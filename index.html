@@ -26,22 +26,27 @@
   .btn{ border:1px solid var(--line); background:#fff; color:var(--ink); padding:7px 13px; border-radius:10px; font-size:13px; cursor:pointer; font-family:inherit; transition:.15s; }
   .btn:hover{ background:#f3f6fb; }
   .btn.active{ background:#4b7bec; border-color:#4b7bec; color:#fff; }
+  #linkBtn.active{ background:#3b5bdb; border-color:#3b5bdb; color:#fff; }
   .help{ text-align:center; color:var(--ink-soft); font-size:12px; padding:0 16px 8px; }
+  .linkhint{ display:none; text-align:center; font-size:12.5px; color:#1b3bb3; background:#eaf0ff; border:1px solid #c5d4ff; border-radius:8px; margin:0 16px 8px; padding:7px 10px; }
+  body.linking .linkhint{ display:block; }
 
   .canvas-wrap{ flex:1; position:relative; overflow:hidden; }
   svg#canvas{ width:100%; height:100%; display:block; touch-action:none; user-select:none; cursor:grab; }
   svg#canvas.panning{ cursor:grabbing; }
+  body.linking svg#canvas{ cursor:crosshair; }
 
   .node circle{ filter:drop-shadow(0 5px 10px rgba(31,39,51,.18)); cursor:pointer; transition:filter .15s; }
   .node:hover circle{ filter:drop-shadow(0 8px 16px rgba(31,39,51,.28)); }
   body.editing .node circle{ cursor:grab; }
+  body.linking .node circle{ cursor:crosshair; }
   svg#canvas.dragging .node circle{ cursor:grabbing; }
   .node text.lbl{ fill:#fff; font-weight:700; font-size:13px; pointer-events:none; }
   .edge{ fill:none; stroke:#b9c4d4; stroke-width:2.5; }
-  .link{ fill:none; stroke:#5b6b82; stroke-width:2.5; pointer-events:none; }
-  .link-hit{ fill:none; stroke:transparent; stroke-width:16; cursor:pointer; }
+  .link{ fill:none; stroke:#3b5bdb; stroke-width:3.2; pointer-events:none; }
+  .link-hit{ fill:none; stroke:transparent; stroke-width:18; cursor:pointer; }
   body:not(.editing) .link-hit{ pointer-events:none; }
-  .templink{ fill:none; stroke:#4b7bec; stroke-width:2.5; stroke-dasharray:6 5; pointer-events:none; }
+  .templink{ fill:none; stroke:#3b5bdb; stroke-width:3.2; stroke-dasharray:8 5; pointer-events:none; }
   .node circle.port{ fill:#4b7bec; cursor:crosshair; filter:none; }
   body:not(.editing) .port{ display:none; }
   .del{ cursor:pointer; }
@@ -62,12 +67,14 @@
 
     <div class="toolbar">
       <button class="btn" id="addRootBtn">＋ 시작 원 추가</button>
+      <button class="btn" id="linkBtn">🔗 연결 모드</button>
       <button class="btn active" id="modeBtn">👁 보기 모드</button>
       <button class="btn" id="fitBtn">⊡ 화면 맞춤</button>
       <button class="btn" id="exportBtn">💾 내보내기(JSON)</button>
       <button class="btn" id="resetBtn">↺ 초기화</button>
     </div>
-    <div class="help">원 <b>클릭</b> → 다음 단계 추가 · <b>더블클릭</b> → 이름수정 · <b>드래그</b> → 이동 · 원 아래 <b style="color:#4b7bec">파란 점</b>을 다른 원으로 끌면 <b>연결</b> · 연결선 <b>클릭</b> → 삭제 · <b>✕</b> → 원 삭제</div>
+    <div class="help">원 <b>클릭</b> → 다음 단계 추가 · <b>더블클릭</b> → 이름수정 · <b>드래그</b> → 이동 · <b>🔗 연결 모드</b>로 대분류끼리 잇기 · <b>✕</b> → 삭제</div>
+    <div class="linkhint" id="linkHint">🔗 <b>연결 모드</b> — 잇고 싶은 원을 <b>차례로 클릭</b>하면 화살표(→)로 연결돼요. (계속 클릭하면 체인으로 쭉 이어짐) 끝내려면 <b>연결 모드</b> 버튼을 다시 누르세요. · 연결선 클릭 → 삭제</div>
 
     <div class="canvas-wrap">
       <svg id="canvas">
@@ -75,8 +82,8 @@
           <pattern id="dots" width="26" height="26" patternUnits="userSpaceOnUse">
             <circle cx="2" cy="2" r="1.6" fill="#d3dae5"/>
           </pattern>
-          <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
-            <path d="M0 0 L10 5 L0 10 z" fill="#5b6b82"/>
+          <marker id="arrow" viewBox="0 0 10 10" refX="8.5" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse">
+            <path d="M0 0 L10 5 L0 10 z" fill="#3b5bdb"/>
           </marker>
         </defs>
         <g id="viewport">
@@ -115,6 +122,7 @@ let links = [];                 // [ {from,to} ] — 아무 원끼리 연결(대
 let panX = 0, panY = 0, zoom = 1;
 let db = null, graphRef = null, online = false, presenceCount = 0;
 let writeTimer = null, pendingRemote = null, busy = false;
+let linkMode = false, linkSource = null;   // 🔗 연결 모드
 
 const svg      = document.getElementById("canvas");
 const viewport = document.getElementById("viewport");
@@ -124,6 +132,7 @@ const tempLink = document.getElementById("tempLink");
 const conn     = document.getElementById("conn");
 const renamer  = document.getElementById("renamer");
 const modeBtn  = document.getElementById("modeBtn");
+const linkBtn  = document.getElementById("linkBtn");
 
 const editing = () => document.body.classList.contains("editing");
 const genId   = () => "n" + Date.now().toString(36) + Math.random().toString(36).slice(2,6);
@@ -222,14 +231,16 @@ function render(){
     const dy = n.y - p.y;
     e += `<path class="edge" d="M ${p.x} ${p.y} C ${p.x} ${p.y+dy*0.5}, ${n.x} ${n.y-dy*0.5}, ${n.x} ${n.y}"/>`;
   });
-  // 사용자가 그린 연결선(아무 원끼리)
+  // 사용자가 그린 연결선(아무 원끼리) — 방향 화살표(중간 + 끝)
   links.forEach((l, i) => {
     const a = nodes[l.from], b = nodes[l.to];
     if (!a || !b) return;
     const dx=b.x-a.x, dy=b.y-a.y, len=Math.hypot(dx,dy)||1, ux=dx/len, uy=dy/len;
-    const sx=a.x+ux*48, sy=a.y+uy*48, tx=b.x-ux*58, ty=b.y-uy*58;
-    e += `<path class="link-hit" data-li="${i}" d="M ${sx} ${sy} L ${tx} ${ty}"/>`;
-    e += `<path class="link" marker-end="url(#arrow)" d="M ${sx} ${sy} L ${tx} ${ty}"/>`;
+    const sx=a.x+ux*48, sy=a.y+uy*48, tx=b.x-ux*60, ty=b.y-uy*60;
+    const mx=(sx+tx)/2, my=(sy+ty)/2;
+    const d = `M ${sx} ${sy} L ${mx} ${my} L ${tx} ${ty}`;
+    e += `<path class="link-hit" data-li="${i}" d="${d}"/>`;
+    e += `<path class="link" marker-mid="url(#arrow)" marker-end="url(#arrow)" d="${d}"/>`;
   });
   edgesG.innerHTML = e;
 
@@ -241,7 +252,9 @@ function render(){
     const tspans = lines.length === 1
       ? `<tspan x="0" dy="5">${esc(lines[0])}</tspan>`
       : `<tspan x="0" dy="-3">${esc(lines[0])}</tspan><tspan x="0" dy="17">${esc(lines[1])}</tspan>`;
+    const sel = (n.id === linkSource) ? `<circle r="54" fill="none" stroke="#3b5bdb" stroke-width="3" stroke-dasharray="6 4"></circle>` : "";
     h += `<g class="node" data-id="${n.id}" transform="translate(${n.x},${n.y})">
+            ${sel}
             <circle r="46" fill="${color}"></circle>
             <text class="lbl" text-anchor="middle">${tspans}</text>
             <circle class="port" cx="0" cy="46" r="9" stroke="#fff" stroke-width="2"><title>여기서 끌어 다른 원과 연결</title></circle>
@@ -259,7 +272,6 @@ function esc(s){ return String(s).replace(/[&<>]/g, c => ({"&":"&amp;","<":"&lt;
 function addChild(pid){
   const p = nodes[pid]; if(!p) return;
   const id = genId();
-  // 기존 원 위치는 절대 건드리지 않고, 부모 아래 '빈 자리'에만 새 원을 놓음
   let x = p.x, y = p.y + 210, guard = 0;
   while (Object.values(nodes).some(n => Math.abs(n.x-x) < 110 && Math.abs(n.y-y) < 80) && guard++ < 60) x += 120;
   nodes[id] = { id, label:"새 단계", x, y, parent:pid };
@@ -268,7 +280,7 @@ function addChild(pid){
 }
 function addRoot(){
   const id = genId();
-  const k = childrenOf(null).length;   // 기존 루트 수
+  const k = childrenOf(null).length;
   nodes[id] = { id, label:"새 시작", x:300 + k*260, y:120, parent:null };
   persist(); render(); return id;
 }
@@ -281,7 +293,8 @@ function deleteNode(id){
   const kids = collectSubtree(id);
   if (kids.length > 1 && !confirm(`'${nodes[id].label}' 와 하위 ${kids.length-1}개 원을 함께 삭제할까요?`)) return;
   kids.forEach(k => delete nodes[k]);
-  links = links.filter(l => !kids.includes(l.from) && !kids.includes(l.to));  // 연결선도 정리
+  links = links.filter(l => !kids.includes(l.from) && !kids.includes(l.to));
+  if (linkSource && kids.includes(linkSource)) linkSource = null;
   persist(); render();
 }
 function collectSubtree(id){
@@ -314,11 +327,17 @@ renamer.addEventListener("keydown", e => {
 });
 renamer.addEventListener("blur", commitRename);
 
-/* ===== 클릭 vs 더블클릭(원 클릭=추가 / 더블=이름수정) ===== */
+/* ===== 클릭 처리 ===== */
 let pendingClick = null;
 function nodeClicked(id){
+  if (linkMode){ linkClick(id); return; }   // 🔗 연결 모드: 클릭으로 잇기
   if (pendingClick && pendingClick.id === id){ clearTimeout(pendingClick.t); pendingClick=null; startRename(id); }
   else { const t = setTimeout(()=>{ pendingClick=null; addChild(id); }, 240); pendingClick = {id, t}; }
+}
+function linkClick(id){
+  if (!linkSource){ linkSource = id; render(); return; }     // 출발 원 선택
+  if (id !== linkSource){ addLink(linkSource, id); }          // 도착 원 → 연결
+  linkSource = id; render();                                  // 체인: 방금 누른 원이 다음 출발점
 }
 
 /* ===== 포인터: 연결 + 노드 드래그 + 캔버스 팬 ===== */
@@ -332,7 +351,7 @@ svg.addEventListener("pointerdown", e => {
 
   if (editing() && delEl && nodeEl){ e.stopPropagation(); deleteNode(nodeEl.dataset.id); return; }
   if (editing() && linkHit){ const li=+linkHit.dataset.li; if(confirm("이 연결선을 지울까요?")){ links.splice(li,1); persist(); render(); } return; }
-  if (editing() && portEl && nodeEl){
+  if (editing() && !linkMode && portEl && nodeEl){
     linking = { from: nodeEl.dataset.id }; busy = true;
     const a = nodes[linking.from];
     tempLink.setAttribute("d", `M ${a.x} ${a.y} L ${a.x} ${a.y}`);
@@ -401,10 +420,19 @@ function fitView(){
 
 /* ===== 툴바 ===== */
 document.getElementById("addRootBtn").addEventListener("click", ()=>{ if(!editing()) modeBtn.click(); const id=addRoot(); startRename(id); });
+linkBtn.addEventListener("click", ()=>{
+  linkMode = !linkMode;
+  if (linkMode && !editing()) modeBtn.click();          // 편집 모드 자동 진입
+  document.body.classList.toggle("linking", linkMode);
+  linkBtn.classList.toggle("active", linkMode);
+  linkBtn.textContent = linkMode ? "🔗 연결 끝내기" : "🔗 연결 모드";
+  linkSource = null; render();
+});
 modeBtn.addEventListener("click", ()=>{
   const on = document.body.classList.toggle("editing");
   modeBtn.textContent = on ? "👁 보기 모드" : "✏️ 편집 모드";
   modeBtn.classList.toggle("active", on);
+  if (!on && linkMode){ linkMode=false; linkSource=null; document.body.classList.remove("linking"); linkBtn.classList.remove("active"); linkBtn.textContent="🔗 연결 모드"; render(); }
 });
 document.getElementById("fitBtn").addEventListener("click", fitView);
 document.getElementById("resetBtn").addEventListener("click", ()=>{
