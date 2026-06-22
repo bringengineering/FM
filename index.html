@@ -15,19 +15,19 @@
   }
   .stage{ display:flex; flex-direction:column; height:100vh; }
 
-  header{ text-align:center; padding:14px 16px 2px; }
+  header{ text-align:center; padding:12px 16px 2px; }
   header h1{ margin:0; font-size:19px; letter-spacing:-.4px; }
-  .conn{ display:inline-block; margin-top:8px; padding:5px 12px; border-radius:999px; font-size:12px; border:1px solid var(--line); background:#fff; }
+  .conn{ display:inline-block; margin-top:7px; padding:5px 12px; border-radius:999px; font-size:12px; border:1px solid var(--line); background:#fff; }
   .conn.local{ color:#8a6d3b; background:#fff8e6; border-color:#f0dca0; }
   .conn.on{ color:#147a3d; background:#e9f9ef; border-color:#a7e3c0; }
   .conn.off{ color:#b34700; background:#fff1e6; border-color:#f3c39a; }
 
-  .toolbar{ display:flex; gap:8px; justify-content:center; flex-wrap:wrap; padding:10px 16px 6px; }
-  .btn{ border:1px solid var(--line); background:#fff; color:var(--ink); padding:7px 13px; border-radius:10px; font-size:13px; cursor:pointer; font-family:inherit; transition:.15s; }
+  .toolbar{ display:flex; gap:7px; justify-content:center; flex-wrap:wrap; padding:9px 16px 5px; }
+  .btn{ border:1px solid var(--line); background:#fff; color:var(--ink); padding:7px 12px; border-radius:10px; font-size:13px; cursor:pointer; font-family:inherit; transition:.15s; }
   .btn:hover{ background:#f3f6fb; }
   .btn.active{ background:#4b7bec; border-color:#4b7bec; color:#fff; }
   #linkBtn.active{ background:#3b5bdb; border-color:#3b5bdb; color:#fff; }
-  .help{ text-align:center; color:var(--ink-soft); font-size:12px; padding:0 16px 8px; }
+  .help{ text-align:center; color:var(--ink-soft); font-size:11.5px; padding:0 16px 7px; line-height:1.7; }
   .linkhint{ display:none; text-align:center; font-size:12.5px; color:#1b3bb3; background:#eaf0ff; border:1px solid #c5d4ff; border-radius:8px; margin:0 16px 8px; padding:7px 10px; }
   body.linking .linkhint{ display:block; }
 
@@ -36,26 +36,38 @@
   svg#canvas.panning{ cursor:grabbing; }
   body.linking svg#canvas{ cursor:crosshair; }
 
-  .node circle{ filter:drop-shadow(0 5px 10px rgba(31,39,51,.18)); cursor:pointer; transition:filter .15s; }
-  .node:hover circle{ filter:drop-shadow(0 8px 16px rgba(31,39,51,.28)); }
-  body.editing .node circle{ cursor:grab; }
-  body.linking .node circle{ cursor:crosshair; }
-  svg#canvas.dragging .node circle{ cursor:grabbing; }
+  .node circle.body{ filter:drop-shadow(0 5px 10px rgba(31,39,51,.18)); cursor:pointer; transition:filter .15s; }
+  .node:hover circle.body{ filter:drop-shadow(0 8px 16px rgba(31,39,51,.28)); }
+  body.editing .node circle.body{ cursor:grab; }
+  body.linking .node circle.body{ cursor:crosshair; }
+  svg#canvas.dragging .node circle.body{ cursor:grabbing; }
   .node text.lbl{ fill:#fff; font-weight:700; font-size:13px; pointer-events:none; }
   .edge{ fill:none; stroke:#b9c4d4; stroke-width:2.5; }
   .link{ fill:none; stroke:#3b5bdb; stroke-width:3.2; pointer-events:none; }
   .link-hit{ fill:none; stroke:transparent; stroke-width:18; cursor:pointer; }
   body:not(.editing) .link-hit{ pointer-events:none; }
   .templink{ fill:none; stroke:#3b5bdb; stroke-width:3.2; stroke-dasharray:8 5; pointer-events:none; }
-  .node circle.port{ fill:#4b7bec; cursor:crosshair; filter:none; }
-  body:not(.editing) .port{ display:none; }
+  .port{ fill:#4b7bec; cursor:crosshair; }
+  .swatch{ cursor:pointer; }
+  body:not(.editing) .port, body:not(.editing) .swatch{ display:none; }
   .del{ cursor:pointer; }
   body:not(.editing) .del{ display:none; }
 
-  /* 이름 수정 입력칸(원 위에 떠서 표시) */
+  /* 이름 수정 입력칸 */
   #renamer{ position:fixed; display:none; transform:translate(-50%,-50%); z-index:20;
     border:2px solid #4b7bec; border-radius:10px; padding:6px 10px; font-size:14px; font-weight:700;
     font-family:inherit; text-align:center; outline:none; box-shadow:0 8px 20px rgba(31,39,51,.2); width:150px; }
+
+  /* 색·크기 팝업 */
+  #nodePop{ position:fixed; display:none; z-index:25; background:#fff; border:1px solid var(--line);
+    border-radius:10px; padding:8px 8px 6px; box-shadow:0 10px 26px rgba(31,39,51,.2); }
+  #nodePop .poprow{ display:flex; align-items:center; flex-wrap:wrap; max-width:210px; }
+  #nodePop .sw{ width:22px; height:22px; border-radius:6px; margin:3px; cursor:pointer; box-shadow:0 0 0 1px #d3dae5; }
+  #nodePop .sw.reset{ width:auto; padding:0 8px; height:22px; line-height:22px; font-size:11px; color:#6b7686; background:#fff; box-shadow:0 0 0 1px #c7d0dd; }
+  #nodePop .size{ margin-top:5px; }
+  #nodePop .lbl2{ font-size:12px; color:#6b7686; margin:0 6px 0 3px; }
+  #nodePop .szbtn{ border:1px solid var(--line); background:#fff; border-radius:7px; width:32px; height:26px; font-size:15px; cursor:pointer; margin-right:5px; }
+  #nodePop .szbtn:hover{ background:#f3f6fb; }
 </style>
 </head>
 <body class="editing">
@@ -66,15 +78,20 @@
     </header>
 
     <div class="toolbar">
-      <button class="btn" id="addRootBtn">＋ 시작 원 추가</button>
+      <button class="btn" id="addRootBtn">＋ 시작 원</button>
       <button class="btn" id="linkBtn">🔗 연결 모드</button>
+      <button class="btn" id="arrangeBtn">⤧ 자동정렬</button>
+      <button class="btn" id="undoBtn">↩︎ 되돌리기</button>
       <button class="btn active" id="modeBtn">👁 보기 모드</button>
       <button class="btn" id="fitBtn">⊡ 화면 맞춤</button>
-      <button class="btn" id="exportBtn">💾 내보내기(JSON)</button>
+      <button class="btn" id="exportBtn">💾 내보내기</button>
       <button class="btn" id="resetBtn">↺ 초기화</button>
     </div>
-    <div class="help">원 <b>클릭</b> → 다음 단계 추가 · <b>더블클릭</b> → 이름수정 · <b>드래그</b> → 이동 · <b>🔗 연결 모드</b>로 대분류끼리 잇기 · <b>✕</b> → 삭제</div>
-    <div class="linkhint" id="linkHint">🔗 <b>연결 모드</b> — 잇고 싶은 원을 <b>차례로 클릭</b>하면 화살표(→)로 연결돼요. (계속 클릭하면 체인으로 쭉 이어짐) 끝내려면 <b>연결 모드</b> 버튼을 다시 누르세요. · 연결선 클릭 → 삭제</div>
+    <div class="help">
+      원 <b>클릭</b> → 중분류 추가 · <b>더블클릭</b> → 이름수정 (수정 중 <b>Ctrl+Enter</b> → 다음 원) · <b>드래그</b> → 이동 · 왼쪽위 <b>색동그라미</b> → 색·크기<br>
+      <b>🔗 연결 모드</b>로 대분류끼리 잇기 · <b>Shift</b> → 자동정렬 · <b>Ctrl+Z</b> → 되돌리기 · <b>✕</b> → 삭제
+    </div>
+    <div class="linkhint" id="linkHint">🔗 <b>연결 모드</b> — 잇고 싶은 원을 <b>차례로 클릭</b>하면 화살표(→)로 연결돼요. 끝내려면 <b>연결 끝내기</b>를 누르세요. (이 모드에선 클릭해도 중분류가 안 생겨요)</div>
 
     <div class="canvas-wrap">
       <svg id="canvas">
@@ -94,6 +111,7 @@
         </g>
       </svg>
       <input id="renamer" maxlength="40" />
+      <div id="nodePop"></div>
     </div>
   </div>
 
@@ -112,17 +130,19 @@ const firebaseConfig = {
 };
 const ROOM = "main";
 
-const PALETTE = ["#4b7bec","#26de81","#f7b731","#fa8231","#a55eea","#eb3b5a","#2bcbba","#3867d6"];
-const LS_KEY  = "fm_workflow_graph_v1";
+const PALETTE  = ["#4b7bec","#26de81","#f7b731","#fa8231","#a55eea","#eb3b5a","#2bcbba","#3867d6"];
+const COLORSET = ["#4b7bec","#3867d6","#26de81","#20bf6b","#f7b731","#fa8231","#eb3b5a","#a55eea","#2bcbba","#778ca3","#1f2733"];
+const LS_KEY   = "fm_workflow_graph_v1";
 const isConfigured = !!firebaseConfig.apiKey && !firebaseConfig.apiKey.includes("여기에");
 
 /* ===== 상태 ===== */
-let nodes = {};                 // { id: {id,label,x,y,parent} }
-let links = [];                 // [ {from,to} ] — 아무 원끼리 연결(대분류끼리도)
+let nodes = {};                 // { id:{id,label,x,y,parent,color?,r?} }
+let links = [];                 // [ {from,to} ]
 let panX = 0, panY = 0, zoom = 1;
 let db = null, graphRef = null, online = false, presenceCount = 0;
 let writeTimer = null, pendingRemote = null, busy = false;
-let linkMode = false, linkSource = null;   // 🔗 연결 모드
+let linkMode = false, linkSource = null, popFor = null;
+let history = [], redoStack = [];
 
 const svg      = document.getElementById("canvas");
 const viewport = document.getElementById("viewport");
@@ -131,14 +151,16 @@ const nodesG   = document.getElementById("nodes");
 const tempLink = document.getElementById("tempLink");
 const conn     = document.getElementById("conn");
 const renamer  = document.getElementById("renamer");
+const nodePop  = document.getElementById("nodePop");
 const modeBtn  = document.getElementById("modeBtn");
 const linkBtn  = document.getElementById("linkBtn");
+const undoBtn  = document.getElementById("undoBtn");
 
 const editing = () => document.body.classList.contains("editing");
 const genId   = () => "n" + Date.now().toString(36) + Math.random().toString(36).slice(2,6);
 const clamp   = (v,a,b) => Math.max(a, Math.min(b, v));
+const radius  = n => n.r || 46;
 
-/* ===== 기본(예시) 그래프 ===== */
 function makeSeed(){
   return {
     r1:{ id:"r1", label:"업무 시작", x:640, y:120, parent:null },
@@ -151,9 +173,9 @@ function makeSeed(){
 /* ===== 시작 ===== */
 function start(){
   if (isConfigured && typeof firebase !== "undefined"){
-    try { initFirebase(); return; } catch(e){ console.error("Firebase 실패 → 로컬", e); }
+    try { initFirebase(); updateUndoBtn(); return; } catch(e){ console.error("Firebase 실패 → 로컬", e); }
   }
-  const d = loadLocal(); nodes = d.nodes; links = d.links; updateConn(); render(); fitView();
+  const d = loadLocal(); nodes = d.nodes; links = d.links; updateConn(); render(); fitView(); updateUndoBtn();
 }
 function initFirebase(){
   firebase.initializeApp(firebaseConfig);
@@ -162,7 +184,7 @@ function initFirebase(){
   const d = loadLocal(); nodes = d.nodes; links = d.links; render(); fitView();
   graphRef.on("value", snap => {
     const val = snap.val();
-    if (val == null){ graphRef.set(graphState()); return; }   // 최초 1회 시드
+    if (val == null){ graphRef.set(graphState()); return; }
     applyRemote(val);
   });
   setupPresence(); updateConn();
@@ -175,22 +197,26 @@ function loadLocal(){
   try{
     const g = JSON.parse(localStorage.getItem(LS_KEY));
     if (g && g.nodes) return { nodes:g.nodes, links: normLinks(g.links) };
-    if (g && Object.keys(g).length) return { nodes:g, links:[] };   // 옛 형식(노드맵만)
+    if (g && Object.keys(g).length) return { nodes:g, links:[] };
   }catch(e){}
   return { nodes: makeSeed(), links: [] };
 }
 function saveLocal(){ try{ localStorage.setItem(LS_KEY, JSON.stringify(graphState())); }catch(e){} }
 function persist(){ if(graphRef){ graphRef.set(graphState()); } else { saveLocal(); } }
-function persistDebounced(){ clearTimeout(writeTimer); writeTimer = setTimeout(persist, 250); }
 
-/* ===== 원격 반영 (내가 드래그/이름수정/연결 중이면 잠시 보류) ===== */
 function applyRemote(remote){
   if (busy){ pendingRemote = remote; return; }
   if (remote && remote.nodes){ nodes = remote.nodes; links = normLinks(remote.links); }
-  else { nodes = remote; links = []; }   // 옛 형식 호환
+  else { nodes = remote; links = []; }
   render();
 }
 function flushPending(){ if (pendingRemote){ const r=pendingRemote; pendingRemote=null; applyRemote(r); } }
+
+/* ===== 되돌리기(undo/redo) ===== */
+function snapshot(){ history.push(JSON.stringify(graphState())); if(history.length>80) history.shift(); redoStack.length=0; updateUndoBtn(); }
+function undo(){ if(!history.length) return; redoStack.push(JSON.stringify(graphState())); const s=JSON.parse(history.pop()); nodes=s.nodes; links=normLinks(s.links); persist(); render(); updateUndoBtn(); }
+function redoOp(){ if(!redoStack.length) return; history.push(JSON.stringify(graphState())); const s=JSON.parse(redoStack.pop()); nodes=s.nodes; links=normLinks(s.links); persist(); render(); updateUndoBtn(); }
+function updateUndoBtn(){ undoBtn.style.opacity = history.length ? "1" : ".45"; }
 
 /* ===== 접속 상태 ===== */
 function setupPresence(){
@@ -207,6 +233,7 @@ function updateConn(){
 
 /* ===== 보조 ===== */
 function depthOf(id){ let d=0,n=nodes[id]; while(n && n.parent){ d++; n=nodes[n.parent]; if(d>50)break; } return d; }
+function colorOf(n){ return n.color || PALETTE[depthOf(n.id) % PALETTE.length]; }
 function childrenOf(id){ return Object.values(nodes).filter(n => n.parent===id); }
 function setViewport(){ viewport.setAttribute("transform", `translate(${panX},${panY}) scale(${zoom})`); }
 function screenToWorld(cx, cy){ const r=svg.getBoundingClientRect(); return { x:(cx-r.left-panX)/zoom, y:(cy-r.top-panY)/zoom }; }
@@ -217,26 +244,23 @@ function wrapLabel(s){
   let cut = s.lastIndexOf(" ", Math.ceil(s.length/2));
   if (cut < 2) cut = Math.ceil(s.length/2);
   let l1 = s.slice(0, cut).trim(), l2 = s.slice(cut).trim();
-  if (l2.length > 7) l2 = l2.slice(0,6) + "…";
+  if (l2.length > 8) l2 = l2.slice(0,7) + "…";
   return [l1, l2];
 }
 
 /* ===== 렌더 ===== */
 function render(){
   let e = "";
-  // 부모 → 자식 엣지
   Object.values(nodes).forEach(n => {
     if (!n.parent || !nodes[n.parent]) return;
-    const p = nodes[n.parent];
-    const dy = n.y - p.y;
+    const p = nodes[n.parent]; const dy = n.y - p.y;
     e += `<path class="edge" d="M ${p.x} ${p.y} C ${p.x} ${p.y+dy*0.5}, ${n.x} ${n.y-dy*0.5}, ${n.x} ${n.y}"/>`;
   });
-  // 사용자가 그린 연결선(아무 원끼리) — 방향 화살표(중간 + 끝)
   links.forEach((l, i) => {
-    const a = nodes[l.from], b = nodes[l.to];
-    if (!a || !b) return;
+    const a = nodes[l.from], b = nodes[l.to]; if (!a || !b) return;
     const dx=b.x-a.x, dy=b.y-a.y, len=Math.hypot(dx,dy)||1, ux=dx/len, uy=dy/len;
-    const sx=a.x+ux*48, sy=a.y+uy*48, tx=b.x-ux*60, ty=b.y-uy*60;
+    const ra=radius(a), rb=radius(b);
+    const sx=a.x+ux*(ra+2), sy=a.y+uy*(ra+2), tx=b.x-ux*(rb+14), ty=b.y-uy*(rb+14);
     const mx=(sx+tx)/2, my=(sy+ty)/2;
     const d = `M ${sx} ${sy} L ${mx} ${my} L ${tx} ${ty}`;
     e += `<path class="link-hit" data-li="${i}" d="${d}"/>`;
@@ -244,21 +268,22 @@ function render(){
   });
   edgesG.innerHTML = e;
 
-  // 노드
   let h = "";
   Object.values(nodes).forEach(n => {
-    const color = PALETTE[depthOf(n.id) % PALETTE.length];
+    const r = radius(n), color = colorOf(n), off = r - 12;
+    const fs = clamp(Math.round(r*0.29), 11, 18);
     const lines = wrapLabel(n.label);
     const tspans = lines.length === 1
-      ? `<tspan x="0" dy="5">${esc(lines[0])}</tspan>`
-      : `<tspan x="0" dy="-3">${esc(lines[0])}</tspan><tspan x="0" dy="17">${esc(lines[1])}</tspan>`;
-    const sel = (n.id === linkSource) ? `<circle r="54" fill="none" stroke="#3b5bdb" stroke-width="3" stroke-dasharray="6 4"></circle>` : "";
+      ? `<tspan x="0" dy="${fs*0.36}">${esc(lines[0])}</tspan>`
+      : `<tspan x="0" dy="${-fs*0.25}">${esc(lines[0])}</tspan><tspan x="0" dy="${fs*1.25}">${esc(lines[1])}</tspan>`;
+    const sel = (n.id === linkSource) ? `<circle r="${r+8}" fill="none" stroke="#3b5bdb" stroke-width="3" stroke-dasharray="6 4"></circle>` : "";
     h += `<g class="node" data-id="${n.id}" transform="translate(${n.x},${n.y})">
             ${sel}
-            <circle r="46" fill="${color}"></circle>
-            <text class="lbl" text-anchor="middle">${tspans}</text>
-            <circle class="port" cx="0" cy="46" r="9" stroke="#fff" stroke-width="2"><title>여기서 끌어 다른 원과 연결</title></circle>
-            <g class="del" transform="translate(34,-34)">
+            <circle class="body" r="${r}" fill="${color}"></circle>
+            <text class="lbl" text-anchor="middle" font-size="${fs}">${tspans}</text>
+            <circle class="port" cx="0" cy="${r}" r="9" stroke="#fff" stroke-width="2"><title>끌어서 다른 원과 연결</title></circle>
+            <circle class="swatch" cx="${-off}" cy="${-off}" r="11" fill="${color}" stroke="#fff" stroke-width="2"><title>색·크기 바꾸기</title></circle>
+            <g class="del" transform="translate(${off},${-off})">
               <circle r="11" fill="#fff" stroke="#e03131" stroke-width="1.5"></circle>
               <text text-anchor="middle" dy="4.5" font-size="14" fill="#e03131" font-weight="700">×</text>
             </g>
@@ -271,58 +296,81 @@ function esc(s){ return String(s).replace(/[&<>]/g, c => ({"&":"&amp;","<":"&lt;
 /* ===== 동작 ===== */
 function addChild(pid){
   const p = nodes[pid]; if(!p) return;
+  snapshot();
   const id = genId();
-  let x = p.x, y = p.y + 210, guard = 0;
+  let x = p.x, y = p.y + 200, guard = 0;
   while (Object.values(nodes).some(n => Math.abs(n.x-x) < 110 && Math.abs(n.y-y) < 80) && guard++ < 60) x += 120;
   nodes[id] = { id, label:"새 단계", x, y, parent:pid };
   persist(); render();
   return id;
 }
 function addRoot(){
+  snapshot();
   const id = genId();
-  const k = childrenOf(null).length;
-  nodes[id] = { id, label:"새 시작", x:300 + k*260, y:120, parent:null };
+  const rect = svg.getBoundingClientRect();                       // 지금 보이는 화면 정중앙(월드 좌표)
+  const c = screenToWorld(rect.left + rect.width/2, rect.top + rect.height/2);
+  let x = c.x, y = c.y, guard = 0;
+  while (Object.values(nodes).some(n => Math.abs(n.x-x) < 120 && Math.abs(n.y-y) < 90) && guard++ < 60){ x += 130; }
+  nodes[id] = { id, label:"새 시작", x, y, parent:null };
   persist(); render(); return id;
 }
 function addLink(from, to){
   if (!nodes[from] || !nodes[to] || from === to) return;
-  if (links.some(l => (l.from===from&&l.to===to)||(l.from===to&&l.to===from))) return; // 중복 방지
-  links.push({ from, to }); persist(); render();
+  if (links.some(l => (l.from===from&&l.to===to)||(l.from===to&&l.to===from))) return;
+  snapshot(); links.push({ from, to }); persist(); render();
 }
 function deleteNode(id){
   const kids = collectSubtree(id);
   if (kids.length > 1 && !confirm(`'${nodes[id].label}' 와 하위 ${kids.length-1}개 원을 함께 삭제할까요?`)) return;
+  snapshot();
   kids.forEach(k => delete nodes[k]);
   links = links.filter(l => !kids.includes(l.from) && !kids.includes(l.to));
   if (linkSource && kids.includes(linkSource)) linkSource = null;
   persist(); render();
 }
-function collectSubtree(id){
-  const out = [id]; let i=0;
-  while(i < out.length){ childrenOf(out[i]).forEach(c => out.push(c.id)); i++; }
-  return out;
+function collectSubtree(id){ const out=[id]; let i=0; while(i<out.length){ childrenOf(out[i]).forEach(c=>out.push(c.id)); i++; } return out; }
+
+function setNodeColor(id, color){ if(!nodes[id]) return; snapshot(); if(color) nodes[id].color=color; else delete nodes[id].color; persist(); render(); }
+function resizeNode(id, dir){ if(!nodes[id]) return; snapshot(); nodes[id].r = clamp(radius(nodes[id]) + dir*8, 30, 88); persist(); render(); }
+
+/* ===== 자동 정렬(트리) ===== */
+function autoLayout(){
+  if(!Object.keys(nodes).length) return;
+  snapshot();
+  const GAPX=180, GAPY=205; let leaf=0; const seen=new Set();
+  function place(id, depth){
+    if(seen.has(id)) return; seen.add(id);
+    const kids = childrenOf(id);
+    nodes[id].y = 120 + depth*GAPY;
+    if(!kids.length){ nodes[id].x = leaf*GAPX; leaf++; }
+    else { kids.forEach(k=>place(k.id, depth+1)); const xs=kids.map(k=>nodes[k.id].x); nodes[id].x=(Math.min(...xs)+Math.max(...xs))/2; }
+  }
+  Object.values(nodes).filter(n=>!n.parent||!nodes[n.parent]).forEach(r=>{ place(r.id,0); leaf++; });
+  persist(); render(); fitView();
 }
 
-/* ===== 이름 수정 ===== */
-let renameId = null;
+/* ===== 이름 수정 (Ctrl+Enter → 다음 원) ===== */
+let renameId = null, renameOld = "";
 function startRename(id){
   const n = nodes[id]; if(!n) return;
-  renameId = id; busy = true;
+  renameId = id; renameOld = n.label; busy = true;
   const rect = svg.getBoundingClientRect();
   renamer.style.left = (rect.left + panX + n.x*zoom) + "px";
   renamer.style.top  = (rect.top  + panY + n.y*zoom) + "px";
-  renamer.style.display = "block";
-  renamer.value = n.label;
+  renamer.style.display = "block"; renamer.value = n.label;
   renamer.focus(); renamer.select();
 }
 function commitRename(){
   if (renameId == null) return;
-  if (nodes[renameId]){ nodes[renameId].label = renamer.value.trim() || "(이름 없음)"; }
-  const id = renameId; renameId = null; renamer.style.display = "none";
-  busy = false; persist(); render(); flushPending();
+  const id = renameId, nv = renamer.value.trim() || "(이름 없음)";
+  if (nodes[id] && nodes[id].label !== nv){ snapshot(); nodes[id].label = nv; }
+  renameId = null; renamer.style.display = "none"; busy = false; persist(); render(); flushPending();
 }
 renamer.addEventListener("keydown", e => {
-  if (e.key === "Enter"){ e.preventDefault(); commitRename(); }
+  if (e.key === "Enter" && (e.ctrlKey||e.metaKey)){      // Ctrl+Enter → 다음 원 만들어 이어 쓰기
+    e.preventDefault(); const cur = renameId; commitRename();
+    if (cur){ const nid = addChild(cur); if(nid) startRename(nid); }
+  } else if (e.key === "Enter"){ e.preventDefault(); commitRename(); }
   else if (e.key === "Escape"){ renameId=null; renamer.style.display="none"; busy=false; flushPending(); }
 });
 renamer.addEventListener("blur", commitRename);
@@ -330,36 +378,53 @@ renamer.addEventListener("blur", commitRename);
 /* ===== 클릭 처리 ===== */
 let pendingClick = null;
 function nodeClicked(id){
-  if (linkMode){ linkClick(id); return; }   // 🔗 연결 모드: 클릭으로 잇기
+  if (linkMode){ linkClick(id); return; }
   if (pendingClick && pendingClick.id === id){ clearTimeout(pendingClick.t); pendingClick=null; startRename(id); }
   else { const t = setTimeout(()=>{ pendingClick=null; addChild(id); }, 240); pendingClick = {id, t}; }
 }
 function linkClick(id){
-  if (!linkSource){ linkSource = id; render(); return; }     // 출발 원 선택
-  if (id !== linkSource){ addLink(linkSource, id); }          // 도착 원 → 연결
-  linkSource = id; render();                                  // 체인: 방금 누른 원이 다음 출발점
+  if (!linkSource){ linkSource = id; render(); return; }
+  if (id !== linkSource){ addLink(linkSource, id); }
+  linkSource = id; render();
 }
 
-/* ===== 포인터: 연결 + 노드 드래그 + 캔버스 팬 ===== */
+/* ===== 색·크기 팝업 ===== */
+function openNodePop(id, e){
+  popFor = id;
+  nodePop.innerHTML =
+    `<div class="poprow">${COLORSET.map(c=>`<span class="sw" data-c="${c}" style="background:${c}"></span>`).join("")}<span class="sw reset" data-c="">기본색</span></div>`+
+    `<div class="poprow size"><span class="lbl2">크기</span><button class="szbtn" data-s="-1">－</button><button class="szbtn" data-s="1">＋</button></div>`;
+  nodePop.style.left = e.clientX + "px"; nodePop.style.top = (e.clientY + 10) + "px"; nodePop.style.display = "block";
+}
+function hidePop(){ nodePop.style.display = "none"; popFor = null; }
+nodePop.addEventListener("click", e => {
+  if (popFor == null) return;
+  const sw = e.target.closest(".sw"), sz = e.target.closest(".szbtn");
+  if (sw) setNodeColor(popFor, sw.dataset.c || null);
+  else if (sz) resizeNode(popFor, +sz.dataset.s);
+});
+window.addEventListener("pointerdown", e => {
+  if (!e.target.closest("#nodePop") && !e.target.closest(".swatch")) hidePop();
+}, true);
+
+/* ===== 포인터 ===== */
 let drag = null, pan = null, linking = null;
 svg.addEventListener("pointerdown", e => {
   if (renameId != null) return;
-  const delEl   = e.target.closest(".del");
-  const portEl  = e.target.closest(".port");
-  const linkHit = e.target.closest(".link-hit");
-  const nodeEl  = e.target.closest(".node");
+  const delEl=e.target.closest(".del"), swatchEl=e.target.closest(".swatch"),
+        portEl=e.target.closest(".port"), linkHit=e.target.closest(".link-hit"), nodeEl=e.target.closest(".node");
 
   if (editing() && delEl && nodeEl){ e.stopPropagation(); deleteNode(nodeEl.dataset.id); return; }
-  if (editing() && linkHit){ const li=+linkHit.dataset.li; if(confirm("이 연결선을 지울까요?")){ links.splice(li,1); persist(); render(); } return; }
+  if (editing() && swatchEl && nodeEl){ openNodePop(nodeEl.dataset.id, e); return; }
+  if (editing() && linkHit){ const li=+linkHit.dataset.li; if(confirm("이 연결선을 지울까요?")){ snapshot(); links.splice(li,1); persist(); render(); } return; }
   if (editing() && !linkMode && portEl && nodeEl){
     linking = { from: nodeEl.dataset.id }; busy = true;
-    const a = nodes[linking.from];
-    tempLink.setAttribute("d", `M ${a.x} ${a.y} L ${a.x} ${a.y}`);
+    const a = nodes[linking.from]; tempLink.setAttribute("d", `M ${a.x} ${a.y} L ${a.x} ${a.y}`);
     tempLink.style.display = ""; svg.setPointerCapture(e.pointerId); return;
   }
   if (editing() && nodeEl){
     const n = nodes[nodeEl.dataset.id];
-    drag = { id:n.id, sx:e.clientX, sy:e.clientY, ox:n.x, oy:n.y, moved:false };
+    drag = { id:n.id, sx:e.clientX, sy:e.clientY, ox:n.x, oy:n.y, moved:false, snap:JSON.stringify(graphState()) };
     busy = true; svg.classList.add("dragging"); svg.setPointerCapture(e.pointerId);
   } else {
     pan = { sx:e.clientX, sy:e.clientY, px:panX, py:panY };
@@ -370,15 +435,13 @@ svg.addEventListener("pointermove", e => {
   if (linking){
     const a = nodes[linking.from]; if(!a) return;
     const w = screenToWorld(e.clientX, e.clientY);
-    tempLink.setAttribute("d", `M ${a.x} ${a.y} L ${w.x} ${w.y}`);
-    return;
+    tempLink.setAttribute("d", `M ${a.x} ${a.y} L ${w.x} ${w.y}`); return;
   }
   if (drag){
     const dx = e.clientX-drag.sx, dy = e.clientY-drag.sy;
     if (Math.hypot(dx,dy) > 4) drag.moved = true;
     const n = nodes[drag.id]; if(!n) return;
-    n.x = drag.ox + dx/zoom; n.y = drag.oy + dy/zoom;
-    render();
+    n.x = drag.ox + dx/zoom; n.y = drag.oy + dy/zoom; render();
   } else if (pan){
     panX = pan.px + (e.clientX-pan.sx); panY = pan.py + (e.clientY-pan.sy); setViewport();
   }
@@ -386,13 +449,13 @@ svg.addEventListener("pointermove", e => {
 svg.addEventListener("pointerup", e => {
   if (linking){
     tempLink.style.display = "none";
-    const el = document.elementFromPoint(e.clientX, e.clientY);
-    const tgt = el && el.closest(".node");
+    const el = document.elementFromPoint(e.clientX, e.clientY); const tgt = el && el.closest(".node");
     if (tgt && tgt.dataset.id !== linking.from){ addLink(linking.from, tgt.dataset.id); }
     busy = false; linking = null; flushPending(); return;
   }
   if (drag){
-    if (drag.moved){ persist(); } else { nodeClicked(drag.id); }
+    if (drag.moved){ history.push(drag.snap); if(history.length>80) history.shift(); redoStack.length=0; updateUndoBtn(); persist(); }
+    else { nodeClicked(drag.id); }
     busy = false; drag = null; svg.classList.remove("dragging"); flushPending();
   }
   if (pan){ pan = null; svg.classList.remove("panning"); }
@@ -406,13 +469,25 @@ svg.addEventListener("wheel", e => {
   panX = mx - wx*zoom; panY = my - wy*zoom; setViewport();
 }, { passive:false });
 
+/* ===== 키보드: Shift 자동정렬 / Ctrl+Z 되돌리기 ===== */
+let shiftFired = false;
+window.addEventListener("keydown", e => {
+  const tag = (e.target && e.target.tagName || "").toLowerCase();
+  if (tag === "input" || tag === "textarea" || renameId != null) return;
+  const ctrl = e.ctrlKey || e.metaKey;
+  if (ctrl && (e.key === "z" || e.key === "Z")){ e.preventDefault(); e.shiftKey ? redoOp() : undo(); return; }
+  if (ctrl && (e.key === "y" || e.key === "Y")){ e.preventDefault(); redoOp(); return; }
+  if (e.key === "Shift" && !ctrl && !shiftFired){ shiftFired = true; if(!drag && !pan && !linking) autoLayout(); }
+});
+window.addEventListener("keyup", e => { if (e.key === "Shift") shiftFired = false; });
+
 /* ===== 화면 맞춤 ===== */
 function fitView(){
   const ns = Object.values(nodes); if(!ns.length) return;
   const xs = ns.map(n=>n.x), ys = ns.map(n=>n.y);
-  const minX=Math.min(...xs)-90, maxX=Math.max(...xs)+90, minY=Math.min(...ys)-90, maxY=Math.max(...ys)+90;
+  const minX=Math.min(...xs)-100, maxX=Math.max(...xs)+100, minY=Math.min(...ys)-100, maxY=Math.max(...ys)+100;
   const rect = svg.getBoundingClientRect();
-  zoom = clamp(Math.min(rect.width/(maxX-minX), rect.height/(maxY-minY)), 0.4, 1.6);
+  zoom = clamp(Math.min(rect.width/(maxX-minX), rect.height/(maxY-minY)), 0.35, 1.6);
   panX = (rect.width  - (minX+maxX)*zoom)/2;
   panY = (rect.height - (minY+maxY)*zoom)/2;
   setViewport();
@@ -422,12 +497,14 @@ function fitView(){
 document.getElementById("addRootBtn").addEventListener("click", ()=>{ if(!editing()) modeBtn.click(); const id=addRoot(); startRename(id); });
 linkBtn.addEventListener("click", ()=>{
   linkMode = !linkMode;
-  if (linkMode && !editing()) modeBtn.click();          // 편집 모드 자동 진입
+  if (linkMode && !editing()) modeBtn.click();
   document.body.classList.toggle("linking", linkMode);
   linkBtn.classList.toggle("active", linkMode);
   linkBtn.textContent = linkMode ? "🔗 연결 끝내기" : "🔗 연결 모드";
   linkSource = null; render();
 });
+document.getElementById("arrangeBtn").addEventListener("click", autoLayout);
+undoBtn.addEventListener("click", undo);
 modeBtn.addEventListener("click", ()=>{
   const on = document.body.classList.toggle("editing");
   modeBtn.textContent = on ? "👁 보기 모드" : "✏️ 편집 모드";
@@ -437,7 +514,7 @@ modeBtn.addEventListener("click", ()=>{
 document.getElementById("fitBtn").addEventListener("click", fitView);
 document.getElementById("resetBtn").addEventListener("click", ()=>{
   const msg = graphRef ? "기본 예시로 초기화할까요? (모든 팀원에게 적용)" : "기본 예시로 초기화할까요? (수정 내용 사라짐)";
-  if (confirm(msg)){ nodes = makeSeed(); links = []; persist(); render(); fitView(); }
+  if (confirm(msg)){ snapshot(); nodes = makeSeed(); links = []; persist(); render(); fitView(); }
 });
 document.getElementById("exportBtn").addEventListener("click", ()=>{
   const blob = new Blob([JSON.stringify(graphState(),null,2)], {type:"application/json"});
@@ -446,7 +523,8 @@ document.getElementById("exportBtn").addEventListener("click", ()=>{
 window.addEventListener("resize", setViewport);
 
 /* 테스트/디버그 훅 */
-window.__wf = { addChild, addRoot, addLink, deleteNode, getNodes:()=>JSON.parse(JSON.stringify(nodes)), getLinks:()=>JSON.parse(JSON.stringify(links)), applyRemote, isConfigured };
+window.__wf = { addChild, addRoot, addLink, deleteNode, setNodeColor, resizeNode, autoLayout, undo, redo:redoOp,
+  getNodes:()=>JSON.parse(JSON.stringify(nodes)), getLinks:()=>JSON.parse(JSON.stringify(links)), applyRemote, isConfigured };
 
 start();
 </script>
