@@ -1,0 +1,218 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>업무 흐름 (Work Flow) — 대분류</title>
+<style>
+  :root {
+    /* ====== 색상 테마 (원하면 여기 색만 바꿔도 됩니다) ====== */
+    --bg:        #eef1f6;
+    --panel:     #ffffff;
+    --ink:       #1f2733;
+    --ink-soft:  #6b7686;
+    --line:      #c7d0dd;
+    --tail:      14px;   /* 말풍선 꼬리 크기 */
+  }
+
+  * { box-sizing: border-box; }
+
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--ink);
+    font-family: "Apple SD Gothic Neo", "Malgun Gothic", "맑은 고딕",
+                 "Noto Sans KR", system-ui, -apple-system, sans-serif;
+    -webkit-font-smoothing: antialiased;
+    line-height: 1.5;
+  }
+
+  /* ===== 상단 헤더 ===== */
+  header {
+    text-align: center;
+    padding: 40px 20px 8px;
+  }
+  header h1 {
+    margin: 0;
+    font-size: 26px;
+    letter-spacing: -0.5px;
+  }
+  header p {
+    margin: 8px 0 0;
+    color: var(--ink-soft);
+    font-size: 14px;
+  }
+
+  /* ===== 흐름 컨테이너 ===== */
+  .flow {
+    max-width: 720px;
+    margin: 0 auto;
+    padding: 24px 20px 64px;
+    position: relative;
+  }
+
+  /* 가운데 흐름 라인 (척추) */
+  .flow::before {
+    content: "";
+    position: absolute;
+    top: 24px;
+    bottom: 64px;
+    left: 50%;
+    width: 2px;
+    transform: translateX(-50%);
+    background: linear-gradient(var(--line), var(--line)) ;
+    z-index: 0;
+  }
+
+  /* ===== 한 단계 (대분류) ===== */
+  .step {
+    position: relative;
+    z-index: 1;
+    display: flex;
+    align-items: center;
+    margin: 18px 0;
+    min-height: 64px;
+  }
+  .step.left  { justify-content: flex-start; }
+  .step.right { justify-content: flex-end; }
+
+  /* 단계 번호 뱃지 (가운데 라인 위에 올라감) */
+  .badge {
+    position: absolute;
+    left: 50%;
+    top: 50%;
+    transform: translate(-50%, -50%);
+    width: 34px;
+    height: 34px;
+    border-radius: 50%;
+    background: var(--accent, #4b7bec);
+    color: #fff;
+    font-weight: 700;
+    font-size: 15px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    box-shadow: 0 0 0 4px var(--bg);
+    z-index: 2;
+  }
+
+  /* 말풍선 */
+  .bubble {
+    position: relative;
+    max-width: 42%;
+    background: var(--panel);
+    border: 1px solid var(--line);
+    border-top: 3px solid var(--accent, #4b7bec);
+    border-radius: 16px;
+    padding: 14px 18px;
+    box-shadow: 0 6px 18px rgba(31, 39, 51, 0.06);
+    transition: transform .15s ease, box-shadow .15s ease;
+  }
+  .bubble:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 10px 24px rgba(31, 39, 51, 0.12);
+  }
+  .bubble .title {
+    font-weight: 700;
+    font-size: 16px;
+  }
+  .bubble .hint {
+    margin-top: 4px;
+    font-size: 12px;
+    color: var(--ink-soft);
+  }
+
+  /* 말풍선 꼬리 (가운데 라인 쪽을 향함) */
+  .bubble::after {
+    content: "";
+    position: absolute;
+    top: 18px;
+    width: 0; height: 0;
+    border: var(--tail) solid transparent;
+  }
+  .step.left  .bubble::after {
+    right: calc(var(--tail) * -2 + 1px);
+    border-left-color: var(--panel);
+  }
+  .step.right .bubble::after {
+    left: calc(var(--tail) * -2 + 1px);
+    border-right-color: var(--panel);
+  }
+
+  /* ===== 안내 푸터 ===== */
+  footer {
+    text-align: center;
+    color: var(--ink-soft);
+    font-size: 12px;
+    padding-bottom: 40px;
+  }
+
+  /* 모바일: 말풍선을 한쪽 정렬로 펼침 */
+  @media (max-width: 520px) {
+    .flow::before { left: 20px; }
+    .badge { left: 20px; }
+    .step, .step.left, .step.right { justify-content: flex-start; padding-left: 48px; }
+    .bubble { max-width: 100%; }
+    .step.left .bubble::after,
+    .step.right .bubble::after {
+      left: calc(var(--tail) * -2 + 1px);
+      right: auto;
+      border-right-color: var(--panel);
+      border-left-color: transparent;
+    }
+  }
+</style>
+</head>
+<body>
+
+  <header>
+    <h1>📌 업무 흐름 (Work Flow)</h1>
+    <p>아래 말풍선은 우리 업무의 <b>대분류(큰 단계)</b>입니다. 세부 내용은 다음 단계에서 채워집니다.</p>
+  </header>
+
+  <!-- 흐름이 그려지는 곳 (내용은 아래 스크립트가 자동으로 생성) -->
+  <main class="flow" id="flow"></main>
+
+  <footer>
+    ※ 1차 골격 — 대분류만 표시 / 실제 단계 이름은 아래 코드의 STEPS 목록만 수정하면 됩니다.
+  </footer>
+
+<script>
+  /* =======================================================================
+     ▼▼▼  여기 STEPS 목록만 수정하세요  ▼▼▼
+     - 각 줄이 말풍선 하나(대분류)가 됩니다.
+     - 순서를 바꾸려면 줄 순서를 바꾸고, 단계를 추가/삭제하려면 줄을 넣거나 빼세요.
+     - color 는 단계별 강조색입니다(생략 가능).
+     ※ 지금 값은 "예시 placeholder" 입니다. 실제 우리 팀 대분류로 바꿔 주세요.
+  ======================================================================= */
+  const STEPS = [
+    { title: "대분류 ① — 요청 접수",   color: "#4b7bec" },
+    { title: "대분류 ② — 기획 · 검토",  color: "#3867d6" },
+    { title: "대분류 ③ — 진행 · 실행",  color: "#26de81" },
+    { title: "대분류 ④ — 확인 · 검수",  color: "#f7b731" },
+    { title: "대분류 ⑤ — 완료 · 전달",  color: "#fa8231" },
+    { title: "대분류 ⑥ — 회고 · 정리",  color: "#a55eea" },
+  ];
+  /* ▲▲▲  수정 끝  ▲▲▲ */
+
+  const flow = document.getElementById("flow");
+
+  STEPS.forEach((step, i) => {
+    const side = (i % 2 === 0) ? "left" : "right";
+
+    const el = document.createElement("div");
+    el.className = "step " + side;
+    el.style.setProperty("--accent", step.color || "#4b7bec");
+
+    el.innerHTML = `
+      <div class="badge">${i + 1}</div>
+      <div class="bubble">
+        <div class="title">${step.title}</div>
+      </div>
+    `;
+    flow.appendChild(el);
+  });
+</script>
+
+</body>
+</html>
