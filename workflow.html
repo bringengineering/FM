@@ -34,6 +34,8 @@
 
   .node circle{ filter:drop-shadow(0 5px 10px rgba(31,39,51,.18)); cursor:pointer; transition:filter .15s; }
   .node:hover circle{ filter:drop-shadow(0 8px 16px rgba(31,39,51,.28)); }
+  body.editing .node circle{ cursor:grab; }
+  svg#canvas.dragging .node circle{ cursor:grabbing; }
   .node text.lbl{ fill:#fff; font-weight:700; font-size:13px; pointer-events:none; }
   .edge{ fill:none; stroke:#b9c4d4; stroke-width:2.5; }
   .del{ cursor:pointer; }
@@ -223,11 +225,10 @@ function esc(s){ return String(s).replace(/[&<>]/g, c => ({"&":"&amp;","<":"&lt;
 function addChild(pid){
   const p = nodes[pid]; if(!p) return;
   const id = genId();
-  nodes[id] = { id, label:"새 단계", x:p.x, y:p.y+210, parent:pid };
-  // 형제들을 부모 아래 가운데로 정렬
-  const sib = childrenOf(pid).sort((a,b)=> (a.x-b.x) || (a.id>b.id?1:-1));
-  const m = sib.length;
-  sib.forEach((nn,i)=>{ nn.x = p.x + (i-(m-1)/2)*200; nn.y = p.y+210; });
+  // 기존 원 위치는 절대 건드리지 않고, 부모 아래 '빈 자리'에만 새 원을 놓음
+  let x = p.x, y = p.y + 210, guard = 0;
+  while (Object.values(nodes).some(n => Math.abs(n.x-x) < 110 && Math.abs(n.y-y) < 80) && guard++ < 60) x += 120;
+  nodes[id] = { id, label:"새 단계", x, y, parent:pid };
   persist(); render();
   return id;
 }
@@ -292,7 +293,7 @@ svg.addEventListener("pointerdown", e => {
   if (editing() && nodeEl){
     const n = nodes[nodeEl.dataset.id];
     drag = { id:n.id, sx:e.clientX, sy:e.clientY, ox:n.x, oy:n.y, moved:false };
-    busy = true; svg.setPointerCapture(e.pointerId);
+    busy = true; svg.classList.add("dragging"); svg.setPointerCapture(e.pointerId);
   } else {
     pan = { sx:e.clientX, sy:e.clientY, px:panX, py:panY };
     svg.classList.add("panning"); svg.setPointerCapture(e.pointerId);
@@ -312,7 +313,7 @@ svg.addEventListener("pointermove", e => {
 svg.addEventListener("pointerup", e => {
   if (drag){
     if (drag.moved){ persist(); } else { nodeClicked(drag.id); }
-    busy = false; drag = null; flushPending();
+    busy = false; drag = null; svg.classList.remove("dragging"); flushPending();
   }
   if (pan){ pan = null; svg.classList.remove("panning"); }
 });
