@@ -3,85 +3,66 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-<title>업무 흐름 (Work Flow) — 대분류 (가로)</title>
+<title>업무 흐름 (Work Flow) — 실시간 공유</title>
 <style>
-  :root{
-    /* ====== 색상 테마 ====== */
-    --bg:#eef1f6; --panel:#ffffff; --ink:#1f2733; --ink-soft:#6b7686; --line:#c7d0dd;
-  }
+  :root{ --bg:#eef1f6; --panel:#ffffff; --ink:#1f2733; --ink-soft:#6b7686; --line:#c7d0dd; }
   *{ box-sizing:border-box; }
   body{
     margin:0; background:var(--bg); color:var(--ink);
-    font-family:"Apple SD Gothic Neo","Malgun Gothic","맑은 고딕","Noto Sans KR",
-                system-ui,-apple-system,sans-serif;
+    font-family:"Apple SD Gothic Neo","Malgun Gothic","맑은 고딕","Noto Sans KR",system-ui,-apple-system,sans-serif;
     -webkit-font-smoothing:antialiased; line-height:1.5;
   }
 
-  /* ===== 헤더 ===== */
-  header{ text-align:center; padding:32px 20px 6px; }
+  header{ text-align:center; padding:30px 20px 4px; }
   header h1{ margin:0; font-size:24px; letter-spacing:-.5px; }
   header p{ margin:8px 0 0; color:var(--ink-soft); font-size:14px; }
 
-  /* ===== 툴바 ===== */
+  /* 연결 상태 배지 */
+  .conn{ display:inline-block; margin:12px auto 0; padding:6px 14px; border-radius:999px;
+    font-size:13px; border:1px solid var(--line); background:#fff; }
+  .conn-wrap{ text-align:center; }
+  .conn.local{ color:#8a6d3b; background:#fff8e6; border-color:#f0dca0; }
+  .conn.on{ color:#147a3d; background:#e9f9ef; border-color:#a7e3c0; }
+  .conn.off{ color:#b34700; background:#fff1e6; border-color:#f3c39a; }
+
   .toolbar{ display:flex; gap:8px; justify-content:center; flex-wrap:wrap; padding:14px 20px 4px; }
-  .btn{
-    border:1px solid var(--line); background:#fff; color:var(--ink);
-    padding:8px 14px; border-radius:10px; font-size:13px; cursor:pointer;
-    font-family:inherit; transition:.15s;
-  }
+  .btn{ border:1px solid var(--line); background:#fff; color:var(--ink); padding:8px 14px;
+    border-radius:10px; font-size:13px; cursor:pointer; font-family:inherit; transition:.15s; }
   .btn:hover{ background:#f3f6fb; }
   .btn.active{ background:#4b7bec; border-color:#4b7bec; color:#fff; }
-  .hint-edit{
-    display:none; text-align:center; color:var(--ink-soft);
-    font-size:12px; padding-top:10px;
-  }
+  .hint-edit{ display:none; text-align:center; color:var(--ink-soft); font-size:12px; padding-top:10px; }
   body.editing .hint-edit{ display:block; }
 
-  /* ===== 가로 흐름 ===== */
-  .flow-wrap{ overflow-x:auto; padding:30px 24px 40px; }
+  .flow-wrap{ overflow-x:auto; padding:28px 24px 40px; }
   .flow{ display:flex; align-items:center; min-width:min-content; }
 
-  /* 단계(말풍선) */
   .node{ display:flex; align-items:center; }
-  .bubble{
-    position:relative; background:var(--panel);
-    border:1px solid var(--line); border-top:3px solid var(--accent,#4b7bec);
-    border-radius:16px; padding:14px 16px; min-width:150px; max-width:230px;
-    box-shadow:0 6px 18px rgba(31,39,51,.06); transition:transform .15s ease, box-shadow .15s ease;
-  }
+  .bubble{ position:relative; background:var(--panel); border:1px solid var(--line);
+    border-top:3px solid var(--accent,#4b7bec); border-radius:16px; padding:14px 16px;
+    min-width:150px; max-width:230px; box-shadow:0 6px 18px rgba(31,39,51,.06);
+    transition:transform .15s ease, box-shadow .15s ease; }
   .bubble:hover{ transform:translateY(-2px); box-shadow:0 10px 24px rgba(31,39,51,.12); }
   .bubble .top{ display:flex; align-items:center; gap:9px; }
-  .badge{
-    width:26px; height:26px; border-radius:50%; background:var(--accent,#4b7bec);
-    color:#fff; font-weight:700; font-size:13px; flex:0 0 auto;
-    display:flex; align-items:center; justify-content:center;
-  }
+  .badge{ width:26px; height:26px; border-radius:50%; background:var(--accent,#4b7bec); color:#fff;
+    font-weight:700; font-size:13px; flex:0 0 auto; display:flex; align-items:center; justify-content:center; }
   .title{ font-weight:700; font-size:15px; outline:none; flex:1; word-break:keep-all; }
   body.editing .title{ border-bottom:1px dashed var(--line); min-width:40px; cursor:text; }
   body.editing .title:focus{ border-bottom:1px solid #4b7bec; }
 
-  /* 말풍선 꼬리(아래) */
-  .bubble::after{
-    content:""; position:absolute; left:24px; bottom:-12px;
-    width:0; height:0; border:11px solid transparent; border-top-color:var(--panel);
-  }
+  .bubble::after{ content:""; position:absolute; left:24px; bottom:-12px; width:0; height:0;
+    border:11px solid transparent; border-top-color:var(--panel); }
 
-  /* 카드 컨트롤(편집 모드에서만) */
   .ctrls{ display:none; gap:6px; margin-top:10px; }
   body.editing .ctrls{ display:flex; }
-  .mini{
-    border:1px solid var(--line); background:#fff; border-radius:8px;
-    width:28px; height:24px; font-size:13px; line-height:1; cursor:pointer; color:var(--ink-soft);
-  }
+  .mini{ border:1px solid var(--line); background:#fff; border-radius:8px; width:28px; height:24px;
+    font-size:13px; line-height:1; cursor:pointer; color:var(--ink-soft); }
   .mini:hover{ background:#f3f6fb; color:var(--ink); }
   .mini.del:hover{ background:#ffecec; border-color:#ffb3b3; color:#e03131; }
 
-  /* 화살표(→) */
   .arrow{ flex:0 0 auto; color:var(--line); padding:0 6px; user-select:none; }
   .arrow svg{ display:block; width:36px; height:18px; }
 
   footer{ text-align:center; color:var(--ink-soft); font-size:12px; padding:4px 20px 44px; }
-
   .flow-wrap::-webkit-scrollbar{ height:8px; }
   .flow-wrap::-webkit-scrollbar-thumb{ background:#cfd8e3; border-radius:8px; }
 </style>
@@ -91,6 +72,7 @@
   <header>
     <h1>📌 업무 흐름 (Work Flow)</h1>
     <p>왼쪽 → 오른쪽으로 진행되는 우리 업무의 <b>대분류(큰 단계)</b>입니다.</p>
+    <div class="conn-wrap"><span class="conn local" id="conn">⚪ 로컬 모드</span></div>
   </header>
 
   <div class="toolbar">
@@ -100,134 +82,219 @@
     <button class="btn" id="resetBtn">↺ 초기화</button>
   </div>
   <div class="hint-edit">
-    제목을 클릭해 바로 수정 · 카드의 <b>‹ ›</b> 로 순서 이동 · <b>✕</b> 로 삭제 · 변경은 이 브라우저에 자동 저장됩니다.
+    제목을 클릭해 바로 수정 · 카드의 <b>‹ ›</b> 순서 이동 · <b>✕</b> 삭제 · 실시간 모드에선 <b>모두에게 즉시 반영</b>됩니다.
   </div>
 
-  <div class="flow-wrap">
-    <div class="flow" id="flow"></div>
-  </div>
-
+  <div class="flow-wrap"><div class="flow" id="flow"></div></div>
   <footer id="foot"></footer>
 
+  <!-- Firebase (실시간 동기화용) — 키를 넣기 전에는 사용되지 않고 '로컬 모드'로 동작합니다 -->
+  <script src="https://www.gstatic.com/firebasejs/10.12.5/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.12.5/firebase-database-compat.js"></script>
+
 <script>
-  /* =======================================================================
-     ▼ 기본 대분류 (예시 placeholder) — 코드를 몰라도 화면의 "✏️ 편집 모드"에서 바꿀 수 있습니다.
-       (여기 목록을 직접 고쳐 초기값을 바꿔도 됩니다)
-  ======================================================================= */
-  const DEFAULT_STEPS = ["요청 접수","기획 · 검토","진행 · 실행","확인 · 검수","완료 · 전달","회고 · 정리"];
-  const PALETTE = ["#4b7bec","#3867d6","#26de81","#f7b731","#fa8231","#a55eea","#eb3b5a","#2bcbba"];
-  const LS_KEY = "fm_workflow_steps_v1";   // 브라우저 자동저장 키
+/* =========================================================================
+   ① 실시간 공유를 켜려면: 아래 firebaseConfig 값을 본인 Firebase 프로젝트 값으로 교체.
+      (교체 전에는 자동으로 "로컬 모드" = 내 브라우저에만 저장)
+   ② 같은 흐름을 보는 팀은 ROOM 값이 같아야 합니다. (흐름을 여러 개 쓰려면 다르게)
+   ========================================================================= */
+const firebaseConfig = {
+  apiKey:      "여기에-API-KEY",
+  authDomain:  "여기에-PROJECT.firebaseapp.com",
+  databaseURL: "https://여기에-PROJECT-default-rtdb.firebaseio.com",
+  projectId:   "여기에-PROJECT-ID",
+  appId:       "여기에-APP-ID"
+};
+const ROOM = "main";
 
-  let steps = load();
+/* ====== 기본 대분류 (예시) — 편집 모드에서 바꾸세요 ====== */
+const DEFAULT_STEPS = ["요청 접수","기획 · 검토","진행 · 실행","확인 · 검수","완료 · 전달","회고 · 정리"];
+const PALETTE = ["#4b7bec","#3867d6","#26de81","#f7b731","#fa8231","#a55eea","#eb3b5a","#2bcbba"];
+const LS_KEY = "fm_workflow_steps_v1";
 
-  function load(){
-    try{ const s = JSON.parse(localStorage.getItem(LS_KEY)); if(Array.isArray(s) && s.length) return s; }catch(e){}
-    return DEFAULT_STEPS.slice();
+const isConfigured = !!firebaseConfig.apiKey && !firebaseConfig.apiKey.includes("여기에");
+
+let steps = [];
+let db = null, stepsRef = null;
+let online = false, presenceCount = 0;
+let writeTimer = null;
+
+const flow    = document.getElementById("flow");
+const foot    = document.getElementById("foot");
+const conn    = document.getElementById("conn");
+const modeBtn = document.getElementById("modeBtn");
+
+/* ---------- 시작 ---------- */
+function start(){
+  if (isConfigured && typeof firebase !== "undefined"){
+    try { initFirebase(); return; } catch(e){ console.error("Firebase 실패 → 로컬 모드", e); }
   }
-  function save(){ try{ localStorage.setItem(LS_KEY, JSON.stringify(steps)); }catch(e){} }
-
-  const flow = document.getElementById("flow");
-  const foot = document.getElementById("foot");
-  const modeBtn = document.getElementById("modeBtn");
-
-  function render(){
-    flow.innerHTML = "";
-    steps.forEach((title, i) => {
-      if(i > 0) flow.appendChild(arrowEl());
-      flow.appendChild(nodeEl(title, i));
-    });
-    foot.textContent = `총 ${steps.length}단계 · 지금 이름은 예시입니다 — “✏️ 편집 모드”에서 우리 팀 대분류로 바꿔보세요`;
-    setEditable();
-  }
-
-  function arrowEl(){
-    const a = document.createElement("div");
-    a.className = "arrow";
-    a.innerHTML = '<svg viewBox="0 0 36 18"><path d="M1 9 H29 M23 3 L31 9 L23 15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>';
-    return a;
-  }
-
-  function nodeEl(title, i){
-    const color = PALETTE[i % PALETTE.length];
-    const wrap = document.createElement("div");
-    wrap.className = "node";
-    const b = document.createElement("div");
-    b.className = "bubble";
-    b.style.setProperty("--accent", color);
-    b.innerHTML = `
-      <div class="top">
-        <div class="badge">${i+1}</div>
-        <div class="title" data-i="${i}">${escapeHtml(title)}</div>
-      </div>
-      <div class="ctrls">
-        <button class="mini"     data-act="left"  title="앞으로 이동">‹</button>
-        <button class="mini"     data-act="right" title="뒤로 이동">›</button>
-        <button class="mini del" data-act="del"   title="이 단계 삭제">✕</button>
-      </div>`;
-    wrap.appendChild(b);
-    return wrap;
-  }
-
-  function escapeHtml(s){
-    return String(s).replace(/[&<>"]/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
-  }
-
-  /* 제목 인라인 수정 */
-  flow.addEventListener("input", e => {
-    const t = e.target.closest(".title");
-    if(!t) return;
-    steps[+t.dataset.i] = t.textContent;
-    save();
-  });
-
-  /* 카드 컨트롤(이동/삭제) */
-  flow.addEventListener("click", e => {
-    const btn = e.target.closest(".mini");
-    if(!btn) return;
-    const i = +btn.closest(".node").querySelector(".title").dataset.i;
-    const act = btn.dataset.act;
-    if(act === "del"){ if(steps.length > 1) steps.splice(i,1); }
-    else if(act === "left"  && i > 0){ [steps[i-1],steps[i]] = [steps[i],steps[i-1]]; }
-    else if(act === "right" && i < steps.length-1){ [steps[i+1],steps[i]] = [steps[i],steps[i+1]]; }
-    save(); render();
-  });
-
-  /* 보기 ↔ 편집 모드 */
-  modeBtn.addEventListener("click", () => {
-    const on = document.body.classList.toggle("editing");
-    modeBtn.textContent = on ? "👁 보기 모드" : "✏️ 편집 모드";
-    modeBtn.classList.toggle("active", on);
-    setEditable();
-  });
-  function setEditable(){
-    const on = document.body.classList.contains("editing");
-    flow.querySelectorAll(".title").forEach(t => t.contentEditable = on ? "true" : "false");
-  }
-
-  /* 단계 추가 */
-  document.getElementById("addBtn").addEventListener("click", () => {
-    if(!document.body.classList.contains("editing")) modeBtn.click();
-    steps.push("새 단계"); save(); render();
-    document.querySelector(".flow-wrap").scrollLeft = 999999;  // 새 카드로 스크롤
-  });
-
-  /* 초기화 */
-  document.getElementById("resetBtn").addEventListener("click", () => {
-    if(confirm("기본 예시 단계로 초기화할까요? (수정한 내용이 사라집니다)")){
-      steps = DEFAULT_STEPS.slice(); save(); render();
-    }
-  });
-
-  /* JSON 내보내기 (다른 사람과 공유/백업용) */
-  document.getElementById("exportBtn").addEventListener("click", () => {
-    const blob = new Blob([JSON.stringify(steps, null, 2)], {type:"application/json"});
-    const a = document.createElement("a");
-    a.href = URL.createObjectURL(blob);
-    a.download = "workflow_steps.json";
-    a.click();
-  });
-
+  initLocal();
+}
+function initLocal(){
+  stepsRef = null;
+  steps = loadLocal();
+  updateConn();
   render();
+}
+function initFirebase(){
+  firebase.initializeApp(firebaseConfig);
+  db = firebase.database();
+  stepsRef = db.ref("workflow/"+ROOM+"/steps");
+
+  steps = loadLocal(); render();                 // 즉시 화면 표시(원격 도착 전)
+
+  stepsRef.on("value", snap => {
+    const val = snap.val();
+    if (val == null){ stepsRef.set(steps); return; }   // 최초 1회 시드
+    applyRemote(normalizeArr(val));
+  });
+  setupPresence();
+  updateConn();
+}
+
+/* ---------- 로컬 저장 ---------- */
+function loadLocal(){ try{ const s=JSON.parse(localStorage.getItem(LS_KEY)); if(Array.isArray(s)&&s.length) return s; }catch(e){} return DEFAULT_STEPS.slice(); }
+function saveLocal(){ try{ localStorage.setItem(LS_KEY, JSON.stringify(steps)); }catch(e){} }
+
+/* ---------- 저장(공유 or 로컬) ---------- */
+function persist(){ if(stepsRef){ stepsRef.set(steps); } else { saveLocal(); } }
+function persistDebounced(){ clearTimeout(writeTimer); writeTimer = setTimeout(persist, 250); }
+
+/* ---------- 원격 상태 반영 (내가 입력 중인 칸은 보존) ---------- */
+function normalizeArr(v){ return Array.isArray(v) ? v.slice() : Object.values(v); }
+function applyRemote(remote){
+  steps = remote;
+  const titles = flow.querySelectorAll(".title");
+  if (titles.length !== steps.length){
+    renderPreservingFocus();
+  } else {
+    titles.forEach((t,i) => {
+      if (document.activeElement === t) return;        // 지금 타이핑 중인 칸은 건드리지 않음
+      if (t.textContent !== steps[i]) t.textContent = steps[i];
+    });
+  }
+  updateFoot();
+}
+
+/* ---------- 접속자/연결 상태 ---------- */
+function setupPresence(){
+  const presRoot = db.ref("workflow/"+ROOM+"/presence");
+  const me = presRoot.push();
+  db.ref(".info/connected").on("value", s => {
+    online = (s.val() === true);
+    if (online){ me.onDisconnect().remove(); me.set(true); }
+    updateConn();
+  });
+  presRoot.on("value", s => { presenceCount = s.exists() ? Object.keys(s.val()).length : 0; updateConn(); });
+}
+function updateConn(){
+  if (!stepsRef){
+    conn.className = "conn local";
+    conn.innerHTML = "⚪ 로컬 모드 · <b>내 브라우저에만</b> 저장 (팀과 공유 안 됨)";
+    return;
+  }
+  if (online){ conn.className = "conn on";  conn.innerHTML = "🟢 실시간 연결됨 · 👥 <b>"+presenceCount+"</b>명 접속 중"; }
+  else       { conn.className = "conn off"; conn.innerHTML = "🟠 연결 끊김 — 재연결 중…"; }
+}
+
+/* ---------- 렌더 ---------- */
+function render(){
+  flow.innerHTML = "";
+  steps.forEach((title, i) => {
+    if (i > 0) flow.appendChild(arrowEl());
+    flow.appendChild(nodeEl(title, i));
+  });
+  setEditable();
+  updateFoot();
+}
+function updateFoot(){ foot.textContent = "총 " + steps.length + "단계 · 지금 이름은 예시입니다 — “✏️ 편집 모드”에서 우리 팀 대분류로 바꿔보세요"; }
+function arrowEl(){
+  const a = document.createElement("div"); a.className = "arrow";
+  a.innerHTML = '<svg viewBox="0 0 36 18"><path d="M1 9 H29 M23 3 L31 9 L23 15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>';
+  return a;
+}
+function nodeEl(title, i){
+  const color = PALETTE[i % PALETTE.length];
+  const wrap = document.createElement("div"); wrap.className = "node";
+  const b = document.createElement("div"); b.className = "bubble"; b.style.setProperty("--accent", color);
+  b.innerHTML =
+    '<div class="top"><div class="badge">'+(i+1)+'</div>'+
+    '<div class="title">'+escapeHtml(title)+'</div></div>'+
+    '<div class="ctrls">'+
+      '<button class="mini" data-act="left"  title="앞으로 이동">‹</button>'+
+      '<button class="mini" data-act="right" title="뒤로 이동">›</button>'+
+      '<button class="mini del" data-act="del" title="이 단계 삭제">✕</button>'+
+    '</div>';
+  wrap.appendChild(b);
+  return wrap;
+}
+function escapeHtml(s){ return String(s).replace(/[&<>"]/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c])); }
+
+function renderPreservingFocus(){
+  const titles = Array.from(flow.querySelectorAll(".title"));
+  const fi = titles.indexOf(document.activeElement);
+  let off = 0;
+  if (fi >= 0){ const sel = window.getSelection(); off = sel.rangeCount ? sel.getRangeAt(0).startOffset : 0; }
+  render();
+  if (fi >= 0){ const nt = flow.querySelectorAll(".title")[fi]; if (nt){ nt.focus(); placeCaret(nt, off); } }
+}
+function placeCaret(el, off){
+  const node = el.firstChild;
+  const r = document.createRange();
+  if (node){ r.setStart(node, Math.min(off, node.textContent.length)); }
+  else { r.setStart(el, 0); }
+  r.collapse(true);
+  const sel = window.getSelection(); sel.removeAllRanges(); sel.addRange(r);
+}
+function titleIndex(t){ return Array.from(flow.querySelectorAll(".title")).indexOf(t); }
+
+/* ---------- 편집 이벤트 ---------- */
+flow.addEventListener("input", e => {
+  const t = e.target.closest(".title"); if (!t) return;
+  const i = titleIndex(t); if (i < 0) return;
+  steps[i] = t.textContent;
+  persistDebounced();
+});
+flow.addEventListener("click", e => {
+  const btn = e.target.closest(".mini"); if (!btn) return;
+  const i = titleIndex(btn.closest(".node").querySelector(".title"));
+  const act = btn.dataset.act;
+  if (act === "del"){ if (steps.length > 1) steps.splice(i,1); }
+  else if (act === "left"  && i > 0){ [steps[i-1],steps[i]] = [steps[i],steps[i-1]]; }
+  else if (act === "right" && i < steps.length-1){ [steps[i+1],steps[i]] = [steps[i],steps[i+1]]; }
+  render(); persist();
+});
+
+/* ---------- 모드/툴바 ---------- */
+modeBtn.addEventListener("click", () => {
+  const on = document.body.classList.toggle("editing");
+  modeBtn.textContent = on ? "👁 보기 모드" : "✏️ 편집 모드";
+  modeBtn.classList.toggle("active", on);
+  setEditable();
+});
+function setEditable(){
+  const on = document.body.classList.contains("editing");
+  flow.querySelectorAll(".title").forEach(t => t.contentEditable = on ? "true" : "false");
+}
+document.getElementById("addBtn").addEventListener("click", () => {
+  if (!document.body.classList.contains("editing")) modeBtn.click();
+  steps.push("새 단계"); render(); persist();
+  document.querySelector(".flow-wrap").scrollLeft = 999999;
+});
+document.getElementById("resetBtn").addEventListener("click", () => {
+  const msg = stepsRef ? "기본 예시로 초기화할까요? (모든 팀원에게 적용됩니다)" : "기본 예시로 초기화할까요? (수정 내용이 사라집니다)";
+  if (confirm(msg)){ steps = DEFAULT_STEPS.slice(); render(); persist(); }
+});
+document.getElementById("exportBtn").addEventListener("click", () => {
+  const blob = new Blob([JSON.stringify(steps, null, 2)], {type:"application/json"});
+  const a = document.createElement("a"); a.href = URL.createObjectURL(blob); a.download = "workflow_steps.json"; a.click();
+});
+
+/* 테스트/디버그용 훅 (실사용에 영향 없음) */
+window.__wf = { applyRemote, getSteps: () => steps.slice(), isConfigured };
+
+start();
 </script>
 </body>
 </html>
