@@ -3,101 +3,87 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-<title>업무 흐름 (Work Flow) — 실시간 공유</title>
+<title>업무 흐름 빌더 (Flow Builder)</title>
 <style>
-  :root{ --bg:#eef1f6; --panel:#ffffff; --ink:#1f2733; --ink-soft:#6b7686; --line:#c7d0dd; }
+  :root{ --bg:#eef1f6; --panel:#fff; --ink:#1f2733; --ink-soft:#6b7686; --line:#c7d0dd; }
   *{ box-sizing:border-box; }
+  html,body{ margin:0; height:100%; }
   body{
-    margin:0; background:var(--bg); color:var(--ink);
+    background:var(--bg); color:var(--ink);
     font-family:"Apple SD Gothic Neo","Malgun Gothic","맑은 고딕","Noto Sans KR",system-ui,-apple-system,sans-serif;
-    -webkit-font-smoothing:antialiased; line-height:1.5;
+    -webkit-font-smoothing:antialiased;
   }
+  .stage{ display:flex; flex-direction:column; height:100vh; }
 
-  header{ text-align:center; padding:30px 20px 4px; }
-  header h1{ margin:0; font-size:24px; letter-spacing:-.5px; }
-  header p{ margin:8px 0 0; color:var(--ink-soft); font-size:14px; }
-
-  /* 연결 상태 배지 */
-  .conn{ display:inline-block; margin:12px auto 0; padding:6px 14px; border-radius:999px;
-    font-size:13px; border:1px solid var(--line); background:#fff; }
-  .conn-wrap{ text-align:center; }
+  header{ text-align:center; padding:14px 16px 2px; }
+  header h1{ margin:0; font-size:19px; letter-spacing:-.4px; }
+  .conn{ display:inline-block; margin-top:8px; padding:5px 12px; border-radius:999px; font-size:12px; border:1px solid var(--line); background:#fff; }
   .conn.local{ color:#8a6d3b; background:#fff8e6; border-color:#f0dca0; }
   .conn.on{ color:#147a3d; background:#e9f9ef; border-color:#a7e3c0; }
   .conn.off{ color:#b34700; background:#fff1e6; border-color:#f3c39a; }
 
-  .toolbar{ display:flex; gap:8px; justify-content:center; flex-wrap:wrap; padding:14px 20px 4px; }
-  .btn{ border:1px solid var(--line); background:#fff; color:var(--ink); padding:8px 14px;
-    border-radius:10px; font-size:13px; cursor:pointer; font-family:inherit; transition:.15s; }
+  .toolbar{ display:flex; gap:8px; justify-content:center; flex-wrap:wrap; padding:10px 16px 6px; }
+  .btn{ border:1px solid var(--line); background:#fff; color:var(--ink); padding:7px 13px; border-radius:10px; font-size:13px; cursor:pointer; font-family:inherit; transition:.15s; }
   .btn:hover{ background:#f3f6fb; }
   .btn.active{ background:#4b7bec; border-color:#4b7bec; color:#fff; }
-  .hint-edit{ display:none; text-align:center; color:var(--ink-soft); font-size:12px; padding-top:10px; }
-  body.editing .hint-edit{ display:block; }
+  .help{ text-align:center; color:var(--ink-soft); font-size:12px; padding:0 16px 8px; }
 
-  .flow-wrap{ overflow-x:auto; padding:28px 24px 40px; }
-  .flow{ display:flex; align-items:center; min-width:min-content; }
+  .canvas-wrap{ flex:1; position:relative; overflow:hidden; }
+  svg#canvas{ width:100%; height:100%; display:block; touch-action:none; user-select:none; cursor:grab; }
+  svg#canvas.panning{ cursor:grabbing; }
 
-  .node{ display:flex; align-items:center; }
-  .bubble{ position:relative; background:var(--panel); border:1px solid var(--line);
-    border-top:3px solid var(--accent,#4b7bec); border-radius:16px; padding:14px 16px;
-    min-width:150px; max-width:230px; box-shadow:0 6px 18px rgba(31,39,51,.06);
-    transition:transform .15s ease, box-shadow .15s ease; }
-  .bubble:hover{ transform:translateY(-2px); box-shadow:0 10px 24px rgba(31,39,51,.12); }
-  .bubble .top{ display:flex; align-items:center; gap:9px; }
-  .badge{ width:26px; height:26px; border-radius:50%; background:var(--accent,#4b7bec); color:#fff;
-    font-weight:700; font-size:13px; flex:0 0 auto; display:flex; align-items:center; justify-content:center; }
-  .title{ font-weight:700; font-size:15px; outline:none; flex:1; word-break:keep-all; }
-  body.editing .title{ border-bottom:1px dashed var(--line); min-width:40px; cursor:text; }
-  body.editing .title:focus{ border-bottom:1px solid #4b7bec; }
+  .node circle{ filter:drop-shadow(0 5px 10px rgba(31,39,51,.18)); cursor:pointer; transition:filter .15s; }
+  .node:hover circle{ filter:drop-shadow(0 8px 16px rgba(31,39,51,.28)); }
+  .node text.lbl{ fill:#fff; font-weight:700; font-size:13px; pointer-events:none; }
+  .edge{ fill:none; stroke:#b9c4d4; stroke-width:2.5; }
+  .del{ cursor:pointer; }
+  body:not(.editing) .del{ display:none; }
 
-  .bubble::after{ content:""; position:absolute; left:24px; bottom:-12px; width:0; height:0;
-    border:11px solid transparent; border-top-color:var(--panel); }
-
-  .ctrls{ display:none; gap:6px; margin-top:10px; }
-  body.editing .ctrls{ display:flex; }
-  .mini{ border:1px solid var(--line); background:#fff; border-radius:8px; width:28px; height:24px;
-    font-size:13px; line-height:1; cursor:pointer; color:var(--ink-soft); }
-  .mini:hover{ background:#f3f6fb; color:var(--ink); }
-  .mini.del:hover{ background:#ffecec; border-color:#ffb3b3; color:#e03131; }
-
-  .arrow{ flex:0 0 auto; color:var(--line); padding:0 6px; user-select:none; }
-  .arrow svg{ display:block; width:36px; height:18px; }
-
-  footer{ text-align:center; color:var(--ink-soft); font-size:12px; padding:4px 20px 44px; }
-  .flow-wrap::-webkit-scrollbar{ height:8px; }
-  .flow-wrap::-webkit-scrollbar-thumb{ background:#cfd8e3; border-radius:8px; }
+  /* 이름 수정 입력칸(원 위에 떠서 표시) */
+  #renamer{ position:fixed; display:none; transform:translate(-50%,-50%); z-index:20;
+    border:2px solid #4b7bec; border-radius:10px; padding:6px 10px; font-size:14px; font-weight:700;
+    font-family:inherit; text-align:center; outline:none; box-shadow:0 8px 20px rgba(31,39,51,.2); width:150px; }
 </style>
 </head>
-<body>
+<body class="editing">
+  <div class="stage">
+    <header>
+      <h1>🔵 업무 흐름 빌더</h1>
+      <div><span class="conn local" id="conn">⚪ 로컬 모드</span></div>
+    </header>
 
-  <header>
-    <h1>📌 업무 흐름 (Work Flow)</h1>
-    <p>왼쪽 → 오른쪽으로 진행되는 우리 업무의 <b>대분류(큰 단계)</b>입니다.</p>
-    <div class="conn-wrap"><span class="conn local" id="conn">⚪ 로컬 모드</span></div>
-  </header>
+    <div class="toolbar">
+      <button class="btn" id="addRootBtn">＋ 시작 원 추가</button>
+      <button class="btn active" id="modeBtn">👁 보기 모드</button>
+      <button class="btn" id="fitBtn">⊡ 화면 맞춤</button>
+      <button class="btn" id="exportBtn">💾 내보내기(JSON)</button>
+      <button class="btn" id="resetBtn">↺ 초기화</button>
+    </div>
+    <div class="help">원 <b>클릭</b> → 다음 단계 원 추가 · <b>더블클릭</b> → 이름 수정 · <b>드래그</b> → 이동 · <b>휠</b> → 확대/축소 · <b>✕</b> → 삭제</div>
 
-  <div class="toolbar">
-    <button class="btn" id="modeBtn">✏️ 편집 모드</button>
-    <button class="btn" id="addBtn">＋ 단계 추가</button>
-    <button class="btn" id="exportBtn">💾 내보내기(JSON)</button>
-    <button class="btn" id="resetBtn">↺ 초기화</button>
+    <div class="canvas-wrap">
+      <svg id="canvas">
+        <defs>
+          <pattern id="dots" width="26" height="26" patternUnits="userSpaceOnUse">
+            <circle cx="2" cy="2" r="1.6" fill="#d3dae5"/>
+          </pattern>
+        </defs>
+        <g id="viewport">
+          <rect x="-4000" y="-4000" width="9000" height="9000" fill="url(#dots)"/>
+          <g id="edges"></g>
+          <g id="nodes"></g>
+        </g>
+      </svg>
+      <input id="renamer" maxlength="40" />
+    </div>
   </div>
-  <div class="hint-edit">
-    제목을 클릭해 바로 수정 · 카드의 <b>‹ ›</b> 순서 이동 · <b>✕</b> 삭제 · 실시간 모드에선 <b>모두에게 즉시 반영</b>됩니다.
-  </div>
 
-  <div class="flow-wrap"><div class="flow" id="flow"></div></div>
-  <footer id="foot"></footer>
-
-  <!-- Firebase (실시간 동기화용) — 키를 넣기 전에는 사용되지 않고 '로컬 모드'로 동작합니다 -->
+  <!-- Firebase (실시간 동기화용) — 키 입력 전에는 '로컬 모드'로 동작 -->
   <script src="https://www.gstatic.com/firebasejs/10.12.5/firebase-app-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/10.12.5/firebase-database-compat.js"></script>
 
 <script>
-/* =========================================================================
-   ① 실시간 공유를 켜려면: 아래 firebaseConfig 값을 본인 Firebase 프로젝트 값으로 교체.
-      (교체 전에는 자동으로 "로컬 모드" = 내 브라우저에만 저장)
-   ② 같은 흐름을 보는 팀은 ROOM 값이 같아야 합니다. (흐름을 여러 개 쓰려면 다르게)
-   ========================================================================= */
+/* ===== ① 실시간 공유 켜기: 아래 값을 본인 Firebase 프로젝트 값으로 교체 (교체 전엔 '로컬 모드') ===== */
 const firebaseConfig = {
   apiKey:      "여기에-API-KEY",
   authDomain:  "여기에-PROJECT.firebaseapp.com",
@@ -107,192 +93,270 @@ const firebaseConfig = {
 };
 const ROOM = "main";
 
-/* ====== 기본 대분류 (예시) — 편집 모드에서 바꾸세요 ====== */
-const DEFAULT_STEPS = ["요청 접수","기획 · 검토","진행 · 실행","확인 · 검수","완료 · 전달","회고 · 정리"];
-const PALETTE = ["#4b7bec","#3867d6","#26de81","#f7b731","#fa8231","#a55eea","#eb3b5a","#2bcbba"];
-const LS_KEY = "fm_workflow_steps_v1";
-
+const PALETTE = ["#4b7bec","#26de81","#f7b731","#fa8231","#a55eea","#eb3b5a","#2bcbba","#3867d6"];
+const LS_KEY  = "fm_workflow_graph_v1";
 const isConfigured = !!firebaseConfig.apiKey && !firebaseConfig.apiKey.includes("여기에");
 
-let steps = [];
-let db = null, stepsRef = null;
-let online = false, presenceCount = 0;
-let writeTimer = null;
+/* ===== 상태 ===== */
+let nodes = {};                 // { id: {id,label,x,y,parent} }
+let panX = 0, panY = 0, zoom = 1;
+let db = null, graphRef = null, online = false, presenceCount = 0;
+let writeTimer = null, pendingRemote = null, busy = false;
 
-const flow    = document.getElementById("flow");
-const foot    = document.getElementById("foot");
-const conn    = document.getElementById("conn");
-const modeBtn = document.getElementById("modeBtn");
+const svg      = document.getElementById("canvas");
+const viewport = document.getElementById("viewport");
+const edgesG   = document.getElementById("edges");
+const nodesG   = document.getElementById("nodes");
+const conn     = document.getElementById("conn");
+const renamer  = document.getElementById("renamer");
+const modeBtn  = document.getElementById("modeBtn");
 
-/* ---------- 시작 ---------- */
+const editing = () => document.body.classList.contains("editing");
+const genId   = () => "n" + Date.now().toString(36) + Math.random().toString(36).slice(2,6);
+const clamp   = (v,a,b) => Math.max(a, Math.min(b, v));
+
+/* ===== 기본(예시) 그래프 ===== */
+function makeSeed(){
+  return {
+    r1:{ id:"r1", label:"업무 시작", x:640, y:120, parent:null },
+    a1:{ id:"a1", label:"요청 접수", x:400, y:330, parent:"r1" },
+    a2:{ id:"a2", label:"진행 · 실행", x:640, y:330, parent:"r1" },
+    a3:{ id:"a3", label:"완료 · 전달", x:880, y:330, parent:"r1" }
+  };
+}
+
+/* ===== 시작 ===== */
 function start(){
   if (isConfigured && typeof firebase !== "undefined"){
-    try { initFirebase(); return; } catch(e){ console.error("Firebase 실패 → 로컬 모드", e); }
+    try { initFirebase(); return; } catch(e){ console.error("Firebase 실패 → 로컬", e); }
   }
-  initLocal();
-}
-function initLocal(){
-  stepsRef = null;
-  steps = loadLocal();
-  updateConn();
-  render();
+  nodes = loadLocal(); updateConn(); render(); fitView();
 }
 function initFirebase(){
   firebase.initializeApp(firebaseConfig);
   db = firebase.database();
-  stepsRef = db.ref("workflow/"+ROOM+"/steps");
-
-  steps = loadLocal(); render();                 // 즉시 화면 표시(원격 도착 전)
-
-  stepsRef.on("value", snap => {
+  graphRef = db.ref("workflow/"+ROOM+"/graph");
+  nodes = loadLocal(); render(); fitView();
+  graphRef.on("value", snap => {
     const val = snap.val();
-    if (val == null){ stepsRef.set(steps); return; }   // 최초 1회 시드
-    applyRemote(normalizeArr(val));
+    if (val == null){ graphRef.set(nodes); return; }   // 최초 1회 시드
+    applyRemote(val);
   });
-  setupPresence();
-  updateConn();
+  setupPresence(); updateConn();
 }
 
-/* ---------- 로컬 저장 ---------- */
-function loadLocal(){ try{ const s=JSON.parse(localStorage.getItem(LS_KEY)); if(Array.isArray(s)&&s.length) return s; }catch(e){} return DEFAULT_STEPS.slice(); }
-function saveLocal(){ try{ localStorage.setItem(LS_KEY, JSON.stringify(steps)); }catch(e){} }
-
-/* ---------- 저장(공유 or 로컬) ---------- */
-function persist(){ if(stepsRef){ stepsRef.set(steps); } else { saveLocal(); } }
+/* ===== 저장 ===== */
+function loadLocal(){ try{ const g=JSON.parse(localStorage.getItem(LS_KEY)); if(g && Object.keys(g).length) return g; }catch(e){} return makeSeed(); }
+function saveLocal(){ try{ localStorage.setItem(LS_KEY, JSON.stringify(nodes)); }catch(e){} }
+function persist(){ if(graphRef){ graphRef.set(nodes); } else { saveLocal(); } }
 function persistDebounced(){ clearTimeout(writeTimer); writeTimer = setTimeout(persist, 250); }
 
-/* ---------- 원격 상태 반영 (내가 입력 중인 칸은 보존) ---------- */
-function normalizeArr(v){ return Array.isArray(v) ? v.slice() : Object.values(v); }
+/* ===== 원격 반영 (내가 드래그/이름수정 중이면 잠시 보류) ===== */
 function applyRemote(remote){
-  steps = remote;
-  const titles = flow.querySelectorAll(".title");
-  if (titles.length !== steps.length){
-    renderPreservingFocus();
-  } else {
-    titles.forEach((t,i) => {
-      if (document.activeElement === t) return;        // 지금 타이핑 중인 칸은 건드리지 않음
-      if (t.textContent !== steps[i]) t.textContent = steps[i];
-    });
-  }
-  updateFoot();
+  if (busy){ pendingRemote = remote; return; }
+  nodes = remote; render();
 }
+function flushPending(){ if (pendingRemote){ const r=pendingRemote; pendingRemote=null; applyRemote(r); } }
 
-/* ---------- 접속자/연결 상태 ---------- */
+/* ===== 접속 상태 ===== */
 function setupPresence(){
-  const presRoot = db.ref("workflow/"+ROOM+"/presence");
-  const me = presRoot.push();
-  db.ref(".info/connected").on("value", s => {
-    online = (s.val() === true);
-    if (online){ me.onDisconnect().remove(); me.set(true); }
-    updateConn();
-  });
-  presRoot.on("value", s => { presenceCount = s.exists() ? Object.keys(s.val()).length : 0; updateConn(); });
+  const root = db.ref("workflow/"+ROOM+"/presence");
+  const me = root.push();
+  db.ref(".info/connected").on("value", s => { online=(s.val()===true); if(online){ me.onDisconnect().remove(); me.set(true);} updateConn(); });
+  root.on("value", s => { presenceCount = s.exists()? Object.keys(s.val()).length : 0; updateConn(); });
 }
 function updateConn(){
-  if (!stepsRef){
-    conn.className = "conn local";
-    conn.innerHTML = "⚪ 로컬 모드 · <b>내 브라우저에만</b> 저장 (팀과 공유 안 됨)";
-    return;
-  }
-  if (online){ conn.className = "conn on";  conn.innerHTML = "🟢 실시간 연결됨 · 👥 <b>"+presenceCount+"</b>명 접속 중"; }
-  else       { conn.className = "conn off"; conn.innerHTML = "🟠 연결 끊김 — 재연결 중…"; }
+  if (!graphRef){ conn.className="conn local"; conn.innerHTML="⚪ 로컬 모드 · <b>내 브라우저에만</b> 저장 (팀과 공유 안 됨)"; return; }
+  if (online){ conn.className="conn on"; conn.innerHTML="🟢 실시간 연결됨 · 👥 <b>"+presenceCount+"</b>명 접속 중"; }
+  else { conn.className="conn off"; conn.innerHTML="🟠 연결 끊김 — 재연결 중…"; }
 }
 
-/* ---------- 렌더 ---------- */
+/* ===== 보조 ===== */
+function depthOf(id){ let d=0,n=nodes[id]; while(n && n.parent){ d++; n=nodes[n.parent]; if(d>50)break; } return d; }
+function childrenOf(id){ return Object.values(nodes).filter(n => n.parent===id); }
+function setViewport(){ viewport.setAttribute("transform", `translate(${panX},${panY}) scale(${zoom})`); }
+
+function wrapLabel(s){
+  s = String(s||"");
+  if (s.length <= 6) return [s];
+  let cut = s.lastIndexOf(" ", Math.ceil(s.length/2));
+  if (cut < 2) cut = Math.ceil(s.length/2);
+  let l1 = s.slice(0, cut).trim(), l2 = s.slice(cut).trim();
+  if (l2.length > 7) l2 = l2.slice(0,6) + "…";
+  return [l1, l2];
+}
+
+/* ===== 렌더 ===== */
 function render(){
-  flow.innerHTML = "";
-  steps.forEach((title, i) => {
-    if (i > 0) flow.appendChild(arrowEl());
-    flow.appendChild(nodeEl(title, i));
+  // 엣지
+  let e = "";
+  Object.values(nodes).forEach(n => {
+    if (!n.parent || !nodes[n.parent]) return;
+    const p = nodes[n.parent];
+    const dy = n.y - p.y;
+    e += `<path class="edge" d="M ${p.x} ${p.y} C ${p.x} ${p.y+dy*0.5}, ${n.x} ${n.y-dy*0.5}, ${n.x} ${n.y}"/>`;
   });
-  setEditable();
-  updateFoot();
-}
-function updateFoot(){ foot.textContent = "총 " + steps.length + "단계 · 지금 이름은 예시입니다 — “✏️ 편집 모드”에서 우리 팀 대분류로 바꿔보세요"; }
-function arrowEl(){
-  const a = document.createElement("div"); a.className = "arrow";
-  a.innerHTML = '<svg viewBox="0 0 36 18"><path d="M1 9 H29 M23 3 L31 9 L23 15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>';
-  return a;
-}
-function nodeEl(title, i){
-  const color = PALETTE[i % PALETTE.length];
-  const wrap = document.createElement("div"); wrap.className = "node";
-  const b = document.createElement("div"); b.className = "bubble"; b.style.setProperty("--accent", color);
-  b.innerHTML =
-    '<div class="top"><div class="badge">'+(i+1)+'</div>'+
-    '<div class="title">'+escapeHtml(title)+'</div></div>'+
-    '<div class="ctrls">'+
-      '<button class="mini" data-act="left"  title="앞으로 이동">‹</button>'+
-      '<button class="mini" data-act="right" title="뒤로 이동">›</button>'+
-      '<button class="mini del" data-act="del" title="이 단계 삭제">✕</button>'+
-    '</div>';
-  wrap.appendChild(b);
-  return wrap;
-}
-function escapeHtml(s){ return String(s).replace(/[&<>"]/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c])); }
+  edgesG.innerHTML = e;
 
-function renderPreservingFocus(){
-  const titles = Array.from(flow.querySelectorAll(".title"));
-  const fi = titles.indexOf(document.activeElement);
-  let off = 0;
-  if (fi >= 0){ const sel = window.getSelection(); off = sel.rangeCount ? sel.getRangeAt(0).startOffset : 0; }
-  render();
-  if (fi >= 0){ const nt = flow.querySelectorAll(".title")[fi]; if (nt){ nt.focus(); placeCaret(nt, off); } }
+  // 노드
+  let h = "";
+  Object.values(nodes).forEach(n => {
+    const color = PALETTE[depthOf(n.id) % PALETTE.length];
+    const lines = wrapLabel(n.label);
+    const tspans = lines.length === 1
+      ? `<tspan x="0" dy="5">${esc(lines[0])}</tspan>`
+      : `<tspan x="0" dy="-3">${esc(lines[0])}</tspan><tspan x="0" dy="17">${esc(lines[1])}</tspan>`;
+    h += `<g class="node" data-id="${n.id}" transform="translate(${n.x},${n.y})">
+            <circle r="46" fill="${color}"></circle>
+            <text class="lbl" text-anchor="middle">${tspans}</text>
+            <g class="del" transform="translate(34,-34)">
+              <circle r="11" fill="#fff" stroke="#e03131" stroke-width="1.5"></circle>
+              <text text-anchor="middle" dy="4.5" font-size="14" fill="#e03131" font-weight="700">×</text>
+            </g>
+          </g>`;
+  });
+  nodesG.innerHTML = h;
 }
-function placeCaret(el, off){
-  const node = el.firstChild;
-  const r = document.createRange();
-  if (node){ r.setStart(node, Math.min(off, node.textContent.length)); }
-  else { r.setStart(el, 0); }
-  r.collapse(true);
-  const sel = window.getSelection(); sel.removeAllRanges(); sel.addRange(r);
-}
-function titleIndex(t){ return Array.from(flow.querySelectorAll(".title")).indexOf(t); }
+function esc(s){ return String(s).replace(/[&<>]/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;"}[c])); }
 
-/* ---------- 편집 이벤트 ---------- */
-flow.addEventListener("input", e => {
-  const t = e.target.closest(".title"); if (!t) return;
-  const i = titleIndex(t); if (i < 0) return;
-  steps[i] = t.textContent;
-  persistDebounced();
+/* ===== 동작 ===== */
+function addChild(pid){
+  const p = nodes[pid]; if(!p) return;
+  const id = genId();
+  nodes[id] = { id, label:"새 단계", x:p.x, y:p.y+210, parent:pid };
+  // 형제들을 부모 아래 가운데로 정렬
+  const sib = childrenOf(pid).sort((a,b)=> (a.x-b.x) || (a.id>b.id?1:-1));
+  const m = sib.length;
+  sib.forEach((nn,i)=>{ nn.x = p.x + (i-(m-1)/2)*200; nn.y = p.y+210; });
+  persist(); render();
+  return id;
+}
+function addRoot(){
+  const id = genId();
+  const k = childrenOf(null).length;   // 기존 루트 수
+  nodes[id] = { id, label:"새 시작", x:300 + k*260, y:120, parent:null };
+  persist(); render(); return id;
+}
+function deleteNode(id){
+  const kids = collectSubtree(id);
+  if (kids.length > 1 && !confirm(`'${nodes[id].label}' 와 하위 ${kids.length-1}개 원을 함께 삭제할까요?`)) return;
+  kids.forEach(k => delete nodes[k]);
+  persist(); render();
+}
+function collectSubtree(id){
+  const out = [id]; let i=0;
+  while(i < out.length){ childrenOf(out[i]).forEach(c => out.push(c.id)); i++; }
+  return out;
+}
+
+/* ===== 이름 수정 ===== */
+let renameId = null;
+function startRename(id){
+  const n = nodes[id]; if(!n) return;
+  renameId = id; busy = true;
+  const rect = svg.getBoundingClientRect();
+  renamer.style.left = (rect.left + panX + n.x*zoom) + "px";
+  renamer.style.top  = (rect.top  + panY + n.y*zoom) + "px";
+  renamer.style.display = "block";
+  renamer.value = n.label;
+  renamer.focus(); renamer.select();
+}
+function commitRename(){
+  if (renameId == null) return;
+  if (nodes[renameId]){ nodes[renameId].label = renamer.value.trim() || "(이름 없음)"; }
+  const id = renameId; renameId = null; renamer.style.display = "none";
+  busy = false; persist(); render(); flushPending();
+}
+renamer.addEventListener("keydown", e => {
+  if (e.key === "Enter"){ e.preventDefault(); commitRename(); }
+  else if (e.key === "Escape"){ renameId=null; renamer.style.display="none"; busy=false; flushPending(); }
 });
-flow.addEventListener("click", e => {
-  const btn = e.target.closest(".mini"); if (!btn) return;
-  const i = titleIndex(btn.closest(".node").querySelector(".title"));
-  const act = btn.dataset.act;
-  if (act === "del"){ if (steps.length > 1) steps.splice(i,1); }
-  else if (act === "left"  && i > 0){ [steps[i-1],steps[i]] = [steps[i],steps[i-1]]; }
-  else if (act === "right" && i < steps.length-1){ [steps[i+1],steps[i]] = [steps[i],steps[i+1]]; }
-  render(); persist();
-});
+renamer.addEventListener("blur", commitRename);
 
-/* ---------- 모드/툴바 ---------- */
-modeBtn.addEventListener("click", () => {
+/* ===== 클릭 vs 더블클릭(원 클릭=추가 / 더블=이름수정) ===== */
+let pendingClick = null;
+function nodeClicked(id){
+  if (pendingClick && pendingClick.id === id){ clearTimeout(pendingClick.t); pendingClick=null; startRename(id); }
+  else { const t = setTimeout(()=>{ pendingClick=null; addChild(id); }, 240); pendingClick = {id, t}; }
+}
+
+/* ===== 포인터: 노드 드래그 + 캔버스 팬 ===== */
+let drag = null, pan = null;
+svg.addEventListener("pointerdown", e => {
+  if (renameId != null) return;
+  const delEl  = e.target.closest(".del");
+  const nodeEl = e.target.closest(".node");
+
+  if (editing() && delEl && nodeEl){ e.stopPropagation(); deleteNode(nodeEl.dataset.id); return; }
+
+  if (editing() && nodeEl){
+    const n = nodes[nodeEl.dataset.id];
+    drag = { id:n.id, sx:e.clientX, sy:e.clientY, ox:n.x, oy:n.y, moved:false };
+    busy = true; svg.setPointerCapture(e.pointerId);
+  } else {
+    pan = { sx:e.clientX, sy:e.clientY, px:panX, py:panY };
+    svg.classList.add("panning"); svg.setPointerCapture(e.pointerId);
+  }
+});
+svg.addEventListener("pointermove", e => {
+  if (drag){
+    const dx = e.clientX-drag.sx, dy = e.clientY-drag.sy;
+    if (Math.hypot(dx,dy) > 4) drag.moved = true;
+    const n = nodes[drag.id]; if(!n) return;
+    n.x = drag.ox + dx/zoom; n.y = drag.oy + dy/zoom;
+    render();
+  } else if (pan){
+    panX = pan.px + (e.clientX-pan.sx); panY = pan.py + (e.clientY-pan.sy); setViewport();
+  }
+});
+svg.addEventListener("pointerup", e => {
+  if (drag){
+    if (drag.moved){ persist(); } else { nodeClicked(drag.id); }
+    busy = false; drag = null; flushPending();
+  }
+  if (pan){ pan = null; svg.classList.remove("panning"); }
+});
+svg.addEventListener("wheel", e => {
+  e.preventDefault();
+  const rect = svg.getBoundingClientRect();
+  const mx = e.clientX-rect.left, my = e.clientY-rect.top;
+  const wx = (mx-panX)/zoom, wy = (my-panY)/zoom;
+  zoom = clamp(zoom * (e.deltaY<0 ? 1.1 : 1/1.1), 0.4, 2.5);
+  panX = mx - wx*zoom; panY = my - wy*zoom; setViewport();
+}, { passive:false });
+
+/* ===== 화면 맞춤 ===== */
+function fitView(){
+  const ns = Object.values(nodes); if(!ns.length) return;
+  const xs = ns.map(n=>n.x), ys = ns.map(n=>n.y);
+  const minX=Math.min(...xs)-90, maxX=Math.max(...xs)+90, minY=Math.min(...ys)-90, maxY=Math.max(...ys)+90;
+  const rect = svg.getBoundingClientRect();
+  zoom = clamp(Math.min(rect.width/(maxX-minX), rect.height/(maxY-minY)), 0.4, 1.6);
+  panX = (rect.width  - (minX+maxX)*zoom)/2;
+  panY = (rect.height - (minY+maxY)*zoom)/2;
+  setViewport();
+}
+
+/* ===== 툴바 ===== */
+document.getElementById("addRootBtn").addEventListener("click", ()=>{ if(!editing()) modeBtn.click(); const id=addRoot(); startRename(id); });
+modeBtn.addEventListener("click", ()=>{
   const on = document.body.classList.toggle("editing");
   modeBtn.textContent = on ? "👁 보기 모드" : "✏️ 편집 모드";
   modeBtn.classList.toggle("active", on);
-  setEditable();
 });
-function setEditable(){
-  const on = document.body.classList.contains("editing");
-  flow.querySelectorAll(".title").forEach(t => t.contentEditable = on ? "true" : "false");
-}
-document.getElementById("addBtn").addEventListener("click", () => {
-  if (!document.body.classList.contains("editing")) modeBtn.click();
-  steps.push("새 단계"); render(); persist();
-  document.querySelector(".flow-wrap").scrollLeft = 999999;
+document.getElementById("fitBtn").addEventListener("click", fitView);
+document.getElementById("resetBtn").addEventListener("click", ()=>{
+  const msg = graphRef ? "기본 예시로 초기화할까요? (모든 팀원에게 적용)" : "기본 예시로 초기화할까요? (수정 내용 사라짐)";
+  if (confirm(msg)){ nodes = makeSeed(); persist(); render(); fitView(); }
 });
-document.getElementById("resetBtn").addEventListener("click", () => {
-  const msg = stepsRef ? "기본 예시로 초기화할까요? (모든 팀원에게 적용됩니다)" : "기본 예시로 초기화할까요? (수정 내용이 사라집니다)";
-  if (confirm(msg)){ steps = DEFAULT_STEPS.slice(); render(); persist(); }
+document.getElementById("exportBtn").addEventListener("click", ()=>{
+  const blob = new Blob([JSON.stringify(nodes,null,2)], {type:"application/json"});
+  const a = document.createElement("a"); a.href=URL.createObjectURL(blob); a.download="workflow_graph.json"; a.click();
 });
-document.getElementById("exportBtn").addEventListener("click", () => {
-  const blob = new Blob([JSON.stringify(steps, null, 2)], {type:"application/json"});
-  const a = document.createElement("a"); a.href = URL.createObjectURL(blob); a.download = "workflow_steps.json"; a.click();
-});
+window.addEventListener("resize", setViewport);
 
-/* 테스트/디버그용 훅 (실사용에 영향 없음) */
-window.__wf = { applyRemote, getSteps: () => steps.slice(), isConfigured };
+/* 테스트/디버그 훅 */
+window.__wf = { addChild, addRoot, deleteNode, getNodes:()=>JSON.parse(JSON.stringify(nodes)), applyRemote, isConfigured };
 
 start();
 </script>
