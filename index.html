@@ -38,6 +38,12 @@
   svg#canvas.dragging .node circle{ cursor:grabbing; }
   .node text.lbl{ fill:#fff; font-weight:700; font-size:13px; pointer-events:none; }
   .edge{ fill:none; stroke:#b9c4d4; stroke-width:2.5; }
+  .link{ fill:none; stroke:#5b6b82; stroke-width:2.5; pointer-events:none; }
+  .link-hit{ fill:none; stroke:transparent; stroke-width:16; cursor:pointer; }
+  body:not(.editing) .link-hit{ pointer-events:none; }
+  .templink{ fill:none; stroke:#4b7bec; stroke-width:2.5; stroke-dasharray:6 5; pointer-events:none; }
+  .node circle.port{ fill:#4b7bec; cursor:crosshair; filter:none; }
+  body:not(.editing) .port{ display:none; }
   .del{ cursor:pointer; }
   body:not(.editing) .del{ display:none; }
 
@@ -61,7 +67,7 @@
       <button class="btn" id="exportBtn">💾 내보내기(JSON)</button>
       <button class="btn" id="resetBtn">↺ 초기화</button>
     </div>
-    <div class="help">원 <b>클릭</b> → 다음 단계 원 추가 · <b>더블클릭</b> → 이름 수정 · <b>드래그</b> → 이동 · <b>휠</b> → 확대/축소 · <b>✕</b> → 삭제</div>
+    <div class="help">원 <b>클릭</b> → 다음 단계 추가 · <b>더블클릭</b> → 이름수정 · <b>드래그</b> → 이동 · 원 아래 <b style="color:#4b7bec">파란 점</b>을 다른 원으로 끌면 <b>연결</b> · 연결선 <b>클릭</b> → 삭제 · <b>✕</b> → 원 삭제</div>
 
     <div class="canvas-wrap">
       <svg id="canvas">
@@ -69,10 +75,14 @@
           <pattern id="dots" width="26" height="26" patternUnits="userSpaceOnUse">
             <circle cx="2" cy="2" r="1.6" fill="#d3dae5"/>
           </pattern>
+          <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+            <path d="M0 0 L10 5 L0 10 z" fill="#5b6b82"/>
+          </marker>
         </defs>
         <g id="viewport">
           <rect x="-4000" y="-4000" width="9000" height="9000" fill="url(#dots)"/>
           <g id="edges"></g>
+          <path id="tempLink" class="templink" style="display:none"></path>
           <g id="nodes"></g>
         </g>
       </svg>
@@ -101,6 +111,7 @@ const isConfigured = !!firebaseConfig.apiKey && !firebaseConfig.apiKey.includes(
 
 /* ===== 상태 ===== */
 let nodes = {};                 // { id: {id,label,x,y,parent} }
+let links = [];                 // [ {from,to} ] — 아무 원끼리 연결(대분류끼리도)
 let panX = 0, panY = 0, zoom = 1;
 let db = null, graphRef = null, online = false, presenceCount = 0;
 let writeTimer = null, pendingRemote = null, busy = false;
@@ -109,6 +120,7 @@ const svg      = document.getElementById("canvas");
 const viewport = document.getElementById("viewport");
 const edgesG   = document.getElementById("edges");
 const nodesG   = document.getElementById("nodes");
+const tempLink = document.getElementById("tempLink");
 const conn     = document.getElementById("conn");
 const renamer  = document.getElementById("renamer");
 const modeBtn  = document.getElementById("modeBtn");
@@ -132,31 +144,42 @@ function start(){
   if (isConfigured && typeof firebase !== "undefined"){
     try { initFirebase(); return; } catch(e){ console.error("Firebase 실패 → 로컬", e); }
   }
-  nodes = loadLocal(); updateConn(); render(); fitView();
+  const d = loadLocal(); nodes = d.nodes; links = d.links; updateConn(); render(); fitView();
 }
 function initFirebase(){
   firebase.initializeApp(firebaseConfig);
   db = firebase.database();
   graphRef = db.ref("workflow/"+ROOM+"/graph");
-  nodes = loadLocal(); render(); fitView();
+  const d = loadLocal(); nodes = d.nodes; links = d.links; render(); fitView();
   graphRef.on("value", snap => {
     const val = snap.val();
-    if (val == null){ graphRef.set(nodes); return; }   // 최초 1회 시드
+    if (val == null){ graphRef.set(graphState()); return; }   // 최초 1회 시드
     applyRemote(val);
   });
   setupPresence(); updateConn();
 }
 
 /* ===== 저장 ===== */
-function loadLocal(){ try{ const g=JSON.parse(localStorage.getItem(LS_KEY)); if(g && Object.keys(g).length) return g; }catch(e){} return makeSeed(); }
-function saveLocal(){ try{ localStorage.setItem(LS_KEY, JSON.stringify(nodes)); }catch(e){} }
-function persist(){ if(graphRef){ graphRef.set(nodes); } else { saveLocal(); } }
+function graphState(){ return { nodes, links }; }
+function normLinks(l){ return Array.isArray(l) ? l : (l ? Object.values(l) : []); }
+function loadLocal(){
+  try{
+    const g = JSON.parse(localStorage.getItem(LS_KEY));
+    if (g && g.nodes) return { nodes:g.nodes, links: normLinks(g.links) };
+    if (g && Object.keys(g).length) return { nodes:g, links:[] };   // 옛 형식(노드맵만)
+  }catch(e){}
+  return { nodes: makeSeed(), links: [] };
+}
+function saveLocal(){ try{ localStorage.setItem(LS_KEY, JSON.stringify(graphState())); }catch(e){} }
+function persist(){ if(graphRef){ graphRef.set(graphState()); } else { saveLocal(); } }
 function persistDebounced(){ clearTimeout(writeTimer); writeTimer = setTimeout(persist, 250); }
 
-/* ===== 원격 반영 (내가 드래그/이름수정 중이면 잠시 보류) ===== */
+/* ===== 원격 반영 (내가 드래그/이름수정/연결 중이면 잠시 보류) ===== */
 function applyRemote(remote){
   if (busy){ pendingRemote = remote; return; }
-  nodes = remote; render();
+  if (remote && remote.nodes){ nodes = remote.nodes; links = normLinks(remote.links); }
+  else { nodes = remote; links = []; }   // 옛 형식 호환
+  render();
 }
 function flushPending(){ if (pendingRemote){ const r=pendingRemote; pendingRemote=null; applyRemote(r); } }
 
@@ -177,6 +200,7 @@ function updateConn(){
 function depthOf(id){ let d=0,n=nodes[id]; while(n && n.parent){ d++; n=nodes[n.parent]; if(d>50)break; } return d; }
 function childrenOf(id){ return Object.values(nodes).filter(n => n.parent===id); }
 function setViewport(){ viewport.setAttribute("transform", `translate(${panX},${panY}) scale(${zoom})`); }
+function screenToWorld(cx, cy){ const r=svg.getBoundingClientRect(); return { x:(cx-r.left-panX)/zoom, y:(cy-r.top-panY)/zoom }; }
 
 function wrapLabel(s){
   s = String(s||"");
@@ -190,13 +214,22 @@ function wrapLabel(s){
 
 /* ===== 렌더 ===== */
 function render(){
-  // 엣지
   let e = "";
+  // 부모 → 자식 엣지
   Object.values(nodes).forEach(n => {
     if (!n.parent || !nodes[n.parent]) return;
     const p = nodes[n.parent];
     const dy = n.y - p.y;
     e += `<path class="edge" d="M ${p.x} ${p.y} C ${p.x} ${p.y+dy*0.5}, ${n.x} ${n.y-dy*0.5}, ${n.x} ${n.y}"/>`;
+  });
+  // 사용자가 그린 연결선(아무 원끼리)
+  links.forEach((l, i) => {
+    const a = nodes[l.from], b = nodes[l.to];
+    if (!a || !b) return;
+    const dx=b.x-a.x, dy=b.y-a.y, len=Math.hypot(dx,dy)||1, ux=dx/len, uy=dy/len;
+    const sx=a.x+ux*48, sy=a.y+uy*48, tx=b.x-ux*58, ty=b.y-uy*58;
+    e += `<path class="link-hit" data-li="${i}" d="M ${sx} ${sy} L ${tx} ${ty}"/>`;
+    e += `<path class="link" marker-end="url(#arrow)" d="M ${sx} ${sy} L ${tx} ${ty}"/>`;
   });
   edgesG.innerHTML = e;
 
@@ -211,6 +244,7 @@ function render(){
     h += `<g class="node" data-id="${n.id}" transform="translate(${n.x},${n.y})">
             <circle r="46" fill="${color}"></circle>
             <text class="lbl" text-anchor="middle">${tspans}</text>
+            <circle class="port" cx="0" cy="46" r="9" stroke="#fff" stroke-width="2"><title>여기서 끌어 다른 원과 연결</title></circle>
             <g class="del" transform="translate(34,-34)">
               <circle r="11" fill="#fff" stroke="#e03131" stroke-width="1.5"></circle>
               <text text-anchor="middle" dy="4.5" font-size="14" fill="#e03131" font-weight="700">×</text>
@@ -238,10 +272,16 @@ function addRoot(){
   nodes[id] = { id, label:"새 시작", x:300 + k*260, y:120, parent:null };
   persist(); render(); return id;
 }
+function addLink(from, to){
+  if (!nodes[from] || !nodes[to] || from === to) return;
+  if (links.some(l => (l.from===from&&l.to===to)||(l.from===to&&l.to===from))) return; // 중복 방지
+  links.push({ from, to }); persist(); render();
+}
 function deleteNode(id){
   const kids = collectSubtree(id);
   if (kids.length > 1 && !confirm(`'${nodes[id].label}' 와 하위 ${kids.length-1}개 원을 함께 삭제할까요?`)) return;
   kids.forEach(k => delete nodes[k]);
+  links = links.filter(l => !kids.includes(l.from) && !kids.includes(l.to));  // 연결선도 정리
   persist(); render();
 }
 function collectSubtree(id){
@@ -281,15 +321,23 @@ function nodeClicked(id){
   else { const t = setTimeout(()=>{ pendingClick=null; addChild(id); }, 240); pendingClick = {id, t}; }
 }
 
-/* ===== 포인터: 노드 드래그 + 캔버스 팬 ===== */
-let drag = null, pan = null;
+/* ===== 포인터: 연결 + 노드 드래그 + 캔버스 팬 ===== */
+let drag = null, pan = null, linking = null;
 svg.addEventListener("pointerdown", e => {
   if (renameId != null) return;
-  const delEl  = e.target.closest(".del");
-  const nodeEl = e.target.closest(".node");
+  const delEl   = e.target.closest(".del");
+  const portEl  = e.target.closest(".port");
+  const linkHit = e.target.closest(".link-hit");
+  const nodeEl  = e.target.closest(".node");
 
   if (editing() && delEl && nodeEl){ e.stopPropagation(); deleteNode(nodeEl.dataset.id); return; }
-
+  if (editing() && linkHit){ const li=+linkHit.dataset.li; if(confirm("이 연결선을 지울까요?")){ links.splice(li,1); persist(); render(); } return; }
+  if (editing() && portEl && nodeEl){
+    linking = { from: nodeEl.dataset.id }; busy = true;
+    const a = nodes[linking.from];
+    tempLink.setAttribute("d", `M ${a.x} ${a.y} L ${a.x} ${a.y}`);
+    tempLink.style.display = ""; svg.setPointerCapture(e.pointerId); return;
+  }
   if (editing() && nodeEl){
     const n = nodes[nodeEl.dataset.id];
     drag = { id:n.id, sx:e.clientX, sy:e.clientY, ox:n.x, oy:n.y, moved:false };
@@ -300,6 +348,12 @@ svg.addEventListener("pointerdown", e => {
   }
 });
 svg.addEventListener("pointermove", e => {
+  if (linking){
+    const a = nodes[linking.from]; if(!a) return;
+    const w = screenToWorld(e.clientX, e.clientY);
+    tempLink.setAttribute("d", `M ${a.x} ${a.y} L ${w.x} ${w.y}`);
+    return;
+  }
   if (drag){
     const dx = e.clientX-drag.sx, dy = e.clientY-drag.sy;
     if (Math.hypot(dx,dy) > 4) drag.moved = true;
@@ -311,6 +365,13 @@ svg.addEventListener("pointermove", e => {
   }
 });
 svg.addEventListener("pointerup", e => {
+  if (linking){
+    tempLink.style.display = "none";
+    const el = document.elementFromPoint(e.clientX, e.clientY);
+    const tgt = el && el.closest(".node");
+    if (tgt && tgt.dataset.id !== linking.from){ addLink(linking.from, tgt.dataset.id); }
+    busy = false; linking = null; flushPending(); return;
+  }
   if (drag){
     if (drag.moved){ persist(); } else { nodeClicked(drag.id); }
     busy = false; drag = null; svg.classList.remove("dragging"); flushPending();
@@ -348,16 +409,16 @@ modeBtn.addEventListener("click", ()=>{
 document.getElementById("fitBtn").addEventListener("click", fitView);
 document.getElementById("resetBtn").addEventListener("click", ()=>{
   const msg = graphRef ? "기본 예시로 초기화할까요? (모든 팀원에게 적용)" : "기본 예시로 초기화할까요? (수정 내용 사라짐)";
-  if (confirm(msg)){ nodes = makeSeed(); persist(); render(); fitView(); }
+  if (confirm(msg)){ nodes = makeSeed(); links = []; persist(); render(); fitView(); }
 });
 document.getElementById("exportBtn").addEventListener("click", ()=>{
-  const blob = new Blob([JSON.stringify(nodes,null,2)], {type:"application/json"});
+  const blob = new Blob([JSON.stringify(graphState(),null,2)], {type:"application/json"});
   const a = document.createElement("a"); a.href=URL.createObjectURL(blob); a.download="workflow_graph.json"; a.click();
 });
 window.addEventListener("resize", setViewport);
 
 /* 테스트/디버그 훅 */
-window.__wf = { addChild, addRoot, deleteNode, getNodes:()=>JSON.parse(JSON.stringify(nodes)), applyRemote, isConfigured };
+window.__wf = { addChild, addRoot, addLink, deleteNode, getNodes:()=>JSON.parse(JSON.stringify(nodes)), getLinks:()=>JSON.parse(JSON.stringify(links)), applyRemote, isConfigured };
 
 start();
 </script>
