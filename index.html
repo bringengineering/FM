@@ -47,6 +47,7 @@
   .link-hit{ fill:none; stroke:transparent; stroke-width:18; cursor:pointer; }
   body:not(.editing) .link-hit{ pointer-events:none; }
   .templink{ fill:none; stroke:#3b5bdb; stroke-width:3.2; stroke-dasharray:8 5; pointer-events:none; }
+  .guide{ stroke:#fa8231; stroke-width:1.5; stroke-dasharray:6 4; pointer-events:none; }
   .port{ fill:#4b7bec; cursor:crosshair; }
   .swatch{ cursor:pointer; }
   body:not(.editing) .port, body:not(.editing) .swatch{ display:none; }
@@ -80,7 +81,7 @@
     <div class="toolbar">
       <button class="btn" id="addRootBtn">＋ 시작 원</button>
       <button class="btn" id="linkBtn">🔗 연결 모드</button>
-      <button class="btn" id="arrangeBtn">⤧ 자동정렬</button>
+      <button class="btn" id="arrangeBtn">⤧ 트리배치</button>
       <button class="btn" id="undoBtn">↩︎ 되돌리기</button>
       <button class="btn active" id="modeBtn">👁 보기 모드</button>
       <button class="btn" id="fitBtn">⊡ 화면 맞춤</button>
@@ -89,7 +90,7 @@
     </div>
     <div class="help">
       원 <b>클릭</b> → 중분류 추가 · <b>더블클릭</b> → 이름수정 (수정 중 <b>Ctrl+Enter</b> → 다음 원) · <b>드래그</b> → 이동 · 왼쪽위 <b>색동그라미</b> → 색·크기<br>
-      <b>🔗 연결 모드</b>로 대분류끼리 잇기 · <b>Shift</b> → 자동정렬 · <b>Ctrl+Z</b> → 되돌리기 · <b>✕</b> → 삭제
+      <b>🔗 연결 모드</b>로 대분류끼리 잇기 · <b>드래그 중 Shift</b> → 가로·세로 딱 맞춰 붙이기 · <b>Ctrl+Z</b> → 되돌리기 · <b>✕</b> → 삭제
     </div>
     <div class="linkhint" id="linkHint">🔗 <b>연결 모드</b> — 잇고 싶은 원을 <b>차례로 클릭</b>하면 화살표(→)로 연결돼요. 끝내려면 <b>연결 끝내기</b>를 누르세요. (이 모드에선 클릭해도 중분류가 안 생겨요)</div>
 
@@ -106,6 +107,8 @@
         <g id="viewport">
           <rect x="-4000" y="-4000" width="9000" height="9000" fill="url(#dots)"/>
           <g id="edges"></g>
+          <line id="guideV" class="guide" style="display:none"></line>
+          <line id="guideH" class="guide" style="display:none"></line>
           <path id="tempLink" class="templink" style="display:none"></path>
           <g id="nodes"></g>
         </g>
@@ -149,6 +152,8 @@ const viewport = document.getElementById("viewport");
 const edgesG   = document.getElementById("edges");
 const nodesG   = document.getElementById("nodes");
 const tempLink = document.getElementById("tempLink");
+const guideV   = document.getElementById("guideV");
+const guideH   = document.getElementById("guideH");
 const conn     = document.getElementById("conn");
 const renamer  = document.getElementById("renamer");
 const nodePop  = document.getElementById("nodePop");
@@ -237,6 +242,19 @@ function colorOf(n){ return n.color || PALETTE[depthOf(n.id) % PALETTE.length]; 
 function childrenOf(id){ return Object.values(nodes).filter(n => n.parent===id); }
 function setViewport(){ viewport.setAttribute("transform", `translate(${panX},${panY}) scale(${zoom})`); }
 function screenToWorld(cx, cy){ const r=svg.getBoundingClientRect(); return { x:(cx-r.left-panX)/zoom, y:(cy-r.top-panY)/zoom }; }
+function clearGuides(){ guideV.style.display="none"; guideH.style.display="none"; }
+function snapPos(id, x, y){
+  const GRID = 20, TH = 14;
+  let sx = Math.round(x/GRID)*GRID, sy = Math.round(y/GRID)*GRID, gx=null, gy=null;
+  Object.values(nodes).forEach(n => {
+    if (n.id === id) return;
+    if (Math.abs(n.x - x) < TH){ sx = n.x; gx = n.x; }   // 세로줄(같은 X) 맞춤
+    if (Math.abs(n.y - y) < TH){ sy = n.y; gy = n.y; }   // 가로줄(같은 Y) 맞춤
+  });
+  if (gx!=null){ guideV.setAttribute("x1",gx); guideV.setAttribute("x2",gx); guideV.setAttribute("y1",-4000); guideV.setAttribute("y2",5000); guideV.style.display=""; } else guideV.style.display="none";
+  if (gy!=null){ guideH.setAttribute("y1",gy); guideH.setAttribute("y2",gy); guideH.setAttribute("x1",-4000); guideH.setAttribute("x2",5000); guideH.style.display=""; } else guideH.style.display="none";
+  return [sx, sy];
+}
 
 function wrapLabel(s){
   s = String(s||"");
@@ -441,7 +459,9 @@ svg.addEventListener("pointermove", e => {
     const dx = e.clientX-drag.sx, dy = e.clientY-drag.sy;
     if (Math.hypot(dx,dy) > 4) drag.moved = true;
     const n = nodes[drag.id]; if(!n) return;
-    n.x = drag.ox + dx/zoom; n.y = drag.oy + dy/zoom; render();
+    let nx = drag.ox + dx/zoom, ny = drag.oy + dy/zoom;
+    if (e.shiftKey){ const s = snapPos(drag.id, nx, ny); nx = s[0]; ny = s[1]; } else clearGuides();
+    n.x = nx; n.y = ny; render();
   } else if (pan){
     panX = pan.px + (e.clientX-pan.sx); panY = pan.py + (e.clientY-pan.sy); setViewport();
   }
@@ -454,6 +474,7 @@ svg.addEventListener("pointerup", e => {
     busy = false; linking = null; flushPending(); return;
   }
   if (drag){
+    clearGuides();
     if (drag.moved){ history.push(drag.snap); if(history.length>80) history.shift(); redoStack.length=0; updateUndoBtn(); persist(); }
     else { nodeClicked(drag.id); }
     busy = false; drag = null; svg.classList.remove("dragging"); flushPending();
@@ -470,16 +491,13 @@ svg.addEventListener("wheel", e => {
 }, { passive:false });
 
 /* ===== 키보드: Shift 자동정렬 / Ctrl+Z 되돌리기 ===== */
-let shiftFired = false;
 window.addEventListener("keydown", e => {
   const tag = (e.target && e.target.tagName || "").toLowerCase();
   if (tag === "input" || tag === "textarea" || renameId != null) return;
   const ctrl = e.ctrlKey || e.metaKey;
   if (ctrl && (e.key === "z" || e.key === "Z")){ e.preventDefault(); e.shiftKey ? redoOp() : undo(); return; }
   if (ctrl && (e.key === "y" || e.key === "Y")){ e.preventDefault(); redoOp(); return; }
-  if (e.key === "Shift" && !ctrl && !shiftFired){ shiftFired = true; if(!drag && !pan && !linking) autoLayout(); }
 });
-window.addEventListener("keyup", e => { if (e.key === "Shift") shiftFired = false; });
 
 /* ===== 화면 맞춤 ===== */
 function fitView(){
@@ -523,7 +541,7 @@ document.getElementById("exportBtn").addEventListener("click", ()=>{
 window.addEventListener("resize", setViewport);
 
 /* 테스트/디버그 훅 */
-window.__wf = { addChild, addRoot, addLink, deleteNode, setNodeColor, resizeNode, autoLayout, undo, redo:redoOp,
+window.__wf = { addChild, addRoot, addLink, deleteNode, setNodeColor, resizeNode, autoLayout, snapPos, undo, redo:redoOp,
   getNodes:()=>JSON.parse(JSON.stringify(nodes)), getLinks:()=>JSON.parse(JSON.stringify(links)), applyRemote, isConfigured };
 
 start();
