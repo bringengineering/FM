@@ -3,216 +3,231 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-<title>업무 흐름 (Work Flow) — 대분류</title>
+<title>업무 흐름 (Work Flow) — 대분류 (가로)</title>
 <style>
-  :root {
-    /* ====== 색상 테마 (원하면 여기 색만 바꿔도 됩니다) ====== */
-    --bg:        #eef1f6;
-    --panel:     #ffffff;
-    --ink:       #1f2733;
-    --ink-soft:  #6b7686;
-    --line:      #c7d0dd;
-    --tail:      14px;   /* 말풍선 꼬리 크기 */
+  :root{
+    /* ====== 색상 테마 ====== */
+    --bg:#eef1f6; --panel:#ffffff; --ink:#1f2733; --ink-soft:#6b7686; --line:#c7d0dd;
+  }
+  *{ box-sizing:border-box; }
+  body{
+    margin:0; background:var(--bg); color:var(--ink);
+    font-family:"Apple SD Gothic Neo","Malgun Gothic","맑은 고딕","Noto Sans KR",
+                system-ui,-apple-system,sans-serif;
+    -webkit-font-smoothing:antialiased; line-height:1.5;
   }
 
-  * { box-sizing: border-box; }
+  /* ===== 헤더 ===== */
+  header{ text-align:center; padding:32px 20px 6px; }
+  header h1{ margin:0; font-size:24px; letter-spacing:-.5px; }
+  header p{ margin:8px 0 0; color:var(--ink-soft); font-size:14px; }
 
-  body {
-    margin: 0;
-    background: var(--bg);
-    color: var(--ink);
-    font-family: "Apple SD Gothic Neo", "Malgun Gothic", "맑은 고딕",
-                 "Noto Sans KR", system-ui, -apple-system, sans-serif;
-    -webkit-font-smoothing: antialiased;
-    line-height: 1.5;
+  /* ===== 툴바 ===== */
+  .toolbar{ display:flex; gap:8px; justify-content:center; flex-wrap:wrap; padding:14px 20px 4px; }
+  .btn{
+    border:1px solid var(--line); background:#fff; color:var(--ink);
+    padding:8px 14px; border-radius:10px; font-size:13px; cursor:pointer;
+    font-family:inherit; transition:.15s;
   }
+  .btn:hover{ background:#f3f6fb; }
+  .btn.active{ background:#4b7bec; border-color:#4b7bec; color:#fff; }
+  .hint-edit{
+    display:none; text-align:center; color:var(--ink-soft);
+    font-size:12px; padding-top:10px;
+  }
+  body.editing .hint-edit{ display:block; }
 
-  /* ===== 상단 헤더 ===== */
-  header {
-    text-align: center;
-    padding: 40px 20px 8px;
-  }
-  header h1 {
-    margin: 0;
-    font-size: 26px;
-    letter-spacing: -0.5px;
-  }
-  header p {
-    margin: 8px 0 0;
-    color: var(--ink-soft);
-    font-size: 14px;
-  }
+  /* ===== 가로 흐름 ===== */
+  .flow-wrap{ overflow-x:auto; padding:30px 24px 40px; }
+  .flow{ display:flex; align-items:center; min-width:min-content; }
 
-  /* ===== 흐름 컨테이너 ===== */
-  .flow {
-    max-width: 720px;
-    margin: 0 auto;
-    padding: 24px 20px 64px;
-    position: relative;
+  /* 단계(말풍선) */
+  .node{ display:flex; align-items:center; }
+  .bubble{
+    position:relative; background:var(--panel);
+    border:1px solid var(--line); border-top:3px solid var(--accent,#4b7bec);
+    border-radius:16px; padding:14px 16px; min-width:150px; max-width:230px;
+    box-shadow:0 6px 18px rgba(31,39,51,.06); transition:transform .15s ease, box-shadow .15s ease;
   }
-
-  /* 가운데 흐름 라인 (척추) */
-  .flow::before {
-    content: "";
-    position: absolute;
-    top: 24px;
-    bottom: 64px;
-    left: 50%;
-    width: 2px;
-    transform: translateX(-50%);
-    background: linear-gradient(var(--line), var(--line)) ;
-    z-index: 0;
+  .bubble:hover{ transform:translateY(-2px); box-shadow:0 10px 24px rgba(31,39,51,.12); }
+  .bubble .top{ display:flex; align-items:center; gap:9px; }
+  .badge{
+    width:26px; height:26px; border-radius:50%; background:var(--accent,#4b7bec);
+    color:#fff; font-weight:700; font-size:13px; flex:0 0 auto;
+    display:flex; align-items:center; justify-content:center;
   }
+  .title{ font-weight:700; font-size:15px; outline:none; flex:1; word-break:keep-all; }
+  body.editing .title{ border-bottom:1px dashed var(--line); min-width:40px; cursor:text; }
+  body.editing .title:focus{ border-bottom:1px solid #4b7bec; }
 
-  /* ===== 한 단계 (대분류) ===== */
-  .step {
-    position: relative;
-    z-index: 1;
-    display: flex;
-    align-items: center;
-    margin: 18px 0;
-    min-height: 64px;
-  }
-  .step.left  { justify-content: flex-start; }
-  .step.right { justify-content: flex-end; }
-
-  /* 단계 번호 뱃지 (가운데 라인 위에 올라감) */
-  .badge {
-    position: absolute;
-    left: 50%;
-    top: 50%;
-    transform: translate(-50%, -50%);
-    width: 34px;
-    height: 34px;
-    border-radius: 50%;
-    background: var(--accent, #4b7bec);
-    color: #fff;
-    font-weight: 700;
-    font-size: 15px;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    box-shadow: 0 0 0 4px var(--bg);
-    z-index: 2;
+  /* 말풍선 꼬리(아래) */
+  .bubble::after{
+    content:""; position:absolute; left:24px; bottom:-12px;
+    width:0; height:0; border:11px solid transparent; border-top-color:var(--panel);
   }
 
-  /* 말풍선 */
-  .bubble {
-    position: relative;
-    max-width: 42%;
-    background: var(--panel);
-    border: 1px solid var(--line);
-    border-top: 3px solid var(--accent, #4b7bec);
-    border-radius: 16px;
-    padding: 14px 18px;
-    box-shadow: 0 6px 18px rgba(31, 39, 51, 0.06);
-    transition: transform .15s ease, box-shadow .15s ease;
+  /* 카드 컨트롤(편집 모드에서만) */
+  .ctrls{ display:none; gap:6px; margin-top:10px; }
+  body.editing .ctrls{ display:flex; }
+  .mini{
+    border:1px solid var(--line); background:#fff; border-radius:8px;
+    width:28px; height:24px; font-size:13px; line-height:1; cursor:pointer; color:var(--ink-soft);
   }
-  .bubble:hover {
-    transform: translateY(-2px);
-    box-shadow: 0 10px 24px rgba(31, 39, 51, 0.12);
-  }
-  .bubble .title {
-    font-weight: 700;
-    font-size: 16px;
-  }
-  .bubble .hint {
-    margin-top: 4px;
-    font-size: 12px;
-    color: var(--ink-soft);
-  }
+  .mini:hover{ background:#f3f6fb; color:var(--ink); }
+  .mini.del:hover{ background:#ffecec; border-color:#ffb3b3; color:#e03131; }
 
-  /* 말풍선 꼬리 (가운데 라인 쪽을 향함) */
-  .bubble::after {
-    content: "";
-    position: absolute;
-    top: 18px;
-    width: 0; height: 0;
-    border: var(--tail) solid transparent;
-  }
-  .step.left  .bubble::after {
-    right: calc(var(--tail) * -2 + 1px);
-    border-left-color: var(--panel);
-  }
-  .step.right .bubble::after {
-    left: calc(var(--tail) * -2 + 1px);
-    border-right-color: var(--panel);
-  }
+  /* 화살표(→) */
+  .arrow{ flex:0 0 auto; color:var(--line); padding:0 6px; user-select:none; }
+  .arrow svg{ display:block; width:36px; height:18px; }
 
-  /* ===== 안내 푸터 ===== */
-  footer {
-    text-align: center;
-    color: var(--ink-soft);
-    font-size: 12px;
-    padding-bottom: 40px;
-  }
+  footer{ text-align:center; color:var(--ink-soft); font-size:12px; padding:4px 20px 44px; }
 
-  /* 모바일: 말풍선을 한쪽 정렬로 펼침 */
-  @media (max-width: 520px) {
-    .flow::before { left: 20px; }
-    .badge { left: 20px; }
-    .step, .step.left, .step.right { justify-content: flex-start; padding-left: 48px; }
-    .bubble { max-width: 100%; }
-    .step.left .bubble::after,
-    .step.right .bubble::after {
-      left: calc(var(--tail) * -2 + 1px);
-      right: auto;
-      border-right-color: var(--panel);
-      border-left-color: transparent;
-    }
-  }
+  .flow-wrap::-webkit-scrollbar{ height:8px; }
+  .flow-wrap::-webkit-scrollbar-thumb{ background:#cfd8e3; border-radius:8px; }
 </style>
 </head>
 <body>
 
   <header>
     <h1>📌 업무 흐름 (Work Flow)</h1>
-    <p>아래 말풍선은 우리 업무의 <b>대분류(큰 단계)</b>입니다. 세부 내용은 다음 단계에서 채워집니다.</p>
+    <p>왼쪽 → 오른쪽으로 진행되는 우리 업무의 <b>대분류(큰 단계)</b>입니다.</p>
   </header>
 
-  <!-- 흐름이 그려지는 곳 (내용은 아래 스크립트가 자동으로 생성) -->
-  <main class="flow" id="flow"></main>
+  <div class="toolbar">
+    <button class="btn" id="modeBtn">✏️ 편집 모드</button>
+    <button class="btn" id="addBtn">＋ 단계 추가</button>
+    <button class="btn" id="exportBtn">💾 내보내기(JSON)</button>
+    <button class="btn" id="resetBtn">↺ 초기화</button>
+  </div>
+  <div class="hint-edit">
+    제목을 클릭해 바로 수정 · 카드의 <b>‹ ›</b> 로 순서 이동 · <b>✕</b> 로 삭제 · 변경은 이 브라우저에 자동 저장됩니다.
+  </div>
 
-  <footer>
-    ※ 1차 골격 — 대분류만 표시 / 실제 단계 이름은 아래 코드의 STEPS 목록만 수정하면 됩니다.
-  </footer>
+  <div class="flow-wrap">
+    <div class="flow" id="flow"></div>
+  </div>
+
+  <footer id="foot"></footer>
 
 <script>
   /* =======================================================================
-     ▼▼▼  여기 STEPS 목록만 수정하세요  ▼▼▼
-     - 각 줄이 말풍선 하나(대분류)가 됩니다.
-     - 순서를 바꾸려면 줄 순서를 바꾸고, 단계를 추가/삭제하려면 줄을 넣거나 빼세요.
-     - color 는 단계별 강조색입니다(생략 가능).
-     ※ 지금 값은 "예시 placeholder" 입니다. 실제 우리 팀 대분류로 바꿔 주세요.
+     ▼ 기본 대분류 (예시 placeholder) — 코드를 몰라도 화면의 "✏️ 편집 모드"에서 바꿀 수 있습니다.
+       (여기 목록을 직접 고쳐 초기값을 바꿔도 됩니다)
   ======================================================================= */
-  const STEPS = [
-    { title: "대분류 ① — 요청 접수",   color: "#4b7bec" },
-    { title: "대분류 ② — 기획 · 검토",  color: "#3867d6" },
-    { title: "대분류 ③ — 진행 · 실행",  color: "#26de81" },
-    { title: "대분류 ④ — 확인 · 검수",  color: "#f7b731" },
-    { title: "대분류 ⑤ — 완료 · 전달",  color: "#fa8231" },
-    { title: "대분류 ⑥ — 회고 · 정리",  color: "#a55eea" },
-  ];
-  /* ▲▲▲  수정 끝  ▲▲▲ */
+  const DEFAULT_STEPS = ["요청 접수","기획 · 검토","진행 · 실행","확인 · 검수","완료 · 전달","회고 · 정리"];
+  const PALETTE = ["#4b7bec","#3867d6","#26de81","#f7b731","#fa8231","#a55eea","#eb3b5a","#2bcbba"];
+  const LS_KEY = "fm_workflow_steps_v1";   // 브라우저 자동저장 키
+
+  let steps = load();
+
+  function load(){
+    try{ const s = JSON.parse(localStorage.getItem(LS_KEY)); if(Array.isArray(s) && s.length) return s; }catch(e){}
+    return DEFAULT_STEPS.slice();
+  }
+  function save(){ try{ localStorage.setItem(LS_KEY, JSON.stringify(steps)); }catch(e){} }
 
   const flow = document.getElementById("flow");
+  const foot = document.getElementById("foot");
+  const modeBtn = document.getElementById("modeBtn");
 
-  STEPS.forEach((step, i) => {
-    const side = (i % 2 === 0) ? "left" : "right";
+  function render(){
+    flow.innerHTML = "";
+    steps.forEach((title, i) => {
+      if(i > 0) flow.appendChild(arrowEl());
+      flow.appendChild(nodeEl(title, i));
+    });
+    foot.textContent = `총 ${steps.length}단계 · 지금 이름은 예시입니다 — “✏️ 편집 모드”에서 우리 팀 대분류로 바꿔보세요`;
+    setEditable();
+  }
 
-    const el = document.createElement("div");
-    el.className = "step " + side;
-    el.style.setProperty("--accent", step.color || "#4b7bec");
+  function arrowEl(){
+    const a = document.createElement("div");
+    a.className = "arrow";
+    a.innerHTML = '<svg viewBox="0 0 36 18"><path d="M1 9 H29 M23 3 L31 9 L23 15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>';
+    return a;
+  }
 
-    el.innerHTML = `
-      <div class="badge">${i + 1}</div>
-      <div class="bubble">
-        <div class="title">${step.title}</div>
+  function nodeEl(title, i){
+    const color = PALETTE[i % PALETTE.length];
+    const wrap = document.createElement("div");
+    wrap.className = "node";
+    const b = document.createElement("div");
+    b.className = "bubble";
+    b.style.setProperty("--accent", color);
+    b.innerHTML = `
+      <div class="top">
+        <div class="badge">${i+1}</div>
+        <div class="title" data-i="${i}">${escapeHtml(title)}</div>
       </div>
-    `;
-    flow.appendChild(el);
-  });
-</script>
+      <div class="ctrls">
+        <button class="mini"     data-act="left"  title="앞으로 이동">‹</button>
+        <button class="mini"     data-act="right" title="뒤로 이동">›</button>
+        <button class="mini del" data-act="del"   title="이 단계 삭제">✕</button>
+      </div>`;
+    wrap.appendChild(b);
+    return wrap;
+  }
 
+  function escapeHtml(s){
+    return String(s).replace(/[&<>"]/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
+  }
+
+  /* 제목 인라인 수정 */
+  flow.addEventListener("input", e => {
+    const t = e.target.closest(".title");
+    if(!t) return;
+    steps[+t.dataset.i] = t.textContent;
+    save();
+  });
+
+  /* 카드 컨트롤(이동/삭제) */
+  flow.addEventListener("click", e => {
+    const btn = e.target.closest(".mini");
+    if(!btn) return;
+    const i = +btn.closest(".node").querySelector(".title").dataset.i;
+    const act = btn.dataset.act;
+    if(act === "del"){ if(steps.length > 1) steps.splice(i,1); }
+    else if(act === "left"  && i > 0){ [steps[i-1],steps[i]] = [steps[i],steps[i-1]]; }
+    else if(act === "right" && i < steps.length-1){ [steps[i+1],steps[i]] = [steps[i],steps[i+1]]; }
+    save(); render();
+  });
+
+  /* 보기 ↔ 편집 모드 */
+  modeBtn.addEventListener("click", () => {
+    const on = document.body.classList.toggle("editing");
+    modeBtn.textContent = on ? "👁 보기 모드" : "✏️ 편집 모드";
+    modeBtn.classList.toggle("active", on);
+    setEditable();
+  });
+  function setEditable(){
+    const on = document.body.classList.contains("editing");
+    flow.querySelectorAll(".title").forEach(t => t.contentEditable = on ? "true" : "false");
+  }
+
+  /* 단계 추가 */
+  document.getElementById("addBtn").addEventListener("click", () => {
+    if(!document.body.classList.contains("editing")) modeBtn.click();
+    steps.push("새 단계"); save(); render();
+    document.querySelector(".flow-wrap").scrollLeft = 999999;  // 새 카드로 스크롤
+  });
+
+  /* 초기화 */
+  document.getElementById("resetBtn").addEventListener("click", () => {
+    if(confirm("기본 예시 단계로 초기화할까요? (수정한 내용이 사라집니다)")){
+      steps = DEFAULT_STEPS.slice(); save(); render();
+    }
+  });
+
+  /* JSON 내보내기 (다른 사람과 공유/백업용) */
+  document.getElementById("exportBtn").addEventListener("click", () => {
+    const blob = new Blob([JSON.stringify(steps, null, 2)], {type:"application/json"});
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(blob);
+    a.download = "workflow_steps.json";
+    a.click();
+  });
+
+  render();
+</script>
 </body>
 </html>
