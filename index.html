@@ -241,6 +241,7 @@ const firebaseConfig = {
 };
 let boards = { main: "업무 흐름" };   // {boardId: 이름}
 let curBoard = "main";
+let boardOrder = [];                    // 탭 표시 순서 (workflow/_order)
 let boardsRef = null, presenceRoot = null, presenceMeRef = null, connectedAttached = false, justOpened = false;
 
 const PALETTE  = ["#4b7bec","#26de81","#f7b731","#fa8231","#a55eea","#eb3b5a","#2bcbba","#3867d6"];
@@ -296,13 +297,18 @@ function start(){
   if (isConfigured && typeof firebase !== "undefined"){
     try { initFirebase(); updateUndoBtn(); return; } catch(e){ console.error("Firebase 실패 → 로컬", e); }
   }
-  boards = loadBoardsLocal(); if(!boards[curBoard]) curBoard = Object.keys(boards)[0];
+  boards = loadBoardsLocal(); boardOrder = loadOrderLocal(); if(!boards[curBoard]) curBoard = Object.keys(boards)[0];
   openBoard(curBoard); updateUndoBtn();
 }
 function initFirebase(){
   firebase.initializeApp(firebaseConfig);
   db = firebase.database();
-  boards = loadBoardsLocal();
+  boards = loadBoardsLocal(); boardOrder = loadOrderLocal();
+  db.ref("workflow/_order").on("value", s => {
+    const v = s.val(); boardOrder = Array.isArray(v) ? v : [];
+    try{ localStorage.setItem("fm_order_v1", JSON.stringify(boardOrder)); }catch(e){}
+    renderTabs();
+  });
   boardsRef = db.ref("workflow/_boards");
   boardsRef.on("value", snap => {
     const v = snap.val();
@@ -395,8 +401,14 @@ function deleteBoard(id){
   if(db){ db.ref("workflow/"+id).remove(); } else { try{ localStorage.removeItem(graphKey(id)); }catch(e){} }
   if(curBoard===id) openBoard(Object.keys(boards)[0]); else renderTabs();
 }
+function loadOrderLocal(){ try{ const o=JSON.parse(localStorage.getItem("fm_order_v1")); if(Array.isArray(o)) return o; }catch(e){} return []; }
+function orderedBoardIds(){                              // 지정 순서 먼저, 나머지는 뒤에
+  const inOrder = boardOrder.filter(id => boards[id]);
+  const rest = Object.keys(boards).filter(id => !inOrder.includes(id));
+  return inOrder.concat(rest);
+}
 function renderTabs(){
-  tabsEl.innerHTML = Object.keys(boards).map(id =>
+  tabsEl.innerHTML = orderedBoardIds().map(id =>
     `<button class="tab ${id===curBoard?'active':''}" data-bid="${id}">${esc(boards[id])}<span class="tx" data-del="${id}" title="창 삭제">✕</span></button>`
   ).join("") + `<button class="tab add" id="addBoardBtn" title="새 창 만들기">＋ 새 창</button>`;
 }
