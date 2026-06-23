@@ -121,6 +121,18 @@
   .wsbody .todo[data-done="1"]{ color:#9aa6b5; text-decoration:line-through; }
   .wsbody .docbox{ display:inline-block; min-width:110px; padding:12px 16px; border:2px solid #4b7bec; border-radius:12px; margin:6px; vertical-align:top; font-size:14px; }
   .wsbody .docshape{ display:inline-flex; align-items:center; justify-content:center; width:112px; height:112px; border-radius:50%; border:2px solid #26de81; padding:10px; margin:6px; vertical-align:top; font-size:14px; text-align:center; }
+  /* 자유 캔버스(PPT식) */
+  .wscanvas{ flex:1; position:relative; overflow:auto; display:none; background-color:#fafbfd;
+    background-image:radial-gradient(#d3dae5 1.4px, transparent 1.4px); background-size:24px 24px; }
+  .workspace.canvasmode .wsbody, .workspace.canvasmode .wstools{ display:none; }
+  .workspace.canvasmode .wscanvas{ display:block; }
+  #addBox{ display:none; }
+  .workspace.canvasmode #addBox{ display:inline-block; }
+  .cbox{ position:absolute; min-width:90px; border:2px solid #4b7bec; border-radius:10px; background:#fff; box-shadow:0 4px 12px rgba(31,39,51,.1); }
+  .cbox .bar{ height:20px; background:#eef3ff; border-radius:8px 8px 0 0; cursor:move; display:flex; justify-content:space-between; align-items:center; padding:0 7px; font-size:10.5px; color:#4b7bec; user-select:none; }
+  .cbox .bar .x{ cursor:pointer; }
+  .cbox .tx{ padding:8px 10px; outline:none; font-size:14px; min-height:28px; line-height:1.5; }
+  .cbox .rs{ position:absolute; right:-3px; bottom:-3px; width:14px; height:14px; cursor:nwse-resize; border-right:2px solid #4b7bec; border-bottom:2px solid #4b7bec; border-radius:0 0 6px 0; }
   #slashMenu{ position:fixed; display:none; z-index:50; background:#fff; border:1px solid var(--line); border-radius:10px;
     box-shadow:0 10px 26px rgba(31,39,51,.2); padding:6px; width:230px; max-height:300px; overflow:auto; }
   #slashMenu .si{ display:flex; gap:10px; align-items:center; padding:7px 9px; border-radius:7px; cursor:pointer; }
@@ -184,6 +196,8 @@
         <div class="wshead">
           <button class="wsbtn" id="wsback">← 나가기</button>
           <span class="wstitle" id="wstitle"></span>
+          <button class="wsbtn" id="wsmode">🎨 캔버스</button>
+          <button class="wsbtn" id="addBox">＋ 글상자</button>
           <div class="wstools">
             <button data-cmd="formatBlock" data-val="h1" title="제목1">H1</button>
             <button data-cmd="formatBlock" data-val="h2" title="제목2">H2</button>
@@ -208,7 +222,8 @@
           </div>
         </div>
         <div class="wsbody" id="wsbody" contenteditable="true" data-ph="여기에 계획·내용을 적어보세요.  ‘/’ 를 입력하면 블록 메뉴(제목·목록·체크박스·코드…)가 떠요."></div>
-        <div class="wsfoot">✏️ 자동저장·실시간공유 · <b>/</b> 입력 → 블록 메뉴 · 위 툴바로 서식 · Esc/나가기로 복귀</div>
+        <div class="wscanvas" id="wscanvas"></div>
+        <div class="wsfoot">✏️ 자동저장·실시간공유 · <b>/</b> 블록 메뉴 · <b>🎨 캔버스</b>: 글상자 자유 배치(PPT식) · Esc/나가기로 복귀</div>
       </div>
       <div id="slashMenu"></div>
     </div>
@@ -259,7 +274,8 @@ const tabsEl   = document.getElementById("tabs");
 const workspace = document.getElementById("workspace");
 const wstitle  = document.getElementById("wstitle");
 const wsbody   = document.getElementById("wsbody");
-let detailFor  = null;
+const wscanvas = document.getElementById("wscanvas");
+let detailFor  = null, canvasMode = false, cdrag = null;
 
 const editing = () => document.body.classList.contains("editing");
 const genId   = () => "n" + Date.now().toString(36) + Math.random().toString(36).slice(2,6);
@@ -333,7 +349,11 @@ function applyRemote(remote){
   else { nodes = remote; links = []; }
   render();
   if(justOpened){ justOpened=false; fitView(); }
-  if (detailFor){ if(!nodes[detailFor]) closeDetail(); else if(document.activeElement !== wsbody){ wstitle.textContent = nodes[detailFor].label||""; wsbody.innerHTML = nodes[detailFor].detail||""; } }
+  if (detailFor){
+    if(!nodes[detailFor]) closeDetail();
+    else if(document.activeElement !== wsbody){ wstitle.textContent = nodes[detailFor].label||""; wsbody.innerHTML = nodes[detailFor].detail||""; }
+    if(canvasMode && !cdrag && !wscanvas.contains(document.activeElement)) renderCanvas();
+  }
 }
 function flushPending(){ if (pendingRemote){ const r=pendingRemote; pendingRemote=null; applyRemote(r); } }
 
@@ -634,6 +654,7 @@ function saveWs(){ if(detailFor && nodes[detailFor]){ nodes[detailFor].detail = 
 function openDetail(id){
   const n = nodes[id]; if(!n) return;
   detailFor = id; wstitle.textContent = n.label || "(이름 없음)"; wsbody.innerHTML = n.detail || "";
+  canvasMode = false; workspace.classList.remove("canvasmode"); document.getElementById("wsmode").textContent = "🎨 캔버스";
   workspace.classList.add("open"); wsbody.focus();
 }
 function closeDetail(){ closeSlash(); workspace.classList.remove("open"); detailFor = null; busy = false; flushPending(); render(); }
@@ -742,6 +763,45 @@ wsbody.addEventListener("keydown", e=>{
   else if(e.key==="Enter") chooseSlash(slashIdx);
   else if(e.key==="Escape") closeSlash();
 });
+
+/* ===== 워크스페이스 캔버스(자유 배치 — PPT식 글상자) ===== */
+function curCanvas(){ const n=nodes[detailFor]; if(!n) return []; if(!Array.isArray(n.canvas)) n.canvas=[]; return n.canvas; }
+function saveCanvas(){ if(detailFor && nodes[detailFor]) persistDebounced(); }
+function renderCanvas(){
+  wscanvas.innerHTML = curCanvas().map(b=>`<div class="cbox" data-id="${b.id}" style="left:${b.x}px;top:${b.y}px;width:${b.w||180}px">
+      <div class="bar"><span class="mv">⤧ 이동</span><span class="x" data-x="${b.id}">✕</span></div>
+      <div class="tx" contenteditable="true" data-t="${b.id}">${b.text||""}</div>
+      <div class="rs" data-r="${b.id}"></div>
+    </div>`).join("");
+}
+function addBox(x,y){
+  const arr=curCanvas(); const id="c"+Date.now().toString(36)+Math.random().toString(36).slice(2,5);
+  arr.push({ id, x:Math.max(0,Math.round(x)), y:Math.max(0,Math.round(y)), w:180, text:"" });
+  saveCanvas(); renderCanvas();
+  const el=wscanvas.querySelector('[data-t="'+id+'"]'); if(el) el.focus();
+}
+document.getElementById("wsmode").addEventListener("click", ()=>{
+  canvasMode=!canvasMode; workspace.classList.toggle("canvasmode",canvasMode);
+  document.getElementById("wsmode").textContent = canvasMode ? "📄 문서" : "🎨 캔버스";
+  if(canvasMode) renderCanvas(); else if(nodes[detailFor]) wsbody.innerHTML = nodes[detailFor].detail||"";
+});
+document.getElementById("addBox").addEventListener("click", ()=>{ addBox(wscanvas.scrollLeft+50, wscanvas.scrollTop+50); });
+wscanvas.addEventListener("dblclick", e=>{ if(e.target!==wscanvas) return; const r=wscanvas.getBoundingClientRect(); addBox(e.clientX-r.left+wscanvas.scrollLeft-10, e.clientY-r.top+wscanvas.scrollTop-10); });
+wscanvas.addEventListener("input", e=>{ const t=e.target.closest(".tx"); if(!t) return; const b=curCanvas().find(x=>x.id===t.dataset.t); if(b){ b.text=t.innerHTML; saveCanvas(); } });
+wscanvas.addEventListener("click", e=>{ const x=e.target.closest(".x"); if(!x) return; const arr=curCanvas(); const i=arr.findIndex(b=>b.id===x.dataset.x); if(i>=0){ arr.splice(i,1); saveCanvas(); renderCanvas(); } });
+wscanvas.addEventListener("pointerdown", e=>{
+  const rs=e.target.closest(".rs"), bar=e.target.closest(".bar");
+  if(rs){ const b=curCanvas().find(x=>x.id===rs.dataset.r); if(!b) return; cdrag={mode:"rs",id:b.id,sx:e.clientX,sy:e.clientY,ow:b.w||180}; wscanvas.setPointerCapture(e.pointerId); e.preventDefault(); return; }
+  if(bar && !e.target.closest(".x")){ const box=bar.closest(".cbox"); const b=curCanvas().find(x=>x.id===box.dataset.id); if(!b) return; cdrag={mode:"mv",id:b.id,sx:e.clientX,sy:e.clientY,ox:b.x,oy:b.y}; wscanvas.setPointerCapture(e.pointerId); e.preventDefault(); return; }
+});
+wscanvas.addEventListener("pointermove", e=>{
+  if(!cdrag) return;
+  const b=curCanvas().find(x=>x.id===cdrag.id); if(!b) return;
+  const el=wscanvas.querySelector('.cbox[data-id="'+cdrag.id+'"]'); if(!el) return;
+  if(cdrag.mode==="mv"){ b.x=Math.max(0,cdrag.ox+(e.clientX-cdrag.sx)); b.y=Math.max(0,cdrag.oy+(e.clientY-cdrag.sy)); el.style.left=b.x+"px"; el.style.top=b.y+"px"; }
+  else { b.w=Math.max(90,cdrag.ow+(e.clientX-cdrag.sx)); el.style.width=b.w+"px"; }
+});
+wscanvas.addEventListener("pointerup", ()=>{ if(cdrag){ cdrag=null; saveCanvas(); } });
 
 /* ===== 포인터 ===== */
 let drag = null, pan = null, linking = null;
