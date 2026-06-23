@@ -31,6 +31,16 @@
   .linkhint{ display:none; text-align:center; font-size:12.5px; color:#1b3bb3; background:#eaf0ff; border:1px solid #c5d4ff; border-radius:8px; margin:0 16px 8px; padding:7px 10px; }
   body.linking .linkhint{ display:block; }
 
+  /* 창(보드) 탭 */
+  .tabs{ display:flex; gap:6px; justify-content:center; flex-wrap:wrap; padding:8px 16px 0; }
+  .tab{ border:1px solid var(--line); background:#fff; color:var(--ink-soft); padding:6px 11px; border-radius:10px; font-size:13px; cursor:pointer; font-family:inherit; display:inline-flex; align-items:center; gap:7px; }
+  .tab:hover{ background:#f3f6fb; }
+  .tab.active{ background:#4b7bec; border-color:#4b7bec; color:#fff; font-weight:700; }
+  .tab.add{ color:#4b7bec; border-style:dashed; }
+  .tab .tx{ opacity:.45; font-size:11px; }
+  .tab .tx:hover{ opacity:1; color:#e03131; }
+  .tab.active .tx{ color:#fff; opacity:.8; }
+
   .canvas-wrap{ flex:1; position:relative; overflow:hidden; }
   svg#canvas{ width:100%; height:100%; display:block; touch-action:none; user-select:none; cursor:grab; }
   svg#canvas.panning{ cursor:grabbing; }
@@ -98,6 +108,8 @@
       <div><span class="conn local" id="conn">⚪ 로컬 모드</span></div>
     </header>
 
+    <div class="tabs" id="tabs"></div>
+
     <div class="toolbar">
       <button class="btn" id="addRootBtn">＋ 시작 원</button>
       <button class="btn" id="linkBtn">🔗 연결 모드</button>
@@ -158,7 +170,9 @@ const firebaseConfig = {
   databaseURL: "https://bring-fm-default-rtdb.asia-southeast1.firebasedatabase.app",
   projectId:   "bring-fm"
 };
-const ROOM = "main";
+let boards = { main: "업무 흐름" };   // {boardId: 이름}
+let curBoard = "main";
+let boardsRef = null, presenceRoot = null, presenceMeRef = null, connectedAttached = false, justOpened = false;
 
 const PALETTE  = ["#4b7bec","#26de81","#f7b731","#fa8231","#a55eea","#eb3b5a","#2bcbba","#3867d6"];
 const COLORSET = ["#4b7bec","#3867d6","#26de81","#20bf6b","#f7b731","#fa8231","#eb3b5a","#a55eea","#2bcbba","#778ca3","#1f2733"];
@@ -187,6 +201,7 @@ const nodePop  = document.getElementById("nodePop");
 const modeBtn  = document.getElementById("modeBtn");
 const linkBtn  = document.getElementById("linkBtn");
 const undoBtn  = document.getElementById("undoBtn");
+const tabsEl   = document.getElementById("tabs");
 const detail   = document.getElementById("detail");
 const dtitle   = document.getElementById("dtitle");
 const dbody    = document.getElementById("dbody");
@@ -211,43 +226,113 @@ function start(){
   if (isConfigured && typeof firebase !== "undefined"){
     try { initFirebase(); updateUndoBtn(); return; } catch(e){ console.error("Firebase 실패 → 로컬", e); }
   }
-  const d = loadLocal(); nodes = d.nodes; links = d.links; updateConn(); render(); fitView(); updateUndoBtn();
+  boards = loadBoardsLocal(); if(!boards[curBoard]) curBoard = Object.keys(boards)[0];
+  openBoard(curBoard); updateUndoBtn();
 }
 function initFirebase(){
   firebase.initializeApp(firebaseConfig);
   db = firebase.database();
-  graphRef = db.ref("workflow/"+ROOM+"/graph");
-  const d = loadLocal(); nodes = d.nodes; links = d.links; render(); fitView();
-  graphRef.on("value", snap => {
-    const val = snap.val();
-    if (val == null){ graphRef.set(graphState()); return; }
-    applyRemote(val);
+  boards = loadBoardsLocal();
+  boardsRef = db.ref("workflow/_boards");
+  boardsRef.on("value", snap => {
+    const v = snap.val();
+    if (v == null || !Object.keys(v).length){ boardsRef.set(boards); return; }   // 최초 시드
+    boards = v; if(!boards[curBoard]) curBoard = Object.keys(boards)[0];
+    saveBoardsLocal(); renderTabs();
   });
-  setupPresence(); updateConn();
+  openBoard(curBoard);
+  updateConn();
 }
 
-/* ===== 저장 ===== */
+/* ===== 저장 (보드별) ===== */
 function graphState(){ return { nodes, links }; }
 function normLinks(l){ return Array.isArray(l) ? l : (l ? Object.values(l) : []); }
-function loadLocal(){
-  try{
-    const g = JSON.parse(localStorage.getItem(LS_KEY));
-    if (g && g.nodes) return { nodes:g.nodes, links: normLinks(g.links) };
-    if (g && Object.keys(g).length) return { nodes:g, links:[] };
-  }catch(e){}
-  return { nodes: makeSeed(), links: [] };
+const BOARDS_KEY = "fm_boards_v1";
+function loadBoardsLocal(){
+  try{ const b=JSON.parse(localStorage.getItem(BOARDS_KEY)); if(b && Object.keys(b).length) return b; }catch(e){}
+  return { main: "업무 흐름" };
 }
-function saveLocal(){ try{ localStorage.setItem(LS_KEY, JSON.stringify(graphState())); }catch(e){} }
-function persist(){ if(graphRef){ graphRef.set(graphState()); } else { saveLocal(); } }
+function saveBoardsLocal(){ try{ localStorage.setItem(BOARDS_KEY, JSON.stringify(boards)); }catch(e){} }
+function saveBoards(){ if(boardsRef){ boardsRef.set(boards); } else { saveBoardsLocal(); } }
+function graphKey(id){ return "fm_graph_" + id; }
+function loadGraphLocal(id){
+  try{ const g=JSON.parse(localStorage.getItem(graphKey(id)));
+       if(g && g.nodes) return { nodes:g.nodes, links:normLinks(g.links) };
+       if(g && Object.keys(g).length) return { nodes:g, links:[] };
+  }catch(e){}
+  if(id==="main"){                                   // 옛 단일 그래프 → main 보드로 이전
+    try{ const o=JSON.parse(localStorage.getItem(LS_KEY));
+         if(o && o.nodes) return { nodes:o.nodes, links:normLinks(o.links) };
+         if(o && Object.keys(o).length) return { nodes:o, links:[] };
+    }catch(e){}
+    return { nodes: makeSeed(), links: [] };
+  }
+  return { nodes:{}, links:[] };                     // 새 보드는 빈 캔버스
+}
+function saveGraphLocal(){ try{ localStorage.setItem(graphKey(curBoard), JSON.stringify(graphState())); }catch(e){} }
+function persist(){ saveGraphLocal(); if(graphRef){ graphRef.set(graphState()); } }
 
 function applyRemote(remote){
   if (busy){ pendingRemote = remote; return; }
   if (remote && remote.nodes){ nodes = remote.nodes; links = normLinks(remote.links); }
   else { nodes = remote; links = []; }
   render();
+  if(justOpened){ justOpened=false; fitView(); }
   if (detailFor){ if(!nodes[detailFor]) closeDetail(); else if(document.activeElement !== dbody){ dtitle.textContent = nodes[detailFor].label||""; dbody.value = nodes[detailFor].detail||""; } }
 }
 function flushPending(){ if (pendingRemote){ const r=pendingRemote; pendingRemote=null; applyRemote(r); } }
+
+/* ===== 창(보드) 전환·관리 ===== */
+function openBoard(id){
+  if(!boards[id]) id = Object.keys(boards)[0] || "main";
+  if(graphRef){ graphRef.off(); graphRef = null; }
+  curBoard = id; history.length=0; redoStack.length=0; updateUndoBtn(); closeDetail();
+  linkSource=null; pendingRemote=null; busy=false;
+  const cache = loadGraphLocal(id); nodes = cache.nodes; links = cache.links;
+  render(); fitView(); renderTabs();
+  if(db){
+    justOpened = true;
+    graphRef = db.ref("workflow/"+id+"/graph");
+    graphRef.on("value", snap => {
+      const val = snap.val();
+      if (val == null){ graphRef.set(graphState()); return; }   // 최초 시드(캐시 내용)
+      applyRemote(val);
+    });
+    setupPresence(id);
+  }
+  updateConn();
+}
+function addBoard(name){
+  name = (name || "").trim(); if(!name) return null;
+  const id = "b" + Date.now().toString(36) + Math.random().toString(36).slice(2,5);
+  boards[id] = name; saveBoards();
+  openBoard(id);
+  const rid = genId();                                 // 새 보드에 시작 원 하나
+  nodes = { [rid]: { id:rid, label:name, x:640, y:170, parent:null } }; links = [];
+  persist(); render(); fitView();
+  return id;
+}
+function renameBoard(id, name){ name=(name||"").trim(); if(!name||!boards[id]) return; boards[id]=name; saveBoards(); renderTabs(); }
+function deleteBoard(id){
+  if(Object.keys(boards).length<=1){ alert("마지막 창은 지울 수 없어요."); return; }
+  if(!confirm(`'${boards[id]}' 창을 삭제할까요? (그 안의 흐름도 사라져요)`)) return;
+  delete boards[id]; saveBoards();
+  if(db){ db.ref("workflow/"+id).remove(); } else { try{ localStorage.removeItem(graphKey(id)); }catch(e){} }
+  if(curBoard===id) openBoard(Object.keys(boards)[0]); else renderTabs();
+}
+function renderTabs(){
+  tabsEl.innerHTML = Object.keys(boards).map(id =>
+    `<button class="tab ${id===curBoard?'active':''}" data-bid="${id}">${esc(boards[id])}<span class="tx" data-del="${id}" title="창 삭제">✕</span></button>`
+  ).join("") + `<button class="tab add" id="addBoardBtn" title="새 창 만들기">＋ 새 창</button>`;
+}
+tabsEl.addEventListener("click", e => {
+  if(e.target.closest("#addBoardBtn")){ const n=prompt("새 창 이름 (예: 결제방식)"); if(n) addBoard(n); return; }
+  const del=e.target.closest(".tx"); if(del){ e.stopPropagation(); deleteBoard(del.dataset.del); return; }
+  const tab=e.target.closest(".tab"); if(tab && tab.dataset.bid && tab.dataset.bid!==curBoard){ openBoard(tab.dataset.bid); }
+});
+tabsEl.addEventListener("dblclick", e => {
+  const tab=e.target.closest(".tab"); if(tab && tab.dataset.bid){ const nn=prompt("창 이름 변경", boards[tab.dataset.bid]); if(nn) renameBoard(tab.dataset.bid, nn); }
+});
 
 /* ===== 되돌리기(undo/redo) ===== */
 function snapshot(){ history.push(JSON.stringify(graphState())); if(history.length>80) history.shift(); redoStack.length=0; updateUndoBtn(); }
@@ -255,16 +340,22 @@ function undo(){ if(!history.length) return; redoStack.push(JSON.stringify(graph
 function redoOp(){ if(!redoStack.length) return; history.push(JSON.stringify(graphState())); const s=JSON.parse(redoStack.pop()); nodes=s.nodes; links=normLinks(s.links); persist(); render(); updateUndoBtn(); }
 function updateUndoBtn(){ undoBtn.style.opacity = history.length ? "1" : ".45"; }
 
-/* ===== 접속 상태 ===== */
-function setupPresence(){
-  const root = db.ref("workflow/"+ROOM+"/presence");
-  const me = root.push();
-  db.ref(".info/connected").on("value", s => { online=(s.val()===true); if(online){ me.onDisconnect().remove(); me.set(true);} updateConn(); });
-  root.on("value", s => { presenceCount = s.exists()? Object.keys(s.val()).length : 0; updateConn(); });
+/* ===== 접속 상태 (보드별) ===== */
+function setupPresence(id){
+  if(presenceRoot){ presenceRoot.off(); }
+  if(presenceMeRef){ presenceMeRef.remove(); presenceMeRef=null; }
+  presenceRoot = db.ref("workflow/"+id+"/presence");
+  presenceMeRef = presenceRoot.push();
+  if(online){ presenceMeRef.onDisconnect().remove(); presenceMeRef.set(true); }
+  presenceRoot.on("value", s => { presenceCount = s.exists()? Object.keys(s.val()).length : 0; updateConn(); });
+  if(!connectedAttached){
+    connectedAttached = true;
+    db.ref(".info/connected").on("value", s => { online=(s.val()===true); if(online && presenceMeRef){ presenceMeRef.onDisconnect().remove(); presenceMeRef.set(true);} updateConn(); });
+  }
 }
 function updateConn(){
-  if (!graphRef){ conn.className="conn local"; conn.innerHTML="⚪ 로컬 모드 · <b>내 브라우저에만</b> 저장 (팀과 공유 안 됨)"; return; }
-  if (online){ conn.className="conn on"; conn.innerHTML="🟢 실시간 연결됨 · 👥 <b>"+presenceCount+"</b>명 접속 중"; }
+  if (!db){ conn.className="conn local"; conn.innerHTML="⚪ 로컬 모드 · <b>내 브라우저에만</b> 저장 (팀과 공유 안 됨)"; return; }
+  if (online){ conn.className="conn on"; conn.innerHTML="🟢 실시간 연결됨 · 👥 <b>"+presenceCount+"</b>명"; }
   else { conn.className="conn off"; conn.innerHTML="🟠 연결 끊김 — 재연결 중…"; }
 }
 
@@ -599,7 +690,7 @@ window.addEventListener("resize", setViewport);
 
 /* 테스트/디버그 훅 */
 window.__wf = { addChild, addRoot, addLink, deleteNode, setNodeColor, resizeNode, setNodeBadge, autoLayout, snapPos, undo, redo:redoOp,
-  openDetail, getDetailFor:()=>detailFor,
+  openDetail, getDetailFor:()=>detailFor, addBoard, openBoard, deleteBoard, getBoards:()=>JSON.parse(JSON.stringify(boards)), getCurBoard:()=>curBoard,
   getNodes:()=>JSON.parse(JSON.stringify(nodes)), getLinks:()=>JSON.parse(JSON.stringify(links)), applyRemote, isConfigured };
 
 start();
