@@ -66,9 +66,29 @@
   #nodePop .sw{ width:22px; height:22px; border-radius:6px; margin:3px; cursor:pointer; box-shadow:0 0 0 1px #d3dae5; }
   #nodePop .sw.reset{ width:auto; padding:0 8px; height:22px; line-height:22px; font-size:11px; color:#6b7686; background:#fff; box-shadow:0 0 0 1px #c7d0dd; }
   #nodePop .size{ margin-top:5px; }
+  #nodePop .badge{ margin-top:6px; flex-wrap:wrap; max-width:214px; }
+  #nodePop .bdg{ border:1px solid var(--line); background:#fff; border-radius:7px; padding:3px 8px; font-size:12px; cursor:pointer; margin:2px; }
+  #nodePop .bdg:hover{ background:#f3f6fb; }
   #nodePop .lbl2{ font-size:12px; color:#6b7686; margin:0 6px 0 3px; }
   #nodePop .szbtn{ border:1px solid var(--line); background:#fff; border-radius:7px; width:32px; height:26px; font-size:15px; cursor:pointer; margin-right:5px; }
   #nodePop .szbtn:hover{ background:#f3f6fb; }
+
+  /* 색상 범례 */
+  .legend{ position:absolute; left:14px; bottom:14px; background:rgba(255,255,255,.93); border:1px solid var(--line);
+    border-radius:10px; padding:8px 12px; font-size:12.5px; display:flex; gap:14px; box-shadow:0 4px 12px rgba(31,39,51,.1); }
+  .legend div{ display:flex; align-items:center; gap:6px; }
+  .legend .ld{ width:13px; height:13px; border-radius:50%; display:inline-block; }
+  /* 노트 핸들 */
+  .note{ cursor:pointer; }
+  /* 상세 내용 패널 */
+  .detail{ position:fixed; top:0; right:0; width:340px; max-width:88vw; height:100vh; background:#fff; border-left:1px solid var(--line);
+    box-shadow:-8px 0 26px rgba(31,39,51,.14); transform:translateX(100%); transition:transform .2s ease; z-index:30; display:flex; flex-direction:column; }
+  .detail.open{ transform:translateX(0); }
+  .dhead{ display:flex; align-items:center; gap:8px; padding:15px 16px; border-bottom:1px solid var(--line); }
+  .dhead #dtitle{ font-weight:700; font-size:16px; flex:1; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .dhead #dclose{ border:none; background:#f3f6fb; border-radius:8px; width:30px; height:30px; cursor:pointer; font-size:14px; }
+  .detail textarea{ flex:1; border:none; outline:none; resize:none; padding:16px; font-family:inherit; font-size:14px; line-height:1.7; }
+  .dfoot{ padding:10px 16px; font-size:11.5px; color:var(--ink-soft); border-top:1px solid var(--line); }
 </style>
 </head>
 <body class="editing">
@@ -115,6 +135,16 @@
       </svg>
       <input id="renamer" maxlength="40" />
       <div id="nodePop"></div>
+      <div class="legend">
+        <div><span class="ld" style="background:#4b7bec"></span>대분류</div>
+        <div><span class="ld" style="background:#26de81"></span>중분류</div>
+        <div><span class="ld" style="background:#f7b731"></span>소분류</div>
+      </div>
+      <div class="detail" id="detail">
+        <div class="dhead"><span id="dtitle">상세</span><button id="dclose" title="닫기">✕</button></div>
+        <textarea id="dbody" placeholder="이 단계를 어떻게 진행하는지 상세히 적어보세요…&#10;예) 절차 1. … 2. …  ·  담당자  ·  체크리스트  ·  참고 링크"></textarea>
+        <div class="dfoot">✏️ 변경은 자동 저장 · 팀원에게 실시간 공유돼요</div>
+      </div>
     </div>
   </div>
 
@@ -157,6 +187,10 @@ const nodePop  = document.getElementById("nodePop");
 const modeBtn  = document.getElementById("modeBtn");
 const linkBtn  = document.getElementById("linkBtn");
 const undoBtn  = document.getElementById("undoBtn");
+const detail   = document.getElementById("detail");
+const dtitle   = document.getElementById("dtitle");
+const dbody    = document.getElementById("dbody");
+let detailFor  = null;
 
 const editing = () => document.body.classList.contains("editing");
 const genId   = () => "n" + Date.now().toString(36) + Math.random().toString(36).slice(2,6);
@@ -211,6 +245,7 @@ function applyRemote(remote){
   if (remote && remote.nodes){ nodes = remote.nodes; links = normLinks(remote.links); }
   else { nodes = remote; links = []; }
   render();
+  if (detailFor){ if(!nodes[detailFor]) closeDetail(); else if(document.activeElement !== dbody){ dtitle.textContent = nodes[detailFor].label||""; dbody.value = nodes[detailFor].detail||""; } }
 }
 function flushPending(){ if (pendingRemote){ const r=pendingRemote; pendingRemote=null; applyRemote(r); } }
 
@@ -292,8 +327,11 @@ function render(){
       ? `<tspan x="0" dy="${fs*0.36}">${esc(lines[0])}</tspan>`
       : `<tspan x="0" dy="${-fs*0.25}">${esc(lines[0])}</tspan><tspan x="0" dy="${fs*1.25}">${esc(lines[1])}</tspan>`;
     const sel = (n.id === linkSource) ? `<circle r="${r+8}" fill="none" stroke="#3b5bdb" stroke-width="3" stroke-dasharray="6 4"></circle>` : "";
+    let bdg = "";
+    if (n.badge){ const bw = 20 + [...String(n.badge)].length*13; bdg = `<g transform="translate(0,${-(r+18)})" style="pointer-events:none"><rect x="${-bw/2}" y="-13" width="${bw}" height="24" rx="12" fill="#111827"></rect><text text-anchor="middle" dy="4" font-size="12" fill="#fff">${esc(n.badge)}</text></g>`; }
     h += `<g class="node" data-id="${n.id}" transform="translate(${n.x},${n.y})">
             ${sel}
+            ${bdg}
             <circle class="body" r="${r}" fill="${color}"></circle>
             <text class="lbl" text-anchor="middle" font-size="${fs}">${tspans}</text>
             <circle class="port" cx="0" cy="${r}" r="9" stroke="#fff" stroke-width="2"><title>끌어서 다른 원과 연결</title></circle>
@@ -301,6 +339,10 @@ function render(){
             <g class="del" transform="translate(${off},${-off})">
               <circle r="11" fill="#fff" stroke="#e03131" stroke-width="1.5"></circle>
               <text text-anchor="middle" dy="4.5" font-size="14" fill="#e03131" font-weight="700">×</text>
+            </g>
+            <g class="note" transform="translate(${off},${off})">
+              <circle r="11" fill="${(n.detail&&n.detail.trim())?'#4b7bec':'#fff'}" stroke="#4b7bec" stroke-width="1.5"></circle>
+              <text text-anchor="middle" dy="4" font-size="12" fill="${(n.detail&&n.detail.trim())?'#fff':'#4b7bec'}">≡</text>
             </g>
           </g>`;
   });
@@ -347,6 +389,7 @@ function collectSubtree(id){ const out=[id]; let i=0; while(i<out.length){ child
 
 function setNodeColor(id, color){ if(!nodes[id]) return; snapshot(); if(color) nodes[id].color=color; else delete nodes[id].color; persist(); render(); }
 function resizeNode(id, dir){ if(!nodes[id]) return; snapshot(); nodes[id].r = clamp(radius(nodes[id]) + dir*8, 30, 88); persist(); render(); }
+function setNodeBadge(id, b){ if(!nodes[id]) return; snapshot(); if(b) nodes[id].badge=b; else delete nodes[id].badge; persist(); render(); }
 
 /* ===== 자동 정렬(트리) ===== */
 function autoLayout(){
@@ -406,29 +449,45 @@ function linkClick(id){
 /* ===== 색·크기 팝업 ===== */
 function openNodePop(id, e){
   popFor = id;
+  const BDGS = ["🤖 자동화","✅ 완료","⏳ 진행중","🔥 중요"];
   nodePop.innerHTML =
     `<div class="poprow">${COLORSET.map(c=>`<span class="sw" data-c="${c}" style="background:${c}"></span>`).join("")}<span class="sw reset" data-c="">기본색</span></div>`+
-    `<div class="poprow size"><span class="lbl2">크기</span><button class="szbtn" data-s="-1">－</button><button class="szbtn" data-s="1">＋</button></div>`;
+    `<div class="poprow size"><span class="lbl2">크기</span><button class="szbtn" data-s="-1">－</button><button class="szbtn" data-s="1">＋</button></div>`+
+    `<div class="poprow badge"><span class="lbl2">표시</span>${BDGS.map(t=>`<button class="bdg" data-b="${t}">${t}</button>`).join("")}<button class="bdg" data-b="">지우기</button></div>`;
   nodePop.style.left = e.clientX + "px"; nodePop.style.top = (e.clientY + 10) + "px"; nodePop.style.display = "block";
 }
 function hidePop(){ nodePop.style.display = "none"; popFor = null; }
 nodePop.addEventListener("click", e => {
   if (popFor == null) return;
-  const sw = e.target.closest(".sw"), sz = e.target.closest(".szbtn");
+  const sw = e.target.closest(".sw"), sz = e.target.closest(".szbtn"), bd = e.target.closest(".bdg");
   if (sw) setNodeColor(popFor, sw.dataset.c || null);
   else if (sz) resizeNode(popFor, +sz.dataset.s);
+  else if (bd) setNodeBadge(popFor, bd.dataset.b || null);
 });
 window.addEventListener("pointerdown", e => {
   if (!e.target.closest("#nodePop") && !e.target.closest(".swatch")) hidePop();
 }, true);
 
+/* ===== 상세 내용 패널 (원마다 디테일 기록) ===== */
+function openDetail(id){
+  const n = nodes[id]; if(!n) return;
+  detailFor = id; dtitle.textContent = n.label || "(이름 없음)"; dbody.value = n.detail || "";
+  detail.classList.add("open");
+}
+function closeDetail(){ detail.classList.remove("open"); detailFor = null; busy = false; flushPending(); }
+document.getElementById("dclose").addEventListener("click", closeDetail);
+dbody.addEventListener("focus", ()=>{ busy = true; });
+dbody.addEventListener("blur",  ()=>{ busy = false; flushPending(); });
+dbody.addEventListener("input", ()=>{ if(detailFor && nodes[detailFor]){ nodes[detailFor].detail = dbody.value; persistDebounced(); } });
+
 /* ===== 포인터 ===== */
 let drag = null, pan = null, linking = null;
 svg.addEventListener("pointerdown", e => {
   if (renameId != null) return;
-  const delEl=e.target.closest(".del"), swatchEl=e.target.closest(".swatch"),
+  const delEl=e.target.closest(".del"), swatchEl=e.target.closest(".swatch"), noteEl=e.target.closest(".note"),
         portEl=e.target.closest(".port"), linkHit=e.target.closest(".link-hit"), nodeEl=e.target.closest(".node");
 
+  if (noteEl && nodeEl){ openDetail(nodeEl.dataset.id); return; }   // 상세 내용 열기(보기/편집 모두)
   if (editing() && delEl && nodeEl){ e.stopPropagation(); deleteNode(nodeEl.dataset.id); return; }
   if (editing() && swatchEl && nodeEl){ openNodePop(nodeEl.dataset.id, e); return; }
   if (editing() && linkHit){ const li=+linkHit.dataset.li; if(confirm("이 연결선을 지울까요?")){ snapshot(); links.splice(li,1); persist(); render(); } return; }
@@ -442,7 +501,7 @@ svg.addEventListener("pointerdown", e => {
     drag = { id:n.id, sx:e.clientX, sy:e.clientY, ox:n.x, oy:n.y, moved:false, snap:JSON.stringify(graphState()) };
     busy = true; svg.classList.add("dragging"); svg.setPointerCapture(e.pointerId);
   } else {
-    pan = { sx:e.clientX, sy:e.clientY, px:panX, py:panY };
+    pan = { sx:e.clientX, sy:e.clientY, px:panX, py:panY, node: nodeEl ? nodeEl.dataset.id : null, moved:false };
     svg.classList.add("panning"); svg.setPointerCapture(e.pointerId);
   }
 });
@@ -460,6 +519,7 @@ svg.addEventListener("pointermove", e => {
     if (e.shiftKey){ const s = snapPos(drag.id, nx, ny); nx = s[0]; ny = s[1]; } else clearGuides();
     n.x = nx; n.y = ny; render();
   } else if (pan){
+    if (Math.hypot(e.clientX-pan.sx, e.clientY-pan.sy) > 4) pan.moved = true;
     panX = pan.px + (e.clientX-pan.sx); panY = pan.py + (e.clientY-pan.sy); setViewport();
   }
 });
@@ -476,7 +536,7 @@ svg.addEventListener("pointerup", e => {
     else { nodeClicked(drag.id); }
     busy = false; drag = null; svg.classList.remove("dragging"); flushPending();
   }
-  if (pan){ pan = null; svg.classList.remove("panning"); }
+  if (pan){ if (pan.node && !pan.moved && !editing()) openDetail(pan.node); pan = null; svg.classList.remove("panning"); }
 });
 svg.addEventListener("wheel", e => {
   e.preventDefault();
@@ -538,7 +598,8 @@ document.getElementById("exportBtn").addEventListener("click", ()=>{
 window.addEventListener("resize", setViewport);
 
 /* 테스트/디버그 훅 */
-window.__wf = { addChild, addRoot, addLink, deleteNode, setNodeColor, resizeNode, autoLayout, snapPos, undo, redo:redoOp,
+window.__wf = { addChild, addRoot, addLink, deleteNode, setNodeColor, resizeNode, setNodeBadge, autoLayout, snapPos, undo, redo:redoOp,
+  openDetail, getDetailFor:()=>detailFor,
   getNodes:()=>JSON.parse(JSON.stringify(nodes)), getLinks:()=>JSON.parse(JSON.stringify(links)), applyRemote, isConfigured };
 
 start();
