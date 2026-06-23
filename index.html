@@ -139,13 +139,29 @@
   #slashMenu .si.active{ background:#eef3ff; }
   #slashMenu .si .ico{ width:24px; text-align:center; font-weight:700; color:#4b7bec; }
   #slashMenu .si .ds{ color:#9aa6b5; font-size:11px; }
+  /* 업데이트 알림(What's New) */
+  .verbadge{ cursor:pointer; font-size:12px; font-weight:700; color:#4b7bec; background:#eef3ff; border:1px solid #c5d4ff; border-radius:999px; padding:4px 10px; margin-right:8px; }
+  .verbadge:hover{ background:#e0e9ff; }
+  .wn-overlay{ position:fixed; inset:0; background:rgba(17,24,39,.45); display:none; align-items:center; justify-content:center; z-index:1000; }
+  .wn-overlay.open{ display:flex; }
+  .wn-modal{ width:min(460px,92vw); max-height:80vh; overflow:auto; background:#fff; border-radius:16px; box-shadow:0 20px 60px rgba(17,24,39,.3); padding:22px; }
+  .wn-modal h2{ margin:0 0 10px; font-size:19px; }
+  .wn-entry{ margin:0 0 14px; }
+  .wn-entry .vh{ font-size:13px; font-weight:700; color:#1f2733; margin:0 0 5px; }
+  .wn-entry .vh .d{ color:#9aa6b5; font-weight:500; font-size:11.5px; margin-left:6px; }
+  .wn-entry.new .vh:after{ content:"NEW"; background:#26de81; color:#fff; font-size:10px; border-radius:6px; padding:1px 6px; margin-left:7px; }
+  .wn-entry:not(.new){ opacity:.62; }
+  .wn-entry ul{ margin:0; padding-left:18px; }
+  .wn-entry li{ font-size:13.5px; line-height:1.6; color:#3a4452; }
+  .wn-foot{ display:flex; justify-content:flex-end; margin-top:6px; position:sticky; bottom:-22px; background:#fff; padding:10px 0 0; }
+  .wn-btn{ border:0; background:#4b7bec; color:#fff; padding:9px 18px; border-radius:10px; font-size:14px; font-weight:700; cursor:pointer; font-family:inherit; }
 </style>
 </head>
 <body class="editing">
   <div class="stage">
     <header>
       <h1>🔵 업무 흐름 빌더</h1>
-      <div><span class="conn local" id="conn">⚪ 로컬 모드</span></div>
+      <div><span class="verbadge" id="verBadge" title="업데이트 내역 보기">Ver</span><span class="conn local" id="conn">⚪ 로컬 모드</span></div>
     </header>
 
     <div class="tabs" id="tabs"></div>
@@ -226,6 +242,15 @@
         <div class="wsfoot">✏️ 자동저장·실시간공유 · <b>/</b> 블록 메뉴 · <b>🎨 캔버스</b>: 글상자 자유 배치(PPT식) · Esc/나가기로 복귀</div>
       </div>
       <div id="slashMenu"></div>
+    </div>
+  </div>
+
+  <!-- 업데이트 알림(What's New) -->
+  <div class="wn-overlay" id="wnOverlay">
+    <div class="wn-modal">
+      <h2 id="wnTitle">📣 업데이트 내역</h2>
+      <div id="wnBody"></div>
+      <div class="wn-foot"><button class="wn-btn" id="wnClose">확인했어요</button></div>
     </div>
   </div>
 
@@ -933,12 +958,51 @@ document.getElementById("exportBtn").addEventListener("click", ()=>{
 });
 window.addEventListener("resize", setViewport);
 
+/* ===== 업데이트 알림(What's New) — 새 버전 나오면 자동 팝업 ===== */
+const APP_VERSION = "1.6";
+const CHANGELOG = [
+  { v:"1.6", d:"2026-06-23", items:["📣 업데이트 알림 팝업(이 창) 추가 — 새 버전이 나오면 자동으로 떠요","‘시장 분석’ 보드 추가"] },
+  { v:"1.5", d:"2026-06-23", items:["보드 탭을 업무 흐름 순서로 정렬","업무 보드 7종 + ‘결제방식’ 골격 추가"] },
+  { v:"1.4", d:"2026-06-23", items:["상세 안에 PPT식 자유배치 글상자(🎨캔버스) 모드"] },
+  { v:"1.3", d:"2026-06-23", items:["노드 네모(사각형) 도형","노션식 문서 에디터(/메뉴·체크박스·코드·인용·구분선)","원 ≡ 들어가기 = 전체화면 상세"] },
+  { v:"1.2", d:"2026-06-23", items:["여러 창(보드) 시스템","색상 범례·상세 패널·상태 배지(🤖✅⏳🔥)"] },
+  { v:"1.1", d:"2026-06-23", items:["실시간 공유 ON — 팀원 모두 같은 화면(Firebase)"] },
+  { v:"1.0", d:"2026-06-22", items:["흐름 빌더 출시: 클릭으로 가지 뻗기, 자유 드래그, 🔗연결, 색/크기, Ctrl+Z, Shift 정렬"] },
+];
+function verNum(v){ const p=String(v).split("."); return (+p[0]||0)*1000 + (+p[1]||0); }
+function getSeenVer(){ try{ return localStorage.getItem("fm_seen_ver"); }catch(e){ return null; } }
+function renderWhatsNew(seen){
+  const seenN = seen ? verNum(seen) : 0;
+  document.getElementById("wnBody").innerHTML = CHANGELOG.map(e=>{
+    const isNew = verNum(e.v) > seenN;
+    return `<div class="wn-entry ${isNew?'new':''}"><div class="vh">Ver ${e.v}<span class="d">${e.d}</span></div>`
+      + `<ul>${e.items.map(t=>`<li>${esc(t)}</li>`).join("")}</ul></div>`;
+  }).join("");
+}
+function openWhatsNew(){
+  const seen = getSeenVer();
+  const hasNew = !seen || verNum(APP_VERSION) > verNum(seen);
+  document.getElementById("wnTitle").textContent = hasNew ? "🎉 새로운 업데이트가 있어요!" : "📣 업데이트 내역";
+  renderWhatsNew(seen);
+  document.getElementById("wnOverlay").classList.add("open");
+}
+function closeWhatsNew(){ document.getElementById("wnOverlay").classList.remove("open"); try{ localStorage.setItem("fm_seen_ver", APP_VERSION); }catch(e){} }
+function whatsNewInit(){
+  document.getElementById("verBadge").textContent = "Ver " + APP_VERSION;
+  document.getElementById("verBadge").addEventListener("click", openWhatsNew);
+  document.getElementById("wnClose").addEventListener("click", closeWhatsNew);
+  document.getElementById("wnOverlay").addEventListener("click", e=>{ if(e.target.id==="wnOverlay") closeWhatsNew(); });
+  if(getSeenVer() !== APP_VERSION) openWhatsNew();   // 새 버전이면 자동 표시
+}
+
 /* 테스트/디버그 훅 */
 window.__wf = { addChild, addRoot, addLink, deleteNode, setNodeColor, resizeNode, setNodeBadge, setNodeShape, autoLayout, snapPos, undo, redo:redoOp,
   openDetail, getDetailFor:()=>detailFor, addBoard, openBoard, deleteBoard, getBoards:()=>JSON.parse(JSON.stringify(boards)), getCurBoard:()=>curBoard,
-  getNodes:()=>JSON.parse(JSON.stringify(nodes)), getLinks:()=>JSON.parse(JSON.stringify(links)), applyRemote, isConfigured };
+  getNodes:()=>JSON.parse(JSON.stringify(nodes)), getLinks:()=>JSON.parse(JSON.stringify(links)), applyRemote, isConfigured,
+  openWhatsNew, closeWhatsNew, APP_VERSION, getSeenVer };
 
 start();
+whatsNewInit();
 </script>
 </body>
 </html>
