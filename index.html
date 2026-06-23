@@ -328,6 +328,10 @@ function makeSeed(){
 
 const VENDOR_DATA_SOURCE = "원주 유지보수 업체.xlsx";
 const VENDOR_DATA_VERSION = "2026-06-23";
+const GOOGLE_SHEET_CSV_URL = "https://docs.google.com/spreadsheets/d/1SYC0CofvdPLE1AQax_IgLx3FFWmntXi4H6yQttV9y4A/export?format=csv&gid=0";
+const VENDOR_REFRESH_MS = 60 * 1000;
+const VENDOR_AUTO_START = "<!-- vendor:auto:start -->";
+const VENDOR_AUTO_END = "<!-- vendor:auto:end -->";
 const VENDOR_DATA = {
   "누수·배관": [
     { no:1, type:"누수탐지/하수구/고압세척/수도설비", name:"우리종합설비", address:"강원도 원주시 단계동 886-4", phone:"010-4858-7625\n033-742-7625", map:"https://naver.me/F5swtyvo", promo:"https://blog.naver.com/pms7625", rating:"", price:"", note:"" },
@@ -373,13 +377,18 @@ const VENDOR_DATA = {
     { no:23, type:"미장/타일/방수공사", name:"이누스 현대타일 원주대리점", address:"강원 원주시 단계동 800-23", phone:"033-764-9936", map:"https://naver.me/FbqzefkI", promo:"https://blog.naver.com/inus1110", rating:"", price:"", note:"원주, 횡성, 문막, 제천, 춘천 출장 가능" }
   ]
 };
+let vendorData = VENDOR_DATA;
+let vendorDataSource = VENDOR_DATA_SOURCE;
+let vendorDataVersion = VENDOR_DATA_VERSION;
+let vendorLoading = false;
+let vendorRefreshTimer = null;
 
 function vendorKey(label){
   return String(label || "").replace(/\s+/g,"").replace(/[ㆍ・]/g,"·");
 }
 function vendorItemsFor(label){
   const key = vendorKey(label);
-  return Object.keys(VENDOR_DATA).find(k => vendorKey(k) === key);
+  return Object.keys(vendorData).find(k => vendorKey(k) === key);
 }
 function htmlLines(s){
   const v = String(s || "").trim();
@@ -394,7 +403,7 @@ function escAttr(s){ return escH(s).replace(/"/g,"&quot;"); }
 function vendorDetailHtml(label){
   const cat = vendorItemsFor(label);
   if(!cat) return "";
-  const rows = VENDOR_DATA[cat].map(v => `<tr>
+  const rows = vendorData[cat].map(v => `<tr>
     <td>${escH(v.name)}</td>
     <td>${htmlLines(v.type)}</td>
     <td>${htmlLines(v.phone)}</td>
@@ -402,23 +411,131 @@ function vendorDetailHtml(label){
     <td>${urlLines(v.map)}${v.promo && v.promo !== "-" ? "<br>" + urlLines(v.promo) : ""}</td>
     <td>${htmlLines([v.rating, v.price, v.note].filter(Boolean).join("\n"))}</td>
   </tr>`).join("");
-  return `<h2>${escH(cat)} 업체 자료</h2>
-    <p class="vendor-note">${escH(VENDOR_DATA_SOURCE)} · ${escH(VENDOR_DATA_VERSION)} 기준</p>
+  return `${VENDOR_AUTO_START}<h2>${escH(cat)} 업체 자료</h2>
+    <p class="vendor-note">${escH(vendorDataSource)} · ${escH(vendorDataVersion)} 기준</p>
     <table class="vendor-table">
       <thead><tr><th>업체명</th><th>세부유형</th><th>전화번호</th><th>주소</th><th>링크</th><th>평점·단가·비고</th></tr></thead>
       <tbody>${rows}</tbody>
-    </table>`;
+    </table>${VENDOR_AUTO_END}`;
+}
+function mergeVendorDetail(existing, nextHtml){
+  const cur = String(existing || "");
+  if(!cur.replace(/<[^>]*>/g,"").trim()) return nextHtml;
+  const start = cur.indexOf(VENDOR_AUTO_START);
+  const end = cur.indexOf(VENDOR_AUTO_END);
+  if(start >= 0 && end > start){
+    return cur.slice(0,start) + nextHtml + cur.slice(end + VENDOR_AUTO_END.length);
+  }
+  if(cur.includes('class="vendor-table"') || cur.includes("class=vendor-table")){
+    const h2 = cur.search(/<h2[^>]*>[\s\S]*?업체 자료[\s\S]*?<\/h2>/);
+    const tableEnd = cur.indexOf("</table>");
+    if(tableEnd >= 0){
+      const replaceFrom = h2 >= 0 ? h2 : 0;
+      return cur.slice(0, replaceFrom) + nextHtml + cur.slice(tableEnd + "</table>".length);
+    }
+    return nextHtml;
+  }
+  return cur;
 }
 function applyVendorDetailsToNodes(){
   let changed = false;
   Object.values(nodes).forEach(n => {
     if(!n || !vendorItemsFor(n.label)) return;
-    const hasDetail = !!(n.detail && n.detail.replace(/<[^>]*>/g,"").trim());
-    if(hasDetail) return;
-    n.detail = vendorDetailHtml(n.label);
-    changed = true;
+    const next = mergeVendorDetail(n.detail, vendorDetailHtml(n.label));
+    if(next !== (n.detail || "")){ n.detail = next; changed = true; }
   });
   return changed;
+}
+function parseCsv(text){
+  const rows = []; let row = [], cell = "", q = false;
+  for(let i=0; i<String(text).length; i++){
+    const c = text[i], n = text[i+1];
+    if(q){
+      if(c === '"' && n === '"'){ cell += '"'; i++; }
+      else if(c === '"'){ q = false; }
+      else cell += c;
+    } else {
+      if(c === '"') q = true;
+      else if(c === ","){ row.push(cell); cell = ""; }
+      else if(c === "\n"){ row.push(cell); rows.push(row); row = []; cell = ""; }
+      else if(c !== "\r") cell += c;
+    }
+  }
+  row.push(cell); rows.push(row);
+  return rows;
+}
+function cleanCsvCell(v){ return String(v || "").replace(/\r/g,"").trim(); }
+function appendVendorField(item, key, value){
+  const v = cleanCsvCell(value);
+  if(!v) return;
+  item[key] = (String(item[key] || "") + (item[key] ? "\n" : "") + v).trim();
+}
+function vendorDataFromCsv(text){
+  const rows = parseCsv(text).filter(r => r.some(c => cleanCsvCell(c)));
+  if(rows.length < 2) throw new Error("업체 자료 행이 없습니다.");
+  const headers = rows[0].map(h => cleanCsvCell(h).replace(/\s+/g,""));
+  const idx = name => headers.indexOf(name.replace(/\s+/g,""));
+  const col = {
+    no:idx("번호"), cat:idx("대분류"), type:idx("세부유형"), name:idx("업체명"),
+    address:idx("주소"), phone:idx("전화번호"), map:idx("네이버지도검색URL"),
+    promo:idx("홍보URL"), rating:idx("리뷰평점"), price:idx("작업단가"), note:idx("비고")
+  };
+  if(col.cat < 0 || col.name < 0) throw new Error("대분류/업체명 열을 찾을 수 없습니다.");
+  const byCat = {}; let cur = null;
+  rows.slice(1).forEach(r => {
+    const name = cleanCsvCell(r[col.name]);
+    if(name){
+      const cat = cleanCsvCell(r[col.cat]);
+      cur = {
+        no:cleanCsvCell(r[col.no]), type:cleanCsvCell(r[col.type]), name,
+        address:cleanCsvCell(r[col.address]), phone:cleanCsvCell(r[col.phone]),
+        map:cleanCsvCell(r[col.map]), promo:cleanCsvCell(r[col.promo]),
+        rating:cleanCsvCell(r[col.rating]), price:cleanCsvCell(r[col.price]),
+        note:cleanCsvCell(r[col.note])
+      };
+      if(cat){ (byCat[cat] ||= []).push(cur); }
+    } else if(cur){
+      appendVendorField(cur, "promo", r[col.promo]);
+      appendVendorField(cur, "map", r[col.map]);
+      appendVendorField(cur, "price", r[col.price]);
+      appendVendorField(cur, "note", r[col.note]);
+      appendVendorField(cur, "phone", r[col.phone]);
+    }
+  });
+  return byCat;
+}
+async function loadVendorDataFromSheet(){
+  if(vendorLoading || !GOOGLE_SHEET_CSV_URL) return false;
+  vendorLoading = true;
+  try{
+    const sep = GOOGLE_SHEET_CSV_URL.includes("?") ? "&" : "?";
+    const res = await fetch(GOOGLE_SHEET_CSV_URL + sep + "t=" + Date.now(), { cache:"no-store" });
+    if(!res.ok) throw new Error("Google Sheets 응답 오류: " + res.status);
+    const next = vendorDataFromCsv(await res.text());
+    if(!Object.keys(next).length) throw new Error("가져온 업체 분류가 없습니다.");
+    vendorData = next;
+    vendorDataSource = "Google Sheets";
+    vendorDataVersion = new Date().toLocaleString("ko-KR");
+    const changed = applyVendorDetailsToNodes();
+    if(changed){
+      persistDebounced();
+      render();
+      if(detailFor && nodes[detailFor] && !canvasMode && document.activeElement !== wsbody){
+        wsbody.innerHTML = nodes[detailFor].detail || "";
+      }
+    }
+    return true;
+  }catch(e){
+    console.warn("Google Sheets 업체자료를 불러오지 못했습니다.", e);
+    return false;
+  }finally{
+    vendorLoading = false;
+  }
+}
+function initVendorSheetSync(){
+  loadVendorDataFromSheet();
+  clearInterval(vendorRefreshTimer);
+  vendorRefreshTimer = setInterval(loadVendorDataFromSheet, VENDOR_REFRESH_MS);
 }
 
 /* ===== 시작 ===== */
@@ -1066,8 +1183,9 @@ document.getElementById("exportBtn").addEventListener("click", ()=>{
 window.addEventListener("resize", setViewport);
 
 /* ===== 업데이트 알림(What's New) — 새 버전 나오면 자동 팝업 ===== */
-const APP_VERSION = "1.7";
+const APP_VERSION = "1.8";
 const CHANGELOG = [
+  { v:"1.8", d:"2026-06-23", items:["원주 유지보수 업체 자료를 Google Sheets에서 자동으로 불러오기","업체자료 자동 영역만 최신 시트 내용으로 갱신"] },
   { v:"1.7", d:"2026-06-23", items:["견적 현진 분류 노드 상세 화면에 원주 유지보수 업체 엑셀 자료 자동 입력"] },
   { v:"1.6", d:"2026-06-23", items:["📣 업데이트 알림 팝업(이 창) 추가 — 새 버전이 나오면 자동으로 떠요","‘시장 분석’ 보드 추가"] },
   { v:"1.5", d:"2026-06-23", items:["보드 탭을 업무 흐름 순서로 정렬","업무 보드 7종 + ‘결제방식’ 골격 추가"] },
@@ -1107,9 +1225,10 @@ function whatsNewInit(){
 window.__wf = { addChild, addRoot, addLink, deleteNode, setNodeColor, resizeNode, setNodeBadge, setNodeShape, autoLayout, snapPos, undo, redo:redoOp,
   openDetail, getDetailFor:()=>detailFor, addBoard, openBoard, deleteBoard, getBoards:()=>JSON.parse(JSON.stringify(boards)), getCurBoard:()=>curBoard,
   getNodes:()=>JSON.parse(JSON.stringify(nodes)), getLinks:()=>JSON.parse(JSON.stringify(links)), applyRemote, isConfigured,
-  openWhatsNew, closeWhatsNew, APP_VERSION, getSeenVer };
+  openWhatsNew, closeWhatsNew, APP_VERSION, getSeenVer, loadVendorDataFromSheet };
 
 start();
+initVendorSheetSync();
 whatsNewInit();
 </script>
 </body>
