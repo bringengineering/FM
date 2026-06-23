@@ -46,11 +46,11 @@
   svg#canvas.panning{ cursor:grabbing; }
   body.linking svg#canvas{ cursor:crosshair; }
 
-  .node circle.body{ filter:drop-shadow(0 5px 10px rgba(31,39,51,.18)); cursor:pointer; transition:filter .15s; }
-  .node:hover circle.body{ filter:drop-shadow(0 8px 16px rgba(31,39,51,.28)); }
-  body.editing .node circle.body{ cursor:grab; }
-  body.linking .node circle.body{ cursor:crosshair; }
-  svg#canvas.dragging .node circle.body{ cursor:grabbing; }
+  .node .body{ filter:drop-shadow(0 5px 10px rgba(31,39,51,.18)); cursor:pointer; transition:filter .15s; }
+  .node:hover .body{ filter:drop-shadow(0 8px 16px rgba(31,39,51,.28)); }
+  body.editing .node .body{ cursor:grab; }
+  body.linking .node .body{ cursor:crosshair; }
+  svg#canvas.dragging .node .body{ cursor:grabbing; }
   .node text.lbl{ fill:#fff; font-weight:700; font-size:13px; pointer-events:none; }
   .edge{ fill:none; stroke:#b9c4d4; stroke-width:2.5; }
   .link{ fill:none; stroke:#3b5bdb; stroke-width:3.2; pointer-events:none; }
@@ -79,6 +79,9 @@
   #nodePop .badge{ margin-top:6px; flex-wrap:wrap; max-width:214px; }
   #nodePop .bdg{ border:1px solid var(--line); background:#fff; border-radius:7px; padding:3px 8px; font-size:12px; cursor:pointer; margin:2px; }
   #nodePop .bdg:hover{ background:#f3f6fb; }
+  #nodePop .shape{ margin-top:6px; }
+  #nodePop .shp{ border:1px solid var(--line); background:#fff; border-radius:7px; padding:3px 10px; font-size:12px; cursor:pointer; margin:2px; }
+  #nodePop .shp:hover{ background:#f3f6fb; }
   #nodePop .lbl2{ font-size:12px; color:#6b7686; margin:0 6px 0 3px; }
   #nodePop .szbtn{ border:1px solid var(--line); background:#fff; border-radius:7px; width:32px; height:26px; font-size:15px; cursor:pointer; margin-right:5px; }
   #nodePop .szbtn:hover{ background:#f3f6fb; }
@@ -105,6 +108,25 @@
   .wsbody h2{ font-size:22px; margin:18px 0 8px; }
   .wsbody ul,.wsbody ol{ padding-left:26px; }
   .wsfoot{ padding:8px 18px; font-size:11.5px; color:var(--ink-soft); border-top:1px solid var(--line); }
+  .wstools .wssep{ width:1px; height:22px; background:var(--line); margin:0 4px; align-self:center; }
+  .wsbody h1{ font-size:28px; margin:18px 0 8px; font-weight:800; }
+  .wsbody h3{ font-size:18px; margin:14px 0 6px; font-weight:700; }
+  .wsbody blockquote{ border-left:3px solid #c7d0dd; margin:10px 0; padding:4px 14px; color:#52606d; }
+  .wsbody pre{ background:#0f172a; color:#e2e8f0; padding:14px 16px; border-radius:8px; overflow:auto; font-family:ui-monospace,Menlo,Consolas,monospace; font-size:14px; white-space:pre-wrap; }
+  .wsbody code.inline{ background:#eef1f6; padding:1px 6px; border-radius:5px; font-family:ui-monospace,Menlo,monospace; font-size:.92em; }
+  .wsbody mark{ background:#fff3a3; }
+  .wsbody hr{ border:none; border-top:1px solid var(--line); margin:18px 0; }
+  .wsbody .todo{ display:flex; align-items:flex-start; gap:6px; margin:3px 0; }
+  .wsbody .todo .cb{ cursor:pointer; user-select:none; font-size:18px; flex:0 0 auto; }
+  .wsbody .todo[data-done="1"]{ color:#9aa6b5; text-decoration:line-through; }
+  .wsbody .docbox{ display:inline-block; min-width:110px; padding:12px 16px; border:2px solid #4b7bec; border-radius:12px; margin:6px; vertical-align:top; font-size:14px; }
+  .wsbody .docshape{ display:inline-flex; align-items:center; justify-content:center; width:112px; height:112px; border-radius:50%; border:2px solid #26de81; padding:10px; margin:6px; vertical-align:top; font-size:14px; text-align:center; }
+  #slashMenu{ position:fixed; display:none; z-index:50; background:#fff; border:1px solid var(--line); border-radius:10px;
+    box-shadow:0 10px 26px rgba(31,39,51,.2); padding:6px; width:230px; max-height:300px; overflow:auto; }
+  #slashMenu .si{ display:flex; gap:10px; align-items:center; padding:7px 9px; border-radius:7px; cursor:pointer; }
+  #slashMenu .si.active{ background:#eef3ff; }
+  #slashMenu .si .ico{ width:24px; text-align:center; font-weight:700; color:#4b7bec; }
+  #slashMenu .si .ds{ color:#9aa6b5; font-size:11px; }
 </style>
 </head>
 <body class="editing">
@@ -163,17 +185,32 @@
           <button class="wsbtn" id="wsback">← 나가기</button>
           <span class="wstitle" id="wstitle"></span>
           <div class="wstools">
-            <button data-cmd="formatBlock" data-val="h2" title="제목">H</button>
-            <button data-cmd="bold" title="굵게"><b>B</b></button>
-            <button data-cmd="underline" title="밑줄"><u>U</u></button>
-            <button data-cmd="insertUnorderedList" title="목록">• 목록</button>
-            <button data-cmd="insertOrderedList" title="번호목록">1. 번호</button>
-            <button data-cmd="formatBlock" data-val="p" title="본문">본문</button>
+            <button data-cmd="formatBlock" data-val="h1" title="제목1">H1</button>
+            <button data-cmd="formatBlock" data-val="h2" title="제목2">H2</button>
+            <button data-cmd="formatBlock" data-val="h3" title="제목3">H3</button>
+            <span class="wssep"></span>
+            <button data-cmd="bold" title="굵게(Ctrl+B)"><b>B</b></button>
+            <button data-cmd="italic" title="기울임(Ctrl+I)"><i>I</i></button>
+            <button data-cmd="underline" title="밑줄(Ctrl+U)"><u>U</u></button>
+            <button data-cmd="strikeThrough" title="취소선"><s>S</s></button>
+            <button data-ins="code" title="인라인 코드">&lt;/&gt;</button>
+            <button data-ins="hl" title="형광펜">🖍</button>
+            <span class="wssep"></span>
+            <button data-cmd="insertUnorderedList" title="글머리 목록">• 목록</button>
+            <button data-cmd="insertOrderedList" title="번호 목록">1. 번호</button>
+            <button data-ins="todo" title="체크박스">☑ 체크</button>
+            <button data-ins="quote" title="인용">❝ 인용</button>
+            <button data-ins="codeblock" title="코드 블록">{ } 코드</button>
+            <button data-ins="hr" title="구분선">— 구분선</button>
+            <span class="wssep"></span>
+            <button data-ins="shape-circle" title="원 도형">◯ 원</button>
+            <button data-ins="shape-rect" title="사각 도형">▭ 박스</button>
           </div>
         </div>
-        <div class="wsbody" id="wsbody" contenteditable="true" data-ph="여기에 계획·내용을 적어보세요. 제목(H)·굵게(B)·목록(•)으로 PPT처럼 정리할 수 있어요."></div>
-        <div class="wsfoot">✏️ 자동 저장 · 팀원에게 실시간 공유 · Esc 또는 ‘나가기’로 흐름으로 복귀</div>
+        <div class="wsbody" id="wsbody" contenteditable="true" data-ph="여기에 계획·내용을 적어보세요.  ‘/’ 를 입력하면 블록 메뉴(제목·목록·체크박스·코드…)가 떠요."></div>
+        <div class="wsfoot">✏️ 자동저장·실시간공유 · <b>/</b> 입력 → 블록 메뉴 · 위 툴바로 서식 · Esc/나가기로 복귀</div>
       </div>
+      <div id="slashMenu"></div>
     </div>
   </div>
 
@@ -429,27 +466,36 @@ function render(){
 
   let h = "";
   Object.values(nodes).forEach(n => {
-    const r = radius(n), color = colorOf(n), off = r - 12;
+    const r = radius(n), color = colorOf(n);
+    const isRect = n.shape === "rect";
+    const halfW = isRect ? Math.round(r*1.4) : r;
+    const halfH = isRect ? Math.round(r*0.82) : r;
+    const offX = halfW - 12, offY = halfH - 12;
     const fs = clamp(Math.round(r*0.29), 11, 18);
     const lines = wrapLabel(n.label);
     const tspans = lines.length === 1
       ? `<tspan x="0" dy="${fs*0.36}">${esc(lines[0])}</tspan>`
       : `<tspan x="0" dy="${-fs*0.25}">${esc(lines[0])}</tspan><tspan x="0" dy="${fs*1.25}">${esc(lines[1])}</tspan>`;
-    const sel = (n.id === linkSource) ? `<circle r="${r+8}" fill="none" stroke="#3b5bdb" stroke-width="3" stroke-dasharray="6 4"></circle>` : "";
+    const sel = (n.id !== linkSource) ? ""
+      : isRect ? `<rect x="${-halfW-7}" y="${-halfH-7}" width="${halfW*2+14}" height="${halfH*2+14}" rx="18" fill="none" stroke="#3b5bdb" stroke-width="3" stroke-dasharray="6 4"></rect>`
+               : `<circle r="${r+8}" fill="none" stroke="#3b5bdb" stroke-width="3" stroke-dasharray="6 4"></circle>`;
     let bdg = "";
-    if (n.badge){ const bw = 20 + [...String(n.badge)].length*13; bdg = `<g transform="translate(0,${-(r+18)})" style="pointer-events:none"><rect x="${-bw/2}" y="-13" width="${bw}" height="24" rx="12" fill="#111827"></rect><text text-anchor="middle" dy="4" font-size="12" fill="#fff">${esc(n.badge)}</text></g>`; }
+    if (n.badge){ const bw = 20 + [...String(n.badge)].length*13; bdg = `<g transform="translate(0,${-(halfH+18)})" style="pointer-events:none"><rect x="${-bw/2}" y="-13" width="${bw}" height="24" rx="12" fill="#111827"></rect><text text-anchor="middle" dy="4" font-size="12" fill="#fff">${esc(n.badge)}</text></g>`; }
+    const body = isRect
+      ? `<rect class="body" x="${-halfW}" y="${-halfH}" width="${halfW*2}" height="${halfH*2}" rx="14" fill="${color}"></rect>`
+      : `<circle class="body" r="${r}" fill="${color}"></circle>`;
     h += `<g class="node" data-id="${n.id}" transform="translate(${n.x},${n.y})">
             ${sel}
             ${bdg}
-            <circle class="body" r="${r}" fill="${color}"></circle>
+            ${body}
             <text class="lbl" text-anchor="middle" font-size="${fs}">${tspans}</text>
-            <circle class="port" cx="0" cy="${r}" r="9" stroke="#fff" stroke-width="2"><title>끌어서 다른 원과 연결</title></circle>
-            <circle class="swatch" cx="${-off}" cy="${-off}" r="11" fill="${color}" stroke="#fff" stroke-width="2"><title>색·크기 바꾸기</title></circle>
-            <g class="del" transform="translate(${off},${-off})">
+            <circle class="port" cx="0" cy="${halfH}" r="9" stroke="#fff" stroke-width="2"><title>끌어서 연결</title></circle>
+            <circle class="swatch" cx="${-offX}" cy="${-offY}" r="11" fill="${color}" stroke="#fff" stroke-width="2"><title>색·크기·모양</title></circle>
+            <g class="del" transform="translate(${offX},${-offY})">
               <circle r="11" fill="#fff" stroke="#e03131" stroke-width="1.5"></circle>
               <text text-anchor="middle" dy="4.5" font-size="14" fill="#e03131" font-weight="700">×</text>
             </g>
-            <g class="note" transform="translate(${off},${off})">
+            <g class="note" transform="translate(${offX},${offY})">
               <circle r="11" fill="${hasDoc(n)?'#4b7bec':'#fff'}" stroke="#4b7bec" stroke-width="1.5"></circle>
               <text text-anchor="middle" dy="4" font-size="12" fill="${hasDoc(n)?'#fff':'#4b7bec'}">≡</text>
             </g>
@@ -500,6 +546,7 @@ function collectSubtree(id){ const out=[id]; let i=0; while(i<out.length){ child
 function setNodeColor(id, color){ if(!nodes[id]) return; snapshot(); if(color) nodes[id].color=color; else delete nodes[id].color; persist(); render(); }
 function resizeNode(id, dir){ if(!nodes[id]) return; snapshot(); nodes[id].r = clamp(radius(nodes[id]) + dir*8, 30, 88); persist(); render(); }
 function setNodeBadge(id, b){ if(!nodes[id]) return; snapshot(); if(b) nodes[id].badge=b; else delete nodes[id].badge; persist(); render(); }
+function setNodeShape(id, s){ if(!nodes[id]) return; snapshot(); if(s==="rect") nodes[id].shape="rect"; else delete nodes[id].shape; persist(); render(); }
 
 /* ===== 자동 정렬(트리) ===== */
 function autoLayout(){
@@ -562,40 +609,138 @@ function openNodePop(id, e){
   const BDGS = ["🤖 자동화","✅ 완료","⏳ 진행중","🔥 중요"];
   nodePop.innerHTML =
     `<div class="poprow">${COLORSET.map(c=>`<span class="sw" data-c="${c}" style="background:${c}"></span>`).join("")}<span class="sw reset" data-c="">기본색</span></div>`+
-    `<div class="poprow size"><span class="lbl2">크기</span><button class="szbtn" data-s="-1">－</button><button class="szbtn" data-s="1">＋</button></div>`+
+    `<div class="poprow size"><span class="lbl2">크기</span><button class="szbtn" data-s="-1">－</button><button class="szbtn" data-s="1">＋</button>`+
+      `<span class="lbl2" style="margin-left:8px">모양</span><button class="shp" data-sh="circle">● 원</button><button class="shp" data-sh="rect">▭ 사각</button></div>`+
     `<div class="poprow badge"><span class="lbl2">표시</span>${BDGS.map(t=>`<button class="bdg" data-b="${t}">${t}</button>`).join("")}<button class="bdg" data-b="">지우기</button></div>`;
   nodePop.style.left = e.clientX + "px"; nodePop.style.top = (e.clientY + 10) + "px"; nodePop.style.display = "block";
 }
 function hidePop(){ nodePop.style.display = "none"; popFor = null; }
 nodePop.addEventListener("click", e => {
   if (popFor == null) return;
-  const sw = e.target.closest(".sw"), sz = e.target.closest(".szbtn"), bd = e.target.closest(".bdg");
+  const sw = e.target.closest(".sw"), sz = e.target.closest(".szbtn"), bd = e.target.closest(".bdg"), shp = e.target.closest(".shp");
   if (sw) setNodeColor(popFor, sw.dataset.c || null);
   else if (sz) resizeNode(popFor, +sz.dataset.s);
   else if (bd) setNodeBadge(popFor, bd.dataset.b || null);
+  else if (shp) setNodeShape(popFor, shp.dataset.sh);
 });
 window.addEventListener("pointerdown", e => {
   if (!e.target.closest("#nodePop") && !e.target.closest(".swatch")) hidePop();
 }, true);
 
-/* ===== 상세 내용 — 전체 창 모드(들어가기) ===== */
+/* ===== 상세 내용 — 전체 창 모드(노션식 에디터) ===== */
+const slashMenu = document.getElementById("slashMenu");
+let slashOpen=false, slashAnchor=null, slashIdx=0, slashFiltered=[];
+function saveWs(){ if(detailFor && nodes[detailFor]){ nodes[detailFor].detail = wsbody.innerHTML; persistDebounced(); } }
 function openDetail(id){
   const n = nodes[id]; if(!n) return;
   detailFor = id; wstitle.textContent = n.label || "(이름 없음)"; wsbody.innerHTML = n.detail || "";
   workspace.classList.add("open"); wsbody.focus();
 }
-function closeDetail(){ workspace.classList.remove("open"); detailFor = null; busy = false; flushPending(); render(); }
+function closeDetail(){ closeSlash(); workspace.classList.remove("open"); detailFor = null; busy = false; flushPending(); render(); }
 document.getElementById("wsback").addEventListener("click", closeDetail);
 wsbody.addEventListener("focus", ()=>{ busy = true; });
 wsbody.addEventListener("blur",  ()=>{ busy = false; flushPending(); });
-wsbody.addEventListener("input", ()=>{ if(detailFor && nodes[detailFor]){ nodes[detailFor].detail = wsbody.innerHTML; persistDebounced(); } });
+
+/* 블록/서식 삽입 */
+function escH(s){ return String(s).replace(/[&<>]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;"}[c])); }
+function execw(cmd,val){ wsbody.focus(); document.execCommand(cmd,false,val||null); saveWs(); }
+function fmtBlock(tag){ wsbody.focus(); document.execCommand("formatBlock",false,tag); saveWs(); }
+function insHTML(html){ wsbody.focus(); document.execCommand("insertHTML",false,html); saveWs(); }
+function selText(){ const s=window.getSelection(); return s ? s.toString() : ""; }
+function insertBlock(type){
+  if(type==="todo")        insHTML('<div class="todo" data-done="0"><span class="cb" contenteditable="false">☐ </span>할 일</div>');
+  else if(type==="quote")  fmtBlock("blockquote");
+  else if(type==="codeblock"){ const t=selText(); insHTML('<pre>'+(t?escH(t):'코드를 입력하세요')+'</pre><p><br></p>'); }
+  else if(type==="hr")     insHTML('<hr><p><br></p>');
+  else if(type==="code"){ const t=selText(); insHTML('<code class="inline">'+(t?escH(t):'코드')+'</code>&nbsp;'); }
+  else if(type==="hl"){ const t=selText(); if(t){ insHTML('<mark>'+escH(t)+'</mark>'); } else { document.execCommand("hiliteColor",false,"#fff3a3"); saveWs(); } }
+  else if(type==="shape-circle") insHTML('<span class="docshape" contenteditable="true">원 도형</span>&nbsp;');
+  else if(type==="shape-rect")   insHTML('<span class="docbox" contenteditable="true">박스 내용</span>&nbsp;');
+}
+/* 툴바 */
 const wstools = document.querySelector(".wstools");
-wstools.addEventListener("mousedown", e=>{ if(e.target.closest("button")) e.preventDefault(); });   // 선택영역 유지
+wstools.addEventListener("mousedown", e=>{ if(e.target.closest("button")) e.preventDefault(); });
 wstools.addEventListener("click", e=>{
-  const btn = e.target.closest("button[data-cmd]"); if(!btn || detailFor==null) return;
-  wsbody.focus();
-  document.execCommand(btn.dataset.cmd, false, btn.dataset.val || null);
-  nodes[detailFor].detail = wsbody.innerHTML; persistDebounced();
+  const btn=e.target.closest("button"); if(!btn || detailFor==null) return;
+  if(btn.dataset.cmd) execw(btn.dataset.cmd, btn.dataset.val);
+  else if(btn.dataset.ins) insertBlock(btn.dataset.ins);
+});
+/* 체크박스 토글 */
+wsbody.addEventListener("click", e=>{
+  const cb=e.target.closest(".cb"); if(!cb) return;
+  const todo=cb.closest(".todo"); if(!todo) return;
+  const done = todo.getAttribute("data-done")==="1";
+  todo.setAttribute("data-done", done?"0":"1");
+  cb.textContent = done ? "☐ " : "☑ ";
+  saveWs();
+});
+/* 입력 + 슬래시(/) 명령 */
+wsbody.addEventListener("input", e=>{
+  saveWs();
+  if(e.inputType==="insertText" && e.data==="/") openSlash();
+  else if(slashOpen) updateSlash();
+});
+const SLASH=[
+  {k:"제목1",d:"큰 제목",ic:"H1",fn:()=>fmtBlock("h1")},
+  {k:"제목2",d:"중간 제목",ic:"H2",fn:()=>fmtBlock("h2")},
+  {k:"제목3",d:"작은 제목",ic:"H3",fn:()=>fmtBlock("h3")},
+  {k:"글머리목록",d:"불릿 리스트",ic:"•",fn:()=>execw("insertUnorderedList")},
+  {k:"번호목록",d:"번호 리스트",ic:"1.",fn:()=>execw("insertOrderedList")},
+  {k:"체크박스",d:"할 일",ic:"☑",fn:()=>insertBlock("todo")},
+  {k:"인용",d:"인용구",ic:"❝",fn:()=>insertBlock("quote")},
+  {k:"코드블록",d:"코드 블록",ic:"{}",fn:()=>insertBlock("codeblock")},
+  {k:"구분선",d:"가로선",ic:"—",fn:()=>insertBlock("hr")},
+  {k:"원도형",d:"동그라미 박스",ic:"◯",fn:()=>insertBlock("shape-circle")},
+  {k:"사각도형",d:"네모 박스",ic:"▭",fn:()=>insertBlock("shape-rect")},
+];
+function openSlash(){
+  const s=window.getSelection(); if(!s.rangeCount) return;
+  const r=s.getRangeAt(0);
+  slashAnchor={ node:r.startContainer, offset:Math.max(0,r.startOffset-1) };
+  slashOpen=true; slashIdx=0; updateSlash();
+}
+function curQ(){
+  if(!slashAnchor) return null;
+  const s=window.getSelection(); if(!s.rangeCount) return null;
+  const r=s.getRangeAt(0);
+  if(r.startContainer!==slashAnchor.node) return null;
+  const txt=String(slashAnchor.node.textContent||"").slice(slashAnchor.offset+1, r.startOffset);
+  if(/\s/.test(txt)) return null;
+  return txt;
+}
+function updateSlash(){
+  const q=curQ(); if(q==null){ closeSlash(); return; }
+  slashFiltered = SLASH.filter(it=> q==="" || it.k.includes(q));
+  if(!slashFiltered.length){ closeSlash(); return; }
+  if(slashIdx>=slashFiltered.length) slashIdx=0;
+  slashMenu.innerHTML = slashFiltered.map((it,i)=>`<div class="si ${i===slashIdx?'active':''}" data-i="${i}"><span class="ico">${it.ic}</span><div><div>${it.k}</div><div class="ds">${it.d}</div></div></div>`).join("");
+  const s=window.getSelection(); const rr=s.getRangeAt(0).cloneRange(); rr.collapse(true);
+  let rect=rr.getClientRects()[0];
+  if(!rect){ const el=rr.startContainer.nodeType===1?rr.startContainer:rr.startContainer.parentNode; rect=el.getBoundingClientRect(); }
+  slashMenu.style.left=Math.min(rect.left, window.innerWidth-244)+"px";
+  slashMenu.style.top=(rect.bottom+6)+"px"; slashMenu.style.display="block";
+}
+function closeSlash(){ slashOpen=false; slashAnchor=null; slashMenu.style.display="none"; }
+function chooseSlash(i){
+  const it=slashFiltered[i]; if(!it){ closeSlash(); return; }
+  const s=window.getSelection();
+  try{
+    const r=document.createRange();
+    r.setStart(slashAnchor.node, slashAnchor.offset);
+    r.setEnd(s.getRangeAt(0).startContainer, s.getRangeAt(0).startOffset);
+    r.deleteContents(); s.removeAllRanges(); s.addRange(r);
+  }catch(err){}
+  closeSlash(); it.fn(); saveWs();
+}
+slashMenu.addEventListener("mousedown", e=>e.preventDefault());
+slashMenu.addEventListener("click", e=>{ const si=e.target.closest(".si"); if(si) chooseSlash(+si.dataset.i); });
+wsbody.addEventListener("keydown", e=>{
+  if(!slashOpen) return;
+  if(["ArrowDown","ArrowUp","Enter","Escape"].includes(e.key)){ e.preventDefault(); e.stopPropagation(); }
+  if(e.key==="ArrowDown") { slashIdx=(slashIdx+1)%slashFiltered.length; updateSlash(); }
+  else if(e.key==="ArrowUp") { slashIdx=(slashIdx-1+slashFiltered.length)%slashFiltered.length; updateSlash(); }
+  else if(e.key==="Enter") chooseSlash(slashIdx);
+  else if(e.key==="Escape") closeSlash();
 });
 
 /* ===== 포인터 ===== */
@@ -717,7 +862,7 @@ document.getElementById("exportBtn").addEventListener("click", ()=>{
 window.addEventListener("resize", setViewport);
 
 /* 테스트/디버그 훅 */
-window.__wf = { addChild, addRoot, addLink, deleteNode, setNodeColor, resizeNode, setNodeBadge, autoLayout, snapPos, undo, redo:redoOp,
+window.__wf = { addChild, addRoot, addLink, deleteNode, setNodeColor, resizeNode, setNodeBadge, setNodeShape, autoLayout, snapPos, undo, redo:redoOp,
   openDetail, getDetailFor:()=>detailFor, addBoard, openBoard, deleteBoard, getBoards:()=>JSON.parse(JSON.stringify(boards)), getCurBoard:()=>curBoard,
   getNodes:()=>JSON.parse(JSON.stringify(nodes)), getLinks:()=>JSON.parse(JSON.stringify(links)), applyRemote, isConfigured };
 
