@@ -52,8 +52,6 @@
   body.linking .node .body{ cursor:crosshair; }
   svg#canvas.dragging .node .body{ cursor:grabbing; }
   .node text.lbl{ fill:#fff; font-weight:700; font-size:13px; pointer-events:none; }
-  .node text.lbl.card-label{ fill:#1f2733; }
-  .node text.meta{ fill:#6b7686; font-weight:700; font-size:10px; pointer-events:none; letter-spacing:0; }
   .edge{ fill:none; stroke:#b9c4d4; stroke-width:2.5; }
   .link{ fill:none; stroke:#3b5bdb; stroke-width:3.2; pointer-events:none; }
   .link-hit{ fill:none; stroke:transparent; stroke-width:18; cursor:pointer; }
@@ -92,7 +90,7 @@
   .legend{ position:absolute; left:14px; bottom:14px; background:rgba(255,255,255,.93); border:1px solid var(--line);
     border-radius:10px; padding:8px 12px; font-size:12.5px; display:flex; gap:14px; box-shadow:0 4px 12px rgba(31,39,51,.1); }
   .legend div{ display:flex; align-items:center; gap:6px; }
-  .legend .ld{ width:13px; height:13px; border-radius:3px; display:inline-block; }
+  .legend .ld{ width:13px; height:13px; border-radius:50%; display:inline-block; }
   /* 노트 핸들 */
   .note{ cursor:pointer; }
   /* 상세 내용 — 전체 창 모드 (들어가기) */
@@ -178,7 +176,7 @@
     <div class="tabs" id="tabs"></div>
 
     <div class="toolbar">
-      <button class="btn" id="addRootBtn">＋ 시작 카드</button>
+      <button class="btn" id="addRootBtn">＋ 시작 원</button>
       <button class="btn" id="linkBtn">🔗 연결 모드</button>
       <button class="btn" id="arrangeBtn">⤧ 트리배치</button>
       <button class="btn" id="undoBtn">↩︎ 되돌리기</button>
@@ -318,32 +316,6 @@ const editing = () => document.body.classList.contains("editing");
 const genId   = () => "n" + Date.now().toString(36) + Math.random().toString(36).slice(2,6);
 const clamp   = (v,a,b) => Math.max(a, Math.min(b, v));
 const radius  = n => n.r || 46;
-function nodeMetrics(n){
-  const r = radius(n);
-  const shape = n.shape || "card";
-  if(shape === "circle") return { shape, r, halfW:r, halfH:r, rx:r };
-  if(shape === "rect") return { shape, r, halfW:Math.round(r*1.4), halfH:Math.round(r*0.82), rx:14 };
-  return {
-    shape:"card",
-    r,
-    halfW:clamp(Math.round(r*1.8), 78, 148),
-    halfH:clamp(Math.round(r*0.9), 40, 74),
-    rx:8
-  };
-}
-function anchorPoint(n, toward, pad=0){
-  const m = nodeMetrics(n);
-  const dx = toward.x - n.x, dy = toward.y - n.y;
-  const len = Math.hypot(dx, dy) || 1;
-  const ux = dx / len, uy = dy / len;
-  if(m.shape === "circle"){
-    return { x:n.x + ux*(m.r + pad), y:n.y + uy*(m.r + pad) };
-  }
-  const sx = dx === 0 ? Infinity : m.halfW / Math.abs(dx);
-  const sy = dy === 0 ? Infinity : m.halfH / Math.abs(dy);
-  const scale = Math.min(sx, sy);
-  return { x:n.x + dx*scale + ux*pad, y:n.y + dy*scale + uy*pad };
-}
 
 function makeSeed(){
   return {
@@ -743,14 +715,13 @@ function snapPos(id, x, y){
   return [sx, sy];
 }
 
-function wrapLabel(s, max=12){
+function wrapLabel(s){
   s = String(s||"");
-  if (s.length <= max) return [s];
+  if (s.length <= 6) return [s];
   let cut = s.lastIndexOf(" ", Math.ceil(s.length/2));
-  if (cut < 2 || cut > s.length-2) cut = Math.ceil(s.length/2);
+  if (cut < 2) cut = Math.ceil(s.length/2);
   let l1 = s.slice(0, cut).trim(), l2 = s.slice(cut).trim();
-  if (l1.length > max) l1 = l1.slice(0,max-1) + "…";
-  if (l2.length > max) l2 = l2.slice(0,max-1) + "…";
+  if (l2.length > 8) l2 = l2.slice(0,7) + "…";
   return [l1, l2];
 }
 
@@ -759,16 +730,16 @@ function render(){
   let e = "";
   Object.values(nodes).forEach(n => {
     if (!n.parent || !nodes[n.parent]) return;
-    const p = nodes[n.parent];
-    const s = anchorPoint(p, n, 5), t = anchorPoint(n, p, 5);
-    const dy = t.y - s.y;
-    e += `<path class="edge" d="M ${s.x} ${s.y} C ${s.x} ${s.y+dy*0.5}, ${t.x} ${t.y-dy*0.5}, ${t.x} ${t.y}"/>`;
+    const p = nodes[n.parent]; const dy = n.y - p.y;
+    e += `<path class="edge" d="M ${p.x} ${p.y} C ${p.x} ${p.y+dy*0.5}, ${n.x} ${n.y-dy*0.5}, ${n.x} ${n.y}"/>`;
   });
   links.forEach((l, i) => {
     const a = nodes[l.from], b = nodes[l.to]; if (!a || !b) return;
-    const s = anchorPoint(a, b, 5), t = anchorPoint(b, a, 16);
-    const mx=(s.x+t.x)/2, my=(s.y+t.y)/2;
-    const d = `M ${s.x} ${s.y} L ${mx} ${my} L ${t.x} ${t.y}`;
+    const dx=b.x-a.x, dy=b.y-a.y, len=Math.hypot(dx,dy)||1, ux=dx/len, uy=dy/len;
+    const ra=radius(a), rb=radius(b);
+    const sx=a.x+ux*(ra+2), sy=a.y+uy*(ra+2), tx=b.x-ux*(rb+14), ty=b.y-uy*(rb+14);
+    const mx=(sx+tx)/2, my=(sy+ty)/2;
+    const d = `M ${sx} ${sy} L ${mx} ${my} L ${tx} ${ty}`;
     e += `<path class="link-hit" data-li="${i}" d="${d}"/>`;
     e += `<path class="link" marker-mid="url(#arrow)" marker-end="url(#arrow)" d="${d}"/>`;
   });
@@ -776,48 +747,31 @@ function render(){
 
   let h = "";
   Object.values(nodes).forEach(n => {
-    const m = nodeMetrics(n), r = m.r, color = colorOf(n);
-    const isCard = m.shape === "card";
-    const isCircle = m.shape === "circle";
-    const halfW = m.halfW, halfH = m.halfH;
+    const r = radius(n), color = colorOf(n);
+    const isRect = n.shape === "rect";
+    const halfW = isRect ? Math.round(r*1.4) : r;
+    const halfH = isRect ? Math.round(r*0.82) : r;
     const offX = halfW - 12, offY = halfH - 12;
-    const swatchX = isCard ? halfW - 42 : -offX;
-    const swatchY = -offY;
-    const fs = isCard ? clamp(Math.round(r*0.28), 12, 15) : clamp(Math.round(r*0.29), 11, 18);
-    const lines = wrapLabel(n.label, isCard ? 13 : 8);
-    const depth = depthOf(n.id);
-    const kind = depth === 0 ? "대분류" : depth === 1 ? "중분류" : "소분류";
-    const labelX = isCard ? -halfW + 18 : 0;
-    const tspans = isCard
-      ? (lines.length === 1
-        ? `<tspan x="${labelX}" dy="0">${esc(lines[0])}</tspan>`
-        : `<tspan x="${labelX}" dy="0">${esc(lines[0])}</tspan><tspan x="${labelX}" dy="${fs*1.22}">${esc(lines[1])}</tspan>`)
-      : (lines.length === 1
-        ? `<tspan x="0" dy="${fs*0.36}">${esc(lines[0])}</tspan>`
-        : `<tspan x="0" dy="${-fs*0.25}">${esc(lines[0])}</tspan><tspan x="0" dy="${fs*1.25}">${esc(lines[1])}</tspan>`);
+    const fs = clamp(Math.round(r*0.29), 11, 18);
+    const lines = wrapLabel(n.label);
+    const tspans = lines.length === 1
+      ? `<tspan x="0" dy="${fs*0.36}">${esc(lines[0])}</tspan>`
+      : `<tspan x="0" dy="${-fs*0.25}">${esc(lines[0])}</tspan><tspan x="0" dy="${fs*1.25}">${esc(lines[1])}</tspan>`;
     const sel = (n.id !== linkSource) ? ""
-      : !isCircle ? `<rect x="${-halfW-7}" y="${-halfH-7}" width="${halfW*2+14}" height="${halfH*2+14}" rx="${m.rx+4}" fill="none" stroke="#3b5bdb" stroke-width="3" stroke-dasharray="6 4"></rect>`
-                  : `<circle r="${r+8}" fill="none" stroke="#3b5bdb" stroke-width="3" stroke-dasharray="6 4"></circle>`;
+      : isRect ? `<rect x="${-halfW-7}" y="${-halfH-7}" width="${halfW*2+14}" height="${halfH*2+14}" rx="18" fill="none" stroke="#3b5bdb" stroke-width="3" stroke-dasharray="6 4"></rect>`
+               : `<circle r="${r+8}" fill="none" stroke="#3b5bdb" stroke-width="3" stroke-dasharray="6 4"></circle>`;
     let bdg = "";
-    if (n.badge){ const bw = 20 + [...String(n.badge)].length*13; bdg = `<g transform="translate(${isCard ? halfW-bw/2-10 : 0},${-(halfH+18)})" style="pointer-events:none"><rect x="${-bw/2}" y="-13" width="${bw}" height="24" rx="12" fill="#111827"></rect><text text-anchor="middle" dy="4" font-size="12" fill="#fff">${esc(n.badge)}</text></g>`; }
-    const body = isCard
-      ? `<rect class="body" x="${-halfW}" y="${-halfH}" width="${halfW*2}" height="${halfH*2}" rx="8" fill="#fff" stroke="#d8e0ec" stroke-width="1.4"></rect>
-         <rect x="${-halfW}" y="${-halfH}" width="7" height="${halfH*2}" rx="3.5" fill="${color}"></rect>
-         <circle cx="${-halfW+18}" cy="${-halfH+20}" r="4.5" fill="${color}"></circle>
-         <text class="meta" x="${-halfW+30}" y="${-halfH+23}">${kind}</text>`
-      : !isCircle
-        ? `<rect class="body" x="${-halfW}" y="${-halfH}" width="${halfW*2}" height="${halfH*2}" rx="${m.rx}" fill="${color}"></rect>`
-        : `<circle class="body" r="${r}" fill="${color}"></circle>`;
-    const label = isCard
-      ? `<text class="lbl card-label" text-anchor="start" font-size="${fs}" y="${lines.length === 1 ? 9 : 2}">${tspans}</text>`
-      : `<text class="lbl" text-anchor="middle" font-size="${fs}">${tspans}</text>`;
+    if (n.badge){ const bw = 20 + [...String(n.badge)].length*13; bdg = `<g transform="translate(0,${-(halfH+18)})" style="pointer-events:none"><rect x="${-bw/2}" y="-13" width="${bw}" height="24" rx="12" fill="#111827"></rect><text text-anchor="middle" dy="4" font-size="12" fill="#fff">${esc(n.badge)}</text></g>`; }
+    const body = isRect
+      ? `<rect class="body" x="${-halfW}" y="${-halfH}" width="${halfW*2}" height="${halfH*2}" rx="14" fill="${color}"></rect>`
+      : `<circle class="body" r="${r}" fill="${color}"></circle>`;
     h += `<g class="node" data-id="${n.id}" transform="translate(${n.x},${n.y})">
             ${sel}
             ${bdg}
             ${body}
-            ${label}
+            <text class="lbl" text-anchor="middle" font-size="${fs}">${tspans}</text>
             <circle class="port" cx="0" cy="${halfH}" r="9" stroke="#fff" stroke-width="2"><title>끌어서 연결</title></circle>
-            <circle class="swatch" cx="${swatchX}" cy="${swatchY}" r="11" fill="${color}" stroke="#fff" stroke-width="2"><title>색·크기·모양</title></circle>
+            <circle class="swatch" cx="${-offX}" cy="${-offY}" r="11" fill="${color}" stroke="#fff" stroke-width="2"><title>색·크기·모양</title></circle>
             <g class="del" transform="translate(${offX},${-offY})">
               <circle r="11" fill="#fff" stroke="#e03131" stroke-width="1.5"></circle>
               <text text-anchor="middle" dy="4.5" font-size="14" fill="#e03131" font-weight="700">×</text>
@@ -838,8 +792,8 @@ function addChild(pid){
   const p = nodes[pid]; if(!p) return;
   snapshot();
   const id = genId();
-  let x = p.x, y = p.y + 190, guard = 0;
-  while (Object.values(nodes).some(n => Math.abs(n.x-x) < 170 && Math.abs(n.y-y) < 100) && guard++ < 60) x += 185;
+  let x = p.x, y = p.y + 200, guard = 0;
+  while (Object.values(nodes).some(n => Math.abs(n.x-x) < 110 && Math.abs(n.y-y) < 80) && guard++ < 60) x += 120;
   nodes[id] = { id, label:"새 단계", x, y, parent:pid };
   persist(); render();
   return id;
@@ -850,7 +804,7 @@ function addRoot(){
   const rect = svg.getBoundingClientRect();                       // 지금 보이는 화면 정중앙(월드 좌표)
   const c = screenToWorld(rect.left + rect.width/2, rect.top + rect.height/2);
   let x = c.x, y = c.y, guard = 0;
-  while (Object.values(nodes).some(n => Math.abs(n.x-x) < 175 && Math.abs(n.y-y) < 110) && guard++ < 60){ x += 190; }
+  while (Object.values(nodes).some(n => Math.abs(n.x-x) < 120 && Math.abs(n.y-y) < 90) && guard++ < 60){ x += 130; }
   nodes[id] = { id, label:"새 시작", x, y, parent:null };
   persist(); render(); return id;
 }
@@ -873,19 +827,13 @@ function collectSubtree(id){ const out=[id]; let i=0; while(i<out.length){ child
 function setNodeColor(id, color){ if(!nodes[id]) return; snapshot(); if(color) nodes[id].color=color; else delete nodes[id].color; persist(); render(); }
 function resizeNode(id, dir){ if(!nodes[id]) return; snapshot(); nodes[id].r = clamp(radius(nodes[id]) + dir*8, 30, 88); persist(); render(); }
 function setNodeBadge(id, b){ if(!nodes[id]) return; snapshot(); if(b) nodes[id].badge=b; else delete nodes[id].badge; persist(); render(); }
-function setNodeShape(id, s){
-  if(!nodes[id]) return;
-  snapshot();
-  if(s==="circle" || s==="rect") nodes[id].shape=s;
-  else delete nodes[id].shape;
-  persist(); render();
-}
+function setNodeShape(id, s){ if(!nodes[id]) return; snapshot(); if(s==="rect") nodes[id].shape="rect"; else delete nodes[id].shape; persist(); render(); }
 
 /* ===== 자동 정렬(트리) ===== */
 function autoLayout(){
   if(!Object.keys(nodes).length) return;
   snapshot();
-  const GAPX=240, GAPY=190; let leaf=0; const seen=new Set();
+  const GAPX=180, GAPY=205; let leaf=0; const seen=new Set();
   function place(id, depth){
     if(seen.has(id)) return; seen.add(id);
     const kids = childrenOf(id);
@@ -943,7 +891,7 @@ function openNodePop(id, e){
   nodePop.innerHTML =
     `<div class="poprow">${COLORSET.map(c=>`<span class="sw" data-c="${c}" style="background:${c}"></span>`).join("")}<span class="sw reset" data-c="">기본색</span></div>`+
     `<div class="poprow size"><span class="lbl2">크기</span><button class="szbtn" data-s="-1">－</button><button class="szbtn" data-s="1">＋</button>`+
-      `<span class="lbl2" style="margin-left:8px">모양</span><button class="shp" data-sh="card">▤ 카드</button><button class="shp" data-sh="circle">● 원</button><button class="shp" data-sh="rect">▭ 사각</button></div>`+
+      `<span class="lbl2" style="margin-left:8px">모양</span><button class="shp" data-sh="circle">● 원</button><button class="shp" data-sh="rect">▭ 사각</button></div>`+
     `<div class="poprow badge"><span class="lbl2">표시</span>${BDGS.map(t=>`<button class="bdg" data-b="${t}">${t}</button>`).join("")}<button class="bdg" data-b="">지우기</button></div>`;
   nodePop.style.left = e.clientX + "px"; nodePop.style.top = (e.clientY + 10) + "px"; nodePop.style.display = "block";
 }
@@ -1235,9 +1183,8 @@ document.getElementById("exportBtn").addEventListener("click", ()=>{
 window.addEventListener("resize", setViewport);
 
 /* ===== 업데이트 알림(What's New) — 새 버전 나오면 자동 팝업 ===== */
-const APP_VERSION = "1.9";
+const APP_VERSION = "1.8";
 const CHANGELOG = [
-  { v:"1.9", d:"2026-06-23", items:["업무 노드를 카드형 기본 디자인으로 변경","카드 크기에 맞춰 연결선 위치와 자동 정렬 간격 조정"] },
   { v:"1.8", d:"2026-06-23", items:["원주 유지보수 업체 자료를 Google Sheets에서 자동으로 불러오기","업체자료 자동 영역만 최신 시트 내용으로 갱신"] },
   { v:"1.7", d:"2026-06-23", items:["견적 현진 분류 노드 상세 화면에 원주 유지보수 업체 엑셀 자료 자동 입력"] },
   { v:"1.6", d:"2026-06-23", items:["📣 업데이트 알림 팝업(이 창) 추가 — 새 버전이 나오면 자동으로 떠요","‘시장 분석’ 보드 추가"] },
