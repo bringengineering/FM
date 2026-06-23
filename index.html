@@ -72,6 +72,13 @@
   /* 색·크기 팝업 */
   #nodePop{ position:fixed; display:none; z-index:25; background:#fff; border:1px solid var(--line);
     border-radius:10px; padding:8px 8px 6px; box-shadow:0 10px 26px rgba(31,39,51,.2); }
+  #linkPop{ position:fixed; display:none; z-index:26; background:#fff; border:1px solid var(--line);
+    border-radius:10px; padding:6px; box-shadow:0 10px 26px rgba(31,39,51,.2); }
+  #linkPop button{ display:block; width:100%; text-align:left; border:0; background:#fff; padding:7px 14px; border-radius:7px; font-size:13px; cursor:pointer; font-family:inherit; color:var(--ink); white-space:nowrap; }
+  #linkPop button:hover{ background:#eef3ff; }
+  #linkPop button.on{ background:#4b7bec; color:#fff; font-weight:700; }
+  #linkPop button.del{ color:#e03131; }
+  #linkPop button.del:hover{ background:#ffeaea; }
   #nodePop .poprow{ display:flex; align-items:center; flex-wrap:wrap; max-width:210px; }
   #nodePop .sw{ width:22px; height:22px; border-radius:6px; margin:3px; cursor:pointer; box-shadow:0 0 0 1px #d3dae5; }
   #nodePop .sw.reset{ width:auto; padding:0 8px; height:22px; line-height:22px; font-size:11px; color:#6b7686; background:#fff; box-shadow:0 0 0 1px #c7d0dd; }
@@ -202,7 +209,7 @@
     </div>
     <div class="help">
       원 <b>클릭</b> → 중분류 추가 · <b>더블클릭</b> → 이름수정 (수정 중 <b>Ctrl+Enter</b> → 다음 원) · <b>드래그</b> → 이동 · 왼쪽위 <b>색동그라미</b> → 색·크기·<b>글자</b>·모양<br>
-      <b>🔗 연결 모드</b>로 대분류끼리 잇기(떨어진 원도) · <b>드래그 중 Shift</b> → 가로·세로 맞춤 · <b>✕</b> → 삭제<br>
+      <b>🔗 연결 모드</b>로 대분류끼리 잇기(떨어진 원도) · <b>연결선 클릭</b> → 곡선/직선/삭제 · <b>드래그 중 Shift</b> → 가로·세로 맞춤<br>
       ⌨️ 단축키: <b>N</b> 새 원 · <b>L</b> 연결 · <b>C</b> 곡선/직선 · <b>T</b> 트리배치 · <b>F</b> 화면맞춤 · <b>E</b> 편집/보기 · <b>Ctrl+Z</b> 되돌리기
     </div>
     <div class="linkhint" id="linkHint">🔗 <b>연결 모드</b> — 잇고 싶은 원을 <b>차례로 클릭</b>하면 화살표(→)로 연결돼요. 끝내려면 <b>연결 끝내기</b>를 누르세요. (이 모드에선 클릭해도 중분류가 안 생겨요)</div>
@@ -228,6 +235,7 @@
       </svg>
       <input id="renamer" maxlength="40" />
       <div id="nodePop"></div>
+      <div id="linkPop"></div>
       <div class="legend">
         <div><span class="ld" style="background:#4b7bec"></span>대분류</div>
         <div><span class="ld" style="background:#26de81"></span>중분류</div>
@@ -799,7 +807,8 @@ function render(){
     const ra=radius(a), rb=radius(b);
     const sx=a.x+ux*(ra+2), sy=a.y+uy*(ra+2), tx=b.x-ux*(rb+14), ty=b.y-uy*(rb+14);
     let d;
-    if (curvedLinks){
+    const curved = (l.curve === undefined) ? curvedLinks : !!l.curve;   // 선마다 개별 설정
+    if (curved){
       const mx=(sx+tx)/2, my=(sy+ty)/2, bow=Math.min(len*0.22, 90);
       d = `M ${sx} ${sy} Q ${mx-uy*bow} ${my+ux*bow} ${tx} ${ty}`;   // 수직으로 살짝 휜 곡선
     } else {
@@ -978,7 +987,31 @@ nodePop.addEventListener("click", e => {
 });
 window.addEventListener("pointerdown", e => {
   if (!e.target.closest("#nodePop") && !e.target.closest(".swatch")) hidePop();
+  if (!e.target.closest("#linkPop") && !e.target.closest(".link-hit")) hideLinkPop();
 }, true);
+
+/* ===== 연결선(링크) 개별 곡선/직선/삭제 ===== */
+const linkPop = document.getElementById("linkPop");
+let linkPopFor = null;
+function openLinkPop(i, e){
+  linkPopFor = i;
+  const cur = links[i] ? links[i].curve : undefined;
+  const isCurve = (cur === undefined) ? curvedLinks : !!cur;
+  linkPop.innerHTML =
+    `<button data-lk="curve" class="${isCurve?'on':''}">⤳ 곡선</button>`+
+    `<button data-lk="straight" class="${!isCurve?'on':''}">／ 직선</button>`+
+    `<button data-lk="del" class="del">✕ 연결 삭제</button>`;
+  linkPop.style.left = e.clientX + "px"; linkPop.style.top = (e.clientY + 8) + "px"; linkPop.style.display = "block";
+}
+function hideLinkPop(){ linkPop.style.display = "none"; linkPopFor = null; }
+function setLinkCurve(i, v){ if(!links[i]) return; snapshot(); links[i].curve = v; persist(); render(); }
+linkPop.addEventListener("click", e => {
+  const btn = e.target.closest("button"); if(!btn || linkPopFor == null) return;
+  const i = linkPopFor, act = btn.dataset.lk;
+  if (act === "del"){ snapshot(); links.splice(i,1); persist(); render(); }
+  else setLinkCurve(i, act === "curve");
+  hideLinkPop();
+});
 
 /* ===== 상세 내용 — 전체 창 모드(노션식 에디터) ===== */
 const slashMenu = document.getElementById("slashMenu");
@@ -1154,7 +1187,7 @@ svg.addEventListener("pointerdown", e => {
   if (noteEl && nodeEl){ openDetail(nodeEl.dataset.id); return; }   // 상세 내용 열기(보기/편집 모두)
   if (editing() && delEl && nodeEl){ e.stopPropagation(); deleteNode(nodeEl.dataset.id); return; }
   if (editing() && swatchEl && nodeEl){ openNodePop(nodeEl.dataset.id, e); return; }
-  if (editing() && linkHit){ const li=+linkHit.dataset.li; if(confirm("이 연결선을 지울까요?")){ snapshot(); links.splice(li,1); persist(); render(); } return; }
+  if (editing() && linkHit){ e.stopPropagation(); openLinkPop(+linkHit.dataset.li, e); return; }
   if (editing() && !linkMode && portEl && nodeEl){
     linking = { from: nodeEl.dataset.id }; busy = true;
     const a = nodes[linking.from]; tempLink.setAttribute("d", `M ${a.x} ${a.y} L ${a.x} ${a.y}`);
@@ -1282,8 +1315,9 @@ document.getElementById("exportBtn").addEventListener("click", ()=>{
 window.addEventListener("resize", setViewport);
 
 /* ===== 업데이트 알림(What's New) — 새 버전 나오면 자동 팝업 ===== */
-const APP_VERSION = "2.0";
+const APP_VERSION = "2.1";
 const CHANGELOG = [
+  { v:"2.1", d:"2026-06-23", items:["연결선을 클릭하면 그 선만 곡선/직선/삭제 선택 — 선마다 따로 설정 가능"] },
   { v:"2.0", d:"2026-06-23", items:["곡선 화살표 추가(⤳ 곡선/직선 토글) · 떨어진 원 연결도 깔끔하게","화살표 머리 2개 → 1개로 정리","원 글자 크기 조절(색·크기 메뉴의 ‘글자 가＋/가－’)","단축키 추가: N 새 원·L 연결·C 곡선·T 트리·F 화면맞춤·E 편집/보기"] },
   { v:"1.9", d:"2026-06-23", items:["상세 화면의 업체자료를 표에서 업체별 카드형 보기로 변경","업체 카드는 한 줄 최대 4개로 배치","업체 링크를 네이버·블로그·인스타·사이트 버튼으로 자동 분류"] },
   { v:"1.8", d:"2026-06-23", items:["원주 유지보수 업체 자료를 Google Sheets에서 자동으로 불러오기","업체자료 자동 영역만 최신 시트 내용으로 갱신"] },
@@ -1327,7 +1361,7 @@ window.__wf = { addChild, addRoot, addLink, deleteNode, setNodeColor, resizeNode
   openDetail, getDetailFor:()=>detailFor, addBoard, openBoard, deleteBoard, getBoards:()=>JSON.parse(JSON.stringify(boards)), getCurBoard:()=>curBoard,
   getNodes:()=>JSON.parse(JSON.stringify(nodes)), getLinks:()=>JSON.parse(JSON.stringify(links)), applyRemote, isConfigured,
   openWhatsNew, closeWhatsNew, APP_VERSION, getSeenVer, loadVendorDataFromSheet,
-  setNodeFont, getCurved:()=>curvedLinks, setCurved:(v)=>{ curvedLinks=v; render(); } };
+  setNodeFont, getCurved:()=>curvedLinks, setCurved:(v)=>{ curvedLinks=v; render(); }, setLinkCurve, openLinkPop };
 
 start();
 initVendorSheetSync();
