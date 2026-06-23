@@ -90,15 +90,21 @@
   .legend .ld{ width:13px; height:13px; border-radius:50%; display:inline-block; }
   /* 노트 핸들 */
   .note{ cursor:pointer; }
-  /* 상세 내용 패널 */
-  .detail{ position:fixed; top:0; right:0; width:340px; max-width:88vw; height:100vh; background:#fff; border-left:1px solid var(--line);
-    box-shadow:-8px 0 26px rgba(31,39,51,.14); transform:translateX(100%); transition:transform .2s ease; z-index:30; display:flex; flex-direction:column; }
-  .detail.open{ transform:translateX(0); }
-  .dhead{ display:flex; align-items:center; gap:8px; padding:15px 16px; border-bottom:1px solid var(--line); }
-  .dhead #dtitle{ font-weight:700; font-size:16px; flex:1; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
-  .dhead #dclose{ border:none; background:#f3f6fb; border-radius:8px; width:30px; height:30px; cursor:pointer; font-size:14px; }
-  .detail textarea{ flex:1; border:none; outline:none; resize:none; padding:16px; font-family:inherit; font-size:14px; line-height:1.7; }
-  .dfoot{ padding:10px 16px; font-size:11.5px; color:var(--ink-soft); border-top:1px solid var(--line); }
+  /* 상세 내용 — 전체 창 모드 (들어가기) */
+  .workspace{ position:fixed; inset:0; background:#fff; z-index:40; display:none; flex-direction:column; }
+  .workspace.open{ display:flex; }
+  .wshead{ display:flex; align-items:center; gap:10px; padding:12px 18px; border-bottom:1px solid var(--line); flex-wrap:wrap; }
+  .wsbtn{ border:1px solid var(--line); background:#fff; border-radius:9px; padding:7px 13px; font-size:14px; cursor:pointer; font-family:inherit; }
+  .wsbtn:hover{ background:#f3f6fb; }
+  .wstitle{ font-weight:800; font-size:18px; flex:1; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; min-width:80px; }
+  .wstools{ display:flex; gap:4px; }
+  .wstools button{ border:1px solid var(--line); background:#fff; border-radius:7px; min-width:32px; height:32px; padding:0 8px; font-size:14px; cursor:pointer; }
+  .wstools button:hover{ background:#f3f6fb; }
+  .wsbody{ flex:1; overflow:auto; padding:28px max(24px,8vw); font-size:16px; line-height:1.85; outline:none; }
+  .wsbody:empty:before{ content:attr(data-ph); color:#9aa6b5; }
+  .wsbody h2{ font-size:22px; margin:18px 0 8px; }
+  .wsbody ul,.wsbody ol{ padding-left:26px; }
+  .wsfoot{ padding:8px 18px; font-size:11.5px; color:var(--ink-soft); border-top:1px solid var(--line); }
 </style>
 </head>
 <body class="editing">
@@ -152,10 +158,21 @@
         <div><span class="ld" style="background:#26de81"></span>중분류</div>
         <div><span class="ld" style="background:#f7b731"></span>소분류</div>
       </div>
-      <div class="detail" id="detail">
-        <div class="dhead"><span id="dtitle">상세</span><button id="dclose" title="닫기">✕</button></div>
-        <textarea id="dbody" placeholder="이 단계를 어떻게 진행하는지 상세히 적어보세요…&#10;예) 절차 1. … 2. …  ·  담당자  ·  체크리스트  ·  참고 링크"></textarea>
-        <div class="dfoot">✏️ 변경은 자동 저장 · 팀원에게 실시간 공유돼요</div>
+      <div class="workspace" id="workspace">
+        <div class="wshead">
+          <button class="wsbtn" id="wsback">← 나가기</button>
+          <span class="wstitle" id="wstitle"></span>
+          <div class="wstools">
+            <button data-cmd="formatBlock" data-val="h2" title="제목">H</button>
+            <button data-cmd="bold" title="굵게"><b>B</b></button>
+            <button data-cmd="underline" title="밑줄"><u>U</u></button>
+            <button data-cmd="insertUnorderedList" title="목록">• 목록</button>
+            <button data-cmd="insertOrderedList" title="번호목록">1. 번호</button>
+            <button data-cmd="formatBlock" data-val="p" title="본문">본문</button>
+          </div>
+        </div>
+        <div class="wsbody" id="wsbody" contenteditable="true" data-ph="여기에 계획·내용을 적어보세요. 제목(H)·굵게(B)·목록(•)으로 PPT처럼 정리할 수 있어요."></div>
+        <div class="wsfoot">✏️ 자동 저장 · 팀원에게 실시간 공유 · Esc 또는 ‘나가기’로 흐름으로 복귀</div>
       </div>
     </div>
   </div>
@@ -202,9 +219,9 @@ const modeBtn  = document.getElementById("modeBtn");
 const linkBtn  = document.getElementById("linkBtn");
 const undoBtn  = document.getElementById("undoBtn");
 const tabsEl   = document.getElementById("tabs");
-const detail   = document.getElementById("detail");
-const dtitle   = document.getElementById("dtitle");
-const dbody    = document.getElementById("dbody");
+const workspace = document.getElementById("workspace");
+const wstitle  = document.getElementById("wstitle");
+const wsbody   = document.getElementById("wsbody");
 let detailFor  = null;
 
 const editing = () => document.body.classList.contains("editing");
@@ -271,6 +288,7 @@ function loadGraphLocal(id){
 }
 function saveGraphLocal(){ try{ localStorage.setItem(graphKey(curBoard), JSON.stringify(graphState())); }catch(e){} }
 function persist(){ saveGraphLocal(); if(graphRef){ graphRef.set(graphState()); } }
+function persistDebounced(){ clearTimeout(writeTimer); writeTimer = setTimeout(persist, 250); }
 
 function applyRemote(remote){
   if (busy){ pendingRemote = remote; return; }
@@ -278,7 +296,7 @@ function applyRemote(remote){
   else { nodes = remote; links = []; }
   render();
   if(justOpened){ justOpened=false; fitView(); }
-  if (detailFor){ if(!nodes[detailFor]) closeDetail(); else if(document.activeElement !== dbody){ dtitle.textContent = nodes[detailFor].label||""; dbody.value = nodes[detailFor].detail||""; } }
+  if (detailFor){ if(!nodes[detailFor]) closeDetail(); else if(document.activeElement !== wsbody){ wstitle.textContent = nodes[detailFor].label||""; wsbody.innerHTML = nodes[detailFor].detail||""; } }
 }
 function flushPending(){ if (pendingRemote){ const r=pendingRemote; pendingRemote=null; applyRemote(r); } }
 
@@ -432,14 +450,15 @@ function render(){
               <text text-anchor="middle" dy="4.5" font-size="14" fill="#e03131" font-weight="700">×</text>
             </g>
             <g class="note" transform="translate(${off},${off})">
-              <circle r="11" fill="${(n.detail&&n.detail.trim())?'#4b7bec':'#fff'}" stroke="#4b7bec" stroke-width="1.5"></circle>
-              <text text-anchor="middle" dy="4" font-size="12" fill="${(n.detail&&n.detail.trim())?'#fff':'#4b7bec'}">≡</text>
+              <circle r="11" fill="${hasDoc(n)?'#4b7bec':'#fff'}" stroke="#4b7bec" stroke-width="1.5"></circle>
+              <text text-anchor="middle" dy="4" font-size="12" fill="${hasDoc(n)?'#fff':'#4b7bec'}">≡</text>
             </g>
           </g>`;
   });
   nodesG.innerHTML = h;
 }
 function esc(s){ return String(s).replace(/[&<>]/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;"}[c])); }
+function hasDoc(n){ return !!(n.detail && n.detail.replace(/<[^>]*>/g,"").trim()); }
 
 /* ===== 동작 ===== */
 function addChild(pid){
@@ -559,17 +578,25 @@ window.addEventListener("pointerdown", e => {
   if (!e.target.closest("#nodePop") && !e.target.closest(".swatch")) hidePop();
 }, true);
 
-/* ===== 상세 내용 패널 (원마다 디테일 기록) ===== */
+/* ===== 상세 내용 — 전체 창 모드(들어가기) ===== */
 function openDetail(id){
   const n = nodes[id]; if(!n) return;
-  detailFor = id; dtitle.textContent = n.label || "(이름 없음)"; dbody.value = n.detail || "";
-  detail.classList.add("open");
+  detailFor = id; wstitle.textContent = n.label || "(이름 없음)"; wsbody.innerHTML = n.detail || "";
+  workspace.classList.add("open"); wsbody.focus();
 }
-function closeDetail(){ detail.classList.remove("open"); detailFor = null; busy = false; flushPending(); }
-document.getElementById("dclose").addEventListener("click", closeDetail);
-dbody.addEventListener("focus", ()=>{ busy = true; });
-dbody.addEventListener("blur",  ()=>{ busy = false; flushPending(); });
-dbody.addEventListener("input", ()=>{ if(detailFor && nodes[detailFor]){ nodes[detailFor].detail = dbody.value; persistDebounced(); } });
+function closeDetail(){ workspace.classList.remove("open"); detailFor = null; busy = false; flushPending(); render(); }
+document.getElementById("wsback").addEventListener("click", closeDetail);
+wsbody.addEventListener("focus", ()=>{ busy = true; });
+wsbody.addEventListener("blur",  ()=>{ busy = false; flushPending(); });
+wsbody.addEventListener("input", ()=>{ if(detailFor && nodes[detailFor]){ nodes[detailFor].detail = wsbody.innerHTML; persistDebounced(); } });
+const wstools = document.querySelector(".wstools");
+wstools.addEventListener("mousedown", e=>{ if(e.target.closest("button")) e.preventDefault(); });   // 선택영역 유지
+wstools.addEventListener("click", e=>{
+  const btn = e.target.closest("button[data-cmd]"); if(!btn || detailFor==null) return;
+  wsbody.focus();
+  document.execCommand(btn.dataset.cmd, false, btn.dataset.val || null);
+  nodes[detailFor].detail = wsbody.innerHTML; persistDebounced();
+});
 
 /* ===== 포인터 ===== */
 let drag = null, pan = null, linking = null;
@@ -640,6 +667,7 @@ svg.addEventListener("wheel", e => {
 
 /* ===== 키보드: Shift 자동정렬 / Ctrl+Z 되돌리기 ===== */
 window.addEventListener("keydown", e => {
+  if (workspace.classList.contains("open")){ if(e.key==="Escape") closeDetail(); return; }   // 창 모드: 흐름 단축키 차단
   const tag = (e.target && e.target.tagName || "").toLowerCase();
   if (tag === "input" || tag === "textarea" || renameId != null) return;
   const ctrl = e.ctrlKey || e.metaKey;
