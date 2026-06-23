@@ -125,18 +125,15 @@
 <script>
 /* ===== ① 실시간 공유 켜기: 아래 값을 본인 Firebase 프로젝트 값으로 교체 (교체 전엔 '로컬 모드') ===== */
 const firebaseConfig = {
-  apiKey:      "여기에-API-KEY",
-  authDomain:  "여기에-PROJECT.firebaseapp.com",
-  databaseURL: "https://여기에-PROJECT-default-rtdb.firebaseio.com",
-  projectId:   "여기에-PROJECT-ID",
-  appId:       "여기에-APP-ID"
+  databaseURL: "https://bring-fm-default-rtdb.asia-southeast1.firebasedatabase.app",
+  projectId:   "bring-fm"
 };
 const ROOM = "main";
 
 const PALETTE  = ["#4b7bec","#26de81","#f7b731","#fa8231","#a55eea","#eb3b5a","#2bcbba","#3867d6"];
 const COLORSET = ["#4b7bec","#3867d6","#26de81","#20bf6b","#f7b731","#fa8231","#eb3b5a","#a55eea","#2bcbba","#778ca3","#1f2733"];
 const LS_KEY   = "fm_workflow_graph_v1";
-const isConfigured = !!firebaseConfig.apiKey && !firebaseConfig.apiKey.includes("여기에");
+const isConfigured = !!firebaseConfig.databaseURL && !firebaseConfig.databaseURL.includes("여기에");
 
 /* ===== 상태 ===== */
 let nodes = {};                 // { id:{id,label,x,y,parent,color?,r?} }
