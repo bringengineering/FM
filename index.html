@@ -120,12 +120,11 @@
   .wsbody .todo .cb{ cursor:pointer; user-select:none; font-size:18px; flex:0 0 auto; }
   .wsbody .todo[data-done="1"]{ color:#9aa6b5; text-decoration:line-through; }
   .vendor-note{ margin:0 0 14px; color:#52606d; font-size:14px; }
-  .vendor-grid{ display:grid; grid-template-columns:repeat(auto-fit,minmax(280px,1fr)); gap:12px; margin-top:12px; }
+  .vendor-grid{ display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); gap:12px; margin-top:12px; }
   .vendor-card{ border:1px solid #d8e0ec; border-radius:8px; background:#fff; box-shadow:0 4px 12px rgba(31,39,51,.06); overflow:hidden; }
   .vendor-card-head{ display:flex; align-items:flex-start; justify-content:space-between; gap:12px; padding:14px 16px 12px; border-bottom:1px solid #edf1f6; background:#f8fafd; }
   .vendor-card-name{ color:#162033; font-size:16px; font-weight:800; line-height:1.35; }
   .vendor-card-type{ margin-top:5px; color:#52606d; font-size:13px; line-height:1.45; }
-  .vendor-no{ flex:0 0 auto; border:1px solid #c5d4ff; border-radius:999px; padding:2px 8px; color:#315fce; background:#eef3ff; font-size:12px; font-weight:800; }
   .vendor-card-body{ display:grid; gap:10px; padding:14px 16px 16px; }
   .vendor-field{ display:grid; gap:4px; }
   .vendor-field-label{ color:#6b7686; font-size:12px; font-weight:800; }
@@ -133,6 +132,8 @@
   .vendor-links{ display:flex; flex-wrap:wrap; gap:6px; }
   .vendor-links a{ display:inline-flex; align-items:center; min-height:28px; padding:4px 9px; border:1px solid #c5d4ff; border-radius:7px; color:#315fce; background:#f6f8ff; font-size:13px; font-weight:700; text-decoration:none; }
   .vendor-links a:hover{ background:#eaf0ff; text-decoration:none; }
+  @media (max-width:1180px){ .vendor-grid{ grid-template-columns:repeat(2,minmax(0,1fr)); } }
+  @media (max-width:720px){ .vendor-grid{ grid-template-columns:1fr; } }
   .vendor-table{ width:100%; border-collapse:separate; border-spacing:0; border:1px solid #d8e0ec; border-radius:8px; overflow:hidden; line-height:1.45; font-size:14px; }
   .vendor-table th,.vendor-table td{ border-bottom:1px solid #e6ebf2; border-right:1px solid #e6ebf2; padding:9px 10px; text-align:left; vertical-align:top; }
   .vendor-table th{ background:#f3f6fb; color:#243244; font-weight:800; white-space:nowrap; }
@@ -412,15 +413,41 @@ function urlLines(s){
   if(!urls.length) return '<span class="vendor-empty">-</span>';
   return urls.map(u => `<a href="${escAttr(u)}" target="_blank" rel="noopener">${escH(u)}</a>`).join("<br>");
 }
-function vendorUrlItems(s, label){
+function normalizeVendorUrl(url){
+  const u = String(url || "").trim();
+  if(!u) return "";
+  return /^https?:\/\//i.test(u) ? u : "https://" + u;
+}
+function vendorLinkType(url){
+  const safeUrl = normalizeVendorUrl(url);
+  try{
+    const u = new URL(safeUrl);
+    const host = u.hostname.toLowerCase();
+    if(host.includes("instagram.com")) return "인스타";
+    if(host.includes("blog.naver.com")) return "블로그";
+    if(host.includes("naver.")) return "네이버";
+    return "사이트";
+  }catch(e){
+    return "사이트";
+  }
+}
+function vendorUrlItems(s){
   return String(s || "").split(/\n+/).map(x=>x.trim()).filter(x=>x && x !== "-")
-    .map((url, i) => ({ url, label:`${label} ${i+1}` }));
+    .map(raw => {
+      const url = normalizeVendorUrl(raw);
+      const type = vendorLinkType(url);
+      return { url, type };
+    });
 }
 function vendorLinksHtml(map, promo){
-  const links = vendorUrlItems(map, "지도").concat(vendorUrlItems(promo, "자료"));
+  const counts = {};
+  const links = vendorUrlItems(map).concat(vendorUrlItems(promo)).map(l => {
+    counts[l.type] = (counts[l.type] || 0) + 1;
+    return { url:l.url, label:counts[l.type] > 1 ? `${l.type} ${counts[l.type]}` : l.type };
+  });
   if(!links.length) return '<span class="vendor-empty">-</span>';
   return `<div class="vendor-links">${links.map(l =>
-    `<a href="${escAttr(l.url)}" target="_blank" rel="noopener">${escH(l.label)}</a>`
+    `<a href="${escAttr(l.url)}" data-url="${escAttr(l.url)}" title="${escAttr(l.url)}" target="_blank" rel="noopener">${escH(l.label)}</a>`
   ).join("")}</div>`;
 }
 function escAttr(s){ return escH(s).replace(/"/g,"&quot;"); }
@@ -435,7 +462,6 @@ function vendorDetailHtml(label){
           <div class="vendor-card-name">${escH(v.name)}</div>
           <div class="vendor-card-type">${htmlLines(v.type)}</div>
         </div>
-        ${v.no ? `<span class="vendor-no">#${escH(v.no)}</span>` : ""}
       </div>
       <div class="vendor-card-body">
         <div class="vendor-field"><span class="vendor-field-label">전화번호</span><p class="vendor-field-value">${htmlLines(v.phone)}</p></div>
@@ -980,6 +1006,14 @@ wstools.addEventListener("click", e=>{
 });
 /* 체크박스 토글 */
 wsbody.addEventListener("click", e=>{
+  const vendorLink=e.target.closest(".vendor-links a");
+  if(vendorLink){
+    e.preventDefault();
+    e.stopPropagation();
+    const href=vendorLink.getAttribute("href");
+    if(href) window.open(href, "_blank", "noopener");
+    return;
+  }
   const cb=e.target.closest(".cb"); if(!cb) return;
   const todo=cb.closest(".todo"); if(!todo) return;
   const done = todo.getAttribute("data-done")==="1";
@@ -1216,7 +1250,7 @@ window.addEventListener("resize", setViewport);
 /* ===== 업데이트 알림(What's New) — 새 버전 나오면 자동 팝업 ===== */
 const APP_VERSION = "1.9";
 const CHANGELOG = [
-  { v:"1.9", d:"2026-06-23", items:["상세 화면의 업체자료를 표에서 업체별 카드형 보기로 변경","업체 링크를 지도·자료 버튼으로 정리"] },
+  { v:"1.9", d:"2026-06-23", items:["상세 화면의 업체자료를 표에서 업체별 카드형 보기로 변경","업체 카드는 한 줄 최대 4개로 배치","업체 링크를 네이버·블로그·인스타·사이트 버튼으로 자동 분류"] },
   { v:"1.8", d:"2026-06-23", items:["원주 유지보수 업체 자료를 Google Sheets에서 자동으로 불러오기","업체자료 자동 영역만 최신 시트 내용으로 갱신"] },
   { v:"1.7", d:"2026-06-23", items:["견적 현진 분류 노드 상세 화면에 원주 유지보수 업체 엑셀 자료 자동 입력"] },
   { v:"1.6", d:"2026-06-23", items:["📣 업데이트 알림 팝업(이 창) 추가 — 새 버전이 나오면 자동으로 떠요","‘시장 분석’ 보드 추가"] },
