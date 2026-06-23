@@ -119,6 +119,15 @@
   .wsbody .todo{ display:flex; align-items:flex-start; gap:6px; margin:3px 0; }
   .wsbody .todo .cb{ cursor:pointer; user-select:none; font-size:18px; flex:0 0 auto; }
   .wsbody .todo[data-done="1"]{ color:#9aa6b5; text-decoration:line-through; }
+  .vendor-note{ margin:0 0 14px; color:#52606d; font-size:14px; }
+  .vendor-table{ width:100%; border-collapse:separate; border-spacing:0; border:1px solid #d8e0ec; border-radius:8px; overflow:hidden; line-height:1.45; font-size:14px; }
+  .vendor-table th,.vendor-table td{ border-bottom:1px solid #e6ebf2; border-right:1px solid #e6ebf2; padding:9px 10px; text-align:left; vertical-align:top; }
+  .vendor-table th{ background:#f3f6fb; color:#243244; font-weight:800; white-space:nowrap; }
+  .vendor-table tr:last-child td{ border-bottom:0; }
+  .vendor-table th:last-child,.vendor-table td:last-child{ border-right:0; }
+  .vendor-table a{ color:#315fce; text-decoration:none; word-break:break-all; }
+  .vendor-table a:hover{ text-decoration:underline; }
+  .vendor-empty{ color:#9aa6b5; }
   .wsbody .docbox{ display:inline-block; min-width:110px; padding:12px 16px; border:2px solid #4b7bec; border-radius:12px; margin:6px; vertical-align:top; font-size:14px; }
   .wsbody .docshape{ display:inline-flex; align-items:center; justify-content:center; width:112px; height:112px; border-radius:50%; border:2px solid #26de81; padding:10px; margin:6px; vertical-align:top; font-size:14px; text-align:center; }
   /* 자유 캔버스(PPT식) */
@@ -317,6 +326,101 @@ function makeSeed(){
   };
 }
 
+const VENDOR_DATA_SOURCE = "원주 유지보수 업체.xlsx";
+const VENDOR_DATA_VERSION = "2026-06-23";
+const VENDOR_DATA = {
+  "누수·배관": [
+    { no:1, type:"누수탐지/하수구/고압세척/수도설비", name:"우리종합설비", address:"강원도 원주시 단계동 886-4", phone:"010-4858-7625\n033-742-7625", map:"https://naver.me/F5swtyvo", promo:"https://blog.naver.com/pms7625", rating:"", price:"", note:"" },
+    { no:2, type:"누수탐지", name:"원주 누수탐지 웰빙", address:"강원 원주시 단계동 789-2", phone:"010-3617-7468", map:"https://naver.me/FhUHMhpd", promo:"https://blog.naver.com/byung7468\nhttps://www.instagram.com/wonju_wellbingnusu?igsh=MTVqNzJxNHI0dXBkMA%3D%3D", rating:"", price:"", note:"" },
+    { no:20, type:"누수탐지", name:"달인누수탐지", address:"강원 원주시 우산동 821", phone:"0507-1394-8959\n010-2394-8959", map:"https://naver.me/FG3ERBn5", promo:"https://www.youtube.com/@nusuin", rating:"", price:"", note:"전문장비보유" },
+    { no:21, type:"배관/냉난방공사", name:"누수탐지", address:"강원 원주시 일산동 347-37", phone:"0507-976-9753", map:"https://naver.me/FQuI60qj", promo:"https://blog.naver.com/wnalsl7", rating:"", price:"", note:"경력 17년\n 최첨단 탐지 장비 활용\n고객 입장에서의 상세 설명" }
+  ],
+  "전기·조명": [
+    { no:3, type:"전기공사/누전수리/조명/콘센트", name:"신원주 전기공사/출장수리", address:"강원 원주시 단구동 66-5", phone:"010-9616-1155\n0507-1333-6085", map:"https://naver.me/5WOYybis", promo:"https://litt.ly/ssonghyo", rating:"★★★★★", price:"", note:"" }
+  ],
+  "도배공사": [
+    { no:4, type:"도배/장판/페인트", name:"원주 늘푸른 도배장판", address:"강원 원주시 태장동 819-38", phone:"010-5017-7135", map:"https://naver.me/GZ6KUuAY", promo:"https://soomgo.com/profile/users/15930897", rating:"★★★★★", price:"", note:"" },
+    { no:17, type:"인테리어/리모델링", name:"현진종합장식", address:"강원 원주시 단구동 1669-6", phone:"0507-1389-2482\n010-8969-9198", map:"https://naver.me/GxkzaB4O", promo:"https://blog.naver.com/lyi7540", rating:"", price:"", note:"곰팡이 제거 가능" },
+    { no:18, type:"벽지/장판/마루", name:"부엉이인테리어", address:"강원 원주시 무실동 1669-1", phone:"0507-1351-3097", map:"https://naver.me/57VutxDg", promo:"https://blog.naver.com/lovergksmf10", rating:"", price:"", note:"" },
+    { no:19, type:"도배/누수/장판/마루/필름/몰딩", name:"고운도배", address:"강원 원주시 관설동 1767-3", phone:"0507-1405-2996", map:"https://naver.me/F0AlOeRV", promo:"https://blog.naver.com/gowoondobae\nhttps://www.instagram.com/gowoondobae", rating:"★★★★★", price:"", note:"입주도배\n사장님이 직접시공\n국가기술자격증을 보유" }
+  ],
+  "방수·코킹": [
+    { no:5, type:"방수/타일/미장", name:"방수&코킹", address:"충남 아산시 배방읍 중리 59-2", phone:"0507-1476-8583", map:"https://naver.me/5r3Vlero", promo:"http://xn--vh3bo2im2c04n9vb.kr/", rating:"", price:"", note:"" }
+  ],
+  "문·창호·도어락": [
+    { no:6, type:"도어락/열쇠", name:"원주열쇠.공공열쇠", address:"강원 원주시 일산동 326-25", phone:"033-744-4080\n033-745-1433\n010-8684-6910", map:"https://naver.me/xuFof5Mj", promo:"https://033-744-4080.ezbuilder.co.kr/", rating:"", price:"", note:"" },
+    { no:7, type:"디지털도어락/열쇠 출장", name:"원주디지털도어락24시출장열쇠전문", address:"강원 원주시 일산동 154-290", phone:"033-743-1382", map:"https://naver.me/Fpxbf1Xl", promo:"-", rating:"", price:"", note:"" }
+  ],
+  "냉난방·보일러": [
+    { no:8, type:"보일러/전등/집수리", name:"리페어존!!", address:"강원 원주시", phone:"숨고 고객센터 경유", map:"https://soomgo.com/profile/users/13808578?from=seo", promo:"", rating:"★★★★★", price:"", note:"숨고 기준 고용 27회\n경력 12년" },
+    { no:9, type:"보일러/설비", name:"기동설비", address:"강원 원주시", phone:"숨고 고객센터 경유", map:"https://soomgo.com/profile/users/15946298?from=seo", promo:"-", rating:"★★★★★", price:"", note:"숨고 기준 고용 2회\n경력 20년" }
+  ],
+  "냉난방·에어컨": [
+    { no:10, type:"에어컨 청소", name:"원주에어컨청소클린업", address:"강원 원주시 흥업면 흥업리", phone:"010-8254-4553", map:"https://naver.me/Fy2zbpm1", promo:"https://blog.naver.com/mekjoo07", rating:"", price:"벽걸이 에어컨 - 80,000원\n스탠드 에어컨 - 110,000원\n투인원 에어컨 - 180,000원\n가정용 원웨이 천장형 에어컨 - 1대 100,000원, 2대 90,000원, 3대 80,000원, 4대이상, 70,000원\n천장형 4웨이 에어컨 - 일반 가정 혹은 사무실 - 110,000원, 식당및 오염도 최상제품 - 130,000원 (높이 3미터 이상 추가비 20,000)\n천장형 원형 에어컨 - 140,000원 (높이 3미터 이상 20,000원 추가)", note:"" }
+  ],
+  "청소·위생": [
+    { no:11, type:"준공청소/유리창/저수조/물탱크", name:"원클린", address:"강원 원주시 태장동 1365-1", phone:"0507-1309-3066", map:"https://naver.me/5BwfDtM2", promo:"https://blog.naver.com/joa8610\nhttps://www.instagram.com/_one_clean/", rating:"", price:"", note:"" },
+    { no:12, type:"방역/물탱크/저수조 청소", name:"신세계방역&종합환경", address:"강원권", phone:"033-742-1677", map:"https://naver.me/GL8e6dzS", promo:"https://soomgo.com/profile/users/15619724?from=seo", rating:"", price:"", note:"경력 27년" }
+  ],
+  "소방·안전": [
+    { no:13, type:"소방시설관리/점검", name:"주식회사 창영", address:"원주시 판부면 서곡리 442-1", phone:"0507-1319-9513", map:"https://naver.me/G1po2g4m", promo:"-", rating:"", price:"", note:"확인필요" },
+    { no:14, type:"소방시설관리/점검", name:"주식회사대원소방", address:"원주시 판부면 매봉길 10-6 101호", phone:"033-761-6634", map:"https://naver.me/5T0lPfom", promo:"-", rating:"", price:"", note:"" },
+    { no:15, type:"소방시설공사", name:"중부소방 주식회사", address:"강원특별자치도 원주시 흥업면 남원로 125", phone:"033-761-0119", map:"https://naver.me/GWi0O2qG", promo:"https://blog.naver.com/jbf0119", rating:"", price:"", note:"" },
+    { no:16, type:"주택용소방시설 판매", name:"북원소방", address:"원주시 단구동 1686-4", phone:"033-744-0704", map:"https://naver.me/GahUWJeN", promo:"-", rating:"", price:"", note:"확인필요" }
+  ],
+  "타일공사": [
+    { no:22, type:"미장/타일/방수공사", name:"그랜드욕실앤타일", address:"강원 원주시 단구동 121-36", phone:"010-4788-9355", map:"https://naver.me/xVB5n3Rx", promo:"https://blog.naver.com/pyc8318", rating:"", price:"", note:"" },
+    { no:23, type:"미장/타일/방수공사", name:"이누스 현대타일 원주대리점", address:"강원 원주시 단계동 800-23", phone:"033-764-9936", map:"https://naver.me/FbqzefkI", promo:"https://blog.naver.com/inus1110", rating:"", price:"", note:"원주, 횡성, 문막, 제천, 춘천 출장 가능" }
+  ]
+};
+
+function vendorKey(label){
+  return String(label || "").replace(/\s+/g,"").replace(/[ㆍ・]/g,"·");
+}
+function vendorItemsFor(label){
+  const key = vendorKey(label);
+  return Object.keys(VENDOR_DATA).find(k => vendorKey(k) === key);
+}
+function htmlLines(s){
+  const v = String(s || "").trim();
+  return v && v !== "-" ? v.split(/\n+/).map(x => escH(x.trim())).join("<br>") : '<span class="vendor-empty">-</span>';
+}
+function urlLines(s){
+  const urls = String(s || "").split(/\n+/).map(x=>x.trim()).filter(x=>x && x !== "-");
+  if(!urls.length) return '<span class="vendor-empty">-</span>';
+  return urls.map(u => `<a href="${escAttr(u)}" target="_blank" rel="noopener">${escH(u)}</a>`).join("<br>");
+}
+function escAttr(s){ return escH(s).replace(/"/g,"&quot;"); }
+function vendorDetailHtml(label){
+  const cat = vendorItemsFor(label);
+  if(!cat) return "";
+  const rows = VENDOR_DATA[cat].map(v => `<tr>
+    <td>${escH(v.name)}</td>
+    <td>${htmlLines(v.type)}</td>
+    <td>${htmlLines(v.phone)}</td>
+    <td>${htmlLines(v.address)}</td>
+    <td>${urlLines(v.map)}${v.promo && v.promo !== "-" ? "<br>" + urlLines(v.promo) : ""}</td>
+    <td>${htmlLines([v.rating, v.price, v.note].filter(Boolean).join("\n"))}</td>
+  </tr>`).join("");
+  return `<h2>${escH(cat)} 업체 자료</h2>
+    <p class="vendor-note">${escH(VENDOR_DATA_SOURCE)} · ${escH(VENDOR_DATA_VERSION)} 기준</p>
+    <table class="vendor-table">
+      <thead><tr><th>업체명</th><th>세부유형</th><th>전화번호</th><th>주소</th><th>링크</th><th>평점·단가·비고</th></tr></thead>
+      <tbody>${rows}</tbody>
+    </table>`;
+}
+function applyVendorDetailsToNodes(){
+  let changed = false;
+  Object.values(nodes).forEach(n => {
+    if(!n || !vendorItemsFor(n.label)) return;
+    const hasDetail = !!(n.detail && n.detail.replace(/<[^>]*>/g,"").trim());
+    if(hasDetail) return;
+    n.detail = vendorDetailHtml(n.label);
+    changed = true;
+  });
+  return changed;
+}
+
 /* ===== 시작 ===== */
 function start(){
   if (isConfigured && typeof firebase !== "undefined"){
@@ -378,6 +482,7 @@ function applyRemote(remote){
   if (busy){ pendingRemote = remote; return; }
   if (remote && remote.nodes){ nodes = remote.nodes; links = normLinks(remote.links); }
   else { nodes = remote; links = []; }
+  const vendorChanged = applyVendorDetailsToNodes();
   render();
   if(justOpened){ justOpened=false; fitView(); }
   if (detailFor){
@@ -385,6 +490,7 @@ function applyRemote(remote){
     else if(document.activeElement !== wsbody){ wstitle.textContent = nodes[detailFor].label||""; wsbody.innerHTML = nodes[detailFor].detail||""; }
     if(canvasMode && !cdrag && !wscanvas.contains(document.activeElement)) renderCanvas();
   }
+  if(vendorChanged) persistDebounced();
 }
 function flushPending(){ if (pendingRemote){ const r=pendingRemote; pendingRemote=null; applyRemote(r); } }
 
@@ -395,6 +501,7 @@ function openBoard(id){
   curBoard = id; history.length=0; redoStack.length=0; updateUndoBtn(); closeDetail();
   linkSource=null; pendingRemote=null; busy=false;
   const cache = loadGraphLocal(id); nodes = cache.nodes; links = cache.links;
+  if(applyVendorDetailsToNodes()) saveGraphLocal();
   render(); fitView(); renderTabs();
   if(db){
     justOpened = true;
@@ -959,8 +1066,9 @@ document.getElementById("exportBtn").addEventListener("click", ()=>{
 window.addEventListener("resize", setViewport);
 
 /* ===== 업데이트 알림(What's New) — 새 버전 나오면 자동 팝업 ===== */
-const APP_VERSION = "1.6";
+const APP_VERSION = "1.7";
 const CHANGELOG = [
+  { v:"1.7", d:"2026-06-23", items:["견적 현진 분류 노드 상세 화면에 원주 유지보수 업체 엑셀 자료 자동 입력"] },
   { v:"1.6", d:"2026-06-23", items:["📣 업데이트 알림 팝업(이 창) 추가 — 새 버전이 나오면 자동으로 떠요","‘시장 분석’ 보드 추가"] },
   { v:"1.5", d:"2026-06-23", items:["보드 탭을 업무 흐름 순서로 정렬","업무 보드 7종 + ‘결제방식’ 골격 추가"] },
   { v:"1.4", d:"2026-06-23", items:["상세 안에 PPT식 자유배치 글상자(🎨캔버스) 모드"] },
