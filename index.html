@@ -207,6 +207,43 @@
   .wn-entry li{ font-size:13.5px; line-height:1.6; color:#3a4452; }
   .wn-foot{ display:flex; justify-content:flex-end; margin-top:6px; position:sticky; bottom:-22px; background:#fff; padding:10px 0 0; }
   .wn-btn{ border:0; background:#4b7bec; color:#fff; padding:9px 18px; border-radius:10px; font-size:14px; font-weight:700; cursor:pointer; font-family:inherit; }
+  /* 케이스 자동화 트래커 */
+  .caseview{ position:fixed; inset:0; background:#f4f6fa; z-index:60; display:none; flex-direction:column; }
+  .caseview.open{ display:flex; }
+  .cv-head{ display:flex; align-items:center; gap:12px; padding:12px 18px; background:#fff; border-bottom:1px solid var(--line); }
+  .cv-head b{ font-size:16px; }
+  .cv-hint{ font-size:12px; color:var(--ink-soft); }
+  .wsbtn{ border:1px solid var(--line); background:#fff; border-radius:9px; padding:7px 12px; font-size:13px; cursor:pointer; font-family:inherit; }
+  .cv-body{ flex:1; display:flex; min-height:0; }
+  .cv-list{ width:260px; border-right:1px solid var(--line); background:#fff; overflow:auto; padding:10px; }
+  .cv-newcase{ width:100%; border:1px dashed #4b7bec; color:#4b7bec; background:#f5f8ff; border-radius:10px; padding:10px; font-size:13.5px; cursor:pointer; font-family:inherit; font-weight:700; margin-bottom:8px; }
+  .cv-item{ padding:10px 12px; border-radius:10px; cursor:pointer; margin-bottom:5px; border:1px solid transparent; }
+  .cv-item:hover{ background:#f3f6fb; }
+  .cv-item.on{ background:#eaf0ff; border-color:#c5d4ff; }
+  .cv-item .nm{ font-weight:700; font-size:14px; }
+  .cv-item .sub{ font-size:11.5px; color:var(--ink-soft); margin-top:2px; }
+  .cv-item .pg{ font-size:11px; color:#4b7bec; margin-top:3px; }
+  .cv-detail{ flex:1; overflow:auto; padding:20px 26px; }
+  .cv-empty{ color:#9aa6b5; text-align:center; margin-top:80px; font-size:14px; }
+  .cv-form{ display:flex; flex-wrap:wrap; gap:10px; margin-bottom:8px; }
+  .cv-form label{ font-size:12px; color:var(--ink-soft); display:flex; flex-direction:column; gap:3px; }
+  .cv-form input,.cv-form select{ border:1px solid var(--line); border-radius:8px; padding:7px 9px; font-size:13px; font-family:inherit; min-width:140px; }
+  .cv-bar{ height:9px; background:#e7ecf3; border-radius:6px; overflow:hidden; margin:10px 0 4px; }
+  .cv-bar > i{ display:block; height:100%; background:#26de81; }
+  .cv-prog{ font-size:12.5px; color:var(--ink-soft); margin-bottom:14px; }
+  .cv-step{ display:flex; align-items:center; gap:10px; padding:9px 12px; border:1px solid var(--line); border-radius:11px; margin-bottom:7px; background:#fff; }
+  .cv-step.done{ background:#f3fbf6; border-color:#bce8cf; }
+  .cv-step.doing{ background:#fff8e8; border-color:#f0dca0; }
+  .cv-chip{ border:0; border-radius:999px; padding:4px 11px; font-size:12px; cursor:pointer; font-family:inherit; white-space:nowrap; min-width:62px; }
+  .cv-chip.wait{ background:#eef1f6; color:#6b7686; }
+  .cv-chip.doing{ background:#f7b731; color:#5a3d00; }
+  .cv-chip.done{ background:#26de81; color:#fff; }
+  .cv-step .lbl{ flex:1; font-size:13.5px; }
+  .cv-act{ border:1px solid #2bcbba; background:#e9fbf8; color:#0c8478; border-radius:8px; padding:5px 11px; font-size:12.5px; cursor:pointer; font-family:inherit; white-space:nowrap; }
+  .cv-act .tag{ font-size:10px; opacity:.7; margin-left:3px; }
+  .cv-del{ border:1px solid #f3c0c0; background:#fff; color:#e03131; border-radius:8px; padding:6px 11px; font-size:12.5px; cursor:pointer; font-family:inherit; margin-top:14px; }
+  .cv-log{ margin-top:16px; border-top:1px dashed var(--line); padding-top:10px; }
+  .cv-log .t{ font-size:12px; color:var(--ink-soft); margin-bottom:4px; }
 </style>
 </head>
 <body class="editing">
@@ -228,6 +265,7 @@
       <button class="btn" id="fitBtn">⊡ 화면 맞춤</button>
       <button class="btn" id="exportBtn">💾 내보내기</button>
       <button class="btn" id="resetBtn">↺ 초기화</button>
+      <button class="btn" id="caseBtn" style="background:#1b335f;color:#fff;border-color:#1b335f;font-weight:700">🚀 케이스</button>
     </div>
     <div class="help">
       원 <b>클릭</b> → 중분류 추가 · <b>더블클릭</b> → 이름수정 (수정 중 <b>Ctrl+Enter</b> → 다음 원) · <b>드래그</b> → 이동 · 왼쪽위 <b>색동그라미</b> → 색·크기·<b>글자</b>·모양<br>
@@ -308,6 +346,19 @@
       <h2 id="wnTitle">📣 업데이트 내역</h2>
       <div id="wnBody"></div>
       <div class="wn-foot"><button class="wn-btn" id="wnClose">확인했어요</button></div>
+    </div>
+  </div>
+
+  <!-- 케이스 자동화 트래커 (와꾸 — API 연결 자리 포함) -->
+  <div class="caseview" id="caseView">
+    <div class="cv-head">
+      <button class="wsbtn" id="caseBack">← 나가기</button>
+      <b>🚀 고객 케이스 자동화</b>
+      <span class="cv-hint">고객 한 건을 만들면 ①~⑰ 단계가 진행돼요 · 🤖=자동화(연결 예정)</span>
+    </div>
+    <div class="cv-body">
+      <div class="cv-list" id="caseList"></div>
+      <div class="cv-detail" id="caseDetail"></div>
     </div>
   </div>
 
@@ -656,6 +707,18 @@ function initFirebase(){
     if (v == null || !Object.keys(v).length){ boardsRef.set(boards); return; }   // 최초 시드
     boards = v; if(!boards[curBoard]) curBoard = Object.keys(boards)[0];
     saveBoardsLocal(); renderTabs();
+  });
+  casesRef = db.ref("cases");
+  casesRef.on("value", s => {
+    const v = s.val();
+    if (v == null){ if(Object.keys(cases).length) casesRef.set(cases); return; }   // 최초 시드
+    cases = v;
+    try{ localStorage.setItem("fm_cases_v1", JSON.stringify(cases)); }catch(e){}
+    if (caseView.classList.contains("open")){
+      renderCaseList();
+      if (curCase && !cases[curCase]) curCase = Object.keys(cases)[0] || null;
+      if (!caseView.contains(document.activeElement)) renderCaseDetail();   // 입력 중엔 갱신 보류
+    }
   });
   openBoard(curBoard);
   updateConn();
@@ -1520,9 +1583,85 @@ document.getElementById("exportBtn").addEventListener("click", ()=>{
 });
 window.addEventListener("resize", setViewport);
 
+/* ===== 케이스 자동화 트래커 (와꾸 — API 연결 자리 포함) ===== */
+const CASE_STEPS = [
+ {k:"c1",t:"① 문의 접수 / 정보 입력"},
+ {k:"c2",t:"② 접수확인 발송",auto:"메일/카톡"},
+ {k:"c3",t:"③ 상담·요청 파악"},
+ {k:"c4",t:"④ 민원·요청 분류"},
+ {k:"c5",t:"⑤ 업체 견적 요청",auto:"업체 발송"},
+ {k:"c6",t:"⑥ 견적 비교"},
+ {k:"c7",t:"⑦ 최적 추천"},
+ {k:"c8",t:"⑧ 건물주에 추천 발송",auto:"메일/카톡"},
+ {k:"c9",t:"⑨ 승인·입금"},
+ {k:"c10",t:"⑩ 입금 확인 → 자동 진행",auto:"입금 확인"},
+ {k:"c11",t:"⑪ 업체 연결·일정"},
+ {k:"c12",t:"⑫ 공사 진행"},
+ {k:"c13",t:"⑬ 작업 사진(전/후)"},
+ {k:"c14",t:"⑭ B/A 보고서 생성·발송",auto:"문서 생성"},
+ {k:"c15",t:"⑮ 정산·증빙"},
+ {k:"c16",t:"⑯ 월간 리포트",auto:"문서 생성"},
+ {k:"c17",t:"⑰ 유지관리·사후관리"},
+];
+const caseView = document.getElementById("caseView");
+const caseListEl = document.getElementById("caseList");
+const caseDetailEl = document.getElementById("caseDetail");
+let cases = {}, curCase = null, casesRef = null, caseWriteT = null;
+function caseGenId(){ return "k"+Date.now().toString(36)+Math.random().toString(36).slice(2,5); }
+function loadCasesLocal(){ try{ const c=JSON.parse(localStorage.getItem("fm_cases_v1")); if(c&&typeof c==="object") return c; }catch(e){} return {}; }
+function saveCases(){ try{ localStorage.setItem("fm_cases_v1", JSON.stringify(cases)); }catch(e){} clearTimeout(caseWriteT); caseWriteT=setTimeout(()=>{ if(casesRef) casesRef.set(cases); }, 300); }
+function caseProgress(c){ return { done: CASE_STEPS.filter(s=>(c.status||{})[s.k]==="done").length, total: CASE_STEPS.length }; }
+function caseLog(c,m){ (c.log=c.log||[]).unshift(m); if(c.log.length>30) c.log.length=30; }
+function openCaseView(){ if(!curCase) curCase=Object.keys(cases)[0]||null; caseView.classList.add("open"); renderCaseList(); renderCaseDetail(); }
+function closeCaseView(){ caseView.classList.remove("open"); }
+function createCase(){ const id=caseGenId(); cases[id]={ id, name:"새 고객", phone:"", building:"", grade:"스탠다드", memo:"", status:{}, log:[] }; curCase=id; saveCases(); renderCaseList(); renderCaseDetail(); return id; }
+function selectCase(id){ curCase=id; renderCaseList(); renderCaseDetail(); }
+function deleteCase(id){ if(!cases[id]) return; if(!confirm("이 케이스를 삭제할까요?")) return; delete cases[id]; if(curCase===id) curCase=Object.keys(cases)[0]||null; saveCases(); renderCaseList(); renderCaseDetail(); }
+function cycleStep(id,k){ const c=cases[id]; if(!c) return; c.status=c.status||{}; const cur=c.status[k]||""; c.status[k]= cur===""?"doing":cur==="doing"?"done":""; const s=CASE_STEPS.find(x=>x.k===k); caseLog(c, s.t+" → "+(c.status[k]==="done"?"완료":c.status[k]==="doing"?"진행중":"대기")); saveCases(); renderCaseList(); renderCaseDetail(); }
+function doAuto(id,k,channel){ const c=cases[id]; if(!c) return;
+  /* 🔌 여기에 실제 API 연결 (메일/카톡/입금/문서). 지금은 와꾸(수동 기록). */
+  if(!confirm("["+channel+"] 자동 연결은 준비 중(예정)입니다.\n지금은 '실행함'으로 기록하고 이 단계를 완료 처리할까요?")) return;
+  c.status=c.status||{}; c.status[k]="done"; caseLog(c, "🔌 "+channel+" 실행(수동 기록)"); saveCases(); renderCaseList(); renderCaseDetail();
+}
+function setCaseField(id,f,v){ const c=cases[id]; if(!c) return; c[f]=v; saveCases(); if(f==="name"||f==="grade"||f==="building") renderCaseList(); }
+function renderCaseList(){
+  const ids=Object.keys(cases);
+  caseListEl.innerHTML = `<button class="cv-newcase" id="cvNew">＋ 새 케이스(고객)</button>`+
+    (ids.length? ids.map(id=>{ const c=cases[id], p=caseProgress(c);
+      return `<div class="cv-item ${id===curCase?'on':''}" data-cid="${id}"><div class="nm">${esc(c.name||"무제")}</div>`+
+        `<div class="sub">${esc(c.building||"건물 미입력")} · ${esc(c.grade||"")}</div><div class="pg">진행 ${p.done}/${p.total}</div></div>`;
+    }).join("") : `<div class="cv-empty" style="margin-top:20px;font-size:12.5px">고객을 추가해보세요</div>`);
+}
+function renderCaseDetail(){
+  const c=cases[curCase];
+  if(!c){ caseDetailEl.innerHTML=`<div class="cv-empty">왼쪽에서 케이스를 선택하거나<br>＋ 새 케이스를 만들어주세요</div>`; return; }
+  const p=caseProgress(c), pct=Math.round(p.done/p.total*100);
+  caseDetailEl.innerHTML =
+    `<div class="cv-form"><label>고객명<input data-f="name" value="${esc(c.name||"")}"></label>`+
+    `<label>연락처<input data-f="phone" value="${esc(c.phone||"")}"></label>`+
+    `<label>건물<input data-f="building" value="${esc(c.building||"")}"></label>`+
+    `<label>등급<select data-f="grade">${["라이트","스탠다드","프리미엄"].map(g=>`<option ${g===c.grade?"selected":""}>${g}</option>`).join("")}</select></label></div>`+
+    `<div class="cv-bar"><i style="width:${pct}%"></i></div><div class="cv-prog">진행 ${p.done}/${p.total} (${pct}%)</div>`+
+    CASE_STEPS.map(s=>{ const st=(c.status||{})[s.k]||"";
+      const chip=`<button class="cv-chip ${st||'wait'}" data-step="${s.k}">${st==="done"?"완료":st==="doing"?"진행중":"대기"}</button>`;
+      const act=s.auto?`<button class="cv-act" data-auto="${s.k}" data-ch="${esc(s.auto)}">🤖 ${esc(s.auto)}<span class="tag">연결예정</span></button>`:"";
+      return `<div class="cv-step ${st}">${chip}<div class="lbl">${esc(s.t)}</div>${act}</div>`;
+    }).join("")+
+    `<button class="cv-del" id="cvDel">🗑 이 케이스 삭제</button>`+
+    (c.log&&c.log.length?`<div class="cv-log"><div class="t" style="font-weight:700">기록</div>`+c.log.slice(0,8).map(l=>`<div class="t">· ${esc(l)}</div>`).join("")+`</div>`:"");
+}
+document.getElementById("caseBtn").addEventListener("click", openCaseView);
+document.getElementById("caseBack").addEventListener("click", closeCaseView);
+caseListEl.addEventListener("click", e=>{ if(e.target.closest("#cvNew")){ createCase(); return; } const it=e.target.closest(".cv-item"); if(it) selectCase(it.dataset.cid); });
+caseDetailEl.addEventListener("click", e=>{ const ch=e.target.closest("[data-step]"); if(ch){ cycleStep(curCase, ch.dataset.step); return; } const au=e.target.closest("[data-auto]"); if(au){ doAuto(curCase, au.dataset.auto, au.dataset.ch); return; } if(e.target.closest("#cvDel")){ deleteCase(curCase); } });
+caseDetailEl.addEventListener("input", e=>{ const f=e.target.closest("input[data-f]"); if(f) setCaseField(curCase, f.dataset.f, f.value); });
+caseDetailEl.addEventListener("change", e=>{ const f=e.target.closest("select[data-f]"); if(f) setCaseField(curCase, f.dataset.f, f.value); });
+cases = loadCasesLocal();
+
 /* ===== 업데이트 알림(What's New) — 새 버전 나오면 자동 팝업 ===== */
-const APP_VERSION = "2.8";
+const APP_VERSION = "3.0";
 const CHANGELOG = [
+  { v:"3.0", d:"2026-06-23", items:["🚀 케이스 자동화 트래커 추가 — 고객 한 건을 ①~⑰ 단계로 진행 관리","각 단계 상태(대기·진행·완료) + 진행률 표시, 팀 실시간 공유","자동화 지점(메일·카톡·입금·문서)에 버튼 자리 마련(와꾸) — API 연결 예정"] },
   { v:"2.8", d:"2026-06-23", items:["상단 탭(보드)을 북마크바 느낌으로 정리 — 📁 폴더 아이콘·납작한 디자인","탭을 드래그해서 순서 바꾸기 (모든 팀원에게 동일하게 적용)"] },
   { v:"2.7", d:"2026-06-23", items:["PPT식 스마트 가이드 — 드래그 중 Shift 누르면 옆 원과 같은 간격을 점선으로 추천하고 딱 맞춰줌","두 원 사이 가운데, 같은 간격 잇기 자동 감지"] },
   { v:"2.6", d:"2026-06-23", items:["PPT식 정렬 추가 — 가로/세로 정렬(좌·중·우 / 위·중·아래)","간격 균등 분배(가로 ↔ / 세로 ↕)","크기·글자 통일(선택 노드 다 똑같이)","모두 선택 바에서 한 번에 적용"] },
@@ -1576,7 +1715,8 @@ window.__wf = { addChild, addRoot, addLink, deleteNode, setNodeColor, resizeNode
   openWhatsNew, closeWhatsNew, APP_VERSION, getSeenVer, loadVendorDataFromSheet,
   setNodeFont, getCurved:()=>curvedLinks, setCurved:(v)=>{ curvedLinks=v; render(); }, setLinkCurve, openLinkPop,
   selectAll, clearSelection, toggleSelect, getSelected:()=>[...selected], bulkFont, bulkResize, bulkColor, bulkShape, bulkBadge,
-  alignNodes, distribute, equalizeSize, equalizeFont, moveBoard, getBoardOrder:()=>orderedBoardIds() };
+  alignNodes, distribute, equalizeSize, equalizeFont, moveBoard, getBoardOrder:()=>orderedBoardIds(),
+  openCaseView, closeCaseView, createCase, selectCase, cycleStep, doAuto, getCases:()=>JSON.parse(JSON.stringify(cases)), CASE_STEPS };
 
 start();
 initVendorSheetSync();
