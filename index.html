@@ -227,7 +227,7 @@
     </div>
     <div class="help">
       원 <b>클릭</b> → 중분류 추가 · <b>더블클릭</b> → 이름수정 (수정 중 <b>Ctrl+Enter</b> → 다음 원) · <b>드래그</b> → 이동 · 왼쪽위 <b>색동그라미</b> → 색·크기·<b>글자</b>·모양<br>
-      <b>🔗 연결 모드</b>로 대분류끼리 잇기(떨어진 원도) · <b>연결선 클릭</b> → 곡선/직선/삭제 · <b>드래그 중 Shift</b> → 가로·세로 맞춤<br>
+      <b>🔗 연결 모드</b>로 대분류끼리 잇기(떨어진 원도) · <b>연결선 클릭</b> → 곡선/직선/삭제 · <b>드래그 중 Shift</b> → 가로·세로 맞춤 + <b>균등 간격 추천(점선)</b><br>
       ⌨️ 단축키: <b>N</b> 새 원 · <b>L</b> 연결 · <b>C</b> 곡선/직선 · <b>T</b> 트리배치 · <b>F</b> 화면맞춤 · <b>E</b> 편집/보기 · <b>Ctrl+Z</b> 되돌리기 · <b>Ctrl+A</b> 전체선택(<b>Ctrl+클릭</b>=개별, 위쪽 바에서 일괄 적용)
     </div>
     <div class="linkhint" id="linkHint">🔗 <b>연결 모드</b> — 잇고 싶은 원을 <b>차례로 클릭</b>하면 화살표(→)로 연결돼요. 끝내려면 <b>연결 끝내기</b>를 누르세요. (이 모드에선 클릭해도 중분류가 안 생겨요)</div>
@@ -247,6 +247,7 @@
           <g id="edges"></g>
           <line id="guideV" class="guide" style="display:none"></line>
           <line id="guideH" class="guide" style="display:none"></line>
+          <g id="spaceGuides"></g>
           <path id="tempLink" class="templink" style="display:none"></path>
           <g id="nodes"></g>
         </g>
@@ -343,6 +344,7 @@ const nodesG   = document.getElementById("nodes");
 const tempLink = document.getElementById("tempLink");
 const guideV   = document.getElementById("guideV");
 const guideH   = document.getElementById("guideH");
+const spaceG   = document.getElementById("spaceGuides");
 const conn     = document.getElementById("conn");
 const renamer  = document.getElementById("renamer");
 const nodePop  = document.getElementById("nodePop");
@@ -790,17 +792,41 @@ function colorOf(n){ return n.color || PALETTE[depthOf(n.id) % PALETTE.length]; 
 function childrenOf(id){ return Object.values(nodes).filter(n => n.parent===id); }
 function setViewport(){ viewport.setAttribute("transform", `translate(${panX},${panY}) scale(${zoom})`); }
 function screenToWorld(cx, cy){ const r=svg.getBoundingClientRect(); return { x:(cx-r.left-panX)/zoom, y:(cy-r.top-panY)/zoom }; }
-function clearGuides(){ guideV.style.display="none"; guideH.style.display="none"; }
+function clearGuides(){ guideV.style.display="none"; guideH.style.display="none"; spaceG.innerHTML=""; }
+/* 균등 간격 추천: 같은 줄의 점들(arr) 중 val 근처에서 '패턴 잇기/가운데' 위치를 찾음 */
+function equalSpaceCandidates(arr, val, th){
+  if (arr.length < 2) return null;
+  let best = null;
+  const consider = (pos, segs) => { const d = Math.abs(val - pos); if (d < th && (!best || d < best.d)) best = { pos, segs, d }; };
+  for (let i=0;i+1<arr.length;i++){ const a=arr[i], b=arr[i+1]; if (a<val && val<b){ const m=(a+b)/2; consider(m, [[a,m],[m,b]]); } }   // 두 점 사이 가운데
+  for (let i=1;i<arr.length;i++){ const g=arr[i]-arr[i-1]; consider(arr[i]+g, [[arr[i-1],arr[i]],[arr[i],arr[i]+g]]); }              // 오른쪽으로 같은 간격
+  for (let i=0;i+1<arr.length;i++){ const g=arr[i+1]-arr[i]; consider(arr[i]-g, [[arr[i]-g,arr[i]],[arr[i],arr[i+1]]]); }           // 왼쪽으로 같은 간격
+  return best;
+}
+function tickSeg(a, b, cross, vert){   // a~b 점선 + 양끝 짧은 직선(눈금)
+  const t=6, c="#e84393", w='stroke="'+c+'" stroke-width="1.5"';
+  if (vert) return `<line x1="${cross}" y1="${a}" x2="${cross}" y2="${b}" ${w} stroke-dasharray="5 4"></line>`+
+    `<line x1="${cross-t}" y1="${a}" x2="${cross+t}" y2="${a}" ${w}></line><line x1="${cross-t}" y1="${b}" x2="${cross+t}" y2="${b}" ${w}></line>`;
+  return `<line x1="${a}" y1="${cross}" x2="${b}" y2="${cross}" ${w} stroke-dasharray="5 4"></line>`+
+    `<line x1="${a}" y1="${cross-t}" x2="${a}" y2="${cross+t}" ${w}></line><line x1="${b}" y1="${cross-t}" x2="${b}" y2="${cross+t}" ${w}></line>`;
+}
 function snapPos(id, x, y){
-  const GRID = 20, TH = 14;
-  let sx = Math.round(x/GRID)*GRID, sy = Math.round(y/GRID)*GRID, gx=null, gy=null;
-  Object.values(nodes).forEach(n => {
-    if (n.id === id) return;
-    if (Math.abs(n.x - x) < TH){ sx = n.x; gx = n.x; }   // 세로줄(같은 X) 맞춤
-    if (Math.abs(n.y - y) < TH){ sy = n.y; gy = n.y; }   // 가로줄(같은 Y) 맞춤
-  });
+  const GRID=20, TH=14, ROW=32, THS=16;
+  let sx=Math.round(x/GRID)*GRID, sy=Math.round(y/GRID)*GRID, gx=null, gy=null;
+  const others=Object.values(nodes).filter(n=>n.id!==id);
+  others.forEach(n => { if(Math.abs(n.x-x)<TH){ sx=n.x; gx=n.x; } if(Math.abs(n.y-y)<TH){ sy=n.y; gy=n.y; } });
+  let marks="";
+  // 가로 균등(같은 줄) — x 추천
+  const rowX = others.filter(n=>Math.abs(n.y-sy)<ROW).map(n=>n.x).sort((a,b)=>a-b);
+  const cX = equalSpaceCandidates(rowX, x, THS);
+  if (cX){ sx=Math.round(cX.pos); gx=null; marks += cX.segs.map(s=>tickSeg(s[0],s[1],sy,false)).join(""); }
+  // 세로 균등(같은 칸) — y 추천
+  const colY = others.filter(n=>Math.abs(n.x-sx)<ROW).map(n=>n.y).sort((a,b)=>a-b);
+  const cY = equalSpaceCandidates(colY, y, THS);
+  if (cY){ sy=Math.round(cY.pos); gy=null; marks += cY.segs.map(s=>tickSeg(s[0],s[1],sx,true)).join(""); }
   if (gx!=null){ guideV.setAttribute("x1",gx); guideV.setAttribute("x2",gx); guideV.setAttribute("y1",-4000); guideV.setAttribute("y2",5000); guideV.style.display=""; } else guideV.style.display="none";
   if (gy!=null){ guideH.setAttribute("y1",gy); guideH.setAttribute("y2",gy); guideH.setAttribute("x1",-4000); guideH.setAttribute("x2",5000); guideH.style.display=""; } else guideH.style.display="none";
+  spaceG.innerHTML = marks;
   return [sx, sy];
 }
 
@@ -1454,8 +1480,9 @@ document.getElementById("exportBtn").addEventListener("click", ()=>{
 window.addEventListener("resize", setViewport);
 
 /* ===== 업데이트 알림(What's New) — 새 버전 나오면 자동 팝업 ===== */
-const APP_VERSION = "2.6";
+const APP_VERSION = "2.7";
 const CHANGELOG = [
+  { v:"2.7", d:"2026-06-23", items:["PPT식 스마트 가이드 — 드래그 중 Shift 누르면 옆 원과 같은 간격을 점선으로 추천하고 딱 맞춰줌","두 원 사이 가운데, 같은 간격 잇기 자동 감지"] },
   { v:"2.6", d:"2026-06-23", items:["PPT식 정렬 추가 — 가로/세로 정렬(좌·중·우 / 위·중·아래)","간격 균등 분배(가로 ↔ / 세로 ↕)","크기·글자 통일(선택 노드 다 똑같이)","모두 선택 바에서 한 번에 적용"] },
   { v:"2.5", d:"2026-06-23", items:["여러 원 한 번에 선택(Ctrl+A 전체 / Ctrl+클릭 개별)","선택하면 위쪽 바에서 글자·크기·색·모양·배지를 한꺼번에 통일 적용","빈 곳 클릭 또는 Esc로 선택 해제"] },
   { v:"2.4", d:"2026-06-23", items:["글자 크기 버튼이 실제로 글자를 키우도록 수정(전엔 줄간격만 바뀌던 버그)"] },
