@@ -238,6 +238,11 @@
   .cv-chip.wait{ background:#eef1f6; color:#6b7686; }
   .cv-chip.doing{ background:#f7b731; color:#5a3d00; }
   .cv-chip.done{ background:#26de81; color:#fff; }
+  .cv-stepwrap{ margin-bottom:7px; }
+  .cv-stepwrap .cv-step{ margin-bottom:0; }
+  .cv-notebtn{ border:1px solid var(--line); background:#fff; border-radius:8px; padding:5px 8px; font-size:12.5px; cursor:pointer; }
+  .cv-notebtn.has{ background:#fff7e6; border-color:#f0dca0; }
+  .cv-note{ width:100%; box-sizing:border-box; margin:5px 0 0; border:1px solid var(--line); border-radius:9px; padding:8px 10px; font-size:13px; font-family:inherit; min-height:54px; resize:vertical; }
   .cv-step .lbl{ flex:1; font-size:13.5px; }
   .cv-act{ border:1px solid #2bcbba; background:#e9fbf8; color:#0c8478; border-radius:8px; padding:5px 11px; font-size:12.5px; cursor:pointer; font-family:inherit; white-space:nowrap; }
   .cv-act .tag{ font-size:10px; opacity:.7; margin-left:3px; }
@@ -1606,7 +1611,7 @@ const CASE_STEPS = [
 const caseView = document.getElementById("caseView");
 const caseListEl = document.getElementById("caseList");
 const caseDetailEl = document.getElementById("caseDetail");
-let cases = {}, curCase = null, casesRef = null, caseWriteT = null;
+let cases = {}, curCase = null, casesRef = null, caseWriteT = null, noteOpen = new Set();
 function caseGenId(){ return "k"+Date.now().toString(36)+Math.random().toString(36).slice(2,5); }
 function loadCasesLocal(){ try{ const c=JSON.parse(localStorage.getItem("fm_cases_v1")); if(c&&typeof c==="object") return c; }catch(e){} return {}; }
 function saveCases(){ try{ localStorage.setItem("fm_cases_v1", JSON.stringify(cases)); }catch(e){} clearTimeout(caseWriteT); caseWriteT=setTimeout(()=>{ if(casesRef) casesRef.set(cases); }, 300); }
@@ -1615,7 +1620,7 @@ function caseLog(c,m){ (c.log=c.log||[]).unshift(m); if(c.log.length>30) c.log.l
 function openCaseView(){ if(!curCase) curCase=Object.keys(cases)[0]||null; caseView.classList.add("open"); renderCaseList(); renderCaseDetail(); }
 function closeCaseView(){ caseView.classList.remove("open"); }
 function createCase(){ const id=caseGenId(); cases[id]={ id, name:"새 고객", phone:"", building:"", grade:"스탠다드", memo:"", status:{}, log:[] }; curCase=id; saveCases(); renderCaseList(); renderCaseDetail(); return id; }
-function selectCase(id){ curCase=id; renderCaseList(); renderCaseDetail(); }
+function selectCase(id){ curCase=id; noteOpen.clear(); renderCaseList(); renderCaseDetail(); }
 function deleteCase(id){ if(!cases[id]) return; if(!confirm("이 케이스를 삭제할까요?")) return; delete cases[id]; if(curCase===id) curCase=Object.keys(cases)[0]||null; saveCases(); renderCaseList(); renderCaseDetail(); }
 function cycleStep(id,k){ const c=cases[id]; if(!c) return; c.status=c.status||{}; const cur=c.status[k]||""; c.status[k]= cur===""?"doing":cur==="doing"?"done":""; const s=CASE_STEPS.find(x=>x.k===k); caseLog(c, s.t+" → "+(c.status[k]==="done"?"완료":c.status[k]==="doing"?"진행중":"대기")); saveCases(); renderCaseList(); renderCaseDetail(); }
 function doAuto(id,k,channel){ const c=cases[id]; if(!c) return;
@@ -1624,6 +1629,7 @@ function doAuto(id,k,channel){ const c=cases[id]; if(!c) return;
   c.status=c.status||{}; c.status[k]="done"; caseLog(c, "🔌 "+channel+" 실행(수동 기록)"); saveCases(); renderCaseList(); renderCaseDetail();
 }
 function setCaseField(id,f,v){ const c=cases[id]; if(!c) return; c[f]=v; saveCases(); if(f==="name"||f==="grade"||f==="building") renderCaseList(); }
+function setCaseNote(id,k,v){ const c=cases[id]; if(!c) return; c.note=c.note||{}; c.note[k]=v; saveCases(); }
 function renderCaseList(){
   const ids=Object.keys(cases);
   caseListEl.innerHTML = `<button class="cv-newcase" id="cvNew">＋ 새 케이스(고객)</button>`+
@@ -1642,10 +1648,12 @@ function renderCaseDetail(){
     `<label>건물<input data-f="building" value="${esc(c.building||"")}"></label>`+
     `<label>등급<select data-f="grade">${["라이트","스탠다드","프리미엄"].map(g=>`<option ${g===c.grade?"selected":""}>${g}</option>`).join("")}</select></label></div>`+
     `<div class="cv-bar"><i style="width:${pct}%"></i></div><div class="cv-prog">진행 ${p.done}/${p.total} (${pct}%)</div>`+
-    CASE_STEPS.map(s=>{ const st=(c.status||{})[s.k]||"";
+    CASE_STEPS.map(s=>{ const st=(c.status||{})[s.k]||""; const note=(c.note||{})[s.k]||""; const open=noteOpen.has(s.k);
       const chip=`<button class="cv-chip ${st||'wait'}" data-step="${s.k}">${st==="done"?"완료":st==="doing"?"진행중":"대기"}</button>`;
       const act=s.auto?`<button class="cv-act" data-auto="${s.k}" data-ch="${esc(s.auto)}">🤖 ${esc(s.auto)}<span class="tag">연결예정</span></button>`:"";
-      return `<div class="cv-step ${st}">${chip}<div class="lbl">${esc(s.t)}</div>${act}</div>`;
+      const nb=`<button class="cv-notebtn ${note?'has':''}" data-notetoggle="${s.k}" title="메모">📝</button>`;
+      const box=open?`<textarea class="cv-note" data-note="${s.k}" placeholder="이 단계 메모 (민원 내용·선정 업체·금액 등)">${esc(note)}</textarea>`:"";
+      return `<div class="cv-stepwrap"><div class="cv-step ${st}">${chip}<div class="lbl">${esc(s.t)}</div>${act}${nb}</div>${box}</div>`;
     }).join("")+
     `<button class="cv-del" id="cvDel">🗑 이 케이스 삭제</button>`+
     (c.log&&c.log.length?`<div class="cv-log"><div class="t" style="font-weight:700">기록</div>`+c.log.slice(0,8).map(l=>`<div class="t">· ${esc(l)}</div>`).join("")+`</div>`:"");
@@ -1653,14 +1661,15 @@ function renderCaseDetail(){
 document.getElementById("caseBtn").addEventListener("click", openCaseView);
 document.getElementById("caseBack").addEventListener("click", closeCaseView);
 caseListEl.addEventListener("click", e=>{ if(e.target.closest("#cvNew")){ createCase(); return; } const it=e.target.closest(".cv-item"); if(it) selectCase(it.dataset.cid); });
-caseDetailEl.addEventListener("click", e=>{ const ch=e.target.closest("[data-step]"); if(ch){ cycleStep(curCase, ch.dataset.step); return; } const au=e.target.closest("[data-auto]"); if(au){ doAuto(curCase, au.dataset.auto, au.dataset.ch); return; } if(e.target.closest("#cvDel")){ deleteCase(curCase); } });
-caseDetailEl.addEventListener("input", e=>{ const f=e.target.closest("input[data-f]"); if(f) setCaseField(curCase, f.dataset.f, f.value); });
+caseDetailEl.addEventListener("click", e=>{ const nt=e.target.closest("[data-notetoggle]"); if(nt){ const k=nt.dataset.notetoggle; noteOpen.has(k)?noteOpen.delete(k):noteOpen.add(k); renderCaseDetail(); return; } const ch=e.target.closest("[data-step]"); if(ch){ cycleStep(curCase, ch.dataset.step); return; } const au=e.target.closest("[data-auto]"); if(au){ doAuto(curCase, au.dataset.auto, au.dataset.ch); return; } if(e.target.closest("#cvDel")){ deleteCase(curCase); } });
+caseDetailEl.addEventListener("input", e=>{ const f=e.target.closest("input[data-f]"); if(f){ setCaseField(curCase, f.dataset.f, f.value); return; } const nb=e.target.closest("textarea[data-note]"); if(nb) setCaseNote(curCase, nb.dataset.note, nb.value); });
 caseDetailEl.addEventListener("change", e=>{ const f=e.target.closest("select[data-f]"); if(f) setCaseField(curCase, f.dataset.f, f.value); });
 cases = loadCasesLocal();
 
 /* ===== 업데이트 알림(What's New) — 새 버전 나오면 자동 팝업 ===== */
-const APP_VERSION = "3.0";
+const APP_VERSION = "3.1";
 const CHANGELOG = [
+  { v:"3.1", d:"2026-06-23", items:["케이스 단계마다 📝 메모 추가 — 민원 내용·선정 업체·금액 등 기록","메모 있는 단계는 📝 버튼이 노란색으로 표시"] },
   { v:"3.0", d:"2026-06-23", items:["🚀 케이스 자동화 트래커 추가 — 고객 한 건을 ①~⑰ 단계로 진행 관리","각 단계 상태(대기·진행·완료) + 진행률 표시, 팀 실시간 공유","자동화 지점(메일·카톡·입금·문서)에 버튼 자리 마련(와꾸) — API 연결 예정"] },
   { v:"2.8", d:"2026-06-23", items:["상단 탭(보드)을 북마크바 느낌으로 정리 — 📁 폴더 아이콘·납작한 디자인","탭을 드래그해서 순서 바꾸기 (모든 팀원에게 동일하게 적용)"] },
   { v:"2.7", d:"2026-06-23", items:["PPT식 스마트 가이드 — 드래그 중 Shift 누르면 옆 원과 같은 간격을 점선으로 추천하고 딱 맞춰줌","두 원 사이 가운데, 같은 간격 잇기 자동 감지"] },
