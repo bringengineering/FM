@@ -51,7 +51,7 @@
   body.editing .node .body{ cursor:grab; }
   body.linking .node .body{ cursor:crosshair; }
   svg#canvas.dragging .node .body{ cursor:grabbing; }
-  .node text.lbl{ fill:#fff; font-weight:700; font-size:13px; pointer-events:none; }
+  .node text.lbl{ fill:#fff; font-weight:700; pointer-events:none; }
   .edge{ fill:none; stroke:#b9c4d4; stroke-width:2.5; }
   .link{ fill:none; stroke:#3b5bdb; stroke-width:3.2; pointer-events:none; }
   .link-hit{ fill:none; stroke:transparent; stroke-width:18; cursor:pointer; }
@@ -1350,8 +1350,9 @@ document.getElementById("exportBtn").addEventListener("click", ()=>{
 window.addEventListener("resize", setViewport);
 
 /* ===== 업데이트 알림(What's New) — 새 버전 나오면 자동 팝업 ===== */
-const APP_VERSION = "2.3";
+const APP_VERSION = "2.4";
 const CHANGELOG = [
+  { v:"2.4", d:"2026-06-23", items:["글자 크기 버튼이 실제로 글자를 키우도록 수정(전엔 줄간격만 바뀌던 버그)"] },
   { v:"2.3", d:"2026-06-23", items:["꾸미기 팝업 확대 + 더 보기 편하게","글자 ‘작게/크게/기본’ 버튼 정리(크게 버튼 명확)","색상 20종으로 확대","모양 추가: 캡슐·마름모·타원 (원·사각 포함 5종)","표시(배지) 16종으로 대폭 추가(핵심·주의·필수·검토·일정·비용 등)"] },
   { v:"2.2", d:"2026-06-23", items:["색·크기 팝업을 드래그로 이동 가능(상단 ⠿ 바) — 노드 가림 방지","팝업이 노드 왼쪽에 떠서 내용을 안 가리게 + 닫기(✕) 버튼"] },
   { v:"2.1", d:"2026-06-23", items:["연결선을 클릭하면 그 선만 곡선/직선/삭제 선택 — 선마다 따로 설정 가능"] },
