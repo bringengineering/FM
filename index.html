@@ -80,6 +80,9 @@
   #linkPop button.del{ color:#e03131; }
   #linkPop button.del:hover{ background:#ffeaea; }
   #nodePop .poprow{ display:flex; align-items:center; flex-wrap:wrap; max-width:210px; }
+  #nodePop .pophead{ display:flex; align-items:center; gap:6px; cursor:move; user-select:none; font-size:11px; color:#8a94a3; padding:1px 2px 6px; touch-action:none; }
+  #nodePop .pophead .pclose{ margin-left:auto; cursor:pointer; color:#aab3c0; font-weight:700; font-size:13px; padding:0 3px; }
+  #nodePop .pophead .pclose:hover{ color:#e03131; }
   #nodePop .sw{ width:22px; height:22px; border-radius:6px; margin:3px; cursor:pointer; box-shadow:0 0 0 1px #d3dae5; }
   #nodePop .sw.reset{ width:auto; padding:0 8px; height:22px; line-height:22px; font-size:11px; color:#6b7686; background:#fff; box-shadow:0 0 0 1px #c7d0dd; }
   #nodePop .size{ margin-top:5px; }
@@ -967,15 +970,24 @@ function openNodePop(id, e){
   popFor = id;
   const BDGS = ["🤖 자동화","✅ 완료","⏳ 진행중","🔥 중요"];
   nodePop.innerHTML =
+    `<div class="pophead">⠿ <span>색·크기·글자·모양</span><span class="pclose" title="닫기">✕</span></div>`+
     `<div class="poprow">${COLORSET.map(c=>`<span class="sw" data-c="${c}" style="background:${c}"></span>`).join("")}<span class="sw reset" data-c="">기본색</span></div>`+
     `<div class="poprow size"><span class="lbl2">크기</span><button class="szbtn" data-s="-1">－</button><button class="szbtn" data-s="1">＋</button>`+
       `<span class="lbl2" style="margin-left:8px">모양</span><button class="shp" data-sh="circle">● 원</button><button class="shp" data-sh="rect">▭ 사각</button></div>`+
     `<div class="poprow"><span class="lbl2">글자</span><button class="szbtn" data-f="-1">가－</button><button class="szbtn" data-f="1">가＋</button><button class="szbtn" data-f="0">기본</button></div>`+
     `<div class="poprow badge"><span class="lbl2">표시</span>${BDGS.map(t=>`<button class="bdg" data-b="${t}">${t}</button>`).join("")}<button class="bdg" data-b="">지우기</button></div>`;
-  nodePop.style.left = e.clientX + "px"; nodePop.style.top = (e.clientY + 10) + "px"; nodePop.style.display = "block";
+  nodePop.style.display = "block";
+  // 노드를 안 가리게 swatch 왼쪽에 띄우고, 화면 밖으로 안 나가게 보정 (이후 드래그로 이동 가능)
+  const w = nodePop.offsetWidth, h = nodePop.offsetHeight;
+  let left = e.clientX - w - 16;
+  if (left < 8) left = e.clientX + 16;
+  let top = e.clientY - 12;
+  nodePop.style.left = Math.max(8, Math.min(left, innerWidth - w - 8)) + "px";
+  nodePop.style.top  = Math.max(8, Math.min(top,  innerHeight - h - 8)) + "px";
 }
 function hidePop(){ nodePop.style.display = "none"; popFor = null; }
 nodePop.addEventListener("click", e => {
+  if (e.target.closest(".pclose")){ hidePop(); return; }
   if (popFor == null) return;
   const sw = e.target.closest(".sw"), bd = e.target.closest(".bdg"), shp = e.target.closest(".shp");
   const fz = e.target.closest("[data-f]"), sz = e.target.closest("[data-s]");
@@ -985,6 +997,21 @@ nodePop.addEventListener("click", e => {
   else if (bd) setNodeBadge(popFor, bd.dataset.b || null);
   else if (shp) setNodeShape(popFor, shp.dataset.sh);
 });
+/* 색·크기 팝업 드래그 이동 (노드 가림 방지) */
+let popDrag = null;
+nodePop.addEventListener("pointerdown", e => {
+  if (!e.target.closest(".pophead") || e.target.closest(".pclose")) return;
+  const r = nodePop.getBoundingClientRect();
+  popDrag = { dx: e.clientX - r.left, dy: e.clientY - r.top };
+  nodePop.setPointerCapture(e.pointerId); e.preventDefault();
+});
+nodePop.addEventListener("pointermove", e => {
+  if (!popDrag) return;
+  const w = nodePop.offsetWidth, h = nodePop.offsetHeight;
+  nodePop.style.left = Math.max(0, Math.min(e.clientX - popDrag.dx, innerWidth  - w)) + "px";
+  nodePop.style.top  = Math.max(0, Math.min(e.clientY - popDrag.dy, innerHeight - h)) + "px";
+});
+nodePop.addEventListener("pointerup", () => { popDrag = null; });
 window.addEventListener("pointerdown", e => {
   if (!e.target.closest("#nodePop") && !e.target.closest(".swatch")) hidePop();
   if (!e.target.closest("#linkPop") && !e.target.closest(".link-hit")) hideLinkPop();
@@ -1315,8 +1342,9 @@ document.getElementById("exportBtn").addEventListener("click", ()=>{
 window.addEventListener("resize", setViewport);
 
 /* ===== 업데이트 알림(What's New) — 새 버전 나오면 자동 팝업 ===== */
-const APP_VERSION = "2.1";
+const APP_VERSION = "2.2";
 const CHANGELOG = [
+  { v:"2.2", d:"2026-06-23", items:["색·크기 팝업을 드래그로 이동 가능(상단 ⠿ 바) — 노드 가림 방지","팝업이 노드 왼쪽에 떠서 내용을 안 가리게 + 닫기(✕) 버튼"] },
   { v:"2.1", d:"2026-06-23", items:["연결선을 클릭하면 그 선만 곡선/직선/삭제 선택 — 선마다 따로 설정 가능"] },
   { v:"2.0", d:"2026-06-23", items:["곡선 화살표 추가(⤳ 곡선/직선 토글) · 떨어진 원 연결도 깔끔하게","화살표 머리 2개 → 1개로 정리","원 글자 크기 조절(색·크기 메뉴의 ‘글자 가＋/가－’)","단축키 추가: N 새 원·L 연결·C 곡선·T 트리·F 화면맞춤·E 편집/보기"] },
   { v:"1.9", d:"2026-06-23", items:["상세 화면의 업체자료를 표에서 업체별 카드형 보기로 변경","업체 카드는 한 줄 최대 4개로 배치","업체 링크를 네이버·블로그·인스타·사이트 버튼으로 자동 분류"] },
