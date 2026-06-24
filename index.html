@@ -32,14 +32,18 @@
   body.linking .linkhint{ display:block; }
 
   /* 창(보드) 탭 */
-  .tabs{ display:flex; gap:6px; justify-content:center; flex-wrap:wrap; padding:8px 16px 0; }
-  .tab{ border:1px solid var(--line); background:#fff; color:var(--ink-soft); padding:6px 11px; border-radius:10px; font-size:13px; cursor:pointer; font-family:inherit; display:inline-flex; align-items:center; gap:7px; }
-  .tab:hover{ background:#f3f6fb; }
-  .tab.active{ background:#4b7bec; border-color:#4b7bec; color:#fff; font-weight:700; }
-  .tab.add{ color:#4b7bec; border-style:dashed; }
-  .tab .tx{ opacity:.45; font-size:11px; }
-  .tab .tx:hover{ opacity:1; color:#e03131; }
-  .tab.active .tx{ color:#fff; opacity:.8; }
+  .tabs{ display:flex; gap:2px; justify-content:center; flex-wrap:wrap; padding:7px 16px 6px; border-bottom:1px solid var(--line); }
+  .tab{ border:1px solid transparent; background:transparent; color:var(--ink-soft); padding:5px 9px; border-radius:7px; font-size:13px; cursor:pointer; font-family:inherit; display:inline-flex; align-items:center; gap:5px; white-space:nowrap; user-select:none; }
+  .tab .ico{ font-size:12.5px; }
+  .tab:hover{ background:#eef1f6; }
+  .tab.active{ background:#d3e2ff; color:#2455c9; font-weight:700; }
+  .tab.add{ color:#4b7bec; border:1px dashed #c5d4ff; }
+  .tab .tx{ opacity:0; font-size:11px; margin-left:1px; }
+  .tab:hover .tx, .tab.active .tx{ opacity:.45; }
+  .tab .tx:hover{ opacity:1 !important; color:#e03131; }
+  .tab.dragging{ opacity:.35; }
+  .tab.dragover{ box-shadow:inset 3px 0 0 0 #4b7bec; }
+  .tab.dragover-after{ box-shadow:inset -3px 0 0 0 #4b7bec; }
 
   .canvas-wrap{ flex:1; position:relative; overflow:hidden; }
   svg#canvas{ width:100%; height:100%; display:block; touch-action:none; user-select:none; cursor:grab; }
@@ -749,7 +753,7 @@ function orderedBoardIds(){                              // 지정 순서 먼저
 }
 function renderTabs(){
   tabsEl.innerHTML = orderedBoardIds().map(id =>
-    `<button class="tab ${id===curBoard?'active':''}" data-bid="${id}">${esc(boards[id])}<span class="tx" data-del="${id}" title="창 삭제">✕</span></button>`
+    `<button class="tab ${id===curBoard?'active':''}" data-bid="${id}" draggable="true"><span class="ico">📁</span><span class="nm">${esc(boards[id])}</span><span class="tx" data-del="${id}" title="창 삭제">✕</span></button>`
   ).join("") + `<button class="tab add" id="addBoardBtn" title="새 창 만들기">＋ 새 창</button>`;
 }
 tabsEl.addEventListener("click", e => {
@@ -760,6 +764,43 @@ tabsEl.addEventListener("click", e => {
 tabsEl.addEventListener("dblclick", e => {
   const tab=e.target.closest(".tab"); if(tab && tab.dataset.bid){ const nn=prompt("창 이름 변경", boards[tab.dataset.bid]); if(nn) renameBoard(tab.dataset.bid, nn); }
 });
+/* ===== 탭 드래그로 순서 바꾸기 (공유 순서에 저장) ===== */
+function saveOrder(){ if(db){ db.ref("workflow/_order").set(boardOrder); } try{ localStorage.setItem("fm_order_v1", JSON.stringify(boardOrder)); }catch(e){} }
+function moveBoard(dragId, targetId, after){
+  if(dragId===targetId || !boards[dragId]) return;
+  let ord = orderedBoardIds().filter(id => id!==dragId);
+  let idx = ord.indexOf(targetId); if(idx<0) idx = ord.length-1;
+  ord.splice(after ? idx+1 : idx, 0, dragId);
+  boardOrder = ord; saveOrder(); renderTabs();
+}
+let dragTabId = null;
+function clearTabDnd(){ [...tabsEl.children].forEach(c=>c.classList.remove("dragging","dragover","dragover-after")); }
+tabsEl.addEventListener("dragstart", e => {
+  const t=e.target.closest(".tab");
+  if(!t || !t.dataset.bid){ e.preventDefault(); return; }
+  dragTabId = t.dataset.bid; t.classList.add("dragging");
+  e.dataTransfer.effectAllowed="move"; try{ e.dataTransfer.setData("text/plain", dragTabId); }catch(_){}
+});
+tabsEl.addEventListener("dragover", e => {
+  if(!dragTabId) return;
+  const t=e.target.closest(".tab");
+  if(!t || !t.dataset.bid || t.dataset.bid===dragTabId) return;
+  e.preventDefault();
+  const r=t.getBoundingClientRect(), after=e.clientX > r.left+r.width/2;
+  [...tabsEl.children].forEach(c=>c.classList.remove("dragover","dragover-after"));
+  t.classList.add(after?"dragover-after":"dragover");
+});
+tabsEl.addEventListener("drop", e => {
+  if(!dragTabId) return;
+  const t=e.target.closest(".tab");
+  if(t && t.dataset.bid && t.dataset.bid!==dragTabId){
+    e.preventDefault();
+    const r=t.getBoundingClientRect(), after=e.clientX > r.left+r.width/2;
+    moveBoard(dragTabId, t.dataset.bid, after);
+  }
+  dragTabId=null; clearTabDnd();
+});
+tabsEl.addEventListener("dragend", () => { dragTabId=null; clearTabDnd(); });
 
 /* ===== 되돌리기(undo/redo) ===== */
 function snapshot(){ history.push(JSON.stringify(graphState())); if(history.length>80) history.shift(); redoStack.length=0; updateUndoBtn(); }
@@ -1480,8 +1521,9 @@ document.getElementById("exportBtn").addEventListener("click", ()=>{
 window.addEventListener("resize", setViewport);
 
 /* ===== 업데이트 알림(What's New) — 새 버전 나오면 자동 팝업 ===== */
-const APP_VERSION = "2.7";
+const APP_VERSION = "2.8";
 const CHANGELOG = [
+  { v:"2.8", d:"2026-06-23", items:["상단 탭(보드)을 북마크바 느낌으로 정리 — 📁 폴더 아이콘·납작한 디자인","탭을 드래그해서 순서 바꾸기 (모든 팀원에게 동일하게 적용)"] },
   { v:"2.7", d:"2026-06-23", items:["PPT식 스마트 가이드 — 드래그 중 Shift 누르면 옆 원과 같은 간격을 점선으로 추천하고 딱 맞춰줌","두 원 사이 가운데, 같은 간격 잇기 자동 감지"] },
   { v:"2.6", d:"2026-06-23", items:["PPT식 정렬 추가 — 가로/세로 정렬(좌·중·우 / 위·중·아래)","간격 균등 분배(가로 ↔ / 세로 ↕)","크기·글자 통일(선택 노드 다 똑같이)","모두 선택 바에서 한 번에 적용"] },
   { v:"2.5", d:"2026-06-23", items:["여러 원 한 번에 선택(Ctrl+A 전체 / Ctrl+클릭 개별)","선택하면 위쪽 바에서 글자·크기·색·모양·배지를 한꺼번에 통일 적용","빈 곳 클릭 또는 Esc로 선택 해제"] },
@@ -1534,7 +1576,7 @@ window.__wf = { addChild, addRoot, addLink, deleteNode, setNodeColor, resizeNode
   openWhatsNew, closeWhatsNew, APP_VERSION, getSeenVer, loadVendorDataFromSheet,
   setNodeFont, getCurved:()=>curvedLinks, setCurved:(v)=>{ curvedLinks=v; render(); }, setLinkCurve, openLinkPop,
   selectAll, clearSelection, toggleSelect, getSelected:()=>[...selected], bulkFont, bulkResize, bulkColor, bulkShape, bulkBadge,
-  alignNodes, distribute, equalizeSize, equalizeFont };
+  alignNodes, distribute, equalizeSize, equalizeFont, moveBoard, getBoardOrder:()=>orderedBoardIds() };
 
 start();
 initVendorSheetSync();
