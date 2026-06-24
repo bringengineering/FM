@@ -84,9 +84,9 @@
     padding:9px 13px; box-shadow:0 12px 32px rgba(31,39,51,.22); z-index:24; }
   #selBar.on{ display:flex; }
   #selBar .cnt{ font-weight:700; font-size:13px; color:#4b7bec; background:#eef3ff; border-radius:8px; padding:5px 11px; }
-  #selBar .grp{ display:flex; align-items:center; gap:4px; }
-  #selBar .grp b{ font-size:12px; color:#6b7686; font-weight:600; margin-right:1px; }
-  #selBar button{ border:1px solid var(--line); background:#fff; border-radius:8px; padding:6px 10px; font-size:13px; cursor:pointer; font-family:inherit; color:var(--ink); }
+  #selBar .grp{ display:flex; align-items:center; gap:3px; padding-left:9px; border-left:1px solid #edf0f5; }
+  #selBar .grp b{ font-size:11.5px; color:#6b7686; font-weight:600; margin-right:2px; }
+  #selBar button{ border:1px solid var(--line); background:#fff; border-radius:7px; padding:5px 9px; font-size:12.5px; cursor:pointer; font-family:inherit; color:var(--ink); }
   #selBar button:hover{ background:#eef3ff; border-color:#c5d4ff; }
   #selBar .clear{ color:#e03131; }
   #selBar .clear:hover{ background:#ffeaea; }
@@ -956,9 +956,45 @@ function bulkResize(dir){ eachSelected(n=>{ n.r = clamp((n.r||46) + dir*8, 30, 8
 function bulkColor(c){ eachSelected(n=>{ if(c) n.color=c; else delete n.color; }); }
 function bulkShape(s){ eachSelected(n=>{ if(s && s!=="circle") n.shape=s; else delete n.shape; }); }
 function bulkBadge(b){ eachSelected(n=>{ if(b) n.badge=b; else delete n.badge; }); }
+/* PPT식 정렬·간격·크기 통일 (선택 노드 기준) */
+function halfSize(n){ const r=radius(n); const wide=["rect","pill","diamond","ellipse"].includes(n.shape); return wide ? [Math.round(r*1.4), Math.round(r*0.82)] : [r, r]; }
+function selIds(){ return [...selected].filter(id=>nodes[id]); }
+function alignNodes(mode){
+  const ids=selIds(); if(ids.length<2) return; snapshot();
+  let minX=Infinity,minY=Infinity,maxX=-Infinity,maxY=-Infinity;
+  ids.forEach(id=>{ const n=nodes[id],[hw,hh]=halfSize(n); minX=Math.min(minX,n.x-hw); maxX=Math.max(maxX,n.x+hw); minY=Math.min(minY,n.y-hh); maxY=Math.max(maxY,n.y+hh); });
+  const cx=(minX+maxX)/2, cy=(minY+maxY)/2;
+  ids.forEach(id=>{ const n=nodes[id],[hw,hh]=halfSize(n);
+    if(mode==="left") n.x=Math.round(minX+hw);
+    else if(mode==="hcenter") n.x=Math.round(cx);
+    else if(mode==="right") n.x=Math.round(maxX-hw);
+    else if(mode==="top") n.y=Math.round(minY+hh);
+    else if(mode==="vcenter") n.y=Math.round(cy);
+    else if(mode==="bottom") n.y=Math.round(maxY-hh);
+  });
+  persist(); render();
+}
+function distribute(axis){
+  const ids=selIds(); if(ids.length<3) return; snapshot();
+  const key=axis==="h"?"x":"y", half=n=>axis==="h"?halfSize(n)[0]:halfSize(n)[1];
+  ids.sort((a,b)=>nodes[a][key]-nodes[b][key]);
+  const f=nodes[ids[0]], l=nodes[ids[ids.length-1]];
+  const start=f[key]-half(f), end=l[key]+half(l);
+  const totalSize=ids.reduce((s,id)=>s+2*half(nodes[id]),0);
+  const gap=(end-start-totalSize)/(ids.length-1);
+  let cur=start;
+  ids.forEach(id=>{ const n=nodes[id],h=half(n); n[key]=Math.round(cur+h); cur+=2*h+gap; });
+  persist(); render();
+}
+function equalizeSize(){ const ids=selIds(); if(ids.length<2) return; snapshot(); const t=Math.max(...ids.map(id=>radius(nodes[id]))); ids.forEach(id=>{ nodes[id].r=t; }); persist(); render(); }
+function equalizeFont(){ const ids=selIds(); if(ids.length<2) return; snapshot(); const t=Math.max(...ids.map(id=>nodes[id].fscale||1)); ids.forEach(id=>{ nodes[id].fscale=t; }); persist(); render(); }
 function buildSelBar(){
   selBarEl().innerHTML =
     `<span class="cnt">0개 선택</span>`+
+    `<span class="grp"><b>가로정렬</b><button data-a="al:left" title="왼쪽 맞춤">좌</button><button data-a="al:hcenter" title="가로 가운데">중</button><button data-a="al:right" title="오른쪽 맞춤">우</button></span>`+
+    `<span class="grp"><b>세로정렬</b><button data-a="al:top" title="위 맞춤">위</button><button data-a="al:vcenter" title="세로 가운데">중</button><button data-a="al:bottom" title="아래 맞춤">아래</button></span>`+
+    `<span class="grp"><b>간격</b><button data-a="ds:h" title="가로 간격 균등">↔</button><button data-a="ds:v" title="세로 간격 균등">↕</button></span>`+
+    `<span class="grp"><b>통일</b><button data-a="eq:size" title="크기 통일">크기</button><button data-a="eq:font" title="글자 통일">글자</button></span>`+
     `<span class="grp"><b>글자</b><button data-a="f:-1">작게</button><button data-a="f:1">크게</button></span>`+
     `<span class="grp"><b>크기</b><button data-a="r:-1">－</button><button data-a="r:1">＋</button></span>`+
     `<span class="grp"><b>모양</b>${SHAPES.map(([v,t])=>`<button data-a="sh:${v}" title="${t}">${t.split(" ")[0]}</button>`).join("")}</span>`+
@@ -970,7 +1006,11 @@ selBarEl().addEventListener("click", e => {
   const el = e.target.closest("[data-a]"); if(!el) return;
   const a = el.dataset.a;
   if (a==="clear"){ clearSelection(); return; }
-  if (a.startsWith("f:")) bulkFont(+a.slice(2));
+  if (a.startsWith("al:")) alignNodes(a.slice(3));
+  else if (a.startsWith("ds:")) distribute(a.slice(3));
+  else if (a==="eq:size") equalizeSize();
+  else if (a==="eq:font") equalizeFont();
+  else if (a.startsWith("f:")) bulkFont(+a.slice(2));
   else if (a.startsWith("r:")) bulkResize(+a.slice(2));
   else if (a.startsWith("sh:")) bulkShape(a.slice(3));
   else if (a.startsWith("c:")) bulkColor(a.slice(2) || null);
@@ -1414,8 +1454,9 @@ document.getElementById("exportBtn").addEventListener("click", ()=>{
 window.addEventListener("resize", setViewport);
 
 /* ===== 업데이트 알림(What's New) — 새 버전 나오면 자동 팝업 ===== */
-const APP_VERSION = "2.5";
+const APP_VERSION = "2.6";
 const CHANGELOG = [
+  { v:"2.6", d:"2026-06-23", items:["PPT식 정렬 추가 — 가로/세로 정렬(좌·중·우 / 위·중·아래)","간격 균등 분배(가로 ↔ / 세로 ↕)","크기·글자 통일(선택 노드 다 똑같이)","모두 선택 바에서 한 번에 적용"] },
   { v:"2.5", d:"2026-06-23", items:["여러 원 한 번에 선택(Ctrl+A 전체 / Ctrl+클릭 개별)","선택하면 위쪽 바에서 글자·크기·색·모양·배지를 한꺼번에 통일 적용","빈 곳 클릭 또는 Esc로 선택 해제"] },
   { v:"2.4", d:"2026-06-23", items:["글자 크기 버튼이 실제로 글자를 키우도록 수정(전엔 줄간격만 바뀌던 버그)"] },
   { v:"2.3", d:"2026-06-23", items:["꾸미기 팝업 확대 + 더 보기 편하게","글자 ‘작게/크게/기본’ 버튼 정리(크게 버튼 명확)","색상 20종으로 확대","모양 추가: 캡슐·마름모·타원 (원·사각 포함 5종)","표시(배지) 16종으로 대폭 추가(핵심·주의·필수·검토·일정·비용 등)"] },
@@ -1465,7 +1506,8 @@ window.__wf = { addChild, addRoot, addLink, deleteNode, setNodeColor, resizeNode
   getNodes:()=>JSON.parse(JSON.stringify(nodes)), getLinks:()=>JSON.parse(JSON.stringify(links)), applyRemote, isConfigured,
   openWhatsNew, closeWhatsNew, APP_VERSION, getSeenVer, loadVendorDataFromSheet,
   setNodeFont, getCurved:()=>curvedLinks, setCurved:(v)=>{ curvedLinks=v; render(); }, setLinkCurve, openLinkPop,
-  selectAll, clearSelection, toggleSelect, getSelected:()=>[...selected], bulkFont, bulkResize, bulkColor, bulkShape, bulkBadge };
+  selectAll, clearSelection, toggleSelect, getSelected:()=>[...selected], bulkFont, bulkResize, bulkColor, bulkShape, bulkBadge,
+  alignNodes, distribute, equalizeSize, equalizeFont };
 
 start();
 initVendorSheetSync();
