@@ -240,6 +240,8 @@
   .cv-chip.done{ background:#26de81; color:#fff; }
   .cv-stepwrap{ margin-bottom:7px; }
   .cv-stepwrap .cv-step{ margin-bottom:0; }
+  .cv-doc{ border:1px solid #1b335f; background:#1b335f; color:#fff; border-radius:8px; padding:5px 11px; font-size:12.5px; cursor:pointer; font-family:inherit; white-space:nowrap; font-weight:600; }
+  .cv-doc:hover{ background:#26477e; }
   .cv-notebtn{ border:1px solid var(--line); background:#fff; border-radius:8px; padding:5px 8px; font-size:12.5px; cursor:pointer; }
   .cv-notebtn.has{ background:#fff7e6; border-color:#f0dca0; }
   .cv-note{ width:100%; box-sizing:border-box; margin:5px 0 0; border:1px solid var(--line); border-radius:9px; padding:8px 10px; font-size:13px; font-family:inherit; min-height:54px; resize:vertical; }
@@ -1590,24 +1592,79 @@ window.addEventListener("resize", setViewport);
 
 /* ===== 케이스 자동화 트래커 (와꾸 — API 연결 자리 포함) ===== */
 const CASE_STEPS = [
- {k:"c1",t:"① 문의 접수 / 정보 입력"},
+ {k:"c1",t:"① 문의 접수 / 정보 입력",doc:"onboard"},
  {k:"c2",t:"② 접수확인 발송",auto:"메일/카톡"},
  {k:"c3",t:"③ 상담·요청 파악"},
  {k:"c4",t:"④ 민원·요청 분류"},
  {k:"c5",t:"⑤ 업체 견적 요청",auto:"업체 발송"},
- {k:"c6",t:"⑥ 견적 비교"},
+ {k:"c6",t:"⑥ 견적 비교",doc:"quote"},
  {k:"c7",t:"⑦ 최적 추천"},
  {k:"c8",t:"⑧ 건물주에 추천 발송",auto:"메일/카톡"},
- {k:"c9",t:"⑨ 승인·입금"},
+ {k:"c9",t:"⑨ 승인·입금 (계약)",doc:"contract"},
  {k:"c10",t:"⑩ 입금 확인 → 자동 진행",auto:"입금 확인"},
  {k:"c11",t:"⑪ 업체 연결·일정"},
- {k:"c12",t:"⑫ 공사 진행"},
+ {k:"c12",t:"⑫ 공사 진행 (점검표)",doc:"inspect"},
  {k:"c13",t:"⑬ 작업 사진(전/후)"},
- {k:"c14",t:"⑭ B/A 보고서 생성·발송",auto:"문서 생성"},
+ {k:"c14",t:"⑭ B/A 보고서",doc:"ba"},
  {k:"c15",t:"⑮ 정산·증빙"},
- {k:"c16",t:"⑯ 월간 리포트",auto:"문서 생성"},
+ {k:"c16",t:"⑯ 월간 리포트",doc:"monthly"},
  {k:"c17",t:"⑰ 유지관리·사후관리"},
 ];
+const DOC_NAMES = { onboard:"온보딩 수집서", quote:"견적서", contract:"계약서", inspect:"점검 체크리스트", ba:"B/A 보고서", monthly:"월간 리포트" };
+function gradeFee(g){ return g==="라이트"?"190,000원/월":g==="프리미엄"?"월세수입의 7~11%":"390,000원/월"; }
+function caseDocHTML(id,k){
+  const c=cases[id]; if(!c) return null;
+  const s=CASE_STEPS.find(x=>x.k===k); if(!s||!s.doc) return null;
+  const nm=esc(c.name||"___"), bl=esc(c.building||"___"), gr=esc(c.grade||"___"), ph=esc(c.phone||"___");
+  const memo=esc((c.note||{})[k]||""), fee=gradeFee(c.grade), today=new Date().toLocaleDateString("ko-KR"), p=caseProgress(c);
+  const tbl=(rows)=>`<table>${rows}</table>`;
+  let title=DOC_NAMES[s.doc], body="";
+  if(s.doc==="contract"){
+    body=`<h1>건물 운영 지원 서비스 이용 계약서</h1>`+
+      `<p>주식회사 브링(이하 "회사")과 ${nm}(이하 "고객")은 아래 건물의 운영 지원에 관하여 다음과 같이 계약한다.</p>`+
+      tbl(`<tr><th>대상 건물</th><td>${bl}</td><th>서비스 등급</th><td>${gr}</td></tr><tr><th>월 이용요금</th><td>${fee}</td><th>연락처</th><td>${ph}</td></tr>`)+
+      `<h2>제1조 (목적)</h2><p>회사가 고객의 건물 운영을 지원하기 위한 서비스의 범위·요금·권리·의무를 정한다.</p>`+
+      `<h2>제2조 (제외 업무 — 법령상 불가)</h2><p>임차인 모집, 임대차 계약 체결, 월세 수납 대행, 임대 조건 협상, 임대 관리 위탁은 수행하지 아니한다.</p>`+
+      `<h2>제3조 (요금·결제)</h2><p>월 ${fee}(부가세 별도). 매월 [&nbsp;&nbsp;]일 회사 지정 계좌 납입, 세금계산서/현금영수증 발행.</p>`+
+      `<h2>제4조 (수리·공사 비용)</h2><p>수리·공사 비용은 고객이 협력업체에 직접 지급하며, 회사는 중계·기록만 한다.</p>`+
+      `<h2>제5조 (책임의 한계)</h2><p>점검·진단은 '확인·권고'이며 하자 보증이 아니다. 회사는 배상책임보험에 가입한다.</p>`+
+      `<p style="margin-top:24px">계약일: ${today}</p>`+
+      tbl(`<tr><th>회사(브링)</th><td>(서명/인)</td><th>고객</th><td>(서명/인)</td></tr>`)+
+      `<p class="muted">※ 자동 생성 초안 — 시행 전 변호사 검토 필요.</p>`;
+  } else if(s.doc==="quote"){
+    body=`<h1>견 적 서</h1>`+tbl(`<tr><th>수신</th><td>${nm} 귀하</td><th>견적일</th><td>${today}</td></tr><tr><th>건물</th><td>${bl}</td><th>연락처</th><td>${ph}</td></tr>`)+
+      `<h2>견적 내역</h2>`+tbl(`<tr><th>항목</th><th>금액</th></tr><tr><td>건물 운영 지원 (${gr})</td><td>${fee}</td></tr><tr><td>비고(메모)</td><td>${memo||"-"}</td></tr>`)+
+      `<p class="muted">수리·공사 비용은 별도이며 건물주가 협력업체에 직접 지급. 부가세 별도.</p>`;
+  } else if(s.doc==="onboard"){
+    body=`<h1>온보딩 — 건물 기초정보 수집서</h1>`+tbl(`<tr><th>고객명</th><td>${nm}</td><th>등급</th><td>${gr}</td></tr><tr><th>건물</th><td>${bl}</td><th>연락처</th><td>${ph}</td></tr>`)+
+      `<h2>설비 현황</h2>`+tbl(`<tr><th>설비</th><th>유/무·연식·비고</th></tr>`+["전기/분전반","소방","승강기","CCTV/출입","보일러/냉난방","수도/배관"].map(x=>`<tr><td>${x}</td><td>&nbsp;</td></tr>`).join(""))+
+      `<h2>임차인 현황</h2>`+tbl(`<tr><th>호실</th><th>성명</th><th>연락처</th><th>계약만료</th></tr>`+`<tr><td>&nbsp;</td><td></td><td></td><td></td></tr>`.repeat(4))+
+      `<p>도면 □유 □무 · 비상연락망: ______________ · 기존 업체: ______________</p>`;
+  } else if(s.doc==="inspect"){
+    body=`<h1>건물 점검 체크리스트</h1>`+tbl(`<tr><th>건물</th><td>${bl}</td><th>점검일</th><td>${today}</td></tr>`)+
+      ["공용부(복도·계단·주차장)","옥상 방수·누수","전기·분전반·조명","소방(소화기·감지기)","CCTV·출입문","계절 리스크(배수·동파)"].map(x=>tbl(`<tr><th>${x}</th><th>양호</th><th>주의</th><th>불량</th><th>비고</th></tr><tr><td>&nbsp;</td><td>□</td><td>□</td><td>□</td><td></td></tr>`)).join("")+
+      `<p>종합 의견: ______________________</p>`;
+  } else if(s.doc==="ba"){
+    body=`<h1>작업 Before / After 보고서</h1>`+tbl(`<tr><th>건물</th><td>${bl}</td><th>작업일</th><td>${today}</td></tr>`)+
+      `<h2>작업 내용</h2><p>${memo||"______________________"}</p>`+
+      `<h2>사진</h2>`+tbl(`<tr><th>작업 전</th><th>작업 후</th></tr><tr><td style="height:120px">&nbsp;</td><td>&nbsp;</td></tr>`)+
+      `<h2>비용</h2><p>견적/실제: ______ (건물주 → 업체 직접 지급)</p>`;
+  } else if(s.doc==="monthly"){
+    body=`<h1>월간 운영 리포트</h1>`+tbl(`<tr><th>건물</th><td>${bl}</td><th>고객</th><td>${nm}</td></tr><tr><th>대상월</th><td>${today.slice(0,7)}</td><th>등급</th><td>${gr}</td></tr>`)+
+      `<h2>이달 요약</h2><p>케이스 진행: ${p.done}/${p.total} 단계</p>`+
+      `<h2>민원·점검·공사</h2>`+tbl(`<tr><th>일자</th><th>내용</th><th>처리</th></tr><tr><td>&nbsp;</td><td></td><td></td></tr>`.repeat(1)+`<tr><td>&nbsp;</td><td></td><td></td></tr>`)+
+      `<h2>비용 정리</h2><p>수리비/청소비/기타: ______ (증빙 첨부)</p>`;
+  }
+  const html=`<html xmlns:o="urn:schemas-microsoft-com:office:office" xmlns:w="urn:schemas-microsoft-com:office:word"><head><meta charset="utf-8"><title>${title}</title>`+
+    `<style>body{font-family:'Malgun Gothic',sans-serif;font-size:11pt;line-height:1.6;color:#222;} h1{font-size:18pt;text-align:center;margin-bottom:16px;} h2{font-size:12.5pt;border-bottom:1px solid #ccc;padding-bottom:3px;margin-top:18px;} p{margin:6px 0;} table{border-collapse:collapse;width:100%;margin:6px 0;} td,th{border:1px solid #999;padding:5px 8px;font-size:10pt;text-align:left;} th{background:#eef1f6;} .muted{color:#888;font-size:9.5pt;font-style:italic;}</style></head><body>${body}</body></html>`;
+  return { filename:`${title}_${(c.name||"고객")}.doc`, html, title };
+}
+function downloadCaseDoc(id,k){
+  const d=caseDocHTML(id,k); if(!d) return;
+  const blob=new Blob(["﻿"+d.html], {type:"application/msword"});
+  const a=document.createElement("a"); a.href=URL.createObjectURL(blob); a.download=d.filename; document.body.appendChild(a); a.click(); a.remove();
+  const c=cases[id]; if(c){ caseLog(c, "📄 "+d.title+" 생성"); saveCases(); renderCaseDetail(); }
+}
 const caseView = document.getElementById("caseView");
 const caseListEl = document.getElementById("caseList");
 const caseDetailEl = document.getElementById("caseDetail");
@@ -1651,9 +1708,10 @@ function renderCaseDetail(){
     CASE_STEPS.map(s=>{ const st=(c.status||{})[s.k]||""; const note=(c.note||{})[s.k]||""; const open=noteOpen.has(s.k);
       const chip=`<button class="cv-chip ${st||'wait'}" data-step="${s.k}">${st==="done"?"완료":st==="doing"?"진행중":"대기"}</button>`;
       const act=s.auto?`<button class="cv-act" data-auto="${s.k}" data-ch="${esc(s.auto)}">🤖 ${esc(s.auto)}<span class="tag">연결예정</span></button>`:"";
+      const dc=s.doc?`<button class="cv-doc" data-doc="${s.k}" title="이 고객 정보로 자동 채운 문서 받기">📄 ${esc(DOC_NAMES[s.doc])}</button>`:"";
       const nb=`<button class="cv-notebtn ${note?'has':''}" data-notetoggle="${s.k}" title="메모">📝</button>`;
       const box=open?`<textarea class="cv-note" data-note="${s.k}" placeholder="이 단계 메모 (민원 내용·선정 업체·금액 등)">${esc(note)}</textarea>`:"";
-      return `<div class="cv-stepwrap"><div class="cv-step ${st}">${chip}<div class="lbl">${esc(s.t)}</div>${act}${nb}</div>${box}</div>`;
+      return `<div class="cv-stepwrap"><div class="cv-step ${st}">${chip}<div class="lbl">${esc(s.t)}</div>${act}${dc}${nb}</div>${box}</div>`;
     }).join("")+
     `<button class="cv-del" id="cvDel">🗑 이 케이스 삭제</button>`+
     (c.log&&c.log.length?`<div class="cv-log"><div class="t" style="font-weight:700">기록</div>`+c.log.slice(0,8).map(l=>`<div class="t">· ${esc(l)}</div>`).join("")+`</div>`:"");
@@ -1661,14 +1719,15 @@ function renderCaseDetail(){
 document.getElementById("caseBtn").addEventListener("click", openCaseView);
 document.getElementById("caseBack").addEventListener("click", closeCaseView);
 caseListEl.addEventListener("click", e=>{ if(e.target.closest("#cvNew")){ createCase(); return; } const it=e.target.closest(".cv-item"); if(it) selectCase(it.dataset.cid); });
-caseDetailEl.addEventListener("click", e=>{ const nt=e.target.closest("[data-notetoggle]"); if(nt){ const k=nt.dataset.notetoggle; noteOpen.has(k)?noteOpen.delete(k):noteOpen.add(k); renderCaseDetail(); return; } const ch=e.target.closest("[data-step]"); if(ch){ cycleStep(curCase, ch.dataset.step); return; } const au=e.target.closest("[data-auto]"); if(au){ doAuto(curCase, au.dataset.auto, au.dataset.ch); return; } if(e.target.closest("#cvDel")){ deleteCase(curCase); } });
+caseDetailEl.addEventListener("click", e=>{ const dc=e.target.closest("[data-doc]"); if(dc){ downloadCaseDoc(curCase, dc.dataset.doc); return; } const nt=e.target.closest("[data-notetoggle]"); if(nt){ const k=nt.dataset.notetoggle; noteOpen.has(k)?noteOpen.delete(k):noteOpen.add(k); renderCaseDetail(); return; } const ch=e.target.closest("[data-step]"); if(ch){ cycleStep(curCase, ch.dataset.step); return; } const au=e.target.closest("[data-auto]"); if(au){ doAuto(curCase, au.dataset.auto, au.dataset.ch); return; } if(e.target.closest("#cvDel")){ deleteCase(curCase); } });
 caseDetailEl.addEventListener("input", e=>{ const f=e.target.closest("input[data-f]"); if(f){ setCaseField(curCase, f.dataset.f, f.value); return; } const nb=e.target.closest("textarea[data-note]"); if(nb) setCaseNote(curCase, nb.dataset.note, nb.value); });
 caseDetailEl.addEventListener("change", e=>{ const f=e.target.closest("select[data-f]"); if(f) setCaseField(curCase, f.dataset.f, f.value); });
 cases = loadCasesLocal();
 
 /* ===== 업데이트 알림(What's New) — 새 버전 나오면 자동 팝업 ===== */
-const APP_VERSION = "3.1";
+const APP_VERSION = "3.2";
 const CHANGELOG = [
+  { v:"3.2", d:"2026-06-23", items:["케이스 단계에 📄 문서 자동생성 — 그 고객 정보로 채운 Word(.doc) 바로 다운로드","계약서·견적서·온보딩·점검표·B/A·월간리포트 6종을 흐름에 연결"] },
   { v:"3.1", d:"2026-06-23", items:["케이스 단계마다 📝 메모 추가 — 민원 내용·선정 업체·금액 등 기록","메모 있는 단계는 📝 버튼이 노란색으로 표시"] },
   { v:"3.0", d:"2026-06-23", items:["🚀 케이스 자동화 트래커 추가 — 고객 한 건을 ①~⑰ 단계로 진행 관리","각 단계 상태(대기·진행·완료) + 진행률 표시, 팀 실시간 공유","자동화 지점(메일·카톡·입금·문서)에 버튼 자리 마련(와꾸) — API 연결 예정"] },
   { v:"2.8", d:"2026-06-23", items:["상단 탭(보드)을 북마크바 느낌으로 정리 — 📁 폴더 아이콘·납작한 디자인","탭을 드래그해서 순서 바꾸기 (모든 팀원에게 동일하게 적용)"] },
@@ -1725,7 +1784,8 @@ window.__wf = { addChild, addRoot, addLink, deleteNode, setNodeColor, resizeNode
   setNodeFont, getCurved:()=>curvedLinks, setCurved:(v)=>{ curvedLinks=v; render(); }, setLinkCurve, openLinkPop,
   selectAll, clearSelection, toggleSelect, getSelected:()=>[...selected], bulkFont, bulkResize, bulkColor, bulkShape, bulkBadge,
   alignNodes, distribute, equalizeSize, equalizeFont, moveBoard, getBoardOrder:()=>orderedBoardIds(),
-  openCaseView, closeCaseView, createCase, selectCase, cycleStep, doAuto, getCases:()=>JSON.parse(JSON.stringify(cases)), CASE_STEPS };
+  openCaseView, closeCaseView, createCase, selectCase, cycleStep, doAuto, getCases:()=>JSON.parse(JSON.stringify(cases)), CASE_STEPS,
+  setCaseField, setCaseNote, caseDocHTML, downloadCaseDoc };
 
 start();
 initVendorSheetSync();
