@@ -242,6 +242,22 @@
   .cv-stepwrap .cv-step{ margin-bottom:0; }
   .cv-doc{ border:1px solid #1b335f; background:#1b335f; color:#fff; border-radius:8px; padding:5px 11px; font-size:12.5px; cursor:pointer; font-family:inherit; white-space:nowrap; font-weight:600; }
   .cv-doc:hover{ background:#26477e; }
+  .cv-act.mail{ border-color:#1b335f; }
+  .cv-act.mail .tag{ background:#1b335f; color:#fff; }
+  .mailmodal{ position:fixed; inset:0; background:rgba(15,25,45,.5); display:none; align-items:center; justify-content:center; z-index:9999; }
+  .mailmodal.open{ display:flex; }
+  .mm-box{ background:#fff; width:min(560px,92vw); max-height:88vh; overflow:auto; border-radius:16px; padding:20px 22px; box-shadow:0 20px 60px rgba(0,0,0,.3); }
+  .mm-head{ font-size:17px; font-weight:800; color:#1b335f; display:flex; align-items:center; gap:8px; margin-bottom:14px; }
+  .mm-x{ margin-left:auto; border:none; background:#eef1f6; border-radius:8px; width:30px; height:30px; cursor:pointer; font-size:14px; }
+  .mm-l{ display:block; font-size:12.5px; color:#52606d; font-weight:600; margin-bottom:10px; }
+  .mm-l input, .mm-l textarea{ width:100%; box-sizing:border-box; margin-top:4px; border:1px solid var(--line); border-radius:9px; padding:9px 11px; font-size:13.5px; font-family:inherit; }
+  .mm-l textarea{ resize:vertical; line-height:1.6; }
+  .mm-note{ font-size:12px; color:#8a94a6; margin:2px 0 14px; line-height:1.5; }
+  .mm-actions{ display:flex; gap:8px; justify-content:flex-end; align-items:center; }
+  .mm-setup{ border:1px solid var(--line); background:#fff; border-radius:9px; padding:9px 12px; cursor:pointer; font-size:12.5px; margin-right:auto; }
+  .mm-cancel{ border:1px solid var(--line); background:#fff; border-radius:9px; padding:9px 16px; cursor:pointer; font-size:13.5px; }
+  .mm-send{ border:none; background:#1b335f; color:#fff; border-radius:9px; padding:9px 18px; cursor:pointer; font-size:13.5px; font-weight:700; }
+  .mm-send:hover{ background:#26477e; }
   .cv-notebtn{ border:1px solid var(--line); background:#fff; border-radius:8px; padding:5px 8px; font-size:12.5px; cursor:pointer; }
   .cv-notebtn.has{ background:#fff7e6; border-color:#f0dca0; }
   .cv-note{ width:100%; box-sizing:border-box; margin:5px 0 0; border:1px solid var(--line); border-radius:9px; padding:8px 10px; font-size:13px; font-family:inherit; min-height:54px; resize:vertical; }
@@ -696,12 +712,16 @@ function start(){
   if (isConfigured && typeof firebase !== "undefined"){
     try { initFirebase(); updateUndoBtn(); return; } catch(e){ console.error("Firebase 실패 → 로컬", e); }
   }
+  settings = loadSettingsLocal();
   boards = loadBoardsLocal(); boardOrder = loadOrderLocal(); if(!boards[curBoard]) curBoard = Object.keys(boards)[0];
   openBoard(curBoard); updateUndoBtn();
 }
 function initFirebase(){
   firebase.initializeApp(firebaseConfig);
   db = firebase.database();
+  settings = loadSettingsLocal();
+  settingsRef = db.ref("workflow/_settings");
+  settingsRef.on("value", s => { settings = s.val()||{}; saveSettingsLocal(); });
   boards = loadBoardsLocal(); boardOrder = loadOrderLocal();
   db.ref("workflow/_order").on("value", s => {
     const v = s.val(); boardOrder = Array.isArray(v) ? v : [];
@@ -1669,6 +1689,7 @@ const caseView = document.getElementById("caseView");
 const caseListEl = document.getElementById("caseList");
 const caseDetailEl = document.getElementById("caseDetail");
 let cases = {}, curCase = null, casesRef = null, caseWriteT = null, noteOpen = new Set();
+let settings = {}, settingsRef = null;
 function caseGenId(){ return "k"+Date.now().toString(36)+Math.random().toString(36).slice(2,5); }
 function loadCasesLocal(){ try{ const c=JSON.parse(localStorage.getItem("fm_cases_v1")); if(c&&typeof c==="object") return c; }catch(e){} return {}; }
 function saveCases(){ try{ localStorage.setItem("fm_cases_v1", JSON.stringify(cases)); }catch(e){} clearTimeout(caseWriteT); caseWriteT=setTimeout(()=>{ if(casesRef) casesRef.set(cases); }, 300); }
@@ -1676,14 +1697,66 @@ function caseProgress(c){ return { done: CASE_STEPS.filter(s=>(c.status||{})[s.k
 function caseLog(c,m){ (c.log=c.log||[]).unshift(m); if(c.log.length>30) c.log.length=30; }
 function openCaseView(){ if(!curCase) curCase=Object.keys(cases)[0]||null; caseView.classList.add("open"); renderCaseList(); renderCaseDetail(); }
 function closeCaseView(){ caseView.classList.remove("open"); }
-function createCase(){ const id=caseGenId(); cases[id]={ id, name:"새 고객", phone:"", building:"", grade:"스탠다드", memo:"", status:{}, log:[] }; curCase=id; saveCases(); renderCaseList(); renderCaseDetail(); return id; }
+function createCase(){ const id=caseGenId(); cases[id]={ id, name:"새 고객", phone:"", email:"", building:"", grade:"스탠다드", memo:"", status:{}, log:[] }; curCase=id; saveCases(); renderCaseList(); renderCaseDetail(); return id; }
 function selectCase(id){ curCase=id; noteOpen.clear(); renderCaseList(); renderCaseDetail(); }
 function deleteCase(id){ if(!cases[id]) return; if(!confirm("이 케이스를 삭제할까요?")) return; delete cases[id]; if(curCase===id) curCase=Object.keys(cases)[0]||null; saveCases(); renderCaseList(); renderCaseDetail(); }
 function cycleStep(id,k){ const c=cases[id]; if(!c) return; c.status=c.status||{}; const cur=c.status[k]||""; c.status[k]= cur===""?"doing":cur==="doing"?"done":""; const s=CASE_STEPS.find(x=>x.k===k); caseLog(c, s.t+" → "+(c.status[k]==="done"?"완료":c.status[k]==="doing"?"진행중":"대기")); saveCases(); renderCaseList(); renderCaseDetail(); }
 function doAuto(id,k,channel){ const c=cases[id]; if(!c) return;
-  /* 🔌 여기에 실제 API 연결 (메일/카톡/입금/문서). 지금은 와꾸(수동 기록). */
+  /* 메일 외 자동화(입금확인 등)는 아직 수동 기록 */
   if(!confirm("["+channel+"] 자동 연결은 준비 중(예정)입니다.\n지금은 '실행함'으로 기록하고 이 단계를 완료 처리할까요?")) return;
   c.status=c.status||{}; c.status[k]="done"; caseLog(c, "🔌 "+channel+" 실행(수동 기록)"); saveCases(); renderCaseList(); renderCaseDetail();
+}
+/* ===== 📧 메일 자동발송 (구글 Apps Script 백엔드) ===== */
+const EMAIL_TEMPLATES = {
+  c2: c => ({ to: c.email||"", subject: "[브링] 문의 접수 확인 안내",
+    body: `${c.name||"고객"}님, 안녕하세요. 브링입니다.\n\n${c.building||"건물"} 관련 문의가 정상 접수되었습니다.\n담당자가 확인 후 상담 및 현장 점검 일정을 안내드리겠습니다.\n\n궁금하신 점은 회신 주시면 빠르게 도와드리겠습니다.\n감사합니다.\n— 브링` }),
+  c5: c => ({ to: "", subject: `[브링] 견적 요청 — ${c.building||""}`,
+    body: `안녕하세요, 브링입니다.\n\n아래 건에 대한 견적을 요청드립니다.\n\n· 대상 건물: ${c.building||""}\n· 요청 내용: ${(c.note||{}).c4||(c.note||{}).c3||"(상담 내용 참고)"}\n· 희망 일정: 협의\n\n견적서 회신 부탁드립니다. 감사합니다.\n— 브링` }),
+  c8: c => ({ to: c.email||"", subject: `[브링] 점검·견적 추천 안내 — ${c.building||""}`,
+    body: `${c.name||"고객"}님, 안녕하세요. 브링입니다.\n\n${c.building||"건물"} 점검 및 견적 비교 결과와 추천안을 안내드립니다.\n\n${(c.note||{}).c6||(c.note||{}).c7||"(견적 비교·추천 내용을 여기에 정리)"}\n\n승인해주시면 일정 잡고 진행하겠습니다.\n감사합니다.\n— 브링` })
+};
+function loadSettingsLocal(){ try{ return JSON.parse(localStorage.getItem("fm_settings_v1"))||{}; }catch(e){ return {}; } }
+function saveSettingsLocal(){ try{ localStorage.setItem("fm_settings_v1", JSON.stringify(settings)); }catch(e){} }
+function setMailEndpoint(url){ settings.mailEndpoint=url; if(settingsRef){ settingsRef.set(settings); } else { saveSettingsLocal(); } }
+function promptMailSetup(){
+  const url = prompt("메일 자동발송을 켜려면 구글 Apps Script 웹앱 URL이 필요해요.\n(팀에 공유된 '메일 자동화 설치 안내' 참고 — 5분)\n\nApps Script 웹앱 URL을 붙여넣으세요:", settings.mailEndpoint||"");
+  if(url==null) return false;
+  if(/^https:\/\/script\.google\.com\//.test(url.trim())){ setMailEndpoint(url.trim()); alert("✅ 저장됐어요(팀 공유). 다시 '보내기'를 누르면 발송됩니다."); return true; }
+  alert("⚠️ https://script.google.com/ 으로 시작하는 웹앱 URL이 맞는지 확인하세요."); return false;
+}
+function sendMailRequest(endpoint, payload){
+  return fetch(endpoint, { method:"POST", mode:"no-cors", headers:{"Content-Type":"text/plain;charset=utf-8"}, body: JSON.stringify(Object.assign({fromName:"브링"}, payload)) }).catch(e=>console.error("mail",e));
+}
+let mailModalEl=null, mailCtx=null;
+function ensureMailModal(){
+  if(mailModalEl) return;
+  mailModalEl=document.createElement("div"); mailModalEl.className="mailmodal";
+  mailModalEl.innerHTML=`<div class="mm-box"><div class="mm-head">📧 <span id="mmTitle">메일 발송</span><button class="mm-x" id="mmClose">✕</button></div>`+
+    `<label class="mm-l">받는사람<input id="mmTo" placeholder="example@email.com"></label>`+
+    `<label class="mm-l">제목<input id="mmSubject"></label>`+
+    `<label class="mm-l">내용<textarea id="mmBody" rows="10"></textarea></label>`+
+    `<div class="mm-note" id="mmNote"></div>`+
+    `<div class="mm-actions"><button class="mm-setup" id="mmSetup">⚙️ 자동발송 설정</button><button class="mm-cancel" id="mmCancel">취소</button><button class="mm-send" id="mmSend">보내기 ✉️</button></div></div>`;
+  document.body.appendChild(mailModalEl);
+  mailModalEl.addEventListener("click", e=>{ if(e.target===mailModalEl||e.target.closest("#mmClose")||e.target.closest("#mmCancel")) closeMailModal(); else if(e.target.closest("#mmSetup")){ promptMailSetup(); refreshMailNote(); } else if(e.target.closest("#mmSend")) doSendMail(); });
+}
+function refreshMailNote(){ const n=document.getElementById("mmNote"); if(!n) return; n.innerHTML = settings.mailEndpoint ? "✅ 연결됨 — '보내기'를 누르면 Gmail에서 실제 전송됩니다. (보낸편지함에서 확인)" : "⚠️ 자동발송 미설정 — ⚙️로 한 번만 연결하거나, 내용을 복사해 직접 보내세요."; }
+function openMailModal(id,k){
+  const c=cases[id]; if(!c) return; const tpl=EMAIL_TEMPLATES[k]; if(!tpl){ const s=CASE_STEPS.find(x=>x.k===k)||{}; return doAuto(id,k,s.auto||""); }
+  ensureMailModal(); const m=tpl(c); mailCtx={id,k}; const step=CASE_STEPS.find(x=>x.k===k)||{};
+  document.getElementById("mmTitle").textContent=(step.t||"메일")+" — 메일 발송";
+  document.getElementById("mmTo").value=m.to; document.getElementById("mmSubject").value=m.subject; document.getElementById("mmBody").value=m.body;
+  refreshMailNote(); mailModalEl.classList.add("open");
+  setTimeout(()=>{ const f=document.getElementById(m.to?"mmSubject":"mmTo"); if(f) f.focus(); },50);
+}
+function closeMailModal(){ if(mailModalEl) mailModalEl.classList.remove("open"); mailCtx=null; }
+function doSendMail(){
+  const to=document.getElementById("mmTo").value.trim(), subject=document.getElementById("mmSubject").value.trim(), body=document.getElementById("mmBody").value;
+  if(!to){ alert("받는사람 이메일을 입력하세요."); return; }
+  if(!settings.mailEndpoint){ if(!promptMailSetup()){ return; } refreshMailNote(); if(!settings.mailEndpoint) return; }
+  sendMailRequest(settings.mailEndpoint, {to, subject, body});
+  if(mailCtx){ const c=cases[mailCtx.id]; if(c){ c.status=c.status||{}; c.status[mailCtx.k]="done"; caseLog(c, "📧 메일 발송: "+to+" — "+subject); saveCases(); renderCaseList(); renderCaseDetail(); } }
+  closeMailModal(); alert("✉️ 발송 요청을 보냈어요.\nGmail 보낸편지함에서 확인하세요.");
 }
 function setCaseField(id,f,v){ const c=cases[id]; if(!c) return; c[f]=v; saveCases(); if(f==="name"||f==="grade"||f==="building") renderCaseList(); }
 function setCaseNote(id,k,v){ const c=cases[id]; if(!c) return; c.note=c.note||{}; c.note[k]=v; saveCases(); }
@@ -1702,12 +1775,13 @@ function renderCaseDetail(){
   caseDetailEl.innerHTML =
     `<div class="cv-form"><label>고객명<input data-f="name" value="${esc(c.name||"")}"></label>`+
     `<label>연락처<input data-f="phone" value="${esc(c.phone||"")}"></label>`+
+    `<label>이메일<input data-f="email" value="${esc(c.email||"")}" placeholder="메일 자동발송용"></label>`+
     `<label>건물<input data-f="building" value="${esc(c.building||"")}"></label>`+
     `<label>등급<select data-f="grade">${["라이트","스탠다드","프리미엄"].map(g=>`<option ${g===c.grade?"selected":""}>${g}</option>`).join("")}</select></label></div>`+
     `<div class="cv-bar"><i style="width:${pct}%"></i></div><div class="cv-prog">진행 ${p.done}/${p.total} (${pct}%)</div>`+
     CASE_STEPS.map(s=>{ const st=(c.status||{})[s.k]||""; const note=(c.note||{})[s.k]||""; const open=noteOpen.has(s.k);
       const chip=`<button class="cv-chip ${st||'wait'}" data-step="${s.k}">${st==="done"?"완료":st==="doing"?"진행중":"대기"}</button>`;
-      const act=s.auto?`<button class="cv-act" data-auto="${s.k}" data-ch="${esc(s.auto)}">🤖 ${esc(s.auto)}<span class="tag">연결예정</span></button>`:"";
+      const act=s.auto?`<button class="cv-act ${EMAIL_TEMPLATES[s.k]?'mail':''}" data-auto="${s.k}" data-ch="${esc(s.auto)}">${EMAIL_TEMPLATES[s.k]?'📧':'🤖'} ${esc(s.auto)}<span class="tag">${EMAIL_TEMPLATES[s.k]?'메일 발송':'연결예정'}</span></button>`:"";
       const dc=s.doc?`<button class="cv-doc" data-doc="${s.k}" title="이 고객 정보로 자동 채운 문서 받기">📄 ${esc(DOC_NAMES[s.doc])}</button>`:"";
       const nb=`<button class="cv-notebtn ${note?'has':''}" data-notetoggle="${s.k}" title="메모">📝</button>`;
       const box=open?`<textarea class="cv-note" data-note="${s.k}" placeholder="이 단계 메모 (민원 내용·선정 업체·금액 등)">${esc(note)}</textarea>`:"";
@@ -1719,14 +1793,15 @@ function renderCaseDetail(){
 document.getElementById("caseBtn").addEventListener("click", openCaseView);
 document.getElementById("caseBack").addEventListener("click", closeCaseView);
 caseListEl.addEventListener("click", e=>{ if(e.target.closest("#cvNew")){ createCase(); return; } const it=e.target.closest(".cv-item"); if(it) selectCase(it.dataset.cid); });
-caseDetailEl.addEventListener("click", e=>{ const dc=e.target.closest("[data-doc]"); if(dc){ downloadCaseDoc(curCase, dc.dataset.doc); return; } const nt=e.target.closest("[data-notetoggle]"); if(nt){ const k=nt.dataset.notetoggle; noteOpen.has(k)?noteOpen.delete(k):noteOpen.add(k); renderCaseDetail(); return; } const ch=e.target.closest("[data-step]"); if(ch){ cycleStep(curCase, ch.dataset.step); return; } const au=e.target.closest("[data-auto]"); if(au){ doAuto(curCase, au.dataset.auto, au.dataset.ch); return; } if(e.target.closest("#cvDel")){ deleteCase(curCase); } });
+caseDetailEl.addEventListener("click", e=>{ const dc=e.target.closest("[data-doc]"); if(dc){ downloadCaseDoc(curCase, dc.dataset.doc); return; } const nt=e.target.closest("[data-notetoggle]"); if(nt){ const k=nt.dataset.notetoggle; noteOpen.has(k)?noteOpen.delete(k):noteOpen.add(k); renderCaseDetail(); return; } const ch=e.target.closest("[data-step]"); if(ch){ cycleStep(curCase, ch.dataset.step); return; } const au=e.target.closest("[data-auto]"); if(au){ const ak=au.dataset.auto; if(EMAIL_TEMPLATES[ak]) openMailModal(curCase, ak); else doAuto(curCase, ak, au.dataset.ch); return; } if(e.target.closest("#cvDel")){ deleteCase(curCase); } });
 caseDetailEl.addEventListener("input", e=>{ const f=e.target.closest("input[data-f]"); if(f){ setCaseField(curCase, f.dataset.f, f.value); return; } const nb=e.target.closest("textarea[data-note]"); if(nb) setCaseNote(curCase, nb.dataset.note, nb.value); });
 caseDetailEl.addEventListener("change", e=>{ const f=e.target.closest("select[data-f]"); if(f) setCaseField(curCase, f.dataset.f, f.value); });
 cases = loadCasesLocal();
 
 /* ===== 업데이트 알림(What's New) — 새 버전 나오면 자동 팝업 ===== */
-const APP_VERSION = "3.2";
+const APP_VERSION = "4.0";
 const CHANGELOG = [
+  { v:"4.0", d:"2026-06-23", items:["📧 메일 자동발송 연결 — ②접수확인·⑤업체 견적요청·⑧건물주 추천 단계에서 버튼 누르면 고객 정보로 채운 메일 검토창 → 보내기로 실제 발송","구글 Apps Script(팀 Gmail) 백엔드 — 한 번만 설치하면 팀 전체 공유","케이스에 이메일 항목 추가"] },
   { v:"3.2", d:"2026-06-23", items:["케이스 단계에 📄 문서 자동생성 — 그 고객 정보로 채운 Word(.doc) 바로 다운로드","계약서·견적서·온보딩·점검표·B/A·월간리포트 6종을 흐름에 연결"] },
   { v:"3.1", d:"2026-06-23", items:["케이스 단계마다 📝 메모 추가 — 민원 내용·선정 업체·금액 등 기록","메모 있는 단계는 📝 버튼이 노란색으로 표시"] },
   { v:"3.0", d:"2026-06-23", items:["🚀 케이스 자동화 트래커 추가 — 고객 한 건을 ①~⑰ 단계로 진행 관리","각 단계 상태(대기·진행·완료) + 진행률 표시, 팀 실시간 공유","자동화 지점(메일·카톡·입금·문서)에 버튼 자리 마련(와꾸) — API 연결 예정"] },
@@ -1785,7 +1860,8 @@ window.__wf = { addChild, addRoot, addLink, deleteNode, setNodeColor, resizeNode
   selectAll, clearSelection, toggleSelect, getSelected:()=>[...selected], bulkFont, bulkResize, bulkColor, bulkShape, bulkBadge,
   alignNodes, distribute, equalizeSize, equalizeFont, moveBoard, getBoardOrder:()=>orderedBoardIds(),
   openCaseView, closeCaseView, createCase, selectCase, cycleStep, doAuto, getCases:()=>JSON.parse(JSON.stringify(cases)), CASE_STEPS,
-  setCaseField, setCaseNote, caseDocHTML, downloadCaseDoc };
+  setCaseField, setCaseNote, caseDocHTML, downloadCaseDoc,
+  openMailModal, closeMailModal, setMailEndpoint, getSettings:()=>JSON.parse(JSON.stringify(settings)), EMAIL_TEMPLATES };
 
 start();
 initVendorSheetSync();
