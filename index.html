@@ -566,7 +566,7 @@ function vendorLinksHtml(map, promo){
 }
 function escAttr(s){ return escH(s).replace(/"/g,"&quot;"); }
 function vendorExtraFieldsHtml(extra){
-  const fields = Object.entries(extra || {}).filter(([,v]) => String(v || "").trim());
+  const fields = Object.entries(extra || {});
   return fields.map(([label,value]) =>
     `<div class="vendor-field"><span class="vendor-field-label">${escH(label)}</span><p class="vendor-field-value">${htmlLines(value)}</p></div>`
   ).join("");
@@ -652,8 +652,9 @@ function appendVendorField(item, key, value){
 }
 function appendVendorExtra(item, label, value){
   const v = cleanCsvCell(value);
-  if(!v) return;
   item.extra ||= {};
+  if(!(label in item.extra)) item.extra[label] = "";
+  if(!v) return;
   item.extra[label] = (String(item.extra[label] || "") + (item.extra[label] ? "\n" : "") + v).trim();
 }
 function vendorDataFromCsv(text){
@@ -1823,8 +1824,9 @@ caseDetailEl.addEventListener("change", e=>{ const f=e.target.closest("select[da
 cases = loadCasesLocal();
 
 /* ===== 업데이트 알림(What's New) — 새 버전 나오면 자동 팝업 ===== */
-const APP_VERSION = "4.1";
+const APP_VERSION = "4.2";
 const CHANGELOG = [
+  { v:"4.2", d:"2026-06-26", items:["브링 메모 등 구글시트 추가 열이 비어 있어도 카드에 '-'로 표시"] },
   { v:"4.1", d:"2026-06-26", items:["구글시트 새 열 자동 반영 — 브링 메모 등 추가 열이 업체 카드에 표시","홍보 링크 버튼을 지도·블로그·인스타·유튜브·숨고·홈페이지으로 자동 분류"] },
   { v:"4.0", d:"2026-06-23", items:["📧 메일 자동발송 연결 — ②접수확인·⑤업체 견적요청·⑧건물주 추천 단계에서 버튼 누르면 고객 정보로 채운 메일 검토창 → 보내기로 실제 발송","구글 Apps Script(팀 Gmail) 백엔드 — 한 번만 설치하면 팀 전체 공유","케이스에 이메일 항목 추가"] },
   { v:"3.2", d:"2026-06-23", items:["케이스 단계에 📄 문서 자동생성 — 그 고객 정보로 채운 Word(.doc) 바로 다운로드","계약서·견적서·온보딩·점검표·B/A·월간리포트 6종을 흐름에 연결"] },
