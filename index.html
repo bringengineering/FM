@@ -535,12 +535,14 @@ function vendorLinkType(url){
   try{
     const u = new URL(safeUrl);
     const host = u.hostname.toLowerCase();
+    if(host.includes("youtube.com") || host.includes("youtu.be")) return "유튜브";
     if(host.includes("instagram.com")) return "인스타";
     if(host.includes("blog.naver.com")) return "블로그";
-    if(host.includes("naver.")) return "네이버";
-    return "사이트";
+    if(host.includes("soomgo.com")) return "숨고";
+    if(host.includes("naver.me") || host.includes("map.naver.com")) return "지도";
+    return "홈페이지";
   }catch(e){
-    return "사이트";
+    return "홈페이지";
   }
 }
 function vendorUrlItems(s){
@@ -563,10 +565,17 @@ function vendorLinksHtml(map, promo){
   ).join("")}</div>`;
 }
 function escAttr(s){ return escH(s).replace(/"/g,"&quot;"); }
+function vendorExtraFieldsHtml(extra){
+  const fields = Object.entries(extra || {}).filter(([,v]) => String(v || "").trim());
+  return fields.map(([label,value]) =>
+    `<div class="vendor-field"><span class="vendor-field-label">${escH(label)}</span><p class="vendor-field-value">${htmlLines(value)}</p></div>`
+  ).join("");
+}
 function vendorDetailHtml(label){
   const cat = vendorItemsFor(label);
   if(!cat) return "";
   const cards = vendorData[cat].map(v => {
+    const extraFields = vendorExtraFieldsHtml(v.extra);
     return `<article class="vendor-card">
       <div class="vendor-card-head">
         <div>
@@ -581,6 +590,7 @@ function vendorDetailHtml(label){
         <div class="vendor-field"><span class="vendor-field-label">평점</span><p class="vendor-field-value">${htmlLines(v.rating)}</p></div>
         <div class="vendor-field"><span class="vendor-field-label">단가</span><p class="vendor-field-value">${htmlLines(v.price)}</p></div>
         <div class="vendor-field"><span class="vendor-field-label">비고</span><p class="vendor-field-value">${htmlLines(v.note)}</p></div>
+        ${extraFields}
       </div>
     </article>`;
   }).join("");
@@ -640,10 +650,17 @@ function appendVendorField(item, key, value){
   if(!v) return;
   item[key] = (String(item[key] || "") + (item[key] ? "\n" : "") + v).trim();
 }
+function appendVendorExtra(item, label, value){
+  const v = cleanCsvCell(value);
+  if(!v) return;
+  item.extra ||= {};
+  item.extra[label] = (String(item.extra[label] || "") + (item.extra[label] ? "\n" : "") + v).trim();
+}
 function vendorDataFromCsv(text){
   const rows = parseCsv(text).filter(r => r.some(c => cleanCsvCell(c)));
   if(rows.length < 2) throw new Error("업체 자료 행이 없습니다.");
-  const headers = rows[0].map(h => cleanCsvCell(h).replace(/\s+/g,""));
+  const rawHeaders = rows[0].map(h => cleanCsvCell(h));
+  const headers = rawHeaders.map(h => h.replace(/\s+/g,""));
   const idx = name => headers.indexOf(name.replace(/\s+/g,""));
   const col = {
     no:idx("번호"), cat:idx("대분류"), type:idx("세부유형"), name:idx("업체명"),
@@ -651,6 +668,10 @@ function vendorDataFromCsv(text){
     promo:idx("홍보URL"), rating:idx("리뷰평점"), price:idx("작업단가"), note:idx("비고")
   };
   if(col.cat < 0 || col.name < 0) throw new Error("대분류/업체명 열을 찾을 수 없습니다.");
+  const fixedCols = new Set(Object.values(col).filter(i => i >= 0));
+  const extraCols = rawHeaders
+    .map((label, index) => ({ label, index }))
+    .filter(h => h.label && !fixedCols.has(h.index));
   const byCat = {}; let cur = null;
   rows.slice(1).forEach(r => {
     const name = cleanCsvCell(r[col.name]);
@@ -661,8 +682,9 @@ function vendorDataFromCsv(text){
         address:cleanCsvCell(r[col.address]), phone:cleanCsvCell(r[col.phone]),
         map:cleanCsvCell(r[col.map]), promo:cleanCsvCell(r[col.promo]),
         rating:cleanCsvCell(r[col.rating]), price:cleanCsvCell(r[col.price]),
-        note:cleanCsvCell(r[col.note])
+        note:cleanCsvCell(r[col.note]), extra:{}
       };
+      extraCols.forEach(c => appendVendorExtra(cur, c.label, r[c.index]));
       if(cat){ (byCat[cat] ||= []).push(cur); }
     } else if(cur){
       appendVendorField(cur, "promo", r[col.promo]);
@@ -670,6 +692,7 @@ function vendorDataFromCsv(text){
       appendVendorField(cur, "price", r[col.price]);
       appendVendorField(cur, "note", r[col.note]);
       appendVendorField(cur, "phone", r[col.phone]);
+      extraCols.forEach(c => appendVendorExtra(cur, c.label, r[c.index]));
     }
   });
   return byCat;
@@ -1800,8 +1823,9 @@ caseDetailEl.addEventListener("change", e=>{ const f=e.target.closest("select[da
 cases = loadCasesLocal();
 
 /* ===== 업데이트 알림(What's New) — 새 버전 나오면 자동 팝업 ===== */
-const APP_VERSION = "4.0";
+const APP_VERSION = "4.1";
 const CHANGELOG = [
+  { v:"4.1", d:"2026-06-26", items:["구글시트 새 열 자동 반영 — 브링 메모 등 추가 열이 업체 카드에 표시","홍보 링크 버튼을 지도·블로그·인스타·유튜브·숨고·홈페이지으로 자동 분류"] },
   { v:"4.0", d:"2026-06-23", items:["📧 메일 자동발송 연결 — ②접수확인·⑤업체 견적요청·⑧건물주 추천 단계에서 버튼 누르면 고객 정보로 채운 메일 검토창 → 보내기로 실제 발송","구글 Apps Script(팀 Gmail) 백엔드 — 한 번만 설치하면 팀 전체 공유","케이스에 이메일 항목 추가"] },
   { v:"3.2", d:"2026-06-23", items:["케이스 단계에 📄 문서 자동생성 — 그 고객 정보로 채운 Word(.doc) 바로 다운로드","계약서·견적서·온보딩·점검표·B/A·월간리포트 6종을 흐름에 연결"] },
   { v:"3.1", d:"2026-06-23", items:["케이스 단계마다 📝 메모 추가 — 민원 내용·선정 업체·금액 등 기록","메모 있는 단계는 📝 버튼이 노란색으로 표시"] },
