@@ -458,7 +458,6 @@ function vendorDetailHtml(label){
   const cat = vendorItemsFor(label);
   if(!cat) return "";
   const cards = vendorData[cat].map(v => {
-    const note = [v.rating, v.price, v.note].filter(Boolean).join("\n");
     return `<article class="vendor-card">
       <div class="vendor-card-head">
         <div>
@@ -470,7 +469,9 @@ function vendorDetailHtml(label){
         <div class="vendor-field"><span class="vendor-field-label">전화번호</span><p class="vendor-field-value">${htmlLines(v.phone)}</p></div>
         <div class="vendor-field"><span class="vendor-field-label">주소</span><p class="vendor-field-value">${htmlLines(v.address)}</p></div>
         <div class="vendor-field"><span class="vendor-field-label">링크</span><div class="vendor-field-value">${vendorLinksHtml(v.map, v.promo)}</div></div>
-        <div class="vendor-field"><span class="vendor-field-label">평점·단가·비고</span><p class="vendor-field-value">${htmlLines(note)}</p></div>
+        <div class="vendor-field"><span class="vendor-field-label">평점</span><p class="vendor-field-value">${htmlLines(v.rating)}</p></div>
+        <div class="vendor-field"><span class="vendor-field-label">단가</span><p class="vendor-field-value">${htmlLines(v.price)}</p></div>
+        <div class="vendor-field"><span class="vendor-field-label">비고</span><p class="vendor-field-value">${htmlLines(v.note)}</p></div>
       </div>
     </article>`;
   }).join("");
