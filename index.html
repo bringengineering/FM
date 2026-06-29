@@ -267,6 +267,32 @@
   .cv-del{ border:1px solid #f3c0c0; background:#fff; color:#e03131; border-radius:8px; padding:6px 11px; font-size:12.5px; cursor:pointer; font-family:inherit; margin-top:14px; }
   .cv-log{ margin-top:16px; border-top:1px dashed var(--line); padding-top:10px; }
   .cv-log .t{ font-size:12px; color:var(--ink-soft); margin-bottom:4px; }
+  /* 📢 비전·공지 */
+  .notice-banner{ display:flex; align-items:center; gap:9px; padding:8px 16px; background:linear-gradient(90deg,#1b335f,#26477e); color:#fff; cursor:pointer; font-size:13px; }
+  .notice-banner .nb-ic{ font-size:14px; flex:0 0 auto; }
+  .notice-banner .nb-txt{ flex:1; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; font-weight:600; }
+  .notice-banner .nb-more{ font-size:12px; color:#bcd0f0; flex:0 0 auto; }
+  .notice-banner:hover{ filter:brightness(1.1); }
+  .np-modal{ position:fixed; inset:0; background:rgba(15,25,45,.5); display:none; align-items:center; justify-content:center; z-index:9999; }
+  .np-modal.open{ display:flex; }
+  .np-box{ background:#fff; width:min(680px,94vw); max-height:90vh; overflow:auto; border-radius:16px; box-shadow:0 20px 60px rgba(0,0,0,.3); }
+  .np-head{ background:linear-gradient(135deg,#16294d,#244a82); color:#fff; padding:17px 22px; display:flex; align-items:center; gap:9px; position:sticky; top:0; z-index:1; }
+  .np-head h2{ font-size:17px; font-weight:800; flex:1; }
+  .np-x{ border:none; background:rgba(255,255,255,.2); color:#fff; border-radius:8px; width:30px; height:30px; cursor:pointer; font-size:14px; }
+  .np-body{ padding:16px 22px 22px; }
+  .np-sec h3{ font-size:14px; font-weight:800; color:#1b335f; margin:14px 0 8px; display:flex; align-items:center; gap:8px; }
+  .np-vision{ border:1px solid var(--line); border-radius:11px; padding:14px 16px; font-size:13.5px; line-height:1.7; background:#fbfcfe; }
+  .np-vision[contenteditable="true"]{ background:#fffdf5; outline:2px solid #ffe08a; }
+  .np-vision blockquote{ border-left:3px solid #c7d0dd; margin:8px 0; padding:4px 12px; color:#52606d; }
+  .np-vision ol,.np-vision ul{ padding-left:22px; }
+  .np-btn{ border:1px solid var(--line); background:#fff; border-radius:8px; padding:6px 12px; font-size:12.5px; cursor:pointer; font-family:inherit; }
+  .np-btn.primary{ background:#1b335f; color:#fff; border-color:#1b335f; font-weight:700; }
+  .np-postin{ display:flex; gap:8px; margin-bottom:12px; align-items:flex-start; }
+  .np-postin textarea{ flex:1; border:1px solid var(--line); border-radius:9px; padding:9px 11px; font-size:13px; font-family:inherit; min-height:46px; resize:vertical; }
+  .np-post{ border:1px solid var(--line); border-radius:10px; padding:10px 13px; margin-bottom:8px; background:#fff; }
+  .np-post .meta{ font-size:11px; color:#98a2b3; margin-bottom:4px; display:flex; justify-content:space-between; align-items:center; }
+  .np-post .body2{ font-size:13px; color:#2a3445; white-space:pre-wrap; line-height:1.55; }
+  .np-post .del{ border:none; background:none; color:#c92a2a; cursor:pointer; font-size:11px; }
 </style>
 </head>
 <body class="editing">
@@ -275,6 +301,8 @@
       <h1>🔵 업무 흐름 빌더</h1>
       <div><span class="verbadge" id="verBadge" title="업데이트 내역 보기">Ver</span><span class="conn local" id="conn">⚪ 로컬 모드</span></div>
     </header>
+
+    <div class="notice-banner" id="noticeBanner" title="비전·공지 전체 보기"><span class="nb-ic">📢</span><span class="nb-txt" id="nbTxt">비전·공지</span><span class="nb-more">전체보기 ›</span></div>
 
     <div class="tabs" id="tabs"></div>
 
@@ -289,6 +317,7 @@
       <button class="btn" id="exportBtn">💾 내보내기</button>
       <button class="btn" id="resetBtn">↺ 초기화</button>
       <button class="btn" id="caseBtn" style="background:#1b335f;color:#fff;border-color:#1b335f;font-weight:700">🚀 케이스</button>
+      <button class="btn" id="noticeBtn">📢 비전·공지</button>
     </div>
     <div class="help">
       원 <b>클릭</b> → 중분류 추가 · <b>더블클릭</b> → 이름수정 (수정 중 <b>Ctrl+Enter</b> → 다음 원) · <b>드래그</b> → 이동 · 왼쪽위 <b>색동그라미</b> → 색·크기·<b>글자</b>·모양<br>
@@ -738,6 +767,7 @@ function start(){
     try { initFirebase(); updateUndoBtn(); return; } catch(e){ console.error("Firebase 실패 → 로컬", e); }
   }
   settings = loadSettingsLocal();
+  notice = loadNoticeLocal(); ensureNotice(); renderNoticeBanner();
   boards = loadBoardsLocal(); boardOrder = loadOrderLocal(); if(!boards[curBoard]) curBoard = Object.keys(boards)[0];
   openBoard(curBoard); updateUndoBtn();
 }
@@ -747,6 +777,9 @@ function initFirebase(){
   settings = loadSettingsLocal();
   settingsRef = db.ref("workflow/_settings");
   settingsRef.on("value", s => { settings = s.val()||{}; saveSettingsLocal(); });
+  notice = loadNoticeLocal(); ensureNotice(); renderNoticeBanner();
+  noticeRef = db.ref("workflow/_notice");
+  noticeRef.on("value", s => { const v=s.val(); if(v==null){ noticeRef.set(notice); return; } notice=v; ensureNotice(); saveNoticeLocal(); renderNoticeBanner(); const editing=npEl&&npEl.classList.contains("open")&&(document.activeElement===document.getElementById("npVision")||document.activeElement===document.getElementById("npNew")); if(npEl&&npEl.classList.contains("open")&&!editing) renderNoticePanel(); });
   boards = loadBoardsLocal(); boardOrder = loadOrderLocal();
   db.ref("workflow/_order").on("value", s => {
     const v = s.val(); boardOrder = Array.isArray(v) ? v : [];
@@ -1715,6 +1748,7 @@ const caseListEl = document.getElementById("caseList");
 const caseDetailEl = document.getElementById("caseDetail");
 let cases = {}, curCase = null, casesRef = null, caseWriteT = null, noteOpen = new Set();
 let settings = {}, settingsRef = null;
+let notice = null, noticeRef = null;
 function caseGenId(){ return "k"+Date.now().toString(36)+Math.random().toString(36).slice(2,5); }
 function loadCasesLocal(){ try{ const c=JSON.parse(localStorage.getItem("fm_cases_v1")); if(c&&typeof c==="object") return c; }catch(e){} return {}; }
 function saveCases(){ try{ localStorage.setItem("fm_cases_v1", JSON.stringify(cases)); }catch(e){} clearTimeout(caseWriteT); caseWriteT=setTimeout(()=>{ if(casesRef) casesRef.set(cases); }, 300); }
@@ -1824,8 +1858,52 @@ caseDetailEl.addEventListener("change", e=>{ const f=e.target.closest("select[da
 cases = loadCasesLocal();
 
 /* ===== 업데이트 알림(What's New) — 새 버전 나오면 자동 팝업 ===== */
-const APP_VERSION = "4.2";
+/* ===== 📢 비전·공지 (팀 공유) ===== */
+const DEFAULT_VISION =
+ "<p><b>🎯 BRING 비전</b></p>"
+ +"<blockquote>사람이 대신함 → 프로세스로 표준화 → 소프트웨어로 자동화 → 로봇/AI로 고도화 → <b>OS가 운영</b></blockquote>"
+ +"<p><b>핵심 기초 5</b> · 건물주 시간 절약 · 스트레스 감소 · 세입자 민원 처리 · 업체·공사·비용 투명관리 · 운영 이력 데이터화</p>"
+ +"<p><b>발전 8단계</b></p><ol>"
+ +"<li><b>사람 기반 운영대행</b> — 사람이 대신 처리 (운영 신뢰)</li>"
+ +"<li><b>프로세스 표준화</b> — 누가 해도 같은 방식</li>"
+ +"<li><b>소프트웨어 자동화</b> — 반복 업무 시간↓</li>"
+ +"<li><b>로봇화</b> — 숨은 공간까지 데이터화</li>"
+ +"<li><b>AI화</b> — 분류·추천·예측 보조</li>"
+ +"<li><b>직접 이행</b> — 단가·응답속도 개선</li>"
+ +"<li><b>건물 유지관리 OS</b> — 데이터 기반 운영 (건물의 운영 기억장치)</li>"
+ +"<li><b>Physical Infrastructure AI</b> — 점검·판단·이행 통합</li></ol>"
+ +"<p><b>최종 정의</b></p><blockquote>BRING은 건물주의 시간·스트레스를 줄이는 운영대행으로 시작해, 민원·수납·업체·공사·재발 데이터를 축적하고, 이를 자동화·로봇화·AI화하여 건물 유지관리 단가를 낮추는 <b>OS 기업</b>으로 진화한다.</blockquote>";
+function loadNoticeLocal(){ try{ return JSON.parse(localStorage.getItem("fm_notice_v1"))||null; }catch(e){ return null; } }
+function saveNoticeLocal(){ try{ localStorage.setItem("fm_notice_v1", JSON.stringify(notice)); }catch(e){} }
+function ensureNotice(){ if(!notice||typeof notice!=="object") notice={vision:DEFAULT_VISION,posts:[]}; if(!notice.vision) notice.vision=DEFAULT_VISION; if(!Array.isArray(notice.posts)) notice.posts=[]; }
+function saveNotice(){ ensureNotice(); if(noticeRef){ noticeRef.set(notice); } else { saveNoticeLocal(); } renderNoticeBanner(); }
+function renderNoticeBanner(){ ensureNotice(); const t=document.getElementById("nbTxt"); if(!t) return; const latest=notice.posts[0]; t.textContent = latest ? ("공지 · "+latest.text.replace(/\s+/g," ")) : "비전·공지 — 우리의 방향과 공지를 여기서 봐요 (클릭)"; }
+let npEl=null;
+function ensureNoticePanel(){ if(npEl) return; npEl=document.createElement("div"); npEl.className="np-modal";
+  npEl.innerHTML=`<div class="np-box"><div class="np-head"><span>📢</span><h2>비전 · 공지</h2><button class="np-x" id="npClose">✕</button></div><div class="np-body" id="npBody"></div></div>`;
+  document.body.appendChild(npEl);
+  npEl.addEventListener("click", e=>{ if(e.target===npEl||e.target.closest("#npClose")){ closeNoticePanel(); return; } handleNoticeClick(e); });
+}
+function openNoticePanel(){ ensureNoticePanel(); renderNoticePanel(); npEl.classList.add("open"); }
+function closeNoticePanel(){ if(npEl) npEl.classList.remove("open"); }
+function fmtDate(ts){ try{ const d=new Date(ts); return d.toLocaleDateString("ko-KR")+" "+d.toLocaleTimeString("ko-KR",{hour:"2-digit",minute:"2-digit"}); }catch(e){ return ""; } }
+function renderNoticePanel(){ ensureNotice(); const b=document.getElementById("npBody"); if(!b) return;
+  b.innerHTML = `<div class="np-sec"><h3>🎯 우리의 비전 <button class="np-btn" id="npEditVision">✏️ 수정</button></h3><div class="np-vision" id="npVision">${notice.vision}</div></div>`
+   + `<div class="np-sec"><h3>📢 공지</h3><div class="np-postin"><textarea id="npNew" placeholder="팀에 공지할 내용을 적고 '올리기'"></textarea><button class="np-btn primary" id="npAdd">올리기</button></div><div id="npPosts">`
+   + (notice.posts.length? notice.posts.map(p=>`<div class="np-post"><div class="meta"><span>🕑 ${fmtDate(p.ts)}</span><button class="del" data-del="${p.id}">삭제</button></div><div class="body2">${esc(p.text)}</div></div>`).join("") : `<div style="color:#98a2b3;font-size:13px">아직 공지가 없어요. 첫 공지를 올려보세요.</div>`)
+   + `</div></div>`;
+}
+function handleNoticeClick(e){
+  if(e.target.closest("#npAdd")){ const ta=document.getElementById("npNew"); const v=(ta.value||"").trim(); if(!v) return; ensureNotice(); notice.posts.unshift({ id:"n"+Date.now().toString(36)+Math.random().toString(36).slice(2,5), text:v, ts:Date.now() }); if(notice.posts.length>50) notice.posts.length=50; saveNotice(); renderNoticePanel(); return; }
+  const del=e.target.closest("[data-del]"); if(del){ if(confirm("이 공지를 삭제할까요?")){ notice.posts=notice.posts.filter(p=>p.id!==del.dataset.del); saveNotice(); renderNoticePanel(); } return; }
+  const ev=e.target.closest("#npEditVision"); if(ev){ const v=document.getElementById("npVision"); const editing=v.getAttribute("contenteditable")==="true"; if(editing){ notice.vision=v.innerHTML; saveNotice(); v.setAttribute("contenteditable","false"); ev.textContent="✏️ 수정"; } else { v.setAttribute("contenteditable","true"); v.focus(); ev.textContent="💾 저장"; } return; }
+}
+document.getElementById("noticeBtn").addEventListener("click", openNoticePanel);
+document.getElementById("noticeBanner").addEventListener("click", openNoticePanel);
+
+const APP_VERSION = "4.3";
 const CHANGELOG = [
+  { v:"4.3", d:"2026-06-26", items:["📢 상단에 '비전·공지' 추가 — 회사 비전(발전 8단계)과 팀 공지를 한곳에","상단 배너에 최신 공지 표시, 패널에서 공지 올리기/비전 수정 (팀 실시간 공유)"] },
   { v:"4.2", d:"2026-06-26", items:["브링 메모 등 구글시트 추가 열이 비어 있어도 카드에 '-'로 표시"] },
   { v:"4.1", d:"2026-06-26", items:["구글시트 새 열 자동 반영 — 브링 메모 등 추가 열이 업체 카드에 표시","홍보 링크 버튼을 지도·블로그·인스타·유튜브·숨고·홈페이지으로 자동 분류"] },
   { v:"4.0", d:"2026-06-23", items:["📧 메일 자동발송 연결 — ②접수확인·⑤업체 견적요청·⑧건물주 추천 단계에서 버튼 누르면 고객 정보로 채운 메일 검토창 → 보내기로 실제 발송","구글 Apps Script(팀 Gmail) 백엔드 — 한 번만 설치하면 팀 전체 공유","케이스에 이메일 항목 추가"] },
@@ -1888,7 +1966,9 @@ window.__wf = { addChild, addRoot, addLink, deleteNode, setNodeColor, resizeNode
   alignNodes, distribute, equalizeSize, equalizeFont, moveBoard, getBoardOrder:()=>orderedBoardIds(),
   openCaseView, closeCaseView, createCase, selectCase, cycleStep, doAuto, getCases:()=>JSON.parse(JSON.stringify(cases)), CASE_STEPS,
   setCaseField, setCaseNote, caseDocHTML, downloadCaseDoc,
-  openMailModal, closeMailModal, setMailEndpoint, getSettings:()=>JSON.parse(JSON.stringify(settings)), EMAIL_TEMPLATES };
+  openMailModal, closeMailModal, setMailEndpoint, getSettings:()=>JSON.parse(JSON.stringify(settings)), EMAIL_TEMPLATES,
+  openNoticePanel, closeNoticePanel, getNotice:()=>JSON.parse(JSON.stringify(notice||{})), renderNoticeBanner,
+  _addNotice:(t)=>{ ensureNotice(); notice.posts.unshift({id:"t"+Date.now().toString(36),text:t,ts:Date.now()}); saveNotice(); } };
 
 start();
 initVendorSheetSync();
