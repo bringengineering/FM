@@ -1849,6 +1849,93 @@ window.BRING_BUILDING_MAINTENANCE_DATA = {
           "precision": "road"
         }
       ]
+    },
+    {
+      "id": "sheet-031",
+      "no": 31,
+      "name": "흥남전기",
+      "category": "전기·조명",
+      "service": "전기자재, 전기공사, LED 등기구, 자동화 전기자재",
+      "feature": "문막 톨게이트 앞 원주의료고등학교 옆. 자동화 전기자재·전기공사 전기자재·각종 LED 등기구 보유",
+      "operation": "033-744-1197",
+      "region": "강원 원주시 문막읍 원문로 1746",
+      "address": "강원 원주시 문막읍 원문로 1746",
+      "scale": "",
+      "url": "",
+      "extraUrl": "",
+      "naverUrl": "https://naver.me/5KqrgrTv",
+      "phone": "033-744-1197",
+      "rating": "4.18 / 리뷰 49",
+      "status": "사용자 추가",
+      "source": "google-sheet",
+      "sourceLabel": "원주 유지보수 직접추가",
+      "locations": [
+        {
+          "label": "문막읍 원문로",
+          "lat": 37.3117679,
+          "lng": 127.8215796,
+          "source": "naver-place-address",
+          "precision": "road"
+        }
+      ]
+    },
+    {
+      "id": "sheet-032",
+      "no": 32,
+      "name": "강원전기",
+      "category": "전기·조명",
+      "service": "전기공사, 실내 배관·배선, 조명기구 교체, 인테리어 전기, 누전",
+      "feature": "소중한 우리 가족을 위한 전기공사. 친절상담, 언제든 견적 문의 환영",
+      "operation": "0507-1313-2571",
+      "region": "강원 원주시 문막읍 개나루길 6",
+      "address": "강원 원주시 문막읍 개나루길 6",
+      "scale": "",
+      "url": "",
+      "extraUrl": "",
+      "naverUrl": "https://naver.me/59vSMnG3",
+      "phone": "0507-1313-2571",
+      "rating": "리뷰 1",
+      "status": "사용자 추가",
+      "source": "google-sheet",
+      "sourceLabel": "원주 유지보수 직접추가",
+      "locations": [
+        {
+          "label": "문막읍 개나루길",
+          "lat": 37.2896206,
+          "lng": 127.817889,
+          "source": "naver-place-address",
+          "precision": "road"
+        }
+      ]
+    },
+    {
+      "id": "sheet-033",
+      "no": 33,
+      "name": "우진전기상사",
+      "category": "전기·조명",
+      "service": "전기자재, 소방자재, 통신자재, 전기공사 자재, 인테리어 조명",
+      "feature": "1층은 전기자재·소방자재·통신자재, 2층은 인테리어 조명 전시 판매. 외곽 배달 영업으로 토요일 영업시간 유동적",
+      "operation": "0507-1478-3046",
+      "region": "강원 원주시 호저면 원문로 482",
+      "address": "강원 원주시 호저면 원문로 482",
+      "scale": "",
+      "url": "",
+      "extraUrl": "",
+      "naverUrl": "https://naver.me/IgMSfcMD",
+      "phone": "0507-1478-3046",
+      "rating": "리뷰 11",
+      "status": "사용자 추가",
+      "source": "google-sheet",
+      "sourceLabel": "원주 유지보수 직접추가",
+      "locations": [
+        {
+          "label": "호저면 원문로",
+          "lat": 37.3595188,
+          "lng": 127.9195424,
+          "source": "naver-place-address",
+          "precision": "road"
+        }
+      ]
     }
   ],
   "categories": [
