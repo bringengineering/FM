@@ -42,12 +42,21 @@ window.BRING_BUILDING_MAINTENANCE_DATA = {
       "feature": "통합관리 플랫폼 'insite' 자체개발, AIoT 플랫폼화. 스마트홈 B2C 확장",
       "operation": "혼합",
       "region": "국민은행본점·롯데홈쇼핑 등 100여 사업장/전국",
+      "address": "06722 서울특별시 서초구 효령로 346 HDC랩스타워",
       "scale": "코스닥 상장(A039570), 매출 6천억+",
       "url": "https://www.hdc-labs.com/",
       "status": "확인완료",
       "source": "excel",
       "sourceLabel": "경쟁사 엑셀",
-      "locations": []
+      "locations": [
+        {
+          "label": "HDC랩스타워",
+          "lat": 37.48629336,
+          "lng": 127.0218655,
+          "source": "address",
+          "precision": "address"
+        }
+      ]
     },
     {
       "id": "excel-03",
