@@ -4,7 +4,6 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>BRING 원주 건물 유지보수 지도</title>
-  <script src="https://oapi.map.naver.com/openapi/v3/maps.js?ncpKeyId=1iu68jzhci"></script>
   <script src="./data/building-maintenance-companies.js"></script>
   <style>
     :root {
@@ -383,6 +382,7 @@
   </main>
 
   <script>
+    const NAVER_MAPS_KEY = "1iu68jzhci";
     const DATA = window.BRING_BUILDING_MAINTENANCE_DATA || { companies: [], categories: [] };
     const WONJU = { lat: 37.3422, lng: 127.9202 };
     const CATEGORY_COLORS = {
@@ -431,6 +431,14 @@
 
     function hasLocation(company) {
       return Array.isArray(company.locations) && company.locations.length > 0;
+    }
+
+    function showMapError(message) {
+      if (message) {
+        const copy = els.mapError.querySelector("p");
+        if (copy) copy.textContent = message;
+      }
+      els.mapError.classList.add("show");
     }
 
     function optionLabel(category) {
@@ -612,7 +620,7 @@
 
     function initMap() {
       if (!window.naver || !naver.maps) {
-        els.mapError.classList.add("show");
+        showMapError("네이버 지도 SDK를 불러오지 못했습니다. 네이버 클라우드 플랫폼에서 이 GitHub Pages 도메인을 Web 서비스 URL에 추가해 주세요.");
         render();
         return;
       }
@@ -648,6 +656,32 @@
       render();
     }
 
+    function loadNaverMaps() {
+      if (window.naver && window.naver.maps) {
+        initMap();
+        return;
+      }
+
+      const script = document.createElement("script");
+      script.src = `https://oapi.map.naver.com/openapi/v3/maps.js?ncpKeyId=${encodeURIComponent(NAVER_MAPS_KEY)}`;
+      script.async = true;
+      script.onload = () => {
+        setTimeout(initMap, 0);
+      };
+      script.onerror = () => {
+        showMapError("네이버 지도 SDK 로드가 차단되었습니다. 네이버 클라우드 플랫폼의 API 키와 Web 서비스 URL 등록을 확인해 주세요.");
+        render();
+      };
+      document.head.appendChild(script);
+
+      setTimeout(() => {
+        if (!map && (!window.naver || !window.naver.maps)) {
+          showMapError("네이버 지도 SDK 응답이 지연되고 있습니다. 새로고침 후에도 같으면 네이버 지도 API 키의 허용 도메인을 확인해 주세요.");
+          render();
+        }
+      }, 5000);
+    }
+
     els.list.addEventListener("click", event => {
       const item = event.target.closest(".company");
       if (!item) return;
@@ -655,7 +689,7 @@
     });
 
     setupFilters();
-    initMap();
+    loadNaverMaps();
   </script>
 </body>
 </html>
