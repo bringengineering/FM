@@ -1820,6 +1820,35 @@ window.BRING_BUILDING_MAINTENANCE_DATA = {
           "precision": "neighborhood"
         }
       ]
+    },
+    {
+      "id": "sheet-030",
+      "no": 30,
+      "name": "문막전기",
+      "category": "전기·조명",
+      "service": "전기·통신·소방자재, 자동제어 판넬 제작, PLC 및 자동화 설비 수리보수",
+      "feature": "원주 의료고등학교 정문 옆",
+      "operation": "033-735-5020",
+      "region": "강원 원주시 문막읍 구암길 3",
+      "address": "강원 원주시 문막읍 구암길 3",
+      "scale": "",
+      "url": "",
+      "extraUrl": "",
+      "naverUrl": "https://naver.me/5K6LN0va",
+      "phone": "033-735-5020",
+      "rating": "",
+      "status": "사용자 추가",
+      "source": "google-sheet",
+      "sourceLabel": "원주 유지보수 직접추가",
+      "locations": [
+        {
+          "label": "문막읍 구암길",
+          "lat": 37.3205025,
+          "lng": 127.8222761,
+          "source": "naver-place-address",
+          "precision": "road"
+        }
+      ]
     }
   ],
   "categories": [
