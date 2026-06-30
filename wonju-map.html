@@ -662,6 +662,11 @@
         return;
       }
 
+      window.navermap_authFailure = () => {
+        showMapError("네이버 지도 Open API 인증에 실패했습니다. 네이버 클라우드 플랫폼에서 Web 서비스 URL에 https://bringengineering1008-pixel.github.io 를 추가해야 지도가 표시됩니다.");
+        render();
+      };
+
       const script = document.createElement("script");
       script.src = `https://oapi.map.naver.com/openapi/v3/maps.js?ncpKeyId=${encodeURIComponent(NAVER_MAPS_KEY)}`;
       script.async = true;
@@ -678,6 +683,8 @@
         if (!map && (!window.naver || !window.naver.maps)) {
           showMapError("네이버 지도 SDK 응답이 지연되고 있습니다. 새로고침 후에도 같으면 네이버 지도 API 키의 허용 도메인을 확인해 주세요.");
           render();
+        } else if (map && document.querySelector("#map")?.children.length === 0) {
+          showMapError("네이버 지도 인증 또는 타일 로딩이 완료되지 않았습니다. 네이버 클라우드 플랫폼의 Web 서비스 URL 등록을 확인해 주세요.");
         }
       }, 5000);
     }
