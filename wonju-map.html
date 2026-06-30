@@ -614,6 +614,7 @@
           company.feature,
           company.operation,
           company.region,
+          company.address,
           company.scale,
           company.phone,
           company.rating,
@@ -653,6 +654,7 @@
         const primaryLink = company.naverUrl || company.url || company.extraUrl;
         const phone = company.phone || company.operation;
         const contact = [
+          company.address ? `<span>${esc(company.address)}</span>` : "",
           company.region ? `<span>${esc(company.region)}</span>` : "",
           phone ? `<span>${esc(phone).replace(/\n/g, " / ")}</span>` : "",
           company.rating ? `<span>${esc(company.rating)}</span>` : "",
@@ -704,6 +706,7 @@
           <h2>${esc(company.name)}</h2>
           <p><b>출처</b> ${esc(company.sourceLabel || sourceName(company))}</p>
           <p><b>분류</b> ${esc(company.category)}</p>
+          ${company.address ? `<p><b>주소</b> ${esc(company.address)}</p>` : ""}
           <p><b>지역</b> ${esc(company.region || regionText)}</p>
           <p><b>운영</b> ${esc(company.operation || "-")}</p>
           ${company.rating ? `<p><b>평점</b> ${esc(company.rating)}</p>` : ""}
