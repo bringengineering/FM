@@ -263,6 +263,8 @@
   .cv-stepwrap .cv-step{ margin-bottom:0; }
   .cv-doc{ border:1px solid #1b335f; background:#1b335f; color:#fff; border-radius:8px; padding:5px 11px; font-size:12.5px; cursor:pointer; font-family:inherit; white-space:nowrap; font-weight:600; }
   .cv-doc:hover{ background:#26477e; }
+  .cv-doc.disabled,.cv-doc:disabled{ border-color:#d8e0ec; background:#eef2f7; color:#7b8794; cursor:not-allowed; }
+  .cv-doc.disabled:hover,.cv-doc:disabled:hover{ background:#eef2f7; }
   .cv-act.mail{ border-color:#1b335f; }
   .cv-act.mail .tag{ background:#1b335f; color:#fff; }
   .mailmodal{ position:fixed; inset:0; background:rgba(15,25,45,.5); display:none; align-items:center; justify-content:center; z-index:9999; }
@@ -1826,33 +1828,58 @@ function renderComplaintOverview(c){
 }
 function contractStatusLabel(match){
   const st=match&&match.status;
-  if(st==="matched") return "계약 확인 완료";
-  if(st==="multiple") return "복수 계약 후보";
+  if(st==="matched") return "온보딩 연결 완료";
+  if(st==="multiple") return "복수 온보딩 후보";
   if(st==="unmatched") return "계약확인보류";
   if(st==="address_missing") return "주소 미입력";
-  return "계약 미확인";
+  return "온보딩 미확인";
 }
 function contractBadgeHTML(c){
   const match=c.contractMatch||{};
-  if(match.status==="matched") return `<span class="cv-badge matched">계약 확인</span>`;
-  if(match.status==="unmatched"||match.status==="multiple"||c.statusValue==="계약확인보류") return `<span class="cv-badge hold">계약확인보류</span>`;
+  if(match.status==="matched") return `<span class="cv-badge matched">온보딩 연결</span>`;
+  if(match.status==="unmatched"||match.status==="multiple"||match.status==="address_missing"||c.statusValue==="계약확인보류") return `<span class="cv-badge hold">계약확인보류</span>`;
   return "";
+}
+function onboardingFileUrl(c){
+  const match=(c&&c.contractMatch)||{};
+  const contract=match.contract||{};
+  return match.fileUrl || contract.contractFileUrl || "";
+}
+function onboardingFileName(c){
+  const match=(c&&c.contractMatch)||{};
+  const contract=match.contract||{};
+  return match.fileName || contract.contractFileName || "";
+}
+function onboardingDocButtonHTML(c,s){
+  if(!s.doc) return "";
+  if(s.doc!=="onboard"){
+    return `<button class="cv-doc" data-doc="${s.k}" title="이 고객 정보로 자동 채운 문서 받기">📄 ${esc(DOC_NAMES[s.doc])}</button>`;
+  }
+
+  const match=(c&&c.contractMatch)||{};
+  const url=onboardingFileUrl(c);
+  if(match.status==="matched" && url){
+    const fileName=onboardingFileName(c);
+    return `<button class="cv-doc" data-drive-doc="${s.k}" data-url="${escAttr(url)}" title="${escAttr(fileName || "Drive 온보딩 수집서 열기")}">📄 ${esc(DOC_NAMES[s.doc])}</button>`;
+  }
+  return `<button class="cv-doc disabled" disabled title="Drive DOCX 본문에서 매칭된 온보딩 수집서가 없습니다">📄 온보딩 파일 미매칭</button>`;
 }
 function renderContractOverview(c){
   const match=c.contractMatch;
   if(!match && !c.address) return "";
-  const isHold=match && (match.status==="unmatched"||match.status==="multiple");
+  const isHold=match && (match.status==="unmatched"||match.status==="multiple"||match.status==="address_missing");
   const contract=(match&&match.contract)||{};
+  const fileName=onboardingFileName(c);
+  const fileUrl=onboardingFileUrl(c);
+  const driveFileId=(match&&match.driveFileId)||contract.driveFileId||"";
   const candidates=(match&&Array.isArray(match.candidates))?match.candidates:[];
   const fields = match&&match.status==="matched" ? [
-    ["계약상태", contract.contractStatus],
-    ["건물명", contract.building],
-    ["주소", contract.address],
-    ["건물주", contract.ownerName],
-    ["연락처", contract.ownerPhone],
-    ["등급", contract.grade],
-    ["계약파일", contract.contractFileName],
-    ["인덱스 행", contract.indexRow ? contract.indexRow+"행" : ""]
+    ["입력 건물명", (match&&match.inputBuilding)||contract.building||c.building],
+    ["입력 주소", (match&&match.inputAddress)||contract.address||c.address],
+    ["온보딩 파일", fileName],
+    ["검색 방식", match.source==="drive_fulltext" ? "Drive 본문 검색" : match.source],
+    ["후보 수", match.candidateCount!=null ? String(match.candidateCount) : ""],
+    ["Drive File ID", driveFileId]
   ].filter(x=>x[1]) : [
     ["입력 건물명", (match&&match.inputBuilding)||c.building],
     ["입력 주소", (match&&match.inputAddress)||c.address],
@@ -1862,9 +1889,9 @@ function renderContractOverview(c){
     `<div class="cv-complaint-title">계약 건물 정보</div>`+
     `<div>${contractBadgeHTML(c) || `<span class="cv-badge review">${esc(contractStatusLabel(match))}</span>`}</div></div>`+
     `<div class="cv-complaint-meta">${fields.map(([k,v])=>`<div class="cv-kv"><b>${esc(k)}</b><span>${esc(v)}</span></div>`).join("")}</div>`+
-    (contract.contractFileUrl ? `<div class="cv-summary"><b>한글 계약파일</b><br><a href="${escAttr(contract.contractFileUrl)}" target="_blank" rel="noopener">권한 있는 Drive에서 계약파일 열기</a></div>` : "")+
-    (match&&match.statusText ? `<div class="cv-summary"><b>계약 확인 메모</b><br>${esc(match.statusText)}</div>` : "")+
-    (candidates.length ? `<div class="cv-summary"><b>계약 후보</b><br>${candidates.map(x=>esc([x.building,x.address,x.contractFileName].filter(Boolean).join(" / "))).join("<br>")}</div>` : "")+
+    (fileUrl ? `<div class="cv-summary"><b>Drive 온보딩 수집서</b><br><a href="${escAttr(fileUrl)}" target="_blank" rel="noopener">권한 있는 Drive에서 온보딩 수집서 열기</a></div>` : "")+
+    (match&&match.statusText ? `<div class="cv-summary"><b>온보딩 확인 메모</b><br>${esc(match.statusText)}</div>` : "")+
+    (candidates.length ? `<div class="cv-summary"><b>온보딩 후보</b><br>${candidates.map(x=>x.fileUrl?`<a href="${escAttr(x.fileUrl)}" target="_blank" rel="noopener">${esc(x.fileName||"Drive 파일")}</a>`:esc([x.building,x.address,x.contractFileName||x.fileName].filter(Boolean).join(" / "))).join("<br>")}</div>` : "")+
     `</div>`;
 }
 function openCaseView(){ if(!curCase) curCase=Object.keys(cases)[0]||null; caseView.classList.add("open"); renderCaseList(); renderCaseDetail(); }
@@ -1960,7 +1987,7 @@ function renderCaseDetail(){
     CASE_STEPS.map(s=>{ const st=(c.status||{})[s.k]||""; const note=(c.note||{})[s.k]||""; const open=noteOpen.has(s.k);
       const chip=`<button class="cv-chip ${st||'wait'}" data-step="${s.k}">${st==="done"?"완료":st==="doing"?"진행중":"대기"}</button>`;
       const act=s.auto?`<button class="cv-act ${EMAIL_TEMPLATES[s.k]?'mail':''}" data-auto="${s.k}" data-ch="${esc(s.auto)}">${EMAIL_TEMPLATES[s.k]?'📧':'🤖'} ${esc(s.auto)}<span class="tag">${EMAIL_TEMPLATES[s.k]?'메일 발송':'연결예정'}</span></button>`:"";
-      const dc=s.doc?`<button class="cv-doc" data-doc="${s.k}" title="이 고객 정보로 자동 채운 문서 받기">📄 ${esc(DOC_NAMES[s.doc])}</button>`:"";
+      const dc=onboardingDocButtonHTML(c,s);
       const nb=`<button class="cv-notebtn ${note?'has':''}" data-notetoggle="${s.k}" title="메모">📝</button>`;
       const box=open?`<textarea class="cv-note" data-note="${s.k}" placeholder="이 단계 메모 (민원 내용·선정 업체·금액 등)">${esc(note)}</textarea>`:"";
       return `<div class="cv-stepwrap"><div class="cv-step ${st}">${chip}<div class="lbl">${esc(s.t)}</div>${act}${dc}${nb}</div>${box}</div>`;
@@ -1971,7 +1998,7 @@ function renderCaseDetail(){
 document.getElementById("caseBtn").addEventListener("click", openCaseView);
 document.getElementById("caseBack").addEventListener("click", closeCaseView);
 caseListEl.addEventListener("click", e=>{ if(e.target.closest("#cvNew")){ createCase(); return; } const it=e.target.closest(".cv-item"); if(it) selectCase(it.dataset.cid); });
-caseDetailEl.addEventListener("click", e=>{ const dc=e.target.closest("[data-doc]"); if(dc){ downloadCaseDoc(curCase, dc.dataset.doc); return; } const nt=e.target.closest("[data-notetoggle]"); if(nt){ const k=nt.dataset.notetoggle; noteOpen.has(k)?noteOpen.delete(k):noteOpen.add(k); renderCaseDetail(); return; } const ch=e.target.closest("[data-step]"); if(ch){ cycleStep(curCase, ch.dataset.step); return; } const au=e.target.closest("[data-auto]"); if(au){ const ak=au.dataset.auto; if(EMAIL_TEMPLATES[ak]) openMailModal(curCase, ak); else doAuto(curCase, ak, au.dataset.ch); return; } if(e.target.closest("#cvDel")){ deleteCase(curCase); } });
+caseDetailEl.addEventListener("click", e=>{ const dd=e.target.closest("[data-drive-doc]"); if(dd){ const url=dd.dataset.url; if(url) window.open(url, "_blank", "noopener"); return; } const dc=e.target.closest("[data-doc]"); if(dc){ downloadCaseDoc(curCase, dc.dataset.doc); return; } const nt=e.target.closest("[data-notetoggle]"); if(nt){ const k=nt.dataset.notetoggle; noteOpen.has(k)?noteOpen.delete(k):noteOpen.add(k); renderCaseDetail(); return; } const ch=e.target.closest("[data-step]"); if(ch){ cycleStep(curCase, ch.dataset.step); return; } const au=e.target.closest("[data-auto]"); if(au){ const ak=au.dataset.auto; if(EMAIL_TEMPLATES[ak]) openMailModal(curCase, ak); else doAuto(curCase, ak, au.dataset.ch); return; } if(e.target.closest("#cvDel")){ deleteCase(curCase); } });
 caseDetailEl.addEventListener("input", e=>{ const f=e.target.closest("input[data-f]"); if(f){ setCaseField(curCase, f.dataset.f, f.value); return; } const nb=e.target.closest("textarea[data-note]"); if(nb) setCaseNote(curCase, nb.dataset.note, nb.value); });
 caseDetailEl.addEventListener("change", e=>{ const f=e.target.closest("select[data-f]"); if(f) setCaseField(curCase, f.dataset.f, f.value); });
 cases = loadCasesLocal();
@@ -2017,8 +2044,9 @@ document.getElementById("noticeBtn").addEventListener("click", openNoticePanel);
 document.getElementById("noticeBanner").addEventListener("click", openNoticePanel);
 
 /* ===== 업데이트 알림(What's New) — 새 버전 나오면 자동 팝업 ===== */
-const APP_VERSION = "4.6";
+const APP_VERSION = "4.7";
 const CHANGELOG = [
+  { v:"4.7", d:"2026-06-30", items:["① 온보딩 수집서 버튼을 자동 문서 생성에서 Drive 매칭 파일 열기로 전환","구글폼 건물명·건물 주소로 Drive 폴더의 DOCX 본문 검색 후 1건이면 연결, 없거나 복수면 계약확인보류 표시"] },
   { v:"4.6", d:"2026-06-30", items:["계약 건물 인덱스 매칭 표시 — 구글폼 민원과 계약 건물 정보를 건물명·주소로 연결","케이스 ①에 계약상태·주소·건물주·계약파일 링크 표시, 미매칭은 계약확인보류 배지 표시"] },
   { v:"4.5", d:"2026-06-30", items:["구글폼 민원접수 케이스 표시 지원 — 접수번호·긴급도·문제유형·업체분류·요약 카드 표시","구글폼에서 자동 등록된 케이스는 목록에 구글폼/긴급도 배지 표시"] },
   { v:"4.4", d:"2026-06-26", items:["📢 비전·공지 상단 배너 더 크게(2줄)","비전·메모를 노션처럼 바로 작성·편집 — 제목·굵게·목록·체크박스·인용·구분선 + 자동 저장"] },
