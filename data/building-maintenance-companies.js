@@ -2430,6 +2430,122 @@ window.BRING_BUILDING_MAINTENANCE_DATA = {
           "precision": "road"
         }
       ]
+    },
+    {
+      "id": "sheet-051",
+      "no": 51,
+      "name": "속뚫설비",
+      "category": "누수·배관",
+      "service": "배관, 냉난방공사, 하수구 막힘, 싱크대 막힘, 변기 막힘, 고압세척",
+      "feature": "원주 지역 중심 하수구·싱크대·변기 막힘 등 배관 문제 전문 해결. 24시간 긴급출동",
+      "operation": "010-8555-8357",
+      "region": "강원 원주시 지정면 신지정로 295 324동 2102호",
+      "address": "강원 원주시 지정면 신지정로 295 324동 2102호",
+      "scale": "변동",
+      "url": "",
+      "extraUrl": "",
+      "naverUrl": "https://naver.me/5sunJlpS",
+      "phone": "010-8555-8357",
+      "rating": "리뷰 42",
+      "status": "사용자 추가",
+      "source": "google-sheet",
+      "sourceLabel": "원주 유지보수 직접추가",
+      "locations": [
+        {
+          "label": "지정면 신지정로",
+          "lat": 37.38155,
+          "lng": 127.8850508,
+          "source": "naver-place-address",
+          "precision": "road"
+        }
+      ]
+    },
+    {
+      "id": "sheet-052",
+      "no": 52,
+      "name": "원주 뻥뚜러설비",
+      "category": "누수·배관",
+      "service": "하수구 막힘, 변기 막힘, 싱크대 막힘, 고압세척, 배관내시경, 누수탐지, 관로해빙",
+      "feature": "막힌 변기·배수구 전문, 하수구 청소, 배관 내시경 촬영, 언수도 녹임, 각종 관로 해빙",
+      "operation": "",
+      "region": "강원 원주시 둔전길 177",
+      "address": "강원 원주시 둔전길 177",
+      "scale": "변동",
+      "url": "",
+      "extraUrl": "",
+      "naverUrl": "https://naver.me/GDaRm7XC",
+      "phone": "",
+      "rating": "",
+      "status": "사용자 추가",
+      "source": "google-sheet",
+      "sourceLabel": "원주 유지보수 직접추가",
+      "locations": [
+        {
+          "label": "흥업리 둔전길",
+          "lat": 37.3138915,
+          "lng": 127.9145255,
+          "source": "naver-place-address",
+          "precision": "building"
+        }
+      ]
+    },
+    {
+      "id": "sheet-053",
+      "no": 53,
+      "name": "에이스설비 누수탐지",
+      "category": "누수·배관",
+      "service": "누수탐지, 누수공사, 하수구 막힘, 싱크대 막힘, 수전설치, 변기수리, 변기교체, 누수 피해복구, 연수도 녹임, 배관고압세척",
+      "feature": "원주 전지역 누수탐지·하수구막힘 전문업체. 배관 관련 문제 해결, 첨단 장비 보유",
+      "operation": "0507-1477-5518",
+      "region": "강원 원주시 오성마을길 63-25 201동 239호",
+      "address": "강원 원주시 오성마을길 63-25 201동 239호",
+      "scale": "변동",
+      "url": "",
+      "extraUrl": "",
+      "naverUrl": "https://naver.me/5eUnbRvT",
+      "phone": "0507-1477-5518",
+      "rating": "리뷰 292",
+      "status": "사용자 추가",
+      "source": "google-sheet",
+      "sourceLabel": "원주 유지보수 직접추가",
+      "locations": [
+        {
+          "label": "판부면 오성마을길",
+          "lat": 37.3175741,
+          "lng": 127.947819,
+          "source": "naver-place-address",
+          "precision": "road"
+        }
+      ]
+    },
+    {
+      "id": "sheet-054",
+      "no": 54,
+      "name": "누수탐지 오성마을",
+      "category": "누수·배관",
+      "service": "누수탐지, 누수설비, 누수공사",
+      "feature": "원탑누수배관. 원주 누수탐지 전문, 첨단 장비로 미세 누수까지 탐지",
+      "operation": "",
+      "region": "강원 원주시 판부면 오성마을길 24 101호",
+      "address": "강원 원주시 판부면 오성마을길 24 101호",
+      "scale": "",
+      "url": "",
+      "extraUrl": "",
+      "naverUrl": "https://naver.me/5eDYFIDK",
+      "phone": "",
+      "rating": "",
+      "status": "사용자 추가",
+      "source": "google-sheet",
+      "sourceLabel": "원주 유지보수 직접추가",
+      "locations": [
+        {
+          "label": "판부면 오성마을길",
+          "lat": 37.3189069,
+          "lng": 127.9521183,
+          "source": "naver-place-address",
+          "precision": "building"
+        }
+      ]
     }
   ],
   "categories": [
