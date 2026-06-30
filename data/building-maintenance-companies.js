@@ -2081,6 +2081,180 @@ window.BRING_BUILDING_MAINTENANCE_DATA = {
           "precision": "road"
         }
       ]
+    },
+    {
+      "id": "sheet-039",
+      "no": 39,
+      "name": "원주 서비스센터",
+      "category": "전자·전기",
+      "service": "전자, 전기",
+      "feature": "전자·전기 서비스센터",
+      "operation": "033-748-2635",
+      "region": "강원 원주시 갈머리길 2",
+      "address": "강원 원주시 갈머리길 2",
+      "scale": "",
+      "url": "",
+      "extraUrl": "",
+      "naverUrl": "https://naver.me/xsZhgYXe",
+      "phone": "033-748-2635",
+      "rating": "리뷰 29",
+      "status": "사용자 추가",
+      "source": "google-sheet",
+      "sourceLabel": "원주 유지보수 직접추가",
+      "locations": [
+        {
+          "label": "일산동 갈머리길",
+          "lat": 37.352201,
+          "lng": 127.9450007,
+          "source": "naver-place-address",
+          "precision": "road"
+        }
+      ]
+    },
+    {
+      "id": "sheet-040",
+      "no": 40,
+      "name": "태성전기전자",
+      "category": "전자·전기",
+      "service": "전자, 전기",
+      "feature": "전자·전기 업체",
+      "operation": "",
+      "region": "강원 원주시 원일로 300-1",
+      "address": "강원 원주시 원일로 300-1",
+      "scale": "",
+      "url": "",
+      "extraUrl": "",
+      "naverUrl": "https://naver.me/GhwanNXL",
+      "phone": "",
+      "rating": "리뷰 3",
+      "status": "사용자 추가",
+      "source": "google-sheet",
+      "sourceLabel": "원주 유지보수 직접추가",
+      "locations": [
+        {
+          "label": "중앙동 원일로",
+          "lat": 37.353676,
+          "lng": 127.9457974,
+          "source": "naver-place-address",
+          "precision": "road"
+        }
+      ]
+    },
+    {
+      "id": "sheet-041",
+      "no": 41,
+      "name": "부광전기",
+      "category": "전자·전기",
+      "service": "전자, 전기",
+      "feature": "전자·전기 업체",
+      "operation": "",
+      "region": "강원 원주시 정지길 195-20",
+      "address": "강원 원주시 정지길 195-20",
+      "scale": "",
+      "url": "",
+      "extraUrl": "",
+      "naverUrl": "https://naver.me/Gowo92Ho",
+      "phone": "",
+      "rating": "",
+      "status": "사용자 추가",
+      "source": "google-sheet",
+      "sourceLabel": "원주 유지보수 직접추가",
+      "locations": [
+        {
+          "label": "중앙동 정지길",
+          "lat": 37.3564962,
+          "lng": 127.949279,
+          "source": "naver-place-address",
+          "precision": "road"
+        }
+      ]
+    },
+    {
+      "id": "sheet-042",
+      "no": 42,
+      "name": "이레전기",
+      "category": "전자·전기",
+      "service": "전자, 전기",
+      "feature": "전자·전기 업체",
+      "operation": "033-742-2947",
+      "region": "강원 원주시 우산로 77",
+      "address": "강원 원주시 우산로 77",
+      "scale": "",
+      "url": "",
+      "extraUrl": "",
+      "naverUrl": "https://naver.me/5zU7454U",
+      "phone": "033-742-2947",
+      "rating": "",
+      "status": "사용자 추가",
+      "source": "google-sheet",
+      "sourceLabel": "원주 유지보수 직접추가",
+      "locations": [
+        {
+          "label": "우산동 우산로",
+          "lat": 37.3704231,
+          "lng": 127.9368398,
+          "source": "naver-place-address",
+          "precision": "building"
+        }
+      ]
+    },
+    {
+      "id": "sheet-043",
+      "no": 43,
+      "name": "우산전기",
+      "category": "전자·전기",
+      "service": "전자, 전기",
+      "feature": "전자·전기 업체",
+      "operation": "",
+      "region": "강원 원주시 진광길 11",
+      "address": "강원 원주시 진광길 11",
+      "scale": "",
+      "url": "",
+      "extraUrl": "",
+      "naverUrl": "https://naver.me/xD8nRC12",
+      "phone": "",
+      "rating": "",
+      "status": "사용자 추가",
+      "source": "google-sheet",
+      "sourceLabel": "원주 유지보수 직접추가",
+      "locations": [
+        {
+          "label": "우산동 진광길",
+          "lat": 37.3717192,
+          "lng": 127.9406437,
+          "source": "naver-place-address",
+          "precision": "building"
+        }
+      ]
+    },
+    {
+      "id": "sheet-044",
+      "no": 44,
+      "name": "강원전기판넬",
+      "category": "전자·전기",
+      "service": "전자, 전기, 각종 판넬, 전기온수기",
+      "feature": "전기·전자, 각종 판넬, 전기온수기 취급",
+      "operation": "033-731-0404",
+      "region": "강원 원주시 북원로 2559",
+      "address": "강원 원주시 북원로 2559",
+      "scale": "",
+      "url": "",
+      "extraUrl": "",
+      "naverUrl": "https://naver.me/5JqRnqAm",
+      "phone": "033-731-0404",
+      "rating": "리뷰 8",
+      "status": "사용자 추가",
+      "source": "google-sheet",
+      "sourceLabel": "원주 유지보수 직접추가",
+      "locations": [
+        {
+          "label": "북원로 원주우리병원 인근",
+          "lat": 37.3709,
+          "lng": 127.9452,
+          "source": "address-region",
+          "precision": "nearby"
+        }
+      ]
     }
   ],
   "categories": [
@@ -2096,6 +2270,7 @@ window.BRING_BUILDING_MAINTENANCE_DATA = {
     "기타/생활서비스",
     "누수·배관",
     "전기·조명",
+    "전자·전기",
     "통신·방송장비",
     "설비·수도·가스",
     "도배공사",
