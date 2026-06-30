@@ -406,7 +406,7 @@
       <div class="map-error" id="mapError">
         <div>
           <b>네이버 지도를 불러오지 못했습니다.</b>
-          <p>네이버 클라우드 플랫폼의 Maps API 키와 GitHub Pages 도메인 등록 상태를 확인해 주세요. 회사 목록과 필터는 계속 사용할 수 있습니다.</p>
+          <p>네이버 클라우드 콘솔의 Web 서비스 URL에 https://bringengineering1008-pixel.github.io 를 추가해 주세요. 공식 주소까지 쓰려면 https://bringengineering.github.io 도 같이 추가하면 됩니다.</p>
           <div class="key-tools">
             <input id="naverKeyInput" type="text" placeholder="새 ncpKeyId 입력" autocomplete="off" />
             <button id="naverKeySave" type="button">키 적용</button>
@@ -674,7 +674,7 @@
     function initMap() {
       if (map) return;
       if (!window.naver || !naver.maps) {
-        showMapError("네이버 지도 SDK를 불러오지 못했습니다. 네이버 클라우드 플랫폼에서 이 GitHub Pages 도메인을 Web 서비스 URL에 추가해 주세요.");
+        showMapError("네이버 지도 SDK를 불러오지 못했습니다. 네이버 클라우드 콘솔의 Web 서비스 URL에 https://bringengineering1008-pixel.github.io 를 추가해 주세요.");
         render();
         return;
       }
@@ -717,7 +717,7 @@
       }
 
       window.navermap_authFailure = () => {
-        showMapError("네이버 지도 Open API 인증에 실패했습니다. 네이버 클라우드 플랫폼에서 Web 서비스 URL에 https://bringengineering1008-pixel.github.io 를 추가해야 지도가 표시됩니다.");
+        showMapError("네이버 지도 Open API 인증에 실패했습니다. 네이버 클라우드 콘솔의 Web 서비스 URL에 https://bringengineering1008-pixel.github.io 를 추가해야 합니다.");
         render();
       };
       window.__bringNaverMapsReady = () => initMap();
@@ -729,17 +729,17 @@
         setTimeout(initMap, 0);
       };
       script.onerror = () => {
-        showMapError("네이버 지도 SDK 로드가 차단되었습니다. 네이버 클라우드 플랫폼의 API 키와 Web 서비스 URL 등록을 확인해 주세요.");
+        showMapError("네이버 지도 SDK 로드가 차단되었습니다. 네이버 클라우드 콘솔의 Web 서비스 URL에 https://bringengineering1008-pixel.github.io 를 추가해 주세요.");
         render();
       };
       document.head.appendChild(script);
 
       setTimeout(() => {
         if (!map && (!window.naver || !window.naver.maps)) {
-          showMapError("네이버 지도 SDK 응답이 지연되고 있습니다. 새로고침 후에도 같으면 네이버 지도 API 키의 허용 도메인을 확인해 주세요.");
+          showMapError("네이버 지도 SDK 응답이 지연되고 있습니다. 새로고침 후에도 같으면 Web 서비스 URL에 https://bringengineering1008-pixel.github.io 가 들어갔는지 확인해 주세요.");
           render();
         } else if (map && document.querySelector("#map")?.children.length === 0) {
-          showMapError("네이버 지도 인증 또는 타일 로딩이 완료되지 않았습니다. 네이버 클라우드 플랫폼의 Web 서비스 URL 등록을 확인해 주세요.");
+          showMapError("네이버 지도 인증 또는 타일 로딩이 완료되지 않았습니다. Web 서비스 URL에 https://bringengineering1008-pixel.github.io 를 추가해 주세요.");
         }
       }, 5000);
     }
