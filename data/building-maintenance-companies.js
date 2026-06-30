@@ -1849,6 +1849,35 @@ window.BRING_BUILDING_MAINTENANCE_DATA = {
           "precision": "road"
         }
       ]
+    },
+    {
+      "id": "sheet-031",
+      "no": 31,
+      "name": "흥남전기",
+      "category": "전기·조명",
+      "service": "전기자재, 전기공사, LED 등기구, 자동화 전기자재",
+      "feature": "문막 톨게이트 앞 원주의료고등학교 옆. 자동화 전기자재·전기공사 전기자재·각종 LED 등기구 보유",
+      "operation": "033-744-1197",
+      "region": "강원 원주시 문막읍 원문로 1746",
+      "address": "강원 원주시 문막읍 원문로 1746",
+      "scale": "",
+      "url": "",
+      "extraUrl": "",
+      "naverUrl": "https://naver.me/5KqrgrTv",
+      "phone": "033-744-1197",
+      "rating": "4.18 / 리뷰 49",
+      "status": "사용자 추가",
+      "source": "google-sheet",
+      "sourceLabel": "원주 유지보수 직접추가",
+      "locations": [
+        {
+          "label": "문막읍 원문로",
+          "lat": 37.3117679,
+          "lng": 127.8215796,
+          "source": "naver-place-address",
+          "precision": "road"
+        }
+      ]
     }
   ],
   "categories": [
