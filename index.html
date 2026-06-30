@@ -24,6 +24,7 @@
 
   .toolbar{ display:flex; gap:7px; justify-content:center; flex-wrap:wrap; padding:9px 16px 5px; }
   .btn{ border:1px solid var(--line); background:#fff; color:var(--ink); padding:7px 12px; border-radius:10px; font-size:13px; cursor:pointer; font-family:inherit; transition:.15s; }
+  .toolbar a.btn{ text-decoration:none; display:inline-flex; align-items:center; }
   .btn:hover{ background:#f3f6fb; }
   .btn.active{ background:#4b7bec; border-color:#4b7bec; color:#fff; }
   #linkBtn.active{ background:#3b5bdb; border-color:#3b5bdb; color:#fff; }
@@ -327,6 +328,7 @@
       <button class="btn" id="resetBtn">↺ 초기화</button>
       <button class="btn" id="caseBtn" style="background:#1b335f;color:#fff;border-color:#1b335f;font-weight:700">🚀 케이스</button>
       <button class="btn" id="noticeBtn">📢 비전·공지</button>
+      <a class="btn" href="./wonju-map.html" target="_blank" rel="noopener">📍 건물지도</a>
     </div>
     <div class="help">
       원 <b>클릭</b> → 중분류 추가 · <b>더블클릭</b> → 이름수정 (수정 중 <b>Ctrl+Enter</b> → 다음 원) · <b>드래그</b> → 이동 · 왼쪽위 <b>색동그라미</b> → 색·크기·<b>글자</b>·모양<br>
