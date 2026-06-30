@@ -2401,6 +2401,35 @@ window.BRING_BUILDING_MAINTENANCE_DATA = {
           "precision": "nearby"
         }
       ]
+    },
+    {
+      "id": "sheet-050",
+      "no": 50,
+      "name": "원영전기",
+      "category": "전자·전기",
+      "service": "전자, 전기",
+      "feature": "전자·전기 업체",
+      "operation": "033-742-6301",
+      "region": "강원 원주시 소초면 치악로 2378-33",
+      "address": "강원 원주시 소초면 치악로 2378-33",
+      "scale": "",
+      "url": "",
+      "extraUrl": "",
+      "naverUrl": "https://naver.me/xaTFYQdm",
+      "phone": "033-742-6301",
+      "rating": "리뷰 8",
+      "status": "사용자 추가",
+      "source": "google-sheet",
+      "sourceLabel": "원주 유지보수 직접추가",
+      "locations": [
+        {
+          "label": "소초면 치악로",
+          "lat": 37.4058804,
+          "lng": 127.9960013,
+          "source": "naver-place-address",
+          "precision": "road"
+        }
+      ]
     }
   ],
   "categories": [
