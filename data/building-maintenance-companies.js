@@ -1071,25 +1071,26 @@ window.BRING_BUILDING_MAINTENANCE_DATA = {
       "name": "신원주 전기공사/출장수리",
       "category": "전기·조명",
       "service": "전기공사/누전수리/조명/콘센트",
-      "feature": "",
+      "feature": "전기 문제 해결, 원주 지역 24시간 출동 가능. 전기공사, 누전수리, 조명공사, 콘센트/차단기 교체",
       "operation": "010-9616-1155 0507-1333-6085",
-      "region": "강원 원주시 단구동 66-5",
+      "region": "강원 원주시 치악로1524번길 20 2층",
+      "address": "강원 원주시 치악로1524번길 20 2층",
       "scale": "",
       "url": "https://litt.ly/ssonghyo",
       "extraUrl": "",
       "naverUrl": "https://naver.me/5WOYybis",
       "phone": "010-9616-1155 0507-1333-6085",
-      "rating": "★★★★★",
+      "rating": "★★★★★ / 리뷰 5",
       "status": "구글시트",
       "source": "google-sheet",
       "sourceLabel": "원주 유지보수 구글시트",
       "locations": [
         {
-          "label": "단구동",
-          "lat": 37.3178,
-          "lng": 127.9613,
-          "source": "address-region",
-          "precision": "neighborhood"
+          "label": "치악로1524번길",
+          "lat": 37.3212946,
+          "lng": 127.9667854,
+          "source": "naver-place-address",
+          "precision": "road"
         }
       ]
     },
@@ -2251,6 +2252,151 @@ window.BRING_BUILDING_MAINTENANCE_DATA = {
           "label": "북원로 원주우리병원 인근",
           "lat": 37.3709,
           "lng": 127.9452,
+          "source": "address-region",
+          "precision": "nearby"
+        }
+      ]
+    },
+    {
+      "id": "sheet-045",
+      "no": 45,
+      "name": "가나전기공사",
+      "category": "전기·조명",
+      "service": "전기공사",
+      "feature": "전기공사 업체",
+      "operation": "033-764-0326",
+      "region": "강원 원주시 월운정안길 7",
+      "address": "강원 원주시 월운정안길 7",
+      "scale": "",
+      "url": "",
+      "extraUrl": "",
+      "naverUrl": "https://naver.me/GqfuGcQ9",
+      "phone": "033-764-0326",
+      "rating": "리뷰 3",
+      "status": "사용자 추가",
+      "source": "google-sheet",
+      "sourceLabel": "원주 유지보수 직접추가",
+      "locations": [
+        {
+          "label": "반곡동 월운정",
+          "lat": 37.32623,
+          "lng": 127.964032,
+          "source": "naver-place-address",
+          "precision": "nearby"
+        }
+      ]
+    },
+    {
+      "id": "sheet-046",
+      "no": 46,
+      "name": "부흥전기상사",
+      "category": "전자·전기",
+      "service": "전자, 전기",
+      "feature": "전자·전기 업체",
+      "operation": "033-734-5542",
+      "region": "강원 원주시 입춘내길 26",
+      "address": "강원 원주시 입춘내길 26",
+      "scale": "",
+      "url": "",
+      "extraUrl": "",
+      "naverUrl": "https://naver.me/FhuGvall",
+      "phone": "033-734-5542",
+      "rating": "리뷰 1",
+      "status": "사용자 추가",
+      "source": "google-sheet",
+      "sourceLabel": "원주 유지보수 직접추가",
+      "locations": [
+        {
+          "label": "반곡동 입춘내길",
+          "lat": 37.3355201,
+          "lng": 127.9688627,
+          "source": "naver-place-address",
+          "precision": "road"
+        }
+      ]
+    },
+    {
+      "id": "sheet-047",
+      "no": 47,
+      "name": "아이엔티",
+      "category": "전자·전기",
+      "service": "전자, 전기, 전기공사, 전기자재, 자재납품",
+      "feature": "대표 키워드: 전기공사, 전기자재, 자재납품, 원주전기",
+      "operation": "033-761-0102",
+      "region": "강원 원주시 강변로 203",
+      "address": "강원 원주시 강변로 203",
+      "scale": "",
+      "url": "",
+      "extraUrl": "",
+      "naverUrl": "https://naver.me/5NeyTb3R",
+      "phone": "033-761-0102",
+      "rating": "리뷰 3",
+      "status": "사용자 추가",
+      "source": "google-sheet",
+      "sourceLabel": "원주 유지보수 직접추가",
+      "locations": [
+        {
+          "label": "반곡동 강변로",
+          "lat": 37.32623,
+          "lng": 127.964032,
+          "source": "naver-place-address",
+          "precision": "road"
+        }
+      ]
+    },
+    {
+      "id": "sheet-048",
+      "no": 48,
+      "name": "케이슬라",
+      "category": "전기·조명",
+      "service": "전기공사",
+      "feature": "전기공사 업체",
+      "operation": "",
+      "region": "강원 원주시 치악로 1521 402호",
+      "address": "강원 원주시 치악로 1521 402호",
+      "scale": "",
+      "url": "",
+      "extraUrl": "",
+      "naverUrl": "https://naver.me/x9VrFOOk",
+      "phone": "",
+      "rating": "리뷰 3",
+      "status": "사용자 추가",
+      "source": "google-sheet",
+      "sourceLabel": "원주 유지보수 직접추가",
+      "locations": [
+        {
+          "label": "치악로 1521",
+          "lat": 37.3199734,
+          "lng": 127.9653454,
+          "source": "naver-place-address",
+          "precision": "building"
+        }
+      ]
+    },
+    {
+      "id": "sheet-049",
+      "no": 49,
+      "name": "신우전기",
+      "category": "전자·전기",
+      "service": "전자, 전기",
+      "feature": "전자·전기 업체",
+      "operation": "033-766-2656",
+      "region": "강원 원주시 소초면 살여울길 65",
+      "address": "강원 원주시 소초면 살여울길 65",
+      "scale": "",
+      "url": "",
+      "extraUrl": "",
+      "naverUrl": "https://naver.me/551gYkVL",
+      "phone": "033-766-2656",
+      "rating": "",
+      "status": "사용자 추가",
+      "source": "google-sheet",
+      "sourceLabel": "원주 유지보수 직접추가",
+      "locations": [
+        {
+          "label": "소초면 살여울길",
+          "lat": 37.415,
+          "lng": 128.001,
           "source": "address-region",
           "precision": "nearby"
         }
