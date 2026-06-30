@@ -223,8 +223,24 @@
   .cv-item .nm{ font-weight:700; font-size:14px; }
   .cv-item .sub{ font-size:11.5px; color:var(--ink-soft); margin-top:2px; }
   .cv-item .pg{ font-size:11px; color:#4b7bec; margin-top:3px; }
+  .cv-item .badges{ display:flex; flex-wrap:wrap; gap:4px; margin-top:6px; }
+  .cv-badge{ display:inline-flex; align-items:center; min-height:22px; padding:2px 7px; border-radius:999px; font-size:11px; font-weight:800; line-height:1.2; border:1px solid #d7dfec; color:#52606d; background:#fff; }
+  .cv-badge.urgent{ color:#b42318; background:#fff1f0; border-color:#ffccc7; }
+  .cv-badge.review{ color:#8a5a00; background:#fff8e1; border-color:#ffe08a; }
+  .cv-badge.normal{ color:#116329; background:#eaf7ee; border-color:#b9e6c5; }
+  .cv-badge.source{ color:#315fce; background:#eef3ff; border-color:#c5d4ff; }
   .cv-detail{ flex:1; overflow:auto; padding:20px 26px; }
   .cv-empty{ color:#9aa6b5; text-align:center; margin-top:80px; font-size:14px; }
+  .cv-complaint{ border:1px solid #d8e0ec; background:#fff; border-radius:10px; padding:14px 16px; margin:0 0 14px; box-shadow:0 4px 12px rgba(31,39,51,.06); }
+  .cv-complaint-head{ display:flex; align-items:center; justify-content:space-between; gap:10px; flex-wrap:wrap; margin-bottom:10px; }
+  .cv-complaint-title{ font-size:16px; font-weight:900; color:#162033; }
+  .cv-complaint-meta{ display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); gap:8px; }
+  .cv-kv{ border:1px solid #edf1f6; background:#fafbfd; border-radius:8px; padding:8px 10px; min-width:0; }
+  .cv-kv b{ display:block; color:#6b7686; font-size:11px; margin-bottom:3px; }
+  .cv-kv span{ display:block; color:#1f2733; font-size:13px; line-height:1.45; word-break:break-word; }
+  .cv-summary{ margin-top:10px; padding:10px 12px; border-radius:8px; background:#f6f8ff; color:#243244; font-size:13.5px; line-height:1.6; }
+  @media (max-width:980px){ .cv-complaint-meta{ grid-template-columns:repeat(2,minmax(0,1fr)); } }
+  @media (max-width:640px){ .cv-body{ flex-direction:column; } .cv-list{ width:auto; max-height:36vh; border-right:0; border-bottom:1px solid var(--line); } .cv-complaint-meta{ grid-template-columns:1fr; } }
   .cv-form{ display:flex; flex-wrap:wrap; gap:10px; margin-bottom:8px; }
   .cv-form label{ font-size:12px; color:var(--ink-soft); display:flex; flex-direction:column; gap:3px; }
   .cv-form input,.cv-form select{ border:1px solid var(--line); border-radius:8px; padding:7px 9px; font-size:13px; font-family:inherit; min-width:140px; }
@@ -1720,6 +1736,44 @@ function loadCasesLocal(){ try{ const c=JSON.parse(localStorage.getItem("fm_case
 function saveCases(){ try{ localStorage.setItem("fm_cases_v1", JSON.stringify(cases)); }catch(e){} clearTimeout(caseWriteT); caseWriteT=setTimeout(()=>{ if(casesRef) casesRef.set(cases); }, 300); }
 function caseProgress(c){ return { done: CASE_STEPS.filter(s=>(c.status||{})[s.k]==="done").length, total: CASE_STEPS.length }; }
 function caseLog(c,m){ (c.log=c.log||[]).unshift(m); if(c.log.length>30) c.log.length=30; }
+function caseTimeValue(c){ const d=Date.parse(c.receivedAt||c.createdAt||c.updatedAt||""); return Number.isFinite(d) ? d : 0; }
+function caseUrgencyClass(u){
+  const v=String(u||"").trim();
+  if(v.includes("긴급")) return "urgent";
+  if(v.includes("확인")) return "review";
+  if(v.includes("보통")) return "normal";
+  return "";
+}
+function caseTitle(c){ return c.ticketNo || c.receiptNo || c.id || c.name || "무제"; }
+function caseSubText(c){
+  const parts=[c.building, c.room, c.issueType || c.grade].filter(Boolean);
+  return parts.length ? parts.join(" · ") : "건물 미입력";
+}
+function formatCaseDate(v){
+  const d=new Date(v||"");
+  if(Number.isNaN(d.getTime())) return "";
+  return d.toLocaleString("ko-KR", { month:"2-digit", day:"2-digit", hour:"2-digit", minute:"2-digit" });
+}
+function renderComplaintOverview(c){
+  if(!(c.source==="google_form" || c.ticketNo || c.issueType || c.urgency || c.vendorType || c.summary)) return "";
+  const ucls=caseUrgencyClass(c.urgency);
+  const received=formatCaseDate(c.receivedAt||c.createdAt);
+  const fields=[
+    ["접수번호", c.ticketNo || c.id],
+    ["건물/호실", [c.building, c.room].filter(Boolean).join(" / ")],
+    ["문제 유형", c.issueType],
+    ["업체 분류", c.vendorType],
+    ["방문 가능", c.visitTime],
+    ["접수 시각", received]
+  ].filter(x=>x[1]);
+  return `<div class="cv-complaint"><div class="cv-complaint-head">`+
+    `<div class="cv-complaint-title">${esc(c.summary || c.ticketNo || "구글폼 민원")}</div>`+
+    `<div><span class="cv-badge source">구글폼 접수</span> ${c.urgency?`<span class="cv-badge ${ucls}">${esc(c.urgency)}</span>`:""}</div></div>`+
+    `<div class="cv-complaint-meta">${fields.map(([k,v])=>`<div class="cv-kv"><b>${esc(k)}</b><span>${esc(v)}</span></div>`).join("")}</div>`+
+    (c.analysisReason ? `<div class="cv-summary"><b>판단 근거</b><br>${esc(c.analysisReason)}</div>` : "")+
+    (c.sheetUrl ? `<div class="cv-summary"><b>상세 원장</b><br><a href="${escAttr(c.sheetUrl)}" target="_blank" rel="noopener">응답 시트에서 개인정보/사진 확인</a></div>` : "")+
+    `</div>`;
+}
 function openCaseView(){ if(!curCase) curCase=Object.keys(cases)[0]||null; caseView.classList.add("open"); renderCaseList(); renderCaseDetail(); }
 function closeCaseView(){ caseView.classList.remove("open"); }
 function createCase(){ const id=caseGenId(); cases[id]={ id, name:"새 고객", phone:"", email:"", building:"", grade:"스탠다드", memo:"", status:{}, log:[] }; curCase=id; saveCases(); renderCaseList(); renderCaseDetail(); return id; }
@@ -1786,11 +1840,14 @@ function doSendMail(){
 function setCaseField(id,f,v){ const c=cases[id]; if(!c) return; c[f]=v; saveCases(); if(f==="name"||f==="grade"||f==="building") renderCaseList(); }
 function setCaseNote(id,k,v){ const c=cases[id]; if(!c) return; c.note=c.note||{}; c.note[k]=v; saveCases(); }
 function renderCaseList(){
-  const ids=Object.keys(cases);
+  const ids=Object.keys(cases).sort((a,b)=>caseTimeValue(cases[b])-caseTimeValue(cases[a]));
   caseListEl.innerHTML = `<button class="cv-newcase" id="cvNew">＋ 새 케이스(고객)</button>`+
     (ids.length? ids.map(id=>{ const c=cases[id], p=caseProgress(c);
-      return `<div class="cv-item ${id===curCase?'on':''}" data-cid="${id}"><div class="nm">${esc(c.name||"무제")}</div>`+
-        `<div class="sub">${esc(c.building||"건물 미입력")} · ${esc(c.grade||"")}</div><div class="pg">진행 ${p.done}/${p.total}</div></div>`;
+      const ucls=caseUrgencyClass(c.urgency);
+      return `<div class="cv-item ${id===curCase?'on':''}" data-cid="${id}"><div class="nm">${esc(caseTitle(c))}</div>`+
+        `<div class="sub">${esc(caseSubText(c))}</div>`+
+        `<div class="badges">${c.urgency?`<span class="cv-badge ${ucls}">${esc(c.urgency)}</span>`:""}${c.source==="google_form"?`<span class="cv-badge source">구글폼</span>`:""}</div>`+
+        `<div class="pg">진행 ${p.done}/${p.total}${c.receivedAt?" · "+esc(formatCaseDate(c.receivedAt)):""}</div></div>`;
     }).join("") : `<div class="cv-empty" style="margin-top:20px;font-size:12.5px">고객을 추가해보세요</div>`);
 }
 function renderCaseDetail(){
@@ -1798,6 +1855,7 @@ function renderCaseDetail(){
   if(!c){ caseDetailEl.innerHTML=`<div class="cv-empty">왼쪽에서 케이스를 선택하거나<br>＋ 새 케이스를 만들어주세요</div>`; return; }
   const p=caseProgress(c), pct=Math.round(p.done/p.total*100);
   caseDetailEl.innerHTML =
+    renderComplaintOverview(c)+
     `<div class="cv-form"><label>고객명<input data-f="name" value="${esc(c.name||"")}"></label>`+
     `<label>연락처<input data-f="phone" value="${esc(c.phone||"")}"></label>`+
     `<label>이메일<input data-f="email" value="${esc(c.email||"")}" placeholder="메일 자동발송용"></label>`+
@@ -1824,8 +1882,9 @@ caseDetailEl.addEventListener("change", e=>{ const f=e.target.closest("select[da
 cases = loadCasesLocal();
 
 /* ===== 업데이트 알림(What's New) — 새 버전 나오면 자동 팝업 ===== */
-const APP_VERSION = "4.2";
+const APP_VERSION = "4.3";
 const CHANGELOG = [
+  { v:"4.3", d:"2026-06-30", items:["구글폼 민원접수 케이스 표시 지원 — 접수번호·긴급도·문제유형·업체분류·요약 카드 표시","구글폼에서 자동 등록된 케이스는 목록에 구글폼/긴급도 배지 표시"] },
   { v:"4.2", d:"2026-06-26", items:["브링 메모 등 구글시트 추가 열이 비어 있어도 카드에 '-'로 표시"] },
   { v:"4.1", d:"2026-06-26", items:["구글시트 새 열 자동 반영 — 브링 메모 등 추가 열이 업체 카드에 표시","홍보 링크 버튼을 지도·블로그·인스타·유튜브·숨고·홈페이지으로 자동 분류"] },
   { v:"4.0", d:"2026-06-23", items:["📧 메일 자동발송 연결 — ②접수확인·⑤업체 견적요청·⑧건물주 추천 단계에서 버튼 누르면 고객 정보로 채운 메일 검토창 → 보내기로 실제 발송","구글 Apps Script(팀 Gmail) 백엔드 — 한 번만 설치하면 팀 전체 공유","케이스에 이메일 항목 추가"] },
