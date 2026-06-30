@@ -250,6 +250,37 @@
     .map-error b { display: block; margin-bottom: 8px; font-size: 17px; }
     .map-error p { max-width: 520px; margin: 0; color: var(--muted); line-height: 1.6; }
 
+    .key-tools {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) auto;
+      gap: 8px;
+      width: min(520px, 100%);
+      margin-top: 16px;
+    }
+
+    .key-tools input {
+      min-width: 0;
+      height: 38px;
+      padding: 0 10px;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      font: inherit;
+      font-size: 13px;
+    }
+
+    .key-tools button {
+      height: 38px;
+      padding: 0 13px;
+      border: 0;
+      border-radius: 8px;
+      color: #fff;
+      background: var(--brand);
+      font: inherit;
+      font-size: 13px;
+      font-weight: 700;
+      cursor: pointer;
+    }
+
     .map-count {
       position: absolute;
       top: 14px;
@@ -376,13 +407,23 @@
         <div>
           <b>네이버 지도를 불러오지 못했습니다.</b>
           <p>네이버 클라우드 플랫폼의 Maps API 키와 GitHub Pages 도메인 등록 상태를 확인해 주세요. 회사 목록과 필터는 계속 사용할 수 있습니다.</p>
+          <div class="key-tools">
+            <input id="naverKeyInput" type="text" placeholder="새 ncpKeyId 입력" autocomplete="off" />
+            <button id="naverKeySave" type="button">키 적용</button>
+          </div>
         </div>
       </div>
     </section>
   </main>
 
   <script>
-    const NAVER_MAPS_KEY = "1iu68jzhci";
+    const DEFAULT_NAVER_MAPS_KEY = "1iu68jzhci";
+    const NAVER_MAPS_KEY_STORAGE = "bring_naver_maps_key";
+    const params = new URLSearchParams(window.location.search);
+    const NAVER_MAPS_KEY =
+      params.get("ncpKeyId") ||
+      localStorage.getItem(NAVER_MAPS_KEY_STORAGE) ||
+      DEFAULT_NAVER_MAPS_KEY;
     const DATA = window.BRING_BUILDING_MAINTENANCE_DATA || { companies: [], categories: [] };
     const WONJU = { lat: 37.3422, lng: 127.9202 };
     const CATEGORY_COLORS = {
@@ -412,7 +453,9 @@
       mapped: document.getElementById("mapCount"),
       hidden: document.getElementById("hiddenCount"),
       visibleMapCount: document.getElementById("visibleMapCount"),
-      mapError: document.getElementById("mapError")
+      mapError: document.getElementById("mapError"),
+      naverKeyInput: document.getElementById("naverKeyInput"),
+      naverKeySave: document.getElementById("naverKeySave")
     };
 
     function esc(value) {
@@ -438,7 +481,17 @@
         const copy = els.mapError.querySelector("p");
         if (copy) copy.textContent = message;
       }
+      if (els.naverKeyInput) els.naverKeyInput.value = NAVER_MAPS_KEY;
       els.mapError.classList.add("show");
+    }
+
+    function saveNaverKey() {
+      const key = (els.naverKeyInput?.value || "").trim();
+      if (!key) return;
+      localStorage.setItem(NAVER_MAPS_KEY_STORAGE, key);
+      const nextUrl = new URL(window.location.href);
+      nextUrl.searchParams.set("ncpKeyId", key);
+      window.location.href = nextUrl.toString();
     }
 
     function optionLabel(category) {
@@ -619,6 +672,7 @@
     }
 
     function initMap() {
+      if (map) return;
       if (!window.naver || !naver.maps) {
         showMapError("네이버 지도 SDK를 불러오지 못했습니다. 네이버 클라우드 플랫폼에서 이 GitHub Pages 도메인을 Web 서비스 URL에 추가해 주세요.");
         render();
@@ -666,9 +720,10 @@
         showMapError("네이버 지도 Open API 인증에 실패했습니다. 네이버 클라우드 플랫폼에서 Web 서비스 URL에 https://bringengineering1008-pixel.github.io 를 추가해야 지도가 표시됩니다.");
         render();
       };
+      window.__bringNaverMapsReady = () => initMap();
 
       const script = document.createElement("script");
-      script.src = `https://oapi.map.naver.com/openapi/v3/maps.js?ncpKeyId=${encodeURIComponent(NAVER_MAPS_KEY)}`;
+      script.src = `https://oapi.map.naver.com/openapi/v3/maps.js?ncpKeyId=${encodeURIComponent(NAVER_MAPS_KEY)}&callback=__bringNaverMapsReady`;
       script.async = true;
       script.onload = () => {
         setTimeout(initMap, 0);
@@ -693,6 +748,11 @@
       const item = event.target.closest(".company");
       if (!item) return;
       focusCompany(item.dataset.id);
+    });
+
+    els.naverKeySave.addEventListener("click", saveNaverKey);
+    els.naverKeyInput.addEventListener("keydown", event => {
+      if (event.key === "Enter") saveNaverKey();
     });
 
     setupFilters();
