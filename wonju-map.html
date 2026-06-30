@@ -485,6 +485,10 @@
       els.mapError.classList.add("show");
     }
 
+    function hideMapError() {
+      els.mapError.classList.remove("show");
+    }
+
     function saveNaverKey() {
       const key = (els.naverKeyInput?.value || "").trim();
       if (!key) return;
@@ -678,6 +682,7 @@
         render();
         return;
       }
+      hideMapError();
 
       map = new naver.maps.Map("map", {
         center: new naver.maps.LatLng(WONJU.lat, WONJU.lng),
@@ -726,7 +731,9 @@
       script.src = `https://oapi.map.naver.com/openapi/v3/maps.js?ncpKeyId=${encodeURIComponent(NAVER_MAPS_KEY)}&callback=__bringNaverMapsReady`;
       script.async = true;
       script.onload = () => {
-        setTimeout(initMap, 0);
+        setTimeout(() => {
+          if (!map && window.naver && window.naver.maps) initMap();
+        }, 100);
       };
       script.onerror = () => {
         showMapError("네이버 지도 SDK 로드가 차단되었습니다. 네이버 클라우드 콘솔의 Web 서비스 URL에 https://bringengineering1008-pixel.github.io 를 추가해 주세요.");
