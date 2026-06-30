@@ -1,107 +1,661 @@
 <!DOCTYPE html>
 <html lang="ko">
 <head>
-  <meta charset="UTF-8">
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>BRING 원주 건물 유지보수 지도</title>
-
   <script src="https://oapi.map.naver.com/openapi/v3/maps.js?ncpKeyId=1iu68jzhci"></script>
-
+  <script src="./data/building-maintenance-companies.js"></script>
   <style>
-    html, body {
-      width: 100%;
-      height: 100%;
-      margin: 0;
-      font-family: Arial, sans-serif;
+    :root {
+      --ink: #172033;
+      --muted: #667085;
+      --line: #d7dee8;
+      --panel: #ffffff;
+      --bg: #f3f6f9;
+      --brand: #163b6d;
+      --brand-2: #0f766e;
+      --warn: #9a3412;
     }
 
-    #top-bar {
-      height: 56px;
-      background: #111827;
-      color: white;
+    * { box-sizing: border-box; }
+    html, body { width: 100%; height: 100%; margin: 0; }
+    body {
+      color: var(--ink);
+      background: var(--bg);
+      font-family: "Apple SD Gothic Neo", "Malgun Gothic", "Noto Sans KR", Arial, sans-serif;
+      -webkit-font-smoothing: antialiased;
+    }
+
+    .app {
+      display: grid;
+      grid-template-columns: minmax(360px, 440px) 1fr;
+      height: 100%;
+      min-height: 0;
+    }
+
+    .sidebar {
       display: flex;
+      flex-direction: column;
+      min-width: 0;
+      min-height: 0;
+      background: var(--panel);
+      border-right: 1px solid var(--line);
+    }
+
+    .topbar {
+      padding: 16px 18px 14px;
+      color: #fff;
+      background: linear-gradient(135deg, #163b6d, #0f766e);
+    }
+
+    .topbar a {
+      color: rgba(255,255,255,.82);
+      font-size: 12px;
+      text-decoration: none;
+    }
+
+    h1 {
+      margin: 8px 0 6px;
+      font-size: 21px;
+      line-height: 1.25;
+      font-weight: 800;
+      letter-spacing: 0;
+    }
+
+    .subtitle {
+      margin: 0;
+      color: rgba(255,255,255,.82);
+      font-size: 13px;
+      line-height: 1.5;
+    }
+
+    .stats {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 8px;
+      padding: 12px;
+      border-bottom: 1px solid var(--line);
+      background: #f8fafc;
+    }
+
+    .stat {
+      min-width: 0;
+      padding: 10px 8px;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: #fff;
+    }
+
+    .stat b {
+      display: block;
+      font-size: 19px;
+      line-height: 1.1;
+    }
+
+    .stat span {
+      display: block;
+      margin-top: 4px;
+      color: var(--muted);
+      font-size: 12px;
+    }
+
+    .filters {
+      display: grid;
+      gap: 8px;
+      padding: 12px;
+      border-bottom: 1px solid var(--line);
+    }
+
+    .search {
+      width: 100%;
+      height: 40px;
+      padding: 0 12px;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      font: inherit;
+      color: var(--ink);
+      background: #fff;
+      outline: none;
+    }
+
+    .filter-row {
+      display: grid;
+      grid-template-columns: 1fr 130px;
+      gap: 8px;
+    }
+
+    select {
+      width: 100%;
+      height: 38px;
+      padding: 0 10px;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      color: var(--ink);
+      background: #fff;
+      font: inherit;
+      font-size: 13px;
+    }
+
+    .notice {
+      margin: 0;
+      padding: 10px 12px;
+      color: #475467;
+      background: #fff7ed;
+      border-bottom: 1px solid #fed7aa;
+      font-size: 12px;
+      line-height: 1.55;
+    }
+
+    .list {
+      flex: 1;
+      min-height: 0;
+      overflow: auto;
+      padding: 10px 12px 18px;
+    }
+
+    .company {
+      width: 100%;
+      margin: 0 0 8px;
+      padding: 12px;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: #fff;
+      text-align: left;
+      color: inherit;
+      cursor: pointer;
+      font: inherit;
+    }
+
+    .company:hover { border-color: #98a2b3; background: #fbfcfe; }
+    .company.active { border-color: var(--brand-2); box-shadow: 0 0 0 2px rgba(15,118,110,.14); }
+
+    .company-head {
+      display: flex;
+      gap: 8px;
+      align-items: flex-start;
+      justify-content: space-between;
+    }
+
+    .company-name {
+      margin: 0;
+      font-size: 15px;
+      line-height: 1.35;
+      font-weight: 800;
+    }
+
+    .badge {
+      display: inline-flex;
       align-items: center;
-      padding: 0 18px;
-      font-size: 18px;
-      font-weight: bold;
+      max-width: 150px;
+      min-height: 22px;
+      padding: 3px 7px;
+      border-radius: 8px;
+      color: #fff;
+      font-size: 11px;
+      line-height: 1.25;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      flex: none;
+    }
+
+    .meta {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 6px;
+      margin: 9px 0 0;
+      color: var(--muted);
+      font-size: 12px;
+    }
+
+    .meta span {
+      padding: 3px 6px;
+      border-radius: 7px;
+      background: #f2f4f7;
+    }
+
+    .desc {
+      margin: 9px 0 0;
+      color: #344054;
+      font-size: 13px;
+      line-height: 1.45;
+    }
+
+    .map-wrap {
+      position: relative;
+      min-width: 0;
+      min-height: 0;
     }
 
     #map {
       width: 100%;
-      height: calc(100% - 56px);
+      height: 100%;
+      background: #dce6ef;
     }
 
-    .info-box {
-      padding: 10px;
-      min-width: 210px;
-      line-height: 1.5;
-      font-size: 14px;
+    .map-error {
+      position: absolute;
+      inset: 16px;
+      display: none;
+      place-items: center;
+      padding: 24px;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: rgba(255,255,255,.94);
+      text-align: center;
+      z-index: 5;
     }
 
-    .info-title {
-      font-weight: bold;
+    .map-error.show { display: grid; }
+    .map-error b { display: block; margin-bottom: 8px; font-size: 17px; }
+    .map-error p { max-width: 520px; margin: 0; color: var(--muted); line-height: 1.6; }
+
+    .map-count {
+      position: absolute;
+      top: 14px;
+      right: 14px;
+      z-index: 3;
+      padding: 9px 11px;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: rgba(255,255,255,.96);
+      font-size: 13px;
+      box-shadow: 0 8px 24px rgba(16,24,40,.13);
+    }
+
+    .pin {
+      display: grid;
+      place-items: center;
+      width: 30px;
+      height: 30px;
+      border: 2px solid #fff;
+      border-radius: 50%;
+      color: #fff;
+      font-size: 12px;
+      font-weight: 800;
+      box-shadow: 0 5px 14px rgba(16,24,40,.28);
+    }
+
+    .pin.base {
+      width: 34px;
+      height: 34px;
+      background: #111827;
+    }
+
+    .info {
+      min-width: 240px;
+      max-width: 320px;
+      padding: 12px;
+      line-height: 1.45;
+      color: var(--ink);
+      font-family: "Apple SD Gothic Neo", "Malgun Gothic", "Noto Sans KR", Arial, sans-serif;
+    }
+
+    .info h2 {
+      margin: 0 0 8px;
       font-size: 16px;
-      margin-bottom: 6px;
+      line-height: 1.35;
+    }
+
+    .info p {
+      margin: 6px 0 0;
+      color: #344054;
+      font-size: 13px;
+    }
+
+    .info a {
+      display: inline-block;
+      margin-top: 9px;
+      color: var(--brand);
+      font-size: 13px;
+      font-weight: 700;
+      text-decoration: none;
+    }
+
+    .empty {
+      margin: 30px 4px;
+      color: var(--muted);
+      text-align: center;
+      font-size: 14px;
+      line-height: 1.6;
+    }
+
+    @media (max-width: 900px) {
+      .app {
+        grid-template-columns: 1fr;
+        grid-template-rows: minmax(390px, 52vh) minmax(420px, 48vh);
+      }
+
+      .sidebar {
+        order: 2;
+        border-right: 0;
+        border-top: 1px solid var(--line);
+      }
+
+      .map-wrap { order: 1; }
+      .filter-row { grid-template-columns: 1fr; }
+      .stats { grid-template-columns: repeat(3, minmax(0, 1fr)); }
     }
   </style>
 </head>
-
 <body>
-  <div id="top-bar">
-    BRING 원주 건물 유지보수 지도
-  </div>
+  <main class="app">
+    <section class="sidebar" aria-label="회사 목록">
+      <div class="topbar">
+        <a href="./index.html">← 이루 대시보드</a>
+        <h1>BRING 원주 건물 유지보수 지도</h1>
+        <p class="subtitle">엑셀의 건물관리 경쟁사 정보를 지도와 목록으로 함께 봅니다.</p>
+      </div>
 
-  <div id="map"></div>
+      <div class="stats" aria-label="요약">
+        <div class="stat"><b id="totalCount">0</b><span>전체 회사</span></div>
+        <div class="stat"><b id="mapCount">0</b><span>지도 표시</span></div>
+        <div class="stat"><b id="hiddenCount">0</b><span>위치 미입력</span></div>
+      </div>
+
+      <div class="filters">
+        <input class="search" id="searchInput" type="search" placeholder="회사명, 서비스, 지역 검색" />
+        <div class="filter-row">
+          <select id="categoryFilter" aria-label="대분류 필터"></select>
+          <select id="locationFilter" aria-label="위치 필터">
+            <option value="all">전체</option>
+            <option value="mapped">지도 표시 가능</option>
+            <option value="missing">위치 미입력</option>
+          </select>
+        </div>
+      </div>
+
+      <p class="notice">엑셀에 정확한 주소/좌표가 없어서 지도 핀은 지역명이 확인되는 회사만 지역 중심점 기준으로 표시합니다.</p>
+      <div class="list" id="companyList"></div>
+    </section>
+
+    <section class="map-wrap" aria-label="네이버 지도">
+      <div id="map"></div>
+      <div class="map-count" id="visibleMapCount">지도 표시 0개</div>
+      <div class="map-error" id="mapError">
+        <div>
+          <b>네이버 지도를 불러오지 못했습니다.</b>
+          <p>네이버 클라우드 플랫폼의 Maps API 키와 GitHub Pages 도메인 등록 상태를 확인해 주세요. 회사 목록과 필터는 계속 사용할 수 있습니다.</p>
+        </div>
+      </div>
+    </section>
+  </main>
 
   <script>
-    const map = new naver.maps.Map('map', {
-      center: new naver.maps.LatLng(37.3422, 127.9202),
-      zoom: 13
-    });
+    const DATA = window.BRING_BUILDING_MAINTENANCE_DATA || { companies: [], categories: [] };
+    const WONJU = { lat: 37.3422, lng: 127.9202 };
+    const CATEGORY_COLORS = {
+      "대기업 종합FM/보안": "#163b6d",
+      "시설관리 SaaS/소프트웨어": "#7c3aed",
+      "프롭테크 플랫폼(비상주)": "#0f766e",
+      "임대관리 특화": "#b45309",
+      "행정/법무 대행": "#475467",
+      "견적비교/마켓플레이스": "#c026d3",
+      "공유주거 개발사(관리아님)": "#0891b2",
+      "지역 전통 종합관리": "#2563eb",
+      "수리/시공 소규모": "#dc2626",
+      "기타/생활서비스": "#16a34a"
+    };
 
-    const places = [
-      {
-        name: '관리 대상 건물 A',
-        type: '건물',
-        lat: 37.3422,
-        lng: 127.9202,
-        memo: '원룸 / 누수 민원 관리 대상'
-      },
-      {
-        name: '전기업체 B',
-        type: '전기',
-        lat: 37.3500,
-        lng: 127.9250,
-        memo: '콘센트, 차단기, 조명 수리 가능'
-      },
-      {
-        name: '설비업체 C',
-        type: '설비/누수',
-        lat: 37.3350,
-        lng: 127.9150,
-        memo: '배관, 누수, 보일러 대응 가능'
+    let map = null;
+    let infoWindow = null;
+    let markers = [];
+    let activeCompanyId = "";
+
+    const els = {
+      search: document.getElementById("searchInput"),
+      category: document.getElementById("categoryFilter"),
+      location: document.getElementById("locationFilter"),
+      list: document.getElementById("companyList"),
+      total: document.getElementById("totalCount"),
+      mapped: document.getElementById("mapCount"),
+      hidden: document.getElementById("hiddenCount"),
+      visibleMapCount: document.getElementById("visibleMapCount"),
+      mapError: document.getElementById("mapError")
+    };
+
+    function esc(value) {
+      return String(value || "").replace(/[&<>"']/g, ch => ({
+        "&": "&amp;",
+        "<": "&lt;",
+        ">": "&gt;",
+        '"': "&quot;",
+        "'": "&#39;"
+      }[ch]));
+    }
+
+    function colorFor(category) {
+      return CATEGORY_COLORS[category] || "#344054";
+    }
+
+    function hasLocation(company) {
+      return Array.isArray(company.locations) && company.locations.length > 0;
+    }
+
+    function optionLabel(category) {
+      const count = DATA.companies.filter(company => company.category === category).length;
+      return `${category} (${count})`;
+    }
+
+    function setupFilters() {
+      els.category.innerHTML = `<option value="all">전체 대분류</option>` +
+        DATA.categories.map(category => `<option value="${esc(category)}">${esc(optionLabel(category))}</option>`).join("");
+
+      els.search.addEventListener("input", render);
+      els.category.addEventListener("change", render);
+      els.location.addEventListener("change", render);
+    }
+
+    function getFilteredCompanies() {
+      const query = els.search.value.trim().toLowerCase();
+      const category = els.category.value;
+      const locationMode = els.location.value;
+
+      return DATA.companies.filter(company => {
+        const text = [
+          company.name,
+          company.category,
+          company.service,
+          company.feature,
+          company.operation,
+          company.region,
+          company.scale
+        ].join(" ").toLowerCase();
+        const matchesQuery = !query || text.includes(query);
+        const matchesCategory = category === "all" || company.category === category;
+        const mapped = hasLocation(company);
+        const matchesLocation =
+          locationMode === "all" ||
+          (locationMode === "mapped" && mapped) ||
+          (locationMode === "missing" && !mapped);
+        return matchesQuery && matchesCategory && matchesLocation;
+      });
+    }
+
+    function renderStats(filtered) {
+      const mappedAll = DATA.companies.filter(hasLocation).length;
+      els.total.textContent = DATA.companies.length;
+      els.mapped.textContent = mappedAll;
+      els.hidden.textContent = DATA.companies.length - mappedAll;
+      els.visibleMapCount.textContent = `지도 표시 ${filtered.filter(hasLocation).length}개`;
+    }
+
+    function renderList(companies) {
+      if (!companies.length) {
+        els.list.innerHTML = `<div class="empty">조건에 맞는 회사가 없습니다.</div>`;
+        return;
       }
-    ];
 
-    places.forEach(place => {
-      const marker = new naver.maps.Marker({
-        position: new naver.maps.LatLng(place.lat, place.lng),
-        map: map
+      els.list.innerHTML = companies.map(company => {
+        const mapped = hasLocation(company);
+        const badgeText = mapped ? company.locations.map(item => item.label).join(", ") : "위치 미입력";
+        return `
+          <button class="company ${activeCompanyId === company.id ? "active" : ""}" data-id="${esc(company.id)}">
+            <div class="company-head">
+              <h2 class="company-name">${esc(company.name)}</h2>
+              <span class="badge" style="background:${colorFor(company.category)}">${esc(badgeText)}</span>
+            </div>
+            <div class="meta">
+              <span>${esc(company.category)}</span>
+              <span>${esc(company.operation || "운영정보 없음")}</span>
+              <span>${esc(company.status || "상태 없음")}</span>
+            </div>
+            <p class="desc">${esc(company.service)}</p>
+            <p class="desc">${esc(company.feature)}</p>
+          </button>
+        `;
+      }).join("");
+    }
+
+    function clearMarkers() {
+      markers.forEach(marker => marker.setMap(null));
+      markers = [];
+    }
+
+    function markerContent(company, label) {
+      const initial = company.name.trim().slice(0, 1) || "B";
+      return `<div class="pin" title="${esc(company.name)}" style="background:${colorFor(company.category)}">${esc(initial)}</div>`;
+    }
+
+    function infoContent(company, location) {
+      const regionText = location ? `${esc(location.label)} 지역 기준 표시` : "정확 위치 미입력";
+      const url = company.url ? `<a href="${esc(company.url)}" target="_blank" rel="noopener">공식 사이트 열기</a>` : "";
+      return `
+        <div class="info">
+          <h2>${esc(company.name)}</h2>
+          <p><b>분류</b> ${esc(company.category)}</p>
+          <p><b>지역</b> ${esc(company.region || regionText)}</p>
+          <p><b>운영</b> ${esc(company.operation || "-")}</p>
+          <p>${esc(company.service)}</p>
+          <p>${esc(company.feature)}</p>
+          ${url}
+        </div>
+      `;
+    }
+
+    function offsetLocation(location, index) {
+      if (index === 0) return location;
+      const angle = index * 1.12;
+      const radius = 0.007 + Math.min(index, 8) * 0.0015;
+      return {
+        lat: location.lat + Math.sin(angle) * radius,
+        lng: location.lng + Math.cos(angle) * radius
+      };
+    }
+
+    function renderMarkers(companies) {
+      if (!map || !window.naver || !naver.maps) return;
+      clearMarkers();
+
+      const bounds = new naver.maps.LatLngBounds();
+      bounds.extend(new naver.maps.LatLng(WONJU.lat, WONJU.lng));
+      const duplicateCounts = {};
+
+      companies.forEach(company => {
+        company.locations.forEach(location => {
+          const key = `${location.lat},${location.lng}`;
+          const duplicateIndex = duplicateCounts[key] || 0;
+          duplicateCounts[key] = duplicateIndex + 1;
+          const adjusted = offsetLocation(location, duplicateIndex);
+          const position = new naver.maps.LatLng(adjusted.lat, adjusted.lng);
+          const marker = new naver.maps.Marker({
+            position,
+            map,
+            title: company.name,
+            icon: {
+              content: markerContent(company, location.label),
+              size: new naver.maps.Size(30, 30),
+              anchor: new naver.maps.Point(15, 15)
+            }
+          });
+
+          marker.__companyId = company.id;
+          naver.maps.Event.addListener(marker, "click", () => {
+            activeCompanyId = company.id;
+            infoWindow.setContent(infoContent(company, location));
+            infoWindow.open(map, marker);
+            renderList(getFilteredCompanies());
+          });
+
+          markers.push(marker);
+          bounds.extend(position);
+        });
       });
 
-      const infoWindow = new naver.maps.InfoWindow({
-        content: `
-          <div class="info-box">
-            <div class="info-title">${place.name}</div>
-            <div>분류: ${place.type}</div>
-            <div>메모: ${place.memo}</div>
+      if (markers.length) {
+        map.fitBounds(bounds, { top: 60, right: 60, bottom: 60, left: 60 });
+      } else {
+        map.setCenter(new naver.maps.LatLng(WONJU.lat, WONJU.lng));
+        map.setZoom(12);
+      }
+    }
+
+    function focusCompany(id) {
+      const marker = markers.find(item => item.__companyId === id);
+      activeCompanyId = id;
+      renderList(getFilteredCompanies());
+      if (!marker || !map) return;
+      const company = DATA.companies.find(item => item.id === id);
+      map.setCenter(marker.getPosition());
+      map.setZoom(Math.max(map.getZoom(), 12));
+      infoWindow.setContent(infoContent(company, company.locations[0]));
+      infoWindow.open(map, marker);
+    }
+
+    function render() {
+      const filtered = getFilteredCompanies();
+      renderStats(filtered);
+      renderList(filtered);
+      renderMarkers(filtered);
+    }
+
+    function initMap() {
+      if (!window.naver || !naver.maps) {
+        els.mapError.classList.add("show");
+        render();
+        return;
+      }
+
+      map = new naver.maps.Map("map", {
+        center: new naver.maps.LatLng(WONJU.lat, WONJU.lng),
+        zoom: 8,
+        minZoom: 6,
+        mapDataControl: false
+      });
+      infoWindow = new naver.maps.InfoWindow({ borderWidth: 0, backgroundColor: "#fff" });
+
+      const baseMarker = new naver.maps.Marker({
+        position: new naver.maps.LatLng(WONJU.lat, WONJU.lng),
+        map,
+        title: "BRING 원주 기준점",
+        icon: {
+          content: `<div class="pin base" title="BRING 원주 기준점">B</div>`,
+          size: new naver.maps.Size(34, 34),
+          anchor: new naver.maps.Point(17, 17)
+        }
+      });
+      naver.maps.Event.addListener(baseMarker, "click", () => {
+        infoWindow.setContent(`
+          <div class="info">
+            <h2>BRING 원주 기준점</h2>
+            <p>원주 건물 유지보수/경쟁사 검토를 시작하는 기준 위치입니다.</p>
           </div>
-        `
+        `);
+        infoWindow.open(map, baseMarker);
       });
 
-      naver.maps.Event.addListener(marker, 'click', function() {
-        infoWindow.open(map, marker);
-      });
+      render();
+    }
+
+    els.list.addEventListener("click", event => {
+      const item = event.target.closest(".company");
+      if (!item) return;
+      focusCompany(item.dataset.id);
     });
+
+    setupFilters();
+    initMap();
   </script>
 </body>
 </html>
