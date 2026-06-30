@@ -1936,6 +1936,151 @@ window.BRING_BUILDING_MAINTENANCE_DATA = {
           "precision": "road"
         }
       ]
+    },
+    {
+      "id": "sheet-034",
+      "no": 34,
+      "name": "케이티엠에스",
+      "category": "통신·방송장비",
+      "service": "통신, 방송장비 제조",
+      "feature": "통신·방송장비 제조 업체",
+      "operation": "033-742-8071",
+      "region": "강원 원주시 시청로 96",
+      "address": "강원 원주시 시청로 96",
+      "scale": "",
+      "url": "",
+      "extraUrl": "",
+      "naverUrl": "https://naver.me/xQJRV33o",
+      "phone": "033-742-8071",
+      "rating": "",
+      "status": "사용자 추가",
+      "source": "google-sheet",
+      "sourceLabel": "원주 유지보수 직접추가",
+      "locations": [
+        {
+          "label": "원주시 시청로",
+          "lat": 37.3371653,
+          "lng": 127.9224741,
+          "source": "naver-place-address",
+          "precision": "road"
+        }
+      ]
+    },
+    {
+      "id": "sheet-035",
+      "no": 35,
+      "name": "삼성인터폰",
+      "category": "통신·방송장비",
+      "service": "통신, 방송장비 제조",
+      "feature": "통신·방송장비 제조 업체",
+      "operation": "033-765-0443",
+      "region": "강원 원주시 무실로 415",
+      "address": "강원 원주시 무실로 415",
+      "scale": "",
+      "url": "",
+      "extraUrl": "",
+      "naverUrl": "https://naver.me/GsBZxdmc",
+      "phone": "033-765-0443",
+      "rating": "",
+      "status": "사용자 추가",
+      "source": "google-sheet",
+      "sourceLabel": "원주 유지보수 직접추가",
+      "locations": [
+        {
+          "label": "원주시 무실로",
+          "lat": 37.3288871,
+          "lng": 127.9293212,
+          "source": "naver-place-address",
+          "precision": "building"
+        }
+      ]
+    },
+    {
+      "id": "sheet-036",
+      "no": 36,
+      "name": "한얼누리",
+      "category": "전기·조명",
+      "service": "전자, 전기",
+      "feature": "전자·전기 업체",
+      "operation": "",
+      "region": "강원 원주시 이화4길 35",
+      "address": "강원 원주시 이화4길 35",
+      "scale": "",
+      "url": "",
+      "extraUrl": "",
+      "naverUrl": "https://naver.me/FKG8JkqA",
+      "phone": "",
+      "rating": "",
+      "status": "사용자 추가",
+      "source": "google-sheet",
+      "sourceLabel": "원주 유지보수 직접추가",
+      "locations": [
+        {
+          "label": "원주시 이화4길",
+          "lat": 37.3405479,
+          "lng": 127.9324992,
+          "source": "naver-place-address",
+          "precision": "building"
+        }
+      ]
+    },
+    {
+      "id": "sheet-037",
+      "no": 37,
+      "name": "이은종합설비",
+      "category": "설비·수도·가스",
+      "service": "전기, 가스, 수도사업, 변기·하수구 수리, 수도꼭지, 전등 교체, 용접",
+      "feature": "용접, 철물제작, 연수도 녹임, 변기하수 수리, 수도꼭지, 전등교체 등 주변 어려운 일을 해결",
+      "operation": "0507-1314-0572",
+      "region": "강원 원주시 한지공원길 102 105동 404호",
+      "address": "강원 원주시 한지공원길 102 105동 404호",
+      "scale": "",
+      "url": "",
+      "extraUrl": "",
+      "naverUrl": "https://naver.me/GP2GN9UR",
+      "phone": "0507-1314-0572",
+      "rating": "",
+      "status": "사용자 추가",
+      "source": "google-sheet",
+      "sourceLabel": "원주 유지보수 직접추가",
+      "locations": [
+        {
+          "label": "원주시 한지공원길",
+          "lat": 37.330171,
+          "lng": 127.9428004,
+          "source": "naver-place-address",
+          "precision": "road"
+        }
+      ]
+    },
+    {
+      "id": "sheet-038",
+      "no": 38,
+      "name": "대한전기조명",
+      "category": "전기·조명",
+      "service": "전기자재, 조명 판매, 전기공사",
+      "feature": "전기 자재 및 조명 판매. 간단한 전기 공사도 가능. 연락처 010-5378-2286",
+      "operation": "0507-1329-9876",
+      "region": "강원 원주시 무실로 50",
+      "address": "강원 원주시 무실로 50",
+      "scale": "",
+      "url": "",
+      "extraUrl": "",
+      "naverUrl": "https://naver.me/FtoKN9WW",
+      "phone": "0507-1329-9876",
+      "rating": "리뷰 1",
+      "status": "사용자 추가",
+      "source": "google-sheet",
+      "sourceLabel": "원주 유지보수 직접추가",
+      "locations": [
+        {
+          "label": "원주시 무실로",
+          "lat": 37.3448546,
+          "lng": 127.9441106,
+          "source": "naver-place-address",
+          "precision": "road"
+        }
+      ]
     }
   ],
   "categories": [
@@ -1951,6 +2096,8 @@ window.BRING_BUILDING_MAINTENANCE_DATA = {
     "기타/생활서비스",
     "누수·배관",
     "전기·조명",
+    "통신·방송장비",
+    "설비·수도·가스",
     "도배공사",
     "방수·코킹",
     "문·창호·도어락",
