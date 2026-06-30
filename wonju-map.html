@@ -15,6 +15,8 @@
       --brand: #163b6d;
       --brand-2: #0f766e;
       --warn: #9a3412;
+      --excel: #111827;
+      --sheet: #0f766e;
     }
 
     * { box-sizing: border-box; }
@@ -28,7 +30,7 @@
 
     .app {
       display: grid;
-      grid-template-columns: minmax(360px, 440px) 1fr;
+      grid-template-columns: minmax(390px, 470px) 1fr;
       height: 100%;
       min-height: 0;
     }
@@ -71,7 +73,7 @@
 
     .stats {
       display: grid;
-      grid-template-columns: repeat(3, 1fr);
+      grid-template-columns: repeat(4, minmax(0, 1fr));
       gap: 8px;
       padding: 12px;
       border-bottom: 1px solid var(--line);
@@ -120,7 +122,7 @@
 
     .filter-row {
       display: grid;
-      grid-template-columns: 1fr 130px;
+      grid-template-columns: minmax(0, 1fr) 128px 122px;
       gap: 8px;
     }
 
@@ -156,7 +158,7 @@
     .company {
       width: 100%;
       margin: 0 0 8px;
-      padding: 12px;
+      padding: 13px 13px 12px;
       border: 1px solid var(--line);
       border-radius: 8px;
       background: #fff;
@@ -164,10 +166,13 @@
       color: inherit;
       cursor: pointer;
       font: inherit;
+      border-left-width: 5px;
     }
 
     .company:hover { border-color: #98a2b3; background: #fbfcfe; }
     .company.active { border-color: var(--brand-2); box-shadow: 0 0 0 2px rgba(15,118,110,.14); }
+    .company.excel { border-left-color: var(--excel); }
+    .company.google-sheet { border-left-color: var(--sheet); }
 
     .company-head {
       display: flex;
@@ -183,6 +188,22 @@
       font-weight: 800;
     }
 
+    .source-badge {
+      display: inline-flex;
+      align-items: center;
+      height: 22px;
+      padding: 0 7px;
+      border-radius: 999px;
+      color: #fff;
+      font-size: 11px;
+      font-weight: 800;
+      white-space: nowrap;
+      flex: none;
+    }
+
+    .source-badge.excel { background: var(--excel); }
+    .source-badge.google-sheet { background: var(--sheet); }
+
     .badge {
       display: inline-flex;
       align-items: center;
@@ -197,6 +218,14 @@
       overflow: hidden;
       text-overflow: ellipsis;
       flex: none;
+    }
+
+    .card-tags {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 8px;
+      margin-top: 9px;
     }
 
     .meta {
@@ -219,6 +248,25 @@
       color: #344054;
       font-size: 13px;
       line-height: 1.45;
+      display: -webkit-box;
+      -webkit-line-clamp: 2;
+      -webkit-box-orient: vertical;
+      overflow: hidden;
+    }
+
+    .contact-line {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 7px;
+      margin-top: 9px;
+      color: #475467;
+      font-size: 12px;
+    }
+
+    .contact-line a {
+      color: var(--brand);
+      font-weight: 700;
+      text-decoration: none;
     }
 
     .map-wrap {
@@ -263,17 +311,64 @@
       box-shadow: 0 8px 24px rgba(16,24,40,.13);
     }
 
+    .legend {
+      position: absolute;
+      left: 14px;
+      bottom: 14px;
+      z-index: 3;
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      padding: 10px 12px;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: rgba(255,255,255,.96);
+      box-shadow: 0 8px 24px rgba(16,24,40,.13);
+      font-size: 12px;
+      color: #344054;
+    }
+
+    .legend span {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      white-space: nowrap;
+    }
+
+    .legend i {
+      display: inline-block;
+      width: 11px;
+      height: 11px;
+      border-radius: 999px;
+      background: var(--excel);
+    }
+
+    .legend .sheet-dot { background: var(--sheet); }
+
     .pin {
       display: grid;
       place-items: center;
-      width: 30px;
-      height: 30px;
+      width: 34px;
+      height: 34px;
       border: 2px solid #fff;
-      border-radius: 50%;
+      border-radius: 50% 50% 50% 8px;
       color: #fff;
       font-size: 12px;
       font-weight: 800;
+      transform: rotate(-45deg);
       box-shadow: 0 5px 14px rgba(16,24,40,.28);
+    }
+
+    .pin span {
+      transform: rotate(45deg);
+    }
+
+    .pin.excel {
+      background: var(--excel) !important;
+    }
+
+    .pin.google-sheet {
+      border-color: #fff;
     }
 
     .pin.base {
@@ -344,19 +439,25 @@
       <div class="topbar">
         <a href="./index.html">← 이루 대시보드</a>
         <h1>BRING 원주 건물 유지보수 지도</h1>
-        <p class="subtitle">엑셀의 건물관리 경쟁사 정보를 지도와 목록으로 함께 봅니다.</p>
+        <p class="subtitle">경쟁사 엑셀과 원주 유지보수 구글시트를 한 화면에서 비교합니다.</p>
       </div>
 
       <div class="stats" aria-label="요약">
-        <div class="stat"><b id="totalCount">0</b><span>전체 회사</span></div>
+        <div class="stat"><b id="totalCount">0</b><span>전체</span></div>
+        <div class="stat"><b id="excelCount">0</b><span>경쟁사</span></div>
+        <div class="stat"><b id="sheetCount">0</b><span>원주업체</span></div>
         <div class="stat"><b id="mapCount">0</b><span>지도 표시</span></div>
-        <div class="stat"><b id="hiddenCount">0</b><span>위치 미입력</span></div>
       </div>
 
       <div class="filters">
         <input class="search" id="searchInput" type="search" placeholder="회사명, 서비스, 지역 검색" />
         <div class="filter-row">
           <select id="categoryFilter" aria-label="대분류 필터"></select>
+          <select id="sourceFilter" aria-label="출처 필터">
+            <option value="all">전체 출처</option>
+            <option value="excel">경쟁사</option>
+            <option value="google-sheet">원주업체</option>
+          </select>
           <select id="locationFilter" aria-label="위치 필터">
             <option value="all">전체</option>
             <option value="mapped">지도 표시 가능</option>
@@ -365,13 +466,17 @@
         </div>
       </div>
 
-      <p class="notice">엑셀에 정확한 주소/좌표가 없어서 지도 핀은 지역명이 확인되는 회사만 지역 중심점 기준으로 표시합니다.</p>
+      <p class="notice">검은 핀은 경쟁사 엑셀, 컬러 핀은 원주 유지보수 구글시트입니다. 구글시트 업체는 주소의 동/읍/면 기준으로 우선 표시합니다.</p>
       <div class="list" id="companyList"></div>
     </section>
 
     <section class="map-wrap" aria-label="네이버 지도">
       <div id="map"></div>
       <div class="map-count" id="visibleMapCount">지도 표시 0개</div>
+      <div class="legend">
+        <span><i></i>경쟁사 엑셀</span>
+        <span><i class="sheet-dot"></i>원주 유지보수</span>
+      </div>
       <div class="map-error" id="mapError">
         <div>
           <b>네이버 지도를 불러오지 못했습니다.</b>
@@ -410,7 +515,17 @@
       "공유주거 개발사(관리아님)": "#0891b2",
       "지역 전통 종합관리": "#2563eb",
       "수리/시공 소규모": "#dc2626",
-      "기타/생활서비스": "#16a34a"
+      "기타/생활서비스": "#16a34a",
+      "누수·배관": "#0f766e",
+      "전기·조명": "#f59e0b",
+      "도배공사": "#8b5cf6",
+      "방수·코킹": "#0284c7",
+      "문·창호·도어락": "#475569",
+      "냉난방·보일러": "#dc2626",
+      "냉난방·에어컨": "#0891b2",
+      "청소·위생": "#16a34a",
+      "소방·안전": "#b91c1c",
+      "타일공사": "#9333ea"
     };
 
     let map = null;
@@ -421,11 +536,13 @@
     const els = {
       search: document.getElementById("searchInput"),
       category: document.getElementById("categoryFilter"),
+      source: document.getElementById("sourceFilter"),
       location: document.getElementById("locationFilter"),
       list: document.getElementById("companyList"),
       total: document.getElementById("totalCount"),
+      excel: document.getElementById("excelCount"),
+      sheet: document.getElementById("sheetCount"),
       mapped: document.getElementById("mapCount"),
-      hidden: document.getElementById("hiddenCount"),
       visibleMapCount: document.getElementById("visibleMapCount"),
       mapError: document.getElementById("mapError")
     };
@@ -442,6 +559,14 @@
 
     function colorFor(category) {
       return CATEGORY_COLORS[category] || "#344054";
+    }
+
+    function sourceClass(company) {
+      return company.source === "google-sheet" ? "google-sheet" : "excel";
+    }
+
+    function sourceName(company) {
+      return company.source === "google-sheet" ? "원주업체" : "경쟁사";
     }
 
     function hasLocation(company) {
@@ -471,12 +596,14 @@
 
       els.search.addEventListener("input", render);
       els.category.addEventListener("change", render);
+      els.source.addEventListener("change", render);
       els.location.addEventListener("change", render);
     }
 
     function getFilteredCompanies() {
       const query = els.search.value.trim().toLowerCase();
       const category = els.category.value;
+      const source = els.source.value;
       const locationMode = els.location.value;
 
       return DATA.companies.filter(company => {
@@ -487,24 +614,29 @@
           company.feature,
           company.operation,
           company.region,
-          company.scale
+          company.scale,
+          company.phone,
+          company.rating,
+          company.sourceLabel
         ].join(" ").toLowerCase();
         const matchesQuery = !query || text.includes(query);
         const matchesCategory = category === "all" || company.category === category;
+        const matchesSource = source === "all" || company.source === source;
         const mapped = hasLocation(company);
         const matchesLocation =
           locationMode === "all" ||
           (locationMode === "mapped" && mapped) ||
           (locationMode === "missing" && !mapped);
-        return matchesQuery && matchesCategory && matchesLocation;
+        return matchesQuery && matchesCategory && matchesSource && matchesLocation;
       });
     }
 
     function renderStats(filtered) {
       const mappedAll = DATA.companies.filter(hasLocation).length;
       els.total.textContent = DATA.companies.length;
+      els.excel.textContent = DATA.companies.filter(company => company.source !== "google-sheet").length;
+      els.sheet.textContent = DATA.companies.filter(company => company.source === "google-sheet").length;
       els.mapped.textContent = mappedAll;
-      els.hidden.textContent = DATA.companies.length - mappedAll;
       els.visibleMapCount.textContent = `지도 표시 ${filtered.filter(hasLocation).length}개`;
     }
 
@@ -517,11 +649,23 @@
       els.list.innerHTML = companies.map(company => {
         const mapped = hasLocation(company);
         const badgeText = mapped ? company.locations.map(item => item.label).join(", ") : "위치 미입력";
+        const sClass = sourceClass(company);
+        const primaryLink = company.naverUrl || company.url || company.extraUrl;
+        const phone = company.phone || company.operation;
+        const contact = [
+          company.region ? `<span>${esc(company.region)}</span>` : "",
+          phone ? `<span>${esc(phone).replace(/\n/g, " / ")}</span>` : "",
+          company.rating ? `<span>${esc(company.rating)}</span>` : "",
+          primaryLink ? `<a href="${esc(primaryLink)}" target="_blank" rel="noopener">링크 열기</a>` : ""
+        ].filter(Boolean).join("");
         return `
-          <button class="company ${activeCompanyId === company.id ? "active" : ""}" data-id="${esc(company.id)}">
+          <button class="company ${sClass} ${activeCompanyId === company.id ? "active" : ""}" data-id="${esc(company.id)}">
             <div class="company-head">
               <h2 class="company-name">${esc(company.name)}</h2>
-              <span class="badge" style="background:${colorFor(company.category)}">${esc(badgeText)}</span>
+              <span class="source-badge ${sClass}">${sourceName(company)}</span>
+            </div>
+            <div class="card-tags">
+              <span class="badge" style="background:${company.source === "google-sheet" ? colorFor(company.category) : "#111827"}">${esc(badgeText)}</span>
             </div>
             <div class="meta">
               <span>${esc(company.category)}</span>
@@ -529,7 +673,8 @@
               <span>${esc(company.status || "상태 없음")}</span>
             </div>
             <p class="desc">${esc(company.service)}</p>
-            <p class="desc">${esc(company.feature)}</p>
+            ${company.feature ? `<p class="desc">${esc(company.feature)}</p>` : ""}
+            ${contact ? `<div class="contact-line">${contact}</div>` : ""}
           </button>
         `;
       }).join("");
@@ -542,21 +687,29 @@
 
     function markerContent(company, label) {
       const initial = company.name.trim().slice(0, 1) || "B";
-      return `<div class="pin" title="${esc(company.name)}" style="background:${colorFor(company.category)}">${esc(initial)}</div>`;
+      const sClass = sourceClass(company);
+      const color = company.source === "google-sheet" ? colorFor(company.category) : "#111827";
+      return `<div class="pin ${sClass}" title="${esc(company.name)}" style="background:${color}"><span>${esc(initial)}</span></div>`;
     }
 
     function infoContent(company, location) {
       const regionText = location ? `${esc(location.label)} 지역 기준 표시` : "정확 위치 미입력";
-      const url = company.url ? `<a href="${esc(company.url)}" target="_blank" rel="noopener">공식 사이트 열기</a>` : "";
+      const links = [
+        company.naverUrl ? `<a href="${esc(company.naverUrl)}" target="_blank" rel="noopener">네이버 지도 열기</a>` : "",
+        company.url ? `<a href="${esc(company.url)}" target="_blank" rel="noopener">홍보/공식 링크</a>` : "",
+        company.extraUrl ? `<a href="${esc(company.extraUrl)}" target="_blank" rel="noopener">추가 링크</a>` : ""
+      ].filter(Boolean).join(" ");
       return `
         <div class="info">
           <h2>${esc(company.name)}</h2>
+          <p><b>출처</b> ${esc(company.sourceLabel || sourceName(company))}</p>
           <p><b>분류</b> ${esc(company.category)}</p>
           <p><b>지역</b> ${esc(company.region || regionText)}</p>
           <p><b>운영</b> ${esc(company.operation || "-")}</p>
+          ${company.rating ? `<p><b>평점</b> ${esc(company.rating)}</p>` : ""}
           <p>${esc(company.service)}</p>
-          <p>${esc(company.feature)}</p>
-          ${url}
+          ${company.feature ? `<p>${esc(company.feature)}</p>` : ""}
+          ${links}
         </div>
       `;
     }
@@ -592,8 +745,8 @@
             title: company.name,
             icon: {
               content: markerContent(company, location.label),
-              size: new naver.maps.Size(30, 30),
-              anchor: new naver.maps.Point(15, 15)
+              size: new naver.maps.Size(34, 34),
+              anchor: new naver.maps.Point(17, 17)
             }
           });
 
@@ -659,7 +812,7 @@
         map,
         title: "BRING 원주 기준점",
         icon: {
-          content: `<div class="pin base" title="BRING 원주 기준점">B</div>`,
+          content: `<div class="pin base" title="BRING 원주 기준점"><span>B</span></div>`,
           size: new naver.maps.Size(34, 34),
           anchor: new naver.maps.Point(17, 17)
         }
