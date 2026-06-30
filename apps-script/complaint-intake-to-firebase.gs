@@ -44,6 +44,34 @@ function setupComplaintAutomation() {
   processExistingResponses();
 }
 
+function authorizeDriveAccess() {
+  const folderId = extractDriveId_(COMPLAINT_CONFIG.CONTRACT_DRIVE_FOLDER_ID);
+  if (!folderId) throw new Error("CONTRACT_DRIVE_FOLDER_ID가 비어 있습니다.");
+
+  const folder = DriveApp.getFolderById(folderId);
+  Logger.log("Drive 권한 확인 대상 폴더: " + folder.getName() + " / https://drive.google.com/drive/folders/" + folderId);
+
+  const directFiles = folder.getFiles();
+  const fileLogs = [];
+  while (directFiles.hasNext() && fileLogs.length < 20) {
+    const file = directFiles.next();
+    fileLogs.push(file.getName() + " / " + file.getMimeType());
+  }
+  Logger.log(fileLogs.length
+    ? "폴더 직접 파일 목록: " + fileLogs.join(" | ")
+    : "폴더 직접 파일 목록: 비어 있음");
+
+  const query = [
+    "'" + escapeDriveQueryValue_(folderId) + "' in parents",
+    "trashed = false",
+    "mimeType = 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'"
+  ].join(" and ");
+  const files = DriveApp.searchFiles(query);
+  Logger.log(files.hasNext()
+    ? "Drive 권한 확인 완료: " + files.next().getName()
+    : "Drive 권한 확인 완료: 폴더 안에 DOCX 파일이 아직 없습니다.");
+}
+
 function onComplaintFormSubmit(e) {
   const sheet = e && e.range ? e.range.getSheet() : getResponseSheet_();
   const row = e && e.range ? e.range.getRow() : sheet.getLastRow();

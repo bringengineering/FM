@@ -10,8 +10,10 @@
 3. 기본 코드 내용을 지우고 `complaint-intake-to-firebase.gs` 내용을 붙여넣습니다.
 4. 온보딩 수집서 DOCX 파일이 들어 있는 Google Drive 폴더를 연결하려면 코드 상단의 `CONTRACT_DRIVE_FOLDER_ID`에 폴더 ID 또는 폴더 URL을 넣습니다.
    - 현재 설정값은 `1818MusPDfVV6znALkWDMGK99NXAlAj8g`입니다.
-5. 저장 후 함수 선택 드롭다운에서 `setupComplaintAutomation`을 선택합니다.
-6. `실행`을 누르고 Google 권한 승인을 완료합니다.
+5. 왼쪽 톱니바퀴 `프로젝트 설정`에서 `appsscript.json 매니페스트 파일 표시`를 켭니다.
+6. 왼쪽 파일 목록의 `appsscript.json`에 이 폴더의 `appsscript.json` 내용을 붙여넣습니다.
+7. 저장 후 함수 선택 드롭다운에서 `setupComplaintAutomation`을 선택합니다.
+8. `실행`을 누르고 Google 권한 승인을 완료합니다.
 
 ## 작동 방식
 
@@ -50,3 +52,12 @@
 테스트 응답이 들어오면 시트에 분석 컬럼이 채워지고, 앱의 `케이스` 화면에 새 접수번호가 표시됩니다.
 
 온보딩 파일 매칭까지 테스트하려면 Drive 폴더에 DOCX 파일을 올리고, 본문에 테스트 건물의 `건물명`을 넣은 뒤 같은 건물명으로 폼을 제출하세요. 같은 건물명이 들어간 DOCX가 여러 개라면 본문에 `건물 주소`까지 넣어 주소로 1건만 남는지 확인하세요.
+
+## Drive 권한 오류가 뜰 때
+
+`You do not have permission to call DriveApp.searchFiles`가 보이면 Apps Script 프로젝트에 Drive 읽기 권한이 아직 붙지 않은 상태입니다.
+
+1. `appsscript.json`에 `https://www.googleapis.com/auth/drive.readonly`가 들어 있는지 확인합니다.
+2. 저장 후 `setupComplaintAutomation`을 다시 실행합니다.
+3. 권한 승인 창이 뜨면 승인합니다.
+4. 그래도 안 뜨면 함수 선택에서 `authorizeDriveAccess`를 실행해 Drive 권한만 따로 승인합니다.
