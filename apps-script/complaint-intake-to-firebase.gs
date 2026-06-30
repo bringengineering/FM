@@ -485,7 +485,7 @@ function buildCasePayload_(ticketNo, record, analysis, contractMatch, row, sheet
   const visitTime = readField_(record, ["방문 가능 시간"]);
   const isContractHold = contractMatch && (contractMatch.status === "unmatched" || contractMatch.status === "multiple" || contractMatch.status === "address_missing");
   const statusValue = isContractHold ? "계약확인보류" : analysis.statusValue;
-  const status = isContractHold ? { c1: "doing" } : { c1: "done", c3: "done", c4: "done" };
+  const status = isContractHold ? { c1: "doing" } : { c1: "done" };
   const c1Note = contractMatch && contractMatch.status === "matched"
     ? "구글폼 자동 접수. Drive 온보딩 수집서와 연결되었습니다. 개인정보/사진 원본은 응답 시트에서 확인하세요."
     : isContractHold

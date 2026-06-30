@@ -255,10 +255,12 @@
   .cv-step{ display:flex; align-items:center; gap:10px; padding:9px 12px; border:1px solid var(--line); border-radius:11px; margin-bottom:7px; background:#fff; }
   .cv-step.done{ background:#f3fbf6; border-color:#bce8cf; }
   .cv-step.doing{ background:#fff8e8; border-color:#f0dca0; }
+  .cv-step.locked{ background:#f8fafc; color:#8a94a6; }
   .cv-chip{ border:0; border-radius:999px; padding:4px 11px; font-size:12px; cursor:pointer; font-family:inherit; white-space:nowrap; min-width:62px; }
   .cv-chip.wait{ background:#eef1f6; color:#6b7686; }
   .cv-chip.doing{ background:#f7b731; color:#5a3d00; }
   .cv-chip.done{ background:#26de81; color:#fff; }
+  .cv-chip.locked,.cv-chip:disabled{ background:#eef1f6; color:#9aa6b5; cursor:not-allowed; }
   .cv-stepwrap{ margin-bottom:7px; }
   .cv-stepwrap .cv-step{ margin-bottom:0; }
   .cv-doc{ border:1px solid #1b335f; background:#1b335f; color:#fff; border-radius:8px; padding:5px 11px; font-size:12.5px; cursor:pointer; font-family:inherit; white-space:nowrap; font-weight:600; }
@@ -287,6 +289,7 @@
   .cv-step .lbl{ flex:1; font-size:13.5px; }
   .cv-act{ border:1px solid #2bcbba; background:#e9fbf8; color:#0c8478; border-radius:8px; padding:5px 11px; font-size:12.5px; cursor:pointer; font-family:inherit; white-space:nowrap; }
   .cv-act .tag{ font-size:10px; opacity:.7; margin-left:3px; }
+  .cv-act.disabled,.cv-act:disabled{ border-color:#d8e0ec; background:#eef2f7; color:#7b8794; cursor:not-allowed; }
   .cv-del{ border:1px solid #f3c0c0; background:#fff; color:#e03131; border-radius:8px; padding:6px 11px; font-size:12.5px; cursor:pointer; font-family:inherit; margin-top:14px; }
   .cv-log{ margin-top:16px; border-top:1px dashed var(--line); padding-top:10px; }
   .cv-log .t{ font-size:12px; color:var(--ink-soft); margin-bottom:4px; }
@@ -831,7 +834,9 @@ function initFirebase(){
     const v = s.val();
     if (v == null){ if(Object.keys(cases).length) casesRef.set(cases); return; }   // 최초 시드
     cases = v;
+    const fixed = normalizeAllCaseSteps(cases);
     try{ localStorage.setItem("fm_cases_v1", JSON.stringify(cases)); }catch(e){}
+    if (fixed) { clearTimeout(caseWriteT); caseWriteT=setTimeout(()=>{ if(casesRef) casesRef.set(cases); }, 200); }
     if (caseView.classList.contains("open")){
       renderCaseList();
       if (curCase && !cases[curCase]) curCase = Object.keys(cases)[0] || null;
@@ -1840,6 +1845,38 @@ function contractBadgeHTML(c){
   if(match.status==="unmatched"||match.status==="multiple"||match.status==="address_missing"||c.statusValue==="계약확인보류") return `<span class="cv-badge hold">계약확인보류</span>`;
   return "";
 }
+function stepIndex(k){ return CASE_STEPS.findIndex(s=>s.k===k); }
+function firstBlockingStep(c,k){
+  const idx=stepIndex(k), status=(c&&c.status)||{};
+  if(idx <= 0) return null;
+  for(let i=0;i<idx;i++){
+    const s=CASE_STEPS[i];
+    if(status[s.k] !== "done") return s;
+  }
+  return null;
+}
+function isStepUnlocked(c,k){ return !firstBlockingStep(c,k); }
+function stepLockMessage(c,k){
+  const block=firstBlockingStep(c,k);
+  return block ? `먼저 ${block.t} 단계를 완료해야 진행할 수 있어요.` : "";
+}
+function normalizeCaseSteps(c){
+  if(!c || !c.status) return false;
+  let changed=false, allPrevDone=true;
+  CASE_STEPS.forEach(s=>{
+    if(!allPrevDone && c.status[s.k]){
+      delete c.status[s.k];
+      changed=true;
+    }
+    if(c.status[s.k] !== "done") allPrevDone=false;
+  });
+  return changed;
+}
+function normalizeAllCaseSteps(src){
+  let changed=false;
+  Object.keys(src||{}).forEach(id=>{ if(normalizeCaseSteps(src[id])) changed=true; });
+  return changed;
+}
 function onboardingFileUrl(c){
   const match=(c&&c.contractMatch)||{};
   const contract=match.contract||{};
@@ -1850,8 +1887,11 @@ function onboardingFileName(c){
   const contract=match.contract||{};
   return match.fileName || contract.contractFileName || "";
 }
-function onboardingDocButtonHTML(c,s){
+function onboardingDocButtonHTML(c,s,locked){
   if(!s.doc) return "";
+  if(locked){
+    return `<button class="cv-doc disabled" disabled title="${escAttr(stepLockMessage(c,s.k))}">📄 ${esc(DOC_NAMES[s.doc])}</button>`;
+  }
   if(s.doc!=="onboard"){
     return `<button class="cv-doc" data-doc="${s.k}" title="이 고객 정보로 자동 채운 문서 받기">📄 ${esc(DOC_NAMES[s.doc])}</button>`;
   }
@@ -1899,11 +1939,12 @@ function closeCaseView(){ caseView.classList.remove("open"); }
 function createCase(){ const id=caseGenId(); cases[id]={ id, name:"새 고객", phone:"", email:"", building:"", grade:"스탠다드", memo:"", status:{}, log:[] }; curCase=id; saveCases(); renderCaseList(); renderCaseDetail(); return id; }
 function selectCase(id){ curCase=id; noteOpen.clear(); renderCaseList(); renderCaseDetail(); }
 function deleteCase(id){ if(!cases[id]) return; if(!confirm("이 케이스를 삭제할까요?")) return; delete cases[id]; if(curCase===id) curCase=Object.keys(cases)[0]||null; saveCases(); renderCaseList(); renderCaseDetail(); }
-function cycleStep(id,k){ const c=cases[id]; if(!c) return; c.status=c.status||{}; const cur=c.status[k]||""; c.status[k]= cur===""?"doing":cur==="doing"?"done":""; const s=CASE_STEPS.find(x=>x.k===k); caseLog(c, s.t+" → "+(c.status[k]==="done"?"완료":c.status[k]==="doing"?"진행중":"대기")); saveCases(); renderCaseList(); renderCaseDetail(); }
+function cycleStep(id,k){ const c=cases[id]; if(!c) return; const msg=stepLockMessage(c,k); if(msg){ alert(msg); return; } c.status=c.status||{}; const cur=c.status[k]||""; c.status[k]= cur===""?"doing":cur==="doing"?"done":""; if(!c.status[k]) delete c.status[k]; normalizeCaseSteps(c); const s=CASE_STEPS.find(x=>x.k===k); caseLog(c, s.t+" → "+(c.status[k]==="done"?"완료":c.status[k]==="doing"?"진행중":"대기")); saveCases(); renderCaseList(); renderCaseDetail(); }
 function doAuto(id,k,channel){ const c=cases[id]; if(!c) return;
+  const msg=stepLockMessage(c,k); if(msg){ alert(msg); return; }
   /* 메일 외 자동화(입금확인 등)는 아직 수동 기록 */
   if(!confirm("["+channel+"] 자동 연결은 준비 중(예정)입니다.\n지금은 '실행함'으로 기록하고 이 단계를 완료 처리할까요?")) return;
-  c.status=c.status||{}; c.status[k]="done"; caseLog(c, "🔌 "+channel+" 실행(수동 기록)"); saveCases(); renderCaseList(); renderCaseDetail();
+  c.status=c.status||{}; c.status[k]="done"; normalizeCaseSteps(c); caseLog(c, "🔌 "+channel+" 실행(수동 기록)"); saveCases(); renderCaseList(); renderCaseDetail();
 }
 /* ===== 📧 메일 자동발송 (구글 Apps Script 백엔드) ===== */
 const EMAIL_TEMPLATES = {
@@ -1942,6 +1983,7 @@ function ensureMailModal(){
 function refreshMailNote(){ const n=document.getElementById("mmNote"); if(!n) return; n.innerHTML = settings.mailEndpoint ? "✅ 연결됨 — '보내기'를 누르면 Gmail에서 실제 전송됩니다. (보낸편지함에서 확인)" : "⚠️ 자동발송 미설정 — ⚙️로 한 번만 연결하거나, 내용을 복사해 직접 보내세요."; }
 function openMailModal(id,k){
   const c=cases[id]; if(!c) return; const tpl=EMAIL_TEMPLATES[k]; if(!tpl){ const s=CASE_STEPS.find(x=>x.k===k)||{}; return doAuto(id,k,s.auto||""); }
+  const msg=stepLockMessage(c,k); if(msg){ alert(msg); return; }
   ensureMailModal(); const m=tpl(c); mailCtx={id,k}; const step=CASE_STEPS.find(x=>x.k===k)||{};
   document.getElementById("mmTitle").textContent=(step.t||"메일")+" — 메일 발송";
   document.getElementById("mmTo").value=m.to; document.getElementById("mmSubject").value=m.subject; document.getElementById("mmBody").value=m.body;
@@ -1953,8 +1995,9 @@ function doSendMail(){
   const to=document.getElementById("mmTo").value.trim(), subject=document.getElementById("mmSubject").value.trim(), body=document.getElementById("mmBody").value;
   if(!to){ alert("받는사람 이메일을 입력하세요."); return; }
   if(!settings.mailEndpoint){ if(!promptMailSetup()){ return; } refreshMailNote(); if(!settings.mailEndpoint) return; }
+  if(mailCtx){ const c=cases[mailCtx.id]; const msg=stepLockMessage(c,mailCtx.k); if(msg){ alert(msg); return; } }
   sendMailRequest(settings.mailEndpoint, {to, subject, body});
-  if(mailCtx){ const c=cases[mailCtx.id]; if(c){ c.status=c.status||{}; c.status[mailCtx.k]="done"; caseLog(c, "📧 메일 발송: "+to+" — "+subject); saveCases(); renderCaseList(); renderCaseDetail(); } }
+  if(mailCtx){ const c=cases[mailCtx.id]; if(c){ c.status=c.status||{}; c.status[mailCtx.k]="done"; normalizeCaseSteps(c); caseLog(c, "📧 메일 발송: "+to+" — "+subject); saveCases(); renderCaseList(); renderCaseDetail(); } }
   closeMailModal(); alert("✉️ 발송 요청을 보냈어요.\nGmail 보낸편지함에서 확인하세요.");
 }
 function setCaseField(id,f,v){ const c=cases[id]; if(!c) return; c[f]=v; saveCases(); if(f==="name"||f==="grade"||f==="building"||f==="address") renderCaseList(); }
@@ -1985,12 +2028,14 @@ function renderCaseDetail(){
     `<label>등급<select data-f="grade">${["라이트","스탠다드","프리미엄"].map(g=>`<option ${g===c.grade?"selected":""}>${g}</option>`).join("")}</select></label></div>`+
     `<div class="cv-bar"><i style="width:${pct}%"></i></div><div class="cv-prog">진행 ${p.done}/${p.total} (${pct}%)</div>`+
     CASE_STEPS.map(s=>{ const st=(c.status||{})[s.k]||""; const note=(c.note||{})[s.k]||""; const open=noteOpen.has(s.k);
-      const chip=`<button class="cv-chip ${st||'wait'}" data-step="${s.k}">${st==="done"?"완료":st==="doing"?"진행중":"대기"}</button>`;
-      const act=s.auto?`<button class="cv-act ${EMAIL_TEMPLATES[s.k]?'mail':''}" data-auto="${s.k}" data-ch="${esc(s.auto)}">${EMAIL_TEMPLATES[s.k]?'📧':'🤖'} ${esc(s.auto)}<span class="tag">${EMAIL_TEMPLATES[s.k]?'메일 발송':'연결예정'}</span></button>`:"";
-      const dc=onboardingDocButtonHTML(c,s);
+      const locked=!isStepUnlocked(c,s.k);
+      const lockMsg=locked ? stepLockMessage(c,s.k) : "";
+      const chip=`<button class="cv-chip ${locked?'locked':(st||'wait')}" data-step="${s.k}" ${locked?'disabled':''} title="${escAttr(lockMsg)}">${locked?"잠김":st==="done"?"완료":st==="doing"?"진행중":"대기"}</button>`;
+      const act=s.auto?`<button class="cv-act ${EMAIL_TEMPLATES[s.k]?'mail':''} ${locked?'disabled':''}" data-auto="${s.k}" data-ch="${esc(s.auto)}" ${locked?'disabled':''} title="${escAttr(lockMsg)}">${EMAIL_TEMPLATES[s.k]?'📧':'🤖'} ${esc(s.auto)}<span class="tag">${EMAIL_TEMPLATES[s.k]?'메일 발송':'연결예정'}</span></button>`:"";
+      const dc=onboardingDocButtonHTML(c,s,locked);
       const nb=`<button class="cv-notebtn ${note?'has':''}" data-notetoggle="${s.k}" title="메모">📝</button>`;
       const box=open?`<textarea class="cv-note" data-note="${s.k}" placeholder="이 단계 메모 (민원 내용·선정 업체·금액 등)">${esc(note)}</textarea>`:"";
-      return `<div class="cv-stepwrap"><div class="cv-step ${st}">${chip}<div class="lbl">${esc(s.t)}</div>${act}${dc}${nb}</div>${box}</div>`;
+      return `<div class="cv-stepwrap"><div class="cv-step ${locked?'locked':st}">${chip}<div class="lbl">${esc(s.t)}</div>${act}${dc}${nb}</div>${box}</div>`;
     }).join("")+
     `<button class="cv-del" id="cvDel">🗑 이 케이스 삭제</button>`+
     (c.log&&c.log.length?`<div class="cv-log"><div class="t" style="font-weight:700">기록</div>`+c.log.slice(0,8).map(l=>`<div class="t">· ${esc(l)}</div>`).join("")+`</div>`:"");
@@ -1998,10 +2043,11 @@ function renderCaseDetail(){
 document.getElementById("caseBtn").addEventListener("click", openCaseView);
 document.getElementById("caseBack").addEventListener("click", closeCaseView);
 caseListEl.addEventListener("click", e=>{ if(e.target.closest("#cvNew")){ createCase(); return; } const it=e.target.closest(".cv-item"); if(it) selectCase(it.dataset.cid); });
-caseDetailEl.addEventListener("click", e=>{ const dd=e.target.closest("[data-drive-doc]"); if(dd){ const url=dd.dataset.url; if(url) window.open(url, "_blank", "noopener"); return; } const dc=e.target.closest("[data-doc]"); if(dc){ downloadCaseDoc(curCase, dc.dataset.doc); return; } const nt=e.target.closest("[data-notetoggle]"); if(nt){ const k=nt.dataset.notetoggle; noteOpen.has(k)?noteOpen.delete(k):noteOpen.add(k); renderCaseDetail(); return; } const ch=e.target.closest("[data-step]"); if(ch){ cycleStep(curCase, ch.dataset.step); return; } const au=e.target.closest("[data-auto]"); if(au){ const ak=au.dataset.auto; if(EMAIL_TEMPLATES[ak]) openMailModal(curCase, ak); else doAuto(curCase, ak, au.dataset.ch); return; } if(e.target.closest("#cvDel")){ deleteCase(curCase); } });
+caseDetailEl.addEventListener("click", e=>{ const dd=e.target.closest("[data-drive-doc]"); if(dd){ const c=cases[curCase], msg=stepLockMessage(c,dd.dataset.driveDoc); if(msg){ alert(msg); return; } const url=dd.dataset.url; if(url) window.open(url, "_blank", "noopener"); return; } const dc=e.target.closest("[data-doc]"); if(dc){ const msg=stepLockMessage(cases[curCase], dc.dataset.doc); if(msg){ alert(msg); return; } downloadCaseDoc(curCase, dc.dataset.doc); return; } const nt=e.target.closest("[data-notetoggle]"); if(nt){ const k=nt.dataset.notetoggle; noteOpen.has(k)?noteOpen.delete(k):noteOpen.add(k); renderCaseDetail(); return; } const ch=e.target.closest("[data-step]"); if(ch){ cycleStep(curCase, ch.dataset.step); return; } const au=e.target.closest("[data-auto]"); if(au){ const ak=au.dataset.auto; if(EMAIL_TEMPLATES[ak]) openMailModal(curCase, ak); else doAuto(curCase, ak, au.dataset.ch); return; } if(e.target.closest("#cvDel")){ deleteCase(curCase); } });
 caseDetailEl.addEventListener("input", e=>{ const f=e.target.closest("input[data-f]"); if(f){ setCaseField(curCase, f.dataset.f, f.value); return; } const nb=e.target.closest("textarea[data-note]"); if(nb) setCaseNote(curCase, nb.dataset.note, nb.value); });
 caseDetailEl.addEventListener("change", e=>{ const f=e.target.closest("select[data-f]"); if(f) setCaseField(curCase, f.dataset.f, f.value); });
 cases = loadCasesLocal();
+if(normalizeAllCaseSteps(cases)){ try{ localStorage.setItem("fm_cases_v1", JSON.stringify(cases)); }catch(e){} }
 
 /* ===== 📢 비전·공지 (팀 공유) ===== */
 const DEFAULT_VISION = "<h2>🎯 BRING 비전</h2><blockquote>사람이 대신함 → 프로세스로 표준화 → 소프트웨어로 자동화 → 로봇/AI로 고도화 → <b>OS가 운영</b></blockquote><p><b>핵심 기초 5개는 고정된 가치</b>이고, 회사가 성장하면서 <b>수행 방식</b>만 진화한다. (초기=사람이 대신 · 중기=시스템이 처리 · 장기=AI·로봇·OS가 처리)</p><h3>🧱 핵심 기초 5 × 진화 (초기 → 중기 → 장기)</h3><p><b>1) 건물주의 시간 절약</b></p><ul><li><b>초기</b> — BRING 운영자가 대신 처리</li><li><b>중기</b> — 접수·분류·알림 자동화</li><li><b>장기</b> — AI가 처리 우선순위와 업체 추천</li></ul><p><b>2) 건물주의 스트레스 감소</b></p><ul><li><b>초기</b> — 민원·업체·공사 연락을 대신함</li><li><b>중기</b> — 건물주가 대시보드로 현황 확인</li><li><b>장기</b> — 월간 리포트와 승인만 확인</li></ul><p><b>3) 세입자 민원 처리</b></p><ul><li><b>초기</b> — 카톡/폼 접수 후 사람이 분류</li><li><b>중기</b> — 민원 유형별 표준 프로세스 적용</li><li><b>장기</b> — AI 분류 + 자동 응대 + 업체/로봇 연결</li></ul><p><b>4) 업체·공사·비용 투명관리</b></p><ul><li><b>초기</b> — 견적·사진·영수증 수동 정리</li><li><b>중기</b> — 업체 DB·B/A 보고서 자동화</li><li><b>장기</b> — 업체별 단가·품질·재발률 기반 최적 배정</li></ul><p><b>5) 운영 이력 데이터화</b></p><ul><li><b>초기</b> — 구글시트/노션에 기록</li><li><b>중기</b> — BRING OS에 건물별 이력 축적</li><li><b>장기</b> — 디지털 트윈 + 리스크 점수 + 예측 유지관리</li></ul><h3>🚀 발전 8단계</h3><ol><li><b>사람 기반 운영대행</b> — 사람이 대신 처리 (운영 신뢰)</li><li><b>프로세스 표준화</b> — 누가 해도 같은 방식</li><li><b>소프트웨어 자동화</b> — 반복 업무 시간↓</li><li><b>로봇화</b> — 숨은 공간까지 데이터화</li><li><b>AI화</b> — 분류·추천·예측 보조</li><li><b>직접 이행</b> — 단가·응답속도 개선</li><li><b>건물 유지관리 OS</b> — 데이터 기반 운영 (건물의 운영 기억장치)</li><li><b>Physical Infrastructure AI</b> — 점검·판단·이행 통합</li></ol><h3>🏁 최종 정의</h3><blockquote>BRING은 건물주의 시간·스트레스를 줄이는 운영대행으로 시작해, 민원·수납·업체·공사·재발 데이터를 축적하고, 이를 자동화·로봇화·AI화하여 건물 유지관리 단가를 낮추는 <b>OS 기업</b>으로 진화한다.</blockquote>";
@@ -2044,8 +2090,9 @@ document.getElementById("noticeBtn").addEventListener("click", openNoticePanel);
 document.getElementById("noticeBanner").addEventListener("click", openNoticePanel);
 
 /* ===== 업데이트 알림(What's New) — 새 버전 나오면 자동 팝업 ===== */
-const APP_VERSION = "4.7";
+const APP_VERSION = "4.8";
 const CHANGELOG = [
+  { v:"4.8", d:"2026-06-30", items:["케이스 단계 순서 잠금 추가 — 이전 단계가 완료되지 않으면 다음 단계 진행·자동발송·문서 버튼을 막음","구글폼 자동 등록 케이스도 ①만 자동 완료되도록 조정해 ②를 건너뛰는 완료 상태 방지"] },
   { v:"4.7", d:"2026-06-30", items:["① 온보딩 수집서 버튼을 자동 문서 생성에서 Drive 매칭 파일 열기로 전환","구글폼 건물명·건물 주소로 Drive 폴더의 DOCX 본문 검색 후 1건이면 연결, 없거나 복수면 계약확인보류 표시"] },
   { v:"4.6", d:"2026-06-30", items:["계약 건물 인덱스 매칭 표시 — 구글폼 민원과 계약 건물 정보를 건물명·주소로 연결","케이스 ①에 계약상태·주소·건물주·계약파일 링크 표시, 미매칭은 계약확인보류 배지 표시"] },
   { v:"4.5", d:"2026-06-30", items:["구글폼 민원접수 케이스 표시 지원 — 접수번호·긴급도·문제유형·업체분류·요약 카드 표시","구글폼에서 자동 등록된 케이스는 목록에 구글폼/긴급도 배지 표시"] },
