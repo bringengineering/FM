@@ -11,10 +11,7 @@ const COMPLAINT_CONFIG = {
   CONTRACT_DRIVE_FOLDER_ID: "1818MusPDfVV6znALkWDMGK99NXAlAj8g",
   FIREBASE_DATABASE_URL: "https://bring-fm-default-rtdb.asia-southeast1.firebasedatabase.app",
   FIREBASE_CASES_PATH: "cases",
-  RESPONSE_SHEET_URL: "https://docs.google.com/spreadsheets/d/1HI6KzIMomL6vOUPs8zZDhXHktL1cWRDcg93lflsuojA/edit",
-  FIREBASE_API_KEY_PROPERTY: "FIREBASE_WEB_API_KEY",
-  FIREBASE_AUTOMATION_EMAIL_PROPERTY: "FIREBASE_AUTOMATION_EMAIL",
-  FIREBASE_AUTOMATION_PASSWORD_PROPERTY: "FIREBASE_AUTOMATION_PASSWORD"
+  RESPONSE_SHEET_URL: "https://docs.google.com/spreadsheets/d/1HI6KzIMomL6vOUPs8zZDhXHktL1cWRDcg93lflsuojA/edit"
 };
 
 const OUTPUT_HEADERS = [
@@ -776,8 +773,7 @@ function setCellByHeader_(sheet, row, headerMap, header, value) {
 function writeCaseToFirebase_(caseId, payload) {
   const base = COMPLAINT_CONFIG.FIREBASE_DATABASE_URL.replace(/\/$/, "");
   const path = COMPLAINT_CONFIG.FIREBASE_CASES_PATH.replace(/^\/|\/$/g, "");
-  const idToken = getFirebaseAutomationIdToken_();
-  const url = base + "/" + path + "/" + encodeURIComponent(caseId) + ".json?auth=" + encodeURIComponent(idToken);
+  const url = base + "/" + path + "/" + encodeURIComponent(caseId) + ".json";
   const response = UrlFetchApp.fetch(url, {
     method: "put",
     contentType: "application/json; charset=utf-8",
@@ -789,35 +785,6 @@ function writeCaseToFirebase_(caseId, payload) {
   if (code < 200 || code >= 300) {
     throw new Error("Firebase 저장 실패: HTTP " + code + " / " + response.getContentText());
   }
-}
-
-function getRequiredScriptProperty_(key) {
-  const value = PropertiesService.getScriptProperties().getProperty(key);
-  if (!value) {
-    throw new Error("Apps Script 프로젝트 설정 > 스크립트 속성에 " + key + " 값을 추가해야 합니다.");
-  }
-  return value;
-}
-
-function getFirebaseAutomationIdToken_() {
-  const apiKey = getRequiredScriptProperty_(COMPLAINT_CONFIG.FIREBASE_API_KEY_PROPERTY);
-  const email = getRequiredScriptProperty_(COMPLAINT_CONFIG.FIREBASE_AUTOMATION_EMAIL_PROPERTY);
-  const password = getRequiredScriptProperty_(COMPLAINT_CONFIG.FIREBASE_AUTOMATION_PASSWORD_PROPERTY);
-  const url = "https://identitytoolkit.googleapis.com/v1/accounts:signInWithPassword?key=" + encodeURIComponent(apiKey);
-  const response = UrlFetchApp.fetch(url, {
-    method: "post",
-    contentType: "application/json; charset=utf-8",
-    payload: JSON.stringify({ email, password, returnSecureToken: true }),
-    muteHttpExceptions: true
-  });
-  const code = response.getResponseCode();
-  const body = response.getContentText();
-  if (code < 200 || code >= 300) {
-    throw new Error("Firebase 자동화 계정 로그인 실패: HTTP " + code + " / " + body);
-  }
-  const data = JSON.parse(body);
-  if (!data.idToken) throw new Error("Firebase 자동화 계정 로그인 응답에 idToken이 없습니다.");
-  return data.idToken;
 }
 
 function maskName_(name) {

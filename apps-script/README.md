@@ -12,11 +12,7 @@
    - 현재 설정값은 `1818MusPDfVV6znALkWDMGK99NXAlAj8g`입니다.
 5. 왼쪽 톱니바퀴 `프로젝트 설정`에서 `appsscript.json 매니페스트 파일 표시`를 켭니다.
 6. 왼쪽 파일 목록의 `appsscript.json`에 이 폴더의 `appsscript.json` 내용을 붙여넣습니다.
-7. Firebase `/cases` 보안 규칙을 적용했다면 `프로젝트 설정` -> `스크립트 속성`에 자동화 계정 값을 추가합니다.
-   - `FIREBASE_WEB_API_KEY`: Firebase Web API key
-   - `FIREBASE_AUTOMATION_EMAIL`: Firebase Auth에 만든 자동화 계정 이메일
-   - `FIREBASE_AUTOMATION_PASSWORD`: 자동화 계정 비밀번호
-   - 자동화 계정의 UID는 Realtime Database `/authorizedUsers/{uid}`에 `email`과 `writerAccess: true`로 등록합니다.
+7. 저장 후 함수 선택 드롭다운에서 `setupComplaintAutomation`을 선택해 실행합니다.
 8. 네이버클라우드 SENS 문자 발송을 쓰려면 `프로젝트 설정` -> `스크립트 속성`에 아래 값을 추가합니다.
    - `NCP_SENS_SERVICE_ID`: SENS SMS 서비스 ID
    - `NCP_ACCESS_KEY`: 네이버클라우드 Access Key ID
@@ -24,8 +20,7 @@
    - `NCP_SENS_FROM`: SENS에 등록/승인된 발신번호
    - `NCP_SENS_TEST_TO`: 테스트 문자를 받을 내 번호
    - `SMS_ENABLED`: `true`
-9. 저장 후 함수 선택 드롭다운에서 `setupComplaintAutomation`을 선택합니다.
-10. `실행`을 누르고 Google 권한 승인을 완료합니다.
+9. Google 권한 승인을 완료합니다.
 
 ## 작동 방식
 
@@ -51,12 +46,12 @@
 - 파일명 검색이나 인덱스 시트 fallback은 사용하지 않습니다. DOCX 본문 안에 건물명, 가능하면 주소도 들어 있어야 합니다.
 - NCP SENS 설정이 완료되어 있으면 세입자 연락처와 온보딩 수집서의 건물주 연락처로 접수 확인 문자를 발송합니다.
 - 온보딩 수집서 DOCX 본문에 `건물주 연락처: 010-0000-0000` 형식의 항목을 넣으면 건물주 번호를 자동 추출합니다.
-- Firebase Auth 자동화 계정으로 ID 토큰을 받은 뒤 Realtime Database의 `/cases/{접수번호}`에 케이스를 등록합니다.
+- Realtime Database의 `/cases/{접수번호}`에 케이스를 등록합니다.
 - GitHub.io FM 앱의 `케이스` 화면에서 자동 등록된 민원을 볼 수 있습니다.
 
 ## 개인정보 주의
 
-FM 앱의 `케이스` 화면은 승인된 Google 계정만 볼 수 있도록 보호합니다. 그래도 Apps Script는 세입자 이름, 연락처, 호실을 마스킹해서 Firebase에 보내고, 원본 개인정보와 사진 링크, Drive 온보딩 원본 파일은 Google Sheets/Drive 권한이 있는 계정에서 확인하는 구조를 유지합니다.
+FM 앱의 `케이스` 화면은 현재 별도 인증 없이 열립니다. 그래서 Apps Script는 세입자 이름, 연락처, 호실을 마스킹해서 Firebase에 보내고, 원본 개인정보와 사진 링크, Drive 온보딩 원본 파일은 Google Sheets/Drive 권한이 있는 계정에서 확인하는 구조를 유지합니다.
 
 ## 테스트
 
@@ -86,4 +81,4 @@ FM 앱의 `케이스` 화면은 승인된 Google 계정만 볼 수 있도록 보
 4. 함수 선택에서 `testSensSmsSetup`을 실행합니다.
 5. 테스트 문자가 오면 `setupComplaintAutomation`을 실행해 실제 구글폼 접수 자동 문자 발송을 켭니다.
 
-NCP Secret Key와 Firebase 자동화 계정 비밀번호는 GitHub나 HTML 화면에 절대 넣지 않습니다. Apps Script의 스크립트 속성에만 저장합니다.
+NCP Secret Key는 GitHub나 HTML 화면에 절대 넣지 않습니다. Apps Script의 스크립트 속성에만 저장합니다.

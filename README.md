@@ -7,7 +7,7 @@
 **https://bringengineering.github.io/FM/**
 - 설치·가입 필요 없음 — 링크만 열면 됩니다.
 - **실시간 공유**: 내가 고치면 팀원 화면에 바로 반영돼요 (Firebase).
-- **케이스 화면**: 승인된 Google 계정만 열 수 있습니다.
+- **케이스 화면**: 현재는 별도 인증 없이 바로 열립니다. 보안 방식은 추후 다시 설계합니다.
 - 최신이 안 보이면 새로고침: `Ctrl+Shift+R`
 
 ---
@@ -22,7 +22,7 @@
 - **드래그 중 Shift** → 가로·세로 맞춤 + 같은 간격 점선 추천
 - **단축키**: `N` 새 원 · `L` 연결 · `C` 곡선/직선 · `T` 트리배치 · `F` 화면맞춤 · `E` 편집/보기 · `Ctrl+Z` 되돌리기
 
-> ⚠️ 업무 흐름 보드는 링크를 알면 접근할 수 있어요. 고객/민원 케이스는 Google 로그인 + 승인 명단으로 보호합니다.
+> ⚠️ 업무 흐름 보드와 고객/민원 케이스는 현재 링크를 알면 접근할 수 있어요. 케이스 보안은 추후 다시 설계합니다.
 
 ---
 
@@ -51,9 +51,7 @@ workflow/
   _order  : [ "<보드id>", ... ]                   // 탭 표시 순서
   <보드id>/graph : { nodes: {...}, links: [...] } // 보드별 흐름
   <보드id>/presence : 접속 표시(자동)
-cases/ : 고객/민원 케이스 (승인된 Google 계정만 접근)
-authorizedUsers/<uid> : 케이스 승인 명단
-accessRequests/<uid> : 미승인 계정의 승인 요청
+cases/ : 고객/민원 케이스
 caseSettings/mailEndpoint : 케이스 메일 자동발송 설정
 ```
 **노드(원/네모)** 한 개:
@@ -75,21 +73,8 @@ caseSettings/mailEndpoint : 케이스 메일 자동발송 설정
 
 ---
 
-## 🔒 케이스 보안 설정
+## 🔒 케이스 보안 메모
 
-1. Firebase Console -> Authentication -> Sign-in method에서 Google 로그인을 켭니다.
-2. Project settings -> Web app config의 `apiKey`, `authDomain`, `appId`를 `index.html`의 `firebaseConfig`에 채웁니다.
-3. `database.rules.json` 내용을 Realtime Database Rules에 배포합니다.
-4. 케이스 접근을 허용할 계정은 Authentication의 `uid`를 확인한 뒤 `/authorizedUsers/{uid}`에 아래처럼 등록합니다.
+케이스 보안은 잠시 보류했습니다. 지금 버전은 Firebase Auth, apiKey, 앱ID, 인증번호 웹앱 URL 설정 없이 케이스 버튼이 바로 열립니다.
 
-```json
-{
-  "email": "member@example.com",
-  "displayName": "팀원 이름",
-  "caseAccess": true,
-  "role": "member",
-  "approvedAt": 1710000000000
-}
-```
-
-구글폼 자동 등록용 계정은 같은 경로에 `writerAccess: true`를 추가하고, Apps Script 스크립트 속성에 자동화 계정 정보를 넣어야 `/cases`에 계속 등록됩니다.
+나중에 보안 방식을 확정하면 `database.rules.json`에서 `/cases`와 `/caseSettings`를 다시 잠그고, 앱과 Apps Script 흐름을 그 방식에 맞춰 연결하면 됩니다.
