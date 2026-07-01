@@ -10,6 +10,7 @@
 3. 기본 코드 내용을 지우고 `complaint-intake-to-firebase.gs` 내용을 붙여넣습니다.
 4. 온보딩 수집서 DOCX 파일이 들어 있는 Google Drive 폴더를 연결하려면 코드 상단의 `CONTRACT_DRIVE_FOLDER_ID`에 폴더 ID 또는 폴더 URL을 넣습니다.
    - 현재 설정값은 `1818MusPDfVV6znALkWDMGK99NXAlAj8g`입니다.
+   - ⑥ 견적 파일을 별도 폴더에 저장하려면 `QUOTE_DRIVE_FOLDER_ID`에 폴더 ID를 넣습니다. 비워두면 기존 Drive 폴더 아래 `견적서 회신` 폴더를 자동으로 만듭니다.
 5. 왼쪽 톱니바퀴 `프로젝트 설정`에서 `appsscript.json 매니페스트 파일 표시`를 켭니다.
 6. 왼쪽 파일 목록의 `appsscript.json`에 이 폴더의 `appsscript.json` 내용을 붙여넣습니다.
 7. 저장 후 함수 선택 드롭다운에서 `setupComplaintAutomation`을 선택해 실행합니다.
@@ -52,6 +53,7 @@
 - 온보딩 수집서 DOCX 본문에 `건물주 연락처: 010-0000-0000` 형식의 항목을 넣으면 건물주 번호를 자동 추출합니다.
 - ④에서 선택한 업체가 있으면 ⑤에서 구글폼 첨부 사진의 첫 번째 JPG/JPEG를 SENS MMS로 보내는 견적 요청을 실행할 수 있습니다.
 - MMS 첨부는 SENS 제한 때문에 JPG/JPEG만 사용하며, 300KB를 넘으면 발송하지 않고 ⑤를 진행중/보류로 둡니다.
+- ⑥ 견적 비교에서 업체별 회신 견적 파일을 업로드하면 Drive에 저장되고, 케이스에는 업체명/금액/메모/파일 링크가 표시됩니다.
 - Realtime Database의 `/cases/{접수번호}`에 케이스를 등록합니다.
 - GitHub.io FM 앱의 `케이스` 화면에서 자동 등록된 민원을 볼 수 있습니다.
 
@@ -74,7 +76,7 @@ FM 앱의 `케이스` 화면은 현재 별도 인증 없이 열립니다. 그래
 
 `You do not have permission to call DriveApp.searchFiles`가 보이면 Apps Script 프로젝트에 Drive 읽기 권한이 아직 붙지 않은 상태입니다.
 
-1. `appsscript.json`에 `https://www.googleapis.com/auth/drive.readonly`가 들어 있는지 확인합니다.
+1. `appsscript.json`에 `https://www.googleapis.com/auth/drive`가 들어 있는지 확인합니다.
 2. 저장 후 `setupComplaintAutomation`을 다시 실행합니다.
 3. 권한 승인 창이 뜨면 승인합니다.
 4. 그래도 안 뜨면 함수 선택에서 `authorizeDriveAccess`를 실행해 Drive 권한만 따로 승인합니다.
@@ -88,6 +90,14 @@ FM 앱의 `케이스` 화면은 현재 별도 인증 없이 열립니다. 그래
 5. 테스트 문자가 오면 `setupComplaintAutomation`을 실행해 실제 구글폼 접수 자동 문자 발송을 켭니다.
 
 NCP Secret Key는 GitHub나 HTML 화면에 절대 넣지 않습니다. Apps Script의 스크립트 속성에만 저장합니다.
+
+## ⑥ 견적 파일 업로드 테스트
+
+1. ⑤가 완료되어 ⑥이 `진행중`인지 확인합니다.
+2. ⑥ 메모 버튼을 열고 업체, 견적 금액, 메모, 파일을 선택합니다.
+3. 파일은 PDF, JPG/JPEG, PNG, DOC/DOCX, XLS/XLSX만 가능하며 최대 5MB입니다.
+4. 처음 사용할 때는 `caseAutomationEndpoint`에 Apps Script 웹 앱 URL을 저장합니다. ⑤ MMS 웹앱 URL과 같은 URL을 사용해도 됩니다.
+5. 업로드 후 케이스 ⑥ 카드에 Drive 파일 링크가 표시되는지 확인합니다.
 
 ## ⑤ 업체 MMS 견적 요청 테스트
 

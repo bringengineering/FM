@@ -9,6 +9,7 @@ const COMPLAINT_CONFIG = {
   SPREADSHEET_ID: "1HI6KzIMomL6vOUPs8zZDhXHktL1cWRDcg93lflsuojA",
   SHEET_NAME: "설문지 응답 시트1",
   CONTRACT_DRIVE_FOLDER_ID: "1818MusPDfVV6znALkWDMGK99NXAlAj8g",
+  QUOTE_DRIVE_FOLDER_ID: "",
   FIREBASE_DATABASE_URL: "https://bring-fm-default-rtdb.asia-southeast1.firebasedatabase.app",
   FIREBASE_CASES_PATH: "cases",
   RESPONSE_SHEET_URL: "https://docs.google.com/spreadsheets/d/1HI6KzIMomL6vOUPs8zZDhXHktL1cWRDcg93lflsuojA/edit"
@@ -85,6 +86,9 @@ function doPost(e) {
     const payload = JSON.parse(e && e.postData && e.postData.contents ? e.postData.contents : "{}");
     if (payload.action === "sendVendorEstimateMms") {
       return jsonResponse_(handleVendorEstimateMms_(payload));
+    }
+    if (payload.action === "uploadQuoteFile") {
+      return jsonResponse_(handleQuoteFileUpload_(payload));
     }
     return jsonResponse_({ ok: false, message: "지원하지 않는 action입니다." });
   } catch (err) {
@@ -454,6 +458,165 @@ function makeVendorMmsNote_(result) {
     lines.push("[제외]");
     result.skipped.forEach(item => lines.push("- " + item.name + " / " + item.reason));
   }
+  return lines.join("\n");
+}
+
+function handleQuoteFileUpload_(payload) {
+  const caseId = String(payload.caseId || "").trim();
+  const filePayload = payload.file || {};
+  if (!caseId) return { ok: false, message: "caseId가 없습니다." };
+
+  const casePayload = readCaseFromFirebase_(caseId);
+  if (!casePayload) return { ok: false, message: "Firebase 케이스를 찾지 못했습니다: " + caseId };
+
+  const validation = validateQuoteUpload_(filePayload);
+  if (!validation.ok) {
+    return updateQuoteUploadFailure_(caseId, casePayload, validation.message);
+  }
+
+  const vendorName = String(payload.vendorName || "업체 미지정").trim();
+  const uploadedAt = new Date().toISOString();
+  const quoteId = "q" + Utilities.formatDate(new Date(), "Asia/Seoul", "yyyyMMddHHmmss") + "-" + Utilities.getUuid().slice(0, 8);
+  const folder = getQuoteDriveFolder_(casePayload);
+  const savedName = makeQuoteDriveFileName_(casePayload, vendorName, filePayload.fileName);
+  const bytes = Utilities.base64Decode(String(filePayload.fileBody || "").replace(/^data:[^,]+,/, ""));
+  const mimeType = filePayload.mimeType || inferQuoteMimeType_(filePayload.fileName);
+  const blob = Utilities.newBlob(bytes, mimeType, savedName);
+  const driveFile = folder.createFile(blob);
+
+  const quote = {
+    id: quoteId,
+    vendorId: String(payload.vendorId || ""),
+    vendorName: vendorName,
+    amount: String(payload.amount || "").trim(),
+    memo: String(payload.memo || "").trim(),
+    fileName: driveFile.getName(),
+    fileUrl: driveFile.getUrl(),
+    driveFileId: driveFile.getId(),
+    mimeType: mimeType,
+    size: Number(filePayload.size || bytes.length),
+    uploadedAt: uploadedAt
+  };
+
+  casePayload.quoteFiles = casePayload.quoteFiles && typeof casePayload.quoteFiles === "object" && !Array.isArray(casePayload.quoteFiles)
+    ? casePayload.quoteFiles
+    : {};
+  casePayload.quoteFiles[quoteId] = quote;
+  casePayload.status = casePayload.status || {};
+  if (casePayload.status.c6 !== "done") casePayload.status.c6 = "doing";
+  casePayload.note = casePayload.note || {};
+  casePayload.note.c6 = makeQuoteComparisonNote_(casePayload);
+  casePayload.log = Array.isArray(casePayload.log) ? casePayload.log : [];
+  casePayload.log.unshift("견적 파일 업로드: " + vendorName + " / " + driveFile.getName());
+  if (casePayload.log.length > 30) casePayload.log.length = 30;
+  casePayload.updatedAt = uploadedAt;
+  writeCaseToFirebase_(caseId, casePayload);
+
+  return { ok: true, caseId: caseId, quote: quote, message: "견적 파일 업로드 완료" };
+}
+
+function validateQuoteUpload_(filePayload) {
+  const fileName = String(filePayload.fileName || "").trim();
+  const mimeType = String(filePayload.mimeType || "").trim();
+  const body = String(filePayload.fileBody || "").replace(/^data:[^,]+,/, "");
+  const size = Number(filePayload.size || 0);
+  const maxSize = 5 * 1024 * 1024;
+  const ext = fileName.split(".").pop().toLowerCase();
+  const allowedExts = ["pdf", "jpg", "jpeg", "png", "doc", "docx", "xls", "xlsx"];
+  const allowedMimes = [
+    "application/pdf",
+    "image/jpeg",
+    "image/png",
+    "application/msword",
+    "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+    "application/vnd.ms-excel",
+    "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+  ];
+
+  if (!fileName) return { ok: false, message: "파일명이 없습니다." };
+  if (!body) return { ok: false, message: "파일 내용이 없습니다." };
+  if (size > maxSize) return { ok: false, message: "파일 용량이 5MB를 초과했습니다." };
+  if (!allowedExts.includes(ext) && !allowedMimes.includes(mimeType)) {
+    return { ok: false, message: "지원하지 않는 견적 파일 형식입니다. PDF, JPG, PNG, DOC/DOCX, XLS/XLSX만 업로드할 수 있습니다." };
+  }
+  return { ok: true };
+}
+
+function updateQuoteUploadFailure_(caseId, casePayload, message) {
+  casePayload.status = casePayload.status || {};
+  if (casePayload.status.c6 !== "done") casePayload.status.c6 = "doing";
+  casePayload.note = casePayload.note || {};
+  casePayload.note.c6 = "견적 파일 업로드 실패: " + message;
+  casePayload.log = Array.isArray(casePayload.log) ? casePayload.log : [];
+  casePayload.log.unshift("견적 파일 업로드 실패: " + message);
+  if (casePayload.log.length > 30) casePayload.log.length = 30;
+  casePayload.updatedAt = new Date().toISOString();
+  writeCaseToFirebase_(caseId, casePayload);
+  return { ok: false, caseId: caseId, message: message };
+}
+
+function getQuoteDriveFolder_(casePayload) {
+  const configured = extractDriveId_(COMPLAINT_CONFIG.QUOTE_DRIVE_FOLDER_ID);
+  if (configured) return DriveApp.getFolderById(configured);
+
+  const rootId = extractDriveId_(COMPLAINT_CONFIG.CONTRACT_DRIVE_FOLDER_ID);
+  const root = DriveApp.getFolderById(rootId);
+  const quoteRoot = getOrCreateChildFolder_(root, "견적서 회신");
+  const caseName = safeDriveName_((casePayload.ticketNo || casePayload.id || "case") + "_" + (casePayload.building || "건물"));
+  return getOrCreateChildFolder_(quoteRoot, caseName);
+}
+
+function getOrCreateChildFolder_(parent, name) {
+  const folders = parent.getFoldersByName(name);
+  return folders.hasNext() ? folders.next() : parent.createFolder(name);
+}
+
+function makeQuoteDriveFileName_(casePayload, vendorName, originalName) {
+  const extMatch = String(originalName || "").match(/(\.[A-Za-z0-9]+)$/);
+  const ext = extMatch ? extMatch[1] : "";
+  const base = [
+    casePayload.ticketNo || casePayload.id || "case",
+    vendorName || "업체",
+    "견적"
+  ].join("_");
+  return safeDriveName_(base).slice(0, 120 - ext.length) + ext.toLowerCase();
+}
+
+function safeDriveName_(value) {
+  return String(value || "")
+    .replace(/[\\/:*?"<>|#{}\[\]%~&]/g, "_")
+    .replace(/\s+/g, " ")
+    .trim() || "file";
+}
+
+function inferQuoteMimeType_(fileName) {
+  const ext = String(fileName || "").split(".").pop().toLowerCase();
+  const map = {
+    pdf: "application/pdf",
+    jpg: "image/jpeg",
+    jpeg: "image/jpeg",
+    png: "image/png",
+    doc: "application/msword",
+    docx: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+    xls: "application/vnd.ms-excel",
+    xlsx: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+  };
+  return map[ext] || "application/octet-stream";
+}
+
+function makeQuoteComparisonNote_(casePayload) {
+  const quotes = Object.values(casePayload.quoteFiles || {}).filter(Boolean);
+  if (!quotes.length) return "";
+  const lines = ["[견적 비교]", "업로드 견적: " + quotes.length + "건", ""];
+  quotes.forEach(quote => {
+    lines.push("- " + [
+      quote.vendorName || "업체 미지정",
+      quote.amount ? "금액 " + quote.amount : "금액 미입력",
+      quote.fileName || "파일명 없음"
+    ].join(" / "));
+  });
+  lines.push("");
+  lines.push("비교 후 ⑥ 단계를 직접 완료하면 ⑦ 최적 추천으로 넘어갑니다.");
   return lines.join("\n");
 }
 
