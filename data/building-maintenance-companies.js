@@ -1548,26 +1548,27 @@ window.BRING_BUILDING_MAINTENANCE_DATA = {
       "no": 20,
       "name": "달인누수탐지",
       "category": "누수·배관",
-      "service": "누수탐지",
-      "feature": "비고: 전문장비보유",
-      "operation": "0507-1394-8959 010-2394-8959",
-      "region": "강원 원주시 우산동 821",
+      "service": "주택누수탐사, 아파트누수탐사, 학교누수탐사, 공장누수탐사, 마을상수도누수탐사, 관공서누수탐사, 기업체누수탐사, 소방누수탐사",
+      "feature": "달인누수탐지. 각종 누수탐사 전문, 예약 및 방문접수·출장 가능",
+      "operation": "0507-1394-8959",
+      "region": "강원 원주시 우산공단길 23",
+      "address": "강원 원주시 우산공단길 23",
       "scale": "",
       "url": "https://www.youtube.com/@nusuin",
       "extraUrl": "",
       "naverUrl": "https://naver.me/FG3ERBn5",
-      "phone": "0507-1394-8959 010-2394-8959",
-      "rating": "",
-      "status": "구글시트",
+      "phone": "0507-1394-8959",
+      "rating": "리뷰 37",
+      "status": "사용자 추가",
       "source": "google-sheet",
       "sourceLabel": "원주 유지보수 구글시트",
       "locations": [
         {
-          "label": "우산동",
-          "lat": 37.37,
-          "lng": 127.938,
-          "source": "address-region",
-          "precision": "neighborhood"
+          "label": "우산동 우산공단길",
+          "lat": 37.3819345,
+          "lng": 127.9367981,
+          "source": "address-geocode",
+          "precision": "road"
         }
       ]
     },
@@ -3215,6 +3216,267 @@ window.BRING_BUILDING_MAINTENANCE_DATA = {
           "precision": "road"
         }
       ]
+    },
+    {
+      "id": "sheet-078",
+      "no": 78,
+      "name": "명품누수탐지공사",
+      "category": "누수·배관",
+      "service": "누수탐지, 도누수, 배관교체",
+      "feature": "원주 태학교길 소재 누수탐지 공사 업체",
+      "operation": "033-744-9387",
+      "region": "강원 원주시 태학교길 8",
+      "address": "강원 원주시 태학교길 8",
+      "scale": "",
+      "url": "",
+      "extraUrl": "",
+      "naverUrl": "https://naver.me/GFBKlKqY",
+      "phone": "033-744-9387",
+      "rating": "리뷰 1",
+      "status": "사용자 추가",
+      "source": "google-sheet",
+      "sourceLabel": "원주 유지보수 직접추가",
+      "locations": [
+        {
+          "label": "평원동 태학교길",
+          "lat": 37.3534867,
+          "lng": 127.9524209,
+          "source": "address-geocode",
+          "precision": "road"
+        }
+      ]
+    },
+    {
+      "id": "sheet-079",
+      "no": 79,
+      "name": "번개누수탐지",
+      "category": "누수·배관",
+      "service": "누수탐지",
+      "feature": "원주 학성길 소재 누수탐지 업체",
+      "operation": "033-744-7804",
+      "region": "강원 원주시 학성길 38",
+      "address": "강원 원주시 학성길 38",
+      "scale": "",
+      "url": "",
+      "extraUrl": "",
+      "naverUrl": "https://naver.me/xzHykzvc",
+      "phone": "033-744-7804",
+      "rating": "리뷰 1",
+      "status": "사용자 추가",
+      "source": "google-sheet",
+      "sourceLabel": "원주 유지보수 직접추가",
+      "locations": [
+        {
+          "label": "단계동 학성길",
+          "lat": 37.3541389,
+          "lng": 127.9384707,
+          "source": "address-geocode",
+          "precision": "road"
+        }
+      ]
+    },
+    {
+      "id": "sheet-080",
+      "no": 80,
+      "name": "하수구막힘뚫음",
+      "category": "누수·배관",
+      "service": "싱크대 막힘, 하수구 문제, 변기 막힘",
+      "feature": "각종 싱크대 막힘, 하수구 관련 문제, 변기막힘 증상 해결. 방문상담 가능",
+      "operation": "010-6777-3322",
+      "region": "강원 원주시 백간길 55 2층 201-15호",
+      "address": "강원 원주시 백간길 55 2층 201-15호",
+      "scale": "변동",
+      "url": "https://blog.naver.com/red982034",
+      "extraUrl": "",
+      "naverUrl": "https://naver.me/xwm1NBhI",
+      "phone": "010-6777-3322",
+      "rating": "리뷰 400",
+      "status": "사용자 추가",
+      "source": "google-sheet",
+      "sourceLabel": "원주 유지보수 직접추가",
+      "locations": [
+        {
+          "label": "단계동 백간길",
+          "lat": 37.351976,
+          "lng": 127.929768,
+          "source": "address-geocode",
+          "precision": "building"
+        }
+      ]
+    },
+    {
+      "id": "sheet-081",
+      "no": 81,
+      "name": "달인설비 하수구막힘",
+      "category": "누수·배관",
+      "service": "하수구 막힘, 싱크대 막힘, 변기 막힘, 배관공사, 고압세척, 누수탐지, 언수도 녹임",
+      "feature": "오시기 전에 꼭 전화 부탁. 24시간 하수구·싱크대·변기 막힘 해결",
+      "operation": "",
+      "region": "강원 원주시 백간길 55 201-18호",
+      "address": "강원 원주시 백간길 55 201-18호",
+      "scale": "변동",
+      "url": "https://wjhasugu.aidc.kr",
+      "extraUrl": "",
+      "naverUrl": "https://naver.me/GI3huT9K",
+      "phone": "",
+      "rating": "리뷰 128",
+      "status": "사용자 추가",
+      "source": "google-sheet",
+      "sourceLabel": "원주 유지보수 직접추가",
+      "locations": [
+        {
+          "label": "단계동 백간길",
+          "lat": 37.351976,
+          "lng": 127.929768,
+          "source": "address-geocode",
+          "precision": "building"
+        }
+      ]
+    },
+    {
+      "id": "sheet-082",
+      "no": 82,
+      "name": "해결누수종합설비",
+      "category": "누수·배관",
+      "service": "누수 검사, 누수 탐지, 청음 누수 탐지, 가스식 누수 탐지, 열화상 내시경 검사, 방수 공사",
+      "feature": "원주 누수 해결 전문. 24시간 영업, 주차 가능",
+      "operation": "010-4510-7484",
+      "region": "강원 원주시 현충로 234",
+      "address": "강원 원주시 현충로 234",
+      "scale": "변동",
+      "url": "https://blog.naver.com/nusu_solution",
+      "extraUrl": "",
+      "naverUrl": "https://naver.me/xcnafLDx",
+      "phone": "010-4510-7484",
+      "rating": "리뷰 194",
+      "status": "사용자 추가",
+      "source": "google-sheet",
+      "sourceLabel": "원주 유지보수 직접추가",
+      "locations": [
+        {
+          "label": "태장동 현충로",
+          "lat": 37.3793399,
+          "lng": 127.9486778,
+          "source": "address-geocode",
+          "precision": "road"
+        }
+      ]
+    },
+    {
+      "id": "sheet-083",
+      "no": 83,
+      "name": "다뚫배관클리닉",
+      "category": "누수·배관",
+      "service": "싱크대 배관 막힘, 공용 배관 막힘, 고압세척, 관로탐지, 누수탐지",
+      "feature": "상가, 펜션, 주택, 아파트 하수구·변기·싱크대 막힘과 고압세척 전문",
+      "operation": "0507-1404-7481",
+      "region": "강원 원주시 흥양로51번길 20 404동 207호",
+      "address": "강원 원주시 흥양로51번길 20 404동 207호",
+      "scale": "변동",
+      "url": "https://www.facebook.com/jaemyeong7452",
+      "extraUrl": "유튜브 · 인스타그램 · 블로그",
+      "naverUrl": "https://naver.me/xDJZ1RG4",
+      "phone": "0507-1404-7481",
+      "rating": "리뷰 143",
+      "status": "사용자 추가",
+      "source": "google-sheet",
+      "sourceLabel": "원주 유지보수 직접추가",
+      "locations": [
+        {
+          "label": "태장동 흥양로51번길",
+          "lat": 37.385368,
+          "lng": 127.9566,
+          "source": "address-geocode",
+          "precision": "building"
+        }
+      ]
+    },
+    {
+      "id": "sheet-084",
+      "no": 84,
+      "name": "누수탐정",
+      "category": "누수·배관",
+      "service": "누수탐지",
+      "feature": "흥양로 두진백로아파트 소재 누수탐정. 22시까지 영업",
+      "operation": "0507-1411-1597",
+      "region": "강원 원주시 흥양로 64 두진백로아파트 102동 1309호",
+      "address": "강원 원주시 흥양로 64 두진백로아파트 102동 1309호",
+      "scale": "",
+      "url": "",
+      "extraUrl": "",
+      "naverUrl": "https://naver.me/5pqnJSSy",
+      "phone": "0507-1411-1597",
+      "rating": "리뷰 1",
+      "status": "사용자 추가",
+      "source": "google-sheet",
+      "sourceLabel": "원주 유지보수 직접추가",
+      "locations": [
+        {
+          "label": "태장동 흥양로",
+          "lat": 37.3832536,
+          "lng": 127.954515,
+          "source": "address-geocode",
+          "precision": "road"
+        }
+      ]
+    },
+    {
+      "id": "sheet-085",
+      "no": 85,
+      "name": "하수구막힘 싱크대막힘",
+      "category": "누수·배관",
+      "service": "하수구 막힘, 싱크대 막힘, 배관내시경",
+      "feature": "복원상가길 소재 하수구·싱크대 막힘 전문. 방문상담 가능",
+      "operation": "0507-1388-7090",
+      "region": "강원 원주시 북원상가길 13 북원상가 2층 13-에이07호",
+      "address": "강원 원주시 북원상가길 13 북원상가 2층 13-에이07호",
+      "scale": "변동",
+      "url": "",
+      "extraUrl": "",
+      "naverUrl": "https://naver.me/G0DuZZPD",
+      "phone": "0507-1388-7090",
+      "rating": "리뷰 919",
+      "status": "사용자 추가",
+      "source": "google-sheet",
+      "sourceLabel": "원주 유지보수 직접추가",
+      "locations": [
+        {
+          "label": "태장동 북원상가길",
+          "lat": 37.3841401,
+          "lng": 127.9509566,
+          "source": "address-geocode",
+          "precision": "road"
+        }
+      ]
+    },
+    {
+      "id": "sheet-086",
+      "no": 86,
+      "name": "고고설비 고압세척",
+      "category": "누수·배관",
+      "service": "하수구 싱크대 막힘 뚫음, 하수구 고압세척, 변기 막힘 뚫음, 누수탐지 및 수리, 언수도 녹임 해빙, 배관 청소, 보일러 분배기 온수기 설치 교체, 부동전 교체, 수전 변기 교체",
+      "feature": "복원상가 2층 소재 하수구 전문 업체. 내시경, 관로탐지, 고압세척, 가스탐지 최신 장비 장착",
+      "operation": "",
+      "region": "강원 원주시 북원상가길 13 북원상가 2층 13-비08호",
+      "address": "강원 원주시 북원상가길 13 북원상가 2층 13-비08호",
+      "scale": "변동",
+      "url": "",
+      "extraUrl": "",
+      "naverUrl": "https://naver.me/FBMU1fry",
+      "phone": "",
+      "rating": "리뷰 216",
+      "status": "사용자 추가",
+      "source": "google-sheet",
+      "sourceLabel": "원주 유지보수 직접추가",
+      "locations": [
+        {
+          "label": "태장동 북원상가길",
+          "lat": 37.3841401,
+          "lng": 127.9509566,
+          "source": "address-geocode",
+          "precision": "road"
+        }
+      ]
     }
   ],
   "categories": [
@@ -3244,9 +3506,9 @@ window.BRING_BUILDING_MAINTENANCE_DATA = {
   ],
   "summary": {
     "excel": 49,
-    "googleSheet": 77,
-    "total": 126,
-    "mapped": 96,
+    "googleSheet": 86,
+    "total": 135,
+    "mapped": 105,
     "geocoded": 0
   }
 };
