@@ -1994,38 +1994,57 @@ function shouldFillClassificationNote(c){
   if(note.includes("[민원·요청 분류]")) return false;
   return /^긴급도:\s*[\s\S]*업체 분류:\s*[\s\S]*판단 근거:/m.test(note);
 }
+function applyNextStepProgress(c, messages){
+  if(!c || !c.status) return false;
+  let changed=false;
+  CASE_STEPS.forEach((s,i)=>{
+    const next=CASE_STEPS[i+1];
+    if(!next) return;
+    if(c.status[s.k]==="done" && !c.status[next.k]){
+      c.status[next.k]="doing";
+      changed=true;
+      if(messages) messages.push(`${s.t} 완료 후 ${next.t} 진행중 전환`);
+    }
+  });
+  return changed;
+}
 function applyStepAutomation(c, logEnabled){
   if(!c || !c.status) return false;
   let changed=false;
   const messages=[];
   c.note=c.note||{};
+  if(applyNextStepProgress(c, messages)) changed=true;
   if(c.status.c2==="done"){
     let stepChanged=false;
+    let cardChanged=false;
     if(shouldFillConsultationNote(c)){
       c.note.c3=makeConsultationNote(c);
       changed=true;
       stepChanged=true;
+      cardChanged=true;
     }
     if(c.status.c3!=="done" && c.status.c3!=="doing"){
       c.status.c3="doing";
       changed=true;
       stepChanged=true;
     }
-    if(stepChanged) messages.push("② 완료 후 ③ 상담·요청 파악 자동 준비");
+    if(cardChanged) messages.push("③ 상담카드 자동 생성");
   }
   if(c.status.c3==="done"){
     let stepChanged=false;
+    let cardChanged=false;
     if(shouldFillClassificationNote(c)){
       c.note.c4=makeClassificationNote(c);
       changed=true;
       stepChanged=true;
+      cardChanged=true;
     }
     if(c.status.c4!=="done" && c.status.c4!=="doing"){
       c.status.c4="doing";
       changed=true;
       stepChanged=true;
     }
-    if(stepChanged) messages.push("③ 완료 후 ④ 민원·요청 분류 자동초안 준비");
+    if(cardChanged) messages.push("④ 민원·요청 분류 자동초안 생성");
   }
   if(logEnabled) messages.forEach(msg=>caseLog(c, msg));
   return changed;
@@ -2327,8 +2346,9 @@ document.getElementById("noticeBtn").addEventListener("click", openNoticePanel);
 document.getElementById("noticeBanner").addEventListener("click", openNoticePanel);
 
 /* ===== 업데이트 알림(What's New) — 새 버전 나오면 자동 팝업 ===== */
-const APP_VERSION = "4.13";
+const APP_VERSION = "4.14";
 const CHANGELOG = [
+  { v:"4.14", d:"2026-07-01", items:["완료된 단계의 바로 다음 단계를 자동으로 진행중 표시","새 구글폼 접수도 ① 완료 후 ② 접수확인 발송이 진행중으로 시작"] },
   { v:"4.13", d:"2026-07-01", items:["③ 상담·요청 파악 완료 후 ④ 민원·요청 분류 자동초안 생성","④ 분류카드에 업체 분류·긴급도·현장 방문·견적 필요·업체 요청용 요약 표시"] },
   { v:"4.12", d:"2026-07-01", items:["③ 상담·요청 파악 메모창을 상담카드 내용에 맞춰 자동 확장","상담카드 메모는 더 넓은 시작 높이와 읽기 쉬운 줄간격으로 표시"] },
   { v:"4.11", d:"2026-07-01", items:["② 접수확인 발송 완료 후 ③ 상담·요청 파악을 자동 진행중으로 전환","구글폼 접수 내용을 바탕으로 ③ 메모에 상담카드 자동 생성"] },
