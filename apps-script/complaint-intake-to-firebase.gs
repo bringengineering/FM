@@ -749,6 +749,54 @@ function consultationWarnings_(description, photo, visitTime, analysis) {
   return warnings;
 }
 
+function makeClassificationNote_(ticketNo, record, analysis) {
+  const building = readField_(record, ["건물명", "건물"]) || "건물 미입력";
+  const room = readField_(record, ["호실"]) || "호실 미입력";
+  const issueType = readField_(record, ["문제 유형"]) || "문제 유형 미입력";
+  const vendorType = analysis.vendorType || "관리자 확인";
+  const urgency = analysis.urgency || "미확인";
+  const siteVisit = classificationSiteVisit_(issueType, vendorType, urgency);
+  const quoteNeed = classificationQuoteNeed_(vendorType);
+  const reasons = classificationReasonLines_(analysis);
+
+  return [
+    "[민원·요청 분류]",
+    "문제 대분류: " + issueType,
+    "업체 분류: " + vendorType,
+    "긴급도: " + urgency,
+    "현장 방문: " + siteVisit,
+    "견적 필요: " + quoteNeed,
+    "",
+    "[판단 근거]",
+    reasons.map(item => "- " + item).join("\n"),
+    "",
+    "[⑤ 업체 요청용 요약]",
+    building + " " + room + " " + issueType + " 문제입니다.",
+    vendorType + " 업체에 현장 확인 및 견적 요청이 필요합니다.",
+    "접수번호: " + ticketNo
+  ].join("\n").replace(/\n+$/, "");
+}
+
+function classificationSiteVisit_(issueType, vendorType, urgency) {
+  const text = [issueType, vendorType].join(" ");
+  if (urgency === "긴급") return "필요";
+  if (/전기|누수|배관|보일러|에어컨|도어락|출입|창호|문|청소|방역|공용부/.test(text)) return "필요";
+  return "확인 필요";
+}
+
+function classificationQuoteNeed_(vendorType) {
+  return vendorType === "관리자 확인" ? "확인 필요" : "필요";
+}
+
+function classificationReasonLines_(analysis) {
+  const lines = [];
+  if (analysis && analysis.reason) lines.push(analysis.reason);
+  if (analysis && analysis.urgency === "긴급") lines.push("긴급도 우선 확인 후 업체 연결이 필요합니다.");
+  if (analysis && analysis.vendorType === "관리자 확인") lines.push("업체 분류가 명확하지 않아 관리자 확인이 필요합니다.");
+  if (!lines.length) lines.push("구글폼 접수 내용과 상담카드 기준으로 1차 분류했습니다.");
+  return lines;
+}
+
 function buildCasePayload_(ticketNo, record, analysis, contractMatch, row, sheet) {
   const timestamp = readRawField_(record, ["타임스탬프", "Timestamp"]);
   const receivedAt = dateFromValue_(timestamp).toISOString();
@@ -796,7 +844,7 @@ function buildCasePayload_(ticketNo, record, analysis, contractMatch, row, sheet
     note: {
       c1: c1Note,
       c3: makeConsultationNote_(ticketNo, record, analysis, sheetUrl),
-      c4: "긴급도: " + analysis.urgency + "\n업체 분류: " + analysis.vendorType + "\n판단 근거: " + analysis.reason,
+      c4: makeClassificationNote_(ticketNo, record, analysis),
       c11: visitTime ? "방문 가능 시간: " + visitTime : ""
     },
     log: [

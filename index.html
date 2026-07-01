@@ -290,6 +290,7 @@
   .cv-notebtn.has{ background:#fff7e6; border-color:#f0dca0; }
   .cv-note{ width:100%; box-sizing:border-box; margin:5px 0 0; border:1px solid var(--line); border-radius:9px; padding:10px 12px; font-size:13px; font-family:inherit; line-height:1.58; min-height:64px; resize:none; overflow:hidden; }
   .cv-note.consultation{ min-height:260px; background:#fffdf8; border-color:#f0dca0; }
+  .cv-note.classification{ min-height:240px; background:#f8fbff; border-color:#b8d4ff; }
   .cv-step .lbl{ flex:1; font-size:13.5px; }
   .cv-act{ border:1px solid #2bcbba; background:#e9fbf8; color:#0c8478; border-radius:8px; padding:5px 11px; font-size:12.5px; cursor:pointer; font-family:inherit; white-space:nowrap; }
   .cv-act .tag{ font-size:10px; opacity:.7; margin-left:3px; }
@@ -1945,19 +1946,88 @@ function shouldFillConsultationNote(c){
   const summary=String(c.summary||"").trim();
   return !!summary && note===summary;
 }
+function classificationSiteVisit(c){
+  const text=[c.issueType,c.vendorType,c.summary,c.analysisReason].filter(Boolean).join(" ");
+  if(c.urgency==="긴급") return "필요";
+  if(/전기|누수|배관|보일러|에어컨|도어락|출입|창호|문|청소|방역|공용부/.test(text)) return "필요";
+  return "확인 필요";
+}
+function classificationQuoteNeed(c){
+  return c.vendorType==="관리자 확인" ? "확인 필요" : "필요";
+}
+function classificationReasonLines(c){
+  const lines=[];
+  if(c.analysisReason) lines.push(c.analysisReason);
+  if(c.urgency==="긴급") lines.push("긴급도 우선 확인 후 업체 연결이 필요합니다.");
+  if(c.vendorType==="관리자 확인") lines.push("업체 분류가 명확하지 않아 관리자 확인이 필요합니다.");
+  if(c.statusValue==="계약확인보류") lines.push("계약 확인 보류 상태이므로 온보딩 파일 또는 계약 정보를 함께 확인해야 합니다.");
+  if(!lines.length) lines.push("구글폼 접수 내용과 상담카드 기준으로 1차 분류했습니다.");
+  return lines;
+}
+function makeClassificationNote(c){
+  const building=c.building||"건물 미입력";
+  const room=c.room||"호실 미입력";
+  const issueType=c.issueType||"문제 유형 미입력";
+  const vendorType=c.vendorType||"관리자 확인";
+  const urgency=c.urgency||"미확인";
+  const reasons=classificationReasonLines(c);
+  return [
+    "[민원·요청 분류]",
+    "문제 대분류: " + issueType,
+    "업체 분류: " + vendorType,
+    "긴급도: " + urgency,
+    "현장 방문: " + classificationSiteVisit(c),
+    "견적 필요: " + classificationQuoteNeed(c),
+    "",
+    "[판단 근거]",
+    reasons.map(item => "- " + item).join("\n"),
+    "",
+    "[⑤ 업체 요청용 요약]",
+    building + " " + room + " " + issueType + " 문제입니다.",
+    vendorType + " 업체에 현장 확인 및 견적 요청이 필요합니다.",
+    "접수번호: " + (c.ticketNo || c.id || "미발급")
+  ].join("\n").replace(/\n+$/, "");
+}
+function shouldFillClassificationNote(c){
+  const note=String(((c.note||{}).c4)||"").trim();
+  if(!note) return true;
+  if(note.includes("[민원·요청 분류]")) return false;
+  return /^긴급도:\s*[\s\S]*업체 분류:\s*[\s\S]*판단 근거:/m.test(note);
+}
 function applyStepAutomation(c, logEnabled){
-  if(!c || !c.status || c.status.c2!=="done") return false;
+  if(!c || !c.status) return false;
   let changed=false;
+  const messages=[];
   c.note=c.note||{};
-  if(shouldFillConsultationNote(c)){
-    c.note.c3=makeConsultationNote(c);
-    changed=true;
+  if(c.status.c2==="done"){
+    let stepChanged=false;
+    if(shouldFillConsultationNote(c)){
+      c.note.c3=makeConsultationNote(c);
+      changed=true;
+      stepChanged=true;
+    }
+    if(c.status.c3!=="done" && c.status.c3!=="doing"){
+      c.status.c3="doing";
+      changed=true;
+      stepChanged=true;
+    }
+    if(stepChanged) messages.push("② 완료 후 ③ 상담·요청 파악 자동 준비");
   }
-  if(c.status.c3!=="done" && c.status.c3!=="doing"){
-    c.status.c3="doing";
-    changed=true;
+  if(c.status.c3==="done"){
+    let stepChanged=false;
+    if(shouldFillClassificationNote(c)){
+      c.note.c4=makeClassificationNote(c);
+      changed=true;
+      stepChanged=true;
+    }
+    if(c.status.c4!=="done" && c.status.c4!=="doing"){
+      c.status.c4="doing";
+      changed=true;
+      stepChanged=true;
+    }
+    if(stepChanged) messages.push("③ 완료 후 ④ 민원·요청 분류 자동초안 준비");
   }
-  if(changed && logEnabled) caseLog(c, "② 완료 후 ③ 상담·요청 파악 자동 준비");
+  if(logEnabled) messages.forEach(msg=>caseLog(c, msg));
   return changed;
 }
 function applyAllStepAutomation(src, logEnabled){
@@ -2168,7 +2238,7 @@ function renderCaseList(){
 }
 function autoGrowCaseNote(el){
   if(!el) return;
-  const min=el.dataset.note==="c3" ? 260 : 64;
+  const min=(el.dataset.note==="c3" || el.dataset.note==="c4") ? 260 : 64;
   el.style.height="auto";
   el.style.height=Math.max(min, el.scrollHeight + 2) + "px";
 }
@@ -2197,7 +2267,8 @@ function renderCaseDetail(){
       const dc=onboardingDocButtonHTML(c,s,locked);
       const tb=caseTestMode?`<button class="cv-testbtn" data-testdone="${s.k}" title="이 단계까지 테스트 완료 처리">테스트 완료</button>`:"";
       const nb=`<button class="cv-notebtn ${note?'has':''}" data-notetoggle="${s.k}" title="메모">📝</button>`;
-      const box=open?`<textarea class="cv-note ${s.k==='c3'?'consultation':''}" data-note="${s.k}" placeholder="이 단계 메모 (민원 내용·선정 업체·금액 등)">${esc(note)}</textarea>`:"";
+      const noteClass=s.k==='c3'?'consultation':s.k==='c4'?'classification':'';
+      const box=open?`<textarea class="cv-note ${noteClass}" data-note="${s.k}" placeholder="이 단계 메모 (민원 내용·선정 업체·금액 등)">${esc(note)}</textarea>`:"";
       return `<div class="cv-stepwrap"><div class="cv-step ${locked?'locked':st}">${chip}<div class="lbl">${esc(s.t)}</div>${act}${dc}${tb}${nb}</div>${box}</div>`;
     }).join("")+
     `<button class="cv-del" id="cvDel">🗑 이 케이스 삭제</button>`+
@@ -2256,8 +2327,9 @@ document.getElementById("noticeBtn").addEventListener("click", openNoticePanel);
 document.getElementById("noticeBanner").addEventListener("click", openNoticePanel);
 
 /* ===== 업데이트 알림(What's New) — 새 버전 나오면 자동 팝업 ===== */
-const APP_VERSION = "4.12";
+const APP_VERSION = "4.13";
 const CHANGELOG = [
+  { v:"4.13", d:"2026-07-01", items:["③ 상담·요청 파악 완료 후 ④ 민원·요청 분류 자동초안 생성","④ 분류카드에 업체 분류·긴급도·현장 방문·견적 필요·업체 요청용 요약 표시"] },
   { v:"4.12", d:"2026-07-01", items:["③ 상담·요청 파악 메모창을 상담카드 내용에 맞춰 자동 확장","상담카드 메모는 더 넓은 시작 높이와 읽기 쉬운 줄간격으로 표시"] },
   { v:"4.11", d:"2026-07-01", items:["② 접수확인 발송 완료 후 ③ 상담·요청 파악을 자동 진행중으로 전환","구글폼 접수 내용을 바탕으로 ③ 메모에 상담카드 자동 생성"] },
   { v:"4.10", d:"2026-07-01", items:["케이스 테스트 모드 추가 — 진행률 옆 토글을 켜면 각 단계 오른쪽에 테스트 완료 버튼 표시","테스트 완료 버튼은 선택 단계까지 한 번에 완료 처리하고 이후 단계는 대기로 정리"] },
