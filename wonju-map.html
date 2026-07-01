@@ -574,6 +574,11 @@
       return CATEGORY_COLORS[category] || "#344054";
     }
 
+    function markerColorFor(company) {
+      if (sourceKey(company) === "electric-vendor") return "#f59e0b";
+      return company.source === "google-sheet" ? colorFor(company.category) : "#111827";
+    }
+
     function sourceKey(company) {
       if (company.source !== "google-sheet") return "excel";
       return ELECTRIC_VENDOR_IDS.has(company.id) ? "electric-vendor" : "google-sheet";
@@ -712,7 +717,7 @@
     function markerContent(company, label) {
       const initial = company.name.trim().slice(0, 1) || "B";
       const sClass = sourceClass(company);
-      const color = company.source === "google-sheet" ? colorFor(company.category) : "#111827";
+      const color = markerColorFor(company);
       return `<div class="pin ${sClass}" title="${esc(company.name)}" style="background:${color}"><span>${esc(initial)}</span></div>`;
     }
 
