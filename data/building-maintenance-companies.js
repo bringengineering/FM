@@ -2691,6 +2691,238 @@ window.BRING_BUILDING_MAINTENANCE_DATA = {
           "precision": "building"
         }
       ]
+    },
+    {
+      "id": "sheet-060",
+      "no": 60,
+      "name": "하수구막힘 단관초교길",
+      "category": "누수·배관",
+      "service": "하수구 막힘, 변기 막힘, 싱크대 막힘, 해동",
+      "feature": "원주 전지역 24시간 출장 가능. 최신 장비 보유, 하수구·변기·싱크대 막힘 전문",
+      "operation": "0507-1348-1738",
+      "region": "강원 원주시 단관초교길 26-6 101-w1호",
+      "address": "강원 원주시 단관초교길 26-6 101-w1호",
+      "scale": "변동",
+      "url": "",
+      "extraUrl": "",
+      "naverUrl": "https://naver.me/GzdJfV3w",
+      "phone": "0507-1348-1738",
+      "rating": "",
+      "status": "사용자 추가",
+      "source": "google-sheet",
+      "sourceLabel": "원주 유지보수 직접추가",
+      "locations": [
+        {
+          "label": "단구동 단관초교길",
+          "lat": 37.3166566,
+          "lng": 127.963621,
+          "source": "address-geocode",
+          "precision": "building"
+        }
+      ]
+    },
+    {
+      "id": "sheet-061",
+      "no": 61,
+      "name": "하수구행님",
+      "category": "누수·배관",
+      "service": "하수구 막힘, 싱크대 막힘, 변기 막힘, 고압세척, 관로탐지, 수전교체, 부속교체",
+      "feature": "원주·횡성·충주·여주·제천 지역 하수구 막힘, 변기 막힘, 싱크대 막힘 전문",
+      "operation": "0507-1368-8671",
+      "region": "강원 원주시 나비허리길 120-6 201호",
+      "address": "강원 원주시 나비허리길 120-6 201호",
+      "scale": "변동",
+      "url": "",
+      "extraUrl": "",
+      "naverUrl": "https://naver.me/xhPJ2wzR",
+      "phone": "0507-1368-8671",
+      "rating": "리뷰 150",
+      "status": "사용자 추가",
+      "source": "google-sheet",
+      "sourceLabel": "원주 유지보수 직접추가",
+      "locations": [
+        {
+          "label": "단구동 나비허리길",
+          "lat": 37.3206453,
+          "lng": 127.9622577,
+          "source": "address-geocode",
+          "precision": "building"
+        }
+      ]
+    },
+    {
+      "id": "sheet-062",
+      "no": 62,
+      "name": "하수구막힘 뚫는곳역류",
+      "category": "누수·배관",
+      "service": "하수구 막힘, 싱크대 막힘, 변기 막힘, 고압세척, 배관내시경",
+      "feature": "하수구·싱크대·변기 막힘과 역류 문제 대응. 예약, 방문접수·출장, 간편결제, 주차 가능",
+      "operation": "0507-1391-5067",
+      "region": "강원 원주시 라옹정길 51-3 3층",
+      "address": "강원 원주시 라옹정길 51-3 3층",
+      "scale": "변동",
+      "url": "",
+      "extraUrl": "",
+      "naverUrl": "https://naver.me/GB3xMYJi",
+      "phone": "0507-1391-5067",
+      "rating": "",
+      "status": "사용자 추가",
+      "source": "google-sheet",
+      "sourceLabel": "원주 유지보수 직접추가",
+      "locations": [
+        {
+          "label": "단구동 라옹정길",
+          "lat": 37.3200507,
+          "lng": 127.9611898,
+          "source": "address-geocode",
+          "precision": "building"
+        }
+      ]
+    },
+    {
+      "id": "sheet-063",
+      "no": 63,
+      "name": "원주배관클린",
+      "category": "누수·배관",
+      "service": "변기 막힘, 배관공사, 언수도 녹임, 누수탐지, 고압세척, 싱크대 막힘, 하수구 막힘",
+      "feature": "원주 하수구 막힘, 싱크대 막힘, 변기 막힘, 배관 관리 전문. 작업 후 3개월 A/S, 고압세척 1년 보증",
+      "operation": "033-900-0482",
+      "region": "강원 원주시 강변로 119 104동 302호",
+      "address": "강원 원주시 강변로 119 104동 302호",
+      "scale": "변동",
+      "url": "",
+      "extraUrl": "",
+      "naverUrl": "https://naver.me/Fr06blTr",
+      "phone": "033-900-0482",
+      "rating": "리뷰 8",
+      "status": "사용자 추가",
+      "source": "google-sheet",
+      "sourceLabel": "원주 유지보수 직접추가",
+      "locations": [
+        {
+          "label": "학성동 강변로",
+          "lat": 37.3608242,
+          "lng": 127.9496115,
+          "source": "address-geocode",
+          "precision": "road"
+        }
+      ]
+    },
+    {
+      "id": "sheet-064",
+      "no": 64,
+      "name": "달인하수구",
+      "category": "누수·배관",
+      "service": "하수구 막힘 뚫음, 싱크대 막힘 뚫음, 변기 막힘 뚫음, 하수구 고압세척, 수도난방 누수탐지, 배관내시경검사",
+      "feature": "원주시 지역 하수도 전문. 예약 가능, 무료 견적상담 쿠폰 제공",
+      "operation": "",
+      "region": "강원 원주시 서원대로 500",
+      "address": "강원 원주시 서원대로 500",
+      "scale": "변동",
+      "url": "",
+      "extraUrl": "",
+      "naverUrl": "https://naver.me/xFL6oSbn",
+      "phone": "",
+      "rating": "리뷰 434",
+      "status": "사용자 추가",
+      "source": "google-sheet",
+      "sourceLabel": "원주 유지보수 직접추가",
+      "locations": [
+        {
+          "label": "단구동 서원대로",
+          "lat": 37.3253502,
+          "lng": 127.9576053,
+          "source": "address-geocode",
+          "precision": "building"
+        }
+      ]
+    },
+    {
+      "id": "sheet-065",
+      "no": 65,
+      "name": "달인하수구고압세척",
+      "category": "누수·배관",
+      "service": "하수구 막힘 뚫음, 싱크대 막힘 뚫음, 변기 막힘 뚫음, 하수구 고압세척, 수도난방 누수탐지, 배관내시경검사",
+      "feature": "미세누수 위치탐지, 하수구·변기·싱크대 해결 전문 업체",
+      "operation": "0507-1355-8544",
+      "region": "강원 원주시 나비허리길 5",
+      "address": "강원 원주시 나비허리길 5",
+      "scale": "변동",
+      "url": "",
+      "extraUrl": "",
+      "naverUrl": "https://naver.me/F5aHoFad",
+      "phone": "0507-1355-8544",
+      "rating": "리뷰 298",
+      "status": "사용자 추가",
+      "source": "google-sheet",
+      "sourceLabel": "원주 유지보수 직접추가",
+      "locations": [
+        {
+          "label": "단구동 나비허리길",
+          "lat": 37.3242518,
+          "lng": 127.9594627,
+          "source": "address-geocode",
+          "precision": "road"
+        }
+      ]
+    },
+    {
+      "id": "sheet-066",
+      "no": 66,
+      "name": "가나누수탐지설비",
+      "category": "누수·배관",
+      "service": "누수탐지설비, 난방누수, 매설관 누수탐지, 수도배관 누수탐지",
+      "feature": "누수탐지 전문 설비 업체. 난방누수, 매설관 누수탐지, 수도배관 누수탐지 대응",
+      "operation": "033-762-8912",
+      "region": "강원 원주시 남원로527번길 6-42",
+      "address": "강원 원주시 남원로527번길 6-42",
+      "scale": "",
+      "url": "",
+      "extraUrl": "",
+      "naverUrl": "https://naver.me/xcnyDz8F",
+      "phone": "033-762-8912",
+      "rating": "",
+      "status": "사용자 추가",
+      "source": "google-sheet",
+      "sourceLabel": "원주 유지보수 직접추가",
+      "locations": [
+        {
+          "label": "명륜동 남원로527번길",
+          "lat": 37.3335041,
+          "lng": 127.9452441,
+          "source": "address-geocode",
+          "precision": "building"
+        }
+      ]
+    },
+    {
+      "id": "sheet-067",
+      "no": 67,
+      "name": "하수구막힘 한지공원길",
+      "category": "누수·배관",
+      "service": "하수구 막힘, 싱크대 막힘, 변기 막힘, 배관내시경, 고압세척, 누수탐지",
+      "feature": "하수구 막힘, 싱크대 막힘, 변기 막힘 긴급 출동. 리뷰 작성 페이백 쿠폰 제공",
+      "operation": "0507-1434-5447",
+      "region": "강원 원주시 한지공원길 102",
+      "address": "강원 원주시 한지공원길 102",
+      "scale": "변동",
+      "url": "",
+      "extraUrl": "",
+      "naverUrl": "https://naver.me/FW0ekkLm",
+      "phone": "0507-1434-5447",
+      "rating": "리뷰 1,683",
+      "status": "사용자 추가",
+      "source": "google-sheet",
+      "sourceLabel": "원주 유지보수 직접추가",
+      "locations": [
+        {
+          "label": "명륜동 한지공원길",
+          "lat": 37.330171,
+          "lng": 127.9428004,
+          "source": "address-geocode",
+          "precision": "road"
+        }
+      ]
     }
   ],
   "categories": [
@@ -2720,9 +2952,9 @@ window.BRING_BUILDING_MAINTENANCE_DATA = {
   ],
   "summary": {
     "excel": 49,
-    "googleSheet": 59,
-    "total": 108,
-    "mapped": 78,
+    "googleSheet": 67,
+    "total": 116,
+    "mapped": 86,
     "geocoded": 0
   }
 };
