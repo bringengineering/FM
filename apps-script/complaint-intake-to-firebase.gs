@@ -11,7 +11,10 @@ const COMPLAINT_CONFIG = {
   CONTRACT_DRIVE_FOLDER_ID: "1818MusPDfVV6znALkWDMGK99NXAlAj8g",
   FIREBASE_DATABASE_URL: "https://bring-fm-default-rtdb.asia-southeast1.firebasedatabase.app",
   FIREBASE_CASES_PATH: "cases",
-  RESPONSE_SHEET_URL: "https://docs.google.com/spreadsheets/d/1HI6KzIMomL6vOUPs8zZDhXHktL1cWRDcg93lflsuojA/edit"
+  RESPONSE_SHEET_URL: "https://docs.google.com/spreadsheets/d/1HI6KzIMomL6vOUPs8zZDhXHktL1cWRDcg93lflsuojA/edit",
+  FIREBASE_API_KEY_PROPERTY: "FIREBASE_WEB_API_KEY",
+  FIREBASE_AUTOMATION_EMAIL_PROPERTY: "FIREBASE_AUTOMATION_EMAIL",
+  FIREBASE_AUTOMATION_PASSWORD_PROPERTY: "FIREBASE_AUTOMATION_PASSWORD"
 };
 
 const OUTPUT_HEADERS = [
@@ -23,6 +26,8 @@ const OUTPUT_HEADERS = [
   "온보딩 매칭 상태",
   "온보딩 파일명",
   "온보딩 확인 메모",
+  "문자 발송 상태",
+  "문자 발송 메모",
   "Firebase Case ID",
   "분석 처리일시"
 ];
@@ -161,8 +166,10 @@ function processResponseRow_(sheet, row) {
   const analysis = analyzeComplaint_(record);
   const contractMatch = matchDriveOnboardingFile_(record);
   const casePayload = buildCasePayload_(ticketNo, record, analysis, contractMatch, row, sheet);
+  const smsResult = sendComplaintSms_(ticketNo, record, analysis, contractMatch);
+  applySmsResultToCase_(casePayload, smsResult);
 
-  writeAnalysisToSheet_(sheet, row, headers, ticketNo, analysis, casePayload, contractMatch);
+  writeAnalysisToSheet_(sheet, row, headers, ticketNo, analysis, casePayload, contractMatch, smsResult);
   writeCaseToFirebase_(ticketNo, casePayload);
 }
 
@@ -400,6 +407,210 @@ function makeDriveCandidate_(file) {
   };
 }
 
+function sendComplaintSms_(ticketNo, record, analysis, contractMatch) {
+  const existingStatus = readField_(record, ["문자 발송 상태"]);
+  if (/발송완료|일부발송/.test(existingStatus)) {
+    return {
+      status: existingStatus,
+      statusText: readField_(record, ["문자 발송 메모"]) || "이미 발송된 문자 기록이 있어 재발송하지 않았습니다.",
+      skipped: true
+    };
+  }
+
+  const config = getSensConfig_();
+  if (!config.enabled) {
+    return { status: "설정필요", statusText: "NCP SENS Script Properties 설정 후 문자 발송이 가능합니다.", skipped: true };
+  }
+
+  const tenantPhone = normalizePhoneForSms_(readField_(record, ["연락처", "전화번호", "휴대폰"]));
+  const ownerPhone = normalizePhoneForSms_(extractOwnerPhoneFromOnboarding_(contractMatch));
+  const building = readField_(record, ["건물명", "건물"]);
+  const room = readField_(record, ["호실"]);
+  const issueType = readField_(record, ["문제 유형"]);
+  const tenantContent = [
+    "[BRING Care]",
+    "민원이 접수되었습니다.",
+    "접수번호: " + ticketNo,
+    building ? "건물: " + building : "",
+    issueType ? "문제: " + issueType : "",
+    "확인 후 안내드리겠습니다."
+  ].filter(Boolean).join("\n");
+  const ownerContent = [
+    "[BRING Care]",
+    "건물 민원이 접수되었습니다.",
+    "접수번호: " + ticketNo,
+    building ? "건물: " + building : "",
+    room ? "호실: " + maskRoom_(room) : "",
+    issueType ? "문제: " + issueType : "",
+    analysis && analysis.urgency ? "긴급도: " + analysis.urgency : ""
+  ].filter(Boolean).join("\n");
+
+  const logs = [];
+  let tenantSent = false;
+  let ownerSent = false;
+
+  if (tenantPhone) {
+    const tenantResult = sendSensSms_(tenantPhone, tenantContent, "세입자");
+    tenantSent = tenantResult.ok;
+    logs.push("세입자 " + maskPhone_(tenantPhone) + " " + tenantResult.message);
+  } else {
+    logs.push("세입자 연락처 없음");
+  }
+
+  if (ownerPhone) {
+    const ownerResult = sendSensSms_(ownerPhone, ownerContent, "건물주");
+    ownerSent = ownerResult.ok;
+    logs.push("건물주 " + maskPhone_(ownerPhone) + " " + ownerResult.message);
+  } else {
+    logs.push("건물주 연락처 미확인: 온보딩 수집서 본문에 '건물주 연락처: 010-0000-0000' 형식으로 넣어주세요.");
+  }
+
+  const status = tenantSent && ownerSent ? "발송완료" : tenantSent || ownerSent ? "일부발송" : "발송보류";
+  return {
+    status: status,
+    statusText: logs.join(" / "),
+    tenantSent: tenantSent,
+    ownerSent: ownerSent,
+    tenantPhoneMasked: tenantPhone ? maskPhone_(tenantPhone) : "",
+    ownerPhoneMasked: ownerPhone ? maskPhone_(ownerPhone) : ""
+  };
+}
+
+function applySmsResultToCase_(casePayload, smsResult) {
+  if (!smsResult) return;
+  casePayload.sms = smsResult;
+  casePayload.note = casePayload.note || {};
+  casePayload.note.c2 = smsResult.statusText || "";
+  casePayload.status = casePayload.status || {};
+  if (smsResult.status === "발송완료") {
+    casePayload.status.c2 = "done";
+  } else if (smsResult.status === "일부발송" || smsResult.status === "발송보류") {
+    casePayload.status.c2 = "doing";
+  }
+  if (casePayload.log) {
+    casePayload.log.push("문자 " + smsResult.status + " / " + (smsResult.statusText || ""));
+  }
+}
+
+function getSensConfig_() {
+  const props = PropertiesService.getScriptProperties();
+  const enabled = String(props.getProperty("SMS_ENABLED") || "true").toLowerCase() !== "false";
+  const config = {
+    enabled: enabled,
+    serviceId: props.getProperty("NCP_SENS_SERVICE_ID") || "",
+    accessKey: props.getProperty("NCP_ACCESS_KEY") || "",
+    secretKey: props.getProperty("NCP_SECRET_KEY") || "",
+    from: normalizePhoneForSms_(props.getProperty("NCP_SENS_FROM") || "")
+  };
+  config.enabled = Boolean(config.enabled && config.serviceId && config.accessKey && config.secretKey && config.from);
+  return config;
+}
+
+function sendSensSms_(to, content, label) {
+  const config = getSensConfig_();
+  if (!config.enabled) return { ok: false, message: "SENS 설정필요" };
+
+  const uri = "/sms/v2/services/" + encodeURIComponent(config.serviceId) + "/messages";
+  const timestamp = String(Date.now());
+  const signature = makeNcpSignature_("POST", uri, timestamp, config.accessKey, config.secretKey);
+  const type = byteLength_(content) > 90 ? "LMS" : "SMS";
+  const payload = {
+    type: type,
+    contentType: "COMM",
+    countryCode: "82",
+    from: config.from,
+    content: content,
+    messages: [{ to: to, content: content }]
+  };
+  if (type === "LMS") payload.subject = "BRING Care";
+
+  try {
+    const response = UrlFetchApp.fetch("https://sens.apigw.ntruss.com" + uri, {
+      method: "post",
+      contentType: "application/json; charset=utf-8",
+      headers: {
+        "x-ncp-apigw-timestamp": timestamp,
+        "x-ncp-iam-access-key": config.accessKey,
+        "x-ncp-apigw-signature-v2": signature
+      },
+      payload: JSON.stringify(payload),
+      muteHttpExceptions: true
+    });
+    const code = response.getResponseCode();
+    const body = response.getContentText();
+    if (code >= 200 && code < 300) {
+      return { ok: true, message: "발송요청 완료(" + label + ")" };
+    }
+    return { ok: false, message: "발송실패(" + label + " HTTP " + code + "): " + body.slice(0, 200) };
+  } catch (err) {
+    return { ok: false, message: "발송오류(" + label + "): " + err.message };
+  }
+}
+
+function makeNcpSignature_(method, uri, timestamp, accessKey, secretKey) {
+  const message = method + " " + uri + "\n" + timestamp + "\n" + accessKey;
+  const signature = Utilities.computeHmacSha256Signature(message, secretKey);
+  return Utilities.base64Encode(signature);
+}
+
+function extractOwnerPhoneFromOnboarding_(contractMatch) {
+  if (!contractMatch || contractMatch.status !== "matched" || !contractMatch.driveFileId) return "";
+  const text = extractDocxText_(contractMatch.driveFileId);
+  if (!text) return "";
+
+  const labelMatch = text.match(/건물주\s*(?:연락처|전화번호|휴대폰|번호)\s*[:：]?\s*((?:\+?82[-.\s]?)?0?\d{1,2}[-.\s]?\d{3,4}[-.\s]?\d{4})/);
+  if (labelMatch) return labelMatch[1];
+
+  const anyPhone = text.match(/(?:\+?82[-.\s]?)?0?(?:10|11|16|17|18|19)[-.\s]?\d{3,4}[-.\s]?\d{4}/);
+  return anyPhone ? anyPhone[0] : "";
+}
+
+function extractDocxText_(driveFileId) {
+  try {
+    const blobs = Utilities.unzip(DriveApp.getFileById(driveFileId).getBlob());
+    const xml = blobs
+      .filter(blob => /^word\/(?:document|header\d*|footer\d*)\.xml$/.test(blob.getName()))
+      .map(blob => blob.getDataAsString("UTF-8"))
+      .join("\n");
+    return decodeXmlText_(xml);
+  } catch (err) {
+    Logger.log("DOCX 본문 추출 실패: " + err.message);
+    return "";
+  }
+}
+
+function decodeXmlText_(xml) {
+  return String(xml || "")
+    .replace(/<w:tab\/>/g, " ")
+    .replace(/<[^>]+>/g, " ")
+    .replace(/&lt;/g, "<")
+    .replace(/&gt;/g, ">")
+    .replace(/&amp;/g, "&")
+    .replace(/&quot;/g, '"')
+    .replace(/&#39;/g, "'")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function normalizePhoneForSms_(phone) {
+  let digits = String(phone || "").replace(/\D/g, "");
+  if (!digits) return "";
+  if (digits.indexOf("82") === 0) digits = "0" + digits.slice(2);
+  return digits;
+}
+
+function byteLength_(value) {
+  return Utilities.newBlob(String(value || "")).getBytes().length;
+}
+
+function testSensSmsSetup() {
+  const props = PropertiesService.getScriptProperties();
+  const to = normalizePhoneForSms_(props.getProperty("NCP_SENS_TEST_TO") || "");
+  if (!to) throw new Error("Script Properties에 NCP_SENS_TEST_TO를 테스트 수신번호로 넣어주세요.");
+  const result = sendSensSms_(to, "[BRING Care]\nSENS 문자 연동 테스트입니다.", "테스트");
+  Logger.log(JSON.stringify(result));
+}
+
 function makeTicketNo_(row, record) {
   const ts = readRawField_(record, ["타임스탬프", "Timestamp"]) || new Date();
   const year = Utilities.formatDate(dateFromValue_(ts), "Asia/Seoul", "yyyy");
@@ -530,13 +741,15 @@ function buildCasePayload_(ticketNo, record, analysis, contractMatch, row, sheet
   };
 }
 
-function writeAnalysisToSheet_(sheet, row, headers, ticketNo, analysis, casePayload, contractMatch) {
+function writeAnalysisToSheet_(sheet, row, headers, ticketNo, analysis, casePayload, contractMatch, smsResult) {
   const headerMap = {};
   headers.forEach((header, index) => headerMap[header] = index + 1);
   const contract = contractMatch && contractMatch.contract ? contractMatch.contract : {};
   const fileName = (contractMatch && contractMatch.fileName) || contract.contractFileName || "";
   const statusText = contractMatch ? contractMatch.statusText : "";
   const matchStatus = contractMatch ? contractMatch.status : "미확인";
+  const smsStatus = smsResult ? smsResult.status : "미확인";
+  const smsText = smsResult ? smsResult.statusText : "";
 
   setCellByHeader_(sheet, row, headerMap, "접수번호", ticketNo);
   setCellByHeader_(sheet, row, headerMap, "긴급도", analysis.urgency);
@@ -550,6 +763,8 @@ function writeAnalysisToSheet_(sheet, row, headers, ticketNo, analysis, casePayl
   setCellByHeader_(sheet, row, headerMap, "계약 건물주", contract.ownerName || "");
   setCellByHeader_(sheet, row, headerMap, "계약 파일명", fileName);
   setCellByHeader_(sheet, row, headerMap, "계약 확인 메모", statusText);
+  setCellByHeader_(sheet, row, headerMap, "문자 발송 상태", smsStatus);
+  setCellByHeader_(sheet, row, headerMap, "문자 발송 메모", smsText);
   setCellByHeader_(sheet, row, headerMap, "Firebase Case ID", casePayload.id);
   setCellByHeader_(sheet, row, headerMap, "분석 처리일시", Utilities.formatDate(new Date(), "Asia/Seoul", "yyyy-MM-dd HH:mm:ss"));
 }
@@ -561,7 +776,8 @@ function setCellByHeader_(sheet, row, headerMap, header, value) {
 function writeCaseToFirebase_(caseId, payload) {
   const base = COMPLAINT_CONFIG.FIREBASE_DATABASE_URL.replace(/\/$/, "");
   const path = COMPLAINT_CONFIG.FIREBASE_CASES_PATH.replace(/^\/|\/$/g, "");
-  const url = base + "/" + path + "/" + encodeURIComponent(caseId) + ".json";
+  const idToken = getFirebaseAutomationIdToken_();
+  const url = base + "/" + path + "/" + encodeURIComponent(caseId) + ".json?auth=" + encodeURIComponent(idToken);
   const response = UrlFetchApp.fetch(url, {
     method: "put",
     contentType: "application/json; charset=utf-8",
@@ -573,6 +789,35 @@ function writeCaseToFirebase_(caseId, payload) {
   if (code < 200 || code >= 300) {
     throw new Error("Firebase 저장 실패: HTTP " + code + " / " + response.getContentText());
   }
+}
+
+function getRequiredScriptProperty_(key) {
+  const value = PropertiesService.getScriptProperties().getProperty(key);
+  if (!value) {
+    throw new Error("Apps Script 프로젝트 설정 > 스크립트 속성에 " + key + " 값을 추가해야 합니다.");
+  }
+  return value;
+}
+
+function getFirebaseAutomationIdToken_() {
+  const apiKey = getRequiredScriptProperty_(COMPLAINT_CONFIG.FIREBASE_API_KEY_PROPERTY);
+  const email = getRequiredScriptProperty_(COMPLAINT_CONFIG.FIREBASE_AUTOMATION_EMAIL_PROPERTY);
+  const password = getRequiredScriptProperty_(COMPLAINT_CONFIG.FIREBASE_AUTOMATION_PASSWORD_PROPERTY);
+  const url = "https://identitytoolkit.googleapis.com/v1/accounts:signInWithPassword?key=" + encodeURIComponent(apiKey);
+  const response = UrlFetchApp.fetch(url, {
+    method: "post",
+    contentType: "application/json; charset=utf-8",
+    payload: JSON.stringify({ email, password, returnSecureToken: true }),
+    muteHttpExceptions: true
+  });
+  const code = response.getResponseCode();
+  const body = response.getContentText();
+  if (code < 200 || code >= 300) {
+    throw new Error("Firebase 자동화 계정 로그인 실패: HTTP " + code + " / " + body);
+  }
+  const data = JSON.parse(body);
+  if (!data.idToken) throw new Error("Firebase 자동화 계정 로그인 응답에 idToken이 없습니다.");
+  return data.idToken;
 }
 
 function maskName_(name) {

@@ -293,6 +293,20 @@
   .cv-del{ border:1px solid #f3c0c0; background:#fff; color:#e03131; border-radius:8px; padding:6px 11px; font-size:12.5px; cursor:pointer; font-family:inherit; margin-top:14px; }
   .cv-log{ margin-top:16px; border-top:1px dashed var(--line); padding-top:10px; }
   .cv-log .t{ font-size:12px; color:var(--ink-soft); margin-bottom:4px; }
+  .cv-user{ margin-left:auto; font-size:12px; color:#52606d; white-space:nowrap; }
+  .case-auth{ position:fixed; inset:0; background:rgba(15,25,45,.52); display:none; align-items:center; justify-content:center; z-index:10000; padding:20px; box-sizing:border-box; }
+  .case-auth.open{ display:flex; }
+  .case-auth-box{ width:min(430px,94vw); background:#fff; border-radius:14px; box-shadow:0 20px 60px rgba(0,0,0,.3); padding:22px; color:#1f2733; }
+  .case-auth-head{ display:flex; align-items:flex-start; gap:10px; margin-bottom:14px; }
+  .case-auth-ic{ width:34px; height:34px; border-radius:10px; background:#eaf0ff; color:#1b335f; display:flex; align-items:center; justify-content:center; font-weight:900; flex:0 0 auto; }
+  .case-auth-title{ font-size:17px; font-weight:900; color:#162033; margin-bottom:3px; }
+  .case-auth-desc{ font-size:13px; line-height:1.55; color:#52606d; }
+  .case-auth-meta{ border:1px solid #edf1f6; border-radius:9px; background:#fafbfd; padding:10px 12px; margin:12px 0; font-size:12.5px; color:#52606d; line-height:1.55; word-break:break-word; }
+  .case-auth-actions{ display:flex; gap:8px; justify-content:flex-end; align-items:center; margin-top:16px; flex-wrap:wrap; }
+  .case-auth-btn{ border:1px solid var(--line); background:#fff; border-radius:9px; padding:9px 13px; cursor:pointer; font-size:13px; font-family:inherit; }
+  .case-auth-btn.primary{ background:#1b335f; border-color:#1b335f; color:#fff; font-weight:800; }
+  .case-auth-btn.primary:hover{ background:#26477e; }
+  .case-auth-btn[disabled]{ opacity:.55; cursor:not-allowed; }
   /* 📢 비전·공지 */
   .notice-banner{ display:flex; align-items:center; gap:13px; padding:13px 20px; background:linear-gradient(90deg,#1b335f,#2a4f8c); color:#fff; cursor:pointer; box-shadow:0 2px 8px rgba(20,40,80,.12); }
   .notice-banner .nb-ic{ font-size:22px; flex:0 0 auto; }
@@ -443,6 +457,8 @@
       <button class="wsbtn" id="caseBack">← 나가기</button>
       <b>🚀 고객 케이스 자동화</b>
       <span class="cv-hint">고객 한 건을 만들면 ①~⑰ 단계가 진행돼요 · 🤖=자동화(연결 예정)</span>
+      <span class="cv-user" id="caseUserBadge"></span>
+      <button class="wsbtn" id="caseLogout" style="display:none">로그아웃</button>
     </div>
     <div class="cv-body">
       <div class="cv-list" id="caseList"></div>
@@ -452,24 +468,31 @@
 
   <!-- Firebase (실시간 동기화용) — 키 입력 전에는 '로컬 모드'로 동작 -->
   <script src="https://www.gstatic.com/firebasejs/10.12.5/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.12.5/firebase-auth-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/10.12.5/firebase-database-compat.js"></script>
 
 <script>
 /* ===== ① 실시간 공유 켜기: 아래 값을 본인 Firebase 프로젝트 값으로 교체 (교체 전엔 '로컬 모드') ===== */
 const firebaseConfig = {
+  apiKey: "여기에_FIREBASE_WEB_API_KEY",
+  authDomain: "bring-fm.firebaseapp.com",
   databaseURL: "https://bring-fm-default-rtdb.asia-southeast1.firebasedatabase.app",
-  projectId:   "bring-fm"
+  projectId:   "bring-fm",
+  appId: "여기에_FIREBASE_WEB_APP_ID"
 };
 let boards = { main: "업무 흐름" };   // {boardId: 이름}
 let curBoard = "main";
 let boardOrder = [];                    // 탭 표시 순서 (workflow/_order)
 let boardsRef = null, presenceRoot = null, presenceMeRef = null, connectedAttached = false, justOpened = false;
+let auth = null, caseUser = null, caseAccessReady = false, caseAuthModalEl = null;
 
 const PALETTE  = ["#4b7bec","#26de81","#f7b731","#fa8231","#a55eea","#eb3b5a","#2bcbba","#3867d6"];
 const COLORSET = ["#4b7bec","#3867d6","#45aaf2","#2d98da","#26de81","#20bf6b","#0fb9b1","#2bcbba","#f7b731","#fed330","#fa8231","#fd9644","#eb3b5a","#fc5c65","#e84393","#a55eea","#8854d0","#778ca3","#4b6584","#1f2733"];
 const SHAPES = [["circle","● 원"],["rect","▭ 사각"],["pill","⬭ 캡슐"],["diamond","◆ 마름모"],["ellipse","⬬ 타원"]];
 const LS_KEY   = "fm_workflow_graph_v1";
-const isConfigured = !!firebaseConfig.databaseURL && !firebaseConfig.databaseURL.includes("여기에");
+const hasFirebaseValue = v => !!v && !String(v).includes("여기에");
+const isConfigured = hasFirebaseValue(firebaseConfig.databaseURL);
+const isAuthConfigured = () => hasFirebaseValue(firebaseConfig.apiKey) && hasFirebaseValue(firebaseConfig.authDomain) && typeof firebase !== "undefined" && !!firebase.auth;
 
 /* ===== 상태 ===== */
 let nodes = {};                 // { id:{id,label,x,y,parent,color?,r?} }
@@ -810,9 +833,12 @@ function start(){
 function initFirebase(){
   firebase.initializeApp(firebaseConfig);
   db = firebase.database();
-  settings = loadSettingsLocal();
-  settingsRef = db.ref("workflow/_settings");
-  settingsRef.on("value", s => { settings = s.val()||{}; saveSettingsLocal(); });
+  settings = {};
+  clearCaseLocalCache();
+  if(isAuthConfigured()){
+    auth = firebase.auth();
+    auth.onAuthStateChanged(handleCaseAuthState);
+  }
   notice = loadNoticeLocal(); ensureNotice(); renderNoticeBanner();
   noticeRef = db.ref("workflow/_notice");
   noticeRef.on("value", s => { const v=s.val(); if(v==null){ noticeRef.set(notice); return; } notice=v; ensureNotice(); saveNoticeLocal(); renderNoticeBanner(); const editing=npEl&&npEl.classList.contains("open")&&(document.activeElement===document.getElementById("npVision")||document.activeElement===document.getElementById("npNew")); if(npEl&&npEl.classList.contains("open")&&!editing) renderNoticePanel(); });
@@ -828,20 +854,6 @@ function initFirebase(){
     if (v == null || !Object.keys(v).length){ boardsRef.set(boards); return; }   // 최초 시드
     boards = v; if(!boards[curBoard]) curBoard = Object.keys(boards)[0];
     saveBoardsLocal(); renderTabs();
-  });
-  casesRef = db.ref("cases");
-  casesRef.on("value", s => {
-    const v = s.val();
-    if (v == null){ if(Object.keys(cases).length) casesRef.set(cases); return; }   // 최초 시드
-    cases = v;
-    const fixed = normalizeAllCaseSteps(cases);
-    try{ localStorage.setItem("fm_cases_v1", JSON.stringify(cases)); }catch(e){}
-    if (fixed) { clearTimeout(caseWriteT); caseWriteT=setTimeout(()=>{ if(casesRef) casesRef.set(cases); }, 200); }
-    if (caseView.classList.contains("open")){
-      renderCaseList();
-      if (curCase && !cases[curCase]) curCase = Object.keys(cases)[0] || null;
-      if (!caseView.contains(document.activeElement)) renderCaseDetail();   // 입력 중엔 갱신 보류
-    }
   });
   openBoard(curBoard);
   updateConn();
@@ -1784,12 +1796,23 @@ function downloadCaseDoc(id,k){
 const caseView = document.getElementById("caseView");
 const caseListEl = document.getElementById("caseList");
 const caseDetailEl = document.getElementById("caseDetail");
-let cases = {}, curCase = null, casesRef = null, caseWriteT = null, noteOpen = new Set();
-let settings = {}, settingsRef = null;
+let cases = {}, curCase = null, casesRef = null, caseWriteT = null, caseValueHandler = null, noteOpen = new Set();
+let settings = {}, caseSettingsRef = null, caseSettingsHandler = null;
 let notice = null, noticeRef = null;
 function caseGenId(){ return "k"+Date.now().toString(36)+Math.random().toString(36).slice(2,5); }
-function loadCasesLocal(){ try{ const c=JSON.parse(localStorage.getItem("fm_cases_v1")); if(c&&typeof c==="object") return c; }catch(e){} return {}; }
-function saveCases(){ try{ localStorage.setItem("fm_cases_v1", JSON.stringify(cases)); }catch(e){} clearTimeout(caseWriteT); caseWriteT=setTimeout(()=>{ if(casesRef) casesRef.set(cases); }, 300); }
+function loadCasesLocal(){
+  if(isConfigured) return {};
+  try{ const c=JSON.parse(localStorage.getItem("fm_cases_v1")); if(c&&typeof c==="object") return c; }catch(e){}
+  return {};
+}
+function saveCases(){
+  clearTimeout(caseWriteT);
+  if(casesRef){
+    caseWriteT=setTimeout(()=>{ if(casesRef) casesRef.set(cases); }, 300);
+  } else if(!isConfigured) {
+    try{ localStorage.setItem("fm_cases_v1", JSON.stringify(cases)); }catch(e){}
+  }
+}
 function caseProgress(c){ return { done: CASE_STEPS.filter(s=>(c.status||{})[s.k]==="done").length, total: CASE_STEPS.length }; }
 function caseLog(c,m){ (c.log=c.log||[]).unshift(m); if(c.log.length>30) c.log.length=30; }
 function caseTimeValue(c){ const d=Date.parse(c.receivedAt||c.createdAt||c.updatedAt||""); return Number.isFinite(d) ? d : 0; }
@@ -1934,7 +1957,199 @@ function renderContractOverview(c){
     (candidates.length ? `<div class="cv-summary"><b>온보딩 후보</b><br>${candidates.map(x=>x.fileUrl?`<a href="${escAttr(x.fileUrl)}" target="_blank" rel="noopener">${esc(x.fileName||"Drive 파일")}</a>`:esc([x.building,x.address,x.contractFileName||x.fileName].filter(Boolean).join(" / "))).join("<br>")}</div>` : "")+
     `</div>`;
 }
-function openCaseView(){ if(!curCase) curCase=Object.keys(cases)[0]||null; caseView.classList.add("open"); renderCaseList(); renderCaseDetail(); }
+function clearCaseLocalCache(){
+  try{ localStorage.removeItem("fm_cases_v1"); localStorage.removeItem("fm_settings_v1"); }catch(e){}
+}
+function caseUserName(user){
+  return user ? (user.displayName || user.email || "로그인 계정") : "";
+}
+function renderCaseAuthStatus(){
+  const badge=document.getElementById("caseUserBadge");
+  const logout=document.getElementById("caseLogout");
+  if(!badge || !logout) return;
+  if(caseUser && caseAccessReady){
+    badge.textContent = caseUser.email || caseUserName(caseUser);
+    logout.style.display = "";
+  } else {
+    badge.textContent = "";
+    logout.style.display = "none";
+  }
+}
+function detachCaseSettingsRef(){
+  if(caseSettingsRef && caseSettingsHandler) caseSettingsRef.off("value", caseSettingsHandler);
+  caseSettingsRef = null; caseSettingsHandler = null; settings = {};
+}
+function attachCaseSettingsRef(){
+  if(!db || caseSettingsRef) return;
+  caseSettingsRef = db.ref("caseSettings");
+  caseSettingsHandler = s => { settings = s.val() || {}; };
+  caseSettingsRef.on("value", caseSettingsHandler, e => console.warn("caseSettings 권한 확인 필요", e));
+}
+function detachCasesRef(){
+  clearTimeout(caseWriteT);
+  if(casesRef && caseValueHandler) casesRef.off("value", caseValueHandler);
+  casesRef = null; caseValueHandler = null; cases = {}; curCase = null; noteOpen.clear();
+  clearCaseLocalCache();
+}
+function attachCasesRef(){
+  if(!db || casesRef) return;
+  casesRef = db.ref("cases");
+  caseValueHandler = s => {
+    const v = s.val();
+    cases = v && typeof v === "object" ? v : {};
+    const fixed = normalizeAllCaseSteps(cases);
+    if (fixed) {
+      clearTimeout(caseWriteT);
+      caseWriteT = setTimeout(()=>{ if(casesRef) casesRef.set(cases); }, 200);
+    }
+    if (caseView.classList.contains("open")){
+      renderCaseList();
+      if (curCase && !cases[curCase]) curCase = Object.keys(cases)[0] || null;
+      if (!caseView.contains(document.activeElement)) renderCaseDetail();   // 입력 중엔 갱신 보류
+    }
+  };
+  casesRef.on("value", caseValueHandler, e => {
+    caseAccessReady = false;
+    detachCasesRef();
+    closeCaseView();
+    showCaseAuthModal("error", caseUser, "케이스 데이터 권한을 확인하지 못했어요. Firebase 승인 명단과 Database Rules를 확인해 주세요.");
+    console.error("cases 권한 오류", e);
+  });
+}
+function handleCaseAuthState(user){
+  caseUser = user || null;
+  if(!caseUser){
+    caseAccessReady = false;
+    detachCasesRef();
+    detachCaseSettingsRef();
+    closeCaseView();
+  }
+  renderCaseAuthStatus();
+}
+function ensureCaseAuthModal(){
+  if(caseAuthModalEl) return;
+  caseAuthModalEl = document.createElement("div");
+  caseAuthModalEl.className = "case-auth";
+  caseAuthModalEl.innerHTML = `<div class="case-auth-box" id="caseAuthBox"></div>`;
+  document.body.appendChild(caseAuthModalEl);
+  caseAuthModalEl.addEventListener("click", e => {
+    if(e.target === caseAuthModalEl || e.target.closest("[data-case-auth-close]")) closeCaseAuthModal();
+    else if(e.target.closest("[data-case-auth-google]")) signInCaseWithGoogle();
+    else if(e.target.closest("[data-case-auth-logout]") && auth) auth.signOut();
+    else if(e.target.closest("[data-case-auth-retry]") && auth && auth.currentUser) verifyCaseAccess(auth.currentUser, true);
+  });
+}
+function caseAuthActions(state){
+  if(state === "login") return `<button class="case-auth-btn" data-case-auth-close>닫기</button><button class="case-auth-btn primary" data-case-auth-google>Google로 로그인</button>`;
+  if(state === "pending") return `<button class="case-auth-btn" data-case-auth-logout>다른 계정으로 로그인</button><button class="case-auth-btn primary" data-case-auth-retry>승인 다시 확인</button>`;
+  if(state === "checking") return `<button class="case-auth-btn" disabled>확인 중...</button>`;
+  if(state === "setup") return `<button class="case-auth-btn primary" data-case-auth-close>확인</button>`;
+  return `<button class="case-auth-btn" data-case-auth-close>닫기</button><button class="case-auth-btn primary" data-case-auth-retry>다시 시도</button>`;
+}
+function showCaseAuthModal(state, user, message){
+  ensureCaseAuthModal();
+  const title = state === "login" ? "케이스 보안 로그인" :
+    state === "pending" ? "승인 대기 중" :
+    state === "checking" ? "승인 확인 중" :
+    state === "setup" ? "Firebase Auth 설정 필요" : "케이스 접근 확인";
+  const desc = message || (
+    state === "login" ? "케이스 화면은 승인된 Google 계정만 열 수 있어요." :
+    state === "pending" ? "이 계정은 아직 승인 명단에 없어요. 관리자 승인 후 다시 확인해 주세요." :
+    state === "checking" ? "로그인 계정이 케이스 승인 명단에 있는지 확인하고 있어요." :
+    state === "setup" ? "Firebase 콘솔의 웹 앱 설정에서 apiKey와 appId를 index.html의 firebaseConfig에 넣고, Authentication에서 Google 로그인을 켜 주세요." :
+    "권한 확인 중 문제가 생겼어요."
+  );
+  const meta = user ? `<div class="case-auth-meta"><b>${esc(caseUserName(user))}</b><br>${esc(user.email||"")}</div>` : "";
+  document.getElementById("caseAuthBox").innerHTML =
+    `<div class="case-auth-head"><div class="case-auth-ic">🔒</div><div><div class="case-auth-title">${esc(title)}</div><div class="case-auth-desc">${esc(desc)}</div></div></div>`+
+    meta+
+    `<div class="case-auth-actions">${caseAuthActions(state)}</div>`;
+  caseAuthModalEl.classList.add("open");
+}
+function closeCaseAuthModal(){ if(caseAuthModalEl) caseAuthModalEl.classList.remove("open"); }
+async function requestCaseApproval(user){
+  const now = Date.now();
+  const payload = {
+    email: user.email || "",
+    displayName: user.displayName || "",
+    requestedAt: now,
+    lastSeenAt: now
+  };
+  await db.ref("accessRequests/"+user.uid).set(payload);
+}
+async function verifyCaseAccess(user, openWhenAllowed){
+  if(!db || !user) return;
+  showCaseAuthModal("checking", user);
+  if(!user.emailVerified){
+    await requestCaseApproval(user).catch(()=>{});
+    showCaseAuthModal("pending", user, "Google 계정의 이메일 인증 상태를 확인할 수 없어 승인 대기 상태로 기록했어요.");
+    return;
+  }
+  try{
+    const snap = await db.ref("authorizedUsers/"+user.uid).once("value");
+    const approved = snap.val() || {};
+    const allowed = approved.caseAccess === true && approved.email === user.email;
+    if(!allowed){
+      caseAccessReady = false;
+      detachCasesRef();
+      detachCaseSettingsRef();
+      clearCaseLocalCache();
+      await requestCaseApproval(user);
+      showCaseAuthModal("pending", user);
+      return;
+    }
+    caseUser = user; caseAccessReady = true;
+    attachCaseSettingsRef();
+    attachCasesRef();
+    closeCaseAuthModal();
+    renderCaseAuthStatus();
+    if(openWhenAllowed) openCaseView();
+  }catch(e){
+    console.error("케이스 승인 확인 실패", e);
+    showCaseAuthModal("error", user, "승인 확인 중 오류가 났어요. 잠시 후 다시 시도하거나 Firebase 권한 설정을 확인해 주세요.");
+  }
+}
+function signInCaseWithGoogle(){
+  if(!isAuthConfigured()){
+    showCaseAuthModal("setup");
+    return;
+  }
+  if(!auth) auth = firebase.auth();
+  const provider = new firebase.auth.GoogleAuthProvider();
+  provider.setCustomParameters({ prompt:"select_account" });
+  showCaseAuthModal("checking", auth.currentUser);
+  auth.signInWithPopup(provider)
+    .then(result => verifyCaseAccess(result.user, true))
+    .catch(e => {
+      console.error("Google 로그인 실패", e);
+      showCaseAuthModal("login", null, "Google 로그인을 완료하지 못했어요. 팝업 차단을 해제한 뒤 다시 시도해 주세요.");
+    });
+}
+function requireCaseAccess(){
+  if(!isConfigured){
+    openCaseView();
+    return;
+  }
+  if(!isAuthConfigured()){
+    showCaseAuthModal("setup");
+    return;
+  }
+  if(!auth) auth = firebase.auth();
+  const user = auth.currentUser;
+  if(!user){
+    showCaseAuthModal("login");
+    return;
+  }
+  verifyCaseAccess(user, true);
+}
+function openCaseView(){
+  if(isConfigured && !caseAccessReady){ requireCaseAccess(); return; }
+  if(!curCase) curCase=Object.keys(cases)[0]||null;
+  caseView.classList.add("open");
+  renderCaseAuthStatus();
+  renderCaseList();
+  renderCaseDetail();
+}
 function closeCaseView(){ caseView.classList.remove("open"); }
 function createCase(){ const id=caseGenId(); cases[id]={ id, name:"새 고객", phone:"", email:"", building:"", grade:"스탠다드", memo:"", status:{}, log:[] }; curCase=id; saveCases(); renderCaseList(); renderCaseDetail(); return id; }
 function selectCase(id){ curCase=id; noteOpen.clear(); renderCaseList(); renderCaseDetail(); }
@@ -1955,9 +2170,13 @@ const EMAIL_TEMPLATES = {
   c8: c => ({ to: c.email||"", subject: `[브링] 점검·견적 추천 안내 — ${c.building||""}`,
     body: `${c.name||"고객"}님, 안녕하세요. 브링입니다.\n\n${c.building||"건물"} 점검 및 견적 비교 결과와 추천안을 안내드립니다.\n\n${(c.note||{}).c6||(c.note||{}).c7||"(견적 비교·추천 내용을 여기에 정리)"}\n\n승인해주시면 일정 잡고 진행하겠습니다.\n감사합니다.\n— 브링` })
 };
-function loadSettingsLocal(){ try{ return JSON.parse(localStorage.getItem("fm_settings_v1"))||{}; }catch(e){ return {}; } }
-function saveSettingsLocal(){ try{ localStorage.setItem("fm_settings_v1", JSON.stringify(settings)); }catch(e){} }
-function setMailEndpoint(url){ settings.mailEndpoint=url; if(settingsRef){ settingsRef.set(settings); } else { saveSettingsLocal(); } }
+function loadSettingsLocal(){ if(isConfigured) return {}; try{ return JSON.parse(localStorage.getItem("fm_settings_v1"))||{}; }catch(e){ return {}; } }
+function saveSettingsLocal(){ if(isConfigured) return; try{ localStorage.setItem("fm_settings_v1", JSON.stringify(settings)); }catch(e){} }
+function setMailEndpoint(url){
+  settings.mailEndpoint=url;
+  if(caseSettingsRef){ caseSettingsRef.child("mailEndpoint").set(url); }
+  else { saveSettingsLocal(); }
+}
 function promptMailSetup(){
   const url = prompt("메일 자동발송을 켜려면 구글 Apps Script 웹앱 URL이 필요해요.\n(팀에 공유된 '메일 자동화 설치 안내' 참고 — 5분)\n\nApps Script 웹앱 URL을 붙여넣으세요:", settings.mailEndpoint||"");
   if(url==null) return false;
@@ -2040,14 +2259,15 @@ function renderCaseDetail(){
     `<button class="cv-del" id="cvDel">🗑 이 케이스 삭제</button>`+
     (c.log&&c.log.length?`<div class="cv-log"><div class="t" style="font-weight:700">기록</div>`+c.log.slice(0,8).map(l=>`<div class="t">· ${esc(l)}</div>`).join("")+`</div>`:"");
 }
-document.getElementById("caseBtn").addEventListener("click", openCaseView);
+document.getElementById("caseBtn").addEventListener("click", requireCaseAccess);
 document.getElementById("caseBack").addEventListener("click", closeCaseView);
+document.getElementById("caseLogout").addEventListener("click", ()=>{ if(auth) auth.signOut(); });
 caseListEl.addEventListener("click", e=>{ if(e.target.closest("#cvNew")){ createCase(); return; } const it=e.target.closest(".cv-item"); if(it) selectCase(it.dataset.cid); });
 caseDetailEl.addEventListener("click", e=>{ const dd=e.target.closest("[data-drive-doc]"); if(dd){ const c=cases[curCase], msg=stepLockMessage(c,dd.dataset.driveDoc); if(msg){ alert(msg); return; } const url=dd.dataset.url; if(url) window.open(url, "_blank", "noopener"); return; } const dc=e.target.closest("[data-doc]"); if(dc){ const msg=stepLockMessage(cases[curCase], dc.dataset.doc); if(msg){ alert(msg); return; } downloadCaseDoc(curCase, dc.dataset.doc); return; } const nt=e.target.closest("[data-notetoggle]"); if(nt){ const k=nt.dataset.notetoggle; noteOpen.has(k)?noteOpen.delete(k):noteOpen.add(k); renderCaseDetail(); return; } const ch=e.target.closest("[data-step]"); if(ch){ cycleStep(curCase, ch.dataset.step); return; } const au=e.target.closest("[data-auto]"); if(au){ const ak=au.dataset.auto; if(EMAIL_TEMPLATES[ak]) openMailModal(curCase, ak); else doAuto(curCase, ak, au.dataset.ch); return; } if(e.target.closest("#cvDel")){ deleteCase(curCase); } });
 caseDetailEl.addEventListener("input", e=>{ const f=e.target.closest("input[data-f]"); if(f){ setCaseField(curCase, f.dataset.f, f.value); return; } const nb=e.target.closest("textarea[data-note]"); if(nb) setCaseNote(curCase, nb.dataset.note, nb.value); });
 caseDetailEl.addEventListener("change", e=>{ const f=e.target.closest("select[data-f]"); if(f) setCaseField(curCase, f.dataset.f, f.value); });
 cases = loadCasesLocal();
-if(normalizeAllCaseSteps(cases)){ try{ localStorage.setItem("fm_cases_v1", JSON.stringify(cases)); }catch(e){} }
+if(normalizeAllCaseSteps(cases)){ saveCases(); }
 
 /* ===== 📢 비전·공지 (팀 공유) ===== */
 const DEFAULT_VISION = "<h2>🎯 BRING 비전</h2><blockquote>사람이 대신함 → 프로세스로 표준화 → 소프트웨어로 자동화 → 로봇/AI로 고도화 → <b>OS가 운영</b></blockquote><p><b>핵심 기초 5개는 고정된 가치</b>이고, 회사가 성장하면서 <b>수행 방식</b>만 진화한다. (초기=사람이 대신 · 중기=시스템이 처리 · 장기=AI·로봇·OS가 처리)</p><h3>🧱 핵심 기초 5 × 진화 (초기 → 중기 → 장기)</h3><p><b>1) 건물주의 시간 절약</b></p><ul><li><b>초기</b> — BRING 운영자가 대신 처리</li><li><b>중기</b> — 접수·분류·알림 자동화</li><li><b>장기</b> — AI가 처리 우선순위와 업체 추천</li></ul><p><b>2) 건물주의 스트레스 감소</b></p><ul><li><b>초기</b> — 민원·업체·공사 연락을 대신함</li><li><b>중기</b> — 건물주가 대시보드로 현황 확인</li><li><b>장기</b> — 월간 리포트와 승인만 확인</li></ul><p><b>3) 세입자 민원 처리</b></p><ul><li><b>초기</b> — 카톡/폼 접수 후 사람이 분류</li><li><b>중기</b> — 민원 유형별 표준 프로세스 적용</li><li><b>장기</b> — AI 분류 + 자동 응대 + 업체/로봇 연결</li></ul><p><b>4) 업체·공사·비용 투명관리</b></p><ul><li><b>초기</b> — 견적·사진·영수증 수동 정리</li><li><b>중기</b> — 업체 DB·B/A 보고서 자동화</li><li><b>장기</b> — 업체별 단가·품질·재발률 기반 최적 배정</li></ul><p><b>5) 운영 이력 데이터화</b></p><ul><li><b>초기</b> — 구글시트/노션에 기록</li><li><b>중기</b> — BRING OS에 건물별 이력 축적</li><li><b>장기</b> — 디지털 트윈 + 리스크 점수 + 예측 유지관리</li></ul><h3>🚀 발전 8단계</h3><ol><li><b>사람 기반 운영대행</b> — 사람이 대신 처리 (운영 신뢰)</li><li><b>프로세스 표준화</b> — 누가 해도 같은 방식</li><li><b>소프트웨어 자동화</b> — 반복 업무 시간↓</li><li><b>로봇화</b> — 숨은 공간까지 데이터화</li><li><b>AI화</b> — 분류·추천·예측 보조</li><li><b>직접 이행</b> — 단가·응답속도 개선</li><li><b>건물 유지관리 OS</b> — 데이터 기반 운영 (건물의 운영 기억장치)</li><li><b>Physical Infrastructure AI</b> — 점검·판단·이행 통합</li></ol><h3>🏁 최종 정의</h3><blockquote>BRING은 건물주의 시간·스트레스를 줄이는 운영대행으로 시작해, 민원·수납·업체·공사·재발 데이터를 축적하고, 이를 자동화·로봇화·AI화하여 건물 유지관리 단가를 낮추는 <b>OS 기업</b>으로 진화한다.</blockquote>";
@@ -2090,8 +2310,9 @@ document.getElementById("noticeBtn").addEventListener("click", openNoticePanel);
 document.getElementById("noticeBanner").addEventListener("click", openNoticePanel);
 
 /* ===== 업데이트 알림(What's New) — 새 버전 나오면 자동 팝업 ===== */
-const APP_VERSION = "4.8";
+const APP_VERSION = "4.9";
 const CHANGELOG = [
+  { v:"4.9", d:"2026-06-30", items:["케이스 화면 Google 로그인 보호 추가 — 승인된 Firebase 사용자만 케이스 열람·수정 가능","구글폼 자동 등록도 Firebase Auth 자동화 계정 토큰으로 /cases에 저장하도록 보안 규칙 대응"] },
   { v:"4.8", d:"2026-06-30", items:["케이스 단계 순서 잠금 추가 — 이전 단계가 완료되지 않으면 다음 단계 진행·자동발송·문서 버튼을 막음","구글폼 자동 등록 케이스도 ①만 자동 완료되도록 조정해 ②를 건너뛰는 완료 상태 방지"] },
   { v:"4.7", d:"2026-06-30", items:["① 온보딩 수집서 버튼을 자동 문서 생성에서 Drive 매칭 파일 열기로 전환","구글폼 건물명·건물 주소로 Drive 폴더의 DOCX 본문 검색 후 1건이면 연결, 없거나 복수면 계약확인보류 표시"] },
   { v:"4.6", d:"2026-06-30", items:["계약 건물 인덱스 매칭 표시 — 구글폼 민원과 계약 건물 정보를 건물명·주소로 연결","케이스 ①에 계약상태·주소·건물주·계약파일 링크 표시, 미매칭은 계약확인보류 배지 표시"] },
