@@ -4,7 +4,7 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>BRING 원주 건물 유지보수 지도</title>
-  <script src="./data/building-maintenance-companies.js?v=20260701-sewer-vendors-5"></script>
+  <script src="./data/building-maintenance-companies.js?v=20260701-hvac-source-group"></script>
   <style>
     :root {
       --ink: #172033;
@@ -346,6 +346,7 @@
     .legend .sheet-dot { background: var(--sheet); }
     .legend .electric-dot { background: #f59e0b; }
     .legend .leak-dot { background: #2563eb; }
+    .legend .hvac-dot { background: #f97316; }
 
     .pin {
       display: grid;
@@ -450,6 +451,7 @@
         <div class="stat"><b id="sheetCount">0</b><span>원주업체</span></div>
         <div class="stat"><b id="electricCount">0</b><span>전기업체</span></div>
         <div class="stat"><b id="leakCount">0</b><span>누수/하수구</span></div>
+        <div class="stat"><b id="hvacCount">0</b><span>냉난방</span></div>
         <div class="stat"><b id="mapCount">0</b><span>지도 표시</span></div>
       </div>
 
@@ -463,6 +465,7 @@
             <option value="google-sheet">원주업체</option>
             <option value="electric-vendor">전기업체</option>
             <option value="leak-vendor">누수,하수구업체</option>
+            <option value="hvac-vendor">냉난방업체</option>
           </select>
           <select id="locationFilter" aria-label="위치 필터">
             <option value="all">전체</option>
@@ -484,6 +487,7 @@
         <span><i class="sheet-dot"></i>원주 유지보수</span>
         <span><i class="electric-dot"></i>전기업체</span>
         <span><i class="leak-dot"></i>누수/하수구</span>
+        <span><i class="hvac-dot"></i>냉난방</span>
       </div>
       <div class="map-error" id="mapError">
         <div>
@@ -514,6 +518,7 @@
     const DATA = window.BRING_BUILDING_MAINTENANCE_DATA || { companies: [], categories: [] };
     const WONJU = { lat: 37.3422, lng: 127.9202 };
     const LEAK_VENDOR_CATEGORY = "누수·배관";
+    const HVAC_VENDOR_CATEGORIES = new Set(["냉난방·보일러", "냉난방·에어컨"]);
     const ELECTRIC_VENDOR_IDS = new Set([
       "sheet-003",
       "sheet-030", "sheet-031", "sheet-032", "sheet-033", "sheet-034",
@@ -563,6 +568,7 @@
       sheet: document.getElementById("sheetCount"),
       electric: document.getElementById("electricCount"),
       leak: document.getElementById("leakCount"),
+      hvac: document.getElementById("hvacCount"),
       mapped: document.getElementById("mapCount"),
       visibleMapCount: document.getElementById("visibleMapCount"),
       mapError: document.getElementById("mapError")
@@ -585,6 +591,7 @@
     function markerColorFor(company) {
       if (sourceKey(company) === "electric-vendor") return "#f59e0b";
       if (sourceKey(company) === "leak-vendor") return "#2563eb";
+      if (sourceKey(company) === "hvac-vendor") return "#f97316";
       return company.source === "google-sheet" ? colorFor(company.category) : "#111827";
     }
 
@@ -592,6 +599,7 @@
       if (company.source !== "google-sheet") return "excel";
       if (ELECTRIC_VENDOR_IDS.has(company.id)) return "electric-vendor";
       if (company.category === LEAK_VENDOR_CATEGORY) return "leak-vendor";
+      if (HVAC_VENDOR_CATEGORIES.has(company.category)) return "hvac-vendor";
       return "google-sheet";
     }
 
@@ -603,6 +611,7 @@
       const key = sourceKey(company);
       if (key === "electric-vendor") return "전기업체";
       if (key === "leak-vendor") return "누수,하수구업체";
+      if (key === "hvac-vendor") return "냉난방업체";
       return key === "google-sheet" ? "원주업체" : "경쟁사";
     }
 
@@ -677,6 +686,7 @@
       els.sheet.textContent = DATA.companies.filter(company => sourceKey(company) === "google-sheet").length;
       els.electric.textContent = DATA.companies.filter(company => sourceKey(company) === "electric-vendor").length;
       els.leak.textContent = DATA.companies.filter(company => sourceKey(company) === "leak-vendor").length;
+      els.hvac.textContent = DATA.companies.filter(company => sourceKey(company) === "hvac-vendor").length;
       els.mapped.textContent = mappedAll;
       els.visibleMapCount.textContent = `지도 표시 ${filtered.filter(hasLocation).length}개`;
     }
