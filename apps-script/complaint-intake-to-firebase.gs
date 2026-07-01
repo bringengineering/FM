@@ -80,6 +80,383 @@ function onComplaintFormSubmit(e) {
   processResponseRow_(sheet, row);
 }
 
+function doPost(e) {
+  try {
+    const payload = JSON.parse(e && e.postData && e.postData.contents ? e.postData.contents : "{}");
+    if (payload.action === "sendVendorEstimateMms") {
+      return jsonResponse_(handleVendorEstimateMms_(payload));
+    }
+    return jsonResponse_({ ok: false, message: "지원하지 않는 action입니다." });
+  } catch (err) {
+    return jsonResponse_({ ok: false, message: err.message });
+  }
+}
+
+function jsonResponse_(value) {
+  return ContentService
+    .createTextOutput(JSON.stringify(value || {}))
+    .setMimeType(ContentService.MimeType.JSON);
+}
+
+function handleVendorEstimateMms_(payload) {
+  const caseId = String(payload.caseId || "").trim();
+  const selectedVendors = Array.isArray(payload.vendors) ? payload.vendors.map(normalizeVendorForMms_).filter(v => v.name || v.phone) : [];
+
+  if (!caseId) return { ok: false, message: "caseId가 없습니다." };
+
+  const casePayload = readCaseFromFirebase_(caseId);
+  if (!casePayload) return { ok: false, message: "Firebase 케이스를 찾지 못했습니다: " + caseId };
+
+  if (!selectedVendors.length) {
+    return updateVendorMmsCase_(caseId, casePayload, {
+      ok: false,
+      status: "blocked",
+      statusText: "선택된 업체가 없어 MMS 발송을 보류했습니다.",
+      sent: [],
+      failed: [],
+      skipped: []
+    });
+  }
+
+  const record = readResponseRecordForCase_(casePayload);
+  const photo = firstJpegPhotoFromRecord_(record);
+  if (!photo.ok) {
+    return updateVendorMmsCase_(caseId, casePayload, {
+      ok: false,
+      status: "blocked",
+      statusText: photo.message,
+      sent: [],
+      failed: [],
+      skipped: selectedVendors.map(v => ({ name: v.name, reason: "사진 미확인" }))
+    });
+  }
+
+  const config = getSensConfig_();
+  if (!config.enabled) {
+    return updateVendorMmsCase_(caseId, casePayload, {
+      ok: false,
+      status: "blocked",
+      statusText: "NCP SENS 설정 또는 승인된 발신번호가 없어 MMS 발송을 보류했습니다.",
+      photoName: photo.fileName,
+      sent: [],
+      failed: [],
+      skipped: selectedVendors.map(v => ({ name: v.name, reason: "SENS 설정 필요" }))
+    });
+  }
+
+  const upload = uploadSensMmsAttachment_(photo, config);
+  if (!upload.ok) {
+    return updateVendorMmsCase_(caseId, casePayload, {
+      ok: false,
+      status: "blocked",
+      statusText: upload.message,
+      photoName: photo.fileName,
+      sent: [],
+      failed: [],
+      skipped: selectedVendors.map(v => ({ name: v.name, reason: "사진 업로드 실패" }))
+    });
+  }
+
+  const content = String(payload.message || "").trim() || makeVendorEstimateMmsContent_(casePayload, record);
+  const result = {
+    ok: false,
+    status: "failed",
+    statusText: "",
+    photoName: photo.fileName,
+    sensFileId: upload.fileId,
+    sent: [],
+    failed: [],
+    skipped: []
+  };
+
+  selectedVendors.forEach(vendor => {
+    const to = vendorSmsPhone_(vendor);
+    if (!to) {
+      result.skipped.push({ name: vendor.name || "업체명 없음", reason: "발송 가능한 전화번호 없음" });
+      return;
+    }
+
+    const sendResult = sendSensMms_(to, content, upload.fileId, vendor.name || "업체", config);
+    const item = {
+      name: vendor.name || "업체명 없음",
+      category: vendor.category || "",
+      phoneMasked: maskPhone_(to),
+      message: sendResult.message
+    };
+    if (sendResult.ok) {
+      result.sent.push(item);
+    } else {
+      result.failed.push(item);
+    }
+  });
+
+  result.ok = result.sent.length > 0 && result.failed.length === 0;
+  result.status = result.ok ? "sent" : "failed";
+  result.statusText = result.ok
+    ? "업체 MMS 발송 완료: " + result.sent.length + "곳"
+    : "업체 MMS 발송 보류/실패: 성공 " + result.sent.length + "곳, 실패 " + result.failed.length + "곳, 제외 " + result.skipped.length + "곳";
+
+  return updateVendorMmsCase_(caseId, casePayload, result);
+}
+
+function readCaseFromFirebase_(caseId) {
+  const response = UrlFetchApp.fetch(firebaseCaseUrl_(caseId), {
+    method: "get",
+    muteHttpExceptions: true
+  });
+  const code = response.getResponseCode();
+  if (code === 404) return null;
+  if (code < 200 || code >= 300) {
+    throw new Error("Firebase 조회 실패: HTTP " + code + " / " + response.getContentText());
+  }
+  const body = response.getContentText();
+  return body && body !== "null" ? JSON.parse(body) : null;
+}
+
+function readResponseRecordForCase_(casePayload) {
+  const row = Number(casePayload && casePayload.sheetRow);
+  if (!row || row < 2) return {};
+  const sheet = getResponseSheet_();
+  const headers = ensureOutputHeaders_(sheet);
+  const values = sheet.getRange(row, 1, 1, headers.length).getValues()[0];
+  return recordFromRow_(headers, values);
+}
+
+function firstJpegPhotoFromRecord_(record) {
+  const photoValue = readField_(record, ["사진 첨부", "첨부 사진", "사진", "사진첨부"]);
+  if (!photoValue) return { ok: false, message: "구글폼 사진 첨부가 없어 MMS 발송을 보류했습니다." };
+
+  const ids = extractDriveFileIdsFromText_(photoValue);
+  if (!ids.length) return { ok: false, message: "사진 첨부에서 Drive 파일 ID를 찾지 못했습니다." };
+
+  const errors = [];
+  for (const id of ids) {
+    try {
+      const file = DriveApp.getFileById(id);
+      const blob = file.getBlob();
+      const name = file.getName() || "photo.jpg";
+      const contentType = blob.getContentType() || "";
+      const isJpeg = /jpe?g$/i.test(name) || /jpeg/i.test(contentType);
+      if (!isJpeg) {
+        errors.push(name + ": JPG/JPEG 파일이 아님");
+        continue;
+      }
+
+      const bytes = blob.getBytes();
+      if (bytes.length > 300 * 1024) {
+        errors.push(name + ": SENS MMS 첨부 제한 300KB 초과");
+        continue;
+      }
+
+      return {
+        ok: true,
+        driveFileId: id,
+        fileName: makeSensImageName_(name),
+        fileBody: Utilities.base64Encode(bytes),
+        byteSize: bytes.length
+      };
+    } catch (err) {
+      errors.push(id + ": " + err.message);
+    }
+  }
+
+  return { ok: false, message: "MMS로 보낼 수 있는 JPG/JPEG 사진을 찾지 못했습니다. " + errors.join(" / ") };
+}
+
+function extractDriveFileIdsFromText_(value) {
+  const text = String(value || "");
+  const ids = [];
+  const patterns = [
+    /\/d\/([A-Za-z0-9_-]{20,})/g,
+    /[?&]id=([A-Za-z0-9_-]{20,})/g,
+    /open\?id=([A-Za-z0-9_-]{20,})/g
+  ];
+  patterns.forEach(pattern => {
+    let match;
+    while ((match = pattern.exec(text)) !== null) ids.push(match[1]);
+  });
+  const generic = text.match(/[A-Za-z0-9_-]{25,}/g) || [];
+  generic.forEach(id => ids.push(id));
+  return [...new Set(ids)];
+}
+
+function makeSensImageName_(name) {
+  const ext = /\.jpeg$/i.test(name) ? ".jpeg" : ".jpg";
+  return ("bring_photo_" + Utilities.formatDate(new Date(), "Asia/Seoul", "MMddHHmmss")).slice(0, 40 - ext.length) + ext;
+}
+
+function uploadSensMmsAttachment_(photo, config) {
+  const uri = "/sms/v2/services/" + encodeURIComponent(config.serviceId) + "/files";
+  const response = sensPostJson_(uri, {
+    fileName: photo.fileName,
+    fileBody: photo.fileBody
+  }, config);
+
+  if (!response.ok) return { ok: false, message: "MMS 사진 업로드 실패: " + response.message };
+
+  const fileId = findSensFileId_(response.json);
+  if (!fileId) return { ok: false, message: "MMS 사진 업로드 응답에서 fileId를 찾지 못했습니다: " + response.body.slice(0, 200) };
+  return { ok: true, fileId: fileId };
+}
+
+function sendSensMms_(to, content, fileId, label, config) {
+  if (!config || !config.enabled) config = getSensConfig_();
+  if (!config.enabled) return { ok: false, message: "SENS 설정필요" };
+  if (!fileId) return { ok: false, message: "MMS 첨부 fileId 없음" };
+  if (byteLength_(content) > 2000) return { ok: false, message: "MMS 문구 2000바이트 초과" };
+
+  const uri = "/sms/v2/services/" + encodeURIComponent(config.serviceId) + "/messages";
+  const payload = {
+    type: "MMS",
+    contentType: "COMM",
+    countryCode: "82",
+    from: config.from,
+    subject: "BRING Care",
+    content: content,
+    messages: [{ to: to, content: content }],
+    files: [{ fileId: fileId }]
+  };
+  const response = sensPostJson_(uri, payload, config);
+  return response.ok
+    ? { ok: true, message: "MMS 발송요청 완료(" + label + ")" }
+    : { ok: false, message: "MMS 발송실패(" + label + "): " + response.message };
+}
+
+function sensPostJson_(uri, payload, config) {
+  const timestamp = String(Date.now());
+  const signature = makeNcpSignature_("POST", uri, timestamp, config.accessKey, config.secretKey);
+  try {
+    const response = UrlFetchApp.fetch("https://sens.apigw.ntruss.com" + uri, {
+      method: "post",
+      contentType: "application/json; charset=utf-8",
+      headers: {
+        "x-ncp-apigw-timestamp": timestamp,
+        "x-ncp-iam-access-key": config.accessKey,
+        "x-ncp-apigw-signature-v2": signature
+      },
+      payload: JSON.stringify(payload),
+      muteHttpExceptions: true
+    });
+    const code = response.getResponseCode();
+    const body = response.getContentText();
+    let json = {};
+    try { json = body ? JSON.parse(body) : {}; } catch (err) {}
+    if (code >= 200 && code < 300) return { ok: true, code: code, body: body, json: json };
+    return { ok: false, code: code, body: body, json: json, message: "HTTP " + code + " / " + body.slice(0, 200) };
+  } catch (err) {
+    return { ok: false, code: 0, body: "", json: {}, message: err.message };
+  }
+}
+
+function findSensFileId_(value) {
+  if (!value || typeof value !== "object") return "";
+  if (value.fileId) return value.fileId;
+  if (Array.isArray(value.files)) {
+    for (const file of value.files) {
+      const id = findSensFileId_(file);
+      if (id) return id;
+    }
+  }
+  for (const key in value) {
+    if (value[key] && typeof value[key] === "object") {
+      const id = findSensFileId_(value[key]);
+      if (id) return id;
+    }
+  }
+  return "";
+}
+
+function normalizeVendorForMms_(vendor) {
+  vendor = vendor || {};
+  return {
+    id: String(vendor.id || ""),
+    category: String(vendor.category || ""),
+    no: String(vendor.no || ""),
+    type: String(vendor.type || ""),
+    name: String(vendor.name || ""),
+    address: String(vendor.address || ""),
+    phone: String(vendor.phone || ""),
+    map: String(vendor.map || ""),
+    promo: String(vendor.promo || ""),
+    note: String(vendor.note || "")
+  };
+}
+
+function vendorSmsPhone_(vendor) {
+  const raw = [vendor.phone, vendor.mobile, vendor.tel].filter(Boolean).join("\n");
+  const phones = extractPhones_(raw);
+  return phones.find(phone => /^01[016789]\d{7,8}$/.test(phone)) || phones[0] || "";
+}
+
+function extractPhones_(value) {
+  const matches = String(value || "").match(/(?:\+?82[-.\s]?)?0?\d{1,3}[-.\s]?\d{3,4}[-.\s]?\d{4}/g) || [];
+  return [...new Set(matches.map(normalizePhoneForSms_).filter(phone => phone.length >= 9 && phone.length <= 11))];
+}
+
+function makeVendorEstimateMmsContent_(casePayload, record) {
+  const building = casePayload.building || readField_(record, ["건물명", "건물"]) || "건물 미입력";
+  const address = casePayload.address || readField_(record, ["건물 주소", "주소"]) || "주소 미입력";
+  const room = readField_(record, ["호실"]) || casePayload.room || "호실 미입력";
+  const issueType = casePayload.issueType || readField_(record, ["문제 유형"]) || "문제 유형 미입력";
+  const vendorType = casePayload.vendorType || "업체 분류 미확인";
+  const visitTime = casePayload.visitTime || readField_(record, ["방문 가능 시간"]) || "협의 필요";
+  const ticketNo = casePayload.ticketNo || casePayload.id || "";
+  return [
+    "[BRING Care 견적요청]",
+    building + " / " + room,
+    "주소: " + address,
+    "문제: " + issueType + " / " + vendorType,
+    "방문 가능: " + visitTime,
+    "",
+    "첨부 사진 확인 후 현장 확인 가능 여부와 견적 회신 부탁드립니다.",
+    "접수번호: " + ticketNo
+  ].join("\n");
+}
+
+function updateVendorMmsCase_(caseId, casePayload, result) {
+  casePayload.status = casePayload.status || {};
+  casePayload.note = casePayload.note || {};
+  casePayload.log = Array.isArray(casePayload.log) ? casePayload.log : [];
+  casePayload.vendorEstimateMms = result;
+  casePayload.note.c5 = makeVendorMmsNote_(result);
+  casePayload.status.c5 = result.ok ? "done" : "doing";
+  if (result.ok && casePayload.status.c6 !== "done") {
+    casePayload.status.c6 = "doing";
+  }
+  casePayload.updatedAt = new Date().toISOString();
+  casePayload.log.unshift("업체 MMS " + (result.ok ? "발송완료" : "발송보류") + " / " + (result.statusText || ""));
+  if (casePayload.log.length > 30) casePayload.log.length = 30;
+  writeCaseToFirebase_(caseId, casePayload);
+  return Object.assign({ caseId: caseId }, result);
+}
+
+function makeVendorMmsNote_(result) {
+  const lines = [
+    "[업체 MMS 견적 요청]",
+    "상태: " + (result.ok ? "발송완료" : "진행중/보류"),
+    result.statusText || "",
+    result.photoName ? "사진: " + result.photoName : "",
+    result.sensFileId ? "SENS 파일 ID: " + result.sensFileId : ""
+  ].filter(Boolean);
+
+  if (result.sent && result.sent.length) {
+    lines.push("");
+    lines.push("[발송 완료]");
+    result.sent.forEach(item => lines.push("- " + item.name + " / " + item.phoneMasked + " / " + item.message));
+  }
+  if (result.failed && result.failed.length) {
+    lines.push("");
+    lines.push("[발송 실패]");
+    result.failed.forEach(item => lines.push("- " + item.name + " / " + item.phoneMasked + " / " + item.message));
+  }
+  if (result.skipped && result.skipped.length) {
+    lines.push("");
+    lines.push("[제외]");
+    result.skipped.forEach(item => lines.push("- " + item.name + " / " + item.reason));
+  }
+  return lines.join("\n");
+}
+
 function processExistingResponses() {
   const sheet = getResponseSheet_();
   ensureOutputHeaders_(sheet);
@@ -877,11 +1254,14 @@ function setCellByHeader_(sheet, row, headerMap, header, value) {
   if (headerMap[header]) sheet.getRange(row, headerMap[header]).setValue(value);
 }
 
-function writeCaseToFirebase_(caseId, payload) {
+function firebaseCaseUrl_(caseId) {
   const base = COMPLAINT_CONFIG.FIREBASE_DATABASE_URL.replace(/\/$/, "");
   const path = COMPLAINT_CONFIG.FIREBASE_CASES_PATH.replace(/^\/|\/$/g, "");
-  const url = base + "/" + path + "/" + encodeURIComponent(caseId) + ".json";
-  const response = UrlFetchApp.fetch(url, {
+  return base + "/" + path + "/" + encodeURIComponent(caseId) + ".json";
+}
+
+function writeCaseToFirebase_(caseId, payload) {
+  const response = UrlFetchApp.fetch(firebaseCaseUrl_(caseId), {
     method: "put",
     contentType: "application/json; charset=utf-8",
     payload: JSON.stringify(payload),
