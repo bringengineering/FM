@@ -383,13 +383,22 @@
   .np-post .meta{ font-size:11px; color:#98a2b3; margin-bottom:4px; display:flex; justify-content:space-between; align-items:center; }
   .np-post .body2{ font-size:13px; color:#2a3445; white-space:pre-wrap; line-height:1.55; }
   .np-post .del{ border:none; background:none; color:#c92a2a; cursor:pointer; font-size:11px; }
+  /* 🔐 로그인 게이트 */
+  .authgate{ position:fixed; inset:0; background:linear-gradient(135deg,#16294d,#1b335f 55%,#2a4f8c); display:none; align-items:center; justify-content:center; z-index:100000; }
+  .authgate.show{ display:flex; }
+  .ag-box{ background:#fff; border-radius:18px; padding:40px 46px; text-align:center; box-shadow:0 24px 70px rgba(0,0,0,.35); max-width:90vw; }
+  .ag-logo{ font-size:25px; font-weight:800; color:#1b335f; }
+  .ag-sub{ font-size:13.5px; color:#6b7787; margin:9px 0 26px; line-height:1.6; }
+  .ag-btn{ border:1px solid #1b335f; background:#1b335f; color:#fff; border-radius:11px; padding:13px 28px; font-size:15px; font-weight:700; cursor:pointer; }
+  .ag-btn:hover{ background:#26477e; }
+  .ag-msg{ margin-top:18px; font-size:12.5px; color:#c0392b; line-height:1.6; }
 </style>
 </head>
 <body class="editing">
   <div class="stage">
     <header>
       <h1>🔵 업무 흐름 빌더</h1>
-      <div><span class="verbadge" id="verBadge" title="업데이트 내역 보기">Ver</span><span class="conn local" id="conn">⚪ 로컬 모드</span></div>
+      <div><span id="authUser" style="display:none;font-size:12px;color:#52607a;margin-right:8px"></span><button id="logoutBtn" style="display:none;font-size:12px;border:1px solid var(--line);background:#fff;border-radius:7px;padding:3px 10px;cursor:pointer;margin-right:10px">로그아웃</button><span class="verbadge" id="verBadge" title="업데이트 내역 보기">Ver</span><span class="conn local" id="conn">⚪ 로컬 모드</span></div>
     </header>
 
     <div class="notice-banner" id="noticeBanner" title="비전·공지 열기 (클릭)"><span class="nb-ic">📢</span><div class="nb-main"><div class="nb-ti">비전 · 공지</div><div class="nb-txt" id="nbTxt">비전·공지</div></div><span class="nb-more">열기 ›</span></div>
@@ -508,6 +517,7 @@
   <!-- Firebase (실시간 동기화용) — 키 입력 전에는 '로컬 모드'로 동작 -->
   <script src="https://www.gstatic.com/firebasejs/10.12.5/firebase-app-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/10.12.5/firebase-database-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.12.5/firebase-auth-compat.js"></script>
 
 <script>
 /* ===== ① 실시간 공유 켜기: 아래 값을 본인 Firebase 프로젝트 값으로 교체 (교체 전엔 '로컬 모드') ===== */
@@ -532,6 +542,7 @@ let nodes = {};                 // { id:{id,label,x,y,parent,color?,r?} }
 let links = [];                 // [ {from,to} ]
 let panX = 0, panY = 0, zoom = 1;
 let db = null, graphRef = null, online = false, presenceCount = 0;
+let auth = null, dbAttached = false, authedUser = null, authGateEl = null;
 let writeTimer = null, pendingRemote = null, busy = false;
 let linkMode = false, linkSource = null, popFor = null;
 let history = [], redoStack = [];
@@ -880,6 +891,16 @@ function start(){
 function initFirebase(){
   firebase.initializeApp(firebaseConfig);
   db = firebase.database();
+  if (firebase.auth){
+    auth = firebase.auth();
+    ensureAuthGate(); showAuthGate();
+    auth.onAuthStateChanged(user => {
+      if (user){ authedUser=user; updateAuthUI(user); hideAuthGate(); if(!dbAttached){ dbAttached=true; bootAfterAuth(); } }
+      else { authedUser=null; updateAuthUI(null); showAuthGate(); }
+    });
+  } else { bootAfterAuth(); }   // 인증 SDK 없으면 게이트 없이 동작
+}
+function bootAfterAuth(){
   settings = {};
   clearCaseLocalCache();
   attachCaseSettingsRef();
@@ -906,7 +927,33 @@ function bootFirebase(){
   openBoard(curBoard);
   updateConn(); updateUndoBtn();
 }
-function firebaseErr(err){ if(err) console.warn("Firebase 권한 확인 필요", err); }
+function firebaseErr(err){ if(err){ console.warn("Firebase 권한 확인 필요", err); if(err.code==="PERMISSION_DENIED" || /permission_denied|permission denied/i.test((err&&err.message)||"")) showDenied(); } }
+/* ===== 🔐 Google 로그인 (팀 전용) ===== */
+function authErr(err){ if(err && (err.code==="PERMISSION_DENIED" || /permission_denied|permission denied/i.test((err&&err.message)||""))) showDenied(); }
+function ensureAuthGate(){ if(authGateEl) return; authGateEl=document.createElement("div"); authGateEl.id="authGate"; authGateEl.className="authgate";
+  authGateEl.innerHTML=`<div class="ag-box"><div class="ag-logo">🔵 업무 흐름 빌더</div><div class="ag-sub">BRING 운영 매뉴얼 · 팀 전용<br>허용된 구글 계정으로만 입장할 수 있어요</div><button class="ag-btn" id="agLogin">🔓 Google로 로그인</button><div class="ag-msg" id="agMsg"></div></div>`;
+  document.body.appendChild(authGateEl);
+  authGateEl.querySelector("#agLogin").addEventListener("click", doGoogleLogin);
+}
+function showAuthGate(){ ensureAuthGate(); authGateEl.classList.add("show"); }
+function hideAuthGate(){ if(authGateEl) authGateEl.classList.remove("show"); }
+function doGoogleLogin(){ const msg=document.getElementById("agMsg"); if(msg) msg.textContent="로그인 창을 여는 중…";
+  const prov=new firebase.auth.GoogleAuthProvider();
+  auth.signInWithPopup(prov).catch(e=>{ if(!msg) return;
+    if(e.code==="auth/operation-not-allowed") msg.innerHTML="⚠️ 아직 Google 로그인이 켜지지 않았어요.<br>관리자: Firebase 콘솔 → Authentication → Google 사용 설정";
+    else if(e.code==="auth/unauthorized-domain") msg.innerHTML="⚠️ 이 도메인이 허용되지 않았어요.<br>관리자: Authentication → Settings → 승인된 도메인에 추가";
+    else if(e.code==="auth/popup-closed-by-user"||e.code==="auth/cancelled-popup-request"||e.code==="auth/popup-blocked") msg.textContent="";
+    else msg.textContent="로그인 오류: "+(e.message||e.code);
+  });
+}
+function showDenied(){ ensureAuthGate(); authGateEl.classList.add("show");
+  authGateEl.querySelector(".ag-box").innerHTML=`<div class="ag-logo">🚫 접근 권한 없음</div><div class="ag-sub">이 구글 계정은 허용 목록에 없어요.<br>관리자에게 추가를 요청하세요.</div><button class="ag-btn" id="agOut">다른 계정으로 로그인</button>`;
+  const o=authGateEl.querySelector("#agOut"); if(o) o.addEventListener("click", ()=>{ if(auth) auth.signOut().finally(()=>location.reload()); else location.reload(); });
+}
+function updateAuthUI(user){ const u=document.getElementById("authUser"), b=document.getElementById("logoutBtn"); if(!u||!b) return;
+  if(user){ u.textContent="👤 "+(user.email||""); u.style.display=""; b.style.display=""; b.onclick=()=>{ if(auth) auth.signOut().finally(()=>location.reload()); }; }
+  else { u.style.display="none"; b.style.display="none"; }
+}
 
 /* ===== 저장 (보드별) ===== */
 function graphState(){ return { nodes, links }; }
@@ -2767,8 +2814,9 @@ document.getElementById("noticeBtn").addEventListener("click", openNoticePanel);
 document.getElementById("noticeBanner").addEventListener("click", openNoticePanel);
 
 /* ===== 업데이트 알림(What's New) — 새 버전 나오면 자동 팝업 ===== */
-const APP_VERSION = "4.17";
+const APP_VERSION = "4.18";
 const CHANGELOG = [
+  { v:"4.18", d:"2026-07-01", items:["🔐 Google 로그인 추가 — 팀 전용 접근(허용된 구글 계정만 입장)","로그인해야 보드·케이스가 열리고, 데이터는 Firebase 규칙으로 잠금"] },
   { v:"4.17", d:"2026-07-01", items:["⑥ 견적 비교 단계에 업체별 견적 파일 업로드 패널 추가","업로드된 견적 파일을 Drive 링크 카드로 비교 표시"] },
   { v:"4.16", d:"2026-07-01", items:["④ 업체 후보 카드에서 견적 요청 대상 업체 선택 가능","⑤ 업체 견적 요청을 선택 업체 MMS 발송 확인창으로 전환"] },
   { v:"4.15", d:"2026-07-01", items:["④ 민원·요청 분류 메모를 간단 형식으로 축소","④ 메모 아래에 업체리스트_현진 분류 매칭 업체 전체 카드 표시"] },
@@ -2849,7 +2897,8 @@ window.__wf = { addChild, addRoot, addLink, deleteNode, setNodeColor, resizeNode
   openMailModal, closeMailModal, setMailEndpoint, getSettings:()=>JSON.parse(JSON.stringify(settings)), EMAIL_TEMPLATES,
   openVendorSmsModal, closeVendorSmsModal, setVendorSmsEndpoint, setCaseAutomationEndpoint, selectedCaseVendors,
   openNoticePanel, closeNoticePanel, getNotice:()=>JSON.parse(JSON.stringify(notice||{})), renderNoticeBanner,
-  _addNotice:(t)=>{ ensureNotice(); notice.posts.unshift({id:"t"+Date.now().toString(36),text:t,ts:Date.now()}); saveNotice(); } };
+  _addNotice:(t)=>{ ensureNotice(); notice.posts.unshift({id:"t"+Date.now().toString(36),text:t,ts:Date.now()}); saveNotice(); },
+  ensureAuthGate, showAuthGate, hideAuthGate, showDenied, updateAuthUI };
 
 start();
 initVendorSheetSync();
