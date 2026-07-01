@@ -750,8 +750,6 @@ function consultationWarnings_(description, photo, visitTime, analysis) {
 }
 
 function makeClassificationNote_(ticketNo, record, analysis) {
-  const building = readField_(record, ["건물명", "건물"]) || "건물 미입력";
-  const room = readField_(record, ["호실"]) || "호실 미입력";
   const issueType = readField_(record, ["문제 유형"]) || "문제 유형 미입력";
   const vendorType = analysis.vendorType || "관리자 확인";
   const urgency = analysis.urgency || "미확인";
@@ -761,19 +759,11 @@ function makeClassificationNote_(ticketNo, record, analysis) {
 
   return [
     "[민원·요청 분류]",
-    "문제 대분류: " + issueType,
     "업체 분류: " + vendorType,
     "긴급도: " + urgency,
-    "현장 방문: " + siteVisit,
-    "견적 필요: " + quoteNeed,
-    "",
-    "[판단 근거]",
-    reasons.map(item => "- " + item).join("\n"),
-    "",
-    "[⑤ 업체 요청용 요약]",
-    building + " " + room + " " + issueType + " 문제입니다.",
-    vendorType + " 업체에 현장 확인 및 견적 요청이 필요합니다.",
-    "접수번호: " + ticketNo
+    "현장/견적: " + siteVisit + " / " + quoteNeed,
+    "근거: " + reasons[0],
+    "접수번호: " + ticketNo + " · 문제: " + issueType
   ].join("\n").replace(/\n+$/, "");
 }
 

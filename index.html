@@ -172,6 +172,18 @@
   .vendor-table a{ color:#315fce; text-decoration:none; word-break:break-all; }
   .vendor-table a:hover{ text-decoration:underline; }
   .vendor-empty{ color:#9aa6b5; }
+  .cv-vendors{ margin:8px 0 0; border:1px solid #d8e0ec; border-radius:8px; background:#f8fafd; padding:12px; }
+  .cv-vendors-head{ display:flex; align-items:center; justify-content:space-between; gap:10px; margin-bottom:9px; }
+  .cv-vendors-title{ color:#162033; font-size:13.5px; font-weight:900; }
+  .cv-vendors-sub{ color:#6b7686; font-size:12px; }
+  .cv-vendors .vendor-grid{ grid-template-columns:repeat(3,minmax(0,1fr)); margin-top:0; }
+  .cv-vendors .vendor-card{ box-shadow:none; }
+  .cv-vendors .vendor-card-name{ font-size:14px; }
+  .cv-vendors .vendor-card-type,.cv-vendors .vendor-field-value{ font-size:12.5px; }
+  .cv-vendors .vendor-card-head{ padding:11px 12px 9px; }
+  .cv-vendors .vendor-card-body{ padding:10px 12px 12px; gap:8px; }
+  @media (max-width:1180px){ .cv-vendors .vendor-grid{ grid-template-columns:repeat(2,minmax(0,1fr)); } }
+  @media (max-width:720px){ .cv-vendors .vendor-grid{ grid-template-columns:1fr; } }
   .wsbody .docbox{ display:inline-block; min-width:110px; padding:12px 16px; border:2px solid #4b7bec; border-radius:12px; margin:6px; vertical-align:top; font-size:14px; }
   .wsbody .docshape{ display:inline-flex; align-items:center; justify-content:center; width:112px; height:112px; border-radius:50%; border:2px solid #26de81; padding:10px; margin:6px; vertical-align:top; font-size:14px; text-align:center; }
   /* 자유 캔버스(PPT식) */
@@ -290,7 +302,7 @@
   .cv-notebtn.has{ background:#fff7e6; border-color:#f0dca0; }
   .cv-note{ width:100%; box-sizing:border-box; margin:5px 0 0; border:1px solid var(--line); border-radius:9px; padding:10px 12px; font-size:13px; font-family:inherit; line-height:1.58; min-height:64px; resize:none; overflow:hidden; }
   .cv-note.consultation{ min-height:260px; background:#fffdf8; border-color:#f0dca0; }
-  .cv-note.classification{ min-height:240px; background:#f8fbff; border-color:#b8d4ff; }
+  .cv-note.classification{ min-height:132px; background:#f8fbff; border-color:#b8d4ff; }
   .cv-step .lbl{ flex:1; font-size:13.5px; }
   .cv-act{ border:1px solid #2bcbba; background:#e9fbf8; color:#0c8478; border-radius:8px; padding:5px 11px; font-size:12.5px; cursor:pointer; font-family:inherit; white-space:nowrap; }
   .cv-act .tag{ font-size:10px; opacity:.7; margin-left:3px; }
@@ -586,6 +598,19 @@ let vendorRefreshTimer = null;
 function vendorKey(label){
   return String(label || "").replace(/\s+/g,"").replace(/[ㆍ・]/g,"·");
 }
+const CASE_VENDOR_CATEGORY_MAP = {
+  [vendorKey("전기")]: ["전기·조명"],
+  [vendorKey("전기·조명")]: ["전기·조명"],
+  [vendorKey("누수·배관")]: ["누수·배관"],
+  [vendorKey("누수·방수")]: ["누수·배관", "방수·코킹"],
+  [vendorKey("배관")]: ["누수·배관"],
+  [vendorKey("보일러·난방")]: ["냉난방·보일러"],
+  [vendorKey("에어컨·냉난방")]: ["냉난방·에어컨"],
+  [vendorKey("도어락·출입")]: ["문·창호·도어락"],
+  [vendorKey("창호·문")]: ["문·창호·도어락"],
+  [vendorKey("창호·출입")]: ["문·창호·도어락"],
+  [vendorKey("청소·방역")]: ["청소·위생"]
+};
 function vendorItemsFor(label){
   const key = vendorKey(label);
   return Object.keys(vendorData).find(k => vendorKey(k) === key);
@@ -645,29 +670,30 @@ function vendorExtraFieldsHtml(extra){
     `<div class="vendor-field"><span class="vendor-field-label">${escH(label)}</span><p class="vendor-field-value">${htmlLines(value)}</p></div>`
   ).join("");
 }
+function vendorCardHtml(v){
+  const extraFields = vendorExtraFieldsHtml(v.extra);
+  return `<article class="vendor-card">
+    <div class="vendor-card-head">
+      <div>
+        <div class="vendor-card-name">${escH(v.name)}</div>
+        <div class="vendor-card-type">${htmlLines(v.type)}</div>
+      </div>
+    </div>
+    <div class="vendor-card-body">
+      <div class="vendor-field"><span class="vendor-field-label">전화번호</span><p class="vendor-field-value">${htmlLines(v.phone)}</p></div>
+      <div class="vendor-field"><span class="vendor-field-label">주소</span><p class="vendor-field-value">${htmlLines(v.address)}</p></div>
+      <div class="vendor-field"><span class="vendor-field-label">링크</span><div class="vendor-field-value">${vendorLinksHtml(v.map, v.promo)}</div></div>
+      <div class="vendor-field"><span class="vendor-field-label">평점</span><p class="vendor-field-value">${htmlLines(v.rating)}</p></div>
+      <div class="vendor-field"><span class="vendor-field-label">단가</span><p class="vendor-field-value">${htmlLines(v.price)}</p></div>
+      <div class="vendor-field"><span class="vendor-field-label">비고</span><p class="vendor-field-value">${htmlLines(v.note)}</p></div>
+      ${extraFields}
+    </div>
+  </article>`;
+}
 function vendorDetailHtml(label){
   const cat = vendorItemsFor(label);
   if(!cat) return "";
-  const cards = vendorData[cat].map(v => {
-    const extraFields = vendorExtraFieldsHtml(v.extra);
-    return `<article class="vendor-card">
-      <div class="vendor-card-head">
-        <div>
-          <div class="vendor-card-name">${escH(v.name)}</div>
-          <div class="vendor-card-type">${htmlLines(v.type)}</div>
-        </div>
-      </div>
-      <div class="vendor-card-body">
-        <div class="vendor-field"><span class="vendor-field-label">전화번호</span><p class="vendor-field-value">${htmlLines(v.phone)}</p></div>
-        <div class="vendor-field"><span class="vendor-field-label">주소</span><p class="vendor-field-value">${htmlLines(v.address)}</p></div>
-        <div class="vendor-field"><span class="vendor-field-label">링크</span><div class="vendor-field-value">${vendorLinksHtml(v.map, v.promo)}</div></div>
-        <div class="vendor-field"><span class="vendor-field-label">평점</span><p class="vendor-field-value">${htmlLines(v.rating)}</p></div>
-        <div class="vendor-field"><span class="vendor-field-label">단가</span><p class="vendor-field-value">${htmlLines(v.price)}</p></div>
-        <div class="vendor-field"><span class="vendor-field-label">비고</span><p class="vendor-field-value">${htmlLines(v.note)}</p></div>
-        ${extraFields}
-      </div>
-    </article>`;
-  }).join("");
+  const cards = vendorData[cat].map(vendorCardHtml).join("");
   return `${VENDOR_AUTO_START}<h2>${escH(cat)} 업체 자료</h2>
     <p class="vendor-note">${escH(vendorDataSource)} · ${escH(vendorDataVersion)} 기준</p>
     <div class="vendor-grid">${cards}</div>${VENDOR_AUTO_END}`;
@@ -1965,34 +1991,47 @@ function classificationReasonLines(c){
   return lines;
 }
 function makeClassificationNote(c){
-  const building=c.building||"건물 미입력";
-  const room=c.room||"호실 미입력";
   const issueType=c.issueType||"문제 유형 미입력";
   const vendorType=c.vendorType||"관리자 확인";
   const urgency=c.urgency||"미확인";
   const reasons=classificationReasonLines(c);
   return [
     "[민원·요청 분류]",
-    "문제 대분류: " + issueType,
     "업체 분류: " + vendorType,
     "긴급도: " + urgency,
-    "현장 방문: " + classificationSiteVisit(c),
-    "견적 필요: " + classificationQuoteNeed(c),
-    "",
-    "[판단 근거]",
-    reasons.map(item => "- " + item).join("\n"),
-    "",
-    "[⑤ 업체 요청용 요약]",
-    building + " " + room + " " + issueType + " 문제입니다.",
-    vendorType + " 업체에 현장 확인 및 견적 요청이 필요합니다.",
-    "접수번호: " + (c.ticketNo || c.id || "미발급")
+    "현장/견적: " + classificationSiteVisit(c) + " / " + classificationQuoteNeed(c),
+    "근거: " + reasons[0],
+    "접수번호: " + (c.ticketNo || c.id || "미발급") + " · 문제: " + issueType
   ].join("\n").replace(/\n+$/, "");
 }
 function shouldFillClassificationNote(c){
   const note=String(((c.note||{}).c4)||"").trim();
   if(!note) return true;
+  if(note.includes("[민원·요청 분류]") && (note.includes("[⑤ 업체 요청용 요약]") || note.includes("문제 대분류:"))) return true;
   if(note.includes("[민원·요청 분류]")) return false;
   return /^긴급도:\s*[\s\S]*업체 분류:\s*[\s\S]*판단 근거:/m.test(note);
+}
+function caseVendorCategories(c){
+  const labels=[(c&&c.vendorType) || (c&&c.issueType)].filter(Boolean);
+  const cats=[];
+  labels.forEach(label=>{
+    const mapped=CASE_VENDOR_CATEGORY_MAP[vendorKey(label)] || [];
+    mapped.forEach(cat=>cats.push(cat));
+    const direct=vendorItemsFor(label);
+    if(direct) cats.push(direct);
+  });
+  return [...new Set(cats.map(cat=>vendorItemsFor(cat)||cat).filter(cat=>vendorData[cat]))];
+}
+function renderCaseVendorCandidates(c, stepStatus){
+  if(stepStatus!=="doing" && stepStatus!=="done") return "";
+  const cats=caseVendorCategories(c);
+  const title = c.vendorType || c.issueType || "업체 분류";
+  if(!cats.length){
+    return `<div class="cv-vendors"><div class="cv-vendors-head"><div class="cv-vendors-title">업체 후보</div><div class="cv-vendors-sub">업체리스트_현진</div></div><div class="vendor-empty">업체리스트_현진에서 수동 확인 필요 · 현재 분류: ${escH(title)}</div></div>`;
+  }
+  const cards=cats.flatMap(cat => (vendorData[cat]||[]).map(v => vendorCardHtml(v))).join("");
+  const count=cats.reduce((sum,cat)=>sum+(vendorData[cat]||[]).length,0);
+  return `<div class="cv-vendors"><div class="cv-vendors-head"><div><div class="cv-vendors-title">업체 후보</div><div class="cv-vendors-sub">${escH(cats.join(" + "))} · ${count}곳 · 업체리스트_현진</div></div></div><div class="vendor-grid">${cards}</div></div>`;
 }
 function applyNextStepProgress(c, messages){
   if(!c || !c.status) return false;
@@ -2257,7 +2296,7 @@ function renderCaseList(){
 }
 function autoGrowCaseNote(el){
   if(!el) return;
-  const min=(el.dataset.note==="c3" || el.dataset.note==="c4") ? 260 : 64;
+  const min=el.dataset.note==="c3" ? 260 : el.dataset.note==="c4" ? 132 : 64;
   el.style.height="auto";
   el.style.height=Math.max(min, el.scrollHeight + 2) + "px";
 }
@@ -2288,7 +2327,8 @@ function renderCaseDetail(){
       const nb=`<button class="cv-notebtn ${note?'has':''}" data-notetoggle="${s.k}" title="메모">📝</button>`;
       const noteClass=s.k==='c3'?'consultation':s.k==='c4'?'classification':'';
       const box=open?`<textarea class="cv-note ${noteClass}" data-note="${s.k}" placeholder="이 단계 메모 (민원 내용·선정 업체·금액 등)">${esc(note)}</textarea>`:"";
-      return `<div class="cv-stepwrap"><div class="cv-step ${locked?'locked':st}">${chip}<div class="lbl">${esc(s.t)}</div>${act}${dc}${tb}${nb}</div>${box}</div>`;
+      const vendors=open && s.k==='c4' ? renderCaseVendorCandidates(c, st) : "";
+      return `<div class="cv-stepwrap"><div class="cv-step ${locked?'locked':st}">${chip}<div class="lbl">${esc(s.t)}</div>${act}${dc}${tb}${nb}</div>${box}${vendors}</div>`;
     }).join("")+
     `<button class="cv-del" id="cvDel">🗑 이 케이스 삭제</button>`+
     (c.log&&c.log.length?`<div class="cv-log"><div class="t" style="font-weight:700">기록</div>`+c.log.slice(0,8).map(l=>`<div class="t">· ${esc(l)}</div>`).join("")+`</div>`:"");
@@ -2346,8 +2386,9 @@ document.getElementById("noticeBtn").addEventListener("click", openNoticePanel);
 document.getElementById("noticeBanner").addEventListener("click", openNoticePanel);
 
 /* ===== 업데이트 알림(What's New) — 새 버전 나오면 자동 팝업 ===== */
-const APP_VERSION = "4.14";
+const APP_VERSION = "4.15";
 const CHANGELOG = [
+  { v:"4.15", d:"2026-07-01", items:["④ 민원·요청 분류 메모를 간단 형식으로 축소","④ 메모 아래에 업체리스트_현진 분류 매칭 업체 전체 카드 표시"] },
   { v:"4.14", d:"2026-07-01", items:["완료된 단계의 바로 다음 단계를 자동으로 진행중 표시","새 구글폼 접수도 ① 완료 후 ② 접수확인 발송이 진행중으로 시작"] },
   { v:"4.13", d:"2026-07-01", items:["③ 상담·요청 파악 완료 후 ④ 민원·요청 분류 자동초안 생성","④ 분류카드에 업체 분류·긴급도·현장 방문·견적 필요·업체 요청용 요약 표시"] },
   { v:"4.12", d:"2026-07-01", items:["③ 상담·요청 파악 메모창을 상담카드 내용에 맞춰 자동 확장","상담카드 메모는 더 넓은 시작 높이와 읽기 쉬운 줄간격으로 표시"] },
