@@ -481,6 +481,9 @@ function applySmsResultToCase_(casePayload, smsResult) {
   casePayload.status = casePayload.status || {};
   if (smsResult.status === "발송완료") {
     casePayload.status.c2 = "done";
+    if (casePayload.status.c3 !== "done") {
+      casePayload.status.c3 = "doing";
+    }
   } else if (smsResult.status === "일부발송" || smsResult.status === "발송보류") {
     casePayload.status.c2 = "doing";
   }
@@ -681,6 +684,71 @@ function makeSummary_(record, issueType, description) {
   return [building, room, issueType].filter(Boolean).join(" / ") + " - " + preview;
 }
 
+function makeConsultationNote_(ticketNo, record, analysis, sheetUrl) {
+  const building = readField_(record, ["건물명", "건물"]) || "건물 미입력";
+  const room = readField_(record, ["호실"]) || "호실 미입력";
+  const issueType = readField_(record, ["문제 유형"]) || "문제 유형 미입력";
+  const description = readField_(record, ["증상 설명", "민원 내용", "내용"]);
+  const photo = readField_(record, ["사진 첨부"]);
+  const visitTime = readField_(record, ["방문 가능 시간"]);
+  const extra = readField_(record, ["추가 요청사항"]);
+  const questions = consultationQuestions_(issueType, [issueType, description, extra].join(" "));
+  const warnings = consultationWarnings_(description, photo, visitTime, analysis);
+
+  return [
+    "[상담 요약]",
+    analysis.summary || makeSummary_(record, issueType, description),
+    "",
+    "[접수 정보]",
+    "접수번호: " + ticketNo,
+    "건물/호실: " + building + " / " + room,
+    "문제 유형: " + issueType,
+    "방문 가능 시간: " + (visitTime || "미입력"),
+    "사진/원본: " + (sheetUrl ? "응답 시트에서 확인" : (photo ? "첨부됨" : "미확인")),
+    "",
+    "[추가 확인 질문]",
+    questions.map(item => "- " + item).join("\n"),
+    "",
+    "[누락/주의]",
+    warnings.map(item => "- " + item).join("\n"),
+    "",
+    "[다음 액션]",
+    "- ④ 민원·요청 분류에서 업체 분류 확인: " + (analysis.vendorType || "관리자 확인"),
+    "- 긴급도 확인: " + (analysis.urgency || "미확인"),
+    sheetUrl ? "- 개인정보/사진 원본 링크: " + sheetUrl : ""
+  ].filter(line => line !== "").join("\n");
+}
+
+function consultationQuestions_(issueType, haystack) {
+  const text = String(haystack || "").toLowerCase();
+  if (issueType === "전기" || /전기|차단기|정전|스파크|조명/.test(text)) {
+    return ["전체 정전인지 해당 호실만 문제인지 확인", "차단기가 반복해서 내려가는지 확인", "타는 냄새나 스파크가 있었는지 확인"];
+  }
+  if (issueType === "누수" || issueType === "배관" || /누수|배관|물|천장|배수|역류/.test(text)) {
+    return ["물이 떨어지는 위치와 범위 확인", "계속 새는지 간헐적으로 새는지 확인", "아래층 피해나 전기 설비 근처 누수 여부 확인"];
+  }
+  if (issueType === "도어락" || /도어락|문|잠금|출입/.test(text)) {
+    return ["현재 출입 가능 여부 확인", "배터리 교체 여부 확인", "문틀/잠금장치 물리적 걸림 여부 확인"];
+  }
+  if (issueType === "보일러" || /보일러|난방|온수/.test(text)) {
+    return ["온수와 난방 중 어떤 기능 문제인지 확인", "에러코드 표시 여부 확인", "가스 밸브와 전원 상태 확인"];
+  }
+  if (issueType === "에어컨" || /에어컨|냉방|실외기/.test(text)) {
+    return ["전원이 켜지는지 확인", "냉방이 안 되는지 누수/소음 문제인지 확인", "실외기 작동 여부 확인"];
+  }
+  return ["현장 확인이 필요한 증상인지 확인", "사진 추가 요청 필요 여부 확인", "방문 가능 시간 재확인"];
+}
+
+function consultationWarnings_(description, photo, visitTime, analysis) {
+  const warnings = [];
+  if (!photo) warnings.push("사진 첨부 없음: 현장 판단 전 사진 요청 권장");
+  if (!description || String(description).replace(/\s/g, "").length < 12) warnings.push("설명이 짧음: 증상 세부 확인 필요");
+  if (!visitTime) warnings.push("방문 가능 시간 미입력: 일정 조율 전 확인 필요");
+  if (analysis && analysis.urgency === "긴급") warnings.push("긴급 표현 감지: 관리자 우선 확인");
+  if (!warnings.length) warnings.push("필수 상담 정보는 1차로 확보됨");
+  return warnings;
+}
+
 function buildCasePayload_(ticketNo, record, analysis, contractMatch, row, sheet) {
   const timestamp = readRawField_(record, ["타임스탬프", "Timestamp"]);
   const receivedAt = dateFromValue_(timestamp).toISOString();
@@ -691,6 +759,7 @@ function buildCasePayload_(ticketNo, record, analysis, contractMatch, row, sheet
   const phone = readField_(record, ["연락처", "전화번호", "휴대폰"]);
   const issueType = readField_(record, ["문제 유형"]);
   const visitTime = readField_(record, ["방문 가능 시간"]);
+  const sheetUrl = COMPLAINT_CONFIG.RESPONSE_SHEET_URL + "#gid=" + sheet.getSheetId();
   const isContractHold = contractMatch && (contractMatch.status === "unmatched" || contractMatch.status === "multiple" || contractMatch.status === "address_missing");
   const statusValue = isContractHold ? "계약확인보류" : analysis.statusValue;
   const status = isContractHold ? { c1: "doing" } : { c1: "done" };
@@ -706,7 +775,7 @@ function buildCasePayload_(ticketNo, record, analysis, contractMatch, row, sheet
     source: "google_form",
     createdAt: new Date().toISOString(),
     receivedAt: receivedAt,
-    sheetUrl: COMPLAINT_CONFIG.RESPONSE_SHEET_URL + "#gid=" + sheet.getSheetId(),
+    sheetUrl: sheetUrl,
     sheetRow: row,
     name: maskName_(name) || "세입자",
     phone: maskPhone_(phone),
@@ -726,7 +795,7 @@ function buildCasePayload_(ticketNo, record, analysis, contractMatch, row, sheet
     status: status,
     note: {
       c1: c1Note,
-      c3: analysis.summary,
+      c3: makeConsultationNote_(ticketNo, record, analysis, sheetUrl),
       c4: "긴급도: " + analysis.urgency + "\n업체 분류: " + analysis.vendorType + "\n판단 근거: " + analysis.reason,
       c11: visitTime ? "방문 가능 시간: " + visitTime : ""
     },
