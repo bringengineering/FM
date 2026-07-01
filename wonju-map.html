@@ -4,7 +4,7 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>BRING 원주 건물 유지보수 지도</title>
-  <script src="./data/building-maintenance-companies.js?v=20260701-leak-vendors-2"></script>
+  <script src="./data/building-maintenance-companies.js?v=20260701-leak-source-group"></script>
   <style>
     :root {
       --ink: #172033;
@@ -73,7 +73,7 @@
 
     .stats {
       display: grid;
-      grid-template-columns: repeat(5, minmax(0, 1fr));
+      grid-template-columns: repeat(3, minmax(0, 1fr));
       gap: 8px;
       padding: 12px;
       border-bottom: 1px solid var(--line);
@@ -344,6 +344,8 @@
     }
 
     .legend .sheet-dot { background: var(--sheet); }
+    .legend .electric-dot { background: #f59e0b; }
+    .legend .leak-dot { background: #2563eb; }
 
     .pin {
       display: grid;
@@ -447,6 +449,7 @@
         <div class="stat"><b id="excelCount">0</b><span>경쟁사</span></div>
         <div class="stat"><b id="sheetCount">0</b><span>원주업체</span></div>
         <div class="stat"><b id="electricCount">0</b><span>전기업체</span></div>
+        <div class="stat"><b id="leakCount">0</b><span>누수/하수구</span></div>
         <div class="stat"><b id="mapCount">0</b><span>지도 표시</span></div>
       </div>
 
@@ -459,6 +462,7 @@
             <option value="excel">경쟁사</option>
             <option value="google-sheet">원주업체</option>
             <option value="electric-vendor">전기업체</option>
+            <option value="leak-vendor">누수,하수구업체</option>
           </select>
           <select id="locationFilter" aria-label="위치 필터">
             <option value="all">전체</option>
@@ -478,6 +482,8 @@
       <div class="legend">
         <span><i></i>경쟁사 엑셀</span>
         <span><i class="sheet-dot"></i>원주 유지보수</span>
+        <span><i class="electric-dot"></i>전기업체</span>
+        <span><i class="leak-dot"></i>누수/하수구</span>
       </div>
       <div class="map-error" id="mapError">
         <div>
@@ -507,6 +513,7 @@
     }
     const DATA = window.BRING_BUILDING_MAINTENANCE_DATA || { companies: [], categories: [] };
     const WONJU = { lat: 37.3422, lng: 127.9202 };
+    const LEAK_VENDOR_CATEGORY = "누수·배관";
     const ELECTRIC_VENDOR_IDS = new Set([
       "sheet-003",
       "sheet-030", "sheet-031", "sheet-032", "sheet-033", "sheet-034",
@@ -555,6 +562,7 @@
       excel: document.getElementById("excelCount"),
       sheet: document.getElementById("sheetCount"),
       electric: document.getElementById("electricCount"),
+      leak: document.getElementById("leakCount"),
       mapped: document.getElementById("mapCount"),
       visibleMapCount: document.getElementById("visibleMapCount"),
       mapError: document.getElementById("mapError")
@@ -576,12 +584,15 @@
 
     function markerColorFor(company) {
       if (sourceKey(company) === "electric-vendor") return "#f59e0b";
+      if (sourceKey(company) === "leak-vendor") return "#2563eb";
       return company.source === "google-sheet" ? colorFor(company.category) : "#111827";
     }
 
     function sourceKey(company) {
       if (company.source !== "google-sheet") return "excel";
-      return ELECTRIC_VENDOR_IDS.has(company.id) ? "electric-vendor" : "google-sheet";
+      if (ELECTRIC_VENDOR_IDS.has(company.id)) return "electric-vendor";
+      if (company.category === LEAK_VENDOR_CATEGORY) return "leak-vendor";
+      return "google-sheet";
     }
 
     function sourceClass(company) {
@@ -591,6 +602,7 @@
     function sourceName(company) {
       const key = sourceKey(company);
       if (key === "electric-vendor") return "전기업체";
+      if (key === "leak-vendor") return "누수,하수구업체";
       return key === "google-sheet" ? "원주업체" : "경쟁사";
     }
 
@@ -664,6 +676,7 @@
       els.excel.textContent = DATA.companies.filter(company => sourceKey(company) === "excel").length;
       els.sheet.textContent = DATA.companies.filter(company => sourceKey(company) === "google-sheet").length;
       els.electric.textContent = DATA.companies.filter(company => sourceKey(company) === "electric-vendor").length;
+      els.leak.textContent = DATA.companies.filter(company => sourceKey(company) === "leak-vendor").length;
       els.mapped.textContent = mappedAll;
       els.visibleMapCount.textContent = `지도 표시 ${filtered.filter(hasLocation).length}개`;
     }
