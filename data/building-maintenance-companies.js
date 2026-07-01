@@ -1071,25 +1071,26 @@ window.BRING_BUILDING_MAINTENANCE_DATA = {
       "name": "신원주 전기공사/출장수리",
       "category": "전기·조명",
       "service": "전기공사/누전수리/조명/콘센트",
-      "feature": "",
+      "feature": "전기 문제 해결, 원주 지역 24시간 출동 가능. 전기공사, 누전수리, 조명공사, 콘센트/차단기 교체",
       "operation": "010-9616-1155 0507-1333-6085",
-      "region": "강원 원주시 단구동 66-5",
+      "region": "강원 원주시 치악로1524번길 20 2층",
+      "address": "강원 원주시 치악로1524번길 20 2층",
       "scale": "",
       "url": "https://litt.ly/ssonghyo",
       "extraUrl": "",
       "naverUrl": "https://naver.me/5WOYybis",
       "phone": "010-9616-1155 0507-1333-6085",
-      "rating": "★★★★★",
+      "rating": "★★★★★ / 리뷰 5",
       "status": "구글시트",
       "source": "google-sheet",
       "sourceLabel": "원주 유지보수 구글시트",
       "locations": [
         {
-          "label": "단구동",
-          "lat": 37.3178,
-          "lng": 127.9613,
-          "source": "address-region",
-          "precision": "neighborhood"
+          "label": "치악로1524번길",
+          "lat": 37.3212946,
+          "lng": 127.9667854,
+          "source": "naver-place-address",
+          "precision": "road"
         }
       ]
     },
@@ -2253,6 +2254,296 @@ window.BRING_BUILDING_MAINTENANCE_DATA = {
           "lng": 127.9452,
           "source": "address-region",
           "precision": "nearby"
+        }
+      ]
+    },
+    {
+      "id": "sheet-045",
+      "no": 45,
+      "name": "가나전기공사",
+      "category": "전기·조명",
+      "service": "전기공사",
+      "feature": "전기공사 업체",
+      "operation": "033-764-0326",
+      "region": "강원 원주시 월운정안길 7",
+      "address": "강원 원주시 월운정안길 7",
+      "scale": "",
+      "url": "",
+      "extraUrl": "",
+      "naverUrl": "https://naver.me/GqfuGcQ9",
+      "phone": "033-764-0326",
+      "rating": "리뷰 3",
+      "status": "사용자 추가",
+      "source": "google-sheet",
+      "sourceLabel": "원주 유지보수 직접추가",
+      "locations": [
+        {
+          "label": "반곡동 월운정",
+          "lat": 37.32623,
+          "lng": 127.964032,
+          "source": "naver-place-address",
+          "precision": "nearby"
+        }
+      ]
+    },
+    {
+      "id": "sheet-046",
+      "no": 46,
+      "name": "부흥전기상사",
+      "category": "전자·전기",
+      "service": "전자, 전기",
+      "feature": "전자·전기 업체",
+      "operation": "033-734-5542",
+      "region": "강원 원주시 입춘내길 26",
+      "address": "강원 원주시 입춘내길 26",
+      "scale": "",
+      "url": "",
+      "extraUrl": "",
+      "naverUrl": "https://naver.me/FhuGvall",
+      "phone": "033-734-5542",
+      "rating": "리뷰 1",
+      "status": "사용자 추가",
+      "source": "google-sheet",
+      "sourceLabel": "원주 유지보수 직접추가",
+      "locations": [
+        {
+          "label": "반곡동 입춘내길",
+          "lat": 37.3355201,
+          "lng": 127.9688627,
+          "source": "naver-place-address",
+          "precision": "road"
+        }
+      ]
+    },
+    {
+      "id": "sheet-047",
+      "no": 47,
+      "name": "아이엔티",
+      "category": "전자·전기",
+      "service": "전자, 전기, 전기공사, 전기자재, 자재납품",
+      "feature": "대표 키워드: 전기공사, 전기자재, 자재납품, 원주전기",
+      "operation": "033-761-0102",
+      "region": "강원 원주시 강변로 203",
+      "address": "강원 원주시 강변로 203",
+      "scale": "",
+      "url": "",
+      "extraUrl": "",
+      "naverUrl": "https://naver.me/5NeyTb3R",
+      "phone": "033-761-0102",
+      "rating": "리뷰 3",
+      "status": "사용자 추가",
+      "source": "google-sheet",
+      "sourceLabel": "원주 유지보수 직접추가",
+      "locations": [
+        {
+          "label": "반곡동 강변로",
+          "lat": 37.32623,
+          "lng": 127.964032,
+          "source": "naver-place-address",
+          "precision": "road"
+        }
+      ]
+    },
+    {
+      "id": "sheet-048",
+      "no": 48,
+      "name": "케이슬라",
+      "category": "전기·조명",
+      "service": "전기공사",
+      "feature": "전기공사 업체",
+      "operation": "",
+      "region": "강원 원주시 치악로 1521 402호",
+      "address": "강원 원주시 치악로 1521 402호",
+      "scale": "",
+      "url": "",
+      "extraUrl": "",
+      "naverUrl": "https://naver.me/x9VrFOOk",
+      "phone": "",
+      "rating": "리뷰 3",
+      "status": "사용자 추가",
+      "source": "google-sheet",
+      "sourceLabel": "원주 유지보수 직접추가",
+      "locations": [
+        {
+          "label": "치악로 1521",
+          "lat": 37.3199734,
+          "lng": 127.9653454,
+          "source": "naver-place-address",
+          "precision": "building"
+        }
+      ]
+    },
+    {
+      "id": "sheet-049",
+      "no": 49,
+      "name": "신우전기",
+      "category": "전자·전기",
+      "service": "전자, 전기",
+      "feature": "전자·전기 업체",
+      "operation": "033-766-2656",
+      "region": "강원 원주시 소초면 살여울길 65",
+      "address": "강원 원주시 소초면 살여울길 65",
+      "scale": "",
+      "url": "",
+      "extraUrl": "",
+      "naverUrl": "https://naver.me/551gYkVL",
+      "phone": "033-766-2656",
+      "rating": "",
+      "status": "사용자 추가",
+      "source": "google-sheet",
+      "sourceLabel": "원주 유지보수 직접추가",
+      "locations": [
+        {
+          "label": "소초면 살여울길",
+          "lat": 37.415,
+          "lng": 128.001,
+          "source": "address-region",
+          "precision": "nearby"
+        }
+      ]
+    },
+    {
+      "id": "sheet-050",
+      "no": 50,
+      "name": "원영전기",
+      "category": "전자·전기",
+      "service": "전자, 전기",
+      "feature": "전자·전기 업체",
+      "operation": "033-742-6301",
+      "region": "강원 원주시 소초면 치악로 2378-33",
+      "address": "강원 원주시 소초면 치악로 2378-33",
+      "scale": "",
+      "url": "",
+      "extraUrl": "",
+      "naverUrl": "https://naver.me/xaTFYQdm",
+      "phone": "033-742-6301",
+      "rating": "리뷰 8",
+      "status": "사용자 추가",
+      "source": "google-sheet",
+      "sourceLabel": "원주 유지보수 직접추가",
+      "locations": [
+        {
+          "label": "소초면 치악로",
+          "lat": 37.4058804,
+          "lng": 127.9960013,
+          "source": "naver-place-address",
+          "precision": "road"
+        }
+      ]
+    },
+    {
+      "id": "sheet-051",
+      "no": 51,
+      "name": "속뚫설비",
+      "category": "누수·배관",
+      "service": "배관, 냉난방공사, 하수구 막힘, 싱크대 막힘, 변기 막힘, 고압세척",
+      "feature": "원주 지역 중심 하수구·싱크대·변기 막힘 등 배관 문제 전문 해결. 24시간 긴급출동",
+      "operation": "010-8555-8357",
+      "region": "강원 원주시 지정면 신지정로 295 324동 2102호",
+      "address": "강원 원주시 지정면 신지정로 295 324동 2102호",
+      "scale": "변동",
+      "url": "",
+      "extraUrl": "",
+      "naverUrl": "https://naver.me/5sunJlpS",
+      "phone": "010-8555-8357",
+      "rating": "리뷰 42",
+      "status": "사용자 추가",
+      "source": "google-sheet",
+      "sourceLabel": "원주 유지보수 직접추가",
+      "locations": [
+        {
+          "label": "지정면 신지정로",
+          "lat": 37.38155,
+          "lng": 127.8850508,
+          "source": "naver-place-address",
+          "precision": "road"
+        }
+      ]
+    },
+    {
+      "id": "sheet-052",
+      "no": 52,
+      "name": "원주 뻥뚜러설비",
+      "category": "누수·배관",
+      "service": "하수구 막힘, 변기 막힘, 싱크대 막힘, 고압세척, 배관내시경, 누수탐지, 관로해빙",
+      "feature": "막힌 변기·배수구 전문, 하수구 청소, 배관 내시경 촬영, 언수도 녹임, 각종 관로 해빙",
+      "operation": "",
+      "region": "강원 원주시 둔전길 177",
+      "address": "강원 원주시 둔전길 177",
+      "scale": "변동",
+      "url": "",
+      "extraUrl": "",
+      "naverUrl": "https://naver.me/GDaRm7XC",
+      "phone": "",
+      "rating": "",
+      "status": "사용자 추가",
+      "source": "google-sheet",
+      "sourceLabel": "원주 유지보수 직접추가",
+      "locations": [
+        {
+          "label": "흥업리 둔전길",
+          "lat": 37.3138915,
+          "lng": 127.9145255,
+          "source": "naver-place-address",
+          "precision": "building"
+        }
+      ]
+    },
+    {
+      "id": "sheet-053",
+      "no": 53,
+      "name": "에이스설비 누수탐지",
+      "category": "누수·배관",
+      "service": "누수탐지, 누수공사, 하수구 막힘, 싱크대 막힘, 수전설치, 변기수리, 변기교체, 누수 피해복구, 연수도 녹임, 배관고압세척",
+      "feature": "원주 전지역 누수탐지·하수구막힘 전문업체. 배관 관련 문제 해결, 첨단 장비 보유",
+      "operation": "0507-1477-5518",
+      "region": "강원 원주시 오성마을길 63-25 201동 239호",
+      "address": "강원 원주시 오성마을길 63-25 201동 239호",
+      "scale": "변동",
+      "url": "",
+      "extraUrl": "",
+      "naverUrl": "https://naver.me/5eUnbRvT",
+      "phone": "0507-1477-5518",
+      "rating": "리뷰 292",
+      "status": "사용자 추가",
+      "source": "google-sheet",
+      "sourceLabel": "원주 유지보수 직접추가",
+      "locations": [
+        {
+          "label": "판부면 오성마을길",
+          "lat": 37.3175741,
+          "lng": 127.947819,
+          "source": "naver-place-address",
+          "precision": "road"
+        }
+      ]
+    },
+    {
+      "id": "sheet-054",
+      "no": 54,
+      "name": "누수탐지 오성마을",
+      "category": "누수·배관",
+      "service": "누수탐지, 누수설비, 누수공사",
+      "feature": "원탑누수배관. 원주 누수탐지 전문, 첨단 장비로 미세 누수까지 탐지",
+      "operation": "",
+      "region": "강원 원주시 판부면 오성마을길 24 101호",
+      "address": "강원 원주시 판부면 오성마을길 24 101호",
+      "scale": "",
+      "url": "",
+      "extraUrl": "",
+      "naverUrl": "https://naver.me/5eDYFIDK",
+      "phone": "",
+      "rating": "",
+      "status": "사용자 추가",
+      "source": "google-sheet",
+      "sourceLabel": "원주 유지보수 직접추가",
+      "locations": [
+        {
+          "label": "판부면 오성마을길",
+          "lat": 37.3189069,
+          "lng": 127.9521183,
+          "source": "naver-place-address",
+          "precision": "building"
         }
       ]
     }
