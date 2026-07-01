@@ -4,7 +4,7 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>BRING 원주 건물 유지보수 지도</title>
-  <script src="./data/building-maintenance-companies.js?v=20260630-plumbing-leak-vendors"></script>
+  <script src="./data/building-maintenance-companies.js?v=20260701-electric-source-group"></script>
   <style>
     :root {
       --ink: #172033;
@@ -73,7 +73,7 @@
 
     .stats {
       display: grid;
-      grid-template-columns: repeat(4, minmax(0, 1fr));
+      grid-template-columns: repeat(5, minmax(0, 1fr));
       gap: 8px;
       padding: 12px;
       border-bottom: 1px solid var(--line);
@@ -446,6 +446,7 @@
         <div class="stat"><b id="totalCount">0</b><span>전체</span></div>
         <div class="stat"><b id="excelCount">0</b><span>경쟁사</span></div>
         <div class="stat"><b id="sheetCount">0</b><span>원주업체</span></div>
+        <div class="stat"><b id="electricCount">0</b><span>전기업체</span></div>
         <div class="stat"><b id="mapCount">0</b><span>지도 표시</span></div>
       </div>
 
@@ -457,6 +458,7 @@
             <option value="all">전체 출처</option>
             <option value="excel">경쟁사</option>
             <option value="google-sheet">원주업체</option>
+            <option value="electric-vendor">전기업체</option>
           </select>
           <select id="locationFilter" aria-label="위치 필터">
             <option value="all">전체</option>
@@ -505,6 +507,13 @@
     }
     const DATA = window.BRING_BUILDING_MAINTENANCE_DATA || { companies: [], categories: [] };
     const WONJU = { lat: 37.3422, lng: 127.9202 };
+    const ELECTRIC_VENDOR_IDS = new Set([
+      "sheet-003",
+      "sheet-030", "sheet-031", "sheet-032", "sheet-033", "sheet-034",
+      "sheet-035", "sheet-036", "sheet-038", "sheet-039", "sheet-040",
+      "sheet-041", "sheet-042", "sheet-043", "sheet-044", "sheet-045",
+      "sheet-046", "sheet-047", "sheet-048", "sheet-049", "sheet-050"
+    ]);
     const CATEGORY_COLORS = {
       "대기업 종합FM/보안": "#163b6d",
       "시설관리 SaaS/소프트웨어": "#7c3aed",
@@ -545,6 +554,7 @@
       total: document.getElementById("totalCount"),
       excel: document.getElementById("excelCount"),
       sheet: document.getElementById("sheetCount"),
+      electric: document.getElementById("electricCount"),
       mapped: document.getElementById("mapCount"),
       visibleMapCount: document.getElementById("visibleMapCount"),
       mapError: document.getElementById("mapError")
@@ -564,12 +574,19 @@
       return CATEGORY_COLORS[category] || "#344054";
     }
 
+    function sourceKey(company) {
+      if (company.source !== "google-sheet") return "excel";
+      return ELECTRIC_VENDOR_IDS.has(company.id) ? "electric-vendor" : "google-sheet";
+    }
+
     function sourceClass(company) {
-      return company.source === "google-sheet" ? "google-sheet" : "excel";
+      return sourceKey(company) === "excel" ? "excel" : "google-sheet";
     }
 
     function sourceName(company) {
-      return company.source === "google-sheet" ? "원주업체" : "경쟁사";
+      const key = sourceKey(company);
+      if (key === "electric-vendor") return "전기업체";
+      return key === "google-sheet" ? "원주업체" : "경쟁사";
     }
 
     function hasLocation(company) {
@@ -621,11 +638,12 @@
           company.scale,
           company.phone,
           company.rating,
-          company.sourceLabel
+          company.sourceLabel,
+          sourceName(company)
         ].join(" ").toLowerCase();
         const matchesQuery = !query || text.includes(query);
         const matchesCategory = category === "all" || company.category === category;
-        const matchesSource = source === "all" || company.source === source;
+        const matchesSource = source === "all" || sourceKey(company) === source;
         const mapped = hasLocation(company);
         const matchesLocation =
           locationMode === "all" ||
@@ -638,8 +656,9 @@
     function renderStats(filtered) {
       const mappedAll = DATA.companies.filter(hasLocation).length;
       els.total.textContent = DATA.companies.length;
-      els.excel.textContent = DATA.companies.filter(company => company.source !== "google-sheet").length;
-      els.sheet.textContent = DATA.companies.filter(company => company.source === "google-sheet").length;
+      els.excel.textContent = DATA.companies.filter(company => sourceKey(company) === "excel").length;
+      els.sheet.textContent = DATA.companies.filter(company => sourceKey(company) === "google-sheet").length;
+      els.electric.textContent = DATA.companies.filter(company => sourceKey(company) === "electric-vendor").length;
       els.mapped.textContent = mappedAll;
       els.visibleMapCount.textContent = `지도 표시 ${filtered.filter(hasLocation).length}개`;
     }
@@ -707,7 +726,7 @@
       return `
         <div class="info">
           <h2>${esc(company.name)}</h2>
-          <p><b>출처</b> ${esc(company.sourceLabel || sourceName(company))}</p>
+          <p><b>출처</b> ${esc(sourceName(company))}</p>
           <p><b>분류</b> ${esc(company.category)}</p>
           ${company.address ? `<p><b>주소</b> ${esc(company.address)}</p>` : ""}
           <p><b>지역</b> ${esc(company.region || regionText)}</p>
