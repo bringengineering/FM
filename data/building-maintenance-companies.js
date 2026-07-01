@@ -2546,6 +2546,151 @@ window.BRING_BUILDING_MAINTENANCE_DATA = {
           "precision": "building"
         }
       ]
+    },
+    {
+      "id": "sheet-055",
+      "no": 55,
+      "name": "가람누수탐지",
+      "category": "누수·배관",
+      "service": "누수탐지, 하수구, 수도설비",
+      "feature": "원주누수·원주하수구·원주수도설비. 작은 일에도 최선을 다하는 누수·배관 업체",
+      "operation": "033-733-0585",
+      "region": "강원 원주시 시청로 40",
+      "address": "강원 원주시 시청로 40",
+      "scale": "",
+      "url": "",
+      "extraUrl": "",
+      "naverUrl": "https://naver.me/xUZGlXT4",
+      "phone": "033-733-0585",
+      "rating": "리뷰 39",
+      "status": "사용자 추가",
+      "source": "google-sheet",
+      "sourceLabel": "원주 유지보수 직접추가",
+      "locations": [
+        {
+          "label": "무실동 시청로",
+          "lat": 37.3382323,
+          "lng": 127.9234637,
+          "source": "address-geocode",
+          "precision": "building"
+        }
+      ]
+    },
+    {
+      "id": "sheet-056",
+      "no": 56,
+      "name": "원주하수구케어",
+      "category": "누수·배관",
+      "service": "하수구 막힘, 싱크대 막힘, 변기 막힘, 세면대 막힘, 배관내시경, 고압세척",
+      "feature": "원주 무실동 위치. 하수구·배관 막힘 뚫음과 청소 전문, 24시간 영업",
+      "operation": "0507-1424-6482",
+      "region": "강원 원주시 시청로 68 105동",
+      "address": "강원 원주시 시청로 68 105동",
+      "scale": "변동",
+      "url": "",
+      "extraUrl": "",
+      "naverUrl": "https://naver.me/xnOzaAQy",
+      "phone": "0507-1424-6482",
+      "rating": "리뷰 1",
+      "status": "사용자 추가",
+      "source": "google-sheet",
+      "sourceLabel": "원주 유지보수 직접추가",
+      "locations": [
+        {
+          "label": "무실동 시청로",
+          "lat": 37.3392286,
+          "lng": 127.9244749,
+          "source": "address-geocode",
+          "precision": "road"
+        }
+      ]
+    },
+    {
+      "id": "sheet-057",
+      "no": 57,
+      "name": "바람아이 토탈케어",
+      "category": "누수·배관",
+      "service": "누수탐지, 특수방수, 옥상방수, 하수구 막힘, 에어컨 청소",
+      "feature": "시스템에어컨 세척, 누수탐지, 특수방수, 옥상방수, 하수구 막힘 등 토탈케어. 강원·충청·경기 출장 가능",
+      "operation": "010-5372-0513",
+      "region": "강원 원주시 시청로 92 무실주공3단지아파트",
+      "address": "강원 원주시 시청로 92 무실주공3단지아파트",
+      "scale": "변동",
+      "url": "https://blog.naver.com/oiorof",
+      "extraUrl": "",
+      "naverUrl": "https://naver.me/xM5a9X5T",
+      "phone": "010-5372-0513",
+      "rating": "리뷰 52",
+      "status": "사용자 추가",
+      "source": "google-sheet",
+      "sourceLabel": "원주 유지보수 직접추가",
+      "locations": [
+        {
+          "label": "무실동 시청로",
+          "lat": 37.334896,
+          "lng": 127.927036,
+          "source": "address-geocode",
+          "precision": "building"
+        }
+      ]
+    },
+    {
+      "id": "sheet-058",
+      "no": 58,
+      "name": "부부누수탐지공사",
+      "category": "누수·배관",
+      "service": "수도배관누수탐지, 발코니천장누수, 욕실천장누수",
+      "feature": "수도배관 누수탐지, 피해세대 복구공사, 위생도기 교체공사, 각종 홈서비스 공사",
+      "operation": "",
+      "region": "강원 원주시 무실로 380",
+      "address": "강원 원주시 무실로 380",
+      "scale": "변동",
+      "url": "https://www.youtube.com/@watermaster7347",
+      "extraUrl": "",
+      "naverUrl": "https://naver.me/5ECAN8gq",
+      "phone": "010-5290-7347",
+      "rating": "",
+      "status": "사용자 추가",
+      "source": "google-sheet",
+      "sourceLabel": "원주 유지보수 직접추가",
+      "locations": [
+        {
+          "label": "무실로",
+          "lat": 37.3448546,
+          "lng": 127.9441106,
+          "source": "address-geocode",
+          "precision": "road"
+        }
+      ]
+    },
+    {
+      "id": "sheet-059",
+      "no": 59,
+      "name": "프로원누수테크",
+      "category": "누수·배관",
+      "service": "누수탐지, 아파트누수, 상가누수, 주택누수, 공장누수, 보일러난방배관청소, 욕실비철개방수공사, 누수도배",
+      "feature": "난방시공 전문건설업 면허 등록 업체. 전문 누수탐지 공사와 방수공사를 주요 업무로 운영",
+      "operation": "0507-1349-0440",
+      "region": "강원 원주시 남원로469번길 7-13 1층",
+      "address": "강원 원주시 남원로469번길 7-13 1층",
+      "scale": "변동",
+      "url": "",
+      "extraUrl": "",
+      "naverUrl": "https://naver.me/502wNPPP",
+      "phone": "0507-1349-0440",
+      "rating": "리뷰 93",
+      "status": "사용자 추가",
+      "source": "google-sheet",
+      "sourceLabel": "원주 유지보수 직접추가",
+      "locations": [
+        {
+          "label": "명륜동 남원로469번길",
+          "lat": 37.3264399,
+          "lng": 127.9414022,
+          "source": "address-geocode",
+          "precision": "building"
+        }
+      ]
     }
   ],
   "categories": [
@@ -2575,9 +2720,9 @@ window.BRING_BUILDING_MAINTENANCE_DATA = {
   ],
   "summary": {
     "excel": 49,
-    "googleSheet": 29,
-    "total": 78,
-    "mapped": 47,
+    "googleSheet": 59,
+    "total": 108,
+    "mapped": 78,
     "geocoded": 0
   }
 };
