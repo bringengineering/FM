@@ -357,6 +357,15 @@
   .quote-status.ok{ color:#116329; background:#eaf7ee; border-color:#b9e6c5; }
   .quote-status.review{ color:#8a5a00; background:#fff8e1; border-color:#ffe08a; }
   .quote-status.fail{ color:#b42318; background:#fff1f0; border-color:#ffccc7; }
+  .quote-amount-source{ justify-self:start; display:inline-flex; align-items:center; min-height:20px; border-radius:999px; padding:2px 7px; font-size:11px; font-weight:900; border:1px solid #d7dfec; color:#52606d; background:#fff; }
+  .quote-amount-source.confirmed{ color:#116329; background:#eaf7ee; border-color:#b9e6c5; }
+  .quote-amount-source.auto{ color:#315fce; background:#eef4ff; border-color:#c5d4ff; }
+  .quote-amount-source.empty{ color:#8a5a00; background:#fff8e1; border-color:#ffe08a; }
+  .quote-confirm{ display:grid; grid-template-columns:minmax(0,1fr) auto; gap:6px; align-items:end; margin-top:2px; }
+  .quote-confirm label{ display:grid; gap:3px; font-size:11px; color:#52606d; font-weight:800; }
+  .quote-confirm input{ width:100%; min-width:0; box-sizing:border-box; border:1px solid #d8e0ec; border-radius:7px; padding:6px 8px; font-size:12.5px; font-family:inherit; }
+  .quote-confirm button{ border:1px solid #1b335f; background:#1b335f; color:#fff; border-radius:7px; padding:6px 9px; font-size:11.5px; font-weight:900; cursor:pointer; font-family:inherit; white-space:nowrap; }
+  .quote-confirm button:hover{ background:#26477e; }
   .quote-card-links{ display:flex; flex-wrap:wrap; gap:6px; }
   .quote-card a{ color:#315fce; text-decoration:none; font-size:12.5px; font-weight:800; }
   .quote-card-links a{ display:inline-flex; align-items:center; min-height:26px; padding:3px 8px; border:1px solid #c5d4ff; border-radius:7px; background:#f6f8ff; }
@@ -2290,9 +2299,32 @@ function quoteAmountText(value){
   if(numeric && numeric<1000) return "금액 미입력";
   return v || "금액 미입력";
 }
+function quoteAmountNumber(value){
+  const numeric=Number(String(value||"").replace(/[^\d]/g,""));
+  return numeric>=1000 ? numeric : 0;
+}
+function quoteBestAmount(q){
+  return quoteAmountNumber(q&&q.confirmedTotalAmount) ||
+    quoteAmountNumber(q&&q.totalAmount) ||
+    quoteAmountNumber(q&&q.amount);
+}
 function quoteDisplayAmount(q){
-  const total=Number(q.totalAmount||0);
-  return quoteAmountText(total>=1000 ? total.toLocaleString("ko-KR")+"원" : q.amount);
+  const amount=quoteBestAmount(q);
+  return quoteAmountText(amount ? amount.toLocaleString("ko-KR")+"원" : "");
+}
+function quoteAmountInputValue(q){
+  const amount=quoteBestAmount(q);
+  return amount ? String(amount) : "";
+}
+function quoteAmountSourceLabel(q){
+  if(quoteAmountNumber(q&&q.confirmedTotalAmount)) return "금액 확정";
+  if(quoteAmountNumber(q&&q.totalAmount)) return "자동 추출";
+  return "금액 확인 필요";
+}
+function quoteAmountSourceClass(q){
+  if(quoteAmountNumber(q&&q.confirmedTotalAmount)) return "confirmed";
+  if(quoteAmountNumber(q&&q.totalAmount)) return "auto";
+  return "empty";
 }
 function quoteExtractionLabel(q){
   return q.extractionStatus || (q.bringQuoteSheetUrl ? "추출완료" : "확인필요");
@@ -2412,7 +2444,12 @@ function renderQuoteUploadPanel(c, stepStatus){
     <article class="quote-card">
       <div class="quote-card-head"><div class="quote-card-name">${esc(q.vendorName||"업체 미지정")}</div><div class="quote-card-amount">${esc(quoteDisplayAmount(q))}</div></div>
       <span class="quote-status ${quoteExtractionClass(q)}">${esc(quoteExtractionLabel(q))}</span>
+      <span class="quote-amount-source ${quoteAmountSourceClass(q)}">${esc(quoteAmountSourceLabel(q))}</span>
       <div class="quote-card-meta">${esc(q.fileName||q.originalFileName||"파일명 없음")}<br>${esc(formatQuoteDate(q.uploadedAt))}${q.memo?`<br>${esc(q.memo)}`:""}${q.extractionMemo?`<br>${esc(q.extractionMemo)}`:""}</div>
+      <div class="quote-confirm">
+        <label>합계금액 확인/수정<input data-quote-amount="${escAttr(q.id)}" inputmode="numeric" value="${escAttr(quoteAmountInputValue(q))}" placeholder="예: 145200"></label>
+        <button type="button" data-quote-confirm="${escAttr(q.id)}">브링 양식 재작성</button>
+      </div>
       ${quoteLinksHtml(q)}
       <button class="quote-remove" data-quote-remove="${escAttr(q.id)}">목록에서 제거</button>
     </article>`).join("")}</div>` : `<div class="vendor-empty" style="margin-top:10px;text-align:left">아직 업로드된 견적 파일이 없습니다.</div>`;
@@ -2598,6 +2635,62 @@ async function uploadQuoteFile(){
     count:files.length+"/"+files.length
   });
   quoteUploadInProgress=false;
+  setTimeout(hideQuoteUploadProgress, 1400);
+}
+async function confirmQuoteAmount(quoteId){
+  const c=cases[curCase];
+  if(!c || !quoteId || !c.quoteFiles || !c.quoteFiles[quoteId]) return;
+  const q=c.quoteFiles[quoteId];
+  const input=Array.from(caseDetailEl.querySelectorAll("[data-quote-amount]")).find(el=>el.dataset.quoteAmount===quoteId);
+  const amount=quoteAmountNumber(input && input.value);
+  if(!amount){
+    alert("합계금액을 1,000원 이상으로 입력해 주세요.");
+    if(input) input.focus();
+    return;
+  }
+  if(!caseAutomationEndpoint()){
+    if(!promptCaseAutomationSetup()) return;
+    if(!caseAutomationEndpoint()) return;
+  }
+  const supply=Math.round(amount/1.1);
+  const vat=amount-supply;
+  q.confirmedTotalAmount=amount;
+  q.confirmedSupplyAmount=supply;
+  q.confirmedVatAmount=vat;
+  q.amountStatus="확정";
+  q.amountSource="admin_confirmed";
+  q.amountConfirmedAt=new Date().toISOString();
+  q.amount=String(amount);
+  q.totalAmount=amount;
+  q.supplyAmount=supply;
+  q.vatAmount=vat;
+  c.status=c.status||{};
+  c.note=c.note||{};
+  if(c.status.c6!=="done") c.status.c6="doing";
+  c.note.c6=`${q.vendorName||"업체"} 합계금액 ${amount.toLocaleString("ko-KR")}원 확정 및 브링 양식 재작성 요청 중입니다.`;
+  caseLog(c, "견적 합계금액 확정 요청: "+(q.vendorName||"업체")+" / "+amount.toLocaleString("ko-KR")+"원");
+  saveCase(curCase);
+  renderCaseDetail();
+  updateQuoteUploadProgress({
+    title:"브링 양식 재작성 요청",
+    fileName:q.fileName||q.originalFileName||"견적 파일",
+    detail:"확정 합계금액을 Apps Script로 보내고 있습니다.",
+    percent:45,
+    count:""
+  });
+  await sendCaseAutomationRequest(caseAutomationEndpoint(), {
+    action:"confirmQuoteAmount",
+    caseId:c.ticketNo||c.id||curCase,
+    quoteId,
+    totalAmount:amount
+  });
+  updateQuoteUploadProgress({
+    title:"브링 양식 재작성 요청 완료",
+    fileName:(q.vendorName||"업체")+" / "+amount.toLocaleString("ko-KR")+"원",
+    detail:"Apps Script 처리 후 브링 양식 링크와 XLSX 링크가 자동 갱신됩니다.",
+    percent:100,
+    count:""
+  });
   setTimeout(hideQuoteUploadProgress, 1400);
 }
 function removeQuoteFileFromCase(quoteId){
@@ -3059,7 +3152,7 @@ function renderCaseDetail(){
 document.getElementById("caseBtn").addEventListener("click", openCaseView);
 document.getElementById("caseBack").addEventListener("click", closeCaseView);
 caseListEl.addEventListener("click", e=>{ if(e.target.closest("#cvNew")){ createCase(); return; } const ar=e.target.closest("[data-archive-toggle]"); if(ar){ setCaseArchiveMode(!showArchivedCases); return; } const rs=e.target.closest("[data-restore-case]"); if(rs){ restoreCase(rs.dataset.restoreCase); return; } const it=e.target.closest(".cv-item"); if(it) selectCase(it.dataset.cid); });
-caseDetailEl.addEventListener("click", e=>{ const tm=e.target.closest("[data-testmode]"); if(tm){ setCaseTestMode(!caseTestMode); return; } const qu=e.target.closest("[data-quote-upload]"); if(qu){ uploadQuoteFile(); return; } const qr=e.target.closest("[data-quote-remove]"); if(qr){ removeQuoteFileFromCase(qr.dataset.quoteRemove); return; } const td=e.target.closest("[data-testdone]"); if(td){ forceCompleteThroughStep(curCase, td.dataset.testdone); return; } const dd=e.target.closest("[data-drive-doc]"); if(dd){ const c=cases[curCase], msg=stepLockMessage(c,dd.dataset.driveDoc); if(msg){ alert(msg); return; } const url=dd.dataset.url; if(url) window.open(url, "_blank", "noopener"); return; } const dc=e.target.closest("[data-doc]"); if(dc){ const msg=stepLockMessage(cases[curCase], dc.dataset.doc); if(msg){ alert(msg); return; } downloadCaseDoc(curCase, dc.dataset.doc); return; } const nt=e.target.closest("[data-notetoggle]"); if(nt){ const k=nt.dataset.notetoggle; noteOpen.has(k)?noteOpen.delete(k):noteOpen.add(k); renderCaseDetail(); return; } const ch=e.target.closest("[data-step]"); if(ch){ cycleStep(curCase, ch.dataset.step); return; } const au=e.target.closest("[data-auto]"); if(au){ const ak=au.dataset.auto; if(ak==="c5") openVendorSmsModal(curCase); else if(EMAIL_TEMPLATES[ak]) openMailModal(curCase, ak); else doAuto(curCase, ak, au.dataset.ch); return; } if(e.target.closest("#cvRestore")){ restoreCase(curCase); return; } if(e.target.closest("#cvDel")){ deleteCase(curCase); } });
+caseDetailEl.addEventListener("click", e=>{ const tm=e.target.closest("[data-testmode]"); if(tm){ setCaseTestMode(!caseTestMode); return; } const qu=e.target.closest("[data-quote-upload]"); if(qu){ uploadQuoteFile(); return; } const qc=e.target.closest("[data-quote-confirm]"); if(qc){ confirmQuoteAmount(qc.dataset.quoteConfirm); return; } const qr=e.target.closest("[data-quote-remove]"); if(qr){ removeQuoteFileFromCase(qr.dataset.quoteRemove); return; } const td=e.target.closest("[data-testdone]"); if(td){ forceCompleteThroughStep(curCase, td.dataset.testdone); return; } const dd=e.target.closest("[data-drive-doc]"); if(dd){ const c=cases[curCase], msg=stepLockMessage(c,dd.dataset.driveDoc); if(msg){ alert(msg); return; } const url=dd.dataset.url; if(url) window.open(url, "_blank", "noopener"); return; } const dc=e.target.closest("[data-doc]"); if(dc){ const msg=stepLockMessage(cases[curCase], dc.dataset.doc); if(msg){ alert(msg); return; } downloadCaseDoc(curCase, dc.dataset.doc); return; } const nt=e.target.closest("[data-notetoggle]"); if(nt){ const k=nt.dataset.notetoggle; noteOpen.has(k)?noteOpen.delete(k):noteOpen.add(k); renderCaseDetail(); return; } const ch=e.target.closest("[data-step]"); if(ch){ cycleStep(curCase, ch.dataset.step); return; } const au=e.target.closest("[data-auto]"); if(au){ const ak=au.dataset.auto; if(ak==="c5") openVendorSmsModal(curCase); else if(EMAIL_TEMPLATES[ak]) openMailModal(curCase, ak); else doAuto(curCase, ak, au.dataset.ch); return; } if(e.target.closest("#cvRestore")){ restoreCase(curCase); return; } if(e.target.closest("#cvDel")){ deleteCase(curCase); } });
 caseDetailEl.addEventListener("click", e=>{ const qpr=e.target.closest("[data-quote-file-remove]"); if(qpr){ removeQuotePendingFile(qpr.dataset.quoteFileRemove); } });
 caseDetailEl.addEventListener("input", e=>{ const f=e.target.closest("input[data-f]"); if(f){ setCaseField(curCase, f.dataset.f, f.value); return; } const nb=e.target.closest("textarea[data-note]"); if(nb){ setCaseNote(curCase, nb.dataset.note, nb.value); autoGrowCaseNote(nb); } });
 caseDetailEl.addEventListener("change", e=>{ const qf=e.target.closest("#quoteFile"); if(qf){ addQuotePendingFiles(qf.files); return; } const vf=e.target.closest("input[data-vendor-select]"); if(vf){ setCaseVendorSelection(curCase, vf.dataset.vendorSelect, vf.checked); return; } const f=e.target.closest("select[data-f]"); if(f) setCaseField(curCase, f.dataset.f, f.value); });
@@ -3114,8 +3207,9 @@ document.getElementById("noticeBtn").addEventListener("click", openNoticePanel);
 document.getElementById("noticeBanner").addEventListener("click", openNoticePanel);
 
 /* ===== 업데이트 알림(What's New) — 새 버전 나오면 자동 팝업 ===== */
-const APP_VERSION = "4.32";
+const APP_VERSION = "4.33";
 const CHANGELOG = [
+  { v:"4.33", d:"2026-07-02", items:["⑥ 견적 카드에서 합계금액 확인/수정 후 브링 양식 재작성 요청","확정 합계금액을 카드·비교 메모·브링 양식에 우선 반영"] },
   { v:"4.32", d:"2026-07-02", items:["⑥ 견적 금액 추출에서 날짜·수량 같은 작은 숫자 오인 방지","견적 파일 목록 제거 시 ⑥ 메모를 제거 문구로 덮어쓰지 않음"] },
   { v:"4.31", d:"2026-07-02", items:["케이스 저장을 개별 저장 방식으로 변경","삭제를 보관함 이동/복구 방식으로 변경","늦게 도착한 자동화 결과가 케이스 진행상태를 되돌리지 않도록 안정화"] },
   { v:"4.30", d:"2026-07-02", items:["⑥ 견적 업로드 중 진행 팝업과 진행바 표시","파일별 읽기·전송 상태를 업로드 완료 전까지 표시"] },
