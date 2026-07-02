@@ -318,9 +318,11 @@
   .quote-form{ display:grid; grid-template-columns:minmax(260px,1fr) auto; gap:8px; align-items:end; }
   .quote-form label{ display:flex; flex-direction:column; gap:3px; color:#6b7686; font-size:11.5px; font-weight:800; }
   .quote-form input,.quote-form select{ min-width:0; border:1px solid var(--line); border-radius:8px; padding:7px 9px; background:#fff; font-size:13px; font-family:inherit; }
-  .quote-file-wrap{ display:grid; gap:7px; min-width:0; }
+  .quote-file-wrap{ display:grid; gap:7px; min-width:0; border:1px dashed #c5d4ff; background:#f8fafd; border-radius:8px; padding:9px; transition:.15s; }
+  .quote-file-wrap.dragover{ border-color:#4b7bec; background:#eef3ff; box-shadow:0 0 0 2px rgba(75,123,236,.12); }
   .quote-file-picker{ justify-self:start; display:inline-flex !important; flex-direction:row !important; align-items:center; justify-content:center; min-height:34px; padding:7px 12px; border:1px dashed #9db2d8; background:#fff; color:#315fce; border-radius:8px; font-size:12.5px !important; font-weight:900 !important; cursor:pointer; }
   .quote-file-picker:hover{ background:#f6f8ff; border-color:#4b7bec; }
+  .quote-drop-hint{ color:#6b7686; font-size:12px; line-height:1.4; }
   .quote-file{ position:absolute; width:1px; height:1px; opacity:0; pointer-events:none; }
   .quote-file-list{ display:grid; gap:5px; min-height:24px; }
   .quote-file-empty{ color:#9aa6b5; font-size:12.5px; }
@@ -2275,6 +2277,20 @@ function refreshQuoteFileList(){
   if(!list) return;
   list.innerHTML=quoteSelectedFileListHtml(input && input.files);
 }
+function setQuoteInputFiles(files){
+  const input=document.getElementById("quoteFile");
+  if(!input) return false;
+  try{
+    const dt=new DataTransfer();
+    Array.from(files||[]).forEach(file=>dt.items.add(file));
+    input.files=dt.files;
+    refreshQuoteFileList();
+    return true;
+  }catch(e){
+    alert("이 브라우저에서는 드래그 파일을 직접 넣지 못했어요. 파일 선택 버튼으로 올려주세요.");
+    return false;
+  }
+}
 function renderQuoteUploadPanel(c, stepStatus){
   if(stepStatus!=="doing" && stepStatus!=="done") return "";
   const quotes=quoteFilesList(c);
@@ -2289,8 +2305,9 @@ function renderQuoteUploadPanel(c, stepStatus){
   return `<div class="quote-upload">
     <div class="quote-upload-head"><div><div class="quote-upload-title">견적 파일 업로드</div><div class="quote-upload-sub">PDF, JPG/PNG, DOC/DOCX, XLS/XLSX · 최대 5MB · 원본 저장 후 브링 양식 자동 생성</div></div></div>
     <div class="quote-form">
-      <div class="quote-file-wrap">
+      <div class="quote-file-wrap" data-quote-drop="1">
         <label class="quote-file-picker">파일 선택<input class="quote-file" id="quoteFile" type="file" multiple accept=".pdf,.jpg,.jpeg,.png,.doc,.docx,.xls,.xlsx,application/pdf,image/jpeg,image/png,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document,application/vnd.ms-excel,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"></label>
+        <div class="quote-drop-hint">파일을 여기로 드래그해도 됩니다.</div>
         <div class="quote-file-list" id="quoteFileList">${quoteSelectedFileListHtml([])}</div>
       </div>
       <button class="quote-send" data-quote-upload="1">업로드</button>
@@ -2840,6 +2857,9 @@ caseListEl.addEventListener("click", e=>{ if(e.target.closest("#cvNew")){ create
 caseDetailEl.addEventListener("click", e=>{ const tm=e.target.closest("[data-testmode]"); if(tm){ setCaseTestMode(!caseTestMode); return; } const qu=e.target.closest("[data-quote-upload]"); if(qu){ uploadQuoteFile(); return; } const qr=e.target.closest("[data-quote-remove]"); if(qr){ removeQuoteFileFromCase(qr.dataset.quoteRemove); return; } const td=e.target.closest("[data-testdone]"); if(td){ forceCompleteThroughStep(curCase, td.dataset.testdone); return; } const dd=e.target.closest("[data-drive-doc]"); if(dd){ const c=cases[curCase], msg=stepLockMessage(c,dd.dataset.driveDoc); if(msg){ alert(msg); return; } const url=dd.dataset.url; if(url) window.open(url, "_blank", "noopener"); return; } const dc=e.target.closest("[data-doc]"); if(dc){ const msg=stepLockMessage(cases[curCase], dc.dataset.doc); if(msg){ alert(msg); return; } downloadCaseDoc(curCase, dc.dataset.doc); return; } const nt=e.target.closest("[data-notetoggle]"); if(nt){ const k=nt.dataset.notetoggle; noteOpen.has(k)?noteOpen.delete(k):noteOpen.add(k); renderCaseDetail(); return; } const ch=e.target.closest("[data-step]"); if(ch){ cycleStep(curCase, ch.dataset.step); return; } const au=e.target.closest("[data-auto]"); if(au){ const ak=au.dataset.auto; if(ak==="c5") openVendorSmsModal(curCase); else if(EMAIL_TEMPLATES[ak]) openMailModal(curCase, ak); else doAuto(curCase, ak, au.dataset.ch); return; } if(e.target.closest("#cvDel")){ deleteCase(curCase); } });
 caseDetailEl.addEventListener("input", e=>{ const f=e.target.closest("input[data-f]"); if(f){ setCaseField(curCase, f.dataset.f, f.value); return; } const nb=e.target.closest("textarea[data-note]"); if(nb){ setCaseNote(curCase, nb.dataset.note, nb.value); autoGrowCaseNote(nb); } });
 caseDetailEl.addEventListener("change", e=>{ const qf=e.target.closest("#quoteFile"); if(qf){ refreshQuoteFileList(); return; } const vf=e.target.closest("input[data-vendor-select]"); if(vf){ setCaseVendorSelection(curCase, vf.dataset.vendorSelect, vf.checked); return; } const f=e.target.closest("select[data-f]"); if(f) setCaseField(curCase, f.dataset.f, f.value); });
+caseDetailEl.addEventListener("dragover", e=>{ const dz=e.target.closest("[data-quote-drop]"); if(!dz) return; e.preventDefault(); dz.classList.add("dragover"); });
+caseDetailEl.addEventListener("dragleave", e=>{ const dz=e.target.closest("[data-quote-drop]"); if(!dz) return; if(!dz.contains(e.relatedTarget)) dz.classList.remove("dragover"); });
+caseDetailEl.addEventListener("drop", e=>{ const dz=e.target.closest("[data-quote-drop]"); if(!dz) return; e.preventDefault(); dz.classList.remove("dragover"); const files=Array.from((e.dataTransfer&&e.dataTransfer.files)||[]); if(files.length) setQuoteInputFiles(files); });
 cases = loadCasesLocal();
 const localAutoFixed = applyAllStepAutomation(cases, false);
 const localStepFixed = normalizeAllCaseSteps(cases);
@@ -2886,8 +2906,9 @@ document.getElementById("noticeBtn").addEventListener("click", openNoticePanel);
 document.getElementById("noticeBanner").addEventListener("click", openNoticePanel);
 
 /* ===== 업데이트 알림(What's New) — 새 버전 나오면 자동 팝업 ===== */
-const APP_VERSION = "4.24";
+const APP_VERSION = "4.25";
 const CHANGELOG = [
+  { v:"4.25", d:"2026-07-02", items:["⑥ 견적 파일 업로드에 드래그 앤 드롭 추가","드롭한 파일도 파일명 목록에 표시하고 기존 업로드 흐름으로 처리"] },
   { v:"4.24", d:"2026-07-02", items:["⑥ 견적 파일 선택 후 파일명을 한 줄씩 목록으로 표시","여러 파일 선택 시 '파일 3개' 대신 실제 파일명을 바로 확인"] },
   { v:"4.23", d:"2026-07-02", items:["⑥ 견적 파일 업로드에서 여러 파일 동시 선택 지원","선택된 견적 파일을 각각 Drive 저장·브링 양식 생성 요청으로 처리"] },
   { v:"4.22", d:"2026-07-02", items:["🔑 Firebase apiKey 추가 — Google 로그인이 실제로 작동(그동안 apiKey 누락으로 로그인 시작 자체가 안 됐음)"] },
