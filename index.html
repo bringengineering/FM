@@ -389,18 +389,17 @@
   .np-post .meta{ font-size:11px; color:#98a2b3; margin-bottom:4px; display:flex; justify-content:space-between; align-items:center; }
   .np-post .body2{ font-size:13px; color:#2a3445; white-space:pre-wrap; line-height:1.55; }
   .np-post .del{ border:none; background:none; color:#c92a2a; cursor:pointer; font-size:11px; }
-  /* 🔐 로그인 게이트 */
-  .authgate{ position:fixed; inset:0; background:linear-gradient(135deg,#16294d,#1b335f 55%,#2a4f8c); display:none; align-items:center; justify-content:center; z-index:100000; }
-  .authgate.show{ display:flex; }
-  .ag-box{ background:#fff; border-radius:18px; padding:40px 46px; text-align:center; box-shadow:0 24px 70px rgba(0,0,0,.35); max-width:90vw; }
-  .ag-logo{ font-size:25px; font-weight:800; color:#1b335f; }
-  .ag-sub{ font-size:13.5px; color:#6b7787; margin:9px 0 26px; line-height:1.6; }
-  .ag-btn{ border:1px solid #1b335f; background:#1b335f; color:#fff; border-radius:11px; padding:13px 28px; font-size:15px; font-weight:700; cursor:pointer; }
-  .ag-btn:hover{ background:#26477e; }
-  .ag-msg{ margin-top:18px; font-size:12.5px; color:#c0392b; line-height:1.6; }
 </style>
 </head>
 <body class="editing">
+  <div id="authGate" style="position:fixed;inset:0;background:linear-gradient(135deg,#16294d,#1b335f 55%,#2a4f8c);display:flex;align-items:center;justify-content:center;z-index:100000;font-family:'Malgun Gothic','Apple SD Gothic Neo',sans-serif">
+    <div style="background:#fff;border-radius:18px;padding:40px 46px;text-align:center;box-shadow:0 24px 70px rgba(0,0,0,.35);max-width:90vw">
+      <div style="font-size:25px;font-weight:800;color:#1b335f">🔵 업무 흐름 빌더</div>
+      <div style="font-size:13.5px;color:#6b7787;margin:10px 0 26px;line-height:1.6">BRING 운영 매뉴얼 · 팀 전용<br>구글 계정으로 로그인하세요</div>
+      <button id="agLogin" style="border:none;background:#1b335f;color:#fff;border-radius:11px;padding:13px 28px;font-size:15px;font-weight:700;cursor:pointer">🔓 Google로 로그인</button>
+      <div id="agMsg" style="margin-top:18px;font-size:12.5px;color:#c0392b;line-height:1.6"></div>
+    </div>
+  </div>
   <div class="stage">
     <header>
       <h1>🔵 업무 흐름 빌더</h1>
@@ -548,7 +547,7 @@ let nodes = {};                 // { id:{id,label,x,y,parent,color?,r?} }
 let links = [];                 // [ {from,to} ]
 let panX = 0, panY = 0, zoom = 1;
 let db = null, graphRef = null, online = false, presenceCount = 0;
-let auth = null, dbAttached = false, authedUser = null, authGateEl = null;
+let auth = null, authedUser = null;
 let writeTimer = null, pendingRemote = null, busy = false;
 let linkMode = false, linkSource = null, popFor = null;
 let history = [], redoStack = [];
@@ -887,26 +886,58 @@ function initVendorSheetSync(){
 /* ===== 시작 ===== */
 function start(){
   if (isConfigured && typeof firebase !== "undefined"){
-    try { initFirebase(); updateUndoBtn(); return; } catch(e){ console.error("Firebase 실패 → 로컬", e); }
+    try { initFirebase(); updateUndoBtn(); initAuthGate(); return; } catch(e){ console.error("Firebase 실패 → 로컬", e); }
   }
+  hideAuthGate();   // 로컬 모드: 로그인 화면 숨김
   settings = loadSettingsLocal();
   notice = loadNoticeLocal(); ensureNotice(); renderNoticeBanner();
   boards = loadBoardsLocal(); boardOrder = loadOrderLocal(); if(!boards[curBoard]) curBoard = Object.keys(boards)[0];
   openBoard(curBoard); updateUndoBtn();
 }
+/* ===== 🔐 Google 로그인 (데이터 로딩은 그대로, 화면만 덮음) ===== */
+function hideAuthGate(){ const g=document.getElementById("authGate"); if(g) g.style.display="none"; }
+function showAuthGate(){ const g=document.getElementById("authGate"); if(g) g.style.display="flex"; }
+function initAuthGate(){
+  const gate=document.getElementById("authGate"); if(!gate) return;
+  gate.style.display="flex";   // 로그인 전엔 항상 보이게 유지
+  const lb=document.getElementById("agLogin"); if(lb) lb.onclick=doGoogleLogin;   // 버튼 즉시 연결
+  let tries=0;
+  (function setup(){
+    if(typeof firebase!=="undefined" && firebase.auth){
+      try{
+        auth = firebase.auth();
+        auth.onAuthStateChanged(function(user){
+          authedUser=user;
+          if(user){ gate.style.display="none"; updateAuthUI(user); }
+          else { gate.style.display="flex"; updateAuthUI(null); }
+        });
+        return;
+      }catch(e){ console.error("auth init 재시도", e); }
+    }
+    if(tries++ < 40){ setTimeout(setup, 200); }   // 인증 SDK 로드 대기(최대 8초, 그동안 화면 유지)
+    else { const m=document.getElementById("agMsg"); if(m) m.innerHTML="로그인 모듈을 못 불러왔어요. <b>Ctrl+Shift+R</b>로 새로고침 해주세요."; }
+  })();
+}
+function doGoogleLogin(){ const msg=document.getElementById("agMsg");
+  if(!auth || typeof firebase==="undefined" || !firebase.auth){ if(msg) msg.textContent="로그인 모듈 준비 중… 2초 뒤 다시 눌러주세요."; return; }
+  if(msg) msg.textContent="로그인 창 여는 중…";
+  try{
+    const prov=new firebase.auth.GoogleAuthProvider();
+    auth.signInWithPopup(prov).catch(e=>{ if(!msg) return;
+      if(e.code==="auth/operation-not-allowed") msg.innerHTML="⚠️ Firebase 콘솔에서 Google 로그인을 켜주세요.";
+      else if(e.code==="auth/unauthorized-domain") msg.innerHTML="⚠️ 승인된 도메인에 <b>bringengineering.github.io</b> 추가가 필요해요.";
+      else if(e.code==="auth/popup-closed-by-user"||e.code==="auth/cancelled-popup-request"||e.code==="auth/popup-blocked") msg.textContent="";
+      else msg.textContent="오류: "+(e.message||e.code);
+    });
+  }catch(e){ if(msg) msg.textContent="오류: "+(e.message||e); }
+}
+function updateAuthUI(user){ const u=document.getElementById("authUser"), b=document.getElementById("logoutBtn"); if(!u||!b) return;
+  if(user){ u.textContent="👤 "+(user.email||""); u.style.display=""; b.style.display=""; b.onclick=()=>{ if(auth) auth.signOut().finally(()=>location.reload()); }; }
+  else { u.style.display="none"; b.style.display="none"; }
+}
 function initFirebase(){
   firebase.initializeApp(firebaseConfig);
   db = firebase.database();
-  if (firebase.auth){
-    auth = firebase.auth();
-    ensureAuthGate(); showAuthGate();
-    auth.onAuthStateChanged(user => {
-      if (user){ authedUser=user; updateAuthUI(user); hideAuthGate(); if(!dbAttached){ dbAttached=true; bootAfterAuth(); } }
-      else { authedUser=null; updateAuthUI(null); showAuthGate(); }
-    });
-  } else { bootAfterAuth(); }   // 인증 SDK 없으면 게이트 없이 동작
-}
-function bootAfterAuth(){
   settings = {};
   clearCaseLocalCache();
   attachCaseSettingsRef();
@@ -933,33 +964,7 @@ function bootFirebase(){
   openBoard(curBoard);
   updateConn(); updateUndoBtn();
 }
-function firebaseErr(err){ if(err){ console.warn("Firebase 권한 확인 필요", err); if(err.code==="PERMISSION_DENIED" || /permission_denied|permission denied/i.test((err&&err.message)||"")) showDenied(); } }
-/* ===== 🔐 Google 로그인 (팀 전용) ===== */
-function authErr(err){ if(err && (err.code==="PERMISSION_DENIED" || /permission_denied|permission denied/i.test((err&&err.message)||""))) showDenied(); }
-function ensureAuthGate(){ if(authGateEl) return; authGateEl=document.createElement("div"); authGateEl.id="authGate"; authGateEl.className="authgate";
-  authGateEl.innerHTML=`<div class="ag-box"><div class="ag-logo">🔵 업무 흐름 빌더</div><div class="ag-sub">BRING 운영 매뉴얼 · 팀 전용<br>허용된 구글 계정으로만 입장할 수 있어요</div><button class="ag-btn" id="agLogin">🔓 Google로 로그인</button><div class="ag-msg" id="agMsg"></div></div>`;
-  document.body.appendChild(authGateEl);
-  authGateEl.querySelector("#agLogin").addEventListener("click", doGoogleLogin);
-}
-function showAuthGate(){ ensureAuthGate(); authGateEl.classList.add("show"); }
-function hideAuthGate(){ if(authGateEl) authGateEl.classList.remove("show"); }
-function doGoogleLogin(){ const msg=document.getElementById("agMsg"); if(msg) msg.textContent="로그인 창을 여는 중…";
-  const prov=new firebase.auth.GoogleAuthProvider();
-  auth.signInWithPopup(prov).catch(e=>{ if(!msg) return;
-    if(e.code==="auth/operation-not-allowed") msg.innerHTML="⚠️ 아직 Google 로그인이 켜지지 않았어요.<br>관리자: Firebase 콘솔 → Authentication → Google 사용 설정";
-    else if(e.code==="auth/unauthorized-domain") msg.innerHTML="⚠️ 이 도메인이 허용되지 않았어요.<br>관리자: Authentication → Settings → 승인된 도메인에 추가";
-    else if(e.code==="auth/popup-closed-by-user"||e.code==="auth/cancelled-popup-request"||e.code==="auth/popup-blocked") msg.textContent="";
-    else msg.textContent="로그인 오류: "+(e.message||e.code);
-  });
-}
-function showDenied(){ ensureAuthGate(); authGateEl.classList.add("show");
-  authGateEl.querySelector(".ag-box").innerHTML=`<div class="ag-logo">🚫 접근 권한 없음</div><div class="ag-sub">이 구글 계정은 허용 목록에 없어요.<br>관리자에게 추가를 요청하세요.</div><button class="ag-btn" id="agOut">다른 계정으로 로그인</button>`;
-  const o=authGateEl.querySelector("#agOut"); if(o) o.addEventListener("click", ()=>{ if(auth) auth.signOut().finally(()=>location.reload()); else location.reload(); });
-}
-function updateAuthUI(user){ const u=document.getElementById("authUser"), b=document.getElementById("logoutBtn"); if(!u||!b) return;
-  if(user){ u.textContent="👤 "+(user.email||""); u.style.display=""; b.style.display=""; b.onclick=()=>{ if(auth) auth.signOut().finally(()=>location.reload()); }; }
-  else { u.style.display="none"; b.style.display="none"; }
-}
+function firebaseErr(err){ if(err) console.warn("Firebase 권한 확인 필요", err); }
 
 /* ===== 저장 (보드별) ===== */
 function graphState(){ return { nodes, links }; }
@@ -2847,11 +2852,12 @@ document.getElementById("noticeBtn").addEventListener("click", openNoticePanel);
 document.getElementById("noticeBanner").addEventListener("click", openNoticePanel);
 
 /* ===== 업데이트 알림(What's New) — 새 버전 나오면 자동 팝업 ===== */
-const APP_VERSION = "4.20";
+const APP_VERSION = "4.21";
 const CHANGELOG = [
-  { v:"4.20", d:"2026-07-02", items:["⑥ 견적 파일 업로드 입력을 파일 선택 하나로 단순화","업체가 1곳이면 자동 연결, 여러 곳이면 파일 내용 추출 후 확인필요로 표시"] },
-  { v:"4.19", d:"2026-07-02", items:["⑥ 견적 업로드 시 원본 Drive 저장 후 브링 양식 견적서 자동 생성","견적 카드에 원본·브링 양식·XLSX 링크와 추출 상태 표시"] },
-  { v:"4.18", d:"2026-07-01", items:["🔐 Google 로그인 추가 — 팀 전용 접근(허용된 구글 계정만 입장)","로그인해야 보드·케이스가 열리고, 데이터는 Firebase 규칙으로 잠금"] },
+  { v:"4.21", d:"2026-07-02", items:["⑥ 견적 파일 업로드 입력을 파일 선택 하나로 단순화","업체가 1곳이면 자동 연결, 여러 곳이면 파일 내용 추출 후 확인필요로 표시"] },
+  { v:"4.20", d:"2026-07-02", items:["🔐 로그인 화면이 떴다가 사라지던 문제 수정 — 로그인 모듈 준비될 때까지 화면 유지·재시도","로그인 전엔 항상 로그인 화면이 보이게"] },
+  { v:"4.19", d:"2026-07-02", items:["🔐 Google 로그인(팀 전용) 재도입 — 데이터 로딩은 그대로 두고 로그인 화면만 위에 덮는 안전 방식","로그인해야 도구가 열림(케이스·보드는 영향 없음)"] },
+  { v:"4.18", d:"2026-07-02", items:["⑥ 견적 업로드 시 원본 Drive 저장 후 브링 양식 견적서 자동 생성","견적 카드에 원본·브링 양식·XLSX 링크와 추출 상태 표시"] },
   { v:"4.17", d:"2026-07-01", items:["⑥ 견적 비교 단계에 업체별 견적 파일 업로드 패널 추가","업로드된 견적 파일을 Drive 링크 카드로 비교 표시"] },
   { v:"4.16", d:"2026-07-01", items:["④ 업체 후보 카드에서 견적 요청 대상 업체 선택 가능","⑤ 업체 견적 요청을 선택 업체 MMS 발송 확인창으로 전환"] },
   { v:"4.15", d:"2026-07-01", items:["④ 민원·요청 분류 메모를 간단 형식으로 축소","④ 메모 아래에 업체리스트_현진 분류 매칭 업체 전체 카드 표시"] },
@@ -2933,7 +2939,7 @@ window.__wf = { addChild, addRoot, addLink, deleteNode, setNodeColor, resizeNode
   openVendorSmsModal, closeVendorSmsModal, setVendorSmsEndpoint, setCaseAutomationEndpoint, selectedCaseVendors,
   openNoticePanel, closeNoticePanel, getNotice:()=>JSON.parse(JSON.stringify(notice||{})), renderNoticeBanner,
   _addNotice:(t)=>{ ensureNotice(); notice.posts.unshift({id:"t"+Date.now().toString(36),text:t,ts:Date.now()}); saveNotice(); },
-  ensureAuthGate, showAuthGate, hideAuthGate, showDenied, updateAuthUI };
+  initAuthGate, showAuthGate, hideAuthGate, updateAuthUI };
 
 start();
 initVendorSheetSync();
