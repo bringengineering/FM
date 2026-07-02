@@ -10,7 +10,7 @@
 3. 기본 코드 내용을 지우고 `complaint-intake-to-firebase.gs` 내용을 붙여넣습니다.
 4. 온보딩 수집서 DOCX 파일이 들어 있는 Google Drive 폴더를 연결하려면 코드 상단의 `CONTRACT_DRIVE_FOLDER_ID`에 폴더 ID 또는 폴더 URL을 넣습니다.
    - 현재 설정값은 `1818MusPDfVV6znALkWDMGK99NXAlAj8g`입니다.
-   - ⑥ 견적 파일을 별도 폴더에 저장하려면 `QUOTE_DRIVE_FOLDER_ID`에 폴더 ID를 넣습니다. 비워두면 기존 Drive 폴더 아래 `견적서 회신` 폴더를 자동으로 만듭니다.
+   - ⑥ 견적 파일은 `QUOTE_DRIVE_FOLDER_ID`에 지정한 견적서 전용 폴더에 저장합니다. 현재 설정값은 `11QX5F-KRQvvYNc0hso3QACuMS7lMZw4r`입니다.
    - ⑥ 브링 양식 견적서 자동 생성을 쓰려면 `브링엔지니어링_견적서_양식.xlsx`를 Google Drive에 올린 뒤 Google Sheets로 열어 변환하고, 그 Google Sheet 파일 ID를 `QUOTE_TEMPLATE_SPREADSHEET_ID`에 넣습니다.
 5. 왼쪽 톱니바퀴 `프로젝트 설정`에서 `appsscript.json 매니페스트 파일 표시`를 켭니다.
 6. 왼쪽 파일 목록의 `appsscript.json`에 이 폴더의 `appsscript.json` 내용을 붙여넣습니다.
@@ -54,7 +54,8 @@
 - 온보딩 수집서 DOCX 본문에 `건물주 연락처: 010-0000-0000` 형식의 항목을 넣으면 건물주 번호를 자동 추출합니다.
 - ④에서 선택한 업체가 있으면 ⑤에서 구글폼 첨부 사진의 첫 번째 JPG/JPEG를 SENS MMS로 보내는 견적 요청을 실행할 수 있습니다.
 - MMS 첨부는 SENS 제한 때문에 JPG/JPEG만 사용하며, 300KB를 넘으면 발송하지 않고 ⑤를 진행중/보류로 둡니다.
-- ⑥ 견적 비교에서 업체별 회신 견적 파일을 업로드하면 원본은 `원본 견적서` 폴더에 저장되고, `QUOTE_TEMPLATE_SPREADSHEET_ID`가 설정되어 있으면 브링 양식 Google Sheet와 XLSX 파일을 `브링 양식 견적서` 폴더에 생성합니다.
+- ⑥ 견적 비교에서 업체별 회신 견적 파일을 업로드하면 `QUOTE_DRIVE_FOLDER_ID` 폴더 아래 `{접수번호}_{건물명}` 케이스 폴더를 만들고, 원본은 `원본 견적서` 폴더에 저장합니다. `QUOTE_TEMPLATE_SPREADSHEET_ID`가 설정되어 있으면 브링 양식 Google Sheet와 XLSX 파일을 `브링 양식 견적서` 폴더에 `{업체명}_{yyyyMMdd}` 이름으로 생성합니다.
+- 견적 금액은 합계/견적금액/청구금액 같은 라벨과 공급가액+부가세 계산을 우선하며, 날짜·수량·호실처럼 보이는 작은 숫자는 합계 후보에서 제외합니다. 기존 잘못된 견적 카드는 목록에서 제거 후 재업로드하세요.
 - XLSX/DOCX는 본문 텍스트를 직접 추출하고, PDF/JPG/PNG는 고급 Google 서비스 `Drive API(v3)` OCR을 사용합니다. OCR이 꺼져 있거나 실패하면 원본은 저장하고 케이스에 `확인필요/추출실패`로 표시합니다.
 - Realtime Database의 `/cases/{접수번호}`에 케이스를 등록합니다.
 - GitHub.io FM 앱의 `케이스` 화면에서 자동 등록된 민원을 볼 수 있습니다.

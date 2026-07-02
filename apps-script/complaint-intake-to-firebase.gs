@@ -9,7 +9,7 @@ const COMPLAINT_CONFIG = {
   SPREADSHEET_ID: "1HI6KzIMomL6vOUPs8zZDhXHktL1cWRDcg93lflsuojA",
   SHEET_NAME: "설문지 응답 시트1",
   CONTRACT_DRIVE_FOLDER_ID: "1818MusPDfVV6znALkWDMGK99NXAlAj8g",
-  QUOTE_DRIVE_FOLDER_ID: "",
+  QUOTE_DRIVE_FOLDER_ID: "11QX5F-KRQvvYNc0hso3QACuMS7lMZw4r",
   QUOTE_TEMPLATE_SPREADSHEET_ID: "",
   FIREBASE_DATABASE_URL: "https://bring-fm-default-rtdb.asia-southeast1.firebasedatabase.app",
   FIREBASE_CASES_PATH: "cases",
@@ -76,6 +76,12 @@ function authorizeDriveAccess() {
     : "Drive 권한 확인 완료: 폴더 안에 DOCX 파일이 아직 없습니다.");
 
   const templateId = extractDriveId_(COMPLAINT_CONFIG.QUOTE_TEMPLATE_SPREADSHEET_ID);
+  const quoteFolderId = extractDriveId_(COMPLAINT_CONFIG.QUOTE_DRIVE_FOLDER_ID);
+  if (quoteFolderId) {
+    const quoteFolder = DriveApp.getFolderById(quoteFolderId);
+    Logger.log("견적서 저장 폴더 확인 완료: " + quoteFolder.getName() + " / https://drive.google.com/drive/folders/" + quoteFolderId);
+  }
+
   if (templateId) {
     const templateFile = DriveApp.getFileById(templateId);
     Logger.log("견적서 템플릿 확인 완료: " + templateFile.getName() + " / " + templateFile.getUrl());
@@ -525,14 +531,14 @@ function handleQuoteFileUpload_(payload) {
     return updateQuoteUploadFailure_(caseId, casePayload, validation.message);
   }
 
-  const vendorName = String(payload.vendorName || "업체 미지정").trim();
-  const vendor = normalizeQuoteVendor_(payload.vendor, vendorName);
+  const initialVendorName = resolveInitialQuoteVendorName_(payload, filePayload.fileName);
+  const vendor = normalizeQuoteVendor_(payload.vendor, initialVendorName);
   const uploadedAt = new Date().toISOString();
   const quoteId = "q" + Utilities.formatDate(new Date(), "Asia/Seoul", "yyyyMMddHHmmss") + "-" + Utilities.getUuid().slice(0, 8);
   const folder = getQuoteDriveFolder_(casePayload);
   const originalFolder = getOrCreateChildFolder_(folder, "원본 견적서");
   const bringFolder = getOrCreateChildFolder_(folder, "브링 양식 견적서");
-  const savedName = makeQuoteDriveFileName_(casePayload, vendorName, filePayload.fileName);
+  const savedName = makeQuoteDriveFileName_(casePayload, initialVendorName, filePayload.fileName);
   const bytes = Utilities.base64Decode(String(filePayload.fileBody || "").replace(/^data:[^,]+,/, ""));
   const mimeType = filePayload.mimeType || inferQuoteMimeType_(filePayload.fileName);
   const blob = Utilities.newBlob(bytes, mimeType, savedName);
@@ -541,7 +547,7 @@ function handleQuoteFileUpload_(payload) {
   const quote = {
     id: quoteId,
     vendorId: String(payload.vendorId || ""),
-    vendorName: vendorName,
+    vendorName: initialVendorName,
     vendor: vendor,
     amount: String(payload.amount || "").trim(),
     memo: String(payload.memo || "").trim(),
@@ -565,6 +571,13 @@ function handleQuoteFileUpload_(payload) {
     quote.vendor = quote.vendor || {};
     quote.vendor.name = quote.extractedVendorName;
   }
+  const finalVendorName = quote.vendorName || initialVendorName;
+  if (isGenericQuoteVendorName_(driveFile.getName()) && !isGenericQuoteVendorName_(finalVendorName)) {
+    const renamed = makeQuoteDriveFileName_(casePayload, finalVendorName, filePayload.fileName);
+    driveFile.setName(renamed);
+    quote.fileName = driveFile.getName();
+    quote.originalFileName = driveFile.getName();
+  }
 
   casePayload.quoteFiles = casePayload.quoteFiles && typeof casePayload.quoteFiles === "object" && !Array.isArray(casePayload.quoteFiles)
     ? casePayload.quoteFiles
@@ -575,11 +588,11 @@ function handleQuoteFileUpload_(payload) {
   casePayload.note = casePayload.note || {};
   casePayload.note.c6 = makeQuoteComparisonNote_(casePayload);
   casePayload.log = Array.isArray(casePayload.log) ? casePayload.log : [];
-  casePayload.log.unshift("견적 파일 업로드: " + vendorName + " / " + driveFile.getName());
+  casePayload.log.unshift("견적 파일 업로드: " + finalVendorName + " / " + driveFile.getName());
   if (quote.bringQuoteSheetUrl) {
-    casePayload.log.unshift("브링 양식 견적서 생성: " + vendorName + " / " + (quote.extractionStatus || "확인필요"));
+    casePayload.log.unshift("브링 양식 견적서 생성: " + finalVendorName + " / " + (quote.extractionStatus || "확인필요"));
   } else {
-    casePayload.log.unshift("브링 양식 견적서 생성 보류: " + vendorName + " / " + (quote.extractionMemo || "템플릿 설정 확인 필요"));
+    casePayload.log.unshift("브링 양식 견적서 생성 보류: " + finalVendorName + " / " + (quote.extractionMemo || "템플릿 설정 확인 필요"));
   }
   if (casePayload.log.length > 30) casePayload.log.length = 30;
   casePayload.updatedAt = uploadedAt;
@@ -645,9 +658,8 @@ function updateQuoteUploadFailure_(caseId, casePayload, message) {
 
 function getQuoteDriveFolder_(casePayload) {
   const configured = extractDriveId_(COMPLAINT_CONFIG.QUOTE_DRIVE_FOLDER_ID);
-  const quoteRoot = configured
-    ? DriveApp.getFolderById(configured)
-    : getOrCreateChildFolder_(DriveApp.getFolderById(extractDriveId_(COMPLAINT_CONFIG.CONTRACT_DRIVE_FOLDER_ID)), "견적서 회신");
+  if (!configured) throw new Error("QUOTE_DRIVE_FOLDER_ID가 비어 있어 견적서 저장 폴더를 찾을 수 없습니다.");
+  const quoteRoot = DriveApp.getFolderById(configured);
   const caseName = safeDriveName_((casePayload.ticketNo || casePayload.id || "case") + "_" + (casePayload.building || "건물"));
   return getOrCreateChildFolder_(quoteRoot, caseName);
 }
@@ -666,6 +678,27 @@ function makeQuoteDriveFileName_(casePayload, vendorName, originalName) {
     "견적"
   ].join("_");
   return safeDriveName_(base).slice(0, 120 - ext.length) + ext.toLowerCase();
+}
+
+function resolveInitialQuoteVendorName_(payload, originalName) {
+  const selected = String(payload.vendorName || "").trim();
+  if (selected && !isGenericQuoteVendorName_(selected)) return selected;
+  const fromFile = extractQuoteVendorNameFromFileName_(originalName);
+  if (fromFile) return fromFile;
+  return selected || "업체 확인 필요";
+}
+
+function extractQuoteVendorNameFromFileName_(fileName) {
+  const raw = String(fileName || "").replace(/\.[^.]+$/, "");
+  if (!raw) return "";
+  const withoutCase = raw
+    .replace(/^BR-\d{4}-\d{4}[_\-\s]*/i, "")
+    .replace(/^\d{1,3}[_\-\s]*/, "");
+  const parts = withoutCase.split(/[_\-]+/).map(part => part.trim()).filter(Boolean);
+  const filtered = parts.filter(part => !/^(견적서?|견적|최종|수정|업로드|회신|원본|브링|양식|확인|필요)$/i.test(part));
+  const candidate = filtered[0] || withoutCase;
+  const cleaned = cleanExtractedVendorName_(candidate);
+  return isGenericQuoteVendorName_(cleaned) ? "" : cleaned;
 }
 
 function normalizeQuoteVendor_(vendor, fallbackName) {
@@ -687,6 +720,16 @@ function normalizeQuoteVendor_(vendor, fallbackName) {
 
 function isGenericQuoteVendorName_(value) {
   return !String(value || "").trim() || /업체\s*(미지정|확인|자동)/.test(String(value || ""));
+}
+
+function makeBringQuoteFileNameBase_(quote, extraction) {
+  const rawVendor = !isGenericQuoteVendorName_(quote.vendorName)
+    ? quote.vendorName
+    : extraction.vendorName;
+  const vendorName = String(rawVendor || "").trim() || "업체확인필요";
+  const dateSource = quote.uploadedAt ? new Date(quote.uploadedAt) : new Date();
+  const date = Utilities.formatDate(dateSource, "Asia/Seoul", "yyyyMMdd");
+  return safeDriveName_(vendorName + "_" + date);
 }
 
 function createBringQuoteFromUpload_(casePayload, quote, blob, payload, bringFolder) {
@@ -717,11 +760,7 @@ function createBringQuoteFromUpload_(casePayload, quote, blob, payload, bringFol
   }
 
   try {
-    const fileNameBase = safeDriveName_([
-      casePayload.ticketNo || casePayload.id || "case",
-      quote.vendorName || "업체",
-      "브링양식견적서"
-    ].join("_"));
+    const fileNameBase = makeBringQuoteFileNameBase_(quote, extraction);
     const templateFile = DriveApp.getFileById(templateId);
     const copied = templateFile.makeCopy(fileNameBase, bringFolder);
     const ss = SpreadsheetApp.openById(copied.getId());
@@ -917,20 +956,19 @@ function extractTextWithDriveOcr_(blob, fileName) {
 }
 
 function extractQuoteAmounts_(text, fallbackAmount) {
-  let supply = extractAmountNearLabels_(text, ["공급가액", "공급가", "공급 금액"]);
-  let vat = extractAmountNearLabels_(text, ["부가세", "VAT", "세액"]);
-  let total = extractAmountNearLabels_(text, ["합계금액", "합계 금액", "견적금액", "견적 금액", "총액", "총 견적", "합계"]);
+  let supply = extractAmountNearLabels_(text, ["공급가액", "공급가", "공급 금액", "공급가격"]);
+  let vat = extractAmountNearLabels_(text, ["부가세", "VAT", "세액", "부가 가치세"]);
+  let total = extractAmountNearLabels_(text, ["합계금액", "합계 금액", "견적금액", "견적 금액", "청구금액", "청구 금액", "총액", "총 견적", "합계"]);
   const fallback = parseMoneyValue_(fallbackAmount);
   let usedFallbackOnly = false;
 
-  if (!total) {
-    const values = extractMoneyValues_(text);
-    if (values.length) total = values[values.length - 1];
-  }
+  if (!total && supply && vat) total = supply + vat;
+  if (!total) total = bestQuoteAmountCandidate_(text);
   if (!total && fallback) {
     total = fallback;
     usedFallbackOnly = true;
   }
+  if (total && total < 1000) total = 0;
   if (!supply && total && vat) supply = total - vat;
   if (!vat && total && supply) vat = total - supply;
   if (!supply && !vat && total) {
@@ -950,19 +988,51 @@ function extractQuoteAmounts_(text, fallbackAmount) {
 function extractAmountNearLabels_(text, labels) {
   const source = String(text || "").replace(/\s+/g, " ");
   for (const label of labels) {
-    const pattern = new RegExp(escapeRegex_(label) + "[^0-9]{0,30}((?:\\d{1,3}(?:,\\d{3})+|\\d+)(?:\\.\\d+)?\\s*(?:만원|만|원)?)", "i");
+    const pattern = new RegExp(escapeRegex_(label) + "[^0-9]{0,40}((?:\\d{1,3}(?:,\\d{3})+|\\d{4,})(?:\\.\\d+)?\\s*(?:만원|만|원)?)", "i");
     const match = source.match(pattern);
     const value = match ? parseMoneyValue_(match[1]) : 0;
-    if (value) return value;
+    if (value >= 1000) return value;
   }
   return 0;
 }
 
 function extractMoneyValues_(text) {
-  const matches = String(text || "").match(/(?:\d{1,3}(?:,\d{3})+|\d{4,})(?:\.\d+)?\s*(?:만원|만|원)?/g) || [];
-  return matches
-    .map(parseMoneyValue_)
-    .filter(value => value >= 1000 && value <= 300000000);
+  return extractMoneyCandidates_(text).map(item => item.value);
+}
+
+function bestQuoteAmountCandidate_(text) {
+  const candidates = extractMoneyCandidates_(text);
+  if (!candidates.length) return 0;
+  return candidates.reduce((best, item) => item.value > best.value ? item : best, candidates[0]).value;
+}
+
+function extractMoneyCandidates_(text) {
+  const source = String(text || "");
+  const pattern = /(?:\d{1,3}(?:,\d{3})+|\d{4,})(?:\.\d+)?\s*(?:만원|만|원)?/g;
+  const results = [];
+  let match;
+  while ((match = pattern.exec(source)) !== null) {
+    const raw = match[0];
+    const value = parseMoneyValue_(raw);
+    if (value < 1000 || value > 300000000) continue;
+    const start = Math.max(0, match.index - 18);
+    const end = Math.min(source.length, pattern.lastIndex + 18);
+    const context = source.slice(start, end);
+    if (isNonMoneyContext_(raw, context, value)) continue;
+    results.push({ raw: raw, value: value, context: context });
+  }
+  return results;
+}
+
+function isNonMoneyContext_(raw, context, value) {
+  const compactRaw = String(raw || "").replace(/\s+/g, "");
+  const compactContext = String(context || "").replace(/\s+/g, "");
+  if (/^\d{4}[.\-\/]\d{1,2}[.\-\/]\d{1,2}$/.test(compactRaw)) return true;
+  if (/^\d{6,8}$/.test(compactRaw) && /일자|날짜|작성|발행|견적일/.test(compactContext)) return true;
+  if (/BR-\d{4}-\d{4}/i.test(compactContext)) return true;
+  if (value < 10000 && !/원|만원|만|금액|합계|견적|공급|부가|세액|총액|청구/.test(compactContext)) return true;
+  if (/수량|규격|호실|전화|연락처|사업자|등록번호|팩스|우편|페이지|No\.?/i.test(compactContext) && !/원|만원|만/.test(compactRaw)) return true;
+  return false;
 }
 
 function extractQuoteVendorName_(text) {

@@ -2286,10 +2286,13 @@ function formatQuoteDate(value){
 }
 function quoteAmountText(value){
   const v=String(value||"").trim();
+  const numeric=Number(v.replace(/[^\d]/g,""));
+  if(numeric && numeric<1000) return "금액 미입력";
   return v || "금액 미입력";
 }
 function quoteDisplayAmount(q){
-  return quoteAmountText(q.totalAmount ? Number(q.totalAmount).toLocaleString("ko-KR")+"원" : q.amount);
+  const total=Number(q.totalAmount||0);
+  return quoteAmountText(total>=1000 ? total.toLocaleString("ko-KR")+"원" : q.amount);
 }
 function quoteExtractionLabel(q){
   return q.extractionStatus || (q.bringQuoteSheetUrl ? "추출완료" : "확인필요");
@@ -2604,8 +2607,7 @@ function removeQuoteFileFromCase(quoteId){
   if(!confirm("이 견적 파일을 케이스 목록에서만 제거할까요?\nDrive 원본 파일은 삭제하지 않습니다.")) return;
   delete c.quoteFiles[quoteId];
   c.note=c.note||{};
-  const left=quoteFilesList(c);
-  c.note.c6=left.length ? "견적 파일 목록에서 제거했습니다. 남은 견적: "+left.length+"건" : "견적 파일 목록에서 제거했습니다. 업로드된 견적이 없습니다.";
+  if(/^견적 파일 목록에서 제거했습니다/.test(String(c.note.c6||""))) c.note.c6="";
   caseLog(c, "견적 파일 목록 제거: "+(q.vendorName||"업체")+" / "+(q.fileName||"파일"));
   saveCase(curCase);
   renderCaseDetail();
@@ -3112,8 +3114,9 @@ document.getElementById("noticeBtn").addEventListener("click", openNoticePanel);
 document.getElementById("noticeBanner").addEventListener("click", openNoticePanel);
 
 /* ===== 업데이트 알림(What's New) — 새 버전 나오면 자동 팝업 ===== */
-const APP_VERSION = "4.31";
+const APP_VERSION = "4.32";
 const CHANGELOG = [
+  { v:"4.32", d:"2026-07-02", items:["⑥ 견적 금액 추출에서 날짜·수량 같은 작은 숫자 오인 방지","견적 파일 목록 제거 시 ⑥ 메모를 제거 문구로 덮어쓰지 않음"] },
   { v:"4.31", d:"2026-07-02", items:["케이스 저장을 개별 저장 방식으로 변경","삭제를 보관함 이동/복구 방식으로 변경","늦게 도착한 자동화 결과가 케이스 진행상태를 되돌리지 않도록 안정화"] },
   { v:"4.30", d:"2026-07-02", items:["⑥ 견적 업로드 중 진행 팝업과 진행바 표시","파일별 읽기·전송 상태를 업로드 완료 전까지 표시"] },
   { v:"4.29", d:"2026-07-02", items:["⑥ HWPX 견적서 텍스트 자동 추출 지원","HWP는 원본 저장 후 수동 확인 상태 유지"] },
