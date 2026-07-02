@@ -4,7 +4,7 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>BRING 원주 건물 유지보수 지도</title>
-  <script src="./data/building-maintenance-companies.js?v=20260701-hvac-source-group"></script>
+  <script src="./data/building-maintenance-companies.js?v=20260702-hvac-green-pin"></script>
   <style>
     :root {
       --ink: #172033;
@@ -346,7 +346,7 @@
     .legend .sheet-dot { background: var(--sheet); }
     .legend .electric-dot { background: #f59e0b; }
     .legend .leak-dot { background: #2563eb; }
-    .legend .hvac-dot { background: #f97316; }
+    .legend .hvac-dot { background: #16a34a; }
 
     .pin {
       display: grid;
@@ -591,7 +591,7 @@
     function markerColorFor(company) {
       if (sourceKey(company) === "electric-vendor") return "#f59e0b";
       if (sourceKey(company) === "leak-vendor") return "#2563eb";
-      if (sourceKey(company) === "hvac-vendor") return "#f97316";
+      if (sourceKey(company) === "hvac-vendor") return "#16a34a";
       return company.source === "google-sheet" ? colorFor(company.category) : "#111827";
     }
 
