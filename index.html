@@ -893,18 +893,28 @@ function hideAuthGate(){ const g=document.getElementById("authGate"); if(g) g.st
 function showAuthGate(){ const g=document.getElementById("authGate"); if(g) g.style.display="flex"; }
 function initAuthGate(){
   const gate=document.getElementById("authGate"); if(!gate) return;
-  if(typeof firebase==="undefined" || !firebase.auth){ gate.style.display="none"; return; }  // 인증 SDK 없으면 게이트 끔(도구는 정상 동작)
-  try{
-    auth = firebase.auth();
-    const lb=document.getElementById("agLogin"); if(lb) lb.onclick=doGoogleLogin;
-    auth.onAuthStateChanged(user => {
-      authedUser = user;
-      if(user){ gate.style.display="none"; updateAuthUI(user); }
-      else { gate.style.display="flex"; updateAuthUI(null); }
-    });
-  }catch(e){ console.error("로그인 초기화 실패(도구는 계속 동작)", e); gate.style.display="none"; }
+  gate.style.display="flex";   // 로그인 전엔 항상 보이게 유지
+  const lb=document.getElementById("agLogin"); if(lb) lb.onclick=doGoogleLogin;   // 버튼 즉시 연결
+  let tries=0;
+  (function setup(){
+    if(typeof firebase!=="undefined" && firebase.auth){
+      try{
+        auth = firebase.auth();
+        auth.onAuthStateChanged(function(user){
+          authedUser=user;
+          if(user){ gate.style.display="none"; updateAuthUI(user); }
+          else { gate.style.display="flex"; updateAuthUI(null); }
+        });
+        return;
+      }catch(e){ console.error("auth init 재시도", e); }
+    }
+    if(tries++ < 40){ setTimeout(setup, 200); }   // 인증 SDK 로드 대기(최대 8초, 그동안 화면 유지)
+    else { const m=document.getElementById("agMsg"); if(m) m.innerHTML="로그인 모듈을 못 불러왔어요. <b>Ctrl+Shift+R</b>로 새로고침 해주세요."; }
+  })();
 }
-function doGoogleLogin(){ const msg=document.getElementById("agMsg"); if(msg) msg.textContent="로그인 창 여는 중…";
+function doGoogleLogin(){ const msg=document.getElementById("agMsg");
+  if(!auth || typeof firebase==="undefined" || !firebase.auth){ if(msg) msg.textContent="로그인 모듈 준비 중… 2초 뒤 다시 눌러주세요."; return; }
+  if(msg) msg.textContent="로그인 창 여는 중…";
   try{
     const prov=new firebase.auth.GoogleAuthProvider();
     auth.signInWithPopup(prov).catch(e=>{ if(!msg) return;
@@ -2809,8 +2819,9 @@ document.getElementById("noticeBtn").addEventListener("click", openNoticePanel);
 document.getElementById("noticeBanner").addEventListener("click", openNoticePanel);
 
 /* ===== 업데이트 알림(What's New) — 새 버전 나오면 자동 팝업 ===== */
-const APP_VERSION = "4.19";
+const APP_VERSION = "4.20";
 const CHANGELOG = [
+  { v:"4.20", d:"2026-07-02", items:["🔐 로그인 화면이 떴다가 사라지던 문제 수정 — 로그인 모듈 준비될 때까지 화면 유지·재시도","로그인 전엔 항상 로그인 화면이 보이게"] },
   { v:"4.19", d:"2026-07-02", items:["🔐 Google 로그인(팀 전용) 재도입 — 데이터 로딩은 그대로 두고 로그인 화면만 위에 덮는 안전 방식","로그인해야 도구가 열림(케이스·보드는 영향 없음)"] },
   { v:"4.17", d:"2026-07-01", items:["⑥ 견적 비교 단계에 업체별 견적 파일 업로드 패널 추가","업로드된 견적 파일을 Drive 링크 카드로 비교 표시"] },
   { v:"4.16", d:"2026-07-01", items:["④ 업체 후보 카드에서 견적 요청 대상 업체 선택 가능","⑤ 업체 견적 요청을 선택 업체 MMS 발송 확인창으로 전환"] },
