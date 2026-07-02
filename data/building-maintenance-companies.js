@@ -1690,26 +1690,27 @@ window.BRING_BUILDING_MAINTENANCE_DATA = {
       "no": 25,
       "name": "쿤",
       "category": "냉난방·에어컨",
-      "service": "에어컨설치/냉매보충",
-      "feature": "비고: 캐리어 / LG /삼성 신제품판매가지고 계신제품 이전 설치벽걸이 인버터 2in1 스탠드 천장형 전제품 가능 / 작업 단가: 변동",
+      "service": "이전 설치, 신제품 판매 및 설치, 천장형 에어컨 설치, 투인원 에어컨 설치, 스탠드 에어컨 설치, 벽걸이 에어컨 설치, 냉매 보충",
+      "feature": "춘천, 원주, 횡성 에어컨 전문. 캐리어, LG, 삼성 신제품 판매와 이전 설치 가능",
       "operation": "010-8376-7516",
-      "region": "강원 원주시 단계동 915-10",
+      "region": "강원 원주시 이화2길 30 201호",
+      "address": "강원 원주시 이화2길 30 201호",
       "scale": "변동",
       "url": "https://blog.naver.com/hoon375",
       "extraUrl": "",
       "naverUrl": "https://naver.me/xPUgNnak",
       "phone": "010-8376-7516",
-      "rating": "",
-      "status": "구글시트",
+      "rating": "리뷰 18",
+      "status": "사용자 추가",
       "source": "google-sheet",
       "sourceLabel": "원주 유지보수 구글시트",
       "locations": [
         {
-          "label": "단계동",
-          "lat": 37.3477,
-          "lng": 127.9267,
-          "source": "address-region",
-          "precision": "neighborhood"
+          "label": "무실동 이화2길",
+          "lat": 37.3394793,
+          "lng": 127.9338854,
+          "source": "address-geocode",
+          "precision": "building"
         }
       ]
     },
@@ -3652,6 +3653,557 @@ window.BRING_BUILDING_MAINTENANCE_DATA = {
           "precision": "road"
         }
       ]
+    },
+    {
+      "id": "sheet-093",
+      "no": 93,
+      "name": "현진시스템",
+      "category": "냉난방·에어컨",
+      "service": "시스템에어컨설치, 에어컨 이전설치, 스탠드에어컨설치, 벽걸이에어컨설치, 냉난방기설치, 에어컨판매, 에어컨AS, 에어컨수리",
+      "feature": "원주 전역 에어컨 설치·수리·AS 대응. 예약 및 방문접수·출장 가능",
+      "operation": "",
+      "region": "강원 원주시 송삼길 2",
+      "address": "강원 원주시 송삼길 2",
+      "scale": "변동",
+      "url": "",
+      "extraUrl": "",
+      "naverUrl": "https://naver.me/ximn3Fpx",
+      "phone": "",
+      "rating": "리뷰 3",
+      "status": "사용자 추가",
+      "source": "google-sheet",
+      "sourceLabel": "원주 유지보수 직접추가",
+      "locations": [
+        {
+          "label": "무실동 송삼길",
+          "lat": 37.3259758,
+          "lng": 127.9204182,
+          "source": "address-geocode",
+          "precision": "road"
+        }
+      ]
+    },
+    {
+      "id": "sheet-094",
+      "no": 94,
+      "name": "원주 에어컨설치",
+      "category": "냉난방·에어컨",
+      "service": "원주 에어컨설치, 벽걸이에어컨설치, 스탠드에어컨설치, 2in1 에어컨설치, 매립배관 설치, 에어컨 이전설치",
+      "feature": "시청로 소재 에어컨 설치 업체. 블로그 운영, 22시까지 영업",
+      "operation": "",
+      "region": "강원 원주시 시청로 40",
+      "address": "강원 원주시 시청로 40",
+      "scale": "변동",
+      "url": "https://blog.naver.com/bars0617",
+      "extraUrl": "",
+      "naverUrl": "https://naver.me/FqWjJlBL",
+      "phone": "",
+      "rating": "리뷰 5",
+      "status": "사용자 추가",
+      "source": "google-sheet",
+      "sourceLabel": "원주 유지보수 직접추가",
+      "locations": [
+        {
+          "label": "무실동 시청로",
+          "lat": 37.3382323,
+          "lng": 127.9234637,
+          "source": "address-geocode",
+          "precision": "building"
+        }
+      ]
+    },
+    {
+      "id": "sheet-095",
+      "no": 95,
+      "name": "경동나비엔 원주동부대리점",
+      "category": "냉난방·보일러",
+      "service": "보일러 설치, 가스보일러, 전기온수기",
+      "feature": "경동나비엔 공식 대리점. 일반가스보일러, 콘덴싱가스보일러, 전기온수기 설치 상담",
+      "operation": "033-748-7977",
+      "region": "강원 원주시 만대로 196-6 2층",
+      "address": "강원 원주시 만대로 196-6 2층",
+      "scale": "가격표 있음",
+      "url": "https://blog.naver.com/ncb35322k",
+      "extraUrl": "스마트스토어",
+      "naverUrl": "https://naver.me/xMnGMuy6",
+      "phone": "033-748-7977",
+      "rating": "리뷰 16",
+      "status": "사용자 추가",
+      "source": "google-sheet",
+      "sourceLabel": "원주 유지보수 직접추가",
+      "locations": [
+        {
+          "label": "무실동 만대로",
+          "lat": 37.3400495,
+          "lng": 127.9200143,
+          "source": "address-geocode",
+          "precision": "road"
+        }
+      ]
+    },
+    {
+      "id": "sheet-096",
+      "no": 96,
+      "name": "수상한난방 보일러 에어컨 원주점",
+      "category": "냉난방·보일러",
+      "service": "보일러 설치, 에어컨 설치, 온수기, 안전점검",
+      "feature": "단구동 천매마을 위치. 보일러와 에어컨 기본 설치비, 안전점검 대응",
+      "operation": "0507-1398-1035",
+      "region": "강원 원주시 천매봉길 82-16 101호",
+      "address": "강원 원주시 천매봉길 82-16 101호",
+      "scale": "가격표 있음",
+      "url": "https://smartstore.naver.com/kwesv",
+      "extraUrl": "",
+      "naverUrl": "https://naver.me/xDC32E9b",
+      "phone": "0507-1398-1035",
+      "rating": "리뷰 99",
+      "status": "사용자 추가",
+      "source": "google-sheet",
+      "sourceLabel": "원주 유지보수 직접추가",
+      "locations": [
+        {
+          "label": "단구동 천매봉길",
+          "lat": 37.3237779,
+          "lng": 127.9426222,
+          "source": "address-geocode",
+          "precision": "building"
+        }
+      ]
+    },
+    {
+      "id": "sheet-097",
+      "no": 97,
+      "name": "대성보일러 원주중부대리점",
+      "category": "냉난방·보일러",
+      "service": "보일러 설치, 보일러 AS",
+      "feature": "대성보일러 공식대리점. 판부면 오성마을길 소재",
+      "operation": "0507-1416-8577",
+      "region": "강원 원주시 판부면 오성마을길 67-9 101호",
+      "address": "강원 원주시 판부면 오성마을길 67-9 101호",
+      "scale": "",
+      "url": "",
+      "extraUrl": "",
+      "naverUrl": "https://naver.me/xs3Kb5Jz",
+      "phone": "0507-1416-8577",
+      "rating": "리뷰 66",
+      "status": "사용자 추가",
+      "source": "google-sheet",
+      "sourceLabel": "원주 유지보수 직접추가",
+      "locations": [
+        {
+          "label": "판부면 오성마을길",
+          "lat": 37.3191204,
+          "lng": 127.9481689,
+          "source": "address-geocode",
+          "precision": "building"
+        }
+      ]
+    },
+    {
+      "id": "sheet-098",
+      "no": 98,
+      "name": "경동나비엔 신원주대리점",
+      "category": "냉난방·보일러",
+      "service": "보일러 설치, 청정환기시스템, 프리미엄 보일러",
+      "feature": "경동나비엔 공식인증 대리점. 청정환기시스템과 프리미엄 보일러 취급",
+      "operation": "0507-1402-1764",
+      "region": "강원 원주시 강변로 55 경동나비엔",
+      "address": "강원 원주시 강변로 55 경동나비엔",
+      "scale": "가격표 있음",
+      "url": "https://blog.naver.com/hotboiler111",
+      "extraUrl": "홈페이지",
+      "naverUrl": "https://naver.me/FwGBG5oW",
+      "phone": "0507-1402-1764",
+      "rating": "리뷰 54",
+      "status": "사용자 추가",
+      "source": "google-sheet",
+      "sourceLabel": "원주 유지보수 직접추가",
+      "locations": [
+        {
+          "label": "학성동 강변로",
+          "lat": 37.369855,
+          "lng": 127.9472583,
+          "source": "address-geocode",
+          "precision": "road"
+        }
+      ]
+    },
+    {
+      "id": "sheet-099",
+      "no": 99,
+      "name": "박정남의에어컨클린",
+      "category": "냉난방·에어컨",
+      "service": "에어컨 청소, 에어컨 설치",
+      "feature": "라옹정길 소재 에어컨 클린 업체. 방문접수·출장 가능",
+      "operation": "033-762-8885",
+      "region": "강원 원주시 라옹정길 20-4",
+      "address": "강원 원주시 라옹정길 20-4",
+      "scale": "가격표 있음",
+      "url": "",
+      "extraUrl": "",
+      "naverUrl": "https://naver.me/5Bc8Oedn",
+      "phone": "033-762-8885",
+      "rating": "",
+      "status": "사용자 추가",
+      "source": "google-sheet",
+      "sourceLabel": "원주 유지보수 직접추가",
+      "locations": [
+        {
+          "label": "단구동 라옹정길",
+          "lat": 37.3190654,
+          "lng": 127.9639999,
+          "source": "address-geocode",
+          "precision": "building"
+        }
+      ]
+    },
+    {
+      "id": "sheet-100",
+      "no": 100,
+      "name": "원주1동보일러에어컨 단구초교",
+      "category": "냉난방·보일러",
+      "service": "보일러, 에어컨",
+      "feature": "단구초교길 소재 보일러·에어컨 업체. 전화, 문자, 네이버톡톡 상담 가능",
+      "operation": "",
+      "region": "강원 원주시 단구초교길 6-19 1층",
+      "address": "강원 원주시 단구초교길 6-19 1층",
+      "scale": "",
+      "url": "https://blog.naver.com/zzazal-1",
+      "extraUrl": "",
+      "naverUrl": "https://naver.me/5owOah5a",
+      "phone": "",
+      "rating": "리뷰 1",
+      "status": "사용자 추가",
+      "source": "google-sheet",
+      "sourceLabel": "원주 유지보수 직접추가",
+      "locations": [
+        {
+          "label": "반곡동 단구초교길",
+          "lat": 37.3216967,
+          "lng": 127.9643588,
+          "source": "address-geocode",
+          "precision": "road"
+        }
+      ]
+    },
+    {
+      "id": "sheet-101",
+      "no": 101,
+      "name": "린나이 케이가스텍",
+      "category": "냉난방·보일러",
+      "service": "친환경콘덴싱보일러, 저녹스일반가스보일러, 가스온수기, 전기온수기, 전기레인지, 가스레인지, 주방기구",
+      "feature": "린나이 공식인증. 단구동 판부농협 맞은편 보일러·가스기기 업체",
+      "operation": "0507-1339-8573",
+      "region": "강원 원주시 치악로 1532 1층",
+      "address": "강원 원주시 치악로 1532 1층",
+      "scale": "변동",
+      "url": "https://blog.naver.com/ssopiha",
+      "extraUrl": "홈페이지",
+      "naverUrl": "https://naver.me/xF4tPYwU",
+      "phone": "0507-1339-8573",
+      "rating": "리뷰 63",
+      "status": "사용자 추가",
+      "source": "google-sheet",
+      "sourceLabel": "원주 유지보수 직접추가",
+      "locations": [
+        {
+          "label": "반곡동 치악로",
+          "lat": 37.3191851,
+          "lng": 127.9668541,
+          "source": "address-geocode",
+          "precision": "road"
+        }
+      ]
+    },
+    {
+      "id": "sheet-102",
+      "no": 102,
+      "name": "귀뚜라미보일러 원주동부대리점",
+      "category": "냉난방·보일러",
+      "service": "보일러 설치, 보일러 AS",
+      "feature": "귀뚜라미 공식인증 대리점. 원주보일러 귀뚜라미 대흥아파트 설치 후기 운영",
+      "operation": "033-761-7252",
+      "region": "강원 원주시 치악로 1555 귀뚜라미보일러 원주동부대리점",
+      "address": "강원 원주시 치악로 1555 귀뚜라미보일러 원주동부대리점",
+      "scale": "",
+      "url": "https://ok114.co.kr/0337617252",
+      "extraUrl": "블로그",
+      "naverUrl": "https://naver.me/GVVbY7I5",
+      "phone": "033-761-7252",
+      "rating": "",
+      "status": "사용자 추가",
+      "source": "google-sheet",
+      "sourceLabel": "원주 유지보수 직접추가",
+      "locations": [
+        {
+          "label": "단구동 치악로",
+          "lat": 37.3221134,
+          "lng": 127.9629108,
+          "source": "address-geocode",
+          "precision": "building"
+        }
+      ]
+    },
+    {
+      "id": "sheet-103",
+      "no": 103,
+      "name": "경동나비엔 DK에너지솔루션",
+      "category": "냉난방·보일러",
+      "service": "보일러 설치, 보일러 AS",
+      "feature": "경동나비엔 시스템 대리점. 단사정길 소재, 방문접수·출장 가능",
+      "operation": "",
+      "region": "강원 원주시 단사정길 25 1층",
+      "address": "강원 원주시 단사정길 25 1층",
+      "scale": "",
+      "url": "",
+      "extraUrl": "",
+      "naverUrl": "https://naver.me/xNpQj1na",
+      "phone": "",
+      "rating": "리뷰 1",
+      "status": "사용자 추가",
+      "source": "google-sheet",
+      "sourceLabel": "원주 유지보수 직접추가",
+      "locations": [
+        {
+          "label": "단구동 단사정길",
+          "lat": 37.3290423,
+          "lng": 127.9606968,
+          "source": "address-geocode",
+          "precision": "road"
+        }
+      ]
+    },
+    {
+      "id": "sheet-104",
+      "no": 104,
+      "name": "원주1동보일러에어컨 단구초교 2",
+      "category": "냉난방·보일러",
+      "service": "보일러, 에어컨",
+      "feature": "단구초교길 소재 보일러·에어컨 업체. 전화, 문자, 네이버톡톡 상담 가능",
+      "operation": "",
+      "region": "강원 원주시 단구초교길 6-19 1층",
+      "address": "강원 원주시 단구초교길 6-19 1층",
+      "scale": "",
+      "url": "https://blog.naver.com/zzazal-1",
+      "extraUrl": "",
+      "naverUrl": "https://naver.me/xE6g6D6w",
+      "phone": "",
+      "rating": "리뷰 1",
+      "status": "사용자 추가",
+      "source": "google-sheet",
+      "sourceLabel": "원주 유지보수 직접추가",
+      "locations": [
+        {
+          "label": "반곡동 단구초교길",
+          "lat": 37.3216967,
+          "lng": 127.9643588,
+          "source": "address-geocode",
+          "precision": "road"
+        }
+      ]
+    },
+    {
+      "id": "sheet-105",
+      "no": 105,
+      "name": "경동나비엔 원주대리점",
+      "category": "냉난방·보일러",
+      "service": "보일러 설치, 보일러 AS",
+      "feature": "경동나비엔 공식 대리점. 남원로 소재 보일러 업체",
+      "operation": "0507-1404-0159",
+      "region": "강원 원주시 남원로 603",
+      "address": "강원 원주시 남원로 603",
+      "scale": "",
+      "url": "-",
+      "extraUrl": "",
+      "naverUrl": "https://naver.me/GXAKLPPx",
+      "phone": "0507-1404-0159",
+      "rating": "리뷰 7",
+      "status": "사용자 추가",
+      "source": "google-sheet",
+      "sourceLabel": "원주 유지보수 직접추가",
+      "locations": [
+        {
+          "label": "판부면 남원로",
+          "lat": 37.313125,
+          "lng": 127.9295932,
+          "source": "address-geocode",
+          "precision": "road"
+        }
+      ]
+    },
+    {
+      "id": "sheet-106",
+      "no": 106,
+      "name": "대성보일러 원주온수기 전문점",
+      "category": "냉난방·보일러",
+      "service": "보일러 설치, 온수기 설치",
+      "feature": "대성보일러 공식대리점. 원주 온수기 전문점",
+      "operation": "033-734-8577",
+      "region": "강원 원주시 이화3길 31",
+      "address": "강원 원주시 이화3길 31",
+      "scale": "",
+      "url": "-",
+      "extraUrl": "",
+      "naverUrl": "https://naver.me/GmpxGAvF",
+      "phone": "033-734-8577",
+      "rating": "리뷰 1",
+      "status": "사용자 추가",
+      "source": "google-sheet",
+      "sourceLabel": "원주 유지보수 직접추가",
+      "locations": [
+        {
+          "label": "무실동 이화3길",
+          "lat": 37.3381408,
+          "lng": 127.9326004,
+          "source": "address-geocode",
+          "precision": "building"
+        }
+      ]
+    },
+    {
+      "id": "sheet-107",
+      "no": 107,
+      "name": "강추에어컨",
+      "category": "냉난방·에어컨",
+      "service": "에어컨 설치, 에어컨 기본설치",
+      "feature": "이화3길 소재 에어컨 설치 업체. 에어컨 기본 설치비 포함 상품 안내",
+      "operation": "0507-1316-6248",
+      "region": "강원 원주시 이화3길 16-3",
+      "address": "강원 원주시 이화3길 16-3",
+      "scale": "에어컨투900 기본설치비 포함 350,000원",
+      "url": "-",
+      "extraUrl": "",
+      "naverUrl": "https://naver.me/FlBTSUX2",
+      "phone": "0507-1316-6248",
+      "rating": "",
+      "status": "사용자 추가",
+      "source": "google-sheet",
+      "sourceLabel": "원주 유지보수 직접추가",
+      "locations": [
+        {
+          "label": "무실동 이화3길",
+          "lat": 37.3377819,
+          "lng": 127.9338913,
+          "source": "address-geocode",
+          "precision": "building"
+        }
+      ]
+    },
+    {
+      "id": "sheet-108",
+      "no": 108,
+      "name": "롯데기공가스보일러 원주대리점",
+      "category": "냉난방·보일러",
+      "service": "가스보일러 설치, 보일러 AS",
+      "feature": "롯데기공 가스보일러 원주대리점",
+      "operation": "033-762-6029",
+      "region": "강원 원주시 이화4길 9",
+      "address": "강원 원주시 이화4길 9",
+      "scale": "",
+      "url": "-",
+      "extraUrl": "",
+      "naverUrl": "https://naver.me/51urL6zQ",
+      "phone": "033-762-6029",
+      "rating": "리뷰 10",
+      "status": "사용자 추가",
+      "source": "google-sheet",
+      "sourceLabel": "원주 유지보수 직접추가",
+      "locations": [
+        {
+          "label": "무실동 이화4길",
+          "lat": 37.3418171,
+          "lng": 127.9342309,
+          "source": "address-geocode",
+          "precision": "road"
+        }
+      ]
+    },
+    {
+      "id": "sheet-109",
+      "no": 109,
+      "name": "에어컨설치나라",
+      "category": "냉난방·에어컨",
+      "service": "스탠드 재설치, 벽걸이 재설치, 투인원 재설치, 냉매 보충",
+      "feature": "냉난방기 설치 업체. 스탠드·벽걸이·투인원 재설치와 냉매 보충 가격표 제공",
+      "operation": "",
+      "region": "강원 원주시 이화4길 62",
+      "address": "강원 원주시 이화4길 62",
+      "scale": "가격표 있음",
+      "url": "-",
+      "extraUrl": "",
+      "naverUrl": "https://naver.me/GmtGr1Df",
+      "phone": "",
+      "rating": "리뷰 2",
+      "status": "사용자 추가",
+      "source": "google-sheet",
+      "sourceLabel": "원주 유지보수 직접추가",
+      "locations": [
+        {
+          "label": "무실동 이화4길",
+          "lat": 37.3421873,
+          "lng": 127.9334477,
+          "source": "address-geocode",
+          "precision": "building"
+        }
+      ]
+    },
+    {
+      "id": "sheet-110",
+      "no": 110,
+      "name": "귀뚜라미 원주중앙대리점",
+      "category": "냉난방·보일러",
+      "service": "보일러 설치, 보일러 AS",
+      "feature": "귀뚜라미 공식인증 대리점. 원주 중앙대리점",
+      "operation": "033-742-9004",
+      "region": "강원 원주시 남산로 69 1층 101호",
+      "address": "강원 원주시 남산로 69 1층 101호",
+      "scale": "",
+      "url": "-",
+      "extraUrl": "",
+      "naverUrl": "https://naver.me/xHEZNwqx",
+      "phone": "033-742-9004",
+      "rating": "리뷰 2",
+      "status": "사용자 추가",
+      "source": "google-sheet",
+      "sourceLabel": "원주 유지보수 직접추가",
+      "locations": [
+        {
+          "label": "일산동 남산로",
+          "lat": 37.3450087,
+          "lng": 127.9430494,
+          "source": "address-geocode",
+          "precision": "road"
+        }
+      ]
+    },
+    {
+      "id": "sheet-111",
+      "no": 111,
+      "name": "린나이 남원주대리점",
+      "category": "냉난방·보일러",
+      "service": "보일러 설치, 보일러 AS",
+      "feature": "린나이 공식인증대리점. 남원주대리점",
+      "operation": "033-765-3651",
+      "region": "강원 원주시 북원로 2250",
+      "address": "강원 원주시 북원로 2250",
+      "scale": "",
+      "url": "-",
+      "extraUrl": "",
+      "naverUrl": "https://naver.me/GTnl3Amr",
+      "phone": "033-765-3651",
+      "rating": "리뷰 30",
+      "status": "사용자 추가",
+      "source": "google-sheet",
+      "sourceLabel": "원주 유지보수 직접추가",
+      "locations": [
+        {
+          "label": "우산동 북원로",
+          "lat": 37.3765042,
+          "lng": 127.944677,
+          "source": "address-geocode",
+          "precision": "road"
+        }
+      ]
     }
   ],
   "categories": [
@@ -3681,9 +4233,9 @@ window.BRING_BUILDING_MAINTENANCE_DATA = {
   ],
   "summary": {
     "excel": 49,
-    "googleSheet": 92,
-    "total": 141,
-    "mapped": 111,
+    "googleSheet": 111,
+    "total": 160,
+    "mapped": 130,
     "geocoded": 0
   }
 };
