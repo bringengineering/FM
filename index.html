@@ -527,8 +527,13 @@
 <script>
 /* ===== ① 실시간 공유 켜기: 아래 값을 본인 Firebase 프로젝트 값으로 교체 (교체 전엔 '로컬 모드') ===== */
 const firebaseConfig = {
+  apiKey: "AIzaSyBKOTIuQ8pOKSuaeKFQs_6UDdDnxdjCTZg",
+  authDomain: "bring-fm.firebaseapp.com",
   databaseURL: "https://bring-fm-default-rtdb.asia-southeast1.firebasedatabase.app",
-  projectId:   "bring-fm"
+  projectId: "bring-fm",
+  storageBucket: "bring-fm.firebasestorage.app",
+  messagingSenderId: "864976295990",
+  appId: "1:864976295990:web:194f145b1b4dad58eb6097"
 };
 let boards = { main: "업무 흐름" };   // {boardId: 이름}
 let curBoard = "main";
@@ -2861,9 +2866,10 @@ document.getElementById("noticeBtn").addEventListener("click", openNoticePanel);
 document.getElementById("noticeBanner").addEventListener("click", openNoticePanel);
 
 /* ===== 업데이트 알림(What's New) — 새 버전 나오면 자동 팝업 ===== */
-const APP_VERSION = "4.22";
+const APP_VERSION = "4.23";
 const CHANGELOG = [
-  { v:"4.22", d:"2026-07-02", items:["⑥ 견적 파일 업로드에서 여러 파일 동시 선택 지원","선택된 견적 파일을 각각 Drive 저장·브링 양식 생성 요청으로 처리"] },
+  { v:"4.23", d:"2026-07-02", items:["⑥ 견적 파일 업로드에서 여러 파일 동시 선택 지원","선택된 견적 파일을 각각 Drive 저장·브링 양식 생성 요청으로 처리"] },
+  { v:"4.22", d:"2026-07-02", items:["🔑 Firebase apiKey 추가 — Google 로그인이 실제로 작동(그동안 apiKey 누락으로 로그인 시작 자체가 안 됐음)"] },
   { v:"4.21", d:"2026-07-02", items:["⑥ 견적 파일 업로드 입력을 파일 선택 하나로 단순화","업체가 1곳이면 자동 연결, 여러 곳이면 파일 내용 추출 후 확인필요로 표시"] },
   { v:"4.20", d:"2026-07-02", items:["🔐 로그인 화면이 떴다가 사라지던 문제 수정 — 로그인 모듈 준비될 때까지 화면 유지·재시도","로그인 전엔 항상 로그인 화면이 보이게"] },
   { v:"4.19", d:"2026-07-02", items:["🔐 Google 로그인(팀 전용) 재도입 — 데이터 로딩은 그대로 두고 로그인 화면만 위에 덮는 안전 방식","로그인해야 도구가 열림(케이스·보드는 영향 없음)"] },
