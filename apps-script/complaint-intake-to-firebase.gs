@@ -553,7 +553,7 @@ function validateQuoteUpload_(filePayload) {
   const size = Number(filePayload.size || 0);
   const maxSize = 5 * 1024 * 1024;
   const ext = fileName.split(".").pop().toLowerCase();
-  const allowedExts = ["pdf", "jpg", "jpeg", "png", "doc", "docx", "xls", "xlsx"];
+  const allowedExts = ["pdf", "jpg", "jpeg", "png", "doc", "docx", "xls", "xlsx", "hwp", "hwpx"];
   const allowedMimes = [
     "application/pdf",
     "image/jpeg",
@@ -561,14 +561,18 @@ function validateQuoteUpload_(filePayload) {
     "application/msword",
     "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
     "application/vnd.ms-excel",
-    "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+    "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    "application/x-hwp",
+    "application/haansofthwp",
+    "application/vnd.hancom.hwp",
+    "application/vnd.hancom.hwpx"
   ];
 
   if (!fileName) return { ok: false, message: "파일명이 없습니다." };
   if (!body) return { ok: false, message: "파일 내용이 없습니다." };
   if (size > maxSize) return { ok: false, message: "파일 용량이 5MB를 초과했습니다." };
   if (!allowedExts.includes(ext) && !allowedMimes.includes(mimeType)) {
-    return { ok: false, message: "지원하지 않는 견적 파일 형식입니다. PDF, JPG, PNG, DOC/DOCX, XLS/XLSX만 업로드할 수 있습니다." };
+    return { ok: false, message: "지원하지 않는 견적 파일 형식입니다. PDF, JPG, PNG, DOC/DOCX, XLS/XLSX, HWP/HWPX만 업로드할 수 있습니다." };
   }
   return { ok: true };
 }
@@ -739,6 +743,15 @@ function extractQuoteText_(blob, mimeType, fileName) {
       ? { ok: true, text: text, message: "DOCX 텍스트 추출 완료" }
       : { ok: false, text: "", message: "DOCX 텍스트를 추출하지 못했습니다." };
   }
+  if (ext === "hwpx" || mimeType === "application/vnd.hancom.hwpx") {
+    const text = extractHwpxText_(blob);
+    return text
+      ? { ok: true, text: text, message: "HWPX 텍스트 추출 완료" }
+      : { ok: false, text: "", message: "HWPX 텍스트를 추출하지 못했습니다. 원본 확인이 필요합니다." };
+  }
+  if (ext === "hwp" || ["application/x-hwp", "application/haansofthwp", "application/vnd.hancom.hwp"].includes(mimeType)) {
+    return { ok: true, text: "", message: "HWP는 자동 추출 미지원 파일입니다. 원본을 저장했고 견적 내용은 수동 확인이 필요합니다." };
+  }
   if (["pdf", "jpg", "jpeg", "png"].includes(ext) || /^image\//.test(mimeType) || mimeType === "application/pdf") {
     return extractTextWithDriveOcr_(blob, fileName);
   }
@@ -747,7 +760,7 @@ function extractQuoteText_(blob, mimeType, fileName) {
 
 function extractXlsxText_(blob) {
   try {
-    const blobs = Utilities.unzip(blob);
+    const blobs = unzipOfficeBlob_(blob);
     return blobs
       .filter(item => /^xl\/(?:sharedStrings|worksheets\/sheet\d+)\.xml$/.test(item.getName()))
       .map(item => decodeSpreadsheetXmlText_(item.getDataAsString("UTF-8")))
@@ -761,7 +774,7 @@ function extractXlsxText_(blob) {
 
 function extractDocxTextFromBlob_(blob) {
   try {
-    const blobs = Utilities.unzip(blob);
+    const blobs = unzipOfficeBlob_(blob);
     const xml = blobs
       .filter(item => /^word\/(?:document|header\d*|footer\d*)\.xml$/.test(item.getName()))
       .map(item => item.getDataAsString("UTF-8"))
@@ -771,6 +784,35 @@ function extractDocxTextFromBlob_(blob) {
     Logger.log("업로드 DOCX 본문 추출 실패: " + err.message);
     return "";
   }
+}
+
+function extractHwpxText_(blob) {
+  try {
+    const blobs = unzipOfficeBlob_(blob);
+    const previewText = blobs
+      .filter(item => /^Preview\/PrvText\.txt$/i.test(item.getName()))
+      .map(item => item.getDataAsString("UTF-8"))
+      .join("\n")
+      .replace(/\s+/g, " ")
+      .trim();
+    if (previewText) return previewText;
+
+    const xml = blobs
+      .filter(item => /^Contents\/(?:section\d+|header\d*|footer\d*)\.xml$/i.test(item.getName()))
+      .map(item => item.getDataAsString("UTF-8"))
+      .join("\n");
+    return decodeXmlText_(xml);
+  } catch (err) {
+    Logger.log("HWPX 텍스트 추출 실패: " + err.message);
+    return "";
+  }
+}
+
+function unzipOfficeBlob_(blob) {
+  const name = typeof blob.getName === "function" && blob.getName()
+    ? blob.getName()
+    : "office-file.zip";
+  return Utilities.unzip(Utilities.newBlob(blob.getBytes(), "application/zip", name));
 }
 
 function decodeSpreadsheetXmlText_(xml) {
@@ -1062,7 +1104,9 @@ function inferQuoteMimeType_(fileName) {
     doc: "application/msword",
     docx: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
     xls: "application/vnd.ms-excel",
-    xlsx: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+    xlsx: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    hwp: "application/x-hwp",
+    hwpx: "application/vnd.hancom.hwpx"
   };
   return map[ext] || "application/octet-stream";
 }
@@ -1572,7 +1616,7 @@ function extractOwnerPhoneFromOnboarding_(contractMatch) {
 
 function extractDocxText_(driveFileId) {
   try {
-    const blobs = Utilities.unzip(DriveApp.getFileById(driveFileId).getBlob());
+    const blobs = unzipOfficeBlob_(DriveApp.getFileById(driveFileId).getBlob());
     const xml = blobs
       .filter(blob => /^word\/(?:document|header\d*|footer\d*)\.xml$/.test(blob.getName()))
       .map(blob => blob.getDataAsString("UTF-8"))

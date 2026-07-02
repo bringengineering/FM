@@ -97,7 +97,7 @@ NCP Secret Key는 GitHub나 HTML 화면에 절대 넣지 않습니다. Apps Scri
 
 1. ⑤가 완료되어 ⑥이 `진행중`인지 확인합니다.
 2. ⑥ 메모 버튼을 열고 견적 파일을 선택합니다. 여러 파일을 한 번에 선택해도 됩니다.
-3. 파일은 PDF, JPG/JPEG, PNG, DOC/DOCX, XLS/XLSX만 가능하며 최대 5MB입니다.
+3. 파일은 PDF, JPG/JPEG, PNG, DOC/DOCX, XLS/XLSX, HWP/HWPX만 가능하며 최대 5MB입니다. HWPX는 텍스트 자동 추출을 시도하고, HWP는 원본 저장 후 수동 확인 상태로 남깁니다.
 4. 업체가 1곳만 선택되어 있으면 자동으로 그 업체에 연결됩니다. 여러 곳이면 파일 본문에서 업체명을 추출하고, 애매하면 `업체 확인 필요`로 남깁니다.
 5. 처음 사용할 때는 `caseAutomationEndpoint`에 Apps Script 웹 앱 URL을 저장합니다. ⑤ MMS 웹앱 URL과 같은 URL을 사용해도 됩니다.
 6. 업로드 후 선택한 파일 수만큼 케이스 ⑥ 카드에 `원본 열기`, `브링 양식`, `XLSX 다운로드` 링크와 추출 상태가 표시되는지 확인합니다.

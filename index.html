@@ -2365,10 +2365,10 @@ function renderQuoteUploadPanel(c, stepStatus){
       <button class="quote-remove" data-quote-remove="${escAttr(q.id)}">목록에서 제거</button>
     </article>`).join("")}</div>` : `<div class="vendor-empty" style="margin-top:10px;text-align:left">아직 업로드된 견적 파일이 없습니다.</div>`;
   return `<div class="quote-upload">
-    <div class="quote-upload-head"><div><div class="quote-upload-title">견적 파일 업로드</div><div class="quote-upload-sub">PDF, JPG/PNG, DOC/DOCX, XLS/XLSX · 최대 5MB · 원본 저장 후 브링 양식 자동 생성</div></div></div>
+    <div class="quote-upload-head"><div><div class="quote-upload-title">견적 파일 업로드</div><div class="quote-upload-sub">PDF, JPG/PNG, DOC/DOCX, XLS/XLSX, HWP/HWPX · 최대 5MB · 원본 저장 후 브링 양식 자동 생성</div></div></div>
     <div class="quote-form">
       <div class="quote-file-wrap" data-quote-drop="1">
-        <label class="quote-file-picker">파일 선택<input class="quote-file" id="quoteFile" type="file" multiple accept=".pdf,.jpg,.jpeg,.png,.doc,.docx,.xls,.xlsx,application/pdf,image/jpeg,image/png,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document,application/vnd.ms-excel,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"></label>
+        <label class="quote-file-picker">파일 선택<input class="quote-file" id="quoteFile" type="file" multiple accept=".pdf,.jpg,.jpeg,.png,.doc,.docx,.xls,.xlsx,.hwp,.hwpx,application/pdf,image/jpeg,image/png,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document,application/vnd.ms-excel,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/x-hwp,application/haansofthwp,application/vnd.hancom.hwp,application/vnd.hancom.hwpx"></label>
         <div class="quote-drop-hint">파일을 여기로 드래그해도 됩니다.</div>
         <div class="quote-file-list" id="quoteFileList">${quoteSelectedFileListHtml(quotePendingFiles)}</div>
       </div>
@@ -2396,9 +2396,9 @@ function promptCaseAutomationSetup(){
 function quoteUploadAllowed(file){
   if(!file) return "업로드할 파일을 선택하세요.";
   const ext=(file.name.split(".").pop()||"").toLowerCase();
-  const allowed=["pdf","jpg","jpeg","png","doc","docx","xls","xlsx"];
+  const allowed=["pdf","jpg","jpeg","png","doc","docx","xls","xlsx","hwp","hwpx"];
   if(file.size > 5 * 1024 * 1024) return "파일 용량이 5MB를 초과했습니다.";
-  if(!allowed.includes(ext)) return "지원하지 않는 파일 형식입니다. PDF, JPG, PNG, DOC/DOCX, XLS/XLSX만 가능합니다.";
+  if(!allowed.includes(ext)) return "지원하지 않는 파일 형식입니다. PDF, JPG, PNG, DOC/DOCX, XLS/XLSX, HWP/HWPX만 가능합니다.";
   return "";
 }
 function quoteUploadErrors(files){
@@ -2971,8 +2971,10 @@ document.getElementById("noticeBtn").addEventListener("click", openNoticePanel);
 document.getElementById("noticeBanner").addEventListener("click", openNoticePanel);
 
 /* ===== 업데이트 알림(What's New) — 새 버전 나오면 자동 팝업 ===== */
-const APP_VERSION = "4.27";
+const APP_VERSION = "4.29";
 const CHANGELOG = [
+  { v:"4.29", d:"2026-07-02", items:["⑥ HWPX 견적서 텍스트 자동 추출 지원","HWP는 원본 저장 후 수동 확인 상태 유지"] },
+  { v:"4.28", d:"2026-07-02", items:["⑥ HWP/HWPX 견적 파일 업로드 허용","한글 견적서는 원본 저장 후 확인필요 상태로 표시"] },
   { v:"4.27", d:"2026-07-02", items:["⑥ 견적 업로드 Apps Script URL 기본 연결","URL 입력창 없이 업로드 버튼으로 바로 Drive 저장 요청"] },
   { v:"4.26", d:"2026-07-02", items:["⑥ 견적 파일을 하나씩 선택하거나 드래그해도 목록에 누적","업로드 전 파일별 쓰레기통 버튼으로 잘못 넣은 파일 제거"] },
   { v:"4.25", d:"2026-07-02", items:["⑥ 견적 파일 업로드에 드래그 앤 드롭 추가","드롭한 파일도 파일명 목록에 표시하고 기존 업로드 흐름으로 처리"] },
