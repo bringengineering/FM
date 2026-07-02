@@ -12,6 +12,7 @@
    - 현재 설정값은 `1818MusPDfVV6znALkWDMGK99NXAlAj8g`입니다.
    - ⑥ 견적 파일은 `QUOTE_DRIVE_FOLDER_ID`에 지정한 견적서 전용 폴더에 저장합니다. 현재 설정값은 `11QX5F-KRQvvYNc0hso3QACuMS7lMZw4r`입니다.
    - ⑥ 브링 양식 견적서 자동 생성을 쓰려면 `브링엔지니어링_견적서_양식.xlsx`를 Google Drive에 올린 뒤 Google Sheets로 열어 변환하고, 그 Google Sheet 파일 ID를 `QUOTE_TEMPLATE_SPREADSHEET_ID`에 넣습니다.
+   - MinerU 문서 분석을 쓰려면 Apps Script `프로젝트 설정` -> `스크립트 속성`에 `MINERU_API_KEY`를 넣습니다. 이 값만 있으면 기본적으로 `https://mineru.net` API를 직접 사용합니다. 별도 중계 서버를 쓰는 경우에만 `MINERU_API_URL`도 넣습니다.
 5. 왼쪽 톱니바퀴 `프로젝트 설정`에서 `appsscript.json 매니페스트 파일 표시`를 켭니다.
 6. 왼쪽 파일 목록의 `appsscript.json`에 이 폴더의 `appsscript.json` 내용을 붙여넣습니다.
 7. 저장 후 함수 선택 드롭다운에서 `setupComplaintAutomation`을 선택해 실행합니다.
@@ -56,6 +57,10 @@
 - MMS 첨부는 SENS 제한 때문에 JPG/JPEG만 사용하며, 300KB를 넘으면 발송하지 않고 ⑤를 진행중/보류로 둡니다.
 - ⑥ 견적 비교에서 업체별 회신 견적 파일을 업로드하면 `QUOTE_DRIVE_FOLDER_ID` 폴더 아래 `{접수번호}_{건물명}` 케이스 폴더를 만들고, 원본은 `원본 견적서` 폴더에 저장합니다. `QUOTE_TEMPLATE_SPREADSHEET_ID`가 설정되어 있으면 브링 양식 Google Sheet와 XLSX 파일을 `브링 양식 견적서` 폴더에 `{업체명}_{yyyyMMdd}` 이름으로 생성합니다.
 - 업체 견적 파일 업로드 직후 생성되는 브링 양식은 `초안`으로 표시됩니다. 자동 추출 금액이 틀리면 FM 앱 ⑥ 견적 카드의 `합계금액 확인/수정`에 부가세 포함 합계금액을 입력하고 `브링 양식 재작성`을 누르세요. 확정 합계금액이 카드, 비교 메모, 브링 양식에 우선 반영되고 상태가 `확정`으로 바뀝니다.
+- `MINERU_API_KEY`가 설정되어 있으면 견적 업로드 때 Apps Script가 먼저 mineru.net 정밀 API에 파일을 업로드하고 분석 결과 ZIP을 받아 Markdown/JSON을 저장합니다. 성공하면 케이스 Drive 폴더의 `문서 분석 결과` 폴더에 `.md`, `.json` 파일이 저장되고, 견적 카드에 `분석 Markdown`, `분석 JSON` 링크가 표시됩니다.
+- 별도 MinerU 중계 서버를 쓰고 싶으면 `MINERU_API_URL`에 서버 주소를 넣습니다. 이 서버가 `/analyze-quote`를 제공하면 같은 카드 표시 흐름을 사용합니다.
+- MinerU 서버가 없거나 실패하면 기존 Apps Script 추출 방식으로 자동 fallback합니다. HWP는 v1에서 수동확인으로 남기고, HWPX는 기존 XML 텍스트 추출을 보조로 사용합니다.
+- MinerU 서버 요청 형식은 `POST /analyze-quote`이며 입력은 `fileName`, `mimeType`, `fileBase64`, `caseId`입니다. 응답은 `markdown`, `json`, `tables`, `vendorName`, `items`, `supplyAmount`, `vatAmount`, `totalAmount`, `confidence`, `warnings`를 받을 수 있습니다.
 - 견적 금액은 합계/견적금액/청구금액 같은 라벨과 공급가액+부가세 계산을 우선하며, 날짜·수량·호실처럼 보이는 작은 숫자는 합계 후보에서 제외합니다. 기존 잘못된 견적 카드는 목록에서 제거 후 재업로드하세요.
 - XLSX/DOCX는 본문 텍스트를 직접 추출하고, PDF/JPG/PNG는 고급 Google 서비스 `Drive API(v3)` OCR을 사용합니다. OCR이 꺼져 있거나 실패하면 원본은 저장하고 케이스에 `확인필요/추출실패`로 표시합니다.
 - Realtime Database의 `/cases/{접수번호}`에 케이스를 등록합니다.

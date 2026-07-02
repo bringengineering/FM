@@ -10,7 +10,7 @@ const COMPLAINT_CONFIG = {
   SHEET_NAME: "설문지 응답 시트1",
   CONTRACT_DRIVE_FOLDER_ID: "1818MusPDfVV6znALkWDMGK99NXAlAj8g",
   QUOTE_DRIVE_FOLDER_ID: "11QX5F-KRQvvYNc0hso3QACuMS7lMZw4r",
-  QUOTE_TEMPLATE_SPREADSHEET_ID: "",
+  QUOTE_TEMPLATE_SPREADSHEET_ID: "1JXP8NEaU0I_96ZMAZFn2GlYQHkLsbhSJCawsdMgqH7w",
   FIREBASE_DATABASE_URL: "https://bring-fm-default-rtdb.asia-southeast1.firebasedatabase.app",
   FIREBASE_CASES_PATH: "cases",
   RESPONSE_SHEET_URL: "https://docs.google.com/spreadsheets/d/1HI6KzIMomL6vOUPs8zZDhXHktL1cWRDcg93lflsuojA/edit"
@@ -545,6 +545,7 @@ function handleQuoteFileUpload_(payload) {
   const folder = getQuoteDriveFolder_(casePayload);
   const originalFolder = getOrCreateChildFolder_(folder, "원본 견적서");
   const bringFolder = getOrCreateChildFolder_(folder, "브링 양식 견적서");
+  const analysisFolder = getOrCreateChildFolder_(folder, "문서 분석 결과");
   const savedName = makeQuoteDriveFileName_(casePayload, initialVendorName, filePayload.fileName);
   const bytes = Utilities.base64Decode(String(filePayload.fileBody || "").replace(/^data:[^,]+,/, ""));
   const mimeType = filePayload.mimeType || inferQuoteMimeType_(filePayload.fileName);
@@ -569,7 +570,7 @@ function handleQuoteFileUpload_(payload) {
     uploadedAt: uploadedAt
   };
 
-  const bringQuote = createBringQuoteFromUpload_(casePayload, quote, blob, payload, bringFolder);
+  const bringQuote = createBringQuoteFromUpload_(casePayload, quote, blob, payload, bringFolder, analysisFolder);
   Object.keys(bringQuote).forEach(key => {
     quote[key] = bringQuote[key];
   });
@@ -903,9 +904,9 @@ function makeBringQuoteFileNameBase_(quote, extraction) {
   return safeDriveName_(vendorName + "_" + date);
 }
 
-function createBringQuoteFromUpload_(casePayload, quote, blob, payload, bringFolder) {
+function createBringQuoteFromUpload_(casePayload, quote, blob, payload, bringFolder, analysisFolder) {
   const templateId = extractDriveId_(COMPLAINT_CONFIG.QUOTE_TEMPLATE_SPREADSHEET_ID);
-  const extraction = extractQuoteDataFromUpload_(blob, quote.mimeType, quote.fileName, payload.amount, casePayload);
+  const extraction = extractQuoteDataFromUpload_(blob, quote.mimeType, quote.fileName, payload.amount, casePayload, analysisFolder);
   if (isGenericQuoteVendorName_(quote.vendorName) && extraction.vendorName) {
     quote.vendorName = extraction.vendorName;
     quote.vendor = quote.vendor || {};
@@ -920,7 +921,16 @@ function createBringQuoteFromUpload_(casePayload, quote, blob, payload, bringFol
     vatAmount: extraction.vatAmount || "",
     totalAmount: extraction.totalAmount || "",
     extractedVendorName: extraction.vendorName || "",
-    extractedItems: extraction.items || []
+    extractedItems: extraction.items || [],
+    analysisEngine: extraction.analysisEngine || "",
+    analysisStatus: extraction.analysisStatus || "",
+    analysisStatusCode: extraction.analysisStatusCode || "",
+    analysisConfidence: extraction.analysisConfidence || "",
+    analysisWarnings: extraction.analysisWarnings || [],
+    analysisMarkdownUrl: extraction.analysisMarkdownUrl || "",
+    analysisMarkdownFileId: extraction.analysisMarkdownFileId || "",
+    analysisJsonUrl: extraction.analysisJsonUrl || "",
+    analysisJsonFileId: extraction.analysisJsonFileId || ""
   };
 
   if (!templateId) {
@@ -962,7 +972,46 @@ function createBringQuoteFromUpload_(casePayload, quote, blob, payload, bringFol
   return result;
 }
 
-function extractQuoteDataFromUpload_(blob, mimeType, fileName, fallbackAmount, casePayload) {
+function extractQuoteDataFromUpload_(blob, mimeType, fileName, fallbackAmount, casePayload, analysisFolder) {
+  const mineruResult = analyzeQuoteWithMinerU_(blob, mimeType, fileName, casePayload, analysisFolder);
+  if (mineruResult.ok) {
+    const text = mineruResult.markdown || mineruResult.text || "";
+    const amounts = extractQuoteAmountsFromMinerU_(mineruResult, fallbackAmount, text);
+    const items = extractQuoteItemsFromMinerU_(mineruResult, amounts, casePayload, text);
+    const vendorName = cleanExtractedVendorName_(mineruResult.vendorName) || extractQuoteVendorName_(text);
+    let status = "확인필요";
+    if (amounts.totalAmount && items.length && !amounts.usedFallbackOnly) status = "추출완료";
+
+    const memo = [
+      "MinerU 분석완료",
+      mineruResult.warnings && mineruResult.warnings.length ? "주의: " + mineruResult.warnings.join(", ") : "",
+      amounts.usedFallbackOnly ? "분석 결과에서 금액을 확정하지 못해 입력 금액을 사용했습니다." : "",
+      !amounts.totalAmount ? "금액 확인 필요" : "",
+      items.length && items[0].fallback ? "품목 추출이 어려워 기본 품목 1줄로 생성했습니다." : ""
+    ].filter(Boolean).join(" / ");
+
+    return {
+      status: status,
+      memo: memo,
+      text: text,
+      textPreview: text.replace(/\s+/g, " ").trim().slice(0, 500),
+      vendorName: vendorName,
+      supplyAmount: amounts.supplyAmount || "",
+      vatAmount: amounts.vatAmount || "",
+      totalAmount: amounts.totalAmount || "",
+      items: items,
+      analysisEngine: "mineru",
+      analysisStatus: "MinerU 분석완료",
+      analysisStatusCode: "mineru_ok",
+      analysisConfidence: mineruResult.confidence || "",
+      analysisWarnings: mineruResult.warnings || [],
+      analysisMarkdownUrl: mineruResult.markdownUrl || "",
+      analysisMarkdownFileId: mineruResult.markdownFileId || "",
+      analysisJsonUrl: mineruResult.jsonUrl || "",
+      analysisJsonFileId: mineruResult.jsonFileId || ""
+    };
+  }
+
   const textResult = extractQuoteText_(blob, mimeType, fileName);
   const text = textResult.text || "";
   const amounts = extractQuoteAmounts_(text, fallbackAmount);
@@ -976,6 +1025,7 @@ function extractQuoteDataFromUpload_(blob, mimeType, fileName, fallbackAmount, c
   }
 
   const memo = [
+    mineruResult.message || "",
     textResult.message || "",
     amounts.usedFallbackOnly ? "파일에서 금액을 찾지 못해 입력 금액을 사용했습니다." : "",
     !amounts.totalAmount ? "금액 확인 필요" : "",
@@ -991,7 +1041,405 @@ function extractQuoteDataFromUpload_(blob, mimeType, fileName, fallbackAmount, c
     supplyAmount: amounts.supplyAmount || "",
     vatAmount: amounts.vatAmount || "",
     totalAmount: amounts.totalAmount || "",
-    items: items
+    items: items,
+    analysisEngine: mineruResult.skipped ? "local_fallback" : "mineru_fallback",
+    analysisStatus: mineruResult.manual ? "수동확인" : mineruResult.skipped ? "기본 분석" : "MinerU 분석실패",
+    analysisStatusCode: mineruResult.statusCode || (mineruResult.skipped ? "mineru_not_configured" : "mineru_failed"),
+    analysisConfidence: "",
+    analysisWarnings: mineruResult.message ? [mineruResult.message] : [],
+    analysisMarkdownUrl: "",
+    analysisMarkdownFileId: "",
+    analysisJsonUrl: "",
+    analysisJsonFileId: ""
+  };
+}
+
+function getMineruConfig_() {
+  const props = PropertiesService.getScriptProperties();
+  const apiKey = String(props.getProperty("MINERU_API_KEY") || "").trim();
+  const apiUrl = String(props.getProperty("MINERU_API_URL") || (apiKey ? "https://mineru.net" : "")).trim().replace(/\/$/, "");
+  const modelVersion = String(props.getProperty("MINERU_MODEL_VERSION") || "vlm").trim();
+  const language = String(props.getProperty("MINERU_LANGUAGE") || "korean").trim();
+  const maxWaitSeconds = Number(props.getProperty("MINERU_MAX_WAIT_SECONDS") || 75);
+  return {
+    apiUrl: apiUrl,
+    apiKey: apiKey,
+    modelVersion: modelVersion,
+    language: language,
+    maxWaitSeconds: maxWaitSeconds,
+    enabled: !!apiUrl
+  };
+}
+
+function isMineruNetEndpoint_(apiUrl) {
+  return /(^https:\/\/)?([^\/]+\.)?mineru\.net$/i.test(String(apiUrl || "").replace(/\/$/, ""));
+}
+
+function mineruNetUrl_(config, path) {
+  return String(config.apiUrl || "https://mineru.net").replace(/\/$/, "") + path;
+}
+
+function mineruNetFetchJson_(url, method, token, payload) {
+  const options = {
+    method: method,
+    headers: {
+      Authorization: "Bearer " + token,
+      Accept: "*/*"
+    },
+    muteHttpExceptions: true
+  };
+  if (payload !== undefined && payload !== null) {
+    options.contentType = "application/json; charset=utf-8";
+    options.payload = JSON.stringify(payload);
+  }
+  const response = UrlFetchApp.fetch(url, options);
+  const code = response.getResponseCode();
+  const text = response.getContentText() || "{}";
+  let data = {};
+  try {
+    data = JSON.parse(text);
+  } catch (err) {
+    data = { code: -1, msg: text.slice(0, 300) };
+  }
+  data.httpCode = code;
+  return data;
+}
+
+function safeMineruDataId_(value) {
+  return String(value || Utilities.getUuid())
+    .replace(/[^A-Za-z0-9_.-]/g, "_")
+    .slice(0, 120) || Utilities.getUuid();
+}
+
+function isOcrFriendlyFile_(fileName, mimeType) {
+  const ext = String(fileName || "").split(".").pop().toLowerCase();
+  return ["pdf", "jpg", "jpeg", "png", "bmp", "webp"].includes(ext) || /^image\//.test(String(mimeType || ""));
+}
+
+function analyzeQuoteWithMineruNet_(blob, mimeType, fileName, casePayload, analysisFolder, config) {
+  if (!config.apiKey) {
+    return {
+      ok: false,
+      statusCode: "mineru_failed",
+      message: "MinerU 토큰 미설정: MINERU_API_KEY를 스크립트 속성에 넣어주세요."
+    };
+  }
+
+  try {
+    const dataId = safeMineruDataId_((casePayload.ticketNo || casePayload.id || "case") + "_" + Utilities.getUuid().slice(0, 8));
+    const createPayload = {
+      files: [{
+        name: fileName,
+        data_id: dataId,
+        is_ocr: isOcrFriendlyFile_(fileName, mimeType)
+      }],
+      model_version: config.modelVersion || "vlm",
+      language: config.language || "korean",
+      enable_table: true,
+      enable_formula: false
+    };
+    const created = mineruNetFetchJson_(mineruNetUrl_(config, "/api/v4/file-urls/batch"), "post", config.apiKey, createPayload);
+    if (created.httpCode < 200 || created.httpCode >= 300 || created.code !== 0) {
+      return {
+        ok: false,
+        statusCode: "mineru_failed",
+        message: "MinerU 업로드 URL 생성 실패: " + (created.msg || ("HTTP " + created.httpCode))
+      };
+    }
+
+    const batchId = created.data && created.data.batch_id;
+    const uploadUrl = created.data && created.data.file_urls && created.data.file_urls[0];
+    if (!batchId || !uploadUrl) {
+      return {
+        ok: false,
+        statusCode: "mineru_failed",
+        message: "MinerU 업로드 URL 응답이 비어 있습니다."
+      };
+    }
+
+    const putResponse = UrlFetchApp.fetch(uploadUrl, {
+      method: "put",
+      payload: blob.getBytes(),
+      muteHttpExceptions: true
+    });
+    const putCode = putResponse.getResponseCode();
+    if (putCode < 200 || putCode >= 300) {
+      return {
+        ok: false,
+        statusCode: "mineru_failed",
+        message: "MinerU 파일 업로드 실패: HTTP " + putCode
+      };
+    }
+
+    const started = Date.now();
+    const maxWaitMs = Math.max(15, Number(config.maxWaitSeconds || 75)) * 1000;
+    let lastState = "";
+    let lastMessage = "";
+    while (Date.now() - started < maxWaitMs) {
+      Utilities.sleep(3500);
+      const checked = mineruNetFetchJson_(mineruNetUrl_(config, "/api/v4/extract-results/batch/" + encodeURIComponent(batchId)), "get", config.apiKey);
+      if (checked.httpCode < 200 || checked.httpCode >= 300 || checked.code !== 0) {
+        lastMessage = checked.msg || ("HTTP " + checked.httpCode);
+        continue;
+      }
+      const results = checked.data && checked.data.extract_result;
+      const result = Array.isArray(results) ? results[0] : results;
+      if (!result) {
+        lastMessage = "결과가 아직 비어 있습니다.";
+        continue;
+      }
+      lastState = result.state || "";
+      if (lastState === "failed") {
+        return {
+          ok: false,
+          statusCode: "mineru_failed",
+          message: "MinerU 분석 실패: " + (result.err_msg || "분석 실패")
+        };
+      }
+      if (lastState === "done" && result.full_zip_url) {
+        const parsed = downloadMineruNetZipResult_(result.full_zip_url);
+        const data = {
+          markdown: parsed.markdown,
+          json: parsed.json,
+          tables: parsed.tables || [],
+          vendorName: "",
+          items: [],
+          supplyAmount: "",
+          vatAmount: "",
+          totalAmount: "",
+          confidence: parsed.markdown ? "mineru-net" : "",
+          warnings: parsed.warnings || [],
+          mineruNet: {
+            batchId: batchId,
+            dataId: dataId,
+            fullZipUrl: result.full_zip_url,
+            state: lastState
+          }
+        };
+        const saved = saveMineruAnalysisFiles_(analysisFolder, fileName, casePayload, data);
+        return {
+          ok: true,
+          markdown: parsed.markdown,
+          json: parsed.json,
+          tables: parsed.tables || [],
+          vendorName: "",
+          items: [],
+          supplyAmount: "",
+          vatAmount: "",
+          totalAmount: "",
+          confidence: "mineru.net",
+          warnings: parsed.warnings || [],
+          markdownUrl: saved.markdownUrl || "",
+          markdownFileId: saved.markdownFileId || "",
+          jsonUrl: saved.jsonUrl || "",
+          jsonFileId: saved.jsonFileId || ""
+        };
+      }
+    }
+
+    return {
+      ok: false,
+      statusCode: "mineru_failed",
+      message: "MinerU 분석 대기 시간 초과: " + (lastState || lastMessage || "처리중")
+    };
+  } catch (err) {
+    return {
+      ok: false,
+      statusCode: "mineru_failed",
+      message: "MinerU 직접 연결 실패: " + err.message
+    };
+  }
+}
+
+function downloadMineruNetZipResult_(zipUrl) {
+  const result = { markdown: "", json: {}, tables: [], warnings: [] };
+  try {
+    const response = UrlFetchApp.fetch(zipUrl, { method: "get", muteHttpExceptions: true });
+    const code = response.getResponseCode();
+    if (code < 200 || code >= 300) {
+      result.warnings.push("MinerU 결과 ZIP 다운로드 실패: HTTP " + code);
+      return result;
+    }
+    const files = Utilities.unzip(response.getBlob());
+    const mdFiles = files
+      .filter(file => /\.md$/i.test(file.getName()))
+      .sort((a, b) => b.getBytes().length - a.getBytes().length);
+    if (mdFiles.length) {
+      result.markdown = mdFiles[0].getDataAsString("UTF-8");
+    }
+
+    const jsonFiles = files.filter(file => /\.json$/i.test(file.getName()));
+    const parsedJson = {};
+    jsonFiles.forEach(file => {
+      try {
+        parsedJson[file.getName()] = JSON.parse(file.getDataAsString("UTF-8"));
+      } catch (err) {
+        parsedJson[file.getName()] = file.getDataAsString("UTF-8").slice(0, 1000);
+      }
+    });
+    result.json = parsedJson;
+    return result;
+  } catch (err) {
+    result.warnings.push("MinerU 결과 ZIP 처리 실패: " + err.message);
+    return result;
+  }
+}
+
+function analyzeQuoteWithMinerU_(blob, mimeType, fileName, casePayload, analysisFolder) {
+  const ext = String(fileName || "").split(".").pop().toLowerCase();
+  if (ext === "hwp") {
+    return {
+      ok: false,
+      manual: true,
+      statusCode: "manual_required",
+      message: "HWP는 MinerU 자동 분석 미지원 파일입니다. 원본 확인이 필요합니다."
+    };
+  }
+
+  const config = getMineruConfig_();
+  if (!config.enabled) {
+    return {
+      ok: false,
+      skipped: true,
+      statusCode: "mineru_not_configured",
+      message: "MinerU API URL 미설정"
+    };
+  }
+  if (isMineruNetEndpoint_(config.apiUrl)) {
+    return analyzeQuoteWithMineruNet_(blob, mimeType, fileName, casePayload, analysisFolder, config);
+  }
+
+  try {
+    const payload = {
+      fileName: fileName,
+      mimeType: mimeType || inferQuoteMimeType_(fileName),
+      fileBase64: Utilities.base64Encode(blob.getBytes()),
+      caseId: casePayload.ticketNo || casePayload.id || ""
+    };
+    const headers = {};
+    if (config.apiKey) headers.Authorization = "Bearer " + config.apiKey;
+
+    const endpoint = /\/analyze-quote$/i.test(config.apiUrl)
+      ? config.apiUrl
+      : config.apiUrl + "/analyze-quote";
+    const response = UrlFetchApp.fetch(endpoint, {
+      method: "post",
+      contentType: "application/json; charset=utf-8",
+      headers: headers,
+      payload: JSON.stringify(payload),
+      muteHttpExceptions: true
+    });
+    const code = response.getResponseCode();
+    const body = response.getContentText() || "{}";
+    if (code < 200 || code >= 300) {
+      return {
+        ok: false,
+        statusCode: "mineru_failed",
+        message: "MinerU 분석실패: HTTP " + code + " / " + body.slice(0, 180)
+      };
+    }
+
+    const data = JSON.parse(body);
+    if (data && data.ok === false) {
+      return {
+        ok: false,
+        statusCode: "mineru_failed",
+        message: "MinerU 분석실패: " + (data.message || "응답 실패")
+      };
+    }
+
+    const saved = saveMineruAnalysisFiles_(analysisFolder, fileName, casePayload, data);
+    return {
+      ok: true,
+      markdown: String(data.markdown || data.text || ""),
+      json: data.json || data.result || data,
+      tables: Array.isArray(data.tables) ? data.tables : [],
+      vendorName: data.vendorName || "",
+      items: Array.isArray(data.items) ? data.items : [],
+      supplyAmount: data.supplyAmount || data.supply || "",
+      vatAmount: data.vatAmount || data.vat || "",
+      totalAmount: data.totalAmount || data.total || data.amount || "",
+      confidence: data.confidence || "",
+      warnings: Array.isArray(data.warnings) ? data.warnings.map(String).filter(Boolean) : [],
+      markdownUrl: saved.markdownUrl || "",
+      markdownFileId: saved.markdownFileId || "",
+      jsonUrl: saved.jsonUrl || "",
+      jsonFileId: saved.jsonFileId || ""
+    };
+  } catch (err) {
+    return {
+      ok: false,
+      statusCode: "mineru_failed",
+      message: "MinerU 분석실패: " + err.message
+    };
+  }
+}
+
+function saveMineruAnalysisFiles_(folder, fileName, casePayload, data) {
+  if (!folder) return {};
+  const ticketNo = casePayload.ticketNo || casePayload.id || "case";
+  const base = safeDriveName_(ticketNo + "_" + String(fileName || "quote").replace(/\.[^.]+$/, "") + "_mineru");
+  const result = {};
+  const markdown = String(data.markdown || data.text || "").trim();
+  if (markdown) {
+    const mdFile = folder.createFile(Utilities.newBlob(markdown, "text/markdown", base + ".md"));
+    result.markdownUrl = mdFile.getUrl();
+    result.markdownFileId = mdFile.getId();
+  }
+  const jsonText = JSON.stringify(data.json || data.result || data, null, 2);
+  const jsonFile = folder.createFile(Utilities.newBlob(jsonText, "application/json", base + ".json"));
+  result.jsonUrl = jsonFile.getUrl();
+  result.jsonFileId = jsonFile.getId();
+  return result;
+}
+
+function extractQuoteAmountsFromMinerU_(mineruResult, fallbackAmount, text) {
+  let supply = parseMoneyValue_(mineruResult.supplyAmount);
+  let vat = parseMoneyValue_(mineruResult.vatAmount);
+  let total = parseMoneyValue_(mineruResult.totalAmount);
+  const local = extractQuoteAmounts_(text, fallbackAmount);
+
+  if (!total && supply && vat) total = supply + vat;
+  if (!total) total = local.totalAmount || "";
+  if (!supply) supply = local.supplyAmount || "";
+  if (!vat) vat = local.vatAmount || "";
+  if (!supply && total && vat) supply = total - vat;
+  if (!vat && total && supply) vat = total - supply;
+  if (!supply && !vat && total) {
+    supply = Math.round(total / 1.1);
+    vat = total - supply;
+  }
+
+  return {
+    supplyAmount: supply || "",
+    vatAmount: vat || "",
+    totalAmount: total || "",
+    usedFallbackOnly: !parseMoneyValue_(mineruResult.totalAmount) && !!local.usedFallbackOnly
+  };
+}
+
+function extractQuoteItemsFromMinerU_(mineruResult, amounts, casePayload, text) {
+  const rawItems = Array.isArray(mineruResult.items) ? mineruResult.items : [];
+  const items = rawItems
+    .map(item => normalizeMineruItem_(item))
+    .filter(item => item.product)
+    .slice(0, 12);
+  if (items.length) return items;
+  return extractQuoteItems_(text, amounts, casePayload);
+}
+
+function normalizeMineruItem_(item) {
+  if (!item || typeof item !== "object") return {};
+  const total = parseMoneyValue_(item.total || item.totalAmount || item.amount || item.price);
+  const unitPrice = parseMoneyValue_(item.unitPrice || item.supplyAmount || item.supply || "");
+  const vat = parseMoneyValue_(item.vat || item.vatAmount || "");
+  return {
+    product: String(item.product || item.name || item.item || item.description || "").replace(/\s+/g, " ").trim().slice(0, 80),
+    unit: String(item.unit || item.quantity || item.qty || "식").replace(/\s+/g, " ").trim().slice(0, 20),
+    unitPrice: unitPrice || (total ? Math.round(total / 1.1) : ""),
+    vat: vat || (total ? total - Math.round(total / 1.1) : ""),
+    total: total || "",
+    note: String(item.note || "MinerU 자동추출").slice(0, 60)
   };
 }
 

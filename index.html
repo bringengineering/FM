@@ -361,6 +361,11 @@
   .quote-bring-status.draft{ color:#315fce; background:#eef4ff; border-color:#c5d4ff; }
   .quote-bring-status.confirmed{ color:#116329; background:#eaf7ee; border-color:#b9e6c5; }
   .quote-bring-status.missing,.quote-bring-status.failed{ color:#8a5a00; background:#fff8e1; border-color:#ffe08a; }
+  .quote-analysis-status{ justify-self:start; display:inline-flex; align-items:center; min-height:20px; border-radius:999px; padding:2px 7px; font-size:11px; font-weight:900; border:1px solid #d7dfec; color:#52606d; background:#fff; }
+  .quote-analysis-status.ok{ color:#116329; background:#eaf7ee; border-color:#b9e6c5; }
+  .quote-analysis-status.fail{ color:#b42318; background:#fff1f0; border-color:#ffccc7; }
+  .quote-analysis-status.manual{ color:#8a5a00; background:#fff8e1; border-color:#ffe08a; }
+  .quote-analysis-status.basic{ color:#315fce; background:#eef4ff; border-color:#c5d4ff; }
   .quote-amount-source{ justify-self:start; display:inline-flex; align-items:center; min-height:20px; border-radius:999px; padding:2px 7px; font-size:11px; font-weight:900; border:1px solid #d7dfec; color:#52606d; background:#fff; }
   .quote-amount-source.confirmed{ color:#116329; background:#eaf7ee; border-color:#b9e6c5; }
   .quote-amount-source.auto{ color:#315fce; background:#eef4ff; border-color:#c5d4ff; }
@@ -2356,10 +2361,35 @@ function quoteBringClass(q){
   if(type==="failed" || status==="template_failed") return "failed";
   return "missing";
 }
+function quoteAnalysisLabel(q){
+  const code=String(q&&q.analysisStatusCode||"");
+  if(code==="mineru_ok") return "MinerU 분석완료";
+  if(code==="mineru_failed") return "MinerU 분석실패";
+  if(code==="manual_required") return "수동확인";
+  if(code==="mineru_not_configured") return "기본 분석";
+  if(q&&q.analysisStatus) return q.analysisStatus;
+  return "기본 분석";
+}
+function quoteAnalysisClass(q){
+  const code=String(q&&q.analysisStatusCode||"");
+  if(code==="mineru_ok") return "ok";
+  if(code==="mineru_failed") return "fail";
+  if(code==="manual_required") return "manual";
+  return "basic";
+}
+function quoteAnalysisMeta(q){
+  const bits=[];
+  if(q&&q.analysisConfidence) bits.push("신뢰도 " + q.analysisConfidence);
+  const warnings=Array.isArray(q&&q.analysisWarnings) ? q.analysisWarnings.filter(Boolean) : [];
+  if(warnings.length) bits.push("분석 주의: " + warnings.slice(0,2).join(", "));
+  return bits.length ? `<br>${esc(bits.join(" / "))}` : "";
+}
 function quoteLinksHtml(q){
   const links=[];
   const originalUrl=q.originalFileUrl||q.fileUrl;
   if(originalUrl) links.push(`<a href="${escAttr(originalUrl)}" target="_blank" rel="noopener">원본 열기</a>`);
+  if(q.analysisMarkdownUrl) links.push(`<a href="${escAttr(q.analysisMarkdownUrl)}" target="_blank" rel="noopener">분석 Markdown</a>`);
+  if(q.analysisJsonUrl) links.push(`<a href="${escAttr(q.analysisJsonUrl)}" target="_blank" rel="noopener">분석 JSON</a>`);
   if(q.bringQuoteSheetUrl) links.push(`<a href="${escAttr(q.bringQuoteSheetUrl)}" target="_blank" rel="noopener">브링 양식</a>`);
   if(q.bringQuoteXlsxUrl) links.push(`<a href="${escAttr(q.bringQuoteXlsxUrl)}" target="_blank" rel="noopener">XLSX 다운로드</a>`);
   return links.length ? `<div class="quote-card-links">${links.join("")}</div>` : "";
@@ -2465,9 +2495,10 @@ function renderQuoteUploadPanel(c, stepStatus){
     <article class="quote-card">
       <div class="quote-card-head"><div class="quote-card-name">${esc(q.vendorName||"업체 미지정")}</div><div class="quote-card-amount">${esc(quoteDisplayAmount(q))}</div></div>
       <span class="quote-status ${quoteExtractionClass(q)}">${esc(quoteExtractionLabel(q))}</span>
+      <span class="quote-analysis-status ${quoteAnalysisClass(q)}">${esc(quoteAnalysisLabel(q))}</span>
       <span class="quote-bring-status ${quoteBringClass(q)}">${esc(quoteBringLabel(q))}</span>
       <span class="quote-amount-source ${quoteAmountSourceClass(q)}">${esc(quoteAmountSourceLabel(q))}</span>
-      <div class="quote-card-meta">${esc(q.fileName||q.originalFileName||"파일명 없음")}<br>${esc(formatQuoteDate(q.uploadedAt))}${q.memo?`<br>${esc(q.memo)}`:""}${q.extractionMemo?`<br>${esc(q.extractionMemo)}`:""}</div>
+      <div class="quote-card-meta">${esc(q.fileName||q.originalFileName||"파일명 없음")}<br>${esc(formatQuoteDate(q.uploadedAt))}${quoteAnalysisMeta(q)}${q.memo?`<br>${esc(q.memo)}`:""}${q.extractionMemo?`<br>${esc(q.extractionMemo)}`:""}</div>
       <div class="quote-confirm">
         <label>합계금액 확인/수정<input data-quote-amount="${escAttr(q.id)}" inputmode="numeric" value="${escAttr(quoteAmountInputValue(q))}" placeholder="예: 145200"></label>
         <button type="button" data-quote-confirm="${escAttr(q.id)}">브링 양식 재작성</button>
@@ -3229,8 +3260,9 @@ document.getElementById("noticeBtn").addEventListener("click", openNoticePanel);
 document.getElementById("noticeBanner").addEventListener("click", openNoticePanel);
 
 /* ===== 업데이트 알림(What's New) — 새 버전 나오면 자동 팝업 ===== */
-const APP_VERSION = "4.34";
+const APP_VERSION = "4.35";
 const CHANGELOG = [
+  { v:"4.35", d:"2026-07-02", items:["⑥ 견적 업로드에 MinerU 문서 분석 결과 표시 추가","견적 카드에서 분석 Markdown/JSON 링크와 MinerU 분석 상태 배지 확인"] },
   { v:"4.34", d:"2026-07-02", items:["⑥ 업체 견적 업로드 후 생성되는 브링 양식을 초안으로 표시","합계금액 재작성 후 브링 양식 확정 상태를 별도 표시"] },
   { v:"4.33", d:"2026-07-02", items:["⑥ 견적 카드에서 합계금액 확인/수정 후 브링 양식 재작성 요청","확정 합계금액을 카드·비교 메모·브링 양식에 우선 반영"] },
   { v:"4.32", d:"2026-07-02", items:["⑥ 견적 금액 추출에서 날짜·수량 같은 작은 숫자 오인 방지","견적 파일 목록 제거 시 ⑥ 메모를 제거 문구로 덮어쓰지 않음"] },
