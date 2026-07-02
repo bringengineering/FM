@@ -91,8 +91,9 @@ function onComplaintFormSubmit(e) {
 }
 
 function doPost(e) {
+  let payload = {};
   try {
-    const payload = JSON.parse(e && e.postData && e.postData.contents ? e.postData.contents : "{}");
+    payload = JSON.parse(e && e.postData && e.postData.contents ? e.postData.contents : "{}");
     if (payload.action === "sendVendorEstimateMms") {
       return jsonResponse_(handleVendorEstimateMms_(payload));
     }
@@ -101,8 +102,40 @@ function doPost(e) {
     }
     return jsonResponse_({ ok: false, message: "지원하지 않는 action입니다." });
   } catch (err) {
+    try {
+      recordAutomationError_(payload, err);
+    } catch (recordErr) {
+      Logger.log("자동화 오류 기록 실패: " + recordErr.message);
+    }
     return jsonResponse_({ ok: false, message: err.message });
   }
+}
+
+function recordAutomationError_(payload, err) {
+  const action = String(payload && payload.action || "");
+  const caseId = String(payload && payload.caseId || "").trim();
+  if (!caseId) return;
+
+  const message = err && err.message ? err.message : String(err || "알 수 없는 오류");
+  const now = new Date().toISOString();
+  const casePayload = readCaseFromFirebase_(caseId) || {};
+  const log = Array.isArray(casePayload.log) ? casePayload.log : [];
+
+  if (action === "uploadQuoteFile") {
+    const fileName = payload && payload.file && payload.file.fileName ? String(payload.file.fileName) : "파일명 미확인";
+    patchCaseChildToFirebase_(caseId, "status", { c6: "doing" });
+    patchCaseChildToFirebase_(caseId, "note", { c6: "견적 파일 업로드 실패: " + fileName + " / " + message });
+    log.unshift("견적 파일 업로드 실패: " + fileName + " / " + message);
+  } else if (action === "sendVendorEstimateMms") {
+    patchCaseChildToFirebase_(caseId, "status", { c5: "doing" });
+    patchCaseChildToFirebase_(caseId, "note", { c5: "업체 MMS 발송 실패: " + message });
+    log.unshift("업체 MMS 발송 실패: " + message);
+  } else {
+    return;
+  }
+
+  if (log.length > 30) log.length = 30;
+  patchCaseToFirebase_(caseId, { log: log, updatedAt: now });
 }
 
 function jsonResponse_(value) {
