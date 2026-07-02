@@ -4552,6 +4552,296 @@ window.BRING_BUILDING_MAINTENANCE_DATA = {
           "precision": "road"
         }
       ]
+    },
+    {
+      "id": "sheet-124",
+      "no": 124,
+      "name": "성능에어컨냉난방시스템",
+      "category": "냉난방·에어컨",
+      "service": "에어컨 이전설치 전문, 벽걸이 에어컨 설치, 스탠드 에어컨 설치, 멀티 에어컨 설치",
+      "feature": "원일로 소재 에어컨·냉난방 시스템 업체. 중고 판매와 고가 매입 안내",
+      "operation": "0507-1306-8039",
+      "region": "강원 원주시 원일로 198 1층",
+      "address": "강원 원주시 원일로 198 1층",
+      "scale": "변동",
+      "url": "-",
+      "extraUrl": "",
+      "naverUrl": "https://naver.me/x4F5LMJG",
+      "phone": "0507-1306-8039",
+      "rating": "리뷰 28",
+      "status": "사용자 추가",
+      "source": "google-sheet",
+      "sourceLabel": "원주 유지보수 직접추가",
+      "locations": [
+        {
+          "label": "학성동 원일로",
+          "lat": 37.3547979,
+          "lng": 127.9451569,
+          "source": "naver-geocode",
+          "precision": "road"
+        }
+      ]
+    },
+    {
+      "id": "sheet-125",
+      "no": 125,
+      "name": "린나이가스기구 원주점",
+      "category": "냉난방·보일러",
+      "service": "린나이 가스기구, 보일러 판매, 보일러 설치",
+      "feature": "중앙로 소재 린나이 가스기구 및 보일러 취급점",
+      "operation": "033-745-4456",
+      "region": "강원 원주시 중앙로 158",
+      "address": "강원 원주시 중앙로 158",
+      "scale": "",
+      "url": "-",
+      "extraUrl": "",
+      "naverUrl": "https://naver.me/xWIxGqNb",
+      "phone": "033-745-4456",
+      "rating": "리뷰 12",
+      "status": "사용자 추가",
+      "source": "google-sheet",
+      "sourceLabel": "원주 유지보수 직접추가",
+      "locations": [
+        {
+          "label": "중앙동 중앙로",
+          "lat": 37.3518261,
+          "lng": 127.9490204,
+          "source": "naver-geocode",
+          "precision": "road"
+        }
+      ]
+    },
+    {
+      "id": "sheet-126",
+      "no": 126,
+      "name": "신바람 에어컨",
+      "category": "냉난방·에어컨",
+      "service": "냉난방기, 새제품, 중고, 이전설치, 매입",
+      "feature": "개봉길 소재 에어컨 업체. 냉난방기와 신제품·중고·이전설치 상담 가능",
+      "operation": "0507-1480-1525",
+      "region": "강원 원주시 개봉길 35 단독",
+      "address": "강원 원주시 개봉길 35",
+      "scale": "",
+      "url": "-",
+      "extraUrl": "",
+      "naverUrl": "https://naver.me/GxLXTFWu",
+      "phone": "0507-1480-1525",
+      "rating": "",
+      "status": "사용자 추가",
+      "source": "google-sheet",
+      "sourceLabel": "원주 유지보수 직접추가",
+      "locations": [
+        {
+          "label": "개운동 개봉길",
+          "lat": 37.3437118,
+          "lng": 127.9555827,
+          "source": "naver-geocode",
+          "precision": "road"
+        }
+      ]
+    },
+    {
+      "id": "sheet-127",
+      "no": 127,
+      "name": "린나이 원주대리점",
+      "category": "냉난방·보일러",
+      "service": "보일러 설치, 린나이 가스기구, 보일러 AS",
+      "feature": "봉산로 소재 린나이 원주대리점. 원주초등학교 인근",
+      "operation": "033-744-3651",
+      "region": "강원 원주시 봉산로 30",
+      "address": "강원 원주시 봉산로 30",
+      "scale": "",
+      "url": "-",
+      "extraUrl": "",
+      "naverUrl": "https://naver.me/G3Pa51C3",
+      "phone": "033-744-3651",
+      "rating": "리뷰 8",
+      "status": "사용자 추가",
+      "source": "google-sheet",
+      "sourceLabel": "원주 유지보수 직접추가",
+      "locations": [
+        {
+          "label": "봉산동 봉산로",
+          "lat": 37.3466983,
+          "lng": 127.9591186,
+          "source": "naver-geocode",
+          "precision": "road"
+        }
+      ]
+    },
+    {
+      "id": "sheet-128",
+      "no": 128,
+      "name": "태광전자",
+      "category": "냉난방·에어컨",
+      "service": "냉난방기 총판, 냉난방기 렌탈, 냉난방기 AS",
+      "feature": "강변로 소재 냉난방기 업체. 렌탈과 AS 상담 가능",
+      "operation": "033-747-9006",
+      "region": "강원 원주시 강변로 389",
+      "address": "강원 원주시 강변로 389",
+      "scale": "",
+      "url": "https://blog.naver.com/ascs00",
+      "extraUrl": "",
+      "naverUrl": "https://naver.me/5N155GGk",
+      "phone": "033-747-9006",
+      "rating": "리뷰 7",
+      "status": "사용자 추가",
+      "source": "google-sheet",
+      "sourceLabel": "원주 유지보수 직접추가",
+      "locations": [
+        {
+          "label": "개운동 강변로",
+          "lat": 37.3419036,
+          "lng": 127.961964,
+          "source": "naver-geocode",
+          "precision": "road"
+        }
+      ]
+    },
+    {
+      "id": "sheet-129",
+      "no": 129,
+      "name": "태경엔지니어링",
+      "category": "냉난방·보일러",
+      "service": "보일러 설치, 보일러 수리, 보일러 AS",
+      "feature": "오리현길 소재 보일러 업체. 방문접수와 출장 가능",
+      "operation": "033-764-0708",
+      "region": "강원 원주시 오리현길 1",
+      "address": "강원 원주시 오리현길 1",
+      "scale": "",
+      "url": "http://taegyeongeng.alltheway.kr/",
+      "extraUrl": "",
+      "naverUrl": "https://naver.me/G02L4nBO",
+      "phone": "033-764-0708",
+      "rating": "리뷰 5",
+      "status": "사용자 추가",
+      "source": "google-sheet",
+      "sourceLabel": "원주 유지보수 직접추가",
+      "locations": [
+        {
+          "label": "반곡동 오리현길",
+          "lat": 37.3398347,
+          "lng": 127.966046,
+          "source": "naver-geocode",
+          "precision": "road"
+        }
+      ]
+    },
+    {
+      "id": "sheet-130",
+      "no": 130,
+      "name": "조은전자",
+      "category": "냉난방·에어컨",
+      "service": "에어커튼 설치, 비데 설치, 주방후드 설치, 에어컨 가스 보충",
+      "feature": "양지로 소재 에어컨·전자 설치 업체. 특판과 AS 상담 가능",
+      "operation": "010-5657-9850",
+      "region": "강원 원주시 양지로 160",
+      "address": "강원 원주시 양지로 160",
+      "scale": "변동",
+      "url": "https://blog.naver.com/kbu6248",
+      "extraUrl": "",
+      "naverUrl": "https://naver.me/xONKJ7YC",
+      "phone": "010-5657-9850",
+      "rating": "리뷰 2",
+      "status": "사용자 추가",
+      "source": "google-sheet",
+      "sourceLabel": "원주 유지보수 직접추가",
+      "locations": [
+        {
+          "label": "반곡동 양지로",
+          "lat": 37.3354384,
+          "lng": 127.9877767,
+          "source": "naver-geocode",
+          "precision": "building"
+        }
+      ]
+    },
+    {
+      "id": "sheet-131",
+      "no": 131,
+      "name": "마린에어솔루션",
+      "category": "냉난방·에어컨",
+      "service": "시스템에어컨, 냉난방기 설치, 에어컨 AS",
+      "feature": "양지로 소재 시스템에어컨 전문기업",
+      "operation": "033-744-8934",
+      "region": "강원 원주시 양지로 26 5층",
+      "address": "강원 원주시 양지로 26 5층",
+      "scale": "",
+      "url": "https://blog.naver.com/dachos11",
+      "extraUrl": "",
+      "naverUrl": "https://naver.me/xOdU2no5",
+      "phone": "033-744-8934",
+      "rating": "리뷰 41",
+      "status": "사용자 추가",
+      "source": "google-sheet",
+      "sourceLabel": "원주 유지보수 직접추가",
+      "locations": [
+        {
+          "label": "반곡동 양지로",
+          "lat": 37.3245927,
+          "lng": 127.9816052,
+          "source": "naver-geocode",
+          "precision": "road"
+        }
+      ]
+    },
+    {
+      "id": "sheet-132",
+      "no": 132,
+      "name": "대성보일러 강원지사",
+      "category": "냉난방·보일러",
+      "service": "보일러 설치, 보일러 AS",
+      "feature": "대성쎌틱 에너시스 강원지사. 건강로 소재 보일러 업체",
+      "operation": "033-766-4545",
+      "region": "강원 원주시 건강로 17-1 반곡동 1910-2",
+      "address": "강원 원주시 건강로 17-1",
+      "scale": "",
+      "url": "https://blog.naver.com/celtic_wonju",
+      "extraUrl": "",
+      "naverUrl": "https://naver.me/Fc67Nsvq",
+      "phone": "033-766-4545",
+      "rating": "리뷰 63",
+      "status": "사용자 추가",
+      "source": "google-sheet",
+      "sourceLabel": "원주 유지보수 직접추가",
+      "locations": [
+        {
+          "label": "반곡동 건강로",
+          "lat": 37.3260147,
+          "lng": 127.9878209,
+          "source": "naver-geocode",
+          "precision": "road"
+        }
+      ]
+    },
+    {
+      "id": "sheet-133",
+      "no": 133,
+      "name": "보일러에어컨장이 원주본사",
+      "category": "냉난방·보일러",
+      "service": "보일러 설치, 에어컨 설치, 에어컨 수리, 에어컨 청소",
+      "feature": "양지로 소재 보일러·에어컨 설치 및 수리 업체",
+      "operation": "033-766-0822",
+      "region": "강원 원주시 양지로 58 상가 202호",
+      "address": "강원 원주시 양지로 58 상가 202호",
+      "scale": "보일러설치 580,000원, 에어컨설치 150,000원",
+      "url": "-",
+      "extraUrl": "",
+      "naverUrl": "https://naver.me/GvWGbpLJ",
+      "phone": "033-766-0822",
+      "rating": "",
+      "status": "사용자 추가",
+      "source": "google-sheet",
+      "sourceLabel": "원주 유지보수 직접추가",
+      "locations": [
+        {
+          "label": "반곡동 양지로",
+          "lat": 37.326588,
+          "lng": 127.984721,
+          "source": "naver-geocode",
+          "precision": "road"
+        }
+      ]
     }
   ],
   "categories": [
@@ -4581,9 +4871,9 @@ window.BRING_BUILDING_MAINTENANCE_DATA = {
   ],
   "summary": {
     "excel": 49,
-    "googleSheet": 123,
-    "total": 172,
-    "mapped": 142,
+    "googleSheet": 133,
+    "total": 182,
+    "mapped": 152,
     "geocoded": 0
   }
 };
