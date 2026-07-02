@@ -357,6 +357,10 @@
   .quote-status.ok{ color:#116329; background:#eaf7ee; border-color:#b9e6c5; }
   .quote-status.review{ color:#8a5a00; background:#fff8e1; border-color:#ffe08a; }
   .quote-status.fail{ color:#b42318; background:#fff1f0; border-color:#ffccc7; }
+  .quote-bring-status{ justify-self:start; display:inline-flex; align-items:center; min-height:20px; border-radius:999px; padding:2px 7px; font-size:11px; font-weight:900; border:1px solid #d7dfec; color:#52606d; background:#fff; }
+  .quote-bring-status.draft{ color:#315fce; background:#eef4ff; border-color:#c5d4ff; }
+  .quote-bring-status.confirmed{ color:#116329; background:#eaf7ee; border-color:#b9e6c5; }
+  .quote-bring-status.missing,.quote-bring-status.failed{ color:#8a5a00; background:#fff8e1; border-color:#ffe08a; }
   .quote-amount-source{ justify-self:start; display:inline-flex; align-items:center; min-height:20px; border-radius:999px; padding:2px 7px; font-size:11px; font-weight:900; border:1px solid #d7dfec; color:#52606d; background:#fff; }
   .quote-amount-source.confirmed{ color:#116329; background:#eaf7ee; border-color:#b9e6c5; }
   .quote-amount-source.auto{ color:#315fce; background:#eef4ff; border-color:#c5d4ff; }
@@ -2335,6 +2339,23 @@ function quoteExtractionClass(q){
   if(label==="추출실패") return "fail";
   return "review";
 }
+function quoteBringLabel(q){
+  const type=String(q&&q.bringQuoteType||"");
+  const status=String(q&&q.bringQuoteStatus||"");
+  if(type==="confirmed" || status==="confirmed_rewritten") return "브링 양식 확정";
+  if(type==="draft" || status==="draft_created" || status==="created" || (q&&q.bringQuoteSheetUrl)) return "브링 양식 초안";
+  if(type==="missing" || status==="template_missing") return "템플릿 설정 필요";
+  if(type==="failed" || status==="template_failed") return "양식 생성 실패";
+  return "브링 양식 확인 필요";
+}
+function quoteBringClass(q){
+  const type=String(q&&q.bringQuoteType||"");
+  const status=String(q&&q.bringQuoteStatus||"");
+  if(type==="confirmed" || status==="confirmed_rewritten") return "confirmed";
+  if(type==="draft" || status==="draft_created" || status==="created" || (q&&q.bringQuoteSheetUrl)) return "draft";
+  if(type==="failed" || status==="template_failed") return "failed";
+  return "missing";
+}
 function quoteLinksHtml(q){
   const links=[];
   const originalUrl=q.originalFileUrl||q.fileUrl;
@@ -2444,6 +2465,7 @@ function renderQuoteUploadPanel(c, stepStatus){
     <article class="quote-card">
       <div class="quote-card-head"><div class="quote-card-name">${esc(q.vendorName||"업체 미지정")}</div><div class="quote-card-amount">${esc(quoteDisplayAmount(q))}</div></div>
       <span class="quote-status ${quoteExtractionClass(q)}">${esc(quoteExtractionLabel(q))}</span>
+      <span class="quote-bring-status ${quoteBringClass(q)}">${esc(quoteBringLabel(q))}</span>
       <span class="quote-amount-source ${quoteAmountSourceClass(q)}">${esc(quoteAmountSourceLabel(q))}</span>
       <div class="quote-card-meta">${esc(q.fileName||q.originalFileName||"파일명 없음")}<br>${esc(formatQuoteDate(q.uploadedAt))}${q.memo?`<br>${esc(q.memo)}`:""}${q.extractionMemo?`<br>${esc(q.extractionMemo)}`:""}</div>
       <div class="quote-confirm">
@@ -3207,8 +3229,9 @@ document.getElementById("noticeBtn").addEventListener("click", openNoticePanel);
 document.getElementById("noticeBanner").addEventListener("click", openNoticePanel);
 
 /* ===== 업데이트 알림(What's New) — 새 버전 나오면 자동 팝업 ===== */
-const APP_VERSION = "4.33";
+const APP_VERSION = "4.34";
 const CHANGELOG = [
+  { v:"4.34", d:"2026-07-02", items:["⑥ 업체 견적 업로드 후 생성되는 브링 양식을 초안으로 표시","합계금액 재작성 후 브링 양식 확정 상태를 별도 표시"] },
   { v:"4.33", d:"2026-07-02", items:["⑥ 견적 카드에서 합계금액 확인/수정 후 브링 양식 재작성 요청","확정 합계금액을 카드·비교 메모·브링 양식에 우선 반영"] },
   { v:"4.32", d:"2026-07-02", items:["⑥ 견적 금액 추출에서 날짜·수량 같은 작은 숫자 오인 방지","견적 파일 목록 제거 시 ⑥ 메모를 제거 문구로 덮어쓰지 않음"] },
   { v:"4.31", d:"2026-07-02", items:["케이스 저장을 개별 저장 방식으로 변경","삭제를 보관함 이동/복구 방식으로 변경","늦게 도착한 자동화 결과가 케이스 진행상태를 되돌리지 않도록 안정화"] },
