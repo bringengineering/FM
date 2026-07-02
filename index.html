@@ -241,6 +241,10 @@
   .cv-item .sub{ font-size:11.5px; color:var(--ink-soft); margin-top:2px; }
   .cv-item .pg{ font-size:11px; color:#4b7bec; margin-top:3px; }
   .cv-item .badges{ display:flex; flex-wrap:wrap; gap:4px; margin-top:6px; }
+  .cv-list-tools{ display:flex; gap:6px; margin:7px 0 9px; }
+  .cv-archive-toggle{ flex:1; border:1px solid #d8e0ec; background:#fff; color:#52606d; border-radius:8px; padding:7px 9px; font-size:12px; font-weight:800; cursor:pointer; }
+  .cv-archive-toggle.on{ border-color:#4b7bec; background:#eef3ff; color:#315fce; }
+  .cv-restore{ border:1px solid #b9e6c5; background:#eaf7ee; color:#116329; border-radius:7px; padding:5px 8px; font-size:11.5px; font-weight:900; cursor:pointer; margin-top:8px; }
   .cv-badge{ display:inline-flex; align-items:center; min-height:22px; padding:2px 7px; border-radius:999px; font-size:11px; font-weight:800; line-height:1.2; border:1px solid #d7dfec; color:#52606d; background:#fff; }
   .cv-badge.urgent{ color:#b42318; background:#fff1f0; border-color:#ffccc7; }
   .cv-badge.review{ color:#8a5a00; background:#fff8e1; border-color:#ffe08a; }
@@ -333,6 +337,16 @@
   .quote-send{ border:0; background:#1b335f; color:#fff; border-radius:8px; padding:8px 13px; font-size:12.5px; font-weight:800; cursor:pointer; font-family:inherit; white-space:nowrap; }
   .quote-send:hover{ background:#26477e; }
   .quote-send:disabled{ background:#c6cfdb; cursor:not-allowed; }
+  .quote-progress-modal{ position:fixed; inset:0; display:none; align-items:center; justify-content:center; background:rgba(15,25,45,.5); z-index:10001; }
+  .quote-progress-modal.open{ display:flex; }
+  .quote-progress-box{ width:min(440px,92vw); background:#fff; border-radius:16px; box-shadow:0 20px 60px rgba(0,0,0,.3); padding:20px 22px; }
+  .quote-progress-head{ display:flex; align-items:center; gap:8px; margin-bottom:12px; color:#1b335f; font-size:17px; font-weight:900; }
+  .quote-progress-close{ margin-left:auto; border:0; background:#eef1f6; border-radius:8px; width:30px; height:30px; cursor:pointer; font-size:14px; }
+  .quote-progress-file{ min-height:20px; color:#243244; font-size:13px; font-weight:800; margin-bottom:8px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .quote-progress-detail{ min-height:20px; color:#52606d; font-size:12.5px; margin-bottom:10px; }
+  .quote-progress-bar{ height:10px; background:#e8edf5; border-radius:999px; overflow:hidden; }
+  .quote-progress-bar i{ display:block; height:100%; width:0%; background:#4b7bec; border-radius:inherit; transition:width .2s ease; }
+  .quote-progress-meta{ display:flex; justify-content:space-between; gap:8px; margin-top:8px; color:#6b7686; font-size:12px; font-weight:800; }
   .quote-cards{ display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:9px; margin-top:12px; }
   .quote-card{ border:1px solid #d8e0ec; background:#fff; border-radius:8px; padding:10px 11px; display:grid; gap:5px; }
   .quote-card-head{ display:flex; justify-content:space-between; gap:8px; align-items:flex-start; }
@@ -362,6 +376,7 @@
   .cv-testbtn{ border:1px dashed #aeb7c5; background:#fff; color:#6b7686; border-radius:8px; padding:5px 9px; font-size:12px; cursor:pointer; font-family:inherit; white-space:nowrap; }
   .cv-testbtn:hover{ background:#f3f6fb; color:#1f2733; }
   .cv-del{ border:1px solid #f3c0c0; background:#fff; color:#e03131; border-radius:8px; padding:6px 11px; font-size:12.5px; cursor:pointer; font-family:inherit; margin-top:14px; }
+  .cv-del.restore{ border-color:#b9e6c5; background:#eaf7ee; color:#116329; }
   .cv-log{ margin-top:16px; border-top:1px dashed var(--line); padding-top:10px; }
   .cv-log .t{ font-size:12px; color:var(--ink-soft); margin-bottom:4px; }
   .cv-user{ margin-left:auto; font-size:12px; color:#52606d; white-space:nowrap; }
@@ -1914,19 +1929,22 @@ function downloadCaseDoc(id,k){
   const d=caseDocHTML(id,k); if(!d) return;
   const blob=new Blob(["﻿"+d.html], {type:"application/msword"});
   const a=document.createElement("a"); a.href=URL.createObjectURL(blob); a.download=d.filename; document.body.appendChild(a); a.click(); a.remove();
-  const c=cases[id]; if(c){ caseLog(c, "📄 "+d.title+" 생성"); saveCases(); renderCaseDetail(); }
+  const c=cases[id]; if(c){ caseLog(c, "📄 "+d.title+" 생성"); saveCase(id); renderCaseDetail(); }
 }
 const caseView = document.getElementById("caseView");
 const caseListEl = document.getElementById("caseList");
 const caseDetailEl = document.getElementById("caseDetail");
-let cases = {}, curCase = null, casesRef = null, caseWriteT = null, caseValueHandler = null, noteOpen = new Set();
+let cases = {}, curCase = null, casesRef = null, caseWriteT = null, caseWriteTimers = {}, caseValueHandler = null, noteOpen = new Set();
 let caseTestMode = loadCaseTestMode();
+let showArchivedCases = loadCaseArchiveMode();
 let settings = {}, caseSettingsRef = null, caseSettingsHandler = null;
 let quotePendingFiles = [], quotePendingCaseId = null;
 let notice = null, noticeRef = null;
 function caseGenId(){ return "k"+Date.now().toString(36)+Math.random().toString(36).slice(2,5); }
 function loadCaseTestMode(){ try{ return localStorage.getItem("fm_case_test_mode") === "1"; }catch(e){ return false; } }
 function setCaseTestMode(v){ caseTestMode=!!v; try{ localStorage.setItem("fm_case_test_mode", caseTestMode?"1":"0"); }catch(e){} renderCaseDetail(); }
+function loadCaseArchiveMode(){ try{ return localStorage.getItem("fm_case_archive_mode") === "1"; }catch(e){ return false; } }
+function setCaseArchiveMode(v){ showArchivedCases=!!v; try{ localStorage.setItem("fm_case_archive_mode", showArchivedCases?"1":"0"); }catch(e){} if(curCase && !isCaseVisible(cases[curCase])) curCase=firstVisibleCaseId(); renderCaseList(); renderCaseDetail(); }
 function loadCasesLocal(){
   if(isConfigured) return {};
   try{ const c=JSON.parse(localStorage.getItem("fm_cases_v1")); if(c&&typeof c==="object") return c; }catch(e){}
@@ -1935,11 +1953,42 @@ function loadCasesLocal(){
 function saveCases(){
   clearTimeout(caseWriteT);
   if(casesRef){
-    caseWriteT=setTimeout(()=>{ if(casesRef) casesRef.set(cases); }, 300);
+    if(curCase && cases[curCase]) saveCase(curCase);
   } else if(!isConfigured) {
     try{ localStorage.setItem("fm_cases_v1", JSON.stringify(cases)); }catch(e){}
   }
 }
+function caseUserLabel(){ return authedUser && authedUser.email ? authedUser.email : "local"; }
+function touchCase(c){ if(c) c.updatedAt=new Date().toISOString(); return c; }
+function caseSavePayload(id, includeArchive){
+  const src=cases[id] || {};
+  const payload=Object.assign({}, src);
+  if(!includeArchive && payload.archived !== true){
+    delete payload.archived;
+    delete payload.archivedAt;
+    delete payload.archivedBy;
+    delete payload.restoredAt;
+    delete payload.restoredBy;
+  }
+  return payload;
+}
+function saveCase(id, immediate, options){
+  if(!id || !cases[id]) return;
+  touchCase(cases[id]);
+  if(casesRef){
+    clearTimeout(caseWriteTimers[id]);
+    const write=()=>{ if(casesRef && cases[id]) casesRef.child(id).update(caseSavePayload(id, options&&options.includeArchive)); delete caseWriteTimers[id]; };
+    if(immediate) write();
+    else caseWriteTimers[id]=setTimeout(write, 300);
+  } else if(!isConfigured) {
+    try{ localStorage.setItem("fm_cases_v1", JSON.stringify(cases)); }catch(e){}
+  }
+}
+function isCaseVisible(c){ return !!c && (showArchivedCases ? c.archived===true : c.archived!==true); }
+function visibleCaseIds(){
+  return Object.keys(cases).filter(id=>isCaseVisible(cases[id])).sort((a,b)=>caseTimeValue(cases[b])-caseTimeValue(cases[a]));
+}
+function firstVisibleCaseId(){ return visibleCaseIds()[0] || null; }
 function caseProgress(c){ return { done: CASE_STEPS.filter(s=>(c.status||{})[s.k]==="done").length, total: CASE_STEPS.length }; }
 function caseLog(c,m){ (c.log=c.log||[]).unshift(m); if(c.log.length>30) c.log.length=30; }
 function caseTimeValue(c){ const d=Date.parse(c.receivedAt||c.createdAt||c.updatedAt||""); return Number.isFinite(d) ? d : 0; }
@@ -2180,7 +2229,7 @@ function setCaseVendorSelection(caseId, vendorId, selected){
   }else{
     delete selections[vendorId];
   }
-  saveCases();
+  saveCase(caseId);
   renderCaseDetail();
 }
 function caseVendorCardHtml(c,cat,v){
@@ -2424,9 +2473,42 @@ function sendCaseAutomationRequest(endpoint, payload){
     body:JSON.stringify(payload)
   }).catch(e=>console.error("case automation", e));
 }
+let quoteUploadProgressEl=null, quoteUploadInProgress=false;
+function ensureQuoteUploadProgressModal(){
+  if(quoteUploadProgressEl) return quoteUploadProgressEl;
+  quoteUploadProgressEl=document.createElement("div");
+  quoteUploadProgressEl.className="quote-progress-modal";
+  quoteUploadProgressEl.innerHTML=`<div class="quote-progress-box">
+    <div class="quote-progress-head"><span id="qProgTitle">업로드 중...</span><button class="quote-progress-close" id="qProgClose">✕</button></div>
+    <div class="quote-progress-file" id="qProgFile"></div>
+    <div class="quote-progress-detail" id="qProgDetail"></div>
+    <div class="quote-progress-bar"><i id="qProgBar"></i></div>
+    <div class="quote-progress-meta"><span id="qProgCount"></span><span id="qProgPct">0%</span></div>
+  </div>`;
+  document.body.appendChild(quoteUploadProgressEl);
+  quoteUploadProgressEl.addEventListener("click", e=>{
+    if(e.target===quoteUploadProgressEl || e.target.closest("#qProgClose")) hideQuoteUploadProgress();
+  });
+  return quoteUploadProgressEl;
+}
+function updateQuoteUploadProgress(opts){
+  const el=ensureQuoteUploadProgressModal();
+  const pct=Math.max(0, Math.min(100, Math.round(opts.percent||0)));
+  el.classList.add("open");
+  document.getElementById("qProgTitle").textContent=opts.title||"업로드 중...";
+  document.getElementById("qProgFile").textContent=opts.fileName||"견적 파일 준비 중";
+  document.getElementById("qProgDetail").textContent=opts.detail||"";
+  document.getElementById("qProgBar").style.width=pct+"%";
+  document.getElementById("qProgPct").textContent=pct+"%";
+  document.getElementById("qProgCount").textContent=opts.count||"";
+}
+function hideQuoteUploadProgress(){
+  if(quoteUploadProgressEl) quoteUploadProgressEl.classList.remove("open");
+}
 async function uploadQuoteFile(){
   const c=cases[curCase];
   if(!c) return;
+  if(quoteUploadInProgress) return;
   const lock=stepLockMessage(c,"c6");
   if(lock){ alert(lock); return; }
   ensureQuotePendingCase();
@@ -2440,29 +2522,80 @@ async function uploadQuoteFile(){
   const vendor=quoteAutoVendor(c);
   const vendorId=vendor.id || "";
   const vendorName=vendor.name || "업체 확인 필요";
-  for(const file of files){
-    const body=await readFileAsBase64(file);
-    await sendCaseAutomationRequest(caseAutomationEndpoint(), {
-      action:"uploadQuoteFile",
-      caseId:c.ticketNo||c.id||curCase,
-      vendorId,
-      vendorName,
-      vendor,
-      amount:"",
-      memo:"",
-      file:{ fileName:file.name, mimeType:file.type || "", size:file.size, fileBody:body }
+  quoteUploadInProgress=true;
+  try{
+    updateQuoteUploadProgress({
+      title:"업로드 중...",
+      fileName:files.length+"개 견적 파일 준비 중",
+      detail:"파일을 읽고 Apps Script로 보낼 준비를 하고 있습니다.",
+      percent:0,
+      count:"0/"+files.length
     });
-    caseLog(c, "📎 견적 파일 업로드 요청: "+vendorName+" / "+file.name);
+    for(let i=0; i<files.length; i++){
+      const file=files[i];
+      updateQuoteUploadProgress({
+        title:"업로드 중...",
+        fileName:file.name,
+        detail:"파일을 읽는 중입니다.",
+        percent:(i/files.length)*100,
+        count:(i+1)+"/"+files.length
+      });
+      const body=await readFileAsBase64(file);
+      updateQuoteUploadProgress({
+        title:"업로드 중...",
+        fileName:file.name,
+        detail:"Apps Script로 업로드 요청을 보내는 중입니다.",
+        percent:((i+0.55)/files.length)*100,
+        count:(i+1)+"/"+files.length
+      });
+      await sendCaseAutomationRequest(caseAutomationEndpoint(), {
+        action:"uploadQuoteFile",
+        caseId:c.ticketNo||c.id||curCase,
+        vendorId,
+        vendorName,
+        vendor,
+        amount:"",
+        memo:"",
+        file:{ fileName:file.name, mimeType:file.type || "", size:file.size, fileBody:body }
+      });
+      caseLog(c, "📎 견적 파일 업로드 요청: "+vendorName+" / "+file.name);
+      updateQuoteUploadProgress({
+        title:"업로드 중...",
+        fileName:file.name,
+        detail:"업로드 요청을 보냈습니다.",
+        percent:((i+1)/files.length)*100,
+        count:(i+1)+"/"+files.length
+      });
+    }
+  }catch(err){
+    updateQuoteUploadProgress({
+      title:"업로드 실패",
+      fileName:"견적 파일 업로드를 중단했습니다.",
+      detail:err && err.message ? err.message : "파일을 읽거나 전송하지 못했습니다.",
+      percent:0,
+      count:""
+    });
+    alert("견적 파일 업로드 중 문제가 생겼어요.\n"+(err && err.message ? err.message : "다시 시도해 주세요."));
+    quoteUploadInProgress=false;
+    return;
   }
   clearQuotePendingFiles();
   c.status=c.status||{};
   c.note=c.note||{};
   c.status.c6="doing";
   c.note.c6=files.length+"개 견적 파일 업로드 요청 중입니다. Apps Script 처리 후 Drive 링크가 자동 반영됩니다.";
-  saveCases();
+  saveCase(curCase);
   renderCaseList();
   renderCaseDetail();
-  alert("📎 견적 파일 "+files.length+"개 업로드 요청을 보냈어요.\n잠시 뒤 ⑥ 견적 카드에서 Drive 링크를 확인하세요.");
+  updateQuoteUploadProgress({
+    title:"업로드 요청 완료",
+    fileName:"견적 파일 "+files.length+"개 요청 완료",
+    detail:"Apps Script 처리 후 Drive 링크가 ⑥ 견적 카드에 자동 반영됩니다.",
+    percent:100,
+    count:files.length+"/"+files.length
+  });
+  quoteUploadInProgress=false;
+  setTimeout(hideQuoteUploadProgress, 1400);
 }
 function removeQuoteFileFromCase(quoteId){
   const c=cases[curCase];
@@ -2474,7 +2607,7 @@ function removeQuoteFileFromCase(quoteId){
   const left=quoteFilesList(c);
   c.note.c6=left.length ? "견적 파일 목록에서 제거했습니다. 남은 견적: "+left.length+"건" : "견적 파일 목록에서 제거했습니다. 업로드된 견적이 없습니다.";
   caseLog(c, "견적 파일 목록 제거: "+(q.vendorName||"업체")+" / "+(q.fileName||"파일"));
-  saveCases();
+  saveCase(curCase);
   renderCaseDetail();
 }
 function applyNextStepProgress(c, messages){
@@ -2547,7 +2680,7 @@ function forceCompleteThroughStep(id,k){
   caseLog(c, `테스트 완료: ${stepMark(CASE_STEPS[0])}~${stepMark(target)} 단계 완료 처리`);
   applyStepAutomation(c, true);
   normalizeCaseSteps(c);
-  saveCases();
+  saveCase(id);
   renderCaseList();
   renderCaseDetail();
 }
@@ -2623,6 +2756,8 @@ function attachCaseSettingsRef(){
 }
 function detachCasesRef(){
   clearTimeout(caseWriteT);
+  Object.keys(caseWriteTimers||{}).forEach(id=>clearTimeout(caseWriteTimers[id]));
+  caseWriteTimers = {};
   if(casesRef && caseValueHandler) casesRef.off("value", caseValueHandler);
   casesRef = null; caseValueHandler = null; cases = {}; curCase = null; noteOpen.clear();
   clearCaseLocalCache();
@@ -2636,12 +2771,11 @@ function attachCasesRef(){
     const autoFixed = applyAllStepAutomation(cases, false);
     const fixed = normalizeAllCaseSteps(cases) || autoFixed;
     if (fixed) {
-      clearTimeout(caseWriteT);
-      caseWriteT = setTimeout(()=>{ if(casesRef) casesRef.set(cases); }, 200);
+      Object.keys(cases).forEach(id=>saveCase(id));
     }
     if (caseView.classList.contains("open")){
       renderCaseList();
-      if (curCase && !cases[curCase]) curCase = Object.keys(cases)[0] || null;
+      if (!curCase || !isCaseVisible(cases[curCase])) curCase = firstVisibleCaseId();
       if (!caseView.contains(document.activeElement)) renderCaseDetail();   // 입력 중엔 갱신 보류
     }
   };
@@ -2651,21 +2785,23 @@ function attachCasesRef(){
   });
 }
 function openCaseView(){
-  if(!curCase) curCase=Object.keys(cases)[0]||null;
+  if(!curCase || !isCaseVisible(cases[curCase])) curCase=firstVisibleCaseId();
   caseView.classList.add("open");
   renderCaseList();
   renderCaseDetail();
 }
 function closeCaseView(){ caseView.classList.remove("open"); }
-function createCase(){ const id=caseGenId(); cases[id]={ id, name:"새 고객", phone:"", email:"", building:"", grade:"스탠다드", memo:"", status:{}, log:[] }; curCase=id; saveCases(); renderCaseList(); renderCaseDetail(); return id; }
+function createCase(){ const id=caseGenId(); cases[id]={ id, name:"새 고객", phone:"", email:"", building:"", grade:"스탠다드", memo:"", status:{}, log:[], createdAt:new Date().toISOString() }; curCase=id; saveCase(id, true); renderCaseList(); renderCaseDetail(); return id; }
 function selectCase(id){ curCase=id; noteOpen.clear(); quotePendingCaseId=id; quotePendingFiles=[]; renderCaseList(); renderCaseDetail(); }
-function deleteCase(id){ if(!cases[id]) return; if(!confirm("이 케이스를 삭제할까요?")) return; delete cases[id]; if(curCase===id) curCase=Object.keys(cases)[0]||null; saveCases(); renderCaseList(); renderCaseDetail(); }
-function cycleStep(id,k){ const c=cases[id]; if(!c) return; const msg=stepLockMessage(c,k); if(msg){ alert(msg); return; } c.status=c.status||{}; const cur=c.status[k]||""; c.status[k]= cur===""?"doing":cur==="doing"?"done":""; if(!c.status[k]) delete c.status[k]; const s=CASE_STEPS.find(x=>x.k===k); caseLog(c, s.t+" → "+(c.status[k]==="done"?"완료":c.status[k]==="doing"?"진행중":"대기")); applyStepAutomation(c, true); normalizeCaseSteps(c); saveCases(); renderCaseList(); renderCaseDetail(); }
+function archiveCase(id){ const c=cases[id]; if(!c) return; if(!confirm("이 케이스를 보관함으로 이동할까요?")) return; c.archived=true; c.archivedAt=new Date().toISOString(); c.archivedBy=caseUserLabel(); caseLog(c, "케이스 보관 처리"); saveCase(id, true, {includeArchive:true}); if(curCase===id) curCase=firstVisibleCaseId(); renderCaseList(); renderCaseDetail(); }
+function restoreCase(id){ const c=cases[id]; if(!c) return; c.archived=false; c.restoredAt=new Date().toISOString(); c.restoredBy=caseUserLabel(); caseLog(c, "케이스 보관 해제"); curCase=id; saveCase(id, true, {includeArchive:true}); renderCaseList(); renderCaseDetail(); }
+function deleteCase(id){ archiveCase(id); }
+function cycleStep(id,k){ const c=cases[id]; if(!c) return; const msg=stepLockMessage(c,k); if(msg){ alert(msg); return; } c.status=c.status||{}; const cur=c.status[k]||""; c.status[k]= cur===""?"doing":cur==="doing"?"done":""; if(!c.status[k]) delete c.status[k]; const s=CASE_STEPS.find(x=>x.k===k); caseLog(c, s.t+" → "+(c.status[k]==="done"?"완료":c.status[k]==="doing"?"진행중":"대기")); applyStepAutomation(c, true); normalizeCaseSteps(c); saveCase(id); renderCaseList(); renderCaseDetail(); }
 function doAuto(id,k,channel){ const c=cases[id]; if(!c) return;
   const msg=stepLockMessage(c,k); if(msg){ alert(msg); return; }
   /* 메일 외 자동화(입금확인 등)는 아직 수동 기록 */
   if(!confirm("["+channel+"] 자동 연결은 준비 중(예정)입니다.\n지금은 '실행함'으로 기록하고 이 단계를 완료 처리할까요?")) return;
-  c.status=c.status||{}; c.status[k]="done"; caseLog(c, "🔌 "+channel+" 실행(수동 기록)"); applyStepAutomation(c, true); normalizeCaseSteps(c); saveCases(); renderCaseList(); renderCaseDetail();
+  c.status=c.status||{}; c.status[k]="done"; caseLog(c, "🔌 "+channel+" 실행(수동 기록)"); applyStepAutomation(c, true); normalizeCaseSteps(c); saveCase(id); renderCaseList(); renderCaseDetail();
 }
 /* ===== 📧 메일 자동발송 (구글 Apps Script 백엔드) ===== */
 const EMAIL_TEMPLATES = {
@@ -2722,7 +2858,7 @@ function doSendMail(){
   if(!settings.mailEndpoint){ if(!promptMailSetup()){ return; } refreshMailNote(); if(!settings.mailEndpoint) return; }
   if(mailCtx){ const c=cases[mailCtx.id]; const msg=stepLockMessage(c,mailCtx.k); if(msg){ alert(msg); return; } }
   sendMailRequest(settings.mailEndpoint, {to, subject, body});
-  if(mailCtx){ const c=cases[mailCtx.id]; if(c){ c.status=c.status||{}; c.status[mailCtx.k]="done"; caseLog(c, "📧 메일 발송: "+to+" — "+subject); applyStepAutomation(c, true); normalizeCaseSteps(c); saveCases(); renderCaseList(); renderCaseDetail(); } }
+  if(mailCtx){ const c=cases[mailCtx.id]; if(c){ c.status=c.status||{}; c.status[mailCtx.k]="done"; caseLog(c, "📧 메일 발송: "+to+" — "+subject); applyStepAutomation(c, true); normalizeCaseSteps(c); saveCase(mailCtx.id); renderCaseList(); renderCaseDetail(); } }
   closeMailModal(); alert("✉️ 발송 요청을 보냈어요.\nGmail 보낸편지함에서 확인하세요.");
 }
 function setVendorSmsEndpoint(url){
@@ -2853,24 +2989,27 @@ function doSendVendorSms(){
   c.status.c5="doing";
   c.note.c5="업체 MMS 발송 요청 중입니다. Apps Script 처리 결과가 도착하면 자동 갱신됩니다.";
   caseLog(c, "📷 업체 MMS 발송 요청: "+vendors.length+"곳");
-  saveCases();
+  saveCase(vendorSmsCtx.id);
   renderCaseList();
   renderCaseDetail();
   closeVendorSmsModal();
   alert("📷 업체 MMS 발송 요청을 보냈어요.\n사진 업로드와 SENS 발송 결과는 잠시 뒤 ⑤ 메모에서 확인하세요.");
 }
-function setCaseField(id,f,v){ const c=cases[id]; if(!c) return; c[f]=v; saveCases(); if(f==="name"||f==="grade"||f==="building"||f==="address") renderCaseList(); }
-function setCaseNote(id,k,v){ const c=cases[id]; if(!c) return; c.note=c.note||{}; c.note[k]=v; saveCases(); }
+function setCaseField(id,f,v){ const c=cases[id]; if(!c) return; c[f]=v; saveCase(id); if(f==="name"||f==="grade"||f==="building"||f==="address") renderCaseList(); }
+function setCaseNote(id,k,v){ const c=cases[id]; if(!c) return; c.note=c.note||{}; c.note[k]=v; saveCase(id); }
 function renderCaseList(){
-  const ids=Object.keys(cases).sort((a,b)=>caseTimeValue(cases[b])-caseTimeValue(cases[a]));
+  const ids=visibleCaseIds();
+  const archivedCount=Object.keys(cases).filter(id=>cases[id]&&cases[id].archived===true).length;
   caseListEl.innerHTML = `<button class="cv-newcase" id="cvNew">＋ 새 케이스(고객)</button>`+
+    `<div class="cv-list-tools"><button class="cv-archive-toggle ${showArchivedCases?'on':''}" data-archive-toggle="1">${showArchivedCases?'보관함 보기 ON':'보관함 보기'}${archivedCount?` (${archivedCount})`:""}</button></div>`+
     (ids.length? ids.map(id=>{ const c=cases[id], p=caseProgress(c);
       const ucls=caseUrgencyClass(c.urgency);
       return `<div class="cv-item ${id===curCase?'on':''}" data-cid="${id}"><div class="nm">${esc(caseTitle(c))}</div>`+
         `<div class="sub">${esc(caseSubText(c))}</div>`+
-        `<div class="badges">${c.urgency?`<span class="cv-badge ${ucls}">${esc(c.urgency)}</span>`:""}${c.source==="google_form"?`<span class="cv-badge source">구글폼</span>`:""}${contractBadgeHTML(c)}</div>`+
-        `<div class="pg">진행 ${p.done}/${p.total}${c.receivedAt?" · "+esc(formatCaseDate(c.receivedAt)):""}</div></div>`;
-    }).join("") : `<div class="cv-empty" style="margin-top:20px;font-size:12.5px">고객을 추가해보세요</div>`);
+        `<div class="badges">${c.archived?`<span class="cv-badge normal">보관</span>`:""}${c.urgency?`<span class="cv-badge ${ucls}">${esc(c.urgency)}</span>`:""}${c.source==="google_form"?`<span class="cv-badge source">구글폼</span>`:""}${contractBadgeHTML(c)}</div>`+
+        `<div class="pg">진행 ${p.done}/${p.total}${c.receivedAt?" · "+esc(formatCaseDate(c.receivedAt)):""}</div>`+
+        `${c.archived?`<button class="cv-restore" data-restore-case="${escAttr(id)}">복구</button>`:""}</div>`;
+    }).join("") : `<div class="cv-empty" style="margin-top:20px;font-size:12.5px">${showArchivedCases?"보관된 케이스가 없습니다":"고객을 추가해보세요"}</div>`);
 }
 function autoGrowCaseNote(el){
   if(!el) return;
@@ -2911,14 +3050,14 @@ function renderCaseDetail(){
       const quotes=open && s.k==='c6' ? renderQuoteUploadPanel(c, st) : "";
       return `<div class="cv-stepwrap"><div class="cv-step ${locked?'locked':st}">${chip}<div class="lbl">${esc(s.t)}</div>${act}${dc}${tb}${nb}</div>${box}${vendors}${quotes}</div>`;
     }).join("")+
-    `<button class="cv-del" id="cvDel">🗑 이 케이스 삭제</button>`+
+    (c.archived?`<button class="cv-del restore" id="cvRestore">↩ 보관 해제</button>`:`<button class="cv-del" id="cvDel">🗄 보관함으로 이동</button>`)+
     (c.log&&c.log.length?`<div class="cv-log"><div class="t" style="font-weight:700">기록</div>`+c.log.slice(0,8).map(l=>`<div class="t">· ${esc(l)}</div>`).join("")+`</div>`:"");
   (window.requestAnimationFrame || (fn=>setTimeout(fn,0)))(autoGrowCaseNotes);
 }
 document.getElementById("caseBtn").addEventListener("click", openCaseView);
 document.getElementById("caseBack").addEventListener("click", closeCaseView);
-caseListEl.addEventListener("click", e=>{ if(e.target.closest("#cvNew")){ createCase(); return; } const it=e.target.closest(".cv-item"); if(it) selectCase(it.dataset.cid); });
-caseDetailEl.addEventListener("click", e=>{ const tm=e.target.closest("[data-testmode]"); if(tm){ setCaseTestMode(!caseTestMode); return; } const qu=e.target.closest("[data-quote-upload]"); if(qu){ uploadQuoteFile(); return; } const qr=e.target.closest("[data-quote-remove]"); if(qr){ removeQuoteFileFromCase(qr.dataset.quoteRemove); return; } const td=e.target.closest("[data-testdone]"); if(td){ forceCompleteThroughStep(curCase, td.dataset.testdone); return; } const dd=e.target.closest("[data-drive-doc]"); if(dd){ const c=cases[curCase], msg=stepLockMessage(c,dd.dataset.driveDoc); if(msg){ alert(msg); return; } const url=dd.dataset.url; if(url) window.open(url, "_blank", "noopener"); return; } const dc=e.target.closest("[data-doc]"); if(dc){ const msg=stepLockMessage(cases[curCase], dc.dataset.doc); if(msg){ alert(msg); return; } downloadCaseDoc(curCase, dc.dataset.doc); return; } const nt=e.target.closest("[data-notetoggle]"); if(nt){ const k=nt.dataset.notetoggle; noteOpen.has(k)?noteOpen.delete(k):noteOpen.add(k); renderCaseDetail(); return; } const ch=e.target.closest("[data-step]"); if(ch){ cycleStep(curCase, ch.dataset.step); return; } const au=e.target.closest("[data-auto]"); if(au){ const ak=au.dataset.auto; if(ak==="c5") openVendorSmsModal(curCase); else if(EMAIL_TEMPLATES[ak]) openMailModal(curCase, ak); else doAuto(curCase, ak, au.dataset.ch); return; } if(e.target.closest("#cvDel")){ deleteCase(curCase); } });
+caseListEl.addEventListener("click", e=>{ if(e.target.closest("#cvNew")){ createCase(); return; } const ar=e.target.closest("[data-archive-toggle]"); if(ar){ setCaseArchiveMode(!showArchivedCases); return; } const rs=e.target.closest("[data-restore-case]"); if(rs){ restoreCase(rs.dataset.restoreCase); return; } const it=e.target.closest(".cv-item"); if(it) selectCase(it.dataset.cid); });
+caseDetailEl.addEventListener("click", e=>{ const tm=e.target.closest("[data-testmode]"); if(tm){ setCaseTestMode(!caseTestMode); return; } const qu=e.target.closest("[data-quote-upload]"); if(qu){ uploadQuoteFile(); return; } const qr=e.target.closest("[data-quote-remove]"); if(qr){ removeQuoteFileFromCase(qr.dataset.quoteRemove); return; } const td=e.target.closest("[data-testdone]"); if(td){ forceCompleteThroughStep(curCase, td.dataset.testdone); return; } const dd=e.target.closest("[data-drive-doc]"); if(dd){ const c=cases[curCase], msg=stepLockMessage(c,dd.dataset.driveDoc); if(msg){ alert(msg); return; } const url=dd.dataset.url; if(url) window.open(url, "_blank", "noopener"); return; } const dc=e.target.closest("[data-doc]"); if(dc){ const msg=stepLockMessage(cases[curCase], dc.dataset.doc); if(msg){ alert(msg); return; } downloadCaseDoc(curCase, dc.dataset.doc); return; } const nt=e.target.closest("[data-notetoggle]"); if(nt){ const k=nt.dataset.notetoggle; noteOpen.has(k)?noteOpen.delete(k):noteOpen.add(k); renderCaseDetail(); return; } const ch=e.target.closest("[data-step]"); if(ch){ cycleStep(curCase, ch.dataset.step); return; } const au=e.target.closest("[data-auto]"); if(au){ const ak=au.dataset.auto; if(ak==="c5") openVendorSmsModal(curCase); else if(EMAIL_TEMPLATES[ak]) openMailModal(curCase, ak); else doAuto(curCase, ak, au.dataset.ch); return; } if(e.target.closest("#cvRestore")){ restoreCase(curCase); return; } if(e.target.closest("#cvDel")){ deleteCase(curCase); } });
 caseDetailEl.addEventListener("click", e=>{ const qpr=e.target.closest("[data-quote-file-remove]"); if(qpr){ removeQuotePendingFile(qpr.dataset.quoteFileRemove); } });
 caseDetailEl.addEventListener("input", e=>{ const f=e.target.closest("input[data-f]"); if(f){ setCaseField(curCase, f.dataset.f, f.value); return; } const nb=e.target.closest("textarea[data-note]"); if(nb){ setCaseNote(curCase, nb.dataset.note, nb.value); autoGrowCaseNote(nb); } });
 caseDetailEl.addEventListener("change", e=>{ const qf=e.target.closest("#quoteFile"); if(qf){ addQuotePendingFiles(qf.files); return; } const vf=e.target.closest("input[data-vendor-select]"); if(vf){ setCaseVendorSelection(curCase, vf.dataset.vendorSelect, vf.checked); return; } const f=e.target.closest("select[data-f]"); if(f) setCaseField(curCase, f.dataset.f, f.value); });
@@ -2928,7 +3067,9 @@ caseDetailEl.addEventListener("drop", e=>{ const dz=e.target.closest("[data-quot
 cases = loadCasesLocal();
 const localAutoFixed = applyAllStepAutomation(cases, false);
 const localStepFixed = normalizeAllCaseSteps(cases);
-if(localAutoFixed || localStepFixed){ saveCases(); }
+if((localAutoFixed || localStepFixed) && !isConfigured){
+  try{ localStorage.setItem("fm_cases_v1", JSON.stringify(cases)); }catch(e){}
+}
 
 /* ===== 📢 비전·공지 (팀 공유) ===== */
 const DEFAULT_VISION = "<h2>🎯 BRING 비전</h2><blockquote>사람이 대신함 → 프로세스로 표준화 → 소프트웨어로 자동화 → 로봇/AI로 고도화 → <b>OS가 운영</b></blockquote><p><b>핵심 기초 5개는 고정된 가치</b>이고, 회사가 성장하면서 <b>수행 방식</b>만 진화한다. (초기=사람이 대신 · 중기=시스템이 처리 · 장기=AI·로봇·OS가 처리)</p><h3>🧱 핵심 기초 5 × 진화 (초기 → 중기 → 장기)</h3><p><b>1) 건물주의 시간 절약</b></p><ul><li><b>초기</b> — BRING 운영자가 대신 처리</li><li><b>중기</b> — 접수·분류·알림 자동화</li><li><b>장기</b> — AI가 처리 우선순위와 업체 추천</li></ul><p><b>2) 건물주의 스트레스 감소</b></p><ul><li><b>초기</b> — 민원·업체·공사 연락을 대신함</li><li><b>중기</b> — 건물주가 대시보드로 현황 확인</li><li><b>장기</b> — 월간 리포트와 승인만 확인</li></ul><p><b>3) 세입자 민원 처리</b></p><ul><li><b>초기</b> — 카톡/폼 접수 후 사람이 분류</li><li><b>중기</b> — 민원 유형별 표준 프로세스 적용</li><li><b>장기</b> — AI 분류 + 자동 응대 + 업체/로봇 연결</li></ul><p><b>4) 업체·공사·비용 투명관리</b></p><ul><li><b>초기</b> — 견적·사진·영수증 수동 정리</li><li><b>중기</b> — 업체 DB·B/A 보고서 자동화</li><li><b>장기</b> — 업체별 단가·품질·재발률 기반 최적 배정</li></ul><p><b>5) 운영 이력 데이터화</b></p><ul><li><b>초기</b> — 구글시트/노션에 기록</li><li><b>중기</b> — BRING OS에 건물별 이력 축적</li><li><b>장기</b> — 디지털 트윈 + 리스크 점수 + 예측 유지관리</li></ul><h3>🚀 발전 8단계</h3><ol><li><b>사람 기반 운영대행</b> — 사람이 대신 처리 (운영 신뢰)</li><li><b>프로세스 표준화</b> — 누가 해도 같은 방식</li><li><b>소프트웨어 자동화</b> — 반복 업무 시간↓</li><li><b>로봇화</b> — 숨은 공간까지 데이터화</li><li><b>AI화</b> — 분류·추천·예측 보조</li><li><b>직접 이행</b> — 단가·응답속도 개선</li><li><b>건물 유지관리 OS</b> — 데이터 기반 운영 (건물의 운영 기억장치)</li><li><b>Physical Infrastructure AI</b> — 점검·판단·이행 통합</li></ol><h3>🏁 최종 정의</h3><blockquote>BRING은 건물주의 시간·스트레스를 줄이는 운영대행으로 시작해, 민원·수납·업체·공사·재발 데이터를 축적하고, 이를 자동화·로봇화·AI화하여 건물 유지관리 단가를 낮추는 <b>OS 기업</b>으로 진화한다.</blockquote>";
@@ -2971,8 +3112,10 @@ document.getElementById("noticeBtn").addEventListener("click", openNoticePanel);
 document.getElementById("noticeBanner").addEventListener("click", openNoticePanel);
 
 /* ===== 업데이트 알림(What's New) — 새 버전 나오면 자동 팝업 ===== */
-const APP_VERSION = "4.29";
+const APP_VERSION = "4.31";
 const CHANGELOG = [
+  { v:"4.31", d:"2026-07-02", items:["케이스 저장을 개별 저장 방식으로 변경","삭제를 보관함 이동/복구 방식으로 변경","늦게 도착한 자동화 결과가 케이스 진행상태를 되돌리지 않도록 안정화"] },
+  { v:"4.30", d:"2026-07-02", items:["⑥ 견적 업로드 중 진행 팝업과 진행바 표시","파일별 읽기·전송 상태를 업로드 완료 전까지 표시"] },
   { v:"4.29", d:"2026-07-02", items:["⑥ HWPX 견적서 텍스트 자동 추출 지원","HWP는 원본 저장 후 수동 확인 상태 유지"] },
   { v:"4.28", d:"2026-07-02", items:["⑥ HWP/HWPX 견적 파일 업로드 허용","한글 견적서는 원본 저장 후 확인필요 상태로 표시"] },
   { v:"4.27", d:"2026-07-02", items:["⑥ 견적 업로드 Apps Script URL 기본 연결","URL 입력창 없이 업로드 버튼으로 바로 Drive 저장 요청"] },

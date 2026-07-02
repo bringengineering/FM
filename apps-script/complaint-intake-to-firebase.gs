@@ -439,7 +439,16 @@ function updateVendorMmsCase_(caseId, casePayload, result) {
   casePayload.updatedAt = new Date().toISOString();
   casePayload.log.unshift("업체 MMS " + (result.ok ? "발송완료" : "발송보류") + " / " + (result.statusText || ""));
   if (casePayload.log.length > 30) casePayload.log.length = 30;
-  writeCaseToFirebase_(caseId, casePayload);
+  putCaseChildToFirebase_(caseId, "vendorEstimateMms", result);
+  patchCaseChildToFirebase_(caseId, "status", {
+    c5: casePayload.status.c5,
+    c6: casePayload.status.c6
+  });
+  patchCaseChildToFirebase_(caseId, "note", { c5: casePayload.note.c5 });
+  patchCaseToFirebase_(caseId, {
+    log: casePayload.log,
+    updatedAt: casePayload.updatedAt
+  });
   return Object.assign({ caseId: caseId }, result);
 }
 
@@ -541,7 +550,13 @@ function handleQuoteFileUpload_(payload) {
   }
   if (casePayload.log.length > 30) casePayload.log.length = 30;
   casePayload.updatedAt = uploadedAt;
-  writeCaseToFirebase_(caseId, casePayload);
+  putCaseChildToFirebase_(caseId, "quoteFiles/" + quoteId, quote);
+  patchCaseChildToFirebase_(caseId, "status", { c6: casePayload.status.c6 });
+  patchCaseChildToFirebase_(caseId, "note", { c6: casePayload.note.c6 });
+  patchCaseToFirebase_(caseId, {
+    log: casePayload.log,
+    updatedAt: uploadedAt
+  });
 
   return { ok: true, caseId: caseId, quote: quote, message: "견적 파일 업로드 및 브링 양식 처리 완료" };
 }
@@ -586,7 +601,12 @@ function updateQuoteUploadFailure_(caseId, casePayload, message) {
   casePayload.log.unshift("견적 파일 업로드 실패: " + message);
   if (casePayload.log.length > 30) casePayload.log.length = 30;
   casePayload.updatedAt = new Date().toISOString();
-  writeCaseToFirebase_(caseId, casePayload);
+  patchCaseChildToFirebase_(caseId, "status", { c6: casePayload.status.c6 });
+  patchCaseChildToFirebase_(caseId, "note", { c6: casePayload.note.c6 });
+  patchCaseToFirebase_(caseId, {
+    log: casePayload.log,
+    updatedAt: casePayload.updatedAt
+  });
   return { ok: false, caseId: caseId, message: message };
 }
 
@@ -1926,15 +1946,18 @@ function setCellByHeader_(sheet, row, headerMap, header, value) {
   if (headerMap[header]) sheet.getRange(row, headerMap[header]).setValue(value);
 }
 
-function firebaseCaseUrl_(caseId) {
+function firebaseCaseUrl_(caseId, childPath) {
   const base = COMPLAINT_CONFIG.FIREBASE_DATABASE_URL.replace(/\/$/, "");
   const path = COMPLAINT_CONFIG.FIREBASE_CASES_PATH.replace(/^\/|\/$/g, "");
-  return base + "/" + path + "/" + encodeURIComponent(caseId) + ".json";
+  const child = childPath
+    ? "/" + String(childPath).split("/").filter(Boolean).map(part => encodeURIComponent(part)).join("/")
+    : "";
+  return base + "/" + path + "/" + encodeURIComponent(caseId) + child + ".json";
 }
 
-function writeCaseToFirebase_(caseId, payload) {
-  const response = UrlFetchApp.fetch(firebaseCaseUrl_(caseId), {
-    method: "put",
+function firebaseWriteRequest_(url, method, payload, label) {
+  const response = UrlFetchApp.fetch(url, {
+    method: method,
     contentType: "application/json; charset=utf-8",
     payload: JSON.stringify(payload),
     muteHttpExceptions: true
@@ -1942,8 +1965,48 @@ function writeCaseToFirebase_(caseId, payload) {
 
   const code = response.getResponseCode();
   if (code < 200 || code >= 300) {
-    throw new Error("Firebase 저장 실패: HTTP " + code + " / " + response.getContentText());
+    throw new Error(label + ": HTTP " + code + " / " + response.getContentText());
   }
+  return response;
+}
+
+function patchCaseToFirebase_(caseId, patch) {
+  return firebaseWriteRequest_(firebaseCaseUrl_(caseId), "patch", patch || {}, "Firebase 부분 저장 실패");
+}
+
+function patchCaseChildToFirebase_(caseId, childPath, patch) {
+  return firebaseWriteRequest_(firebaseCaseUrl_(caseId, childPath), "patch", patch || {}, "Firebase 부분 저장 실패");
+}
+
+function putCaseChildToFirebase_(caseId, childPath, payload) {
+  return firebaseWriteRequest_(firebaseCaseUrl_(caseId, childPath), "put", payload || {}, "Firebase 필드 저장 실패");
+}
+
+function mergeCasePayloadForFirebase_(existing, payload) {
+  if (!existing || typeof existing !== "object") return payload;
+  const merged = Object.assign({}, existing, payload);
+
+  merged.status = Object.assign({}, payload.status || {}, existing.status || {});
+  merged.note = Object.assign({}, payload.note || {}, existing.note || {});
+
+  ["log", "quoteFiles", "vendorSelections", "vendorEstimateMms", "selectedVendors"].forEach(key => {
+    if (existing[key] !== undefined) merged[key] = existing[key];
+  });
+
+  if (existing.archived === true) {
+    merged.archived = true;
+    merged.archivedAt = existing.archivedAt || merged.archivedAt;
+    merged.archivedBy = existing.archivedBy || merged.archivedBy;
+  }
+
+  return merged;
+}
+
+function writeCaseToFirebase_(caseId, payload) {
+  const existing = readCaseFromFirebase_(caseId);
+  const merged = mergeCasePayloadForFirebase_(existing, payload || {});
+  merged.updatedAt = new Date().toISOString();
+  patchCaseToFirebase_(caseId, merged);
 }
 
 function maskName_(name) {
