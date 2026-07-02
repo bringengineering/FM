@@ -1718,26 +1718,27 @@ window.BRING_BUILDING_MAINTENANCE_DATA = {
       "no": 26,
       "name": "청솔냉열",
       "category": "냉난방·에어컨",
-      "service": "에어컨설치/판매",
-      "feature": "비고: 설치 as 3년무상",
+      "service": "에어컨 설치",
+      "feature": "흥업면 광터길 소재 에어컨 업체. 설치 및 판매, 주차 가능",
       "operation": "0507-1430-0293",
-      "region": "강원 원주시 흥업면 사제리 1470-15",
+      "region": "강원 원주시 흥업면 광터길 143-7",
+      "address": "강원 원주시 흥업면 광터길 143-7",
       "scale": "",
       "url": "-",
       "extraUrl": "",
       "naverUrl": "https://naver.me/FCZzzp9B",
       "phone": "0507-1430-0293",
-      "rating": "",
-      "status": "구글시트",
+      "rating": "리뷰 8",
+      "status": "사용자 추가",
       "source": "google-sheet",
       "sourceLabel": "원주 유지보수 구글시트",
       "locations": [
         {
-          "label": "흥업면",
-          "lat": 37.3009,
-          "lng": 127.9209,
-          "source": "address-region",
-          "precision": "neighborhood"
+          "label": "흥업면 광터길",
+          "lat": 37.337188,
+          "lng": 127.8825043,
+          "source": "address-geocode",
+          "precision": "road"
         }
       ]
     },
@@ -3477,6 +3478,180 @@ window.BRING_BUILDING_MAINTENANCE_DATA = {
           "precision": "road"
         }
       ]
+    },
+    {
+      "id": "sheet-087",
+      "no": 87,
+      "name": "원주에어컨설치 문막시장",
+      "category": "냉난방·에어컨",
+      "service": "에어컨 설치, 견적문의, 상담",
+      "feature": "문막시장1길 소재 에어컨 설치 업체. 24시간 영업, 견적 문의와 상담 가능",
+      "operation": "0507-1320-6676",
+      "region": "강원 원주시 문막읍 문막시장1길 77",
+      "address": "강원 원주시 문막읍 문막시장1길 77",
+      "scale": "변동",
+      "url": "https://eodthf89.wixsite.com/wonju-aircon",
+      "extraUrl": "블로그",
+      "naverUrl": "https://naver.me/FRLapxMT",
+      "phone": "0507-1320-6676",
+      "rating": "리뷰 38",
+      "status": "사용자 추가",
+      "source": "google-sheet",
+      "sourceLabel": "원주 유지보수 직접추가",
+      "locations": [
+        {
+          "label": "문막읍 문막시장1길",
+          "lat": 37.3042652,
+          "lng": 127.8154576,
+          "source": "address-geocode",
+          "precision": "road"
+        }
+      ]
+    },
+    {
+      "id": "sheet-088",
+      "no": 88,
+      "name": "윤에어컨",
+      "category": "냉난방·에어컨",
+      "service": "벽걸이에어컨설치, 스탠드에어컨설치, 투인원에어컨설치, 중대형에어컨설치, 가스충전, 에어컨철거, 에어컨청소",
+      "feature": "원주, 여주, 이천, 양평, 횡성, 충주, 제천 출장 전문 에어컨 설치·청소 업체",
+      "operation": "0507-1307-0852",
+      "region": "강원 원주시 문막읍 원문로 1700 103동 403호",
+      "address": "강원 원주시 문막읍 원문로 1700 103동 403호",
+      "scale": "변동",
+      "url": "https://blog.naver.com/cay5896",
+      "extraUrl": "https://cafe.naver.com/woon5896",
+      "naverUrl": "https://naver.me/53lZ5Whf",
+      "phone": "0507-1307-0852",
+      "rating": "리뷰 2",
+      "status": "사용자 추가",
+      "source": "google-sheet",
+      "sourceLabel": "원주 유지보수 직접추가",
+      "locations": [
+        {
+          "label": "문막읍 원문로",
+          "lat": 37.2745618,
+          "lng": 127.771119,
+          "source": "address-geocode",
+          "precision": "road"
+        }
+      ]
+    },
+    {
+      "id": "sheet-089",
+      "no": 89,
+      "name": "성신에어컨설치",
+      "category": "냉난방·에어컨",
+      "service": "에어컨 설치",
+      "feature": "문막읍 구암길 소재 에어컨 설치 업체",
+      "operation": "033-733-0655",
+      "region": "강원 원주시 문막읍 구암길 9",
+      "address": "강원 원주시 문막읍 구암길 9",
+      "scale": "",
+      "url": "",
+      "extraUrl": "",
+      "naverUrl": "https://naver.me/xqbObkrG",
+      "phone": "033-733-0655",
+      "rating": "리뷰 1",
+      "status": "사용자 추가",
+      "source": "google-sheet",
+      "sourceLabel": "원주 유지보수 직접추가",
+      "locations": [
+        {
+          "label": "문막읍 구암길",
+          "lat": 37.3205025,
+          "lng": 127.8222761,
+          "source": "address-geocode",
+          "precision": "road"
+        }
+      ]
+    },
+    {
+      "id": "sheet-090",
+      "no": 90,
+      "name": "영에어컨",
+      "category": "냉난방·에어컨",
+      "service": "에어컨 설치, 에어컨 시공",
+      "feature": "지정면 조엄로 이지더원 어반포레 인근 에어컨 업체. 원주 자이센트로 B타입 LG 단배관 4실 시공 사례",
+      "operation": "0507-1321-4827",
+      "region": "강원 원주시 지정면 조엄로 391 이지더원 어반포레",
+      "address": "강원 원주시 지정면 조엄로 391 이지더원 어반포레",
+      "scale": "",
+      "url": "https://blog.naver.com/6511130",
+      "extraUrl": "",
+      "naverUrl": "https://naver.me/5yPulK0b",
+      "phone": "0507-1321-4827",
+      "rating": "리뷰 65",
+      "status": "사용자 추가",
+      "source": "google-sheet",
+      "sourceLabel": "원주 유지보수 직접추가",
+      "locations": [
+        {
+          "label": "지정면 조엄로",
+          "lat": 37.3744635,
+          "lng": 127.8662187,
+          "source": "address-geocode",
+          "precision": "nearby"
+        }
+      ]
+    },
+    {
+      "id": "sheet-091",
+      "no": 91,
+      "name": "원주에어컨설치 지정면",
+      "category": "냉난방·에어컨",
+      "service": "원주에어컨설치, 원주냉난방기설치, 벽걸이에어컨설치, 투인원에어컨설치, 시스템에어컨설치, 에어컨가스충전, 스탠드에어컨설치",
+      "feature": "원주, 횡성, 평창, 진부, 홍천, 제천, 충주, 여주 지역 출장 가능. 24시간 영업",
+      "operation": "0507-1374-4144",
+      "region": "강원 원주시 지정면 조엄로 393 105",
+      "address": "강원 원주시 지정면 조엄로 393 105",
+      "scale": "변동",
+      "url": "https://blog.naver.com/lco3353",
+      "extraUrl": "",
+      "naverUrl": "https://naver.me/GyYBzffF",
+      "phone": "0507-1374-4144",
+      "rating": "리뷰 11",
+      "status": "사용자 추가",
+      "source": "google-sheet",
+      "sourceLabel": "원주 유지보수 직접추가",
+      "locations": [
+        {
+          "label": "지정면 조엄로",
+          "lat": 37.3496763,
+          "lng": 127.8525081,
+          "source": "address-geocode",
+          "precision": "road"
+        }
+      ]
+    },
+    {
+      "id": "sheet-092",
+      "no": 92,
+      "name": "에어컨씻쓰리",
+      "category": "냉난방·에어컨",
+      "service": "에어컨 설치, 에어컨 청소",
+      "feature": "지정면 유보라 아이비파크 소재 에어컨 설치·청소 업체. 방문접수·출장 가능",
+      "operation": "0507-1336-3430",
+      "region": "강원 원주시 지정면 조엄로 393 유보라 아이비파크 1단지 114동 2층 3호",
+      "address": "강원 원주시 지정면 조엄로 393 유보라 아이비파크 1단지 114동 2층 3호",
+      "scale": "",
+      "url": "",
+      "extraUrl": "",
+      "naverUrl": "https://naver.me/xv6WlE5V",
+      "phone": "0507-1336-3430",
+      "rating": "리뷰 1",
+      "status": "사용자 추가",
+      "source": "google-sheet",
+      "sourceLabel": "원주 유지보수 직접추가",
+      "locations": [
+        {
+          "label": "지정면 조엄로",
+          "lat": 37.3496763,
+          "lng": 127.8525081,
+          "source": "address-geocode",
+          "precision": "road"
+        }
+      ]
     }
   ],
   "categories": [
@@ -3506,9 +3681,9 @@ window.BRING_BUILDING_MAINTENANCE_DATA = {
   ],
   "summary": {
     "excel": 49,
-    "googleSheet": 86,
-    "total": 135,
-    "mapped": 105,
+    "googleSheet": 92,
+    "total": 141,
+    "mapped": 111,
     "geocoded": 0
   }
 };
