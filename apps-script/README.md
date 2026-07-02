@@ -11,6 +11,7 @@
 4. 온보딩 수집서 DOCX 파일이 들어 있는 Google Drive 폴더를 연결하려면 코드 상단의 `CONTRACT_DRIVE_FOLDER_ID`에 폴더 ID 또는 폴더 URL을 넣습니다.
    - 현재 설정값은 `1818MusPDfVV6znALkWDMGK99NXAlAj8g`입니다.
    - ⑥ 견적 파일을 별도 폴더에 저장하려면 `QUOTE_DRIVE_FOLDER_ID`에 폴더 ID를 넣습니다. 비워두면 기존 Drive 폴더 아래 `견적서 회신` 폴더를 자동으로 만듭니다.
+   - ⑥ 브링 양식 견적서 자동 생성을 쓰려면 `브링엔지니어링_견적서_양식.xlsx`를 Google Drive에 올린 뒤 Google Sheets로 열어 변환하고, 그 Google Sheet 파일 ID를 `QUOTE_TEMPLATE_SPREADSHEET_ID`에 넣습니다.
 5. 왼쪽 톱니바퀴 `프로젝트 설정`에서 `appsscript.json 매니페스트 파일 표시`를 켭니다.
 6. 왼쪽 파일 목록의 `appsscript.json`에 이 폴더의 `appsscript.json` 내용을 붙여넣습니다.
 7. 저장 후 함수 선택 드롭다운에서 `setupComplaintAutomation`을 선택해 실행합니다.
@@ -53,7 +54,8 @@
 - 온보딩 수집서 DOCX 본문에 `건물주 연락처: 010-0000-0000` 형식의 항목을 넣으면 건물주 번호를 자동 추출합니다.
 - ④에서 선택한 업체가 있으면 ⑤에서 구글폼 첨부 사진의 첫 번째 JPG/JPEG를 SENS MMS로 보내는 견적 요청을 실행할 수 있습니다.
 - MMS 첨부는 SENS 제한 때문에 JPG/JPEG만 사용하며, 300KB를 넘으면 발송하지 않고 ⑤를 진행중/보류로 둡니다.
-- ⑥ 견적 비교에서 업체별 회신 견적 파일을 업로드하면 Drive에 저장되고, 케이스에는 업체명/금액/메모/파일 링크가 표시됩니다.
+- ⑥ 견적 비교에서 업체별 회신 견적 파일을 업로드하면 원본은 `원본 견적서` 폴더에 저장되고, `QUOTE_TEMPLATE_SPREADSHEET_ID`가 설정되어 있으면 브링 양식 Google Sheet와 XLSX 파일을 `브링 양식 견적서` 폴더에 생성합니다.
+- XLSX/DOCX는 본문 텍스트를 직접 추출하고, PDF/JPG/PNG는 고급 Google 서비스 `Drive API(v3)` OCR을 사용합니다. OCR이 꺼져 있거나 실패하면 원본은 저장하고 케이스에 `확인필요/추출실패`로 표시합니다.
 - Realtime Database의 `/cases/{접수번호}`에 케이스를 등록합니다.
 - GitHub.io FM 앱의 `케이스` 화면에서 자동 등록된 민원을 볼 수 있습니다.
 
@@ -94,10 +96,12 @@ NCP Secret Key는 GitHub나 HTML 화면에 절대 넣지 않습니다. Apps Scri
 ## ⑥ 견적 파일 업로드 테스트
 
 1. ⑤가 완료되어 ⑥이 `진행중`인지 확인합니다.
-2. ⑥ 메모 버튼을 열고 업체, 견적 금액, 메모, 파일을 선택합니다.
+2. ⑥ 메모 버튼을 열고 견적 파일만 선택합니다.
 3. 파일은 PDF, JPG/JPEG, PNG, DOC/DOCX, XLS/XLSX만 가능하며 최대 5MB입니다.
-4. 처음 사용할 때는 `caseAutomationEndpoint`에 Apps Script 웹 앱 URL을 저장합니다. ⑤ MMS 웹앱 URL과 같은 URL을 사용해도 됩니다.
-5. 업로드 후 케이스 ⑥ 카드에 Drive 파일 링크가 표시되는지 확인합니다.
+4. 업체가 1곳만 선택되어 있으면 자동으로 그 업체에 연결됩니다. 여러 곳이면 파일 본문에서 업체명을 추출하고, 애매하면 `업체 확인 필요`로 남깁니다.
+5. 처음 사용할 때는 `caseAutomationEndpoint`에 Apps Script 웹 앱 URL을 저장합니다. ⑤ MMS 웹앱 URL과 같은 URL을 사용해도 됩니다.
+6. 업로드 후 케이스 ⑥ 카드에 `원본 열기`, `브링 양식`, `XLSX 다운로드` 링크와 추출 상태가 표시되는지 확인합니다.
+7. PDF/JPG/PNG 추출을 테스트하려면 Apps Script 왼쪽 `서비스`에서 `Drive API`가 추가되어 있는지 확인합니다. 매니페스트에는 `Drive API v3` 설정이 포함되어 있습니다.
 
 ## ⑤ 업체 MMS 견적 요청 테스트
 

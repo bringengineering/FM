@@ -315,7 +315,7 @@
   .quote-upload-head{ display:flex; align-items:center; justify-content:space-between; gap:10px; margin-bottom:10px; }
   .quote-upload-title{ font-size:13.5px; font-weight:900; color:#162033; }
   .quote-upload-sub{ font-size:12px; color:#6b7686; }
-  .quote-form{ display:grid; grid-template-columns:minmax(160px,1.1fr) minmax(130px,.8fr) minmax(220px,1.4fr) minmax(220px,1.6fr) auto; gap:8px; align-items:end; }
+  .quote-form{ display:grid; grid-template-columns:minmax(260px,1fr) auto; gap:8px; align-items:end; }
   .quote-form label{ display:flex; flex-direction:column; gap:3px; color:#6b7686; font-size:11.5px; font-weight:800; }
   .quote-form input,.quote-form select{ min-width:0; border:1px solid var(--line); border-radius:8px; padding:7px 9px; background:#fff; font-size:13px; font-family:inherit; }
   .quote-file{ border-style:dashed !important; }
@@ -328,10 +328,16 @@
   .quote-card-name{ font-size:13.5px; color:#162033; font-weight:900; line-height:1.35; }
   .quote-card-amount{ font-size:12px; font-weight:900; color:#116329; background:#eaf7ee; border:1px solid #b9e6c5; border-radius:999px; padding:2px 7px; white-space:nowrap; }
   .quote-card-meta{ font-size:12px; color:#52606d; line-height:1.5; word-break:break-word; }
+  .quote-status{ justify-self:start; display:inline-flex; align-items:center; min-height:22px; border-radius:999px; padding:2px 7px; font-size:11px; font-weight:900; border:1px solid #d7dfec; color:#52606d; background:#fff; }
+  .quote-status.ok{ color:#116329; background:#eaf7ee; border-color:#b9e6c5; }
+  .quote-status.review{ color:#8a5a00; background:#fff8e1; border-color:#ffe08a; }
+  .quote-status.fail{ color:#b42318; background:#fff1f0; border-color:#ffccc7; }
+  .quote-card-links{ display:flex; flex-wrap:wrap; gap:6px; }
   .quote-card a{ color:#315fce; text-decoration:none; font-size:12.5px; font-weight:800; }
+  .quote-card-links a{ display:inline-flex; align-items:center; min-height:26px; padding:3px 8px; border:1px solid #c5d4ff; border-radius:7px; background:#f6f8ff; }
   .quote-card a:hover{ text-decoration:underline; }
   .quote-remove{ justify-self:start; border:1px dashed #f3c0c0; background:#fff; color:#c92a2a; border-radius:7px; padding:4px 8px; font-size:11.5px; cursor:pointer; font-family:inherit; }
-  @media (max-width:1180px){ .quote-form{ grid-template-columns:repeat(2,minmax(0,1fr)); } .quote-cards{ grid-template-columns:repeat(2,minmax(0,1fr)); } }
+  @media (max-width:1180px){ .quote-cards{ grid-template-columns:repeat(2,minmax(0,1fr)); } }
   @media (max-width:720px){ .quote-form,.quote-cards{ grid-template-columns:1fr; } }
   .cv-notebtn{ border:1px solid var(--line); background:#fff; border-radius:8px; padding:5px 8px; font-size:12.5px; cursor:pointer; }
   .cv-notebtn.has{ background:#fff7e6; border-color:#f0dca0; }
@@ -2179,12 +2185,16 @@ function caseVendorCardHtml(c,cat,v){
   </article>`;
 }
 function quoteUploadVendors(c){
-  const sent=((c.vendorEstimateMms||{}).sent||[]).map((v,i)=>({
-    id:v.id || ("sent_"+i+"_"+vendorKey(v.name||"")),
-    name:v.name||"업체명 없음",
-    category:v.category||""
-  })).filter(v=>v.name);
-  const selected=selectedCaseVendors(c).map(v=>({ id:v.id||vendorKey(v.name||""), name:v.name||"업체명 없음", category:v.category||v.type||"" }));
+  const selected=selectedCaseVendors(c).map(v=>Object.assign({}, v, { id:v.id||vendorKey(v.name||""), name:v.name||"업체명 없음", category:v.category||v.type||"" }));
+  const selectedByName=new Map(selected.map(v=>[vendorKey(v.name), v]));
+  const sent=((c.vendorEstimateMms||{}).sent||[]).map((v,i)=>{
+    const base=selectedByName.get(vendorKey(v.name||""))||{};
+    return Object.assign({}, base, {
+      id:v.id || base.id || ("sent_"+i+"_"+vendorKey(v.name||"")),
+      name:v.name||base.name||"업체명 없음",
+      category:v.category||base.category||base.type||""
+    });
+  }).filter(v=>v.name);
   const src=sent.length ? sent : selected;
   const seen=new Set();
   return src.filter(v=>{
@@ -2207,26 +2217,51 @@ function quoteAmountText(value){
   const v=String(value||"").trim();
   return v || "금액 미입력";
 }
+function quoteDisplayAmount(q){
+  return quoteAmountText(q.totalAmount ? Number(q.totalAmount).toLocaleString("ko-KR")+"원" : q.amount);
+}
+function quoteExtractionLabel(q){
+  return q.extractionStatus || (q.bringQuoteSheetUrl ? "추출완료" : "확인필요");
+}
+function quoteExtractionClass(q){
+  const label=quoteExtractionLabel(q);
+  if(label==="추출완료") return "ok";
+  if(label==="추출실패") return "fail";
+  return "review";
+}
+function quoteLinksHtml(q){
+  const links=[];
+  const originalUrl=q.originalFileUrl||q.fileUrl;
+  if(originalUrl) links.push(`<a href="${escAttr(originalUrl)}" target="_blank" rel="noopener">원본 열기</a>`);
+  if(q.bringQuoteSheetUrl) links.push(`<a href="${escAttr(q.bringQuoteSheetUrl)}" target="_blank" rel="noopener">브링 양식</a>`);
+  if(q.bringQuoteXlsxUrl) links.push(`<a href="${escAttr(q.bringQuoteXlsxUrl)}" target="_blank" rel="noopener">XLSX 다운로드</a>`);
+  return links.length ? `<div class="quote-card-links">${links.join("")}</div>` : "";
+}
+function quoteVendorById(c, vendorId, vendorName){
+  const vendors=quoteUploadVendors(c);
+  return vendors.find(v=>String(v.id||"")===String(vendorId||"")) ||
+    vendors.find(v=>vendorKey(v.name||"")===vendorKey(vendorName||"")) ||
+    { id:vendorId||"", name:vendorName||"업체 미지정" };
+}
+function quoteAutoVendor(c){
+  const vendors=quoteUploadVendors(c);
+  if(vendors.length===1) return vendors[0];
+  return { id:"", name:"업체 확인 필요" };
+}
 function renderQuoteUploadPanel(c, stepStatus){
   if(stepStatus!=="doing" && stepStatus!=="done") return "";
-  const vendors=quoteUploadVendors(c);
   const quotes=quoteFilesList(c);
-  const vendorOptions=vendors.length
-    ? vendors.map(v=>`<option value="${escAttr(v.id)}" data-name="${escAttr(v.name)}">${esc(v.name)}${v.category?" · "+esc(v.category):""}</option>`).join("")
-    : `<option value="" data-name="">업체 미지정</option>`;
   const cards=quotes.length ? `<div class="quote-cards">${quotes.map(q=>`
     <article class="quote-card">
-      <div class="quote-card-head"><div class="quote-card-name">${esc(q.vendorName||"업체 미지정")}</div><div class="quote-card-amount">${esc(quoteAmountText(q.amount))}</div></div>
-      <div class="quote-card-meta">${esc(q.fileName||"파일명 없음")}<br>${esc(formatQuoteDate(q.uploadedAt))}${q.memo?`<br>${esc(q.memo)}`:""}</div>
-      ${q.fileUrl?`<a href="${escAttr(q.fileUrl)}" target="_blank" rel="noopener">Drive 파일 열기</a>`:""}
+      <div class="quote-card-head"><div class="quote-card-name">${esc(q.vendorName||"업체 미지정")}</div><div class="quote-card-amount">${esc(quoteDisplayAmount(q))}</div></div>
+      <span class="quote-status ${quoteExtractionClass(q)}">${esc(quoteExtractionLabel(q))}</span>
+      <div class="quote-card-meta">${esc(q.fileName||q.originalFileName||"파일명 없음")}<br>${esc(formatQuoteDate(q.uploadedAt))}${q.memo?`<br>${esc(q.memo)}`:""}${q.extractionMemo?`<br>${esc(q.extractionMemo)}`:""}</div>
+      ${quoteLinksHtml(q)}
       <button class="quote-remove" data-quote-remove="${escAttr(q.id)}">목록에서 제거</button>
     </article>`).join("")}</div>` : `<div class="vendor-empty" style="margin-top:10px;text-align:left">아직 업로드된 견적 파일이 없습니다.</div>`;
   return `<div class="quote-upload">
-    <div class="quote-upload-head"><div><div class="quote-upload-title">견적 파일 업로드</div><div class="quote-upload-sub">PDF, JPG/PNG, DOC/DOCX, XLS/XLSX · 최대 5MB · 원본은 Google Drive에 저장</div></div></div>
+    <div class="quote-upload-head"><div><div class="quote-upload-title">견적 파일 업로드</div><div class="quote-upload-sub">PDF, JPG/PNG, DOC/DOCX, XLS/XLSX · 최대 5MB · 원본 저장 후 브링 양식 자동 생성</div></div></div>
     <div class="quote-form">
-      <label>업체<select id="quoteVendor">${vendorOptions}</select></label>
-      <label>견적 금액<input id="quoteAmount" placeholder="예: 120,000원"></label>
-      <label>메모<input id="quoteMemo" placeholder="부가세 포함, 방문비 별도 등"></label>
       <label>파일<input class="quote-file" id="quoteFile" type="file" accept=".pdf,.jpg,.jpeg,.png,.doc,.docx,.xls,.xlsx,application/pdf,image/jpeg,image/png,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document,application/vnd.ms-excel,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"></label>
       <button class="quote-send" data-quote-upload="1">업로드</button>
     </div>
@@ -2277,9 +2312,6 @@ async function uploadQuoteFile(){
   if(!c) return;
   const lock=stepLockMessage(c,"c6");
   if(lock){ alert(lock); return; }
-  const vendorSel=document.getElementById("quoteVendor");
-  const amount=document.getElementById("quoteAmount");
-  const memo=document.getElementById("quoteMemo");
   const fileInput=document.getElementById("quoteFile");
   const file=fileInput && fileInput.files && fileInput.files[0];
   const error=quoteUploadAllowed(file);
@@ -2288,17 +2320,18 @@ async function uploadQuoteFile(){
     if(!promptCaseAutomationSetup()) return;
     if(!caseAutomationEndpoint()) return;
   }
-  const option=vendorSel && vendorSel.selectedOptions && vendorSel.selectedOptions[0];
-  const vendorId=vendorSel ? vendorSel.value : "";
-  const vendorName=(option && option.dataset.name) || (option && option.textContent) || "업체 미지정";
+  const vendor=quoteAutoVendor(c);
+  const vendorId=vendor.id || "";
+  const vendorName=vendor.name || "업체 확인 필요";
   const body=await readFileAsBase64(file);
   sendCaseAutomationRequest(caseAutomationEndpoint(), {
     action:"uploadQuoteFile",
     caseId:c.ticketNo||c.id||curCase,
     vendorId,
     vendorName,
-    amount:amount ? amount.value : "",
-    memo:memo ? memo.value : "",
+    vendor,
+    amount:"",
+    memo:"",
     file:{ fileName:file.name, mimeType:file.type || "", size:file.size, fileBody:body }
   });
   c.status=c.status||{};
@@ -2814,8 +2847,10 @@ document.getElementById("noticeBtn").addEventListener("click", openNoticePanel);
 document.getElementById("noticeBanner").addEventListener("click", openNoticePanel);
 
 /* ===== 업데이트 알림(What's New) — 새 버전 나오면 자동 팝업 ===== */
-const APP_VERSION = "4.18";
+const APP_VERSION = "4.20";
 const CHANGELOG = [
+  { v:"4.20", d:"2026-07-02", items:["⑥ 견적 파일 업로드 입력을 파일 선택 하나로 단순화","업체가 1곳이면 자동 연결, 여러 곳이면 파일 내용 추출 후 확인필요로 표시"] },
+  { v:"4.19", d:"2026-07-02", items:["⑥ 견적 업로드 시 원본 Drive 저장 후 브링 양식 견적서 자동 생성","견적 카드에 원본·브링 양식·XLSX 링크와 추출 상태 표시"] },
   { v:"4.18", d:"2026-07-01", items:["🔐 Google 로그인 추가 — 팀 전용 접근(허용된 구글 계정만 입장)","로그인해야 보드·케이스가 열리고, 데이터는 Firebase 규칙으로 잠금"] },
   { v:"4.17", d:"2026-07-01", items:["⑥ 견적 비교 단계에 업체별 견적 파일 업로드 패널 추가","업로드된 견적 파일을 Drive 링크 카드로 비교 표시"] },
   { v:"4.16", d:"2026-07-01", items:["④ 업체 후보 카드에서 견적 요청 대상 업체 선택 가능","⑤ 업체 견적 요청을 선택 업체 MMS 발송 확인창으로 전환"] },

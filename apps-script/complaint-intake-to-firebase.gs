@@ -10,6 +10,7 @@ const COMPLAINT_CONFIG = {
   SHEET_NAME: "설문지 응답 시트1",
   CONTRACT_DRIVE_FOLDER_ID: "1818MusPDfVV6znALkWDMGK99NXAlAj8g",
   QUOTE_DRIVE_FOLDER_ID: "",
+  QUOTE_TEMPLATE_SPREADSHEET_ID: "",
   FIREBASE_DATABASE_URL: "https://bring-fm-default-rtdb.asia-southeast1.firebasedatabase.app",
   FIREBASE_CASES_PATH: "cases",
   RESPONSE_SHEET_URL: "https://docs.google.com/spreadsheets/d/1HI6KzIMomL6vOUPs8zZDhXHktL1cWRDcg93lflsuojA/edit"
@@ -73,6 +74,14 @@ function authorizeDriveAccess() {
   Logger.log(files.hasNext()
     ? "Drive 권한 확인 완료: " + files.next().getName()
     : "Drive 권한 확인 완료: 폴더 안에 DOCX 파일이 아직 없습니다.");
+
+  const templateId = extractDriveId_(COMPLAINT_CONFIG.QUOTE_TEMPLATE_SPREADSHEET_ID);
+  if (templateId) {
+    const templateFile = DriveApp.getFileById(templateId);
+    Logger.log("견적서 템플릿 확인 완료: " + templateFile.getName() + " / " + templateFile.getUrl());
+  } else {
+    Logger.log("견적서 템플릿 미설정: QUOTE_TEMPLATE_SPREADSHEET_ID에 Google Sheets 템플릿 ID를 넣으면 ⑥에서 브링 양식 견적서를 자동 생성합니다.");
+  }
 }
 
 function onComplaintFormSubmit(e) {
@@ -475,28 +484,45 @@ function handleQuoteFileUpload_(payload) {
   }
 
   const vendorName = String(payload.vendorName || "업체 미지정").trim();
+  const vendor = normalizeQuoteVendor_(payload.vendor, vendorName);
   const uploadedAt = new Date().toISOString();
   const quoteId = "q" + Utilities.formatDate(new Date(), "Asia/Seoul", "yyyyMMddHHmmss") + "-" + Utilities.getUuid().slice(0, 8);
   const folder = getQuoteDriveFolder_(casePayload);
+  const originalFolder = getOrCreateChildFolder_(folder, "원본 견적서");
+  const bringFolder = getOrCreateChildFolder_(folder, "브링 양식 견적서");
   const savedName = makeQuoteDriveFileName_(casePayload, vendorName, filePayload.fileName);
   const bytes = Utilities.base64Decode(String(filePayload.fileBody || "").replace(/^data:[^,]+,/, ""));
   const mimeType = filePayload.mimeType || inferQuoteMimeType_(filePayload.fileName);
   const blob = Utilities.newBlob(bytes, mimeType, savedName);
-  const driveFile = folder.createFile(blob);
+  const driveFile = originalFolder.createFile(blob);
 
   const quote = {
     id: quoteId,
     vendorId: String(payload.vendorId || ""),
     vendorName: vendorName,
+    vendor: vendor,
     amount: String(payload.amount || "").trim(),
     memo: String(payload.memo || "").trim(),
     fileName: driveFile.getName(),
     fileUrl: driveFile.getUrl(),
     driveFileId: driveFile.getId(),
+    originalFileName: driveFile.getName(),
+    originalFileUrl: driveFile.getUrl(),
+    originalDriveFileId: driveFile.getId(),
     mimeType: mimeType,
     size: Number(filePayload.size || bytes.length),
     uploadedAt: uploadedAt
   };
+
+  const bringQuote = createBringQuoteFromUpload_(casePayload, quote, blob, payload, bringFolder);
+  Object.keys(bringQuote).forEach(key => {
+    quote[key] = bringQuote[key];
+  });
+  if (isGenericQuoteVendorName_(quote.vendorName) && quote.extractedVendorName) {
+    quote.vendorName = quote.extractedVendorName;
+    quote.vendor = quote.vendor || {};
+    quote.vendor.name = quote.extractedVendorName;
+  }
 
   casePayload.quoteFiles = casePayload.quoteFiles && typeof casePayload.quoteFiles === "object" && !Array.isArray(casePayload.quoteFiles)
     ? casePayload.quoteFiles
@@ -508,11 +534,16 @@ function handleQuoteFileUpload_(payload) {
   casePayload.note.c6 = makeQuoteComparisonNote_(casePayload);
   casePayload.log = Array.isArray(casePayload.log) ? casePayload.log : [];
   casePayload.log.unshift("견적 파일 업로드: " + vendorName + " / " + driveFile.getName());
+  if (quote.bringQuoteSheetUrl) {
+    casePayload.log.unshift("브링 양식 견적서 생성: " + vendorName + " / " + (quote.extractionStatus || "확인필요"));
+  } else {
+    casePayload.log.unshift("브링 양식 견적서 생성 보류: " + vendorName + " / " + (quote.extractionMemo || "템플릿 설정 확인 필요"));
+  }
   if (casePayload.log.length > 30) casePayload.log.length = 30;
   casePayload.updatedAt = uploadedAt;
   writeCaseToFirebase_(caseId, casePayload);
 
-  return { ok: true, caseId: caseId, quote: quote, message: "견적 파일 업로드 완료" };
+  return { ok: true, caseId: caseId, quote: quote, message: "견적 파일 업로드 및 브링 양식 처리 완료" };
 }
 
 function validateQuoteUpload_(filePayload) {
@@ -557,11 +588,9 @@ function updateQuoteUploadFailure_(caseId, casePayload, message) {
 
 function getQuoteDriveFolder_(casePayload) {
   const configured = extractDriveId_(COMPLAINT_CONFIG.QUOTE_DRIVE_FOLDER_ID);
-  if (configured) return DriveApp.getFolderById(configured);
-
-  const rootId = extractDriveId_(COMPLAINT_CONFIG.CONTRACT_DRIVE_FOLDER_ID);
-  const root = DriveApp.getFolderById(rootId);
-  const quoteRoot = getOrCreateChildFolder_(root, "견적서 회신");
+  const quoteRoot = configured
+    ? DriveApp.getFolderById(configured)
+    : getOrCreateChildFolder_(DriveApp.getFolderById(extractDriveId_(COMPLAINT_CONFIG.CONTRACT_DRIVE_FOLDER_ID)), "견적서 회신");
   const caseName = safeDriveName_((casePayload.ticketNo || casePayload.id || "case") + "_" + (casePayload.building || "건물"));
   return getOrCreateChildFolder_(quoteRoot, caseName);
 }
@@ -580,6 +609,440 @@ function makeQuoteDriveFileName_(casePayload, vendorName, originalName) {
     "견적"
   ].join("_");
   return safeDriveName_(base).slice(0, 120 - ext.length) + ext.toLowerCase();
+}
+
+function normalizeQuoteVendor_(vendor, fallbackName) {
+  vendor = vendor || {};
+  return {
+    id: String(vendor.id || ""),
+    category: String(vendor.category || ""),
+    no: String(vendor.no || ""),
+    type: String(vendor.type || ""),
+    name: String(vendor.name || fallbackName || "업체 미지정"),
+    address: String(vendor.address || ""),
+    phone: String(vendor.phone || ""),
+    email: String(vendor.email || vendor.mail || ""),
+    businessNo: String(vendor.businessNo || vendor.bizNo || vendor.no || ""),
+    ceo: String(vendor.ceo || vendor.owner || ""),
+    note: String(vendor.note || "")
+  };
+}
+
+function isGenericQuoteVendorName_(value) {
+  return !String(value || "").trim() || /업체\s*(미지정|확인|자동)/.test(String(value || ""));
+}
+
+function createBringQuoteFromUpload_(casePayload, quote, blob, payload, bringFolder) {
+  const templateId = extractDriveId_(COMPLAINT_CONFIG.QUOTE_TEMPLATE_SPREADSHEET_ID);
+  const extraction = extractQuoteDataFromUpload_(blob, quote.mimeType, quote.fileName, payload.amount, casePayload);
+  if (isGenericQuoteVendorName_(quote.vendorName) && extraction.vendorName) {
+    quote.vendorName = extraction.vendorName;
+    quote.vendor = quote.vendor || {};
+    quote.vendor.name = extraction.vendorName;
+  }
+  const result = {
+    extractionStatus: extraction.status,
+    extractionMemo: extraction.memo,
+    extractionTextPreview: extraction.textPreview,
+    amount: quote.amount || formatMoney_(extraction.totalAmount),
+    supplyAmount: extraction.supplyAmount || "",
+    vatAmount: extraction.vatAmount || "",
+    totalAmount: extraction.totalAmount || "",
+    extractedVendorName: extraction.vendorName || "",
+    extractedItems: extraction.items || []
+  };
+
+  if (!templateId) {
+    result.extractionStatus = extraction.status === "추출실패" ? "추출실패" : "확인필요";
+    result.extractionMemo = [result.extractionMemo, "QUOTE_TEMPLATE_SPREADSHEET_ID가 비어 있어 브링 양식 파일은 생성하지 않았습니다."].filter(Boolean).join(" / ");
+    result.bringQuoteStatus = "template_missing";
+    return result;
+  }
+
+  try {
+    const fileNameBase = safeDriveName_([
+      casePayload.ticketNo || casePayload.id || "case",
+      quote.vendorName || "업체",
+      "브링양식견적서"
+    ].join("_"));
+    const templateFile = DriveApp.getFileById(templateId);
+    const copied = templateFile.makeCopy(fileNameBase, bringFolder);
+    const ss = SpreadsheetApp.openById(copied.getId());
+    fillBringQuoteSpreadsheet_(ss, casePayload, quote, extraction);
+    SpreadsheetApp.flush();
+
+    result.bringQuoteStatus = "created";
+    result.bringQuoteSheetName = copied.getName();
+    result.bringQuoteSheetUrl = copied.getUrl();
+    result.bringQuoteSheetId = copied.getId();
+
+    const exported = exportBringQuoteXlsx_(copied.getId(), fileNameBase + ".xlsx", bringFolder);
+    if (exported.ok) {
+      result.bringQuoteXlsxName = exported.fileName;
+      result.bringQuoteXlsxUrl = exported.fileUrl;
+      result.bringQuoteXlsxId = exported.fileId;
+    } else {
+      result.extractionMemo = [result.extractionMemo, "XLSX 내보내기 실패: " + exported.message].filter(Boolean).join(" / ");
+    }
+  } catch (err) {
+    result.bringQuoteStatus = "template_failed";
+    result.extractionStatus = result.extractionStatus === "추출완료" ? "확인필요" : result.extractionStatus;
+    result.extractionMemo = [result.extractionMemo, "브링 양식 생성 실패: " + err.message].filter(Boolean).join(" / ");
+  }
+  return result;
+}
+
+function extractQuoteDataFromUpload_(blob, mimeType, fileName, fallbackAmount, casePayload) {
+  const textResult = extractQuoteText_(blob, mimeType, fileName);
+  const text = textResult.text || "";
+  const amounts = extractQuoteAmounts_(text, fallbackAmount);
+  const items = extractQuoteItems_(text, amounts, casePayload);
+  const vendorName = extractQuoteVendorName_(text);
+  let status = "확인필요";
+  if (!textResult.ok) {
+    status = "추출실패";
+  } else if (amounts.totalAmount && items.length && !amounts.usedFallbackOnly) {
+    status = "추출완료";
+  }
+
+  const memo = [
+    textResult.message || "",
+    amounts.usedFallbackOnly ? "파일에서 금액을 찾지 못해 입력 금액을 사용했습니다." : "",
+    !amounts.totalAmount ? "금액 확인 필요" : "",
+    items.length && items[0].fallback ? "품목 추출이 어려워 기본 품목 1줄로 생성했습니다." : ""
+  ].filter(Boolean).join(" / ");
+
+  return {
+    status: status,
+    memo: memo,
+    text: text,
+    textPreview: text.replace(/\s+/g, " ").trim().slice(0, 500),
+    vendorName: vendorName,
+    supplyAmount: amounts.supplyAmount || "",
+    vatAmount: amounts.vatAmount || "",
+    totalAmount: amounts.totalAmount || "",
+    items: items
+  };
+}
+
+function extractQuoteText_(blob, mimeType, fileName) {
+  const ext = String(fileName || "").split(".").pop().toLowerCase();
+  if (ext === "xlsx" || mimeType === "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet") {
+    const text = extractXlsxText_(blob);
+    return text
+      ? { ok: true, text: text, message: "XLSX 텍스트 추출 완료" }
+      : { ok: false, text: "", message: "XLSX 텍스트를 추출하지 못했습니다." };
+  }
+  if (ext === "docx" || mimeType === "application/vnd.openxmlformats-officedocument.wordprocessingml.document") {
+    const text = extractDocxTextFromBlob_(blob);
+    return text
+      ? { ok: true, text: text, message: "DOCX 텍스트 추출 완료" }
+      : { ok: false, text: "", message: "DOCX 텍스트를 추출하지 못했습니다." };
+  }
+  if (["pdf", "jpg", "jpeg", "png"].includes(ext) || /^image\//.test(mimeType) || mimeType === "application/pdf") {
+    return extractTextWithDriveOcr_(blob, fileName);
+  }
+  return { ok: false, text: "", message: "이 파일 형식은 자동 텍스트 추출을 지원하지 않아 원본만 저장했습니다." };
+}
+
+function extractXlsxText_(blob) {
+  try {
+    const blobs = Utilities.unzip(blob);
+    return blobs
+      .filter(item => /^xl\/(?:sharedStrings|worksheets\/sheet\d+)\.xml$/.test(item.getName()))
+      .map(item => decodeSpreadsheetXmlText_(item.getDataAsString("UTF-8")))
+      .filter(Boolean)
+      .join("\n");
+  } catch (err) {
+    Logger.log("XLSX 텍스트 추출 실패: " + err.message);
+    return "";
+  }
+}
+
+function extractDocxTextFromBlob_(blob) {
+  try {
+    const blobs = Utilities.unzip(blob);
+    const xml = blobs
+      .filter(item => /^word\/(?:document|header\d*|footer\d*)\.xml$/.test(item.getName()))
+      .map(item => item.getDataAsString("UTF-8"))
+      .join("\n");
+    return decodeXmlText_(xml);
+  } catch (err) {
+    Logger.log("업로드 DOCX 본문 추출 실패: " + err.message);
+    return "";
+  }
+}
+
+function decodeSpreadsheetXmlText_(xml) {
+  return String(xml || "")
+    .replace(/<row[^>]*>/g, "\n")
+    .replace(/<\/c>/g, " ")
+    .replace(/<[^>]+>/g, " ")
+    .replace(/&lt;/g, "<")
+    .replace(/&gt;/g, ">")
+    .replace(/&amp;/g, "&")
+    .replace(/&quot;/g, '"')
+    .replace(/&#39;/g, "'")
+    .replace(/[ \t]+/g, " ")
+    .replace(/\n\s+/g, "\n")
+    .replace(/\n{2,}/g, "\n")
+    .trim();
+}
+
+function extractTextWithDriveOcr_(blob, fileName) {
+  if (typeof Drive === "undefined" || !Drive.Files || !Drive.Files.create) {
+    return {
+      ok: false,
+      text: "",
+      message: "PDF/이미지 추출에는 Apps Script 고급 Google 서비스의 Drive API(v3)가 필요합니다."
+    };
+  }
+
+  let tempId = "";
+  try {
+    const resource = {
+      name: "BRING OCR " + safeDriveName_(fileName || "quote"),
+      mimeType: "application/vnd.google-apps.document"
+    };
+    const copiedBlob = blob.copyBlob().setName(fileName || "quote");
+    const created = Drive.Files.create(resource, copiedBlob, { fields: "id" });
+    tempId = created && created.id ? created.id : "";
+    if (!tempId) return { ok: false, text: "", message: "Drive OCR 임시 문서 ID를 받지 못했습니다." };
+    const text = DocumentApp.openById(tempId).getBody().getText();
+    return text
+      ? { ok: true, text: text, message: "Drive OCR 텍스트 추출 완료" }
+      : { ok: false, text: "", message: "Drive OCR 결과 텍스트가 비어 있습니다." };
+  } catch (err) {
+    return { ok: false, text: "", message: "Drive OCR 추출 실패: " + err.message };
+  } finally {
+    if (tempId) {
+      try { DriveApp.getFileById(tempId).setTrashed(true); } catch (err) {}
+    }
+  }
+}
+
+function extractQuoteAmounts_(text, fallbackAmount) {
+  let supply = extractAmountNearLabels_(text, ["공급가액", "공급가", "공급 금액"]);
+  let vat = extractAmountNearLabels_(text, ["부가세", "VAT", "세액"]);
+  let total = extractAmountNearLabels_(text, ["합계금액", "합계 금액", "견적금액", "견적 금액", "총액", "총 견적", "합계"]);
+  const fallback = parseMoneyValue_(fallbackAmount);
+  let usedFallbackOnly = false;
+
+  if (!total) {
+    const values = extractMoneyValues_(text);
+    if (values.length) total = values[values.length - 1];
+  }
+  if (!total && fallback) {
+    total = fallback;
+    usedFallbackOnly = true;
+  }
+  if (!supply && total && vat) supply = total - vat;
+  if (!vat && total && supply) vat = total - supply;
+  if (!supply && !vat && total) {
+    supply = Math.round(total / 1.1);
+    vat = total - supply;
+  }
+  if (!total && supply && vat) total = supply + vat;
+
+  return {
+    supplyAmount: supply || "",
+    vatAmount: vat || "",
+    totalAmount: total || "",
+    usedFallbackOnly: usedFallbackOnly
+  };
+}
+
+function extractAmountNearLabels_(text, labels) {
+  const source = String(text || "").replace(/\s+/g, " ");
+  for (const label of labels) {
+    const pattern = new RegExp(escapeRegex_(label) + "[^0-9]{0,30}((?:\\d{1,3}(?:,\\d{3})+|\\d+)(?:\\.\\d+)?\\s*(?:만원|만|원)?)", "i");
+    const match = source.match(pattern);
+    const value = match ? parseMoneyValue_(match[1]) : 0;
+    if (value) return value;
+  }
+  return 0;
+}
+
+function extractMoneyValues_(text) {
+  const matches = String(text || "").match(/(?:\d{1,3}(?:,\d{3})+|\d{4,})(?:\.\d+)?\s*(?:만원|만|원)?/g) || [];
+  return matches
+    .map(parseMoneyValue_)
+    .filter(value => value >= 1000 && value <= 300000000);
+}
+
+function extractQuoteVendorName_(text) {
+  const source = String(text || "").replace(/\s+/g, " ").trim();
+  if (!source) return "";
+  const patterns = [
+    /(?:상호|업체명|회사명|공급자|견적업체)\s*[:：]?\s*([가-힣A-Za-z0-9㈜주식회사\.\-\s]{2,30})/,
+    /([가-힣A-Za-z0-9㈜주식회사\.\-\s]{2,30})\s*(?:귀하|대표자|사업자번호)/
+  ];
+  for (const pattern of patterns) {
+    const match = source.match(pattern);
+    const name = match ? cleanExtractedVendorName_(match[1]) : "";
+    if (name) return name;
+  }
+  return "";
+}
+
+function cleanExtractedVendorName_(value) {
+  const name = String(value || "")
+    .replace(/^(주식회사|\(주\)|㈜)\s*/g, "")
+    .replace(/\s*(대표자|사업자번호|주소|전화|이메일|견적|공급자).*$/g, "")
+    .replace(/\s+/g, " ")
+    .trim();
+  if (!name || name.length < 2 || /견적서|합계|공급가액|부가세|주소|전화|이메일/.test(name)) return "";
+  return name.slice(0, 30);
+}
+
+function parseMoneyValue_(value) {
+  const raw = String(value || "").trim();
+  if (!raw) return 0;
+  const compact = raw.replace(/,/g, "").replace(/\s+/g, "");
+  const match = compact.match(/(\d+(?:\.\d+)?)/);
+  if (!match) return 0;
+  let amount = Number(match[1]);
+  if (!Number.isFinite(amount)) return 0;
+  if (/만원|만$/.test(compact)) amount *= 10000;
+  return Math.round(amount);
+}
+
+function extractQuoteItems_(text, amounts, casePayload) {
+  const lines = String(text || "")
+    .split(/\n| {2,}/)
+    .map(line => line.replace(/\s+/g, " ").trim())
+    .filter(Boolean);
+  const items = [];
+  for (const line of lines) {
+    if (items.length >= 12) break;
+    if (!/[가-힣A-Za-z]/.test(line)) continue;
+    if (/합계|총액|부가세|공급가액|사업자|대표자|전화|주소|이메일|견적\s*일자/i.test(line)) continue;
+    const moneyMatch = line.match(/(?:\d{1,3}(?:,\d{3})+|\d{4,})(?:\.\d+)?\s*(?:만원|만|원)?(?!.*(?:\d{1,3}(?:,\d{3})+|\d{4,}))/);
+    const total = moneyMatch ? parseMoneyValue_(moneyMatch[0]) : 0;
+    if (!total) continue;
+    const supply = Math.round(total / 1.1);
+    const vat = total - supply;
+    const product = line
+      .replace(moneyMatch[0], "")
+      .replace(/^\d+[\).\-]?\s*/, "")
+      .replace(/단가|금액|합계|원/g, "")
+      .trim();
+    if (product.length < 2) continue;
+    items.push({
+      product: product.slice(0, 80),
+      unit: "식",
+      unitPrice: supply,
+      vat: vat,
+      total: total,
+      note: "원본 자동추출"
+    });
+  }
+
+  if (items.length) return items;
+
+  const totalAmount = Number(amounts.totalAmount || 0);
+  const supplyAmount = Number(amounts.supplyAmount || (totalAmount ? Math.round(totalAmount / 1.1) : 0));
+  const vatAmount = Number(amounts.vatAmount || (totalAmount ? totalAmount - supplyAmount : 0));
+  return [{
+    product: [(casePayload.issueType || casePayload.vendorType || "현장"), "점검 및 공사 견적"].join(" "),
+    unit: "식",
+    unitPrice: supplyAmount || "",
+    vat: vatAmount || "",
+    total: totalAmount || "",
+    note: "추출 확인 필요",
+    fallback: true
+  }];
+}
+
+function fillBringQuoteSpreadsheet_(ss, casePayload, quote, extraction) {
+  const sheet = ss.getSheets()[0];
+  const vendor = quote.vendor || {};
+  const total = Number(extraction.totalAmount || parseMoneyValue_(quote.amount) || 0);
+  const supply = Number(extraction.supplyAmount || (total ? Math.round(total / 1.1) : 0));
+  const vat = Number(extraction.vatAmount || (total ? total - supply : 0));
+  const ticketNo = casePayload.ticketNo || casePayload.id || "";
+  const buildingLine = [
+    casePayload.building || "",
+    casePayload.room || "",
+    ticketNo ? "접수번호 " + ticketNo : ""
+  ].filter(Boolean).join(" / ");
+
+  setSheetValue_(sheet, "D5", Utilities.formatDate(new Date(), "Asia/Seoul", "yyyy-MM-dd"));
+  setSheetValue_(sheet, "D6", vendor.businessNo || "");
+  setSheetValue_(sheet, "D7", vendor.name || quote.vendorName || "");
+  setSheetValue_(sheet, "I7", vendor.ceo || "");
+  setSheetValue_(sheet, "D8", vendor.address || "");
+  setSheetValue_(sheet, "D9", vendor.type || vendor.category || "");
+  setSheetValue_(sheet, "I9", vendor.category || "");
+  setSheetValue_(sheet, "D10", vendor.phone || "");
+  setSheetValue_(sheet, "I10", vendor.email || "");
+  setSheetValue_(sheet, "D11", buildingLine || "케이스 정보 확인 필요");
+  setSheetNumber_(sheet, "D13", supply);
+  setSheetNumber_(sheet, "I13", vat);
+  setSheetNumber_(sheet, "D15", total);
+
+  for (let row = 18; row <= 29; row++) {
+    ["C", "E", "G", "H", "I", "K"].forEach(col => setSheetValue_(sheet, col + row, ""));
+  }
+  const items = extraction.items || [];
+  items.slice(0, 12).forEach((item, index) => {
+    const row = 18 + index;
+    setSheetValue_(sheet, "C" + row, item.product || "");
+    setSheetValue_(sheet, "E" + row, item.unit || "식");
+    setSheetNumber_(sheet, "G" + row, item.unitPrice || "");
+    setSheetNumber_(sheet, "H" + row, item.vat || "");
+    setSheetNumber_(sheet, "I" + row, item.total || "");
+    setSheetValue_(sheet, "K" + row, item.note || "");
+  });
+  setSheetValue_(sheet, "C30", items.length || 1);
+  setSheetNumber_(sheet, "E30", supply);
+  setSheetNumber_(sheet, "H30", vat);
+  setSheetNumber_(sheet, "J30", total);
+}
+
+function setSheetValue_(sheet, a1, value) {
+  try { sheet.getRange(a1).setValue(value); } catch (err) {}
+}
+
+function setSheetNumber_(sheet, a1, value) {
+  try {
+    const range = sheet.getRange(a1);
+    if (value === "" || value == null || Number(value) === 0) {
+      range.setValue(value === 0 ? 0 : "");
+    } else {
+      range.setValue(Number(value)).setNumberFormat("#,##0");
+    }
+  } catch (err) {}
+}
+
+function exportBringQuoteXlsx_(spreadsheetId, fileName, folder) {
+  try {
+    const mime = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
+    const url = "https://www.googleapis.com/drive/v3/files/" + encodeURIComponent(spreadsheetId) +
+      "/export?mimeType=" + encodeURIComponent(mime);
+    const response = UrlFetchApp.fetch(url, {
+      method: "get",
+      headers: { Authorization: "Bearer " + ScriptApp.getOAuthToken() },
+      muteHttpExceptions: true
+    });
+    const code = response.getResponseCode();
+    if (code < 200 || code >= 300) {
+      return { ok: false, message: "HTTP " + code + " / " + response.getContentText().slice(0, 160) };
+    }
+    const file = folder.createFile(response.getBlob().setName(fileName));
+    return { ok: true, fileName: file.getName(), fileUrl: file.getUrl(), fileId: file.getId() };
+  } catch (err) {
+    return { ok: false, message: err.message };
+  }
+}
+
+function formatMoney_(value) {
+  const num = Number(value || 0);
+  return num ? String(num) : "";
+}
+
+function escapeRegex_(value) {
+  return String(value || "").replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
 
 function safeDriveName_(value) {
@@ -611,8 +1074,10 @@ function makeQuoteComparisonNote_(casePayload) {
   quotes.forEach(quote => {
     lines.push("- " + [
       quote.vendorName || "업체 미지정",
-      quote.amount ? "금액 " + quote.amount : "금액 미입력",
-      quote.fileName || "파일명 없음"
+      quote.totalAmount ? "합계 " + quote.totalAmount + "원" : quote.amount ? "금액 " + quote.amount : "금액 미입력",
+      quote.fileName || "파일명 없음",
+      quote.extractionStatus ? "추출 " + quote.extractionStatus : "",
+      quote.bringQuoteSheetUrl ? "브링 양식 생성" : "브링 양식 확인 필요"
     ].join(" / "));
   });
   lines.push("");
