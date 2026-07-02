@@ -4204,6 +4204,354 @@ window.BRING_BUILDING_MAINTENANCE_DATA = {
           "precision": "road"
         }
       ]
+    },
+    {
+      "id": "sheet-112",
+      "no": 112,
+      "name": "귀뚜라미보일러 원주홈시스점",
+      "category": "냉난방·보일러",
+      "service": "보일러 설치, 보일러 AS",
+      "feature": "귀뚜라미 공식인증 대리점. 원주 홈시스점",
+      "operation": "033-732-5577",
+      "region": "강원 원주시 봉화로 99",
+      "address": "강원 원주시 봉화로 99",
+      "scale": "",
+      "url": "http://kiturami.nasoft.kr/",
+      "extraUrl": "",
+      "naverUrl": "https://naver.me/FW6Ged81",
+      "phone": "033-732-5577",
+      "rating": "리뷰 114",
+      "status": "사용자 추가",
+      "source": "google-sheet",
+      "sourceLabel": "원주 유지보수 직접추가",
+      "locations": [
+        {
+          "label": "단계동 봉화로",
+          "lat": 37.3533438,
+          "lng": 127.9279964,
+          "source": "naver-geocode",
+          "precision": "road"
+        }
+      ]
+    },
+    {
+      "id": "sheet-113",
+      "no": 113,
+      "name": "귀뚜라미보일러 강원지사",
+      "category": "냉난방·보일러",
+      "service": "보일러 설치, 보일러 AS",
+      "feature": "봉화서부로 소재 귀뚜라미보일러 강원지사",
+      "operation": "070-4713-9811",
+      "region": "강원 원주시 봉화서부로 14-3",
+      "address": "강원 원주시 봉화서부로 14-3",
+      "scale": "",
+      "url": "-",
+      "extraUrl": "",
+      "naverUrl": "https://naver.me/xzHyz3WD",
+      "phone": "070-4713-9811",
+      "rating": "리뷰 1",
+      "status": "사용자 추가",
+      "source": "google-sheet",
+      "sourceLabel": "원주 유지보수 직접추가",
+      "locations": [
+        {
+          "label": "단계동 봉화서부로",
+          "lat": 37.3569477,
+          "lng": 127.9204001,
+          "source": "naver-geocode",
+          "precision": "road"
+        }
+      ]
+    },
+    {
+      "id": "sheet-114",
+      "no": 114,
+      "name": "에어컨설치",
+      "category": "냉난방·에어컨",
+      "service": "에어컨 판매, 에어컨 설치, 에어컨 수리",
+      "feature": "단계초교 후문 앞 에어컨 설치 업체. 벽걸이·스탠드·천장형 설치 가격표 제공",
+      "operation": "",
+      "region": "강원 원주시 원문로110번길 21 1층",
+      "address": "강원 원주시 원문로110번길 21 1층",
+      "scale": "벽걸이 6-8평 기본설치비 100,000원, 스탠드 설치 120,000원부터",
+      "url": "-",
+      "extraUrl": "",
+      "naverUrl": "https://naver.me/5tJntRhS",
+      "phone": "",
+      "rating": "리뷰 91",
+      "status": "사용자 추가",
+      "source": "google-sheet",
+      "sourceLabel": "원주 유지보수 직접추가",
+      "locations": [
+        {
+          "label": "단계동 원문로110번길",
+          "lat": 37.3583817,
+          "lng": 127.9346061,
+          "source": "naver-geocode",
+          "precision": "road"
+        }
+      ]
+    },
+    {
+      "id": "sheet-115",
+      "no": 115,
+      "name": "대성보일러 원주서부대리점",
+      "category": "냉난방·보일러",
+      "service": "보일러 설치, 보일러 AS",
+      "feature": "대성쎌틱 에너시스 공식대리점. 원주 서부대리점",
+      "operation": "033-765-8577",
+      "region": "강원 원주시 우산로 276 마동 102호",
+      "address": "강원 원주시 우산로 276 마동 102호",
+      "scale": "",
+      "url": "https://blog.naver.com/hihyun3838",
+      "extraUrl": "",
+      "naverUrl": "https://naver.me/GprwyPf0",
+      "phone": "033-765-8577",
+      "rating": "평점 3.81 · 리뷰 81",
+      "status": "사용자 추가",
+      "source": "google-sheet",
+      "sourceLabel": "원주 유지보수 직접추가",
+      "locations": [
+        {
+          "label": "우산동 우산로",
+          "lat": 37.3833665,
+          "lng": 127.9396612,
+          "source": "naver-geocode",
+          "precision": "building"
+        }
+      ]
+    },
+    {
+      "id": "sheet-116",
+      "no": 116,
+      "name": "보일러할인마트",
+      "category": "냉난방·보일러",
+      "service": "보일러 판매, 보일러 설치",
+      "feature": "귀뚜라미, 린나이, 대성 보일러 취급. 북원로 소재 보일러 업체",
+      "operation": "0507-1326-4433",
+      "region": "강원 원주시 북원로 2699-1 1층 1호",
+      "address": "강원 원주시 북원로 2699-1 1층 1호",
+      "scale": "",
+      "url": "-",
+      "extraUrl": "",
+      "naverUrl": "https://naver.me/FtGbKo9B",
+      "phone": "0507-1326-4433",
+      "rating": "",
+      "status": "사용자 추가",
+      "source": "google-sheet",
+      "sourceLabel": "원주 유지보수 직접추가",
+      "locations": [
+        {
+          "label": "가현동 북원로",
+          "lat": 37.3845638,
+          "lng": 127.9472948,
+          "source": "naver-geocode",
+          "precision": "road"
+        }
+      ]
+    },
+    {
+      "id": "sheet-117",
+      "no": 117,
+      "name": "투투에어컨",
+      "category": "냉난방·에어컨",
+      "service": "에어컨 설치, 에어컨 수리",
+      "feature": "상지대길 소재 에어컨 업체. 에어컨 설치와 AS 상담 가능",
+      "operation": "0507-1344-2678",
+      "region": "강원 원주시 상지대길 66-65",
+      "address": "강원 원주시 상지대길 66-65",
+      "scale": "",
+      "url": "-",
+      "extraUrl": "",
+      "naverUrl": "https://naver.me/FSSj43jZ",
+      "phone": "0507-1344-2678",
+      "rating": "리뷰 4",
+      "status": "사용자 추가",
+      "source": "google-sheet",
+      "sourceLabel": "원주 유지보수 직접추가",
+      "locations": [
+        {
+          "label": "우산동 상지대길",
+          "lat": 37.3716607,
+          "lng": 127.9350819,
+          "source": "naver-geocode",
+          "precision": "building"
+        }
+      ]
+    },
+    {
+      "id": "sheet-118",
+      "no": 118,
+      "name": "경동나비엔 서원주대리점",
+      "category": "냉난방·보일러",
+      "service": "보일러 설치, 보일러 AS",
+      "feature": "경동나비엔 공식인증 대리점. 서원주대리점",
+      "operation": "033-765-6739",
+      "region": "강원 원주시 현충로 210 1층",
+      "address": "강원 원주시 현충로 210 1층",
+      "scale": "상품 구성 및 월 구독료 2,900원",
+      "url": "-",
+      "extraUrl": "",
+      "naverUrl": "https://naver.me/FG38Oopg",
+      "phone": "033-765-6739",
+      "rating": "리뷰 1",
+      "status": "사용자 추가",
+      "source": "google-sheet",
+      "sourceLabel": "원주 유지보수 직접추가",
+      "locations": [
+        {
+          "label": "태장동 현충로",
+          "lat": 37.3725743,
+          "lng": 127.9498376,
+          "source": "naver-geocode",
+          "precision": "road"
+        }
+      ]
+    },
+    {
+      "id": "sheet-119",
+      "no": 119,
+      "name": "936에어컨",
+      "category": "냉난방·에어컨",
+      "service": "에어컨 이전 설치, 에어컨 판매, 에어컨 설치, 냉매 가스 충전",
+      "feature": "북원로2475번길 소재 에어컨 전문 업체. 24시간 영업",
+      "operation": "0507-1447-0165",
+      "region": "강원 원주시 북원로2475번길 86-5 1층",
+      "address": "강원 원주시 북원로2475번길 86-5 1층",
+      "scale": "",
+      "url": "-",
+      "extraUrl": "",
+      "naverUrl": "https://naver.me/5vc0IdYZ",
+      "phone": "0507-1447-0165",
+      "rating": "리뷰 2",
+      "status": "사용자 추가",
+      "source": "google-sheet",
+      "sourceLabel": "원주 유지보수 직접추가",
+      "locations": [
+        {
+          "label": "우산동 북원로2475번길",
+          "lat": 37.3666562,
+          "lng": 127.9334497,
+          "source": "naver-geocode",
+          "precision": "road"
+        }
+      ]
+    },
+    {
+      "id": "sheet-120",
+      "no": 120,
+      "name": "에어컨설치",
+      "category": "냉난방·에어컨",
+      "service": "벽걸이 에어컨 설치, 스탠드 에어컨 설치, 투인원 에어컨 설치, 천장형 에어컨 설치, 냉난방기 설치",
+      "feature": "우무개로 소재 24시간 에어컨 설치 업체",
+      "operation": "0507-1363-3298",
+      "region": "강원 원주시 우무개로 66 에어컨설치",
+      "address": "강원 원주시 우무개로 66",
+      "scale": "가격표 있음",
+      "url": "-",
+      "extraUrl": "",
+      "naverUrl": "https://naver.me/xBw85oLc",
+      "phone": "0507-1363-3298",
+      "rating": "리뷰 19",
+      "status": "사용자 추가",
+      "source": "google-sheet",
+      "sourceLabel": "원주 유지보수 직접추가",
+      "locations": [
+        {
+          "label": "우산동 우무개로",
+          "lat": 37.3653827,
+          "lng": 127.9345609,
+          "source": "naver-geocode",
+          "precision": "road"
+        }
+      ]
+    },
+    {
+      "id": "sheet-121",
+      "no": 121,
+      "name": "강남심야보일러&에어렉스",
+      "category": "냉난방·보일러",
+      "service": "심야보일러, 자동전기, 전기패널, 온돌 난방",
+      "feature": "북원로 소재 보일러 및 에어렉스 난방 업체",
+      "operation": "033-731-0055",
+      "region": "강원 원주시 북원로 2451-7",
+      "address": "강원 원주시 북원로 2451-7",
+      "scale": "",
+      "url": "-",
+      "extraUrl": "",
+      "naverUrl": "https://naver.me/Gq9Y9jRN",
+      "phone": "033-731-0055",
+      "rating": "리뷰 1",
+      "status": "사용자 추가",
+      "source": "google-sheet",
+      "sourceLabel": "원주 유지보수 직접추가",
+      "locations": [
+        {
+          "label": "우산동 북원로",
+          "lat": 37.3631304,
+          "lng": 127.9390147,
+          "source": "naver-geocode",
+          "precision": "road"
+        }
+      ]
+    },
+    {
+      "id": "sheet-122",
+      "no": 122,
+      "name": "신흥사설비",
+      "category": "냉난방·보일러",
+      "service": "누수탐지, 온수기 수리, 온수기 판매, 심야전기보일러 수리, 심야전기보일러 설치",
+      "feature": "원일로 소재 설비 업체. 보일러와 온수기, 누수탐지 서비스 제공",
+      "operation": "",
+      "region": "강원 원주시 원일로 288",
+      "address": "강원 원주시 원일로 288",
+      "scale": "변동",
+      "url": "http://ok114.co.kr/0339007070",
+      "extraUrl": "",
+      "naverUrl": "https://naver.me/5Z1A5RwT",
+      "phone": "",
+      "rating": "",
+      "status": "사용자 추가",
+      "source": "google-sheet",
+      "sourceLabel": "원주 유지보수 직접추가",
+      "locations": [
+        {
+          "label": "학성동 원일로",
+          "lat": 37.3599654,
+          "lng": 127.9410455,
+          "source": "naver-geocode",
+          "precision": "building"
+        }
+      ]
+    },
+    {
+      "id": "sheet-123",
+      "no": 123,
+      "name": "캐리어 원주총판",
+      "category": "냉난방·에어컨",
+      "service": "냉난방기 판매, 냉난방기 설치, 에어컨 설치",
+      "feature": "캐리어 원주총판. 현충로 소재 냉난방기 업체",
+      "operation": "0507-1392-7680",
+      "region": "강원 원주시 현충로 72",
+      "address": "강원 원주시 현충로 72",
+      "scale": "",
+      "url": "https://blog.naver.com/carrierwonju",
+      "extraUrl": "",
+      "naverUrl": "https://naver.me/x7elgcgX",
+      "phone": "0507-1392-7680",
+      "rating": "",
+      "status": "사용자 추가",
+      "source": "google-sheet",
+      "sourceLabel": "원주 유지보수 직접추가",
+      "locations": [
+        {
+          "label": "태장동 현충로",
+          "lat": 37.3623513,
+          "lng": 127.9547712,
+          "source": "naver-geocode",
+          "precision": "road"
+        }
+      ]
     }
   ],
   "categories": [
@@ -4233,9 +4581,9 @@ window.BRING_BUILDING_MAINTENANCE_DATA = {
   ],
   "summary": {
     "excel": 49,
-    "googleSheet": 111,
-    "total": 160,
-    "mapped": 130,
+    "googleSheet": 123,
+    "total": 172,
+    "mapped": 142,
     "geocoded": 0
   }
 };
