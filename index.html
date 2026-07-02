@@ -2377,13 +2377,14 @@ function renderQuoteUploadPanel(c, stepStatus){
     ${cards}
   </div>`;
 }
+const DEFAULT_CASE_AUTOMATION_ENDPOINT = "https://script.google.com/macros/s/AKfycbxGAdtEDoNifxkM-e_Jm7dBkCnjM4oPJqz8RxZXoMoSKod5M_m9Yj2b11-nI97zmfd6Jw/exec";
 function setCaseAutomationEndpoint(url){
   settings.caseAutomationEndpoint=url;
   if(caseSettingsRef){ caseSettingsRef.child("caseAutomationEndpoint").set(url); }
   else { saveSettingsLocal(); }
 }
 function caseAutomationEndpoint(){
-  return settings.caseAutomationEndpoint || settings.vendorSmsEndpoint || "";
+  return settings.caseAutomationEndpoint || settings.vendorSmsEndpoint || DEFAULT_CASE_AUTOMATION_ENDPOINT;
 }
 function promptCaseAutomationSetup(){
   const url = prompt("견적 파일 업로드를 하려면 Apps Script 웹앱 URL이 필요해요.\n⑤ MMS 발송에 쓰던 웹앱 URL과 같은 주소를 넣으면 됩니다:", caseAutomationEndpoint());
@@ -2970,8 +2971,9 @@ document.getElementById("noticeBtn").addEventListener("click", openNoticePanel);
 document.getElementById("noticeBanner").addEventListener("click", openNoticePanel);
 
 /* ===== 업데이트 알림(What's New) — 새 버전 나오면 자동 팝업 ===== */
-const APP_VERSION = "4.26";
+const APP_VERSION = "4.27";
 const CHANGELOG = [
+  { v:"4.27", d:"2026-07-02", items:["⑥ 견적 업로드 Apps Script URL 기본 연결","URL 입력창 없이 업로드 버튼으로 바로 Drive 저장 요청"] },
   { v:"4.26", d:"2026-07-02", items:["⑥ 견적 파일을 하나씩 선택하거나 드래그해도 목록에 누적","업로드 전 파일별 쓰레기통 버튼으로 잘못 넣은 파일 제거"] },
   { v:"4.25", d:"2026-07-02", items:["⑥ 견적 파일 업로드에 드래그 앤 드롭 추가","드롭한 파일도 파일명 목록에 표시하고 기존 업로드 흐름으로 처리"] },
   { v:"4.24", d:"2026-07-02", items:["⑥ 견적 파일 선택 후 파일명을 한 줄씩 목록으로 표시","여러 파일 선택 시 '파일 3개' 대신 실제 파일명을 바로 확인"] },
