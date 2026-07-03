@@ -1157,9 +1157,13 @@ function analyzeQuoteWithMineruNet_(blob, mimeType, fileName, casePayload, analy
       };
     }
 
+    const uploadBlob = blob.copyBlob()
+      .setContentType("application/octet-stream")
+      .setName(fileName || "quote");
     const putResponse = UrlFetchApp.fetch(uploadUrl, {
       method: "put",
-      payload: blob.getBytes(),
+      contentType: "application/octet-stream",
+      payload: uploadBlob,
       muteHttpExceptions: true
     });
     const putCode = putResponse.getResponseCode();
@@ -1303,6 +1307,14 @@ function analyzeQuoteWithMinerU_(blob, mimeType, fileName, casePayload, analysis
       skipped: true,
       statusCode: "mineru_not_configured",
       message: "MinerU API URL 미설정"
+    };
+  }
+  if (isMineruNetEndpoint_(config.apiUrl) && ext === "hwpx") {
+    return {
+      ok: false,
+      skipped: true,
+      statusCode: "mineru_not_supported",
+      message: "mineru.net API는 HWPX 직접 업로드를 지원하지 않아 HWPX 텍스트 추출로 처리합니다."
     };
   }
   if (isMineruNetEndpoint_(config.apiUrl)) {
@@ -1693,12 +1705,24 @@ function extractMoneyCandidates_(text) {
 function isNonMoneyContext_(raw, context, value) {
   const compactRaw = String(raw || "").replace(/\s+/g, "");
   const compactContext = String(context || "").replace(/\s+/g, "");
+  if (isLikelyYmdDateNumber_(compactRaw)) return true;
   if (/^\d{4}[.\-\/]\d{1,2}[.\-\/]\d{1,2}$/.test(compactRaw)) return true;
   if (/^\d{6,8}$/.test(compactRaw) && /일자|날짜|작성|발행|견적일/.test(compactContext)) return true;
   if (/BR-\d{4}-\d{4}/i.test(compactContext)) return true;
   if (value < 10000 && !/원|만원|만|금액|합계|견적|공급|부가|세액|총액|청구/.test(compactContext)) return true;
   if (/수량|규격|호실|전화|연락처|사업자|등록번호|팩스|우편|페이지|No\.?/i.test(compactContext) && !/원|만원|만/.test(compactRaw)) return true;
   return false;
+}
+
+function isLikelyYmdDateNumber_(value) {
+  const raw = String(value || "").replace(/[^\d]/g, "");
+  if (!/^20\d{6}$/.test(raw)) return false;
+  const year = Number(raw.slice(0, 4));
+  const month = Number(raw.slice(4, 6));
+  const day = Number(raw.slice(6, 8));
+  if (year < 2020 || year > 2099 || month < 1 || month > 12 || day < 1 || day > 31) return false;
+  const date = new Date(year, month - 1, day);
+  return date.getFullYear() === year && date.getMonth() === month - 1 && date.getDate() === day;
 }
 
 function extractQuoteVendorName_(text) {

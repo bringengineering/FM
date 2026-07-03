@@ -2750,7 +2750,6 @@ function removeQuoteFileFromCase(quoteId){
   const c=cases[curCase];
   if(!c || !quoteId || !c.quoteFiles || !c.quoteFiles[quoteId]) return;
   const q=c.quoteFiles[quoteId];
-  if(!confirm("이 견적 파일을 케이스 목록에서만 제거할까요?\nDrive 원본 파일은 삭제하지 않습니다.")) return;
   delete c.quoteFiles[quoteId];
   c.note=c.note||{};
   if(/^견적 파일 목록에서 제거했습니다/.test(String(c.note.c6||""))) c.note.c6="";
@@ -3260,8 +3259,9 @@ document.getElementById("noticeBtn").addEventListener("click", openNoticePanel);
 document.getElementById("noticeBanner").addEventListener("click", openNoticePanel);
 
 /* ===== 업데이트 알림(What's New) — 새 버전 나오면 자동 팝업 ===== */
-const APP_VERSION = "4.35";
+const APP_VERSION = "4.36";
 const CHANGELOG = [
+  { v:"4.36", d:"2026-07-03", items:["⑥ 견적 파일 카드의 목록에서 제거 버튼을 확인창 없이 바로 처리"] },
   { v:"4.35", d:"2026-07-02", items:["⑥ 견적 업로드에 MinerU 문서 분석 결과 표시 추가","견적 카드에서 분석 Markdown/JSON 링크와 MinerU 분석 상태 배지 확인"] },
   { v:"4.34", d:"2026-07-02", items:["⑥ 업체 견적 업로드 후 생성되는 브링 양식을 초안으로 표시","합계금액 재작성 후 브링 양식 확정 상태를 별도 표시"] },
   { v:"4.33", d:"2026-07-02", items:["⑥ 견적 카드에서 합계금액 확인/수정 후 브링 양식 재작성 요청","확정 합계금액을 카드·비교 메모·브링 양식에 우선 반영"] },
