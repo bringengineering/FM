@@ -623,6 +623,11 @@ function applyQuoteAmountState_(quote) {
     quote.amountSource = "admin_confirmed";
     return quote;
   }
+  if (Number(quote.bringQuoteTotalAmount || 0) || quote.amountSource === "bring_sheet") {
+    quote.amountStatus = "확인필요";
+    quote.amountSource = "bring_sheet";
+    return quote;
+  }
   if (Number(quote.totalAmount || 0)) {
     quote.amountStatus = "확인필요";
     quote.amountSource = "auto_extracted";
@@ -689,6 +694,13 @@ function handleConfirmQuoteAmount_(payload) {
     const ss = SpreadsheetApp.openById(sheetId);
     fillBringQuoteSpreadsheet_(ss, casePayload, quote, extraction);
     SpreadsheetApp.flush();
+    const sheetAmounts = readBringQuoteAmounts_(ss);
+    if (sheetAmounts.totalAmount && !Number(quote.confirmedTotalAmount || 0)) {
+      quote.bringQuoteTotalAmount = sheetAmounts.totalAmount;
+      quote.bringQuoteSupplyAmount = sheetAmounts.supplyAmount || "";
+      quote.bringQuoteVatAmount = sheetAmounts.vatAmount || "";
+      quote.bringQuoteAmountSyncedAt = confirmedAt;
+    }
 
     quote.bringQuoteStatus = "confirmed_rewritten";
     quote.bringQuoteType = "confirmed";
@@ -948,12 +960,26 @@ function createBringQuoteFromUpload_(casePayload, quote, blob, payload, bringFol
     const ss = SpreadsheetApp.openById(copied.getId());
     fillBringQuoteSpreadsheet_(ss, casePayload, quote, extraction);
     SpreadsheetApp.flush();
+    const sheetAmounts = readBringQuoteAmounts_(ss);
 
     result.bringQuoteStatus = "draft_created";
     result.bringQuoteType = "draft";
     result.bringQuoteSheetName = copied.getName();
     result.bringQuoteSheetUrl = copied.getUrl();
     result.bringQuoteSheetId = copied.getId();
+    if (sheetAmounts.totalAmount) {
+      result.totalAmount = sheetAmounts.totalAmount;
+      result.supplyAmount = sheetAmounts.supplyAmount || "";
+      result.vatAmount = sheetAmounts.vatAmount || "";
+      result.bringQuoteTotalAmount = sheetAmounts.totalAmount;
+      result.bringQuoteSupplyAmount = sheetAmounts.supplyAmount || "";
+      result.bringQuoteVatAmount = sheetAmounts.vatAmount || "";
+      result.amount = formatMoney_(sheetAmounts.totalAmount);
+      result.amountSource = "bring_sheet";
+      result.amountStatus = "확인필요";
+      result.bringQuoteAmountSyncedAt = new Date().toISOString();
+      result.extractionMemo = removeQuoteMemo_(result.extractionMemo, "금액 확인 필요");
+    }
 
     const exported = exportBringQuoteXlsx_(copied.getId(), fileNameBase + ".xlsx", bringFolder);
     if (exported.ok) {
@@ -1855,6 +1881,38 @@ function fillBringQuoteSpreadsheet_(ss, casePayload, quote, extraction) {
   setSheetNumber_(sheet, "J30", total);
 }
 
+function readBringQuoteAmounts_(ss) {
+  const sheet = ss.getSheets()[0];
+  const supply = readBringSheetMoney_(sheet, "D13") || readBringSheetMoney_(sheet, "E30");
+  const vat = readBringSheetMoney_(sheet, "I13") || readBringSheetMoney_(sheet, "H30");
+  let total = readBringSheetMoney_(sheet, "D15") || readBringSheetMoney_(sheet, "J30");
+  if (!total && supply && vat) total = normalizeBringSheetMoney_(supply + vat);
+  if (!total) return { supplyAmount: "", vatAmount: "", totalAmount: "" };
+  const finalSupply = supply || Math.round(total / 1.1);
+  const finalVat = vat || (total - finalSupply);
+  return {
+    supplyAmount: finalSupply,
+    vatAmount: finalVat,
+    totalAmount: total
+  };
+}
+
+function readBringSheetMoney_(sheet, a1) {
+  try {
+    const range = sheet.getRange(a1);
+    return normalizeBringSheetMoney_(range.getDisplayValue()) || normalizeBringSheetMoney_(range.getValue());
+  } catch (err) {
+    return 0;
+  }
+}
+
+function normalizeBringSheetMoney_(value) {
+  const amount = parseMoneyValue_(value);
+  if (!amount || amount < 1000) return 0;
+  if (isLikelyYmdDateNumber_(String(amount))) return 0;
+  return amount;
+}
+
 function setSheetValue_(sheet, a1, value) {
   try { sheet.getRange(a1).setValue(value); } catch (err) {}
 }
@@ -1935,6 +1993,7 @@ function makeQuoteComparisonNote_(casePayload) {
   const lines = ["[견적 비교]", "업로드 견적: " + quotes.length + "건", ""];
   quotes.forEach(quote => {
     const confirmed = Number(quote.confirmedTotalAmount || 0);
+    const bringSheetAmount = Number(quote.bringQuoteTotalAmount || 0);
     const extracted = Number(quote.totalAmount || 0);
     const bringLabel = quote.bringQuoteType === "confirmed" || quote.bringQuoteStatus === "confirmed_rewritten"
       ? "브링 양식 확정"
@@ -1943,7 +2002,9 @@ function makeQuoteComparisonNote_(casePayload) {
         : "브링 양식 확인 필요";
     const amountLabel = confirmed
       ? "확정합계 " + formatCurrencyText_(confirmed)
-      : extracted
+      : bringSheetAmount
+        ? "브링양식 " + formatCurrencyText_(bringSheetAmount)
+        : extracted
         ? "자동추출 " + formatCurrencyText_(extracted)
         : quote.amount ? "금액 " + quote.amount : "금액 미입력";
     lines.push("- " + [

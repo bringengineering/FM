@@ -368,6 +368,7 @@
   .quote-analysis-status.basic{ color:#315fce; background:#eef4ff; border-color:#c5d4ff; }
   .quote-amount-source{ justify-self:start; display:inline-flex; align-items:center; min-height:20px; border-radius:999px; padding:2px 7px; font-size:11px; font-weight:900; border:1px solid #d7dfec; color:#52606d; background:#fff; }
   .quote-amount-source.confirmed{ color:#116329; background:#eaf7ee; border-color:#b9e6c5; }
+  .quote-amount-source.bring{ color:#0c6b76; background:#e7f8fb; border-color:#aee4ec; }
   .quote-amount-source.auto{ color:#315fce; background:#eef4ff; border-color:#c5d4ff; }
   .quote-amount-source.empty{ color:#8a5a00; background:#fff8e1; border-color:#ffe08a; }
   .quote-confirm{ display:grid; grid-template-columns:minmax(0,1fr) auto; gap:6px; align-items:end; margin-top:2px; }
@@ -2314,6 +2315,7 @@ function quoteAmountNumber(value){
 }
 function quoteBestAmount(q){
   return quoteAmountNumber(q&&q.confirmedTotalAmount) ||
+    quoteAmountNumber(q&&q.bringQuoteTotalAmount) ||
     quoteAmountNumber(q&&q.totalAmount) ||
     quoteAmountNumber(q&&q.amount);
 }
@@ -2327,11 +2329,13 @@ function quoteAmountInputValue(q){
 }
 function quoteAmountSourceLabel(q){
   if(quoteAmountNumber(q&&q.confirmedTotalAmount)) return "금액 확정";
+  if(quoteAmountNumber(q&&q.bringQuoteTotalAmount) || String(q&&q.amountSource||"")==="bring_sheet") return "브링 양식 기준";
   if(quoteAmountNumber(q&&q.totalAmount)) return "자동 추출";
   return "금액 확인 필요";
 }
 function quoteAmountSourceClass(q){
   if(quoteAmountNumber(q&&q.confirmedTotalAmount)) return "confirmed";
+  if(quoteAmountNumber(q&&q.bringQuoteTotalAmount) || String(q&&q.amountSource||"")==="bring_sheet") return "bring";
   if(quoteAmountNumber(q&&q.totalAmount)) return "auto";
   return "empty";
 }
@@ -3259,8 +3263,9 @@ document.getElementById("noticeBtn").addEventListener("click", openNoticePanel);
 document.getElementById("noticeBanner").addEventListener("click", openNoticePanel);
 
 /* ===== 업데이트 알림(What's New) — 새 버전 나오면 자동 팝업 ===== */
-const APP_VERSION = "4.37";
+const APP_VERSION = "4.38";
 const CHANGELOG = [
+  { v:"4.38", d:"2026-07-06", items:["⑥ 견적 카드 금액을 브링 양식 셀 기준으로 우선 표시","금액 출처 배지에 브링 양식 기준 표시 추가"] },
   { v:"4.37", d:"2026-07-06", items:["⑥ 견적 파일 목록 제거 확인창 제거 변경을 다시 배포용 버전으로 반영"] },
   { v:"4.36", d:"2026-07-03", items:["⑥ 견적 파일 카드의 목록에서 제거 버튼을 확인창 없이 바로 처리"] },
   { v:"4.35", d:"2026-07-02", items:["⑥ 견적 업로드에 MinerU 문서 분석 결과 표시 추가","견적 카드에서 분석 Markdown/JSON 링크와 MinerU 분석 상태 배지 확인"] },
