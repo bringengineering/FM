@@ -10,6 +10,7 @@ const COMPLAINT_CONFIG = {
   SHEET_NAME: "설문지 응답 시트1",
   CONTRACT_DRIVE_FOLDER_ID: "1818MusPDfVV6znALkWDMGK99NXAlAj8g",
   QUOTE_DRIVE_FOLDER_ID: "11QX5F-KRQvvYNc0hso3QACuMS7lMZw4r",
+  BUSINESS_REGISTRATION_DRIVE_FOLDER_ID: "",
   QUOTE_TEMPLATE_SPREADSHEET_ID: "1JXP8NEaU0I_96ZMAZFn2GlYQHkLsbhSJCawsdMgqH7w",
   FIREBASE_DATABASE_URL: "https://bring-fm-default-rtdb.asia-southeast1.firebasedatabase.app",
   FIREBASE_CASES_PATH: "cases",
@@ -77,9 +78,14 @@ function authorizeDriveAccess() {
 
   const templateId = extractDriveId_(COMPLAINT_CONFIG.QUOTE_TEMPLATE_SPREADSHEET_ID);
   const quoteFolderId = extractDriveId_(COMPLAINT_CONFIG.QUOTE_DRIVE_FOLDER_ID);
+  const businessFolderId = extractDriveId_(COMPLAINT_CONFIG.BUSINESS_REGISTRATION_DRIVE_FOLDER_ID);
   if (quoteFolderId) {
     const quoteFolder = DriveApp.getFolderById(quoteFolderId);
     Logger.log("견적서 저장 폴더 확인 완료: " + quoteFolder.getName() + " / https://drive.google.com/drive/folders/" + quoteFolderId);
+    const businessRoot = businessFolderId
+      ? DriveApp.getFolderById(businessFolderId)
+      : getOrCreateChildFolder_(quoteFolder, "사업자등록증");
+    Logger.log("사업자등록증 저장 폴더 확인 완료: " + businessRoot.getName() + " / " + businessRoot.getUrl());
   }
 
   if (templateId) {
@@ -641,8 +647,8 @@ function handleBusinessRegistrationUpload_(payload) {
 
   const uploadedAt = new Date().toISOString();
   const docId = "br" + Utilities.formatDate(new Date(), "Asia/Seoul", "yyyyMMddHHmmss") + "-" + Utilities.getUuid().slice(0, 8);
-  const folder = getQuoteDriveFolder_(casePayload);
-  const businessFolder = getOrCreateChildFolder_(folder, "사업자등록증");
+  const folder = getBusinessRegistrationDriveFolder_(casePayload);
+  const businessFolder = getOrCreateChildFolder_(folder, "원본 사업자등록증");
   const analysisFolder = getOrCreateChildFolder_(folder, "문서 분석 결과");
   const bytes = Utilities.base64Decode(String(filePayload.fileBody || "").replace(/^data:[^,]+,/, ""));
   const mimeType = filePayload.mimeType || inferQuoteMimeType_(filePayload.fileName);
@@ -967,11 +973,26 @@ function updateBusinessRegistrationUploadFailure_(caseId, casePayload, message) 
 }
 
 function getQuoteDriveFolder_(casePayload) {
+  const quoteRoot = getQuoteDriveRootFolder_();
+  return getOrCreateChildFolder_(quoteRoot, makeCaseDriveFolderName_(casePayload));
+}
+
+function getBusinessRegistrationDriveFolder_(casePayload) {
+  const configured = extractDriveId_(COMPLAINT_CONFIG.BUSINESS_REGISTRATION_DRIVE_FOLDER_ID);
+  const root = configured
+    ? DriveApp.getFolderById(configured)
+    : getOrCreateChildFolder_(getQuoteDriveRootFolder_(), "사업자등록증");
+  return getOrCreateChildFolder_(root, makeCaseDriveFolderName_(casePayload));
+}
+
+function getQuoteDriveRootFolder_() {
   const configured = extractDriveId_(COMPLAINT_CONFIG.QUOTE_DRIVE_FOLDER_ID);
   if (!configured) throw new Error("QUOTE_DRIVE_FOLDER_ID가 비어 있어 견적서 저장 폴더를 찾을 수 없습니다.");
-  const quoteRoot = DriveApp.getFolderById(configured);
-  const caseName = safeDriveName_((casePayload.ticketNo || casePayload.id || "case") + "_" + (casePayload.building || "건물"));
-  return getOrCreateChildFolder_(quoteRoot, caseName);
+  return DriveApp.getFolderById(configured);
+}
+
+function makeCaseDriveFolderName_(casePayload) {
+  return safeDriveName_((casePayload.ticketNo || casePayload.id || "case") + "_" + (casePayload.building || "건물"));
 }
 
 function getOrCreateChildFolder_(parent, name) {
