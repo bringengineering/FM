@@ -1678,13 +1678,15 @@ function getMineruConfig_() {
   const apiUrl = String(props.getProperty("MINERU_API_URL") || (apiKey ? "https://mineru.net" : "")).trim().replace(/\/$/, "");
   const modelVersion = String(props.getProperty("MINERU_MODEL_VERSION") || "vlm").trim();
   const language = String(props.getProperty("MINERU_LANGUAGE") || "korean").trim();
-  const maxWaitSeconds = Number(props.getProperty("MINERU_MAX_WAIT_SECONDS") || 75);
+  const syncEnabled = String(props.getProperty("MINERU_SYNC_ENABLED") || "").toLowerCase() === "true";
+  const maxWaitSeconds = Number(props.getProperty("MINERU_MAX_WAIT_SECONDS") || 20);
   return {
     apiUrl: apiUrl,
     apiKey: apiKey,
     modelVersion: modelVersion,
     language: language,
     maxWaitSeconds: maxWaitSeconds,
+    syncEnabled: syncEnabled,
     enabled: !!apiUrl
   };
 }
@@ -1925,6 +1927,14 @@ function analyzeQuoteWithMinerU_(blob, mimeType, fileName, casePayload, analysis
       skipped: true,
       statusCode: "mineru_not_configured",
       message: "MinerU API URL 미설정"
+    };
+  }
+  if (!config.syncEnabled) {
+    return {
+      ok: false,
+      skipped: true,
+      statusCode: "mineru_sync_disabled",
+      message: "빠른 업로드 모드: MinerU 실시간 분석 생략"
     };
   }
   if (isMineruNetEndpoint_(config.apiUrl) && ext === "hwpx") {

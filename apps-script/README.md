@@ -13,7 +13,7 @@
    - ⑥ 견적 파일은 `QUOTE_DRIVE_FOLDER_ID`에 지정한 견적서 전용 폴더에 저장합니다. 현재 설정값은 `11QX5F-KRQvvYNc0hso3QACuMS7lMZw4r`입니다.
    - ⑥ 사업자등록증은 견적서 저장 폴더 안의 케이스 폴더에 저장합니다. 구조는 `{접수번호}_{건물명} / 사업자등록증 / {업체명} / 원본 파일`입니다.
    - ⑥ 브링 양식 견적서 자동 생성을 쓰려면 `브링엔지니어링_견적서_양식.xlsx`를 Google Drive에 올린 뒤 Google Sheets로 열어 변환하고, 그 Google Sheet 파일 ID를 `QUOTE_TEMPLATE_SPREADSHEET_ID`에 넣습니다.
-   - MinerU 문서 분석을 쓰려면 Apps Script `프로젝트 설정` -> `스크립트 속성`에 `MINERU_API_KEY`를 넣습니다. 이 값만 있으면 기본적으로 `https://mineru.net` API를 직접 사용합니다. 별도 중계 서버를 쓰는 경우에만 `MINERU_API_URL`도 넣습니다.
+   - 업로드 속도를 위해 MinerU 실시간 분석은 기본적으로 기다리지 않습니다. 업로드 중 MinerU까지 기다리려면 Apps Script `프로젝트 설정` -> `스크립트 속성`에 `MINERU_SYNC_ENABLED`를 `true`로 넣고, `MINERU_API_KEY`를 함께 넣습니다.
 5. 왼쪽 톱니바퀴 `프로젝트 설정`에서 `appsscript.json 매니페스트 파일 표시`를 켭니다.
 6. 왼쪽 파일 목록의 `appsscript.json`에 이 폴더의 `appsscript.json` 내용을 붙여넣습니다.
 7. 저장 후 함수 선택 드롭다운에서 `setupComplaintAutomation`을 선택해 실행합니다.
@@ -62,7 +62,7 @@
 - 업체명, 전화번호, 사업자번호, 대표자, 주소, 업태, 업종, 이메일은 견적서 본문 추출값을 우선 사용하고, 빈칸만 ④에서 선택한 업체리스트_현진 데이터로 보충합니다. `테스트`, `샘플`, `업체 확인 필요` 같은 임시 문구는 업체명으로 사용하지 않습니다.
 - 업체 견적 파일 업로드 직후 생성되는 브링 양식은 `초안`으로 표시됩니다. 자동 추출 금액이 틀리면 FM 앱 ⑥ 견적 카드의 `합계금액 확인/수정`에 부가세 포함 합계금액을 입력하고 `브링 양식 재작성`을 누르세요. 확정 합계금액이 카드, 비교 메모, 브링 양식에 우선 반영되고 상태가 `확정`으로 바뀝니다.
 - 브링 양식 생성 직후에는 템플릿의 고정 셀 `D15 -> J30 -> E30+H30` 순서로 합계금액을 다시 읽어 견적 카드에 `브링 양식 기준` 금액으로 표시합니다.
-- `MINERU_API_KEY`가 설정되어 있으면 견적 업로드 때 Apps Script가 먼저 mineru.net 정밀 API에 파일을 업로드해 분석값을 사용합니다. 분석 결과 Markdown/JSON 파일은 Drive에 따로 저장하지 않고, 견적 카드에는 원본 파일과 최종 엑셀 견적서 링크만 표시합니다.
+- 빠른 업로드를 위해 기본값은 MinerU 실시간 분석을 생략하고 기존 Apps Script 추출 방식으로 처리합니다. `MINERU_SYNC_ENABLED=true`와 `MINERU_API_KEY`가 설정되어 있으면 견적 업로드 중 mineru.net 정밀 API를 기다려 분석값을 사용합니다. 분석 결과 Markdown/JSON 파일은 Drive에 따로 저장하지 않고, 견적 카드에는 원본 파일과 최종 엑셀 견적서 링크만 표시합니다.
 - 별도 MinerU 중계 서버를 쓰고 싶으면 `MINERU_API_URL`에 서버 주소를 넣습니다. 이 서버가 `/analyze-quote`를 제공하면 같은 카드 표시 흐름을 사용합니다.
 - MinerU 서버가 없거나 실패하면 기존 Apps Script 추출 방식으로 자동 fallback합니다. HWP는 v1에서 수동확인으로 남기고, HWPX는 기존 XML 텍스트 추출을 보조로 사용합니다.
 - MinerU 서버 요청 형식은 `POST /analyze-quote`이며 입력은 `fileName`, `mimeType`, `fileBase64`, `caseId`입니다. 응답은 `markdown`, `json`, `tables`, `vendorName`, `items`, `supplyAmount`, `vatAmount`, `totalAmount`, `confidence`, `warnings`를 받을 수 있습니다.
