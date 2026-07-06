@@ -2763,10 +2763,7 @@ function inferQuoteMimeType_(fileName) {
 function isBusinessRegistrationLikeQuote_(quote) {
   const text = [
     quote && quote.fileName,
-    quote && quote.originalFileName,
-    quote && quote.memo,
-    quote && quote.extractionMemo,
-    quote && quote.vendorName
+    quote && quote.originalFileName
   ].filter(Boolean).join(" ");
   return /사업자\s*등록|사업자등록증|business[-_\s]*registration|biz[-_\s]*reg/i.test(text);
 }

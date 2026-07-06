@@ -2317,7 +2317,7 @@ function isBusinessRegistrationFileName(name){
   return /사업자\s*등록|사업자등록증|business[-_\s]*registration|biz[-_\s]*reg/i.test(String(name||""));
 }
 function isBusinessRegistrationLikeQuote(q){
-  const text=[q&&q.fileName, q&&q.originalFileName, q&&q.memo, q&&q.extractionMemo, q&&q.vendorName].filter(Boolean).join(" ");
+  const text=[q&&q.fileName, q&&q.originalFileName].filter(Boolean).join(" ");
   return isBusinessRegistrationFileName(text);
 }
 function formatQuoteDate(value){
@@ -3656,8 +3656,9 @@ document.getElementById("noticeBtn").addEventListener("click", openNoticePanel);
 document.getElementById("noticeBanner").addEventListener("click", openNoticePanel);
 
 /* ===== 업데이트 알림(What's New) — 새 버전 나오면 자동 팝업 ===== */
-const APP_VERSION = "4.48";
+const APP_VERSION = "4.49";
 const CHANGELOG = [
+  { v:"4.49", d:"2026-07-06", items:["사업자등록증 보충 메모가 있는 정상 견적서가 숨겨지지 않도록 견적 목록 필터 기준 수정"] },
   { v:"4.48", d:"2026-07-06", items:["⑥ 견적 카드 목록에는 견적서만 표시","사업자등록증은 케이스 폴더에 원본만 저장하고 브링 엑셀 보충용으로만 사용","문서 분석 결과 Markdown/JSON 링크 표시 제거"] },
   { v:"4.47", d:"2026-07-06", items:["사업자등록증 업로드에서 XLS/XLSX 파일 형식 허용"] },
   { v:"4.46", d:"2026-07-06", items:["⑥ 견적 파일 업로드와 사업자등록증 업로드 영역을 50:50 반반 배치"] },
