@@ -1326,6 +1326,17 @@ function extractQuoteDataFromUpload_(blob, mimeType, fileName, fallbackAmount, c
     !amounts.totalAmount ? "금액 확인 필요" : "",
     items.length && items[0].fallback ? "품목 추출이 어려워 기본 품목 1줄로 생성했습니다." : ""
   ].filter(Boolean).join(" / ");
+  const fallbackSucceeded = !!(textResult.ok && (vendorName || amounts.totalAmount || (items.length && !items[0].fallback)));
+  const fallbackStatus = mineruResult.manual
+    ? "수동확인"
+    : fallbackSucceeded || mineruResult.skipped
+      ? "기본 분석"
+      : "MinerU 분석실패";
+  const fallbackStatusCode = mineruResult.manual
+    ? "manual_required"
+    : fallbackSucceeded || mineruResult.skipped
+      ? "local_fallback"
+      : (mineruResult.statusCode || "mineru_failed");
 
   return {
     status: status,
@@ -1340,8 +1351,8 @@ function extractQuoteDataFromUpload_(blob, mimeType, fileName, fallbackAmount, c
     totalAmount: amounts.totalAmount || "",
     items: items,
     analysisEngine: mineruResult.skipped ? "local_fallback" : "mineru_fallback",
-    analysisStatus: mineruResult.manual ? "수동확인" : mineruResult.skipped ? "기본 분석" : "MinerU 분석실패",
-    analysisStatusCode: mineruResult.statusCode || (mineruResult.skipped ? "mineru_not_configured" : "mineru_failed"),
+    analysisStatus: fallbackStatus,
+    analysisStatusCode: fallbackStatusCode,
     analysisConfidence: "",
     analysisWarnings: mineruResult.message ? [mineruResult.message] : [],
     analysisMarkdownUrl: "",
