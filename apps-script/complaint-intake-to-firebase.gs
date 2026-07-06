@@ -106,6 +106,9 @@ function doPost(e) {
     if (payload.action === "uploadQuoteFile") {
       return jsonResponse_(handleQuoteFileUpload_(payload));
     }
+    if (payload.action === "uploadBusinessRegistration") {
+      return jsonResponse_(handleBusinessRegistrationUpload_(payload));
+    }
     if (payload.action === "confirmQuoteAmount") {
       return jsonResponse_(handleConfirmQuoteAmount_(payload));
     }
@@ -135,6 +138,11 @@ function recordAutomationError_(payload, err) {
     patchCaseChildToFirebase_(caseId, "status", { c6: "doing" });
     patchCaseChildToFirebase_(caseId, "note", { c6: "견적 파일 업로드 실패: " + fileName + " / " + message });
     log.unshift("견적 파일 업로드 실패: " + fileName + " / " + message);
+  } else if (action === "uploadBusinessRegistration") {
+    const fileName = payload && payload.file && payload.file.fileName ? String(payload.file.fileName) : "파일명 미확인";
+    patchCaseChildToFirebase_(caseId, "status", { c6: "doing" });
+    patchCaseChildToFirebase_(caseId, "note", { c6: "사업자등록증 업로드 실패: " + fileName + " / " + message });
+    log.unshift("사업자등록증 업로드 실패: " + fileName + " / " + message);
   } else if (action === "confirmQuoteAmount") {
     patchCaseChildToFirebase_(caseId, "status", { c6: "doing" });
     patchCaseChildToFirebase_(caseId, "note", { c6: "견적 합계금액 확정 실패: " + message });
@@ -618,6 +626,90 @@ function handleQuoteFileUpload_(payload) {
   return { ok: true, caseId: caseId, quote: quote, message: "견적 파일 업로드 및 브링 양식 처리 완료" };
 }
 
+function handleBusinessRegistrationUpload_(payload) {
+  const caseId = String(payload.caseId || "").trim();
+  const filePayload = payload.file || {};
+  if (!caseId) return { ok: false, message: "caseId가 없습니다." };
+
+  const casePayload = readCaseFromFirebase_(caseId);
+  if (!casePayload) return { ok: false, message: "Firebase 케이스를 찾지 못했습니다: " + caseId };
+
+  const validation = validateBusinessRegistrationUpload_(filePayload);
+  if (!validation.ok) {
+    return updateBusinessRegistrationUploadFailure_(caseId, casePayload, validation.message);
+  }
+
+  const uploadedAt = new Date().toISOString();
+  const docId = "br" + Utilities.formatDate(new Date(), "Asia/Seoul", "yyyyMMddHHmmss") + "-" + Utilities.getUuid().slice(0, 8);
+  const folder = getQuoteDriveFolder_(casePayload);
+  const businessFolder = getOrCreateChildFolder_(folder, "사업자등록증");
+  const analysisFolder = getOrCreateChildFolder_(folder, "문서 분석 결과");
+  const bytes = Utilities.base64Decode(String(filePayload.fileBody || "").replace(/^data:[^,]+,/, ""));
+  const mimeType = filePayload.mimeType || inferQuoteMimeType_(filePayload.fileName);
+  const blob = Utilities.newBlob(bytes, mimeType, safeDriveName_(filePayload.fileName || "business-registration"));
+  const analysis = extractBusinessRegistrationData_(blob, mimeType, filePayload.fileName, casePayload, analysisFolder);
+  const vendorInfo = cleanVendorInfo_(analysis.vendorInfo || {});
+  const match = matchBusinessRegistrationVendor_(vendorInfo, payload, casePayload);
+  const finalVendorName = vendorInfo.name || match.vendorName || "";
+  const savedName = makeBusinessRegistrationDriveFileName_(casePayload, finalVendorName, filePayload.fileName);
+  const driveFile = businessFolder.createFile(blob.setName(savedName));
+
+  const doc = {
+    id: docId,
+    vendorId: match.vendorId || "",
+    vendorName: finalVendorName,
+    matchedVendorName: match.vendorName || "",
+    matchStatus: match.status,
+    matchMemo: match.memo,
+    statusText: match.status === "matched" ? "업체 자동 연결" : match.status === "multiple" ? "업체 연결 확인 필요" : "업체 연결 확인 필요",
+    businessNo: vendorInfo.businessNo || "",
+    ceo: vendorInfo.ceo || "",
+    address: vendorInfo.address || "",
+    type: vendorInfo.type || "",
+    category: vendorInfo.category || "",
+    phone: vendorInfo.phone || "",
+    email: vendorInfo.email || "",
+    extractionStatus: analysis.status,
+    extractionMemo: analysis.memo,
+    extractionTextPreview: analysis.textPreview || "",
+    analysisEngine: analysis.analysisEngine || "",
+    analysisStatus: analysis.analysisStatus || "",
+    analysisStatusCode: analysis.analysisStatusCode || "",
+    analysisWarnings: analysis.analysisWarnings || [],
+    analysisMarkdownUrl: analysis.analysisMarkdownUrl || "",
+    analysisMarkdownFileId: analysis.analysisMarkdownFileId || "",
+    analysisJsonUrl: analysis.analysisJsonUrl || "",
+    analysisJsonFileId: analysis.analysisJsonFileId || "",
+    fileName: driveFile.getName(),
+    fileUrl: driveFile.getUrl(),
+    driveFileId: driveFile.getId(),
+    originalFileName: String(filePayload.fileName || driveFile.getName()),
+    mimeType: mimeType,
+    size: Number(filePayload.size || bytes.length),
+    uploadedAt: uploadedAt
+  };
+
+  casePayload.businessRegistrationFiles = casePayload.businessRegistrationFiles && typeof casePayload.businessRegistrationFiles === "object" && !Array.isArray(casePayload.businessRegistrationFiles)
+    ? casePayload.businessRegistrationFiles
+    : {};
+  casePayload.businessRegistrationFiles[docId] = doc;
+  casePayload.status = casePayload.status || {};
+  if (casePayload.status.c6 !== "done") casePayload.status.c6 = "doing";
+  casePayload.log = Array.isArray(casePayload.log) ? casePayload.log : [];
+  casePayload.log.unshift("사업자등록증 업로드: " + (finalVendorName || "업체 연결 확인 필요") + " / " + driveFile.getName());
+  if (casePayload.log.length > 30) casePayload.log.length = 30;
+  casePayload.updatedAt = uploadedAt;
+
+  putCaseChildToFirebase_(caseId, "businessRegistrationFiles/" + docId, doc);
+  patchCaseChildToFirebase_(caseId, "status", { c6: casePayload.status.c6 });
+  patchCaseToFirebase_(caseId, {
+    log: casePayload.log,
+    updatedAt: uploadedAt
+  });
+
+  return { ok: true, caseId: caseId, businessRegistration: doc, message: "사업자등록증 업로드 및 업체 정보 분석 완료" };
+}
+
 function applyQuoteAmountState_(quote) {
   quote = quote || {};
   if (Number(quote.confirmedTotalAmount || 0)) {
@@ -827,6 +919,17 @@ function validateQuoteUpload_(filePayload) {
   return { ok: true };
 }
 
+function validateBusinessRegistrationUpload_(filePayload) {
+  const validation = validateQuoteUpload_(filePayload || {});
+  if (validation.ok) return validation;
+  return {
+    ok: false,
+    message: String(validation.message || "사업자등록증 파일을 확인해주세요.")
+      .replace(/견적\s*파일/g, "사업자등록증 파일")
+      .replace(/견적/g, "사업자등록증")
+  };
+}
+
 function updateQuoteUploadFailure_(caseId, casePayload, message) {
   casePayload.status = casePayload.status || {};
   if (casePayload.status.c6 !== "done") casePayload.status.c6 = "doing";
@@ -834,6 +937,24 @@ function updateQuoteUploadFailure_(caseId, casePayload, message) {
   casePayload.note.c6 = "견적 파일 업로드 실패: " + message;
   casePayload.log = Array.isArray(casePayload.log) ? casePayload.log : [];
   casePayload.log.unshift("견적 파일 업로드 실패: " + message);
+  if (casePayload.log.length > 30) casePayload.log.length = 30;
+  casePayload.updatedAt = new Date().toISOString();
+  patchCaseChildToFirebase_(caseId, "status", { c6: casePayload.status.c6 });
+  patchCaseChildToFirebase_(caseId, "note", { c6: casePayload.note.c6 });
+  patchCaseToFirebase_(caseId, {
+    log: casePayload.log,
+    updatedAt: casePayload.updatedAt
+  });
+  return { ok: false, caseId: caseId, message: message };
+}
+
+function updateBusinessRegistrationUploadFailure_(caseId, casePayload, message) {
+  casePayload.status = casePayload.status || {};
+  if (casePayload.status.c6 !== "done") casePayload.status.c6 = "doing";
+  casePayload.note = casePayload.note || {};
+  casePayload.note.c6 = "사업자등록증 업로드 실패: " + message;
+  casePayload.log = Array.isArray(casePayload.log) ? casePayload.log : [];
+  casePayload.log.unshift("사업자등록증 업로드 실패: " + message);
   if (casePayload.log.length > 30) casePayload.log.length = 30;
   casePayload.updatedAt = new Date().toISOString();
   patchCaseChildToFirebase_(caseId, "status", { c6: casePayload.status.c6 });
@@ -865,6 +986,17 @@ function makeQuoteDriveFileName_(casePayload, vendorName, originalName) {
     casePayload.ticketNo || casePayload.id || "case",
     vendorName || "업체",
     "견적"
+  ].join("_");
+  return safeDriveName_(base).slice(0, 120 - ext.length) + ext.toLowerCase();
+}
+
+function makeBusinessRegistrationDriveFileName_(casePayload, vendorName, originalName) {
+  const extMatch = String(originalName || "").match(/(\.[A-Za-z0-9]+)$/);
+  const ext = extMatch ? extMatch[1] : "";
+  const base = [
+    casePayload.ticketNo || casePayload.id || "case",
+    vendorName || "업체확인필요",
+    "사업자등록증"
   ].join("_");
   return safeDriveName_(base).slice(0, 120 - ext.length) + ext.toLowerCase();
 }
@@ -1390,6 +1522,128 @@ function extractQuoteDataFromUpload_(blob, mimeType, fileName, fallbackAmount, c
     analysisMarkdownFileId: "",
     analysisJsonUrl: "",
     analysisJsonFileId: ""
+  };
+}
+
+function extractBusinessRegistrationData_(blob, mimeType, fileName, casePayload, analysisFolder) {
+  const mineruResult = analyzeQuoteWithMinerU_(blob, mimeType, fileName, casePayload, analysisFolder);
+  let text = "";
+  let textMessage = "";
+  let analysisEngine = mineruResult.skipped ? "local_fallback" : "mineru_fallback";
+  let analysisStatus = mineruResult.ok ? "MinerU 분석완료" : (mineruResult.manual ? "수동확인" : "기본 분석");
+  let analysisStatusCode = mineruResult.ok ? "mineru_ok" : (mineruResult.statusCode || "local_fallback");
+
+  if (mineruResult.ok) {
+    text = mineruResult.markdown || mineruResult.text || "";
+    analysisEngine = "mineru";
+  } else {
+    const textResult = extractQuoteText_(blob, mimeType, fileName);
+    text = textResult.text || "";
+    textMessage = textResult.message || "";
+    if (!textResult.ok && !mineruResult.message) analysisStatus = "추출실패";
+  }
+
+  const vendorInfo = extractBusinessRegistrationVendorInfo_(text, mineruResult, fileName);
+  const hasImportantInfo = !!(vendorInfo.name || vendorInfo.businessNo || vendorInfo.ceo || vendorInfo.address || vendorInfo.type || vendorInfo.category || vendorInfo.phone);
+  const status = hasImportantInfo ? "추출완료" : "확인필요";
+  const memo = [
+    mineruResult.ok ? "MinerU 분석완료" : (mineruResult.message || ""),
+    textMessage,
+    hasImportantInfo ? "" : "사업자등록증 핵심 정보를 자동 확인하지 못했습니다."
+  ].filter(Boolean).join(" / ");
+
+  return {
+    status: status,
+    memo: memo,
+    text: text,
+    textPreview: text.replace(/\s+/g, " ").trim().slice(0, 500),
+    vendorInfo: vendorInfo,
+    analysisEngine: analysisEngine,
+    analysisStatus: analysisStatus,
+    analysisStatusCode: analysisStatusCode,
+    analysisWarnings: mineruResult.warnings || (mineruResult.message ? [mineruResult.message] : []),
+    analysisMarkdownUrl: mineruResult.markdownUrl || "",
+    analysisMarkdownFileId: mineruResult.markdownFileId || "",
+    analysisJsonUrl: mineruResult.jsonUrl || "",
+    analysisJsonFileId: mineruResult.jsonFileId || ""
+  };
+}
+
+function extractBusinessRegistrationVendorInfo_(text, mineruResult, fileName) {
+  const source = String(text || "");
+  const quoteInfo = extractQuoteVendorInfo_(source, mineruResult || {}, fileName);
+  const businessInfo = cleanVendorInfo_({
+    name: extractFieldNearLabels_(source, ["상호", "법인명", "회사명", "업체명", "사업체명"]) || quoteInfo.name,
+    phone: extractFieldNearLabels_(source, ["전화번호", "전화", "TEL", "Tel", "연락처"]) || quoteInfo.phone,
+    businessNo: extractQuoteBusinessNo_(source) || quoteInfo.businessNo,
+    ceo: extractFieldNearLabels_(source, ["대표자", "대표", "성명"]) || quoteInfo.ceo,
+    address: extractFieldNearLabels_(source, ["사업장 소재지", "사업장 주소", "소재지", "주소"]) || quoteInfo.address,
+    type: extractFieldNearLabels_(source, ["업태"]) || quoteInfo.type,
+    category: extractFieldNearLabels_(source, ["종목", "업종"]) || quoteInfo.category,
+    email: extractQuoteEmail_(source) || quoteInfo.email,
+    source: "business_registration"
+  });
+  const merged = mergeVendorInfoObjects_(quoteInfo, businessInfo);
+  merged.source = businessInfo.name || businessInfo.businessNo || businessInfo.ceo || businessInfo.address || businessInfo.type || businessInfo.category || businessInfo.phone
+    ? "business_registration"
+    : quoteInfo.source || "";
+  return cleanVendorInfo_(merged);
+}
+
+function matchBusinessRegistrationVendor_(vendorInfo, payload, casePayload) {
+  const targetName = cleanExtractedVendorName_(vendorInfo && vendorInfo.name || "");
+  const targetBusinessNo = cleanBusinessNo_(vendorInfo && vendorInfo.businessNo || "");
+  const candidates = collectBusinessRegistrationVendorCandidates_(payload, casePayload);
+  if (!targetName && !targetBusinessNo) {
+    return { status: "unmatched", vendorId: "", vendorName: "", memo: "업체명/사업자번호를 찾지 못했습니다." };
+  }
+
+  const businessMatches = targetBusinessNo
+    ? candidates.filter(v => cleanBusinessNo_(v.businessNo || "") === targetBusinessNo)
+    : [];
+  if (businessMatches.length === 1) return businessRegistrationMatchResult_(businessMatches[0], "사업자번호 일치");
+  if (businessMatches.length > 1) return { status: "multiple", vendorId: "", vendorName: targetName, memo: "사업자번호가 같은 후보가 여러 개입니다." };
+
+  const targetKey = vendorMatchKey_(targetName);
+  const exact = targetKey ? candidates.filter(v => vendorMatchKey_(v.name) === targetKey) : [];
+  if (exact.length === 1) return businessRegistrationMatchResult_(exact[0], "업체명 일치");
+  if (exact.length > 1) return { status: "multiple", vendorId: "", vendorName: targetName, memo: "같은 업체명 후보가 여러 개입니다." };
+
+  const similar = targetName ? candidates.filter(v => isSimilarVendorName_(targetName, v.name)) : [];
+  if (similar.length === 1) return businessRegistrationMatchResult_(similar[0], "유사 업체명 일치");
+  if (similar.length > 1) return { status: "multiple", vendorId: "", vendorName: targetName, memo: "유사 업체명 후보가 여러 개입니다." };
+
+  return { status: "unmatched", vendorId: "", vendorName: targetName, memo: "일치하는 업체 후보를 찾지 못했습니다." };
+}
+
+function collectBusinessRegistrationVendorCandidates_(payload, casePayload) {
+  const rows = [];
+  if (Array.isArray(payload && payload.vendors)) {
+    payload.vendors.forEach(v => rows.push(normalizeQuoteVendor_(v, "")));
+  }
+  Object.values((casePayload && casePayload.quoteFiles) || {}).filter(Boolean).forEach(quote => {
+    const vendor = cleanVendorInfo_(quote.resolvedVendorInfo || quote.vendor || {});
+    if (!vendor.name) vendor.name = cleanExtractedVendorName_(quote.vendorName || "");
+    if (vendor.name || vendor.businessNo || vendor.phone) rows.push(vendor);
+  });
+  const seen = {};
+  return rows
+    .map(v => cleanVendorInfo_(v))
+    .filter(v => v.name || v.businessNo || v.phone)
+    .filter(v => {
+      const key = [v.id, vendorMatchKey_(v.name), v.businessNo, v.phone].join("|");
+      if (seen[key]) return false;
+      seen[key] = true;
+      return true;
+    });
+}
+
+function businessRegistrationMatchResult_(candidate, memo) {
+  return {
+    status: "matched",
+    vendorId: candidate.id || "",
+    vendorName: candidate.name || "",
+    memo: memo || "자동 연결"
   };
 }
 
@@ -2148,12 +2402,67 @@ function extractQuoteItems_(text, amounts, casePayload) {
   }];
 }
 
+function findBusinessRegistrationForQuote_(casePayload, quote, vendorName) {
+  const docs = Object.values((casePayload && casePayload.businessRegistrationFiles) || {})
+    .filter(Boolean)
+    .map(businessRegistrationVendorInfoFromDoc_)
+    .filter(v => v.name || v.businessNo || v.phone);
+  if (!docs.length) return {};
+
+  const quoteVendor = cleanVendorInfo_(quote && (quote.resolvedVendorInfo || quote.vendor) || {});
+  const targetNames = [
+    vendorName,
+    quoteVendor.name,
+    quote && quote.vendorName
+  ].map(cleanExtractedVendorName_).filter(Boolean);
+  const targetBusinessNo = cleanBusinessNo_(quoteVendor.businessNo || "");
+
+  if (targetBusinessNo) {
+    const businessMatches = docs.filter(doc => cleanBusinessNo_(doc.businessNo || "") === targetBusinessNo);
+    if (businessMatches.length === 1) return businessMatches[0];
+  }
+
+  for (const target of targetNames) {
+    const exact = docs.filter(doc => vendorMatchKey_(doc.name) === vendorMatchKey_(target));
+    if (exact.length === 1) return exact[0];
+  }
+  for (const target of targetNames) {
+    const similar = docs.filter(doc => isSimilarVendorName_(target, doc.name));
+    if (similar.length === 1) return similar[0];
+  }
+  return {};
+}
+
+function businessRegistrationVendorInfoFromDoc_(doc) {
+  return cleanVendorInfo_({
+    id: doc.vendorId || "",
+    name: doc.vendorName || doc.matchedVendorName || "",
+    businessNo: doc.businessNo || "",
+    ceo: doc.ceo || "",
+    address: doc.address || "",
+    type: doc.type || "",
+    category: doc.category || "",
+    phone: doc.phone || "",
+    email: doc.email || "",
+    source: "business_registration"
+  });
+}
+
 function fillBringQuoteSpreadsheet_(ss, casePayload, quote, extraction) {
   const sheet = ss.getSheets()[0];
-  const vendor = cleanVendorInfo_(quote.resolvedVendorInfo || quote.vendor || {});
+  const quoteVendor = cleanVendorInfo_(quote.resolvedVendorInfo || quote.vendor || {});
+  const businessVendor = findBusinessRegistrationForQuote_(casePayload, quote, quoteVendor.name || quote.vendorName || extraction.vendorName || "");
+  const vendor = mergeVendorInfoObjects_(businessVendor, quoteVendor);
   if (!vendor.name) vendor.name = cleanExtractedVendorName_(quote.vendorName || extraction.vendorName || "");
-  const vendorName = cleanExtractedVendorName_(vendor.name || quote.vendorName || extraction.vendorName || "");
+  const vendorName = cleanExtractedVendorName_(vendor.name || businessVendor.name || quote.vendorName || extraction.vendorName || "");
+  if (!vendor.businessNo && businessVendor.businessNo) vendor.businessNo = businessVendor.businessNo;
+  if (!vendor.ceo && businessVendor.ceo) vendor.ceo = businessVendor.ceo;
+  if (!vendor.type && businessVendor.type) vendor.type = businessVendor.type;
+  if (!vendor.category && businessVendor.category) vendor.category = businessVendor.category;
+  if (!vendor.phone && businessVendor.phone) vendor.phone = businessVendor.phone;
+  if (!vendor.email && businessVendor.email) vendor.email = businessVendor.email;
   const vendorListAddress = cleanQuoteAddress_(vendor.addressFromVendorList || "");
+  const businessAddress = cleanQuoteAddress_(businessVendor.address || "");
   const total = Number(quote.confirmedTotalAmount || extraction.totalAmount || parseMoneyValue_(quote.amount) || 0);
   const supply = Number(quote.confirmedSupplyAmount || extraction.supplyAmount || (total ? Math.round(total / 1.1) : 0));
   const vat = Number(quote.confirmedVatAmount || extraction.vatAmount || (total ? total - supply : 0));
@@ -2161,7 +2470,7 @@ function fillBringQuoteSpreadsheet_(ss, casePayload, quote, extraction) {
   setSheetValue_(sheet, "D6", vendor.businessNo || "");
   setSheetValue_(sheet, "D7", vendorName || "");
   setSheetValue_(sheet, "I7", vendor.ceo || "");
-  setSheetValue_(sheet, "D8", vendorListAddress || "");
+  setSheetValue_(sheet, "D8", businessAddress || vendorListAddress || "");
   setSheetValue_(sheet, "D9", vendor.type || vendor.category || "");
   setSheetValue_(sheet, "I9", vendor.category || "");
   setSheetValue_(sheet, "D10", vendor.phone || "");
@@ -3189,7 +3498,7 @@ function mergeCasePayloadForFirebase_(existing, payload) {
   merged.status = Object.assign({}, payload.status || {}, existing.status || {});
   merged.note = Object.assign({}, payload.note || {}, existing.note || {});
 
-  ["log", "quoteFiles", "vendorSelections", "vendorEstimateMms", "selectedVendors"].forEach(key => {
+  ["log", "quoteFiles", "businessRegistrationFiles", "vendorSelections", "vendorEstimateMms", "selectedVendors"].forEach(key => {
     if (existing[key] !== undefined) merged[key] = existing[key];
   });
 
