@@ -2289,7 +2289,9 @@ function quoteUploadVendors(c){
       category:v.category||base.category||base.type||""
     });
   }).filter(v=>v.name);
-  const src=sent.length ? sent : selected;
+  const candidateCats=caseVendorCategories(c);
+  const candidates=candidateCats.flatMap(cat => (vendorData[cat]||[]).map(v => vendorPayload(cat, v)));
+  const src=sent.length ? sent : (selected.length ? selected : candidates);
   const seen=new Set();
   return src.filter(v=>{
     const key=vendorKey(v.id||v.name);
@@ -3283,8 +3285,9 @@ document.getElementById("noticeBtn").addEventListener("click", openNoticePanel);
 document.getElementById("noticeBanner").addEventListener("click", openNoticePanel);
 
 /* ===== 업데이트 알림(What's New) — 새 버전 나오면 자동 팝업 ===== */
-const APP_VERSION = "4.40";
+const APP_VERSION = "4.41";
 const CHANGELOG = [
+  { v:"4.41", d:"2026-07-06", items:["브링 양식 견적서의 업체 행을 상호명과 같게 반영","업체 주소는 견적서 추출값 대신 업체리스트_현진 매칭 주소만 사용"] },
   { v:"4.40", d:"2026-07-06", items:["⑥ 견적서에서 업체명·전화번호·사업자번호 등 공급자 정보 추출 강화","브링 양식 공급자 영역에 견적서 추출값 우선 반영","견적 카드에 업체 정보 출처 배지 추가"] },
   { v:"4.39", d:"2026-07-06", items:["⑥ 브링 양식 금액 동기화 버전 표시 갱신","견적 금액 셀에서 날짜값을 금액으로 오인하지 않도록 보정"] },
   { v:"4.38", d:"2026-07-06", items:["⑥ 견적 카드 금액을 브링 양식 셀 기준으로 우선 표시","금액 출처 배지에 브링 양식 기준 표시 추가"] },

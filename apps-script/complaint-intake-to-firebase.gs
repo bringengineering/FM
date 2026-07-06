@@ -979,18 +979,38 @@ function mergeQuoteVendorInfo_(fileInfo, selectedVendor, fileNameCandidate) {
   const selected = cleanVendorInfo_(normalizeQuoteVendor_(selectedVendor || {}, ""));
   const fileNameInfo = cleanVendorInfo_({ name: fileNameCandidate || "" });
   const merged = mergeVendorInfoObjects_(selected, file);
-  if (!merged.name && fileNameInfo.name) merged.name = fileNameInfo.name;
+  const quoteName = file.name || fileNameInfo.name || "";
+  const matchedVendorListAddress = resolveVendorListAddress_(quoteName, selected);
+  merged.name = quoteName || "";
+  merged.address = file.address || "";
+  merged.addressFromVendorList = matchedVendorListAddress;
   merged.source = file.name || file.phone || file.businessNo || file.ceo || file.address || file.type || file.category || file.email
     ? (file.source || "quote_text")
-    : selected.name || selected.phone || selected.businessNo || selected.ceo || selected.address || selected.type || selected.category || selected.email
-      ? "vendor_list"
-      : fileNameInfo.name
-        ? "file_name"
+    : fileNameInfo.name
+      ? "file_name"
+      : selected.phone || selected.businessNo || selected.ceo || selected.type || selected.category || selected.email || matchedVendorListAddress
+        ? "vendor_list"
         : "missing";
   return {
     vendor: cleanVendorInfo_(merged),
     source: merged.source
   };
+}
+
+function resolveVendorListAddress_(quoteVendorName, selectedVendor) {
+  const selected = cleanVendorInfo_(selectedVendor || {});
+  if (!selected.address) return "";
+  if (!quoteVendorName || !isSimilarVendorName_(quoteVendorName, selected.name)) return "";
+  return selected.address;
+}
+
+function isSimilarVendorName_(left, right) {
+  const a = vendorMatchKey_(left);
+  const b = vendorMatchKey_(right);
+  if (!a || !b) return false;
+  if (a === b) return true;
+  if (a.length < 3 || b.length < 3) return false;
+  return a.indexOf(b) !== -1 || b.indexOf(a) !== -1;
 }
 
 function mergeVendorInfoObjects_(base, override) {
@@ -1003,6 +1023,7 @@ function mergeVendorInfoObjects_(base, override) {
     type: override.type || base.type || "",
     name: override.name || base.name || "",
     address: override.address || base.address || "",
+    addressFromVendorList: override.addressFromVendorList || base.addressFromVendorList || "",
     phone: override.phone || base.phone || "",
     email: override.email || base.email || "",
     businessNo: override.businessNo || base.businessNo || "",
@@ -1022,6 +1043,7 @@ function cleanVendorInfo_(info) {
     type: cleanSimpleVendorField_(info.type || info.businessType || ""),
     name: isGenericQuoteVendorValue_(name) ? "" : name,
     address: cleanQuoteAddress_(info.address || ""),
+    addressFromVendorList: cleanQuoteAddress_(info.addressFromVendorList || ""),
     phone: cleanQuotePhone_(info.phone || info.tel || info.mobile || ""),
     email: cleanQuoteEmail_(info.email || info.mail || ""),
     businessNo: cleanBusinessNo_(info.businessNo || info.bizNo || info.registrationNo || ""),
@@ -1041,13 +1063,14 @@ function chooseQuoteSelectedVendor_(payload, fileInfo, initialName, fileName) {
   ].map(cleanExtractedVendorName_).filter(name => name && !isGenericQuoteVendorName_(name));
   for (const target of targetNames) {
     const key = vendorMatchKey_(target);
-    const exact = vendors.find(v => vendorMatchKey_(v.name) === key);
-    if (exact) return exact;
-    const loose = vendors.find(v => {
+    const exact = vendors.filter(v => vendorMatchKey_(v.name) === key);
+    if (exact.length === 1) return exact[0];
+    if (exact.length > 1) continue;
+    const loose = vendors.filter(v => {
       const vk = vendorMatchKey_(v.name);
       return vk && key && (vk.indexOf(key) !== -1 || key.indexOf(vk) !== -1);
     });
-    if (loose) return loose;
+    if (loose.length === 1) return loose[0];
   }
   if (vendors.length === 1) return vendors[0];
   return fallback;
@@ -2121,26 +2144,21 @@ function fillBringQuoteSpreadsheet_(ss, casePayload, quote, extraction) {
   const sheet = ss.getSheets()[0];
   const vendor = cleanVendorInfo_(quote.resolvedVendorInfo || quote.vendor || {});
   if (!vendor.name) vendor.name = cleanExtractedVendorName_(quote.vendorName || extraction.vendorName || "");
+  const vendorName = cleanExtractedVendorName_(vendor.name || quote.vendorName || extraction.vendorName || "");
+  const vendorListAddress = cleanQuoteAddress_(vendor.addressFromVendorList || "");
   const total = Number(quote.confirmedTotalAmount || extraction.totalAmount || parseMoneyValue_(quote.amount) || 0);
   const supply = Number(quote.confirmedSupplyAmount || extraction.supplyAmount || (total ? Math.round(total / 1.1) : 0));
   const vat = Number(quote.confirmedVatAmount || extraction.vatAmount || (total ? total - supply : 0));
-  const ticketNo = casePayload.ticketNo || casePayload.id || "";
-  const buildingLine = [
-    casePayload.building || "",
-    casePayload.room || "",
-    ticketNo ? "접수번호 " + ticketNo : ""
-  ].filter(Boolean).join(" / ");
-
   setSheetValue_(sheet, "D5", Utilities.formatDate(new Date(), "Asia/Seoul", "yyyy-MM-dd"));
   setSheetValue_(sheet, "D6", vendor.businessNo || "");
-  setSheetValue_(sheet, "D7", vendor.name || quote.vendorName || "");
+  setSheetValue_(sheet, "D7", vendorName || "");
   setSheetValue_(sheet, "I7", vendor.ceo || "");
-  setSheetValue_(sheet, "D8", vendor.address || "");
+  setSheetValue_(sheet, "D8", vendorListAddress || "");
   setSheetValue_(sheet, "D9", vendor.type || vendor.category || "");
   setSheetValue_(sheet, "I9", vendor.category || "");
   setSheetValue_(sheet, "D10", vendor.phone || "");
   setSheetValue_(sheet, "I10", vendor.email || "");
-  setSheetValue_(sheet, "D11", buildingLine || "케이스 정보 확인 필요");
+  setSheetValue_(sheet, "D11", vendorName || "");
   setSheetNumber_(sheet, "D13", supply);
   setSheetNumber_(sheet, "I13", vat);
   setSheetNumber_(sheet, "D15", total);
