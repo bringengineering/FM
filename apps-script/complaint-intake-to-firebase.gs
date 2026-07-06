@@ -647,16 +647,18 @@ function handleBusinessRegistrationUpload_(payload) {
 
   const uploadedAt = new Date().toISOString();
   const docId = "br" + Utilities.formatDate(new Date(), "Asia/Seoul", "yyyyMMddHHmmss") + "-" + Utilities.getUuid().slice(0, 8);
-  const folder = getBusinessRegistrationDriveFolder_(casePayload);
-  const businessFolder = getOrCreateChildFolder_(folder, "원본 사업자등록증");
-  const analysisFolder = getOrCreateChildFolder_(folder, "문서 분석 결과");
+  const tempAnalysisFolder = getBusinessRegistrationTempAnalysisFolder_();
   const bytes = Utilities.base64Decode(String(filePayload.fileBody || "").replace(/^data:[^,]+,/, ""));
   const mimeType = filePayload.mimeType || inferQuoteMimeType_(filePayload.fileName);
   const blob = Utilities.newBlob(bytes, mimeType, safeDriveName_(filePayload.fileName || "business-registration"));
-  const analysis = extractBusinessRegistrationData_(blob, mimeType, filePayload.fileName, casePayload, analysisFolder);
+  const analysis = extractBusinessRegistrationData_(blob, mimeType, filePayload.fileName, casePayload, tempAnalysisFolder);
   const vendorInfo = cleanVendorInfo_(analysis.vendorInfo || {});
   const match = matchBusinessRegistrationVendor_(vendorInfo, payload, casePayload);
   const finalVendorName = vendorInfo.name || match.vendorName || "";
+  const folder = getBusinessRegistrationDriveFolder_(casePayload, finalVendorName);
+  const businessFolder = getOrCreateChildFolder_(folder, "원본 사업자등록증");
+  const analysisFolder = getOrCreateChildFolder_(folder, "문서 분석 결과");
+  moveBusinessRegistrationAnalysisFiles_(analysis, analysisFolder);
   const savedName = makeBusinessRegistrationDriveFileName_(casePayload, finalVendorName, filePayload.fileName);
   const driveFile = businessFolder.createFile(blob.setName(savedName));
 
@@ -977,12 +979,32 @@ function getQuoteDriveFolder_(casePayload) {
   return getOrCreateChildFolder_(quoteRoot, makeCaseDriveFolderName_(casePayload));
 }
 
-function getBusinessRegistrationDriveFolder_(casePayload) {
+function getBusinessRegistrationDriveFolder_(casePayload, vendorName) {
   const configured = extractDriveId_(COMPLAINT_CONFIG.BUSINESS_REGISTRATION_DRIVE_FOLDER_ID);
   const root = configured
     ? DriveApp.getFolderById(configured)
     : getOrCreateChildFolder_(getQuoteDriveRootFolder_(), "사업자등록증");
-  return getOrCreateChildFolder_(root, makeCaseDriveFolderName_(casePayload));
+  return getOrCreateChildFolder_(root, makeBusinessRegistrationVendorFolderName_(vendorName, casePayload));
+}
+
+function getBusinessRegistrationTempAnalysisFolder_() {
+  const configured = extractDriveId_(COMPLAINT_CONFIG.BUSINESS_REGISTRATION_DRIVE_FOLDER_ID);
+  const root = configured
+    ? DriveApp.getFolderById(configured)
+    : getOrCreateChildFolder_(getQuoteDriveRootFolder_(), "사업자등록증");
+  return getOrCreateChildFolder_(root, "문서 분석 결과");
+}
+
+function moveBusinessRegistrationAnalysisFiles_(analysis, targetFolder) {
+  ["analysisMarkdownFileId", "analysisJsonFileId"].forEach(key => {
+    const fileId = String(analysis && analysis[key] || "");
+    if (!fileId) return;
+    try {
+      DriveApp.getFileById(fileId).moveTo(targetFolder);
+    } catch (err) {
+      Logger.log("사업자등록증 분석 파일 이동 실패: " + fileId + " / " + err.message);
+    }
+  });
 }
 
 function getQuoteDriveRootFolder_() {
@@ -993,6 +1015,12 @@ function getQuoteDriveRootFolder_() {
 
 function makeCaseDriveFolderName_(casePayload) {
   return safeDriveName_((casePayload.ticketNo || casePayload.id || "case") + "_" + (casePayload.building || "건물"));
+}
+
+function makeBusinessRegistrationVendorFolderName_(vendorName, casePayload) {
+  const cleanVendor = cleanExtractedVendorName_(vendorName || "");
+  const fallback = cleanVendor || "업체확인필요";
+  return safeDriveName_(fallback);
 }
 
 function getOrCreateChildFolder_(parent, name) {
