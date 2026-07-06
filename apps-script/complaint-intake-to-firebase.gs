@@ -554,7 +554,7 @@ function handleQuoteFileUpload_(payload) {
   const folder = getQuoteDriveFolder_(casePayload);
   const originalFolder = getOrCreateChildFolder_(folder, "원본 견적서");
   const bringFolder = getOrCreateChildFolder_(folder, "브링 양식 견적서");
-  const analysisFolder = getOrCreateChildFolder_(folder, "문서 분석 결과");
+  const analysisFolder = null;
   const savedName = makeQuoteDriveFileName_(casePayload, initialVendorName, filePayload.fileName);
   const bytes = Utilities.base64Decode(String(filePayload.fileBody || "").replace(/^data:[^,]+,/, ""));
   const mimeType = filePayload.mimeType || inferQuoteMimeType_(filePayload.fileName);
@@ -642,20 +642,16 @@ function handleBusinessRegistrationUpload_(payload) {
 
   const uploadedAt = new Date().toISOString();
   const docId = "br" + Utilities.formatDate(new Date(), "Asia/Seoul", "yyyyMMddHHmmss") + "-" + Utilities.getUuid().slice(0, 8);
-  const tempAnalysisFolder = getBusinessRegistrationTempAnalysisFolder_(casePayload);
   const bytes = Utilities.base64Decode(String(filePayload.fileBody || "").replace(/^data:[^,]+,/, ""));
   const mimeType = filePayload.mimeType || inferQuoteMimeType_(filePayload.fileName);
   const blob = Utilities.newBlob(bytes, mimeType, safeDriveName_(filePayload.fileName || "business-registration"));
-  const analysis = extractBusinessRegistrationData_(blob, mimeType, filePayload.fileName, casePayload, tempAnalysisFolder);
+  const analysis = extractBusinessRegistrationData_(blob, mimeType, filePayload.fileName, casePayload, null);
   const vendorInfo = cleanVendorInfo_(analysis.vendorInfo || {});
   const match = matchBusinessRegistrationVendor_(vendorInfo, payload, casePayload);
   const finalVendorName = vendorInfo.name || match.vendorName || "";
   const folder = getBusinessRegistrationDriveFolder_(casePayload, finalVendorName);
-  const businessFolder = getOrCreateChildFolder_(folder, "원본 사업자등록증");
-  const analysisFolder = getOrCreateChildFolder_(folder, "문서 분석 결과");
-  moveBusinessRegistrationAnalysisFiles_(analysis, analysisFolder);
   const savedName = makeBusinessRegistrationDriveFileName_(casePayload, finalVendorName, filePayload.fileName);
-  const driveFile = businessFolder.createFile(blob.setName(savedName));
+  const driveFile = folder.createFile(blob.setName(savedName));
 
   const doc = {
     id: docId,
@@ -985,24 +981,6 @@ function getBusinessRegistrationDriveFolder_(casePayload, vendorName) {
   const caseFolder = getQuoteDriveFolder_(casePayload);
   const root = getOrCreateChildFolder_(caseFolder, "사업자등록증");
   return getOrCreateChildFolder_(root, makeBusinessRegistrationVendorFolderName_(vendorName, casePayload));
-}
-
-function getBusinessRegistrationTempAnalysisFolder_(casePayload) {
-  const caseFolder = getQuoteDriveFolder_(casePayload);
-  const root = getOrCreateChildFolder_(caseFolder, "사업자등록증");
-  return getOrCreateChildFolder_(root, "문서 분석 결과");
-}
-
-function moveBusinessRegistrationAnalysisFiles_(analysis, targetFolder) {
-  ["analysisMarkdownFileId", "analysisJsonFileId"].forEach(key => {
-    const fileId = String(analysis && analysis[key] || "");
-    if (!fileId) return;
-    try {
-      DriveApp.getFileById(fileId).moveTo(targetFolder);
-    } catch (err) {
-      Logger.log("사업자등록증 분석 파일 이동 실패: " + fileId + " / " + err.message);
-    }
-  });
 }
 
 function getQuoteDriveRootFolder_() {
@@ -2028,21 +2006,7 @@ function analyzeQuoteWithMinerU_(blob, mimeType, fileName, casePayload, analysis
 }
 
 function saveMineruAnalysisFiles_(folder, fileName, casePayload, data) {
-  if (!folder) return {};
-  const ticketNo = casePayload.ticketNo || casePayload.id || "case";
-  const base = safeDriveName_(ticketNo + "_" + String(fileName || "quote").replace(/\.[^.]+$/, "") + "_mineru");
-  const result = {};
-  const markdown = String(data.markdown || data.text || "").trim();
-  if (markdown) {
-    const mdFile = folder.createFile(Utilities.newBlob(markdown, "text/markdown", base + ".md"));
-    result.markdownUrl = mdFile.getUrl();
-    result.markdownFileId = mdFile.getId();
-  }
-  const jsonText = JSON.stringify(data.json || data.result || data, null, 2);
-  const jsonFile = folder.createFile(Utilities.newBlob(jsonText, "application/json", base + ".json"));
-  result.jsonUrl = jsonFile.getUrl();
-  result.jsonFileId = jsonFile.getId();
-  return result;
+  return {};
 }
 
 function extractQuoteAmountsFromMinerU_(mineruResult, fallbackAmount, text) {
@@ -2796,8 +2760,19 @@ function inferQuoteMimeType_(fileName) {
   return map[ext] || "application/octet-stream";
 }
 
+function isBusinessRegistrationLikeQuote_(quote) {
+  const text = [
+    quote && quote.fileName,
+    quote && quote.originalFileName,
+    quote && quote.memo,
+    quote && quote.extractionMemo,
+    quote && quote.vendorName
+  ].filter(Boolean).join(" ");
+  return /사업자\s*등록|사업자등록증|business[-_\s]*registration|biz[-_\s]*reg/i.test(text);
+}
+
 function makeQuoteComparisonNote_(casePayload) {
-  const quotes = Object.values(casePayload.quoteFiles || {}).filter(Boolean);
+  const quotes = Object.values(casePayload.quoteFiles || {}).filter(quote => quote && !isBusinessRegistrationLikeQuote_(quote));
   if (!quotes.length) return "";
   const lines = ["[견적 비교]", "업로드 견적: " + quotes.length + "건", ""];
   quotes.forEach(quote => {
