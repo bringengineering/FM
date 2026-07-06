@@ -318,7 +318,9 @@
   .quote-upload{ margin:8px 0 0; border:1px solid #d8e0ec; border-radius:8px; background:#fbfcff; padding:12px; }
   .quote-upload-split{ display:grid; grid-template-columns:minmax(0,1fr) minmax(320px,420px); gap:10px; align-items:stretch; margin-top:8px; }
   .quote-upload-split .quote-upload{ margin:0; box-sizing:border-box; height:100%; }
-  .quote-upload-split .quote-form{ grid-template-columns:minmax(0,1fr) auto; }
+  .quote-upload-split .quote-form{ grid-template-columns:1fr; }
+  .quote-upload-action{ display:flex; justify-content:flex-end; margin:10px 0 0; }
+  .quote-upload-action .quote-send{ min-width:190px; }
   .quote-result-section{ margin-top:8px; }
   .quote-upload-head{ display:flex; align-items:center; justify-content:space-between; gap:10px; margin-bottom:10px; }
   .quote-upload-title{ font-size:13.5px; font-weight:900; color:#162033; }
@@ -2599,7 +2601,6 @@ function renderBusinessRegistrationUploadBox(){
         <div class="quote-drop-hint">사업자등록증 파일을 여기로 드래그해도 됩니다.</div>
         <div class="quote-file-list" id="businessRegFileList">${businessRegSelectedFileListHtml(businessRegPendingFiles)}</div>
       </div>
-      <button class="quote-send" data-bizreg-upload="1">업로드</button>
     </div>
   </div>`;
 }
@@ -2645,10 +2646,9 @@ function renderQuoteUploadPanel(c, stepStatus){
         <div class="quote-drop-hint">파일을 여기로 드래그해도 됩니다.</div>
         <div class="quote-file-list" id="quoteFileList">${quoteSelectedFileListHtml(quotePendingFiles)}</div>
       </div>
-      <button class="quote-send" data-quote-upload="1">업로드</button>
     </div>
   </div>`;
-  return `<div class="quote-upload-split">${quoteUploadBox}${renderBusinessRegistrationUploadBox()}</div><div class="quote-result-section">${cards}</div>${renderBusinessRegistrationPanel(c)}`;
+  return `<div class="quote-upload-split">${quoteUploadBox}${renderBusinessRegistrationUploadBox()}</div><div class="quote-upload-action"><button class="quote-send" data-case-doc-upload="1">선택 파일 모두 업로드</button></div><div class="quote-result-section">${cards}</div>${renderBusinessRegistrationPanel(c)}`;
 }
 const DEFAULT_CASE_AUTOMATION_ENDPOINT = "https://script.google.com/macros/s/AKfycbxGAdtEDoNifxkM-e_Jm7dBkCnjM4oPJqz8RxZXoMoSKod5M_m9Yj2b11-nI97zmfd6Jw/exec";
 function setCaseAutomationEndpoint(url){
@@ -2911,6 +2911,155 @@ async function uploadBusinessRegistrationFiles(){
     detail:"Apps Script 처리 후 증빙 카드가 자동 반영됩니다.",
     percent:100,
     count:files.length+"/"+files.length
+  });
+  quoteUploadInProgress=false;
+  setTimeout(hideQuoteUploadProgress, 1400);
+}
+async function uploadSelectedCaseDocuments(){
+  const c=cases[curCase];
+  if(!c) return;
+  if(quoteUploadInProgress) return;
+  const lock=stepLockMessage(c,"c6");
+  if(lock){ alert(lock); return; }
+  ensureQuotePendingCase();
+  ensureBusinessRegPendingCase();
+  const quoteFiles=quotePendingFiles.slice();
+  const businessFiles=businessRegPendingFiles.slice();
+  if(!quoteFiles.length && !businessFiles.length){
+    alert("업로드할 견적 파일 또는 사업자등록증 파일을 선택하세요.");
+    return;
+  }
+  const errors=[
+    ...(quoteFiles.length ? quoteUploadErrors(quoteFiles) : []),
+    ...(businessFiles.length ? businessRegUploadErrors(businessFiles) : [])
+  ];
+  if(errors.length){ alert(errors.slice(0,8).join("\n")); return; }
+  if(!caseAutomationEndpoint()){
+    if(!promptCaseAutomationSetup()) return;
+    if(!caseAutomationEndpoint()) return;
+  }
+
+  const vendor=quoteAutoVendor(c);
+  const vendors=quoteUploadVendors(c);
+  const vendorId=vendor.id || "";
+  const vendorName=vendor.name || "업체 확인 필요";
+  const totalCount=quoteFiles.length + businessFiles.length;
+  let doneCount=0;
+  quoteUploadInProgress=true;
+
+  try{
+    updateQuoteUploadProgress({
+      title:"업로드 중...",
+      fileName:`선택 파일 ${totalCount}개 준비 중`,
+      detail:"견적 파일과 사업자등록증 파일을 Apps Script로 보낼 준비를 하고 있습니다.",
+      percent:0,
+      count:`0/${totalCount}`
+    });
+
+    for(let i=0; i<quoteFiles.length; i++){
+      const file=quoteFiles[i];
+      updateQuoteUploadProgress({
+        title:"견적 파일 업로드 중...",
+        fileName:file.name,
+        detail:"파일을 읽는 중입니다.",
+        percent:(doneCount/totalCount)*100,
+        count:`${doneCount+1}/${totalCount}`
+      });
+      const body=await readFileAsBase64(file);
+      updateQuoteUploadProgress({
+        title:"견적 파일 업로드 중...",
+        fileName:file.name,
+        detail:"Apps Script로 업로드 요청을 보내는 중입니다.",
+        percent:((doneCount+0.55)/totalCount)*100,
+        count:`${doneCount+1}/${totalCount}`
+      });
+      await sendCaseAutomationRequest(caseAutomationEndpoint(), {
+        action:"uploadQuoteFile",
+        caseId:c.ticketNo||c.id||curCase,
+        vendorId,
+        vendorName,
+        vendor,
+        vendors,
+        amount:"",
+        memo:"",
+        file:{ fileName:file.name, mimeType:file.type || "", size:file.size, fileBody:body }
+      });
+      caseLog(c, "📎 견적 파일 업로드 요청: "+vendorName+" / "+file.name);
+      doneCount++;
+      updateQuoteUploadProgress({
+        title:"견적 파일 업로드 중...",
+        fileName:file.name,
+        detail:"업로드 요청을 보냈습니다.",
+        percent:(doneCount/totalCount)*100,
+        count:`${doneCount}/${totalCount}`
+      });
+    }
+
+    for(let i=0; i<businessFiles.length; i++){
+      const file=businessFiles[i];
+      updateQuoteUploadProgress({
+        title:"사업자등록증 업로드 중...",
+        fileName:file.name,
+        detail:"파일을 읽는 중입니다.",
+        percent:(doneCount/totalCount)*100,
+        count:`${doneCount+1}/${totalCount}`
+      });
+      const body=await readFileAsBase64(file);
+      updateQuoteUploadProgress({
+        title:"사업자등록증 업로드 중...",
+        fileName:file.name,
+        detail:"Apps Script로 업로드 요청을 보내는 중입니다.",
+        percent:((doneCount+0.55)/totalCount)*100,
+        count:`${doneCount+1}/${totalCount}`
+      });
+      await sendCaseAutomationRequest(caseAutomationEndpoint(), {
+        action:"uploadBusinessRegistration",
+        caseId:c.ticketNo||c.id||curCase,
+        vendors,
+        file:{ fileName:file.name, mimeType:file.type || "", size:file.size, fileBody:body }
+      });
+      caseLog(c, "사업자등록증 업로드 요청: "+file.name);
+      doneCount++;
+      updateQuoteUploadProgress({
+        title:"사업자등록증 업로드 중...",
+        fileName:file.name,
+        detail:"업로드 요청을 보냈습니다.",
+        percent:(doneCount/totalCount)*100,
+        count:`${doneCount}/${totalCount}`
+      });
+    }
+  }catch(err){
+    updateQuoteUploadProgress({
+      title:"업로드 실패",
+      fileName:"선택 파일 업로드를 중단했습니다.",
+      detail:err && err.message ? err.message : "파일을 읽거나 전송하지 못했습니다.",
+      percent:0,
+      count:""
+    });
+    alert("업로드 중 문제가 생겼어요.\n"+(err && err.message ? err.message : "다시 시도해 주세요."));
+    quoteUploadInProgress=false;
+    return;
+  }
+
+  if(quoteFiles.length) clearQuotePendingFiles();
+  if(businessFiles.length) clearBusinessRegPendingFiles();
+  c.status=c.status||{};
+  c.note=c.note||{};
+  if(c.status.c6!=="done") c.status.c6="doing";
+  const summaryParts=[
+    quoteFiles.length ? `${quoteFiles.length}개 견적 파일` : "",
+    businessFiles.length ? `${businessFiles.length}개 사업자등록증` : ""
+  ].filter(Boolean);
+  c.note.c6=summaryParts.join("과 ")+" 업로드 요청 중입니다. Apps Script 처리 후 Drive 링크가 자동 반영됩니다.";
+  saveCase(curCase);
+  renderCaseList();
+  renderCaseDetail();
+  updateQuoteUploadProgress({
+    title:"업로드 요청 완료",
+    fileName:summaryParts.join(" + ")+" 요청 완료",
+    detail:"Apps Script 처리 후 견적 카드와 사업자등록증 증빙 카드가 자동 반영됩니다.",
+    percent:100,
+    count:`${totalCount}/${totalCount}`
   });
   quoteUploadInProgress=false;
   setTimeout(hideQuoteUploadProgress, 1400);
@@ -3440,6 +3589,7 @@ document.getElementById("caseBack").addEventListener("click", closeCaseView);
 caseListEl.addEventListener("click", e=>{ if(e.target.closest("#cvNew")){ createCase(); return; } const ar=e.target.closest("[data-archive-toggle]"); if(ar){ setCaseArchiveMode(!showArchivedCases); return; } const rs=e.target.closest("[data-restore-case]"); if(rs){ restoreCase(rs.dataset.restoreCase); return; } const it=e.target.closest(".cv-item"); if(it) selectCase(it.dataset.cid); });
 caseDetailEl.addEventListener("click", e=>{
   const tm=e.target.closest("[data-testmode]"); if(tm){ setCaseTestMode(!caseTestMode); return; }
+  const cu=e.target.closest("[data-case-doc-upload]"); if(cu){ uploadSelectedCaseDocuments(); return; }
   const qu=e.target.closest("[data-quote-upload]"); if(qu){ uploadQuoteFile(); return; }
   const bu=e.target.closest("[data-bizreg-upload]"); if(bu){ uploadBusinessRegistrationFiles(); return; }
   const qc=e.target.closest("[data-quote-confirm]"); if(qc){ confirmQuoteAmount(qc.dataset.quoteConfirm); return; }
@@ -3508,8 +3658,9 @@ document.getElementById("noticeBtn").addEventListener("click", openNoticePanel);
 document.getElementById("noticeBanner").addEventListener("click", openNoticePanel);
 
 /* ===== 업데이트 알림(What's New) — 새 버전 나오면 자동 팝업 ===== */
-const APP_VERSION = "4.44";
+const APP_VERSION = "4.45";
 const CHANGELOG = [
+  { v:"4.45", d:"2026-07-06", items:["⑥ 견적 파일과 사업자등록증을 공통 업로드 버튼 하나로 처리","좌우 파일 선택 영역은 유지하고 선택 파일 전체를 한 번에 업로드"] },
   { v:"4.44", d:"2026-07-06", items:["⑥ 견적 파일 업로드 오른쪽에 사업자등록증 업로드 배치","업로드 입력 영역은 2열, 결과 카드는 아래 목록으로 분리"] },
   { v:"4.43", d:"2026-07-06", items:["⑥ 견적 비교에 사업자등록증 별도 업로드 영역 추가","사업자등록증은 견적 카드와 분리해 증빙 카드로 저장","추출된 사업자 정보는 브링 엑셀 견적서 작성 시 보충값으로 반영"] },
   { v:"4.42", d:"2026-07-06", items:["브링 양식 견적서는 최종 Drive 폴더에 엑셀 파일만 저장","작업용 Google Sheet는 엑셀 내보내기 후 자동 정리"] },
