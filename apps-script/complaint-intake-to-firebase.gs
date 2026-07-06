@@ -600,7 +600,7 @@ function handleQuoteFileUpload_(payload) {
   casePayload.note.c6 = makeQuoteComparisonNote_(casePayload);
   casePayload.log = Array.isArray(casePayload.log) ? casePayload.log : [];
   casePayload.log.unshift("견적 파일 업로드: " + finalVendorName + " / " + driveFile.getName());
-  if (quote.bringQuoteSheetUrl) {
+  if (quote.bringQuoteXlsxUrl) {
     casePayload.log.unshift("브링 양식 견적서 초안 생성: " + finalVendorName + " / " + (quote.extractionStatus || "확인필요"));
   } else {
     casePayload.log.unshift("브링 양식 견적서 생성 보류: " + finalVendorName + " / " + (quote.extractionMemo || "템플릿 설정 확인 필요"));
@@ -706,9 +706,9 @@ function handleConfirmQuoteAmount_(payload) {
 
     quote.bringQuoteStatus = "confirmed_rewritten";
     quote.bringQuoteType = "confirmed";
-    quote.bringQuoteSheetName = sheetFile.getName();
-    quote.bringQuoteSheetUrl = sheetFile.getUrl();
-    quote.bringQuoteSheetId = sheetId;
+    quote.bringQuoteSheetName = "";
+    quote.bringQuoteSheetUrl = "";
+    quote.bringQuoteSheetId = "";
     quote.extractionStatus = "추출완료";
     quote.extractionMemo = appendQuoteMemo_(removeQuoteMemo_(quote.extractionMemo, "금액 확인 필요"), "관리자 확정 금액으로 브링 양식 재작성");
     quote.extractedItems = extraction.items;
@@ -720,8 +720,11 @@ function handleConfirmQuoteAmount_(payload) {
       quote.bringQuoteXlsxUrl = exported.fileUrl;
       quote.bringQuoteXlsxId = exported.fileId;
     } else {
+      quote.bringQuoteStatus = "xlsx_failed";
+      quote.bringQuoteType = "failed";
       quote.extractionMemo = appendQuoteMemo_(quote.extractionMemo, "XLSX 내보내기 실패: " + exported.message);
     }
+    trashDriveFileQuietly_(sheetFile);
     rewriteMessage = "브링 양식 재작성 완료";
   }
 
@@ -1241,10 +1244,11 @@ function createBringQuoteFromUpload_(casePayload, quote, blob, payload, bringFol
     return result;
   }
 
+  let copied = null;
   try {
     const fileNameBase = makeBringQuoteFileNameBase_(quote, extraction);
     const templateFile = DriveApp.getFileById(templateId);
-    const copied = templateFile.makeCopy(fileNameBase, bringFolder);
+    copied = templateFile.makeCopy(fileNameBase, bringFolder);
     const ss = SpreadsheetApp.openById(copied.getId());
     fillBringQuoteSpreadsheet_(ss, casePayload, quote, extraction);
     SpreadsheetApp.flush();
@@ -1252,9 +1256,9 @@ function createBringQuoteFromUpload_(casePayload, quote, blob, payload, bringFol
 
     result.bringQuoteStatus = "draft_created";
     result.bringQuoteType = "draft";
-    result.bringQuoteSheetName = copied.getName();
-    result.bringQuoteSheetUrl = copied.getUrl();
-    result.bringQuoteSheetId = copied.getId();
+    result.bringQuoteSheetName = "";
+    result.bringQuoteSheetUrl = "";
+    result.bringQuoteSheetId = "";
     if (sheetAmounts.totalAmount) {
       result.totalAmount = sheetAmounts.totalAmount;
       result.supplyAmount = sheetAmounts.supplyAmount || "";
@@ -1275,6 +1279,8 @@ function createBringQuoteFromUpload_(casePayload, quote, blob, payload, bringFol
       result.bringQuoteXlsxUrl = exported.fileUrl;
       result.bringQuoteXlsxId = exported.fileId;
     } else {
+      result.bringQuoteStatus = "xlsx_failed";
+      result.bringQuoteType = "failed";
       result.extractionMemo = [result.extractionMemo, "XLSX 내보내기 실패: " + exported.message].filter(Boolean).join(" / ");
     }
   } catch (err) {
@@ -1282,6 +1288,8 @@ function createBringQuoteFromUpload_(casePayload, quote, blob, payload, bringFol
     result.bringQuoteType = "failed";
     result.extractionStatus = result.extractionStatus === "추출완료" ? "확인필요" : result.extractionStatus;
     result.extractionMemo = [result.extractionMemo, "브링 양식 생성 실패: " + err.message].filter(Boolean).join(" / ");
+  } finally {
+    trashDriveFileQuietly_(copied);
   }
   return result;
 }
@@ -2258,6 +2266,15 @@ function exportBringQuoteXlsx_(spreadsheetId, fileName, folder) {
   }
 }
 
+function trashDriveFileQuietly_(file) {
+  if (!file) return;
+  try {
+    file.setTrashed(true);
+  } catch (err) {
+    Logger.log("임시 브링 양식 Google Sheet 정리 실패: " + err.message);
+  }
+}
+
 function formatMoney_(value) {
   const num = Number(value || 0);
   return num ? String(num) : "";
@@ -2305,10 +2322,10 @@ function makeQuoteComparisonNote_(casePayload) {
     const bringSheetAmount = Number(quote.bringQuoteTotalAmount || 0);
     const extracted = Number(quote.totalAmount || 0);
     const bringLabel = quote.bringQuoteType === "confirmed" || quote.bringQuoteStatus === "confirmed_rewritten"
-      ? "브링 양식 확정"
-      : quote.bringQuoteSheetUrl
-        ? "브링 양식 초안"
-        : "브링 양식 확인 필요";
+      ? "브링 엑셀 확정"
+      : quote.bringQuoteXlsxUrl
+        ? "브링 엑셀 초안"
+        : "브링 엑셀 확인 필요";
     const amountLabel = confirmed
       ? "확정합계 " + formatCurrencyText_(confirmed)
       : bringSheetAmount
