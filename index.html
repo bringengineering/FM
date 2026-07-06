@@ -2594,10 +2594,10 @@ function businessRegCardMeta(doc){
 function renderBusinessRegistrationUploadBox(){
   ensureBusinessRegPendingCase();
   return `<div class="quote-upload business-reg-upload">
-    <div class="quote-upload-head"><div><div class="quote-upload-title">사업자등록증 업로드</div><div class="quote-upload-sub">PDF, JPG/PNG, DOC/DOCX, HWP/HWPX · 최대 5MB · 견적 카드가 아닌 업체 증빙으로 저장</div></div></div>
+    <div class="quote-upload-head"><div><div class="quote-upload-title">사업자등록증 업로드</div><div class="quote-upload-sub">PDF, JPG/PNG, DOC/DOCX, XLS/XLSX, HWP/HWPX · 최대 5MB · 견적 카드가 아닌 업체 증빙으로 저장</div></div></div>
     <div class="quote-form">
       <div class="quote-file-wrap" data-bizreg-drop="1">
-        <label class="quote-file-picker">파일 선택<input class="quote-file" id="businessRegFile" type="file" multiple accept=".pdf,.jpg,.jpeg,.png,.doc,.docx,.hwp,.hwpx,application/pdf,image/jpeg,image/png,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document,application/x-hwp,application/haansofthwp,application/vnd.hancom.hwp,application/vnd.hancom.hwpx"></label>
+        <label class="quote-file-picker">파일 선택<input class="quote-file" id="businessRegFile" type="file" multiple accept=".pdf,.jpg,.jpeg,.png,.doc,.docx,.xls,.xlsx,.hwp,.hwpx,application/pdf,image/jpeg,image/png,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document,application/vnd.ms-excel,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/x-hwp,application/haansofthwp,application/vnd.hancom.hwp,application/vnd.hancom.hwpx"></label>
         <div class="quote-drop-hint">사업자등록증 파일을 여기로 드래그해도 됩니다.</div>
         <div class="quote-file-list" id="businessRegFileList">${businessRegSelectedFileListHtml(businessRegPendingFiles)}</div>
       </div>
@@ -2684,9 +2684,9 @@ function quoteUploadErrors(files){
 function businessRegUploadAllowed(file){
   if(!file) return "업로드할 사업자등록증 파일을 선택하세요.";
   const ext=(file.name.split(".").pop()||"").toLowerCase();
-  const allowed=["pdf","jpg","jpeg","png","doc","docx","hwp","hwpx"];
+  const allowed=["pdf","jpg","jpeg","png","doc","docx","xls","xlsx","hwp","hwpx"];
   if(file.size > 5 * 1024 * 1024) return "파일 용량이 5MB를 초과했습니다.";
-  if(!allowed.includes(ext)) return "지원하지 않는 사업자등록증 파일 형식입니다. PDF, JPG, PNG, DOC/DOCX, HWP/HWPX만 가능합니다.";
+  if(!allowed.includes(ext)) return "지원하지 않는 사업자등록증 파일 형식입니다. PDF, JPG, PNG, DOC/DOCX, XLS/XLSX, HWP/HWPX만 가능합니다.";
   return "";
 }
 function businessRegUploadErrors(files){
@@ -3658,8 +3658,9 @@ document.getElementById("noticeBtn").addEventListener("click", openNoticePanel);
 document.getElementById("noticeBanner").addEventListener("click", openNoticePanel);
 
 /* ===== 업데이트 알림(What's New) — 새 버전 나오면 자동 팝업 ===== */
-const APP_VERSION = "4.46";
+const APP_VERSION = "4.47";
 const CHANGELOG = [
+  { v:"4.47", d:"2026-07-06", items:["사업자등록증 업로드에서 XLS/XLSX 파일 형식 허용"] },
   { v:"4.46", d:"2026-07-06", items:["⑥ 견적 파일 업로드와 사업자등록증 업로드 영역을 50:50 반반 배치"] },
   { v:"4.45", d:"2026-07-06", items:["⑥ 견적 파일과 사업자등록증을 공통 업로드 버튼 하나로 처리","좌우 파일 선택 영역은 유지하고 선택 파일 전체를 한 번에 업로드"] },
   { v:"4.44", d:"2026-07-06", items:["⑥ 견적 파일 업로드 오른쪽에 사업자등록증 업로드 배치","업로드 입력 영역은 2열, 결과 카드는 아래 목록으로 분리"] },
