@@ -10,7 +10,6 @@ const COMPLAINT_CONFIG = {
   SHEET_NAME: "설문지 응답 시트1",
   CONTRACT_DRIVE_FOLDER_ID: "1818MusPDfVV6znALkWDMGK99NXAlAj8g",
   QUOTE_DRIVE_FOLDER_ID: "11QX5F-KRQvvYNc0hso3QACuMS7lMZw4r",
-  BUSINESS_REGISTRATION_DRIVE_FOLDER_ID: "",
   QUOTE_TEMPLATE_SPREADSHEET_ID: "1JXP8NEaU0I_96ZMAZFn2GlYQHkLsbhSJCawsdMgqH7w",
   FIREBASE_DATABASE_URL: "https://bring-fm-default-rtdb.asia-southeast1.firebasedatabase.app",
   FIREBASE_CASES_PATH: "cases",
@@ -78,14 +77,10 @@ function authorizeDriveAccess() {
 
   const templateId = extractDriveId_(COMPLAINT_CONFIG.QUOTE_TEMPLATE_SPREADSHEET_ID);
   const quoteFolderId = extractDriveId_(COMPLAINT_CONFIG.QUOTE_DRIVE_FOLDER_ID);
-  const businessFolderId = extractDriveId_(COMPLAINT_CONFIG.BUSINESS_REGISTRATION_DRIVE_FOLDER_ID);
   if (quoteFolderId) {
     const quoteFolder = DriveApp.getFolderById(quoteFolderId);
     Logger.log("견적서 저장 폴더 확인 완료: " + quoteFolder.getName() + " / https://drive.google.com/drive/folders/" + quoteFolderId);
-    const businessRoot = businessFolderId
-      ? DriveApp.getFolderById(businessFolderId)
-      : getOrCreateChildFolder_(quoteFolder, "사업자등록증");
-    Logger.log("사업자등록증 저장 폴더 확인 완료: " + businessRoot.getName() + " / " + businessRoot.getUrl());
+    Logger.log("사업자등록증은 견적서 저장 폴더의 케이스 폴더 안에 저장됩니다: {접수번호}_{건물명}/사업자등록증/{업체명}");
   }
 
   if (templateId) {
@@ -647,7 +642,7 @@ function handleBusinessRegistrationUpload_(payload) {
 
   const uploadedAt = new Date().toISOString();
   const docId = "br" + Utilities.formatDate(new Date(), "Asia/Seoul", "yyyyMMddHHmmss") + "-" + Utilities.getUuid().slice(0, 8);
-  const tempAnalysisFolder = getBusinessRegistrationTempAnalysisFolder_();
+  const tempAnalysisFolder = getBusinessRegistrationTempAnalysisFolder_(casePayload);
   const bytes = Utilities.base64Decode(String(filePayload.fileBody || "").replace(/^data:[^,]+,/, ""));
   const mimeType = filePayload.mimeType || inferQuoteMimeType_(filePayload.fileName);
   const blob = Utilities.newBlob(bytes, mimeType, safeDriveName_(filePayload.fileName || "business-registration"));
@@ -701,21 +696,28 @@ function handleBusinessRegistrationUpload_(payload) {
     ? casePayload.businessRegistrationFiles
     : {};
   casePayload.businessRegistrationFiles[docId] = doc;
+  const refreshResult = refreshBringQuotesFromBusinessRegistration_(caseId, casePayload, doc, uploadedAt);
   casePayload.status = casePayload.status || {};
   if (casePayload.status.c6 !== "done") casePayload.status.c6 = "doing";
+  casePayload.note = casePayload.note || {};
+  casePayload.note.c6 = makeQuoteComparisonNote_(casePayload);
   casePayload.log = Array.isArray(casePayload.log) ? casePayload.log : [];
   casePayload.log.unshift("사업자등록증 업로드: " + (finalVendorName || "업체 연결 확인 필요") + " / " + driveFile.getName());
+  if (refreshResult.updated) {
+    casePayload.log.unshift("사업자등록증 정보로 브링 엑셀 보충: " + refreshResult.updated + "건");
+  }
   if (casePayload.log.length > 30) casePayload.log.length = 30;
   casePayload.updatedAt = uploadedAt;
 
   putCaseChildToFirebase_(caseId, "businessRegistrationFiles/" + docId, doc);
   patchCaseChildToFirebase_(caseId, "status", { c6: casePayload.status.c6 });
+  patchCaseChildToFirebase_(caseId, "note", { c6: casePayload.note.c6 });
   patchCaseToFirebase_(caseId, {
     log: casePayload.log,
     updatedAt: uploadedAt
   });
 
-  return { ok: true, caseId: caseId, businessRegistration: doc, message: "사업자등록증 업로드 및 업체 정보 분석 완료" };
+  return { ok: true, caseId: caseId, businessRegistration: doc, refreshedQuotes: refreshResult.updated, message: "사업자등록증 업로드 및 업체 정보 분석 완료" };
 }
 
 function applyQuoteAmountState_(quote) {
@@ -980,18 +982,14 @@ function getQuoteDriveFolder_(casePayload) {
 }
 
 function getBusinessRegistrationDriveFolder_(casePayload, vendorName) {
-  const configured = extractDriveId_(COMPLAINT_CONFIG.BUSINESS_REGISTRATION_DRIVE_FOLDER_ID);
-  const root = configured
-    ? DriveApp.getFolderById(configured)
-    : getOrCreateChildFolder_(getQuoteDriveRootFolder_(), "사업자등록증");
+  const caseFolder = getQuoteDriveFolder_(casePayload);
+  const root = getOrCreateChildFolder_(caseFolder, "사업자등록증");
   return getOrCreateChildFolder_(root, makeBusinessRegistrationVendorFolderName_(vendorName, casePayload));
 }
 
-function getBusinessRegistrationTempAnalysisFolder_() {
-  const configured = extractDriveId_(COMPLAINT_CONFIG.BUSINESS_REGISTRATION_DRIVE_FOLDER_ID);
-  const root = configured
-    ? DriveApp.getFolderById(configured)
-    : getOrCreateChildFolder_(getQuoteDriveRootFolder_(), "사업자등록증");
+function getBusinessRegistrationTempAnalysisFolder_(casePayload) {
+  const caseFolder = getQuoteDriveFolder_(casePayload);
+  const root = getOrCreateChildFolder_(caseFolder, "사업자등록증");
   return getOrCreateChildFolder_(root, "문서 분석 결과");
 }
 
@@ -2497,6 +2495,124 @@ function businessRegistrationVendorInfoFromDoc_(doc) {
   });
 }
 
+function refreshBringQuotesFromBusinessRegistration_(caseId, casePayload, businessDoc, timestamp) {
+  const result = { updated: 0, skipped: 0 };
+  const templateId = extractDriveId_(COMPLAINT_CONFIG.QUOTE_TEMPLATE_SPREADSHEET_ID);
+  if (!templateId) return result;
+  const quoteFiles = casePayload && casePayload.quoteFiles && typeof casePayload.quoteFiles === "object" && !Array.isArray(casePayload.quoteFiles)
+    ? casePayload.quoteFiles
+    : {};
+  const quoteIds = Object.keys(quoteFiles);
+  if (!quoteIds.length) return result;
+
+  const businessVendor = businessRegistrationVendorInfoFromDoc_(businessDoc);
+  const bringFolder = getOrCreateChildFolder_(getQuoteDriveFolder_(casePayload), "브링 양식 견적서");
+
+  quoteIds.forEach(quoteId => {
+    const quote = quoteFiles[quoteId];
+    if (!businessRegistrationMatchesQuote_(businessVendor, quote)) {
+      result.skipped++;
+      return;
+    }
+
+    let sheetFile = null;
+    try {
+      const extraction = makeQuoteRewriteExtraction_(quote, casePayload);
+      const fileNameBase = makeBringQuoteFileNameBase_(quote, extraction);
+      sheetFile = DriveApp.getFileById(templateId).makeCopy(fileNameBase, bringFolder);
+      const ss = SpreadsheetApp.openById(sheetFile.getId());
+      fillBringQuoteSpreadsheet_(ss, casePayload, quote, extraction);
+      SpreadsheetApp.flush();
+
+      const previousXlsxId = String(quote.bringQuoteXlsxId || "");
+      const exported = exportBringQuoteXlsx_(sheetFile.getId(), fileNameBase + ".xlsx", bringFolder);
+      if (exported.ok) {
+        quote.bringQuoteXlsxName = exported.fileName;
+        quote.bringQuoteXlsxUrl = exported.fileUrl;
+        quote.bringQuoteXlsxId = exported.fileId;
+        if (previousXlsxId && previousXlsxId !== exported.fileId) trashDriveFileByIdQuietly_(previousXlsxId);
+      } else {
+        quote.bringQuoteStatus = "xlsx_failed";
+        quote.bringQuoteType = "failed";
+        quote.extractionMemo = appendQuoteMemo_(quote.extractionMemo, "사업자등록증 반영 XLSX 내보내기 실패: " + exported.message);
+      }
+
+      const sheetAmounts = readBringQuoteAmounts_(ss);
+      if (sheetAmounts.totalAmount && !Number(quote.confirmedTotalAmount || 0)) {
+        quote.bringQuoteTotalAmount = sheetAmounts.totalAmount;
+        quote.bringQuoteSupplyAmount = sheetAmounts.supplyAmount || "";
+        quote.bringQuoteVatAmount = sheetAmounts.vatAmount || "";
+        quote.bringQuoteAmountSyncedAt = timestamp;
+      }
+      quote.bringQuoteStatus = quote.bringQuoteStatus === "xlsx_failed" ? quote.bringQuoteStatus : "business_registration_rewritten";
+      quote.bringQuoteType = Number(quote.confirmedTotalAmount || 0) ? "confirmed" : "draft";
+      quote.extractionMemo = appendQuoteMemo_(quote.extractionMemo, "사업자등록증 정보로 브링 엑셀 보충");
+      quote.businessRegistrationAppliedAt = timestamp;
+      quote.businessRegistrationDocId = businessDoc.id || "";
+      quote.updatedAt = timestamp;
+      applyQuoteAmountState_(quote);
+
+      casePayload.quoteFiles[quoteId] = quote;
+      putCaseChildToFirebase_(caseId, "quoteFiles/" + quoteId, quote);
+      result.updated++;
+    } catch (err) {
+      quote.extractionMemo = appendQuoteMemo_(quote.extractionMemo, "사업자등록증 정보 반영 실패: " + err.message);
+      casePayload.quoteFiles[quoteId] = quote;
+      putCaseChildToFirebase_(caseId, "quoteFiles/" + quoteId, quote);
+    } finally {
+      trashDriveFileQuietly_(sheetFile);
+    }
+  });
+
+  return result;
+}
+
+function businessRegistrationMatchesQuote_(businessVendor, quote) {
+  businessVendor = cleanVendorInfo_(businessVendor || {});
+  quote = quote || {};
+  const quoteVendor = cleanVendorInfo_(quote.resolvedVendorInfo || quote.vendor || {});
+  const businessNo = cleanBusinessNo_(businessVendor.businessNo || "");
+  const quoteBusinessNo = cleanBusinessNo_(quoteVendor.businessNo || quote.businessNo || "");
+  if (businessNo && quoteBusinessNo && businessNo === quoteBusinessNo) return true;
+
+  const businessName = cleanExtractedVendorName_(businessVendor.name || "");
+  if (!businessName) return false;
+  const quoteNames = [
+    quoteVendor.name,
+    quote.vendorName,
+    quote.extractedVendorName
+  ].map(cleanExtractedVendorName_).filter(Boolean);
+  if (!quoteNames.length) return false;
+  return quoteNames.some(name => vendorMatchKey_(name) === vendorMatchKey_(businessName) || isSimilarVendorName_(name, businessName));
+}
+
+function makeQuoteRewriteExtraction_(quote, casePayload) {
+  quote = quote || {};
+  const total = Number(quote.confirmedTotalAmount || quote.bringQuoteTotalAmount || quote.totalAmount || parseMoneyValue_(quote.amount) || 0);
+  const supply = Number(quote.confirmedSupplyAmount || quote.bringQuoteSupplyAmount || quote.supplyAmount || (total ? Math.round(total / 1.1) : 0));
+  const vat = Number(quote.confirmedVatAmount || quote.bringQuoteVatAmount || quote.vatAmount || (total ? total - supply : 0));
+  const items = Array.isArray(quote.extractedItems) && quote.extractedItems.length
+    ? quote.extractedItems
+    : [{
+      product: [(casePayload.issueType || casePayload.vendorType || "현장"), "점검 및 공사 견적"].join(" "),
+      unit: "식",
+      unitPrice: supply || "",
+      vat: vat || "",
+      total: total || "",
+      note: "사업자등록증 정보 보충",
+      fallback: true
+    }];
+  return {
+    status: quote.extractionStatus || "확인필요",
+    memo: quote.extractionMemo || "",
+    vendorName: quote.extractedVendorName || quote.vendorName || "",
+    supplyAmount: supply,
+    vatAmount: vat,
+    totalAmount: total,
+    items: items
+  };
+}
+
 function fillBringQuoteSpreadsheet_(ss, casePayload, quote, extraction) {
   const sheet = ss.getSheets()[0];
   const quoteVendor = cleanVendorInfo_(quote.resolvedVendorInfo || quote.vendor || {});
@@ -2630,6 +2746,15 @@ function trashDriveFileQuietly_(file) {
     file.setTrashed(true);
   } catch (err) {
     Logger.log("임시 브링 양식 Google Sheet 정리 실패: " + err.message);
+  }
+}
+
+function trashDriveFileByIdQuietly_(fileId) {
+  if (!fileId) return;
+  try {
+    DriveApp.getFileById(fileId).setTrashed(true);
+  } catch (err) {
+    Logger.log("이전 브링 엑셀 파일 정리 실패: " + err.message);
   }
 }
 
