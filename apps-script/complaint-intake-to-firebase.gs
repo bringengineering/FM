@@ -792,7 +792,7 @@ function handleConfirmQuoteAmount_(payload) {
     }
 
     const ss = SpreadsheetApp.openById(sheetId);
-    fillBringQuoteSpreadsheet_(ss, casePayload, quote, extraction);
+    const fillResult = fillBringQuoteSpreadsheet_(ss, casePayload, quote, extraction);
     SpreadsheetApp.flush();
     const sheetAmounts = readBringQuoteAmounts_(ss);
     if (sheetAmounts.totalAmount && !Number(quote.confirmedTotalAmount || 0)) {
@@ -809,6 +809,11 @@ function handleConfirmQuoteAmount_(payload) {
     quote.bringQuoteSheetId = "";
     quote.extractionStatus = "추출완료";
     quote.extractionMemo = appendQuoteMemo_(removeQuoteMemo_(quote.extractionMemo, "금액 확인 필요"), "관리자 확정 금액으로 브링 양식 재작성");
+    if (fillResult && fillResult.businessApplied) {
+      quote.extractionMemo = appendQuoteMemo_(quote.extractionMemo, "사업자등록증 정보로 브링 엑셀 빈칸 보충");
+      quote.businessRegistrationAppliedAt = confirmedAt;
+      quote.businessRegistrationDocId = fillResult.businessVendor && fillResult.businessVendor.docId || quote.businessRegistrationDocId || "";
+    }
     quote.extractedItems = extraction.items;
 
     const fileNameBase = makeBringQuoteFileNameBase_(quote, extraction);
@@ -1171,6 +1176,7 @@ function mergeVendorInfoObjects_(base, override) {
   override = cleanVendorInfo_(override || {});
   return {
     id: override.id || base.id || "",
+    docId: override.docId || base.docId || "",
     category: override.category || base.category || "",
     no: override.no || base.no || "",
     type: override.type || base.type || "",
@@ -1191,6 +1197,7 @@ function cleanVendorInfo_(info) {
   const name = cleanExtractedVendorName_(info.name || info.vendorName || info.companyName || "");
   return {
     id: String(info.id || ""),
+    docId: String(info.docId || ""),
     category: cleanSimpleVendorField_(info.category || info.industry || ""),
     no: String(info.no || ""),
     type: cleanSimpleVendorField_(info.type || info.businessType || ""),
@@ -1421,6 +1428,11 @@ function createBringQuoteFromUpload_(casePayload, quote, blob, payload, bringFol
       result.amountStatus = "확인필요";
       result.bringQuoteAmountSyncedAt = new Date().toISOString();
       result.extractionMemo = removeQuoteMemo_(result.extractionMemo, "금액 확인 필요");
+    }
+    if (fillResult && fillResult.businessApplied) {
+      result.businessRegistrationAppliedAt = new Date().toISOString();
+      result.businessRegistrationDocId = fillResult.businessVendor && fillResult.businessVendor.docId || "";
+      result.extractionMemo = appendQuoteMemo_(result.extractionMemo, "사업자등록증 정보로 브링 엑셀 빈칸 보충");
     }
 
     const exported = exportBringQuoteXlsx_(copied.getId(), fileNameBase + ".xlsx", bringFolder);
@@ -2427,9 +2439,10 @@ function findBusinessRegistrationForQuote_(casePayload, quote, vendorName) {
   const targetNames = [
     vendorName,
     quoteVendor.name,
-    quote && quote.vendorName
+    quote && quote.vendorName,
+    quote && quote.extractedVendorName
   ].map(cleanExtractedVendorName_).filter(Boolean);
-  const targetBusinessNo = cleanBusinessNo_(quoteVendor.businessNo || "");
+  const targetBusinessNo = cleanBusinessNo_(quoteVendor.businessNo || (quote && quote.businessNo) || "");
 
   if (targetBusinessNo) {
     const businessMatches = docs.filter(doc => cleanBusinessNo_(doc.businessNo || "") === targetBusinessNo);
@@ -2449,6 +2462,7 @@ function findBusinessRegistrationForQuote_(casePayload, quote, vendorName) {
 
 function businessRegistrationVendorInfoFromDoc_(doc) {
   return cleanVendorInfo_({
+    docId: doc.id || "",
     id: doc.vendorId || "",
     name: doc.vendorName || doc.matchedVendorName || "",
     businessNo: doc.businessNo || "",
@@ -2460,6 +2474,32 @@ function businessRegistrationVendorInfoFromDoc_(doc) {
     email: doc.email || "",
     source: "business_registration"
   });
+}
+
+function resolveBringQuoteVendorInfo_(casePayload, quote, extraction) {
+  quote = quote || {};
+  extraction = extraction || {};
+  const quoteVendor = cleanVendorInfo_(quote.resolvedVendorInfo || quote.vendor || {});
+  if (!quoteVendor.name) quoteVendor.name = cleanExtractedVendorName_(quote.vendorName || extraction.vendorName || "");
+  const businessVendor = findBusinessRegistrationForQuote_(casePayload, quote, quoteVendor.name || quote.vendorName || extraction.vendorName || "");
+  const vendor = mergeVendorInfoObjects_(businessVendor, quoteVendor);
+  if (!vendor.name) vendor.name = cleanExtractedVendorName_(quote.vendorName || extraction.vendorName || businessVendor.name || "");
+
+  const businessFields = ["name", "businessNo", "ceo", "address", "type", "category", "phone", "email"];
+  const businessApplied = businessFields.some(field => {
+    const businessValue = String(businessVendor[field] || "").trim();
+    if (!businessValue) return false;
+    const quoteValue = String(quoteVendor[field] || "").trim();
+    const finalValue = String(vendor[field] || "").trim();
+    return !quoteValue && finalValue === businessValue;
+  });
+
+  return {
+    vendor: cleanVendorInfo_(vendor),
+    quoteVendor: quoteVendor,
+    businessVendor: businessVendor,
+    businessApplied: businessApplied
+  };
 }
 
 function refreshBringQuotesFromBusinessRegistration_(caseId, casePayload, businessDoc, timestamp) {
@@ -2488,7 +2528,7 @@ function refreshBringQuotesFromBusinessRegistration_(caseId, casePayload, busine
       const fileNameBase = makeBringQuoteFileNameBase_(quote, extraction);
       sheetFile = DriveApp.getFileById(templateId).makeCopy(fileNameBase, bringFolder);
       const ss = SpreadsheetApp.openById(sheetFile.getId());
-      fillBringQuoteSpreadsheet_(ss, casePayload, quote, extraction);
+      const fillResult = fillBringQuoteSpreadsheet_(ss, casePayload, quote, extraction);
       SpreadsheetApp.flush();
 
       const previousXlsxId = String(quote.bringQuoteXlsxId || "");
@@ -2513,9 +2553,11 @@ function refreshBringQuotesFromBusinessRegistration_(caseId, casePayload, busine
       }
       quote.bringQuoteStatus = quote.bringQuoteStatus === "xlsx_failed" ? quote.bringQuoteStatus : "business_registration_rewritten";
       quote.bringQuoteType = Number(quote.confirmedTotalAmount || 0) ? "confirmed" : "draft";
-      quote.extractionMemo = appendQuoteMemo_(quote.extractionMemo, "사업자등록증 정보로 브링 엑셀 보충");
-      quote.businessRegistrationAppliedAt = timestamp;
-      quote.businessRegistrationDocId = businessDoc.id || "";
+      if (fillResult && fillResult.businessApplied) {
+        quote.extractionMemo = appendQuoteMemo_(quote.extractionMemo, "사업자등록증 정보로 브링 엑셀 빈칸 보충");
+        quote.businessRegistrationAppliedAt = timestamp;
+        quote.businessRegistrationDocId = businessDoc.id || "";
+      }
       quote.updatedAt = timestamp;
       applyQuoteAmountState_(quote);
 
@@ -2582,19 +2624,11 @@ function makeQuoteRewriteExtraction_(quote, casePayload) {
 
 function fillBringQuoteSpreadsheet_(ss, casePayload, quote, extraction) {
   const sheet = ss.getSheets()[0];
-  const quoteVendor = cleanVendorInfo_(quote.resolvedVendorInfo || quote.vendor || {});
-  const businessVendor = findBusinessRegistrationForQuote_(casePayload, quote, quoteVendor.name || quote.vendorName || extraction.vendorName || "");
-  const vendor = mergeVendorInfoObjects_(businessVendor, quoteVendor);
-  if (!vendor.name) vendor.name = cleanExtractedVendorName_(quote.vendorName || extraction.vendorName || "");
-  const vendorName = cleanExtractedVendorName_(vendor.name || businessVendor.name || quote.vendorName || extraction.vendorName || "");
-  if (!vendor.businessNo && businessVendor.businessNo) vendor.businessNo = businessVendor.businessNo;
-  if (!vendor.ceo && businessVendor.ceo) vendor.ceo = businessVendor.ceo;
-  if (!vendor.type && businessVendor.type) vendor.type = businessVendor.type;
-  if (!vendor.category && businessVendor.category) vendor.category = businessVendor.category;
-  if (!vendor.phone && businessVendor.phone) vendor.phone = businessVendor.phone;
-  if (!vendor.email && businessVendor.email) vendor.email = businessVendor.email;
-  const vendorListAddress = cleanQuoteAddress_(vendor.addressFromVendorList || "");
-  const businessAddress = cleanQuoteAddress_(businessVendor.address || "");
+  extraction = extraction || {};
+  const vendorResult = resolveBringQuoteVendorInfo_(casePayload, quote, extraction);
+  const vendor = vendorResult.vendor;
+  const vendorName = cleanExtractedVendorName_(vendor.name || quote.vendorName || extraction.vendorName || "");
+  const vendorAddress = cleanQuoteAddress_(vendor.address || vendor.addressFromVendorList || "");
   const total = Number(quote.confirmedTotalAmount || extraction.totalAmount || parseMoneyValue_(quote.amount) || 0);
   const supply = Number(quote.confirmedSupplyAmount || extraction.supplyAmount || (total ? Math.round(total / 1.1) : 0));
   const vat = Number(quote.confirmedVatAmount || extraction.vatAmount || (total ? total - supply : 0));
@@ -2602,7 +2636,7 @@ function fillBringQuoteSpreadsheet_(ss, casePayload, quote, extraction) {
   setSheetValue_(sheet, "D6", vendor.businessNo || "");
   setSheetValue_(sheet, "D7", vendorName || "");
   setSheetValue_(sheet, "I7", vendor.ceo || "");
-  setSheetValue_(sheet, "D8", businessAddress || vendorListAddress || "");
+  setSheetValue_(sheet, "D8", vendorAddress || "");
   setSheetValue_(sheet, "D9", vendor.type || vendor.category || "");
   setSheetValue_(sheet, "I9", vendor.category || "");
   setSheetValue_(sheet, "D10", vendor.phone || "");
@@ -2629,6 +2663,7 @@ function fillBringQuoteSpreadsheet_(ss, casePayload, quote, extraction) {
   setSheetNumber_(sheet, "E30", supply);
   setSheetNumber_(sheet, "H30", vat);
   setSheetNumber_(sheet, "J30", total);
+  return vendorResult;
 }
 
 function readBringQuoteAmounts_(ss) {
