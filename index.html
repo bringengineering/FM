@@ -371,6 +371,10 @@
   .quote-amount-source.bring{ color:#0c6b76; background:#e7f8fb; border-color:#aee4ec; }
   .quote-amount-source.auto{ color:#315fce; background:#eef4ff; border-color:#c5d4ff; }
   .quote-amount-source.empty{ color:#8a5a00; background:#fff8e1; border-color:#ffe08a; }
+  .quote-vendor-source{ justify-self:start; display:inline-flex; align-items:center; min-height:20px; border-radius:999px; padding:2px 7px; font-size:11px; font-weight:900; border:1px solid #d7dfec; color:#52606d; background:#fff; }
+  .quote-vendor-source.file{ color:#116329; background:#eaf7ee; border-color:#b9e6c5; }
+  .quote-vendor-source.list{ color:#315fce; background:#eef4ff; border-color:#c5d4ff; }
+  .quote-vendor-source.missing{ color:#8a5a00; background:#fff8e1; border-color:#ffe08a; }
   .quote-confirm{ display:grid; grid-template-columns:minmax(0,1fr) auto; gap:6px; align-items:end; margin-top:2px; }
   .quote-confirm label{ display:grid; gap:3px; font-size:11px; color:#52606d; font-weight:800; }
   .quote-confirm input{ width:100%; min-width:0; box-sizing:border-box; border:1px solid #d8e0ec; border-radius:7px; padding:6px 8px; font-size:12.5px; font-family:inherit; }
@@ -2339,6 +2343,19 @@ function quoteAmountSourceClass(q){
   if(quoteAmountNumber(q&&q.totalAmount)) return "auto";
   return "empty";
 }
+function quoteVendorSourceLabel(q){
+  const source=String(q&&q.vendorInfoSource||"");
+  if(source==="quote_text" || source==="mineru_structured") return "견적서 추출";
+  if(source==="vendor_list") return "업체리스트 보충";
+  if(source==="file_name") return "파일명 기준";
+  return "업체 확인 필요";
+}
+function quoteVendorSourceClass(q){
+  const source=String(q&&q.vendorInfoSource||"");
+  if(source==="quote_text" || source==="mineru_structured") return "file";
+  if(source==="vendor_list" || source==="file_name") return "list";
+  return "missing";
+}
 function quoteExtractionLabel(q){
   return q.extractionStatus || (q.bringQuoteSheetUrl ? "추출완료" : "확인필요");
 }
@@ -2502,6 +2519,7 @@ function renderQuoteUploadPanel(c, stepStatus){
       <span class="quote-analysis-status ${quoteAnalysisClass(q)}">${esc(quoteAnalysisLabel(q))}</span>
       <span class="quote-bring-status ${quoteBringClass(q)}">${esc(quoteBringLabel(q))}</span>
       <span class="quote-amount-source ${quoteAmountSourceClass(q)}">${esc(quoteAmountSourceLabel(q))}</span>
+      <span class="quote-vendor-source ${quoteVendorSourceClass(q)}">${esc(quoteVendorSourceLabel(q))}</span>
       <div class="quote-card-meta">${esc(q.fileName||q.originalFileName||"파일명 없음")}<br>${esc(formatQuoteDate(q.uploadedAt))}${quoteAnalysisMeta(q)}${q.memo?`<br>${esc(q.memo)}`:""}${q.extractionMemo?`<br>${esc(q.extractionMemo)}`:""}</div>
       <div class="quote-confirm">
         <label>합계금액 확인/수정<input data-quote-amount="${escAttr(q.id)}" inputmode="numeric" value="${escAttr(quoteAmountInputValue(q))}" placeholder="예: 145200"></label>
@@ -2617,6 +2635,7 @@ async function uploadQuoteFile(){
     if(!caseAutomationEndpoint()) return;
   }
   const vendor=quoteAutoVendor(c);
+  const vendors=quoteUploadVendors(c);
   const vendorId=vendor.id || "";
   const vendorName=vendor.name || "업체 확인 필요";
   quoteUploadInProgress=true;
@@ -2651,6 +2670,7 @@ async function uploadQuoteFile(){
         vendorId,
         vendorName,
         vendor,
+        vendors,
         amount:"",
         memo:"",
         file:{ fileName:file.name, mimeType:file.type || "", size:file.size, fileBody:body }
@@ -3263,8 +3283,9 @@ document.getElementById("noticeBtn").addEventListener("click", openNoticePanel);
 document.getElementById("noticeBanner").addEventListener("click", openNoticePanel);
 
 /* ===== 업데이트 알림(What's New) — 새 버전 나오면 자동 팝업 ===== */
-const APP_VERSION = "4.39";
+const APP_VERSION = "4.40";
 const CHANGELOG = [
+  { v:"4.40", d:"2026-07-06", items:["⑥ 견적서에서 업체명·전화번호·사업자번호 등 공급자 정보 추출 강화","브링 양식 공급자 영역에 견적서 추출값 우선 반영","견적 카드에 업체 정보 출처 배지 추가"] },
   { v:"4.39", d:"2026-07-06", items:["⑥ 브링 양식 금액 동기화 버전 표시 갱신","견적 금액 셀에서 날짜값을 금액으로 오인하지 않도록 보정"] },
   { v:"4.38", d:"2026-07-06", items:["⑥ 견적 카드 금액을 브링 양식 셀 기준으로 우선 표시","금액 출처 배지에 브링 양식 기준 표시 추가"] },
   { v:"4.37", d:"2026-07-06", items:["⑥ 견적 파일 목록 제거 확인창 제거 변경을 다시 배포용 버전으로 반영"] },

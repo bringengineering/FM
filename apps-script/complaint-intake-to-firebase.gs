@@ -581,11 +581,13 @@ function handleQuoteFileUpload_(payload) {
     quote.vendor.name = quote.extractedVendorName;
   }
   const finalVendorName = quote.vendorName || initialVendorName;
-  if (isGenericQuoteVendorName_(driveFile.getName()) && !isGenericQuoteVendorName_(finalVendorName)) {
+  if (!isGenericQuoteVendorName_(finalVendorName)) {
     const renamed = makeQuoteDriveFileName_(casePayload, finalVendorName, filePayload.fileName);
-    driveFile.setName(renamed);
-    quote.fileName = driveFile.getName();
-    quote.originalFileName = driveFile.getName();
+    if (driveFile.getName() !== renamed) {
+      driveFile.setName(renamed);
+      quote.fileName = driveFile.getName();
+      quote.originalFileName = driveFile.getName();
+    }
   }
 
   casePayload.quoteFiles = casePayload.quoteFiles && typeof casePayload.quoteFiles === "object" && !Array.isArray(casePayload.quoteFiles)
@@ -869,7 +871,7 @@ function resolveInitialQuoteVendorName_(payload, originalName) {
   if (selected && !isGenericQuoteVendorName_(selected)) return selected;
   const fromFile = extractQuoteVendorNameFromFileName_(originalName);
   if (fromFile) return fromFile;
-  return selected || "업체 확인 필요";
+  return selected && !isGenericQuoteVendorName_(selected) ? selected : "업체 확인 필요";
 }
 
 function extractQuoteVendorNameFromFileName_(fileName) {
@@ -887,12 +889,13 @@ function extractQuoteVendorNameFromFileName_(fileName) {
 
 function normalizeQuoteVendor_(vendor, fallbackName) {
   vendor = vendor || {};
+  const fallback = isGenericQuoteVendorValue_(fallbackName) ? "" : fallbackName;
   return {
     id: String(vendor.id || ""),
     category: String(vendor.category || ""),
     no: String(vendor.no || ""),
     type: String(vendor.type || ""),
-    name: String(vendor.name || fallbackName || "업체 미지정"),
+    name: String(isGenericQuoteVendorValue_(vendor.name) ? fallback || "업체 미지정" : vendor.name || fallback || "업체 미지정"),
     address: String(vendor.address || ""),
     phone: String(vendor.phone || ""),
     email: String(vendor.email || vendor.mail || ""),
@@ -903,7 +906,265 @@ function normalizeQuoteVendor_(vendor, fallbackName) {
 }
 
 function isGenericQuoteVendorName_(value) {
-  return !String(value || "").trim() || /업체\s*(미지정|확인|자동)/.test(String(value || ""));
+  return isGenericQuoteVendorValue_(value);
+}
+
+function isGenericQuoteVendorValue_(value) {
+  const raw = String(value || "").replace(/\s+/g, " ").trim();
+  if (!raw) return true;
+  const compact = raw.replace(/\s+/g, "").toLowerCase();
+  if (/^(test|sample|quote|vendor|company)$/i.test(raw)) return true;
+  if (/^(테스트|샘플|견적|견적서|업체|업체명|업체미지정|업체확인필요|확인필요|미지정|자동|수동|원본|브링|양식)$/.test(compact)) return true;
+  if (/업체(미지정|확인|자동|명없음)/.test(compact)) return true;
+  if (/^br-\d{4}-\d{4}$/i.test(raw)) return true;
+  if (/^\d+$/.test(compact)) return true;
+  return false;
+}
+
+function extractQuoteVendorInfo_(text, mineruResult, fileName) {
+  const structured = extractQuoteVendorInfoFromObject_(mineruResult || {});
+  const fromText = extractQuoteVendorInfoFromText_(text || "");
+  const merged = mergeVendorInfoObjects_(structured, fromText);
+  const cleaned = cleanVendorInfo_(merged);
+  cleaned.source = Object.keys(cleanVendorInfo_(fromText)).some(key => key !== "source" && cleanVendorInfo_(fromText)[key])
+    ? "quote_text"
+    : Object.keys(cleanVendorInfo_(structured)).some(key => key !== "source" && cleanVendorInfo_(structured)[key])
+      ? "mineru_structured"
+      : "";
+  cleaned.fileNameVendorName = extractQuoteVendorNameFromFileName_(fileName);
+  return cleaned;
+}
+
+function extractQuoteVendorInfoFromText_(text) {
+  const source = String(text || "");
+  return {
+    name: extractQuoteVendorName_(source),
+    phone: extractQuotePhone_(source),
+    businessNo: extractQuoteBusinessNo_(source),
+    ceo: extractFieldNearLabels_(source, ["대표자", "대표", "성명"]),
+    address: extractFieldNearLabels_(source, ["주소", "사업장주소", "소재지"]),
+    type: extractFieldNearLabels_(source, ["업태"]),
+    category: extractFieldNearLabels_(source, ["업종", "종목"]),
+    email: extractQuoteEmail_(source),
+    source: "quote_text"
+  };
+}
+
+function extractQuoteVendorInfoFromObject_(data) {
+  const roots = [
+    data && data.vendorInfo,
+    data && data.supplier,
+    data && data.company,
+    data && data.vendor,
+    data && data.provider,
+    data && data.json,
+    data
+  ].filter(Boolean);
+  const root = { roots: roots };
+  return cleanVendorInfo_({
+    name: deepFindValueByKeys_(root, ["vendorName", "supplierName", "companyName", "corpName", "businessName", "상호", "회사명", "업체명", "공급자"]),
+    phone: deepFindValueByKeys_(root, ["phone", "tel", "telephone", "mobile", "contact", "전화", "연락처", "TEL"]),
+    businessNo: deepFindValueByKeys_(root, ["businessNo", "bizNo", "registrationNo", "사업자번호", "사업자등록번호", "등록번호"]),
+    ceo: deepFindValueByKeys_(root, ["ceo", "owner", "representative", "대표", "대표자"]),
+    address: deepFindValueByKeys_(root, ["address", "addr", "소재지", "주소", "사업장주소"]),
+    type: deepFindValueByKeys_(root, ["businessType", "업태"]),
+    category: deepFindValueByKeys_(root, ["businessCategory", "industry", "업종", "종목"]),
+    email: deepFindValueByKeys_(root, ["email", "mail", "이메일"]),
+    source: "mineru_structured"
+  });
+}
+
+function mergeQuoteVendorInfo_(fileInfo, selectedVendor, fileNameCandidate) {
+  const file = cleanVendorInfo_(fileInfo || {});
+  const selected = cleanVendorInfo_(normalizeQuoteVendor_(selectedVendor || {}, ""));
+  const fileNameInfo = cleanVendorInfo_({ name: fileNameCandidate || "" });
+  const merged = mergeVendorInfoObjects_(selected, file);
+  if (!merged.name && fileNameInfo.name) merged.name = fileNameInfo.name;
+  merged.source = file.name || file.phone || file.businessNo || file.ceo || file.address || file.type || file.category || file.email
+    ? (file.source || "quote_text")
+    : selected.name || selected.phone || selected.businessNo || selected.ceo || selected.address || selected.type || selected.category || selected.email
+      ? "vendor_list"
+      : fileNameInfo.name
+        ? "file_name"
+        : "missing";
+  return {
+    vendor: cleanVendorInfo_(merged),
+    source: merged.source
+  };
+}
+
+function mergeVendorInfoObjects_(base, override) {
+  base = cleanVendorInfo_(base || {});
+  override = cleanVendorInfo_(override || {});
+  return {
+    id: override.id || base.id || "",
+    category: override.category || base.category || "",
+    no: override.no || base.no || "",
+    type: override.type || base.type || "",
+    name: override.name || base.name || "",
+    address: override.address || base.address || "",
+    phone: override.phone || base.phone || "",
+    email: override.email || base.email || "",
+    businessNo: override.businessNo || base.businessNo || "",
+    ceo: override.ceo || base.ceo || "",
+    note: override.note || base.note || "",
+    source: override.source || base.source || ""
+  };
+}
+
+function cleanVendorInfo_(info) {
+  info = info || {};
+  const name = cleanExtractedVendorName_(info.name || info.vendorName || info.companyName || "");
+  return {
+    id: String(info.id || ""),
+    category: cleanSimpleVendorField_(info.category || info.industry || ""),
+    no: String(info.no || ""),
+    type: cleanSimpleVendorField_(info.type || info.businessType || ""),
+    name: isGenericQuoteVendorValue_(name) ? "" : name,
+    address: cleanQuoteAddress_(info.address || ""),
+    phone: cleanQuotePhone_(info.phone || info.tel || info.mobile || ""),
+    email: cleanQuoteEmail_(info.email || info.mail || ""),
+    businessNo: cleanBusinessNo_(info.businessNo || info.bizNo || info.registrationNo || ""),
+    ceo: cleanSimpleVendorField_(info.ceo || info.owner || info.representative || ""),
+    note: String(info.note || "").trim(),
+    source: String(info.source || "")
+  };
+}
+
+function chooseQuoteSelectedVendor_(payload, fileInfo, initialName, fileName) {
+  const vendors = Array.isArray(payload.vendors) ? payload.vendors.map(v => normalizeQuoteVendor_(v, "")).filter(v => v.name || v.phone) : [];
+  const fallback = normalizeQuoteVendor_(payload.vendor || {}, initialName);
+  const targetNames = [
+    fileInfo && fileInfo.name,
+    initialName,
+    extractQuoteVendorNameFromFileName_(fileName)
+  ].map(cleanExtractedVendorName_).filter(name => name && !isGenericQuoteVendorName_(name));
+  for (const target of targetNames) {
+    const key = vendorMatchKey_(target);
+    const exact = vendors.find(v => vendorMatchKey_(v.name) === key);
+    if (exact) return exact;
+    const loose = vendors.find(v => {
+      const vk = vendorMatchKey_(v.name);
+      return vk && key && (vk.indexOf(key) !== -1 || key.indexOf(vk) !== -1);
+    });
+    if (loose) return loose;
+  }
+  if (vendors.length === 1) return vendors[0];
+  return fallback;
+}
+
+function vendorMatchKey_(value) {
+  return String(value || "")
+    .replace(/주식회사|\(주\)|㈜/g, "")
+    .replace(/[^가-힣a-zA-Z0-9]/g, "")
+    .toLowerCase();
+}
+
+function extractFieldNearLabels_(text, labels) {
+  const lines = normalizeQuoteTextLines_(text);
+  const normalizedLabels = labels.map(label => String(label).replace(/\s+/g, ""));
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i];
+    const compact = line.replace(/\s+/g, "");
+    for (let j = 0; j < labels.length; j++) {
+      if (compact.indexOf(normalizedLabels[j]) === -1) continue;
+      const value = cleanFieldValueAfterLabel_(line, labels[j]);
+      if (value) return value;
+      const next = cleanFieldValueAfterLabel_(lines[i + 1] || "", "");
+      if (next && !labels.some(label => (lines[i + 1] || "").indexOf(label) !== -1)) return next;
+    }
+  }
+  return "";
+}
+
+function cleanFieldValueAfterLabel_(line, label) {
+  let value = String(line || "").trim();
+  if (label) value = value.replace(new RegExp("^.*?" + escapeRegex_(label) + "\\s*[:：=\\-]?\\s*"), "");
+  value = value
+    .replace(/^[\s:：=\-]+/, "")
+    .replace(/\s+/g, " ")
+    .trim();
+  return value.slice(0, 140);
+}
+
+function extractQuoteBusinessNo_(text) {
+  const source = String(text || "");
+  const labeled = source.match(/(?:사업자\s*(?:등록)?\s*번호|등록번호)\s*[:：]?\s*([0-9]{3}[-.\s]?[0-9]{2}[-.\s]?[0-9]{5})/);
+  return cleanBusinessNo_(labeled ? labeled[1] : "");
+}
+
+function extractQuotePhone_(text) {
+  const labeled = extractFieldNearLabels_(text, ["전화번호", "전화", "연락처", "TEL", "Tel", "tel"]);
+  return cleanQuotePhone_(labeled) || cleanQuotePhone_(text);
+}
+
+function extractQuoteEmail_(text) {
+  const match = String(text || "").match(/[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/i);
+  return match ? match[0] : "";
+}
+
+function cleanQuotePhone_(value) {
+  const phones = extractPhones_(value);
+  const digits = phones.find(phone => /^01[016789]\d{7,8}$/.test(phone)) || phones[0] || "";
+  if (!digits) return "";
+  if (digits.length === 11) return digits.replace(/(\d{3})(\d{4})(\d{4})/, "$1-$2-$3");
+  if (digits.length === 10 && digits.indexOf("02") === 0) return digits.replace(/(\d{2})(\d{4})(\d{4})/, "$1-$2-$3");
+  if (digits.length === 10) return digits.replace(/(\d{3})(\d{3})(\d{4})/, "$1-$2-$3");
+  return digits;
+}
+
+function cleanBusinessNo_(value) {
+  const digits = String(value || "").replace(/\D/g, "");
+  if (digits.length !== 10) return "";
+  return digits.replace(/(\d{3})(\d{2})(\d{5})/, "$1-$2-$3");
+}
+
+function cleanQuoteEmail_(value) {
+  const match = String(value || "").match(/[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/i);
+  return match ? match[0] : "";
+}
+
+function cleanQuoteAddress_(value) {
+  const cleaned = String(value || "")
+    .replace(/^[\s:：=\-]+/, "")
+    .replace(/\s+/g, " ")
+    .trim()
+    .replace(/\s*(전화|TEL|Tel|tel|연락처|대표자|대표|사업자|이메일|업태|업종|종목)\s*[:：]?.*$/g, "")
+    .trim();
+  if (!cleaned || isGenericQuoteVendorValue_(cleaned)) return "";
+  return cleaned.slice(0, 120);
+}
+
+function cleanSimpleVendorField_(value) {
+  const cleaned = String(value || "")
+    .replace(/^[\s:：=\-]+/, "")
+    .replace(/\s+/g, " ")
+    .trim();
+  if (!cleaned || isGenericQuoteVendorValue_(cleaned)) return "";
+  return cleaned
+    .replace(/\s*(사업자등록번호|사업자번호|전화번호|전화|TEL|이메일|주소)\s*[:：]?.*$/g, "")
+    .trim()
+    .slice(0, 80);
+}
+
+function deepFindValueByKeys_(obj, keys) {
+  const wanted = keys.map(key => String(key).replace(/[\s_\-]/g, "").toLowerCase());
+  const queue = [obj];
+  let visited = 0;
+  while (queue.length && visited < 300) {
+    const current = queue.shift();
+    visited++;
+    if (!current || typeof current !== "object") continue;
+    for (const key in current) {
+      const normalized = String(key).replace(/[\s_\-]/g, "").toLowerCase();
+      const value = current[key];
+      if (wanted.some(item => normalized === item || normalized.indexOf(item) !== -1)) {
+        if (value !== null && value !== undefined && typeof value !== "object") return String(value);
+      }
+      if (value && typeof value === "object") queue.push(value);
+    }
+  }
+  return "";
 }
 
 function makeBringQuoteFileNameBase_(quote, extraction) {
@@ -919,11 +1180,12 @@ function makeBringQuoteFileNameBase_(quote, extraction) {
 function createBringQuoteFromUpload_(casePayload, quote, blob, payload, bringFolder, analysisFolder) {
   const templateId = extractDriveId_(COMPLAINT_CONFIG.QUOTE_TEMPLATE_SPREADSHEET_ID);
   const extraction = extractQuoteDataFromUpload_(blob, quote.mimeType, quote.fileName, payload.amount, casePayload, analysisFolder);
-  if (isGenericQuoteVendorName_(quote.vendorName) && extraction.vendorName) {
-    quote.vendorName = extraction.vendorName;
-    quote.vendor = quote.vendor || {};
-    quote.vendor.name = extraction.vendorName;
-  }
+  const selectedVendor = chooseQuoteSelectedVendor_(payload, extraction.vendorInfo, quote.vendorName, quote.fileName);
+  const resolvedVendor = mergeQuoteVendorInfo_(extraction.vendorInfo, selectedVendor, extraction.fileNameVendorName || extractQuoteVendorNameFromFileName_(quote.fileName));
+  quote.vendor = resolvedVendor.vendor;
+  quote.resolvedVendorInfo = resolvedVendor.vendor;
+  quote.vendorInfoSource = resolvedVendor.source;
+  quote.vendorName = resolvedVendor.vendor.name || "업체 확인 필요";
   const result = {
     extractionStatus: extraction.status,
     extractionMemo: extraction.memo,
@@ -933,6 +1195,9 @@ function createBringQuoteFromUpload_(casePayload, quote, blob, payload, bringFol
     vatAmount: extraction.vatAmount || "",
     totalAmount: extraction.totalAmount || "",
     extractedVendorName: extraction.vendorName || "",
+    extractedVendorInfo: extraction.vendorInfo || {},
+    resolvedVendorInfo: resolvedVendor.vendor,
+    vendorInfoSource: resolvedVendor.source,
     extractedItems: extraction.items || [],
     analysisEngine: extraction.analysisEngine || "",
     analysisStatus: extraction.analysisStatus || "",
@@ -1004,7 +1269,8 @@ function extractQuoteDataFromUpload_(blob, mimeType, fileName, fallbackAmount, c
     const text = mineruResult.markdown || mineruResult.text || "";
     const amounts = extractQuoteAmountsFromMinerU_(mineruResult, fallbackAmount, text);
     const items = extractQuoteItemsFromMinerU_(mineruResult, amounts, casePayload, text);
-    const vendorName = cleanExtractedVendorName_(mineruResult.vendorName) || extractQuoteVendorName_(text);
+    const vendorInfo = extractQuoteVendorInfo_(text, mineruResult, fileName);
+    const vendorName = vendorInfo.name || cleanExtractedVendorName_(mineruResult.vendorName) || extractQuoteVendorName_(text);
     let status = "확인필요";
     if (amounts.totalAmount && items.length && !amounts.usedFallbackOnly) status = "추출완료";
 
@@ -1022,6 +1288,8 @@ function extractQuoteDataFromUpload_(blob, mimeType, fileName, fallbackAmount, c
       text: text,
       textPreview: text.replace(/\s+/g, " ").trim().slice(0, 500),
       vendorName: vendorName,
+      vendorInfo: vendorInfo,
+      fileNameVendorName: vendorInfo.fileNameVendorName || extractQuoteVendorNameFromFileName_(fileName),
       supplyAmount: amounts.supplyAmount || "",
       vatAmount: amounts.vatAmount || "",
       totalAmount: amounts.totalAmount || "",
@@ -1042,7 +1310,8 @@ function extractQuoteDataFromUpload_(blob, mimeType, fileName, fallbackAmount, c
   const text = textResult.text || "";
   const amounts = extractQuoteAmounts_(text, fallbackAmount);
   const items = extractQuoteItems_(text, amounts, casePayload);
-  const vendorName = extractQuoteVendorName_(text);
+  const vendorInfo = extractQuoteVendorInfo_(text, mineruResult, fileName);
+  const vendorName = vendorInfo.name || extractQuoteVendorName_(text);
   let status = "확인필요";
   if (!textResult.ok) {
     status = "추출실패";
@@ -1064,6 +1333,8 @@ function extractQuoteDataFromUpload_(blob, mimeType, fileName, fallbackAmount, c
     text: text,
     textPreview: text.replace(/\s+/g, " ").trim().slice(0, 500),
     vendorName: vendorName,
+    vendorInfo: vendorInfo,
+    fileNameVendorName: vendorInfo.fileNameVendorName || extractQuoteVendorNameFromFileName_(fileName),
     supplyAmount: amounts.supplyAmount || "",
     vatAmount: amounts.vatAmount || "",
     totalAmount: amounts.totalAmount || "",
@@ -1769,10 +2040,10 @@ function extractQuoteVendorName_(text) {
 function cleanExtractedVendorName_(value) {
   const name = String(value || "")
     .replace(/^(주식회사|\(주\)|㈜)\s*/g, "")
-    .replace(/\s*(대표자|사업자번호|주소|전화|이메일|견적|공급자).*$/g, "")
+    .replace(/\s*(대표자|대표|사업자등록번호|사업자번호|등록번호|주소|전화번호|전화|연락처|TEL|Tel|tel|이메일|업태|업종|종목|견적|공급자).*$/g, "")
     .replace(/\s+/g, " ")
     .trim();
-  if (!name || name.length < 2 || /견적서|합계|공급가액|부가세|주소|전화|이메일/.test(name)) return "";
+  if (!name || name.length < 2 || /견적서|합계|공급가액|부가세|주소|전화|이메일/.test(name) || isGenericQuoteVendorValue_(name)) return "";
   return name.slice(0, 30);
 }
 
@@ -1837,7 +2108,8 @@ function extractQuoteItems_(text, amounts, casePayload) {
 
 function fillBringQuoteSpreadsheet_(ss, casePayload, quote, extraction) {
   const sheet = ss.getSheets()[0];
-  const vendor = quote.vendor || {};
+  const vendor = cleanVendorInfo_(quote.resolvedVendorInfo || quote.vendor || {});
+  if (!vendor.name) vendor.name = cleanExtractedVendorName_(quote.vendorName || extraction.vendorName || "");
   const total = Number(quote.confirmedTotalAmount || extraction.totalAmount || parseMoneyValue_(quote.amount) || 0);
   const supply = Number(quote.confirmedSupplyAmount || extraction.supplyAmount || (total ? Math.round(total / 1.1) : 0));
   const vat = Number(quote.confirmedVatAmount || extraction.vatAmount || (total ? total - supply : 0));
