@@ -80,7 +80,7 @@ function authorizeDriveAccess() {
   if (quoteFolderId) {
     const quoteFolder = DriveApp.getFolderById(quoteFolderId);
     Logger.log("견적서 저장 폴더 확인 완료: " + quoteFolder.getName() + " / https://drive.google.com/drive/folders/" + quoteFolderId);
-    Logger.log("사업자등록증은 견적서 저장 폴더의 케이스 폴더 안에 저장됩니다: {접수번호}_{건물명}/사업자등록증/{업체명}");
+    Logger.log("사업자등록증은 견적서 저장 폴더의 케이스 폴더 안에 바로 저장됩니다: {접수번호}_{건물명}/사업자등록증/BR-..._{업체명}_사업자등록증.pdf");
   }
 
   if (templateId) {
@@ -979,8 +979,7 @@ function getQuoteDriveFolder_(casePayload) {
 
 function getBusinessRegistrationDriveFolder_(casePayload, vendorName) {
   const caseFolder = getQuoteDriveFolder_(casePayload);
-  const root = getOrCreateChildFolder_(caseFolder, "사업자등록증");
-  return getOrCreateChildFolder_(root, makeBusinessRegistrationVendorFolderName_(vendorName, casePayload));
+  return getOrCreateChildFolder_(caseFolder, "사업자등록증");
 }
 
 function getQuoteDriveRootFolder_() {
@@ -991,12 +990,6 @@ function getQuoteDriveRootFolder_() {
 
 function makeCaseDriveFolderName_(casePayload) {
   return safeDriveName_((casePayload.ticketNo || casePayload.id || "case") + "_" + (casePayload.building || "건물"));
-}
-
-function makeBusinessRegistrationVendorFolderName_(vendorName, casePayload) {
-  const cleanVendor = cleanExtractedVendorName_(vendorName || "");
-  const fallback = cleanVendor || "업체확인필요";
-  return safeDriveName_(fallback);
 }
 
 function getOrCreateChildFolder_(parent, name) {
