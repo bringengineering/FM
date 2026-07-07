@@ -1411,6 +1411,157 @@ function cleanFieldValueAfterLabel_(line, label) {
   return value.slice(0, 140);
 }
 
+function extractBusinessRegistrationVendorInfoFromText_(text) {
+  const source = String(text || "");
+  const typeAndCategory = extractBusinessRegistrationTypeCategory_(source);
+  return cleanVendorInfo_({
+    name: extractBusinessRegistrationField_(source, ["상호", "상호명", "법인명", "회사명", "업체명", "사업체명"]),
+    phone: extractBusinessRegistrationPhone_(source),
+    businessNo: extractBusinessRegistrationBusinessNo_(source),
+    ceo: extractBusinessRegistrationField_(source, ["대표자", "대표자명", "대표", "성명"]),
+    address: extractBusinessRegistrationAddress_(source),
+    type: typeAndCategory.type || extractBusinessRegistrationField_(source, ["업태"]),
+    category: typeAndCategory.category || extractBusinessRegistrationField_(source, ["종목", "업종"]),
+    email: extractQuoteEmail_(source),
+    source: "business_registration"
+  });
+}
+
+function extractBusinessRegistrationBusinessNo_(text) {
+  const source = String(text || "");
+  const labeled = extractBusinessRegistrationField_(source, ["사업자등록번호", "사업자 번호", "등록번호"]);
+  const cleaned = cleanBusinessNo_(labeled);
+  if (cleaned) return cleaned;
+  const match = source.match(/[0-9]{3}[-.\s]?[0-9]{2}[-.\s]?[0-9]{5}/);
+  return cleanBusinessNo_(match ? match[0] : "");
+}
+
+function extractBusinessRegistrationPhone_(text) {
+  const labeled = extractBusinessRegistrationField_(text, ["전화번호", "전화", "연락처", "TEL", "Tel", "tel"]);
+  return cleanQuotePhone_(labeled) || cleanQuotePhone_(text);
+}
+
+function extractBusinessRegistrationAddress_(text) {
+  const value = extractBusinessRegistrationField_(text, ["사업장 소재지", "사업장 주소", "사업장소재지", "사업장주소", "본점 소재지", "본점소재지", "소재지", "주소"]);
+  return cleanQuoteAddress_(value);
+}
+
+function extractBusinessRegistrationTypeCategory_(text) {
+  const lines = normalizeQuoteTextLines_(text);
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i];
+    const type = restoreBusinessTypeSuffix_(extractBusinessRegistrationValueFromLine_(line, ["업태"], ["종목", "업종"]), line);
+    const category = extractBusinessRegistrationValueFromLine_(line, ["종목", "업종"], ["업태"]);
+    if (type || category) {
+      return {
+        type: cleanSimpleVendorField_(type),
+        category: cleanSimpleVendorField_(category)
+      };
+    }
+  }
+  return { type: "", category: "" };
+}
+
+function restoreBusinessTypeSuffix_(type, line) {
+  const cleaned = cleanSimpleVendorField_(type);
+  if (!cleaned || /업$/.test(cleaned)) return cleaned;
+  const compactLine = String(line || "").replace(/\s+/g, "");
+  const compactType = cleaned.replace(/\s+/g, "");
+  if (compactType && (compactLine.indexOf(compactType + "업종목") !== -1 || compactLine.indexOf(compactType + "업업종") !== -1)) {
+    return cleaned + "업";
+  }
+  return cleaned;
+}
+
+function extractBusinessRegistrationField_(text, labels) {
+  const lines = normalizeQuoteTextLines_(text);
+  const labelsArray = sortBusinessRegistrationLabels_(Array.isArray(labels) ? labels : [labels]);
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i];
+    const value = extractBusinessRegistrationValueFromLine_(line, labelsArray);
+    if (value) return cleanBusinessRegistrationFieldValue_(value);
+    if (!lineHasBusinessRegistrationLabel_(line, labelsArray)) continue;
+    const next = lines[i + 1] || "";
+    if (next && !lineHasBusinessRegistrationLabel_(next, businessRegistrationStopLabels_())) {
+      const nextValue = cleanBusinessRegistrationFieldValue_(next);
+      if (nextValue) return nextValue;
+    }
+  }
+  return "";
+}
+
+function extractBusinessRegistrationValueFromLine_(line, labels, extraStopLabels) {
+  const labelsArray = sortBusinessRegistrationLabels_(Array.isArray(labels) ? labels : [labels]);
+  for (let i = 0; i < labelsArray.length; i++) {
+    const label = labelsArray[i];
+    const pattern = flexibleLabelPattern_(label);
+    const regex = new RegExp(pattern + "\\s*[:：=\\-]?\\s*([\\s\\S]*)", "i");
+    const match = String(line || "").match(regex);
+    if (!match) continue;
+    const stopLabels = businessRegistrationStopLabels_()
+      .concat(extraStopLabels || [])
+      .filter(stop => businessRegistrationLabelKey_(stop) !== businessRegistrationLabelKey_(label));
+    const trimmed = trimBusinessRegistrationValueAtNextLabel_(match[1], stopLabels);
+    const cleaned = cleanBusinessRegistrationFieldValue_(trimmed);
+    if (cleaned) return cleaned;
+  }
+  return "";
+}
+
+function lineHasBusinessRegistrationLabel_(line, labels) {
+  const compact = String(line || "").replace(/\s+/g, "");
+  return (Array.isArray(labels) ? labels : [labels]).some(label => compact.indexOf(businessRegistrationLabelKey_(label)) !== -1);
+}
+
+function sortBusinessRegistrationLabels_(labels) {
+  return (labels || []).slice().sort((a, b) => businessRegistrationLabelKey_(b).length - businessRegistrationLabelKey_(a).length);
+}
+
+function trimBusinessRegistrationValueAtNextLabel_(value, stopLabels) {
+  let result = String(value || "");
+  let cutAt = result.length;
+  (stopLabels || []).forEach(label => {
+    const pattern = businessRegistrationStopLabelPattern_(label);
+    const regex = new RegExp(pattern + "\\s*[:：=\\-]?", "i");
+    const match = result.match(regex);
+    if (match && typeof match.index === "number" && match.index >= 0) {
+      cutAt = Math.min(cutAt, match.index);
+    }
+  });
+  return result.slice(0, cutAt);
+}
+
+function cleanBusinessRegistrationFieldValue_(value) {
+  return String(value || "")
+    .replace(/^[\s:：=\-·ㆍ|/\\]+/, "")
+    .replace(/[□■✓✔]/g, "")
+    .replace(/\s+/g, " ")
+    .trim()
+    .slice(0, 160);
+}
+
+function businessRegistrationStopLabels_() {
+  return [
+    "사업자등록번호", "사업자 번호", "등록번호", "상호", "상호명", "법인명", "회사명", "업체명",
+    "대표자", "대표자명", "대표", "성명", "사업장 소재지", "사업장 주소", "사업장소재지",
+    "사업장주소", "본점 소재지", "본점소재지", "소재지", "주소", "사업의 종류", "업태",
+    "종목", "업종", "전화번호", "전화", "연락처", "TEL", "Tel", "tel", "팩스", "이메일",
+    "전자우편", "개업연월일", "발급사유", "공동사업자"
+  ];
+}
+
+function businessRegistrationLabelKey_(label) {
+  return String(label || "").replace(/\s+/g, "");
+}
+
+function flexibleLabelPattern_(label) {
+  return businessRegistrationLabelKey_(label).split("").map(escapeRegex_).join("\\s*");
+}
+
+function businessRegistrationStopLabelPattern_(label) {
+  return escapeRegex_(String(label || "").trim()).replace(/\s+/g, "\\s*");
+}
+
 function extractQuoteBusinessNo_(text) {
   const source = String(text || "");
   const labeled = source.match(/(?:사업자\s*(?:등록)?\s*번호|등록번호)\s*[:：]?\s*([0-9]{3}[-.\s]?[0-9]{2}[-.\s]?[0-9]{5})/);
@@ -1750,21 +1901,17 @@ function extractBusinessRegistrationData_(blob, mimeType, fileName, casePayload,
 function extractBusinessRegistrationVendorInfo_(text, mineruResult, fileName) {
   const source = String(text || "");
   const quoteInfo = extractQuoteVendorInfo_(source, mineruResult || {}, fileName);
-  const businessInfo = cleanVendorInfo_({
-    name: extractFieldNearLabels_(source, ["상호", "법인명", "회사명", "업체명", "사업체명"]) || quoteInfo.name,
-    phone: extractFieldNearLabels_(source, ["전화번호", "전화", "TEL", "Tel", "연락처"]) || quoteInfo.phone,
-    businessNo: extractQuoteBusinessNo_(source) || quoteInfo.businessNo,
-    ceo: extractFieldNearLabels_(source, ["대표자", "대표", "성명"]) || quoteInfo.ceo,
-    address: extractFieldNearLabels_(source, ["사업장 소재지", "사업장 주소", "소재지", "주소"]) || quoteInfo.address,
-    type: extractFieldNearLabels_(source, ["업태"]) || quoteInfo.type,
-    category: extractFieldNearLabels_(source, ["종목", "업종"]) || quoteInfo.category,
-    email: extractQuoteEmail_(source) || quoteInfo.email,
-    source: "business_registration"
-  });
-  const merged = mergeVendorInfoObjects_(quoteInfo, businessInfo);
+  const structuredInfo = extractQuoteVendorInfoFromObject_(mineruResult || {});
+  const businessInfo = extractBusinessRegistrationVendorInfoFromText_(source);
+  const fileNameInfo = cleanVendorInfo_({ name: extractQuoteVendorNameFromFileName_(fileName) });
+  let merged = mergeVendorInfoObjects_(quoteInfo, structuredInfo);
+  merged = mergeVendorInfoObjects_(merged, businessInfo);
+  if (!merged.name) merged.name = fileNameInfo.name || "";
   merged.source = businessInfo.name || businessInfo.businessNo || businessInfo.ceo || businessInfo.address || businessInfo.type || businessInfo.category || businessInfo.phone
     ? "business_registration"
-    : quoteInfo.source || "";
+    : structuredInfo.name || structuredInfo.businessNo || structuredInfo.ceo || structuredInfo.address || structuredInfo.type || structuredInfo.category || structuredInfo.phone
+      ? "mineru_structured"
+      : quoteInfo.source || (fileNameInfo.name ? "file_name" : "");
   return cleanVendorInfo_(merged);
 }
 
@@ -2651,9 +2798,11 @@ function findBusinessRegistrationForQuote_(casePayload, quote, vendorName) {
     vendorName,
     quoteVendor.name,
     quote && quote.vendorName,
-    quote && quote.extractedVendorName
+    quote && quote.extractedVendorName,
+    quote && quote.extractedVendorInfo && quote.extractedVendorInfo.name,
+    quote && extractQuoteVendorNameFromFileName_(quote.fileName || quote.originalFileName || "")
   ].map(cleanExtractedVendorName_).filter(Boolean);
-  const targetBusinessNo = cleanBusinessNo_(quoteVendor.businessNo || (quote && quote.businessNo) || "");
+  const targetBusinessNo = cleanBusinessNo_(quoteVendor.businessNo || (quote && quote.businessNo) || (quote && quote.extractedVendorInfo && quote.extractedVendorInfo.businessNo) || "");
 
   if (targetBusinessNo) {
     const businessMatches = docs.filter(doc => cleanBusinessNo_(doc.businessNo || "") === targetBusinessNo);
@@ -2803,7 +2952,7 @@ function businessRegistrationMatchesQuote_(businessVendor, quote) {
   quote = quote || {};
   const quoteVendor = cleanVendorInfo_(quote.resolvedVendorInfo || quote.vendor || {});
   const businessNo = cleanBusinessNo_(businessVendor.businessNo || "");
-  const quoteBusinessNo = cleanBusinessNo_(quoteVendor.businessNo || quote.businessNo || "");
+  const quoteBusinessNo = cleanBusinessNo_(quoteVendor.businessNo || quote.businessNo || (quote.extractedVendorInfo && quote.extractedVendorInfo.businessNo) || "");
   if (businessNo && quoteBusinessNo && businessNo === quoteBusinessNo) return true;
 
   const businessName = cleanExtractedVendorName_(businessVendor.name || "");
@@ -2811,7 +2960,9 @@ function businessRegistrationMatchesQuote_(businessVendor, quote) {
   const quoteNames = [
     quoteVendor.name,
     quote.vendorName,
-    quote.extractedVendorName
+    quote.extractedVendorName,
+    quote.extractedVendorInfo && quote.extractedVendorInfo.name,
+    extractQuoteVendorNameFromFileName_(quote.fileName || quote.originalFileName || "")
   ].map(cleanExtractedVendorName_).filter(Boolean);
   if (!quoteNames.length) return false;
   return quoteNames.some(name => vendorMatchKey_(name) === vendorMatchKey_(businessName) || isSimilarVendorName_(name, businessName));
