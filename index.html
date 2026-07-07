@@ -386,9 +386,6 @@
   .quote-confirm input{ width:100%; min-width:0; box-sizing:border-box; border:1px solid #d8e0ec; border-radius:7px; padding:6px 8px; font-size:12.5px; font-family:inherit; }
   .quote-confirm button{ border:1px solid #1b335f; background:#1b335f; color:#fff; border-radius:7px; padding:6px 9px; font-size:11.5px; font-weight:900; cursor:pointer; font-family:inherit; white-space:nowrap; }
   .quote-confirm button:hover{ background:#26477e; }
-  .quote-confirm-actions{ display:flex; flex-wrap:wrap; justify-content:flex-end; gap:6px; }
-  .quote-confirm button.secondary{ color:#1b335f; background:#f6f8ff; border-color:#b8c9ef; }
-  .quote-confirm button.secondary:hover{ background:#eaf0ff; }
   .quote-card-links{ display:flex; flex-wrap:wrap; gap:6px; }
   .quote-card a{ color:#315fce; text-decoration:none; font-size:12.5px; font-weight:800; }
   .quote-card-links a{ display:inline-flex; align-items:center; min-height:26px; padding:3px 8px; border:1px solid #c5d4ff; border-radius:7px; background:#f6f8ff; }
@@ -2635,10 +2632,7 @@ function renderQuoteUploadPanel(c, stepStatus){
       <div class="quote-card-meta">${esc(q.fileName||q.originalFileName||"파일명 없음")}<br>${esc(formatQuoteDate(q.uploadedAt))}${quoteAnalysisMeta(q)}${q.memo?`<br>${esc(q.memo)}`:""}${q.extractionMemo?`<br>${esc(q.extractionMemo)}`:""}</div>
       <div class="quote-confirm">
         <label>합계금액 확인/수정<input data-quote-amount="${escAttr(q.id)}" inputmode="numeric" value="${escAttr(quoteAmountInputValue(q))}" placeholder="예: 145200"></label>
-        <div class="quote-confirm-actions">
-          <button type="button" data-quote-confirm="${escAttr(q.id)}">브링 양식 재작성</button>
-          <button type="button" class="secondary" data-quote-apply-br="${escAttr(q.id)}">사업자등록증 반영</button>
-        </div>
+        <button type="button" data-quote-confirm="${escAttr(q.id)}">브링 양식 재작성</button>
       </div>
       ${quoteLinksHtml(q)}
       <button class="quote-remove" data-quote-remove="${escAttr(q.id)}">목록에서 제거</button>
@@ -3212,41 +3206,43 @@ async function confirmQuoteAmount(quoteId){
   });
   setTimeout(hideQuoteUploadProgress, 1400);
 }
-async function applyBusinessRegistrationToQuote(quoteId){
-  const c=cases[curCase];
+const businessRegAutoApplyQueue = new Set();
+function businessRegistrationAutoSignature(c){
+  return Object.values((c&&c.businessRegistrationFiles)||{}).filter(Boolean)
+    .map(doc=>[doc.id, doc.driveFileId, doc.uploadedAt, doc.updatedAt].filter(Boolean).join("@"))
+    .sort()
+    .join("|");
+}
+function quoteNeedsBusinessRegistrationAutoApply(q){
+  if(!q || isBusinessRegistrationLikeQuote(q)) return false;
+  if(q.businessRegistrationAppliedAt || String(q.vendorInfoSource||"")==="business_registration") return false;
+  return !!(q.bringQuoteXlsxUrl || q.bringQuoteStatus || q.extractionStatus || q.fileUrl || q.originalFileUrl);
+}
+function queueBusinessRegistrationAutoApply(c, caseKey){
+  const docs=Object.values((c&&c.businessRegistrationFiles)||{}).filter(Boolean);
+  if(!c || !c.quoteFiles || !docs.length || !caseAutomationEndpoint()) return;
+  const sig=businessRegistrationAutoSignature(c);
+  if(!sig) return;
+  Object.entries(c.quoteFiles).forEach(([quoteId,q])=>{
+    if(!quoteNeedsBusinessRegistrationAutoApply(q)) return;
+    const key=[c.ticketNo||c.id||caseKey, quoteId, sig].join("::");
+    if(businessRegAutoApplyQueue.has(key)) return;
+    businessRegAutoApplyQueue.add(key);
+    setTimeout(()=>autoApplyBusinessRegistrationToQuote(caseKey, quoteId), 350);
+  });
+}
+async function autoApplyBusinessRegistrationToQuote(caseKey, quoteId){
+  const c=cases[caseKey];
   if(!c || !quoteId || !c.quoteFiles || !c.quoteFiles[quoteId]) return;
-  const q=c.quoteFiles[quoteId];
-  if(!caseAutomationEndpoint()){
-    if(!promptCaseAutomationSetup()) return;
-    if(!caseAutomationEndpoint()) return;
+  try{
+    await sendCaseAutomationRequest(caseAutomationEndpoint(), {
+      action:"applyBusinessRegistrationToQuote",
+      caseId:c.ticketNo||c.id||caseKey,
+      quoteId
+    });
+  }catch(e){
+    console.warn("business registration auto apply", e);
   }
-  c.status=c.status||{};
-  c.note=c.note||{};
-  if(c.status.c6!=="done") c.status.c6="doing";
-  c.note.c6=`${q.vendorName||"업체"} 사업자등록증 정보 반영 요청 중입니다.`;
-  caseLog(c, "사업자등록증 정보 반영 요청: "+(q.vendorName||"업체"));
-  saveCase(curCase);
-  renderCaseDetail();
-  updateQuoteUploadProgress({
-    title:"사업자등록증 반영 요청",
-    fileName:q.fileName||q.originalFileName||"견적 파일",
-    detail:"사업자등록증 정보로 브링 엑셀 빈칸을 다시 채우는 중입니다.",
-    percent:45,
-    count:""
-  });
-  await sendCaseAutomationRequest(caseAutomationEndpoint(), {
-    action:"applyBusinessRegistrationToQuote",
-    caseId:c.ticketNo||c.id||curCase,
-    quoteId
-  });
-  updateQuoteUploadProgress({
-    title:"사업자등록증 반영 요청 완료",
-    fileName:q.vendorName||"업체",
-    detail:"Apps Script 처리 후 엑셀 견적서 링크가 자동 갱신됩니다.",
-    percent:100,
-    count:""
-  });
-  setTimeout(hideQuoteUploadProgress, 1400);
 }
 function removeQuoteFileFromCase(quoteId){
   const c=cases[curCase];
@@ -3711,6 +3707,7 @@ function renderCaseDetail(){
     (c.archived?`<button class="cv-del restore" id="cvRestore">↩ 보관 해제</button>`:`<button class="cv-del" id="cvDel">🗄 보관함으로 이동</button>`)+
     (c.log&&c.log.length?`<div class="cv-log"><div class="t" style="font-weight:700">기록</div>`+c.log.slice(0,8).map(l=>`<div class="t">· ${esc(l)}</div>`).join("")+`</div>`:"");
   (window.requestAnimationFrame || (fn=>setTimeout(fn,0)))(autoGrowCaseNotes);
+  queueBusinessRegistrationAutoApply(c, curCase);
 }
 document.getElementById("caseBtn").addEventListener("click", openCaseView);
 document.getElementById("caseBack").addEventListener("click", closeCaseView);
@@ -3721,7 +3718,6 @@ caseDetailEl.addEventListener("click", e=>{
   const qu=e.target.closest("[data-quote-upload]"); if(qu){ uploadQuoteFile(); return; }
   const bu=e.target.closest("[data-bizreg-upload]"); if(bu){ uploadBusinessRegistrationFiles(); return; }
   const qc=e.target.closest("[data-quote-confirm]"); if(qc){ confirmQuoteAmount(qc.dataset.quoteConfirm); return; }
-  const qab=e.target.closest("[data-quote-apply-br]"); if(qab){ applyBusinessRegistrationToQuote(qab.dataset.quoteApplyBr); return; }
   const qr=e.target.closest("[data-quote-remove]"); if(qr){ removeQuoteFileFromCase(qr.dataset.quoteRemove); return; }
   const br=e.target.closest("[data-bizreg-remove]"); if(br){ removeBusinessRegistrationFromCase(br.dataset.bizregRemove); return; }
   const td=e.target.closest("[data-testdone]"); if(td){ forceCompleteThroughStep(curCase, td.dataset.testdone); return; }
@@ -3787,8 +3783,9 @@ document.getElementById("noticeBtn").addEventListener("click", openNoticePanel);
 document.getElementById("noticeBanner").addEventListener("click", openNoticePanel);
 
 /* ===== 업데이트 알림(What's New) — 새 버전 나오면 자동 팝업 ===== */
-const APP_VERSION = "4.52";
+const APP_VERSION = "4.53";
 const CHANGELOG = [
+  { v:"4.53", d:"2026-07-07", items:["⑥ 사업자등록증 반영 버튼 제거","견적서와 사업자등록증만 업로드하면 브링 엑셀 공급자 빈칸 자동 보충"] },
   { v:"4.52", d:"2026-07-07", items:["⑥ 견적 카드에 사업자등록증 반영 버튼 추가","브링 엑셀 공급자 빈칸을 사업자등록증 정보로 다시 채우기"] },
   { v:"4.51", d:"2026-07-07", items:["⑥ 업로드 진행 팝업의 X 버튼을 누르면 남은 파일 업로드를 중단","취소 후 진행 팝업이 다시 열리지 않도록 처리"] },
   { v:"4.50", d:"2026-07-06", items:["⑥ 견적 업로드 속도 개선","기본값은 MinerU 실시간 대기 없이 빠르게 원본 저장과 엑셀 견적서 생성을 먼저 처리"] },
