@@ -2691,23 +2691,76 @@ function businessRegUploadErrors(files){
     return error ? `${file.name}: ${error}` : "";
   }).filter(Boolean);
 }
-function readFileAsBase64(file){
+function readFileAsBase64(file, job){
   return new Promise((resolve,reject)=>{
+    if(isQuoteUploadCanceled(job)){ reject(quoteUploadCanceledError()); return; }
     const reader=new FileReader();
-    reader.onload=()=>resolve(String(reader.result||"").split(",")[1]||"");
-    reader.onerror=()=>reject(reader.error||new Error("파일을 읽지 못했습니다."));
+    const removeCancel=addQuoteUploadCancelHandler(job, ()=>{
+      try{ reader.abort(); }catch(e){}
+      reject(quoteUploadCanceledError());
+    });
+    reader.onload=()=>{ removeCancel(); if(isQuoteUploadCanceled(job)) reject(quoteUploadCanceledError()); else resolve(String(reader.result||"").split(",")[1]||""); };
+    reader.onerror=()=>{ removeCancel(); reject(reader.error||new Error("파일을 읽지 못했습니다.")); };
+    reader.onabort=()=>{ removeCancel(); reject(quoteUploadCanceledError()); };
     reader.readAsDataURL(file);
   });
 }
-function sendCaseAutomationRequest(endpoint, payload){
+function sendCaseAutomationRequest(endpoint, payload, job){
+  throwIfQuoteUploadCanceled(job);
+  const controller = typeof AbortController !== "undefined" ? new AbortController() : null;
+  const removeCancel = controller ? addQuoteUploadCancelHandler(job, ()=>controller.abort()) : ()=>{};
   return fetch(endpoint, {
     method:"POST",
     mode:"no-cors",
     headers:{"Content-Type":"text/plain;charset=utf-8"},
-    body:JSON.stringify(payload)
-  }).catch(e=>console.error("case automation", e));
+    body:JSON.stringify(payload),
+    signal:controller ? controller.signal : undefined
+  }).catch(e=>{
+    if(isQuoteUploadCanceled(job) || (e && e.name==="AbortError")) throw quoteUploadCanceledError();
+    console.error("case automation", e);
+  }).finally(()=>removeCancel());
 }
-let quoteUploadProgressEl=null, quoteUploadInProgress=false;
+let quoteUploadProgressEl=null, quoteUploadInProgress=false, quoteUploadJob=null, quoteUploadHideTimer=null;
+function createQuoteUploadJob(){
+  const job={ id:"qu"+Date.now().toString(36)+Math.random().toString(36).slice(2,7), canceled:false, cancelHandlers:[] };
+  quoteUploadJob=job;
+  quoteUploadInProgress=true;
+  return job;
+}
+function addQuoteUploadCancelHandler(job, fn){
+  if(!job || typeof fn!=="function") return ()=>{};
+  job.cancelHandlers.push(fn);
+  return ()=>{ job.cancelHandlers=job.cancelHandlers.filter(item=>item!==fn); };
+}
+function quoteUploadCanceledError(){
+  const err=new Error("업로드가 취소되었습니다.");
+  err.name="UploadCanceled";
+  return err;
+}
+function isQuoteUploadCanceled(job){
+  return !!(job && (job.canceled || quoteUploadJob!==job));
+}
+function throwIfQuoteUploadCanceled(job){
+  if(isQuoteUploadCanceled(job)) throw quoteUploadCanceledError();
+}
+function cancelQuoteUpload(){
+  const job=quoteUploadJob;
+  if(job && !job.canceled){
+    job.canceled=true;
+    (job.cancelHandlers||[]).slice().forEach(fn=>{ try{ fn(); }catch(e){} });
+    job.cancelHandlers=[];
+  }
+  quoteUploadInProgress=false;
+  if(quoteUploadHideTimer){ clearTimeout(quoteUploadHideTimer); quoteUploadHideTimer=null; }
+  hideQuoteUploadProgress();
+}
+function finishQuoteUploadJob(job){
+  if(quoteUploadJob===job) quoteUploadJob=null;
+  quoteUploadInProgress=false;
+}
+function isQuoteUploadCanceledError(err){
+  return err && (err.name==="UploadCanceled" || err.name==="AbortError");
+}
 function ensureQuoteUploadProgressModal(){
   if(quoteUploadProgressEl) return quoteUploadProgressEl;
   quoteUploadProgressEl=document.createElement("div");
@@ -2721,11 +2774,12 @@ function ensureQuoteUploadProgressModal(){
   </div>`;
   document.body.appendChild(quoteUploadProgressEl);
   quoteUploadProgressEl.addEventListener("click", e=>{
-    if(e.target===quoteUploadProgressEl || e.target.closest("#qProgClose")) hideQuoteUploadProgress();
+    if(e.target===quoteUploadProgressEl || e.target.closest("#qProgClose")) cancelQuoteUpload();
   });
   return quoteUploadProgressEl;
 }
-function updateQuoteUploadProgress(opts){
+function updateQuoteUploadProgress(opts, job){
+  if(isQuoteUploadCanceled(job)) return;
   const el=ensureQuoteUploadProgressModal();
   const pct=Math.max(0, Math.min(100, Math.round(opts.percent||0)));
   el.classList.add("open");
@@ -2757,16 +2811,18 @@ async function uploadQuoteFile(){
   const vendors=quoteUploadVendors(c);
   const vendorId=vendor.id || "";
   const vendorName=vendor.name || "업체 확인 필요";
-  quoteUploadInProgress=true;
+  const uploadJob=createQuoteUploadJob();
   try{
+    throwIfQuoteUploadCanceled(uploadJob);
     updateQuoteUploadProgress({
       title:"업로드 중...",
       fileName:files.length+"개 견적 파일 준비 중",
       detail:"파일을 읽고 Apps Script로 보낼 준비를 하고 있습니다.",
       percent:0,
       count:"0/"+files.length
-    });
+    }, uploadJob);
     for(let i=0; i<files.length; i++){
+      throwIfQuoteUploadCanceled(uploadJob);
       const file=files[i];
       updateQuoteUploadProgress({
         title:"업로드 중...",
@@ -2774,15 +2830,16 @@ async function uploadQuoteFile(){
         detail:"파일을 읽는 중입니다.",
         percent:(i/files.length)*100,
         count:(i+1)+"/"+files.length
-      });
-      const body=await readFileAsBase64(file);
+      }, uploadJob);
+      const body=await readFileAsBase64(file, uploadJob);
+      throwIfQuoteUploadCanceled(uploadJob);
       updateQuoteUploadProgress({
         title:"업로드 중...",
         fileName:file.name,
         detail:"Apps Script로 업로드 요청을 보내는 중입니다.",
         percent:((i+0.55)/files.length)*100,
         count:(i+1)+"/"+files.length
-      });
+      }, uploadJob);
       await sendCaseAutomationRequest(caseAutomationEndpoint(), {
         action:"uploadQuoteFile",
         caseId:c.ticketNo||c.id||curCase,
@@ -2793,7 +2850,8 @@ async function uploadQuoteFile(){
         amount:"",
         memo:"",
         file:{ fileName:file.name, mimeType:file.type || "", size:file.size, fileBody:body }
-      });
+      }, uploadJob);
+      throwIfQuoteUploadCanceled(uploadJob);
       caseLog(c, "📎 견적 파일 업로드 요청: "+vendorName+" / "+file.name);
       updateQuoteUploadProgress({
         title:"업로드 중...",
@@ -2801,20 +2859,25 @@ async function uploadQuoteFile(){
         detail:"업로드 요청을 보냈습니다.",
         percent:((i+1)/files.length)*100,
         count:(i+1)+"/"+files.length
-      });
+      }, uploadJob);
     }
   }catch(err){
+    if(isQuoteUploadCanceledError(err)){
+      finishQuoteUploadJob(uploadJob);
+      return;
+    }
     updateQuoteUploadProgress({
       title:"업로드 실패",
       fileName:"견적 파일 업로드를 중단했습니다.",
       detail:err && err.message ? err.message : "파일을 읽거나 전송하지 못했습니다.",
       percent:0,
       count:""
-    });
+    }, uploadJob);
     alert("견적 파일 업로드 중 문제가 생겼어요.\n"+(err && err.message ? err.message : "다시 시도해 주세요."));
-    quoteUploadInProgress=false;
+    finishQuoteUploadJob(uploadJob);
     return;
   }
+  if(isQuoteUploadCanceled(uploadJob)){ finishQuoteUploadJob(uploadJob); return; }
   clearQuotePendingFiles();
   c.status=c.status||{};
   c.note=c.note||{};
@@ -2829,9 +2892,9 @@ async function uploadQuoteFile(){
     detail:"Apps Script 처리 후 Drive 링크가 ⑥ 견적 카드에 자동 반영됩니다.",
     percent:100,
     count:files.length+"/"+files.length
-  });
-  quoteUploadInProgress=false;
-  setTimeout(hideQuoteUploadProgress, 1400);
+  }, uploadJob);
+  finishQuoteUploadJob(uploadJob);
+  quoteUploadHideTimer=setTimeout(()=>{ quoteUploadHideTimer=null; hideQuoteUploadProgress(); }, 1400);
 }
 async function uploadBusinessRegistrationFiles(){
   const c=cases[curCase];
@@ -2848,16 +2911,18 @@ async function uploadBusinessRegistrationFiles(){
     if(!caseAutomationEndpoint()) return;
   }
   const vendors=quoteUploadVendors(c);
-  quoteUploadInProgress=true;
+  const uploadJob=createQuoteUploadJob();
   try{
+    throwIfQuoteUploadCanceled(uploadJob);
     updateQuoteUploadProgress({
       title:"사업자등록증 업로드 중...",
       fileName:files.length+"개 사업자등록증 파일 준비 중",
       detail:"파일을 읽고 Apps Script로 보낼 준비를 하고 있습니다.",
       percent:0,
       count:"0/"+files.length
-    });
+    }, uploadJob);
     for(let i=0; i<files.length; i++){
+      throwIfQuoteUploadCanceled(uploadJob);
       const file=files[i];
       updateQuoteUploadProgress({
         title:"사업자등록증 업로드 중...",
@@ -2865,14 +2930,16 @@ async function uploadBusinessRegistrationFiles(){
         detail:"파일을 읽는 중입니다.",
         percent:(i/files.length)*100,
         count:(i+1)+"/"+files.length
-      });
-      const body=await readFileAsBase64(file);
+      }, uploadJob);
+      const body=await readFileAsBase64(file, uploadJob);
+      throwIfQuoteUploadCanceled(uploadJob);
       await sendCaseAutomationRequest(caseAutomationEndpoint(), {
         action:"uploadBusinessRegistration",
         caseId:c.ticketNo||c.id||curCase,
         vendors,
         file:{ fileName:file.name, mimeType:file.type || "", size:file.size, fileBody:body }
-      });
+      }, uploadJob);
+      throwIfQuoteUploadCanceled(uploadJob);
       caseLog(c, "사업자등록증 업로드 요청: "+file.name);
       updateQuoteUploadProgress({
         title:"사업자등록증 업로드 중...",
@@ -2880,20 +2947,25 @@ async function uploadBusinessRegistrationFiles(){
         detail:"업로드 요청을 보냈습니다.",
         percent:((i+1)/files.length)*100,
         count:(i+1)+"/"+files.length
-      });
+      }, uploadJob);
     }
   }catch(err){
+    if(isQuoteUploadCanceledError(err)){
+      finishQuoteUploadJob(uploadJob);
+      return;
+    }
     updateQuoteUploadProgress({
       title:"사업자등록증 업로드 실패",
       fileName:"사업자등록증 업로드를 중단했습니다.",
       detail:err && err.message ? err.message : "파일을 읽거나 전송하지 못했습니다.",
       percent:0,
       count:""
-    });
+    }, uploadJob);
     alert("사업자등록증 업로드 중 문제가 생겼어요.\n"+(err && err.message ? err.message : "다시 시도해 주세요."));
-    quoteUploadInProgress=false;
+    finishQuoteUploadJob(uploadJob);
     return;
   }
+  if(isQuoteUploadCanceled(uploadJob)){ finishQuoteUploadJob(uploadJob); return; }
   clearBusinessRegPendingFiles();
   c.status=c.status||{};
   if(c.status.c6!=="done") c.status.c6="doing";
@@ -2906,9 +2978,9 @@ async function uploadBusinessRegistrationFiles(){
     detail:"Apps Script 처리 후 사업자 정보가 브링 엑셀 빈칸 보충에 사용됩니다.",
     percent:100,
     count:files.length+"/"+files.length
-  });
-  quoteUploadInProgress=false;
-  setTimeout(hideQuoteUploadProgress, 1400);
+  }, uploadJob);
+  finishQuoteUploadJob(uploadJob);
+  quoteUploadHideTimer=setTimeout(()=>{ quoteUploadHideTimer=null; hideQuoteUploadProgress(); }, 1400);
 }
 async function uploadSelectedCaseDocuments(){
   const c=cases[curCase];
@@ -2943,18 +3015,20 @@ async function uploadSelectedCaseDocuments(){
   const vendorName=vendor.name || "업체 확인 필요";
   const totalCount=quoteFiles.length + businessFiles.length;
   let doneCount=0;
-  quoteUploadInProgress=true;
+  const uploadJob=createQuoteUploadJob();
 
   try{
+    throwIfQuoteUploadCanceled(uploadJob);
     updateQuoteUploadProgress({
       title:"업로드 중...",
       fileName:`선택 파일 ${totalCount}개 준비 중`,
       detail:"견적 파일과 사업자등록증 파일을 Apps Script로 보낼 준비를 하고 있습니다.",
       percent:0,
       count:`0/${totalCount}`
-    });
+    }, uploadJob);
 
     for(let i=0; i<quoteFiles.length; i++){
+      throwIfQuoteUploadCanceled(uploadJob);
       const file=quoteFiles[i];
       updateQuoteUploadProgress({
         title:"견적 파일 업로드 중...",
@@ -2962,15 +3036,16 @@ async function uploadSelectedCaseDocuments(){
         detail:"파일을 읽는 중입니다.",
         percent:(doneCount/totalCount)*100,
         count:`${doneCount+1}/${totalCount}`
-      });
-      const body=await readFileAsBase64(file);
+      }, uploadJob);
+      const body=await readFileAsBase64(file, uploadJob);
+      throwIfQuoteUploadCanceled(uploadJob);
       updateQuoteUploadProgress({
         title:"견적 파일 업로드 중...",
         fileName:file.name,
         detail:"Apps Script로 업로드 요청을 보내는 중입니다.",
         percent:((doneCount+0.55)/totalCount)*100,
         count:`${doneCount+1}/${totalCount}`
-      });
+      }, uploadJob);
       await sendCaseAutomationRequest(caseAutomationEndpoint(), {
         action:"uploadQuoteFile",
         caseId:c.ticketNo||c.id||curCase,
@@ -2981,7 +3056,8 @@ async function uploadSelectedCaseDocuments(){
         amount:"",
         memo:"",
         file:{ fileName:file.name, mimeType:file.type || "", size:file.size, fileBody:body }
-      });
+      }, uploadJob);
+      throwIfQuoteUploadCanceled(uploadJob);
       caseLog(c, "📎 견적 파일 업로드 요청: "+vendorName+" / "+file.name);
       doneCount++;
       updateQuoteUploadProgress({
@@ -2990,10 +3066,11 @@ async function uploadSelectedCaseDocuments(){
         detail:"업로드 요청을 보냈습니다.",
         percent:(doneCount/totalCount)*100,
         count:`${doneCount}/${totalCount}`
-      });
+      }, uploadJob);
     }
 
     for(let i=0; i<businessFiles.length; i++){
+      throwIfQuoteUploadCanceled(uploadJob);
       const file=businessFiles[i];
       updateQuoteUploadProgress({
         title:"사업자등록증 업로드 중...",
@@ -3001,21 +3078,23 @@ async function uploadSelectedCaseDocuments(){
         detail:"파일을 읽는 중입니다.",
         percent:(doneCount/totalCount)*100,
         count:`${doneCount+1}/${totalCount}`
-      });
-      const body=await readFileAsBase64(file);
+      }, uploadJob);
+      const body=await readFileAsBase64(file, uploadJob);
+      throwIfQuoteUploadCanceled(uploadJob);
       updateQuoteUploadProgress({
         title:"사업자등록증 업로드 중...",
         fileName:file.name,
         detail:"Apps Script로 업로드 요청을 보내는 중입니다.",
         percent:((doneCount+0.55)/totalCount)*100,
         count:`${doneCount+1}/${totalCount}`
-      });
+      }, uploadJob);
       await sendCaseAutomationRequest(caseAutomationEndpoint(), {
         action:"uploadBusinessRegistration",
         caseId:c.ticketNo||c.id||curCase,
         vendors,
         file:{ fileName:file.name, mimeType:file.type || "", size:file.size, fileBody:body }
-      });
+      }, uploadJob);
+      throwIfQuoteUploadCanceled(uploadJob);
       caseLog(c, "사업자등록증 업로드 요청: "+file.name);
       doneCount++;
       updateQuoteUploadProgress({
@@ -3024,21 +3103,26 @@ async function uploadSelectedCaseDocuments(){
         detail:"업로드 요청을 보냈습니다.",
         percent:(doneCount/totalCount)*100,
         count:`${doneCount}/${totalCount}`
-      });
+      }, uploadJob);
     }
   }catch(err){
+    if(isQuoteUploadCanceledError(err)){
+      finishQuoteUploadJob(uploadJob);
+      return;
+    }
     updateQuoteUploadProgress({
       title:"업로드 실패",
       fileName:"선택 파일 업로드를 중단했습니다.",
       detail:err && err.message ? err.message : "파일을 읽거나 전송하지 못했습니다.",
       percent:0,
       count:""
-    });
+    }, uploadJob);
     alert("업로드 중 문제가 생겼어요.\n"+(err && err.message ? err.message : "다시 시도해 주세요."));
-    quoteUploadInProgress=false;
+    finishQuoteUploadJob(uploadJob);
     return;
   }
 
+  if(isQuoteUploadCanceled(uploadJob)){ finishQuoteUploadJob(uploadJob); return; }
   if(rawQuoteFiles.length) clearQuotePendingFiles();
   if(businessFiles.length) clearBusinessRegPendingFiles();
   c.status=c.status||{};
@@ -3058,9 +3142,9 @@ async function uploadSelectedCaseDocuments(){
     detail:"Apps Script 처리 후 견적서는 카드에 반영되고, 사업자등록증은 브링 엑셀 빈칸 보충에만 사용됩니다.",
     percent:100,
     count:`${totalCount}/${totalCount}`
-  });
-  quoteUploadInProgress=false;
-  setTimeout(hideQuoteUploadProgress, 1400);
+  }, uploadJob);
+  finishQuoteUploadJob(uploadJob);
+  quoteUploadHideTimer=setTimeout(()=>{ quoteUploadHideTimer=null; hideQuoteUploadProgress(); }, 1400);
 }
 async function confirmQuoteAmount(quoteId){
   const c=cases[curCase];
@@ -3656,8 +3740,9 @@ document.getElementById("noticeBtn").addEventListener("click", openNoticePanel);
 document.getElementById("noticeBanner").addEventListener("click", openNoticePanel);
 
 /* ===== 업데이트 알림(What's New) — 새 버전 나오면 자동 팝업 ===== */
-const APP_VERSION = "4.50";
+const APP_VERSION = "4.51";
 const CHANGELOG = [
+  { v:"4.51", d:"2026-07-07", items:["⑥ 업로드 진행 팝업의 X 버튼을 누르면 남은 파일 업로드를 중단","취소 후 진행 팝업이 다시 열리지 않도록 처리"] },
   { v:"4.50", d:"2026-07-06", items:["⑥ 견적 업로드 속도 개선","기본값은 MinerU 실시간 대기 없이 빠르게 원본 저장과 엑셀 견적서 생성을 먼저 처리"] },
   { v:"4.49", d:"2026-07-06", items:["사업자등록증 보충 메모가 있는 정상 견적서가 숨겨지지 않도록 견적 목록 필터 기준 수정"] },
   { v:"4.48", d:"2026-07-06", items:["⑥ 견적 카드 목록에는 견적서만 표시","사업자등록증은 케이스 폴더에 원본만 저장하고 브링 엑셀 보충용으로만 사용","문서 분석 결과 Markdown/JSON 링크 표시 제거"] },
