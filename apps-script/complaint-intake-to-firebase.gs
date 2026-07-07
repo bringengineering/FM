@@ -101,6 +101,9 @@ function doPost(e) {
   let payload = {};
   try {
     payload = JSON.parse(e && e.postData && e.postData.contents ? e.postData.contents : "{}");
+    if (payload.action === "sendComplaintReceiptSms") {
+      return jsonResponse_(handleComplaintReceiptSms_(payload));
+    }
     if (payload.action === "sendVendorEstimateMms") {
       return jsonResponse_(handleVendorEstimateMms_(payload));
     }
@@ -137,7 +140,11 @@ function recordAutomationError_(payload, err) {
   const casePayload = readCaseFromFirebase_(caseId) || {};
   const log = Array.isArray(casePayload.log) ? casePayload.log : [];
 
-  if (action === "uploadQuoteFile") {
+  if (action === "sendComplaintReceiptSms") {
+    patchCaseChildToFirebase_(caseId, "status", { c2: "doing" });
+    patchCaseChildToFirebase_(caseId, "note", { c2: "접수확인 문자 발송 실패: " + message });
+    log.unshift("접수확인 문자 발송 실패: " + message);
+  } else if (action === "uploadQuoteFile") {
     const fileName = payload && payload.file && payload.file.fileName ? String(payload.file.fileName) : "파일명 미확인";
     patchCaseChildToFirebase_(caseId, "status", { c6: "doing" });
     patchCaseChildToFirebase_(caseId, "note", { c6: "견적 파일 업로드 실패: " + fileName + " / " + message });
@@ -167,6 +174,72 @@ function jsonResponse_(value) {
   return ContentService
     .createTextOutput(JSON.stringify(value || {}))
     .setMimeType(ContentService.MimeType.JSON);
+}
+
+function handleComplaintReceiptSms_(payload) {
+  const caseId = String(payload.caseId || "").trim();
+  if (!caseId) return { ok: false, message: "caseId가 없습니다." };
+
+  const casePayload = readCaseFromFirebase_(caseId);
+  if (!casePayload) return { ok: false, message: "Firebase 케이스를 찾지 못했습니다: " + caseId };
+
+  const existingStatus = String(casePayload.sms && casePayload.sms.status || "");
+  if (!payload.force && /발송완료|일부발송/.test(existingStatus)) {
+    const skippedResult = {
+      status: existingStatus,
+      statusText: (casePayload.note && casePayload.note.c2) || "이미 발송된 문자 기록이 있어 재발송하지 않았습니다.",
+      skipped: true
+    };
+    return Object.assign({ ok: true, caseId: caseId, message: skippedResult.statusText }, skippedResult);
+  }
+
+  const record = readResponseRecordForCase_(casePayload);
+  const smsRecord = Object.keys(record).length ? record : casePayloadToSmsRecord_(casePayload, payload);
+  const ticketNo = casePayload.ticketNo || casePayload.id || caseId;
+  const analysis = {
+    urgency: casePayload.urgency || "",
+    vendorType: casePayload.vendorType || "",
+    summary: casePayload.summary || "",
+    reason: casePayload.analysisReason || ""
+  };
+  const smsResult = sendComplaintSms_(ticketNo, smsRecord, analysis, casePayload.contractMatch || {});
+
+  applySmsResultToCase_(casePayload, smsResult);
+  if (!smsResult.skipped) writeSmsResultToSheetForCase_(casePayload, smsResult);
+  writeCaseToFirebase_(caseId, casePayload);
+
+  const ok = /발송완료|일부발송/.test(String(smsResult.status || ""));
+  return Object.assign({
+    ok: ok,
+    caseId: caseId,
+    message: smsResult.statusText || smsResult.status || ""
+  }, smsResult);
+}
+
+function casePayloadToSmsRecord_(casePayload, payload) {
+  const contact = payload && payload.contact || {};
+  return {
+    "건물명": casePayload.building || contact.building || "",
+    "건물 주소": casePayload.address || contact.address || "",
+    "호실": casePayload.room || contact.room || "",
+    "이름": casePayload.name || contact.name || "",
+    "연락처": contact.phone || casePayload.phone || "",
+    "문제 유형": casePayload.issueType || contact.issueType || "",
+    "방문 가능 시간": casePayload.visitTime || contact.visitTime || "",
+    "민원 내용": casePayload.summary || contact.summary || ""
+  };
+}
+
+function writeSmsResultToSheetForCase_(casePayload, smsResult) {
+  const row = Number(casePayload && casePayload.sheetRow);
+  if (!row || row < 2) return;
+
+  const sheet = getResponseSheet_();
+  const headers = ensureOutputHeaders_(sheet);
+  const headerMap = {};
+  headers.forEach((header, index) => headerMap[header] = index + 1);
+  setCellByHeader_(sheet, row, headerMap, "문자 발송 상태", smsResult.status || "");
+  setCellByHeader_(sheet, row, headerMap, "문자 발송 메모", smsResult.statusText || "");
 }
 
 function handleVendorEstimateMms_(payload) {
@@ -682,6 +755,10 @@ function handleBusinessRegistrationUpload_(payload) {
     analysisMarkdownFileId: analysis.analysisMarkdownFileId || "",
     analysisJsonUrl: analysis.analysisJsonUrl || "",
     analysisJsonFileId: analysis.analysisJsonFileId || "",
+    mineruSupplementAttempted: !!analysis.mineruSupplementMessage,
+    mineruSupplementUsed: !!analysis.mineruSupplementUsed,
+    mineruSupplementMessage: analysis.mineruSupplementMessage || "",
+    supplierMissingFields: analysis.supplierMissingFields || [],
     fileName: driveFile.getName(),
     fileUrl: driveFile.getUrl(),
     driveFileId: driveFile.getId(),
@@ -823,6 +900,9 @@ function handleConfirmQuoteAmount_(payload) {
       quote.businessRegistrationAppliedAt = confirmedAt;
       quote.businessRegistrationDocId = fillResult.businessVendor && fillResult.businessVendor.docId || quote.businessRegistrationDocId || "";
     }
+    if (fillResult && fillResult.mineruSupplementApplied) {
+      quote.extractionMemo = appendQuoteMemo_(quote.extractionMemo, fillResult.mineruSupplementMessage || "MinerU OCR로 사업자등록증 빈칸 보충");
+    }
     quote.extractedItems = extraction.items;
 
     const fileNameBase = makeBringQuoteFileNameBase_(quote, extraction);
@@ -938,6 +1018,9 @@ function handleApplyBusinessRegistrationToQuote_(payload) {
         quote.extractionMemo = appendQuoteMemo_(removeQuoteMemo_(quote.extractionMemo, "사업자등록증 매칭 없음"), "사업자등록증 정보 반영 완료");
         quote.businessRegistrationAppliedAt = timestamp;
         quote.businessRegistrationDocId = fillResult && fillResult.businessVendor && fillResult.businessVendor.docId || businessVendor.docId || quote.businessRegistrationDocId || "";
+        if (fillResult && fillResult.mineruSupplementApplied) {
+          quote.extractionMemo = appendQuoteMemo_(quote.extractionMemo, fillResult.mineruSupplementMessage || "MinerU OCR로 사업자등록증 빈칸 보충");
+        }
       } catch (err) {
         quote.extractionMemo = appendQuoteMemo_(quote.extractionMemo, "사업자등록증 정보 반영 실패: " + err.message);
         message = "사업자등록증 정보 반영 실패: " + err.message;
@@ -1733,6 +1816,9 @@ function createBringQuoteFromUpload_(casePayload, quote, blob, payload, bringFol
       result.businessRegistrationDocId = fillResult.businessVendor && fillResult.businessVendor.docId || "";
       result.extractionMemo = appendQuoteMemo_(result.extractionMemo, "사업자등록증 정보로 브링 엑셀 빈칸 보충");
     }
+    if (fillResult && fillResult.mineruSupplementApplied) {
+      result.extractionMemo = appendQuoteMemo_(result.extractionMemo, fillResult.mineruSupplementMessage || "MinerU OCR로 사업자등록증 빈칸 보충");
+    }
 
     const exported = exportBringQuoteXlsx_(copied.getId(), fileNameBase + ".xlsx", bringFolder);
     if (exported.ok) {
@@ -1872,11 +1958,16 @@ function extractBusinessRegistrationData_(blob, mimeType, fileName, casePayload,
     if (!textResult.ok && !mineruResult.message) analysisStatus = "추출실패";
   }
 
-  const vendorInfo = extractBusinessRegistrationVendorInfo_(text, mineruResult, fileName);
+  let vendorInfo = extractBusinessRegistrationVendorInfo_(text, mineruResult, fileName);
+  const mineruSupplement = analyzeBusinessRegistrationWithMinerUIfNeeded_(blob, mimeType, fileName, casePayload, vendorInfo, mineruResult);
+  if (mineruSupplement && mineruSupplement.vendorInfo) {
+    vendorInfo = mineruSupplement.vendorInfo;
+  }
   const hasImportantInfo = !!(vendorInfo.name || vendorInfo.businessNo || vendorInfo.ceo || vendorInfo.address || vendorInfo.type || vendorInfo.category || vendorInfo.phone);
   const status = hasImportantInfo ? "추출완료" : "확인필요";
   const memo = [
     mineruResult.ok ? "MinerU 분석완료" : (mineruResult.message || ""),
+    mineruSupplement && mineruSupplement.message ? mineruSupplement.message : "",
     textMessage,
     hasImportantInfo ? "" : "사업자등록증 핵심 정보를 자동 확인하지 못했습니다."
   ].filter(Boolean).join(" / ");
@@ -1890,11 +1981,14 @@ function extractBusinessRegistrationData_(blob, mimeType, fileName, casePayload,
     analysisEngine: analysisEngine,
     analysisStatus: analysisStatus,
     analysisStatusCode: analysisStatusCode,
-    analysisWarnings: mineruResult.warnings || (mineruResult.message ? [mineruResult.message] : []),
+    analysisWarnings: (mineruResult.warnings || (mineruResult.message ? [mineruResult.message] : [])).concat(mineruSupplement && mineruSupplement.warnings || []),
     analysisMarkdownUrl: mineruResult.markdownUrl || "",
     analysisMarkdownFileId: mineruResult.markdownFileId || "",
     analysisJsonUrl: mineruResult.jsonUrl || "",
-    analysisJsonFileId: mineruResult.jsonFileId || ""
+    analysisJsonFileId: mineruResult.jsonFileId || "",
+    mineruSupplementUsed: !!(mineruSupplement && mineruSupplement.used),
+    mineruSupplementMessage: mineruSupplement && mineruSupplement.message || "",
+    supplierMissingFields: getMissingBringSupplierFields_(vendorInfo)
   };
 }
 
@@ -1913,6 +2007,87 @@ function extractBusinessRegistrationVendorInfo_(text, mineruResult, fileName) {
       ? "mineru_structured"
       : quoteInfo.source || (fileNameInfo.name ? "file_name" : "");
   return cleanVendorInfo_(merged);
+}
+
+function getMissingBringSupplierFields_(vendorInfo) {
+  vendorInfo = cleanVendorInfo_(vendorInfo || {});
+  const missing = [];
+  if (!vendorInfo.businessNo) missing.push("businessNo");
+  if (!vendorInfo.name) missing.push("name");
+  if (!vendorInfo.ceo) missing.push("ceo");
+  if (!vendorInfo.address && !vendorInfo.addressFromVendorList) missing.push("address");
+  if (!vendorInfo.type) missing.push("type");
+  if (!vendorInfo.category) missing.push("category");
+  if (!vendorInfo.phone) missing.push("phone");
+  if (!vendorInfo.email) missing.push("email");
+  return missing;
+}
+
+function hasMissingSupplierFields_(vendorInfo) {
+  return getMissingBringSupplierFields_(vendorInfo).length > 0;
+}
+
+function fillVendorInfoMissingFields_(base, supplement) {
+  return mergeVendorInfoObjects_(cleanVendorInfo_(supplement || {}), cleanVendorInfo_(base || {}));
+}
+
+function analyzeBusinessRegistrationWithMinerUIfNeeded_(blob, mimeType, fileName, casePayload, vendorInfo, currentMineruResult) {
+  const current = cleanVendorInfo_(vendorInfo || {});
+  const missingBefore = getMissingBringSupplierFields_(current);
+  if (!missingBefore.length) {
+    return { vendorInfo: current, used: false, message: "", warnings: [] };
+  }
+  if (currentMineruResult && currentMineruResult.ok) {
+    return { vendorInfo: current, used: false, message: "", warnings: [] };
+  }
+
+  const config = getMineruConfig_();
+  if (!config.enabled || !config.apiKey) {
+    return {
+      vendorInfo: current,
+      used: false,
+      message: "MinerU 토큰 없음",
+      warnings: ["MinerU 토큰 없음"],
+      missingFields: missingBefore
+    };
+  }
+
+  const mineruResult = analyzeQuoteWithMinerU_(blob, mimeType, fileName, casePayload, null, { forceSync: true });
+  if (!mineruResult.ok) {
+    const message = mineruResult.message ? "MinerU OCR 보충 실패: " + mineruResult.message : "MinerU OCR 보충 실패";
+    return {
+      vendorInfo: current,
+      used: false,
+      message: message,
+      warnings: [message],
+      missingFields: missingBefore
+    };
+  }
+
+  const ocrText = mineruResult.markdown || mineruResult.text || "";
+  const ocrInfo = extractBusinessRegistrationVendorInfo_(ocrText, mineruResult, fileName);
+  const merged = fillVendorInfoMissingFields_(current, ocrInfo);
+  const missingAfter = getMissingBringSupplierFields_(merged);
+  const filledFields = missingBefore.filter(field => missingAfter.indexOf(field) === -1);
+  if (!filledFields.length) {
+    return {
+      vendorInfo: merged,
+      used: false,
+      message: "MinerU OCR 보충값 없음",
+      warnings: mineruResult.warnings || [],
+      missingFields: missingAfter
+    };
+  }
+
+  merged.source = current.source || "business_registration";
+  return {
+    vendorInfo: cleanVendorInfo_(merged),
+    used: true,
+    message: "MinerU OCR로 사업자등록증 빈칸 보충",
+    warnings: mineruResult.warnings || [],
+    filledFields: filledFields,
+    missingFields: missingAfter
+  };
 }
 
 function matchBusinessRegistrationVendor_(vendorInfo, payload, casePayload) {
@@ -2209,7 +2384,9 @@ function downloadMineruNetZipResult_(zipUrl) {
   }
 }
 
-function analyzeQuoteWithMinerU_(blob, mimeType, fileName, casePayload, analysisFolder) {
+function analyzeQuoteWithMinerU_(blob, mimeType, fileName, casePayload, analysisFolder, options) {
+  options = options || {};
+  const forceSync = !!options.forceSync;
   const ext = String(fileName || "").split(".").pop().toLowerCase();
   if (ext === "hwp") {
     return {
@@ -2229,7 +2406,7 @@ function analyzeQuoteWithMinerU_(blob, mimeType, fileName, casePayload, analysis
       message: "MinerU API URL 미설정"
     };
   }
-  if (!config.syncEnabled) {
+  if (!config.syncEnabled && !forceSync) {
     return {
       ok: false,
       skipped: true,
@@ -2821,7 +2998,7 @@ function findBusinessRegistrationForQuote_(casePayload, quote, vendorName) {
 }
 
 function businessRegistrationVendorInfoFromDoc_(doc) {
-  return cleanVendorInfo_({
+  const info = cleanVendorInfo_({
     docId: doc.id || "",
     id: doc.vendorId || "",
     name: doc.vendorName || doc.matchedVendorName || "",
@@ -2834,6 +3011,70 @@ function businessRegistrationVendorInfoFromDoc_(doc) {
     email: doc.email || "",
     source: "business_registration"
   });
+  info.driveFileId = doc.driveFileId || "";
+  info.fileName = doc.fileName || "";
+  info.originalFileName = doc.originalFileName || doc.fileName || "";
+  info.mimeType = doc.mimeType || "";
+  info.extractionStatus = doc.extractionStatus || "";
+  info.extractionMemo = doc.extractionMemo || "";
+  info.mineruSupplementAttempted = !!doc.mineruSupplementAttempted || !!doc.mineruSupplementMessage;
+  info.mineruSupplementUsed = !!doc.mineruSupplementUsed;
+  info.mineruSupplementMessage = doc.mineruSupplementMessage || "";
+  info.supplierMissingFields = doc.supplierMissingFields || [];
+  return info;
+}
+
+function supplementBusinessRegistrationVendorFromDriveIfNeeded_(casePayload, businessVendor) {
+  businessVendor = businessVendor || {};
+  const current = cleanVendorInfo_(businessVendor);
+  current.docId = businessVendor.docId || current.docId || "";
+  if (!hasMissingSupplierFields_(current)) {
+    return { vendorInfo: current, used: false, message: "" };
+  }
+  if (businessVendor.mineruSupplementAttempted) {
+    return { vendorInfo: current, used: false, message: businessVendor.mineruSupplementMessage || "" };
+  }
+
+  const docId = businessVendor.docId || "";
+  const docs = casePayload && casePayload.businessRegistrationFiles || {};
+  const doc = docId && docs[docId] ? docs[docId] : null;
+  const driveFileId = businessVendor.driveFileId || (doc && doc.driveFileId) || "";
+  if (!driveFileId) {
+    return { vendorInfo: current, used: false, message: "" };
+  }
+
+  try {
+    const file = DriveApp.getFileById(driveFileId);
+    const blob = file.getBlob();
+    const fileName = businessVendor.originalFileName || businessVendor.fileName || (doc && (doc.originalFileName || doc.fileName)) || file.getName();
+    const mimeType = businessVendor.mimeType || (doc && doc.mimeType) || blob.getContentType();
+    const result = analyzeBusinessRegistrationWithMinerUIfNeeded_(blob, mimeType, fileName, casePayload, current, null);
+    if (result && result.vendorInfo) {
+      result.vendorInfo.docId = current.docId || docId;
+      result.vendorInfo.driveFileId = driveFileId;
+      result.vendorInfo.fileName = businessVendor.fileName || (doc && doc.fileName) || file.getName();
+      result.vendorInfo.originalFileName = fileName;
+      result.vendorInfo.mimeType = mimeType;
+      if (doc) {
+        doc.mineruSupplementAttempted = true;
+        doc.mineruSupplementUsed = !!result.used;
+        doc.mineruSupplementMessage = result.message || "";
+        doc.supplierMissingFields = result.missingFields || getMissingBringSupplierFields_(result.vendorInfo);
+        ["businessNo", "ceo", "address", "type", "category", "phone", "email"].forEach(field => {
+          if (!doc[field] && result.vendorInfo[field]) doc[field] = result.vendorInfo[field];
+        });
+        if (!doc.vendorName && result.vendorInfo.name) doc.vendorName = result.vendorInfo.name;
+      }
+    }
+    return result || { vendorInfo: current, used: false, message: "" };
+  } catch (err) {
+    return {
+      vendorInfo: current,
+      used: false,
+      message: "MinerU OCR 보충 실패: " + err.message,
+      warnings: ["MinerU OCR 보충 실패: " + err.message]
+    };
+  }
 }
 
 function resolveBringQuoteVendorInfo_(casePayload, quote, extraction) {
@@ -2841,7 +3082,11 @@ function resolveBringQuoteVendorInfo_(casePayload, quote, extraction) {
   extraction = extraction || {};
   const quoteVendor = cleanVendorInfo_(quote.resolvedVendorInfo || quote.vendor || {});
   if (!quoteVendor.name) quoteVendor.name = cleanExtractedVendorName_(quote.vendorName || extraction.vendorName || "");
-  const businessVendor = findBusinessRegistrationForQuote_(casePayload, quote, quoteVendor.name || quote.vendorName || extraction.vendorName || "");
+  let businessVendor = findBusinessRegistrationForQuote_(casePayload, quote, quoteVendor.name || quote.vendorName || extraction.vendorName || "");
+  const mineruSupplement = supplementBusinessRegistrationVendorFromDriveIfNeeded_(casePayload, businessVendor);
+  if (mineruSupplement && mineruSupplement.vendorInfo) {
+    businessVendor = mineruSupplement.vendorInfo;
+  }
   const vendor = mergeVendorInfoObjects_(businessVendor, quoteVendor);
   const businessName = cleanExtractedVendorName_(businessVendor.name || "");
   if (businessName && (!quoteVendor.name || isSimilarVendorName_(quoteVendor.name, businessName))) {
@@ -2850,7 +3095,7 @@ function resolveBringQuoteVendorInfo_(casePayload, quote, extraction) {
   if (!vendor.name) vendor.name = cleanExtractedVendorName_(quote.vendorName || extraction.vendorName || businessVendor.name || "");
 
   const businessFields = ["name", "businessNo", "ceo", "address", "type", "category", "phone", "email"];
-  const businessApplied = businessFields.some(field => {
+  let businessApplied = businessFields.some(field => {
     const businessValue = String(businessVendor[field] || "").trim();
     if (!businessValue) return false;
     const quoteValue = String(quoteVendor[field] || "").trim();
@@ -2858,12 +3103,15 @@ function resolveBringQuoteVendorInfo_(casePayload, quote, extraction) {
     if (field === "name") return finalValue === businessValue && finalValue !== quoteValue;
     return !quoteValue && finalValue === businessValue;
   });
+  businessApplied = businessApplied || !!(mineruSupplement && mineruSupplement.used);
 
   return {
     vendor: cleanVendorInfo_(vendor),
     quoteVendor: quoteVendor,
     businessVendor: businessVendor,
-    businessApplied: businessApplied
+    businessApplied: businessApplied,
+    mineruSupplementApplied: !!(mineruSupplement && mineruSupplement.used),
+    mineruSupplementMessage: mineruSupplement && mineruSupplement.message || ""
   };
 }
 
@@ -2928,6 +3176,9 @@ function refreshBringQuotesFromBusinessRegistration_(caseId, casePayload, busine
         quote.extractionMemo = appendQuoteMemo_(quote.extractionMemo, "사업자등록증 정보 반영 완료");
         quote.businessRegistrationAppliedAt = timestamp;
         quote.businessRegistrationDocId = businessDoc.id || "";
+      }
+      if (fillResult && fillResult.mineruSupplementApplied) {
+        quote.extractionMemo = appendQuoteMemo_(quote.extractionMemo, fillResult.mineruSupplementMessage || "MinerU OCR로 사업자등록증 빈칸 보충");
       }
       quote.updatedAt = timestamp;
       applyQuoteAmountState_(quote);
@@ -3544,8 +3795,10 @@ function sendComplaintSms_(ticketNo, record, analysis, contractMatch) {
     return { status: "설정필요", statusText: "NCP SENS Script Properties 설정 후 문자 발송이 가능합니다.", skipped: true };
   }
 
-  const tenantPhone = normalizePhoneForSms_(readField_(record, ["연락처", "전화번호", "휴대폰"]));
-  const ownerPhone = normalizePhoneForSms_(extractOwnerPhoneFromOnboarding_(contractMatch));
+  const tenantPhoneRaw = normalizePhoneForSms_(readField_(record, ["연락처", "전화번호", "휴대폰"]));
+  const ownerPhoneRaw = normalizePhoneForSms_(extractOwnerPhoneFromOnboarding_(contractMatch));
+  const tenantPhone = isSendableSmsPhone_(tenantPhoneRaw) ? tenantPhoneRaw : "";
+  const ownerPhone = isSendableSmsPhone_(ownerPhoneRaw) ? ownerPhoneRaw : "";
   const building = readField_(record, ["건물명", "건물"]);
   const room = readField_(record, ["호실"]);
   const issueType = readField_(record, ["문제 유형"]);
@@ -3575,6 +3828,8 @@ function sendComplaintSms_(ticketNo, record, analysis, contractMatch) {
     const tenantResult = sendSensSms_(tenantPhone, tenantContent, "세입자");
     tenantSent = tenantResult.ok;
     logs.push("세입자 " + maskPhone_(tenantPhone) + " " + tenantResult.message);
+  } else if (tenantPhoneRaw) {
+    logs.push("세입자 연락처 형식 확인 필요");
   } else {
     logs.push("세입자 연락처 없음");
   }
@@ -3611,6 +3866,8 @@ function applySmsResultToCase_(casePayload, smsResult) {
     }
   } else if (smsResult.status === "일부발송" || smsResult.status === "발송보류") {
     casePayload.status.c2 = "doing";
+  } else if (smsResult.status) {
+    casePayload.status.c2 = "doing";
   }
   if (casePayload.log) {
     casePayload.log.push("문자 " + smsResult.status + " / " + (smsResult.statusText || ""));
@@ -3634,6 +3891,8 @@ function getSensConfig_() {
 function sendSensSms_(to, content, label) {
   const config = getSensConfig_();
   if (!config.enabled) return { ok: false, message: "SENS 설정필요" };
+  to = normalizePhoneForSms_(to);
+  if (!isSendableSmsPhone_(to)) return { ok: false, message: "수신번호 확인필요(" + label + ")" };
 
   const uri = "/sms/v2/services/" + encodeURIComponent(config.serviceId) + "/messages";
   const timestamp = String(Date.now());
@@ -3722,6 +3981,10 @@ function normalizePhoneForSms_(phone) {
   if (!digits) return "";
   if (digits.indexOf("82") === 0) digits = "0" + digits.slice(2);
   return digits;
+}
+
+function isSendableSmsPhone_(phone) {
+  return /^0\d{8,10}$/.test(String(phone || ""));
 }
 
 function byteLength_(value) {

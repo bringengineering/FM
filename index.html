@@ -1889,7 +1889,7 @@ window.addEventListener("resize", setViewport);
 /* ===== 케이스 자동화 트래커 (와꾸 — API 연결 자리 포함) ===== */
 const CASE_STEPS = [
  {k:"c1",t:"① 문의 접수 / 정보 입력",doc:"onboard"},
- {k:"c2",t:"② 접수확인 발송",auto:"메일/카톡"},
+ {k:"c2",t:"② 접수확인 발송",auto:"SENS 문자"},
  {k:"c3",t:"③ 상담·요청 파악"},
  {k:"c4",t:"④ 민원·요청 분류"},
  {k:"c5",t:"⑤ 업체 견적 요청",auto:"업체 발송"},
@@ -2659,9 +2659,9 @@ function caseAutomationEndpoint(){
   return settings.caseAutomationEndpoint || settings.vendorSmsEndpoint || DEFAULT_CASE_AUTOMATION_ENDPOINT;
 }
 function promptCaseAutomationSetup(){
-  const url = prompt("견적 파일 업로드를 하려면 Apps Script 웹앱 URL이 필요해요.\n⑤ MMS 발송에 쓰던 웹앱 URL과 같은 주소를 넣으면 됩니다:", caseAutomationEndpoint());
+  const url = prompt("케이스 자동화(② 접수확인 문자, ⑤ 업체 MMS, ⑥ 파일 업로드)를 쓰려면 Apps Script 웹앱 URL이 필요해요.\nApps Script에서 배포 > 새 배포 > 웹 앱으로 배포한 URL을 붙여넣으세요:", caseAutomationEndpoint());
   if(url==null) return false;
-  if(/^https:\/\/script\.google\.com\//.test(url.trim())){ setCaseAutomationEndpoint(url.trim()); alert("✅ 저장됐어요. 다시 업로드를 누르면 Drive에 저장됩니다."); return true; }
+  if(/^https:\/\/script\.google\.com\//.test(url.trim())){ setCaseAutomationEndpoint(url.trim()); alert("✅ 저장됐어요. 다시 자동화 버튼을 누르면 요청을 보낼 수 있어요."); return true; }
   alert("⚠️ https://script.google.com/ 으로 시작하는 웹앱 URL이 맞는지 확인하세요.");
   return false;
 }
@@ -2723,6 +2723,48 @@ function sendCaseAutomationRequest(endpoint, payload, job){
     if(isQuoteUploadCanceled(job) || (e && e.name==="AbortError")) throw quoteUploadCanceledError();
     console.error("case automation", e);
   }).finally(()=>removeCancel());
+}
+function sendComplaintReceiptSmsFromCase(id){
+  const c=cases[id];
+  if(!c) return;
+  const lock=stepLockMessage(c,"c2");
+  if(lock){ alert(lock); return; }
+  if(!caseAutomationEndpoint()){
+    if(!promptCaseAutomationSetup()) return;
+    if(!caseAutomationEndpoint()) return;
+  }
+
+  const alreadySent=/발송완료|일부발송/.test(String((c.sms&&c.sms.status)||"")) || (c.status||{}).c2==="done";
+  let force=false;
+  if(alreadySent){
+    if(!confirm("이미 접수확인 문자가 발송 완료로 표시된 케이스입니다.\n다시 발송 요청할까요?")) return;
+    force=true;
+  }
+
+  sendCaseAutomationRequest(caseAutomationEndpoint(), {
+    action:"sendComplaintReceiptSms",
+    caseId:c.ticketNo||c.id||id,
+    force,
+    contact:{
+      name:c.name||"",
+      phone:c.phone||"",
+      building:c.building||"",
+      address:c.address||"",
+      room:c.room||"",
+      issueType:c.issueType||"",
+      visitTime:c.visitTime||"",
+      summary:c.summary||""
+    }
+  });
+  c.status=c.status||{};
+  c.note=c.note||{};
+  c.status.c2="doing";
+  c.note.c2="접수확인 문자 발송 요청 중입니다. Apps Script 처리 결과가 도착하면 자동 갱신됩니다.";
+  caseLog(c, "📨 접수확인 문자 발송 요청");
+  saveCase(id);
+  renderCaseList();
+  renderCaseDetail();
+  alert("접수확인 문자 발송 요청을 보냈어요.\n결과는 잠시 뒤 ② 메모와 기록에 반영됩니다.");
 }
 let quoteUploadProgressEl=null, quoteUploadInProgress=false, quoteUploadJob=null, quoteUploadHideTimer=null;
 function createQuoteUploadJob(){
@@ -3692,9 +3734,12 @@ function renderCaseDetail(){
       const locked=!isStepUnlocked(c,s.k);
       const lockMsg=locked ? stepLockMessage(c,s.k) : "";
       const chip=`<button class="cv-chip ${locked?'locked':(st||'wait')}" data-step="${s.k}" ${locked?'disabled':''} title="${escAttr(lockMsg)}">${locked?"잠김":st==="done"?"완료":st==="doing"?"진행중":"대기"}</button>`;
+      const isReceiptSms=s.k==="c2";
       const isVendorSms=s.k==="c5";
-      const isMail=!!EMAIL_TEMPLATES[s.k] && !isVendorSms;
-      const act=s.auto?`<button class="cv-act ${isMail?'mail':isVendorSms?'sms':''} ${locked?'disabled':''}" data-auto="${s.k}" data-ch="${esc(s.auto)}" ${locked?'disabled':''} title="${escAttr(lockMsg)}">${isMail?'📧':isVendorSms?'📷':'🤖'} ${esc(s.auto)}<span class="tag">${isMail?'메일 발송':isVendorSms?'MMS 발송':'연결예정'}</span></button>`:"";
+      const isMail=!!EMAIL_TEMPLATES[s.k] && !isReceiptSms && !isVendorSms;
+      const actIcon=isReceiptSms?'📨':isMail?'📧':isVendorSms?'📷':'🤖';
+      const actTag=isReceiptSms?'SENS 문자':isMail?'메일 발송':isVendorSms?'MMS 발송':'연결예정';
+      const act=s.auto?`<button class="cv-act ${isMail?'mail':(isReceiptSms||isVendorSms)?'sms':''} ${locked?'disabled':''}" data-auto="${s.k}" data-ch="${escAttr(s.auto)}" ${locked?'disabled':''} title="${escAttr(lockMsg)}">${actIcon} ${esc(s.auto)}<span class="tag">${actTag}</span></button>`:"";
       const dc=onboardingDocButtonHTML(c,s,locked);
       const tb=caseTestMode?`<button class="cv-testbtn" data-testdone="${s.k}" title="이 단계까지 테스트 완료 처리">테스트 완료</button>`:"";
       const nb=`<button class="cv-notebtn ${note?'has':''}" data-notetoggle="${s.k}" title="메모">📝</button>`;
@@ -3725,7 +3770,7 @@ caseDetailEl.addEventListener("click", e=>{
   const dc=e.target.closest("[data-doc]"); if(dc){ const msg=stepLockMessage(cases[curCase], dc.dataset.doc); if(msg){ alert(msg); return; } downloadCaseDoc(curCase, dc.dataset.doc); return; }
   const nt=e.target.closest("[data-notetoggle]"); if(nt){ const k=nt.dataset.notetoggle; noteOpen.has(k)?noteOpen.delete(k):noteOpen.add(k); renderCaseDetail(); return; }
   const ch=e.target.closest("[data-step]"); if(ch){ cycleStep(curCase, ch.dataset.step); return; }
-  const au=e.target.closest("[data-auto]"); if(au){ const ak=au.dataset.auto; if(ak==="c5") openVendorSmsModal(curCase); else if(EMAIL_TEMPLATES[ak]) openMailModal(curCase, ak); else doAuto(curCase, ak, au.dataset.ch); return; }
+  const au=e.target.closest("[data-auto]"); if(au){ const ak=au.dataset.auto; if(ak==="c2") sendComplaintReceiptSmsFromCase(curCase); else if(ak==="c5") openVendorSmsModal(curCase); else if(EMAIL_TEMPLATES[ak]) openMailModal(curCase, ak); else doAuto(curCase, ak, au.dataset.ch); return; }
   if(e.target.closest("#cvRestore")){ restoreCase(curCase); return; }
   if(e.target.closest("#cvDel")){ deleteCase(curCase); }
 });
@@ -3783,8 +3828,10 @@ document.getElementById("noticeBtn").addEventListener("click", openNoticePanel);
 document.getElementById("noticeBanner").addEventListener("click", openNoticePanel);
 
 /* ===== 업데이트 알림(What's New) — 새 버전 나오면 자동 팝업 ===== */
-const APP_VERSION = "4.54";
+const APP_VERSION = "4.56";
 const CHANGELOG = [
+  { v:"4.56", d:"2026-07-07", items:["② 접수확인 발송을 네이버 SENS 문자 요청으로 연결","구글폼 자동 접수와 케이스 화면 수동 요청 모두 Apps Script에서 결과를 ② 메모에 반영"] },
+  { v:"4.55", d:"2026-07-07", items:["사업자등록증 기본 매칭 후 빈칸이 남을 때만 MinerU OCR 보충","브링 엑셀 공급자 빈칸은 기존 값은 유지하고 누락값만 자동 보충"] },
   { v:"4.54", d:"2026-07-07", items:["사업자등록증 표/라벨 분석 강화","브링 엑셀 공급자 빈칸을 견적서·사업자등록증 기준으로 자동 보충"] },
   { v:"4.53", d:"2026-07-07", items:["⑥ 사업자등록증 반영 버튼 제거","견적서와 사업자등록증만 업로드하면 브링 엑셀 공급자 빈칸 자동 보충"] },
   { v:"4.52", d:"2026-07-07", items:["⑥ 견적 카드에 사업자등록증 반영 버튼 추가","브링 엑셀 공급자 빈칸을 사업자등록증 정보로 다시 채우기"] },
@@ -3900,7 +3947,7 @@ window.__wf = { addChild, addRoot, addLink, deleteNode, setNodeColor, resizeNode
   openCaseView, closeCaseView, createCase, selectCase, cycleStep, doAuto, getCases:()=>JSON.parse(JSON.stringify(cases)), CASE_STEPS,
   setCaseField, setCaseNote, caseDocHTML, downloadCaseDoc,
   openMailModal, closeMailModal, setMailEndpoint, getSettings:()=>JSON.parse(JSON.stringify(settings)), EMAIL_TEMPLATES,
-  openVendorSmsModal, closeVendorSmsModal, setVendorSmsEndpoint, setCaseAutomationEndpoint, selectedCaseVendors,
+  sendComplaintReceiptSmsFromCase, openVendorSmsModal, closeVendorSmsModal, setVendorSmsEndpoint, setCaseAutomationEndpoint, selectedCaseVendors,
   openNoticePanel, closeNoticePanel, getNotice:()=>JSON.parse(JSON.stringify(notice||{})), renderNoticeBanner,
   _addNotice:(t)=>{ ensureNotice(); notice.posts.unshift({id:"t"+Date.now().toString(36),text:t,ts:Date.now()}); saveNotice(); },
   initAuthGate, showAuthGate, hideAuthGate, updateAuthUI };
