@@ -1255,7 +1255,7 @@ function mergeQuoteVendorInfo_(fileInfo, selectedVendor, fileNameCandidate) {
   const selected = cleanVendorInfo_(normalizeQuoteVendor_(selectedVendor || {}, ""));
   const fileNameInfo = cleanVendorInfo_({ name: fileNameCandidate || "" });
   const merged = mergeVendorInfoObjects_(selected, file);
-  const quoteName = file.name || fileNameInfo.name || "";
+  const quoteName = chooseBestVendorName_(file.name, fileNameInfo.name, selected.name);
   const matchedVendorListAddress = resolveVendorListAddress_(quoteName, selected);
   merged.name = quoteName || "";
   merged.address = file.address || "";
@@ -1287,6 +1287,29 @@ function isSimilarVendorName_(left, right) {
   if (a === b) return true;
   if (a.length < 3 || b.length < 3) return false;
   return a.indexOf(b) !== -1 || b.indexOf(a) !== -1;
+}
+
+function chooseBestVendorName_() {
+  const names = Array.prototype.slice.call(arguments)
+    .map(cleanExtractedVendorName_)
+    .filter(Boolean)
+    .filter(name => !isGenericQuoteVendorName_(name));
+  if (!names.length) return "";
+  const unique = [];
+  names.forEach(name => {
+    if (!unique.some(item => vendorMatchKey_(item) === vendorMatchKey_(name))) unique.push(name);
+  });
+  const sorted = unique.slice().sort((a, b) => a.length - b.length);
+  for (const shortName of sorted) {
+    const shortKey = vendorMatchKey_(shortName);
+    if (!shortKey) continue;
+    const contained = unique.some(name => {
+      const key = vendorMatchKey_(name);
+      return key && key !== shortKey && key.indexOf(shortKey) !== -1;
+    });
+    if (contained) return shortName;
+  }
+  return unique[0];
 }
 
 function mergeVendorInfoObjects_(base, override) {
@@ -1483,6 +1506,7 @@ function createBringQuoteFromUpload_(casePayload, quote, blob, payload, bringFol
   const extraction = extractQuoteDataFromUpload_(blob, quote.mimeType, quote.fileName, payload.amount, casePayload, analysisFolder);
   const selectedVendor = chooseQuoteSelectedVendor_(payload, extraction.vendorInfo, quote.vendorName, quote.fileName);
   const resolvedVendor = mergeQuoteVendorInfo_(extraction.vendorInfo, selectedVendor, extraction.fileNameVendorName || extractQuoteVendorNameFromFileName_(quote.fileName));
+  extraction.items = normalizeBringQuoteItems_(extraction.items, casePayload, extraction.totalAmount, extraction.supplyAmount, extraction.vatAmount);
   quote.vendor = resolvedVendor.vendor;
   quote.resolvedVendorInfo = resolvedVendor.vendor;
   quote.vendorInfoSource = resolvedVendor.source;
@@ -2484,13 +2508,26 @@ function extractQuoteVendorName_(text) {
 }
 
 function cleanExtractedVendorName_(value) {
-  const name = String(value || "")
+  let name = String(value || "")
     .replace(/^(주식회사|\(주\)|㈜)\s*/g, "")
     .replace(/\s*(대표자|대표|사업자등록번호|사업자번호|등록번호|주소|전화번호|전화|연락처|TEL|Tel|tel|이메일|업태|업종|종목|견적|공급자).*$/g, "")
     .replace(/\s+/g, " ")
     .trim();
+  name = trimQuoteVendorNoise_(name);
   if (!name || name.length < 2 || /견적서|합계|공급가액|부가세|주소|전화|이메일/.test(name) || isGenericQuoteVendorValue_(name)) return "";
   return name.slice(0, 30);
+}
+
+function trimQuoteVendorNoise_(value) {
+  let name = String(value || "").replace(/\s+/g, " ").trim();
+  [
+    /\s*(?:대상\s*건물|대상건물|건물명|현장명|현장|민원|호실|호수|객실).*/i,
+    /\s+(?:강원도|강원|서울특별시|서울|경기도|경기|인천|부산|대구|대전|광주|울산|세종|충북|충남|전북|전남|경북|경남|제주|원주시|춘천시|강릉시|흥업면|단구동|무실동|문막읍|상지대).*/i,
+    /\s+(?:[A-Za-z]?\s*상가|[A-Za-z]?\s*원룸|[A-Za-z]?\s*호실|\d+\s*호).*/i
+  ].forEach(pattern => {
+    name = name.replace(pattern, "").trim();
+  });
+  return name;
 }
 
 function parseMoneyValue_(value) {
@@ -2536,20 +2573,70 @@ function extractQuoteItems_(text, amounts, casePayload) {
     });
   }
 
-  if (items.length) return items;
+  if (items.length) return normalizeBringQuoteItems_(items, casePayload, amounts.totalAmount, amounts.supplyAmount, amounts.vatAmount);
 
   const totalAmount = Number(amounts.totalAmount || 0);
   const supplyAmount = Number(amounts.supplyAmount || (totalAmount ? Math.round(totalAmount / 1.1) : 0));
   const vatAmount = Number(amounts.vatAmount || (totalAmount ? totalAmount - supplyAmount : 0));
-  return [{
+  return [makeFallbackQuoteItem_(casePayload, supplyAmount, vatAmount, totalAmount, "추출 확인 필요")];
+}
+
+function makeFallbackQuoteItem_(casePayload, supplyAmount, vatAmount, totalAmount, note) {
+  return {
     product: [(casePayload.issueType || casePayload.vendorType || "현장"), "점검 및 공사 견적"].join(" "),
     unit: "식",
     unitPrice: supplyAmount || "",
     vat: vatAmount || "",
     total: totalAmount || "",
-    note: "추출 확인 필요",
+    note: note || "추출 확인 필요",
     fallback: true
-  }];
+  };
+}
+
+function normalizeBringQuoteItems_(items, casePayload, totalAmount, supplyAmount, vatAmount) {
+  const total = Number(totalAmount || 0);
+  const supply = Number(supplyAmount || (total ? Math.round(total / 1.1) : 0));
+  const vat = Number(vatAmount || (total ? total - supply : 0));
+  const fallback = [makeFallbackQuoteItem_(casePayload, supply, vat, total, "추출 확인 필요")];
+  const rawItems = Array.isArray(items) ? items : [];
+  if (!rawItems.length) return fallback;
+
+  const normalized = rawItems.map(item => {
+    item = item || {};
+    const itemTotal = parseMoneyValue_(item.total || item.totalAmount || item.amount || "");
+    const itemSupply = parseMoneyValue_(item.unitPrice || item.supplyAmount || item.supply || "");
+    const itemVat = parseMoneyValue_(item.vat || item.vatAmount || "");
+    let finalTotal = itemTotal || (itemSupply && itemVat ? itemSupply + itemVat : 0);
+    let finalSupply = itemSupply || (finalTotal ? Math.round(finalTotal / 1.1) : 0);
+    let finalVat = itemVat || (finalTotal ? finalTotal - finalSupply : 0);
+    if (!finalTotal && finalSupply && finalVat) finalTotal = finalSupply + finalVat;
+    const product = String(item.product || item.name || item.item || item.description || "")
+      .replace(/\s+/g, " ")
+      .trim()
+      .slice(0, 80);
+    return {
+      product: product,
+      unit: String(item.unit || "식").replace(/\s+/g, " ").trim().slice(0, 20) || "식",
+      unitPrice: finalSupply || "",
+      vat: finalVat || "",
+      total: finalTotal || "",
+      note: String(item.note || "원본 자동추출").replace(/\s+/g, " ").trim().slice(0, 60)
+    };
+  }).filter(item => {
+    if (!item.product || item.product.length < 2) return false;
+    if (/합계|총액|공급가액|부가세|사업자|대표자|전화|주소|이메일|견적일자/i.test(item.product)) return false;
+    if (!Number(item.total || 0)) return false;
+    if (total && Number(item.total || 0) > Math.round(total * 1.05)) return false;
+    return true;
+  }).slice(0, 12);
+
+  if (!normalized.length) return fallback;
+  if (total) {
+    const sum = normalized.reduce((acc, item) => acc + Number(item.total || 0), 0);
+    const tolerance = Math.max(1000, Math.round(total * 0.08));
+    if (!sum || Math.abs(sum - total) > tolerance) return fallback;
+  }
+  return normalized;
 }
 
 function findBusinessRegistrationForQuote_(casePayload, quote, vendorName) {
@@ -2735,17 +2822,7 @@ function makeQuoteRewriteExtraction_(quote, casePayload) {
   const total = Number(quote.confirmedTotalAmount || quote.bringQuoteTotalAmount || quote.totalAmount || parseMoneyValue_(quote.amount) || 0);
   const supply = Number(quote.confirmedSupplyAmount || quote.bringQuoteSupplyAmount || quote.supplyAmount || (total ? Math.round(total / 1.1) : 0));
   const vat = Number(quote.confirmedVatAmount || quote.bringQuoteVatAmount || quote.vatAmount || (total ? total - supply : 0));
-  const items = Array.isArray(quote.extractedItems) && quote.extractedItems.length
-    ? quote.extractedItems
-    : [{
-      product: [(casePayload.issueType || casePayload.vendorType || "현장"), "점검 및 공사 견적"].join(" "),
-      unit: "식",
-      unitPrice: supply || "",
-      vat: vat || "",
-      total: total || "",
-      note: "사업자등록증 정보 보충",
-      fallback: true
-    }];
+  const items = normalizeBringQuoteItems_(quote.extractedItems, casePayload, total, supply, vat);
   return {
     status: quote.extractionStatus || "확인필요",
     memo: quote.extractionMemo || "",
@@ -2784,7 +2861,7 @@ function fillBringQuoteSpreadsheet_(ss, casePayload, quote, extraction) {
   for (let row = 18; row <= 29; row++) {
     ["C", "E", "G", "H", "I", "K"].forEach(col => setSheetValue_(sheet, col + row, ""));
   }
-  const items = extraction.items || [];
+  const items = normalizeBringQuoteItems_(extraction.items || [], casePayload, total, supply, vat);
   items.slice(0, 12).forEach((item, index) => {
     const row = 18 + index;
     setSheetValue_(sheet, "C" + row, item.product || "");
