@@ -113,6 +113,9 @@ function doPost(e) {
     if (payload.action === "confirmQuoteAmount") {
       return jsonResponse_(handleConfirmQuoteAmount_(payload));
     }
+    if (payload.action === "applyBusinessRegistrationToQuote") {
+      return jsonResponse_(handleApplyBusinessRegistrationToQuote_(payload));
+    }
     return jsonResponse_({ ok: false, message: "지원하지 않는 action입니다." });
   } catch (err) {
     try {
@@ -794,6 +797,12 @@ function handleConfirmQuoteAmount_(payload) {
     const ss = SpreadsheetApp.openById(sheetId);
     const fillResult = fillBringQuoteSpreadsheet_(ss, casePayload, quote, extraction);
     SpreadsheetApp.flush();
+    if (fillResult && fillResult.vendor && fillResult.vendor.name) {
+      quote.vendor = fillResult.vendor;
+      quote.resolvedVendorInfo = fillResult.vendor;
+      quote.vendorName = fillResult.vendor.name;
+      quote.vendorInfoSource = fillResult.businessApplied ? "business_registration" : quote.vendorInfoSource;
+    }
     const sheetAmounts = readBringQuoteAmounts_(ss);
     if (sheetAmounts.totalAmount && !Number(quote.confirmedTotalAmount || 0)) {
       quote.bringQuoteTotalAmount = sheetAmounts.totalAmount;
@@ -850,6 +859,115 @@ function handleConfirmQuoteAmount_(payload) {
   });
 
   return { ok: true, caseId: caseId, quoteId: quoteId, quote: quote, message: rewriteMessage };
+}
+
+function handleApplyBusinessRegistrationToQuote_(payload) {
+  const caseId = String(payload.caseId || "").trim();
+  const quoteId = String(payload.quoteId || "").trim();
+  if (!caseId) return { ok: false, message: "caseId가 없습니다." };
+  if (!quoteId) return { ok: false, message: "quoteId가 없습니다." };
+
+  const timestamp = new Date().toISOString();
+  const casePayload = readCaseFromFirebase_(caseId);
+  if (!casePayload) return { ok: false, message: "Firebase 케이스를 찾지 못했습니다: " + caseId };
+
+  casePayload.quoteFiles = casePayload.quoteFiles && typeof casePayload.quoteFiles === "object" && !Array.isArray(casePayload.quoteFiles)
+    ? casePayload.quoteFiles
+    : {};
+  const quote = casePayload.quoteFiles[quoteId];
+  if (!quote) return { ok: false, caseId: caseId, quoteId: quoteId, message: "견적 파일을 찾지 못했습니다." };
+
+  const templateId = extractDriveId_(COMPLAINT_CONFIG.QUOTE_TEMPLATE_SPREADSHEET_ID);
+  let message = "사업자등록증 정보 반영 완료";
+  if (!templateId) {
+    quote.bringQuoteStatus = "template_missing";
+    quote.bringQuoteType = "missing";
+    quote.extractionStatus = quote.extractionStatus || "확인필요";
+    quote.extractionMemo = appendQuoteMemo_(quote.extractionMemo, "브링 양식 템플릿 설정 필요");
+    message = "브링 양식 템플릿 설정 필요";
+  } else {
+    const businessVendor = findBusinessRegistrationForQuote_(casePayload, quote, quote.vendorName || quote.extractedVendorName || "");
+    if (!(businessVendor && (businessVendor.docId || businessVendor.name || businessVendor.businessNo))) {
+      quote.extractionMemo = appendQuoteMemo_(quote.extractionMemo, "사업자등록증 매칭 없음");
+      message = "사업자등록증 매칭 없음";
+    } else {
+      const folder = getQuoteDriveFolder_(casePayload);
+      const bringFolder = getOrCreateChildFolder_(folder, "브링 양식 견적서");
+      const extraction = makeQuoteRewriteExtraction_(quote, casePayload);
+      const fileNameBase = makeBringQuoteFileNameBase_(quote, extraction);
+      const previousXlsxId = String(quote.bringQuoteXlsxId || "");
+      let sheetFile = null;
+      try {
+        sheetFile = DriveApp.getFileById(templateId).makeCopy(fileNameBase, bringFolder);
+        const ss = SpreadsheetApp.openById(sheetFile.getId());
+        const fillResult = fillBringQuoteSpreadsheet_(ss, casePayload, quote, extraction);
+        SpreadsheetApp.flush();
+
+        if (fillResult && fillResult.vendor && fillResult.vendor.name) {
+          quote.vendor = fillResult.vendor;
+          quote.resolvedVendorInfo = fillResult.vendor;
+          quote.vendorName = fillResult.vendor.name;
+          quote.vendorInfoSource = fillResult.businessApplied ? "business_registration" : quote.vendorInfoSource;
+        }
+
+        const exported = exportBringQuoteXlsx_(sheetFile.getId(), fileNameBase + ".xlsx", bringFolder);
+        if (exported.ok) {
+          quote.bringQuoteXlsxName = exported.fileName;
+          quote.bringQuoteXlsxUrl = exported.fileUrl;
+          quote.bringQuoteXlsxId = exported.fileId;
+          if (previousXlsxId && previousXlsxId !== exported.fileId) trashDriveFileByIdQuietly_(previousXlsxId);
+        } else {
+          quote.bringQuoteStatus = "xlsx_failed";
+          quote.bringQuoteType = "failed";
+          quote.extractionMemo = appendQuoteMemo_(quote.extractionMemo, "사업자등록증 반영 XLSX 내보내기 실패: " + exported.message);
+          message = "XLSX 내보내기 실패";
+        }
+
+        const sheetAmounts = readBringQuoteAmounts_(ss);
+        if (sheetAmounts.totalAmount && !Number(quote.confirmedTotalAmount || 0)) {
+          quote.bringQuoteTotalAmount = sheetAmounts.totalAmount;
+          quote.bringQuoteSupplyAmount = sheetAmounts.supplyAmount || "";
+          quote.bringQuoteVatAmount = sheetAmounts.vatAmount || "";
+          quote.bringQuoteAmountSyncedAt = timestamp;
+        }
+
+        if (quote.bringQuoteStatus !== "xlsx_failed") {
+          quote.bringQuoteStatus = "business_registration_rewritten";
+          quote.bringQuoteType = Number(quote.confirmedTotalAmount || 0) ? "confirmed" : "draft";
+        }
+        quote.extractionMemo = appendQuoteMemo_(removeQuoteMemo_(quote.extractionMemo, "사업자등록증 매칭 없음"), "사업자등록증 정보 반영 완료");
+        quote.businessRegistrationAppliedAt = timestamp;
+        quote.businessRegistrationDocId = fillResult && fillResult.businessVendor && fillResult.businessVendor.docId || businessVendor.docId || quote.businessRegistrationDocId || "";
+      } catch (err) {
+        quote.extractionMemo = appendQuoteMemo_(quote.extractionMemo, "사업자등록증 정보 반영 실패: " + err.message);
+        message = "사업자등록증 정보 반영 실패: " + err.message;
+      } finally {
+        trashDriveFileQuietly_(sheetFile);
+      }
+    }
+  }
+
+  quote.updatedAt = timestamp;
+  applyQuoteAmountState_(quote);
+  casePayload.quoteFiles[quoteId] = quote;
+  casePayload.status = casePayload.status || {};
+  if (casePayload.status.c6 !== "done") casePayload.status.c6 = "doing";
+  casePayload.note = casePayload.note || {};
+  casePayload.note.c6 = makeQuoteComparisonNote_(casePayload);
+  casePayload.log = Array.isArray(casePayload.log) ? casePayload.log : [];
+  casePayload.log.unshift("사업자등록증 정보 반영: " + (quote.vendorName || "업체") + " / " + message);
+  if (casePayload.log.length > 30) casePayload.log.length = 30;
+  casePayload.updatedAt = timestamp;
+
+  putCaseChildToFirebase_(caseId, "quoteFiles/" + quoteId, quote);
+  patchCaseChildToFirebase_(caseId, "status", { c6: casePayload.status.c6 });
+  patchCaseChildToFirebase_(caseId, "note", { c6: casePayload.note.c6 });
+  patchCaseToFirebase_(caseId, {
+    log: casePayload.log,
+    updatedAt: timestamp
+  });
+
+  return { ok: message.indexOf("실패") === -1 && message.indexOf("없음") === -1, caseId: caseId, quoteId: quoteId, quote: quote, message: message };
 }
 
 function confirmedQuoteAmounts_(totalAmount) {
@@ -1407,7 +1525,7 @@ function createBringQuoteFromUpload_(casePayload, quote, blob, payload, bringFol
     const templateFile = DriveApp.getFileById(templateId);
     copied = templateFile.makeCopy(fileNameBase, bringFolder);
     const ss = SpreadsheetApp.openById(copied.getId());
-    fillBringQuoteSpreadsheet_(ss, casePayload, quote, extraction);
+    const fillResult = fillBringQuoteSpreadsheet_(ss, casePayload, quote, extraction);
     SpreadsheetApp.flush();
     const sheetAmounts = readBringQuoteAmounts_(ss);
 
@@ -1430,6 +1548,12 @@ function createBringQuoteFromUpload_(casePayload, quote, blob, payload, bringFol
       result.extractionMemo = removeQuoteMemo_(result.extractionMemo, "금액 확인 필요");
     }
     if (fillResult && fillResult.businessApplied) {
+      if (fillResult.vendor && fillResult.vendor.name) {
+        result.vendor = fillResult.vendor;
+        result.resolvedVendorInfo = fillResult.vendor;
+        result.vendorName = fillResult.vendor.name;
+        result.vendorInfoSource = "business_registration";
+      }
       result.businessRegistrationAppliedAt = new Date().toISOString();
       result.businessRegistrationDocId = fillResult.businessVendor && fillResult.businessVendor.docId || "";
       result.extractionMemo = appendQuoteMemo_(result.extractionMemo, "사업자등록증 정보로 브링 엑셀 빈칸 보충");
@@ -2483,6 +2607,10 @@ function resolveBringQuoteVendorInfo_(casePayload, quote, extraction) {
   if (!quoteVendor.name) quoteVendor.name = cleanExtractedVendorName_(quote.vendorName || extraction.vendorName || "");
   const businessVendor = findBusinessRegistrationForQuote_(casePayload, quote, quoteVendor.name || quote.vendorName || extraction.vendorName || "");
   const vendor = mergeVendorInfoObjects_(businessVendor, quoteVendor);
+  const businessName = cleanExtractedVendorName_(businessVendor.name || "");
+  if (businessName && (!quoteVendor.name || isSimilarVendorName_(quoteVendor.name, businessName))) {
+    vendor.name = businessName;
+  }
   if (!vendor.name) vendor.name = cleanExtractedVendorName_(quote.vendorName || extraction.vendorName || businessVendor.name || "");
 
   const businessFields = ["name", "businessNo", "ceo", "address", "type", "category", "phone", "email"];
@@ -2491,6 +2619,7 @@ function resolveBringQuoteVendorInfo_(casePayload, quote, extraction) {
     if (!businessValue) return false;
     const quoteValue = String(quoteVendor[field] || "").trim();
     const finalValue = String(vendor[field] || "").trim();
+    if (field === "name") return finalValue === businessValue && finalValue !== quoteValue;
     return !quoteValue && finalValue === businessValue;
   });
 
@@ -2530,6 +2659,12 @@ function refreshBringQuotesFromBusinessRegistration_(caseId, casePayload, busine
       const ss = SpreadsheetApp.openById(sheetFile.getId());
       const fillResult = fillBringQuoteSpreadsheet_(ss, casePayload, quote, extraction);
       SpreadsheetApp.flush();
+      if (fillResult && fillResult.vendor && fillResult.vendor.name) {
+        quote.vendor = fillResult.vendor;
+        quote.resolvedVendorInfo = fillResult.vendor;
+        quote.vendorName = fillResult.vendor.name;
+        quote.vendorInfoSource = fillResult.businessApplied ? "business_registration" : quote.vendorInfoSource;
+      }
 
       const previousXlsxId = String(quote.bringQuoteXlsxId || "");
       const exported = exportBringQuoteXlsx_(sheetFile.getId(), fileNameBase + ".xlsx", bringFolder);
@@ -2554,7 +2689,7 @@ function refreshBringQuotesFromBusinessRegistration_(caseId, casePayload, busine
       quote.bringQuoteStatus = quote.bringQuoteStatus === "xlsx_failed" ? quote.bringQuoteStatus : "business_registration_rewritten";
       quote.bringQuoteType = Number(quote.confirmedTotalAmount || 0) ? "confirmed" : "draft";
       if (fillResult && fillResult.businessApplied) {
-        quote.extractionMemo = appendQuoteMemo_(quote.extractionMemo, "사업자등록증 정보로 브링 엑셀 빈칸 보충");
+        quote.extractionMemo = appendQuoteMemo_(quote.extractionMemo, "사업자등록증 정보 반영 완료");
         quote.businessRegistrationAppliedAt = timestamp;
         quote.businessRegistrationDocId = businessDoc.id || "";
       }
