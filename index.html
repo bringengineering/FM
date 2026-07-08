@@ -2016,6 +2016,15 @@ function saveCase(id, immediate, options){
     try{ localStorage.setItem("fm_cases_v1", JSON.stringify(cases)); }catch(e){}
   }
 }
+function removeCaseChild(id, childPath){
+  if(!id || !childPath || !casesRef) return;
+  casesRef.child(id).child(childPath).remove().catch(e=>console.warn("case child remove failed", childPath, e));
+}
+function resolveCaseMapKey(map, requestedKey){
+  if(!map || !requestedKey) return requestedKey;
+  if(map[requestedKey]) return requestedKey;
+  return Object.keys(map).find(key=>String((map[key]&&map[key].id)||"")===String(requestedKey)) || requestedKey;
+}
 function isCaseVisible(c){ return !!c && (showArchivedCases ? c.archived===true : c.archived!==true); }
 function visibleCaseIds(){
   return Object.keys(cases).filter(id=>isCaseVisible(cases[id])).sort((a,b)=>caseTimeValue(cases[b])-caseTimeValue(cases[a]));
@@ -2310,7 +2319,7 @@ function quoteUploadVendors(c){
   });
 }
 function quoteFilesList(c){
-  return Object.values((c&&c.quoteFiles)||{}).filter(Boolean)
+  return Object.entries((c&&c.quoteFiles)||{}).map(([key,q])=>Object.assign({}, q, { id:key, storedId:(q&&q.id)||key })).filter(Boolean)
     .filter(q=>!isBusinessRegistrationLikeQuote(q))
     .sort((a,b)=>String(b.uploadedAt||"").localeCompare(String(a.uploadedAt||"")));
 }
@@ -3295,22 +3304,28 @@ async function autoApplyBusinessRegistrationToQuote(caseKey, quoteId){
 }
 function removeQuoteFileFromCase(quoteId){
   const c=cases[curCase];
-  if(!c || !quoteId || !c.quoteFiles || !c.quoteFiles[quoteId]) return;
+  if(!c || !quoteId || !c.quoteFiles) return;
+  quoteId=resolveCaseMapKey(c.quoteFiles, quoteId);
+  if(!c.quoteFiles[quoteId]) return;
   const q=c.quoteFiles[quoteId];
   delete c.quoteFiles[quoteId];
+  removeCaseChild(curCase, "quoteFiles/"+quoteId);
   c.note=c.note||{};
   if(/^견적 파일 목록에서 제거했습니다/.test(String(c.note.c6||""))) c.note.c6="";
   caseLog(c, "견적 파일 목록 제거: "+(q.vendorName||"업체")+" / "+(q.fileName||"파일"));
-  saveCase(curCase);
+  saveCase(curCase, true);
   renderCaseDetail();
 }
 function removeBusinessRegistrationFromCase(docId){
   const c=cases[curCase];
-  if(!c || !docId || !c.businessRegistrationFiles || !c.businessRegistrationFiles[docId]) return;
+  if(!c || !docId || !c.businessRegistrationFiles) return;
+  docId=resolveCaseMapKey(c.businessRegistrationFiles, docId);
+  if(!c.businessRegistrationFiles[docId]) return;
   const doc=c.businessRegistrationFiles[docId];
   delete c.businessRegistrationFiles[docId];
+  removeCaseChild(curCase, "businessRegistrationFiles/"+docId);
   caseLog(c, "사업자등록증 목록 제거: "+(doc.vendorName||doc.fileName||"증빙"));
-  saveCase(curCase);
+  saveCase(curCase, true);
   renderCaseDetail();
 }
 function applyNextStepProgress(c, messages){
@@ -3866,8 +3881,9 @@ document.getElementById("noticeBtn").addEventListener("click", openNoticePanel);
 document.getElementById("noticeBanner").addEventListener("click", openNoticePanel);
 
 /* ===== 업데이트 알림(What's New) — 새 버전 나오면 자동 팝업 ===== */
-const APP_VERSION = "4.58";
+const APP_VERSION = "4.59";
 const CHANGELOG = [
+  { v:"4.59", d:"2026-07-08", items:["⑥ 견적 카드의 목록에서 제거가 Firebase에도 즉시 반영되도록 수정","삭제한 견적서가 실시간 동기화 후 다시 나타나는 문제 방지"] },
   { v:"4.58", d:"2026-07-08", items:["⑥ 견적서 영역을 펼친 뒤 스크롤이 끝까지 자동 이동하는 문제 수정","⑥ 견적 비교가 열린 상태에서는 실시간 갱신과 메모 펼침이 현재 위치를 유지"] },
   { v:"4.57", d:"2026-07-08", items:["⑥ 견적서·사업자등록증 업로드 후 케이스 화면 스크롤이 자동으로 내려가는 문제 수정","업로드 중 실시간 갱신이 들어와도 현재 스크롤 위치 유지"] },
   { v:"4.56", d:"2026-07-07", items:["② 접수확인 발송을 네이버 SENS 문자 요청으로 연결","구글폼 자동 접수와 케이스 화면 수동 요청 모두 Apps Script에서 결과를 ② 메모에 반영"] },
