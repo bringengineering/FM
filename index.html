@@ -2924,6 +2924,7 @@ async function uploadQuoteFile(){
     return;
   }
   if(isQuoteUploadCanceled(uploadJob)){ finishQuoteUploadJob(uploadJob); return; }
+  const scrollSnapshot=captureCaseDetailScroll();
   clearQuotePendingFiles();
   c.status=c.status||{};
   c.note=c.note||{};
@@ -2932,6 +2933,7 @@ async function uploadQuoteFile(){
   saveCase(curCase);
   renderCaseList();
   renderCaseDetail();
+  restoreCaseDetailScroll(scrollSnapshot);
   updateQuoteUploadProgress({
     title:"업로드 요청 완료",
     fileName:"견적 파일 "+files.length+"개 요청 완료",
@@ -3012,12 +3014,14 @@ async function uploadBusinessRegistrationFiles(){
     return;
   }
   if(isQuoteUploadCanceled(uploadJob)){ finishQuoteUploadJob(uploadJob); return; }
+  const scrollSnapshot=captureCaseDetailScroll();
   clearBusinessRegPendingFiles();
   c.status=c.status||{};
   if(c.status.c6!=="done") c.status.c6="doing";
   saveCase(curCase);
   renderCaseList();
   renderCaseDetail();
+  restoreCaseDetailScroll(scrollSnapshot);
   updateQuoteUploadProgress({
     title:"사업자등록증 업로드 요청 완료",
     fileName:"사업자등록증 파일 "+files.length+"개 요청 완료",
@@ -3169,6 +3173,7 @@ async function uploadSelectedCaseDocuments(){
   }
 
   if(isQuoteUploadCanceled(uploadJob)){ finishQuoteUploadJob(uploadJob); return; }
+  const scrollSnapshot=captureCaseDetailScroll();
   if(rawQuoteFiles.length) clearQuotePendingFiles();
   if(businessFiles.length) clearBusinessRegPendingFiles();
   c.status=c.status||{};
@@ -3182,6 +3187,7 @@ async function uploadSelectedCaseDocuments(){
   saveCase(curCase);
   renderCaseList();
   renderCaseDetail();
+  restoreCaseDetailScroll(scrollSnapshot);
   updateQuoteUploadProgress({
     title:"업로드 요청 완료",
     fileName:summaryParts.join(" + ")+" 요청 완료",
@@ -3472,7 +3478,10 @@ function attachCasesRef(){
     if (caseView.classList.contains("open")){
       renderCaseList();
       if (!curCase || !isCaseVisible(cases[curCase])) curCase = firstVisibleCaseId();
-      if (!caseView.contains(document.activeElement)) renderCaseDetail();   // 입력 중엔 갱신 보류
+      if (!caseView.contains(document.activeElement)) {
+        if (quoteUploadInProgress) renderCaseDetailKeepScroll();
+        else renderCaseDetail();
+      }   // 입력 중엔 갱신 보류
     }
   };
   casesRef.on("value", caseValueHandler, e => {
@@ -3716,6 +3725,28 @@ function autoGrowCaseNote(el){
 function autoGrowCaseNotes(){
   caseDetailEl.querySelectorAll("textarea.cv-note").forEach(autoGrowCaseNote);
 }
+function captureCaseDetailScroll(){
+  const root=document.scrollingElement||document.documentElement;
+  return {
+    detailTop:caseDetailEl?caseDetailEl.scrollTop:0,
+    pageTop:root?root.scrollTop:0
+  };
+}
+function restoreCaseDetailScroll(snapshot){
+  if(!snapshot) return;
+  const apply=()=>{
+    if(caseDetailEl) caseDetailEl.scrollTop=snapshot.detailTop||0;
+    const root=document.scrollingElement||document.documentElement;
+    if(root) root.scrollTop=snapshot.pageTop||0;
+  };
+  apply();
+  requestAnimationFrame(apply);
+}
+function renderCaseDetailKeepScroll(){
+  const snapshot=captureCaseDetailScroll();
+  renderCaseDetail();
+  restoreCaseDetailScroll(snapshot);
+}
 function renderCaseDetail(){
   const c=cases[curCase];
   if(!c){ caseDetailEl.innerHTML=`<div class="cv-empty">왼쪽에서 케이스를 선택하거나<br>＋ 새 케이스를 만들어주세요</div>`; return; }
@@ -3828,8 +3859,9 @@ document.getElementById("noticeBtn").addEventListener("click", openNoticePanel);
 document.getElementById("noticeBanner").addEventListener("click", openNoticePanel);
 
 /* ===== 업데이트 알림(What's New) — 새 버전 나오면 자동 팝업 ===== */
-const APP_VERSION = "4.56";
+const APP_VERSION = "4.57";
 const CHANGELOG = [
+  { v:"4.57", d:"2026-07-08", items:["⑥ 견적서·사업자등록증 업로드 후 케이스 화면 스크롤이 자동으로 내려가는 문제 수정","업로드 중 실시간 갱신이 들어와도 현재 스크롤 위치 유지"] },
   { v:"4.56", d:"2026-07-07", items:["② 접수확인 발송을 네이버 SENS 문자 요청으로 연결","구글폼 자동 접수와 케이스 화면 수동 요청 모두 Apps Script에서 결과를 ② 메모에 반영"] },
   { v:"4.55", d:"2026-07-07", items:["사업자등록증 기본 매칭 후 빈칸이 남을 때만 MinerU OCR 보충","브링 엑셀 공급자 빈칸은 기존 값은 유지하고 누락값만 자동 보충"] },
   { v:"4.54", d:"2026-07-07", items:["사업자등록증 표/라벨 분석 강화","브링 엑셀 공급자 빈칸을 견적서·사업자등록증 기준으로 자동 보충"] },
