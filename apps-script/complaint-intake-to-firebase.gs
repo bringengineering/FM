@@ -1467,6 +1467,38 @@ function vendorMatchKey_(value) {
     .toLowerCase();
 }
 
+function vendorMatchKey_(value) {
+  return String(value || "")
+    .replace(/(\(\s*\uC8FC\s*\)|\u3231|\uC8FC\uC2DD\uD68C\uC0AC|\uC720\uD55C\uD68C\uC0AC|\uD569\uC790\uD68C\uC0AC|\uD569\uBA85\uD68C\uC0AC)/g, "")
+    .replace(/[^\uAC00-\uD7A3a-zA-Z0-9]/g, "")
+    .toLowerCase();
+}
+
+function vendorNameLooseMatch_(left, right) {
+  const a = vendorMatchKey_(left);
+  const b = vendorMatchKey_(right);
+  if (!a || !b) return false;
+  if (a === b) return true;
+  if (a.length < 3 || b.length < 3) return false;
+  if (a.indexOf(b) !== -1 || b.indexOf(a) !== -1) return true;
+  return isSimilarVendorName_(left, right);
+}
+
+function extractBusinessRegistrationVendorNameFromFileName_(fileName) {
+  let value = String(fileName || "").replace(/\.[^.]+$/, "");
+  value = value
+    .replace(/^BR-\d{4}-\d{4}[_\s-]*/i, "")
+    .replace(/^\d+[_\s.-]*/, "")
+    .replace(/\s*\uC0AC\uC5C5\uC790\s*\uB4F1\uB85D\uC99D.*$/g, "")
+    .replace(/\s*\uC0AC\uC5C5\uC790\uB4F1\uB85D.*$/g, "")
+    .replace(/\s*business\s*registration.*$/ig, "")
+    .replace(/[_-]+$/g, "")
+    .replace(/[_-]+/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+  return cleanExtractedVendorName_(value);
+}
+
 function extractFieldNearLabels_(text, labels) {
   const lines = normalizeQuoteTextLines_(text);
   const normalizedLabels = labels.map(label => String(label).replace(/\s+/g, ""));
@@ -1997,7 +2029,9 @@ function extractBusinessRegistrationVendorInfo_(text, mineruResult, fileName) {
   const quoteInfo = extractQuoteVendorInfo_(source, mineruResult || {}, fileName);
   const structuredInfo = extractQuoteVendorInfoFromObject_(mineruResult || {});
   const businessInfo = extractBusinessRegistrationVendorInfoFromText_(source);
-  const fileNameInfo = cleanVendorInfo_({ name: extractQuoteVendorNameFromFileName_(fileName) });
+  const fileNameInfo = cleanVendorInfo_({
+    name: extractBusinessRegistrationVendorNameFromFileName_(fileName) || extractQuoteVendorNameFromFileName_(fileName)
+  });
   let merged = mergeVendorInfoObjects_(quoteInfo, structuredInfo);
   merged = mergeVendorInfoObjects_(merged, businessInfo);
   if (!merged.name) merged.name = fileNameInfo.name || "";
@@ -2109,7 +2143,7 @@ function matchBusinessRegistrationVendor_(vendorInfo, payload, casePayload) {
   if (exact.length === 1) return businessRegistrationMatchResult_(exact[0], "업체명 일치");
   if (exact.length > 1) return { status: "multiple", vendorId: "", vendorName: targetName, memo: "같은 업체명 후보가 여러 개입니다." };
 
-  const similar = targetName ? candidates.filter(v => isSimilarVendorName_(targetName, v.name)) : [];
+  const similar = targetName ? candidates.filter(v => vendorNameLooseMatch_(targetName, v.name)) : [];
   if (similar.length === 1) return businessRegistrationMatchResult_(similar[0], "유사 업체명 일치");
   if (similar.length > 1) return { status: "multiple", vendorId: "", vendorName: targetName, memo: "유사 업체명 후보가 여러 개입니다." };
 
@@ -2991,17 +3025,18 @@ function findBusinessRegistrationForQuote_(casePayload, quote, vendorName) {
     if (exact.length === 1) return exact[0];
   }
   for (const target of targetNames) {
-    const similar = docs.filter(doc => isSimilarVendorName_(target, doc.name));
+    const similar = docs.filter(doc => vendorNameLooseMatch_(target, doc.name));
     if (similar.length === 1) return similar[0];
   }
   return {};
 }
 
 function businessRegistrationVendorInfoFromDoc_(doc) {
+  const fileNameVendorName = extractBusinessRegistrationVendorNameFromFileName_(doc.originalFileName || doc.fileName || "");
   const info = cleanVendorInfo_({
     docId: doc.id || "",
     id: doc.vendorId || "",
-    name: doc.vendorName || doc.matchedVendorName || "",
+    name: doc.vendorName || doc.matchedVendorName || fileNameVendorName || "",
     businessNo: doc.businessNo || "",
     ceo: doc.ceo || "",
     address: doc.address || "",
@@ -3089,7 +3124,7 @@ function resolveBringQuoteVendorInfo_(casePayload, quote, extraction) {
   }
   const vendor = mergeVendorInfoObjects_(businessVendor, quoteVendor);
   const businessName = cleanExtractedVendorName_(businessVendor.name || "");
-  if (businessName && (!quoteVendor.name || isSimilarVendorName_(quoteVendor.name, businessName))) {
+  if (businessName && (!quoteVendor.name || vendorNameLooseMatch_(quoteVendor.name, businessName))) {
     vendor.name = businessName;
   }
   if (!vendor.name) vendor.name = cleanExtractedVendorName_(quote.vendorName || extraction.vendorName || businessVendor.name || "");
@@ -3216,7 +3251,7 @@ function businessRegistrationMatchesQuote_(businessVendor, quote) {
     extractQuoteVendorNameFromFileName_(quote.fileName || quote.originalFileName || "")
   ].map(cleanExtractedVendorName_).filter(Boolean);
   if (!quoteNames.length) return false;
-  return quoteNames.some(name => vendorMatchKey_(name) === vendorMatchKey_(businessName) || isSimilarVendorName_(name, businessName));
+  return quoteNames.some(name => vendorNameLooseMatch_(name, businessName));
 }
 
 function makeQuoteRewriteExtraction_(quote, casePayload) {
