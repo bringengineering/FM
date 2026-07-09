@@ -320,7 +320,11 @@
     font-weight:800;
   }
   .loc .dot,#locName{display:none}
-  .loc::after{content:"햇 빛 빌 라"}
+  .loc::after{
+    content:"햇 빛 빌 라";
+    display:inline-block;
+    transform:translateX(35px);
+  }
   .date{
     position:fixed;
     top:56px;
