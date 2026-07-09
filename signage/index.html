@@ -637,6 +637,32 @@
     opacity:.58;
   }
   .quick-line{width:42%;height:2px;background:#DDE8F6}
+  /* 위탁판매 카드 — 세로 보드에서는 '빠른 이용하기' 다음 섹션으로 배치 */
+  .consign{
+    order:4;
+    flex:.95 1 120px;
+    min-height:120px;
+    grid-area:auto;
+    padding:24px 32px;
+    border-radius:12px;
+    background:rgba(255,255,255,.94);
+    border:1px solid #DDE8F6;
+    box-shadow:0 12px 32px rgba(35,80,130,.08);
+  }
+  .consign .ctag{
+    color:#1359B4;
+    font-size:clamp(20px,1.8vw,30px);
+    font-weight:900;
+    margin-bottom:14px;
+  }
+  .consign .cbody{gap:24px}
+  .consign .cphoto{width:clamp(72px,8vw,110px);height:clamp(72px,8vw,110px);border-radius:12px;border:1px solid #DDE8F6}
+  .consign .cname{font-size:clamp(19px,1.7vw,27px);color:#173D72}
+  .consign .cvendor{font-size:clamp(13px,1.1vw,17px)}
+  .consign .cprice{font-size:clamp(19px,1.8vw,28px);color:#1359B4}
+  .consign .cqr .qbox{border:1px solid #DDE8F6;border-radius:10px}
+  .consign .cqr img{width:clamp(80px,7.5vw,116px);height:clamp(80px,7.5vw,116px)}
+  .consign .cqrsub{color:#65738A}
   .benefits{
     order:4;
     flex:1 1 110px;
