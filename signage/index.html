@@ -370,9 +370,39 @@
     justify-content:center;
     gap:12px;
   }
+  .temp-row{
+    display:flex;
+    align-items:center;
+    justify-content:space-between;
+    gap:22px;
+  }
   .temp{
     font-size:clamp(54px,7vw,112px);
     color:#102A54;
+    flex:none;
+  }
+  .umbrella-tip{
+    min-width:190px;
+    max-width:300px;
+    padding:14px 18px;
+    border:1px solid #D8E4F4;
+    border-radius:12px;
+    background:#F7FBFF;
+    color:#173D72;
+    display:flex;
+    flex-direction:column;
+    gap:5px;
+    box-shadow:inset 0 0 0 1px rgba(255,255,255,.7);
+  }
+  .umbrella-tip strong{
+    font-size:clamp(18px,1.5vw,25px);
+    line-height:1.12;
+    font-weight:900;
+  }
+  .umbrella-tip span{
+    font-size:clamp(12px,1vw,16px);
+    line-height:1.25;
+    color:#607089;
   }
   .wdesc{
     font-size:clamp(18px,1.6vw,26px);
@@ -757,7 +787,13 @@
     <div class="card weather">
       <div class="wicon" id="wicon" aria-label="날씨 아이콘"></div>
       <div class="wmain">
-        <div class="temp"><span id="temp">--</span><small>°C</small></div>
+        <div class="temp-row">
+          <div class="temp"><span id="temp">--</span><small>°C</small></div>
+          <div class="umbrella-tip">
+            <strong id="umbrellaTitle">날씨 확인 중</strong>
+            <span id="umbrellaSub">강수확률을 확인하고 있어요</span>
+          </div>
+        </div>
         <div class="wdesc" id="wdesc">날씨 정보를 불러오는 중</div>
         <div class="wsub">
           <span>최고 <b id="tmax">--°</b></span>
@@ -1009,6 +1045,16 @@ async function refresh(){
     const dayCode = w.daily.weather_code?.[0];
     const raining = RAIN.includes(c.weather_code) || RAIN.includes(dayCode) || prob >= 40;
     const snowing = SNOW.includes(c.weather_code) || SNOW.includes(dayCode);
+    if(snowing){
+      $("umbrellaTitle").textContent = "미끄럼 주의";
+      $("umbrellaSub").textContent = prob > 0 ? `눈 소식 · 강수확률 ${prob}%` : "눈 소식이 있어요";
+    }else if(raining){
+      $("umbrellaTitle").textContent = "우산 챙겨주세요";
+      $("umbrellaSub").textContent = prob > 0 ? `오늘 강수확률 ${prob}%` : "비 소식이 있어요";
+    }else{
+      $("umbrellaTitle").textContent = "우산은 괜찮아요";
+      $("umbrellaSub").textContent = prob > 0 ? `오늘 강수확률 ${prob}%` : "비 소식이 낮아요";
+    }
     const notice = $("notice");
     if(snowing){
       $("nicon").innerHTML = iconSvg("snow");
