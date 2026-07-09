@@ -1,0 +1,77 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <title>Bring Signage</title>
+  <style>
+    body {
+      margin: 0;
+      background: #101820;
+      color: white;
+      font-family: Arial, sans-serif;
+      height: 100vh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      text-align: center;
+    }
+    h1 {
+      font-size: 64px;
+    }
+    p {
+      font-size: 32px;
+    }
+  </style>
+</head>
+<body>
+  <div>
+    <h1>BRING ENGINEERING</h1>
+    <p>사이니지 화면 테스트</p>
+    <p id="clock"></p>
+  </div>
+
+  <script>
+    function updateClock() {
+      document.getElementById("clock").textContent =
+        new Date().toLocaleString("ko-KR");
+    }
+
+    updateClock();
+    setInterval(updateClock, 1000);
+  </script>
+
+  <script>
+    const VERSION_FILE = "./version.json";
+    const CHECK_INTERVAL = 30 * 1000;
+
+    async function checkForUpdate() {
+      try {
+        const response = await fetch(VERSION_FILE + "?t=" + Date.now(), {
+          cache: "no-store"
+        });
+
+        if (!response.ok) return;
+
+        const data = await response.json();
+        const latestVersion = String(data.version || "").trim();
+        const currentVersion = localStorage.getItem("bring_signage_version");
+
+        if (!currentVersion) {
+          localStorage.setItem("bring_signage_version", latestVersion);
+          return;
+        }
+
+        if (latestVersion !== currentVersion) {
+          localStorage.setItem("bring_signage_version", latestVersion);
+          window.location.reload();
+        }
+      } catch (error) {
+        console.log("업데이트 확인 실패:", error);
+      }
+    }
+
+    checkForUpdate();
+    setInterval(checkForUpdate, CHECK_INTERVAL);
+  </script>
+</body>
+</html>
