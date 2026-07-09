@@ -3017,18 +3017,42 @@ function findBusinessRegistrationForQuote_(casePayload, quote, vendorName) {
 
   if (targetBusinessNo) {
     const businessMatches = docs.filter(doc => cleanBusinessNo_(doc.businessNo || "") === targetBusinessNo);
-    if (businessMatches.length === 1) return businessMatches[0];
+    const selectedByBusinessNo = selectBusinessRegistrationMatch_(businessMatches);
+    if (selectedByBusinessNo) return selectedByBusinessNo;
   }
 
   for (const target of targetNames) {
     const exact = docs.filter(doc => vendorMatchKey_(doc.name) === vendorMatchKey_(target));
-    if (exact.length === 1) return exact[0];
+    const selectedExact = selectBusinessRegistrationMatch_(exact);
+    if (selectedExact) return selectedExact;
   }
   for (const target of targetNames) {
     const similar = docs.filter(doc => vendorNameLooseMatch_(target, doc.name));
-    if (similar.length === 1) return similar[0];
+    const selectedSimilar = selectBusinessRegistrationMatch_(similar);
+    if (selectedSimilar) return selectedSimilar;
   }
   return {};
+}
+
+function selectBusinessRegistrationMatch_(matches) {
+  matches = (matches || []).filter(Boolean);
+  if (!matches.length) return null;
+  if (matches.length === 1) return matches[0];
+  const nameKeys = new Set(matches.map(item => vendorMatchKey_(item.name || "")).filter(Boolean));
+  const businessNos = new Set(matches.map(item => cleanBusinessNo_(item.businessNo || "")).filter(Boolean));
+  if (nameKeys.size > 1 && businessNos.size > 1) return null;
+  return matches.slice().sort((a, b) => {
+    const scoreDiff = businessRegistrationCompletenessScore_(b) - businessRegistrationCompletenessScore_(a);
+    if (scoreDiff) return scoreDiff;
+    return String(b.uploadedAt || b.updatedAt || "").localeCompare(String(a.uploadedAt || a.updatedAt || ""));
+  })[0];
+}
+
+function businessRegistrationCompletenessScore_(info) {
+  info = info || {};
+  return ["businessNo", "ceo", "address", "type", "category", "phone", "email"].reduce((score, key) => {
+    return score + (String(info[key] || "").trim() ? 1 : 0);
+  }, 0);
 }
 
 function businessRegistrationVendorInfoFromDoc_(doc) {
@@ -3052,6 +3076,8 @@ function businessRegistrationVendorInfoFromDoc_(doc) {
   info.mimeType = doc.mimeType || "";
   info.extractionStatus = doc.extractionStatus || "";
   info.extractionMemo = doc.extractionMemo || "";
+  info.uploadedAt = doc.uploadedAt || "";
+  info.updatedAt = doc.updatedAt || "";
   info.mineruSupplementAttempted = !!doc.mineruSupplementAttempted || !!doc.mineruSupplementMessage;
   info.mineruSupplementUsed = !!doc.mineruSupplementUsed;
   info.mineruSupplementMessage = doc.mineruSupplementMessage || "";
