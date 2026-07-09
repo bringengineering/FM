@@ -763,7 +763,7 @@
           <span>최고 <b id="tmax">--°</b></span>
           <span>최저 <b id="tmin">--°</b></span>
           <span>미세먼지 <b id="pm10Brief">--</b></span>
-          <span>강수량 <b id="rainSum">-- mm</b></span>
+          <span>강수확률 <b id="rainProb">--%</b></span>
         </div>
       </div>
     </div>
@@ -980,7 +980,7 @@ async function refresh(){
   try{
     const wURL = `https://api.open-meteo.com/v1/forecast?latitude=${LAT}&longitude=${LON}`
       + `&current=temperature_2m,weather_code,is_day`
-      + `&daily=temperature_2m_max,temperature_2m_min,precipitation_probability_max,precipitation_sum,weather_code&timezone=Asia%2FSeoul`;
+      + `&daily=temperature_2m_max,temperature_2m_min,precipitation_probability_max,weather_code&timezone=Asia%2FSeoul`;
     const aURL = `https://air-quality-api.open-meteo.com/v1/air-quality?latitude=${LAT}&longitude=${LON}`
       + `&current=pm10,pm2_5&timezone=Asia%2FSeoul`;
 
@@ -996,7 +996,7 @@ async function refresh(){
     $("tmin").textContent = Math.round(w.daily.temperature_2m_min[0])+"°";
     const [pm10Label] = gradePM10(a.current.pm10);
     $("pm10Brief").textContent = `${pm10Label} ${Math.round(a.current.pm10)}`;
-    $("rainSum").textContent = `${Number(w.daily.precipitation_sum?.[0] ?? 0).toFixed(1)} mm`;
+    $("rainProb").textContent = `${Math.round(w.daily.precipitation_probability_max?.[0] ?? 0)}%`;
     const [desc, icon] = describe(c.weather_code, c.is_day===1);
     $("wdesc").textContent = desc;
     $("wicon").innerHTML = iconSvg(icon);
