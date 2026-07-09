@@ -597,6 +597,103 @@
     gap:16px;
     height:calc(100% - 44px);
   }
+  .facility-card{
+    flex-direction:column;
+    align-items:center;
+    justify-content:center;
+    gap:9px;
+    padding:12px 8px;
+    color:#173D72;
+    font-size:clamp(13px,1.05vw,18px);
+    font-weight:800;
+    line-height:1.25;
+    text-align:center;
+  }
+  .facility-icon{
+    width:34px;
+    height:34px;
+    border:3px solid #2D7DD2;
+    border-radius:8px;
+    position:relative;
+    flex:none;
+  }
+  .facility-icon.laundry{
+    border-radius:50%;
+  }
+  .facility-icon.laundry::before{
+    content:"";
+    position:absolute;
+    inset:8px;
+    border:3px solid #2D7DD2;
+    border-radius:50%;
+  }
+  .facility-icon.store::before{
+    content:"";
+    position:absolute;
+    left:4px;
+    right:4px;
+    top:8px;
+    height:5px;
+    background:#2D7DD2;
+    box-shadow:0 8px 0 #2D7DD2;
+  }
+  .facility-icon.cafe{
+    border-radius:50%;
+  }
+  .facility-icon.cafe::after{
+    content:"";
+    position:absolute;
+    right:-9px;
+    top:9px;
+    width:9px;
+    height:10px;
+    border:3px solid #2D7DD2;
+    border-left:0;
+    border-radius:0 8px 8px 0;
+  }
+  .facility-icon.pharmacy::before,
+  .facility-icon.pharmacy::after{
+    content:"";
+    position:absolute;
+    background:#2D7DD2;
+  }
+  .facility-icon.pharmacy::before{left:7px;right:7px;top:14px;height:4px}
+  .facility-icon.pharmacy::after{top:7px;bottom:7px;left:14px;width:4px}
+  .facility-icon.bank{
+    border-radius:50%;
+  }
+  .facility-icon.bank::before{
+    content:"";
+    position:absolute;
+    left:8px;
+    right:8px;
+    bottom:7px;
+    height:16px;
+    border-left:4px solid #2D7DD2;
+    border-right:4px solid #2D7DD2;
+  }
+  .facility-icon.parking::before{
+    content:"P";
+    position:absolute;
+    inset:0;
+    display:grid;
+    place-items:center;
+    color:#2D7DD2;
+    font-weight:900;
+    font-size:22px;
+  }
+  .facility-label{
+    color:#6B7B92;
+    font-size:.78em;
+    font-weight:700;
+  }
+  .facility-name{
+    display:-webkit-box;
+    -webkit-line-clamp:2;
+    -webkit-box-orient:vertical;
+    overflow:hidden;
+    max-width:100%;
+  }
   .alert-strip{
     order:6;
     flex:none;
@@ -733,14 +830,7 @@
 
   <section class="section-card facilities">
     <div class="section-title"><span class="section-icon pin" aria-hidden="true"></span>주변 편의시설</div>
-    <div class="facility-grid">
-      <div class="facility-card"><span class="placeholder-line"></span></div>
-      <div class="facility-card"><span class="placeholder-line"></span></div>
-      <div class="facility-card"><span class="placeholder-line"></span></div>
-      <div class="facility-card"><span class="placeholder-line"></span></div>
-      <div class="facility-card"><span class="placeholder-line"></span></div>
-      <div class="facility-card"><span class="placeholder-line"></span></div>
-    </div>
+    <div class="facility-grid" id="facilityGrid"></div>
   </section>
 
   <section class="section-card alert-strip"><span class="section-icon megaphone" aria-hidden="true"></span>알림</section>
@@ -761,6 +851,7 @@ const CONFIG = {
   LAT: 37.3422,          // 위도
   LON: 127.9202,         // 경도
   NAME: "원주시",         // 화면에 표시할 위치 이름
+  ADDRESS: "강원특별자치도 원주시", // 건물 주소(추후 주변 편의시설 자동 검색 기준)
   REFRESH_MIN: 10,       // 갱신 주기(분)
 
   /* 공지사항: 아래 목록에 문구를 넣으면 화면에 표시됩니다.
@@ -776,7 +867,18 @@ const CONFIG = {
   QR_IMAGE: "./qr-code.png",
   QR_URL: "",
   QR_TITLE: "시설 불편사항 접수",
-  QR_SUB: "QR코드를 스캔해 주세요"
+  QR_SUB: "QR코드를 스캔해 주세요",
+
+  /* 주변 편의시설: name에 실제 상호명을 넣으면 화면에 표시됩니다.
+     추후 주소 기반 자동 검색을 붙이면 이 목록을 자동으로 채우는 구조입니다. */
+  FACILITIES: [
+    { type: "laundry", label: "세탁소", name: "세탁소 정보 준비중" },
+    { type: "store", label: "편의점", name: "편의점 정보 준비중" },
+    { type: "cafe", label: "카페", name: "카페 정보 준비중" },
+    { type: "pharmacy", label: "약국", name: "약국 정보 준비중" },
+    { type: "bank", label: "은행", name: "은행 정보 준비중" },
+    { type: "parking", label: "주차장", name: "주차장 정보 준비중" }
+  ]
 };
 /* ═══════════════════════════════════════════════ */
 
@@ -792,6 +894,26 @@ function tick(){
 }
 setInterval(tick,1000); tick();
 $("locName").textContent = CONFIG.NAME;
+
+function renderFacilities(){
+  const grid = $("facilityGrid");
+  if(!grid) return;
+  const esc = s => String(s || "").replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;");
+  const items = (CONFIG.FACILITIES || []).slice(0,6);
+  grid.innerHTML = items.map(item => {
+    const type = esc(item.type || "store");
+    const label = esc(item.label || "편의시설");
+    const name = esc(item.name || "정보 준비중");
+    return `
+      <div class="facility-card">
+        <span class="facility-icon ${type}" aria-hidden="true"></span>
+        <span class="facility-label">${label}</span>
+        <span class="facility-name">${name}</span>
+      </div>
+    `;
+  }).join("");
+}
+renderFacilities();
 
 /* 라즈베리파이에서 이모지 폰트가 없어도 보이도록 SVG 아이콘을 사용합니다. */
 function iconSvg(type){
