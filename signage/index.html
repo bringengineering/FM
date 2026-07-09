@@ -117,7 +117,8 @@
     font-weight:800;
     color:var(--brand);
   }
-  .wicon{font-size:clamp(48px,5.5vw,86px);line-height:1}
+  .wicon{width:clamp(58px,6vw,88px);height:clamp(58px,6vw,88px);line-height:0}
+  .wicon svg{width:100%;height:100%;display:block}
   .wmain{display:flex;flex-direction:column;gap:8px;min-width:0}
   .temp{font-size:clamp(48px,5.7vw,82px);font-weight:800;line-height:1;color:#10233F}
   .temp small{font-size:.42em;font-weight:500;color:var(--ink-dim);vertical-align:.5em}
@@ -152,7 +153,8 @@
     box-shadow:0 10px 28px rgba(35,55,85,.13);
   }
   .notice.on{display:flex;animation:slideIn .6s cubic-bezier(.2,.8,.2,1)}
-  .notice .nicon{font-size:clamp(24px,2.5vw,34px);line-height:1;animation:bob 2.8s ease-in-out infinite}
+  .notice .nicon{width:clamp(28px,2.5vw,36px);height:clamp(28px,2.5vw,36px);line-height:0;animation:bob 2.8s ease-in-out infinite}
+  .notice .nicon svg{width:100%;height:100%;display:block}
   .notice .ntext{display:flex;flex-direction:column;gap:2px;min-width:0}
   .notice .ntitle{font-size:clamp(14px,1.4vw,18px);font-weight:800}
   .notice .nsub{font-size:clamp(12px,1vw,14px);color:var(--ink-dim)}
@@ -289,7 +291,7 @@
 
   <div class="right">
     <div class="card weather">
-      <div class="wicon" id="wicon">⛅</div>
+      <div class="wicon" id="wicon" aria-label="날씨 아이콘"></div>
       <div class="wmain">
         <div class="temp"><span id="temp">--</span><small>°C</small></div>
         <div class="wdesc" id="wdesc">날씨 정보를 불러오는 중</div>
@@ -303,7 +305,7 @@
     </div>
 
     <div class="notice" id="notice">
-      <div class="nicon" id="nicon">☔</div>
+      <div class="nicon" id="nicon" aria-label="날씨 안내 아이콘"></div>
       <div class="ntext">
         <div class="ntitle" id="ntitle">오늘 비 소식이 있어요 — 우산을 챙기세요</div>
         <div class="nsub" id="nsub"></div>
@@ -374,21 +376,40 @@ function tick(){
 setInterval(tick,1000); tick();
 $("locName").textContent = CONFIG.NAME;
 
-/* 날씨 코드 → 한글 설명 + 아이콘 */
+/* 라즈베리파이에서 이모지 폰트가 없어도 보이도록 SVG 아이콘을 사용합니다. */
+function iconSvg(type){
+  const cloud = '<path d="M30 66h38a16 16 0 0 0 1.8-31.9A23 23 0 0 0 26.4 40 13.5 13.5 0 0 0 30 66Z" fill="#D7E2EF" stroke="#7891AD" stroke-width="4" stroke-linejoin="round"/>';
+  const sun = '<circle cx="34" cy="30" r="14" fill="#F7C948"/><g stroke="#F7C948" stroke-width="4" stroke-linecap="round"><path d="M34 7v8M34 45v8M11 30h8M49 30h8M18 14l6 6M50 14l-6 6M18 46l6-6M50 46l-6-6"/></g>';
+  const moon = '<path d="M58 14a30 30 0 1 0 24 44A25 25 0 1 1 58 14Z" fill="#6D7FA3"/>';
+  const rain = '<g stroke="#2D7DD2" stroke-width="5" stroke-linecap="round"><path d="M33 72l-5 10M49 72l-5 10M65 72l-5 10"/></g>';
+  const snow = '<g stroke="#68BFEF" stroke-width="4" stroke-linecap="round"><path d="M33 76h14M40 69v14M57 76h14M64 69v14"/></g>';
+  const fog = '<g stroke="#9AAABD" stroke-width="4" stroke-linecap="round"><path d="M22 70h52M28 80h40"/></g>';
+  const storm = '<path d="M49 68l-9 15h12l-5 11 16-20H51l7-6Z" fill="#F0B429"/>';
+  if(type === "sun") return `<svg viewBox="0 0 96 96" role="img">${sun}</svg>`;
+  if(type === "moon") return `<svg viewBox="0 0 96 96" role="img">${moon}</svg>`;
+  if(type === "cloud") return `<svg viewBox="0 0 96 96" role="img">${cloud}</svg>`;
+  if(type === "rain") return `<svg viewBox="0 0 96 96" role="img">${cloud}${rain}</svg>`;
+  if(type === "snow") return `<svg viewBox="0 0 96 96" role="img">${cloud}${snow}</svg>`;
+  if(type === "storm") return `<svg viewBox="0 0 96 96" role="img">${cloud}${rain}${storm}</svg>`;
+  if(type === "fog") return `<svg viewBox="0 0 96 96" role="img">${cloud}${fog}</svg>`;
+  return `<svg viewBox="0 0 96 96" role="img">${sun}${cloud}</svg>`;
+}
+
+/* 날씨 코드 → 한글 설명 + SVG 아이콘 종류 */
 function describe(code, isDay){
-  const sun = isDay ? "☀️" : "🌙";
+  const clear = isDay ? "sun" : "moon";
   const map = {
-    0:[ "맑음", sun ], 1:["대체로 맑음", isDay?"🌤️":"🌙"], 2:["구름 조금","⛅"], 3:["흐림","☁️"],
-    45:["안개","🌫️"], 48:["짙은 안개","🌫️"],
-    51:["가랑비","🌦️"], 53:["이슬비","🌦️"], 55:["강한 이슬비","🌧️"],
-    61:["약한 비","🌧️"], 63:["비","🌧️"], 65:["강한 비","🌧️"],
-    66:["어는 비","🌧️"], 67:["강한 어는 비","🌧️"],
-    71:["약한 눈","🌨️"], 73:["눈","🌨️"], 75:["폭설","❄️"], 77:["싸락눈","🌨️"],
-    80:["소나기","🌦️"], 81:["강한 소나기","🌧️"], 82:["폭우","⛈️"],
-    85:["소낙눈","🌨️"], 86:["강한 소낙눈","❄️"],
-    95:["뇌우","⛈️"], 96:["뇌우·우박","⛈️"], 99:["강한 뇌우·우박","⛈️"]
+    0:[ "맑음", clear ], 1:["대체로 맑음", isDay ? "partly" : "moon"], 2:["구름 조금","partly"], 3:["흐림","cloud"],
+    45:["안개","fog"], 48:["짙은 안개","fog"],
+    51:["가랑비","rain"], 53:["이슬비","rain"], 55:["강한 이슬비","rain"],
+    61:["약한 비","rain"], 63:["비","rain"], 65:["강한 비","rain"],
+    66:["어는 비","rain"], 67:["강한 어는 비","rain"],
+    71:["약한 눈","snow"], 73:["눈","snow"], 75:["폭설","snow"], 77:["싸락눈","snow"],
+    80:["소나기","rain"], 81:["강한 소나기","rain"], 82:["폭우","storm"],
+    85:["소낙눈","snow"], 86:["강한 소낙눈","snow"],
+    95:["뇌우","storm"], 96:["뇌우·우박","storm"], 99:["강한 뇌우·우박","storm"]
   };
-  return map[code] || ["날씨","🌡️"];
+  return map[code] || ["날씨","partly"];
 }
 
 /* 미세먼지 등급 (환경부 기준) */
@@ -437,7 +458,8 @@ async function refresh(){
     $("tmin").textContent = Math.round(w.daily.temperature_2m_min[0])+"°";
     const [desc, icon] = describe(c.weather_code, c.is_day===1);
     $("wdesc").textContent = desc;
-    $("wicon").textContent = icon;
+    $("wicon").innerHTML = iconSvg(icon);
+    $("wicon").setAttribute("aria-label", desc);
 
     /* 우산 안내: 현재 비가 오거나, 오늘 강수확률 40% 이상이거나, 하루 예보에 비/눈 코드가 있으면 표시 */
     const RAIN = [51,53,55,61,63,65,66,67,80,81,82,95,96,99];
@@ -448,12 +470,12 @@ async function refresh(){
     const snowing = SNOW.includes(c.weather_code) || SNOW.includes(dayCode);
     const notice = $("notice");
     if(snowing){
-      $("nicon").textContent = "❄️";
+      $("nicon").innerHTML = iconSvg("snow");
       $("ntitle").textContent = "오늘 눈 소식이 있어요 — 미끄럼에 주의하세요";
       $("nsub").textContent = prob > 0 ? `강수확률 ${prob}%` : "";
       notice.classList.add("on");
     }else if(raining){
-      $("nicon").textContent = "☔";
+      $("nicon").innerHTML = iconSvg("rain");
       $("ntitle").textContent = RAIN.includes(c.weather_code)
         ? "지금 비가 오고 있어요 — 우산을 챙기세요"
         : "오늘 비 소식이 있어요 — 우산을 챙기세요";
