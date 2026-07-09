@@ -2905,6 +2905,9 @@ function extractQuoteItems_(text, amounts, casePayload) {
     .split(/\n| {2,}/)
     .map(line => line.replace(/\s+/g, " ").trim())
     .filter(Boolean);
+  const tableItems = extractQuoteTableItems_(text, amounts, casePayload);
+  if (tableItems.length && !tableItems[0].fallback) return tableItems;
+
   const items = [];
   for (const line of lines) {
     if (items.length >= 12) break;
@@ -2937,6 +2940,132 @@ function extractQuoteItems_(text, amounts, casePayload) {
   const supplyAmount = Number(amounts.supplyAmount || (totalAmount ? Math.round(totalAmount / 1.1) : 0));
   const vatAmount = Number(amounts.vatAmount || (totalAmount ? totalAmount - supplyAmount : 0));
   return [makeFallbackQuoteItem_(casePayload, supplyAmount, vatAmount, totalAmount, "추출 확인 필요")];
+}
+
+function extractQuoteTableItems_(text, amounts, casePayload) {
+  const source = String(text || "").replace(/\r/g, "\n");
+  if (!source || !/(품\s*명|품목|내역|규격|수량|단가|금액)/i.test(source)) return [];
+
+  const sections = buildQuoteItemCandidateSections_(source);
+  for (const section of sections) {
+    const rows = parseQuoteItemRowsFromSection_(section);
+    if (!rows.length) continue;
+    const items = buildQuoteItemsFromParsedRows_(rows, amounts);
+    const normalized = normalizeBringQuoteItems_(items, casePayload, amounts.totalAmount, amounts.supplyAmount, amounts.vatAmount);
+    if (normalized.length && !normalized[0].fallback) return normalized;
+  }
+  return [];
+}
+
+function buildQuoteItemCandidateSections_(source) {
+  const compact = String(source || "")
+    .replace(/\r?\n/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+  if (!compact) return [];
+
+  const sections = [];
+  const headerPattern = /(품\s*명\s*\(?\s*규격\s*\)?|품목|내역|규격)\s*(?:수량|단위)?\s*(?:단위|수량)?\s*(?:단가)?\s*(?:금액|합계)?\s*(?:비고)?/gi;
+  let match;
+  while ((match = headerPattern.exec(compact)) !== null) {
+    let section = compact.slice(match.index + match[0].length);
+    const stop = section.search(/(?:공급\s*가액|공급가|부가\s*세|부가세|합계\s*금액|총\s*액|총액|견적\s*유효|입금|사업자\s*등록|사업자번호|대표자|주소|전화|이메일|상호\s*:|회사명\s*:)/i);
+    if (stop > 0) section = section.slice(0, stop);
+    if (section.trim()) sections.push(section.trim());
+  }
+
+  if (!sections.length) {
+    let section = compact;
+    const firstHeader = section.search(/(?:품\s*명|품목|내역|규격)/i);
+    if (firstHeader >= 0) section = section.slice(firstHeader);
+    const stop = section.search(/(?:공급\s*가액|부가\s*세|합계\s*금액|총\s*액|견적\s*유효|사업자\s*등록|대표자|주소|전화|이메일)/i);
+    if (stop > 0) section = section.slice(0, stop);
+    sections.push(section);
+  }
+  return sections;
+}
+
+function parseQuoteItemRowsFromSection_(section) {
+  let text = String(section || "")
+    .replace(/품\s*명\s*\(?\s*규격\s*\)?|품목|내역|규격|수량|단위|단가|금액|합계|비고/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+  const rows = [];
+  const money = "(?:\\d{1,3}(?:,\\d{3})+|\\d{4,})(?:\\.\\d+)?";
+  const formula = "(?:[A-Z]{1,3}\\d+\\s*[*+\\-/]\\s*[A-Z]{1,3}\\d+)";
+  const rowPattern = new RegExp("([^\\d]{1}[^\\n]{1,90}?)\\s+(\\d+(?:\\.\\d+)?)\\s+(" + money + ")(?:\\s*원)?(?:\\s+" + formula + ")?(?:\\s+(" + money + ")(?:\\s*원)?)?", "g");
+  let match;
+  while ((match = rowPattern.exec(text)) !== null) {
+    if (rows.length >= 12) break;
+    const product = cleanQuoteItemProduct_(match[1]);
+    if (!product) continue;
+    const qty = Number(match[2] || 1) || 1;
+    const unitPrice = parseMoneyValue_(match[3]);
+    const lineAmount = parseMoneyValue_(match[4] || match[3]);
+    if (!lineAmount || lineAmount < 1000) continue;
+    rows.push({ product: product, qty: qty, unitPrice: unitPrice, lineAmount: lineAmount });
+  }
+  return rows;
+}
+
+function cleanQuoteItemProduct_(value) {
+  let product = String(value || "")
+    .replace(/\s+/g, " ")
+    .replace(/^\d+[\).\-]?\s*/, "")
+    .replace(/^(No|NO|no)\s*\d+\s*/i, "")
+    .replace(/^[\s:;,\-–—·ㆍ|()[\]{}]+|[\s:;,\-–—·ㆍ|()[\]{}]+$/g, "")
+    .trim();
+  product = product.replace(/^(품\s*명\s*\(?\s*규격\s*\)?|품목|내역|규격|수량|단위|단가|금액|합계|비고)\s*/i, "").trim();
+  if (product.length < 2) return "";
+  if (!/[가-힣A-Za-z]/.test(product)) return "";
+  if (/공급\s*가액|부가\s*세|합계|총액|사업자|대표자|주소|전화|이메일|견적\s*일자/i.test(product)) return "";
+  return product.slice(0, 80);
+}
+
+function buildQuoteItemsFromParsedRows_(rows, amounts) {
+  rows = Array.isArray(rows) ? rows : [];
+  if (!rows.length) return [];
+  const totalAmount = Number(amounts && amounts.totalAmount || 0);
+  const supplyAmount = Number(amounts && amounts.supplyAmount || (totalAmount ? Math.round(totalAmount / 1.1) : 0));
+  const vatAmount = Number(amounts && amounts.vatAmount || (totalAmount ? totalAmount - supplyAmount : 0));
+  const rowSum = rows.reduce((sum, row) => sum + Number(row.lineAmount || 0), 0);
+  const tolerance = Math.max(1000, Math.round((totalAmount || rowSum) * 0.08));
+  const rowAmountsAreSupply = supplyAmount && Math.abs(rowSum - supplyAmount) <= tolerance;
+  const rowAmountsAreTotal = totalAmount && Math.abs(rowSum - totalAmount) <= tolerance;
+  if (totalAmount && !rowAmountsAreSupply && !rowAmountsAreTotal) return [];
+
+  let remainingVat = vatAmount || Math.round(rowSum * 0.1);
+  let remainingTotal = totalAmount || (rowAmountsAreSupply ? rowSum + remainingVat : rowSum);
+  return rows.map((row, index) => {
+    let supply;
+    let vat;
+    let total;
+    if (rowAmountsAreSupply) {
+      supply = Number(row.lineAmount || 0);
+      vat = index === rows.length - 1
+        ? remainingVat
+        : Math.round(supply * (vatAmount || Math.round(rowSum * 0.1)) / Math.max(1, rowSum));
+      total = supply + vat;
+    } else {
+      total = Number(row.lineAmount || 0);
+      supply = Math.round(total / 1.1);
+      vat = total - supply;
+    }
+    remainingVat -= vat;
+    remainingTotal -= total;
+    if (index === rows.length - 1 && totalAmount && Math.abs(remainingTotal) <= 1000) {
+      total += remainingTotal;
+      vat = total - supply;
+    }
+    return {
+      product: row.product,
+      unit: "식",
+      unitPrice: supply || "",
+      vat: vat || "",
+      total: total || "",
+      note: "표 자동추출"
+    };
+  });
 }
 
 function makeFallbackQuoteItem_(casePayload, supplyAmount, vatAmount, totalAmount, note) {
