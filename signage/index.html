@@ -182,15 +182,22 @@
 
   /* QR 민원접수 */
   .qr{
-    margin-top:clamp(14px,2.4vh,24px);
-    display:none;align-items:center;gap:clamp(12px,1.6vw,18px);
+    position:fixed;left:50%;bottom:clamp(52px,7vh,76px);transform:translateX(-50%);
+    z-index:6;
+    display:none;align-items:center;justify-content:center;gap:clamp(12px,1.6vw,18px);
+    padding:clamp(8px,1.2vh,12px) clamp(12px,1.6vw,18px);
+    border-radius:18px;
+    background:rgba(7,16,30,.72);
+    border:1px solid var(--line);
+    box-shadow:0 14px 36px rgba(0,0,0,.28);
+    backdrop-filter:blur(8px);
   }
   .qr.on{display:flex}
   .qr .qbox{
     flex:none;background:#fff;border-radius:14px;
     padding:8px;line-height:0;
   }
-  .qr img{width:clamp(72px,9vw,112px);height:clamp(72px,9vw,112px);display:block}
+  .qr img{width:clamp(120px,12vw,180px);height:clamp(120px,12vw,180px);display:block}
   .qr .qtext{display:flex;flex-direction:column;gap:3px}
   .qr .qtitle{font-size:clamp(14px,1.7vw,19px);font-weight:700}
   .qr .qsub{font-size:clamp(12px,1.4vw,15px);color:var(--ink-dim)}
@@ -365,8 +372,9 @@ const CONFIG = {
     "분리수거 부탁드립니다."
   ],
 
-  /* QR 민원접수: 구글폼 등 접수 페이지 주소를 넣으면 QR코드가 자동 생성됩니다.
-     비워두면("") 숨겨집니다. */
+  /* QR 민원접수: QR_IMAGE에 이미지 파일을 넣거나, QR_URL에 주소를 넣으면 표시됩니다.
+     둘 다 비워두면("") 숨겨집니다. */
+  QR_IMAGE: "./qr-code.png",
   QR_URL: "",
   QR_TITLE: "시설 불편사항 접수",
   QR_SUB: "QR코드를 스캔해 주세요"
@@ -532,11 +540,16 @@ setInterval(refreshNews, CONFIG.REFRESH_MIN*60*1000);
   if(list.length > 1) setInterval(show, 8000);
 })();
 
-/* QR 민원접수: 주소가 있으면 QR코드 자동 생성 */
+/* QR 민원접수: 이미지 파일 또는 주소가 있으면 QR코드 표시 */
 (function initQR(){
-  if(!CONFIG.QR_URL) return;
-  $("qrimg").src = "https://api.qrserver.com/v1/create-qr-code/?size=240x240&margin=0&data="
-    + encodeURIComponent(CONFIG.QR_URL);
+  if(CONFIG.QR_IMAGE){
+    $("qrimg").src = CONFIG.QR_IMAGE;
+  }else if(CONFIG.QR_URL){
+    $("qrimg").src = "https://api.qrserver.com/v1/create-qr-code/?size=240x240&margin=0&data="
+      + encodeURIComponent(CONFIG.QR_URL);
+  }else{
+    return;
+  }
   $("qrtitle").textContent = CONFIG.QR_TITLE;
   $("qrsub").textContent = CONFIG.QR_SUB;
   $("qr").classList.add("on");

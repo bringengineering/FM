@@ -1021,6 +1021,7 @@ function handleApplyBusinessRegistrationToQuote_(payload) {
         if (fillResult && fillResult.mineruSupplementApplied) {
           quote.extractionMemo = appendQuoteMemo_(quote.extractionMemo, fillResult.mineruSupplementMessage || "MinerU OCR로 사업자등록증 빈칸 보충");
         }
+        quote.extractedItems = extraction.items;
       } catch (err) {
         quote.extractionMemo = appendQuoteMemo_(quote.extractionMemo, "사업자등록증 정보 반영 실패: " + err.message);
         message = "사업자등록증 정보 반영 실패: " + err.message;
@@ -1064,6 +1065,7 @@ function confirmedQuoteAmounts_(totalAmount) {
 }
 
 function makeConfirmedQuoteExtraction_(quote, casePayload, amounts) {
+  const items = getQuoteItemsForRewrite_(quote, casePayload, amounts.totalAmount, amounts.supplyAmount, amounts.vatAmount);
   return {
     status: "추출완료",
     memo: "관리자 확정 금액",
@@ -1071,15 +1073,7 @@ function makeConfirmedQuoteExtraction_(quote, casePayload, amounts) {
     supplyAmount: amounts.supplyAmount,
     vatAmount: amounts.vatAmount,
     totalAmount: amounts.totalAmount,
-    items: [{
-      product: [(casePayload.issueType || casePayload.vendorType || "현장"), "점검 및 공사 견적"].join(" "),
-      unit: "식",
-      unitPrice: amounts.supplyAmount,
-      vat: amounts.vatAmount,
-      total: amounts.totalAmount,
-      note: "관리자 확정 금액",
-      fallback: true
-    }]
+    items: items
   };
 }
 
@@ -1896,7 +1890,7 @@ function extractQuoteDataFromUpload_(blob, mimeType, fileName, fallbackAmount, c
       status: status,
       memo: memo,
       text: text,
-      textPreview: text.replace(/\s+/g, " ").trim().slice(0, 500),
+      textPreview: text.replace(/\s+/g, " ").trim().slice(0, 5000),
       vendorName: vendorName,
       vendorInfo: vendorInfo,
       fileNameVendorName: vendorInfo.fileNameVendorName || extractQuoteVendorNameFromFileName_(fileName),
@@ -1952,7 +1946,7 @@ function extractQuoteDataFromUpload_(blob, mimeType, fileName, fallbackAmount, c
     status: status,
     memo: memo,
     text: text,
-    textPreview: text.replace(/\s+/g, " ").trim().slice(0, 500),
+    textPreview: text.replace(/\s+/g, " ").trim().slice(0, 5000),
     vendorName: vendorName,
     vendorInfo: vendorInfo,
     fileNameVendorName: vendorInfo.fileNameVendorName || extractQuoteVendorNameFromFileName_(fileName),
@@ -2008,7 +2002,7 @@ function extractBusinessRegistrationData_(blob, mimeType, fileName, casePayload,
     status: status,
     memo: memo,
     text: text,
-    textPreview: text.replace(/\s+/g, " ").trim().slice(0, 500),
+    textPreview: text.replace(/\s+/g, " ").trim().slice(0, 5000),
     vendorInfo: vendorInfo,
     analysisEngine: analysisEngine,
     analysisStatus: analysisStatus,
@@ -2905,6 +2899,9 @@ function extractQuoteItems_(text, amounts, casePayload) {
     .split(/\n| {2,}/)
     .map(line => line.replace(/\s+/g, " ").trim())
     .filter(Boolean);
+  const tableItems = extractQuoteTableItems_(text, amounts, casePayload);
+  if (tableItems.length && !tableItems[0].fallback) return tableItems;
+
   const items = [];
   for (const line of lines) {
     if (items.length >= 12) break;
@@ -2937,6 +2934,132 @@ function extractQuoteItems_(text, amounts, casePayload) {
   const supplyAmount = Number(amounts.supplyAmount || (totalAmount ? Math.round(totalAmount / 1.1) : 0));
   const vatAmount = Number(amounts.vatAmount || (totalAmount ? totalAmount - supplyAmount : 0));
   return [makeFallbackQuoteItem_(casePayload, supplyAmount, vatAmount, totalAmount, "추출 확인 필요")];
+}
+
+function extractQuoteTableItems_(text, amounts, casePayload) {
+  const source = String(text || "").replace(/\r/g, "\n");
+  if (!source || !/(품\s*명|품목|내역|규격|수량|단가|금액)/i.test(source)) return [];
+
+  const sections = buildQuoteItemCandidateSections_(source);
+  for (const section of sections) {
+    const rows = parseQuoteItemRowsFromSection_(section);
+    if (!rows.length) continue;
+    const items = buildQuoteItemsFromParsedRows_(rows, amounts);
+    const normalized = normalizeBringQuoteItems_(items, casePayload, amounts.totalAmount, amounts.supplyAmount, amounts.vatAmount);
+    if (normalized.length && !normalized[0].fallback) return normalized;
+  }
+  return [];
+}
+
+function buildQuoteItemCandidateSections_(source) {
+  const compact = String(source || "")
+    .replace(/\r?\n/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+  if (!compact) return [];
+
+  const sections = [];
+  const headerPattern = /(품\s*명\s*\(?\s*규격\s*\)?|품목|내역|규격)\s*(?:수량|단위)?\s*(?:단위|수량)?\s*(?:단가)?\s*(?:금액|합계)?\s*(?:비고)?/gi;
+  let match;
+  while ((match = headerPattern.exec(compact)) !== null) {
+    let section = compact.slice(match.index + match[0].length);
+    const stop = section.search(/(?:공급\s*가액|공급가|부가\s*세|부가세|합계\s*금액|총\s*액|총액|견적\s*유효|입금|사업자\s*등록|사업자번호|대표자|주소|전화|이메일|상호\s*:|회사명\s*:)/i);
+    if (stop > 0) section = section.slice(0, stop);
+    if (section.trim()) sections.push(section.trim());
+  }
+
+  if (!sections.length) {
+    let section = compact;
+    const firstHeader = section.search(/(?:품\s*명|품목|내역|규격)/i);
+    if (firstHeader >= 0) section = section.slice(firstHeader);
+    const stop = section.search(/(?:공급\s*가액|부가\s*세|합계\s*금액|총\s*액|견적\s*유효|사업자\s*등록|대표자|주소|전화|이메일)/i);
+    if (stop > 0) section = section.slice(0, stop);
+    sections.push(section);
+  }
+  return sections;
+}
+
+function parseQuoteItemRowsFromSection_(section) {
+  let text = String(section || "")
+    .replace(/품\s*명\s*\(?\s*규격\s*\)?|품목|내역|규격|수량|단위|단가|금액|합계|비고/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+  const rows = [];
+  const money = "(?:\\d{1,3}(?:,\\d{3})+|\\d{4,})(?:\\.\\d+)?";
+  const formula = "(?:[A-Z]{1,3}\\d+\\s*[*+\\-/]\\s*[A-Z]{1,3}\\d+)";
+  const rowPattern = new RegExp("([^\\d]{1}[^\\n]{1,90}?)\\s+(\\d+(?:\\.\\d+)?)\\s+(" + money + ")(?:\\s*원)?(?:\\s+" + formula + ")?(?:\\s+(" + money + ")(?:\\s*원)?)?", "g");
+  let match;
+  while ((match = rowPattern.exec(text)) !== null) {
+    if (rows.length >= 12) break;
+    const product = cleanQuoteItemProduct_(match[1]);
+    if (!product) continue;
+    const qty = Number(match[2] || 1) || 1;
+    const unitPrice = parseMoneyValue_(match[3]);
+    const lineAmount = parseMoneyValue_(match[4] || match[3]);
+    if (!lineAmount || lineAmount < 1000) continue;
+    rows.push({ product: product, qty: qty, unitPrice: unitPrice, lineAmount: lineAmount });
+  }
+  return rows;
+}
+
+function cleanQuoteItemProduct_(value) {
+  let product = String(value || "")
+    .replace(/\s+/g, " ")
+    .replace(/^\d+[\).\-]?\s*/, "")
+    .replace(/^(No|NO|no)\s*\d+\s*/i, "")
+    .replace(/^[\s:;,\-–—·ㆍ|()[\]{}]+|[\s:;,\-–—·ㆍ|()[\]{}]+$/g, "")
+    .trim();
+  product = product.replace(/^(품\s*명\s*\(?\s*규격\s*\)?|품목|내역|규격|수량|단위|단가|금액|합계|비고)\s*/i, "").trim();
+  if (product.length < 2) return "";
+  if (!/[가-힣A-Za-z]/.test(product)) return "";
+  if (/공급\s*가액|부가\s*세|합계|총액|사업자|대표자|주소|전화|이메일|견적\s*일자/i.test(product)) return "";
+  return product.slice(0, 80);
+}
+
+function buildQuoteItemsFromParsedRows_(rows, amounts) {
+  rows = Array.isArray(rows) ? rows : [];
+  if (!rows.length) return [];
+  const totalAmount = Number(amounts && amounts.totalAmount || 0);
+  const supplyAmount = Number(amounts && amounts.supplyAmount || (totalAmount ? Math.round(totalAmount / 1.1) : 0));
+  const vatAmount = Number(amounts && amounts.vatAmount || (totalAmount ? totalAmount - supplyAmount : 0));
+  const rowSum = rows.reduce((sum, row) => sum + Number(row.lineAmount || 0), 0);
+  const tolerance = Math.max(1000, Math.round((totalAmount || rowSum) * 0.08));
+  const rowAmountsAreSupply = supplyAmount && Math.abs(rowSum - supplyAmount) <= tolerance;
+  const rowAmountsAreTotal = totalAmount && Math.abs(rowSum - totalAmount) <= tolerance;
+  if (totalAmount && !rowAmountsAreSupply && !rowAmountsAreTotal) return [];
+
+  let remainingVat = vatAmount || Math.round(rowSum * 0.1);
+  let remainingTotal = totalAmount || (rowAmountsAreSupply ? rowSum + remainingVat : rowSum);
+  return rows.map((row, index) => {
+    let supply;
+    let vat;
+    let total;
+    if (rowAmountsAreSupply) {
+      supply = Number(row.lineAmount || 0);
+      vat = index === rows.length - 1
+        ? remainingVat
+        : Math.round(supply * (vatAmount || Math.round(rowSum * 0.1)) / Math.max(1, rowSum));
+      total = supply + vat;
+    } else {
+      total = Number(row.lineAmount || 0);
+      supply = Math.round(total / 1.1);
+      vat = total - supply;
+    }
+    remainingVat -= vat;
+    remainingTotal -= total;
+    if (index === rows.length - 1 && totalAmount && Math.abs(remainingTotal) <= 1000) {
+      total += remainingTotal;
+      vat = total - supply;
+    }
+    return {
+      product: row.product,
+      unit: "식",
+      unitPrice: supply || "",
+      vat: vat || "",
+      total: total || "",
+      note: "표 자동추출"
+    };
+  });
 }
 
 function makeFallbackQuoteItem_(casePayload, supplyAmount, vatAmount, totalAmount, note) {
@@ -3017,18 +3140,42 @@ function findBusinessRegistrationForQuote_(casePayload, quote, vendorName) {
 
   if (targetBusinessNo) {
     const businessMatches = docs.filter(doc => cleanBusinessNo_(doc.businessNo || "") === targetBusinessNo);
-    if (businessMatches.length === 1) return businessMatches[0];
+    const selectedByBusinessNo = selectBusinessRegistrationMatch_(businessMatches);
+    if (selectedByBusinessNo) return selectedByBusinessNo;
   }
 
   for (const target of targetNames) {
     const exact = docs.filter(doc => vendorMatchKey_(doc.name) === vendorMatchKey_(target));
-    if (exact.length === 1) return exact[0];
+    const selectedExact = selectBusinessRegistrationMatch_(exact);
+    if (selectedExact) return selectedExact;
   }
   for (const target of targetNames) {
     const similar = docs.filter(doc => vendorNameLooseMatch_(target, doc.name));
-    if (similar.length === 1) return similar[0];
+    const selectedSimilar = selectBusinessRegistrationMatch_(similar);
+    if (selectedSimilar) return selectedSimilar;
   }
   return {};
+}
+
+function selectBusinessRegistrationMatch_(matches) {
+  matches = (matches || []).filter(Boolean);
+  if (!matches.length) return null;
+  if (matches.length === 1) return matches[0];
+  const nameKeys = new Set(matches.map(item => vendorMatchKey_(item.name || "")).filter(Boolean));
+  const businessNos = new Set(matches.map(item => cleanBusinessNo_(item.businessNo || "")).filter(Boolean));
+  if (nameKeys.size > 1 && businessNos.size > 1) return null;
+  return matches.slice().sort((a, b) => {
+    const scoreDiff = businessRegistrationCompletenessScore_(b) - businessRegistrationCompletenessScore_(a);
+    if (scoreDiff) return scoreDiff;
+    return String(b.uploadedAt || b.updatedAt || "").localeCompare(String(a.uploadedAt || a.updatedAt || ""));
+  })[0];
+}
+
+function businessRegistrationCompletenessScore_(info) {
+  info = info || {};
+  return ["businessNo", "ceo", "address", "type", "category", "phone", "email"].reduce((score, key) => {
+    return score + (String(info[key] || "").trim() ? 1 : 0);
+  }, 0);
 }
 
 function businessRegistrationVendorInfoFromDoc_(doc) {
@@ -3052,6 +3199,8 @@ function businessRegistrationVendorInfoFromDoc_(doc) {
   info.mimeType = doc.mimeType || "";
   info.extractionStatus = doc.extractionStatus || "";
   info.extractionMemo = doc.extractionMemo || "";
+  info.uploadedAt = doc.uploadedAt || "";
+  info.updatedAt = doc.updatedAt || "";
   info.mineruSupplementAttempted = !!doc.mineruSupplementAttempted || !!doc.mineruSupplementMessage;
   info.mineruSupplementUsed = !!doc.mineruSupplementUsed;
   info.mineruSupplementMessage = doc.mineruSupplementMessage || "";
@@ -3215,6 +3364,7 @@ function refreshBringQuotesFromBusinessRegistration_(caseId, casePayload, busine
       if (fillResult && fillResult.mineruSupplementApplied) {
         quote.extractionMemo = appendQuoteMemo_(quote.extractionMemo, fillResult.mineruSupplementMessage || "MinerU OCR로 사업자등록증 빈칸 보충");
       }
+      quote.extractedItems = extraction.items;
       quote.updatedAt = timestamp;
       applyQuoteAmountState_(quote);
 
@@ -3259,7 +3409,7 @@ function makeQuoteRewriteExtraction_(quote, casePayload) {
   const total = Number(quote.confirmedTotalAmount || quote.bringQuoteTotalAmount || quote.totalAmount || parseMoneyValue_(quote.amount) || 0);
   const supply = Number(quote.confirmedSupplyAmount || quote.bringQuoteSupplyAmount || quote.supplyAmount || (total ? Math.round(total / 1.1) : 0));
   const vat = Number(quote.confirmedVatAmount || quote.bringQuoteVatAmount || quote.vatAmount || (total ? total - supply : 0));
-  const items = normalizeBringQuoteItems_(quote.extractedItems, casePayload, total, supply, vat);
+  const items = getQuoteItemsForRewrite_(quote, casePayload, total, supply, vat);
   return {
     status: quote.extractionStatus || "확인필요",
     memo: quote.extractionMemo || "",
@@ -3269,6 +3419,53 @@ function makeQuoteRewriteExtraction_(quote, casePayload) {
     totalAmount: total,
     items: items
   };
+}
+
+function getQuoteItemsForRewrite_(quote, casePayload, total, supply, vat) {
+  quote = quote || {};
+  const amounts = {
+    totalAmount: Number(total || 0),
+    supplyAmount: Number(supply || (total ? Math.round(total / 1.1) : 0)),
+    vatAmount: Number(vat || (total ? total - Math.round(total / 1.1) : 0))
+  };
+  const text = getQuoteTextForRewrite_(quote);
+  if (text) {
+    const fromText = extractQuoteItems_(text, amounts, casePayload);
+    if (hasUsableQuoteItems_(fromText)) return fromText;
+  }
+  const existing = normalizeBringQuoteItems_(quote.extractedItems, casePayload, amounts.totalAmount, amounts.supplyAmount, amounts.vatAmount);
+  if (hasUsableQuoteItems_(existing)) return existing;
+  return [makeFallbackQuoteItem_(casePayload, amounts.supplyAmount, amounts.vatAmount, amounts.totalAmount, "추출 확인 필요")];
+}
+
+function hasUsableQuoteItems_(items) {
+  items = Array.isArray(items) ? items : [];
+  return items.some(item => item && !item.fallback && String(item.product || "").trim().length >= 2);
+}
+
+function getQuoteTextForRewrite_(quote) {
+  quote = quote || {};
+  const storedText = [
+    quote.extractionText || "",
+    quote.extractionTextPreview || "",
+    quote.textPreview || "",
+    quote.analysisText || ""
+  ].filter(Boolean).join(" ");
+  if (storedText && /(품\s*명|품목|내역|규격|수량|단가|금액)/i.test(storedText)) return storedText;
+
+  const fileId = extractDriveId_(quote.originalDriveFileId || quote.driveFileId || quote.originalFileUrl || quote.fileUrl || "");
+  if (!fileId) return storedText;
+  try {
+    const file = DriveApp.getFileById(fileId);
+    const fileName = file.getName();
+    const blob = file.getBlob();
+    const mimeType = quote.mimeType || blob.getContentType() || inferQuoteMimeType_(fileName);
+    const result = extractQuoteText_(blob, mimeType, fileName);
+    const freshText = result && result.text ? String(result.text) : "";
+    return [storedText, freshText].filter(Boolean).join(" ");
+  } catch (err) {
+    return storedText;
+  }
 }
 
 function fillBringQuoteSpreadsheet_(ss, casePayload, quote, extraction) {
