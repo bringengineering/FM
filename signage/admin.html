@@ -166,6 +166,16 @@
         <div class="hint">입력하면 상품페이지에 "카톡 문의" 버튼이 함께 표시됩니다.</div>
       </div>
       <div class="field">
+        <label>관리사무실 전화번호</label>
+        <input id="setPhone" type="text" placeholder="033-000-0000">
+        <div class="hint">쇼핑 페이지 헤더·상세·하단에 표시됩니다.</div>
+      </div>
+      <div class="field">
+        <label>주문서 구글 폼 URL (선택)</label>
+        <input id="setOrderForm" type="url" placeholder="https://docs.google.com/forms/... (비워두면 자체 주문 접수)">
+        <div class="hint">입력하면 [주문하기]가 이 폼으로 연결됩니다. URL 속 {name} 자리에 상품명이 자동으로 들어갑니다.</div>
+      </div>
+      <div class="field">
         <label>하단 안내 문구 (선택)</label>
         <input id="setFooter" type="text" placeholder="예) 상품 문의는 매장 또는 주문 시 남겨주세요.">
       </div>
@@ -458,6 +468,8 @@ function loadSettings(){
     const v = s.val()||{};
     $("setBank").value = v.bankInfo||"";
     $("setKakao").value = v.kakaoUrl||"";
+    $("setPhone").value = v.phone||"";
+    $("setOrderForm").value = v.orderFormUrl||"";
     $("setFooter").value = v.footer||"";
   });
 }
@@ -466,6 +478,8 @@ $("saveSettings").onclick = async ()=>{
     await db.ref("signage/settings").update({
       bankInfo: $("setBank").value.trim(),
       kakaoUrl: $("setKakao").value.trim(),
+      phone: $("setPhone").value.trim(),
+      orderFormUrl: $("setOrderForm").value.trim(),
       footer: $("setFooter").value.trim()
     });
     toast("설정이 저장되었습니다");
