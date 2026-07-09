@@ -1,0 +1,496 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="format-detection" content="telephone=no">
+<title>BRING 위탁판매</title>
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard/dist/web/static/pretendard.css">
+<style>
+  :root{
+    --brand:#0F58A0;
+    --brand-dark:#0B416F;
+    --ink:#16202E;
+    --ink-dim:#5B6B7C;
+    --line:#E6EBF1;
+    --bg:#F4F7FA;
+    --card:#FFFFFF;
+    --good:#1F9D57;
+  }
+  *{margin:0;padding:0;box-sizing:border-box}
+  html,body{height:100%}
+  body{
+    font-family:"Pretendard",-apple-system,"Malgun Gothic",sans-serif;
+    background:var(--bg);color:var(--ink);
+    -webkit-font-smoothing:antialiased;
+    line-height:1.5;
+  }
+  a{color:inherit;text-decoration:none}
+  img{display:block;max-width:100%}
+
+  .wrap{max-width:640px;margin:0 auto;min-height:100%;background:var(--bg)}
+
+  /* ── 상단바 ─────────────────────────── */
+  header{
+    position:sticky;top:0;z-index:20;
+    background:rgba(255,255,255,.92);backdrop-filter:blur(10px);
+    border-bottom:1px solid var(--line);
+    display:flex;align-items:center;gap:10px;
+    padding:14px 18px;
+  }
+  header .logo{font-weight:800;font-size:19px;letter-spacing:-.02em;color:var(--brand)}
+  header .logo small{color:var(--ink-dim);font-weight:600;font-size:13px;margin-left:6px;letter-spacing:0}
+  header .back{
+    display:none;border:0;background:transparent;cursor:pointer;
+    font-size:22px;line-height:1;color:var(--ink);padding:2px 4px;margin-left:-4px;
+  }
+  body.detail header .back{display:block}
+
+  .hero{
+    padding:22px 20px 6px;
+  }
+  .hero h1{font-size:22px;font-weight:800;letter-spacing:-.02em}
+  .hero p{color:var(--ink-dim);font-size:14px;margin-top:4px}
+
+  /* ── 목록 그리드 ─────────────────────── */
+  .grid{
+    display:grid;grid-template-columns:1fr 1fr;
+    gap:12px;padding:16px 16px 40px;
+  }
+  .item{
+    background:var(--card);border:1px solid var(--line);border-radius:16px;
+    overflow:hidden;cursor:pointer;
+    transition:transform .12s ease, box-shadow .12s ease;
+    display:flex;flex-direction:column;
+  }
+  .item:active{transform:scale(.98)}
+  @media (hover:hover){.item:hover{box-shadow:0 8px 24px rgba(16,32,46,.09)}}
+  .item .thumb{aspect-ratio:1/1;background:#EEF2F6 center/cover no-repeat;position:relative}
+  .item .thumb.noimg{display:flex;align-items:center;justify-content:center;color:#B7C2CE;font-size:34px}
+  .item .body{padding:11px 12px 13px;display:flex;flex-direction:column;gap:4px;flex:1}
+  .item .nm{font-weight:700;font-size:14.5px;line-height:1.35;
+    display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
+  .item .vd{font-size:12px;color:var(--ink-dim)}
+  .item .pr{margin-top:auto;font-weight:800;font-size:16px;color:var(--ink)}
+  .item .pr.ask{color:var(--brand);font-size:14px}
+  .sold{
+    position:absolute;inset:0;background:rgba(22,32,46,.55);color:#fff;
+    display:flex;align-items:center;justify-content:center;font-weight:800;font-size:15px;letter-spacing:.05em;
+  }
+
+  /* ── 상세 ────────────────────────────── */
+  .detailview{display:none;padding-bottom:96px}
+  body.detail .detailview{display:block}
+  body.detail .listview{display:none}
+  .dphoto{aspect-ratio:1/1;background:#EEF2F6 center/cover no-repeat}
+  .dphoto.noimg{display:flex;align-items:center;justify-content:center;color:#B7C2CE;font-size:64px}
+  .dinfo{padding:20px 20px 8px}
+  .dvendor{font-size:13px;color:var(--brand);font-weight:700;margin-bottom:6px}
+  .dname{font-size:23px;font-weight:800;letter-spacing:-.02em;line-height:1.3}
+  .dprice{font-size:26px;font-weight:800;margin-top:12px}
+  .dprice.ask{color:var(--brand);font-size:20px}
+  .ddesc{margin-top:16px;white-space:pre-wrap;color:#33424F;font-size:15px;line-height:1.7}
+  .dmeta{margin-top:20px;border-top:1px solid var(--line);padding-top:16px;
+    display:flex;flex-direction:column;gap:9px;font-size:14px;color:var(--ink-dim)}
+  .dmeta div{display:flex;gap:8px}
+  .dmeta b{color:var(--ink);font-weight:600;flex:none;width:76px}
+
+  /* 하단 고정 주문바 */
+  .orderbar{
+    position:fixed;left:0;right:0;bottom:0;z-index:30;
+    max-width:640px;margin:0 auto;
+    background:rgba(255,255,255,.95);backdrop-filter:blur(10px);
+    border-top:1px solid var(--line);
+    padding:12px 16px calc(12px + env(safe-area-inset-bottom));
+    display:none;gap:10px;
+  }
+  body.detail .orderbar{display:flex}
+  .btn{
+    flex:1;border:0;border-radius:13px;cursor:pointer;
+    font-family:inherit;font-weight:800;font-size:16px;padding:15px;
+    transition:filter .12s ease, transform .1s ease;
+  }
+  .btn:active{transform:scale(.98)}
+  .btn-primary{background:var(--brand);color:#fff}
+  .btn-primary:hover{filter:brightness(1.06)}
+  .btn-primary:disabled{background:#B7C2CE;cursor:default}
+  .btn-ghost{flex:none;background:#FEE500;color:#191600;padding:15px 18px}
+  .btn-ghost.hide{display:none}
+
+  /* ── 주문 모달 ───────────────────────── */
+  .modal{position:fixed;inset:0;z-index:50;display:none;
+    align-items:flex-end;justify-content:center;background:rgba(16,32,46,.45)}
+  .modal.on{display:flex}
+  .sheet{
+    width:100%;max-width:640px;background:#fff;border-radius:22px 22px 0 0;
+    padding:22px 20px calc(22px + env(safe-area-inset-bottom));
+    max-height:92vh;overflow:auto;animation:up .28s cubic-bezier(.2,.8,.2,1);
+  }
+  @keyframes up{from{transform:translateY(30px);opacity:.5}to{transform:none;opacity:1}}
+  .sheet h2{font-size:19px;font-weight:800;margin-bottom:4px}
+  .sheet .sub{font-size:13.5px;color:var(--ink-dim);margin-bottom:18px}
+  .field{margin-bottom:14px}
+  .field label{display:block;font-size:13.5px;font-weight:700;margin-bottom:6px}
+  .field input,.field textarea,.field select{
+    width:100%;border:1.5px solid var(--line);border-radius:12px;
+    padding:13px 14px;font-family:inherit;font-size:15.5px;background:#fff;color:var(--ink);
+  }
+  .field input:focus,.field textarea:focus,.field select:focus{outline:none;border-color:var(--brand)}
+  .field textarea{min-height:72px;resize:vertical}
+  .qtyrow{display:flex;align-items:center;gap:0;width:150px;border:1.5px solid var(--line);border-radius:12px;overflow:hidden}
+  .qtyrow button{width:44px;height:46px;border:0;background:#F4F7FA;font-size:20px;cursor:pointer;color:var(--ink)}
+  .qtyrow input{border:0;text-align:center;width:62px;border-radius:0;font-weight:700}
+  .radio{display:flex;gap:8px}
+  .radio label{flex:1;border:1.5px solid var(--line);border-radius:12px;padding:12px;
+    text-align:center;font-weight:600;font-size:14px;cursor:pointer;color:var(--ink-dim)}
+  .radio input{display:none}
+  .radio input:checked + span{color:var(--brand)}
+  .radio label:has(input:checked){border-color:var(--brand);background:rgba(15,88,160,.05);color:var(--brand)}
+  .paynote{background:#F4F7FA;border-radius:12px;padding:13px 14px;font-size:13.5px;color:#33424F;margin-bottom:16px;white-space:pre-wrap}
+  .modal .actions{display:flex;gap:10px;margin-top:4px}
+  .modal .cancel{flex:none;background:#EEF2F6;color:var(--ink)}
+
+  /* 완료/상태 화면 */
+  .center{
+    min-height:70vh;display:flex;flex-direction:column;align-items:center;justify-content:center;
+    text-align:center;padding:40px 24px;gap:12px;color:var(--ink-dim);
+  }
+  .center .ic{font-size:52px}
+  .center h2{font-size:20px;font-weight:800;color:var(--ink)}
+  .center p{font-size:14.5px;max-width:300px}
+  .center .btn{max-width:280px;margin-top:12px;flex:none;width:100%}
+
+  .toast{
+    position:fixed;left:50%;bottom:calc(90px + env(safe-area-inset-bottom));transform:translateX(-50%);
+    background:var(--ink);color:#fff;padding:12px 20px;border-radius:99px;font-size:14px;font-weight:600;
+    z-index:60;opacity:0;pointer-events:none;transition:opacity .25s ease;white-space:nowrap;
+  }
+  .toast.on{opacity:1}
+
+  footer{padding:26px 20px 40px;text-align:center;color:#98A6B4;font-size:12px;line-height:1.7}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <button class="back" id="back" aria-label="뒤로">←</button>
+    <div class="logo">BRING <small>위탁판매</small></div>
+  </header>
+
+  <!-- 목록 -->
+  <div class="listview">
+    <div class="hero">
+      <h1>이 건물에서 만나는 위탁판매 상품</h1>
+      <p>마음에 드는 상품을 눌러 자세히 보고 주문하세요.</p>
+    </div>
+    <div class="grid" id="grid"></div>
+    <div class="center" id="emptyList" style="display:none">
+      <div class="ic">🗂️</div>
+      <h2>등록된 상품이 없어요</h2>
+      <p>곧 위탁판매 상품이 올라올 예정입니다.</p>
+    </div>
+    <footer id="footList"></footer>
+  </div>
+
+  <!-- 상세 -->
+  <div class="detailview" id="detailview"></div>
+</div>
+
+<!-- 하단 주문바 (상세일 때) -->
+<div class="orderbar" id="orderbar">
+  <button class="btn btn-ghost hide" id="kakaoBtn">💬 카톡</button>
+  <button class="btn btn-primary" id="orderBtn">주문하기</button>
+</div>
+
+<!-- 주문 모달 -->
+<div class="modal" id="modal">
+  <div class="sheet">
+    <h2>주문하기</h2>
+    <div class="sub" id="modalItem"></div>
+    <div class="field">
+      <label>수량</label>
+      <div class="qtyrow">
+        <button type="button" id="qtyMinus">−</button>
+        <input id="qty" type="number" value="1" min="1" inputmode="numeric">
+        <button type="button" id="qtyPlus">+</button>
+      </div>
+    </div>
+    <div class="field">
+      <label>성함 <span style="color:#E14">*</span></label>
+      <input id="fName" type="text" placeholder="홍길동" autocomplete="name">
+    </div>
+    <div class="field">
+      <label>연락처 <span style="color:#E14">*</span></label>
+      <input id="fPhone" type="tel" placeholder="010-1234-5678" autocomplete="tel" inputmode="numeric">
+    </div>
+    <div class="field">
+      <label>수령 방법</label>
+      <div class="radio" id="receive">
+        <label><input type="radio" name="rc" value="방문수령" checked><span>🏢 방문수령</span></label>
+        <label><input type="radio" name="rc" value="택배"><span>📦 택배</span></label>
+      </div>
+    </div>
+    <div class="field" id="addrField" style="display:none">
+      <label>배송지 주소</label>
+      <input id="fAddr" type="text" placeholder="택배 받으실 주소">
+    </div>
+    <div class="field">
+      <label>요청사항 (선택)</label>
+      <textarea id="fMemo" placeholder="예) 색상 문의, 방문 예정 시간 등"></textarea>
+    </div>
+    <div class="paynote" id="payNote"></div>
+    <div class="actions">
+      <button class="btn cancel" id="cancelOrder">취소</button>
+      <button class="btn btn-primary" id="submitOrder">주문 접수</button>
+    </div>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script src="https://www.gstatic.com/firebasejs/10.12.5/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.5/firebase-database-compat.js"></script>
+<script>
+/* ══════════ Firebase (메인 앱과 동일 프로젝트) ══════════ */
+const firebaseConfig = {
+  apiKey: "AIzaSyBKOTIuQ8pOKSuaeKFQs_6UDdDnxdjCTZg",
+  authDomain: "bring-fm.firebaseapp.com",
+  databaseURL: "https://bring-fm-default-rtdb.asia-southeast1.firebasedatabase.app",
+  projectId: "bring-fm",
+  storageBucket: "bring-fm.firebasestorage.app",
+  messagingSenderId: "864976295990",
+  appId: "1:864976295990:web:194f145b1b4dad58eb6097"
+};
+const $ = id => document.getElementById(id);
+let db = null;
+if(typeof firebase !== "undefined"){
+  try{ firebase.initializeApp(firebaseConfig); db = firebase.database(); }
+  catch(e){ console.error(e); }
+}
+const won = n => Number(n).toLocaleString("ko-KR");
+
+/* 기본 결제 안내 (관리페이지 settings 에서 덮어씀) */
+let SETTINGS = {
+  bankInfo: "주문 접수 후 담당자가 연락드려 결제(계좌이체 또는 방문 결제)를 안내드립니다.",
+  kakaoUrl: ""   // 있으면 카톡 문의 버튼 노출
+};
+
+let PRODUCTS = {};   // id -> product
+let currentId = null;
+
+/* ── 데이터 구독 ───────────────────────── */
+if(!db){
+  // Firebase SDK 로드 실패(네트워크 등) — 안내만 표시
+  $("emptyList").style.display = "flex";
+  $("emptyList").querySelector("h2").textContent = "연결에 실패했어요";
+  $("emptyList").querySelector("p").textContent = "잠시 후 새로고침해 주세요.";
+} else {
+  db.ref("signage/settings").on("value", s => {
+    const v = s.val();
+    if(v){ SETTINGS = Object.assign(SETTINGS, v); }
+    applySettings();
+  });
+
+  db.ref("signage/consign").on("value", snap => {
+    PRODUCTS = snap.val() || {};
+    renderList();
+    if(currentId) renderDetail(currentId);   // 실시간 반영
+  }, err => {
+    console.warn("상품 로드 실패", err);
+    $("grid").innerHTML = "";
+    $("emptyList").style.display = "flex";
+    $("emptyList").querySelector("h2").textContent = "상품을 불러오지 못했어요";
+  });
+}
+
+function activeSorted(){
+  return Object.entries(PRODUCTS)
+    .map(([id,p]) => ({id, ...p}))
+    .filter(p => p.active !== false)
+    .sort((a,b) => (a.sort??999) - (b.sort??999) || String(a.name).localeCompare(b.name,"ko"));
+}
+
+/* ── 목록 렌더 ─────────────────────────── */
+function renderList(){
+  const list = activeSorted();
+  const grid = $("grid");
+  $("emptyList").style.display = list.length ? "none" : "flex";
+  grid.innerHTML = list.map(p => {
+    const img = p.photo
+      ? `<div class="thumb" style="background-image:url('${escAttr(p.photo)}')">${p.soldout?'<div class="sold">품절</div>':''}</div>`
+      : `<div class="thumb noimg">🛍️${p.soldout?'<div class="sold">품절</div>':''}</div>`;
+    const price = priceHtml(p);
+    return `<div class="item" data-id="${p.id}">
+      ${img}
+      <div class="body">
+        <div class="nm">${esc(p.name||"이름 없음")}</div>
+        ${p.vendor?`<div class="vd">${esc(p.vendor)}</div>`:""}
+        <div class="pr ${(!p.price||Number(p.price)<=0)?'ask':''}">${price}</div>
+      </div>
+    </div>`;
+  }).join("");
+  grid.querySelectorAll(".item").forEach(el =>
+    el.addEventListener("click", () => go(el.dataset.id)));
+}
+
+function priceHtml(p){
+  if(!p.price || Number(p.price) <= 0) return "가격 문의";
+  return won(p.price) + "원";
+}
+
+/* ── 상세 렌더 ─────────────────────────── */
+function renderDetail(id){
+  const p = PRODUCTS[id];
+  if(!p){ $("detailview").innerHTML = notFound(); return; }
+  const soldout = !!p.soldout;
+  const img = p.photo
+    ? `<div class="dphoto" style="background-image:url('${escAttr(p.photo)}')"></div>`
+    : `<div class="dphoto noimg">🛍️</div>`;
+  $("detailview").innerHTML = `
+    ${img}
+    <div class="dinfo">
+      ${p.vendor?`<div class="dvendor">${esc(p.vendor)}</div>`:""}
+      <div class="dname">${esc(p.name||"이름 없음")}</div>
+      <div class="dprice ${(!p.price||Number(p.price)<=0)?'ask':''}">${priceHtml(p)}</div>
+      ${p.desc?`<div class="ddesc">${esc(p.desc)}</div>`:""}
+      <div class="dmeta">
+        <div><b>판매처</b><span>${esc(p.vendor||"BRING 위탁판매")}</span></div>
+        <div><b>수령</b><span>BRING 건물 1층 방문 수령 · 택배 가능</span></div>
+        ${soldout?`<div><b>상태</b><span style="color:#E14;font-weight:700">품절</span></div>`:""}
+      </div>
+    </div>`;
+  // 주문바 상태
+  const ob = $("orderBtn");
+  ob.disabled = soldout;
+  ob.textContent = soldout ? "품절된 상품입니다" : "주문하기";
+  const kb = $("kakaoBtn");
+  if(SETTINGS.kakaoUrl){ kb.classList.remove("hide"); kb.onclick = ()=> window.open(SETTINGS.kakaoUrl,"_blank"); }
+  else kb.classList.add("hide");
+}
+
+function notFound(){
+  return `<div class="center"><div class="ic">🔍</div><h2>상품을 찾을 수 없어요</h2>
+    <p>삭제되었거나 잘못된 링크일 수 있습니다.</p>
+    <button class="btn btn-primary" onclick="go(null)">전체 상품 보기</button></div>`;
+}
+
+/* ── 라우팅 (?id=) ─────────────────────── */
+function go(id){
+  currentId = id;
+  const url = new URL(location.href);
+  if(id){ url.searchParams.set("id", id); } else { url.searchParams.delete("id"); }
+  history.pushState({id}, "", url);
+  render();
+}
+function render(){
+  const id = new URLSearchParams(location.search).get("id");
+  currentId = id;
+  if(id){
+    document.body.classList.add("detail");
+    renderDetail(id);
+    window.scrollTo(0,0);
+  } else {
+    document.body.classList.remove("detail");
+    window.scrollTo(0,0);
+  }
+}
+window.addEventListener("popstate", render);
+$("back").addEventListener("click", () => history.length > 1 ? history.back() : go(null));
+
+/* ── 주문 모달 ─────────────────────────── */
+$("orderBtn").addEventListener("click", () => {
+  const p = PRODUCTS[currentId];
+  if(!p || p.soldout) return;
+  $("modalItem").textContent = `${p.name}${p.price>0?" · "+won(p.price)+"원":""}`;
+  $("payNote").textContent = SETTINGS.bankInfo || "";
+  $("qty").value = 1;
+  $("modal").classList.add("on");
+  document.body.style.overflow = "hidden";
+});
+function closeModal(){ $("modal").classList.remove("on"); document.body.style.overflow=""; }
+$("cancelOrder").addEventListener("click", closeModal);
+$("modal").addEventListener("click", e => { if(e.target === $("modal")) closeModal(); });
+
+$("qtyMinus").addEventListener("click", ()=> $("qty").value = Math.max(1,(+$("qty").value||1)-1));
+$("qtyPlus").addEventListener("click", ()=> $("qty").value = (+$("qty").value||1)+1);
+$("receive").addEventListener("change", e => {
+  $("addrField").style.display = e.target.value === "택배" ? "block" : "none";
+});
+
+$("submitOrder").addEventListener("click", async () => {
+  const p = PRODUCTS[currentId];
+  if(!p) return;
+  if(!db){ toast("연결 상태를 확인해 주세요"); return; }
+  const name = $("fName").value.trim();
+  const phone = $("fPhone").value.trim();
+  const qty = Math.max(1, +$("qty").value || 1);
+  const receive = (document.querySelector('input[name="rc"]:checked')||{}).value || "방문수령";
+  const addr = $("fAddr").value.trim();
+  const memo = $("fMemo").value.trim();
+
+  if(!name){ toast("성함을 입력해 주세요"); $("fName").focus(); return; }
+  if(!phone || phone.replace(/\D/g,"").length < 9){ toast("연락처를 확인해 주세요"); $("fPhone").focus(); return; }
+  if(receive === "택배" && !addr){ toast("배송지 주소를 입력해 주세요"); $("fAddr").focus(); return; }
+
+  const btn = $("submitOrder");
+  btn.disabled = true; btn.textContent = "접수 중…";
+  try{
+    await db.ref("signage/orders").push({
+      productId: currentId,
+      productName: p.name || "",
+      vendor: p.vendor || "",
+      price: Number(p.price)||0,
+      qty, name, phone, receive,
+      addr: receive==="택배" ? addr : "",
+      memo,
+      status: "신규",
+      createdAt: firebase.database.ServerValue.TIMESTAMP
+    });
+    closeModal();
+    showDone(p, name);
+  }catch(e){
+    console.error(e);
+    toast("주문 접수에 실패했어요. 잠시 후 다시 시도해 주세요");
+  }finally{
+    btn.disabled = false; btn.textContent = "주문 접수";
+  }
+});
+
+function showDone(p, name){
+  document.body.classList.remove("detail");
+  $("orderbar").style.display = "none";
+  const lv = document.querySelector(".listview");
+  lv.style.display = "none";
+  const dv = $("detailview");
+  dv.style.display = "block";
+  dv.innerHTML = `<div class="center">
+    <div class="ic">✅</div>
+    <h2>주문이 접수되었어요</h2>
+    <p><b>${esc(name)}</b>님, <b>${esc(p.name)}</b> 주문이 정상 접수되었습니다.
+       담당자가 입력하신 연락처로 결제·수령 안내를 드릴 예정입니다.</p>
+    <button class="btn btn-primary" id="doneHome">다른 상품 더 보기</button>
+  </div>`;
+  $("doneHome").addEventListener("click", () => {
+    dv.style.display = ""; lv.style.display = ""; $("orderbar").style.display = "";
+    go(null);
+  });
+}
+
+/* ── 유틸 ──────────────────────────────── */
+let toastT;
+function toast(msg){
+  const t = $("toast"); t.textContent = msg; t.classList.add("on");
+  clearTimeout(toastT); toastT = setTimeout(()=>t.classList.remove("on"), 2200);
+}
+function esc(s){ return String(s??"").replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
+function escAttr(s){ return String(s??"").replace(/'/g,"%27").replace(/"/g,"%22"); }
+
+function applySettings(){
+  $("footList").innerHTML = `BRING 위탁판매 · 건물 1층<br>${SETTINGS.footer ? esc(SETTINGS.footer) : "상품 문의는 매장 또는 주문 시 남겨주세요."}`;
+  if(currentId) renderDetail(currentId);
+}
+
+render();
+</script>
+</body>
+</html>

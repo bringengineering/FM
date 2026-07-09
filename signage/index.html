@@ -195,6 +195,43 @@
   .qr .qtitle{font-size:clamp(14px,1.7vw,19px);font-weight:700}
   .qr .qsub{font-size:clamp(12px,1.4vw,15px);color:var(--ink-dim)}
 
+  /* 위탁판매 상품 순환 카드 */
+  .consign{
+    margin-top:clamp(14px,2.4vh,24px);
+    padding:clamp(14px,2vh,20px) clamp(16px,2vw,24px);
+    border-radius:18px;
+    background:rgba(242,246,251,.045);
+    border:1px solid var(--line);
+    border-left:4px solid var(--brand);
+    display:none;
+  }
+  .consign.on{display:block;animation:cfade .5s ease}
+  @keyframes cfade{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:none}}
+  .consign .ctag{
+    font-size:clamp(11px,1.3vw,14px);letter-spacing:.1em;font-weight:700;
+    color:var(--brand);filter:brightness(1.9);margin-bottom:clamp(8px,1.4vh,14px);
+    display:flex;align-items:center;gap:8px;
+  }
+  .consign .ccount{color:var(--ink-dim);filter:none;font-weight:500;letter-spacing:0}
+  .cbody{display:flex;align-items:center;gap:clamp(12px,1.6vw,20px)}
+  .cphoto{
+    flex:none;width:clamp(64px,8vw,104px);height:clamp(64px,8vw,104px);
+    border-radius:14px;background:#1a2c44 center/cover no-repeat;
+    display:flex;align-items:center;justify-content:center;font-size:clamp(28px,3.4vw,44px);
+  }
+  .cinfo{flex:1;min-width:0;display:flex;flex-direction:column;gap:3px}
+  .cname{
+    font-size:clamp(16px,2vw,24px);font-weight:700;line-height:1.3;
+    white-space:nowrap;overflow:hidden;text-overflow:ellipsis;
+  }
+  .cvendor{font-size:clamp(12px,1.4vw,15px);color:var(--ink-dim)}
+  .cprice{font-size:clamp(17px,2.1vw,26px);font-weight:800;margin-top:2px}
+  .cprice.ask{font-size:clamp(14px,1.6vw,19px);color:var(--brand);filter:brightness(1.7)}
+  .cqr{flex:none;display:flex;flex-direction:column;align-items:center;gap:6px}
+  .cqr .qbox{background:#fff;border-radius:12px;padding:7px;line-height:0}
+  .cqr img{width:clamp(70px,8.5vw,104px);height:clamp(70px,8.5vw,104px);display:block}
+  .cqr .cqrsub{font-size:clamp(11px,1.2vw,14px);color:var(--ink-dim);font-weight:600}
+
   /* 하단 중앙 회사 로고 */
   .brandbar{
     position:fixed;left:50%;bottom:clamp(14px,2.4vh,26px);transform:translateX(-50%);
@@ -238,6 +275,23 @@
       <div class="qtext">
         <div class="qtitle" id="qrtitle">시설 불편사항 접수</div>
         <div class="qsub" id="qrsub">QR코드를 스캔해 주세요</div>
+      </div>
+    </div>
+
+    <!-- 위탁판매 상품 순환 카드 -->
+    <div class="consign" id="consign">
+      <div class="ctag">🛍️ 위탁판매 <span class="ccount" id="ccount"></span></div>
+      <div class="cbody">
+        <div class="cphoto" id="cphoto"></div>
+        <div class="cinfo">
+          <div class="cname" id="cname"></div>
+          <div class="cvendor" id="cvendor"></div>
+          <div class="cprice" id="cprice"></div>
+        </div>
+        <div class="cqr">
+          <div class="qbox"><img id="cqrimg" alt="상품 주문 QR코드"></div>
+          <div class="cqrsub">QR 스캔 → 주문</div>
+        </div>
       </div>
     </div>
 
@@ -293,6 +347,8 @@
 
 <div class="err" id="err">네트워크 오류 — 잠시 후 자동으로 다시 시도합니다</div>
 
+<script src="https://www.gstatic.com/firebasejs/10.12.5/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.5/firebase-database-compat.js"></script>
 <script>
 /* ══════════ 설정 (여기만 수정하면 됩니다) ══════════ */
 const CONFIG = {
@@ -484,6 +540,67 @@ setInterval(refreshNews, CONFIG.REFRESH_MIN*60*1000);
   $("qrtitle").textContent = CONFIG.QR_TITLE;
   $("qrsub").textContent = CONFIG.QR_SUB;
   $("qr").classList.add("on");
+})();
+
+/* ══════════ 위탁판매 상품 순환 ══════════ */
+(function initConsign(){
+  const firebaseConfig = {
+    apiKey: "AIzaSyBKOTIuQ8pOKSuaeKFQs_6UDdDnxdjCTZg",
+    authDomain: "bring-fm.firebaseapp.com",
+    databaseURL: "https://bring-fm-default-rtdb.asia-southeast1.firebasedatabase.app",
+    projectId: "bring-fm",
+    storageBucket: "bring-fm.firebasestorage.app",
+    messagingSenderId: "864976295990",
+    appId: "1:864976295990:web:194f145b1b4dad58eb6097"
+  };
+  if(typeof firebase === "undefined") return;   // SDK 로드 실패 시 조용히 무시
+  try{ firebase.initializeApp(firebaseConfig); }catch(e){}
+  const db = firebase.database();
+
+  // shop 페이지 절대주소: .../signage/(index.html) → .../shop/
+  const SHOP_BASE = location.href.split("#")[0].split("?")[0]
+    .replace(/signage\/(index\.html)?$/, "shop/");
+  const won = n => Number(n).toLocaleString("ko-KR");
+
+  let items = [];
+  let idx = 0, timer = null;
+
+  db.ref("signage/consign").on("value", snap => {
+    const all = snap.val() || {};
+    items = Object.entries(all).map(([id,p])=>({id,...p}))
+      .filter(p => p.active !== false && !p.soldout && p.name)
+      .sort((a,b)=>(a.sort??999)-(b.sort??999) || String(a.name).localeCompare(b.name,"ko"));
+    restart();
+  }, () => {/* 권한/네트워크 오류 시 카드 숨김 유지 */});
+
+  function restart(){
+    clearInterval(timer);
+    const card = $("consign");
+    if(items.length === 0){ card.classList.remove("on"); return; }
+    if(idx >= items.length) idx = 0;
+    card.classList.add("on");
+    show();
+    if(items.length > 1) timer = setInterval(()=>{ idx=(idx+1)%items.length; show(); }, 10000);
+  }
+
+  function show(){
+    const p = items[idx];
+    if(!p) return;
+    const card = $("consign");
+    card.classList.remove("on"); void card.offsetWidth; card.classList.add("on"); // 페이드 재생
+    $("ccount").textContent = items.length > 1 ? `${idx+1} / ${items.length}` : "";
+    $("cname").textContent = p.name;
+    $("cvendor").textContent = p.vendor || "";
+    const priceEl = $("cprice");
+    if(!p.price || Number(p.price) <= 0){ priceEl.textContent = "가격 문의"; priceEl.classList.add("ask"); }
+    else { priceEl.textContent = won(p.price) + "원"; priceEl.classList.remove("ask"); }
+    const ph = $("cphoto");
+    if(p.photo){ ph.style.backgroundImage = `url('${String(p.photo).replace(/'/g,"%27")}')`; ph.textContent=""; }
+    else { ph.style.backgroundImage = "none"; ph.textContent = "🛍️"; }
+    const url = SHOP_BASE + "?id=" + encodeURIComponent(p.id);
+    $("cqrimg").src = "https://api.qrserver.com/v1/create-qr-code/?size=240x240&margin=0&data="
+      + encodeURIComponent(url);
+  }
 })();
 
 /* 화면 항상 켜짐 (Wake Lock) — 지원 브라우저에서 자동 작동 */

@@ -53,6 +53,9 @@ workflow/
   <보드id>/presence : 접속 표시(자동)
 cases/ : 고객/민원 케이스
 caseSettings/mailEndpoint : 케이스 메일 자동발송 설정
+signage/consign/<상품id> : 위탁판매 상품 { name, price, desc, photo(base64), vendor, sort, active, soldout }
+signage/orders/<주문id>  : 위탁판매 주문 { productId, productName, qty, name, phone, receive, addr, memo, status, createdAt }
+signage/settings         : 위탁판매 설정 { bankInfo, kakaoUrl, footer }
 ```
 **노드(원/네모)** 한 개:
 ```js
@@ -70,6 +73,29 @@ caseSettings/mailEndpoint : 케이스 메일 자동발송 설정
 - **배포**: 기본 브랜치에 push → GitHub Pages "Deploy from a branch"로 자동.
 - **백업**: 보드 화면의 `💾 내보내기`로 현재 보드를 JSON으로 저장할 수 있습니다. (중요한 시점에 한 번씩 권장)
 - **버전 확인**: 헤더의 `Ver x.x` 배지 클릭 → 전체 업데이트 내역.
+
+---
+
+## 🛍️ 위탁판매 QR 사이니지
+
+1층 사이니지에서 위탁판매 상품을 QR로 소개하고, 손님이 휴대폰에서 바로 주문하는 기능입니다.
+
+| 페이지 | 주소 | 용도 |
+|---|---|---|
+| **쇼핑몰**(손님) | `/shop/` | 상품 목록·상세·주문. QR을 찍으면 여기로 옵니다. 개별 상품은 `/shop/?id=<상품id>` |
+| **관리페이지**(직원) | `/signage/admin.html` | 상품 등록/수정/삭제 · 주문 확인 · 결제안내·카톡링크 설정 |
+| **대화면**(전시) | `/signage/` | 등록된 상품을 QR과 함께 10초마다 순환 표시 |
+
+**흐름:** 대화면에서 순환되는 상품 QR 스캔 → `/shop/?id=…` 자체 상품페이지(사진·가격·설명) → **주문하기**(성함·연락처·수량) → `signage/orders`에 접수 → 관리페이지에서 확인 후 결제·수령 안내.
+
+**쓰는 법**
+- 상품 등록: `/signage/admin.html` 접속 → 비밀번호 입력 → `+ 새 상품`. 사진은 고르면 **자동 압축**되어 저장됩니다.
+- 주문 확인: 관리페이지 **주문** 탭. 상태를 신규 → 처리중 → 완료로 바꿀 수 있어요.
+- 결제 방식: 온라인 즉시결제(PG)는 아직 없습니다. 주문 접수 후 **계좌이체/방문결제**로 안내하는 방식이며, 안내 문구는 관리페이지 **설정**에서 바꿉니다.
+
+> ⚠️ **관리 비밀번호**: `signage/admin.html` 상단 `ADMIN_PASS` 값을 배포 전에 꼭 바꾸세요(기본값 `bring0000`). 지금 보안 수준은 케이스와 동일하게 "링크+비밀번호" 정도이며, 정식 인증은 케이스 보안과 함께 추후 설계합니다.
+>
+> ⚠️ **DB 규칙 반영 필요**: 이 기능은 `database.rules.json`에 `signage` 노드를 열어야 동작합니다. 이 파일을 **Firebase 콘솔(Realtime Database → 규칙)** 또는 `firebase deploy --only database`로 반영해 주세요. (GitHub Pages 배포와 별개입니다)
 
 ---
 
