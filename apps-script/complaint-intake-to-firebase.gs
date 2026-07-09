@@ -1021,6 +1021,7 @@ function handleApplyBusinessRegistrationToQuote_(payload) {
         if (fillResult && fillResult.mineruSupplementApplied) {
           quote.extractionMemo = appendQuoteMemo_(quote.extractionMemo, fillResult.mineruSupplementMessage || "MinerU OCR로 사업자등록증 빈칸 보충");
         }
+        quote.extractedItems = extraction.items;
       } catch (err) {
         quote.extractionMemo = appendQuoteMemo_(quote.extractionMemo, "사업자등록증 정보 반영 실패: " + err.message);
         message = "사업자등록증 정보 반영 실패: " + err.message;
@@ -1064,6 +1065,7 @@ function confirmedQuoteAmounts_(totalAmount) {
 }
 
 function makeConfirmedQuoteExtraction_(quote, casePayload, amounts) {
+  const items = getQuoteItemsForRewrite_(quote, casePayload, amounts.totalAmount, amounts.supplyAmount, amounts.vatAmount);
   return {
     status: "추출완료",
     memo: "관리자 확정 금액",
@@ -1071,15 +1073,7 @@ function makeConfirmedQuoteExtraction_(quote, casePayload, amounts) {
     supplyAmount: amounts.supplyAmount,
     vatAmount: amounts.vatAmount,
     totalAmount: amounts.totalAmount,
-    items: [{
-      product: [(casePayload.issueType || casePayload.vendorType || "현장"), "점검 및 공사 견적"].join(" "),
-      unit: "식",
-      unitPrice: amounts.supplyAmount,
-      vat: amounts.vatAmount,
-      total: amounts.totalAmount,
-      note: "관리자 확정 금액",
-      fallback: true
-    }]
+    items: items
   };
 }
 
@@ -1896,7 +1890,7 @@ function extractQuoteDataFromUpload_(blob, mimeType, fileName, fallbackAmount, c
       status: status,
       memo: memo,
       text: text,
-      textPreview: text.replace(/\s+/g, " ").trim().slice(0, 500),
+      textPreview: text.replace(/\s+/g, " ").trim().slice(0, 5000),
       vendorName: vendorName,
       vendorInfo: vendorInfo,
       fileNameVendorName: vendorInfo.fileNameVendorName || extractQuoteVendorNameFromFileName_(fileName),
@@ -1952,7 +1946,7 @@ function extractQuoteDataFromUpload_(blob, mimeType, fileName, fallbackAmount, c
     status: status,
     memo: memo,
     text: text,
-    textPreview: text.replace(/\s+/g, " ").trim().slice(0, 500),
+    textPreview: text.replace(/\s+/g, " ").trim().slice(0, 5000),
     vendorName: vendorName,
     vendorInfo: vendorInfo,
     fileNameVendorName: vendorInfo.fileNameVendorName || extractQuoteVendorNameFromFileName_(fileName),
@@ -2008,7 +2002,7 @@ function extractBusinessRegistrationData_(blob, mimeType, fileName, casePayload,
     status: status,
     memo: memo,
     text: text,
-    textPreview: text.replace(/\s+/g, " ").trim().slice(0, 500),
+    textPreview: text.replace(/\s+/g, " ").trim().slice(0, 5000),
     vendorInfo: vendorInfo,
     analysisEngine: analysisEngine,
     analysisStatus: analysisStatus,
@@ -3370,6 +3364,7 @@ function refreshBringQuotesFromBusinessRegistration_(caseId, casePayload, busine
       if (fillResult && fillResult.mineruSupplementApplied) {
         quote.extractionMemo = appendQuoteMemo_(quote.extractionMemo, fillResult.mineruSupplementMessage || "MinerU OCR로 사업자등록증 빈칸 보충");
       }
+      quote.extractedItems = extraction.items;
       quote.updatedAt = timestamp;
       applyQuoteAmountState_(quote);
 
@@ -3414,7 +3409,7 @@ function makeQuoteRewriteExtraction_(quote, casePayload) {
   const total = Number(quote.confirmedTotalAmount || quote.bringQuoteTotalAmount || quote.totalAmount || parseMoneyValue_(quote.amount) || 0);
   const supply = Number(quote.confirmedSupplyAmount || quote.bringQuoteSupplyAmount || quote.supplyAmount || (total ? Math.round(total / 1.1) : 0));
   const vat = Number(quote.confirmedVatAmount || quote.bringQuoteVatAmount || quote.vatAmount || (total ? total - supply : 0));
-  const items = normalizeBringQuoteItems_(quote.extractedItems, casePayload, total, supply, vat);
+  const items = getQuoteItemsForRewrite_(quote, casePayload, total, supply, vat);
   return {
     status: quote.extractionStatus || "확인필요",
     memo: quote.extractionMemo || "",
@@ -3424,6 +3419,53 @@ function makeQuoteRewriteExtraction_(quote, casePayload) {
     totalAmount: total,
     items: items
   };
+}
+
+function getQuoteItemsForRewrite_(quote, casePayload, total, supply, vat) {
+  quote = quote || {};
+  const amounts = {
+    totalAmount: Number(total || 0),
+    supplyAmount: Number(supply || (total ? Math.round(total / 1.1) : 0)),
+    vatAmount: Number(vat || (total ? total - Math.round(total / 1.1) : 0))
+  };
+  const text = getQuoteTextForRewrite_(quote);
+  if (text) {
+    const fromText = extractQuoteItems_(text, amounts, casePayload);
+    if (hasUsableQuoteItems_(fromText)) return fromText;
+  }
+  const existing = normalizeBringQuoteItems_(quote.extractedItems, casePayload, amounts.totalAmount, amounts.supplyAmount, amounts.vatAmount);
+  if (hasUsableQuoteItems_(existing)) return existing;
+  return [makeFallbackQuoteItem_(casePayload, amounts.supplyAmount, amounts.vatAmount, amounts.totalAmount, "추출 확인 필요")];
+}
+
+function hasUsableQuoteItems_(items) {
+  items = Array.isArray(items) ? items : [];
+  return items.some(item => item && !item.fallback && String(item.product || "").trim().length >= 2);
+}
+
+function getQuoteTextForRewrite_(quote) {
+  quote = quote || {};
+  const storedText = [
+    quote.extractionText || "",
+    quote.extractionTextPreview || "",
+    quote.textPreview || "",
+    quote.analysisText || ""
+  ].filter(Boolean).join(" ");
+  if (storedText && /(품\s*명|품목|내역|규격|수량|단가|금액)/i.test(storedText)) return storedText;
+
+  const fileId = extractDriveId_(quote.originalDriveFileId || quote.driveFileId || quote.originalFileUrl || quote.fileUrl || "");
+  if (!fileId) return storedText;
+  try {
+    const file = DriveApp.getFileById(fileId);
+    const fileName = file.getName();
+    const blob = file.getBlob();
+    const mimeType = quote.mimeType || blob.getContentType() || inferQuoteMimeType_(fileName);
+    const result = extractQuoteText_(blob, mimeType, fileName);
+    const freshText = result && result.text ? String(result.text) : "";
+    return [storedText, freshText].filter(Boolean).join(" ");
+  } catch (err) {
+    return storedText;
+  }
 }
 
 function fillBringQuoteSpreadsheet_(ss, casePayload, quote, extraction) {
