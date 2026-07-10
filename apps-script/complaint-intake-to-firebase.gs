@@ -4047,7 +4047,7 @@ function sendComplaintSms_(ticketNo, record, analysis, contractMatch) {
     "건물 민원이 접수되었습니다.",
     "접수번호: " + ticketNo,
     building ? "건물: " + building : "",
-    room ? "호실: " + maskRoom_(room) : "",
+    room ? "호실: " + formatRoomForCase_(room) : "",
     issueType ? "문제: " + issueType : "",
     analysis && analysis.urgency ? "긴급도: " + analysis.urgency : ""
   ].filter(Boolean).join("\n");
@@ -4075,14 +4075,26 @@ function sendComplaintSms_(ticketNo, record, analysis, contractMatch) {
   }
 
   const status = tenantSent && ownerSent ? "발송완료" : tenantSent || ownerSent ? "일부발송" : "발송보류";
+  const statusSummary = logs.join(" / ");
   return {
     status: status,
-    statusText: logs.join(" / "),
+    statusSummary: statusSummary,
+    statusText: statusSummary + "\n\n" + makeComplaintSmsPreview_(tenantContent, ownerContent),
     tenantSent: tenantSent,
     ownerSent: ownerSent,
     tenantPhoneMasked: tenantPhone ? maskPhone_(tenantPhone) : "",
     ownerPhoneMasked: ownerPhone ? maskPhone_(ownerPhone) : ""
   };
+}
+
+function makeComplaintSmsPreview_(tenantContent, ownerContent) {
+  return [
+    "[발송 예시 - 세입자]",
+    tenantContent || "세입자 발송 문구 없음",
+    "",
+    "[발송 예시 - 건물주]",
+    ownerContent || "건물주 발송 문구 없음"
+  ].join("\n");
 }
 
 function applySmsResultToCase_(casePayload, smsResult) {
@@ -4102,7 +4114,7 @@ function applySmsResultToCase_(casePayload, smsResult) {
     casePayload.status.c2 = "doing";
   }
   if (casePayload.log) {
-    casePayload.log.push("문자 " + smsResult.status + " / " + (smsResult.statusText || ""));
+    casePayload.log.push("문자 " + smsResult.status + " / " + (smsResult.statusSummary || smsResult.statusText || ""));
   }
 }
 
@@ -4440,7 +4452,7 @@ function buildCasePayload_(ticketNo, record, analysis, contractMatch, row, sheet
     email: "",
     building: building,
     address: address,
-    room: maskRoom_(room),
+    room: formatRoomForCase_(room),
     grade: contractMatch && contractMatch.contract && contractMatch.contract.grade ? contractMatch.contract.grade : "스탠다드",
     issueType: issueType,
     urgency: analysis.urgency,
@@ -4574,12 +4586,10 @@ function maskPhone_(phone) {
   return digits.slice(0, 3) + "-****-" + digits.slice(-4);
 }
 
-function maskRoom_(room) {
+function formatRoomForCase_(room) {
   const v = String(room || "").trim();
   if (!v) return "";
-  const digits = v.replace(/\D/g, "");
-  if (digits.length >= 3) return digits[0] + "**호";
-  return "호실 비공개";
+  return /호$/.test(v) ? v : v + "호";
 }
 
 function testAnalyzeSample() {

@@ -286,6 +286,9 @@
   .cv-chip.locked,.cv-chip:disabled{ background:#eef1f6; color:#9aa6b5; cursor:not-allowed; }
   .cv-stepwrap{ margin-bottom:7px; }
   .cv-stepwrap .cv-step{ margin-bottom:0; }
+  .cv-sms-preview{ margin-top:7px; border:1px solid #d8e5ff; background:#f8fbff; border-radius:8px; padding:10px 12px; }
+  .cv-sms-preview-title{ font-size:12px; font-weight:900; color:#315fce; margin-bottom:6px; }
+  .cv-sms-preview pre{ margin:0; white-space:pre-wrap; word-break:break-word; font-family:inherit; font-size:13px; line-height:1.55; color:#243244; }
   .cv-doc{ border:1px solid #1b335f; background:#1b335f; color:#fff; border-radius:8px; padding:5px 11px; font-size:12.5px; cursor:pointer; font-family:inherit; white-space:nowrap; font-weight:600; }
   .cv-doc:hover{ background:#26477e; }
   .cv-doc.disabled,.cv-doc:disabled{ border-color:#d8e0ec; background:#eef2f7; color:#7b8794; cursor:not-allowed; }
@@ -387,13 +390,30 @@
   .quote-confirm button{ border:1px solid #1b335f; background:#1b335f; color:#fff; border-radius:7px; padding:6px 9px; font-size:11.5px; font-weight:900; cursor:pointer; font-family:inherit; white-space:nowrap; }
   .quote-confirm button:hover{ background:#26477e; }
   .quote-card-links{ display:flex; flex-wrap:wrap; gap:6px; }
-  .quote-card a{ color:#315fce; text-decoration:none; font-size:12.5px; font-weight:800; }
-  .quote-card-links a{ display:inline-flex; align-items:center; min-height:26px; padding:3px 8px; border:1px solid #c5d4ff; border-radius:7px; background:#f6f8ff; }
-  .quote-card a:hover{ text-decoration:underline; }
+  .quote-card-links a{ display:inline-flex; align-items:center; min-height:26px; padding:3px 8px; border:1px solid #c5d4ff; border-radius:7px; background:#f6f8ff; color:#315fce; text-decoration:none; font-size:12.5px; font-weight:800; }
+  .quote-card-links a:hover{ text-decoration:underline; }
   .quote-remove{ justify-self:start; border:1px dashed #f3c0c0; background:#fff; color:#c92a2a; border-radius:7px; padding:4px 8px; font-size:11.5px; cursor:pointer; font-family:inherit; }
+  .recommend-card{ margin-top:8px; border:1px solid #b9e6c5; background:#fbfffc; border-radius:10px; padding:12px; display:grid; gap:10px; }
+  .recommend-head{ display:flex; align-items:flex-start; justify-content:space-between; gap:10px; flex-wrap:wrap; }
+  .recommend-title{ font-size:15px; font-weight:900; color:#162033; }
+  .recommend-sub{ margin-top:2px; font-size:12px; color:#52606d; }
+  .recommend-amount{ font-size:13px; font-weight:900; color:#116329; background:#eaf7ee; border:1px solid #b9e6c5; border-radius:999px; padding:3px 9px; white-space:nowrap; }
+  .recommend-grid{ display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); gap:7px; }
+  .recommend-kv{ border:1px solid #e3e8f1; background:#fff; border-radius:8px; padding:7px 8px; min-height:38px; }
+  .recommend-kv b{ display:block; color:#6b7686; font-size:11px; margin-bottom:3px; }
+  .recommend-kv span{ display:block; color:#162033; font-size:12.5px; font-weight:800; line-height:1.35; word-break:break-word; }
+  .recommend-section-title{ font-size:12.5px; font-weight:900; color:#1b335f; margin-top:2px; }
+  .recommend-table-wrap{ overflow:auto; border:1px solid #e3e8f1; border-radius:8px; background:#fff; }
+  .recommend-table{ width:100%; border-collapse:collapse; min-width:680px; font-size:12px; }
+  .recommend-table th,.recommend-table td{ border-bottom:1px solid #edf1f6; padding:7px 8px; text-align:left; vertical-align:top; }
+  .recommend-table th{ color:#52606d; background:#f8fafd; font-weight:900; white-space:nowrap; }
+  .recommend-table td.money{ text-align:right; white-space:nowrap; font-weight:800; color:#162033; }
+  .recommend-empty{ border:1px dashed #d8e0ec; background:#fff; color:#6b7686; border-radius:8px; padding:11px; font-size:12.5px; }
+  @media (max-width:980px){ .recommend-grid{ grid-template-columns:repeat(2,minmax(0,1fr)); } }
   @media (max-width:1180px){ .quote-cards{ grid-template-columns:repeat(2,minmax(0,1fr)); } }
   @media (max-width:980px){ .quote-upload-split{ grid-template-columns:1fr; } }
   @media (max-width:720px){ .quote-form,.quote-cards{ grid-template-columns:1fr; } }
+  @media (max-width:720px){ .recommend-grid{ grid-template-columns:1fr; } }
   .cv-notebtn{ border:1px solid var(--line); background:#fff; border-radius:8px; padding:5px 8px; font-size:12.5px; cursor:pointer; }
   .cv-notebtn.has{ background:#fff7e6; border-color:#f0dca0; }
   .cv-note{ width:100%; box-sizing:border-box; margin:5px 0 0; border:1px solid var(--line); border-radius:9px; padding:10px 12px; font-size:13px; font-family:inherit; line-height:1.58; min-height:64px; resize:none; overflow:hidden; }
@@ -2041,8 +2061,24 @@ function caseUrgencyClass(u){
   return "";
 }
 function caseTitle(c){ return c.ticketNo || c.receiptNo || c.id || c.name || "무제"; }
+function normalizeCaseRoomText(value){
+  const v=String(value||"").trim();
+  if(!v || v.includes("*") || v.includes("미입력") || v.includes("비공개")) return "";
+  return /호$/.test(v) ? v : v+"호";
+}
+function caseDisplayRoom(c){
+  const direct=normalizeCaseRoomText(c&&c.room);
+  if(direct) return direct;
+  const summary=String((c&&c.summary)||"");
+  const parts=summary.split("/").map(part=>part.trim());
+  if(parts.length>=2){
+    const fromSummary=normalizeCaseRoomText(parts[1].replace(/\s*[-–].*$/,"").trim());
+    if(fromSummary) return fromSummary;
+  }
+  return String((c&&c.room)||"").trim();
+}
 function caseSubText(c){
-  const parts=[c.building, c.room, c.issueType || c.grade].filter(Boolean);
+  const parts=[c.building, caseDisplayRoom(c), c.issueType || c.grade].filter(Boolean);
   return parts.length ? parts.join(" · ") : "건물 미입력";
 }
 function formatCaseDate(v){
@@ -2054,9 +2090,10 @@ function renderComplaintOverview(c){
   if(!(c.source==="google_form" || c.ticketNo || c.issueType || c.urgency || c.vendorType || c.summary)) return "";
   const ucls=caseUrgencyClass(c.urgency);
   const received=formatCaseDate(c.receivedAt||c.createdAt);
+  const room=caseDisplayRoom(c);
   const fields=[
     ["접수번호", c.ticketNo || c.id],
-    ["건물/호실", [c.building, c.room].filter(Boolean).join(" / ")],
+    ["건물/호실", [c.building, room].filter(Boolean).join(" / ")],
     ["주소", c.address],
     ["문제 유형", c.issueType],
     ["업체 분류", c.vendorType],
@@ -2138,7 +2175,7 @@ function consultationWarnings(c){
 }
 function makeConsultationNote(c){
   const building=c.building||"건물 미입력";
-  const room=c.room||"호실 미입력";
+  const room=caseDisplayRoom(c)||"호실 미입력";
   const issueType=c.issueType||"문제 유형 미입력";
   const summary=c.summary || [building, room, issueType].filter(Boolean).join(" / ") || "접수 내용 확인 필요";
   const questions=consultationQuestions(c);
@@ -2165,6 +2202,39 @@ function makeConsultationNote(c){
     "- 긴급도 확인: " + (c.urgency || "미확인"),
     c.sheetUrl ? "- 개인정보/사진 원본 링크: " + c.sheetUrl : ""
   ].filter(line => line !== "").join("\n");
+}
+function caseReceiptSmsPreview(c){
+  const ticketNo=c.ticketNo || c.id || "미발급";
+  const building=c.building || "건물 미입력";
+  const room=caseDisplayRoom(c);
+  const issueType=c.issueType || "";
+  const tenantContent=[
+    "[BRING Care]",
+    "민원이 접수되었습니다.",
+    "접수번호: " + ticketNo,
+    building ? "건물: " + building : "",
+    issueType ? "문제: " + issueType : "",
+    "확인 후 안내드리겠습니다."
+  ].filter(Boolean).join("\n");
+  const ownerContent=[
+    "[BRING Care]",
+    "건물 민원이 접수되었습니다.",
+    "접수번호: " + ticketNo,
+    building ? "건물: " + building : "",
+    room ? "호실: " + room : "",
+    issueType ? "문제: " + issueType : "",
+    c.urgency ? "긴급도: " + c.urgency : ""
+  ].filter(Boolean).join("\n");
+  return [
+    "[발송 예시 - 세입자]",
+    tenantContent,
+    "",
+    "[발송 예시 - 건물주]",
+    ownerContent
+  ].join("\n");
+}
+function renderReceiptSmsPreview(c){
+  return `<div class="cv-sms-preview"><div class="cv-sms-preview-title">발송 예시</div><pre>${esc(caseReceiptSmsPreview(c))}</pre></div>`;
 }
 function shouldFillConsultationNote(c){
   const note=String(((c.note||{}).c3)||"").trim();
@@ -2371,6 +2441,69 @@ function quoteAmountSourceClass(q){
   if(quoteAmountNumber(q&&q.totalAmount)) return "auto";
   return "empty";
 }
+function quoteHasBusinessRegistration(q){
+  const source=String(q&&q.vendorInfoSource||"");
+  return !!(q&&q.businessRegistrationAppliedAt) || source==="business_registration";
+}
+function quoteRecommendationCandidates(c){
+  return quoteFilesList(c).map(q=>Object.assign({}, q, {
+    bestAmount: quoteBestAmount(q),
+    hasBusinessRegistration: quoteHasBusinessRegistration(q)
+  }));
+}
+function hasPricedQuoteForRecommendation(c){
+  return quoteRecommendationCandidates(c).some(q=>q.bestAmount>=1000);
+}
+function formatRecommendationAmount(amount){
+  return amount ? amount.toLocaleString("ko-KR")+"원" : "금액 미입력";
+}
+function makeCheapestRecommendationNote(c){
+  const candidates=quoteRecommendationCandidates(c);
+  const priced=candidates.filter(q=>q.bestAmount>=1000);
+  const unpriced=candidates.filter(q=>!q.bestAmount || q.bestAmount<1000);
+  if(!priced.length){
+    return [
+      "[최적 추천 - 최저가]",
+      "",
+      "추천 보류: 금액이 확인된 견적이 없습니다.",
+      "",
+      unpriced.length ? "[확인 필요]" : "",
+      ...unpriced.map(q=>"- "+(q.vendorName||"업체 미지정")+" / 금액 미입력")
+    ].filter(Boolean).join("\n");
+  }
+  const sorted=priced.slice().sort((a,b)=>{
+    const amountDiff=a.bestAmount-b.bestAmount;
+    if(amountDiff) return amountDiff;
+    if(a.hasBusinessRegistration!==b.hasBusinessRegistration) return a.hasBusinessRegistration ? -1 : 1;
+    return String(a.vendorName||"").localeCompare(String(b.vendorName||""), "ko");
+  });
+  const winner=sorted[0];
+  const alternatives=sorted.slice(1,4);
+  const lowest=winner.bestAmount;
+  const sameLowest=sorted.filter(q=>q.bestAmount===lowest).length;
+  return [
+    "[최적 추천 - 최저가]",
+    "",
+    "1순위 추천: "+(winner.vendorName||"업체 미지정"),
+    "추천 금액: "+formatRecommendationAmount(winner.bestAmount),
+    "선정 기준: 금액이 확인된 견적 중 최저가"+(sameLowest>1 ? " · 동가 견적은 사업자등록증 반영 여부를 우선 확인" : ""),
+    "",
+    "[비교 견적]",
+    ...sorted.map((q,i)=>`${i+1}. ${q.vendorName||"업체 미지정"} / ${formatRecommendationAmount(q.bestAmount)}${q.hasBusinessRegistration?" / 사업자등록증 확인":""}`),
+    unpriced.length ? "" : "",
+    unpriced.length ? "[비교 제외]" : "",
+    ...unpriced.map(q=>"- "+(q.vendorName||"업체 미지정")+" / 금액 미입력"),
+    alternatives.length ? "" : "",
+    alternatives.length ? "대안 업체: "+alternatives.map(q=>(q.vendorName||"업체 미지정")+" "+formatRecommendationAmount(q.bestAmount)).join(" · ") : "",
+    "",
+    "관리자 확인: 최저가 업체의 작업 범위가 민원 내용과 맞는지 확인 후 ⑦을 완료하세요."
+  ].filter(line=>line!==null && line!==undefined).join("\n").replace(/\n{3,}/g,"\n\n");
+}
+function shouldFillRecommendationNote(c){
+  const note=String(((c&&c.note)||{}).c7||"").trim();
+  if(!note) return true;
+  return note.indexOf("[최적 추천 - 최저가]")===0;
+}
 function quoteVendorSourceLabel(q){
   if(q&&q.businessRegistrationAppliedAt) return "사업자등록증 반영";
   const source=String(q&&q.vendorInfoSource||"");
@@ -2443,6 +2576,107 @@ function quoteLinksHtml(q){
   if(originalUrl) links.push(`<a href="${escAttr(originalUrl)}" target="_blank" rel="noopener">원본 열기</a>`);
   if(q.bringQuoteXlsxUrl) links.push(`<a href="${escAttr(q.bringQuoteXlsxUrl)}" target="_blank" rel="noopener">엑셀 견적서</a>`);
   return links.length ? `<div class="quote-card-links">${links.join("")}</div>` : "";
+}
+function recommendedQuoteForCase(c){
+  const priced=quoteRecommendationCandidates(c).filter(q=>q.bestAmount>=1000);
+  if(!priced.length) return null;
+  return priced.slice().sort((a,b)=>{
+    const amountDiff=a.bestAmount-b.bestAmount;
+    if(amountDiff) return amountDiff;
+    if(a.hasBusinessRegistration!==b.hasBusinessRegistration) return a.hasBusinessRegistration ? -1 : 1;
+    return String(a.vendorName||"").localeCompare(String(b.vendorName||""), "ko");
+  })[0];
+}
+function quoteSupplierValue(q, keys){
+  const sources=[q&&q.resolvedVendorInfo, q&&q.vendor, q&&q.extractedVendorInfo, q].filter(src=>src && typeof src==="object");
+  for(const src of sources){
+    for(const key of keys){
+      const value=src[key];
+      if(value!==null && value!==undefined && String(value).trim()) return String(value).trim();
+    }
+  }
+  return "";
+}
+function recommendedQuoteSupplier(q){
+  return {
+    name: quoteSupplierValue(q, ["name","vendorName"]) || String(q&&q.vendorName||""),
+    businessNo: quoteSupplierValue(q, ["businessNo","bizNo","businessNumber"]),
+    ceo: quoteSupplierValue(q, ["ceo","owner","representative","representativeName"]),
+    address: quoteSupplierValue(q, ["address","addressFromVendorList"]),
+    type: quoteSupplierValue(q, ["type","businessType"]),
+    category: quoteSupplierValue(q, ["category","businessCategory","industry"]),
+    phone: quoteSupplierValue(q, ["phone","tel","telephone"]),
+    email: quoteSupplierValue(q, ["email","mail"])
+  };
+}
+function recommendedQuoteAmounts(q){
+  const total=quoteBestAmount(q);
+  const supply=quoteAmountNumber(q&&q.confirmedSupplyAmount) ||
+    quoteAmountNumber(q&&q.bringQuoteSupplyAmount) ||
+    quoteAmountNumber(q&&q.supplyAmount) ||
+    (total ? Math.round(total/1.1) : 0);
+  const vat=quoteAmountNumber(q&&q.confirmedVatAmount) ||
+    quoteAmountNumber(q&&q.bringQuoteVatAmount) ||
+    quoteAmountNumber(q&&q.vatAmount) ||
+    (total && supply ? total-supply : 0);
+  return { supply, vat, total };
+}
+function recommendedQuoteMoney(value){
+  const amount=quoteAmountNumber(value);
+  return amount ? amount.toLocaleString("ko-KR")+"원" : "";
+}
+function quoteItemValue(item, keys){
+  item=item||{};
+  for(const key of keys){
+    const value=item[key];
+    if(value!==null && value!==undefined && String(value).trim()) return String(value).trim();
+  }
+  return "";
+}
+function recommendedQuoteItems(q){
+  const items=Array.isArray(q&&q.extractedItems) ? q.extractedItems : (Array.isArray(q&&q.items) ? q.items : []);
+  return items.filter(Boolean).slice(0,12);
+}
+function renderRecommendedQuotePanel(c, stepStatus){
+  if(stepStatus!=="doing" && stepStatus!=="done") return "";
+  const q=recommendedQuoteForCase(c);
+  if(!q) return `<div class="recommend-card"><div class="recommend-empty">추천 가능한 견적서가 없습니다. 금액이 확인된 견적서를 ⑥에 업로드하거나 합계금액을 입력해 주세요.</div></div>`;
+  const supplier=recommendedQuoteSupplier(q);
+  const amounts=recommendedQuoteAmounts(q);
+  const items=recommendedQuoteItems(q);
+  const fields=[
+    ["사업자번호", supplier.businessNo],
+    ["상호", supplier.name],
+    ["대표자", supplier.ceo],
+    ["주소", supplier.address],
+    ["업태", supplier.type],
+    ["업종", supplier.category],
+    ["전화", supplier.phone],
+    ["이메일", supplier.email],
+    ["공급가액", recommendedQuoteMoney(amounts.supply)],
+    ["부가세", recommendedQuoteMoney(amounts.vat)],
+    ["합계금액", recommendedQuoteMoney(amounts.total)],
+    ["파일명", q.fileName||q.originalFileName||""]
+  ];
+  const itemRows=items.length ? items.map((item,index)=>{
+    const product=quoteItemValue(item, ["product","name","itemName","description","title"]);
+    const unit=quoteItemValue(item, ["unit","unitName"]);
+    const unitPrice=quoteItemValue(item, ["unitPrice","supplyAmount","supply","price"]);
+    const vat=quoteItemValue(item, ["vat","vatAmount","tax"]);
+    const total=quoteItemValue(item, ["total","totalAmount","amount"]);
+    const note=quoteItemValue(item, ["note","memo","remark"]);
+    return `<tr><td>${index+1}</td><td>${esc(product)}</td><td>${esc(unit)}</td><td class="money">${esc(recommendedQuoteMoney(unitPrice))}</td><td class="money">${esc(recommendedQuoteMoney(vat))}</td><td class="money">${esc(recommendedQuoteMoney(total))}</td><td>${esc(note)}</td></tr>`;
+  }).join("") : `<tr><td colspan="7" class="recommend-empty">품목 데이터가 없습니다. 브링 엑셀 견적서를 열어 직접 확인해 주세요.</td></tr>`;
+  return `<div class="recommend-card">
+    <div class="recommend-head">
+      <div><div class="recommend-title">추천 견적서 · ${esc(supplier.name||q.vendorName||"업체 미지정")}</div><div class="recommend-sub">최저가 기준으로 선정된 브링 양식 견적서 내용입니다.</div></div>
+      <div class="recommend-amount">${esc(recommendedQuoteMoney(amounts.total) || "금액 미입력")}</div>
+    </div>
+    <div class="recommend-grid">${fields.map(([label,value])=>`<div class="recommend-kv"><b>${esc(label)}</b><span>${esc(value||"")}</span></div>`).join("")}</div>
+    <div class="recommend-section-title">품목 내역</div>
+    <div class="recommend-table-wrap"><table class="recommend-table"><thead><tr><th>No</th><th>품명(규격)</th><th>단위</th><th>단가</th><th>부가세</th><th>합계</th><th>비고</th></tr></thead><tbody>${itemRows}</tbody></table></div>
+    ${quoteLinksHtml(q)}
+  </div>`;
 }
 function quoteVendorById(c, vendorId, vendorName){
   const vendors=quoteUploadVendors(c);
@@ -2760,7 +2994,7 @@ function sendComplaintReceiptSmsFromCase(id){
       phone:c.phone||"",
       building:c.building||"",
       address:c.address||"",
-      room:c.room||"",
+      room:caseDisplayRoom(c)||c.room||"",
       issueType:c.issueType||"",
       visitTime:c.visitTime||"",
       summary:c.summary||""
@@ -3380,6 +3614,39 @@ function applyStepAutomation(c, logEnabled){
     }
     if(cardChanged) messages.push("④ 민원·요청 분류 자동초안 생성");
   }
+  if(c.status.c6==="doing" && hasPricedQuoteForRecommendation(c)){
+    c.status.c6="done";
+    if(c.status.c7!=="done") c.status.c7="doing";
+    changed=true;
+    messages.push("⑥ 견적 비교: 금액 확인 견적 업로드로 완료 처리");
+  }
+  if(c.status.c6==="done"){
+    let cardChanged=false;
+    let stepChanged=false;
+    const hasRecommendation=hasPricedQuoteForRecommendation(c);
+    if(shouldFillRecommendationNote(c)){
+      c.note.c7=makeCheapestRecommendationNote(c);
+      changed=true;
+      cardChanged=true;
+    }
+    if(hasRecommendation){
+      if(c.status.c7!=="done"){
+        c.status.c7="done";
+        changed=true;
+        stepChanged=true;
+      }
+      if(c.status.c8!=="done" && c.status.c8!=="doing"){
+        c.status.c8="doing";
+        changed=true;
+        stepChanged=true;
+      }
+    }else if(c.status.c7!=="done" && c.status.c7!=="doing"){
+      c.status.c7="doing";
+      changed=true;
+    }
+    if(cardChanged) messages.push("⑦ 최저가 기준 최적 추천 자동 생성");
+    if(stepChanged) messages.push("⑦ 최적 추천 완료 후 ⑧ 건물주에 추천 발송 진행중 전환");
+  }
   if(logEnabled) messages.forEach(msg=>caseLog(c, msg));
   return changed;
 }
@@ -3611,9 +3878,10 @@ function maskSmsPhone(value){
   return digits.slice(0,3)+"-****-"+digits.slice(-4);
 }
 function buildVendorMmsMessage(c){
+  const room=caseDisplayRoom(c)||"호실 미입력";
   return [
     "[BRING Care 견적요청]",
-    `${c.building||"건물 미입력"} / ${c.room||"호실 미입력"}`,
+    `${c.building||"건물 미입력"} / ${room}`,
     `주소: ${c.address||"주소 미입력"}`,
     `문제: ${c.issueType||"문제 유형 미입력"} / ${c.vendorType||"업체 분류 미확인"}`,
     `방문 가능: ${c.visitTime||"협의 필요"}`,
@@ -3797,9 +4065,11 @@ function renderCaseDetail(){
       const nb=`<button class="cv-notebtn ${note?'has':''}" data-notetoggle="${s.k}" title="메모">📝</button>`;
       const noteClass=s.k==='c3'?'consultation':s.k==='c4'?'classification':'';
       const box=open?`<textarea class="cv-note ${noteClass}" data-note="${s.k}" placeholder="이 단계 메모 (민원 내용·선정 업체·금액 등)">${esc(note)}</textarea>`:"";
+      const receiptSmsPreview=open && s.k==='c2' && !/\[발송 예시/.test(note) ? renderReceiptSmsPreview(c) : "";
       const vendors=open && s.k==='c4' ? renderCaseVendorCandidates(c, st) : "";
       const quotes=open && s.k==='c6' ? renderQuoteUploadPanel(c, st) : "";
-      return `<div class="cv-stepwrap"><div class="cv-step ${locked?'locked':st}">${chip}<div class="lbl">${esc(s.t)}</div>${act}${dc}${tb}${nb}</div>${box}${vendors}${quotes}</div>`;
+      const recommendation=open && s.k==='c7' ? renderRecommendedQuotePanel(c, st) : "";
+      return `<div class="cv-stepwrap"><div class="cv-step ${locked?'locked':st}">${chip}<div class="lbl">${esc(s.t)}</div>${act}${dc}${tb}${nb}</div>${box}${receiptSmsPreview}${vendors}${quotes}${recommendation}</div>`;
     }).join("")+
     (c.archived?`<button class="cv-del restore" id="cvRestore">↩ 보관 해제</button>`:`<button class="cv-del" id="cvDel">🗄 보관함으로 이동</button>`)+
     (c.log&&c.log.length?`<div class="cv-log"><div class="t" style="font-weight:700">기록</div>`+c.log.slice(0,8).map(l=>`<div class="t">· ${esc(l)}</div>`).join("")+`</div>`:"");
@@ -3881,8 +4151,14 @@ document.getElementById("noticeBtn").addEventListener("click", openNoticePanel);
 document.getElementById("noticeBanner").addEventListener("click", openNoticePanel);
 
 /* ===== 업데이트 알림(What's New) — 새 버전 나오면 자동 팝업 ===== */
-const APP_VERSION = "4.59";
+const APP_VERSION = "4.65";
 const CHANGELOG = [
+  { v:"4.65", d:"2026-07-10", items:["② 접수확인 메모에 발송 예시를 화면에서 항상 표시","기존 마스킹된 호실은 접수 요약에서 원래 호실을 찾아 표시"] },
+  { v:"4.64", d:"2026-07-10", items:["⑦ 최적 추천이 생성되면 자동 완료 처리하고 ⑧ 건물주에 추천 발송을 바로 진행중으로 전환"] },
+  { v:"4.63", d:"2026-07-10", items:["⑦ 추천 견적서의 원본/엑셀 링크 버튼을 ⑥ 견적 카드와 같은 디자인으로 통일"] },
+  { v:"4.62", d:"2026-07-10", items:["⑦ 최적 추천에 선정된 브링 견적서 내용을 카드로 표시","추천 업체 정보, 금액, 품목, 원본/엑셀 링크를 한눈에 확인"] },
+  { v:"4.61", d:"2026-07-10", items:["⑥ 진행중 상태에서 금액 있는 견적이 업로드되면 자동으로 ⑥ 완료 및 ⑦ 최적 추천 진행중 전환"] },
+  { v:"4.60", d:"2026-07-10", items:["⑥ 견적 비교 완료 후 ⑦ 최적 추천을 최저가 기준으로 자동 생성","금액 확인된 견적 중 최저가 업체를 1순위 추천으로 표시"] },
   { v:"4.59", d:"2026-07-08", items:["⑥ 견적 카드의 목록에서 제거가 Firebase에도 즉시 반영되도록 수정","삭제한 견적서가 실시간 동기화 후 다시 나타나는 문제 방지"] },
   { v:"4.58", d:"2026-07-08", items:["⑥ 견적서 영역을 펼친 뒤 스크롤이 끝까지 자동 이동하는 문제 수정","⑥ 견적 비교가 열린 상태에서는 실시간 갱신과 메모 펼침이 현재 위치를 유지"] },
   { v:"4.57", d:"2026-07-08", items:["⑥ 견적서·사업자등록증 업로드 후 케이스 화면 스크롤이 자동으로 내려가는 문제 수정","업로드 중 실시간 갱신이 들어와도 현재 스크롤 위치 유지"] },
