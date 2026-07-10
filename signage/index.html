@@ -618,6 +618,32 @@
     justify-content:center;
     padding-bottom:22px;
   }
+  .benefit-card.has-benefit{
+    flex-direction:column;
+    align-items:stretch;
+    justify-content:space-between;
+    overflow:hidden;
+    padding:0;
+  }
+  .benefit-card.has-benefit img{
+    width:100%;
+    height:calc(100% - 34px);
+    object-fit:contain;
+    background:#991416;
+    display:block;
+  }
+  .benefit-name{
+    min-height:34px;
+    display:flex;
+    align-items:center;
+    justify-content:center;
+    background:#FFFFFF;
+    border-top:1px solid #DDE8F6;
+    color:#173D72;
+    font-size:clamp(18px,1.45vw,25px);
+    font-weight:900;
+    letter-spacing:0;
+  }
   .placeholder-line{width:46%;height:2px;background:#DDE8F6}
   .facilities{
     order:5;
@@ -795,7 +821,10 @@
   <section class="section-card benefits">
     <div class="section-title"><span class="section-icon gift" aria-hidden="true"></span>입주민 혜택 <span class="section-more">더보기 〉</span></div>
     <div class="benefit-grid">
-      <div class="benefit-card"><span class="placeholder-line"></span></div>
+      <div class="benefit-card has-benefit">
+        <img src="./benefit-donghwaru.png" alt="동화루 입주민 혜택">
+        <span class="benefit-name">동 화 루</span>
+      </div>
       <div class="benefit-card"><span class="placeholder-line"></span></div>
       <div class="benefit-card"><span class="placeholder-line"></span></div>
       <div class="benefit-card"><span class="placeholder-line"></span></div>
