@@ -391,9 +391,27 @@
   .quote-card-links a{ display:inline-flex; align-items:center; min-height:26px; padding:3px 8px; border:1px solid #c5d4ff; border-radius:7px; background:#f6f8ff; }
   .quote-card a:hover{ text-decoration:underline; }
   .quote-remove{ justify-self:start; border:1px dashed #f3c0c0; background:#fff; color:#c92a2a; border-radius:7px; padding:4px 8px; font-size:11.5px; cursor:pointer; font-family:inherit; }
+  .recommend-card{ margin-top:8px; border:1px solid #b9e6c5; background:#fbfffc; border-radius:10px; padding:12px; display:grid; gap:10px; }
+  .recommend-head{ display:flex; align-items:flex-start; justify-content:space-between; gap:10px; flex-wrap:wrap; }
+  .recommend-title{ font-size:15px; font-weight:900; color:#162033; }
+  .recommend-sub{ margin-top:2px; font-size:12px; color:#52606d; }
+  .recommend-amount{ font-size:13px; font-weight:900; color:#116329; background:#eaf7ee; border:1px solid #b9e6c5; border-radius:999px; padding:3px 9px; white-space:nowrap; }
+  .recommend-grid{ display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); gap:7px; }
+  .recommend-kv{ border:1px solid #e3e8f1; background:#fff; border-radius:8px; padding:7px 8px; min-height:38px; }
+  .recommend-kv b{ display:block; color:#6b7686; font-size:11px; margin-bottom:3px; }
+  .recommend-kv span{ display:block; color:#162033; font-size:12.5px; font-weight:800; line-height:1.35; word-break:break-word; }
+  .recommend-section-title{ font-size:12.5px; font-weight:900; color:#1b335f; margin-top:2px; }
+  .recommend-table-wrap{ overflow:auto; border:1px solid #e3e8f1; border-radius:8px; background:#fff; }
+  .recommend-table{ width:100%; border-collapse:collapse; min-width:680px; font-size:12px; }
+  .recommend-table th,.recommend-table td{ border-bottom:1px solid #edf1f6; padding:7px 8px; text-align:left; vertical-align:top; }
+  .recommend-table th{ color:#52606d; background:#f8fafd; font-weight:900; white-space:nowrap; }
+  .recommend-table td.money{ text-align:right; white-space:nowrap; font-weight:800; color:#162033; }
+  .recommend-empty{ border:1px dashed #d8e0ec; background:#fff; color:#6b7686; border-radius:8px; padding:11px; font-size:12.5px; }
+  @media (max-width:980px){ .recommend-grid{ grid-template-columns:repeat(2,minmax(0,1fr)); } }
   @media (max-width:1180px){ .quote-cards{ grid-template-columns:repeat(2,minmax(0,1fr)); } }
   @media (max-width:980px){ .quote-upload-split{ grid-template-columns:1fr; } }
   @media (max-width:720px){ .quote-form,.quote-cards{ grid-template-columns:1fr; } }
+  @media (max-width:720px){ .recommend-grid{ grid-template-columns:1fr; } }
   .cv-notebtn{ border:1px solid var(--line); background:#fff; border-radius:8px; padding:5px 8px; font-size:12.5px; cursor:pointer; }
   .cv-notebtn.has{ background:#fff7e6; border-color:#f0dca0; }
   .cv-note{ width:100%; box-sizing:border-box; margin:5px 0 0; border:1px solid var(--line); border-radius:9px; padding:10px 12px; font-size:13px; font-family:inherit; line-height:1.58; min-height:64px; resize:none; overflow:hidden; }
@@ -2507,6 +2525,107 @@ function quoteLinksHtml(q){
   if(q.bringQuoteXlsxUrl) links.push(`<a href="${escAttr(q.bringQuoteXlsxUrl)}" target="_blank" rel="noopener">엑셀 견적서</a>`);
   return links.length ? `<div class="quote-card-links">${links.join("")}</div>` : "";
 }
+function recommendedQuoteForCase(c){
+  const priced=quoteRecommendationCandidates(c).filter(q=>q.bestAmount>=1000);
+  if(!priced.length) return null;
+  return priced.slice().sort((a,b)=>{
+    const amountDiff=a.bestAmount-b.bestAmount;
+    if(amountDiff) return amountDiff;
+    if(a.hasBusinessRegistration!==b.hasBusinessRegistration) return a.hasBusinessRegistration ? -1 : 1;
+    return String(a.vendorName||"").localeCompare(String(b.vendorName||""), "ko");
+  })[0];
+}
+function quoteSupplierValue(q, keys){
+  const sources=[q&&q.resolvedVendorInfo, q&&q.vendor, q&&q.extractedVendorInfo, q].filter(src=>src && typeof src==="object");
+  for(const src of sources){
+    for(const key of keys){
+      const value=src[key];
+      if(value!==null && value!==undefined && String(value).trim()) return String(value).trim();
+    }
+  }
+  return "";
+}
+function recommendedQuoteSupplier(q){
+  return {
+    name: quoteSupplierValue(q, ["name","vendorName"]) || String(q&&q.vendorName||""),
+    businessNo: quoteSupplierValue(q, ["businessNo","bizNo","businessNumber"]),
+    ceo: quoteSupplierValue(q, ["ceo","owner","representative","representativeName"]),
+    address: quoteSupplierValue(q, ["address","addressFromVendorList"]),
+    type: quoteSupplierValue(q, ["type","businessType"]),
+    category: quoteSupplierValue(q, ["category","businessCategory","industry"]),
+    phone: quoteSupplierValue(q, ["phone","tel","telephone"]),
+    email: quoteSupplierValue(q, ["email","mail"])
+  };
+}
+function recommendedQuoteAmounts(q){
+  const total=quoteBestAmount(q);
+  const supply=quoteAmountNumber(q&&q.confirmedSupplyAmount) ||
+    quoteAmountNumber(q&&q.bringQuoteSupplyAmount) ||
+    quoteAmountNumber(q&&q.supplyAmount) ||
+    (total ? Math.round(total/1.1) : 0);
+  const vat=quoteAmountNumber(q&&q.confirmedVatAmount) ||
+    quoteAmountNumber(q&&q.bringQuoteVatAmount) ||
+    quoteAmountNumber(q&&q.vatAmount) ||
+    (total && supply ? total-supply : 0);
+  return { supply, vat, total };
+}
+function recommendedQuoteMoney(value){
+  const amount=quoteAmountNumber(value);
+  return amount ? amount.toLocaleString("ko-KR")+"원" : "";
+}
+function quoteItemValue(item, keys){
+  item=item||{};
+  for(const key of keys){
+    const value=item[key];
+    if(value!==null && value!==undefined && String(value).trim()) return String(value).trim();
+  }
+  return "";
+}
+function recommendedQuoteItems(q){
+  const items=Array.isArray(q&&q.extractedItems) ? q.extractedItems : (Array.isArray(q&&q.items) ? q.items : []);
+  return items.filter(Boolean).slice(0,12);
+}
+function renderRecommendedQuotePanel(c, stepStatus){
+  if(stepStatus!=="doing" && stepStatus!=="done") return "";
+  const q=recommendedQuoteForCase(c);
+  if(!q) return `<div class="recommend-card"><div class="recommend-empty">추천 가능한 견적서가 없습니다. 금액이 확인된 견적서를 ⑥에 업로드하거나 합계금액을 입력해 주세요.</div></div>`;
+  const supplier=recommendedQuoteSupplier(q);
+  const amounts=recommendedQuoteAmounts(q);
+  const items=recommendedQuoteItems(q);
+  const fields=[
+    ["사업자번호", supplier.businessNo],
+    ["상호", supplier.name],
+    ["대표자", supplier.ceo],
+    ["주소", supplier.address],
+    ["업태", supplier.type],
+    ["업종", supplier.category],
+    ["전화", supplier.phone],
+    ["이메일", supplier.email],
+    ["공급가액", recommendedQuoteMoney(amounts.supply)],
+    ["부가세", recommendedQuoteMoney(amounts.vat)],
+    ["합계금액", recommendedQuoteMoney(amounts.total)],
+    ["파일명", q.fileName||q.originalFileName||""]
+  ];
+  const itemRows=items.length ? items.map((item,index)=>{
+    const product=quoteItemValue(item, ["product","name","itemName","description","title"]);
+    const unit=quoteItemValue(item, ["unit","unitName"]);
+    const unitPrice=quoteItemValue(item, ["unitPrice","supplyAmount","supply","price"]);
+    const vat=quoteItemValue(item, ["vat","vatAmount","tax"]);
+    const total=quoteItemValue(item, ["total","totalAmount","amount"]);
+    const note=quoteItemValue(item, ["note","memo","remark"]);
+    return `<tr><td>${index+1}</td><td>${esc(product)}</td><td>${esc(unit)}</td><td class="money">${esc(recommendedQuoteMoney(unitPrice))}</td><td class="money">${esc(recommendedQuoteMoney(vat))}</td><td class="money">${esc(recommendedQuoteMoney(total))}</td><td>${esc(note)}</td></tr>`;
+  }).join("") : `<tr><td colspan="7" class="recommend-empty">품목 데이터가 없습니다. 브링 엑셀 견적서를 열어 직접 확인해 주세요.</td></tr>`;
+  return `<div class="recommend-card">
+    <div class="recommend-head">
+      <div><div class="recommend-title">추천 견적서 · ${esc(supplier.name||q.vendorName||"업체 미지정")}</div><div class="recommend-sub">최저가 기준으로 선정된 브링 양식 견적서 내용입니다.</div></div>
+      <div class="recommend-amount">${esc(recommendedQuoteMoney(amounts.total) || "금액 미입력")}</div>
+    </div>
+    <div class="recommend-grid">${fields.map(([label,value])=>`<div class="recommend-kv"><b>${esc(label)}</b><span>${esc(value||"")}</span></div>`).join("")}</div>
+    <div class="recommend-section-title">품목 내역</div>
+    <div class="recommend-table-wrap"><table class="recommend-table"><thead><tr><th>No</th><th>품명(규격)</th><th>단위</th><th>단가</th><th>부가세</th><th>합계</th><th>비고</th></tr></thead><tbody>${itemRows}</tbody></table></div>
+    ${quoteLinksHtml(q)}
+  </div>`;
+}
 function quoteVendorById(c, vendorId, vendorName){
   const vendors=quoteUploadVendors(c);
   return vendors.find(v=>String(v.id||"")===String(vendorId||"")) ||
@@ -3881,7 +4000,8 @@ function renderCaseDetail(){
       const box=open?`<textarea class="cv-note ${noteClass}" data-note="${s.k}" placeholder="이 단계 메모 (민원 내용·선정 업체·금액 등)">${esc(note)}</textarea>`:"";
       const vendors=open && s.k==='c4' ? renderCaseVendorCandidates(c, st) : "";
       const quotes=open && s.k==='c6' ? renderQuoteUploadPanel(c, st) : "";
-      return `<div class="cv-stepwrap"><div class="cv-step ${locked?'locked':st}">${chip}<div class="lbl">${esc(s.t)}</div>${act}${dc}${tb}${nb}</div>${box}${vendors}${quotes}</div>`;
+      const recommendation=open && s.k==='c7' ? renderRecommendedQuotePanel(c, st) : "";
+      return `<div class="cv-stepwrap"><div class="cv-step ${locked?'locked':st}">${chip}<div class="lbl">${esc(s.t)}</div>${act}${dc}${tb}${nb}</div>${box}${vendors}${quotes}${recommendation}</div>`;
     }).join("")+
     (c.archived?`<button class="cv-del restore" id="cvRestore">↩ 보관 해제</button>`:`<button class="cv-del" id="cvDel">🗄 보관함으로 이동</button>`)+
     (c.log&&c.log.length?`<div class="cv-log"><div class="t" style="font-weight:700">기록</div>`+c.log.slice(0,8).map(l=>`<div class="t">· ${esc(l)}</div>`).join("")+`</div>`:"");
@@ -3963,8 +4083,9 @@ document.getElementById("noticeBtn").addEventListener("click", openNoticePanel);
 document.getElementById("noticeBanner").addEventListener("click", openNoticePanel);
 
 /* ===== 업데이트 알림(What's New) — 새 버전 나오면 자동 팝업 ===== */
-const APP_VERSION = "4.61";
+const APP_VERSION = "4.62";
 const CHANGELOG = [
+  { v:"4.62", d:"2026-07-10", items:["⑦ 최적 추천에 선정된 브링 견적서 내용을 카드로 표시","추천 업체 정보, 금액, 품목, 원본/엑셀 링크를 한눈에 확인"] },
   { v:"4.61", d:"2026-07-10", items:["⑥ 진행중 상태에서 금액 있는 견적이 업로드되면 자동으로 ⑥ 완료 및 ⑦ 최적 추천 진행중 전환"] },
   { v:"4.60", d:"2026-07-10", items:["⑥ 견적 비교 완료 후 ⑦ 최적 추천을 최저가 기준으로 자동 생성","금액 확인된 견적 중 최저가 업체를 1순위 추천으로 표시"] },
   { v:"4.59", d:"2026-07-08", items:["⑥ 견적 카드의 목록에서 제거가 Firebase에도 즉시 반영되도록 수정","삭제한 견적서가 실시간 동기화 후 다시 나타나는 문제 방지"] },
