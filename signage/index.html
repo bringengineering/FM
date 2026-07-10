@@ -644,77 +644,11 @@
     text-align:center;
   }
   .facility-icon{
-    width:34px;
-    height:34px;
-    border:3px solid #2D7DD2;
-    border-radius:8px;
-    position:relative;
+    width:42px;
+    height:42px;
+    object-fit:contain;
+    display:block;
     flex:none;
-  }
-  .facility-icon.laundry{
-    border-radius:50%;
-  }
-  .facility-icon.laundry::before{
-    content:"";
-    position:absolute;
-    inset:8px;
-    border:3px solid #2D7DD2;
-    border-radius:50%;
-  }
-  .facility-icon.store::before{
-    content:"";
-    position:absolute;
-    left:4px;
-    right:4px;
-    top:8px;
-    height:5px;
-    background:#2D7DD2;
-    box-shadow:0 8px 0 #2D7DD2;
-  }
-  .facility-icon.cafe{
-    border-radius:50%;
-  }
-  .facility-icon.cafe::after{
-    content:"";
-    position:absolute;
-    right:-9px;
-    top:9px;
-    width:9px;
-    height:10px;
-    border:3px solid #2D7DD2;
-    border-left:0;
-    border-radius:0 8px 8px 0;
-  }
-  .facility-icon.pharmacy::before,
-  .facility-icon.pharmacy::after{
-    content:"";
-    position:absolute;
-    background:#2D7DD2;
-  }
-  .facility-icon.pharmacy::before{left:7px;right:7px;top:14px;height:4px}
-  .facility-icon.pharmacy::after{top:7px;bottom:7px;left:14px;width:4px}
-  .facility-icon.bank{
-    border-radius:50%;
-  }
-  .facility-icon.bank::before{
-    content:"";
-    position:absolute;
-    left:8px;
-    right:8px;
-    bottom:7px;
-    height:16px;
-    border-left:4px solid #2D7DD2;
-    border-right:4px solid #2D7DD2;
-  }
-  .facility-icon.parking::before{
-    content:"P";
-    position:absolute;
-    inset:0;
-    display:grid;
-    place-items:center;
-    color:#2D7DD2;
-    font-weight:900;
-    font-size:22px;
   }
   .facility-label{
     color:#6B7B92;
@@ -910,12 +844,12 @@ const CONFIG = {
   /* 주변 편의시설: name에 실제 상호명을 넣으면 화면에 표시됩니다.
      추후 주소 기반 자동 검색을 붙이면 이 목록을 자동으로 채우는 구조입니다. */
   FACILITIES: [
-    { type: "laundry", label: "세탁소", name: "세탁소 정보 준비중" },
-    { type: "store", label: "편의점", name: "편의점 정보 준비중" },
-    { type: "cafe", label: "카페", name: "카페 정보 준비중" },
-    { type: "pharmacy", label: "약국", name: "약국 정보 준비중" },
-    { type: "bank", label: "은행", name: "은행 정보 준비중" },
-    { type: "parking", label: "주차장", name: "주차장 정보 준비중" }
+    { type: "laundry", label: "세탁소", name: "세탁소 정보 준비중", icon: "./facility-laundry.svg" },
+    { type: "store", label: "편의점", name: "편의점 정보 준비중", icon: "./facility-store.svg" },
+    { type: "cafe", label: "카페", name: "카페 정보 준비중", icon: "./facility-cafe.svg" },
+    { type: "pharmacy", label: "약국", name: "약국 정보 준비중", icon: "./facility-pharmacy.svg" },
+    { type: "bank", label: "은행", name: "은행 정보 준비중", icon: "./facility-bank.svg" },
+    { type: "parking", label: "주차장", name: "주차장 정보 준비중", icon: "./facility-parking.svg" }
   ]
 };
 /* ═══════════════════════════════════════════════ */
@@ -942,9 +876,10 @@ function renderFacilities(){
     const type = esc(item.type || "store");
     const label = esc(item.label || "편의시설");
     const name = esc(item.name || "정보 준비중");
+    const icon = esc(item.icon || "./facility-store.svg");
     return `
       <div class="facility-card">
-        <span class="facility-icon ${type}" aria-hidden="true"></span>
+        <img class="facility-icon ${type}" src="${icon}" alt="" aria-hidden="true">
         <span class="facility-label">${label}</span>
         <span class="facility-name">${name}</span>
       </div>
