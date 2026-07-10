@@ -286,6 +286,9 @@
   .cv-chip.locked,.cv-chip:disabled{ background:#eef1f6; color:#9aa6b5; cursor:not-allowed; }
   .cv-stepwrap{ margin-bottom:7px; }
   .cv-stepwrap .cv-step{ margin-bottom:0; }
+  .cv-sms-preview{ margin-top:7px; border:1px solid #d8e5ff; background:#f8fbff; border-radius:8px; padding:10px 12px; }
+  .cv-sms-preview-title{ font-size:12px; font-weight:900; color:#315fce; margin-bottom:6px; }
+  .cv-sms-preview pre{ margin:0; white-space:pre-wrap; word-break:break-word; font-family:inherit; font-size:13px; line-height:1.55; color:#243244; }
   .cv-doc{ border:1px solid #1b335f; background:#1b335f; color:#fff; border-radius:8px; padding:5px 11px; font-size:12.5px; cursor:pointer; font-family:inherit; white-space:nowrap; font-weight:600; }
   .cv-doc:hover{ background:#26477e; }
   .cv-doc.disabled,.cv-doc:disabled{ border-color:#d8e0ec; background:#eef2f7; color:#7b8794; cursor:not-allowed; }
@@ -2058,8 +2061,24 @@ function caseUrgencyClass(u){
   return "";
 }
 function caseTitle(c){ return c.ticketNo || c.receiptNo || c.id || c.name || "무제"; }
+function normalizeCaseRoomText(value){
+  const v=String(value||"").trim();
+  if(!v || v.includes("*") || v.includes("미입력") || v.includes("비공개")) return "";
+  return /호$/.test(v) ? v : v+"호";
+}
+function caseDisplayRoom(c){
+  const direct=normalizeCaseRoomText(c&&c.room);
+  if(direct) return direct;
+  const summary=String((c&&c.summary)||"");
+  const parts=summary.split("/").map(part=>part.trim());
+  if(parts.length>=2){
+    const fromSummary=normalizeCaseRoomText(parts[1].replace(/\s*[-–].*$/,"").trim());
+    if(fromSummary) return fromSummary;
+  }
+  return String((c&&c.room)||"").trim();
+}
 function caseSubText(c){
-  const parts=[c.building, c.room, c.issueType || c.grade].filter(Boolean);
+  const parts=[c.building, caseDisplayRoom(c), c.issueType || c.grade].filter(Boolean);
   return parts.length ? parts.join(" · ") : "건물 미입력";
 }
 function formatCaseDate(v){
@@ -2071,9 +2090,10 @@ function renderComplaintOverview(c){
   if(!(c.source==="google_form" || c.ticketNo || c.issueType || c.urgency || c.vendorType || c.summary)) return "";
   const ucls=caseUrgencyClass(c.urgency);
   const received=formatCaseDate(c.receivedAt||c.createdAt);
+  const room=caseDisplayRoom(c);
   const fields=[
     ["접수번호", c.ticketNo || c.id],
-    ["건물/호실", [c.building, c.room].filter(Boolean).join(" / ")],
+    ["건물/호실", [c.building, room].filter(Boolean).join(" / ")],
     ["주소", c.address],
     ["문제 유형", c.issueType],
     ["업체 분류", c.vendorType],
@@ -2155,7 +2175,7 @@ function consultationWarnings(c){
 }
 function makeConsultationNote(c){
   const building=c.building||"건물 미입력";
-  const room=c.room||"호실 미입력";
+  const room=caseDisplayRoom(c)||"호실 미입력";
   const issueType=c.issueType||"문제 유형 미입력";
   const summary=c.summary || [building, room, issueType].filter(Boolean).join(" / ") || "접수 내용 확인 필요";
   const questions=consultationQuestions(c);
@@ -2182,6 +2202,39 @@ function makeConsultationNote(c){
     "- 긴급도 확인: " + (c.urgency || "미확인"),
     c.sheetUrl ? "- 개인정보/사진 원본 링크: " + c.sheetUrl : ""
   ].filter(line => line !== "").join("\n");
+}
+function caseReceiptSmsPreview(c){
+  const ticketNo=c.ticketNo || c.id || "미발급";
+  const building=c.building || "건물 미입력";
+  const room=caseDisplayRoom(c);
+  const issueType=c.issueType || "";
+  const tenantContent=[
+    "[BRING Care]",
+    "민원이 접수되었습니다.",
+    "접수번호: " + ticketNo,
+    building ? "건물: " + building : "",
+    issueType ? "문제: " + issueType : "",
+    "확인 후 안내드리겠습니다."
+  ].filter(Boolean).join("\n");
+  const ownerContent=[
+    "[BRING Care]",
+    "건물 민원이 접수되었습니다.",
+    "접수번호: " + ticketNo,
+    building ? "건물: " + building : "",
+    room ? "호실: " + room : "",
+    issueType ? "문제: " + issueType : "",
+    c.urgency ? "긴급도: " + c.urgency : ""
+  ].filter(Boolean).join("\n");
+  return [
+    "[발송 예시 - 세입자]",
+    tenantContent,
+    "",
+    "[발송 예시 - 건물주]",
+    ownerContent
+  ].join("\n");
+}
+function renderReceiptSmsPreview(c){
+  return `<div class="cv-sms-preview"><div class="cv-sms-preview-title">발송 예시</div><pre>${esc(caseReceiptSmsPreview(c))}</pre></div>`;
 }
 function shouldFillConsultationNote(c){
   const note=String(((c.note||{}).c3)||"").trim();
@@ -2941,7 +2994,7 @@ function sendComplaintReceiptSmsFromCase(id){
       phone:c.phone||"",
       building:c.building||"",
       address:c.address||"",
-      room:c.room||"",
+      room:caseDisplayRoom(c)||c.room||"",
       issueType:c.issueType||"",
       visitTime:c.visitTime||"",
       summary:c.summary||""
@@ -3825,9 +3878,10 @@ function maskSmsPhone(value){
   return digits.slice(0,3)+"-****-"+digits.slice(-4);
 }
 function buildVendorMmsMessage(c){
+  const room=caseDisplayRoom(c)||"호실 미입력";
   return [
     "[BRING Care 견적요청]",
-    `${c.building||"건물 미입력"} / ${c.room||"호실 미입력"}`,
+    `${c.building||"건물 미입력"} / ${room}`,
     `주소: ${c.address||"주소 미입력"}`,
     `문제: ${c.issueType||"문제 유형 미입력"} / ${c.vendorType||"업체 분류 미확인"}`,
     `방문 가능: ${c.visitTime||"협의 필요"}`,
@@ -4011,10 +4065,11 @@ function renderCaseDetail(){
       const nb=`<button class="cv-notebtn ${note?'has':''}" data-notetoggle="${s.k}" title="메모">📝</button>`;
       const noteClass=s.k==='c3'?'consultation':s.k==='c4'?'classification':'';
       const box=open?`<textarea class="cv-note ${noteClass}" data-note="${s.k}" placeholder="이 단계 메모 (민원 내용·선정 업체·금액 등)">${esc(note)}</textarea>`:"";
+      const receiptSmsPreview=open && s.k==='c2' && !/\[발송 예시/.test(note) ? renderReceiptSmsPreview(c) : "";
       const vendors=open && s.k==='c4' ? renderCaseVendorCandidates(c, st) : "";
       const quotes=open && s.k==='c6' ? renderQuoteUploadPanel(c, st) : "";
       const recommendation=open && s.k==='c7' ? renderRecommendedQuotePanel(c, st) : "";
-      return `<div class="cv-stepwrap"><div class="cv-step ${locked?'locked':st}">${chip}<div class="lbl">${esc(s.t)}</div>${act}${dc}${tb}${nb}</div>${box}${vendors}${quotes}${recommendation}</div>`;
+      return `<div class="cv-stepwrap"><div class="cv-step ${locked?'locked':st}">${chip}<div class="lbl">${esc(s.t)}</div>${act}${dc}${tb}${nb}</div>${box}${receiptSmsPreview}${vendors}${quotes}${recommendation}</div>`;
     }).join("")+
     (c.archived?`<button class="cv-del restore" id="cvRestore">↩ 보관 해제</button>`:`<button class="cv-del" id="cvDel">🗄 보관함으로 이동</button>`)+
     (c.log&&c.log.length?`<div class="cv-log"><div class="t" style="font-weight:700">기록</div>`+c.log.slice(0,8).map(l=>`<div class="t">· ${esc(l)}</div>`).join("")+`</div>`:"");
@@ -4096,8 +4151,9 @@ document.getElementById("noticeBtn").addEventListener("click", openNoticePanel);
 document.getElementById("noticeBanner").addEventListener("click", openNoticePanel);
 
 /* ===== 업데이트 알림(What's New) — 새 버전 나오면 자동 팝업 ===== */
-const APP_VERSION = "4.64";
+const APP_VERSION = "4.65";
 const CHANGELOG = [
+  { v:"4.65", d:"2026-07-10", items:["② 접수확인 메모에 발송 예시를 화면에서 항상 표시","기존 마스킹된 호실은 접수 요약에서 원래 호실을 찾아 표시"] },
   { v:"4.64", d:"2026-07-10", items:["⑦ 최적 추천이 생성되면 자동 완료 처리하고 ⑧ 건물주에 추천 발송을 바로 진행중으로 전환"] },
   { v:"4.63", d:"2026-07-10", items:["⑦ 추천 견적서의 원본/엑셀 링크 버튼을 ⑥ 견적 카드와 같은 디자인으로 통일"] },
   { v:"4.62", d:"2026-07-10", items:["⑦ 최적 추천에 선정된 브링 견적서 내용을 카드로 표시","추천 업체 정보, 금액, 품목, 원본/엑셀 링크를 한눈에 확인"] },
