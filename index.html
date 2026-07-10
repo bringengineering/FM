@@ -3569,16 +3569,30 @@ function applyStepAutomation(c, logEnabled){
   }
   if(c.status.c6==="done"){
     let cardChanged=false;
+    let stepChanged=false;
+    const hasRecommendation=hasPricedQuoteForRecommendation(c);
     if(shouldFillRecommendationNote(c)){
       c.note.c7=makeCheapestRecommendationNote(c);
       changed=true;
       cardChanged=true;
     }
-    if(c.status.c7!=="done" && c.status.c7!=="doing"){
+    if(hasRecommendation){
+      if(c.status.c7!=="done"){
+        c.status.c7="done";
+        changed=true;
+        stepChanged=true;
+      }
+      if(c.status.c8!=="done" && c.status.c8!=="doing"){
+        c.status.c8="doing";
+        changed=true;
+        stepChanged=true;
+      }
+    }else if(c.status.c7!=="done" && c.status.c7!=="doing"){
       c.status.c7="doing";
       changed=true;
     }
     if(cardChanged) messages.push("⑦ 최저가 기준 최적 추천 자동 생성");
+    if(stepChanged) messages.push("⑦ 최적 추천 완료 후 ⑧ 건물주에 추천 발송 진행중 전환");
   }
   if(logEnabled) messages.forEach(msg=>caseLog(c, msg));
   return changed;
@@ -4082,8 +4096,9 @@ document.getElementById("noticeBtn").addEventListener("click", openNoticePanel);
 document.getElementById("noticeBanner").addEventListener("click", openNoticePanel);
 
 /* ===== 업데이트 알림(What's New) — 새 버전 나오면 자동 팝업 ===== */
-const APP_VERSION = "4.63";
+const APP_VERSION = "4.64";
 const CHANGELOG = [
+  { v:"4.64", d:"2026-07-10", items:["⑦ 최적 추천이 생성되면 자동 완료 처리하고 ⑧ 건물주에 추천 발송을 바로 진행중으로 전환"] },
   { v:"4.63", d:"2026-07-10", items:["⑦ 추천 견적서의 원본/엑셀 링크 버튼을 ⑥ 견적 카드와 같은 디자인으로 통일"] },
   { v:"4.62", d:"2026-07-10", items:["⑦ 최적 추천에 선정된 브링 견적서 내용을 카드로 표시","추천 업체 정보, 금액, 품목, 원본/엑셀 링크를 한눈에 확인"] },
   { v:"4.61", d:"2026-07-10", items:["⑥ 진행중 상태에서 금액 있는 견적이 업로드되면 자동으로 ⑥ 완료 및 ⑦ 최적 추천 진행중 전환"] },
