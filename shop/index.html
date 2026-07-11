@@ -154,6 +154,40 @@
   .dspec span{color:var(--ink);font-weight:500}
   .dstate{color:#C4402F;font-weight:700}
 
+  /* ── 리치 상세본문 (detailHtml, BRING 파랑) ── */
+  .dbody{color:var(--ink)}
+  .dbody .rhero{position:relative}
+  .dbody .rhero img{width:100%;display:block;aspect-ratio:4/5;object-fit:cover}
+  .dbody .rhero .sc{position:absolute;inset:0;background:linear-gradient(180deg,rgba(9,24,44,0) 40%,rgba(9,24,44,.72) 100%)}
+  .dbody .rhero .cap{position:absolute;left:0;right:0;bottom:0;padding:26px 20px;color:#fff}
+  .dbody .rhero .eye{font-size:11.5px;font-weight:700;letter-spacing:.2em;opacity:.92;margin-bottom:10px}
+  .dbody .rhero h1{font-size:30px;font-weight:800;letter-spacing:-.02em;line-height:1.22;text-shadow:0 2px 16px rgba(0,0,0,.35)}
+  .dbody .rhero .sub{margin-top:10px;font-size:14.5px;opacity:.95;font-weight:500}
+  .dbody .rbrix{display:flex;align-items:center;justify-content:center;gap:14px;background:var(--brand);color:#fff;padding:16px 20px;text-align:center}
+  .dbody .rbrix .n{font-size:30px;font-weight:800;line-height:1;white-space:nowrap}
+  .dbody .rbrix .n small{font-size:15px;font-weight:700;margin-left:3px}
+  .dbody .rbrix .t{font-size:13px;font-weight:600;text-align:left}
+  .dbody .rbrix .t b{display:block;font-size:15px;font-weight:800}
+  .dbody section{padding:30px 20px;border-top:1px solid var(--line)}
+  .dbody .kick{font-size:11.5px;font-weight:800;letter-spacing:.14em;color:var(--brand);margin-bottom:10px}
+  .dbody h3{font-size:21px;font-weight:800;letter-spacing:-.02em;line-height:1.3;word-break:keep-all}
+  .dbody .lead{margin-top:14px;font-size:15px;line-height:1.85;color:var(--body);word-break:keep-all}
+  .dbody .pts{margin-top:20px;display:flex;flex-direction:column;gap:15px}
+  .dbody .pt{display:flex;gap:14px;align-items:flex-start}
+  .dbody .pt .ic{flex:none;width:42px;height:42px;border-radius:12px;background:var(--chipbg);color:var(--brand);display:flex;align-items:center;justify-content:center;font-size:21px}
+  .dbody .pt b{display:block;font-size:15px;font-weight:800}
+  .dbody .pt span{font-size:13.5px;color:var(--mut)}
+  .dbody figure{margin:18px 0 0}
+  .dbody figure img{width:100%;border-radius:14px;display:block}
+  .dbody figcaption{margin-top:9px;font-size:12.5px;color:var(--mut);text-align:center}
+  .dbody table{width:100%;border-collapse:collapse;margin-top:16px;font-size:14.5px}
+  .dbody th,.dbody td{text-align:left;padding:12px 4px;border-bottom:1px solid var(--line);vertical-align:top}
+  .dbody th{width:84px;color:var(--mut);font-weight:600}
+  .dbody td{color:var(--ink);font-weight:600}
+  .dbody .store2{display:flex;flex-direction:column;gap:10px;font-size:14px;color:var(--body);margin-top:14px}
+  .dbody .store2 div{display:flex;gap:10px}
+  .dbody .store2 b{flex:none;width:52px;color:var(--mut);font-weight:600}
+
   /* 하단 주문 바 (모바일 sticky) */
   .orderbar{
     margin-top:auto;position:sticky;bottom:0;z-index:9;background:#fff;
@@ -508,7 +542,10 @@ function renderDetail(id){
   const rest = photos.length>1
     ? `<div class="dgallery">${photos.slice(1).map(u=>`<img src="${escAttr(u)}" alt="${esc(p.name||'상품 사진')}" loading="lazy">`).join("")}</div>`
     : "";
-  $("detailview").innerHTML = `
+  $("detailview").innerHTML = (p.detailHtml && String(p.detailHtml).trim()) ? (
+    `<div class="backrow" id="backrow"><span class="ar">←</span><span>전체 상품</span></div>`
+    + `<div class="dbody">${p.detailHtml}</div>`
+  ) : `
     <div class="backrow" id="backrow"><span class="ar">←</span><span>전체 상품</span></div>
     <div class="dhero${photos.length?'':' noimg'}">
       ${hero}
