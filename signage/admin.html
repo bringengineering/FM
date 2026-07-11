@@ -71,11 +71,14 @@
   .field input:focus,.field textarea:focus,.field select:focus{outline:none;border-color:var(--brand)}
   .field textarea{min-height:76px;resize:vertical}
   .grid2{display:grid;grid-template-columns:1fr 1fr;gap:12px}
-  .imgpick{border:1.5px dashed var(--line);border-radius:12px;padding:14px;text-align:center;cursor:pointer;color:var(--ink-dim);font-size:13.5px}
-  .imgpick:hover{border-color:var(--brand);color:var(--brand)}
-  .preview{margin-top:10px;border-radius:12px;overflow:hidden;display:none;position:relative}
-  .preview img{width:100%;aspect-ratio:16/10;object-fit:cover}
-  .preview .rm{position:absolute;top:8px;right:8px;background:rgba(22,32,46,.75);color:#fff;border:0;border-radius:99px;width:30px;height:30px;cursor:pointer;font-size:16px}
+  .galgrid{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-top:8px}
+  .galgrid .cell{position:relative;aspect-ratio:1/1;border-radius:10px;overflow:hidden;background:#eef2f7}
+  .galgrid .cell img{width:100%;height:100%;object-fit:cover;display:block}
+  .galgrid .cell .rm{position:absolute;top:5px;right:5px;background:rgba(22,32,46,.78);color:#fff;border:0;border-radius:99px;width:26px;height:26px;cursor:pointer;font-size:15px;line-height:1}
+  .galgrid .cell .b0{position:absolute;left:5px;bottom:5px;background:var(--brand);color:#fff;font-size:10.5px;font-weight:700;border-radius:6px;padding:2px 7px}
+  .galgrid .add{display:flex;flex-direction:column;gap:3px;align-items:center;justify-content:center;aspect-ratio:1/1;border:1.5px dashed var(--line);border-radius:10px;cursor:pointer;color:var(--ink-dim);font-size:12.5px}
+  .galgrid .add:hover{border-color:var(--brand);color:var(--brand)}
+  .galgrid .add span{font-size:22px;line-height:1}
   .switchrow{display:flex;gap:10px;align-items:center;justify-content:space-between;padding:11px 0;border-top:1px solid var(--line)}
   .switchrow .t{font-size:14px;font-weight:600}.switchrow .t small{display:block;color:var(--ink-dim);font-weight:400;font-size:12px}
   .sw{position:relative;width:48px;height:28px;flex:none}
@@ -194,10 +197,9 @@
   <div class="sheet">
     <h2 id="editTitle">새 상품</h2>
     <div class="field">
-      <label>상품 사진</label>
-      <div class="imgpick" id="imgPick">📷 사진 선택 (자동으로 압축됩니다)</div>
-      <input id="imgFile" type="file" accept="image/*" style="display:none">
-      <div class="preview" id="preview"><img id="previewImg"><button class="rm" id="imgRemove" title="사진 삭제">×</button></div>
+      <label>상품 사진 <small style="color:var(--ink-dim);font-weight:400">여러 장 가능 · 맨 앞이 대표사진</small></label>
+      <input id="imgFile" type="file" accept="image/*" multiple style="display:none">
+      <div class="galgrid" id="galGrid"></div>
     </div>
     <div class="field">
       <label>상품명 <span style="color:var(--danger)">*</span></label>
@@ -361,7 +363,7 @@ function badge(p){
 
 /* ── 상품 편집 모달 ── */
 let editId = null;
-let editPhoto = "";   // base64 or ""
+let editGallery = [];   // base64 사진 배열 (맨 앞이 대표)
 function openEdit(id){
   editId = id || null;
   const p = id ? PRODUCTS[id] : {};
@@ -373,25 +375,30 @@ function openEdit(id){
   $("eSort").value = (p.sort??"");
   $("eActive").checked = p.active !== false;
   $("eSold").checked = !!p.soldout;
-  setPhoto(p.photo||"");
+  editGallery = (Array.isArray(p.gallery) && p.gallery.length) ? p.gallery.slice()
+              : (p.photo ? [p.photo] : []);
+  renderGallery();
   $("editModal").classList.add("on");
 }
-function setPhoto(src){
-  editPhoto = src||"";
-  if(editPhoto){ $("previewImg").src = editPhoto; $("preview").style.display="block"; }
-  else { $("preview").style.display="none"; $("previewImg").src=""; }
+function renderGallery(){
+  const g = $("galGrid");
+  g.innerHTML = editGallery.map((u,i)=>
+    `<div class="cell"><img src="${u}"><button class="rm" data-rm="${i}" title="삭제">×</button>${i===0?'<span class="b0">대표</span>':''}</div>`
+  ).join("") + `<div class="add" id="galAdd"><span>＋</span>사진 추가</div>`;
+  $("galAdd").onclick = ()=>$("imgFile").click();
+  g.querySelectorAll("[data-rm]").forEach(b=> b.onclick=()=>{ editGallery.splice(+b.dataset.rm,1); renderGallery(); });
 }
 $("addBtn").onclick = ()=>openEdit(null);
 $("editCancel").onclick = ()=>$("editModal").classList.remove("on");
 $("editModal").addEventListener("click", e=>{ if(e.target===$("editModal")) $("editModal").classList.remove("on"); });
-$("imgPick").onclick = ()=>$("imgFile").click();
-$("imgRemove").onclick = ()=>setPhoto("");
 $("imgFile").addEventListener("change", async e=>{
-  const f = e.target.files[0]; if(!f) return;
-  $("imgPick").textContent = "압축 중…";
-  try{ setPhoto(await resizeImage(f, 900, .82)); }
-  catch(err){ toast("이미지 처리 실패"); }
-  $("imgPick").textContent = "📷 사진 선택 (자동으로 압축됩니다)";
+  const files = [...e.target.files]; if(!files.length) return;
+  const add = $("galAdd"); if(add) add.textContent = "압축 중…";
+  for(const f of files){
+    try{ editGallery.push(await resizeImage(f, 900, .82)); }
+    catch(err){ toast("이미지 처리 실패"); }
+  }
+  renderGallery();
   e.target.value="";
 });
 
@@ -425,7 +432,8 @@ $("editSave").onclick = async ()=>{
     sort: $("eSort").value===""? 999 : Number($("eSort").value),
     active: $("eActive").checked,
     soldout: $("eSold").checked,
-    photo: editPhoto||"",
+    photo: editGallery[0]||"",
+    gallery: editGallery,
     updatedAt: firebase.database.ServerValue.TIMESTAMP
   };
   const btn = $("editSave"); btn.disabled=true; btn.textContent="저장 중…";

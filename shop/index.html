@@ -131,7 +131,9 @@
   .backrow .ar{font-size:16px}
 
   .dgrid{display:flex;flex-direction:column}
-  .dphoto{width:100%;height:340px;background:var(--ph) center/cover no-repeat}
+  .dgallery{display:flex;flex-direction:column;gap:8px}
+  .dgallery img{width:100%;display:block}
+  .dphoto{width:100%;aspect-ratio:1/1;background:var(--ph) center/cover no-repeat}
   .dphoto.noimg{display:flex;align-items:center;justify-content:center;color:#B9C9DC;font-size:60px}
   .dinfo{display:flex;flex-direction:column;gap:14px;padding:22px 20px 18px}
   .badges{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
@@ -263,7 +265,8 @@
     .dwide{padding:0 32px 72px}
     .dgrid{display:grid;grid-template-columns:1.1fr 1fr;gap:44px;align-items:start;padding-top:22px}
     .dphoto{height:auto;aspect-ratio:1/1;border-radius:18px}
-    .dinfo{padding:8px 0 0;gap:18px}
+    .dgallery img{border-radius:18px}
+    .dinfo{padding:8px 0 0;gap:18px;position:sticky;top:84px}
     .dname{font-size:30px;line-height:1.28}
     .ddesc{font-size:15.5px;line-height:1.7}
     .dprice{font-size:32px}
@@ -493,13 +496,15 @@ function renderDetail(id){
   if(!p){ $("detailview").innerHTML = notFound(); $("orderbar").style.display="none"; return; }
   $("orderbar").style.display = "";
   const soldout = !!p.soldout;
-  const img = p.photo
-    ? `<div class="dphoto" style="background-image:url('${escAttr(p.photo)}')"></div>`
+  const photos = (Array.isArray(p.gallery) && p.gallery.length) ? p.gallery
+               : (p.photo ? [p.photo] : []);
+  const gal = photos.length
+    ? `<div class="dgallery">${photos.map(u=>`<img src="${escAttr(u)}" alt="${esc(p.name||'상품 사진')}" loading="lazy">`).join("")}</div>`
     : `<div class="dphoto noimg">🛍️</div>`;
   $("detailview").innerHTML = `
     <div class="backrow" id="backrow"><span class="ar">←</span><span>전체 상품</span></div>
     <div class="dgrid">
-      ${img}
+      ${gal}
       <div class="dinfo">
         <div class="badges">
           ${p.vendor?`<span class="bd1">${esc(p.vendor)}</span>`:""}
