@@ -129,6 +129,7 @@
   <section id="tab-products" class="on">
     <div class="toolbar">
       <button class="btn btn-primary" id="addBtn">+ 새 상품</button>
+      <button class="btn btn-ghost" id="bulkBtn">⚡ 일괄 등록</button>
       <span class="count" id="pCount"></span>
     </div>
     <div class="plist" id="plist"></div>
@@ -231,6 +232,31 @@
     <div class="actions">
       <button class="btn btn-ghost" id="editCancel">취소</button>
       <button class="btn btn-primary" id="editSave">저장</button>
+    </div>
+  </div>
+</div>
+
+<!-- 일괄 등록 모달 -->
+<div class="modal" id="bulkModal">
+  <div class="sheet">
+    <h2>⚡ 일괄 등록</h2>
+    <p style="font-size:13px;color:var(--ink-dim);line-height:1.6;margin-bottom:12px">
+      한 줄에 상품 하나. <b>세로줄( | )</b>로 칸을 나눕니다.<br>
+      <code style="background:#f1f1f1;padding:2px 5px;border-radius:4px">상품명 | 가격 | 위탁처 | 설명</code>
+      <br>가격·위탁처·설명은 비워도 됩니다. 가격 0 = 가격문의. 사진은 등록 후 상품을 눌러 채우세요.
+    </p>
+    <button class="btn btn-ghost" id="bulkFill" style="margin-bottom:10px">진과 상품 목록 불러오기</button>
+    <div class="field">
+      <textarea id="bulkText" style="min-height:220px;font-family:monospace;font-size:13px" placeholder="로얄 대석 자두 | 9000 | 진과&#10;대극천 복숭아 | 12700 | 진과"></textarea>
+    </div>
+    <div id="bulkPreview" style="font-size:13px;color:var(--ink-dim);margin-bottom:12px"></div>
+    <div class="switchrow">
+      <div class="t">기존 상품 유지 <small>끄면 등록 전에 기존 상품을 모두 지웁니다</small></div>
+      <label class="sw"><input id="bulkKeep" type="checkbox" checked><span></span></label>
+    </div>
+    <div class="actions">
+      <button class="btn btn-ghost" id="bulkCancel">취소</button>
+      <button class="btn btn-primary" id="bulkSave">등록</button>
     </div>
   </div>
 </div>
@@ -411,6 +437,69 @@ $("editSave").onclick = async ()=>{
   }catch(e){ console.error(e); toast("저장 실패 — 사진이 너무 크면 다시 시도하세요"); }
   finally{ btn.disabled=false; btn.textContent="저장"; }
 };
+/* ══════════ 일괄 등록 ══════════ */
+/* 가격 = 진과 공급가 + 10% (판매가). 공급가는 주석 참고 */
+const JINGWA_LIST = [
+  "로얄 대석 자두 | 9900 | 진과 | [고품위 라인]",                    // 공급 9,000
+  "대극천 복숭아 | 13970 | 진과 | [고품위 라인]",                   // 공급 12,700
+  "레드볼 천도 복숭아 | 10450 | 진과 | [고품위 라인]",              // 공급 9,500
+  "완주 대둔산 흑곶감 | 14300 | 진과 | [계약출고·공통 라인]",        // 공급 13,000
+  "유럽종 완숙 토마토 최상품 | 10450 | 진과 | [산지직송·공통 라인]",  // 공급 9,500
+  "스테비아 대추 방울토마토 | 11000 | 진과 | [산지직송·공통 라인]",   // 공급 10,000
+  "데일리 논산 방울토마토 | 14850 | 진과 | [산지직송·공통 라인]",     // 공급 13,500
+  "쫀득 두툼 건시 봉지곶감 + 반건시곶감 | 11550 | 진과 | [공통 라인]", // 공급 10,500
+  "초SS급 고당도 감말랭이 | 13200 | 진과 | [계약출고·공통 라인]",     // 공급 12,000
+  "흑곶감 선물세트 | 16940 | 진과 | [계약출고·선물세트]",            // 공급 15,400
+  "상주 건시·반건시 선물세트 | 31900 | 진과 | [계약출고·선물세트]",   // 공급 29,000
+  "호두말이 선물세트 | 20900 | 진과 | [계약출고·선물세트]"           // 공급 19,000
+].join("\n");
+
+function parseBulk(text){
+  return text.split("\n").map(l=>l.trim()).filter(Boolean).map(line=>{
+    const c = line.split("|").map(s=>s.trim());
+    const name = c[0]||"";
+    const price = c[1]!=null ? (Number(String(c[1]).replace(/[^0-9]/g,""))||0) : 0;
+    return { name, price, vendor:c[2]||"", desc:c[3]||"" };
+  }).filter(p=>p.name);
+}
+function renderBulkPreview(){
+  const items = parseBulk($("bulkText").value);
+  $("bulkPreview").innerHTML = items.length
+    ? `<b>${items.length}개</b> 상품이 등록됩니다.`
+    : "등록할 상품이 없습니다. (한 줄에 하나씩)";
+}
+$("bulkBtn").onclick = ()=>{ $("bulkModal").classList.add("on"); renderBulkPreview(); };
+$("bulkCancel").onclick = ()=>$("bulkModal").classList.remove("on");
+$("bulkModal").addEventListener("click", e=>{ if(e.target===$("bulkModal")) $("bulkModal").classList.remove("on"); });
+$("bulkText").addEventListener("input", renderBulkPreview);
+$("bulkFill").onclick = ()=>{ $("bulkText").value = JINGWA_LIST; renderBulkPreview(); };
+
+$("bulkSave").onclick = async ()=>{
+  const items = parseBulk($("bulkText").value);
+  if(!items.length){ toast("등록할 상품이 없습니다"); return; }
+  const wipe = !$("bulkKeep").checked;
+  if(!confirm(`${items.length}개 상품을 등록합니다.` + (wipe? "\n\n⚠️ 기존 상품은 모두 삭제됩니다." : "") + "\n\n진행할까요?")) return;
+  const btn = $("bulkSave"); btn.disabled=true; btn.textContent="등록 중…";
+  try{
+    if(wipe) await db.ref("signage/consign").remove();
+    const baseSort = wipe ? 0 : (Math.max(0, ...Object.values(PRODUCTS).map(p=>p.sort||0)) );
+    const ts = firebase.database.ServerValue.TIMESTAMP;
+    const updates = {};
+    items.forEach((p,i)=>{
+      const key = db.ref("signage/consign").push().key;
+      updates[key] = {
+        name:p.name, price:p.price, vendor:p.vendor, desc:p.desc,
+        sort: baseSort + (i+1)*10, active:true, soldout:false, photo:"",
+        createdAt:ts, updatedAt:ts
+      };
+    });
+    await db.ref("signage/consign").update(updates);
+    $("bulkModal").classList.remove("on");
+    toast(`${items.length}개 상품이 등록되었습니다`);
+  }catch(e){ console.error(e); toast("일괄 등록 실패 — 잠시 후 다시 시도하세요"); }
+  finally{ btn.disabled=false; btn.textContent="등록"; }
+};
+
 async function delProduct(id){
   const p = PRODUCTS[id];
   if(!confirm(`'${p?.name||"이 상품"}' 을(를) 삭제할까요?`)) return;
