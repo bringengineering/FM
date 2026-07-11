@@ -146,8 +146,9 @@ NCP Secret Key는 GitHub나 HTML 화면에 절대 넣지 않습니다. Apps Scri
 우선순위가 자동으로 정리되고, 할 일(To-Do)이 점수순으로 자동 정렬되며,
 시트1(대시보드)에 정량·정성 지표가 실시간으로 자동 갱신되는 Apps Script 코드입니다.
 
-- 대상 시트: https://docs.google.com/spreadsheets/d/1u01R6dh7jBRYpCykNdu0jYCchvmTLzrxUfBXZ2pn3lc/edit
+- 대상 시트(원본은 그대로 두고 만든 새 파일): https://docs.google.com/spreadsheets/d/1cOsKbyYV6BAYJrGar5rJ8cIftH4ZEeXPFprjs_oXhys/edit
 - 만들어지는 탭: `대시보드`(시트1) · `과업입력` · `우선순위ToDo` · `설정`
+- 원본 현황표(`1u01R6dh7jBRYpCykNdu0jYCchvmTLzrxUfBXZ2pn3lc`)에 만들려면 코드 상단 `SPREADSHEET_ID`를 원본 ID로 바꾸면 됩니다.
 
 ## 설치 순서
 

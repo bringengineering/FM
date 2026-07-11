@@ -11,7 +11,7 @@
  */
 
 const PS_CONFIG = {
-  SPREADSHEET_ID: "1u01R6dh7jBRYpCykNdu0jYCchvmTLzrxUfBXZ2pn3lc",
+  SPREADSHEET_ID: "1cOsKbyYV6BAYJrGar5rJ8cIftH4ZEeXPFprjs_oXhys",
   WEEK_LABEL: "2026년 7월 2주차 (7/6 ~ 7/12)",
   MAX_ROWS: 200, // 과업 입력 최대 행
 };
