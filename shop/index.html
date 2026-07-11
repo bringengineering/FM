@@ -131,25 +131,28 @@
   .backrow .ar{font-size:16px}
 
   .dgrid{display:flex;flex-direction:column}
-  .dgallery{display:flex;flex-direction:column;gap:8px}
+  /* ── 상세페이지 (에디토리얼 · BRING 파랑) ── */
+  .dhero{position:relative;background:var(--ph)}
+  .dhero img{width:100%;display:block;aspect-ratio:4/5;object-fit:cover}
+  .dhero.noimg{aspect-ratio:4/5;background:linear-gradient(160deg,var(--brand),#0B416F)}
+  .dscrim{position:absolute;inset:0;background:linear-gradient(180deg,rgba(9,24,44,0) 42%,rgba(9,24,44,.74) 100%)}
+  .dcap{position:absolute;left:0;right:0;bottom:0;padding:26px 20px 26px;color:#fff}
+  .deye{font-size:11.5px;font-weight:700;letter-spacing:.18em;opacity:.92;margin-bottom:9px}
+  .dttl{font-size:27px;font-weight:800;letter-spacing:-.02em;line-height:1.25;text-shadow:0 2px 16px rgba(0,0,0,.35);word-break:keep-all}
+  .dband{display:flex;align-items:center;justify-content:space-between;gap:12px;background:var(--brand);color:#fff;padding:14px 20px}
+  .dband .dbrand{font-size:12px;font-weight:700;border:1px solid rgba(255,255,255,.55);border-radius:999px;padding:4px 11px;white-space:nowrap}
+  .dband .dprice{font-size:23px;font-weight:800;color:#fff;white-space:nowrap}
+  .dband .dprice.ask{font-size:16px}
+  .dgallery{display:flex;flex-direction:column;gap:8px;padding:8px 0 0}
   .dgallery img{width:100%;display:block}
-  .dphoto{width:100%;aspect-ratio:1/1;background:var(--ph) center/cover no-repeat}
-  .dphoto.noimg{display:flex;align-items:center;justify-content:center;color:#B9C9DC;font-size:60px}
-  .dinfo{display:flex;flex-direction:column;gap:14px;padding:22px 20px 18px}
-  .badges{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
-  .badges .bd1{font-size:11px;font-weight:600;color:var(--brand);background:var(--chipbg);border-radius:999px;padding:4px 10px}
-  .badges .bd2{font-size:11px;font-weight:600;color:#fff;background:var(--brand);border-radius:999px;padding:4px 10px}
-  .dname{font-size:23px;font-weight:800;line-height:1.3;color:var(--ink);text-wrap:pretty}
-  .ddesc{font-size:14px;line-height:1.65;color:var(--sub);white-space:pre-wrap}
-  .dprice{font-size:27px;font-weight:800;color:var(--brand)}
-  .dprice small{font-size:16px;font-weight:600;color:var(--mut)}
-  .dprice.ask{font-size:20px}
-  .dsep{height:1px;background:var(--line)}
-  .dmeta{display:flex;flex-direction:column;gap:10px}
-  .dmeta div{display:flex;gap:12px;font-size:13.5px;line-height:1.5}
-  .dmeta b{width:56px;flex:none;color:var(--mut);font-weight:400}
-  .dmeta span{color:var(--body)}
-  .dstate{color:#C4402F !important;font-weight:700}
+  .dsec{padding:26px 20px;border-top:1px solid var(--line)}
+  .kick{font-size:11.5px;font-weight:800;letter-spacing:.14em;color:var(--brand);margin-bottom:12px}
+  .ddesc{font-size:15px;line-height:1.8;color:var(--body);white-space:pre-wrap;word-break:keep-all}
+  .dspec{display:flex;flex-direction:column;gap:11px;font-size:14px}
+  .dspec div{display:flex;gap:12px;line-height:1.5}
+  .dspec b{flex:none;width:60px;color:var(--mut);font-weight:600}
+  .dspec span{color:var(--ink);font-weight:500}
+  .dstate{color:#C4402F;font-weight:700}
 
   /* 하단 주문 바 (모바일 sticky) */
   .orderbar{
@@ -261,25 +264,25 @@
     .item .pr{font-size:18px}
     .item .pr small{font-size:13px}
 
-    .backrow{border-bottom:0;padding:22px 32px 0;width:fit-content;font-size:14px}
-    .dwide{padding:0 32px 72px}
-    .dgrid{display:grid;grid-template-columns:1.1fr 1fr;gap:44px;align-items:start;padding-top:22px}
-    .dphoto{height:auto;aspect-ratio:1/1;border-radius:18px}
-    .dgallery img{border-radius:18px}
-    .dinfo{padding:8px 0 0;gap:18px;position:sticky;top:84px}
-    .dname{font-size:30px;line-height:1.28}
-    .ddesc{font-size:15.5px;line-height:1.7}
-    .dprice{font-size:32px}
-    .dprice small{font-size:18px}
-    .badges .bd1,.badges .bd2{font-size:12px;padding:5px 12px}
-    .dmeta div{font-size:14.5px}
-    .dmeta b{width:60px}
+    /* 상세페이지 = 중앙 정렬 단일 컬럼(잡지형) */
+    .backrow{border-bottom:0;padding:20px 20px 0;width:fit-content;font-size:14px;max-width:760px;margin:0 auto}
+    .dwide{max-width:760px;margin:0 auto;padding:0 0 40px}
+    .dhero{border-radius:0 0 4px 4px;overflow:hidden}
+    .dhero img{aspect-ratio:16/10}
+    .dhero.noimg{aspect-ratio:16/10}
+    .dttl{font-size:34px}
+    .dband{border-radius:12px;margin:2px 20px 0}
+    .dgallery{padding:10px 20px 0}
+    .dgallery img{border-radius:14px}
+    .dsec{padding:30px 20px}
+    .ddesc{font-size:16px}
+    .dspec{font-size:15px}
 
-    .orderbar{position:static;border-top:0;padding:0 32px 72px;background:transparent}
-    .obrow{max-width:1160px;margin:0 auto;width:100%;justify-content:flex-start}
-    .btn-primary{flex:none;width:320px;height:56px;font-size:17px}
+    .orderbar{position:sticky;bottom:0;border-top:1px solid var(--line);padding:14px 20px 20px;background:rgba(255,255,255,.95)}
+    .obrow{max-width:760px;margin:0 auto;width:100%}
+    .btn-primary{flex:1;height:56px;font-size:17px}
     .btn-kakao{height:56px;padding:0 22px;font-size:15px}
-    .obcap{max-width:1160px;margin:0 auto;width:100%;text-align:left;font-size:12px}
+    .obcap{max-width:760px;margin:0 auto;width:100%;text-align:center;font-size:12px}
 
     footer{display:block;padding:30px 32px 36px}
     footer .fin{display:flex;align-items:flex-start;justify-content:space-between;gap:24px;flex-wrap:wrap}
@@ -498,30 +501,39 @@ function renderDetail(id){
   const soldout = !!p.soldout;
   const photos = (Array.isArray(p.gallery) && p.gallery.length) ? p.gallery
                : (p.photo ? [p.photo] : []);
-  const gal = photos.length
-    ? `<div class="dgallery">${photos.map(u=>`<img src="${escAttr(u)}" alt="${esc(p.name||'상품 사진')}" loading="lazy">`).join("")}</div>`
-    : `<div class="dphoto noimg">🛍️</div>`;
+  const ask = (!p.price||Number(p.price)<=0) ? "ask" : "";
+  const hero = photos.length
+    ? `<img src="${escAttr(photos[0])}" alt="${esc(p.name||'상품 사진')}">`
+    : "";
+  const rest = photos.length>1
+    ? `<div class="dgallery">${photos.slice(1).map(u=>`<img src="${escAttr(u)}" alt="${esc(p.name||'상품 사진')}" loading="lazy">`).join("")}</div>`
+    : "";
   $("detailview").innerHTML = `
     <div class="backrow" id="backrow"><span class="ar">←</span><span>전체 상품</span></div>
-    <div class="dgrid">
-      ${gal}
-      <div class="dinfo">
-        <div class="badges">
-          ${p.vendor?`<span class="bd1">${esc(p.vendor)}</span>`:""}
-          <span class="bd2">1층 실물 전시 중</span>
-        </div>
-        <div>
-          <div class="dname">${esc(p.name||"이름 없음")}</div>
-          ${p.desc?`<div class="ddesc" style="margin-top:8px">${esc(p.desc)}</div>`:""}
-        </div>
-        <div class="dprice ${(!p.price||Number(p.price)<=0)?'ask':''}">${priceHtml(p)}</div>
-        <div class="dsep"></div>
-        <div class="dmeta">
-          <div><b>수령</b><span>BRING 1층 데스크 (평일 9–18시)</span></div>
-          <div><b>결제</b><span>주문 접수 후 계좌이체 안내</span></div>
-          <div><b>문의</b><span>관리사무실 ${esc(SETTINGS.phone)}</span></div>
-          ${soldout?`<div><b>상태</b><span class="dstate">품절</span></div>`:""}
-        </div>
+    <div class="dhero${photos.length?'':' noimg'}">
+      ${hero}
+      <div class="dscrim"></div>
+      <div class="dcap">
+        <div class="deye">${esc(p.vendor||"BRING 위탁판매")} · BRING 1F MARKET</div>
+        <h1 class="dttl">${esc(p.name||"이름 없음")}</h1>
+      </div>
+    </div>
+    <div class="dband">
+      <span class="dbrand">1층 실물 전시 중</span>
+      <span class="dprice ${ask}">${priceHtml(p)}</span>
+    </div>
+    ${rest}
+    ${p.desc?`<div class="dsec"><div class="kick">상품 소개</div><div class="ddesc">${esc(p.desc)}</div></div>`:""}
+    <div class="dsec">
+      <div class="kick">상품 정보</div>
+      <div class="dspec">
+        <div><b>품명</b><span>${esc(p.name||"-")}</span></div>
+        ${p.vendor?`<div><b>판매처</b><span>${esc(p.vendor)}</span></div>`:""}
+        <div><b>가격</b><span>${priceHtml(p)}</span></div>
+        <div><b>수령</b><span>BRING 1층 데스크 (평일 9–18시)</span></div>
+        <div><b>결제</b><span>주문 접수 후 안내</span></div>
+        <div><b>문의</b><span>관리사무실 ${esc(SETTINGS.phone)}</span></div>
+        ${soldout?`<div><b>상태</b><span class="dstate">품절</span></div>`:""}
       </div>
     </div>`;
   $("backrow").addEventListener("click", () => go(null));
