@@ -526,7 +526,7 @@ function renderList(){
 
 function priceHtml(p){
   if(!p.price || Number(p.price) <= 0) return "가격 문의";
-  return won(p.price) + "<small>원</small>";
+  return won(p.price) + "<small>원" + (p.priceFrom ? "~" : "") + "</small>";
 }
 
 /* ── 상품별 외부 주문 URL (구글 폼 등) ───── */
