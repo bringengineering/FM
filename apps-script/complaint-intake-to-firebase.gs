@@ -318,7 +318,7 @@ function handleVendorEstimateMms_(payload) {
   selectedVendors.forEach(vendor => {
     const to = vendorSmsPhone_(vendor);
     if (!to) {
-      result.skipped.push({ name: vendor.name || "업체명 없음", reason: "발송 가능한 전화번호 없음" });
+      result.skipped.push({ name: vendor.name || "업체명 없음", reason: "MMS 가능한 휴대폰 번호 없음" });
       return;
     }
 
@@ -327,7 +327,11 @@ function handleVendorEstimateMms_(payload) {
       name: vendor.name || "업체명 없음",
       category: vendor.category || "",
       phoneMasked: maskPhone_(to),
-      message: sendResult.message
+      message: sendResult.message,
+      requestId: sendResult.requestId || "",
+      statusCode: sendResult.statusCode || "",
+      statusName: sendResult.statusName || "",
+      responseCode: sendResult.responseCode || ""
     };
     if (sendResult.ok) {
       result.sent.push(item);
@@ -466,9 +470,16 @@ function sendSensMms_(to, content, fileId, label, config) {
     files: [{ fileId: fileId }]
   };
   const response = sensPostJson_(uri, payload, config);
-  return response.ok
-    ? { ok: true, message: "MMS 발송요청 완료(" + label + ")" }
-    : { ok: false, message: "MMS 발송실패(" + label + "): " + response.message };
+  if (!response.ok) return { ok: false, message: "MMS 발송실패(" + label + "): " + response.message };
+  const receipt = sensResponseReceipt_(response.json);
+  return {
+    ok: true,
+    message: "MMS 발송요청 완료(" + label + ")",
+    requestId: receipt.requestId,
+    statusCode: receipt.statusCode,
+    statusName: receipt.statusName,
+    responseCode: response.code
+  };
 }
 
 function sensPostJson_(uri, payload, config) {
@@ -515,6 +526,15 @@ function findSensFileId_(value) {
   return "";
 }
 
+function sensResponseReceipt_(json) {
+  json = json && typeof json === "object" ? json : {};
+  return {
+    requestId: String(json.requestId || json.requestID || ""),
+    statusCode: String(json.statusCode || ""),
+    statusName: String(json.statusName || json.status || "")
+  };
+}
+
 function normalizeVendorForMms_(vendor) {
   vendor = vendor || {};
   return {
@@ -534,7 +554,7 @@ function normalizeVendorForMms_(vendor) {
 function vendorSmsPhone_(vendor) {
   const raw = [vendor.phone, vendor.mobile, vendor.tel].filter(Boolean).join("\n");
   const phones = extractPhones_(raw);
-  return phones.find(phone => /^01[016789]\d{7,8}$/.test(phone)) || phones[0] || "";
+  return phones.find(phone => /^01[016789]\d{7,8}$/.test(phone)) || "";
 }
 
 function extractPhones_(value) {
@@ -600,7 +620,11 @@ function makeVendorMmsNote_(result) {
   if (result.sent && result.sent.length) {
     lines.push("");
     lines.push("[발송 완료]");
-    result.sent.forEach(item => lines.push("- " + item.name + " / " + item.phoneMasked + " / " + item.message));
+    result.sent.forEach(item => {
+      const tracking = item.requestId ? " / 요청ID: " + item.requestId : "";
+      const sensStatus = item.statusCode || item.statusName ? " / SENS: " + [item.statusCode, item.statusName].filter(Boolean).join(" ") : "";
+      lines.push("- " + item.name + " / " + item.phoneMasked + " / " + item.message + tracking + sensStatus);
+    });
   }
   if (result.failed && result.failed.length) {
     lines.push("");
