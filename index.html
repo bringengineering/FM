@@ -2263,6 +2263,9 @@ function caseReceiptSmsPreview(c){
 function renderReceiptSmsPreview(c){
   return `<div class="cv-sms-preview"><div class="cv-sms-preview-title">발송 예시</div><pre>${esc(caseReceiptSmsPreview(c))}</pre></div>`;
 }
+function renderVendorMmsPreview(c){
+  return `<div class="cv-sms-preview"><div class="cv-sms-preview-title">발송 예시 - 업체 MMS</div><pre>${esc(buildVendorMmsMessage(c))}</pre></div>`;
+}
 function shouldFillConsultationNote(c){
   const note=String(((c.note||{}).c3)||"").trim();
   if(!note) return true;
@@ -4200,10 +4203,11 @@ function renderCaseDetail(){
       const noteClass=s.k==='c3'?'consultation':s.k==='c4'?'classification':'';
       const box=open?`<textarea class="cv-note ${noteClass}" data-note="${s.k}" placeholder="이 단계 메모 (민원 내용·선정 업체·금액 등)">${esc(note)}</textarea>`:"";
       const receiptSmsPreview=open && s.k==='c2' && !/\[발송 예시/.test(note) ? renderReceiptSmsPreview(c) : "";
+      const vendorMmsPreview=open && s.k==='c5' && !/업체 MMS 견적 요청|업체 MMS 발송 요청 중|업체 MMS 발송 실패/.test(note) ? renderVendorMmsPreview(c) : "";
       const vendors=open && s.k==='c4' ? renderCaseVendorCandidates(c, st) : "";
       const quotes=open && s.k==='c6' ? renderQuoteUploadPanel(c, st) : "";
       const recommendation=open && s.k==='c7' ? renderRecommendedQuotePanel(c, st) : "";
-      return `<div class="cv-stepwrap"><div class="cv-step ${locked?'locked':st}">${chip}<div class="lbl">${esc(s.t)}</div>${act}${dc}${tb}${nb}</div>${box}${receiptSmsPreview}${vendors}${quotes}${recommendation}</div>`;
+      return `<div class="cv-stepwrap"><div class="cv-step ${locked?'locked':st}">${chip}<div class="lbl">${esc(s.t)}</div>${act}${dc}${tb}${nb}</div>${box}${receiptSmsPreview}${vendorMmsPreview}${vendors}${quotes}${recommendation}</div>`;
     }).join("")+
     (c.archived?`<button class="cv-del restore" id="cvRestore">↩ 보관 해제</button>`:`<button class="cv-del" id="cvDel">🗄 보관함으로 이동</button>`)+
     (c.log&&c.log.length?`<div class="cv-log"><div class="t" style="font-weight:700">기록</div>`+c.log.slice(0,8).map(l=>`<div class="t">· ${esc(l)}</div>`).join("")+`</div>`:"");
@@ -4285,8 +4289,9 @@ document.getElementById("noticeBtn").addEventListener("click", openNoticePanel);
 document.getElementById("noticeBanner").addEventListener("click", openNoticePanel);
 
 /* ===== 업데이트 알림(What's New) — 새 버전 나오면 자동 팝업 ===== */
-const APP_VERSION = "4.76";
+const APP_VERSION = "4.77";
 const CHANGELOG = [
+  { v:"4.77", d:"2026-07-13", items:["⑤ 업체 견적 요청 메모에 MMS 발송 예시 표시","발송 결과가 없을 때 실제 업체에게 보낼 문구를 미리 확인"] },
   { v:"4.76", d:"2026-07-13", items:["⑤ 선택 업체 MMS 발송 완료 기준 정리","선택한 업체 전체 발송 성공 시에만 ⑤ 완료 및 ⑥ 견적 비교 진행중으로 전환"] },
   { v:"4.75", d:"2026-07-13", items:["④ 업체 후보 선택/해제 직후 실시간 동기화로 체크가 깜빡이는 문제 수정","선택 직후에는 방금 누른 값을 잠시 우선 적용해 화면 흔들림 방지"] },
   { v:"4.74", d:"2026-07-13", items:["④ 업체 후보 선택 해제가 다시 살아나는 문제 수정","업체명에 슬래시 같은 문자가 있어도 선택 저장/해제가 안정적으로 동작하도록 내부 ID 정리"] },
