@@ -1,0 +1,723 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="format-detection" content="telephone=no">
+<title>BRING 1F 위탁판매</title>
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/variable/pretendardvariable-dynamic-subset.min.css">
+<style>
+  /* ── 디자인 토큰 (핸드오프 명세) ─────────────── */
+  :root{
+    --brand:#0F58A0;
+    --brand-hover:#1A6EC2;
+    --ink:#16233A;
+    --body:#33445C;
+    --sub:#5C6B80;
+    --mut:#8AA5C4;
+    --cap:#9DB2CA;
+    --bg-hero:#F0F6FC;
+    --chipbg:#EAF2FA;
+    --ph:#F0F4F9;
+    --line:#E3EBF4;
+    --line2:#CFDFF0;
+    --dark:#16233A;
+    --kakao:#FAE100;
+    --kakao-ink:#3C1E1E;
+  }
+  *{margin:0;padding:0;box-sizing:border-box}
+  html,body{height:100%}
+  body{
+    font-family:"Pretendard Variable",Pretendard,system-ui,-apple-system,"Malgun Gothic",sans-serif;
+    background:#e9eef4;color:var(--ink);
+    -webkit-font-smoothing:antialiased;
+    line-height:1.5;
+  }
+  a{color:var(--brand);text-decoration:none}
+  a:hover{color:var(--brand-hover)}
+  img{display:block;max-width:100%}
+  button{font-family:inherit}
+
+  .wrap{
+    max-width:480px;margin:0 auto;min-height:100vh;background:#fff;
+    box-shadow:0 0 40px rgba(15,40,70,.10);
+    display:flex;flex-direction:column;
+  }
+
+  /* ── 헤더 (sticky, 브랜드 블루) ─────────────── */
+  header{
+    position:sticky;top:0;z-index:10;background:var(--brand);
+    padding:10px 16px;
+  }
+  header .hin{display:flex;align-items:center;justify-content:space-between;gap:10px}
+  header .logo{cursor:pointer;border:0;background:transparent;padding:0}
+  header .logo img{width:170px;display:block}
+  header .hright{display:flex;align-items:center;gap:18px}
+  header .phone{display:none;font-size:13px;font-weight:600;color:rgba(255,255,255,.85);white-space:nowrap}
+  header .pill{
+    font-size:11px;font-weight:700;color:#fff;letter-spacing:.08em;
+    background:rgba(255,255,255,.16);border-radius:999px;padding:5px 11px;white-space:nowrap;
+  }
+
+  /* ── 홈: 히어로 ─────────────────────────────── */
+  .hero{
+    display:flex;flex-direction:column;gap:12px;
+    padding:26px 20px 20px;
+    background:linear-gradient(180deg,var(--bg-hero) 0%,#fff 100%);
+    border-bottom:1px solid #e9f0f8;
+  }
+  .hero .htxt{display:flex;flex-direction:column;gap:7px}
+  .hero .over{font-size:12px;font-weight:700;color:var(--brand);letter-spacing:.14em}
+  .hero h1{font-size:25px;font-weight:800;line-height:1.28;color:var(--ink);text-wrap:pretty}
+  .hero .hsub{font-size:13.5px;line-height:1.6;color:var(--sub);text-wrap:pretty}
+  .hero .chips{display:flex;gap:6px;flex-wrap:wrap}
+  .hero .chips span{
+    font-size:11.5px;font-weight:600;color:var(--brand);
+    background:#fff;border:1px solid var(--line2);border-radius:999px;padding:5px 11px;
+  }
+  .hero .chips span b{font-weight:700;margin-right:6px}
+
+  /* ── 홈: 상품 그리드 ────────────────────────── */
+  .sechead{display:flex;align-items:baseline;justify-content:space-between;padding:20px 20px 12px}
+  .sechead .t{font-size:16px;font-weight:800;color:var(--ink)}
+  .sechead .c{font-size:12px;color:var(--mut)}
+  .grid{display:grid;grid-template-columns:1fr 1fr;gap:12px;padding:0 16px 28px}
+  .item{
+    display:flex;flex-direction:column;background:#fff;
+    border:1px solid var(--line);border-radius:14px;overflow:hidden;cursor:pointer;
+    transition:box-shadow .15s,border-color .15s;
+  }
+  .item:active{transform:scale(.985)}
+  @media (hover:hover){.item:hover{border-color:var(--brand);box-shadow:0 4px 14px rgba(15,88,160,.12)}}
+  .item .thumb{width:100%;aspect-ratio:1/1;background:var(--ph) center/cover no-repeat;position:relative}
+  .item .thumb.noimg{display:flex;align-items:center;justify-content:center;color:#B9C9DC;font-size:34px}
+  .item .body{display:flex;flex-direction:column;gap:4px;padding:11px 12px 13px}
+  .item .vd{font-size:11px;font-weight:600;color:var(--mut)}
+  .item .nm{font-size:14px;font-weight:700;line-height:1.35;color:var(--ink);text-wrap:pretty;
+    display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
+  .item .pr{font-size:15px;font-weight:800;color:var(--brand)}
+  .item .pr small{font-size:12px;font-weight:600;color:var(--mut)}
+  .item .pr.ask{font-size:13px;font-weight:700}
+  .sold{
+    position:absolute;inset:0;background:rgba(22,35,58,.5);
+    display:flex;align-items:center;justify-content:center;
+  }
+  .sold::after{
+    content:"품절";color:#fff;font-weight:700;font-size:12.5px;letter-spacing:.12em;
+    border:1px solid rgba(255,255,255,.7);border-radius:999px;padding:6px 15px 5px;
+  }
+
+  /* ── 푸터 (다크) ────────────────────────────── */
+  footer{
+    margin-top:auto;background:var(--dark);
+    padding:24px 20px 28px;display:flex;flex-direction:column;gap:10px;
+  }
+  footer .fb{font-size:14px;font-weight:800;color:#fff;letter-spacing:.04em}
+  footer .fs{font-size:12px;line-height:1.7;color:#8FA2BD}
+  footer .fx{font-size:11px;color:#5C6B80}
+
+  /* ── 상세 ───────────────────────────────────── */
+  .detailview{display:none;flex-direction:column;flex:1}
+  body.detail .detailview{display:flex}
+  body.detail .listview{display:none}
+  .listview{display:flex;flex-direction:column;flex:1}
+
+  .backrow{
+    display:flex;align-items:center;gap:6px;padding:12px 14px;
+    border-bottom:1px solid var(--line);cursor:pointer;
+    color:var(--sub);font-size:13.5px;font-weight:600;
+  }
+  .backrow:hover{color:var(--brand)}
+  .backrow .ar{font-size:16px}
+
+  .dgrid{display:flex;flex-direction:column}
+  /* ── 상세페이지 (에디토리얼 · BRING 파랑) ── */
+  .dhero{position:relative;background:var(--ph)}
+  .dhero img{width:100%;display:block;aspect-ratio:4/5;object-fit:cover}
+  .dhero.noimg{aspect-ratio:4/5;background:linear-gradient(160deg,var(--brand),#0B416F)}
+  .dscrim{position:absolute;inset:0;background:linear-gradient(180deg,rgba(9,24,44,0) 42%,rgba(9,24,44,.74) 100%)}
+  .dcap{position:absolute;left:0;right:0;bottom:0;padding:26px 20px 26px;color:#fff}
+  .deye{font-size:11.5px;font-weight:700;letter-spacing:.18em;opacity:.92;margin-bottom:9px}
+  .dttl{font-size:27px;font-weight:800;letter-spacing:-.02em;line-height:1.25;text-shadow:0 2px 16px rgba(0,0,0,.35);word-break:keep-all}
+  .dband{display:flex;align-items:center;justify-content:space-between;gap:12px;background:var(--brand);color:#fff;padding:14px 20px}
+  .dband .dbrand{font-size:12px;font-weight:700;border:1px solid rgba(255,255,255,.55);border-radius:999px;padding:4px 11px;white-space:nowrap}
+  .dband .dprice{font-size:23px;font-weight:800;color:#fff;white-space:nowrap}
+  .dband .dprice.ask{font-size:16px}
+  .dgallery{display:flex;flex-direction:column;gap:8px;padding:8px 0 0}
+  .dgallery img{width:100%;display:block}
+  .dsec{padding:26px 20px;border-top:1px solid var(--line)}
+  .kick{font-size:11.5px;font-weight:800;letter-spacing:.14em;color:var(--brand);margin-bottom:12px}
+  .ddesc{font-size:15px;line-height:1.8;color:var(--body);white-space:pre-wrap;word-break:keep-all}
+  .dspec{display:flex;flex-direction:column;gap:11px;font-size:14px}
+  .dspec div{display:flex;gap:12px;line-height:1.5}
+  .dspec b{flex:none;width:60px;color:var(--mut);font-weight:600}
+  .dspec span{color:var(--ink);font-weight:500}
+  .dstate{color:#C4402F;font-weight:700}
+
+  /* ── 리치 상세본문 (detailHtml, BRING 파랑) ── */
+  .dbody{color:var(--ink)}
+  .dbody .rhero{position:relative}
+  .dbody .rhero img{width:100%;display:block;aspect-ratio:4/5;object-fit:cover}
+  .dbody .rhero .sc{position:absolute;inset:0;background:linear-gradient(180deg,rgba(9,24,44,0) 40%,rgba(9,24,44,.72) 100%)}
+  .dbody .rhero .cap{position:absolute;left:0;right:0;bottom:0;padding:26px 20px;color:#fff}
+  .dbody .rhero .eye{font-size:11.5px;font-weight:700;letter-spacing:.2em;opacity:.92;margin-bottom:10px}
+  .dbody .rhero h1{font-size:30px;font-weight:800;letter-spacing:-.02em;line-height:1.22;text-shadow:0 2px 16px rgba(0,0,0,.35)}
+  .dbody .rhero .sub{margin-top:10px;font-size:14.5px;opacity:.95;font-weight:500}
+  .dbody .rbrix{display:flex;align-items:center;justify-content:center;gap:14px;background:var(--brand);color:#fff;padding:16px 20px;text-align:center}
+  .dbody .rbrix .n{font-size:30px;font-weight:800;line-height:1;white-space:nowrap}
+  .dbody .rbrix .n small{font-size:15px;font-weight:700;margin-left:3px}
+  .dbody .rbrix .t{font-size:13px;font-weight:600;text-align:left}
+  .dbody .rbrix .t b{display:block;font-size:15px;font-weight:800}
+  .dbody section{padding:30px 20px;border-top:1px solid var(--line)}
+  .dbody .kick{font-size:11.5px;font-weight:800;letter-spacing:.14em;color:var(--brand);margin-bottom:10px}
+  .dbody h3{font-size:21px;font-weight:800;letter-spacing:-.02em;line-height:1.3;word-break:keep-all}
+  .dbody .lead{margin-top:14px;font-size:15px;line-height:1.85;color:var(--body);word-break:keep-all}
+  .dbody .pts{margin-top:20px;display:flex;flex-direction:column;gap:15px}
+  .dbody .pt{display:flex;gap:14px;align-items:flex-start}
+  .dbody .pt .ic{flex:none;width:42px;height:42px;border-radius:12px;background:var(--chipbg);color:var(--brand);display:flex;align-items:center;justify-content:center;font-size:21px}
+  .dbody .pt b{display:block;font-size:15px;font-weight:800}
+  .dbody .pt span{font-size:13.5px;color:var(--mut)}
+  .dbody figure{margin:18px 0 0}
+  .dbody figure img{width:100%;border-radius:14px;display:block}
+  .dbody figcaption{margin-top:9px;font-size:12.5px;color:var(--mut);text-align:center}
+  .dbody table{width:100%;border-collapse:collapse;margin-top:16px;font-size:14.5px}
+  .dbody th,.dbody td{text-align:left;padding:12px 4px;border-bottom:1px solid var(--line);vertical-align:top}
+  .dbody th{width:84px;color:var(--mut);font-weight:600}
+  .dbody td{color:var(--ink);font-weight:600}
+  .dbody .store2{display:flex;flex-direction:column;gap:10px;font-size:14px;color:var(--body);margin-top:14px}
+  .dbody .store2 div{display:flex;gap:10px}
+  .dbody .store2 b{flex:none;width:52px;color:var(--mut);font-weight:600}
+  .dbody .draft{background:#FFF7E6;border-bottom:1px solid #F0D89A;color:#8A6D1E;font-size:12.5px;padding:10px 20px;text-align:center;font-weight:600;line-height:1.5}
+  .dbody .draft b{color:#6E5410}
+  .dbody .need{color:#B8791A;background:#FFF7E6;border-radius:6px;padding:1px 8px;font-size:12.5px;font-weight:700}
+  .dbody .optbox{margin-top:18px;border:1.5px dashed #E7C98A;background:#FFFBF2;border-radius:14px;padding:18px}
+  .dbody .optbox .h{font-size:13px;font-weight:800;color:#8A6D1E;margin-bottom:10px}
+  .dbody .optrow{display:flex;justify-content:space-between;align-items:center;gap:12px;padding:9px 0;border-top:1px dotted #EAD9AE;font-size:14.5px}
+  .dbody .optrow:first-of-type{border-top:0}
+  .dbody .optrow .price{font-weight:800;color:var(--brand);white-space:nowrap}
+  .dbody .ref{margin-top:12px;font-size:12px;color:var(--mut);line-height:1.55}
+  .dbody .cta{margin-top:22px;display:block;background:var(--ink);color:#fff;text-align:center;padding:16px;border-radius:14px;font-weight:800;font-size:16px;text-decoration:none}
+
+  /* 하단 주문 바 (모바일 sticky) */
+  .orderbar{
+    margin-top:auto;position:sticky;bottom:0;z-index:9;background:#fff;
+    display:none;flex-direction:column;gap:8px;
+    padding:14px 20px calc(20px + env(safe-area-inset-bottom));
+    border-top:1px solid var(--line);
+  }
+  body.detail .orderbar{display:flex}
+  .obrow{display:flex;gap:10px}
+  .btn{
+    border:0;border-radius:12px;cursor:pointer;
+    display:flex;align-items:center;justify-content:center;
+    font-weight:700;transition:background .15s,transform .1s;
+  }
+  .btn:active{transform:scale(.985)}
+  .btn-primary{flex:1;height:54px;background:var(--brand);color:#fff;font-size:16px}
+  .btn-primary:hover{background:var(--brand-hover)}
+  .btn-primary:disabled{background:#AEC3D8;cursor:default}
+  .btn-kakao{flex:none;height:54px;padding:0 18px;background:var(--kakao);color:var(--kakao-ink);font-size:14px}
+  .btn-kakao:hover{background:#FFEC33}
+  .btn-kakao.hide{display:none}
+  .obcap{text-align:center;font-size:11px;color:var(--cap)}
+
+  /* ── 주문 모달 ──────────────────────────────── */
+  .modal{position:fixed;inset:0;z-index:50;display:none;
+    align-items:flex-end;justify-content:center;background:rgba(22,35,58,.5)}
+  .modal.on{display:flex}
+  .sheet{
+    width:100%;max-width:480px;background:#fff;border-radius:20px 20px 0 0;
+    padding:24px 20px calc(24px + env(safe-area-inset-bottom));
+    max-height:92vh;overflow:auto;animation:up .28s cubic-bezier(.2,.8,.2,1);
+  }
+  @keyframes up{from{transform:translateY(30px);opacity:.5}to{transform:none;opacity:1}}
+  .sheet h2{font-size:19px;font-weight:800;color:var(--ink);margin-bottom:4px}
+  .sheet .msub{font-size:13.5px;color:var(--sub);margin-bottom:18px}
+  .field{margin-bottom:14px}
+  .field label{display:block;font-size:13px;font-weight:700;color:var(--ink);margin-bottom:6px}
+  .field .req{color:#C4402F}
+  .field input,.field textarea{
+    width:100%;border:1.5px solid var(--line);border-radius:11px;
+    padding:13px 14px;font-family:inherit;font-size:15.5px;background:#fff;color:var(--ink);
+  }
+  .field input:focus,.field textarea:focus{outline:none;border-color:var(--brand)}
+  .field textarea{min-height:70px;resize:vertical}
+  .qtyrow{display:flex;align-items:center;width:150px;border:1.5px solid var(--line);border-radius:11px;overflow:hidden}
+  .qtyrow button{width:44px;height:46px;border:0;background:var(--bg-hero);font-size:20px;cursor:pointer;color:var(--ink)}
+  .qtyrow input{border:0;text-align:center;width:62px;border-radius:0;font-weight:700}
+  .radio{display:flex;gap:8px}
+  .radio label{flex:1;border:1.5px solid var(--line);border-radius:11px;padding:12px;
+    text-align:center;font-weight:600;font-size:14px;cursor:pointer;color:var(--sub)}
+  .radio input{display:none}
+  .radio label:has(input:checked){border-color:var(--brand);background:var(--chipbg);color:var(--brand);font-weight:700}
+  .paynote{background:var(--bg-hero);border-radius:11px;padding:13px 14px;font-size:13px;line-height:1.65;color:var(--body);margin-bottom:16px;white-space:pre-wrap}
+  .modal .actions{display:flex;gap:10px}
+  .modal .actions .btn{height:52px;font-size:15px}
+  .modal .cancel{flex:none;padding:0 20px;background:var(--bg-hero);color:var(--ink)}
+  .modal .go{flex:1;background:var(--brand);color:#fff}
+  .modal .go:hover{background:var(--brand-hover)}
+
+  /* 빈 상태/완료 화면 */
+  .center{
+    flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;
+    text-align:center;padding:48px 24px;gap:12px;color:var(--sub);
+  }
+  .center .ic{font-size:50px}
+  .center h2{font-size:19px;font-weight:800;color:var(--ink)}
+  .center p{font-size:14px;max-width:300px;line-height:1.65;text-wrap:pretty}
+  .center .btn{margin-top:10px;height:50px;padding:0 26px;background:var(--brand);color:#fff;font-size:15px}
+  .center .btn:hover{background:var(--brand-hover)}
+
+  .toast{
+    position:fixed;left:50%;bottom:calc(120px + env(safe-area-inset-bottom));transform:translateX(-50%);
+    background:var(--ink);color:#fff;padding:12px 20px;border-radius:999px;font-size:14px;font-weight:600;
+    z-index:60;opacity:0;pointer-events:none;transition:opacity .25s ease;white-space:nowrap;
+  }
+  .toast.on{opacity:1}
+
+  /* ── PC (≥900px) ───────────────────────────── */
+  @media (min-width:900px){
+    .wrap{max-width:none;box-shadow:none}
+    header{padding:14px 32px}
+    header .hin,.hero,.sechead,.grid,.dwide,footer .fin{max-width:1160px;margin:0 auto;width:100%}
+    header{display:block}
+    header .hin{display:flex;align-items:center;justify-content:space-between;gap:10px}
+    header .logo img{width:240px}
+    header .phone{display:block}
+    header .pill{font-size:12px;padding:6px 14px}
+
+    .hero{flex-direction:row;align-items:flex-end;justify-content:space-between;gap:40px;
+      padding:56px 32px 44px;background:linear-gradient(180deg,var(--bg-hero) 0%,#fff 100%)}
+    .hero .htxt{gap:12px;max-width:620px}
+    .hero .over{font-size:13px;letter-spacing:.16em}
+    .hero h1{font-size:40px;line-height:1.22}
+    .hero .hsub{font-size:16px;line-height:1.65}
+    .hero .chips{flex-direction:column;gap:8px;flex:none}
+    .hero .chips span{font-size:13.5px;padding:11px 16px;border-radius:10px;min-width:230px;color:var(--body)}
+    .hero .chips span b{color:var(--brand);font-weight:600;margin-right:8px}
+
+    .sechead{padding:36px 32px 18px}
+    .sechead .t{font-size:20px}
+    .sechead .c{font-size:14px}
+    .grid{grid-template-columns:repeat(3,1fr);gap:20px;padding:0 32px 64px}
+    .item{border-radius:16px}
+    .item .thumb{aspect-ratio:4/3}
+    .item .body{gap:5px;padding:16px 18px 18px}
+    .item .vd{font-size:12px}
+    .item .nm{font-size:16.5px}
+    .item .pr{font-size:18px}
+    .item .pr small{font-size:13px}
+
+    /* 상세페이지 = 중앙 정렬 단일 컬럼(잡지형) */
+    .backrow{border-bottom:0;padding:20px 20px 0;width:fit-content;font-size:14px;max-width:760px;margin:0 auto}
+    .dwide{max-width:760px;margin:0 auto;padding:0 0 40px}
+    .dhero{border-radius:0 0 4px 4px;overflow:hidden}
+    .dhero img{aspect-ratio:16/10}
+    .dhero.noimg{aspect-ratio:16/10}
+    .dttl{font-size:34px}
+    .dband{border-radius:12px;margin:2px 20px 0}
+    .dgallery{padding:10px 20px 0}
+    .dgallery img{border-radius:14px}
+    .dsec{padding:30px 20px}
+    .ddesc{font-size:16px}
+    .dspec{font-size:15px}
+
+    .orderbar{position:sticky;bottom:0;border-top:1px solid var(--line);padding:14px 20px 20px;background:rgba(255,255,255,.95)}
+    .obrow{max-width:760px;margin:0 auto;width:100%}
+    .btn-primary{flex:1;height:56px;font-size:17px}
+    .btn-kakao{height:56px;padding:0 22px;font-size:15px}
+    .obcap{max-width:760px;margin:0 auto;width:100%;text-align:center;font-size:12px}
+
+    footer{display:block;padding:30px 32px 36px}
+    footer .fin{display:flex;align-items:flex-start;justify-content:space-between;gap:24px;flex-wrap:wrap}
+    footer .fl{display:flex;flex-direction:column;gap:8px}
+    footer .fb{font-size:15px}
+    footer .fs{font-size:12.5px}
+    footer .fx{padding-top:4px;font-size:12px}
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <div class="hin">
+      <button class="logo" id="back" aria-label="홈으로"><img src="./assets/logo.png" alt="브링엔지니어링"></button>
+      <div class="hright">
+        <div class="phone" id="hPhone">관리사무실 033-000-0000</div>
+        <div class="pill">1F 위탁판매</div>
+      </div>
+    </div>
+  </header>
+
+  <!-- ═══════════ 홈 (상품 목록) ═══════════ -->
+  <div class="listview">
+    <div class="hero">
+      <div class="htxt">
+        <div class="over">BRING 1F STORE</div>
+        <h1>1층에서 만난 상품,<br>여기서 주문하세요</h1>
+        <div class="hsub">지역 공방·소상공인의 제품을 위탁 판매합니다. 실물은 BRING빌딩 1층 로비에 전시되어 있어요.</div>
+      </div>
+      <div class="chips">
+        <span><b>수령</b>1층 데스크 · 평일 9–18시</span>
+        <span><b>결제</b>주문 접수 후 계좌이체</span>
+      </div>
+    </div>
+
+    <div class="sechead">
+      <div class="t">판매 중인 상품</div>
+      <div class="c"><span id="count">0</span>개</div>
+    </div>
+    <div class="grid" id="grid"></div>
+    <div class="center" id="emptyList" style="display:none">
+      <div class="ic">🗂️</div>
+      <h2>등록된 상품이 없어요</h2>
+      <p>곧 위탁판매 상품이 올라올 예정입니다.</p>
+    </div>
+
+    <footer>
+      <div class="fin">
+        <div class="fl">
+          <div class="fb">브링엔지니어링</div>
+          <div class="fs" id="footList">BRING빌딩 1층 위탁판매 · 수령/문의는 1층 데스크</div>
+        </div>
+        <div class="fx">입점(위탁판매) 문의도 환영합니다</div>
+      </div>
+    </footer>
+  </div>
+
+  <!-- ═══════════ 상품 상세 ═══════════ -->
+  <div class="detailview">
+    <div class="dwide" id="detailview"></div>
+
+    <!-- 하단 주문 바 -->
+    <div class="orderbar" id="orderbar">
+      <div class="obrow">
+        <button class="btn btn-kakao hide" id="kakaoBtn">카톡 문의</button>
+        <button class="btn btn-primary" id="orderBtn">주문하기</button>
+      </div>
+      <div class="obcap" id="obCaption"></div>
+    </div>
+  </div>
+</div>
+
+<!-- 주문 모달 (자체 접수) -->
+<div class="modal" id="modal">
+  <div class="sheet">
+    <h2>주문하기</h2>
+    <div class="msub" id="modalItem"></div>
+    <div class="field">
+      <label>수량</label>
+      <div class="qtyrow">
+        <button type="button" id="qtyMinus">−</button>
+        <input id="qty" type="number" value="1" min="1" inputmode="numeric">
+        <button type="button" id="qtyPlus">+</button>
+      </div>
+    </div>
+    <div class="field">
+      <label>성함 <span class="req">*</span></label>
+      <input id="fName" type="text" placeholder="홍길동" autocomplete="name">
+    </div>
+    <div class="field">
+      <label>연락처 <span class="req">*</span></label>
+      <input id="fPhone" type="tel" placeholder="010-1234-5678" autocomplete="tel" inputmode="numeric">
+    </div>
+    <div class="field">
+      <label>수령 방법</label>
+      <div class="radio" id="receive">
+        <label><input type="radio" name="rc" value="방문수령" checked><span>🏢 방문수령</span></label>
+        <label><input type="radio" name="rc" value="택배"><span>📦 택배</span></label>
+      </div>
+    </div>
+    <div class="field" id="addrField" style="display:none">
+      <label>배송지 주소</label>
+      <input id="fAddr" type="text" placeholder="택배 받으실 주소">
+    </div>
+    <div class="field">
+      <label>요청사항 (선택)</label>
+      <textarea id="fMemo" placeholder="예) 색상 문의, 방문 예정 시간 등"></textarea>
+    </div>
+    <div class="paynote" id="payNote"></div>
+    <div class="actions">
+      <button class="btn cancel" id="cancelOrder">취소</button>
+      <button class="btn go" id="submitOrder">주문 접수</button>
+    </div>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script src="https://www.gstatic.com/firebasejs/10.12.5/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.5/firebase-database-compat.js"></script>
+<script>
+/* ══════════ Firebase (메인 앱과 동일 프로젝트) ══════════ */
+const firebaseConfig = {
+  apiKey: "AIzaSyBKOTIuQ8pOKSuaeKFQs_6UDdDnxdjCTZg",
+  authDomain: "bring-fm.firebaseapp.com",
+  databaseURL: "https://bring-fm-default-rtdb.asia-southeast1.firebasedatabase.app",
+  projectId: "bring-fm",
+  storageBucket: "bring-fm.firebasestorage.app",
+  messagingSenderId: "864976295990",
+  appId: "1:864976295990:web:194f145b1b4dad58eb6097"
+};
+firebase.initializeApp(firebaseConfig);
+const db = firebase.database();
+
+const $ = id => document.getElementById(id);
+const won = n => Number(n).toLocaleString("ko-KR");
+
+/* 관리페이지(signage/settings)에서 덮어쓰는 값들 */
+let SETTINGS = {
+  bankInfo: "주문 접수 후 담당자가 연락드려 결제(계좌이체 또는 방문 결제)를 안내드립니다.",
+  kakaoUrl: "",       // 카카오 채널 URL — 있으면 '카톡 문의' 버튼 노출
+  orderFormUrl: "",   // 구글 폼 URL — 있으면 주문하기가 폼으로 연결({name} 자리에 상품명 삽입)
+  phone: "033-000-0000",
+  footer: ""
+};
+
+let PRODUCTS = {};
+let currentId = null;
+
+db.ref("signage/settings").on("value", s => {
+  const v = s.val();
+  if(v){ SETTINGS = Object.assign(SETTINGS, v); }
+  applySettings();
+});
+
+db.ref("signage/consign").on("value", snap => {
+  PRODUCTS = snap.val() || {};
+  renderList();
+  if(currentId) renderDetail(currentId);
+}, err => {
+  console.warn("상품 로드 실패", err);
+  $("grid").innerHTML = "";
+  $("emptyList").style.display = "flex";
+  $("emptyList").querySelector("h2").textContent = "상품을 불러오지 못했어요";
+});
+
+function activeSorted(){
+  return Object.entries(PRODUCTS)
+    .map(([id,p]) => ({id, ...p}))
+    .filter(p => p.active !== false)
+    .sort((a,b) => (a.sort??999) - (b.sort??999) || String(a.name).localeCompare(b.name,"ko"));
+}
+
+/* ── 목록 렌더 ─────────────────────────── */
+function renderList(){
+  const list = activeSorted();
+  const grid = $("grid");
+  $("emptyList").style.display = list.length ? "none" : "flex";
+  $("count").textContent = list.length;
+  grid.innerHTML = list.map(p => {
+    const img = p.photo
+      ? `<div class="thumb" style="background-image:url('${escAttr(p.photo)}')">${p.soldout?'<div class="sold"></div>':''}</div>`
+      : `<div class="thumb noimg">🛍️${p.soldout?'<div class="sold"></div>':''}</div>`;
+    return `<div class="item" data-id="${p.id}">
+      ${img}
+      <div class="body">
+        ${p.vendor?`<div class="vd">${esc(p.vendor)}</div>`:""}
+        <div class="nm">${esc(p.name||"이름 없음")}</div>
+        <div class="pr ${(!p.price||Number(p.price)<=0)?'ask':''}">${priceHtml(p)}</div>
+      </div>
+    </div>`;
+  }).join("");
+  grid.querySelectorAll(".item").forEach(el =>
+    el.addEventListener("click", () => go(el.dataset.id)));
+}
+
+function priceHtml(p){
+  if(!p.price || Number(p.price) <= 0) return "가격 문의";
+  return won(p.price) + "<small>원</small>";
+}
+
+/* ── 상품별 외부 주문 URL (구글 폼 등) ───── */
+function extOrderUrl(p){
+  const v = (p.order && p.order.value ? String(p.order.value) : "").trim()
+         || (SETTINGS.orderFormUrl || "").trim();
+  if(!v) return "";
+  return v.replace(/\{name\}/g, encodeURIComponent(p.name || ""));
+}
+
+/* ── 상세 렌더 ─────────────────────────── */
+function renderDetail(id){
+  const p = PRODUCTS[id];
+  if(!p){ $("detailview").innerHTML = notFound(); $("orderbar").style.display="none"; return; }
+  $("orderbar").style.display = "";
+  const soldout = !!p.soldout;
+  const photos = (Array.isArray(p.gallery) && p.gallery.length) ? p.gallery
+               : (p.photo ? [p.photo] : []);
+  const ask = (!p.price||Number(p.price)<=0) ? "ask" : "";
+  const hero = photos.length
+    ? `<img src="${escAttr(photos[0])}" alt="${esc(p.name||'상품 사진')}">`
+    : "";
+  const rest = photos.length>1
+    ? `<div class="dgallery">${photos.slice(1).map(u=>`<img src="${escAttr(u)}" alt="${esc(p.name||'상품 사진')}" loading="lazy">`).join("")}</div>`
+    : "";
+  $("detailview").innerHTML = (p.detailHtml && String(p.detailHtml).trim()) ? (
+    `<div class="backrow" id="backrow"><span class="ar">←</span><span>전체 상품</span></div>`
+    + `<div class="dbody">${p.detailHtml}</div>`
+  ) : `
+    <div class="backrow" id="backrow"><span class="ar">←</span><span>전체 상품</span></div>
+    <div class="dhero${photos.length?'':' noimg'}">
+      ${hero}
+      <div class="dscrim"></div>
+      <div class="dcap">
+        <div class="deye">${esc(p.vendor||"BRING 위탁판매")} · BRING 1F MARKET</div>
+        <h1 class="dttl">${esc(p.name||"이름 없음")}</h1>
+      </div>
+    </div>
+    <div class="dband">
+      <span class="dbrand">1층 실물 전시 중</span>
+      <span class="dprice ${ask}">${priceHtml(p)}</span>
+    </div>
+    ${rest}
+    ${p.desc?`<div class="dsec"><div class="kick">상품 소개</div><div class="ddesc">${esc(p.desc)}</div></div>`:""}
+    <div class="dsec">
+      <div class="kick">상품 정보</div>
+      <div class="dspec">
+        <div><b>품명</b><span>${esc(p.name||"-")}</span></div>
+        ${p.vendor?`<div><b>판매처</b><span>${esc(p.vendor)}</span></div>`:""}
+        <div><b>가격</b><span>${priceHtml(p)}</span></div>
+        <div><b>수령</b><span>BRING 1층 데스크 (평일 9–18시)</span></div>
+        <div><b>결제</b><span>주문 접수 후 안내</span></div>
+        <div><b>문의</b><span>관리사무실 ${esc(SETTINGS.phone)}</span></div>
+        ${soldout?`<div><b>상태</b><span class="dstate">품절</span></div>`:""}
+      </div>
+    </div>`;
+  $("backrow").addEventListener("click", () => go(null));
+
+  const ob = $("orderBtn");
+  ob.disabled = soldout;
+  ob.textContent = soldout ? "품절된 상품입니다" : "주문하기";
+  $("obCaption").textContent = soldout ? "" :
+    (extOrderUrl(p)
+      ? "주문서(구글 폼)로 연결됩니다 · 접수 후 문자로 안내드려요"
+      : "주문은 이 페이지에서 바로 접수됩니다 · 접수 후 연락드려요");
+
+  const kb = $("kakaoBtn");
+  if(SETTINGS.kakaoUrl){ kb.classList.remove("hide"); kb.onclick = ()=> window.open(SETTINGS.kakaoUrl,"_blank"); }
+  else kb.classList.add("hide");
+}
+
+function notFound(){
+  return `<div class="center"><div class="ic">🔍</div><h2>상품을 찾을 수 없어요</h2>
+    <p>삭제되었거나 잘못된 링크일 수 있습니다.</p>
+    <button class="btn" onclick="go(null)">전체 상품 보기</button></div>`;
+}
+
+/* ── 라우팅 (?id=) ─────────────────────── */
+function go(id){
+  currentId = id;
+  const url = new URL(location.href);
+  if(id){ url.searchParams.set("id", id); } else { url.searchParams.delete("id"); }
+  history.pushState({id}, "", url);
+  render();
+}
+function render(){
+  const id = new URLSearchParams(location.search).get("id");
+  currentId = id;
+  if(id){
+    document.body.classList.add("detail");
+    renderDetail(id);
+    window.scrollTo(0,0);
+  } else {
+    document.body.classList.remove("detail");
+    window.scrollTo(0,0);
+  }
+}
+window.addEventListener("popstate", render);
+$("back").addEventListener("click", () => go(null));
+
+/* ── 주문: 외부 폼이 있으면 새 탭, 없으면 자체 접수 모달 ── */
+$("orderBtn").addEventListener("click", () => {
+  const p = PRODUCTS[currentId];
+  if(!p || p.soldout) return;
+  const ext = extOrderUrl(p);
+  if(ext){ window.open(ext, "_blank"); return; }
+  $("modalItem").textContent = `${p.name}${p.price>0?" · "+won(p.price)+"원":""}`;
+  $("payNote").textContent = SETTINGS.bankInfo || "";
+  $("qty").value = 1;
+  $("modal").classList.add("on");
+  document.body.style.overflow = "hidden";
+});
+function closeModal(){ $("modal").classList.remove("on"); document.body.style.overflow=""; }
+$("cancelOrder").addEventListener("click", closeModal);
+$("modal").addEventListener("click", e => { if(e.target === $("modal")) closeModal(); });
+
+$("qtyMinus").addEventListener("click", ()=> $("qty").value = Math.max(1,(+$("qty").value||1)-1));
+$("qtyPlus").addEventListener("click", ()=> $("qty").value = (+$("qty").value||1)+1);
+$("receive").addEventListener("change", e => {
+  $("addrField").style.display = e.target.value === "택배" ? "block" : "none";
+});
+
+$("submitOrder").addEventListener("click", async () => {
+  const p = PRODUCTS[currentId];
+  if(!p) return;
+  const name = $("fName").value.trim();
+  const phone = $("fPhone").value.trim();
+  const qty = Math.max(1, +$("qty").value || 1);
+  const receive = (document.querySelector('input[name="rc"]:checked')||{}).value || "방문수령";
+  const addr = $("fAddr").value.trim();
+  const memo = $("fMemo").value.trim();
+
+  if(!name){ toast("성함을 입력해 주세요"); $("fName").focus(); return; }
+  if(!phone || phone.replace(/\D/g,"").length < 9){ toast("연락처를 확인해 주세요"); $("fPhone").focus(); return; }
+  if(receive === "택배" && !addr){ toast("배송지 주소를 입력해 주세요"); $("fAddr").focus(); return; }
+
+  const btn = $("submitOrder");
+  btn.disabled = true; btn.textContent = "접수 중…";
+  try{
+    await db.ref("signage/orders").push({
+      productId: currentId,
+      productName: p.name || "",
+      vendor: p.vendor || "",
+      price: Number(p.price)||0,
+      qty, name, phone, receive,
+      addr: receive==="택배" ? addr : "",
+      memo,
+      status: "신규",
+      createdAt: firebase.database.ServerValue.TIMESTAMP
+    });
+    closeModal();
+    showDone(p, name);
+  }catch(e){
+    console.error(e);
+    toast("주문 접수에 실패했어요. 잠시 후 다시 시도해 주세요");
+  }finally{
+    btn.disabled = false; btn.textContent = "주문 접수";
+  }
+});
+
+function showDone(p, name){
+  $("orderbar").style.display = "none";
+  $("detailview").innerHTML = `<div class="center">
+    <div class="ic">✅</div>
+    <h2>주문이 접수되었어요</h2>
+    <p><b>${esc(name)}</b>님, <b>${esc(p.name)}</b> 주문이 정상 접수되었습니다.
+       담당자가 입력하신 연락처로 결제·수령 안내를 드릴 예정입니다.</p>
+    <button class="btn" id="doneHome">다른 상품 더 보기</button>
+  </div>`;
+  $("doneHome").addEventListener("click", () => { $("orderbar").style.display=""; go(null); });
+}
+
+/* ── 유틸 ──────────────────────────────── */
+let toastT;
+function toast(msg){
+  const t = $("toast"); t.textContent = msg; t.classList.add("on");
+  clearTimeout(toastT); toastT = setTimeout(()=>t.classList.remove("on"), 2200);
+}
+function esc(s){ return String(s??"").replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
+function escAttr(s){ return String(s??"").replace(/'/g,"%27").replace(/"/g,"%22"); }
+
+function applySettings(){
+  $("hPhone").textContent = "관리사무실 " + (SETTINGS.phone || "");
+  $("footList").innerHTML =
+    "BRING빌딩 1층 위탁판매 · 수령/문의는 1층 데스크<br>관리사무실 "
+    + esc(SETTINGS.phone) + " (평일 9–18시)"
+    + (SETTINGS.footer ? "<br>" + esc(SETTINGS.footer) : "");
+  if(currentId) renderDetail(currentId);
+}
+
+render();
+</script>
+</body>
+</html>
