@@ -152,7 +152,15 @@ def build_title_url(
 
 
 def _default_http_get(url: str) -> str:
-    with urllib.request.urlopen(url, timeout=15) as resp:  # noqa: S310 - https only
+    # data.go.kr(및 프록시)는 Accept/User-Agent 없는 요청에 빈 응답을 주므로 명시한다.
+    req = urllib.request.Request(
+        url,
+        headers={
+            "Accept": "application/json",
+            "User-Agent": "BRING-ValueScope/0.1 (building-registry-connector)",
+        },
+    )
+    with urllib.request.urlopen(req, timeout=15) as resp:  # noqa: S310 - https only
         return resp.read().decode("utf-8")
 
 
