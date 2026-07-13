@@ -2316,6 +2316,17 @@ function vendorPayload(cat,v){
     rating:v.rating||"", price:v.price||"", note:v.note||""
   };
 }
+function encodeVendorPayload(payload){
+  try{ return encodeURIComponent(JSON.stringify(payload||{})); }catch(e){ return ""; }
+}
+function decodeVendorPayload(value){
+  try{
+    const payload=JSON.parse(decodeURIComponent(String(value||"")));
+    return payload && typeof payload==="object" ? payload : null;
+  }catch(e){
+    return null;
+  }
+}
 function caseVendorSelections(c){
   if(!c.vendorSelections || typeof c.vendorSelections!=="object" || Array.isArray(c.vendorSelections)) c.vendorSelections={};
   return c.vendorSelections;
@@ -2331,24 +2342,26 @@ function findVendorPayloadById(id){
   }
   return null;
 }
-function setCaseVendorSelection(caseId, vendorId, selected){
+function setCaseVendorSelection(caseId, vendorId, selected, fallbackPayload){
   const c=cases[caseId];
   if(!c) return;
   const selections=caseVendorSelections(c);
-  const payload=findVendorPayloadById(vendorId);
+  const payload=findVendorPayloadById(vendorId) || fallbackPayload;
   if(selected && payload){
+    payload.id = payload.id || vendorId;
     selections[vendorId]=payload;
   }else{
     delete selections[vendorId];
   }
-  saveCase(caseId);
-  renderCaseDetail();
+  saveCase(caseId, true);
+  renderCaseDetailKeepScroll();
 }
 function caseVendorCardHtml(c,cat,v){
-  const id=caseVendorId(cat,v);
+  const payload=vendorPayload(cat,v);
+  const id=payload.id;
   const checked=!!caseVendorSelections(c)[id];
   const extraFields = vendorExtraFieldsHtml(v.extra);
-  return `<article class="vendor-card case-vendor-card ${checked?'selected':''}">
+  return `<article class="vendor-card case-vendor-card ${checked?'selected':''}" data-vendor-payload="${escAttr(encodeVendorPayload(payload))}">
     <div class="vendor-card-head">
       <div>
         <div class="vendor-card-name">${escH(v.name)}</div>
@@ -4164,7 +4177,7 @@ caseDetailEl.addEventListener("click", e=>{
 });
 caseDetailEl.addEventListener("click", e=>{ const qpr=e.target.closest("[data-quote-file-remove]"); if(qpr){ removeQuotePendingFile(qpr.dataset.quoteFileRemove); return; } const bpr=e.target.closest("[data-bizreg-file-remove]"); if(bpr){ removeBusinessRegPendingFile(bpr.dataset.bizregFileRemove); } });
 caseDetailEl.addEventListener("input", e=>{ const f=e.target.closest("input[data-f]"); if(f){ setCaseField(curCase, f.dataset.f, f.value); return; } const nb=e.target.closest("textarea[data-note]"); if(nb){ setCaseNote(curCase, nb.dataset.note, nb.value); autoGrowCaseNote(nb); } });
-caseDetailEl.addEventListener("change", e=>{ const qf=e.target.closest("#quoteFile"); if(qf){ addQuotePendingFiles(qf.files); return; } const bf=e.target.closest("#businessRegFile"); if(bf){ addBusinessRegPendingFiles(bf.files); return; } const vf=e.target.closest("input[data-vendor-select]"); if(vf){ setCaseVendorSelection(curCase, vf.dataset.vendorSelect, vf.checked); return; } const f=e.target.closest("select[data-f]"); if(f) setCaseField(curCase, f.dataset.f, f.value); });
+caseDetailEl.addEventListener("change", e=>{ const qf=e.target.closest("#quoteFile"); if(qf){ addQuotePendingFiles(qf.files); return; } const bf=e.target.closest("#businessRegFile"); if(bf){ addBusinessRegPendingFiles(bf.files); return; } const vf=e.target.closest("input[data-vendor-select]"); if(vf){ const card=vf.closest("[data-vendor-payload]"); setCaseVendorSelection(curCase, vf.dataset.vendorSelect, vf.checked, decodeVendorPayload(card&&card.dataset.vendorPayload)); return; } const f=e.target.closest("select[data-f]"); if(f) setCaseField(curCase, f.dataset.f, f.value); });
 caseDetailEl.addEventListener("dragover", e=>{ const dz=e.target.closest("[data-quote-drop],[data-bizreg-drop]"); if(!dz) return; e.preventDefault(); dz.classList.add("dragover"); });
 caseDetailEl.addEventListener("dragleave", e=>{ const dz=e.target.closest("[data-quote-drop],[data-bizreg-drop]"); if(!dz) return; if(!dz.contains(e.relatedTarget)) dz.classList.remove("dragover"); });
 caseDetailEl.addEventListener("drop", e=>{ const dz=e.target.closest("[data-quote-drop],[data-bizreg-drop]"); if(!dz) return; e.preventDefault(); dz.classList.remove("dragover"); const files=Array.from((e.dataTransfer&&e.dataTransfer.files)||[]); if(!files.length) return; if(dz.matches("[data-bizreg-drop]")) addBusinessRegPendingFiles(files); else addQuotePendingFiles(files); });
@@ -4216,8 +4229,9 @@ document.getElementById("noticeBtn").addEventListener("click", openNoticePanel);
 document.getElementById("noticeBanner").addEventListener("click", openNoticePanel);
 
 /* ===== 업데이트 알림(What's New) — 새 버전 나오면 자동 팝업 ===== */
-const APP_VERSION = "4.72";
+const APP_VERSION = "4.73";
 const CHANGELOG = [
+  { v:"4.73", d:"2026-07-13", items:["④ 업체 후보 선택이 체크 직후 다시 풀리는 문제 수정","업체 카드 데이터를 함께 저장해 업체리스트 로딩/ID 매칭 흔들림에도 선택 유지"] },
   { v:"4.72", d:"2026-07-13", items:["완료 단계를 진행중으로 되돌릴 때 자동화 보정과 충돌해 깜빡이는 문제 수정","수동으로 되돌린 단계는 다시 완료할 때까지 자동 진행을 잠시 멈춤"] },
   { v:"4.71", d:"2026-07-13", items:["단계 상태 버튼을 완료로 바꾼 뒤 실시간 동기화로 다시 진행중으로 돌아오는 문제 수정"] },
   { v:"4.70", d:"2026-07-13", items:["문자 발송완료 확인 문구를 더 넓게 인식해 ② 완료 및 ③ 진행중 전환 안정화"] },
