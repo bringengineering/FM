@@ -3602,7 +3602,8 @@ function applyNextStepProgress(c, messages){
 }
 function isReceiptSmsConfirmed(c){
   const smsStatus=String((c&&c.sms&&c.sms.status)||"");
-  return smsStatus === "발송완료";
+  const smsNote=String((c&&c.note&&c.note.c2)||"");
+  return /발송\s*완료/.test(smsStatus) || /발송\s*완료/.test(smsNote);
 }
 function applyStepAutomation(c, logEnabled){
   if(!c || !c.status) return false;
@@ -4189,8 +4190,9 @@ document.getElementById("noticeBtn").addEventListener("click", openNoticePanel);
 document.getElementById("noticeBanner").addEventListener("click", openNoticePanel);
 
 /* ===== 업데이트 알림(What's New) — 새 버전 나오면 자동 팝업 ===== */
-const APP_VERSION = "4.69";
+const APP_VERSION = "4.70";
 const CHANGELOG = [
+  { v:"4.70", d:"2026-07-13", items:["문자 발송완료 확인 문구를 더 넓게 인식해 ② 완료 및 ③ 진행중 전환 안정화"] },
   { v:"4.69", d:"2026-07-13", items:["접수확인 문자 발송완료가 확인되면 ② 완료 처리 후 ③ 상담·요청 파악으로 자동 전환"] },
   { v:"4.68", d:"2026-07-13", items:["건물주용 접수확인 문자와 ② 발송 예시에서 긴급도 표시 제거"] },
   { v:"4.67", d:"2026-07-13", items:["세입자용 접수확인 문자와 ② 발송 예시에 호실 표시 추가"] },

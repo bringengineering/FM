@@ -184,7 +184,7 @@ function handleComplaintReceiptSms_(payload) {
   if (!casePayload) return { ok: false, message: "Firebase 케이스를 찾지 못했습니다: " + caseId };
 
   const existingStatus = String(casePayload.sms && casePayload.sms.status || "");
-  if (!payload.force && /발송완료|일부발송/.test(existingStatus)) {
+  if (!payload.force && isSmsSentStatus_(existingStatus)) {
     const skippedResult = {
       status: existingStatus,
       statusText: (casePayload.note && casePayload.note.c2) || "이미 발송된 문자 기록이 있어 재발송하지 않았습니다.",
@@ -210,7 +210,7 @@ function handleComplaintReceiptSms_(payload) {
   if (!smsResult.skipped) writeSmsResultToSheetForCase_(casePayload, smsResult);
   writeCaseToFirebase_(caseId, casePayload);
 
-  const ok = /발송완료|일부발송/.test(String(smsResult.status || ""));
+  const ok = isSmsSentStatus_(smsResult.status);
   return Object.assign({
     ok: ok,
     caseId: caseId,
@@ -4014,10 +4014,22 @@ function makeDriveCandidate_(file) {
   };
 }
 
+function isSmsCompleteStatus_(status) {
+  return /발송\s*완료/.test(String(status || ""));
+}
+
+function isSmsPartialStatus_(status) {
+  return /일부\s*발송/.test(String(status || ""));
+}
+
+function isSmsSentStatus_(status) {
+  return isSmsCompleteStatus_(status) || isSmsPartialStatus_(status);
+}
+
 function sendComplaintSms_(ticketNo, record, analysis, contractMatch, options) {
   const force = options && options.force === true;
   const existingStatus = readField_(record, ["문자 발송 상태"]);
-  if (!force && /발송완료|일부발송/.test(existingStatus)) {
+  if (!force && isSmsSentStatus_(existingStatus)) {
     return {
       status: existingStatus,
       statusText: readField_(record, ["문자 발송 메모"]) || "이미 발송된 문자 기록이 있어 재발송하지 않았습니다.",
@@ -4106,12 +4118,12 @@ function applySmsResultToCase_(casePayload, smsResult) {
   casePayload.note = casePayload.note || {};
   casePayload.note.c2 = smsResult.statusText || "";
   casePayload.status = casePayload.status || {};
-  if (smsResult.status === "발송완료") {
+  if (isSmsCompleteStatus_(smsResult.status)) {
     casePayload.status.c2 = "done";
     if (casePayload.status.c3 !== "done") {
       casePayload.status.c3 = "doing";
     }
-  } else if (smsResult.status === "일부발송" || smsResult.status === "발송보류") {
+  } else if (isSmsPartialStatus_(smsResult.status) || smsResult.status === "발송보류") {
     casePayload.status.c2 = "doing";
   } else if (smsResult.status) {
     casePayload.status.c2 = "doing";
