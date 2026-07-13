@@ -722,7 +722,7 @@
   .benefit-card.has-benefit img{
     width:100%;
     height:calc(100% - 34px);
-    object-fit:contain;
+    object-fit:cover;
     background:#991416;
     display:block;
   }
@@ -838,12 +838,6 @@
       </div>
     </div>
 
-    <!-- 위탁판매 상품 순환 카드 -->
-    <div class="consign" id="consign">
-      <div class="ctag">위탁판매 <span class="ccount" id="ccount"></span></div>
-      <div class="consign-grid" id="consignGrid"></div>
-    </div>
-
     <div class="updated"><span class="pulse"></span><span id="updated">데이터 수신 대기</span></div>
   </div>
 
@@ -915,6 +909,19 @@
         <span class="quick-line"></span>
         <span>입주민 소통방</span>
       </div>
+    </div>
+  </section>
+
+  <section class="section-card benefits">
+    <div class="section-title"><span class="section-icon gift" aria-hidden="true"></span>입주민 혜택 <span class="section-more">더보기 〉</span></div>
+    <div class="benefit-grid">
+      <div class="benefit-card has-benefit">
+        <img src="./benefit-donghwaru.png" alt="동화루 입주민 혜택">
+        <span class="benefit-name">동 화 루</span>
+      </div>
+      <div class="benefit-card"><span class="placeholder-line"></span></div>
+      <div class="benefit-card"><span class="placeholder-line"></span></div>
+      <div class="benefit-card"><span class="placeholder-line"></span></div>
     </div>
   </section>
 
@@ -1193,101 +1200,6 @@ setInterval(refreshNews, CONFIG.REFRESH_MIN*60*1000);
   $("qrtitle").textContent = CONFIG.QR_TITLE;
   $("qrsub").textContent = CONFIG.QR_SUB;
   $("qr").classList.add("on");
-})();
-
-/* ══════════ 위탁판매 상품 순환 ══════════ */
-(function initConsign(){
-  const firebaseConfig = {
-    apiKey: "AIzaSyBKOTIuQ8pOKSuaeKFQs_6UDdDnxdjCTZg",
-    authDomain: "bring-fm.firebaseapp.com",
-    databaseURL: "https://bring-fm-default-rtdb.asia-southeast1.firebasedatabase.app",
-    projectId: "bring-fm",
-    storageBucket: "bring-fm.firebasestorage.app",
-    messagingSenderId: "864976295990",
-    appId: "1:864976295990:web:194f145b1b4dad58eb6097"
-  };
-  if(typeof firebase === "undefined") return;   // SDK 로드 실패 시 조용히 무시
-  try{ firebase.initializeApp(firebaseConfig); }catch(e){}
-  const db = firebase.database();
-
-  // shop 페이지 절대주소: .../signage/(index.html) → .../shop/
-  const SHOP_BASE = location.href.split("#")[0].split("?")[0]
-    .replace(/signage\/(index\.html)?$/, "shop/");
-  const won = n => Number(n).toLocaleString("ko-KR");
-
-  let items = [];
-  let page = 0, timer = null;
-
-  db.ref("signage/consign").on("value", snap => {
-    const all = snap.val() || {};
-    items = Object.entries(all).map(([id,p])=>({id,...p}))
-      .filter(p => p.active !== false && !p.soldout && p.name)
-      .sort((a,b)=>(a.sort??999)-(b.sort??999) || String(a.name).localeCompare(b.name,"ko"));
-    restart();
-  }, () => {/* 권한/네트워크 오류 시 카드 숨김 유지 */});
-
-  function restart(){
-    clearInterval(timer);
-    const card = $("consign");
-    const qrPanel = $("qr");
-    if(items.length === 0){
-      card.classList.remove("on");
-      if(qrPanel) qrPanel.classList.remove("off");   // 상품 없으면 정적 QR 복귀
-      return;
-    }
-    if(qrPanel) qrPanel.classList.add("off");        // 같은 자리(grid-area:qr) 공유 → 정적 QR 숨김
-    if(page * 6 >= items.length) page = 0;
-    card.classList.add("on");
-    renderGrid();
-    if(items.length > 6) timer = setInterval(nextPage, 10000);
-  }
-
-  function renderGrid(){
-    const grid = $("consignGrid");
-    const start = page * 6;
-    const shown = items.slice(start,start + 6);
-    const totalPages = Math.ceil(items.length / 6);
-    $("ccount").textContent = totalPages > 1 ? `${page + 1} / ${totalPages}` : `${shown.length}개`;
-    grid.innerHTML = shown.map(productCard).join("");
-  }
-
-  function nextPage(){
-    page = (page + 1) % Math.ceil(items.length / 6);
-    renderGrid();
-  }
-
-  function productCard(p){
-    const price = (!p.price || Number(p.price) <= 0) ? "가격 문의" : won(p.price) + "원";
-    const photo = p.photo
-      ? `style="background-image:url('${String(p.photo).replace(/'/g,"%27")}')"`
-      : "";
-    const url = SHOP_BASE + "?id=" + encodeURIComponent(p.id);
-    const qr = "https://api.qrserver.com/v1/create-qr-code/?size=180x180&margin=0&data="
-      + encodeURIComponent(url);
-    return `
-      <div class="consign-item">
-        <div class="cphoto" ${photo}></div>
-        <div class="cinfo">
-          <div class="cname">${escapeHTML(p.name)}</div>
-          <div class="cvendor">${escapeHTML(p.vendor || "")}</div>
-          <div class="cprice">${escapeHTML(price)}</div>
-        </div>
-        <div class="cqr">
-          <div class="qbox"><img src="${qr}" alt="상품 주문 QR코드"></div>
-          <div class="cqrsub">QR 스캔</div>
-        </div>
-      </div>`;
-  }
-
-  function escapeHTML(value){
-    return String(value ?? "").replace(/[&<>"']/g, ch => ({
-      "&":"&amp;",
-      "<":"&lt;",
-      ">":"&gt;",
-      '"':"&quot;",
-      "'":"&#39;"
-    }[ch]));
-  }
 })();
 
 /* 화면 항상 켜짐 (Wake Lock) — 지원 브라우저에서 자동 작동 */
