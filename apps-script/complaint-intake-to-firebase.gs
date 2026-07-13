@@ -202,7 +202,9 @@ function handleComplaintReceiptSms_(payload) {
     summary: casePayload.summary || "",
     reason: casePayload.analysisReason || ""
   };
-  const smsResult = sendComplaintSms_(ticketNo, smsRecord, analysis, casePayload.contractMatch || {});
+  const smsResult = sendComplaintSms_(ticketNo, smsRecord, analysis, casePayload.contractMatch || {}, {
+    force: payload.force === true
+  });
 
   applySmsResultToCase_(casePayload, smsResult);
   if (!smsResult.skipped) writeSmsResultToSheetForCase_(casePayload, smsResult);
@@ -4012,9 +4014,10 @@ function makeDriveCandidate_(file) {
   };
 }
 
-function sendComplaintSms_(ticketNo, record, analysis, contractMatch) {
+function sendComplaintSms_(ticketNo, record, analysis, contractMatch, options) {
+  const force = options && options.force === true;
   const existingStatus = readField_(record, ["문자 발송 상태"]);
-  if (/발송완료|일부발송/.test(existingStatus)) {
+  if (!force && /발송완료|일부발송/.test(existingStatus)) {
     return {
       status: existingStatus,
       statusText: readField_(record, ["문자 발송 메모"]) || "이미 발송된 문자 기록이 있어 재발송하지 않았습니다.",
