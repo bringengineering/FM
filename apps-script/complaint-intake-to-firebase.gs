@@ -227,7 +227,7 @@ function casePayloadToSmsRecord_(casePayload, payload) {
     "이름": casePayload.name || contact.name || "",
     "연락처": contact.phone || casePayload.phone || "",
     "문제 유형": casePayload.issueType || contact.issueType || "",
-    "방문 가능 시간": casePayload.visitTime || contact.visitTime || "",
+    "방문 가능 시간": formatKoreanDateTimeForCase_(casePayload.visitTime || contact.visitTime || ""),
     "민원 내용": casePayload.summary || contact.summary || ""
   };
 }
@@ -568,7 +568,7 @@ function makeVendorEstimateMmsContent_(casePayload, record) {
   const room = readField_(record, ["호실"]) || casePayload.room || "호실 미입력";
   const issueType = casePayload.issueType || readField_(record, ["문제 유형"]) || "문제 유형 미입력";
   const vendorType = casePayload.vendorType || "업체 분류 미확인";
-  const visitTime = casePayload.visitTime || readField_(record, ["방문 가능 시간"]) || "협의 필요";
+  const visitTime = formatKoreanDateTimeForCase_(casePayload.visitTime || readRawField_(record, ["방문 가능 시간"])) || "협의 필요";
   const ticketNo = casePayload.ticketNo || casePayload.id || "";
   return [
     "[BRING Care 견적요청]",
@@ -3854,6 +3854,30 @@ function dateFromValue_(value) {
   return isNaN(parsed.getTime()) ? new Date() : parsed;
 }
 
+function formatEnglishDateTextForCase_(raw) {
+  const months = { jan: 1, feb: 2, mar: 3, apr: 4, may: 5, jun: 6, jul: 7, aug: 8, sep: 9, oct: 10, nov: 11, dec: 12 };
+  const match = String(raw || "").trim().match(/^(?:[A-Za-z]{3}\s+)?([A-Za-z]{3})\s+(\d{1,2})\s+(\d{4})\s+(\d{1,2}):(\d{2})/);
+  if (!match) return "";
+  const month = months[String(match[1]).toLowerCase()];
+  if (!month) return "";
+  return match[3] + "년 " + month + "월 " + Number(match[2]) + "일 " + String(match[4]).padStart(2, "0") + ":" + match[5];
+}
+
+function formatKoreanDateTimeForCase_(value) {
+  if (value === undefined || value === null || String(value).trim() === "") return "";
+  if (value instanceof Date && !isNaN(value.getTime())) {
+    return Utilities.formatDate(value, "Asia/Seoul", "yyyy년 M월 d일 HH:mm");
+  }
+  const raw = String(value).trim();
+  const englishDate = formatEnglishDateTextForCase_(raw);
+  if (englishDate) return englishDate;
+  const parsed = new Date(raw);
+  if (!isNaN(parsed.getTime())) {
+    return Utilities.formatDate(parsed, "Asia/Seoul", "yyyy년 M월 d일 HH:mm");
+  }
+  return raw;
+}
+
 function normalizeText_(value) {
   return String(value || "")
     .toLowerCase()
@@ -4364,7 +4388,7 @@ function makeConsultationNote_(ticketNo, record, analysis, sheetUrl) {
   const issueType = readField_(record, ["문제 유형"]) || "문제 유형 미입력";
   const description = readField_(record, ["증상 설명", "민원 내용", "내용"]);
   const photo = readField_(record, ["사진 첨부"]);
-  const visitTime = readField_(record, ["방문 가능 시간"]);
+  const visitTime = formatKoreanDateTimeForCase_(readRawField_(record, ["방문 가능 시간"]));
   const extra = readField_(record, ["추가 요청사항"]);
   const questions = consultationQuestions_(issueType, [issueType, description, extra].join(" "));
   const warnings = consultationWarnings_(description, photo, visitTime, analysis);
@@ -4470,7 +4494,7 @@ function buildCasePayload_(ticketNo, record, analysis, contractMatch, row, sheet
   const name = readField_(record, ["이름", "성명"]);
   const phone = readField_(record, ["연락처", "전화번호", "휴대폰"]);
   const issueType = readField_(record, ["문제 유형"]);
-  const visitTime = readField_(record, ["방문 가능 시간"]);
+  const visitTime = formatKoreanDateTimeForCase_(readRawField_(record, ["방문 가능 시간"]));
   const sheetUrl = COMPLAINT_CONFIG.RESPONSE_SHEET_URL + "#gid=" + sheet.getSheetId();
   const isContractHold = contractMatch && (contractMatch.status === "unmatched" || contractMatch.status === "multiple" || contractMatch.status === "address_missing");
   const statusValue = isContractHold ? "계약확인보류" : analysis.statusValue;
