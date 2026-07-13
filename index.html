@@ -2027,9 +2027,10 @@ function caseSavePayload(id, includeArchive){
 function saveCase(id, immediate, options){
   if(!id || !cases[id]) return;
   touchCase(cases[id]);
+  const payload=caseSavePayload(id, options&&options.includeArchive);
   if(casesRef){
     clearTimeout(caseWriteTimers[id]);
-    const write=()=>{ if(casesRef && cases[id]) casesRef.child(id).update(caseSavePayload(id, options&&options.includeArchive)); delete caseWriteTimers[id]; };
+    const write=()=>{ if(casesRef) casesRef.child(id).update(payload); delete caseWriteTimers[id]; };
     if(immediate) write();
     else caseWriteTimers[id]=setTimeout(write, 300);
   } else if(!isConfigured) {
@@ -3818,7 +3819,7 @@ function selectCase(id){ curCase=id; noteOpen.clear(); quotePendingCaseId=id; qu
 function archiveCase(id){ const c=cases[id]; if(!c) return; if(!confirm("이 케이스를 보관함으로 이동할까요?")) return; c.archived=true; c.archivedAt=new Date().toISOString(); c.archivedBy=caseUserLabel(); caseLog(c, "케이스 보관 처리"); saveCase(id, true, {includeArchive:true}); if(curCase===id) curCase=firstVisibleCaseId(); renderCaseList(); renderCaseDetail(); }
 function restoreCase(id){ const c=cases[id]; if(!c) return; c.archived=false; c.restoredAt=new Date().toISOString(); c.restoredBy=caseUserLabel(); caseLog(c, "케이스 보관 해제"); curCase=id; saveCase(id, true, {includeArchive:true}); renderCaseList(); renderCaseDetail(); }
 function deleteCase(id){ archiveCase(id); }
-function cycleStep(id,k){ const c=cases[id]; if(!c) return; const msg=stepLockMessage(c,k); if(msg){ alert(msg); return; } c.status=c.status||{}; const cur=c.status[k]||""; c.status[k]= cur===""?"doing":cur==="doing"?"done":""; if(!c.status[k]) delete c.status[k]; const s=CASE_STEPS.find(x=>x.k===k); caseLog(c, s.t+" → "+(c.status[k]==="done"?"완료":c.status[k]==="doing"?"진행중":"대기")); applyStepAutomation(c, true); normalizeCaseSteps(c); saveCase(id); renderCaseList(); renderCaseDetail(); }
+function cycleStep(id,k){ const c=cases[id]; if(!c) return; const msg=stepLockMessage(c,k); if(msg){ alert(msg); return; } c.status=c.status||{}; const cur=c.status[k]||""; c.status[k]= cur===""?"doing":cur==="doing"?"done":""; if(!c.status[k]) delete c.status[k]; const s=CASE_STEPS.find(x=>x.k===k); caseLog(c, s.t+" → "+(c.status[k]==="done"?"완료":c.status[k]==="doing"?"진행중":"대기")); applyStepAutomation(c, true); normalizeCaseSteps(c); saveCase(id, true); renderCaseList(); renderCaseDetail(); }
 function doAuto(id,k,channel){ const c=cases[id]; if(!c) return;
   const msg=stepLockMessage(c,k); if(msg){ alert(msg); return; }
   /* 메일 외 자동화(입금확인 등)는 아직 수동 기록 */
@@ -4190,8 +4191,9 @@ document.getElementById("noticeBtn").addEventListener("click", openNoticePanel);
 document.getElementById("noticeBanner").addEventListener("click", openNoticePanel);
 
 /* ===== 업데이트 알림(What's New) — 새 버전 나오면 자동 팝업 ===== */
-const APP_VERSION = "4.70";
+const APP_VERSION = "4.71";
 const CHANGELOG = [
+  { v:"4.71", d:"2026-07-13", items:["단계 상태 버튼을 완료로 바꾼 뒤 실시간 동기화로 다시 진행중으로 돌아오는 문제 수정"] },
   { v:"4.70", d:"2026-07-13", items:["문자 발송완료 확인 문구를 더 넓게 인식해 ② 완료 및 ③ 진행중 전환 안정화"] },
   { v:"4.69", d:"2026-07-13", items:["접수확인 문자 발송완료가 확인되면 ② 완료 처리 후 ③ 상담·요청 파악으로 자동 전환"] },
   { v:"4.68", d:"2026-07-13", items:["건물주용 접수확인 문자와 ② 발송 예시에서 긴급도 표시 제거"] },
