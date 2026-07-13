@@ -2223,8 +2223,7 @@ function caseReceiptSmsPreview(c){
     "접수번호: " + ticketNo,
     building ? "건물: " + building : "",
     room ? "호실: " + room : "",
-    issueType ? "문제: " + issueType : "",
-    c.urgency ? "긴급도: " + c.urgency : ""
+    issueType ? "문제: " + issueType : ""
   ].filter(Boolean).join("\n");
   return [
     "[발송 예시 - 세입자]",
@@ -4181,8 +4180,9 @@ document.getElementById("noticeBtn").addEventListener("click", openNoticePanel);
 document.getElementById("noticeBanner").addEventListener("click", openNoticePanel);
 
 /* ===== 업데이트 알림(What's New) — 새 버전 나오면 자동 팝업 ===== */
-const APP_VERSION = "4.67";
+const APP_VERSION = "4.68";
 const CHANGELOG = [
+  { v:"4.68", d:"2026-07-13", items:["건물주용 접수확인 문자와 ② 발송 예시에서 긴급도 표시 제거"] },
   { v:"4.67", d:"2026-07-13", items:["세입자용 접수확인 문자와 ② 발송 예시에 호실 표시 추가"] },
   { v:"4.66", d:"2026-07-10", items:["②·⑤·⑥ 자동화가 같은 Apps Script 웹앱 URL을 사용하도록 통일","예전 자동화 URL이 남아 있으면 새 기본 URL로 자동 보정"] },
   { v:"4.65", d:"2026-07-10", items:["② 접수확인 메모에 발송 예시를 화면에서 항상 표시","기존 마스킹된 호실은 접수 요약에서 원래 호실을 찾아 표시"] },

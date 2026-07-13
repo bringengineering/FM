@@ -4052,8 +4052,7 @@ function sendComplaintSms_(ticketNo, record, analysis, contractMatch, options) {
     "접수번호: " + ticketNo,
     building ? "건물: " + building : "",
     room ? "호실: " + formatRoomForCase_(room) : "",
-    issueType ? "문제: " + issueType : "",
-    analysis && analysis.urgency ? "긴급도: " + analysis.urgency : ""
+    issueType ? "문제: " + issueType : ""
   ].filter(Boolean).join("\n");
 
   const logs = [];
