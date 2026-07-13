@@ -1082,7 +1082,7 @@ async function refresh(){
     $("tmax").textContent = Math.round(w.daily.temperature_2m_max[0])+"°";
     $("tmin").textContent = Math.round(w.daily.temperature_2m_min[0])+"°";
     const [pm10Label] = gradePM10(a.current.pm10);
-    $("pm10Brief").textContent = `${pm10Label} ${Math.round(a.current.pm10)}`;
+    $("pm10Brief").textContent = pm10Label;
     $("rainProb").textContent = `${Math.round(w.daily.precipitation_probability_max?.[0] ?? 0)}%`;
     const [desc, icon] = describe(c.weather_code, c.is_day===1);
     $("wdesc").textContent = desc;
