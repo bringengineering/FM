@@ -1985,6 +1985,7 @@ const caseView = document.getElementById("caseView");
 const caseListEl = document.getElementById("caseList");
 const caseDetailEl = document.getElementById("caseDetail");
 let cases = {}, curCase = null, casesRef = null, caseWriteT = null, caseWriteTimers = {}, caseValueHandler = null, noteOpen = new Set();
+let caseLocalFieldLocks = {};
 let lastCaseDetailScrollAt = 0;
 let caseTestMode = loadCaseTestMode();
 let showArchivedCases = loadCaseArchiveMode();
@@ -2023,6 +2024,31 @@ function caseSavePayload(id, includeArchive){
     delete payload.restoredBy;
   }
   return payload;
+}
+function clonePlain(value){
+  try{ return JSON.parse(JSON.stringify(value||{})); }catch(e){ return {}; }
+}
+function holdCaseLocalField(id, field, value, ttl){
+  if(!id || !field) return;
+  caseLocalFieldLocks[id] ||= {};
+  caseLocalFieldLocks[id][field]={ value:clonePlain(value), until:Date.now()+(ttl||2500) };
+}
+function applyCaseLocalFieldLocks(remoteCases){
+  const now=Date.now();
+  Object.keys(caseLocalFieldLocks||{}).forEach(id=>{
+    const fields=caseLocalFieldLocks[id]||{};
+    Object.keys(fields).forEach(field=>{
+      const lock=fields[field];
+      if(!lock || lock.until < now){
+        delete fields[field];
+        return;
+      }
+      remoteCases[id] ||= {};
+      remoteCases[id][field]=clonePlain(lock.value);
+    });
+    if(!Object.keys(fields).length) delete caseLocalFieldLocks[id];
+  });
+  return remoteCases;
 }
 function saveCase(id, immediate, options){
   if(!id || !cases[id]) return;
@@ -2305,8 +2331,13 @@ function renderCaseVendorCandidates(c, stepStatus){
   const picked=selectedCaseVendors(c).length;
   return `<div class="cv-vendors"><div class="cv-vendors-head"><div><div class="cv-vendors-title">업체 후보</div><div class="cv-vendors-sub">${escH(cats.join(" + "))} · ${count}곳 · 업체리스트_현진</div></div><span class="cv-vendor-count">선택 ${picked}곳</span></div><div class="vendor-grid">${cards}</div></div>`;
 }
+function safeVendorIdPart(value){
+  return vendorKey(value).replace(/[.#$/\[\]]/g, ch => ({
+    ".":"%2E", "#":"%23", "$":"%24", "/":"%2F", "[":"%5B", "]":"%5D"
+  }[ch] || ""));
+}
 function caseVendorId(cat,v){
-  return [vendorKey(cat), String(v.no||""), vendorKey(v.name||""), vendorKey(v.phone||"")].join("|");
+  return [safeVendorIdPart(cat), safeVendorIdPart(v.no||""), safeVendorIdPart(v.name||""), safeVendorIdPart(v.phone||"")].join("|");
 }
 function vendorPayload(cat,v){
   const id=caseVendorId(cat,v);
@@ -2327,8 +2358,20 @@ function decodeVendorPayload(value){
     return null;
   }
 }
+function normalizeVendorSelectionKeys(selections){
+  Object.keys(selections||{}).forEach(key=>{
+    const item=selections[key];
+    if(!item || typeof item!=="object") return;
+    const safeId=caseVendorId(item.category||item.type||"", item);
+    if(!safeId || key===safeId) return;
+    item.id=safeId;
+    if(!selections[safeId]) selections[safeId]=item;
+    delete selections[key];
+  });
+}
 function caseVendorSelections(c){
   if(!c.vendorSelections || typeof c.vendorSelections!=="object" || Array.isArray(c.vendorSelections)) c.vendorSelections={};
+  normalizeVendorSelectionKeys(c.vendorSelections);
   return c.vendorSelections;
 }
 function selectedCaseVendors(c){
@@ -2342,6 +2385,14 @@ function findVendorPayloadById(id){
   }
   return null;
 }
+function deleteCaseVendorSelection(c, vendorId){
+  const selections=caseVendorSelections(c);
+  const target=String(vendorId||"");
+  Object.keys(selections).forEach(key=>{
+    const item=selections[key]||{};
+    if(key===target || String(item.id||"")===target) delete selections[key];
+  });
+}
 function setCaseVendorSelection(caseId, vendorId, selected, fallbackPayload){
   const c=cases[caseId];
   if(!c) return;
@@ -2351,9 +2402,14 @@ function setCaseVendorSelection(caseId, vendorId, selected, fallbackPayload){
     payload.id = payload.id || vendorId;
     selections[vendorId]=payload;
   }else{
-    delete selections[vendorId];
+    deleteCaseVendorSelection(c, vendorId);
   }
+  holdCaseLocalField(caseId, "vendorSelections", c.vendorSelections, 4000);
   saveCase(caseId, true);
+  if(!selected && casesRef && vendorId){
+    const key=String(vendorId);
+    casesRef.child(caseId).child("vendorSelections").child(key).remove().catch(e=>console.warn("vendor selection remove failed", e));
+  }
   renderCaseDetailKeepScroll();
 }
 function caseVendorCardHtml(c,cat,v){
@@ -3817,7 +3873,7 @@ function detachCasesRef(){
   Object.keys(caseWriteTimers||{}).forEach(id=>clearTimeout(caseWriteTimers[id]));
   caseWriteTimers = {};
   if(casesRef && caseValueHandler) casesRef.off("value", caseValueHandler);
-  casesRef = null; caseValueHandler = null; cases = {}; curCase = null; noteOpen.clear();
+  casesRef = null; caseValueHandler = null; cases = {}; curCase = null; noteOpen.clear(); caseLocalFieldLocks = {};
   clearCaseLocalCache();
 }
 function attachCasesRef(){
@@ -3825,7 +3881,7 @@ function attachCasesRef(){
   casesRef = db.ref("cases");
   caseValueHandler = s => {
     const v = s.val();
-    cases = v && typeof v === "object" ? v : {};
+    cases = applyCaseLocalFieldLocks(v && typeof v === "object" ? v : {});
     const autoFixed = applyAllStepAutomation(cases, false);
     const fixed = normalizeAllCaseSteps(cases) || autoFixed;
     if (fixed) {
@@ -4229,8 +4285,10 @@ document.getElementById("noticeBtn").addEventListener("click", openNoticePanel);
 document.getElementById("noticeBanner").addEventListener("click", openNoticePanel);
 
 /* ===== 업데이트 알림(What's New) — 새 버전 나오면 자동 팝업 ===== */
-const APP_VERSION = "4.73";
+const APP_VERSION = "4.75";
 const CHANGELOG = [
+  { v:"4.75", d:"2026-07-13", items:["④ 업체 후보 선택/해제 직후 실시간 동기화로 체크가 깜빡이는 문제 수정","선택 직후에는 방금 누른 값을 잠시 우선 적용해 화면 흔들림 방지"] },
+  { v:"4.74", d:"2026-07-13", items:["④ 업체 후보 선택 해제가 다시 살아나는 문제 수정","업체명에 슬래시 같은 문자가 있어도 선택 저장/해제가 안정적으로 동작하도록 내부 ID 정리"] },
   { v:"4.73", d:"2026-07-13", items:["④ 업체 후보 선택이 체크 직후 다시 풀리는 문제 수정","업체 카드 데이터를 함께 저장해 업체리스트 로딩/ID 매칭 흔들림에도 선택 유지"] },
   { v:"4.72", d:"2026-07-13", items:["완료 단계를 진행중으로 되돌릴 때 자동화 보정과 충돌해 깜빡이는 문제 수정","수동으로 되돌린 단계는 다시 완료할 때까지 자동 진행을 잠시 멈춤"] },
   { v:"4.71", d:"2026-07-13", items:["단계 상태 버튼을 완료로 바꾼 뒤 실시간 동기화로 다시 진행중으로 돌아오는 문제 수정"] },
