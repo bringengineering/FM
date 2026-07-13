@@ -698,10 +698,22 @@
     padding:24px 32px;
   }
   .benefit-grid{
-    display:grid;
-    grid-template-columns:repeat(4,1fr);
-    gap:18px;
+    display:block;
     height:calc(100% - 48px);
+  }
+  .benefit-banner{
+    width:100%;
+    height:100%;
+    border:1px solid #DDE8F6;
+    border-radius:12px;
+    overflow:hidden;
+    background:#07182F;
+  }
+  .benefit-banner img{
+    width:100%;
+    height:100%;
+    object-fit:contain;
+    display:block;
   }
   .benefit-card,.facility-card{
     border:1px solid #DDE8F6;
@@ -915,13 +927,9 @@
   <section class="section-card benefits">
     <div class="section-title"><span class="section-icon gift" aria-hidden="true"></span>입주민 혜택 <span class="section-more">더보기 〉</span></div>
     <div class="benefit-grid">
-      <div class="benefit-card has-benefit">
-        <img src="./benefit-donghwaru.png" alt="동화루 입주민 혜택">
-        <span class="benefit-name">동 화 루</span>
+      <div class="benefit-banner">
+        <img src="./benefit-banner.png" alt="Bring Care 입주민 혜택 광고 배너">
       </div>
-      <div class="benefit-card"><span class="placeholder-line"></span></div>
-      <div class="benefit-card"><span class="placeholder-line"></span></div>
-      <div class="benefit-card"><span class="placeholder-line"></span></div>
     </div>
   </section>
 
