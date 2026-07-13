@@ -640,8 +640,8 @@
   /* 위탁판매 카드 — 세로 보드에서는 '빠른 이용하기' 다음 섹션으로 배치 */
   .consign{
     order:4;
-    flex:.95 1 120px;
-    min-height:120px;
+    flex:2.05 1 260px;
+    min-height:260px;
     grid-area:auto;
     padding:24px 32px;
     border-radius:12px;
@@ -655,14 +655,42 @@
     font-weight:900;
     margin-bottom:14px;
   }
+  .consign-grid{
+    display:grid;
+    grid-template-columns:repeat(2,minmax(0,1fr));
+    grid-template-rows:repeat(3,minmax(0,1fr));
+    gap:12px;
+    height:calc(100% - 48px);
+  }
+  .consign-item{
+    min-width:0;
+    display:grid;
+    grid-template-columns:clamp(54px,5.6vw,76px) minmax(0,1fr) clamp(50px,5.2vw,68px);
+    align-items:center;
+    gap:12px;
+    padding:10px 12px;
+    border:1px solid #DDE8F6;
+    border-radius:12px;
+    background:rgba(255,255,255,.72);
+  }
   .consign .cbody{gap:24px}
-  .consign .cphoto{width:clamp(72px,8vw,110px);height:clamp(72px,8vw,110px);border-radius:12px;border:1px solid #DDE8F6}
-  .consign .cname{font-size:clamp(19px,1.7vw,27px);color:#173D72}
-  .consign .cvendor{font-size:clamp(13px,1.1vw,17px)}
-  .consign .cprice{font-size:clamp(19px,1.8vw,28px);color:#1359B4}
+  .consign .cphoto{
+    width:clamp(54px,5.6vw,76px);
+    height:clamp(54px,5.6vw,76px);
+    border-radius:10px;
+    border:1px solid #DDE8F6;
+  }
+  .consign .cname{font-size:clamp(15px,1.35vw,20px);color:#173D72}
+  .consign .cvendor{
+    font-size:clamp(11px,.95vw,14px);
+    overflow:hidden;
+    text-overflow:ellipsis;
+    white-space:nowrap;
+  }
+  .consign .cprice{font-size:clamp(15px,1.35vw,20px);color:#1359B4}
   .consign .cqr .qbox{border:1px solid #DDE8F6;border-radius:10px}
-  .consign .cqr img{width:clamp(80px,7.5vw,116px);height:clamp(80px,7.5vw,116px)}
-  .consign .cqrsub{color:#65738A}
+  .consign .cqr img{width:clamp(42px,4.8vw,62px);height:clamp(42px,4.8vw,62px)}
+  .consign .cqrsub{display:none}
   .benefits{
     order:4;
     flex:1 1 110px;
@@ -812,19 +840,8 @@
 
     <!-- 위탁판매 상품 순환 카드 -->
     <div class="consign" id="consign">
-      <div class="ctag">🛍️ 위탁판매 <span class="ccount" id="ccount"></span></div>
-      <div class="cbody">
-        <div class="cphoto" id="cphoto"></div>
-        <div class="cinfo">
-          <div class="cname" id="cname"></div>
-          <div class="cvendor" id="cvendor"></div>
-          <div class="cprice" id="cprice"></div>
-        </div>
-        <div class="cqr">
-          <div class="qbox"><img id="cqrimg" alt="상품 주문 QR코드"></div>
-          <div class="cqrsub">QR 스캔 → 주문</div>
-        </div>
-      </div>
+      <div class="ctag">위탁판매 <span class="ccount" id="ccount"></span></div>
+      <div class="consign-grid" id="consignGrid"></div>
     </div>
 
     <div class="updated"><span class="pulse"></span><span id="updated">데이터 수신 대기</span></div>
@@ -898,19 +915,6 @@
         <span class="quick-line"></span>
         <span>입주민 소통방</span>
       </div>
-    </div>
-  </section>
-
-  <section class="section-card benefits">
-    <div class="section-title"><span class="section-icon gift" aria-hidden="true"></span>입주민 혜택 <span class="section-more">더보기 〉</span></div>
-    <div class="benefit-grid">
-      <div class="benefit-card has-benefit">
-        <img src="./benefit-donghwaru.png" alt="동화루 입주민 혜택">
-        <span class="benefit-name">동 화 루</span>
-      </div>
-      <div class="benefit-card"><span class="placeholder-line"></span></div>
-      <div class="benefit-card"><span class="placeholder-line"></span></div>
-      <div class="benefit-card"><span class="placeholder-line"></span></div>
     </div>
   </section>
 
@@ -1212,7 +1216,6 @@ setInterval(refreshNews, CONFIG.REFRESH_MIN*60*1000);
   const won = n => Number(n).toLocaleString("ko-KR");
 
   let items = [];
-  let idx = 0, timer = null;
 
   db.ref("signage/consign").on("value", snap => {
     const all = snap.val() || {};
@@ -1223,7 +1226,6 @@ setInterval(refreshNews, CONFIG.REFRESH_MIN*60*1000);
   }, () => {/* 권한/네트워크 오류 시 카드 숨김 유지 */});
 
   function restart(){
-    clearInterval(timer);
     const card = $("consign");
     const qrPanel = $("qr");
     if(items.length === 0){
@@ -1232,29 +1234,48 @@ setInterval(refreshNews, CONFIG.REFRESH_MIN*60*1000);
       return;
     }
     if(qrPanel) qrPanel.classList.add("off");        // 같은 자리(grid-area:qr) 공유 → 정적 QR 숨김
-    if(idx >= items.length) idx = 0;
     card.classList.add("on");
-    show();
-    if(items.length > 1) timer = setInterval(()=>{ idx=(idx+1)%items.length; show(); }, 10000);
+    renderGrid();
   }
 
-  function show(){
-    const p = items[idx];
-    if(!p) return;
-    const card = $("consign");
-    card.classList.remove("on"); void card.offsetWidth; card.classList.add("on"); // 페이드 재생
-    $("ccount").textContent = items.length > 1 ? `${idx+1} / ${items.length}` : "";
-    $("cname").textContent = p.name;
-    $("cvendor").textContent = p.vendor || "";
-    const priceEl = $("cprice");
-    if(!p.price || Number(p.price) <= 0){ priceEl.textContent = "가격 문의"; priceEl.classList.add("ask"); }
-    else { priceEl.textContent = won(p.price) + "원"; priceEl.classList.remove("ask"); }
-    const ph = $("cphoto");
-    if(p.photo){ ph.style.backgroundImage = `url('${String(p.photo).replace(/'/g,"%27")}')`; ph.textContent=""; }
-    else { ph.style.backgroundImage = "none"; ph.textContent = "🛍️"; }
+  function renderGrid(){
+    const grid = $("consignGrid");
+    const shown = items.slice(0,6);
+    $("ccount").textContent = items.length > 6 ? `6 / ${items.length}` : `${shown.length}개`;
+    grid.innerHTML = shown.map(productCard).join("");
+  }
+
+  function productCard(p){
+    const price = (!p.price || Number(p.price) <= 0) ? "가격 문의" : won(p.price) + "원";
+    const photo = p.photo
+      ? `style="background-image:url('${String(p.photo).replace(/'/g,"%27")}')"`
+      : "";
     const url = SHOP_BASE + "?id=" + encodeURIComponent(p.id);
-    $("cqrimg").src = "https://api.qrserver.com/v1/create-qr-code/?size=240x240&margin=0&data="
+    const qr = "https://api.qrserver.com/v1/create-qr-code/?size=180x180&margin=0&data="
       + encodeURIComponent(url);
+    return `
+      <div class="consign-item">
+        <div class="cphoto" ${photo}></div>
+        <div class="cinfo">
+          <div class="cname">${escapeHTML(p.name)}</div>
+          <div class="cvendor">${escapeHTML(p.vendor || "")}</div>
+          <div class="cprice">${escapeHTML(price)}</div>
+        </div>
+        <div class="cqr">
+          <div class="qbox"><img src="${qr}" alt="상품 주문 QR코드"></div>
+          <div class="cqrsub">QR 스캔</div>
+        </div>
+      </div>`;
+  }
+
+  function escapeHTML(value){
+    return String(value ?? "").replace(/[&<>"']/g, ch => ({
+      "&":"&amp;",
+      "<":"&lt;",
+      ">":"&gt;",
+      '"':"&quot;",
+      "'":"&#39;"
+    }[ch]));
   }
 })();
 
