@@ -4042,6 +4042,7 @@ function sendComplaintSms_(ticketNo, record, analysis, contractMatch, options) {
     "민원이 접수되었습니다.",
     "접수번호: " + ticketNo,
     building ? "건물: " + building : "",
+    room ? "호실: " + formatRoomForCase_(room) : "",
     issueType ? "문제: " + issueType : "",
     "확인 후 안내드리겠습니다."
   ].filter(Boolean).join("\n");
