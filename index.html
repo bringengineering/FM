@@ -4007,7 +4007,7 @@ function firstVendorSmsPhone(value){
   const raw=String(value||"");
   const matches=raw.match(/(?:\+?82[-.\s]?)?0?\d{1,3}[-.\s]?\d{3,4}[-.\s]?\d{4}/g)||[];
   const normalized=matches.map(smsDigits).filter(v=>v.length>=9 && v.length<=11);
-  return normalized.find(v=>/^01[016789]\d{7,8}$/.test(v)) || normalized[0] || "";
+  return normalized.find(v=>/^01[016789]\d{7,8}$/.test(v)) || "";
 }
 function maskSmsPhone(value){
   const digits=smsDigits(value);
@@ -4066,8 +4066,8 @@ function openVendorSmsModal(id){
   if(msg){ alert(msg); return; }
   const vendors=selectedCaseVendors(c);
   if(!vendors.length){
-    alert("④ 민원·요청 분류에서 발송할 업체를 먼저 선택하세요.");
-    noteOpen.add("c4");
+    alert("⑤ 업체 견적 요청에서 발송할 업체를 먼저 선택하세요.");
+    noteOpen.add("c5");
     renderCaseDetail();
     return;
   }
@@ -4077,7 +4077,7 @@ function openVendorSmsModal(id){
   document.getElementById("vsmBody").textContent=buildVendorMmsMessage(c);
   document.getElementById("vsmList").innerHTML=vendors.map(v=>{
     const phone=firstVendorSmsPhone(v.phone);
-    return `<div class="vsm-item ${phone?'':'bad'}"><b>${esc(v.name||"업체명 없음")}</b><span>${esc(v.category||v.type||"분류 미확인")} · ${esc(phone?maskSmsPhone(phone):"발송 가능한 번호 없음")}</span></div>`;
+    return `<div class="vsm-item ${phone?'':'bad'}"><b>${esc(v.name||"업체명 없음")}</b><span>${esc(v.category||v.type||"분류 미확인")} · ${esc(phone?maskSmsPhone(phone):"MMS 가능한 휴대폰 번호 없음")}</span></div>`;
   }).join("");
   refreshVendorSmsNote();
   vendorSmsModalEl.classList.add("open");
@@ -4095,7 +4095,7 @@ function doSendVendorSms(){
   const vendors=selectedCaseVendors(c);
   if(!vendors.length){ alert("발송할 업체가 선택되지 않았어요."); return; }
   if(!vendors.some(v=>firstVendorSmsPhone(v.phone))){
-    alert("선택한 업체 중 발송 가능한 전화번호가 없어요.");
+    alert("선택한 업체 중 MMS를 받을 수 있는 휴대폰 번호가 없어요.");
     return;
   }
   if(!vendorSmsEndpoint()){
@@ -4204,7 +4204,7 @@ function renderCaseDetail(){
       const box=open?`<textarea class="cv-note ${noteClass}" data-note="${s.k}" placeholder="이 단계 메모 (민원 내용·선정 업체·금액 등)">${esc(note)}</textarea>`:"";
       const receiptSmsPreview=open && s.k==='c2' && !/\[발송 예시/.test(note) ? renderReceiptSmsPreview(c) : "";
       const vendorMmsPreview=open && s.k==='c5' && !/업체 MMS 견적 요청|업체 MMS 발송 요청 중|업체 MMS 발송 실패/.test(note) ? renderVendorMmsPreview(c) : "";
-      const vendors=open && s.k==='c4' ? renderCaseVendorCandidates(c, st) : "";
+      const vendors=open && s.k==='c5' ? renderCaseVendorCandidates(c, st) : "";
       const quotes=open && s.k==='c6' ? renderQuoteUploadPanel(c, st) : "";
       const recommendation=open && s.k==='c7' ? renderRecommendedQuotePanel(c, st) : "";
       return `<div class="cv-stepwrap"><div class="cv-step ${locked?'locked':st}">${chip}<div class="lbl">${esc(s.t)}</div>${act}${dc}${tb}${nb}</div>${box}${receiptSmsPreview}${vendorMmsPreview}${vendors}${quotes}${recommendation}</div>`;
@@ -4289,8 +4289,10 @@ document.getElementById("noticeBtn").addEventListener("click", openNoticePanel);
 document.getElementById("noticeBanner").addEventListener("click", openNoticePanel);
 
 /* ===== 업데이트 알림(What's New) — 새 버전 나오면 자동 팝업 ===== */
-const APP_VERSION = "4.77";
+const APP_VERSION = "4.79";
 const CHANGELOG = [
+  { v:"4.79", d:"2026-07-13", items:["업체 후보 선택 영역을 ④ 분류 단계에서 ⑤ 업체 견적 요청 단계로 이동","⑤에서 업체를 선택한 뒤 바로 MMS 발송 확인으로 이어지도록 정리"] },
+  { v:"4.78", d:"2026-07-13", items:["⑤ 업체 MMS 발송 결과에 SENS 요청 ID 표시","MMS는 휴대폰 번호만 발송 가능으로 판정해 미도착 혼선을 줄임"] },
   { v:"4.77", d:"2026-07-13", items:["⑤ 업체 견적 요청 메모에 MMS 발송 예시 표시","발송 결과가 없을 때 실제 업체에게 보낼 문구를 미리 확인"] },
   { v:"4.76", d:"2026-07-13", items:["⑤ 선택 업체 MMS 발송 완료 기준 정리","선택한 업체 전체 발송 성공 시에만 ⑤ 완료 및 ⑥ 견적 비교 진행중으로 전환"] },
   { v:"4.75", d:"2026-07-13", items:["④ 업체 후보 선택/해제 직후 실시간 동기화로 체크가 깜빡이는 문제 수정","선택 직후에는 방금 누른 값을 잠시 우선 적용해 화면 흔들림 방지"] },
