@@ -4112,7 +4112,7 @@ function doSendVendorSms(){
   c.status.c5="doing";
   c.note.c5="업체 MMS 발송 요청 중입니다. Apps Script 처리 결과가 도착하면 자동 갱신됩니다.";
   caseLog(c, "📷 업체 MMS 발송 요청: "+vendors.length+"곳");
-  saveCase(vendorSmsCtx.id);
+  saveCase(vendorSmsCtx.id, true);
   renderCaseList();
   renderCaseDetail();
   closeVendorSmsModal();
@@ -4285,8 +4285,9 @@ document.getElementById("noticeBtn").addEventListener("click", openNoticePanel);
 document.getElementById("noticeBanner").addEventListener("click", openNoticePanel);
 
 /* ===== 업데이트 알림(What's New) — 새 버전 나오면 자동 팝업 ===== */
-const APP_VERSION = "4.75";
+const APP_VERSION = "4.76";
 const CHANGELOG = [
+  { v:"4.76", d:"2026-07-13", items:["⑤ 선택 업체 MMS 발송 완료 기준 정리","선택한 업체 전체 발송 성공 시에만 ⑤ 완료 및 ⑥ 견적 비교 진행중으로 전환"] },
   { v:"4.75", d:"2026-07-13", items:["④ 업체 후보 선택/해제 직후 실시간 동기화로 체크가 깜빡이는 문제 수정","선택 직후에는 방금 누른 값을 잠시 우선 적용해 화면 흔들림 방지"] },
   { v:"4.74", d:"2026-07-13", items:["④ 업체 후보 선택 해제가 다시 살아나는 문제 수정","업체명에 슬래시 같은 문자가 있어도 선택 저장/해제가 안정적으로 동작하도록 내부 ID 정리"] },
   { v:"4.73", d:"2026-07-13", items:["④ 업체 후보 선택이 체크 직후 다시 풀리는 문제 수정","업체 카드 데이터를 함께 저장해 업체리스트 로딩/ID 매칭 흔들림에도 선택 유지"] },

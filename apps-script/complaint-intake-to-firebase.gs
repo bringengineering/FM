@@ -336,7 +336,10 @@ function handleVendorEstimateMms_(payload) {
     }
   });
 
-  result.ok = result.sent.length > 0 && result.failed.length === 0;
+  result.ok = selectedVendors.length > 0 &&
+    result.sent.length === selectedVendors.length &&
+    result.failed.length === 0 &&
+    result.skipped.length === 0;
   result.status = result.ok ? "sent" : "failed";
   result.statusText = result.ok
     ? "업체 MMS 발송 완료: " + result.sent.length + "곳"
