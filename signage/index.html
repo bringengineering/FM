@@ -1216,6 +1216,7 @@ setInterval(refreshNews, CONFIG.REFRESH_MIN*60*1000);
   const won = n => Number(n).toLocaleString("ko-KR");
 
   let items = [];
+  let page = 0, timer = null;
 
   db.ref("signage/consign").on("value", snap => {
     const all = snap.val() || {};
@@ -1226,6 +1227,7 @@ setInterval(refreshNews, CONFIG.REFRESH_MIN*60*1000);
   }, () => {/* 권한/네트워크 오류 시 카드 숨김 유지 */});
 
   function restart(){
+    clearInterval(timer);
     const card = $("consign");
     const qrPanel = $("qr");
     if(items.length === 0){
@@ -1234,15 +1236,24 @@ setInterval(refreshNews, CONFIG.REFRESH_MIN*60*1000);
       return;
     }
     if(qrPanel) qrPanel.classList.add("off");        // 같은 자리(grid-area:qr) 공유 → 정적 QR 숨김
+    if(page * 6 >= items.length) page = 0;
     card.classList.add("on");
     renderGrid();
+    if(items.length > 6) timer = setInterval(nextPage, 10000);
   }
 
   function renderGrid(){
     const grid = $("consignGrid");
-    const shown = items.slice(0,6);
-    $("ccount").textContent = items.length > 6 ? `6 / ${items.length}` : `${shown.length}개`;
+    const start = page * 6;
+    const shown = items.slice(start,start + 6);
+    const totalPages = Math.ceil(items.length / 6);
+    $("ccount").textContent = totalPages > 1 ? `${page + 1} / ${totalPages}` : `${shown.length}개`;
     grid.innerHTML = shown.map(productCard).join("");
+  }
+
+  function nextPage(){
+    page = (page + 1) % Math.ceil(items.length / 6);
+    renderGrid();
   }
 
   function productCard(p){
