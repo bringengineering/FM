@@ -3027,6 +3027,7 @@ function sendComplaintReceiptSmsFromCase(id){
   });
   c.status=c.status||{};
   c.note=c.note||{};
+  clearStepAutomationHoldThrough(c,"c2");
   c.status.c2="doing";
   c.note.c2="접수확인 문자 발송 요청 중입니다. Apps Script 처리 결과가 도착하면 자동 갱신됩니다.";
   caseLog(c, "📨 접수확인 문자 발송 요청");
@@ -3593,6 +3594,7 @@ function applyNextStepProgress(c, messages){
   CASE_STEPS.forEach((s,i)=>{
     const next=CASE_STEPS[i+1];
     if(!next) return;
+    if(isStepAutomationHeld(c,next.k)) return;
     if(c.status[s.k]==="done" && !c.status[next.k]){
       c.status[next.k]="doing";
       changed=true;
@@ -3606,12 +3608,33 @@ function isReceiptSmsConfirmed(c){
   const smsNote=String((c&&c.note&&c.note.c2)||"");
   return /발송\s*완료/.test(smsStatus) || /발송\s*완료/.test(smsNote);
 }
+function stepAutomationHoldIndex(c){
+  const idx=stepIndex(c&&c.stepAutomationHoldFrom);
+  return idx >= 0 ? idx : -1;
+}
+function isStepAutomationHeld(c,k){
+  const holdIdx=stepAutomationHoldIndex(c), idx=stepIndex(k);
+  return holdIdx >= 0 && idx >= holdIdx;
+}
+function holdStepAutomationFrom(c,k){
+  if(!c || stepIndex(k) < 0) return;
+  c.stepAutomationHoldFrom=k;
+  c.stepAutomationHoldAt=new Date().toISOString();
+}
+function clearStepAutomationHoldThrough(c,k){
+  if(!c) return;
+  const holdIdx=stepAutomationHoldIndex(c), idx=stepIndex(k);
+  if(holdIdx >= 0 && idx >= 0 && idx >= holdIdx){
+    delete c.stepAutomationHoldFrom;
+    delete c.stepAutomationHoldAt;
+  }
+}
 function applyStepAutomation(c, logEnabled){
   if(!c || !c.status) return false;
   let changed=false;
   const messages=[];
   c.note=c.note||{};
-  if(isReceiptSmsConfirmed(c) && c.status.c2!=="done"){
+  if(!isStepAutomationHeld(c,"c2") && isReceiptSmsConfirmed(c) && c.status.c2!=="done"){
     c.status.c2="done";
     changed=true;
     messages.push("② 접수확인 문자 발송완료 확인");
@@ -3626,7 +3649,7 @@ function applyStepAutomation(c, logEnabled){
       stepChanged=true;
       cardChanged=true;
     }
-    if(c.status.c3!=="done" && c.status.c3!=="doing"){
+    if(!isStepAutomationHeld(c,"c3") && c.status.c3!=="done" && c.status.c3!=="doing"){
       c.status.c3="doing";
       changed=true;
       stepChanged=true;
@@ -3642,16 +3665,16 @@ function applyStepAutomation(c, logEnabled){
       stepChanged=true;
       cardChanged=true;
     }
-    if(c.status.c4!=="done" && c.status.c4!=="doing"){
+    if(!isStepAutomationHeld(c,"c4") && c.status.c4!=="done" && c.status.c4!=="doing"){
       c.status.c4="doing";
       changed=true;
       stepChanged=true;
     }
     if(cardChanged) messages.push("④ 민원·요청 분류 자동초안 생성");
   }
-  if(c.status.c6==="doing" && hasPricedQuoteForRecommendation(c)){
+  if(!isStepAutomationHeld(c,"c6") && c.status.c6==="doing" && hasPricedQuoteForRecommendation(c)){
     c.status.c6="done";
-    if(c.status.c7!=="done") c.status.c7="doing";
+    if(!isStepAutomationHeld(c,"c7") && c.status.c7!=="done") c.status.c7="doing";
     changed=true;
     messages.push("⑥ 견적 비교: 금액 확인 견적 업로드로 완료 처리");
   }
@@ -3665,17 +3688,17 @@ function applyStepAutomation(c, logEnabled){
       cardChanged=true;
     }
     if(hasRecommendation){
-      if(c.status.c7!=="done"){
+      if(!isStepAutomationHeld(c,"c7") && c.status.c7!=="done"){
         c.status.c7="done";
         changed=true;
         stepChanged=true;
       }
-      if(c.status.c8!=="done" && c.status.c8!=="doing"){
+      if(!isStepAutomationHeld(c,"c8") && c.status.c8!=="done" && c.status.c8!=="doing"){
         c.status.c8="doing";
         changed=true;
         stepChanged=true;
       }
-    }else if(c.status.c7!=="done" && c.status.c7!=="doing"){
+    }else if(!isStepAutomationHeld(c,"c7") && c.status.c7!=="done" && c.status.c7!=="doing"){
       c.status.c7="doing";
       changed=true;
     }
@@ -3696,6 +3719,8 @@ function forceCompleteThroughStep(id,k){
   if(!c || idx < 0) return;
   c.status=c.status||{};
   CASE_STEPS.forEach((s,i)=>{ if(i<=idx) c.status[s.k]="done"; else delete c.status[s.k]; });
+  delete c.stepAutomationHoldFrom;
+  delete c.stepAutomationHoldAt;
   const target=CASE_STEPS[idx];
   caseLog(c, `테스트 완료: ${stepMark(CASE_STEPS[0])}~${stepMark(target)} 단계 완료 처리`);
   applyStepAutomation(c, true);
@@ -3819,12 +3844,12 @@ function selectCase(id){ curCase=id; noteOpen.clear(); quotePendingCaseId=id; qu
 function archiveCase(id){ const c=cases[id]; if(!c) return; if(!confirm("이 케이스를 보관함으로 이동할까요?")) return; c.archived=true; c.archivedAt=new Date().toISOString(); c.archivedBy=caseUserLabel(); caseLog(c, "케이스 보관 처리"); saveCase(id, true, {includeArchive:true}); if(curCase===id) curCase=firstVisibleCaseId(); renderCaseList(); renderCaseDetail(); }
 function restoreCase(id){ const c=cases[id]; if(!c) return; c.archived=false; c.restoredAt=new Date().toISOString(); c.restoredBy=caseUserLabel(); caseLog(c, "케이스 보관 해제"); curCase=id; saveCase(id, true, {includeArchive:true}); renderCaseList(); renderCaseDetail(); }
 function deleteCase(id){ archiveCase(id); }
-function cycleStep(id,k){ const c=cases[id]; if(!c) return; const msg=stepLockMessage(c,k); if(msg){ alert(msg); return; } c.status=c.status||{}; const cur=c.status[k]||""; c.status[k]= cur===""?"doing":cur==="doing"?"done":""; if(!c.status[k]) delete c.status[k]; const s=CASE_STEPS.find(x=>x.k===k); caseLog(c, s.t+" → "+(c.status[k]==="done"?"완료":c.status[k]==="doing"?"진행중":"대기")); applyStepAutomation(c, true); normalizeCaseSteps(c); saveCase(id, true); renderCaseList(); renderCaseDetail(); }
+function cycleStep(id,k){ const c=cases[id]; if(!c) return; const msg=stepLockMessage(c,k); if(msg){ alert(msg); return; } c.status=c.status||{}; const cur=c.status[k]||""; c.status[k]= cur===""?"doing":cur==="doing"?"done":"doing"; if(c.status[k]==="done") clearStepAutomationHoldThrough(c,k); else holdStepAutomationFrom(c,k); const s=CASE_STEPS.find(x=>x.k===k); caseLog(c, s.t+" → "+(c.status[k]==="done"?"완료":c.status[k]==="doing"?"진행중":"대기")); applyStepAutomation(c, true); normalizeCaseSteps(c); saveCase(id, true); renderCaseList(); renderCaseDetail(); }
 function doAuto(id,k,channel){ const c=cases[id]; if(!c) return;
   const msg=stepLockMessage(c,k); if(msg){ alert(msg); return; }
   /* 메일 외 자동화(입금확인 등)는 아직 수동 기록 */
   if(!confirm("["+channel+"] 자동 연결은 준비 중(예정)입니다.\n지금은 '실행함'으로 기록하고 이 단계를 완료 처리할까요?")) return;
-  c.status=c.status||{}; c.status[k]="done"; caseLog(c, "🔌 "+channel+" 실행(수동 기록)"); applyStepAutomation(c, true); normalizeCaseSteps(c); saveCase(id); renderCaseList(); renderCaseDetail();
+  c.status=c.status||{}; c.status[k]="done"; clearStepAutomationHoldThrough(c,k); caseLog(c, "🔌 "+channel+" 실행(수동 기록)"); applyStepAutomation(c, true); normalizeCaseSteps(c); saveCase(id, true); renderCaseList(); renderCaseDetail();
 }
 /* ===== 📧 메일 자동발송 (구글 Apps Script 백엔드) ===== */
 const EMAIL_TEMPLATES = {
@@ -3881,7 +3906,7 @@ function doSendMail(){
   if(!settings.mailEndpoint){ if(!promptMailSetup()){ return; } refreshMailNote(); if(!settings.mailEndpoint) return; }
   if(mailCtx){ const c=cases[mailCtx.id]; const msg=stepLockMessage(c,mailCtx.k); if(msg){ alert(msg); return; } }
   sendMailRequest(settings.mailEndpoint, {to, subject, body});
-  if(mailCtx){ const c=cases[mailCtx.id]; if(c){ c.status=c.status||{}; c.status[mailCtx.k]="done"; caseLog(c, "📧 메일 발송: "+to+" — "+subject); applyStepAutomation(c, true); normalizeCaseSteps(c); saveCase(mailCtx.id); renderCaseList(); renderCaseDetail(); } }
+  if(mailCtx){ const c=cases[mailCtx.id]; if(c){ c.status=c.status||{}; c.status[mailCtx.k]="done"; clearStepAutomationHoldThrough(c,mailCtx.k); caseLog(c, "📧 메일 발송: "+to+" — "+subject); applyStepAutomation(c, true); normalizeCaseSteps(c); saveCase(mailCtx.id, true); renderCaseList(); renderCaseDetail(); } }
   closeMailModal(); alert("✉️ 발송 요청을 보냈어요.\nGmail 보낸편지함에서 확인하세요.");
 }
 function setVendorSmsEndpoint(url){
@@ -4191,8 +4216,9 @@ document.getElementById("noticeBtn").addEventListener("click", openNoticePanel);
 document.getElementById("noticeBanner").addEventListener("click", openNoticePanel);
 
 /* ===== 업데이트 알림(What's New) — 새 버전 나오면 자동 팝업 ===== */
-const APP_VERSION = "4.71";
+const APP_VERSION = "4.72";
 const CHANGELOG = [
+  { v:"4.72", d:"2026-07-13", items:["완료 단계를 진행중으로 되돌릴 때 자동화 보정과 충돌해 깜빡이는 문제 수정","수동으로 되돌린 단계는 다시 완료할 때까지 자동 진행을 잠시 멈춤"] },
   { v:"4.71", d:"2026-07-13", items:["단계 상태 버튼을 완료로 바꾼 뒤 실시간 동기화로 다시 진행중으로 돌아오는 문제 수정"] },
   { v:"4.70", d:"2026-07-13", items:["문자 발송완료 확인 문구를 더 넓게 인식해 ② 완료 및 ③ 진행중 전환 안정화"] },
   { v:"4.69", d:"2026-07-13", items:["접수확인 문자 발송완료가 확인되면 ② 완료 처리 후 ③ 상담·요청 파악으로 자동 전환"] },
