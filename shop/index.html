@@ -391,6 +391,13 @@
 
     <!-- 하단 주문 바 -->
     <div class="orderbar" id="orderbar">
+      <div class="obopt" id="obOptWrap" style="display:none;align-items:center;gap:10px;margin-bottom:2px">
+        <select id="obOptSel" style="flex:1;min-width:0;padding:12px;border:1px solid #d9d9d9;border-radius:10px;font-size:15px;background:#fff"></select>
+        <div style="text-align:right;white-space:nowrap;line-height:1.15">
+          <div id="obOptPrice" style="font-weight:800;color:var(--brand);font-size:17px"></div>
+          <div style="font-size:11px;color:#1a9d63;font-weight:800">무료배송</div>
+        </div>
+      </div>
       <div class="obrow">
         <button class="btn btn-kakao hide" id="kakaoBtn">카톡 문의</button>
         <button class="btn btn-primary" id="orderBtn">주문하기</button>
@@ -427,7 +434,7 @@
     </div>
     <div class="field">
       <label>수령 방법</label>
-      <div class="rcfixed" style="padding:11px 12px;background:#F3F6FB;border-radius:10px;font-size:14.5px;color:#0F58A0;font-weight:700">📦 전국 택배 배송</div>
+      <div class="rcfixed" style="padding:11px 12px;background:#F3F6FB;border-radius:10px;font-size:14.5px;color:#0F58A0;font-weight:700">📦 전국 택배 배송 · 무료배송</div>
     </div>
     <div class="field" id="addrField">
       <label>배송지 주소 <span class="req">*</span></label>
@@ -477,6 +484,7 @@ let SETTINGS = {
 
 let PRODUCTS = {};
 let currentId = null;
+let selOptIdx = 0;   // 하단 주문바에서 선택한 옵션 인덱스
 
 db.ref("signage/settings").on("value", s => {
   const v = s.val();
@@ -544,6 +552,17 @@ function renderDetail(id){
   if(!p){ $("detailview").innerHTML = notFound(); $("orderbar").style.display="none"; return; }
   $("orderbar").style.display = "";
   const soldout = !!p.soldout;
+  // 하단 주문바 옵션 드롭다운 채우기
+  selOptIdx = 0;
+  (function(){
+    const opts = Array.isArray(p.options) ? p.options : [];
+    const wrap = $("obOptWrap"), sel = $("obOptSel");
+    if(opts.length && !soldout){
+      sel.innerHTML = opts.map((o,i)=>`<option value="${i}">${esc(o.n)} — ${won(o.p)}원</option>`).join("");
+      $("obOptPrice").textContent = won(opts[0].p) + "원";
+      wrap.style.display = "flex";
+    } else { wrap.style.display = "none"; }
+  })();
   const photos = (Array.isArray(p.gallery) && p.gallery.length) ? p.gallery
                : (p.photo ? [p.photo] : []);
   const ask = (!p.price||Number(p.price)<=0) ? "ask" : "";
@@ -592,7 +611,7 @@ function renderDetail(id){
   $("obCaption").textContent = soldout ? "" :
     (extOrderUrl(p)
       ? "주문서(구글 폼)로 연결됩니다 · 접수 후 문자로 안내드려요"
-      : "주문은 이 페이지에서 바로 접수됩니다 · 접수 후 연락드려요");
+      : "전 상품 무료배송 · 계좌이체 전용 · 접수 후 입금 계좌 안내드려요");
 
   const kb = $("kakaoBtn");
   if(SETTINGS.kakaoUrl){ kb.classList.remove("hide"); kb.onclick = ()=> window.open(SETTINGS.kakaoUrl,"_blank"); }
@@ -632,7 +651,7 @@ $("back").addEventListener("click", () => go(null));
 function selectedOpt(p){
   const opts = Array.isArray(p.options) ? p.options : [];
   if(!opts.length) return null;
-  return opts[+($("optSel").value||0)] || opts[0];
+  return opts[selOptIdx] || opts[0];
 }
 function updateModalItem(p){
   const o = selectedOpt(p);
@@ -644,18 +663,19 @@ $("orderBtn").addEventListener("click", () => {
   if(!p || p.soldout) return;
   const ext = extOrderUrl(p);
   if(ext){ window.open(ext, "_blank"); return; }
-  const opts = Array.isArray(p.options) ? p.options : [];
-  if(opts.length){
-    $("optSel").innerHTML = opts.map((o,i)=>`<option value="${i}">${esc(o.n)} — ${won(o.p)}원</option>`).join("");
-    $("optField").style.display = "block";
-  } else { $("optSel").innerHTML = ""; $("optField").style.display = "none"; }
+  $("optField").style.display = "none";   // 옵션은 하단 주문바에서 선택
   updateModalItem(p);
   $("payNote").textContent = SETTINGS.bankInfo || "";
   $("qty").value = 1;
   $("modal").classList.add("on");
   document.body.style.overflow = "hidden";
 });
-$("optSel").addEventListener("change", ()=>{ const p = PRODUCTS[currentId]; if(p) updateModalItem(p); });
+$("obOptSel").addEventListener("change", ()=>{
+  const p = PRODUCTS[currentId]; if(!p) return;
+  const opts = Array.isArray(p.options) ? p.options : [];
+  selOptIdx = +($("obOptSel").value||0);
+  if(opts[selOptIdx]) $("obOptPrice").textContent = won(opts[selOptIdx].p) + "원";
+});
 function closeModal(){ $("modal").classList.remove("on"); document.body.style.overflow=""; }
 $("cancelOrder").addEventListener("click", closeModal);
 $("modal").addEventListener("click", e => { if(e.target === $("modal")) closeModal(); });
