@@ -770,8 +770,8 @@
     flex-direction:column;
     align-items:center;
     justify-content:center;
-    gap:9px;
-    padding:12px 8px;
+    gap:7px;
+    padding:10px 8px;
     color:#173D72;
     font-size:clamp(13px,1.05vw,18px);
     font-weight:800;
@@ -796,6 +796,12 @@
     -webkit-box-orient:vertical;
     overflow:hidden;
     max-width:100%;
+  }
+  .facility-distance{
+    color:#2D7DD2;
+    font-size:.76em;
+    font-weight:800;
+    line-height:1.15;
   }
   .alert-strip{
     order:6;
@@ -979,12 +985,12 @@ const CONFIG = {
   /* 주변 편의시설: name에 실제 상호명을 넣으면 화면에 표시됩니다.
      추후 주소 기반 자동 검색을 붙이면 이 목록을 자동으로 채우는 구조입니다. */
   FACILITIES: [
-    { type: "laundry", label: "세탁소", name: "빨래나라", icon: "./facility-laundry.svg" },
-    { type: "store", label: "편의점", name: "이마트24 이화해피점", icon: "./facility-store.svg" },
-    { type: "cafe", label: "카페", name: "커피모도", icon: "./facility-cafe.svg" },
-    { type: "pharmacy", label: "약국", name: "메디팜이화약국", icon: "./facility-pharmacy.svg" },
-    { type: "bank", label: "은행", name: "원주원예농협", icon: "./facility-bank.svg" },
-    { type: "parking", label: "주차장", name: "이화마을2 주차장", icon: "./facility-parking.svg" }
+    { type: "laundry", label: "세탁소", name: "빨래나라", distance: "약 30m", icon: "./facility-laundry.svg" },
+    { type: "store", label: "편의점", name: "이마트24 이화해피점", distance: "약 170m", icon: "./facility-store.svg" },
+    { type: "cafe", label: "카페", name: "커피모도", distance: "약 260m", icon: "./facility-cafe.svg" },
+    { type: "pharmacy", label: "약국", name: "메디팜이화약국", distance: "약 450m", icon: "./facility-pharmacy.svg" },
+    { type: "bank", label: "은행", name: "원주원예농협", distance: "약 520m", icon: "./facility-bank.svg" },
+    { type: "parking", label: "주차장", name: "이화마을2 주차장", distance: "약 240m", icon: "./facility-parking.svg" }
   ]
 };
 /* ═══════════════════════════════════════════════ */
@@ -1011,12 +1017,14 @@ function renderFacilities(){
     const type = esc(item.type || "store");
     const label = esc(item.label || "편의시설");
     const name = esc(item.name || "정보 준비중");
+    const distance = esc(item.distance || "");
     const icon = esc(item.icon || "./facility-store.svg");
     return `
       <div class="facility-card">
         <img class="facility-icon ${type}" src="${icon}" alt="" aria-hidden="true">
         <span class="facility-label">${label}</span>
         <span class="facility-name">${name}</span>
+        ${distance ? `<span class="facility-distance">${distance}</span>` : ""}
       </div>
     `;
   }).join("");
