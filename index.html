@@ -2113,6 +2113,34 @@ function formatCaseDate(v){
   if(Number.isNaN(d.getTime())) return "";
   return d.toLocaleString("ko-KR", { month:"2-digit", day:"2-digit", hour:"2-digit", minute:"2-digit" });
 }
+function formatEnglishDateTextKorean(raw){
+  const monthMap={jan:1,feb:2,mar:3,apr:4,may:5,jun:6,jul:7,aug:8,sep:9,oct:10,nov:11,dec:12};
+  const m=String(raw||"").trim().match(/^(?:[A-Za-z]{3}\s+)?([A-Za-z]{3})\s+(\d{1,2})\s+(\d{4})\s+(\d{1,2}):(\d{2})/);
+  if(!m) return "";
+  const month=monthMap[m[1].toLowerCase()];
+  if(!month) return "";
+  return `${m[3]}년 ${month}월 ${Number(m[2])}일 ${String(m[4]).padStart(2,"0")}:${m[5]}`;
+}
+function formatKoreanDateTime(value){
+  const raw=String(value||"").trim();
+  if(!raw) return "";
+  const english=formatEnglishDateTextKorean(raw);
+  if(english) return english;
+  const d=new Date(raw);
+  if(Number.isNaN(d.getTime())) return raw;
+  return d.toLocaleString("ko-KR", {
+    timeZone:"Asia/Seoul",
+    year:"numeric",
+    month:"long",
+    day:"numeric",
+    hour:"2-digit",
+    minute:"2-digit",
+    hour12:false
+  });
+}
+function displayVisitTime(c){
+  return formatKoreanDateTime(c&&c.visitTime);
+}
 function renderComplaintOverview(c){
   if(!(c.source==="google_form" || c.ticketNo || c.issueType || c.urgency || c.vendorType || c.summary)) return "";
   const ucls=caseUrgencyClass(c.urgency);
@@ -2124,7 +2152,7 @@ function renderComplaintOverview(c){
     ["주소", c.address],
     ["문제 유형", c.issueType],
     ["업체 분류", c.vendorType],
-    ["방문 가능", c.visitTime],
+    ["방문 가능", displayVisitTime(c)],
     ["접수 시각", received]
   ].filter(x=>x[1]);
   return `<div class="cv-complaint"><div class="cv-complaint-head">`+
@@ -2215,7 +2243,7 @@ function makeConsultationNote(c){
     "접수번호: " + (c.ticketNo || c.id || "미발급"),
     "건물/호실: " + building + " / " + room,
     "문제 유형: " + issueType,
-    "방문 가능 시간: " + (c.visitTime || "미입력"),
+    "방문 가능 시간: " + (displayVisitTime(c) || "미입력"),
     "사진/원본: " + (c.sheetUrl ? "응답 시트에서 확인" : "확인 링크 없음"),
     "",
     "[추가 확인 질문]",
@@ -4021,7 +4049,7 @@ function buildVendorMmsMessage(c){
     `${c.building||"건물 미입력"} / ${room}`,
     `주소: ${c.address||"주소 미입력"}`,
     `문제: ${c.issueType||"문제 유형 미입력"} / ${c.vendorType||"업체 분류 미확인"}`,
-    `방문 가능: ${c.visitTime||"협의 필요"}`,
+    `방문 가능: ${displayVisitTime(c)||"협의 필요"}`,
     "",
     "첨부 사진 확인 후 현장 확인 가능 여부와 견적 회신 부탁드립니다.",
     `접수번호: ${c.ticketNo||c.id||"미발급"}`
@@ -4289,8 +4317,9 @@ document.getElementById("noticeBtn").addEventListener("click", openNoticePanel);
 document.getElementById("noticeBanner").addEventListener("click", openNoticePanel);
 
 /* ===== 업데이트 알림(What's New) — 새 버전 나오면 자동 팝업 ===== */
-const APP_VERSION = "4.79";
+const APP_VERSION = "4.80";
 const CHANGELOG = [
+  { v:"4.80", d:"2026-07-13", items:["방문 가능 시간을 한국시간 년·월·일·시·분 형식으로 표시","구글시트 시간값이 영문 Date 문자열로 보이는 문제 수정"] },
   { v:"4.79", d:"2026-07-13", items:["업체 후보 선택 영역을 ④ 분류 단계에서 ⑤ 업체 견적 요청 단계로 이동","⑤에서 업체를 선택한 뒤 바로 MMS 발송 확인으로 이어지도록 정리"] },
   { v:"4.78", d:"2026-07-13", items:["⑤ 업체 MMS 발송 결과에 SENS 요청 ID 표시","MMS는 휴대폰 번호만 발송 가능으로 판정해 미도착 혼선을 줄임"] },
   { v:"4.77", d:"2026-07-13", items:["⑤ 업체 견적 요청 메모에 MMS 발송 예시 표시","발송 결과가 없을 때 실제 업체에게 보낼 문구를 미리 확인"] },
