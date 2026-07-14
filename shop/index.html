@@ -113,8 +113,9 @@
     padding:24px 20px 28px;display:flex;flex-direction:column;gap:10px;
   }
   footer .fb{font-size:14px;font-weight:800;color:#fff;letter-spacing:.04em}
-  footer .fs{font-size:12px;line-height:1.7;color:#8FA2BD}
+  footer .fs{font-size:12px;line-height:1.8;color:#8FA2BD}
   footer .fx{font-size:11px;color:#5C6B80}
+  footer .fcopy{margin-top:6px;padding-top:12px;border-top:1px solid rgba(255,255,255,.08);font-size:11px;color:#5C6B80;letter-spacing:.02em}
 
   /* ── 상세 ───────────────────────────────────── */
   .detailview{display:none;flex-direction:column;flex:1}
@@ -378,10 +379,11 @@
       <div class="fin">
         <div class="fl">
           <div class="fb">브링엔지니어링</div>
-          <div class="fs" id="footList">BRING빌딩 1층 위탁판매 · 수령/문의는 1층 데스크</div>
+          <div class="fs" id="footList"></div>
         </div>
         <div class="fx">입점(위탁판매) 문의도 환영합니다</div>
       </div>
+      <div class="fcopy" id="footCopy"></div>
     </footer>
   </div>
 
@@ -747,13 +749,13 @@ function esc(s){ return String(s??"").replace(/[&<>"']/g, c => ({'&':'&amp;','<'
 function escAttr(s){ return String(s??"").replace(/'/g,"%27").replace(/"/g,"%22"); }
 
 function applySettings(){
-  $("hPhone").textContent = "관리사무실 " + (SETTINGS.phone || "");
+  $("hPhone").textContent = "전화 " + (SETTINGS.phone || "");
   $("footList").innerHTML =
-    "BRING빌딩 1층 위탁판매 · 수령/문의는 1층 데스크<br>"
-    + "관리사무실 " + esc(SETTINGS.phone) + " · 팩스 033-746-8919 (평일 9–18시)<br>"
+    "전화 " + esc(SETTINGS.phone) + " · 팩스 033-746-8919 <span style=\"color:#5C6B80\">(평일 9–18시)</span><br>"
     + "강원도 원주시 상지대길 83 벤처창업관 305호<br>"
     + "사업자등록번호 748-28-01935 · rancemo858@naver.com"
     + (SETTINGS.footer ? "<br>" + esc(SETTINGS.footer) : "");
+  $("footCopy").textContent = "© " + new Date().getFullYear() + " 브링엔지니어링 (BRING ENGINEERING). All rights reserved.";
   if(currentId) renderDetail(currentId);
 }
 
