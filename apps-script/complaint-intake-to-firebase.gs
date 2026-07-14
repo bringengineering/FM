@@ -16,7 +16,7 @@ const COMPLAINT_CONFIG = {
   FIREBASE_CASES_PATH: "cases",
   RESPONSE_SHEET_URL: "https://docs.google.com/spreadsheets/d/1HI6KzIMomL6vOUPs8zZDhXHktL1cWRDcg93lflsuojA/edit"
 };
-const AUTOMATION_BUILD = "vendor-mms-step-transition-20260714";
+const AUTOMATION_BUILD = "vendor-mms-step-transition-20260714-v2";
 
 const OUTPUT_HEADERS = [
   "접수번호",
@@ -429,6 +429,18 @@ function firstJpegPhotoFromRecord_(record) {
 
 function makeSensThumbnailBlob_(fileId, originalName) {
   try {
+    // DriveApp's thumbnail is a reliable fallback when the Advanced Drive
+    // Service does not expose a usable thumbnailLink for a form upload.
+    const driveFile = DriveApp.getFileById(fileId);
+    const directThumbnail = driveFile.getThumbnail();
+    if (directThumbnail) {
+      const directType = String(directThumbnail.getContentType() || "").toLowerCase();
+      const directBytes = directThumbnail.getBytes();
+      if (directBytes.length <= 300 * 1024 && /jpe?g/.test(directType)) {
+        return { blob: directThumbnail, name: makeSensImageName_(originalName) };
+      }
+    }
+
     if (typeof Drive === "undefined" || !Drive.Files || !Drive.Files.get) return null;
     const metadata = Drive.Files.get(fileId, { fields: "thumbnailLink,name" });
     const thumbnailLink = String(metadata && metadata.thumbnailLink || "").trim();
@@ -438,27 +450,26 @@ function makeSensThumbnailBlob_(fileId, originalName) {
     ].filter(Boolean);
     if (!thumbnailLinks.length) return null;
 
-    const sizes = [800, 640, 480, 360, 240];
+    const sizes = [640, 480, 360, 240, 180, 120];
     for (const size of sizes) {
       for (const baseUrl of thumbnailLinks) {
         let url = baseUrl;
         if (/=s\d+$/.test(url)) url = url.replace(/=s\d+$/, "=s" + size);
         else if (/sz=w\d+-h\d+/.test(url)) url = url.replace(/sz=w\d+-h\d+/, "sz=w" + size + "-h" + size);
-        const response = UrlFetchApp.fetch(url, {
-          method: "get",
-          headers: { Authorization: "Bearer " + ScriptApp.getOAuthToken() },
-          muteHttpExceptions: true
-        });
-        const code = response.getResponseCode();
-        if (code < 200 || code >= 300) continue;
-        const blob = response.getBlob();
-        const contentType = String(blob.getContentType() || "").toLowerCase();
-        if (contentType && contentType.indexOf("jpeg") < 0 && contentType.indexOf("jpg") < 0) continue;
-        if (blob.getBytes().length <= 300 * 1024) {
-          return {
-            blob: blob,
-            name: makeSensImageName_(originalName)
-          };
+        const requestOptions = [
+          { method: "get", headers: { Authorization: "Bearer " + ScriptApp.getOAuthToken() }, muteHttpExceptions: true },
+          { method: "get", muteHttpExceptions: true }
+        ];
+        for (const options of requestOptions) {
+          const response = UrlFetchApp.fetch(url, options);
+          const code = response.getResponseCode();
+          if (code < 200 || code >= 300) continue;
+          const blob = response.getBlob();
+          const contentType = String(blob.getContentType() || "").toLowerCase();
+          if (contentType && contentType.indexOf("jpeg") < 0 && contentType.indexOf("jpg") < 0) continue;
+          if (blob.getBytes().length <= 300 * 1024) {
+            return { blob: blob, name: makeSensImageName_(originalName) };
+          }
         }
       }
     }
@@ -597,6 +608,8 @@ function normalizeVendorForMms_(vendor) {
     name: String(vendor.name || ""),
     address: String(vendor.address || ""),
     phone: String(vendor.phone || ""),
+    mobile: String(vendor.mobile || ""),
+    tel: String(vendor.tel || ""),
     map: String(vendor.map || ""),
     promo: String(vendor.promo || ""),
     note: String(vendor.note || "")
