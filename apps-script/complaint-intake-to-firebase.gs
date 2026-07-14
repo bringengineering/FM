@@ -16,6 +16,7 @@ const COMPLAINT_CONFIG = {
   FIREBASE_CASES_PATH: "cases",
   RESPONSE_SHEET_URL: "https://docs.google.com/spreadsheets/d/1HI6KzIMomL6vOUPs8zZDhXHktL1cWRDcg93lflsuojA/edit"
 };
+const AUTOMATION_BUILD = "mms-photo-resize-20260714";
 
 const OUTPUT_HEADERS = [
   "접수번호",
@@ -102,6 +103,9 @@ function doPost(e) {
   let payload = {};
   try {
     payload = JSON.parse(e && e.postData && e.postData.contents ? e.postData.contents : "{}");
+    if (payload.action === "healthCheck") {
+      return jsonResponse_({ ok: true, build: AUTOMATION_BUILD, time: new Date().toISOString() });
+    }
     if (payload.action === "sendComplaintReceiptSms") {
       return jsonResponse_(handleComplaintReceiptSms_(payload));
     }
@@ -428,27 +432,34 @@ function makeSensThumbnailBlob_(fileId, originalName) {
     if (typeof Drive === "undefined" || !Drive.Files || !Drive.Files.get) return null;
     const metadata = Drive.Files.get(fileId, { fields: "thumbnailLink,name" });
     const thumbnailLink = String(metadata && metadata.thumbnailLink || "").trim();
-    if (!thumbnailLink) return null;
+    const thumbnailLinks = [
+      thumbnailLink,
+      "https://drive.google.com/thumbnail?id=" + encodeURIComponent(fileId) + "&sz=w800-h800"
+    ].filter(Boolean);
+    if (!thumbnailLinks.length) return null;
 
     const sizes = [800, 640, 480, 360, 240];
     for (const size of sizes) {
-      let url = thumbnailLink;
-      if (/=s\\d+$/.test(url)) url = url.replace(/=s\\d+$/, "=s" + size);
-      const response = UrlFetchApp.fetch(url, {
-        method: "get",
-        headers: { Authorization: "Bearer " + ScriptApp.getOAuthToken() },
-        muteHttpExceptions: true
-      });
-      const code = response.getResponseCode();
-      if (code < 200 || code >= 300) continue;
-      const blob = response.getBlob();
-      const contentType = String(blob.getContentType() || "").toLowerCase();
-      if (contentType && contentType.indexOf("jpeg") < 0 && contentType.indexOf("jpg") < 0) continue;
-      if (blob.getBytes().length <= 300 * 1024) {
-        return {
-          blob: blob,
-          name: makeSensImageName_(originalName)
-        };
+      for (const baseUrl of thumbnailLinks) {
+        let url = baseUrl;
+        if (/=s\d+$/.test(url)) url = url.replace(/=s\d+$/, "=s" + size);
+        else if (/sz=w\d+-h\d+/.test(url)) url = url.replace(/sz=w\d+-h\d+/, "sz=w" + size + "-h" + size);
+        const response = UrlFetchApp.fetch(url, {
+          method: "get",
+          headers: { Authorization: "Bearer " + ScriptApp.getOAuthToken() },
+          muteHttpExceptions: true
+        });
+        const code = response.getResponseCode();
+        if (code < 200 || code >= 300) continue;
+        const blob = response.getBlob();
+        const contentType = String(blob.getContentType() || "").toLowerCase();
+        if (contentType && contentType.indexOf("jpeg") < 0 && contentType.indexOf("jpg") < 0) continue;
+        if (blob.getBytes().length <= 300 * 1024) {
+          return {
+            blob: blob,
+            name: makeSensImageName_(originalName)
+          };
+        }
       }
     }
   } catch (err) {
