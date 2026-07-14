@@ -11,6 +11,7 @@ const COMPLAINT_CONFIG = {
   CONTRACT_DRIVE_FOLDER_ID: "1818MusPDfVV6znALkWDMGK99NXAlAj8g",
   QUOTE_DRIVE_FOLDER_ID: "11QX5F-KRQvvYNc0hso3QACuMS7lMZw4r",
   QUOTE_TEMPLATE_SPREADSHEET_ID: "1JXP8NEaU0I_96ZMAZFn2GlYQHkLsbhSJCawsdMgqH7w",
+  VENDOR_QUOTE_REPLY_EMAIL: "",
   FIREBASE_DATABASE_URL: "https://bring-fm-default-rtdb.asia-southeast1.firebasedatabase.app",
   FIREBASE_CASES_PATH: "cases",
   RESPONSE_SHEET_URL: "https://docs.google.com/spreadsheets/d/1HI6KzIMomL6vOUPs8zZDhXHktL1cWRDcg93lflsuojA/edit"
@@ -565,27 +566,21 @@ function extractPhones_(value) {
   return [...new Set(matches.map(normalizePhoneForSms_).filter(phone => phone.length >= 9 && phone.length <= 11))];
 }
 
+function getVendorQuoteReplyEmail_() {
+  const props = PropertiesService.getScriptProperties();
+  return String(
+    props.getProperty("VENDOR_QUOTE_REPLY_EMAIL") ||
+    COMPLAINT_CONFIG.VENDOR_QUOTE_REPLY_EMAIL ||
+    ""
+  ).trim();
+}
+
 function makeVendorEstimateMmsContent_(casePayload, record) {
-  const building = casePayload.building || readField_(record, ["건물명", "건물"]) || "건물 미입력";
-  const address = casePayload.address || readField_(record, ["건물 주소", "주소"]) || "주소 미입력";
-  const room = readField_(record, ["호실"]) || casePayload.room || "호실 미입력";
-  const issueType = casePayload.issueType || readField_(record, ["문제 유형"]) || "문제 유형 미입력";
-  const vendorType = casePayload.vendorType || "업체 분류 미확인";
-  const visitTime = formatKoreanDateTimeForCase_(
-    casePayload.visitTime || readRawField_(record, ["방문 가능 시간"]),
-    readRawField_(record, ["방문 가능 날짜", "방문 날짜", "방문일"]) || casePayload.visitDate ||
-      readRawField_(record, ["타임스탬프", "Timestamp"]) || casePayload.receivedAt || casePayload.createdAt
-  ) || "협의 필요";
-  const ticketNo = casePayload.ticketNo || casePayload.id || "";
+  const replyEmail = getVendorQuoteReplyEmail_() || "회신 이메일 미설정";
   return [
-    "[BRING Care 견적요청]",
-    building + " / " + room,
-    "주소: " + address,
-    "문제: " + issueType + " / " + vendorType,
-    "방문 가능: " + visitTime,
-    "",
-    "첨부 사진 확인 후 현장 확인 가능 여부와 견적 회신 부탁드립니다.",
-    "접수번호: " + ticketNo
+    "[견적서 회신 요청]",
+    "첨부 사진 확인 후 견적서를 이메일로 회신 부탁드립니다.",
+    "회신 이메일: " + replyEmail
   ].join("\n");
 }
 
