@@ -16,7 +16,7 @@ const COMPLAINT_CONFIG = {
   FIREBASE_CASES_PATH: "cases",
   RESPONSE_SHEET_URL: "https://docs.google.com/spreadsheets/d/1HI6KzIMomL6vOUPs8zZDhXHktL1cWRDcg93lflsuojA/edit"
 };
-const AUTOMATION_BUILD = "vendor-mms-step-transition-20260714-v2";
+const AUTOMATION_BUILD = "quote-bring-markup-20260714-v1";
 
 const OUTPUT_HEADERS = [
   "접수번호",
@@ -1017,10 +1017,16 @@ function handleConfirmQuoteAmount_(payload) {
       quote.vendorInfoSource = fillResult.businessApplied ? "business_registration" : quote.vendorInfoSource;
     }
     const sheetAmounts = readBringQuoteAmounts_(ss);
-    if (sheetAmounts.totalAmount && !Number(quote.confirmedTotalAmount || 0)) {
+    if (sheetAmounts.totalAmount) {
       quote.bringQuoteTotalAmount = sheetAmounts.totalAmount;
       quote.bringQuoteSupplyAmount = sheetAmounts.supplyAmount || "";
       quote.bringQuoteVatAmount = sheetAmounts.vatAmount || "";
+      quote.bringQuoteBaseTotalAmount = Number(quote.confirmedTotalAmount || quote.bringQuoteBaseTotalAmount || quote.totalAmount || amounts.totalAmount || 0);
+      quote.bringQuoteBaseSupplyAmount = Number(quote.confirmedSupplyAmount || quote.bringQuoteBaseSupplyAmount || quote.supplyAmount || amounts.supplyAmount || 0);
+      quote.bringQuoteBaseVatAmount = Number(quote.confirmedVatAmount || quote.bringQuoteBaseVatAmount || quote.vatAmount || amounts.vatAmount || 0);
+      quote.bringQuoteMarkupRate = BRING_QUOTE_MARKUP_RATE;
+      quote.bringQuoteMarkupAmount = Math.max(0, sheetAmounts.totalAmount - quote.bringQuoteBaseTotalAmount);
+      quote.bringQuoteItems = fillResult && fillResult.bringItems || quote.bringQuoteItems || [];
       quote.bringQuoteAmountSyncedAt = confirmedAt;
     }
 
@@ -1140,10 +1146,16 @@ function handleApplyBusinessRegistrationToQuote_(payload) {
         }
 
         const sheetAmounts = readBringQuoteAmounts_(ss);
-        if (sheetAmounts.totalAmount && !Number(quote.confirmedTotalAmount || 0)) {
+        if (sheetAmounts.totalAmount) {
           quote.bringQuoteTotalAmount = sheetAmounts.totalAmount;
           quote.bringQuoteSupplyAmount = sheetAmounts.supplyAmount || "";
           quote.bringQuoteVatAmount = sheetAmounts.vatAmount || "";
+          quote.bringQuoteBaseTotalAmount = Number(quote.confirmedTotalAmount || quote.bringQuoteBaseTotalAmount || quote.totalAmount || extraction.totalAmount || 0);
+          quote.bringQuoteBaseSupplyAmount = Number(quote.confirmedSupplyAmount || quote.bringQuoteBaseSupplyAmount || quote.supplyAmount || extraction.supplyAmount || 0);
+          quote.bringQuoteBaseVatAmount = Number(quote.confirmedVatAmount || quote.bringQuoteBaseVatAmount || quote.vatAmount || extraction.vatAmount || 0);
+          quote.bringQuoteMarkupRate = BRING_QUOTE_MARKUP_RATE;
+          quote.bringQuoteMarkupAmount = Math.max(0, sheetAmounts.totalAmount - quote.bringQuoteBaseTotalAmount);
+          quote.bringQuoteItems = fillResult && fillResult.bringItems || quote.bringQuoteItems || [];
           quote.bringQuoteAmountSyncedAt = timestamp;
         }
 
@@ -1188,6 +1200,90 @@ function handleApplyBusinessRegistrationToQuote_(payload) {
   });
 
   return { ok: message.indexOf("실패") === -1 && message.indexOf("없음") === -1, caseId: caseId, quoteId: quoteId, quote: quote, message: message };
+}
+
+const BRING_QUOTE_MARKUP_RATE = 0.10;
+
+function roundToHundred_(value) {
+  const number = Number(value || 0);
+  return number ? Math.round(number / 100) * 100 : 0;
+}
+
+function getBringQuoteBaseAmounts_(quote, extraction) {
+  quote = quote || {};
+  extraction = extraction || {};
+  const total = Math.round(Number(
+    quote.confirmedTotalAmount ||
+    quote.bringQuoteBaseTotalAmount ||
+    quote.totalAmount ||
+    extraction.totalAmount ||
+    parseMoneyValue_(quote.amount) ||
+    0
+  ));
+  const supply = Math.round(Number(
+    quote.confirmedSupplyAmount ||
+    quote.bringQuoteBaseSupplyAmount ||
+    quote.supplyAmount ||
+    extraction.supplyAmount ||
+    (total ? Math.round(total / 1.1) : 0)
+  ));
+  const vat = Math.round(Number(
+    quote.confirmedVatAmount ||
+    quote.bringQuoteBaseVatAmount ||
+    quote.vatAmount ||
+    extraction.vatAmount ||
+    (total ? total - supply : 0)
+  ));
+  return { totalAmount: total, supplyAmount: supply, vatAmount: vat };
+}
+
+function calculateBringQuoteAmounts_(baseTotalAmount) {
+  const baseTotal = Math.round(Number(baseTotalAmount || 0));
+  if (!baseTotal || baseTotal < 1000) {
+    return { baseTotalAmount: 0, totalAmount: 0, supplyAmount: 0, vatAmount: 0, markupRate: BRING_QUOTE_MARKUP_RATE, markupAmount: 0 };
+  }
+  const total = roundToHundred_(baseTotal * (1 + BRING_QUOTE_MARKUP_RATE));
+  const supply = roundToHundred_(total / 1.1);
+  const vat = total - supply;
+  return {
+    baseTotalAmount: baseTotal,
+    totalAmount: total,
+    supplyAmount: supply,
+    vatAmount: vat,
+    markupRate: BRING_QUOTE_MARKUP_RATE,
+    markupAmount: total - baseTotal
+  };
+}
+
+function scaleBringQuoteItems_(items, casePayload, baseAmounts, bringAmounts) {
+  const sourceItems = normalizeBringQuoteItems_(items, casePayload, baseAmounts.totalAmount, baseAmounts.supplyAmount, baseAmounts.vatAmount);
+  const usableItems = sourceItems.filter(item => item && !item.fallback && Number(item.total || 0));
+  if (!bringAmounts.totalAmount || !usableItems.length) {
+    return normalizeBringQuoteItems_([], casePayload, bringAmounts.totalAmount, bringAmounts.supplyAmount, bringAmounts.vatAmount);
+  }
+
+  const sourceTotal = usableItems.reduce((sum, item) => sum + Number(item.total || 0), 0);
+  if (!sourceTotal) return normalizeBringQuoteItems_([], casePayload, bringAmounts.totalAmount, bringAmounts.supplyAmount, bringAmounts.vatAmount);
+
+  let usedTotal = 0;
+  let usedSupply = 0;
+  return usableItems.map((item, index) => {
+    const isLast = index === usableItems.length - 1;
+    const ratio = Number(item.total || 0) / sourceTotal;
+    const total = isLast ? bringAmounts.totalAmount - usedTotal : roundToHundred_(bringAmounts.totalAmount * ratio);
+    const supply = isLast ? bringAmounts.supplyAmount - usedSupply : roundToHundred_(bringAmounts.supplyAmount * ratio);
+    const vat = total - supply;
+    usedTotal += total;
+    usedSupply += supply;
+    return {
+      product: item.product || "",
+      unit: item.unit || "식",
+      unitPrice: supply || "",
+      vat: vat || "",
+      total: total || "",
+      note: item.note || "원본 자동추출"
+    };
+  });
 }
 
 function confirmedQuoteAmounts_(totalAmount) {
@@ -1903,6 +1999,7 @@ function createBringQuoteFromUpload_(casePayload, quote, blob, payload, bringFol
   const selectedVendor = chooseQuoteSelectedVendor_(payload, extraction.vendorInfo, quote.vendorName, quote.fileName);
   const resolvedVendor = mergeQuoteVendorInfo_(extraction.vendorInfo, selectedVendor, extraction.fileNameVendorName || extractQuoteVendorNameFromFileName_(quote.fileName));
   extraction.items = normalizeBringQuoteItems_(extraction.items, casePayload, extraction.totalAmount, extraction.supplyAmount, extraction.vatAmount);
+  const baseAmounts = getBringQuoteBaseAmounts_(quote, extraction);
   quote.vendor = resolvedVendor.vendor;
   quote.resolvedVendorInfo = resolvedVendor.vendor;
   quote.vendorInfoSource = resolvedVendor.source;
@@ -1911,10 +2008,11 @@ function createBringQuoteFromUpload_(casePayload, quote, blob, payload, bringFol
     extractionStatus: extraction.status,
     extractionMemo: extraction.memo,
     extractionTextPreview: extraction.textPreview,
-    amount: quote.amount || formatMoney_(extraction.totalAmount),
-    supplyAmount: extraction.supplyAmount || "",
-    vatAmount: extraction.vatAmount || "",
-    totalAmount: extraction.totalAmount || "",
+    amount: formatMoney_(baseAmounts.totalAmount),
+    sourceTotalAmount: baseAmounts.totalAmount || "",
+    supplyAmount: baseAmounts.supplyAmount || "",
+    vatAmount: baseAmounts.vatAmount || "",
+    totalAmount: baseAmounts.totalAmount || "",
     extractedVendorName: extraction.vendorName || "",
     extractedVendorInfo: extraction.vendorInfo || {},
     resolvedVendorInfo: resolvedVendor.vendor,
@@ -1955,13 +2053,15 @@ function createBringQuoteFromUpload_(casePayload, quote, blob, payload, bringFol
     result.bringQuoteSheetUrl = "";
     result.bringQuoteSheetId = "";
     if (sheetAmounts.totalAmount) {
-      result.totalAmount = sheetAmounts.totalAmount;
-      result.supplyAmount = sheetAmounts.supplyAmount || "";
-      result.vatAmount = sheetAmounts.vatAmount || "";
       result.bringQuoteTotalAmount = sheetAmounts.totalAmount;
       result.bringQuoteSupplyAmount = sheetAmounts.supplyAmount || "";
       result.bringQuoteVatAmount = sheetAmounts.vatAmount || "";
-      result.amount = formatMoney_(sheetAmounts.totalAmount);
+      result.bringQuoteBaseTotalAmount = baseAmounts.totalAmount || "";
+      result.bringQuoteBaseSupplyAmount = baseAmounts.supplyAmount || "";
+      result.bringQuoteBaseVatAmount = baseAmounts.vatAmount || "";
+      result.bringQuoteMarkupRate = BRING_QUOTE_MARKUP_RATE;
+      result.bringQuoteMarkupAmount = Math.max(0, sheetAmounts.totalAmount - baseAmounts.totalAmount);
+      result.bringQuoteItems = fillResult && fillResult.bringItems || [];
       result.amountSource = "bring_sheet";
       result.amountStatus = "확인필요";
       result.bringQuoteAmountSyncedAt = new Date().toISOString();
@@ -3484,10 +3584,16 @@ function refreshBringQuotesFromBusinessRegistration_(caseId, casePayload, busine
       }
 
       const sheetAmounts = readBringQuoteAmounts_(ss);
-      if (sheetAmounts.totalAmount && !Number(quote.confirmedTotalAmount || 0)) {
+      if (sheetAmounts.totalAmount) {
         quote.bringQuoteTotalAmount = sheetAmounts.totalAmount;
         quote.bringQuoteSupplyAmount = sheetAmounts.supplyAmount || "";
         quote.bringQuoteVatAmount = sheetAmounts.vatAmount || "";
+        quote.bringQuoteBaseTotalAmount = Number(quote.confirmedTotalAmount || quote.bringQuoteBaseTotalAmount || quote.totalAmount || extraction.totalAmount || 0);
+        quote.bringQuoteBaseSupplyAmount = Number(quote.confirmedSupplyAmount || quote.bringQuoteBaseSupplyAmount || quote.supplyAmount || extraction.supplyAmount || 0);
+        quote.bringQuoteBaseVatAmount = Number(quote.confirmedVatAmount || quote.bringQuoteBaseVatAmount || quote.vatAmount || extraction.vatAmount || 0);
+        quote.bringQuoteMarkupRate = BRING_QUOTE_MARKUP_RATE;
+        quote.bringQuoteMarkupAmount = Math.max(0, sheetAmounts.totalAmount - quote.bringQuoteBaseTotalAmount);
+        quote.bringQuoteItems = fillResult && fillResult.bringItems || quote.bringQuoteItems || [];
         quote.bringQuoteAmountSyncedAt = timestamp;
       }
       quote.bringQuoteStatus = quote.bringQuoteStatus === "xlsx_failed" ? quote.bringQuoteStatus : "business_registration_rewritten";
@@ -3542,9 +3648,10 @@ function businessRegistrationMatchesQuote_(businessVendor, quote) {
 
 function makeQuoteRewriteExtraction_(quote, casePayload) {
   quote = quote || {};
-  const total = Number(quote.confirmedTotalAmount || quote.bringQuoteTotalAmount || quote.totalAmount || parseMoneyValue_(quote.amount) || 0);
-  const supply = Number(quote.confirmedSupplyAmount || quote.bringQuoteSupplyAmount || quote.supplyAmount || (total ? Math.round(total / 1.1) : 0));
-  const vat = Number(quote.confirmedVatAmount || quote.bringQuoteVatAmount || quote.vatAmount || (total ? total - supply : 0));
+  const baseAmounts = getBringQuoteBaseAmounts_(quote, {});
+  const total = baseAmounts.totalAmount;
+  const supply = baseAmounts.supplyAmount;
+  const vat = baseAmounts.vatAmount;
   const items = getQuoteItemsForRewrite_(quote, casePayload, total, supply, vat);
   return {
     status: quote.extractionStatus || "확인필요",
@@ -3611,9 +3718,19 @@ function fillBringQuoteSpreadsheet_(ss, casePayload, quote, extraction) {
   const vendor = vendorResult.vendor;
   const vendorName = cleanExtractedVendorName_(vendor.name || quote.vendorName || extraction.vendorName || "");
   const vendorAddress = cleanQuoteAddress_(vendor.address || vendor.addressFromVendorList || "");
-  const total = Number(quote.confirmedTotalAmount || extraction.totalAmount || parseMoneyValue_(quote.amount) || 0);
-  const supply = Number(quote.confirmedSupplyAmount || extraction.supplyAmount || (total ? Math.round(total / 1.1) : 0));
-  const vat = Number(quote.confirmedVatAmount || extraction.vatAmount || (total ? total - supply : 0));
+  const baseAmounts = getBringQuoteBaseAmounts_(quote, extraction);
+  const bringAmounts = calculateBringQuoteAmounts_(baseAmounts.totalAmount);
+  const total = bringAmounts.totalAmount;
+  const supply = bringAmounts.supplyAmount;
+  const vat = bringAmounts.vatAmount;
+  if (quote && bringAmounts.totalAmount) {
+    quote.sourceTotalAmount = baseAmounts.totalAmount;
+    quote.bringQuoteBaseTotalAmount = baseAmounts.totalAmount;
+    quote.bringQuoteBaseSupplyAmount = baseAmounts.supplyAmount;
+    quote.bringQuoteBaseVatAmount = baseAmounts.vatAmount;
+    quote.bringQuoteMarkupRate = bringAmounts.markupRate;
+    quote.bringQuoteMarkupAmount = bringAmounts.markupAmount;
+  }
   setSheetValue_(sheet, "D5", Utilities.formatDate(new Date(), "Asia/Seoul", "yyyy-MM-dd"));
   setSheetValue_(sheet, "D6", vendor.businessNo || "");
   setSheetValue_(sheet, "D7", vendorName || "");
@@ -3631,7 +3748,7 @@ function fillBringQuoteSpreadsheet_(ss, casePayload, quote, extraction) {
   for (let row = 18; row <= 29; row++) {
     ["C", "E", "G", "H", "I", "K"].forEach(col => setSheetValue_(sheet, col + row, ""));
   }
-  const items = normalizeBringQuoteItems_(extraction.items || [], casePayload, total, supply, vat);
+  const items = scaleBringQuoteItems_(extraction.items || [], casePayload, baseAmounts, bringAmounts);
   items.slice(0, 12).forEach((item, index) => {
     const row = 18 + index;
     setSheetValue_(sheet, "C" + row, item.product || "");
@@ -3645,6 +3762,8 @@ function fillBringQuoteSpreadsheet_(ss, casePayload, quote, extraction) {
   setSheetNumber_(sheet, "E30", supply);
   setSheetNumber_(sheet, "H30", vat);
   setSheetNumber_(sheet, "J30", total);
+  vendorResult.bringAmounts = bringAmounts;
+  vendorResult.bringItems = items;
   return vendorResult;
 }
 
@@ -3794,20 +3913,16 @@ function makeQuoteComparisonNote_(casePayload) {
   const lines = ["[견적 비교]", "업로드 견적: " + quotes.length + "건", ""];
   quotes.forEach(quote => {
     const confirmed = Number(quote.confirmedTotalAmount || 0);
+    const baseAmount = confirmed || Number(quote.bringQuoteBaseTotalAmount || 0) || Number(quote.totalAmount || 0) || parseMoneyValue_(quote.amount);
     const bringSheetAmount = Number(quote.bringQuoteTotalAmount || 0);
-    const extracted = Number(quote.totalAmount || 0);
     const bringLabel = quote.bringQuoteType === "confirmed" || quote.bringQuoteStatus === "confirmed_rewritten"
       ? "브링 엑셀 확정"
       : quote.bringQuoteXlsxUrl
         ? "브링 엑셀 초안"
         : "브링 엑셀 확인 필요";
-    const amountLabel = confirmed
-      ? "확정합계 " + formatCurrencyText_(confirmed)
-      : bringSheetAmount
-        ? "브링양식 " + formatCurrencyText_(bringSheetAmount)
-        : extracted
-        ? "자동추출 " + formatCurrencyText_(extracted)
-        : quote.amount ? "금액 " + quote.amount : "금액 미입력";
+    const amountLabel = baseAmount
+      ? "원본합계 " + formatCurrencyText_(baseAmount) + (bringSheetAmount ? " / 브링양식 " + formatCurrencyText_(bringSheetAmount) : "")
+      : quote.amount ? "금액 " + quote.amount : "금액 미입력";
     lines.push("- " + [
       quote.vendorName || "업체 미지정",
       amountLabel,
