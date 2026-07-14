@@ -11,10 +11,12 @@ const COMPLAINT_CONFIG = {
   CONTRACT_DRIVE_FOLDER_ID: "1818MusPDfVV6znALkWDMGK99NXAlAj8g",
   QUOTE_DRIVE_FOLDER_ID: "11QX5F-KRQvvYNc0hso3QACuMS7lMZw4r",
   QUOTE_TEMPLATE_SPREADSHEET_ID: "1JXP8NEaU0I_96ZMAZFn2GlYQHkLsbhSJCawsdMgqH7w",
+  VENDOR_QUOTE_REPLY_EMAIL: "bringengineering1008@gmail.com",
   FIREBASE_DATABASE_URL: "https://bring-fm-default-rtdb.asia-southeast1.firebasedatabase.app",
   FIREBASE_CASES_PATH: "cases",
   RESPONSE_SHEET_URL: "https://docs.google.com/spreadsheets/d/1HI6KzIMomL6vOUPs8zZDhXHktL1cWRDcg93lflsuojA/edit"
 };
+const AUTOMATION_BUILD = "mms-photo-resize-20260714";
 
 const OUTPUT_HEADERS = [
   "접수번호",
@@ -101,6 +103,9 @@ function doPost(e) {
   let payload = {};
   try {
     payload = JSON.parse(e && e.postData && e.postData.contents ? e.postData.contents : "{}");
+    if (payload.action === "healthCheck") {
+      return jsonResponse_({ ok: true, build: AUTOMATION_BUILD, time: new Date().toISOString() });
+    }
     if (payload.action === "sendComplaintReceiptSms") {
       return jsonResponse_(handleComplaintReceiptSms_(payload));
     }
@@ -227,7 +232,10 @@ function casePayloadToSmsRecord_(casePayload, payload) {
     "이름": casePayload.name || contact.name || "",
     "연락처": contact.phone || casePayload.phone || "",
     "문제 유형": casePayload.issueType || contact.issueType || "",
-    "방문 가능 시간": formatKoreanDateTimeForCase_(casePayload.visitTime || contact.visitTime || ""),
+    "방문 가능 시간": formatKoreanDateTimeForCase_(
+      casePayload.visitTime || contact.visitTime || "",
+      casePayload.visitDate || contact.visitDate || casePayload.receivedAt || casePayload.createdAt
+    ),
     "민원 내용": casePayload.summary || contact.summary || ""
   };
 }
@@ -395,7 +403,10 @@ function firstJpegPhotoFromRecord_(record) {
         continue;
       }
 
-      const bytes = blob.getBytes();
+      const originalBytes = blob.getBytes();
+      const thumbnail = originalBytes.length > 300 * 1024 ? makeSensThumbnailBlob_(id, name) : null;
+      const bytes = thumbnail ? thumbnail.blob.getBytes() : originalBytes;
+      const outputName = thumbnail ? thumbnail.name : makeSensImageName_(name);
       if (bytes.length > 300 * 1024) {
         errors.push(name + ": SENS MMS 첨부 제한 300KB 초과");
         continue;
@@ -404,7 +415,7 @@ function firstJpegPhotoFromRecord_(record) {
       return {
         ok: true,
         driveFileId: id,
-        fileName: makeSensImageName_(name),
+        fileName: outputName,
         fileBody: Utilities.base64Encode(bytes),
         byteSize: bytes.length
       };
@@ -414,6 +425,47 @@ function firstJpegPhotoFromRecord_(record) {
   }
 
   return { ok: false, message: "MMS로 보낼 수 있는 JPG/JPEG 사진을 찾지 못했습니다. " + errors.join(" / ") };
+}
+
+function makeSensThumbnailBlob_(fileId, originalName) {
+  try {
+    if (typeof Drive === "undefined" || !Drive.Files || !Drive.Files.get) return null;
+    const metadata = Drive.Files.get(fileId, { fields: "thumbnailLink,name" });
+    const thumbnailLink = String(metadata && metadata.thumbnailLink || "").trim();
+    const thumbnailLinks = [
+      thumbnailLink,
+      "https://drive.google.com/thumbnail?id=" + encodeURIComponent(fileId) + "&sz=w800-h800"
+    ].filter(Boolean);
+    if (!thumbnailLinks.length) return null;
+
+    const sizes = [800, 640, 480, 360, 240];
+    for (const size of sizes) {
+      for (const baseUrl of thumbnailLinks) {
+        let url = baseUrl;
+        if (/=s\d+$/.test(url)) url = url.replace(/=s\d+$/, "=s" + size);
+        else if (/sz=w\d+-h\d+/.test(url)) url = url.replace(/sz=w\d+-h\d+/, "sz=w" + size + "-h" + size);
+        const response = UrlFetchApp.fetch(url, {
+          method: "get",
+          headers: { Authorization: "Bearer " + ScriptApp.getOAuthToken() },
+          muteHttpExceptions: true
+        });
+        const code = response.getResponseCode();
+        if (code < 200 || code >= 300) continue;
+        const blob = response.getBlob();
+        const contentType = String(blob.getContentType() || "").toLowerCase();
+        if (contentType && contentType.indexOf("jpeg") < 0 && contentType.indexOf("jpg") < 0) continue;
+        if (blob.getBytes().length <= 300 * 1024) {
+          return {
+            blob: blob,
+            name: makeSensImageName_(originalName)
+          };
+        }
+      }
+    }
+  } catch (err) {
+    Logger.log("SENS MMS photo resize failed: " + err.message);
+  }
+  return null;
 }
 
 function extractDriveFileIdsFromText_(value) {
@@ -562,23 +614,57 @@ function extractPhones_(value) {
   return [...new Set(matches.map(normalizePhoneForSms_).filter(phone => phone.length >= 9 && phone.length <= 11))];
 }
 
+function getVendorQuoteReplyEmail_() {
+  const props = PropertiesService.getScriptProperties();
+  return String(
+    props.getProperty("VENDOR_QUOTE_REPLY_EMAIL") ||
+    COMPLAINT_CONFIG.VENDOR_QUOTE_REPLY_EMAIL ||
+    ""
+  ).trim();
+}
+
+function vendorQuoteSymptom_(value) {
+  const text = String(value || "").trim();
+  if (!text) return "";
+  const marker = text.indexOf(" - ");
+  return marker >= 0 ? text.slice(marker + 3).trim() : text;
+}
+
 function makeVendorEstimateMmsContent_(casePayload, record) {
-  const building = casePayload.building || readField_(record, ["건물명", "건물"]) || "건물 미입력";
-  const address = casePayload.address || readField_(record, ["건물 주소", "주소"]) || "주소 미입력";
-  const room = readField_(record, ["호실"]) || casePayload.room || "호실 미입력";
-  const issueType = casePayload.issueType || readField_(record, ["문제 유형"]) || "문제 유형 미입력";
-  const vendorType = casePayload.vendorType || "업체 분류 미확인";
-  const visitTime = formatKoreanDateTimeForCase_(casePayload.visitTime || readRawField_(record, ["방문 가능 시간"])) || "협의 필요";
-  const ticketNo = casePayload.ticketNo || casePayload.id || "";
+  const replyEmail = getVendorQuoteReplyEmail_() || "회신 이메일 미설정";
+  const building = readField_(record, ["건물명", "건물"]) || casePayload.building || "건물 미입력";
+  const room = readField_(record, ["호실"]) || casePayload.room || "";
+  const issueType = readField_(record, ["문제 유형"]) || casePayload.issueType || casePayload.vendorType || "시설";
+  const subject = [building, room, issueType, "유지보수 민원 건"].filter(Boolean).join(" ");
+  const symptom = readField_(record, ["증상 설명", "민원 내용", "내용"]) || vendorQuoteSymptom_(casePayload.summary) || "미입력";
+  const visitTime = formatVisitTimeFromRecord_(record) || casePayload.visitTime || "미입력";
   return [
-    "[BRING Care 견적요청]",
-    building + " / " + room,
-    "주소: " + address,
-    "문제: " + issueType + " / " + vendorType,
-    "방문 가능: " + visitTime,
+    "[BRING Care 견적서 회신 요청]",
     "",
-    "첨부 사진 확인 후 현장 확인 가능 여부와 견적 회신 부탁드립니다.",
-    "접수번호: " + ticketNo
+    "안녕하세요. BRING Care입니다.",
+    subject + "으로 견적 요청드립니다.",
+    "",
+    "첨부된 현장 사진과 아래 내용을 확인하신 후,",
+    "작업 가능 여부와 견적서를 아래 이메일로 회신 부탁드립니다.",
+    "",
+    "회신 이메일: " + replyEmail,
+    "",
+    "■ 민원 내용",
+    "- 증상: " + symptom,
+    "- 방문 가능 시간대: " + visitTime,
+    "",
+    "■ 회신 요청 내용",
+    "- 작업 가능 여부",
+    "- 예상 작업 내용",
+    "- 총 견적금액",
+    "- 방문 가능 일정",
+    "",
+    "■ 첨부 요청",
+    "- 견적서",
+    "- 사업자등록증 사본",
+    "",
+    "확인 후 회신 부탁드립니다.",
+    "감사합니다."
   ].join("\n");
 }
 
@@ -3863,8 +3949,46 @@ function formatEnglishDateTextForCase_(raw) {
   return match[3] + "년 " + month + "월 " + Number(match[2]) + "일 " + String(match[4]).padStart(2, "0") + ":" + match[5];
 }
 
-function formatKoreanDateTimeForCase_(value) {
+function formatKoreanDateOnlyForCase_(value) {
   if (value === undefined || value === null || String(value).trim() === "") return "";
+  const raw = String(value).trim();
+  const korean = raw.match(/(\d{4})년\s*(\d{1,2})월\s*(\d{1,2})일/);
+  if (korean && Number(korean[1]) > 1901) {
+    return Number(korean[1]) + "년 " + Number(korean[2]) + "월 " + Number(korean[3]) + "일";
+  }
+  const parsed = value instanceof Date ? value : new Date(raw);
+  if (isNaN(parsed.getTime())) return "";
+  const year = Number(Utilities.formatDate(parsed, "Asia/Seoul", "yyyy"));
+  return year > 1901 ? Utilities.formatDate(parsed, "Asia/Seoul", "yyyy년 M월 d일") : "";
+}
+
+function timeOnlyPartsForCase_(value) {
+  const raw = String(value || "").trim();
+  const english = raw.match(/^(?:[A-Za-z]{3}\s+)?[A-Za-z]{3}\s+\d{1,2}\s+(\d{4})\s+(\d{1,2}):(\d{2})/);
+  if (english && Number(english[1]) <= 1901) {
+    return { hour: String(english[2]).padStart(2, "0"), minute: english[3] };
+  }
+  const korean = raw.match(/^(\d{4})년\s*\d{1,2}월\s*\d{1,2}일\s*(\d{1,2}):(\d{2})/);
+  if (korean && Number(korean[1]) <= 1901) {
+    return { hour: String(korean[2]).padStart(2, "0"), minute: korean[3] };
+  }
+  const parsed = value instanceof Date ? value : new Date(raw);
+  if (isNaN(parsed.getTime())) return null;
+  const year = Number(Utilities.formatDate(parsed, "Asia/Seoul", "yyyy"));
+  if (year > 1901) return null;
+  return {
+    hour: Utilities.formatDate(parsed, "Asia/Seoul", "HH"),
+    minute: Utilities.formatDate(parsed, "Asia/Seoul", "mm")
+  };
+}
+
+function formatKoreanDateTimeForCase_(value, fallbackDate) {
+  if (value === undefined || value === null || String(value).trim() === "") return "";
+  const timeOnly = timeOnlyPartsForCase_(value);
+  if (timeOnly) {
+    const dateText = formatKoreanDateOnlyForCase_(fallbackDate);
+    return (dateText ? dateText + " " : "") + timeOnly.hour + ":" + timeOnly.minute;
+  }
   if (value instanceof Date && !isNaN(value.getTime())) {
     return Utilities.formatDate(value, "Asia/Seoul", "yyyy년 M월 d일 HH:mm");
   }
@@ -3876,6 +4000,13 @@ function formatKoreanDateTimeForCase_(value) {
     return Utilities.formatDate(parsed, "Asia/Seoul", "yyyy년 M월 d일 HH:mm");
   }
   return raw;
+}
+
+function formatVisitTimeFromRecord_(record, fallbackDate) {
+  const visitTime = readRawField_(record, ["방문 가능 시간"]);
+  const visitDate = readRawField_(record, ["방문 가능 날짜", "방문 날짜", "방문일"]);
+  const submittedAt = readRawField_(record, ["타임스탬프", "Timestamp"]);
+  return formatKoreanDateTimeForCase_(visitTime, visitDate || fallbackDate || submittedAt);
 }
 
 function normalizeText_(value) {
@@ -4388,7 +4519,7 @@ function makeConsultationNote_(ticketNo, record, analysis, sheetUrl) {
   const issueType = readField_(record, ["문제 유형"]) || "문제 유형 미입력";
   const description = readField_(record, ["증상 설명", "민원 내용", "내용"]);
   const photo = readField_(record, ["사진 첨부"]);
-  const visitTime = formatKoreanDateTimeForCase_(readRawField_(record, ["방문 가능 시간"]));
+  const visitTime = formatVisitTimeFromRecord_(record);
   const extra = readField_(record, ["추가 요청사항"]);
   const questions = consultationQuestions_(issueType, [issueType, description, extra].join(" "));
   const warnings = consultationWarnings_(description, photo, visitTime, analysis);
@@ -4494,7 +4625,8 @@ function buildCasePayload_(ticketNo, record, analysis, contractMatch, row, sheet
   const name = readField_(record, ["이름", "성명"]);
   const phone = readField_(record, ["연락처", "전화번호", "휴대폰"]);
   const issueType = readField_(record, ["문제 유형"]);
-  const visitTime = formatKoreanDateTimeForCase_(readRawField_(record, ["방문 가능 시간"]));
+  const visitDateRaw = readRawField_(record, ["방문 가능 날짜", "방문 날짜", "방문일"]);
+  const visitTime = formatVisitTimeFromRecord_(record, timestamp);
   const sheetUrl = COMPLAINT_CONFIG.RESPONSE_SHEET_URL + "#gid=" + sheet.getSheetId();
   const isContractHold = contractMatch && (contractMatch.status === "unmatched" || contractMatch.status === "multiple" || contractMatch.status === "address_missing");
   const statusValue = isContractHold ? "계약확인보류" : analysis.statusValue;
@@ -4525,6 +4657,7 @@ function buildCasePayload_(ticketNo, record, analysis, contractMatch, row, sheet
     vendorType: analysis.vendorType,
     summary: analysis.summary,
     analysisReason: analysis.reason,
+    visitDate: formatKoreanDateOnlyForCase_(visitDateRaw || timestamp),
     visitTime: visitTime,
     statusValue: statusValue,
     contractMatch: contractMatch,

@@ -2121,25 +2121,51 @@ function formatEnglishDateTextKorean(raw){
   if(!month) return "";
   return `${m[3]}년 ${month}월 ${Number(m[2])}일 ${String(m[4]).padStart(2,"0")}:${m[5]}`;
 }
-function formatKoreanDateTime(value){
+function koreanDateParts(value){
+  const d=new Date(value||"");
+  if(Number.isNaN(d.getTime())) return null;
+  const parts={};
+  new Intl.DateTimeFormat("ko-KR",{
+    timeZone:"Asia/Seoul", year:"numeric", month:"numeric", day:"numeric",
+    hour:"2-digit", minute:"2-digit", hour12:false
+  }).formatToParts(d).forEach(part=>{ if(part.type!=="literal") parts[part.type]=part.value; });
+  return {
+    year:Number(parts.year), month:Number(parts.month), day:Number(parts.day),
+    hour:String(parts.hour||"00").padStart(2,"0"), minute:String(parts.minute||"00").padStart(2,"0")
+  };
+}
+function koreanDateText(value){
+  const raw=String(value||"").trim();
+  const ko=raw.match(/(\d{4})년\s*(\d{1,2})월\s*(\d{1,2})일/);
+  if(ko && Number(ko[1])>1901) return `${Number(ko[1])}년 ${Number(ko[2])}월 ${Number(ko[3])}일`;
+  const p=koreanDateParts(value);
+  return p && p.year>1901 ? `${p.year}년 ${p.month}월 ${p.day}일` : "";
+}
+function timeOnlyVisitParts(value){
+  const raw=String(value||"").trim();
+  const english=raw.match(/^(?:[A-Za-z]{3}\s+)?[A-Za-z]{3}\s+\d{1,2}\s+(\d{4})\s+(\d{1,2}):(\d{2})/);
+  if(english && Number(english[1])<=1901) return { hour:String(english[2]).padStart(2,"0"), minute:english[3] };
+  const korean=raw.match(/^(\d{4})년\s*\d{1,2}월\s*\d{1,2}일\s*(\d{1,2}):(\d{2})/);
+  if(korean && Number(korean[1])<=1901) return { hour:String(korean[2]).padStart(2,"0"), minute:korean[3] };
+  const p=koreanDateParts(value);
+  return p && p.year<=1901 ? { hour:p.hour, minute:p.minute } : null;
+}
+function formatKoreanDateTime(value, fallbackDate){
   const raw=String(value||"").trim();
   if(!raw) return "";
+  const timeOnly=timeOnlyVisitParts(value);
+  if(timeOnly){
+    const dateText=koreanDateText(fallbackDate);
+    return `${dateText ? dateText+" " : ""}${timeOnly.hour}:${timeOnly.minute}`;
+  }
   const english=formatEnglishDateTextKorean(raw);
   if(english) return english;
-  const d=new Date(raw);
-  if(Number.isNaN(d.getTime())) return raw;
-  return d.toLocaleString("ko-KR", {
-    timeZone:"Asia/Seoul",
-    year:"numeric",
-    month:"long",
-    day:"numeric",
-    hour:"2-digit",
-    minute:"2-digit",
-    hour12:false
-  });
+  const p=koreanDateParts(value);
+  if(!p) return raw;
+  return `${p.year}년 ${p.month}월 ${p.day}일 ${p.hour}:${p.minute}`;
 }
 function displayVisitTime(c){
-  return formatKoreanDateTime(c&&c.visitTime);
+  return formatKoreanDateTime(c&&c.visitTime, c&&(c.visitDate||c.receivedAt||c.createdAt));
 }
 function renderComplaintOverview(c){
   if(!(c.source==="google_form" || c.ticketNo || c.issueType || c.urgency || c.vendorType || c.summary)) return "";
@@ -4019,6 +4045,32 @@ function setVendorSmsEndpoint(url){
 function vendorSmsEndpoint(){
   return caseAutomationEndpoint();
 }
+const DEFAULT_VENDOR_QUOTE_REPLY_EMAIL = "bringengineering1008@gmail.com";
+function vendorQuoteReplyEmail(){
+  return String(settings.vendorQuoteReplyEmail||settings.quoteReplyEmail||DEFAULT_VENDOR_QUOTE_REPLY_EMAIL).trim();
+}
+function isValidEmail(value){
+  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(String(value||"").trim());
+}
+function setVendorQuoteReplyEmail(email){
+  const value=String(email||"").trim();
+  settings.vendorQuoteReplyEmail=value;
+  if(caseSettingsRef){ caseSettingsRef.child("vendorQuoteReplyEmail").set(value); }
+  else { saveSettingsLocal(); }
+}
+function ensureVendorQuoteReplyEmail(){
+  const current=vendorQuoteReplyEmail();
+  if(isValidEmail(current)) return current;
+  const input=prompt("업체가 견적서를 회신할 이메일을 입력하세요:", DEFAULT_VENDOR_QUOTE_REPLY_EMAIL);
+  if(input==null) return "";
+  const email=String(input||"").trim();
+  if(!isValidEmail(email)){
+    alert("이메일 형식을 확인해주세요.");
+    return "";
+  }
+  setVendorQuoteReplyEmail(email);
+  return email;
+}
 function promptVendorSmsSetup(){
   const url = prompt("업체 MMS 발송을 켜려면 Apps Script 웹앱 URL이 필요해요.\nApps Script에서 배포 > 새 배포 > 웹 앱으로 배포한 URL을 붙여넣으세요:", vendorSmsEndpoint());
   if(url==null) return false;
@@ -4042,17 +4094,48 @@ function maskSmsPhone(value){
   if(digits.length<7) return value ? "***" : "번호 없음";
   return digits.slice(0,3)+"-****-"+digits.slice(-4);
 }
+function vendorQuoteSymptom(c){
+  const direct=String(c&&(c.symptom||c.description||c.descriptionText)||"").trim();
+  if(direct) return direct;
+  const summary=String(c&&c.summary||"").trim();
+  const marker=summary.indexOf(" - ");
+  return marker>=0 ? summary.slice(marker+3).trim() : summary;
+}
 function buildVendorMmsMessage(c){
-  const room=caseDisplayRoom(c)||"호실 미입력";
+  const replyEmail=vendorQuoteReplyEmail()||"회신 이메일 미설정";
+  const building=String(c&&c.building||"건물 미입력").trim();
+  const room=caseDisplayRoom(c)||"";
+  const issue=String(c&&(c.issueType||c.vendorType)||"시설").trim();
+  const subject=[building,room,issue,"유지보수 민원 건"].filter(Boolean).join(" ");
+  const symptom=vendorQuoteSymptom(c)||"미입력";
+  const visit=displayVisitTime(c)||String(c&&c.visitTime||"").trim()||"미입력";
   return [
-    "[BRING Care 견적요청]",
-    `${c.building||"건물 미입력"} / ${room}`,
-    `주소: ${c.address||"주소 미입력"}`,
-    `문제: ${c.issueType||"문제 유형 미입력"} / ${c.vendorType||"업체 분류 미확인"}`,
-    `방문 가능: ${displayVisitTime(c)||"협의 필요"}`,
+    "[BRING Care 견적서 회신 요청]",
     "",
-    "첨부 사진 확인 후 현장 확인 가능 여부와 견적 회신 부탁드립니다.",
-    `접수번호: ${c.ticketNo||c.id||"미발급"}`
+    "안녕하세요. BRING Care입니다.",
+    `${subject}으로 견적 요청드립니다.`,
+    "",
+    "첨부된 현장 사진과 아래 내용을 확인하신 후,",
+    "작업 가능 여부와 견적서를 아래 이메일로 회신 부탁드립니다.",
+    "",
+    `회신 이메일: ${replyEmail}`,
+    "",
+    "■ 민원 내용",
+    `- 증상: ${symptom}`,
+    `- 방문 가능 시간대: ${visit}`,
+    "",
+    "■ 회신 요청 내용",
+    "- 작업 가능 여부",
+    "- 예상 작업 내용",
+    "- 총 견적금액",
+    "- 방문 가능 일정",
+    "",
+    "■ 첨부 요청",
+    "- 견적서",
+    "- 사업자등록증 사본",
+    "",
+    "확인 후 회신 부탁드립니다.",
+    "감사합니다."
   ].join("\n");
 }
 function sendVendorSmsRequest(endpoint, payload){
@@ -4099,6 +4182,7 @@ function openVendorSmsModal(id){
     renderCaseDetail();
     return;
   }
+  if(!ensureVendorQuoteReplyEmail()) return;
   ensureVendorSmsModal();
   vendorSmsCtx={id};
   document.getElementById("vsmTitle").textContent="업체 MMS 발송 확인";
@@ -4126,6 +4210,9 @@ function doSendVendorSms(){
     alert("선택한 업체 중 MMS를 받을 수 있는 휴대폰 번호가 없어요.");
     return;
   }
+  if(!ensureVendorQuoteReplyEmail()) return;
+  const bodyEl=document.getElementById("vsmBody");
+  if(bodyEl) bodyEl.textContent=buildVendorMmsMessage(c);
   if(!vendorSmsEndpoint()){
     if(!promptVendorSmsSetup()) return;
     refreshVendorSmsNote();
@@ -4317,8 +4404,12 @@ document.getElementById("noticeBtn").addEventListener("click", openNoticePanel);
 document.getElementById("noticeBanner").addEventListener("click", openNoticePanel);
 
 /* ===== 업데이트 알림(What's New) — 새 버전 나오면 자동 팝업 ===== */
-const APP_VERSION = "4.80";
+const APP_VERSION = "4.85";
 const CHANGELOG = [
+  { v:"4.85", d:"2026-07-14", items:["⑤ 업체 발송 예시의 증상 항목에서 건물명·호실·문제 유형을 제거하고 실제 증상만 표시"] },
+  { v:"4.84", d:"2026-07-14", items:["⑤ 업체 견적 요청 발송 예시를 민원 내용·방문 가능 시간·회신 요청 항목 형식으로 확장","견적서와 사업자등록증 사본 회신 요청 문구 추가"] },
+  { v:"4.83", d:"2026-07-14", items:["⑤ 업체 견적 요청 발송 예시에 기본 회신 이메일 자동 표시","업체 견적서 회신 이메일 입력창 제거 및 기본 주소 연결"] },
+  { v:"4.81", d:"2026-07-14", items:["시간 전용 응답의 1899년 기준 날짜 제거","방문 날짜가 없으면 접수일과 방문 시각을 조합해 표시"] },
   { v:"4.80", d:"2026-07-13", items:["방문 가능 시간을 한국시간 년·월·일·시·분 형식으로 표시","구글시트 시간값이 영문 Date 문자열로 보이는 문제 수정"] },
   { v:"4.79", d:"2026-07-13", items:["업체 후보 선택 영역을 ④ 분류 단계에서 ⑤ 업체 견적 요청 단계로 이동","⑤에서 업체를 선택한 뒤 바로 MMS 발송 확인으로 이어지도록 정리"] },
   { v:"4.78", d:"2026-07-13", items:["⑤ 업체 MMS 발송 결과에 SENS 요청 ID 표시","MMS는 휴대폰 번호만 발송 가능으로 판정해 미도착 혼선을 줄임"] },
