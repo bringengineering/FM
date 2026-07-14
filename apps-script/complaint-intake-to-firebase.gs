@@ -16,7 +16,7 @@ const COMPLAINT_CONFIG = {
   FIREBASE_CASES_PATH: "cases",
   RESPONSE_SHEET_URL: "https://docs.google.com/spreadsheets/d/1HI6KzIMomL6vOUPs8zZDhXHktL1cWRDcg93lflsuojA/edit"
 };
-const AUTOMATION_BUILD = "mms-photo-resize-20260714";
+const AUTOMATION_BUILD = "vendor-mms-step-transition-20260714-v2";
 
 const OUTPUT_HEADERS = [
   "접수번호",
@@ -429,6 +429,18 @@ function firstJpegPhotoFromRecord_(record) {
 
 function makeSensThumbnailBlob_(fileId, originalName) {
   try {
+    // DriveApp's thumbnail is a reliable fallback when the Advanced Drive
+    // Service does not expose a usable thumbnailLink for a form upload.
+    const driveFile = DriveApp.getFileById(fileId);
+    const directThumbnail = driveFile.getThumbnail();
+    if (directThumbnail) {
+      const directType = String(directThumbnail.getContentType() || "").toLowerCase();
+      const directBytes = directThumbnail.getBytes();
+      if (directBytes.length <= 300 * 1024 && /jpe?g/.test(directType)) {
+        return { blob: directThumbnail, name: makeSensImageName_(originalName) };
+      }
+    }
+
     if (typeof Drive === "undefined" || !Drive.Files || !Drive.Files.get) return null;
     const metadata = Drive.Files.get(fileId, { fields: "thumbnailLink,name" });
     const thumbnailLink = String(metadata && metadata.thumbnailLink || "").trim();
@@ -438,27 +450,26 @@ function makeSensThumbnailBlob_(fileId, originalName) {
     ].filter(Boolean);
     if (!thumbnailLinks.length) return null;
 
-    const sizes = [800, 640, 480, 360, 240];
+    const sizes = [640, 480, 360, 240, 180, 120];
     for (const size of sizes) {
       for (const baseUrl of thumbnailLinks) {
         let url = baseUrl;
         if (/=s\d+$/.test(url)) url = url.replace(/=s\d+$/, "=s" + size);
         else if (/sz=w\d+-h\d+/.test(url)) url = url.replace(/sz=w\d+-h\d+/, "sz=w" + size + "-h" + size);
-        const response = UrlFetchApp.fetch(url, {
-          method: "get",
-          headers: { Authorization: "Bearer " + ScriptApp.getOAuthToken() },
-          muteHttpExceptions: true
-        });
-        const code = response.getResponseCode();
-        if (code < 200 || code >= 300) continue;
-        const blob = response.getBlob();
-        const contentType = String(blob.getContentType() || "").toLowerCase();
-        if (contentType && contentType.indexOf("jpeg") < 0 && contentType.indexOf("jpg") < 0) continue;
-        if (blob.getBytes().length <= 300 * 1024) {
-          return {
-            blob: blob,
-            name: makeSensImageName_(originalName)
-          };
+        const requestOptions = [
+          { method: "get", headers: { Authorization: "Bearer " + ScriptApp.getOAuthToken() }, muteHttpExceptions: true },
+          { method: "get", muteHttpExceptions: true }
+        ];
+        for (const options of requestOptions) {
+          const response = UrlFetchApp.fetch(url, options);
+          const code = response.getResponseCode();
+          if (code < 200 || code >= 300) continue;
+          const blob = response.getBlob();
+          const contentType = String(blob.getContentType() || "").toLowerCase();
+          if (contentType && contentType.indexOf("jpeg") < 0 && contentType.indexOf("jpg") < 0) continue;
+          if (blob.getBytes().length <= 300 * 1024) {
+            return { blob: blob, name: makeSensImageName_(originalName) };
+          }
         }
       }
     }
@@ -597,6 +608,8 @@ function normalizeVendorForMms_(vendor) {
     name: String(vendor.name || ""),
     address: String(vendor.address || ""),
     phone: String(vendor.phone || ""),
+    mobile: String(vendor.mobile || ""),
+    tel: String(vendor.tel || ""),
     map: String(vendor.map || ""),
     promo: String(vendor.promo || ""),
     note: String(vendor.note || "")
@@ -642,7 +655,6 @@ function makeVendorEstimateMmsContent_(casePayload, record) {
     "[BRING Care 견적서 회신 요청]",
     "",
     "안녕하세요. BRING Care입니다.",
-    subject + "으로 견적 요청드립니다.",
     "",
     "첨부된 현장 사진과 아래 내용을 확인하신 후,",
     "작업 가능 여부와 견적서를 아래 이메일로 회신 부탁드립니다.",
@@ -672,10 +684,18 @@ function updateVendorMmsCase_(caseId, casePayload, result) {
   casePayload.status = casePayload.status || {};
   casePayload.note = casePayload.note || {};
   casePayload.log = Array.isArray(casePayload.log) ? casePayload.log : [];
+  if (result.ok === true) {
+    result.completedAt = result.completedAt || new Date().toISOString();
+    result.stepTransition = {
+      completed: "c5",
+      opened: "c6",
+      completedAt: result.completedAt
+    };
+  }
   casePayload.vendorEstimateMms = result;
   casePayload.note.c5 = makeVendorMmsNote_(result);
-  casePayload.status.c5 = result.ok ? "done" : "doing";
-  if (result.ok && casePayload.status.c6 !== "done") {
+  casePayload.status.c5 = result.ok === true ? "done" : "doing";
+  if (result.ok === true && casePayload.status.c6 !== "done") {
     casePayload.status.c6 = "doing";
   }
   casePayload.updatedAt = new Date().toISOString();
@@ -699,6 +719,7 @@ function makeVendorMmsNote_(result) {
     "[업체 MMS 견적 요청]",
     "상태: " + (result.ok ? "발송완료" : "진행중/보류"),
     result.statusText || "",
+    result.ok ? "다음 단계: ⑥ 견적 비교 진행중" : "",
     result.photoName ? "사진: " + result.photoName : "",
     result.sensFileId ? "SENS 파일 ID: " + result.sensFileId : ""
   ].filter(Boolean);

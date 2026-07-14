@@ -3755,11 +3755,47 @@ function clearStepAutomationHoldThrough(c,k){
     delete c.stepAutomationHoldAt;
   }
 }
+function isVendorMmsSuccess(c){
+  const result=(c&&c.vendorEstimateMms)||{};
+  if(result.ok===true) return true;
+  const sent=Array.isArray(result.sent)?result.sent:[];
+  const failed=Array.isArray(result.failed)?result.failed:[];
+  const skipped=Array.isArray(result.skipped)?result.skipped:[];
+  return result.status==="sent" && sent.length>0 && failed.length===0 && skipped.length===0;
+}
+function syncVendorMmsResultNote(c){
+  if(!c) return false;
+  const result=c.vendorEstimateMms||{};
+  if(!result.status && result.ok!==true) return false;
+  const current=String((c.note||{}).c5||"");
+  if(current && !current.includes("발송 요청 중입니다")) return false;
+  c.note=c.note||{};
+  const status=isVendorMmsSuccess(c) ? "발송완료" : "진행중/보류";
+  const lines=["[업체 MMS 견적 요청]", "상태: "+status, result.statusText||""];
+  if(isVendorMmsSuccess(c)) lines.push("다음 단계: ⑥ 견적 비교 진행중");
+  if(result.photoName) lines.push("사진: "+result.photoName);
+  c.note.c5=lines.filter(Boolean).join("\n");
+  return true;
+}
 function applyStepAutomation(c, logEnabled){
   if(!c || !c.status) return false;
   let changed=false;
   const messages=[];
   c.note=c.note||{};
+  const vendorMms=c.vendorEstimateMms||{};
+  if(syncVendorMmsResultNote(c)) changed=true;
+  if(isVendorMmsSuccess(c)){
+    if(c.status.c5!=="done"){
+      c.status.c5="done";
+      changed=true;
+      messages.push("⑤ 업체 견적 요청 발송완료 확인");
+    }
+    if(c.status.c6!=="done" && c.status.c6!=="doing"){
+      c.status.c6="doing";
+      changed=true;
+      messages.push("⑤ 발송완료 후 ⑥ 견적 비교 진행중 전환");
+    }
+  }
   if(!isStepAutomationHeld(c,"c2") && isReceiptSmsConfirmed(c) && c.status.c2!=="done"){
     c.status.c2="done";
     changed=true;
@@ -4113,7 +4149,6 @@ function buildVendorMmsMessage(c){
     "[BRING Care 견적서 회신 요청]",
     "",
     "안녕하세요. BRING Care입니다.",
-    `${subject}으로 견적 요청드립니다.`,
     "",
     "첨부된 현장 사진과 아래 내용을 확인하신 후,",
     "작업 가능 여부와 견적서를 아래 이메일로 회신 부탁드립니다.",
@@ -4229,8 +4264,6 @@ function doSendVendorSms(){
   c.note=c.note||{};
   c.status.c5="doing";
   c.note.c5="업체 MMS 발송 요청 중입니다. Apps Script 처리 결과가 도착하면 자동 갱신됩니다.";
-  caseLog(c, "📷 업체 MMS 발송 요청: "+vendors.length+"곳");
-  saveCase(vendorSmsCtx.id, true);
   renderCaseList();
   renderCaseDetail();
   closeVendorSmsModal();
@@ -4404,8 +4437,11 @@ document.getElementById("noticeBtn").addEventListener("click", openNoticePanel);
 document.getElementById("noticeBanner").addEventListener("click", openNoticePanel);
 
 /* ===== 업데이트 알림(What's New) — 새 버전 나오면 자동 팝업 ===== */
-const APP_VERSION = "4.85";
+const APP_VERSION = "4.88";
 const CHANGELOG = [
+  { v:"4.88", d:"2026-07-14", items:["⑤ 업체 MMS 결과를 서버 기준으로 반영","발송 성공 시 ⑤ 완료·⑥ 진행중 자동 전환 안정화","사진 용량 제한으로 보류된 경우 실제 원인을 메모에 표시"] },
+  { v:"4.87", d:"2026-07-14", items:["⑤ 업체 MMS 발송 예시에서 인사말 아래 건물명·호실 문장 제거"] },
+  { v:"4.86", d:"2026-07-14", items:["⑤ 업체 MMS 발송 성공 결과를 확인하면 ⑤ 완료 처리 후 ⑥ 견적 비교를 자동으로 진행중 전환"] },
   { v:"4.85", d:"2026-07-14", items:["⑤ 업체 발송 예시의 증상 항목에서 건물명·호실·문제 유형을 제거하고 실제 증상만 표시"] },
   { v:"4.84", d:"2026-07-14", items:["⑤ 업체 견적 요청 발송 예시를 민원 내용·방문 가능 시간·회신 요청 항목 형식으로 확장","견적서와 사업자등록증 사본 회신 요청 문구 추가"] },
   { v:"4.83", d:"2026-07-14", items:["⑤ 업체 견적 요청 발송 예시에 기본 회신 이메일 자동 표시","업체 견적서 회신 이메일 입력창 제거 및 기본 주소 연결"] },
