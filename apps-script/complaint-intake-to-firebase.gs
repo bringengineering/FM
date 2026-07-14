@@ -11,7 +11,7 @@ const COMPLAINT_CONFIG = {
   CONTRACT_DRIVE_FOLDER_ID: "1818MusPDfVV6znALkWDMGK99NXAlAj8g",
   QUOTE_DRIVE_FOLDER_ID: "11QX5F-KRQvvYNc0hso3QACuMS7lMZw4r",
   QUOTE_TEMPLATE_SPREADSHEET_ID: "1JXP8NEaU0I_96ZMAZFn2GlYQHkLsbhSJCawsdMgqH7w",
-  VENDOR_QUOTE_REPLY_EMAIL: "",
+  VENDOR_QUOTE_REPLY_EMAIL: "bringengineering1008@gmail.com",
   FIREBASE_DATABASE_URL: "https://bring-fm-default-rtdb.asia-southeast1.firebasedatabase.app",
   FIREBASE_CASES_PATH: "cases",
   RESPONSE_SHEET_URL: "https://docs.google.com/spreadsheets/d/1HI6KzIMomL6vOUPs8zZDhXHktL1cWRDcg93lflsuojA/edit"
@@ -579,8 +579,8 @@ function makeVendorEstimateMmsContent_(casePayload, record) {
   const replyEmail = getVendorQuoteReplyEmail_() || "회신 이메일 미설정";
   return [
     "[견적서 회신 요청]",
-    "첨부 사진 확인 후 견적서를 이메일로 회신 부탁드립니다.",
-    "회신 이메일: " + replyEmail
+    "첨부 사진 확인 후 견적서를 아래 이메일로 회신 부탁드립니다.",
+    "이메일: " + replyEmail
   ].join("\n");
 }
 

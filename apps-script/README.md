@@ -24,7 +24,7 @@
    - `NCP_SENS_FROM`: SENS에 등록/승인된 발신번호
    - `NCP_SENS_TEST_TO`: 테스트 문자를 받을 내 번호
    - `SMS_ENABLED`: `true`
-   - `VENDOR_QUOTE_REPLY_EMAIL`: 업체 견적서를 회신받을 이메일 주소
+   - `VENDOR_QUOTE_REPLY_EMAIL`: 업체 견적서를 회신받을 이메일 주소 (기본값: `bringengineering1008@gmail.com`)
 9. 케이스 화면의 ② 문자 발송, ⑤ 업체 MMS 발송, ⑥ 파일 업로드를 쓰려면 Apps Script에서 `배포` -> `새 배포` -> `웹 앱`으로 배포합니다.
    - 실행 사용자: `나`
    - 액세스 권한: GitHub.io 화면에서 호출할 수 있는 권한으로 설정
