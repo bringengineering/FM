@@ -16,7 +16,7 @@ const COMPLAINT_CONFIG = {
   FIREBASE_CASES_PATH: "cases",
   RESPONSE_SHEET_URL: "https://docs.google.com/spreadsheets/d/1HI6KzIMomL6vOUPs8zZDhXHktL1cWRDcg93lflsuojA/edit"
 };
-const AUTOMATION_BUILD = "mms-photo-resize-20260714";
+const AUTOMATION_BUILD = "vendor-mms-step-transition-20260714";
 
 const OUTPUT_HEADERS = [
   "접수번호",
@@ -672,10 +672,18 @@ function updateVendorMmsCase_(caseId, casePayload, result) {
   casePayload.status = casePayload.status || {};
   casePayload.note = casePayload.note || {};
   casePayload.log = Array.isArray(casePayload.log) ? casePayload.log : [];
+  if (result.ok === true) {
+    result.completedAt = result.completedAt || new Date().toISOString();
+    result.stepTransition = {
+      completed: "c5",
+      opened: "c6",
+      completedAt: result.completedAt
+    };
+  }
   casePayload.vendorEstimateMms = result;
   casePayload.note.c5 = makeVendorMmsNote_(result);
-  casePayload.status.c5 = result.ok ? "done" : "doing";
-  if (result.ok && casePayload.status.c6 !== "done") {
+  casePayload.status.c5 = result.ok === true ? "done" : "doing";
+  if (result.ok === true && casePayload.status.c6 !== "done") {
     casePayload.status.c6 = "doing";
   }
   casePayload.updatedAt = new Date().toISOString();
@@ -699,6 +707,7 @@ function makeVendorMmsNote_(result) {
     "[업체 MMS 견적 요청]",
     "상태: " + (result.ok ? "발송완료" : "진행중/보류"),
     result.statusText || "",
+    result.ok ? "다음 단계: ⑥ 견적 비교 진행중" : "",
     result.photoName ? "사진: " + result.photoName : "",
     result.sensFileId ? "SENS 파일 ID: " + result.sensFileId : ""
   ].filter(Boolean);
