@@ -227,7 +227,10 @@ function casePayloadToSmsRecord_(casePayload, payload) {
     "이름": casePayload.name || contact.name || "",
     "연락처": contact.phone || casePayload.phone || "",
     "문제 유형": casePayload.issueType || contact.issueType || "",
-    "방문 가능 시간": formatKoreanDateTimeForCase_(casePayload.visitTime || contact.visitTime || ""),
+    "방문 가능 시간": formatKoreanDateTimeForCase_(
+      casePayload.visitTime || contact.visitTime || "",
+      casePayload.visitDate || contact.visitDate || casePayload.receivedAt || casePayload.createdAt
+    ),
     "민원 내용": casePayload.summary || contact.summary || ""
   };
 }
@@ -568,7 +571,11 @@ function makeVendorEstimateMmsContent_(casePayload, record) {
   const room = readField_(record, ["호실"]) || casePayload.room || "호실 미입력";
   const issueType = casePayload.issueType || readField_(record, ["문제 유형"]) || "문제 유형 미입력";
   const vendorType = casePayload.vendorType || "업체 분류 미확인";
-  const visitTime = formatKoreanDateTimeForCase_(casePayload.visitTime || readRawField_(record, ["방문 가능 시간"])) || "협의 필요";
+  const visitTime = formatKoreanDateTimeForCase_(
+    casePayload.visitTime || readRawField_(record, ["방문 가능 시간"]),
+    readRawField_(record, ["방문 가능 날짜", "방문 날짜", "방문일"]) || casePayload.visitDate ||
+      readRawField_(record, ["타임스탬프", "Timestamp"]) || casePayload.receivedAt || casePayload.createdAt
+  ) || "협의 필요";
   const ticketNo = casePayload.ticketNo || casePayload.id || "";
   return [
     "[BRING Care 견적요청]",
@@ -3863,8 +3870,46 @@ function formatEnglishDateTextForCase_(raw) {
   return match[3] + "년 " + month + "월 " + Number(match[2]) + "일 " + String(match[4]).padStart(2, "0") + ":" + match[5];
 }
 
-function formatKoreanDateTimeForCase_(value) {
+function formatKoreanDateOnlyForCase_(value) {
   if (value === undefined || value === null || String(value).trim() === "") return "";
+  const raw = String(value).trim();
+  const korean = raw.match(/(\d{4})년\s*(\d{1,2})월\s*(\d{1,2})일/);
+  if (korean && Number(korean[1]) > 1901) {
+    return Number(korean[1]) + "년 " + Number(korean[2]) + "월 " + Number(korean[3]) + "일";
+  }
+  const parsed = value instanceof Date ? value : new Date(raw);
+  if (isNaN(parsed.getTime())) return "";
+  const year = Number(Utilities.formatDate(parsed, "Asia/Seoul", "yyyy"));
+  return year > 1901 ? Utilities.formatDate(parsed, "Asia/Seoul", "yyyy년 M월 d일") : "";
+}
+
+function timeOnlyPartsForCase_(value) {
+  const raw = String(value || "").trim();
+  const english = raw.match(/^(?:[A-Za-z]{3}\s+)?[A-Za-z]{3}\s+\d{1,2}\s+(\d{4})\s+(\d{1,2}):(\d{2})/);
+  if (english && Number(english[1]) <= 1901) {
+    return { hour: String(english[2]).padStart(2, "0"), minute: english[3] };
+  }
+  const korean = raw.match(/^(\d{4})년\s*\d{1,2}월\s*\d{1,2}일\s*(\d{1,2}):(\d{2})/);
+  if (korean && Number(korean[1]) <= 1901) {
+    return { hour: String(korean[2]).padStart(2, "0"), minute: korean[3] };
+  }
+  const parsed = value instanceof Date ? value : new Date(raw);
+  if (isNaN(parsed.getTime())) return null;
+  const year = Number(Utilities.formatDate(parsed, "Asia/Seoul", "yyyy"));
+  if (year > 1901) return null;
+  return {
+    hour: Utilities.formatDate(parsed, "Asia/Seoul", "HH"),
+    minute: Utilities.formatDate(parsed, "Asia/Seoul", "mm")
+  };
+}
+
+function formatKoreanDateTimeForCase_(value, fallbackDate) {
+  if (value === undefined || value === null || String(value).trim() === "") return "";
+  const timeOnly = timeOnlyPartsForCase_(value);
+  if (timeOnly) {
+    const dateText = formatKoreanDateOnlyForCase_(fallbackDate);
+    return (dateText ? dateText + " " : "") + timeOnly.hour + ":" + timeOnly.minute;
+  }
   if (value instanceof Date && !isNaN(value.getTime())) {
     return Utilities.formatDate(value, "Asia/Seoul", "yyyy년 M월 d일 HH:mm");
   }
@@ -3876,6 +3921,13 @@ function formatKoreanDateTimeForCase_(value) {
     return Utilities.formatDate(parsed, "Asia/Seoul", "yyyy년 M월 d일 HH:mm");
   }
   return raw;
+}
+
+function formatVisitTimeFromRecord_(record, fallbackDate) {
+  const visitTime = readRawField_(record, ["방문 가능 시간"]);
+  const visitDate = readRawField_(record, ["방문 가능 날짜", "방문 날짜", "방문일"]);
+  const submittedAt = readRawField_(record, ["타임스탬프", "Timestamp"]);
+  return formatKoreanDateTimeForCase_(visitTime, visitDate || fallbackDate || submittedAt);
 }
 
 function normalizeText_(value) {
@@ -4388,7 +4440,7 @@ function makeConsultationNote_(ticketNo, record, analysis, sheetUrl) {
   const issueType = readField_(record, ["문제 유형"]) || "문제 유형 미입력";
   const description = readField_(record, ["증상 설명", "민원 내용", "내용"]);
   const photo = readField_(record, ["사진 첨부"]);
-  const visitTime = formatKoreanDateTimeForCase_(readRawField_(record, ["방문 가능 시간"]));
+  const visitTime = formatVisitTimeFromRecord_(record);
   const extra = readField_(record, ["추가 요청사항"]);
   const questions = consultationQuestions_(issueType, [issueType, description, extra].join(" "));
   const warnings = consultationWarnings_(description, photo, visitTime, analysis);
@@ -4494,7 +4546,8 @@ function buildCasePayload_(ticketNo, record, analysis, contractMatch, row, sheet
   const name = readField_(record, ["이름", "성명"]);
   const phone = readField_(record, ["연락처", "전화번호", "휴대폰"]);
   const issueType = readField_(record, ["문제 유형"]);
-  const visitTime = formatKoreanDateTimeForCase_(readRawField_(record, ["방문 가능 시간"]));
+  const visitDateRaw = readRawField_(record, ["방문 가능 날짜", "방문 날짜", "방문일"]);
+  const visitTime = formatVisitTimeFromRecord_(record, timestamp);
   const sheetUrl = COMPLAINT_CONFIG.RESPONSE_SHEET_URL + "#gid=" + sheet.getSheetId();
   const isContractHold = contractMatch && (contractMatch.status === "unmatched" || contractMatch.status === "multiple" || contractMatch.status === "address_missing");
   const statusValue = isContractHold ? "계약확인보류" : analysis.statusValue;
@@ -4525,6 +4578,7 @@ function buildCasePayload_(ticketNo, record, analysis, contractMatch, row, sheet
     vendorType: analysis.vendorType,
     summary: analysis.summary,
     analysisReason: analysis.reason,
+    visitDate: formatKoreanDateOnlyForCase_(visitDateRaw || timestamp),
     visitTime: visitTime,
     statusValue: statusValue,
     contractMatch: contractMatch,

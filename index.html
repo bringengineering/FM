@@ -2121,25 +2121,51 @@ function formatEnglishDateTextKorean(raw){
   if(!month) return "";
   return `${m[3]}년 ${month}월 ${Number(m[2])}일 ${String(m[4]).padStart(2,"0")}:${m[5]}`;
 }
-function formatKoreanDateTime(value){
+function koreanDateParts(value){
+  const d=new Date(value||"");
+  if(Number.isNaN(d.getTime())) return null;
+  const parts={};
+  new Intl.DateTimeFormat("ko-KR",{
+    timeZone:"Asia/Seoul", year:"numeric", month:"numeric", day:"numeric",
+    hour:"2-digit", minute:"2-digit", hour12:false
+  }).formatToParts(d).forEach(part=>{ if(part.type!=="literal") parts[part.type]=part.value; });
+  return {
+    year:Number(parts.year), month:Number(parts.month), day:Number(parts.day),
+    hour:String(parts.hour||"00").padStart(2,"0"), minute:String(parts.minute||"00").padStart(2,"0")
+  };
+}
+function koreanDateText(value){
+  const raw=String(value||"").trim();
+  const ko=raw.match(/(\d{4})년\s*(\d{1,2})월\s*(\d{1,2})일/);
+  if(ko && Number(ko[1])>1901) return `${Number(ko[1])}년 ${Number(ko[2])}월 ${Number(ko[3])}일`;
+  const p=koreanDateParts(value);
+  return p && p.year>1901 ? `${p.year}년 ${p.month}월 ${p.day}일` : "";
+}
+function timeOnlyVisitParts(value){
+  const raw=String(value||"").trim();
+  const english=raw.match(/^(?:[A-Za-z]{3}\s+)?[A-Za-z]{3}\s+\d{1,2}\s+(\d{4})\s+(\d{1,2}):(\d{2})/);
+  if(english && Number(english[1])<=1901) return { hour:String(english[2]).padStart(2,"0"), minute:english[3] };
+  const korean=raw.match(/^(\d{4})년\s*\d{1,2}월\s*\d{1,2}일\s*(\d{1,2}):(\d{2})/);
+  if(korean && Number(korean[1])<=1901) return { hour:String(korean[2]).padStart(2,"0"), minute:korean[3] };
+  const p=koreanDateParts(value);
+  return p && p.year<=1901 ? { hour:p.hour, minute:p.minute } : null;
+}
+function formatKoreanDateTime(value, fallbackDate){
   const raw=String(value||"").trim();
   if(!raw) return "";
+  const timeOnly=timeOnlyVisitParts(value);
+  if(timeOnly){
+    const dateText=koreanDateText(fallbackDate);
+    return `${dateText ? dateText+" " : ""}${timeOnly.hour}:${timeOnly.minute}`;
+  }
   const english=formatEnglishDateTextKorean(raw);
   if(english) return english;
-  const d=new Date(raw);
-  if(Number.isNaN(d.getTime())) return raw;
-  return d.toLocaleString("ko-KR", {
-    timeZone:"Asia/Seoul",
-    year:"numeric",
-    month:"long",
-    day:"numeric",
-    hour:"2-digit",
-    minute:"2-digit",
-    hour12:false
-  });
+  const p=koreanDateParts(value);
+  if(!p) return raw;
+  return `${p.year}년 ${p.month}월 ${p.day}일 ${p.hour}:${p.minute}`;
 }
 function displayVisitTime(c){
-  return formatKoreanDateTime(c&&c.visitTime);
+  return formatKoreanDateTime(c&&c.visitTime, c&&(c.visitDate||c.receivedAt||c.createdAt));
 }
 function renderComplaintOverview(c){
   if(!(c.source==="google_form" || c.ticketNo || c.issueType || c.urgency || c.vendorType || c.summary)) return "";
@@ -4317,8 +4343,9 @@ document.getElementById("noticeBtn").addEventListener("click", openNoticePanel);
 document.getElementById("noticeBanner").addEventListener("click", openNoticePanel);
 
 /* ===== 업데이트 알림(What's New) — 새 버전 나오면 자동 팝업 ===== */
-const APP_VERSION = "4.80";
+const APP_VERSION = "4.81";
 const CHANGELOG = [
+  { v:"4.81", d:"2026-07-14", items:["시간 전용 응답의 1899년 기준 날짜 제거","방문 날짜가 없으면 접수일과 방문 시각을 조합해 표시"] },
   { v:"4.80", d:"2026-07-13", items:["방문 가능 시간을 한국시간 년·월·일·시·분 형식으로 표시","구글시트 시간값이 영문 Date 문자열로 보이는 문제 수정"] },
   { v:"4.79", d:"2026-07-13", items:["업체 후보 선택 영역을 ④ 분류 단계에서 ⑤ 업체 견적 요청 단계로 이동","⑤에서 업체를 선택한 뒤 바로 MMS 발송 확인으로 이어지도록 정리"] },
   { v:"4.78", d:"2026-07-13", items:["⑤ 업체 MMS 발송 결과에 SENS 요청 ID 표시","MMS는 휴대폰 번호만 발송 가능으로 판정해 미도착 혼선을 줄임"] },
