@@ -391,6 +391,13 @@
 
     <!-- 하단 주문 바 -->
     <div class="orderbar" id="orderbar">
+      <div class="obopt" id="obOptWrap" style="display:none;align-items:center;gap:10px;margin-bottom:2px">
+        <select id="obOptSel" style="flex:1;min-width:0;padding:12px;border:1px solid #d9d9d9;border-radius:10px;font-size:15px;background:#fff"></select>
+        <div style="text-align:right;white-space:nowrap;line-height:1.15">
+          <div id="obOptPrice" style="font-weight:800;color:var(--brand);font-size:17px"></div>
+          <div style="font-size:11px;color:#1a9d63;font-weight:800">무료배송</div>
+        </div>
+      </div>
       <div class="obrow">
         <button class="btn btn-kakao hide" id="kakaoBtn">카톡 문의</button>
         <button class="btn btn-primary" id="orderBtn">주문하기</button>
@@ -405,6 +412,10 @@
   <div class="sheet">
     <h2>주문하기</h2>
     <div class="msub" id="modalItem"></div>
+    <div class="field" id="optField" style="display:none">
+      <label>옵션 선택 <span class="req">*</span></label>
+      <select id="optSel" style="width:100%;padding:12px;border:1px solid #d9d9d9;border-radius:10px;font-size:15px;background:#fff"></select>
+    </div>
     <div class="field">
       <label>수량</label>
       <div class="qtyrow">
@@ -423,13 +434,10 @@
     </div>
     <div class="field">
       <label>수령 방법</label>
-      <div class="radio" id="receive">
-        <label><input type="radio" name="rc" value="방문수령" checked><span>🏢 방문수령</span></label>
-        <label><input type="radio" name="rc" value="택배"><span>📦 택배</span></label>
-      </div>
+      <div class="rcfixed" style="padding:11px 12px;background:#F3F6FB;border-radius:10px;font-size:14.5px;color:#0F58A0;font-weight:700">📦 전국 택배 배송 · 무료배송</div>
     </div>
-    <div class="field" id="addrField" style="display:none">
-      <label>배송지 주소</label>
+    <div class="field" id="addrField">
+      <label>배송지 주소 <span class="req">*</span></label>
       <input id="fAddr" type="text" placeholder="택배 받으실 주소">
     </div>
     <div class="field">
@@ -476,6 +484,7 @@ let SETTINGS = {
 
 let PRODUCTS = {};
 let currentId = null;
+let selOptIdx = 0;   // 하단 주문바에서 선택한 옵션 인덱스
 
 db.ref("signage/settings").on("value", s => {
   const v = s.val();
@@ -526,7 +535,7 @@ function renderList(){
 
 function priceHtml(p){
   if(!p.price || Number(p.price) <= 0) return "가격 문의";
-  return won(p.price) + "<small>원</small>";
+  return won(p.price) + "<small>원" + (p.priceFrom ? "~" : "") + "</small>";
 }
 
 /* ── 상품별 외부 주문 URL (구글 폼 등) ───── */
@@ -543,6 +552,17 @@ function renderDetail(id){
   if(!p){ $("detailview").innerHTML = notFound(); $("orderbar").style.display="none"; return; }
   $("orderbar").style.display = "";
   const soldout = !!p.soldout;
+  // 하단 주문바 옵션 드롭다운 채우기
+  selOptIdx = 0;
+  (function(){
+    const opts = Array.isArray(p.options) ? p.options : [];
+    const wrap = $("obOptWrap"), sel = $("obOptSel");
+    if(opts.length && !soldout){
+      sel.innerHTML = opts.map((o,i)=>`<option value="${i}">${esc(o.n)} — ${won(o.p)}원</option>`).join("");
+      $("obOptPrice").textContent = won(opts[0].p) + "원";
+      wrap.style.display = "flex";
+    } else { wrap.style.display = "none"; }
+  })();
   const photos = (Array.isArray(p.gallery) && p.gallery.length) ? p.gallery
                : (p.photo ? [p.photo] : []);
   const ask = (!p.price||Number(p.price)<=0) ? "ask" : "";
@@ -577,8 +597,8 @@ function renderDetail(id){
         <div><b>품명</b><span>${esc(p.name||"-")}</span></div>
         ${p.vendor?`<div><b>판매처</b><span>${esc(p.vendor)}</span></div>`:""}
         <div><b>가격</b><span>${priceHtml(p)}</span></div>
-        <div><b>수령</b><span>BRING 1층 데스크 (평일 9–18시)</span></div>
-        <div><b>결제</b><span>주문 접수 후 안내</span></div>
+        <div><b>수령</b><span>전국 택배 배송</span></div>
+        <div><b>결제</b><span>계좌이체 (주문 후 계좌 안내)</span></div>
         <div><b>문의</b><span>관리사무실 ${esc(SETTINGS.phone)}</span></div>
         ${soldout?`<div><b>상태</b><span class="dstate">품절</span></div>`:""}
       </div>
@@ -591,7 +611,7 @@ function renderDetail(id){
   $("obCaption").textContent = soldout ? "" :
     (extOrderUrl(p)
       ? "주문서(구글 폼)로 연결됩니다 · 접수 후 문자로 안내드려요"
-      : "주문은 이 페이지에서 바로 접수됩니다 · 접수 후 연락드려요");
+      : "전 상품 무료배송 · 계좌이체 전용 · 접수 후 입금 계좌 안내드려요");
 
   const kb = $("kakaoBtn");
   if(SETTINGS.kakaoUrl){ kb.classList.remove("hide"); kb.onclick = ()=> window.open(SETTINGS.kakaoUrl,"_blank"); }
@@ -628,26 +648,40 @@ window.addEventListener("popstate", render);
 $("back").addEventListener("click", () => go(null));
 
 /* ── 주문: 외부 폼이 있으면 새 탭, 없으면 자체 접수 모달 ── */
+function selectedOpt(p){
+  const opts = Array.isArray(p.options) ? p.options : [];
+  if(!opts.length) return null;
+  return opts[selOptIdx] || opts[0];
+}
+function updateModalItem(p){
+  const o = selectedOpt(p);
+  const price = o ? o.p : (Number(p.price)||0);
+  $("modalItem").textContent = `${p.name}${o?" · "+o.n:""}${price>0?" · "+won(price)+"원":""}`;
+}
 $("orderBtn").addEventListener("click", () => {
   const p = PRODUCTS[currentId];
   if(!p || p.soldout) return;
   const ext = extOrderUrl(p);
   if(ext){ window.open(ext, "_blank"); return; }
-  $("modalItem").textContent = `${p.name}${p.price>0?" · "+won(p.price)+"원":""}`;
+  $("optField").style.display = "none";   // 옵션은 하단 주문바에서 선택
+  updateModalItem(p);
   $("payNote").textContent = SETTINGS.bankInfo || "";
   $("qty").value = 1;
   $("modal").classList.add("on");
   document.body.style.overflow = "hidden";
 });
+$("obOptSel").addEventListener("change", ()=>{
+  const p = PRODUCTS[currentId]; if(!p) return;
+  const opts = Array.isArray(p.options) ? p.options : [];
+  selOptIdx = +($("obOptSel").value||0);
+  if(opts[selOptIdx]) $("obOptPrice").textContent = won(opts[selOptIdx].p) + "원";
+});
 function closeModal(){ $("modal").classList.remove("on"); document.body.style.overflow=""; }
 $("cancelOrder").addEventListener("click", closeModal);
 $("modal").addEventListener("click", e => { if(e.target === $("modal")) closeModal(); });
 
-$("qtyMinus").addEventListener("click", ()=> $("qty").value = Math.max(1,(+$("qty").value||1)-1));
-$("qtyPlus").addEventListener("click", ()=> $("qty").value = (+$("qty").value||1)+1);
-$("receive").addEventListener("change", e => {
-  $("addrField").style.display = e.target.value === "택배" ? "block" : "none";
-});
+$("qtyMinus").addEventListener("click", ()=> { $("qty").value = Math.max(1,(+$("qty").value||1)-1); });
+$("qtyPlus").addEventListener("click", ()=> { $("qty").value = (+$("qty").value||1)+1; });
 
 $("submitOrder").addEventListener("click", async () => {
   const p = PRODUCTS[currentId];
@@ -655,13 +689,15 @@ $("submitOrder").addEventListener("click", async () => {
   const name = $("fName").value.trim();
   const phone = $("fPhone").value.trim();
   const qty = Math.max(1, +$("qty").value || 1);
-  const receive = (document.querySelector('input[name="rc"]:checked')||{}).value || "방문수령";
+  const opt = selectedOpt(p);
+  const receive = "택배";
   const addr = $("fAddr").value.trim();
   const memo = $("fMemo").value.trim();
+  const unit = opt ? opt.p : (Number(p.price)||0);
 
   if(!name){ toast("성함을 입력해 주세요"); $("fName").focus(); return; }
   if(!phone || phone.replace(/\D/g,"").length < 9){ toast("연락처를 확인해 주세요"); $("fPhone").focus(); return; }
-  if(receive === "택배" && !addr){ toast("배송지 주소를 입력해 주세요"); $("fAddr").focus(); return; }
+  if(!addr){ toast("배송지 주소를 입력해 주세요"); $("fAddr").focus(); return; }
 
   const btn = $("submitOrder");
   btn.disabled = true; btn.textContent = "접수 중…";
@@ -669,10 +705,12 @@ $("submitOrder").addEventListener("click", async () => {
     await db.ref("signage/orders").push({
       productId: currentId,
       productName: p.name || "",
+      option: opt ? opt.n : "",
       vendor: p.vendor || "",
-      price: Number(p.price)||0,
-      qty, name, phone, receive,
-      addr: receive==="택배" ? addr : "",
+      price: unit,
+      qty, amount: unit*qty,
+      name, phone, receive: "택배",
+      addr,
       memo,
       status: "신규",
       createdAt: firebase.database.ServerValue.TIMESTAMP
@@ -711,8 +749,10 @@ function escAttr(s){ return String(s??"").replace(/'/g,"%27").replace(/"/g,"%22"
 function applySettings(){
   $("hPhone").textContent = "관리사무실 " + (SETTINGS.phone || "");
   $("footList").innerHTML =
-    "BRING빌딩 1층 위탁판매 · 수령/문의는 1층 데스크<br>관리사무실 "
-    + esc(SETTINGS.phone) + " (평일 9–18시)"
+    "BRING빌딩 1층 위탁판매 · 수령/문의는 1층 데스크<br>"
+    + "관리사무실 " + esc(SETTINGS.phone) + " · 팩스 033-746-8919 (평일 9–18시)<br>"
+    + "강원도 원주시 상지대길 83 벤처창업관 305호<br>"
+    + "사업자등록번호 748-28-01935 · rancemo858@naver.com"
     + (SETTINGS.footer ? "<br>" + esc(SETTINGS.footer) : "");
   if(currentId) renderDetail(currentId);
 }
