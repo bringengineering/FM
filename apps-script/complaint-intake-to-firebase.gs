@@ -577,10 +577,39 @@ function getVendorQuoteReplyEmail_() {
 
 function makeVendorEstimateMmsContent_(casePayload, record) {
   const replyEmail = getVendorQuoteReplyEmail_() || "회신 이메일 미설정";
+  const building = readField_(record, ["건물명", "건물"]) || casePayload.building || "건물 미입력";
+  const room = readField_(record, ["호실"]) || casePayload.room || "";
+  const issueType = readField_(record, ["문제 유형"]) || casePayload.issueType || casePayload.vendorType || "시설";
+  const subject = [building, room, issueType, "유지보수 민원 건"].filter(Boolean).join(" ");
+  const symptom = readField_(record, ["증상 설명", "민원 내용", "내용"]) || casePayload.summary || "미입력";
+  const visitTime = formatVisitTimeFromRecord_(record) || casePayload.visitTime || "미입력";
   return [
-    "[견적서 회신 요청]",
-    "첨부 사진 확인 후 견적서를 아래 이메일로 회신 부탁드립니다.",
-    "이메일: " + replyEmail
+    "[BRING Care 견적서 회신 요청]",
+    "",
+    "안녕하세요. BRING Care입니다.",
+    subject + "으로 견적 요청드립니다.",
+    "",
+    "첨부된 현장 사진과 아래 내용을 확인하신 후,",
+    "작업 가능 여부와 견적서를 아래 이메일로 회신 부탁드립니다.",
+    "",
+    "회신 이메일: " + replyEmail,
+    "",
+    "■ 민원 내용",
+    "- 증상: " + symptom,
+    "- 방문 가능 시간대: " + visitTime,
+    "",
+    "■ 회신 요청 내용",
+    "- 작업 가능 여부",
+    "- 예상 작업 내용",
+    "- 총 견적금액",
+    "- 방문 가능 일정",
+    "",
+    "■ 첨부 요청",
+    "- 견적서",
+    "- 사업자등록증 사본",
+    "",
+    "확인 후 회신 부탁드립니다.",
+    "감사합니다."
   ].join("\n");
 }
 
