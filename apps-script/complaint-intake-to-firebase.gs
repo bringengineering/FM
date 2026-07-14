@@ -575,13 +575,20 @@ function getVendorQuoteReplyEmail_() {
   ).trim();
 }
 
+function vendorQuoteSymptom_(value) {
+  const text = String(value || "").trim();
+  if (!text) return "";
+  const marker = text.indexOf(" - ");
+  return marker >= 0 ? text.slice(marker + 3).trim() : text;
+}
+
 function makeVendorEstimateMmsContent_(casePayload, record) {
   const replyEmail = getVendorQuoteReplyEmail_() || "회신 이메일 미설정";
   const building = readField_(record, ["건물명", "건물"]) || casePayload.building || "건물 미입력";
   const room = readField_(record, ["호실"]) || casePayload.room || "";
   const issueType = readField_(record, ["문제 유형"]) || casePayload.issueType || casePayload.vendorType || "시설";
   const subject = [building, room, issueType, "유지보수 민원 건"].filter(Boolean).join(" ");
-  const symptom = readField_(record, ["증상 설명", "민원 내용", "내용"]) || casePayload.summary || "미입력";
+  const symptom = readField_(record, ["증상 설명", "민원 내용", "내용"]) || vendorQuoteSymptom_(casePayload.summary) || "미입력";
   const visitTime = formatVisitTimeFromRecord_(record) || casePayload.visitTime || "미입력";
   return [
     "[BRING Care 견적서 회신 요청]",

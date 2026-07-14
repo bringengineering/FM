@@ -4094,13 +4094,20 @@ function maskSmsPhone(value){
   if(digits.length<7) return value ? "***" : "번호 없음";
   return digits.slice(0,3)+"-****-"+digits.slice(-4);
 }
+function vendorQuoteSymptom(c){
+  const direct=String(c&&(c.symptom||c.description||c.descriptionText)||"").trim();
+  if(direct) return direct;
+  const summary=String(c&&c.summary||"").trim();
+  const marker=summary.indexOf(" - ");
+  return marker>=0 ? summary.slice(marker+3).trim() : summary;
+}
 function buildVendorMmsMessage(c){
   const replyEmail=vendorQuoteReplyEmail()||"회신 이메일 미설정";
   const building=String(c&&c.building||"건물 미입력").trim();
   const room=caseDisplayRoom(c)||"";
   const issue=String(c&&(c.issueType||c.vendorType)||"시설").trim();
   const subject=[building,room,issue,"유지보수 민원 건"].filter(Boolean).join(" ");
-  const symptom=String(c&&(c.symptom||c.description||c.summary)||"미입력").trim();
+  const symptom=vendorQuoteSymptom(c)||"미입력";
   const visit=displayVisitTime(c)||String(c&&c.visitTime||"").trim()||"미입력";
   return [
     "[BRING Care 견적서 회신 요청]",
@@ -4397,8 +4404,9 @@ document.getElementById("noticeBtn").addEventListener("click", openNoticePanel);
 document.getElementById("noticeBanner").addEventListener("click", openNoticePanel);
 
 /* ===== 업데이트 알림(What's New) — 새 버전 나오면 자동 팝업 ===== */
-const APP_VERSION = "4.84";
+const APP_VERSION = "4.85";
 const CHANGELOG = [
+  { v:"4.85", d:"2026-07-14", items:["⑤ 업체 발송 예시의 증상 항목에서 건물명·호실·문제 유형을 제거하고 실제 증상만 표시"] },
   { v:"4.84", d:"2026-07-14", items:["⑤ 업체 견적 요청 발송 예시를 민원 내용·방문 가능 시간·회신 요청 항목 형식으로 확장","견적서와 사업자등록증 사본 회신 요청 문구 추가"] },
   { v:"4.83", d:"2026-07-14", items:["⑤ 업체 견적 요청 발송 예시에 기본 회신 이메일 자동 표시","업체 견적서 회신 이메일 입력창 제거 및 기본 주소 연결"] },
   { v:"4.81", d:"2026-07-14", items:["시간 전용 응답의 1899년 기준 날짜 제거","방문 날짜가 없으면 접수일과 방문 시각을 조합해 표시"] },
