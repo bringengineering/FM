@@ -2063,6 +2063,20 @@ function saveCase(id, immediate, options){
     try{ localStorage.setItem("fm_cases_v1", JSON.stringify(cases)); }catch(e){}
   }
 }
+function saveCaseWithRemovedChild(id, childPath, options){
+  if(!id || !cases[id] || !childPath) return;
+  touchCase(cases[id]);
+  if(casesRef){
+    clearTimeout(caseWriteTimers[id]);
+    const payload=caseSavePayload(id, options&&options.includeArchive);
+    const rootKey=String(childPath).split("/")[0];
+    delete payload[rootKey];
+    payload[childPath]=null;
+    casesRef.child(id).update(payload);
+  }else if(!isConfigured){
+    try{ localStorage.setItem("fm_cases_v1", JSON.stringify(cases)); }catch(e){}
+  }
+}
 function removeCaseChild(id, childPath){
   if(!id || !childPath || !casesRef) return;
   casesRef.child(id).child(childPath).remove().catch(e=>console.warn("case child remove failed", childPath, e));
@@ -3695,11 +3709,11 @@ function removeQuoteFileFromCase(quoteId){
   if(!c.quoteFiles[quoteId]) return;
   const q=c.quoteFiles[quoteId];
   delete c.quoteFiles[quoteId];
-  removeCaseChild(curCase, "quoteFiles/"+quoteId);
+  holdCaseLocalField(curCase, "quoteFiles", c.quoteFiles, 5000);
   c.note=c.note||{};
   if(/^견적 파일 목록에서 제거했습니다/.test(String(c.note.c6||""))) c.note.c6="";
   caseLog(c, "견적 파일 목록 제거: "+(q.vendorName||"업체")+" / "+(q.fileName||"파일"));
-  saveCase(curCase, true);
+  saveCaseWithRemovedChild(curCase, "quoteFiles/"+quoteId);
   renderCaseDetail();
 }
 function removeBusinessRegistrationFromCase(docId){
@@ -3709,9 +3723,9 @@ function removeBusinessRegistrationFromCase(docId){
   if(!c.businessRegistrationFiles[docId]) return;
   const doc=c.businessRegistrationFiles[docId];
   delete c.businessRegistrationFiles[docId];
-  removeCaseChild(curCase, "businessRegistrationFiles/"+docId);
+  holdCaseLocalField(curCase, "businessRegistrationFiles", c.businessRegistrationFiles, 5000);
   caseLog(c, "사업자등록증 목록 제거: "+(doc.vendorName||doc.fileName||"증빙"));
-  saveCase(curCase, true);
+  saveCaseWithRemovedChild(curCase, "businessRegistrationFiles/"+docId);
   renderCaseDetail();
 }
 function applyNextStepProgress(c, messages){
@@ -4437,8 +4451,9 @@ document.getElementById("noticeBtn").addEventListener("click", openNoticePanel);
 document.getElementById("noticeBanner").addEventListener("click", openNoticePanel);
 
 /* ===== 업데이트 알림(What's New) — 새 버전 나오면 자동 팝업 ===== */
-const APP_VERSION = "4.88";
+const APP_VERSION = "4.89";
 const CHANGELOG = [
+  { v:"4.89", d:"2026-07-14", items:["⑥ 견적 목록에서 제거한 파일이 실시간 동기화 후 다시 나타나는 문제 수정"] },
   { v:"4.88", d:"2026-07-14", items:["⑤ 업체 MMS 결과를 서버 기준으로 반영","발송 성공 시 ⑤ 완료·⑥ 진행중 자동 전환 안정화","사진 용량 제한으로 보류된 경우 실제 원인을 메모에 표시"] },
   { v:"4.87", d:"2026-07-14", items:["⑤ 업체 MMS 발송 예시에서 인사말 아래 건물명·호실 문장 제거"] },
   { v:"4.86", d:"2026-07-14", items:["⑤ 업체 MMS 발송 성공 결과를 확인하면 ⑤ 완료 처리 후 ⑥ 견적 비교를 자동으로 진행중 전환"] },
