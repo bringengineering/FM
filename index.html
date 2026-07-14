@@ -4126,7 +4126,6 @@ function buildVendorMmsMessage(c){
     "[BRING Care 견적서 회신 요청]",
     "",
     "안녕하세요. BRING Care입니다.",
-    `${subject}으로 견적 요청드립니다.`,
     "",
     "첨부된 현장 사진과 아래 내용을 확인하신 후,",
     "작업 가능 여부와 견적서를 아래 이메일로 회신 부탁드립니다.",
@@ -4417,8 +4416,9 @@ document.getElementById("noticeBtn").addEventListener("click", openNoticePanel);
 document.getElementById("noticeBanner").addEventListener("click", openNoticePanel);
 
 /* ===== 업데이트 알림(What's New) — 새 버전 나오면 자동 팝업 ===== */
-const APP_VERSION = "4.86";
+const APP_VERSION = "4.87";
 const CHANGELOG = [
+  { v:"4.87", d:"2026-07-14", items:["⑤ 업체 MMS 발송 예시에서 인사말 아래 건물명·호실 문장 제거"] },
   { v:"4.86", d:"2026-07-14", items:["⑤ 업체 MMS 발송 성공 결과를 확인하면 ⑤ 완료 처리 후 ⑥ 견적 비교를 자동으로 진행중 전환"] },
   { v:"4.85", d:"2026-07-14", items:["⑤ 업체 발송 예시의 증상 항목에서 건물명·호실·문제 유형을 제거하고 실제 증상만 표시"] },
   { v:"4.84", d:"2026-07-14", items:["⑤ 업체 견적 요청 발송 예시를 민원 내용·방문 가능 시간·회신 요청 항목 형식으로 확장","견적서와 사업자등록증 사본 회신 요청 문구 추가"] },

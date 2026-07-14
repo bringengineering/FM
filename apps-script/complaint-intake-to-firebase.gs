@@ -642,7 +642,6 @@ function makeVendorEstimateMmsContent_(casePayload, record) {
     "[BRING Care 견적서 회신 요청]",
     "",
     "안녕하세요. BRING Care입니다.",
-    subject + "으로 견적 요청드립니다.",
     "",
     "첨부된 현장 사진과 아래 내용을 확인하신 후,",
     "작업 가능 여부와 견적서를 아래 이메일로 회신 부탁드립니다.",
