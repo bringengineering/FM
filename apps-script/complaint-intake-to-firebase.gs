@@ -399,7 +399,10 @@ function firstJpegPhotoFromRecord_(record) {
         continue;
       }
 
-      const bytes = blob.getBytes();
+      const originalBytes = blob.getBytes();
+      const thumbnail = originalBytes.length > 300 * 1024 ? makeSensThumbnailBlob_(id, name) : null;
+      const bytes = thumbnail ? thumbnail.blob.getBytes() : originalBytes;
+      const outputName = thumbnail ? thumbnail.name : makeSensImageName_(name);
       if (bytes.length > 300 * 1024) {
         errors.push(name + ": SENS MMS 첨부 제한 300KB 초과");
         continue;
@@ -408,7 +411,7 @@ function firstJpegPhotoFromRecord_(record) {
       return {
         ok: true,
         driveFileId: id,
-        fileName: makeSensImageName_(name),
+        fileName: outputName,
         fileBody: Utilities.base64Encode(bytes),
         byteSize: bytes.length
       };
@@ -418,6 +421,40 @@ function firstJpegPhotoFromRecord_(record) {
   }
 
   return { ok: false, message: "MMS로 보낼 수 있는 JPG/JPEG 사진을 찾지 못했습니다. " + errors.join(" / ") };
+}
+
+function makeSensThumbnailBlob_(fileId, originalName) {
+  try {
+    if (typeof Drive === "undefined" || !Drive.Files || !Drive.Files.get) return null;
+    const metadata = Drive.Files.get(fileId, { fields: "thumbnailLink,name" });
+    const thumbnailLink = String(metadata && metadata.thumbnailLink || "").trim();
+    if (!thumbnailLink) return null;
+
+    const sizes = [800, 640, 480, 360, 240];
+    for (const size of sizes) {
+      let url = thumbnailLink;
+      if (/=s\\d+$/.test(url)) url = url.replace(/=s\\d+$/, "=s" + size);
+      const response = UrlFetchApp.fetch(url, {
+        method: "get",
+        headers: { Authorization: "Bearer " + ScriptApp.getOAuthToken() },
+        muteHttpExceptions: true
+      });
+      const code = response.getResponseCode();
+      if (code < 200 || code >= 300) continue;
+      const blob = response.getBlob();
+      const contentType = String(blob.getContentType() || "").toLowerCase();
+      if (contentType && contentType.indexOf("jpeg") < 0 && contentType.indexOf("jpg") < 0) continue;
+      if (blob.getBytes().length <= 300 * 1024) {
+        return {
+          blob: blob,
+          name: makeSensImageName_(originalName)
+        };
+      }
+    }
+  } catch (err) {
+    Logger.log("SENS MMS photo resize failed: " + err.message);
+  }
+  return null;
 }
 
 function extractDriveFileIdsFromText_(value) {
