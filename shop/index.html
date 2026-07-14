@@ -749,8 +749,10 @@ function escAttr(s){ return String(s??"").replace(/'/g,"%27").replace(/"/g,"%22"
 function applySettings(){
   $("hPhone").textContent = "관리사무실 " + (SETTINGS.phone || "");
   $("footList").innerHTML =
-    "BRING빌딩 1층 위탁판매 · 수령/문의는 1층 데스크<br>관리사무실 "
-    + esc(SETTINGS.phone) + " (평일 9–18시)"
+    "BRING빌딩 1층 위탁판매 · 수령/문의는 1층 데스크<br>"
+    + "관리사무실 " + esc(SETTINGS.phone) + " · 팩스 033-746-8919 (평일 9–18시)<br>"
+    + "강원도 원주시 상지대길 83 벤처창업관 305호<br>"
+    + "사업자등록번호 748-28-01935 · rancemo858@naver.com"
     + (SETTINGS.footer ? "<br>" + esc(SETTINGS.footer) : "");
   if(currentId) renderDetail(currentId);
 }
