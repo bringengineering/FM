@@ -301,6 +301,7 @@
   .mailmodal.open{ display:flex; }
   .mm-box{ background:#fff; width:min(560px,92vw); max-height:88vh; overflow:auto; border-radius:16px; padding:20px 22px; box-shadow:0 20px 60px rgba(0,0,0,.3); }
   .mm-box.vendor-sms{ width:min(680px,94vw); }
+  .mm-box.owner-recommendation{ width:min(760px,94vw); }
   .mm-head{ font-size:17px; font-weight:800; color:#1b335f; display:flex; align-items:center; gap:8px; margin-bottom:14px; }
   .mm-x{ margin-left:auto; border:none; background:#eef1f6; border-radius:8px; width:30px; height:30px; cursor:pointer; font-size:14px; }
   .mm-l{ display:block; font-size:12.5px; color:#52606d; font-weight:600; margin-bottom:10px; }
@@ -318,6 +319,16 @@
   .vsm-item span{ font-size:12px; color:#52606d; line-height:1.45; }
   .vsm-item.bad{ background:#fffafa; border-color:#ffd3cf; }
   .vsm-preview{ white-space:pre-wrap; border:1px solid #d8e0ec; background:#f8fafd; border-radius:9px; padding:10px 12px; font-size:13px; line-height:1.55; color:#243244; margin:4px 0 12px; }
+  .orm-grid{ display:grid; grid-template-columns:minmax(0,1fr) minmax(260px,340px); gap:12px; align-items:start; }
+  .orm-summary{ display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:7px; }
+  .orm-kv{ border:1px solid #e3e8f1; background:#fafbfd; border-radius:8px; padding:8px 9px; display:grid; gap:3px; min-width:0; }
+  .orm-kv b{ color:#6b7686; font-size:11px; }
+  .orm-kv span{ color:#162033; font-size:13px; font-weight:800; overflow-wrap:anywhere; }
+  .orm-preview-image{ display:block; width:100%; max-height:360px; object-fit:contain; border:1px solid #d8e0ec; background:#fff; border-radius:8px; }
+  .orm-preview-placeholder{ min-height:190px; display:grid; place-items:center; border:1px dashed #b8c6dc; background:#f8fafd; color:#6b7686; border-radius:8px; padding:16px; text-align:center; font-size:12px; line-height:1.5; }
+  .orm-caption{ margin-top:6px; color:#6b7686; font-size:11.5px; line-height:1.45; }
+  .orm-message{ min-height:180px; }
+  @media (max-width:720px){ .orm-grid,.orm-summary{ grid-template-columns:1fr; } }
   .quote-upload{ margin:8px 0 0; border:1px solid #d8e0ec; border-radius:8px; background:#fbfcff; padding:12px; overflow-anchor:none; }
   .quote-upload-split{ display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:10px; align-items:stretch; margin-top:8px; overflow-anchor:none; }
   .quote-upload-split .quote-upload{ margin:0; box-sizing:border-box; height:100%; }
@@ -1915,7 +1926,7 @@ const CASE_STEPS = [
  {k:"c5",t:"⑤ 업체 견적 요청",auto:"업체 발송"},
  {k:"c6",t:"⑥ 견적 비교",doc:"quote"},
  {k:"c7",t:"⑦ 최적 추천"},
- {k:"c8",t:"⑧ 건물주에 추천 발송",auto:"메일/카톡"},
+ {k:"c8",t:"⑧ 건물주에 추천 발송",auto:"건물주 추천 MMS"},
  {k:"c9",t:"⑨ 승인·입금 (계약)",doc:"contract"},
  {k:"c10",t:"⑩ 입금 확인 → 자동 진행",auto:"입금 확인"},
  {k:"c11",t:"⑪ 업체 연결·일정"},
@@ -3799,6 +3810,27 @@ function syncVendorMmsResultNote(c){
   c.note.c5=lines.filter(Boolean).join("\n");
   return true;
 }
+function isOwnerRecommendationMmsSuccess(c){
+  const result=c&&c.ownerRecommendationMms||{};
+  return result.ok===true || result.status==="sent";
+}
+function syncOwnerRecommendationResultNote(c){
+  if(!c) return false;
+  const result=c.ownerRecommendationMms||{};
+  if(!result.status && result.ok!==true) return false;
+  if(result.status==="sending") return false;
+  const current=String((c.note||{}).c8||"");
+  if(current && !current.includes("발송 요청 중입니다")) return false;
+  c.note=c.note||{};
+  const lines=["[건물주 추천 MMS]", "상태: "+(isOwnerRecommendationMmsSuccess(c)?"발송완료":"진행중/보류"), result.statusText||""];
+  if(result.vendorName) lines.push("추천 업체: "+result.vendorName);
+  if(result.bringTotalAmount) lines.push("브링 추천금액: "+recommendedQuoteMoney(result.bringTotalAmount));
+  if(result.ownerPhoneMasked) lines.push("건물주 연락처: "+result.ownerPhoneMasked);
+  if(result.imageFileUrl) lines.push("첨부 이미지: "+result.imageFileUrl);
+  if(isOwnerRecommendationMmsSuccess(c)) lines.push("다음 단계: ⑨ 승인·입금 진행중");
+  c.note.c8=lines.filter(Boolean).join("\n");
+  return true;
+}
 function applyStepAutomation(c, logEnabled){
   if(!c || !c.status) return false;
   let changed=false;
@@ -3806,6 +3838,7 @@ function applyStepAutomation(c, logEnabled){
   c.note=c.note||{};
   const vendorMms=c.vendorEstimateMms||{};
   if(syncVendorMmsResultNote(c)) changed=true;
+  if(syncOwnerRecommendationResultNote(c)) changed=true;
   if(isVendorMmsSuccess(c)){
     if(c.status.c5!=="done"){
       c.status.c5="done";
@@ -3816,6 +3849,18 @@ function applyStepAutomation(c, logEnabled){
       c.status.c6="doing";
       changed=true;
       messages.push("⑤ 발송완료 후 ⑥ 견적 비교 진행중 전환");
+    }
+  }
+  if(isOwnerRecommendationMmsSuccess(c)){
+    if(c.status.c8!=="done"){
+      c.status.c8="done";
+      changed=true;
+      messages.push("⑧ 건물주 추천 MMS 발송완료 확인");
+    }
+    if(c.status.c9!=="done" && c.status.c9!=="doing"){
+      c.status.c9="doing";
+      changed=true;
+      messages.push("⑧ 발송완료 후 ⑨ 승인·입금 진행중 전환");
     }
   }
   if(!isStepAutomationHeld(c,"c2") && isReceiptSmsConfirmed(c) && c.status.c2!=="done"){
@@ -4050,8 +4095,6 @@ const EMAIL_TEMPLATES = {
     body: `${c.name||"고객"}님, 안녕하세요. 브링입니다.\n\n${c.building||"건물"} 관련 문의가 정상 접수되었습니다.\n담당자가 확인 후 상담 및 현장 점검 일정을 안내드리겠습니다.\n\n궁금하신 점은 회신 주시면 빠르게 도와드리겠습니다.\n감사합니다.\n— 브링` }),
   c5: c => ({ to: "", subject: `[브링] 견적 요청 — ${c.building||""}`,
     body: `안녕하세요, 브링입니다.\n\n아래 건에 대한 견적을 요청드립니다.\n\n· 대상 건물: ${c.building||""}\n· 요청 내용: ${(c.note||{}).c4||(c.note||{}).c3||"(상담 내용 참고)"}\n· 희망 일정: 협의\n\n견적서 회신 부탁드립니다. 감사합니다.\n— 브링` }),
-  c8: c => ({ to: c.email||"", subject: `[브링] 점검·견적 추천 안내 — ${c.building||""}`,
-    body: `${c.name||"고객"}님, 안녕하세요. 브링입니다.\n\n${c.building||"건물"} 점검 및 견적 비교 결과와 추천안을 안내드립니다.\n\n${(c.note||{}).c6||(c.note||{}).c7||"(견적 비교·추천 내용을 여기에 정리)"}\n\n승인해주시면 일정 잡고 진행하겠습니다.\n감사합니다.\n— 브링` })
 };
 function loadSettingsLocal(){ if(isConfigured) return {}; try{ return JSON.parse(localStorage.getItem("fm_settings_v1"))||{}; }catch(e){ return {}; } }
 function saveSettingsLocal(){ if(isConfigured) return; try{ localStorage.setItem("fm_settings_v1", JSON.stringify(settings)); }catch(e){} }
@@ -4300,6 +4343,151 @@ function doSendVendorSms(){
   closeVendorSmsModal();
   alert("📷 업체 MMS 발송 요청을 보냈어요.\n사진 업로드와 SENS 발송 결과는 잠시 뒤 ⑤ 메모에서 확인하세요.");
 }
+function ownerRecommendationDisplayPhone(c){
+  const result=c&&c.ownerRecommendationMms||{};
+  const direct=String(c&&((c.ownerPhoneMasked||c.ownerPhone)||"")||"").trim();
+  if(direct) return direct === c.ownerPhone ? maskSmsPhone(direct) : direct;
+  return String(result.ownerPhoneMasked||result.preview&&result.preview.ownerPhoneMasked||"온보딩 수집서에서 확인").trim();
+}
+function ownerRecommendationMessage(c, q, supplier, amounts){
+  return [
+    "[BRING Care 추천 견적 안내]",
+    "",
+    "안녕하세요. BRING Care입니다.",
+    `추천 업체: ${supplier.name||"업체 확인 필요"}`,
+    `추천 금액: ${recommendedQuoteMoney(amounts.total)||"금액 미입력"}`,
+    "",
+    "첨부된 브링 견적서를 확인해 주세요.",
+    "확인 후 회신 부탁드립니다.",
+    `접수번호: ${c.ticketNo||c.id||""}`
+  ].join("\n");
+}
+function ownerRecommendationPreviewImage(c, q, supplier, amounts){
+  const items=recommendedQuoteItems(q).slice(0,8);
+  const escSvg=value=>String(value??"").replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;");
+  const rows=[
+    ["BRING Care 추천 견적서", supplier.name||""],
+    ["사업자번호", supplier.businessNo||"", "대표자", supplier.ceo||""],
+    ["주소", supplier.address||"", "전화", supplier.phone||""],
+    ["공급가액", recommendedQuoteMoney(amounts.supply), "부가세", recommendedQuoteMoney(amounts.vat)],
+    ["합계금액", recommendedQuoteMoney(amounts.total)]
+  ];
+  items.forEach((item,index)=>rows.push([String(index+1), quoteItemValue(item,["product","name","itemName","description","title"])]));
+  const rowHeight=34, width=760, height=Math.max(260, rows.length*rowHeight+28);
+  const body=rows.map((row,index)=>{
+    const y=24+index*rowHeight;
+    const cells=row.map((cell,cellIndex)=>{
+      const x=16+cellIndex*190;
+      return `<text x="${x}" y="${y}" class="${cellIndex%2===0?"label":"value"}">${escSvg(cell)}</text>`;
+    }).join("");
+    return `<g>${cells}</g>`;
+  }).join("");
+  const svg=`<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}" viewBox="0 0 ${width} ${height}">
+    <style>text{font-family:Arial,'Malgun Gothic',sans-serif;font-size:15px}.label{fill:#52606d;font-weight:700}.value{fill:#162033;font-weight:800}rect{fill:#fff;stroke:#d8e0ec}</style>
+    <rect x="0.5" y="0.5" width="${width-1}" height="${height-1}" rx="10"/>
+    ${body}
+  </svg>`;
+  return "data:image/svg+xml;charset=utf-8,"+encodeURIComponent(svg);
+}
+function ownerRecommendationPanel(c, st){
+  if(st!=="doing" && st!=="done") return "";
+  const q=recommendedQuoteForCase(c);
+  if(!q) return `<div class="cv-sms-preview"><div class="cv-sms-preview-title">건물주 추천 발송</div><pre>추천할 금액 확인 견적서가 없습니다.</pre></div>`;
+  const supplier=recommendedQuoteSupplier(q), amounts=recommendedQuoteAmounts(q);
+  const result=c.ownerRecommendationMms||{};
+  const imageUrl=result.imageFileUrl||result.preview&&result.preview.imageFileUrl||"";
+  const status=result.ok===true?"발송완료":result.statusText||"확인 후 MMS 발송 요청";
+  return `<div class="recommend-card owner-recommend-panel">
+    <div class="recommend-head"><div><div class="recommend-title">건물주 추천 발송 확인</div><div class="recommend-sub">${esc(status)}</div></div><div class="recommend-amount">${esc(recommendedQuoteMoney(amounts.total)||"금액 미입력")}</div></div>
+    <div class="recommend-grid"><div class="recommend-kv"><b>건물주 연락처</b><span>${esc(ownerRecommendationDisplayPhone(c))}</span></div><div class="recommend-kv"><b>추천 업체</b><span>${esc(supplier.name||"업체 확인 필요")}</span></div><div class="recommend-kv"><b>브링 최종금액</b><span>${esc(recommendedQuoteMoney(amounts.total)||"금액 미입력")}</span></div><div class="recommend-kv"><b>첨부 이미지</b><span>${imageUrl?"생성됨":"발송 확인 시 생성"}</span></div></div>
+    ${imageUrl?`<a href="${escAttr(imageUrl)}" target="_blank" rel="noopener">추천 견적 이미지 열기</a>`:""}
+  </div>`;
+}
+let ownerRecommendationModalEl=null, ownerRecommendationCtx=null;
+function ensureOwnerRecommendationModal(){
+  if(ownerRecommendationModalEl) return;
+  ownerRecommendationModalEl=document.createElement("div");
+  ownerRecommendationModalEl.className="mailmodal";
+  ownerRecommendationModalEl.innerHTML=`<div class="mm-box owner-recommendation"><div class="mm-head">📨 <span id="ormTitle">건물주 추천 견적 MMS 확인</span><button class="mm-x" id="ormClose">✕</button></div>
+    <div class="orm-grid"><div><div class="orm-summary" id="ormSummary"></div><label class="mm-l">문자 내용<textarea class="orm-message" id="ormBody" rows="9"></textarea></label></div><div><div class="mm-l">첨부 이미지 미리보기</div><div id="ormImage"></div><div class="orm-caption" id="ormImageCaption">브링 양식 주요 내용을 이미지로 만들어 첨부합니다.</div></div></div>
+    <div class="mm-note" id="ormNote"></div><div class="mm-actions"><button class="mm-setup" id="ormSetup">⚙️ MMS 웹앱 설정</button><button class="mm-cancel" id="ormCancel">취소</button><button class="mm-send" id="ormSend">확인 후 MMS 발송</button></div></div>`;
+  document.body.appendChild(ownerRecommendationModalEl);
+  ownerRecommendationModalEl.addEventListener("click", e=>{
+    if(e.target===ownerRecommendationModalEl||e.target.closest("#ormClose")||e.target.closest("#ormCancel")) closeOwnerRecommendationMmsModal();
+    else if(e.target.closest("#ormSetup")){ promptCaseAutomationSetup(); refreshOwnerRecommendationModal(); }
+    else if(e.target.closest("#ormSend")) sendOwnerRecommendationMms();
+  });
+}
+function refreshOwnerRecommendationModal(){
+  if(!ownerRecommendationCtx) return;
+  const c=cases[ownerRecommendationCtx.id];
+  if(!c) return;
+  const q=recommendedQuoteForCase(c);
+  if(!q) return;
+  const supplier=recommendedQuoteSupplier(q), amounts=recommendedQuoteAmounts(q);
+  const summary=[
+    ["건물주 연락처",ownerRecommendationDisplayPhone(c)],
+    ["추천 업체",supplier.name||"업체 확인 필요"],
+    ["브링 최종금액",recommendedQuoteMoney(amounts.total)||"금액 미입력"],
+    ["원본 견적서",q.fileName||q.originalFileName||""]
+  ];
+  const summaryEl=document.getElementById("ormSummary");
+  if(summaryEl) summaryEl.innerHTML=summary.map(([label,value])=>`<div class="orm-kv"><b>${esc(label)}</b><span>${esc(value||"")}</span></div>`).join("");
+  const body=document.getElementById("ormBody");
+  if(body && !body.dataset.edited) body.value=ownerRecommendationMessage(c,q,supplier,amounts);
+  const image=document.getElementById("ormImage");
+  if(image && !image.dataset.ready){ image.innerHTML=`<img class="orm-preview-image" alt="브링 추천 견적 미리보기" src="${escAttr(ownerRecommendationPreviewImage(c,q,supplier,amounts))}">`; image.dataset.ready="1"; }
+  const note=document.getElementById("ormNote");
+  if(note) note.textContent=caseAutomationEndpoint()?"✅ 확인 후 발송을 누르면 건물주에게 추천 업체와 브링 최종금액, 견적 이미지가 MMS로 전송됩니다.":"⚠️ Apps Script 웹앱 URL이 연결되지 않았습니다.";
+}
+function requestOwnerRecommendationPreview(c,q,message){
+  const endpoint=caseAutomationEndpoint();
+  if(!endpoint) return;
+  sendVendorSmsRequest(endpoint,{action:"getOwnerRecommendationPreview",caseId:c.ticketNo||c.id,quoteId:q&&q.id||q&&q.storedId||"",message:message||""});
+}
+function openOwnerRecommendationMmsModal(id){
+  const c=cases[id];
+  if(!c) return;
+  const msg=stepLockMessage(c,"c8");
+  if(msg){ alert(msg); return; }
+  const q=recommendedQuoteForCase(c);
+  if(!q){ alert("추천할 금액 확인 견적서가 없습니다."); return; }
+  ensureOwnerRecommendationModal();
+  ownerRecommendationCtx={id};
+  const body=document.getElementById("ormBody");
+  if(body){ body.dataset.edited=""; body.oninput=()=>{ body.dataset.edited="1"; }; }
+  const image=document.getElementById("ormImage"); if(image){ image.dataset.ready=""; }
+  refreshOwnerRecommendationModal();
+  const content=body&&body.value||"";
+  requestOwnerRecommendationPreview(c,q,content);
+  ownerRecommendationModalEl.classList.add("open");
+}
+function closeOwnerRecommendationMmsModal(){
+  if(ownerRecommendationModalEl) ownerRecommendationModalEl.classList.remove("open");
+  ownerRecommendationCtx=null;
+}
+function sendOwnerRecommendationMms(){
+  if(!ownerRecommendationCtx) return;
+  const c=cases[ownerRecommendationCtx.id];
+  if(!c) return;
+  const msg=stepLockMessage(c,"c8");
+  if(msg){ alert(msg); return; }
+  const q=recommendedQuoteForCase(c);
+  if(!q){ alert("추천할 금액 확인 견적서가 없습니다."); return; }
+  if(!caseAutomationEndpoint()){ if(!promptCaseAutomationSetup()) return; }
+  const supplier=recommendedQuoteSupplier(q), amounts=recommendedQuoteAmounts(q);
+  const body=document.getElementById("ormBody");
+  const content=body&&body.value||ownerRecommendationMessage(c,q,supplier,amounts);
+  const preview=c.ownerRecommendationMms&&c.ownerRecommendationMms.preview||{};
+  c.status=c.status||{}; c.note=c.note||{};
+  c.status.c8="doing";
+  c.note.c8="건물주 추천 MMS 발송 요청 중입니다. Apps Script 처리 결과를 기다리는 중입니다.";
+  saveCase(ownerRecommendationCtx.id,true);
+  sendVendorSmsRequest(caseAutomationEndpoint(),{action:"sendOwnerRecommendationMms",caseId:c.ticketNo||c.id,quoteId:q.id||q.storedId||"",message:content,imageFileId:preview.imageFileId||""});
+  closeOwnerRecommendationMmsModal();
+  renderCaseList(); renderCaseDetail();
+  alert("📨 건물주 추천 MMS 발송 요청을 보냈어요. 결과는 잠시 뒤 ⑧ 메모에서 확인하세요.");
+}
 function setCaseField(id,f,v){ const c=cases[id]; if(!c) return; c[f]=v; saveCase(id); if(f==="name"||f==="grade"||f==="building"||f==="address") renderCaseList(); }
 function setCaseNote(id,k,v){ const c=cases[id]; if(!c) return; c.note=c.note||{}; c.note[k]=v; saveCase(id); }
 function renderCaseList(){
@@ -4372,10 +4560,11 @@ function renderCaseDetail(){
       const chip=`<button class="cv-chip ${locked?'locked':(st||'wait')}" data-step="${s.k}" ${locked?'disabled':''} title="${escAttr(lockMsg)}">${locked?"잠김":st==="done"?"완료":st==="doing"?"진행중":"대기"}</button>`;
       const isReceiptSms=s.k==="c2";
       const isVendorSms=s.k==="c5";
-      const isMail=!!EMAIL_TEMPLATES[s.k] && !isReceiptSms && !isVendorSms;
-      const actIcon=isReceiptSms?'📨':isMail?'📧':isVendorSms?'📷':'🤖';
-      const actTag=isReceiptSms?'SENS 문자':isMail?'메일 발송':isVendorSms?'MMS 발송':'연결예정';
-      const act=s.auto?`<button class="cv-act ${isMail?'mail':(isReceiptSms||isVendorSms)?'sms':''} ${locked?'disabled':''}" data-auto="${s.k}" data-ch="${escAttr(s.auto)}" ${locked?'disabled':''} title="${escAttr(lockMsg)}">${actIcon} ${esc(s.auto)}<span class="tag">${actTag}</span></button>`:"";
+      const isOwnerMms=s.k==="c8";
+      const isMail=!!EMAIL_TEMPLATES[s.k] && !isReceiptSms && !isVendorSms && !isOwnerMms;
+      const actIcon=isReceiptSms?'📨':isMail?'📧':(isVendorSms||isOwnerMms)?'📷':'🤖';
+      const actTag=isReceiptSms?'SENS 문자':isMail?'메일 발송':(isVendorSms||isOwnerMms)?'MMS 발송':'연결예정';
+      const act=s.auto?`<button class="cv-act ${isMail?'mail':(isReceiptSms||isVendorSms||isOwnerMms)?'sms':''} ${locked?'disabled':''}" data-auto="${s.k}" data-ch="${escAttr(s.auto)}" ${locked?'disabled':''} title="${escAttr(lockMsg)}">${actIcon} ${esc(s.auto)}<span class="tag">${actTag}</span></button>`:"";
       const dc=onboardingDocButtonHTML(c,s,locked);
       const tb=caseTestMode?`<button class="cv-testbtn" data-testdone="${s.k}" title="이 단계까지 테스트 완료 처리">테스트 완료</button>`:"";
       const nb=`<button class="cv-notebtn ${note?'has':''}" data-notetoggle="${s.k}" title="메모">📝</button>`;
@@ -4386,7 +4575,8 @@ function renderCaseDetail(){
       const vendors=open && s.k==='c5' ? renderCaseVendorCandidates(c, st) : "";
       const quotes=open && s.k==='c6' ? renderQuoteUploadPanel(c, st) : "";
       const recommendation=open && s.k==='c7' ? renderRecommendedQuotePanel(c, st) : "";
-      return `<div class="cv-stepwrap"><div class="cv-step ${locked?'locked':st}">${chip}<div class="lbl">${esc(s.t)}</div>${act}${dc}${tb}${nb}</div>${box}${receiptSmsPreview}${vendorMmsPreview}${vendors}${quotes}${recommendation}</div>`;
+      const ownerRecommendation=open && s.k==='c8' ? ownerRecommendationPanel(c, st) : "";
+      return `<div class="cv-stepwrap"><div class="cv-step ${locked?'locked':st}">${chip}<div class="lbl">${esc(s.t)}</div>${act}${dc}${tb}${nb}</div>${box}${receiptSmsPreview}${vendorMmsPreview}${vendors}${quotes}${recommendation}${ownerRecommendation}</div>`;
     }).join("")+
     (c.archived?`<button class="cv-del restore" id="cvRestore">↩ 보관 해제</button>`:`<button class="cv-del" id="cvDel">🗄 보관함으로 이동</button>`)+
     (c.log&&c.log.length?`<div class="cv-log"><div class="t" style="font-weight:700">기록</div>`+c.log.slice(0,8).map(l=>`<div class="t">· ${esc(l)}</div>`).join("")+`</div>`:"");
@@ -4410,7 +4600,7 @@ caseDetailEl.addEventListener("click", e=>{
   const dc=e.target.closest("[data-doc]"); if(dc){ const msg=stepLockMessage(cases[curCase], dc.dataset.doc); if(msg){ alert(msg); return; } downloadCaseDoc(curCase, dc.dataset.doc); return; }
   const nt=e.target.closest("[data-notetoggle]"); if(nt){ const k=nt.dataset.notetoggle; noteOpen.has(k)?noteOpen.delete(k):noteOpen.add(k); renderCaseDetailKeepScroll(); return; }
   const ch=e.target.closest("[data-step]"); if(ch){ cycleStep(curCase, ch.dataset.step); return; }
-  const au=e.target.closest("[data-auto]"); if(au){ const ak=au.dataset.auto; if(ak==="c2") sendComplaintReceiptSmsFromCase(curCase); else if(ak==="c5") openVendorSmsModal(curCase); else if(EMAIL_TEMPLATES[ak]) openMailModal(curCase, ak); else doAuto(curCase, ak, au.dataset.ch); return; }
+  const au=e.target.closest("[data-auto]"); if(au){ const ak=au.dataset.auto; if(ak==="c2") sendComplaintReceiptSmsFromCase(curCase); else if(ak==="c5") openVendorSmsModal(curCase); else if(ak==="c8") openOwnerRecommendationMmsModal(curCase); else if(EMAIL_TEMPLATES[ak]) openMailModal(curCase, ak); else doAuto(curCase, ak, au.dataset.ch); return; }
   if(e.target.closest("#cvRestore")){ restoreCase(curCase); return; }
   if(e.target.closest("#cvDel")){ deleteCase(curCase); }
 });
@@ -4468,8 +4658,9 @@ document.getElementById("noticeBtn").addEventListener("click", openNoticePanel);
 document.getElementById("noticeBanner").addEventListener("click", openNoticePanel);
 
 /* ===== 업데이트 알림(What's New) — 새 버전 나오면 자동 팝업 ===== */
-const APP_VERSION = "4.92";
+const APP_VERSION = "4.93";
 const CHANGELOG = [
+  { v:"4.93", d:"2026-07-15", items:["⑦ 최적 추천 완료 후 ⑧ 건물주 추천 MMS 확인 모달 연결","브링 추천 견적 JPG 첨부 생성 및 발송 성공 시 ⑨ 승인·입금 진행중 전환"] },
   { v:"4.92", d:"2026-07-15", items:["금액 있는 견적 확인 시 오래된 자동화 잠금과 관계없이 ⑥→⑦ 자동 전환"] },
   { v:"4.91", d:"2026-07-15", items:["⑥ 견적 업로드 후 금액 확인이 끝나면 ⑦ 최적 추천으로 자동 전환","견적 업로드로 남아 있던 ⑥ 자동화 잠금 해제"] },
   { v:"4.90", d:"2026-07-14", items:["브링 양식 변환 시 원본 견적금액에 10% 가산","브링 합계금액·공급가액·부가세를 100원 단위로 정리","원본 견적금액과 브링 양식 금액을 분리 표시"] },
@@ -4622,7 +4813,7 @@ window.__wf = { addChild, addRoot, addLink, deleteNode, setNodeColor, resizeNode
   openCaseView, closeCaseView, createCase, selectCase, cycleStep, doAuto, getCases:()=>JSON.parse(JSON.stringify(cases)), CASE_STEPS,
   setCaseField, setCaseNote, caseDocHTML, downloadCaseDoc,
   openMailModal, closeMailModal, setMailEndpoint, getSettings:()=>JSON.parse(JSON.stringify(settings)), EMAIL_TEMPLATES,
-  sendComplaintReceiptSmsFromCase, openVendorSmsModal, closeVendorSmsModal, setVendorSmsEndpoint, setCaseAutomationEndpoint, selectedCaseVendors,
+  sendComplaintReceiptSmsFromCase, openVendorSmsModal, closeVendorSmsModal, openOwnerRecommendationMmsModal, closeOwnerRecommendationMmsModal, setVendorSmsEndpoint, setCaseAutomationEndpoint, selectedCaseVendors,
   openNoticePanel, closeNoticePanel, getNotice:()=>JSON.parse(JSON.stringify(notice||{})), renderNoticeBanner,
   _addNotice:(t)=>{ ensureNotice(); notice.posts.unshift({id:"t"+Date.now().toString(36),text:t,ts:Date.now()}); saveNotice(); },
   initAuthGate, showAuthGate, hideAuthGate, updateAuthUI };
