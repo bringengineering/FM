@@ -413,6 +413,8 @@
   .recommend-kv{ border:1px solid #e3e8f1; background:#fff; border-radius:8px; padding:7px 8px; min-height:38px; }
   .recommend-kv b{ display:block; color:#6b7686; font-size:11px; margin-bottom:3px; }
   .recommend-kv span{ display:block; color:#162033; font-size:12.5px; font-weight:800; line-height:1.35; word-break:break-word; }
+  .cv-owner-confirm{ justify-self:start; border:1px solid #1b335f; background:#1b335f; color:#fff; border-radius:7px; padding:7px 11px; font-size:12px; font-weight:900; cursor:pointer; font-family:inherit; }
+  .cv-owner-confirm:hover{ background:#26477e; }
   .recommend-section-title{ font-size:12.5px; font-weight:900; color:#1b335f; margin-top:2px; }
   .recommend-table-wrap{ overflow:auto; border:1px solid #e3e8f1; border-radius:8px; background:#fff; }
   .recommend-table{ width:100%; border-collapse:collapse; min-width:680px; font-size:12px; }
@@ -3812,7 +3814,11 @@ function syncVendorMmsResultNote(c){
 }
 function isOwnerRecommendationMmsSuccess(c){
   const result=c&&c.ownerRecommendationMms||{};
-  return result.ok===true || result.status==="sent";
+  return result.deliveryConfirmed===true || (result.ok===true && result.status==="sent");
+}
+function isOwnerRecommendationMmsAccepted(c){
+  const result=c&&c.ownerRecommendationMms||{};
+  return result.deliveryAccepted===true || result.status==="sent_pending_confirmation" || isOwnerRecommendationMmsSuccess(c);
 }
 function syncOwnerRecommendationResultNote(c){
   if(!c) return false;
@@ -3822,12 +3828,14 @@ function syncOwnerRecommendationResultNote(c){
   const current=String((c.note||{}).c8||"");
   if(current && !current.includes("발송 요청 중입니다")) return false;
   c.note=c.note||{};
-  const lines=["[건물주 추천 MMS]", "상태: "+(isOwnerRecommendationMmsSuccess(c)?"발송완료":"진행중/보류"), result.statusText||""];
+  const confirmed=isOwnerRecommendationMmsSuccess(c);
+  const accepted=isOwnerRecommendationMmsAccepted(c);
+  const lines=["[건물주 추천 MMS]", "상태: "+(confirmed?"발송완료":accepted?"발송 요청 완료 · 수신 확인 필요":"진행중/보류"), result.statusText||""];
   if(result.vendorName) lines.push("추천 업체: "+result.vendorName);
   if(result.bringTotalAmount) lines.push("브링 추천금액: "+recommendedQuoteMoney(result.bringTotalAmount));
   if(result.ownerPhoneMasked) lines.push("건물주 연락처: "+result.ownerPhoneMasked);
   if(result.imageFileUrl) lines.push("첨부 이미지: "+result.imageFileUrl);
-  if(isOwnerRecommendationMmsSuccess(c)) lines.push("다음 단계: ⑨ 승인·입금 진행중");
+  if(confirmed) lines.push("다음 단계: ⑨ 승인·입금 진행중");
   c.note.c8=lines.filter(Boolean).join("\n");
   return true;
 }
@@ -4396,11 +4404,14 @@ function ownerRecommendationPanel(c, st){
   const supplier=recommendedQuoteSupplier(q), amounts=recommendedQuoteAmounts(q);
   const result=c.ownerRecommendationMms||{};
   const imageUrl=result.imageFileUrl||result.preview&&result.preview.imageFileUrl||"";
-  const status=result.ok===true?"발송완료":result.statusText||"확인 후 MMS 발송 요청";
+  const confirmed=isOwnerRecommendationMmsSuccess(c);
+  const accepted=isOwnerRecommendationMmsAccepted(c);
+  const status=confirmed?"발송완료":accepted?"발송 요청 완료 · 수신 확인 필요":result.statusText||"확인 후 MMS 발송 요청";
+  const confirmButton=accepted&&!confirmed?`<button type="button" class="cv-owner-confirm" data-owner-confirm="${escAttr(c.ticketNo||c.id||"")}">발송 완료 확인</button>`:"";
   return `<div class="recommend-card owner-recommend-panel">
     <div class="recommend-head"><div><div class="recommend-title">건물주 추천 발송 확인</div><div class="recommend-sub">${esc(status)}</div></div><div class="recommend-amount">${esc(recommendedQuoteMoney(amounts.total)||"금액 미입력")}</div></div>
     <div class="recommend-grid"><div class="recommend-kv"><b>건물주 연락처</b><span>${esc(ownerRecommendationDisplayPhone(c))}</span></div><div class="recommend-kv"><b>추천 업체</b><span>${esc(supplier.name||"업체 확인 필요")}</span></div><div class="recommend-kv"><b>브링 최종금액</b><span>${esc(recommendedQuoteMoney(amounts.total)||"금액 미입력")}</span></div><div class="recommend-kv"><b>첨부 이미지</b><span>${imageUrl?"생성됨":"발송 확인 시 생성"}</span></div></div>
-    ${imageUrl?`<a href="${escAttr(imageUrl)}" target="_blank" rel="noopener">추천 견적 이미지 열기</a>`:""}
+    ${imageUrl?`<a href="${escAttr(imageUrl)}" target="_blank" rel="noopener">추천 견적 이미지 열기</a>`:""} ${confirmButton}
   </div>`;
 }
 let ownerRecommendationModalEl=null, ownerRecommendationCtx=null;
@@ -4488,6 +4499,29 @@ function sendOwnerRecommendationMms(){
   renderCaseList(); renderCaseDetail();
   alert("📨 건물주 추천 MMS 발송 요청을 보냈어요. 결과는 잠시 뒤 ⑧ 메모에서 확인하세요.");
 }
+function confirmOwnerRecommendationMms(id){
+  const c=cases[id];
+  if(!c) return;
+  const result=c.ownerRecommendationMms||{};
+  if(!isOwnerRecommendationMmsAccepted(c) || isOwnerRecommendationMmsSuccess(c)){
+    alert("먼저 건물주 추천 MMS 발송 요청을 완료해 주세요.");
+    return;
+  }
+  if(!caseAutomationEndpoint()){
+    if(!promptCaseAutomationSetup()) return;
+  }
+  c.status=c.status||{};
+  c.note=c.note||{};
+  c.note.c8="건물주 문자 수신 확인 중입니다. Apps Script 처리 결과를 기다리는 중입니다.";
+  saveCase(id,true);
+  sendVendorSmsRequest(caseAutomationEndpoint(),{
+    action:"confirmOwnerRecommendationMms",
+    caseId:c.ticketNo||c.id||id
+  });
+  renderCaseList();
+  renderCaseDetail();
+  alert("건물주 문자 수신 확인을 요청했습니다. 처리 후 ⑧ 완료와 ⑨ 진행중으로 갱신됩니다.");
+}
 function setCaseField(id,f,v){ const c=cases[id]; if(!c) return; c[f]=v; saveCase(id); if(f==="name"||f==="grade"||f==="building"||f==="address") renderCaseList(); }
 function setCaseNote(id,k,v){ const c=cases[id]; if(!c) return; c.note=c.note||{}; c.note[k]=v; saveCase(id); }
 function renderCaseList(){
@@ -4561,10 +4595,12 @@ function renderCaseDetail(){
       const isReceiptSms=s.k==="c2";
       const isVendorSms=s.k==="c5";
       const isOwnerMms=s.k==="c8";
+      const ownerMmsPending=isOwnerMms && isOwnerRecommendationMmsAccepted(c) && !isOwnerRecommendationMmsSuccess(c);
       const isMail=!!EMAIL_TEMPLATES[s.k] && !isReceiptSms && !isVendorSms && !isOwnerMms;
       const actIcon=isReceiptSms?'📨':isMail?'📧':(isVendorSms||isOwnerMms)?'📷':'🤖';
       const actTag=isReceiptSms?'SENS 문자':isMail?'메일 발송':(isVendorSms||isOwnerMms)?'MMS 발송':'연결예정';
-      const act=s.auto?`<button class="cv-act ${isMail?'mail':(isReceiptSms||isVendorSms||isOwnerMms)?'sms':''} ${locked?'disabled':''}" data-auto="${s.k}" data-ch="${escAttr(s.auto)}" ${locked?'disabled':''} title="${escAttr(lockMsg)}">${actIcon} ${esc(s.auto)}<span class="tag">${actTag}</span></button>`:"";
+      const actLabel=ownerMmsPending?"발송 완료 확인":s.auto;
+      const act=s.auto?`<button class="cv-act ${isMail?'mail':(isReceiptSms||isVendorSms||isOwnerMms)?'sms':''} ${locked?'disabled':''}" data-auto="${s.k}" data-ch="${escAttr(s.auto)}" ${locked?'disabled':''} title="${escAttr(lockMsg)}">${actIcon} ${esc(actLabel)}<span class="tag">${ownerMmsPending?'수신 확인':actTag}</span></button>`:"";
       const dc=onboardingDocButtonHTML(c,s,locked);
       const tb=caseTestMode?`<button class="cv-testbtn" data-testdone="${s.k}" title="이 단계까지 테스트 완료 처리">테스트 완료</button>`:"";
       const nb=`<button class="cv-notebtn ${note?'has':''}" data-notetoggle="${s.k}" title="메모">📝</button>`;
@@ -4600,7 +4636,8 @@ caseDetailEl.addEventListener("click", e=>{
   const dc=e.target.closest("[data-doc]"); if(dc){ const msg=stepLockMessage(cases[curCase], dc.dataset.doc); if(msg){ alert(msg); return; } downloadCaseDoc(curCase, dc.dataset.doc); return; }
   const nt=e.target.closest("[data-notetoggle]"); if(nt){ const k=nt.dataset.notetoggle; noteOpen.has(k)?noteOpen.delete(k):noteOpen.add(k); renderCaseDetailKeepScroll(); return; }
   const ch=e.target.closest("[data-step]"); if(ch){ cycleStep(curCase, ch.dataset.step); return; }
-  const au=e.target.closest("[data-auto]"); if(au){ const ak=au.dataset.auto; if(ak==="c2") sendComplaintReceiptSmsFromCase(curCase); else if(ak==="c5") openVendorSmsModal(curCase); else if(ak==="c8") openOwnerRecommendationMmsModal(curCase); else if(EMAIL_TEMPLATES[ak]) openMailModal(curCase, ak); else doAuto(curCase, ak, au.dataset.ch); return; }
+  const au=e.target.closest("[data-auto]"); if(au){ const ak=au.dataset.auto; if(ak==="c2") sendComplaintReceiptSmsFromCase(curCase); else if(ak==="c5") openVendorSmsModal(curCase); else if(ak==="c8"){ const currentCase=cases[curCase]; if(isOwnerRecommendationMmsAccepted(currentCase) && !isOwnerRecommendationMmsSuccess(currentCase)) confirmOwnerRecommendationMms(curCase); else openOwnerRecommendationMmsModal(curCase); } else if(EMAIL_TEMPLATES[ak]) openMailModal(curCase, ak); else doAuto(curCase, ak, au.dataset.ch); return; }
+  const oc=e.target.closest("[data-owner-confirm]"); if(oc){ confirmOwnerRecommendationMms(curCase); return; }
   if(e.target.closest("#cvRestore")){ restoreCase(curCase); return; }
   if(e.target.closest("#cvDel")){ deleteCase(curCase); }
 });
@@ -4658,8 +4695,9 @@ document.getElementById("noticeBtn").addEventListener("click", openNoticePanel);
 document.getElementById("noticeBanner").addEventListener("click", openNoticePanel);
 
 /* ===== 업데이트 알림(What's New) — 새 버전 나오면 자동 팝업 ===== */
-const APP_VERSION = "4.93";
+const APP_VERSION = "4.94";
 const CHANGELOG = [
+  { v:"4.94", d:"2026-07-16", items:["건물주 추천 MMS는 실제 수신 확인 후 ⑧ 완료·⑨ 진행중 전환","추천 견적 첨부 이미지를 세로형 2열 요약으로 개선해 가독성 강화"] },
   { v:"4.93", d:"2026-07-15", items:["⑦ 최적 추천 완료 후 ⑧ 건물주 추천 MMS 확인 모달 연결","브링 추천 견적 JPG 첨부 생성 및 발송 성공 시 ⑨ 승인·입금 진행중 전환"] },
   { v:"4.92", d:"2026-07-15", items:["금액 있는 견적 확인 시 오래된 자동화 잠금과 관계없이 ⑥→⑦ 자동 전환"] },
   { v:"4.91", d:"2026-07-15", items:["⑥ 견적 업로드 후 금액 확인이 끝나면 ⑦ 최적 추천으로 자동 전환","견적 업로드로 남아 있던 ⑥ 자동화 잠금 해제"] },
@@ -4813,7 +4851,7 @@ window.__wf = { addChild, addRoot, addLink, deleteNode, setNodeColor, resizeNode
   openCaseView, closeCaseView, createCase, selectCase, cycleStep, doAuto, getCases:()=>JSON.parse(JSON.stringify(cases)), CASE_STEPS,
   setCaseField, setCaseNote, caseDocHTML, downloadCaseDoc,
   openMailModal, closeMailModal, setMailEndpoint, getSettings:()=>JSON.parse(JSON.stringify(settings)), EMAIL_TEMPLATES,
-  sendComplaintReceiptSmsFromCase, openVendorSmsModal, closeVendorSmsModal, openOwnerRecommendationMmsModal, closeOwnerRecommendationMmsModal, setVendorSmsEndpoint, setCaseAutomationEndpoint, selectedCaseVendors,
+  sendComplaintReceiptSmsFromCase, openVendorSmsModal, closeVendorSmsModal, openOwnerRecommendationMmsModal, closeOwnerRecommendationMmsModal, confirmOwnerRecommendationMms, setVendorSmsEndpoint, setCaseAutomationEndpoint, selectedCaseVendors,
   openNoticePanel, closeNoticePanel, getNotice:()=>JSON.parse(JSON.stringify(notice||{})), renderNoticeBanner,
   _addNotice:(t)=>{ ensureNotice(); notice.posts.unshift({id:"t"+Date.now().toString(36),text:t,ts:Date.now()}); saveNotice(); },
   initAuthGate, showAuthGate, hideAuthGate, updateAuthUI };

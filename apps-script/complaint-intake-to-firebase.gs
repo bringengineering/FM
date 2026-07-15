@@ -16,7 +16,7 @@ const COMPLAINT_CONFIG = {
   FIREBASE_CASES_PATH: "cases",
   RESPONSE_SHEET_URL: "https://docs.google.com/spreadsheets/d/1HI6KzIMomL6vOUPs8zZDhXHktL1cWRDcg93lflsuojA/edit"
 };
-const AUTOMATION_BUILD = "owner-recommendation-mms-20260715-v1";
+const AUTOMATION_BUILD = "owner-recommendation-mms-20260716-v2";
 
 const OUTPUT_HEADERS = [
   "접수번호",
@@ -117,6 +117,9 @@ function doPost(e) {
     }
     if (payload.action === "sendOwnerRecommendationMms") {
       return jsonResponse_(handleOwnerRecommendationMms_(payload));
+    }
+    if (payload.action === "confirmOwnerRecommendationMms") {
+      return jsonResponse_(handleOwnerRecommendationMmsConfirmation_(payload));
     }
     if (payload.action === "uploadQuoteFile") {
       return jsonResponse_(handleQuoteFileUpload_(payload));
@@ -442,6 +445,39 @@ function handleOwnerRecommendationMms_(payload) {
   }
 }
 
+function handleOwnerRecommendationMmsConfirmation_(payload) {
+  const caseId = String(payload && payload.caseId || "").trim();
+  if (!caseId) return { ok: false, message: "caseId가 없습니다." };
+
+  const casePayload = readCaseFromFirebase_(caseId);
+  if (!casePayload) return { ok: false, message: "Firebase 케이스를 찾지 못했습니다: " + caseId };
+
+  const existing = casePayload.ownerRecommendationMms || {};
+  if (existing.deliveryConfirmed === true || (existing.ok === true && existing.status === "sent")) {
+    return Object.assign({ caseId: caseId, skipped: true }, existing);
+  }
+  if (existing.deliveryAccepted !== true && existing.status !== "sent_pending_confirmation") {
+    return updateOwnerRecommendationMmsCase_(caseId, casePayload, {
+      ok: false,
+      status: "blocked",
+      statusText: "먼저 건물주 추천 MMS 발송을 요청해야 합니다.",
+      requestKey: existing.requestKey || "",
+      quoteId: existing.quoteId || "",
+      vendorName: existing.vendorName || ""
+    });
+  }
+
+  const result = Object.assign({}, existing, {
+    ok: true,
+    status: "sent",
+    deliveryAccepted: true,
+    deliveryConfirmed: true,
+    confirmedAt: new Date().toISOString(),
+    statusText: "건물주 문자 수신 확인 완료"
+  });
+  return updateOwnerRecommendationMmsCase_(caseId, casePayload, result);
+}
+
 function handleOwnerRecommendationMmsLocked_(payload) {
   const caseId = String(payload.caseId || "").trim();
   if (!caseId) return { ok: false, message: "caseId가 없습니다." };
@@ -460,7 +496,7 @@ function handleOwnerRecommendationMmsLocked_(payload) {
 
   const existing = casePayload.ownerRecommendationMms || {};
   const requestKey = caseId + ":" + selected.quoteId;
-  if (existing.ok === true && existing.requestKey === requestKey && payload.force !== true) {
+  if ((existing.ok === true || existing.deliveryAccepted === true) && existing.requestKey === requestKey && payload.force !== true) {
     return Object.assign({ caseId: caseId, skipped: true }, existing);
   }
 
@@ -529,10 +565,12 @@ function handleOwnerRecommendationMmsLocked_(payload) {
     baseResult.imageFileUrl = image.fileUrl;
     baseResult.imageFileName = image.fileName;
     baseResult.statusText = send.ok
-      ? "건물주 추천 MMS 발송 완료"
+      ? "SENS 발송 요청 완료. 실제 문자 수신을 확인한 뒤 발송 완료 확인을 눌러주세요."
       : send.message;
-    baseResult.ok = send.ok === true;
-    baseResult.status = baseResult.ok ? "sent" : "failed";
+    baseResult.deliveryAccepted = send.ok === true;
+    baseResult.deliveryConfirmed = false;
+    baseResult.ok = false;
+    baseResult.status = send.ok ? "sent_pending_confirmation" : "failed";
   } catch (err) {
     baseResult.statusText = "건물주 추천 MMS 처리 실패: " + err.message;
   }
@@ -638,35 +676,39 @@ function createOwnerRecommendationImage_(casePayload, quoteId, quote, supplier, 
     ? quote.bringQuoteItems
     : (Array.isArray(quote && quote.extractedItems) ? quote.extractedItems : []);
   const rows = [
-    ["BRING Care 추천 견적서", supplier.name || "", "", "", "", "", ""],
-    ["사업자번호", supplier.businessNo || "", "대표자", supplier.ceo || "", "주소", supplier.address || "", ""],
-    ["업태", supplier.type || "", "업종", supplier.category || "", "전화", supplier.phone || "", ""],
-    ["이메일", supplier.email || "", "공급가액", ownerRecommendationAmountText_(amounts.supplyAmount), "부가세", ownerRecommendationAmountText_(amounts.vatAmount), ""],
-    ["합계금액", ownerRecommendationAmountText_(amounts.totalAmount), "", "", "", "", ""],
-    ["No", "품명(규격)", "단위", "단가", "부가세", "합계", "비고"]
+    ["BRING Care 추천 견적서", supplier.name || "업체 확인 필요"],
+    ["추천 업체", supplier.name || ""],
+    ["합계금액", ownerRecommendationAmountText_(amounts.totalAmount)],
+    ["공급가액", ownerRecommendationAmountText_(amounts.supplyAmount)],
+    ["부가세", ownerRecommendationAmountText_(amounts.vatAmount)],
+    ["사업자번호", supplier.businessNo || ""],
+    ["대표자", supplier.ceo || ""],
+    ["주소", supplier.address || ""],
+    ["업태 / 업종", [supplier.type, supplier.category].filter(Boolean).join(" / ")],
+    ["전화", supplier.phone || ""],
+    ["이메일", supplier.email || ""],
+    ["품목 내역", ""]
   ];
   items.slice(0, 12).forEach((item, index) => rows.push([
-    String(index + 1),
-    String(item.product || item.name || item.itemName || item.description || ""),
-    String(item.unit || "식"),
-    ownerRecommendationAmountText_(item.unitPrice || item.supplyAmount || item.price),
-    ownerRecommendationAmountText_(item.vat || item.vatAmount),
-    ownerRecommendationAmountText_(item.total || item.totalAmount || item.amount),
-    String(item.note || item.memo || "")
+    "품목 " + String(index + 1),
+    [
+      String(item.product || item.name || item.itemName || item.description || ""),
+      item.unit ? "단위 " + item.unit : "",
+      item.unitPrice || item.supplyAmount || item.price ? "단가 " + ownerRecommendationAmountText_(item.unitPrice || item.supplyAmount || item.price) : "",
+      item.total || item.totalAmount || item.amount ? "합계 " + ownerRecommendationAmountText_(item.total || item.totalAmount || item.amount) : "",
+      item.note || item.memo ? "비고 " + String(item.note || item.memo) : ""
+    ].filter(Boolean).join(" / ")
   ]));
 
   const table = Charts.newDataTable()
     .addColumn(Charts.ColumnType.STRING, "항목")
-    .addColumn(Charts.ColumnType.STRING, "내용")
-    .addColumn(Charts.ColumnType.STRING, "단위")
-    .addColumn(Charts.ColumnType.STRING, "단가")
-    .addColumn(Charts.ColumnType.STRING, "부가세")
-    .addColumn(Charts.ColumnType.STRING, "합계")
-    .addColumn(Charts.ColumnType.STRING, "비고");
+    .addColumn(Charts.ColumnType.STRING, "내용");
   rows.forEach(row => table.addRow(row));
   const chart = Charts.newTableChart()
     .setDataTable(table)
-    .setDimensions(1400, Math.max(900, rows.length * 56))
+    .setDimensions(1000, Math.max(1000, rows.length * 64))
+    .setOption("page", "disable")
+    .setOption("alternatingRowStyle", false)
     .setOption("showRowNumber", false)
     .build();
   let blob = chart.getAs("image/png");
@@ -704,8 +746,9 @@ function updateOwnerRecommendationMmsCase_(caseId, casePayload, result) {
   casePayload.note = casePayload.note || {};
   casePayload.log = Array.isArray(casePayload.log) ? casePayload.log : [];
   casePayload.ownerRecommendationMms = result;
-  casePayload.status.c8 = result.ok === true ? "done" : "doing";
-  if (result.ok === true && casePayload.status.c9 !== "done") casePayload.status.c9 = "doing";
+  const deliveryConfirmed = result.deliveryConfirmed === true || (result.ok === true && result.status === "sent");
+  casePayload.status.c8 = deliveryConfirmed ? "done" : "doing";
+  if (deliveryConfirmed && casePayload.status.c9 !== "done") casePayload.status.c9 = "doing";
   casePayload.note.c8 = makeOwnerRecommendationMmsNote_(result);
   casePayload.log.unshift("건물주 추천 MMS " + (result.ok ? "발송완료" : "발송보류") + " / " + (result.statusText || ""));
   if (casePayload.log.length > 30) casePayload.log.length = 30;
@@ -724,9 +767,11 @@ function updateOwnerRecommendationMmsCase_(caseId, casePayload, result) {
 }
 
 function makeOwnerRecommendationMmsNote_(result) {
+  const deliveryConfirmed = result.deliveryConfirmed === true || (result.ok === true && result.status === "sent");
+  const deliveryAccepted = result.deliveryAccepted === true || result.status === "sent_pending_confirmation";
   const lines = [
     "[건물주 추천 MMS]",
-    "상태: " + (result.ok ? "발송완료" : "진행중/보류"),
+    "상태: " + (deliveryConfirmed ? "발송완료" : deliveryAccepted ? "발송 요청 완료 · 수신 확인 필요" : "진행중/보류"),
     result.statusText || "",
     result.vendorName ? "추천 업체: " + result.vendorName : "",
     result.bringTotalAmount ? "브링 추천금액: " + ownerRecommendationAmountText_(result.bringTotalAmount) : "",
