@@ -3432,6 +3432,8 @@ async function uploadBusinessRegistrationFiles(){
   clearBusinessRegPendingFiles();
   c.status=c.status||{};
   if(c.status.c6!=="done") c.status.c6="doing";
+  // 새 업로드는 ⑥ 비교를 다시 시작하는 명시적 신호이므로, 이전 수동 잠금을 해제한다.
+  clearStepAutomationHoldThrough(c,"c6");
   saveCase(curCase);
   renderCaseList();
   renderCaseDetail();
@@ -3593,6 +3595,8 @@ async function uploadSelectedCaseDocuments(){
   c.status=c.status||{};
   c.note=c.note||{};
   if(c.status.c6!=="done") c.status.c6="doing";
+  // Apps Script 결과가 도착하면 금액 있는 견적을 확인해 ⑦로 넘긴다.
+  clearStepAutomationHoldThrough(c,"c6");
   const summaryParts=[
     quoteFiles.length ? `${quoteFiles.length}개 견적 파일` : "",
     businessFiles.length ? `${businessFiles.length}개 사업자등록증` : ""
@@ -4455,8 +4459,9 @@ document.getElementById("noticeBtn").addEventListener("click", openNoticePanel);
 document.getElementById("noticeBanner").addEventListener("click", openNoticePanel);
 
 /* ===== 업데이트 알림(What's New) — 새 버전 나오면 자동 팝업 ===== */
-const APP_VERSION = "4.90";
+const APP_VERSION = "4.91";
 const CHANGELOG = [
+  { v:"4.91", d:"2026-07-15", items:["⑥ 견적 업로드 후 금액 확인이 끝나면 ⑦ 최적 추천으로 자동 전환","견적 업로드로 남아 있던 ⑥ 자동화 잠금 해제"] },
   { v:"4.90", d:"2026-07-14", items:["브링 양식 변환 시 원본 견적금액에 10% 가산","브링 합계금액·공급가액·부가세를 100원 단위로 정리","원본 견적금액과 브링 양식 금액을 분리 표시"] },
   { v:"4.89", d:"2026-07-14", items:["⑥ 견적 목록에서 제거한 파일이 실시간 동기화 후 다시 나타나는 문제 수정"] },
   { v:"4.88", d:"2026-07-14", items:["⑤ 업체 MMS 결과를 서버 기준으로 반영","발송 성공 시 ⑤ 완료·⑥ 진행중 자동 전환 안정화","사진 용량 제한으로 보류된 경우 실제 원인을 메모에 표시"] },
