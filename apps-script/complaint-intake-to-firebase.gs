@@ -16,7 +16,7 @@ const COMPLAINT_CONFIG = {
   FIREBASE_CASES_PATH: "cases",
   RESPONSE_SHEET_URL: "https://docs.google.com/spreadsheets/d/1HI6KzIMomL6vOUPs8zZDhXHktL1cWRDcg93lflsuojA/edit"
 };
-const AUTOMATION_BUILD = "quote-bring-markup-20260714-v1";
+const AUTOMATION_BUILD = "owner-recommendation-mms-20260715-v1";
 
 const OUTPUT_HEADERS = [
   "접수번호",
@@ -112,6 +112,12 @@ function doPost(e) {
     if (payload.action === "sendVendorEstimateMms") {
       return jsonResponse_(handleVendorEstimateMms_(payload));
     }
+    if (payload.action === "getOwnerRecommendationPreview") {
+      return jsonResponse_(handleOwnerRecommendationPreview_(payload));
+    }
+    if (payload.action === "sendOwnerRecommendationMms") {
+      return jsonResponse_(handleOwnerRecommendationMms_(payload));
+    }
     if (payload.action === "uploadQuoteFile") {
       return jsonResponse_(handleQuoteFileUpload_(payload));
     }
@@ -167,6 +173,10 @@ function recordAutomationError_(payload, err) {
     patchCaseChildToFirebase_(caseId, "status", { c5: "doing" });
     patchCaseChildToFirebase_(caseId, "note", { c5: "업체 MMS 발송 실패: " + message });
     log.unshift("업체 MMS 발송 실패: " + message);
+  } else if (action === "sendOwnerRecommendationMms") {
+    patchCaseChildToFirebase_(caseId, "status", { c8: "doing" });
+    patchCaseChildToFirebase_(caseId, "note", { c8: "건물주 추천 MMS 발송 실패: " + message });
+    log.unshift("건물주 추천 MMS 발송 실패: " + message);
   } else {
     return;
   }
@@ -358,6 +368,373 @@ function handleVendorEstimateMms_(payload) {
     : "업체 MMS 발송 보류/실패: 성공 " + result.sent.length + "곳, 실패 " + result.failed.length + "곳, 제외 " + result.skipped.length + "곳";
 
   return updateVendorMmsCase_(caseId, casePayload, result);
+}
+
+function handleOwnerRecommendationPreview_(payload) {
+  const caseId = String(payload && payload.caseId || "").trim();
+  if (!caseId) return { ok: false, message: "caseId가 없습니다." };
+
+  const casePayload = readCaseFromFirebase_(caseId);
+  if (!casePayload) return { ok: false, message: "Firebase 케이스를 찾지 못했습니다: " + caseId };
+
+  const selected = selectOwnerRecommendationQuote_(casePayload, payload.quoteId);
+  if (!selected.quote) {
+    return { ok: false, message: "추천할 수 있는 금액 확인 견적이 없습니다." };
+  }
+
+  const ownerPhone = extractOwnerRecommendationPhone_(casePayload);
+  const supplier = ownerRecommendationSupplier_(selected.quote);
+  const amounts = ownerRecommendationAmounts_(selected.quote);
+  const message = String(payload.message || "").trim() || makeOwnerRecommendationMmsContent_(casePayload, supplier, amounts);
+  let image = null;
+  try {
+    image = createOwnerRecommendationImage_(casePayload, selected.quoteId, selected.quote, supplier, amounts);
+  } catch (err) {
+    Logger.log("건물주 추천 이미지 미리 생성 실패: " + err.message);
+  }
+
+  const preview = {
+    quoteId: selected.quoteId,
+    vendorName: supplier.name,
+    ownerPhoneMasked: maskPhone_(ownerPhone),
+    ownerPhoneAvailable: !!ownerPhone,
+    bringTotalAmount: amounts.totalAmount,
+    bringSupplyAmount: amounts.supplyAmount,
+    bringVatAmount: amounts.vatAmount,
+    message: message,
+    imageFileId: image && image.fileId || "",
+    imageFileUrl: image && image.fileUrl || "",
+    imageFileName: image && image.fileName || "",
+    updatedAt: new Date().toISOString()
+  };
+  try {
+    patchCaseChildToFirebase_(caseId, "ownerRecommendationMms/preview", preview);
+  } catch (err) {
+    Logger.log("건물주 추천 미리보기 저장 실패: " + err.message);
+  }
+
+  return {
+    ok: true,
+    caseId: caseId,
+    quoteId: selected.quoteId,
+    vendorName: supplier.name,
+    ownerPhoneMasked: maskPhone_(ownerPhone),
+    ownerPhoneAvailable: !!ownerPhone,
+    bringTotalAmount: amounts.totalAmount,
+    bringSupplyAmount: amounts.supplyAmount,
+    bringVatAmount: amounts.vatAmount,
+    message: message,
+    imageFileId: image && image.fileId || "",
+    imageFileUrl: image && image.fileUrl || "",
+    imageFileName: image && image.fileName || ""
+  };
+}
+
+function handleOwnerRecommendationMms_(payload) {
+  const lock = LockService.getScriptLock();
+  if (!lock.tryLock(10000)) {
+    return { ok: false, status: "blocked", statusText: "다른 건물주 추천 MMS 요청을 처리 중입니다. 잠시 후 다시 시도해 주세요." };
+  }
+  try {
+    return handleOwnerRecommendationMmsLocked_(payload || {});
+  } finally {
+    lock.releaseLock();
+  }
+}
+
+function handleOwnerRecommendationMmsLocked_(payload) {
+  const caseId = String(payload.caseId || "").trim();
+  if (!caseId) return { ok: false, message: "caseId가 없습니다." };
+
+  const casePayload = readCaseFromFirebase_(caseId);
+  if (!casePayload) return { ok: false, message: "Firebase 케이스를 찾지 못했습니다: " + caseId };
+
+  const selected = selectOwnerRecommendationQuote_(casePayload, payload.quoteId);
+  if (!selected.quote) {
+    return updateOwnerRecommendationMmsCase_(caseId, casePayload, {
+      ok: false,
+      status: "blocked",
+      statusText: "추천할 수 있는 금액 확인 견적이 없습니다."
+    });
+  }
+
+  const existing = casePayload.ownerRecommendationMms || {};
+  const requestKey = caseId + ":" + selected.quoteId;
+  if (existing.ok === true && existing.requestKey === requestKey && payload.force !== true) {
+    return Object.assign({ caseId: caseId, skipped: true }, existing);
+  }
+
+  const ownerPhone = extractOwnerRecommendationPhone_(casePayload);
+  const supplier = ownerRecommendationSupplier_(selected.quote);
+  const amounts = ownerRecommendationAmounts_(selected.quote);
+  const message = String(payload.message || "").trim() || makeOwnerRecommendationMmsContent_(casePayload, supplier, amounts);
+  const baseResult = {
+    ok: false,
+    status: "failed",
+    statusText: "",
+    requestKey: requestKey,
+    quoteId: selected.quoteId,
+    vendorName: supplier.name,
+    originalTotalAmount: ownerQuoteOriginalAmount_(selected.quote),
+    bringTotalAmount: amounts.totalAmount,
+    ownerPhoneMasked: maskPhone_(ownerPhone),
+    updatedAt: new Date().toISOString()
+  };
+
+  if (!ownerPhone) {
+    baseResult.status = "blocked";
+    baseResult.statusText = "온보딩 수집서에서 건물주 연락처를 찾지 못했습니다.";
+    return updateOwnerRecommendationMmsCase_(caseId, casePayload, baseResult);
+  }
+
+  const config = getSensConfig_();
+  if (!config.enabled) {
+    baseResult.status = "blocked";
+    baseResult.statusText = "NCP SENS 설정 또는 승인된 발신번호가 없어 MMS 발송을 보류했습니다.";
+    return updateOwnerRecommendationMmsCase_(caseId, casePayload, baseResult);
+  }
+
+  let image = null;
+  try {
+    const requestedImageId = String(payload.imageFileId || existing.imageFileId || "").trim();
+    if (requestedImageId) {
+      try {
+        const requestedFile = DriveApp.getFileById(requestedImageId);
+        image = {
+          fileId: requestedFile.getId(),
+          fileUrl: requestedFile.getUrl(),
+          fileName: requestedFile.getName(),
+          file: requestedFile
+        };
+      } catch (err) {
+        Logger.log("건물주 추천 기존 이미지 확인 실패: " + err.message);
+      }
+    }
+    if (!image) image = createOwnerRecommendationImage_(casePayload, selected.quoteId, selected.quote, supplier, amounts);
+    const imagePayload = driveImageToMmsPayload_(image.file);
+    const upload = uploadSensMmsAttachment_(imagePayload, config);
+    if (!upload.ok) {
+      baseResult.statusText = upload.message;
+      baseResult.imageFileId = image.fileId;
+      baseResult.imageFileUrl = image.fileUrl;
+      baseResult.imageFileName = image.fileName;
+      return updateOwnerRecommendationMmsCase_(caseId, casePayload, baseResult);
+    }
+
+    const send = sendSensMms_(ownerPhone, message, upload.fileId, "건물주", config);
+    baseResult.sensFileId = upload.fileId;
+    baseResult.requestId = send.requestId || "";
+    baseResult.responseCode = send.responseCode || "";
+    baseResult.imageFileId = image.fileId;
+    baseResult.imageFileUrl = image.fileUrl;
+    baseResult.imageFileName = image.fileName;
+    baseResult.statusText = send.ok
+      ? "건물주 추천 MMS 발송 완료"
+      : send.message;
+    baseResult.ok = send.ok === true;
+    baseResult.status = baseResult.ok ? "sent" : "failed";
+  } catch (err) {
+    baseResult.statusText = "건물주 추천 MMS 처리 실패: " + err.message;
+  }
+
+  return updateOwnerRecommendationMmsCase_(caseId, casePayload, baseResult);
+}
+
+function selectOwnerRecommendationQuote_(casePayload, requestedQuoteId) {
+  const quoteFiles = casePayload && casePayload.quoteFiles && typeof casePayload.quoteFiles === "object"
+    ? casePayload.quoteFiles
+    : {};
+  const candidates = Object.keys(quoteFiles).map(quoteId => {
+    const quote = quoteFiles[quoteId] || {};
+    return { quoteId: quoteId, quote: quote, amount: ownerQuoteOriginalAmount_(quote) };
+  }).filter(item => item.amount >= 1000 && !isBusinessRegistrationLikeQuote_(item.quote));
+
+  const requested = candidates.find(item => item.quoteId === String(requestedQuoteId || ""));
+  if (requested) return requested;
+  candidates.sort((a, b) => {
+    if (a.amount !== b.amount) return a.amount - b.amount;
+    const aApplied = a.quote.businessRegistrationAppliedAt ? 1 : 0;
+    const bApplied = b.quote.businessRegistrationAppliedAt ? 1 : 0;
+    if (aApplied !== bApplied) return bApplied - aApplied;
+    return String(a.quote.vendorName || "").localeCompare(String(b.quote.vendorName || ""), "ko");
+  });
+  return candidates[0] || { quoteId: "", quote: null, amount: 0 };
+}
+
+function ownerQuoteOriginalAmount_(quote) {
+  quote = quote || {};
+  return Math.round(Number(
+    quote.confirmedTotalAmount ||
+    quote.bringQuoteBaseTotalAmount ||
+    quote.totalAmount ||
+    parseMoneyValue_(quote.amount) ||
+    0
+  ));
+}
+
+function ownerRecommendationSupplier_(quote) {
+  const sources = [quote && quote.resolvedVendorInfo, quote && quote.vendor, quote && quote.extractedVendorInfo, quote || {}];
+  const pick = keys => {
+    for (const source of sources) {
+      if (!source || typeof source !== "object") continue;
+      for (const key of keys) {
+        const value = String(source[key] || "").trim();
+        if (value && !isGenericQuoteVendorValue_(value)) return value;
+      }
+    }
+    return "";
+  };
+  return {
+    name: pick(["name", "vendorName"]) || "업체 확인 필요",
+    businessNo: pick(["businessNo", "bizNo", "businessNumber"]),
+    ceo: pick(["ceo", "owner", "representative", "representativeName"]),
+    address: pick(["address", "addressFromVendorList"]),
+    type: pick(["type", "businessType"]),
+    category: pick(["category", "businessCategory", "industry"]),
+    phone: pick(["phone", "tel", "telephone"]),
+    email: pick(["email", "mail"])
+  };
+}
+
+function ownerRecommendationAmounts_(quote) {
+  const base = ownerQuoteOriginalAmount_(quote);
+  const calculated = calculateBringQuoteAmounts_(base);
+  const total = Number(quote && quote.bringQuoteTotalAmount || calculated.totalAmount || 0);
+  const supply = Number(quote && quote.bringQuoteSupplyAmount || calculated.supplyAmount || (total ? Math.round(total / 1.1) : 0));
+  const vat = Number(quote && quote.bringQuoteVatAmount || calculated.vatAmount || (total ? total - supply : 0));
+  return { baseTotalAmount: base, supplyAmount: supply, vatAmount: vat, totalAmount: total };
+}
+
+function ownerRecommendationAmountText_(amount) {
+  return Number(amount || 0) ? Number(amount).toLocaleString("ko-KR") + "원" : "금액 미입력";
+}
+
+function makeOwnerRecommendationMmsContent_(casePayload, supplier, amounts) {
+  return [
+    "[BRING Care 추천 견적 안내]",
+    "",
+    "안녕하세요. BRING Care입니다.",
+    "추천 업체: " + (supplier.name || "업체 확인 필요"),
+    "추천 금액: " + ownerRecommendationAmountText_(amounts.totalAmount),
+    "",
+    "첨부된 브링 견적서를 확인해 주세요.",
+    "확인 후 회신 부탁드립니다.",
+    "접수번호: " + (casePayload.ticketNo || casePayload.id || "")
+  ].join("\n");
+}
+
+function extractOwnerRecommendationPhone_(casePayload) {
+  const direct = [casePayload && casePayload.ownerPhone, casePayload && casePayload.ownerContact,
+    casePayload && casePayload.owner && casePayload.owner.phone].filter(Boolean).join(" ");
+  const directPhone = extractPhones_(direct).find(phone => isSendableSmsPhone_(phone));
+  if (directPhone) return directPhone;
+  const contractMatch = casePayload && casePayload.contractMatch || {};
+  const onboardingPhone = normalizePhoneForSms_(extractOwnerPhoneFromOnboarding_(contractMatch));
+  return isSendableSmsPhone_(onboardingPhone) ? onboardingPhone : "";
+}
+
+function createOwnerRecommendationImage_(casePayload, quoteId, quote, supplier, amounts) {
+  const items = Array.isArray(quote && quote.bringQuoteItems) && quote.bringQuoteItems.length
+    ? quote.bringQuoteItems
+    : (Array.isArray(quote && quote.extractedItems) ? quote.extractedItems : []);
+  const rows = [
+    ["BRING Care 추천 견적서", supplier.name || "", "", "", "", "", ""],
+    ["사업자번호", supplier.businessNo || "", "대표자", supplier.ceo || "", "주소", supplier.address || "", ""],
+    ["업태", supplier.type || "", "업종", supplier.category || "", "전화", supplier.phone || "", ""],
+    ["이메일", supplier.email || "", "공급가액", ownerRecommendationAmountText_(amounts.supplyAmount), "부가세", ownerRecommendationAmountText_(amounts.vatAmount), ""],
+    ["합계금액", ownerRecommendationAmountText_(amounts.totalAmount), "", "", "", "", ""],
+    ["No", "품명(규격)", "단위", "단가", "부가세", "합계", "비고"]
+  ];
+  items.slice(0, 12).forEach((item, index) => rows.push([
+    String(index + 1),
+    String(item.product || item.name || item.itemName || item.description || ""),
+    String(item.unit || "식"),
+    ownerRecommendationAmountText_(item.unitPrice || item.supplyAmount || item.price),
+    ownerRecommendationAmountText_(item.vat || item.vatAmount),
+    ownerRecommendationAmountText_(item.total || item.totalAmount || item.amount),
+    String(item.note || item.memo || "")
+  ]));
+
+  const table = Charts.newDataTable()
+    .addColumn(Charts.ColumnType.STRING, "항목")
+    .addColumn(Charts.ColumnType.STRING, "내용")
+    .addColumn(Charts.ColumnType.STRING, "단위")
+    .addColumn(Charts.ColumnType.STRING, "단가")
+    .addColumn(Charts.ColumnType.STRING, "부가세")
+    .addColumn(Charts.ColumnType.STRING, "합계")
+    .addColumn(Charts.ColumnType.STRING, "비고");
+  rows.forEach(row => table.addRow(row));
+  const chart = Charts.newTableChart()
+    .setDataTable(table)
+    .setDimensions(1400, Math.max(900, rows.length * 56))
+    .setOption("showRowNumber", false)
+    .build();
+  let blob = chart.getAs("image/png");
+  try { blob = blob.getAs("image/jpeg"); } catch (err) {}
+  const date = Utilities.formatDate(new Date(), "Asia/Seoul", "yyyyMMdd_HHmmss");
+  const fileName = safeDriveName_((casePayload.ticketNo || casePayload.id || "case") + "_" + (supplier.name || "업체확인필요") + "_" + date + "_브링추천견적.jpg");
+  blob.setName(fileName);
+  const folder = getOrCreateChildFolder_(getQuoteDriveFolder_(casePayload), "건물주 추천 발송");
+  const file = folder.createFile(blob);
+  return { file: file, fileId: file.getId(), fileUrl: file.getUrl(), fileName: file.getName(), quoteId: quoteId };
+}
+
+function driveImageToMmsPayload_(file) {
+  if (!file) throw new Error("건물주 추천 이미지 파일이 없습니다.");
+  const original = file.getBlob();
+  let blob = original;
+  if (blob.getBytes().length > 300 * 1024) {
+    const thumbnail = makeSensThumbnailBlob_(file.getId(), file.getName());
+    if (thumbnail && thumbnail.blob) blob = thumbnail.blob;
+  }
+  const bytes = blob.getBytes();
+  if (bytes.length > 300 * 1024) throw new Error("생성된 추천 이미지가 SENS MMS 첨부 제한 300KB를 초과했습니다.");
+  return {
+    fileName: makeSensImageName_(file.getName()),
+    fileBody: Utilities.base64Encode(bytes),
+    byteSize: bytes.length
+  };
+}
+
+function updateOwnerRecommendationMmsCase_(caseId, casePayload, result) {
+  const timestamp = new Date().toISOString();
+  result = result || {};
+  result.updatedAt = timestamp;
+  casePayload.status = casePayload.status || {};
+  casePayload.note = casePayload.note || {};
+  casePayload.log = Array.isArray(casePayload.log) ? casePayload.log : [];
+  casePayload.ownerRecommendationMms = result;
+  casePayload.status.c8 = result.ok === true ? "done" : "doing";
+  if (result.ok === true && casePayload.status.c9 !== "done") casePayload.status.c9 = "doing";
+  casePayload.note.c8 = makeOwnerRecommendationMmsNote_(result);
+  casePayload.log.unshift("건물주 추천 MMS " + (result.ok ? "발송완료" : "발송보류") + " / " + (result.statusText || ""));
+  if (casePayload.log.length > 30) casePayload.log.length = 30;
+  putCaseChildToFirebase_(caseId, "ownerRecommendationMms", result);
+  patchCaseChildToFirebase_(caseId, "status", { c8: casePayload.status.c8, c9: casePayload.status.c9 });
+  patchCaseChildToFirebase_(caseId, "note", { c8: casePayload.note.c8 });
+  putCaseChildToFirebase_(caseId, "recommendation", {
+    quoteId: result.quoteId || "",
+    vendorName: result.vendorName || "",
+    selectionAmount: result.originalTotalAmount || 0,
+    criterion: "lowest_original_amount",
+    updatedAt: timestamp
+  });
+  patchCaseToFirebase_(caseId, { log: casePayload.log, updatedAt: timestamp });
+  return Object.assign({ caseId: caseId }, result);
+}
+
+function makeOwnerRecommendationMmsNote_(result) {
+  const lines = [
+    "[건물주 추천 MMS]",
+    "상태: " + (result.ok ? "발송완료" : "진행중/보류"),
+    result.statusText || "",
+    result.vendorName ? "추천 업체: " + result.vendorName : "",
+    result.bringTotalAmount ? "브링 추천금액: " + ownerRecommendationAmountText_(result.bringTotalAmount) : "",
+    result.ownerPhoneMasked ? "건물주 연락처: " + result.ownerPhoneMasked : "",
+    result.imageFileUrl ? "첨부 이미지: " + result.imageFileUrl : "",
+    result.ok ? "다음 단계: ⑨ 승인·입금 진행중" : ""
+  ];
+  return lines.filter(Boolean).join("\n");
 }
 
 function readCaseFromFirebase_(caseId) {
@@ -4764,6 +5141,7 @@ function buildCasePayload_(ticketNo, record, analysis, contractMatch, row, sheet
   const visitDateRaw = readRawField_(record, ["방문 가능 날짜", "방문 날짜", "방문일"]);
   const visitTime = formatVisitTimeFromRecord_(record, timestamp);
   const sheetUrl = COMPLAINT_CONFIG.RESPONSE_SHEET_URL + "#gid=" + sheet.getSheetId();
+  const ownerPhone = normalizePhoneForSms_(extractOwnerPhoneFromOnboarding_(contractMatch));
   const isContractHold = contractMatch && (contractMatch.status === "unmatched" || contractMatch.status === "multiple" || contractMatch.status === "address_missing");
   const statusValue = isContractHold ? "계약확인보류" : analysis.statusValue;
   const status = isContractHold ? { c1: "doing" } : { c1: "done", c2: "doing" };
@@ -4797,6 +5175,7 @@ function buildCasePayload_(ticketNo, record, analysis, contractMatch, row, sheet
     visitTime: visitTime,
     statusValue: statusValue,
     contractMatch: contractMatch,
+    ownerPhoneMasked: ownerPhone ? maskPhone_(ownerPhone) : "",
     status: status,
     note: {
       c1: c1Note,
