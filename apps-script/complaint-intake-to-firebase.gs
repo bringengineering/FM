@@ -16,8 +16,8 @@ const COMPLAINT_CONFIG = {
   FIREBASE_CASES_PATH: "cases",
   RESPONSE_SHEET_URL: "https://docs.google.com/spreadsheets/d/1HI6KzIMomL6vOUPs8zZDhXHktL1cWRDcg93lflsuojA/edit"
 };
-const AUTOMATION_BUILD = "owner-recommendation-mms-20260716-v5";
-const OWNER_RECOMMENDATION_IMAGE_VERSION = "owner-summary-v2";
+const AUTOMATION_BUILD = "owner-recommendation-mms-20260716-v6";
+const OWNER_RECOMMENDATION_IMAGE_VERSION = "owner-summary-v3";
 
 const OUTPUT_HEADERS = [
   "접수번호",
@@ -712,19 +712,22 @@ function createOwnerRecommendationImage_(casePayload, quoteId, quote, supplier, 
   const fileName = safeDriveName_((casePayload.ticketNo || casePayload.id || "case") + "_" + (supplier.name || "업체확인필요") + "_" + date + "_브링추천견적.jpg");
   const folder = getOrCreateChildFolder_(getQuoteDriveFolder_(casePayload), "건물주 추천 발송");
   let file = null;
+  let tempSpreadsheetFile = null;
+  let tempPdfFile = null;
   try {
-    const svg = buildOwnerRecommendationSvg_(casePayload, quote, supplier, amounts);
-    const svgName = fileName.replace(/\.jpg$/i, ".svg");
-    const tempFile = folder.createFile(Utilities.newBlob(svg, "image/svg+xml", svgName));
-    try {
-      const rendered = renderDriveImageFile_(tempFile.getId(), fileName);
-      file = folder.createFile(rendered);
-    } finally {
-      try { tempFile.setTrashed(true); } catch (err) {}
-    }
+    const spreadsheet = SpreadsheetApp.create("BRING 추천 견적 이미지 임시 파일");
+    tempSpreadsheetFile = DriveApp.getFileById(spreadsheet.getId());
+    buildOwnerRecommendationSheet_(spreadsheet, casePayload, quote, supplier, amounts);
+    const pdfBlob = exportOwnerRecommendationSheetPdf_(spreadsheet);
+    tempPdfFile = folder.createFile(pdfBlob.setName(fileName.replace(/\.jpg$/i, ".pdf")));
+    const rendered = renderDriveImageFile_(tempPdfFile.getId(), fileName);
+    file = folder.createFile(rendered);
   } catch (err) {
-    Logger.log("추천 견적 4:5 이미지 생성 실패, 기본 이미지로 대체: " + err.message);
+    Logger.log("추천 견적 한글 이미지 생성 실패, 기본 이미지로 대체: " + err.message);
     file = createOwnerRecommendationFallbackImage_(folder, fileName, casePayload, quote, supplier, amounts);
+  } finally {
+    try { if (tempPdfFile) tempPdfFile.setTrashed(true); } catch (err) {}
+    try { if (tempSpreadsheetFile) tempSpreadsheetFile.setTrashed(true); } catch (err) {}
   }
   return {
     file: file,
@@ -736,105 +739,112 @@ function createOwnerRecommendationImage_(casePayload, quoteId, quote, supplier, 
   };
 }
 
-function buildOwnerRecommendationSvg_(casePayload, quote, supplier, amounts) {
-  const vendorLines = ownerRecommendationImageLines_(supplier.name || "업체 확인 필요", 18, 2);
-  const visitLines = ownerRecommendationImageLines_(casePayload && casePayload.visitTime || "미입력", 18, 2);
-  const workLines = ownerRecommendationWorkLines_(quote).map(line =>
-    ownerRecommendationImageLines_(line, 30, 1)[0]
-  );
-  const workText = workLines.map((line, index) =>
-    ownerRecommendationSvgLine_("• " + line, 82, 535 + index * 39, "work")
-  ).join("");
-  return [
-    '<svg xmlns="http://www.w3.org/2000/svg" width="800" height="1000" viewBox="0 0 800 1000">',
-    '<style>',
-    'text{font-family:"Noto Sans KR","Malgun Gothic",Arial,sans-serif;letter-spacing:0}',
-    '.title{fill:#fff;font-size:34px;font-weight:900}.subtitle{fill:#cfe0ff;font-size:17px;font-weight:700}',
-    '.badge{fill:#176b45;font-size:16px;font-weight:900}.section{fill:#5b6678;font-size:17px;font-weight:800}',
-    '.total{fill:#12346b;font-size:56px;font-weight:900}.value{fill:#17233a;font-size:23px;font-weight:900}',
-    '.work{fill:#17233a;font-size:23px;font-weight:800}.money{fill:#17233a;font-size:29px;font-weight:900}',
-    '.footer{fill:#7b8798;font-size:15px;font-weight:700}',
-    '</style>',
-    '<rect width="800" height="1000" fill="#f3f6fb"/>',
-    '<rect width="800" height="168" fill="#17386f"/>',
-    '<text x="48" y="66" class="title">BRING Care 추천 견적서</text>',
-    '<text x="48" y="105" class="subtitle">검토를 마친 추천 견적 요약입니다</text>',
-    '<rect x="620" y="42" width="132" height="44" rx="22" fill="#dff7e9"/>',
-    '<text x="686" y="70" text-anchor="middle" class="badge">추천 견적</text>',
-    '<rect x="40" y="130" width="720" height="166" rx="18" fill="#e1edff" stroke="#aac8f3" stroke-width="2"/>',
-    '<text x="76" y="181" class="section">최종 합계금액</text>',
-    '<text x="724" y="252" text-anchor="end" class="total">' + ownerRecommendationXml_(ownerRecommendationAmountText_(amounts.totalAmount)) + '</text>',
-    '<rect x="40" y="322" width="350" height="126" rx="14" fill="#fff" stroke="#d7e0ed"/>',
-    '<text x="68" y="360" class="section">추천 업체</text>',
-    ownerRecommendationSvgLines_(vendorLines, 68, 397, 30, "value"),
-    '<rect x="410" y="322" width="350" height="126" rx="14" fill="#fff" stroke="#d7e0ed"/>',
-    '<text x="438" y="360" class="section">방문 가능 시간</text>',
-    ownerRecommendationSvgLines_(visitLines, 438, 397, 30, "value"),
-    '<rect x="40" y="474" width="720" height="288" rx="14" fill="#fff" stroke="#d7e0ed"/>',
-    '<text x="68" y="515" class="section">작업 내용</text>',
-    workText,
-    '<rect x="40" y="788" width="350" height="132" rx="14" fill="#fff" stroke="#d7e0ed"/>',
-    '<text x="68" y="830" class="section">공급가액</text>',
-    '<text x="362" y="884" text-anchor="end" class="money">' + ownerRecommendationXml_(ownerRecommendationAmountText_(amounts.supplyAmount)) + '</text>',
-    '<rect x="410" y="788" width="350" height="132" rx="14" fill="#fff" stroke="#d7e0ed"/>',
-    '<text x="438" y="830" class="section">부가세</text>',
-    '<text x="732" y="884" text-anchor="end" class="money">' + ownerRecommendationXml_(ownerRecommendationAmountText_(amounts.vatAmount)) + '</text>',
-    '<text x="400" y="968" text-anchor="middle" class="footer">BRING Care · 건물 유지보수 추천 견적</text>',
-    '</svg>'
-  ].join("");
-}
+function buildOwnerRecommendationSheet_(spreadsheet, casePayload, quote, supplier, amounts) {
+  const sheet = spreadsheet.getSheets()[0];
+  sheet.setName("추천 견적");
+  sheet.clear();
+  sheet.setHiddenGridlines(true);
+  const font = "Noto Sans KR";
+  const all = sheet.getRange("A1:H19");
+  all.setBackground("#f3f6fb").setFontFamily(font).setFontColor("#17233a").setVerticalAlignment("middle");
+  [56, 118, 118, 92, 92, 108, 108, 56].forEach((width, index) => sheet.setColumnWidth(index + 1, width));
+  sheet.setRowHeights(1, 19, 38);
+  sheet.setRowHeights(1, 2, 54);
+  sheet.setRowHeight(3, 34);
+  sheet.setRowHeights(4, 3, 55);
+  sheet.setRowHeights(7, 3, 46);
+  sheet.setRowHeight(10, 42);
+  sheet.setRowHeights(11, 5, 42);
+  sheet.setRowHeights(16, 3, 48);
+  sheet.setRowHeight(19, 32);
 
-function ownerRecommendationImageLines_(value, maxChars, maxLines) {
-  const text = String(value || "").replace(/\s+/g, " ").trim() || "미입력";
-  const lines = [];
-  let rest = text;
-  while (rest && lines.length < maxLines) {
-    if (rest.length <= maxChars) {
-      lines.push(rest);
-      rest = "";
-      break;
-    }
-    let cut = rest.lastIndexOf(" ", maxChars);
-    if (cut < Math.floor(maxChars * 0.55)) cut = maxChars;
-    lines.push(rest.slice(0, cut).trim());
-    rest = rest.slice(cut).trim();
+  sheet.getRange("A1:H2").merge().setValue("BRING Care 추천 견적서")
+    .setBackground("#17386f").setFontColor("#ffffff").setFontSize(28).setFontWeight("bold")
+    .setHorizontalAlignment("left").setWrap(true);
+  sheet.getRange("A3:H3").merge().setValue("검토를 마친 추천 견적 요약입니다")
+    .setBackground("#17386f").setFontColor("#cfe0ff").setFontSize(14).setFontWeight("bold")
+    .setHorizontalAlignment("left");
+
+  sheet.getRange("A4:C6").merge().setValue("최종 합계금액")
+    .setBackground("#e1edff").setFontColor("#52606d").setFontSize(16).setFontWeight("bold")
+    .setHorizontalAlignment("left").setBorder(true, true, true, false, false, false, "#aac8f3", SpreadsheetApp.BorderStyle.SOLID_MEDIUM);
+  sheet.getRange("D4:H6").merge().setValue(ownerRecommendationAmountText_(amounts.totalAmount))
+    .setBackground("#e1edff").setFontColor("#12346b").setFontSize(34).setFontWeight("bold")
+    .setHorizontalAlignment("right").setBorder(true, false, true, true, false, false, "#aac8f3", SpreadsheetApp.BorderStyle.SOLID_MEDIUM);
+
+  ownerRecommendationSheetCard_(sheet, "A7:D7", "A8:D9", "추천 업체", supplier.name || "업체 확인 필요");
+  ownerRecommendationSheetCard_(sheet, "E7:H7", "E8:H9", "방문 가능 시간", casePayload && casePayload.visitTime || "미입력");
+
+  sheet.getRange("A10:H10").merge().setValue("작업 내용")
+    .setBackground("#ffffff").setFontColor("#52606d").setFontSize(16).setFontWeight("bold")
+    .setHorizontalAlignment("left").setBorder(true, true, false, true, false, false, "#d7e0ed", SpreadsheetApp.BorderStyle.SOLID);
+  const workLines = ownerRecommendationWorkLines_(quote);
+  for (let row = 11; row <= 15; row++) {
+    const value = workLines[row - 11] ? "• " + workLines[row - 11] : "";
+    sheet.getRange("A" + row + ":H" + row).merge().setValue(value)
+      .setBackground("#ffffff").setFontSize(17).setFontWeight("bold").setHorizontalAlignment("left")
+      .setWrap(true).setBorder(false, true, row === 15, true, false, false, "#d7e0ed", SpreadsheetApp.BorderStyle.SOLID);
   }
-  if (rest && lines.length) {
-    lines[lines.length - 1] = lines[lines.length - 1].replace(/[.…]+$/, "") + "…";
+
+  ownerRecommendationSheetMoney_(sheet, "A16:D16", "A17:D18", "공급가액", amounts.supplyAmount);
+  ownerRecommendationSheetMoney_(sheet, "E16:H16", "E17:H18", "부가세", amounts.vatAmount);
+  sheet.getRange("A19:H19").merge().setValue("BRING Care · 건물 유지보수 추천 견적")
+    .setFontColor("#7b8798").setFontSize(11).setFontWeight("bold").setHorizontalAlignment("center");
+  SpreadsheetApp.flush();
+}
+
+function ownerRecommendationSheetCard_(sheet, labelRange, valueRange, label, value) {
+  sheet.getRange(labelRange).merge().setValue(label)
+    .setBackground("#ffffff").setFontColor("#52606d").setFontSize(14).setFontWeight("bold")
+    .setHorizontalAlignment("left").setBorder(true, true, false, true, false, false, "#d7e0ed", SpreadsheetApp.BorderStyle.SOLID);
+  sheet.getRange(valueRange).merge().setValue(String(value || "미입력"))
+    .setBackground("#ffffff").setFontColor("#17233a").setFontSize(18).setFontWeight("bold")
+    .setHorizontalAlignment("left").setWrap(true).setBorder(false, true, true, true, false, false, "#d7e0ed", SpreadsheetApp.BorderStyle.SOLID);
+}
+
+function ownerRecommendationSheetMoney_(sheet, labelRange, valueRange, label, amount) {
+  sheet.getRange(labelRange).merge().setValue(label)
+    .setBackground("#ffffff").setFontColor("#52606d").setFontSize(14).setFontWeight("bold")
+    .setHorizontalAlignment("left").setBorder(true, true, false, true, false, false, "#d7e0ed", SpreadsheetApp.BorderStyle.SOLID);
+  sheet.getRange(valueRange).merge().setValue(ownerRecommendationAmountText_(amount))
+    .setBackground("#ffffff").setFontColor("#17233a").setFontSize(24).setFontWeight("bold")
+    .setHorizontalAlignment("right").setBorder(false, true, true, true, false, false, "#d7e0ed", SpreadsheetApp.BorderStyle.SOLID);
+}
+
+function exportOwnerRecommendationSheetPdf_(spreadsheet) {
+  SpreadsheetApp.flush();
+  Utilities.sleep(250);
+  const sheet = spreadsheet.getSheets()[0];
+  const params = [
+    "format=pdf", "size=letter", "portrait=true", "scale=4", "sheetnames=false", "printtitle=false",
+    "pagenumbers=false", "gridlines=false", "fzr=false", "top_margin=0.20", "bottom_margin=0.20",
+    "left_margin=0.20", "right_margin=0.20", "gid=" + sheet.getSheetId(), "range=A1:H19"
+  ].join("&");
+  const response = UrlFetchApp.fetch("https://docs.google.com/spreadsheets/d/" + spreadsheet.getId() + "/export?" + params, {
+    headers: { Authorization: "Bearer " + ScriptApp.getOAuthToken() },
+    muteHttpExceptions: true,
+    followRedirects: true
+  });
+  if (response.getResponseCode() < 200 || response.getResponseCode() >= 300) {
+    throw new Error("추천 견적 PDF 생성 실패: HTTP " + response.getResponseCode());
   }
-  return lines.length ? lines : ["미입력"];
-}
-
-function ownerRecommendationXml_(value) {
-  return String(value || "")
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;")
-    .replace(/\"/g, "&quot;")
-    .replace(/'/g, "&apos;");
-}
-
-function ownerRecommendationSvgLine_(value, x, y, className) {
-  return '<text x="' + x + '" y="' + y + '" class="' + className + '">' + ownerRecommendationXml_(value) + '</text>';
-}
-
-function ownerRecommendationSvgLines_(lines, x, y, gap, className) {
-  return (lines || []).map((line, index) =>
-    ownerRecommendationSvgLine_(line, x, y + index * gap, className)
-  ).join("");
+  return response.getBlob().getAs("application/pdf");
 }
 
 function renderDriveImageFile_(fileId, outputName) {
-  const urls = [];
-  try {
-    const metadata = Drive.Files.get(fileId, { fields: "thumbnailLink" });
-    if (metadata && metadata.thumbnailLink) urls.push(String(metadata.thumbnailLink).replace(/=s\d+$/, "=s1600"));
-  } catch (err) {
-    Logger.log("추천 SVG 썸네일 링크 확인 실패: " + err.message);
-  }
-  urls.push("https://drive.google.com/thumbnail?id=" + encodeURIComponent(fileId) + "&sz=w1600-h1600");
   const headers = { Authorization: "Bearer " + ScriptApp.getOAuthToken() };
-  for (let attempt = 0; attempt < 5; attempt++) {
+  const fallbackUrl = "https://drive.google.com/thumbnail?id=" + encodeURIComponent(fileId) + "&sz=w1600-h1600";
+  for (let attempt = 0; attempt < 8; attempt++) {
+    const urls = [];
+    try {
+      const metadata = Drive.Files.get(fileId, { fields: "thumbnailLink" });
+      if (metadata && metadata.thumbnailLink) {
+        urls.push(String(metadata.thumbnailLink).replace(/=s\d+$/, "=s1600"));
+      }
+    } catch (err) {
+      Logger.log("추천 PDF 썸네일 링크 확인 실패: " + err.message);
+    }
+    urls.push(fallbackUrl + "&retry=" + attempt);
     for (let index = 0; index < urls.length; index++) {
       try {
         const response = UrlFetchApp.fetch(urls[index], { headers: headers, muteHttpExceptions: true, followRedirects: true });
@@ -846,12 +856,12 @@ function renderDriveImageFile_(fileId, outputName) {
           return blob;
         }
       } catch (err) {
-        Logger.log("추천 SVG 이미지 변환 시도 실패: " + err.message);
+        Logger.log("추천 PDF 이미지 변환 시도 실패: " + err.message);
       }
     }
-    Utilities.sleep(400);
+    Utilities.sleep(500);
   }
-  throw new Error("4:5 추천 견적 이미지를 렌더링하지 못했습니다.");
+  throw new Error("한글 추천 견적 이미지를 렌더링하지 못했습니다.");
 }
 
 function createOwnerRecommendationFallbackImage_(folder, fileName, casePayload, quote, supplier, amounts) {
