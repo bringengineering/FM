@@ -16,7 +16,7 @@ const COMPLAINT_CONFIG = {
   FIREBASE_CASES_PATH: "cases",
   RESPONSE_SHEET_URL: "https://docs.google.com/spreadsheets/d/1HI6KzIMomL6vOUPs8zZDhXHktL1cWRDcg93lflsuojA/edit"
 };
-const AUTOMATION_BUILD = "owner-recommendation-mms-20260716-v10";
+const AUTOMATION_BUILD = "owner-recommendation-mms-20260716-v11";
 const OWNER_RECOMMENDATION_IMAGE_VERSION = "owner-summary-v4";
 
 const OUTPUT_HEADERS = [
@@ -5628,7 +5628,17 @@ function mergeCasePayloadForFirebase_(existing, payload) {
   merged.status = Object.assign({}, payload.status || {}, existing.status || {});
   merged.note = Object.assign({}, payload.note || {}, existing.note || {});
 
-  ["log", "quoteFiles", "businessRegistrationFiles", "vendorSelections", "vendorEstimateMms", "selectedVendors"].forEach(key => {
+  [
+    "log",
+    "quoteFiles",
+    "businessRegistrationFiles",
+    "vendorSelections",
+    "vendorEstimateMms",
+    "ownerRecommendationMms",
+    "automationState",
+    "complaintReceiptSms",
+    "selectedVendors"
+  ].forEach(key => {
     if (existing[key] !== undefined) merged[key] = existing[key];
   });
 
