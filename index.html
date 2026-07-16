@@ -4481,7 +4481,7 @@ function refreshOwnerRecommendationModal(){
   const body=document.getElementById("ormBody");
   if(body && !body.dataset.edited) body.value=ownerRecommendationMessage(c,q,supplier,amounts);
   const image=document.getElementById("ormImage");
-  if(image){ image.innerHTML=`<img class="orm-preview-image" alt="브링 추천 견적 미리보기" src="${escAttr(ownerRecommendationPreviewImage(c,q,supplier,amounts))}">`; image.dataset.ready="owner-summary-v3"; }
+  if(image){ image.innerHTML=`<img class="orm-preview-image" alt="브링 추천 견적 미리보기" src="${escAttr(ownerRecommendationPreviewImage(c,q,supplier,amounts))}">`; image.dataset.ready="owner-summary-v4"; }
   const note=document.getElementById("ormNote");
   if(note) note.textContent=caseAutomationEndpoint()?"✅ 확인 후 발송을 누르면 건물주에게 추천 업체와 브링 최종금액, 견적 이미지가 MMS로 전송됩니다.":"⚠️ Apps Script 웹앱 URL이 연결되지 않았습니다.";
 }
@@ -4729,8 +4729,9 @@ document.getElementById("noticeBtn").addEventListener("click", openNoticePanel);
 document.getElementById("noticeBanner").addEventListener("click", openNoticePanel);
 
 /* ===== 업데이트 알림(What's New) — 새 버전 나오면 자동 팝업 ===== */
-const APP_VERSION = "4.98";
+const APP_VERSION = "4.99";
 const CHANGELOG = [
+  { v:"4.99", d:"2026-07-16", items:["추천 견적 이미지의 방문 가능 시간을 한국시간 한글 형식으로 통일","시간 전용 1899년 날짜를 실제 방문일 또는 접수일과 결합해 표시"] },
   { v:"4.98", d:"2026-07-16", items:["추천 견적 MMS 이미지의 한글이 네모로 깨지는 문제 수정","한글 글꼴이 보장되는 Google Sheet 카드 렌더링 방식으로 교체"] },
   { v:"4.97", d:"2026-07-16", items:["건물주 추천 MMS 이미지를 전송 전에 최대 800px JPEG로 축소","SENS 첨부 이미지 해상도 제한으로 문자가 발송되지 않던 문제 수정"] },
   { v:"4.96", d:"2026-07-16", items:["건물주 추천 견적 이미지를 4:5 세로형 모바일 요약 카드로 전면 재구성","최종금액·업체·방문시간·품목·공급가액·부가세만 큰 글씨로 표시","구버전 표 이미지를 새 MMS에서 재사용하지 않도록 이미지 설계 버전 적용"] },

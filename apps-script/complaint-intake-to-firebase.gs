@@ -16,8 +16,8 @@ const COMPLAINT_CONFIG = {
   FIREBASE_CASES_PATH: "cases",
   RESPONSE_SHEET_URL: "https://docs.google.com/spreadsheets/d/1HI6KzIMomL6vOUPs8zZDhXHktL1cWRDcg93lflsuojA/edit"
 };
-const AUTOMATION_BUILD = "owner-recommendation-mms-20260716-v6";
-const OWNER_RECOMMENDATION_IMAGE_VERSION = "owner-summary-v3";
+const AUTOMATION_BUILD = "owner-recommendation-mms-20260716-v7";
+const OWNER_RECOMMENDATION_IMAGE_VERSION = "owner-summary-v4";
 
 const OUTPUT_HEADERS = [
   "접수번호",
@@ -693,6 +693,14 @@ function ownerRecommendationWorkLines_(quote) {
   return lines;
 }
 
+function ownerRecommendationVisitTime_(casePayload) {
+  const source = casePayload || {};
+  return formatKoreanDateTimeForCase_(
+    source.visitTime || "",
+    source.visitDate || source.receivedAt || source.createdAt || ""
+  ) || "미입력";
+}
+
 function ownerRecommendationWrapText_(value, maxChars) {
   const text = String(value || "").trim() || "미입력";
   const lines = [];
@@ -773,7 +781,7 @@ function buildOwnerRecommendationSheet_(spreadsheet, casePayload, quote, supplie
     .setHorizontalAlignment("right").setBorder(true, false, true, true, false, false, "#aac8f3", SpreadsheetApp.BorderStyle.SOLID_MEDIUM);
 
   ownerRecommendationSheetCard_(sheet, "A7:D7", "A8:D9", "추천 업체", supplier.name || "업체 확인 필요");
-  ownerRecommendationSheetCard_(sheet, "E7:H7", "E8:H9", "방문 가능 시간", casePayload && casePayload.visitTime || "미입력");
+  ownerRecommendationSheetCard_(sheet, "E7:H7", "E8:H9", "방문 가능 시간", ownerRecommendationVisitTime_(casePayload));
 
   sheet.getRange("A10:H10").merge().setValue("작업 내용")
     .setBackground("#ffffff").setFontColor("#52606d").setFontSize(16).setFontWeight("bold")
@@ -868,7 +876,7 @@ function createOwnerRecommendationFallbackImage_(folder, fileName, casePayload, 
   const rows = [
     ["최종 합계금액", ownerRecommendationAmountText_(amounts.totalAmount)],
     ["추천 업체", ownerRecommendationWrapText_(supplier.name || "업체 확인 필요", 28)],
-    ["방문 가능 시간", ownerRecommendationWrapText_(casePayload && casePayload.visitTime || "미입력", 32)]
+    ["방문 가능 시간", ownerRecommendationWrapText_(ownerRecommendationVisitTime_(casePayload), 32)]
   ];
   ownerRecommendationWorkLines_(quote).forEach((line, index) => rows.push([
     index === 0 ? "작업 내용" : "",
