@@ -16,7 +16,7 @@ const COMPLAINT_CONFIG = {
   FIREBASE_CASES_PATH: "cases",
   RESPONSE_SHEET_URL: "https://docs.google.com/spreadsheets/d/1HI6KzIMomL6vOUPs8zZDhXHktL1cWRDcg93lflsuojA/edit"
 };
-const AUTOMATION_BUILD = "owner-recommendation-mms-20260716-v11";
+const AUTOMATION_BUILD = "complaint-workflow-20260716-v12";
 const OWNER_RECOMMENDATION_IMAGE_VERSION = "owner-summary-v4";
 
 const OUTPUT_HEADERS = [
@@ -228,12 +228,14 @@ function handleComplaintReceiptSms_(payload) {
   applySmsResultToCase_(casePayload, smsResult);
   if (!smsResult.skipped) writeSmsResultToSheetForCase_(casePayload, smsResult);
   writeCaseToFirebase_(caseId, casePayload);
+  const workflow = advanceCaseWorkflow_(caseId, { source: "receipt_sms", skipOwnerAutoSend: true });
 
   const ok = isSmsSentStatus_(smsResult.status);
   return Object.assign({
     ok: ok,
     caseId: caseId,
-    message: smsResult.statusText || smsResult.status || ""
+    message: smsResult.statusText || smsResult.status || "",
+    workflow: workflow
   }, smsResult);
 }
 
@@ -274,6 +276,17 @@ function handleVendorEstimateMms_(payload) {
 
   const casePayload = readCaseFromFirebase_(caseId);
   if (!casePayload) return { ok: false, message: "Firebase 케이스를 찾지 못했습니다: " + caseId };
+
+  const requestKey = "vendor-mms:" + caseId + ":" + selectedVendors.map(vendor => [
+    vendor.id || "",
+    vendor.name || "",
+    vendorSmsPhone_(vendor) || ""
+  ].join("|")).sort().join(";");
+  const previous = casePayload.vendorEstimateMms || {};
+  if (payload.force !== true && previous.ok === true && previous.requestKey === requestKey) {
+    const workflow = advanceCaseWorkflow_(caseId, { source: "vendor_mms", skipOwnerAutoSend: true });
+    return Object.assign({ caseId: caseId, skipped: true, workflow: workflow }, previous);
+  }
 
   if (!selectedVendors.length) {
     return updateVendorMmsCase_(caseId, casePayload, {
@@ -330,6 +343,7 @@ function handleVendorEstimateMms_(payload) {
     ok: false,
     status: "failed",
     statusText: "",
+    requestKey: requestKey,
     photoName: photo.fileName,
     sensFileId: upload.fileId,
     sent: [],
@@ -708,6 +722,175 @@ function ownerRecommendationWorkLines_(quote) {
   return lines;
 }
 
+function workflowStatusRank_(value) {
+  if (value === "done") return 2;
+  if (value === "doing") return 1;
+  return 0;
+}
+
+function promoteWorkflowStatus_(status, key, value) {
+  status = status || {};
+  if (workflowStatusRank_(value) > workflowStatusRank_(status[key])) status[key] = value;
+  return status;
+}
+
+function receiptSmsWorkflowComplete_(casePayload) {
+  const candidates = [
+    casePayload && casePayload.complaintReceiptSms,
+    casePayload && casePayload.sms,
+    casePayload && casePayload.automationState && casePayload.automationState.receiptSms
+  ];
+  return candidates.some(item => item && (
+    item.ok === true || item.deliveryAccepted === true || isSmsCompleteStatus_(item.status)
+  ));
+}
+
+function vendorMmsWorkflowComplete_(casePayload) {
+  const candidates = [
+    casePayload && casePayload.vendorEstimateMms,
+    casePayload && casePayload.automationState && casePayload.automationState.vendorEstimateMms
+  ];
+  return candidates.some(item => item && item.ok === true && (item.status === "sent" || item.deliveryAccepted === true || (item.sent || []).length > 0));
+}
+
+function ownerMmsWorkflowComplete_(casePayload) {
+  const candidates = [
+    casePayload && casePayload.ownerRecommendationMms,
+    casePayload && casePayload.automationState && casePayload.automationState.ownerRecommendationMms
+  ];
+  return candidates.some(item => item && (
+    item.deliveryConfirmed === true || item.deliveryAccepted === true || (item.ok === true && item.status === "sent")
+  ));
+}
+
+function workflowPricedQuote_(casePayload) {
+  const selected = selectOwnerRecommendationQuote_(casePayload || {}, "");
+  return selected && selected.quote && Number(selected.amount || 0) >= 1000 ? selected : null;
+}
+
+function workflowStepState_(automationState, key, status, now, extra) {
+  automationState.workflow = Object.assign({}, automationState.workflow || {});
+  const current = Object.assign({}, automationState.workflow[key] || {}, extra || {});
+  current.status = status;
+  current.updatedAt = now;
+  if (status === "done" && !current.completedAt) current.completedAt = now;
+  automationState.workflow[key] = current;
+}
+
+function recordUploadBatchProgress_(caseId, payload) {
+  const batchId = String(payload && payload.uploadBatchId || "").trim();
+  if (!batchId) return;
+  const casePayload = readCaseFromFirebase_(caseId) || {};
+  const automationState = Object.assign({}, casePayload.automationState || {});
+  automationState.uploadBatch = Object.assign({}, automationState.uploadBatch || {}, {
+    id: batchId,
+    processed: Number(payload.uploadBatchIndex || 0),
+    total: Number(payload.uploadBatchTotal || 0),
+    complete: payload.uploadBatchComplete === true,
+    updatedAt: new Date().toISOString()
+  });
+  if (payload.uploadBatchComplete === true) automationState.uploadBatch.completedAt = automationState.uploadBatch.completedAt || new Date().toISOString();
+  patchCaseChildToFirebase_(caseId, "automationState", automationState);
+}
+
+/**
+ * 서버에서만 단계 상태를 올리는 중앙 진행 함수.
+ * 완료 상태는 절대 낮추지 않으며 status/cN 경로만 부분 업데이트한다.
+ */
+function advanceCaseWorkflow_(caseId, context) {
+  context = context || {};
+  const casePayload = readCaseFromFirebase_(caseId);
+  if (!casePayload) return { ok: false, message: "Firebase 케이스를 찾지 못했습니다: " + caseId };
+
+  const now = new Date().toISOString();
+  const before = Object.assign({}, casePayload.status || {});
+  const status = Object.assign({}, before);
+  const automationState = Object.assign({}, casePayload.automationState || {});
+  const match = casePayload.contractMatch || {};
+  const matched = match.status === "matched";
+
+  if (!matched) {
+    promoteWorkflowStatus_(status, "c1", "doing");
+    workflowStepState_(automationState, "c1", "doing", now, { reason: match.statusText || "온보딩 매칭 대기" });
+  } else {
+    promoteWorkflowStatus_(status, "c1", "done");
+    promoteWorkflowStatus_(status, "c2", "doing");
+    workflowStepState_(automationState, "c1", "done", now, {
+      matchKey: match.matchKey || "",
+      driveFileId: match.driveFileId || "",
+      matchLevel: match.matchLevel || ""
+    });
+    workflowStepState_(automationState, "c2", "doing", now, {
+      retryState: "waiting_or_processing"
+    });
+
+    if (receiptSmsWorkflowComplete_(casePayload)) {
+      ["c2", "c3", "c4"].forEach(key => promoteWorkflowStatus_(status, key, "done"));
+      promoteWorkflowStatus_(status, "c5", "doing");
+      workflowStepState_(automationState, "c2", "done", now, {
+        tenantRequestId: casePayload.sms && casePayload.sms.tenantRequestId || "",
+        ownerRequestId: casePayload.sms && casePayload.sms.ownerRequestId || "",
+        retryState: "completed"
+      });
+      workflowStepState_(automationState, "c3", "done", now, { mode: "rules" });
+      workflowStepState_(automationState, "c4", "done", now, { vendorType: casePayload.vendorType || "" });
+      workflowStepState_(automationState, "c5", "doing", now, { mode: "manual_vendor_selection" });
+    }
+
+    if (vendorMmsWorkflowComplete_(casePayload)) {
+      promoteWorkflowStatus_(status, "c5", "done");
+      promoteWorkflowStatus_(status, "c6", "doing");
+      workflowStepState_(automationState, "c5", "done", now, {
+        requestKey: casePayload.vendorEstimateMms && casePayload.vendorEstimateMms.requestKey || ""
+      });
+      workflowStepState_(automationState, "c6", "doing", now, { mode: "manual_document_upload" });
+    }
+
+    const batchComplete = context.uploadBatchComplete === true || (!context.uploadBatchId && context.source !== "quote_upload" && context.source !== "business_registration_upload");
+    const pricedQuote = workflowPricedQuote_(casePayload);
+    if (status.c5 === "done" && pricedQuote && batchComplete) {
+      promoteWorkflowStatus_(status, "c6", "done");
+      promoteWorkflowStatus_(status, "c7", "done");
+      promoteWorkflowStatus_(status, "c8", "doing");
+      workflowStepState_(automationState, "c6", "done", now, { pricedQuoteCount: Object.keys(casePayload.quoteFiles || {}).length });
+      workflowStepState_(automationState, "c7", "done", now, {
+        quoteId: pricedQuote.quoteId,
+        vendorName: ownerRecommendationSupplier_(pricedQuote.quote).name,
+        originalTotalAmount: pricedQuote.amount,
+        criterion: "lowest_original_amount"
+      });
+      workflowStepState_(automationState, "c8", "doing", now, { mode: "automatic_owner_mms" });
+    }
+
+    if (ownerMmsWorkflowComplete_(casePayload)) {
+      promoteWorkflowStatus_(status, "c8", "done");
+      promoteWorkflowStatus_(status, "c9", "doing");
+      workflowStepState_(automationState, "c8", "done", now, {
+        requestId: casePayload.ownerRecommendationMms && casePayload.ownerRecommendationMms.requestId || ""
+      });
+      workflowStepState_(automationState, "c9", "doing", now, { mode: "manual_approval_payment" });
+    }
+  }
+
+  const statusPatch = {};
+  Object.keys(status).forEach(key => {
+    if (status[key] !== before[key]) statusPatch[key] = status[key];
+  });
+  if (Object.keys(statusPatch).length) patchCaseChildToFirebase_(caseId, "status", statusPatch);
+  patchCaseChildToFirebase_(caseId, "automationState", automationState);
+  patchCaseToFirebase_(caseId, { updatedAt: now });
+
+  const shouldSendOwner = matched && status.c7 === "done" && status.c8 === "doing" && !ownerMmsWorkflowComplete_(casePayload);
+  if (shouldSendOwner && context.skipOwnerAutoSend !== true) {
+    const priced = pricedQuote || workflowPricedQuote_(readCaseFromFirebase_(caseId) || {});
+    if (priced) {
+      const ownerResult = handleOwnerRecommendationMms_({ caseId: caseId, quoteId: priced.quoteId });
+      return { ok: ownerResult && ownerResult.ok === true, status: status, ownerResult: ownerResult };
+    }
+  }
+  return { ok: true, status: status };
+}
+
 function ownerRecommendationVisitTime_(casePayload) {
   const source = casePayload || {};
   return formatKoreanDateTimeForCase_(
@@ -997,20 +1180,20 @@ function updateOwnerRecommendationMmsCase_(caseId, casePayload, result) {
   casePayload.note.c8 = makeOwnerRecommendationMmsNote_(result);
   casePayload.log.unshift("건물주 추천 MMS " + (result.ok ? "발송완료" : "발송보류") + " / " + (result.statusText || ""));
   if (casePayload.log.length > 30) casePayload.log.length = 30;
-  const patch = {
-    ownerRecommendationMms: result,
-    status: casePayload.status,
-    note: casePayload.note,
-    recommendation: {
-      quoteId: result.quoteId || "",
-      vendorName: result.vendorName || "",
-      selectionAmount: result.originalTotalAmount || 0,
-      criterion: "lowest_original_amount",
-      updatedAt: timestamp
-    },
-    log: casePayload.log,
+  putCaseChildToFirebase_(caseId, "ownerRecommendationMms", result);
+  patchCaseChildToFirebase_(caseId, "status", {
+    c8: casePayload.status.c8,
+    c9: casePayload.status.c9 || null
+  });
+  patchCaseChildToFirebase_(caseId, "note", { c8: casePayload.note.c8 });
+  putCaseChildToFirebase_(caseId, "recommendation", {
+    quoteId: result.quoteId || "",
+    vendorName: result.vendorName || "",
+    selectionAmount: result.originalTotalAmount || 0,
+    criterion: "lowest_original_amount",
     updatedAt: timestamp
-  };
+  });
+  patchCaseToFirebase_(caseId, { log: casePayload.log, updatedAt: timestamp });
   if (deliveryConfirmed) {
     const automationState = Object.assign({}, casePayload.automationState || {});
     automationState.ownerRecommendationMms = {
@@ -1033,10 +1216,10 @@ function updateOwnerRecommendationMmsCase_(caseId, casePayload, result) {
       updatedAt: timestamp,
       build: AUTOMATION_BUILD
     };
-    patch.automationState = automationState;
+    patchCaseChildToFirebase_(caseId, "automationState", automationState);
   }
-  patchOwnerRecommendationCaseWithRetry_(caseId, patch);
-  return Object.assign({ caseId: caseId }, result);
+  const workflow = advanceCaseWorkflow_(caseId, { source: "owner_mms", skipOwnerAutoSend: true });
+  return Object.assign({ caseId: caseId, workflow: workflow }, result);
 }
 
 function checkpointOwnerRecommendationMmsCase_(caseId, casePayload, result) {
@@ -1059,12 +1242,10 @@ function checkpointOwnerRecommendationMmsCase_(caseId, casePayload, result) {
   casePayload.note.c8 = "건물주 추천 MMS 발송을 처리하고 있습니다.";
   casePayload.ownerRecommendationMms = checkpoint;
 
-  patchOwnerRecommendationCaseWithRetry_(caseId, {
-    ownerRecommendationMms: checkpoint,
-    status: casePayload.status,
-    note: casePayload.note,
-    updatedAt: timestamp
-  });
+  putCaseChildToFirebase_(caseId, "ownerRecommendationMms", checkpoint);
+  patchCaseChildToFirebase_(caseId, "status", { c8: "doing" });
+  patchCaseChildToFirebase_(caseId, "note", { c8: casePayload.note.c8 });
+  patchCaseToFirebase_(caseId, { updatedAt: timestamp });
   return checkpoint;
 }
 
@@ -1420,11 +1601,12 @@ function makeVendorEstimateMmsContent_(casePayload, record) {
 }
 
 function updateVendorMmsCase_(caseId, casePayload, result) {
+  const timestamp = new Date().toISOString();
   casePayload.status = casePayload.status || {};
   casePayload.note = casePayload.note || {};
   casePayload.log = Array.isArray(casePayload.log) ? casePayload.log : [];
   if (result.ok === true) {
-    result.completedAt = result.completedAt || new Date().toISOString();
+    result.completedAt = result.completedAt || timestamp;
     result.stepTransition = {
       completed: "c5",
       opened: "c6",
@@ -1437,7 +1619,7 @@ function updateVendorMmsCase_(caseId, casePayload, result) {
   if (result.ok === true && casePayload.status.c6 !== "done") {
     casePayload.status.c6 = "doing";
   }
-  casePayload.updatedAt = new Date().toISOString();
+  casePayload.updatedAt = timestamp;
   casePayload.log.unshift("업체 MMS " + (result.ok ? "발송완료" : "발송보류") + " / " + (result.statusText || ""));
   if (casePayload.log.length > 30) casePayload.log.length = 30;
   putCaseChildToFirebase_(caseId, "vendorEstimateMms", result);
@@ -1450,7 +1632,22 @@ function updateVendorMmsCase_(caseId, casePayload, result) {
     log: casePayload.log,
     updatedAt: casePayload.updatedAt
   });
-  return Object.assign({ caseId: caseId }, result);
+  const automationState = Object.assign({}, casePayload.automationState || {});
+  automationState.vendorEstimateMms = {
+    ok: result.ok === true,
+    status: result.status || "",
+    requestKey: result.requestKey || "",
+    requestIds: (result.sent || []).map(item => item.requestId || "").filter(Boolean),
+    sentCount: (result.sent || []).length,
+    failedCount: (result.failed || []).length,
+    skippedCount: (result.skipped || []).length,
+    completedAt: result.ok === true ? (result.completedAt || timestamp) : "",
+    updatedAt: timestamp,
+    build: AUTOMATION_BUILD
+  };
+  patchCaseChildToFirebase_(caseId, "automationState", automationState);
+  const workflow = advanceCaseWorkflow_(caseId, { source: "vendor_mms", skipOwnerAutoSend: true });
+  return Object.assign({ caseId: caseId, workflow: workflow }, result);
 }
 
 function makeVendorMmsNote_(result) {
@@ -1574,8 +1771,14 @@ function handleQuoteFileUpload_(payload) {
     log: casePayload.log,
     updatedAt: uploadedAt
   });
+  recordUploadBatchProgress_(caseId, payload);
+  const workflow = advanceCaseWorkflow_(caseId, {
+    source: "quote_upload",
+    uploadBatchId: String(payload.uploadBatchId || ""),
+    uploadBatchComplete: payload.uploadBatchId ? payload.uploadBatchComplete === true : true
+  });
 
-  return { ok: true, caseId: caseId, quote: quote, message: "견적 파일 업로드 및 브링 양식 처리 완료" };
+  return { ok: true, caseId: caseId, quote: quote, workflow: workflow, message: "견적 파일 업로드 및 브링 양식 처리 완료" };
 }
 
 function handleBusinessRegistrationUpload_(payload) {
@@ -1667,8 +1870,14 @@ function handleBusinessRegistrationUpload_(payload) {
     log: casePayload.log,
     updatedAt: uploadedAt
   });
+  recordUploadBatchProgress_(caseId, payload);
+  const workflow = advanceCaseWorkflow_(caseId, {
+    source: "business_registration_upload",
+    uploadBatchId: String(payload.uploadBatchId || ""),
+    uploadBatchComplete: payload.uploadBatchId ? payload.uploadBatchComplete === true : true
+  });
 
-  return { ok: true, caseId: caseId, businessRegistration: doc, refreshedQuotes: refreshResult.updated, message: "사업자등록증 업로드 및 업체 정보 분석 완료" };
+  return { ok: true, caseId: caseId, businessRegistration: doc, refreshedQuotes: refreshResult.updated, workflow: workflow, message: "사업자등록증 업로드 및 업체 정보 분석 완료" };
 }
 
 function applyQuoteAmountState_(quote) {
@@ -1819,7 +2028,11 @@ function handleConfirmQuoteAmount_(payload) {
     updatedAt: confirmedAt
   });
 
-  return { ok: true, caseId: caseId, quoteId: quoteId, quote: quote, message: rewriteMessage };
+  const workflow = advanceCaseWorkflow_(caseId, {
+    source: "quote_amount_confirm",
+    uploadBatchComplete: true
+  });
+  return { ok: true, caseId: caseId, quoteId: quoteId, quote: quote, workflow: workflow, message: rewriteMessage };
 }
 
 function handleApplyBusinessRegistrationToQuote_(payload) {
@@ -4761,11 +4974,27 @@ function processResponseRow_(sheet, row) {
   const analysis = analyzeComplaint_(record);
   const contractMatch = matchDriveOnboardingFile_(record);
   const casePayload = buildCasePayload_(ticketNo, record, analysis, contractMatch, row, sheet);
-  const smsResult = sendComplaintSms_(ticketNo, record, analysis, contractMatch);
+  writeCaseToFirebase_(ticketNo, casePayload);
+
+  const existingCase = readCaseFromFirebase_(ticketNo) || {};
+  let smsResult;
+  if (contractMatch.status !== "matched") {
+    smsResult = {
+      ok: false,
+      status: "매칭대기",
+      statusText: "온보딩 수집서 매칭이 완료되지 않아 접수확인 문자를 발송하지 않았습니다.",
+      skipped: true
+    };
+  } else if (isSmsCompleteStatus_(existingCase.sms && existingCase.sms.status)) {
+    smsResult = Object.assign({ skipped: true }, existingCase.sms);
+  } else {
+    smsResult = sendComplaintSms_(ticketNo, record, analysis, contractMatch);
+  }
   applySmsResultToCase_(casePayload, smsResult);
 
   writeAnalysisToSheet_(sheet, row, headers, ticketNo, analysis, casePayload, contractMatch, smsResult);
   writeCaseToFirebase_(ticketNo, casePayload);
+  advanceCaseWorkflow_(ticketNo, { source: "form_submit" });
 }
 
 function ensureOutputHeaders_(sheet) {
@@ -4909,7 +5138,7 @@ function matchDriveOnboardingFile_(record) {
     inputBuilding: inputBuilding,
     inputAddress: inputAddress,
     matchKey: buildingKey + "|" + addressKey,
-    source: "drive_fulltext",
+    source: "drive_ranked",
     status: "unmatched",
     statusText: "Drive 온보딩 수집서 매칭을 확인하지 못했습니다.",
     candidateCount: 0,
@@ -4922,66 +5151,133 @@ function matchDriveOnboardingFile_(record) {
     });
   }
 
-  const buildingTerms = makeDriveSearchTerms_(inputBuilding);
-  const buildingResult = searchDriveOnboardingFiles_(buildingTerms);
-  if (!buildingResult.ok) {
+  const candidatesResult = listDriveOnboardingCandidates_();
+  if (!candidatesResult.ok) {
     return Object.assign(base, {
-      statusText: buildingResult.error || "Drive 폴더 접근 실패: 폴더 공유 권한 또는 폴더 ID를 확인하세요."
+      statusText: candidatesResult.error || "Drive 폴더 접근 실패: 폴더 공유 권한 또는 폴더 ID를 확인하세요."
     });
   }
-
-  const buildingCandidates = buildingResult.files;
-  if (buildingCandidates.length === 1) {
-    return makeDriveMatchPayload_(buildingCandidates[0], inputBuilding, inputAddress, {
-      matchKey: buildingKey + "|" + addressKey,
-      candidateCount: 1,
-      statusText: "Drive DOCX 본문에서 건물명이 정확히 1건 매칭되었습니다."
-    });
-  }
-
-  if (buildingCandidates.length === 0) {
+  if (!candidatesResult.candidates.length) {
     return Object.assign(base, {
-      statusText: "Drive 폴더에서 건물명이 포함된 DOCX 온보딩 수집서를 찾지 못했습니다."
+      statusText: "Drive 폴더에 매칭할 DOCX 온보딩 수집서가 없습니다."
     });
   }
-
-  if (!addressKey) {
-    return Object.assign(base, {
-      status: "address_missing",
-      statusText: "건물명 후보가 여러 개지만 건물 주소가 없어 수동 확인이 필요합니다.",
-      candidateCount: buildingCandidates.length,
-      candidates: buildingCandidates.slice(0, 5).map(makeDriveCandidate_)
-    });
-  }
-
-  const addressTerms = makeDriveSearchTerms_(inputAddress);
-  const narrowedResult = searchDriveOnboardingFiles_(buildingTerms.concat(addressTerms));
-  if (!narrowedResult.ok) {
-    return Object.assign(base, {
-      status: "multiple",
-      statusText: narrowedResult.error || "건물명 후보는 여러 개이나 주소 검색 중 Drive 오류가 발생했습니다.",
-      candidateCount: buildingCandidates.length,
-      candidates: buildingCandidates.slice(0, 5).map(makeDriveCandidate_)
-    });
-  }
-
-  const narrowedCandidates = narrowedResult.files;
-  if (narrowedCandidates.length === 1) {
-    return makeDriveMatchPayload_(narrowedCandidates[0], inputBuilding, inputAddress, {
-      matchKey: buildingKey + "|" + addressKey,
-      candidateCount: 1,
-      statusText: "Drive DOCX 본문에서 건물명 후보를 주소로 좁혀 1건 매칭되었습니다."
-    });
-  }
-
-  return Object.assign(base, {
-    status: narrowedCandidates.length === 0 ? "unmatched" : "multiple",
-    statusText: narrowedCandidates.length === 0
-      ? "건물명 후보는 여러 개였지만 주소까지 포함된 DOCX 온보딩 수집서를 찾지 못했습니다."
-      : "건물명과 주소를 함께 검색해도 복수 후보가 남아 수동 확인이 필요합니다.",
-    candidateCount: narrowedCandidates.length,
-    candidates: (narrowedCandidates.length ? narrowedCandidates : buildingCandidates).slice(0, 5).map(makeDriveCandidate_)
+  const ranked = candidatesResult.candidates.map(candidate => rankDriveOnboardingCandidate_(candidate, inputBuilding, inputAddress));
+  ranked.sort((a, b) => {
+    if (a.matchRank !== b.matchRank) return b.matchRank - a.matchRank;
+    if (a.matchScore !== b.matchScore) return b.matchScore - a.matchScore;
+    if (a.addressScore !== b.addressScore) return b.addressScore - a.addressScore;
+    return b.lastUpdatedMs - a.lastUpdatedMs;
   });
+  const winner = ranked[0];
+  const levelText = winner.matchRank === 3
+    ? "건물명과 주소 정확 일치"
+    : winner.matchRank === 2
+      ? "정규화 건물명 일치"
+      : "건물명 60%·주소 40% 유사도 최고 후보";
+  return makeDriveMatchPayload_(winner.file, inputBuilding, inputAddress, {
+    matchKey: buildingKey + "|" + addressKey,
+    candidateCount: ranked.length,
+    statusText: levelText + "로 자동 매칭했습니다.",
+    source: "drive_ranked",
+    matchLevel: levelText,
+    matchScore: winner.matchScore,
+    buildingScore: winner.buildingScore,
+    addressScore: winner.addressScore,
+    matchedBuilding: winner.building,
+    matchedAddress: winner.address,
+    candidates: ranked.slice(0, 5).map(candidate => ({
+      fileName: candidate.file.getName(),
+      fileUrl: candidate.file.getUrl(),
+      driveFileId: candidate.file.getId(),
+      building: candidate.building,
+      address: candidate.address,
+      matchScore: candidate.matchScore
+    }))
+  });
+}
+
+function listDriveOnboardingCandidates_() {
+  const folderId = extractDriveId_(COMPLAINT_CONFIG.CONTRACT_DRIVE_FOLDER_ID);
+  if (!folderId) return { ok: false, candidates: [], error: "Drive 폴더 ID가 설정되지 않았습니다." };
+  try {
+    const folder = DriveApp.getFolderById(folderId);
+    const files = folder.getFiles();
+    const candidates = [];
+    while (files.hasNext()) {
+      const file = files.next();
+      if (file.isTrashed() || file.getMimeType() !== "application/vnd.openxmlformats-officedocument.wordprocessingml.document") continue;
+      let text = "";
+      try { text = extractDocxText_(file.getId()) || ""; } catch (err) { Logger.log("온보딩 DOCX 본문 추출 실패: " + file.getName() + " / " + err.message); }
+      candidates.push({
+        file: file,
+        text: text,
+        building: extractOnboardingField_(text, ["건물명", "건물"]) || onboardingBuildingFromFileName_(file.getName()),
+        address: extractOnboardingField_(text, ["건물 주소", "주소", "소재지"]),
+        lastUpdatedMs: file.getLastUpdated().getTime()
+      });
+    }
+    return { ok: true, candidates: candidates };
+  } catch (err) {
+    return { ok: false, candidates: [], error: "Drive 온보딩 목록 조회 실패: " + err.message };
+  }
+}
+
+function extractOnboardingField_(text, labels) {
+  const source = String(text || "").replace(/\r/g, "\n").replace(/[\t ]+/g, " ");
+  for (const label of labels || []) {
+    const escaped = String(label).replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    const lineMatch = source.match(new RegExp("(?:^|\\n)\\s*" + escaped + "\\s*[:：]?\\s*([^\\n]{2,120})", "i"));
+    if (lineMatch) return String(lineMatch[1] || "").trim();
+    const flatMatch = source.match(new RegExp(escaped + "\\s*[:：]?\\s*(.{2,80}?)(?=\\s+(?:건물명|건물 주소|주소|소재지|건물주|대표자|연락처|전화|등급|비고)\\s*[:：]|$)", "i"));
+    if (flatMatch) return String(flatMatch[1] || "").trim();
+  }
+  return "";
+}
+
+function onboardingBuildingFromFileName_(fileName) {
+  return String(fileName || "")
+    .replace(/\.(docx?|hwp|hwpx|pdf)$/i, "")
+    .replace(/[_-]*(온보딩|수집서|계약|계약서).*$/i, "")
+    .replace(/[_-]+/g, " ")
+    .trim();
+}
+
+function diceSimilarity_(left, right) {
+  left = String(left || "");
+  right = String(right || "");
+  if (!left || !right) return 0;
+  if (left === right) return 1;
+  if (left.length < 2 || right.length < 2) return left === right ? 1 : 0;
+  const counts = {};
+  for (let i = 0; i < left.length - 1; i += 1) {
+    const pair = left.slice(i, i + 2);
+    counts[pair] = (counts[pair] || 0) + 1;
+  }
+  let overlap = 0;
+  for (let i = 0; i < right.length - 1; i += 1) {
+    const pair = right.slice(i, i + 2);
+    if (counts[pair]) { overlap += 1; counts[pair] -= 1; }
+  }
+  return (2 * overlap) / ((left.length - 1) + (right.length - 1));
+}
+
+function rankDriveOnboardingCandidate_(candidate, inputBuilding, inputAddress) {
+  const buildingKey = normalizeText_(inputBuilding);
+  const addressKey = normalizeAddress_(inputAddress);
+  const candidateBuildingKey = normalizeText_(candidate.building);
+  const candidateAddressKey = normalizeAddress_(candidate.address);
+  const fullTextKey = normalizeText_(candidate.text);
+  const fullAddressKey = normalizeAddress_(candidate.text);
+  const buildingExact = candidateBuildingKey === buildingKey || (!!buildingKey && fullTextKey.indexOf(buildingKey) >= 0);
+  const addressExact = !!addressKey && (candidateAddressKey === addressKey || fullAddressKey.indexOf(addressKey) >= 0);
+  const buildingScore = buildingExact ? 1 : Math.max(diceSimilarity_(buildingKey, candidateBuildingKey), diceSimilarity_(buildingKey, fullTextKey.slice(0, Math.max(buildingKey.length * 3, 80))));
+  const addressScore = addressExact ? 1 : diceSimilarity_(addressKey, candidateAddressKey);
+  candidate.matchRank = buildingExact && addressExact ? 3 : buildingExact ? 2 : 1;
+  candidate.buildingScore = Math.round(buildingScore * 1000) / 1000;
+  candidate.addressScore = Math.round(addressScore * 1000) / 1000;
+  candidate.matchScore = Math.round((buildingScore * 0.6 + addressScore * 0.4) * 1000) / 1000;
+  return candidate;
 }
 
 function makeDriveSearchTerms_(value) {
@@ -5046,16 +5342,23 @@ function makeDriveMatchPayload_(file, inputBuilding, inputAddress, options) {
     inputBuilding: inputBuilding,
     inputAddress: inputAddress,
     matchKey: options.matchKey,
-    source: "drive_fulltext",
+    source: options.source || "drive_ranked",
     status: "matched",
     statusText: options.statusText,
     fileName: fileName,
     fileUrl: fileUrl,
     driveFileId: driveFileId,
     candidateCount: options.candidateCount,
+    matchLevel: options.matchLevel || "",
+    matchScore: Number(options.matchScore || 0),
+    buildingScore: Number(options.buildingScore || 0),
+    addressScore: Number(options.addressScore || 0),
+    matchedBuilding: options.matchedBuilding || inputBuilding,
+    matchedAddress: options.matchedAddress || inputAddress,
+    candidates: options.candidates || [],
     contract: {
-      building: inputBuilding,
-      address: inputAddress,
+      building: options.matchedBuilding || inputBuilding,
+      address: options.matchedAddress || inputAddress,
       contractFileName: fileName,
       contractFileUrl: fileUrl,
       driveFileId: driveFileId
@@ -5127,9 +5430,12 @@ function sendComplaintSms_(ticketNo, record, analysis, contractMatch, options) {
   const logs = [];
   let tenantSent = false;
   let ownerSent = false;
+  let tenantReceipt = {};
+  let ownerReceipt = {};
 
   if (tenantPhone) {
     const tenantResult = sendSensSms_(tenantPhone, tenantContent, "세입자");
+    tenantReceipt = tenantResult;
     tenantSent = tenantResult.ok;
     logs.push("세입자 " + maskPhone_(tenantPhone) + " " + tenantResult.message);
   } else if (tenantPhoneRaw) {
@@ -5140,6 +5446,7 @@ function sendComplaintSms_(ticketNo, record, analysis, contractMatch, options) {
 
   if (ownerPhone) {
     const ownerResult = sendSensSms_(ownerPhone, ownerContent, "건물주");
+    ownerReceipt = ownerResult;
     ownerSent = ownerResult.ok;
     logs.push("건물주 " + maskPhone_(ownerPhone) + " " + ownerResult.message);
   } else {
@@ -5149,13 +5456,19 @@ function sendComplaintSms_(ticketNo, record, analysis, contractMatch, options) {
   const status = tenantSent && ownerSent ? "발송완료" : tenantSent || ownerSent ? "일부발송" : "발송보류";
   const statusSummary = logs.join(" / ");
   return {
+    ok: status === "발송완료",
     status: status,
     statusSummary: statusSummary,
     statusText: statusSummary + "\n\n" + makeComplaintSmsPreview_(tenantContent, ownerContent),
     tenantSent: tenantSent,
     ownerSent: ownerSent,
     tenantPhoneMasked: tenantPhone ? maskPhone_(tenantPhone) : "",
-    ownerPhoneMasked: ownerPhone ? maskPhone_(ownerPhone) : ""
+    ownerPhoneMasked: ownerPhone ? maskPhone_(ownerPhone) : "",
+    tenantRequestId: tenantReceipt.requestId || "",
+    ownerRequestId: ownerReceipt.requestId || "",
+    requestIds: [tenantReceipt.requestId, ownerReceipt.requestId].filter(Boolean),
+    deliveryAccepted: status === "발송완료",
+    completedAt: status === "발송완료" ? new Date().toISOString() : ""
   };
 }
 
@@ -5172,14 +5485,24 @@ function makeComplaintSmsPreview_(tenantContent, ownerContent) {
 function applySmsResultToCase_(casePayload, smsResult) {
   if (!smsResult) return;
   casePayload.sms = smsResult;
+  casePayload.complaintReceiptSms = smsResult;
+  casePayload.automationState = Object.assign({}, casePayload.automationState || {});
+  casePayload.automationState.receiptSms = {
+    ok: isSmsCompleteStatus_(smsResult.status),
+    status: smsResult.status || "",
+    requestIds: smsResult.requestIds || [],
+    tenantRequestId: smsResult.tenantRequestId || "",
+    ownerRequestId: smsResult.ownerRequestId || "",
+    deliveryAccepted: isSmsCompleteStatus_(smsResult.status),
+    completedAt: smsResult.completedAt || "",
+    updatedAt: new Date().toISOString(),
+    build: AUTOMATION_BUILD
+  };
   casePayload.note = casePayload.note || {};
   casePayload.note.c2 = smsResult.statusText || "";
   casePayload.status = casePayload.status || {};
   if (isSmsCompleteStatus_(smsResult.status)) {
     casePayload.status.c2 = "done";
-    if (casePayload.status.c3 !== "done") {
-      casePayload.status.c3 = "doing";
-    }
   } else if (isSmsPartialStatus_(smsResult.status) || smsResult.status === "발송보류") {
     casePayload.status.c2 = "doing";
   } else if (smsResult.status) {
@@ -5238,8 +5561,18 @@ function sendSensSms_(to, content, label) {
     });
     const code = response.getResponseCode();
     const body = response.getContentText();
+    let json = {};
+    try { json = body ? JSON.parse(body) : {}; } catch (err) {}
     if (code >= 200 && code < 300) {
-      return { ok: true, message: "발송요청 완료(" + label + ")" };
+      const receipt = sensResponseReceipt_(json);
+      return {
+        ok: true,
+        message: "발송요청 완료(" + label + ")",
+        requestId: receipt.requestId,
+        statusCode: receipt.statusCode,
+        statusName: receipt.statusName,
+        responseCode: code
+      };
     }
     return { ok: false, message: "발송실패(" + label + " HTTP " + code + "): " + body.slice(0, 200) };
   } catch (err) {
@@ -5625,7 +5958,15 @@ function mergeCasePayloadForFirebase_(existing, payload) {
   if (!existing || typeof existing !== "object") return payload;
   const merged = Object.assign({}, existing, payload);
 
-  merged.status = Object.assign({}, payload.status || {}, existing.status || {});
+  const incomingStatus = Object.assign({}, payload.status || {});
+  const existingStatus = Object.assign({}, existing.status || {});
+  merged.status = {};
+  const statusKeys = Object.keys(Object.assign({}, incomingStatus, existingStatus));
+  statusKeys.forEach(key => {
+    const incoming = incomingStatus[key];
+    const current = existingStatus[key];
+    merged.status[key] = workflowStatusRank_(incoming) > workflowStatusRank_(current) ? incoming : current;
+  });
   merged.note = Object.assign({}, payload.note || {}, existing.note || {});
 
   [

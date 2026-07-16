@@ -2046,11 +2046,13 @@ function caseSavePayload(id, options){
   delete payload.status;
   delete payload.note;
   CASE_STEPS.forEach(step=>{
-    if(!options.includeOwnerRecommendationState && (step.k==="c8" || step.k==="c9")) return;
+    const serverWorkflowStep=stepIndex(step.k)>=0 && stepIndex(step.k)<=7;
+    if(isConfigured && serverWorkflowStep && !options.includeWorkflowState) return;
     payload["status/"+step.k]=Object.prototype.hasOwnProperty.call(status,step.k)?status[step.k]:null;
   });
   Object.keys(note).forEach(key=>{
-    if(!options.includeOwnerRecommendationState && key==="c8") return;
+    const serverWorkflowNote=stepIndex(key)>=0 && stepIndex(key)<=7;
+    if(isConfigured && serverWorkflowNote && !options.includeWorkflowState) return;
     payload["note/"+key]=note[key];
   });
   return payload;
@@ -2264,14 +2266,18 @@ function stepLockMessage(c,k){
 }
 function normalizeCaseSteps(c){
   if(!c || !c.status) return false;
-  let changed=false, allPrevDone=true;
-  CASE_STEPS.forEach(s=>{
-    if(!allPrevDone && c.status[s.k]){
-      delete c.status[s.k];
+  let changed=false;
+  let highestActive=-1;
+  CASE_STEPS.forEach((s,index)=>{
+    if(c.status[s.k]==="doing" || c.status[s.k]==="done") highestActive=index;
+  });
+  for(let i=0;i<highestActive;i++){
+    const key=CASE_STEPS[i].k;
+    if(c.status[key]!=="done"){
+      c.status[key]="done";
       changed=true;
     }
-    if(c.status[s.k] !== "done") allPrevDone=false;
-  });
+  }
   return changed;
 }
 function normalizeAllCaseSteps(src){
@@ -3511,6 +3517,7 @@ async function uploadSelectedCaseDocuments(){
   const vendorName=vendor.name || "업체 확인 필요";
   const totalCount=quoteFiles.length + businessFiles.length;
   let doneCount=0;
+  const uploadBatchId=`case-upload-${c.ticketNo||c.id||curCase}-${Date.now()}`;
   const uploadJob=createQuoteUploadJob();
 
   try{
@@ -3549,6 +3556,10 @@ async function uploadSelectedCaseDocuments(){
         vendorName,
         vendor,
         vendors,
+        uploadBatchId,
+        uploadBatchIndex:doneCount+1,
+        uploadBatchTotal:totalCount,
+        uploadBatchComplete:doneCount+1===totalCount,
         amount:"",
         memo:"",
         file:{ fileName:file.name, mimeType:file.type || "", size:file.size, fileBody:body }
@@ -3588,6 +3599,10 @@ async function uploadSelectedCaseDocuments(){
         action:"uploadBusinessRegistration",
         caseId:c.ticketNo||c.id||curCase,
         vendors,
+        uploadBatchId,
+        uploadBatchIndex:doneCount+1,
+        uploadBatchTotal:totalCount,
+        uploadBatchComplete:doneCount+1===totalCount,
         file:{ fileName:file.name, mimeType:file.type || "", size:file.size, fileBody:body }
       }, uploadJob);
       throwIfQuoteUploadCanceled(uploadJob);
@@ -3901,20 +3916,30 @@ function applyStepAutomation(c, logEnabled){
   }
   if(applyNextStepProgress(c, messages)) changed=true;
   if(c.status.c2==="done"){
-    let stepChanged=false;
     let cardChanged=false;
     if(shouldFillConsultationNote(c)){
       c.note.c3=makeConsultationNote(c);
       changed=true;
-      stepChanged=true;
       cardChanged=true;
     }
-    if(!isStepAutomationHeld(c,"c3") && c.status.c3!=="done" && c.status.c3!=="doing"){
-      c.status.c3="doing";
+    if(shouldFillClassificationNote(c)){
+      c.note.c4=makeClassificationNote(c);
       changed=true;
-      stepChanged=true;
+      cardChanged=true;
     }
-    if(cardChanged) messages.push("③ 상담카드 자동 생성");
+    if(!isStepAutomationHeld(c,"c3") && c.status.c3!=="done"){
+      c.status.c3="done";
+      changed=true;
+    }
+    if(!isStepAutomationHeld(c,"c4") && c.status.c4!=="done"){
+      c.status.c4="done";
+      changed=true;
+    }
+    if(!isStepAutomationHeld(c,"c5") && c.status.c5!=="done" && c.status.c5!=="doing"){
+      c.status.c5="doing";
+      changed=true;
+    }
+    if(cardChanged) messages.push("③ 상담 파악 및 ④ 민원 분류 자동 완료");
   }
   if(c.status.c3==="done"){
     let stepChanged=false;
@@ -3994,7 +4019,7 @@ function forceCompleteThroughStep(id,k){
   caseLog(c, `테스트 완료: ${stepMark(CASE_STEPS[0])}~${stepMark(target)} 단계 완료 처리`);
   applyStepAutomation(c, true);
   normalizeCaseSteps(c);
-  saveCase(id, false, {includeOwnerRecommendationState:idx>=7});
+  saveCase(id, false, {includeWorkflowState:true});
   renderCaseList();
   renderCaseDetail();
 }
@@ -4038,7 +4063,7 @@ function renderContractOverview(c){
     ["입력 건물명", (match&&match.inputBuilding)||contract.building||c.building],
     ["입력 주소", (match&&match.inputAddress)||contract.address||c.address],
     ["온보딩 파일", fileName],
-    ["검색 방식", match.source==="drive_fulltext" ? "Drive 본문 검색" : match.source],
+    ["검색 방식", match.source==="drive_ranked" ? "정확·건물명·유사도 순위 매칭" : match.source==="drive_fulltext" ? "Drive 본문 검색" : match.source],
     ["후보 수", match.candidateCount!=null ? String(match.candidateCount) : ""],
     ["Drive File ID", driveFileId]
   ].filter(x=>x[1]) : [
@@ -4082,12 +4107,10 @@ function attachCasesRef(){
   caseValueHandler = s => {
     const v = s.val();
     cases = applyCaseLocalFieldLocks(v && typeof v === "object" ? v : {});
-    const fixedIds=[];
     Object.keys(cases).forEach(id=>{
-      const changed=applyStepAutomation(cases[id],false) || normalizeCaseSteps(cases[id]);
-      if(changed) fixedIds.push(id);
+      if(!isConfigured) applyStepAutomation(cases[id],false);
+      normalizeCaseSteps(cases[id]);
     });
-    fixedIds.forEach(id=>saveCase(id,false,{includeOwnerRecommendationState:isOwnerRecommendationMmsSuccess(cases[id])}));
     if (caseView.classList.contains("open")){
       renderCaseList();
       if (!curCase || !isCaseVisible(cases[curCase])) curCase = firstVisibleCaseId();
@@ -4114,7 +4137,7 @@ function selectCase(id){ curCase=id; noteOpen.clear(); quotePendingCaseId=id; qu
 function archiveCase(id){ const c=cases[id]; if(!c) return; if(!confirm("이 케이스를 보관함으로 이동할까요?")) return; c.archived=true; c.archivedAt=new Date().toISOString(); c.archivedBy=caseUserLabel(); caseLog(c, "케이스 보관 처리"); saveCase(id, true, {includeArchive:true}); if(curCase===id) curCase=firstVisibleCaseId(); renderCaseList(); renderCaseDetail(); }
 function restoreCase(id){ const c=cases[id]; if(!c) return; c.archived=false; c.restoredAt=new Date().toISOString(); c.restoredBy=caseUserLabel(); caseLog(c, "케이스 보관 해제"); curCase=id; saveCase(id, true, {includeArchive:true}); renderCaseList(); renderCaseDetail(); }
 function deleteCase(id){ archiveCase(id); }
-function cycleStep(id,k){ const c=cases[id]; if(!c) return; const msg=stepLockMessage(c,k); if(msg){ alert(msg); return; } c.status=c.status||{}; const cur=c.status[k]||""; c.status[k]= cur===""?"doing":cur==="doing"?"done":"doing"; if(c.status[k]==="done") clearStepAutomationHoldThrough(c,k); else holdStepAutomationFrom(c,k); const s=CASE_STEPS.find(x=>x.k===k); caseLog(c, s.t+" → "+(c.status[k]==="done"?"완료":c.status[k]==="doing"?"진행중":"대기")); applyStepAutomation(c, true); normalizeCaseSteps(c); saveCase(id, true, {includeOwnerRecommendationState:k==="c8"||k==="c9"}); renderCaseList(); renderCaseDetail(); }
+function cycleStep(id,k){ const c=cases[id]; if(!c) return; if(isConfigured && stepIndex(k)<=7 && !caseTestMode){ alert("①~⑧ 단계는 자동화 결과에 따라 진행됩니다. 테스트가 필요하면 테스트 모드를 켜주세요."); return; } const msg=stepLockMessage(c,k); if(msg){ alert(msg); return; } c.status=c.status||{}; const cur=c.status[k]||""; c.status[k]= cur===""?"doing":cur==="doing"?"done":"doing"; if(c.status[k]==="done") clearStepAutomationHoldThrough(c,k); else holdStepAutomationFrom(c,k); const s=CASE_STEPS.find(x=>x.k===k); caseLog(c, s.t+" → "+(c.status[k]==="done"?"완료":c.status[k]==="doing"?"진행중":"대기")); applyStepAutomation(c, true); normalizeCaseSteps(c); saveCase(id, true, {includeWorkflowState:caseTestMode}); renderCaseList(); renderCaseDetail(); }
 function doAuto(id,k,channel){ const c=cases[id]; if(!c) return;
   const msg=stepLockMessage(c,k); if(msg){ alert(msg); return; }
   /* 메일 외 자동화(입금확인 등)는 아직 수동 기록 */
@@ -4652,12 +4675,13 @@ function renderCaseDetail(){
       const isReceiptSms=s.k==="c2";
       const isVendorSms=s.k==="c5";
       const isOwnerMms=s.k==="c8";
+      const hideConfiguredServerAction=(isReceiptSms||isOwnerMms) && isConfigured && !caseTestMode;
       const ownerMmsPending=isOwnerMms && isOwnerRecommendationMmsAccepted(c) && !isOwnerRecommendationMmsSuccess(c);
       const isMail=!!EMAIL_TEMPLATES[s.k] && !isReceiptSms && !isVendorSms && !isOwnerMms;
       const actIcon=isReceiptSms?'📨':isMail?'📧':(isVendorSms||isOwnerMms)?'📷':'🤖';
       const actTag=isReceiptSms?'SENS 문자':isMail?'메일 발송':(isVendorSms||isOwnerMms)?'MMS 발송':'연결예정';
       const actLabel=ownerMmsPending?"발송 완료 확인":s.auto;
-      const act=s.auto?`<button class="cv-act ${isMail?'mail':(isReceiptSms||isVendorSms||isOwnerMms)?'sms':''} ${locked?'disabled':''}" data-auto="${s.k}" data-ch="${escAttr(s.auto)}" ${locked?'disabled':''} title="${escAttr(lockMsg)}">${actIcon} ${esc(actLabel)}<span class="tag">${ownerMmsPending?'수신 확인':actTag}</span></button>`:"";
+      const act=s.auto && !hideConfiguredServerAction?`<button class="cv-act ${isMail?'mail':(isReceiptSms||isVendorSms||isOwnerMms)?'sms':''} ${locked?'disabled':''}" data-auto="${s.k}" data-ch="${escAttr(s.auto)}" ${locked?'disabled':''} title="${escAttr(lockMsg)}">${actIcon} ${esc(actLabel)}<span class="tag">${ownerMmsPending?'수신 확인':actTag}</span></button>`:"";
       const dc=onboardingDocButtonHTML(c,s,locked);
       const tb=caseTestMode?`<button class="cv-testbtn" data-testdone="${s.k}" title="이 단계까지 테스트 완료 처리">테스트 완료</button>`:"";
       const nb=`<button class="cv-notebtn ${note?'has':''}" data-notetoggle="${s.k}" title="메모">📝</button>`;
@@ -4752,8 +4776,9 @@ document.getElementById("noticeBtn").addEventListener("click", openNoticePanel);
 document.getElementById("noticeBanner").addEventListener("click", openNoticePanel);
 
 /* ===== 업데이트 알림(What's New) — 새 버전 나오면 자동 팝업 ===== */
-const APP_VERSION = "5.03";
+const APP_VERSION = "5.04";
 const CHANGELOG = [
+  { v:"5.04", d:"2026-07-16", items:["민원 접수 ①~⑨ 중앙 자동 진행 엔진 연결","온보딩 정확·건물명·유사도 순위 매칭 적용","문자·업체 MMS·견적 배치·건물주 MMS 완료 이벤트로 순차 자동 전환","화면의 오래된 저장이 서버 완료 상태를 되돌리지 않도록 동기화 분리"] },
   { v:"5.03", d:"2026-07-16", items:["건물주 MMS 발송 성공을 별도 자동화 확정 기록으로 보존","오래 열린 화면이 ⑧ 상태를 되돌려도 ⑧ 완료·⑨ 진행중을 자동 복구"] },
   { v:"5.02", d:"2026-07-16", items:["대시보드의 늦은 저장이 건물주 MMS 발송완료 결과를 다시 진행중으로 덮는 문제 차단","서버 관리 결과와 ⑧·⑨ 상태를 일반 케이스 저장에서 분리해 단계 되돌림 방지"] },
   { v:"5.01", d:"2026-07-16", items:["건물주 추천 MMS 발송 결과를 Firebase에 한 번에 저장해 ⑧ 단계에 멈추는 문제 수정","발송 직전 체크포인트와 저장 재시도로 ⑧ 완료·⑨ 진행중 전환 안정화"] },
