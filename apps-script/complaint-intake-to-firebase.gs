@@ -684,19 +684,33 @@ function ownerRecommendationWorkLines_(quote) {
   return lines;
 }
 
+function ownerRecommendationWrapText_(value, maxChars) {
+  const text = String(value || "").trim() || "미입력";
+  const lines = [];
+  text.split(/\n/).forEach(part => {
+    let rest = part.trim() || "미입력";
+    while (rest.length > maxChars) {
+      lines.push(rest.slice(0, maxChars));
+      rest = rest.slice(maxChars);
+    }
+    lines.push(rest);
+  });
+  return lines.join("\n");
+}
+
 function createOwnerRecommendationImage_(casePayload, quoteId, quote, supplier, amounts) {
   const workLines = ownerRecommendationWorkLines_(quote);
   const rows = [
     ["BRING Care 추천 견적서", "추천 견적 요약"],
     ["최종 합계금액", ownerRecommendationAmountText_(amounts.totalAmount)],
-    ["추천 업체", supplier.name || "업체 확인 필요"]
+    ["추천 업체", ownerRecommendationWrapText_(supplier.name || "업체 확인 필요", 28)]
   ];
   workLines.forEach((line, index) => rows.push([
     workLines.length === 1 ? "작업 내용" : "작업 내용 " + String(index + 1),
-    line
+    ownerRecommendationWrapText_(line, 32)
   ]));
   rows.push(
-    ["방문 가능 시간", casePayload && casePayload.visitTime || "미입력"],
+    ["방문 가능 시간", ownerRecommendationWrapText_(casePayload && casePayload.visitTime || "미입력", 32)],
     ["공급가액", ownerRecommendationAmountText_(amounts.supplyAmount)],
     ["부가세", ownerRecommendationAmountText_(amounts.vatAmount)]
   );
