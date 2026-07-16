@@ -16,7 +16,7 @@ const COMPLAINT_CONFIG = {
   FIREBASE_CASES_PATH: "cases",
   RESPONSE_SHEET_URL: "https://docs.google.com/spreadsheets/d/1HI6KzIMomL6vOUPs8zZDhXHktL1cWRDcg93lflsuojA/edit"
 };
-const AUTOMATION_BUILD = "owner-recommendation-mms-20260716-v2";
+const AUTOMATION_BUILD = "owner-recommendation-mms-20260716-v3";
 
 const OUTPUT_HEADERS = [
   "접수번호",
@@ -671,34 +671,35 @@ function extractOwnerRecommendationPhone_(casePayload) {
   return isSendableSmsPhone_(onboardingPhone) ? onboardingPhone : "";
 }
 
-function createOwnerRecommendationImage_(casePayload, quoteId, quote, supplier, amounts) {
+function ownerRecommendationWorkLines_(quote) {
   const items = Array.isArray(quote && quote.bringQuoteItems) && quote.bringQuoteItems.length
     ? quote.bringQuoteItems
     : (Array.isArray(quote && quote.extractedItems) ? quote.extractedItems : []);
+  const names = items.map(item => String(
+    item && (item.product || item.name || item.itemName || item.description || item.title) || ""
+  ).trim()).filter(Boolean);
+  if (!names.length) return ["현장 확인 및 작업 견적"];
+  const lines = names.slice(0, 4);
+  if (names.length > 4) lines.push("외 " + String(names.length - 4) + "건");
+  return lines;
+}
+
+function createOwnerRecommendationImage_(casePayload, quoteId, quote, supplier, amounts) {
+  const workLines = ownerRecommendationWorkLines_(quote);
   const rows = [
-    ["BRING Care 추천 견적서", supplier.name || "업체 확인 필요"],
-    ["추천 업체", supplier.name || ""],
-    ["합계금액", ownerRecommendationAmountText_(amounts.totalAmount)],
-    ["공급가액", ownerRecommendationAmountText_(amounts.supplyAmount)],
-    ["부가세", ownerRecommendationAmountText_(amounts.vatAmount)],
-    ["사업자번호", supplier.businessNo || ""],
-    ["대표자", supplier.ceo || ""],
-    ["주소", supplier.address || ""],
-    ["업태 / 업종", [supplier.type, supplier.category].filter(Boolean).join(" / ")],
-    ["전화", supplier.phone || ""],
-    ["이메일", supplier.email || ""],
-    ["품목 내역", ""]
+    ["BRING Care 추천 견적서", "추천 견적 요약"],
+    ["최종 합계금액", ownerRecommendationAmountText_(amounts.totalAmount)],
+    ["추천 업체", supplier.name || "업체 확인 필요"]
   ];
-  items.slice(0, 12).forEach((item, index) => rows.push([
-    "품목 " + String(index + 1),
-    [
-      String(item.product || item.name || item.itemName || item.description || ""),
-      item.unit ? "단위 " + item.unit : "",
-      item.unitPrice || item.supplyAmount || item.price ? "단가 " + ownerRecommendationAmountText_(item.unitPrice || item.supplyAmount || item.price) : "",
-      item.total || item.totalAmount || item.amount ? "합계 " + ownerRecommendationAmountText_(item.total || item.totalAmount || item.amount) : "",
-      item.note || item.memo ? "비고 " + String(item.note || item.memo) : ""
-    ].filter(Boolean).join(" / ")
+  workLines.forEach((line, index) => rows.push([
+    workLines.length === 1 ? "작업 내용" : "작업 내용 " + String(index + 1),
+    line
   ]));
+  rows.push(
+    ["방문 가능 시간", casePayload && casePayload.visitTime || "미입력"],
+    ["공급가액", ownerRecommendationAmountText_(amounts.supplyAmount)],
+    ["부가세", ownerRecommendationAmountText_(amounts.vatAmount)]
+  );
 
   const table = Charts.newDataTable()
     .addColumn(Charts.ColumnType.STRING, "항목")
@@ -706,7 +707,7 @@ function createOwnerRecommendationImage_(casePayload, quoteId, quote, supplier, 
   rows.forEach(row => table.addRow(row));
   const chart = Charts.newTableChart()
     .setDataTable(table)
-    .setDimensions(1000, Math.max(1000, rows.length * 64))
+    .setDimensions(1000, Math.max(860, rows.length * 64))
     .setOption("page", "disable")
     .setOption("alternatingRowStyle", false)
     .setOption("showRowNumber", false)

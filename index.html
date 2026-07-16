@@ -4370,29 +4370,61 @@ function ownerRecommendationMessage(c, q, supplier, amounts){
     `접수번호: ${c.ticketNo||c.id||""}`
   ].join("\n");
 }
+function ownerRecommendationWorkLines(q){
+  const items=recommendedQuoteItems(q)||[];
+  const names=items.map(item=>quoteItemValue(item,["product","name","itemName","description","title"]).trim()).filter(Boolean);
+  if(!names.length) return ["현장 확인 및 작업 견적"];
+  const lines=names.slice(0,4);
+  if(names.length>4) lines.push(`외 ${names.length-4}건`);
+  return lines;
+}
+function ownerRecommendationSvgWrap(value,maxChars){
+  const text=String(value??"").trim()||"미입력";
+  const lines=[];
+  text.split(/\n/).forEach(part=>{
+    let rest=part.trim()||"미입력";
+    while(rest.length>maxChars){ lines.push(rest.slice(0,maxChars)); rest=rest.slice(maxChars); }
+    lines.push(rest);
+  });
+  return lines;
+}
 function ownerRecommendationPreviewImage(c, q, supplier, amounts){
-  const items=recommendedQuoteItems(q).slice(0,8);
   const escSvg=value=>String(value??"").replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;");
-  const rows=[
-    ["BRING Care 추천 견적서", supplier.name||""],
-    ["사업자번호", supplier.businessNo||"", "대표자", supplier.ceo||""],
-    ["주소", supplier.address||"", "전화", supplier.phone||""],
-    ["공급가액", recommendedQuoteMoney(amounts.supply), "부가세", recommendedQuoteMoney(amounts.vat)],
-    ["합계금액", recommendedQuoteMoney(amounts.total)]
-  ];
-  items.forEach((item,index)=>rows.push([String(index+1), quoteItemValue(item,["product","name","itemName","description","title"])]));
-  const rowHeight=34, width=760, height=Math.max(260, rows.length*rowHeight+28);
-  const body=rows.map((row,index)=>{
-    const y=24+index*rowHeight;
-    const cells=row.map((cell,cellIndex)=>{
-      const x=16+cellIndex*190;
-      return `<text x="${x}" y="${y}" class="${cellIndex%2===0?"label":"value"}">${escSvg(cell)}</text>`;
-    }).join("");
-    return `<g>${cells}</g>`;
-  }).join("");
+  const workLines=ownerRecommendationWorkLines(q);
+  const rows=[["추천 업체",supplier.name||"업체 확인 필요"]];
+  workLines.forEach((line,index)=>rows.push([
+    workLines.length===1?"작업 내용":`작업 내용 ${index+1}`,
+    line
+  ]));
+  rows.push(
+    ["방문 가능 시간",displayVisitTime(c)||String(c&&c.visitTime||"미입력")],
+    ["공급가액",recommendedQuoteMoney(amounts.supply)||"금액 미입력"],
+    ["부가세",recommendedQuoteMoney(amounts.vat)||"금액 미입력"]
+  );
+  const width=760, pad=24, headerHeight=78, totalHeight=108, rowGap=8;
+  const prepared=rows.map(row=>({label:row[0],lines:ownerRecommendationSvgWrap(row[1],34)}));
+  const bodyHeight=prepared.reduce((sum,row)=>sum+Math.max(46,row.lines.length*25+18)+rowGap,0);
+  const height=headerHeight+totalHeight+bodyHeight+pad;
+  let y=headerHeight+totalHeight;
+  let body="";
+  prepared.forEach((row,index)=>{
+    const rowHeight=Math.max(46,row.lines.length*25+18);
+    const fill=index%2===0?"#ffffff":"#f7faff";
+    body+=`<rect x="${pad}" y="${y}" width="${width-pad*2}" height="${rowHeight}" rx="8" fill="${fill}" stroke="#d8e0ec"/>`;
+    body+=`<text x="${pad+16}" y="${y+29}" class="label">${escSvg(row.label)}</text>`;
+    row.lines.forEach((line,lineIndex)=>{ body+=`<text x="${pad+172}" y="${y+28+lineIndex*25}" class="value">${escSvg(line)}</text>`; });
+    y+=rowHeight+rowGap;
+  });
+  const total=recommendedQuoteMoney(amounts.total)||"금액 미입력";
   const svg=`<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}" viewBox="0 0 ${width} ${height}">
-    <style>text{font-family:Arial,'Malgun Gothic',sans-serif;font-size:15px}.label{fill:#52606d;font-weight:700}.value{fill:#162033;font-weight:800}rect{fill:#fff;stroke:#d8e0ec}</style>
-    <rect x="0.5" y="0.5" width="${width-1}" height="${height-1}" rx="10"/>
+    <style>text{font-family:Arial,'Malgun Gothic',sans-serif}.title{fill:#fff;font-size:25px;font-weight:900}.sub{fill:#dbe8ff;font-size:13px;font-weight:700}.totalLabel{fill:#52606d;font-size:15px;font-weight:800}.totalValue{fill:#17386f;font-size:34px;font-weight:900}.label{fill:#52606d;font-size:14px;font-weight:800}.value{fill:#162033;font-size:16px;font-weight:800}</style>
+    <rect width="${width}" height="${height}" rx="14" fill="#eef4fb"/>
+    <rect x="0" y="0" width="${width}" height="${headerHeight}" rx="14" fill="#17386f"/>
+    <text x="${pad}" y="34" class="title">BRING Care 추천 견적서</text>
+    <text x="${pad}" y="58" class="sub">최저가 기준 추천 견적 요약</text>
+    <rect x="${pad}" y="${headerHeight+14}" width="${width-pad*2}" height="${totalHeight-22}" rx="10" fill="#dceaff" stroke="#a9c9f5"/>
+    <text x="${pad+20}" y="${headerHeight+53}" class="totalLabel">최종 합계금액</text>
+    <text x="${width-pad-20}" y="${headerHeight+59}" text-anchor="end" class="totalValue">${escSvg(total)}</text>
     ${body}
   </svg>`;
   return "data:image/svg+xml;charset=utf-8,"+encodeURIComponent(svg);
@@ -4695,8 +4727,9 @@ document.getElementById("noticeBtn").addEventListener("click", openNoticePanel);
 document.getElementById("noticeBanner").addEventListener("click", openNoticePanel);
 
 /* ===== 업데이트 알림(What's New) — 새 버전 나오면 자동 팝업 ===== */
-const APP_VERSION = "4.94";
+const APP_VERSION = "4.95";
 const CHANGELOG = [
+  { v:"4.95", d:"2026-07-16", items:["추천 견적 MMS 이미지를 핵심 정보 중심의 세로형 요약으로 개선","최종 합계금액 강조 및 작업 내용·방문 가능 시간 표시"] },
   { v:"4.94", d:"2026-07-16", items:["건물주 추천 MMS는 실제 수신 확인 후 ⑧ 완료·⑨ 진행중 전환","추천 견적 첨부 이미지를 세로형 2열 요약으로 개선해 가독성 강화"] },
   { v:"4.93", d:"2026-07-15", items:["⑦ 최적 추천 완료 후 ⑧ 건물주 추천 MMS 확인 모달 연결","브링 추천 견적 JPG 첨부 생성 및 발송 성공 시 ⑨ 승인·입금 진행중 전환"] },
   { v:"4.92", d:"2026-07-15", items:["금액 있는 견적 확인 시 오래된 자동화 잠금과 관계없이 ⑥→⑦ 자동 전환"] },
