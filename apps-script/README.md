@@ -1,6 +1,6 @@
 # BRING Care 민원접수 자동 분석 설치
 
-건물주 추천 MMS는 발송 직전 체크포인트를 저장하고, SENS 접수 성공 후 발송 결과와 ⑧ 완료·⑨ 진행중 상태를 하나의 Firebase 업데이트로 반영합니다. 일시적인 저장 오류는 최대 3회 자동 재시도합니다.
+건물주 추천 MMS는 발송 직전 체크포인트를 저장하고, SENS 접수 성공 후 발송 결과와 ⑧ 완료·⑨ 진행중 상태를 하나의 Firebase 업데이트로 반영합니다. 성공 결과는 `automationState.ownerRecommendationMms`에도 별도로 보존해 오래 열린 화면이 상태를 되돌려도 자동 복구하며, 일시적인 저장 오류는 최대 3회 재시도합니다.
 
 이 폴더의 `complaint-intake-to-firebase.gs`는 Google Form 응답 시트에서 새 민원이 들어올 때 자동으로 분석하고, FM GitHub.io 앱의 Firebase `/cases` 경로에 케이스를 등록하는 Apps Script 코드입니다.
 

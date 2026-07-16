@@ -2038,7 +2038,7 @@ function caseSavePayload(id, options){
     delete payload.restoredBy;
   }
   // Apps Script가 관리하는 결과는 늦게 도착한 화면 저장이 덮어쓰지 않게 한다.
-  ["ownerRecommendationMms","vendorEstimateMms","quoteFiles","businessRegistrationFiles","complaintReceiptSms"].forEach(key=>delete payload[key]);
+  ["ownerRecommendationMms","automationState","vendorEstimateMms","quoteFiles","businessRegistrationFiles","complaintReceiptSms"].forEach(key=>delete payload[key]);
 
   // Firebase update에서 status/note 객체 전체가 교체되지 않도록 개별 경로로 저장한다.
   const status=Object.assign({}, payload.status||{});
@@ -3829,17 +3829,23 @@ function syncVendorMmsResultNote(c){
   c.note.c5=lines.filter(Boolean).join("\n");
   return true;
 }
+function ownerRecommendationMmsResult(c){
+  const live=c&&c.ownerRecommendationMms||{};
+  const durable=c&&c.automationState&&c.automationState.ownerRecommendationMms||{};
+  const durableSuccess=durable.deliveryConfirmed===true || durable.deliveryAccepted===true || (durable.ok===true && durable.status==="sent");
+  return durableSuccess?Object.assign({},live,durable):live;
+}
 function isOwnerRecommendationMmsSuccess(c){
-  const result=c&&c.ownerRecommendationMms||{};
+  const result=ownerRecommendationMmsResult(c);
   return result.deliveryConfirmed===true || result.deliveryAccepted===true || result.status==="sent_pending_confirmation" || (result.ok===true && result.status==="sent");
 }
 function isOwnerRecommendationMmsAccepted(c){
-  const result=c&&c.ownerRecommendationMms||{};
+  const result=ownerRecommendationMmsResult(c);
   return result.deliveryAccepted===true || result.status==="sent_pending_confirmation" || isOwnerRecommendationMmsSuccess(c);
 }
 function syncOwnerRecommendationResultNote(c){
   if(!c) return false;
-  const result=c.ownerRecommendationMms||{};
+  const result=ownerRecommendationMmsResult(c);
   if(!result.status && result.ok!==true) return false;
   if(result.status==="sending") return false;
   const current=String((c.note||{}).c8||"");
@@ -4081,7 +4087,7 @@ function attachCasesRef(){
       const changed=applyStepAutomation(cases[id],false) || normalizeCaseSteps(cases[id]);
       if(changed) fixedIds.push(id);
     });
-    fixedIds.forEach(id=>saveCase(id));
+    fixedIds.forEach(id=>saveCase(id,false,{includeOwnerRecommendationState:isOwnerRecommendationMmsSuccess(cases[id])}));
     if (caseView.classList.contains("open")){
       renderCaseList();
       if (!curCase || !isCaseVisible(cases[curCase])) curCase = firstVisibleCaseId();
@@ -4371,7 +4377,7 @@ function doSendVendorSms(){
   alert("📷 업체 MMS 발송 요청을 보냈어요.\n사진 업로드와 SENS 발송 결과는 잠시 뒤 ⑤ 메모에서 확인하세요.");
 }
 function ownerRecommendationDisplayPhone(c){
-  const result=c&&c.ownerRecommendationMms||{};
+  const result=ownerRecommendationMmsResult(c);
   const direct=String(c&&((c.ownerPhoneMasked||c.ownerPhone)||"")||"").trim();
   if(direct) return direct === c.ownerPhone ? maskSmsPhone(direct) : direct;
   return String(result.ownerPhoneMasked||result.preview&&result.preview.ownerPhoneMasked||"온보딩 수집서에서 확인").trim();
@@ -4454,7 +4460,7 @@ function ownerRecommendationPanel(c, st){
   const q=recommendedQuoteForCase(c);
   if(!q) return `<div class="cv-sms-preview"><div class="cv-sms-preview-title">건물주 추천 발송</div><pre>추천할 금액 확인 견적서가 없습니다.</pre></div>`;
   const supplier=recommendedQuoteSupplier(q), amounts=recommendedQuoteAmounts(q);
-  const result=c.ownerRecommendationMms||{};
+  const result=ownerRecommendationMmsResult(c);
   const imageUrl=result.imageFileUrl||result.preview&&result.preview.imageFileUrl||"";
   const confirmed=isOwnerRecommendationMmsSuccess(c);
   const accepted=isOwnerRecommendationMmsAccepted(c);
@@ -4553,7 +4559,7 @@ function sendOwnerRecommendationMms(){
 function confirmOwnerRecommendationMms(id){
   const c=cases[id];
   if(!c) return;
-  const result=c.ownerRecommendationMms||{};
+  const result=ownerRecommendationMmsResult(c);
   if(!isOwnerRecommendationMmsAccepted(c) || isOwnerRecommendationMmsSuccess(c)){
     alert("먼저 건물주 추천 MMS 발송 요청을 완료해 주세요.");
     return;
@@ -4746,8 +4752,9 @@ document.getElementById("noticeBtn").addEventListener("click", openNoticePanel);
 document.getElementById("noticeBanner").addEventListener("click", openNoticePanel);
 
 /* ===== 업데이트 알림(What's New) — 새 버전 나오면 자동 팝업 ===== */
-const APP_VERSION = "5.02";
+const APP_VERSION = "5.03";
 const CHANGELOG = [
+  { v:"5.03", d:"2026-07-16", items:["건물주 MMS 발송 성공을 별도 자동화 확정 기록으로 보존","오래 열린 화면이 ⑧ 상태를 되돌려도 ⑧ 완료·⑨ 진행중을 자동 복구"] },
   { v:"5.02", d:"2026-07-16", items:["대시보드의 늦은 저장이 건물주 MMS 발송완료 결과를 다시 진행중으로 덮는 문제 차단","서버 관리 결과와 ⑧·⑨ 상태를 일반 케이스 저장에서 분리해 단계 되돌림 방지"] },
   { v:"5.01", d:"2026-07-16", items:["건물주 추천 MMS 발송 결과를 Firebase에 한 번에 저장해 ⑧ 단계에 멈추는 문제 수정","발송 직전 체크포인트와 저장 재시도로 ⑧ 완료·⑨ 진행중 전환 안정화"] },
   { v:"5.00", d:"2026-07-16", items:["건물주 추천 MMS가 SENS에서 정상 접수되면 ⑧ 완료·⑨ 진행중으로 자동 전환","기존 수신 확인 대기 케이스도 화면을 열면 다음 단계로 자동 복구"] },

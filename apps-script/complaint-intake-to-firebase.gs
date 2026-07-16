@@ -16,7 +16,7 @@ const COMPLAINT_CONFIG = {
   FIREBASE_CASES_PATH: "cases",
   RESPONSE_SHEET_URL: "https://docs.google.com/spreadsheets/d/1HI6KzIMomL6vOUPs8zZDhXHktL1cWRDcg93lflsuojA/edit"
 };
-const AUTOMATION_BUILD = "owner-recommendation-mms-20260716-v9";
+const AUTOMATION_BUILD = "owner-recommendation-mms-20260716-v10";
 const OWNER_RECOMMENDATION_IMAGE_VERSION = "owner-summary-v4";
 
 const OUTPUT_HEADERS = [
@@ -997,7 +997,7 @@ function updateOwnerRecommendationMmsCase_(caseId, casePayload, result) {
   casePayload.note.c8 = makeOwnerRecommendationMmsNote_(result);
   casePayload.log.unshift("건물주 추천 MMS " + (result.ok ? "발송완료" : "발송보류") + " / " + (result.statusText || ""));
   if (casePayload.log.length > 30) casePayload.log.length = 30;
-  patchOwnerRecommendationCaseWithRetry_(caseId, {
+  const patch = {
     ownerRecommendationMms: result,
     status: casePayload.status,
     note: casePayload.note,
@@ -1010,7 +1010,32 @@ function updateOwnerRecommendationMmsCase_(caseId, casePayload, result) {
     },
     log: casePayload.log,
     updatedAt: timestamp
-  });
+  };
+  if (deliveryConfirmed) {
+    const automationState = Object.assign({}, casePayload.automationState || {});
+    automationState.ownerRecommendationMms = {
+      ok: true,
+      status: "sent",
+      deliveryAccepted: true,
+      deliveryConfirmed: true,
+      requestId: result.requestId || "",
+      requestKey: result.requestKey || "",
+      quoteId: result.quoteId || "",
+      vendorName: result.vendorName || "",
+      originalTotalAmount: result.originalTotalAmount || 0,
+      bringTotalAmount: result.bringTotalAmount || 0,
+      ownerPhoneMasked: result.ownerPhoneMasked || "",
+      imageFileId: result.imageFileId || "",
+      imageFileUrl: result.imageFileUrl || "",
+      imageFileName: result.imageFileName || "",
+      statusText: result.statusText || "SENS MMS 발송 완료",
+      confirmedAt: result.confirmedAt || timestamp,
+      updatedAt: timestamp,
+      build: AUTOMATION_BUILD
+    };
+    patch.automationState = automationState;
+  }
+  patchOwnerRecommendationCaseWithRetry_(caseId, patch);
   return Object.assign({ caseId: caseId }, result);
 }
 
