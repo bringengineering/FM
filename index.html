@@ -3814,7 +3814,7 @@ function syncVendorMmsResultNote(c){
 }
 function isOwnerRecommendationMmsSuccess(c){
   const result=c&&c.ownerRecommendationMms||{};
-  return result.deliveryConfirmed===true || (result.ok===true && result.status==="sent");
+  return result.deliveryConfirmed===true || result.deliveryAccepted===true || result.status==="sent_pending_confirmation" || (result.ok===true && result.status==="sent");
 }
 function isOwnerRecommendationMmsAccepted(c){
   const result=c&&c.ownerRecommendationMms||{};
@@ -4729,8 +4729,9 @@ document.getElementById("noticeBtn").addEventListener("click", openNoticePanel);
 document.getElementById("noticeBanner").addEventListener("click", openNoticePanel);
 
 /* ===== 업데이트 알림(What's New) — 새 버전 나오면 자동 팝업 ===== */
-const APP_VERSION = "4.99";
+const APP_VERSION = "5.00";
 const CHANGELOG = [
+  { v:"5.00", d:"2026-07-16", items:["건물주 추천 MMS가 SENS에서 정상 접수되면 ⑧ 완료·⑨ 진행중으로 자동 전환","기존 수신 확인 대기 케이스도 화면을 열면 다음 단계로 자동 복구"] },
   { v:"4.99", d:"2026-07-16", items:["추천 견적 이미지의 방문 가능 시간을 한국시간 한글 형식으로 통일","시간 전용 1899년 날짜를 실제 방문일 또는 접수일과 결합해 표시"] },
   { v:"4.98", d:"2026-07-16", items:["추천 견적 MMS 이미지의 한글이 네모로 깨지는 문제 수정","한글 글꼴이 보장되는 Google Sheet 카드 렌더링 방식으로 교체"] },
   { v:"4.97", d:"2026-07-16", items:["건물주 추천 MMS 이미지를 전송 전에 최대 800px JPEG로 축소","SENS 첨부 이미지 해상도 제한으로 문자가 발송되지 않던 문제 수정"] },

@@ -16,7 +16,7 @@ const COMPLAINT_CONFIG = {
   FIREBASE_CASES_PATH: "cases",
   RESPONSE_SHEET_URL: "https://docs.google.com/spreadsheets/d/1HI6KzIMomL6vOUPs8zZDhXHktL1cWRDcg93lflsuojA/edit"
 };
-const AUTOMATION_BUILD = "owner-recommendation-mms-20260716-v7";
+const AUTOMATION_BUILD = "owner-recommendation-mms-20260716-v8";
 const OWNER_RECOMMENDATION_IMAGE_VERSION = "owner-summary-v4";
 
 const OUTPUT_HEADERS = [
@@ -500,7 +500,15 @@ function handleOwnerRecommendationMmsLocked_(payload) {
   const existing = casePayload.ownerRecommendationMms || {};
   const requestKey = caseId + ":" + selected.quoteId;
   if ((existing.ok === true || existing.deliveryAccepted === true) && existing.requestKey === requestKey && payload.force !== true) {
-    return Object.assign({ caseId: caseId, skipped: true }, existing);
+    const normalizedExisting = Object.assign({}, existing, {
+      ok: true,
+      status: "sent",
+      deliveryAccepted: true,
+      deliveryConfirmed: true,
+      confirmedAt: existing.confirmedAt || new Date().toISOString(),
+      statusText: "SENS MMS 발송 완료. ⑨ 승인·입금 단계로 전환했습니다."
+    });
+    return Object.assign({ skipped: true }, updateOwnerRecommendationMmsCase_(caseId, casePayload, normalizedExisting));
   }
 
   const ownerPhone = extractOwnerRecommendationPhone_(casePayload);
@@ -574,12 +582,13 @@ function handleOwnerRecommendationMmsLocked_(payload) {
     baseResult.imageFileName = image.fileName;
     baseResult.imageDesignVersion = image.imageDesignVersion || OWNER_RECOMMENDATION_IMAGE_VERSION;
     baseResult.statusText = send.ok
-      ? "SENS 발송 요청 완료. 실제 문자 수신을 확인한 뒤 발송 완료 확인을 눌러주세요."
+      ? "SENS MMS 발송 완료. ⑨ 승인·입금 단계로 전환했습니다."
       : send.message;
     baseResult.deliveryAccepted = send.ok === true;
-    baseResult.deliveryConfirmed = false;
-    baseResult.ok = false;
-    baseResult.status = send.ok ? "sent_pending_confirmation" : "failed";
+    baseResult.deliveryConfirmed = send.ok === true;
+    baseResult.confirmedAt = send.ok ? new Date().toISOString() : "";
+    baseResult.ok = send.ok === true;
+    baseResult.status = send.ok ? "sent" : "failed";
   } catch (err) {
     baseResult.statusText = "건물주 추천 MMS 처리 실패: " + err.message;
   }
@@ -961,12 +970,20 @@ function makeOwnerRecommendationMmsBlob_(fileId, originalName) {
 function updateOwnerRecommendationMmsCase_(caseId, casePayload, result) {
   const timestamp = new Date().toISOString();
   result = result || {};
+  const deliveryAccepted = result.deliveryAccepted === true || result.status === "sent_pending_confirmation";
+  const deliveryConfirmed = deliveryAccepted || result.deliveryConfirmed === true || (result.ok === true && result.status === "sent");
+  if (deliveryConfirmed) {
+    result.ok = true;
+    result.status = "sent";
+    result.deliveryAccepted = true;
+    result.deliveryConfirmed = true;
+    result.confirmedAt = result.confirmedAt || timestamp;
+  }
   result.updatedAt = timestamp;
   casePayload.status = casePayload.status || {};
   casePayload.note = casePayload.note || {};
   casePayload.log = Array.isArray(casePayload.log) ? casePayload.log : [];
   casePayload.ownerRecommendationMms = result;
-  const deliveryConfirmed = result.deliveryConfirmed === true || (result.ok === true && result.status === "sent");
   casePayload.status.c8 = deliveryConfirmed ? "done" : "doing";
   if (deliveryConfirmed && casePayload.status.c9 !== "done") casePayload.status.c9 = "doing";
   casePayload.note.c8 = makeOwnerRecommendationMmsNote_(result);
