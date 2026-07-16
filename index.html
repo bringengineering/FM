@@ -4259,6 +4259,7 @@ function sendVendorSmsRequest(endpoint, payload){
   return fetch(endpoint, {
     method:"POST",
     mode:"no-cors",
+    keepalive:true,
     headers:{"Content-Type":"text/plain;charset=utf-8"},
     body:JSON.stringify(payload)
   }).catch(e=>console.error("vendor mms", e));
@@ -4728,8 +4729,9 @@ document.getElementById("noticeBtn").addEventListener("click", openNoticePanel);
 document.getElementById("noticeBanner").addEventListener("click", openNoticePanel);
 
 /* ===== 업데이트 알림(What's New) — 새 버전 나오면 자동 팝업 ===== */
-const APP_VERSION = "4.96";
+const APP_VERSION = "4.97";
 const CHANGELOG = [
+  { v:"4.97", d:"2026-07-16", items:["건물주 추천 MMS 이미지를 전송 전에 최대 800px JPEG로 축소","SENS 첨부 이미지 해상도 제한으로 문자가 발송되지 않던 문제 수정"] },
   { v:"4.96", d:"2026-07-16", items:["건물주 추천 견적 이미지를 4:5 세로형 모바일 요약 카드로 전면 재구성","최종금액·업체·방문시간·품목·공급가액·부가세만 큰 글씨로 표시","구버전 표 이미지를 새 MMS에서 재사용하지 않도록 이미지 설계 버전 적용"] },
   { v:"4.95", d:"2026-07-16", items:["추천 견적 MMS 이미지를 핵심 정보 중심의 세로형 요약으로 개선","최종 합계금액 강조 및 작업 내용·방문 가능 시간 표시"] },
   { v:"4.94", d:"2026-07-16", items:["건물주 추천 MMS는 실제 수신 확인 후 ⑧ 완료·⑨ 진행중 전환","추천 견적 첨부 이미지를 세로형 2열 요약으로 개선해 가독성 강화"] },

@@ -16,7 +16,7 @@ const COMPLAINT_CONFIG = {
   FIREBASE_CASES_PATH: "cases",
   RESPONSE_SHEET_URL: "https://docs.google.com/spreadsheets/d/1HI6KzIMomL6vOUPs8zZDhXHktL1cWRDcg93lflsuojA/edit"
 };
-const AUTOMATION_BUILD = "owner-recommendation-mms-20260716-v4";
+const AUTOMATION_BUILD = "owner-recommendation-mms-20260716-v5";
 const OWNER_RECOMMENDATION_IMAGE_VERSION = "owner-summary-v2";
 
 const OUTPUT_HEADERS = [
@@ -887,19 +887,57 @@ function createOwnerRecommendationFallbackImage_(folder, fileName, casePayload, 
 
 function driveImageToMmsPayload_(file) {
   if (!file) throw new Error("건물주 추천 이미지 파일이 없습니다.");
-  const original = file.getBlob();
-  let blob = original;
-  if (blob.getBytes().length > 300 * 1024) {
-    const thumbnail = makeSensThumbnailBlob_(file.getId(), file.getName());
-    if (thumbnail && thumbnail.blob) blob = thumbnail.blob;
+  const thumbnail = makeOwnerRecommendationMmsBlob_(file.getId(), file.getName());
+  if (!thumbnail || !thumbnail.blob) {
+    throw new Error("추천 이미지를 MMS 허용 해상도(최대 800px)로 축소하지 못했습니다.");
   }
+  const blob = thumbnail.blob;
   const bytes = blob.getBytes();
   if (bytes.length > 300 * 1024) throw new Error("생성된 추천 이미지가 SENS MMS 첨부 제한 300KB를 초과했습니다.");
   return {
-    fileName: makeSensImageName_(file.getName()),
+    fileName: thumbnail.name || makeSensImageName_(file.getName()),
     fileBody: Utilities.base64Encode(bytes),
     byteSize: bytes.length
   };
+}
+
+function makeOwnerRecommendationMmsBlob_(fileId, originalName) {
+  try {
+    const metadata = Drive.Files.get(fileId, { fields: "thumbnailLink,name" });
+    const thumbnailLink = String(metadata && metadata.thumbnailLink || "").trim();
+    const thumbnailLinks = [
+      thumbnailLink,
+      "https://drive.google.com/thumbnail?id=" + encodeURIComponent(fileId) + "&sz=w800-h800"
+    ].filter(Boolean);
+    const sizes = [800, 720, 640, 560, 480];
+    const requestOptions = [
+      { method: "get", headers: { Authorization: "Bearer " + ScriptApp.getOAuthToken() }, muteHttpExceptions: true, followRedirects: true },
+      { method: "get", muteHttpExceptions: true, followRedirects: true }
+    ];
+    for (const size of sizes) {
+      for (const baseUrl of thumbnailLinks) {
+        let url = baseUrl;
+        if (/=s\d+/.test(url)) url = url.replace(/=s\d+[^&]*/, "=s" + size);
+        else if (/sz=w\d+-h\d+/.test(url)) url = url.replace(/sz=w\d+-h\d+/, "sz=w" + size + "-h" + size);
+        for (const options of requestOptions) {
+          const response = UrlFetchApp.fetch(url, options);
+          if (response.getResponseCode() < 200 || response.getResponseCode() >= 300) continue;
+          const source = response.getBlob();
+          const type = String(source.getContentType() || "").toLowerCase();
+          if (type.indexOf("image/") !== 0) continue;
+          let blob = source;
+          try { blob = source.getAs("image/jpeg"); } catch (err) { continue; }
+          if (blob.getBytes().length <= 300 * 1024) {
+            blob.setName(makeSensImageName_(originalName));
+            return { blob: blob, name: blob.getName(), maxDimension: size };
+          }
+        }
+      }
+    }
+  } catch (err) {
+    Logger.log("추천 견적 MMS 이미지 축소 실패: " + err.message);
+  }
+  return null;
 }
 
 function updateOwnerRecommendationMmsCase_(caseId, casePayload, result) {
