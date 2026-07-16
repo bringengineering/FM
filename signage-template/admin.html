@@ -1,0 +1,592 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>위탁판매 관리 · BRING</title>
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard/dist/web/static/pretendard.css">
+<style>
+  :root{
+    --brand:#0F58A0;--ink:#16202E;--ink-dim:#5B6B7C;
+    --line:#E6EBF1;--bg:#F4F7FA;--card:#fff;--danger:#E14b3c;--good:#1F9D57;
+  }
+  *{margin:0;padding:0;box-sizing:border-box}
+  body{font-family:"Pretendard",-apple-system,"Malgun Gothic",sans-serif;background:var(--bg);color:var(--ink);line-height:1.5}
+  img{display:block;max-width:100%}
+  .wrap{max-width:900px;margin:0 auto;padding:20px 18px 80px}
+
+  header{display:flex;align-items:center;gap:12px;padding:8px 0 18px;flex-wrap:wrap}
+  header h1{font-size:20px;font-weight:800;color:var(--brand)}
+  header h1 small{color:var(--ink-dim);font-weight:600;font-size:13px;margin-left:6px}
+  .tabs{display:flex;gap:6px;margin-left:auto;background:#E9EEF3;padding:4px;border-radius:12px}
+  .tabs button{border:0;background:transparent;padding:9px 16px;border-radius:9px;font-family:inherit;
+    font-weight:700;font-size:14px;color:var(--ink-dim);cursor:pointer}
+  .tabs button.on{background:#fff;color:var(--brand);box-shadow:0 1px 4px rgba(16,32,46,.08)}
+
+  .btn{border:0;border-radius:11px;cursor:pointer;font-family:inherit;font-weight:700;font-size:14.5px;padding:11px 18px;transition:filter .12s}
+  .btn:active{transform:scale(.98)}
+  .btn-primary{background:var(--brand);color:#fff}.btn-primary:hover{filter:brightness(1.06)}
+  .btn-ghost{background:#E9EEF3;color:var(--ink)}
+  .btn-danger{background:transparent;color:var(--danger);padding:6px 8px}
+  .btn-sm{padding:7px 12px;font-size:13px}
+
+  .toolbar{display:flex;align-items:center;gap:10px;margin-bottom:16px}
+  .toolbar .count{color:var(--ink-dim);font-size:14px}
+
+  /* 상품 카드 목록 */
+  .plist{display:grid;grid-template-columns:repeat(auto-fill,minmax(240px,1fr));gap:14px}
+  .pcard{background:var(--card);border:1px solid var(--line);border-radius:16px;overflow:hidden;display:flex;flex-direction:column}
+  .pcard .th{aspect-ratio:16/10;background:#EEF2F6 center/cover no-repeat;display:flex;align-items:center;justify-content:center;color:#B7C2CE;font-size:30px;position:relative}
+  .pcard .badge{position:absolute;top:8px;left:8px;background:rgba(22,32,46,.72);color:#fff;font-size:11px;font-weight:700;padding:4px 9px;border-radius:99px}
+  .pcard .badge.off{background:rgba(225,75,60,.9)}
+  .pcard .bd{padding:12px 13px 13px;display:flex;flex-direction:column;gap:5px;flex:1}
+  .pcard .nm{font-weight:700;font-size:15px}
+  .pcard .vd{font-size:12.5px;color:var(--ink-dim)}
+  .pcard .pr{font-weight:800;margin-top:2px}
+  .pcard .row{display:flex;gap:6px;margin-top:auto;padding-top:10px}
+
+  .empty{text-align:center;color:var(--ink-dim);padding:60px 20px;background:var(--card);border:1px dashed var(--line);border-radius:16px}
+  .empty .ic{font-size:44px;margin-bottom:10px}
+
+  /* 주문 테이블 */
+  .otable{width:100%;border-collapse:collapse;background:var(--card);border:1px solid var(--line);border-radius:14px;overflow:hidden;font-size:14px}
+  .otable th,.otable td{padding:12px 12px;text-align:left;border-bottom:1px solid var(--line);vertical-align:top}
+  .otable th{background:#F1F5F9;font-size:12.5px;color:var(--ink-dim);font-weight:700;white-space:nowrap}
+  .otable tr:last-child td{border-bottom:0}
+  .otable .st{font-size:12px;font-weight:700;padding:3px 9px;border-radius:99px;white-space:nowrap}
+  .st.신규{background:#FEF0E6;color:#C4641b}
+  .st.처리중{background:#E7F0FB;color:var(--brand)}
+  .st.완료{background:#E6F5EC;color:var(--good)}
+  .otable select{border:1px solid var(--line);border-radius:8px;padding:5px 8px;font-family:inherit;font-size:12.5px}
+  .otable .who b{display:block}.otable .who span{color:var(--ink-dim);font-size:12.5px}
+
+  /* 모달 폼 */
+  .modal{position:fixed;inset:0;background:rgba(16,32,46,.5);display:none;align-items:center;justify-content:center;z-index:40;padding:16px}
+  .modal.on{display:flex}
+  .sheet{background:#fff;border-radius:18px;width:100%;max-width:520px;max-height:92vh;overflow:auto;padding:22px}
+  .sheet h2{font-size:18px;font-weight:800;margin-bottom:16px}
+  .field{margin-bottom:14px}
+  .field label{display:block;font-size:13px;font-weight:700;margin-bottom:6px}
+  .field input,.field textarea,.field select{width:100%;border:1.5px solid var(--line);border-radius:11px;padding:11px 13px;font-family:inherit;font-size:15px;color:var(--ink)}
+  .field input:focus,.field textarea:focus,.field select:focus{outline:none;border-color:var(--brand)}
+  .field textarea{min-height:76px;resize:vertical}
+  .grid2{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+  .galgrid{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-top:8px}
+  .galgrid .cell{position:relative;aspect-ratio:1/1;border-radius:10px;overflow:hidden;background:#eef2f7}
+  .galgrid .cell img{width:100%;height:100%;object-fit:cover;display:block}
+  .galgrid .cell .rm{position:absolute;top:5px;right:5px;background:rgba(22,32,46,.78);color:#fff;border:0;border-radius:99px;width:26px;height:26px;cursor:pointer;font-size:15px;line-height:1}
+  .galgrid .cell .b0{position:absolute;left:5px;bottom:5px;background:var(--brand);color:#fff;font-size:10.5px;font-weight:700;border-radius:6px;padding:2px 7px}
+  .galgrid .add{display:flex;flex-direction:column;gap:3px;align-items:center;justify-content:center;aspect-ratio:1/1;border:1.5px dashed var(--line);border-radius:10px;cursor:pointer;color:var(--ink-dim);font-size:12.5px}
+  .galgrid .add:hover{border-color:var(--brand);color:var(--brand)}
+  .galgrid .add span{font-size:22px;line-height:1}
+  .switchrow{display:flex;gap:10px;align-items:center;justify-content:space-between;padding:11px 0;border-top:1px solid var(--line)}
+  .switchrow .t{font-size:14px;font-weight:600}.switchrow .t small{display:block;color:var(--ink-dim);font-weight:400;font-size:12px}
+  .sw{position:relative;width:48px;height:28px;flex:none}
+  .sw input{opacity:0;width:0;height:0}
+  .sw span{position:absolute;inset:0;background:#CDD6DF;border-radius:99px;transition:.2s;cursor:pointer}
+  .sw span::before{content:"";position:absolute;width:22px;height:22px;left:3px;top:3px;background:#fff;border-radius:50%;transition:.2s}
+  .sw input:checked + span{background:var(--brand)}
+  .sw input:checked + span::before{transform:translateX(20px)}
+  .modal .actions{display:flex;gap:10px;margin-top:18px}
+  .modal .actions .btn{flex:1}
+  .hint{font-size:12px;color:var(--ink-dim);margin-top:5px}
+
+  /* 로그인 게이트 */
+  .gate{min-height:100vh;display:flex;align-items:center;justify-content:center;padding:20px}
+  .gatebox{background:#fff;border:1px solid var(--line);border-radius:18px;padding:30px;max-width:340px;width:100%;text-align:center}
+  .gatebox h1{font-size:20px;color:var(--brand);margin-bottom:6px}
+  .gatebox p{color:var(--ink-dim);font-size:14px;margin-bottom:18px}
+  .gatebox input{width:100%;border:1.5px solid var(--line);border-radius:11px;padding:13px;font-size:16px;text-align:center;margin-bottom:12px;font-family:inherit}
+  .gatebox .btn{width:100%}
+
+  .toast{position:fixed;left:50%;bottom:26px;transform:translateX(-50%);background:var(--ink);color:#fff;padding:12px 22px;border-radius:99px;font-size:14px;font-weight:600;z-index:60;opacity:0;pointer-events:none;transition:opacity .25s}
+  .toast.on{opacity:1}
+  .settings-link{margin-left:8px}
+  section{display:none}section.on{display:block}
+</style>
+</head>
+<body>
+
+<!-- 로그인 게이트 -->
+<div class="gate" id="gate">
+  <div class="gatebox">
+    <h1>BRING 위탁판매 관리</h1>
+    <p>관리 비밀번호를 입력하세요.</p>
+    <input id="pass" type="password" placeholder="비밀번호" autocomplete="off">
+    <button class="btn btn-primary" id="passBtn">들어가기</button>
+  </div>
+</div>
+
+<!-- 본문 -->
+<div class="wrap" id="app" style="display:none">
+  <header>
+    <h1>위탁판매 관리 <small>BRING 1층 사이니지</small></h1>
+    <div class="tabs">
+      <button data-tab="products" class="on">상품</button>
+      <button data-tab="orders">주문 <span id="orderBadge"></span></button>
+      <button data-tab="settings">설정</button>
+    </div>
+  </header>
+
+  <!-- 상품 탭 -->
+  <section id="tab-products" class="on">
+    <div class="toolbar">
+      <button class="btn btn-primary" id="addBtn">+ 새 상품</button>
+      <button class="btn btn-ghost" id="bulkBtn">⚡ 일괄 등록</button>
+      <span class="count" id="pCount"></span>
+    </div>
+    <div class="plist" id="plist"></div>
+    <div class="empty" id="pEmpty" style="display:none">
+      <div class="ic">📦</div>
+      <div>아직 등록된 상품이 없어요. <b>+ 새 상품</b>으로 추가하세요.</div>
+    </div>
+  </section>
+
+  <!-- 주문 탭 -->
+  <section id="tab-orders">
+    <div class="toolbar">
+      <span class="count" id="oCount"></span>
+    </div>
+    <div style="overflow-x:auto">
+      <table class="otable" id="otable"><tbody></tbody></table>
+    </div>
+    <div class="empty" id="oEmpty" style="display:none">
+      <div class="ic">🧾</div>
+      <div>아직 들어온 주문이 없어요.</div>
+    </div>
+  </section>
+
+  <!-- 설정 탭 -->
+  <section id="tab-settings">
+    <div style="background:#fff;border:1px solid var(--line);border-radius:16px;padding:20px;max-width:560px">
+      <div class="field">
+        <label>주문 완료 안내 문구 (결제 안내)</label>
+        <textarea id="setBank" placeholder="예) 주문 접수 후 담당자가 연락드려 계좌이체 또는 방문 결제를 안내드립니다."></textarea>
+        <div class="hint">손님이 주문할 때 화면에 보이는 안내입니다.</div>
+      </div>
+      <div class="field">
+        <label>카카오톡 채널 링크 (선택)</label>
+        <input id="setKakao" type="url" placeholder="https://pf.kakao.com/... (비워두면 카톡 버튼 숨김)">
+        <div class="hint">입력하면 상품페이지에 "카톡 문의" 버튼이 함께 표시됩니다.</div>
+      </div>
+      <div class="field">
+        <label>관리사무실 전화번호</label>
+        <input id="setPhone" type="text" placeholder="033-000-0000">
+        <div class="hint">쇼핑 페이지 헤더·상세·하단에 표시됩니다.</div>
+      </div>
+      <div class="field">
+        <label>주문서 구글 폼 URL (선택)</label>
+        <input id="setOrderForm" type="url" placeholder="https://docs.google.com/forms/... (비워두면 자체 주문 접수)">
+        <div class="hint">입력하면 [주문하기]가 이 폼으로 연결됩니다. URL 속 {name} 자리에 상품명이 자동으로 들어갑니다.</div>
+      </div>
+      <div class="field">
+        <label>하단 안내 문구 (선택)</label>
+        <input id="setFooter" type="text" placeholder="예) 상품 문의는 매장 또는 주문 시 남겨주세요.">
+      </div>
+      <button class="btn btn-primary" id="saveSettings">설정 저장</button>
+    </div>
+    <div style="margin-top:18px;font-size:13px;color:var(--ink-dim);max-width:560px;line-height:1.7">
+      · 쇼핑 페이지 주소: <b id="shopUrl"></b><br>
+      · 이 주소를 QR로 만들면 손님이 전체 상품을 볼 수 있어요. (개별 상품 QR은 대화면이 자동 생성)
+    </div>
+  </section>
+</div>
+
+<!-- 상품 편집 모달 -->
+<div class="modal" id="editModal">
+  <div class="sheet">
+    <h2 id="editTitle">새 상품</h2>
+    <div class="field">
+      <label>상품 사진 <small style="color:var(--ink-dim);font-weight:400">여러 장 가능 · 맨 앞이 대표사진</small></label>
+      <input id="imgFile" type="file" accept="image/*" multiple style="display:none">
+      <div class="galgrid" id="galGrid"></div>
+    </div>
+    <div class="field">
+      <label>상품명 <span style="color:var(--danger)">*</span></label>
+      <input id="eName" type="text" placeholder="예) 수제 원두 500g">
+    </div>
+    <div class="grid2">
+      <div class="field">
+        <label>가격 (원)</label>
+        <input id="ePrice" type="number" min="0" placeholder="0 = 가격문의" inputmode="numeric">
+      </div>
+      <div class="field">
+        <label>위탁처 / 브랜드</label>
+        <input id="eVendor" type="text" placeholder="예) ○○공방">
+      </div>
+    </div>
+    <div class="field">
+      <label>상품 설명</label>
+      <textarea id="eDesc" placeholder="상품 소개, 특징, 용량 등"></textarea>
+    </div>
+    <div class="field">
+      <label>노출 순서</label>
+      <input id="eSort" type="number" placeholder="숫자가 작을수록 앞에 (예: 10)" inputmode="numeric">
+    </div>
+    <div class="switchrow">
+      <div class="t">화면 노출 <small>끄면 목록·대화면에서 숨겨집니다</small></div>
+      <label class="sw"><input id="eActive" type="checkbox" checked><span></span></label>
+    </div>
+    <div class="switchrow">
+      <div class="t">품절 표시 <small>노출은 하되 주문은 막습니다</small></div>
+      <label class="sw"><input id="eSold" type="checkbox"><span></span></label>
+    </div>
+    <div class="actions">
+      <button class="btn btn-ghost" id="editCancel">취소</button>
+      <button class="btn btn-primary" id="editSave">저장</button>
+    </div>
+  </div>
+</div>
+
+<!-- 일괄 등록 모달 -->
+<div class="modal" id="bulkModal">
+  <div class="sheet">
+    <h2>⚡ 일괄 등록</h2>
+    <p style="font-size:13px;color:var(--ink-dim);line-height:1.6;margin-bottom:12px">
+      한 줄에 상품 하나. <b>세로줄( | )</b>로 칸을 나눕니다.<br>
+      <code style="background:#f1f1f1;padding:2px 5px;border-radius:4px">상품명 | 가격 | 위탁처 | 설명</code>
+      <br>가격·위탁처·설명은 비워도 됩니다. 가격 0 = 가격문의. 사진은 등록 후 상품을 눌러 채우세요.
+    </p>
+    <button class="btn btn-ghost" id="bulkFill" style="margin-bottom:10px">진과 상품 목록 불러오기</button>
+    <div class="field">
+      <textarea id="bulkText" style="min-height:220px;font-family:monospace;font-size:13px" placeholder="로얄 대석 자두 | 9000 | 진과&#10;대극천 복숭아 | 12700 | 진과"></textarea>
+    </div>
+    <div id="bulkPreview" style="font-size:13px;color:var(--ink-dim);margin-bottom:12px"></div>
+    <div class="switchrow">
+      <div class="t">기존 상품 유지 <small>끄면 등록 전에 기존 상품을 모두 지웁니다</small></div>
+      <label class="sw"><input id="bulkKeep" type="checkbox" checked><span></span></label>
+    </div>
+    <div class="actions">
+      <button class="btn btn-ghost" id="bulkCancel">취소</button>
+      <button class="btn btn-primary" id="bulkSave">등록</button>
+    </div>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script src="https://www.gstatic.com/firebasejs/10.12.5/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.5/firebase-database-compat.js"></script>
+<script>
+/* ══════════ 설정 ══════════ */
+const ADMIN_PASS = "bring0000";   // ← 관리 비밀번호. 배포 전에 꼭 바꾸세요.
+const firebaseConfig = {
+  apiKey: "AIzaSyBKOTIuQ8pOKSuaeKFQs_6UDdDnxdjCTZg",
+  authDomain: "bring-fm.firebaseapp.com",
+  databaseURL: "https://bring-fm-default-rtdb.asia-southeast1.firebasedatabase.app",
+  projectId: "bring-fm",
+  storageBucket: "bring-fm.firebasestorage.app",
+  messagingSenderId: "864976295990",
+  appId: "1:864976295990:web:194f145b1b4dad58eb6097"
+};
+let db = null;
+if(typeof firebase !== "undefined"){
+  try{ firebase.initializeApp(firebaseConfig); db = firebase.database(); }
+  catch(e){ console.error(e); }
+}
+const $ = id => document.getElementById(id);
+const won = n => Number(n).toLocaleString("ko-KR");
+const esc = s => String(s??"").replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+
+/* ── 로그인 게이트 ── */
+const GATE_KEY = "bring_admin_ok";
+function unlock(){ $("gate").style.display="none"; $("app").style.display="block"; start(); }
+if(sessionStorage.getItem(GATE_KEY)==="1") unlock();
+$("passBtn").addEventListener("click", tryPass);
+$("pass").addEventListener("keydown", e=>{ if(e.key==="Enter") tryPass(); });
+function tryPass(){
+  if($("pass").value === ADMIN_PASS){ sessionStorage.setItem(GATE_KEY,"1"); unlock(); }
+  else { toast("비밀번호가 맞지 않습니다"); $("pass").value=""; }
+}
+
+/* ── 탭 전환 ── */
+document.querySelectorAll(".tabs button").forEach(b=>{
+  b.addEventListener("click", ()=>{
+    document.querySelectorAll(".tabs button").forEach(x=>x.classList.remove("on"));
+    b.classList.add("on");
+    document.querySelectorAll("section").forEach(s=>s.classList.remove("on"));
+    $("tab-"+b.dataset.tab).classList.add("on");
+  });
+});
+
+let started=false;
+function start(){
+  if(started) return; started=true;
+  $("shopUrl").textContent = location.origin + location.pathname.replace(/signage\/admin\.html$/, "shop/");
+  if(!db){ toast("연결에 실패했어요. 새로고침해 주세요."); return; }
+  subscribeProducts();
+  subscribeOrders();
+  loadSettings();
+}
+
+/* ══════════ 상품 ══════════ */
+let PRODUCTS = {};
+function subscribeProducts(){
+  db.ref("signage/consign").on("value", snap=>{
+    PRODUCTS = snap.val() || {};
+    renderProducts();
+  });
+}
+function sortedProducts(){
+  return Object.entries(PRODUCTS).map(([id,p])=>({id,...p}))
+    .sort((a,b)=>(a.sort??999)-(b.sort??999) || String(a.name).localeCompare(b.name,"ko"));
+}
+function renderProducts(){
+  const list = sortedProducts();
+  $("pCount").textContent = list.length ? `${list.length}개 상품` : "";
+  $("pEmpty").style.display = list.length ? "none":"block";
+  $("plist").innerHTML = list.map(p=>{
+    const th = p.photo
+      ? `<div class="th" style="background-image:url('${escAttr(p.photo)}')">${badge(p)}</div>`
+      : `<div class="th">🛍️${badge(p)}</div>`;
+    return `<div class="pcard">
+      ${th}
+      <div class="bd">
+        <div class="nm">${esc(p.name||"(이름 없음)")}</div>
+        ${p.vendor?`<div class="vd">${esc(p.vendor)}</div>`:""}
+        <div class="pr">${(!p.price||p.price<=0)?'<span style="color:var(--brand)">가격문의</span>':won(p.price)+"원"}</div>
+        <div class="row">
+          <button class="btn btn-ghost btn-sm" data-edit="${p.id}">수정</button>
+          <button class="btn btn-danger btn-sm" data-del="${p.id}" style="margin-left:auto">삭제</button>
+        </div>
+      </div>
+    </div>`;
+  }).join("");
+  $("plist").querySelectorAll("[data-edit]").forEach(b=>b.onclick=()=>openEdit(b.dataset.edit));
+  $("plist").querySelectorAll("[data-del]").forEach(b=>b.onclick=()=>delProduct(b.dataset.del));
+}
+function badge(p){
+  if(p.active===false) return '<span class="badge off">숨김</span>';
+  if(p.soldout) return '<span class="badge">품절</span>';
+  return "";
+}
+
+/* ── 상품 편집 모달 ── */
+let editId = null;
+let editGallery = [];   // base64 사진 배열 (맨 앞이 대표)
+function openEdit(id){
+  editId = id || null;
+  const p = id ? PRODUCTS[id] : {};
+  $("editTitle").textContent = id ? "상품 수정" : "새 상품";
+  $("eName").value = p.name||"";
+  $("ePrice").value = p.price||"";
+  $("eVendor").value = p.vendor||"";
+  $("eDesc").value = p.desc||"";
+  $("eSort").value = (p.sort??"");
+  $("eActive").checked = p.active !== false;
+  $("eSold").checked = !!p.soldout;
+  editGallery = (Array.isArray(p.gallery) && p.gallery.length) ? p.gallery.slice()
+              : (p.photo ? [p.photo] : []);
+  renderGallery();
+  $("editModal").classList.add("on");
+}
+function renderGallery(){
+  const g = $("galGrid");
+  g.innerHTML = editGallery.map((u,i)=>
+    `<div class="cell"><img src="${u}"><button class="rm" data-rm="${i}" title="삭제">×</button>${i===0?'<span class="b0">대표</span>':''}</div>`
+  ).join("") + `<div class="add" id="galAdd"><span>＋</span>사진 추가</div>`;
+  $("galAdd").onclick = ()=>$("imgFile").click();
+  g.querySelectorAll("[data-rm]").forEach(b=> b.onclick=()=>{ editGallery.splice(+b.dataset.rm,1); renderGallery(); });
+}
+$("addBtn").onclick = ()=>openEdit(null);
+$("editCancel").onclick = ()=>$("editModal").classList.remove("on");
+$("editModal").addEventListener("click", e=>{ if(e.target===$("editModal")) $("editModal").classList.remove("on"); });
+$("imgFile").addEventListener("change", async e=>{
+  const files = [...e.target.files]; if(!files.length) return;
+  const add = $("galAdd"); if(add) add.textContent = "압축 중…";
+  for(const f of files){
+    try{ editGallery.push(await resizeImage(f, 900, .82)); }
+    catch(err){ toast("이미지 처리 실패"); }
+  }
+  renderGallery();
+  e.target.value="";
+});
+
+/* 이미지 리사이즈 → base64 (가로 max px, jpeg 품질) */
+function resizeImage(file, maxW, quality){
+  return new Promise((resolve,reject)=>{
+    const img = new Image();
+    const url = URL.createObjectURL(file);
+    img.onload = ()=>{
+      URL.revokeObjectURL(url);
+      let {width:w, height:h} = img;
+      if(w > maxW){ h = Math.round(h*maxW/w); w = maxW; }
+      const c = document.createElement("canvas");
+      c.width=w; c.height=h;
+      c.getContext("2d").drawImage(img,0,0,w,h);
+      resolve(c.toDataURL("image/jpeg", quality));
+    };
+    img.onerror = reject;
+    img.src = url;
+  });
+}
+
+$("editSave").onclick = async ()=>{
+  const name = $("eName").value.trim();
+  if(!name){ toast("상품명을 입력하세요"); $("eName").focus(); return; }
+  const data = {
+    name,
+    price: Number($("ePrice").value)||0,
+    vendor: $("eVendor").value.trim(),
+    desc: $("eDesc").value.trim(),
+    sort: $("eSort").value===""? 999 : Number($("eSort").value),
+    active: $("eActive").checked,
+    soldout: $("eSold").checked,
+    photo: editGallery[0]||"",
+    gallery: editGallery,
+    updatedAt: firebase.database.ServerValue.TIMESTAMP
+  };
+  const btn = $("editSave"); btn.disabled=true; btn.textContent="저장 중…";
+  try{
+    if(editId) await db.ref("signage/consign/"+editId).update(data);
+    else { data.createdAt = firebase.database.ServerValue.TIMESTAMP; await db.ref("signage/consign").push(data); }
+    $("editModal").classList.remove("on");
+    toast("저장되었습니다");
+  }catch(e){ console.error(e); toast("저장 실패 — 사진이 너무 크면 다시 시도하세요"); }
+  finally{ btn.disabled=false; btn.textContent="저장"; }
+};
+/* ══════════ 일괄 등록 ══════════ */
+/* 가격 = 진과 공급가 + 10% (판매가). 공급가는 주석 참고 */
+const JINGWA_LIST = [
+  "로얄 대석 자두 | 9900 | 진과 | [고품위 라인]",                    // 공급 9,000
+  "대극천 복숭아 | 13970 | 진과 | [고품위 라인]",                   // 공급 12,700
+  "레드볼 천도 복숭아 | 10450 | 진과 | [고품위 라인]",              // 공급 9,500
+  "완주 대둔산 흑곶감 | 14300 | 진과 | [계약출고·공통 라인]",        // 공급 13,000
+  "유럽종 완숙 토마토 최상품 | 10450 | 진과 | [산지직송·공통 라인]",  // 공급 9,500
+  "스테비아 대추 방울토마토 | 11000 | 진과 | [산지직송·공통 라인]",   // 공급 10,000
+  "데일리 논산 방울토마토 | 14850 | 진과 | [산지직송·공통 라인]",     // 공급 13,500
+  "쫀득 두툼 건시 봉지곶감 + 반건시곶감 | 11550 | 진과 | [공통 라인]", // 공급 10,500
+  "초SS급 고당도 감말랭이 | 13200 | 진과 | [계약출고·공통 라인]",     // 공급 12,000
+  "흑곶감 선물세트 | 16940 | 진과 | [계약출고·선물세트]",            // 공급 15,400
+  "상주 건시·반건시 선물세트 | 31900 | 진과 | [계약출고·선물세트]",   // 공급 29,000
+  "호두말이 선물세트 | 20900 | 진과 | [계약출고·선물세트]"           // 공급 19,000
+].join("\n");
+
+function parseBulk(text){
+  return text.split("\n").map(l=>l.trim()).filter(Boolean).map(line=>{
+    const c = line.split("|").map(s=>s.trim());
+    const name = c[0]||"";
+    const price = c[1]!=null ? (Number(String(c[1]).replace(/[^0-9]/g,""))||0) : 0;
+    return { name, price, vendor:c[2]||"", desc:c[3]||"" };
+  }).filter(p=>p.name);
+}
+function renderBulkPreview(){
+  const items = parseBulk($("bulkText").value);
+  $("bulkPreview").innerHTML = items.length
+    ? `<b>${items.length}개</b> 상품이 등록됩니다.`
+    : "등록할 상품이 없습니다. (한 줄에 하나씩)";
+}
+$("bulkBtn").onclick = ()=>{ $("bulkModal").classList.add("on"); renderBulkPreview(); };
+$("bulkCancel").onclick = ()=>$("bulkModal").classList.remove("on");
+$("bulkModal").addEventListener("click", e=>{ if(e.target===$("bulkModal")) $("bulkModal").classList.remove("on"); });
+$("bulkText").addEventListener("input", renderBulkPreview);
+$("bulkFill").onclick = ()=>{ $("bulkText").value = JINGWA_LIST; renderBulkPreview(); };
+
+$("bulkSave").onclick = async ()=>{
+  const items = parseBulk($("bulkText").value);
+  if(!items.length){ toast("등록할 상품이 없습니다"); return; }
+  const wipe = !$("bulkKeep").checked;
+  if(!confirm(`${items.length}개 상품을 등록합니다.` + (wipe? "\n\n⚠️ 기존 상품은 모두 삭제됩니다." : "") + "\n\n진행할까요?")) return;
+  const btn = $("bulkSave"); btn.disabled=true; btn.textContent="등록 중…";
+  try{
+    if(wipe) await db.ref("signage/consign").remove();
+    const baseSort = wipe ? 0 : (Math.max(0, ...Object.values(PRODUCTS).map(p=>p.sort||0)) );
+    const ts = firebase.database.ServerValue.TIMESTAMP;
+    const updates = {};
+    items.forEach((p,i)=>{
+      const key = db.ref("signage/consign").push().key;
+      updates[key] = {
+        name:p.name, price:p.price, vendor:p.vendor, desc:p.desc,
+        sort: baseSort + (i+1)*10, active:true, soldout:false, photo:"",
+        createdAt:ts, updatedAt:ts
+      };
+    });
+    await db.ref("signage/consign").update(updates);
+    $("bulkModal").classList.remove("on");
+    toast(`${items.length}개 상품이 등록되었습니다`);
+  }catch(e){ console.error(e); toast("일괄 등록 실패 — 잠시 후 다시 시도하세요"); }
+  finally{ btn.disabled=false; btn.textContent="등록"; }
+};
+
+async function delProduct(id){
+  const p = PRODUCTS[id];
+  if(!confirm(`'${p?.name||"이 상품"}' 을(를) 삭제할까요?`)) return;
+  try{ await db.ref("signage/consign/"+id).remove(); toast("삭제되었습니다"); }
+  catch(e){ toast("삭제 실패"); }
+}
+
+/* ══════════ 주문 ══════════ */
+let ORDERS = {};
+function subscribeOrders(){
+  db.ref("signage/orders").on("value", snap=>{ ORDERS = snap.val()||{}; renderOrders(); });
+}
+function renderOrders(){
+  const list = Object.entries(ORDERS).map(([id,o])=>({id,...o}))
+    .sort((a,b)=>(b.createdAt||0)-(a.createdAt||0));
+  const nNew = list.filter(o=>o.status==="신규").length;
+  $("orderBadge").textContent = nNew ? `(${nNew})` : "";
+  $("oCount").textContent = list.length ? `총 ${list.length}건 · 신규 ${nNew}건` : "";
+  $("oEmpty").style.display = list.length ? "none":"block";
+  $("otable").style.display = list.length ? "table":"none";
+  const tb = $("otable").querySelector("tbody");
+  tb.innerHTML = `<tr>
+      <th>일시</th><th>상품</th><th>수량</th><th>주문자</th><th>수령</th><th>요청</th><th>상태</th><th></th>
+    </tr>` + list.map(o=>`<tr>
+      <td style="white-space:nowrap;color:var(--ink-dim);font-size:12.5px">${fmtDate(o.createdAt)}</td>
+      <td><b>${esc(o.productName||"")}</b>${o.vendor?`<br><span style="color:var(--ink-dim);font-size:12px">${esc(o.vendor)}</span>`:""}</td>
+      <td>${o.qty||1}개</td>
+      <td class="who"><b>${esc(o.name||"")}</b><span>${esc(o.phone||"")}</span></td>
+      <td>${esc(o.receive||"")}${o.addr?`<br><span style="color:var(--ink-dim);font-size:12px">${esc(o.addr)}</span>`:""}</td>
+      <td style="max-width:160px;font-size:12.5px;color:#33424F">${esc(o.memo||"")}</td>
+      <td><span class="st ${o.status||'신규'}">${esc(o.status||"신규")}</span></td>
+      <td>
+        <select data-st="${o.id}">
+          ${["신규","처리중","완료"].map(s=>`<option ${s===(o.status||"신규")?"selected":""}>${s}</option>`).join("")}
+        </select>
+        <button class="btn btn-danger btn-sm" data-odel="${o.id}">삭제</button>
+      </td>
+    </tr>`).join("");
+  tb.querySelectorAll("[data-st]").forEach(sel=>sel.onchange=()=>
+    db.ref("signage/orders/"+sel.dataset.st+"/status").set(sel.value));
+  tb.querySelectorAll("[data-odel]").forEach(b=>b.onclick=()=>{
+    if(confirm("이 주문을 삭제할까요?")) db.ref("signage/orders/"+b.dataset.odel).remove();
+  });
+}
+function fmtDate(ts){
+  if(!ts) return "-";
+  const d = new Date(ts);
+  const p = n=>String(n).padStart(2,"0");
+  return `${d.getMonth()+1}/${d.getDate()} ${p(d.getHours())}:${p(d.getMinutes())}`;
+}
+
+/* ══════════ 설정 ══════════ */
+function loadSettings(){
+  db.ref("signage/settings").on("value", s=>{
+    const v = s.val()||{};
+    $("setBank").value = v.bankInfo||"";
+    $("setKakao").value = v.kakaoUrl||"";
+    $("setPhone").value = v.phone||"";
+    $("setOrderForm").value = v.orderFormUrl||"";
+    $("setFooter").value = v.footer||"";
+  });
+}
+$("saveSettings").onclick = async ()=>{
+  try{
+    await db.ref("signage/settings").update({
+      bankInfo: $("setBank").value.trim(),
+      kakaoUrl: $("setKakao").value.trim(),
+      phone: $("setPhone").value.trim(),
+      orderFormUrl: $("setOrderForm").value.trim(),
+      footer: $("setFooter").value.trim()
+    });
+    toast("설정이 저장되었습니다");
+  }catch(e){ toast("저장 실패"); }
+};
+
+/* ── 유틸 ── */
+function escAttr(s){ return String(s??"").replace(/'/g,"%27").replace(/"/g,"%22"); }
+let toastT;
+function toast(m){ const t=$("toast"); t.textContent=m; t.classList.add("on"); clearTimeout(toastT); toastT=setTimeout(()=>t.classList.remove("on"),2200); }
+</script>
+</body>
+</html>

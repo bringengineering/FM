@@ -1,0 +1,1270 @@
+﻿<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<title>건물 안내 사이니지</title>
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard/dist/web/static/pretendard.css">
+<style>
+  :root{
+    --brand:#1E5AA8;
+    --brand-soft:#E9F1FC;
+    --bg:#F4F7FB;
+    --panel:#FFFFFF;
+    --panel-soft:#F8FAFD;
+    --ink:#17243A;
+    --ink-dim:#65738A;
+    --line:#D9E2EF;
+    --good:#2D7DD2;
+    --normal:#37A873;
+    --bad:#E3A12B;
+    --verybad:#D94F45;
+  }
+  *{margin:0;padding:0;box-sizing:border-box}
+  html,body{height:100%}
+  body{
+    font-family:"Pretendard",-apple-system,"Malgun Gothic",sans-serif;
+    background:
+      linear-gradient(180deg,rgba(255,255,255,.86),rgba(244,247,251,.95)),
+      var(--bg);
+    color:var(--ink);
+    overflow:hidden;
+    -webkit-user-select:none;user-select:none;
+    cursor:none;
+  }
+
+  .stage{
+    height:100vh;
+    display:grid;
+    grid-template-columns:minmax(240px,1.05fr) minmax(340px,1.35fr) minmax(250px,.95fr);
+    grid-template-rows:auto minmax(0,1fr) minmax(136px,.42fr);
+    grid-template-areas:
+      "loc clock clock"
+      "weather board qr"
+      "dust news news";
+    gap:clamp(10px,1.2vw,18px);
+    padding:clamp(24px,3vw,42px);
+    padding-top:clamp(72px,9vh,96px);
+    padding-bottom:clamp(42px,5.2vh,62px);
+    position:relative;
+  }
+
+  .left,.right{display:contents}
+  .loc{
+    grid-area:loc;
+    display:flex;align-items:center;gap:10px;
+    min-width:0;
+    font-size:clamp(14px,1.2vw,18px);
+    color:var(--ink-dim);
+    font-weight:700;
+  }
+  .loc .dot{width:8px;height:8px;border-radius:50%;background:var(--normal)}
+  .clock{
+    grid-area:clock;
+    align-self:center;
+    justify-self:end;
+    font-size:clamp(170px,18vw,270px);
+    font-weight:800;
+    line-height:1;
+    font-variant-numeric:tabular-nums;
+  }
+  .clock .sec{font-size:.2em;font-weight:700;color:var(--ink-dim);margin-left:.08em}
+  .date{
+    position:fixed;
+    right:clamp(24px,3vw,42px);top:clamp(20px,2.4vh,30px);
+    z-index:6;
+    align-self:center;
+    justify-self:end;
+    font-size:clamp(22px,2.2vw,34px);
+    font-weight:700;
+    color:var(--ink);
+  }
+  .updated{
+    position:fixed;
+    left:50%;bottom:clamp(12px,1.8vh,20px);
+    transform:translateX(-50%);
+    z-index:8;
+    font-size:clamp(13px,1.15vw,16px);
+    color:var(--ink-dim);
+    display:flex;align-items:center;gap:8px;
+  }
+  .updated .pulse{width:6px;height:6px;border-radius:50%;background:var(--normal);animation:pulse 2.4s infinite}
+  @keyframes pulse{0%,100%{opacity:1}50%{opacity:.25}}
+
+  .card{
+    background:var(--panel);
+    border:1px solid var(--line);
+    border-radius:8px;
+    box-shadow:0 14px 34px rgba(35,55,85,.08);
+    min-width:0;
+  }
+
+  .weather{
+    grid-area:weather;
+    display:grid;
+    grid-template-columns:minmax(174px,18vw) 1fr;
+    grid-template-rows:auto 1fr;
+    align-items:center;
+    gap:clamp(10px,1.4vw,18px);
+    padding:clamp(20px,2.2vw,30px);
+    background:linear-gradient(180deg,#EFF6FF,#DDEBFA);
+  }
+  .weather::before{
+    content:"오늘의 날씨";
+    grid-column:1/-1;
+    font-size:clamp(15px,1.3vw,20px);
+    font-weight:800;
+    color:var(--brand);
+  }
+  .wicon{width:clamp(174px,18vw,264px);height:clamp(174px,18vw,264px);line-height:0}
+  .wicon svg{width:100%;height:100%;display:block}
+  .wmain{display:flex;flex-direction:column;gap:8px;min-width:0}
+  .temp{font-size:clamp(124px,13.6vw,208px);font-weight:800;line-height:1;color:#10233F}
+  .temp small{font-size:.42em;font-weight:500;color:var(--ink-dim);vertical-align:.5em}
+  .wdesc{font-size:clamp(19px,1.85vw,28px);font-weight:700;color:#344762}
+  .wsub{
+    display:flex;flex-wrap:wrap;gap:clamp(10px,1.6vw,22px);
+    font-size:clamp(15px,1.35vw,19px);color:var(--ink-dim);
+  }
+  .wsub b{color:var(--ink);font-weight:600}
+
+  .dust{grid-area:dust;display:grid;grid-template-columns:1fr 1fr;gap:clamp(10px,1vw,14px)}
+  .dust .card{
+    padding:clamp(18px,1.8vw,26px);
+    display:flex;flex-direction:column;gap:clamp(8px,1.4vh,14px);
+    border-top:4px solid var(--stat,transparent);
+  }
+  .dlabel{font-size:clamp(15px,1.25vw,19px);color:var(--ink-dim);font-weight:800}
+  .dgrade{font-size:clamp(32px,3.3vw,52px);font-weight:800;color:var(--stat)}
+  .dval{font-size:clamp(15px,1.25vw,19px);color:var(--ink-dim)}
+  .dval b{color:var(--ink);font-weight:700;font-size:1.25em}
+  .dbar{height:10px;border-radius:99px;background:#E8EEF6;overflow:hidden;margin-top:auto}
+  .dbar i{display:block;height:100%;border-radius:99px;background:var(--stat);width:0;transition:width 1.2s cubic-bezier(.2,.8,.2,1)}
+
+  .notice{
+    position:fixed;left:50%;top:clamp(76px,10vh,108px);transform:translateX(-50%);
+    z-index:9;
+    display:none;align-items:center;gap:clamp(10px,1.2vw,16px);
+    padding:clamp(10px,1vh,14px) clamp(16px,1.8vw,22px);
+    border-radius:8px;
+    background:#FFFFFF;
+    border:1px solid #BFD4EF;
+    box-shadow:0 10px 28px rgba(35,55,85,.13);
+  }
+  .notice.on{display:flex;animation:slideIn .6s cubic-bezier(.2,.8,.2,1)}
+  .notice .nicon{width:clamp(28px,2.5vw,36px);height:clamp(28px,2.5vw,36px);line-height:0;animation:bob 2.8s ease-in-out infinite}
+  .notice .nicon svg{width:100%;height:100%;display:block}
+  .notice .ntext{display:flex;flex-direction:column;gap:2px;min-width:0}
+  .notice .ntitle{font-size:clamp(14px,1.4vw,18px);font-weight:800}
+  .notice .nsub{font-size:clamp(12px,1vw,14px);color:var(--ink-dim)}
+  @keyframes slideIn{from{opacity:0;transform:translate(-50%,12px)}to{opacity:1;transform:translate(-50%,0)}}
+  @keyframes bob{0%,100%{transform:translateY(0)}50%{transform:translateY(-5px)}}
+  @media (prefers-reduced-motion:reduce){.notice.on{animation:none}.notice .nicon{animation:none}}
+
+  .news{grid-area:news;padding:clamp(16px,1.6vw,22px)}
+  .news .nhead{
+    display:flex;align-items:center;gap:10px;
+    font-size:clamp(15px,1.3vw,20px);
+    color:var(--brand);font-weight:800;margin-bottom:clamp(10px,1.6vh,16px);
+  }
+  .news .nhead .dot{width:8px;height:8px;border-radius:50%;background:var(--brand)}
+  .news ul{list-style:none;display:flex;flex-direction:column}
+  .news li{
+    display:flex;align-items:baseline;gap:clamp(10px,1.4vw,16px);
+    padding:clamp(7px,1vh,10px) 0;
+  }
+  .news li + li{border-top:1px solid var(--line)}
+  .news .ntag{
+    flex:none;font-size:clamp(11px,1vw,14px);font-weight:800;color:var(--brand);
+  }
+  .news .nt{
+    font-size:clamp(14px,1.2vw,18px);font-weight:700;line-height:1.35;
+    overflow:hidden;display:-webkit-box;-webkit-line-clamp:1;-webkit-box-orient:vertical;
+    min-width:0;
+  }
+  .news .nsrc{flex:none;font-size:clamp(11px,1vw,14px);color:var(--ink-dim);margin-left:auto;white-space:nowrap}
+
+  .board{
+    grid-area:board;
+    padding:clamp(22px,2.2vw,32px);
+    border-radius:8px;
+    background:var(--panel);
+    border:1px solid var(--line);
+    display:none;
+    box-shadow:0 14px 34px rgba(35,55,85,.08);
+  }
+  .board.on{display:block}
+  .board .btag{
+    font-size:clamp(20px,1.8vw,28px);font-weight:800;
+    color:var(--brand);margin-bottom:clamp(16px,2vh,24px);
+    display:flex;align-items:center;gap:8px;
+  }
+  .board .bcount{color:var(--ink-dim);font-weight:600;font-size:.72em;margin-left:auto}
+  .board .btext{
+    font-size:clamp(20px,1.75vw,28px);font-weight:700;line-height:1.35;
+    display:flex;flex-direction:column;gap:clamp(14px,1.6vh,20px);
+  }
+  .board .notice-item{display:grid;grid-template-columns:36px 1fr;gap:12px;align-items:start}
+  .board .notice-icon{
+    width:36px;height:36px;border-radius:50%;
+    display:grid;place-items:center;
+    background:var(--brand-soft);color:var(--brand);
+    font-size:20px;font-weight:800;
+  }
+  .board .notice-copy{padding-top:4px;font-size:1.1em}
+  .board .btext.fade{animation:bfade .5s ease}
+  @keyframes bfade{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:none}}
+
+  .qr{
+    grid-area:qr;
+    display:none;flex-direction:column;align-items:center;justify-content:center;gap:clamp(16px,2vh,22px);
+    padding:clamp(20px,2.2vw,30px);
+    border-radius:8px;
+    background:var(--panel);
+    border:1px solid var(--line);
+    box-shadow:0 14px 34px rgba(35,55,85,.08);
+  }
+  .qr.on{display:flex}
+  .qr .qbox{
+    flex:none;background:#fff;border-radius:8px;
+    padding:10px;line-height:0;border:1px solid var(--line);
+  }
+  .qr img{width:clamp(118px,11vw,166px);height:clamp(118px,11vw,166px);display:block}
+  .qr .qtext{display:flex;flex-direction:column;gap:8px;text-align:center}
+  .qr .qtitle{font-size:clamp(22px,1.9vw,30px);font-weight:800;color:var(--brand)}
+  .qr .qsub{font-size:clamp(16px,1.35vw,20px);line-height:1.45;color:var(--ink-dim)}
+
+  /* 위탁판매 상품 순환 카드 — QR 자리(grid-area:qr)를 공유, 상품 있으면 정적 QR 대신 표시 */
+  .consign{
+    grid-area:qr;
+    display:none;flex-direction:column;
+    padding:clamp(16px,1.8vw,24px);
+    border-radius:8px;
+    background:var(--panel);
+    border:1px solid var(--line);
+    box-shadow:0 14px 34px rgba(35,55,85,.08);
+    min-width:0;
+  }
+  .consign.on{display:flex;animation:cfade .5s ease}
+  .qr.off{display:none !important}
+  @keyframes cfade{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:none}}
+  .consign .ctag{
+    font-size:clamp(14px,1.3vw,20px);font-weight:800;
+    color:var(--brand);margin-bottom:clamp(10px,1.6vh,16px);
+    display:flex;align-items:center;gap:8px;
+  }
+  .consign .ccount{color:var(--ink-dim);font-weight:600;font-size:.72em;margin-left:auto;letter-spacing:0}
+  .cbody{flex:1;display:flex;align-items:center;gap:clamp(12px,1.4vw,18px);min-height:0}
+  .cphoto{
+    flex:none;width:clamp(60px,7vw,96px);height:clamp(60px,7vw,96px);
+    border-radius:8px;background:var(--brand-soft) center/cover no-repeat;
+    border:1px solid var(--line);
+    display:flex;align-items:center;justify-content:center;font-size:clamp(26px,3vw,40px);
+  }
+  .cinfo{flex:1;min-width:0;display:flex;flex-direction:column;gap:3px}
+  .cname{
+    font-size:clamp(15px,1.6vw,21px);font-weight:800;line-height:1.3;color:var(--ink);
+    display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;
+  }
+  .cvendor{font-size:clamp(11px,1.1vw,14px);color:var(--ink-dim);font-weight:600}
+  .cprice{font-size:clamp(16px,1.8vw,24px);font-weight:800;margin-top:2px;color:var(--brand)}
+  .cprice.ask{font-size:clamp(13px,1.4vw,17px)}
+  .cqr{flex:none;display:flex;flex-direction:column;align-items:center;gap:6px}
+  .cqr .qbox{background:#fff;border:1px solid var(--line);border-radius:8px;padding:7px;line-height:0}
+  .cqr img{width:clamp(74px,8vw,110px);height:clamp(74px,8vw,110px);display:block}
+  .cqr .cqrsub{font-size:clamp(11px,1vw,13px);color:var(--ink-dim);font-weight:700}
+
+  .brandbar{
+    position:fixed;left:clamp(24px,3vw,42px);top:clamp(20px,2.4vh,30px);
+    z-index:5;pointer-events:none;
+    display:flex;align-items:center;
+  }
+  .brandbar img{height:clamp(28px,4vh,42px);display:block;opacity:1}
+
+  .err{
+    position:fixed;left:50%;bottom:20px;transform:translateX(-50%);
+    background:#FFF3F1;border:1px solid #F0B5AD;
+    color:#A13E34;font-size:14px;padding:10px 18px;border-radius:8px;display:none;
+    z-index:10;
+  }
+
+  @media (orientation:portrait){
+    .stage{
+      grid-template-columns:1fr;
+      grid-template-rows:auto auto auto auto auto auto;
+      grid-template-areas:"date" "clock" "weather" "board" "qr" "dust";
+      overflow:hidden;
+    }
+    .loc,.news{display:none!important}
+    .date,.clock{justify-self:start}
+    .updated{display:none}
+  }
+  @media (prefers-reduced-motion:reduce){
+    .updated .pulse{animation:none}.dbar i{transition:none}
+  }
+
+  /* Building Board vertical interface */
+  body{
+    background:#F3F8FF;
+  }
+  .stage{
+    height:100vh;
+    display:flex;
+    flex-direction:column;
+    gap:8px;
+    padding:14px 16px;
+    padding-bottom:10px;
+    overflow:hidden;
+  }
+  .left,.right{display:contents}
+  .card,.section-card,.loc,.board,.qr{
+    background:rgba(255,255,255,.94);
+    border:1px solid #DDE8F6;
+    border-radius:12px;
+    box-shadow:0 12px 32px rgba(35,80,130,.08);
+  }
+  .brandbar{
+    left:40px;
+    top:42px;
+    z-index:12;
+    width:216px;
+    height:37px;
+    display:flex;
+    align-items:center;
+  }
+  .brandbar img{
+    display:block;
+    width:100%;
+    height:100%;
+    object-fit:contain;
+    object-position:left center;
+  }
+  .loc{
+    order:0;
+    position:fixed;
+    left:16px;
+    right:16px;
+    top:14px;
+    z-index:8;
+    height:90px;
+    flex:none;
+    display:flex!important;
+    align-items:center;
+    justify-content:center;
+    padding:0 300px 0 260px;
+    color:#12325F;
+    font-size:clamp(36px,3.1vw,52px);
+    font-weight:800;
+  }
+  .loc .dot,#locName{display:none}
+  .loc::after{
+    content:"햇 빛 빌 라";
+    display:inline-block;
+    transform:translateX(20px);
+  }
+  .date{
+    position:fixed;
+    top:56px;
+    right:203px;
+    z-index:12;
+    font-size:clamp(18px,1.65vw,28px);
+    font-weight:800;
+    color:#102A54;
+  }
+  .clock{
+    position:fixed;
+    top:35px;
+    right:44px;
+    z-index:12;
+    font-size:clamp(42px,4.6vw,72px);
+    line-height:1;
+    color:#0A234C;
+  }
+  .clock .sec{display:none}
+  .weather{
+    order:1;
+    margin-top:98px;
+    flex:1.2 1 120px;
+    min-height:120px;
+    position:relative;
+    display:grid;
+    grid-template-columns:minmax(130px,20vw) 1fr;
+    grid-template-rows:auto 1fr;
+    gap:10px 24px;
+    padding:26px 30px 18px;
+    background:rgba(255,255,255,.94);
+  }
+  .weather::before{
+    content:"오늘의 날씨";
+    grid-column:1/-1;
+    font-size:clamp(20px,2vw,32px);
+    font-weight:900;
+    color:#1359B4;
+  }
+  .wicon{
+    justify-self:center;
+    align-self:center;
+    width:clamp(96px,14vw,170px);
+    height:clamp(96px,14vw,170px);
+  }
+  .wmain{
+    justify-content:center;
+    gap:12px;
+  }
+  .temp-row{
+    display:flex;
+    align-items:center;
+    justify-content:space-between;
+    gap:22px;
+  }
+  .temp{
+    font-size:clamp(54px,7vw,112px);
+    color:#102A54;
+    flex:none;
+  }
+  .umbrella-tip{
+    min-width:190px;
+    max-width:300px;
+    padding:14px 18px;
+    border:1px solid #D8E4F4;
+    border-radius:12px;
+    background:#F7FBFF;
+    color:#173D72;
+    display:flex;
+    flex-direction:column;
+    gap:5px;
+    box-shadow:inset 0 0 0 1px rgba(255,255,255,.7);
+  }
+  .umbrella-tip strong{
+    font-size:clamp(18px,1.5vw,25px);
+    line-height:1.12;
+    font-weight:900;
+  }
+  .umbrella-tip span{
+    font-size:clamp(12px,1vw,16px);
+    line-height:1.25;
+    color:#607089;
+  }
+  .wdesc{
+    font-size:clamp(18px,1.6vw,26px);
+    color:#334B6E;
+  }
+  .wsub{
+    display:grid;
+    grid-template-columns:repeat(4,1fr);
+    gap:0;
+    border:1px solid #D8E4F4;
+    border-radius:12px;
+    overflow:hidden;
+    color:#203A60;
+    font-size:clamp(15px,1.25vw,20px);
+  }
+  .wsub span{
+    min-height:86px;
+    display:flex;
+    flex-direction:column;
+    align-items:center;
+    justify-content:center;
+    gap:8px;
+    border-left:1px solid #D8E4F4;
+  }
+  .wsub span:first-child{border-left:0}
+  .wsub b{font-size:1.28em;color:#0F2F62}
+  .board{
+    order:2;
+    flex:1.4 1 140px;
+    min-height:140px;
+    padding:28px 32px;
+    display:block;
+  }
+  .board .btag{
+    font-size:clamp(20px,2vw,32px);
+    color:#1359B4;
+    margin-bottom:22px;
+  }
+  .board .btext{
+    gap:0;
+    border:1px solid #DFE8F4;
+    border-radius:12px;
+    padding:14px 20px;
+    font-size:clamp(18px,1.65vw,26px);
+  }
+  .board .notice-item{
+    grid-template-columns:44px 1fr;
+    min-height:54px;
+    align-items:center;
+    border-top:1px solid #E2EAF5;
+  }
+  .board .notice-item:first-child{border-top:0}
+  .board .notice-icon{
+    width:32px;
+    height:32px;
+    font-size:16px;
+  }
+  .board .notice-copy{padding-top:0}
+  .qr{
+    order:3;
+    flex:0 1 0;
+    min-height:0;
+    display:none!important;
+  }
+  .quick{
+    order:3;
+    flex:.95 1 120px;
+    min-height:120px;
+    padding:24px 32px;
+  }
+  .section-title{
+    display:flex;
+    align-items:center;
+    gap:10px;
+    margin-bottom:18px;
+    color:#1359B4;
+    font-size:clamp(20px,1.8vw,30px);
+    font-weight:900;
+  }
+  .section-icon{
+    width:26px;
+    height:26px;
+    flex:none;
+    border:3px solid #2D7DD2;
+    border-radius:50%;
+    display:inline-block;
+    position:relative;
+  }
+  .section-icon.time::before{
+    content:"";
+    position:absolute;
+    left:10px;
+    top:5px;
+    width:2px;
+    height:7px;
+    background:#2D7DD2;
+  }
+  .section-icon.time::after{
+    content:"";
+    position:absolute;
+    left:10px;
+    top:11px;
+    width:7px;
+    height:2px;
+    background:#2D7DD2;
+  }
+  .section-icon.gift{
+    border-radius:5px;
+  }
+  .section-icon.gift::before{
+    content:"";
+    position:absolute;
+    left:10px;
+    top:-3px;
+    width:3px;
+    height:26px;
+    background:#2D7DD2;
+  }
+  .section-icon.gift::after{
+    content:"";
+    position:absolute;
+    left:-3px;
+    top:9px;
+    width:26px;
+    height:3px;
+    background:#2D7DD2;
+  }
+  .section-icon.pin::before{
+    content:"";
+    position:absolute;
+    left:5px;
+    top:5px;
+    width:10px;
+    height:10px;
+    border-radius:50%;
+    background:#2D7DD2;
+  }
+  .section-icon.megaphone{
+    border-radius:5px;
+    border-left-width:10px;
+  }
+  .contact-icon{
+    width:20px;
+    height:20px;
+    flex:none;
+    border:3px solid #2D7DD2;
+    border-radius:50%;
+    display:inline-block;
+  }
+  .section-more{
+    margin-left:auto;
+    color:#3D5270;
+    font-size:.72em;
+    font-weight:700;
+  }
+  .quick-grid{
+    display:grid;
+    grid-template-columns:repeat(3,1fr);
+    gap:18px;
+    height:calc(100% - 48px);
+  }
+  .quick-item{
+    display:flex;
+    flex-direction:column;
+    align-items:center;
+    justify-content:center;
+    gap:14px;
+    border:1px solid #DDE8F6;
+    border-radius:12px;
+    background:rgba(255,255,255,.72);
+    color:#173D72;
+    font-size:clamp(18px,1.4vw,24px);
+    font-weight:800;
+  }
+  .quick-item img{
+    width:clamp(58px,6vw,94px);
+    height:clamp(58px,6vw,94px);
+    opacity:1;
+  }
+  .quick-line{width:42%;height:2px;background:#DDE8F6}
+  /* 위탁판매 카드 — 세로 보드에서는 '빠른 이용하기' 다음 섹션으로 배치 */
+  .consign{
+    order:4;
+    flex:2.05 1 260px;
+    min-height:260px;
+    grid-area:auto;
+    padding:24px 32px;
+    border-radius:12px;
+    background:rgba(255,255,255,.94);
+    border:1px solid #DDE8F6;
+    box-shadow:0 12px 32px rgba(35,80,130,.08);
+  }
+  .consign .ctag{
+    color:#1359B4;
+    font-size:clamp(20px,1.8vw,30px);
+    font-weight:900;
+    margin-bottom:14px;
+  }
+  .consign-grid{
+    display:grid;
+    grid-template-columns:repeat(2,minmax(0,1fr));
+    grid-template-rows:repeat(3,minmax(0,1fr));
+    gap:12px;
+    height:calc(100% - 48px);
+  }
+  .consign-item{
+    min-width:0;
+    display:grid;
+    grid-template-columns:clamp(54px,5.6vw,76px) minmax(0,1fr) clamp(50px,5.2vw,68px);
+    align-items:center;
+    gap:12px;
+    padding:10px 12px;
+    border:1px solid #DDE8F6;
+    border-radius:12px;
+    background:rgba(255,255,255,.72);
+  }
+  .consign .cbody{gap:24px}
+  .consign .cphoto{
+    width:clamp(54px,5.6vw,76px);
+    height:clamp(54px,5.6vw,76px);
+    border-radius:10px;
+    border:1px solid #DDE8F6;
+  }
+  .consign .cname{font-size:clamp(15px,1.35vw,20px);color:#173D72}
+  .consign .cvendor{
+    font-size:clamp(11px,.95vw,14px);
+    overflow:hidden;
+    text-overflow:ellipsis;
+    white-space:nowrap;
+  }
+  .consign .cprice{font-size:clamp(15px,1.35vw,20px);color:#1359B4}
+  .consign .cqr .qbox{border:1px solid #DDE8F6;border-radius:10px}
+  .consign .cqr img{width:clamp(42px,4.8vw,62px);height:clamp(42px,4.8vw,62px)}
+  .consign .cqrsub{display:none}
+  .benefits{
+    order:5;
+    flex:none;
+    aspect-ratio:1729 / 657;
+    min-height:0;
+    padding:0;
+    background:transparent!important;
+    border:0!important;
+    box-shadow:none!important;
+  }
+  .benefit-grid{
+    display:block;
+    height:100%;
+  }
+  .benefit-banner{
+    width:100%;
+    height:100%;
+    border-radius:12px;
+    overflow:hidden;
+    background:#07182F;
+  }
+  .benefit-banner img{
+    width:100%;
+    height:100%;
+    object-fit:contain;
+    display:block;
+  }
+  .benefit-card,.facility-card{
+    border:1px solid #DDE8F6;
+    border-radius:12px;
+    background:rgba(255,255,255,.7);
+    display:flex;
+    align-items:flex-end;
+    justify-content:center;
+    padding-bottom:22px;
+  }
+  .benefit-card.has-benefit{
+    flex-direction:column;
+    align-items:stretch;
+    justify-content:space-between;
+    overflow:hidden;
+    padding:0;
+  }
+  .benefit-card.has-benefit img{
+    width:100%;
+    height:calc(100% - 34px);
+    object-fit:cover;
+    background:#991416;
+    display:block;
+  }
+  .benefit-name{
+    min-height:34px;
+    display:flex;
+    align-items:center;
+    justify-content:center;
+    background:#FFFFFF;
+    border-top:1px solid #DDE8F6;
+    color:#173D72;
+    font-size:clamp(18px,1.45vw,25px);
+    font-weight:900;
+    letter-spacing:0;
+  }
+  .placeholder-line{width:46%;height:2px;background:#DDE8F6}
+  .facilities{
+    order:4;
+    flex:.8 1 90px;
+    min-height:90px;
+    padding:22px 32px;
+  }
+  .facility-grid{
+    display:grid;
+    grid-template-columns:repeat(6,1fr);
+    gap:16px;
+    height:calc(100% - 44px);
+  }
+  .facility-card{
+    flex-direction:column;
+    align-items:center;
+    justify-content:center;
+    gap:7px;
+    padding:10px 8px;
+    color:#173D72;
+    font-size:clamp(13px,1.05vw,18px);
+    font-weight:800;
+    line-height:1.25;
+    text-align:center;
+  }
+  .facility-icon{
+    width:42px;
+    height:42px;
+    object-fit:contain;
+    display:block;
+    flex:none;
+  }
+  .facility-label{
+    color:#6B7B92;
+    font-size:.78em;
+    font-weight:700;
+  }
+  .facility-name{
+    display:-webkit-box;
+    -webkit-line-clamp:2;
+    -webkit-box-orient:vertical;
+    overflow:hidden;
+    max-width:100%;
+  }
+  .facility-distance{
+    color:#2D7DD2;
+    font-size:12px;
+    font-weight:800;
+    line-height:1.15;
+  }
+  .alert-strip{
+    order:6;
+    flex:none;
+    min-height:52px;
+    padding:0 32px;
+    display:flex;
+    align-items:center;
+    gap:12px;
+    color:#1359B4;
+    font-size:clamp(18px,1.4vw,24px);
+    font-weight:900;
+  }
+  .contact-strip{
+    order:7;
+    flex:none;
+    min-height:58px;
+    padding:0 32px;
+    display:grid;
+    grid-template-columns:1fr;
+    align-items:center;
+    color:#173D72;
+    font-size:clamp(17px,1.35vw,23px);
+    font-weight:800;
+  }
+  .contact-strip div{
+    display:flex;
+    align-items:center;
+    justify-content:center;
+    gap:14px;
+  }
+  .contact-strip div + div{border-left:1px solid #DDE8F6}
+  .dust,.news,.notice{display:none!important}
+  .updated{display:none}
+</style>
+</head>
+<body>
+
+<div class="stage">
+  <div class="left">
+    <div class="loc"><span class="dot"></span><span id="locName">원주시</span></div>
+    <div class="clock"><span id="hm">--:--</span><span class="sec" id="ss"></span></div>
+    <div class="date" id="date">불러오는 중…</div>
+
+    <div class="board" id="board">
+      <div class="btag">공지사항 <span class="bcount" id="bcount"></span></div>
+      <div class="btext" id="btext"></div>
+    </div>
+
+    <div class="qr" id="qr">
+      <div class="qbox"><img id="qrimg" alt="민원 접수 QR코드"></div>
+      <div class="qtext">
+        <div class="qtitle" id="qrtitle">시설 불편사항 접수</div>
+        <div class="qsub" id="qrsub">QR코드를 스캔해 주세요</div>
+      </div>
+    </div>
+
+    <div class="updated"><span class="pulse"></span><span id="updated">데이터 수신 대기</span></div>
+  </div>
+
+  <div class="right">
+    <div class="card weather">
+      <div class="wicon" id="wicon" aria-label="날씨 아이콘"></div>
+      <div class="wmain">
+        <div class="temp-row">
+          <div class="temp"><span id="temp">--</span><small>°C</small></div>
+          <div class="umbrella-tip">
+            <strong id="umbrellaTitle">날씨 확인 중</strong>
+            <span id="umbrellaSub">강수확률을 확인하고 있어요</span>
+          </div>
+        </div>
+        <div class="wdesc" id="wdesc">날씨 정보를 불러오는 중</div>
+        <div class="wsub">
+          <span>최고 <b id="tmax">--°</b></span>
+          <span>최저 <b id="tmin">--°</b></span>
+          <span>미세먼지 <b id="pm10Brief">--</b></span>
+          <span>강수확률 <b id="rainProb">--%</b></span>
+        </div>
+      </div>
+    </div>
+
+    <div class="notice" id="notice">
+      <div class="nicon" id="nicon" aria-label="날씨 안내 아이콘"></div>
+      <div class="ntext">
+        <div class="ntitle" id="ntitle">오늘 비 소식이 있어요 — 우산을 챙기세요</div>
+        <div class="nsub" id="nsub"></div>
+      </div>
+    </div>
+
+    <div class="dust">
+      <div class="card" id="pm10card">
+        <div class="dlabel">미세먼지 · PM10</div>
+        <div class="dgrade" id="pm10grade">측정 중</div>
+        <div class="dval"><b id="pm10val">--</b> ㎍/㎥</div>
+        <div class="dbar"><i id="pm10bar"></i></div>
+      </div>
+      <div class="card" id="pm25card">
+        <div class="dlabel">초미세먼지 · PM2.5</div>
+        <div class="dgrade" id="pm25grade">측정 중</div>
+        <div class="dval"><b id="pm25val">--</b> ㎍/㎥</div>
+        <div class="dbar"><i id="pm25bar"></i></div>
+      </div>
+    </div>
+
+    <div class="card news" id="newsCard" style="display:none">
+      <div class="nhead"><span class="dot"></span>주요 뉴스</div>
+      <ul id="newsList"></ul>
+    </div>
+  </div>
+
+  <section class="section-card quick">
+    <div class="section-title">빠른 이용하기</div>
+    <div class="quick-grid">
+      <div class="quick-item">
+        <img src="./qr-complaint.svg" alt="민원 접수 QR코드">
+        <span class="quick-line"></span>
+        <span>민원 접수</span>
+      </div>
+      <div class="quick-item">
+        <img src="./qr-order.svg" alt="공동구매 주문 QR코드">
+        <span class="quick-line"></span>
+        <span>공동구매/주문</span>
+      </div>
+      <div class="quick-item">
+        <img src="./qr-kakao-channel.svg" alt="카카오톡 채널 QR코드">
+        <span class="quick-line"></span>
+        <span>카카오톡 채널</span>
+      </div>
+    </div>
+  </section>
+
+  <section class="section-card benefits">
+    <div class="benefit-grid">
+      <div class="benefit-banner">
+        <img src="./benefit-banner-cropped.png" alt="Bring Care 광고 배너">
+      </div>
+    </div>
+  </section>
+
+  <section class="section-card facilities">
+    <div class="section-title">주변 편의시설</div>
+    <div class="facility-grid" id="facilityGrid"></div>
+  </section>
+
+  <section class="section-card contact-strip">
+    <div>문의 : 전화번호를 입력하세요</div>
+  </section>
+</div>
+
+<div class="brandbar"><img src="./bring-care-logo.png" alt="Bring Care"></div>
+
+<div class="err" id="err">네트워크 오류 — 잠시 후 자동으로 다시 시도합니다</div>
+
+<script src="https://www.gstatic.com/firebasejs/10.12.5/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.5/firebase-database-compat.js"></script>
+<script>
+/* ══════════ 다른 건물용 템플릿 설정 ══════════
+   아래 건물별 정보를 바꾼 뒤 새 사이니지 폴더로 복사해 사용하세요. */
+const CONFIG = {
+  LAT: 37.5665,          // 새 건물 위도 입력
+  LON: 126.9780,         // 새 건물 경도 입력
+  NAME: "건물명 입력",    // 화면에 표시할 위치 이름
+  ADDRESS: "건물 주소 입력", // 건물 주소(주변 편의시설 기준)
+  REFRESH_MIN: 10,       // 갱신 주기(분)
+
+  /* 공지사항: 아래 목록에 문구를 넣으면 화면에 표시됩니다.
+     여러 개면 8초마다 순서대로 번갈아 나옵니다. 비워두면([]) 숨겨집니다. */
+  NOTICES: [
+    "첫 번째 공지사항을 입력하세요.",
+    "두 번째 공지사항을 입력하세요.",
+    "세 번째 공지사항을 입력하세요."
+  ],
+
+  /* QR 민원접수: QR_IMAGE에 이미지 파일을 넣거나, QR_URL에 주소를 넣으면 표시됩니다.
+     둘 다 비워두면("") 숨겨집니다. */
+  QR_IMAGE: "./qr-complaint.svg",
+  QR_URL: "",
+  QR_TITLE: "시설 불편사항 접수",
+  QR_SUB: "QR코드를 스캔해 주세요",
+
+  /* 주변 편의시설: name에 실제 상호명을 넣으면 화면에 표시됩니다.
+     추후 주소 기반 자동 검색을 붙이면 이 목록을 자동으로 채우는 구조입니다. */
+  FACILITIES: [
+    { type: "laundry", label: "세탁소", name: "상호명 입력", distance: "거리 입력", icon: "./facility-laundry.svg" },
+    { type: "store", label: "편의점", name: "상호명 입력", distance: "거리 입력", icon: "./facility-store.svg" },
+    { type: "cafe", label: "카페", name: "상호명 입력", distance: "거리 입력", icon: "./facility-cafe.svg" },
+    { type: "pharmacy", label: "약국", name: "상호명 입력", distance: "거리 입력", icon: "./facility-pharmacy.svg" },
+    { type: "bank", label: "은행", name: "상호명 입력", distance: "거리 입력", icon: "./facility-bank.svg" },
+    { type: "parking", label: "주차장", name: "상호명 입력", distance: "거리 입력", icon: "./facility-parking.svg" }
+  ]
+};
+/* ═══════════════════════════════════════════════ */
+
+const $ = id => document.getElementById(id);
+
+/* 시계 */
+const DAYS = ["일","월","화","수","목","금","토"];
+function tick(){
+  const n = new Date();
+  $("hm").textContent = String(n.getHours()).padStart(2,"0")+":"+String(n.getMinutes()).padStart(2,"0");
+  $("ss").textContent = String(n.getSeconds()).padStart(2,"0");
+  $("date").textContent = `${n.getMonth()+1}월 ${n.getDate()}일 (${DAYS[n.getDay()]})`;
+}
+setInterval(tick,1000); tick();
+$("locName").textContent = CONFIG.NAME;
+
+function renderFacilities(){
+  const grid = $("facilityGrid");
+  if(!grid) return;
+  const esc = s => String(s || "").replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;");
+  const items = (CONFIG.FACILITIES || []).slice(0,6);
+  grid.innerHTML = items.map(item => {
+    const type = esc(item.type || "store");
+    const label = esc(item.label || "편의시설");
+    const name = esc(item.name || "정보 준비중");
+    const distance = esc(item.distance || "");
+    const icon = esc(item.icon || "./facility-store.svg");
+    return `
+      <div class="facility-card">
+        <img class="facility-icon ${type}" src="${icon}" alt="" aria-hidden="true">
+        <span class="facility-label">${label}</span>
+        <span class="facility-name">${name}</span>
+        ${distance ? `<span class="facility-distance">${distance}</span>` : ""}
+      </div>
+    `;
+  }).join("");
+}
+renderFacilities();
+
+/* 라즈베리파이에서 이모지 폰트가 없어도 보이도록 SVG 아이콘을 사용합니다. */
+function iconSvg(type){
+  const cloud = '<path d="M30 66h38a16 16 0 0 0 1.8-31.9A23 23 0 0 0 26.4 40 13.5 13.5 0 0 0 30 66Z" fill="#D7E2EF" stroke="#7891AD" stroke-width="4" stroke-linejoin="round"/>';
+  const sun = '<circle cx="34" cy="30" r="14" fill="#F7C948"/><g stroke="#F7C948" stroke-width="4" stroke-linecap="round"><path d="M34 7v8M34 45v8M11 30h8M49 30h8M18 14l6 6M50 14l-6 6M18 46l6-6M50 46l-6-6"/></g>';
+  const moon = '<path d="M58 14a30 30 0 1 0 24 44A25 25 0 1 1 58 14Z" fill="#6D7FA3"/>';
+  const rain = '<g stroke="#2D7DD2" stroke-width="5" stroke-linecap="round"><path d="M33 72l-5 10M49 72l-5 10M65 72l-5 10"/></g>';
+  const snow = '<g stroke="#68BFEF" stroke-width="4" stroke-linecap="round"><path d="M33 76h14M40 69v14M57 76h14M64 69v14"/></g>';
+  const fog = '<g stroke="#9AAABD" stroke-width="4" stroke-linecap="round"><path d="M22 70h52M28 80h40"/></g>';
+  const storm = '<path d="M49 68l-9 15h12l-5 11 16-20H51l7-6Z" fill="#F0B429"/>';
+  if(type === "sun") return `<svg viewBox="0 0 96 96" role="img">${sun}</svg>`;
+  if(type === "moon") return `<svg viewBox="0 0 96 96" role="img">${moon}</svg>`;
+  if(type === "cloud") return `<svg viewBox="0 0 96 96" role="img">${cloud}</svg>`;
+  if(type === "rain") return `<svg viewBox="0 0 96 96" role="img">${cloud}${rain}</svg>`;
+  if(type === "snow") return `<svg viewBox="0 0 96 96" role="img">${cloud}${snow}</svg>`;
+  if(type === "storm") return `<svg viewBox="0 0 96 96" role="img">${cloud}${rain}${storm}</svg>`;
+  if(type === "fog") return `<svg viewBox="0 0 96 96" role="img">${cloud}${fog}</svg>`;
+  return `<svg viewBox="0 0 96 96" role="img">${sun}${cloud}</svg>`;
+}
+$("wicon").innerHTML = iconSvg("partly");
+
+/* 날씨 코드 → 한글 설명 + SVG 아이콘 종류 */
+function describe(code, isDay){
+  const clear = isDay ? "sun" : "moon";
+  const map = {
+    0:[ "맑음", clear ], 1:["대체로 맑음", isDay ? "partly" : "moon"], 2:["구름 조금","partly"], 3:["흐림","cloud"],
+    45:["안개","fog"], 48:["짙은 안개","fog"],
+    51:["가랑비","rain"], 53:["이슬비","rain"], 55:["강한 이슬비","rain"],
+    61:["약한 비","rain"], 63:["비","rain"], 65:["강한 비","rain"],
+    66:["어는 비","rain"], 67:["강한 어는 비","rain"],
+    71:["약한 눈","snow"], 73:["눈","snow"], 75:["폭설","snow"], 77:["싸락눈","snow"],
+    80:["소나기","rain"], 81:["강한 소나기","rain"], 82:["폭우","storm"],
+    85:["소낙눈","snow"], 86:["강한 소낙눈","snow"],
+    95:["뇌우","storm"], 96:["뇌우·우박","storm"], 99:["강한 뇌우·우박","storm"]
+  };
+  return map[code] || ["날씨","partly"];
+}
+
+/* 미세먼지 등급 (환경부 기준) */
+function gradePM10(v){
+  if(v<=30) return ["좋음","--good",v/150];
+  if(v<=80) return ["보통","--normal",v/150];
+  if(v<=150) return ["나쁨","--bad",v/150];
+  return ["매우나쁨","--verybad",1];
+}
+function gradePM25(v){
+  if(v<=15) return ["좋음","--good",v/75];
+  if(v<=35) return ["보통","--normal",v/75];
+  if(v<=75) return ["나쁨","--bad",v/75];
+  return ["매우나쁨","--verybad",1];
+}
+function paint(cardId, gradeId, valId, barId, value, grader){
+  const [label, varName, ratio] = grader(value);
+  const color = getComputedStyle(document.documentElement).getPropertyValue(varName);
+  $(cardId).style.setProperty("--stat", color);
+  $(gradeId).textContent = label;
+  $(valId).textContent = Math.round(value);
+  $(barId).style.width = Math.min(100, ratio*100)+"%";
+}
+
+/* 데이터 가져오기 */
+async function refresh(){
+  const {LAT, LON} = CONFIG;
+  try{
+    const wURL = `https://api.open-meteo.com/v1/forecast?latitude=${LAT}&longitude=${LON}`
+      + `&current=temperature_2m,weather_code,is_day`
+      + `&daily=temperature_2m_max,temperature_2m_min,precipitation_probability_max,weather_code&timezone=Asia%2FSeoul`;
+    const aURL = `https://air-quality-api.open-meteo.com/v1/air-quality?latitude=${LAT}&longitude=${LON}`
+      + `&current=pm10,pm2_5&timezone=Asia%2FSeoul`;
+
+    const [w, a] = await Promise.all([
+      fetch(wURL).then(r=>r.json()),
+      fetch(aURL).then(r=>r.json())
+    ]);
+
+    /* 날씨 */
+    const c = w.current;
+    $("temp").textContent = Math.round(c.temperature_2m);
+    $("tmax").textContent = Math.round(w.daily.temperature_2m_max[0])+"°";
+    $("tmin").textContent = Math.round(w.daily.temperature_2m_min[0])+"°";
+    const [pm10Label] = gradePM10(a.current.pm10);
+    $("pm10Brief").textContent = pm10Label;
+    $("rainProb").textContent = `${Math.round(w.daily.precipitation_probability_max?.[0] ?? 0)}%`;
+    const [desc, icon] = describe(c.weather_code, c.is_day===1);
+    $("wdesc").textContent = desc;
+    $("wicon").innerHTML = iconSvg(icon);
+    $("wicon").setAttribute("aria-label", desc);
+
+    /* 우산 안내: 현재 비가 오거나, 오늘 강수확률 40% 이상이거나, 하루 예보에 비/눈 코드가 있으면 표시 */
+    const RAIN = [51,53,55,61,63,65,66,67,80,81,82,95,96,99];
+    const SNOW = [71,73,75,77,85,86];
+    const prob = w.daily.precipitation_probability_max?.[0] ?? 0;
+    const dayCode = w.daily.weather_code?.[0];
+    const raining = RAIN.includes(c.weather_code) || RAIN.includes(dayCode) || prob >= 40;
+    const snowing = SNOW.includes(c.weather_code) || SNOW.includes(dayCode);
+    if(snowing){
+      $("umbrellaTitle").textContent = "미끄럼 주의";
+      $("umbrellaSub").textContent = prob > 0 ? `눈 소식 · 강수확률 ${prob}%` : "눈 소식이 있어요";
+    }else if(raining){
+      $("umbrellaTitle").textContent = "우산 챙겨주세요";
+      $("umbrellaSub").textContent = prob > 0 ? `오늘 강수확률 ${prob}%` : "비 소식이 있어요";
+    }else{
+      $("umbrellaTitle").textContent = "우산은 괜찮아요";
+      $("umbrellaSub").textContent = prob > 0 ? `오늘 강수확률 ${prob}%` : "비 소식이 낮아요";
+    }
+    const notice = $("notice");
+    if(snowing){
+      $("nicon").innerHTML = iconSvg("snow");
+      $("ntitle").textContent = "오늘 눈 소식이 있어요 — 미끄럼에 주의하세요";
+      $("nsub").textContent = prob > 0 ? `강수확률 ${prob}%` : "";
+      notice.classList.add("on");
+    }else if(raining){
+      $("nicon").innerHTML = iconSvg("rain");
+      $("ntitle").textContent = RAIN.includes(c.weather_code)
+        ? "지금 비가 오고 있어요 — 우산을 챙기세요"
+        : "오늘 비 소식이 있어요 — 우산을 챙기세요";
+      $("nsub").textContent = prob > 0 ? `오늘 강수확률 ${prob}%` : "";
+      notice.classList.add("on");
+    }else{
+      notice.classList.remove("on");
+    }
+
+    /* 미세먼지 */
+    paint("pm10card","pm10grade","pm10val","pm10bar", a.current.pm10, gradePM10);
+    paint("pm25card","pm25grade","pm25val","pm25bar", a.current.pm2_5, gradePM25);
+
+    const n = new Date();
+    $("updated").textContent = `${String(n.getHours()).padStart(2,"0")}:${String(n.getMinutes()).padStart(2,"0")} 업데이트 · ${CONFIG.REFRESH_MIN}분마다 자동 갱신`;
+    $("err").style.display = "none";
+  }catch(e){
+    $("err").style.display = "block";
+  }
+}
+refresh();
+setInterval(refresh, CONFIG.REFRESH_MIN*60*1000);
+
+/* 뉴스: 구글 뉴스 RSS(한국) 헤드라인 3개 */
+async function refreshNews(){
+  try{
+    const rss = "https://news.google.com/rss?hl=ko&gl=KR&ceid=KR:ko";
+    const res = await fetch("https://api.allorigins.win/raw?url="+encodeURIComponent(rss));
+    const xml = new DOMParser().parseFromString(await res.text(), "text/xml");
+    const items = [...xml.querySelectorAll("item")].slice(0,3);
+    if(items.length === 0) return;
+
+    $("newsList").innerHTML = items.map((it,i)=>{
+      const raw = it.querySelector("title")?.textContent || "";
+      // 구글 뉴스 제목은 "기사제목 - 언론사" 형식
+      const cut = raw.lastIndexOf(" - ");
+      const title = cut > 0 ? raw.slice(0,cut) : raw;
+      const src = cut > 0 ? raw.slice(cut+3) : "";
+      const esc = s => s.replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;");
+      return `<li><span class="ntag">${String(i+1).padStart(2,"0")}</span><span class="nt">${esc(title)}</span><span class="nsrc">${esc(src)}</span></li>`;
+    }).join("");
+    $("newsCard").style.display = "block";
+  }catch(e){ /* 실패 시 뉴스 카드만 숨김 유지, 다음 주기에 재시도 */ }
+}
+refreshNews();
+setInterval(refreshNews, CONFIG.REFRESH_MIN*60*1000);
+
+/* 공지사항: 여러 개면 8초마다 순환 */
+(function initBoard(){
+  const list = CONFIG.NOTICES || [];
+  if(list.length === 0) return;
+  $("board").classList.add("on");
+  const esc = s => String(s).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;");
+  $("btext").innerHTML = list.map((text, idx) => `
+    <div class="notice-item">
+      <div class="notice-icon">${idx + 1}</div>
+      <div class="notice-copy">${esc(text)}</div>
+    </div>
+  `).join("");
+  $("bcount").textContent = `${list.length}건`;
+})();
+
+/* QR 민원접수: 이미지 파일 또는 주소가 있으면 QR코드 표시 */
+(function initQR(){
+  if(CONFIG.QR_IMAGE){
+    $("qrimg").src = CONFIG.QR_IMAGE;
+  }else if(CONFIG.QR_URL){
+    $("qrimg").src = "https://api.qrserver.com/v1/create-qr-code/?size=240x240&margin=0&data="
+      + encodeURIComponent(CONFIG.QR_URL);
+  }else{
+    return;
+  }
+  $("qrtitle").textContent = CONFIG.QR_TITLE;
+  $("qrsub").textContent = CONFIG.QR_SUB;
+  $("qr").classList.add("on");
+})();
+
+/* 화면 항상 켜짐 (Wake Lock) — 지원 브라우저에서 자동 작동 */
+let wakeLock = null;
+async function keepAwake(){
+  try{ if("wakeLock" in navigator) wakeLock = await navigator.wakeLock.request("screen"); }catch(e){}
+}
+document.addEventListener("visibilitychange", ()=>{ if(document.visibilityState==="visible") keepAwake(); });
+keepAwake();
+
+/* 화면을 두 번 탭하면 전체화면 */
+document.addEventListener("dblclick", ()=>{
+  if(!document.fullscreenElement) document.documentElement.requestFullscreen?.();
+  else document.exitFullscreen?.();
+});
+</script>
+
+
+<!-- GitHub version.json 변경 감지 후 자동 새로고침 -->
+<script>
+  const SIGNAGE_VERSION_FILE = "./version.json";
+  const SIGNAGE_CHECK_INTERVAL = 30 * 1000; // 30초마다 확인
+
+  async function checkSignagePageUpdate() {
+    try {
+      const response = await fetch(SIGNAGE_VERSION_FILE + "?t=" + Date.now(), {
+        cache: "no-store"
+      });
+
+      if (!response.ok) return;
+
+      const data = await response.json();
+      const latestVersion = String(data.version || "").trim();
+      if (!latestVersion) return;
+
+      const storageKey = "bring_signage_version";
+      const currentVersion = localStorage.getItem(storageKey);
+
+      if (!currentVersion) {
+        localStorage.setItem(storageKey, latestVersion);
+        return;
+      }
+
+      if (latestVersion !== currentVersion) {
+        localStorage.setItem(storageKey, latestVersion);
+        const cleanUrl = window.location.origin + window.location.pathname;
+        window.location.replace(cleanUrl + "?v=" + encodeURIComponent(latestVersion) + "&t=" + Date.now());
+      }
+    } catch (error) {
+      console.log("사이니지 업데이트 확인 실패:", error);
+    }
+  }
+
+  checkSignagePageUpdate();
+  setInterval(checkSignagePageUpdate, SIGNAGE_CHECK_INTERVAL);
+</script>
+
+</body>
+</html>
+
