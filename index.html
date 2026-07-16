@@ -2026,16 +2026,33 @@ function saveCases(){
 }
 function caseUserLabel(){ return authedUser && authedUser.email ? authedUser.email : "local"; }
 function touchCase(c){ if(c) c.updatedAt=new Date().toISOString(); return c; }
-function caseSavePayload(id, includeArchive){
+function caseSavePayload(id, options){
+  options=options||{};
   const src=cases[id] || {};
   const payload=Object.assign({}, src);
-  if(!includeArchive && payload.archived !== true){
+  if(!options.includeArchive && payload.archived !== true){
     delete payload.archived;
     delete payload.archivedAt;
     delete payload.archivedBy;
     delete payload.restoredAt;
     delete payload.restoredBy;
   }
+  // Apps Script가 관리하는 결과는 늦게 도착한 화면 저장이 덮어쓰지 않게 한다.
+  ["ownerRecommendationMms","vendorEstimateMms","quoteFiles","businessRegistrationFiles","complaintReceiptSms"].forEach(key=>delete payload[key]);
+
+  // Firebase update에서 status/note 객체 전체가 교체되지 않도록 개별 경로로 저장한다.
+  const status=Object.assign({}, payload.status||{});
+  const note=Object.assign({}, payload.note||{});
+  delete payload.status;
+  delete payload.note;
+  CASE_STEPS.forEach(step=>{
+    if(!options.includeOwnerRecommendationState && (step.k==="c8" || step.k==="c9")) return;
+    payload["status/"+step.k]=Object.prototype.hasOwnProperty.call(status,step.k)?status[step.k]:null;
+  });
+  Object.keys(note).forEach(key=>{
+    if(!options.includeOwnerRecommendationState && key==="c8") return;
+    payload["note/"+key]=note[key];
+  });
   return payload;
 }
 function clonePlain(value){
@@ -2066,7 +2083,7 @@ function applyCaseLocalFieldLocks(remoteCases){
 function saveCase(id, immediate, options){
   if(!id || !cases[id]) return;
   touchCase(cases[id]);
-  const payload=caseSavePayload(id, options&&options.includeArchive);
+  const payload=caseSavePayload(id, options);
   if(casesRef){
     clearTimeout(caseWriteTimers[id]);
     const write=()=>{ if(casesRef) casesRef.child(id).update(payload); delete caseWriteTimers[id]; };
@@ -2081,7 +2098,7 @@ function saveCaseWithRemovedChild(id, childPath, options){
   touchCase(cases[id]);
   if(casesRef){
     clearTimeout(caseWriteTimers[id]);
-    const payload=caseSavePayload(id, options&&options.includeArchive);
+    const payload=caseSavePayload(id, options);
     const rootKey=String(childPath).split("/")[0];
     delete payload[rootKey];
     payload[childPath]=null;
@@ -3971,7 +3988,7 @@ function forceCompleteThroughStep(id,k){
   caseLog(c, `테스트 완료: ${stepMark(CASE_STEPS[0])}~${stepMark(target)} 단계 완료 처리`);
   applyStepAutomation(c, true);
   normalizeCaseSteps(c);
-  saveCase(id);
+  saveCase(id, false, {includeOwnerRecommendationState:idx>=7});
   renderCaseList();
   renderCaseDetail();
 }
@@ -4059,11 +4076,12 @@ function attachCasesRef(){
   caseValueHandler = s => {
     const v = s.val();
     cases = applyCaseLocalFieldLocks(v && typeof v === "object" ? v : {});
-    const autoFixed = applyAllStepAutomation(cases, false);
-    const fixed = normalizeAllCaseSteps(cases) || autoFixed;
-    if (fixed) {
-      Object.keys(cases).forEach(id=>saveCase(id));
-    }
+    const fixedIds=[];
+    Object.keys(cases).forEach(id=>{
+      const changed=applyStepAutomation(cases[id],false) || normalizeCaseSteps(cases[id]);
+      if(changed) fixedIds.push(id);
+    });
+    fixedIds.forEach(id=>saveCase(id));
     if (caseView.classList.contains("open")){
       renderCaseList();
       if (!curCase || !isCaseVisible(cases[curCase])) curCase = firstVisibleCaseId();
@@ -4090,12 +4108,12 @@ function selectCase(id){ curCase=id; noteOpen.clear(); quotePendingCaseId=id; qu
 function archiveCase(id){ const c=cases[id]; if(!c) return; if(!confirm("이 케이스를 보관함으로 이동할까요?")) return; c.archived=true; c.archivedAt=new Date().toISOString(); c.archivedBy=caseUserLabel(); caseLog(c, "케이스 보관 처리"); saveCase(id, true, {includeArchive:true}); if(curCase===id) curCase=firstVisibleCaseId(); renderCaseList(); renderCaseDetail(); }
 function restoreCase(id){ const c=cases[id]; if(!c) return; c.archived=false; c.restoredAt=new Date().toISOString(); c.restoredBy=caseUserLabel(); caseLog(c, "케이스 보관 해제"); curCase=id; saveCase(id, true, {includeArchive:true}); renderCaseList(); renderCaseDetail(); }
 function deleteCase(id){ archiveCase(id); }
-function cycleStep(id,k){ const c=cases[id]; if(!c) return; const msg=stepLockMessage(c,k); if(msg){ alert(msg); return; } c.status=c.status||{}; const cur=c.status[k]||""; c.status[k]= cur===""?"doing":cur==="doing"?"done":"doing"; if(c.status[k]==="done") clearStepAutomationHoldThrough(c,k); else holdStepAutomationFrom(c,k); const s=CASE_STEPS.find(x=>x.k===k); caseLog(c, s.t+" → "+(c.status[k]==="done"?"완료":c.status[k]==="doing"?"진행중":"대기")); applyStepAutomation(c, true); normalizeCaseSteps(c); saveCase(id, true); renderCaseList(); renderCaseDetail(); }
+function cycleStep(id,k){ const c=cases[id]; if(!c) return; const msg=stepLockMessage(c,k); if(msg){ alert(msg); return; } c.status=c.status||{}; const cur=c.status[k]||""; c.status[k]= cur===""?"doing":cur==="doing"?"done":"doing"; if(c.status[k]==="done") clearStepAutomationHoldThrough(c,k); else holdStepAutomationFrom(c,k); const s=CASE_STEPS.find(x=>x.k===k); caseLog(c, s.t+" → "+(c.status[k]==="done"?"완료":c.status[k]==="doing"?"진행중":"대기")); applyStepAutomation(c, true); normalizeCaseSteps(c); saveCase(id, true, {includeOwnerRecommendationState:k==="c8"||k==="c9"}); renderCaseList(); renderCaseDetail(); }
 function doAuto(id,k,channel){ const c=cases[id]; if(!c) return;
   const msg=stepLockMessage(c,k); if(msg){ alert(msg); return; }
   /* 메일 외 자동화(입금확인 등)는 아직 수동 기록 */
   if(!confirm("["+channel+"] 자동 연결은 준비 중(예정)입니다.\n지금은 '실행함'으로 기록하고 이 단계를 완료 처리할까요?")) return;
-  c.status=c.status||{}; c.status[k]="done"; clearStepAutomationHoldThrough(c,k); caseLog(c, "🔌 "+channel+" 실행(수동 기록)"); applyStepAutomation(c, true); normalizeCaseSteps(c); saveCase(id, true); renderCaseList(); renderCaseDetail();
+  c.status=c.status||{}; c.status[k]="done"; clearStepAutomationHoldThrough(c,k); caseLog(c, "🔌 "+channel+" 실행(수동 기록)"); applyStepAutomation(c, true); normalizeCaseSteps(c); saveCase(id, true, {includeOwnerRecommendationState:k==="c8"||k==="c9"}); renderCaseList(); renderCaseDetail();
 }
 /* ===== 📧 메일 자동발송 (구글 Apps Script 백엔드) ===== */
 const EMAIL_TEMPLATES = {
@@ -4527,7 +4545,6 @@ function sendOwnerRecommendationMms(){
   c.status=c.status||{}; c.note=c.note||{};
   c.status.c8="doing";
   c.note.c8="건물주 추천 MMS 발송 요청 중입니다. Apps Script 처리 결과를 기다리는 중입니다.";
-  saveCase(ownerRecommendationCtx.id,true);
   sendVendorSmsRequest(caseAutomationEndpoint(),{action:"sendOwnerRecommendationMms",caseId:c.ticketNo||c.id,quoteId:q.id||q.storedId||"",message:content,imageFileId:preview.imageFileId||"",imageDesignVersion:preview.imageDesignVersion||""});
   closeOwnerRecommendationMmsModal();
   renderCaseList(); renderCaseDetail();
@@ -4729,8 +4746,9 @@ document.getElementById("noticeBtn").addEventListener("click", openNoticePanel);
 document.getElementById("noticeBanner").addEventListener("click", openNoticePanel);
 
 /* ===== 업데이트 알림(What's New) — 새 버전 나오면 자동 팝업 ===== */
-const APP_VERSION = "5.01";
+const APP_VERSION = "5.02";
 const CHANGELOG = [
+  { v:"5.02", d:"2026-07-16", items:["대시보드의 늦은 저장이 건물주 MMS 발송완료 결과를 다시 진행중으로 덮는 문제 차단","서버 관리 결과와 ⑧·⑨ 상태를 일반 케이스 저장에서 분리해 단계 되돌림 방지"] },
   { v:"5.01", d:"2026-07-16", items:["건물주 추천 MMS 발송 결과를 Firebase에 한 번에 저장해 ⑧ 단계에 멈추는 문제 수정","발송 직전 체크포인트와 저장 재시도로 ⑧ 완료·⑨ 진행중 전환 안정화"] },
   { v:"5.00", d:"2026-07-16", items:["건물주 추천 MMS가 SENS에서 정상 접수되면 ⑧ 완료·⑨ 진행중으로 자동 전환","기존 수신 확인 대기 케이스도 화면을 열면 다음 단계로 자동 복구"] },
   { v:"4.99", d:"2026-07-16", items:["추천 견적 이미지의 방문 가능 시간을 한국시간 한글 형식으로 통일","시간 전용 1899년 날짜를 실제 방문일 또는 접수일과 결합해 표시"] },
