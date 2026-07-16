@@ -16,7 +16,8 @@ const COMPLAINT_CONFIG = {
   FIREBASE_CASES_PATH: "cases",
   RESPONSE_SHEET_URL: "https://docs.google.com/spreadsheets/d/1HI6KzIMomL6vOUPs8zZDhXHktL1cWRDcg93lflsuojA/edit"
 };
-const AUTOMATION_BUILD = "owner-recommendation-mms-20260716-v3";
+const AUTOMATION_BUILD = "owner-recommendation-mms-20260716-v4";
+const OWNER_RECOMMENDATION_IMAGE_VERSION = "owner-summary-v2";
 
 const OUTPUT_HEADERS = [
   "접수번호",
@@ -408,6 +409,7 @@ function handleOwnerRecommendationPreview_(payload) {
     imageFileId: image && image.fileId || "",
     imageFileUrl: image && image.fileUrl || "",
     imageFileName: image && image.fileName || "",
+    imageDesignVersion: image && image.imageDesignVersion || OWNER_RECOMMENDATION_IMAGE_VERSION,
     updatedAt: new Date().toISOString()
   };
   try {
@@ -429,7 +431,8 @@ function handleOwnerRecommendationPreview_(payload) {
     message: message,
     imageFileId: image && image.fileId || "",
     imageFileUrl: image && image.fileUrl || "",
-    imageFileName: image && image.fileName || ""
+    imageFileName: image && image.fileName || "",
+    imageDesignVersion: image && image.imageDesignVersion || OWNER_RECOMMENDATION_IMAGE_VERSION
   };
 }
 
@@ -533,7 +536,11 @@ function handleOwnerRecommendationMmsLocked_(payload) {
   let image = null;
   try {
     const requestedImageId = String(payload.imageFileId || existing.imageFileId || "").trim();
-    if (requestedImageId) {
+    const requestedImageVersion = String(
+      payload.imageDesignVersion || existing.imageDesignVersion ||
+      existing.preview && existing.preview.imageDesignVersion || ""
+    ).trim();
+    if (requestedImageId && requestedImageVersion === OWNER_RECOMMENDATION_IMAGE_VERSION) {
       try {
         const requestedFile = DriveApp.getFileById(requestedImageId);
         image = {
@@ -554,6 +561,7 @@ function handleOwnerRecommendationMmsLocked_(payload) {
       baseResult.imageFileId = image.fileId;
       baseResult.imageFileUrl = image.fileUrl;
       baseResult.imageFileName = image.fileName;
+      baseResult.imageDesignVersion = image.imageDesignVersion || OWNER_RECOMMENDATION_IMAGE_VERSION;
       return updateOwnerRecommendationMmsCase_(caseId, casePayload, baseResult);
     }
 
@@ -564,6 +572,7 @@ function handleOwnerRecommendationMmsLocked_(payload) {
     baseResult.imageFileId = image.fileId;
     baseResult.imageFileUrl = image.fileUrl;
     baseResult.imageFileName = image.fileName;
+    baseResult.imageDesignVersion = image.imageDesignVersion || OWNER_RECOMMENDATION_IMAGE_VERSION;
     baseResult.statusText = send.ok
       ? "SENS 발송 요청 완료. 실제 문자 수신을 확인한 뒤 발송 완료 확인을 눌러주세요."
       : send.message;
@@ -699,41 +708,181 @@ function ownerRecommendationWrapText_(value, maxChars) {
 }
 
 function createOwnerRecommendationImage_(casePayload, quoteId, quote, supplier, amounts) {
-  const workLines = ownerRecommendationWorkLines_(quote);
+  const date = Utilities.formatDate(new Date(), "Asia/Seoul", "yyyyMMdd_HHmmss");
+  const fileName = safeDriveName_((casePayload.ticketNo || casePayload.id || "case") + "_" + (supplier.name || "업체확인필요") + "_" + date + "_브링추천견적.jpg");
+  const folder = getOrCreateChildFolder_(getQuoteDriveFolder_(casePayload), "건물주 추천 발송");
+  let file = null;
+  try {
+    const svg = buildOwnerRecommendationSvg_(casePayload, quote, supplier, amounts);
+    const svgName = fileName.replace(/\.jpg$/i, ".svg");
+    const tempFile = folder.createFile(Utilities.newBlob(svg, "image/svg+xml", svgName));
+    try {
+      const rendered = renderDriveImageFile_(tempFile.getId(), fileName);
+      file = folder.createFile(rendered);
+    } finally {
+      try { tempFile.setTrashed(true); } catch (err) {}
+    }
+  } catch (err) {
+    Logger.log("추천 견적 4:5 이미지 생성 실패, 기본 이미지로 대체: " + err.message);
+    file = createOwnerRecommendationFallbackImage_(folder, fileName, casePayload, quote, supplier, amounts);
+  }
+  return {
+    file: file,
+    fileId: file.getId(),
+    fileUrl: file.getUrl(),
+    fileName: file.getName(),
+    quoteId: quoteId,
+    imageDesignVersion: OWNER_RECOMMENDATION_IMAGE_VERSION
+  };
+}
+
+function buildOwnerRecommendationSvg_(casePayload, quote, supplier, amounts) {
+  const vendorLines = ownerRecommendationImageLines_(supplier.name || "업체 확인 필요", 18, 2);
+  const visitLines = ownerRecommendationImageLines_(casePayload && casePayload.visitTime || "미입력", 18, 2);
+  const workLines = ownerRecommendationWorkLines_(quote).map(line =>
+    ownerRecommendationImageLines_(line, 30, 1)[0]
+  );
+  const workText = workLines.map((line, index) =>
+    ownerRecommendationSvgLine_("• " + line, 82, 535 + index * 39, "work")
+  ).join("");
+  return [
+    '<svg xmlns="http://www.w3.org/2000/svg" width="800" height="1000" viewBox="0 0 800 1000">',
+    '<style>',
+    'text{font-family:"Noto Sans KR","Malgun Gothic",Arial,sans-serif;letter-spacing:0}',
+    '.title{fill:#fff;font-size:34px;font-weight:900}.subtitle{fill:#cfe0ff;font-size:17px;font-weight:700}',
+    '.badge{fill:#176b45;font-size:16px;font-weight:900}.section{fill:#5b6678;font-size:17px;font-weight:800}',
+    '.total{fill:#12346b;font-size:56px;font-weight:900}.value{fill:#17233a;font-size:23px;font-weight:900}',
+    '.work{fill:#17233a;font-size:23px;font-weight:800}.money{fill:#17233a;font-size:29px;font-weight:900}',
+    '.footer{fill:#7b8798;font-size:15px;font-weight:700}',
+    '</style>',
+    '<rect width="800" height="1000" fill="#f3f6fb"/>',
+    '<rect width="800" height="168" fill="#17386f"/>',
+    '<text x="48" y="66" class="title">BRING Care 추천 견적서</text>',
+    '<text x="48" y="105" class="subtitle">검토를 마친 추천 견적 요약입니다</text>',
+    '<rect x="620" y="42" width="132" height="44" rx="22" fill="#dff7e9"/>',
+    '<text x="686" y="70" text-anchor="middle" class="badge">추천 견적</text>',
+    '<rect x="40" y="130" width="720" height="166" rx="18" fill="#e1edff" stroke="#aac8f3" stroke-width="2"/>',
+    '<text x="76" y="181" class="section">최종 합계금액</text>',
+    '<text x="724" y="252" text-anchor="end" class="total">' + ownerRecommendationXml_(ownerRecommendationAmountText_(amounts.totalAmount)) + '</text>',
+    '<rect x="40" y="322" width="350" height="126" rx="14" fill="#fff" stroke="#d7e0ed"/>',
+    '<text x="68" y="360" class="section">추천 업체</text>',
+    ownerRecommendationSvgLines_(vendorLines, 68, 397, 30, "value"),
+    '<rect x="410" y="322" width="350" height="126" rx="14" fill="#fff" stroke="#d7e0ed"/>',
+    '<text x="438" y="360" class="section">방문 가능 시간</text>',
+    ownerRecommendationSvgLines_(visitLines, 438, 397, 30, "value"),
+    '<rect x="40" y="474" width="720" height="288" rx="14" fill="#fff" stroke="#d7e0ed"/>',
+    '<text x="68" y="515" class="section">작업 내용</text>',
+    workText,
+    '<rect x="40" y="788" width="350" height="132" rx="14" fill="#fff" stroke="#d7e0ed"/>',
+    '<text x="68" y="830" class="section">공급가액</text>',
+    '<text x="362" y="884" text-anchor="end" class="money">' + ownerRecommendationXml_(ownerRecommendationAmountText_(amounts.supplyAmount)) + '</text>',
+    '<rect x="410" y="788" width="350" height="132" rx="14" fill="#fff" stroke="#d7e0ed"/>',
+    '<text x="438" y="830" class="section">부가세</text>',
+    '<text x="732" y="884" text-anchor="end" class="money">' + ownerRecommendationXml_(ownerRecommendationAmountText_(amounts.vatAmount)) + '</text>',
+    '<text x="400" y="968" text-anchor="middle" class="footer">BRING Care · 건물 유지보수 추천 견적</text>',
+    '</svg>'
+  ].join("");
+}
+
+function ownerRecommendationImageLines_(value, maxChars, maxLines) {
+  const text = String(value || "").replace(/\s+/g, " ").trim() || "미입력";
+  const lines = [];
+  let rest = text;
+  while (rest && lines.length < maxLines) {
+    if (rest.length <= maxChars) {
+      lines.push(rest);
+      rest = "";
+      break;
+    }
+    let cut = rest.lastIndexOf(" ", maxChars);
+    if (cut < Math.floor(maxChars * 0.55)) cut = maxChars;
+    lines.push(rest.slice(0, cut).trim());
+    rest = rest.slice(cut).trim();
+  }
+  if (rest && lines.length) {
+    lines[lines.length - 1] = lines[lines.length - 1].replace(/[.…]+$/, "") + "…";
+  }
+  return lines.length ? lines : ["미입력"];
+}
+
+function ownerRecommendationXml_(value) {
+  return String(value || "")
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/\"/g, "&quot;")
+    .replace(/'/g, "&apos;");
+}
+
+function ownerRecommendationSvgLine_(value, x, y, className) {
+  return '<text x="' + x + '" y="' + y + '" class="' + className + '">' + ownerRecommendationXml_(value) + '</text>';
+}
+
+function ownerRecommendationSvgLines_(lines, x, y, gap, className) {
+  return (lines || []).map((line, index) =>
+    ownerRecommendationSvgLine_(line, x, y + index * gap, className)
+  ).join("");
+}
+
+function renderDriveImageFile_(fileId, outputName) {
+  const urls = [];
+  try {
+    const metadata = Drive.Files.get(fileId, { fields: "thumbnailLink" });
+    if (metadata && metadata.thumbnailLink) urls.push(String(metadata.thumbnailLink).replace(/=s\d+$/, "=s1600"));
+  } catch (err) {
+    Logger.log("추천 SVG 썸네일 링크 확인 실패: " + err.message);
+  }
+  urls.push("https://drive.google.com/thumbnail?id=" + encodeURIComponent(fileId) + "&sz=w1600-h1600");
+  const headers = { Authorization: "Bearer " + ScriptApp.getOAuthToken() };
+  for (let attempt = 0; attempt < 5; attempt++) {
+    for (let index = 0; index < urls.length; index++) {
+      try {
+        const response = UrlFetchApp.fetch(urls[index], { headers: headers, muteHttpExceptions: true, followRedirects: true });
+        const responseHeaders = response.getHeaders();
+        const type = String(responseHeaders["Content-Type"] || responseHeaders["content-type"] || response.getBlob().getContentType() || "").toLowerCase();
+        if (response.getResponseCode() >= 200 && response.getResponseCode() < 300 && type.indexOf("image/") === 0) {
+          const blob = response.getBlob().getAs("image/jpeg");
+          blob.setName(outputName);
+          return blob;
+        }
+      } catch (err) {
+        Logger.log("추천 SVG 이미지 변환 시도 실패: " + err.message);
+      }
+    }
+    Utilities.sleep(400);
+  }
+  throw new Error("4:5 추천 견적 이미지를 렌더링하지 못했습니다.");
+}
+
+function createOwnerRecommendationFallbackImage_(folder, fileName, casePayload, quote, supplier, amounts) {
   const rows = [
-    ["BRING Care 추천 견적서", "추천 견적 요약"],
     ["최종 합계금액", ownerRecommendationAmountText_(amounts.totalAmount)],
-    ["추천 업체", ownerRecommendationWrapText_(supplier.name || "업체 확인 필요", 28)]
+    ["추천 업체", ownerRecommendationWrapText_(supplier.name || "업체 확인 필요", 28)],
+    ["방문 가능 시간", ownerRecommendationWrapText_(casePayload && casePayload.visitTime || "미입력", 32)]
   ];
-  workLines.forEach((line, index) => rows.push([
-    workLines.length === 1 ? "작업 내용" : "작업 내용 " + String(index + 1),
+  ownerRecommendationWorkLines_(quote).forEach((line, index) => rows.push([
+    index === 0 ? "작업 내용" : "",
     ownerRecommendationWrapText_(line, 32)
   ]));
   rows.push(
-    ["방문 가능 시간", ownerRecommendationWrapText_(casePayload && casePayload.visitTime || "미입력", 32)],
     ["공급가액", ownerRecommendationAmountText_(amounts.supplyAmount)],
     ["부가세", ownerRecommendationAmountText_(amounts.vatAmount)]
   );
-
   const table = Charts.newDataTable()
     .addColumn(Charts.ColumnType.STRING, "항목")
     .addColumn(Charts.ColumnType.STRING, "내용");
   rows.forEach(row => table.addRow(row));
   const chart = Charts.newTableChart()
     .setDataTable(table)
-    .setDimensions(1000, Math.max(860, rows.length * 64))
+    .setDimensions(800, 1000)
     .setOption("page", "disable")
     .setOption("alternatingRowStyle", false)
     .setOption("showRowNumber", false)
     .build();
   let blob = chart.getAs("image/png");
   try { blob = blob.getAs("image/jpeg"); } catch (err) {}
-  const date = Utilities.formatDate(new Date(), "Asia/Seoul", "yyyyMMdd_HHmmss");
-  const fileName = safeDriveName_((casePayload.ticketNo || casePayload.id || "case") + "_" + (supplier.name || "업체확인필요") + "_" + date + "_브링추천견적.jpg");
   blob.setName(fileName);
-  const folder = getOrCreateChildFolder_(getQuoteDriveFolder_(casePayload), "건물주 추천 발송");
-  const file = folder.createFile(blob);
-  return { file: file, fileId: file.getId(), fileUrl: file.getUrl(), fileName: file.getName(), quoteId: quoteId };
+  return folder.createFile(blob);
 }
 
 function driveImageToMmsPayload_(file) {

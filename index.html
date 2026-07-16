@@ -301,7 +301,7 @@
   .mailmodal.open{ display:flex; }
   .mm-box{ background:#fff; width:min(560px,92vw); max-height:88vh; overflow:auto; border-radius:16px; padding:20px 22px; box-shadow:0 20px 60px rgba(0,0,0,.3); }
   .mm-box.vendor-sms{ width:min(680px,94vw); }
-  .mm-box.owner-recommendation{ width:min(760px,94vw); }
+  .mm-box.owner-recommendation{ width:min(1080px,96vw); }
   .mm-head{ font-size:17px; font-weight:800; color:#1b335f; display:flex; align-items:center; gap:8px; margin-bottom:14px; }
   .mm-x{ margin-left:auto; border:none; background:#eef1f6; border-radius:8px; width:30px; height:30px; cursor:pointer; font-size:14px; }
   .mm-l{ display:block; font-size:12.5px; color:#52606d; font-weight:600; margin-bottom:10px; }
@@ -319,16 +319,16 @@
   .vsm-item span{ font-size:12px; color:#52606d; line-height:1.45; }
   .vsm-item.bad{ background:#fffafa; border-color:#ffd3cf; }
   .vsm-preview{ white-space:pre-wrap; border:1px solid #d8e0ec; background:#f8fafd; border-radius:9px; padding:10px 12px; font-size:13px; line-height:1.55; color:#243244; margin:4px 0 12px; }
-  .orm-grid{ display:grid; grid-template-columns:minmax(0,1fr) minmax(260px,340px); gap:12px; align-items:start; }
+  .orm-grid{ display:grid; grid-template-columns:minmax(0,.9fr) minmax(420px,520px); gap:18px; align-items:start; }
   .orm-summary{ display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:7px; }
   .orm-kv{ border:1px solid #e3e8f1; background:#fafbfd; border-radius:8px; padding:8px 9px; display:grid; gap:3px; min-width:0; }
   .orm-kv b{ color:#6b7686; font-size:11px; }
   .orm-kv span{ color:#162033; font-size:13px; font-weight:800; overflow-wrap:anywhere; }
-  .orm-preview-image{ display:block; width:100%; max-height:360px; object-fit:contain; border:1px solid #d8e0ec; background:#fff; border-radius:8px; }
+  .orm-preview-image{ display:block; width:100%; height:auto; object-fit:contain; border:1px solid #d8e0ec; background:#fff; border-radius:8px; }
   .orm-preview-placeholder{ min-height:190px; display:grid; place-items:center; border:1px dashed #b8c6dc; background:#f8fafd; color:#6b7686; border-radius:8px; padding:16px; text-align:center; font-size:12px; line-height:1.5; }
   .orm-caption{ margin-top:6px; color:#6b7686; font-size:11.5px; line-height:1.45; }
   .orm-message{ min-height:180px; }
-  @media (max-width:720px){ .orm-grid,.orm-summary{ grid-template-columns:1fr; } }
+  @media (max-width:900px){ .orm-grid,.orm-summary{ grid-template-columns:1fr; } .mm-box.owner-recommendation{ width:min(680px,94vw); } }
   .quote-upload{ margin:8px 0 0; border:1px solid #d8e0ec; border-radius:8px; background:#fbfcff; padding:12px; overflow-anchor:none; }
   .quote-upload-split{ display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:10px; align-items:stretch; margin-top:8px; overflow-anchor:none; }
   .quote-upload-split .quote-upload{ margin:0; box-sizing:border-box; height:100%; }
@@ -4378,54 +4378,55 @@ function ownerRecommendationWorkLines(q){
   if(names.length>4) lines.push(`외 ${names.length-4}건`);
   return lines;
 }
-function ownerRecommendationSvgWrap(value,maxChars){
-  const text=String(value??"").trim()||"미입력";
+function ownerRecommendationSvgWrap(value,maxChars,maxLines=2){
+  const text=String(value??"").replace(/\s+/g," ").trim()||"미입력";
   const lines=[];
-  text.split(/\n/).forEach(part=>{
-    let rest=part.trim()||"미입력";
-    while(rest.length>maxChars){ lines.push(rest.slice(0,maxChars)); rest=rest.slice(maxChars); }
-    lines.push(rest);
-  });
-  return lines;
+  let rest=text;
+  while(rest && lines.length<maxLines){
+    if(rest.length<=maxChars){ lines.push(rest); rest=""; break; }
+    let cut=rest.lastIndexOf(" ",maxChars);
+    if(cut<Math.floor(maxChars*.55)) cut=maxChars;
+    lines.push(rest.slice(0,cut).trim());
+    rest=rest.slice(cut).trim();
+  }
+  if(rest&&lines.length) lines[lines.length-1]=lines[lines.length-1].replace(/[.…]+$/g,"")+"…";
+  return lines.length?lines:["미입력"];
 }
 function ownerRecommendationPreviewImage(c, q, supplier, amounts){
   const escSvg=value=>String(value??"").replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;");
-  const workLines=ownerRecommendationWorkLines(q);
-  const rows=[["추천 업체",supplier.name||"업체 확인 필요"]];
-  workLines.forEach((line,index)=>rows.push([
-    workLines.length===1?"작업 내용":`작업 내용 ${index+1}`,
-    line
-  ]));
-  rows.push(
-    ["방문 가능 시간",displayVisitTime(c)||String(c&&c.visitTime||"미입력")],
-    ["공급가액",recommendedQuoteMoney(amounts.supply)||"금액 미입력"],
-    ["부가세",recommendedQuoteMoney(amounts.vat)||"금액 미입력"]
-  );
-  const width=760, pad=24, headerHeight=78, totalHeight=108, rowGap=8;
-  const prepared=rows.map(row=>({label:row[0],lines:ownerRecommendationSvgWrap(row[1],34)}));
-  const bodyHeight=prepared.reduce((sum,row)=>sum+Math.max(46,row.lines.length*25+18)+rowGap,0);
-  const height=headerHeight+totalHeight+bodyHeight+pad;
-  let y=headerHeight+totalHeight;
-  let body="";
-  prepared.forEach((row,index)=>{
-    const rowHeight=Math.max(46,row.lines.length*25+18);
-    const fill=index%2===0?"#ffffff":"#f7faff";
-    body+=`<rect x="${pad}" y="${y}" width="${width-pad*2}" height="${rowHeight}" rx="8" fill="${fill}" stroke="#d8e0ec"/>`;
-    body+=`<text x="${pad+16}" y="${y+29}" class="label">${escSvg(row.label)}</text>`;
-    row.lines.forEach((line,lineIndex)=>{ body+=`<text x="${pad+172}" y="${y+28+lineIndex*25}" class="value">${escSvg(line)}</text>`; });
-    y+=rowHeight+rowGap;
-  });
+  const vendorLines=ownerRecommendationSvgWrap(supplier.name||"업체 확인 필요",18,2);
+  const visitLines=ownerRecommendationSvgWrap(displayVisitTime(c)||String(c&&c.visitTime||"미입력"),18,2);
+  const workLines=ownerRecommendationWorkLines(q).map(line=>ownerRecommendationSvgWrap(line,30,1)[0]);
+  const textLines=(lines,x,y,gap,cls)=>lines.map((line,index)=>`<text x="${x}" y="${y+index*gap}" class="${cls}">${escSvg(line)}</text>`).join("");
+  const workText=workLines.map((line,index)=>`<text x="82" y="${535+index*39}" class="work">${escSvg(`• ${line}`)}</text>`).join("");
   const total=recommendedQuoteMoney(amounts.total)||"금액 미입력";
-  const svg=`<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}" viewBox="0 0 ${width} ${height}">
-    <style>text{font-family:Arial,'Malgun Gothic',sans-serif}.title{fill:#fff;font-size:25px;font-weight:900}.sub{fill:#dbe8ff;font-size:13px;font-weight:700}.totalLabel{fill:#52606d;font-size:15px;font-weight:800}.totalValue{fill:#17386f;font-size:34px;font-weight:900}.label{fill:#52606d;font-size:14px;font-weight:800}.value{fill:#162033;font-size:16px;font-weight:800}</style>
-    <rect width="${width}" height="${height}" rx="14" fill="#eef4fb"/>
-    <rect x="0" y="0" width="${width}" height="${headerHeight}" rx="14" fill="#17386f"/>
-    <text x="${pad}" y="34" class="title">BRING Care 추천 견적서</text>
-    <text x="${pad}" y="58" class="sub">최저가 기준 추천 견적 요약</text>
-    <rect x="${pad}" y="${headerHeight+14}" width="${width-pad*2}" height="${totalHeight-22}" rx="10" fill="#dceaff" stroke="#a9c9f5"/>
-    <text x="${pad+20}" y="${headerHeight+53}" class="totalLabel">최종 합계금액</text>
-    <text x="${width-pad-20}" y="${headerHeight+59}" text-anchor="end" class="totalValue">${escSvg(total)}</text>
-    ${body}
+  const svg=`<svg xmlns="http://www.w3.org/2000/svg" width="800" height="1000" viewBox="0 0 800 1000">
+    <style>text{font-family:'Noto Sans KR','Malgun Gothic',Arial,sans-serif;letter-spacing:0}.title{fill:#fff;font-size:34px;font-weight:900}.subtitle{fill:#cfe0ff;font-size:17px;font-weight:700}.badge{fill:#176b45;font-size:16px;font-weight:900}.section{fill:#5b6678;font-size:17px;font-weight:800}.total{fill:#12346b;font-size:56px;font-weight:900}.value{fill:#17233a;font-size:23px;font-weight:900}.work{fill:#17233a;font-size:23px;font-weight:800}.money{fill:#17233a;font-size:29px;font-weight:900}.footer{fill:#7b8798;font-size:15px;font-weight:700}</style>
+    <rect width="800" height="1000" fill="#f3f6fb"/>
+    <rect width="800" height="168" fill="#17386f"/>
+    <text x="48" y="66" class="title">BRING Care 추천 견적서</text>
+    <text x="48" y="105" class="subtitle">검토를 마친 추천 견적 요약입니다</text>
+    <rect x="620" y="42" width="132" height="44" rx="22" fill="#dff7e9"/>
+    <text x="686" y="70" text-anchor="middle" class="badge">추천 견적</text>
+    <rect x="40" y="130" width="720" height="166" rx="18" fill="#e1edff" stroke="#aac8f3" stroke-width="2"/>
+    <text x="76" y="181" class="section">최종 합계금액</text>
+    <text x="724" y="252" text-anchor="end" class="total">${escSvg(total)}</text>
+    <rect x="40" y="322" width="350" height="126" rx="14" fill="#fff" stroke="#d7e0ed"/>
+    <text x="68" y="360" class="section">추천 업체</text>
+    ${textLines(vendorLines,68,397,30,"value")}
+    <rect x="410" y="322" width="350" height="126" rx="14" fill="#fff" stroke="#d7e0ed"/>
+    <text x="438" y="360" class="section">방문 가능 시간</text>
+    ${textLines(visitLines,438,397,30,"value")}
+    <rect x="40" y="474" width="720" height="288" rx="14" fill="#fff" stroke="#d7e0ed"/>
+    <text x="68" y="515" class="section">작업 내용</text>
+    ${workText}
+    <rect x="40" y="788" width="350" height="132" rx="14" fill="#fff" stroke="#d7e0ed"/>
+    <text x="68" y="830" class="section">공급가액</text>
+    <text x="362" y="884" text-anchor="end" class="money">${escSvg(recommendedQuoteMoney(amounts.supply)||"금액 미입력")}</text>
+    <rect x="410" y="788" width="350" height="132" rx="14" fill="#fff" stroke="#d7e0ed"/>
+    <text x="438" y="830" class="section">부가세</text>
+    <text x="732" y="884" text-anchor="end" class="money">${escSvg(recommendedQuoteMoney(amounts.vat)||"금액 미입력")}</text>
+    <text x="400" y="968" text-anchor="middle" class="footer">BRING Care · 건물 유지보수 추천 견적</text>
   </svg>`;
   return "data:image/svg+xml;charset=utf-8,"+encodeURIComponent(svg);
 }
@@ -4479,7 +4480,7 @@ function refreshOwnerRecommendationModal(){
   const body=document.getElementById("ormBody");
   if(body && !body.dataset.edited) body.value=ownerRecommendationMessage(c,q,supplier,amounts);
   const image=document.getElementById("ormImage");
-  if(image && !image.dataset.ready){ image.innerHTML=`<img class="orm-preview-image" alt="브링 추천 견적 미리보기" src="${escAttr(ownerRecommendationPreviewImage(c,q,supplier,amounts))}">`; image.dataset.ready="1"; }
+  if(image){ image.innerHTML=`<img class="orm-preview-image" alt="브링 추천 견적 미리보기" src="${escAttr(ownerRecommendationPreviewImage(c,q,supplier,amounts))}">`; image.dataset.ready="owner-summary-v2"; }
   const note=document.getElementById("ormNote");
   if(note) note.textContent=caseAutomationEndpoint()?"✅ 확인 후 발송을 누르면 건물주에게 추천 업체와 브링 최종금액, 견적 이미지가 MMS로 전송됩니다.":"⚠️ Apps Script 웹앱 URL이 연결되지 않았습니다.";
 }
@@ -4526,7 +4527,7 @@ function sendOwnerRecommendationMms(){
   c.status.c8="doing";
   c.note.c8="건물주 추천 MMS 발송 요청 중입니다. Apps Script 처리 결과를 기다리는 중입니다.";
   saveCase(ownerRecommendationCtx.id,true);
-  sendVendorSmsRequest(caseAutomationEndpoint(),{action:"sendOwnerRecommendationMms",caseId:c.ticketNo||c.id,quoteId:q.id||q.storedId||"",message:content,imageFileId:preview.imageFileId||""});
+  sendVendorSmsRequest(caseAutomationEndpoint(),{action:"sendOwnerRecommendationMms",caseId:c.ticketNo||c.id,quoteId:q.id||q.storedId||"",message:content,imageFileId:preview.imageFileId||"",imageDesignVersion:preview.imageDesignVersion||""});
   closeOwnerRecommendationMmsModal();
   renderCaseList(); renderCaseDetail();
   alert("📨 건물주 추천 MMS 발송 요청을 보냈어요. 결과는 잠시 뒤 ⑧ 메모에서 확인하세요.");
@@ -4727,8 +4728,9 @@ document.getElementById("noticeBtn").addEventListener("click", openNoticePanel);
 document.getElementById("noticeBanner").addEventListener("click", openNoticePanel);
 
 /* ===== 업데이트 알림(What's New) — 새 버전 나오면 자동 팝업 ===== */
-const APP_VERSION = "4.95";
+const APP_VERSION = "4.96";
 const CHANGELOG = [
+  { v:"4.96", d:"2026-07-16", items:["건물주 추천 견적 이미지를 4:5 세로형 모바일 요약 카드로 전면 재구성","최종금액·업체·방문시간·품목·공급가액·부가세만 큰 글씨로 표시","구버전 표 이미지를 새 MMS에서 재사용하지 않도록 이미지 설계 버전 적용"] },
   { v:"4.95", d:"2026-07-16", items:["추천 견적 MMS 이미지를 핵심 정보 중심의 세로형 요약으로 개선","최종 합계금액 강조 및 작업 내용·방문 가능 시간 표시"] },
   { v:"4.94", d:"2026-07-16", items:["건물주 추천 MMS는 실제 수신 확인 후 ⑧ 완료·⑨ 진행중 전환","추천 견적 첨부 이미지를 세로형 2열 요약으로 개선해 가독성 강화"] },
   { v:"4.93", d:"2026-07-15", items:["⑦ 최적 추천 완료 후 ⑧ 건물주 추천 MMS 확인 모달 연결","브링 추천 견적 JPG 첨부 생성 및 발송 성공 시 ⑨ 승인·입금 진행중 전환"] },
