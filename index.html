@@ -244,7 +244,11 @@
   .cv-list-tools{ display:flex; gap:6px; margin:7px 0 9px; }
   .cv-archive-toggle{ flex:1; border:1px solid #d8e0ec; background:#fff; color:#52606d; border-radius:8px; padding:7px 9px; font-size:12px; font-weight:800; cursor:pointer; }
   .cv-archive-toggle.on{ border-color:#4b7bec; background:#eef3ff; color:#315fce; }
-  .cv-restore{ border:1px solid #b9e6c5; background:#eaf7ee; color:#116329; border-radius:7px; padding:5px 8px; font-size:11.5px; font-weight:900; cursor:pointer; margin-top:8px; }
+  .cv-trash-actions{ display:flex; gap:6px; margin-top:8px; }
+  .cv-restore,.cv-delete{ border-radius:7px; padding:5px 9px; font-size:11.5px; font-weight:900; cursor:pointer; }
+  .cv-restore{ border:1px solid #b9e6c5; background:#eaf7ee; color:#116329; }
+  .cv-delete{ border:1px solid #ffccc7; background:#fff1f0; color:#b42318; }
+  .cv-trash-detail-actions{ display:flex; gap:8px; align-items:center; margin-top:12px; }
   .cv-badge{ display:inline-flex; align-items:center; min-height:22px; padding:2px 7px; border-radius:999px; font-size:11px; font-weight:800; line-height:1.2; border:1px solid #d7dfec; color:#52606d; background:#fff; }
   .cv-badge.urgent{ color:#b42318; background:#fff1f0; border-color:#ffccc7; }
   .cv-badge.review{ color:#8a5a00; background:#fff8e1; border-color:#ffe08a; }
@@ -2118,7 +2122,7 @@ function resolveCaseMapKey(map, requestedKey){
   if(map[requestedKey]) return requestedKey;
   return Object.keys(map).find(key=>String((map[key]&&map[key].id)||"")===String(requestedKey)) || requestedKey;
 }
-function isCaseVisible(c){ return !!c && (showArchivedCases ? c.archived===true : c.archived!==true); }
+function isCaseVisible(c){ return !!c && c.deleted!==true && (showArchivedCases ? c.archived===true : c.archived!==true); }
 function visibleCaseIds(){
   return Object.keys(cases).filter(id=>isCaseVisible(cases[id])).sort((a,b)=>caseTimeValue(cases[b])-caseTimeValue(cases[a]));
 }
@@ -4134,8 +4138,36 @@ function openCaseView(){
 function closeCaseView(){ caseView.classList.remove("open"); }
 function createCase(){ const id=caseGenId(); cases[id]={ id, name:"새 고객", phone:"", email:"", building:"", grade:"스탠다드", memo:"", status:{}, log:[], createdAt:new Date().toISOString() }; curCase=id; saveCase(id, true); renderCaseList(); renderCaseDetail(); return id; }
 function selectCase(id){ curCase=id; noteOpen.clear(); quotePendingCaseId=id; quotePendingFiles=[]; businessRegPendingCaseId=id; businessRegPendingFiles=[]; renderCaseList(); renderCaseDetail(); }
-function archiveCase(id){ const c=cases[id]; if(!c) return; if(!confirm("이 케이스를 보관함으로 이동할까요?")) return; c.archived=true; c.archivedAt=new Date().toISOString(); c.archivedBy=caseUserLabel(); caseLog(c, "케이스 보관 처리"); saveCase(id, true, {includeArchive:true}); if(curCase===id) curCase=firstVisibleCaseId(); renderCaseList(); renderCaseDetail(); }
-function restoreCase(id){ const c=cases[id]; if(!c) return; c.archived=false; c.restoredAt=new Date().toISOString(); c.restoredBy=caseUserLabel(); caseLog(c, "케이스 보관 해제"); curCase=id; saveCase(id, true, {includeArchive:true}); renderCaseList(); renderCaseDetail(); }
+function archiveCase(id){ const c=cases[id]; if(!c) return; if(!confirm("이 케이스를 휴지통으로 이동할까요?")) return; c.archived=true; c.archivedAt=new Date().toISOString(); c.archivedBy=caseUserLabel(); caseLog(c, "케이스 휴지통 이동"); saveCase(id, true, {includeArchive:true}); if(curCase===id) curCase=firstVisibleCaseId(); renderCaseList(); renderCaseDetail(); }
+function restoreCase(id){ const c=cases[id]; if(!c) return; c.archived=false; c.restoredAt=new Date().toISOString(); c.restoredBy=caseUserLabel(); caseLog(c, "케이스 복원"); curCase=id; saveCase(id, true, {includeArchive:true}); renderCaseList(); renderCaseDetail(); }
+async function permanentlyDeleteCase(id){
+  const c=cases[id];
+  if(!c || c.archived!==true) return;
+  if(!confirm("이 케이스를 휴지통에서 완전히 삭제할까요?\n삭제 후에는 복원할 수 없습니다.")) return;
+  const deletedAt=new Date().toISOString();
+  const tombstone={
+    id:c.id||id,
+    ticketNo:c.ticketNo||id,
+    archived:true,
+    deleted:true,
+    deletedAt,
+    deletedBy:caseUserLabel(),
+    updatedAt:deletedAt
+  };
+  try{
+    clearTimeout(caseWriteTimers[id]);
+    delete caseWriteTimers[id];
+    if(casesRef) await casesRef.child(id).set(tombstone);
+    delete cases[id];
+    if(!casesRef && !isConfigured) localStorage.setItem("fm_cases_v1", JSON.stringify(cases));
+    if(curCase===id) curCase=firstVisibleCaseId();
+    renderCaseList();
+    renderCaseDetail();
+  }catch(err){
+    console.error("케이스 영구 삭제 실패", err);
+    alert("케이스를 삭제하지 못했습니다. 잠시 후 다시 시도해 주세요.");
+  }
+}
 function deleteCase(id){ archiveCase(id); }
 function cycleStep(id,k){ const c=cases[id]; if(!c) return; if(isConfigured && stepIndex(k)<=7 && !caseTestMode){ alert("①~⑧ 단계는 자동화 결과에 따라 진행됩니다. 테스트가 필요하면 테스트 모드를 켜주세요."); return; } const msg=stepLockMessage(c,k); if(msg){ alert(msg); return; } c.status=c.status||{}; const cur=c.status[k]||""; c.status[k]= cur===""?"doing":cur==="doing"?"done":"doing"; if(c.status[k]==="done") clearStepAutomationHoldThrough(c,k); else holdStepAutomationFrom(c,k); const s=CASE_STEPS.find(x=>x.k===k); caseLog(c, s.t+" → "+(c.status[k]==="done"?"완료":c.status[k]==="doing"?"진행중":"대기")); applyStepAutomation(c, true); normalizeCaseSteps(c); saveCase(id, true, {includeWorkflowState:caseTestMode}); renderCaseList(); renderCaseDetail(); }
 function doAuto(id,k,channel){ const c=cases[id]; if(!c) return;
@@ -4606,17 +4638,17 @@ function setCaseField(id,f,v){ const c=cases[id]; if(!c) return; c[f]=v; saveCas
 function setCaseNote(id,k,v){ const c=cases[id]; if(!c) return; c.note=c.note||{}; c.note[k]=v; saveCase(id); }
 function renderCaseList(){
   const ids=visibleCaseIds();
-  const archivedCount=Object.keys(cases).filter(id=>cases[id]&&cases[id].archived===true).length;
+  const archivedCount=Object.keys(cases).filter(id=>cases[id]&&cases[id].archived===true&&cases[id].deleted!==true).length;
   caseListEl.innerHTML = `<button class="cv-newcase" id="cvNew">＋ 새 케이스(고객)</button>`+
-    `<div class="cv-list-tools"><button class="cv-archive-toggle ${showArchivedCases?'on':''}" data-archive-toggle="1">${showArchivedCases?'보관함 보기 ON':'보관함 보기'}${archivedCount?` (${archivedCount})`:""}</button></div>`+
+    `<div class="cv-list-tools"><button class="cv-archive-toggle ${showArchivedCases?'on':''}" data-archive-toggle="1">${showArchivedCases?'휴지통 ON':'휴지통'}${archivedCount?` (${archivedCount})`:""}</button></div>`+
     (ids.length? ids.map(id=>{ const c=cases[id], p=caseProgress(c);
       const ucls=caseUrgencyClass(c.urgency);
       return `<div class="cv-item ${id===curCase?'on':''}" data-cid="${id}"><div class="nm">${esc(caseTitle(c))}</div>`+
         `<div class="sub">${esc(caseSubText(c))}</div>`+
         `<div class="badges">${c.archived?`<span class="cv-badge normal">보관</span>`:""}${c.urgency?`<span class="cv-badge ${ucls}">${esc(c.urgency)}</span>`:""}${c.source==="google_form"?`<span class="cv-badge source">구글폼</span>`:""}${contractBadgeHTML(c)}</div>`+
         `<div class="pg">진행 ${p.done}/${p.total}${c.receivedAt?" · "+esc(formatCaseDate(c.receivedAt)):""}</div>`+
-        `${c.archived?`<button class="cv-restore" data-restore-case="${escAttr(id)}">복구</button>`:""}</div>`;
-    }).join("") : `<div class="cv-empty" style="margin-top:20px;font-size:12.5px">${showArchivedCases?"보관된 케이스가 없습니다":"고객을 추가해보세요"}</div>`);
+        `${c.archived?`<div class="cv-trash-actions"><button class="cv-restore" data-restore-case="${escAttr(id)}">복원</button><button class="cv-delete" data-delete-case="${escAttr(id)}">삭제</button></div>`:""}</div>`;
+    }).join("") : `<div class="cv-empty" style="margin-top:20px;font-size:12.5px">${showArchivedCases?"휴지통이 비어 있습니다":"고객을 추가해보세요"}</div>`);
 }
 function autoGrowCaseNote(el){
   if(!el) return;
@@ -4695,7 +4727,7 @@ function renderCaseDetail(){
       const ownerRecommendation=open && s.k==='c8' ? ownerRecommendationPanel(c, st) : "";
       return `<div class="cv-stepwrap"><div class="cv-step ${locked?'locked':st}">${chip}<div class="lbl">${esc(s.t)}</div>${act}${dc}${tb}${nb}</div>${box}${receiptSmsPreview}${vendorMmsPreview}${vendors}${quotes}${recommendation}${ownerRecommendation}</div>`;
     }).join("")+
-    (c.archived?`<button class="cv-del restore" id="cvRestore">↩ 보관 해제</button>`:`<button class="cv-del" id="cvDel">🗄 보관함으로 이동</button>`)+
+    (c.archived?`<div class="cv-trash-detail-actions"><button class="cv-del restore" id="cvRestore">복원</button><button class="cv-delete" id="cvPermanentDelete">삭제</button></div>`:`<button class="cv-del" id="cvDel">휴지통으로 이동</button>`)+
     (c.log&&c.log.length?`<div class="cv-log"><div class="t" style="font-weight:700">기록</div>`+c.log.slice(0,8).map(l=>`<div class="t">· ${esc(l)}</div>`).join("")+`</div>`:"");
   (window.requestAnimationFrame || (fn=>setTimeout(fn,0)))(autoGrowCaseNotes);
   queueBusinessRegistrationAutoApply(c, curCase);
@@ -4703,7 +4735,7 @@ function renderCaseDetail(){
 document.getElementById("caseBtn").addEventListener("click", openCaseView);
 document.getElementById("caseBack").addEventListener("click", closeCaseView);
 caseDetailEl.addEventListener("scroll", ()=>{ lastCaseDetailScrollAt=Date.now(); }, { passive:true });
-caseListEl.addEventListener("click", e=>{ if(e.target.closest("#cvNew")){ createCase(); return; } const ar=e.target.closest("[data-archive-toggle]"); if(ar){ setCaseArchiveMode(!showArchivedCases); return; } const rs=e.target.closest("[data-restore-case]"); if(rs){ restoreCase(rs.dataset.restoreCase); return; } const it=e.target.closest(".cv-item"); if(it) selectCase(it.dataset.cid); });
+caseListEl.addEventListener("click", e=>{ if(e.target.closest("#cvNew")){ createCase(); return; } const ar=e.target.closest("[data-archive-toggle]"); if(ar){ setCaseArchiveMode(!showArchivedCases); return; } const rs=e.target.closest("[data-restore-case]"); if(rs){ restoreCase(rs.dataset.restoreCase); return; } const del=e.target.closest("[data-delete-case]"); if(del){ permanentlyDeleteCase(del.dataset.deleteCase); return; } const it=e.target.closest(".cv-item"); if(it) selectCase(it.dataset.cid); });
 caseDetailEl.addEventListener("click", e=>{
   const tm=e.target.closest("[data-testmode]"); if(tm){ setCaseTestMode(!caseTestMode); return; }
   const cu=e.target.closest("[data-case-doc-upload]"); if(cu){ uploadSelectedCaseDocuments(); return; }
@@ -4720,6 +4752,7 @@ caseDetailEl.addEventListener("click", e=>{
   const au=e.target.closest("[data-auto]"); if(au){ const ak=au.dataset.auto; if(ak==="c2") sendComplaintReceiptSmsFromCase(curCase); else if(ak==="c5") openVendorSmsModal(curCase); else if(ak==="c8"){ const currentCase=cases[curCase]; if(isOwnerRecommendationMmsAccepted(currentCase) && !isOwnerRecommendationMmsSuccess(currentCase)) confirmOwnerRecommendationMms(curCase); else openOwnerRecommendationMmsModal(curCase); } else if(EMAIL_TEMPLATES[ak]) openMailModal(curCase, ak); else doAuto(curCase, ak, au.dataset.ch); return; }
   const oc=e.target.closest("[data-owner-confirm]"); if(oc){ confirmOwnerRecommendationMms(curCase); return; }
   if(e.target.closest("#cvRestore")){ restoreCase(curCase); return; }
+  if(e.target.closest("#cvPermanentDelete")){ permanentlyDeleteCase(curCase); return; }
   if(e.target.closest("#cvDel")){ deleteCase(curCase); }
 });
 caseDetailEl.addEventListener("click", e=>{ const qpr=e.target.closest("[data-quote-file-remove]"); if(qpr){ removeQuotePendingFile(qpr.dataset.quoteFileRemove); return; } const bpr=e.target.closest("[data-bizreg-file-remove]"); if(bpr){ removeBusinessRegPendingFile(bpr.dataset.bizregFileRemove); } });
@@ -4776,8 +4809,9 @@ document.getElementById("noticeBtn").addEventListener("click", openNoticePanel);
 document.getElementById("noticeBanner").addEventListener("click", openNoticePanel);
 
 /* ===== 업데이트 알림(What's New) — 새 버전 나오면 자동 팝업 ===== */
-const APP_VERSION = "5.04";
+const APP_VERSION = "5.05";
 const CHANGELOG = [
+  { v:"5.05", d:"2026-07-20", items:["보관함을 휴지통으로 변경하고 휴지통 케이스에 복원·삭제 버튼 추가","완전 삭제한 케이스가 자동화 재처리로 다시 나타나지 않도록 삭제 보호 적용"] },
   { v:"5.04", d:"2026-07-16", items:["민원 접수 ①~⑨ 중앙 자동 진행 엔진 연결","온보딩 정확·건물명·유사도 순위 매칭 적용","문자·업체 MMS·견적 배치·건물주 MMS 완료 이벤트로 순차 자동 전환","화면의 오래된 저장이 서버 완료 상태를 되돌리지 않도록 동기화 분리"] },
   { v:"5.03", d:"2026-07-16", items:["건물주 MMS 발송 성공을 별도 자동화 확정 기록으로 보존","오래 열린 화면이 ⑧ 상태를 되돌려도 ⑧ 완료·⑨ 진행중을 자동 복구"] },
   { v:"5.02", d:"2026-07-16", items:["대시보드의 늦은 저장이 건물주 MMS 발송완료 결과를 다시 진행중으로 덮는 문제 차단","서버 관리 결과와 ⑧·⑨ 상태를 일반 케이스 저장에서 분리해 단계 되돌림 방지"] },

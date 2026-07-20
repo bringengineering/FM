@@ -801,6 +801,7 @@ function advanceCaseWorkflow_(caseId, context) {
   context = context || {};
   const casePayload = readCaseFromFirebase_(caseId);
   if (!casePayload) return { ok: false, message: "Firebase 케이스를 찾지 못했습니다: " + caseId };
+  if (casePayload.deleted === true) return { ok: false, skipped: true, message: "삭제된 케이스는 자동 진행하지 않습니다: " + caseId };
 
   const now = new Date().toISOString();
   const before = Object.assign({}, casePayload.status || {});
@@ -4971,6 +4972,11 @@ function processResponseRow_(sheet, row) {
   }
 
   const ticketNo = readField_(record, ["접수번호"]) || makeTicketNo_(row, record);
+  const deletedCase = readCaseFromFirebase_(ticketNo);
+  if (deletedCase && deletedCase.deleted === true) {
+    Logger.log("삭제된 케이스 재처리 생략: " + ticketNo);
+    return;
+  }
   const analysis = analyzeComplaint_(record);
   const contractMatch = matchDriveOnboardingFile_(record);
   const casePayload = buildCasePayload_(ticketNo, record, analysis, contractMatch, row, sheet);
@@ -5956,6 +5962,14 @@ function putCaseChildToFirebase_(caseId, childPath, payload) {
 
 function mergeCasePayloadForFirebase_(existing, payload) {
   if (!existing || typeof existing !== "object") return payload;
+  if (existing.deleted === true) {
+    return Object.assign({}, existing, {
+      archived: true,
+      deleted: true,
+      deletedAt: existing.deletedAt || new Date().toISOString(),
+      updatedAt: existing.updatedAt || new Date().toISOString()
+    });
+  }
   const merged = Object.assign({}, existing, payload);
 
   const incomingStatus = Object.assign({}, payload.status || {});
@@ -5994,6 +6008,10 @@ function mergeCasePayloadForFirebase_(existing, payload) {
 
 function writeCaseToFirebase_(caseId, payload) {
   const existing = readCaseFromFirebase_(caseId);
+  if (existing && existing.deleted === true) {
+    Logger.log("삭제된 케이스 저장 생략: " + caseId);
+    return;
+  }
   const merged = mergeCasePayloadForFirebase_(existing, payload || {});
   merged.updatedAt = new Date().toISOString();
   patchCaseToFirebase_(caseId, merged);
