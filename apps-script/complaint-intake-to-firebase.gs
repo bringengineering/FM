@@ -8,7 +8,7 @@
 const COMPLAINT_CONFIG = {
   SPREADSHEET_ID: "1HI6KzIMomL6vOUPs8zZDhXHktL1cWRDcg93lflsuojA",
   SHEET_NAME: "설문지 응답 시트1",
-  CONTRACT_DRIVE_FOLDER_ID: "1818MusPDfVV6znALkWDMGK99NXAlAj8g",
+  CONTRACT_DRIVE_FOLDER_ID: "1GKI8oc4iicdEw7MnPKpfZrwKd4ZGKnBZ",
   QUOTE_DRIVE_FOLDER_ID: "11QX5F-KRQvvYNc0hso3QACuMS7lMZw4r",
   QUOTE_TEMPLATE_SPREADSHEET_ID: "1JXP8NEaU0I_96ZMAZFn2GlYQHkLsbhSJCawsdMgqH7w",
   VENDOR_QUOTE_REPLY_EMAIL: "bringengineering1008@gmail.com",
@@ -16,7 +16,7 @@ const COMPLAINT_CONFIG = {
   FIREBASE_CASES_PATH: "cases",
   RESPONSE_SHEET_URL: "https://docs.google.com/spreadsheets/d/1HI6KzIMomL6vOUPs8zZDhXHktL1cWRDcg93lflsuojA/edit"
 };
-const AUTOMATION_BUILD = "complaint-workflow-20260720-v13";
+const AUTOMATION_BUILD = "complaint-workflow-20260720-v14";
 const OWNER_RECOMMENDATION_IMAGE_VERSION = "owner-summary-v4";
 
 const OUTPUT_HEADERS = [
@@ -5244,7 +5244,7 @@ function extractOnboardingField_(text, labels) {
 
 function onboardingBuildingFromFileName_(fileName) {
   return String(fileName || "")
-    .replace(/\.(docx?|hwp|hwpx|pdf)$/i, "")
+    .replace(/(?:\.(?:docx?|hwp|hwpx|pdf))+$/i, "")
     .replace(/[_-]*(온보딩|수집서|계약|계약서).*$/i, "")
     .replace(/[_-]+/g, " ")
     .trim();

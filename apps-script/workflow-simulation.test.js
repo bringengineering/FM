@@ -130,7 +130,8 @@ const functions = [
   "normalizeText_",
   "normalizeAddress_",
   "diceSimilarity_",
-  "rankDriveOnboardingCandidate_"
+  "rankDriveOnboardingCandidate_",
+  "onboardingBuildingFromFileName_"
 ];
 
 vm.createContext(context);
@@ -220,6 +221,24 @@ function runWorkflowSimulation() {
 }
 
 function runMatchingSimulation() {
+  assert.match(
+    source,
+    /CONTRACT_DRIVE_FOLDER_ID:\s*"1GKI8oc4iicdEw7MnPKpfZrwKd4ZGKnBZ"/,
+    "onboarding matching must use the dedicated Drive folder"
+  );
+  assert.equal(
+    context.onboardingBuildingFromFileName_("햇빛빌라.docx.docx"),
+    "햇빛빌라",
+    "duplicated DOCX extensions must not remain in the building name"
+  );
+  const sunlightVilla = context.rankDriveOnboardingCandidate_(
+    { building: context.onboardingBuildingFromFileName_("햇빛빌라.docx.docx"), address: "", text: "" },
+    "햇빛빌라",
+    "단계동 927-2"
+  );
+  assert.equal(sunlightVilla.matchRank, 2, "sunlight villa must match by normalized building name");
+  assert.equal(sunlightVilla.buildingScore, 1, "sunlight villa building name must match exactly");
+
   const exact = context.rankDriveOnboardingCandidate_(
     { building: "Sangji Center", address: "Wonju 83", text: "Sangji Center Wonju 83" },
     "Sangji Center",
