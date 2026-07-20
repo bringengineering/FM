@@ -16,7 +16,7 @@ const COMPLAINT_CONFIG = {
   FIREBASE_CASES_PATH: "cases",
   RESPONSE_SHEET_URL: "https://docs.google.com/spreadsheets/d/1HI6KzIMomL6vOUPs8zZDhXHktL1cWRDcg93lflsuojA/edit"
 };
-const AUTOMATION_BUILD = "complaint-workflow-20260720-v14";
+const AUTOMATION_BUILD = "complaint-workflow-20260720-v15";
 const OWNER_RECOMMENDATION_IMAGE_VERSION = "owner-summary-v4";
 
 const OUTPUT_HEADERS = [
@@ -48,6 +48,7 @@ function setupComplaintAutomation() {
     .create();
 
   ensureFormAddressQuestion_();
+  syncPaymentBuildingsFromOnboarding_();
   processExistingResponses();
 }
 
@@ -106,6 +107,9 @@ function doPost(e) {
     payload = JSON.parse(e && e.postData && e.postData.contents ? e.postData.contents : "{}");
     if (payload.action === "healthCheck") {
       return jsonResponse_({ ok: true, build: AUTOMATION_BUILD, time: new Date().toISOString() });
+    }
+    if (payload.action === "syncPaymentBuildings") {
+      return jsonResponse_(syncPaymentBuildingsFromOnboarding_());
     }
     if (payload.action === "sendComplaintReceiptSms") {
       return jsonResponse_(handleComplaintReceiptSms_(payload));
@@ -5250,6 +5254,45 @@ function onboardingBuildingFromFileName_(fileName) {
     .trim();
 }
 
+function syncPaymentBuildings() {
+  const result = syncPaymentBuildingsFromOnboarding_();
+  Logger.log(JSON.stringify(result));
+  return result;
+}
+
+function syncPaymentBuildingsFromOnboarding_() {
+  const result = listDriveOnboardingCandidates_();
+  if (!result.ok) throw new Error(result.error || "온보딩 건물 목록을 읽지 못했습니다.");
+
+  const syncedAt = new Date().toISOString();
+  const registry = {};
+  result.candidates.forEach(candidate => {
+    const file = candidate.file;
+    const driveFileId = file.getId();
+    const building = String(candidate.building || onboardingBuildingFromFileName_(file.getName()) || "").trim();
+    if (!building) return;
+    registry[driveFileId] = {
+      id: driveFileId,
+      driveFileId: driveFileId,
+      building: building,
+      address: String(candidate.address || "").trim(),
+      fileName: file.getName(),
+      fileUrl: file.getUrl(),
+      source: "onboarding_drive",
+      lastUpdatedAt: file.getLastUpdated().toISOString(),
+      syncedAt: syncedAt
+    };
+  });
+
+  firebaseWriteRequest_(
+    firebaseCaseSettingsUrl_("paymentBuildings"),
+    "put",
+    registry,
+    "입금 캘린더 건물 동기화 실패"
+  );
+  return { ok: true, count: Object.keys(registry).length, syncedAt: syncedAt, build: AUTOMATION_BUILD };
+}
+
 function diceSimilarity_(left, right) {
   left = String(left || "");
   right = String(right || "");
@@ -5932,6 +5975,12 @@ function firebaseCaseUrl_(caseId, childPath) {
     ? "/" + String(childPath).split("/").filter(Boolean).map(part => encodeURIComponent(part)).join("/")
     : "";
   return base + "/" + path + "/" + encodeURIComponent(caseId) + child + ".json";
+}
+
+function firebaseCaseSettingsUrl_(childPath) {
+  const base = COMPLAINT_CONFIG.FIREBASE_DATABASE_URL.replace(/\/$/, "");
+  const child = String(childPath || "").split("/").filter(Boolean).map(part => encodeURIComponent(part)).join("/");
+  return base + "/caseSettings" + (child ? "/" + child : "") + ".json";
 }
 
 function firebaseWriteRequest_(url, method, payload, label) {

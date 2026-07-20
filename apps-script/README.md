@@ -21,6 +21,8 @@
 5. 왼쪽 톱니바퀴 `프로젝트 설정`에서 `appsscript.json 매니페스트 파일 표시`를 켭니다.
 6. 왼쪽 파일 목록의 `appsscript.json`에 이 폴더의 `appsscript.json` 내용을 붙여넣습니다.
 7. 저장 후 함수 선택 드롭다운에서 `setupComplaintAutomation`을 선택해 실행합니다.
+   - 이때 온보딩 DOCX의 건물명·주소도 `caseSettings/paymentBuildings`로 동기화되어 입금확인 캘린더의 건물 목록으로 사용됩니다.
+   - 건물 목록만 다시 읽고 싶으면 `syncPaymentBuildings`를 실행하거나 FM 화면의 `온보딩 건물 새로고침`을 누릅니다.
 8. 네이버클라우드 SENS 문자 발송을 쓰려면 `프로젝트 설정` -> `스크립트 속성`에 아래 값을 추가합니다.
    - `NCP_SENS_SERVICE_ID`: SENS SMS 서비스 ID
    - `NCP_ACCESS_KEY`: 네이버클라우드 Access Key ID
@@ -30,6 +32,7 @@
    - `SMS_ENABLED`: `true`
    - `VENDOR_QUOTE_REPLY_EMAIL`: 업체 견적서를 회신받을 이메일 주소 (기본값: `bringengineering1008@gmail.com`)
 9. ② 접수확인 문자, ⑤ 업체 MMS, ⑥ 파일 업로드, ⑧ 건물주 추천 MMS 자동화를 쓰려면 Apps Script에서 `배포` -> `새 배포` -> `웹 앱`으로 배포합니다.
+   - 입금확인 캘린더의 건물 새로고침도 이 웹 앱의 `syncPaymentBuildings` 요청을 사용합니다.
    - 실행 사용자: `나`
    - 액세스 권한: GitHub.io 화면에서 호출할 수 있는 권한으로 설정
    - 배포 후 생성된 웹 앱 URL을 FM 앱 ② `SENS 문자`, ⑤ `업체 발송`, ⑥ 업로드, ⑧ `건물주 추천 MMS`에서 사용하는 자동화 웹앱 URL에 연결합니다.

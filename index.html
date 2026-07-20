@@ -447,6 +447,93 @@
   .cv-log{ margin-top:16px; border-top:1px dashed var(--line); padding-top:10px; }
   .cv-log .t{ font-size:12px; color:var(--ink-soft); margin-bottom:4px; }
   .cv-user{ margin-left:auto; font-size:12px; color:#52606d; white-space:nowrap; }
+  /* 입금확인 캘린더 */
+  .payment-alert-badge{ display:none; min-width:18px; height:18px; align-items:center; justify-content:center; margin-left:4px; padding:0 5px; border-radius:999px; background:#e03131; color:#fff; font-size:10px; font-weight:900; }
+  .payment-alert-badge.on{ display:inline-flex; }
+  .paymentview{ position:fixed; inset:0; background:#f4f6fa; z-index:61; display:none; flex-direction:column; }
+  .paymentview.open{ display:flex; }
+  .pv-head{ display:flex; align-items:center; gap:12px; padding:12px 18px; background:#fff; border-bottom:1px solid var(--line); }
+  .pv-head b{ font-size:16px; }
+  .pv-hint{ color:var(--ink-soft); font-size:12px; }
+  .pv-head-actions{ margin-left:auto; display:flex; align-items:center; gap:7px; }
+  .pv-sync{ border:1px solid #c5d4ff; background:#eef3ff; color:#315fce; border-radius:8px; padding:7px 11px; font-size:12px; font-weight:800; cursor:pointer; font-family:inherit; }
+  .pv-body{ flex:1; display:flex; min-height:0; }
+  .pv-sidebar{ width:280px; border-right:1px solid var(--line); background:#fff; overflow:auto; padding:12px; box-sizing:border-box; }
+  .pv-side-title{ display:flex; align-items:center; justify-content:space-between; gap:8px; margin-bottom:8px; color:#162033; font-size:13px; font-weight:900; }
+  .pv-building{ width:100%; text-align:left; border:1px solid transparent; background:#fff; border-radius:10px; padding:10px 11px; margin-bottom:6px; cursor:pointer; font-family:inherit; }
+  .pv-building:hover{ background:#f3f6fb; }
+  .pv-building.on{ background:#eaf0ff; border-color:#c5d4ff; }
+  .pv-building b{ display:block; color:#162033; font-size:13.5px; }
+  .pv-building span{ display:block; margin-top:3px; color:#6b7686; font-size:11.5px; line-height:1.35; }
+  .pv-building-meta{ display:flex !important; gap:5px; flex-wrap:wrap; }
+  .pv-mini{ display:inline-flex !important; align-items:center; width:auto; border-radius:999px; padding:2px 6px; background:#eef1f6; color:#52606d !important; font-size:10.5px !important; font-weight:800; }
+  .pv-mini.bad{ background:#fff1f0; color:#b42318 !important; }
+  .pv-bank-card{ margin-top:13px; border:1px solid #d8e0ec; border-radius:10px; background:#fafbfd; padding:11px; }
+  .pv-bank-card b{ display:block; color:#162033; font-size:12.5px; margin-bottom:5px; }
+  .pv-bank-card p{ margin:0; color:#6b7686; font-size:11.5px; line-height:1.55; }
+  .pv-main{ flex:1; min-width:0; overflow:auto; padding:18px 22px 28px; box-sizing:border-box; }
+  .pv-empty{ margin-top:90px; text-align:center; color:#8a94a6; font-size:13.5px; line-height:1.7; }
+  .pv-top{ display:flex; align-items:flex-start; justify-content:space-between; gap:12px; flex-wrap:wrap; margin-bottom:12px; }
+  .pv-title{ color:#162033; font-size:20px; font-weight:900; }
+  .pv-sub{ margin-top:3px; color:#6b7686; font-size:12px; }
+  .pv-actions{ display:flex; flex-wrap:wrap; gap:7px; }
+  .pv-btn{ border:1px solid #d8e0ec; background:#fff; color:#243244; border-radius:8px; padding:8px 11px; font-size:12.5px; font-weight:800; cursor:pointer; font-family:inherit; }
+  .pv-btn.primary{ border-color:#1b335f; background:#1b335f; color:#fff; }
+  .pv-btn.test{ border-style:dashed; border-color:#e5b84b; background:#fff8e1; color:#7a5200; }
+  .pv-monthbar{ display:flex; align-items:center; justify-content:center; gap:10px; margin:5px 0 13px; }
+  .pv-monthbar button{ border:1px solid #d8e0ec; background:#fff; border-radius:8px; width:34px; height:32px; cursor:pointer; font-size:17px; }
+  .pv-monthbar b{ min-width:135px; text-align:center; color:#162033; font-size:16px; }
+  .pv-summary{ display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); gap:8px; margin-bottom:12px; }
+  .pv-stat{ border:1px solid #e3e8f1; background:#fff; border-radius:10px; padding:10px 11px; }
+  .pv-stat span{ display:block; color:#6b7686; font-size:11px; font-weight:800; }
+  .pv-stat b{ display:block; margin-top:4px; color:#162033; font-size:18px; }
+  .pv-stat.paid{ border-color:#b9e6c5; background:#fbfffc; }
+  .pv-stat.overdue{ border-color:#ffccc7; background:#fffafa; }
+  .pv-stat.review{ border-color:#ffe08a; background:#fffdf5; }
+  .pv-calendar{ border:1px solid #d8e0ec; border-radius:12px; overflow:hidden; background:#fff; }
+  .pv-weekdays,.pv-days{ display:grid; grid-template-columns:repeat(7,minmax(0,1fr)); }
+  .pv-weekdays div{ padding:8px 5px; text-align:center; color:#6b7686; background:#f8fafd; border-bottom:1px solid #e3e8f1; font-size:11.5px; font-weight:900; }
+  .pv-weekdays div:first-child{ color:#d64545; }
+  .pv-weekdays div:last-child{ color:#315fce; }
+  .pv-day{ min-height:116px; padding:7px; border-right:1px solid #edf1f6; border-bottom:1px solid #edf1f6; box-sizing:border-box; background:#fff; }
+  .pv-day:nth-child(7n){ border-right:0; }
+  .pv-day.out{ background:#fafbfd; }
+  .pv-day.today{ box-shadow:inset 0 0 0 2px #4b7bec; }
+  .pv-daynum{ color:#52606d; font-size:11.5px; font-weight:900; margin-bottom:5px; }
+  .pv-day.out .pv-daynum{ color:#b4bdc8; }
+  .pv-payitem{ width:100%; display:block; border:0; border-left:3px solid #9aa6b5; background:#f3f5f8; color:#243244; border-radius:6px; margin:0 0 4px; padding:5px 6px; text-align:left; cursor:pointer; font-family:inherit; font-size:10.5px; line-height:1.35; overflow:hidden; }
+  .pv-payitem b{ display:block; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .pv-payitem.paid{ border-color:#20a552; background:#eaf7ee; color:#116329; }
+  .pv-payitem.overdue,.pv-payitem.manual_unpaid{ border-color:#e03131; background:#fff1f0; color:#b42318; }
+  .pv-payitem.review{ border-color:#e5a900; background:#fff8e1; color:#7a5200; }
+  .pv-payitem.selected{ outline:2px solid #4b7bec; outline-offset:1px; }
+  .pv-detail{ margin-top:12px; border:1px solid #d8e0ec; background:#fff; border-radius:11px; padding:13px; }
+  .pv-detail-head{ display:flex; align-items:flex-start; justify-content:space-between; gap:10px; flex-wrap:wrap; }
+  .pv-detail-title{ color:#162033; font-size:14px; font-weight:900; }
+  .pv-detail-grid{ display:grid; grid-template-columns:repeat(5,minmax(0,1fr)); gap:7px; margin-top:9px; }
+  .pv-detail-kv{ border:1px solid #edf1f6; background:#fafbfd; border-radius:8px; padding:7px 8px; }
+  .pv-detail-kv b{ display:block; color:#6b7686; font-size:10.5px; margin-bottom:3px; }
+  .pv-detail-kv span{ display:block; color:#162033; font-size:12.5px; font-weight:800; word-break:break-word; }
+  .pv-detail-actions{ display:flex; flex-wrap:wrap; gap:6px; margin-top:10px; }
+  .pv-detail-actions button{ border:1px solid #d8e0ec; background:#fff; border-radius:7px; padding:6px 9px; color:#52606d; font-size:11.5px; font-weight:800; cursor:pointer; font-family:inherit; }
+  .pv-detail-actions button.good{ border-color:#b9e6c5; background:#eaf7ee; color:#116329; }
+  .pv-detail-actions button.bad{ border-color:#ffccc7; background:#fff1f0; color:#b42318; }
+  .pv-detail-actions button.warn{ border-color:#ffe08a; background:#fff8e1; color:#7a5200; }
+  .pv-modal{ position:fixed; inset:0; z-index:10002; display:none; align-items:center; justify-content:center; background:rgba(15,25,45,.5); }
+  .pv-modal.open{ display:flex; }
+  .pv-modal-box{ width:min(560px,92vw); max-height:88vh; overflow:auto; border-radius:16px; background:#fff; padding:20px 22px; box-shadow:0 20px 60px rgba(0,0,0,.3); }
+  .pv-modal-head{ display:flex; align-items:center; gap:8px; color:#1b335f; font-size:17px; font-weight:900; margin-bottom:14px; }
+  .pv-modal-head button{ margin-left:auto; border:0; background:#eef1f6; border-radius:8px; width:30px; height:30px; cursor:pointer; }
+  .pv-form{ display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:9px; }
+  .pv-form label{ display:grid; gap:4px; color:#52606d; font-size:11.5px; font-weight:800; }
+  .pv-form label.wide{ grid-column:1/-1; }
+  .pv-form input{ min-width:0; border:1px solid #d8e0ec; border-radius:8px; padding:8px 9px; font-size:13px; font-family:inherit; }
+  .pv-modal-note{ margin:10px 0 0; color:#6b7686; font-size:11.5px; line-height:1.5; }
+  .pv-modal-actions{ display:flex; justify-content:flex-end; gap:7px; margin-top:14px; }
+  .pv-modal-actions button{ border:1px solid #d8e0ec; background:#fff; border-radius:8px; padding:8px 13px; cursor:pointer; font-family:inherit; font-weight:800; }
+  .pv-modal-actions button.primary{ border-color:#1b335f; background:#1b335f; color:#fff; }
+  @media (max-width:980px){ .pv-summary{ grid-template-columns:repeat(2,minmax(0,1fr)); } .pv-detail-grid{ grid-template-columns:repeat(2,minmax(0,1fr)); } .pv-day{ min-height:96px; } }
+  @media (max-width:720px){ .pv-body{ flex-direction:column; } .pv-sidebar{ width:auto; max-height:31vh; border-right:0; border-bottom:1px solid var(--line); } .pv-main{ padding:14px 10px 24px; } .pv-calendar{ overflow-x:auto; } .pv-weekdays,.pv-days{ min-width:760px; } .pv-form{ grid-template-columns:1fr; } .pv-form label.wide{ grid-column:auto; } }
   /* 📢 비전·공지 */
   .notice-banner{ display:flex; align-items:center; gap:13px; padding:13px 20px; background:linear-gradient(90deg,#1b335f,#2a4f8c); color:#fff; cursor:pointer; box-shadow:0 2px 8px rgba(20,40,80,.12); }
   .notice-banner .nb-ic{ font-size:22px; flex:0 0 auto; }
@@ -514,6 +601,7 @@
       <button class="btn" id="exportBtn">💾 내보내기</button>
       <button class="btn" id="resetBtn">↺ 초기화</button>
       <button class="btn" id="caseBtn" style="background:#1b335f;color:#fff;border-color:#1b335f;font-weight:700">🚀 케이스</button>
+      <button class="btn" id="paymentBtn" style="border-color:#0c8478;color:#0c6f66;font-weight:700">💰 입금확인 캘린더<span class="payment-alert-badge" id="paymentAlertBadge"></span></button>
       <button class="btn" id="noticeBtn">📢 비전·공지</button>
       <a class="btn" href="./wonju-map.html" target="_blank" rel="noopener">📍 건물지도</a>
     </div>
@@ -609,6 +697,51 @@
     <div class="cv-body">
       <div class="cv-list" id="caseList"></div>
       <div class="cv-detail" id="caseDetail"></div>
+    </div>
+  </div>
+
+  <!-- 건물별 세입자 입금확인 캘린더 -->
+  <div class="paymentview" id="paymentView">
+    <div class="pv-head">
+      <button class="wsbtn" id="paymentBack">← 나가기</button>
+      <b>💰 입금확인 캘린더</b>
+      <span class="pv-hint">온보딩 건물별 월 납부 일정과 실제 입금 여부를 확인합니다</span>
+      <div class="pv-head-actions"><button class="pv-sync" id="paymentBuildingSync">↻ 온보딩 건물 새로고침</button></div>
+    </div>
+    <div class="pv-body">
+      <aside class="pv-sidebar" id="paymentBuildingList"></aside>
+      <main class="pv-main" id="paymentMain"></main>
+    </div>
+  </div>
+
+  <div class="pv-modal" id="paymentScheduleModal">
+    <div class="pv-modal-box">
+      <div class="pv-modal-head">🗓️ <span id="paymentScheduleTitle">월 납부 일정 등록</span><button id="paymentScheduleClose">✕</button></div>
+      <div class="pv-form">
+        <label class="wide">건물<input id="psBuilding" readonly></label>
+        <label>호실<input id="psUnit" placeholder="예: 305호"></label>
+        <label>세입자명<input id="psTenant" placeholder="내부 확인용"></label>
+        <label>예상 입금자명<input id="psPayer" placeholder="통장에 표시될 이름"></label>
+        <label>월 납부금액<input id="psAmount" inputmode="numeric" placeholder="예: 500000"></label>
+        <label>매월 납부일<input id="psDueDay" type="number" min="1" max="31" placeholder="1~31"></label>
+        <label>시작월<input id="psStartMonth" type="month"></label>
+        <label>종료월(선택)<input id="psEndMonth" type="month"></label>
+      </div>
+      <div class="pv-modal-note">금액·입금자명·납부일 전후 3일~7일의 거래가 모두 일치하는 유일한 1건만 자동으로 입금 완료 처리합니다.</div>
+      <div class="pv-modal-actions"><button id="paymentScheduleCancel">취소</button><button class="primary" id="paymentScheduleSave">저장</button></div>
+    </div>
+  </div>
+
+  <div class="pv-modal" id="paymentTransactionModal">
+    <div class="pv-modal-box">
+      <div class="pv-modal-head">🧪 테스트 입금 등록<button id="paymentTransactionClose">✕</button></div>
+      <div class="pv-form">
+        <label>입금일<input id="ptDate" type="date"></label>
+        <label>입금자명<input id="ptPayer" placeholder="통장 표시 이름"></label>
+        <label class="wide">입금금액<input id="ptAmount" inputmode="numeric" placeholder="예: 500000"></label>
+      </div>
+      <div class="pv-modal-note">실제 은행 연결 전 자동 매칭을 검증하는 테스트 거래입니다. Access Token은 이 화면이나 Firebase에 저장하지 않습니다.</div>
+      <div class="pv-modal-actions"><button id="paymentTransactionCancel">취소</button><button class="primary" id="paymentTransactionSave">테스트 입금 저장</button></div>
     </div>
   </div>
 
@@ -1006,8 +1139,8 @@ function initAuthGate(){
         auth = firebase.auth();
         auth.onAuthStateChanged(function(user){
           authedUser=user;
-          if(user){ gate.style.display="none"; updateAuthUI(user); }
-          else { gate.style.display="flex"; updateAuthUI(null); }
+          if(user){ gate.style.display="none"; updateAuthUI(user); attachPaymentCalendarRef(user); }
+          else { detachPaymentCalendarRef(); gate.style.display="flex"; updateAuthUI(null); }
         });
         return;
       }catch(e){ console.error("auth init 재시도", e); }
@@ -4094,7 +4227,7 @@ function detachCaseSettingsRef(){
 function attachCaseSettingsRef(){
   if(!db || caseSettingsRef) return;
   caseSettingsRef = db.ref("caseSettings");
-  caseSettingsHandler = s => { settings = s.val() || {}; syncDefaultCaseAutomationEndpoint(); };
+  caseSettingsHandler = s => { settings = s.val() || {}; syncDefaultCaseAutomationEndpoint(); renderPaymentCalendar(); };
   caseSettingsRef.on("value", caseSettingsHandler, e => console.warn("caseSettings 권한 확인 필요", e));
 }
 function detachCasesRef(){
@@ -4123,6 +4256,7 @@ function attachCasesRef(){
         else renderCaseDetail();
       }   // 입력 중엔 갱신 보류
     }
+    renderPaymentCalendar();
   };
   casesRef.on("value", caseValueHandler, e => {
     detachCasesRef();
@@ -4768,6 +4902,238 @@ if((localAutoFixed || localStepFixed) && !isConfigured){
   try{ localStorage.setItem("fm_cases_v1", JSON.stringify(cases)); }catch(e){}
 }
 
+/* ===== 💰 건물별 입금확인 캘린더 ===== */
+const paymentView=document.getElementById("paymentView");
+const paymentBuildingListEl=document.getElementById("paymentBuildingList");
+const paymentMainEl=document.getElementById("paymentMain");
+const paymentAlertBadgeEl=document.getElementById("paymentAlertBadge");
+const paymentScheduleModal=document.getElementById("paymentScheduleModal");
+const paymentTransactionModal=document.getElementById("paymentTransactionModal");
+let paymentRef=null, paymentValueHandler=null, paymentData={profile:{},schedules:{},transactions:{},overrides:{},audit:{}};
+let paymentMonth=paymentTodayKey().slice(0,7), paymentBuildingId="", selectedPaymentScheduleId="", editingPaymentScheduleId="";
+
+function paymentTodayKey(){
+  const parts=new Intl.DateTimeFormat("en-CA",{timeZone:"Asia/Seoul",year:"numeric",month:"2-digit",day:"2-digit"}).formatToParts(new Date());
+  const values={}; parts.forEach(p=>{ if(p.type!=="literal") values[p.type]=p.value; });
+  return [values.year,values.month,values.day].join("-");
+}
+function paymentMonthParts(monthKey){ const m=String(monthKey||"").match(/^(\d{4})-(\d{2})$/); return m?{year:Number(m[1]),month:Number(m[2])}:null; }
+function paymentMonthCompare(a,b){ return String(a||"").localeCompare(String(b||"")); }
+function paymentDaysInMonth(monthKey){ const p=paymentMonthParts(monthKey); return p?new Date(Date.UTC(p.year,p.month,0)).getUTCDate():30; }
+function paymentDueDate(monthKey,dueDay){ const p=paymentMonthParts(monthKey); if(!p) return ""; const day=Math.min(Math.max(1,Number(dueDay)||1),paymentDaysInMonth(monthKey)); return `${p.year}-${String(p.month).padStart(2,"0")}-${String(day).padStart(2,"0")}`; }
+function paymentAddDays(dateKey,days){ const m=String(dateKey||"").match(/^(\d{4})-(\d{2})-(\d{2})$/); if(!m) return ""; const d=new Date(Date.UTC(Number(m[1]),Number(m[2])-1,Number(m[3])+Number(days||0))); return `${d.getUTCFullYear()}-${String(d.getUTCMonth()+1).padStart(2,"0")}-${String(d.getUTCDate()).padStart(2,"0")}`; }
+function paymentNormalizeName(value){ return String(value||"").toLowerCase().replace(/\s+/g,"").replace(/[^0-9a-z가-힣]/g,""); }
+function paymentScheduleActiveInMonth(schedule,monthKey){ if(!schedule||schedule.active===false) return false; if(schedule.startMonth&&paymentMonthCompare(monthKey,schedule.startMonth)<0) return false; if(schedule.endMonth&&paymentMonthCompare(monthKey,schedule.endMonth)>0) return false; return true; }
+function paymentTransactionsArray(data){ return Object.keys(data&&data.transactions||{}).map(id=>Object.assign({id},data.transactions[id]||{})).filter(t=>t.active!==false); }
+function calculatePaymentMonthRows(data,buildingId,monthKey,todayKey){
+  const schedules=Object.keys(data&&data.schedules||{}).map(id=>Object.assign({id},data.schedules[id]||{})).filter(s=>s.buildingId===buildingId&&paymentScheduleActiveInMonth(s,monthKey));
+  const transactions=paymentTransactionsArray(data);
+  const rows=schedules.map(schedule=>{
+    const dueDate=paymentDueDate(monthKey,schedule.dueDay);
+    const payerKey=paymentNormalizeName(schedule.payerName);
+    const amount=Number(schedule.amount)||0;
+    const candidates=transactions.filter(tx=>{
+      if(tx.direction&&tx.direction!=="deposit") return false;
+      if(String(tx.buildingId||"")!==String(schedule.buildingId||"")) return false;
+      return Number(tx.amount)===amount && paymentNormalizeName(tx.payerName)===payerKey && String(tx.date||"")>=paymentAddDays(dueDate,-3) && String(tx.date||"")<=paymentAddDays(dueDate,7);
+    });
+    return {schedule,dueDate,candidates,status:"scheduled",matchedTransaction:null,override:null};
+  });
+  const candidateUsage={};
+  rows.forEach(row=>row.candidates.forEach(tx=>{ candidateUsage[tx.id]=(candidateUsage[tx.id]||0)+1; }));
+  const overrides=data&&data.overrides&&data.overrides[monthKey]||{};
+  rows.forEach(row=>{
+    const override=overrides[row.schedule.id]||null;
+    row.override=override;
+    if(override&&override.status&&override.status!=="auto"){
+      row.status=override.status;
+      row.matchedTransaction=override.transactionId?transactions.find(tx=>tx.id===override.transactionId)||null:null;
+      return;
+    }
+    if(row.candidates.length===1&&candidateUsage[row.candidates[0].id]===1){ row.status="paid"; row.matchedTransaction=row.candidates[0]; return; }
+    if(row.candidates.length){ row.status="review"; return; }
+    row.status=String(todayKey||"")>row.dueDate?"overdue":"scheduled";
+  });
+  return rows.sort((a,b)=>a.dueDate.localeCompare(b.dueDate)||String(a.schedule.unit||"").localeCompare(String(b.schedule.unit||""),"ko"));
+}
+function paymentFormatMoney(value){ const n=Number(value); return Number.isFinite(n)&&n?Math.round(n).toLocaleString("ko-KR")+"원":"0원"; }
+function paymentStatusLabel(status){ return status==="paid"?"입금완료":status==="overdue"||status==="manual_unpaid"?"미입금":status==="review"?"확인필요":"입금예정"; }
+function paymentId(prefix){ return prefix+Date.now().toString(36)+Math.random().toString(36).slice(2,7); }
+function paymentHash(value){ let h=2166136261; const text=String(value||""); for(let i=0;i<text.length;i++){ h^=text.charCodeAt(i); h=Math.imul(h,16777619); } return (h>>>0).toString(36); }
+function paymentEnsureData(){
+  if(!paymentData||typeof paymentData!=="object") paymentData={};
+  ["profile","schedules","transactions","overrides","audit"].forEach(key=>{ if(!paymentData[key]||typeof paymentData[key]!=="object") paymentData[key]={}; });
+}
+function paymentLocalKey(){ return "fm_payment_calendar_"+(authedUser&&authedUser.uid||"local"); }
+function loadPaymentLocal(){ try{ return JSON.parse(localStorage.getItem(paymentLocalKey()))||{}; }catch(e){ return {}; } }
+function savePaymentLocal(){ try{ localStorage.setItem(paymentLocalKey(),JSON.stringify(paymentData)); }catch(e){} }
+function paymentSetLocalPath(path,value){
+  const parts=String(path||"").split("/").filter(Boolean); let target=paymentData;
+  parts.slice(0,-1).forEach(part=>{ target[part]=target[part]&&typeof target[part]==="object"?target[part]:{}; target=target[part]; });
+  if(!parts.length) paymentData=value||{}; else if(value===null) delete target[parts[parts.length-1]]; else target[parts[parts.length-1]]=value;
+  paymentEnsureData(); savePaymentLocal(); renderPaymentCalendar();
+}
+function writePaymentValue(path,value){
+  paymentSetLocalPath(path,value);
+  if(paymentRef) paymentRef.child(path).set(value).catch(err=>{ console.error("입금 캘린더 저장 실패",err); alert("입금 캘린더를 저장하지 못했습니다. 로그인과 데이터 권한을 확인해 주세요."); });
+}
+function recordPaymentAudit(action,details){
+  const id=paymentId("a_");
+  const row={action:String(action||""),details:details||{},at:new Date().toISOString(),by:authedUser&&authedUser.email||"local"};
+  paymentData.audit[id]=row; savePaymentLocal();
+  if(paymentRef) paymentRef.child("audit/"+id).set(row).catch(err=>console.warn("입금 감사기록 저장 실패",err));
+}
+function detachPaymentCalendarRef(){ if(paymentRef&&paymentValueHandler) paymentRef.off("value",paymentValueHandler); paymentRef=null; paymentValueHandler=null; paymentData={profile:{},schedules:{},transactions:{},overrides:{},audit:{}}; }
+function attachPaymentCalendarRef(user){
+  detachPaymentCalendarRef();
+  if(!user){ updatePaymentAlertBadge(); return; }
+  if(!db){ paymentData=loadPaymentLocal(); paymentEnsureData(); renderPaymentCalendar(); return; }
+  paymentRef=db.ref("paymentCalendars/"+user.uid);
+  paymentValueHandler=s=>{
+    paymentData=s.val()||{}; paymentEnsureData();
+    if(!paymentData.profile.adminEmail){
+      const profile={adminUid:user.uid,adminEmail:user.email||"",role:"admin",createdAt:new Date().toISOString()};
+      paymentData.profile=profile; paymentRef.child("profile").set(profile);
+    }
+    renderPaymentCalendar();
+  };
+  paymentRef.on("value",paymentValueHandler,e=>{
+    console.error("입금 캘린더 권한 오류",e);
+    if(paymentRef&&paymentValueHandler) paymentRef.off("value",paymentValueHandler);
+    paymentRef=null; paymentValueHandler=null;
+    paymentData=loadPaymentLocal(); paymentEnsureData(); renderPaymentCalendar();
+  });
+}
+function paymentBuildingRecords(){
+  const out=[],seen={};
+  const add=(value,key)=>{
+    const b=value||{}; const name=String(b.building||b.name||b.matchedBuilding||"").trim(); if(!name) return;
+    const address=String(b.address||b.matchedAddress||"").trim(); const dedupe=paymentNormalizeName(name)+"|"+paymentNormalizeName(address);
+    if(seen[dedupe]) return; seen[dedupe]=true;
+    out.push({id:String(b.id||b.driveFileId||key||("b_"+paymentHash(dedupe))),name,address,fileName:b.fileName||"",fileUrl:b.fileUrl||"",source:b.source||"onboarding"});
+  };
+  const registry=settings&&settings.paymentBuildings||{};
+  Object.keys(registry).forEach(key=>add(registry[key],key));
+  Object.keys(cases||{}).forEach(id=>{
+    const c=cases[id]||{},m=c.contractMatch||{}; if(c.deleted===true||m.status!=="matched") return;
+    add({id:m.driveFileId||("case_"+paymentHash((m.matchedBuilding||c.building)+"|"+(m.matchedAddress||c.address))),building:m.matchedBuilding||m.inputBuilding||c.building,address:m.matchedAddress||m.inputAddress||c.address,fileName:m.fileName,fileUrl:m.fileUrl,source:"matched_case"},id);
+  });
+  return out.sort((a,b)=>a.name.localeCompare(b.name,"ko"));
+}
+function paymentRowsFor(buildingId,monthKey){ return calculatePaymentMonthRows(paymentData,buildingId,monthKey||paymentMonth,paymentTodayKey()); }
+function paymentMonthShift(offset){ const p=paymentMonthParts(paymentMonth); const d=new Date(Date.UTC(p.year,p.month-1+offset,1)); paymentMonth=`${d.getUTCFullYear()}-${String(d.getUTCMonth()+1).padStart(2,"0")}`; selectedPaymentScheduleId=""; renderPaymentCalendar(); }
+function paymentMonthLabel(monthKey){ const p=paymentMonthParts(monthKey); return p?`${p.year}년 ${p.month}월`:monthKey; }
+function paymentCalendarDays(monthKey){
+  const p=paymentMonthParts(monthKey), first=new Date(Date.UTC(p.year,p.month-1,1)), start=paymentAddDays(`${p.year}-${String(p.month).padStart(2,"0")}-01`,-first.getUTCDay());
+  return Array.from({length:42},(_,i)=>paymentAddDays(start,i));
+}
+function paymentBuildingCounts(buildingId){ const rows=paymentRowsFor(buildingId); return {total:rows.length,overdue:rows.filter(r=>r.status==="overdue"||r.status==="manual_unpaid").length,review:rows.filter(r=>r.status==="review").length}; }
+function updatePaymentAlertBadge(){
+  if(!paymentAlertBadgeEl) return; const buildings=paymentBuildingRecords(); let count=0;
+  buildings.forEach(b=>{ const c=paymentBuildingCounts(b.id); count+=c.overdue+c.review; });
+  paymentAlertBadgeEl.textContent=count>99?"99+":String(count||""); paymentAlertBadgeEl.classList.toggle("on",count>0);
+}
+function renderPaymentBuildingList(buildings){
+  if(!paymentBuildingListEl) return;
+  const recent=paymentTransactionsArray(paymentData).filter(t=>t.source==="test").sort((a,b)=>String(b.createdAt||"").localeCompare(String(a.createdAt||""))).slice(0,5);
+  paymentBuildingListEl.innerHTML=`<div class="pv-side-title"><span>온보딩 건물</span><span>${buildings.length}곳</span></div>`+
+    (buildings.length?buildings.map(b=>{ const c=paymentBuildingCounts(b.id); return `<button class="pv-building ${b.id===paymentBuildingId?'on':''}" data-payment-building="${escAttr(b.id)}"><b>${esc(b.name)}</b><span>${esc(b.address||"주소 미입력")}</span><span class="pv-building-meta"><i class="pv-mini">일정 ${c.total}</i>${c.overdue?`<i class="pv-mini bad">미입금 ${c.overdue}</i>`:""}${c.review?`<i class="pv-mini bad">확인 ${c.review}</i>`:""}</span></button>`; }).join(""):`<div class="pv-empty" style="margin-top:28px">온보딩 건물이 없습니다.<br>새로고침 후 Apps Script 동기화를 확인해 주세요.</div>`)+
+    `<div class="pv-bank-card"><b>🏦 은행 자동조회</b><p>현재 관리자: ${esc(authedUser&&authedUser.email||"로컬")}</p><p style="margin-top:4px">핀테크이용번호와 Access Token은 나중에 보안 서버에 연결합니다. 화면과 Firebase에는 토큰을 저장하지 않습니다.</p>${recent.length?`<p style="margin-top:8px;font-weight:800;color:#52606d">최근 테스트 입금</p>${recent.map(t=>`<p>${esc(t.date)} · ${esc(t.payerName)} · ${esc(paymentFormatMoney(t.amount))} <button class="pv-btn" style="padding:2px 5px;font-size:10px" data-payment-tx-remove="${escAttr(t.id)}">삭제</button></p>`).join("")}`:""}</div>`;
+}
+function renderPaymentDetail(row){
+  if(!row) return `<div class="pv-detail"><div class="pv-detail-title">캘린더의 납부 일정을 선택하면 상세 정보와 수동 보정 버튼이 표시됩니다.</div></div>`;
+  const s=row.schedule,tx=row.matchedTransaction;
+  return `<div class="pv-detail"><div class="pv-detail-head"><div><div class="pv-detail-title">${esc(s.unit||"호실 미입력")} · ${esc(s.tenantName||"세입자 미입력")}</div><div class="pv-sub">${esc(paymentStatusLabel(row.status))}${row.override&&row.override.reason?` · ${esc(row.override.reason)}`:""}</div></div><b>${esc(paymentFormatMoney(s.amount))}</b></div>`+
+    `<div class="pv-detail-grid"><div class="pv-detail-kv"><b>납부 예정일</b><span>${esc(row.dueDate)}</span></div><div class="pv-detail-kv"><b>예상 입금자</b><span>${esc(s.payerName)}</span></div><div class="pv-detail-kv"><b>자동 확인 기간</b><span>${esc(paymentAddDays(row.dueDate,-3))} ~ ${esc(paymentAddDays(row.dueDate,7))}</span></div><div class="pv-detail-kv"><b>연결 거래</b><span>${tx?esc(tx.date+" / "+tx.payerName):"없음"}</span></div><div class="pv-detail-kv"><b>판정</b><span>${esc(paymentStatusLabel(row.status))}</span></div></div>`+
+    `<div class="pv-detail-actions"><button data-payment-edit="${escAttr(s.id)}">일정 수정</button><button class="good" data-payment-override="paid">입금완료</button><button class="bad" data-payment-override="manual_unpaid">미입금</button><button class="warn" data-payment-override="review">확인필요</button><button data-payment-override="auto">자동판정으로 복원</button><button class="bad" data-payment-disable="${escAttr(s.id)}">일정 종료</button>${tx&&tx.source==="test"?`<button class="bad" data-payment-tx-remove="${escAttr(tx.id)}">테스트 거래 삭제</button>`:""}</div></div>`;
+}
+function renderPaymentMain(building){
+  if(!paymentMainEl) return;
+  if(!building){ paymentMainEl.innerHTML=`<div class="pv-empty">온보딩 건물을 선택하면 건물별 입금확인 캘린더가 표시됩니다.</div>`; return; }
+  const rows=paymentRowsFor(building.id),paid=rows.filter(r=>r.status==="paid").length,overdue=rows.filter(r=>r.status==="overdue"||r.status==="manual_unpaid").length,review=rows.filter(r=>r.status==="review").length;
+  if(selectedPaymentScheduleId&&!rows.some(r=>r.schedule.id===selectedPaymentScheduleId)) selectedPaymentScheduleId="";
+  const days=paymentCalendarDays(paymentMonth),today=paymentTodayKey();
+  const selected=rows.find(r=>r.schedule.id===selectedPaymentScheduleId)||null;
+  paymentMainEl.innerHTML=`<div class="pv-top"><div><div class="pv-title">${esc(building.name)}</div><div class="pv-sub">${esc(building.address||"주소 미입력")} · 건물별 월 납부 현황</div></div><div class="pv-actions"><button class="pv-btn test" data-payment-test="1">＋ 테스트 입금</button><button class="pv-btn primary" data-payment-add="1">＋ 월 납부 일정</button></div></div>`+
+    `<div class="pv-monthbar"><button data-payment-month="-1">‹</button><b>${esc(paymentMonthLabel(paymentMonth))}</b><button data-payment-month="1">›</button></div>`+
+    `<div class="pv-summary"><div class="pv-stat"><span>전체 예정</span><b>${rows.length}건</b></div><div class="pv-stat paid"><span>입금완료</span><b>${paid}건</b></div><div class="pv-stat overdue"><span>미입금</span><b>${overdue}건</b></div><div class="pv-stat review"><span>확인필요</span><b>${review}건</b></div></div>`+
+    `<div class="pv-calendar"><div class="pv-weekdays">${["일","월","화","수","목","금","토"].map(x=>`<div>${x}</div>`).join("")}</div><div class="pv-days">${days.map(date=>{ const inMonth=date.slice(0,7)===paymentMonth,dayRows=rows.filter(r=>r.dueDate===date); return `<div class="pv-day ${inMonth?'':'out'} ${date===today?'today':''}"><div class="pv-daynum">${Number(date.slice(-2))}</div>${dayRows.map(r=>`<button class="pv-payitem ${escAttr(r.status)} ${selectedPaymentScheduleId===r.schedule.id?'selected':''}" data-payment-item="${escAttr(r.schedule.id)}"><b>${esc(r.schedule.unit||r.schedule.tenantName||"납부")}</b>${esc(paymentFormatMoney(r.schedule.amount))}</button>`).join("")}</div>`; }).join("")}</div></div>`+renderPaymentDetail(selected);
+}
+function renderPaymentCalendar(){
+  paymentEnsureData(); const buildings=paymentBuildingRecords();
+  if(!paymentBuildingId||!buildings.some(b=>b.id===paymentBuildingId)) paymentBuildingId=buildings[0]&&buildings[0].id||"";
+  updatePaymentAlertBadge();
+  if(!paymentView||!paymentView.classList.contains("open")) return;
+  renderPaymentBuildingList(buildings); renderPaymentMain(buildings.find(b=>b.id===paymentBuildingId)||null);
+}
+function openPaymentView(){ if(!authedUser&&isConfigured){ showAuthGate(); return; } paymentView.classList.add("open"); renderPaymentCalendar(); }
+function closePaymentView(){ paymentView.classList.remove("open"); }
+function openPaymentScheduleEditor(scheduleId){
+  const building=paymentBuildingRecords().find(b=>b.id===paymentBuildingId); if(!building) return;
+  const s=scheduleId&&paymentData.schedules[scheduleId]||{}; editingPaymentScheduleId=scheduleId||"";
+  document.getElementById("paymentScheduleTitle").textContent=scheduleId?"월 납부 일정 수정":"월 납부 일정 등록";
+  document.getElementById("psBuilding").value=building.name; document.getElementById("psUnit").value=s.unit||""; document.getElementById("psTenant").value=s.tenantName||""; document.getElementById("psPayer").value=s.payerName||""; document.getElementById("psAmount").value=s.amount||""; document.getElementById("psDueDay").value=s.dueDay||""; document.getElementById("psStartMonth").value=s.startMonth||paymentMonth; document.getElementById("psEndMonth").value=s.endMonth||"";
+  paymentScheduleModal.classList.add("open");
+}
+function closePaymentScheduleEditor(){ paymentScheduleModal.classList.remove("open"); editingPaymentScheduleId=""; }
+function savePaymentScheduleFromModal(){
+  const building=paymentBuildingRecords().find(b=>b.id===paymentBuildingId); if(!building) return;
+  const unit=document.getElementById("psUnit").value.trim(),tenantName=document.getElementById("psTenant").value.trim(),payerName=document.getElementById("psPayer").value.trim();
+  const amount=Number(document.getElementById("psAmount").value.replace(/[^0-9]/g,"")),dueDay=Number(document.getElementById("psDueDay").value),startMonth=document.getElementById("psStartMonth").value,endMonth=document.getElementById("psEndMonth").value;
+  if(!unit||!tenantName||!payerName||!amount||dueDay<1||dueDay>31||!startMonth){ alert("호실, 세입자명, 예상 입금자명, 금액, 납부일, 시작월을 모두 입력해 주세요."); return; }
+  if(endMonth&&paymentMonthCompare(endMonth,startMonth)<0){ alert("종료월은 시작월보다 빠를 수 없습니다."); return; }
+  const id=editingPaymentScheduleId||paymentId("s_"),existing=paymentData.schedules[id]||{},now=new Date().toISOString();
+  const schedule={id,buildingId:building.id,buildingName:building.name,unit,tenantName,payerName,amount,dueDay,startMonth,endMonth,active:true,createdAt:existing.createdAt||now,updatedAt:now};
+  writePaymentValue("schedules/"+id,schedule); recordPaymentAudit(editingPaymentScheduleId?"납부 일정 수정":"납부 일정 등록",{scheduleId:id,building:building.name,unit,amount,dueDay}); selectedPaymentScheduleId=id; closePaymentScheduleEditor(); renderPaymentCalendar();
+}
+function openPaymentTransactionEditor(){ document.getElementById("ptDate").value=paymentTodayKey(); document.getElementById("ptPayer").value=""; document.getElementById("ptAmount").value=""; paymentTransactionModal.classList.add("open"); }
+function closePaymentTransactionEditor(){ paymentTransactionModal.classList.remove("open"); }
+function savePaymentTransactionFromModal(){
+  const date=document.getElementById("ptDate").value,payerName=document.getElementById("ptPayer").value.trim(),amount=Number(document.getElementById("ptAmount").value.replace(/[^0-9]/g,""));
+  if(!date||!payerName||!amount){ alert("입금일, 입금자명, 입금금액을 모두 입력해 주세요."); return; }
+  const building=paymentBuildingRecords().find(b=>b.id===paymentBuildingId); if(!building){ alert("건물을 먼저 선택해 주세요."); return; }
+  const id=paymentId("tx_"),tx={id,buildingId:building.id,buildingName:building.name,date,payerName,amount,direction:"deposit",source:"test",active:true,createdAt:new Date().toISOString()};
+  writePaymentValue("transactions/"+id,tx); recordPaymentAudit("테스트 입금 등록",{transactionId:id,date,payerName,amount}); closePaymentTransactionEditor(); renderPaymentCalendar();
+}
+function removePaymentTransaction(id){ if(!id||!paymentData.transactions[id]) return; writePaymentValue("transactions/"+id,null); recordPaymentAudit("테스트 입금 삭제",{transactionId:id}); renderPaymentCalendar(); }
+function setPaymentOverride(status){
+  if(!selectedPaymentScheduleId) return;
+  const path=`overrides/${paymentMonth}/${selectedPaymentScheduleId}`;
+  if(status==="auto"){ writePaymentValue(path,null); recordPaymentAudit("자동판정 복원",{scheduleId:selectedPaymentScheduleId,month:paymentMonth}); renderPaymentCalendar(); return; }
+  const reason=prompt("수동 변경 사유를 입력해 주세요:",status==="paid"?"입금내역 수동 확인":status==="manual_unpaid"?"미입금 확인":"거래 확인 필요"); if(reason===null) return;
+  const value={status,reason:String(reason||"").trim(),at:new Date().toISOString(),by:authedUser&&authedUser.email||"local"};
+  writePaymentValue(path,value); recordPaymentAudit("입금 상태 수동 변경",{scheduleId:selectedPaymentScheduleId,month:paymentMonth,status,reason:value.reason}); renderPaymentCalendar();
+}
+function disablePaymentSchedule(id){ const s=paymentData.schedules[id]; if(!s||!confirm("이 월 납부 일정을 이번 달까지만 표시하고 종료할까요? 과거 기록은 유지됩니다.")) return; const updated=Object.assign({},s,{active:true,endMonth:paymentMonth,endedAt:new Date().toISOString(),updatedAt:new Date().toISOString()}); writePaymentValue("schedules/"+id,updated); recordPaymentAudit("납부 일정 종료",{scheduleId:id,building:s.buildingName,unit:s.unit,endMonth:paymentMonth}); selectedPaymentScheduleId=""; renderPaymentCalendar(); }
+function requestPaymentBuildingSync(){
+  const button=document.getElementById("paymentBuildingSync"); if(button){ button.disabled=true; button.textContent="동기화 요청 중…"; }
+  sendCaseAutomationRequest(caseAutomationEndpoint(),{action:"syncPaymentBuildings"});
+  setTimeout(()=>{ if(button){ button.disabled=false; button.textContent="↻ 온보딩 건물 새로고침"; } },2500);
+}
+
+document.getElementById("paymentBtn").addEventListener("click",openPaymentView);
+document.getElementById("paymentBack").addEventListener("click",closePaymentView);
+document.getElementById("paymentBuildingSync").addEventListener("click",requestPaymentBuildingSync);
+paymentBuildingListEl.addEventListener("click",e=>{ const tx=e.target.closest("[data-payment-tx-remove]"); if(tx){ removePaymentTransaction(tx.dataset.paymentTxRemove); return; } const b=e.target.closest("[data-payment-building]"); if(b){ paymentBuildingId=b.dataset.paymentBuilding; selectedPaymentScheduleId=""; renderPaymentCalendar(); } });
+paymentMainEl.addEventListener("click",e=>{
+  const month=e.target.closest("[data-payment-month]"); if(month){ paymentMonthShift(Number(month.dataset.paymentMonth)); return; }
+  if(e.target.closest("[data-payment-add]")){ openPaymentScheduleEditor(""); return; }
+  if(e.target.closest("[data-payment-test]")){ openPaymentTransactionEditor(); return; }
+  const item=e.target.closest("[data-payment-item]"); if(item){ selectedPaymentScheduleId=item.dataset.paymentItem; renderPaymentCalendar(); return; }
+  const edit=e.target.closest("[data-payment-edit]"); if(edit){ openPaymentScheduleEditor(edit.dataset.paymentEdit); return; }
+  const over=e.target.closest("[data-payment-override]"); if(over){ setPaymentOverride(over.dataset.paymentOverride); return; }
+  const disable=e.target.closest("[data-payment-disable]"); if(disable){ disablePaymentSchedule(disable.dataset.paymentDisable); return; }
+  const tx=e.target.closest("[data-payment-tx-remove]"); if(tx) removePaymentTransaction(tx.dataset.paymentTxRemove);
+});
+document.getElementById("paymentScheduleClose").addEventListener("click",closePaymentScheduleEditor);
+document.getElementById("paymentScheduleCancel").addEventListener("click",closePaymentScheduleEditor);
+document.getElementById("paymentScheduleSave").addEventListener("click",savePaymentScheduleFromModal);
+document.getElementById("paymentTransactionClose").addEventListener("click",closePaymentTransactionEditor);
+document.getElementById("paymentTransactionCancel").addEventListener("click",closePaymentTransactionEditor);
+document.getElementById("paymentTransactionSave").addEventListener("click",savePaymentTransactionFromModal);
+paymentScheduleModal.addEventListener("click",e=>{ if(e.target===paymentScheduleModal) closePaymentScheduleEditor(); });
+paymentTransactionModal.addEventListener("click",e=>{ if(e.target===paymentTransactionModal) closePaymentTransactionEditor(); });
+
 /* ===== 📢 비전·공지 (팀 공유) ===== */
 const DEFAULT_VISION = "<h2>🎯 BRING 비전</h2><blockquote>사람이 대신함 → 프로세스로 표준화 → 소프트웨어로 자동화 → 로봇/AI로 고도화 → <b>OS가 운영</b></blockquote><p><b>핵심 기초 5개는 고정된 가치</b>이고, 회사가 성장하면서 <b>수행 방식</b>만 진화한다. (초기=사람이 대신 · 중기=시스템이 처리 · 장기=AI·로봇·OS가 처리)</p><h3>🧱 핵심 기초 5 × 진화 (초기 → 중기 → 장기)</h3><p><b>1) 건물주의 시간 절약</b></p><ul><li><b>초기</b> — BRING 운영자가 대신 처리</li><li><b>중기</b> — 접수·분류·알림 자동화</li><li><b>장기</b> — AI가 처리 우선순위와 업체 추천</li></ul><p><b>2) 건물주의 스트레스 감소</b></p><ul><li><b>초기</b> — 민원·업체·공사 연락을 대신함</li><li><b>중기</b> — 건물주가 대시보드로 현황 확인</li><li><b>장기</b> — 월간 리포트와 승인만 확인</li></ul><p><b>3) 세입자 민원 처리</b></p><ul><li><b>초기</b> — 카톡/폼 접수 후 사람이 분류</li><li><b>중기</b> — 민원 유형별 표준 프로세스 적용</li><li><b>장기</b> — AI 분류 + 자동 응대 + 업체/로봇 연결</li></ul><p><b>4) 업체·공사·비용 투명관리</b></p><ul><li><b>초기</b> — 견적·사진·영수증 수동 정리</li><li><b>중기</b> — 업체 DB·B/A 보고서 자동화</li><li><b>장기</b> — 업체별 단가·품질·재발률 기반 최적 배정</li></ul><p><b>5) 운영 이력 데이터화</b></p><ul><li><b>초기</b> — 구글시트/노션에 기록</li><li><b>중기</b> — BRING OS에 건물별 이력 축적</li><li><b>장기</b> — 디지털 트윈 + 리스크 점수 + 예측 유지관리</li></ul><h3>🚀 발전 8단계</h3><ol><li><b>사람 기반 운영대행</b> — 사람이 대신 처리 (운영 신뢰)</li><li><b>프로세스 표준화</b> — 누가 해도 같은 방식</li><li><b>소프트웨어 자동화</b> — 반복 업무 시간↓</li><li><b>로봇화</b> — 숨은 공간까지 데이터화</li><li><b>AI화</b> — 분류·추천·예측 보조</li><li><b>직접 이행</b> — 단가·응답속도 개선</li><li><b>건물 유지관리 OS</b> — 데이터 기반 운영 (건물의 운영 기억장치)</li><li><b>Physical Infrastructure AI</b> — 점검·판단·이행 통합</li></ol><h3>🏁 최종 정의</h3><blockquote>BRING은 건물주의 시간·스트레스를 줄이는 운영대행으로 시작해, 민원·수납·업체·공사·재발 데이터를 축적하고, 이를 자동화·로봇화·AI화하여 건물 유지관리 단가를 낮추는 <b>OS 기업</b>으로 진화한다.</blockquote>";
 function loadNoticeLocal(){ try{ return JSON.parse(localStorage.getItem("fm_notice_v1"))||null; }catch(e){ return null; } }
@@ -4809,8 +5175,9 @@ document.getElementById("noticeBtn").addEventListener("click", openNoticePanel);
 document.getElementById("noticeBanner").addEventListener("click", openNoticePanel);
 
 /* ===== 업데이트 알림(What's New) — 새 버전 나오면 자동 팝업 ===== */
-const APP_VERSION = "5.07";
+const APP_VERSION = "5.08";
 const CHANGELOG = [
+  { v:"5.08", d:"2026-07-20", items:["케이스 옆에 온보딩 건물별 입금확인 캘린더 추가","월 납부 일정·테스트 입금·엄격 자동매칭·수동 보정 기록 지원","입금 데이터는 현재 로그인한 구글 계정 전용 Firebase 경로로 분리"] },
   { v:"5.07", d:"2026-07-20", items:["온보딩 탐색 위치를 BRING CARE 안의 전용 온보딩 파일 폴더로 수정해 햇빛빌라 파일 미매칭 해결","DOCX 확장자가 중복된 파일도 건물명으로 정상 인식"] },
   { v:"5.06", d:"2026-07-20", items:["건물주 추천 MMS 자동 호출에서 추천 견적 변수를 찾지 못해 흐름이 중단되던 문제 수정","온보딩 매칭부터 승인·입금 진행중까지 모의 Firebase 전체 흐름 재검증"] },
   { v:"5.05", d:"2026-07-20", items:["보관함을 휴지통으로 변경하고 휴지통 케이스에 복원·삭제 버튼 추가","완전 삭제한 케이스가 자동화 재처리로 다시 나타나지 않도록 삭제 보호 적용"] },

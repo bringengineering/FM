@@ -14,6 +14,12 @@
       ".read": true,
       ".write": true
     },
+    "paymentCalendars": {
+      "$uid": {
+        ".read": "auth != null && auth.uid === $uid",
+        ".write": "auth != null && auth.uid === $uid"
+      }
+    },
     "signage": {
       ".read": true,
       ".write": true
