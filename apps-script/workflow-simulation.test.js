@@ -1,0 +1,251 @@
+"use strict";
+
+const assert = require("node:assert/strict");
+const fs = require("node:fs");
+const path = require("node:path");
+const vm = require("node:vm");
+
+const sourcePath = path.join(__dirname, "complaint-intake-to-firebase.gs");
+const source = fs.readFileSync(sourcePath, "utf8");
+
+function extractFunction(name) {
+  const marker = `function ${name}(`;
+  const start = source.indexOf(marker);
+  assert.notEqual(start, -1, `Apps Script function not found: ${name}`);
+  const braceStart = source.indexOf("{", start);
+  let depth = 0;
+  let quote = "";
+  let escaped = false;
+  let lineComment = false;
+  let blockComment = false;
+
+  for (let index = braceStart; index < source.length; index += 1) {
+    const current = source[index];
+    const next = source[index + 1];
+    if (lineComment) {
+      if (current === "\n") lineComment = false;
+      continue;
+    }
+    if (blockComment) {
+      if (current === "*" && next === "/") {
+        blockComment = false;
+        index += 1;
+      }
+      continue;
+    }
+    if (quote) {
+      if (escaped) escaped = false;
+      else if (current === "\\") escaped = true;
+      else if (current === quote) quote = "";
+      continue;
+    }
+    if (current === "/" && next === "/") {
+      lineComment = true;
+      index += 1;
+      continue;
+    }
+    if (current === "/" && next === "*") {
+      blockComment = true;
+      index += 1;
+      continue;
+    }
+    if (current === "\"" || current === "'" || current === "`") {
+      quote = current;
+      continue;
+    }
+    if (current === "{") depth += 1;
+    if (current === "}" && --depth === 0) return source.slice(start, index + 1);
+  }
+  throw new Error(`Unclosed Apps Script function: ${name}`);
+}
+
+const db = Object.create(null);
+const ownerCalls = [];
+let ownerSendSucceeds = true;
+
+function clone(value) {
+  return value == null ? value : JSON.parse(JSON.stringify(value));
+}
+
+function mergeInto(target, patch) {
+  Object.keys(patch || {}).forEach(key => {
+    const value = patch[key];
+    if (value && typeof value === "object" && !Array.isArray(value)) {
+      target[key] = target[key] && typeof target[key] === "object" && !Array.isArray(target[key]) ? target[key] : {};
+      mergeInto(target[key], value);
+    } else {
+      target[key] = clone(value);
+    }
+  });
+  return target;
+}
+
+const context = {
+  console,
+  Date,
+  Math,
+  Object,
+  Array,
+  String,
+  Number,
+  JSON,
+  readCaseFromFirebase_(caseId) {
+    return clone(db[caseId] || null);
+  },
+  patchCaseChildToFirebase_(caseId, childPath, value) {
+    db[caseId] = db[caseId] || {};
+    db[caseId][childPath] = db[caseId][childPath] || {};
+    mergeInto(db[caseId][childPath], value || {});
+  },
+  patchCaseToFirebase_(caseId, value) {
+    db[caseId] = db[caseId] || {};
+    mergeInto(db[caseId], value || {});
+  },
+  isSmsCompleteStatus_(status) {
+    return ["sent", "success", "completed", "accepted"].includes(String(status || "").toLowerCase());
+  },
+  isBusinessRegistrationLikeQuote_(quote) {
+    return quote && quote.documentType === "business_registration";
+  },
+  isGenericQuoteVendorValue_(value) {
+    return /^(테스트|샘플|견적서|업체 확인 필요)$/i.test(String(value || "").trim());
+  },
+  parseMoneyValue_(value) {
+    return Number(String(value || "").replace(/[^0-9.-]/g, "")) || 0;
+  }
+};
+
+const functions = [
+  "ownerQuoteOriginalAmount_",
+  "selectOwnerRecommendationQuote_",
+  "ownerRecommendationSupplier_",
+  "workflowStatusRank_",
+  "promoteWorkflowStatus_",
+  "receiptSmsWorkflowComplete_",
+  "vendorMmsWorkflowComplete_",
+  "ownerMmsWorkflowComplete_",
+  "workflowPricedQuote_",
+  "workflowStepState_",
+  "advanceCaseWorkflow_",
+  "normalizeText_",
+  "normalizeAddress_",
+  "diceSimilarity_",
+  "rankDriveOnboardingCandidate_"
+];
+
+vm.createContext(context);
+vm.runInContext(functions.map(extractFunction).join("\n\n"), context, { filename: sourcePath });
+
+context.handleOwnerRecommendationMms_ = payload => {
+  ownerCalls.push(clone(payload));
+  if (!ownerSendSucceeds) return { ok: false, status: "failed", message: "mock SENS failure" };
+  db[payload.caseId].ownerRecommendationMms = {
+    ok: true,
+    status: "sent",
+    deliveryAccepted: true,
+    deliveryConfirmed: true,
+    requestId: `owner-${ownerCalls.length}`
+  };
+  const workflow = context.advanceCaseWorkflow_(payload.caseId, { source: "owner_mms", skipOwnerAutoSend: true });
+  return { ok: true, status: "sent", workflow };
+};
+
+function expectStatus(caseId, expected, label) {
+  Object.entries(expected).forEach(([step, status]) => {
+    assert.equal(db[caseId].status && db[caseId].status[step], status, `${label}: ${step}`);
+  });
+}
+
+function runWorkflowSimulation() {
+  const caseId = "BR-SIM-0001";
+  db[caseId] = {
+    id: caseId,
+    contractMatch: { status: "matched", matchLevel: "building_address_exact" },
+    status: {}
+  };
+
+  context.advanceCaseWorkflow_(caseId, { source: "form_submit", skipOwnerAutoSend: true });
+  expectStatus(caseId, { c1: "done", c2: "doing" }, "onboarding matched");
+
+  db[caseId].complaintReceiptSms = { ok: true, status: "sent", deliveryAccepted: true };
+  context.advanceCaseWorkflow_(caseId, { source: "receipt_sms", skipOwnerAutoSend: true });
+  expectStatus(caseId, { c2: "done", c3: "done", c4: "done", c5: "doing" }, "receipt complete");
+
+  db[caseId].quoteFiles = { premature: { vendorName: "Too Early", totalAmount: 100000 } };
+  context.advanceCaseWorkflow_(caseId, { source: "quote_upload", uploadBatchId: "early", uploadBatchComplete: true, skipOwnerAutoSend: true });
+  expectStatus(caseId, { c5: "doing" }, "quote waits for vendor MMS");
+  assert.notEqual(db[caseId].status.c6, "done", "quote must not skip manual vendor MMS");
+  db[caseId].quoteFiles = {};
+
+  db[caseId].vendorEstimateMms = { ok: true, status: "sent", deliveryAccepted: true, sent: [{ vendorName: "Vendor A" }] };
+  context.advanceCaseWorkflow_(caseId, { source: "vendor_mms", skipOwnerAutoSend: true });
+  expectStatus(caseId, { c5: "done", c6: "doing" }, "vendor MMS complete");
+
+  db[caseId].quoteFiles = {
+    high: { vendorName: "High Vendor", totalAmount: 220000 },
+    low: { vendorName: "Low Vendor", totalAmount: 130000, businessRegistrationAppliedAt: "2026-07-20T00:00:00Z" }
+  };
+  context.advanceCaseWorkflow_(caseId, { source: "quote_upload", uploadBatchId: "batch-1", uploadBatchComplete: false, skipOwnerAutoSend: true });
+  expectStatus(caseId, { c6: "doing" }, "incomplete upload batch");
+  assert.notEqual(db[caseId].status.c7, "done", "incomplete upload batch must wait");
+
+  context.advanceCaseWorkflow_(caseId, { source: "quote_upload", uploadBatchId: "batch-1", uploadBatchComplete: true });
+  expectStatus(caseId, { c6: "done", c7: "done", c8: "done", c9: "doing" }, "owner MMS automatic completion");
+  assert.equal(ownerCalls.length, 1, "owner MMS must be requested once");
+  assert.equal(ownerCalls[0].quoteId, "low", "lowest original quote must be recommended");
+
+  context.advanceCaseWorkflow_(caseId, { source: "retry" });
+  assert.equal(ownerCalls.length, 1, "completed owner MMS must not be sent twice");
+  expectStatus(caseId, { c8: "done", c9: "doing" }, "idempotent retry");
+
+  const unmatchedId = "BR-SIM-UNMATCHED";
+  db[unmatchedId] = { id: unmatchedId, contractMatch: { status: "unmatched" }, status: {} };
+  context.advanceCaseWorkflow_(unmatchedId, { source: "form_submit" });
+  expectStatus(unmatchedId, { c1: "doing" }, "unmatched onboarding");
+  assert.equal(db[unmatchedId].status.c2, undefined, "unmatched onboarding must not open c2");
+
+  const failureId = "BR-SIM-OWNER-FAIL";
+  db[failureId] = {
+    id: failureId,
+    contractMatch: { status: "matched" },
+    status: { c1: "done", c2: "done", c3: "done", c4: "done", c5: "done", c6: "done", c7: "done", c8: "doing" },
+    quoteFiles: { q1: { vendorName: "Failure Vendor", totalAmount: 150000 } }
+  };
+  ownerSendSucceeds = false;
+  const failedResult = context.advanceCaseWorkflow_(failureId, { source: "retry" });
+  assert.equal(failedResult.ok, false, "owner MMS failure must be exposed");
+  expectStatus(failureId, { c8: "doing" }, "owner MMS failure stays on c8");
+  assert.equal(db[failureId].status.c9, undefined, "owner MMS failure must not open c9");
+  ownerSendSucceeds = true;
+}
+
+function runMatchingSimulation() {
+  const exact = context.rankDriveOnboardingCandidate_(
+    { building: "Sangji Center", address: "Wonju 83", text: "Sangji Center Wonju 83" },
+    "Sangji Center",
+    "Wonju 83"
+  );
+  assert.equal(exact.matchRank, 3, "building and address exact match must rank first");
+
+  const buildingOnly = context.rankDriveOnboardingCandidate_(
+    { building: "Sangji Center", address: "Different Address", text: "Sangji Center Different Address" },
+    "Sangji Center",
+    "Wonju 83"
+  );
+  assert.equal(buildingOnly.matchRank, 2, "building exact match must rank second");
+
+  const fuzzy = context.rankDriveOnboardingCandidate_(
+    { building: "Sangji Startup Center", address: "Wonju 85", text: "Sangji Startup Center Wonju 85" },
+    "Sangji Start Center",
+    "Wonju 83"
+  );
+  assert.equal(fuzzy.matchRank, 1, "similar building and address must use fuzzy rank");
+  assert.ok(fuzzy.matchScore > 0, "fuzzy match must produce a score");
+}
+
+runWorkflowSimulation();
+runMatchingSimulation();
+console.log("PASS ①→⑤: onboarding, receipt SMS, consultation and classification");
+console.log("PASS ⑤→⑦: vendor MMS, upload batch gate and lowest-price recommendation");
+console.log("PASS ⑧→⑨: automatic owner MMS, failure hold and duplicate-send prevention");
+console.log("PASS matching: exact, building-only and fuzzy ranking");

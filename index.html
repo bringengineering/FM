@@ -4809,8 +4809,9 @@ document.getElementById("noticeBtn").addEventListener("click", openNoticePanel);
 document.getElementById("noticeBanner").addEventListener("click", openNoticePanel);
 
 /* ===== 업데이트 알림(What's New) — 새 버전 나오면 자동 팝업 ===== */
-const APP_VERSION = "5.05";
+const APP_VERSION = "5.06";
 const CHANGELOG = [
+  { v:"5.06", d:"2026-07-20", items:["건물주 추천 MMS 자동 호출에서 추천 견적 변수를 찾지 못해 흐름이 중단되던 문제 수정","온보딩 매칭부터 승인·입금 진행중까지 모의 Firebase 전체 흐름 재검증"] },
   { v:"5.05", d:"2026-07-20", items:["보관함을 휴지통으로 변경하고 휴지통 케이스에 복원·삭제 버튼 추가","완전 삭제한 케이스가 자동화 재처리로 다시 나타나지 않도록 삭제 보호 적용"] },
   { v:"5.04", d:"2026-07-16", items:["민원 접수 ①~⑨ 중앙 자동 진행 엔진 연결","온보딩 정확·건물명·유사도 순위 매칭 적용","문자·업체 MMS·견적 배치·건물주 MMS 완료 이벤트로 순차 자동 전환","화면의 오래된 저장이 서버 완료 상태를 되돌리지 않도록 동기화 분리"] },
   { v:"5.03", d:"2026-07-16", items:["건물주 MMS 발송 성공을 별도 자동화 확정 기록으로 보존","오래 열린 화면이 ⑧ 상태를 되돌려도 ⑧ 완료·⑨ 진행중을 자동 복구"] },

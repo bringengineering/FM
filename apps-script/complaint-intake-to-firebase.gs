@@ -16,7 +16,7 @@ const COMPLAINT_CONFIG = {
   FIREBASE_CASES_PATH: "cases",
   RESPONSE_SHEET_URL: "https://docs.google.com/spreadsheets/d/1HI6KzIMomL6vOUPs8zZDhXHktL1cWRDcg93lflsuojA/edit"
 };
-const AUTOMATION_BUILD = "complaint-workflow-20260716-v12";
+const AUTOMATION_BUILD = "complaint-workflow-20260720-v13";
 const OWNER_RECOMMENDATION_IMAGE_VERSION = "owner-summary-v4";
 
 const OUTPUT_HEADERS = [
@@ -807,6 +807,7 @@ function advanceCaseWorkflow_(caseId, context) {
   const before = Object.assign({}, casePayload.status || {});
   const status = Object.assign({}, before);
   const automationState = Object.assign({}, casePayload.automationState || {});
+  let pricedQuote = null;
   const match = casePayload.contractMatch || {};
   const matched = match.status === "matched";
 
@@ -848,7 +849,7 @@ function advanceCaseWorkflow_(caseId, context) {
     }
 
     const batchComplete = context.uploadBatchComplete === true || (!context.uploadBatchId && context.source !== "quote_upload" && context.source !== "business_registration_upload");
-    const pricedQuote = workflowPricedQuote_(casePayload);
+    pricedQuote = workflowPricedQuote_(casePayload);
     if (status.c5 === "done" && pricedQuote && batchComplete) {
       promoteWorkflowStatus_(status, "c6", "done");
       promoteWorkflowStatus_(status, "c7", "done");
