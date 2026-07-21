@@ -5230,8 +5230,9 @@ document.getElementById("noticeBtn").addEventListener("click", openNoticePanel);
 document.getElementById("noticeBanner").addEventListener("click", openNoticePanel);
 
 /* ===== 업데이트 알림(What's New) — 새 버전 나오면 자동 팝업 ===== */
-const APP_VERSION = "5.12";
+const APP_VERSION = "5.13";
 const CHANGELOG = [
+  { v:"5.13", d:"2026-07-21", items:["세입자 월세 관리대장을 BRING CARE 공유 폴더의 독립 파일로 분리","입금확인 캘린더가 새 관리대장 파일을 계속 동기화하도록 연결"] },
   { v:"5.12", d:"2026-07-21", items:["세입자 월세 관리대장과 입금확인 캘린더 동기화 연결","건물·호실·세입자·입금자·금액·납부일·계약기간을 월 납부 일정으로 자동 반영","관리대장 열기와 반영 결과·오류 행 표시 추가"] },
   { v:"5.11", d:"2026-07-21", items:["입금확인 캘린더 왼쪽 목록에서 온보딩 안내문으로 잘못 생성된 항목 제거","건물 카드를 건물명·주소·건물주명 세 줄로 간소화"] },
   { v:"5.10", d:"2026-07-21", items:["온보딩 문서의 안내 문장을 건물명으로 잘못 읽는 문제 수정","건물명·주소는 항목명 뒤에 구분자가 있는 실제 입력값만 인식"] },

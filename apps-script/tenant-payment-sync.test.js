@@ -87,5 +87,7 @@ assert.equal(pausedRecord.schedule.active, false, "보류된 계약은 캘린더
 
 assert.match(source, /payload\.action === "syncPaymentSchedules"/);
 assert.match(source, /paymentCalendars\/" \+ encodeURIComponent\(safeUid\)/, "로그인 사용자 전용 Firebase 경로를 사용한다");
+assert.match(source, /function movePaymentScheduleSheetToBringCareFolder\(/, "관리대장을 BRING CARE 공유 폴더의 독립 파일로 이동할 수 있다");
+assert.match(source, /PAYMENT_SCHEDULE_SPREADSHEET_ID/, "이동한 독립 관리대장 파일 ID를 자동화가 계속 사용한다");
 
 console.log("tenant payment sync tests passed");

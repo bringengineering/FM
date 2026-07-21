@@ -14,7 +14,9 @@ const COMPLAINT_CONFIG = {
   VENDOR_QUOTE_REPLY_EMAIL: "bringengineering1008@gmail.com",
   FIREBASE_DATABASE_URL: "https://bring-fm-hj-default-rtdb.asia-southeast1.firebasedatabase.app",
   FIREBASE_CASES_PATH: "cases",
-  RESPONSE_SHEET_URL: "https://docs.google.com/spreadsheets/d/1HI6KzIMomL6vOUPs8zZDhXHktL1cWRDcg93lflsuojA/edit"
+  RESPONSE_SHEET_URL: "https://docs.google.com/spreadsheets/d/1HI6KzIMomL6vOUPs8zZDhXHktL1cWRDcg93lflsuojA/edit",
+  PAYMENT_SCHEDULE_DRIVE_FOLDER_ID: "1q1uKquSngjyi0upoCRmjnRxm_CD1sAcN",
+  PAYMENT_SCHEDULE_SPREADSHEET_NAME: "BRING CARE 세입자 월세 관리대장"
 };
 const PAYMENT_SCHEDULE_SHEET_NAME = "세입자 월세 관리대장";
 const PAYMENT_SCHEDULE_HEADERS = [
@@ -30,7 +32,7 @@ const PAYMENT_SCHEDULE_HEADERS = [
   "상태",
   "비고"
 ];
-const AUTOMATION_BUILD = "complaint-workflow-20260721-v19";
+const AUTOMATION_BUILD = "complaint-workflow-20260721-v20";
 const OWNER_RECOMMENDATION_IMAGE_VERSION = "owner-summary-v4";
 
 const OUTPUT_HEADERS = [
@@ -5298,8 +5300,62 @@ function setupPaymentScheduleSheet() {
   return result;
 }
 
+function paymentScheduleSpreadsheetId_() {
+  return PropertiesService.getScriptProperties().getProperty("PAYMENT_SCHEDULE_SPREADSHEET_ID")
+    || COMPLAINT_CONFIG.SPREADSHEET_ID;
+}
+
+function movePaymentScheduleSheetToBringCareFolder() {
+  const props = PropertiesService.getScriptProperties();
+  const currentId = props.getProperty("PAYMENT_SCHEDULE_SPREADSHEET_ID");
+  let targetSpreadsheet;
+  if (currentId) {
+    targetSpreadsheet = SpreadsheetApp.openById(currentId);
+  } else {
+    targetSpreadsheet = SpreadsheetApp.create(COMPLAINT_CONFIG.PAYMENT_SCHEDULE_SPREADSHEET_NAME);
+    const targetFile = DriveApp.getFileById(targetSpreadsheet.getId());
+    const targetFolder = DriveApp.getFolderById(COMPLAINT_CONFIG.PAYMENT_SCHEDULE_DRIVE_FOLDER_ID);
+    targetFile.moveTo(targetFolder);
+
+    const sourceSpreadsheet = SpreadsheetApp.openById(COMPLAINT_CONFIG.SPREADSHEET_ID);
+    const sourceSheet = sourceSpreadsheet.getSheetByName(PAYMENT_SCHEDULE_SHEET_NAME);
+    if (sourceSheet) {
+      const copiedSheet = sourceSheet.copyTo(targetSpreadsheet).setName(PAYMENT_SCHEDULE_SHEET_NAME);
+      targetSpreadsheet.getSheets().forEach(sheet => {
+        if (sheet.getSheetId() !== copiedSheet.getSheetId() && targetSpreadsheet.getSheets().length > 1) {
+          targetSpreadsheet.deleteSheet(sheet);
+        }
+      });
+    } else {
+      targetSpreadsheet.getSheets()[0].setName(PAYMENT_SCHEDULE_SHEET_NAME);
+    }
+    props.setProperty("PAYMENT_SCHEDULE_SPREADSHEET_ID", targetSpreadsheet.getId());
+  }
+
+  const result = setupPaymentScheduleSheet_();
+  const sourceSpreadsheet = SpreadsheetApp.openById(COMPLAINT_CONFIG.SPREADSHEET_ID);
+  const sourceSheet = sourceSpreadsheet.getSheetByName(PAYMENT_SCHEDULE_SHEET_NAME);
+  const targetSheet = targetSpreadsheet.getSheetByName(PAYMENT_SCHEDULE_SHEET_NAME);
+  if (sourceSheet && targetSheet && targetSpreadsheet.getId() !== sourceSpreadsheet.getId()) {
+    const sourceHeaders = sourceSheet.getRange(1, 1, 1, PAYMENT_SCHEDULE_HEADERS.length).getDisplayValues()[0];
+    const targetHeaders = targetSheet.getRange(1, 1, 1, PAYMENT_SCHEDULE_HEADERS.length).getDisplayValues()[0];
+    if (JSON.stringify(sourceHeaders) !== JSON.stringify(targetHeaders)) {
+      throw new Error("새 관리대장 파일의 열을 확인하지 못해 기존 탭을 유지했습니다.");
+    }
+    sourceSpreadsheet.deleteSheet(sourceSheet);
+  }
+  const output = Object.assign({}, result, {
+    moved: true,
+    spreadsheetId: targetSpreadsheet.getId(),
+    folderId: COMPLAINT_CONFIG.PAYMENT_SCHEDULE_DRIVE_FOLDER_ID,
+    fileName: targetSpreadsheet.getName()
+  });
+  Logger.log(JSON.stringify(output));
+  return output;
+}
+
 function setupPaymentScheduleSheet_() {
-  const spreadsheet = SpreadsheetApp.openById(COMPLAINT_CONFIG.SPREADSHEET_ID);
+  const spreadsheet = SpreadsheetApp.openById(paymentScheduleSpreadsheetId_());
   let sheet = spreadsheet.getSheetByName(PAYMENT_SCHEDULE_SHEET_NAME);
   if (!sheet) sheet = spreadsheet.insertSheet(PAYMENT_SCHEDULE_SHEET_NAME);
 
@@ -5502,7 +5558,7 @@ function syncPaymentSchedulesFromSheet_(payload) {
   const requestedAt = new Date().toISOString();
   const currentMonth = Utilities.formatDate(new Date(), "Asia/Seoul", "yyyy-MM");
   try {
-    const sheet = setupPaymentScheduleSheet_() && SpreadsheetApp.openById(COMPLAINT_CONFIG.SPREADSHEET_ID).getSheetByName(PAYMENT_SCHEDULE_SHEET_NAME);
+    const sheet = setupPaymentScheduleSheet_() && SpreadsheetApp.openById(paymentScheduleSpreadsheetId_()).getSheetByName(PAYMENT_SCHEDULE_SHEET_NAME);
     if (!sheet) throw new Error("세입자 월세 관리대장 탭을 찾지 못했습니다.");
     const lastRow = sheet.getLastRow();
     const lastColumn = Math.max(sheet.getLastColumn(), PAYMENT_SCHEDULE_HEADERS.length);
