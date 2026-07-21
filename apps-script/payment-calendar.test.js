@@ -130,8 +130,11 @@ context.settings.paymentBuildings = {
   simple: { building: "햇빛빌라", address: "단계동 927-2" },
   onboarding: { building: "햇빛빌라", address: "단계동 927-2", ownerName: "서창환" }
 };
+context.cases = {
+  case1: { building: "햇빛 빌라", address: "원주시 단계동 927-2", contractMatch: { status: "matched", driveFileId: "simple", matchedBuilding: "햇빛 빌라", matchedAddress: "원주시 단계동 927-2" } }
+};
 const buildings = context.paymentBuildingRecords();
-assert.equal(buildings.length, 1, "안내문 항목과 중복 건물은 왼쪽 목록에서 제거한다");
+assert.equal(buildings.length, 1, "안내문 항목과 같은 온보딩 파일의 중복 건물은 왼쪽 목록에서 제거한다");
 assert.equal(buildings[0].name, "햇빛빌라");
 assert.equal(buildings[0].ownerName, "서창환", "중복 온보딩 자료의 건물주명을 합쳐 표시한다");
 

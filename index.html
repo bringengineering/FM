@@ -5005,17 +5005,19 @@ function attachPaymentCalendarRef(user){
   });
 }
 function paymentBuildingRecords(){
-  const out=[],seen={};
+  const out=[],seen={},seenIds={};
   const add=(value,key)=>{
     const b=value||{};
     const isGuide=value=>/(?:주소로\s*계약\s*건물을?\s*확인|계약\s*건물\s*인덱스|확인하기\s*위한|간단\s*기록용|응답\s*시트|동일하게\s*입력|입력하면|자동\s*매칭)/i.test(String(value||""));
     const name=[b.building,b.name,b.matchedBuilding].map(value=>String(value||"").trim()).find(value=>value&&!isGuide(value))||""; if(!name) return;
     const address=[b.address,b.matchedAddress].map(value=>String(value||"").trim()).find(value=>value&&!isGuide(value))||"";
     const ownerName=String(b.ownerName||b.buildingOwnerName||(b.contract&&b.contract.ownerName)||"").trim();
+    const id=String(b.id||b.driveFileId||key||("b_"+paymentHash(name+"|"+address)));
     const dedupe=paymentNormalizeName(name)+"|"+paymentNormalizeName(address);
-    if(seen[dedupe]){ if(!seen[dedupe].ownerName&&ownerName) seen[dedupe].ownerName=ownerName; return; }
-    const record={id:String(b.id||b.driveFileId||key||("b_"+paymentHash(dedupe))),name,address,ownerName,fileName:b.fileName||"",fileUrl:b.fileUrl||"",source:b.source||"onboarding"};
-    seen[dedupe]=record; out.push(record);
+    const existing=seenIds[id]||seen[dedupe];
+    if(existing){ if(!existing.ownerName&&ownerName) existing.ownerName=ownerName; seenIds[id]=existing; return; }
+    const record={id,name,address,ownerName,fileName:b.fileName||"",fileUrl:b.fileUrl||"",source:b.source||"onboarding"};
+    seen[dedupe]=record; seenIds[id]=record; out.push(record);
   };
   const registry=settings&&settings.paymentBuildings||{};
   Object.keys(registry).forEach(key=>add(registry[key],key));
