@@ -46,6 +46,7 @@ GPT·클로드·커서에 **파일을 통째로** 넣고 "○○ 기능 추가/�
 
 ## 📂 데이터 구조 (Firebase Realtime Database)
 
+- 운영 프로젝트: `BRING-FM-HJ` (`bring-fm-hj`), 소유 계정 `ameejin92@gmail.com`
 - `paymentCalendars/{Google UID}`: 현재 로그인한 구글 계정 전용 입금 캘린더(월 납부 일정, 거래, 수동 보정, 감사 기록)
 - `caseSettings/paymentBuildings`: 온보딩 Drive 폴더에서 동기화한 건물명·주소·원본 파일 링크. 계좌번호나 토큰은 저장하지 않습니다.
 

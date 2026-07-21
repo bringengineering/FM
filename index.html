@@ -753,13 +753,13 @@
 <script>
 /* ===== ① 실시간 공유 켜기: 아래 값을 본인 Firebase 프로젝트 값으로 교체 (교체 전엔 '로컬 모드') ===== */
 const firebaseConfig = {
-  apiKey: "AIzaSyBKOTIuQ8pOKSuaeKFQs_6UDdDnxdjCTZg",
-  authDomain: "bring-fm.firebaseapp.com",
-  databaseURL: "https://bring-fm-default-rtdb.asia-southeast1.firebasedatabase.app",
-  projectId: "bring-fm",
-  storageBucket: "bring-fm.firebasestorage.app",
-  messagingSenderId: "864976295990",
-  appId: "1:864976295990:web:194f145b1b4dad58eb6097"
+  apiKey: "AIzaSyAeAvJIeu5hOHQ-aT6YurHdPh1thO-NYmo",
+  authDomain: "bring-fm-hj.firebaseapp.com",
+  databaseURL: "https://bring-fm-hj-default-rtdb.asia-southeast1.firebasedatabase.app",
+  projectId: "bring-fm-hj",
+  storageBucket: "bring-fm-hj.firebasestorage.app",
+  messagingSenderId: "975975605634",
+  appId: "1:975975605634:web:34ae9d7af84b3ee9ea5b9b"
 };
 let boards = { main: "업무 흐름" };   // {boardId: 이름}
 let curBoard = "main";
@@ -5175,8 +5175,9 @@ document.getElementById("noticeBtn").addEventListener("click", openNoticePanel);
 document.getElementById("noticeBanner").addEventListener("click", openNoticePanel);
 
 /* ===== 업데이트 알림(What's New) — 새 버전 나오면 자동 팝업 ===== */
-const APP_VERSION = "5.08";
+const APP_VERSION = "5.09";
 const CHANGELOG = [
+  { v:"5.09", d:"2026-07-21", items:["Firebase를 ameejin92@gmail.com 소유의 BRING-FM-HJ 프로젝트로 이전","기존 업무 흐름·케이스·간판 데이터를 새 데이터베이스로 이전","Google 로그인과 입금확인 캘린더 보안 규칙을 새 프로젝트에 적용"] },
   { v:"5.08", d:"2026-07-20", items:["케이스 옆에 온보딩 건물별 입금확인 캘린더 추가","월 납부 일정·테스트 입금·엄격 자동매칭·수동 보정 기록 지원","입금 데이터는 현재 로그인한 구글 계정 전용 Firebase 경로로 분리"] },
   { v:"5.07", d:"2026-07-20", items:["온보딩 탐색 위치를 BRING CARE 안의 전용 온보딩 파일 폴더로 수정해 햇빛빌라 파일 미매칭 해결","DOCX 확장자가 중복된 파일도 건물명으로 정상 인식"] },
   { v:"5.06", d:"2026-07-20", items:["건물주 추천 MMS 자동 호출에서 추천 견적 변수를 찾지 못해 흐름이 중단되던 문제 수정","온보딩 매칭부터 승인·입금 진행중까지 모의 Firebase 전체 흐름 재검증"] },
