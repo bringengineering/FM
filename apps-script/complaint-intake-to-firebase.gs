@@ -24,6 +24,7 @@ const PAYMENT_SCHEDULE_HEADERS = [
   "건물명",
   "호실",
   "세입자명",
+  "연락처",
   "입금자명",
   "월 납부금액",
   "매월 납부일",
@@ -32,7 +33,7 @@ const PAYMENT_SCHEDULE_HEADERS = [
   "상태",
   "비고"
 ];
-const AUTOMATION_BUILD = "complaint-workflow-20260721-v21";
+const AUTOMATION_BUILD = "complaint-workflow-20260721-v22";
 const OWNER_RECOMMENDATION_IMAGE_VERSION = "owner-summary-v4";
 
 const OUTPUT_HEADERS = [
@@ -131,6 +132,9 @@ function doPost(e) {
     }
     if (payload.action === "syncPaymentSchedules") {
       return jsonResponse_(syncPaymentSchedulesFromSheet_(payload));
+    }
+    if (payload.action === "sendPaymentReminderSms") {
+      return jsonResponse_(handlePaymentReminderSms_(payload));
     }
     if (payload.action === "sendComplaintReceiptSms") {
       return jsonResponse_(handleComplaintReceiptSms_(payload));
@@ -5407,6 +5411,13 @@ function setupPaymentScheduleSheet_() {
   let sheet = spreadsheet.getSheetByName(PAYMENT_SCHEDULE_SHEET_NAME);
   if (!sheet) sheet = spreadsheet.insertSheet(PAYMENT_SCHEDULE_SHEET_NAME);
 
+  const existingHeaderCount = Math.max(sheet.getLastColumn(), PAYMENT_SCHEDULE_HEADERS.length - 1);
+  const existingHeaders = sheet.getRange(1, 1, 1, existingHeaderCount).getDisplayValues()[0]
+    .map(value => String(value || "").trim());
+  if (existingHeaders.indexOf("연락처") === -1 && existingHeaders[4] === "입금자명") {
+    sheet.insertColumnAfter(4);
+  }
+
   const headerCount = PAYMENT_SCHEDULE_HEADERS.length;
   if (sheet.getMaxColumns() < headerCount) {
     sheet.insertColumnsAfter(sheet.getMaxColumns(), headerCount - sheet.getMaxColumns());
@@ -5422,20 +5433,21 @@ function setupPaymentScheduleSheet_() {
     .setVerticalAlignment("middle");
   sheet.setRowHeight(1, 34);
 
-  const widths = [120, 190, 90, 110, 110, 120, 105, 115, 115, 90, 240];
+  const widths = [120, 190, 90, 110, 135, 110, 120, 105, 115, 115, 90, 240];
   widths.forEach((width, index) => sheet.setColumnWidth(index + 1, width));
-  sheet.getRange("F2:F").setNumberFormat("#,##0").setHorizontalAlignment("right");
-  sheet.getRange("G2:G").setNumberFormat("0").setHorizontalAlignment("center");
-  sheet.getRange("H2:I").setNumberFormat("yyyy-mm-dd").setHorizontalAlignment("center");
-  sheet.getRange("J2:J").setHorizontalAlignment("center");
-  sheet.getRange("K2:K").setWrap(true);
+  sheet.getRange("E2:E").setNumberFormat("@");
+  sheet.getRange("G2:G").setNumberFormat("#,##0").setHorizontalAlignment("right");
+  sheet.getRange("H2:H").setNumberFormat("0").setHorizontalAlignment("center");
+  sheet.getRange("I2:J").setNumberFormat("yyyy-mm-dd").setHorizontalAlignment("center");
+  sheet.getRange("K2:K").setHorizontalAlignment("center");
+  sheet.getRange("L2:L").setWrap(true);
 
   const statusValidation = SpreadsheetApp.newDataValidation()
     .requireValueInList(["계약중", "종료", "보류"], true)
     .setAllowInvalid(false)
     .setHelpText("계약중, 종료, 보류 중 하나를 선택하세요.")
     .build();
-  sheet.getRange("J2:J").setDataValidation(statusValidation);
+  sheet.getRange("K2:K").setDataValidation(statusValidation);
 
   const buildingNames = paymentBuildingRegistryRecords_().map(item => item.name);
   if (buildingNames.length) {
@@ -5450,8 +5462,9 @@ function setupPaymentScheduleSheet_() {
   if (!sheet.getFilter()) sheet.getRange(1, 1, sheet.getMaxRows(), headerCount).createFilter();
   sheet.getRange("A2:A").setBackground("#f3f6fb").setFontColor("#6b7686");
   sheet.getRange("A1").setNote("자동 동기화용 번호입니다. 직접 수정하지 마세요.");
-  sheet.getRange("E1").setNote("은행 통장에 실제로 표시되는 입금자명을 입력하세요. 세입자명과 다를 수 있습니다.");
-  sheet.getRange("G1").setNote("매월 납부일을 1~31 사이 숫자로 입력하세요. 31일이 없는 달은 말일로 표시됩니다.");
+  sheet.getRange("E1").setNote("납부 당일·미입금 안내 문자를 받을 세입자 휴대폰 번호를 입력하세요.");
+  sheet.getRange("F1").setNote("은행 통장에 실제로 표시되는 입금자명을 입력하세요. 세입자명과 다를 수 있습니다.");
+  sheet.getRange("H1").setNote("매월 납부일을 1~31 사이 숫자로 입력하세요. 31일이 없는 달은 말일로 표시됩니다.");
 
   const sheetUrl = spreadsheet.getUrl() + "#gid=" + sheet.getSheetId();
   firebaseWriteRequest_(
@@ -5519,6 +5532,8 @@ function paymentScheduleRecordFromSheetRow_(row, headerMap, byName, currentMonth
   const buildingName = paymentScheduleSheetText_(paymentScheduleRowValue_(row, headerMap, "건물명"));
   const unit = paymentScheduleSheetText_(paymentScheduleRowValue_(row, headerMap, "호실"));
   const tenantName = paymentScheduleSheetText_(paymentScheduleRowValue_(row, headerMap, "세입자명"));
+  const tenantPhoneRaw = paymentScheduleSheetText_(paymentScheduleRowValue_(row, headerMap, "연락처"));
+  const tenantPhone = tenantPhoneRaw.replace(/\D/g, "");
   const payerName = paymentScheduleSheetText_(paymentScheduleRowValue_(row, headerMap, "입금자명")) || tenantName;
   const amount = paymentScheduleSheetNumber_(paymentScheduleRowValue_(row, headerMap, "월 납부금액"));
   const dueDay = paymentScheduleSheetNumber_(paymentScheduleRowValue_(row, headerMap, "매월 납부일"));
@@ -5533,6 +5548,7 @@ function paymentScheduleRecordFromSheetRow_(row, headerMap, byName, currentMonth
   else if (matches.length > 1) problems.push("같은 이름의 건물이 여러 곳임");
   if (!unit) problems.push("호실");
   if (!tenantName) problems.push("세입자명");
+  if (tenantPhoneRaw && !/^01[016789]\d{7,8}$/.test(tenantPhone)) problems.push("연락처(휴대폰 번호)");
   if (!payerName) problems.push("입금자명");
   if (amount <= 0) problems.push("월 납부금액");
   if (dueDay < 1 || dueDay > 31) problems.push("매월 납부일(1~31)");
@@ -5550,6 +5566,7 @@ function paymentScheduleRecordFromSheetRow_(row, headerMap, byName, currentMonth
       buildingName: building.name,
       unit: unit,
       tenantName: tenantName,
+      tenantPhone: tenantPhone,
       payerName: payerName,
       amount: amount,
       dueDay: dueDay,
@@ -5683,6 +5700,81 @@ function syncPaymentSchedulesFromSheet_(payload) {
     writePaymentSheetSyncStatus_(payload, status);
     throw err;
   }
+}
+
+function paymentReminderDueDate_(month, dueDay) {
+  const match = String(month || "").match(/^(\d{4})-(\d{2})$/);
+  if (!match) throw new Error("납부월이 올바르지 않습니다.");
+  const year = Number(match[1]);
+  const monthNumber = Number(match[2]);
+  if (monthNumber < 1 || monthNumber > 12) throw new Error("납부월이 올바르지 않습니다.");
+  const lastDay = new Date(Date.UTC(year, monthNumber, 0)).getUTCDate();
+  const day = Math.min(Math.max(1, Number(dueDay) || 1), lastDay);
+  return match[1] + "-" + match[2] + "-" + String(day).padStart(2, "0");
+}
+
+function paymentReminderSmsContent_(schedule, dueDate, reminderType) {
+  const dateParts = String(dueDate || "").split("-");
+  const displayDate = Number(dateParts[0]) + "년 " + Number(dateParts[1]) + "월 " + Number(dateParts[2]) + "일";
+  const amount = Number(schedule.amount) || 0;
+  return [
+    "[BRING Care]",
+    schedule.tenantName ? schedule.tenantName + "님, 안녕하세요." : "안녕하세요.",
+    reminderType === "due" ? "오늘은 월세 납부일입니다." : "월세 입금이 아직 확인되지 않아 안내드립니다.",
+    schedule.buildingName ? "건물: " + schedule.buildingName : "",
+    schedule.unit ? "호실: " + schedule.unit : "",
+    amount ? "납부금액: " + Math.round(amount).toLocaleString("ko-KR") + "원" : "",
+    "납부일: " + displayDate,
+    "이미 납부하셨다면 확인에 시간이 걸릴 수 있으니 이 문자는 무시해 주세요."
+  ].filter(Boolean).join("\n");
+}
+
+function handlePaymentReminderSms_(payload) {
+  payload = payload || {};
+  const scheduleId = String(payload.scheduleId || "").trim();
+  const month = String(payload.month || "").trim();
+  if (!/^[A-Za-z0-9_-]{6,160}$/.test(scheduleId)) throw new Error("월 납부 일정 ID가 올바르지 않습니다.");
+  if (!/^\d{4}-\d{2}$/.test(month)) throw new Error("납부월이 올바르지 않습니다.");
+
+  const scheduleUrl = firebasePaymentCalendarUrl_(payload.uid, "schedules/" + scheduleId, payload.idToken);
+  const schedule = firebaseReadJson_(scheduleUrl, "월 납부 일정 조회 실패");
+  if (!schedule || schedule.active === false) throw new Error("발송할 월 납부 일정을 찾지 못했습니다.");
+
+  const tenantPhone = normalizePhoneForSms_(schedule.tenantPhone || "");
+  if (!isSendableSmsPhone_(tenantPhone)) throw new Error("관리대장의 세입자 연락처를 확인해 주세요.");
+  const dueDate = paymentReminderDueDate_(month, schedule.dueDay);
+  const today = Utilities.formatDate(new Date(), "Asia/Seoul", "yyyy-MM-dd");
+  const status = String(payload.status || "");
+  const reminderType = dueDate === today ? "due" : "unpaid";
+  if (reminderType !== "due" && ["overdue", "manual_unpaid"].indexOf(status) === -1) {
+    throw new Error("납부 당일 또는 미입금 일정에만 안내 문자를 보낼 수 있습니다.");
+  }
+
+  const recordUrl = firebasePaymentCalendarUrl_(payload.uid, "rentSms/" + month + "/" + scheduleId, payload.idToken);
+  const existing = firebaseReadJson_(recordUrl, "기존 월세 안내 문자 기록 조회 실패") || {};
+  if (existing.ok === true && payload.force !== true) {
+    return Object.assign({}, existing, { skipped: true, message: "이미 발송된 기록이 있습니다." });
+  }
+
+  const content = paymentReminderSmsContent_(schedule, dueDate, reminderType);
+  const result = sendSensSms_(tenantPhone, content, "월세 안내");
+  const record = {
+    ok: result.ok === true,
+    status: result.ok === true ? "발송요청 완료" : "발송실패",
+    message: result.message || "",
+    requestId: result.requestId || "",
+    reminderType: reminderType,
+    scheduleId: scheduleId,
+    month: month,
+    dueDate: dueDate,
+    phoneMasked: maskPhone_(tenantPhone),
+    sentAt: new Date().toISOString(),
+    sentBy: String(payload.adminEmail || ""),
+    build: AUTOMATION_BUILD
+  };
+  firebaseAuthorizedWriteRequest_(recordUrl, "put", record, "월세 안내 문자 기록 저장 실패");
+  if (!result.ok) throw new Error(result.message || "월세 안내 문자 발송에 실패했습니다.");
+  return record;
 }
 
 function syncPaymentBuildingsFromOnboarding_() {

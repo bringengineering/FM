@@ -54,7 +54,8 @@ const functionNames = [
   "paymentScheduleActiveInMonth",
   "paymentTransactionsArray",
   "calculatePaymentMonthRows",
-  "paymentBuildingRecords"
+  "paymentBuildingRecords",
+  "paymentReminderTimingEligible"
 ];
 const context = { Date, Math, Object, Array, String, Number, settings: {}, cases: {} };
 vm.createContext(context);
@@ -66,6 +67,7 @@ function schedule(id, overrides) {
     buildingId: "building-1",
     unit: "101호",
     tenantName: "홍길동",
+    tenantPhone: "01012345678",
     payerName: "홍길동",
     amount: 500000,
     dueDay: 10,
@@ -124,6 +126,13 @@ const manual = rows({
 assert.equal(manual[0].status, "paid", "수동 보정은 자동 판정보다 우선한다");
 
 assert.equal(rows({ schedules: { s1: schedule("s1", { endMonth: "2026-06" }) } }).length, 0, "종료월 이후 일정은 만들지 않는다");
+
+const dueToday = rows({ schedules: { s1: schedule("s1") } }, "2026-07", "2026-07-10")[0];
+assert.equal(context.paymentReminderTimingEligible(dueToday, "2026-07-10"), true, "납부 당일에는 문자 발송 대상이다");
+const beforeDue = rows({ schedules: { s1: schedule("s1") } }, "2026-07", "2026-07-09")[0];
+assert.equal(context.paymentReminderTimingEligible(beforeDue, "2026-07-09"), false, "납부일 전에는 문자 발송 대상이 아니다");
+const unpaid = rows({ schedules: { s1: schedule("s1") } }, "2026-07", "2026-07-11")[0];
+assert.equal(context.paymentReminderTimingEligible(unpaid, "2026-07-11"), true, "미입금이면 문자 발송 대상이다");
 
 context.settings.paymentBuildings = {
   guide: { building: "+ 주소로 계약 건물을 확인하기 위한 간단 기록용", address: "단계동 927-2" },
