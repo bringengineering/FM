@@ -32,7 +32,7 @@ const PAYMENT_SCHEDULE_HEADERS = [
   "상태",
   "비고"
 ];
-const AUTOMATION_BUILD = "complaint-workflow-20260721-v20";
+const AUTOMATION_BUILD = "complaint-workflow-20260721-v21";
 const OWNER_RECOMMENDATION_IMAGE_VERSION = "owner-summary-v4";
 
 const OUTPUT_HEADERS = [
@@ -66,6 +66,7 @@ function setupComplaintAutomation() {
   ensureFormAddressQuestion_();
   syncPaymentBuildingsFromOnboarding_();
   setupPaymentScheduleSheet_();
+  ensurePaymentScheduleEditTrigger_();
   processExistingResponses();
 }
 
@@ -5296,13 +5297,59 @@ function syncPaymentBuildings() {
 
 function setupPaymentScheduleSheet() {
   const result = setupPaymentScheduleSheet_();
-  Logger.log(JSON.stringify(result));
-  return result;
+  const trigger = ensurePaymentScheduleEditTrigger_();
+  const output = Object.assign({}, result, { autoSync: true, trigger: trigger });
+  Logger.log(JSON.stringify(output));
+  return output;
 }
 
 function paymentScheduleSpreadsheetId_() {
   return PropertiesService.getScriptProperties().getProperty("PAYMENT_SCHEDULE_SPREADSHEET_ID")
     || COMPLAINT_CONFIG.SPREADSHEET_ID;
+}
+
+function ensurePaymentScheduleEditTrigger_() {
+  ScriptApp.getProjectTriggers().forEach(trigger => {
+    if (trigger.getHandlerFunction() === "onPaymentScheduleSheetEdit") {
+      ScriptApp.deleteTrigger(trigger);
+    }
+  });
+  const trigger = ScriptApp.newTrigger("onPaymentScheduleSheetEdit")
+    .forSpreadsheet(paymentScheduleSpreadsheetId_())
+    .onEdit()
+    .create();
+  return {
+    handler: trigger.getHandlerFunction(),
+    spreadsheetId: paymentScheduleSpreadsheetId_()
+  };
+}
+
+function setupPaymentScheduleAutoSync() {
+  const result = setupPaymentScheduleSheet_();
+  const trigger = ensurePaymentScheduleEditTrigger_();
+  const output = Object.assign({}, result, { autoSync: true, trigger: trigger });
+  Logger.log(JSON.stringify(output));
+  return output;
+}
+
+function onPaymentScheduleSheetEdit(e) {
+  const range = e && e.range;
+  if (!range) return;
+  const sheet = range.getSheet();
+  if (!sheet || sheet.getName() !== PAYMENT_SCHEDULE_SHEET_NAME) return;
+  if (sheet.getParent().getId() !== paymentScheduleSpreadsheetId_()) return;
+  if (range.getLastRow() < 2 || range.getColumn() > PAYMENT_SCHEDULE_HEADERS.length) return;
+
+  firebaseWriteRequest_(
+    firebaseCaseSettingsUrl_("paymentScheduleSheet"),
+    "patch",
+    {
+      lastEditedAt: new Date().toISOString(),
+      autoSyncEnabled: true,
+      build: AUTOMATION_BUILD
+    },
+    "세입자 월세 관리대장 자동 반영 신호 저장 실패"
+  );
 }
 
 function movePaymentScheduleSheetToBringCareFolder() {
@@ -5333,6 +5380,7 @@ function movePaymentScheduleSheetToBringCareFolder() {
   }
 
   const result = setupPaymentScheduleSheet_();
+  ensurePaymentScheduleEditTrigger_();
   const sourceSpreadsheet = SpreadsheetApp.openById(COMPLAINT_CONFIG.SPREADSHEET_ID);
   const sourceSheet = sourceSpreadsheet.getSheetByName(PAYMENT_SCHEDULE_SHEET_NAME);
   const targetSheet = targetSpreadsheet.getSheetByName(PAYMENT_SCHEDULE_SHEET_NAME);
@@ -5408,8 +5456,8 @@ function setupPaymentScheduleSheet_() {
   const sheetUrl = spreadsheet.getUrl() + "#gid=" + sheet.getSheetId();
   firebaseWriteRequest_(
     firebaseCaseSettingsUrl_("paymentScheduleSheet"),
-    "put",
-    { name: PAYMENT_SCHEDULE_SHEET_NAME, url: sheetUrl, updatedAt: new Date().toISOString(), build: AUTOMATION_BUILD },
+    "patch",
+    { name: PAYMENT_SCHEDULE_SHEET_NAME, url: sheetUrl, updatedAt: new Date().toISOString(), autoSyncEnabled: true, build: AUTOMATION_BUILD },
     "세입자 월세 관리대장 연결정보 저장 실패"
   );
   return { ok: true, sheetName: PAYMENT_SCHEDULE_SHEET_NAME, sheetUrl: sheetUrl, build: AUTOMATION_BUILD };
@@ -5558,7 +5606,7 @@ function syncPaymentSchedulesFromSheet_(payload) {
   const requestedAt = new Date().toISOString();
   const currentMonth = Utilities.formatDate(new Date(), "Asia/Seoul", "yyyy-MM");
   try {
-    const sheet = setupPaymentScheduleSheet_() && SpreadsheetApp.openById(paymentScheduleSpreadsheetId_()).getSheetByName(PAYMENT_SCHEDULE_SHEET_NAME);
+    const sheet = SpreadsheetApp.openById(paymentScheduleSpreadsheetId_()).getSheetByName(PAYMENT_SCHEDULE_SHEET_NAME);
     if (!sheet) throw new Error("세입자 월세 관리대장 탭을 찾지 못했습니다.");
     const lastRow = sheet.getLastRow();
     const lastColumn = Math.max(sheet.getLastColumn(), PAYMENT_SCHEDULE_HEADERS.length);

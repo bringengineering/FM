@@ -6,6 +6,7 @@ const path = require("node:path");
 const vm = require("node:vm");
 
 const source = fs.readFileSync(path.join(__dirname, "complaint-intake-to-firebase.gs"), "utf8");
+const indexSource = fs.readFileSync(path.join(__dirname, "..", "index.html"), "utf8");
 
 function extractFunction(name) {
   const marker = `function ${name}(`;
@@ -89,5 +90,11 @@ assert.match(source, /payload\.action === "syncPaymentSchedules"/);
 assert.match(source, /paymentCalendars\/" \+ encodeURIComponent\(safeUid\)/, "로그인 사용자 전용 Firebase 경로를 사용한다");
 assert.match(source, /function movePaymentScheduleSheetToBringCareFolder\(/, "관리대장을 BRING CARE 공유 폴더의 독립 파일로 이동할 수 있다");
 assert.match(source, /PAYMENT_SCHEDULE_SPREADSHEET_ID/, "이동한 독립 관리대장 파일 ID를 자동화가 계속 사용한다");
+assert.match(source, /function onPaymentScheduleSheetEdit\(/, "관리대장 편집을 감지하는 자동 반영 트리거가 있다");
+assert.match(source, /newTrigger\("onPaymentScheduleSheetEdit"\)[\s\S]*?\.onEdit\(\)/, "독립 관리대장에 설치형 편집 트리거를 연결한다");
+assert.match(source, /lastEditedAt: new Date\(\)\.toISOString\(\)/, "편집 시 민감정보 없이 변경 시각만 알린다");
+assert.doesNotMatch(extractFunction("syncPaymentSchedulesFromSheet_"), /setupPaymentScheduleSheet_\(/, "자동 반영 때마다 관리대장 서식을 다시 쓰지 않는다");
+assert.doesNotMatch(indexSource, /id="paymentScheduleSync"/, "수동 세입자 자료 반영 버튼을 제거한다");
+assert.match(indexSource, /function startPaymentScheduleAutoSync\(/, "입금확인 화면에서 자동 반영을 시작한다");
 
 console.log("tenant payment sync tests passed");
