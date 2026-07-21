@@ -5007,16 +5007,21 @@ function attachPaymentCalendarRef(user){
 function paymentBuildingRecords(){
   const out=[],seen={};
   const add=(value,key)=>{
-    const b=value||{}; const name=String(b.building||b.name||b.matchedBuilding||"").trim(); if(!name) return;
-    const address=String(b.address||b.matchedAddress||"").trim(); const dedupe=paymentNormalizeName(name)+"|"+paymentNormalizeName(address);
-    if(seen[dedupe]) return; seen[dedupe]=true;
-    out.push({id:String(b.id||b.driveFileId||key||("b_"+paymentHash(dedupe))),name,address,fileName:b.fileName||"",fileUrl:b.fileUrl||"",source:b.source||"onboarding"});
+    const b=value||{};
+    const isGuide=value=>/(?:주소로\s*계약\s*건물을?\s*확인|계약\s*건물\s*인덱스|확인하기\s*위한|간단\s*기록용|응답\s*시트|동일하게\s*입력|입력하면|자동\s*매칭)/i.test(String(value||""));
+    const name=[b.building,b.name,b.matchedBuilding].map(value=>String(value||"").trim()).find(value=>value&&!isGuide(value))||""; if(!name) return;
+    const address=[b.address,b.matchedAddress].map(value=>String(value||"").trim()).find(value=>value&&!isGuide(value))||"";
+    const ownerName=String(b.ownerName||b.buildingOwnerName||(b.contract&&b.contract.ownerName)||"").trim();
+    const dedupe=paymentNormalizeName(name)+"|"+paymentNormalizeName(address);
+    if(seen[dedupe]){ if(!seen[dedupe].ownerName&&ownerName) seen[dedupe].ownerName=ownerName; return; }
+    const record={id:String(b.id||b.driveFileId||key||("b_"+paymentHash(dedupe))),name,address,ownerName,fileName:b.fileName||"",fileUrl:b.fileUrl||"",source:b.source||"onboarding"};
+    seen[dedupe]=record; out.push(record);
   };
   const registry=settings&&settings.paymentBuildings||{};
   Object.keys(registry).forEach(key=>add(registry[key],key));
   Object.keys(cases||{}).forEach(id=>{
     const c=cases[id]||{},m=c.contractMatch||{}; if(c.deleted===true||m.status!=="matched") return;
-    add({id:m.driveFileId||("case_"+paymentHash((m.matchedBuilding||c.building)+"|"+(m.matchedAddress||c.address))),building:m.matchedBuilding||m.inputBuilding||c.building,address:m.matchedAddress||m.inputAddress||c.address,fileName:m.fileName,fileUrl:m.fileUrl,source:"matched_case"},id);
+    add({id:m.driveFileId||("case_"+paymentHash((m.matchedBuilding||c.building)+"|"+(m.matchedAddress||c.address))),building:m.matchedBuilding||m.inputBuilding||c.building,address:m.matchedAddress||m.inputAddress||c.address,ownerName:m.ownerName||(m.contract&&m.contract.ownerName)||"",fileName:m.fileName,fileUrl:m.fileUrl,source:"matched_case"},id);
   });
   return out.sort((a,b)=>a.name.localeCompare(b.name,"ko"));
 }
@@ -5037,7 +5042,7 @@ function renderPaymentBuildingList(buildings){
   if(!paymentBuildingListEl) return;
   const recent=paymentTransactionsArray(paymentData).filter(t=>t.source==="test").sort((a,b)=>String(b.createdAt||"").localeCompare(String(a.createdAt||""))).slice(0,5);
   paymentBuildingListEl.innerHTML=`<div class="pv-side-title"><span>온보딩 건물</span><span>${buildings.length}곳</span></div>`+
-    (buildings.length?buildings.map(b=>{ const c=paymentBuildingCounts(b.id); return `<button class="pv-building ${b.id===paymentBuildingId?'on':''}" data-payment-building="${escAttr(b.id)}"><b>${esc(b.name)}</b><span>${esc(b.address||"주소 미입력")}</span><span class="pv-building-meta"><i class="pv-mini">일정 ${c.total}</i>${c.overdue?`<i class="pv-mini bad">미입금 ${c.overdue}</i>`:""}${c.review?`<i class="pv-mini bad">확인 ${c.review}</i>`:""}</span></button>`; }).join(""):`<div class="pv-empty" style="margin-top:28px">온보딩 건물이 없습니다.<br>새로고침 후 Apps Script 동기화를 확인해 주세요.</div>`)+
+    (buildings.length?buildings.map(b=>`<button class="pv-building ${b.id===paymentBuildingId?'on':''}" data-payment-building="${escAttr(b.id)}"><b>${esc(b.name)}</b><span>${esc(b.address||"주소 미입력")}</span><span>건물주: ${esc(b.ownerName||"미입력")}</span></button>`).join(""):`<div class="pv-empty" style="margin-top:28px">온보딩 건물이 없습니다.<br>새로고침 후 Apps Script 동기화를 확인해 주세요.</div>`)+
     `<div class="pv-bank-card"><b>🏦 은행 자동조회</b><p>현재 관리자: ${esc(authedUser&&authedUser.email||"로컬")}</p><p style="margin-top:4px">핀테크이용번호와 Access Token은 나중에 보안 서버에 연결합니다. 화면과 Firebase에는 토큰을 저장하지 않습니다.</p>${recent.length?`<p style="margin-top:8px;font-weight:800;color:#52606d">최근 테스트 입금</p>${recent.map(t=>`<p>${esc(t.date)} · ${esc(t.payerName)} · ${esc(paymentFormatMoney(t.amount))} <button class="pv-btn" style="padding:2px 5px;font-size:10px" data-payment-tx-remove="${escAttr(t.id)}">삭제</button></p>`).join("")}`:""}</div>`;
 }
 function renderPaymentDetail(row){
@@ -5175,8 +5180,9 @@ document.getElementById("noticeBtn").addEventListener("click", openNoticePanel);
 document.getElementById("noticeBanner").addEventListener("click", openNoticePanel);
 
 /* ===== 업데이트 알림(What's New) — 새 버전 나오면 자동 팝업 ===== */
-const APP_VERSION = "5.10";
+const APP_VERSION = "5.11";
 const CHANGELOG = [
+  { v:"5.11", d:"2026-07-21", items:["입금확인 캘린더 왼쪽 목록에서 온보딩 안내문으로 잘못 생성된 항목 제거","건물 카드를 건물명·주소·건물주명 세 줄로 간소화"] },
   { v:"5.10", d:"2026-07-21", items:["온보딩 문서의 안내 문장을 건물명으로 잘못 읽는 문제 수정","건물명·주소는 항목명 뒤에 구분자가 있는 실제 입력값만 인식"] },
   { v:"5.09", d:"2026-07-21", items:["Firebase를 ameejin92@gmail.com 소유의 BRING-FM-HJ 프로젝트로 이전","기존 업무 흐름·케이스·간판 데이터를 새 데이터베이스로 이전","Google 로그인과 입금확인 캘린더 보안 규칙을 새 프로젝트에 적용"] },
   { v:"5.08", d:"2026-07-20", items:["케이스 옆에 온보딩 건물별 입금확인 캘린더 추가","월 납부 일정·테스트 입금·엄격 자동매칭·수동 보정 기록 지원","입금 데이터는 현재 로그인한 구글 계정 전용 Firebase 경로로 분리"] },

@@ -16,7 +16,7 @@ const COMPLAINT_CONFIG = {
   FIREBASE_CASES_PATH: "cases",
   RESPONSE_SHEET_URL: "https://docs.google.com/spreadsheets/d/1HI6KzIMomL6vOUPs8zZDhXHktL1cWRDcg93lflsuojA/edit"
 };
-const AUTOMATION_BUILD = "complaint-workflow-20260721-v17";
+const AUTOMATION_BUILD = "complaint-workflow-20260721-v18";
 const OWNER_RECOMMENDATION_IMAGE_VERSION = "owner-summary-v4";
 
 const OUTPUT_HEADERS = [
@@ -5197,12 +5197,14 @@ function matchDriveOnboardingFile_(record) {
     addressScore: winner.addressScore,
     matchedBuilding: winner.building,
     matchedAddress: winner.address,
+    ownerName: winner.ownerName,
     candidates: ranked.slice(0, 5).map(candidate => ({
       fileName: candidate.file.getName(),
       fileUrl: candidate.file.getUrl(),
       driveFileId: candidate.file.getId(),
       building: candidate.building,
       address: candidate.address,
+      ownerName: candidate.ownerName,
       matchScore: candidate.matchScore
     }))
   });
@@ -5225,6 +5227,7 @@ function listDriveOnboardingCandidates_() {
         text: text,
         building: extractOnboardingField_(text, ["건물명", "건물"]) || onboardingBuildingFromFileName_(file.getName()),
         address: extractOnboardingField_(text, ["건물 주소", "주소", "소재지"]),
+        ownerName: extractOnboardingOwnerName_(text),
         lastUpdatedMs: file.getLastUpdated().getTime()
       });
     }
@@ -5235,23 +5238,26 @@ function listDriveOnboardingCandidates_() {
 }
 
 function extractOnboardingField_(text, labels) {
-  const source = String(text || "").replace(/\r/g, "\n").replace(/[\t ]+/g, " ");
-  const isInstruction = value => /(?:응답\s*시트|계약\s*건물\s*인덱스|동일하게\s*입력|입력하면|자동\s*매칭)/i.test(String(value || ""));
+  const source = String(text || "").replace(/\r/g, "\n").replace(/[\t ]+/g, " ").replace(/\n+/g, " ").trim();
+  const stopLabels = "(?:건물명|건물 주소|주소|소재지|건물주명|건물주 성명|건물주|소유자명|소유자|임대인명|임대인|대표자|연락처|전화번호|전화|휴대폰|등급|비고)";
+  const isInstruction = value => /(?:주소로\s*계약\s*건물을?\s*확인|계약\s*건물\s*인덱스|확인하기\s*위한|간단\s*기록용|응답\s*시트|동일하게\s*입력|입력하면|자동\s*매칭)/i.test(String(value || ""));
   for (const label of labels || []) {
     const escaped = String(label).replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
     const separator = "(?:\\s*[:：]\\s*|[ \\t]+)";
-    const lineMatch = source.match(new RegExp("(?:^|\\n)\\s*" + escaped + separator + "([^\\n]{2,120})", "i"));
-    if (lineMatch) {
-      const value = String(lineMatch[1] || "").trim();
-      if (!isInstruction(value)) return value;
-    }
-    const flatMatch = source.match(new RegExp(escaped + separator + "(.{2,80}?)(?=\\s+(?:건물명|건물 주소|주소|소재지|건물주|대표자|연락처|전화|등급|비고)(?:\\s*[:：]|[ \\t]+)|$)", "i"));
-    if (flatMatch) {
-      const value = String(flatMatch[1] || "").trim();
+    const matcher = new RegExp("(?:^|\\s)" + escaped + separator + "(.{2,120}?)(?=\\s+" + stopLabels + "(?:\\s*[:：]|[ \\t]+)|$)", "ig");
+    let match;
+    while ((match = matcher.exec(source)) !== null) {
+      const value = String(match[1] || "").trim();
       if (!isInstruction(value)) return value;
     }
   }
   return "";
+}
+
+function extractOnboardingOwnerName_(text) {
+  const value = extractOnboardingField_(text, ["건물주명", "건물주 성명", "소유자명", "임대인명", "건물주", "소유자", "임대인"]);
+  if (!value || /(?:연락처|전화|휴대폰|번호)/.test(value) || /\d{2,}[-.\s]?\d{3,}/.test(value)) return "";
+  return value.slice(0, 60).trim();
 }
 
 function onboardingBuildingFromFileName_(fileName) {
@@ -5284,6 +5290,7 @@ function syncPaymentBuildingsFromOnboarding_() {
       driveFileId: driveFileId,
       building: building,
       address: String(candidate.address || "").trim(),
+      ownerName: String(candidate.ownerName || "").trim(),
       fileName: file.getName(),
       fileUrl: file.getUrl(),
       source: "onboarding_drive",
@@ -5413,10 +5420,12 @@ function makeDriveMatchPayload_(file, inputBuilding, inputAddress, options) {
     addressScore: Number(options.addressScore || 0),
     matchedBuilding: options.matchedBuilding || inputBuilding,
     matchedAddress: options.matchedAddress || inputAddress,
+    ownerName: options.ownerName || "",
     candidates: options.candidates || [],
     contract: {
       building: options.matchedBuilding || inputBuilding,
       address: options.matchedAddress || inputAddress,
+      ownerName: options.ownerName || "",
       contractFileName: fileName,
       contractFileUrl: fileUrl,
       driveFileId: driveFileId

@@ -50,11 +50,13 @@ const functionNames = [
   "paymentDueDate",
   "paymentAddDays",
   "paymentNormalizeName",
+  "paymentHash",
   "paymentScheduleActiveInMonth",
   "paymentTransactionsArray",
-  "calculatePaymentMonthRows"
+  "calculatePaymentMonthRows",
+  "paymentBuildingRecords"
 ];
-const context = { Date, Math, Object, Array, String, Number };
+const context = { Date, Math, Object, Array, String, Number, settings: {}, cases: {} };
 vm.createContext(context);
 vm.runInContext(functionNames.map(extractFunction).join("\n"), context);
 
@@ -122,5 +124,15 @@ const manual = rows({
 assert.equal(manual[0].status, "paid", "수동 보정은 자동 판정보다 우선한다");
 
 assert.equal(rows({ schedules: { s1: schedule("s1", { endMonth: "2026-06" }) } }).length, 0, "종료월 이후 일정은 만들지 않는다");
+
+context.settings.paymentBuildings = {
+  guide: { building: "+ 주소로 계약 건물을 확인하기 위한 간단 기록용", address: "단계동 927-2" },
+  simple: { building: "햇빛빌라", address: "단계동 927-2" },
+  onboarding: { building: "햇빛빌라", address: "단계동 927-2", ownerName: "서창환" }
+};
+const buildings = context.paymentBuildingRecords();
+assert.equal(buildings.length, 1, "안내문 항목과 중복 건물은 왼쪽 목록에서 제거한다");
+assert.equal(buildings[0].name, "햇빛빌라");
+assert.equal(buildings[0].ownerName, "서창환", "중복 온보딩 자료의 건물주명을 합쳐 표시한다");
 
 console.log("payment calendar tests passed");

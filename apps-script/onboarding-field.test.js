@@ -32,7 +32,10 @@ function extractFunction(name) {
 
 const context = { String, RegExp };
 vm.createContext(context);
-vm.runInContext(extractFunction("extractOnboardingField_"), context);
+vm.runInContext([
+  extractFunction("extractOnboardingField_"),
+  extractFunction("extractOnboardingOwnerName_")
+].join("\n"), context);
 
 const labels = ["건물명", "건물"];
 assert.equal(
@@ -42,5 +45,10 @@ assert.equal(
 );
 assert.equal(context.extractOnboardingField_("건물명: 햇빛빌라\n주소: 원주시 중앙동", labels), "햇빛빌라");
 assert.equal(context.extractOnboardingField_("건물명 햇빛빌라\n주소 원주시 중앙동", labels), "햇빛빌라");
+
+const flattened = "건물명 + 주소로 계약 건물을 확인하기 위한 간단 기록용 건물명 상지대 창업보육센터 주소 강원 원주시 상지대길 83 상지대학교 건물주명 김현진 연락처 010-1234-5678";
+assert.equal(context.extractOnboardingField_(flattened, labels), "상지대 창업보육센터", "안내문 다음의 실제 건물명을 선택한다");
+assert.equal(context.extractOnboardingField_(flattened, ["건물 주소", "주소", "소재지"]), "강원 원주시 상지대길 83 상지대학교", "주소 뒤의 건물주명은 포함하지 않는다");
+assert.equal(context.extractOnboardingOwnerName_(flattened), "김현진", "온보딩 문서의 건물주명을 추출한다");
 
 console.log("onboarding field tests passed");
