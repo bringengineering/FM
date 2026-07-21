@@ -16,7 +16,21 @@ const COMPLAINT_CONFIG = {
   FIREBASE_CASES_PATH: "cases",
   RESPONSE_SHEET_URL: "https://docs.google.com/spreadsheets/d/1HI6KzIMomL6vOUPs8zZDhXHktL1cWRDcg93lflsuojA/edit"
 };
-const AUTOMATION_BUILD = "complaint-workflow-20260721-v18";
+const PAYMENT_SCHEDULE_SHEET_NAME = "세입자 월세 관리대장";
+const PAYMENT_SCHEDULE_HEADERS = [
+  "관리번호",
+  "건물명",
+  "호실",
+  "세입자명",
+  "입금자명",
+  "월 납부금액",
+  "매월 납부일",
+  "계약 시작일",
+  "계약 종료일",
+  "상태",
+  "비고"
+];
+const AUTOMATION_BUILD = "complaint-workflow-20260721-v19";
 const OWNER_RECOMMENDATION_IMAGE_VERSION = "owner-summary-v4";
 
 const OUTPUT_HEADERS = [
@@ -49,6 +63,7 @@ function setupComplaintAutomation() {
 
   ensureFormAddressQuestion_();
   syncPaymentBuildingsFromOnboarding_();
+  setupPaymentScheduleSheet_();
   processExistingResponses();
 }
 
@@ -110,6 +125,9 @@ function doPost(e) {
     }
     if (payload.action === "syncPaymentBuildings") {
       return jsonResponse_(syncPaymentBuildingsFromOnboarding_());
+    }
+    if (payload.action === "syncPaymentSchedules") {
+      return jsonResponse_(syncPaymentSchedulesFromSheet_(payload));
     }
     if (payload.action === "sendComplaintReceiptSms") {
       return jsonResponse_(handleComplaintReceiptSms_(payload));
@@ -5272,6 +5290,295 @@ function syncPaymentBuildings() {
   const result = syncPaymentBuildingsFromOnboarding_();
   Logger.log(JSON.stringify(result));
   return result;
+}
+
+function setupPaymentScheduleSheet() {
+  const result = setupPaymentScheduleSheet_();
+  Logger.log(JSON.stringify(result));
+  return result;
+}
+
+function setupPaymentScheduleSheet_() {
+  const spreadsheet = SpreadsheetApp.openById(COMPLAINT_CONFIG.SPREADSHEET_ID);
+  let sheet = spreadsheet.getSheetByName(PAYMENT_SCHEDULE_SHEET_NAME);
+  if (!sheet) sheet = spreadsheet.insertSheet(PAYMENT_SCHEDULE_SHEET_NAME);
+
+  const headerCount = PAYMENT_SCHEDULE_HEADERS.length;
+  if (sheet.getMaxColumns() < headerCount) {
+    sheet.insertColumnsAfter(sheet.getMaxColumns(), headerCount - sheet.getMaxColumns());
+  }
+  sheet.getRange(1, 1, 1, headerCount).setValues([PAYMENT_SCHEDULE_HEADERS]);
+  sheet.setFrozenRows(1);
+  sheet.setTabColor("#1b335f");
+  sheet.getRange(1, 1, 1, headerCount)
+    .setBackground("#1b335f")
+    .setFontColor("#ffffff")
+    .setFontWeight("bold")
+    .setHorizontalAlignment("center")
+    .setVerticalAlignment("middle");
+  sheet.setRowHeight(1, 34);
+
+  const widths = [120, 190, 90, 110, 110, 120, 105, 115, 115, 90, 240];
+  widths.forEach((width, index) => sheet.setColumnWidth(index + 1, width));
+  sheet.getRange("F2:F").setNumberFormat("#,##0").setHorizontalAlignment("right");
+  sheet.getRange("G2:G").setNumberFormat("0").setHorizontalAlignment("center");
+  sheet.getRange("H2:I").setNumberFormat("yyyy-mm-dd").setHorizontalAlignment("center");
+  sheet.getRange("J2:J").setHorizontalAlignment("center");
+  sheet.getRange("K2:K").setWrap(true);
+
+  const statusValidation = SpreadsheetApp.newDataValidation()
+    .requireValueInList(["계약중", "종료", "보류"], true)
+    .setAllowInvalid(false)
+    .setHelpText("계약중, 종료, 보류 중 하나를 선택하세요.")
+    .build();
+  sheet.getRange("J2:J").setDataValidation(statusValidation);
+
+  const buildingNames = paymentBuildingRegistryRecords_().map(item => item.name);
+  if (buildingNames.length) {
+    const buildingValidation = SpreadsheetApp.newDataValidation()
+      .requireValueInList(buildingNames, true)
+      .setAllowInvalid(false)
+      .setHelpText("입금확인 캘린더에 등록된 건물을 선택하세요.")
+      .build();
+    sheet.getRange("B2:B").setDataValidation(buildingValidation);
+  }
+
+  if (!sheet.getFilter()) sheet.getRange(1, 1, sheet.getMaxRows(), headerCount).createFilter();
+  sheet.getRange("A2:A").setBackground("#f3f6fb").setFontColor("#6b7686");
+  sheet.getRange("A1").setNote("자동 동기화용 번호입니다. 직접 수정하지 마세요.");
+  sheet.getRange("E1").setNote("은행 통장에 실제로 표시되는 입금자명을 입력하세요. 세입자명과 다를 수 있습니다.");
+  sheet.getRange("G1").setNote("매월 납부일을 1~31 사이 숫자로 입력하세요. 31일이 없는 달은 말일로 표시됩니다.");
+
+  const sheetUrl = spreadsheet.getUrl() + "#gid=" + sheet.getSheetId();
+  firebaseWriteRequest_(
+    firebaseCaseSettingsUrl_("paymentScheduleSheet"),
+    "put",
+    { name: PAYMENT_SCHEDULE_SHEET_NAME, url: sheetUrl, updatedAt: new Date().toISOString(), build: AUTOMATION_BUILD },
+    "세입자 월세 관리대장 연결정보 저장 실패"
+  );
+  return { ok: true, sheetName: PAYMENT_SCHEDULE_SHEET_NAME, sheetUrl: sheetUrl, build: AUTOMATION_BUILD };
+}
+
+function paymentBuildingRegistryRecords_() {
+  const registry = firebaseReadJson_(firebaseCaseSettingsUrl_("paymentBuildings"), "입금 캘린더 건물 조회 실패") || {};
+  return Object.keys(registry).map(key => {
+    const item = registry[key] || {};
+    return {
+      id: String(item.id || item.driveFileId || key),
+      name: String(item.building || item.name || "").trim(),
+      address: String(item.address || "").trim()
+    };
+  }).filter(item => item.id && item.name);
+}
+
+function paymentScheduleSheetText_(value) {
+  if (value instanceof Date && !isNaN(value.getTime())) {
+    return Utilities.formatDate(value, "Asia/Seoul", "yyyy-MM-dd");
+  }
+  return String(value == null ? "" : value).trim();
+}
+
+function paymentScheduleSheetMonth_(value, fallbackMonth) {
+  if (value instanceof Date && !isNaN(value.getTime())) {
+    return Utilities.formatDate(value, "Asia/Seoul", "yyyy-MM");
+  }
+  const text = paymentScheduleSheetText_(value);
+  const match = text.match(/^(\d{4})[-./년\s]+(\d{1,2})/);
+  if (!match) return fallbackMonth || "";
+  const month = Number(match[2]);
+  return month >= 1 && month <= 12 ? match[1] + "-" + String(month).padStart(2, "0") : (fallbackMonth || "");
+}
+
+function paymentScheduleSheetNumber_(value) {
+  if (typeof value === "number" && isFinite(value)) return Math.round(value);
+  const digits = paymentScheduleSheetText_(value).replace(/[^0-9.-]/g, "");
+  const number = Number(digits);
+  return isFinite(number) ? Math.round(number) : 0;
+}
+
+function paymentScheduleSheetId_() {
+  return "sheet_" + Utilities.getUuid().replace(/-/g, "").slice(0, 20);
+}
+
+function paymentScheduleHeaderMap_(headers) {
+  const out = {};
+  (headers || []).forEach((header, index) => { out[paymentScheduleSheetText_(header)] = index; });
+  return out;
+}
+
+function paymentScheduleRowValue_(row, headerMap, header) {
+  const index = headerMap[header];
+  return index === undefined ? "" : row[index];
+}
+
+function paymentScheduleRecordFromSheetRow_(row, headerMap, byName, currentMonth, id, rowNumber, requestedAt) {
+  const buildingName = paymentScheduleSheetText_(paymentScheduleRowValue_(row, headerMap, "건물명"));
+  const unit = paymentScheduleSheetText_(paymentScheduleRowValue_(row, headerMap, "호실"));
+  const tenantName = paymentScheduleSheetText_(paymentScheduleRowValue_(row, headerMap, "세입자명"));
+  const payerName = paymentScheduleSheetText_(paymentScheduleRowValue_(row, headerMap, "입금자명")) || tenantName;
+  const amount = paymentScheduleSheetNumber_(paymentScheduleRowValue_(row, headerMap, "월 납부금액"));
+  const dueDay = paymentScheduleSheetNumber_(paymentScheduleRowValue_(row, headerMap, "매월 납부일"));
+  const startMonth = paymentScheduleSheetMonth_(paymentScheduleRowValue_(row, headerMap, "계약 시작일"), currentMonth);
+  const endMonth = paymentScheduleSheetMonth_(paymentScheduleRowValue_(row, headerMap, "계약 종료일"), "");
+  const status = paymentScheduleSheetText_(paymentScheduleRowValue_(row, headerMap, "상태")) || "계약중";
+  const note = paymentScheduleSheetText_(paymentScheduleRowValue_(row, headerMap, "비고"));
+  const matches = byName[normalizeText_(buildingName)] || [];
+  const problems = [];
+  if (!buildingName) problems.push("건물명");
+  else if (!matches.length) problems.push("등록된 건물명과 불일치");
+  else if (matches.length > 1) problems.push("같은 이름의 건물이 여러 곳임");
+  if (!unit) problems.push("호실");
+  if (!tenantName) problems.push("세입자명");
+  if (!payerName) problems.push("입금자명");
+  if (amount <= 0) problems.push("월 납부금액");
+  if (dueDay < 1 || dueDay > 31) problems.push("매월 납부일(1~31)");
+  if (endMonth && endMonth < startMonth) problems.push("계약 종료일");
+  if (["계약중", "종료", "보류"].indexOf(status) === -1) problems.push("상태");
+  if (problems.length) return { id: id, problems: problems, schedule: null };
+
+  const building = matches[0];
+  return {
+    id: id,
+    problems: [],
+    schedule: {
+      id: id,
+      buildingId: building.id,
+      buildingName: building.name,
+      unit: unit,
+      tenantName: tenantName,
+      payerName: payerName,
+      amount: amount,
+      dueDay: dueDay,
+      startMonth: startMonth,
+      endMonth: endMonth,
+      active: status === "계약중" || (status === "종료" && !!endMonth),
+      contractStatus: status,
+      note: note,
+      source: "tenant_sheet",
+      sourceSheetName: PAYMENT_SCHEDULE_SHEET_NAME,
+      sourceSheetRow: rowNumber,
+      updatedAt: requestedAt
+    }
+  };
+}
+
+function firebasePaymentCalendarUrl_(uid, childPath, idToken) {
+  const safeUid = String(uid || "").trim();
+  if (!/^[A-Za-z0-9:_-]{6,160}$/.test(safeUid)) throw new Error("로그인 사용자 ID가 올바르지 않습니다.");
+  const base = COMPLAINT_CONFIG.FIREBASE_DATABASE_URL.replace(/\/$/, "");
+  const child = String(childPath || "").split("/").filter(Boolean).map(part => encodeURIComponent(part)).join("/");
+  const token = String(idToken || "").trim();
+  if (!token) throw new Error("로그인 인증정보가 없습니다. 다시 로그인해 주세요.");
+  return base + "/paymentCalendars/" + encodeURIComponent(safeUid) + (child ? "/" + child : "") + ".json?auth=" + encodeURIComponent(token);
+}
+
+function firebaseReadJson_(url, label) {
+  const response = UrlFetchApp.fetch(url, { method: "get", muteHttpExceptions: true });
+  const code = response.getResponseCode();
+  if (code < 200 || code >= 300) throw new Error(label + ": HTTP " + code + " / " + response.getContentText());
+  const body = response.getContentText();
+  return body && body !== "null" ? JSON.parse(body) : null;
+}
+
+function writePaymentSheetSyncStatus_(payload, status) {
+  try {
+    firebaseAuthorizedWriteRequest_(
+      firebasePaymentCalendarUrl_(payload.uid, "sheetSync", payload.idToken),
+      "put",
+      status,
+      "세입자 자료 동기화 상태 저장 실패"
+    );
+  } catch (err) {
+    Logger.log("세입자 자료 동기화 상태 저장 실패: " + err.message);
+  }
+}
+
+function firebaseAuthorizedWriteRequest_(url, method, payload, label) {
+  return firebaseWriteRequest_(url, method, payload, label);
+}
+
+function syncPaymentSchedulesFromSheet_(payload) {
+  payload = payload || {};
+  const requestedAt = new Date().toISOString();
+  const currentMonth = Utilities.formatDate(new Date(), "Asia/Seoul", "yyyy-MM");
+  try {
+    const sheet = setupPaymentScheduleSheet_() && SpreadsheetApp.openById(COMPLAINT_CONFIG.SPREADSHEET_ID).getSheetByName(PAYMENT_SCHEDULE_SHEET_NAME);
+    if (!sheet) throw new Error("세입자 월세 관리대장 탭을 찾지 못했습니다.");
+    const lastRow = sheet.getLastRow();
+    const lastColumn = Math.max(sheet.getLastColumn(), PAYMENT_SCHEDULE_HEADERS.length);
+    const values = sheet.getRange(1, 1, Math.max(lastRow, 1), lastColumn).getValues();
+    const headerMap = paymentScheduleHeaderMap_(values[0] || []);
+    const missingHeaders = PAYMENT_SCHEDULE_HEADERS.filter(header => headerMap[header] === undefined);
+    if (missingHeaders.length) throw new Error("관리대장 필수 열이 없습니다: " + missingHeaders.join(", "));
+
+    const buildings = paymentBuildingRegistryRecords_();
+    const byName = {};
+    buildings.forEach(building => {
+      const key = normalizeText_(building.name);
+      byName[key] = byName[key] || [];
+      byName[key].push(building);
+    });
+
+    const schedules = {};
+    const errors = [];
+    const errorIds = {};
+    for (let index = 1; index < values.length; index += 1) {
+      const row = values[index];
+      const rowNumber = index + 1;
+      const hasContent = row.slice(1, PAYMENT_SCHEDULE_HEADERS.length).some(value => paymentScheduleSheetText_(value));
+      if (!hasContent) continue;
+
+      let id = paymentScheduleSheetText_(paymentScheduleRowValue_(row, headerMap, "관리번호"));
+      if (!id) {
+        id = paymentScheduleSheetId_();
+        sheet.getRange(rowNumber, headerMap["관리번호"] + 1).setValue(id);
+      }
+      const parsed = paymentScheduleRecordFromSheetRow_(row, headerMap, byName, currentMonth, id, rowNumber, requestedAt);
+      if (parsed.problems.length) {
+        errors.push({ row: rowNumber, message: parsed.problems.join(" · ") });
+        errorIds[id] = true;
+        continue;
+      }
+      schedules[id] = parsed.schedule;
+    }
+
+    const schedulesUrl = firebasePaymentCalendarUrl_(payload.uid, "schedules", payload.idToken);
+    const existing = firebaseReadJson_(schedulesUrl, "기존 월 납부 일정 조회 실패") || {};
+    const merged = {};
+    Object.keys(existing).forEach(id => {
+      const item = existing[id] || {};
+      if (item.source !== "tenant_sheet" || (errors.length && errorIds[id])) merged[id] = item;
+    });
+    Object.keys(schedules).forEach(id => {
+      schedules[id].createdAt = existing[id] && existing[id].createdAt || requestedAt;
+      merged[id] = schedules[id];
+    });
+    firebaseAuthorizedWriteRequest_(schedulesUrl, "put", merged, "세입자 월 납부 일정 저장 실패");
+
+    const status = {
+      ok: true,
+      count: Object.keys(schedules).length,
+      errorCount: errors.length,
+      errors: errors.slice(0, 20),
+      updatedAt: new Date().toISOString(),
+      requestedBy: String(payload.adminEmail || ""),
+      build: AUTOMATION_BUILD
+    };
+    writePaymentSheetSyncStatus_(payload, status);
+    return status;
+  } catch (err) {
+    const status = {
+      ok: false,
+      count: 0,
+      errorCount: 1,
+      errors: [{ row: 0, message: err.message }],
+      updatedAt: new Date().toISOString(),
+      requestedBy: String(payload.adminEmail || ""),
+      build: AUTOMATION_BUILD
+    };
+    writePaymentSheetSyncStatus_(payload, status);
+    throw err;
+  }
 }
 
 function syncPaymentBuildingsFromOnboarding_() {

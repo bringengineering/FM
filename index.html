@@ -455,8 +455,14 @@
   .pv-head{ display:flex; align-items:center; gap:12px; padding:12px 18px; background:#fff; border-bottom:1px solid var(--line); }
   .pv-head b{ font-size:16px; }
   .pv-hint{ color:var(--ink-soft); font-size:12px; }
-  .pv-head-actions{ margin-left:auto; display:flex; align-items:center; gap:7px; }
+  .pv-head-actions{ margin-left:auto; display:flex; align-items:center; justify-content:flex-end; flex-wrap:wrap; gap:7px; }
   .pv-sync{ border:1px solid #c5d4ff; background:#eef3ff; color:#315fce; border-radius:8px; padding:7px 11px; font-size:12px; font-weight:800; cursor:pointer; font-family:inherit; }
+  .pv-sync.sheet{ border-color:#b9e6c5; background:#effaf2; color:#116329; }
+  .pv-sync:disabled{ opacity:.6; cursor:wait; }
+  .pv-sync-status{ max-width:250px; color:#6b7686; font-size:11px; line-height:1.35; }
+  .pv-sync-status.good{ color:#147a3d; }
+  .pv-sync-status.warn{ color:#9a6700; }
+  .pv-sync-status.bad{ color:#b42318; }
   .pv-body{ flex:1; display:flex; min-height:0; }
   .pv-sidebar{ width:280px; border-right:1px solid var(--line); background:#fff; overflow:auto; padding:12px; box-sizing:border-box; }
   .pv-side-title{ display:flex; align-items:center; justify-content:space-between; gap:8px; margin-bottom:8px; color:#162033; font-size:13px; font-weight:900; }
@@ -706,7 +712,12 @@
       <button class="wsbtn" id="paymentBack">← 나가기</button>
       <b>💰 입금확인 캘린더</b>
       <span class="pv-hint">온보딩 건물별 월 납부 일정과 실제 입금 여부를 확인합니다</span>
-      <div class="pv-head-actions"><button class="pv-sync" id="paymentBuildingSync">↻ 온보딩 건물 새로고침</button></div>
+      <div class="pv-head-actions">
+        <span class="pv-sync-status" id="paymentScheduleSyncStatus"></span>
+        <button class="pv-sync sheet" id="paymentSheetOpen">📋 세입자 관리대장</button>
+        <button class="pv-sync sheet" id="paymentScheduleSync">↻ 세입자 자료 반영</button>
+        <button class="pv-sync" id="paymentBuildingSync">↻ 건물 새로고침</button>
+      </div>
     </div>
     <div class="pv-body">
       <aside class="pv-sidebar" id="paymentBuildingList"></aside>
@@ -4911,6 +4922,8 @@ const paymentScheduleModal=document.getElementById("paymentScheduleModal");
 const paymentTransactionModal=document.getElementById("paymentTransactionModal");
 let paymentRef=null, paymentValueHandler=null, paymentData={profile:{},schedules:{},transactions:{},overrides:{},audit:{}};
 let paymentMonth=paymentTodayKey().slice(0,7), paymentBuildingId="", selectedPaymentScheduleId="", editingPaymentScheduleId="";
+let paymentScheduleSyncInFlight=false;
+const DEFAULT_PAYMENT_SHEET_URL="https://docs.google.com/spreadsheets/d/1HI6KzIMomL6vOUPs8zZDhXHktL1cWRDcg93lflsuojA/edit";
 
 function paymentTodayKey(){
   const parts=new Intl.DateTimeFormat("en-CA",{timeZone:"Asia/Seoul",year:"numeric",month:"2-digit",day:"2-digit"}).formatToParts(new Date());
@@ -5071,6 +5084,7 @@ function renderPaymentCalendar(){
   if(!paymentBuildingId||!buildings.some(b=>b.id===paymentBuildingId)) paymentBuildingId=buildings[0]&&buildings[0].id||"";
   updatePaymentAlertBadge();
   if(!paymentView||!paymentView.classList.contains("open")) return;
+  renderPaymentScheduleSyncStatus();
   renderPaymentBuildingList(buildings); renderPaymentMain(buildings.find(b=>b.id===paymentBuildingId)||null);
 }
 function openPaymentView(){ if(!authedUser&&isConfigured){ showAuthGate(); return; } paymentView.classList.add("open"); renderPaymentCalendar(); }
@@ -5115,12 +5129,46 @@ function disablePaymentSchedule(id){ const s=paymentData.schedules[id]; if(!s||!
 function requestPaymentBuildingSync(){
   const button=document.getElementById("paymentBuildingSync"); if(button){ button.disabled=true; button.textContent="동기화 요청 중…"; }
   sendCaseAutomationRequest(caseAutomationEndpoint(),{action:"syncPaymentBuildings"});
-  setTimeout(()=>{ if(button){ button.disabled=false; button.textContent="↻ 온보딩 건물 새로고침"; } },2500);
+  setTimeout(()=>{ if(button){ button.disabled=false; button.textContent="↻ 건물 새로고침"; } },2500);
+}
+
+function paymentScheduleSheetInfo(){ return settings&&settings.paymentScheduleSheet||{}; }
+function openPaymentScheduleSheet(){
+  const info=paymentScheduleSheetInfo();
+  window.open(info.url||DEFAULT_PAYMENT_SHEET_URL,"_blank","noopener");
+}
+function paymentScheduleSyncMessage(sync){
+  if(!sync||!sync.updatedAt) return "관리대장 입력 후 ‘자료 반영’을 눌러주세요";
+  const time=new Date(sync.updatedAt).toLocaleString("ko-KR",{timeZone:"Asia/Seoul",month:"numeric",day:"numeric",hour:"2-digit",minute:"2-digit"});
+  if(sync.ok===false) return `반영 실패 · ${sync.errors&&sync.errors[0]&&sync.errors[0].message||"관리대장을 확인해 주세요"}`;
+  return `최근 반영 ${Number(sync.count)||0}명${Number(sync.errorCount)?` · 오류 ${Number(sync.errorCount)}행`:""} · ${time}`;
+}
+function renderPaymentScheduleSyncStatus(){
+  const status=document.getElementById("paymentScheduleSyncStatus"),button=document.getElementById("paymentScheduleSync");
+  if(status){ const sync=paymentData&&paymentData.sheetSync||{}; status.textContent=paymentScheduleSyncMessage(sync); status.className="pv-sync-status "+(sync.ok===false?"bad":Number(sync.errorCount)?"warn":sync.updatedAt?"good":""); }
+  if(button&&!paymentScheduleSyncInFlight){ button.disabled=false; button.textContent="↻ 세입자 자료 반영"; }
+}
+async function requestPaymentScheduleSync(){
+  if(!authedUser){ alert("Google 로그인 후 세입자 자료를 반영할 수 있습니다."); return; }
+  const button=document.getElementById("paymentScheduleSync");
+  paymentScheduleSyncInFlight=true;
+  if(button){ button.disabled=true; button.textContent="자료 반영 중…"; }
+  try{
+    const idToken=await authedUser.getIdToken(true);
+    await sendCaseAutomationRequest(caseAutomationEndpoint(),{action:"syncPaymentSchedules",uid:authedUser.uid,idToken,adminEmail:authedUser.email||""});
+    setTimeout(()=>{ paymentScheduleSyncInFlight=false; renderPaymentScheduleSyncStatus(); },5000);
+  }catch(err){
+    paymentScheduleSyncInFlight=false;
+    renderPaymentScheduleSyncStatus();
+    alert("세입자 자료 반영을 요청하지 못했습니다. 잠시 후 다시 시도해 주세요.");
+  }
 }
 
 document.getElementById("paymentBtn").addEventListener("click",openPaymentView);
 document.getElementById("paymentBack").addEventListener("click",closePaymentView);
 document.getElementById("paymentBuildingSync").addEventListener("click",requestPaymentBuildingSync);
+document.getElementById("paymentSheetOpen").addEventListener("click",openPaymentScheduleSheet);
+document.getElementById("paymentScheduleSync").addEventListener("click",requestPaymentScheduleSync);
 paymentBuildingListEl.addEventListener("click",e=>{ const tx=e.target.closest("[data-payment-tx-remove]"); if(tx){ removePaymentTransaction(tx.dataset.paymentTxRemove); return; } const b=e.target.closest("[data-payment-building]"); if(b){ paymentBuildingId=b.dataset.paymentBuilding; selectedPaymentScheduleId=""; renderPaymentCalendar(); } });
 paymentMainEl.addEventListener("click",e=>{
   const month=e.target.closest("[data-payment-month]"); if(month){ paymentMonthShift(Number(month.dataset.paymentMonth)); return; }
@@ -5182,8 +5230,9 @@ document.getElementById("noticeBtn").addEventListener("click", openNoticePanel);
 document.getElementById("noticeBanner").addEventListener("click", openNoticePanel);
 
 /* ===== 업데이트 알림(What's New) — 새 버전 나오면 자동 팝업 ===== */
-const APP_VERSION = "5.11";
+const APP_VERSION = "5.12";
 const CHANGELOG = [
+  { v:"5.12", d:"2026-07-21", items:["세입자 월세 관리대장과 입금확인 캘린더 동기화 연결","건물·호실·세입자·입금자·금액·납부일·계약기간을 월 납부 일정으로 자동 반영","관리대장 열기와 반영 결과·오류 행 표시 추가"] },
   { v:"5.11", d:"2026-07-21", items:["입금확인 캘린더 왼쪽 목록에서 온보딩 안내문으로 잘못 생성된 항목 제거","건물 카드를 건물명·주소·건물주명 세 줄로 간소화"] },
   { v:"5.10", d:"2026-07-21", items:["온보딩 문서의 안내 문장을 건물명으로 잘못 읽는 문제 수정","건물명·주소는 항목명 뒤에 구분자가 있는 실제 입력값만 인식"] },
   { v:"5.09", d:"2026-07-21", items:["Firebase를 ameejin92@gmail.com 소유의 BRING-FM-HJ 프로젝트로 이전","기존 업무 흐름·케이스·간판 데이터를 새 데이터베이스로 이전","Google 로그인과 입금확인 캘린더 보안 규칙을 새 프로젝트에 적용"] },
