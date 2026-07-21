@@ -4241,7 +4241,7 @@ function attachCaseSettingsRef(){
     settings = s.val() || {};
     syncDefaultCaseAutomationEndpoint();
     const nextSignal=String(settings&&settings.paymentScheduleSheet&&settings.paymentScheduleSheet.lastEditedAt||"");
-    const changed=!!paymentScheduleLastSignal&&!!nextSignal&&nextSignal!==paymentScheduleLastSignal;
+    const changed=!!nextSignal&&nextSignal!==paymentScheduleLastSignal;
     paymentScheduleLastSignal=nextSignal;
     if(changed&&paymentView&&paymentView.classList.contains("open")) requestPaymentScheduleSync({source:"sheet_edit",force:true});
     renderPaymentCalendar();

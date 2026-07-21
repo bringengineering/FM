@@ -96,5 +96,6 @@ assert.match(source, /lastEditedAt: new Date\(\)\.toISOString\(\)/, "편집 시 
 assert.doesNotMatch(extractFunction("syncPaymentSchedulesFromSheet_"), /setupPaymentScheduleSheet_\(/, "자동 반영 때마다 관리대장 서식을 다시 쓰지 않는다");
 assert.doesNotMatch(indexSource, /id="paymentScheduleSync"/, "수동 세입자 자료 반영 버튼을 제거한다");
 assert.match(indexSource, /function startPaymentScheduleAutoSync\(/, "입금확인 화면에서 자동 반영을 시작한다");
+assert.match(indexSource, /const changed=!!nextSignal&&nextSignal!==paymentScheduleLastSignal;/, "설치 후 첫 관리대장 편집 신호도 놓치지 않는다");
 
 console.log("tenant payment sync tests passed");
