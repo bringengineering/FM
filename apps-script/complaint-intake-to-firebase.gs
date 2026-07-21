@@ -16,7 +16,7 @@ const COMPLAINT_CONFIG = {
   FIREBASE_CASES_PATH: "cases",
   RESPONSE_SHEET_URL: "https://docs.google.com/spreadsheets/d/1HI6KzIMomL6vOUPs8zZDhXHktL1cWRDcg93lflsuojA/edit"
 };
-const AUTOMATION_BUILD = "complaint-workflow-20260721-v16";
+const AUTOMATION_BUILD = "complaint-workflow-20260721-v17";
 const OWNER_RECOMMENDATION_IMAGE_VERSION = "owner-summary-v4";
 
 const OUTPUT_HEADERS = [
@@ -5236,12 +5236,20 @@ function listDriveOnboardingCandidates_() {
 
 function extractOnboardingField_(text, labels) {
   const source = String(text || "").replace(/\r/g, "\n").replace(/[\t ]+/g, " ");
+  const isInstruction = value => /(?:응답\s*시트|계약\s*건물\s*인덱스|동일하게\s*입력|입력하면|자동\s*매칭)/i.test(String(value || ""));
   for (const label of labels || []) {
     const escaped = String(label).replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-    const lineMatch = source.match(new RegExp("(?:^|\\n)\\s*" + escaped + "\\s*[:：]?\\s*([^\\n]{2,120})", "i"));
-    if (lineMatch) return String(lineMatch[1] || "").trim();
-    const flatMatch = source.match(new RegExp(escaped + "\\s*[:：]?\\s*(.{2,80}?)(?=\\s+(?:건물명|건물 주소|주소|소재지|건물주|대표자|연락처|전화|등급|비고)\\s*[:：]|$)", "i"));
-    if (flatMatch) return String(flatMatch[1] || "").trim();
+    const separator = "(?:\\s*[:：]\\s*|[ \\t]+)";
+    const lineMatch = source.match(new RegExp("(?:^|\\n)\\s*" + escaped + separator + "([^\\n]{2,120})", "i"));
+    if (lineMatch) {
+      const value = String(lineMatch[1] || "").trim();
+      if (!isInstruction(value)) return value;
+    }
+    const flatMatch = source.match(new RegExp(escaped + separator + "(.{2,80}?)(?=\\s+(?:건물명|건물 주소|주소|소재지|건물주|대표자|연락처|전화|등급|비고)(?:\\s*[:：]|[ \\t]+)|$)", "i"));
+    if (flatMatch) {
+      const value = String(flatMatch[1] || "").trim();
+      if (!isInstruction(value)) return value;
+    }
   }
   return "";
 }
