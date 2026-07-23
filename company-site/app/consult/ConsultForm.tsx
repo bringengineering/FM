@@ -2,13 +2,16 @@
 
 import { FormEvent, useState } from "react";
 
-const CONSULT_EMAIL = "bringengineering1008@gmail.com";
-const FORM_ENDPOINT = `https://formsubmit.co/ajax/${CONSULT_EMAIL}`;
+const FORM_ENDPOINT =
+  "https://bring-care-fm.bringengineering1008.chatgpt.site/api/consult";
 
 type SubmitStatus = "idle" | "sending" | "error" | "copied";
 
 export default function ConsultForm() {
   const [status, setStatus] = useState<SubmitStatus>("idle");
+  const [errorMessage, setErrorMessage] = useState(
+    "전송이 완료되지 않았습니다. 잠시 후 다시 시도하거나 전화·이메일로 문의해 주세요.",
+  );
 
   function buildMessage(form: HTMLFormElement) {
     const data = new FormData(form);
@@ -46,6 +49,7 @@ export default function ConsultForm() {
       `[Bring Care 상담 신청] ${data.get("name")} / ${data.get("buildingType")}`,
     );
     delivery.append("_template", "table");
+    delivery.append("_captcha", "false");
     delivery.append("_honey", String(data.get("website") || ""));
     delivery.append("성명", String(data.get("name") || ""));
     delivery.append("연락처", String(data.get("phone") || ""));
@@ -60,6 +64,9 @@ export default function ConsultForm() {
     }
 
     setStatus("sending");
+    setErrorMessage(
+      "전송이 완료되지 않았습니다. 잠시 후 다시 시도하거나 전화·이메일로 문의해 주세요.",
+    );
 
     try {
       const response = await fetch(FORM_ENDPOINT, {
@@ -82,7 +89,10 @@ export default function ConsultForm() {
       }
 
       window.location.assign("/consult/complete");
-    } catch {
+    } catch (error) {
+      if (error instanceof Error && error.message) {
+        setErrorMessage(error.message);
+      }
       setStatus("error");
     }
   }
@@ -267,7 +277,7 @@ export default function ConsultForm() {
       >
         {status === "copied"
           ? "신청 내용이 복사되었습니다. 이메일이나 문자에 붙여넣어 보내주세요."
-          : "전송이 완료되지 않았습니다. 잠시 후 다시 시도하거나 전화·이메일로 문의해 주세요."}
+          : errorMessage}
       </p>
     </form>
   );
