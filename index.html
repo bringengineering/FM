@@ -4324,7 +4324,40 @@ async function permanentlyDeleteCase(id){
   }
 }
 function deleteCase(id){ archiveCase(id); }
-function cycleStep(id,k){ const c=cases[id]; if(!c) return; if(isConfigured && stepIndex(k)<=7 && !caseTestMode){ alert("①~⑧ 단계는 자동화 결과에 따라 진행됩니다. 테스트가 필요하면 테스트 모드를 켜주세요."); return; } const msg=stepLockMessage(c,k); if(msg){ alert(msg); return; } c.status=c.status||{}; const cur=c.status[k]||""; c.status[k]= cur===""?"doing":cur==="doing"?"done":"doing"; if(c.status[k]==="done") clearStepAutomationHoldThrough(c,k); else holdStepAutomationFrom(c,k); const s=CASE_STEPS.find(x=>x.k===k); caseLog(c, s.t+" → "+(c.status[k]==="done"?"완료":c.status[k]==="doing"?"진행중":"대기")); applyStepAutomation(c, true); normalizeCaseSteps(c); saveCase(id, true, {includeWorkflowState:caseTestMode}); renderCaseList(); renderCaseDetail(); }
+function resetStepsAfter(c,k){
+  const idx=stepIndex(k);
+  if(!c || !c.status || idx<0) return;
+  CASE_STEPS.forEach((step,index)=>{ if(index>idx) delete c.status[step.k]; });
+}
+function cycleStep(id,k){
+  const c=cases[id];
+  if(!c) return;
+  if(isConfigured && stepIndex(k)<=7 && !caseTestMode){
+    alert("①~⑧ 단계는 자동화 결과에 따라 진행됩니다. 테스트가 필요하면 테스트 모드를 켜주세요.");
+    return;
+  }
+  const msg=stepLockMessage(c,k);
+  if(msg){ alert(msg); return; }
+  c.status=c.status||{};
+  const cur=c.status[k]||"";
+  if(cur==="done"){
+    c.status[k]="doing";
+    resetStepsAfter(c,k);
+    holdStepAutomationFrom(c,k);
+  }else{
+    c.status[k]=cur==="doing"?"done":"doing";
+    if(c.status[k]==="done") clearStepAutomationHoldThrough(c,k);
+    else holdStepAutomationFrom(c,k);
+  }
+  const s=CASE_STEPS.find(x=>x.k===k);
+  caseLog(c, s.t+" → "+(c.status[k]==="done"?"완료":"진행중"));
+  if(c.status[k]==="done") applyStepAutomation(c, true);
+  normalizeCaseSteps(c);
+  holdCaseLocalField(id, "status", c.status, 3500);
+  saveCase(id, true, {includeWorkflowState:caseTestMode});
+  renderCaseList();
+  renderCaseDetail();
+}
 function doAuto(id,k,channel){ const c=cases[id]; if(!c) return;
   const msg=stepLockMessage(c,k); if(msg){ alert(msg); return; }
   /* 메일 외 자동화(입금확인 등)는 아직 수동 기록 */
@@ -5306,8 +5339,9 @@ document.getElementById("noticeBtn").addEventListener("click", openNoticePanel);
 document.getElementById("noticeBanner").addEventListener("click", openNoticePanel);
 
 /* ===== 업데이트 알림(What's New) — 새 버전 나오면 자동 팝업 ===== */
-const APP_VERSION = "5.15";
+const APP_VERSION = "5.16";
 const CHANGELOG = [
+  { v:"5.16", d:"2026-07-23", items:["완료 상태 버튼을 다시 누르면 해당 단계가 진행중으로 돌아가도록 수정","앞 단계를 되돌릴 때 이후 단계는 대기로 정리하고 실시간 동기화 깜빡임 방지"] },
   { v:"5.15", d:"2026-07-21", items:["세입자 월세 관리대장에 연락처 열 추가","납부 당일·미입금 일정에서 세입자 안내 문자 발송 지원","문자 발송 전 수신번호·문구 확인 및 발송 기록 표시"] },
   { v:"5.14", d:"2026-07-21", items:["세입자 관리대장을 수정하면 입금확인 캘린더에 자동 반영","수동 ‘세입자 자료 반영’ 버튼 제거","캘린더 진입·화면 복귀 시 자동 재확인 추가"] },
   { v:"5.13", d:"2026-07-21", items:["세입자 월세 관리대장을 BRING CARE 공유 폴더의 독립 파일로 분리","입금확인 캘린더가 새 관리대장 파일을 계속 동기화하도록 연결"] },
