@@ -34,6 +34,8 @@ test("server-renders the Bring Care company website", async () => {
   const html = await response.text();
   assert.match(html, /<html lang="ko"/i);
   assert.match(html, /Bring Care \| 브링엔지니어링 시설관리/);
+  assert.match(html, /Bring Care · bringengineering 홈으로 이동/);
+  assert.match(html, /brand-engineering/);
   assert.match(html, /관리의 모든 흐름을/);
   assert.match(html, /건물의 오늘을 돌보고/);
   assert.match(html, /hero-fm\.png/);

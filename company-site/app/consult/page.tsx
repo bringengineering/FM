@@ -11,8 +11,15 @@ export default function ConsultPage() {
   return (
     <main className="consult-page">
       <header className="consult-header">
-        <a className="brand" href="/" aria-label="Bring Care 홈으로 이동">
+        <a
+          className="brand"
+          href="/"
+          aria-label="Bring Care · bringengineering 홈으로 이동"
+        >
           <span className="brand-image" aria-hidden="true" />
+          <span className="brand-engineering" aria-hidden="true">
+            <strong>bring</strong>engineering
+          </span>
         </a>
         <nav aria-label="상담 페이지 메뉴">
           <a href="/#services">서비스</a>

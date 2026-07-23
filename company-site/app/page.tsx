@@ -71,8 +71,15 @@ export default function Home() {
   return (
     <main>
       <header className="site-header">
-        <a className="brand" href="#top" aria-label="Bring Care 홈으로 이동">
+        <a
+          className="brand"
+          href="#top"
+          aria-label="Bring Care · bringengineering 홈으로 이동"
+        >
           <span className="brand-image" aria-hidden="true" />
+          <span className="brand-engineering" aria-hidden="true">
+            <strong>bring</strong>engineering
+          </span>
         </a>
         <nav className="nav-links" aria-label="주요 메뉴">
           <a href="#services">서비스</a>

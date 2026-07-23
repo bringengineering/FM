@@ -64,18 +64,41 @@ a {
 }
 
 .brand {
-  display: block;
-  width: 170px;
+  display: inline-flex;
+  align-items: center;
+  gap: 11px;
+  width: max-content;
+  max-width: 100%;
 }
 
 .brand-image {
   display: block;
-  aspect-ratio: 7.55 / 1;
-  width: 100%;
+  flex: 0 0 auto;
+  width: 170px;
+  height: 28px;
   background-image: url("/bring-care-logo.png");
   background-position: center 48.8%;
-  background-size: 200% auto;
+  background-size: 192% auto;
   background-repeat: no-repeat;
+}
+
+.brand-engineering {
+  display: inline-flex;
+  align-items: baseline;
+  min-height: 21px;
+  border-left: 1px solid #cad7e3;
+  padding-left: 11px;
+  color: #254968;
+  font-size: 9px;
+  font-weight: 650;
+  letter-spacing: -0.035em;
+  line-height: 1;
+  white-space: nowrap;
+}
+
+.brand-engineering strong {
+  color: var(--blue);
+  font-weight: 900;
 }
 
 .nav-links {
@@ -1032,6 +1055,11 @@ a {
   margin-bottom: 34px;
 }
 
+.company-logo .brand-image {
+  width: 100%;
+  height: 31px;
+}
+
 .company-card dl {
   display: grid;
   grid-template-columns: 1fr 1fr;
@@ -1218,8 +1246,14 @@ footer {
     display: none;
   }
 
-  .brand {
+  .brand-image {
     width: 150px;
+    height: 25px;
+  }
+
+  .brand-engineering {
+    padding-left: 9px;
+    font-size: 8px;
   }
 
   .hero {
@@ -1297,7 +1331,18 @@ footer {
   }
 
   .brand {
-    width: 137px;
+    gap: 7px;
+  }
+
+  .brand-image {
+    width: 125px;
+    height: 22px;
+  }
+
+  .brand-engineering {
+    min-height: 18px;
+    padding-left: 7px;
+    font-size: 7px;
   }
 
   .header-cta {
