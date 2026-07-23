@@ -4655,7 +4655,8 @@ function ownerRecommendationMessage(c, q, supplier, amounts){
     `추천 금액: ${recommendedQuoteMoney(amounts.total)||"금액 미입력"}`,
     "",
     "첨부된 브링 견적서를 확인해 주세요.",
-    "확인 후 회신 부탁드립니다.",
+    "추천 견적으로 진행을 원하시면 문자 하단의 승인 링크에서",
+    "'승인하고 입금 진행' 버튼을 눌러주세요.",
     `접수번호: ${c.ticketNo||c.id||""}`
   ].join("\n");
 }
@@ -5383,8 +5384,9 @@ document.getElementById("noticeBtn").addEventListener("click", openNoticePanel);
 document.getElementById("noticeBanner").addEventListener("click", openNoticePanel);
 
 /* ===== 업데이트 알림(What's New) — 새 버전 나오면 자동 팝업 ===== */
-const APP_VERSION = "5.18";
+const APP_VERSION = "5.19";
 const CHANGELOG = [
+  { v:"5.19", d:"2026-07-23", items:["⑧ 건물주 추천 문자에 모바일 승인 링크와 승인·입금 진행 안내 추가","추천 견적으로 진행할 경우 링크에서 승인하고 입금 진행 버튼을 누르도록 발송 문구 개선"] },
   { v:"5.18", d:"2026-07-23", items:["⑨ 단계의 계약서 버튼을 건물주 모바일 승인 링크 버튼으로 변경","승인 링크가 준비되기 전에는 버튼을 비활성 상태로 표시"] },
   { v:"5.17", d:"2026-07-23", items:["⑨ 건물주 승인·입금 모바일 링크 추가","승인하고 입금 진행 선택 시 ⑨ 완료·⑩ 진행중 자동 전환","다른 견적 요청 선택 시 기존 회차를 보관하고 ⑤부터 새 견적 진행"] },
   { v:"5.16", d:"2026-07-23", items:["완료 상태 버튼을 다시 누르면 해당 단계가 진행중으로 돌아가도록 수정","앞 단계를 되돌릴 때 이후 단계는 대기로 정리하고 실시간 동기화 깜빡임 방지"] },

@@ -233,7 +233,14 @@ function appendOwnerDecisionLink_(message, decisionUrl) {
   const content = String(message || "").trim();
   const url = String(decisionUrl || "").trim();
   if (!url || content.indexOf(url) >= 0) return content;
-  return [content, "", "승인 여부 선택:", url].join("\n");
+  const guide = [
+    "추천 견적으로 진행을 원하시면 아래 링크에서",
+    "'승인하고 입금 진행' 버튼을 눌러주세요."
+  ].join("\n");
+  const lines = [content];
+  if (content.indexOf("승인하고 입금 진행") < 0) lines.push("", guide);
+  lines.push("", "승인 링크:", url);
+  return lines.join("\n");
 }
 
 function ownerDecisionEscapeHtml_(value) {
@@ -994,7 +1001,8 @@ function makeOwnerRecommendationMmsContent_(casePayload, supplier, amounts) {
     "추천 금액: " + ownerRecommendationAmountText_(amounts.totalAmount),
     "",
     "첨부된 브링 견적서를 확인해 주세요.",
-    "확인 후 회신 부탁드립니다.",
+    "추천 견적으로 진행을 원하시면 문자 하단의 승인 링크에서",
+    "'승인하고 입금 진행' 버튼을 눌러주세요.",
     "접수번호: " + (casePayload.ticketNo || casePayload.id || "")
   ].join("\n");
 }
