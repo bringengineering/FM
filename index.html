@@ -2093,7 +2093,7 @@ const CASE_STEPS = [
  {k:"c6",t:"⑥ 견적 비교",doc:"quote"},
  {k:"c7",t:"⑦ 최적 추천"},
  {k:"c8",t:"⑧ 건물주에 추천 발송",auto:"건물주 추천 MMS"},
- {k:"c9",t:"⑨ 승인·입금 (계약)",doc:"contract"},
+ {k:"c9",t:"⑨ 승인·입금 (계약)",doc:"approval"},
  {k:"c10",t:"⑩ 입금 확인 → 자동 진행",auto:"입금 확인"},
  {k:"c11",t:"⑪ 업체 연결·일정"},
  {k:"c12",t:"⑫ 공사 진행 (점검표)",doc:"inspect"},
@@ -2103,7 +2103,7 @@ const CASE_STEPS = [
  {k:"c16",t:"⑯ 월간 리포트",doc:"monthly"},
  {k:"c17",t:"⑰ 유지관리·사후관리"},
 ];
-const DOC_NAMES = { onboard:"온보딩 수집서", quote:"견적서", contract:"계약서", inspect:"점검 체크리스트", ba:"B/A 보고서", monthly:"월간 리포트" };
+const DOC_NAMES = { onboard:"온보딩 수집서", quote:"견적서", contract:"계약서", approval:"승인 링크", inspect:"점검 체크리스트", ba:"B/A 보고서", monthly:"월간 리포트" };
 function gradeFee(g){ return g==="라이트"?"190,000원/월":g==="프리미엄"?"월세수입의 7~11%":"390,000원/월"; }
 function caseDocHTML(id,k){
   const c=cases[id]; if(!c) return null;
@@ -4202,6 +4202,13 @@ function onboardingDocButtonHTML(c,s,locked){
   if(locked){
     return `<button class="cv-doc disabled" disabled title="${escAttr(stepLockMessage(c,s.k))}">📄 ${esc(DOC_NAMES[s.doc])}</button>`;
   }
+  if(s.doc==="approval"){
+    const url=String(c&&c.ownerDecision&&c.ownerDecision.decisionUrl||"").trim();
+    if(url){
+      return `<button class="cv-doc" data-drive-doc="${s.k}" data-url="${escAttr(url)}" title="건물주 모바일 승인 페이지 열기">🔗 승인 링크</button>`;
+    }
+    return `<button class="cv-doc disabled" disabled title="건물주 승인 링크를 준비하고 있습니다">🔗 승인 링크 준비중</button>`;
+  }
   if(s.doc!=="onboard"){
     return `<button class="cv-doc" data-doc="${s.k}" title="이 고객 정보로 자동 채운 문서 받기">📄 ${esc(DOC_NAMES[s.doc])}</button>`;
   }
@@ -5376,8 +5383,9 @@ document.getElementById("noticeBtn").addEventListener("click", openNoticePanel);
 document.getElementById("noticeBanner").addEventListener("click", openNoticePanel);
 
 /* ===== 업데이트 알림(What's New) — 새 버전 나오면 자동 팝업 ===== */
-const APP_VERSION = "5.17";
+const APP_VERSION = "5.18";
 const CHANGELOG = [
+  { v:"5.18", d:"2026-07-23", items:["⑨ 단계의 계약서 버튼을 건물주 모바일 승인 링크 버튼으로 변경","승인 링크가 준비되기 전에는 버튼을 비활성 상태로 표시"] },
   { v:"5.17", d:"2026-07-23", items:["⑨ 건물주 승인·입금 모바일 링크 추가","승인하고 입금 진행 선택 시 ⑨ 완료·⑩ 진행중 자동 전환","다른 견적 요청 선택 시 기존 회차를 보관하고 ⑤부터 새 견적 진행"] },
   { v:"5.16", d:"2026-07-23", items:["완료 상태 버튼을 다시 누르면 해당 단계가 진행중으로 돌아가도록 수정","앞 단계를 되돌릴 때 이후 단계는 대기로 정리하고 실시간 동기화 깜빡임 방지"] },
   { v:"5.15", d:"2026-07-21", items:["세입자 월세 관리대장에 연락처 열 추가","납부 당일·미입금 일정에서 세입자 안내 문자 발송 지원","문자 발송 전 수신번호·문구 확인 및 발송 기록 표시"] },
