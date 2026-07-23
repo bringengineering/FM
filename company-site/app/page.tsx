@@ -1,47 +1,63 @@
 const services = [
   {
     number: "01",
+    en: "FACILITY",
     title: "시설 운영 관리",
-    copy: "점검, 보수, 일정, 협력업체 업무를 한 흐름으로 관리해 시설의 빈틈을 줄입니다.",
-    tag: "OPERATION",
+    copy: "점검·보수·일정을 기준화해 시설의 상태와 다음 조치를 명확하게 관리합니다.",
   },
   {
     number: "02",
+    en: "RENT & PAYMENT",
     title: "임대·입금 관리",
-    copy: "건물·호실·세입자 기준으로 계약과 납부 일정을 정리해 확인 업무를 단순하게 만듭니다.",
-    tag: "RENT & PAYMENT",
+    copy: "건물과 호실, 계약과 납부 일정을 연결해 반복 확인 업무를 줄입니다.",
   },
   {
     number: "03",
+    en: "CARE DESK",
     title: "민원 대응",
-    copy: "접수부터 담당 지정, 처리, 완료까지 기록해 고객과 현장이 같은 진행 상황을 공유합니다.",
-    tag: "CARE DESK",
+    copy: "접수부터 담당 지정, 처리와 완료 보고까지 하나의 이력으로 남깁니다.",
   },
   {
     number: "04",
+    en: "PROJECT",
     title: "공사·견적 관리",
-    copy: "현장 확인, 견적 비교, 승인, 시공, 정산을 연결해 의사결정과 책임을 분명하게 합니다.",
-    tag: "PROJECT",
+    copy: "현장 확인, 견적 비교, 승인, 시공, 정산의 책임과 진행 상황을 연결합니다.",
   },
   {
     number: "05",
+    en: "SAFETY",
     title: "에너지·안전 점검",
-    copy: "시설별 점검 기준과 이력을 축적해 예방 중심의 운영 기반을 만듭니다.",
-    tag: "SAFETY",
+    copy: "시설별 점검 기준과 이력을 쌓아 예방 중심의 운영 기반을 만듭니다.",
   },
   {
     number: "06",
+    en: "INSIGHT",
     title: "운영 데이터·보고",
-    copy: "흩어진 현장 기록을 한눈에 볼 수 있는 정보로 바꿔 더 나은 운영 판단을 돕습니다.",
-    tag: "INSIGHT",
+    copy: "흩어진 현장 기록을 한눈에 볼 수 있는 정보로 바꿔 판단을 돕습니다.",
   },
 ];
 
-const process = [
-  ["현장 파악", "건물과 운영 환경, 현재 업무 흐름을 함께 살펴봅니다."],
-  ["기준 설계", "시설별 점검·보고·대응 기준과 담당 흐름을 정리합니다."],
-  ["실행·연결", "현장 업무와 디지털 기록을 연결해 운영을 시작합니다."],
-  ["개선·보고", "축적된 이력을 바탕으로 반복 문제와 비용 구조를 개선합니다."],
+const flow = [
+  {
+    number: "01",
+    title: "요청을 받습니다",
+    copy: "현장 이슈와 요청 내용을 빠짐없이 기록합니다.",
+  },
+  {
+    number: "02",
+    title: "담당을 연결합니다",
+    copy: "업무 성격에 맞는 담당과 처리 기준을 지정합니다.",
+  },
+  {
+    number: "03",
+    title: "과정을 남깁니다",
+    copy: "진행 상황, 사진, 견적과 의사결정을 한곳에 모읍니다.",
+  },
+  {
+    number: "04",
+    title: "완료를 확인합니다",
+    copy: "처리 결과를 공유하고 다음 점검과 개선으로 이어갑니다.",
+  },
 ];
 
 const capabilities = [
@@ -60,99 +76,121 @@ export default function Home() {
         </a>
         <nav className="nav-links" aria-label="주요 메뉴">
           <a href="#services">서비스</a>
-          <a href="#method">운영 방식</a>
+          <a href="#standard">운영 기준</a>
           <a href="#digital">디지털 FM</a>
           <a href="#company">회사 정보</a>
         </nav>
         <a className="header-cta" href="#company">
           회사 소개
-          <span aria-hidden="true">↘</span>
+          <span aria-hidden="true">↗</span>
         </a>
       </header>
 
       <section className="hero" id="top">
-        <div className="hero-glow" aria-hidden="true" />
         <div className="hero-copy">
           <p className="eyebrow">
             <span />
             FACILITY MANAGEMENT · WONJU
           </p>
           <h1>
-            관리의 모든 흐름을,
+            건물의 오늘을 돌보고,
             <br />
-            <em>하나의 기준</em>으로.
+            <em>내일의 기준</em>을 만듭니다.
           </h1>
           <p className="hero-lede">
-            브링케어는 시설·임대·민원·공사 데이터를 연결해
+            시설·임대·민원·공사 데이터를 하나로 연결해
             <br className="desktop-break" />
-            현장이 더 빠르고 정확하게 움직이도록 돕는 FM 운영 파트너입니다.
+            현장이 더 빠르고 정확하게 움직이는 FM 운영을 설계합니다.
           </p>
           <div className="hero-actions">
             <a className="button button-primary" href="#services">
               서비스 살펴보기
               <span aria-hidden="true">→</span>
             </a>
-            <a className="text-link" href="#company">
-              브링엔지니어링 소개
-              <span aria-hidden="true">↘</span>
+            <a className="text-link" href="#standard">
+              브링케어의 운영 기준
+              <span aria-hidden="true">↓</span>
             </a>
           </div>
+          <div className="hero-facts" aria-label="브링케어 운영 구성">
+            <div>
+              <strong>06</strong>
+              <span>관리 영역</span>
+            </div>
+            <div>
+              <strong>04</strong>
+              <span>운영 단계</span>
+            </div>
+            <div>
+              <strong>01</strong>
+              <span>연결된 기준</span>
+            </div>
+          </div>
         </div>
 
-        <div className="hero-visual" aria-label="브링케어 FM 운영 흐름">
-          <div className="visual-topline">
-            <span>CARE FLOW</span>
-            <span>FM / 01</span>
+        <div className="hero-media">
+          <img
+            src="/hero-fm.png"
+            alt="태블릿으로 건물 설비를 점검하는 시설관리 담당자"
+          />
+          <div className="hero-media-shade" aria-hidden="true" />
+          <div className="media-label">
+            <span className="live-dot" />
+            <div>
+              <small>CONNECTED OPERATION</small>
+              <strong>현장과 기록이 이어지는 FM</strong>
+            </div>
           </div>
-          <div className="orbit orbit-one" aria-hidden="true" />
-          <div className="orbit orbit-two" aria-hidden="true" />
-          <div className="flow-core">
-            <span className="core-kicker">BRING</span>
-            <strong>CARE</strong>
-            <span className="core-caption">Connected operation</span>
-          </div>
-          <div className="flow-node node-a">
-            <span>01</span>
-            시설
-          </div>
-          <div className="flow-node node-b">
-            <span>02</span>
-            임대
-          </div>
-          <div className="flow-node node-c">
-            <span>03</span>
-            민원
-          </div>
-          <div className="flow-node node-d">
-            <span>04</span>
-            공사
-          </div>
-          <div className="visual-footer">
-            <span>FIELD</span>
-            <i />
-            <span>DATA</span>
-            <i />
-            <span>REPORT</span>
+          <div className="media-index">
+            <span>BRING CARE</span>
+            <span>FM / 2026</span>
           </div>
         </div>
       </section>
 
-      <section className="value-strip" aria-label="브링케어 핵심 가치">
-        <p>현장을 이해하고</p>
-        <span aria-hidden="true">+</span>
-        <p>업무를 연결하고</p>
-        <span aria-hidden="true">+</span>
-        <p>기록으로 개선합니다</p>
+      <section className="flow-strip" aria-label="브링케어 관리 영역">
+        <p>FACILITY</p>
+        <span>+</span>
+        <p>RENT</p>
+        <span>+</span>
+        <p>CARE</p>
+        <span>+</span>
+        <p>PROJECT</p>
+        <span>+</span>
+        <p>DATA</p>
       </section>
 
-      <section className="section services" id="services">
+      <section className="manifesto" id="standard">
+        <div className="manifesto-heading">
+          <p className="section-label">BRING CARE STANDARD</p>
+          <p className="manifesto-note">
+            관리의 품질은 얼마나 많이 하는지가 아니라
+            <br />
+            얼마나 정확하게 이어지는지에서 시작합니다.
+          </p>
+        </div>
+        <div className="manifesto-words" aria-label="현장 연결 기록">
+          <span>현장</span>
+          <i>→</i>
+          <span>연결</span>
+          <i>→</i>
+          <span>기록</span>
+        </div>
+        <p className="manifesto-copy">
+          현장을 이해하고, 필요한 사람과 업무를 연결하고,
+          <br />
+          그 과정을 다음 판단을 위한 기록으로 남깁니다.
+        </p>
+      </section>
+
+      <section className="services section" id="services">
         <div className="section-heading">
           <p className="section-label">WHAT WE CARE</p>
           <div>
             <h2>
               건물 운영에 필요한 일을
               <br />
-              <span>끊김 없이 연결합니다.</span>
+              <span>한 흐름으로 관리합니다.</span>
             </h2>
             <p>
               시설의 상태와 사람의 업무가 따로 움직이지 않도록,
@@ -164,14 +202,19 @@ export default function Home() {
         <div className="service-grid">
           {services.map((service) => (
             <article className="service-card" key={service.number}>
-              <div className="card-top">
+              <div className="card-head">
                 <span className="card-number">{service.number}</span>
                 <span className="card-arrow" aria-hidden="true">
                   ↗
                 </span>
               </div>
+              <div className="service-glyph" aria-hidden="true">
+                <span />
+                <span />
+                <span />
+              </div>
               <div>
-                <p className="card-tag">{service.tag}</p>
+                <p className="card-en">{service.en}</p>
                 <h3>{service.title}</h3>
                 <p className="card-copy">{service.copy}</p>
               </div>
@@ -180,31 +223,29 @@ export default function Home() {
         </div>
       </section>
 
-      <section className="method" id="method">
-        <div className="method-intro">
-          <p className="section-label section-label-light">HOW WE WORK</p>
+      <section className="operation-flow">
+        <div className="operation-intro">
+          <p className="section-label section-label-light">ONE CONNECTED FLOW</p>
           <h2>
-            현장을 먼저 보고,
+            한 건의 요청이
             <br />
-            운영 기준을 만듭니다.
+            끝까지 이어지는 방식.
           </h2>
           <p>
-            정해진 답을 가져오기보다 건물과 사용자,
+            요청을 받은 순간부터 완료를 확인하는 순간까지,
             <br />
-            기존 업무에 맞는 실행 가능한 방법을 찾습니다.
+            담당과 기록이 끊어지지 않게 연결합니다.
           </p>
         </div>
-        <ol className="process-list">
-          {process.map(([title, copy], index) => (
-            <li key={title}>
-              <span className="process-number">
-                {String(index + 1).padStart(2, "0")}
-              </span>
+        <ol className="flow-list">
+          {flow.map((item) => (
+            <li key={item.number}>
+              <span className="flow-number">{item.number}</span>
               <div>
-                <h3>{title}</h3>
-                <p>{copy}</p>
+                <h3>{item.title}</h3>
+                <p>{item.copy}</p>
               </div>
-              <span className="process-mark" aria-hidden="true">
+              <span className="flow-plus" aria-hidden="true">
                 +
               </span>
             </li>
@@ -212,30 +253,30 @@ export default function Home() {
         </ol>
       </section>
 
-      <section className="section digital" id="digital">
-        <div className="digital-panel">
-          <div className="digital-ui" aria-label="FM 운영 데이터 예시 화면">
-            <div className="ui-header">
-              <span className="ui-brand">BRING FM</span>
-              <span className="ui-live">
+      <section className="digital section" id="digital">
+        <div className="digital-visual">
+          <div className="ui-shell">
+            <div className="ui-topbar">
+              <span className="ui-logo">BRING FM</span>
+              <div className="ui-state">
                 <i />
-                LIVE
-              </span>
+                LIVE OPERATION
+              </div>
             </div>
-            <div className="ui-body">
-              <aside className="ui-sidebar">
+            <div className="ui-grid">
+              <aside className="ui-sidebar" aria-hidden="true">
                 <span className="active" />
                 <span />
                 <span />
                 <span />
               </aside>
               <div className="ui-content">
-                <div className="ui-title-row">
+                <div className="ui-heading">
                   <div>
                     <small>OPERATION BOARD</small>
                     <strong>오늘의 운영 현황</strong>
                   </div>
-                  <span className="ui-date">07.23</span>
+                  <span>JUL 23</span>
                 </div>
                 <div className="ui-metrics">
                   <div>
@@ -254,7 +295,7 @@ export default function Home() {
                     <i className="soft" />
                   </div>
                 </div>
-                <div className="ui-chart">
+                <div className="ui-chart" aria-hidden="true">
                   <span style={{ height: "32%" }} />
                   <span style={{ height: "58%" }} />
                   <span style={{ height: "43%" }} />
@@ -263,7 +304,7 @@ export default function Home() {
                   <span style={{ height: "91%" }} />
                   <span style={{ height: "70%" }} />
                 </div>
-                <div className="ui-list">
+                <div className="ui-table" aria-hidden="true">
                   <span />
                   <span />
                   <span />
@@ -271,47 +312,50 @@ export default function Home() {
               </div>
             </div>
           </div>
-
-          <div className="digital-copy">
-            <p className="section-label section-label-light">DIGITAL FM</p>
-            <h2>
-              기억에 의존하던 관리에서,
-              <br />
-              <span>데이터가 남는 운영으로.</span>
-            </h2>
-            <p>
-              브링케어는 현장의 실제 업무를 디지털 흐름으로 연결합니다.
-              담당자가 바뀌어도 기록은 남고, 다음 판단은 더 빨라집니다.
-            </p>
-            <ul>
-              {capabilities.map((item) => (
-                <li key={item}>
-                  <span aria-hidden="true">✓</span>
-                  {item}
-                </li>
-              ))}
-            </ul>
+          <div className="visual-badge">
+            <strong>FIELD</strong>
+            <span>TO</span>
+            <strong>DATA</strong>
           </div>
+        </div>
+
+        <div className="digital-copy">
+          <p className="section-label">DIGITAL FM</p>
+          <h2>
+            기억에 의존하던 관리에서,
+            <br />
+            <span>데이터가 남는 운영으로.</span>
+          </h2>
+          <p>
+            브링케어는 현장의 실제 업무를 디지털 흐름으로 연결합니다.
+            담당자가 바뀌어도 기록은 남고, 다음 판단은 더 빨라집니다.
+          </p>
+          <ul>
+            {capabilities.map((item) => (
+              <li key={item}>
+                <span aria-hidden="true">✓</span>
+                {item}
+              </li>
+            ))}
+          </ul>
         </div>
       </section>
 
-      <section className="belief">
-        <p className="belief-kicker">BRING CARE STANDARD</p>
-        <blockquote>
-          좋은 시설관리는
+      <section className="closing">
+        <p>BRING CARE</p>
+        <h2>
+          문제가 생긴 뒤 움직이는 관리보다,
           <br />
-          문제가 생긴 뒤 움직이는 일이 아니라,
-          <br />
-          <em>문제가 커지기 전에 연결하는 일</em>이라고 믿습니다.
-        </blockquote>
-        <div className="belief-line">
+          <span>문제가 커지기 전에 연결하는 관리.</span>
+        </h2>
+        <div className="closing-line">
           <span />
           <p>CARE · CONNECT · IMPROVE</p>
           <span />
         </div>
       </section>
 
-      <section className="company" id="company">
+      <section className="company section" id="company">
         <div className="company-copy">
           <p className="section-label">COMPANY</p>
           <h2>
@@ -375,6 +419,12 @@ export default function Home() {
         </div>
       </section>
 
+      <a className="floating-cta" href="#company">
+        <span>FM 운영</span>
+        <strong>회사 정보</strong>
+        <i aria-hidden="true">↓</i>
+      </a>
+
       <footer>
         <div className="footer-top">
           <div>
@@ -387,12 +437,8 @@ export default function Home() {
           </a>
         </div>
         <div className="footer-bottom">
-          <p>
-            브링엔지니어링 · 대표 서창환 · 사업자등록번호 748-28-01935
-          </p>
-          <p>
-            강원특별자치도 원주시 상지대길 83, 벤처창업관동 3층 305호
-          </p>
+          <p>브링엔지니어링 · 대표 서창환 · 사업자등록번호 748-28-01935</p>
+          <p>강원특별자치도 원주시 상지대길 83, 벤처창업관동 3층 305호</p>
           <p>© 2026 BRING ENGINEERING. ALL RIGHTS RESERVED.</p>
         </div>
       </footer>
