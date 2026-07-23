@@ -34,7 +34,7 @@ const PAYMENT_SCHEDULE_HEADERS = [
   "상태",
   "비고"
 ];
-const AUTOMATION_BUILD = "complaint-workflow-20260723-v24";
+const AUTOMATION_BUILD = "complaint-workflow-20260723-v25";
 const OWNER_RECOMMENDATION_IMAGE_VERSION = "owner-summary-v4";
 const OWNER_DECISION_VIEW = "owner-decision";
 
@@ -232,12 +232,44 @@ function ensureOwnerDecisionLink_(caseId, casePayload, quoteId, supplier, amount
   return state;
 }
 
-function validateOwnerDecisionLink_(decisionUrl) {
+function ownerDecisionUrlParameter_(url, name) {
+  const match = String(url || "").match(new RegExp("[?&]" + name + "=([^&#]*)"));
+  if (!match) return "";
+  try {
+    return decodeURIComponent(match[1].replace(/\+/g, " "));
+  } catch (err) {
+    return "";
+  }
+}
+
+function validateOwnerDecisionLink_(decisionUrl, caseId, token) {
   const url = String(decisionUrl || "").trim();
   if (!/^https:\/\/script\.google\.com\/macros\/s\/[^/]+\/exec\?/i.test(url)) {
     return { ok: false, statusCode: 0, message: "승인 링크 형식이 올바르지 않습니다." };
   }
+  const urlView = ownerDecisionUrlParameter_(url, "view");
+  const urlCaseId = ownerDecisionUrlParameter_(url, "caseId");
+  const urlToken = ownerDecisionUrlParameter_(url, "token");
+  if (
+    urlView !== OWNER_DECISION_VIEW ||
+    urlCaseId !== String(caseId || "") ||
+    urlToken !== String(token || "")
+  ) {
+    return { ok: false, statusCode: 0, message: "승인 링크의 케이스 또는 보안 토큰이 일치하지 않습니다." };
+  }
   try {
+    const latestCase = readCaseFromFirebase_(caseId);
+    const latestDecision = latestCase && latestCase.ownerDecision || {};
+    const stateValid = !!(
+      latestCase &&
+      latestDecision.token &&
+      String(latestDecision.token) === String(token || "") &&
+      String(latestDecision.decisionUrl || "") === url
+    );
+    const rendered = stateValid
+      ? String(renderOwnerDecisionPage_({ caseId: caseId, token: token }).getContent() || "")
+      : "";
+    const renderedValid = rendered.indexOf('data-owner-decision-valid="1"') >= 0;
     const response = UrlFetchApp.fetch(url, {
       method: "get",
       followRedirects: true,
@@ -245,7 +277,13 @@ function validateOwnerDecisionLink_(decisionUrl) {
     });
     const statusCode = Number(response.getResponseCode() || 0);
     const body = String(response.getContentText() || "");
-    const validPage = body.indexOf('data-owner-decision-valid="1"') >= 0;
+    // Apps Script 웹앱을 서버에서 다시 호출하면 Google 래퍼 HTML이 반환될 수
+    // 있으므로 본문 마커만으로 실패 처리하지 않는다. 저장된 토큰과 직접 렌더한
+    // 승인 화면을 우선 검증하고, 외부 URL이 오류 응답이나 명시적 무효 화면이
+    // 아닌지 함께 확인한다.
+    const explicitInvalid = body.indexOf('data-owner-decision-valid="0"') >= 0 ||
+      body.indexOf("유효하지 않거나 만료된 링크") >= 0;
+    const validPage = stateValid && renderedValid && !explicitInvalid;
     return {
       ok: statusCode >= 200 && statusCode < 400 && validPage,
       statusCode: statusCode,
@@ -275,7 +313,7 @@ function prepareOwnerDecisionLinkForCase_(caseId, casePayload, quoteId, quote) {
     return { ok: true, state: state, supplier: supplier, amounts: amounts, reused: true };
   }
 
-  const validation = validateOwnerDecisionLink_(state.decisionUrl);
+  const validation = validateOwnerDecisionLink_(state.decisionUrl, caseId, state.token);
   state = Object.assign({}, state, {
     linkValidated: validation.ok === true,
     linkStatus: validation.ok ? "ready" : "failed",
@@ -304,7 +342,7 @@ function handleEnsureOwnerDecisionLink_(payload) {
   if (!selected.quote) return { ok: false, message: "승인 링크에 연결할 추천 견적이 없습니다." };
 
   const prepared = prepareOwnerDecisionLinkForCase_(caseId, casePayload, selected.quoteId, selected.quote);
-  return {
+  const response = {
     ok: prepared.ok === true,
     caseId: caseId,
     quoteId: selected.quoteId,
@@ -314,6 +352,12 @@ function handleEnsureOwnerDecisionLink_(payload) {
     linkStatusText: prepared.state && prepared.state.linkStatusText || prepared.message || "",
     reused: prepared.reused === true
   };
+  const workflow = advanceCaseWorkflow_(caseId, {
+    source: "owner_decision_link",
+    skipOwnerAutoSend: prepared.ok !== true
+  });
+  response.workflow = workflow;
+  return response;
 }
 
 function appendOwnerDecisionLink_(message, decisionUrl) {
@@ -872,7 +916,7 @@ function handleOwnerRecommendationMmsConfirmation_(payload) {
   if (!casePayload) return { ok: false, message: "Firebase 케이스를 찾지 못했습니다: " + caseId };
 
   const existing = casePayload.ownerRecommendationMms || {};
-  if (existing.deliveryConfirmed === true || (existing.ok === true && existing.status === "sent")) {
+  if (ownerMmsResultComplete_(casePayload, existing)) {
     return Object.assign({ caseId: caseId, skipped: true }, existing);
   }
   if (
@@ -919,7 +963,11 @@ function handleOwnerRecommendationMmsLocked_(payload) {
 
   const existing = casePayload.ownerRecommendationMms || {};
   const requestKey = caseId + ":" + selected.quoteId;
-  if ((existing.ok === true || existing.deliveryAccepted === true) && existing.requestKey === requestKey && payload.force !== true) {
+  if (
+    ownerMmsResultComplete_(casePayload, existing) &&
+    existing.requestKey === requestKey &&
+    payload.force !== true
+  ) {
     const normalizedExisting = Object.assign({}, existing, {
       ok: true,
       status: "sent",
@@ -1181,14 +1229,41 @@ function vendorMmsWorkflowComplete_(casePayload) {
   return candidates.some(item => item && item.ok === true && (item.status === "sent" || item.deliveryAccepted === true || (item.sent || []).length > 0));
 }
 
+function ownerDecisionLinkReady_(casePayload, result) {
+  const state = casePayload && casePayload.ownerDecision || {};
+  const item = result || {};
+  if (
+    state.status !== "pending" ||
+    state.linkValidated !== true ||
+    !state.token ||
+    !state.decisionUrl
+  ) {
+    return false;
+  }
+  if (
+    item.decisionLinkValidated !== true ||
+    String(item.decisionUrl || "") !== String(state.decisionUrl || "")
+  ) {
+    return false;
+  }
+  if (item.quoteId && state.quoteId && String(item.quoteId) !== String(state.quoteId)) return false;
+  return true;
+}
+
+function ownerMmsResultComplete_(casePayload, item) {
+  return !!(item && ownerDecisionLinkReady_(casePayload, item) && (
+    item.deliveryConfirmed === true ||
+    item.deliveryAccepted === true ||
+    (item.ok === true && item.status === "sent")
+  ));
+}
+
 function ownerMmsWorkflowComplete_(casePayload) {
   const candidates = [
     casePayload && casePayload.ownerRecommendationMms,
     casePayload && casePayload.automationState && casePayload.automationState.ownerRecommendationMms
   ];
-  return candidates.some(item => item && (
-    item.deliveryConfirmed === true || item.deliveryAccepted === true || (item.ok === true && item.status === "sent")
-  ));
+  return candidates.some(item => ownerMmsResultComplete_(casePayload, item));
 }
 
 function workflowPricedQuote_(casePayload) {
@@ -1239,6 +1314,25 @@ function advanceCaseWorkflow_(caseId, context) {
   let ownerDecisionPreparation = null;
   const match = casePayload.contractMatch || {};
   const matched = match.status === "matched";
+  const ownerMmsComplete = ownerMmsWorkflowComplete_(casePayload);
+
+  // 과거 MMS 성공 기록만 있고 현재 승인 링크가 검증되지 않았거나 서로 다른
+  // 링크인 경우에는 ⑨를 열지 않는다. 잘못 진행된 기존 케이스도 여기서 복구한다.
+  if (
+    status.c8 === "done" &&
+    status.c9 !== "done" &&
+    !ownerMmsComplete
+  ) {
+    status.c8 = "doing";
+    status.c9 = "wait";
+    workflowStepState_(automationState, "c8", "doing", now, {
+      mode: "automatic_owner_mms",
+      reason: "decision_link_not_verified_for_sent_mms"
+    });
+    workflowStepState_(automationState, "c9", "wait", now, {
+      reason: "waiting_for_verified_owner_mms"
+    });
+  }
 
   if (!matched) {
     promoteWorkflowStatus_(status, "c1", "doing");
@@ -1291,7 +1385,7 @@ function advanceCaseWorkflow_(caseId, context) {
         criterion: "lowest_original_amount"
       });
       workflowStepState_(automationState, "c8", "doing", now, { mode: "automatic_owner_mms" });
-      if (status.c8 === "doing" && !ownerMmsWorkflowComplete_(casePayload)) {
+      if (status.c8 === "doing" && !ownerMmsComplete) {
         ownerDecisionPreparation = prepareOwnerDecisionLinkForCase_(
           caseId,
           casePayload,
@@ -1307,7 +1401,7 @@ function advanceCaseWorkflow_(caseId, context) {
       }
     }
 
-    if (ownerMmsWorkflowComplete_(casePayload)) {
+    if (ownerMmsComplete) {
       promoteWorkflowStatus_(status, "c8", "done");
       promoteWorkflowStatus_(status, "c9", "doing");
       workflowStepState_(automationState, "c8", "done", now, {
@@ -1325,7 +1419,7 @@ function advanceCaseWorkflow_(caseId, context) {
   patchCaseChildToFirebase_(caseId, "automationState", automationState);
   patchCaseToFirebase_(caseId, { updatedAt: now });
 
-  const shouldSendOwner = matched && status.c7 === "done" && status.c8 === "doing" && !ownerMmsWorkflowComplete_(casePayload);
+  const shouldSendOwner = matched && status.c7 === "done" && status.c8 === "doing" && !ownerMmsComplete;
   if (shouldSendOwner && context.skipOwnerAutoSend !== true) {
     const priced = pricedQuote || workflowPricedQuote_(readCaseFromFirebase_(caseId) || {});
     if (priced) {
@@ -1626,7 +1720,8 @@ function updateOwnerRecommendationMmsCase_(caseId, casePayload, result) {
   if (!result.preview && previousResult.preview) result.preview = previousResult.preview;
   const deliveryAccepted = result.deliveryAccepted === true || result.status === "sent_pending_confirmation";
   const deliveryConfirmed = deliveryAccepted || result.deliveryConfirmed === true || (result.ok === true && result.status === "sent");
-  if (deliveryConfirmed) {
+  const safeCompletion = deliveryConfirmed && ownerDecisionLinkReady_(casePayload, result);
+  if (safeCompletion) {
     result.ok = true;
     result.status = "sent";
     result.deliveryAccepted = true;
@@ -1638,8 +1733,20 @@ function updateOwnerRecommendationMmsCase_(caseId, casePayload, result) {
   casePayload.note = casePayload.note || {};
   casePayload.log = Array.isArray(casePayload.log) ? casePayload.log : [];
   casePayload.ownerRecommendationMms = result;
-  casePayload.status.c8 = deliveryConfirmed ? "done" : "doing";
-  if (deliveryConfirmed && casePayload.status.c9 !== "done") casePayload.status.c9 = "doing";
+  casePayload.status.c8 = safeCompletion ? "done" : "doing";
+  if (safeCompletion && casePayload.status.c9 !== "done") {
+    casePayload.status.c9 = "doing";
+  } else if (!safeCompletion && casePayload.status.c9 !== "done") {
+    casePayload.status.c9 = "wait";
+  }
+  if (deliveryConfirmed && !safeCompletion) {
+    result.sensDeliveryAccepted = true;
+    result.ok = false;
+    result.status = "blocked";
+    result.deliveryAccepted = false;
+    result.deliveryConfirmed = false;
+    result.statusText = "MMS 발송 기록과 검증된 승인 링크가 일치하지 않아 ⑧ 단계에서 다시 확인합니다.";
+  }
   casePayload.note.c8 = makeOwnerRecommendationMmsNote_(result);
   casePayload.log.unshift("건물주 추천 MMS " + (result.ok ? "발송완료" : "발송보류") + " / " + (result.statusText || ""));
   if (casePayload.log.length > 30) casePayload.log.length = 30;
@@ -1657,13 +1764,13 @@ function updateOwnerRecommendationMmsCase_(caseId, casePayload, result) {
     updatedAt: timestamp
   });
   patchCaseToFirebase_(caseId, { log: casePayload.log, updatedAt: timestamp });
-  if (deliveryConfirmed) {
+  {
     const automationState = Object.assign({}, casePayload.automationState || {});
     automationState.ownerRecommendationMms = {
-      ok: true,
-      status: "sent",
-      deliveryAccepted: true,
-      deliveryConfirmed: true,
+      ok: safeCompletion,
+      status: safeCompletion ? "sent" : (result.status || "blocked"),
+      deliveryAccepted: safeCompletion,
+      deliveryConfirmed: safeCompletion,
       requestId: result.requestId || "",
       requestKey: result.requestKey || "",
       quoteId: result.quoteId || "",
@@ -1674,8 +1781,11 @@ function updateOwnerRecommendationMmsCase_(caseId, casePayload, result) {
       imageFileId: result.imageFileId || "",
       imageFileUrl: result.imageFileUrl || "",
       imageFileName: result.imageFileName || "",
-      statusText: result.statusText || "SENS MMS 발송 완료",
-      confirmedAt: result.confirmedAt || timestamp,
+      decisionUrl: result.decisionUrl || "",
+      decisionStatus: result.decisionStatus || "",
+      decisionLinkValidated: result.decisionLinkValidated === true,
+      statusText: result.statusText || (safeCompletion ? "SENS MMS 발송 완료" : "승인 링크 확인 필요"),
+      confirmedAt: safeCompletion ? (result.confirmedAt || timestamp) : "",
       updatedAt: timestamp,
       build: AUTOMATION_BUILD
     };

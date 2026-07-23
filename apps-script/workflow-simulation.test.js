@@ -142,6 +142,8 @@ const functions = [
   "promoteWorkflowStatus_",
   "receiptSmsWorkflowComplete_",
   "vendorMmsWorkflowComplete_",
+  "ownerDecisionLinkReady_",
+  "ownerMmsResultComplete_",
   "ownerMmsWorkflowComplete_",
   "workflowPricedQuote_",
   "workflowStepState_",
@@ -161,12 +163,18 @@ vm.runInContext(functions.map(extractFunction).join("\n\n"), context, { filename
 context.handleOwnerRecommendationMms_ = payload => {
   ownerCalls.push(clone(payload));
   if (!ownerSendSucceeds) return { ok: false, status: "failed", message: "mock SENS failure" };
+  const decision = db[payload.caseId].ownerDecision || {};
   db[payload.caseId].ownerRecommendationMms = {
     ok: true,
     status: "sent",
     deliveryAccepted: true,
     deliveryConfirmed: true,
-    requestId: `owner-${ownerCalls.length}`
+    requestId: `owner-${ownerCalls.length}`,
+    requestKey: `${payload.caseId}:${payload.quoteId}`,
+    quoteId: payload.quoteId,
+    decisionUrl: decision.decisionUrl || "",
+    decisionStatus: decision.status || "",
+    decisionLinkValidated: decision.linkValidated === true
   };
   const workflow = context.advanceCaseWorkflow_(payload.caseId, { source: "owner_mms", skipOwnerAutoSend: true });
   return { ok: true, status: "sent", workflow };
@@ -274,6 +282,47 @@ function runWorkflowSimulation() {
   assert.equal(ownerCalls.length, ownerCallsBeforeLinkFailure, "owner MMS must not send before decision link validation");
   expectStatus(linkFailureId, { c8: "doing" }, "decision link failure stays on c8");
   ownerLinkSucceeds = true;
+
+  const staleSuccessId = "BR-SIM-STALE-OWNER-MMS";
+  db[staleSuccessId] = {
+    id: staleSuccessId,
+    contractMatch: { status: "matched" },
+    status: {
+      c1: "done",
+      c2: "done",
+      c3: "done",
+      c4: "done",
+      c5: "done",
+      c6: "done",
+      c7: "done",
+      c8: "done",
+      c9: "doing"
+    },
+    quoteFiles: { q1: { vendorName: "Stale Vendor", totalAmount: 145000 } },
+    ownerDecision: {
+      status: "pending",
+      token: "old-token",
+      quoteId: "q1",
+      decisionUrl: "https://script.google.com/macros/s/mock/exec?view=owner-decision&caseId=BR-SIM-STALE-OWNER-MMS&token=old-token",
+      linkValidated: false
+    },
+    ownerRecommendationMms: {
+      ok: true,
+      status: "sent",
+      deliveryAccepted: true,
+      deliveryConfirmed: true,
+      quoteId: "q1"
+    }
+  };
+  ownerLinkSucceeds = false;
+  context.advanceCaseWorkflow_(staleSuccessId, { source: "repair", skipOwnerAutoSend: true });
+  expectStatus(staleSuccessId, { c8: "doing", c9: "wait" }, "stale owner MMS must roll back to c8");
+
+  const ownerCallsBeforeRepair = ownerCalls.length;
+  ownerLinkSucceeds = true;
+  context.advanceCaseWorkflow_(staleSuccessId, { source: "repair" });
+  assert.equal(ownerCalls.length, ownerCallsBeforeRepair + 1, "repaired decision link must trigger a fresh owner MMS");
+  expectStatus(staleSuccessId, { c8: "done", c9: "doing" }, "fresh MMS with validated link opens c9");
 }
 
 function runMatchingSimulation() {
