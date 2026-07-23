@@ -5430,8 +5430,9 @@ document.getElementById("noticeBtn").addEventListener("click", openNoticePanel);
 document.getElementById("noticeBanner").addEventListener("click", openNoticePanel);
 
 /* ===== 업데이트 알림(What's New) — 새 버전 나오면 자동 팝업 ===== */
-const APP_VERSION = "5.22";
+const APP_VERSION = "5.23";
 const CHANGELOG = [
+  { v:"5.23", d:"2026-07-23", items:["승인 링크를 케이스 번호 기반 짧은 주소로 변경해 Firebase 권한 오류 제거"] },
   { v:"5.22", d:"2026-07-23", items:["건물주 문자 승인 링크를 짧은 GitHub Pages 주소로 변경","건물주 승인 화면을 모바일 한 화면 중심으로 재구성","승인하고 입금 진행 선택 후 계좌번호와 예금주 브링케어 표시"] },
   { v:"5.21", d:"2026-07-23", items:["검증된 승인 링크가 포함된 동일 건물주 MMS의 성공 결과일 때만 ⑧ 완료·⑨ 진행중 전환","과거 MMS 성공 기록과 승인 링크 실패가 섞인 케이스를 ⑧ 진행중·⑨ 대기로 자동 복구","Apps Script 웹앱 래퍼 HTML 때문에 정상 승인 링크를 실패로 오인하던 검증 방식 수정"] },
   { v:"5.20", d:"2026-07-23", items:["⑧ 단계 진입 시 건물주 승인 링크를 먼저 생성하고 실제 승인 화면이 열리는지 확인","승인 링크 확인이 끝난 경우에만 건물주 추천 MMS 발송","기존 ⑨ 진행중 케이스의 승인 링크가 비어 있으면 문자 재발송 없이 자동 복구"] },

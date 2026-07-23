@@ -13,7 +13,7 @@ const COMPLAINT_CONFIG = {
   QUOTE_TEMPLATE_SPREADSHEET_ID: "1JXP8NEaU0I_96ZMAZFn2GlYQHkLsbhSJCawsdMgqH7w",
   VENDOR_QUOTE_REPLY_EMAIL: "bringengineering1008@gmail.com",
   WEB_APP_URL: "https://script.google.com/macros/s/AKfycbxGAdtEDoNifxkM-e_Jm7dBkCnjM4oPJqz8RxZXoMoSKod5M_m9Yj2b11-nI97zmfd6Jw/exec",
-  OWNER_DECISION_SHORT_URL: "https://bringengineering.github.io/FM/approve.html?k=",
+  OWNER_DECISION_SHORT_URL: "https://bringengineering.github.io/FM/approve.html?c=",
   FIREBASE_DATABASE_URL: "https://bring-fm-hj-default-rtdb.asia-southeast1.firebasedatabase.app",
   FIREBASE_CASES_PATH: "cases",
   RESPONSE_SHEET_URL: "https://docs.google.com/spreadsheets/d/1HI6KzIMomL6vOUPs8zZDhXHktL1cWRDcg93lflsuojA/edit",
@@ -35,7 +35,7 @@ const PAYMENT_SCHEDULE_HEADERS = [
   "상태",
   "비고"
 ];
-const AUTOMATION_BUILD = "complaint-workflow-20260723-v26";
+const AUTOMATION_BUILD = "complaint-workflow-20260723-v27";
 const OWNER_RECOMMENDATION_IMAGE_VERSION = "owner-summary-v4";
 const OWNER_DECISION_VIEW = "owner-decision";
 const OWNER_PAYMENT_ACCOUNT = {
@@ -202,41 +202,14 @@ function ownerDecisionWebAppUrl_() {
   return String(ScriptApp.getService().getUrl() || "").trim();
 }
 
-function ownerDecisionShortLinkFirebaseUrl_(shortCode) {
-  const base = COMPLAINT_CONFIG.FIREBASE_DATABASE_URL.replace(/\/$/, "");
-  return base + "/ownerDecisionShortLinks/" + encodeURIComponent(shortCode) + ".json";
-}
-
-function makeOwnerDecisionShortCode_() {
-  const seed = Utilities.getUuid() + ":" + String(Date.now()) + ":" + String(Math.random());
-  const digest = Utilities.computeDigest(
-    Utilities.DigestAlgorithm.SHA_256,
-    seed,
-    Utilities.Charset.UTF_8
-  );
-  return Utilities.base64EncodeWebSafe(digest).replace(/=+$/g, "").slice(0, 18);
-}
-
 function ensureOwnerDecisionShortLink_(caseId, state) {
   const current = Object.assign({}, state || {});
-  const shortCode = /^[A-Za-z0-9_-]{12,40}$/.test(String(current.shortCode || ""))
-    ? String(current.shortCode)
-    : makeOwnerDecisionShortCode_();
+  const shortCode = String(caseId || "").trim().replace(/^BR-/i, "");
+  if (!/^\d{4}-\d{4,}$/.test(shortCode)) {
+    throw new Error("승인 짧은 링크용 접수번호가 올바르지 않습니다.");
+  }
   const shortDecisionUrl = String(COMPLAINT_CONFIG.OWNER_DECISION_SHORT_URL || "") + encodeURIComponent(shortCode);
   const now = new Date().toISOString();
-  firebaseWriteRequest_(
-    ownerDecisionShortLinkFirebaseUrl_(shortCode),
-    "put",
-    {
-      caseId: String(caseId || ""),
-      token: String(current.token || ""),
-      decisionUrl: String(current.decisionUrl || ""),
-      quoteId: String(current.quoteId || ""),
-      status: "active",
-      updatedAt: now
-    },
-    "승인 짧은 링크 저장 실패"
-  );
   return Object.assign({}, current, {
     shortCode: shortCode,
     shortDecisionUrl: shortDecisionUrl,

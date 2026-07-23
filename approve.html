@@ -102,7 +102,9 @@
     (function () {
       "use strict";
       var databaseUrl = "https://bring-fm-hj-default-rtdb.asia-southeast1.firebasedatabase.app";
-      var code = new URLSearchParams(window.location.search).get("k") || "";
+      var params = new URLSearchParams(window.location.search);
+      var caseCode = params.get("c") || "";
+      var legacyCode = params.get("k") || "";
       var card = document.getElementById("card");
       var title = document.getElementById("title");
       var message = document.getElementById("message");
@@ -114,31 +116,40 @@
         message.textContent = text || "유효하지 않거나 만료된 승인 링크입니다.";
       }
 
-      if (!/^[A-Za-z0-9_-]{12,40}$/.test(code)) {
+      function openTarget(data) {
+        var target = data && String(data.decisionUrl || "");
+        if (!/^https:\/\/script\.google\.com\/macros\/s\/[^/]+\/exec\?/i.test(target)) {
+          throw new Error("승인 화면 주소 없음");
+        }
+        fallback.href = target;
+        window.location.replace(target);
+        window.setTimeout(function () {
+          title.textContent = "승인 화면으로 이동합니다";
+          message.textContent = "자동으로 이동하지 않으면 아래 버튼을 눌러 주세요.";
+          fallback.style.display = "flex";
+        }, 1500);
+      }
+
+      var lookupUrl = "";
+      if (/^\d{4}-\d{4,}$/.test(caseCode)) {
+        lookupUrl = databaseUrl + "/cases/" + encodeURIComponent("BR-" + caseCode) + "/ownerDecision.json";
+      } else if (/^BR-\d{4}-\d{4,}$/i.test(caseCode)) {
+        lookupUrl = databaseUrl + "/cases/" + encodeURIComponent(caseCode.toUpperCase()) + "/ownerDecision.json";
+      } else if (/^[A-Za-z0-9_-]{12,40}$/.test(legacyCode)) {
+        lookupUrl = databaseUrl + "/ownerDecisionShortLinks/" + encodeURIComponent(legacyCode) + ".json";
+      } else {
         fail("승인 링크 정보가 올바르지 않습니다.");
         return;
       }
 
-      fetch(databaseUrl + "/ownerDecisionShortLinks/" + encodeURIComponent(code) + ".json", {
+      fetch(lookupUrl, {
         cache: "no-store"
       })
         .then(function (response) {
           if (!response.ok) throw new Error("링크 조회 실패");
           return response.json();
         })
-        .then(function (data) {
-          var target = data && String(data.decisionUrl || "");
-          if (!/^https:\/\/script\.google\.com\/macros\/s\/[^/]+\/exec\?/i.test(target)) {
-            throw new Error("승인 화면 주소 없음");
-          }
-          fallback.href = target;
-          window.location.replace(target);
-          window.setTimeout(function () {
-            title.textContent = "승인 화면으로 이동합니다";
-            message.textContent = "자동으로 이동하지 않으면 아래 버튼을 눌러 주세요.";
-            fallback.style.display = "flex";
-          }, 1500);
-        })
+        .then(openTarget)
         .catch(function () {
           fail("유효하지 않거나 만료된 승인 링크입니다.");
         });
