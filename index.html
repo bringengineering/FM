@@ -5430,8 +5430,9 @@ document.getElementById("noticeBtn").addEventListener("click", openNoticePanel);
 document.getElementById("noticeBanner").addEventListener("click", openNoticePanel);
 
 /* ===== 업데이트 알림(What's New) — 새 버전 나오면 자동 팝업 ===== */
-const APP_VERSION = "5.23";
+const APP_VERSION = "5.24";
 const CHANGELOG = [
+  { v:"5.24", d:"2026-07-23", items:["짧은 승인 링크에서 모바일 승인 화면을 직접 표시해 화면 축소 문제 해결","승인 응답을 Apps Script API로 연결하고 승인 후 계좌번호·예금주·입금금액 안내"] },
   { v:"5.23", d:"2026-07-23", items:["승인 링크를 케이스 번호 기반 짧은 주소로 변경해 Firebase 권한 오류 제거"] },
   { v:"5.22", d:"2026-07-23", items:["건물주 문자 승인 링크를 짧은 GitHub Pages 주소로 변경","건물주 승인 화면을 모바일 한 화면 중심으로 재구성","승인하고 입금 진행 선택 후 계좌번호와 예금주 브링케어 표시"] },
   { v:"5.21", d:"2026-07-23", items:["검증된 승인 링크가 포함된 동일 건물주 MMS의 성공 결과일 때만 ⑧ 완료·⑨ 진행중 전환","과거 MMS 성공 기록과 승인 링크 실패가 섞인 케이스를 ⑧ 진행중·⑨ 대기로 자동 복구","Apps Script 웹앱 래퍼 HTML 때문에 정상 승인 링크를 실패로 오인하던 검증 방식 수정"] },

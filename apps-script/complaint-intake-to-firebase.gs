@@ -35,7 +35,7 @@ const PAYMENT_SCHEDULE_HEADERS = [
   "상태",
   "비고"
 ];
-const AUTOMATION_BUILD = "complaint-workflow-20260723-v27";
+const AUTOMATION_BUILD = "complaint-workflow-20260723-v28";
 const OWNER_RECOMMENDATION_IMAGE_VERSION = "owner-summary-v4";
 const OWNER_DECISION_VIEW = "owner-decision";
 const OWNER_PAYMENT_ACCOUNT = {
@@ -145,6 +145,13 @@ function doPost(e) {
     payload = JSON.parse(e && e.postData && e.postData.contents ? e.postData.contents : "{}");
     if (payload.action === "healthCheck") {
       return jsonResponse_({ ok: true, build: AUTOMATION_BUILD, time: new Date().toISOString() });
+    }
+    if (payload.action === "submitOwnerDecision") {
+      return jsonResponse_(submitOwnerDecision(
+        payload.caseId,
+        payload.token,
+        payload.decision
+      ));
     }
     if (payload.action === "syncPaymentBuildings") {
       return jsonResponse_(syncPaymentBuildingsFromOnboarding_());
