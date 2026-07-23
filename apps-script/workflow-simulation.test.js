@@ -61,7 +61,9 @@ function extractFunction(name) {
 
 const db = Object.create(null);
 const ownerCalls = [];
+const ownerLinkCalls = [];
 let ownerSendSucceeds = true;
+let ownerLinkSucceeds = true;
 
 function clone(value) {
   return value == null ? value : JSON.parse(JSON.stringify(value));
@@ -169,6 +171,24 @@ context.handleOwnerRecommendationMms_ = payload => {
   const workflow = context.advanceCaseWorkflow_(payload.caseId, { source: "owner_mms", skipOwnerAutoSend: true });
   return { ok: true, status: "sent", workflow };
 };
+context.prepareOwnerDecisionLinkForCase_ = (caseId, casePayload, quoteId, quote) => {
+  ownerLinkCalls.push({ caseId, quoteId });
+  const state = {
+    status: "pending",
+    token: "mock-owner-token",
+    quoteId,
+    decisionUrl: `https://script.google.com/macros/s/mock/exec?view=owner-decision&caseId=${caseId}&token=mock-owner-token`,
+    linkValidated: ownerLinkSucceeds
+  };
+  db[caseId].ownerDecision = clone(state);
+  return {
+    ok: ownerLinkSucceeds,
+    state,
+    supplier: context.ownerRecommendationSupplier_(quote),
+    amounts: { totalAmount: Number(quote && quote.totalAmount || 0) },
+    message: ownerLinkSucceeds ? "승인 링크 열림 확인 완료" : "승인 링크 확인 실패"
+  };
+};
 
 function expectStatus(caseId, expected, label) {
   Object.entries(expected).forEach(([step, status]) => {
@@ -212,6 +232,8 @@ function runWorkflowSimulation() {
   context.advanceCaseWorkflow_(caseId, { source: "quote_upload", uploadBatchId: "batch-1", uploadBatchComplete: true });
   expectStatus(caseId, { c6: "done", c7: "done", c8: "done", c9: "doing" }, "owner MMS automatic completion");
   assert.equal(ownerCalls.length, 1, "owner MMS must be requested once");
+  assert.ok(ownerLinkCalls.length >= 1, "owner decision link must be prepared at c8 before MMS");
+  assert.equal(db[caseId].ownerDecision.linkValidated, true, "owner decision link must be validated before MMS");
   assert.equal(ownerCalls[0].quoteId, "low", "lowest original quote must be recommended");
 
   context.advanceCaseWorkflow_(caseId, { source: "retry" });
@@ -237,6 +259,21 @@ function runWorkflowSimulation() {
   expectStatus(failureId, { c8: "doing" }, "owner MMS failure stays on c8");
   assert.equal(db[failureId].status.c9, undefined, "owner MMS failure must not open c9");
   ownerSendSucceeds = true;
+
+  const linkFailureId = "BR-SIM-LINK-FAIL";
+  db[linkFailureId] = {
+    id: linkFailureId,
+    contractMatch: { status: "matched" },
+    status: { c1: "done", c2: "done", c3: "done", c4: "done", c5: "done", c6: "done", c7: "done", c8: "doing" },
+    quoteFiles: { q1: { vendorName: "Link Failure Vendor", totalAmount: 140000 } }
+  };
+  const ownerCallsBeforeLinkFailure = ownerCalls.length;
+  ownerLinkSucceeds = false;
+  const linkFailure = context.advanceCaseWorkflow_(linkFailureId, { source: "retry" });
+  assert.equal(linkFailure.ok, false, "invalid owner decision link must block owner MMS");
+  assert.equal(ownerCalls.length, ownerCallsBeforeLinkFailure, "owner MMS must not send before decision link validation");
+  expectStatus(linkFailureId, { c8: "doing" }, "decision link failure stays on c8");
+  ownerLinkSucceeds = true;
 }
 
 function runMatchingSimulation() {
@@ -328,3 +365,4 @@ console.log("PASS ⑤→⑦: vendor MMS, upload batch gate and lowest-price reco
 console.log("PASS ⑧→⑨: automatic owner MMS, failure hold and duplicate-send prevention");
 console.log("PASS matching: exact, building-only and fuzzy ranking");
 console.log("PASS owner decision: approval opens c10 and other quote reopens c5");
+console.log("PASS owner decision link: prepared and validated at c8 before owner MMS");

@@ -34,7 +34,7 @@ const PAYMENT_SCHEDULE_HEADERS = [
   "상태",
   "비고"
 ];
-const AUTOMATION_BUILD = "complaint-workflow-20260723-v23";
+const AUTOMATION_BUILD = "complaint-workflow-20260723-v24";
 const OWNER_RECOMMENDATION_IMAGE_VERSION = "owner-summary-v4";
 const OWNER_DECISION_VIEW = "owner-decision";
 
@@ -159,6 +159,9 @@ function doPost(e) {
     if (payload.action === "getOwnerRecommendationPreview") {
       return jsonResponse_(handleOwnerRecommendationPreview_(payload));
     }
+    if (payload.action === "ensureOwnerDecisionLink") {
+      return jsonResponse_(handleEnsureOwnerDecisionLink_(payload));
+    }
     if (payload.action === "sendOwnerRecommendationMms") {
       return jsonResponse_(handleOwnerRecommendationMms_(payload));
     }
@@ -227,6 +230,90 @@ function ensureOwnerDecisionLink_(caseId, casePayload, quoteId, supplier, amount
   putCaseChildToFirebase_(caseId, "ownerDecision", state);
   casePayload.ownerDecision = state;
   return state;
+}
+
+function validateOwnerDecisionLink_(decisionUrl) {
+  const url = String(decisionUrl || "").trim();
+  if (!/^https:\/\/script\.google\.com\/macros\/s\/[^/]+\/exec\?/i.test(url)) {
+    return { ok: false, statusCode: 0, message: "승인 링크 형식이 올바르지 않습니다." };
+  }
+  try {
+    const response = UrlFetchApp.fetch(url, {
+      method: "get",
+      followRedirects: true,
+      muteHttpExceptions: true
+    });
+    const statusCode = Number(response.getResponseCode() || 0);
+    const body = String(response.getContentText() || "");
+    const validPage = body.indexOf('data-owner-decision-valid="1"') >= 0;
+    return {
+      ok: statusCode >= 200 && statusCode < 400 && validPage,
+      statusCode: statusCode,
+      message: validPage
+        ? "승인 링크 열림 확인 완료"
+        : "승인 링크가 유효한 승인 화면을 반환하지 않았습니다."
+    };
+  } catch (err) {
+    return {
+      ok: false,
+      statusCode: 0,
+      message: "승인 링크 열림 확인 실패: " + err.message
+    };
+  }
+}
+
+function prepareOwnerDecisionLinkForCase_(caseId, casePayload, quoteId, quote) {
+  const supplier = ownerRecommendationSupplier_(quote);
+  const amounts = ownerRecommendationAmounts_(quote);
+  let state = ensureOwnerDecisionLink_(caseId, casePayload, quoteId, supplier, amounts);
+  if (
+    state.linkValidated === true &&
+    state.linkValidatedAt &&
+    String(state.quoteId || "") === String(quoteId || "") &&
+    state.decisionUrl
+  ) {
+    return { ok: true, state: state, supplier: supplier, amounts: amounts, reused: true };
+  }
+
+  const validation = validateOwnerDecisionLink_(state.decisionUrl);
+  state = Object.assign({}, state, {
+    linkValidated: validation.ok === true,
+    linkStatus: validation.ok ? "ready" : "failed",
+    linkStatusText: validation.message || "",
+    linkStatusCode: validation.statusCode || 0,
+    linkValidatedAt: validation.ok ? new Date().toISOString() : "",
+    updatedAt: new Date().toISOString()
+  });
+  putCaseChildToFirebase_(caseId, "ownerDecision", state);
+  casePayload.ownerDecision = state;
+  return {
+    ok: validation.ok === true,
+    state: state,
+    supplier: supplier,
+    amounts: amounts,
+    message: validation.message || ""
+  };
+}
+
+function handleEnsureOwnerDecisionLink_(payload) {
+  const caseId = String(payload && payload.caseId || "").trim();
+  if (!caseId) return { ok: false, message: "caseId가 없습니다." };
+  const casePayload = readCaseFromFirebase_(caseId);
+  if (!casePayload) return { ok: false, message: "Firebase 케이스를 찾지 못했습니다: " + caseId };
+  const selected = selectOwnerRecommendationQuote_(casePayload, payload && payload.quoteId);
+  if (!selected.quote) return { ok: false, message: "승인 링크에 연결할 추천 견적이 없습니다." };
+
+  const prepared = prepareOwnerDecisionLinkForCase_(caseId, casePayload, selected.quoteId, selected.quote);
+  return {
+    ok: prepared.ok === true,
+    caseId: caseId,
+    quoteId: selected.quoteId,
+    decisionUrl: prepared.state && prepared.state.decisionUrl || "",
+    decisionStatus: prepared.state && prepared.state.status || "",
+    linkValidated: prepared.state && prepared.state.linkValidated === true,
+    linkStatusText: prepared.state && prepared.state.linkStatusText || prepared.message || "",
+    reused: prepared.reused === true
+  };
 }
 
 function appendOwnerDecisionLink_(message, decisionUrl) {
@@ -306,7 +393,7 @@ function renderOwnerDecisionPage_(params) {
     ".actions button:disabled{opacity:.55;cursor:wait}.result{display:flex;flex-direction:column;gap:6px;margin-top:22px;padding:17px;border-radius:8px}",
     ".result.approved{background:#eaf8ef;border:1px solid #9cd9b0;color:#116329}.result.other{background:#fff7e8;border:1px solid #f1c879;color:#8a5300}",
     ".result strong{font-size:17px}.result span{font-size:13px}.message{margin-top:14px;font-size:13px;color:#667085;text-align:center}",
-    "</style></head><body><main class=\"page\"><div class=\"brand\">BRING Care</div><section class=\"card\">",
+    "</style></head><body data-owner-decision-valid=\"" + (valid ? "1" : "0") + "\"><main class=\"page\"><div class=\"brand\">BRING Care</div><section class=\"card\">",
     "<h1>" + ownerDecisionEscapeHtml_(title) + "</h1><p>" + ownerDecisionEscapeHtml_(description) + "</p>",
     valid ? "<div class=\"amount\"><span>추천 최종금액</span><strong>" + ownerDecisionEscapeHtml_(ownerRecommendationAmountText_(amounts.totalAmount)) + "</strong></div>" : "",
     valid ? "<div class=\"info\"><b>추천 업체</b><span>" + ownerDecisionEscapeHtml_(supplier.name || "업체 확인 필요") + "</span><b>접수번호</b><span>" + ownerDecisionEscapeHtml_(casePayload.ticketNo || caseId) + "</span></div>" : "",
@@ -694,9 +781,21 @@ function handleOwnerRecommendationPreview_(payload) {
   }
 
   const ownerPhone = extractOwnerRecommendationPhone_(casePayload);
-  const supplier = ownerRecommendationSupplier_(selected.quote);
-  const amounts = ownerRecommendationAmounts_(selected.quote);
-  const ownerDecision = ensureOwnerDecisionLink_(caseId, casePayload, selected.quoteId, supplier, amounts);
+  const preparedDecision = prepareOwnerDecisionLinkForCase_(caseId, casePayload, selected.quoteId, selected.quote);
+  const supplier = preparedDecision.supplier;
+  const amounts = preparedDecision.amounts;
+  const ownerDecision = preparedDecision.state || {};
+  if (!preparedDecision.ok || !ownerDecision.decisionUrl) {
+    return {
+      ok: false,
+      status: "blocked",
+      message: preparedDecision.message || ownerDecision.linkStatusText || "승인 링크가 열리는지 확인하지 못해 미리보기를 만들지 않았습니다.",
+      caseId: caseId,
+      quoteId: selected.quoteId,
+      decisionUrl: ownerDecision.decisionUrl || "",
+      linkValidated: false
+    };
+  }
   const message = appendOwnerDecisionLink_(
     String(payload.message || "").trim() || makeOwnerRecommendationMmsContent_(casePayload, supplier, amounts),
     ownerDecision.decisionUrl
@@ -719,6 +818,7 @@ function handleOwnerRecommendationPreview_(payload) {
     message: message,
     decisionUrl: ownerDecision.decisionUrl,
     decisionStatus: ownerDecision.status,
+    decisionLinkValidated: true,
     imageFileId: image && image.fileId || "",
     imageFileUrl: image && image.fileUrl || "",
     imageFileName: image && image.fileName || "",
@@ -744,6 +844,7 @@ function handleOwnerRecommendationPreview_(payload) {
     message: message,
     decisionUrl: ownerDecision.decisionUrl,
     decisionStatus: ownerDecision.status,
+    decisionLinkValidated: true,
     imageFileId: image && image.fileId || "",
     imageFileUrl: image && image.fileUrl || "",
     imageFileName: image && image.fileName || "",
@@ -831,9 +932,27 @@ function handleOwnerRecommendationMmsLocked_(payload) {
   }
 
   const ownerPhone = extractOwnerRecommendationPhone_(casePayload);
-  const supplier = ownerRecommendationSupplier_(selected.quote);
-  const amounts = ownerRecommendationAmounts_(selected.quote);
-  const ownerDecision = ensureOwnerDecisionLink_(caseId, casePayload, selected.quoteId, supplier, amounts);
+  const preparedDecision = prepareOwnerDecisionLinkForCase_(caseId, casePayload, selected.quoteId, selected.quote);
+  const supplier = preparedDecision.supplier;
+  const amounts = preparedDecision.amounts;
+  const ownerDecision = preparedDecision.state || {};
+  if (!preparedDecision.ok || !ownerDecision.decisionUrl) {
+    return updateOwnerRecommendationMmsCase_(caseId, casePayload, {
+      ok: false,
+      status: "blocked",
+      statusText: preparedDecision.message || ownerDecision.linkStatusText || "승인 링크가 열리는지 확인하지 못해 MMS 발송을 보류했습니다.",
+      requestKey: requestKey,
+      quoteId: selected.quoteId,
+      vendorName: supplier.name,
+      originalTotalAmount: ownerQuoteOriginalAmount_(selected.quote),
+      bringTotalAmount: amounts.totalAmount,
+      ownerPhoneMasked: maskPhone_(ownerPhone),
+      decisionUrl: ownerDecision.decisionUrl || "",
+      decisionStatus: ownerDecision.status || "",
+      decisionLinkValidated: false,
+      updatedAt: new Date().toISOString()
+    });
+  }
   const message = appendOwnerDecisionLink_(
     String(payload.message || "").trim() || makeOwnerRecommendationMmsContent_(casePayload, supplier, amounts),
     ownerDecision.decisionUrl
@@ -850,6 +969,7 @@ function handleOwnerRecommendationMmsLocked_(payload) {
     ownerPhoneMasked: maskPhone_(ownerPhone),
     decisionUrl: ownerDecision.decisionUrl,
     decisionStatus: ownerDecision.status,
+    decisionLinkValidated: true,
     updatedAt: new Date().toISOString()
   };
 
@@ -1116,6 +1236,7 @@ function advanceCaseWorkflow_(caseId, context) {
   const status = Object.assign({}, before);
   const automationState = Object.assign({}, casePayload.automationState || {});
   let pricedQuote = null;
+  let ownerDecisionPreparation = null;
   const match = casePayload.contractMatch || {};
   const matched = match.status === "matched";
 
@@ -1170,6 +1291,20 @@ function advanceCaseWorkflow_(caseId, context) {
         criterion: "lowest_original_amount"
       });
       workflowStepState_(automationState, "c8", "doing", now, { mode: "automatic_owner_mms" });
+      if (status.c8 === "doing" && !ownerMmsWorkflowComplete_(casePayload)) {
+        ownerDecisionPreparation = prepareOwnerDecisionLinkForCase_(
+          caseId,
+          casePayload,
+          pricedQuote.quoteId,
+          pricedQuote.quote
+        );
+        workflowStepState_(automationState, "c8", "doing", now, {
+          mode: "automatic_owner_mms",
+          decisionLinkStatus: ownerDecisionPreparation.ok ? "ready" : "failed",
+          decisionUrl: ownerDecisionPreparation.state && ownerDecisionPreparation.state.decisionUrl || "",
+          decisionLinkMessage: ownerDecisionPreparation.message || ""
+        });
+      }
     }
 
     if (ownerMmsWorkflowComplete_(casePayload)) {
@@ -1194,6 +1329,24 @@ function advanceCaseWorkflow_(caseId, context) {
   if (shouldSendOwner && context.skipOwnerAutoSend !== true) {
     const priced = pricedQuote || workflowPricedQuote_(readCaseFromFirebase_(caseId) || {});
     if (priced) {
+      const latestCase = readCaseFromFirebase_(caseId) || casePayload;
+      const prepared = ownerDecisionPreparation || prepareOwnerDecisionLinkForCase_(
+        caseId,
+        latestCase,
+        priced.quoteId,
+        priced.quote
+      );
+      if (!prepared.ok) {
+        return {
+          ok: false,
+          status: status,
+          ownerDecisionPreparation: {
+            ok: false,
+            decisionUrl: prepared.state && prepared.state.decisionUrl || "",
+            message: prepared.message || prepared.state && prepared.state.linkStatusText || "승인 링크 확인 실패"
+          }
+        };
+      }
       const ownerResult = handleOwnerRecommendationMms_({ caseId: caseId, quoteId: priced.quoteId });
       return { ok: ownerResult && ownerResult.ok === true, status: status, ownerResult: ownerResult };
     }

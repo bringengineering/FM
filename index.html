@@ -4204,10 +4204,11 @@ function onboardingDocButtonHTML(c,s,locked){
   }
   if(s.doc==="approval"){
     const url=String(c&&c.ownerDecision&&c.ownerDecision.decisionUrl||"").trim();
-    if(url){
+    const validated=c&&c.ownerDecision&&c.ownerDecision.linkValidated===true;
+    if(url && validated){
       return `<button class="cv-doc" data-drive-doc="${s.k}" data-url="${escAttr(url)}" title="건물주 모바일 승인 페이지 열기">🔗 승인 링크</button>`;
     }
-    return `<button class="cv-doc disabled" disabled title="건물주 승인 링크를 준비하고 있습니다">🔗 승인 링크 준비중</button>`;
+    return `<button class="cv-doc disabled" disabled title="⑧ 단계에서 건물주 승인 링크를 생성하고 열림 여부를 확인하고 있습니다">🔗 승인 링크 준비중</button>`;
   }
   if(s.doc!=="onboard"){
     return `<button class="cv-doc" data-doc="${s.k}" title="이 고객 정보로 자동 채운 문서 받기">📄 ${esc(DOC_NAMES[s.doc])}</button>`;
@@ -4801,6 +4802,30 @@ function requestOwnerRecommendationPreview(c,q,message){
   if(!endpoint) return;
   sendVendorSmsRequest(endpoint,{action:"getOwnerRecommendationPreview",caseId:c.ticketNo||c.id,quoteId:q&&q.id||q&&q.storedId||"",message:message||""});
 }
+const ownerDecisionLinkPreparationQueue=new Set();
+function queueOwnerDecisionLinkPreparation(c,id){
+  if(!c || !id || !caseAutomationEndpoint()) return;
+  const status=c.status||{};
+  const needsAtStep8=status.c8==="doing";
+  const repairsStep9=status.c8==="done" && status.c9==="doing";
+  if(!needsAtStep8 && !repairsStep9) return;
+  const state=c.ownerDecision||{};
+  if(state.decisionUrl && state.linkValidated===true){
+    ownerDecisionLinkPreparationQueue.delete(id);
+    return;
+  }
+  const q=recommendedQuoteForCase(c);
+  if(!q) return;
+  const quoteId=q.id||q.storedId||"";
+  const key=String(c.ticketNo||c.id||id)+":"+String(quoteId);
+  if(ownerDecisionLinkPreparationQueue.has(key)) return;
+  ownerDecisionLinkPreparationQueue.add(key);
+  sendVendorSmsRequest(caseAutomationEndpoint(),{
+    action:"ensureOwnerDecisionLink",
+    caseId:c.ticketNo||c.id||id,
+    quoteId
+  }).finally(()=>setTimeout(()=>ownerDecisionLinkPreparationQueue.delete(key),30000));
+}
 function openOwnerRecommendationMmsModal(id){
   const c=cases[id];
   if(!c) return;
@@ -4964,6 +4989,7 @@ function renderCaseDetail(){
     (c.log&&c.log.length?`<div class="cv-log"><div class="t" style="font-weight:700">기록</div>`+c.log.slice(0,8).map(l=>`<div class="t">· ${esc(l)}</div>`).join("")+`</div>`:"");
   (window.requestAnimationFrame || (fn=>setTimeout(fn,0)))(autoGrowCaseNotes);
   queueBusinessRegistrationAutoApply(c, curCase);
+  (window.requestAnimationFrame || (fn=>setTimeout(fn,0)))(()=>queueOwnerDecisionLinkPreparation(c, curCase));
 }
 document.getElementById("caseBtn").addEventListener("click", openCaseView);
 document.getElementById("caseBack").addEventListener("click", closeCaseView);
@@ -5384,8 +5410,9 @@ document.getElementById("noticeBtn").addEventListener("click", openNoticePanel);
 document.getElementById("noticeBanner").addEventListener("click", openNoticePanel);
 
 /* ===== 업데이트 알림(What's New) — 새 버전 나오면 자동 팝업 ===== */
-const APP_VERSION = "5.19";
+const APP_VERSION = "5.20";
 const CHANGELOG = [
+  { v:"5.20", d:"2026-07-23", items:["⑧ 단계 진입 시 건물주 승인 링크를 먼저 생성하고 실제 승인 화면이 열리는지 확인","승인 링크 확인이 끝난 경우에만 건물주 추천 MMS 발송","기존 ⑨ 진행중 케이스의 승인 링크가 비어 있으면 문자 재발송 없이 자동 복구"] },
   { v:"5.19", d:"2026-07-23", items:["⑧ 건물주 추천 문자에 모바일 승인 링크와 승인·입금 진행 안내 추가","추천 견적으로 진행할 경우 링크에서 승인하고 입금 진행 버튼을 누르도록 발송 문구 개선"] },
   { v:"5.18", d:"2026-07-23", items:["⑨ 단계의 계약서 버튼을 건물주 모바일 승인 링크 버튼으로 변경","승인 링크가 준비되기 전에는 버튼을 비활성 상태로 표시"] },
   { v:"5.17", d:"2026-07-23", items:["⑨ 건물주 승인·입금 모바일 링크 추가","승인하고 입금 진행 선택 시 ⑨ 완료·⑩ 진행중 자동 전환","다른 견적 요청 선택 시 기존 회차를 보관하고 ⑤부터 새 견적 진행"] },
