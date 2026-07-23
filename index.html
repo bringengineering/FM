@@ -4223,7 +4223,7 @@ function onboardingDocButtonHTML(c,s,locked){
     return `<button class="cv-doc disabled" disabled title="${escAttr(stepLockMessage(c,s.k))}">📄 ${esc(DOC_NAMES[s.doc])}</button>`;
   }
   if(s.doc==="approval"){
-    const url=String(c&&c.ownerDecision&&c.ownerDecision.decisionUrl||"").trim();
+    const url=String(c&&c.ownerDecision&&(c.ownerDecision.shortDecisionUrl||c.ownerDecision.decisionUrl)||"").trim();
     const validated=c&&c.ownerDecision&&c.ownerDecision.linkValidated===true;
     if(url && validated){
       return `<button class="cv-doc" data-drive-doc="${s.k}" data-url="${escAttr(url)}" title="건물주 모바일 승인 페이지 열기">🔗 승인 링크</button>`;
@@ -4777,7 +4777,7 @@ function ownerDecisionPanel(c, st){
   return `<div class="owner-decision-panel">
     <div class="owner-decision-head"><div><div class="owner-decision-title">건물주 승인·입금 응답</div><div class="owner-decision-sub">${esc(sub)}</div></div><span class="owner-decision-badge ${badgeClass}">${esc(label)}</span></div>
     <div class="owner-decision-info"><div><b>추천 업체</b><span>${esc(supplier.name||state.vendorName||"")}</span></div><div><b>브링 최종금액</b><span>${esc(recommendedQuoteMoney(amounts.total)||"금액 미입력")}</span></div><div><b>응답 시각</b><span>${esc(state.decidedAt?formatCaseDate(state.decidedAt):"대기 중")}</span></div></div>
-    ${state.decisionUrl?`<a class="owner-decision-link" href="${escAttr(state.decisionUrl)}" target="_blank" rel="noopener">모바일 승인 링크 열기</a>`:""}
+    ${(state.shortDecisionUrl||state.decisionUrl)?`<a class="owner-decision-link" href="${escAttr(state.shortDecisionUrl||state.decisionUrl)}" target="_blank" rel="noopener">모바일 승인 링크 열기</a>`:""}
   </div>`;
 }
 let ownerRecommendationModalEl=null, ownerRecommendationCtx=null;
@@ -5430,8 +5430,9 @@ document.getElementById("noticeBtn").addEventListener("click", openNoticePanel);
 document.getElementById("noticeBanner").addEventListener("click", openNoticePanel);
 
 /* ===== 업데이트 알림(What's New) — 새 버전 나오면 자동 팝업 ===== */
-const APP_VERSION = "5.21";
+const APP_VERSION = "5.22";
 const CHANGELOG = [
+  { v:"5.22", d:"2026-07-23", items:["건물주 문자 승인 링크를 짧은 GitHub Pages 주소로 변경","건물주 승인 화면을 모바일 한 화면 중심으로 재구성","승인하고 입금 진행 선택 후 계좌번호와 예금주 브링케어 표시"] },
   { v:"5.21", d:"2026-07-23", items:["검증된 승인 링크가 포함된 동일 건물주 MMS의 성공 결과일 때만 ⑧ 완료·⑨ 진행중 전환","과거 MMS 성공 기록과 승인 링크 실패가 섞인 케이스를 ⑧ 진행중·⑨ 대기로 자동 복구","Apps Script 웹앱 래퍼 HTML 때문에 정상 승인 링크를 실패로 오인하던 검증 방식 수정"] },
   { v:"5.20", d:"2026-07-23", items:["⑧ 단계 진입 시 건물주 승인 링크를 먼저 생성하고 실제 승인 화면이 열리는지 확인","승인 링크 확인이 끝난 경우에만 건물주 추천 MMS 발송","기존 ⑨ 진행중 케이스의 승인 링크가 비어 있으면 문자 재발송 없이 자동 복구"] },
   { v:"5.19", d:"2026-07-23", items:["⑧ 건물주 추천 문자에 모바일 승인 링크와 승인·입금 진행 안내 추가","추천 견적으로 진행할 경우 링크에서 승인하고 입금 진행 버튼을 누르도록 발송 문구 개선"] },

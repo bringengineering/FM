@@ -104,6 +104,10 @@ const context = {
   String,
   Number,
   JSON,
+  OWNER_PAYMENT_ACCOUNT: {
+    accountNumber: "123-456-789012",
+    accountHolder: "브링케어"
+  },
   readCaseFromFirebase_(caseId) {
     return clone(db[caseId] || null);
   },

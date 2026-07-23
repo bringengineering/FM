@@ -1,0 +1,148 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+  <meta name="theme-color" content="#173a70">
+  <title>BRING Care 승인</title>
+  <style>
+    * { box-sizing: border-box; }
+    html { background: #eef3f9; }
+    body {
+      margin: 0;
+      color: #162033;
+      font-family: Arial, "Noto Sans KR", sans-serif;
+      -webkit-font-smoothing: antialiased;
+    }
+    main {
+      width: 100%;
+      max-width: 480px;
+      min-height: 100dvh;
+      margin: 0 auto;
+      padding: max(28px, env(safe-area-inset-top)) 16px max(32px, env(safe-area-inset-bottom));
+      display: grid;
+      align-content: center;
+    }
+    .brand {
+      display: flex;
+      align-items: center;
+      gap: 9px;
+      margin: 0 2px 18px;
+      color: #173a70;
+      font-size: 18px;
+      font-weight: 900;
+    }
+    .mark {
+      width: 12px;
+      height: 12px;
+      border-radius: 50%;
+      background: #2f80ed;
+      box-shadow: 8px 0 0 #28b779;
+    }
+    .card {
+      padding: 28px 20px;
+      text-align: center;
+      background: #fff;
+      border: 1px solid #dbe3ef;
+      border-radius: 8px;
+      box-shadow: 0 10px 28px rgba(31, 57, 91, .09);
+    }
+    .spinner {
+      width: 38px;
+      height: 38px;
+      margin: 0 auto 18px;
+      border: 4px solid #dce7f6;
+      border-top-color: #173a70;
+      border-radius: 50%;
+      animation: spin .8s linear infinite;
+    }
+    h1 {
+      margin: 0 0 8px;
+      font-size: 23px;
+      line-height: 1.3;
+      letter-spacing: 0;
+    }
+    p {
+      margin: 0;
+      color: #667085;
+      font-size: 14px;
+      line-height: 1.6;
+    }
+    a {
+      display: none;
+      min-height: 50px;
+      margin-top: 18px;
+      align-items: center;
+      justify-content: center;
+      color: #fff;
+      background: #173a70;
+      border-radius: 8px;
+      font-size: 15px;
+      font-weight: 900;
+      text-decoration: none;
+    }
+    .error .spinner { display: none; }
+    .error a { display: flex; }
+    @keyframes spin { to { transform: rotate(360deg); } }
+  </style>
+</head>
+<body>
+  <main>
+    <div>
+      <div class="brand"><span class="mark"></span>BRING Care</div>
+      <section class="card" id="card">
+        <div class="spinner"></div>
+        <h1 id="title">승인 화면을 준비하고 있습니다</h1>
+        <p id="message">잠시만 기다려 주세요.</p>
+        <a id="fallback" href="#">승인 화면 열기</a>
+      </section>
+    </div>
+  </main>
+  <script>
+    (function () {
+      "use strict";
+      var databaseUrl = "https://bring-fm-hj-default-rtdb.asia-southeast1.firebasedatabase.app";
+      var code = new URLSearchParams(window.location.search).get("k") || "";
+      var card = document.getElementById("card");
+      var title = document.getElementById("title");
+      var message = document.getElementById("message");
+      var fallback = document.getElementById("fallback");
+
+      function fail(text) {
+        card.classList.add("error");
+        title.textContent = "링크를 확인해 주세요";
+        message.textContent = text || "유효하지 않거나 만료된 승인 링크입니다.";
+      }
+
+      if (!/^[A-Za-z0-9_-]{12,40}$/.test(code)) {
+        fail("승인 링크 정보가 올바르지 않습니다.");
+        return;
+      }
+
+      fetch(databaseUrl + "/ownerDecisionShortLinks/" + encodeURIComponent(code) + ".json", {
+        cache: "no-store"
+      })
+        .then(function (response) {
+          if (!response.ok) throw new Error("링크 조회 실패");
+          return response.json();
+        })
+        .then(function (data) {
+          var target = data && String(data.decisionUrl || "");
+          if (!/^https:\/\/script\.google\.com\/macros\/s\/[^/]+\/exec\?/i.test(target)) {
+            throw new Error("승인 화면 주소 없음");
+          }
+          fallback.href = target;
+          window.location.replace(target);
+          window.setTimeout(function () {
+            title.textContent = "승인 화면으로 이동합니다";
+            message.textContent = "자동으로 이동하지 않으면 아래 버튼을 눌러 주세요.";
+            fallback.style.display = "flex";
+          }, 1500);
+        })
+        .catch(function () {
+          fail("유효하지 않거나 만료된 승인 링크입니다.");
+        });
+    }());
+  </script>
+</body>
+</html>

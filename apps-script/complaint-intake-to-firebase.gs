@@ -13,6 +13,7 @@ const COMPLAINT_CONFIG = {
   QUOTE_TEMPLATE_SPREADSHEET_ID: "1JXP8NEaU0I_96ZMAZFn2GlYQHkLsbhSJCawsdMgqH7w",
   VENDOR_QUOTE_REPLY_EMAIL: "bringengineering1008@gmail.com",
   WEB_APP_URL: "https://script.google.com/macros/s/AKfycbxGAdtEDoNifxkM-e_Jm7dBkCnjM4oPJqz8RxZXoMoSKod5M_m9Yj2b11-nI97zmfd6Jw/exec",
+  OWNER_DECISION_SHORT_URL: "https://bringengineering.github.io/FM/approve.html?k=",
   FIREBASE_DATABASE_URL: "https://bring-fm-hj-default-rtdb.asia-southeast1.firebasedatabase.app",
   FIREBASE_CASES_PATH: "cases",
   RESPONSE_SHEET_URL: "https://docs.google.com/spreadsheets/d/1HI6KzIMomL6vOUPs8zZDhXHktL1cWRDcg93lflsuojA/edit",
@@ -34,9 +35,13 @@ const PAYMENT_SCHEDULE_HEADERS = [
   "상태",
   "비고"
 ];
-const AUTOMATION_BUILD = "complaint-workflow-20260723-v25";
+const AUTOMATION_BUILD = "complaint-workflow-20260723-v26";
 const OWNER_RECOMMENDATION_IMAGE_VERSION = "owner-summary-v4";
 const OWNER_DECISION_VIEW = "owner-decision";
+const OWNER_PAYMENT_ACCOUNT = {
+  accountNumber: "123-456-789012",
+  accountHolder: "브링케어"
+};
 
 const OUTPUT_HEADERS = [
   "접수번호",
@@ -197,6 +202,48 @@ function ownerDecisionWebAppUrl_() {
   return String(ScriptApp.getService().getUrl() || "").trim();
 }
 
+function ownerDecisionShortLinkFirebaseUrl_(shortCode) {
+  const base = COMPLAINT_CONFIG.FIREBASE_DATABASE_URL.replace(/\/$/, "");
+  return base + "/ownerDecisionShortLinks/" + encodeURIComponent(shortCode) + ".json";
+}
+
+function makeOwnerDecisionShortCode_() {
+  const seed = Utilities.getUuid() + ":" + String(Date.now()) + ":" + String(Math.random());
+  const digest = Utilities.computeDigest(
+    Utilities.DigestAlgorithm.SHA_256,
+    seed,
+    Utilities.Charset.UTF_8
+  );
+  return Utilities.base64EncodeWebSafe(digest).replace(/=+$/g, "").slice(0, 18);
+}
+
+function ensureOwnerDecisionShortLink_(caseId, state) {
+  const current = Object.assign({}, state || {});
+  const shortCode = /^[A-Za-z0-9_-]{12,40}$/.test(String(current.shortCode || ""))
+    ? String(current.shortCode)
+    : makeOwnerDecisionShortCode_();
+  const shortDecisionUrl = String(COMPLAINT_CONFIG.OWNER_DECISION_SHORT_URL || "") + encodeURIComponent(shortCode);
+  const now = new Date().toISOString();
+  firebaseWriteRequest_(
+    ownerDecisionShortLinkFirebaseUrl_(shortCode),
+    "put",
+    {
+      caseId: String(caseId || ""),
+      token: String(current.token || ""),
+      decisionUrl: String(current.decisionUrl || ""),
+      quoteId: String(current.quoteId || ""),
+      status: "active",
+      updatedAt: now
+    },
+    "승인 짧은 링크 저장 실패"
+  );
+  return Object.assign({}, current, {
+    shortCode: shortCode,
+    shortDecisionUrl: shortDecisionUrl,
+    shortLinkUpdatedAt: now
+  });
+}
+
 function ensureOwnerDecisionLink_(caseId, casePayload, quoteId, supplier, amounts) {
   const existing = casePayload && casePayload.ownerDecision || {};
   if (
@@ -205,7 +252,10 @@ function ensureOwnerDecisionLink_(caseId, casePayload, quoteId, supplier, amount
     existing.decisionUrl &&
     String(existing.quoteId || "") === String(quoteId || "")
   ) {
-    return existing;
+    const linkedExisting = ensureOwnerDecisionShortLink_(caseId, existing);
+    putCaseChildToFirebase_(caseId, "ownerDecision", linkedExisting);
+    casePayload.ownerDecision = linkedExisting;
+    return linkedExisting;
   }
 
   const baseUrl = ownerDecisionWebAppUrl_();
@@ -216,7 +266,7 @@ function ensureOwnerDecisionLink_(caseId, casePayload, quoteId, supplier, amount
     "?view=" + encodeURIComponent(OWNER_DECISION_VIEW) +
     "&caseId=" + encodeURIComponent(caseId) +
     "&token=" + encodeURIComponent(token);
-  const state = {
+  let state = {
     status: "pending",
     statusText: "건물주 응답 대기",
     token: token,
@@ -227,6 +277,7 @@ function ensureOwnerDecisionLink_(caseId, casePayload, quoteId, supplier, amount
     createdAt: now,
     updatedAt: now
   };
+  state = ensureOwnerDecisionShortLink_(caseId, state);
   putCaseChildToFirebase_(caseId, "ownerDecision", state);
   casePayload.ownerDecision = state;
   return state;
@@ -347,6 +398,7 @@ function handleEnsureOwnerDecisionLink_(payload) {
     caseId: caseId,
     quoteId: selected.quoteId,
     decisionUrl: prepared.state && prepared.state.decisionUrl || "",
+    shortDecisionUrl: prepared.state && prepared.state.shortDecisionUrl || "",
     decisionStatus: prepared.state && prepared.state.status || "",
     linkValidated: prepared.state && prepared.state.linkValidated === true,
     linkStatusText: prepared.state && prepared.state.linkStatusText || prepared.message || "",
@@ -389,6 +441,23 @@ function ownerDecisionStatusText_(status) {
   return "응답 대기";
 }
 
+function ownerDecisionPaymentHtml_(amount) {
+  return [
+    "<section class=\"payment\">",
+    "<div class=\"payment-head\"><span>입금 계좌</span><b>승인 완료</b></div>",
+    "<p>아래 계좌로 입금을 진행해 주세요.</p>",
+    "<dl><div><dt>계좌번호</dt><dd id=\"accountNumber\">" +
+      ownerDecisionEscapeHtml_(OWNER_PAYMENT_ACCOUNT.accountNumber) +
+      "</dd></div><div><dt>예금주</dt><dd>" +
+      ownerDecisionEscapeHtml_(OWNER_PAYMENT_ACCOUNT.accountHolder) +
+      "</dd></div><div><dt>입금금액</dt><dd>" +
+      ownerDecisionEscapeHtml_(ownerRecommendationAmountText_(amount)) +
+      "</dd></div></dl>",
+    "<button type=\"button\" class=\"copy\" onclick=\"copyAccountNumber()\">계좌번호 복사</button>",
+    "</section>"
+  ].join("");
+}
+
 function renderOwnerDecisionPage_(params) {
   const caseId = String(params && params.caseId || "").trim();
   const token = String(params && params.token || "").trim();
@@ -410,7 +479,8 @@ function renderOwnerDecisionPage_(params) {
   const statusHtml = decided
     ? "<div class=\"result " + (state.status === "approved_payment" ? "approved" : "other") + "\">" +
       "<strong>" + ownerDecisionEscapeHtml_(ownerDecisionStatusText_(state.status)) + "</strong>" +
-      "<span>응답이 정상적으로 접수되었습니다.</span></div>"
+      "<span>응답이 정상적으로 접수되었습니다.</span></div>" +
+      (state.status === "approved_payment" ? ownerDecisionPaymentHtml_(amounts.totalAmount) : "")
     : "";
   const buttons = valid && !decided
     ? "<div class=\"actions\"><button class=\"approve\" onclick=\"submitDecision('approve_payment')\">승인하고 입금 진행</button>" +
@@ -418,25 +488,30 @@ function renderOwnerDecisionPage_(params) {
     : "";
   const caseIdJs = JSON.stringify(caseId).replace(/</g, "\\u003c");
   const tokenJs = JSON.stringify(token).replace(/</g, "\\u003c");
+  const paymentHtmlJs = JSON.stringify(ownerDecisionPaymentHtml_(amounts.totalAmount)).replace(/</g, "\\u003c");
+  const accountNumberJs = JSON.stringify(OWNER_PAYMENT_ACCOUNT.accountNumber).replace(/</g, "\\u003c");
   const html = [
     "<!doctype html><html lang=\"ko\"><head><meta charset=\"utf-8\">",
     "<meta name=\"viewport\" content=\"width=device-width,initial-scale=1,viewport-fit=cover\">",
     "<title>BRING Care 추천 견적 승인</title>",
     "<style>",
-    "*{box-sizing:border-box}body{margin:0;background:#f3f6fb;color:#162033;font-family:Arial,'Noto Sans KR',sans-serif}",
-    ".page{max-width:520px;margin:0 auto;padding:22px 16px 40px}.brand{font-weight:900;color:#173a70;font-size:18px;margin:5px 0 24px}",
-    ".card{background:#fff;border:1px solid #dbe3ef;border-radius:8px;padding:22px 18px;box-shadow:0 8px 24px rgba(31,57,91,.08)}",
-    "h1{font-size:24px;line-height:1.3;margin:0 0 8px}p{font-size:14px;line-height:1.6;color:#667085;margin:0 0 20px}",
-    ".amount{background:#eaf2ff;border:1px solid #bfd3f6;border-radius:8px;padding:18px;margin:0 0 16px}",
-    ".amount span{display:block;font-size:12px;color:#52606f;margin-bottom:5px}.amount strong{font-size:30px;color:#123568;letter-spacing:0}",
-    ".info{display:grid;grid-template-columns:92px 1fr;gap:10px 12px;padding:14px 0;border-top:1px solid #edf1f6}",
-    ".info b{font-size:13px;color:#667085}.info span{font-size:14px;font-weight:700;word-break:keep-all}",
-    ".work{border-top:1px solid #edf1f6;padding-top:15px}.work b{font-size:13px}.work ul{margin:9px 0 0;padding-left:20px}.work li{font-size:14px;line-height:1.55;margin:4px 0}",
-    ".actions{display:grid;gap:10px;margin-top:22px}.actions button{width:100%;min-height:54px;border-radius:8px;font-size:16px;font-weight:800;cursor:pointer}",
-    ".approve{border:1px solid #173a70;background:#173a70;color:#fff}.other{border:1px solid #b8c3d1;background:#fff;color:#27364a}",
-    ".actions button:disabled{opacity:.55;cursor:wait}.result{display:flex;flex-direction:column;gap:6px;margin-top:22px;padding:17px;border-radius:8px}",
+    "*{box-sizing:border-box}html{background:#eef3f9}body{margin:0;color:#162033;font-family:Arial,'Noto Sans KR',sans-serif;-webkit-font-smoothing:antialiased}",
+    ".page{width:100%;max-width:480px;min-height:100dvh;margin:0 auto;padding:max(22px,env(safe-area-inset-top)) 16px max(32px,env(safe-area-inset-bottom))}",
+    ".brand{display:flex;align-items:center;gap:9px;font-weight:900;color:#173a70;font-size:18px;margin:2px 2px 18px}.brand:before{content:'';width:12px;height:12px;border-radius:50%;background:#2f80ed;box-shadow:8px 0 0 #28b779}",
+    ".card{background:#fff;border:1px solid #dbe3ef;border-radius:8px;padding:24px 18px;box-shadow:0 10px 28px rgba(31,57,91,.09)}",
+    "h1{font-size:25px;line-height:1.3;margin:0 0 8px;letter-spacing:0}p{font-size:14px;line-height:1.6;color:#667085;margin:0 0 20px}",
+    ".amount{background:#eaf2ff;border:1px solid #b8cff2;border-radius:8px;padding:20px 18px;margin:0 0 18px}",
+    ".amount span{display:block;font-size:13px;font-weight:700;color:#52606f;margin-bottom:6px}.amount strong{display:block;font-size:34px;line-height:1.15;color:#123568;letter-spacing:0;word-break:keep-all}",
+    ".info{display:grid;grid-template-columns:88px minmax(0,1fr);gap:12px;padding:16px 0;border-top:1px solid #e7edf5}",
+    ".info b{font-size:13px;color:#667085}.info span{font-size:15px;font-weight:800;line-height:1.45;word-break:keep-all;overflow-wrap:anywhere}",
+    ".work{border-top:1px solid #e7edf5;padding-top:16px}.work b{font-size:14px}.work ul{margin:10px 0 0;padding-left:20px}.work li{font-size:15px;line-height:1.55;margin:5px 0;word-break:keep-all}",
+    ".actions{display:grid;gap:10px;margin-top:24px}.actions button{width:100%;min-height:56px;border-radius:8px;font-size:16px;font-weight:900;cursor:pointer;touch-action:manipulation}",
+    ".approve{border:1px solid #173a70;background:#173a70;color:#fff}.other{border:1px solid #aebbc9;background:#fff;color:#27364a}",
+    ".actions button:disabled{opacity:.55;cursor:wait}.result{display:flex;flex-direction:column;gap:6px;margin-top:22px;padding:18px;border-radius:8px}",
     ".result.approved{background:#eaf8ef;border:1px solid #9cd9b0;color:#116329}.result.other{background:#fff7e8;border:1px solid #f1c879;color:#8a5300}",
-    ".result strong{font-size:17px}.result span{font-size:13px}.message{margin-top:14px;font-size:13px;color:#667085;text-align:center}",
+    ".result strong{font-size:18px}.result span{font-size:14px}.message{margin-top:14px;font-size:13px;color:#667085;text-align:center}",
+    ".payment{margin-top:14px;padding:18px;background:#f7f9fc;border:1px solid #dbe3ef;border-radius:8px}.payment-head{display:flex;align-items:center;justify-content:space-between;gap:12px}.payment-head span{font-size:18px;font-weight:900}.payment-head b{font-size:12px;color:#116329;background:#dcf7e6;border:1px solid #a9dfba;border-radius:999px;padding:5px 8px}.payment>p{margin:8px 0 14px}.payment dl{margin:0}.payment dl div{display:grid;grid-template-columns:82px 1fr;gap:10px;padding:11px 0;border-top:1px solid #e1e7ef}.payment dt{font-size:13px;color:#667085}.payment dd{margin:0;font-size:16px;font-weight:900;word-break:break-all}.copy{width:100%;min-height:48px;margin-top:14px;border:1px solid #173a70;background:#fff;color:#173a70;border-radius:8px;font-size:15px;font-weight:900}",
+    "@media(max-width:360px){.page{padding-left:10px;padding-right:10px}.card{padding:20px 14px}.amount strong{font-size:30px}}",
     "</style></head><body data-owner-decision-valid=\"" + (valid ? "1" : "0") + "\"><main class=\"page\"><div class=\"brand\">BRING Care</div><section class=\"card\">",
     "<h1>" + ownerDecisionEscapeHtml_(title) + "</h1><p>" + ownerDecisionEscapeHtml_(description) + "</p>",
     valid ? "<div class=\"amount\"><span>추천 최종금액</span><strong>" + ownerDecisionEscapeHtml_(ownerRecommendationAmountText_(amounts.totalAmount)) + "</strong></div>" : "",
@@ -444,12 +519,13 @@ function renderOwnerDecisionPage_(params) {
     valid ? "<div class=\"work\"><b>주요 작업</b><ul>" + workHtml + "</ul></div>" : "",
     "<div id=\"result\">" + statusHtml + "</div>" + buttons + "<div class=\"message\" id=\"message\"></div>",
     "</section></main><script>",
-    "var CASE_ID=" + caseIdJs + ";var TOKEN=" + tokenJs + ";var running=false;",
+    "var CASE_ID=" + caseIdJs + ";var TOKEN=" + tokenJs + ";var PAYMENT_HTML=" + paymentHtmlJs + ";var ACCOUNT_NUMBER=" + accountNumberJs + ";var running=false;",
+    "function copyAccountNumber(){var value=ACCOUNT_NUMBER.replace(/[^0-9]/g,'');if(navigator.clipboard&&navigator.clipboard.writeText){navigator.clipboard.writeText(value).then(function(){var b=document.querySelector('.copy');if(b){b.textContent='복사 완료';setTimeout(function(){b.textContent='계좌번호 복사'},1400)}});return;}var t=document.createElement('textarea');t.value=value;document.body.appendChild(t);t.select();document.execCommand('copy');t.remove();}",
     "function submitDecision(decision){if(running)return;running=true;var buttons=document.querySelectorAll('button');buttons.forEach(function(b){b.disabled=true});",
     "document.getElementById('message').textContent='응답을 저장하고 있습니다...';",
     "google.script.run.withSuccessHandler(function(result){running=false;if(!result||!result.ok){document.getElementById('message').textContent=result&&result.message||'응답 저장에 실패했습니다.';buttons.forEach(function(b){b.disabled=false});return;}",
     "document.getElementById('message').textContent='';document.querySelector('.actions').remove();var cls=decision==='approve_payment'?'approved':'other';",
-    "var label=decision==='approve_payment'?'승인하고 입금 진행':'다른 견적 요청';document.getElementById('result').innerHTML='<div class=\"result '+cls+'\"><strong>'+label+'</strong><span>응답이 정상적으로 접수되었습니다.</span></div>';",
+    "var label=decision==='approve_payment'?'승인하고 입금 진행':'다른 견적 요청';document.getElementById('result').innerHTML='<div class=\"result '+cls+'\"><strong>'+label+'</strong><span>응답이 정상적으로 접수되었습니다.</span></div>'+(decision==='approve_payment'?PAYMENT_HTML:'');",
     "}).withFailureHandler(function(err){running=false;document.getElementById('message').textContent=err&&err.message||'응답 저장에 실패했습니다.';buttons.forEach(function(b){b.disabled=false});}).submitOwnerDecision(CASE_ID,TOKEN,decision);}",
     "</script></body></html>"
   ].join("");
@@ -480,7 +556,12 @@ function submitOwnerDecisionLocked_(caseId, token, decision) {
   if (!current.token || current.token !== token) return { ok: false, message: "유효하지 않거나 만료된 승인 링크입니다." };
   if (current.status && current.status !== "pending") {
     return current.status === (decision === "approve_payment" ? "approved_payment" : "request_other_quote")
-      ? { ok: true, skipped: true, status: current.status }
+      ? {
+        ok: true,
+        skipped: true,
+        status: current.status,
+        payment: current.status === "approved_payment" ? Object.assign({}, OWNER_PAYMENT_ACCOUNT) : null
+      }
       : { ok: false, message: "이미 다른 응답이 접수된 링크입니다." };
   }
 
@@ -511,7 +592,12 @@ function submitOwnerDecisionLocked_(caseId, token, decision) {
       log: log,
       updatedAt: now
     });
-    return { ok: true, status: resolved.status, nextStep: "c10" };
+    return {
+      ok: true,
+      status: resolved.status,
+      nextStep: "c10",
+      payment: Object.assign({}, OWNER_PAYMENT_ACCOUNT)
+    };
   }
 
   reopenCaseForAnotherQuote_(caseId, casePayload, resolved, now);
@@ -842,7 +928,7 @@ function handleOwnerRecommendationPreview_(payload) {
   }
   const message = appendOwnerDecisionLink_(
     String(payload.message || "").trim() || makeOwnerRecommendationMmsContent_(casePayload, supplier, amounts),
-    ownerDecision.decisionUrl
+    ownerDecision.shortDecisionUrl || ownerDecision.decisionUrl
   );
   let image = null;
   try {
@@ -861,6 +947,7 @@ function handleOwnerRecommendationPreview_(payload) {
     bringVatAmount: amounts.vatAmount,
     message: message,
     decisionUrl: ownerDecision.decisionUrl,
+    shortDecisionUrl: ownerDecision.shortDecisionUrl || "",
     decisionStatus: ownerDecision.status,
     decisionLinkValidated: true,
     imageFileId: image && image.fileId || "",
@@ -887,6 +974,7 @@ function handleOwnerRecommendationPreview_(payload) {
     bringVatAmount: amounts.vatAmount,
     message: message,
     decisionUrl: ownerDecision.decisionUrl,
+    shortDecisionUrl: ownerDecision.shortDecisionUrl || "",
     decisionStatus: ownerDecision.status,
     decisionLinkValidated: true,
     imageFileId: image && image.fileId || "",
@@ -996,6 +1084,7 @@ function handleOwnerRecommendationMmsLocked_(payload) {
       bringTotalAmount: amounts.totalAmount,
       ownerPhoneMasked: maskPhone_(ownerPhone),
       decisionUrl: ownerDecision.decisionUrl || "",
+      shortDecisionUrl: ownerDecision.shortDecisionUrl || "",
       decisionStatus: ownerDecision.status || "",
       decisionLinkValidated: false,
       updatedAt: new Date().toISOString()
@@ -1003,7 +1092,7 @@ function handleOwnerRecommendationMmsLocked_(payload) {
   }
   const message = appendOwnerDecisionLink_(
     String(payload.message || "").trim() || makeOwnerRecommendationMmsContent_(casePayload, supplier, amounts),
-    ownerDecision.decisionUrl
+    ownerDecision.shortDecisionUrl || ownerDecision.decisionUrl
   );
   const baseResult = {
     ok: false,
@@ -1016,6 +1105,7 @@ function handleOwnerRecommendationMmsLocked_(payload) {
     bringTotalAmount: amounts.totalAmount,
     ownerPhoneMasked: maskPhone_(ownerPhone),
     decisionUrl: ownerDecision.decisionUrl,
+    shortDecisionUrl: ownerDecision.shortDecisionUrl || "",
     decisionStatus: ownerDecision.status,
     decisionLinkValidated: true,
     updatedAt: new Date().toISOString()
