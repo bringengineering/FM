@@ -81,7 +81,8 @@ a {
   background-position: center 48.8%;
   background-size: 200% auto;
   background-repeat: no-repeat;
-  filter: brightness(0) invert(1);
+  filter: invert(1) grayscale(1) brightness(4) contrast(4);
+  mix-blend-mode: screen;
 }
 
 .nav-links {
@@ -1012,6 +1013,7 @@ a {
 
 .company-logo .brand-image {
   filter: none;
+  mix-blend-mode: normal;
 }
 
 .company-card dl {
