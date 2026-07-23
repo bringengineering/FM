@@ -1,6 +1,6 @@
 {
-  "_framework-XU8gKkFC.js": {
-    "file": "assets/framework-XU8gKkFC.js",
+  "_framework-DjPHiq1u.js": {
+    "file": "assets/framework-DjPHiq1u.js",
     "name": "framework",
     "imports": [
       "_rolldown-runtime-S-ySWqyJ.js"
@@ -10,27 +10,38 @@
     "file": "assets/rolldown-runtime-S-ySWqyJ.js",
     "name": "rolldown-runtime"
   },
+  "app/consult/ConsultForm.tsx": {
+    "file": "assets/ConsultForm-CvONmsnE.js",
+    "name": "ConsultForm",
+    "src": "app/consult/ConsultForm.tsx",
+    "isDynamicEntry": true,
+    "imports": [
+      "_rolldown-runtime-S-ySWqyJ.js",
+      "_framework-DjPHiq1u.js"
+    ]
+  },
   "node_modules/.pnpm/vinext@0.0.50_@vitejs+plugi_411db1e72ff1d4e0dfb72e4a8d0c6b6d/node_modules/vinext/dist/shims/layout-segment-context.js": {
-    "file": "assets/layout-segment-context-CMLPr4qb.js",
+    "file": "assets/layout-segment-context-DyFNX5Kp.js",
     "name": "layout-segment-context",
     "src": "node_modules/.pnpm/vinext@0.0.50_@vitejs+plugi_411db1e72ff1d4e0dfb72e4a8d0c6b6d/node_modules/vinext/dist/shims/layout-segment-context.js",
     "isDynamicEntry": true,
     "imports": [
       "_rolldown-runtime-S-ySWqyJ.js",
       "virtual:vinext-app-browser-entry",
-      "_framework-XU8gKkFC.js"
+      "_framework-DjPHiq1u.js"
     ]
   },
   "virtual:vinext-app-browser-entry": {
-    "file": "assets/index-BUhafJ2m.js",
+    "file": "assets/index-Cg_XftY4.js",
     "name": "index",
     "src": "virtual:vinext-app-browser-entry",
     "isEntry": true,
     "imports": [
       "_rolldown-runtime-S-ySWqyJ.js",
-      "_framework-XU8gKkFC.js"
+      "_framework-DjPHiq1u.js"
     ],
     "dynamicImports": [
+      "app/consult/ConsultForm.tsx",
       "virtual:vinext-app-browser-entry",
       "node_modules/.pnpm/vinext@0.0.50_@vitejs+plugi_411db1e72ff1d4e0dfb72e4a8d0c6b6d/node_modules/vinext/dist/shims/layout-segment-context.js"
     ]

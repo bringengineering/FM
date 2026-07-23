@@ -1,13 +1,13 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-async function render() {
+async function render(pathname = "/") {
   const workerUrl = new URL("../dist/server/index.js", import.meta.url);
   workerUrl.searchParams.set("test", `${process.pid}-${Date.now()}`);
   const { default: worker } = await import(workerUrl.href);
 
   return worker.fetch(
-    new Request("http://localhost/", {
+    new Request(`http://localhost${pathname}`, {
       headers: {
         accept: "text/html",
         host: "localhost",
@@ -41,4 +41,16 @@ test("server-renders the Bring Care company website", async () => {
   assert.match(html, /og\.png/);
   assert.doesNotMatch(html, /codex-preview|Your site is taking shape/);
   assert.doesNotMatch(html, /365일|24시간 출동/);
+});
+
+test("server-renders the consultation page with direct contacts", async () => {
+  const response = await render("/consult");
+  assert.equal(response.status, 200);
+
+  const html = await response.text();
+  assert.match(html, /상담 신청 \| Bring Care/);
+  assert.match(html, /010-6566-3606/);
+  assert.match(html, /bringengineering1008@gmail\.com/);
+  assert.match(html, /이메일로 상담 신청/);
+  assert.match(html, /별도로 저장하지 않으며/);
 });

@@ -80,8 +80,8 @@ export default function Home() {
           <a href="#digital">디지털 FM</a>
           <a href="#company">회사 정보</a>
         </nav>
-        <a className="header-cta" href="#company">
-          회사 소개
+        <a className="header-cta" href="/consult">
+          상담 신청
           <span aria-hidden="true">↗</span>
         </a>
       </header>
@@ -419,9 +419,9 @@ export default function Home() {
         </div>
       </section>
 
-      <a className="floating-cta" href="#company">
+      <a className="floating-cta" href="/consult">
         <span>FM 운영</span>
-        <strong>회사 정보</strong>
+        <strong>상담 신청</strong>
         <i aria-hidden="true">↓</i>
       </a>
 
@@ -430,6 +430,9 @@ export default function Home() {
           <div>
             <span className="footer-brand">Bring Care</span>
             <p>관리의 모든 흐름을 연결합니다.</p>
+            <p className="footer-contact">
+              010-6566-3606 · bringengineering1008@gmail.com
+            </p>
           </div>
           <a href="#top" aria-label="페이지 맨 위로 이동">
             TOP

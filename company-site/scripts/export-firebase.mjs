@@ -20,30 +20,40 @@ await cp(client, output, { recursive: true });
 const workerUrl = new URL("../dist/server/index.js", import.meta.url);
 workerUrl.searchParams.set("firebase-export", `${Date.now()}`);
 const { default: worker } = await import(workerUrl.href);
-const response = await worker.fetch(
-  new Request("https://bring-fm-hj.web.app/", {
-    headers: {
-      accept: "text/html",
-      host: "bring-fm-hj.web.app",
-      "x-forwarded-host": "bring-fm-hj.web.app",
-      "x-forwarded-proto": "https",
-    },
-  }),
-  {
-    ASSETS: {
-      fetch: async () => new Response("Not found", { status: 404 }),
-    },
-  },
-  {
-    waitUntil() {},
-    passThroughOnException() {},
-  },
-);
+const routes = [
+  { pathname: "/", outputFile: "index.html" },
+  { pathname: "/consult", outputFile: "consult/index.html" },
+];
 
-if (!response.ok) {
-  throw new Error(`Static export failed with status ${response.status}.`);
+for (const route of routes) {
+  const response = await worker.fetch(
+    new Request(`https://bring-fm-hj.web.app${route.pathname}`, {
+      headers: {
+        accept: "text/html",
+        host: "bring-fm-hj.web.app",
+        "x-forwarded-host": "bring-fm-hj.web.app",
+        "x-forwarded-proto": "https",
+      },
+    }),
+    {
+      ASSETS: {
+        fetch: async () => new Response("Not found", { status: 404 }),
+      },
+    },
+    {
+      waitUntil() {},
+      passThroughOnException() {},
+    },
+  );
+
+  if (!response.ok) {
+    throw new Error(
+      `Static export failed for ${route.pathname} with status ${response.status}.`,
+    );
+  }
+
+  const target = path.join(output, route.outputFile);
+  await mkdir(path.dirname(target), { recursive: true });
+  await writeFile(target, await response.text(), "utf8");
 }
-
-const html = await response.text();
-await writeFile(path.join(output, "index.html"), html, "utf8");
 console.log(`Firebase static export created at ${output}`);
