@@ -51,6 +51,17 @@ test("server-renders the consultation page with direct contacts", async () => {
   assert.match(html, /상담 신청 \| Bring Care/);
   assert.match(html, /010-6566-3606/);
   assert.match(html, /bringengineering1008@gmail\.com/);
-  assert.match(html, /이메일로 상담 신청/);
-  assert.match(html, /별도로 저장하지 않으며/);
+  assert.match(html, /상담 신청 전송/);
+  assert.match(html, /전송 대행 서비스/);
+});
+
+test("server-renders the consultation completion page", async () => {
+  const response = await render("/consult/complete");
+  assert.equal(response.status, 200);
+
+  const html = await response.text();
+  assert.match(html, /상담 신청 발송 완료 \| Bring Care/);
+  assert.match(html, /발송 완료되었습니다/);
+  assert.match(html, /담당 이메일로 전달되었습니다/);
+  assert.match(html, /010-6566-3606/);
 });

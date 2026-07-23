@@ -3,9 +3,12 @@
 import { FormEvent, useState } from "react";
 
 const CONSULT_EMAIL = "bringengineering1008@gmail.com";
+const FORM_ENDPOINT = `https://formsubmit.co/ajax/${CONSULT_EMAIL}`;
+
+type SubmitStatus = "idle" | "sending" | "error" | "copied";
 
 export default function ConsultForm() {
-  const [status, setStatus] = useState<"idle" | "ready" | "copied">("idle");
+  const [status, setStatus] = useState<SubmitStatus>("idle");
 
   function buildMessage(form: HTMLFormElement) {
     const data = new FormData(form);
@@ -26,19 +29,62 @@ export default function ConsultForm() {
     ].join("\n");
   }
 
-  function handleSubmit(event: FormEvent<HTMLFormElement>) {
+  async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     const form = event.currentTarget;
 
-    if (!form.reportValidity()) {
+    if (!form.reportValidity() || status === "sending") {
       return;
     }
 
     const data = new FormData(form);
-    const subject = `[Bring Care 상담 신청] ${data.get("name")} / ${data.get("buildingType")}`;
-    const body = buildMessage(form);
-    setStatus("ready");
-    window.location.href = `mailto:${CONSULT_EMAIL}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
+    const services = data.getAll("service").join(", ") || "선택 안 함";
+    const delivery = new FormData();
+
+    delivery.append(
+      "_subject",
+      `[Bring Care 상담 신청] ${data.get("name")} / ${data.get("buildingType")}`,
+    );
+    delivery.append("_template", "table");
+    delivery.append("_honey", String(data.get("website") || ""));
+    delivery.append("성명", String(data.get("name") || ""));
+    delivery.append("연락처", String(data.get("phone") || ""));
+    delivery.append("이메일", String(data.get("email") || "입력 안 함"));
+    delivery.append("건물 유형", String(data.get("buildingType") || ""));
+    delivery.append("건물 위치", String(data.get("location") || "입력 안 함"));
+    delivery.append("관심 서비스", services);
+    delivery.append("문의 내용", String(data.get("message") || ""));
+    delivery.append("접수 시각", new Date().toLocaleString("ko-KR"));
+    if (data.get("email")) {
+      delivery.append("email", String(data.get("email")));
+    }
+
+    setStatus("sending");
+
+    try {
+      const response = await fetch(FORM_ENDPOINT, {
+        method: "POST",
+        headers: {
+          Accept: "application/json",
+        },
+        body: delivery,
+      });
+      const result = (await response.json()) as {
+        success?: boolean | string;
+        message?: string;
+      };
+      const succeeded =
+        response.ok &&
+        (result.success === true || result.success === "true");
+
+      if (!succeeded) {
+        throw new Error(result.message || "상담 신청 전송에 실패했습니다.");
+      }
+
+      window.location.assign("/consult/complete");
+    } catch {
+      setStatus("error");
+    }
   }
 
   async function copyApplication() {
@@ -64,6 +110,16 @@ export default function ConsultForm() {
 
   return (
     <form className="consult-form" id="consult-form" onSubmit={handleSubmit}>
+      <label className="form-honeypot" aria-hidden="true">
+        웹사이트
+        <input
+          name="website"
+          type="text"
+          tabIndex={-1}
+          autoComplete="off"
+        />
+      </label>
+
       <div className="form-section-head">
         <span>01</span>
         <div>
@@ -183,15 +239,19 @@ export default function ConsultForm() {
         <span>
           상담과 회신을 위해 입력한 정보를 이메일로 전달하는 데 동의합니다.
           <small>
-            이 페이지는 입력 내용을 별도로 저장하지 않으며, 신청 시 사용자의
-            이메일 앱으로 내용이 전달됩니다.
+            입력 내용은 상담 메일 발송을 위해 전송 대행 서비스에 전달될 수
+            있으며, 브링케어 홈페이지에는 별도로 저장되지 않습니다.
           </small>
         </span>
       </label>
 
       <div className="form-actions">
-        <button className="submit-button" type="submit">
-          이메일로 상담 신청
+        <button
+          className="submit-button"
+          type="submit"
+          disabled={status === "sending"}
+        >
+          {status === "sending" ? "상담 신청 전송 중..." : "상담 신청 전송"}
           <span aria-hidden="true">↗</span>
         </button>
         <button className="copy-button" type="button" onClick={copyApplication}>
@@ -199,13 +259,16 @@ export default function ConsultForm() {
         </button>
       </div>
 
-      {status !== "idle" && (
-        <p className="form-status" role="status">
-          {status === "copied"
-            ? "신청 내용이 복사되었습니다. 이메일이나 문자에 붙여넣어 보내주세요."
-            : "이메일 앱이 열리지 않으면 ‘신청 내용 복사’를 이용하거나 아래 연락처로 문의해 주세요."}
-        </p>
-      )}
+      <p
+        className={`form-status${status === "error" ? " form-status-error" : ""}`}
+        role="status"
+        aria-live="polite"
+        hidden={status === "idle" || status === "sending"}
+      >
+        {status === "copied"
+          ? "신청 내용이 복사되었습니다. 이메일이나 문자에 붙여넣어 보내주세요."
+          : "전송이 완료되지 않았습니다. 잠시 후 다시 시도하거나 전화·이메일로 문의해 주세요."}
+      </p>
     </form>
   );
 }

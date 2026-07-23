@@ -23,6 +23,10 @@ const { default: worker } = await import(workerUrl.href);
 const routes = [
   { pathname: "/", outputFile: "index.html" },
   { pathname: "/consult", outputFile: "consult/index.html" },
+  {
+    pathname: "/consult/complete",
+    outputFile: "consult/complete/index.html",
+  },
 ];
 
 for (const route of routes) {
