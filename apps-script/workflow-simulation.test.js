@@ -70,7 +70,9 @@ function clone(value) {
 function mergeInto(target, patch) {
   Object.keys(patch || {}).forEach(key => {
     const value = patch[key];
-    if (value && typeof value === "object" && !Array.isArray(value)) {
+    if (value === null) {
+      delete target[key];
+    } else if (value && typeof value === "object" && !Array.isArray(value)) {
       target[key] = target[key] && typeof target[key] === "object" && !Array.isArray(target[key]) ? target[key] : {};
       mergeInto(target[key], value);
     } else {
@@ -78,6 +80,17 @@ function mergeInto(target, patch) {
     }
   });
   return target;
+}
+
+function childNode(caseId, childPath, create) {
+  db[caseId] = db[caseId] || {};
+  const parts = String(childPath || "").split("/").filter(Boolean);
+  let node = db[caseId];
+  parts.slice(0, -1).forEach(part => {
+    if (!node[part] && create) node[part] = {};
+    node = node[part];
+  });
+  return { node, key: parts[parts.length - 1] };
 }
 
 const context = {
@@ -93,9 +106,13 @@ const context = {
     return clone(db[caseId] || null);
   },
   patchCaseChildToFirebase_(caseId, childPath, value) {
-    db[caseId] = db[caseId] || {};
-    db[caseId][childPath] = db[caseId][childPath] || {};
-    mergeInto(db[caseId][childPath], value || {});
+    const target = childNode(caseId, childPath, true);
+    target.node[target.key] = target.node[target.key] || {};
+    mergeInto(target.node[target.key], value || {});
+  },
+  putCaseChildToFirebase_(caseId, childPath, value) {
+    const target = childNode(caseId, childPath, true);
+    target.node[target.key] = clone(value || {});
   },
   patchCaseToFirebase_(caseId, value) {
     db[caseId] = db[caseId] || {};
@@ -126,6 +143,8 @@ const functions = [
   "ownerMmsWorkflowComplete_",
   "workflowPricedQuote_",
   "workflowStepState_",
+  "submitOwnerDecisionLocked_",
+  "reopenCaseForAnotherQuote_",
   "advanceCaseWorkflow_",
   "normalizeText_",
   "normalizeAddress_",
@@ -262,9 +281,50 @@ function runMatchingSimulation() {
   assert.ok(fuzzy.matchScore > 0, "fuzzy match must produce a score");
 }
 
+function runOwnerDecisionSimulation() {
+  const approvalId = "BR-SIM-APPROVAL";
+  db[approvalId] = {
+    id: approvalId,
+    status: { c1: "done", c2: "done", c3: "done", c4: "done", c5: "done", c6: "done", c7: "done", c8: "done", c9: "doing" },
+    ownerDecision: { status: "pending", token: "approval-token", quoteId: "q1" },
+    automationState: { workflow: { c9: { status: "doing" } } },
+    log: []
+  };
+  const approved = context.submitOwnerDecisionLocked_(approvalId, "approval-token", "approve_payment");
+  assert.equal(approved.ok, true, "owner approval must succeed");
+  expectStatus(approvalId, { c9: "done", c10: "doing" }, "owner approval");
+  assert.equal(db[approvalId].ownerDecision.status, "approved_payment", "owner decision must be stored");
+  assert.equal(db[approvalId].paymentStatus, "awaiting_payment", "payment must wait for confirmation");
+
+  const otherId = "BR-SIM-OTHER-QUOTE";
+  db[otherId] = {
+    id: otherId,
+    status: { c1: "done", c2: "done", c3: "done", c4: "done", c5: "done", c6: "done", c7: "done", c8: "done", c9: "doing" },
+    ownerDecision: { status: "pending", token: "other-token", quoteId: "q-low" },
+    vendorSelections: { vendorA: true },
+    selectedVendors: [{ id: "vendorA", name: "Vendor A" }],
+    vendorEstimateMms: { ok: true, status: "sent" },
+    quoteFiles: { "q-low": { vendorName: "Vendor A", totalAmount: 130000 } },
+    businessRegistrationFiles: { br1: { vendorName: "Vendor A" } },
+    recommendation: { quoteId: "q-low" },
+    ownerRecommendationMms: { ok: true, status: "sent" },
+    automationState: { workflow: { c5: { status: "done" }, c6: { status: "done" }, c9: { status: "doing" } } },
+    log: []
+  };
+  const other = context.submitOwnerDecisionLocked_(otherId, "other-token", "request_other_quote");
+  assert.equal(other.ok, true, "other quote request must succeed");
+  expectStatus(otherId, { c5: "doing" }, "other quote request");
+  assert.equal(db[otherId].status.c6, undefined, "other quote request must close c6");
+  assert.equal(db[otherId].quoteFiles, undefined, "active quote list must be cleared");
+  assert.ok(db[otherId].quoteRequestRounds["round-1"].quoteFiles["q-low"], "previous quote round must be archived");
+  assert.equal(db[otherId].quoteRequestRound, 2, "next quote round must increment");
+}
+
 runWorkflowSimulation();
 runMatchingSimulation();
+runOwnerDecisionSimulation();
 console.log("PASS ①→⑤: onboarding, receipt SMS, consultation and classification");
 console.log("PASS ⑤→⑦: vendor MMS, upload batch gate and lowest-price recommendation");
 console.log("PASS ⑧→⑨: automatic owner MMS, failure hold and duplicate-send prevention");
 console.log("PASS matching: exact, building-only and fuzzy ranking");
+console.log("PASS owner decision: approval opens c10 and other quote reopens c5");

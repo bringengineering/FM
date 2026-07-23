@@ -12,6 +12,7 @@ const COMPLAINT_CONFIG = {
   QUOTE_DRIVE_FOLDER_ID: "11QX5F-KRQvvYNc0hso3QACuMS7lMZw4r",
   QUOTE_TEMPLATE_SPREADSHEET_ID: "1JXP8NEaU0I_96ZMAZFn2GlYQHkLsbhSJCawsdMgqH7w",
   VENDOR_QUOTE_REPLY_EMAIL: "bringengineering1008@gmail.com",
+  WEB_APP_URL: "https://script.google.com/macros/s/AKfycbxGAdtEDoNifxkM-e_Jm7dBkCnjM4oPJqz8RxZXoMoSKod5M_m9Yj2b11-nI97zmfd6Jw/exec",
   FIREBASE_DATABASE_URL: "https://bring-fm-hj-default-rtdb.asia-southeast1.firebasedatabase.app",
   FIREBASE_CASES_PATH: "cases",
   RESPONSE_SHEET_URL: "https://docs.google.com/spreadsheets/d/1HI6KzIMomL6vOUPs8zZDhXHktL1cWRDcg93lflsuojA/edit",
@@ -33,8 +34,9 @@ const PAYMENT_SCHEDULE_HEADERS = [
   "상태",
   "비고"
 ];
-const AUTOMATION_BUILD = "complaint-workflow-20260721-v22";
+const AUTOMATION_BUILD = "complaint-workflow-20260723-v23";
 const OWNER_RECOMMENDATION_IMAGE_VERSION = "owner-summary-v4";
+const OWNER_DECISION_VIEW = "owner-decision";
 
 const OUTPUT_HEADERS = [
   "접수번호",
@@ -120,6 +122,18 @@ function onComplaintFormSubmit(e) {
   processResponseRow_(sheet, row);
 }
 
+function doGet(e) {
+  const params = e && e.parameter ? e.parameter : {};
+  if (String(params.view || "") === OWNER_DECISION_VIEW) {
+    return renderOwnerDecisionPage_(params);
+  }
+  return HtmlService.createHtmlOutput(
+    "<!doctype html><html lang=\"ko\"><head><meta charset=\"utf-8\"><meta name=\"viewport\" content=\"width=device-width,initial-scale=1\">" +
+    "<title>BRING Care</title></head><body style=\"font-family:Arial,sans-serif;padding:32px\">" +
+    "<h1 style=\"font-size:22px\">BRING Care 자동화</h1><p>서비스가 정상 작동 중입니다.</p></body></html>"
+  ).setTitle("BRING Care");
+}
+
 function doPost(e) {
   let payload = {};
   try {
@@ -172,6 +186,249 @@ function doPost(e) {
     }
     return jsonResponse_({ ok: false, message: err.message });
   }
+}
+
+function ownerDecisionWebAppUrl_() {
+  const configured = String(COMPLAINT_CONFIG.WEB_APP_URL || "").trim();
+  if (configured) return configured;
+  return String(ScriptApp.getService().getUrl() || "").trim();
+}
+
+function ensureOwnerDecisionLink_(caseId, casePayload, quoteId, supplier, amounts) {
+  const existing = casePayload && casePayload.ownerDecision || {};
+  if (
+    existing.status === "pending" &&
+    existing.token &&
+    existing.decisionUrl &&
+    String(existing.quoteId || "") === String(quoteId || "")
+  ) {
+    return existing;
+  }
+
+  const baseUrl = ownerDecisionWebAppUrl_();
+  if (!baseUrl) throw new Error("Apps Script 웹 앱 URL을 확인하지 못했습니다.");
+  const now = new Date().toISOString();
+  const token = Utilities.getUuid().replace(/-/g, "") + Utilities.getUuid().replace(/-/g, "");
+  const decisionUrl = baseUrl +
+    "?view=" + encodeURIComponent(OWNER_DECISION_VIEW) +
+    "&caseId=" + encodeURIComponent(caseId) +
+    "&token=" + encodeURIComponent(token);
+  const state = {
+    status: "pending",
+    statusText: "건물주 응답 대기",
+    token: token,
+    decisionUrl: decisionUrl,
+    quoteId: String(quoteId || ""),
+    vendorName: String(supplier && supplier.name || ""),
+    bringTotalAmount: Number(amounts && amounts.totalAmount || 0),
+    createdAt: now,
+    updatedAt: now
+  };
+  putCaseChildToFirebase_(caseId, "ownerDecision", state);
+  casePayload.ownerDecision = state;
+  return state;
+}
+
+function appendOwnerDecisionLink_(message, decisionUrl) {
+  const content = String(message || "").trim();
+  const url = String(decisionUrl || "").trim();
+  if (!url || content.indexOf(url) >= 0) return content;
+  return [content, "", "승인 여부 선택:", url].join("\n");
+}
+
+function ownerDecisionEscapeHtml_(value) {
+  return String(value === null || value === undefined ? "" : value)
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#39;");
+}
+
+function ownerDecisionStatusText_(status) {
+  if (status === "approved_payment") return "승인하고 입금 진행";
+  if (status === "request_other_quote") return "다른 견적 요청";
+  return "응답 대기";
+}
+
+function renderOwnerDecisionPage_(params) {
+  const caseId = String(params && params.caseId || "").trim();
+  const token = String(params && params.token || "").trim();
+  const casePayload = caseId ? readCaseFromFirebase_(caseId) : null;
+  const state = casePayload && casePayload.ownerDecision || {};
+  const valid = !!(casePayload && token && state.token && token === String(state.token));
+  const selected = valid ? selectOwnerRecommendationQuote_(casePayload, state.quoteId) : { quoteId: "", quote: null };
+  const supplier = selected.quote ? ownerRecommendationSupplier_(selected.quote) : { name: state.vendorName || "" };
+  const amounts = selected.quote ? ownerRecommendationAmounts_(selected.quote) : { totalAmount: Number(state.bringTotalAmount || 0) };
+  const workLines = selected.quote ? ownerRecommendationWorkLines_(selected.quote) : [];
+  const decided = valid && state.status && state.status !== "pending";
+  const title = valid ? "추천 견적 승인" : "링크 확인 필요";
+  const description = valid
+    ? "추천 내용을 확인하고 아래 두 항목 중 하나를 선택해 주세요."
+    : "유효하지 않거나 만료된 링크입니다. BRING Care 담당자에게 문의해 주세요.";
+  const workHtml = workLines.length
+    ? workLines.slice(0, 4).map(line => "<li>" + ownerDecisionEscapeHtml_(line) + "</li>").join("")
+    : "<li>견적서의 작업 내용을 확인해 주세요.</li>";
+  const statusHtml = decided
+    ? "<div class=\"result " + (state.status === "approved_payment" ? "approved" : "other") + "\">" +
+      "<strong>" + ownerDecisionEscapeHtml_(ownerDecisionStatusText_(state.status)) + "</strong>" +
+      "<span>응답이 정상적으로 접수되었습니다.</span></div>"
+    : "";
+  const buttons = valid && !decided
+    ? "<div class=\"actions\"><button class=\"approve\" onclick=\"submitDecision('approve_payment')\">승인하고 입금 진행</button>" +
+      "<button class=\"other\" onclick=\"submitDecision('request_other_quote')\">다른 견적 요청</button></div>"
+    : "";
+  const caseIdJs = JSON.stringify(caseId).replace(/</g, "\\u003c");
+  const tokenJs = JSON.stringify(token).replace(/</g, "\\u003c");
+  const html = [
+    "<!doctype html><html lang=\"ko\"><head><meta charset=\"utf-8\">",
+    "<meta name=\"viewport\" content=\"width=device-width,initial-scale=1,viewport-fit=cover\">",
+    "<title>BRING Care 추천 견적 승인</title>",
+    "<style>",
+    "*{box-sizing:border-box}body{margin:0;background:#f3f6fb;color:#162033;font-family:Arial,'Noto Sans KR',sans-serif}",
+    ".page{max-width:520px;margin:0 auto;padding:22px 16px 40px}.brand{font-weight:900;color:#173a70;font-size:18px;margin:5px 0 24px}",
+    ".card{background:#fff;border:1px solid #dbe3ef;border-radius:8px;padding:22px 18px;box-shadow:0 8px 24px rgba(31,57,91,.08)}",
+    "h1{font-size:24px;line-height:1.3;margin:0 0 8px}p{font-size:14px;line-height:1.6;color:#667085;margin:0 0 20px}",
+    ".amount{background:#eaf2ff;border:1px solid #bfd3f6;border-radius:8px;padding:18px;margin:0 0 16px}",
+    ".amount span{display:block;font-size:12px;color:#52606f;margin-bottom:5px}.amount strong{font-size:30px;color:#123568;letter-spacing:0}",
+    ".info{display:grid;grid-template-columns:92px 1fr;gap:10px 12px;padding:14px 0;border-top:1px solid #edf1f6}",
+    ".info b{font-size:13px;color:#667085}.info span{font-size:14px;font-weight:700;word-break:keep-all}",
+    ".work{border-top:1px solid #edf1f6;padding-top:15px}.work b{font-size:13px}.work ul{margin:9px 0 0;padding-left:20px}.work li{font-size:14px;line-height:1.55;margin:4px 0}",
+    ".actions{display:grid;gap:10px;margin-top:22px}.actions button{width:100%;min-height:54px;border-radius:8px;font-size:16px;font-weight:800;cursor:pointer}",
+    ".approve{border:1px solid #173a70;background:#173a70;color:#fff}.other{border:1px solid #b8c3d1;background:#fff;color:#27364a}",
+    ".actions button:disabled{opacity:.55;cursor:wait}.result{display:flex;flex-direction:column;gap:6px;margin-top:22px;padding:17px;border-radius:8px}",
+    ".result.approved{background:#eaf8ef;border:1px solid #9cd9b0;color:#116329}.result.other{background:#fff7e8;border:1px solid #f1c879;color:#8a5300}",
+    ".result strong{font-size:17px}.result span{font-size:13px}.message{margin-top:14px;font-size:13px;color:#667085;text-align:center}",
+    "</style></head><body><main class=\"page\"><div class=\"brand\">BRING Care</div><section class=\"card\">",
+    "<h1>" + ownerDecisionEscapeHtml_(title) + "</h1><p>" + ownerDecisionEscapeHtml_(description) + "</p>",
+    valid ? "<div class=\"amount\"><span>추천 최종금액</span><strong>" + ownerDecisionEscapeHtml_(ownerRecommendationAmountText_(amounts.totalAmount)) + "</strong></div>" : "",
+    valid ? "<div class=\"info\"><b>추천 업체</b><span>" + ownerDecisionEscapeHtml_(supplier.name || "업체 확인 필요") + "</span><b>접수번호</b><span>" + ownerDecisionEscapeHtml_(casePayload.ticketNo || caseId) + "</span></div>" : "",
+    valid ? "<div class=\"work\"><b>주요 작업</b><ul>" + workHtml + "</ul></div>" : "",
+    "<div id=\"result\">" + statusHtml + "</div>" + buttons + "<div class=\"message\" id=\"message\"></div>",
+    "</section></main><script>",
+    "var CASE_ID=" + caseIdJs + ";var TOKEN=" + tokenJs + ";var running=false;",
+    "function submitDecision(decision){if(running)return;running=true;var buttons=document.querySelectorAll('button');buttons.forEach(function(b){b.disabled=true});",
+    "document.getElementById('message').textContent='응답을 저장하고 있습니다...';",
+    "google.script.run.withSuccessHandler(function(result){running=false;if(!result||!result.ok){document.getElementById('message').textContent=result&&result.message||'응답 저장에 실패했습니다.';buttons.forEach(function(b){b.disabled=false});return;}",
+    "document.getElementById('message').textContent='';document.querySelector('.actions').remove();var cls=decision==='approve_payment'?'approved':'other';",
+    "var label=decision==='approve_payment'?'승인하고 입금 진행':'다른 견적 요청';document.getElementById('result').innerHTML='<div class=\"result '+cls+'\"><strong>'+label+'</strong><span>응답이 정상적으로 접수되었습니다.</span></div>';",
+    "}).withFailureHandler(function(err){running=false;document.getElementById('message').textContent=err&&err.message||'응답 저장에 실패했습니다.';buttons.forEach(function(b){b.disabled=false});}).submitOwnerDecision(CASE_ID,TOKEN,decision);}",
+    "</script></body></html>"
+  ].join("");
+  return HtmlService.createHtmlOutput(html).setTitle("BRING Care 추천 견적 승인");
+}
+
+function submitOwnerDecision(caseId, token, decision) {
+  const lock = LockService.getScriptLock();
+  if (!lock.tryLock(10000)) return { ok: false, message: "다른 응답을 처리 중입니다. 잠시 후 다시 시도해 주세요." };
+  try {
+    return submitOwnerDecisionLocked_(caseId, token, decision);
+  } finally {
+    lock.releaseLock();
+  }
+}
+
+function submitOwnerDecisionLocked_(caseId, token, decision) {
+  caseId = String(caseId || "").trim();
+  token = String(token || "").trim();
+  decision = String(decision || "").trim();
+  if (!caseId || !token) return { ok: false, message: "승인 링크 정보가 없습니다." };
+  if (decision !== "approve_payment" && decision !== "request_other_quote") {
+    return { ok: false, message: "지원하지 않는 응답입니다." };
+  }
+  const casePayload = readCaseFromFirebase_(caseId);
+  if (!casePayload) return { ok: false, message: "케이스를 찾지 못했습니다." };
+  const current = Object.assign({}, casePayload.ownerDecision || {});
+  if (!current.token || current.token !== token) return { ok: false, message: "유효하지 않거나 만료된 승인 링크입니다." };
+  if (current.status && current.status !== "pending") {
+    return current.status === (decision === "approve_payment" ? "approved_payment" : "request_other_quote")
+      ? { ok: true, skipped: true, status: current.status }
+      : { ok: false, message: "이미 다른 응답이 접수된 링크입니다." };
+  }
+
+  const now = new Date().toISOString();
+  const resolved = Object.assign({}, current, {
+    status: decision === "approve_payment" ? "approved_payment" : "request_other_quote",
+    statusText: decision === "approve_payment" ? "승인하고 입금 진행" : "다른 견적 요청",
+    decidedAt: now,
+    updatedAt: now
+  });
+  putCaseChildToFirebase_(caseId, "ownerDecision", resolved);
+
+  if (decision === "approve_payment") {
+    const automationState = Object.assign({}, casePayload.automationState || {});
+    workflowStepState_(automationState, "c9", "done", now, { decision: decision, source: "owner_mobile_link" });
+    workflowStepState_(automationState, "c10", "doing", now, { mode: "payment_confirmation" });
+    const log = Array.isArray(casePayload.log) ? casePayload.log.slice() : [];
+    log.unshift("건물주 승인 완료 · 입금 진행");
+    if (log.length > 30) log.length = 30;
+    patchCaseChildToFirebase_(caseId, "status", { c9: "done", c10: "doing" });
+    patchCaseChildToFirebase_(caseId, "note", {
+      c9: "건물주가 추천 견적을 승인하고 입금 진행을 선택했습니다.",
+      c10: "건물주 승인 완료 · 입금 확인 대기 중"
+    });
+    patchCaseToFirebase_(caseId, {
+      automationState: automationState,
+      paymentStatus: "awaiting_payment",
+      log: log,
+      updatedAt: now
+    });
+    return { ok: true, status: resolved.status, nextStep: "c10" };
+  }
+
+  reopenCaseForAnotherQuote_(caseId, casePayload, resolved, now);
+  return { ok: true, status: resolved.status, nextStep: "c5" };
+}
+
+function reopenCaseForAnotherQuote_(caseId, casePayload, ownerDecision, now) {
+  const currentRound = Math.max(1, Number(casePayload.quoteRequestRound || 1));
+  const roundKey = "round-" + currentRound;
+  const roundSnapshot = {
+    round: currentRound,
+    ownerDecision: ownerDecision,
+    vendorSelections: casePayload.vendorSelections || {},
+    selectedVendors: casePayload.selectedVendors || [],
+    vendorEstimateMms: casePayload.vendorEstimateMms || {},
+    quoteFiles: casePayload.quoteFiles || {},
+    businessRegistrationFiles: casePayload.businessRegistrationFiles || {},
+    recommendation: casePayload.recommendation || {},
+    ownerRecommendationMms: casePayload.ownerRecommendationMms || {},
+    archivedAt: now
+  };
+  putCaseChildToFirebase_(caseId, "quoteRequestRounds/" + roundKey, roundSnapshot);
+
+  const automationState = Object.assign({}, casePayload.automationState || {});
+  delete automationState.vendorEstimateMms;
+  delete automationState.ownerRecommendationMms;
+  delete automationState.uploadBatch;
+  automationState.workflow = Object.assign({}, automationState.workflow || {});
+  ["c6", "c7", "c8", "c9", "c10", "c11", "c12", "c13", "c14", "c15", "c16", "c17"].forEach(key => delete automationState.workflow[key]);
+  workflowStepState_(automationState, "c5", "doing", now, { mode: "manual_vendor_selection", reason: "owner_requested_other_quote" });
+
+  const log = Array.isArray(casePayload.log) ? casePayload.log.slice() : [];
+  log.unshift("건물주가 다른 견적 요청을 선택했습니다. ⑤ 업체 견적 요청을 다시 시작합니다.");
+  if (log.length > 30) log.length = 30;
+  const statusPatch = { c5: "doing" };
+  const notePatch = { c5: "건물주가 다른 견적 요청을 선택했습니다. 새 업체를 선택해 견적을 요청해 주세요." };
+  for (let i = 6; i <= 17; i += 1) {
+    statusPatch["c" + i] = null;
+    notePatch["c" + i] = null;
+  }
+  patchCaseChildToFirebase_(caseId, "status", statusPatch);
+  patchCaseChildToFirebase_(caseId, "note", notePatch);
+  patchCaseToFirebase_(caseId, {
+    quoteRequestRound: currentRound + 1,
+    vendorSelections: null,
+    selectedVendors: null,
+    vendorEstimateMms: null,
+    quoteFiles: null,
+    businessRegistrationFiles: null,
+    recommendation: null,
+    ownerRecommendationMms: null,
+    automationState: automationState,
+    log: log,
+    updatedAt: now
+  });
 }
 
 function recordAutomationError_(payload, err) {
@@ -432,7 +689,11 @@ function handleOwnerRecommendationPreview_(payload) {
   const ownerPhone = extractOwnerRecommendationPhone_(casePayload);
   const supplier = ownerRecommendationSupplier_(selected.quote);
   const amounts = ownerRecommendationAmounts_(selected.quote);
-  const message = String(payload.message || "").trim() || makeOwnerRecommendationMmsContent_(casePayload, supplier, amounts);
+  const ownerDecision = ensureOwnerDecisionLink_(caseId, casePayload, selected.quoteId, supplier, amounts);
+  const message = appendOwnerDecisionLink_(
+    String(payload.message || "").trim() || makeOwnerRecommendationMmsContent_(casePayload, supplier, amounts),
+    ownerDecision.decisionUrl
+  );
   let image = null;
   try {
     image = createOwnerRecommendationImage_(casePayload, selected.quoteId, selected.quote, supplier, amounts);
@@ -449,6 +710,8 @@ function handleOwnerRecommendationPreview_(payload) {
     bringSupplyAmount: amounts.supplyAmount,
     bringVatAmount: amounts.vatAmount,
     message: message,
+    decisionUrl: ownerDecision.decisionUrl,
+    decisionStatus: ownerDecision.status,
     imageFileId: image && image.fileId || "",
     imageFileUrl: image && image.fileUrl || "",
     imageFileName: image && image.fileName || "",
@@ -472,6 +735,8 @@ function handleOwnerRecommendationPreview_(payload) {
     bringSupplyAmount: amounts.supplyAmount,
     bringVatAmount: amounts.vatAmount,
     message: message,
+    decisionUrl: ownerDecision.decisionUrl,
+    decisionStatus: ownerDecision.status,
     imageFileId: image && image.fileId || "",
     imageFileUrl: image && image.fileUrl || "",
     imageFileName: image && image.fileName || "",
@@ -561,7 +826,11 @@ function handleOwnerRecommendationMmsLocked_(payload) {
   const ownerPhone = extractOwnerRecommendationPhone_(casePayload);
   const supplier = ownerRecommendationSupplier_(selected.quote);
   const amounts = ownerRecommendationAmounts_(selected.quote);
-  const message = String(payload.message || "").trim() || makeOwnerRecommendationMmsContent_(casePayload, supplier, amounts);
+  const ownerDecision = ensureOwnerDecisionLink_(caseId, casePayload, selected.quoteId, supplier, amounts);
+  const message = appendOwnerDecisionLink_(
+    String(payload.message || "").trim() || makeOwnerRecommendationMmsContent_(casePayload, supplier, amounts),
+    ownerDecision.decisionUrl
+  );
   const baseResult = {
     ok: false,
     status: "failed",
@@ -572,6 +841,8 @@ function handleOwnerRecommendationMmsLocked_(payload) {
     originalTotalAmount: ownerQuoteOriginalAmount_(selected.quote),
     bringTotalAmount: amounts.totalAmount,
     ownerPhoneMasked: maskPhone_(ownerPhone),
+    decisionUrl: ownerDecision.decisionUrl,
+    decisionStatus: ownerDecision.status,
     updatedAt: new Date().toISOString()
   };
 
@@ -6560,6 +6831,9 @@ function mergeCasePayloadForFirebase_(existing, payload) {
     "vendorSelections",
     "vendorEstimateMms",
     "ownerRecommendationMms",
+    "ownerDecision",
+    "quoteRequestRounds",
+    "quoteRequestRound",
     "automationState",
     "complaintReceiptSms",
     "selectedVendors"

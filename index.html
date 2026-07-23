@@ -426,11 +426,25 @@
   .recommend-table th{ color:#52606d; background:#f8fafd; font-weight:900; white-space:nowrap; }
   .recommend-table td.money{ text-align:right; white-space:nowrap; font-weight:800; color:#162033; }
   .recommend-empty{ border:1px dashed #d8e0ec; background:#fff; color:#6b7686; border-radius:8px; padding:11px; font-size:12.5px; }
+  .owner-decision-panel{ margin-top:8px; border:1px solid #c8d8ef; background:#f8fbff; border-radius:8px; padding:12px; display:grid; gap:10px; }
+  .owner-decision-head{ display:flex; align-items:flex-start; justify-content:space-between; gap:10px; }
+  .owner-decision-title{ font-size:14px; font-weight:900; color:#173a70; }
+  .owner-decision-sub{ margin-top:3px; font-size:12px; color:#667085; line-height:1.45; }
+  .owner-decision-badge{ border:1px solid #b8c9e3; background:#fff; color:#315f7e; border-radius:999px; padding:4px 9px; font-size:11.5px; font-weight:900; white-space:nowrap; }
+  .owner-decision-badge.approved{ border-color:#9cd9b0; background:#eaf8ef; color:#116329; }
+  .owner-decision-badge.other{ border-color:#f1c879; background:#fff7e8; color:#8a5300; }
+  .owner-decision-info{ display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:7px; }
+  .owner-decision-info div{ border:1px solid #e0e7f1; background:#fff; border-radius:7px; padding:8px; min-width:0; }
+  .owner-decision-info b{ display:block; font-size:11px; color:#667085; margin-bottom:3px; }
+  .owner-decision-info span{ display:block; font-size:12.5px; font-weight:800; color:#162033; overflow-wrap:anywhere; }
+  .owner-decision-link{ justify-self:start; color:#315fce; font-size:12.5px; font-weight:800; text-decoration:none; }
+  .owner-decision-link:hover{ text-decoration:underline; }
   @media (max-width:980px){ .recommend-grid{ grid-template-columns:repeat(2,minmax(0,1fr)); } }
   @media (max-width:1180px){ .quote-cards{ grid-template-columns:repeat(2,minmax(0,1fr)); } }
   @media (max-width:980px){ .quote-upload-split{ grid-template-columns:1fr; } }
   @media (max-width:720px){ .quote-form,.quote-cards{ grid-template-columns:1fr; } }
   @media (max-width:720px){ .recommend-grid{ grid-template-columns:1fr; } }
+  @media (max-width:720px){ .owner-decision-info{ grid-template-columns:1fr; } }
   .cv-notebtn{ border:1px solid var(--line); background:#fff; border-radius:8px; padding:5px 8px; font-size:12.5px; cursor:pointer; }
   .cv-notebtn.has{ background:#fff7e6; border-color:#f0dca0; }
   .cv-note{ width:100%; box-sizing:border-box; margin:5px 0 0; border:1px solid var(--line); border-radius:9px; padding:10px 12px; font-size:13px; font-family:inherit; line-height:1.58; min-height:64px; resize:none; overflow:hidden; }
@@ -2188,7 +2202,7 @@ function caseSavePayload(id, options){
     delete payload.restoredBy;
   }
   // Apps Script가 관리하는 결과는 늦게 도착한 화면 저장이 덮어쓰지 않게 한다.
-  ["ownerRecommendationMms","automationState","vendorEstimateMms","quoteFiles","businessRegistrationFiles","complaintReceiptSms"].forEach(key=>delete payload[key]);
+  ["ownerRecommendationMms","ownerDecision","automationState","vendorEstimateMms","quoteFiles","businessRegistrationFiles","complaintReceiptSms"].forEach(key=>delete payload[key]);
 
   // Firebase update에서 status/note 객체 전체가 교체되지 않도록 개별 경로로 저장한다.
   const status=Object.assign({}, payload.status||{});
@@ -2196,12 +2210,12 @@ function caseSavePayload(id, options){
   delete payload.status;
   delete payload.note;
   CASE_STEPS.forEach(step=>{
-    const serverWorkflowStep=stepIndex(step.k)>=0 && stepIndex(step.k)<=7;
+    const serverWorkflowStep=stepIndex(step.k)>=0 && stepIndex(step.k)<=9;
     if(isConfigured && serverWorkflowStep && !options.includeWorkflowState) return;
     payload["status/"+step.k]=Object.prototype.hasOwnProperty.call(status,step.k)?status[step.k]:null;
   });
   Object.keys(note).forEach(key=>{
-    const serverWorkflowNote=stepIndex(key)>=0 && stepIndex(key)<=7;
+    const serverWorkflowNote=stepIndex(key)>=0 && stepIndex(key)<=9;
     if(isConfigured && serverWorkflowNote && !options.includeWorkflowState) return;
     payload["note/"+key]=note[key];
   });
@@ -4332,8 +4346,8 @@ function resetStepsAfter(c,k){
 function cycleStep(id,k){
   const c=cases[id];
   if(!c) return;
-  if(isConfigured && stepIndex(k)<=7 && !caseTestMode){
-    alert("①~⑧ 단계는 자동화 결과에 따라 진행됩니다. 테스트가 필요하면 테스트 모드를 켜주세요.");
+  if(isConfigured && stepIndex(k)<=9 && !caseTestMode){
+    alert("①~⑩ 단계는 자동화 결과에 따라 진행됩니다. 테스트가 필요하면 테스트 모드를 켜주세요.");
     return;
   }
   const msg=stepLockMessage(c,k);
@@ -4715,6 +4729,28 @@ function ownerRecommendationPanel(c, st){
     ${imageUrl?`<a href="${escAttr(imageUrl)}" target="_blank" rel="noopener">추천 견적 이미지 열기</a>`:""} ${confirmButton}
   </div>`;
 }
+function ownerDecisionPanel(c, st){
+  if(st!=="doing" && st!=="done") return "";
+  const state=c&&c.ownerDecision||{};
+  const status=String(state.status||"pending");
+  const approved=status==="approved_payment";
+  const other=status==="request_other_quote";
+  const label=approved?"승인하고 입금 진행":other?"다른 견적 요청":"건물주 응답 대기";
+  const sub=approved
+    ?"건물주 승인이 접수되어 ⑨가 완료되고 ⑩ 입금 확인 단계가 진행중입니다."
+    :other
+      ?"건물주가 다른 견적을 요청해 ⑤ 업체 견적 요청 단계로 돌아갔습니다."
+      :"건물주에게 전송된 모바일 링크에서 승인 여부를 기다리고 있습니다.";
+  const badgeClass=approved?"approved":other?"other":"";
+  const q=recommendedQuoteForCase(c);
+  const supplier=q?recommendedQuoteSupplier(q):{name:state.vendorName||""};
+  const amounts=q?recommendedQuoteAmounts(q):{total:Number(state.bringTotalAmount||0)};
+  return `<div class="owner-decision-panel">
+    <div class="owner-decision-head"><div><div class="owner-decision-title">건물주 승인·입금 응답</div><div class="owner-decision-sub">${esc(sub)}</div></div><span class="owner-decision-badge ${badgeClass}">${esc(label)}</span></div>
+    <div class="owner-decision-info"><div><b>추천 업체</b><span>${esc(supplier.name||state.vendorName||"")}</span></div><div><b>브링 최종금액</b><span>${esc(recommendedQuoteMoney(amounts.total)||"금액 미입력")}</span></div><div><b>응답 시각</b><span>${esc(state.decidedAt?formatCaseDate(state.decidedAt):"대기 중")}</span></div></div>
+    ${state.decisionUrl?`<a class="owner-decision-link" href="${escAttr(state.decisionUrl)}" target="_blank" rel="noopener">모바일 승인 링크 열기</a>`:""}
+  </div>`;
+}
 let ownerRecommendationModalEl=null, ownerRecommendationCtx=null;
 function ensureOwnerRecommendationModal(){
   if(ownerRecommendationModalEl) return;
@@ -4913,7 +4949,8 @@ function renderCaseDetail(){
       const quotes=open && s.k==='c6' ? renderQuoteUploadPanel(c, st) : "";
       const recommendation=open && s.k==='c7' ? renderRecommendedQuotePanel(c, st) : "";
       const ownerRecommendation=open && s.k==='c8' ? ownerRecommendationPanel(c, st) : "";
-      return `<div class="cv-stepwrap"><div class="cv-step ${locked?'locked':st}">${chip}<div class="lbl">${esc(s.t)}</div>${act}${dc}${tb}${nb}</div>${box}${receiptSmsPreview}${vendorMmsPreview}${vendors}${quotes}${recommendation}${ownerRecommendation}</div>`;
+      const ownerDecision=open && s.k==='c9' ? ownerDecisionPanel(c, st) : "";
+      return `<div class="cv-stepwrap"><div class="cv-step ${locked?'locked':st}">${chip}<div class="lbl">${esc(s.t)}</div>${act}${dc}${tb}${nb}</div>${box}${receiptSmsPreview}${vendorMmsPreview}${vendors}${quotes}${recommendation}${ownerRecommendation}${ownerDecision}</div>`;
     }).join("")+
     (c.archived?`<div class="cv-trash-detail-actions"><button class="cv-del restore" id="cvRestore">복원</button><button class="cv-delete" id="cvPermanentDelete">삭제</button></div>`:`<button class="cv-del" id="cvDel">휴지통으로 이동</button>`)+
     (c.log&&c.log.length?`<div class="cv-log"><div class="t" style="font-weight:700">기록</div>`+c.log.slice(0,8).map(l=>`<div class="t">· ${esc(l)}</div>`).join("")+`</div>`:"");
@@ -5339,8 +5376,9 @@ document.getElementById("noticeBtn").addEventListener("click", openNoticePanel);
 document.getElementById("noticeBanner").addEventListener("click", openNoticePanel);
 
 /* ===== 업데이트 알림(What's New) — 새 버전 나오면 자동 팝업 ===== */
-const APP_VERSION = "5.16";
+const APP_VERSION = "5.17";
 const CHANGELOG = [
+  { v:"5.17", d:"2026-07-23", items:["⑨ 건물주 승인·입금 모바일 링크 추가","승인하고 입금 진행 선택 시 ⑨ 완료·⑩ 진행중 자동 전환","다른 견적 요청 선택 시 기존 회차를 보관하고 ⑤부터 새 견적 진행"] },
   { v:"5.16", d:"2026-07-23", items:["완료 상태 버튼을 다시 누르면 해당 단계가 진행중으로 돌아가도록 수정","앞 단계를 되돌릴 때 이후 단계는 대기로 정리하고 실시간 동기화 깜빡임 방지"] },
   { v:"5.15", d:"2026-07-21", items:["세입자 월세 관리대장에 연락처 열 추가","납부 당일·미입금 일정에서 세입자 안내 문자 발송 지원","문자 발송 전 수신번호·문구 확인 및 발송 기록 표시"] },
   { v:"5.14", d:"2026-07-21", items:["세입자 관리대장을 수정하면 입금확인 캘린더에 자동 반영","수동 ‘세입자 자료 반영’ 버튼 제거","캘린더 진입·화면 복귀 시 자동 재확인 추가"] },
