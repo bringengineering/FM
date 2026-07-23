@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { readFile } from "node:fs/promises";
 import test from "node:test";
 
 async function render(pathname = "/") {
@@ -66,46 +67,17 @@ test("server-renders the consultation completion page", async () => {
   assert.match(html, /010-6566-3606/);
 });
 
-test("consultation API allows only the published Bring Care sites", async () => {
-  const workerUrl = new URL("../dist/server/index.js", import.meta.url);
-  workerUrl.searchParams.set("api-test", `${process.pid}-${Date.now()}`);
-  const { default: worker } = await import(workerUrl.href);
-  const env = {
-    ASSETS: {
-      fetch: async () => new Response("Not found", { status: 404 }),
-    },
-  };
-  const ctx = {
-    waitUntil() {},
-    passThroughOnException() {},
-  };
-
-  const rejected = await worker.fetch(
-    new Request("http://localhost/api/consult", {
-      method: "POST",
-      headers: {
-        origin: "https://example.com",
-      },
-      body: new FormData(),
-    }),
-    env,
-    ctx,
+test("mail bridge accepts only the two published Bring Care origins", async () => {
+  const bridge = await readFile(
+    new URL("../public/consult-mail-bridge.html", import.meta.url),
+    "utf8",
   );
-  assert.equal(rejected.status, 403);
-
-  const preflight = await worker.fetch(
-    new Request("http://localhost/api/consult", {
-      method: "OPTIONS",
-      headers: {
-        origin: "https://bring-fm-hj.web.app",
-      },
-    }),
-    env,
-    ctx,
+  assert.match(bridge, /https:\/\/bring-fm-hj\.web\.app/);
+  assert.match(
+    bridge,
+    /https:\/\/bring-care-fm\.bringengineering1008\.chatgpt\.site/,
   );
-  assert.equal(preflight.status, 204);
-  assert.equal(
-    preflight.headers.get("access-control-allow-origin"),
-    "https://bring-fm-hj.web.app",
-  );
+  assert.match(bridge, /bring-consult-submit/);
+  assert.match(bridge, /bring-consult-result/);
+  assert.match(bridge, /formsubmit\.co\/ajax\/bringengineering1008@gmail\.com/);
 });

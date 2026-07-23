@@ -1,0 +1,80 @@
+<!doctype html>
+<html lang="ko">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="robots" content="noindex,nofollow" />
+    <title>Bring Care 상담 메일 전송</title>
+  </head>
+  <body>
+    <script>
+      (() => {
+        const endpoint =
+          "https://formsubmit.co/ajax/bringengineering1008@gmail.com";
+        const allowedOrigins = new Set([
+          "https://bring-fm-hj.web.app",
+          "https://bring-care-fm.bringengineering1008.chatgpt.site",
+        ]);
+
+        window.addEventListener("message", async (event) => {
+          const payload = event.data || {};
+          if (
+            !allowedOrigins.has(event.origin) ||
+            payload.type !== "bring-consult-submit" ||
+            !payload.requestId ||
+            !payload.fields ||
+            !event.source
+          ) {
+            return;
+          }
+
+          const resultTarget = event.source;
+          const reply = (result) => {
+            resultTarget.postMessage(
+              {
+                type: "bring-consult-result",
+                requestId: payload.requestId,
+                ...result,
+              },
+              event.origin,
+            );
+          };
+
+          const form = new FormData();
+          Object.entries(payload.fields).forEach(([key, value]) => {
+            if (typeof value === "string") {
+              form.append(key, value.slice(0, key === "문의 내용" ? 4000 : 500));
+            }
+          });
+          form.set("_captcha", "false");
+
+          try {
+            const response = await fetch(endpoint, {
+              method: "POST",
+              headers: {
+                Accept: "application/json",
+              },
+              body: form,
+            });
+            const result = await response.json();
+            const success =
+              response.ok &&
+              (result.success === true || result.success === "true");
+
+            reply({
+              success,
+              message: success
+                ? "상담 신청이 이메일로 전송되었습니다."
+                : result.message || "상담 신청 전송에 실패했습니다.",
+            });
+          } catch {
+            reply({
+              success: false,
+              message:
+                "메일 전송 중 연결 문제가 발생했습니다. 잠시 후 다시 시도해 주세요.",
+            });
+          }
+        });
+      })();
+    </script>
+  </body>
+</html>

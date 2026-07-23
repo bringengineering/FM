@@ -3,12 +3,19 @@
 import { FormEvent, useState } from "react";
 
 const FORM_ENDPOINT =
-  "https://bring-care-fm.bringengineering1008.chatgpt.site/api/consult";
+  "https://formsubmit.co/ajax/bringengineering1008@gmail.com";
+const BRIDGE_ORIGIN = "https://bring-fm-hj.web.app";
+const BRIDGE_URL = `${BRIDGE_ORIGIN}/consult-mail-bridge.html`;
 
 type SubmitStatus = "idle" | "sending" | "error" | "copied";
+type DeliveryResult = {
+  success?: boolean | string;
+  message?: string;
+};
 
 export default function ConsultForm() {
   const [status, setStatus] = useState<SubmitStatus>("idle");
+  const [bridgeReady, setBridgeReady] = useState(false);
   const [errorMessage, setErrorMessage] = useState(
     "전송이 완료되지 않았습니다. 잠시 후 다시 시도하거나 전화·이메일로 문의해 주세요.",
   );
@@ -30,6 +37,79 @@ export default function ConsultForm() {
       "[문의 내용]",
       `${data.get("message")}`,
     ].join("\n");
+  }
+
+  async function submitDirect(delivery: FormData) {
+    const response = await fetch(FORM_ENDPOINT, {
+      method: "POST",
+      headers: {
+        Accept: "application/json",
+      },
+      body: delivery,
+    });
+    const result = (await response.json()) as DeliveryResult;
+    return {
+      ...result,
+      success:
+        response.ok &&
+        (result.success === true || result.success === "true"),
+    };
+  }
+
+  async function submitThroughBridge(delivery: FormData) {
+    const iframe =
+      document.querySelector<HTMLIFrameElement>("#consult-mail-bridge");
+    if (!bridgeReady || !iframe?.contentWindow) {
+      throw new Error(
+        "메일 전송 연결을 준비 중입니다. 잠시 후 다시 눌러 주세요.",
+      );
+    }
+
+    const fields: Record<string, string> = {};
+    delivery.forEach((value, key) => {
+      if (typeof value === "string") {
+        fields[key] = value;
+      }
+    });
+    const requestId =
+      globalThis.crypto?.randomUUID?.() ||
+      `consult-${Date.now()}-${Math.random().toString(16).slice(2)}`;
+
+    return new Promise<DeliveryResult>((resolve, reject) => {
+      const timeout = window.setTimeout(() => {
+        window.removeEventListener("message", receiveResult);
+        reject(
+          new Error(
+            "메일 전송 응답이 지연되고 있습니다. 잠시 후 다시 시도해 주세요.",
+          ),
+        );
+      }, 20_000);
+
+      function receiveResult(event: MessageEvent) {
+        if (
+          event.origin !== BRIDGE_ORIGIN ||
+          event.source !== iframe.contentWindow ||
+          event.data?.type !== "bring-consult-result" ||
+          event.data?.requestId !== requestId
+        ) {
+          return;
+        }
+
+        window.clearTimeout(timeout);
+        window.removeEventListener("message", receiveResult);
+        resolve(event.data as DeliveryResult);
+      }
+
+      window.addEventListener("message", receiveResult);
+      iframe.contentWindow.postMessage(
+        {
+          type: "bring-consult-submit",
+          requestId,
+          fields,
+        },
+        BRIDGE_ORIGIN,
+      );
+    });
   }
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
@@ -69,22 +149,12 @@ export default function ConsultForm() {
     );
 
     try {
-      const response = await fetch(FORM_ENDPOINT, {
-        method: "POST",
-        headers: {
-          Accept: "application/json",
-        },
-        body: delivery,
-      });
-      const result = (await response.json()) as {
-        success?: boolean | string;
-        message?: string;
-      };
-      const succeeded =
-        response.ok &&
-        (result.success === true || result.success === "true");
+      const result =
+        window.location.origin === BRIDGE_ORIGIN
+          ? await submitDirect(delivery)
+          : await submitThroughBridge(delivery);
 
-      if (!succeeded) {
+      if (result.success !== true && result.success !== "true") {
         throw new Error(result.message || "상담 신청 전송에 실패했습니다.");
       }
 
@@ -120,6 +190,16 @@ export default function ConsultForm() {
 
   return (
     <form className="consult-form" id="consult-form" onSubmit={handleSubmit}>
+      <iframe
+        className="form-mail-bridge"
+        id="consult-mail-bridge"
+        src={BRIDGE_URL}
+        title="상담 메일 전송 연결"
+        tabIndex={-1}
+        aria-hidden="true"
+        onLoad={() => setBridgeReady(true)}
+      />
+
       <label className="form-honeypot" aria-hidden="true">
         웹사이트
         <input
