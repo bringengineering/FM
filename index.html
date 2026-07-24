@@ -439,12 +439,26 @@
   .owner-decision-info span{ display:block; font-size:12.5px; font-weight:800; color:#162033; overflow-wrap:anywhere; }
   .owner-decision-link{ justify-self:start; color:#315fce; font-size:12.5px; font-weight:800; text-decoration:none; }
   .owner-decision-link:hover{ text-decoration:underline; }
+  .payment-confirm-panel{ margin-top:8px; border:1px solid #c9d7ea; background:#f8fbff; border-radius:8px; padding:12px; display:grid; gap:10px; }
+  .payment-confirm-head{ display:flex; align-items:flex-start; justify-content:space-between; gap:10px; }
+  .payment-confirm-title{ font-size:14px; font-weight:900; color:#173a70; }
+  .payment-confirm-sub{ margin-top:3px; font-size:12px; color:#667085; line-height:1.5; }
+  .payment-confirm-badge{ border:1px solid #f1c879; background:#fff7e8; color:#8a5300; border-radius:999px; padding:4px 9px; font-size:11.5px; font-weight:900; white-space:nowrap; }
+  .payment-confirm-badge.done{ border-color:#9cd9b0; background:#eaf8ef; color:#116329; }
+  .payment-confirm-info{ display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:7px; }
+  .payment-confirm-info div{ border:1px solid #e0e7f1; background:#fff; border-radius:7px; padding:8px; min-width:0; }
+  .payment-confirm-info b{ display:block; font-size:11px; color:#667085; margin-bottom:3px; }
+  .payment-confirm-info span{ display:block; font-size:12.5px; font-weight:800; color:#162033; overflow-wrap:anywhere; }
+  .payment-confirm-action{ justify-self:start; border:1px solid #1b335f; background:#1b335f; color:#fff; border-radius:7px; padding:8px 13px; font-size:12.5px; font-weight:900; cursor:pointer; font-family:inherit; }
+  .payment-confirm-action:hover{ background:#26477e; }
+  .payment-confirm-action:disabled{ opacity:.5; cursor:not-allowed; }
   @media (max-width:980px){ .recommend-grid{ grid-template-columns:repeat(2,minmax(0,1fr)); } }
   @media (max-width:1180px){ .quote-cards{ grid-template-columns:repeat(2,minmax(0,1fr)); } }
   @media (max-width:980px){ .quote-upload-split{ grid-template-columns:1fr; } }
   @media (max-width:720px){ .quote-form,.quote-cards{ grid-template-columns:1fr; } }
   @media (max-width:720px){ .recommend-grid{ grid-template-columns:1fr; } }
   @media (max-width:720px){ .owner-decision-info{ grid-template-columns:1fr; } }
+  @media (max-width:720px){ .payment-confirm-info{ grid-template-columns:1fr; } }
   .cv-notebtn{ border:1px solid var(--line); background:#fff; border-radius:8px; padding:5px 8px; font-size:12.5px; cursor:pointer; }
   .cv-notebtn.has{ background:#fff7e6; border-color:#f0dca0; }
   .cv-note{ width:100%; box-sizing:border-box; margin:5px 0 0; border:1px solid var(--line); border-radius:9px; padding:10px 12px; font-size:13px; font-family:inherit; line-height:1.58; min-height:64px; resize:none; overflow:hidden; }
@@ -2103,6 +2117,7 @@ const CASE_STEPS = [
  {k:"c16",t:"⑯ 월간 리포트",doc:"monthly"},
  {k:"c17",t:"⑰ 유지관리·사후관리"},
 ];
+const OWNER_PAYMENT_ACCOUNT = { accountNumber:"123-456-789012", accountHolder:"브링케어" };
 const DOC_NAMES = { onboard:"온보딩 수집서", quote:"견적서", contract:"계약서", approval:"승인 링크", inspect:"점검 체크리스트", ba:"B/A 보고서", monthly:"월간 리포트" };
 function gradeFee(g){ return g==="라이트"?"190,000원/월":g==="프리미엄"?"월세수입의 7~11%":"390,000원/월"; }
 function caseDocHTML(id,k){
@@ -4780,6 +4795,56 @@ function ownerDecisionPanel(c, st){
     ${(state.shortDecisionUrl||state.decisionUrl)?`<a class="owner-decision-link" href="${escAttr(state.shortDecisionUrl||state.decisionUrl)}" target="_blank" rel="noopener">모바일 승인 링크 열기</a>`:""}
   </div>`;
 }
+const paymentConfirmationRequests=new Set();
+function paymentConfirmationPanel(c, st){
+  if(st!=="doing" && st!=="done") return "";
+  const confirmed=st==="done" || String(c&&c.paymentStatus||"")==="confirmed";
+  const account=Object.assign({}, OWNER_PAYMENT_ACCOUNT, c&&c.paymentAccount||{});
+  const q=recommendedQuoteForCase(c);
+  const amounts=q?recommendedQuoteAmounts(q):{total:Number(c&&c.ownerDecision&&c.ownerDecision.bringTotalAmount||0)};
+  const confirmedAt=c&&c.paymentConfirmation&&c.paymentConfirmation.confirmedAt||c&&c.paymentConfirmedAt||"";
+  const pending=paymentConfirmationRequests.has(c.ticketNo||c.id);
+  const sub=confirmed
+    ? "관리자가 실제 사업자계좌 입금 내역을 확인했습니다."
+    : "실제 사업자계좌의 입금 내역을 확인한 뒤 아래 버튼을 눌러주세요.";
+  return `<div class="payment-confirm-panel">
+    <div class="payment-confirm-head"><div><div class="payment-confirm-title">관리자 입금 확인</div><div class="payment-confirm-sub">${esc(sub)}</div></div><span class="payment-confirm-badge ${confirmed?'done':''}">${confirmed?"입금 확인 완료":"관리자 확인 대기"}</span></div>
+    <div class="payment-confirm-info"><div><b>입금 계좌</b><span>${esc(account.accountNumber||"")}</span></div><div><b>예금주</b><span>${esc(account.accountHolder||"")}</span></div><div><b>확인 금액</b><span>${esc(recommendedQuoteMoney(amounts.total)||"금액 미입력")}</span></div></div>
+    ${confirmed?`<div class="payment-confirm-sub">확인 시각: ${esc(confirmedAt?formatCaseDate(confirmedAt):"확인 완료")}</div>`:`<button type="button" class="payment-confirm-action" data-payment-confirm="1" ${pending?'disabled':''}>${pending?"확인 처리 중":"입금 확인"}</button>`}
+  </div>`;
+}
+function confirmCasePayment(id){
+  const c=cases[id];
+  if(!c) return;
+  if((c.status||{}).c9!=="done"){
+    alert("먼저 건물주의 승인 응답이 완료되어야 합니다.");
+    return;
+  }
+  const caseId=c.ticketNo||c.id||id;
+  if(paymentConfirmationRequests.has(caseId)) return;
+  const q=recommendedQuoteForCase(c);
+  const amounts=q?recommendedQuoteAmounts(q):{total:Number(c.ownerDecision&&c.ownerDecision.bringTotalAmount||0)};
+  const amountText=recommendedQuoteMoney(amounts.total)||"금액 미입력";
+  if(!confirm(`실제 사업자계좌 입금 내역을 확인했나요?\n\n예금주: ${OWNER_PAYMENT_ACCOUNT.accountHolder}\n확인 금액: ${amountText}\n\n확인하면 ⑩이 완료되고 ⑪ 업체 연결·일정이 시작됩니다.`)) return;
+  if(!caseAutomationEndpoint()){
+    if(!promptCaseAutomationSetup()) return;
+  }
+  paymentConfirmationRequests.add(caseId);
+  c.note=c.note||{};
+  c.note.c10="관리자 입금 확인 처리 중입니다. Apps Script 결과를 기다리는 중입니다.";
+  renderCaseDetailKeepScroll();
+  sendVendorSmsRequest(caseAutomationEndpoint(),{
+    action:"confirmCasePayment",
+    caseId,
+    adminEmail:typeof authedUser!=="undefined"&&authedUser&&authedUser.email||"",
+    adminUid:typeof authedUser!=="undefined"&&authedUser&&authedUser.uid||""
+  }).finally(()=>{
+    setTimeout(()=>{
+      paymentConfirmationRequests.delete(caseId);
+      if(cases[id] && (cases[id].status||{}).c10!=="done") renderCaseDetailKeepScroll();
+    },8000);
+  });
+}
 let ownerRecommendationModalEl=null, ownerRecommendationCtx=null;
 function ensureOwnerRecommendationModal(){
   if(ownerRecommendationModalEl) return;
@@ -4984,13 +5049,15 @@ function renderCaseDetail(){
       const isReceiptSms=s.k==="c2";
       const isVendorSms=s.k==="c5";
       const isOwnerMms=s.k==="c8";
+      const isPaymentConfirm=s.k==="c10";
       const hideConfiguredServerAction=(isReceiptSms||isOwnerMms) && isConfigured && !caseTestMode;
+      const hideCompletedPaymentConfirm=isPaymentConfirm && st==="done";
       const ownerMmsPending=isOwnerMms && isOwnerRecommendationMmsAccepted(c) && !isOwnerRecommendationMmsSuccess(c);
       const isMail=!!EMAIL_TEMPLATES[s.k] && !isReceiptSms && !isVendorSms && !isOwnerMms;
-      const actIcon=isReceiptSms?'📨':isMail?'📧':(isVendorSms||isOwnerMms)?'📷':'🤖';
-      const actTag=isReceiptSms?'SENS 문자':isMail?'메일 발송':(isVendorSms||isOwnerMms)?'MMS 발송':'연결예정';
+      const actIcon=isPaymentConfirm?'✓':isReceiptSms?'📨':isMail?'📧':(isVendorSms||isOwnerMms)?'📷':'🤖';
+      const actTag=isPaymentConfirm?'관리자 확인':isReceiptSms?'SENS 문자':isMail?'메일 발송':(isVendorSms||isOwnerMms)?'MMS 발송':'연결예정';
       const actLabel=ownerMmsPending?"발송 완료 확인":s.auto;
-      const act=s.auto && !hideConfiguredServerAction?`<button class="cv-act ${isMail?'mail':(isReceiptSms||isVendorSms||isOwnerMms)?'sms':''} ${locked?'disabled':''}" data-auto="${s.k}" data-ch="${escAttr(s.auto)}" ${locked?'disabled':''} title="${escAttr(lockMsg)}">${actIcon} ${esc(actLabel)}<span class="tag">${ownerMmsPending?'수신 확인':actTag}</span></button>`:"";
+      const act=s.auto && !hideConfiguredServerAction && !hideCompletedPaymentConfirm?`<button class="cv-act ${isMail?'mail':(isReceiptSms||isVendorSms||isOwnerMms)?'sms':''} ${locked?'disabled':''}" data-auto="${s.k}" data-ch="${escAttr(s.auto)}" ${locked?'disabled':''} title="${escAttr(lockMsg)}">${actIcon} ${esc(actLabel)}<span class="tag">${ownerMmsPending?'수신 확인':actTag}</span></button>`:"";
       const dc=onboardingDocButtonHTML(c,s,locked);
       const tb=caseTestMode?`<button class="cv-testbtn" data-testdone="${s.k}" title="이 단계까지 테스트 완료 처리">테스트 완료</button>`:"";
       const nb=`<button class="cv-notebtn ${note?'has':''}" data-notetoggle="${s.k}" title="메모">📝</button>`;
@@ -5003,7 +5070,8 @@ function renderCaseDetail(){
       const recommendation=open && s.k==='c7' ? renderRecommendedQuotePanel(c, st) : "";
       const ownerRecommendation=open && s.k==='c8' ? ownerRecommendationPanel(c, st) : "";
       const ownerDecision=open && s.k==='c9' ? ownerDecisionPanel(c, st) : "";
-      return `<div class="cv-stepwrap"><div class="cv-step ${locked?'locked':st}">${chip}<div class="lbl">${esc(s.t)}</div>${act}${dc}${tb}${nb}</div>${box}${receiptSmsPreview}${vendorMmsPreview}${vendors}${quotes}${recommendation}${ownerRecommendation}${ownerDecision}</div>`;
+      const paymentConfirmation=s.k==='c10' ? paymentConfirmationPanel(c, st) : "";
+      return `<div class="cv-stepwrap"><div class="cv-step ${locked?'locked':st}">${chip}<div class="lbl">${esc(s.t)}</div>${act}${dc}${tb}${nb}</div>${box}${receiptSmsPreview}${vendorMmsPreview}${vendors}${quotes}${recommendation}${ownerRecommendation}${ownerDecision}${paymentConfirmation}</div>`;
     }).join("")+
     (c.archived?`<div class="cv-trash-detail-actions"><button class="cv-del restore" id="cvRestore">복원</button><button class="cv-delete" id="cvPermanentDelete">삭제</button></div>`:`<button class="cv-del" id="cvDel">휴지통으로 이동</button>`)+
     (c.log&&c.log.length?`<div class="cv-log"><div class="t" style="font-weight:700">기록</div>`+c.log.slice(0,8).map(l=>`<div class="t">· ${esc(l)}</div>`).join("")+`</div>`:"");
@@ -5028,7 +5096,8 @@ caseDetailEl.addEventListener("click", e=>{
   const dc=e.target.closest("[data-doc]"); if(dc){ const msg=stepLockMessage(cases[curCase], dc.dataset.doc); if(msg){ alert(msg); return; } downloadCaseDoc(curCase, dc.dataset.doc); return; }
   const nt=e.target.closest("[data-notetoggle]"); if(nt){ const k=nt.dataset.notetoggle; noteOpen.has(k)?noteOpen.delete(k):noteOpen.add(k); renderCaseDetailKeepScroll(); return; }
   const ch=e.target.closest("[data-step]"); if(ch){ cycleStep(curCase, ch.dataset.step); return; }
-  const au=e.target.closest("[data-auto]"); if(au){ const ak=au.dataset.auto; if(ak==="c2") sendComplaintReceiptSmsFromCase(curCase); else if(ak==="c5") openVendorSmsModal(curCase); else if(ak==="c8"){ const currentCase=cases[curCase]; if(isOwnerRecommendationMmsAccepted(currentCase) && !isOwnerRecommendationMmsSuccess(currentCase)) confirmOwnerRecommendationMms(curCase); else openOwnerRecommendationMmsModal(curCase); } else if(EMAIL_TEMPLATES[ak]) openMailModal(curCase, ak); else doAuto(curCase, ak, au.dataset.ch); return; }
+  const au=e.target.closest("[data-auto]"); if(au){ const ak=au.dataset.auto; if(ak==="c2") sendComplaintReceiptSmsFromCase(curCase); else if(ak==="c5") openVendorSmsModal(curCase); else if(ak==="c8"){ const currentCase=cases[curCase]; if(isOwnerRecommendationMmsAccepted(currentCase) && !isOwnerRecommendationMmsSuccess(currentCase)) confirmOwnerRecommendationMms(curCase); else openOwnerRecommendationMmsModal(curCase); } else if(ak==="c10") confirmCasePayment(curCase); else if(EMAIL_TEMPLATES[ak]) openMailModal(curCase, ak); else doAuto(curCase, ak, au.dataset.ch); return; }
+  const pc=e.target.closest("[data-payment-confirm]"); if(pc){ confirmCasePayment(curCase); return; }
   const oc=e.target.closest("[data-owner-confirm]"); if(oc){ confirmOwnerRecommendationMms(curCase); return; }
   if(e.target.closest("#cvRestore")){ restoreCase(curCase); return; }
   if(e.target.closest("#cvPermanentDelete")){ permanentlyDeleteCase(curCase); return; }
@@ -5430,8 +5499,9 @@ document.getElementById("noticeBtn").addEventListener("click", openNoticePanel);
 document.getElementById("noticeBanner").addEventListener("click", openNoticePanel);
 
 /* ===== 업데이트 알림(What's New) — 새 버전 나오면 자동 팝업 ===== */
-const APP_VERSION = "5.24";
+const APP_VERSION = "5.25";
 const CHANGELOG = [
+  { v:"5.25", d:"2026-07-24", items:["건물주의 별도 입금 신고 없이 관리자가 실제 사업자계좌 입금을 확인하는 ⑩ 단계 추가","관리자 입금 확인 완료 시 ⑩ 완료·⑪ 업체 연결 및 일정 진행중 자동 전환"] },
   { v:"5.24", d:"2026-07-23", items:["짧은 승인 링크에서 모바일 승인 화면을 직접 표시해 화면 축소 문제 해결","승인 응답을 Apps Script API로 연결하고 승인 후 계좌번호·예금주·입금금액 안내"] },
   { v:"5.23", d:"2026-07-23", items:["승인 링크를 케이스 번호 기반 짧은 주소로 변경해 Firebase 권한 오류 제거"] },
   { v:"5.22", d:"2026-07-23", items:["건물주 문자 승인 링크를 짧은 GitHub Pages 주소로 변경","건물주 승인 화면을 모바일 한 화면 중심으로 재구성","승인하고 입금 진행 선택 후 계좌번호와 예금주 브링케어 표시"] },

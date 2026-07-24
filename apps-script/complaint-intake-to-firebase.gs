@@ -35,7 +35,7 @@ const PAYMENT_SCHEDULE_HEADERS = [
   "상태",
   "비고"
 ];
-const AUTOMATION_BUILD = "complaint-workflow-20260723-v28";
+const AUTOMATION_BUILD = "complaint-workflow-20260724-v29";
 const OWNER_RECOMMENDATION_IMAGE_VERSION = "owner-summary-v4";
 const OWNER_DECISION_VIEW = "owner-decision";
 const OWNER_PAYMENT_ACCOUNT = {
@@ -152,6 +152,9 @@ function doPost(e) {
         payload.token,
         payload.decision
       ));
+    }
+    if (payload.action === "confirmCasePayment") {
+      return jsonResponse_(handleConfirmCasePayment_(payload));
     }
     if (payload.action === "syncPaymentBuildings") {
       return jsonResponse_(syncPaymentBuildingsFromOnboarding_());
@@ -569,6 +572,8 @@ function submitOwnerDecisionLocked_(caseId, token, decision) {
     patchCaseToFirebase_(caseId, {
       automationState: automationState,
       paymentStatus: "awaiting_payment",
+      paymentAccount: Object.assign({}, OWNER_PAYMENT_ACCOUNT),
+      paymentExpectedAmount: Number(current.bringTotalAmount || 0),
       log: log,
       updatedAt: now
     });
@@ -582,6 +587,86 @@ function submitOwnerDecisionLocked_(caseId, token, decision) {
 
   reopenCaseForAnotherQuote_(caseId, casePayload, resolved, now);
   return { ok: true, status: resolved.status, nextStep: "c5" };
+}
+
+function handleConfirmCasePayment_(payload) {
+  const lock = LockService.getScriptLock();
+  if (!lock.tryLock(10000)) return { ok: false, message: "다른 입금 확인을 처리 중입니다. 잠시 후 다시 시도해 주세요." };
+  try {
+    return confirmCasePaymentLocked_(
+      payload && payload.caseId,
+      payload && payload.adminEmail,
+      payload && payload.adminUid
+    );
+  } finally {
+    lock.releaseLock();
+  }
+}
+
+function confirmCasePaymentLocked_(caseId, adminEmail, adminUid) {
+  caseId = String(caseId || "").trim();
+  if (!caseId) return { ok: false, message: "caseId가 없습니다." };
+  const casePayload = readCaseFromFirebase_(caseId);
+  if (!casePayload) return { ok: false, message: "케이스를 찾지 못했습니다." };
+  const status = Object.assign({}, casePayload.status || {});
+  const ownerDecision = Object.assign({}, casePayload.ownerDecision || {});
+  if (status.c10 === "done" && String(casePayload.paymentStatus || "") === "confirmed") {
+    return {
+      ok: true,
+      skipped: true,
+      status: "confirmed",
+      nextStep: "c11",
+      confirmedAt: casePayload.paymentConfirmedAt || ""
+    };
+  }
+  if (status.c9 !== "done" || ownerDecision.status !== "approved_payment") {
+    return { ok: false, message: "건물주 승인 완료 후 입금을 확인할 수 있습니다." };
+  }
+
+  const now = new Date().toISOString();
+  const automationState = Object.assign({}, casePayload.automationState || {});
+  workflowStepState_(automationState, "c10", "done", now, {
+    mode: "manual_admin_confirmation",
+    confirmedBy: String(adminEmail || adminUid || "관리자")
+  });
+  workflowStepState_(automationState, "c11", "doing", now, { mode: "vendor_schedule" });
+
+  const priced = workflowPricedQuote_(casePayload);
+  const amounts = priced ? ownerRecommendationAmounts_(priced.quote) : { totalAmount: Number(casePayload.paymentExpectedAmount || ownerDecision.bringTotalAmount || 0) };
+  const confirmation = {
+    status: "confirmed",
+    statusText: "관리자 입금 확인 완료",
+    amount: Number(amounts.totalAmount || 0),
+    accountNumber: String(casePayload.paymentAccount && casePayload.paymentAccount.accountNumber || OWNER_PAYMENT_ACCOUNT.accountNumber),
+    accountHolder: String(casePayload.paymentAccount && casePayload.paymentAccount.accountHolder || OWNER_PAYMENT_ACCOUNT.accountHolder),
+    confirmedAt: now,
+    confirmedBy: String(adminEmail || adminUid || "관리자")
+  };
+  const log = Array.isArray(casePayload.log) ? casePayload.log.slice() : [];
+  log.unshift("관리자 입금 확인 완료 · ⑪ 업체 연결·일정 시작");
+  if (log.length > 30) log.length = 30;
+
+  patchCaseChildToFirebase_(caseId, "status", { c10: "done", c11: "doing" });
+  patchCaseChildToFirebase_(caseId, "note", {
+    c10: "관리자가 실제 사업자계좌 입금 내역을 확인했습니다.",
+    c11: "입금 확인 완료 · 업체 연결 및 일정 조율을 진행해 주세요."
+  });
+  patchCaseToFirebase_(caseId, {
+    automationState: automationState,
+    paymentStatus: "confirmed",
+    paymentConfirmation: confirmation,
+    paymentConfirmedAt: now,
+    paymentConfirmedBy: confirmation.confirmedBy,
+    log: log,
+    updatedAt: now
+  });
+  return {
+    ok: true,
+    status: "confirmed",
+    nextStep: "c11",
+    confirmedAt: now,
+    amount: confirmation.amount
+  };
 }
 
 function reopenCaseForAnotherQuote_(caseId, casePayload, ownerDecision, now) {
@@ -671,6 +756,10 @@ function recordAutomationError_(payload, err) {
     patchCaseChildToFirebase_(caseId, "status", { c8: "doing" });
     patchCaseChildToFirebase_(caseId, "note", { c8: "건물주 추천 MMS 발송 실패: " + message });
     log.unshift("건물주 추천 MMS 발송 실패: " + message);
+  } else if (action === "confirmCasePayment") {
+    patchCaseChildToFirebase_(caseId, "status", { c10: "doing" });
+    patchCaseChildToFirebase_(caseId, "note", { c10: "관리자 입금 확인 처리 실패: " + message });
+    log.unshift("관리자 입금 확인 처리 실패: " + message);
   } else {
     return;
   }
