@@ -2,6 +2,8 @@
 
 카카오 알림톡을 켜면 ② 세입자·건물주 접수 안내와 ⑧ 건물주 추천 견적 안내를 `@bringcare` 채널로 먼저 발송합니다. 알림톡 요청이 거절되면 기존 SENS SMS로 즉시 대체하고, 알림톡을 끈 상태에서는 기존 SMS/MMS 흐름을 그대로 유지합니다. 건물주 추천 알림은 발송 직전 체크포인트를 저장하고, SENS 접수 성공 후 발송 결과와 ⑧ 완료·⑨ 진행중 상태를 하나의 Firebase 업데이트로 반영합니다. 성공 결과는 `automationState.ownerRecommendationMms`에도 별도로 보존해 오래 열린 화면이 상태를 되돌려도 자동 복구하며, 일시적인 저장 오류는 최대 3회 재시도합니다.
 
+카카오 챗봇 민원 접수를 켜면 `브링케어` 채널 대화 안에서 건물명, 주소, 호실, 세입자명, 연락처, 문제 유형, 증상, 방문 가능 시간을 순서대로 입력받습니다. 원본 카카오 사용자 키는 저장하지 않고 SHA-256 해시만 Firebase 케이스와 연결합니다. 접수 즉시 접수번호와 `접수처리중` 케이스를 만든 뒤 1분 대기열이 기존 구글폼 분석·계약 매칭·접수 안내 흐름을 실행합니다.
+
 현재 자동 진행 기준은 다음과 같습니다. 새 민원이 온보딩 수집서와 매칭되면 ①을 완료하고 ② 접수확인 문자를 자동 발송합니다. 세입자·건물주 발송이 모두 성공하면 ③ 상담카드와 ④ 업체 분류를 자동 완료한 뒤 ⑤에서 멈춥니다. 관리자가 ⑤에서 업체를 선택해 견적 요청 MMS를 보내고 전체 발송이 성공하면 ⑥이 열립니다. ⑥에서 현재 선택한 파일의 업로드가 모두 끝나고 금액이 확인된 견적이 한 건 이상이면 ⑦ 최저가 추천을 자동 완료하고, ⑧ 건물주 추천 MMS를 자동 발송합니다. 발송이 성공하면 ⑨ 승인·입금이 진행중으로 열립니다.
 
 이 폴더의 `complaint-intake-to-firebase.gs`는 Google Form 응답 시트에서 새 민원이 들어올 때 자동으로 분석하고, FM GitHub.io 앱의 Firebase `/cases` 경로에 케이스를 등록하는 Apps Script 코드입니다.
@@ -15,7 +17,7 @@
 2. 상단 메뉴에서 `확장 프로그램` -> `Apps Script`를 엽니다.
 3. 기본 코드 내용을 지우고 `complaint-intake-to-firebase.gs` 내용을 붙여넣습니다.
 4. 온보딩 수집서 DOCX 파일이 들어 있는 Google Drive 폴더를 연결하려면 코드 상단의 `CONTRACT_DRIVE_FOLDER_ID`에 폴더 ID 또는 폴더 URL을 넣습니다.
-   - 현재 설정값은 `1818MusPDfVV6znALkWDMGK99NXAlAj8g`입니다.
+   - 현재 설정값은 `1GKI8oc4iicdEw7MnPKpfZrwKd4ZGKnBZ`입니다.
    - ⑥ 견적 파일은 `QUOTE_DRIVE_FOLDER_ID`에 지정한 견적서 전용 폴더에 저장합니다. 현재 설정값은 `11QX5F-KRQvvYNc0hso3QACuMS7lMZw4r`입니다.
    - ⑥ 사업자등록증은 견적서 저장 폴더 안의 케이스 폴더에 원본 파일로 바로 저장합니다. 구조는 `{접수번호}_{건물명} / 사업자등록증 / BR-..._{업체명}_사업자등록증.pdf`입니다.
    - ⑥ 브링 양식 견적서 자동 생성을 쓰려면 `브링엔지니어링_견적서_양식.xlsx`를 Google Drive에 올린 뒤 Google Sheets로 열어 변환하고, 그 Google Sheet 파일 ID를 `QUOTE_TEMPLATE_SPREADSHEET_ID`에 넣습니다.
@@ -41,6 +43,10 @@
    - `KAKAO_TEMPLATE_RECEIPT_OWNER`: `BRINGRECEIPTOWNERV1`
    - `KAKAO_TEMPLATE_OWNER_QUOTE`: `BRINGOWNERQUOTEV1`
    - `KAKAO_SMS_FAILOVER_ENABLED`: NCP 채널의 SMS 대체 발송 설정까지 완료한 뒤 `true`, 그전에는 `false`
+   - 카카오 챗봇 민원 접수는 `setupKakaoComplaintIntake`를 한 번 실행해 스킬 토큰과 1분 대기열 트리거를 만든 뒤 설정합니다.
+   - `KAKAO_CHATBOT_INTAKE_ENABLED`: 챗봇 연결 전 `false`, 봇 테스트 완료 후 `true`
+   - `KAKAO_CHATBOT_SKILL_TOKEN`: `setupKakaoComplaintIntake`가 자동 생성하므로 GitHub에 기록하지 않음
+   - `KAKAO_CHATBOT_BOT_ID`: 챗봇 관리자센터의 봇 ID. 다른 봇 요청 차단용이며 운영 연결 전에 설정
 9. ② 접수확인 문자, ⑤ 업체 MMS, ⑥ 파일 업로드, ⑧ 건물주 추천 MMS 자동화를 쓰려면 Apps Script에서 `배포` -> `새 배포` -> `웹 앱`으로 배포합니다.
    - 입금확인 캘린더의 건물 새로고침도 이 웹 앱의 `syncPaymentBuildings` 요청을 사용합니다.
    - 실행 사용자: `나`
@@ -65,6 +71,7 @@
   - Firebase Case ID
   - 분석 처리일시
 - `setupComplaintAutomation` 실행 시 Google Form에 `건물 주소` 필수 질문을 추가합니다.
+- 카카오 챗봇 접수는 동일한 응답 시트에 `접수 경로=kakao_chatbot`으로 추가되고, 1분 트리거가 기존 `processResponseRow_` 처리를 재사용합니다. Firebase 케이스의 `source`와 `kakao.userKeyHash`로 카카오 계정과 접수번호를 연결하며 `내 민원 조회` 발화로 최근 케이스 상태를 확인할 수 있습니다.
 - 민원 접수 시 Drive 폴더의 DOCX 본문을 읽고 `건물명+주소 정확 일치` → `정규화 건물명 일치` → `건물명 60%+주소 40% 유사도` 순서로 온보딩 수집서를 선택합니다.
 - 유사 후보 점수가 같으면 주소 유사도가 높은 파일, 그다음 Drive 수정일이 최신인 파일을 선택합니다.
 - 후보가 전혀 없을 때만 케이스를 `계약확인보류` 상태로 유지합니다.
@@ -146,6 +153,18 @@ NCP Secret Key는 GitHub나 HTML 화면에 절대 넣지 않습니다. Apps Scri
 5. `@bringcare` 이름으로 세입자 민원 접수 테스트 알림톡이 도착하고 실행 로그에 `provider: kakao_alimtalk`이 표시되는지 확인합니다.
 6. 실제 테스트 민원 한 건을 접수해 ② 세입자·건물주 알림톡과 ⑧ 추천 견적 버튼이 현재 케이스의 승인 화면으로 연결되는지 확인합니다.
 7. 검증이 끝난 후 NCP 채널에서 SMS 대체 발송을 설정했다면 `KAKAO_SMS_FAILOVER_ENABLED=true`로 변경합니다.
+
+## 카카오 챗봇 민원 접수 테스트
+
+1. Apps Script에서 `setupKakaoComplaintIntake`를 한 번 실행합니다.
+2. 실행 로그의 카카오 챗봇 스킬 URL을 챗봇 관리자센터 스킬 엔드포인트로 등록합니다. URL에 포함된 토큰은 외부에 공개하지 않습니다.
+3. 챗봇의 `민원 접수` 블록과 폴백 블록에 같은 스킬을 연결합니다.
+4. 봇 테스트에서는 `KAKAO_CHATBOT_INTAKE_ENABLED=false` 상태로 기존 구글폼 안내 응답이 표시되는지 먼저 확인합니다.
+5. 챗봇 관리자센터의 봇 ID를 `KAKAO_CHATBOT_BOT_ID`에 저장하고 `KAKAO_CHATBOT_INTAKE_ENABLED=true`로 변경합니다.
+6. `민원 접수`를 입력하고 건물명부터 개인정보 동의까지 진행합니다.
+7. 카카오톡에 발급된 접수번호가 Google 응답 시트와 Firebase `/cases/{접수번호}`에 생성되는지 확인합니다.
+8. 1분 이내 `카카오 처리 상태=완료`로 바뀌고 FM 대시보드에서 같은 접수번호가 표시되는지 확인합니다.
+9. `내 민원 조회`를 입력해 최근 케이스의 현재 상태가 카카오톡에 표시되는지 확인합니다.
 
 ## ② 접수확인 문자 테스트
 

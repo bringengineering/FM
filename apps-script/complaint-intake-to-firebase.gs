@@ -35,7 +35,7 @@ const PAYMENT_SCHEDULE_HEADERS = [
   "상태",
   "비고"
 ];
-const AUTOMATION_BUILD = "complaint-workflow-20260727-v30";
+const AUTOMATION_BUILD = "complaint-workflow-20260727-v31";
 const OWNER_RECOMMENDATION_IMAGE_VERSION = "owner-summary-v4";
 const OWNER_DECISION_VIEW = "owner-decision";
 const OWNER_PAYMENT_ACCOUNT = {
@@ -55,7 +55,24 @@ const OUTPUT_HEADERS = [
   "문자 발송 상태",
   "문자 발송 메모",
   "Firebase Case ID",
-  "분석 처리일시"
+  "분석 처리일시",
+  "접수 경로",
+  "카카오 사용자 키 해시",
+  "카카오 처리 상태",
+  "카카오 처리 메모"
+];
+const KAKAO_INTAKE_INPUT_HEADERS = [
+  "타임스탬프",
+  "건물명",
+  "건물 주소",
+  "호실",
+  "이름",
+  "연락처",
+  "문제 유형",
+  "증상 설명",
+  "추가 요청사항",
+  "방문 가능 시간",
+  "사진 첨부"
 ];
 
 function setupComplaintAutomation() {
@@ -71,6 +88,7 @@ function setupComplaintAutomation() {
     .onFormSubmit()
     .create();
 
+  ensureKakaoComplaintQueueTrigger_();
   ensureFormAddressQuestion_();
   syncPaymentBuildingsFromOnboarding_();
   setupPaymentScheduleSheet_();
@@ -143,6 +161,9 @@ function doPost(e) {
   let payload = {};
   try {
     payload = JSON.parse(e && e.postData && e.postData.contents ? e.postData.contents : "{}");
+    if (isKakaoChatbotSkillPayload_(payload)) {
+      return jsonResponse_(handleKakaoChatbotSkill_(payload, e));
+    }
     if (payload.action === "healthCheck") {
       return jsonResponse_({ ok: true, build: AUTOMATION_BUILD, time: new Date().toISOString() });
     }
@@ -203,6 +224,543 @@ function doPost(e) {
       Logger.log("자동화 오류 기록 실패: " + recordErr.message);
     }
     return jsonResponse_({ ok: false, message: err.message });
+  }
+}
+
+function isKakaoChatbotSkillPayload_(payload) {
+  return !!(
+    payload &&
+    String(payload.version || "") === "2.0" &&
+    payload.userRequest &&
+    payload.userRequest.user &&
+    payload.action &&
+    typeof payload.action === "object"
+  );
+}
+
+function getKakaoChatbotIntakeConfig_() {
+  const props = PropertiesService.getScriptProperties();
+  return {
+    enabled: /^(1|true|yes|on)$/i.test(String(props.getProperty("KAKAO_CHATBOT_INTAKE_ENABLED") || "")),
+    token: String(props.getProperty("KAKAO_CHATBOT_SKILL_TOKEN") || "").trim(),
+    botId: String(props.getProperty("KAKAO_CHATBOT_BOT_ID") || "").trim(),
+    sessionSeconds: 30 * 60
+  };
+}
+
+function setupKakaoComplaintIntake() {
+  const props = PropertiesService.getScriptProperties();
+  let token = String(props.getProperty("KAKAO_CHATBOT_SKILL_TOKEN") || "").trim();
+  if (!token) {
+    token = [Utilities.getUuid(), Utilities.getUuid()].join("").replace(/-/g, "");
+    props.setProperty("KAKAO_CHATBOT_SKILL_TOKEN", token);
+  }
+  if (!props.getProperty("KAKAO_CHATBOT_INTAKE_ENABLED")) {
+    props.setProperty("KAKAO_CHATBOT_INTAKE_ENABLED", "false");
+  }
+  ensureKakaoIntakeHeaders_(getResponseSheet_());
+  ensureKakaoComplaintQueueTrigger_();
+  const skillUrl = ownerDecisionWebAppUrl_() + "?kakaoSkillToken=" + encodeURIComponent(token);
+  Logger.log("카카오 챗봇 스킬 URL: " + skillUrl);
+  Logger.log("챗봇 연결과 테스트를 마친 뒤 KAKAO_CHATBOT_INTAKE_ENABLED=true 로 변경하세요.");
+  return {
+    ok: true,
+    enabled: getKakaoChatbotIntakeConfig_().enabled,
+    skillUrl: skillUrl,
+    queueTrigger: true
+  };
+}
+
+function ensureKakaoComplaintQueueTrigger_() {
+  const handler = "processPendingKakaoComplaintIntakes";
+  const exists = ScriptApp.getProjectTriggers().some(trigger => trigger.getHandlerFunction() === handler);
+  if (exists) return false;
+  ScriptApp.newTrigger(handler).timeBased().everyMinutes(1).create();
+  return true;
+}
+
+function handleKakaoChatbotSkill_(payload, event) {
+  const config = getKakaoChatbotIntakeConfig_();
+  const suppliedToken = String(event && event.parameter && event.parameter.kakaoSkillToken || "").trim();
+  if (!config.token || suppliedToken !== config.token) {
+    return kakaoChatbotTextResponse_(
+      "브링케어 연결 인증에 실패했습니다. 채널 관리자에게 문의해 주세요."
+    );
+  }
+  if (!config.enabled) {
+    return kakaoChatbotTextResponse_(
+      [
+        "브링케어 카카오 민원 접수를 준비 중입니다.",
+        "현재는 기존 민원 접수 폼을 이용해 주세요.",
+        "",
+        "https://docs.google.com/forms/d/e/1FAIpQLSfzi-H-abXT-dgsU5rF8vgkWuKtbltr9acgWClVeQ5W297DiA/viewform"
+      ].join("\n")
+    );
+  }
+
+  const request = payload.userRequest || {};
+  const user = request.user || {};
+  const userKey = String(user.id || user.properties && (user.properties.botUserKey || user.properties.plusfriendUserKey) || "").trim();
+  if (!userKey) {
+    return kakaoChatbotTextResponse_("카카오 사용자 정보를 확인하지 못했습니다. 채팅방을 다시 열어 주세요.");
+  }
+  if (config.botId && String(payload.bot && payload.bot.id || "") !== config.botId) {
+    return kakaoChatbotTextResponse_("등록되지 않은 브링케어 챗봇 요청입니다.");
+  }
+
+  const userHash = kakaoChatbotUserHash_(userKey);
+  const utterance = kakaoChatbotCleanText_(request.utterance, 1000);
+  const command = normalizeText_(utterance);
+
+  if (/^(취소|접수취소|민원취소)$/.test(command)) {
+    kakaoChatbotDeleteSession_(userHash);
+    return kakaoChatbotTextResponse_(
+      "민원 접수를 취소했습니다.",
+      kakaoChatbotHomeQuickReplies_()
+    );
+  }
+  if (/^(내민원조회|민원조회|접수조회|진행상황)$/.test(command)) {
+    return kakaoChatbotCaseStatusResponse_(userHash);
+  }
+  if (/^(민원접수|민원접수시작|접수시작|새민원)$/.test(command)) {
+    const freshSession = {
+      step: "building",
+      values: {},
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString()
+    };
+    kakaoChatbotWriteSession_(userHash, freshSession, config.sessionSeconds);
+    return kakaoChatbotPromptResponse_("building");
+  }
+
+  let session = kakaoChatbotReadSession_(userHash);
+  if (!session) {
+    return kakaoChatbotTextResponse_(
+      "안녕하세요. 브링케어입니다.\n카카오톡에서 민원을 접수하고 기존 계약 건물의 케이스로 연결할 수 있습니다.",
+      kakaoChatbotHomeQuickReplies_()
+    );
+  }
+  if (session.completedTicketNo) {
+    return kakaoChatbotTextResponse_(
+      "최근 접수번호는 " + session.completedTicketNo + "입니다.",
+      kakaoChatbotHomeQuickReplies_()
+    );
+  }
+
+  const step = String(session.step || "building");
+  const validation = validateKakaoChatbotAnswer_(step, utterance);
+  if (!validation.ok) {
+    return kakaoChatbotTextResponse_(
+      validation.message,
+      kakaoChatbotQuickRepliesForStep_(step)
+    );
+  }
+
+  if (step === "consent") {
+    if (!validation.value) {
+      kakaoChatbotDeleteSession_(userHash);
+      return kakaoChatbotTextResponse_(
+        "개인정보 수집·이용에 동의하지 않아 접수를 종료했습니다.",
+        kakaoChatbotHomeQuickReplies_()
+      );
+    }
+    try {
+      const result = enqueueKakaoComplaintIntake_(session.values || {}, userHash, payload);
+      session.completedTicketNo = result.ticketNo;
+      session.step = "completed";
+      session.updatedAt = new Date().toISOString();
+      kakaoChatbotWriteSession_(userHash, session, 6 * 60 * 60);
+      return kakaoChatbotTextResponse_(
+        [
+          "민원이 정상 접수되었습니다.",
+          "",
+          "접수번호: " + result.ticketNo,
+          "건물: " + result.building,
+          "호실: " + formatRoomForCase_(result.room),
+          "문제 유형: " + result.issueType,
+          "",
+          "브링케어 케이스와 연결 중이며 보통 1분 이내 처리됩니다."
+        ].join("\n"),
+        kakaoChatbotHomeQuickReplies_()
+      );
+    } catch (err) {
+      Logger.log("카카오 민원 접수 실패: " + err.message);
+      return kakaoChatbotTextResponse_(
+        "접수 처리 중 오류가 발생했습니다. 잠시 후 '동의합니다'를 다시 눌러 주세요."
+      );
+    }
+  }
+
+  session.values = Object.assign({}, session.values || {});
+  session.values[step] = validation.value;
+  const photoUrl = kakaoChatbotExtractPhotoUrl_(payload);
+  if (photoUrl) session.values.photoUrl = photoUrl;
+  session.step = kakaoChatbotNextStep_(step);
+  session.updatedAt = new Date().toISOString();
+  kakaoChatbotWriteSession_(userHash, session, config.sessionSeconds);
+  return kakaoChatbotPromptResponse_(session.step);
+}
+
+function kakaoChatbotTextResponse_(text, quickReplies) {
+  const template = {
+    outputs: [{ simpleText: { text: String(text || "").slice(0, 1000) } }]
+  };
+  if (quickReplies && quickReplies.length) {
+    template.quickReplies = quickReplies.slice(0, 10);
+  }
+  return { version: "2.0", template: template };
+}
+
+function kakaoChatbotHomeQuickReplies_() {
+  return [
+    { label: "민원 접수", action: "message", messageText: "민원 접수" },
+    { label: "내 민원 조회", action: "message", messageText: "내 민원 조회" }
+  ];
+}
+
+function kakaoChatbotQuickRepliesForStep_(step) {
+  if (step === "issueType") {
+    return ["누수", "배관", "전기", "도어락", "보일러", "에어컨", "기타"].map(value => ({
+      label: value,
+      action: "message",
+      messageText: value
+    }));
+  }
+  if (step === "visitTime") {
+    return [
+      { label: "일정 협의", action: "message", messageText: "일정 협의" },
+      { label: "평일 오전", action: "message", messageText: "평일 오전" },
+      { label: "평일 오후", action: "message", messageText: "평일 오후" }
+    ];
+  }
+  if (step === "consent") {
+    return [
+      { label: "동의합니다", action: "message", messageText: "동의합니다" },
+      { label: "동의하지 않습니다", action: "message", messageText: "동의하지 않습니다" }
+    ];
+  }
+  return [{ label: "접수 취소", action: "message", messageText: "접수 취소" }];
+}
+
+function kakaoChatbotPromptResponse_(step) {
+  const prompts = {
+    building: "민원을 접수할 건물명을 입력해 주세요.\n예: 브링타워",
+    address: "계약 건물 확인을 위해 건물 주소를 입력해 주세요.\n예: 서울시 강남구 테헤란로 123",
+    room: "호실을 입력해 주세요.\n예: 301",
+    name: "세입자 성함을 입력해 주세요.",
+    phone: "접수 안내를 받을 휴대폰 번호를 입력해 주세요.\n예: 010-1234-5678",
+    issueType: "문제 유형을 선택하거나 직접 입력해 주세요.",
+    description: "현재 증상을 자세히 입력해 주세요.\n언제부터, 어디에서, 어떤 문제가 발생했는지 적어 주세요.",
+    visitTime: "방문 가능한 날짜와 시간대를 입력해 주세요.\n예: 7월 28일 오후 2시 이후\n정해지지 않았다면 '일정 협의'를 선택해 주세요.",
+    consent: [
+      "민원 처리와 계약 확인을 위해 입력한 성명, 연락처, 주소, 민원 내용을 수집·이용합니다.",
+      "수집 정보는 민원 처리 및 업체 연결 목적으로만 사용합니다.",
+      "",
+      "동의하시겠습니까?"
+    ].join("\n")
+  };
+  return kakaoChatbotTextResponse_(
+    prompts[step] || prompts.building,
+    kakaoChatbotQuickRepliesForStep_(step)
+  );
+}
+
+function kakaoChatbotNextStep_(step) {
+  const steps = ["building", "address", "room", "name", "phone", "issueType", "description", "visitTime", "consent"];
+  const index = steps.indexOf(step);
+  return index >= 0 && index < steps.length - 1 ? steps[index + 1] : "consent";
+}
+
+function validateKakaoChatbotAnswer_(step, value) {
+  const text = kakaoChatbotCleanText_(value, step === "description" ? 1000 : 240);
+  if (!text) return { ok: false, message: "내용을 입력해 주세요." };
+  if (step === "building" && text.length < 2) {
+    return { ok: false, message: "건물명을 두 글자 이상 입력해 주세요." };
+  }
+  if (step === "address" && text.length < 5) {
+    return { ok: false, message: "계약 건물과 매칭할 수 있도록 주소를 조금 더 자세히 입력해 주세요." };
+  }
+  if (step === "room" && !/[0-9가-힣A-Za-z]/.test(text)) {
+    return { ok: false, message: "호실을 다시 입력해 주세요. 예: 301" };
+  }
+  if (step === "name" && text.replace(/\s/g, "").length < 2) {
+    return { ok: false, message: "세입자 성함을 두 글자 이상 입력해 주세요." };
+  }
+  if (step === "phone") {
+    const phone = normalizePhoneForSms_(text);
+    if (!/^01[016789]\d{7,8}$/.test(phone)) {
+      return { ok: false, message: "휴대폰 번호를 다시 입력해 주세요. 예: 010-1234-5678" };
+    }
+    return { ok: true, value: phone };
+  }
+  if (step === "description" && text.replace(/\s/g, "").length < 5) {
+    return { ok: false, message: "증상을 다섯 글자 이상 자세히 입력해 주세요." };
+  }
+  if (step === "consent") {
+    if (/동의하지|비동의|거부/.test(text)) return { ok: true, value: false };
+    if (/동의|확인|예|네/.test(text)) return { ok: true, value: true };
+    return { ok: false, message: "민원 접수를 계속하려면 '동의합니다'를 선택해 주세요." };
+  }
+  return { ok: true, value: text };
+}
+
+function kakaoChatbotCleanText_(value, maxLength) {
+  return String(value || "")
+    .replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F]/g, "")
+    .replace(/\r\n?/g, "\n")
+    .trim()
+    .slice(0, Number(maxLength || 500));
+}
+
+function kakaoChatbotUserHash_(userKey) {
+  const digest = Utilities.computeDigest(
+    Utilities.DigestAlgorithm.SHA_256,
+    String(userKey || ""),
+    Utilities.Charset.UTF_8
+  );
+  return digest.map(value => ("0" + ((value + 256) % 256).toString(16)).slice(-2)).join("");
+}
+
+function kakaoChatbotSessionCacheKey_(userHash) {
+  return "bringcare:kakao:intake:" + String(userHash || "").slice(0, 64);
+}
+
+function kakaoChatbotReadSession_(userHash) {
+  const raw = CacheService.getScriptCache().get(kakaoChatbotSessionCacheKey_(userHash));
+  if (!raw) return null;
+  try {
+    return JSON.parse(raw);
+  } catch (err) {
+    kakaoChatbotDeleteSession_(userHash);
+    return null;
+  }
+}
+
+function kakaoChatbotWriteSession_(userHash, session, expirationSeconds) {
+  CacheService.getScriptCache().put(
+    kakaoChatbotSessionCacheKey_(userHash),
+    JSON.stringify(session || {}),
+    Math.min(Math.max(Number(expirationSeconds || 1800), 60), 21600)
+  );
+}
+
+function kakaoChatbotDeleteSession_(userHash) {
+  CacheService.getScriptCache().remove(kakaoChatbotSessionCacheKey_(userHash));
+}
+
+function kakaoChatbotExtractPhotoUrl_(payload) {
+  const params = Object.assign({}, payload && payload.action && payload.action.params || {});
+  const candidates = [
+    params.photoUrl,
+    params.photo,
+    params.imageUrl,
+    params.secureImage,
+    params.secureimage
+  ];
+  for (const candidate of candidates) {
+    const value = String(candidate || "").trim();
+    if (/^https:\/\//i.test(value)) return value.slice(0, 2000);
+  }
+  return "";
+}
+
+function kakaoChatbotCaseStatusResponse_(userHash) {
+  try {
+    const link = firebaseReadJson_(
+      firebaseCaseSettingsUrl_("kakaoChatbotIntake/users/" + userHash),
+      "카카오 민원 연결 조회 실패"
+    );
+    const caseId = String(link && link.lastCaseId || "").trim();
+    if (!caseId) {
+      return kakaoChatbotTextResponse_(
+        "이 카카오 계정으로 접수한 민원이 없습니다.",
+        kakaoChatbotHomeQuickReplies_()
+      );
+    }
+    const casePayload = readCaseFromFirebase_(caseId);
+    if (!casePayload) {
+      return kakaoChatbotTextResponse_(
+        "최근 접수번호는 " + caseId + "이지만 케이스 정보를 확인하지 못했습니다.",
+        kakaoChatbotHomeQuickReplies_()
+      );
+    }
+    return kakaoChatbotTextResponse_(
+      [
+        "최근 민원 진행 상황입니다.",
+        "",
+        "접수번호: " + (casePayload.ticketNo || caseId),
+        "건물: " + (casePayload.building || "확인 중"),
+        "호실: " + (casePayload.room || "확인 중"),
+        "문제 유형: " + (casePayload.issueType || "확인 중"),
+        "현재 상태: " + (casePayload.statusValue || "접수 처리 중")
+      ].join("\n"),
+      kakaoChatbotHomeQuickReplies_()
+    );
+  } catch (err) {
+    Logger.log("카카오 민원 상태 조회 실패: " + err.message);
+    return kakaoChatbotTextResponse_(
+      "민원 진행 상황을 불러오지 못했습니다. 잠시 후 다시 시도해 주세요.",
+      kakaoChatbotHomeQuickReplies_()
+    );
+  }
+}
+
+function enqueueKakaoComplaintIntake_(values, userHash, payload) {
+  const lock = LockService.getScriptLock();
+  if (!lock.tryLock(500)) throw new Error("접수 요청이 많습니다. 잠시 후 다시 시도해 주세요.");
+  try {
+    const sheet = getResponseSheet_();
+    const headers = ensureKakaoIntakeHeaders_(sheet);
+    const now = new Date();
+    const photoUrl = kakaoChatbotExtractPhotoUrl_(payload) || String(values.photoUrl || "");
+    const record = {
+      "타임스탬프": now,
+      "건물명": kakaoChatbotCleanText_(values.building, 120),
+      "건물 주소": kakaoChatbotCleanText_(values.address, 240),
+      "호실": kakaoChatbotCleanText_(values.room, 60),
+      "이름": kakaoChatbotCleanText_(values.name, 80),
+      "연락처": normalizePhoneForSms_(values.phone),
+      "문제 유형": kakaoChatbotCleanText_(values.issueType, 80),
+      "증상 설명": kakaoChatbotCleanText_(values.description, 1000),
+      "추가 요청사항": "카카오톡 브링케어 채널 접수",
+      "방문 가능 시간": kakaoChatbotCleanText_(values.visitTime, 240),
+      "사진 첨부": photoUrl,
+      "접수 경로": "kakao_chatbot",
+      "카카오 사용자 키 해시": userHash,
+      "카카오 처리 상태": "대기",
+      "카카오 처리 메모": "챗봇 접수 후 자동 처리 대기"
+    };
+    sheet.appendRow(headers.map(header => Object.prototype.hasOwnProperty.call(record, header) ? record[header] : ""));
+    const row = sheet.getLastRow();
+    const ticketNo = makeTicketNo_(row, record);
+    const headerMap = kakaoComplaintHeaderMap_(headers);
+    setCellByHeader_(sheet, row, headerMap, "접수번호", ticketNo);
+
+    const pendingCase = makeKakaoPendingCase_(ticketNo, record, row, sheet);
+    writeCaseToFirebase_(ticketNo, pendingCase);
+    firebaseWriteRequest_(
+      firebaseCaseSettingsUrl_("kakaoChatbotIntake/users/" + userHash),
+      "put",
+      {
+        lastCaseId: ticketNo,
+        updatedAt: now.toISOString()
+      },
+      "카카오 사용자-민원 연결 저장 실패"
+    );
+    ensureKakaoComplaintQueueTrigger_();
+    return {
+      ok: true,
+      ticketNo: ticketNo,
+      building: record["건물명"],
+      room: record["호실"],
+      issueType: record["문제 유형"],
+      row: row
+    };
+  } finally {
+    lock.releaseLock();
+  }
+}
+
+function ensureKakaoIntakeHeaders_(sheet) {
+  let headers = ensureOutputHeaders_(sheet);
+  KAKAO_INTAKE_INPUT_HEADERS.forEach(header => {
+    if (!headers.includes(header)) {
+      headers.push(header);
+      sheet.getRange(1, headers.length).setValue(header);
+    }
+  });
+  OUTPUT_HEADERS.forEach(header => {
+    if (!headers.includes(header)) {
+      headers.push(header);
+      sheet.getRange(1, headers.length).setValue(header);
+    }
+  });
+  return headers;
+}
+
+function kakaoComplaintHeaderMap_(headers) {
+  const map = {};
+  (headers || []).forEach((header, index) => {
+    if (header) map[header] = index + 1;
+  });
+  return map;
+}
+
+function makeKakaoPendingCase_(ticketNo, record, row, sheet) {
+  return {
+    id: ticketNo,
+    ticketNo: ticketNo,
+    source: "kakao_chatbot",
+    createdAt: new Date().toISOString(),
+    receivedAt: dateFromValue_(record["타임스탬프"]).toISOString(),
+    sheetUrl: COMPLAINT_CONFIG.RESPONSE_SHEET_URL + "#gid=" + sheet.getSheetId(),
+    sheetRow: row,
+    name: maskName_(record["이름"]) || "세입자",
+    phone: maskPhone_(record["연락처"]),
+    email: "",
+    building: record["건물명"],
+    address: record["건물 주소"],
+    room: formatRoomForCase_(record["호실"]),
+    issueType: record["문제 유형"],
+    summary: [record["건물명"], formatRoomForCase_(record["호실"]), record["문제 유형"]].filter(Boolean).join(" / "),
+    visitTime: record["방문 가능 시간"],
+    statusValue: "접수처리중",
+    status: { c1: "doing" },
+    kakao: {
+      userKeyHash: record["카카오 사용자 키 해시"],
+      linkedAt: new Date().toISOString()
+    },
+    note: {
+      c1: "카카오톡 브링케어 채널에서 접수되었습니다. 계약 건물 매칭과 자동 분석을 진행 중입니다."
+    },
+    log: [
+      Utilities.formatDate(new Date(), "Asia/Seoul", "yyyy-MM-dd HH:mm") + " 카카오톡 민원 접수",
+      "자동 분석 대기"
+    ]
+  };
+}
+
+function processPendingKakaoComplaintIntakes() {
+  const lock = LockService.getScriptLock();
+  if (!lock.tryLock(1000)) return;
+  try {
+    const sheet = getResponseSheet_();
+    const headers = ensureKakaoIntakeHeaders_(sheet);
+    const headerMap = kakaoComplaintHeaderMap_(headers);
+    const lastRow = sheet.getLastRow();
+    if (lastRow < 2) return;
+    const firstRow = Math.max(2, lastRow - 49);
+    const rows = sheet.getRange(firstRow, 1, lastRow - firstRow + 1, headers.length).getValues();
+    let processed = 0;
+    for (let index = 0; index < rows.length && processed < 5; index++) {
+      const row = firstRow + index;
+      const record = recordFromRow_(headers, rows[index]);
+      if (readField_(record, ["접수 경로"]) !== "kakao_chatbot") continue;
+      const queueStatus = readField_(record, ["카카오 처리 상태"]);
+      const analyzedAt = readField_(record, ["분석 처리일시"]);
+      if (queueStatus === "완료" || analyzedAt) continue;
+      setCellByHeader_(sheet, row, headerMap, "카카오 처리 상태", "처리중");
+      setCellByHeader_(sheet, row, headerMap, "카카오 처리 메모", "자동 분석 및 계약 매칭 진행 중");
+      SpreadsheetApp.flush();
+      try {
+        processResponseRow_(sheet, row);
+        setCellByHeader_(sheet, row, headerMap, "카카오 처리 상태", "완료");
+        setCellByHeader_(
+          sheet,
+          row,
+          headerMap,
+          "카카오 처리 메모",
+          Utilities.formatDate(new Date(), "Asia/Seoul", "yyyy-MM-dd HH:mm:ss") + " 케이스 연결 완료"
+        );
+      } catch (err) {
+        setCellByHeader_(sheet, row, headerMap, "카카오 처리 상태", "오류");
+        setCellByHeader_(sheet, row, headerMap, "카카오 처리 메모", String(err.message || err).slice(0, 500));
+        Logger.log("카카오 민원 대기열 처리 실패 " + row + "행: " + err.message);
+      }
+      processed++;
+    }
+  } finally {
+    lock.releaseLock();
   }
 }
 
@@ -7368,19 +7926,22 @@ function buildCasePayload_(ticketNo, record, analysis, contractMatch, row, sheet
   const visitTime = formatVisitTimeFromRecord_(record, timestamp);
   const sheetUrl = COMPLAINT_CONFIG.RESPONSE_SHEET_URL + "#gid=" + sheet.getSheetId();
   const ownerPhone = normalizePhoneForSms_(extractOwnerPhoneFromOnboarding_(contractMatch));
+  const source = readField_(record, ["접수 경로"]) || "google_form";
+  const sourceLabel = source === "kakao_chatbot" ? "카카오톡" : "구글폼";
+  const kakaoUserKeyHash = readField_(record, ["카카오 사용자 키 해시"]);
   const isContractHold = contractMatch && (contractMatch.status === "unmatched" || contractMatch.status === "multiple" || contractMatch.status === "address_missing");
   const statusValue = isContractHold ? "계약확인보류" : analysis.statusValue;
   const status = isContractHold ? { c1: "doing" } : { c1: "done", c2: "doing" };
   const c1Note = contractMatch && contractMatch.status === "matched"
-    ? "구글폼 자동 접수. Drive 온보딩 수집서와 연결되었습니다. 개인정보/사진 원본은 응답 시트에서 확인하세요."
+    ? sourceLabel + " 자동 접수. Drive 온보딩 수집서와 연결되었습니다. 개인정보/사진 원본은 응답 시트에서 확인하세요."
     : isContractHold
       ? "온보딩 파일 미매칭. Drive 폴더의 DOCX 본문에 건물명/주소가 있는지 확인한 뒤 진행하세요."
-      : "구글폼 자동 접수. 개인정보/사진 원본은 응답 시트에서 확인하세요.";
+      : sourceLabel + " 자동 접수. 개인정보/사진 원본은 응답 시트에서 확인하세요.";
 
   return {
     id: ticketNo,
     ticketNo: ticketNo,
-    source: "google_form",
+    source: source,
     createdAt: new Date().toISOString(),
     receivedAt: receivedAt,
     sheetUrl: sheetUrl,
@@ -7403,6 +7964,10 @@ function buildCasePayload_(ticketNo, record, analysis, contractMatch, row, sheet
     contractMatch: contractMatch,
     ownerPhoneMasked: ownerPhone ? maskPhone_(ownerPhone) : "",
     status: status,
+    kakao: source === "kakao_chatbot" ? {
+      userKeyHash: kakaoUserKeyHash,
+      linkedAt: new Date().toISOString()
+    } : {},
     note: {
       c1: c1Note,
       c3: makeConsultationNote_(ticketNo, record, analysis, sheetUrl),
@@ -7410,7 +7975,7 @@ function buildCasePayload_(ticketNo, record, analysis, contractMatch, row, sheet
       c11: visitTime ? "방문 가능 시간: " + visitTime : ""
     },
     log: [
-      Utilities.formatDate(new Date(), "Asia/Seoul", "yyyy-MM-dd HH:mm") + " 구글폼 자동 접수",
+      Utilities.formatDate(new Date(), "Asia/Seoul", "yyyy-MM-dd HH:mm") + " " + sourceLabel + " 자동 접수",
       "긴급도 " + analysis.urgency + " / 업체분류 " + analysis.vendorType,
       contractMatch ? "온보딩매칭 " + contractMatch.status + " / " + contractMatch.statusText : "온보딩매칭 미확인"
     ]
