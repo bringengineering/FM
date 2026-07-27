@@ -193,6 +193,9 @@ function payload(utterance, extra) {
 
 const validEvent = { parameter: { kakaoSkillToken: "skill-secret" } };
 assert.equal(context.isKakaoChatbotSkillPayload_(payload("민원 접수")), true);
+const payloadWithoutVersion = payload("민원 접수");
+delete payloadWithoutVersion.version;
+assert.equal(context.isKakaoChatbotSkillPayload_(payloadWithoutVersion), true);
 assert.equal(context.isKakaoChatbotSkillPayload_({ action: "healthCheck" }), false);
 
 let response = context.handleKakaoChatbotSkill_(payload("민원 접수"), {
@@ -239,7 +242,7 @@ assert.equal(context.validateKakaoChatbotAnswer_("description", "짧음").ok, fa
 assert.equal(context.validateKakaoChatbotAnswer_("consent", "동의하지 않습니다").value, false);
 assert.equal(context.kakaoChatbotExtractPhotoUrl_(payload("사진", { photoUrl: "https://example.com/photo.jpg" })), "https://example.com/photo.jpg");
 
-assert.match(source, /const AUTOMATION_BUILD = "complaint-workflow-20260727-v31"/);
+assert.match(source, /const AUTOMATION_BUILD = "complaint-workflow-20260727-v32"/);
 assert.match(source, /source: "kakao_chatbot"/);
 assert.match(source, /processPendingKakaoComplaintIntakes/);
 assert.match(source, /카카오 사용자 키 해시/);

@@ -35,7 +35,7 @@ const PAYMENT_SCHEDULE_HEADERS = [
   "상태",
   "비고"
 ];
-const AUTOMATION_BUILD = "complaint-workflow-20260727-v31";
+const AUTOMATION_BUILD = "complaint-workflow-20260727-v32";
 const OWNER_RECOMMENDATION_IMAGE_VERSION = "owner-summary-v4";
 const OWNER_DECISION_VIEW = "owner-decision";
 const OWNER_PAYMENT_ACCOUNT = {
@@ -230,11 +230,12 @@ function doPost(e) {
 function isKakaoChatbotSkillPayload_(payload) {
   return !!(
     payload &&
-    String(payload.version || "") === "2.0" &&
     payload.userRequest &&
     payload.userRequest.user &&
     payload.action &&
-    typeof payload.action === "object"
+    typeof payload.action === "object" &&
+    payload.bot &&
+    typeof payload.bot === "object"
   );
 }
 

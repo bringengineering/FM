@@ -223,7 +223,7 @@ assert.equal(fallbackResult.alimTalkError.includes("template not approved"), tru
 assert.equal(lastSms.to, "01099998888");
 assert.equal(lastSms.content, tenantContent);
 
-assert.match(source, /const AUTOMATION_BUILD = "complaint-workflow-20260727-v31"/);
+assert.match(source, /const AUTOMATION_BUILD = "complaint-workflow-20260727-v32"/);
 assert.match(source, /provider: "kakao_alimtalk"/);
 assert.match(source, /name: "추천 견적 확인"/);
 
