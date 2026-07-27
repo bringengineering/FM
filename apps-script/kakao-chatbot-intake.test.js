@@ -67,6 +67,7 @@ const properties = {
 const cache = new Map();
 let enqueued = null;
 let firebaseWrite = null;
+let contractMatched = true;
 
 const context = {
   console,
@@ -136,6 +137,14 @@ const context = {
       issueType: values.issueType
     };
   },
+  verifyKakaoContractBuilding_(building, address) {
+    return {
+      matched: contractMatched,
+      id: contractMatched ? "contract-1" : "",
+      building,
+      address
+    };
+  },
   firebaseWriteRequest_(url, method, payload, label) {
     firebaseWrite = { url, method, payload, label };
     return { ok: true };
@@ -155,6 +164,7 @@ const functions = [
   "kakaoChatbotTextResponse_",
   "kakaoChatbotHomeQuickReplies_",
   "kakaoChatbotQuickRepliesForStep_",
+  "kakaoChatbotContractMismatchQuickReplies_",
   "kakaoChatbotPromptResponse_",
   "kakaoChatbotNextStep_",
   "validateKakaoChatbotAnswer_",
@@ -226,8 +236,7 @@ assert.match(response.template.outputs[0].simpleText.text, /건물명/);
 const answers = [
   ["브링타워", /건물 주소/],
   ["서울시 강남구 테헤란로 123", /호실/],
-  ["301", /성함/],
-  ["홍길동", /휴대폰 번호/],
+  ["301", /휴대폰 번호/],
   ["010-1234-5678", /문제 유형/],
   ["누수", /현재 증상/],
   ["천장에서 물이 계속 떨어지고 있습니다", /방문 가능한 날짜/],
@@ -241,6 +250,7 @@ for (const [answer, expected] of answers) {
 response = context.handleKakaoChatbotSkill_(payload("동의합니다"), validEvent);
 assert.match(response.template.outputs[0].simpleText.text, /BR-2026-0099/);
 assert.equal(enqueued.values.building, "브링타워");
+assert.equal(enqueued.values.name, "세입자");
 assert.equal(enqueued.values.phone, "01012345678");
 assert.equal(enqueued.values.issueType, "누수");
 assert.equal(enqueued.userHash.length, 64);
@@ -248,12 +258,94 @@ assert.equal(enqueued.userHash.length, 64);
 response = context.handleKakaoChatbotSkill_(payload("내 민원 조회"), validEvent);
 assert.equal(response.template.outputs[0].simpleText.text, "상태 조회");
 
+contractMatched = false;
+response = context.handleKakaoChatbotSkill_(payload("민원 접수"), validEvent);
+assert.match(response.template.outputs[0].simpleText.text, /건물명/);
+response = context.handleKakaoChatbotSkill_(payload("브링타워"), validEvent);
+assert.match(response.template.outputs[0].simpleText.text, /건물 주소/);
+response = context.handleKakaoChatbotSkill_(payload("서울시 강남구 다른로 999"), validEvent);
+assert.match(response.template.outputs[0].simpleText.text, /계약 건물이 없습니다/);
+assert.deepEqual(
+  Array.from(response.template.quickReplies).map(item => item.label),
+  ["주소 다시 입력", "건물명 다시 입력", "접수 취소"]
+);
+response = context.handleKakaoChatbotSkill_(payload("건물명 다시 입력"), validEvent);
+assert.match(response.template.outputs[0].simpleText.text, /건물명/);
+contractMatched = true;
+
 assert.equal(context.validateKakaoChatbotAnswer_("phone", "123").ok, false);
 assert.equal(context.validateKakaoChatbotAnswer_("description", "짧음").ok, false);
 assert.equal(context.validateKakaoChatbotAnswer_("consent", "동의하지 않습니다").value, false);
 assert.equal(context.kakaoChatbotExtractPhotoUrl_(payload("사진", { photoUrl: "https://example.com/photo.jpg" })), "https://example.com/photo.jpg");
 assert.equal(context.normalizePhoneForSms_("1020773076"), "01020773076");
 assert.equal(context.normalizePhoneForSms_("010-2077-3076"), "01020773076");
+
+const contractContext = {
+  String,
+  Math,
+  normalizeText_(value) {
+    return String(value || "")
+      .toLowerCase()
+      .replace(/\s+/g, "")
+      .replace(/[()\[\]{}.,·ㆍ-]/g, "")
+      .trim();
+  },
+  normalizeAddress_(value) {
+    return String(value || "")
+      .toLowerCase()
+      .replace(/강원특별자치도/g, "강원")
+      .replace(/강원도/g, "강원")
+      .replace(/\s+/g, "")
+      .replace(/[()\[\]{}.,·ㆍ-]/g, "")
+      .replace(/번지/g, "")
+      .replace(/층/g, "f")
+      .trim();
+  }
+};
+vm.createContext(contractContext);
+vm.runInContext(
+  [
+    "diceSimilarity_",
+    "rankDriveOnboardingCandidate_",
+    "isPlausibleOnboardingCandidate_"
+  ].map(extractFunction).join("\n\n"),
+  contractContext,
+  { filename: sourcePath }
+);
+const matchingContract = contractContext.rankDriveOnboardingCandidate_(
+  {
+    building: "햇빛빌라",
+    address: "강원 원주시 단계동 927-2",
+    text: "햇빛빌라 강원 원주시 단계동 927-2"
+  },
+  "햇빛빌라",
+  "단계동 927-2"
+);
+assert.equal(
+  contractContext.isPlausibleOnboardingCandidate_(
+    matchingContract,
+    "햇빛빌라",
+    "단계동 927-2"
+  ),
+  true
+);
+const wrongAddressContract = contractContext.rankDriveOnboardingCandidate_(
+  {
+    building: "햇빛빌라",
+    address: "강원 원주시 단계동 927-2",
+    text: "햇빛빌라 강원 원주시 단계동 927-2"
+  },
+  "햇빛빌라",
+  "우산동 240-2"
+);
+assert.equal(
+  contractContext.isPlausibleOnboardingCandidate_(
+    wrongAddressContract,
+    "햇빛빌라",
+    "우산동 240-2"
+  ),
+  false
+);
 
 context.writeKakaoPendingCaseLink_(
   "BR-2026-0099",
@@ -359,7 +451,9 @@ assert.deepEqual(
   ["owner-existing-request", "세입자-request"]
 );
 
-assert.match(source, /const AUTOMATION_BUILD = "complaint-workflow-20260727-v36"/);
+assert.match(source, /const AUTOMATION_BUILD = "complaint-workflow-20260727-v37"/);
+assert.doesNotMatch(source, /name: "세입자 성함을 입력해 주세요/);
+assert.match(source, /입력한 건물명과 주소로 확인되는 브링케어 계약 건물이 없습니다/);
 assert.match(source, /putCaseChildToFirebase_\(caseId, "complaintReceiptSms", smsResult\)/);
 assert.match(source, /putCaseChildToFirebase_\(caseId, "automationState\/receiptSms", casePayload\.automationState\.receiptSms\)/);
 assert.match(source, /writeNormalizedKakaoPhoneToSheetForCase_\(casePayload, normalizedTenantPhone\)/);

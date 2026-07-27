@@ -35,7 +35,7 @@ const PAYMENT_SCHEDULE_HEADERS = [
   "상태",
   "비고"
 ];
-const AUTOMATION_BUILD = "complaint-workflow-20260727-v36";
+const AUTOMATION_BUILD = "complaint-workflow-20260727-v37";
 const OWNER_RECOMMENDATION_IMAGE_VERSION = "owner-summary-v4";
 const OWNER_DECISION_VIEW = "owner-decision";
 const OWNER_PAYMENT_ACCOUNT = {
@@ -329,7 +329,7 @@ function handleKakaoChatbotSkill_(payload, event) {
   if (/^(민원접수|민원접수시작|접수시작|새민원)$/.test(command)) {
     const freshSession = {
       step: "building",
-      values: {},
+      values: { name: "세입자" },
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString()
     };
@@ -349,6 +349,24 @@ function handleKakaoChatbotSkill_(payload, event) {
       "최근 접수번호는 " + session.completedTicketNo + "입니다.",
       kakaoChatbotHomeQuickReplies_()
     );
+  }
+
+  if (/^(건물명다시입력|건물다시입력)$/.test(command)) {
+    session.step = "building";
+    session.values = Object.assign({}, session.values || {}, { name: "세입자" });
+    delete session.values.building;
+    delete session.values.address;
+    session.updatedAt = new Date().toISOString();
+    kakaoChatbotWriteSession_(userHash, session, config.sessionSeconds);
+    return kakaoChatbotPromptResponse_("building");
+  }
+  if (/^(주소다시입력|주소재입력)$/.test(command)) {
+    session.step = "address";
+    session.values = Object.assign({}, session.values || {}, { name: "세입자" });
+    delete session.values.address;
+    session.updatedAt = new Date().toISOString();
+    kakaoChatbotWriteSession_(userHash, session, config.sessionSeconds);
+    return kakaoChatbotPromptResponse_("address");
   }
 
   const step = String(session.step || "building");
@@ -396,6 +414,30 @@ function handleKakaoChatbotSkill_(payload, event) {
   }
 
   session.values = Object.assign({}, session.values || {});
+  if (step === "address") {
+    const contractCheck = verifyKakaoContractBuilding_(
+      session.values.building || "",
+      validation.value
+    );
+    if (!contractCheck.matched) {
+      session.step = "address";
+      session.values.name = "세입자";
+      session.updatedAt = new Date().toISOString();
+      kakaoChatbotWriteSession_(userHash, session, config.sessionSeconds);
+      return kakaoChatbotTextResponse_(
+        [
+          "입력한 건물명과 주소로 확인되는 브링케어 계약 건물이 없습니다.",
+          "건물명과 주소를 다시 확인해 주세요.",
+          "",
+          "계약 중인 건물인데 계속 확인되지 않으면 브링케어 관리자에게 문의해 주세요."
+        ].join("\n"),
+        kakaoChatbotContractMismatchQuickReplies_()
+      );
+    }
+    session.values.contractBuildingId = contractCheck.id || "";
+    session.values.contractBuilding = contractCheck.building || session.values.building || "";
+    session.values.contractAddress = contractCheck.address || validation.value;
+  }
   session.values[step] = validation.value;
   const photoUrl = kakaoChatbotExtractPhotoUrl_(payload);
   if (photoUrl) session.values.photoUrl = photoUrl;
@@ -446,18 +488,25 @@ function kakaoChatbotQuickRepliesForStep_(step) {
   return [{ label: "접수 취소", action: "message", messageText: "접수 취소" }];
 }
 
+function kakaoChatbotContractMismatchQuickReplies_() {
+  return [
+    { label: "주소 다시 입력", action: "message", messageText: "주소 다시 입력" },
+    { label: "건물명 다시 입력", action: "message", messageText: "건물명 다시 입력" },
+    { label: "접수 취소", action: "message", messageText: "접수 취소" }
+  ];
+}
+
 function kakaoChatbotPromptResponse_(step) {
   const prompts = {
     building: "민원을 접수할 건물명을 입력해 주세요.\n예: 브링타워",
     address: "계약 건물 확인을 위해 건물 주소를 입력해 주세요.\n예: 서울시 강남구 테헤란로 123",
     room: "호실을 입력해 주세요.\n예: 301",
-    name: "세입자 성함을 입력해 주세요.",
     phone: "접수 안내를 받을 휴대폰 번호를 입력해 주세요.\n예: 010-1234-5678",
     issueType: "문제 유형을 선택하거나 직접 입력해 주세요.",
     description: "현재 증상을 자세히 입력해 주세요.\n언제부터, 어디에서, 어떤 문제가 발생했는지 적어 주세요.",
     visitTime: "방문 가능한 날짜와 시간대를 입력해 주세요.\n예: 7월 28일 오후 2시 이후\n정해지지 않았다면 '일정 협의'를 선택해 주세요.",
     consent: [
-      "민원 처리와 계약 확인을 위해 입력한 성명, 연락처, 주소, 민원 내용을 수집·이용합니다.",
+      "민원 처리와 계약 확인을 위해 입력한 연락처, 주소, 민원 내용을 수집·이용합니다.",
       "수집 정보는 민원 처리 및 업체 연결 목적으로만 사용합니다.",
       "",
       "동의하시겠습니까?"
@@ -470,7 +519,7 @@ function kakaoChatbotPromptResponse_(step) {
 }
 
 function kakaoChatbotNextStep_(step) {
-  const steps = ["building", "address", "room", "name", "phone", "issueType", "description", "visitTime", "consent"];
+  const steps = ["building", "address", "room", "phone", "issueType", "description", "visitTime", "consent"];
   const index = steps.indexOf(step);
   return index >= 0 && index < steps.length - 1 ? steps[index + 1] : "consent";
 }
@@ -486,9 +535,6 @@ function validateKakaoChatbotAnswer_(step, value) {
   }
   if (step === "room" && !/[0-9가-힣A-Za-z]/.test(text)) {
     return { ok: false, message: "호실을 다시 입력해 주세요. 예: 301" };
-  }
-  if (step === "name" && text.replace(/\s/g, "").length < 2) {
-    return { ok: false, message: "세입자 성함을 두 글자 이상 입력해 주세요." };
   }
   if (step === "phone") {
     const phone = normalizePhoneForSms_(text);
@@ -568,6 +614,57 @@ function kakaoChatbotExtractPhotoUrl_(payload) {
   return "";
 }
 
+function verifyKakaoContractBuilding_(building, address) {
+  let registry = null;
+  try {
+    registry = firebaseReadJson_(
+      firebaseCaseSettingsUrl_("paymentBuildings"),
+      "카카오 계약 건물 목록 조회 실패"
+    );
+  } catch (err) {
+    Logger.log("카카오 계약 건물 Firebase 조회 실패: " + err.message);
+  }
+
+  const records = Object.keys(registry || {}).map(key => {
+    const item = registry[key] || {};
+    return {
+      id: String(item.id || item.driveFileId || key),
+      building: String(item.building || item.name || "").trim(),
+      address: String(item.address || "").trim(),
+      text: [item.building || item.name || "", item.address || ""].join(" ")
+    };
+  }).filter(item => item.id && item.building);
+
+  if (records.length) {
+    const ranked = records.map(item => rankDriveOnboardingCandidate_(item, building, address));
+    ranked.sort((a, b) => {
+      if (a.matchRank !== b.matchRank) return b.matchRank - a.matchRank;
+      if (a.matchScore !== b.matchScore) return b.matchScore - a.matchScore;
+      return b.addressScore - a.addressScore;
+    });
+    const winner = ranked[0];
+    return {
+      matched: isPlausibleOnboardingCandidate_(winner, building, address),
+      id: winner.id || "",
+      building: winner.building || "",
+      address: winner.address || "",
+      matchScore: winner.matchScore || 0
+    };
+  }
+
+  const driveMatch = matchDriveOnboardingFile_({
+    "건물명": building,
+    "건물 주소": address
+  });
+  return {
+    matched: driveMatch && driveMatch.status === "matched",
+    id: driveMatch && driveMatch.driveFileId || "",
+    building: driveMatch && driveMatch.matchedBuilding || "",
+    address: driveMatch && driveMatch.matchedAddress || "",
+    matchScore: driveMatch && driveMatch.matchScore || 0
+  };
+}
+
 function kakaoChatbotCaseStatusResponse_(userHash) {
   try {
     const link = firebaseReadJson_(
@@ -622,7 +719,7 @@ function enqueueKakaoComplaintIntake_(values, userHash, payload) {
       "건물명": kakaoChatbotCleanText_(values.building, 120),
       "건물 주소": kakaoChatbotCleanText_(values.address, 240),
       "호실": kakaoChatbotCleanText_(values.room, 60),
-      "이름": kakaoChatbotCleanText_(values.name, 80),
+      "이름": kakaoChatbotCleanText_(values.name || "세입자", 80),
       "연락처": normalizePhoneForSms_(values.phone),
       "문제 유형": kakaoChatbotCleanText_(values.issueType, 80),
       "증상 설명": kakaoChatbotCleanText_(values.description, 1000),
@@ -6605,6 +6702,21 @@ function matchDriveOnboardingFile_(record) {
     return b.lastUpdatedMs - a.lastUpdatedMs;
   });
   const winner = ranked[0];
+  if (!isPlausibleOnboardingCandidate_(winner, inputBuilding, inputAddress)) {
+    return Object.assign(base, {
+      statusText: "입력한 건물명과 주소에 일치하는 계약 건물을 찾지 못했습니다.",
+      candidateCount: ranked.length,
+      candidates: ranked.slice(0, 5).map(candidate => ({
+        fileName: candidate.file.getName(),
+        fileUrl: candidate.file.getUrl(),
+        driveFileId: candidate.file.getId(),
+        building: candidate.building,
+        address: candidate.address,
+        ownerName: candidate.ownerName,
+        matchScore: candidate.matchScore
+      }))
+    });
+  }
   const levelText = winner.matchRank === 3
     ? "건물명과 주소 정확 일치"
     : winner.matchRank === 2
@@ -7245,6 +7357,32 @@ function rankDriveOnboardingCandidate_(candidate, inputBuilding, inputAddress) {
   candidate.addressScore = Math.round(addressScore * 1000) / 1000;
   candidate.matchScore = Math.round((buildingScore * 0.6 + addressScore * 0.4) * 1000) / 1000;
   return candidate;
+}
+
+function isPlausibleOnboardingCandidate_(candidate, inputBuilding, inputAddress) {
+  if (!candidate) return false;
+  const buildingKey = normalizeText_(inputBuilding);
+  const candidateBuildingKey = normalizeText_(candidate.building);
+  const addressKey = normalizeAddress_(inputAddress);
+  const candidateAddressKey = normalizeAddress_(candidate.address);
+  if (!buildingKey || !candidateBuildingKey || !addressKey || !candidateAddressKey) return false;
+
+  const buildingMatches = (
+    buildingKey === candidateBuildingKey ||
+    candidate.buildingScore >= 0.82
+  );
+  const addressContains = (
+    addressKey.indexOf(candidateAddressKey) >= 0 ||
+    candidateAddressKey.indexOf(addressKey) >= 0
+  );
+  const inputNumbers = addressKey.match(/\d+/g) || [];
+  const candidateNumbers = candidateAddressKey.match(/\d+/g) || [];
+  const sharesAddressNumber = inputNumbers.some(value => candidateNumbers.indexOf(value) >= 0);
+  const addressMatches = addressContains || (
+    candidate.addressScore >= 0.5 &&
+    sharesAddressNumber
+  );
+  return buildingMatches && addressMatches;
 }
 
 function makeDriveSearchTerms_(value) {
