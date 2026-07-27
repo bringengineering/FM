@@ -35,7 +35,7 @@ const PAYMENT_SCHEDULE_HEADERS = [
   "상태",
   "비고"
 ];
-const AUTOMATION_BUILD = "complaint-workflow-20260724-v29";
+const AUTOMATION_BUILD = "complaint-workflow-20260727-v30";
 const OWNER_RECOMMENDATION_IMAGE_VERSION = "owner-summary-v4";
 const OWNER_DECISION_VIEW = "owner-decision";
 const OWNER_PAYMENT_ACCOUNT = {
@@ -1131,7 +1131,7 @@ function handleOwnerRecommendationMmsLocked_(payload) {
       deliveryAccepted: true,
       deliveryConfirmed: true,
       confirmedAt: existing.confirmedAt || new Date().toISOString(),
-      statusText: "SENS MMS 발송 완료. ⑨ 승인·입금 단계로 전환했습니다."
+      statusText: "건물주 추천 알림 발송 완료. ⑨ 승인·입금 단계로 전환했습니다."
     });
     return Object.assign({ skipped: true }, updateOwnerRecommendationMmsCase_(caseId, casePayload, normalizedExisting));
   }
@@ -1145,7 +1145,7 @@ function handleOwnerRecommendationMmsLocked_(payload) {
     return updateOwnerRecommendationMmsCase_(caseId, casePayload, {
       ok: false,
       status: "blocked",
-      statusText: preparedDecision.message || ownerDecision.linkStatusText || "승인 링크가 열리는지 확인하지 못해 MMS 발송을 보류했습니다.",
+      statusText: preparedDecision.message || ownerDecision.linkStatusText || "승인 링크가 열리는지 확인하지 못해 추천 알림 발송을 보류했습니다.",
       requestKey: requestKey,
       quoteId: selected.quoteId,
       vendorName: supplier.name,
@@ -1183,6 +1183,43 @@ function handleOwnerRecommendationMmsLocked_(payload) {
   if (!ownerPhone) {
     baseResult.status = "blocked";
     baseResult.statusText = "온보딩 수집서에서 건물주 연락처를 찾지 못했습니다.";
+    return updateOwnerRecommendationMmsCase_(caseId, casePayload, baseResult);
+  }
+
+  const kakaoConfig = getKakaoAlimTalkConfig_();
+  if (kakaoConfig.enabled && kakaoConfig.templates.ownerQuote) {
+    const approvalUrl = ownerDecision.shortDecisionUrl || ownerDecision.decisionUrl;
+    const alimTalkContent = makeOwnerRecommendationAlimTalkContent_(casePayload, supplier, amounts);
+    const fallbackContent = appendOwnerDecisionLink_(alimTalkContent, approvalUrl);
+    checkpointOwnerRecommendationMmsCase_(caseId, casePayload, Object.assign({}, baseResult, {
+      provider: "kakao_alimtalk",
+      templateCode: kakaoConfig.templates.ownerQuote
+    }));
+    const send = sendKakaoAlimTalkOrSms_(ownerPhone, alimTalkContent, "건물주 추천 견적", {
+      templateCode: kakaoConfig.templates.ownerQuote,
+      fallbackContent: fallbackContent,
+      buttons: [{
+        type: "WL",
+        name: "추천 견적 확인",
+        linkMobile: approvalUrl,
+        linkPc: approvalUrl
+      }]
+    });
+    baseResult.provider = send.provider || "kakao_alimtalk";
+    baseResult.templateCode = send.templateCode || kakaoConfig.templates.ownerQuote;
+    baseResult.requestId = send.requestId || "";
+    baseResult.messageId = send.messageId || "";
+    baseResult.responseCode = send.responseCode || "";
+    baseResult.statusText = send.ok
+      ? (send.provider === "kakao_alimtalk"
+        ? "카카오 알림톡 발송 완료. ⑨ 승인·입금 단계로 전환했습니다."
+        : "알림톡 실패 후 문자 대체 발송 완료. ⑨ 승인·입금 단계로 전환했습니다.")
+      : send.message;
+    baseResult.deliveryAccepted = send.ok === true;
+    baseResult.deliveryConfirmed = send.ok === true;
+    baseResult.confirmedAt = send.ok ? new Date().toISOString() : "";
+    baseResult.ok = send.ok === true;
+    baseResult.status = send.ok ? "sent" : "failed";
     return updateOwnerRecommendationMmsCase_(caseId, casePayload, baseResult);
   }
 
@@ -1331,6 +1368,61 @@ function makeOwnerRecommendationMmsContent_(casePayload, supplier, amounts) {
     "추천 견적으로 진행을 원하시면 문자 하단의 승인 링크에서",
     "'승인하고 입금 진행' 버튼을 눌러주세요.",
     "접수번호: " + (casePayload.ticketNo || casePayload.id || "")
+  ].join("\n");
+}
+
+function safeAlimTalkVariable_(value, fallback) {
+  const text = String(value == null ? "" : value).replace(/\s+/g, " ").trim();
+  return (text || String(fallback || "미입력")).slice(0, 200);
+}
+
+function makeComplaintReceiptTenantAlimTalkContent_(ticketNo, record) {
+  const tenantName = safeAlimTalkVariable_(readField_(record, ["이름", "성명", "세입자명"]), "고객");
+  const building = safeAlimTalkVariable_(readField_(record, ["건물명", "건물"]), "미입력");
+  const room = safeAlimTalkVariable_(formatRoomForCase_(readField_(record, ["호실"])), "미입력");
+  const issueType = safeAlimTalkVariable_(readField_(record, ["문제 유형"]), "미입력");
+  return [
+    "[브링케어 민원 접수 안내]",
+    tenantName + "님, 민원이 정상 접수되었습니다.",
+    "",
+    "접수번호: " + safeAlimTalkVariable_(ticketNo, "미입력"),
+    "건물: " + building,
+    "호실: " + room,
+    "문제 유형: " + issueType,
+    "",
+    "담당자가 내용을 확인한 후 진행 상황을 안내드리겠습니다."
+  ].join("\n");
+}
+
+function makeComplaintReceiptOwnerAlimTalkContent_(ticketNo, record) {
+  const building = safeAlimTalkVariable_(readField_(record, ["건물명", "건물"]), "미입력");
+  const room = safeAlimTalkVariable_(formatRoomForCase_(readField_(record, ["호실"])), "미입력");
+  const issueType = safeAlimTalkVariable_(readField_(record, ["문제 유형"]), "미입력");
+  return [
+    "[브링케어 건물 민원 접수 안내]",
+    "관리 중인 건물에 민원이 접수되었습니다.",
+    "",
+    "접수번호: " + safeAlimTalkVariable_(ticketNo, "미입력"),
+    "건물: " + building,
+    "호실: " + room,
+    "문제 유형: " + issueType,
+    "",
+    "접수 내용을 확인한 후 필요한 업체 견적을 진행하겠습니다."
+  ].join("\n");
+}
+
+function makeOwnerRecommendationAlimTalkContent_(casePayload, supplier, amounts) {
+  return [
+    "[브링케어 추천 견적 안내]",
+    "건물 민원에 대한 추천 견적이 준비되었습니다.",
+    "",
+    "접수번호: " + safeAlimTalkVariable_(casePayload && (casePayload.ticketNo || casePayload.id), "미입력"),
+    "건물: " + safeAlimTalkVariable_(casePayload && casePayload.building, "미입력"),
+    "호실: " + safeAlimTalkVariable_(formatRoomForCase_(casePayload && casePayload.room), "미입력"),
+    "추천 업체: " + safeAlimTalkVariable_(supplier && supplier.name, "업체 확인 필요"),
+    "추천 금액: " + ownerRecommendationAmountText_(amounts && amounts.totalAmount),
+    "",
+    "아래 버튼에서 세부 작업 내용과 금액을 확인한 후 진행 방법을 선택해 주세요."
   ].join("\n");
 }
 
@@ -1904,10 +1996,10 @@ function updateOwnerRecommendationMmsCase_(caseId, casePayload, result) {
     result.status = "blocked";
     result.deliveryAccepted = false;
     result.deliveryConfirmed = false;
-    result.statusText = "MMS 발송 기록과 검증된 승인 링크가 일치하지 않아 ⑧ 단계에서 다시 확인합니다.";
+    result.statusText = "추천 알림 발송 기록과 검증된 승인 링크가 일치하지 않아 ⑧ 단계에서 다시 확인합니다.";
   }
   casePayload.note.c8 = makeOwnerRecommendationMmsNote_(result);
-  casePayload.log.unshift("건물주 추천 MMS " + (result.ok ? "발송완료" : "발송보류") + " / " + (result.statusText || ""));
+  casePayload.log.unshift("건물주 추천 알림 " + (result.ok ? "발송완료" : "발송보류") + " / " + (result.statusText || ""));
   if (casePayload.log.length > 30) casePayload.log.length = 30;
   putCaseChildToFirebase_(caseId, "ownerRecommendationMms", result);
   patchCaseChildToFirebase_(caseId, "status", {
@@ -1931,6 +2023,9 @@ function updateOwnerRecommendationMmsCase_(caseId, casePayload, result) {
       deliveryAccepted: safeCompletion,
       deliveryConfirmed: safeCompletion,
       requestId: result.requestId || "",
+      messageId: result.messageId || "",
+      provider: result.provider || "",
+      templateCode: result.templateCode || "",
       requestKey: result.requestKey || "",
       quoteId: result.quoteId || "",
       vendorName: result.vendorName || "",
@@ -1943,7 +2038,7 @@ function updateOwnerRecommendationMmsCase_(caseId, casePayload, result) {
       decisionUrl: result.decisionUrl || "",
       decisionStatus: result.decisionStatus || "",
       decisionLinkValidated: result.decisionLinkValidated === true,
-      statusText: result.statusText || (safeCompletion ? "SENS MMS 발송 완료" : "승인 링크 확인 필요"),
+      statusText: result.statusText || (safeCompletion ? "건물주 추천 알림 발송 완료" : "승인 링크 확인 필요"),
       confirmedAt: safeCompletion ? (result.confirmedAt || timestamp) : "",
       updatedAt: timestamp,
       build: AUTOMATION_BUILD
@@ -1960,7 +2055,7 @@ function checkpointOwnerRecommendationMmsCase_(caseId, casePayload, result) {
   const checkpoint = Object.assign({}, result, {
     ok: false,
     status: "sending",
-    statusText: "SENS MMS 발송 요청을 처리하고 있습니다.",
+    statusText: "건물주 추천 알림 발송 요청을 처리하고 있습니다.",
     deliveryAccepted: false,
     deliveryConfirmed: false,
     sendAttemptedAt: timestamp,
@@ -1971,7 +2066,7 @@ function checkpointOwnerRecommendationMmsCase_(caseId, casePayload, result) {
   casePayload.status = casePayload.status || {};
   casePayload.note = casePayload.note || {};
   casePayload.status.c8 = "doing";
-  casePayload.note.c8 = "건물주 추천 MMS 발송을 처리하고 있습니다.";
+  casePayload.note.c8 = "건물주 추천 알림 발송을 처리하고 있습니다.";
   casePayload.ownerRecommendationMms = checkpoint;
 
   putCaseChildToFirebase_(caseId, "ownerRecommendationMms", checkpoint);
@@ -2000,7 +2095,7 @@ function makeOwnerRecommendationMmsNote_(result) {
   const deliveryConfirmed = result.deliveryConfirmed === true || (result.ok === true && result.status === "sent");
   const deliveryAccepted = result.deliveryAccepted === true || result.status === "sent_pending_confirmation";
   const lines = [
-    "[건물주 추천 MMS]",
+    "[건물주 추천 알림]",
     "상태: " + (deliveryConfirmed ? "발송완료" : deliveryAccepted ? "발송 요청 완료 · 수신 확인 필요" : "진행중/보류"),
     result.statusText || "",
     result.vendorName ? "추천 업체: " + result.vendorName : "",
@@ -6668,35 +6763,18 @@ function sendComplaintSms_(ticketNo, record, analysis, contractMatch, options) {
     };
   }
 
-  const config = getSensConfig_();
-  if (!config.enabled) {
-    return { status: "설정필요", statusText: "NCP SENS Script Properties 설정 후 문자 발송이 가능합니다.", skipped: true };
+  const smsConfig = getSensConfig_();
+  const kakaoConfig = getKakaoAlimTalkConfig_();
+  if (!smsConfig.enabled && !kakaoConfig.enabled) {
+    return { status: "설정필요", statusText: "NCP SENS SMS 또는 카카오 알림톡 Script Properties 설정 후 발송이 가능합니다.", skipped: true };
   }
 
   const tenantPhoneRaw = normalizePhoneForSms_(readField_(record, ["연락처", "전화번호", "휴대폰"]));
   const ownerPhoneRaw = normalizePhoneForSms_(extractOwnerPhoneFromOnboarding_(contractMatch));
   const tenantPhone = isSendableSmsPhone_(tenantPhoneRaw) ? tenantPhoneRaw : "";
   const ownerPhone = isSendableSmsPhone_(ownerPhoneRaw) ? ownerPhoneRaw : "";
-  const building = readField_(record, ["건물명", "건물"]);
-  const room = readField_(record, ["호실"]);
-  const issueType = readField_(record, ["문제 유형"]);
-  const tenantContent = [
-    "[BRING Care]",
-    "민원이 접수되었습니다.",
-    "접수번호: " + ticketNo,
-    building ? "건물: " + building : "",
-    room ? "호실: " + formatRoomForCase_(room) : "",
-    issueType ? "문제: " + issueType : "",
-    "확인 후 안내드리겠습니다."
-  ].filter(Boolean).join("\n");
-  const ownerContent = [
-    "[BRING Care]",
-    "건물 민원이 접수되었습니다.",
-    "접수번호: " + ticketNo,
-    building ? "건물: " + building : "",
-    room ? "호실: " + formatRoomForCase_(room) : "",
-    issueType ? "문제: " + issueType : ""
-  ].filter(Boolean).join("\n");
+  const tenantContent = makeComplaintReceiptTenantAlimTalkContent_(ticketNo, record);
+  const ownerContent = makeComplaintReceiptOwnerAlimTalkContent_(ticketNo, record);
 
   const logs = [];
   let tenantSent = false;
@@ -6705,7 +6783,10 @@ function sendComplaintSms_(ticketNo, record, analysis, contractMatch, options) {
   let ownerReceipt = {};
 
   if (tenantPhone) {
-    const tenantResult = sendSensSms_(tenantPhone, tenantContent, "세입자");
+    const tenantResult = sendKakaoAlimTalkOrSms_(tenantPhone, tenantContent, "세입자", {
+      templateCode: kakaoConfig.templates.receiptTenant,
+      fallbackContent: tenantContent
+    });
     tenantReceipt = tenantResult;
     tenantSent = tenantResult.ok;
     logs.push("세입자 " + maskPhone_(tenantPhone) + " " + tenantResult.message);
@@ -6716,7 +6797,10 @@ function sendComplaintSms_(ticketNo, record, analysis, contractMatch, options) {
   }
 
   if (ownerPhone) {
-    const ownerResult = sendSensSms_(ownerPhone, ownerContent, "건물주");
+    const ownerResult = sendKakaoAlimTalkOrSms_(ownerPhone, ownerContent, "건물주", {
+      templateCode: kakaoConfig.templates.receiptOwner,
+      fallbackContent: ownerContent
+    });
     ownerReceipt = ownerResult;
     ownerSent = ownerResult.ok;
     logs.push("건물주 " + maskPhone_(ownerPhone) + " " + ownerResult.message);
@@ -6737,6 +6821,10 @@ function sendComplaintSms_(ticketNo, record, analysis, contractMatch, options) {
     ownerPhoneMasked: ownerPhone ? maskPhone_(ownerPhone) : "",
     tenantRequestId: tenantReceipt.requestId || "",
     ownerRequestId: ownerReceipt.requestId || "",
+    tenantProvider: tenantReceipt.provider || "",
+    ownerProvider: ownerReceipt.provider || "",
+    tenantTemplateCode: tenantReceipt.templateCode || "",
+    ownerTemplateCode: ownerReceipt.templateCode || "",
     requestIds: [tenantReceipt.requestId, ownerReceipt.requestId].filter(Boolean),
     deliveryAccepted: status === "발송완료",
     completedAt: status === "발송완료" ? new Date().toISOString() : ""
@@ -6764,6 +6852,10 @@ function applySmsResultToCase_(casePayload, smsResult) {
     requestIds: smsResult.requestIds || [],
     tenantRequestId: smsResult.tenantRequestId || "",
     ownerRequestId: smsResult.ownerRequestId || "",
+    tenantProvider: smsResult.tenantProvider || "",
+    ownerProvider: smsResult.ownerProvider || "",
+    tenantTemplateCode: smsResult.tenantTemplateCode || "",
+    ownerTemplateCode: smsResult.ownerTemplateCode || "",
     deliveryAccepted: isSmsCompleteStatus_(smsResult.status),
     completedAt: smsResult.completedAt || "",
     updatedAt: new Date().toISOString(),
@@ -6796,6 +6888,142 @@ function getSensConfig_() {
   };
   config.enabled = Boolean(config.enabled && config.serviceId && config.accessKey && config.secretKey && config.from);
   return config;
+}
+
+function getKakaoAlimTalkConfig_() {
+  const props = PropertiesService.getScriptProperties();
+  const enabled = String(props.getProperty("KAKAO_ALIMTALK_ENABLED") || "false").toLowerCase() === "true";
+  const plusFriendIdRaw = String(props.getProperty("KAKAO_CHANNEL_ID") || "").trim();
+  const config = {
+    enabled: enabled,
+    serviceId: String(props.getProperty("NCP_BIZ_MESSAGE_SERVICE_ID") || "").trim(),
+    plusFriendId: plusFriendIdRaw && plusFriendIdRaw.charAt(0) !== "@" ? "@" + plusFriendIdRaw : plusFriendIdRaw,
+    accessKey: String(props.getProperty("NCP_ACCESS_KEY") || "").trim(),
+    secretKey: String(props.getProperty("NCP_SECRET_KEY") || "").trim(),
+    smsFrom: normalizePhoneForSms_(props.getProperty("NCP_SENS_FROM") || ""),
+    useSmsFailover: String(props.getProperty("KAKAO_SMS_FAILOVER_ENABLED") || "false").toLowerCase() === "true",
+    templates: {
+      receiptTenant: String(props.getProperty("KAKAO_TEMPLATE_RECEIPT_TENANT") || "BRINGRECEIPTTENANTV1").trim(),
+      receiptOwner: String(props.getProperty("KAKAO_TEMPLATE_RECEIPT_OWNER") || "BRINGRECEIPTOWNERV1").trim(),
+      ownerQuote: String(props.getProperty("KAKAO_TEMPLATE_OWNER_QUOTE") || "BRINGOWNERQUOTEV1").trim()
+    }
+  };
+  config.enabled = Boolean(
+    config.enabled &&
+    config.serviceId &&
+    config.plusFriendId &&
+    config.accessKey &&
+    config.secretKey
+  );
+  return config;
+}
+
+function sendSensAlimTalk_(to, content, label, templateCode, options, config) {
+  options = options || {};
+  if (!config || !config.enabled) config = getKakaoAlimTalkConfig_();
+  if (!config.enabled) return { ok: false, provider: "kakao_alimtalk", message: "카카오 알림톡 설정필요" };
+  to = normalizePhoneForSms_(to);
+  if (!isSendableSmsPhone_(to)) {
+    return { ok: false, provider: "kakao_alimtalk", message: "수신번호 확인필요(" + label + ")" };
+  }
+  templateCode = String(templateCode || "").trim();
+  if (!templateCode) {
+    return { ok: false, provider: "kakao_alimtalk", message: "알림톡 템플릿 코드 확인필요(" + label + ")" };
+  }
+  content = String(content || "");
+  if (!content || content.length > 1000) {
+    return { ok: false, provider: "kakao_alimtalk", message: "알림톡 본문은 1~1000자로 입력해야 합니다(" + label + ")" };
+  }
+
+  const message = {
+    countryCode: "82",
+    to: to,
+    content: content
+  };
+  if (Array.isArray(options.buttons) && options.buttons.length) {
+    message.buttons = options.buttons.map(button => ({
+      type: String(button.type || "WL"),
+      name: String(button.name || ""),
+      linkMobile: String(button.linkMobile || ""),
+      linkPc: String(button.linkPc || button.linkMobile || "")
+    }));
+  }
+  if (config.useSmsFailover && config.smsFrom) {
+    const fallbackContent = String(options.fallbackContent || content);
+    message.useSmsFailover = true;
+    message.failoverConfig = {
+      type: byteLength_(fallbackContent) > 90 ? "LMS" : "SMS",
+      from: config.smsFrom,
+      content: fallbackContent
+    };
+    if (message.failoverConfig.type === "LMS") message.failoverConfig.subject = "BRING Care";
+  } else {
+    message.useSmsFailover = false;
+  }
+
+  const uri = "/alimtalk/v2/services/" + encodeURIComponent(config.serviceId) + "/messages";
+  const response = sensPostJson_(uri, {
+    plusFriendId: config.plusFriendId,
+    templateCode: templateCode,
+    messages: [message]
+  }, config);
+  if (!response.ok) {
+    return {
+      ok: false,
+      provider: "kakao_alimtalk",
+      templateCode: templateCode,
+      responseCode: response.code || 0,
+      message: "알림톡 발송실패(" + label + "): " + response.message
+    };
+  }
+
+  const receipt = sensResponseReceipt_(response.json);
+  const responseMessages = Array.isArray(response.json && response.json.messages) ? response.json.messages : [];
+  const firstMessage = responseMessages[0] || {};
+  return {
+    ok: true,
+    provider: "kakao_alimtalk",
+    templateCode: templateCode,
+    message: "카카오 알림톡 발송요청 완료(" + label + ")",
+    requestId: receipt.requestId,
+    messageId: String(firstMessage.messageId || ""),
+    statusCode: receipt.statusCode,
+    statusName: receipt.statusName,
+    responseCode: response.code
+  };
+}
+
+function sendKakaoAlimTalkOrSms_(to, content, label, options) {
+  options = options || {};
+  const kakaoConfig = getKakaoAlimTalkConfig_();
+  if (kakaoConfig.enabled && options.templateCode) {
+    const alimTalkResult = sendSensAlimTalk_(
+      to,
+      content,
+      label,
+      options.templateCode,
+      options,
+      kakaoConfig
+    );
+    if (alimTalkResult.ok) return alimTalkResult;
+
+    const smsConfig = getSensConfig_();
+    if (!smsConfig.enabled) return alimTalkResult;
+    const smsResult = sendSensSms_(to, String(options.fallbackContent || content), label);
+    smsResult.provider = smsResult.ok ? "sens_sms_fallback" : "kakao_alimtalk";
+    smsResult.templateCode = options.templateCode;
+    smsResult.alimTalkError = alimTalkResult.message || "";
+    if (smsResult.ok) {
+      smsResult.message = "알림톡 실패 후 문자 대체 발송요청 완료(" + label + ")";
+    } else {
+      smsResult.message = (alimTalkResult.message || "알림톡 발송실패") + " / " + (smsResult.message || "문자 대체 발송실패");
+    }
+    return smsResult;
+  }
+
+  const smsResult = sendSensSms_(to, content, label);
+  smsResult.provider = "sens_sms";
+  return smsResult;
 }
 
 function sendSensSms_(to, content, label) {
@@ -6917,6 +7145,38 @@ function testSensSmsSetup() {
   if (!to) throw new Error("Script Properties에 NCP_SENS_TEST_TO를 테스트 수신번호로 넣어주세요.");
   const result = sendSensSms_(to, "[BRING Care]\nSENS 문자 연동 테스트입니다.", "테스트");
   Logger.log(JSON.stringify(result));
+}
+
+function testKakaoAlimTalkSetup() {
+  const props = PropertiesService.getScriptProperties();
+  const to = normalizePhoneForSms_(props.getProperty("NCP_SENS_TEST_TO") || "");
+  if (!to) throw new Error("Script Properties에 NCP_SENS_TEST_TO를 테스트 수신번호로 넣어주세요.");
+  const config = getKakaoAlimTalkConfig_();
+  if (!config.enabled) {
+    throw new Error("KAKAO_ALIMTALK_ENABLED, NCP_BIZ_MESSAGE_SERVICE_ID, KAKAO_CHANNEL_ID와 NCP 인증키 설정을 확인해 주세요.");
+  }
+  const content = [
+    "[브링케어 민원 접수 안내]",
+    "테스트고객님, 민원이 정상 접수되었습니다.",
+    "",
+    "접수번호: BR-2026-0000",
+    "건물: 브링케어 테스트 건물",
+    "호실: 101호",
+    "문제 유형: 알림톡 연동 테스트",
+    "",
+    "담당자가 내용을 확인한 후 진행 상황을 안내드리겠습니다."
+  ].join("\n");
+  const result = sendSensAlimTalk_(
+    to,
+    content,
+    "알림톡 테스트",
+    config.templates.receiptTenant,
+    { fallbackContent: content },
+    config
+  );
+  Logger.log(JSON.stringify(result));
+  if (!result.ok) throw new Error(result.message || "카카오 알림톡 테스트 발송 실패");
+  return result;
 }
 
 function makeTicketNo_(row, record) {
