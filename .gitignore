@@ -1,1 +1,6 @@
 .firebase/
+.wrangler/
+.node_modules/
+node_modules/
+.dev.vars
+cloudflare-worker/.dev.vars

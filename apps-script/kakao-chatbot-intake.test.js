@@ -66,6 +66,7 @@ const properties = {
 };
 const cache = new Map();
 let enqueued = null;
+let firebaseWrite = null;
 
 const context = {
   console,
@@ -78,6 +79,10 @@ const context = {
   Math,
   RegExp,
   Logger: { log() {} },
+  COMPLAINT_CONFIG: {
+    FIREBASE_DATABASE_URL: "https://example-default-rtdb.firebaseio.com",
+    FIREBASE_CASES_PATH: "cases"
+  },
   PropertiesService: {
     getScriptProperties() {
       return {
@@ -117,11 +122,6 @@ const context = {
       .replace(/[()\[\]{}.,·ㆍ-]/g, "")
       .trim();
   },
-  normalizePhoneForSms_(value) {
-    let digits = String(value || "").replace(/\D/g, "");
-    if (digits.indexOf("82") === 0) digits = "0" + digits.slice(2);
-    return digits;
-  },
   formatRoomForCase_(value) {
     const text = String(value || "").trim();
     return text && !/호$/.test(text) ? text + "호" : text;
@@ -135,6 +135,10 @@ const context = {
       room: values.room,
       issueType: values.issueType
     };
+  },
+  firebaseWriteRequest_(url, method, payload, label) {
+    firebaseWrite = { url, method, payload, label };
+    return { ok: true };
   },
   kakaoChatbotCaseStatusResponse_() {
     return {
@@ -155,12 +159,14 @@ const functions = [
   "kakaoChatbotNextStep_",
   "validateKakaoChatbotAnswer_",
   "kakaoChatbotCleanText_",
+  "normalizePhoneForSms_",
   "kakaoChatbotUserHash_",
   "kakaoChatbotSessionCacheKey_",
   "kakaoChatbotReadSession_",
   "kakaoChatbotWriteSession_",
   "kakaoChatbotDeleteSession_",
-  "kakaoChatbotExtractPhotoUrl_"
+  "kakaoChatbotExtractPhotoUrl_",
+  "writeKakaoPendingCaseLink_"
 ];
 
 vm.createContext(context);
@@ -198,7 +204,12 @@ delete payloadWithoutVersion.version;
 assert.equal(context.isKakaoChatbotSkillPayload_(payloadWithoutVersion), true);
 assert.equal(context.isKakaoChatbotSkillPayload_({ action: "healthCheck" }), false);
 
-let response = context.handleKakaoChatbotSkill_(payload("민원 접수"), {
+const keepalivePayload = payload("");
+keepalivePayload.action.name = "__bringcare_keepalive__";
+let response = context.handleKakaoChatbotSkill_(keepalivePayload, validEvent);
+assert.equal(response.template.outputs[0].simpleText.text, "ok");
+
+response = context.handleKakaoChatbotSkill_(payload("민원 접수"), {
   parameter: { kakaoSkillToken: "wrong" }
 });
 assert.match(response.template.outputs[0].simpleText.text, /인증에 실패/);
@@ -241,8 +252,117 @@ assert.equal(context.validateKakaoChatbotAnswer_("phone", "123").ok, false);
 assert.equal(context.validateKakaoChatbotAnswer_("description", "짧음").ok, false);
 assert.equal(context.validateKakaoChatbotAnswer_("consent", "동의하지 않습니다").value, false);
 assert.equal(context.kakaoChatbotExtractPhotoUrl_(payload("사진", { photoUrl: "https://example.com/photo.jpg" })), "https://example.com/photo.jpg");
+assert.equal(context.normalizePhoneForSms_("1020773076"), "01020773076");
+assert.equal(context.normalizePhoneForSms_("010-2077-3076"), "01020773076");
 
-assert.match(source, /const AUTOMATION_BUILD = "complaint-workflow-20260727-v32"/);
+context.writeKakaoPendingCaseLink_(
+  "BR-2026-0099",
+  { id: "BR-2026-0099", source: "kakao_chatbot" },
+  "a".repeat(64),
+  new Date("2026-07-27T06:00:00.000Z")
+);
+assert.equal(firebaseWrite.url, "https://example-default-rtdb.firebaseio.com/.json");
+assert.equal(firebaseWrite.method, "patch");
+assert.equal(
+  JSON.stringify(firebaseWrite.payload["cases/BR-2026-0099"]),
+  JSON.stringify({ id: "BR-2026-0099", source: "kakao_chatbot" })
+);
+assert.equal(
+  JSON.stringify(firebaseWrite.payload["caseSettings/kakaoChatbotIntake/users/" + "a".repeat(64)]),
+  JSON.stringify({
+    lastCaseId: "BR-2026-0099",
+    updatedAt: "2026-07-27T06:00:00.000Z"
+  })
+);
+
+const sentRecipientLabels = [];
+const smsContext = {
+  String,
+  Array,
+  Object,
+  Set,
+  Date,
+  readField_(record, names) {
+    for (const name of names) {
+      if (record[name] !== undefined && String(record[name]).trim()) return String(record[name]).trim();
+    }
+    return "";
+  },
+  getSensConfig_() {
+    return { enabled: true };
+  },
+  getKakaoAlimTalkConfig_() {
+    return {
+      enabled: true,
+      templates: {
+        receiptTenant: "TENANT",
+        receiptOwner: "OWNER"
+      }
+    };
+  },
+  extractOwnerPhoneFromOnboarding_() {
+    return "010-9999-3603";
+  },
+  makeComplaintReceiptTenantAlimTalkContent_() {
+    return "tenant message";
+  },
+  makeComplaintReceiptOwnerAlimTalkContent_() {
+    return "owner message";
+  },
+  sendKakaoAlimTalkOrSms_(_phone, _content, label) {
+    sentRecipientLabels.push(label);
+    return {
+      ok: true,
+      requestId: label + "-request",
+      provider: "sens_sms",
+      templateCode: ""
+    };
+  },
+  makeComplaintSmsPreview_() {
+    return "preview";
+  }
+};
+vm.createContext(smsContext);
+vm.runInContext(
+  [
+    "normalizePhoneForSms_",
+    "isSendableSmsPhone_",
+    "maskPhone_",
+    "sendComplaintSms_"
+  ].map(extractFunction).join("\n\n"),
+  smsContext,
+  { filename: sourcePath }
+);
+const retrySmsResult = smsContext.sendComplaintSms_(
+  "BR-2026-0006",
+  { "연락처": "1020773076" },
+  {},
+  {},
+  {
+    force: true,
+    existingSms: {
+      tenantSent: false,
+      ownerSent: true,
+      ownerPhoneMasked: "010-****-3603",
+      ownerRequestId: "owner-existing-request",
+      ownerProvider: "sens_sms",
+      requestIds: ["owner-existing-request"]
+    }
+  }
+);
+assert.deepEqual(sentRecipientLabels, ["세입자"]);
+assert.equal(retrySmsResult.status, "발송완료");
+assert.equal(retrySmsResult.tenantPhoneMasked, "010-****-3076");
+assert.equal(retrySmsResult.ownerRequestId, "owner-existing-request");
+assert.deepEqual(
+  Array.from(retrySmsResult.requestIds),
+  ["owner-existing-request", "세입자-request"]
+);
+
+assert.match(source, /const AUTOMATION_BUILD = "complaint-workflow-20260727-v36"/);
+assert.match(source, /putCaseChildToFirebase_\(caseId, "complaintReceiptSms", smsResult\)/);
+assert.match(source, /putCaseChildToFirebase_\(caseId, "automationState\/receiptSms", casePayload\.automationState\.receiptSms\)/);
+assert.match(source, /writeNormalizedKakaoPhoneToSheetForCase_\(casePayload, normalizedTenantPhone\)/);
 assert.match(source, /source: "kakao_chatbot"/);
 assert.match(source, /processPendingKakaoComplaintIntakes/);
 assert.match(source, /카카오 사용자 키 해시/);

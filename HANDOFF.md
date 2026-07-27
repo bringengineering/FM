@@ -6,9 +6,9 @@
 
 ## 1. 프로젝트 개요
 
-세입자가 Google Form으로 민원을 접수하면 Google Apps Script가 접수 내용을
-분석해 Firebase 케이스를 만들고, GitHub Pages 대시보드에서 17단계 업무를
-관리하는 시스템이다.
+세입자가 Google Form 또는 브링케어 카카오톡 채널로 민원을 접수하면
+Google Apps Script가 접수 내용을 분석해 Firebase 케이스를 만들고,
+GitHub Pages 대시보드에서 17단계 업무를 관리하는 시스템이다.
 
 현재 핵심 목표는 아래 흐름이다.
 
@@ -31,6 +31,8 @@
 | Google Form | <https://docs.google.com/forms/d/e/1FAIpQLSfzi-H-abXT-dgsU5rF8vgkWuKtbltr9acgWClVeQ5W297DiA/viewform> |
 | Google 응답 시트 | <https://docs.google.com/spreadsheets/d/1HI6KzIMomL6vOUPs8zZDhXHktL1cWRDcg93lflsuojA/edit> |
 | Apps Script 웹 앱 | <https://script.google.com/macros/s/AKfycbxGAdtEDoNifxkM-e_Jm7dBkCnjM4oPJqz8RxZXoMoSKod5M_m9Yj2b11-nI97zmfd6Jw/exec> |
+| 카카오톡 채널 | <http://pf.kakao.com/_xnaRfX> |
+| 카카오 챗봇 중계 Worker | <https://bring-care-kakao-intake.bringengineering1008.workers.dev> |
 | Firebase RTDB | `https://bring-fm-hj-default-rtdb.asia-southeast1.firebasedatabase.app` |
 
 Apps Script 웹 앱 URL은 새 버전을 배포해도 같은 배포를 수정하면 유지된다.
@@ -38,10 +40,11 @@ Apps Script 웹 앱 URL은 새 버전을 배포해도 같은 배포를 수정하
 ## 3. 현재 배포 버전
 
 - 대시보드 `APP_VERSION`: `5.25`
-- Apps Script `AUTOMATION_BUILD`: `complaint-workflow-20260724-v29`
+- Apps Script `AUTOMATION_BUILD`: `complaint-workflow-20260727-v36`
 - 추천 이미지 설계 버전: `owner-summary-v4`
-- Apps Script 배포 버전: `86`
-- 마지막 확인 커밋: `d2c5e71 Add admin payment confirmation workflow`
+- Apps Script 배포 버전: `93`
+- Cloudflare Worker: `2026-07-27-v2`
+- Cloudflare Worker 배포 버전 ID: `8bc0a1d8-9d8d-46cc-8d0b-b0cf6327d5b4`
 
 동작을 수정했는데 사이트에서 예전 기능이 보이면 아래 두 버전을 먼저 확인한다.
 
@@ -51,11 +54,19 @@ Apps Script 웹 앱 URL은 새 버전을 배포해도 같은 배포를 수정하
 ## 4. 시스템 구성
 
 ```text
-Google Form
-  -> Google Sheets 응답
+Google Form --------------------+
+                                |
+카카오톡 채널 -> Kakao i Open Builder
+              -> Cloudflare Worker
+                                |
+                                v
+                         Apps Script 웹 앱
+                                |
+                                v
+                       Google Sheets 응답
   -> Apps Script 트리거
   -> Drive 문서 검색·저장
-  -> SENS SMS/MMS
+  -> 카카오 알림톡 / SENS SMS·MMS
   -> Firebase Realtime Database
   -> GitHub Pages 관리자 대시보드
   -> 건물주 모바일 승인 화면
@@ -64,8 +75,10 @@ Google Form
 ### 역할 구분
 
 - Google Form: 세입자 민원 입력
+- 카카오톡 채널·챗봇: 대화형 세입자 민원 입력과 최근 접수 상태 조회
+- Cloudflare Worker: 카카오 스킬 요청 검증, Apps Script 중계, 1분 간격 예열
 - Google Sheets: 원본 응답과 자동 분석 결과 보관
-- Apps Script: 중앙 자동화, SENS, Drive, Firebase 처리
+- Apps Script: 중앙 자동화, 알림톡/SENS, Drive, Firebase 처리
 - Firebase: 케이스 상태와 업로드 결과 실시간 저장
 - GitHub Pages: 관리자 화면과 건물주 승인 화면
 - Google Drive: 온보딩 파일, 견적 원본, 사업자등록증, 브링 엑셀 보관
@@ -75,8 +88,8 @@ Google Form
 
 | 단계 | 현재 동작 | 자동/수동 |
 |---|---|---|
-| ① 문의 접수 / 정보 입력 | 온보딩 파일 매칭 후 케이스 생성 | 자동 |
-| ② 접수확인 발송 | 세입자·건물주 SENS 문자 발송 | 자동 |
+| ① 문의 접수 / 정보 입력 | 폼·카카오 접수, 온보딩 파일 매칭 후 케이스 생성 | 자동 |
+| ② 접수확인 발송 | 세입자·건물주 알림톡 또는 SENS 문자 발송 | 자동 |
 | ③ 상담·요청 파악 | 폼 내용으로 상담카드 작성 | 자동 |
 | ④ 민원·요청 분류 | 문제 유형과 업체 분류 작성 | 자동 |
 | ⑤ 업체 견적 요청 | 업체 선택 후 현장 사진 MMS 발송 | 수동 |
@@ -100,6 +113,15 @@ Google Form
 - ⑨: 건물주 응답을 기다린다.
 - ⑩: 관리자가 실제 계좌 입금을 확인해야 한다.
 - ⑪ 이후: 아직 운영 자동화가 구현되지 않았다.
+
+### 카카오 접수 자동 진행
+
+1. 챗봇이 건물명, 주소, 호실, 이름, 연락처, 문제 유형, 증상, 방문 가능 시간을 수집한다.
+2. Cloudflare Worker가 Apps Script로 요청을 중계한다.
+3. Apps Script가 연락처를 문자열로 보존해 응답 시트와 Firebase 대기 케이스를 동시에 만든다.
+4. 시간 기반 트리거가 계약 매칭, 상담카드, 업체 분류를 처리한다.
+5. 세입자·건물주 접수 알림이 모두 성공하면 ②·③·④를 완료하고 ⑤를 진행중으로 전환한다.
+6. 일부 발송 상태에서는 성공한 수신자 기록을 보존하고 누락된 수신자만 재시도한다.
 
 ## 6. 단계 전환 규칙
 
@@ -323,9 +345,22 @@ git diff --check
 - Apps Script 최신 배포가 반영됐는지 확인한다.
 - `ownerRecommendationMms` 성공 상태와 `status/c8`, `status/c9`를 확인한다.
 
+### 카카오 접수 연락처의 첫 `0`이 사라짐
+
+- Google Sheets가 전화번호를 숫자로 처리하면 `010...`의 첫 `0`이 사라질 수 있다.
+- v35부터 카카오 연락처 셀을 텍스트 형식으로 먼저 지정한 후 저장한다.
+- v36부터 과거 값이 `102...`처럼 저장돼도 `010...`으로 복구하고 시트·Firebase·문자 상태를 함께 보정한다.
+
+### 카카오 챗봇에서 “연결이 원활하지 않습니다”가 표시됨
+
+- Apps Script 콜드 스타트가 카카오 스킬 응답 제한 시간을 넘긴 경우가 많다.
+- Cloudflare Worker의 Cron Trigger가 1분마다 Apps Script keepalive를 호출하도록 배포되어 있다.
+- Worker `/health` 응답과 Cloudflare `Workers Logs`, Apps Script 실행 내역을 순서대로 확인한다.
+
 ## 15. 보안 주의사항
 
 - SENS 키와 MinerU 토큰을 커밋하지 않는다.
+- Cloudflare의 `APPS_SCRIPT_SKILL_URL` 비밀값과 Apps Script 챗봇 토큰을 커밋하지 않는다.
 - GitHub Pages는 정적 공개 사이트이므로 원본 개인정보를 직접 넣지 않는다.
 - 대시보드는 개인정보를 마스킹하지만 운영 전 인증 체계 보강이 필요하다.
 - Apps Script 웹 앱은 GitHub Pages 호출을 위해 공개 접근으로 배포되어 있다.

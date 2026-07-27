@@ -35,7 +35,7 @@ const PAYMENT_SCHEDULE_HEADERS = [
   "상태",
   "비고"
 ];
-const AUTOMATION_BUILD = "complaint-workflow-20260727-v32";
+const AUTOMATION_BUILD = "complaint-workflow-20260727-v36";
 const OWNER_RECOMMENDATION_IMAGE_VERSION = "owner-summary-v4";
 const OWNER_DECISION_VIEW = "owner-decision";
 const OWNER_PAYMENT_ACCOUNT = {
@@ -297,6 +297,9 @@ function handleKakaoChatbotSkill_(payload, event) {
         "https://docs.google.com/forms/d/e/1FAIpQLSfzi-H-abXT-dgsU5rF8vgkWuKtbltr9acgWClVeQ5W297DiA/viewform"
       ].join("\n")
     );
+  }
+  if (String(payload.action && payload.action.name || "") === "__bringcare_keepalive__") {
+    return kakaoChatbotTextResponse_("ok");
   }
 
   const request = payload.userRequest || {};
@@ -631,24 +634,18 @@ function enqueueKakaoComplaintIntake_(values, userHash, payload) {
       "카카오 처리 상태": "대기",
       "카카오 처리 메모": "챗봇 접수 후 자동 처리 대기"
     };
-    sheet.appendRow(headers.map(header => Object.prototype.hasOwnProperty.call(record, header) ? record[header] : ""));
-    const row = sheet.getLastRow();
-    const ticketNo = makeTicketNo_(row, record);
     const headerMap = kakaoComplaintHeaderMap_(headers);
+    const row = sheet.getLastRow() + 1;
+    const rowValues = headers.map(header => Object.prototype.hasOwnProperty.call(record, header) ? record[header] : "");
+    if (headerMap["연락처"]) {
+      sheet.getRange(row, headerMap["연락처"]).setNumberFormat("@");
+    }
+    sheet.getRange(row, 1, 1, headers.length).setValues([rowValues]);
+    const ticketNo = makeTicketNo_(row, record);
     setCellByHeader_(sheet, row, headerMap, "접수번호", ticketNo);
 
     const pendingCase = makeKakaoPendingCase_(ticketNo, record, row, sheet);
-    writeCaseToFirebase_(ticketNo, pendingCase);
-    firebaseWriteRequest_(
-      firebaseCaseSettingsUrl_("kakaoChatbotIntake/users/" + userHash),
-      "put",
-      {
-        lastCaseId: ticketNo,
-        updatedAt: now.toISOString()
-      },
-      "카카오 사용자-민원 연결 저장 실패"
-    );
-    ensureKakaoComplaintQueueTrigger_();
+    writeKakaoPendingCaseLink_(ticketNo, pendingCase, userHash, now);
     return {
       ok: true,
       ticketNo: ticketNo,
@@ -660,6 +657,23 @@ function enqueueKakaoComplaintIntake_(values, userHash, payload) {
   } finally {
     lock.releaseLock();
   }
+}
+
+function writeKakaoPendingCaseLink_(ticketNo, pendingCase, userHash, now) {
+  const base = COMPLAINT_CONFIG.FIREBASE_DATABASE_URL.replace(/\/$/, "");
+  const casesPath = COMPLAINT_CONFIG.FIREBASE_CASES_PATH.replace(/^\/|\/$/g, "");
+  const updates = {};
+  updates[casesPath + "/" + ticketNo] = pendingCase;
+  updates["caseSettings/kakaoChatbotIntake/users/" + userHash] = {
+    lastCaseId: ticketNo,
+    updatedAt: now.toISOString()
+  };
+  return firebaseWriteRequest_(
+    base + "/.json",
+    "patch",
+    updates,
+    "카카오 접수 대기 케이스와 사용자 연결 저장 실패"
+  );
 }
 
 function ensureKakaoIntakeHeaders_(sheet) {
@@ -1360,12 +1374,30 @@ function handleComplaintReceiptSms_(payload) {
     reason: casePayload.analysisReason || ""
   };
   const smsResult = sendComplaintSms_(ticketNo, smsRecord, analysis, casePayload.contractMatch || {}, {
-    force: payload.force === true
+    force: payload.force === true,
+    existingSms: casePayload.sms || {}
   });
+
+  const normalizedTenantPhone = normalizePhoneForSms_(
+    readField_(smsRecord, ["연락처", "전화번호", "휴대폰"])
+  );
+  if (
+    casePayload.source === "kakao_chatbot" &&
+    isSendableSmsPhone_(normalizedTenantPhone)
+  ) {
+    casePayload.phone = maskPhone_(normalizedTenantPhone);
+    writeNormalizedKakaoPhoneToSheetForCase_(casePayload, normalizedTenantPhone);
+  }
 
   applySmsResultToCase_(casePayload, smsResult);
   if (!smsResult.skipped) writeSmsResultToSheetForCase_(casePayload, smsResult);
   writeCaseToFirebase_(caseId, casePayload);
+  putCaseChildToFirebase_(caseId, "complaintReceiptSms", smsResult);
+  putCaseChildToFirebase_(caseId, "automationState/receiptSms", casePayload.automationState.receiptSms);
+  putCaseChildToFirebase_(caseId, "note/c2", casePayload.note.c2 || "");
+  if (casePayload.source === "kakao_chatbot" && casePayload.phone) {
+    putCaseChildToFirebase_(caseId, "phone", casePayload.phone);
+  }
   const workflow = advanceCaseWorkflow_(caseId, { source: "receipt_sms", skipOwnerAutoSend: true });
 
   const ok = isSmsSentStatus_(smsResult.status);
@@ -1404,6 +1436,18 @@ function writeSmsResultToSheetForCase_(casePayload, smsResult) {
   headers.forEach((header, index) => headerMap[header] = index + 1);
   setCellByHeader_(sheet, row, headerMap, "문자 발송 상태", smsResult.status || "");
   setCellByHeader_(sheet, row, headerMap, "문자 발송 메모", smsResult.statusText || "");
+}
+
+function writeNormalizedKakaoPhoneToSheetForCase_(casePayload, phone) {
+  const row = Number(casePayload && casePayload.sheetRow);
+  if (!row || row < 2 || !isSendableSmsPhone_(phone)) return;
+
+  const sheet = getResponseSheet_();
+  const headers = ensureKakaoIntakeHeaders_(sheet);
+  const headerMap = kakaoComplaintHeaderMap_(headers);
+  const column = headerMap["연락처"];
+  if (!column) return;
+  sheet.getRange(row, column).setNumberFormat("@").setValue(String(phone));
 }
 
 function handleVendorEstimateMms_(payload) {
@@ -7313,6 +7357,9 @@ function isSmsSentStatus_(status) {
 
 function sendComplaintSms_(ticketNo, record, analysis, contractMatch, options) {
   const force = options && options.force === true;
+  const previous = options && options.existingSms && typeof options.existingSms === "object"
+    ? options.existingSms
+    : {};
   const existingStatus = readField_(record, ["문자 발송 상태"]);
   if (!force && isSmsSentStatus_(existingStatus)) {
     return {
@@ -7336,12 +7383,22 @@ function sendComplaintSms_(ticketNo, record, analysis, contractMatch, options) {
   const ownerContent = makeComplaintReceiptOwnerAlimTalkContent_(ticketNo, record);
 
   const logs = [];
-  let tenantSent = false;
-  let ownerSent = false;
-  let tenantReceipt = {};
-  let ownerReceipt = {};
+  let tenantSent = previous.tenantSent === true;
+  let ownerSent = previous.ownerSent === true;
+  let tenantReceipt = {
+    requestId: previous.tenantRequestId || "",
+    provider: previous.tenantProvider || "",
+    templateCode: previous.tenantTemplateCode || ""
+  };
+  let ownerReceipt = {
+    requestId: previous.ownerRequestId || "",
+    provider: previous.ownerProvider || "",
+    templateCode: previous.ownerTemplateCode || ""
+  };
 
-  if (tenantPhone) {
+  if (tenantSent) {
+    logs.push("세입자 " + (previous.tenantPhoneMasked || maskPhone_(tenantPhone)) + " 기존 발송 완료");
+  } else if (tenantPhone) {
     const tenantResult = sendKakaoAlimTalkOrSms_(tenantPhone, tenantContent, "세입자", {
       templateCode: kakaoConfig.templates.receiptTenant,
       fallbackContent: tenantContent
@@ -7355,7 +7412,9 @@ function sendComplaintSms_(ticketNo, record, analysis, contractMatch, options) {
     logs.push("세입자 연락처 없음");
   }
 
-  if (ownerPhone) {
+  if (ownerSent) {
+    logs.push("건물주 " + (previous.ownerPhoneMasked || maskPhone_(ownerPhone)) + " 기존 발송 완료");
+  } else if (ownerPhone) {
     const ownerResult = sendKakaoAlimTalkOrSms_(ownerPhone, ownerContent, "건물주", {
       templateCode: kakaoConfig.templates.receiptOwner,
       fallbackContent: ownerContent
@@ -7384,9 +7443,14 @@ function sendComplaintSms_(ticketNo, record, analysis, contractMatch, options) {
     ownerProvider: ownerReceipt.provider || "",
     tenantTemplateCode: tenantReceipt.templateCode || "",
     ownerTemplateCode: ownerReceipt.templateCode || "",
-    requestIds: [tenantReceipt.requestId, ownerReceipt.requestId].filter(Boolean),
+    requestIds: Array.from(new Set(
+      []
+        .concat(previous.requestIds || [])
+        .concat([tenantReceipt.requestId, ownerReceipt.requestId])
+        .filter(Boolean)
+    )),
     deliveryAccepted: status === "발송완료",
-    completedAt: status === "발송완료" ? new Date().toISOString() : ""
+    completedAt: status === "발송완료" ? (previous.completedAt || new Date().toISOString()) : ""
   };
 }
 
@@ -7687,6 +7751,7 @@ function normalizePhoneForSms_(phone) {
   let digits = String(phone || "").replace(/\D/g, "");
   if (!digits) return "";
   if (digits.indexOf("82") === 0) digits = "0" + digits.slice(2);
+  if (/^1[016789]\d{7,8}$/.test(digits)) digits = "0" + digits;
   return digits;
 }
 
@@ -8126,7 +8191,7 @@ function maskName_(name) {
 }
 
 function maskPhone_(phone) {
-  const digits = String(phone || "").replace(/\D/g, "");
+  const digits = normalizePhoneForSms_(phone);
   if (digits.length < 7) return phone ? "***" : "";
   return digits.slice(0, 3) + "-****-" + digits.slice(-4);
 }
