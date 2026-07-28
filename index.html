@@ -185,6 +185,9 @@
   .case-vendor-card.selected{ border-color:#4b7bec; box-shadow:0 0 0 2px rgba(75,123,236,.12); }
   .cv-vendor-pick{ display:inline-flex; align-items:center; gap:5px; border:1px dashed #9db2d8; background:#fff; color:#315fce; border-radius:999px; padding:4px 8px; font-size:12px; font-weight:800; cursor:pointer; white-space:nowrap; }
   .cv-vendor-pick input{ margin:0; width:14px; height:14px; accent-color:#4b7bec; }
+  .cv-vendor-pick.disabled{ border-style:solid; border-color:#d8e0ec; background:#f2f4f7; color:#98a2b3; cursor:not-allowed; }
+  .cv-vendor-near{ display:inline-flex; align-items:center; min-height:22px; margin-top:6px; padding:2px 7px; border:1px solid #b7e4c7; border-radius:999px; background:#edf9f1; color:#157347; font-size:11px; font-weight:800; }
+  .cv-vendor-map-link{ margin-top:2px; }
   .cv-vendor-count{ display:inline-flex; align-items:center; min-height:24px; padding:2px 8px; border-radius:999px; background:#eef3ff; color:#315fce; border:1px solid #c5d4ff; font-size:11.5px; font-weight:800; white-space:nowrap; }
   @media (max-width:1180px){ .cv-vendors .vendor-grid{ grid-template-columns:repeat(2,minmax(0,1fr)); } }
   @media (max-width:720px){ .cv-vendors .vendor-grid{ grid-template-columns:1fr; } }
@@ -790,6 +793,7 @@
   <script src="https://www.gstatic.com/firebasejs/10.12.5/firebase-app-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/10.12.5/firebase-database-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/10.12.5/firebase-auth-compat.js"></script>
+  <script src="./data/building-maintenance-companies.js?v=20260728-case-vendors"></script>
 
 <script>
 /* ===== ① 실시간 공유 켜기: 아래 값을 본인 Firebase 프로젝트 값으로 교체 (교체 전엔 '로컬 모드') ===== */
@@ -912,9 +916,116 @@ const VENDOR_DATA = {
     { no:23, type:"미장/타일/방수공사", name:"이누스 현대타일 원주대리점", address:"강원 원주시 단계동 800-23", phone:"033-764-9936", map:"https://naver.me/FbqzefkI", promo:"https://blog.naver.com/inus1110", rating:"", price:"", note:"원주, 횡성, 문막, 제천, 춘천 출장 가능" }
   ]
 };
+const BUILDING_MAP_VENDOR_SOURCE = window.BRING_BUILDING_MAINTENANCE_DATA || null;
+
+function normalizeVendorIdentityName(value){
+  return String(value || "")
+    .toLowerCase()
+    .replace(/주식회사|\(주\)|㈜/g, "")
+    .replace(/[^0-9a-z가-힣]/g, "");
+}
+function vendorPhoneKeys(value){
+  return [...new Set((String(value || "").match(/(?:\+?82[-.\s]?)?0?\d{1,3}[-.\s]?\d{3,4}[-.\s]?\d{4}/g) || [])
+    .map(smsDigits)
+    .filter(v => v.length >= 9 && v.length <= 11))];
+}
+function vendorRecordsMatch(a,b){
+  if(!a || !b) return false;
+  if(a.mapCompanyId && b.mapCompanyId && a.mapCompanyId === b.mapCompanyId) return true;
+  const nameA=normalizeVendorIdentityName(a.name);
+  const nameB=normalizeVendorIdentityName(b.name);
+  if(nameA && nameB && nameA === nameB) return true;
+  const phonesA=new Set(vendorPhoneKeys(a.phone));
+  return vendorPhoneKeys(b.phone).some(phone=>phonesA.has(phone));
+}
+function buildingMapCompanyToVendor(company, mapOrder){
+  const promo=[company.url, company.extraUrl].map(v=>String(v||"").trim()).filter(v=>v&&v!=="-").join("\n");
+  const locations=Array.isArray(company.locations) ? company.locations : [];
+  return {
+    no:company.no || mapOrder + 1,
+    type:company.service || company.category || "",
+    name:company.name || "",
+    address:company.address || company.region || "",
+    phone:company.phone || "",
+    map:company.naverUrl || "",
+    promo,
+    rating:company.rating || "",
+    price:"",
+    note:company.feature || "",
+    extra:{},
+    category:company.category || "",
+    mapCompanyId:company.id || "",
+    mapLocations:locations.map(item=>item.label).filter(Boolean),
+    mapCoordinates:locations.map(item=>({ lat:item.lat, lng:item.lng, label:item.label||"" })),
+    mapOrder,
+    source:"building-map",
+    sourceLabel:company.sourceLabel || "건물지도 원주업체"
+  };
+}
+function vendorDataFromBuildingMap(source){
+  const companies=source && Array.isArray(source.companies) ? source.companies : [];
+  const byCat={};
+  const seenIds=new Set();
+  const seenIdentity=new Set();
+  companies.filter(company=>company && company.source==="google-sheet").forEach((company,mapOrder)=>{
+    const vendor=buildingMapCompanyToVendor(company,mapOrder);
+    if(!vendor.name || !vendor.category) return;
+    const idKey=vendor.mapCompanyId || "";
+    const phoneKey=vendorPhoneKeys(vendor.phone)[0] || "";
+    const identityKey=normalizeVendorIdentityName(vendor.name)+"|"+phoneKey;
+    if((idKey && seenIds.has(idKey)) || (identityKey!=="|" && seenIdentity.has(identityKey))) return;
+    if(idKey) seenIds.add(idKey);
+    if(identityKey!=="|") seenIdentity.add(identityKey);
+    (byCat[vendor.category] ||= []).push(vendor);
+  });
+  return byCat;
+}
+function flattenVendorData(data){
+  return Object.entries(data||{}).flatMap(([category,items])=>
+    (items||[]).map(item=>Object.assign({ category },item))
+  );
+}
+function mergeBuildingMapVendorData(mapData,sheetData){
+  const sheetVendors=flattenVendorData(sheetData);
+  const byName=new Map();
+  sheetVendors.forEach(v=>{
+    const key=normalizeVendorIdentityName(v.name);
+    if(key) (byName.get(key) || byName.set(key,[]).get(key)).push(v);
+  });
+  const merged={};
+  Object.entries(mapData||{}).forEach(([category,items])=>{
+    merged[category]=(items||[]).map(mapVendor=>{
+      const nameMatches=byName.get(normalizeVendorIdentityName(mapVendor.name)) || [];
+      const mapPhones=new Set(vendorPhoneKeys(mapVendor.phone));
+      let latest=nameMatches.find(v=>vendorPhoneKeys(v.phone).some(phone=>mapPhones.has(phone)));
+      if(!latest && nameMatches.length===1) latest=nameMatches[0];
+      if(!latest && mapPhones.size){
+        const phoneMatches=sheetVendors.filter(v=>vendorPhoneKeys(v.phone).some(phone=>mapPhones.has(phone)));
+        if(phoneMatches.length===1) latest=phoneMatches[0];
+      }
+      if(!latest) return Object.assign({},mapVendor);
+      return Object.assign({},mapVendor,{
+        phone:latest.phone || mapVendor.phone,
+        address:latest.address || mapVendor.address,
+        note:latest.note || mapVendor.note,
+        map:latest.map || mapVendor.map,
+        promo:latest.promo || mapVendor.promo,
+        rating:latest.rating || mapVendor.rating,
+        price:latest.price || mapVendor.price,
+        extra:Object.assign({},mapVendor.extra||{},latest.extra||{}),
+        sourceLabel:"건물지도 + Google Sheets 최신정보"
+      });
+    });
+  });
+  return merged;
+}
+
 let vendorData = VENDOR_DATA;
 let vendorDataSource = VENDOR_DATA_SOURCE;
 let vendorDataVersion = VENDOR_DATA_VERSION;
+const BUILDING_MAP_VENDOR_DATA = vendorDataFromBuildingMap(BUILDING_MAP_VENDOR_SOURCE);
+let caseVendorData = Object.keys(BUILDING_MAP_VENDOR_DATA).length ? BUILDING_MAP_VENDOR_DATA : VENDOR_DATA;
+let caseVendorDataSource = Object.keys(BUILDING_MAP_VENDOR_DATA).length ? "건물지도 원주업체" : VENDOR_DATA_SOURCE;
 let vendorLoading = false;
 let vendorRefreshTimer = null;
 
@@ -927,11 +1038,19 @@ const CASE_VENDOR_CATEGORY_MAP = {
   [vendorKey("누수·배관")]: ["누수·배관"],
   [vendorKey("누수·방수")]: ["누수·배관", "방수·코킹"],
   [vendorKey("배관")]: ["누수·배관"],
+  [vendorKey("누수")]: ["누수·배관"],
+  [vendorKey("보일러")]: ["냉난방·보일러"],
+  [vendorKey("난방")]: ["냉난방·보일러"],
   [vendorKey("보일러·난방")]: ["냉난방·보일러"],
+  [vendorKey("에어컨")]: ["냉난방·에어컨"],
   [vendorKey("에어컨·냉난방")]: ["냉난방·에어컨"],
+  [vendorKey("도어락")]: ["문·창호·도어락"],
   [vendorKey("도어락·출입")]: ["문·창호·도어락"],
+  [vendorKey("창문·문")]: ["문·창호·도어락"],
   [vendorKey("창호·문")]: ["문·창호·도어락"],
   [vendorKey("창호·출입")]: ["문·창호·도어락"],
+  [vendorKey("청소")]: ["청소·위생"],
+  [vendorKey("방역")]: ["청소·위생"],
   [vendorKey("청소·방역")]: ["청소·위생"]
 };
 function vendorItemsFor(label){
@@ -1133,6 +1252,13 @@ async function loadVendorDataFromSheet(){
     vendorData = next;
     vendorDataSource = "Google Sheets";
     vendorDataVersion = new Date().toLocaleString("ko-KR");
+    if(Object.keys(BUILDING_MAP_VENDOR_DATA).length){
+      caseVendorData=mergeBuildingMapVendorData(BUILDING_MAP_VENDOR_DATA,next);
+      caseVendorDataSource="건물지도 + Google Sheets 최신정보";
+    }else{
+      caseVendorData=next;
+      caseVendorDataSource="Google Sheets";
+    }
     const changed = applyVendorDetailsToNodes();
     if(changed){
       persistDebounced();
@@ -1141,6 +1267,7 @@ async function loadVendorDataFromSheet(){
         wsbody.innerHTML = nodes[detailFor].detail || "";
       }
     }
+    if(curCase && cases[curCase]) renderCaseDetailKeepScroll();
     return true;
   }catch(e){
     console.warn("Google Sheets 업체자료를 불러오지 못했습니다.", e);
@@ -2594,28 +2721,63 @@ function shouldFillClassificationNote(c){
   if(note.includes("[민원·요청 분류]")) return false;
   return /^긴급도:\s*[\s\S]*업체 분류:\s*[\s\S]*판단 근거:/m.test(note);
 }
+function caseVendorItemsFor(label){
+  const key=vendorKey(label);
+  return Object.keys(caseVendorData||{}).find(category=>vendorKey(category)===key);
+}
+function koreanAddressLocalities(value){
+  const result=[];
+  const re=/(?:^|\s)([가-힣0-9]+(?:동|읍|면))(?=\s|$|[(),])/g;
+  let match;
+  const text=String(value||"").replace(/[,\n]+/g," ");
+  while((match=re.exec(text))){
+    if(match[1] && !result.includes(match[1])) result.push(match[1]);
+  }
+  return result;
+}
+function caseVendorSharedLocality(c,v){
+  const caseAddress=(c&&c.contractMatch&&c.contractMatch.matchedAddress) || (c&&c.address) || "";
+  const caseLocalities=koreanAddressLocalities(caseAddress);
+  if(!caseLocalities.length) return "";
+  const vendorText=[v&&v.address].concat((v&&v.mapLocations)||[]).join(" ");
+  const vendorLocalities=koreanAddressLocalities(vendorText);
+  return caseLocalities.find(locality=>vendorLocalities.includes(locality)) || "";
+}
+function vendorHasSelectablePhone(v){
+  return !!firstVendorSmsPhone(v&&v.phone);
+}
+function caseVendorsForCategory(c,category){
+  return [...((caseVendorData&&caseVendorData[category])||[])].sort((a,b)=>{
+    const localityDiff=Number(!!caseVendorSharedLocality(c,b))-Number(!!caseVendorSharedLocality(c,a));
+    if(localityDiff) return localityDiff;
+    const phoneDiff=Number(vendorHasSelectablePhone(b))-Number(vendorHasSelectablePhone(a));
+    if(phoneDiff) return phoneDiff;
+    return Number(a.mapOrder??Number.MAX_SAFE_INTEGER)-Number(b.mapOrder??Number.MAX_SAFE_INTEGER);
+  });
+}
 function caseVendorCategories(c){
   const labels=[(c&&c.vendorType) || (c&&c.issueType)].filter(Boolean);
   const cats=[];
   labels.forEach(label=>{
     const mapped=CASE_VENDOR_CATEGORY_MAP[vendorKey(label)] || [];
     mapped.forEach(cat=>cats.push(cat));
-    const direct=vendorItemsFor(label);
+    const direct=caseVendorItemsFor(label);
     if(direct) cats.push(direct);
   });
-  return [...new Set(cats.map(cat=>vendorItemsFor(cat)||cat).filter(cat=>vendorData[cat]))];
+  return [...new Set(cats.map(cat=>caseVendorItemsFor(cat)||cat).filter(cat=>caseVendorData&&caseVendorData[cat]))];
 }
 function renderCaseVendorCandidates(c, stepStatus){
   if(stepStatus!=="doing" && stepStatus!=="done") return "";
   const cats=caseVendorCategories(c);
   const title = c.vendorType || c.issueType || "업체 분류";
   if(!cats.length){
-    return `<div class="cv-vendors"><div class="cv-vendors-head"><div class="cv-vendors-title">업체 후보</div><div class="cv-vendors-sub">업체리스트_현진</div></div><div class="vendor-empty">업체리스트_현진에서 수동 확인 필요 · 현재 분류: ${escH(title)}</div></div>`;
+    return `<div class="cv-vendors"><div class="cv-vendors-head"><div class="cv-vendors-title">업체 후보</div><div class="cv-vendors-sub">${escH(caseVendorDataSource)}</div></div><div class="vendor-empty">건물지도 원주업체에서 수동 확인 필요 · 현재 분류: ${escH(title)}</div></div>`;
   }
-  const cards=cats.flatMap(cat => (vendorData[cat]||[]).map(v => caseVendorCardHtml(c, cat, v))).join("");
-  const count=cats.reduce((sum,cat)=>sum+(vendorData[cat]||[]).length,0);
+  const vendorsByCategory=cats.map(cat=>({ cat, vendors:caseVendorsForCategory(c,cat) }));
+  const cards=vendorsByCategory.flatMap(group=>group.vendors.map(v=>caseVendorCardHtml(c,group.cat,v))).join("");
+  const count=vendorsByCategory.reduce((sum,group)=>sum+group.vendors.length,0);
   const picked=selectedCaseVendors(c).length;
-  return `<div class="cv-vendors"><div class="cv-vendors-head"><div><div class="cv-vendors-title">업체 후보</div><div class="cv-vendors-sub">${escH(cats.join(" + "))} · ${count}곳 · 업체리스트_현진</div></div><span class="cv-vendor-count">선택 ${picked}곳</span></div><div class="vendor-grid">${cards}</div></div>`;
+  return `<div class="cv-vendors"><div class="cv-vendors-head"><div><div class="cv-vendors-title">업체 후보</div><div class="cv-vendors-sub">${escH(cats.join(" + "))} · ${count}곳 · ${escH(caseVendorDataSource)} · 같은 동·읍·면 우선</div></div><span class="cv-vendor-count">선택 ${picked}곳</span></div><div class="vendor-grid">${cards}</div></div>`;
 }
 function safeVendorIdPart(value){
   return vendorKey(value).replace(/[.#$/\[\]]/g, ch => ({
@@ -2623,6 +2785,7 @@ function safeVendorIdPart(value){
   }[ch] || ""));
 }
 function caseVendorId(cat,v){
+  if(v&&v.mapCompanyId) return "map|"+safeVendorIdPart(v.mapCompanyId);
   return [safeVendorIdPart(cat), safeVendorIdPart(v.no||""), safeVendorIdPart(v.name||""), safeVendorIdPart(v.phone||"")].join("|");
 }
 function vendorPayload(cat,v){
@@ -2630,7 +2793,10 @@ function vendorPayload(cat,v){
   return {
     id, category:cat, no:v.no||"", type:v.type||"", name:v.name||"",
     address:v.address||"", phone:v.phone||"", map:v.map||"", promo:v.promo||"",
-    rating:v.rating||"", price:v.price||"", note:v.note||""
+    rating:v.rating||"", price:v.price||"", note:v.note||"",
+    mapCompanyId:v.mapCompanyId||"", mapLocations:v.mapLocations||[],
+    mapCoordinates:v.mapCoordinates||[], source:v.source||"",
+    sourceLabel:v.sourceLabel||"", mapOrder:v.mapOrder
   };
 }
 function encodeVendorPayload(payload){
@@ -2664,19 +2830,34 @@ function selectedCaseVendors(c){
   return Object.values(caseVendorSelections(c)).filter(v=>v && (v.name || v.phone));
 }
 function findVendorPayloadById(id){
-  for(const cat of Object.keys(vendorData||{})){
-    for(const v of vendorData[cat]||[]){
+  for(const cat of Object.keys(caseVendorData||{})){
+    for(const v of caseVendorData[cat]||[]){
       if(caseVendorId(cat,v)===id) return vendorPayload(cat,v);
     }
   }
   return null;
 }
-function deleteCaseVendorSelection(c, vendorId){
+function vendorSelectionMatchesPayload(item,payload){
+  if(!item || !payload) return false;
+  if(item.mapCompanyId && payload.mapCompanyId && item.mapCompanyId===payload.mapCompanyId) return true;
+  const nameA=normalizeVendorIdentityName(item.name);
+  const nameB=normalizeVendorIdentityName(payload.name);
+  if(!nameA || !nameB || nameA!==nameB) return false;
+  const phonesA=vendorPhoneKeys(item.phone);
+  const phonesB=vendorPhoneKeys(payload.phone);
+  return !phonesA.length || !phonesB.length || phonesA.some(phone=>phonesB.includes(phone));
+}
+function selectedVendorKeyForPayload(c,payload){
+  const selections=caseVendorSelections(c);
+  if(selections[payload.id]) return payload.id;
+  return Object.keys(selections).find(key=>vendorSelectionMatchesPayload(selections[key],payload)) || "";
+}
+function deleteCaseVendorSelection(c, vendorId, payload){
   const selections=caseVendorSelections(c);
   const target=String(vendorId||"");
   Object.keys(selections).forEach(key=>{
     const item=selections[key]||{};
-    if(key===target || String(item.id||"")===target) delete selections[key];
+    if(key===target || String(item.id||"")===target || vendorSelectionMatchesPayload(item,payload)) delete selections[key];
   });
 }
 function setCaseVendorSelection(caseId, vendorId, selected, fallbackPayload){
@@ -2685,10 +2866,11 @@ function setCaseVendorSelection(caseId, vendorId, selected, fallbackPayload){
   const selections=caseVendorSelections(c);
   const payload=findVendorPayloadById(vendorId) || fallbackPayload;
   if(selected && payload){
+    deleteCaseVendorSelection(c,vendorId,payload);
     payload.id = payload.id || vendorId;
     selections[vendorId]=payload;
   }else{
-    deleteCaseVendorSelection(c, vendorId);
+    deleteCaseVendorSelection(c,vendorId,payload);
   }
   holdCaseLocalField(caseId, "vendorSelections", c.vendorSelections, 4000);
   saveCase(caseId, true);
@@ -2701,20 +2883,25 @@ function setCaseVendorSelection(caseId, vendorId, selected, fallbackPayload){
 function caseVendorCardHtml(c,cat,v){
   const payload=vendorPayload(cat,v);
   const id=payload.id;
-  const checked=!!caseVendorSelections(c)[id];
+  const checked=!!selectedVendorKeyForPayload(c,payload);
+  const selectable=vendorHasSelectablePhone(v);
+  const locality=caseVendorSharedLocality(c,v);
   const extraFields = vendorExtraFieldsHtml(v.extra);
   return `<article class="vendor-card case-vendor-card ${checked?'selected':''}" data-vendor-payload="${escAttr(encodeVendorPayload(payload))}">
     <div class="vendor-card-head">
       <div>
         <div class="vendor-card-name">${escH(v.name)}</div>
         <div class="vendor-card-type">${htmlLines(v.type)}</div>
+        ${locality?`<span class="cv-vendor-near">같은 지역 · ${escH(locality)}</span>`:""}
       </div>
-      <label class="cv-vendor-pick"><input type="checkbox" data-vendor-select="${escAttr(id)}" ${checked?'checked':''}>선택</label>
+      ${selectable
+        ? `<label class="cv-vendor-pick"><input type="checkbox" data-vendor-select="${escAttr(id)}" ${checked?'checked':''}>선택</label>`
+        : `<span class="cv-vendor-pick disabled">연락처 없음</span>`}
     </div>
     <div class="vendor-card-body">
       <div class="vendor-field"><span class="vendor-field-label">전화번호</span><p class="vendor-field-value">${htmlLines(v.phone)}</p></div>
       <div class="vendor-field"><span class="vendor-field-label">주소</span><p class="vendor-field-value">${htmlLines(v.address)}</p></div>
-      <div class="vendor-field"><span class="vendor-field-label">링크</span><div class="vendor-field-value">${vendorLinksHtml(v.map, v.promo)}</div></div>
+      <div class="vendor-field"><span class="vendor-field-label">링크</span><div class="vendor-field-value">${vendorLinksHtml(v.map, v.promo)}${v.mapCompanyId?`<div class="vendor-links cv-vendor-map-link"><a href="./wonju-map.html?company=${encodeURIComponent(v.mapCompanyId)}" target="_blank" rel="noopener">지도에서 보기</a></div>`:""}</div></div>
       <div class="vendor-field"><span class="vendor-field-label">평점</span><p class="vendor-field-value">${htmlLines(v.rating)}</p></div>
       <div class="vendor-field"><span class="vendor-field-label">단가</span><p class="vendor-field-value">${htmlLines(v.price)}</p></div>
       <div class="vendor-field"><span class="vendor-field-label">비고</span><p class="vendor-field-value">${htmlLines(v.note)}</p></div>
@@ -2734,7 +2921,7 @@ function quoteUploadVendors(c){
     });
   }).filter(v=>v.name);
   const candidateCats=caseVendorCategories(c);
-  const candidates=candidateCats.flatMap(cat => (vendorData[cat]||[]).map(v => vendorPayload(cat, v)));
+  const candidates=candidateCats.flatMap(cat => caseVendorsForCategory(c,cat).map(v => vendorPayload(cat,v)));
   const src=sent.length ? sent : (selected.length ? selected : candidates);
   const seen=new Set();
   return src.filter(v=>{
@@ -5499,8 +5686,9 @@ document.getElementById("noticeBtn").addEventListener("click", openNoticePanel);
 document.getElementById("noticeBanner").addEventListener("click", openNoticePanel);
 
 /* ===== 업데이트 알림(What's New) — 새 버전 나오면 자동 팝업 ===== */
-const APP_VERSION = "5.25";
+const APP_VERSION = "5.26";
 const CHANGELOG = [
+  { v:"5.26", d:"2026-07-28", items:["⑤ 업체 후보를 건물지도 원주업체 데이터로 통합","민원 주소와 같은 동·읍·면 및 문자 발송 가능한 연락처 보유 업체 우선 정렬","업체 카드에서 건물지도 해당 마커를 바로 열 수 있는 지도 링크 추가"] },
   { v:"5.25", d:"2026-07-24", items:["건물주의 별도 입금 신고 없이 관리자가 실제 사업자계좌 입금을 확인하는 ⑩ 단계 추가","관리자 입금 확인 완료 시 ⑩ 완료·⑪ 업체 연결 및 일정 진행중 자동 전환"] },
   { v:"5.24", d:"2026-07-23", items:["짧은 승인 링크에서 모바일 승인 화면을 직접 표시해 화면 축소 문제 해결","승인 응답을 Apps Script API로 연결하고 승인 후 계좌번호·예금주·입금금액 안내"] },
   { v:"5.23", d:"2026-07-23", items:["승인 링크를 케이스 번호 기반 짧은 주소로 변경해 Firebase 권한 오류 제거"] },

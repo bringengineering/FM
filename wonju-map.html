@@ -502,6 +502,7 @@
     const DEFAULT_NAVER_MAPS_KEY = "1iu68jzhci";
     const NAVER_MAPS_KEY_STORAGE = "bring_naver_maps_key";
     const params = new URLSearchParams(window.location.search);
+    const REQUESTED_COMPANY_ID = String(params.get("company") || "").trim();
 
     function isValidNaverKey(value) {
       return /^[A-Za-z0-9_-]{8,40}$/.test(value || "");
@@ -639,6 +640,15 @@
     function setupFilters() {
       els.category.innerHTML = `<option value="all">전체 대분류</option>` +
         DATA.categories.map(category => `<option value="${esc(category)}">${esc(optionLabel(category))}</option>`).join("");
+
+      const requestedCompany = DATA.companies.find(company => company.id === REQUESTED_COMPANY_ID);
+      if (requestedCompany) {
+        activeCompanyId = requestedCompany.id;
+        els.search.value = requestedCompany.name;
+        els.category.value = requestedCompany.category;
+        els.source.value = sourceKey(requestedCompany);
+        els.location.value = "all";
+      }
 
       els.search.addEventListener("input", render);
       els.category.addEventListener("change", render);
@@ -828,12 +838,24 @@
       const marker = markers.find(item => item.__companyId === id);
       activeCompanyId = id;
       renderList(getFilteredCompanies());
+      requestAnimationFrame(() => {
+        const activeItem = [...els.list.querySelectorAll(".company")]
+          .find(item => item.dataset.id === id);
+        activeItem?.scrollIntoView({ block: "nearest" });
+      });
       if (!marker || !map) return;
       const company = DATA.companies.find(item => item.id === id);
+      if (!company) return;
       map.setCenter(marker.getPosition());
       map.setZoom(Math.max(map.getZoom(), 12));
       infoWindow.setContent(infoContent(company, company.locations[0]));
       infoWindow.open(map, marker);
+    }
+
+    function focusRequestedCompany() {
+      if (!REQUESTED_COMPANY_ID) return;
+      const company = DATA.companies.find(item => item.id === REQUESTED_COMPANY_ID);
+      if (company) focusCompany(company.id);
     }
 
     function render() {
@@ -881,6 +903,7 @@
       });
 
       render();
+      focusRequestedCompany();
     }
 
     function loadNaverMaps() {
@@ -926,6 +949,8 @@
     });
 
     setupFilters();
+    render();
+    focusRequestedCompany();
     loadNaverMaps();
   </script>
 </body>
