@@ -35,7 +35,7 @@ const PAYMENT_SCHEDULE_HEADERS = [
   "상태",
   "비고"
 ];
-const AUTOMATION_BUILD = "complaint-workflow-20260728-v40";
+const AUTOMATION_BUILD = "complaint-workflow-20260728-v41";
 const OWNER_RECOMMENDATION_IMAGE_VERSION = "owner-summary-v4";
 const OWNER_DECISION_VIEW = "owner-decision";
 const OWNER_PAYMENT_ACCOUNT = {
@@ -2341,7 +2341,10 @@ function makeOwnerRecommendationAlimTalkContent_(casePayload, supplier, amounts)
     "추천 업체: " + safeAlimTalkVariable_(supplier && supplier.name, "업체 확인 필요"),
     "추천 금액: " + ownerRecommendationAmountText_(amounts && amounts.totalAmount),
     "",
-    "아래 버튼에서 세부 작업 내용과 금액을 확인한 후 진행 방법을 선택해 주세요."
+    "아래 버튼에서 세부 작업 내용과 금액을 확인한 후 진행 방법을 선택해 주세요.",
+    "",
+    "본 알림은 브링케어 관리 서비스 계약에 따라 민원별 견적 안내를 요청한 건물주에게 발송됩니다.",
+    "알림 수신 중단은 브링케어 고객센터(010-2773-3076)로 요청해 주세요."
   ].join("\n");
 }
 

@@ -195,6 +195,8 @@ const quoteContent = context.makeOwnerRecommendationAlimTalkContent_({
 assert.match(quoteContent, /추천 업체: 브링설비/);
 assert.match(quoteContent, /추천 금액: 1,100,000원/);
 
+assert.match(quoteContent, /010-2773-3076/);
+
 const sendResult = context.sendSensAlimTalk_(
   "010-9999-8888",
   tenantContent,
@@ -223,7 +225,7 @@ assert.equal(fallbackResult.alimTalkError.includes("template not approved"), tru
 assert.equal(lastSms.to, "01099998888");
 assert.equal(lastSms.content, tenantContent);
 
-assert.match(source, /const AUTOMATION_BUILD = "complaint-workflow-20260728-v40"/);
+assert.match(source, /const AUTOMATION_BUILD = "complaint-workflow-20260728-v41"/);
 assert.match(source, /provider: "kakao_alimtalk"/);
 assert.match(source, /name: "추천 견적 확인"/);
 

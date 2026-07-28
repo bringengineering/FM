@@ -503,7 +503,7 @@ assert.deepEqual(
   ["owner-existing-request", "세입자-request"]
 );
 
-assert.match(source, /const AUTOMATION_BUILD = "complaint-workflow-20260728-v40"/);
+assert.match(source, /const AUTOMATION_BUILD = "complaint-workflow-20260728-v41"/);
 assert.doesNotMatch(source, /name: "세입자 성함을 입력해 주세요/);
 assert.match(source, /입력한 건물명과 주소로 확인되는 브링케어 계약 건물이 없습니다/);
 assert.match(source, /putCaseChildToFirebase_\(caseId, "complaintReceiptSms", smsResult\)/);
