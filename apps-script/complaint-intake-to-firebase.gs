@@ -35,7 +35,7 @@ const PAYMENT_SCHEDULE_HEADERS = [
   "상태",
   "비고"
 ];
-const AUTOMATION_BUILD = "complaint-workflow-20260728-v38";
+const AUTOMATION_BUILD = "complaint-workflow-20260728-v39";
 const OWNER_RECOMMENDATION_IMAGE_VERSION = "owner-summary-v4";
 const OWNER_DECISION_VIEW = "owner-decision";
 const OWNER_PAYMENT_ACCOUNT = {
@@ -327,6 +327,9 @@ function handleKakaoChatbotSkill_(payload, event) {
   if (/^(내민원조회|민원조회|접수조회|진행상황)$/.test(command)) {
     return kakaoChatbotCaseStatusResponse_(userHash);
   }
+  if (/^(상담|상담신청|상담연결|상담원연결|직원상담)$/.test(command)) {
+    return kakaoChatbotConsultationResponse_();
+  }
   if (/^(민원접수|민원접수시작|접수시작|새민원)$/.test(command)) {
     const freshSession = {
       step: "building",
@@ -495,10 +498,30 @@ function kakaoChatbotTextResponse_(text, quickReplies) {
   return { version: "2.0", template: template };
 }
 
+function kakaoChatbotConsultationResponse_() {
+  return {
+    version: "2.0",
+    template: {
+      outputs: [{
+        basicCard: {
+          title: "브링케어 상담 연결",
+          description: "아래 버튼을 누르면 브링케어 상담원과 1:1 상담을 시작합니다.",
+          buttons: [{
+            label: "상담원 연결",
+            action: "operator"
+          }]
+        }
+      }],
+      quickReplies: kakaoChatbotHomeQuickReplies_()
+    }
+  };
+}
+
 function kakaoChatbotHomeQuickReplies_() {
   return [
     { label: "민원 접수", action: "message", messageText: "민원 접수" },
-    { label: "내 민원 조회", action: "message", messageText: "내 민원 조회" }
+    { label: "내 민원 조회", action: "message", messageText: "내 민원 조회" },
+    { label: "상담 연결", action: "message", messageText: "상담 연결" }
   ];
 }
 
