@@ -172,25 +172,53 @@
   .vendor-table a{ color:#315fce; text-decoration:none; word-break:break-all; }
   .vendor-table a:hover{ text-decoration:underline; }
   .vendor-empty{ color:#9aa6b5; }
-  .cv-vendors{ margin:8px 0 0; border:1px solid #d8e0ec; border-radius:8px; background:#f8fafd; padding:12px; }
-  .cv-vendors-head{ display:flex; align-items:center; justify-content:space-between; gap:10px; margin-bottom:9px; }
-  .cv-vendors-title{ color:#162033; font-size:13.5px; font-weight:900; }
-  .cv-vendors-sub{ color:#6b7686; font-size:12px; }
-  .cv-vendors .vendor-grid{ grid-template-columns:repeat(3,minmax(0,1fr)); margin-top:0; }
-  .cv-vendors .vendor-card{ box-shadow:none; }
-  .cv-vendors .vendor-card-name{ font-size:14px; }
-  .cv-vendors .vendor-card-type,.cv-vendors .vendor-field-value{ font-size:12.5px; }
-  .cv-vendors .vendor-card-head{ padding:11px 12px 9px; }
-  .cv-vendors .vendor-card-body{ padding:10px 12px 12px; gap:8px; }
-  .case-vendor-card.selected{ border-color:#4b7bec; box-shadow:0 0 0 2px rgba(75,123,236,.12); }
-  .cv-vendor-pick{ display:inline-flex; align-items:center; gap:5px; border:1px dashed #9db2d8; background:#fff; color:#315fce; border-radius:999px; padding:4px 8px; font-size:12px; font-weight:800; cursor:pointer; white-space:nowrap; }
-  .cv-vendor-pick input{ margin:0; width:14px; height:14px; accent-color:#4b7bec; }
-  .cv-vendor-pick.disabled{ border-style:solid; border-color:#d8e0ec; background:#f2f4f7; color:#98a2b3; cursor:not-allowed; }
-  .cv-vendor-near{ display:inline-flex; align-items:center; min-height:22px; margin-top:6px; padding:2px 7px; border:1px solid #b7e4c7; border-radius:999px; background:#edf9f1; color:#157347; font-size:11px; font-weight:800; }
-  .cv-vendor-map-link{ margin-top:2px; }
-  .cv-vendor-count{ display:inline-flex; align-items:center; min-height:24px; padding:2px 8px; border-radius:999px; background:#eef3ff; color:#315fce; border:1px solid #c5d4ff; font-size:11.5px; font-weight:800; white-space:nowrap; }
-  @media (max-width:1180px){ .cv-vendors .vendor-grid{ grid-template-columns:repeat(2,minmax(0,1fr)); } }
-  @media (max-width:720px){ .cv-vendors .vendor-grid{ grid-template-columns:1fr; } }
+  .cv-vendors{ margin:10px 0 0; border:1px solid #cfd9e8; border-radius:8px; background:#f5f7fb; padding:16px; }
+  .cv-vendors-head{ display:flex; align-items:center; justify-content:space-between; gap:14px; margin-bottom:14px; }
+  .cv-vendors-title{ color:#162033; font-size:16px; font-weight:900; line-height:1.35; }
+  .cv-vendors-sub{ margin-top:3px; color:#667085; font-size:12.5px; line-height:1.45; }
+  .cv-vendors-actions{ display:flex; align-items:center; gap:7px; }
+  .cv-vendor-source{ display:inline-flex; align-items:center; min-height:26px; padding:3px 8px; border:1px solid #d8e0ec; border-radius:6px; background:#fff; color:#52606d; font-size:11.5px; font-weight:700; white-space:nowrap; }
+  .cv-vendors .vendor-grid{ grid-template-columns:repeat(3,minmax(0,1fr)); gap:14px; margin-top:0; }
+  .cv-vendors .vendor-card{ display:flex; min-width:0; flex-direction:column; border-color:#cfd9e8; box-shadow:0 2px 8px rgba(31,39,51,.05); transition:border-color .15s ease,box-shadow .15s ease,background .15s ease; }
+  .cv-vendors .vendor-card-head{ min-height:86px; padding:14px 14px 12px; border-bottom:1px solid #e4eaf2; background:#fff; }
+  .cv-vendors .vendor-card-name{ color:#101828; font-size:16px; font-weight:900; line-height:1.35; }
+  .cv-vendors .vendor-card-type{ display:-webkit-box; overflow:hidden; margin-top:5px; color:#52606d; font-size:13px; line-height:1.45; -webkit-box-orient:vertical; -webkit-line-clamp:2; }
+  .cv-vendors .vendor-card-body{ display:flex; flex:1; flex-direction:column; gap:12px; padding:13px 14px 14px; }
+  .case-vendor-card.selected{ border-color:#3972e6; background:#f8fbff; box-shadow:0 0 0 2px rgba(57,114,230,.13); }
+  .case-vendor-card.selected .vendor-card-head{ background:#eef4ff; }
+  .cv-vendor-pick{ display:inline-flex; align-items:center; gap:6px; min-height:32px; border:1px solid #8aa8e8; background:#fff; color:#2458c4; border-radius:6px; padding:5px 9px; font-size:12px; font-weight:900; cursor:pointer; white-space:nowrap; }
+  .case-vendor-card.selected .cv-vendor-pick{ border-color:#3972e6; background:#3972e6; color:#fff; }
+  .cv-vendor-pick input{ margin:0; width:15px; height:15px; accent-color:#3972e6; }
+  .case-vendor-card.selected .cv-vendor-pick input{ accent-color:#fff; }
+  .cv-vendor-pick.disabled{ border-color:#d8e0ec; background:#eef1f5; color:#8b95a5; cursor:not-allowed; }
+  .cv-vendor-tags{ display:flex; flex-wrap:wrap; gap:5px; margin-top:8px; }
+  .cv-vendor-category,.cv-vendor-near,.cv-vendor-rating{ display:inline-flex; align-items:center; min-height:22px; padding:2px 7px; border-radius:5px; font-size:11px; font-weight:800; }
+  .cv-vendor-category{ border:1px solid #c8d7f5; background:#f1f5fd; color:#315f92; }
+  .cv-vendor-near{ border:1px solid #b7e4c7; background:#edf9f1; color:#157347; }
+  .cv-vendor-rating{ border:1px solid #f2d38a; background:#fff9e8; color:#8a5a00; }
+  .cv-vendor-core{ display:grid; gap:10px; }
+  .cv-vendor-core-row{ display:grid; grid-template-columns:58px minmax(0,1fr); align-items:start; gap:8px; }
+  .cv-vendor-core-label{ color:#667085; font-size:12px; font-weight:800; line-height:1.5; }
+  .cv-vendor-core-value{ min-width:0; color:#182230; font-size:13.5px; line-height:1.5; word-break:break-word; }
+  .cv-vendor-core-value.phone{ color:#153f8f; font-size:14px; font-weight:900; }
+  .cv-vendor-actions-row{ display:flex; flex-wrap:wrap; gap:7px; margin-top:auto; padding-top:1px; }
+  .cv-vendor-actions-row .vendor-links{ display:contents; }
+  .cv-vendor-actions-row a{ display:inline-flex; align-items:center; justify-content:center; min-height:32px; padding:5px 10px; border:1px solid #b9caf0; border-radius:6px; background:#fff; color:#2458c4; font-size:12px; font-weight:800; text-decoration:none; }
+  .cv-vendor-actions-row a:hover{ border-color:#7c9ee5; background:#eef4ff; text-decoration:none; }
+  .cv-vendor-details{ border-top:1px solid #e4eaf2; padding-top:10px; }
+  .cv-vendor-details summary{ color:#52606d; font-size:12px; font-weight:800; cursor:pointer; user-select:none; }
+  .cv-vendor-details-grid{ display:grid; gap:9px; padding-top:10px; }
+  .cv-vendor-details .vendor-field{ grid-template-columns:58px minmax(0,1fr); gap:8px; }
+  .cv-vendor-details .vendor-field-label{ line-height:1.45; }
+  .cv-vendor-details .vendor-field-value{ font-size:12.5px; line-height:1.5; }
+  .cv-vendor-count{ display:inline-flex; align-items:center; min-height:28px; padding:3px 9px; border-radius:6px; background:#e9f0ff; color:#2458c4; border:1px solid #b9caf0; font-size:12px; font-weight:900; white-space:nowrap; }
+  @media (max-width:1240px){ .cv-vendors .vendor-grid{ grid-template-columns:repeat(2,minmax(0,1fr)); } }
+  @media (max-width:720px){
+    .cv-vendors{ padding:12px; }
+    .cv-vendors-head{ align-items:flex-start; flex-direction:column; }
+    .cv-vendors-actions{ width:100%; justify-content:space-between; }
+    .cv-vendors .vendor-grid{ grid-template-columns:1fr; }
+  }
   .wsbody .docbox{ display:inline-block; min-width:110px; padding:12px 16px; border:2px solid #4b7bec; border-radius:12px; margin:6px; vertical-align:top; font-size:14px; }
   .wsbody .docshape{ display:inline-flex; align-items:center; justify-content:center; width:112px; height:112px; border-radius:50%; border:2px solid #26de81; padding:10px; margin:6px; vertical-align:top; font-size:14px; text-align:center; }
   /* 자유 캔버스(PPT식) */
@@ -2779,7 +2807,7 @@ function renderCaseVendorCandidates(c, stepStatus){
   const cards=vendorsByCategory.flatMap(group=>group.vendors.map(v=>caseVendorCardHtml(c,group.cat,v))).join("");
   const count=vendorsByCategory.reduce((sum,group)=>sum+group.vendors.length,0);
   const picked=selectedCaseVendors(c).length;
-  return `<div class="cv-vendors"><div class="cv-vendors-head"><div><div class="cv-vendors-title">업체 후보</div><div class="cv-vendors-sub">${escH(cats.join(" + "))} · ${count}곳 · ${escH(caseVendorDataSource)} · 같은 동·읍·면 우선</div></div><span class="cv-vendor-count">선택 ${picked}곳</span></div><div class="vendor-grid">${cards}</div></div>`;
+  return `<div class="cv-vendors"><div class="cv-vendors-head"><div><div class="cv-vendors-title">${escH(cats.join(" + "))} 업체 ${count}곳</div><div class="cv-vendors-sub">민원 지역과 연락처 보유 여부를 기준으로 정렬했습니다.</div></div><div class="cv-vendors-actions"><span class="cv-vendor-source">${escH(caseVendorDataSource)}</span><span class="cv-vendor-count">선택 ${picked}곳</span></div></div><div class="vendor-grid">${cards}</div></div>`;
 }
 function safeVendorIdPart(value){
   return vendorKey(value).replace(/[.#$/\[\]]/g, ch => ({
@@ -2882,32 +2910,69 @@ function setCaseVendorSelection(caseId, vendorId, selected, fallbackPayload){
   }
   renderCaseDetailKeepScroll();
 }
+function caseVendorText(value){
+  const text=String(value||"").trim();
+  return text && text!=="-" ? text : "";
+}
+function caseVendorActionLinksHtml(v){
+  const links=[];
+  if(v&&v.mapCompanyId){
+    links.push({ url:"./wonju-map.html?company="+encodeURIComponent(v.mapCompanyId), label:"건물지도" });
+  }
+  const seen=new Set(links.map(item=>item.url));
+  const counts={};
+  vendorUrlItems(v&&v.map).concat(vendorUrlItems(v&&v.promo)).forEach(item=>{
+    if(!item.url || seen.has(item.url)) return;
+    seen.add(item.url);
+    const base=item.type==="지도" ? "네이버지도" : item.type;
+    counts[base]=(counts[base]||0)+1;
+    links.push({ url:item.url, label:counts[base]>1 ? `${base} ${counts[base]}` : base });
+  });
+  if(!links.length) return '<span class="vendor-empty">등록된 링크 없음</span>';
+  return links.map(item=>`<a href="${escAttr(item.url)}" target="_blank" rel="noopener">${escH(item.label)}</a>`).join("");
+}
+function caseVendorDetailsHtml(v){
+  const fields=[
+    ["단가",v&&v.price],
+    ["비고",v&&v.note]
+  ].concat(Object.entries((v&&v.extra)||{}));
+  const rows=fields.map(([label,value])=>[label,caseVendorText(value)]).filter(([,value])=>value);
+  if(!rows.length) return "";
+  return `<details class="cv-vendor-details"><summary>상세 정보 ${rows.length}개</summary><div class="cv-vendor-details-grid">${rows.map(([label,value])=>
+    `<div class="vendor-field"><span class="vendor-field-label">${escH(label)}</span><p class="vendor-field-value">${htmlLines(value)}</p></div>`
+  ).join("")}</div></details>`;
+}
 function caseVendorCardHtml(c,cat,v){
   const payload=vendorPayload(cat,v);
   const id=payload.id;
   const checked=!!selectedVendorKeyForPayload(c,payload);
   const selectable=vendorHasSelectablePhone(v);
   const locality=caseVendorSharedLocality(c,v);
-  const extraFields = vendorExtraFieldsHtml(v.extra);
+  const phone=caseVendorText(v.phone);
+  const address=caseVendorText(v.address);
+  const rating=caseVendorText(v.rating);
   return `<article class="vendor-card case-vendor-card ${checked?'selected':''}" data-vendor-payload="${escAttr(encodeVendorPayload(payload))}">
     <div class="vendor-card-head">
       <div>
         <div class="vendor-card-name">${escH(v.name)}</div>
         <div class="vendor-card-type">${htmlLines(v.type)}</div>
-        ${locality?`<span class="cv-vendor-near">같은 지역 · ${escH(locality)}</span>`:""}
+        <div class="cv-vendor-tags">
+          <span class="cv-vendor-category">${escH(cat)}</span>
+          ${locality?`<span class="cv-vendor-near">가까운 지역 · ${escH(locality)}</span>`:""}
+          ${rating?`<span class="cv-vendor-rating">${escH(rating)}</span>`:""}
+        </div>
       </div>
       ${selectable
         ? `<label class="cv-vendor-pick"><input type="checkbox" data-vendor-select="${escAttr(id)}" ${checked?'checked':''}>선택</label>`
         : `<span class="cv-vendor-pick disabled">연락처 없음</span>`}
     </div>
     <div class="vendor-card-body">
-      <div class="vendor-field"><span class="vendor-field-label">전화번호</span><p class="vendor-field-value">${htmlLines(v.phone)}</p></div>
-      <div class="vendor-field"><span class="vendor-field-label">주소</span><p class="vendor-field-value">${htmlLines(v.address)}</p></div>
-      <div class="vendor-field"><span class="vendor-field-label">링크</span><div class="vendor-field-value">${vendorLinksHtml(v.map, v.promo)}${v.mapCompanyId?`<div class="vendor-links cv-vendor-map-link"><a href="./wonju-map.html?company=${encodeURIComponent(v.mapCompanyId)}" target="_blank" rel="noopener">지도에서 보기</a></div>`:""}</div></div>
-      <div class="vendor-field"><span class="vendor-field-label">평점</span><p class="vendor-field-value">${htmlLines(v.rating)}</p></div>
-      <div class="vendor-field"><span class="vendor-field-label">단가</span><p class="vendor-field-value">${htmlLines(v.price)}</p></div>
-      <div class="vendor-field"><span class="vendor-field-label">비고</span><p class="vendor-field-value">${htmlLines(v.note)}</p></div>
-      ${extraFields}
+      <div class="cv-vendor-core">
+        <div class="cv-vendor-core-row"><span class="cv-vendor-core-label">전화</span><div class="cv-vendor-core-value phone">${phone?htmlLines(phone):'<span class="vendor-empty">연락처 없음</span>'}</div></div>
+        <div class="cv-vendor-core-row"><span class="cv-vendor-core-label">주소</span><div class="cv-vendor-core-value">${address?htmlLines(address):'<span class="vendor-empty">주소 미등록</span>'}</div></div>
+      </div>
+      <div class="cv-vendor-actions-row">${caseVendorActionLinksHtml(v)}</div>
+      ${caseVendorDetailsHtml(v)}
     </div>
   </article>`;
 }
@@ -5688,8 +5753,9 @@ document.getElementById("noticeBtn").addEventListener("click", openNoticePanel);
 document.getElementById("noticeBanner").addEventListener("click", openNoticePanel);
 
 /* ===== 업데이트 알림(What's New) — 새 버전 나오면 자동 팝업 ===== */
-const APP_VERSION = "5.26";
+const APP_VERSION = "5.27";
 const CHANGELOG = [
+  { v:"5.27", d:"2026-07-28", items:["⑤ 업체 후보 카드를 전화·주소 중심의 비교형 화면으로 재구성","평점·단가·비고는 상세 정보로 접어 카드 높이 축소","선택 상태와 건물지도·네이버지도·홈페이지 버튼 시인성 개선"] },
   { v:"5.26", d:"2026-07-28", items:["⑤ 업체 후보를 건물지도 원주업체 데이터로 통합","민원 주소와 같은 동·읍·면 및 문자 발송 가능한 연락처 보유 업체 우선 정렬","업체 카드에서 건물지도 해당 마커를 바로 열 수 있는 지도 링크 추가"] },
   { v:"5.25", d:"2026-07-24", items:["건물주의 별도 입금 신고 없이 관리자가 실제 사업자계좌 입금을 확인하는 ⑩ 단계 추가","관리자 입금 확인 완료 시 ⑩ 완료·⑪ 업체 연결 및 일정 진행중 자동 전환"] },
   { v:"5.24", d:"2026-07-23", items:["짧은 승인 링크에서 모바일 승인 화면을 직접 표시해 화면 축소 문제 해결","승인 응답을 Apps Script API로 연결하고 승인 후 계좌번호·예금주·입금금액 안내"] },
