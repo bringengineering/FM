@@ -35,7 +35,7 @@ const PAYMENT_SCHEDULE_HEADERS = [
   "상태",
   "비고"
 ];
-const AUTOMATION_BUILD = "complaint-workflow-20260728-v39";
+const AUTOMATION_BUILD = "complaint-workflow-20260728-v40";
 const OWNER_RECOMMENDATION_IMAGE_VERSION = "owner-summary-v4";
 const OWNER_DECISION_VIEW = "owner-decision";
 const OWNER_PAYMENT_ACCOUNT = {
@@ -315,7 +315,7 @@ function handleKakaoChatbotSkill_(payload, event) {
 
   const userHash = kakaoChatbotUserHash_(userKey);
   const utterance = kakaoChatbotCleanText_(request.utterance, 1000);
-  const command = normalizeText_(utterance);
+  const command = normalizeText_(utterance).replace(/^[^0-9a-z가-힣]+/i, "");
 
   if (/^(취소|접수취소|민원취소)$/.test(command)) {
     kakaoChatbotDeleteSession_(userHash);
@@ -504,10 +504,10 @@ function kakaoChatbotConsultationResponse_() {
     template: {
       outputs: [{
         basicCard: {
-          title: "브링케어 상담 연결",
-          description: "아래 버튼을 누르면 브링케어 상담원과 1:1 상담을 시작합니다.",
+          title: "💬 브링케어 상담 연결",
+          description: "궁금한 점을 편하게 말씀해 주세요.\n아래 버튼을 누르면 상담원과 1:1 상담을 시작합니다.",
           buttons: [{
-            label: "상담원 연결",
+            label: "💬 상담원 연결",
             action: "operator"
           }]
         }
@@ -519,9 +519,9 @@ function kakaoChatbotConsultationResponse_() {
 
 function kakaoChatbotHomeQuickReplies_() {
   return [
-    { label: "민원 접수", action: "message", messageText: "민원 접수" },
-    { label: "내 민원 조회", action: "message", messageText: "내 민원 조회" },
-    { label: "상담 연결", action: "message", messageText: "상담 연결" }
+    { label: "🛠 민원 접수", action: "message", messageText: "민원 접수" },
+    { label: "🔎 내 민원 조회", action: "message", messageText: "내 민원 조회" },
+    { label: "💬 상담 연결", action: "message", messageText: "상담 연결" }
   ];
 }
 
