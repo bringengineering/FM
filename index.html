@@ -2552,6 +2552,8 @@ function renderComplaintOverview(c){
   const ucls=caseUrgencyClass(c.urgency);
   const received=formatCaseDate(c.receivedAt||c.createdAt);
   const room=caseDisplayRoom(c);
+  const sourceLabel=c.source==="kakao_chatbot" ? "카카오톡 접수" : "구글폼 접수";
+  const photos=Array.isArray(c.photos) ? c.photos.filter(p=>p&&p.driveUrl) : [];
   const fields=[
     ["접수번호", c.ticketNo || c.id],
     ["건물/호실", [c.building, room].filter(Boolean).join(" / ")],
@@ -2563,9 +2565,10 @@ function renderComplaintOverview(c){
   ].filter(x=>x[1]);
   return `<div class="cv-complaint"><div class="cv-complaint-head">`+
     `<div class="cv-complaint-title">${esc(c.summary || c.ticketNo || "구글폼 민원")}</div>`+
-    `<div><span class="cv-badge source">구글폼 접수</span> ${c.urgency?`<span class="cv-badge ${ucls}">${esc(c.urgency)}</span>`:""}</div></div>`+
+    `<div><span class="cv-badge source">${esc(sourceLabel)}</span> ${c.urgency?`<span class="cv-badge ${ucls}">${esc(c.urgency)}</span>`:""}</div></div>`+
     `<div class="cv-complaint-meta">${fields.map(([k,v])=>`<div class="cv-kv"><b>${esc(k)}</b><span>${esc(v)}</span></div>`).join("")}</div>`+
     (c.analysisReason ? `<div class="cv-summary"><b>판단 근거</b><br>${esc(c.analysisReason)}</div>` : "")+
+    (photos.length ? `<div class="cv-summary"><b>현장 사진 ${photos.length}장</b><br>${photos.map((p,i)=>`<a href="${escAttr(p.driveUrl)}" target="_blank" rel="noopener">${esc(p.name||`현장 사진 ${i+1}`)}</a>`).join(" · ")}</div>` : "")+
     (c.sheetUrl ? `<div class="cv-summary"><b>상세 원장</b><br><a href="${escAttr(c.sheetUrl)}" target="_blank" rel="noopener">응답 시트에서 개인정보/사진 확인</a></div>` : "")+
     `</div>`;
 }
@@ -5753,8 +5756,9 @@ document.getElementById("noticeBtn").addEventListener("click", openNoticePanel);
 document.getElementById("noticeBanner").addEventListener("click", openNoticePanel);
 
 /* ===== 업데이트 알림(What's New) — 새 버전 나오면 자동 팝업 ===== */
-const APP_VERSION = "5.27";
+const APP_VERSION = "5.28";
 const CHANGELOG = [
+  { v:"5.28", d:"2026-07-28", items:["카카오톡 민원 접수 현장 사진을 케이스에 연결","케이스 상세에서 현장 사진 Drive 링크 표시","카카오톡 접수 배지 구분"] },
   { v:"5.27", d:"2026-07-28", items:["⑤ 업체 후보 카드를 전화·주소 중심의 비교형 화면으로 재구성","평점·단가·비고는 상세 정보로 접어 카드 높이 축소","선택 상태와 건물지도·네이버지도·홈페이지 버튼 시인성 개선"] },
   { v:"5.26", d:"2026-07-28", items:["⑤ 업체 후보를 건물지도 원주업체 데이터로 통합","민원 주소와 같은 동·읍·면 및 문자 발송 가능한 연락처 보유 업체 우선 정렬","업체 카드에서 건물지도 해당 마커를 바로 열 수 있는 지도 링크 추가"] },
   { v:"5.25", d:"2026-07-24", items:["건물주의 별도 입금 신고 없이 관리자가 실제 사업자계좌 입금을 확인하는 ⑩ 단계 추가","관리자 입금 확인 완료 시 ⑩ 완료·⑪ 업체 연결 및 일정 진행중 자동 전환"] },

@@ -35,7 +35,7 @@ const PAYMENT_SCHEDULE_HEADERS = [
   "상태",
   "비고"
 ];
-const AUTOMATION_BUILD = "complaint-workflow-20260727-v37";
+const AUTOMATION_BUILD = "complaint-workflow-20260728-v38";
 const OWNER_RECOMMENDATION_IMAGE_VERSION = "owner-summary-v4";
 const OWNER_DECISION_VIEW = "owner-decision";
 const OWNER_PAYMENT_ACCOUNT = {
@@ -245,6 +245,7 @@ function getKakaoChatbotIntakeConfig_() {
     enabled: /^(1|true|yes|on)$/i.test(String(props.getProperty("KAKAO_CHATBOT_INTAKE_ENABLED") || "")),
     token: String(props.getProperty("KAKAO_CHATBOT_SKILL_TOKEN") || "").trim(),
     botId: String(props.getProperty("KAKAO_CHATBOT_BOT_ID") || "").trim(),
+    photoBlockId: String(props.getProperty("KAKAO_CHATBOT_PHOTO_BLOCK_ID") || "").trim(),
     sessionSeconds: 30 * 60
   };
 }
@@ -334,7 +335,7 @@ function handleKakaoChatbotSkill_(payload, event) {
       updatedAt: new Date().toISOString()
     };
     kakaoChatbotWriteSession_(userHash, freshSession, config.sessionSeconds);
-    return kakaoChatbotPromptResponse_("building");
+    return kakaoChatbotPromptResponse_("building", config);
   }
 
   let session = kakaoChatbotReadSession_(userHash);
@@ -358,7 +359,7 @@ function handleKakaoChatbotSkill_(payload, event) {
     delete session.values.address;
     session.updatedAt = new Date().toISOString();
     kakaoChatbotWriteSession_(userHash, session, config.sessionSeconds);
-    return kakaoChatbotPromptResponse_("building");
+    return kakaoChatbotPromptResponse_("building", config);
   }
   if (/^(주소다시입력|주소재입력)$/.test(command)) {
     session.step = "address";
@@ -366,15 +367,39 @@ function handleKakaoChatbotSkill_(payload, event) {
     delete session.values.address;
     session.updatedAt = new Date().toISOString();
     kakaoChatbotWriteSession_(userHash, session, config.sessionSeconds);
-    return kakaoChatbotPromptResponse_("address");
+    return kakaoChatbotPromptResponse_("address", config);
   }
 
   const step = String(session.step || "building");
+  if (step === "photo") {
+    const photoUrls = kakaoChatbotExtractPhotoUrls_(payload);
+    const skipPhoto = /^(사진없이접수|사진건너뛰기|사진생략|건너뛰기)$/.test(command);
+    if (!photoUrls.length && !skipPhoto) {
+      return kakaoChatbotPromptResponse_("photo", config);
+    }
+
+    session.values = Object.assign({}, session.values || {});
+    if (photoUrls.length) {
+      session.values.photoUrls = photoUrls;
+      session.values.photoCount = photoUrls.length;
+      session.values.photoSkipped = false;
+    } else {
+      delete session.values.photoUrls;
+      delete session.values.photoUrl;
+      session.values.photoCount = 0;
+      session.values.photoSkipped = true;
+    }
+    session.step = kakaoChatbotNextStep_(step);
+    session.updatedAt = new Date().toISOString();
+    kakaoChatbotWriteSession_(userHash, session, config.sessionSeconds);
+    return kakaoChatbotPromptResponse_(session.step, config);
+  }
+
   const validation = validateKakaoChatbotAnswer_(step, utterance);
   if (!validation.ok) {
     return kakaoChatbotTextResponse_(
       validation.message,
-      kakaoChatbotQuickRepliesForStep_(step)
+      kakaoChatbotQuickRepliesForStep_(step, config)
     );
   }
 
@@ -407,6 +432,19 @@ function handleKakaoChatbotSkill_(payload, event) {
       );
     } catch (err) {
       Logger.log("카카오 민원 접수 실패: " + err.message);
+      if (err && err.kakaoPhotoRetry) {
+        session.step = "photo";
+        session.values = Object.assign({}, session.values || {});
+        delete session.values.photoUrls;
+        delete session.values.photoUrl;
+        delete session.values.photoCount;
+        session.updatedAt = new Date().toISOString();
+        kakaoChatbotWriteSession_(userHash, session, config.sessionSeconds);
+        return kakaoChatbotTextResponse_(
+          "현장 사진의 보관 시간이 지나 저장하지 못했습니다.\n사진을 다시 등록하거나 '사진 없이 접수'를 선택해 주세요.",
+          kakaoChatbotQuickRepliesForStep_("photo", config)
+        );
+      }
       return kakaoChatbotTextResponse_(
         "접수 처리 중 오류가 발생했습니다. 잠시 후 '동의합니다'를 다시 눌러 주세요."
       );
@@ -444,7 +482,7 @@ function handleKakaoChatbotSkill_(payload, event) {
   session.step = kakaoChatbotNextStep_(step);
   session.updatedAt = new Date().toISOString();
   kakaoChatbotWriteSession_(userHash, session, config.sessionSeconds);
-  return kakaoChatbotPromptResponse_(session.step);
+  return kakaoChatbotPromptResponse_(session.step, config);
 }
 
 function kakaoChatbotTextResponse_(text, quickReplies) {
@@ -464,13 +502,32 @@ function kakaoChatbotHomeQuickReplies_() {
   ];
 }
 
-function kakaoChatbotQuickRepliesForStep_(step) {
+function kakaoChatbotQuickRepliesForStep_(step, config) {
   if (step === "issueType") {
     return ["누수", "배관", "전기", "도어락", "보일러", "에어컨", "기타"].map(value => ({
       label: value,
       action: "message",
       messageText: value
     }));
+  }
+  if (step === "photo") {
+    const replies = [];
+    const photoBlockId = String(config && config.photoBlockId || "").trim();
+    if (photoBlockId) {
+      replies.push({
+        label: "현장 사진 등록",
+        action: "block",
+        messageText: "현장 사진 등록",
+        blockId: photoBlockId
+      });
+    }
+    replies.push({
+      label: "사진 없이 접수",
+      action: "message",
+      messageText: "사진 없이 접수"
+    });
+    replies.push({ label: "접수 취소", action: "message", messageText: "접수 취소" });
+    return replies;
   }
   if (step === "visitTime") {
     return [
@@ -496,7 +553,7 @@ function kakaoChatbotContractMismatchQuickReplies_() {
   ];
 }
 
-function kakaoChatbotPromptResponse_(step) {
+function kakaoChatbotPromptResponse_(step, config) {
   const prompts = {
     building: "민원을 접수할 건물명을 입력해 주세요.\n예: 브링타워",
     address: "계약 건물 확인을 위해 건물 주소를 입력해 주세요.\n예: 서울시 강남구 테헤란로 123",
@@ -504,6 +561,13 @@ function kakaoChatbotPromptResponse_(step) {
     phone: "접수 안내를 받을 휴대폰 번호를 입력해 주세요.\n예: 010-1234-5678",
     issueType: "문제 유형을 선택하거나 직접 입력해 주세요.",
     description: "현재 증상을 자세히 입력해 주세요.\n언제부터, 어디에서, 어떤 문제가 발생했는지 적어 주세요.",
+    photo: [
+      "문제가 발생한 현장 사진을 등록해 주세요.",
+      "카메라로 바로 촬영하거나 앨범에서 선택할 수 있습니다.",
+      "가능하면 전체 모습과 문제 부위를 1~3장 보내 주세요.",
+      "",
+      "사진이 없으면 '사진 없이 접수'를 선택해 주세요."
+    ].join("\n"),
     visitTime: "방문 가능한 날짜와 시간대를 입력해 주세요.\n예: 7월 28일 오후 2시 이후\n정해지지 않았다면 '일정 협의'를 선택해 주세요.",
     consent: [
       "민원 처리와 계약 확인을 위해 입력한 연락처, 주소, 민원 내용을 수집·이용합니다.",
@@ -514,12 +578,12 @@ function kakaoChatbotPromptResponse_(step) {
   };
   return kakaoChatbotTextResponse_(
     prompts[step] || prompts.building,
-    kakaoChatbotQuickRepliesForStep_(step)
+    kakaoChatbotQuickRepliesForStep_(step, config)
   );
 }
 
 function kakaoChatbotNextStep_(step) {
-  const steps = ["building", "address", "room", "phone", "issueType", "description", "visitTime", "consent"];
+  const steps = ["building", "address", "room", "phone", "issueType", "description", "photo", "visitTime", "consent"];
   const index = steps.indexOf(step);
   return index >= 0 && index < steps.length - 1 ? steps[index + 1] : "consent";
 }
@@ -598,20 +662,130 @@ function kakaoChatbotDeleteSession_(userHash) {
   CacheService.getScriptCache().remove(kakaoChatbotSessionCacheKey_(userHash));
 }
 
-function kakaoChatbotExtractPhotoUrl_(payload) {
-  const params = Object.assign({}, payload && payload.action && payload.action.params || {});
+function kakaoChatbotExtractPhotoUrls_(payload) {
+  const action = payload && payload.action || {};
+  const params = Object.assign({}, action.params || {});
+  const detailParams = Object.assign({}, action.detailParams || {});
   const candidates = [
     params.photoUrl,
     params.photo,
     params.imageUrl,
     params.secureImage,
-    params.secureimage
+    params.secureimage,
+    detailParams.photoUrl && (detailParams.photoUrl.value || detailParams.photoUrl.origin),
+    detailParams.photo && (detailParams.photo.value || detailParams.photo.origin),
+    detailParams.imageUrl && (detailParams.imageUrl.value || detailParams.imageUrl.origin),
+    detailParams.secureImage && (detailParams.secureImage.value || detailParams.secureImage.origin),
+    detailParams.secureimage && (detailParams.secureimage.value || detailParams.secureimage.origin)
   ];
-  for (const candidate of candidates) {
-    const value = String(candidate || "").trim();
-    if (/^https:\/\//i.test(value)) return value.slice(0, 2000);
+  const urls = [];
+  candidates.forEach(candidate => {
+    kakaoChatbotPhotoUrlsFromValue_(candidate).forEach(url => {
+      if (!urls.includes(url)) urls.push(url);
+    });
+  });
+  return urls.slice(0, 10);
+}
+
+function kakaoChatbotPhotoUrlsFromValue_(candidate) {
+  if (candidate === null || candidate === undefined) return [];
+  if (Array.isArray(candidate)) {
+    return candidate.reduce((all, item) => all.concat(kakaoChatbotPhotoUrlsFromValue_(item)), []);
   }
-  return "";
+  if (typeof candidate === "object") {
+    const nested = candidate.secureUrls || candidate.urls || candidate.url || candidate.value || candidate.origin;
+    return kakaoChatbotPhotoUrlsFromValue_(nested);
+  }
+
+  const value = String(candidate || "").trim();
+  if (!value) return [];
+  try {
+    const parsed = JSON.parse(value);
+    if (parsed !== value) return kakaoChatbotPhotoUrlsFromValue_(parsed);
+  } catch (err) {
+    // The secureimage plugin also returns a List(url) string, so plain-text parsing continues.
+  }
+
+  const matches = value.match(/https?:\/\/[^,\s<>\\)]+/gi) || [];
+  return matches
+    .map(url => url.split("\"")[0].split("'")[0].replace(/[,\]]+$/, "").slice(0, 3000))
+    .filter(url => /^https?:\/\//i.test(url));
+}
+
+function kakaoChatbotExtractPhotoUrl_(payload) {
+  return kakaoChatbotExtractPhotoUrls_(payload)[0] || "";
+}
+
+function isTrustedKakaoPhotoUrl_(url) {
+  return /^https?:\/\/(?:[A-Za-z0-9-]+\.)*kakaocdn\.net(?::\d+)?\//i.test(String(url || ""));
+}
+
+function saveKakaoComplaintPhotosToDrive_(photoUrls, ticketNo) {
+  const trustedUrls = (photoUrls || [])
+    .map(url => String(url || "").trim())
+    .filter(isTrustedKakaoPhotoUrl_)
+    .slice(0, 10);
+  if (!trustedUrls.length) {
+    const error = new Error("카카오 현장 사진 URL이 없거나 허용된 주소가 아닙니다.");
+    error.kakaoPhotoRetry = true;
+    throw error;
+  }
+
+  const responses = UrlFetchApp.fetchAll(trustedUrls.map(url => ({
+    url: url,
+    method: "get",
+    followRedirects: true,
+    muteHttpExceptions: true,
+    headers: { "User-Agent": "BRING-Care-Kakao-Photo/1.0" }
+  })));
+  const root = getOrCreateChildFolder_(getQuoteDriveRootFolder_(), "카카오 민원 사진");
+  const folder = getOrCreateChildFolder_(root, safeDriveName_(ticketNo));
+  const driveUrls = [];
+  const fileIds = [];
+  const errors = [];
+
+  responses.forEach((response, index) => {
+    const status = Number(response.getResponseCode());
+    if (status < 200 || status >= 300) {
+      errors.push("사진 " + (index + 1) + " HTTP " + status);
+      return;
+    }
+    const blob = response.getBlob();
+    const contentType = String(blob.getContentType() || "").toLowerCase();
+    if (!/^image\/(jpeg|jpg|png|gif|webp)$/.test(contentType)) {
+      errors.push("사진 " + (index + 1) + " 지원하지 않는 형식 " + (contentType || "알 수 없음"));
+      return;
+    }
+    if (blob.getBytes().length > 15 * 1024 * 1024) {
+      errors.push("사진 " + (index + 1) + " 15MB 초과");
+      return;
+    }
+    const extensionMap = {
+      "image/jpeg": ".jpg",
+      "image/jpg": ".jpg",
+      "image/png": ".png",
+      "image/gif": ".gif",
+      "image/webp": ".webp"
+    };
+    const fileName = safeDriveName_(
+      ticketNo + "_현장사진_" + String(index + 1).padStart(2, "0")
+    ) + (extensionMap[contentType] || ".jpg");
+    const file = folder.createFile(blob.setName(fileName));
+    fileIds.push(file.getId());
+    driveUrls.push("https://drive.google.com/open?id=" + file.getId());
+  });
+
+  if (!fileIds.length) {
+    const error = new Error("카카오 현장 사진을 Drive에 저장하지 못했습니다. " + errors.join(" / "));
+    error.kakaoPhotoRetry = true;
+    throw error;
+  }
+  return {
+    count: fileIds.length,
+    fileIds: fileIds,
+    driveUrls: driveUrls,
+    errors: errors
+  };
 }
 
 function verifyKakaoContractBuilding_(building, address) {
@@ -713,7 +887,11 @@ function enqueueKakaoComplaintIntake_(values, userHash, payload) {
     const sheet = getResponseSheet_();
     const headers = ensureKakaoIntakeHeaders_(sheet);
     const now = new Date();
-    const photoUrl = kakaoChatbotExtractPhotoUrl_(payload) || String(values.photoUrl || "");
+    const photoUrls = kakaoChatbotExtractPhotoUrls_(payload)
+      .concat(Array.isArray(values.photoUrls) ? values.photoUrls : [])
+      .concat(values.photoUrl ? [values.photoUrl] : [])
+      .filter((url, index, all) => url && all.indexOf(url) === index)
+      .slice(0, 10);
     const record = {
       "타임스탬프": now,
       "건물명": kakaoChatbotCleanText_(values.building, 120),
@@ -725,7 +903,7 @@ function enqueueKakaoComplaintIntake_(values, userHash, payload) {
       "증상 설명": kakaoChatbotCleanText_(values.description, 1000),
       "추가 요청사항": "카카오톡 브링케어 채널 접수",
       "방문 가능 시간": kakaoChatbotCleanText_(values.visitTime, 240),
-      "사진 첨부": photoUrl,
+      "사진 첨부": "",
       "접수 경로": "kakao_chatbot",
       "카카오 사용자 키 해시": userHash,
       "카카오 처리 상태": "대기",
@@ -733,13 +911,23 @@ function enqueueKakaoComplaintIntake_(values, userHash, payload) {
     };
     const headerMap = kakaoComplaintHeaderMap_(headers);
     const row = sheet.getLastRow() + 1;
+    const ticketNo = makeTicketNo_(row, record);
+    if (photoUrls.length) {
+      const savedPhotos = saveKakaoComplaintPhotosToDrive_(photoUrls, ticketNo);
+      record["사진 첨부"] = savedPhotos.driveUrls.join("\n");
+      record["카카오 처리 메모"] = "현장 사진 " + savedPhotos.count + "장 저장 / 챗봇 접수 후 자동 처리 대기";
+      if (savedPhotos.errors.length) {
+        record["카카오 처리 메모"] += " / 일부 제외: " + savedPhotos.errors.join(" / ");
+      }
+    } else if (values.photoSkipped) {
+      record["카카오 처리 메모"] = "사용자가 사진 없이 접수 / 챗봇 접수 후 자동 처리 대기";
+    }
+    record["접수번호"] = ticketNo;
     const rowValues = headers.map(header => Object.prototype.hasOwnProperty.call(record, header) ? record[header] : "");
     if (headerMap["연락처"]) {
       sheet.getRange(row, headerMap["연락처"]).setNumberFormat("@");
     }
     sheet.getRange(row, 1, 1, headers.length).setValues([rowValues]);
-    const ticketNo = makeTicketNo_(row, record);
-    setCellByHeader_(sheet, row, headerMap, "접수번호", ticketNo);
 
     const pendingCase = makeKakaoPendingCase_(ticketNo, record, row, sheet);
     writeKakaoPendingCaseLink_(ticketNo, pendingCase, userHash, now);
@@ -749,6 +937,7 @@ function enqueueKakaoComplaintIntake_(values, userHash, payload) {
       building: record["건물명"],
       room: record["호실"],
       issueType: record["문제 유형"],
+      photoCount: photoUrls.length,
       row: row
     };
   } finally {
@@ -799,6 +988,7 @@ function kakaoComplaintHeaderMap_(headers) {
 }
 
 function makeKakaoPendingCase_(ticketNo, record, row, sheet) {
+  const photoFileIds = extractDriveFileIdsFromText_(record["사진 첨부"] || "");
   return {
     id: ticketNo,
     ticketNo: ticketNo,
@@ -816,6 +1006,12 @@ function makeKakaoPendingCase_(ticketNo, record, row, sheet) {
     issueType: record["문제 유형"],
     summary: [record["건물명"], formatRoomForCase_(record["호실"]), record["문제 유형"]].filter(Boolean).join(" / "),
     visitTime: record["방문 가능 시간"],
+    photos: photoFileIds.map((fileId, index) => ({
+      id: fileId,
+      name: "현장 사진 " + (index + 1),
+      driveUrl: "https://drive.google.com/open?id=" + fileId
+    })),
+    photoCount: photoFileIds.length,
     statusValue: "접수처리중",
     status: { c1: "doing" },
     kakao: {
@@ -2843,15 +3039,22 @@ function firstJpegPhotoFromRecord_(record) {
       const file = DriveApp.getFileById(id);
       const blob = file.getBlob();
       const name = file.getName() || "photo.jpg";
-      const contentType = blob.getContentType() || "";
+      const contentType = String(blob.getContentType() || "").toLowerCase();
+      const isImage = /^image\//i.test(contentType);
       const isJpeg = /jpe?g$/i.test(name) || /jpeg/i.test(contentType);
-      if (!isJpeg) {
-        errors.push(name + ": JPG/JPEG 파일이 아님");
+      if (!isImage && !isJpeg) {
+        errors.push(name + ": 이미지 파일이 아님");
         continue;
       }
 
       const originalBytes = blob.getBytes();
-      const thumbnail = originalBytes.length > 300 * 1024 ? makeSensThumbnailBlob_(id, name) : null;
+      const thumbnail = !isJpeg || originalBytes.length > 300 * 1024
+        ? makeSensThumbnailBlob_(id, name)
+        : null;
+      if (!isJpeg && !thumbnail) {
+        errors.push(name + ": MMS용 JPG 이미지로 변환하지 못함");
+        continue;
+      }
       const bytes = thumbnail ? thumbnail.blob.getBytes() : originalBytes;
       const outputName = thumbnail ? thumbnail.name : makeSensImageName_(name);
       if (bytes.length > 300 * 1024) {
@@ -2871,7 +3074,7 @@ function firstJpegPhotoFromRecord_(record) {
     }
   }
 
-  return { ok: false, message: "MMS로 보낼 수 있는 JPG/JPEG 사진을 찾지 못했습니다. " + errors.join(" / ") };
+  return { ok: false, message: "MMS로 보낼 수 있는 현장 사진을 찾지 못했습니다. " + errors.join(" / ") };
 }
 
 function makeSensThumbnailBlob_(fileId, originalName) {
@@ -8133,6 +8336,7 @@ function buildCasePayload_(ticketNo, record, analysis, contractMatch, row, sheet
   const source = readField_(record, ["접수 경로"]) || "google_form";
   const sourceLabel = source === "kakao_chatbot" ? "카카오톡" : "구글폼";
   const kakaoUserKeyHash = readField_(record, ["카카오 사용자 키 해시"]);
+  const photoFileIds = extractDriveFileIdsFromText_(readField_(record, ["사진 첨부", "첨부 사진", "사진", "사진첨부"]));
   const isContractHold = contractMatch && (contractMatch.status === "unmatched" || contractMatch.status === "multiple" || contractMatch.status === "address_missing");
   const statusValue = isContractHold ? "계약확인보류" : analysis.statusValue;
   const status = isContractHold ? { c1: "doing" } : { c1: "done", c2: "doing" };
@@ -8164,6 +8368,12 @@ function buildCasePayload_(ticketNo, record, analysis, contractMatch, row, sheet
     analysisReason: analysis.reason,
     visitDate: formatKoreanDateOnlyForCase_(visitDateRaw || timestamp),
     visitTime: visitTime,
+    photos: photoFileIds.map((fileId, index) => ({
+      id: fileId,
+      name: "현장 사진 " + (index + 1),
+      driveUrl: "https://drive.google.com/open?id=" + fileId
+    })),
+    photoCount: photoFileIds.length,
     statusValue: statusValue,
     contractMatch: contractMatch,
     ownerPhoneMasked: ownerPhone ? maskPhone_(ownerPhone) : "",

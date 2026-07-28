@@ -47,6 +47,7 @@
    - `KAKAO_CHATBOT_INTAKE_ENABLED`: 챗봇 연결 전 `false`, 봇 테스트 완료 후 `true`
    - `KAKAO_CHATBOT_SKILL_TOKEN`: `setupKakaoComplaintIntake`가 자동 생성하므로 GitHub에 기록하지 않음
    - `KAKAO_CHATBOT_BOT_ID`: 챗봇 관리자센터의 봇 ID. 다른 봇 요청 차단용이며 운영 연결 전에 설정
+   - `KAKAO_CHATBOT_PHOTO_BLOCK_ID`: `@sys.plugin.secureimage` 필수 파라미터를 연결한 `현장 사진 등록` 블록 ID
 9. ② 접수확인 문자, ⑤ 업체 MMS, ⑥ 파일 업로드, ⑧ 건물주 추천 MMS 자동화를 쓰려면 Apps Script에서 `배포` -> `새 배포` -> `웹 앱`으로 배포합니다.
    - 입금확인 캘린더의 건물 새로고침도 이 웹 앱의 `syncPaymentBuildings` 요청을 사용합니다.
    - 실행 사용자: `나`
@@ -161,6 +162,8 @@ NCP Secret Key는 GitHub나 HTML 화면에 절대 넣지 않습니다. Apps Scri
 3. 챗봇의 `민원 접수` 블록과 폴백 블록에 같은 스킬을 연결합니다.
 4. 봇 테스트에서는 `KAKAO_CHATBOT_INTAKE_ENABLED=false` 상태로 기존 구글폼 안내 응답이 표시되는지 먼저 확인합니다.
 5. 챗봇 관리자센터의 봇 ID를 `KAKAO_CHATBOT_BOT_ID`에 저장하고 `KAKAO_CHATBOT_INTAKE_ENABLED=true`로 변경합니다.
+6. `현장 사진 등록` 블록을 만들고 `@sys.plugin.secureimage`를 필수 파라미터 `secureimage`로 연결합니다. 같은 스킬을 적용한 뒤 블록 ID를 `KAKAO_CHATBOT_PHOTO_BLOCK_ID`에 저장합니다.
+7. 챗봇 사진은 카카오 보안 URL 만료 전에 접수 시 Drive의 `카카오 민원 사진/{접수번호}` 폴더로 복사되며, 시트와 Firebase 케이스의 사진 필드에 연결됩니다.
 6. `민원 접수`를 입력하고 건물명부터 개인정보 동의까지 진행합니다.
 7. 카카오톡에 발급된 접수번호가 Google 응답 시트와 Firebase `/cases/{접수번호}`에 생성되는지 확인합니다.
 8. 1분 이내 `카카오 처리 상태=완료`로 바뀌고 FM 대시보드에서 같은 접수번호가 표시되는지 확인합니다.

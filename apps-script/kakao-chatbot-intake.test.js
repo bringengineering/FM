@@ -62,7 +62,8 @@ function extractFunction(name) {
 
 const properties = {
   KAKAO_CHATBOT_INTAKE_ENABLED: "true",
-  KAKAO_CHATBOT_SKILL_TOKEN: "skill-secret"
+  KAKAO_CHATBOT_SKILL_TOKEN: "skill-secret",
+  KAKAO_CHATBOT_PHOTO_BLOCK_ID: "photo-block-001"
 };
 const cache = new Map();
 let enqueued = null;
@@ -175,12 +176,25 @@ const functions = [
   "kakaoChatbotReadSession_",
   "kakaoChatbotWriteSession_",
   "kakaoChatbotDeleteSession_",
+  "kakaoChatbotExtractPhotoUrls_",
+  "kakaoChatbotPhotoUrlsFromValue_",
   "kakaoChatbotExtractPhotoUrl_",
   "writeKakaoPendingCaseLink_"
 ];
 
 vm.createContext(context);
-vm.runInContext(functions.map(extractFunction).join("\n\n"), context, { filename: sourcePath });
+const chatbotFunctionSource = functions.map(extractFunction).join("\n\n");
+try {
+  vm.runInContext(chatbotFunctionSource, context, { filename: sourcePath });
+} catch (error) {
+  const match = String(error && error.stack || "").match(/:(\d+)\n/);
+  const line = match ? Number(match[1]) : 1;
+  const lines = chatbotFunctionSource.split(/\r?\n/);
+  console.error(lines.slice(Math.max(0, line - 5), line + 4).map((text, index) =>
+    `${Math.max(0, line - 5) + index + 1}: ${text}`
+  ).join("\n"));
+  throw error;
+}
 
 function payload(utterance, extra) {
   return {
@@ -239,13 +253,27 @@ const answers = [
   ["301", /휴대폰 번호/],
   ["010-1234-5678", /문제 유형/],
   ["누수", /현재 증상/],
-  ["천장에서 물이 계속 떨어지고 있습니다", /방문 가능한 날짜/],
-  ["평일 오후", /동의하시겠습니까/]
+  ["천장에서 물이 계속 떨어지고 있습니다", /현장 사진/]
 ];
 for (const [answer, expected] of answers) {
   response = context.handleKakaoChatbotSkill_(payload(answer), validEvent);
   assert.match(response.template.outputs[0].simpleText.text, expected);
 }
+assert.equal(response.template.quickReplies[0].action, "block");
+assert.equal(response.template.quickReplies[0].blockId, "photo-block-001");
+assert.equal(response.template.quickReplies[1].messageText, "사진 없이 접수");
+
+const securePhotoPayload = payload("", {
+  secureimage: JSON.stringify({
+    privacyAgreement: "Y",
+    imageQuantity: "2",
+    secureUrls: "List(https://secure.kakaocdn.net/dna/one/photo1.jpg?credential=abc,https://secure.kakaocdn.net/dna/two/photo2.jpg?credential=def)"
+  })
+});
+response = context.handleKakaoChatbotSkill_(securePhotoPayload, validEvent);
+assert.match(response.template.outputs[0].simpleText.text, /방문 가능한 날짜/);
+response = context.handleKakaoChatbotSkill_(payload("평일 오후"), validEvent);
+assert.match(response.template.outputs[0].simpleText.text, /동의하시겠습니까/);
 
 response = context.handleKakaoChatbotSkill_(payload("동의합니다"), validEvent);
 assert.match(response.template.outputs[0].simpleText.text, /BR-2026-0099/);
@@ -253,6 +281,13 @@ assert.equal(enqueued.values.building, "브링타워");
 assert.equal(enqueued.values.name, "세입자");
 assert.equal(enqueued.values.phone, "01012345678");
 assert.equal(enqueued.values.issueType, "누수");
+assert.deepEqual(
+  Array.from(enqueued.values.photoUrls),
+  [
+    "https://secure.kakaocdn.net/dna/one/photo1.jpg?credential=abc",
+    "https://secure.kakaocdn.net/dna/two/photo2.jpg?credential=def"
+  ]
+);
 assert.equal(enqueued.userHash.length, 64);
 
 response = context.handleKakaoChatbotSkill_(payload("내 민원 조회"), validEvent);
@@ -277,6 +312,13 @@ assert.equal(context.validateKakaoChatbotAnswer_("phone", "123").ok, false);
 assert.equal(context.validateKakaoChatbotAnswer_("description", "짧음").ok, false);
 assert.equal(context.validateKakaoChatbotAnswer_("consent", "동의하지 않습니다").value, false);
 assert.equal(context.kakaoChatbotExtractPhotoUrl_(payload("사진", { photoUrl: "https://example.com/photo.jpg" })), "https://example.com/photo.jpg");
+assert.deepEqual(
+  Array.from(context.kakaoChatbotExtractPhotoUrls_(securePhotoPayload)),
+  [
+    "https://secure.kakaocdn.net/dna/one/photo1.jpg?credential=abc",
+    "https://secure.kakaocdn.net/dna/two/photo2.jpg?credential=def"
+  ]
+);
 assert.equal(context.normalizePhoneForSms_("1020773076"), "01020773076");
 assert.equal(context.normalizePhoneForSms_("010-2077-3076"), "01020773076");
 
@@ -451,7 +493,7 @@ assert.deepEqual(
   ["owner-existing-request", "세입자-request"]
 );
 
-assert.match(source, /const AUTOMATION_BUILD = "complaint-workflow-20260727-v37"/);
+assert.match(source, /const AUTOMATION_BUILD = "complaint-workflow-20260728-v38"/);
 assert.doesNotMatch(source, /name: "세입자 성함을 입력해 주세요/);
 assert.match(source, /입력한 건물명과 주소로 확인되는 브링케어 계약 건물이 없습니다/);
 assert.match(source, /putCaseChildToFirebase_\(caseId, "complaintReceiptSms", smsResult\)/);
@@ -460,5 +502,7 @@ assert.match(source, /writeNormalizedKakaoPhoneToSheetForCase_\(casePayload, nor
 assert.match(source, /source: "kakao_chatbot"/);
 assert.match(source, /processPendingKakaoComplaintIntakes/);
 assert.match(source, /카카오 사용자 키 해시/);
+assert.match(source, /saveKakaoComplaintPhotosToDrive_\(photoUrls, ticketNo\)/);
+assert.match(source, /KAKAO_CHATBOT_PHOTO_BLOCK_ID/);
 
 console.log("PASS Kakao chatbot intake session, validation, case link and queue flow");
