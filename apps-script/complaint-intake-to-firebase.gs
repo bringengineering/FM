@@ -35,7 +35,7 @@ const PAYMENT_SCHEDULE_HEADERS = [
   "상태",
   "비고"
 ];
-const AUTOMATION_BUILD = "complaint-workflow-20260729-v42";
+const AUTOMATION_BUILD = "complaint-workflow-20260729-v43";
 const OWNER_RECOMMENDATION_IMAGE_VERSION = "owner-summary-v4";
 const OWNER_DECISION_VIEW = "owner-decision";
 const OWNER_PAYMENT_ACCOUNT = {
@@ -7549,6 +7549,203 @@ function handlePaymentReminderSms_(payload) {
   firebaseAuthorizedWriteRequest_(recordUrl, "put", record, "월세 안내 문자 기록 저장 실패");
   if (!result.ok) throw new Error(result.message || "월세 안내 문자 발송에 실패했습니다.");
   return record;
+}
+
+const POPBILL_EASYFINBANK_SCOPE = ["180", "member"];
+const POPBILL_API_VERSION = "2.0";
+
+function popbillBoolean_(value, fallback) {
+  const normalized = String(value == null ? "" : value).trim().toLowerCase();
+  if (!normalized) return !!fallback;
+  return normalized !== "false" && normalized !== "0" && normalized !== "no";
+}
+
+function popbillConfigFromValues_(values) {
+  const source = values || {};
+  const isTest = popbillBoolean_(source.POPBILL_IS_TEST, true);
+  const linkId = String(source.POPBILL_LINK_ID || "").trim();
+  const secretKey = String(source.POPBILL_SECRET_KEY || "").trim();
+  const corpNum = String(source.POPBILL_CORP_NUM || "").replace(/\D/g, "");
+  const userId = String(source.POPBILL_USER_ID || "").trim();
+  const missing = [];
+  if (!linkId) missing.push("POPBILL_LINK_ID");
+  if (!secretKey) missing.push("POPBILL_SECRET_KEY");
+  if (!/^\d{10}$/.test(corpNum)) missing.push("POPBILL_CORP_NUM");
+  if (missing.length) {
+    throw new Error("팝빌 스크립트 속성을 확인해 주세요: " + missing.join(", "));
+  }
+  return {
+    isTest: isTest,
+    linkId: linkId,
+    secretKey: secretKey,
+    corpNum: corpNum,
+    userId: userId,
+    serviceId: isTest ? "POPBILL_TEST" : "POPBILL",
+    apiBaseUrl: isTest
+      ? "https://popbill-test.linkhub.co.kr"
+      : "https://popbill.linkhub.co.kr"
+  };
+}
+
+function popbillConfig_() {
+  return popbillConfigFromValues_(PropertiesService.getScriptProperties().getProperties());
+}
+
+function popbillUtcTimestamp_(date) {
+  return Utilities.formatDate(
+    date || new Date(),
+    "UTC",
+    "yyyy-MM-dd'T'HH:mm:ss'Z'"
+  );
+}
+
+function popbillTokenRequestBody_(corpNum) {
+  return JSON.stringify({
+    access_id: String(corpNum || "").replace(/\D/g, ""),
+    scope: POPBILL_EASYFINBANK_SCOPE.slice()
+  });
+}
+
+function popbillStringToSign_(serviceId, bodyDigest, requestDate, forwardedIp) {
+  return [
+    "POST",
+    bodyDigest,
+    requestDate,
+    forwardedIp || "*",
+    POPBILL_API_VERSION,
+    "/" + serviceId + "/Token"
+  ].join("\n");
+}
+
+function popbillFetchJson_(url, options, errorLabel) {
+  const response = UrlFetchApp.fetch(url, Object.assign({
+    muteHttpExceptions: true
+  }, options || {}));
+  const status = response.getResponseCode();
+  const body = response.getContentText() || "";
+  let parsed = {};
+  try {
+    parsed = body ? JSON.parse(body) : {};
+  } catch (error) {
+    parsed = {};
+  }
+  if (status < 200 || status >= 300) {
+    const message = String(parsed.message || parsed.Message || "").trim();
+    throw new Error((errorLabel || "팝빌 API 요청 실패") +
+      " (" + status + ")" + (message ? ": " + message : ""));
+  }
+  return parsed;
+}
+
+function popbillSessionToken_(forceRefresh) {
+  const config = popbillConfig_();
+  const cache = CacheService.getScriptCache();
+  const cacheKey = "popbill-token-" + config.serviceId + "-" + config.corpNum;
+  if (!forceRefresh) {
+    const cached = cache.get(cacheKey);
+    if (cached) return cached;
+  }
+
+  const body = popbillTokenRequestBody_(config.corpNum);
+  const digestBytes = Utilities.computeDigest(
+    Utilities.DigestAlgorithm.SHA_256,
+    body,
+    Utilities.Charset.UTF_8
+  );
+  const bodyDigest = Utilities.base64Encode(digestBytes);
+  const requestDate = popbillUtcTimestamp_(new Date());
+  const forwardedIp = "*";
+  const stringToSign = popbillStringToSign_(
+    config.serviceId,
+    bodyDigest,
+    requestDate,
+    forwardedIp
+  );
+  const signatureBytes = Utilities.computeHmacSha256Signature(
+    Utilities.newBlob(stringToSign).getBytes(),
+    Utilities.base64Decode(config.secretKey)
+  );
+  const signature = Utilities.base64Encode(signatureBytes);
+  const tokenResult = popbillFetchJson_(
+    "https://auth.linkhub.co.kr/" + config.serviceId + "/Token",
+    {
+      method: "post",
+      contentType: "application/json",
+      payload: body,
+      headers: {
+        Authorization: "LINKHUB " + config.linkId + " " + signature,
+        "X-LH-Version": POPBILL_API_VERSION,
+        "X-LH-Date": requestDate,
+        "X-LH-Forwarded": forwardedIp
+      }
+    },
+    "팝빌 인증 실패"
+  );
+  const token = String(tokenResult.session_token || "").trim();
+  if (!token) throw new Error("팝빌 인증 응답에 세션 토큰이 없습니다.");
+  cache.put(cacheKey, token, 25 * 60);
+  return token;
+}
+
+function popbillApiRequest_(method, resourcePath, payload) {
+  const config = popbillConfig_();
+  const headers = {
+    Authorization: "Bearer " + popbillSessionToken_(false),
+    "Accept-Language": "ko-KR"
+  };
+  if (config.userId) headers["X-PB-UserID"] = config.userId;
+  const options = {
+    method: String(method || "get").toLowerCase(),
+    headers: headers
+  };
+  if (payload != null) {
+    options.contentType = "application/json";
+    options.payload = JSON.stringify(payload);
+  }
+  return popbillFetchJson_(
+    config.apiBaseUrl + resourcePath,
+    options,
+    "팝빌 계좌조회 API 요청 실패"
+  );
+}
+
+function verifyPopbillEasyFinBankConnection() {
+  const config = popbillConfig_();
+  const accounts = popbillApiRequest_("get", "/EasyFin/Bank/ListBankAccount");
+  const safeAccounts = (Array.isArray(accounts) ? accounts : []).map(account => {
+    const number = String(account && account.accountNumber || "").replace(/\D/g, "");
+    return {
+      bankCode: String(account && account.bankCode || ""),
+      accountName: String(account && account.accountName || ""),
+      accountLast4: number.slice(-4),
+      state: Number(account && account.state || 0)
+    };
+  });
+  const result = {
+    ok: true,
+    environment: config.isTest ? "test" : "production",
+    accountCount: safeAccounts.length,
+    accounts: safeAccounts
+  };
+  Logger.log(JSON.stringify(result));
+  return result;
+}
+
+function getPopbillBankAccountManagerUrl() {
+  const config = popbillConfig_();
+  if (!config.isTest) {
+    throw new Error("현재 운영환경으로 설정되어 있습니다. 테스트 계좌 등록 시 POPBILL_IS_TEST=true를 사용하세요.");
+  }
+  const result = popbillApiRequest_(
+    "get",
+    "/EasyFin/Bank?TG=BankAccount"
+  );
+  const url = String(result && result.url || "").trim();
+  if (!/^https:\/\/test\.popbill\.com\//.test(url)) {
+    throw new Error("팝빌 테스트 계좌등록 URL을 받지 못했습니다.");
+  }
+  Logger.log("POPBILL_BANK_ACCOUNT_MANAGER_URL=" + url);
+  return url;
 }
 
 function syncPaymentBuildingsFromOnboarding_() {
