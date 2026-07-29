@@ -42,6 +42,7 @@
    - `KAKAO_TEMPLATE_RECEIPT_TENANT`: `BRINGRECEIPTTENANTV1`
    - `KAKAO_TEMPLATE_RECEIPT_OWNER`: `BRINGRECEIPTOWNERV1`
    - `KAKAO_TEMPLATE_OWNER_QUOTE`: `BRINGOWNERQUOTEV1`
+   - `KAKAO_TEMPLATE_PAYMENT_REMINDER`: `BRINGRENTREMINDERV1`
    - `KAKAO_SMS_FAILOVER_ENABLED`: NCP 채널의 SMS 대체 발송 설정까지 완료한 뒤 `true`, 그전에는 `false`
    - 카카오 챗봇 민원 접수는 `setupKakaoComplaintIntake`를 한 번 실행해 스킬 토큰과 1분 대기열 트리거를 만든 뒤 설정합니다.
    - `KAKAO_CHATBOT_INTAKE_ENABLED`: 챗봇 연결 전 `false`, 봇 테스트 완료 후 `true`
@@ -163,12 +164,28 @@ NCP Secret Key는 GitHub나 HTML 화면에 절대 넣지 않습니다. Apps Scri
    - `BRINGRECEIPTTENANTV1`
    - `BRINGRECEIPTOWNERV1`
    - `BRINGOWNERQUOTEV1`
+   - `BRINGRENTREMINDERV1`
 2. Apps Script의 스크립트 속성에 설치 순서 8의 카카오 설정값을 추가합니다.
 3. 최초 테스트에서는 `KAKAO_SMS_FAILOVER_ENABLED=false`, `KAKAO_ALIMTALK_ENABLED=true`로 설정합니다.
 4. 함수 선택에서 `testKakaoAlimTalkSetup`을 실행합니다.
 5. `@bringcare` 이름으로 세입자 민원 접수 테스트 알림톡이 도착하고 실행 로그에 `provider: kakao_alimtalk`이 표시되는지 확인합니다.
 6. 실제 테스트 민원 한 건을 접수해 ② 세입자·건물주 알림톡과 ⑧ 추천 견적 버튼이 현재 케이스의 승인 화면으로 연결되는지 확인합니다.
 7. 검증이 끝난 후 NCP 채널에서 SMS 대체 발송을 설정했다면 `KAKAO_SMS_FAILOVER_ENABLED=true`로 변경합니다.
+
+월세 납부 안내용 `BRINGRENTREMINDERV1` 템플릿은 아래 내용 그대로 등록하고 검수를 요청합니다. 변수명과 줄바꿈이 달라지면 발송이 거절될 수 있습니다.
+
+```text
+[BRING Care 월세 납부 안내]
+#{세입자명}님, 안녕하세요.
+
+#{안내문구}
+건물: #{건물명}
+호실: #{호실}
+납부금액: #{납부금액}원
+납부일: #{납부일}
+
+이미 납부하셨다면 확인까지 시간이 걸릴 수 있으니 이 알림톡은 무시해 주세요.
+```
 
 ## 카카오 챗봇 민원 접수 테스트
 

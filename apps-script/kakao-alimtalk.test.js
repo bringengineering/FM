@@ -146,6 +146,7 @@ const functions = [
   "makeComplaintReceiptTenantAlimTalkContent_",
   "makeComplaintReceiptOwnerAlimTalkContent_",
   "makeOwnerRecommendationAlimTalkContent_",
+  "paymentReminderAlimTalkContent_",
   "getKakaoAlimTalkConfig_",
   "sendSensAlimTalk_",
   "sendKakaoAlimTalkOrSms_"
@@ -160,6 +161,7 @@ assert.equal(config.plusFriendId, "@bringcare");
 assert.equal(config.templates.receiptTenant, "BRINGRECEIPTTENANTV1");
 assert.equal(config.templates.receiptOwner, "BRINGRECEIPTOWNERV1");
 assert.equal(config.templates.ownerQuote, "BRINGOWNERQUOTEV1");
+assert.equal(config.templates.paymentReminder, "BRINGRENTREMINDERV1");
 
 const tenantContent = context.makeComplaintReceiptTenantAlimTalkContent_("BR-2026-0001", {
   이름: "홍길동",
@@ -197,6 +199,25 @@ assert.match(quoteContent, /추천 금액: 1,100,000원/);
 
 assert.match(quoteContent, /010-2773-3076/);
 
+const paymentReminderContent = context.paymentReminderAlimTalkContent_({
+  tenantName: "김현진",
+  buildingName: "상지대학교 창업보육센터",
+  unit: "303호",
+  amount: 1
+}, "2026-07-29", "due");
+assert.equal(paymentReminderContent, [
+  "[BRING Care 월세 납부 안내]",
+  "김현진님, 안녕하세요.",
+  "",
+  "오늘은 월세 납부일입니다.",
+  "건물: 상지대학교 창업보육센터",
+  "호실: 303호",
+  "납부금액: 1원",
+  "납부일: 2026년 7월 29일",
+  "",
+  "이미 납부하셨다면 확인까지 시간이 걸릴 수 있으니 이 알림톡은 무시해 주세요."
+].join("\n"));
+
 const sendResult = context.sendSensAlimTalk_(
   "010-9999-8888",
   tenantContent,
@@ -225,7 +246,7 @@ assert.equal(fallbackResult.alimTalkError.includes("template not approved"), tru
 assert.equal(lastSms.to, "01099998888");
 assert.equal(lastSms.content, tenantContent);
 
-assert.match(source, /const AUTOMATION_BUILD = "complaint-workflow-20260729-v46"/);
+assert.match(source, /const AUTOMATION_BUILD = "complaint-workflow-20260729-v47"/);
 assert.match(source, /provider: "kakao_alimtalk"/);
 assert.match(source, /name: "추천 견적 확인"/);
 

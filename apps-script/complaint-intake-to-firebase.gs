@@ -35,7 +35,7 @@ const PAYMENT_SCHEDULE_HEADERS = [
   "상태",
   "비고"
 ];
-const AUTOMATION_BUILD = "complaint-workflow-20260729-v46";
+const AUTOMATION_BUILD = "complaint-workflow-20260729-v47";
 const OWNER_RECOMMENDATION_IMAGE_VERSION = "owner-summary-v4";
 const OWNER_DECISION_VIEW = "owner-decision";
 const OWNER_PAYMENT_ACCOUNT = {
@@ -7506,6 +7506,30 @@ function paymentReminderSmsContent_(schedule, dueDate, reminderType) {
   ].filter(Boolean).join("\n");
 }
 
+function paymentReminderAlimTalkContent_(schedule, dueDate, reminderType) {
+  const dateParts = String(dueDate || "").split("-");
+  const displayDate = Number(dateParts[0]) + "년 " + Number(dateParts[1]) + "월 " + Number(dateParts[2]) + "일";
+  const tenantName = safeAlimTalkVariable_(schedule.tenantName || "고객", 80);
+  const buildingName = safeAlimTalkVariable_(schedule.buildingName || "등록 건물", 120);
+  const unit = safeAlimTalkVariable_(schedule.unit || "등록 호실", 60);
+  const amount = Math.round(Number(schedule.amount) || 0).toLocaleString("ko-KR");
+  const notice = reminderType === "due"
+    ? "오늘은 월세 납부일입니다."
+    : "월세 입금이 아직 확인되지 않아 안내드립니다.";
+  return [
+    "[BRING Care 월세 납부 안내]",
+    tenantName + "님, 안녕하세요.",
+    "",
+    notice,
+    "건물: " + buildingName,
+    "호실: " + unit,
+    "납부금액: " + amount + "원",
+    "납부일: " + displayDate,
+    "",
+    "이미 납부하셨다면 확인까지 시간이 걸릴 수 있으니 이 알림톡은 무시해 주세요."
+  ].join("\n");
+}
+
 function handlePaymentReminderSms_(payload) {
   payload = payload || {};
   const scheduleId = String(payload.scheduleId || "").trim();
@@ -7533,13 +7557,23 @@ function handlePaymentReminderSms_(payload) {
     return Object.assign({}, existing, { skipped: true, message: "이미 발송된 기록이 있습니다." });
   }
 
-  const content = paymentReminderSmsContent_(schedule, dueDate, reminderType);
-  const result = sendSensSms_(tenantPhone, content, "월세 안내");
+  const smsContent = paymentReminderSmsContent_(schedule, dueDate, reminderType);
+  const alimTalkContent = paymentReminderAlimTalkContent_(schedule, dueDate, reminderType);
+  const kakaoConfig = getKakaoAlimTalkConfig_();
+  const result = sendKakaoAlimTalkOrSms_(tenantPhone, alimTalkContent, "월세 납부 안내", {
+    templateCode: kakaoConfig.templates.paymentReminder,
+    fallbackContent: smsContent
+  });
   const record = {
     ok: result.ok === true,
-    status: result.ok === true ? "발송요청 완료" : "발송실패",
+    status: result.ok === true
+      ? (result.provider === "kakao_alimtalk" ? "카카오 알림톡 요청 완료" : "문자 요청 완료")
+      : "발송실패",
     message: result.message || "",
     requestId: result.requestId || "",
+    messageId: result.messageId || "",
+    provider: result.provider || "",
+    templateCode: result.templateCode || "",
     reminderType: reminderType,
     scheduleId: scheduleId,
     month: month,
@@ -8607,7 +8641,8 @@ function getKakaoAlimTalkConfig_() {
     templates: {
       receiptTenant: String(props.getProperty("KAKAO_TEMPLATE_RECEIPT_TENANT") || "BRINGRECEIPTTENANTV1").trim(),
       receiptOwner: String(props.getProperty("KAKAO_TEMPLATE_RECEIPT_OWNER") || "BRINGRECEIPTOWNERV1").trim(),
-      ownerQuote: String(props.getProperty("KAKAO_TEMPLATE_OWNER_QUOTE") || "BRINGOWNERQUOTEV1").trim()
+      ownerQuote: String(props.getProperty("KAKAO_TEMPLATE_OWNER_QUOTE") || "BRINGOWNERQUOTEV1").trim(),
+      paymentReminder: String(props.getProperty("KAKAO_TEMPLATE_PAYMENT_REMINDER") || "BRINGRENTREMINDERV1").trim()
     }
   };
   config.enabled = Boolean(
