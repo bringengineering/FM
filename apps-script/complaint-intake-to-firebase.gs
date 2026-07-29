@@ -35,7 +35,7 @@ const PAYMENT_SCHEDULE_HEADERS = [
   "상태",
   "비고"
 ];
-const AUTOMATION_BUILD = "complaint-workflow-20260729-v47";
+const AUTOMATION_BUILD = "complaint-workflow-20260729-v48";
 const OWNER_RECOMMENDATION_IMAGE_VERSION = "owner-summary-v4";
 const OWNER_DECISION_VIEW = "owner-decision";
 const OWNER_PAYMENT_ACCOUNT = {
@@ -7562,7 +7562,8 @@ function handlePaymentReminderSms_(payload) {
   const kakaoConfig = getKakaoAlimTalkConfig_();
   const result = sendKakaoAlimTalkOrSms_(tenantPhone, alimTalkContent, "월세 납부 안내", {
     templateCode: kakaoConfig.templates.paymentReminder,
-    fallbackContent: smsContent
+    fallbackContent: smsContent,
+    allowSmsFallback: false
   });
   const record = {
     ok: result.ok === true,
@@ -8743,6 +8744,7 @@ function sendKakaoAlimTalkOrSms_(to, content, label, options) {
       kakaoConfig
     );
     if (alimTalkResult.ok) return alimTalkResult;
+    if (options.allowSmsFallback === false) return alimTalkResult;
 
     const smsConfig = getSensConfig_();
     if (!smsConfig.enabled) return alimTalkResult;

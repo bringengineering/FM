@@ -200,17 +200,17 @@ assert.match(quoteContent, /추천 금액: 1,100,000원/);
 assert.match(quoteContent, /010-2773-3076/);
 
 const paymentReminderContent = context.paymentReminderAlimTalkContent_({
-  tenantName: "김현진",
-  buildingName: "상지대학교 창업보육센터",
+  tenantName: "테스트세입자",
+  buildingName: "테스트건물",
   unit: "303호",
   amount: 1
 }, "2026-07-29", "due");
 assert.equal(paymentReminderContent, [
   "[BRING Care 월세 납부 안내]",
-  "김현진님, 안녕하세요.",
+  "테스트세입자님, 안녕하세요.",
   "",
   "오늘은 월세 납부일입니다.",
-  "건물: 상지대학교 창업보육센터",
+  "건물: 테스트건물",
   "호실: 303호",
   "납부금액: 1원",
   "납부일: 2026년 7월 29일",
@@ -246,7 +246,18 @@ assert.equal(fallbackResult.alimTalkError.includes("template not approved"), tru
 assert.equal(lastSms.to, "01099998888");
 assert.equal(lastSms.content, tenantContent);
 
-assert.match(source, /const AUTOMATION_BUILD = "complaint-workflow-20260729-v47"/);
+lastSms = null;
+const kakaoOnlyResult = context.sendKakaoAlimTalkOrSms_("01099998888", tenantContent, "월세 납부 안내", {
+  templateCode: config.templates.paymentReminder,
+  fallbackContent: tenantContent,
+  allowSmsFallback: false
+});
+assert.equal(kakaoOnlyResult.ok, false);
+assert.equal(kakaoOnlyResult.provider, "kakao_alimtalk");
+assert.equal(kakaoOnlyResult.message.includes("template not approved"), true);
+assert.equal(lastSms, null);
+
+assert.match(source, /const AUTOMATION_BUILD = "complaint-workflow-20260729-v48"/);
 assert.match(source, /provider: "kakao_alimtalk"/);
 assert.match(source, /name: "추천 견적 확인"/);
 

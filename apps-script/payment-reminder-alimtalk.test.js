@@ -49,9 +49,9 @@ let stored = null;
 const schedule = {
   id: "s_303_1",
   active: true,
-  tenantName: "김현진",
-  tenantPhone: "01020773077",
-  buildingName: "상지대학교 창업보육센터",
+  tenantName: "테스트세입자",
+  tenantPhone: "01055553077",
+  buildingName: "테스트건물",
   unit: "303호",
   amount: 1,
   dueDay: 29
@@ -66,7 +66,7 @@ const context = {
   Array,
   Object,
   JSON,
-  AUTOMATION_BUILD: "complaint-workflow-20260729-v47",
+  AUTOMATION_BUILD: "complaint-workflow-20260729-v48",
   safeAlimTalkVariable_(value, maxLength) {
     return String(value || "").trim().slice(0, maxLength || 100);
   },
@@ -133,12 +133,13 @@ const result = context.handlePaymentReminderSms_({
   status: "paid"
 });
 
-assert.equal(sent.to, "01020773077");
+assert.equal(sent.to, "01055553077");
 assert.equal(sent.label, "월세 납부 안내");
 assert.equal(sent.options.templateCode, "BRINGRENTREMINDERV1");
 assert.equal(sent.options.fallbackContent, "[BRING Care] SMS fallback");
+assert.equal(sent.options.allowSmsFallback, false);
 assert.match(sent.content, /\[BRING Care 월세 납부 안내\]/);
-assert.match(sent.content, /김현진님, 안녕하세요\./);
+assert.match(sent.content, /테스트세입자님, 안녕하세요\./);
 assert.match(sent.content, /납부금액: 1원/);
 assert.equal(result.ok, true);
 assert.equal(result.status, "카카오 알림톡 요청 완료");
@@ -147,7 +148,7 @@ assert.equal(result.templateCode, "BRINGRENTREMINDERV1");
 assert.equal(result.messageId, "alim-message-rent-1");
 assert.equal(stored.method, "put");
 assert.equal(stored.record.phoneMasked, "010-****-3077");
-assert.equal(JSON.stringify(stored.record).includes("01020773077"), false);
+assert.equal(JSON.stringify(stored.record).includes("01055553077"), false);
 assert.equal(JSON.stringify(stored.record).includes("redacted-token"), false);
 
 console.log("PASS payment reminder Kakao AlimTalk routing and safe delivery record");
