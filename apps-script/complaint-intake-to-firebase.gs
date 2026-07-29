@@ -35,7 +35,7 @@ const PAYMENT_SCHEDULE_HEADERS = [
   "상태",
   "비고"
 ];
-const AUTOMATION_BUILD = "complaint-workflow-20260729-v44";
+const AUTOMATION_BUILD = "complaint-workflow-20260729-v45";
 const OWNER_RECOMMENDATION_IMAGE_VERSION = "owner-summary-v4";
 const OWNER_DECISION_VIEW = "owner-decision";
 const OWNER_PAYMENT_ACCOUNT = {
@@ -7788,6 +7788,37 @@ function popbillBankNormalizePayer_(value) {
     .replace(/[^0-9a-z가-힣]/g, "");
 }
 
+function popbillBankAccountRef_(account, config) {
+  const resolvedConfig = config || popbillConfig_();
+  const raw = [
+    String(account && account.bankCode || ""),
+    String(account && account.accountNumber || "").replace(/\D/g, "")
+  ].join(":");
+  if (!raw.replace(":", "")) throw new Error("팝빌 등록계좌 식별정보가 올바르지 않습니다.");
+  const signature = Utilities.computeHmacSha256Signature(
+    raw,
+    Utilities.base64Decode(resolvedConfig.secretKey)
+  );
+  return "pb_" + Utilities.base64EncodeWebSafe(signature)
+    .replace(/=+$/g, "")
+    .slice(0, 24);
+}
+
+function popbillBankSchedulesForAccount_(schedules, bankBindings, accountRef) {
+  const bindings = bankBindings || {};
+  const ref = String(accountRef || "");
+  if (!ref) return {};
+  const out = {};
+  Object.keys(schedules || {}).forEach(id => {
+    const schedule = schedules[id] || {};
+    const buildingId = String(schedule.buildingId || "");
+    const binding = bindings[buildingId] || {};
+    if (String(binding.accountRef || "") !== ref) return;
+    out[id] = schedule;
+  });
+  return out;
+}
+
 function popbillBankRemarkCandidates_(transaction) {
   const source = transaction || {};
   const seen = {};
@@ -7873,13 +7904,14 @@ function popbillBankResolveTransactionMatch_(transaction, schedules) {
   };
 }
 
-function popbillBankTransactionRecord_(transaction, account, schedules, syncedAt) {
+function popbillBankTransactionRecord_(transaction, account, schedules, syncedAt, accountRef) {
   const amount = Number(String(transaction && transaction.accIn || "0").replace(/,/g, "")) || 0;
   const date = popbillBankIsoDate_(transaction && transaction.trdate);
   const tid = String(transaction && transaction.tid || "").replace(/[.#$\[\]\/]/g, "");
   if (!tid || !date || amount <= 0) return null;
   const accountNumber = String(account && account.accountNumber || "").replace(/\D/g, "");
   const bankCode = String(account && account.bankCode || "");
+  const safeAccountRef = String(accountRef || popbillBankAccountRef_(account));
   const match = popbillBankResolveTransactionMatch_(transaction, schedules);
   return {
     id: ["pb", bankCode, accountNumber.slice(-4), tid].join("_"),
@@ -7892,6 +7924,7 @@ function popbillBankTransactionRecord_(transaction, account, schedules, syncedAt
     provider: "popbill",
     bankCode: bankCode,
     accountLast4: accountNumber.slice(-4),
+    accountRef: safeAccountRef,
     buildingId: match.buildingId,
     buildingName: match.buildingName,
     matchedScheduleId: match.matchedScheduleId,
@@ -8032,7 +8065,9 @@ function syncPopbillBankTransactions_(payload) {
   try {
     const schedulesUrl = firebasePaymentCalendarUrl_(payload.uid, "schedules", payload.idToken);
     const transactionsUrl = firebasePaymentCalendarUrl_(payload.uid, "transactions", payload.idToken);
+    const bankBindingsUrl = firebasePaymentCalendarUrl_(payload.uid, "bankBindings", payload.idToken);
     const schedules = firebaseReadJson_(schedulesUrl, "월 납부 일정 조회 실패") || {};
+    const bankBindings = firebaseReadJson_(bankBindingsUrl, "건물별 팝빌 계좌 연결정보 조회 실패") || {};
     const allAccounts = popbillApiRequest_("get", "/EasyFin/Bank/ListBankAccount");
     const accounts = (Array.isArray(allAccounts) ? allAccounts : [])
       .filter(account => Number(account && account.state) === 1);
@@ -8048,10 +8083,17 @@ function syncPopbillBankTransactions_(payload) {
 
     accounts.forEach(account => {
       const accountNumber = String(account && account.accountNumber || "").replace(/\D/g, "");
+      const accountRef = popbillBankAccountRef_(account);
+      const accountSchedules = popbillBankSchedulesForAccount_(schedules, bankBindings, accountRef);
+      const linkedBuildingIds = Array.from(new Set(Object.keys(accountSchedules)
+        .map(id => String(accountSchedules[id] && accountSchedules[id].buildingId || ""))
+        .filter(Boolean)));
       const safeAccount = {
+        accountRef: accountRef,
         bankCode: String(account && account.bankCode || ""),
         accountName: String(account && account.accountName || ""),
-        accountLast4: accountNumber.slice(-4)
+        accountLast4: accountNumber.slice(-4),
+        linkedBuildingCount: linkedBuildingIds.length
       };
       try {
         const collected = popbillBankCollectAccount_(account, startDate, endDate);
@@ -8059,7 +8101,13 @@ function syncPopbillBankTransactions_(payload) {
         lastScrapDT = String(collected.lastScrapDT || lastScrapDT);
         let depositCount = 0;
         (collected.list || []).forEach(transaction => {
-          const record = popbillBankTransactionRecord_(transaction, account, schedules, requestedAt);
+          const record = popbillBankTransactionRecord_(
+            transaction,
+            account,
+            accountSchedules,
+            requestedAt,
+            accountRef
+          );
           if (!record) return;
           transactionPatch[record.id] = record;
           depositCount += 1;
@@ -8089,6 +8137,9 @@ function syncPopbillBankTransactions_(payload) {
       status: pendingCount ? "pending" : (errors.length ? "error" : "completed"),
       environment: popbillConfig_().isTest ? "test" : "production",
       accountCount: accounts.length,
+      linkedBuildingCount: Object.keys(bankBindings).filter(buildingId =>
+        String(bankBindings[buildingId] && bankBindings[buildingId].accountRef || "")
+      ).length,
       completedAccountCount: accountResults.filter(item => !item.pending).length,
       pendingAccountCount: pendingCount,
       transactionCount: records.length,

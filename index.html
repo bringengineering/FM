@@ -533,9 +533,22 @@
   .pv-building-meta{ display:flex !important; gap:5px; flex-wrap:wrap; }
   .pv-mini{ display:inline-flex !important; align-items:center; width:auto; border-radius:999px; padding:2px 6px; background:#eef1f6; color:#52606d !important; font-size:10.5px !important; font-weight:800; }
   .pv-mini.bad{ background:#fff1f0; color:#b42318 !important; }
+  .pv-mini.good{ background:#eaf7ee; color:#116329 !important; }
   .pv-bank-card{ margin-top:13px; border:1px solid #d8e0ec; border-radius:10px; background:#fafbfd; padding:11px; }
   .pv-bank-card b{ display:block; color:#162033; font-size:12.5px; margin-bottom:5px; }
   .pv-bank-card p{ margin:0; color:#6b7686; font-size:11.5px; line-height:1.55; }
+  .pv-bank-link{ display:flex; align-items:center; justify-content:space-between; gap:10px; flex-wrap:wrap; margin:0 0 12px; border:1px solid #d8e0ec; border-radius:10px; background:#fff; padding:10px 12px; }
+  .pv-bank-link b{ display:block; color:#162033; font-size:12.5px; }
+  .pv-bank-link span{ display:block; margin-top:2px; color:#6b7686; font-size:11.5px; }
+  .pv-bank-link button{ border:1px solid #c5d4ff; background:#eef3ff; color:#315fce; border-radius:8px; padding:7px 10px; font-size:11.5px; font-weight:800; cursor:pointer; font-family:inherit; }
+  .pv-bank-options{ display:grid; gap:8px; margin-top:10px; }
+  .pv-bank-option{ display:flex; align-items:flex-start; gap:9px; border:1px solid #d8e0ec; border-radius:10px; padding:10px 11px; cursor:pointer; }
+  .pv-bank-option:has(input:checked){ border-color:#6d93ef; background:#f2f6ff; }
+  .pv-bank-option input{ margin-top:3px; }
+  .pv-bank-option b{ display:block; color:#162033; font-size:13px; }
+  .pv-bank-option span{ display:block; margin-top:2px; color:#6b7686; font-size:11.5px; }
+  .pv-bank-owner{ display:flex; align-items:flex-start; gap:8px; margin-top:12px; border:1px solid #edf1f6; background:#fafbfd; border-radius:9px; padding:9px 10px; color:#52606d; font-size:11.5px; line-height:1.45; }
+  .pv-bank-owner input{ margin-top:2px; }
   .pv-main{ flex:1; min-width:0; overflow:auto; padding:18px 22px 28px; box-sizing:border-box; }
   .pv-empty{ margin-top:90px; text-align:center; color:#8a94a6; font-size:13.5px; line-height:1.7; }
   .pv-top{ display:flex; align-items:flex-start; justify-content:space-between; gap:12px; flex-wrap:wrap; margin-bottom:12px; }
@@ -814,6 +827,24 @@
       </div>
       <div class="pv-modal-note">실제 은행 연결 전 자동 매칭을 검증하는 테스트 거래입니다. Access Token은 이 화면이나 Firebase에 저장하지 않습니다.</div>
       <div class="pv-modal-actions"><button id="paymentTransactionCancel">취소</button><button class="primary" id="paymentTransactionSave">테스트 입금 저장</button></div>
+    </div>
+  </div>
+
+  <div class="pv-modal" id="paymentBankModal">
+    <div class="pv-modal-box">
+      <div class="pv-modal-head">🏦 <span>건물 입금계좌 연결</span><button id="paymentBankClose">✕</button></div>
+      <div id="paymentBankBuilding" class="pv-modal-note"></div>
+      <div id="paymentBankOptions" class="pv-bank-options"></div>
+      <label class="pv-bank-owner" id="paymentBankOwnerRow">
+        <input id="paymentBankApplyOwner" type="checkbox">
+        <span id="paymentBankOwnerText">같은 건물주의 다른 건물에도 동일 계좌 적용</span>
+      </label>
+      <div class="pv-modal-note">계좌번호 전체와 조회 비밀번호는 저장하지 않습니다. 서버가 만든 익명 계좌 ID, 은행명, 끝 4자리만 현재 관리자 전용 경로에 저장합니다.</div>
+      <div class="pv-modal-actions">
+        <button id="paymentBankUnlink">연결 해제</button>
+        <button id="paymentBankCancel">취소</button>
+        <button class="primary" id="paymentBankSave">연결 저장</button>
+      </div>
     </div>
   </div>
 
@@ -5380,11 +5411,13 @@ const paymentMainEl=document.getElementById("paymentMain");
 const paymentAlertBadgeEl=document.getElementById("paymentAlertBadge");
 const paymentScheduleModal=document.getElementById("paymentScheduleModal");
 const paymentTransactionModal=document.getElementById("paymentTransactionModal");
-let paymentRef=null, paymentValueHandler=null, paymentData={profile:{},schedules:{},transactions:{},overrides:{},rentSms:{},bankSync:{},audit:{}};
+const paymentBankModal=document.getElementById("paymentBankModal");
+let paymentRef=null, paymentValueHandler=null, paymentData={profile:{},schedules:{},transactions:{},overrides:{},rentSms:{},bankSync:{},bankBindings:{},audit:{}};
 let paymentMonth=paymentTodayKey().slice(0,7), paymentBuildingId="", selectedPaymentScheduleId="", editingPaymentScheduleId="";
+let editingPaymentBankBuildingId="";
 let paymentScheduleSyncInFlight=false, paymentScheduleSyncPending=false, paymentScheduleAutoTimer=null;
 let paymentScheduleLastRequestAt=0, paymentScheduleLastSignal="";
-let paymentBankSyncInFlight=false, paymentBankSyncTimer=null, paymentBankLastRequestAt=0;
+let paymentBankSyncInFlight=false, paymentBankSyncPending=false, paymentBankSyncTimer=null, paymentBankLastRequestAt=0;
 let paymentSmsSendingId="";
 const DEFAULT_PAYMENT_SHEET_URL="https://docs.google.com/spreadsheets/d/1HI6KzIMomL6vOUPs8zZDhXHktL1cWRDcg93lflsuojA/edit";
 
@@ -5441,7 +5474,7 @@ function paymentId(prefix){ return prefix+Date.now().toString(36)+Math.random().
 function paymentHash(value){ let h=2166136261; const text=String(value||""); for(let i=0;i<text.length;i++){ h^=text.charCodeAt(i); h=Math.imul(h,16777619); } return (h>>>0).toString(36); }
 function paymentEnsureData(){
   if(!paymentData||typeof paymentData!=="object") paymentData={};
-  ["profile","schedules","transactions","overrides","rentSms","bankSync","audit"].forEach(key=>{ if(!paymentData[key]||typeof paymentData[key]!=="object") paymentData[key]={}; });
+  ["profile","schedules","transactions","overrides","rentSms","bankSync","bankBindings","audit"].forEach(key=>{ if(!paymentData[key]||typeof paymentData[key]!=="object") paymentData[key]={}; });
 }
 function paymentLocalKey(){ return "fm_payment_calendar_"+(authedUser&&authedUser.uid||"local"); }
 function loadPaymentLocal(){ try{ return JSON.parse(localStorage.getItem(paymentLocalKey()))||{}; }catch(e){ return {}; } }
@@ -5462,7 +5495,7 @@ function recordPaymentAudit(action,details){
   paymentData.audit[id]=row; savePaymentLocal();
   if(paymentRef) paymentRef.child("audit/"+id).set(row).catch(err=>console.warn("입금 감사기록 저장 실패",err));
 }
-function detachPaymentCalendarRef(){ if(paymentRef&&paymentValueHandler) paymentRef.off("value",paymentValueHandler); paymentRef=null; paymentValueHandler=null; paymentData={profile:{},schedules:{},transactions:{},overrides:{},rentSms:{},bankSync:{},audit:{}}; }
+function detachPaymentCalendarRef(){ if(paymentRef&&paymentValueHandler) paymentRef.off("value",paymentValueHandler); paymentRef=null; paymentValueHandler=null; paymentData={profile:{},schedules:{},transactions:{},overrides:{},rentSms:{},bankSync:{},bankBindings:{},audit:{}}; }
 function attachPaymentCalendarRef(user){
   detachPaymentCalendarRef();
   if(!user){ updatePaymentAlertBadge(); return; }
@@ -5506,6 +5539,50 @@ function paymentBuildingRecords(){
   });
   return out.sort((a,b)=>a.name.localeCompare(b.name,"ko"));
 }
+function paymentBankName(bankCode){
+  const names={
+    "0003":"기업은행","0004":"국민은행","0011":"농협은행","0020":"우리은행",
+    "0023":"SC제일은행","0027":"한국씨티은행","0031":"대구은행","0032":"부산은행",
+    "0034":"광주은행","0035":"제주은행","0037":"전북은행","0039":"경남은행",
+    "0045":"새마을금고","0048":"신협","0050":"저축은행","0071":"우체국",
+    "0081":"하나은행","0088":"신한은행","0089":"케이뱅크","0090":"카카오뱅크",
+    "0092":"토스뱅크"
+  };
+  const code=String(bankCode||"");
+  return names[code]||("은행 "+code);
+}
+function paymentBankAccounts(){
+  const accounts=paymentData&&paymentData.bankSync&&paymentData.bankSync.accounts;
+  return (Array.isArray(accounts)?accounts:[]).filter(account=>
+    /^pb_[A-Za-z0-9_-]{12,40}$/.test(String(account&&account.accountRef||"")) &&
+    /^\d{4}$/.test(String(account&&account.accountLast4||""))
+  );
+}
+function paymentBankBinding(buildingId){
+  return paymentData&&paymentData.bankBindings&&paymentData.bankBindings[buildingId]||null;
+}
+function paymentBankLabel(value){
+  const item=value||{};
+  return `${paymentBankName(item.bankCode)} ····${String(item.accountLast4||"").slice(-4)}`;
+}
+function paymentOwnerBuildings(building){
+  const ownerKey=paymentNormalizeName(building&&building.ownerName);
+  if(!ownerKey) return building?[building]:[];
+  return paymentBuildingRecords().filter(item=>paymentNormalizeName(item.ownerName)===ownerKey);
+}
+function paymentBankBindingRecord(building,account,at){
+  return {
+    buildingId:String(building&&building.id||""),
+    buildingName:String(building&&building.name||""),
+    ownerName:String(building&&building.ownerName||""),
+    accountRef:String(account&&account.accountRef||""),
+    bankCode:String(account&&account.bankCode||""),
+    bankName:paymentBankName(account&&account.bankCode),
+    accountLast4:String(account&&account.accountLast4||"").slice(-4),
+    linkedAt:at,
+    linkedBy:authedUser&&authedUser.email||"local"
+  };
+}
 function paymentRowsFor(buildingId,monthKey){ return calculatePaymentMonthRows(paymentData,buildingId,monthKey||paymentMonth,paymentTodayKey()); }
 function paymentMonthShift(offset){ const p=paymentMonthParts(paymentMonth); const d=new Date(Date.UTC(p.year,p.month-1+offset,1)); paymentMonth=`${d.getUTCFullYear()}-${String(d.getUTCMonth()+1).padStart(2,"0")}`; selectedPaymentScheduleId=""; renderPaymentCalendar(); }
 function paymentMonthLabel(monthKey){ const p=paymentMonthParts(monthKey); return p?`${p.year}년 ${p.month}월`:monthKey; }
@@ -5532,8 +5609,8 @@ function renderPaymentBuildingList(buildings){
   const bankSync=paymentData&&paymentData.bankSync||{};
   const recent=paymentTransactionsArray(paymentData).filter(t=>t.source==="popbill"||t.source==="test").sort((a,b)=>String(b.transactionAt||b.createdAt||"").localeCompare(String(a.transactionAt||a.createdAt||""))).slice(0,5);
   paymentBuildingListEl.innerHTML=`<div class="pv-side-title"><span>온보딩 건물</span><span>${buildings.length}곳</span></div>`+
-    (buildings.length?buildings.map(b=>`<button class="pv-building ${b.id===paymentBuildingId?'on':''}" data-payment-building="${escAttr(b.id)}"><b>${esc(b.name)}</b><span>${esc(b.address||"주소 미입력")}</span><span>건물주: ${esc(b.ownerName||"미입력")}</span></button>`).join(""):`<div class="pv-empty" style="margin-top:28px">온보딩 건물이 없습니다.<br>새로고침 후 Apps Script 동기화를 확인해 주세요.</div>`)+
-    `<div class="pv-bank-card"><b>🏦 팝빌 은행 자동조회</b><p>현재 관리자: ${esc(authedUser&&authedUser.email||"로컬")}</p><p style="margin-top:4px">${esc(paymentBankSyncMessage(bankSync))}</p><p style="margin-top:4px">${bankSync.environment==="test"?"테스트 환경":bankSync.environment==="production"?"운영 환경":"연결 확인 중"} · 등록계좌 ${Number(bankSync.accountCount)||0}개 · 30분 간격</p>${recent.length?`<p style="margin-top:8px;font-weight:800;color:#52606d">최근 입금</p>${recent.map(t=>`<p>${esc(t.date)} · ${esc(t.payerName||"입금자 확인필요")} · ${esc(paymentFormatMoney(t.amount))}${t.source==="test"?` <button class="pv-btn" style="padding:2px 5px;font-size:10px" data-payment-tx-remove="${escAttr(t.id)}">삭제</button>`:""}</p>`).join("")}`:""}</div>`;
+    (buildings.length?buildings.map(b=>{ const binding=paymentBankBinding(b.id); return `<button class="pv-building ${b.id===paymentBuildingId?'on':''}" data-payment-building="${escAttr(b.id)}"><b>${esc(b.name)}</b><span>${esc(b.address||"주소 미입력")}</span><span>건물주: ${esc(b.ownerName||"미입력")}</span><span class="pv-building-meta"><span class="pv-mini ${binding?'good':'bad'}">${binding?esc(paymentBankLabel(binding)):"계좌 미연결"}</span></span></button>`; }).join(""):`<div class="pv-empty" style="margin-top:28px">온보딩 건물이 없습니다.<br>새로고침 후 Apps Script 동기화를 확인해 주세요.</div>`)+
+    `<div class="pv-bank-card"><b>🏦 팝빌 은행 자동조회</b><p>현재 관리자: ${esc(authedUser&&authedUser.email||"로컬")}</p><p style="margin-top:4px">${esc(paymentBankSyncMessage(bankSync))}</p><p style="margin-top:4px">${bankSync.environment==="test"?"테스트 환경":bankSync.environment==="production"?"운영 환경":"연결 확인 중"} · 등록계좌 ${Number(bankSync.accountCount)||0}개 · 연결건물 ${Number(bankSync.linkedBuildingCount)||Object.keys(paymentData.bankBindings||{}).length}곳 · 30분 간격</p>${recent.length?`<p style="margin-top:8px;font-weight:800;color:#52606d">최근 입금</p>${recent.map(t=>`<p>${esc(t.date)} · ${esc(t.payerName||"입금자 확인필요")} · ${esc(paymentFormatMoney(t.amount))}${t.source==="test"?` <button class="pv-btn" style="padding:2px 5px;font-size:10px" data-payment-tx-remove="${escAttr(t.id)}">삭제</button>`:""}</p>`).join("")}`:""}</div>`;
 }
 function paymentFormatPhone(value){
   const digits=String(value||"").replace(/\D/g,"");
@@ -5559,10 +5636,12 @@ function renderPaymentMain(building){
   if(!paymentMainEl) return;
   if(!building){ paymentMainEl.innerHTML=`<div class="pv-empty">온보딩 건물을 선택하면 건물별 입금확인 캘린더가 표시됩니다.</div>`; return; }
   const rows=paymentRowsFor(building.id),paid=rows.filter(r=>r.status==="paid").length,overdue=rows.filter(r=>r.status==="overdue"||r.status==="manual_unpaid").length,review=rows.filter(r=>r.status==="review").length;
+  const bankBinding=paymentBankBinding(building.id);
   if(selectedPaymentScheduleId&&!rows.some(r=>r.schedule.id===selectedPaymentScheduleId)) selectedPaymentScheduleId="";
   const days=paymentCalendarDays(paymentMonth),today=paymentTodayKey();
   const selected=rows.find(r=>r.schedule.id===selectedPaymentScheduleId)||null;
   paymentMainEl.innerHTML=`<div class="pv-top"><div><div class="pv-title">${esc(building.name)}</div><div class="pv-sub">${esc(building.address||"주소 미입력")} · 건물별 월 납부 현황</div></div><div class="pv-actions"><button class="pv-btn test" data-payment-test="1">＋ 테스트 입금</button><button class="pv-btn primary" data-payment-add="1">＋ 월 납부 일정</button></div></div>`+
+    `<div class="pv-bank-link"><div><b>${bankBinding?`입금계좌 · ${esc(paymentBankLabel(bankBinding))}`:"입금계좌가 연결되지 않았습니다"}</b><span>${bankBinding?"이 계좌의 입금만 이 건물 세입자 일정과 비교합니다.":"팝빌 등록계좌를 연결해야 실제 입금이 자동 매칭됩니다."}</span></div><button data-payment-bank-link="${escAttr(building.id)}">${bankBinding?"계좌 변경":"팝빌 계좌 연결"}</button></div>`+
     `<div class="pv-monthbar"><button data-payment-month="-1">‹</button><b>${esc(paymentMonthLabel(paymentMonth))}</b><button data-payment-month="1">›</button></div>`+
     `<div class="pv-summary"><div class="pv-stat"><span>전체 예정</span><b>${rows.length}건</b></div><div class="pv-stat paid"><span>입금완료</span><b>${paid}건</b></div><div class="pv-stat overdue"><span>미입금</span><b>${overdue}건</b></div><div class="pv-stat review"><span>확인필요</span><b>${review}건</b></div></div>`+
     `<div class="pv-calendar"><div class="pv-weekdays">${["일","월","화","수","목","금","토"].map(x=>`<div>${x}</div>`).join("")}</div><div class="pv-days">${days.map(date=>{ const inMonth=date.slice(0,7)===paymentMonth,dayRows=rows.filter(r=>r.dueDate===date); return `<div class="pv-day ${inMonth?'':'out'} ${date===today?'today':''}"><div class="pv-daynum">${Number(date.slice(-2))}</div>${dayRows.map(r=>`<button class="pv-payitem ${escAttr(r.status)} ${selectedPaymentScheduleId===r.schedule.id?'selected':''}" data-payment-item="${escAttr(r.schedule.id)}"><b>${esc(r.schedule.unit||r.schedule.tenantName||"납부")}</b>${esc(paymentFormatMoney(r.schedule.amount))}</button>`).join("")}</div>`; }).join("")}</div></div>`+renderPaymentDetail(selected);
@@ -5611,6 +5690,69 @@ function savePaymentTransactionFromModal(){
   writePaymentValue("transactions/"+id,tx); recordPaymentAudit("테스트 입금 등록",{transactionId:id,date,payerName,amount}); closePaymentTransactionEditor(); renderPaymentCalendar();
 }
 function removePaymentTransaction(id){ if(!id||!paymentData.transactions[id]) return; writePaymentValue("transactions/"+id,null); recordPaymentAudit("테스트 입금 삭제",{transactionId:id}); renderPaymentCalendar(); }
+function renderPaymentBankBindingEditor(){
+  const building=paymentBuildingRecords().find(item=>item.id===editingPaymentBankBuildingId);
+  if(!building) return;
+  const accounts=paymentBankAccounts(),binding=paymentBankBinding(building.id);
+  const ownerBuildings=paymentOwnerBuildings(building);
+  const buildingEl=document.getElementById("paymentBankBuilding");
+  const optionsEl=document.getElementById("paymentBankOptions");
+  const ownerRow=document.getElementById("paymentBankOwnerRow");
+  const ownerText=document.getElementById("paymentBankOwnerText");
+  const saveButton=document.getElementById("paymentBankSave");
+  const unlinkButton=document.getElementById("paymentBankUnlink");
+  if(buildingEl) buildingEl.textContent=`${building.name} · 건물주 ${building.ownerName||"미입력"}`;
+  if(optionsEl){
+    optionsEl.innerHTML=accounts.length?accounts.map(account=>`<label class="pv-bank-option"><input type="radio" name="paymentBankAccount" value="${escAttr(account.accountRef)}" ${binding&&binding.accountRef===account.accountRef?"checked":""}><span><b>${esc(paymentBankLabel(account))}</b><span>팝빌 등록계좌 · 계좌번호는 끝 4자리만 표시</span></span></label>`).join(""):`<div class="pv-empty" style="margin:18px 0">등록계좌의 안전한 식별정보를 확인 중입니다.<br>잠시 후 다시 열어 주세요.</div>`;
+  }
+  const canApplyOwner=!!building.ownerName&&ownerBuildings.length>1;
+  if(ownerRow) ownerRow.style.display=canApplyOwner?"flex":"none";
+  if(ownerText) ownerText.textContent=canApplyOwner?`${building.ownerName} 건물주의 다른 ${ownerBuildings.length-1}개 건물에도 동일 계좌 적용`:"같은 건물주의 다른 건물에도 동일 계좌 적용";
+  if(saveButton) saveButton.disabled=!accounts.length;
+  if(unlinkButton) unlinkButton.style.display=binding?"inline-block":"none";
+}
+function openPaymentBankBindingEditor(buildingId){
+  const building=paymentBuildingRecords().find(item=>item.id===buildingId);
+  if(!building) return;
+  editingPaymentBankBuildingId=building.id;
+  document.getElementById("paymentBankApplyOwner").checked=false;
+  renderPaymentBankBindingEditor();
+  paymentBankModal.classList.add("open");
+  if(!paymentBankAccounts().length){
+    requestPaymentBankSync({source:"account-list",force:true});
+    setTimeout(()=>{ if(paymentBankModal.classList.contains("open")) renderPaymentBankBindingEditor(); },13000);
+  }
+}
+function closePaymentBankBindingEditor(){
+  paymentBankModal.classList.remove("open");
+  editingPaymentBankBuildingId="";
+}
+function paymentBankBindingTargets(building){
+  const applyOwner=document.getElementById("paymentBankApplyOwner").checked;
+  return applyOwner?paymentOwnerBuildings(building):[building];
+}
+function savePaymentBankBindingFromModal(){
+  const building=paymentBuildingRecords().find(item=>item.id===editingPaymentBankBuildingId);
+  const selected=document.querySelector('input[name="paymentBankAccount"]:checked');
+  const account=paymentBankAccounts().find(item=>item.accountRef===(selected&&selected.value));
+  if(!building||!account){ alert("연결할 팝빌 계좌를 선택해 주세요."); return; }
+  const targets=paymentBankBindingTargets(building),at=new Date().toISOString();
+  closePaymentBankBindingEditor();
+  targets.forEach(target=>writePaymentValue("bankBindings/"+target.id,paymentBankBindingRecord(target,account,at)));
+  recordPaymentAudit("건물 입금계좌 연결",{buildingIds:targets.map(item=>item.id),bankCode:String(account.bankCode||""),accountLast4:String(account.accountLast4||"").slice(-4)});
+  requestPaymentBankSync({source:"binding-change",force:true});
+}
+function unlinkPaymentBankBinding(){
+  const building=paymentBuildingRecords().find(item=>item.id===editingPaymentBankBuildingId);
+  if(!building) return;
+  const targets=paymentBankBindingTargets(building).filter(item=>paymentBankBinding(item.id));
+  if(!targets.length){ closePaymentBankBindingEditor(); return; }
+  if(!confirm(`${targets.length}개 건물의 팝빌 입금계좌 연결을 해제할까요?`)) return;
+  closePaymentBankBindingEditor();
+  targets.forEach(target=>writePaymentValue("bankBindings/"+target.id,null));
+  recordPaymentAudit("건물 입금계좌 연결 해제",{buildingIds:targets.map(item=>item.id)});
+  requestPaymentBankSync({source:"binding-remove",force:true});
+}
 function setPaymentOverride(status){
   if(!selectedPaymentScheduleId) return;
   const path=`overrides/${paymentMonth}/${selectedPaymentScheduleId}`;
@@ -5697,7 +5839,7 @@ function stopPaymentScheduleAutoSync(){
 async function requestPaymentBankSync(options){
   options=options||{};
   if(!authedUser||!caseAutomationEndpoint()) return;
-  if(paymentBankSyncInFlight) return;
+  if(paymentBankSyncInFlight){ if(options.force) paymentBankSyncPending=true; return; }
   const now=Date.now();
   if(!options.force&&now-paymentBankLastRequestAt<25*60*1000) return;
   paymentBankLastRequestAt=now;
@@ -5709,7 +5851,15 @@ async function requestPaymentBankSync(options){
   }catch(err){
     console.warn("팝빌 입금내역 자동 조회 실패",err);
   }finally{
-    setTimeout(()=>{ paymentBankSyncInFlight=false; renderPaymentCalendar(); },12000);
+    setTimeout(()=>{
+      paymentBankSyncInFlight=false;
+      renderPaymentCalendar();
+      if(paymentBankModal.classList.contains("open")) renderPaymentBankBindingEditor();
+      if(paymentBankSyncPending&&paymentView.classList.contains("open")){
+        paymentBankSyncPending=false;
+        requestPaymentBankSync({source:"queued",force:true});
+      }
+    },12000);
   }
 }
 function startPaymentScheduleAutoSync(){
@@ -5737,6 +5887,7 @@ document.addEventListener("visibilitychange",()=>{
 paymentBuildingListEl.addEventListener("click",e=>{ const tx=e.target.closest("[data-payment-tx-remove]"); if(tx){ removePaymentTransaction(tx.dataset.paymentTxRemove); return; } const b=e.target.closest("[data-payment-building]"); if(b){ paymentBuildingId=b.dataset.paymentBuilding; selectedPaymentScheduleId=""; renderPaymentCalendar(); } });
 paymentMainEl.addEventListener("click",e=>{
   const month=e.target.closest("[data-payment-month]"); if(month){ paymentMonthShift(Number(month.dataset.paymentMonth)); return; }
+  const bankLink=e.target.closest("[data-payment-bank-link]"); if(bankLink){ openPaymentBankBindingEditor(bankLink.dataset.paymentBankLink); return; }
   if(e.target.closest("[data-payment-add]")){ openPaymentScheduleEditor(""); return; }
   if(e.target.closest("[data-payment-test]")){ openPaymentTransactionEditor(); return; }
   const item=e.target.closest("[data-payment-item]"); if(item){ selectedPaymentScheduleId=item.dataset.paymentItem; renderPaymentCalendar(); return; }
@@ -5752,8 +5903,13 @@ document.getElementById("paymentScheduleSave").addEventListener("click",savePaym
 document.getElementById("paymentTransactionClose").addEventListener("click",closePaymentTransactionEditor);
 document.getElementById("paymentTransactionCancel").addEventListener("click",closePaymentTransactionEditor);
 document.getElementById("paymentTransactionSave").addEventListener("click",savePaymentTransactionFromModal);
+document.getElementById("paymentBankClose").addEventListener("click",closePaymentBankBindingEditor);
+document.getElementById("paymentBankCancel").addEventListener("click",closePaymentBankBindingEditor);
+document.getElementById("paymentBankSave").addEventListener("click",savePaymentBankBindingFromModal);
+document.getElementById("paymentBankUnlink").addEventListener("click",unlinkPaymentBankBinding);
 paymentScheduleModal.addEventListener("click",e=>{ if(e.target===paymentScheduleModal) closePaymentScheduleEditor(); });
 paymentTransactionModal.addEventListener("click",e=>{ if(e.target===paymentTransactionModal) closePaymentTransactionEditor(); });
+paymentBankModal.addEventListener("click",e=>{ if(e.target===paymentBankModal) closePaymentBankBindingEditor(); });
 
 /* ===== 📢 비전·공지 (팀 공유) ===== */
 const DEFAULT_VISION = "<h2>🎯 BRING 비전</h2><blockquote>사람이 대신함 → 프로세스로 표준화 → 소프트웨어로 자동화 → 로봇/AI로 고도화 → <b>OS가 운영</b></blockquote><p><b>핵심 기초 5개는 고정된 가치</b>이고, 회사가 성장하면서 <b>수행 방식</b>만 진화한다. (초기=사람이 대신 · 중기=시스템이 처리 · 장기=AI·로봇·OS가 처리)</p><h3>🧱 핵심 기초 5 × 진화 (초기 → 중기 → 장기)</h3><p><b>1) 건물주의 시간 절약</b></p><ul><li><b>초기</b> — BRING 운영자가 대신 처리</li><li><b>중기</b> — 접수·분류·알림 자동화</li><li><b>장기</b> — AI가 처리 우선순위와 업체 추천</li></ul><p><b>2) 건물주의 스트레스 감소</b></p><ul><li><b>초기</b> — 민원·업체·공사 연락을 대신함</li><li><b>중기</b> — 건물주가 대시보드로 현황 확인</li><li><b>장기</b> — 월간 리포트와 승인만 확인</li></ul><p><b>3) 세입자 민원 처리</b></p><ul><li><b>초기</b> — 카톡/폼 접수 후 사람이 분류</li><li><b>중기</b> — 민원 유형별 표준 프로세스 적용</li><li><b>장기</b> — AI 분류 + 자동 응대 + 업체/로봇 연결</li></ul><p><b>4) 업체·공사·비용 투명관리</b></p><ul><li><b>초기</b> — 견적·사진·영수증 수동 정리</li><li><b>중기</b> — 업체 DB·B/A 보고서 자동화</li><li><b>장기</b> — 업체별 단가·품질·재발률 기반 최적 배정</li></ul><p><b>5) 운영 이력 데이터화</b></p><ul><li><b>초기</b> — 구글시트/노션에 기록</li><li><b>중기</b> — BRING OS에 건물별 이력 축적</li><li><b>장기</b> — 디지털 트윈 + 리스크 점수 + 예측 유지관리</li></ul><h3>🚀 발전 8단계</h3><ol><li><b>사람 기반 운영대행</b> — 사람이 대신 처리 (운영 신뢰)</li><li><b>프로세스 표준화</b> — 누가 해도 같은 방식</li><li><b>소프트웨어 자동화</b> — 반복 업무 시간↓</li><li><b>로봇화</b> — 숨은 공간까지 데이터화</li><li><b>AI화</b> — 분류·추천·예측 보조</li><li><b>직접 이행</b> — 단가·응답속도 개선</li><li><b>건물 유지관리 OS</b> — 데이터 기반 운영 (건물의 운영 기억장치)</li><li><b>Physical Infrastructure AI</b> — 점검·판단·이행 통합</li></ol><h3>🏁 최종 정의</h3><blockquote>BRING은 건물주의 시간·스트레스를 줄이는 운영대행으로 시작해, 민원·수납·업체·공사·재발 데이터를 축적하고, 이를 자동화·로봇화·AI화하여 건물 유지관리 단가를 낮추는 <b>OS 기업</b>으로 진화한다.</blockquote>";
@@ -5796,8 +5952,9 @@ document.getElementById("noticeBtn").addEventListener("click", openNoticePanel);
 document.getElementById("noticeBanner").addEventListener("click", openNoticePanel);
 
 /* ===== 업데이트 알림(What's New) — 새 버전 나오면 자동 팝업 ===== */
-const APP_VERSION = "5.28";
+const APP_VERSION = "5.29";
 const CHANGELOG = [
+  { v:"5.29", d:"2026-07-29", items:["온보딩 건물별 팝빌 입금계좌 연결·변경 추가","같은 건물주 소유 건물에 동일 계좌 일괄 적용 지원","연결된 계좌의 입금만 해당 건물 월세 일정과 자동 매칭"] },
   { v:"5.28", d:"2026-07-28", items:["카카오톡 민원 접수 현장 사진을 케이스에 연결","케이스 상세에서 현장 사진 Drive 링크 표시","카카오톡 접수 배지 구분"] },
   { v:"5.27", d:"2026-07-28", items:["⑤ 업체 후보 카드를 전화·주소 중심의 비교형 화면으로 재구성","평점·단가·비고는 상세 정보로 접어 카드 높이 축소","선택 상태와 건물지도·네이버지도·홈페이지 버튼 시인성 개선"] },
   { v:"5.26", d:"2026-07-28", items:["⑤ 업체 후보를 건물지도 원주업체 데이터로 통합","민원 주소와 같은 동·읍·면 및 문자 발송 가능한 연락처 보유 업체 우선 정렬","업체 카드에서 건물지도 해당 마커를 바로 열 수 있는 지도 링크 추가"] },

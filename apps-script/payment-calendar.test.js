@@ -55,9 +55,12 @@ const functionNames = [
   "paymentTransactionsArray",
   "calculatePaymentMonthRows",
   "paymentBuildingRecords",
+  "paymentBankName",
+  "paymentBankLabel",
+  "paymentBankBindingRecord",
   "paymentReminderTimingEligible"
 ];
-const context = { Date, Math, Object, Array, String, Number, settings: {}, cases: {} };
+const context = { Date, Math, Object, Array, String, Number, settings: {}, cases: {}, authedUser: { email: "admin@example.com" } };
 vm.createContext(context);
 vm.runInContext(functionNames.map(extractFunction).join("\n"), context);
 
@@ -163,5 +166,17 @@ const buildings = context.paymentBuildingRecords();
 assert.equal(buildings.length, 1, "안내문 항목과 같은 온보딩 파일의 중복 건물은 왼쪽 목록에서 제거한다");
 assert.equal(buildings[0].name, "햇빛빌라");
 assert.equal(buildings[0].ownerName, "서창환", "중복 온보딩 자료의 건물주명을 합쳐 표시한다");
+
+const bankBinding = context.paymentBankBindingRecord(
+  buildings[0],
+  { accountRef: "pb_safeopaqueaccountref1234", bankCode: "0088", accountLast4: "1076" },
+  "2026-07-29T00:00:00.000Z"
+);
+assert.equal(bankBinding.bankName, "신한은행");
+assert.equal(bankBinding.accountLast4, "1076");
+assert.equal(bankBinding.accountRef, "pb_safeopaqueaccountref1234");
+assert.equal(JSON.stringify(bankBinding).includes("accountNumber"), false, "건물 계좌 연결에는 전체 계좌번호 필드를 저장하지 않는다");
+assert.match(source, /팝빌 계좌 연결/);
+assert.match(source, /bankBindings/);
 
 console.log("payment calendar tests passed");

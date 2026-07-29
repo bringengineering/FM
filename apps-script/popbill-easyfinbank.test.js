@@ -1,6 +1,7 @@
 "use strict";
 
 const assert = require("node:assert/strict");
+const crypto = require("node:crypto");
 const fs = require("node:fs");
 const path = require("node:path");
 const vm = require("node:vm");
@@ -67,6 +68,17 @@ const context = {
   Set,
   Number,
   isFinite,
+  Utilities: {
+    base64Decode(value) {
+      return Buffer.from(String(value || ""), "base64");
+    },
+    computeHmacSha256Signature(value, key) {
+      return Array.from(crypto.createHmac("sha256", Buffer.from(key)).update(String(value)).digest());
+    },
+    base64EncodeWebSafe(value) {
+      return Buffer.from(value).toString("base64url");
+    }
+  },
   POPBILL_EASYFINBANK_SCOPE: ["180", "member"],
   POPBILL_API_VERSION: "2.0",
   POPBILL_BANK_SYNC_FRESH_MINUTES: 25,
@@ -86,6 +98,8 @@ vm.runInContext([
   extractFunction("popbillBankIsoDate_"),
   extractFunction("popbillBankShiftMonth_"),
   extractFunction("popbillBankNormalizePayer_"),
+  extractFunction("popbillBankAccountRef_"),
+  extractFunction("popbillBankSchedulesForAccount_"),
   extractFunction("popbillBankRemarkCandidates_"),
   extractFunction("popbillBankScheduleActiveInMonth_"),
   extractFunction("popbillBankTransactionScheduleMatches_"),
@@ -158,6 +172,23 @@ const schedules = {
     active: true
   }
 };
+const accountRef = context.popbillBankAccountRef_(
+  { bankCode: "0088", accountNumber: "110123451076" },
+  { secretKey: Buffer.from("server-only-key").toString("base64") }
+);
+assert.match(accountRef, /^pb_[A-Za-z0-9_-]{24}$/);
+assert.equal(accountRef.includes("1076"), false, "익명 계좌 ID에는 계좌번호 끝자리도 포함하지 않는다");
+const boundSchedules = context.popbillBankSchedulesForAccount_(
+  schedules,
+  { "building-1": { accountRef } },
+  accountRef
+);
+assert.deepEqual(Object.keys(boundSchedules), ["s1"], "연결된 건물 일정만 해당 계좌와 비교한다");
+assert.deepEqual(
+  Object.keys(context.popbillBankSchedulesForAccount_(schedules, {}, accountRef)),
+  [],
+  "계좌가 연결되지 않은 건물 일정은 팝빌 거래와 비교하지 않는다"
+);
 const bankTransaction = {
   tid: "02312071300000000120260710000001",
   trdate: "20260710",
@@ -184,10 +215,12 @@ const record = context.popbillBankTransactionRecord_(
   bankTransaction,
   { bankCode: "0088", accountNumber: "110123451076" },
   schedules,
-  "2026-07-29T00:00:00.000Z"
+  "2026-07-29T00:00:00.000Z",
+  accountRef
 );
 assert.equal(record.source, "popbill");
 assert.equal(record.accountLast4, "1076");
+assert.equal(record.accountRef, accountRef);
 assert.equal(record.payerName, "홍길동");
 assert.equal(record.amount, 500000);
 assert.equal(JSON.stringify(record).includes("110123451076"), false, "Firebase 거래에는 전체 계좌번호를 저장하지 않는다");

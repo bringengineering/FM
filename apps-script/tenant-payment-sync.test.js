@@ -118,5 +118,8 @@ assert.match(source, /payload\.action === "syncPopbillBankTransactions"/, "팝�
 assert.match(indexSource, /action:"syncPopbillBankTransactions"/, "로그인한 캘린더에서 팝빌 입금내역을 요청한다");
 assert.match(indexSource, /1800000/, "입금확인 화면이 열려 있으면 30분 간격으로 팝빌 거래를 다시 확인한다");
 assert.match(indexSource, /팝빌 은행 자동조회/, "은행 연결 상태와 최근 조회 결과를 캘린더에 표시한다");
+assert.match(source, /popbillBankSchedulesForAccount_/, "팝빌 거래는 연결된 건물 일정만 비교한다");
+assert.match(source, /firebasePaymentCalendarUrl_\(payload\.uid, "bankBindings", payload\.idToken\)/, "현재 로그인 관리자 전용 건물-계좌 연결정보를 읽는다");
+assert.match(indexSource, /건물 입금계좌 연결/, "온보딩 건물에서 팝빌 계좌를 연결할 수 있다");
 
 console.log("tenant payment sync tests passed");
