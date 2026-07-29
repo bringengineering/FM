@@ -5419,6 +5419,7 @@ let paymentScheduleSyncInFlight=false, paymentScheduleSyncPending=false, payment
 let paymentScheduleLastRequestAt=0, paymentScheduleLastSignal="";
 let paymentBankSyncInFlight=false, paymentBankSyncPending=false, paymentBankSyncTimer=null, paymentBankLastRequestAt=0;
 let paymentSmsSendingId="";
+let paymentDeliveryCheckingId="";
 const DEFAULT_PAYMENT_SHEET_URL="https://docs.google.com/spreadsheets/d/1HI6KzIMomL6vOUPs8zZDhXHktL1cWRDcg93lflsuojA/edit";
 
 function paymentTodayKey(){
@@ -5620,17 +5621,23 @@ function paymentFormatPhone(value){
 }
 function paymentReminderSmsRecord(scheduleId){ return paymentData&&paymentData.rentSms&&paymentData.rentSms[paymentMonth]&&paymentData.rentSms[paymentMonth][scheduleId]||null; }
 function paymentReminderTimingEligible(row,todayKey){ return !!row&&(row.dueDate===String(todayKey||paymentTodayKey())||row.status==="overdue"||row.status==="manual_unpaid"); }
+function paymentReminderDeliveryText(record){
+  if(!record||!record.deliveryStatus) return "";
+  if(record.deliveryStatus==="delivered") return "정상 도착";
+  if(record.deliveryStatus==="processing") return "전달 처리 중";
+  return `전달 실패${record.deliveryCode?` (${record.deliveryCode})`:""}${record.deliveryMessage?` · ${record.deliveryMessage}`:""}`;
+}
 function paymentReminderSmsPreview(row){
   const s=row.schedule,date=row.dueDate.split("-");
   return ["[BRING Care 월세 납부 안내]",s.tenantName?`${s.tenantName}님, 안녕하세요.`:"고객님, 안녕하세요.","",row.dueDate===paymentTodayKey()?"오늘은 월세 납부일입니다.":"월세 입금이 아직 확인되지 않아 안내드립니다.",`건물: ${s.buildingName||"등록 건물"}`,`호실: ${s.unit||"등록 호실"}`,`납부금액: ${paymentFormatMoney(s.amount||0)}`,`납부일: ${Number(date[0])}년 ${Number(date[1])}월 ${Number(date[2])}일`,"","이미 납부하셨다면 확인까지 시간이 걸릴 수 있으니 이 알림톡은 무시해 주세요."].join("\n");
 }
 function renderPaymentDetail(row){
   if(!row) return `<div class="pv-detail"><div class="pv-detail-title">캘린더의 납부 일정을 선택하면 상세 정보와 수동 보정 버튼이 표시됩니다.</div></div>`;
-  const s=row.schedule,tx=row.matchedTransaction,sms=paymentReminderSmsRecord(s.id),smsEligible=paymentReminderTimingEligible(row),smsSending=paymentSmsSendingId===s.id;
+  const s=row.schedule,tx=row.matchedTransaction,sms=paymentReminderSmsRecord(s.id),smsEligible=paymentReminderTimingEligible(row),smsSending=paymentSmsSendingId===s.id,deliveryChecking=paymentDeliveryCheckingId===s.id;
   const smsTime=sms&&sms.sentAt?new Date(sms.sentAt).toLocaleString("ko-KR",{timeZone:"Asia/Seoul",month:"numeric",day:"numeric",hour:"2-digit",minute:"2-digit"}):"발송 기록 없음";
   return `<div class="pv-detail"><div class="pv-detail-head"><div><div class="pv-detail-title">${esc(s.unit||"호실 미입력")} · ${esc(s.tenantName||"세입자 미입력")}</div><div class="pv-sub">${esc(paymentStatusLabel(row.status))}${row.override&&row.override.reason?` · ${esc(row.override.reason)}`:""}</div></div><b>${esc(paymentFormatMoney(s.amount))}</b></div>`+
-    `<div class="pv-detail-grid"><div class="pv-detail-kv"><b>납부 예정일</b><span>${esc(row.dueDate)}</span></div><div class="pv-detail-kv"><b>세입자 연락처</b><span>${esc(paymentFormatPhone(s.tenantPhone))}</span></div><div class="pv-detail-kv"><b>예상 입금자</b><span>${esc(s.payerName)}</span></div><div class="pv-detail-kv"><b>자동 확인 기간</b><span>${esc(paymentAddDays(row.dueDate,-3))} ~ ${esc(paymentAddDays(row.dueDate,7))}</span></div><div class="pv-detail-kv"><b>연결 거래</b><span>${tx?esc(tx.date+" / "+tx.payerName):"없음"}</span></div><div class="pv-detail-kv"><b>판정</b><span>${esc(paymentStatusLabel(row.status))}</span></div>${sms?`<div class="pv-detail-kv"><b>최근 카카오 안내</b><span>${esc(sms.status||sms.message||"")} · ${esc(smsTime)}</span></div>`:""}</div>`+
-    `<div class="pv-detail-actions">${smsEligible?`<button class="sms" data-payment-sms="${escAttr(s.id)}" ${!s.tenantPhone||smsSending?"disabled":""}>${smsSending?"알림톡 요청 중…":sms&&sms.ok?"납부 알림톡 재발송":"납부 알림톡 보내기"}</button>`:""}<button data-payment-edit="${escAttr(s.id)}">일정 수정</button><button class="good" data-payment-override="paid">입금완료</button><button class="bad" data-payment-override="manual_unpaid">미입금</button><button class="warn" data-payment-override="review">확인필요</button><button data-payment-override="auto">자동판정으로 복원</button><button class="bad" data-payment-disable="${escAttr(s.id)}">일정 종료</button>${tx&&tx.source==="test"?`<button class="bad" data-payment-tx-remove="${escAttr(tx.id)}">테스트 거래 삭제</button>`:""}</div></div>`;
+    `<div class="pv-detail-grid"><div class="pv-detail-kv"><b>납부 예정일</b><span>${esc(row.dueDate)}</span></div><div class="pv-detail-kv"><b>세입자 연락처</b><span>${esc(paymentFormatPhone(s.tenantPhone))}</span></div><div class="pv-detail-kv"><b>예상 입금자</b><span>${esc(s.payerName)}</span></div><div class="pv-detail-kv"><b>자동 확인 기간</b><span>${esc(paymentAddDays(row.dueDate,-3))} ~ ${esc(paymentAddDays(row.dueDate,7))}</span></div><div class="pv-detail-kv"><b>연결 거래</b><span>${tx?esc(tx.date+" / "+tx.payerName):"없음"}</span></div><div class="pv-detail-kv"><b>판정</b><span>${esc(paymentStatusLabel(row.status))}</span></div>${sms?`<div class="pv-detail-kv"><b>최근 카카오 안내</b><span>${esc(sms.status||sms.message||"")} · ${esc(smsTime)}</span></div>`:""}${sms&&sms.deliveryStatus?`<div class="pv-detail-kv"><b>카카오 전달 결과</b><span>${esc(paymentReminderDeliveryText(sms))}</span></div>`:""}</div>`+
+    `<div class="pv-detail-actions">${smsEligible?`<button class="sms" data-payment-sms="${escAttr(s.id)}" ${!s.tenantPhone||smsSending?"disabled":""}>${smsSending?"알림톡 요청 중…":sms&&sms.ok?"납부 알림톡 재발송":"납부 알림톡 보내기"}</button>`:""}${sms&&sms.provider==="kakao_alimtalk"&&sms.messageId?`<button data-payment-delivery="${escAttr(s.id)}" ${deliveryChecking?"disabled":""}>${deliveryChecking?"전달결과 확인 중…":"알림톡 전달결과 확인"}</button>`:""}<button data-payment-edit="${escAttr(s.id)}">일정 수정</button><button class="good" data-payment-override="paid">입금완료</button><button class="bad" data-payment-override="manual_unpaid">미입금</button><button class="warn" data-payment-override="review">확인필요</button><button data-payment-override="auto">자동판정으로 복원</button><button class="bad" data-payment-disable="${escAttr(s.id)}">일정 종료</button>${tx&&tx.source==="test"?`<button class="bad" data-payment-tx-remove="${escAttr(tx.id)}">테스트 거래 삭제</button>`:""}</div></div>`;
 }
 function renderPaymentMain(building){
   if(!paymentMainEl) return;
@@ -5776,11 +5783,38 @@ async function requestPaymentReminderSms(scheduleId){
     await sendCaseAutomationRequest(caseAutomationEndpoint(),{action:"sendPaymentReminderSms",uid:authedUser.uid,idToken,adminEmail:authedUser.email||"",scheduleId,month:paymentMonth,status:row.status,force:!!(previous&&previous.ok)});
     recordPaymentAudit("월세 안내 알림톡 요청",{scheduleId,building:s.buildingName,unit:s.unit,month:paymentMonth,status:row.status});
     alert("카카오 알림톡 발송을 요청했습니다. 발송 결과는 일정 상세에 자동 표시됩니다.");
+    setTimeout(()=>requestPaymentReminderDeliveryStatus(scheduleId,{silent:true}),7000);
   }catch(err){
     console.warn("월세 안내 알림톡 요청 실패",err);
     alert("카카오 알림톡 발송을 요청하지 못했습니다. 잠시 후 다시 시도해 주세요.");
   }
   setTimeout(()=>{ paymentSmsSendingId=""; renderPaymentCalendar(); },5000);
+}
+async function requestPaymentReminderDeliveryStatus(scheduleId,options){
+  options=options||{};
+  const record=paymentReminderSmsRecord(scheduleId);
+  if(!record||record.provider!=="kakao_alimtalk"||!record.messageId){
+    if(!options.silent) alert("조회할 카카오 알림톡 발송 기록이 없습니다.");
+    return;
+  }
+  paymentDeliveryCheckingId=scheduleId;
+  renderPaymentCalendar();
+  try{
+    const idToken=await authedUser.getIdToken(false);
+    await sendCaseAutomationRequest(caseAutomationEndpoint(),{action:"getPaymentReminderDeliveryStatus",uid:authedUser.uid,idToken,scheduleId,month:paymentMonth});
+    setTimeout(()=>{
+      paymentDeliveryCheckingId="";
+      renderPaymentCalendar();
+      if(!options.silent){
+        const latest=paymentReminderSmsRecord(scheduleId);
+        alert(latest&&latest.deliveryStatus?paymentReminderDeliveryText(latest):"전달 결과 조회를 요청했습니다. 잠시 후 다시 확인해 주세요.");
+      }
+    },2500);
+  }catch(err){
+    paymentDeliveryCheckingId="";
+    renderPaymentCalendar();
+    if(!options.silent) alert("카카오 알림톡 전달 결과를 조회하지 못했습니다.");
+  }
 }
 function requestPaymentBuildingSync(){
   const button=document.getElementById("paymentBuildingSync"); if(button){ button.disabled=true; button.textContent="동기화 요청 중…"; }
@@ -5892,6 +5926,7 @@ paymentMainEl.addEventListener("click",e=>{
   if(e.target.closest("[data-payment-test]")){ openPaymentTransactionEditor(); return; }
   const item=e.target.closest("[data-payment-item]"); if(item){ selectedPaymentScheduleId=item.dataset.paymentItem; renderPaymentCalendar(); return; }
   const sms=e.target.closest("[data-payment-sms]"); if(sms){ requestPaymentReminderSms(sms.dataset.paymentSms); return; }
+  const delivery=e.target.closest("[data-payment-delivery]"); if(delivery){ requestPaymentReminderDeliveryStatus(delivery.dataset.paymentDelivery); return; }
   const edit=e.target.closest("[data-payment-edit]"); if(edit){ openPaymentScheduleEditor(edit.dataset.paymentEdit); return; }
   const over=e.target.closest("[data-payment-override]"); if(over){ setPaymentOverride(over.dataset.paymentOverride); return; }
   const disable=e.target.closest("[data-payment-disable]"); if(disable){ disablePaymentSchedule(disable.dataset.paymentDisable); return; }
@@ -5952,8 +5987,9 @@ document.getElementById("noticeBtn").addEventListener("click", openNoticePanel);
 document.getElementById("noticeBanner").addEventListener("click", openNoticePanel);
 
 /* ===== 업데이트 알림(What's New) — 새 버전 나오면 자동 팝업 ===== */
-const APP_VERSION = "5.31";
+const APP_VERSION = "5.32";
 const CHANGELOG = [
+  { v:"5.32", d:"2026-07-29", items:["카카오 알림톡 요청 접수와 실제 휴대폰 도착 상태를 구분","SENS 메시지 ID로 최종 전달 성공·처리중·실패 코드 조회","일정 상세에 알림톡 전달결과 확인 버튼과 실패 사유 표시"] },
   { v:"5.31", d:"2026-07-29", items:["월세 알림은 카카오 알림톡 승인 템플릿으로만 발송","템플릿 미승인·불일치 시 일반 SMS 자동 대체 발송 차단","303호 실발송 전 수신 채널 안전 검증 강화"] },
   { v:"5.30", d:"2026-07-29", items:["납부 당일·미입금 안내를 카카오 알림톡으로 우선 발송","알림톡 발송 결과와 공급자 기록 저장","월세 안내 전용 승인 템플릿 BRINGRENTREMINDERV1 연결"] },
   { v:"5.29", d:"2026-07-29", items:["온보딩 건물별 팝빌 입금계좌 연결·변경 추가","같은 건물주 소유 건물에 동일 계좌 일괄 적용 지원","연결된 계좌의 입금만 해당 건물 월세 일정과 자동 매칭"] },

@@ -35,7 +35,7 @@ const PAYMENT_SCHEDULE_HEADERS = [
   "상태",
   "비고"
 ];
-const AUTOMATION_BUILD = "complaint-workflow-20260729-v48";
+const AUTOMATION_BUILD = "complaint-workflow-20260729-v49";
 const OWNER_RECOMMENDATION_IMAGE_VERSION = "owner-summary-v4";
 const OWNER_DECISION_VIEW = "owner-decision";
 const OWNER_PAYMENT_ACCOUNT = {
@@ -189,6 +189,9 @@ function doPost(e) {
     }
     if (payload.action === "sendPaymentReminderSms") {
       return jsonResponse_(handlePaymentReminderSms_(payload));
+    }
+    if (payload.action === "getPaymentReminderDeliveryStatus") {
+      return jsonResponse_(handlePaymentReminderDeliveryStatus_(payload));
     }
     if (payload.action === "sendComplaintReceiptSms") {
       return jsonResponse_(handleComplaintReceiptSms_(payload));
@@ -3271,6 +3274,30 @@ function sensPostJson_(uri, payload, config) {
         "x-ncp-apigw-signature-v2": signature
       },
       payload: JSON.stringify(payload),
+      muteHttpExceptions: true
+    });
+    const code = response.getResponseCode();
+    const body = response.getContentText();
+    let json = {};
+    try { json = body ? JSON.parse(body) : {}; } catch (err) {}
+    if (code >= 200 && code < 300) return { ok: true, code: code, body: body, json: json };
+    return { ok: false, code: code, body: body, json: json, message: "HTTP " + code + " / " + body.slice(0, 200) };
+  } catch (err) {
+    return { ok: false, code: 0, body: "", json: {}, message: err.message };
+  }
+}
+
+function sensGetJson_(uri, config) {
+  const timestamp = String(Date.now());
+  const signature = makeNcpSignature_("GET", uri, timestamp, config.accessKey, config.secretKey);
+  try {
+    const response = UrlFetchApp.fetch("https://sens.apigw.ntruss.com" + uri, {
+      method: "get",
+      headers: {
+        "x-ncp-apigw-timestamp": timestamp,
+        "x-ncp-iam-access-key": config.accessKey,
+        "x-ncp-apigw-signature-v2": signature
+      },
       muteHttpExceptions: true
     });
     const code = response.getResponseCode();
@@ -7587,6 +7614,58 @@ function handlePaymentReminderSms_(payload) {
   firebaseAuthorizedWriteRequest_(recordUrl, "put", record, "월세 안내 문자 기록 저장 실패");
   if (!result.ok) throw new Error(result.message || "월세 안내 문자 발송에 실패했습니다.");
   return record;
+}
+
+function handlePaymentReminderDeliveryStatus_(payload) {
+  payload = payload || {};
+  const scheduleId = String(payload.scheduleId || "").trim();
+  const month = String(payload.month || "").trim();
+  if (!/^[A-Za-z0-9_-]{6,160}$/.test(scheduleId)) throw new Error("월 납부 일정 ID가 올바르지 않습니다.");
+  if (!/^\d{4}-\d{2}$/.test(month)) throw new Error("납부 월이 올바르지 않습니다.");
+
+  const recordUrl = firebasePaymentCalendarUrl_(payload.uid, "rentSms/" + month + "/" + scheduleId, payload.idToken);
+  const record = firebaseReadJson_(recordUrl, "카카오 알림톡 발송 기록 조회 실패") || {};
+  if (record.provider !== "kakao_alimtalk" || !record.messageId) {
+    throw new Error("조회할 카카오 알림톡 메시지 ID가 없습니다.");
+  }
+
+  const config = getKakaoAlimTalkConfig_();
+  if (!config.enabled) throw new Error("카카오 알림톡 설정이 완료되지 않았습니다.");
+  const uri = "/alimtalk/v2/services/" + encodeURIComponent(config.serviceId) +
+    "/messages/" + encodeURIComponent(String(record.messageId));
+  const response = sensGetJson_(uri, config);
+  if (!response.ok) throw new Error("카카오 알림톡 전달 결과 조회 실패: " + response.message);
+
+  const result = response.json && typeof response.json === "object" ? response.json : {};
+  const messageStatusName = String(result.messageStatusName || "processing").toLowerCase();
+  const messageStatusCode = String(result.messageStatusCode || "");
+  const delivered = messageStatusName === "success" && messageStatusCode === "0000";
+  const processing = messageStatusName === "processing" || (!messageStatusCode && messageStatusName !== "fail");
+  const deliveryStatus = delivered ? "delivered" : (processing ? "processing" : "failed");
+  const safeResult = {
+    ok: true,
+    delivered: delivered,
+    deliveryStatus: deliveryStatus,
+    requestStatusCode: String(result.requestStatusCode || ""),
+    requestStatusName: String(result.requestStatusName || ""),
+    requestStatusDesc: String(result.requestStatusDesc || ""),
+    messageStatusCode: messageStatusCode,
+    messageStatusName: messageStatusName,
+    messageStatusDesc: String(result.messageStatusDesc || ""),
+    completeTime: String(result.completeTime || ""),
+    templateCode: String(result.templateCode || record.templateCode || ""),
+    checkedAt: new Date().toISOString(),
+    build: AUTOMATION_BUILD
+  };
+  const updatedRecord = Object.assign({}, record, {
+    deliveryStatus: safeResult.deliveryStatus,
+    deliveryCode: safeResult.messageStatusCode,
+    deliveryMessage: safeResult.messageStatusDesc,
+    deliveryCheckedAt: safeResult.checkedAt,
+    deliveredAt: delivered ? (safeResult.completeTime || safeResult.checkedAt) : String(record.deliveredAt || "")
+  });
+  firebaseAuthorizedWriteRequest_(recordUrl, "put", updatedRecord, "카카오 알림톡 전달 결과 저장 실패");
+  return safeResult;
 }
 
 const POPBILL_EASYFINBANK_SCOPE = ["180", "member"];
