@@ -419,6 +419,77 @@ assert.equal(
   })
 );
 
+const queuedPhotoCellWrites = [];
+const queuedPhotoContext = {
+  String,
+  Array,
+  JSON,
+  readField_(record, names) {
+    for (const name of names) {
+      if (record[name] !== undefined && String(record[name]).trim()) return String(record[name]).trim();
+    }
+    return "";
+  },
+  setCellByHeader_(_sheet, row, _headerMap, header, value) {
+    queuedPhotoCellWrites.push({ row, header, value });
+  },
+  saveKakaoComplaintPhotosToDrive_(photoUrls, ticketNo) {
+    assert.equal(ticketNo, "BR-2026-0099");
+    assert.deepEqual(
+      Array.from(photoUrls),
+      [
+        "https://secure.kakaocdn.net/dna/one/photo1.jpg?credential=abc",
+        "https://secure.kakaocdn.net/dna/two/photo2.jpg?credential=def"
+      ]
+    );
+    return {
+      count: 2,
+      fileIds: ["drive-photo-1", "drive-photo-2"],
+      driveUrls: [
+        "https://drive.google.com/open?id=drive-photo-1",
+        "https://drive.google.com/open?id=drive-photo-2"
+      ],
+      errors: []
+    };
+  }
+};
+vm.createContext(queuedPhotoContext);
+vm.runInContext(
+  [
+    "kakaoChatbotPhotoUrlsFromValue_",
+    "saveQueuedKakaoComplaintPhotos_"
+  ].map(extractFunction).join("\n\n"),
+  queuedPhotoContext,
+  { filename: sourcePath }
+);
+const queuedPhotoRecord = {
+  "접수번호": "BR-2026-0099",
+  "사진 첨부": "",
+  "카카오 사진 원본 URL": JSON.stringify([
+    "https://secure.kakaocdn.net/dna/one/photo1.jpg?credential=abc",
+    "https://secure.kakaocdn.net/dna/two/photo2.jpg?credential=def"
+  ])
+};
+const queuedPhotoResult = queuedPhotoContext.saveQueuedKakaoComplaintPhotos_(
+  {},
+  99,
+  {},
+  queuedPhotoRecord
+);
+assert.equal(queuedPhotoResult.count, 2);
+assert.equal(queuedPhotoRecord["카카오 사진 원본 URL"], "");
+assert.equal(
+  queuedPhotoRecord["사진 첨부"],
+  [
+    "https://drive.google.com/open?id=drive-photo-1",
+    "https://drive.google.com/open?id=drive-photo-2"
+  ].join("\n")
+);
+assert.deepEqual(
+  queuedPhotoCellWrites.map(item => item.header),
+  ["사진 첨부", "카카오 사진 원본 URL"]
+);
+
 const sentRecipientLabels = [];
 const smsContext = {
   String,
@@ -503,7 +574,7 @@ assert.deepEqual(
   ["owner-existing-request", "세입자-request"]
 );
 
-assert.match(source, /const AUTOMATION_BUILD = "complaint-workflow-20260728-v41"/);
+assert.match(source, /const AUTOMATION_BUILD = "complaint-workflow-20260729-v42"/);
 assert.doesNotMatch(source, /name: "세입자 성함을 입력해 주세요/);
 assert.match(source, /입력한 건물명과 주소로 확인되는 브링케어 계약 건물이 없습니다/);
 assert.match(source, /putCaseChildToFirebase_\(caseId, "complaintReceiptSms", smsResult\)/);
@@ -513,6 +584,15 @@ assert.match(source, /source: "kakao_chatbot"/);
 assert.match(source, /processPendingKakaoComplaintIntakes/);
 assert.match(source, /카카오 사용자 키 해시/);
 assert.match(source, /saveKakaoComplaintPhotosToDrive_\(photoUrls, ticketNo\)/);
+assert.match(source, /"카카오 사진 원본 URL"/);
+assert.doesNotMatch(
+  extractFunction("enqueueKakaoComplaintIntake_"),
+  /saveKakaoComplaintPhotosToDrive_/
+);
+assert.match(
+  extractFunction("processPendingKakaoComplaintIntakes"),
+  /saveQueuedKakaoComplaintPhotos_/
+);
 assert.match(source, /KAKAO_CHATBOT_PHOTO_BLOCK_ID/);
 
 console.log("PASS Kakao chatbot intake session, validation, case link and queue flow");

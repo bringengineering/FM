@@ -40,9 +40,9 @@ Apps Script 웹 앱 URL은 새 버전을 배포해도 같은 배포를 수정하
 ## 3. 현재 배포 버전
 
 - 대시보드 `APP_VERSION`: `5.25`
-- Apps Script `AUTOMATION_BUILD`: `complaint-workflow-20260727-v37`
+- Apps Script `AUTOMATION_BUILD`: `complaint-workflow-20260729-v42`
 - 추천 이미지 설계 버전: `owner-summary-v4`
-- Apps Script 배포 버전: `94`
+- Apps Script 배포 버전: `99`
 - Cloudflare Worker: `2026-07-27-v2`
 - Cloudflare Worker 배포 버전 ID: `8bc0a1d8-9d8d-46cc-8d0b-b0cf6327d5b4`
 
@@ -120,8 +120,8 @@ Google Form --------------------+
 2. 건물명과 주소가 함께 일치하지 않으면 계약 건물 없음 안내 후 주소·건물명 재입력을 받는다.
 3. 계약 확인 후 호실, 연락처, 문제 유형, 증상, 방문 가능 시간을 수집한다. 세입자 성명은 묻지 않는다.
 4. Cloudflare Worker가 Apps Script로 요청을 중계한다.
-5. Apps Script가 연락처를 문자열로 보존해 응답 시트와 Firebase 대기 케이스를 동시에 만든다.
-6. 시간 기반 트리거가 계약 매칭, 상담카드, 업체 분류를 처리한다.
+5. Apps Script가 연락처를 문자열로 보존해 응답 시트와 Firebase 대기 케이스를 동시에 만든다. 카카오 사진은 원본 주소만 대기열에 기록해 챗봇 성공 응답을 먼저 반환한다.
+6. 시간 기반 트리거가 카카오 사진의 Drive 저장, 계약 매칭, 상담카드, 업체 분류를 처리한다.
 7. 세입자·건물주 접수 알림이 모두 성공하면 ②·③·④를 완료하고 ⑤를 진행중으로 전환한다.
 8. 일부 발송 상태에서는 성공한 수신자 기록을 보존하고 누락된 수신자만 재시도한다.
 
@@ -356,6 +356,7 @@ git diff --check
 ### 카카오 챗봇에서 “연결이 원활하지 않습니다”가 표시됨
 
 - Apps Script 콜드 스타트가 카카오 스킬 응답 제한 시간을 넘긴 경우가 많다.
+- v42부터 마지막 동의 요청에서 카카오 사진을 동기 저장하지 않고 1분 대기열로 넘겨 응답 지연을 줄였다.
 - Cloudflare Worker의 Cron Trigger가 1분마다 Apps Script keepalive를 호출하도록 배포되어 있다.
 - Worker `/health` 응답과 Cloudflare `Workers Logs`, Apps Script 실행 내역을 순서대로 확인한다.
 

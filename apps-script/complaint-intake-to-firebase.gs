@@ -35,7 +35,7 @@ const PAYMENT_SCHEDULE_HEADERS = [
   "상태",
   "비고"
 ];
-const AUTOMATION_BUILD = "complaint-workflow-20260728-v41";
+const AUTOMATION_BUILD = "complaint-workflow-20260729-v42";
 const OWNER_RECOMMENDATION_IMAGE_VERSION = "owner-summary-v4";
 const OWNER_DECISION_VIEW = "owner-decision";
 const OWNER_PAYMENT_ACCOUNT = {
@@ -72,7 +72,8 @@ const KAKAO_INTAKE_INPUT_HEADERS = [
   "증상 설명",
   "추가 요청사항",
   "방문 가능 시간",
-  "사진 첨부"
+  "사진 첨부",
+  "카카오 사진 원본 URL"
 ];
 
 function setupComplaintAutomation() {
@@ -927,6 +928,7 @@ function enqueueKakaoComplaintIntake_(values, userHash, payload) {
       "추가 요청사항": "카카오톡 브링케어 채널 접수",
       "방문 가능 시간": kakaoChatbotCleanText_(values.visitTime, 240),
       "사진 첨부": "",
+      "카카오 사진 원본 URL": photoUrls.length ? JSON.stringify(photoUrls) : "",
       "접수 경로": "kakao_chatbot",
       "카카오 사용자 키 해시": userHash,
       "카카오 처리 상태": "대기",
@@ -936,12 +938,8 @@ function enqueueKakaoComplaintIntake_(values, userHash, payload) {
     const row = sheet.getLastRow() + 1;
     const ticketNo = makeTicketNo_(row, record);
     if (photoUrls.length) {
-      const savedPhotos = saveKakaoComplaintPhotosToDrive_(photoUrls, ticketNo);
-      record["사진 첨부"] = savedPhotos.driveUrls.join("\n");
-      record["카카오 처리 메모"] = "현장 사진 " + savedPhotos.count + "장 저장 / 챗봇 접수 후 자동 처리 대기";
-      if (savedPhotos.errors.length) {
-        record["카카오 처리 메모"] += " / 일부 제외: " + savedPhotos.errors.join(" / ");
-      }
+      record["카카오 처리 메모"] =
+        "현장 사진 " + photoUrls.length + "장 비동기 저장 대기 / 챗봇 접수 후 자동 처리 대기";
     } else if (values.photoSkipped) {
       record["카카오 처리 메모"] = "사용자가 사진 없이 접수 / 챗봇 접수 후 자동 처리 대기";
     }
@@ -1012,6 +1010,9 @@ function kakaoComplaintHeaderMap_(headers) {
 
 function makeKakaoPendingCase_(ticketNo, record, row, sheet) {
   const photoFileIds = extractDriveFileIdsFromText_(record["사진 첨부"] || "");
+  const queuedPhotoCount = kakaoChatbotPhotoUrlsFromValue_(
+    record["카카오 사진 원본 URL"] || ""
+  ).length;
   return {
     id: ticketNo,
     ticketNo: ticketNo,
@@ -1034,7 +1035,7 @@ function makeKakaoPendingCase_(ticketNo, record, row, sheet) {
       name: "현장 사진 " + (index + 1),
       driveUrl: "https://drive.google.com/open?id=" + fileId
     })),
-    photoCount: photoFileIds.length,
+    photoCount: photoFileIds.length || queuedPhotoCount,
     statusValue: "접수처리중",
     status: { c1: "doing" },
     kakao: {
@@ -1049,6 +1050,26 @@ function makeKakaoPendingCase_(ticketNo, record, row, sheet) {
       "자동 분석 대기"
     ]
   };
+}
+
+function saveQueuedKakaoComplaintPhotos_(sheet, row, headerMap, record) {
+  const queuedPhotoValue = readField_(record, ["카카오 사진 원본 URL"]);
+  if (!queuedPhotoValue) {
+    return { count: 0, fileIds: [], driveUrls: [], errors: [] };
+  }
+
+  const photoUrls = kakaoChatbotPhotoUrlsFromValue_(queuedPhotoValue)
+    .filter((url, index, all) => url && all.indexOf(url) === index)
+    .slice(0, 10);
+  const ticketNo = readField_(record, ["접수번호"]);
+  const savedPhotos = saveKakaoComplaintPhotosToDrive_(photoUrls, ticketNo);
+  const driveUrlText = savedPhotos.driveUrls.join("\n");
+
+  setCellByHeader_(sheet, row, headerMap, "사진 첨부", driveUrlText);
+  setCellByHeader_(sheet, row, headerMap, "카카오 사진 원본 URL", "");
+  record["사진 첨부"] = driveUrlText;
+  record["카카오 사진 원본 URL"] = "";
+  return savedPhotos;
 }
 
 function processPendingKakaoComplaintIntakes() {
@@ -1074,6 +1095,17 @@ function processPendingKakaoComplaintIntakes() {
       setCellByHeader_(sheet, row, headerMap, "카카오 처리 메모", "자동 분석 및 계약 매칭 진행 중");
       SpreadsheetApp.flush();
       try {
+        const savedPhotos = saveQueuedKakaoComplaintPhotos_(sheet, row, headerMap, record);
+        if (savedPhotos.count) {
+          setCellByHeader_(
+            sheet,
+            row,
+            headerMap,
+            "카카오 처리 메모",
+            "현장 사진 " + savedPhotos.count + "장 저장 완료 / 자동 분석 및 계약 매칭 진행 중"
+          );
+          SpreadsheetApp.flush();
+        }
         processResponseRow_(sheet, row);
         setCellByHeader_(sheet, row, headerMap, "카카오 처리 상태", "완료");
         setCellByHeader_(
@@ -1081,7 +1113,9 @@ function processPendingKakaoComplaintIntakes() {
           row,
           headerMap,
           "카카오 처리 메모",
-          Utilities.formatDate(new Date(), "Asia/Seoul", "yyyy-MM-dd HH:mm:ss") + " 케이스 연결 완료"
+          Utilities.formatDate(new Date(), "Asia/Seoul", "yyyy-MM-dd HH:mm:ss") +
+            " 케이스 연결 완료" +
+            (savedPhotos.count ? " / 현장 사진 " + savedPhotos.count + "장 저장" : "")
         );
       } catch (err) {
         setCellByHeader_(sheet, row, headerMap, "카카오 처리 상태", "오류");
