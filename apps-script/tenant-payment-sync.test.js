@@ -114,5 +114,9 @@ assert.match(indexSource, /const changed=!!nextSignal&&nextSignal!==paymentSched
 assert.match(source, /payload\.action === "sendPaymentReminderSms"/, "월세 안내 문자 요청을 처리한다");
 assert.match(source, /firebasePaymentCalendarUrl_\(payload\.uid, "schedules\/" \+ scheduleId, payload\.idToken\)/, "로그인 계정의 일정에 저장된 연락처만 사용한다");
 assert.match(indexSource, /data-payment-sms=/, "납부 당일·미입금 일정에 문자 버튼을 표시한다");
+assert.match(source, /payload\.action === "syncPopbillBankTransactions"/, "팝빌 입금내역 자동 동기화 요청을 처리한다");
+assert.match(indexSource, /action:"syncPopbillBankTransactions"/, "로그인한 캘린더에서 팝빌 입금내역을 요청한다");
+assert.match(indexSource, /1800000/, "입금확인 화면이 열려 있으면 30분 간격으로 팝빌 거래를 다시 확인한다");
+assert.match(indexSource, /팝빌 은행 자동조회/, "은행 연결 상태와 최근 조회 결과를 캘린더에 표시한다");
 
 console.log("tenant payment sync tests passed");

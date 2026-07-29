@@ -35,7 +35,7 @@ const PAYMENT_SCHEDULE_HEADERS = [
   "상태",
   "비고"
 ];
-const AUTOMATION_BUILD = "complaint-workflow-20260729-v43";
+const AUTOMATION_BUILD = "complaint-workflow-20260729-v44";
 const OWNER_RECOMMENDATION_IMAGE_VERSION = "owner-summary-v4";
 const OWNER_DECISION_VIEW = "owner-decision";
 const OWNER_PAYMENT_ACCOUNT = {
@@ -183,6 +183,9 @@ function doPost(e) {
     }
     if (payload.action === "syncPaymentSchedules") {
       return jsonResponse_(syncPaymentSchedulesFromSheet_(payload));
+    }
+    if (payload.action === "syncPopbillBankTransactions") {
+      return jsonResponse_(syncPopbillBankTransactions_(payload));
     }
     if (payload.action === "sendPaymentReminderSms") {
       return jsonResponse_(handlePaymentReminderSms_(payload));
@@ -7553,6 +7556,8 @@ function handlePaymentReminderSms_(payload) {
 
 const POPBILL_EASYFINBANK_SCOPE = ["180", "member"];
 const POPBILL_API_VERSION = "2.0";
+const POPBILL_BANK_SYNC_DAYS = 30;
+const POPBILL_BANK_SYNC_FRESH_MINUTES = 25;
 
 function popbillBoolean_(value, fallback) {
   const normalized = String(value == null ? "" : value).trim().toLowerCase();
@@ -7746,6 +7751,431 @@ function getPopbillBankAccountManagerUrl() {
   }
   Logger.log("POPBILL_BANK_ACCOUNT_MANAGER_URL=" + url);
   return url;
+}
+
+function popbillBankCompactDate_(date) {
+  return Utilities.formatDate(date || new Date(), "Asia/Seoul", "yyyyMMdd");
+}
+
+function popbillBankAddDays_(compactDate, days) {
+  const match = String(compactDate || "").match(/^(\d{4})(\d{2})(\d{2})$/);
+  if (!match) throw new Error("팝빌 계좌조회 날짜가 올바르지 않습니다.");
+  const date = new Date(Date.UTC(Number(match[1]), Number(match[2]) - 1, Number(match[3])));
+  date.setUTCDate(date.getUTCDate() + Number(days || 0));
+  return [
+    date.getUTCFullYear(),
+    String(date.getUTCMonth() + 1).padStart(2, "0"),
+    String(date.getUTCDate()).padStart(2, "0")
+  ].join("");
+}
+
+function popbillBankIsoDate_(compactDate) {
+  const match = String(compactDate || "").match(/^(\d{4})(\d{2})(\d{2})$/);
+  return match ? [match[1], match[2], match[3]].join("-") : "";
+}
+
+function popbillBankShiftMonth_(monthKey, offset) {
+  const match = String(monthKey || "").match(/^(\d{4})-(\d{2})$/);
+  if (!match) return "";
+  const date = new Date(Date.UTC(Number(match[1]), Number(match[2]) - 1 + Number(offset || 0), 1));
+  return date.getUTCFullYear() + "-" + String(date.getUTCMonth() + 1).padStart(2, "0");
+}
+
+function popbillBankNormalizePayer_(value) {
+  return String(value || "")
+    .toLowerCase()
+    .replace(/\s+/g, "")
+    .replace(/[^0-9a-z가-힣]/g, "");
+}
+
+function popbillBankRemarkCandidates_(transaction) {
+  const source = transaction || {};
+  const seen = {};
+  return [source.remark1, source.remark3, source.remark2]
+    .map(value => String(value || "").trim())
+    .filter(value => {
+      const key = popbillBankNormalizePayer_(value);
+      if (!key || seen[key]) return false;
+      seen[key] = true;
+      return true;
+    });
+}
+
+function popbillBankScheduleActiveInMonth_(schedule, monthKey) {
+  if (!schedule || schedule.active === false) return false;
+  if (schedule.startMonth && String(monthKey) < String(schedule.startMonth)) return false;
+  if (schedule.endMonth && String(monthKey) > String(schedule.endMonth)) return false;
+  return true;
+}
+
+function popbillBankTransactionScheduleMatches_(transaction, schedule) {
+  const amount = Number(String(transaction && transaction.accIn || "0").replace(/,/g, "")) || 0;
+  if (!schedule || amount <= 0 || Number(schedule.amount) !== amount) return false;
+  const payerKey = popbillBankNormalizePayer_(schedule.payerName);
+  if (!payerKey) return false;
+  const remarks = popbillBankRemarkCandidates_(transaction)
+    .map(popbillBankNormalizePayer_);
+  if (remarks.indexOf(payerKey) === -1) return false;
+
+  const transactionDate = popbillBankIsoDate_(transaction.trdate);
+  if (!transactionDate) return false;
+  const transactionMonth = transactionDate.slice(0, 7);
+  return [transactionMonth, popbillBankShiftMonth_(transactionMonth, -1)].some(monthKey => {
+    if (!popbillBankScheduleActiveInMonth_(schedule, monthKey)) return false;
+    const dueDate = paymentReminderDueDate_(monthKey, schedule.dueDay);
+    return transactionDate >= popbillBankIsoDate_(popbillBankAddDays_(dueDate.replace(/-/g, ""), -3)) &&
+      transactionDate <= popbillBankIsoDate_(popbillBankAddDays_(dueDate.replace(/-/g, ""), 7));
+  });
+}
+
+function popbillBankResolveTransactionMatch_(transaction, schedules) {
+  const rows = Object.keys(schedules || {}).map(id =>
+    Object.assign({ id: id }, schedules[id] || {})
+  );
+  const matches = rows.filter(schedule =>
+    popbillBankTransactionScheduleMatches_(transaction, schedule)
+  );
+  const remarks = popbillBankRemarkCandidates_(transaction);
+  const fallbackPayer = remarks[0] || "";
+  if (matches.length === 1) {
+    return {
+      matchStatus: "matched",
+      payerName: String(matches[0].payerName || fallbackPayer),
+      buildingId: String(matches[0].buildingId || ""),
+      buildingName: String(matches[0].buildingName || ""),
+      matchedScheduleId: String(matches[0].id || ""),
+      reviewScheduleIds: [],
+      buildingIds: matches[0].buildingId ? [String(matches[0].buildingId)] : []
+    };
+  }
+  if (matches.length > 1) {
+    const buildingIds = Array.from(new Set(matches
+      .map(schedule => String(schedule.buildingId || ""))
+      .filter(Boolean)));
+    return {
+      matchStatus: "review",
+      payerName: String(matches[0].payerName || fallbackPayer),
+      buildingId: "",
+      buildingName: "",
+      matchedScheduleId: "",
+      reviewScheduleIds: matches.map(schedule => String(schedule.id || "")).filter(Boolean),
+      buildingIds: buildingIds
+    };
+  }
+  return {
+    matchStatus: "unmatched",
+    payerName: fallbackPayer,
+    buildingId: "",
+    buildingName: "",
+    matchedScheduleId: "",
+    reviewScheduleIds: [],
+    buildingIds: []
+  };
+}
+
+function popbillBankTransactionRecord_(transaction, account, schedules, syncedAt) {
+  const amount = Number(String(transaction && transaction.accIn || "0").replace(/,/g, "")) || 0;
+  const date = popbillBankIsoDate_(transaction && transaction.trdate);
+  const tid = String(transaction && transaction.tid || "").replace(/[.#$\[\]\/]/g, "");
+  if (!tid || !date || amount <= 0) return null;
+  const accountNumber = String(account && account.accountNumber || "").replace(/\D/g, "");
+  const bankCode = String(account && account.bankCode || "");
+  const match = popbillBankResolveTransactionMatch_(transaction, schedules);
+  return {
+    id: ["pb", bankCode, accountNumber.slice(-4), tid].join("_"),
+    date: date,
+    transactionAt: String(transaction && transaction.trdt || ""),
+    payerName: match.payerName,
+    amount: amount,
+    direction: "deposit",
+    source: "popbill",
+    provider: "popbill",
+    bankCode: bankCode,
+    accountLast4: accountNumber.slice(-4),
+    buildingId: match.buildingId,
+    buildingName: match.buildingName,
+    matchedScheduleId: match.matchedScheduleId,
+    reviewScheduleIds: match.reviewScheduleIds,
+    buildingIds: match.buildingIds,
+    matchStatus: match.matchStatus,
+    active: true,
+    providerRegisteredAt: String(transaction && transaction.regDT || ""),
+    syncedAt: syncedAt
+  };
+}
+
+function popbillBankJobPropertyKey_(account) {
+  const raw = [
+    String(account && account.bankCode || ""),
+    String(account && account.accountNumber || "").replace(/\D/g, "")
+  ].join(":");
+  const digest = Utilities.computeDigest(
+    Utilities.DigestAlgorithm.SHA_256,
+    raw,
+    Utilities.Charset.UTF_8
+  );
+  return "POPBILL_BANK_JOB_" +
+    Utilities.base64EncodeWebSafe(digest).replace(/=+$/g, "").slice(0, 20);
+}
+
+function popbillBankRequestJob_(account, startDate, endDate) {
+  const query = [
+    "BankCode=" + encodeURIComponent(String(account.bankCode || "")),
+    "AccountNumber=" + encodeURIComponent(String(account.accountNumber || "").replace(/\D/g, "")),
+    "SDate=" + encodeURIComponent(startDate),
+    "EDate=" + encodeURIComponent(endDate)
+  ].join("&");
+  const result = popbillApiRequest_("post", "/EasyFin/Bank/BankAccount?" + query);
+  const jobId = String(result && (result.jobID || result.jobId) || result || "").trim();
+  if (!/^\d{18}$/.test(jobId)) throw new Error("팝빌 거래수집 작업번호를 받지 못했습니다.");
+  return jobId;
+}
+
+function popbillBankJobState_(jobId) {
+  return popbillApiRequest_(
+    "get",
+    "/EasyFin/Bank/" + encodeURIComponent(String(jobId || "")) + "/State"
+  );
+}
+
+function popbillBankSearchTransactions_(jobId) {
+  return popbillApiRequest_(
+    "get",
+    "/EasyFin/Bank/" + encodeURIComponent(String(jobId || "")) +
+      "?TradeType=I&Page=1&PerPage=1000&Order=A"
+  );
+}
+
+function popbillBankSafeError_(error) {
+  return String(error && error.message || error || "알 수 없는 오류")
+    .replace(/\d{6,}/g, "••••")
+    .slice(0, 240);
+}
+
+function popbillBankCollectAccount_(account, startDate, endDate) {
+  const props = PropertiesService.getScriptProperties();
+  const propertyKey = popbillBankJobPropertyKey_(account);
+  let pending = null;
+  try {
+    pending = JSON.parse(props.getProperty(propertyKey) || "null");
+  } catch (error) {
+    pending = null;
+  }
+  if (pending && (
+    pending.startDate !== startDate ||
+    pending.endDate !== endDate ||
+    Date.now() - Number(pending.requestedAt || 0) > 50 * 60 * 1000
+  )) {
+    pending = null;
+    props.deleteProperty(propertyKey);
+  }
+
+  const jobId = pending && pending.jobId ||
+    popbillBankRequestJob_(account, startDate, endDate);
+  if (!pending) {
+    props.setProperty(propertyKey, JSON.stringify({
+      jobId: jobId,
+      startDate: startDate,
+      endDate: endDate,
+      requestedAt: Date.now()
+    }));
+  }
+
+  let state = {};
+  for (let attempt = 0; attempt < 8; attempt += 1) {
+    try {
+      state = popbillBankJobState_(jobId) || {};
+    } catch (error) {
+      if (attempt === 7) throw error;
+    }
+    if (Number(state.jobState) === 3) break;
+    if (attempt < 7) Utilities.sleep(1000);
+  }
+  if (Number(state.jobState) !== 3) {
+    return { pending: true, jobId: jobId, state: Number(state.jobState || 0), list: [] };
+  }
+  props.deleteProperty(propertyKey);
+  if (Number(state.errorCode) !== 1) {
+    throw new Error(String(state.errorReason || "팝빌 거래내역 수집에 실패했습니다."));
+  }
+  const search = popbillBankSearchTransactions_(jobId) || {};
+  return {
+    pending: false,
+    jobId: jobId,
+    state: 3,
+    list: Array.isArray(search.list) ? search.list : [],
+    lastScrapDT: String(search.lastScrapDT || "")
+  };
+}
+
+function popbillBankSyncIsFresh_(status, nowMillis) {
+  if (!status || status.ok !== true || status.status !== "completed") return false;
+  const timestamp = Date.parse(status.lastSuccessfulAt || status.updatedAt || "");
+  if (!isFinite(timestamp)) return false;
+  return Number(nowMillis == null ? Date.now() : nowMillis) - timestamp <
+    POPBILL_BANK_SYNC_FRESH_MINUTES * 60 * 1000;
+}
+
+function syncPopbillBankTransactions_(payload) {
+  payload = payload || {};
+  const requestedAt = new Date().toISOString();
+  const bankSyncUrl = firebasePaymentCalendarUrl_(payload.uid, "bankSync", payload.idToken);
+  const existingStatus = firebaseReadJson_(bankSyncUrl, "기존 팝빌 동기화 상태 조회 실패") || {};
+  if (payload.force !== true && popbillBankSyncIsFresh_(existingStatus, Date.now())) {
+    return Object.assign({}, existingStatus, { skipped: true });
+  }
+
+  const lock = LockService.getScriptLock();
+  if (!lock.tryLock(1500)) {
+    return { ok: true, skipped: true, status: "running", updatedAt: requestedAt };
+  }
+  try {
+    const schedulesUrl = firebasePaymentCalendarUrl_(payload.uid, "schedules", payload.idToken);
+    const transactionsUrl = firebasePaymentCalendarUrl_(payload.uid, "transactions", payload.idToken);
+    const schedules = firebaseReadJson_(schedulesUrl, "월 납부 일정 조회 실패") || {};
+    const allAccounts = popbillApiRequest_("get", "/EasyFin/Bank/ListBankAccount");
+    const accounts = (Array.isArray(allAccounts) ? allAccounts : [])
+      .filter(account => Number(account && account.state) === 1);
+    if (!accounts.length) throw new Error("팝빌에서 사용 가능한 등록 계좌를 찾지 못했습니다.");
+
+    const endDate = popbillBankCompactDate_(new Date());
+    const startDate = popbillBankAddDays_(endDate, -POPBILL_BANK_SYNC_DAYS);
+    const transactionPatch = {};
+    const accountResults = [];
+    const errors = [];
+    let pendingCount = 0;
+    let lastScrapDT = "";
+
+    accounts.forEach(account => {
+      const accountNumber = String(account && account.accountNumber || "").replace(/\D/g, "");
+      const safeAccount = {
+        bankCode: String(account && account.bankCode || ""),
+        accountName: String(account && account.accountName || ""),
+        accountLast4: accountNumber.slice(-4)
+      };
+      try {
+        const collected = popbillBankCollectAccount_(account, startDate, endDate);
+        if (collected.pending) pendingCount += 1;
+        lastScrapDT = String(collected.lastScrapDT || lastScrapDT);
+        let depositCount = 0;
+        (collected.list || []).forEach(transaction => {
+          const record = popbillBankTransactionRecord_(transaction, account, schedules, requestedAt);
+          if (!record) return;
+          transactionPatch[record.id] = record;
+          depositCount += 1;
+        });
+        accountResults.push(Object.assign({}, safeAccount, {
+          pending: collected.pending === true,
+          depositCount: depositCount
+        }));
+      } catch (error) {
+        errors.push(Object.assign({}, safeAccount, {
+          message: popbillBankSafeError_(error)
+        }));
+      }
+    });
+
+    if (Object.keys(transactionPatch).length) {
+      firebaseAuthorizedWriteRequest_(
+        transactionsUrl,
+        "patch",
+        transactionPatch,
+        "팝빌 입금내역 저장 실패"
+      );
+    }
+    const records = Object.keys(transactionPatch).map(id => transactionPatch[id]);
+    const status = {
+      ok: errors.length === 0,
+      status: pendingCount ? "pending" : (errors.length ? "error" : "completed"),
+      environment: popbillConfig_().isTest ? "test" : "production",
+      accountCount: accounts.length,
+      completedAccountCount: accountResults.filter(item => !item.pending).length,
+      pendingAccountCount: pendingCount,
+      transactionCount: records.length,
+      matchedCount: records.filter(item => item.matchStatus === "matched").length,
+      reviewCount: records.filter(item => item.matchStatus === "review").length,
+      unmatchedCount: records.filter(item => item.matchStatus === "unmatched").length,
+      accounts: accountResults,
+      errors: errors,
+      rangeStart: popbillBankIsoDate_(startDate),
+      rangeEnd: popbillBankIsoDate_(endDate),
+      lastScrapDT: lastScrapDT,
+      updatedAt: requestedAt,
+      lastSuccessfulAt: errors.length || pendingCount
+        ? String(existingStatus.lastSuccessfulAt || "")
+        : requestedAt,
+      requestedBy: String(payload.adminEmail || ""),
+      build: AUTOMATION_BUILD
+    };
+    firebaseAuthorizedWriteRequest_(bankSyncUrl, "put", status, "팝빌 동기화 상태 저장 실패");
+    Logger.log(JSON.stringify({
+      ok: status.ok,
+      status: status.status,
+      accountCount: status.accountCount,
+      transactionCount: status.transactionCount,
+      matchedCount: status.matchedCount,
+      reviewCount: status.reviewCount,
+      unmatchedCount: status.unmatchedCount
+    }));
+    return status;
+  } catch (error) {
+    const failed = {
+      ok: false,
+      status: "error",
+      accountCount: 0,
+      transactionCount: 0,
+      errors: [{ message: popbillBankSafeError_(error) }],
+      updatedAt: requestedAt,
+      lastSuccessfulAt: String(existingStatus.lastSuccessfulAt || ""),
+      requestedBy: String(payload.adminEmail || ""),
+      build: AUTOMATION_BUILD
+    };
+    try {
+      firebaseAuthorizedWriteRequest_(bankSyncUrl, "put", failed, "팝빌 동기화 오류 상태 저장 실패");
+    } catch (writeError) {
+      Logger.log("팝빌 동기화 오류 상태 저장 실패");
+    }
+    return failed;
+  } finally {
+    lock.releaseLock();
+  }
+}
+
+function testPopbillBankTransactionCollection() {
+  const allAccounts = popbillApiRequest_("get", "/EasyFin/Bank/ListBankAccount");
+  const accounts = (Array.isArray(allAccounts) ? allAccounts : [])
+    .filter(account => Number(account && account.state) === 1);
+  const endDate = popbillBankCompactDate_(new Date());
+  const startDate = popbillBankAddDays_(endDate, -POPBILL_BANK_SYNC_DAYS);
+  const results = accounts.map(account => {
+    const number = String(account && account.accountNumber || "").replace(/\D/g, "");
+    try {
+      const collected = popbillBankCollectAccount_(account, startDate, endDate);
+      return {
+        bankCode: String(account && account.bankCode || ""),
+        accountLast4: number.slice(-4),
+        pending: collected.pending === true,
+        depositCount: (collected.list || []).filter(item =>
+          (Number(String(item && item.accIn || "0").replace(/,/g, "")) || 0) > 0
+        ).length
+      };
+    } catch (error) {
+      return {
+        bankCode: String(account && account.bankCode || ""),
+        accountLast4: number.slice(-4),
+        error: popbillBankSafeError_(error)
+      };
+    }
+  });
+  const output = {
+    ok: results.every(item => !item.error),
+    accountCount: accounts.length,
+    rangeStart: popbillBankIsoDate_(startDate),
+    rangeEnd: popbillBankIsoDate_(endDate),
+    accounts: results
+  };
+  Logger.log(JSON.stringify(output));
+  return output;
 }
 
 function syncPaymentBuildingsFromOnboarding_() {

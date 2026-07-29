@@ -63,15 +63,35 @@ const context = {
   JSON,
   Object,
   Array,
+  Date,
+  Set,
+  Number,
+  isFinite,
   POPBILL_EASYFINBANK_SCOPE: ["180", "member"],
-  POPBILL_API_VERSION: "2.0"
+  POPBILL_API_VERSION: "2.0",
+  POPBILL_BANK_SYNC_FRESH_MINUTES: 25,
+  paymentReminderDueDate_(monthKey, dueDay) {
+    const [year, month] = monthKey.split("-").map(Number);
+    const lastDay = new Date(Date.UTC(year, month, 0)).getUTCDate();
+    return `${year}-${String(month).padStart(2, "0")}-${String(Math.min(Number(dueDay), lastDay)).padStart(2, "0")}`;
+  }
 };
 vm.createContext(context);
 vm.runInContext([
   extractFunction("popbillBoolean_"),
   extractFunction("popbillConfigFromValues_"),
   extractFunction("popbillTokenRequestBody_"),
-  extractFunction("popbillStringToSign_")
+  extractFunction("popbillStringToSign_"),
+  extractFunction("popbillBankAddDays_"),
+  extractFunction("popbillBankIsoDate_"),
+  extractFunction("popbillBankShiftMonth_"),
+  extractFunction("popbillBankNormalizePayer_"),
+  extractFunction("popbillBankRemarkCandidates_"),
+  extractFunction("popbillBankScheduleActiveInMonth_"),
+  extractFunction("popbillBankTransactionScheduleMatches_"),
+  extractFunction("popbillBankResolveTransactionMatch_"),
+  extractFunction("popbillBankTransactionRecord_"),
+  extractFunction("popbillBankSyncIsFresh_")
 ].join("\n"), context);
 
 const config = context.popbillConfigFromValues_({
@@ -120,5 +140,75 @@ assert.doesNotMatch(
   /secretKey|accountNumber:\s*number/,
   "연결 확인 로그에는 비밀키나 전체 계좌번호를 포함하지 않는다"
 );
+
+assert.equal(context.popbillBankAddDays_("20260701", -1), "20260630");
+assert.equal(context.popbillBankShiftMonth_("2026-01", -1), "2025-12");
+assert.equal(context.popbillBankNormalizePayer_(" 홍 길동(월세) "), "홍길동월세");
+
+const schedules = {
+  s1: {
+    id: "s1",
+    buildingId: "building-1",
+    buildingName: "햇빛빌라",
+    payerName: "홍길동",
+    amount: 500000,
+    dueDay: 10,
+    startMonth: "2026-01",
+    endMonth: "",
+    active: true
+  }
+};
+const bankTransaction = {
+  tid: "02312071300000000120260710000001",
+  trdate: "20260710",
+  trdt: "20260710120000",
+  accIn: "500000",
+  accOut: "0",
+  remark1: "홍 길동",
+  remark2: "입금",
+  remark3: ""
+};
+const resolved = context.popbillBankResolveTransactionMatch_(bankTransaction, schedules);
+assert.equal(resolved.matchStatus, "matched");
+assert.equal(resolved.matchedScheduleId, "s1");
+assert.equal(resolved.buildingId, "building-1");
+
+const duplicateSchedules = Object.assign({}, schedules, {
+  s2: Object.assign({}, schedules.s1, { id: "s2", buildingId: "building-2", buildingName: "달빛빌라" })
+});
+const ambiguous = context.popbillBankResolveTransactionMatch_(bankTransaction, duplicateSchedules);
+assert.equal(ambiguous.matchStatus, "review");
+assert.deepEqual(Array.from(ambiguous.reviewScheduleIds), ["s1", "s2"]);
+
+const record = context.popbillBankTransactionRecord_(
+  bankTransaction,
+  { bankCode: "0088", accountNumber: "110123451076" },
+  schedules,
+  "2026-07-29T00:00:00.000Z"
+);
+assert.equal(record.source, "popbill");
+assert.equal(record.accountLast4, "1076");
+assert.equal(record.payerName, "홍길동");
+assert.equal(record.amount, 500000);
+assert.equal(JSON.stringify(record).includes("110123451076"), false, "Firebase 거래에는 전체 계좌번호를 저장하지 않는다");
+assert.equal(
+  context.popbillBankSyncIsFresh_(
+    { ok: true, status: "completed", lastSuccessfulAt: "2026-07-29T00:00:00.000Z" },
+    Date.parse("2026-07-29T00:20:00.000Z")
+  ),
+  true
+);
+assert.equal(
+  context.popbillBankSyncIsFresh_(
+    { ok: true, status: "completed", lastSuccessfulAt: "2026-07-29T00:00:00.000Z" },
+    Date.parse("2026-07-29T00:30:00.000Z")
+  ),
+  false
+);
+
+assert.match(source, /syncPopbillBankTransactions/);
+assert.match(source, /\/EasyFin\/Bank\/BankAccount\?/);
+assert.match(source, /TradeType=I&Page=1&PerPage=1000&Order=A/);
+assert.doesNotMatch(extractFunction("popbillBankTransactionRecord_"), /balance/);
 
 console.log("popbill easyfinbank tests passed");

@@ -5380,10 +5380,11 @@ const paymentMainEl=document.getElementById("paymentMain");
 const paymentAlertBadgeEl=document.getElementById("paymentAlertBadge");
 const paymentScheduleModal=document.getElementById("paymentScheduleModal");
 const paymentTransactionModal=document.getElementById("paymentTransactionModal");
-let paymentRef=null, paymentValueHandler=null, paymentData={profile:{},schedules:{},transactions:{},overrides:{},rentSms:{},audit:{}};
+let paymentRef=null, paymentValueHandler=null, paymentData={profile:{},schedules:{},transactions:{},overrides:{},rentSms:{},bankSync:{},audit:{}};
 let paymentMonth=paymentTodayKey().slice(0,7), paymentBuildingId="", selectedPaymentScheduleId="", editingPaymentScheduleId="";
 let paymentScheduleSyncInFlight=false, paymentScheduleSyncPending=false, paymentScheduleAutoTimer=null;
 let paymentScheduleLastRequestAt=0, paymentScheduleLastSignal="";
+let paymentBankSyncInFlight=false, paymentBankSyncTimer=null, paymentBankLastRequestAt=0;
 let paymentSmsSendingId="";
 const DEFAULT_PAYMENT_SHEET_URL="https://docs.google.com/spreadsheets/d/1HI6KzIMomL6vOUPs8zZDhXHktL1cWRDcg93lflsuojA/edit";
 
@@ -5409,7 +5410,9 @@ function calculatePaymentMonthRows(data,buildingId,monthKey,todayKey){
     const amount=Number(schedule.amount)||0;
     const candidates=transactions.filter(tx=>{
       if(tx.direction&&tx.direction!=="deposit") return false;
-      if(String(tx.buildingId||"")!==String(schedule.buildingId||"")) return false;
+      if(tx.matchStatus==="review"){
+        if(!Array.isArray(tx.reviewScheduleIds)||!tx.reviewScheduleIds.includes(schedule.id)) return false;
+      }else if(String(tx.buildingId||"")!==String(schedule.buildingId||"")) return false;
       return Number(tx.amount)===amount && paymentNormalizeName(tx.payerName)===payerKey && String(tx.date||"")>=paymentAddDays(dueDate,-3) && String(tx.date||"")<=paymentAddDays(dueDate,7);
     });
     return {schedule,dueDate,candidates,status:"scheduled",matchedTransaction:null,override:null};
@@ -5425,6 +5428,7 @@ function calculatePaymentMonthRows(data,buildingId,monthKey,todayKey){
       row.matchedTransaction=override.transactionId?transactions.find(tx=>tx.id===override.transactionId)||null:null;
       return;
     }
+    if(row.candidates.some(tx=>tx.matchStatus==="review")){ row.status="review"; return; }
     if(row.candidates.length===1&&candidateUsage[row.candidates[0].id]===1){ row.status="paid"; row.matchedTransaction=row.candidates[0]; return; }
     if(row.candidates.length){ row.status="review"; return; }
     row.status=String(todayKey||"")>row.dueDate?"overdue":"scheduled";
@@ -5437,7 +5441,7 @@ function paymentId(prefix){ return prefix+Date.now().toString(36)+Math.random().
 function paymentHash(value){ let h=2166136261; const text=String(value||""); for(let i=0;i<text.length;i++){ h^=text.charCodeAt(i); h=Math.imul(h,16777619); } return (h>>>0).toString(36); }
 function paymentEnsureData(){
   if(!paymentData||typeof paymentData!=="object") paymentData={};
-  ["profile","schedules","transactions","overrides","rentSms","audit"].forEach(key=>{ if(!paymentData[key]||typeof paymentData[key]!=="object") paymentData[key]={}; });
+  ["profile","schedules","transactions","overrides","rentSms","bankSync","audit"].forEach(key=>{ if(!paymentData[key]||typeof paymentData[key]!=="object") paymentData[key]={}; });
 }
 function paymentLocalKey(){ return "fm_payment_calendar_"+(authedUser&&authedUser.uid||"local"); }
 function loadPaymentLocal(){ try{ return JSON.parse(localStorage.getItem(paymentLocalKey()))||{}; }catch(e){ return {}; } }
@@ -5458,7 +5462,7 @@ function recordPaymentAudit(action,details){
   paymentData.audit[id]=row; savePaymentLocal();
   if(paymentRef) paymentRef.child("audit/"+id).set(row).catch(err=>console.warn("입금 감사기록 저장 실패",err));
 }
-function detachPaymentCalendarRef(){ if(paymentRef&&paymentValueHandler) paymentRef.off("value",paymentValueHandler); paymentRef=null; paymentValueHandler=null; paymentData={profile:{},schedules:{},transactions:{},overrides:{},rentSms:{},audit:{}}; }
+function detachPaymentCalendarRef(){ if(paymentRef&&paymentValueHandler) paymentRef.off("value",paymentValueHandler); paymentRef=null; paymentValueHandler=null; paymentData={profile:{},schedules:{},transactions:{},overrides:{},rentSms:{},bankSync:{},audit:{}}; }
 function attachPaymentCalendarRef(user){
   detachPaymentCalendarRef();
   if(!user){ updatePaymentAlertBadge(); return; }
@@ -5515,12 +5519,21 @@ function updatePaymentAlertBadge(){
   buildings.forEach(b=>{ const c=paymentBuildingCounts(b.id); count+=c.overdue+c.review; });
   paymentAlertBadgeEl.textContent=count>99?"99+":String(count||""); paymentAlertBadgeEl.classList.toggle("on",count>0);
 }
+function paymentBankSyncMessage(sync){
+  if(paymentBankSyncInFlight) return "팝빌 입금내역 확인 중…";
+  if(!sync||!sync.updatedAt) return "팝빌 계좌 연결 후 입금내역을 자동 확인합니다";
+  const time=new Date(sync.updatedAt).toLocaleString("ko-KR",{timeZone:"Asia/Seoul",month:"numeric",day:"numeric",hour:"2-digit",minute:"2-digit"});
+  if(sync.ok===false) return `조회 실패 · ${sync.errors&&sync.errors[0]&&sync.errors[0].message||"계좌 설정을 확인해 주세요"}`;
+  if(sync.status==="pending") return `거래내역 수집 중 · ${time}`;
+  return `최근 조회 ${Number(sync.transactionCount)||0}건 · 자동매칭 ${Number(sync.matchedCount)||0}건 · ${time}`;
+}
 function renderPaymentBuildingList(buildings){
   if(!paymentBuildingListEl) return;
-  const recent=paymentTransactionsArray(paymentData).filter(t=>t.source==="test").sort((a,b)=>String(b.createdAt||"").localeCompare(String(a.createdAt||""))).slice(0,5);
+  const bankSync=paymentData&&paymentData.bankSync||{};
+  const recent=paymentTransactionsArray(paymentData).filter(t=>t.source==="popbill"||t.source==="test").sort((a,b)=>String(b.transactionAt||b.createdAt||"").localeCompare(String(a.transactionAt||a.createdAt||""))).slice(0,5);
   paymentBuildingListEl.innerHTML=`<div class="pv-side-title"><span>온보딩 건물</span><span>${buildings.length}곳</span></div>`+
     (buildings.length?buildings.map(b=>`<button class="pv-building ${b.id===paymentBuildingId?'on':''}" data-payment-building="${escAttr(b.id)}"><b>${esc(b.name)}</b><span>${esc(b.address||"주소 미입력")}</span><span>건물주: ${esc(b.ownerName||"미입력")}</span></button>`).join(""):`<div class="pv-empty" style="margin-top:28px">온보딩 건물이 없습니다.<br>새로고침 후 Apps Script 동기화를 확인해 주세요.</div>`)+
-    `<div class="pv-bank-card"><b>🏦 은행 자동조회</b><p>현재 관리자: ${esc(authedUser&&authedUser.email||"로컬")}</p><p style="margin-top:4px">핀테크이용번호와 Access Token은 나중에 보안 서버에 연결합니다. 화면과 Firebase에는 토큰을 저장하지 않습니다.</p>${recent.length?`<p style="margin-top:8px;font-weight:800;color:#52606d">최근 테스트 입금</p>${recent.map(t=>`<p>${esc(t.date)} · ${esc(t.payerName)} · ${esc(paymentFormatMoney(t.amount))} <button class="pv-btn" style="padding:2px 5px;font-size:10px" data-payment-tx-remove="${escAttr(t.id)}">삭제</button></p>`).join("")}`:""}</div>`;
+    `<div class="pv-bank-card"><b>🏦 팝빌 은행 자동조회</b><p>현재 관리자: ${esc(authedUser&&authedUser.email||"로컬")}</p><p style="margin-top:4px">${esc(paymentBankSyncMessage(bankSync))}</p><p style="margin-top:4px">${bankSync.environment==="test"?"테스트 환경":bankSync.environment==="production"?"운영 환경":"연결 확인 중"} · 등록계좌 ${Number(bankSync.accountCount)||0}개 · 30분 간격</p>${recent.length?`<p style="margin-top:8px;font-weight:800;color:#52606d">최근 입금</p>${recent.map(t=>`<p>${esc(t.date)} · ${esc(t.payerName||"입금자 확인필요")} · ${esc(paymentFormatMoney(t.amount))}${t.source==="test"?` <button class="pv-btn" style="padding:2px 5px;font-size:10px" data-payment-tx-remove="${escAttr(t.id)}">삭제</button>`:""}</p>`).join("")}`:""}</div>`;
 }
 function paymentFormatPhone(value){
   const digits=String(value||"").replace(/\D/g,"");
@@ -5677,14 +5690,38 @@ async function requestPaymentScheduleSync(options){
 }
 function stopPaymentScheduleAutoSync(){
   if(paymentScheduleAutoTimer) clearInterval(paymentScheduleAutoTimer);
+  if(paymentBankSyncTimer) clearInterval(paymentBankSyncTimer);
   paymentScheduleAutoTimer=null;
+  paymentBankSyncTimer=null;
+}
+async function requestPaymentBankSync(options){
+  options=options||{};
+  if(!authedUser||!caseAutomationEndpoint()) return;
+  if(paymentBankSyncInFlight) return;
+  const now=Date.now();
+  if(!options.force&&now-paymentBankLastRequestAt<25*60*1000) return;
+  paymentBankLastRequestAt=now;
+  paymentBankSyncInFlight=true;
+  renderPaymentCalendar();
+  try{
+    const idToken=await authedUser.getIdToken(false);
+    await sendCaseAutomationRequest(caseAutomationEndpoint(),{action:"syncPopbillBankTransactions",uid:authedUser.uid,idToken,adminEmail:authedUser.email||"",force:options.force===true});
+  }catch(err){
+    console.warn("팝빌 입금내역 자동 조회 실패",err);
+  }finally{
+    setTimeout(()=>{ paymentBankSyncInFlight=false; renderPaymentCalendar(); },12000);
+  }
 }
 function startPaymentScheduleAutoSync(){
   stopPaymentScheduleAutoSync();
   requestPaymentScheduleSync({source:"open",force:true});
+  requestPaymentBankSync({source:"open"});
   paymentScheduleAutoTimer=setInterval(()=>{
     if(paymentView.classList.contains("open")&&!document.hidden) requestPaymentScheduleSync({source:"fallback",force:true});
   },300000);
+  paymentBankSyncTimer=setInterval(()=>{
+    if(paymentView.classList.contains("open")&&!document.hidden) requestPaymentBankSync({source:"interval"});
+  },1800000);
 }
 
 document.getElementById("paymentBtn").addEventListener("click",openPaymentView);
@@ -5692,7 +5729,10 @@ document.getElementById("paymentBack").addEventListener("click",closePaymentView
 document.getElementById("paymentBuildingSync").addEventListener("click",requestPaymentBuildingSync);
 document.getElementById("paymentSheetOpen").addEventListener("click",openPaymentScheduleSheet);
 document.addEventListener("visibilitychange",()=>{
-  if(!document.hidden&&paymentView.classList.contains("open")) requestPaymentScheduleSync({source:"focus",force:true});
+  if(!document.hidden&&paymentView.classList.contains("open")){
+    requestPaymentScheduleSync({source:"focus",force:true});
+    requestPaymentBankSync({source:"focus"});
+  }
 });
 paymentBuildingListEl.addEventListener("click",e=>{ const tx=e.target.closest("[data-payment-tx-remove]"); if(tx){ removePaymentTransaction(tx.dataset.paymentTxRemove); return; } const b=e.target.closest("[data-payment-building]"); if(b){ paymentBuildingId=b.dataset.paymentBuilding; selectedPaymentScheduleId=""; renderPaymentCalendar(); } });
 paymentMainEl.addEventListener("click",e=>{

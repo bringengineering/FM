@@ -118,6 +118,23 @@ const otherBuilding = rows({
 }, "2026-07", "2026-07-20");
 assert.equal(otherBuilding[0].status, "overdue", "다른 건물 계좌 거래는 매칭하지 않는다");
 
+const popbillReview = rows({
+  schedules: { s1: schedule("s1") },
+  transactions: {
+    tx1: {
+      buildingId: "",
+      date: "2026-07-10",
+      payerName: "홍길동",
+      amount: 500000,
+      direction: "deposit",
+      source: "popbill",
+      matchStatus: "review",
+      reviewScheduleIds: ["s1"]
+    }
+  }
+});
+assert.equal(popbillReview[0].status, "review", "팝빌 거래가 여러 일정에 걸리면 자동 입금완료 대신 확인필요다");
+
 const manual = rows({
   schedules: { s1: schedule("s1") },
   transactions: {},
