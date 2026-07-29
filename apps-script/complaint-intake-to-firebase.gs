@@ -35,7 +35,7 @@ const PAYMENT_SCHEDULE_HEADERS = [
   "상태",
   "비고"
 ];
-const AUTOMATION_BUILD = "complaint-workflow-20260729-v45";
+const AUTOMATION_BUILD = "complaint-workflow-20260729-v46";
 const OWNER_RECOMMENDATION_IMAGE_VERSION = "owner-summary-v4";
 const OWNER_DECISION_VIEW = "owner-decision";
 const OWNER_PAYMENT_ACCOUNT = {
@@ -7796,7 +7796,7 @@ function popbillBankAccountRef_(account, config) {
   ].join(":");
   if (!raw.replace(":", "")) throw new Error("팝빌 등록계좌 식별정보가 올바르지 않습니다.");
   const signature = Utilities.computeHmacSha256Signature(
-    raw,
+    Utilities.newBlob(raw).getBytes(),
     Utilities.base64Decode(resolvedConfig.secretKey)
   );
   return "pb_" + Utilities.base64EncodeWebSafe(signature)

@@ -69,11 +69,14 @@ const context = {
   Number,
   isFinite,
   Utilities: {
+    newBlob(value) {
+      return { getBytes() { return Buffer.from(String(value || ""), "utf8"); } };
+    },
     base64Decode(value) {
       return Buffer.from(String(value || ""), "base64");
     },
     computeHmacSha256Signature(value, key) {
-      return Array.from(crypto.createHmac("sha256", Buffer.from(key)).update(String(value)).digest());
+      return Array.from(crypto.createHmac("sha256", Buffer.from(key)).update(Buffer.from(value)).digest());
     },
     base64EncodeWebSafe(value) {
       return Buffer.from(value).toString("base64url");
