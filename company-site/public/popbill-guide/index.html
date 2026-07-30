@@ -303,7 +303,7 @@
     }
     .guide-grid {
       display: grid;
-      grid-template-columns: minmax(310px, .9fr) minmax(350px, 1.1fr);
+      grid-template-columns: minmax(260px, .58fr) minmax(440px, 1.42fr);
       gap: 16px;
       align-items: stretch;
     }
@@ -400,18 +400,17 @@
       width: 100%;
       height: 100%;
       min-height: 210px;
-      object-fit: cover;
-      object-position: top center;
-      background: var(--white);
-    }
-    .bank-preview.logo-only .preview-image {
-      padding: 68px;
       object-fit: contain;
       object-position: center;
-      background:
-        radial-gradient(circle at 50% 50%, rgba(37,111,189,.11), transparent 38%),
-        var(--white);
-      image-rendering: auto;
+      background: #edf2f8;
+    }
+    .preview-link {
+      display: grid;
+      min-height: 0;
+      overflow: hidden;
+      background: #edf2f8;
+      cursor: zoom-in;
+      text-decoration: none;
     }
     .bank-preview figcaption {
       min-height: 38px;
@@ -637,7 +636,6 @@
       .route-step:nth-child(even)::after { display: none; }
       .bank-preview { min-height: 245px; }
       .preview-image { min-height: 160px; }
-      .bank-preview.logo-only .preview-image { padding: 48px; }
       .info-grid { grid-template-columns: 1fr; }
       .security { align-items: flex-start; flex-direction: column; padding-inline: 18px; }
       .timeline { grid-template-columns: 1fr; }
@@ -704,11 +702,13 @@
 
           <figure class="bank-preview" id="bankPreview">
             <div class="preview-top">
-              <strong id="previewTitle">신한은행 홈페이지 화면</strong>
-              <span>이미지에서 메뉴 위치를 함께 확인하세요</span>
+              <strong id="previewTitle">신한은행 단계별 안내</strong>
+              <span>클릭하면 큰 이미지로 볼 수 있습니다</span>
             </div>
-            <img class="preview-image" id="bankImage" src="/popbill-guide/images/sinhan-site.png" alt="신한은행 홈페이지 화면">
-            <figcaption id="previewCaption">실제 은행 화면은 접속 시점과 개인·기업 로그인 유형에 따라 일부 달라질 수 있습니다.</figcaption>
+            <a class="preview-link" id="bankImageLink" href="/popbill-guide/images/sinhan-guide.png" target="_blank" rel="noopener">
+              <img class="preview-image" id="bankImage" src="/popbill-guide/images/sinhan-guide.png" alt="신한은행 단계별 계좌조회 신청 안내">
+            </a>
+            <figcaption id="previewCaption">PPT에서 정리한 시작 메뉴·이동 경로·팝빌 추가 입력·오류 조치를 한 장에 담았습니다.</figcaption>
           </figure>
         </div>
 
@@ -798,25 +798,25 @@
     ];
 
     const bankImages = {
-      "0002": "kdb-site.png",
-      "0003": "ibk-site.png",
-      "0004": "kb-site.png",
-      "0007": "suhyub-site.png",
-      "0011": "nonghyub-site.png",
-      "0020": "woori-site.png",
-      "0023": "sc-site.png",
-      "0027": "citi-site.png",
-      "0031": "im-site.png",
-      "0032": "busan-site.png",
-      "0034": "kj-site.png",
-      "0035": "jeju.png",
-      "0037": "jeonbuk-site.png",
-      "0039": "gyeongnam-site.png",
-      "0045": "saemaul-site.png",
-      "0048": "sinhyub-site.png",
-      "0071": "epost-site.png",
-      "0081": "hana-site.png",
-      "0088": "sinhan-site.png"
+      "0002": "kdb-guide.png",
+      "0003": "ibk-guide.png",
+      "0004": "kb-guide.png",
+      "0007": "suhyub-guide.png",
+      "0011": "nonghyub-guide.png",
+      "0020": "woori-guide.png",
+      "0023": "sc-guide.png",
+      "0027": "citi-guide.png",
+      "0031": "im-guide.png",
+      "0032": "busan-guide.png",
+      "0034": "kj-guide.png",
+      "0035": "jeju-guide.png",
+      "0037": "jeonbuk-guide.png",
+      "0039": "gyeongnam-guide.png",
+      "0045": "saemaul-guide.png",
+      "0048": "sinhyub-guide.png",
+      "0071": "epost-guide.png",
+      "0081": "hana-guide.png",
+      "0088": "sinhan-guide.png"
     };
 
     const el = (id) => document.getElementById(id);
@@ -867,13 +867,12 @@
       el("bankError").textContent = bank.error;
       el("bankTip").textContent = bank.tip;
       el("selectedSummary").textContent = `현재 선택 · ${bank.name} ${bank.service}`;
-      el("bankImage").src = `/popbill-guide/images/${bankImages[bank.code]}`;
-      el("bankImage").alt = `${bank.name} 홈페이지 화면`;
-      el("previewTitle").textContent = `${bank.name} 홈페이지 화면`;
-      el("bankPreview").classList.toggle("logo-only", bank.code === "0035");
-      el("previewCaption").textContent = bank.code === "0035"
-        ? "제주은행은 공개 홈페이지 자동 캡처가 제한되어 공식 은행 로고와 정확한 메뉴 경로를 함께 제공합니다."
-        : "실제 은행 화면은 접속 시점과 개인·기업 로그인 유형에 따라 일부 달라질 수 있습니다.";
+      const guideImage = `/popbill-guide/images/${bankImages[bank.code]}`;
+      el("bankImage").src = guideImage;
+      el("bankImage").alt = `${bank.name} 단계별 계좌조회 신청 안내`;
+      el("bankImageLink").href = guideImage;
+      el("previewTitle").textContent = `${bank.name} 단계별 안내`;
+      el("previewCaption").textContent = "PPT에서 정리한 시작 메뉴·이동 경로·팝빌 추가 입력·오류 조치를 한 장에 담았습니다.";
       el("bankRoute").innerHTML = steps.map((step, index) => `
         <article class="route-step">
           <span>${String(index + 1).padStart(2, "0")}</span>
