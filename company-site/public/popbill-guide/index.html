@@ -301,6 +301,18 @@
       gap: 19px;
       padding: 24px 28px;
     }
+    .guide-grid {
+      display: grid;
+      grid-template-columns: minmax(310px, .9fr) minmax(350px, 1.1fr);
+      gap: 16px;
+      align-items: stretch;
+    }
+    .route-column {
+      display: grid;
+      align-content: start;
+      gap: 14px;
+      min-width: 0;
+    }
     .section-head {
       display: flex;
       align-items: center;
@@ -316,18 +328,18 @@
     .section-head span { color: var(--muted); font-size: 10px; }
     .route {
       display: grid;
-      grid-template-columns: repeat(var(--route-count, 4), minmax(0, 1fr));
+      grid-template-columns: 1fr 1fr;
       gap: 9px;
     }
     .route-step {
       position: relative;
-      min-height: 102px;
-      padding: 15px 14px;
+      min-height: 78px;
+      padding: 13px;
       border: 1px solid var(--line);
       border-radius: 15px;
       background: #fbfcfe;
     }
-    .route-step:not(:last-child)::after {
+    .route-step:nth-child(odd):not(:last-child)::after {
       position: absolute;
       right: -8px;
       top: 50%;
@@ -354,9 +366,60 @@
     }
     .route-step strong {
       display: block;
-      margin-top: 20px;
+      margin-top: 12px;
       color: var(--navy);
-      font-size: 13px;
+      font-size: 12px;
+      line-height: 1.45;
+    }
+    .bank-preview {
+      display: grid;
+      grid-template-rows: auto 1fr auto;
+      min-width: 0;
+      min-height: 295px;
+      margin: 0;
+      overflow: hidden;
+      border: 1px solid var(--line);
+      border-radius: 17px;
+      background: #eef3f8;
+    }
+    .preview-top {
+      display: flex;
+      min-height: 40px;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      padding: 0 14px;
+      border-bottom: 1px solid var(--line);
+      background: var(--white);
+      color: var(--muted);
+      font-size: 9px;
+    }
+    .preview-top strong { color: var(--navy); font-size: 11px; }
+    .preview-image {
+      display: block;
+      width: 100%;
+      height: 100%;
+      min-height: 210px;
+      object-fit: cover;
+      object-position: top center;
+      background: var(--white);
+    }
+    .bank-preview.logo-only .preview-image {
+      padding: 68px;
+      object-fit: contain;
+      object-position: center;
+      background:
+        radial-gradient(circle at 50% 50%, rgba(37,111,189,.11), transparent 38%),
+        var(--white);
+      image-rendering: auto;
+    }
+    .bank-preview figcaption {
+      min-height: 38px;
+      padding: 10px 14px;
+      border-top: 1px solid var(--line);
+      color: #5b6a7c;
+      background: var(--white);
+      font-size: 9px;
       line-height: 1.45;
     }
     .info-grid {
@@ -535,6 +598,8 @@
         min-height: calc(100vh - 120px);
       }
       .flow-panel { grid-column: 1 / -1; grid-template-columns: .7fr 1.4fr 1fr; grid-template-rows: auto; gap: 24px; }
+      .guide-grid { grid-template-columns: 1fr; }
+      .bank-preview { min-height: 360px; }
       .timeline { grid-template-columns: repeat(4, 1fr); align-content: start; margin: 0; }
       .timeline li { grid-template-columns: 1fr; min-height: 0; }
       .timeline li:not(:last-child)::before { left: 33px; right: 0; top: 16px; bottom: auto; width: auto; height: 1px; }
@@ -567,8 +632,12 @@
       .hero-actions { justify-items: start; }
       .hero-actions small { text-align: left; }
       .detail-body { padding: 22px 18px; }
+      .guide-grid { grid-template-columns: 1fr; }
       .route { grid-template-columns: 1fr 1fr; }
-      .route-step:nth-child(2n)::after { display: none; }
+      .route-step:nth-child(even)::after { display: none; }
+      .bank-preview { min-height: 245px; }
+      .preview-image { min-height: 160px; }
+      .bank-preview.logo-only .preview-image { padding: 48px; }
       .info-grid { grid-template-columns: 1fr; }
       .security { align-items: flex-start; flex-direction: column; padding-inline: 18px; }
       .timeline { grid-template-columns: 1fr; }
@@ -623,11 +692,25 @@
       </div>
 
       <div class="detail-body">
-        <div class="section-head">
-          <h2>은행에서 진행할 경로</h2>
-          <span>화면 명칭은 은행 개편에 따라 조금 달라질 수 있습니다.</span>
+        <div class="guide-grid">
+          <div class="route-column">
+            <div class="section-head">
+              <h2>은행에서 진행할 경로</h2>
+              <span>선택 은행 기준</span>
+            </div>
+            <div class="route" id="bankRoute"></div>
+            <p class="bank-tip"><b>은행별 확인</b><span id="bankTip">간편조회 비밀번호는 6개월마다 변경하고 팝빌 정보도 함께 갱신합니다.</span></p>
+          </div>
+
+          <figure class="bank-preview" id="bankPreview">
+            <div class="preview-top">
+              <strong id="previewTitle">신한은행 홈페이지 화면</strong>
+              <span>이미지에서 메뉴 위치를 함께 확인하세요</span>
+            </div>
+            <img class="preview-image" id="bankImage" src="/popbill-guide/images/sinhan-site.png" alt="신한은행 홈페이지 화면">
+            <figcaption id="previewCaption">실제 은행 화면은 접속 시점과 개인·기업 로그인 유형에 따라 일부 달라질 수 있습니다.</figcaption>
+          </figure>
         </div>
-        <div class="route" id="bankRoute"></div>
 
         <div class="info-grid">
           <article class="info-card prepare">
@@ -641,8 +724,6 @@
             <p id="bankError">접근권한 없음이면 인터넷뱅킹 가입부터 처리하고, 이후 간편조회 계좌를 추가합니다.</p>
           </article>
         </div>
-
-        <p class="bank-tip"><b>은행별 확인</b><span id="bankTip">간편조회 비밀번호는 6개월마다 변경하고 팝빌 정보도 함께 갱신합니다.</span></p>
       </div>
 
       <div class="security">
@@ -716,6 +797,28 @@
       { code:"0088", name:"신한은행", service:"간편조회", url:"https://www.shinhan.com/", path:"간편서비스 → 계좌조회 → 로그인 → 계좌조회 → 간편계좌관리 → 간편계좌조회 추가", extra:"조회전용 ID·PW 추가 필요", type:"required", tip:"간편조회 비밀번호는 6개월마다 변경하고 팝빌 정보도 함께 갱신합니다.", error:"접근권한 없음이면 인터넷뱅킹 가입부터 처리하고, 이후 간편조회 계좌를 추가합니다." }
     ];
 
+    const bankImages = {
+      "0002": "kdb-site.png",
+      "0003": "ibk-site.png",
+      "0004": "kb-site.png",
+      "0007": "suhyub-site.png",
+      "0011": "nonghyub-site.png",
+      "0020": "woori-site.png",
+      "0023": "sc-site.png",
+      "0027": "citi-site.png",
+      "0031": "im-site.png",
+      "0032": "busan-site.png",
+      "0034": "kj-site.png",
+      "0035": "jeju.png",
+      "0037": "jeonbuk-site.png",
+      "0039": "gyeongnam-site.png",
+      "0045": "saemaul-site.png",
+      "0048": "sinhyub-site.png",
+      "0071": "epost-site.png",
+      "0081": "hana-site.png",
+      "0088": "sinhan-site.png"
+    };
+
     const el = (id) => document.getElementById(id);
     const bankList = el("bankList");
     const bankSearch = el("bankSearch");
@@ -764,7 +867,13 @@
       el("bankError").textContent = bank.error;
       el("bankTip").textContent = bank.tip;
       el("selectedSummary").textContent = `현재 선택 · ${bank.name} ${bank.service}`;
-      el("bankRoute").style.setProperty("--route-count", Math.min(steps.length, 4));
+      el("bankImage").src = `/popbill-guide/images/${bankImages[bank.code]}`;
+      el("bankImage").alt = `${bank.name} 홈페이지 화면`;
+      el("previewTitle").textContent = `${bank.name} 홈페이지 화면`;
+      el("bankPreview").classList.toggle("logo-only", bank.code === "0035");
+      el("previewCaption").textContent = bank.code === "0035"
+        ? "제주은행은 공개 홈페이지 자동 캡처가 제한되어 공식 은행 로고와 정확한 메뉴 경로를 함께 제공합니다."
+        : "실제 은행 화면은 접속 시점과 개인·기업 로그인 유형에 따라 일부 달라질 수 있습니다.";
       el("bankRoute").innerHTML = steps.map((step, index) => `
         <article class="route-step">
           <span>${String(index + 1).padStart(2, "0")}</span>
