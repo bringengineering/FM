@@ -216,7 +216,7 @@ assert.equal(paymentReminderContent, [
   "납부금액: 1원",
   "납부일: 2026년 7월 29일",
   "",
-  "이미 납부하셨다면 확인까지 시간이 걸릴 수 있으니 이 알림톡은 무시해 주세요."
+  "입금 여부는 계좌 내역 확인 후 자동 반영됩니다."
 ].join("\n"));
 
 const sendResult = context.sendSensAlimTalk_(
@@ -258,7 +258,7 @@ assert.equal(kakaoOnlyResult.provider, "kakao_alimtalk");
 assert.equal(kakaoOnlyResult.message.includes("template not approved"), true);
 assert.equal(lastSms, null);
 
-assert.match(source, /const AUTOMATION_BUILD = "complaint-workflow-20260730-v50"/);
+assert.match(source, /const AUTOMATION_BUILD = "complaint-workflow-20260730-v51"/);
 assert.match(source, /provider: "kakao_alimtalk"/);
 assert.match(source, /name: "추천 견적 확인"/);
 

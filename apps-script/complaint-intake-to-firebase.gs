@@ -35,7 +35,7 @@ const PAYMENT_SCHEDULE_HEADERS = [
   "상태",
   "비고"
 ];
-const AUTOMATION_BUILD = "complaint-workflow-20260730-v50";
+const AUTOMATION_BUILD = "complaint-workflow-20260730-v51";
 const OWNER_RECOMMENDATION_IMAGE_VERSION = "owner-summary-v4";
 const OWNER_DECISION_VIEW = "owner-decision";
 const PAYMENT_NOTIFICATION_CONFIG_PROPERTY = "PAYMENT_NOTIFICATION_AUTOMATION_CONFIG";
@@ -7564,7 +7564,7 @@ function paymentReminderSmsContent_(schedule, dueDate, reminderType) {
     schedule.unit ? "호실: " + schedule.unit : "",
     amount ? "납부금액: " + Math.round(amount).toLocaleString("ko-KR") + "원" : "",
     "납부일: " + displayDate,
-    "이미 납부하셨다면 확인에 시간이 걸릴 수 있으니 이 문자는 무시해 주세요."
+    "입금 여부는 계좌 내역 확인 후 자동 반영됩니다."
   ].filter(Boolean).join("\n");
 }
 
@@ -7588,7 +7588,7 @@ function paymentReminderAlimTalkContent_(schedule, dueDate, reminderType) {
     "납부금액: " + amount + "원",
     "납부일: " + displayDate,
     "",
-    "이미 납부하셨다면 확인까지 시간이 걸릴 수 있으니 이 알림톡은 무시해 주세요."
+    "입금 여부는 계좌 내역 확인 후 자동 반영됩니다."
   ].join("\n");
 }
 
