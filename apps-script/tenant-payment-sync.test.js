@@ -60,6 +60,7 @@ vm.runInContext([
   extractFunction("paymentScheduleRowValue_"),
   extractFunction("paymentScheduleRecordFromSheetRow_"),
   extractFunction("paymentReminderDueDate_"),
+  extractFunction("paymentTenantInquiryLines_"),
   extractFunction("paymentReminderSmsContent_")
 ].join("\n"), context);
 
@@ -98,6 +99,7 @@ assert.equal(context.paymentReminderDueDate_("2026-02", 31), "2026-02-28", "문�
 const smsContent = context.paymentReminderSmsContent_(parsed.schedule, "2026-07-10", "unpaid");
 assert.match(smsContent, /월세 입금이 아직 확인되지 않아 안내드립니다/);
 assert.match(smsContent, /납부금액: 500,000원/);
+assert.match(smsContent, /문의: 033-748-8919/);
 
 assert.match(source, /payload\.action === "syncPaymentSchedules"/);
 assert.match(source, /paymentCalendars\/" \+ encodeURIComponent\(safeUid\)/, "로그인 사용자 전용 Firebase 경로를 사용한다");

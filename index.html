@@ -5629,7 +5629,8 @@ function paymentReminderDeliveryText(record){
 }
 function paymentReminderSmsPreview(row){
   const s=row.schedule,date=row.dueDate.split("-");
-  return ["[BRING Care 월세 납부 안내]",s.tenantName?`${s.tenantName}님, 안녕하세요.`:"고객님, 안녕하세요.","",row.dueDate===paymentTodayKey()?"오늘은 월세 납부일입니다.":"월세 입금이 아직 확인되지 않아 안내드립니다.",`건물: ${s.buildingName||"등록 건물"}`,`호실: ${s.unit||"등록 호실"}`,`납부금액: ${paymentFormatMoney(s.amount||0)}`,`납부일: ${Number(date[0])}년 ${Number(date[1])}월 ${Number(date[2])}일`].join("\n");
+  const overdue=row.dueDate!==paymentTodayKey();
+  return ["[BRING Care 월세 납부 안내]",s.tenantName?`${s.tenantName}님, 안녕하세요.`:"고객님, 안녕하세요.","",overdue?"월세 입금이 아직 확인되지 않아 안내드립니다.":"오늘은 월세 납부일입니다.",`건물: ${s.buildingName||"등록 건물"}`,`호실: ${s.unit||"등록 호실"}`,`납부금액: ${paymentFormatMoney(s.amount||0)}`,`납부일: ${Number(date[0])}년 ${Number(date[1])}월 ${Number(date[2])}일`,...(overdue?["","월세 납부와 관련한 문의사항은 아래 연락처로 연락해 주세요.","문의: 033-748-8919"]:[])].join("\n");
 }
 function renderPaymentDetail(row){
   if(!row) return `<div class="pv-detail"><div class="pv-detail-title">캘린더의 납부 일정을 선택하면 상세 정보와 수동 보정 버튼이 표시됩니다.</div></div>`;
@@ -5987,8 +5988,9 @@ document.getElementById("noticeBtn").addEventListener("click", openNoticePanel);
 document.getElementById("noticeBanner").addEventListener("click", openNoticePanel);
 
 /* ===== 업데이트 알림(What's New) — 새 버전 나오면 자동 팝업 ===== */
-const APP_VERSION = "5.37";
+const APP_VERSION = "5.38";
 const CHANGELOG = [
+  { v:"5.38", d:"2026-07-30", items:["세입자 미입금 알림에 브링케어 문의 내선 033-748-8919 안내 추가"] },
   { v:"5.37", d:"2026-07-30", items:["건물주 월세 입금 예정 알림의 ‘오늘’을 실제 납부 날짜로 표시"] },
   { v:"5.36", d:"2026-07-30", items:["월세 납부·미입금·건물주 현황 알림에서 불필요한 입금확인 안내 문구 삭제"] },
   { v:"5.35", d:"2026-07-30", items:["팝빌에서 월세 입금이 확정 매칭되면 건물주에게 건물별 입금완료 알림톡 자동 발송","기존 입금 건의 소급 발송을 막고 새로 확인된 거래만 한 번씩 안내"] },

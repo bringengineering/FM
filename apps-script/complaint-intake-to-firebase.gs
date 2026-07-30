@@ -7565,7 +7565,15 @@ function paymentReminderSmsContent_(schedule, dueDate, reminderType) {
     schedule.unit ? "호실: " + schedule.unit : "",
     amount ? "납부금액: " + Math.round(amount).toLocaleString("ko-KR") + "원" : "",
     "납부일: " + displayDate
-  ].filter(Boolean).join("\n");
+  ].filter(Boolean).concat(paymentTenantInquiryLines_(reminderType)).join("\n");
+}
+
+function paymentTenantInquiryLines_(reminderType) {
+  return reminderType === "due" ? [] : [
+    "",
+    "월세 납부와 관련한 문의사항은 아래 연락처로 연락해 주세요.",
+    "문의: 033-748-8919"
+  ];
 }
 
 function paymentReminderAlimTalkContent_(schedule, dueDate, reminderType) {
@@ -7587,7 +7595,7 @@ function paymentReminderAlimTalkContent_(schedule, dueDate, reminderType) {
     "호실: " + unit,
     "납부금액: " + amount + "원",
     "납부일: " + displayDate
-  ].join("\n");
+  ].concat(paymentTenantInquiryLines_(reminderType)).join("\n");
 }
 
 function handlePaymentReminderSms_(payload) {
@@ -7620,8 +7628,11 @@ function handlePaymentReminderSms_(payload) {
   const smsContent = paymentReminderSmsContent_(schedule, dueDate, reminderType);
   const alimTalkContent = paymentReminderAlimTalkContent_(schedule, dueDate, reminderType);
   const kakaoConfig = getKakaoAlimTalkConfig_();
+  const templateCode = reminderType === "due"
+    ? kakaoConfig.templates.paymentReminder
+    : kakaoConfig.templates.paymentReminderOverdue;
   const result = sendKakaoAlimTalkOrSms_(tenantPhone, alimTalkContent, "월세 납부 안내", {
-    templateCode: kakaoConfig.templates.paymentReminder,
+    templateCode: templateCode,
     fallbackContent: smsContent,
     allowSmsFallback: false
   });
@@ -8246,11 +8257,13 @@ function processPaymentNotificationAutomation() {
       confirmedSeenEntries
     );
     const kakaoConfig = getKakaoAlimTalkConfig_();
-    const tenantEvents = plan.tenantDue.concat(plan.tenantOverdue);
     const ownerEventCount = Object.keys(plan.ownerDue).length + Object.keys(plan.ownerOverdue).length;
     const ownerConfirmedEventCount = Object.keys(confirmedPlan.groups).length;
-    const tenantTemplate = tenantEvents.length
+    const tenantDueTemplate = plan.tenantDue.length
       ? kakaoAlimTalkTemplateState_(kakaoConfig.templates.paymentReminder, kakaoConfig)
+      : { ready: false };
+    const tenantOverdueTemplate = plan.tenantOverdue.length
+      ? kakaoAlimTalkTemplateState_(kakaoConfig.templates.paymentReminderOverdue, kakaoConfig)
       : { ready: false };
     const ownerTemplate = ownerEventCount
       ? kakaoAlimTalkTemplateState_(kakaoConfig.templates.paymentOwnerSummary, kakaoConfig)
@@ -8284,6 +8297,7 @@ function processPaymentNotificationAutomation() {
         stats.duplicateSkipped += 1;
         return;
       }
+      const tenantTemplate = reminderType === "due" ? tenantDueTemplate : tenantOverdueTemplate;
       if (!tenantTemplate.ready) {
         stats.templatePendingSkipped += 1;
         return;
@@ -8298,7 +8312,9 @@ function processPaymentNotificationAutomation() {
         paymentReminderAlimTalkContent_(schedule, row.dueDate, reminderType),
         "월세 자동 안내",
         {
-          templateCode: kakaoConfig.templates.paymentReminder,
+          templateCode: reminderType === "due"
+            ? kakaoConfig.templates.paymentReminder
+            : kakaoConfig.templates.paymentReminderOverdue,
           allowSmsFallback: false
         }
       );
@@ -8410,7 +8426,11 @@ function processPaymentNotificationAutomation() {
       scheduleCount: Object.keys(schedules).length,
       linkedBuildingCount: Object.keys(config.bankBindings || {}).length,
       transactionErrorCount: transactionState.errors.length,
-      tenantTemplateReady: tenantTemplate.ready === true,
+      tenantTemplateReady:
+        (!plan.tenantDue.length || tenantDueTemplate.ready === true) &&
+        (!plan.tenantOverdue.length || tenantOverdueTemplate.ready === true),
+      tenantDueTemplateReady: tenantDueTemplate.ready === true,
+      tenantOverdueTemplateReady: tenantOverdueTemplate.ready === true,
       ownerTemplateReady: ownerTemplate.ready === true,
       ownerConfirmedTemplateReady: ownerConfirmedTemplate.ready === true,
       stats: stats,
@@ -9479,6 +9499,7 @@ function getKakaoAlimTalkConfig_() {
       receiptOwner: String(props.getProperty("KAKAO_TEMPLATE_RECEIPT_OWNER") || "BRINGRECEIPTOWNERV1").trim(),
       ownerQuote: String(props.getProperty("KAKAO_TEMPLATE_OWNER_QUOTE") || "BRINGOWNERQUOTEV1").trim(),
       paymentReminder: String(props.getProperty("KAKAO_TEMPLATE_PAYMENT_REMINDER") || "BRINGRENTREMINDERV1").trim(),
+      paymentReminderOverdue: String(props.getProperty("KAKAO_TEMPLATE_PAYMENT_REMINDER_OVERDUE") || "BRINGRENTOVERDUEV1").trim(),
       paymentOwnerSummary: String(props.getProperty("KAKAO_TEMPLATE_PAYMENT_OWNER_SUMMARY") || "BRINGRENTOWNERSUMMARYV1").trim(),
       paymentOwnerConfirmed: String(props.getProperty("KAKAO_TEMPLATE_PAYMENT_OWNER_CONFIRMED") || "BRINGRENTOWNERPAIDV1").trim()
     }

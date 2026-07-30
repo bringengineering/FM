@@ -146,6 +146,7 @@ const functions = [
   "makeComplaintReceiptTenantAlimTalkContent_",
   "makeComplaintReceiptOwnerAlimTalkContent_",
   "makeOwnerRecommendationAlimTalkContent_",
+  "paymentTenantInquiryLines_",
   "paymentReminderAlimTalkContent_",
   "getKakaoAlimTalkConfig_",
   "sendSensAlimTalk_",
@@ -162,6 +163,7 @@ assert.equal(config.templates.receiptTenant, "BRINGRECEIPTTENANTV1");
 assert.equal(config.templates.receiptOwner, "BRINGRECEIPTOWNERV1");
 assert.equal(config.templates.ownerQuote, "BRINGOWNERQUOTEV1");
 assert.equal(config.templates.paymentReminder, "BRINGRENTREMINDERV1");
+assert.equal(config.templates.paymentReminderOverdue, "BRINGRENTOVERDUEV1");
 assert.equal(config.templates.paymentOwnerSummary, "BRINGRENTOWNERSUMMARYV1");
 assert.equal(config.templates.paymentOwnerConfirmed, "BRINGRENTOWNERPAIDV1");
 
@@ -217,6 +219,15 @@ assert.equal(paymentReminderContent, [
   "납부금액: 1원",
   "납부일: 2026년 7월 29일"
 ].join("\n"));
+
+const paymentOverdueContent = context.paymentReminderAlimTalkContent_({
+  tenantName: "테스트세입자",
+  buildingName: "테스트건물",
+  unit: "303호",
+  amount: 1
+}, "2026-07-29", "overdue");
+assert.match(paymentOverdueContent, /월세 납부와 관련한 문의사항은 아래 연락처로 연락해 주세요\./);
+assert.match(paymentOverdueContent, /문의: 033-748-8919$/);
 
 const sendResult = context.sendSensAlimTalk_(
   "010-9999-8888",

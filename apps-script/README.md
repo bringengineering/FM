@@ -43,6 +43,7 @@
    - `KAKAO_TEMPLATE_RECEIPT_OWNER`: `BRINGRECEIPTOWNERV1`
    - `KAKAO_TEMPLATE_OWNER_QUOTE`: `BRINGOWNERQUOTEV1`
    - `KAKAO_TEMPLATE_PAYMENT_REMINDER`: `BRINGRENTREMINDERV1`
+   - `KAKAO_TEMPLATE_PAYMENT_REMINDER_OVERDUE`: `BRINGRENTOVERDUEV1`
    - `KAKAO_TEMPLATE_PAYMENT_OWNER_SUMMARY`: `BRINGRENTOWNERSUMMARYV1`
    - `KAKAO_SMS_FAILOVER_ENABLED`: NCP 채널의 SMS 대체 발송 설정까지 완료한 뒤 `true`, 그전에는 `false`
    - 카카오 챗봇 민원 접수는 `setupKakaoComplaintIntake`를 한 번 실행해 스킬 토큰과 1분 대기열 트리거를 만든 뒤 설정합니다.
@@ -166,6 +167,7 @@ NCP Secret Key는 GitHub나 HTML 화면에 절대 넣지 않습니다. Apps Scri
    - `BRINGRECEIPTOWNERV1`
    - `BRINGOWNERQUOTEV1`
    - `BRINGRENTREMINDERV1`
+   - `BRINGRENTOVERDUEV1`
    - `BRINGRENTOWNERSUMMARYV1`
    - `BRINGRENTOWNERPAIDV1`
 2. Apps Script의 스크립트 속성에 설치 순서 8의 카카오 설정값을 추가합니다.
@@ -186,6 +188,22 @@ NCP Secret Key는 GitHub나 HTML 화면에 절대 넣지 않습니다. Apps Scri
 호실: #{호실}
 납부금액: #{납부금액}원
 납부일: #{납부일}
+```
+
+세입자 미입금 안내용 `BRINGRENTOVERDUEV1` 템플릿은 아래 내용 그대로 등록하고 검수를 요청합니다.
+
+```text
+[BRING Care 월세 납부 안내]
+#{세입자명}님, 안녕하세요.
+
+#{안내문구}
+건물: #{건물명}
+호실: #{호실}
+납부금액: #{납부금액}원
+납부일: #{납부일}
+
+월세 납부와 관련한 문의사항은 아래 연락처로 연락해 주세요.
+문의: 033-748-8919
 ```
 
 건물주 월세 입금 현황용 `BRINGRENTOWNERSUMMARYV1` 템플릿은 아래 내용 그대로 등록하고 검수를 요청합니다.

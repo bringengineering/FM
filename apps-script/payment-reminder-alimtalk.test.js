@@ -96,7 +96,12 @@ const context = {
     return "[BRING Care] SMS fallback";
   },
   getKakaoAlimTalkConfig_() {
-    return { templates: { paymentReminder: "BRINGRENTREMINDERV1" } };
+    return {
+      templates: {
+        paymentReminder: "BRINGRENTREMINDERV1",
+        paymentReminderOverdue: "BRINGRENTOVERDUEV1"
+      }
+    };
   },
   sendKakaoAlimTalkOrSms_(to, content, label, options) {
     sent = { to, content, label, options };
@@ -119,7 +124,11 @@ const context = {
 
 vm.createContext(context);
 vm.runInContext(
-  [extractFunction("paymentReminderAlimTalkContent_"), extractFunction("handlePaymentReminderSms_")].join("\n\n"),
+  [
+    extractFunction("paymentTenantInquiryLines_"),
+    extractFunction("paymentReminderAlimTalkContent_"),
+    extractFunction("handlePaymentReminderSms_")
+  ].join("\n\n"),
   context,
   { filename: sourcePath }
 );
@@ -151,5 +160,20 @@ assert.equal(stored.method, "put");
 assert.equal(stored.record.phoneMasked, "010-****-3077");
 assert.equal(JSON.stringify(stored.record).includes("01055553077"), false);
 assert.equal(JSON.stringify(stored.record).includes("redacted-token"), false);
+
+context.paymentReminderDueDate_ = () => "2026-07-28";
+const overdueResult = context.handlePaymentReminderSms_({
+  uid: "admin-uid",
+  idToken: "redacted-token",
+  adminEmail: "admin@example.com",
+  scheduleId: "s_303_1",
+  month: "2026-07",
+  status: "overdue",
+  force: true
+});
+assert.equal(sent.options.templateCode, "BRINGRENTOVERDUEV1");
+assert.match(sent.content, /월세 납부와 관련한 문의사항은 아래 연락처로 연락해 주세요\./);
+assert.match(sent.content, /문의: 033-748-8919$/);
+assert.equal(overdueResult.templateCode, "BRINGRENTOVERDUEV1");
 
 console.log("PASS payment reminder Kakao AlimTalk routing and safe delivery record");
