@@ -328,98 +328,69 @@
     .section-head span { color: var(--muted); font-size: 10px; }
     .route {
       display: grid;
-      grid-template-columns: 1fr 1fr;
-      gap: 9px;
+      grid-template-columns: 1fr;
+      gap: 10px;
     }
-    .route-step {
-      position: relative;
-      min-height: 78px;
-      padding: 13px;
+    .route-audience {
+      min-height: 94px;
+      padding: 14px 15px;
       border: 1px solid var(--line);
       border-radius: 15px;
       background: #fbfcfe;
     }
-    .route-step:nth-child(odd):not(:last-child)::after {
-      position: absolute;
-      right: -8px;
-      top: 50%;
-      z-index: 2;
-      display: grid;
-      width: 17px;
-      height: 17px;
-      place-items: center;
-      border: 1px solid var(--line);
-      border-radius: 50%;
-      color: var(--blue);
-      background: var(--white);
-      font-size: 9px;
-      font-weight: 900;
-      content: "›";
-      transform: translateY(-50%);
+    .route-audience-head {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
     }
-    .route-step span {
-      display: block;
+    .route-audience-head strong {
       color: var(--blue);
-      font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
-      font-size: 9px;
-      font-weight: 900;
-    }
-    .route-step strong {
-      display: block;
-      margin-top: 12px;
-      color: var(--navy);
       font-size: 12px;
-      line-height: 1.45;
+      font-weight: 900;
+    }
+    .route-audience-head small {
+      color: var(--muted);
+      font-size: 9px;
+      font-weight: 750;
+    }
+    .route-audience p {
+      margin: 11px 0 0;
+      color: var(--navy);
+      font-size: 11px;
+      font-weight: 780;
+      line-height: 1.6;
+      word-break: keep-all;
+    }
+    .route-audience.personal {
+      background: #f5f9ff;
     }
     .bank-preview {
-      display: grid;
-      grid-template-rows: auto 1fr auto;
+      display: block;
       min-width: 0;
-      min-height: 295px;
+      min-height: 0;
       margin: 0;
       overflow: hidden;
       border: 1px solid var(--line);
       border-radius: 17px;
-      background: #eef3f8;
-    }
-    .preview-top {
-      display: flex;
-      min-height: 40px;
-      align-items: center;
-      justify-content: space-between;
-      gap: 12px;
-      padding: 0 14px;
-      border-bottom: 1px solid var(--line);
       background: var(--white);
-      color: var(--muted);
-      font-size: 9px;
     }
-    .preview-top strong { color: var(--navy); font-size: 11px; }
     .preview-image {
       display: block;
       width: 100%;
-      height: 100%;
-      min-height: 210px;
-      object-fit: contain;
+      height: auto;
+      aspect-ratio: 16 / 9;
+      object-fit: cover;
       object-position: center;
-      background: #edf2f8;
+      background: var(--white);
     }
     .preview-link {
-      display: grid;
+      display: block;
       min-height: 0;
       overflow: hidden;
-      background: #edf2f8;
+      background: var(--white);
       cursor: zoom-in;
       text-decoration: none;
-    }
-    .bank-preview figcaption {
-      min-height: 38px;
-      padding: 10px 14px;
-      border-top: 1px solid var(--line);
-      color: #5b6a7c;
-      background: var(--white);
-      font-size: 9px;
-      line-height: 1.45;
     }
     .info-grid {
       display: grid;
@@ -632,10 +603,8 @@
       .hero-actions small { text-align: left; }
       .detail-body { padding: 22px 18px; }
       .guide-grid { grid-template-columns: 1fr; }
-      .route { grid-template-columns: 1fr 1fr; }
-      .route-step:nth-child(even)::after { display: none; }
-      .bank-preview { min-height: 245px; }
-      .preview-image { min-height: 160px; }
+      .route { grid-template-columns: 1fr; }
+      .bank-preview { min-height: 0; }
       .info-grid { grid-template-columns: 1fr; }
       .security { align-items: flex-start; flex-direction: column; padding-inline: 18px; }
       .timeline { grid-template-columns: 1fr; }
@@ -694,21 +663,16 @@
           <div class="route-column">
             <div class="section-head">
               <h2>은행에서 진행할 경로</h2>
-              <span>선택 은행 기준</span>
+              <span>기업·개인 구분</span>
             </div>
             <div class="route" id="bankRoute"></div>
             <p class="bank-tip"><b>은행별 확인</b><span id="bankTip">간편조회 비밀번호는 6개월마다 변경하고 팝빌 정보도 함께 갱신합니다.</span></p>
           </div>
 
           <figure class="bank-preview" id="bankPreview">
-            <div class="preview-top">
-              <strong id="previewTitle">신한은행 단계별 안내</strong>
-              <span>클릭하면 큰 이미지로 볼 수 있습니다</span>
-            </div>
-            <a class="preview-link" id="bankImageLink" href="/popbill-guide/images/sinhan-guide.png" target="_blank" rel="noopener">
-              <img class="preview-image" id="bankImage" src="/popbill-guide/images/sinhan-guide.png" alt="신한은행 단계별 계좌조회 신청 안내">
+            <a class="preview-link" id="bankImageLink" href="/popbill-guide/images/sinhan-site.png" target="_blank" rel="noopener" aria-label="신한은행 홈페이지 화면 크게 보기">
+              <img class="preview-image" id="bankImage" src="/popbill-guide/images/sinhan-site.png" alt="신한은행 홈페이지 화면">
             </a>
-            <figcaption id="previewCaption">PPT에서 정리한 시작 메뉴·이동 경로·팝빌 추가 입력·오류 조치를 한 장에 담았습니다.</figcaption>
           </figure>
         </div>
 
@@ -798,25 +762,25 @@
     ];
 
     const bankImages = {
-      "0002": "kdb-guide.png",
-      "0003": "ibk-guide.png",
-      "0004": "kb-guide.png",
-      "0007": "suhyub-guide.png",
-      "0011": "nonghyub-guide.png",
-      "0020": "woori-guide.png",
-      "0023": "sc-guide.png",
-      "0027": "citi-guide.png",
-      "0031": "im-guide.png",
-      "0032": "busan-guide.png",
-      "0034": "kj-guide.png",
-      "0035": "jeju-guide.png",
-      "0037": "jeonbuk-guide.png",
-      "0039": "gyeongnam-guide.png",
-      "0045": "saemaul-guide.png",
-      "0048": "sinhyub-guide.png",
-      "0071": "epost-guide.png",
-      "0081": "hana-guide.png",
-      "0088": "sinhan-guide.png"
+      "0002": "kdb-site.png",
+      "0003": "ibk-site.png",
+      "0004": "kb-site.png",
+      "0007": "suhyub-site.png",
+      "0011": "nonghyub-site.png",
+      "0020": "woori-site.png",
+      "0023": "sc-site.png",
+      "0027": "citi-site.png",
+      "0031": "im-site.png",
+      "0032": "busan-site.png",
+      "0034": "kj-site.png",
+      "0035": "jeju-site.png",
+      "0037": "jeonbuk-site.png",
+      "0039": "gyeongnam-site.png",
+      "0045": "saemaul-site.png",
+      "0048": "sinhyub-site.png",
+      "0071": "epost-site.png",
+      "0081": "hana-site.png",
+      "0088": "sinhan-site.png"
     };
 
     const el = (id) => document.getElementById(id);
@@ -843,18 +807,36 @@
       };
     }
 
-    function routeParts(path) {
-      return path
-        .split(/\n|→/)
-        .map((part) => part.trim())
-        .filter(Boolean)
-        .slice(0, 6);
+    function routeGroups(path) {
+      const business = [];
+      const personal = [];
+      const shared = [];
+
+      path.split(/\n/).map((line) => line.trim()).filter(Boolean).forEach((line) => {
+        if (/^(기업|법인)\s*:/.test(line)) {
+          business.push(line.replace(/^(기업|법인)\s*:\s*/, ""));
+        } else if (/^개인\s*:/.test(line)) {
+          personal.push(line.replace(/^개인\s*:\s*/, ""));
+        } else {
+          shared.push(line);
+        }
+      });
+
+      const sharedPath = shared.join(" → ");
+      const businessPath = [...business, ...(business.length ? shared : [])].join(" → ") || sharedPath;
+      const personalPath = [...personal, ...(personal.length ? shared : [])].join(" → ") || sharedPath;
+
+      return {
+        business: businessPath || "은행 홈페이지에서 기업뱅킹 메뉴를 확인해 주세요.",
+        personal: personalPath || "은행 홈페이지에서 개인뱅킹 메뉴를 확인해 주세요.",
+        common: businessPath === personalPath
+      };
     }
 
     function renderDetail(bank) {
       selectedCode = bank.code;
       const prepared = prepareText(bank);
-      const steps = routeParts(bank.path);
+      const routes = routeGroups(bank.path);
 
       el("bankCode").textContent = bank.code;
       el("bankService").textContent = bank.service;
@@ -869,16 +851,25 @@
       el("selectedSummary").textContent = `현재 선택 · ${bank.name} ${bank.service}`;
       const guideImage = `/popbill-guide/images/${bankImages[bank.code]}`;
       el("bankImage").src = guideImage;
-      el("bankImage").alt = `${bank.name} 단계별 계좌조회 신청 안내`;
+      el("bankImage").alt = `${bank.name} 홈페이지 화면`;
       el("bankImageLink").href = guideImage;
-      el("previewTitle").textContent = `${bank.name} 단계별 안내`;
-      el("previewCaption").textContent = "PPT에서 정리한 시작 메뉴·이동 경로·팝빌 추가 입력·오류 조치를 한 장에 담았습니다.";
-      el("bankRoute").innerHTML = steps.map((step, index) => `
-        <article class="route-step">
-          <span>${String(index + 1).padStart(2, "0")}</span>
-          <strong>${step}</strong>
+      el("bankImageLink").setAttribute("aria-label", `${bank.name} 홈페이지 화면 크게 보기`);
+      el("bankRoute").innerHTML = `
+        <article class="route-audience business">
+          <div class="route-audience-head">
+            <strong>기업뱅킹</strong>
+            <small>${routes.common ? "공통 경로" : "기업·법인 계좌"}</small>
+          </div>
+          <p>${routes.business}</p>
         </article>
-      `).join("");
+        <article class="route-audience personal">
+          <div class="route-audience-head">
+            <strong>개인뱅킹</strong>
+            <small>${routes.common ? "공통 경로" : "개인 계좌"}</small>
+          </div>
+          <p>${routes.personal}</p>
+        </article>
+      `;
 
       document.querySelectorAll(".bank-button").forEach((button) => {
         button.setAttribute("aria-current", String(button.dataset.code === bank.code));
