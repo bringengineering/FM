@@ -45,6 +45,8 @@
    - `KAKAO_TEMPLATE_PAYMENT_REMINDER`: `BRINGRENTREMINDERV1`
    - `KAKAO_TEMPLATE_PAYMENT_REMINDER_OVERDUE`: `BRINGRENTOVERDUEV1`
    - `KAKAO_TEMPLATE_PAYMENT_OWNER_SUMMARY`: `BRINGRENTOWNERSUMMARYV1`
+   - `KAKAO_TEMPLATE_PAYMENT_OWNER_GROUP`: `BRINGRENTOWNERGROUPV1`
+   - `KAKAO_TEMPLATE_PAYMENT_OWNER_CONFIRMED_GROUP`: `BRINGRENTOWNERPAIDGROUPV1`
    - `KAKAO_SMS_FAILOVER_ENABLED`: NCP 채널의 SMS 대체 발송 설정까지 완료한 뒤 `true`, 그전에는 `false`
    - 카카오 챗봇 민원 접수는 `setupKakaoComplaintIntake`를 한 번 실행해 스킬 토큰과 1분 대기열 트리거를 만든 뒤 설정합니다.
    - `KAKAO_CHATBOT_INTAKE_ENABLED`: 챗봇 연결 전 `false`, 봇 테스트 완료 후 `true`
@@ -170,6 +172,8 @@ NCP Secret Key는 GitHub나 HTML 화면에 절대 넣지 않습니다. Apps Scri
    - `BRINGRENTOVERDUEV1`
    - `BRINGRENTOWNERSUMMARYV1`
    - `BRINGRENTOWNERPAIDV1`
+   - `BRINGRENTOWNERGROUPV1`
+   - `BRINGRENTOWNERPAIDGROUPV1`
 2. Apps Script의 스크립트 속성에 설치 순서 8의 카카오 설정값을 추가합니다.
 3. 최초 테스트에서는 `KAKAO_SMS_FAILOVER_ENABLED=false`, `KAKAO_ALIMTALK_ENABLED=true`로 설정합니다.
 4. 함수 선택에서 `testKakaoAlimTalkSetup`을 실행합니다.
@@ -206,29 +210,27 @@ NCP Secret Key는 GitHub나 HTML 화면에 절대 넣지 않습니다. Apps Scri
 문의: 033-748-8919
 ```
 
-건물주 월세 입금 현황용 `BRINGRENTOWNERSUMMARYV1` 템플릿은 아래 내용 그대로 등록하고 검수를 요청합니다.
+건물주 다건물 월세 입금 현황용 `BRINGRENTOWNERGROUPV1` 템플릿은 아래 내용 그대로 등록하고 검수를 요청합니다.
 
 ```text
 [BRING Care 월세 입금 안내]
 #{건물주명}님, 안녕하세요.
 
 #{안내문구}
-건물: #{건물명}
-#{납부현황}
+#{건물별현황}
 ```
 
-건물주 월세 입금완료용 `BRINGRENTOWNERPAIDV1` 템플릿은 아래 내용 그대로 등록하고 검수를 요청합니다.
+건물주 다건물 월세 입금완료용 `BRINGRENTOWNERPAIDGROUPV1` 템플릿은 아래 내용 그대로 등록하고 검수를 요청합니다.
 
 ```text
 [BRING Care 월세 입금 완료 안내]
 #{건물주명}님, 안녕하세요.
 
 월세 입금이 확인되었습니다.
-건물: #{건물명}
-#{입금내역}
+#{건물별입금내역}
 ```
 
-`setupPaymentNotificationAutomation()`을 한 번 실행하면 매시간 자동 확인 트리거가 설치됩니다. 입금확인 캘린더에서 팝빌 계좌 동기화가 한 번 실행되면 현재 로그인 관리자와 건물별 익명 계좌 연결 정보가 Script Properties에 안전하게 등록됩니다. 납부일 오전 9시 이후에는 아직 입금되지 않은 세입자에게 개별 안내, 건물주에게 건물별 예정 요약을 한 번 발송합니다. 팝빌 거래가 입금자명·금액·납부기간으로 유일하게 확정 매칭되면 새로 확인된 입금만 건물별로 묶어 건물주에게 입금완료 알림을 한 번 발송합니다. 기능을 처음 실행하거나 새 계좌를 연결했을 때는 기존 30일 거래를 기준 상태로만 저장해 과거 입금 알림이 한꺼번에 발송되지 않습니다. 납부일 다음 날 13시 이후까지 입금이 확인되지 않으면 세입자와 건물주에게 미입금 안내를 각각 한 번 발송합니다. 팝빌 거래 조회가 완료되지 않았거나 계좌가 연결되지 않은 건물은 잘못된 알림 방지를 위해 자동 발송하지 않으며, SMS 대체 발송도 사용하지 않습니다. 건물주 자동 알림은 온보딩 DOCX에 `건물주 연락처: 010-0000-0000`처럼 명시된 번호에만 발송하며, 문서 안의 다른 전화번호를 임의로 사용하지 않습니다.
+`setupPaymentNotificationAutomation()`을 한 번 실행하면 매시간 자동 확인 트리거가 설치됩니다. 입금확인 캘린더에서 팝빌 계좌 동기화가 한 번 실행되면 현재 로그인 관리자와 건물별 익명 계좌 연결 정보가 Script Properties에 안전하게 등록됩니다. 납부일 오전 9시 이후에는 아직 입금되지 않은 세입자에게 개별 안내를 보내고, 건물주는 온보딩에 등록된 같은 전화번호를 기준으로 모든 관리 건물의 예정 내역을 한 건으로 묶어 발송합니다. 팝빌 거래가 입금자명·금액·납부기간으로 유일하게 확정 매칭되면 새로 확인된 입금도 같은 건물주 전화번호 기준으로 여러 건물을 통합해 한 번 발송합니다. 기능을 처음 실행하거나 새 계좌를 연결했을 때는 기존 30일 거래를 기준 상태로만 저장해 과거 입금 알림이 한꺼번에 발송되지 않습니다. 납부일 다음 날 13시 이후까지 입금이 확인되지 않으면 세입자에게 개별 미입금 안내를 보내고, 건물주에게는 모든 관리 건물의 미입금 내역을 한 건으로 묶어 발송합니다. 팝빌 거래 조회가 완료되지 않았거나 계좌가 연결되지 않은 건물은 잘못된 알림 방지를 위해 자동 발송하지 않으며, SMS 대체 발송도 사용하지 않습니다. 건물주 자동 알림은 온보딩 DOCX에 `건물주 연락처: 010-0000-0000`처럼 명시된 번호에만 발송하며, 문서 안의 다른 전화번호를 임의로 사용하지 않습니다.
 
 ## 카카오 챗봇 민원 접수 테스트
 

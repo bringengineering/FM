@@ -65,6 +65,12 @@ const context = {
     const text = String(value == null ? "" : value).replace(/\s+/g, " ").trim();
     return (text || String(fallback || "미입력")).slice(0, 200);
   },
+  normalizePhoneForSms_(value) {
+    return String(value || "").replace(/\D/g, "");
+  },
+  isSendableSmsPhone_(value) {
+    return /^01\d{8,9}$/.test(String(value || ""));
+  },
   popbillBankScheduleActiveInMonth_(schedule, monthKey) {
     if (!schedule || schedule.active === false) return false;
     if (schedule.startMonth && monthKey < schedule.startMonth) return false;
@@ -85,9 +91,12 @@ const context = {
   "paymentNotificationPlan_",
   "paymentNotificationConfirmedEventId_",
   "paymentNotificationConfirmedGroups_",
+  "paymentOwnerPhoneGroups_",
   "paymentOwnerSummaryDetail_",
+  "paymentOwnerSummaryBuildingsDetail_",
   "paymentOwnerSummaryAlimTalkContent_",
   "paymentOwnerConfirmedDetail_",
+  "paymentOwnerConfirmedBuildingsDetail_",
   "paymentOwnerConfirmedAlimTalkContent_",
   "kakaoAlimTalkTemplateState_"
 ].forEach(name => {
@@ -195,22 +204,49 @@ const beforePlan = context.paymentNotificationPlan_(schedules, bindings, transac
 assert.equal(beforePlan.tenantDue.length, 1, "납부일 안내는 오전 9시 이후 대상이다");
 assert.equal(beforePlan.tenantOverdue.length, 0, "다음 날 미입금 안내는 13시 전에는 보내지 않는다");
 
+const secondOverdueRows = [{
+  schedule: {
+    id: "overdueTwo",
+    buildingId: "buildingD",
+    buildingName: "행복빌라",
+    unit: "201호",
+    tenantName: "이영희",
+    amount: 600000
+  },
+  dueDate: "2026-07-29"
+}];
+const ownerContacts = {
+  buildingA: { ownerName: "김건물", buildingName: "햇빛빌라", phone: "010-9999-8888" },
+  buildingD: { ownerName: "김건물", buildingName: "행복빌라", phone: "01099998888" }
+};
+const ownerOverdueGroups = context.paymentOwnerPhoneGroups_({
+  buildingA: plan.ownerOverdue.buildingA,
+  buildingD: secondOverdueRows
+}, ownerContacts);
+assert.equal(ownerOverdueGroups.length, 1);
+assert.equal(ownerOverdueGroups[0].buildings.length, 2);
+assert.equal(ownerOverdueGroups[0].phone, "01099998888");
 const ownerContent = context.paymentOwnerSummaryAlimTalkContent_(
-  "김건물",
-  "햇빛빌라",
-  plan.ownerOverdue.buildingA,
+  ownerOverdueGroups[0].ownerName,
+  ownerOverdueGroups[0].buildings,
   "overdue"
 );
 assert.match(ownerContent, /^\[BRING Care 월세 입금 안내\]/);
 assert.match(ownerContent, /다음 날 13시까지 입금이 확인되지 않은 내역/);
 assert.match(ownerContent, /303호 홍길동 500,000원/);
+assert.match(ownerContent, /건물: 행복빌라/);
+assert.match(ownerContent, /201호 이영희 600,000원/);
+assert.match(ownerContent, /전체 미입금 2건 \/ 총 1,100,000원/);
 assert.doesNotMatch(ownerContent, /입금확인 캘린더/);
 assert.ok(ownerContent.length < 1000);
 
 const ownerDueContent = context.paymentOwnerSummaryAlimTalkContent_(
   "김건물",
-  "햇빛빌라",
-  plan.ownerDue.buildingA,
+  [{
+    buildingId: "buildingA",
+    buildingName: "햇빛빌라",
+    rows: plan.ownerDue.buildingA
+  }],
   "due"
 );
 assert.match(ownerDueContent, /2026년 7월 30일 입금 예정 내역을 안내드립니다\./);
@@ -244,19 +280,41 @@ const duplicateConfirmedPlan = context.paymentNotificationConfirmedGroups_(
 assert.equal(Object.keys(duplicateConfirmedPlan.groups).length, 0);
 assert.equal(duplicateConfirmedPlan.duplicateSkipped, 1);
 
+const secondConfirmedRows = [{
+  schedule: {
+    id: "paidTwo",
+    buildingId: "buildingD",
+    buildingName: "행복빌라",
+    unit: "201호",
+    tenantName: "이영희"
+  },
+  payment: {
+    id: "payment_two",
+    date: "2026-07-30",
+    payerName: "이영희",
+    amount: 600000
+  },
+  eventId: "owner_confirmed_payment_two"
+}];
+const ownerConfirmedGroups = context.paymentOwnerPhoneGroups_({
+  buildingA: confirmedPlan.groups.buildingA,
+  buildingD: secondConfirmedRows
+}, ownerContacts);
+assert.equal(ownerConfirmedGroups.length, 1);
 const ownerConfirmedContent = context.paymentOwnerConfirmedAlimTalkContent_(
-  "김건물",
-  "테스트빌라",
-  confirmedPlan.groups.buildingA
+  ownerConfirmedGroups[0].ownerName,
+  ownerConfirmedGroups[0].buildings
 );
 assert.match(ownerConfirmedContent, /^\[BRING Care 월세 입금 완료 안내\]/);
 assert.match(ownerConfirmedContent, /월세 입금이 확인되었습니다\./);
-assert.match(ownerConfirmedContent, /입금완료 1건 \/ 총 450,000원/);
+assert.match(ownerConfirmedContent, /건물: 햇빛빌라/);
+assert.match(ownerConfirmedContent, /건물: 행복빌라/);
+assert.match(ownerConfirmedContent, /전체 입금완료 2건 \/ 총 1,050,000원/);
 assert.match(ownerConfirmedContent, /테스트입금자/);
 assert.doesNotMatch(ownerConfirmedContent, /입금확인 캘린더/);
 assert.match(source, /PAYMENT_NOTIFICATION_CONFIRMED_BASELINE_PROPERTY/);
 assert.match(source, /newConfirmedBaselineRefs/);
-assert.match(source, /templateCode: kakaoConfig\.templates\.paymentOwnerConfirmed/);
+assert.match(source, /templateCode: kakaoConfig\.templates\.paymentOwnerConfirmedGroup/);
 assert.match(source, /paymentOwnerConfirmed[\s\S]*?allowSmsFallback: false/);
 
 context.getKakaoAlimTalkConfig_ = () => ({

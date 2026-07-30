@@ -8031,8 +8031,92 @@ function paymentOwnerSummaryDetail_(rows, reminderType) {
   return detail;
 }
 
-function paymentOwnerSummaryAlimTalkContent_(ownerName, buildingName, rows, reminderType) {
-  const dueDate = String(rows && rows[0] && rows[0].dueDate || "");
+function paymentOwnerPhoneGroups_(buildingRows, ownerContacts) {
+  const grouped = {};
+  Object.keys(buildingRows || {}).sort().forEach(buildingId => {
+    const rows = Array.isArray(buildingRows[buildingId]) ? buildingRows[buildingId] : [];
+    if (!rows.length) return;
+    const contact = ownerContacts && ownerContacts[buildingId] || {};
+    const schedule = rows[0] && rows[0].schedule || {};
+    const normalizedPhone = normalizePhoneForSms_(contact.phone || "");
+    const sendable = isSendableSmsPhone_(normalizedPhone);
+    const key = sendable ? normalizedPhone : "missing_" + buildingId;
+    if (!grouped[key]) {
+      grouped[key] = {
+        key: key,
+        phone: sendable ? normalizedPhone : "",
+        ownerName: contact.ownerName || schedule.ownerName || "건물주",
+        buildings: []
+      };
+    }
+    grouped[key].buildings.push({
+      buildingId: String(buildingId),
+      buildingName: contact.buildingName || schedule.buildingName || "등록 건물",
+      rows: rows
+    });
+  });
+  return Object.keys(grouped).sort().map(key => {
+    grouped[key].buildings.sort((left, right) =>
+      String(left.buildingName || "").localeCompare(String(right.buildingName || ""), "ko")
+    );
+    return grouped[key];
+  });
+}
+
+function paymentOwnerSummaryBuildingsDetail_(buildings, reminderType) {
+  const groups = Array.isArray(buildings) ? buildings : [];
+  const label = reminderType === "overdue" ? "미입금" : "예정";
+  const allRows = groups.reduce((rows, building) =>
+    rows.concat(Array.isArray(building && building.rows) ? building.rows : []), []);
+  const totalAmount = allRows.reduce((sum, row) =>
+    sum + (Number(row.schedule && row.schedule.amount) || 0), 0);
+  const overall = "전체 " + label + " " + allRows.length + "건 / 총 " +
+    Math.round(totalAmount).toLocaleString("ko-KR") + "원";
+  const lines = [];
+  let omitted = 0;
+  groups.forEach(building => {
+    const rows = (building.rows || []).slice().sort((left, right) =>
+      String(left.schedule && left.schedule.unit || "")
+        .localeCompare(String(right.schedule && right.schedule.unit || ""), "ko")
+    );
+    const buildingTotal = rows.reduce((sum, row) =>
+      sum + (Number(row.schedule && row.schedule.amount) || 0), 0);
+    const sectionHeader = [
+      "건물: " + safeAlimTalkVariable_(building.buildingName || "등록 건물", "등록 건물"),
+      label + " " + rows.length + "건 / 총 " +
+        Math.round(buildingTotal).toLocaleString("ko-KR") + "원"
+    ];
+    const separator = lines.length ? [""] : [];
+    const headerCandidate = lines.concat(separator, sectionHeader, groups.length > 1 ? ["", overall] : [])
+      .join("\n");
+    if (headerCandidate.length > 720) {
+      omitted += rows.length;
+      return;
+    }
+    lines.push.apply(lines, separator.concat(sectionHeader));
+    rows.forEach(row => {
+      const schedule = row.schedule || {};
+      const item = "· " + [
+        safeAlimTalkVariable_(schedule.unit || "호실 미입력", "호실 미입력"),
+        safeAlimTalkVariable_(schedule.tenantName || "세입자 미입력", "세입자 미입력"),
+        Math.round(Number(schedule.amount) || 0).toLocaleString("ko-KR") + "원"
+      ].join(" ");
+      const candidate = lines.concat([item], groups.length > 1 ? ["", overall] : []).join("\n");
+      if (candidate.length > 720) {
+        omitted += 1;
+        return;
+      }
+      lines.push(item);
+    });
+  });
+  if (omitted) lines.push("· 세부내역 외 " + omitted + "건");
+  if (groups.length > 1) lines.push("", overall);
+  return lines.join("\n");
+}
+
+function paymentOwnerSummaryAlimTalkContent_(ownerName, buildings, reminderType) {
+  const firstRows = buildings && buildings[0] && buildings[0].rows || [];
+  const dueDate = String(firstRows[0] && firstRows[0].dueDate || "");
   const dateParts = dueDate.split("-");
   const displayDate = dateParts.length === 3 && dateParts.every(part => /^\d+$/.test(part))
     ? Number(dateParts[0]) + "년 " + Number(dateParts[1]) + "월 " + Number(dateParts[2]) + "일"
@@ -8045,8 +8129,7 @@ function paymentOwnerSummaryAlimTalkContent_(ownerName, buildingName, rows, remi
     safeAlimTalkVariable_(ownerName || "건물주", "건물주") + "님, 안녕하세요.",
     "",
     notice,
-    "건물: " + safeAlimTalkVariable_(buildingName || "등록 건물", "등록 건물"),
-    paymentOwnerSummaryDetail_(rows, reminderType)
+    paymentOwnerSummaryBuildingsDetail_(buildings, reminderType)
   ].join("\n");
 }
 
@@ -8087,14 +8170,75 @@ function paymentOwnerConfirmedDetail_(rows) {
   return detail;
 }
 
-function paymentOwnerConfirmedAlimTalkContent_(ownerName, buildingName, rows) {
+function paymentOwnerConfirmedBuildingsDetail_(buildings) {
+  const groups = Array.isArray(buildings) ? buildings : [];
+  const allRows = groups.reduce((rows, building) =>
+    rows.concat(Array.isArray(building && building.rows) ? building.rows : []), []);
+  const totalAmount = allRows.reduce((sum, row) =>
+    sum + (Number(row.payment && row.payment.amount) || 0), 0);
+  const overall = "전체 입금완료 " + allRows.length + "건 / 총 " +
+    Math.round(totalAmount).toLocaleString("ko-KR") + "원";
+  const lines = [];
+  let omitted = 0;
+  groups.forEach(building => {
+    const rows = (building.rows || []).slice().sort((left, right) => {
+      const leftDate = String(left.payment && left.payment.date || "");
+      const rightDate = String(right.payment && right.payment.date || "");
+      if (leftDate !== rightDate) return leftDate.localeCompare(rightDate);
+      return String(left.schedule && left.schedule.unit || "")
+        .localeCompare(String(right.schedule && right.schedule.unit || ""), "ko");
+    });
+    const buildingTotal = rows.reduce((sum, row) =>
+      sum + (Number(row.payment && row.payment.amount) || 0), 0);
+    const sectionHeader = [
+      "건물: " + safeAlimTalkVariable_(building.buildingName || "등록 건물", "등록 건물"),
+      "입금완료 " + rows.length + "건 / 총 " +
+        Math.round(buildingTotal).toLocaleString("ko-KR") + "원"
+    ];
+    const separator = lines.length ? [""] : [];
+    const headerCandidate = lines.concat(separator, sectionHeader, groups.length > 1 ? ["", overall] : [])
+      .join("\n");
+    if (headerCandidate.length > 720) {
+      omitted += rows.length;
+      return;
+    }
+    lines.push.apply(lines, separator.concat(sectionHeader));
+    rows.forEach(row => {
+      const schedule = row.schedule || {};
+      const payment = row.payment || {};
+      const dateParts = String(payment.date || "").split("-");
+      const dateText = dateParts.length === 3
+        ? Number(dateParts[1]) + "월 " + Number(dateParts[2]) + "일"
+        : "입금일 미확인";
+      const payerText = payment.payerName
+        ? "(입금자 " + safeAlimTalkVariable_(payment.payerName, "미확인") + ")"
+        : "";
+      const item = "· " + [
+        safeAlimTalkVariable_(schedule.unit || "호실 미입력", "호실 미입력"),
+        safeAlimTalkVariable_(schedule.tenantName || "세입자 미입력", "세입자 미입력") + payerText,
+        Math.round(Number(payment.amount) || 0).toLocaleString("ko-KR") + "원",
+        dateText
+      ].join(" ");
+      const candidate = lines.concat([item], groups.length > 1 ? ["", overall] : []).join("\n");
+      if (candidate.length > 720) {
+        omitted += 1;
+        return;
+      }
+      lines.push(item);
+    });
+  });
+  if (omitted) lines.push("· 세부내역 외 " + omitted + "건");
+  if (groups.length > 1) lines.push("", overall);
+  return lines.join("\n");
+}
+
+function paymentOwnerConfirmedAlimTalkContent_(ownerName, buildings) {
   return [
     "[BRING Care 월세 입금 완료 안내]",
     safeAlimTalkVariable_(ownerName || "건물주", "건물주") + "님, 안녕하세요.",
     "",
     "월세 입금이 확인되었습니다.",
-    "건물: " + safeAlimTalkVariable_(buildingName || "등록 건물", "등록 건물"),
-    paymentOwnerConfirmedDetail_(rows)
+    paymentOwnerConfirmedBuildingsDetail_(buildings)
   ].join("\n");
 }
 
@@ -8257,8 +8401,18 @@ function processPaymentNotificationAutomation() {
       confirmedSeenEntries
     );
     const kakaoConfig = getKakaoAlimTalkConfig_();
-    const ownerEventCount = Object.keys(plan.ownerDue).length + Object.keys(plan.ownerOverdue).length;
-    const ownerConfirmedEventCount = Object.keys(confirmedPlan.groups).length;
+    const ownerBuildingEventCount =
+      Object.keys(plan.ownerDue).length +
+      Object.keys(plan.ownerOverdue).length +
+      Object.keys(confirmedPlan.groups).length;
+    const ownerContacts = ownerBuildingEventCount
+      ? paymentNotificationOwnerContacts_()
+      : {};
+    const ownerDueGroups = paymentOwnerPhoneGroups_(plan.ownerDue, ownerContacts);
+    const ownerOverdueGroups = paymentOwnerPhoneGroups_(plan.ownerOverdue, ownerContacts);
+    const ownerConfirmedGroups = paymentOwnerPhoneGroups_(confirmedPlan.groups, ownerContacts);
+    const ownerEventCount = ownerDueGroups.length + ownerOverdueGroups.length;
+    const ownerConfirmedEventCount = ownerConfirmedGroups.length;
     const tenantDueTemplate = plan.tenantDue.length
       ? kakaoAlimTalkTemplateState_(kakaoConfig.templates.paymentReminder, kakaoConfig)
       : { ready: false };
@@ -8266,14 +8420,11 @@ function processPaymentNotificationAutomation() {
       ? kakaoAlimTalkTemplateState_(kakaoConfig.templates.paymentReminderOverdue, kakaoConfig)
       : { ready: false };
     const ownerTemplate = ownerEventCount
-      ? kakaoAlimTalkTemplateState_(kakaoConfig.templates.paymentOwnerSummary, kakaoConfig)
+      ? kakaoAlimTalkTemplateState_(kakaoConfig.templates.paymentOwnerGroup, kakaoConfig)
       : { ready: false };
     const ownerConfirmedTemplate = ownerConfirmedEventCount
-      ? kakaoAlimTalkTemplateState_(kakaoConfig.templates.paymentOwnerConfirmed, kakaoConfig)
+      ? kakaoAlimTalkTemplateState_(kakaoConfig.templates.paymentOwnerConfirmedGroup, kakaoConfig)
       : { ready: false };
-    const ownerContacts = ownerEventCount || ownerConfirmedEventCount
-      ? paymentNotificationOwnerContacts_()
-      : {};
     const ledger = paymentNotificationLedger_(plan.today);
     const stats = {
       tenantDueSent: 0,
@@ -8328,8 +8479,17 @@ function processPaymentNotificationAutomation() {
       else stats.tenantOverdueSent += 1;
     }
 
-    function sendOwner(buildingId, rows, reminderType) {
-      const eventId = ["owner", reminderType, buildingId, rows[0] && rows[0].dueDate || ""].join("_");
+    function sendOwner(group, reminderType) {
+      const buildings = group && group.buildings || [];
+      const rows = buildings.reduce((all, building) => all.concat(building.rows || []), []);
+      const buildingIds = buildings.map(building => building.buildingId).sort().join("-");
+      const eventId = [
+        "owner",
+        reminderType,
+        group && group.key || "unknown",
+        rows[0] && rows[0].dueDate || "",
+        buildingIds
+      ].join("_");
       if (ledger.entries[eventId]) {
         stats.duplicateSkipped += 1;
         return;
@@ -8338,23 +8498,20 @@ function processPaymentNotificationAutomation() {
         stats.templatePendingSkipped += 1;
         return;
       }
-      const contact = ownerContacts[buildingId] || {};
-      if (!isSendableSmsPhone_(contact.phone || "")) {
-        stats.missingPhoneSkipped += 1;
+      if (!isSendableSmsPhone_(group && group.phone || "")) {
+        stats.missingPhoneSkipped += buildings.length || 1;
         return;
       }
-      const schedule = rows[0] && rows[0].schedule || {};
       const result = sendKakaoAlimTalkOrSms_(
-        contact.phone,
+        group.phone,
         paymentOwnerSummaryAlimTalkContent_(
-          contact.ownerName || schedule.ownerName || "건물주",
-          contact.buildingName || schedule.buildingName || "등록 건물",
-          rows,
+          group.ownerName || "건물주",
+          buildings,
           reminderType
         ),
         "건물주 월세 입금 현황",
         {
-          templateCode: kakaoConfig.templates.paymentOwnerSummary,
+          templateCode: kakaoConfig.templates.paymentOwnerGroup,
           allowSmsFallback: false
         }
       );
@@ -8368,27 +8525,26 @@ function processPaymentNotificationAutomation() {
       else stats.ownerOverdueSent += 1;
     }
 
-    function sendOwnerConfirmed(buildingId, rows) {
+    function sendOwnerConfirmed(group) {
+      const buildings = group && group.buildings || [];
+      const rows = buildings.reduce((all, building) => all.concat(building.rows || []), []);
       if (!ownerConfirmedTemplate.ready) {
         stats.templatePendingSkipped += rows.length;
         return;
       }
-      const contact = ownerContacts[buildingId] || {};
-      if (!isSendableSmsPhone_(contact.phone || "")) {
+      if (!isSendableSmsPhone_(group && group.phone || "")) {
         stats.missingPhoneSkipped += rows.length;
         return;
       }
-      const schedule = rows[0] && rows[0].schedule || {};
       const result = sendKakaoAlimTalkOrSms_(
-        contact.phone,
+        group.phone,
         paymentOwnerConfirmedAlimTalkContent_(
-          contact.ownerName || schedule.ownerName || "건물주",
-          contact.buildingName || schedule.buildingName || "등록 건물",
-          rows
+          group.ownerName || "건물주",
+          buildings
         ),
         "건물주 월세 입금 완료",
         {
-          templateCode: kakaoConfig.templates.paymentOwnerConfirmed,
+          templateCode: kakaoConfig.templates.paymentOwnerConfirmedGroup,
           allowSmsFallback: false
         }
       );
@@ -8409,15 +8565,9 @@ function processPaymentNotificationAutomation() {
 
     plan.tenantDue.forEach(row => sendTenant(row, "due"));
     plan.tenantOverdue.forEach(row => sendTenant(row, "overdue"));
-    Object.keys(plan.ownerDue).forEach(buildingId =>
-      sendOwner(buildingId, plan.ownerDue[buildingId], "due")
-    );
-    Object.keys(plan.ownerOverdue).forEach(buildingId =>
-      sendOwner(buildingId, plan.ownerOverdue[buildingId], "overdue")
-    );
-    Object.keys(confirmedPlan.groups).forEach(buildingId =>
-      sendOwnerConfirmed(buildingId, confirmedPlan.groups[buildingId])
-    );
+    ownerDueGroups.forEach(group => sendOwner(group, "due"));
+    ownerOverdueGroups.forEach(group => sendOwner(group, "overdue"));
+    ownerConfirmedGroups.forEach(group => sendOwnerConfirmed(group));
     cleanupPaymentNotificationLedgers_(plan.today);
     const output = {
       ok: stats.sendFailed === 0,
@@ -9501,7 +9651,9 @@ function getKakaoAlimTalkConfig_() {
       paymentReminder: String(props.getProperty("KAKAO_TEMPLATE_PAYMENT_REMINDER") || "BRINGRENTREMINDERV1").trim(),
       paymentReminderOverdue: String(props.getProperty("KAKAO_TEMPLATE_PAYMENT_REMINDER_OVERDUE") || "BRINGRENTOVERDUEV1").trim(),
       paymentOwnerSummary: String(props.getProperty("KAKAO_TEMPLATE_PAYMENT_OWNER_SUMMARY") || "BRINGRENTOWNERSUMMARYV1").trim(),
-      paymentOwnerConfirmed: String(props.getProperty("KAKAO_TEMPLATE_PAYMENT_OWNER_CONFIRMED") || "BRINGRENTOWNERPAIDV1").trim()
+      paymentOwnerConfirmed: String(props.getProperty("KAKAO_TEMPLATE_PAYMENT_OWNER_CONFIRMED") || "BRINGRENTOWNERPAIDV1").trim(),
+      paymentOwnerGroup: String(props.getProperty("KAKAO_TEMPLATE_PAYMENT_OWNER_GROUP") || "BRINGRENTOWNERGROUPV1").trim(),
+      paymentOwnerConfirmedGroup: String(props.getProperty("KAKAO_TEMPLATE_PAYMENT_OWNER_CONFIRMED_GROUP") || "BRINGRENTOWNERPAIDGROUPV1").trim()
     }
   };
   config.enabled = Boolean(

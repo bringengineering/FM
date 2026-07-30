@@ -166,6 +166,8 @@ assert.equal(config.templates.paymentReminder, "BRINGRENTREMINDERV1");
 assert.equal(config.templates.paymentReminderOverdue, "BRINGRENTOVERDUEV1");
 assert.equal(config.templates.paymentOwnerSummary, "BRINGRENTOWNERSUMMARYV1");
 assert.equal(config.templates.paymentOwnerConfirmed, "BRINGRENTOWNERPAIDV1");
+assert.equal(config.templates.paymentOwnerGroup, "BRINGRENTOWNERGROUPV1");
+assert.equal(config.templates.paymentOwnerConfirmedGroup, "BRINGRENTOWNERPAIDGROUPV1");
 
 const tenantContent = context.makeComplaintReceiptTenantAlimTalkContent_("BR-2026-0001", {
   이름: "홍길동",
