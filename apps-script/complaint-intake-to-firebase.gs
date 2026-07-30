@@ -35,9 +35,13 @@ const PAYMENT_SCHEDULE_HEADERS = [
   "상태",
   "비고"
 ];
-const AUTOMATION_BUILD = "complaint-workflow-20260729-v49";
+const AUTOMATION_BUILD = "complaint-workflow-20260730-v50";
 const OWNER_RECOMMENDATION_IMAGE_VERSION = "owner-summary-v4";
 const OWNER_DECISION_VIEW = "owner-decision";
+const PAYMENT_NOTIFICATION_CONFIG_PROPERTY = "PAYMENT_NOTIFICATION_AUTOMATION_CONFIG";
+const PAYMENT_NOTIFICATION_LEDGER_PREFIX = "PAYMENT_NOTIFICATION_LEDGER_";
+const PAYMENT_DUE_ALERT_HOUR = 9;
+const PAYMENT_OVERDUE_ALERT_HOUR = 13;
 const OWNER_PAYMENT_ACCOUNT = {
   accountNumber: "123-456-789012",
   accountHolder: "브링케어"
@@ -94,6 +98,7 @@ function setupComplaintAutomation() {
   syncPaymentBuildingsFromOnboarding_();
   setupPaymentScheduleSheet_();
   ensurePaymentScheduleEditTrigger_();
+  ensurePaymentNotificationTrigger_();
   processExistingResponses();
 }
 
@@ -7140,6 +7145,36 @@ function setupPaymentScheduleAutoSync() {
   return output;
 }
 
+function ensurePaymentNotificationTrigger_() {
+  const handler = "processPaymentNotificationAutomation";
+  const exists = ScriptApp.getProjectTriggers().some(trigger =>
+    trigger.getHandlerFunction() === handler
+  );
+  if (!exists) {
+    ScriptApp.newTrigger(handler)
+      .timeBased()
+      .everyHours(1)
+      .create();
+  }
+  return { handler: handler, created: !exists, cadence: "hourly" };
+}
+
+function setupPaymentNotificationAutomation() {
+  const trigger = ensurePaymentNotificationTrigger_();
+  const configured = !!PropertiesService.getScriptProperties()
+    .getProperty(PAYMENT_NOTIFICATION_CONFIG_PROPERTY);
+  const output = {
+    ok: true,
+    configured: configured,
+    dueAlertAfter: String(PAYMENT_DUE_ALERT_HOUR).padStart(2, "0") + ":00",
+    overdueAlertAfter: String(PAYMENT_OVERDUE_ALERT_HOUR).padStart(2, "0") + ":00",
+    trigger: trigger,
+    build: AUTOMATION_BUILD
+  };
+  Logger.log(JSON.stringify(output));
+  return output;
+}
+
 function onPaymentScheduleSheetEdit(e) {
   const range = e && e.range;
   if (!range) return;
@@ -7668,6 +7703,480 @@ function handlePaymentReminderDeliveryStatus_(payload) {
   return safeResult;
 }
 
+function paymentNotificationSafeBindings_(bankBindings) {
+  const safe = {};
+  Object.keys(bankBindings || {}).forEach(buildingId => {
+    const binding = bankBindings[buildingId] || {};
+    const id = String(buildingId || "").trim();
+    const accountRef = String(binding.accountRef || "").trim();
+    if (!/^[A-Za-z0-9_-]{6,160}$/.test(id)) return;
+    if (!/^pb_[A-Za-z0-9_-]{12,40}$/.test(accountRef)) return;
+    safe[id] = {
+      buildingId: id,
+      buildingName: String(binding.buildingName || "").slice(0, 120),
+      ownerName: String(binding.ownerName || "").slice(0, 80),
+      accountRef: accountRef,
+      bankCode: String(binding.bankCode || "").slice(0, 12),
+      accountLast4: String(binding.accountLast4 || "").replace(/\D/g, "").slice(-4)
+    };
+  });
+  return safe;
+}
+
+function rememberPaymentNotificationAutomation_(payload, bankBindings) {
+  const uid = String(payload && payload.uid || "").trim();
+  if (!/^[A-Za-z0-9:_-]{6,160}$/.test(uid)) {
+    throw new Error("입금 알림 자동화 사용자 ID가 올바르지 않습니다.");
+  }
+  const safeBindings = paymentNotificationSafeBindings_(bankBindings);
+  const config = {
+    uid: uid,
+    adminEmail: String(payload && payload.adminEmail || "").trim().slice(0, 160),
+    bankBindings: safeBindings,
+    updatedAt: new Date().toISOString(),
+    build: AUTOMATION_BUILD
+  };
+  PropertiesService.getScriptProperties().setProperty(
+    PAYMENT_NOTIFICATION_CONFIG_PROPERTY,
+    JSON.stringify(config)
+  );
+  ensurePaymentNotificationTrigger_();
+  return {
+    configured: Object.keys(safeBindings).length > 0,
+    linkedBuildingCount: Object.keys(safeBindings).length
+  };
+}
+
+function paymentNotificationConfig_() {
+  const raw = PropertiesService.getScriptProperties()
+    .getProperty(PAYMENT_NOTIFICATION_CONFIG_PROPERTY);
+  if (!raw) return null;
+  try {
+    const config = JSON.parse(raw);
+    if (!config || !/^[A-Za-z0-9:_-]{6,160}$/.test(String(config.uid || ""))) return null;
+    config.bankBindings = paymentNotificationSafeBindings_(config.bankBindings);
+    return config;
+  } catch (error) {
+    return null;
+  }
+}
+
+function paymentNotificationDateKey_(date, offsetDays) {
+  const base = new Date((date || new Date()).getTime() + Number(offsetDays || 0) * 86400000);
+  return Utilities.formatDate(base, "Asia/Seoul", "yyyy-MM-dd");
+}
+
+function paymentNotificationHour_(date) {
+  return Number(Utilities.formatDate(date || new Date(), "Asia/Seoul", "H"));
+}
+
+function paymentNotificationSheetSchedules_(now) {
+  const sheet = SpreadsheetApp.openById(paymentScheduleSpreadsheetId_())
+    .getSheetByName(PAYMENT_SCHEDULE_SHEET_NAME);
+  if (!sheet) throw new Error("세입자 월세 관리대장 탭을 찾지 못했습니다.");
+  const lastRow = sheet.getLastRow();
+  if (lastRow < 2) return {};
+  const lastColumn = Math.max(sheet.getLastColumn(), PAYMENT_SCHEDULE_HEADERS.length);
+  const values = sheet.getRange(1, 1, lastRow, lastColumn).getValues();
+  const headerMap = paymentScheduleHeaderMap_(values[0] || []);
+  const missingHeaders = PAYMENT_SCHEDULE_HEADERS.filter(header => headerMap[header] === undefined);
+  if (missingHeaders.length) throw new Error("관리대장 필수 열이 없습니다: " + missingHeaders.join(", "));
+
+  const buildings = paymentBuildingRegistryRecords_();
+  const byName = {};
+  buildings.forEach(building => {
+    const key = normalizeText_(building.name);
+    byName[key] = byName[key] || [];
+    byName[key].push(building);
+  });
+  const currentMonth = Utilities.formatDate(now || new Date(), "Asia/Seoul", "yyyy-MM");
+  const schedules = {};
+  for (let index = 1; index < values.length; index += 1) {
+    const row = values[index];
+    const rowNumber = index + 1;
+    const hasContent = row.slice(1, PAYMENT_SCHEDULE_HEADERS.length)
+      .some(value => paymentScheduleSheetText_(value));
+    if (!hasContent) continue;
+    const id = paymentScheduleSheetText_(paymentScheduleRowValue_(row, headerMap, "관리번호"));
+    if (!id) continue;
+    const parsed = paymentScheduleRecordFromSheetRow_(
+      row,
+      headerMap,
+      byName,
+      currentMonth,
+      id,
+      rowNumber,
+      new Date().toISOString()
+    );
+    if (parsed.problems.length || !parsed.schedule || parsed.schedule.active === false) continue;
+    schedules[id] = parsed.schedule;
+  }
+  return schedules;
+}
+
+function paymentNotificationTransactionState_(schedules, bankBindings, now) {
+  const bindings = paymentNotificationSafeBindings_(bankBindings);
+  const allAccounts = popbillApiRequest_("get", "/EasyFin/Bank/ListBankAccount");
+  const activeAccounts = (Array.isArray(allAccounts) ? allAccounts : [])
+    .filter(account => Number(account && account.state) === 1);
+  const requiredRefs = {};
+  Object.keys(bindings).forEach(buildingId => {
+    requiredRefs[String(bindings[buildingId].accountRef || "")] = true;
+  });
+
+  const endDate = popbillBankCompactDate_(now || new Date());
+  const startDate = popbillBankAddDays_(endDate, -POPBILL_BANK_SYNC_DAYS);
+  const paidScheduleIds = {};
+  const availableAccountRefs = {};
+  const errors = [];
+  activeAccounts.forEach(account => {
+    const accountRef = popbillBankAccountRef_(account);
+    if (!requiredRefs[accountRef]) return;
+    const accountSchedules = popbillBankSchedulesForAccount_(schedules, bindings, accountRef);
+    try {
+      const collected = popbillBankCollectAccount_(account, startDate, endDate);
+      if (collected.pending) return;
+      availableAccountRefs[accountRef] = true;
+      (collected.list || []).forEach(transaction => {
+        const match = popbillBankResolveTransactionMatch_(transaction, accountSchedules);
+        if (match.matchStatus === "matched" && match.matchedScheduleId) {
+          paidScheduleIds[match.matchedScheduleId] = true;
+        }
+      });
+    } catch (error) {
+      errors.push({
+        accountRef: accountRef,
+        message: popbillBankSafeError_(error)
+      });
+    }
+  });
+  return {
+    paidScheduleIds: paidScheduleIds,
+    availableAccountRefs: availableAccountRefs,
+    errors: errors
+  };
+}
+
+function paymentNotificationPlan_(schedules, bankBindings, transactionState, now) {
+  const bindings = paymentNotificationSafeBindings_(bankBindings);
+  const state = transactionState || {};
+  const paid = state.paidScheduleIds || {};
+  const available = state.availableAccountRefs || {};
+  const current = now || new Date();
+  const today = paymentNotificationDateKey_(current, 0);
+  const yesterday = paymentNotificationDateKey_(current, -1);
+  const hour = paymentNotificationHour_(current);
+  const plan = {
+    today: today,
+    tenantDue: [],
+    ownerDue: {},
+    tenantOverdue: [],
+    ownerOverdue: {},
+    skippedUnlinked: 0,
+    skippedUnavailable: 0
+  };
+
+  Object.keys(schedules || {}).forEach(id => {
+    const schedule = Object.assign({ id: id }, schedules[id] || {});
+    const binding = bindings[String(schedule.buildingId || "")] || {};
+    const accountRef = String(binding.accountRef || "");
+    if (!accountRef) {
+      plan.skippedUnlinked += 1;
+      return;
+    }
+    if (!available[accountRef]) {
+      plan.skippedUnavailable += 1;
+      return;
+    }
+    if (paid[id]) return;
+
+    const monthKeys = Array.from(new Set([today.slice(0, 7), yesterday.slice(0, 7)]));
+    monthKeys.forEach(monthKey => {
+      if (!popbillBankScheduleActiveInMonth_(schedule, monthKey)) return;
+      const dueDate = paymentReminderDueDate_(monthKey, schedule.dueDay);
+      if (hour >= PAYMENT_DUE_ALERT_HOUR && dueDate === today) {
+        plan.tenantDue.push({ schedule: schedule, dueDate: dueDate });
+        plan.ownerDue[schedule.buildingId] = plan.ownerDue[schedule.buildingId] || [];
+        plan.ownerDue[schedule.buildingId].push({ schedule: schedule, dueDate: dueDate });
+      }
+      if (hour >= PAYMENT_OVERDUE_ALERT_HOUR && dueDate === yesterday) {
+        plan.tenantOverdue.push({ schedule: schedule, dueDate: dueDate });
+        plan.ownerOverdue[schedule.buildingId] = plan.ownerOverdue[schedule.buildingId] || [];
+        plan.ownerOverdue[schedule.buildingId].push({ schedule: schedule, dueDate: dueDate });
+      }
+    });
+  });
+  return plan;
+}
+
+function paymentNotificationOwnerContacts_() {
+  const result = listDriveOnboardingCandidates_();
+  if (!result.ok) throw new Error(result.error || "온보딩 건물주 연락처를 읽지 못했습니다.");
+  const contacts = {};
+  result.candidates.forEach(candidate => {
+    const id = candidate && candidate.file && candidate.file.getId();
+    if (!id) return;
+    const text = String(candidate.text || "");
+    const labelMatch = text.match(/건물주\s*(?:연락처|전화번호|휴대폰|번호)\s*[:：]?\s*((?:\+?82[-.\s]?)?0?\d{1,2}[-.\s]?\d{3,4}[-.\s]?\d{4})/);
+    const phone = normalizePhoneForSms_(labelMatch ? labelMatch[1] : "");
+    contacts[id] = {
+      ownerName: String(candidate.ownerName || "").trim(),
+      buildingName: String(candidate.building || "").trim(),
+      phone: isSendableSmsPhone_(phone) ? phone : ""
+    };
+  });
+  return contacts;
+}
+
+function paymentOwnerSummaryDetail_(rows, reminderType) {
+  const items = (rows || []).slice().sort((left, right) =>
+    String(left.schedule && left.schedule.unit || "")
+      .localeCompare(String(right.schedule && right.schedule.unit || ""), "ko")
+  );
+  const total = items.reduce((sum, row) => sum + (Number(row.schedule && row.schedule.amount) || 0), 0);
+  const label = reminderType === "overdue" ? "미입금" : "예정";
+  let detail = label + " " + items.length + "건 / 총 " +
+    Math.round(total).toLocaleString("ko-KR") + "원";
+  let included = 0;
+  items.forEach(row => {
+    const schedule = row.schedule || {};
+    const item = [
+      safeAlimTalkVariable_(schedule.unit || "호실 미입력", "호실 미입력"),
+      safeAlimTalkVariable_(schedule.tenantName || "세입자 미입력", "세입자 미입력"),
+      Math.round(Number(schedule.amount) || 0).toLocaleString("ko-KR") + "원"
+    ].join(" ");
+    if ((detail + " · " + item).length > 520) return;
+    detail += " · " + item;
+    included += 1;
+  });
+  if (included < items.length) detail += " · 외 " + (items.length - included) + "건";
+  return detail;
+}
+
+function paymentOwnerSummaryAlimTalkContent_(ownerName, buildingName, rows, reminderType) {
+  const notice = reminderType === "overdue"
+    ? "납부일 다음 날 13시까지 입금이 확인되지 않은 내역입니다."
+    : "오늘 입금 예정 내역을 안내드립니다.";
+  return [
+    "[BRING Care 월세 입금 안내]",
+    safeAlimTalkVariable_(ownerName || "건물주", "건물주") + "님, 안녕하세요.",
+    "",
+    notice,
+    "건물: " + safeAlimTalkVariable_(buildingName || "등록 건물", "등록 건물"),
+    paymentOwnerSummaryDetail_(rows, reminderType),
+    "",
+    "입금확인 캘린더에서 자세한 내역을 확인해 주세요."
+  ].join("\n");
+}
+
+function kakaoAlimTalkTemplateState_(templateCode, config) {
+  const resolved = config || getKakaoAlimTalkConfig_();
+  if (!resolved.enabled) {
+    return { ready: false, templateCode: templateCode, message: "카카오 알림톡 설정 필요" };
+  }
+  const uri = "/alimtalk/v2/services/" + encodeURIComponent(resolved.serviceId) +
+    "/templates?channelId=" + encodeURIComponent(resolved.plusFriendId) +
+    "&templateCode=" + encodeURIComponent(String(templateCode || ""));
+  const response = sensGetJson_(uri, resolved);
+  if (!response.ok) {
+    return { ready: false, templateCode: templateCode, message: response.message || "템플릿 조회 실패" };
+  }
+  const list = Array.isArray(response.json)
+    ? response.json
+    : (response.json && Array.isArray(response.json.templates) ? response.json.templates : []);
+  const template = list.find(item => String(item && item.templateCode || "") === String(templateCode || ""));
+  return {
+    ready: !!template &&
+      String(template.templateInspectionStatus || "") === "COMPLETE" &&
+      String(template.templateStatus || "") === "ACTIVE",
+    templateCode: String(templateCode || ""),
+    inspectionStatus: String(template && template.templateInspectionStatus || ""),
+    templateStatus: String(template && template.templateStatus || "")
+  };
+}
+
+function paymentNotificationLedger_(dateKey) {
+  const propertyKey = PAYMENT_NOTIFICATION_LEDGER_PREFIX + String(dateKey || "").replace(/\D/g, "");
+  const props = PropertiesService.getScriptProperties();
+  let entries = {};
+  try {
+    entries = JSON.parse(props.getProperty(propertyKey) || "{}") || {};
+  } catch (error) {
+    entries = {};
+  }
+  return {
+    propertyKey: propertyKey,
+    entries: entries,
+    save: function() {
+      props.setProperty(propertyKey, JSON.stringify(entries));
+    }
+  };
+}
+
+function cleanupPaymentNotificationLedgers_(todayKey) {
+  const cutoff = paymentNotificationDateKey_(new Date(todayKey + "T12:00:00+09:00"), -62)
+    .replace(/\D/g, "");
+  const props = PropertiesService.getScriptProperties();
+  Object.keys(props.getProperties()).forEach(key => {
+    if (key.indexOf(PAYMENT_NOTIFICATION_LEDGER_PREFIX) !== 0) return;
+    const datePart = key.slice(PAYMENT_NOTIFICATION_LEDGER_PREFIX.length);
+    if (/^\d{8}$/.test(datePart) && datePart < cutoff) props.deleteProperty(key);
+  });
+}
+
+function processPaymentNotificationAutomation() {
+  const config = paymentNotificationConfig_();
+  const now = new Date();
+  if (!config) return { ok: true, configured: false, build: AUTOMATION_BUILD };
+  if (paymentNotificationHour_(now) < PAYMENT_DUE_ALERT_HOUR) {
+    return { ok: true, configured: true, skipped: "before_notification_window", build: AUTOMATION_BUILD };
+  }
+
+  const lock = LockService.getScriptLock();
+  if (!lock.tryLock(3000)) {
+    return { ok: true, configured: true, skipped: "already_running", build: AUTOMATION_BUILD };
+  }
+  try {
+    const schedules = paymentNotificationSheetSchedules_(now);
+    if (!Object.keys(schedules).length) {
+      return { ok: true, configured: true, scheduleCount: 0, build: AUTOMATION_BUILD };
+    }
+    const transactionState = paymentNotificationTransactionState_(
+      schedules,
+      config.bankBindings,
+      now
+    );
+    const plan = paymentNotificationPlan_(
+      schedules,
+      config.bankBindings,
+      transactionState,
+      now
+    );
+    const kakaoConfig = getKakaoAlimTalkConfig_();
+    const tenantEvents = plan.tenantDue.concat(plan.tenantOverdue);
+    const ownerEventCount = Object.keys(plan.ownerDue).length + Object.keys(plan.ownerOverdue).length;
+    const tenantTemplate = tenantEvents.length
+      ? kakaoAlimTalkTemplateState_(kakaoConfig.templates.paymentReminder, kakaoConfig)
+      : { ready: false };
+    const ownerTemplate = ownerEventCount
+      ? kakaoAlimTalkTemplateState_(kakaoConfig.templates.paymentOwnerSummary, kakaoConfig)
+      : { ready: false };
+    const ownerContacts = ownerEventCount ? paymentNotificationOwnerContacts_() : {};
+    const ledger = paymentNotificationLedger_(plan.today);
+    const stats = {
+      tenantDueSent: 0,
+      tenantOverdueSent: 0,
+      ownerDueSent: 0,
+      ownerOverdueSent: 0,
+      duplicateSkipped: 0,
+      missingPhoneSkipped: 0,
+      templatePendingSkipped: 0,
+      sendFailed: 0
+    };
+
+    function sendTenant(row, reminderType) {
+      const schedule = row.schedule || {};
+      const eventId = ["tenant", reminderType, schedule.id, row.dueDate].join("_");
+      if (ledger.entries[eventId]) {
+        stats.duplicateSkipped += 1;
+        return;
+      }
+      if (!tenantTemplate.ready) {
+        stats.templatePendingSkipped += 1;
+        return;
+      }
+      const phone = normalizePhoneForSms_(schedule.tenantPhone || "");
+      if (!isSendableSmsPhone_(phone)) {
+        stats.missingPhoneSkipped += 1;
+        return;
+      }
+      const result = sendKakaoAlimTalkOrSms_(
+        phone,
+        paymentReminderAlimTalkContent_(schedule, row.dueDate, reminderType),
+        "월세 자동 안내",
+        {
+          templateCode: kakaoConfig.templates.paymentReminder,
+          allowSmsFallback: false
+        }
+      );
+      if (!result.ok) {
+        stats.sendFailed += 1;
+        return;
+      }
+      ledger.entries[eventId] = true;
+      ledger.save();
+      if (reminderType === "due") stats.tenantDueSent += 1;
+      else stats.tenantOverdueSent += 1;
+    }
+
+    function sendOwner(buildingId, rows, reminderType) {
+      const eventId = ["owner", reminderType, buildingId, rows[0] && rows[0].dueDate || ""].join("_");
+      if (ledger.entries[eventId]) {
+        stats.duplicateSkipped += 1;
+        return;
+      }
+      if (!ownerTemplate.ready) {
+        stats.templatePendingSkipped += 1;
+        return;
+      }
+      const contact = ownerContacts[buildingId] || {};
+      if (!isSendableSmsPhone_(contact.phone || "")) {
+        stats.missingPhoneSkipped += 1;
+        return;
+      }
+      const schedule = rows[0] && rows[0].schedule || {};
+      const result = sendKakaoAlimTalkOrSms_(
+        contact.phone,
+        paymentOwnerSummaryAlimTalkContent_(
+          contact.ownerName || schedule.ownerName || "건물주",
+          contact.buildingName || schedule.buildingName || "등록 건물",
+          rows,
+          reminderType
+        ),
+        "건물주 월세 입금 현황",
+        {
+          templateCode: kakaoConfig.templates.paymentOwnerSummary,
+          allowSmsFallback: false
+        }
+      );
+      if (!result.ok) {
+        stats.sendFailed += 1;
+        return;
+      }
+      ledger.entries[eventId] = true;
+      ledger.save();
+      if (reminderType === "due") stats.ownerDueSent += 1;
+      else stats.ownerOverdueSent += 1;
+    }
+
+    plan.tenantDue.forEach(row => sendTenant(row, "due"));
+    plan.tenantOverdue.forEach(row => sendTenant(row, "overdue"));
+    Object.keys(plan.ownerDue).forEach(buildingId =>
+      sendOwner(buildingId, plan.ownerDue[buildingId], "due")
+    );
+    Object.keys(plan.ownerOverdue).forEach(buildingId =>
+      sendOwner(buildingId, plan.ownerOverdue[buildingId], "overdue")
+    );
+    cleanupPaymentNotificationLedgers_(plan.today);
+    const output = {
+      ok: stats.sendFailed === 0,
+      configured: true,
+      date: plan.today,
+      scheduleCount: Object.keys(schedules).length,
+      linkedBuildingCount: Object.keys(config.bankBindings || {}).length,
+      transactionErrorCount: transactionState.errors.length,
+      tenantTemplateReady: tenantTemplate.ready === true,
+      ownerTemplateReady: ownerTemplate.ready === true,
+      stats: stats,
+      build: AUTOMATION_BUILD
+    };
+    Logger.log(JSON.stringify(output));
+    return output;
+  } finally {
+    lock.releaseLock();
+  }
+}
+
 const POPBILL_EASYFINBANK_SCOPE = ["180", "member"];
 const POPBILL_API_VERSION = "2.0";
 const POPBILL_BANK_SYNC_DAYS = 30;
@@ -8168,6 +8677,9 @@ function syncPopbillBankTransactions_(payload) {
   const requestedAt = new Date().toISOString();
   const bankSyncUrl = firebasePaymentCalendarUrl_(payload.uid, "bankSync", payload.idToken);
   const existingStatus = firebaseReadJson_(bankSyncUrl, "기존 팝빌 동기화 상태 조회 실패") || {};
+  const bankBindingsUrl = firebasePaymentCalendarUrl_(payload.uid, "bankBindings", payload.idToken);
+  const bankBindings = firebaseReadJson_(bankBindingsUrl, "건물별 팝빌 계좌 연결정보 조회 실패") || {};
+  rememberPaymentNotificationAutomation_(payload, bankBindings);
   if (payload.force !== true && popbillBankSyncIsFresh_(existingStatus, Date.now())) {
     return Object.assign({}, existingStatus, { skipped: true });
   }
@@ -8179,9 +8691,7 @@ function syncPopbillBankTransactions_(payload) {
   try {
     const schedulesUrl = firebasePaymentCalendarUrl_(payload.uid, "schedules", payload.idToken);
     const transactionsUrl = firebasePaymentCalendarUrl_(payload.uid, "transactions", payload.idToken);
-    const bankBindingsUrl = firebasePaymentCalendarUrl_(payload.uid, "bankBindings", payload.idToken);
     const schedules = firebaseReadJson_(schedulesUrl, "월 납부 일정 조회 실패") || {};
-    const bankBindings = firebaseReadJson_(bankBindingsUrl, "건물별 팝빌 계좌 연결정보 조회 실패") || {};
     const allAccounts = popbillApiRequest_("get", "/EasyFin/Bank/ListBankAccount");
     const accounts = (Array.isArray(allAccounts) ? allAccounts : [])
       .filter(account => Number(account && account.state) === 1);
@@ -8722,7 +9232,8 @@ function getKakaoAlimTalkConfig_() {
       receiptTenant: String(props.getProperty("KAKAO_TEMPLATE_RECEIPT_TENANT") || "BRINGRECEIPTTENANTV1").trim(),
       receiptOwner: String(props.getProperty("KAKAO_TEMPLATE_RECEIPT_OWNER") || "BRINGRECEIPTOWNERV1").trim(),
       ownerQuote: String(props.getProperty("KAKAO_TEMPLATE_OWNER_QUOTE") || "BRINGOWNERQUOTEV1").trim(),
-      paymentReminder: String(props.getProperty("KAKAO_TEMPLATE_PAYMENT_REMINDER") || "BRINGRENTREMINDERV1").trim()
+      paymentReminder: String(props.getProperty("KAKAO_TEMPLATE_PAYMENT_REMINDER") || "BRINGRENTREMINDERV1").trim(),
+      paymentOwnerSummary: String(props.getProperty("KAKAO_TEMPLATE_PAYMENT_OWNER_SUMMARY") || "BRINGRENTOWNERSUMMARYV1").trim()
     }
   };
   config.enabled = Boolean(
