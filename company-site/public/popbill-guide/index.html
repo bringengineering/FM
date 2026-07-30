@@ -379,8 +379,7 @@
       display: block;
       width: 100%;
       height: auto;
-      aspect-ratio: 16 / 9;
-      object-fit: cover;
+      object-fit: contain;
       object-position: center;
       background: var(--white);
     }
@@ -670,8 +669,8 @@
           </div>
 
           <figure class="bank-preview" id="bankPreview">
-            <a class="preview-link" id="bankImageLink" href="/popbill-guide/images/sinhan-site.png" target="_blank" rel="noopener" aria-label="신한은행 홈페이지 화면 크게 보기">
-              <img class="preview-image" id="bankImage" src="/popbill-guide/images/sinhan-site.png" alt="신한은행 홈페이지 화면">
+            <a class="preview-link" id="bankImageLink" href="/popbill-guide/images/sinhan-click.png" target="_blank" rel="noopener" aria-label="신한은행 클릭 위치 안내 화면 크게 보기">
+              <img class="preview-image" id="bankImage" src="/popbill-guide/images/sinhan-click.png" alt="금색 표시로 클릭 위치를 안내한 신한은행 홈페이지 화면">
             </a>
           </figure>
         </div>
@@ -762,25 +761,25 @@
     ];
 
     const bankImages = {
-      "0002": "kdb-site.png",
-      "0003": "ibk-site.png",
-      "0004": "kb-site.png",
-      "0007": "suhyub-site.png",
-      "0011": "nonghyub-site.png",
-      "0020": "woori-site.png",
-      "0023": "sc-site.png",
-      "0027": "citi-site.png",
-      "0031": "im-site.png",
-      "0032": "busan-site.png",
-      "0034": "kj-site.png",
-      "0035": "jeju-site.png",
-      "0037": "jeonbuk-site.png",
-      "0039": "gyeongnam-site.png",
-      "0045": "saemaul-site.png",
-      "0048": "sinhyub-site.png",
-      "0071": "epost-site.png",
-      "0081": "hana-site.png",
-      "0088": "sinhan-site.png"
+      "0002": "kdb-click.png",
+      "0003": "ibk-click.png",
+      "0004": "kb-click.png",
+      "0007": "suhyub-click.png",
+      "0011": "nonghyub-click.png",
+      "0020": "woori-click.png",
+      "0023": "sc-click.png",
+      "0027": "citi-click.png",
+      "0031": "im-click.png",
+      "0032": "busan-click.png",
+      "0034": "kj-click.png",
+      "0035": "jeju-click.png",
+      "0037": "jeonbuk-click.png",
+      "0039": "gyeongnam-click.png",
+      "0045": "saemaul-click.png",
+      "0048": "sinhyub-click.png",
+      "0071": "epost-click.png",
+      "0081": "hana-click.png",
+      "0088": "sinhan-click.png"
     };
 
     const el = (id) => document.getElementById(id);
@@ -851,9 +850,9 @@
       el("selectedSummary").textContent = `현재 선택 · ${bank.name} ${bank.service}`;
       const guideImage = `/popbill-guide/images/${bankImages[bank.code]}`;
       el("bankImage").src = guideImage;
-      el("bankImage").alt = `${bank.name} 홈페이지 화면`;
+      el("bankImage").alt = `금색 표시로 클릭 위치를 안내한 ${bank.name} 홈페이지 화면`;
       el("bankImageLink").href = guideImage;
-      el("bankImageLink").setAttribute("aria-label", `${bank.name} 홈페이지 화면 크게 보기`);
+      el("bankImageLink").setAttribute("aria-label", `${bank.name} 클릭 위치 안내 화면 크게 보기`);
       el("bankRoute").innerHTML = `
         <article class="route-audience business">
           <div class="route-audience-head">
