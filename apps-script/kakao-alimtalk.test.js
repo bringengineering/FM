@@ -163,6 +163,7 @@ assert.equal(config.templates.receiptOwner, "BRINGRECEIPTOWNERV1");
 assert.equal(config.templates.ownerQuote, "BRINGOWNERQUOTEV1");
 assert.equal(config.templates.paymentReminder, "BRINGRENTREMINDERV1");
 assert.equal(config.templates.paymentOwnerSummary, "BRINGRENTOWNERSUMMARYV1");
+assert.equal(config.templates.paymentOwnerConfirmed, "BRINGRENTOWNERPAIDV1");
 
 const tenantContent = context.makeComplaintReceiptTenantAlimTalkContent_("BR-2026-0001", {
   이름: "홍길동",
@@ -258,7 +259,7 @@ assert.equal(kakaoOnlyResult.provider, "kakao_alimtalk");
 assert.equal(kakaoOnlyResult.message.includes("template not approved"), true);
 assert.equal(lastSms, null);
 
-assert.match(source, /const AUTOMATION_BUILD = "complaint-workflow-20260730-v51"/);
+assert.match(source, /const AUTOMATION_BUILD = "complaint-workflow-20260730-v52"/);
 assert.match(source, /provider: "kakao_alimtalk"/);
 assert.match(source, /name: "추천 견적 확인"/);
 

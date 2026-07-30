@@ -5611,7 +5611,7 @@ function renderPaymentBuildingList(buildings){
   const recent=paymentTransactionsArray(paymentData).filter(t=>t.source==="popbill"||t.source==="test").sort((a,b)=>String(b.transactionAt||b.createdAt||"").localeCompare(String(a.transactionAt||a.createdAt||""))).slice(0,5);
   paymentBuildingListEl.innerHTML=`<div class="pv-side-title"><span>온보딩 건물</span><span>${buildings.length}곳</span></div>`+
     (buildings.length?buildings.map(b=>{ const binding=paymentBankBinding(b.id); return `<button class="pv-building ${b.id===paymentBuildingId?'on':''}" data-payment-building="${escAttr(b.id)}"><b>${esc(b.name)}</b><span>${esc(b.address||"주소 미입력")}</span><span>건물주: ${esc(b.ownerName||"미입력")}</span><span class="pv-building-meta"><span class="pv-mini ${binding?'good':'bad'}">${binding?esc(paymentBankLabel(binding)):"계좌 미연결"}</span></span></button>`; }).join(""):`<div class="pv-empty" style="margin-top:28px">온보딩 건물이 없습니다.<br>새로고침 후 Apps Script 동기화를 확인해 주세요.</div>`)+
-    `<div class="pv-bank-card"><b>🏦 팝빌 은행 자동조회</b><p>현재 관리자: ${esc(authedUser&&authedUser.email||"로컬")}</p><p style="margin-top:4px">${esc(paymentBankSyncMessage(bankSync))}</p><p style="margin-top:4px">${bankSync.environment==="test"?"테스트 환경":bankSync.environment==="production"?"운영 환경":"연결 확인 중"} · 등록계좌 ${Number(bankSync.accountCount)||0}개 · 연결건물 ${Number(bankSync.linkedBuildingCount)||Object.keys(paymentData.bankBindings||{}).length}곳 · 30분 간격</p><p style="margin-top:4px">자동 알림 · 납부일 09시 이후 / 다음 날 13시까지 미입금 시</p>${recent.length?`<p style="margin-top:8px;font-weight:800;color:#52606d">최근 입금</p>${recent.map(t=>`<p>${esc(t.date)} · ${esc(t.payerName||"입금자 확인필요")} · ${esc(paymentFormatMoney(t.amount))}${t.source==="test"?` <button class="pv-btn" style="padding:2px 5px;font-size:10px" data-payment-tx-remove="${escAttr(t.id)}">삭제</button>`:""}</p>`).join("")}`:""}</div>`;
+    `<div class="pv-bank-card"><b>🏦 팝빌 은행 자동조회</b><p>현재 관리자: ${esc(authedUser&&authedUser.email||"로컬")}</p><p style="margin-top:4px">${esc(paymentBankSyncMessage(bankSync))}</p><p style="margin-top:4px">${bankSync.environment==="test"?"테스트 환경":bankSync.environment==="production"?"운영 환경":"연결 확인 중"} · 등록계좌 ${Number(bankSync.accountCount)||0}개 · 연결건물 ${Number(bankSync.linkedBuildingCount)||Object.keys(paymentData.bankBindings||{}).length}곳 · 30분 간격</p><p style="margin-top:4px">자동 알림 · 납부일 09시 이후 / 입금확인 시 건물주 / 다음 날 13시까지 미입금 시</p>${recent.length?`<p style="margin-top:8px;font-weight:800;color:#52606d">최근 입금</p>${recent.map(t=>`<p>${esc(t.date)} · ${esc(t.payerName||"입금자 확인필요")} · ${esc(paymentFormatMoney(t.amount))}${t.source==="test"?` <button class="pv-btn" style="padding:2px 5px;font-size:10px" data-payment-tx-remove="${escAttr(t.id)}">삭제</button>`:""}</p>`).join("")}`:""}</div>`;
 }
 function paymentFormatPhone(value){
   const digits=String(value||"").replace(/\D/g,"");
@@ -5987,8 +5987,9 @@ document.getElementById("noticeBtn").addEventListener("click", openNoticePanel);
 document.getElementById("noticeBanner").addEventListener("click", openNoticePanel);
 
 /* ===== 업데이트 알림(What's New) — 새 버전 나오면 자동 팝업 ===== */
-const APP_VERSION = "5.34";
+const APP_VERSION = "5.35";
 const CHANGELOG = [
+  { v:"5.35", d:"2026-07-30", items:["팝빌에서 월세 입금이 확정 매칭되면 건물주에게 건물별 입금완료 알림톡 자동 발송","기존 입금 건의 소급 발송을 막고 새로 확인된 거래만 한 번씩 안내"] },
   { v:"5.34", d:"2026-07-30", items:["월세 알림톡의 ‘무시해 주세요’ 문구를 ‘입금 여부는 계좌 내역 확인 후 자동 반영됩니다.’로 개선"] },
   { v:"5.33", d:"2026-07-30", items:["납부일 오전 9시 이후 세입자 개별·건물주 건물별 예정 요약 알림 자동화","납부일 다음 날 13시까지 입금 미확인 시 세입자·건물주 미입금 알림","팝빌 계좌의 확정 입금만 반영하고 중복 발송을 차단하는 시간 트리거 추가"] },
   { v:"5.32", d:"2026-07-29", items:["카카오 알림톡 요청 접수와 실제 휴대폰 도착 상태를 구분","SENS 메시지 ID로 최종 전달 성공·처리중·실패 코드 조회","일정 상세에 알림톡 전달결과 확인 버튼과 실패 사유 표시"] },

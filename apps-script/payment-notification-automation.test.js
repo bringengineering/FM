@@ -83,8 +83,12 @@ const context = {
   "paymentNotificationDateKey_",
   "paymentNotificationHour_",
   "paymentNotificationPlan_",
+  "paymentNotificationConfirmedEventId_",
+  "paymentNotificationConfirmedGroups_",
   "paymentOwnerSummaryDetail_",
   "paymentOwnerSummaryAlimTalkContent_",
+  "paymentOwnerConfirmedDetail_",
+  "paymentOwnerConfirmedAlimTalkContent_",
   "kakaoAlimTalkTemplateState_"
 ].forEach(name => {
   vm.runInNewContext(extractFunction(name), context, { filename: sourcePath });
@@ -201,6 +205,49 @@ assert.match(ownerContent, /^\[BRING Care 월세 입금 안내\]/);
 assert.match(ownerContent, /다음 날 13시까지 입금이 확인되지 않은 내역/);
 assert.match(ownerContent, /303호 홍길동 500,000원/);
 assert.ok(ownerContent.length < 1000);
+
+const matchedPayments = [{
+  id: "pb_abcdefghijklmnopqrstuvwx_tx_paid_1",
+  accountRef: "pb_abcdefghijklmnopqrstuvwx",
+  transactionId: "tx_paid_1",
+  date: "2026-07-30",
+  payerName: "테스트입금자",
+  amount: 450000,
+  scheduleId: "alreadyPaid",
+  buildingId: "buildingA",
+  buildingName: "테스트빌라"
+}];
+const confirmedPlan = context.paymentNotificationConfirmedGroups_(
+  schedules,
+  matchedPayments,
+  {}
+);
+assert.equal(Object.keys(confirmedPlan.groups).length, 1);
+assert.equal(confirmedPlan.groups.buildingA.length, 1);
+assert.equal(confirmedPlan.duplicateSkipped, 0);
+const confirmedEventId = confirmedPlan.groups.buildingA[0].eventId;
+const duplicateConfirmedPlan = context.paymentNotificationConfirmedGroups_(
+  schedules,
+  matchedPayments,
+  { [confirmedEventId]: true }
+);
+assert.equal(Object.keys(duplicateConfirmedPlan.groups).length, 0);
+assert.equal(duplicateConfirmedPlan.duplicateSkipped, 1);
+
+const ownerConfirmedContent = context.paymentOwnerConfirmedAlimTalkContent_(
+  "김건물",
+  "테스트빌라",
+  confirmedPlan.groups.buildingA
+);
+assert.match(ownerConfirmedContent, /^\[BRING Care 월세 입금 완료 안내\]/);
+assert.match(ownerConfirmedContent, /월세 입금이 확인되었습니다\./);
+assert.match(ownerConfirmedContent, /입금완료 1건 \/ 총 450,000원/);
+assert.match(ownerConfirmedContent, /테스트입금자/);
+assert.match(ownerConfirmedContent, /입금확인 캘린더에 자동 반영되었습니다\./);
+assert.match(source, /PAYMENT_NOTIFICATION_CONFIRMED_BASELINE_PROPERTY/);
+assert.match(source, /newConfirmedBaselineRefs/);
+assert.match(source, /templateCode: kakaoConfig\.templates\.paymentOwnerConfirmed/);
+assert.match(source, /paymentOwnerConfirmed[\s\S]*?allowSmsFallback: false/);
 
 context.getKakaoAlimTalkConfig_ = () => ({
   enabled: true,
