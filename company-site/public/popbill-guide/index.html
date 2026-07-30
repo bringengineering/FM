@@ -1,0 +1,809 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="은행별 빠른조회 신청부터 팝빌 계좌등록, BRING Care 연결과 카카오 알림까지 한 화면에서 확인하는 건물주 계좌연결 가이드입니다.">
+  <meta name="theme-color" content="#0c2d57">
+  <title>건물주 계좌연결 가이드 | BRING Care</title>
+  <style>
+    :root {
+      --navy: #0c2d57;
+      --navy-2: #123d72;
+      --blue: #256fbd;
+      --blue-soft: #eaf3ff;
+      --lime: #c9f33b;
+      --gold: #e5a323;
+      --ink: #182536;
+      --muted: #68768a;
+      --line: #dbe4ef;
+      --paper: #f2f6fb;
+      --white: #fff;
+      --green: #14835a;
+      --green-soft: #e9f7f1;
+      --red: #c54840;
+      --red-soft: #fff0ee;
+      --shadow: 0 18px 50px rgba(21, 48, 83, .09);
+    }
+
+    * { box-sizing: border-box; }
+    html, body { height: 100%; }
+    body {
+      margin: 0;
+      overflow: hidden;
+      color: var(--ink);
+      background: var(--paper);
+      font-family: "Pretendard", "Apple SD Gothic Neo", "Malgun Gothic", system-ui, -apple-system, sans-serif;
+      -webkit-font-smoothing: antialiased;
+      word-break: keep-all;
+    }
+    button, input { font: inherit; }
+    button, a { -webkit-tap-highlight-color: transparent; }
+    a { color: inherit; }
+
+    .topbar {
+      display: grid;
+      grid-template-columns: 250px 1fr auto;
+      align-items: center;
+      min-height: 72px;
+      padding: 0 24px;
+      border-bottom: 1px solid var(--line);
+      background: rgba(255, 255, 255, .96);
+    }
+    .brand {
+      display: inline-flex;
+      width: fit-content;
+      height: 38px;
+      align-items: center;
+      text-decoration: none;
+    }
+    .logo-window {
+      position: relative;
+      display: block;
+      width: 194px;
+      height: 34px;
+      overflow: hidden;
+    }
+    .logo-window img {
+      position: absolute;
+      left: -92px;
+      top: -91px;
+      width: 370px;
+      max-width: none;
+      height: auto;
+    }
+    .page-title {
+      margin: 0;
+      color: var(--navy);
+      font-size: 16px;
+      font-weight: 850;
+      letter-spacing: -.02em;
+      text-align: center;
+    }
+    .support {
+      display: inline-flex;
+      align-items: center;
+      gap: 10px;
+      color: var(--navy);
+      font-size: 13px;
+      font-weight: 850;
+      text-decoration: none;
+    }
+    .support::before {
+      display: block;
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: var(--lime);
+      box-shadow: 0 0 0 5px rgba(201, 243, 59, .2);
+      content: "";
+    }
+
+    .workspace {
+      display: grid;
+      grid-template-columns: 290px minmax(520px, 1fr) 330px;
+      gap: 14px;
+      height: calc(100vh - 120px);
+      padding: 14px;
+    }
+    .panel {
+      min-width: 0;
+      overflow: hidden;
+      border: 1px solid var(--line);
+      border-radius: 22px;
+      background: var(--white);
+      box-shadow: var(--shadow);
+    }
+
+    .bank-panel {
+      display: grid;
+      grid-template-rows: auto auto 1fr;
+      padding: 22px 16px 14px;
+    }
+    .panel-kicker {
+      margin: 0 0 7px;
+      color: var(--blue);
+      font-size: 11px;
+      font-weight: 900;
+      letter-spacing: .1em;
+    }
+    .panel-heading {
+      margin: 0;
+      color: var(--navy);
+      font-size: 25px;
+      line-height: 1.15;
+      letter-spacing: -.045em;
+    }
+    .panel-copy {
+      margin: 9px 0 0;
+      color: var(--muted);
+      font-size: 12px;
+      line-height: 1.55;
+    }
+    .search {
+      position: relative;
+      margin: 18px 0 12px;
+    }
+    .search::before {
+      position: absolute;
+      left: 14px;
+      top: 50%;
+      width: 11px;
+      height: 11px;
+      border: 2px solid #7790ad;
+      border-radius: 50%;
+      content: "";
+      transform: translateY(-60%);
+    }
+    .search::after {
+      position: absolute;
+      left: 25px;
+      top: 27px;
+      width: 6px;
+      height: 2px;
+      background: #7790ad;
+      content: "";
+      transform: rotate(45deg);
+    }
+    .search input {
+      width: 100%;
+      height: 46px;
+      padding: 0 14px 0 40px;
+      border: 1px solid var(--line);
+      border-radius: 13px;
+      outline: none;
+      background: #f8fafd;
+      color: var(--ink);
+      font-size: 13px;
+    }
+    .search input:focus {
+      border-color: var(--blue);
+      box-shadow: 0 0 0 4px rgba(37, 111, 189, .1);
+    }
+    .bank-list {
+      display: grid;
+      align-content: start;
+      gap: 5px;
+      overflow: auto;
+      padding-right: 3px;
+      scrollbar-width: thin;
+      scrollbar-color: #bccbdd transparent;
+    }
+    .bank-button {
+      display: grid;
+      grid-template-columns: 42px 1fr auto;
+      gap: 9px;
+      align-items: center;
+      width: 100%;
+      min-height: 54px;
+      padding: 8px 10px;
+      border: 1px solid transparent;
+      border-radius: 13px;
+      background: transparent;
+      color: var(--ink);
+      text-align: left;
+      cursor: pointer;
+    }
+    .bank-button:hover { background: #f4f7fb; }
+    .bank-button[aria-current="true"] {
+      border-color: #bcd4ee;
+      background: var(--blue-soft);
+      color: var(--navy);
+    }
+    .bank-code {
+      color: #8b9aae;
+      font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+      font-size: 10px;
+      font-weight: 800;
+    }
+    .bank-button strong { display: block; font-size: 14px; }
+    .bank-button small { display: block; margin-top: 3px; color: var(--muted); font-size: 10px; }
+    .bank-arrow { color: var(--blue); font-size: 16px; font-weight: 900; }
+    .empty {
+      padding: 26px 12px;
+      color: var(--muted);
+      font-size: 12px;
+      line-height: 1.6;
+      text-align: center;
+    }
+
+    .detail-panel {
+      display: grid;
+      grid-template-rows: auto 1fr auto;
+      overflow: auto;
+      scrollbar-width: thin;
+    }
+    .bank-hero {
+      position: relative;
+      display: grid;
+      grid-template-columns: 1fr auto;
+      align-items: center;
+      gap: 26px;
+      min-height: 158px;
+      padding: 27px 30px;
+      overflow: hidden;
+      color: var(--white);
+      background:
+        radial-gradient(circle at 92% 0, rgba(58, 130, 204, .45), transparent 35%),
+        linear-gradient(135deg, var(--navy), var(--navy-2));
+    }
+    .bank-hero::after {
+      position: absolute;
+      right: -70px;
+      bottom: -125px;
+      width: 250px;
+      height: 250px;
+      border: 1px solid rgba(255,255,255,.12);
+      border-radius: 50%;
+      content: "";
+      box-shadow: 0 0 0 32px rgba(255,255,255,.04);
+    }
+    .hero-content, .hero-actions { position: relative; z-index: 1; }
+    .hero-meta { display: flex; flex-wrap: wrap; gap: 7px; align-items: center; }
+    .tag {
+      display: inline-flex;
+      min-height: 25px;
+      align-items: center;
+      padding: 0 9px;
+      border-radius: 999px;
+      color: #dceafa;
+      background: rgba(255,255,255,.1);
+      font-size: 10px;
+      font-weight: 850;
+    }
+    .tag.highlight { color: var(--navy); background: var(--lime); }
+    .bank-hero h1 {
+      margin: 12px 0 7px;
+      font-size: clamp(30px, 3vw, 44px);
+      line-height: 1;
+      letter-spacing: -.055em;
+    }
+    .bank-hero p { margin: 0; color: #c7d9ed; font-size: 13px; }
+    .hero-actions { display: grid; justify-items: end; gap: 9px; }
+    .bank-link {
+      display: inline-flex;
+      min-height: 44px;
+      align-items: center;
+      gap: 14px;
+      padding: 0 17px;
+      border-radius: 999px;
+      color: var(--navy);
+      background: var(--white);
+      font-size: 12px;
+      font-weight: 850;
+      text-decoration: none;
+    }
+    .hero-actions small { max-width: 185px; color: #9bb5d1; font-size: 9px; line-height: 1.4; text-align: right; }
+
+    .detail-body {
+      display: grid;
+      align-content: start;
+      gap: 19px;
+      padding: 24px 28px;
+    }
+    .section-head {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 16px;
+    }
+    .section-head h2 {
+      margin: 0;
+      color: var(--navy);
+      font-size: 19px;
+      letter-spacing: -.035em;
+    }
+    .section-head span { color: var(--muted); font-size: 10px; }
+    .route {
+      display: grid;
+      grid-template-columns: repeat(var(--route-count, 4), minmax(0, 1fr));
+      gap: 9px;
+    }
+    .route-step {
+      position: relative;
+      min-height: 102px;
+      padding: 15px 14px;
+      border: 1px solid var(--line);
+      border-radius: 15px;
+      background: #fbfcfe;
+    }
+    .route-step:not(:last-child)::after {
+      position: absolute;
+      right: -8px;
+      top: 50%;
+      z-index: 2;
+      display: grid;
+      width: 17px;
+      height: 17px;
+      place-items: center;
+      border: 1px solid var(--line);
+      border-radius: 50%;
+      color: var(--blue);
+      background: var(--white);
+      font-size: 9px;
+      font-weight: 900;
+      content: "›";
+      transform: translateY(-50%);
+    }
+    .route-step span {
+      display: block;
+      color: var(--blue);
+      font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+      font-size: 9px;
+      font-weight: 900;
+    }
+    .route-step strong {
+      display: block;
+      margin-top: 20px;
+      color: var(--navy);
+      font-size: 13px;
+      line-height: 1.45;
+    }
+    .info-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 11px;
+    }
+    .info-card {
+      min-height: 122px;
+      padding: 17px 18px;
+      border-radius: 16px;
+    }
+    .info-card.prepare { background: var(--green-soft); }
+    .info-card.error { background: var(--red-soft); }
+    .info-label {
+      display: flex;
+      align-items: center;
+      gap: 7px;
+      margin: 0;
+      color: var(--navy);
+      font-size: 12px;
+      font-weight: 900;
+    }
+    .info-label::before {
+      display: block;
+      width: 7px;
+      height: 7px;
+      border-radius: 50%;
+      background: var(--green);
+      content: "";
+    }
+    .error .info-label::before { background: var(--red); }
+    .info-card strong { display: block; margin: 13px 0 6px; color: var(--navy); font-size: 14px; }
+    .info-card p { margin: 0; color: #566576; font-size: 11px; line-height: 1.58; }
+    .bank-tip {
+      display: flex;
+      align-items: flex-start;
+      gap: 10px;
+      margin: 0;
+      padding: 14px 16px;
+      border: 1px solid #dce7f3;
+      border-radius: 14px;
+      color: #506174;
+      background: var(--blue-soft);
+      font-size: 11px;
+      line-height: 1.55;
+    }
+    .bank-tip b { flex: 0 0 auto; color: var(--blue); }
+    .security {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 18px;
+      padding: 13px 28px;
+      border-top: 1px solid var(--line);
+      background: #f9fbfd;
+      color: var(--muted);
+      font-size: 10px;
+      line-height: 1.5;
+    }
+    .security strong { color: var(--navy); font-size: 11px; }
+
+    .flow-panel {
+      display: grid;
+      grid-template-rows: auto 1fr auto;
+      padding: 23px 20px 17px;
+      color: var(--white);
+      background:
+        radial-gradient(circle at 100% 0, rgba(53, 122, 195, .35), transparent 32%),
+        var(--navy);
+    }
+    .flow-panel .panel-kicker { color: var(--lime); }
+    .flow-panel .panel-heading { color: var(--white); font-size: 24px; }
+    .flow-panel .panel-copy { color: #adc2da; }
+    .timeline {
+      display: grid;
+      align-content: center;
+      gap: 0;
+      margin: 17px 0 12px;
+      padding: 0;
+      list-style: none;
+    }
+    .timeline li {
+      position: relative;
+      display: grid;
+      grid-template-columns: 34px 1fr;
+      gap: 12px;
+      min-height: 85px;
+    }
+    .timeline li:not(:last-child)::before {
+      position: absolute;
+      left: 16px;
+      top: 34px;
+      bottom: 0;
+      width: 1px;
+      background: rgba(255,255,255,.2);
+      content: "";
+    }
+    .timeline-num {
+      z-index: 1;
+      display: grid;
+      width: 34px;
+      height: 34px;
+      place-items: center;
+      border: 1px solid rgba(255,255,255,.23);
+      border-radius: 50%;
+      color: var(--lime);
+      background: var(--navy);
+      font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+      font-size: 9px;
+      font-weight: 900;
+    }
+    .timeline strong { display: block; padding-top: 1px; font-size: 14px; }
+    .timeline p { margin: 6px 0 0; color: #aec3db; font-size: 10px; line-height: 1.5; }
+    .notifications {
+      padding: 15px;
+      border: 1px solid rgba(255,255,255,.13);
+      border-radius: 16px;
+      background: rgba(255,255,255,.07);
+    }
+    .notifications > strong { display: block; margin-bottom: 11px; font-size: 12px; }
+    .notice-row { display: grid; grid-template-columns: 64px 1fr; gap: 8px; align-items: start; margin-top: 7px; }
+    .notice-row span {
+      display: inline-flex;
+      min-height: 23px;
+      align-items: center;
+      justify-content: center;
+      border-radius: 999px;
+      color: var(--navy);
+      background: var(--lime);
+      font-size: 9px;
+      font-weight: 900;
+    }
+    .notice-row p { margin: 2px 0 0; color: #d0deed; font-size: 9px; line-height: 1.5; }
+
+    .statusbar {
+      display: grid;
+      grid-template-columns: 290px 1fr auto;
+      align-items: center;
+      min-height: 48px;
+      padding: 0 22px;
+      border-top: 1px solid var(--line);
+      background: var(--white);
+      color: var(--muted);
+      font-size: 10px;
+    }
+    .statusbar strong { color: var(--navy); font-size: 11px; }
+    .status-flow {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+    }
+    .status-flow span {
+      display: inline-flex;
+      min-height: 25px;
+      align-items: center;
+      padding: 0 10px;
+      border-radius: 999px;
+      color: var(--navy);
+      background: #edf3f9;
+      font-weight: 800;
+    }
+    .status-flow i { color: #9badc0; font-style: normal; }
+    .popbill-note { text-align: right; }
+    .popbill-note b { color: var(--blue); }
+
+    :focus-visible { outline: 3px solid rgba(37, 111, 189, .35); outline-offset: 2px; }
+
+    @media (max-width: 1180px) {
+      body { overflow: auto; }
+      .topbar { grid-template-columns: 210px 1fr auto; }
+      .workspace {
+        grid-template-columns: 250px minmax(500px, 1fr);
+        height: auto;
+        min-height: calc(100vh - 120px);
+      }
+      .flow-panel { grid-column: 1 / -1; grid-template-columns: .7fr 1.4fr 1fr; grid-template-rows: auto; gap: 24px; }
+      .timeline { grid-template-columns: repeat(4, 1fr); align-content: start; margin: 0; }
+      .timeline li { grid-template-columns: 1fr; min-height: 0; }
+      .timeline li:not(:last-child)::before { left: 33px; right: 0; top: 16px; bottom: auto; width: auto; height: 1px; }
+      .statusbar { position: sticky; bottom: 0; }
+    }
+
+    @media (max-width: 820px) {
+      .topbar { grid-template-columns: 1fr auto; padding: 0 16px; }
+      .page-title { display: none; }
+      .logo-window { width: 165px; }
+      .logo-window img { left: -79px; top: -77px; width: 315px; }
+      .workspace { grid-template-columns: 1fr; padding: 9px; }
+      .bank-panel { max-height: 360px; }
+      .bank-list { grid-template-columns: 1fr 1fr; }
+      .detail-panel, .flow-panel { grid-column: auto; }
+      .flow-panel { grid-template-columns: 1fr; }
+      .timeline { grid-template-columns: 1fr 1fr; gap: 14px; }
+      .timeline li { min-height: 75px; }
+      .timeline li:not(:last-child)::before { display: none; }
+      .statusbar { grid-template-columns: 1fr; gap: 7px; padding: 10px 16px; }
+      .status-flow { justify-content: flex-start; overflow-x: auto; }
+      .popbill-note { display: none; }
+    }
+
+    @media (max-width: 560px) {
+      .support { font-size: 0; }
+      .support::after { color: var(--navy); font-size: 12px; content: "문의"; }
+      .bank-list { grid-template-columns: 1fr; }
+      .bank-hero { grid-template-columns: 1fr; padding: 24px 20px; }
+      .hero-actions { justify-items: start; }
+      .hero-actions small { text-align: left; }
+      .detail-body { padding: 22px 18px; }
+      .route { grid-template-columns: 1fr 1fr; }
+      .route-step:nth-child(2n)::after { display: none; }
+      .info-grid { grid-template-columns: 1fr; }
+      .security { align-items: flex-start; flex-direction: column; padding-inline: 18px; }
+      .timeline { grid-template-columns: 1fr; }
+      .status-flow span { white-space: nowrap; }
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+      * { scroll-behavior: auto !important; }
+    }
+  </style>
+</head>
+<body>
+  <header class="topbar">
+    <a class="brand" href="/popbill-guide/" aria-label="BRING Care 계좌연결 가이드">
+      <span class="logo-window"><img src="/bring-care-logo.png" alt="BRING Care"></span>
+    </a>
+    <p class="page-title">건물주 계좌연결 가이드</p>
+    <a class="support" href="tel:0337488919">담당자 연결&nbsp; 033-748-8919</a>
+  </header>
+
+  <main class="workspace">
+    <aside class="panel bank-panel" aria-label="은행 선택">
+      <div>
+        <p class="panel-kicker">STEP 01 · BANK</p>
+        <h2 class="panel-heading">은행을 선택하세요</h2>
+        <p class="panel-copy">선택한 은행의 신청 방법만 중앙에 표시됩니다.</p>
+      </div>
+      <label class="search">
+        <span style="position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0)">은행 검색</span>
+        <input id="bankSearch" type="search" placeholder="은행명 검색" autocomplete="off">
+      </label>
+      <div class="bank-list" id="bankList"></div>
+    </aside>
+
+    <section class="panel detail-panel" aria-live="polite">
+      <div class="bank-hero">
+        <div class="hero-content">
+          <div class="hero-meta">
+            <span class="tag" id="bankCode">0088</span>
+            <span class="tag highlight" id="bankService">간편조회</span>
+            <span class="tag" id="bankExtra">조회전용 ID·PW 필요</span>
+          </div>
+          <h1 id="bankName">신한은행</h1>
+          <p>은행에서 먼저 조회서비스를 신청한 뒤 팝빌 계좌등록을 진행합니다.</p>
+        </div>
+        <div class="hero-actions">
+          <a class="bank-link" id="bankLink" href="https://www.shinhan.com/" target="_blank" rel="noopener noreferrer">
+            은행 홈페이지 열기 <span aria-hidden="true">↗</span>
+          </a>
+          <small>은행 화면에서 거래내역 조회까지 확인한 후 다음 단계로 이동하세요.</small>
+        </div>
+      </div>
+
+      <div class="detail-body">
+        <div class="section-head">
+          <h2>은행에서 진행할 경로</h2>
+          <span>화면 명칭은 은행 개편에 따라 조금 달라질 수 있습니다.</span>
+        </div>
+        <div class="route" id="bankRoute"></div>
+
+        <div class="info-grid">
+          <article class="info-card prepare">
+            <p class="info-label">준비할 정보</p>
+            <strong id="prepareTitle">조회전용 ID·PW를 준비합니다</strong>
+            <p id="prepareCopy">계좌번호와 계좌 비밀번호 외에 신한은행 간편조회용 ID·PW가 필요합니다.</p>
+          </article>
+          <article class="info-card error">
+            <p class="info-label">오류가 나오면</p>
+            <strong>등록을 반복하지 말고 원인부터 확인합니다</strong>
+            <p id="bankError">접근권한 없음이면 인터넷뱅킹 가입부터 처리하고, 이후 간편조회 계좌를 추가합니다.</p>
+          </article>
+        </div>
+
+        <p class="bank-tip"><b>은행별 확인</b><span id="bankTip">간편조회 비밀번호는 6개월마다 변경하고 팝빌 정보도 함께 갱신합니다.</span></p>
+      </div>
+
+      <div class="security">
+        <strong>비밀번호·OTP·공동인증서는 건물주가 직접 입력합니다.</strong>
+        <span>BRING Care 담당자는 민감정보를 받거나 기록하지 않고 연결 결과만 확인합니다.</span>
+      </div>
+    </section>
+
+    <aside class="panel flow-panel" aria-label="계좌등록 이후 프로세스">
+      <div>
+        <p class="panel-kicker">STEP 02–04 · PROCESS</p>
+        <h2 class="panel-heading">이후 과정은<br>BRING Care가 함께합니다</h2>
+        <p class="panel-copy">팝빌은 은행 거래내역을 수집해 BRING Care 입금확인 캘린더에 전달하는 연결 서비스입니다.</p>
+      </div>
+
+      <ol class="timeline">
+        <li>
+          <span class="timeline-num">01</span>
+          <div><strong>은행 조회 설정</strong><p>빠른조회·간편조회에서 대상 계좌의 거래내역을 확인합니다.</p></div>
+        </li>
+        <li>
+          <span class="timeline-num">02</span>
+          <div><strong>팝빌 계좌등록</strong><p>계좌조회 → 관리 → 계좌 관리에서 건물주가 직접 등록합니다.</p></div>
+        </li>
+        <li>
+          <span class="timeline-num">03</span>
+          <div><strong>건물·계좌 연결</strong><p>건물명, 은행명, 계좌 끝 4자리를 대조하고 최근 거래를 시험 수집합니다.</p></div>
+        </li>
+        <li>
+          <span class="timeline-num">04</span>
+          <div><strong>자동 확인 시작</strong><p>입금자명과 금액을 비교해 입금확인 캘린더에 상태를 반영합니다.</p></div>
+        </li>
+      </ol>
+
+      <div class="notifications">
+        <strong>연결 후 카카오 알림</strong>
+        <div class="notice-row"><span>건물주</span><p>납부일 예정 내역 통합 안내 · 입금완료 확인</p></div>
+        <div class="notice-row"><span>세입자</span><p>납부일 안내 · 익일 13시까지 미입금 시 안내</p></div>
+      </div>
+    </aside>
+  </main>
+
+  <footer class="statusbar">
+    <strong id="selectedSummary">현재 선택 · 신한은행 간편조회</strong>
+    <div class="status-flow" aria-label="전체 연결 순서">
+      <span>은행 설정</span><i>›</i><span>팝빌 등록</span><i>›</i><span>BRING Care 연결</span><i>›</i><span>자동 알림</span>
+    </div>
+    <div class="popbill-note"><b>팝빌</b> 계좌 거래내역 수집 · <b>BRING Care</b> 입금 매칭 및 알림</div>
+  </footer>
+
+  <script>
+    const banks = [
+      { code:"0002", name:"산업은행", service:"빠른조회", url:"https://www.kdb.co.kr/", path:"기업: 뱅킹관리 → 계좌관리 → 빠른조회대상계좌설정\n개인: 뱅킹관리 → 계좌관리 → 계좌관리", extra:"추가 ID/PW 없음", type:"simple", tip:"기업뱅킹은 관리자 구성에 따라 메뉴가 달라질 수 있습니다.", error:"메뉴가 없으면 인터넷뱅킹 가입·대표관리자 권한과 대상계좌 등록을 확인합니다." },
+      { code:"0003", name:"기업은행", service:"빠른계좌조회", url:"https://www.ibk.co.kr/", path:"뱅킹관리 → 계좌관리 → 빠른계좌조회서비스 신청/해지", extra:"추가 ID/PW 없음", type:"simple", tip:"개인·기업 모두 같은 서비스명으로 찾으면 됩니다.", error:"미가입·미신청 안내가 뜨면 인터넷뱅킹 가입 후 빠른서비스 계좌조회를 신청합니다." },
+      { code:"0004", name:"국민은행", service:"빠른조회", url:"https://www.kbstar.com/", path:"기업: 뱅킹관리 → 통지/편의서비스 신청 → 빠른조회서비스\n개인: MY뱅크 → 뱅킹서비스관리 → 빠른조회", extra:"인터넷뱅킹 ID 추가 필요", type:"required", tip:"팝빌 등록 때 일반 계좌정보와 인터넷뱅킹 ID를 함께 준비합니다.", error:"등록 메뉴가 안 보이면 인터넷뱅킹 가입 ID와 빠른조회 대상계좌 등록 여부를 확인합니다." },
+      { code:"0007", name:"수협은행", service:"간편조회", url:"https://www.suhyup-bank.com/", path:"MY정보 → 계좌정보관리 → 간편조회서비스", extra:"추가 ID/PW 없음", type:"simple", tip:"개인·기업 화면에서 ‘간편조회서비스’를 찾습니다.", error:"접근이 안 되면 개인·기업 로그인 구분과 인터넷뱅킹 가입 상태를 먼저 확인합니다." },
+      { code:"0011", name:"농협은행", service:"빠른조회", url:"https://banking.nonghyup.com/", path:"기업: 이용관리 → 계좌관리 → 빠른조회 계좌관리\n개인: MY뱅크 → 뱅크서비스관리 → 빠른조회", extra:"추가 ID/PW 없음", type:"simple", tip:"NH농협은행 계좌인지 지역 농·축협 계좌인지 먼저 확인합니다.", error:"인터넷뱅킹 미가입이면 영업점에서 빠른조회서비스를 별도로 신청할 수 있습니다." },
+      { code:"0020", name:"우리은행", service:"스피드조회", url:"https://www.wooribank.com/", path:"뱅킹관리 → 계좌관리 → 스피드조회계좌등록/해지", extra:"추가 ID/PW 없음", type:"simple", tip:"‘빠른조회’가 아니라 ‘스피드조회’라는 이름을 사용합니다.", error:"등록계좌 없음이면 스피드계좌등록을 진행하고, 미가입 고객은 영업점에 신청합니다." },
+      { code:"0023", name:"SC제일은행", service:"스피드조회", url:"https://www.standardchartered.co.kr/", path:"기업: 이용자관리 → 관리자업무 → 계좌정보관리\n개인: 서비스 및 설정 → 통장관리 → 스피드조회등록", extra:"추가 ID/PW 없음", type:"simple", tip:"기업은 First Biz·Straight2Bank 유형에 따라 세부 메뉴가 다릅니다.", error:"메뉴가 다르면 가입 유형과 관리자 권한을 확인한 뒤 해당 계좌를 스피드조회에 등록합니다." },
+      { code:"0027", name:"씨티은행", service:"빠른조회", url:"https://www.citibank.co.kr/", path:"기업: CAT-i → 이용자관리 → 빠른조회서비스\n개인: 웹회원등록 후 빠른조회 정보 사용", extra:"추가 ID/PW 없음", type:"simple", tip:"기업·개인의 가입 경로가 다르므로 계좌 유형부터 확인합니다.", error:"법인은 CAT-i 이용자 권한, 개인은 웹회원 등록 여부를 확인합니다." },
+      { code:"0031", name:"아이엠뱅크", service:"안전계좌조회", url:"https://www.imbank.co.kr/", path:"안전계좌조회 → 안전계좌신청", extra:"조회전용 ID·PW 추가 필요", type:"required", tip:"일반 인터넷뱅킹 비밀번호가 아니라 조회전용 정보를 사용합니다.", error:"조회 화면이 안 열리면 보안프로그램 설치 후 안전계좌번호·전용 비밀번호를 확인합니다." },
+      { code:"0032", name:"부산은행", service:"빠른조회", url:"https://www.busanbank.co.kr/", path:"메인 빠른조회서비스 → 개인/기업 빠른조회 계좌등록", extra:"추가 ID/PW 없음", type:"simple", tip:"개인과 기업 중 실제 계좌 유형에 맞는 등록 메뉴를 선택합니다.", error:"개인·기업 메뉴를 잘못 선택했거나 빠른조회 계좌가 미등록인지 확인합니다." },
+      { code:"0034", name:"광주은행", service:"빠른서비스", url:"https://www.kjbank.com/", path:"기업: 사용자관리 → 계좌통합관리 → 빠른서비스 계좌등록\n개인: 마이뱅킹관리 → 계좌통합관리 → 빠른서비스", extra:"추가 ID/PW 없음", type:"simple", tip:"서비스명이 ‘빠른서비스’로 표시됩니다.", error:"메뉴 접근 오류 시 로그인 유형과 계좌통합관리 권한을 확인한 뒤 다시 등록합니다." },
+      { code:"0035", name:"제주은행", service:"바로바로서비스", url:"https://www.e-jejubank.com/HomeFinance.do", path:"사용자관리 → 바로바로서비스 신청", extra:"추가 ID/PW 없음", type:"simple", tip:"인터넷뱅킹 가입 후 ‘바로바로서비스’를 먼저 신청합니다.", error:"사용자관리 메뉴가 없으면 인터넷뱅킹 가입·관리자 권한을 확인합니다." },
+      { code:"0037", name:"전북은행", service:"바로바로서비스", url:"https://www.jbbank.co.kr/", path:"뱅킹관리 → 계좌관리 → 바로바로서비스 계좌관리", extra:"추가 ID/PW 없음", type:"simple", tip:"개인·기업 모두 같은 서비스명으로 찾으면 됩니다.", error:"접근이 안 되면 개인·기업 로그인과 인터넷뱅킹 권한을 확인한 뒤 계좌를 등록합니다." },
+      { code:"0039", name:"경남은행", service:"빠른서비스", url:"https://www.knbank.co.kr/", path:"My Banking → 계좌관리 → 빠른서비스 계좌관리", extra:"추가 ID/PW 없음", type:"simple", tip:"화면 왼쪽 위의 My Banking에서 시작합니다.", error:"빠른서비스 메뉴가 없으면 인터넷뱅킹 가입과 My Banking 계좌관리 권한을 확인합니다." },
+      { code:"0045", name:"새마을금고", service:"즉시조회", url:"https://www.kfcc.co.kr/", path:"개인: 개인정보관리 → 즉시조회 계좌관리\n법인: 거래 영업점에서 신청", extra:"법인은 영업점 신청", type:"branch", tip:"법인 계좌는 온라인 메뉴가 아니라 영업점 신청이 필요합니다.", error:"법인은 거래 영업점에서 즉시조회 신청을 완료한 뒤 팝빌 등록을 진행합니다." },
+      { code:"0048", name:"신협중앙회", service:"조회전용", url:"https://openbank.cu.co.kr/", path:"조회전용 → 조회전용서비스 → 신규 → 계좌등록/해지", extra:"조회전용 ID·PW 추가 필요", type:"required", tip:"조회전용 ID와 비밀번호는 건물주가 팝빌 화면에 직접 입력합니다.", error:"인증 실패 시 조회전용 ID·PW와 계좌등록 상태를 확인하거나 다시 발급합니다." },
+      { code:"0071", name:"우체국", service:"간편조회", url:"https://www.epostbank.go.kr/", path:"예금간편서비스 → 간편조회계좌등록", extra:"추가 ID/PW 없음", type:"simple", tip:"우체국예금 화면에서 ‘예금간편서비스’를 찾습니다.", error:"등록계좌 없음이면 간편조회계좌등록 후 계좌정보를 다시 확인합니다." },
+      { code:"0081", name:"하나은행", service:"빠른조회", url:"https://www.kebhana.com/", path:"기업: 뱅킹관리 → 계좌관리 → 빠른조회계좌관리\n개인: 마이하나 → 계좌정보관리 → 빠른조회관리", extra:"추가 ID/PW 없음", type:"simple", tip:"개인·기업 화면에서 계좌관리 메뉴를 먼저 찾습니다.", error:"메뉴가 안 보이면 개인·기업 로그인 구분과 빠른조회 계좌관리 권한을 확인합니다." },
+      { code:"0088", name:"신한은행", service:"간편조회", url:"https://www.shinhan.com/", path:"간편서비스 → 계좌조회 → 로그인 → 계좌조회 → 간편계좌관리 → 간편계좌조회 추가", extra:"조회전용 ID·PW 추가 필요", type:"required", tip:"간편조회 비밀번호는 6개월마다 변경하고 팝빌 정보도 함께 갱신합니다.", error:"접근권한 없음이면 인터넷뱅킹 가입부터 처리하고, 이후 간편조회 계좌를 추가합니다." }
+    ];
+
+    const el = (id) => document.getElementById(id);
+    const bankList = el("bankList");
+    const bankSearch = el("bankSearch");
+    let selectedCode = "0088";
+
+    function prepareText(bank) {
+      if (bank.type === "required") {
+        return {
+          title: bank.extra.replace(" 추가 필요", "를 준비합니다"),
+          copy: `계좌번호와 계좌 비밀번호 외에 ${bank.name} ${bank.service}용 추가 정보가 필요합니다.`
+        };
+      }
+      if (bank.type === "branch") {
+        return {
+          title: "법인 계좌는 거래 영업점에서 신청합니다",
+          copy: "온라인 계좌등록 전에 영업점 신청을 완료하고 조회 가능 여부를 확인합니다."
+        };
+      }
+      return {
+        title: "계좌번호와 계좌 비밀번호를 준비합니다",
+        copy: `${bank.name}은 별도의 조회전용 ID·PW 없이 대상 계좌의 조회서비스 등록 여부를 확인합니다.`
+      };
+    }
+
+    function routeParts(path) {
+      return path
+        .split(/\n|→/)
+        .map((part) => part.trim())
+        .filter(Boolean)
+        .slice(0, 6);
+    }
+
+    function renderDetail(bank) {
+      selectedCode = bank.code;
+      const prepared = prepareText(bank);
+      const steps = routeParts(bank.path);
+
+      el("bankCode").textContent = bank.code;
+      el("bankService").textContent = bank.service;
+      el("bankExtra").textContent = bank.extra;
+      el("bankName").textContent = bank.name;
+      el("bankLink").href = bank.url;
+      el("bankLink").firstChild.textContent = `${bank.name} 홈페이지 열기 `;
+      el("prepareTitle").textContent = prepared.title;
+      el("prepareCopy").textContent = prepared.copy;
+      el("bankError").textContent = bank.error;
+      el("bankTip").textContent = bank.tip;
+      el("selectedSummary").textContent = `현재 선택 · ${bank.name} ${bank.service}`;
+      el("bankRoute").style.setProperty("--route-count", Math.min(steps.length, 4));
+      el("bankRoute").innerHTML = steps.map((step, index) => `
+        <article class="route-step">
+          <span>${String(index + 1).padStart(2, "0")}</span>
+          <strong>${step}</strong>
+        </article>
+      `).join("");
+
+      document.querySelectorAll(".bank-button").forEach((button) => {
+        button.setAttribute("aria-current", String(button.dataset.code === bank.code));
+      });
+    }
+
+    function renderList() {
+      const query = bankSearch.value.trim().toLocaleLowerCase("ko");
+      const visible = banks.filter((bank) =>
+        `${bank.name} ${bank.service}`.toLocaleLowerCase("ko").includes(query)
+      );
+
+      bankList.innerHTML = visible.length
+        ? visible.map((bank) => `
+            <button class="bank-button" type="button" data-code="${bank.code}" aria-current="${bank.code === selectedCode}">
+              <span class="bank-code">${bank.code}</span>
+              <span><strong>${bank.name}</strong><small>${bank.service}</small></span>
+              <span class="bank-arrow" aria-hidden="true">›</span>
+            </button>
+          `).join("")
+        : `<p class="empty">검색 결과가 없습니다.<br>은행명을 다시 확인해 주세요.</p>`;
+
+      bankList.querySelectorAll(".bank-button").forEach((button) => {
+        button.addEventListener("click", () => {
+          const bank = banks.find((item) => item.code === button.dataset.code);
+          if (bank) renderDetail(bank);
+        });
+      });
+    }
+
+    bankSearch.addEventListener("input", renderList);
+    renderList();
+    renderDetail(banks.find((bank) => bank.code === selectedCode));
+  </script>
+</body>
+</html>
