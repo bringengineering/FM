@@ -7564,8 +7564,7 @@ function paymentReminderSmsContent_(schedule, dueDate, reminderType) {
     schedule.buildingName ? "건물: " + schedule.buildingName : "",
     schedule.unit ? "호실: " + schedule.unit : "",
     amount ? "납부금액: " + Math.round(amount).toLocaleString("ko-KR") + "원" : "",
-    "납부일: " + displayDate,
-    "입금 여부는 계좌 내역 확인 후 자동 반영됩니다."
+    "납부일: " + displayDate
   ].filter(Boolean).join("\n");
 }
 
@@ -7587,9 +7586,7 @@ function paymentReminderAlimTalkContent_(schedule, dueDate, reminderType) {
     "건물: " + buildingName,
     "호실: " + unit,
     "납부금액: " + amount + "원",
-    "납부일: " + displayDate,
-    "",
-    "입금 여부는 계좌 내역 확인 후 자동 반영됩니다."
+    "납부일: " + displayDate
   ].join("\n");
 }
 
@@ -8033,9 +8030,7 @@ function paymentOwnerSummaryAlimTalkContent_(ownerName, buildingName, rows, remi
     "",
     notice,
     "건물: " + safeAlimTalkVariable_(buildingName || "등록 건물", "등록 건물"),
-    paymentOwnerSummaryDetail_(rows, reminderType),
-    "",
-    "입금확인 캘린더에서 자세한 내역을 확인해 주세요."
+    paymentOwnerSummaryDetail_(rows, reminderType)
   ].join("\n");
 }
 

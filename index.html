@@ -5629,7 +5629,7 @@ function paymentReminderDeliveryText(record){
 }
 function paymentReminderSmsPreview(row){
   const s=row.schedule,date=row.dueDate.split("-");
-  return ["[BRING Care 월세 납부 안내]",s.tenantName?`${s.tenantName}님, 안녕하세요.`:"고객님, 안녕하세요.","",row.dueDate===paymentTodayKey()?"오늘은 월세 납부일입니다.":"월세 입금이 아직 확인되지 않아 안내드립니다.",`건물: ${s.buildingName||"등록 건물"}`,`호실: ${s.unit||"등록 호실"}`,`납부금액: ${paymentFormatMoney(s.amount||0)}`,`납부일: ${Number(date[0])}년 ${Number(date[1])}월 ${Number(date[2])}일`,"","입금 여부는 계좌 내역 확인 후 자동 반영됩니다."].join("\n");
+  return ["[BRING Care 월세 납부 안내]",s.tenantName?`${s.tenantName}님, 안녕하세요.`:"고객님, 안녕하세요.","",row.dueDate===paymentTodayKey()?"오늘은 월세 납부일입니다.":"월세 입금이 아직 확인되지 않아 안내드립니다.",`건물: ${s.buildingName||"등록 건물"}`,`호실: ${s.unit||"등록 호실"}`,`납부금액: ${paymentFormatMoney(s.amount||0)}`,`납부일: ${Number(date[0])}년 ${Number(date[1])}월 ${Number(date[2])}일`].join("\n");
 }
 function renderPaymentDetail(row){
   if(!row) return `<div class="pv-detail"><div class="pv-detail-title">캘린더의 납부 일정을 선택하면 상세 정보와 수동 보정 버튼이 표시됩니다.</div></div>`;
@@ -5987,8 +5987,9 @@ document.getElementById("noticeBtn").addEventListener("click", openNoticePanel);
 document.getElementById("noticeBanner").addEventListener("click", openNoticePanel);
 
 /* ===== 업데이트 알림(What's New) — 새 버전 나오면 자동 팝업 ===== */
-const APP_VERSION = "5.35";
+const APP_VERSION = "5.36";
 const CHANGELOG = [
+  { v:"5.36", d:"2026-07-30", items:["월세 납부·미입금·건물주 현황 알림에서 불필요한 입금확인 안내 문구 삭제"] },
   { v:"5.35", d:"2026-07-30", items:["팝빌에서 월세 입금이 확정 매칭되면 건물주에게 건물별 입금완료 알림톡 자동 발송","기존 입금 건의 소급 발송을 막고 새로 확인된 거래만 한 번씩 안내"] },
   { v:"5.34", d:"2026-07-30", items:["월세 알림톡의 ‘무시해 주세요’ 문구를 ‘입금 여부는 계좌 내역 확인 후 자동 반영됩니다.’로 개선"] },
   { v:"5.33", d:"2026-07-30", items:["납부일 오전 9시 이후 세입자 개별·건물주 건물별 예정 요약 알림 자동화","납부일 다음 날 13시까지 입금 미확인 시 세입자·건물주 미입금 알림","팝빌 계좌의 확정 입금만 반영하고 중복 발송을 차단하는 시간 트리거 추가"] },

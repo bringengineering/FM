@@ -141,6 +141,7 @@ assert.equal(sent.options.allowSmsFallback, false);
 assert.match(sent.content, /\[BRING Care 월세 납부 안내\]/);
 assert.match(sent.content, /테스트세입자님, 안녕하세요\./);
 assert.match(sent.content, /납부금액: 1원/);
+assert.doesNotMatch(sent.content, /계좌 내역 확인 후 자동 반영/);
 assert.equal(result.ok, true);
 assert.equal(result.status, "카카오 알림톡 요청 완료");
 assert.equal(result.provider, "kakao_alimtalk");

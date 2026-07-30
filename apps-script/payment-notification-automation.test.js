@@ -204,6 +204,7 @@ const ownerContent = context.paymentOwnerSummaryAlimTalkContent_(
 assert.match(ownerContent, /^\[BRING Care 월세 입금 안내\]/);
 assert.match(ownerContent, /다음 날 13시까지 입금이 확인되지 않은 내역/);
 assert.match(ownerContent, /303호 홍길동 500,000원/);
+assert.doesNotMatch(ownerContent, /입금확인 캘린더/);
 assert.ok(ownerContent.length < 1000);
 
 const matchedPayments = [{

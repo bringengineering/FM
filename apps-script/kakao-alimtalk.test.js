@@ -215,9 +215,7 @@ assert.equal(paymentReminderContent, [
   "건물: 테스트건물",
   "호실: 303호",
   "납부금액: 1원",
-  "납부일: 2026년 7월 29일",
-  "",
-  "입금 여부는 계좌 내역 확인 후 자동 반영됩니다."
+  "납부일: 2026년 7월 29일"
 ].join("\n"));
 
 const sendResult = context.sendSensAlimTalk_(
