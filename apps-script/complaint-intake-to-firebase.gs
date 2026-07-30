@@ -8083,9 +8083,7 @@ function paymentOwnerConfirmedAlimTalkContent_(ownerName, buildingName, rows) {
     "",
     "월세 입금이 확인되었습니다.",
     "건물: " + safeAlimTalkVariable_(buildingName || "등록 건물", "등록 건물"),
-    paymentOwnerConfirmedDetail_(rows),
-    "",
-    "입금확인 캘린더에 자동 반영되었습니다."
+    paymentOwnerConfirmedDetail_(rows)
   ].join("\n");
 }
 

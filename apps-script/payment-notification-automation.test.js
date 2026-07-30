@@ -243,7 +243,7 @@ assert.match(ownerConfirmedContent, /^\[BRING Care 월세 입금 완료 안내\]
 assert.match(ownerConfirmedContent, /월세 입금이 확인되었습니다\./);
 assert.match(ownerConfirmedContent, /입금완료 1건 \/ 총 450,000원/);
 assert.match(ownerConfirmedContent, /테스트입금자/);
-assert.match(ownerConfirmedContent, /입금확인 캘린더에 자동 반영되었습니다\./);
+assert.doesNotMatch(ownerConfirmedContent, /입금확인 캘린더/);
 assert.match(source, /PAYMENT_NOTIFICATION_CONFIRMED_BASELINE_PROPERTY/);
 assert.match(source, /newConfirmedBaselineRefs/);
 assert.match(source, /templateCode: kakaoConfig\.templates\.paymentOwnerConfirmed/);
