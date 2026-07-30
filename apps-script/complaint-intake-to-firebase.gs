@@ -8021,9 +8021,14 @@ function paymentOwnerSummaryDetail_(rows, reminderType) {
 }
 
 function paymentOwnerSummaryAlimTalkContent_(ownerName, buildingName, rows, reminderType) {
+  const dueDate = String(rows && rows[0] && rows[0].dueDate || "");
+  const dateParts = dueDate.split("-");
+  const displayDate = dateParts.length === 3 && dateParts.every(part => /^\d+$/.test(part))
+    ? Number(dateParts[0]) + "년 " + Number(dateParts[1]) + "월 " + Number(dateParts[2]) + "일"
+    : "";
   const notice = reminderType === "overdue"
     ? "납부일 다음 날 13시까지 입금이 확인되지 않은 내역입니다."
-    : "오늘 입금 예정 내역을 안내드립니다.";
+    : (displayDate ? displayDate + " 입금 예정 내역을 안내드립니다." : "입금 예정 내역을 안내드립니다.");
   return [
     "[BRING Care 월세 입금 안내]",
     safeAlimTalkVariable_(ownerName || "건물주", "건물주") + "님, 안녕하세요.",

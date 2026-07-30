@@ -207,6 +207,15 @@ assert.match(ownerContent, /303호 홍길동 500,000원/);
 assert.doesNotMatch(ownerContent, /입금확인 캘린더/);
 assert.ok(ownerContent.length < 1000);
 
+const ownerDueContent = context.paymentOwnerSummaryAlimTalkContent_(
+  "김건물",
+  "햇빛빌라",
+  plan.ownerDue.buildingA,
+  "due"
+);
+assert.match(ownerDueContent, /2026년 7월 30일 입금 예정 내역을 안내드립니다\./);
+assert.doesNotMatch(ownerDueContent, /오늘 입금 예정/);
+
 const matchedPayments = [{
   id: "pb_abcdefghijklmnopqrstuvwx_tx_paid_1",
   accountRef: "pb_abcdefghijklmnopqrstuvwx",
