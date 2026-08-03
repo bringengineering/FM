@@ -2,14 +2,13 @@
 
 - 기준일: 2026-08-03
 - 관리자 화면 버전: `5.39`
-- Apps Script 빌드: `complaint-workflow-20260730-v52`
 - 문서 목적: 새 팀원이 계정 등록부터 민원 처리, 견적, 건물주 승인, 입금 확인까지 스스로 운영할 수 있게 하는 실무 기준서
 
 > **먼저 읽기** ⑤ 업체 선택·견적 요청, ⑥ 견적서·사업자등록증 업로드, ⑩ 실제 입금 확인은 사람이 확인하는 단계입니다. 나머지 ①~④, ⑦~⑨의 주요 처리는 조건이 충족되면 자동으로 진행됩니다.
 
 ## 1. 시스템을 한 문장으로 이해하기
 
-세입자가 Google Form 또는 카카오 챗봇으로 민원을 접수하면 Apps Script가 계약 건물과 민원을 연결하고, 접수 안내·상담 요약·업체 분류·견적 비교·건물주 승인까지 처리한 뒤 Firebase 케이스를 GitHub Pages 관리자 화면에 실시간으로 보여주는 시스템입니다.
+세입자가 Google Form 또는 카카오 챗봇으로 민원을 접수하면 자동화 시스템이 계약 건물과 민원을 연결하고, 접수 안내·상담 요약·업체 분류·견적 비교·건물주 승인까지 처리한 뒤 케이스를 관리자 화면에 실시간으로 보여주는 시스템입니다.
 
 ## 2. 자주 쓰는 운영 주소
 
@@ -18,7 +17,6 @@
 | 관리자 대시보드 | <https://bringengineering.github.io/FM/> | 케이스, 단계, 견적, 입금 캘린더 운영 |
 | Google 민원 접수폼 | <https://docs.google.com/forms/d/e/1FAIpQLSfzi-H-abXT-dgsU5rF8vgkWuKtbltr9acgWClVeQ5W297DiA/viewform> | 세입자 민원 접수 |
 | Google 응답 시트 | <https://docs.google.com/spreadsheets/d/1HI6KzIMomL6vOUPs8zZDhXHktL1cWRDcg93lflsuojA/edit> | 원본 개인정보, 사진, 자동 분석 결과 확인 |
-| Apps Script 웹 앱 | <https://script.google.com/macros/s/AKfycbxGAdtEDoNifxkM-e_Jm7dBkCnjM4oPJqz8RxZXoMoSKod5M_m9Yj2b11-nI97zmfd6Jw/exec> | 문자, 파일 업로드, 승인 화면, 자동화 API |
 | 건물지도 | <https://bringengineering.github.io/FM/wonju-map.html> | 원주 유지보수 업체 확인 |
 | Firebase DB | <https://bring-fm-hj-default-rtdb.asia-southeast1.firebasedatabase.app> | 케이스·설정·입금 캘린더 데이터 |
 | Kakao 채널 | <http://pf.kakao.com/_xnaRfX> | 알림톡·챗봇 운영 채널 |
@@ -28,7 +26,7 @@
 | 역할 | 주 업무 | 필요한 권한 |
 |---|---|---|
 | 운영 담당자 | 케이스 확인, 업체 선택, 견적 업로드, 입금 확인 | 관리자 화면 로그인, 응답 시트·Drive 열람/편집 |
-| 자동화 관리자 | Apps Script 설정·재배포, 트리거·실행 로그 확인 | 응답 시트 편집자, Apps Script 편집, Drive 편집 |
+| 시스템 관리자 | 연동 상태·발송 결과·오류 기록 확인 | 응답 시트 편집자, Drive 편집, 관련 서비스 콘솔 |
 | 개발 담당자 | GitHub Pages, Firebase, 코드 수정·테스트 | GitHub 쓰기, Firebase Console, 배포 도구 |
 | 정산 담당자 | 입금 캘린더, 계좌 연결, 입금 확정 | 지정 Google 계정, 팝빌 또는 은행 조회 권한 |
 | 계정 책임자 | 비밀키, 콘솔 관리자, 퇴사자 권한 회수 | Google/NCP/Kakao/GitHub/Firebase 최고 관리자 |
@@ -46,20 +44,19 @@
 5. 관리자 화면에서 케이스 목록이 보이는지, 응답 시트와 견적 원본 링크가 열리는지 확인합니다.
 6. 입금확인 담당자라면 지정 정산 계정 사용 여부와 계좌 연결 상태를 추가로 확인합니다.
 
-### 4.2 자동화 관리자 추가 권한
+### 4.2 시스템 관리자 추가 권한
 
 1. Google 응답 시트를 `편집자`로 공유합니다.
-2. 응답 시트의 `확장 프로그램 → Apps Script`가 열리는지 확인합니다.
-3. 온보딩·견적·사업자등록증 Drive 폴더에 편집 권한을 부여합니다.
-4. Apps Script 실행 권한 승인과 웹 앱 배포는 자동화 책임자만 수행합니다.
-5. 네이버클라우드 SENS, Kakao, Firebase Console 권한은 업무상 필요한 사람에게만 별도로 초대합니다.
+2. 온보딩·견적·사업자등록증 Drive 폴더에 편집 권한을 부여합니다.
+3. 네이버클라우드 SENS, Kakao, Firebase Console 권한은 업무상 필요한 사람에게만 별도로 초대합니다.
+4. 권한을 부여한 뒤 테스트 케이스로 문자 발송, 파일 열람, 단계 전환을 확인합니다.
 
 ### 4.3 개발 담당자 추가 권한
 
 1. GitHub 저장소 `bringengineering/FM`에 Collaborator 또는 팀 권한을 부여합니다.
 2. Firebase 프로젝트 `bring-fm-hj`에 필요한 최소 역할을 부여합니다.
 3. 배포 브랜치와 GitHub Pages 설정을 확인합니다.
-4. 비밀키는 GitHub에 기록하지 않고 Apps Script `스크립트 속성` 또는 서비스별 비밀 저장소에서만 관리합니다.
+4. 비밀키는 GitHub에 기록하지 않고 서비스별 비밀 저장소에서만 관리합니다.
 
 ### 4.4 퇴사자·담당 변경 시 권한 회수
 
@@ -76,7 +73,7 @@
 1. 온보딩 DOCX를 작성합니다.
 2. 본문에 최소 `건물명`, `건물 주소`, `건물주명`, `건물주 연락처`를 명확한 라벨로 적습니다.
 3. 온보딩 Drive 폴더에 DOCX를 올립니다.
-4. Apps Script의 `syncPaymentBuildings`를 실행하거나 관리자 화면에서 `온보딩 건물 새로고침`을 누릅니다.
+4. 관리자 화면에서 `온보딩 건물 새로고침`을 누릅니다.
 5. 같은 건물명과 주소로 테스트 민원 1건을 제출합니다.
 6. ① 단계가 `온보딩 연결`로 완료되고 파일 링크가 열리는지 확인합니다.
 
@@ -141,8 +138,8 @@
 
 ### 7.1 ①~⑤
 
-- 폼 제출 트리거 `onComplaintFormSubmit`이 응답을 읽습니다.
-- Apps Script가 온보딩 DOCX 본문을 검색해 계약 건물을 정합니다.
+- 자동화 시스템이 새 폼 응답을 읽습니다.
+- 온보딩 DOCX 본문을 검색해 계약 건물을 정합니다.
 - 매칭 성공 시 ① 완료 후 ② 알림을 자동 발송합니다.
 - ②가 성공하면 ③ 상담카드와 ④ 업체 분류를 자동 완료하고 ⑤를 진행중으로 엽니다.
 - ⑤는 관리자가 업체를 선택하고 확인 모달에서 MMS 발송을 실행합니다.
@@ -222,41 +219,9 @@
 | `approve.html` | 건물주 모바일 승인 화면 |
 | `wonju-map.html` | 원주 업체 건물지도 |
 | `data/building-maintenance-companies.js` | 건물지도·업체 후보 기본 데이터 |
-| `apps-script/complaint-intake-to-firebase.gs` | 접수·문자·Drive·견적·승인·입금 자동화 |
-| `apps-script/appsscript.json` | Apps Script 권한·고급 서비스 설정 |
 | `database.rules.json` | Firebase Realtime Database 규칙 |
-| `apps-script/README.md` | Apps Script 상세 설치·테스트 절차 |
 
-## 10. Apps Script 운영과 배포
-
-### 10.1 코드 변경 후 반영
-
-1. 로컬 `apps-script/complaint-intake-to-firebase.gs`의 최신 코드를 확인합니다.
-2. Google 응답 시트에서 `확장 프로그램 → Apps Script`를 엽니다.
-3. `Code.gs` 전체를 최신 코드로 교체하고 저장합니다.
-4. `appsscript.json` 변경이 있으면 매니페스트도 교체합니다.
-5. 새 권한이 추가됐다면 `authorizeDriveAccess` 또는 관련 설정 함수를 실행해 승인합니다.
-6. `배포 → 배포 관리 → 편집 → 새 버전 → 배포`를 실행합니다.
-7. 웹 앱 URL이 바뀌지 않았는지 확인합니다.
-8. 웹 앱 주소에 `?action=health` 또는 시스템의 상태 확인 요청을 보내 현재 빌드를 확인합니다.
-9. 실제 테스트 케이스 1건으로 문자·파일 업로드·상태 전환을 확인합니다.
-
-### 10.2 주요 스크립트 속성
-
-| 영역 | 속성 이름 | 주의 |
-|---|---|---|
-| SENS | `NCP_SENS_SERVICE_ID`, `NCP_ACCESS_KEY`, `NCP_SECRET_KEY`, `NCP_SENS_FROM`, `SMS_ENABLED` | 발신번호는 반드시 승인된 번호 |
-| 테스트 | `NCP_SENS_TEST_TO` | 운영 수신자와 분리 |
-| 견적 회신 | `VENDOR_QUOTE_REPLY_EMAIL` | 기본 운영 메일 확인 |
-| MinerU | `MINERU_API_KEY`, `MINERU_API_URL`, `MINERU_SYNC_ENABLED`, `MINERU_MAX_WAIT_SECONDS` | 실시간 대기는 업로드를 느리게 할 수 있음 |
-| 카카오 알림톡 | `KAKAO_ALIMTALK_ENABLED`, `NCP_BIZ_MESSAGE_SERVICE_ID`, `KAKAO_CHANNEL_ID`, `KAKAO_TEMPLATE_*` | 템플릿 승인 후 활성화 |
-| 카카오 챗봇 | `KAKAO_CHATBOT_INTAKE_ENABLED`, `KAKAO_CHATBOT_SKILL_TOKEN`, `KAKAO_CHATBOT_BOT_ID`, `KAKAO_CHATBOT_PHOTO_BLOCK_ID` | 토큰 공개 금지 |
-| 팝빌 | `POPBILL_IS_TEST`, `POPBILL_LINK_ID`, `POPBILL_SECRET_KEY`, `POPBILL_CORP_NUM`, `POPBILL_USER_ID` | SecretKey 공개 금지 |
-| 입금 관리 | `PAYMENT_SCHEDULE_SPREADSHEET_ID` | 계정별 캘린더와 혼동 금지 |
-
-> 속성의 실제 비밀값은 이 문서와 GitHub에 적지 않습니다. 계정 책임자의 비밀번호 관리 도구에서 별도로 인계합니다.
-
-## 11. GitHub Pages 배포
+## 10. GitHub Pages 배포
 
 1. 수정 전 `git status`로 다른 사람의 변경이 있는지 확인합니다.
 2. 수정 파일만 선택해 커밋합니다.
@@ -267,28 +232,28 @@
 
 > `index.html`은 큰 단일 파일이라 충돌이 잦습니다. 동시에 여러 명이 수정하지 말고, 한 명이 작업하거나 별도 브랜치와 Pull Request로 합칩니다.
 
-## 12. 자주 발생하는 문제
+## 11. 자주 발생하는 문제
 
 | 증상 | 먼저 확인할 것 | 해결 방향 |
 |---|---|---|
 | 온보딩 파일 미매칭 | DOCX가 올바른 폴더에 있는지, 본문 건물명·주소 | 폴더 ID와 본문 라벨 수정 후 재접수 |
 | Google 로그인 실패 | Firebase Google 공급자, 승인 도메인 | `bringengineering.github.io` 승인 도메인 확인 |
-| SENS `from not authenticated` | 발신번호 승인 상태와 `NCP_SENS_FROM` | 승인된 번호를 하이픈 없이 저장 후 재배포 불필요, 재시도 |
+| SENS `from not authenticated` | 발신번호 승인 상태 | 승인된 발신번호인지 확인한 뒤 시스템 관리자에게 재시도 요청 |
 | 업체 문자가 안 감 | 업체 번호가 휴대폰인지, 첫 JPG/JPEG 사진이 있는지 | 033/0507만 있으면 휴대폰 번호 보완 |
 | ⑤가 진행중에 멈춤 | 선택 업체 중 실패 업체, 요청 ID | ⑤ 메모와 SENS 콘솔 발송 내역 비교 |
-| 견적 업로드가 느림 | `MINERU_SYNC_ENABLED`, 파일 크기 | 기본값 `false`, 파일 5MB 이하 확인 |
-| 사업자 정보가 빈칸 | 업체명/사업자번호 매칭, OCR 권한 | 이름 정리, Drive API, MinerU 키 확인 후 재작성 |
-| 단계가 되돌아감 | 오래 열린 브라우저, 전체 저장 코드 | 새로고침 후 Firebase `automationState` 확인, 부분 업데이트 유지 |
+| 견적 업로드가 느림 | 파일 크기와 분석 대기 상태 | 파일 5MB 이하인지 확인하고 완료될 때까지 같은 파일을 다시 올리지 않음 |
+| 사업자 정보가 빈칸 | 업체명/사업자번호 매칭 | 견적서와 사업자등록증의 업체명을 확인한 뒤 재작성 |
+| 단계가 되돌아감 | 오래 열린 브라우저, 여러 탭 동시 수정 | 다른 탭을 닫고 새로고침한 뒤 다시 처리 |
 | 견적 삭제 후 되살아남 | Firebase 삭제 완료 전 오래된 저장 | 케이스 child 삭제 로그와 다른 탭을 확인 |
-| 승인 링크가 안 열림 | Apps Script 최신 배포와 링크 사전검증 | 웹 앱 새 버전 배포 후 ⑧ 재시도 |
-| ⑧ 문자 도착 후 단계 정지 | SENS 요청 결과 저장, Firebase 업데이트 | 실행 로그와 `ownerRecommendationMms` 확인 |
-| Drive 권한 오류 | Apps Script 실행 계정의 폴더 권한 | `authorizeDriveAccess` 실행, scope 승인, 새 배포 |
+| 승인 링크가 안 열림 | 문자에 포함된 링크와 승인 화면 상태 | 시스템 관리자에게 링크 재생성 후 ⑧ 재발송 요청 |
+| ⑧ 문자 도착 후 단계 정지 | 발송 결과와 케이스 기록 | 시스템 관리자에게 발송 기록과 케이스 ID 전달 |
+| Drive 권한 오류 | 로그인 계정의 폴더 공유 권한 | 운영 Drive를 편집자로 다시 공유하고 재시도 |
 | 방문 시간이 1899년으로 표시 | Google Form 시간 전용 값 | 접수일 또는 방문일과 결합되는 최신 코드 확인 |
 | 입금 캘린더가 팀원마다 다름 | 로그인 Google UID | 지정 정산 계정을 사용하거나 공유형 구조 개발 |
 
-## 13. 테스트 체크리스트
+## 12. 테스트 체크리스트
 
-### 13.1 신규 건물 도입 테스트
+### 12.1 신규 건물 도입 테스트
 
 1. 온보딩 DOCX를 올린다.
 2. 건물 목록을 동기화한다.
@@ -301,10 +266,9 @@
 9. 모바일 승인 후 ⑩ 진입을 확인한다.
 10. 관리자가 입금 확인 후 ⑪ 진입을 확인한다.
 
-### 13.2 배포 후 최소 점검
+### 12.2 배포 후 최소 점검
 
 - 관리자 화면 버전이 최신이다.
-- Apps Script health 응답 빌드가 최신이다.
 - Google 로그인과 로그아웃이 된다.
 - 케이스가 실시간으로 보인다.
 - 업체 선택 상태가 새로고침 후 유지된다.
@@ -312,7 +276,7 @@
 - 건물주 승인 페이지가 모바일에서 열린다.
 - 휴지통 복원·영구 삭제가 정상이다.
 
-## 14. 보안과 개인정보 주의
+## 13. 보안과 개인정보 주의
 
 > **현재 제한** 관리자 화면에는 Google 로그인 게이트가 있지만 Firebase 규칙의 `cases`, `caseSettings`, `workflow`는 현재 공개 읽기·쓰기 설정입니다. 로그인 화면만으로 데이터베이스 접근이 완전히 보호되는 것은 아닙니다.
 
@@ -323,7 +287,7 @@
 - 운영 안정화 후 `/cases`, `/caseSettings`, `/workflow`도 인증 사용자와 역할 기반 규칙으로 잠그는 보안 개선이 필요합니다.
 - 로그 공유 전 전화번호, 계좌번호, API 응답의 민감값을 가립니다.
 
-## 15. 인계 완료 확인표
+## 14. 인계 완료 확인표
 
 | 확인 항목 | 담당 | 완료 |
 |---|---|---|
@@ -335,11 +299,10 @@
 | 건물주 승인 링크 테스트 |  |  |
 | ⑩ 입금 확인과 ⑪ 전환 테스트 |  |  |
 | GitHub Pages 배포 실습 |  |  |
-| Apps Script 새 버전 배포 실습 |  |  |
 | 비밀키 보관 위치 인계 |  |  |
 | 퇴사자 권한 회수 절차 확인 |  |  |
 
-## 16. 인계 시 팀이 채울 연락처
+## 15. 인계 시 팀이 채울 연락처
 
 | 구분 | 이름 | 연락처/계정 | 비고 |
 |---|---|---|---|
@@ -352,4 +315,4 @@
 
 ---
 
-이 문서는 팀 운영의 시작점입니다. 세부 Apps Script 설치·템플릿·테스트 절차는 `apps-script/README.md`, 코드 구조와 최신 변경사항은 `README.md`와 `index.html`의 `CHANGELOG`를 함께 확인합니다.
+이 문서는 팀 운영의 시작점입니다. 화면 기능과 최신 변경사항은 `README.md`와 관리자 화면의 업데이트 내역을 함께 확인합니다.
