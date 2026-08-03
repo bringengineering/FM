@@ -35,7 +35,7 @@ const PAYMENT_SCHEDULE_HEADERS = [
   "상태",
   "비고"
 ];
-const AUTOMATION_BUILD = "complaint-workflow-20260730-v52";
+const AUTOMATION_BUILD = "complaint-workflow-20260803-v53";
 const OWNER_RECOMMENDATION_IMAGE_VERSION = "owner-summary-v4";
 const OWNER_DECISION_VIEW = "owner-decision";
 const PAYMENT_NOTIFICATION_CONFIG_PROPERTY = "PAYMENT_NOTIFICATION_AUTOMATION_CONFIG";
@@ -8127,6 +8127,8 @@ function paymentOwnerSummaryAlimTalkContent_(ownerName, buildings, reminderType)
   return [
     "[BRING Care 월세 입금 안내]",
     safeAlimTalkVariable_(ownerName || "건물주", "건물주") + "님, 안녕하세요.",
+    "",
+    "본 알림은 BRING Care가 관리하는 임대차 계약의 월세 납부 예정 또는 미입금 현황을 계약 건물주에게 안내하는 정보성 알림입니다.",
     "",
     notice,
     paymentOwnerSummaryBuildingsDetail_(buildings, reminderType)

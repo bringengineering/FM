@@ -55,7 +55,7 @@ const context = {
   String,
   Date,
   Object,
-  AUTOMATION_BUILD: "complaint-workflow-20260730-v52",
+  AUTOMATION_BUILD: "complaint-workflow-20260803-v53",
   firebasePaymentCalendarUrl_(uid, childPath) {
     return `${uid}/${childPath}`;
   },
@@ -131,6 +131,6 @@ assert.equal(savedRecord.value.deliveredAt, "2026-07-29T16:26:30");
 
 assert.match(source, /payload\.action === "getPaymentReminderDeliveryStatus"/);
 assert.match(source, /makeNcpSignature_\("GET", uri/);
-assert.match(source, /const AUTOMATION_BUILD = "complaint-workflow-20260730-v52"/);
+assert.match(source, /const AUTOMATION_BUILD = "complaint-workflow-20260803-v53"/);
 
 console.log("PASS Kakao AlimTalk final delivery status lookup and safe Firebase record");

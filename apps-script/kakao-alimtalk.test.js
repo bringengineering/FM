@@ -270,7 +270,7 @@ assert.equal(kakaoOnlyResult.provider, "kakao_alimtalk");
 assert.equal(kakaoOnlyResult.message.includes("template not approved"), true);
 assert.equal(lastSms, null);
 
-assert.match(source, /const AUTOMATION_BUILD = "complaint-workflow-20260730-v52"/);
+assert.match(source, /const AUTOMATION_BUILD = "complaint-workflow-20260803-v53"/);
 assert.match(source, /provider: "kakao_alimtalk"/);
 assert.match(source, /name: "추천 견적 확인"/);
 

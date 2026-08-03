@@ -66,7 +66,7 @@ const context = {
   Array,
   Object,
   JSON,
-  AUTOMATION_BUILD: "complaint-workflow-20260730-v52",
+  AUTOMATION_BUILD: "complaint-workflow-20260803-v53",
   safeAlimTalkVariable_(value, maxLength) {
     return String(value || "").trim().slice(0, maxLength || 100);
   },
@@ -150,6 +150,7 @@ assert.equal(sent.options.allowSmsFallback, false);
 assert.match(sent.content, /\[BRING Care 월세 납부 안내\]/);
 assert.match(sent.content, /테스트세입자님, 안녕하세요\./);
 assert.match(sent.content, /납부금액: 1원/);
+assert.match(sent.content, /오늘은 월세 납부일입니다\./);
 assert.doesNotMatch(sent.content, /계좌 내역 확인 후 자동 반영/);
 assert.equal(result.ok, true);
 assert.equal(result.status, "카카오 알림톡 요청 완료");
@@ -172,6 +173,7 @@ const overdueResult = context.handlePaymentReminderSms_({
   force: true
 });
 assert.equal(sent.options.templateCode, "BRINGRENTOVERDUEV1");
+assert.match(sent.content, /월세 입금이 아직 확인되지 않아 안내드립니다\./);
 assert.match(sent.content, /월세 납부와 관련한 문의사항은 아래 연락처로 연락해 주세요\./);
 assert.match(sent.content, /문의: 033-748-8919$/);
 assert.equal(overdueResult.templateCode, "BRINGRENTOVERDUEV1");

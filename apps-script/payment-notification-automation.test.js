@@ -232,6 +232,10 @@ const ownerContent = context.paymentOwnerSummaryAlimTalkContent_(
   "overdue"
 );
 assert.match(ownerContent, /^\[BRING Care 월세 입금 안내\]/);
+assert.match(
+  ownerContent,
+  /본 알림은 BRING Care가 관리하는 임대차 계약의 월세 납부 예정 또는 미입금 현황을 계약 건물주에게 안내하는 정보성 알림입니다\./
+);
 assert.match(ownerContent, /다음 날 13시까지 입금이 확인되지 않은 내역/);
 assert.match(ownerContent, /303호 홍길동 500,000원/);
 assert.match(ownerContent, /건물: 행복빌라/);
@@ -250,6 +254,10 @@ const ownerDueContent = context.paymentOwnerSummaryAlimTalkContent_(
   "due"
 );
 assert.match(ownerDueContent, /2026년 7월 30일 입금 예정 내역을 안내드립니다\./);
+assert.match(
+  ownerDueContent,
+  /본 알림은 BRING Care가 관리하는 임대차 계약의 월세 납부 예정 또는 미입금 현황을 계약 건물주에게 안내하는 정보성 알림입니다\./
+);
 assert.doesNotMatch(ownerDueContent, /오늘 입금 예정/);
 
 const matchedPayments = [{
