@@ -439,6 +439,28 @@
   .quote-card-links a{ display:inline-flex; align-items:center; min-height:26px; padding:3px 8px; border:1px solid #c5d4ff; border-radius:7px; background:#f6f8ff; color:#315fce; text-decoration:none; font-size:12.5px; font-weight:800; }
   .quote-card-links a:hover{ text-decoration:underline; }
   .quote-remove{ justify-self:start; border:1px dashed #f3c0c0; background:#fff; color:#c92a2a; border-radius:7px; padding:4px 8px; font-size:11.5px; cursor:pointer; font-family:inherit; }
+  .work-photo-panel{ margin-top:8px; display:grid; gap:10px; overflow-anchor:none; }
+  .work-photo-upload-grid,.work-photo-compare{ display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:10px; }
+  .work-photo-box{ border:1px solid #d8e0ec; background:#fbfcff; border-radius:8px; padding:12px; min-width:0; }
+  .work-photo-box.before{ border-top:3px solid #6b7686; }
+  .work-photo-box.after{ border-top:3px solid #20b26b; }
+  .work-photo-title{ display:flex; align-items:center; justify-content:space-between; gap:8px; margin-bottom:3px; color:#162033; font-size:14px; font-weight:900; }
+  .work-photo-count{ color:#52606d; background:#eef1f6; border-radius:999px; padding:2px 7px; font-size:11px; white-space:nowrap; }
+  .work-photo-box.after .work-photo-count{ color:#116329; background:#eaf7ee; }
+  .work-photo-sub{ margin-bottom:9px; color:#6b7686; font-size:12px; line-height:1.45; }
+  .work-photo-actions{ display:flex; justify-content:flex-end; }
+  .work-photo-gallery{ display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:8px; margin-top:10px; }
+  .work-photo-card{ border:1px solid #e3e8f1; background:#fff; border-radius:8px; overflow:hidden; min-width:0; }
+  .work-photo-thumb{ display:block; width:100%; aspect-ratio:4/3; object-fit:cover; background:#eef1f6; }
+  .work-photo-card-body{ display:grid; gap:5px; padding:8px; }
+  .work-photo-name{ color:#243244; font-size:12px; font-weight:800; line-height:1.35; overflow-wrap:anywhere; }
+  .work-photo-meta{ color:#6b7686; font-size:11px; }
+  .work-photo-links{ display:flex; align-items:center; justify-content:space-between; gap:6px; }
+  .work-photo-open{ display:inline-flex; align-items:center; min-height:26px; padding:3px 8px; border:1px solid #c5d4ff; border-radius:7px; background:#f6f8ff; color:#315fce; text-decoration:none; font-size:12px; font-weight:800; }
+  .work-photo-remove{ border:1px dashed #f3c0c0; background:#fff; color:#c92a2a; border-radius:7px; padding:4px 7px; font-size:11px; cursor:pointer; }
+  .work-photo-empty{ min-height:130px; display:grid; place-items:center; border:1px dashed #d8e0ec; border-radius:8px; color:#8a96a6; background:#fafbfd; padding:14px; text-align:center; font-size:12px; line-height:1.5; }
+  .work-photo-reference{ margin-top:8px; border:1px solid #b9e6c5; background:#fbfffc; border-radius:8px; padding:12px; overflow-anchor:none; }
+  .work-photo-reference-head{ margin-bottom:9px; color:#162033; font-size:14px; font-weight:900; }
   .recommend-card{ margin-top:8px; border:1px solid #b9e6c5; background:#fbfffc; border-radius:10px; padding:12px; display:grid; gap:10px; }
   .recommend-head{ display:flex; align-items:flex-start; justify-content:space-between; gap:10px; flex-wrap:wrap; }
   .recommend-title{ font-size:15px; font-weight:900; color:#162033; }
@@ -486,7 +508,7 @@
   @media (max-width:980px){ .recommend-grid{ grid-template-columns:repeat(2,minmax(0,1fr)); } }
   @media (max-width:1180px){ .quote-cards{ grid-template-columns:repeat(2,minmax(0,1fr)); } }
   @media (max-width:980px){ .quote-upload-split{ grid-template-columns:1fr; } }
-  @media (max-width:720px){ .quote-form,.quote-cards{ grid-template-columns:1fr; } }
+  @media (max-width:720px){ .quote-form,.quote-cards,.work-photo-upload-grid,.work-photo-compare{ grid-template-columns:1fr; } .work-photo-gallery{ grid-template-columns:repeat(2,minmax(0,1fr)); } }
   @media (max-width:720px){ .recommend-grid{ grid-template-columns:1fr; } }
   @media (max-width:720px){ .owner-decision-info{ grid-template-columns:1fr; } }
   @media (max-width:720px){ .payment-confirm-info{ grid-template-columns:1fr; } }
@@ -2306,6 +2328,24 @@ const CASE_STEPS = [
 const OWNER_PAYMENT_ACCOUNT = { accountNumber:"123-456-789012", accountHolder:"브링케어" };
 const DOC_NAMES = { onboard:"온보딩 수집서", quote:"견적서", contract:"계약서", approval:"승인 링크", inspect:"점검 체크리스트", ba:"B/A 보고서", monthly:"월간 리포트" };
 function gradeFee(g){ return g==="라이트"?"190,000원/월":g==="프리미엄"?"월세수입의 7~11%":"390,000원/월"; }
+function workPhotoFilesList(c, phase){
+  return Object.values((c&&c.workPhotoFiles)||{}).filter(photo=>photo && (!phase || photo.phase===phase))
+    .sort((a,b)=>String(a.uploadedAt||"").localeCompare(String(b.uploadedAt||"")));
+}
+function workPhotoThumbnailUrl(photo, size){
+  const id=String((photo&&(photo.driveFileId||photo.fileId))||"").trim();
+  return id ? `https://drive.google.com/thumbnail?id=${encodeURIComponent(id)}&sz=w${size||900}` : "";
+}
+function workPhotoReportCell(c, phase){
+  const photos=workPhotoFilesList(c,phase).slice(0,4);
+  if(!photos.length) return `<div class="photo-empty">등록된 사진 없음</div>`;
+  return `<div class="photo-grid">${photos.map(photo=>{
+    const thumb=workPhotoThumbnailUrl(photo,700);
+    const url=photo.fileUrl||photo.driveUrl||"";
+    const image=thumb?`<img src="${escAttr(thumb)}" alt="${escAttr(photo.fileName||"작업 사진")}">`:"";
+    return `<div class="photo-item">${url?`<a href="${escAttr(url)}">${image||esc(photo.fileName||"원본 사진 열기")}</a>`:image}<div>${esc(photo.fileName||"")}</div></div>`;
+  }).join("")}</div>`;
+}
 function caseDocHTML(id,k){
   const c=cases[id]; if(!c) return null;
   const s=CASE_STEPS.find(x=>x.k===k); if(!s||!s.doc) return null;
@@ -2341,7 +2381,7 @@ function caseDocHTML(id,k){
   } else if(s.doc==="ba"){
     body=`<h1>작업 Before / After 보고서</h1>`+tbl(`<tr><th>건물</th><td>${bl}</td><th>작업일</th><td>${today}</td></tr>`)+
       `<h2>작업 내용</h2><p>${memo||"______________________"}</p>`+
-      `<h2>사진</h2>`+tbl(`<tr><th>작업 전</th><th>작업 후</th></tr><tr><td style="height:120px">&nbsp;</td><td>&nbsp;</td></tr>`)+
+      `<h2>사진</h2>`+tbl(`<tr><th>작업 전</th><th>작업 후</th></tr><tr><td style="height:120px">${workPhotoReportCell(c,"before")}</td><td>${workPhotoReportCell(c,"after")}</td></tr>`)+
       `<h2>비용</h2><p>견적/실제: ______ (건물주 → 업체 직접 지급)</p>`;
   } else if(s.doc==="monthly"){
     body=`<h1>월간 운영 리포트</h1>`+tbl(`<tr><th>건물</th><td>${bl}</td><th>고객</th><td>${nm}</td></tr><tr><th>대상월</th><td>${today.slice(0,7)}</td><th>등급</th><td>${gr}</td></tr>`)+
@@ -2350,7 +2390,7 @@ function caseDocHTML(id,k){
       `<h2>비용 정리</h2><p>수리비/청소비/기타: ______ (증빙 첨부)</p>`;
   }
   const html=`<html xmlns:o="urn:schemas-microsoft-com:office:office" xmlns:w="urn:schemas-microsoft-com:office:word"><head><meta charset="utf-8"><title>${title}</title>`+
-    `<style>body{font-family:'Malgun Gothic',sans-serif;font-size:11pt;line-height:1.6;color:#222;} h1{font-size:18pt;text-align:center;margin-bottom:16px;} h2{font-size:12.5pt;border-bottom:1px solid #ccc;padding-bottom:3px;margin-top:18px;} p{margin:6px 0;} table{border-collapse:collapse;width:100%;margin:6px 0;} td,th{border:1px solid #999;padding:5px 8px;font-size:10pt;text-align:left;} th{background:#eef1f6;} .muted{color:#888;font-size:9.5pt;font-style:italic;}</style></head><body>${body}</body></html>`;
+    `<style>body{font-family:'Malgun Gothic',sans-serif;font-size:11pt;line-height:1.6;color:#222;} h1{font-size:18pt;text-align:center;margin-bottom:16px;} h2{font-size:12.5pt;border-bottom:1px solid #ccc;padding-bottom:3px;margin-top:18px;} p{margin:6px 0;} table{border-collapse:collapse;width:100%;margin:6px 0;} td,th{border:1px solid #999;padding:5px 8px;font-size:10pt;text-align:left;vertical-align:top;} th{background:#eef1f6;} .muted{color:#888;font-size:9.5pt;font-style:italic;}.photo-grid{display:grid;grid-template-columns:repeat(2,1fr);gap:6px;}.photo-item{font-size:8.5pt;color:#666;word-break:break-all;}.photo-item img{display:block;width:100%;height:120px;object-fit:cover;margin-bottom:3px;}.photo-empty{height:120px;display:flex;align-items:center;justify-content:center;color:#999;}</style></head><body>${body}</body></html>`;
   return { filename:`${title}_${(c.name||"고객")}.doc`, html, title };
 }
 function downloadCaseDoc(id,k){
@@ -2370,6 +2410,7 @@ let showArchivedCases = loadCaseArchiveMode();
 let settings = {}, caseSettingsRef = null, caseSettingsHandler = null;
 let quotePendingFiles = [], quotePendingCaseId = null;
 let businessRegPendingFiles = [], businessRegPendingCaseId = null;
+let workPhotoPendingFiles = { before:[], after:[] }, workPhotoPendingCaseId = null;
 let notice = null, noticeRef = null;
 function caseGenId(){ return "k"+Date.now().toString(36)+Math.random().toString(36).slice(2,5); }
 function loadCaseTestMode(){ try{ return localStorage.getItem("fm_case_test_mode") === "1"; }catch(e){ return false; } }
@@ -2403,7 +2444,7 @@ function caseSavePayload(id, options){
     delete payload.restoredBy;
   }
   // Apps Script가 관리하는 결과는 늦게 도착한 화면 저장이 덮어쓰지 않게 한다.
-  ["ownerRecommendationMms","ownerDecision","automationState","vendorEstimateMms","quoteFiles","businessRegistrationFiles","complaintReceiptSms"].forEach(key=>delete payload[key]);
+  ["ownerRecommendationMms","ownerDecision","automationState","vendorEstimateMms","quoteFiles","businessRegistrationFiles","workPhotoFiles","complaintReceiptSms"].forEach(key=>delete payload[key]);
 
   // Firebase update에서 status/note 객체 전체가 교체되지 않도록 개별 경로로 저장한다.
   const status=Object.assign({}, payload.status||{});
@@ -3543,6 +3584,108 @@ function renderQuoteUploadPanel(c, stepStatus){
   </div>`;
   return `<div class="quote-upload-split">${quoteUploadBox}${renderBusinessRegistrationUploadBox()}</div><div class="quote-upload-action"><button class="quote-send" data-case-doc-upload="1">선택 파일 모두 업로드</button></div><div class="quote-result-section">${cards}</div>`;
 }
+function ensureWorkPhotoPendingCase(){
+  const id=curCase||"";
+  if(workPhotoPendingCaseId!==id){
+    workPhotoPendingCaseId=id;
+    workPhotoPendingFiles={before:[],after:[]};
+  }
+}
+function workPhotoPhaseText(phase){ return phase==="after"?"작업 후":"작업 전"; }
+function workPhotoPendingList(phase){ ensureWorkPhotoPendingCase(); return workPhotoPendingFiles[phase]||[]; }
+function workPhotoSelectedFileListHtml(phase){
+  const files=workPhotoPendingList(phase);
+  if(!files.length) return `<div class="quote-file-empty">선택된 사진 없음</div>`;
+  return files.map(file=>`<div class="quote-file-item" title="${escAttr(file.name)}">
+    <span class="quote-file-name">${esc(file.name)}</span>
+    <button class="quote-file-remove" type="button" data-work-photo-file-remove="${escAttr(phase)}" data-file-key="${escAttr(quoteFileKey(file))}" title="선택 목록에서 제거" aria-label="${escAttr(file.name)} 선택 목록에서 제거">🗑</button>
+  </div>`).join("");
+}
+function refreshWorkPhotoFileList(phase){
+  const list=document.getElementById(phase==="after"?"workPhotoAfterList":"workPhotoBeforeList");
+  if(list) list.innerHTML=workPhotoSelectedFileListHtml(phase);
+}
+function addWorkPhotoPendingFiles(phase, files){
+  ensureWorkPhotoPendingCase();
+  if(phase!=="before" && phase!=="after") return;
+  const pending=workPhotoPendingFiles[phase]||[];
+  const seen=new Set(pending.map(quoteFileKey));
+  Array.from(files||[]).filter(Boolean).forEach(file=>{
+    const key=quoteFileKey(file);
+    if(!seen.has(key)){ pending.push(file); seen.add(key); }
+  });
+  workPhotoPendingFiles[phase]=pending;
+  const input=document.getElementById(phase==="after"?"workPhotoAfterFile":"workPhotoBeforeFile");
+  if(input) input.value="";
+  refreshWorkPhotoFileList(phase);
+}
+function removeWorkPhotoPendingFile(phase, key){
+  ensureWorkPhotoPendingCase();
+  if(!workPhotoPendingFiles[phase]) return;
+  workPhotoPendingFiles[phase]=workPhotoPendingFiles[phase].filter(file=>quoteFileKey(file)!==String(key||""));
+  refreshWorkPhotoFileList(phase);
+}
+function clearWorkPhotoPendingFiles(){
+  ensureWorkPhotoPendingCase();
+  workPhotoPendingFiles={before:[],after:[]};
+  ["before","after"].forEach(refreshWorkPhotoFileList);
+}
+function workPhotoUploadAllowed(file){
+  if(!file) return "업로드할 사진을 선택하세요.";
+  const ext=(file.name.split(".").pop()||"").toLowerCase();
+  if(file.size > 5*1024*1024) return "사진 용량이 5MB를 초과했습니다.";
+  if(!["jpg","jpeg","png","webp"].includes(ext)) return "JPG, PNG, WEBP 사진만 업로드할 수 있습니다.";
+  return "";
+}
+function workPhotoUploadErrors(entries){
+  if(!entries.length) return ["업로드할 작업 전·후 사진을 선택하세요."];
+  return entries.map(entry=>{
+    const error=workPhotoUploadAllowed(entry.file);
+    return error?`${entry.file.name}: ${error}`:"";
+  }).filter(Boolean);
+}
+function workPhotoCardHtml(photo, removable){
+  const thumb=workPhotoThumbnailUrl(photo,800);
+  const url=photo.fileUrl||photo.driveUrl||"";
+  return `<article class="work-photo-card">
+    ${thumb?`<a href="${escAttr(url||thumb)}" target="_blank" rel="noopener"><img class="work-photo-thumb" src="${escAttr(thumb)}" alt="${escAttr(photo.fileName||"작업 사진")}" loading="lazy"></a>`:`<div class="work-photo-empty">미리보기 없음</div>`}
+    <div class="work-photo-card-body">
+      <div class="work-photo-name">${esc(photo.fileName||"작업 사진")}</div>
+      <div class="work-photo-meta">${esc(formatQuoteDate(photo.uploadedAt)||"")}</div>
+      <div class="work-photo-links">${url?`<a class="work-photo-open" href="${escAttr(url)}" target="_blank" rel="noopener">원본 열기</a>`:"<span></span>"}${removable?`<button class="work-photo-remove" data-work-photo-remove="${escAttr(photo.id||"")}">목록에서 제거</button>`:""}</div>
+    </div>
+  </article>`;
+}
+function workPhotoGalleryHtml(c, phase, removable){
+  const photos=workPhotoFilesList(c,phase);
+  if(!photos.length) return `<div class="work-photo-empty">${workPhotoPhaseText(phase)} 사진이 아직 없습니다.</div>`;
+  return `<div class="work-photo-gallery">${photos.map(photo=>workPhotoCardHtml(photo,removable)).join("")}</div>`;
+}
+function renderWorkPhotoUploadBox(c, phase){
+  const isAfter=phase==="after";
+  const inputId=isAfter?"workPhotoAfterFile":"workPhotoBeforeFile";
+  const listId=isAfter?"workPhotoAfterList":"workPhotoBeforeList";
+  const count=workPhotoFilesList(c,phase).length;
+  return `<section class="work-photo-box ${phase}">
+    <div class="work-photo-title"><span>${workPhotoPhaseText(phase)} 사진</span><span class="work-photo-count">업로드 ${count}장</span></div>
+    <div class="work-photo-sub">JPG, PNG, WEBP · 장당 최대 5MB · 여러 장 선택/드래그 가능</div>
+    <div class="quote-file-wrap" data-work-photo-drop="${phase}">
+      <label class="quote-file-picker">사진 선택<input class="quote-file" id="${inputId}" data-work-photo-input="${phase}" type="file" multiple accept=".jpg,.jpeg,.png,.webp,image/jpeg,image/png,image/webp"></label>
+      <div class="quote-drop-hint">${workPhotoPhaseText(phase)} 사진을 여기에 드래그해도 됩니다.</div>
+      <div class="quote-file-list" id="${listId}">${workPhotoSelectedFileListHtml(phase)}</div>
+    </div>
+    ${workPhotoGalleryHtml(c,phase,true)}
+  </section>`;
+}
+function renderWorkPhotoPanel(c, stepStatus){
+  if(stepStatus!=="doing" && stepStatus!=="done") return "";
+  ensureWorkPhotoPendingCase();
+  return `<div class="work-photo-panel"><div class="work-photo-upload-grid">${renderWorkPhotoUploadBox(c,"before")}${renderWorkPhotoUploadBox(c,"after")}</div><div class="work-photo-actions"><button class="quote-send" data-work-photo-upload="1">선택 사진 모두 업로드</button></div></div>`;
+}
+function renderWorkPhotoReferencePanel(c, stepStatus){
+  if(stepStatus!=="doing" && stepStatus!=="done") return "";
+  return `<section class="work-photo-reference"><div class="work-photo-reference-head">⑬ 작업 전·후 사진 참고</div><div class="work-photo-compare"><section class="work-photo-box before"><div class="work-photo-title"><span>작업 전</span><span class="work-photo-count">${workPhotoFilesList(c,"before").length}장</span></div>${workPhotoGalleryHtml(c,"before",false)}</section><section class="work-photo-box after"><div class="work-photo-title"><span>작업 후</span><span class="work-photo-count">${workPhotoFilesList(c,"after").length}장</span></div>${workPhotoGalleryHtml(c,"after",false)}</section></div></section>`;
+}
 const DEFAULT_CASE_AUTOMATION_ENDPOINT = "https://script.google.com/macros/s/AKfycbxGAdtEDoNifxkM-e_Jm7dBkCnjM4oPJqz8RxZXoMoSKod5M_m9Yj2b11-nI97zmfd6Jw/exec";
 const CASE_AUTOMATION_ENDPOINT_VERSION = "sens-main-20260710";
 function normalizeWebAppEndpoint(url){
@@ -4130,6 +4273,81 @@ async function uploadSelectedCaseDocuments(){
   finishQuoteUploadJob(uploadJob);
   quoteUploadHideTimer=setTimeout(()=>{ quoteUploadHideTimer=null; hideQuoteUploadProgress(); }, 1400);
 }
+async function uploadWorkPhotos(){
+  const c=cases[curCase];
+  if(!c || quoteUploadInProgress) return;
+  const lock=stepLockMessage(c,"c13");
+  if(lock){ alert(lock); return; }
+  ensureWorkPhotoPendingCase();
+  const entries=[
+    ...workPhotoPendingList("before").map(file=>({phase:"before",file})),
+    ...workPhotoPendingList("after").map(file=>({phase:"after",file}))
+  ];
+  const errors=workPhotoUploadErrors(entries);
+  if(errors.length){ alert(errors.slice(0,8).join("\n")); return; }
+  if(!caseAutomationEndpoint()){
+    if(!promptCaseAutomationSetup()) return;
+    if(!caseAutomationEndpoint()) return;
+  }
+  const uploadJob=createQuoteUploadJob();
+  try{
+    for(let i=0;i<entries.length;i++){
+      throwIfQuoteUploadCanceled(uploadJob);
+      const entry=entries[i], file=entry.file, phaseText=workPhotoPhaseText(entry.phase);
+      updateQuoteUploadProgress({
+        title:"작업 사진 업로드 중...",
+        fileName:`${phaseText} · ${file.name}`,
+        detail:"사진을 읽는 중입니다.",
+        percent:(i/entries.length)*100,
+        count:`${i+1}/${entries.length}`
+      },uploadJob);
+      const body=await readFileAsBase64(file,uploadJob);
+      throwIfQuoteUploadCanceled(uploadJob);
+      updateQuoteUploadProgress({
+        title:"작업 사진 업로드 중...",
+        fileName:`${phaseText} · ${file.name}`,
+        detail:"Drive 저장 요청을 보내는 중입니다.",
+        percent:((i+0.55)/entries.length)*100,
+        count:`${i+1}/${entries.length}`
+      },uploadJob);
+      await sendCaseAutomationRequest(caseAutomationEndpoint(),{
+        action:"uploadWorkPhoto",
+        caseId:c.ticketNo||c.id||curCase,
+        phase:entry.phase,
+        file:{fileName:file.name,mimeType:file.type||"",size:file.size,fileBody:body}
+      },uploadJob);
+      throwIfQuoteUploadCanceled(uploadJob);
+      caseLog(c,`📷 ${phaseText} 사진 업로드 요청: ${file.name}`);
+      updateQuoteUploadProgress({
+        title:"작업 사진 업로드 중...",
+        fileName:`${phaseText} · ${file.name}`,
+        detail:"업로드 요청을 보냈습니다.",
+        percent:((i+1)/entries.length)*100,
+        count:`${i+1}/${entries.length}`
+      },uploadJob);
+    }
+  }catch(err){
+    if(isQuoteUploadCanceledError(err)){ finishQuoteUploadJob(uploadJob); return; }
+    updateQuoteUploadProgress({title:"업로드 실패",fileName:"작업 사진 업로드를 중단했습니다.",detail:err&&err.message?err.message:"다시 시도해 주세요.",percent:0,count:""},uploadJob);
+    finishQuoteUploadJob(uploadJob);
+    alert("작업 사진 업로드 중 문제가 생겼어요.\n"+(err&&err.message?err.message:"다시 시도해 주세요."));
+    return;
+  }
+  if(isQuoteUploadCanceled(uploadJob)){ finishQuoteUploadJob(uploadJob); return; }
+  const scrollSnapshot=captureCaseDetailScroll();
+  clearWorkPhotoPendingFiles();
+  c.status=c.status||{};
+  c.note=c.note||{};
+  if(c.status.c13!=="done") c.status.c13="doing";
+  c.note.c13=`작업 사진 ${entries.length}장 업로드 요청 완료 · Drive 반영 대기 중`;
+  saveCase(curCase);
+  renderCaseList();
+  renderCaseDetail();
+  restoreCaseDetailScroll(scrollSnapshot);
+  updateQuoteUploadProgress({title:"업로드 요청 완료",fileName:`작업 사진 ${entries.length}장 요청 완료`,detail:"Drive 저장 후 ⑬ 전·후 사진 목록과 ⑭ 보고서 참고 영역에 자동 반영됩니다.",percent:100,count:`${entries.length}/${entries.length}`},uploadJob);
+  finishQuoteUploadJob(uploadJob);
+  quoteUploadHideTimer=setTimeout(()=>{quoteUploadHideTimer=null;hideQuoteUploadProgress();},1400);
+}
 async function confirmQuoteAmount(quoteId){
   const c=cases[curCase];
   if(!c || !quoteId || !c.quoteFiles || !c.quoteFiles[quoteId]) return;
@@ -4249,6 +4467,18 @@ function removeBusinessRegistrationFromCase(docId){
   caseLog(c, "사업자등록증 목록 제거: "+(doc.vendorName||doc.fileName||"증빙"));
   saveCaseWithRemovedChild(curCase, "businessRegistrationFiles/"+docId);
   renderCaseDetail();
+}
+function removeWorkPhotoFromCase(photoId){
+  const c=cases[curCase];
+  if(!c || !photoId || !c.workPhotoFiles) return;
+  photoId=resolveCaseMapKey(c.workPhotoFiles,photoId);
+  if(!c.workPhotoFiles[photoId]) return;
+  const photo=c.workPhotoFiles[photoId];
+  delete c.workPhotoFiles[photoId];
+  holdCaseLocalField(curCase,"workPhotoFiles",c.workPhotoFiles,5000);
+  caseLog(c,`${workPhotoPhaseText(photo.phase)} 사진 목록 제거: ${photo.fileName||"사진"}`);
+  saveCaseWithRemovedChild(curCase,"workPhotoFiles/"+photoId);
+  renderCaseDetailKeepScroll();
 }
 function applyNextStepProgress(c, messages){
   if(!c || !c.status) return false;
@@ -4639,7 +4869,7 @@ function openCaseView(){
 }
 function closeCaseView(){ caseView.classList.remove("open"); }
 function createCase(){ const id=caseGenId(); cases[id]={ id, name:"새 고객", phone:"", email:"", building:"", grade:"스탠다드", memo:"", status:{}, log:[], createdAt:new Date().toISOString() }; curCase=id; saveCase(id, true); renderCaseList(); renderCaseDetail(); return id; }
-function selectCase(id){ curCase=id; noteOpen.clear(); quotePendingCaseId=id; quotePendingFiles=[]; businessRegPendingCaseId=id; businessRegPendingFiles=[]; renderCaseList(); renderCaseDetail(); }
+function selectCase(id){ curCase=id; noteOpen.clear(); quotePendingCaseId=id; quotePendingFiles=[]; businessRegPendingCaseId=id; businessRegPendingFiles=[]; workPhotoPendingCaseId=id; workPhotoPendingFiles={before:[],after:[]}; renderCaseList(); renderCaseDetail(); }
 function archiveCase(id){ const c=cases[id]; if(!c) return; if(!confirm("이 케이스를 휴지통으로 이동할까요?")) return; c.archived=true; c.archivedAt=new Date().toISOString(); c.archivedBy=caseUserLabel(); caseLog(c, "케이스 휴지통 이동"); saveCase(id, true, {includeArchive:true}); if(curCase===id) curCase=firstVisibleCaseId(); renderCaseList(); renderCaseDetail(); }
 function restoreCase(id){ const c=cases[id]; if(!c) return; c.archived=false; c.restoredAt=new Date().toISOString(); c.restoredBy=caseUserLabel(); caseLog(c, "케이스 복원"); curCase=id; saveCase(id, true, {includeArchive:true}); renderCaseList(); renderCaseDetail(); }
 async function permanentlyDeleteCase(id){
@@ -5357,11 +5587,13 @@ function renderCaseDetail(){
       const vendorMmsPreview=open && s.k==='c5' && !/업체 MMS 견적 요청|업체 MMS 발송 요청 중|업체 MMS 발송 실패/.test(note) ? renderVendorMmsPreview(c) : "";
       const vendors=open && s.k==='c5' ? renderCaseVendorCandidates(c, st) : "";
       const quotes=open && s.k==='c6' ? renderQuoteUploadPanel(c, st) : "";
+      const workPhotos=s.k==='c13' ? renderWorkPhotoPanel(c, st) : "";
+      const reportPhotos=s.k==='c14' ? renderWorkPhotoReferencePanel(c, st) : "";
       const recommendation=open && s.k==='c7' ? renderRecommendedQuotePanel(c, st) : "";
       const ownerRecommendation=open && s.k==='c8' ? ownerRecommendationPanel(c, st) : "";
       const ownerDecision=open && s.k==='c9' ? ownerDecisionPanel(c, st) : "";
       const paymentConfirmation=s.k==='c10' ? paymentConfirmationPanel(c, st) : "";
-      return `<div class="cv-stepwrap"><div class="cv-step ${locked?'locked':st}">${chip}<div class="lbl">${esc(s.t)}</div>${act}${dc}${tb}${nb}</div>${box}${receiptSmsPreview}${vendorMmsPreview}${vendors}${quotes}${recommendation}${ownerRecommendation}${ownerDecision}${paymentConfirmation}</div>`;
+      return `<div class="cv-stepwrap"><div class="cv-step ${locked?'locked':st}">${chip}<div class="lbl">${esc(s.t)}</div>${act}${dc}${tb}${nb}</div>${box}${receiptSmsPreview}${vendorMmsPreview}${vendors}${quotes}${workPhotos}${reportPhotos}${recommendation}${ownerRecommendation}${ownerDecision}${paymentConfirmation}</div>`;
     }).join("")+
     (c.archived?`<div class="cv-trash-detail-actions"><button class="cv-del restore" id="cvRestore">복원</button><button class="cv-delete" id="cvPermanentDelete">삭제</button></div>`:`<button class="cv-del" id="cvDel">휴지통으로 이동</button>`)+
     (c.log&&c.log.length?`<div class="cv-log"><div class="t" style="font-weight:700">기록</div>`+c.log.slice(0,8).map(l=>`<div class="t">· ${esc(l)}</div>`).join("")+`</div>`:"");
@@ -5378,9 +5610,11 @@ caseDetailEl.addEventListener("click", e=>{
   const cu=e.target.closest("[data-case-doc-upload]"); if(cu){ uploadSelectedCaseDocuments(); return; }
   const qu=e.target.closest("[data-quote-upload]"); if(qu){ uploadQuoteFile(); return; }
   const bu=e.target.closest("[data-bizreg-upload]"); if(bu){ uploadBusinessRegistrationFiles(); return; }
+  const wu=e.target.closest("[data-work-photo-upload]"); if(wu){ uploadWorkPhotos(); return; }
   const qc=e.target.closest("[data-quote-confirm]"); if(qc){ confirmQuoteAmount(qc.dataset.quoteConfirm); return; }
   const qr=e.target.closest("[data-quote-remove]"); if(qr){ removeQuoteFileFromCase(qr.dataset.quoteRemove); return; }
   const br=e.target.closest("[data-bizreg-remove]"); if(br){ removeBusinessRegistrationFromCase(br.dataset.bizregRemove); return; }
+  const wr=e.target.closest("[data-work-photo-remove]"); if(wr){ removeWorkPhotoFromCase(wr.dataset.workPhotoRemove); return; }
   const td=e.target.closest("[data-testdone]"); if(td){ forceCompleteThroughStep(curCase, td.dataset.testdone); return; }
   const dd=e.target.closest("[data-drive-doc]"); if(dd){ const c=cases[curCase], msg=stepLockMessage(c,dd.dataset.driveDoc); if(msg){ alert(msg); return; } const url=dd.dataset.url; if(url) window.open(url, "_blank", "noopener"); return; }
   const dc=e.target.closest("[data-doc]"); if(dc){ const msg=stepLockMessage(cases[curCase], dc.dataset.doc); if(msg){ alert(msg); return; } downloadCaseDoc(curCase, dc.dataset.doc); return; }
@@ -5393,12 +5627,12 @@ caseDetailEl.addEventListener("click", e=>{
   if(e.target.closest("#cvPermanentDelete")){ permanentlyDeleteCase(curCase); return; }
   if(e.target.closest("#cvDel")){ deleteCase(curCase); }
 });
-caseDetailEl.addEventListener("click", e=>{ const qpr=e.target.closest("[data-quote-file-remove]"); if(qpr){ removeQuotePendingFile(qpr.dataset.quoteFileRemove); return; } const bpr=e.target.closest("[data-bizreg-file-remove]"); if(bpr){ removeBusinessRegPendingFile(bpr.dataset.bizregFileRemove); } });
+caseDetailEl.addEventListener("click", e=>{ const qpr=e.target.closest("[data-quote-file-remove]"); if(qpr){ removeQuotePendingFile(qpr.dataset.quoteFileRemove); return; } const bpr=e.target.closest("[data-bizreg-file-remove]"); if(bpr){ removeBusinessRegPendingFile(bpr.dataset.bizregFileRemove); return; } const wpr=e.target.closest("[data-work-photo-file-remove]"); if(wpr){ removeWorkPhotoPendingFile(wpr.dataset.workPhotoFileRemove,wpr.dataset.fileKey); } });
 caseDetailEl.addEventListener("input", e=>{ const f=e.target.closest("input[data-f]"); if(f){ setCaseField(curCase, f.dataset.f, f.value); return; } const nb=e.target.closest("textarea[data-note]"); if(nb){ setCaseNote(curCase, nb.dataset.note, nb.value); autoGrowCaseNote(nb); } });
-caseDetailEl.addEventListener("change", e=>{ const qf=e.target.closest("#quoteFile"); if(qf){ addQuotePendingFiles(qf.files); return; } const bf=e.target.closest("#businessRegFile"); if(bf){ addBusinessRegPendingFiles(bf.files); return; } const vf=e.target.closest("input[data-vendor-select]"); if(vf){ const card=vf.closest("[data-vendor-payload]"); setCaseVendorSelection(curCase, vf.dataset.vendorSelect, vf.checked, decodeVendorPayload(card&&card.dataset.vendorPayload)); return; } const f=e.target.closest("select[data-f]"); if(f) setCaseField(curCase, f.dataset.f, f.value); });
-caseDetailEl.addEventListener("dragover", e=>{ const dz=e.target.closest("[data-quote-drop],[data-bizreg-drop]"); if(!dz) return; e.preventDefault(); dz.classList.add("dragover"); });
-caseDetailEl.addEventListener("dragleave", e=>{ const dz=e.target.closest("[data-quote-drop],[data-bizreg-drop]"); if(!dz) return; if(!dz.contains(e.relatedTarget)) dz.classList.remove("dragover"); });
-caseDetailEl.addEventListener("drop", e=>{ const dz=e.target.closest("[data-quote-drop],[data-bizreg-drop]"); if(!dz) return; e.preventDefault(); dz.classList.remove("dragover"); const files=Array.from((e.dataTransfer&&e.dataTransfer.files)||[]); if(!files.length) return; if(dz.matches("[data-bizreg-drop]")) addBusinessRegPendingFiles(files); else addQuotePendingFiles(files); });
+caseDetailEl.addEventListener("change", e=>{ const qf=e.target.closest("#quoteFile"); if(qf){ addQuotePendingFiles(qf.files); return; } const bf=e.target.closest("#businessRegFile"); if(bf){ addBusinessRegPendingFiles(bf.files); return; } const wf=e.target.closest("[data-work-photo-input]"); if(wf){ addWorkPhotoPendingFiles(wf.dataset.workPhotoInput,wf.files); return; } const vf=e.target.closest("input[data-vendor-select]"); if(vf){ const card=vf.closest("[data-vendor-payload]"); setCaseVendorSelection(curCase, vf.dataset.vendorSelect, vf.checked, decodeVendorPayload(card&&card.dataset.vendorPayload)); return; } const f=e.target.closest("select[data-f]"); if(f) setCaseField(curCase, f.dataset.f, f.value); });
+caseDetailEl.addEventListener("dragover", e=>{ const dz=e.target.closest("[data-quote-drop],[data-bizreg-drop],[data-work-photo-drop]"); if(!dz) return; e.preventDefault(); dz.classList.add("dragover"); });
+caseDetailEl.addEventListener("dragleave", e=>{ const dz=e.target.closest("[data-quote-drop],[data-bizreg-drop],[data-work-photo-drop]"); if(!dz) return; if(!dz.contains(e.relatedTarget)) dz.classList.remove("dragover"); });
+caseDetailEl.addEventListener("drop", e=>{ const dz=e.target.closest("[data-quote-drop],[data-bizreg-drop],[data-work-photo-drop]"); if(!dz) return; e.preventDefault(); dz.classList.remove("dragover"); const files=Array.from((e.dataTransfer&&e.dataTransfer.files)||[]); if(!files.length) return; if(dz.matches("[data-bizreg-drop]")) addBusinessRegPendingFiles(files); else if(dz.matches("[data-work-photo-drop]")) addWorkPhotoPendingFiles(dz.dataset.workPhotoDrop,files); else addQuotePendingFiles(files); });
 cases = loadCasesLocal();
 const localAutoFixed = applyAllStepAutomation(cases, false);
 const localStepFixed = normalizeAllCaseSteps(cases);
@@ -5990,8 +6224,9 @@ document.getElementById("noticeBtn").addEventListener("click", openNoticePanel);
 document.getElementById("noticeBanner").addEventListener("click", openNoticePanel);
 
 /* ===== 업데이트 알림(What's New) — 새 버전 나오면 자동 팝업 ===== */
-const APP_VERSION = "5.40";
+const APP_VERSION = "5.41";
 const CHANGELOG = [
+  { v:"5.41", d:"2026-08-07", items:["⑬ 작업 전·후 사진 분리 업로드 및 Drive 저장","⑬ 사진 비교 보기와 개별 목록 제거","⑭ B/A 보고서에 작업 사진 자동 참조"] },
   { v:"5.40", d:"2026-08-07", items:["브링 견적서 가산율을 10%에서 5%로 변경","최종 합계금액은 기존처럼 100원 단위 반올림","기존 견적은 브링 양식 재작성 시 5% 적용"] },
   { v:"5.39", d:"2026-07-30", items:["동일한 건물주 전화번호로 등록된 여러 건물의 납부예정·미입금·입금완료 알림을 한 건으로 통합"] },
   { v:"5.38", d:"2026-07-30", items:["세입자 미입금 알림에 브링케어 문의 내선 033-748-8919 안내 추가"] },

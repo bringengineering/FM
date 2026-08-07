@@ -223,6 +223,9 @@ function doPost(e) {
     if (payload.action === "uploadBusinessRegistration") {
       return jsonResponse_(handleBusinessRegistrationUpload_(payload));
     }
+    if (payload.action === "uploadWorkPhoto") {
+      return jsonResponse_(handleWorkPhotoUpload_(payload));
+    }
     if (payload.action === "confirmQuoteAmount") {
       return jsonResponse_(handleConfirmQuoteAmount_(payload));
     }
@@ -1679,6 +1682,11 @@ function recordAutomationError_(payload, err) {
     patchCaseChildToFirebase_(caseId, "status", { c6: "doing" });
     patchCaseChildToFirebase_(caseId, "note", { c6: "사업자등록증 업로드 실패: " + fileName + " / " + message });
     log.unshift("사업자등록증 업로드 실패: " + fileName + " / " + message);
+  } else if (action === "uploadWorkPhoto") {
+    const fileName = payload && payload.file && payload.file.fileName ? String(payload.file.fileName) : "파일명 미확인";
+    patchCaseChildToFirebase_(caseId, "status", { c13: "doing" });
+    patchCaseChildToFirebase_(caseId, "note", { c13: "작업 사진 업로드 실패: " + fileName + " / " + message });
+    log.unshift("작업 사진 업로드 실패: " + fileName + " / " + message);
   } else if (action === "confirmQuoteAmount") {
     patchCaseChildToFirebase_(caseId, "status", { c6: "doing" });
     patchCaseChildToFirebase_(caseId, "note", { c6: "견적 합계금액 확정 실패: " + message });
@@ -3710,6 +3718,78 @@ function handleBusinessRegistrationUpload_(payload) {
   return { ok: true, caseId: caseId, businessRegistration: doc, refreshedQuotes: refreshResult.updated, workflow: workflow, message: "사업자등록증 업로드 및 업체 정보 분석 완료" };
 }
 
+function handleWorkPhotoUpload_(payload) {
+  const caseId = String(payload.caseId || "").trim();
+  const phase = String(payload.phase || "").trim().toLowerCase();
+  const filePayload = payload.file || {};
+  if (!caseId) return { ok: false, message: "caseId가 없습니다." };
+  if (phase !== "before" && phase !== "after") return { ok: false, message: "작업 사진 구분이 올바르지 않습니다." };
+
+  const casePayload = readCaseFromFirebase_(caseId);
+  if (!casePayload) return { ok: false, message: "Firebase 케이스를 찾지 못했습니다: " + caseId };
+
+  const validation = validateWorkPhotoUpload_(filePayload);
+  if (!validation.ok) return updateWorkPhotoUploadFailure_(caseId, casePayload, validation.message);
+
+  const now = new Date();
+  const uploadedAt = now.toISOString();
+  const phaseText = phase === "after" ? "작업 후" : "작업 전";
+  const photoId = "wp" + Utilities.formatDate(now, "Asia/Seoul", "yyyyMMddHHmmss") + "-" + Utilities.getUuid().slice(0, 8);
+  const bytes = Utilities.base64Decode(String(filePayload.fileBody || "").replace(/^data:[^,]+,/, ""));
+  const mimeType = String(filePayload.mimeType || "").trim() || inferWorkPhotoMimeType_(filePayload.fileName);
+  const savedName = makeWorkPhotoDriveFileName_(casePayload, phaseText, filePayload.fileName, now);
+  const blob = Utilities.newBlob(bytes, mimeType, savedName);
+  const folder = getWorkPhotoDriveFolder_(casePayload, phase);
+  const driveFile = folder.createFile(blob);
+
+  const photo = {
+    id: photoId,
+    phase: phase,
+    phaseText: phaseText,
+    fileName: driveFile.getName(),
+    originalFileName: String(filePayload.fileName || driveFile.getName()),
+    fileUrl: driveFile.getUrl(),
+    driveFileId: driveFile.getId(),
+    mimeType: mimeType,
+    size: Number(filePayload.size || bytes.length),
+    uploadedAt: uploadedAt
+  };
+
+  casePayload.workPhotoFiles = casePayload.workPhotoFiles && typeof casePayload.workPhotoFiles === "object" && !Array.isArray(casePayload.workPhotoFiles)
+    ? casePayload.workPhotoFiles
+    : {};
+  casePayload.workPhotoFiles[photoId] = photo;
+  const photos = Object.keys(casePayload.workPhotoFiles).map(key => casePayload.workPhotoFiles[key]).filter(Boolean);
+  const beforeCount = photos.filter(item => item.phase === "before").length;
+  const afterCount = photos.filter(item => item.phase === "after").length;
+
+  casePayload.status = casePayload.status || {};
+  if (casePayload.status.c13 !== "done") casePayload.status.c13 = "doing";
+  casePayload.note = casePayload.note || {};
+  casePayload.note.c13 = [
+    "[작업 사진]",
+    "작업 전: " + beforeCount + "장",
+    "작업 후: " + afterCount + "장",
+    "⑭ B/A 보고서에서 자동 참조됩니다."
+  ].join("\n");
+  casePayload.log = Array.isArray(casePayload.log) ? casePayload.log : [];
+  casePayload.log.unshift(phaseText + " 사진 업로드: " + driveFile.getName());
+  if (casePayload.log.length > 30) casePayload.log.length = 30;
+
+  putCaseChildToFirebase_(caseId, "workPhotoFiles/" + photoId, photo);
+  patchCaseChildToFirebase_(caseId, "status", { c13: casePayload.status.c13 });
+  patchCaseChildToFirebase_(caseId, "note", { c13: casePayload.note.c13 });
+  patchCaseToFirebase_(caseId, { log: casePayload.log, updatedAt: uploadedAt });
+
+  return {
+    ok: true,
+    caseId: caseId,
+    photo: photo,
+    counts: { before: beforeCount, after: afterCount },
+    message: phaseText + " 사진 저장 완료"
+  };
+}
+
 function applyQuoteAmountState_(quote) {
   quote = quote || {};
   if (Number(quote.confirmedTotalAmount || 0)) {
@@ -4150,6 +4230,36 @@ function validateBusinessRegistrationUpload_(filePayload) {
   };
 }
 
+function validateWorkPhotoUpload_(filePayload) {
+  const fileName = String(filePayload.fileName || "").trim();
+  const mimeType = String(filePayload.mimeType || "").trim().toLowerCase();
+  const body = String(filePayload.fileBody || "").replace(/^data:[^,]+,/, "");
+  const size = Number(filePayload.size || 0);
+  const ext = fileName.split(".").pop().toLowerCase();
+  if (!fileName) return { ok: false, message: "작업 사진 파일명이 없습니다." };
+  if (!body) return { ok: false, message: "작업 사진 내용이 없습니다." };
+  if (size > 5 * 1024 * 1024) return { ok: false, message: "작업 사진 용량이 5MB를 초과했습니다." };
+  if (["jpg", "jpeg", "png", "webp"].indexOf(ext) === -1 && ["image/jpeg", "image/png", "image/webp"].indexOf(mimeType) === -1) {
+    return { ok: false, message: "작업 사진은 JPG, PNG, WEBP 형식만 업로드할 수 있습니다." };
+  }
+  return { ok: true };
+}
+
+function updateWorkPhotoUploadFailure_(caseId, casePayload, message) {
+  casePayload.status = casePayload.status || {};
+  if (casePayload.status.c13 !== "done") casePayload.status.c13 = "doing";
+  casePayload.note = casePayload.note || {};
+  casePayload.note.c13 = "작업 사진 업로드 실패: " + message;
+  casePayload.log = Array.isArray(casePayload.log) ? casePayload.log : [];
+  casePayload.log.unshift("작업 사진 업로드 실패: " + message);
+  if (casePayload.log.length > 30) casePayload.log.length = 30;
+  const updatedAt = new Date().toISOString();
+  patchCaseChildToFirebase_(caseId, "status", { c13: casePayload.status.c13 });
+  patchCaseChildToFirebase_(caseId, "note", { c13: casePayload.note.c13 });
+  patchCaseToFirebase_(caseId, { log: casePayload.log, updatedAt: updatedAt });
+  return { ok: false, caseId: caseId, message: message };
+}
+
 function updateQuoteUploadFailure_(caseId, casePayload, message) {
   casePayload.status = casePayload.status || {};
   if (casePayload.status.c6 !== "done") casePayload.status.c6 = "doing";
@@ -4196,6 +4306,12 @@ function getBusinessRegistrationDriveFolder_(casePayload, vendorName) {
   return getOrCreateChildFolder_(caseFolder, "사업자등록증");
 }
 
+function getWorkPhotoDriveFolder_(casePayload, phase) {
+  const caseFolder = getQuoteDriveFolder_(casePayload);
+  const workFolder = getOrCreateChildFolder_(caseFolder, "작업 사진");
+  return getOrCreateChildFolder_(workFolder, phase === "after" ? "작업 후" : "작업 전");
+}
+
 function getQuoteDriveRootFolder_() {
   const configured = extractDriveId_(COMPLAINT_CONFIG.QUOTE_DRIVE_FOLDER_ID);
   if (!configured) throw new Error("QUOTE_DRIVE_FOLDER_ID가 비어 있어 견적서 저장 폴더를 찾을 수 없습니다.");
@@ -4231,6 +4347,20 @@ function makeBusinessRegistrationDriveFileName_(casePayload, vendorName, origina
     "사업자등록증"
   ].join("_");
   return safeDriveName_(base).slice(0, 120 - ext.length) + ext.toLowerCase();
+}
+
+function makeWorkPhotoDriveFileName_(casePayload, phaseText, originalName, date) {
+  const extMatch = String(originalName || "").match(/(\.[A-Za-z0-9]+)$/);
+  const ext = extMatch ? extMatch[1].toLowerCase() : ".jpg";
+  const originalBase = String(originalName || "photo").replace(/\.[^.]+$/, "");
+  const timestamp = Utilities.formatDate(date || new Date(), "Asia/Seoul", "yyyyMMdd_HHmmss");
+  const base = [
+    casePayload.ticketNo || casePayload.id || "case",
+    phaseText,
+    timestamp,
+    originalBase
+  ].join("_");
+  return safeDriveName_(base).slice(0, 150 - ext.length) + ext;
 }
 
 function resolveInitialQuoteVendorName_(payload, originalName) {
@@ -6671,6 +6801,7 @@ function inferQuoteMimeType_(fileName) {
     jpg: "image/jpeg",
     jpeg: "image/jpeg",
     png: "image/png",
+    webp: "image/webp",
     doc: "application/msword",
     docx: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
     xls: "application/vnd.ms-excel",
@@ -10433,6 +10564,7 @@ function mergeCasePayloadForFirebase_(existing, payload) {
     "log",
     "quoteFiles",
     "businessRegistrationFiles",
+    "workPhotoFiles",
     "vendorSelections",
     "vendorEstimateMms",
     "ownerRecommendationMms",
