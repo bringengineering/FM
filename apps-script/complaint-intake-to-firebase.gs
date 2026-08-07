@@ -2379,6 +2379,10 @@ function makeComplaintReceiptOwnerAlimTalkContent_(ticketNo, record) {
 function makeOwnerRecommendationAlimTalkContent_(casePayload, supplier, amounts) {
   return [
     "[브링케어 추천 견적 안내]",
+    "",
+    "본 알림은 고객님께서 브링케어 관리 서비스 계약 시 신청하고 수신에 동의하신 건물 민원 견적 안내입니다.",
+    "계약 건물의 민원에 새로운 추천 견적이 등록될 때마다 발송됩니다.",
+    "",
     "건물 민원에 대한 추천 견적이 준비되었습니다.",
     "",
     "접수번호: " + safeAlimTalkVariable_(casePayload && (casePayload.ticketNo || casePayload.id), "미입력"),
@@ -2387,10 +2391,10 @@ function makeOwnerRecommendationAlimTalkContent_(casePayload, supplier, amounts)
     "추천 업체: " + safeAlimTalkVariable_(supplier && supplier.name, "업체 확인 필요"),
     "추천 금액: " + ownerRecommendationAmountText_(amounts && amounts.totalAmount),
     "",
-    "아래 버튼에서 세부 작업 내용과 금액을 확인한 후 진행 방법을 선택해 주세요.",
+    "아래 버튼에서 세부 작업 내용과 금액을 확인한 후 진행 여부를 선택해 주세요.",
     "",
-    "본 알림은 브링케어 관리 서비스 계약에 따라 민원별 견적 안내를 요청한 건물주에게 발송됩니다.",
-    "알림 수신 중단은 브링케어 고객센터(010-2773-3076)로 요청해 주세요."
+    "알림 관련 문의 및 수신 중단 요청",
+    "브링케어 고객센터: 033-748-8919"
   ].join("\n");
 }
 
@@ -9968,18 +9972,53 @@ function testKakaoOwnerRecommendationAlimTalkSetup() {
     throw new Error("카카오 알림톡과 NCP 인증 설정을 확인해 주세요.");
   }
 
-  const casePayload = {
-    id: "BR-TEST-0001",
-    ticketNo: "BR-TEST-0001",
-    building: "브링케어 테스트 건물",
-    room: "101"
+  const caseId = "BR-2099-9999";
+  const quoteId = "owner_quote_alimtalk_test";
+  const now = new Date().toISOString();
+  const quote = {
+    id: quoteId,
+    vendorName: "원주빛전기",
+    resolvedVendorInfo: {
+      name: "원주빛전기",
+      phone: "010-1111-0001"
+    },
+    confirmedTotalAmount: 130900,
+    bringQuoteBaseTotalAmount: 130900,
+    bringQuoteSupplyAmount: 130900,
+    bringQuoteVatAmount: 13100,
+    bringQuoteTotalAmount: 144000,
+    bringQuoteItems: [
+      { product: "현관 센서등 교체" },
+      { product: "공용부 LED 램프 교체" }
+    ],
+    uploadedAt: now
   };
-  const supplier = { name: "원주빛전기(테스트)" };
-  const amounts = { totalAmount: 144000 };
-  const approvalUrl = String(COMPLAINT_CONFIG.OWNER_DECISION_SHORT_URL || "") +
-    encodeURIComponent("BR-TEST-0001");
-  const content = makeOwnerRecommendationAlimTalkContent_(casePayload, supplier, amounts);
+  const casePayload = {
+    id: caseId,
+    ticketNo: caseId,
+    building: "브링케어 테스트 건물",
+    room: "101호",
+    archived: true,
+    archivedAt: now,
+    archivedBy: "alimtalk-test",
+    status: { c1: "done", c2: "done", c3: "done", c4: "done", c5: "done", c6: "done", c7: "done", c8: "doing" },
+    quoteFiles: {}
+  };
+  casePayload.quoteFiles[quoteId] = quote;
+  patchCaseToFirebase_(caseId, casePayload);
+  putCaseChildToFirebase_(caseId, "ownerDecision", {});
+
+  const latestCase = readCaseFromFirebase_(caseId) || casePayload;
+  const prepared = prepareOwnerDecisionLinkForCase_(caseId, latestCase, quoteId, quote);
+  if (!prepared.ok || !prepared.state || !prepared.state.shortDecisionUrl) {
+    throw new Error(prepared.message || "테스트 승인 링크 생성에 실패했습니다.");
+  }
+  const supplier = prepared.supplier;
+  const amounts = prepared.amounts;
+  const approvalUrl = prepared.state.shortDecisionUrl;
+  const content = makeOwnerRecommendationAlimTalkContent_(latestCase, supplier, amounts);
   const fallbackContent = appendOwnerDecisionLink_(content, approvalUrl);
+  const testConfig = Object.assign({}, config, { useSmsFailover: false });
   const result = sendSensAlimTalk_(
     to,
     content,
@@ -9994,10 +10033,50 @@ function testKakaoOwnerRecommendationAlimTalkSetup() {
         linkPc: approvalUrl
       }]
     },
-    config
+    testConfig
   );
   Logger.log(JSON.stringify(result));
   if (!result.ok) throw new Error(result.message || "건물주 추천 견적 알림톡 테스트 발송 실패");
+  const saved = {
+    sentAt: now,
+    caseId: caseId,
+    quoteId: quoteId,
+    decisionUrl: prepared.state.decisionUrl,
+    shortDecisionUrl: approvalUrl,
+    requestId: result.requestId || "",
+    messageId: result.messageId || "",
+    templateCode: result.templateCode || config.templates.ownerQuote
+  };
+  props.setProperty("LAST_OWNER_RECOMMENDATION_ALIMTALK_TEST", JSON.stringify(saved));
+  return Object.assign({}, result, saved);
+}
+
+function checkKakaoOwnerRecommendationAlimTalkTestStatus() {
+  const props = PropertiesService.getScriptProperties();
+  const saved = JSON.parse(props.getProperty("LAST_OWNER_RECOMMENDATION_ALIMTALK_TEST") || "{}");
+  if (!saved.messageId) {
+    throw new Error("먼저 testKakaoOwnerRecommendationAlimTalkSetup을 실행해 주세요.");
+  }
+  const config = getKakaoAlimTalkConfig_();
+  if (!config.enabled) throw new Error("카카오 알림톡과 NCP 인증 설정을 확인해 주세요.");
+  const uri = "/alimtalk/v2/services/" + encodeURIComponent(config.serviceId) +
+    "/messages/" + encodeURIComponent(String(saved.messageId));
+  const response = sensGetJson_(uri, config);
+  const status = response.json && typeof response.json === "object" ? response.json : {};
+  const result = {
+    ok: response.ok === true,
+    caseId: saved.caseId || "",
+    messageId: saved.messageId,
+    requestStatusCode: String(status.requestStatusCode || ""),
+    requestStatusName: String(status.requestStatusName || ""),
+    messageStatusCode: String(status.messageStatusCode || ""),
+    messageStatusName: String(status.messageStatusName || ""),
+    messageStatusDesc: String(status.messageStatusDesc || ""),
+    completeTime: String(status.completeTime || ""),
+    shortDecisionUrl: saved.shortDecisionUrl || "",
+    decisionUrl: saved.decisionUrl || ""
+  };
+  Logger.log(JSON.stringify(result));
   return result;
 }
 
