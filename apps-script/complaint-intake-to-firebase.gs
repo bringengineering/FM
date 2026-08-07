@@ -9931,6 +9931,34 @@ function testKakaoAlimTalkSetup() {
   return result;
 }
 
+function testKakaoOwnerReceiptAlimTalkSetup() {
+  const props = PropertiesService.getScriptProperties();
+  const to = normalizePhoneForSms_(props.getProperty("NCP_SENS_TEST_TO") || "");
+  if (!to) throw new Error("Script Properties에 NCP_SENS_TEST_TO를 테스트 수신번호로 넣어주세요.");
+  const config = getKakaoAlimTalkConfig_();
+  if (!config.enabled) {
+    throw new Error("카카오 알림톡과 NCP 인증 설정을 확인해 주세요.");
+  }
+
+  const record = {
+    "건물명": "브링케어 테스트 건물",
+    "호실": "101",
+    "문제 유형": "건물주 알림톡 연동 테스트"
+  };
+  const content = makeComplaintReceiptOwnerAlimTalkContent_("BR-2026-0000", record);
+  const result = sendSensAlimTalk_(
+    to,
+    content,
+    "건물주 접수 알림 테스트",
+    config.templates.receiptOwner,
+    { fallbackContent: content },
+    config
+  );
+  Logger.log(JSON.stringify(result));
+  if (!result.ok) throw new Error(result.message || "건물주 접수 알림톡 테스트 발송 실패");
+  return result;
+}
+
 function makeTicketNo_(row, record) {
   const ts = readRawField_(record, ["타임스탬프", "Timestamp"]) || new Date();
   const year = Utilities.formatDate(dateFromValue_(ts), "Asia/Seoul", "yyyy");
