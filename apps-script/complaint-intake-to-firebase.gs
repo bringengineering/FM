@@ -9959,6 +9959,48 @@ function testKakaoOwnerReceiptAlimTalkSetup() {
   return result;
 }
 
+function testKakaoOwnerRecommendationAlimTalkSetup() {
+  const props = PropertiesService.getScriptProperties();
+  const to = normalizePhoneForSms_(props.getProperty("NCP_SENS_TEST_TO") || "");
+  if (!to) throw new Error("Script Properties에 NCP_SENS_TEST_TO를 테스트 수신번호로 넣어주세요.");
+  const config = getKakaoAlimTalkConfig_();
+  if (!config.enabled) {
+    throw new Error("카카오 알림톡과 NCP 인증 설정을 확인해 주세요.");
+  }
+
+  const casePayload = {
+    id: "BR-TEST-0001",
+    ticketNo: "BR-TEST-0001",
+    building: "브링케어 테스트 건물",
+    room: "101"
+  };
+  const supplier = { name: "원주빛전기(테스트)" };
+  const amounts = { totalAmount: 144000 };
+  const approvalUrl = String(COMPLAINT_CONFIG.OWNER_DECISION_SHORT_URL || "") +
+    encodeURIComponent("BR-TEST-0001");
+  const content = makeOwnerRecommendationAlimTalkContent_(casePayload, supplier, amounts);
+  const fallbackContent = appendOwnerDecisionLink_(content, approvalUrl);
+  const result = sendSensAlimTalk_(
+    to,
+    content,
+    "건물주 추천 견적 테스트",
+    config.templates.ownerQuote,
+    {
+      fallbackContent: fallbackContent,
+      buttons: [{
+        type: "WL",
+        name: "추천 견적 확인",
+        linkMobile: approvalUrl,
+        linkPc: approvalUrl
+      }]
+    },
+    config
+  );
+  Logger.log(JSON.stringify(result));
+  if (!result.ok) throw new Error(result.message || "건물주 추천 견적 알림톡 테스트 발송 실패");
+  return result;
+}
+
 function makeTicketNo_(row, record) {
   const ts = readRawField_(record, ["타임스탬프", "Timestamp"]) || new Date();
   const year = Utilities.formatDate(dateFromValue_(ts), "Asia/Seoul", "yyyy");
