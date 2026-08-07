@@ -3984,7 +3984,7 @@ function handleApplyBusinessRegistrationToQuote_(payload) {
   return { ok: message.indexOf("실패") === -1 && message.indexOf("없음") === -1, caseId: caseId, quoteId: quoteId, quote: quote, message: message };
 }
 
-const BRING_QUOTE_MARKUP_RATE = 0.10;
+const BRING_QUOTE_MARKUP_RATE = 0.05;
 
 function roundToHundred_(value) {
   const number = Number(value || 0);
