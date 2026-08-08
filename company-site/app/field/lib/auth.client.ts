@@ -1,5 +1,6 @@
 import {
   GoogleAuthProvider,
+  onAuthStateChanged,
   signInWithPopup,
   signOut as firebaseSignOut,
   type User,
@@ -29,10 +30,32 @@ export interface FieldSession {
   role: UserRole;
 }
 
+export type FieldSessionListener = (session: FieldSession | null) => void;
+export type FieldSessionObserver = (listener: FieldSessionListener) => () => void;
+
 const roles = new Set<UserRole>(["admin", "staff", "reviewer"]);
 
 function isUserRole(value: unknown): value is UserRole {
   return typeof value === "string" && roles.has(value as UserRole);
+}
+
+async function sessionFromUser(
+  user: FieldAuthUser,
+  forceRefresh: boolean,
+): Promise<FieldSession | null> {
+  const tokenResult = await user.getIdTokenResult(forceRefresh);
+  if (
+    tokenResult.claims.fieldPlatform !== true ||
+    !isUserRole(tokenResult.claims.fieldRole)
+  ) {
+    return null;
+  }
+
+  return {
+    uid: user.uid,
+    displayName: user.displayName?.trim() || "브링 담당자",
+    role: tokenResult.claims.fieldRole,
+  };
 }
 
 const googleProvider = new GoogleAuthProvider();
@@ -61,21 +84,14 @@ export async function loginFieldUser(
 ): Promise<FieldSession> {
   const credential = await dependencies.signInWithGoogle();
   await dependencies.provisionFieldUser();
-  const tokenResult = await credential.user.getIdTokenResult(true);
+  const session = await sessionFromUser(credential.user, true);
 
-  if (
-    tokenResult.claims.fieldPlatform !== true ||
-    !isUserRole(tokenResult.claims.fieldRole)
-  ) {
+  if (!session) {
     await dependencies.signOut();
     throw new Error("field_access_denied");
   }
 
-  return {
-    uid: credential.user.uid,
-    displayName: credential.user.displayName?.trim() || "브링 담당자",
-    role: tokenResult.claims.fieldRole,
-  };
+  return session;
 }
 
 export async function logoutFieldUser(
@@ -83,3 +99,31 @@ export async function logoutFieldUser(
 ): Promise<void> {
   await dependencies.signOut();
 }
+
+export const observeFieldSession: FieldSessionObserver = (listener) => {
+  let active = true;
+
+  const unsubscribe = onAuthStateChanged(auth, (user) => {
+    if (!user) {
+      listener(null);
+      return;
+    }
+
+    void sessionFromUser(user, false)
+      .then((session) => {
+        if (active) {
+          listener(session);
+        }
+      })
+      .catch(() => {
+        if (active) {
+          listener(null);
+        }
+      });
+  });
+
+  return () => {
+    active = false;
+    unsubscribe();
+  };
+};

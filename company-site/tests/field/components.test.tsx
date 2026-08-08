@@ -1,7 +1,8 @@
-import { render, screen } from "@testing-library/react";
-import { describe, expect, it } from "vitest";
+import { fireEvent, render, screen } from "@testing-library/react";
+import { describe, expect, it, vi } from "vitest";
 
 import AppShell from "../../app/field/components/AppShell";
+import AuthGate from "../../app/field/components/AuthGate";
 
 describe("AppShell", () => {
   it("renders the five approved platform destinations", () => {
@@ -26,5 +27,48 @@ describe("AppShell", () => {
     for (const button of screen.getAllByRole("button", { name: "건물" })) {
       expect(button).toHaveAttribute("aria-current", "page");
     }
+  });
+});
+
+describe("AuthGate", () => {
+  it("shows only the internal Google login before authentication", async () => {
+    render(
+      <AuthGate
+        observeSession={(listener) => {
+          listener(null);
+          return () => undefined;
+        }}
+      >
+        <div>내부 대시보드</div>
+      </AuthGate>,
+    );
+
+    expect(await screen.findByRole("button", { name: "Google로 로그인" })).toBeInTheDocument();
+    expect(screen.queryByText("내부 대시보드")).not.toBeInTheDocument();
+  });
+
+  it("opens the platform after an approved field session is returned", async () => {
+    const login = vi.fn(async () => ({
+      uid: "user-1",
+      displayName: "브링 담당자",
+      role: "staff" as const,
+    }));
+
+    render(
+      <AuthGate
+        login={login}
+        observeSession={(listener) => {
+          listener(null);
+          return () => undefined;
+        }}
+      >
+        <div>내부 대시보드</div>
+      </AuthGate>,
+    );
+
+    fireEvent.click(await screen.findByRole("button", { name: "Google로 로그인" }));
+
+    expect(await screen.findByText("내부 대시보드")).toBeInTheDocument();
+    expect(login).toHaveBeenCalledOnce();
   });
 });

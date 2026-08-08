@@ -25,6 +25,158 @@
     sans-serif;
 }
 
+.field-auth-screen {
+  display: grid;
+  min-height: 100vh;
+  place-items: center;
+  background:
+    radial-gradient(circle at 12% 5%, rgba(61, 128, 237, 0.22), transparent 30%),
+    radial-gradient(circle at 93% 88%, rgba(31, 111, 227, 0.17), transparent 32%),
+    #eef3f9;
+  padding: 24px;
+  color: #13233a;
+  font-family:
+    "Pretendard Variable",
+    Pretendard,
+    "Noto Sans KR",
+    "Apple SD Gothic Neo",
+    "Malgun Gothic",
+    system-ui,
+    sans-serif;
+}
+
+.field-auth-card {
+  width: min(100%, 440px);
+  border: 1px solid rgba(11, 35, 66, 0.1);
+  border-radius: 27px;
+  background: rgba(255, 255, 255, 0.96);
+  padding: clamp(28px, 7vw, 44px);
+  box-shadow: 0 24px 70px rgba(14, 39, 73, 0.14);
+}
+
+.field-auth-brand {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 37px;
+}
+
+.field-auth-brand > span:last-child {
+  display: grid;
+}
+
+.field-auth-brand strong {
+  color: #0b2342;
+  font-size: 17px;
+  font-weight: 950;
+  line-height: 1;
+  letter-spacing: 0.03em;
+}
+
+.field-auth-brand small {
+  margin-top: 4px;
+  color: #2269e8;
+  font-size: 9px;
+  font-weight: 900;
+  line-height: 1;
+  letter-spacing: 0.18em;
+}
+
+.field-auth-card h1 {
+  margin: 0;
+  color: #0b2342;
+  font-size: clamp(28px, 8vw, 37px);
+  letter-spacing: -0.05em;
+}
+
+.field-auth-card > p:not(.field-eyebrow, .field-auth-error) {
+  margin: 12px 0 0;
+  color: #68778b;
+  font-size: 13px;
+  line-height: 1.75;
+}
+
+.field-auth-notice {
+  display: flex;
+  align-items: flex-start;
+  gap: 9px;
+  margin-top: 25px;
+  border-radius: 13px;
+  background: #edf4ff;
+  padding: 13px 14px;
+  color: #315a8f;
+  font-size: 11px;
+  font-weight: 750;
+  line-height: 1.5;
+}
+
+.field-auth-notice > span {
+  display: grid;
+  width: 19px;
+  height: 19px;
+  flex: 0 0 19px;
+  place-items: center;
+  border-radius: 999px;
+  background: #2269e8;
+  color: #fff;
+  font-size: 10px;
+}
+
+.field-google-login {
+  display: flex;
+  width: 100%;
+  min-height: 52px;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  margin-top: 18px;
+  border: 1px solid #cad5e3;
+  border-radius: 13px;
+  background: #fff;
+  color: #14243a;
+  cursor: pointer;
+  font-size: 13px;
+  font-weight: 850;
+  box-shadow: 0 6px 18px rgba(17, 42, 74, 0.06);
+}
+
+.field-google-login > span {
+  display: grid;
+  width: 23px;
+  height: 23px;
+  place-items: center;
+  border-radius: 999px;
+  background: conic-gradient(from -45deg, #4285f4 0 25%, #34a853 0 50%, #fbbc05 0 75%, #ea4335 0);
+  color: #fff;
+  font-size: 11px;
+  font-weight: 950;
+}
+
+.field-google-login:disabled {
+  cursor: wait;
+  opacity: 0.7;
+}
+
+.field-auth-error {
+  margin: 13px 0 0;
+  border-radius: 11px;
+  background: #fff0f0;
+  padding: 11px 12px;
+  color: #b52b2b;
+  font-size: 11px;
+  font-weight: 700;
+  line-height: 1.55;
+}
+
+.field-auth-help {
+  display: block;
+  margin-top: 18px;
+  color: #8491a2;
+  font-size: 10px;
+  line-height: 1.55;
+  text-align: center;
+}
+
 .field-platform button {
   font: inherit;
 }
