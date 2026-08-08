@@ -7,3 +7,4 @@ cloudflare-worker/.dev.vars
 .worktrees/
 .superpowers/
 .understand-anything/
+*.tsbuildinfo
