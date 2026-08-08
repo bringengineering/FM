@@ -17,6 +17,7 @@
     "test": "pnpm run build && node --test tests/rendered-html.test.mjs",
     "test:field": "vitest",
     "test:field:run": "vitest run tests/field",
+    "test:rules": "vitest run tests/field/database-rules.test.ts tests/field/storage-rules.test.ts",
     "typecheck:field": "tsc -p tsconfig.field.json",
     "lint": "eslint . --ignore-pattern dist --ignore-pattern .next"
   },
@@ -28,6 +29,7 @@
     "react-dom": "19.2.6"
   },
   "devDependencies": {
+    "@firebase/rules-unit-testing": "^5.0.1",
     "@cloudflare/vite-plugin": "1.37.1",
     "@tailwindcss/postcss": "4.2.1",
     "@testing-library/jest-dom": "^7.0.0",
@@ -39,6 +41,7 @@
     "@vitejs/plugin-rsc": "0.5.26",
     "eslint": "9.39.4",
     "eslint-config-next": "16.2.6",
+    "firebase-tools": "^15.26.0",
     "jsdom": "^30.0.1",
     "react-server-dom-webpack": "19.2.6",
     "sharp": "0.34.5",
