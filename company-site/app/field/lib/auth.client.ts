@@ -35,7 +35,7 @@ export type FieldSessionListener = (session: FieldSession | null) => void;
 export type FieldSessionObserver = (listener: FieldSessionListener) => () => void;
 
 const roles = new Set<UserRole>(["admin", "staff", "reviewer"]);
-const existingFirebaseAdmins = new Set(["bringengineering1008@gmail.com"]);
+const existingFirebaseAdmins = new Set(["dpvld858@gmail.com"]);
 
 function isUserRole(value: unknown): value is UserRole {
   return typeof value === "string" && roles.has(value as UserRole);
