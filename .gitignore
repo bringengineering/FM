@@ -8,3 +8,4 @@ cloudflare-worker/.dev.vars
 .superpowers/
 .understand-anything/
 *.tsbuildinfo
+functions/lib/

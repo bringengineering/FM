@@ -29,5 +29,11 @@
         ]
       }
     ]
-  }
+  },
+  "functions": [
+    {
+      "source": "functions",
+      "codebase": "field-platform"
+    }
+  ]
 }
