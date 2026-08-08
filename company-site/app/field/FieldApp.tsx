@@ -4,6 +4,7 @@ import { useState } from "react";
 
 import AppShell, { type FieldDestination } from "./components/AppShell";
 import AuthGate from "./components/AuthGate";
+import FieldMapPanel from "./components/FieldMapPanel";
 
 const destinationTitles: Record<
   Exclude<FieldDestination, "home">,
@@ -190,6 +191,8 @@ export default function FieldApp() {
       <AppShell active={active} onNavigate={setActive}>
         {active === "home" ? (
           <Dashboard onNavigate={setActive} />
+        ) : active === "map" ? (
+          <FieldMapPanel />
         ) : (
           <DestinationPlaceholder destination={active} />
         )}

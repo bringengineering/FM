@@ -20,6 +20,10 @@
         ".write": "auth != null && auth.uid === $uid"
       }
     },
+    "fieldPlatform": {
+      ".read": "auth != null && auth.token.email === 'dpvld858@gmail.com'",
+      ".write": "auth != null && auth.token.email === 'dpvld858@gmail.com'"
+    },
     "signage": {
       ".read": true,
       ".write": true

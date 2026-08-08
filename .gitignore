@@ -9,3 +9,6 @@ cloudflare-worker/.dev.vars
 .understand-anything/
 *.tsbuildinfo
 functions/lib/
+# Generated from the canonical repository map before company-site dev/build.
+company-site/public/wonju-map.html
+company-site/public/data/

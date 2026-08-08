@@ -3,6 +3,17 @@ import { describe, expect, it, vi } from "vitest";
 
 import AppShell from "../../app/field/components/AppShell";
 import AuthGate from "../../app/field/components/AuthGate";
+import FieldMapPanel from "../../app/field/components/FieldMapPanel";
+
+describe("FieldMapPanel", () => {
+  it("embeds the real BRING Wonju map instead of a placeholder", () => {
+    render(<FieldMapPanel />);
+
+    const map = screen.getByTitle("BRING 원주 건물 유지보수 지도");
+    expect(map).toHaveAttribute("src", expect.stringContaining("wonju-map.html"));
+    expect(screen.queryByText("기능을 연결하고 있습니다")).not.toBeInTheDocument();
+  });
+});
 
 describe("AppShell", () => {
   it("renders the five approved platform destinations", () => {

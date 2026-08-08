@@ -6,8 +6,11 @@
     "node": ">=22.13.0"
   },
   "scripts": {
+    "predev": "pnpm sync:field-map",
     "dev": "vinext dev",
+    "prebuild": "pnpm sync:field-map",
     "build": "vinext build",
+    "sync:field-map": "node scripts/sync-field-map.mjs",
     "assets:field-icons": "node scripts/generate-field-icons.mjs",
     "export:firebase": "node scripts/export-firebase.mjs",
     "start": "vinext start",
