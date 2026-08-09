@@ -477,6 +477,28 @@ describe.runIf(databaseEmulatorAvailable)("fieldPlatform database rules", () => 
     }
   });
 
+  it.each([
+    ["tab", "\t"],
+    ["newline", "\n"],
+    ["mixed whitespace", " \t\r\n"],
+  ])("rejects client updates that preserve a %s-only contract actor", async (id, blankActor) => {
+    const admin = environment.authenticatedContext("admin-1", claims("admin")).database();
+
+    await environment.withSecurityRulesDisabled((context) =>
+      set(ref(context.database(), `fieldPlatform/buildings/invalid-${id}`), {
+        ...building(`invalid-${id}`),
+        managementContract: {
+          ...managementContract("active"),
+          updatedBy: blankActor,
+        },
+      }),
+    );
+
+    await assertFails(update(ref(admin, `fieldPlatform/buildings/invalid-${id}`), {
+      name: `조작-${id}`,
+    }));
+  });
+
   it("separates reviewer advertising access from secure access", async () => {
     const reviewer = environment
       .authenticatedContext("reviewer-1", claims("reviewer"))
