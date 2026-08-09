@@ -11,6 +11,7 @@ import {
 import {
   createRegistrationDraft,
   migrateRegistrationDraft,
+  RegistrationDraftCompatibilityError,
   type BuildingDraftState,
   type BuildingWizardDraft,
   type ListingDraftState,
@@ -105,17 +106,35 @@ export default function BuildingWizard({
   onComplete,
 }: BuildingWizardProps) {
   const [step, setStep] = useState(Math.min(Math.max(initialStep, 0), STEPS.length - 1));
-  const [draft, setDraft] = useState<BuildingWizardDraft>(() => {
+  const [initialLoad] = useState(() => {
     if (typeof window !== "undefined") {
       const stored = window.localStorage.getItem(draftKey);
       if (stored) {
         let raw: unknown = stored;
         try { raw = JSON.parse(stored); } catch { /* migrate invalid storage to an empty draft */ }
-        return migrateRegistrationDraft(raw, initialDraft);
+        try {
+          return {
+            draft: migrateRegistrationDraft(raw, initialDraft),
+            incompatibleDraft: false,
+          };
+        } catch (error) {
+          if (error instanceof RegistrationDraftCompatibilityError) {
+            return {
+              draft: createRegistrationDraft(initialDraft),
+              incompatibleDraft: true,
+            };
+          }
+          throw error;
+        }
       }
     }
-    return createRegistrationDraft(initialDraft);
+    return {
+      draft: createRegistrationDraft(initialDraft),
+      incompatibleDraft: false,
+    };
   });
+  const [draft, setDraft] = useState<BuildingWizardDraft>(initialLoad.draft);
+  const incompatibleDraft = initialLoad.incompatibleDraft;
   const [errors, setErrors] = useState<string[]>([]);
   const [saveStatus, setSaveStatus] = useState("로컬 저장 준비");
   const [addressStatus, setAddressStatus] = useState("");
@@ -123,9 +142,10 @@ export default function BuildingWizard({
   const [submitting, setSubmitting] = useState(false);
 
   useEffect(() => {
+    if (incompatibleDraft) return;
     window.localStorage.setItem(draftKey, JSON.stringify(draft));
     setSaveStatus("로컬 자동저장 완료");
-  }, [draft, draftKey]);
+  }, [draft, draftKey, incompatibleDraft]);
 
   const progress = Math.round(((step + 1) / STEPS.length) * 100);
   const gpsDistance = useMemo(() => {
@@ -156,6 +176,7 @@ export default function BuildingWizard({
     key: Key,
     value: BuildingDraftState[Key],
   ) {
+    if (incompatibleDraft) return;
     setDraft((current) => ({
       ...current,
       building: { ...current.building, [key]: value },
@@ -166,6 +187,7 @@ export default function BuildingWizard({
   }
 
   async function verifyAddress() {
+    if (incompatibleDraft) return;
     if (!draft.building.roadAddress.trim()) {
       setErrors((current) => [...new Set([...current, "roadAddress"])]);
       return;
@@ -194,6 +216,7 @@ export default function BuildingWizard({
   }
 
   function validateCurrentStep() {
+    if (incompatibleDraft) return false;
     if (step === 0) {
       setErrors(buildingStepErrors);
       return buildingStepValid;
@@ -220,6 +243,7 @@ export default function BuildingWizard({
   }
 
   function updateUnit(index: number, key: keyof UnitDraftState, value: string | number) {
+    if (incompatibleDraft) return;
     setDraft((current) => ({
       ...current,
       units: current.units.map((unit, unitIndex) =>
@@ -232,11 +256,13 @@ export default function BuildingWizard({
     key: Key,
     value: ListingDraftState[Key],
   ) {
+    if (incompatibleDraft) return;
     setDraft((current) => ({ ...current, listing: { ...current.listing, [key]: value } }));
     setErrors((current) => current.filter((field) => field !== key));
   }
 
   async function complete() {
+    if (incompatibleDraft) return;
     setSubmitting(true);
     try {
       await onComplete?.(draft);
@@ -256,6 +282,12 @@ export default function BuildingWizard({
         </div>
         <span className="field-save-status" aria-live="polite"><i />{saveStatus}</span>
       </header>
+
+      {incompatibleDraft && (
+        <p className="field-gps-warning" role="alert">
+          더 최신 버전에서 작성된 초안이라 현재 화면에서 수정할 수 없습니다.
+        </p>
+      )}
 
       <div className="field-wizard-progress" aria-label={`등록 진행률 ${progress}%`}>
         <div><span>{step + 1} / {STEPS.length}</span><strong>{STEPS[step]}</strong><b>{progress}%</b></div>
@@ -285,7 +317,7 @@ export default function BuildingWizard({
               <Field wide htmlFor="roadAddress" label="도로명주소" required error={errors.includes("roadAddress") ? ERROR_COPY.roadAddress : ""}>
                 <div className="field-address-row">
                   <input id="roadAddress" required value={draft.building.roadAddress} onChange={(event) => updateBuilding("roadAddress", event.target.value)} aria-invalid={errors.includes("roadAddress")} />
-                  <button type="button" onClick={verifyAddress} disabled={checkingAddress}>{checkingAddress ? "확인 중" : "주소 중복 확인"}</button>
+                  <button type="button" onClick={verifyAddress} disabled={checkingAddress || incompatibleDraft}>{checkingAddress ? "확인 중" : "주소 중복 확인"}</button>
                 </div>
                 {addressStatus && <p className={draft.duplicateBuilding ? "field-inline-error" : "field-inline-success"} role="status">{addressStatus}</p>}
                 {(errors.includes("latitude") || errors.includes("longitude")) && (
@@ -345,7 +377,7 @@ export default function BuildingWizard({
                   <Field label="층"><input id={`floor-${index + 1}`} type="number" value={unit.floor} onChange={(event) => updateUnit(index, "floor", numericInput(event.target.value))} /></Field>
                 </div>
               ))}
-              <button className="field-add-unit" type="button" onClick={() => setDraft((current) => ({ ...current, units: [...current.units, emptyUnit(current.units.length + 1)] }))}><span aria-hidden="true">+ </span>호실 추가</button>
+              <button className="field-add-unit" type="button" disabled={incompatibleDraft} onClick={() => setDraft((current) => ({ ...current, units: [...current.units, emptyUnit(current.units.length + 1)] }))}><span aria-hidden="true">+ </span>호실 추가</button>
             </div>
             <div className="field-form-grid field-form-divider">
               <MoneyField id="depositWon" label="보증금(원)" value={draft.listing.depositWon} error={errors.includes("depositWon") ? ERROR_COPY.depositWon : ""} onChange={(value) => updateListing("depositWon", value)} />
@@ -368,12 +400,12 @@ export default function BuildingWizard({
       </div>
 
       <footer className="field-wizard-actions">
-        <button type="button" className="field-wizard-back" onClick={() => setStep((current) => Math.max(current - 1, 0))} disabled={step === 0}>이전</button>
-        {step === 0 && <button type="button" className="field-wizard-check" onClick={validateCurrentStep}>입력 확인</button>}
+        <button type="button" className="field-wizard-back" onClick={() => setStep((current) => Math.max(current - 1, 0))} disabled={incompatibleDraft || step === 0}>이전</button>
+        {step === 0 && <button type="button" className="field-wizard-check" onClick={validateCurrentStep} disabled={incompatibleDraft}>입력 확인</button>}
         {step < STEPS.length - 1 ? (
-          <button type="button" className="field-wizard-next" onClick={nextStep} disabled={step === 0 && !buildingStepValid}>다음 단계</button>
+          <button type="button" className="field-wizard-next" onClick={nextStep} disabled={incompatibleDraft || (step === 0 && !buildingStepValid)}>다음 단계</button>
         ) : (
-          <button type="button" className="field-wizard-next" onClick={complete} disabled={submitting}>{submitting ? "저장 중" : "등록 내용 저장"}</button>
+          <button type="button" className="field-wizard-next" onClick={complete} disabled={incompatibleDraft || submitting}>{submitting ? "저장 중" : "등록 내용 저장"}</button>
         )}
       </footer>
     </section>

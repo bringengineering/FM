@@ -28,6 +28,36 @@ describe("Dashboard", () => {
 });
 
 describe("BuildingWizard", () => {
+  it("preserves a future-version draft and blocks completion", async () => {
+    const draftKey = "future-version-draft";
+    const stored = JSON.stringify({
+      draftVersion: 3,
+      draftId: "future-draft",
+      requestId: "future-request",
+      futureOnlyData: { keep: true },
+    });
+    const onComplete = vi.fn();
+    window.localStorage.setItem(draftKey, stored);
+
+    render(
+      <BuildingWizard
+        draftKey={draftKey}
+        initialStep={6}
+        onComplete={onComplete}
+      />,
+    );
+
+    expect(screen.getByRole("alert")).toHaveTextContent(
+      "더 최신 버전에서 작성된 초안이라 현재 화면에서 수정할 수 없습니다.",
+    );
+    const completeButton = screen.getByRole("button", { name: "등록 내용 저장" });
+    expect(completeButton).toBeDisabled();
+    fireEvent.click(completeButton);
+
+    await waitFor(() => expect(window.localStorage.getItem(draftKey)).toBe(stored));
+    expect(onComplete).not.toHaveBeenCalled();
+  });
+
   it("hides coordinate inputs while preserving the checked address position", async () => {
     render(
       <BuildingWizard

@@ -1,5 +1,23 @@
 export const REGISTRATION_DRAFT_VERSION = 2 as const;
 
+export class RegistrationDraftCompatibilityError extends Error {
+  readonly code = "registration_draft_future_version";
+
+  constructor(readonly draftVersion: number) {
+    super("registration_draft_future_version");
+    this.name = "RegistrationDraftCompatibilityError";
+  }
+}
+
+export class RegistrationDraftProjectionError extends Error {
+  readonly code = "registration_draft_units_required";
+
+  constructor() {
+    super("registration_draft_units_required");
+    this.name = "RegistrationDraftProjectionError";
+  }
+}
+
 export interface ManagementContractDraft {
   requested: boolean;
   startedOn?: string;
@@ -186,9 +204,23 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 }
 
 function isBlockedString(value: string): boolean {
-  const normalized = value.trim().toLowerCase();
-  return normalized.startsWith("blob:") || normalized.startsWith("base64,") ||
-    /^data:[^,]*;base64,/.test(normalized);
+  const trimmed = value.trim();
+  const normalized = trimmed.toLowerCase();
+  if (
+    normalized.startsWith("blob:") ||
+    normalized.startsWith("base64,") ||
+    /^data:[^,]*;base64,/.test(normalized)
+  ) {
+    return true;
+  }
+
+  const compact = trimmed.replace(/\s+/g, "");
+  if (compact.length < 64 || !/^[A-Za-z0-9+/]+={0,2}$/.test(compact)) {
+    return false;
+  }
+
+  const hasBinaryMagic = /^(?:iVBORw0KGgo|\/9j\/|R0lGOD|JVBERi0|UklGR|UEsDB)/.test(compact);
+  return hasBinaryMagic || (compact.length >= 256 && /[+/=]/.test(compact));
 }
 
 function stringValue(value: unknown, fallback: string): string {
@@ -287,17 +319,47 @@ function mergeRegistrationDraft(
 
   let units = base.units;
   if (Array.isArray(raw.units) && raw.units.length > 0) {
-    const migratedUnits = raw.units.flatMap((value, index) => {
-      if (!isRecord(value)) return [];
+    const unitSources = raw.units.flatMap((value, index) =>
+      isRecord(value) ? [{ value, index }] : []);
+    const reservedLocalIds = new Set(
+      unitSources
+        .map(({ value }) => identifierValue(value.localId, ""))
+        .filter(Boolean),
+    );
+    const assignedLocalIds = new Set<string>();
+    let generatedUnitNumber = 1;
+    const nextAvailableLocalId = () => {
+      let candidate = `unit-${generatedUnitNumber}`;
+      while (reservedLocalIds.has(candidate) || assignedLocalIds.has(candidate)) {
+        generatedUnitNumber += 1;
+        candidate = `unit-${generatedUnitNumber}`;
+      }
+      generatedUnitNumber += 1;
+      return candidate;
+    };
+
+    const migratedUnits = unitSources.map(({ value, index }) => {
       const fallback = base.units[index] || emptyUnit(index + 1);
-      return [{
-        localId: identifierValue(value.localId, fallback.localId),
+      const preferredLocalId = identifierValue(value.localId, "");
+      const fallbackLocalId = identifierValue(fallback.localId, "");
+      let localId = preferredLocalId;
+      if (!localId && fallbackLocalId && !reservedLocalIds.has(fallbackLocalId) &&
+        !assignedLocalIds.has(fallbackLocalId)) {
+        localId = fallbackLocalId;
+      }
+      if (!localId || assignedLocalIds.has(localId)) {
+        localId = nextAvailableLocalId();
+      }
+      assignedLocalIds.add(localId);
+
+      return {
+        localId,
         unitLabel: stringValue(value.unitLabel, fallback.unitLabel),
         structure: stringValue(value.structure, fallback.structure),
         floor: numberOrEmpty(value.floor, fallback.floor),
         options: stringArray(value.options, fallback.options),
         isVacant: booleanValue(value.isVacant, fallback.isVacant),
-      }];
+      };
     });
     if (migratedUnits.length > 0) units = migratedUnits;
   }
@@ -347,6 +409,13 @@ export function migrateRegistrationDraft(
   initial?: RegistrationDraftInitial,
   idFactory: () => string = () => crypto.randomUUID(),
 ): BuildingWizardDraft {
+  if (
+    isRecord(raw) &&
+    typeof raw.draftVersion === "number" &&
+    raw.draftVersion > REGISTRATION_DRAFT_VERSION
+  ) {
+    throw new RegistrationDraftCompatibilityError(raw.draftVersion);
+  }
   return mergeRegistrationDraft(createRegistrationDraft(initial, idFactory), raw);
 }
 
@@ -369,6 +438,10 @@ function optionalNumber(value: number | ""): number | undefined {
 export function toSaveFieldRegistrationInput(
   draft: BuildingWizardDraft,
 ): SaveFieldRegistrationInput {
+  if (draft.units.length === 0) {
+    throw new RegistrationDraftProjectionError();
+  }
+
   const units = draft.units.map((unit) => ({
     localId: trimmedString(unit.localId),
     unitLabel: trimmedString(unit.unitLabel),
