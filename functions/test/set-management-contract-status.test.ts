@@ -1,3 +1,5 @@
+import { createHash } from "node:crypto";
+
 import { describe, expect, it, vi } from "vitest";
 
 import type {
@@ -12,6 +14,8 @@ import type {
 import {
   setManagementContractStatusCore,
   type ContractRequestReceipt,
+  type ContractTransitionCommitInput,
+  type ContractTransitionCommitOutcome,
   type ContractTransitionReservation,
   type ContractTransitionReservationOutcome,
   type SetManagementContractStatusDependencies,
@@ -58,6 +62,20 @@ function contractFor(
         ...stamp,
       };
   }
+}
+
+function fingerprintContract(contract: ManagementContractInfo): string {
+  return createHash("sha256")
+    .update(
+      JSON.stringify({
+        status: contract.status,
+        startedOn: contract.startedOn ?? null,
+        endedOn: contract.endedOn ?? null,
+        updatedAt: contract.updatedAt,
+        updatedBy: contract.updatedBy,
+      }),
+    )
+    .digest("hex");
 }
 
 function buildingWith(
@@ -136,6 +154,7 @@ function createBarrier(participants: number): () => Promise<void> {
 interface AdapterOptions {
   beforeBuildingRead?: () => Promise<void>;
   afterBuildingRead?: () => Promise<void>;
+  beforeAtomicCommit?: (input: ContractTransitionCommitInput) => Promise<void>;
   beforeUpdateRoot?: () => Promise<void>;
   building?: ProjectionBuilding | null;
   failUpdateRootOnce?: boolean;
@@ -158,6 +177,33 @@ function createInMemoryAdapter(options: AdapterOptions = {}) {
     : options.building;
   let shouldFailUpdate = options.failUpdateRootOnce === true;
 
+  const applyPatch = (patch: Record<string, unknown>): void => {
+    for (const [path, value] of Object.entries(patch)) {
+      if (path === `fieldPlatform/buildings/${BUILDING_ID}`) {
+        currentBuilding = cloneBuilding(value as ProjectionBuilding);
+      }
+      const buildingChild = new RegExp(
+        `^fieldPlatform/buildings/${BUILDING_ID}/(managementContract|updatedAt|updatedBy)$`,
+      ).exec(path);
+      if (buildingChild && currentBuilding !== null) {
+        currentBuilding = {
+          ...currentBuilding,
+          [buildingChild[1]]: value,
+        } as ProjectionBuilding;
+      }
+      const receiptMatch =
+        /^fieldPlatform\/managementContractRequests\/([^/]+)\/([^/]+)$/.exec(
+          path,
+        );
+      if (receiptMatch) {
+        receipts.set(
+          `${receiptMatch[1]}\0${receiptMatch[2]}`,
+          value as ContractRequestReceipt,
+        );
+      }
+    }
+  };
+
   const dependencies: SetManagementContractStatusDependencies = {
     getBuilding: vi.fn(async () => {
       await options.beforeBuildingRead?.();
@@ -167,9 +213,10 @@ function createInMemoryAdapter(options: AdapterOptions = {}) {
     }),
     getListings: vi.fn(async () => options.listings ?? []),
     getMedia: vi.fn(async () => options.media ?? []),
-    getReceipt: vi.fn(async (uid, requestId) =>
-      receipts.get(`${uid}\0${requestId}`) ?? null,
-    ),
+    getReceipt: vi.fn(async (uid, requestId) => {
+      if (options.persistReceipts === false) return null;
+      return receipts.get(`${uid}\0${requestId}`) ?? null;
+    }),
     getReservation: vi.fn(async (uid, requestId) => {
       const reservation = reservationsByRequest.get(`${uid}\0${requestId}`);
       return reservation === undefined ? null : cloneReservation(reservation);
@@ -204,34 +251,55 @@ function createInMemoryAdapter(options: AdapterOptions = {}) {
         return { status: "acquired", reservation: cloneReservation(stored) };
       },
     ),
+    commitTransitionAtomically: vi.fn(
+      async (
+        input: ContractTransitionCommitInput,
+      ): Promise<ContractTransitionCommitOutcome> => {
+        await options.beforeAtomicCommit?.(input);
+        const receipt = receipts.get(`${input.uid}\0${input.requestId}`);
+        if (
+          receipt?.requestHash === input.requestHash &&
+          receipt.result.buildingId === input.buildingId &&
+          receipt.result.status === input.result.status
+        ) {
+          return { status: "alreadyCommitted" };
+        }
+        if (receipt !== undefined) return { status: "staleConflict" };
+
+        if (
+          fingerprintContract(input.nextContract) !==
+          input.expectedNextContractFingerprint
+        ) {
+          return { status: "staleConflict" };
+        }
+
+        const contract = currentBuilding?.managementContract;
+        if (
+          contract === undefined ||
+          contract === null ||
+          fingerprintContract(contract) !==
+            input.expectedPreviousContractFingerprint
+        ) {
+          return { status: "staleConflict" };
+        }
+
+        patches.push(input.patch);
+        if (shouldFailUpdate) {
+          shouldFailUpdate = false;
+          throw new Error("simulated_crash_before_root_write");
+        }
+        applyPatch(input.patch);
+        return { status: "committed" };
+      },
+    ),
     updateRoot: vi.fn(async (patch) => {
-      patches.push(patch);
       await options.beforeUpdateRoot?.();
+      patches.push(patch);
       if (shouldFailUpdate) {
         shouldFailUpdate = false;
         throw new Error("simulated_crash_before_root_write");
       }
-
-      for (const [path, value] of Object.entries(patch)) {
-        if (path === `fieldPlatform/buildings/${BUILDING_ID}`) {
-          currentBuilding = cloneBuilding(value as ProjectionBuilding);
-        }
-        const buildingChild = new RegExp(
-          `^fieldPlatform/buildings/${BUILDING_ID}/(managementContract|updatedAt|updatedBy)$`,
-        ).exec(path);
-        if (buildingChild && currentBuilding !== null) {
-          currentBuilding = {
-            ...currentBuilding,
-            [buildingChild[1]]: value,
-          } as ProjectionBuilding;
-        }
-        const match = /^fieldPlatform\/managementContractRequests\/([^/]+)\/([^/]+)$/.exec(
-          path,
-        );
-        if (match && options.persistReceipts !== false) {
-          receipts.set(`${match[1]}\0${match[2]}`, value as ContractRequestReceipt);
-        }
-      }
+      applyPatch(patch);
     }),
     now: vi.fn(options.now ?? (() => NOW)),
   };
@@ -308,8 +376,30 @@ describe("setManagementContractStatusCore", () => {
     expect(dependencies.reserveTransition).toHaveBeenCalledTimes(1);
     expect(dependencies.getListings).toHaveBeenCalledWith(BUILDING_ID);
     expect(dependencies.getMedia).toHaveBeenCalledWith(BUILDING_ID);
-    expect(dependencies.updateRoot).toHaveBeenCalledTimes(1);
+    expect(dependencies.commitTransitionAtomically).toHaveBeenCalledTimes(1);
+    expect(dependencies.updateRoot).not.toHaveBeenCalled();
     expect(patches).toHaveLength(1);
+
+    const commitInput = vi.mocked(dependencies.commitTransitionAtomically).mock
+      .calls[0][0];
+    expect(commitInput).toMatchObject({
+      uid: adminActor.uid,
+      requestId: input.requestId,
+      buildingId: BUILDING_ID,
+      requestHash: expect.stringMatching(/^[a-f0-9]{64}$/),
+      expectedPreviousContractFingerprint: expect.stringMatching(
+        /^[a-f0-9]{64}$/,
+      ),
+      expectedNextContractFingerprint: expect.stringMatching(/^[a-f0-9]{64}$/),
+      nextContract: {
+        status: "active",
+        startedOn: "2026-08-09",
+        updatedAt: NOW,
+        updatedBy: adminActor.uid,
+      },
+      result,
+      patch: patches[0],
+    });
 
     const patch = patches[0];
     const auditPaths = Object.keys(patch).filter((path) =>
@@ -563,6 +653,8 @@ describe("setManagementContractStatusCore", () => {
           dependencies,
         ),
       ).resolves.toEqual({ buildingId: BUILDING_ID, status: target });
+      expect(dependencies.commitTransitionAtomically).toHaveBeenCalledTimes(1);
+      expect(dependencies.updateRoot).not.toHaveBeenCalled();
     }
   });
 
@@ -707,7 +799,8 @@ describe("setManagementContractStatusCore", () => {
       buildingReadsAfterFirst,
     );
     expect(dependencies.reserveTransition).toHaveBeenCalledTimes(1);
-    expect(dependencies.updateRoot).toHaveBeenCalledTimes(1);
+    expect(dependencies.commitTransitionAtomically).toHaveBeenCalledTimes(1);
+    expect(dependencies.updateRoot).not.toHaveBeenCalled();
     expect(dependencies.now).toHaveBeenCalledTimes(1);
   });
 
@@ -782,7 +875,8 @@ describe("setManagementContractStatusCore", () => {
     expect(dependencies.getBuilding).toHaveBeenCalledTimes(
       buildingReadsAfterFirst,
     );
-    expect(dependencies.updateRoot).toHaveBeenCalledTimes(1);
+    expect(dependencies.commitTransitionAtomically).toHaveBeenCalledTimes(1);
+    expect(dependencies.updateRoot).not.toHaveBeenCalled();
   });
 
   it("rejects an acquired reservation with a non-canonical claimedAt", async () => {
@@ -844,10 +938,115 @@ describe("setManagementContractStatusCore", () => {
 
     expect(callBResult).toEqual(callAResult);
     expect(adapter.dependencies.getReservation).toHaveBeenCalled();
-    expect(adapter.dependencies.updateRoot).toHaveBeenCalledTimes(1);
+    expect(adapter.dependencies.commitTransitionAtomically).toHaveBeenCalledTimes(2);
+    expect(adapter.dependencies.updateRoot).not.toHaveBeenCalled();
     expect(
       adapter.getCurrentBuilding()?.managementContract,
     ).toMatchObject({ status: "active", updatedAt: NOW });
+  });
+
+  it("returns staleConflict without writing when the reserved prior version changed before commit", async () => {
+    let adapter: ReturnType<typeof createInMemoryAdapter>;
+    adapter = createInMemoryAdapter({
+      beforeAtomicCommit: async () => {
+        const changed = buildingWith("pending");
+        changed.managementContract = {
+          ...changed.managementContract,
+          updatedAt: "2026-08-02T09:00:00.000Z",
+          updatedBy: "admin-2",
+        };
+        adapter.setCurrentBuilding(changed);
+      },
+    });
+
+    await expect(
+      setManagementContractStatusCore(
+        { ...inputFor("active"), startedOn: "2026-08-09" },
+        adminActor,
+        adapter.dependencies,
+      ),
+    ).rejects.toThrow("field_management_transition_conflict");
+
+    expect(adapter.dependencies.commitTransitionAtomically).toHaveBeenCalledTimes(1);
+    expect(adapter.dependencies.updateRoot).not.toHaveBeenCalled();
+    expect(adapter.patches).toHaveLength(0);
+    expect(adapter.receipts).toHaveLength(0);
+    expect(adapter.getCurrentBuilding()?.managementContract).toMatchObject({
+      status: "pending",
+      updatedAt: "2026-08-02T09:00:00.000Z",
+    });
+  });
+
+  it("fences an old retry inside CAS after its receipt and a newer transition commit", async () => {
+    let boundaryCalls = 0;
+    let announceOldRetry: (() => void) | undefined;
+    let releaseOldRetry: (() => void) | undefined;
+    const oldRetryAtCas = new Promise<void>((resolve) => {
+      announceOldRetry = resolve;
+    });
+    const waitForNewerCommit = new Promise<void>((resolve) => {
+      releaseOldRetry = resolve;
+    });
+    const commitBoundary = async (): Promise<void> => {
+      boundaryCalls += 1;
+      if (boundaryCalls === 2) {
+        announceOldRetry?.();
+        await waitForNewerCommit;
+      }
+    };
+    const adapter = createInMemoryAdapter({
+      beforeAtomicCommit: commitBoundary,
+      beforeUpdateRoot: commitBoundary,
+      failUpdateRootOnce: true,
+      persistReceipts: false,
+    });
+    const original = { ...inputFor("active"), startedOn: "2026-08-09" };
+
+    await expect(
+      setManagementContractStatusCore(
+        original,
+        adminActor,
+        adapter.dependencies,
+      ),
+    ).rejects.toThrow("simulated_crash_before_root_write");
+
+    const oldRetry = setManagementContractStatusCore(
+      { ...original },
+      adminActor,
+      adapter.dependencies,
+    );
+    await oldRetryAtCas;
+
+    await setManagementContractStatusCore(
+      { ...original },
+      adminActor,
+      adapter.dependencies,
+    );
+    expect(adapter.getCurrentBuilding()?.managementContract).toMatchObject({
+      status: "active",
+    });
+    await setManagementContractStatusCore(
+      inputFor("paused", "request-newer-pause"),
+      adminActor,
+      adapter.dependencies,
+    );
+    expect(adapter.getCurrentBuilding()?.managementContract).toMatchObject({
+      status: "paused",
+    });
+    const writesBeforeOldRetryResumes = adapter.patches.length;
+
+    releaseOldRetry?.();
+    await expect(oldRetry).resolves.toEqual({
+      buildingId: BUILDING_ID,
+      status: "active",
+    });
+
+    expect(adapter.patches).toHaveLength(writesBeforeOldRetryResumes);
+    expect(adapter.getCurrentBuilding()?.managementContract).toMatchObject({
+      status: "paused",
+    });
+    expect(adapter.dependencies.commitTransitionAtomically).toHaveBeenCalledTimes(4);
+    expect(adapter.dependencies.updateRoot).not.toHaveBeenCalled();
   });
 
   it("replays an identical patch from a self-sufficient reservation after a crash before root write", async () => {
@@ -883,7 +1082,8 @@ describe("setManagementContractStatusCore", () => {
       ),
     ).resolves.toEqual({ buildingId: BUILDING_ID, status: "active" });
     expect(adapter.dependencies.getReservation).toHaveBeenCalled();
-    expect(adapter.dependencies.updateRoot).toHaveBeenCalledTimes(2);
+    expect(adapter.dependencies.commitTransitionAtomically).toHaveBeenCalledTimes(2);
+    expect(adapter.dependencies.updateRoot).not.toHaveBeenCalled();
     expect(adapter.patches[1]).toEqual(adapter.patches[0]);
   });
 
@@ -930,7 +1130,8 @@ describe("setManagementContractStatusCore", () => {
           adapter.dependencies,
         ),
       ).rejects.toThrow(expectedError);
-      expect(adapter.dependencies.updateRoot).toHaveBeenCalledTimes(1);
+      expect(adapter.dependencies.commitTransitionAtomically).toHaveBeenCalledTimes(1);
+      expect(adapter.dependencies.updateRoot).not.toHaveBeenCalled();
     },
   );
 
@@ -959,7 +1160,8 @@ describe("setManagementContractStatusCore", () => {
     );
 
     expect(result).toEqual({ buildingId: BUILDING_ID, status: "active" });
-    expect(adapter.dependencies.updateRoot).toHaveBeenCalledTimes(2);
+    expect(adapter.dependencies.commitTransitionAtomically).toHaveBeenCalledTimes(3);
+    expect(adapter.dependencies.updateRoot).not.toHaveBeenCalled();
     expect(adapter.getCurrentBuilding()?.managementContract).toMatchObject({
       status: "paused",
     });
@@ -992,7 +1194,8 @@ describe("setManagementContractStatusCore", () => {
       expect.objectContaining({ message: "field_management_transition_conflict" }),
     );
     expect(dependencies.reserveTransition).toHaveBeenCalledTimes(2);
-    expect(dependencies.updateRoot).toHaveBeenCalledTimes(1);
+    expect(dependencies.commitTransitionAtomically).toHaveBeenCalledTimes(1);
+    expect(dependencies.updateRoot).not.toHaveBeenCalled();
     expect(patches).toHaveLength(1);
   });
 
@@ -1013,9 +1216,8 @@ describe("setManagementContractStatusCore", () => {
 
     expect(second).toEqual(first);
     expect(dependencies.reserveTransition).toHaveBeenCalledTimes(2);
-    expect(dependencies.updateRoot).toHaveBeenCalledTimes(2);
-    expect(patches).toHaveLength(2);
-    expect(patches[1]).toEqual(patches[0]);
-    expect(Object.keys(patches[1]).sort()).toEqual(Object.keys(patches[0]).sort());
+    expect(dependencies.commitTransitionAtomically).toHaveBeenCalledTimes(2);
+    expect(dependencies.updateRoot).not.toHaveBeenCalled();
+    expect(patches).toHaveLength(1);
   });
 });

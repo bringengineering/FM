@@ -68,6 +68,23 @@ export type ContractTransitionReservationOutcome =
   | { status: "requestConflict" }
   | { status: "buildingConflict" };
 
+export interface ContractTransitionCommitInput {
+  uid: string;
+  requestId: string;
+  requestHash: string;
+  buildingId: string;
+  expectedPreviousContractFingerprint: string;
+  expectedNextContractFingerprint: string;
+  nextContract: ContractTransitionSnapshot;
+  result: SetManagementContractStatusResult;
+  patch: Record<string, unknown>;
+}
+
+export type ContractTransitionCommitOutcome =
+  | { status: "committed" }
+  | { status: "alreadyCommitted" }
+  | { status: "staleConflict" };
+
 export interface SetManagementContractStatusDependencies {
   getBuilding(buildingId: string): Promise<ProjectionBuilding | null>;
   getListings(buildingId: string): Promise<ProjectionListing[]>;
@@ -97,9 +114,19 @@ export interface SetManagementContractStatusDependencies {
     proposed: ContractTransitionReservation,
   ): Promise<ContractTransitionReservationOutcome>;
   /**
-   * Applies every supplied Firebase-style multipath entry atomically and
-   * all-or-nothing. Implementations must not decompose this into sequential
-   * writes.
+   * Performs the authoritative receipt-first compare-and-set at one common
+   * Firebase ancestor. The Task 5 adapter must implement this with a Firebase
+   * transaction/CAS, never `ref().update()`: inside the same transaction it
+   * returns alreadyCommitted for a matching receipt, otherwise compares the
+   * current building contract fingerprint and, only on an exact previous
+   * fingerprint match, applies the granular patch and receipt all-or-nothing.
+   */
+  commitTransitionAtomically(
+    input: ContractTransitionCommitInput,
+  ): Promise<ContractTransitionCommitOutcome>;
+  /**
+   * Retained for base-adapter compatibility. Transition commits never call
+   * this unconditional update method.
    */
   updateRoot(patch: Record<string, unknown>): Promise<void>;
   now(): string;
@@ -516,14 +543,6 @@ async function persistReservation(
   expected: ExpectedRequest,
   dependencies: SetManagementContractStatusDependencies,
 ): Promise<SetManagementContractStatusResult> {
-  const currentFingerprint = contractFingerprint(building.contract);
-  if (currentFingerprint === reservation.value.nextContractFingerprint) {
-    return reservation.value.result;
-  }
-  if (currentFingerprint !== reservation.value.previousContractFingerprint) {
-    return reservation.value.result;
-  }
-
   const { claimedAt, result } = reservation.value;
   const projectionBuilding = {
     ...building.value,
@@ -566,7 +585,7 @@ async function persistReservation(
     completedAt: claimedAt,
   };
 
-  await dependencies.updateRoot({
+  const patch: Record<string, unknown> = {
     [`fieldPlatform/buildings/${result.buildingId}/managementContract`]:
       reservation.nextContract,
     [`fieldPlatform/buildings/${result.buildingId}/updatedAt`]: claimedAt,
@@ -575,8 +594,27 @@ async function persistReservation(
     [`fieldPlatform/mapProjections/${result.buildingId}`]: projection,
     [`fieldPlatform/managementContractRequests/${expected.uid}/${expected.input.requestId}`]:
       receipt,
+  };
+  const outcome = await dependencies.commitTransitionAtomically({
+    uid: expected.uid,
+    requestId: expected.input.requestId,
+    requestHash: expected.requestHash,
+    buildingId: result.buildingId,
+    expectedPreviousContractFingerprint:
+      reservation.value.previousContractFingerprint,
+    expectedNextContractFingerprint:
+      reservation.value.nextContractFingerprint,
+    nextContract: reservation.nextContract,
+    result,
+    patch,
   });
-  return result;
+  if (outcome.status === "committed" || outcome.status === "alreadyCommitted") {
+    return result;
+  }
+  if (outcome.status === "staleConflict") {
+    throw new Error("field_management_transition_conflict");
+  }
+  return invalidTransition();
 }
 
 async function recoverReservation(
