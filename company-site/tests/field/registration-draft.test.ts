@@ -182,6 +182,41 @@ describe("wizard draft persistence", () => {
     expect(storage.getItem(legacyWizardDraftClaimKey(legacyKey))).toContain("staff-a");
   });
 
+  it("does not orphan a legacy claim when active-pointer persistence fails", () => {
+    const legacyKey = "bring-field-building-draft";
+    const activeKey = activeWizardDraftKey("staff-a");
+    const values = new Map<string, string>([[legacyKey, JSON.stringify(legacyDraft)]]);
+    const storage = {
+      getItem: (key: string) => values.get(key) ?? null,
+      setItem: (key: string, value: string) => {
+        if (key === activeKey) throw new Error("active pointer failed");
+        values.set(key, value);
+      },
+      removeItem: (key: string) => { values.delete(key); },
+    };
+    const first = prepareWizardDraft(storage, {
+      uid: "staff-a",
+      draftId: "draft-a",
+      legacyKey,
+      idFactory: () => "request-a",
+    });
+
+    expect(() => commitPreparedWizardDraft(storage, first, { activeUid: "staff-a" }))
+      .toThrow("active pointer failed");
+    expect(storage.getItem(legacyWizardDraftClaimKey(legacyKey))).toBeNull();
+    expect(storage.getItem(wizardDraftStorageKey("staff-a", "draft-a"))).toBeNull();
+    expect(storage.getItem(legacyKey)).not.toBeNull();
+
+    const remount = prepareWizardDraft(storage, {
+      uid: "staff-a",
+      draftId: "draft-b",
+      legacyKey,
+      idFactory: () => "request-b",
+    });
+    expect(remount.envelope.value.building.name).toBe("legacy building");
+    expect(remount.legacyClaim).toMatchObject({ ownerUid: "staff-a", draftId: "draft-b" });
+  });
+
   it("does not delete a new legacy value when an unrelated scoped draft exists", () => {
     const storage = memoryStorage();
     const legacyKey = "bring-field-building-draft";

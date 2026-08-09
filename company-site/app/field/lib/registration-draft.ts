@@ -700,6 +700,7 @@ export function commitPreparedWizardDraft(
   }
 
   let shouldCleanLegacy = false;
+  let claimKeyToWrite: string | null = null;
   if (prepared.legacyClaim && prepared.legacyKeyToRemove) {
     const currentLegacyRaw = storage.getItem(prepared.legacyKeyToRemove);
     const currentFingerprint = currentLegacyRaw === null
@@ -719,7 +720,7 @@ export function commitPreparedWizardDraft(
       if (currentClaim && currentClaim.fingerprint === currentFingerprint && !ownedClaim) {
         throw new Error("registration_draft_legacy_claimed");
       }
-      storage.setItem(claimKey, JSON.stringify(prepared.legacyClaim));
+      claimKeyToWrite = claimKey;
       shouldCleanLegacy = true;
     }
   }
@@ -729,6 +730,9 @@ export function commitPreparedWizardDraft(
       activeWizardDraftKey(options.activeUid),
       prepared.envelope.draftId,
     );
+  }
+  if (claimKeyToWrite && prepared.legacyClaim) {
+    storage.setItem(claimKeyToWrite, JSON.stringify(prepared.legacyClaim));
   }
 
   saveWizardDraft(
