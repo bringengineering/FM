@@ -160,19 +160,49 @@ async function seed() {
           assignedUserId: "staff-1",
         },
       },
+      captureSessions: {
+        "11111111-1111-4111-8111-111111111111": {
+          id: "11111111-1111-4111-8111-111111111111",
+          requestId: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+          buildingId: "building-1",
+          visitId: "visit-1",
+          createdBy: "staff-1",
+          status: "open",
+          createdAt: NOW,
+          updatedAt: NOW,
+        },
+        "22222222-2222-4222-8222-222222222222": {
+          id: "22222222-2222-4222-8222-222222222222",
+          requestId: "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
+          buildingId: "building-unassigned",
+          visitId: "visit-unassigned",
+          createdBy: "staff-2",
+          status: "open",
+          createdAt: NOW,
+          updatedAt: NOW,
+        },
+      },
       media: {
         "media-1": {
           id: "media-1",
+          requestId: "cccccccc-cccc-4ccc-8ccc-cccccccccccc",
           buildingId: "building-1",
+          visitId: "visit-1",
+          captureSessionId: "11111111-1111-4111-8111-111111111111",
           capturedBy: "staff-1",
-          uploadState: "uploaded",
+          uploadState: "finalized",
+          uploadProgress: 100,
           driveSyncState: "queued",
         },
         "media-unassigned": {
           id: "media-unassigned",
+          requestId: "dddddddd-dddd-4ddd-8ddd-dddddddddddd",
           buildingId: "building-unassigned",
+          visitId: "visit-unassigned",
+          captureSessionId: "22222222-2222-4222-8222-222222222222",
           capturedBy: "staff-1",
-          uploadState: "uploaded",
+          uploadState: "finalized",
+          uploadProgress: 100,
           driveSyncState: "queued",
         },
       },
@@ -232,6 +262,7 @@ async function seed() {
 }
 
 beforeAll(async () => {
+  if (!databaseEmulatorAvailable) return;
   environment = await initializeTestEnvironment({
     projectId: PROJECT_ID,
     database: {
@@ -242,13 +273,51 @@ beforeAll(async () => {
   });
 });
 
+describe("field media database rule source", () => {
+  it("declares server ownership and canonical media lifecycle validation", async () => {
+    const source = JSON.parse(
+      await readFile(resolve("../database.rules.json"), "utf8"),
+    ) as { rules: { fieldPlatform: Record<string, unknown> } };
+    const fieldPlatform = source.rules.fieldPlatform as Record<
+      string,
+      Record<string, unknown>
+    >;
+    const media = fieldPlatform.media;
+    const sessions = fieldPlatform.captureSessions;
+
+    expect(media[".write"]).toBe(false);
+    expect(sessions[".write"]).toBe(false);
+    expect(fieldPlatform.auditLogs[".write"]).toBe(false);
+    expect(fieldPlatform.driveSyncJobs[".write"]).toBe(false);
+    expect(fieldPlatform.mapProjections[".write"]).toBe(false);
+
+    const mediaValidation = JSON.stringify(media);
+    for (const state of [
+      "queued",
+      "uploading",
+      "objectStored",
+      "finalizing",
+      "finalized",
+      "failed",
+      "notRequested",
+      "syncing",
+      "complete",
+    ]) {
+      expect(mediaValidation).toContain(state);
+    }
+    expect(mediaValidation).toContain("uploadProgress");
+    expect(JSON.stringify(sessions)).toContain("status");
+  });
+});
+
 beforeEach(async () => {
+  if (!databaseEmulatorAvailable) return;
   await environment.clearDatabase();
   await seed();
 });
 
 afterAll(async () => {
-  await environment.cleanup();
+  await environment?.cleanup();
 });
 
 describe.runIf(databaseEmulatorAvailable)("fieldPlatform database rules", () => {
@@ -276,6 +345,58 @@ describe.runIf(databaseEmulatorAvailable)("fieldPlatform database rules", () => 
     expect(source.rules.fieldPlatform.ownerNotes.$buildingId[".indexOn"]).toEqual([
       "createdAt",
     ]);
+  });
+
+  it("allows only current authority to read finalized media and capture sessions", async () => {
+    const mediaPath = "fieldPlatform/media/media-1";
+    const sessionPath =
+      "fieldPlatform/captureSessions/11111111-1111-4111-8111-111111111111";
+
+    for (const [uid, role] of [
+      ["staff-1", "staff"],
+      ["reviewer-1", "reviewer"],
+      ["admin-1", "admin"],
+    ] as const) {
+      const database = environment.authenticatedContext(uid, claims(role)).database();
+      await assertSucceeds(get(ref(database, mediaPath)));
+      await assertSucceeds(get(ref(database, sessionPath)));
+    }
+
+    const unassigned = environment
+      .authenticatedContext("staff-2", claims("staff"))
+      .database();
+    await assertFails(get(ref(unassigned, mediaPath)));
+    await assertFails(get(ref(unassigned, sessionPath)));
+    await assertSucceeds(get(ref(
+      unassigned,
+      "fieldPlatform/captureSessions/22222222-2222-4222-8222-222222222222",
+    )));
+  });
+
+  it("keeps media, capture status, audit, outbox, and projection server-owned", async () => {
+    for (const [uid, role] of [
+      ["staff-1", "staff"],
+      ["reviewer-1", "reviewer"],
+      ["admin-1", "admin"],
+    ] as const) {
+      const database = environment.authenticatedContext(uid, claims(role)).database();
+      await assertFails(update(ref(database, "fieldPlatform/media/media-1"), {
+        uploadState: "failed",
+      }));
+      await assertFails(update(ref(
+        database,
+        "fieldPlatform/captureSessions/11111111-1111-4111-8111-111111111111",
+      ), { status: "complete" }));
+      await assertFails(set(ref(database, "fieldPlatform/auditLogs/client-event"), {
+        action: "tampered",
+      }));
+      await assertFails(set(ref(database, "fieldPlatform/driveSyncJobs/client-job"), {
+        status: "complete",
+      }));
+      await assertFails(update(ref(database, "fieldPlatform/mapProjections/building-1"), {
+        captureStatus: "complete",
+      }));
+    }
   });
 
   it("allows only assigned active staff and admins to read owner notes", async () => {
@@ -373,7 +494,7 @@ describe.runIf(databaseEmulatorAvailable)("fieldPlatform database rules", () => 
       updatedAt: NOW,
       updatedBy: "staff-1",
     }));
-    await assertSucceeds(set(ref(database, "fieldPlatform/media/media-1"), {
+    await assertFails(set(ref(database, "fieldPlatform/media/media-1"), {
       id: "media-1",
       buildingId: "building-1",
       capturedBy: "staff-1",
@@ -450,6 +571,10 @@ describe.runIf(databaseEmulatorAvailable)("fieldPlatform database rules", () => 
     ["unit", "fieldPlatform/units/unit-1"],
     ["listing", "fieldPlatform/listings/listing-1"],
     ["visit", "fieldPlatform/visits/visit-1"],
+    [
+      "capture session",
+      "fieldPlatform/captureSessions/11111111-1111-4111-8111-111111111111",
+    ],
     ["media", "fieldPlatform/media/media-1"],
     ["secure access", "fieldPlatform/secureAccess/access-1"],
     ["ad package", "fieldPlatform/adPackages/package-1"],
@@ -562,6 +687,7 @@ describe.runIf(databaseEmulatorAvailable)("fieldPlatform database rules", () => 
       "fieldPlatform/units/unit-1",
       "fieldPlatform/listings/listing-1",
       "fieldPlatform/visits/visit-1",
+      "fieldPlatform/captureSessions/11111111-1111-4111-8111-111111111111",
       "fieldPlatform/media/media-1",
       "fieldPlatform/secureAccess/access-1",
       "fieldPlatform/adPackages/package-1",
