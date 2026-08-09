@@ -37,7 +37,9 @@ describe("FieldMapPanel", () => {
     render(<FieldMapPanel />);
 
     const map = screen.getByTitle("BRING 원주 건물 유지보수 지도");
-    expect(map).toHaveAttribute("src", expect.stringContaining("wonju-map.html"));
+    expect(map).toHaveAttribute("src", "/wonju-map.html?embedded=field&mode=managed");
+    expect(screen.getByRole("link", { name: "전체 화면으로 열기" }))
+      .toHaveAttribute("href", "/wonju-map.html?mode=managed");
     expect(screen.queryByText("기능을 연결하고 있습니다")).not.toBeInTheDocument();
   });
 });
