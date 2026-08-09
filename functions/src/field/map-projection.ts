@@ -2,6 +2,7 @@ import type {
   FieldMapProjection,
   ManagementContractInfo,
 } from "./contracts.js";
+import { captureSessionMeetsRequiredPolicy } from "./media-policy.js";
 
 export interface ProjectionBuilding {
   id: string;
@@ -30,6 +31,11 @@ export interface ProjectionListing {
 export interface ProjectionMedia {
   buildingId: string;
   uploadState?: unknown;
+  captureSessionId?: unknown;
+  kind?: unknown;
+  zone?: unknown;
+  captureQualityState?: unknown;
+  excludedAt?: unknown;
 }
 
 type UnknownRecord = Record<string, unknown>;
@@ -104,6 +110,34 @@ function buildParkingSummary(parking: unknown): string {
   return `주차 가능 · 총 ${totalSpaces}대`;
 }
 
+function captureStatusForMedia(
+  media: ProjectionMedia[],
+): FieldMapProjection["captureStatus"] {
+  const finalizedCompatible = media.filter(
+    (item) =>
+      item.uploadState === "finalized"
+      || item.uploadState === "firebaseComplete",
+  );
+  if (finalizedCompatible.length === 0) return "notStarted";
+
+  const currentFinalized = finalizedCompatible.filter(
+    (item) =>
+      item.uploadState === "finalized"
+      && (item.excludedAt === undefined || item.excludedAt === null)
+      && isNonEmptyString(item.captureSessionId),
+  );
+  const sessionIds = new Set(
+    currentFinalized.map((item) => item.captureSessionId as string),
+  );
+  for (const sessionId of sessionIds) {
+    if (captureSessionMeetsRequiredPolicy(currentFinalized, sessionId)) {
+      return "complete";
+    }
+  }
+
+  return "inProgress";
+}
+
 export function buildMapProjection(input: {
   building: ProjectionBuilding | null;
   listings: ProjectionListing[];
@@ -175,12 +209,7 @@ export function buildMapProjection(input: {
           : selected,
       undefined,
     );
-  const captureStatus: FieldMapProjection["captureStatus"] = media.some(
-    (item) =>
-      item.uploadState === "finalized" || item.uploadState === "firebaseComplete",
-  )
-    ? "inProgress"
-    : "notStarted";
+  const captureStatus = captureStatusForMedia(media);
 
   return {
     buildingId,
