@@ -6,7 +6,9 @@ import AuthGate from "../../app/field/components/AuthGate";
 import FieldMapPanel from "../../app/field/components/FieldMapPanel";
 import BuildingWizard from "../../app/field/components/BuildingWizard";
 import Dashboard from "../../app/field/components/Dashboard";
-import ManagementContractQueue from "../../app/field/components/ManagementContractQueue";
+import ManagementContractQueue, {
+  createApprovalRequestId,
+} from "../../app/field/components/ManagementContractQueue";
 import type { Building } from "../../app/field/lib/types";
 
 const pendingBuilding: Building = {
@@ -51,6 +53,55 @@ describe("Dashboard", () => {
 });
 
 describe("ManagementContractQueue", () => {
+  it("creates unique RFC 4122 UUID v4 values with secure fallback bytes", () => {
+    let call = 0;
+    const secureFallback = {
+      getRandomValues(values: Uint8Array) {
+        call += 1;
+        values.forEach((_value, index) => {
+          values[index] = (call * 17 + index) & 0xff;
+        });
+        return values;
+      },
+    };
+
+    const first = createApprovalRequestId(secureFallback);
+    const second = createApprovalRequestId(secureFallback);
+    const uuidV4 = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;
+
+    expect(first).toMatch(uuidV4);
+    expect(second).toMatch(uuidV4);
+    expect(second).not.toBe(first);
+  });
+
+  it("fails safely when secure UUID generation is unavailable", async () => {
+    const approve = vi.fn();
+    vi.stubGlobal("crypto", {});
+
+    try {
+      expect(() => createApprovalRequestId({})).toThrow("field_secure_random_unavailable");
+      render(
+        <ManagementContractQueue
+          resolveRole={async () => "admin"}
+          subscribe={(listener) => {
+            listener([pendingBuilding]);
+            return () => undefined;
+          }}
+          approve={approve}
+        />,
+      );
+
+      fireEvent.click(await screen.findByRole("button", { name: "관리 중으로 승인" }));
+
+      expect(await screen.findByText("승인 실패 · 다시 시도해 주세요"))
+        .toBeInTheDocument();
+      expect(screen.getByText("테스트 빌딩")).toBeInTheDocument();
+      expect(approve).not.toHaveBeenCalled();
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
   it("lets an admin approve a pending building with an editable start date", async () => {
     const approve = vi.fn(async () => ({
       buildingId: "building-1",

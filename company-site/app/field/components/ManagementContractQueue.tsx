@@ -25,13 +25,35 @@ export interface ManagementContractQueueProps {
 
 const DATE_PATTERN = /^\d{4}-\d{2}-\d{2}$/;
 
-function createRequestId(): string {
-  if (typeof globalThis.crypto?.randomUUID === "function") {
-    return globalThis.crypto.randomUUID();
+interface SecureUuidCrypto {
+  randomUUID?: () => string;
+  getRandomValues?: (values: Uint8Array) => Uint8Array;
+}
+
+export function createApprovalRequestId(
+  secureCrypto: SecureUuidCrypto | null | undefined = globalThis.crypto,
+): string {
+  if (typeof secureCrypto?.randomUUID === "function") {
+    return secureCrypto.randomUUID();
   }
 
-  const random = Math.random().toString(36).slice(2);
-  return `contract-${Date.now()}-${random}`;
+  if (typeof secureCrypto?.getRandomValues !== "function") {
+    throw new Error("field_secure_random_unavailable");
+  }
+
+  const bytes = new Uint8Array(16);
+  secureCrypto.getRandomValues(bytes);
+  bytes[6] = (bytes[6] & 0x0f) | 0x40;
+  bytes[8] = (bytes[8] & 0x3f) | 0x80;
+
+  const hex = [...bytes].map((value) => value.toString(16).padStart(2, "0"));
+  return [
+    hex.slice(0, 4).join(""),
+    hex.slice(4, 6).join(""),
+    hex.slice(6, 8).join(""),
+    hex.slice(8, 10).join(""),
+    hex.slice(10, 16).join(""),
+  ].join("-");
 }
 
 export default function ManagementContractQueue({
@@ -107,7 +129,7 @@ export default function ManagementContractQueue({
 
     try {
       await approve({
-        requestId: createRequestId(),
+        requestId: createApprovalRequestId(),
         buildingId: building.id,
         status: "active",
         startedOn,
