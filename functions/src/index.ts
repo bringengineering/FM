@@ -32,6 +32,7 @@ import type {
 import {
   appendOwnerNoteCore,
   archiveOwnerNoteCore,
+  isOwnerNoteActorId,
   normalizeStoredOwnerNoteRecord,
   type OwnerNoteDependencies,
 } from "./field/owner-notes.js";
@@ -95,7 +96,7 @@ export async function requireFieldActor(
   const uid = request.auth?.uid;
   const claimedRole = request.auth?.token.fieldRole;
   if (
-    !isPathSafeId(uid) ||
+    !isOwnerNoteActorId(uid) ||
     request.auth?.token.fieldPlatform !== true ||
     !isFieldRole(claimedRole)
   ) {

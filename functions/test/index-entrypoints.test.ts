@@ -515,8 +515,8 @@ describe("Firebase entrypoint metadata", () => {
     expect(registrations.mutationPaths).not.toContain(OWNER_NOTE_PATH);
   });
 
-  it("rejects a malformed append candidate before the note transaction", async () => {
-    const uid = "staff:unsafe";
+  it("accepts an auth-boundary colon UID through append persistence", async () => {
+    const uid = "staff:wonju";
     registrations.pathValues.set(`fieldPlatform/users/${uid}`, {
       enabled: true,
       role: "staff",
@@ -534,7 +534,7 @@ describe("Firebase entrypoint metadata", () => {
       true,
     );
 
-    await expect(callableHandler(entrypoints.appendOwnerNote)({
+    const result = await callableHandler(entrypoints.appendOwnerNote)({
       auth: {
         uid,
         token: {
@@ -545,13 +545,15 @@ describe("Firebase entrypoint metadata", () => {
         },
       },
       data: validOwnerNoteData(),
-    })).rejects.toMatchObject({
-      code: "internal",
-      message: "owner_note_internal",
     });
 
-    expect(registrations.pathValues.has(OWNER_NOTE_PATH)).toBe(false);
-    expect(registrations.transactionPaths).not.toContain(OWNER_NOTE_PATH);
+    expect(result).toEqual({
+      note: expect.objectContaining({ createdBy: uid }),
+    });
+    expect(registrations.pathValues.get(OWNER_NOTE_PATH)).toMatchObject({
+      createdBy: uid,
+    });
+    expect(registrations.transactionPaths).toContain(OWNER_NOTE_PATH);
   });
 
   it("rejects malformed stored state on the append pre-read", async () => {

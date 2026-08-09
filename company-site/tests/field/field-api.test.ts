@@ -161,7 +161,9 @@ describe("field callable client", () => {
     ["invalid createdAt", { createdAt: "not-a-date" }],
     ["oversized name", { createdByName: "가".repeat(86) }],
     ["control name", { createdByName: "Bad\u0000name" }],
-    ["unstable creator", { createdBy: "bad:uid" }],
+    ["forbidden creator", { createdBy: "bad.uid" }],
+    ["control creator", { createdBy: "bad\u0000uid" }],
+    ["over-byte creator", { createdBy: "가".repeat(43) }],
     ["partial archive", { archivedAt: "2026-08-09T02:30:00.000Z" }],
     ["mismatched id", { id: "note_87654321" }],
     ["mismatched building", { buildingId: "building-2" }],
@@ -177,6 +179,22 @@ describe("field callable client", () => {
       recordedAt: "2026-08-09T01:30:00.000Z",
     })).rejects.toThrow("field_owner_note_response_invalid");
   });
+
+  it.each(["staff:wonju", "원주담당자"])(
+    "accepts the auth-boundary append creator %s",
+    async (createdBy) => {
+      firebase.callableInvoke.mockResolvedValue({
+        data: { note: { ...serverNote, createdBy } },
+      });
+
+      await expect(appendOwnerNote({
+        buildingId: "building-1",
+        localId: "note_12345678",
+        body: "Check boiler pressure",
+        recordedAt: "2026-08-09T01:30:00.000Z",
+      })).resolves.toMatchObject({ createdBy });
+    },
+  );
 
   it("sends only the building and note IDs to archiveOwnerNote", async () => {
     const archive = {
@@ -207,9 +225,13 @@ describe("field callable client", () => {
       archivedAt: "2026-08-09T02:30:00.000Z",
       archivedBy: "bad/path",
     }],
-    ["unstable archivedBy", {
+    ["control archivedBy", {
       archivedAt: "2026-08-09T02:30:00.000Z",
-      archivedBy: "bad:uid",
+      archivedBy: "bad\u007fuid",
+    }],
+    ["over-byte archivedBy", {
+      archivedAt: "2026-08-09T02:30:00.000Z",
+      archivedBy: "가".repeat(43),
     }],
   ])("rejects an archive callable response with %s", async (_label, data) => {
     firebase.callableInvoke.mockResolvedValue({ data });
@@ -219,6 +241,23 @@ describe("field callable client", () => {
       noteId: "note_12345678",
     })).rejects.toThrow("field_owner_note_archive_response_invalid");
   });
+
+  it.each(["staff:wonju", "원주관리자"])(
+    "accepts the auth-boundary archive actor %s",
+    async (archivedBy) => {
+      firebase.callableInvoke.mockResolvedValue({
+        data: {
+          archivedAt: "2026-08-09T02:30:00.000Z",
+          archivedBy,
+        },
+      });
+
+      await expect(archiveOwnerNote({
+        buildingId: "building-1",
+        noteId: "note_12345678",
+      })).resolves.toMatchObject({ archivedBy });
+    },
+  );
 });
 
 describe("owner note read adapter", () => {
@@ -267,10 +306,25 @@ describe("owner note read adapter", () => {
         id: "partial-archive",
         archivedAt: "2026-08-09T02:30:00.000Z",
       },
-      "unstable-creator": {
+      "colon-creator": {
         ...serverNote,
-        id: "unstable-creator",
-        createdBy: "bad:uid",
+        id: "colon-creator",
+        createdBy: "staff:wonju",
+      },
+      "hangul-creator": {
+        ...serverNote,
+        id: "hangul-creator",
+        createdBy: "원주담당자",
+      },
+      "forbidden-creator": {
+        ...serverNote,
+        id: "forbidden-creator",
+        createdBy: "bad#uid",
+      },
+      "over-byte-creator": {
+        ...serverNote,
+        id: "over-byte-creator",
+        createdBy: "가".repeat(43),
       },
       "wrong-building": {
         ...serverNote,
@@ -280,6 +334,8 @@ describe("owner note read adapter", () => {
       scalar: "skip-me",
     }, "building-1")).toEqual([
       { ...serverNote, id: "newer-note", createdAt: "2026-08-09T03:00:00.000Z" },
+      { ...serverNote, id: "colon-creator", createdBy: "staff:wonju" },
+      { ...serverNote, id: "hangul-creator", createdBy: "원주담당자" },
       { ...serverNote, id: "older-note", createdAt: "2026-08-09T01:00:00.000Z" },
     ]);
   });

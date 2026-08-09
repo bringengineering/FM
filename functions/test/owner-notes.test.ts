@@ -4,6 +4,7 @@ import {
   appendOwnerNoteCore,
   archiveOwnerNoteCore,
   buildOwnerNoteRecord,
+  isOwnerNoteActorId,
   isStableId,
   normalizeStoredOwnerNoteRecord,
   normalizeOwnerNoteDrafts,
@@ -116,6 +117,52 @@ describe("owner note normalization", () => {
 });
 
 describe("owner note record construction", () => {
+  it.each([
+    "staff:wonju",
+    "원주담당자",
+    "a".repeat(128),
+  ])("accepts the auth-boundary actor ID %s", (actorId) => {
+    expect(isOwnerNoteActorId(actorId)).toBe(true);
+    expect(normalizeStoredOwnerNoteRecord(
+      note({ createdBy: actorId }),
+      "building-1",
+      "note_12345678",
+    )).toMatchObject({ createdBy: actorId });
+  });
+
+  it.each([
+    "",
+    " padded ",
+    "bad.uid",
+    "bad#uid",
+    "bad$uid",
+    "bad[uid]",
+    "bad/uid",
+    "bad\u0000uid",
+    "bad\u007fuid",
+    "가".repeat(43),
+  ])("rejects the forbidden or over-byte actor ID %#", (actorId) => {
+    expect(isOwnerNoteActorId(actorId)).toBe(false);
+    expect(() => normalizeStoredOwnerNoteRecord(
+      note({ createdBy: actorId }),
+      "building-1",
+      "note_12345678",
+    )).toThrow("owner_note_stored_record_invalid");
+  });
+
+  it("accepts colon and Hangul archive actor IDs", () => {
+    expect(normalizeStoredOwnerNoteRecord(
+      note({ archivedAt: NOW, archivedBy: "staff:wonju" }),
+      "building-1",
+      "note_12345678",
+    )).toMatchObject({ archivedBy: "staff:wonju" });
+    expect(normalizeStoredOwnerNoteRecord(
+      note({ archivedAt: NOW, archivedBy: "원주관리자" }),
+      "building-1",
+      "note_12345678",
+    )).toMatchObject({ archivedBy: "원주관리자" });
+  });
+
   it("reconstructs a stored record and strips fields outside the owner-note schema", () => {
     expect(normalizeStoredOwnerNoteRecord({
       ...note(),
@@ -369,6 +416,45 @@ describe("owner note append policy", () => {
     expect(createNoteIfAbsent).toHaveBeenCalledOnce();
   });
 
+  it("appends with the auth-boundary colon actor ID", async () => {
+    const colonActor = { ...actor, uid: "staff:wonju" };
+    const expected = note({ createdBy: colonActor.uid });
+    const deps = dependencies();
+
+    await expect(appendOwnerNoteCore(input, colonActor, deps)).resolves.toEqual(expected);
+    expect(deps.createNoteIfAbsent).toHaveBeenCalledWith(
+      "building-1",
+      "note_12345678",
+      expected,
+    );
+  });
+
+  it("replays an idempotent note created by a Hangul UID", async () => {
+    const hangulActor = { ...actor, uid: "원주담당자" };
+    const existing = note({ createdBy: hangulActor.uid });
+    const deps = dependencies({ readNote: vi.fn(async () => existing) });
+
+    await expect(appendOwnerNoteCore(input, hangulActor, deps)).resolves.toEqual(existing);
+    expect(deps.createNoteIfAbsent).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ["forbidden actor", { ...actor, uid: "bad/path" }, NOW],
+    ["control actor", { ...actor, uid: "bad\u0000uid" }, NOW],
+    ["over-byte actor", { ...actor, uid: "가".repeat(43) }, NOW],
+    ["invalid server time", actor, "not-a-date"],
+  ])("rejects a malformed %s candidate before createNoteIfAbsent", async (
+    _label,
+    candidateActor,
+    serverTime,
+  ) => {
+    const deps = dependencies({ nowIso: () => serverTime });
+
+    await expect(appendOwnerNoteCore(input, candidateActor, deps))
+      .rejects.toThrow("owner_note_stored_record_invalid");
+    expect(deps.createNoteIfAbsent).not.toHaveBeenCalled();
+  });
+
   it("allows an administrator without consulting assignment", async () => {
     const deps = dependencies({ isAssigned: vi.fn(async () => false) });
 
@@ -521,6 +607,30 @@ describe("owner note archive policy", () => {
     expect(deps.archiveNote).not.toHaveBeenCalled();
   });
 
+  it("accepts colon and Hangul IDs in archive normalization", async () => {
+    const archived = note({
+      archivedAt: "2026-08-09T01:00:00.000Z",
+      archivedBy: "staff:wonju",
+    });
+    const retryDeps = dependencies({ readNote: vi.fn(async () => archived) });
+    await expect(archiveOwnerNoteCore(input, admin, retryDeps)).resolves.toEqual({
+      archivedAt: archived.archivedAt,
+      archivedBy: "staff:wonju",
+    });
+
+    const hangulAdmin = { ...admin, uid: "원주관리자" };
+    const archiveDeps = dependencies({ readNote: vi.fn(async () => note()) });
+    await expect(archiveOwnerNoteCore(input, hangulAdmin, archiveDeps)).resolves.toEqual({
+      archivedAt: NOW,
+      archivedBy: "원주관리자",
+    });
+    expect(archiveDeps.archiveNote).toHaveBeenCalledWith(
+      "building-1",
+      "note_12345678",
+      { archivedAt: NOW, archivedBy: "원주관리자" },
+    );
+  });
+
   it("returns the atomic archive winner when another administrator wins the race", async () => {
     const winningArchive = {
       archivedAt: "2026-08-09T01:59:59.000Z",
@@ -539,6 +649,8 @@ describe("owner note archive policy", () => {
     [{ archivedAt: NOW, archivedBy: "" }],
     [{ archivedAt: NOW, archivedBy: 123 }],
     [{ archivedAt: NOW, archivedBy: "bad/path" }],
+    [{ archivedAt: NOW, archivedBy: "bad\u0000uid" }],
+    [{ archivedAt: NOW, archivedBy: "가".repeat(43) }],
   ])("rejects invalid atomic archive metadata %#", async (archiveResult) => {
     const deps = dependencies({
       readNote: vi.fn(async () => note()),

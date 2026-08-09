@@ -63,7 +63,6 @@ export interface OwnerNoteDependencies {
 }
 
 const STABLE_ID = /^[A-Za-z0-9_-]{8,128}$/;
-const STORED_ACTOR_ID = /^[A-Za-z0-9_-]{1,128}$/;
 const DEFAULT_OWNER_NOTE_ACTOR_NAME = "브링 담당자";
 export const OWNER_NOTE_ACTOR_NAME_MAX_BYTES = 256;
 
@@ -99,8 +98,12 @@ function isCanonicalUtcIso(value: unknown): value is string {
   return Number.isFinite(timestamp) && new Date(timestamp).toISOString() === value;
 }
 
-function isStoredActorId(value: unknown): value is string {
-  return typeof value === "string" && STORED_ACTOR_ID.test(value);
+export function isOwnerNoteActorId(value: unknown): value is string {
+  return typeof value === "string"
+    && value.length > 0
+    && value === value.trim()
+    && Buffer.byteLength(value, "utf8") <= 128
+    && !/[\u0000-\u001f\u007f.#$\[\]\/]/u.test(value);
 }
 
 function storedRecordInvalid(): never {
@@ -138,7 +141,7 @@ export function normalizeStoredOwnerNoteRecord(
     || body !== body.trim()
     || !isCanonicalUtcIso(recordedAt)
     || !isCanonicalUtcIso(createdAt)
-    || !isStoredActorId(createdBy)
+    || !isOwnerNoteActorId(createdBy)
     || createdByName === null
     || createdByName !== value.createdByName
   ) {
@@ -153,7 +156,7 @@ export function normalizeStoredOwnerNoteRecord(
   if (hasArchivedAt) {
     if (
       !isCanonicalUtcIso(value.archivedAt)
-      || !isStoredActorId(value.archivedBy)
+      || !isOwnerNoteActorId(value.archivedBy)
     ) {
       return storedRecordInvalid();
     }
@@ -247,7 +250,7 @@ function normalizeArchiveMetadata(value: unknown): OwnerNoteArchiveMetadata {
   const archivedBy = source?.archivedBy;
   if (
     !isCanonicalUtcIso(archivedAt)
-    || !isStoredActorId(archivedBy)
+    || !isOwnerNoteActorId(archivedBy)
   ) {
     throw new Error("owner_note_archive_result_invalid");
   }
@@ -359,13 +362,17 @@ export async function appendOwnerNoteCore(
     actor,
     dependencies.getUserDisplayName,
   );
-  const candidate = buildOwnerNoteRecord({
-    buildingId: normalized.buildingId,
-    draft: normalized,
-    actorUid: actor.uid,
-    actorName,
-    createdAt: dependencies.nowIso(),
-  });
+  const candidate = normalizeStoredOwnerNoteRecord(
+    buildOwnerNoteRecord({
+      buildingId: normalized.buildingId,
+      draft: normalized,
+      actorUid: actor.uid,
+      actorName,
+      createdAt: dependencies.nowIso(),
+    }),
+    normalized.buildingId,
+    normalized.localId,
+  );
   const existing = await dependencies.readNote(normalized.buildingId, normalized.localId);
   if (existing) {
     if (!sameImmutableNote(existing, candidate)) {

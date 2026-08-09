@@ -72,7 +72,6 @@ const roles = new Set<UserRole>(["admin", "staff", "reviewer"]);
 const PATH_ID_MAX_BYTES = 128;
 const RENDERED_STRING_MAX_LENGTH = 4_096;
 const DATE_ONLY_PATTERN = /^(\d{4})-(\d{2})-(\d{2})$/;
-const STORED_ACTOR_ID_PATTERN = /^[A-Za-z0-9_-]{1,128}$/;
 
 function isUserRole(value: unknown): value is UserRole {
   return typeof value === "string" && roles.has(value as UserRole);
@@ -106,10 +105,6 @@ function isCanonicalUtcIso(value: unknown): value is string {
   return Number.isFinite(timestamp) && new Date(timestamp).toISOString() === value;
 }
 
-function isStoredActorId(value: unknown): value is string {
-  return typeof value === "string" && STORED_ACTOR_ID_PATTERN.test(value);
-}
-
 function normalizeOwnerNote(
   key: string,
   value: unknown,
@@ -128,7 +123,7 @@ function normalizeOwnerNote(
     || value.body !== value.body.trim()
     || !isCanonicalUtcIso(value.recordedAt)
     || !isCanonicalUtcIso(value.createdAt)
-    || !isStoredActorId(value.createdBy)
+    || !isPathSafeId(value.createdBy)
     || typeof value.createdByName !== "string"
     || value.createdByName.trim().length === 0
     || value.createdByName !== value.createdByName.trim()
@@ -143,7 +138,7 @@ function normalizeOwnerNote(
   if (hasArchivedAt !== hasArchivedBy) return null;
   if (
     hasArchivedAt
-    && (!isCanonicalUtcIso(value.archivedAt) || !isStoredActorId(value.archivedBy))
+    && (!isCanonicalUtcIso(value.archivedAt) || !isPathSafeId(value.archivedBy))
   ) {
     return null;
   }
@@ -169,7 +164,7 @@ function normalizeArchiveOwnerNoteResult(value: unknown): ArchiveOwnerNoteResult
   if (
     !isRecord(value)
     || !isCanonicalUtcIso(value.archivedAt)
-    || !isStoredActorId(value.archivedBy)
+    || !isPathSafeId(value.archivedBy)
   ) {
     return null;
   }
