@@ -21,18 +21,19 @@ pnpm --dir functions build
 pnpm --dir company-site test:field:run
 pnpm --dir company-site typecheck:field
 pnpm --dir company-site build
+pnpm --dir company-site export:firebase
 ```
 
-Do not proceed unless every command exits successfully and the production App Check site key is configured.
+`export:firebase` must run after the successful build so Firebase Hosting receives the current `dist/client` output. Do not proceed unless every command exits successfully and the production App Check site key is configured.
 
 ## Deployment order
 
-Run each deployment only after the preceding deployment succeeds:
+Run each deployment only after the preceding deployment succeeds. These commands use the repository-local `firebase-tools` dependency declared by `company-site/package.json`:
 
 ```bash
-firebase deploy --only functions:field-platform
-firebase deploy --only database
-firebase deploy --only hosting:bringcare
+pnpm --dir company-site exec firebase --config ../firebase.json --project bring-fm-hj deploy --only functions:field-platform
+pnpm --dir company-site exec firebase --config ../firebase.json --project bring-fm-hj deploy --only database
+pnpm --dir company-site exec firebase --config ../firebase.json --project bring-fm-hj deploy --only hosting:bringcare
 ```
 
 After deployment, verify that staff registrations requesting management remain `pending`, administrators can activate them, and only active, non-archived buildings appear through `fieldPlatform/mapProjections`.
