@@ -1,9 +1,263 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
 import {
+  REGISTRATION_DRAFT_VERSION,
+  getOrCreateActiveWizardDraftId,
+  loadWizardDraft,
   migrateRegistrationDraft,
+  removeWizardDraft,
+  saveWizardDraft,
   toSaveFieldRegistrationInput,
+  wizardDraftStorageKey,
 } from "../../app/field/lib/registration-draft";
+
+function memoryStorage() {
+  const values = new Map<string, string>();
+  return {
+    getItem: (key: string) => values.get(key) ?? null,
+    setItem: (key: string, value: string) => { values.set(key, value); },
+    removeItem: (key: string) => { values.delete(key); },
+  };
+}
+
+const legacyDraft = {
+  building: { name: "legacy building", roadAddress: "Wonju-ro 1" },
+  units: [{ localId: "unit-1", unitLabel: "201", structure: "", floor: "" }],
+  listing: { maintenanceFeeWon: 0 },
+  addressVerified: true,
+  duplicateBuilding: null,
+};
+
+describe("wizard draft persistence", () => {
+  it("migrates the old shared draft once and fills version-3 fields", () => {
+    const storage = memoryStorage();
+    storage.setItem("bring-field-building-draft", JSON.stringify(legacyDraft));
+
+    const loaded = loadWizardDraft(storage, {
+      uid: "staff-a",
+      draftId: "new-building",
+      legacyKey: "bring-field-building-draft",
+      idFactory: () => "generated-request",
+      now: () => "2026-08-09T00:00:00.000Z",
+    });
+
+    expect(loaded.value.draftVersion).toBe(REGISTRATION_DRAFT_VERSION);
+    expect(loaded.ownerUid).toBe("staff-a");
+    expect(loaded.value.building.name).toBe("legacy building");
+    expect(loaded.value.ownerNoteDrafts).toEqual([]);
+    expect(storage.getItem("bring-field-building-draft")).toBeNull();
+    expect(storage.getItem(wizardDraftStorageKey("staff-a", "new-building"))).not.toBeNull();
+  });
+
+  it("upgrades the managed-map version-2 draft without changing idempotency IDs", () => {
+    const idFactory = vi.fn(() => "unused");
+    const migrated = migrateRegistrationDraft({
+      ...legacyDraft,
+      draftVersion: 2,
+      draftId: "draft-existing",
+      requestId: "request-existing",
+    }, undefined, idFactory);
+
+    expect(migrated).toMatchObject({
+      draftVersion: REGISTRATION_DRAFT_VERSION,
+      draftId: "draft-existing",
+      requestId: "request-existing",
+      ownerNoteDrafts: [],
+    });
+    expect(idFactory).not.toHaveBeenCalled();
+  });
+
+  it("preserves the legacy request ID while rebinding the value to its scoped draft key", () => {
+    const storage = memoryStorage();
+    storage.setItem("bring-field-building-draft", JSON.stringify({
+      ...legacyDraft,
+      draftVersion: 2,
+      draftId: "legacy-shared-draft",
+      requestId: "legacy-request",
+    }));
+
+    const loaded = loadWizardDraft(storage, {
+      uid: "staff-a",
+      draftId: "active-scoped-draft",
+      legacyKey: "bring-field-building-draft",
+      idFactory: () => "unused",
+    });
+
+    expect(loaded).toMatchObject({
+      ownerUid: "staff-a",
+      draftId: "active-scoped-draft",
+      value: {
+        draftId: "active-scoped-draft",
+        requestId: "legacy-request",
+      },
+    });
+  });
+
+  it("never returns another UID's draft after an account switch", () => {
+    const storage = memoryStorage();
+    const draftA = loadWizardDraft(storage, {
+      uid: "staff-a",
+      draftId: "new-building",
+      idFactory: () => "request-a",
+    });
+    draftA.value.building.name = "A private building";
+    saveWizardDraft(storage, draftA, "2026-08-09T01:00:00.000Z");
+
+    const draftB = loadWizardDraft(storage, {
+      uid: "staff-b",
+      draftId: "new-building",
+      idFactory: () => "request-b",
+    });
+    expect(draftB.value.building.name).toBe("");
+    expect(wizardDraftStorageKey("staff-a", "new-building"))
+      .not.toBe(wizardDraftStorageKey("staff-b", "new-building"));
+  });
+
+  it("ignores malformed JSON and a scoped envelope owned by another UID", () => {
+    const storage = memoryStorage();
+    storage.setItem(wizardDraftStorageKey("staff-a", "broken"), "{bad-json");
+    expect(loadWizardDraft(storage, {
+      uid: "staff-a",
+      draftId: "broken",
+      idFactory: () => "request-a",
+    }).value.building.name).toBe("");
+
+    storage.setItem(wizardDraftStorageKey("staff-b", "new-building"), JSON.stringify({
+      ...loadWizardDraft(storage, {
+        uid: "staff-a",
+        draftId: "new-building",
+        idFactory: () => "request-a",
+      }),
+      ownerUid: "staff-a",
+    }));
+    expect(loadWizardDraft(storage, {
+      uid: "staff-b",
+      draftId: "new-building",
+      idFactory: () => "request-b",
+    }).value.building.name).toBe("");
+  });
+
+  it("reuses one active draft ID until completion and creates a new ID afterward", () => {
+    const storage = memoryStorage();
+    const ids = ["draft-first", "draft-second"];
+    const first = getOrCreateActiveWizardDraftId(storage, "staff-a", () => ids.shift()!);
+    expect(getOrCreateActiveWizardDraftId(storage, "staff-a", () => "unexpected")).toBe(first);
+    removeWizardDraft(storage, "staff-a", first);
+    expect(getOrCreateActiveWizardDraftId(storage, "staff-a", () => ids.shift()!))
+      .toBe("draft-second");
+  });
+
+  it("does not clear an unrelated active pointer when removing a scoped draft", () => {
+    const storage = memoryStorage();
+    const active = getOrCreateActiveWizardDraftId(storage, "staff-a", () => "draft-active");
+    const other = loadWizardDraft(storage, {
+      uid: "staff-a",
+      draftId: "draft-other",
+      idFactory: () => "request-other",
+    });
+    saveWizardDraft(storage, other);
+
+    removeWizardDraft(storage, "staff-a", "draft-other");
+
+    expect(getOrCreateActiveWizardDraftId(storage, "staff-a", () => "unexpected"))
+      .toBe(active);
+  });
+
+  it("keeps the legacy draft when the scoped write fails", () => {
+    const values = new Map<string, string>();
+    const legacyKey = "bring-field-building-draft";
+    const stored = JSON.stringify(legacyDraft);
+    values.set(legacyKey, stored);
+    const storage = {
+      getItem: (key: string) => values.get(key) ?? null,
+      setItem: (key: string, value: string) => {
+        if (key !== legacyKey) throw new Error("quota");
+        values.set(key, value);
+      },
+      removeItem: (key: string) => { values.delete(key); },
+    };
+
+    expect(() => loadWizardDraft(storage, {
+      uid: "staff-a",
+      draftId: "draft-a",
+      legacyKey,
+      idFactory: () => "request-a",
+    })).toThrow("quota");
+    expect(storage.getItem(legacyKey)).toBe(stored);
+  });
+
+  it("keeps only valid notes for the same draft and excludes binary-like values", () => {
+    const migrated = migrateRegistrationDraft({
+      ...legacyDraft,
+      draftId: "draft-notes",
+      ownerNoteDrafts: [
+        {
+          localId: "note_12345678",
+          draftId: "draft-notes",
+          body: "  valid owner note  ",
+          recordedAt: "2026-08-09T01:00:00.000Z",
+        },
+        {
+          localId: "note_87654321",
+          draftId: "another-draft",
+          body: "cross-draft note",
+          recordedAt: "2026-08-09T01:00:00.000Z",
+        },
+        {
+          localId: "note_binary_1",
+          draftId: "draft-notes",
+          body: "blob:https://bring.example/private-media",
+          recordedAt: "2026-08-09T01:00:00.000Z",
+        },
+      ],
+    }, undefined, () => "unused");
+
+    expect(migrated.ownerNoteDrafts).toEqual([
+      {
+        localId: "note_12345678",
+        draftId: "draft-notes",
+        body: "  valid owner note  ",
+        recordedAt: "2026-08-09T01:00:00.000Z",
+      },
+    ]);
+    expect(JSON.stringify(migrated)).not.toContain("blob:");
+  });
+
+  it("projects the persisted envelope and never serializes binary fields or base64 payloads", () => {
+    const storage = memoryStorage();
+    const envelope = loadWizardDraft(storage, {
+      uid: "staff-a",
+      draftId: "draft-binary",
+      idFactory: () => "request-binary",
+    });
+    envelope.value.listing.locationNote = "A".repeat(300);
+    envelope.value.ownerNoteDrafts = [{
+      localId: "note_12345678",
+      draftId: "draft-binary",
+      body: "valid note",
+      recordedAt: "2026-08-09T01:00:00.000Z",
+      attachment: new Blob(["private"]),
+      clientCreatedAt: "untrusted",
+    } as typeof envelope.value.ownerNoteDrafts[number] & {
+      attachment: Blob;
+      clientCreatedAt: string;
+    }];
+
+    saveWizardDraft(storage, envelope, "2026-08-09T02:00:00.000Z");
+
+    const serialized = storage.getItem(wizardDraftStorageKey("staff-a", "draft-binary")) || "";
+    const storedNote = JSON.parse(serialized).value.ownerNoteDrafts[0];
+    expect(storedNote).toEqual({
+      localId: "note_12345678",
+      draftId: "draft-binary",
+      body: "valid note",
+      recordedAt: "2026-08-09T01:00:00.000Z",
+    });
+    expect(serialized).not.toContain("A".repeat(300));
+    expect(serialized).not.toContain("attachment");
+    expect(serialized).not.toContain("clientCreatedAt");
+  });
+});
 
 describe("registration draft migration", () => {
   it("replaces duplicate or unusable unit local IDs deterministically", () => {
@@ -31,7 +285,7 @@ describe("registration draft migration", () => {
     let thrown: unknown;
 
     try {
-      migrateRegistrationDraft({ draftVersion: 3 }, undefined, () => "unused-id");
+      migrateRegistrationDraft({ draftVersion: 4 }, undefined, () => "unused-id");
     } catch (error) {
       thrown = error;
     }
@@ -39,7 +293,7 @@ describe("registration draft migration", () => {
     expect(thrown).toMatchObject({
       name: "RegistrationDraftCompatibilityError",
       code: "registration_draft_future_version",
-      draftVersion: 3,
+      draftVersion: 4,
     });
   });
 
@@ -96,7 +350,7 @@ describe("registration draft migration", () => {
     };
 
     expect(migrateRegistrationDraft(raw, undefined, () => "fixed-id")).toMatchObject({
-      draftVersion: 2,
+      draftVersion: REGISTRATION_DRAFT_VERSION,
       draftId: "fixed-id",
       requestId: "fixed-id",
       building: {

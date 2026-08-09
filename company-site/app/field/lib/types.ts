@@ -91,6 +91,13 @@ export interface FieldUser {
   updatedAt: ISODateTime;
 }
 
+export interface OwnerNoteDraft {
+  localId: EntityId;
+  draftId: EntityId;
+  body: string;
+  recordedAt: ISODateTime;
+}
+
 export interface ParkingInfo {
   available: boolean;
   totalSpaces?: number;

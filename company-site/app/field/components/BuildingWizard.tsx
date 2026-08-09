@@ -9,15 +9,21 @@ import {
 } from "react";
 
 import {
+  LEGACY_WIZARD_DRAFT_KEY,
   createRegistrationDraft,
-  migrateRegistrationDraft,
+  getOrCreateActiveWizardDraftId,
+  loadWizardDraft,
   RegistrationDraftCompatibilityError,
+  saveWizardDraft,
   type BuildingDraftState,
   type BuildingWizardDraft,
   type ListingDraftState,
+  type RegistrationDraftStorage,
   type RegistrationDraftInitial,
+  type StoredRegistrationDraft,
   type UnitDraftState,
 } from "../lib/registration-draft";
+import type { FieldSession } from "../lib/auth.client";
 import {
   validateBuildingDraft,
   validateListingDraft,
@@ -41,12 +47,56 @@ interface AddressCheckResult {
 }
 
 export interface BuildingWizardProps {
-  draftKey?: string;
+  session: Pick<FieldSession, "uid" | "displayName" | "role">;
+  draftId?: string;
+  legacyDraftKey?: string;
+  storage?: RegistrationDraftStorage;
+  now?: () => string;
+  idFactory?: Parameters<typeof createRegistrationDraft>[1];
   initialStep?: number;
   initialDraft?: RegistrationDraftInitial;
   currentPosition?: { latitude: number; longitude: number };
   checkAddress?: (query: string) => Promise<AddressCheckResult>;
   onComplete?: (draft: BuildingWizardDraft) => void | Promise<void>;
+}
+
+function defaultNow() {
+  return new Date().toISOString();
+}
+
+function defaultIdFactory() {
+  return crypto.randomUUID();
+}
+
+const unavailableStorage: RegistrationDraftStorage = {
+  getItem: () => null,
+  setItem: () => { throw new Error("registration_draft_storage_unavailable"); },
+  removeItem: () => undefined,
+};
+
+function browserStorage(): RegistrationDraftStorage {
+  if (typeof window === "undefined") return unavailableStorage;
+  try {
+    return window.localStorage;
+  } catch {
+    return unavailableStorage;
+  }
+}
+
+function createDraftEnvelope(
+  session: Pick<FieldSession, "uid">,
+  draftId: string,
+  initialDraft: RegistrationDraftInitial | undefined,
+  idFactory: () => string,
+  now: () => string,
+): StoredRegistrationDraft {
+  const value = createRegistrationDraft(initialDraft, idFactory);
+  return {
+    ownerUid: session.uid,
+    draftId,
+    updatedAt: now(),
+    value: { ...value, draftId },
+  };
 }
 
 function emptyUnit(index = 1): UnitDraftState {
@@ -91,7 +141,12 @@ const ERROR_COPY: Record<string, string> = {
 };
 
 export default function BuildingWizard({
-  draftKey = "bring-field-building-draft",
+  session,
+  draftId,
+  legacyDraftKey = LEGACY_WIZARD_DRAFT_KEY,
+  storage,
+  now = defaultNow,
+  idFactory = defaultIdFactory,
   initialStep = 0,
   initialDraft,
   currentPosition,
@@ -106,34 +161,46 @@ export default function BuildingWizard({
   onComplete,
 }: BuildingWizardProps) {
   const [step, setStep] = useState(Math.min(Math.max(initialStep, 0), STEPS.length - 1));
-  const [initialLoad] = useState(() => {
-    if (typeof window !== "undefined") {
-      const stored = window.localStorage.getItem(draftKey);
-      if (stored) {
-        let raw: unknown = stored;
-        try { raw = JSON.parse(stored); } catch { /* migrate invalid storage to an empty draft */ }
-        try {
-          return {
-            draft: migrateRegistrationDraft(raw, initialDraft),
-            incompatibleDraft: false,
-          };
-        } catch (error) {
-          if (error instanceof RegistrationDraftCompatibilityError) {
-            return {
-              draft: createRegistrationDraft(initialDraft),
-              incompatibleDraft: true,
-            };
-          }
-          throw error;
-        }
-      }
+  const resolvedStorage = storage ?? browserStorage();
+  const [resolvedDraftId] = useState(() => {
+    if (draftId) return draftId;
+    try {
+      return getOrCreateActiveWizardDraftId(resolvedStorage, session.uid, idFactory);
+    } catch {
+      return idFactory();
     }
-    return {
-      draft: createRegistrationDraft(initialDraft),
-      incompatibleDraft: false,
-    };
   });
-  const [draft, setDraft] = useState<BuildingWizardDraft>(initialLoad.draft);
+  const [initialLoad] = useState(() => {
+    try {
+      return {
+        envelope: loadWizardDraft(resolvedStorage, {
+          uid: session.uid,
+          draftId: resolvedDraftId,
+          legacyKey: legacyDraftKey,
+          initial: initialDraft,
+          idFactory,
+          now,
+        }),
+        incompatibleDraft: false,
+        storageLoadFailed: false,
+      };
+    } catch (error) {
+      const incompatibleDraft = error instanceof RegistrationDraftCompatibilityError;
+      return {
+        envelope: createDraftEnvelope(
+          session,
+          resolvedDraftId,
+          initialDraft,
+          idFactory,
+          now,
+        ),
+        incompatibleDraft,
+        storageLoadFailed: !incompatibleDraft,
+      };
+    }
+  });
+  const [envelope, setEnvelope] = useState<StoredRegistrationDraft>(initialLoad.envelope);
+  const draft = envelope.value;
   const incompatibleDraft = initialLoad.incompatibleDraft;
   const [errors, setErrors] = useState<string[]>([]);
   const [completedSave, setCompletedSave] = useState<{
@@ -151,9 +218,17 @@ export default function BuildingWizard({
   useEffect(() => {
     if (incompatibleDraft) return;
     let active = true;
+    if (initialLoad.storageLoadFailed && envelope === initialLoad.envelope) {
+      queueMicrotask(() => {
+        if (active) setLocalSave({ draft, status: "로컬 자동저장 실패" });
+      });
+      return () => {
+        active = false;
+      };
+    }
     let status: "로컬 자동저장 완료" | "로컬 자동저장 실패";
     try {
-      window.localStorage.setItem(draftKey, JSON.stringify(draft));
+      saveWizardDraft(resolvedStorage, envelope, now());
       status = "로컬 자동저장 완료";
     } catch {
       status = "로컬 자동저장 실패";
@@ -164,7 +239,13 @@ export default function BuildingWizard({
     return () => {
       active = false;
     };
-  }, [draft, draftKey, incompatibleDraft]);
+  }, [draft, envelope, incompatibleDraft, initialLoad, now, resolvedStorage]);
+
+  function updateDraft(
+    updater: (current: BuildingWizardDraft) => BuildingWizardDraft,
+  ) {
+    setEnvelope((current) => ({ ...current, value: updater(current.value) }));
+  }
 
   const saveStatus = completedSave?.draft === draft
     ? completedSave.status
@@ -202,7 +283,7 @@ export default function BuildingWizard({
     value: BuildingDraftState[Key],
   ) {
     if (incompatibleDraft) return;
-    setDraft((current) => ({
+    updateDraft((current) => ({
       ...current,
       building: { ...current.building, [key]: value },
       ...(key === "roadAddress" ? { addressVerified: false, duplicateBuilding: null } : {}),
@@ -220,7 +301,7 @@ export default function BuildingWizard({
     setCheckingAddress(true);
     try {
       const result = await checkAddress(draft.building.roadAddress.trim());
-      setDraft((current) => ({
+      updateDraft((current) => ({
         ...current,
         building: {
           ...current.building,
@@ -269,7 +350,7 @@ export default function BuildingWizard({
 
   function updateUnit(index: number, key: keyof UnitDraftState, value: string | number) {
     if (incompatibleDraft) return;
-    setDraft((current) => ({
+    updateDraft((current) => ({
       ...current,
       units: current.units.map((unit, unitIndex) =>
         unitIndex === index ? { ...unit, [key]: value } : unit),
@@ -282,7 +363,7 @@ export default function BuildingWizard({
     value: ListingDraftState[Key],
   ) {
     if (incompatibleDraft) return;
-    setDraft((current) => ({ ...current, listing: { ...current.listing, [key]: value } }));
+    updateDraft((current) => ({ ...current, listing: { ...current.listing, [key]: value } }));
     setErrors((current) => current.filter((field) => field !== key));
   }
 
@@ -405,7 +486,7 @@ export default function BuildingWizard({
                   <Field label="층"><input id={`floor-${index + 1}`} type="number" value={unit.floor} onChange={(event) => updateUnit(index, "floor", numericInput(event.target.value))} /></Field>
                 </div>
               ))}
-              <button className="field-add-unit" type="button" disabled={incompatibleDraft} onClick={() => setDraft((current) => ({ ...current, units: [...current.units, emptyUnit(current.units.length + 1)] }))}><span aria-hidden="true">+ </span>호실 추가</button>
+              <button className="field-add-unit" type="button" disabled={incompatibleDraft} onClick={() => updateDraft((current) => ({ ...current, units: [...current.units, emptyUnit(current.units.length + 1)] }))}><span aria-hidden="true">+ </span>호실 추가</button>
             </div>
             <div className="field-form-grid field-form-divider">
               <MoneyField id="depositWon" label="보증금(원)" value={draft.listing.depositWon} error={errors.includes("depositWon") ? ERROR_COPY.depositWon : ""} onChange={(value) => updateListing("depositWon", value)} />

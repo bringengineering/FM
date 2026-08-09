@@ -12,7 +12,14 @@ import ManagementContractQueue, {
   createApprovalRequestId,
 } from "../../app/field/components/ManagementContractQueue";
 import type { FieldSession } from "../../app/field/lib/auth.client";
+import { wizardDraftStorageKey } from "../../app/field/lib/registration-draft";
 import type { Building } from "../../app/field/lib/types";
+
+const staffSession = {
+  uid: "staff-1",
+  displayName: "BRING staff",
+  role: "staff" as const,
+};
 
 function SessionProbe() {
   const session = useFieldSession();
@@ -301,19 +308,21 @@ describe("ManagementContractQueue", () => {
 
 describe("BuildingWizard", () => {
   it("preserves a future-version draft and blocks completion", async () => {
-    const draftKey = "future-version-draft";
+    const legacyDraftKey = "future-version-draft";
     const stored = JSON.stringify({
-      draftVersion: 3,
+      draftVersion: 4,
       draftId: "future-draft",
       requestId: "future-request",
       futureOnlyData: { keep: true },
     });
     const onComplete = vi.fn();
-    window.localStorage.setItem(draftKey, stored);
+    window.localStorage.setItem(legacyDraftKey, stored);
 
     render(
       <BuildingWizard
-        draftKey={draftKey}
+        session={staffSession}
+        draftId="future-version"
+        legacyDraftKey={legacyDraftKey}
         initialStep={6}
         onComplete={onComplete}
       />,
@@ -326,14 +335,15 @@ describe("BuildingWizard", () => {
     expect(completeButton).toBeDisabled();
     fireEvent.click(completeButton);
 
-    await waitFor(() => expect(window.localStorage.getItem(draftKey)).toBe(stored));
+    await waitFor(() => expect(window.localStorage.getItem(legacyDraftKey)).toBe(stored));
     expect(onComplete).not.toHaveBeenCalled();
   });
 
   it("hides coordinate inputs while preserving the checked address position", async () => {
     render(
       <BuildingWizard
-        draftKey="hidden-map-position"
+        session={staffSession}
+        draftId="hidden-map-position"
         checkAddress={async () => ({
           selection: {
             roadAddress: "강원특별자치도 원주시 서원대로 1",
@@ -358,9 +368,11 @@ describe("BuildingWizard", () => {
 
     expect(await screen.findByText("새 건물로 등록할 수 있는 주소입니다.")).toBeInTheDocument();
     await waitFor(() => {
-      const stored = window.localStorage.getItem("hidden-map-position");
+      const stored = window.localStorage.getItem(
+        wizardDraftStorageKey(staffSession.uid, "hidden-map-position"),
+      );
       expect(stored).not.toBeNull();
-      expect(JSON.parse(stored || "{}").building).toMatchObject({
+      expect(JSON.parse(stored || "{}").value.building).toMatchObject({
         latitude: 37.3422,
         longitude: 127.9202,
       });
@@ -377,7 +389,13 @@ describe("BuildingWizard", () => {
       },
       existingBuilding: null,
     }));
-    render(<BuildingWizard draftKey="address-check" checkAddress={checkAddress} />);
+    render(
+      <BuildingWizard
+        session={staffSession}
+        draftId="address-check"
+        checkAddress={checkAddress}
+      />,
+    );
 
     fireEvent.change(screen.getByLabelText("내부 관리번호"), { target: { value: "BR-0001" } });
     fireEvent.change(screen.getByLabelText("건물명"), { target: { value: "테스트 빌딩" } });
@@ -396,7 +414,8 @@ describe("BuildingWizard", () => {
   it("blocks creation when the normalized address already exists", async () => {
     render(
       <BuildingWizard
-        draftKey="duplicate-address"
+        session={staffSession}
+        draftId="duplicate-address"
         checkAddress={async () => ({
           selection: {
             roadAddress: "강원특별자치도 원주시 서원대로 1",
@@ -419,7 +438,8 @@ describe("BuildingWizard", () => {
   it("models multiple units under one building and preserves zero maintenance fee", async () => {
     render(
       <BuildingWizard
-        draftKey="multiple-units"
+        session={staffSession}
+        draftId="multiple-units"
         initialStep={1}
         initialDraft={{
           building: {
@@ -444,7 +464,7 @@ describe("BuildingWizard", () => {
   });
 
   it("shows field-level validation errors", () => {
-    render(<BuildingWizard draftKey="validation-errors" />);
+    render(<BuildingWizard session={staffSession} draftId="validation-errors" />);
     fireEvent.click(screen.getByRole("button", { name: "입력 확인" }));
     expect(screen.getByText("내부 관리번호를 입력해 주세요.")).toBeInTheDocument();
     expect(screen.getByText("건물명을 입력해 주세요.")).toBeInTheDocument();
@@ -466,9 +486,10 @@ describe("BuildingWizard", () => {
     });
 
     try {
-      render(<BuildingWizard draftKey="autosave-write-order" />);
+      render(<BuildingWizard session={staffSession} draftId="autosave-write-order" />);
 
-      expect(statusAtWrite).toEqual(["pending"]);
+      expect(statusAtWrite.length).toBeGreaterThan(0);
+      expect(statusAtWrite).not.toContain("complete");
       expect(await screen.findByText("로컬 자동저장 완료")).toBeInTheDocument();
     } finally {
       setItem.mockRestore();
@@ -481,7 +502,7 @@ describe("BuildingWizard", () => {
     });
 
     try {
-      render(<BuildingWizard draftKey="autosave-write-failure" />);
+      render(<BuildingWizard session={staffSession} draftId="autosave-write-failure" />);
 
       expect(screen.queryByText("로컬 자동저장 완료")).not.toBeInTheDocument();
       expect(await screen.findByText("로컬 자동저장 실패")).toBeInTheDocument();
@@ -491,13 +512,45 @@ describe("BuildingWizard", () => {
   });
 
   it("autosaves and restores a draft after remount", async () => {
-    const first = render(<BuildingWizard draftKey="restore-draft" />);
+    const first = render(<BuildingWizard session={staffSession} draftId="restore-draft" />);
     fireEvent.change(screen.getByLabelText("건물명"), { target: { value: "복원 빌딩" } });
     expect(await screen.findByText("로컬 자동저장 완료")).toBeInTheDocument();
     first.unmount();
 
-    render(<BuildingWizard draftKey="restore-draft" />);
+    render(<BuildingWizard session={staffSession} draftId="restore-draft" />);
     expect(screen.getByLabelText("건물명")).toHaveValue("복원 빌딩");
+  });
+
+  it("isolates restored drafts by authenticated UID", async () => {
+    const sessionA = { ...staffSession, uid: "staff-a", displayName: "직원 A" };
+    const sessionB = { ...staffSession, uid: "staff-b", displayName: "직원 B" };
+    const first = render(<BuildingWizard session={sessionA} draftId="shared-route" />);
+    fireEvent.change(screen.getByLabelText("건물명"), {
+      target: { value: "A private building" },
+    });
+    await waitFor(() => {
+      const stored = window.localStorage.getItem(
+        wizardDraftStorageKey(sessionA.uid, "shared-route"),
+      );
+      expect(JSON.parse(stored || "{}").value.building.name).toBe("A private building");
+    });
+    first.unmount();
+
+    const second = render(<BuildingWizard session={sessionB} draftId="shared-route" />);
+    expect(screen.getByLabelText("건물명")).toHaveValue("");
+    fireEvent.change(screen.getByLabelText("건물명"), {
+      target: { value: "B private building" },
+    });
+    await waitFor(() => {
+      const stored = window.localStorage.getItem(
+        wizardDraftStorageKey(sessionB.uid, "shared-route"),
+      );
+      expect(JSON.parse(stored || "{}").value.building.name).toBe("B private building");
+    });
+    second.unmount();
+
+    render(<BuildingWizard session={sessionA} draftId="shared-route" />);
+    expect(screen.getByLabelText("건물명")).toHaveValue("A private building");
   });
 });
 

@@ -7,6 +7,7 @@ import AuthGate from "./components/AuthGate";
 import BuildingWizard from "./components/BuildingWizard";
 import Dashboard from "./components/Dashboard";
 import FieldMapPanel from "./components/FieldMapPanel";
+import { useFieldSession } from "./components/FieldSessionContext";
 import ManagementContractQueue from "./components/ManagementContractQueue";
 import { saveFieldRegistration } from "./lib/field-api.client";
 import { toSaveFieldRegistrationInput } from "./lib/registration-draft";
@@ -56,29 +57,33 @@ function DestinationPlaceholder({ destination }: { destination: Exclude<FieldDes
   );
 }
 
-export default function FieldApp() {
+function FieldWorkspace() {
+  const session = useFieldSession();
   const [active, setActive] = useState<FieldDestination>("home");
 
   return (
-    <AuthGate>
-      <AppShell active={active} onNavigate={setActive}>
-        {active === "home" ? (
-          <Dashboard onNavigate={setActive} />
-        ) : active === "map" ? (
-          <FieldMapPanel />
-        ) : active === "buildings" ? (
-          <section className="field-building-workspace">
-            <ManagementContractQueue />
-            <BuildingWizard
-              onComplete={async (draft) => {
-                await saveFieldRegistration(toSaveFieldRegistrationInput(draft));
-              }}
-            />
-          </section>
-        ) : (
-          <DestinationPlaceholder destination={active} />
-        )}
-      </AppShell>
-    </AuthGate>
+    <AppShell active={active} onNavigate={setActive}>
+      {active === "home" ? (
+        <Dashboard onNavigate={setActive} />
+      ) : active === "map" ? (
+        <FieldMapPanel />
+      ) : active === "buildings" ? (
+        <section className="field-building-workspace">
+          <ManagementContractQueue />
+          <BuildingWizard
+            session={session}
+            onComplete={async (draft) => {
+              await saveFieldRegistration(toSaveFieldRegistrationInput(draft));
+            }}
+          />
+        </section>
+      ) : (
+        <DestinationPlaceholder destination={active} />
+      )}
+    </AppShell>
   );
+}
+
+export default function FieldApp() {
+  return <AuthGate><FieldWorkspace /></AuthGate>;
 }
