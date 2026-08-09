@@ -29,8 +29,8 @@
     "react-dom": "19.2.6"
   },
   "devDependencies": {
-    "@firebase/rules-unit-testing": "^5.0.1",
     "@cloudflare/vite-plugin": "1.37.1",
+    "@firebase/rules-unit-testing": "^5.0.1",
     "@tailwindcss/postcss": "4.2.1",
     "@testing-library/jest-dom": "^7.0.0",
     "@testing-library/react": "^16.3.2",
@@ -41,6 +41,7 @@
     "@vitejs/plugin-rsc": "0.5.26",
     "eslint": "9.39.4",
     "eslint-config-next": "16.2.6",
+    "fake-indexeddb": "^6.2.5",
     "firebase-tools": "^15.26.0",
     "jsdom": "^30.0.1",
     "react-server-dom-webpack": "19.2.6",
