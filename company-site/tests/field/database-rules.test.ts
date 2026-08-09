@@ -94,9 +94,12 @@ async function seed() {
     await set(ref(context.database(), "fieldPlatform"), {
       users: {
         "staff-1": user("staff-1", "staff"),
+        "staff-2": user("staff-2", "staff"),
         "reviewer-1": user("reviewer-1", "reviewer"),
         "admin-1": user("admin-1", "admin"),
         "disabled-1": user("disabled-1", "admin", false),
+        "disabled-staff": user("disabled-staff", "staff", false),
+        "email-only": user("email-only", "admin"),
         "stale-admin": user("stale-admin", "staff"),
       },
       buildings: {
@@ -108,7 +111,25 @@ async function seed() {
         "building-unassigned": building("building-unassigned"),
       },
       buildingAssignments: {
-        "building-1": { "staff-1": true, "disabled-1": true },
+        "building-1": {
+          "staff-1": true,
+          "reviewer-1": true,
+          "disabled-1": true,
+          "disabled-staff": true,
+        },
+      },
+      ownerNotes: {
+        "building-1": {
+          "note_12345678": {
+            id: "note_12345678",
+            buildingId: "building-1",
+            body: "서버 저장 메모",
+            recordedAt: NOW,
+            createdAt: NOW,
+            createdBy: "staff-1",
+            createdByName: "담당 직원",
+          },
+        },
       },
       units: {
         "unit-1": { id: "unit-1", buildingId: "building-1", unitLabel: "201호" },
@@ -240,6 +261,9 @@ describe.runIf(databaseEmulatorAvailable)("fieldPlatform database rules", () => 
           buildings: { ".indexOn"?: string[] };
           listings: { ".indexOn"?: string[] };
           media: { ".indexOn"?: string[] };
+          ownerNotes: {
+            $buildingId: { ".indexOn"?: string[] };
+          };
         };
       };
     };
@@ -249,6 +273,78 @@ describe.runIf(databaseEmulatorAvailable)("fieldPlatform database rules", () => 
     ]);
     expect(source.rules.fieldPlatform.listings[".indexOn"]).toEqual(["buildingId"]);
     expect(source.rules.fieldPlatform.media[".indexOn"]).toEqual(["buildingId"]);
+    expect(source.rules.fieldPlatform.ownerNotes.$buildingId[".indexOn"]).toEqual([
+      "createdAt",
+    ]);
+  });
+
+  it("allows only assigned active staff and admins to read owner notes", async () => {
+    const path = "fieldPlatform/ownerNotes/building-1/note_12345678";
+    const assigned = environment
+      .authenticatedContext("staff-1", claims("staff"))
+      .database();
+    const admin = environment
+      .authenticatedContext("admin-1", claims("admin"))
+      .database();
+
+    await assertSucceeds(get(ref(assigned, path)));
+    await assertSucceeds(get(ref(admin, path)));
+
+    const denied = [
+      environment.authenticatedContext("staff-2", claims("staff")).database(),
+      environment.authenticatedContext("reviewer-1", claims("reviewer")).database(),
+      environment.authenticatedContext("disabled-staff", claims("staff")).database(),
+      environment.authenticatedContext("stale-admin", claims("admin")).database(),
+      environment.authenticatedContext("staff-2", {
+        ...claims("staff"),
+        allFieldAccess: true,
+      }).database(),
+      environment.authenticatedContext("email-only", {
+        email: "dpvld858@gmail.com",
+        email_verified: true,
+      }).database(),
+    ];
+
+    for (const database of denied) {
+      await assertFails(get(ref(database, path)));
+    }
+  });
+
+  it("denies collection-wide owner-note reads", async () => {
+    for (const [uid, role] of [
+      ["staff-1", "staff"],
+      ["admin-1", "admin"],
+    ] as const) {
+      const database = environment.authenticatedContext(uid, claims(role)).database();
+      await assertFails(get(ref(database, "fieldPlatform/ownerNotes")));
+    }
+  });
+
+  it("rejects every direct client owner-note create, update, and delete", async () => {
+    for (const [uid, role] of [
+      ["staff-1", "staff"],
+      ["reviewer-1", "reviewer"],
+      ["admin-1", "admin"],
+    ] as const) {
+      const database = environment.authenticatedContext(uid, claims(role)).database();
+      const existingPath = "fieldPlatform/ownerNotes/building-1/note_12345678";
+      const newPath = `fieldPlatform/ownerNotes/building-1/note_${role}_new`;
+
+      await assertFails(update(ref(database, existingPath), {
+        body: "위조",
+        createdAt: "2000-01-01T00:00:00.000Z",
+      }));
+      await assertFails(set(ref(database, existingPath), null));
+      await assertFails(set(ref(database, newPath), {
+        id: `note_${role}_new`,
+        buildingId: "building-1",
+        body: "클라이언트 생성",
+        recordedAt: NOW,
+        createdAt: NOW,
+        createdBy: uid,
+        createdByName: "위조 이름",
+      }));
+    }
   });
 
   it("blocks unauthenticated access", async () => {

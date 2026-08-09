@@ -35,6 +35,13 @@
           }
         }
       },
+      "ownerNotes": {
+        "$buildingId": {
+          ".read": "auth != null && auth.token.fieldPlatform === true && root.child('fieldPlatform/users').child(auth.uid).child('enabled').val() === true && root.child('fieldPlatform/users').child(auth.uid).child('role').val() === auth.token.fieldRole && (auth.token.fieldRole === 'admin' || (auth.token.fieldRole === 'staff' && root.child('fieldPlatform/buildingAssignments').child($buildingId).child(auth.uid).val() === true))",
+          ".write": false,
+          ".indexOn": ["createdAt"]
+        }
+      },
       "secureAccessAssignments": {
         "$buildingId": {
           "$uid": {
