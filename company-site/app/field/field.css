@@ -1098,6 +1098,225 @@
   box-shadow: 0 0 0 4px rgba(12, 155, 98, 0.12);
 }
 
+.field-owner-notes {
+  position: sticky;
+  z-index: 6;
+  top: 12px;
+  margin-top: 20px;
+  border: 1px solid #cfdced;
+  border-radius: 18px;
+  background: rgba(255, 255, 255, 0.97);
+  padding: 14px;
+  box-shadow: 0 12px 30px rgba(11, 35, 66, 0.11);
+  backdrop-filter: blur(14px);
+}
+
+.field-owner-notes-header {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 8px;
+}
+
+.field-owner-notes-heading {
+  min-width: 0;
+}
+
+.field-owner-notes-heading h2 {
+  margin: 0;
+  color: var(--field-navy);
+  font-size: 15px;
+  font-weight: 950;
+  letter-spacing: -0.03em;
+}
+
+.field-owner-notes-heading p {
+  margin: 5px 0 0;
+  overflow: hidden;
+  color: var(--field-muted);
+  font-size: 12px;
+  line-height: 1.45;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.field-owner-notes button {
+  min-height: 44px;
+  border: 0;
+  border-radius: 11px;
+  padding: 0 13px;
+  font: inherit;
+  font-size: 12px;
+  font-weight: 900;
+  cursor: pointer;
+}
+
+.field-owner-notes button:disabled {
+  cursor: not-allowed;
+  opacity: 0.5;
+}
+
+.field-owner-notes button:focus-visible,
+.field-owner-notes textarea:focus-visible {
+  outline: 3px solid rgba(34, 105, 232, 0.22);
+  outline-offset: 2px;
+}
+
+.field-owner-notes-toggle,
+.field-owner-notes-editor-meta button {
+  background: var(--field-blue);
+  color: #fff;
+  box-shadow: 0 6px 14px rgba(34, 105, 232, 0.18);
+}
+
+.field-owner-notes-status {
+  min-height: 18px;
+  margin: 7px 0 0;
+  color: #087548;
+  font-size: 11px;
+  font-weight: 800;
+  line-height: 18px;
+  overflow-wrap: anywhere;
+}
+
+.field-owner-notes-body {
+  display: grid;
+  max-height: min(54vh, 540px);
+  gap: 12px;
+  margin-top: 10px;
+  border-top: 1px solid var(--field-line);
+  padding-top: 12px;
+  padding-right: 3px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-gutter: stable;
+}
+
+.field-owner-notes-editor {
+  display: grid;
+  gap: 8px;
+}
+
+.field-owner-notes-editor label {
+  color: #30435b;
+  font-size: 12px;
+  font-weight: 900;
+}
+
+.field-owner-notes-editor textarea {
+  width: 100%;
+  min-height: 96px;
+  border: 1px solid #ced8e5;
+  border-radius: 11px;
+  background: #fff;
+  padding: 11px 12px;
+  color: var(--field-ink);
+  font: inherit;
+  font-size: 16px;
+  line-height: 1.55;
+  outline: 0;
+  resize: vertical;
+}
+
+.field-owner-notes-editor textarea[aria-invalid="true"] {
+  border-color: #d94747;
+  background: #fffafa;
+}
+
+.field-owner-notes-editor-meta {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 8px;
+}
+
+.field-owner-notes-editor-meta > span {
+  color: var(--field-muted);
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+}
+
+.field-owner-notes-error {
+  margin: 0;
+  border-radius: 9px;
+  background: #fff0f0;
+  padding: 8px 10px;
+  color: #b72e2e;
+  font-size: 11px;
+  font-weight: 750;
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+}
+
+.field-owner-notes-list {
+  display: grid;
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.field-owner-notes-list li {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  border: 1px solid #dfe7f1;
+  border-radius: 12px;
+  background: #f8fafc;
+  padding: 11px;
+}
+
+.field-owner-notes-list li > p {
+  flex: 1 0 100%;
+  margin: 0;
+  color: var(--field-navy);
+  font-size: 13px;
+  font-weight: 800;
+  line-height: 1.55;
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
+}
+
+.field-owner-notes-item-meta {
+  display: flex;
+  flex: 1 1 180px;
+  flex-wrap: wrap;
+  gap: 4px 8px;
+  color: var(--field-muted);
+  font-size: 10px;
+  line-height: 1.45;
+  overflow-wrap: anywhere;
+}
+
+.field-owner-notes-item-meta span:last-child:not(:first-child) {
+  color: #9b5209;
+  font-weight: 850;
+}
+
+.field-owner-notes .field-owner-notes-secondary,
+.field-owner-notes .field-owner-notes-show-all {
+  border: 1px solid #bdd0ed;
+  background: var(--field-blue-soft);
+  color: var(--field-blue);
+  box-shadow: none;
+}
+
+.field-owner-notes-show-all {
+  justify-self: stretch;
+}
+
+.field-owner-notes-empty {
+  margin: 0;
+  border-radius: 11px;
+  background: var(--field-green-soft);
+  padding: 12px;
+  color: #087548;
+  font-size: 11px;
+  font-weight: 750;
+  text-align: center;
+}
+
 .field-wizard-progress {
   margin-top: 24px;
   border: 1px solid var(--field-line);

@@ -9,6 +9,9 @@ import { useFieldSession } from "../../app/field/components/FieldSessionContext"
 import FieldMapPanel from "../../app/field/components/FieldMapPanel";
 import BuildingWizard from "../../app/field/components/BuildingWizard";
 import Dashboard from "../../app/field/components/Dashboard";
+import OwnerNotesPanel, {
+  type OwnerNotesPanelProps,
+} from "../../app/field/components/OwnerNotesPanel";
 import ManagementContractQueue, {
   createApprovalRequestId,
 } from "../../app/field/components/ManagementContractQueue";
@@ -17,7 +20,7 @@ import {
   activeWizardDraftKey,
   wizardDraftStorageKey,
 } from "../../app/field/lib/registration-draft";
-import type { Building } from "../../app/field/lib/types";
+import type { Building, OwnerNote, OwnerNoteDraft } from "../../app/field/lib/types";
 
 const staffSession = {
   uid: "staff-1",
@@ -307,6 +310,230 @@ describe("ManagementContractQueue", () => {
     expect(await screen.findByText("테스트 빌딩")).toBeInTheDocument();
     emit?.([]);
     await waitFor(() => expect(screen.queryByText("테스트 빌딩")).not.toBeInTheDocument());
+  });
+});
+
+const ownerNoteDraft: OwnerNoteDraft = {
+  localId: "local-note-1",
+  draftId: "draft-owner-notes",
+  body: "공실 방문 전 건물주께 연락",
+  recordedAt: "2026-08-10T00:00:00.000Z",
+};
+
+function ownerServerNote(overrides: Partial<OwnerNote> = {}): OwnerNote {
+  return {
+    id: "server-note-1",
+    buildingId: "building-1",
+    body: "서버 전달사항",
+    recordedAt: "2026-08-10T01:00:00.000Z",
+    createdAt: "2026-08-10T01:00:01.000Z",
+    createdBy: "staff-1",
+    createdByName: "BRING staff",
+    ...overrides,
+  };
+}
+
+function OwnerNotesHarness({
+  initialDraftNotes = [],
+  onDraftChange,
+  ...props
+}: Omit<OwnerNotesPanelProps, "draftNotes" | "onDraftNotesChange"> & {
+  initialDraftNotes?: OwnerNoteDraft[];
+  onDraftChange?: (notes: OwnerNoteDraft[]) => void;
+}) {
+  const [draftNotes, setDraftNotes] = useState(initialDraftNotes);
+
+  return (
+    <OwnerNotesPanel
+      {...props}
+      draftNotes={draftNotes}
+      onDraftNotesChange={(notes) => {
+        setDraftNotes(notes);
+        onDraftChange?.(notes);
+      }}
+    />
+  );
+}
+
+describe("OwnerNotesPanel", () => {
+  it("keeps a collapsed owner summary visible and focuses the 16px editor only when expanded", async () => {
+    const onDraftChange = vi.fn();
+    render(
+      <OwnerNotesHarness
+        draftId="draft-owner-notes"
+        currentUser={staffSession}
+        initialDraftNotes={[ownerNoteDraft]}
+        onDraftChange={onDraftChange}
+        createId={() => "local-note-2"}
+        now={() => "2026-08-10T02:00:00.000Z"}
+      />,
+    );
+
+    const panel = screen.getByRole("complementary", { name: "건물주 전달사항" });
+    expect(panel).toHaveTextContent("공실 방문 전 건물주께 연락");
+    const toggle = screen.getByRole("button", { name: "메모 추가" });
+    expect(toggle).toHaveAttribute("aria-expanded", "false");
+
+    fireEvent.click(toggle);
+    const editor = screen.getByLabelText("새 전달사항");
+    await waitFor(() => expect(editor).toHaveFocus());
+    expect(editor).toHaveAttribute("maxlength", "2000");
+    expect(screen.getByText("0 / 2,000")).toBeInTheDocument();
+
+    fireEvent.change(editor, { target: { value: "   " } });
+    fireEvent.click(screen.getByRole("button", { name: "메모 저장" }));
+    expect(screen.getByText("메모 내용을 입력해 주세요.")).toBeInTheDocument();
+
+    fireEvent.change(editor, { target: { value: "  공동현관 비밀번호 변경  " } });
+    fireEvent.click(screen.getByRole("button", { name: "메모 저장" }));
+    expect(await screen.findByText("기기 저장됨 · 건물 등록 시 서버 전송")).toBeInTheDocument();
+    expect(onDraftChange).toHaveBeenLastCalledWith(expect.arrayContaining([
+      expect.objectContaining({
+        localId: "local-note-2",
+        body: "공동현관 비밀번호 변경",
+      }),
+    ]));
+    expect(screen.queryByRole("button", { name: "다시 시도" })).not.toBeInTheDocument();
+  });
+
+  it("retries a failed server save with the same local id and only client-owned fields", async () => {
+    const appended = ownerServerNote({
+      id: "retry-note",
+      body: "옥상 출입 전 연락",
+      recordedAt: "2026-08-10T02:00:00.000Z",
+      createdAt: "2026-08-10T02:00:01.000Z",
+    });
+    const appendNote = vi.fn()
+      .mockRejectedValueOnce(new Error("offline"))
+      .mockResolvedValueOnce(appended);
+
+    render(
+      <OwnerNotesHarness
+        buildingId="building-1"
+        draftId="draft-owner-notes"
+        currentUser={staffSession}
+        createId={() => "retry-note"}
+        now={() => "2026-08-10T02:00:00.000Z"}
+        appendNote={appendNote}
+        subscribeNotes={() => () => undefined}
+      />,
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "메모 추가" }));
+    fireEvent.change(screen.getByLabelText("새 전달사항"), {
+      target: { value: "옥상 출입 전 연락" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "메모 저장" }));
+
+    expect(await screen.findByText("서버 저장 대기 · 다시 시도")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "다시 시도" }));
+    expect(await screen.findByText("서버 저장 완료")).toBeInTheDocument();
+    expect(appendNote).toHaveBeenCalledTimes(2);
+    expect(appendNote.mock.calls[0][0]).toEqual({
+      buildingId: "building-1",
+      localId: "retry-note",
+      body: "옥상 출입 전 연락",
+      recordedAt: "2026-08-10T02:00:00.000Z",
+    });
+    expect(appendNote.mock.calls[1][0]).toEqual(appendNote.mock.calls[0][0]);
+    expect(screen.getAllByText("옥상 출입 전 연락")).toHaveLength(2);
+  });
+
+  it("subscribes to the latest 50, can show all, cleans up, and reports load failures", async () => {
+    const unsubscribers = [vi.fn(), vi.fn(), vi.fn()];
+    const listeners: Array<(notes: OwnerNote[]) => void> = [];
+    const errors: Array<(error: Error) => void> = [];
+    const subscribeNotes = vi.fn((
+      _buildingId: string,
+      listener: (notes: OwnerNote[]) => void,
+      onError: (error: Error) => void,
+    ) => {
+      listeners.push(listener);
+      errors.push(onError);
+      return unsubscribers[listeners.length - 1];
+    });
+    const view = render(
+      <OwnerNotesHarness
+        buildingId="building-1"
+        draftId="draft-owner-notes"
+        currentUser={staffSession}
+        subscribeNotes={subscribeNotes}
+      />,
+    );
+
+    expect(subscribeNotes).toHaveBeenLastCalledWith(
+      "building-1",
+      expect.any(Function),
+      expect.any(Function),
+      { limit: 50 },
+    );
+    act(() => listeners[0]([ownerServerNote()]));
+    expect(await screen.findByText("서버 전달사항")).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "메모 추가" }));
+    fireEvent.click(screen.getByRole("button", { name: "전체 메모 보기" }));
+    expect(unsubscribers[0]).toHaveBeenCalledOnce();
+    expect(subscribeNotes).toHaveBeenLastCalledWith(
+      "building-1",
+      expect.any(Function),
+      expect.any(Function),
+      {},
+    );
+
+    view.rerender(
+      <OwnerNotesHarness
+        buildingId="building-2"
+        draftId="draft-owner-notes"
+        currentUser={staffSession}
+        subscribeNotes={subscribeNotes}
+      />,
+    );
+    expect(unsubscribers[1]).toHaveBeenCalledOnce();
+    expect(screen.queryByText("서버 전달사항")).not.toBeInTheDocument();
+    act(() => errors[2](new Error("permission-denied")));
+    expect(await screen.findByText(
+      "건물주 메모를 불러올 권한이 없거나 네트워크 연결이 끊겼습니다.",
+    )).toBeInTheDocument();
+
+    view.unmount();
+    expect(unsubscribers[2]).toHaveBeenCalledOnce();
+  });
+
+  it("prefers the server copy during merge and exposes archive only to admins", async () => {
+    let emit: ((notes: OwnerNote[]) => void) | undefined;
+    const archiveNote = vi.fn(async () => ({
+      archivedAt: "2026-08-10T03:00:00.000Z",
+      archivedBy: "admin-1",
+    }));
+    const admin = { uid: "admin-1", displayName: "대표", role: "admin" as const };
+    render(
+      <OwnerNotesHarness
+        buildingId="building-1"
+        draftId="draft-owner-notes"
+        currentUser={admin}
+        initialDraftNotes={[ownerNoteDraft]}
+        archiveNote={archiveNote}
+        subscribeNotes={(_id, listener) => {
+          emit = listener;
+          return () => undefined;
+        }}
+      />,
+    );
+
+    act(() => emit?.([ownerServerNote({
+      id: ownerNoteDraft.localId,
+      body: "서버에서 확정된 전달사항",
+    })]));
+    expect(await screen.findByText("서버에서 확정된 전달사항")).toBeInTheDocument();
+    expect(screen.queryByText(ownerNoteDraft.body)).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "메모 추가" }));
+    fireEvent.click(screen.getByRole("button", { name: "메모 보관" }));
+    await waitFor(() => expect(archiveNote).toHaveBeenCalledWith({
+      buildingId: "building-1",
+      noteId: ownerNoteDraft.localId,
+    }));
+    expect(await screen.findByText("메모 보관 완료")).toBeInTheDocument();
   });
 });
 
