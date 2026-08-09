@@ -8,9 +8,10 @@ import {
 } from "../src/field/map-projection.js";
 
 const UPDATED_AT = "2026-08-09T12:00:00.000Z";
+const BUILDING_ID = "building-1";
 
 const activeBuilding: ProjectionBuilding = {
-  id: "building-1",
+  id: BUILDING_ID,
   name: "상지 원룸",
   roadAddress: "강원특별자치도 원주시 상지대길 1",
   latitude: 37.369,
@@ -25,6 +26,8 @@ const activeBuilding: ProjectionBuilding = {
 };
 
 const approvedOpenListing: ProjectionListing = {
+  listingId: "listing-1",
+  buildingId: BUILDING_ID,
   status: "advertising",
   advertisingApproved: true,
   depositWon: 3_000_000,
@@ -34,7 +37,9 @@ const approvedOpenListing: ProjectionListing = {
 
 const source = {
   listings: [approvedOpenListing],
-  media: [{ uploadState: "finalized" }] satisfies ProjectionMedia[],
+  media: [
+    { buildingId: BUILDING_ID, uploadState: "finalized" },
+  ] satisfies ProjectionMedia[],
   updatedAt: UPDATED_AT,
 };
 
@@ -83,6 +88,111 @@ describe("buildMapProjection", () => {
     expect(buildMapProjection({ ...source, building: null })).toBeNull();
   });
 
+  it.each([undefined, "building", 1, [], () => undefined])(
+    "safely rejects the non-record building value %s",
+    (building) => {
+      expect(
+        buildMapProjection({
+          ...source,
+          building: building as unknown as ProjectionBuilding | null,
+        }),
+      ).toBeNull();
+    },
+  );
+
+  it.each(["id", "name", "roadAddress"] as const)(
+    "rejects an object-valued public building field %s without leaking it",
+    (field) => {
+      const projection = buildMapProjection({
+        ...source,
+        building: {
+          ...activeBuilding,
+          [field]: { ownerPhone: "TEST-NESTED-OWNER-PHONE" },
+        } as unknown as ProjectionBuilding,
+      });
+
+      expect(projection).toBeNull();
+      expect(JSON.stringify(projection)).not.toContain("TEST-NESTED-OWNER-PHONE");
+    },
+  );
+
+  it.each(["id", "name", "roadAddress"] as const)(
+    "rejects an empty public building field %s",
+    (field) => {
+      expect(
+        buildMapProjection({
+          ...source,
+          building: {
+            ...activeBuilding,
+            [field]: "   ",
+          },
+        }),
+      ).toBeNull();
+    },
+  );
+
+  it("rejects an object-valued updatedAt without leaking it", () => {
+    const projection = buildMapProjection({
+      ...source,
+      building: activeBuilding,
+      updatedAt: {
+        internalMemo: "TEST-NESTED-INTERNAL-MEMO",
+      } as unknown as string,
+    });
+
+    expect(projection).toBeNull();
+    expect(JSON.stringify(projection)).not.toContain("TEST-NESTED-INTERNAL-MEMO");
+  });
+
+  it("rejects an empty updatedAt", () => {
+    expect(
+      buildMapProjection({ ...source, building: activeBuilding, updatedAt: "" }),
+    ).toBeNull();
+  });
+
+  it.each([
+    ["null", null],
+    ["undefined", undefined],
+    ["plain object", {}],
+    ["string", "invalid"],
+  ])("treats %s listing and media collections as empty", (_label, collection) => {
+    const projection = buildMapProjection({
+      building: activeBuilding,
+      listings: collection as unknown as ProjectionListing[],
+      media: collection as unknown as ProjectionMedia[],
+      updatedAt: UPDATED_AT,
+    });
+
+    expect(projection).toEqual(
+      expect.objectContaining({
+        markerStatus: "managed",
+        vacancyCount: 0,
+        approvedRentSummary:
+          "보증금 확인 필요 · 월세 확인 필요 · 관리비 확인 필요",
+        captureStatus: "notStarted",
+      }),
+    );
+  });
+
+  it("ignores null and non-record collection entries", () => {
+    const projection = buildMapProjection({
+      building: activeBuilding,
+      listings: [null, 1, "listing"] as unknown as ProjectionListing[],
+      media: [null, 1, "media"] as unknown as ProjectionMedia[],
+      updatedAt: UPDATED_AT,
+    });
+
+    expect(projection).toEqual(
+      expect.objectContaining({
+        markerStatus: "managed",
+        vacancyCount: 0,
+        approvedRentSummary:
+          "보증금 확인 필요 · 월세 확인 필요 · 관리비 확인 필요",
+        captureStatus: "notStarted",
+      }),
+    );
+  });
+
   it.each([
     ["missing latitude", { latitude: undefined }],
     ["missing longitude", { longitude: undefined }],
@@ -118,6 +228,8 @@ describe("buildMapProjection", () => {
       building: activeBuilding,
       listings: [
         {
+          listingId: "listing-unapproved",
+          buildingId: BUILDING_ID,
           status: "ready",
           advertisingApproved: false,
           depositWon: 999_000_000,
@@ -125,6 +237,8 @@ describe("buildMapProjection", () => {
           maintenanceFeeWon: 999_000_000,
         },
         {
+          listingId: "listing-closed",
+          buildingId: BUILDING_ID,
           status: "closed",
           advertisingApproved: true,
           depositWon: 888_000_000,
@@ -132,6 +246,8 @@ describe("buildMapProjection", () => {
           maintenanceFeeWon: 888_000_000,
         },
         {
+          listingId: "listing-approved",
+          buildingId: BUILDING_ID,
           status: "advertising",
           advertisingApproved: true,
           depositWon: 200_000_000,
@@ -147,6 +263,63 @@ describe("buildMapProjection", () => {
         vacancyCount: 2,
         approvedRentSummary: "보증금 2억 · 월세 55만 · 관리비 12,345원",
       }),
+    );
+  });
+
+  it("ignores listings and media owned by another building", () => {
+    const projection = buildMapProjection({
+      building: activeBuilding,
+      listings: [
+        {
+          ...approvedOpenListing,
+          listingId: "listing-other-building",
+          buildingId: "building-2",
+        },
+      ],
+      media: [{ buildingId: "building-2", uploadState: "finalized" }],
+      updatedAt: UPDATED_AT,
+    });
+
+    expect(projection).toEqual(
+      expect.objectContaining({
+        markerStatus: "managed",
+        vacancyCount: 0,
+        approvedRentSummary:
+          "보증금 확인 필요 · 월세 확인 필요 · 관리비 확인 필요",
+        captureStatus: "notStarted",
+      }),
+    );
+  });
+
+  it("selects the same approved listing regardless of input order", () => {
+    const listingA: ProjectionListing = {
+      ...approvedOpenListing,
+      listingId: "listing-a",
+      depositWon: 100_000_000,
+      monthlyRentWon: 400_000,
+      maintenanceFeeWon: 10_000,
+    };
+    const listingZ: ProjectionListing = {
+      ...approvedOpenListing,
+      listingId: "listing-z",
+      depositWon: 200_000_000,
+      monthlyRentWon: 900_000,
+      maintenanceFeeWon: 90_000,
+    };
+
+    const project = (listings: ProjectionListing[]) =>
+      buildMapProjection({
+        building: activeBuilding,
+        listings,
+        media: [],
+        updatedAt: UPDATED_AT,
+      });
+
+    expect(project([listingA, listingZ])?.approvedRentSummary).toBe(
+      "보증금 1억 · 월세 40만 · 관리비 1만",
+    );
+    expect(project([listingZ, listingA])?.approvedRentSummary).toBe(
+      "보증금 1억 · 월세 40만 · 관리비 1만",
     );
   });
 
@@ -190,6 +363,7 @@ describe("buildMapProjection", () => {
 
   it.each([
     [0, "0원"],
+    [-0, "0원"],
     [3_000_000, "300만"],
     [100_000_000, "1억"],
     [300_000_000, "3억"],
@@ -197,6 +371,7 @@ describe("buildMapProjection", () => {
     [undefined, "확인 필요"],
     [Number.NaN, "확인 필요"],
     [Number.POSITIVE_INFINITY, "확인 필요"],
+    [Number.MAX_SAFE_INTEGER + 1, "확인 필요"],
     [1.5, "확인 필요"],
     [-1, "확인 필요"],
   ])("formats the won amount %s as %s", (amount, expected) => {
@@ -205,6 +380,8 @@ describe("buildMapProjection", () => {
       building: activeBuilding,
       listings: [
         {
+          listingId: "listing-amount",
+          buildingId: BUILDING_ID,
           status: "ready",
           advertisingApproved: true,
           depositWon: amount,
@@ -223,6 +400,10 @@ describe("buildMapProjection", () => {
     [{ available: false, totalSpaces: 999, notes: "TEST-PARKING-NOTES" }, "주차 불가"],
     [{ available: true }, "주차 가능 · 총 대수 확인 필요"],
     [{ available: true, totalSpaces: -1 }, "주차 가능 · 총 대수 확인 필요"],
+    [
+      { available: true, totalSpaces: Number.MAX_SAFE_INTEGER + 1 },
+      "주차 가능 · 총 대수 확인 필요",
+    ],
     [undefined, "주차 정보 확인 필요"],
   ])("uses a stable parking summary", (parking, expected) => {
     const projection = buildMapProjection({
@@ -240,7 +421,7 @@ describe("buildMapProjection", () => {
       const projection = buildMapProjection({
         ...source,
         building: activeBuilding,
-        media: [{ uploadState }],
+        media: [{ buildingId: BUILDING_ID, uploadState }],
       });
 
       expect(projection?.captureStatus).toBe("notStarted");
@@ -253,7 +434,7 @@ describe("buildMapProjection", () => {
       const projection = buildMapProjection({
         ...source,
         building: activeBuilding,
-        media: [{ uploadState }],
+        media: [{ buildingId: BUILDING_ID, uploadState }],
       });
 
       expect(projection?.captureStatus).toBe("inProgress");
@@ -277,6 +458,7 @@ describe("buildMapProjection", () => {
       ],
       media: [
         {
+          buildingId: BUILDING_ID,
           uploadState: "finalized",
           storagePath: "TEST-SECURE-MEDIA-PATH",
         },

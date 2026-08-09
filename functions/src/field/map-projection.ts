@@ -18,6 +18,8 @@ export interface ProjectionBuilding {
 }
 
 export interface ProjectionListing {
+  listingId: string;
+  buildingId: string;
   status: string;
   advertisingApproved?: unknown;
   depositWon?: unknown;
@@ -26,7 +28,18 @@ export interface ProjectionListing {
 }
 
 export interface ProjectionMedia {
+  buildingId: string;
   uploadState?: unknown;
+}
+
+type UnknownRecord = Record<string, unknown>;
+
+function isRecord(value: unknown): value is UnknownRecord {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function isNonEmptyString(value: unknown): value is string {
+  return typeof value === "string" && value.trim().length > 0;
 }
 
 function isValidCoordinate(value: unknown, minimum: number, maximum: number): value is number {
@@ -41,8 +54,7 @@ function isValidCoordinate(value: unknown, minimum: number, maximum: number): va
 function formatWon(value: unknown): string {
   if (
     typeof value !== "number" ||
-    !Number.isFinite(value) ||
-    !Number.isInteger(value) ||
+    !Number.isSafeInteger(value) ||
     value < 0
   ) {
     return "확인 필요";
@@ -71,20 +83,19 @@ function buildRentSummary(listing: ProjectionListing | undefined): string {
   ].join(" · ");
 }
 
-function buildParkingSummary(parking: ProjectionBuilding["parking"]): string {
-  if (parking?.available === false) {
+function buildParkingSummary(parking: unknown): string {
+  if (isRecord(parking) && parking.available === false) {
     return "주차 불가";
   }
 
-  if (parking?.available !== true) {
+  if (!isRecord(parking) || parking.available !== true) {
     return "주차 정보 확인 필요";
   }
 
   const totalSpaces = parking.totalSpaces;
   if (
     typeof totalSpaces !== "number" ||
-    !Number.isFinite(totalSpaces) ||
-    !Number.isInteger(totalSpaces) ||
+    !Number.isSafeInteger(totalSpaces) ||
     totalSpaces < 0
   ) {
     return "주차 가능 · 총 대수 확인 필요";
@@ -99,24 +110,72 @@ export function buildMapProjection(input: {
   media: ProjectionMedia[];
   updatedAt: string;
 }): FieldMapProjection | null {
-  const { building } = input;
+  const building: unknown = input.building;
+  const updatedAt: unknown = input.updatedAt;
+
+  if (!isRecord(building)) {
+    return null;
+  }
+
+  const {
+    id: buildingId,
+    name,
+    roadAddress,
+    latitude,
+    longitude,
+    parking,
+    managementContract,
+    archivedAt,
+  } = building;
+
   if (
-    building === null ||
-    (building.archivedAt !== undefined && building.archivedAt !== null) ||
-    building.managementContract?.status !== "active" ||
-    !isValidCoordinate(building.latitude, -90, 90) ||
-    !isValidCoordinate(building.longitude, -180, 180)
+    !isNonEmptyString(buildingId) ||
+    !isNonEmptyString(name) ||
+    !isNonEmptyString(roadAddress) ||
+    !isNonEmptyString(updatedAt) ||
+    (archivedAt !== undefined && archivedAt !== null) ||
+    !isRecord(managementContract) ||
+    managementContract.status !== "active" ||
+    !isValidCoordinate(latitude, -90, 90) ||
+    !isValidCoordinate(longitude, -180, 180)
   ) {
     return null;
   }
 
-  const vacancyCount = input.listings.filter((listing) => listing.status !== "closed").length;
+  const rawListings: unknown = input.listings;
+  const listings = Array.isArray(rawListings)
+    ? rawListings.filter(
+        (item): item is ProjectionListing =>
+          isRecord(item) &&
+          item.buildingId === buildingId &&
+          isNonEmptyString(item.listingId) &&
+          isNonEmptyString(item.status),
+      )
+    : [];
+  const rawMedia: unknown = input.media;
+  const media = Array.isArray(rawMedia)
+    ? rawMedia.filter(
+        (item): item is ProjectionMedia =>
+          isRecord(item) && item.buildingId === buildingId,
+      )
+    : [];
+
+  const vacancyCount = listings.filter((listing) => listing.status !== "closed").length;
   const markerStatus: FieldMapProjection["markerStatus"] =
     vacancyCount > 0 ? "vacant" : "managed";
-  const approvedListing = input.listings.find(
-    (listing) => listing.status !== "closed" && listing.advertisingApproved === true,
-  );
-  const captureStatus: FieldMapProjection["captureStatus"] = input.media.some(
+  const approvedListing = listings
+    .filter(
+      (listing) =>
+        listing.status !== "closed" && listing.advertisingApproved === true,
+    )
+    .reduce<ProjectionListing | undefined>(
+      (selected, listing) =>
+        selected === undefined || listing.listingId < selected.listingId
+          ? listing
+          : selected,
+      undefined,
+    );
+  const captureStatus: FieldMapProjection["captureStatus"] = media.some(
     (item) =>
       item.uploadState === "finalized" || item.uploadState === "firebaseComplete",
   )
@@ -124,16 +183,16 @@ export function buildMapProjection(input: {
     : "notStarted";
 
   return {
-    buildingId: building.id,
-    name: building.name,
-    roadAddress: building.roadAddress,
-    latitude: building.latitude,
-    longitude: building.longitude,
+    buildingId,
+    name,
+    roadAddress,
+    latitude,
+    longitude,
     markerStatus,
     vacancyCount,
     approvedRentSummary: buildRentSummary(approvedListing),
-    parkingSummary: buildParkingSummary(building.parking),
+    parkingSummary: buildParkingSummary(parking),
     captureStatus,
-    updatedAt: input.updatedAt,
+    updatedAt,
   };
 }
