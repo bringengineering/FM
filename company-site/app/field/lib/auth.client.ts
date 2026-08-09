@@ -4,9 +4,10 @@ import {
   signInWithRedirect,
   signOut as firebaseSignOut,
 } from "firebase/auth";
+import { get, ref } from "firebase/database";
 import { httpsCallable } from "firebase/functions";
 
-import { auth, functions } from "./firebase.client";
+import { auth, database, functions } from "./firebase.client";
 import type { UserRole } from "./types";
 
 export interface FieldAuthUser {
@@ -21,6 +22,7 @@ export interface FieldAuthUser {
 export interface FieldAuthDependencies {
   signInWithGoogle(): Promise<{ user: FieldAuthUser }>;
   provisionFieldUser(): Promise<void>;
+  getFieldUser(uid: string): Promise<unknown>;
   signOut(): Promise<void>;
 }
 
@@ -41,6 +43,17 @@ const roles = new Set<UserRole>(["admin", "staff", "reviewer"]);
 
 function isUserRole(value: unknown): value is UserRole {
   return typeof value === "string" && roles.has(value as UserRole);
+}
+
+function isEnabledFieldUser(value: unknown, role: UserRole): boolean {
+  return (
+    typeof value === "object" &&
+    value !== null &&
+    "enabled" in value &&
+    value.enabled === true &&
+    "role" in value &&
+    value.role === role
+  );
 }
 
 async function sessionFromUser(
@@ -77,6 +90,10 @@ const defaultDependencies: FieldAuthDependencies = {
   async provisionFieldUser() {
     await provisionCallable();
   },
+  async getFieldUser(uid) {
+    const snapshot = await get(ref(database, `fieldPlatform/users/${uid}`));
+    return snapshot.val() as unknown;
+  },
   async signOut() {
     await firebaseSignOut(auth);
   },
@@ -112,10 +129,10 @@ function provisioningError(error: unknown): Error {
 
 async function restoreFieldSession(
   user: FieldAuthUser,
-  dependencies: Pick<FieldAuthDependencies, "provisionFieldUser">,
+  dependencies: Pick<FieldAuthDependencies, "getFieldUser" | "provisionFieldUser">,
 ): Promise<FieldSession> {
   const restored = await sessionFromUser(user, false);
-  if (restored) return restored;
+  if (restored) return verifyEnabledFieldSession(restored, dependencies);
 
   try {
     await dependencies.provisionFieldUser();
@@ -128,7 +145,18 @@ async function restoreFieldSession(
     throw new Error("field_access_denied");
   }
 
-  return provisioned;
+  return verifyEnabledFieldSession(provisioned, dependencies);
+}
+
+async function verifyEnabledFieldSession(
+  session: FieldSession,
+  dependencies: Pick<FieldAuthDependencies, "getFieldUser">,
+): Promise<FieldSession> {
+  const fieldUser = await dependencies.getFieldUser(session.uid);
+  if (!isEnabledFieldUser(fieldUser, session.role)) {
+    throw new Error("field_access_denied");
+  }
+  return session;
 }
 
 export async function loginFieldUser(
@@ -140,20 +168,19 @@ export async function loginFieldUser(
   } catch (error) {
     throw loginStartError(error);
   }
+
   try {
-    await dependencies.provisionFieldUser();
+    return await restoreFieldSession(credential.user, dependencies);
   } catch (error) {
-    await dependencies.signOut();
-    throw provisioningError(error);
+    if (
+      error instanceof Error &&
+      (error.message === "field_access_denied" ||
+        error.message === "field_provision_failed")
+    ) {
+      await dependencies.signOut().catch(() => undefined);
+    }
+    throw error;
   }
-  const session = await sessionFromUser(credential.user, true);
-
-  if (!session) {
-    await dependencies.signOut();
-    throw new Error("field_access_denied");
-  }
-
-  return session;
 }
 
 export async function logoutFieldUser(
@@ -162,7 +189,14 @@ export async function logoutFieldUser(
   await dependencies.signOut();
 }
 
-export const observeFieldSession: FieldSessionObserver = (listener, errorListener) => {
+export function observeFieldSession(
+  listener: FieldSessionListener,
+  errorListener?: FieldSessionErrorListener,
+  dependencies: Pick<
+    FieldAuthDependencies,
+    "getFieldUser" | "provisionFieldUser" | "signOut"
+  > = defaultDependencies,
+): ReturnType<FieldSessionObserver> {
   let active = true;
   let currentUser: FieldAuthUser | null = null;
   let revision = 0;
@@ -178,7 +212,7 @@ export const observeFieldSession: FieldSessionObserver = (listener, errorListene
       return;
     }
 
-    void restoreFieldSession(user, defaultDependencies)
+    void restoreFieldSession(user, dependencies)
       .then((session) => {
         if (active && revision === currentRevision) {
           listener(session);
@@ -196,7 +230,7 @@ export const observeFieldSession: FieldSessionObserver = (listener, errorListene
         ) {
           suppressSignedOut = true;
           try {
-            await defaultDependencies.signOut().catch(() => undefined);
+            await dependencies.signOut().catch(() => undefined);
           } finally {
             suppressSignedOut = false;
           }
@@ -216,4 +250,4 @@ export const observeFieldSession: FieldSessionObserver = (listener, errorListene
     revision += 1;
     unsubscribe();
   };
-};
+}

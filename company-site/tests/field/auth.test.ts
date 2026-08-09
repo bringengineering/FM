@@ -4,9 +4,16 @@ import { loginFieldUser, type FieldAuthDependencies } from "../../app/field/lib/
 
 function createDependencies(
   claims: Record<string, unknown>,
-  options: { email?: string; provisionError?: Error & { code?: string } } = {},
+  options: {
+    email?: string;
+    provisionError?: Error & { code?: string };
+    userRecord?: unknown;
+  } = {},
 ) {
   const calls: string[] = [];
+  const userRecord = "userRecord" in options
+    ? options.userRecord
+    : { enabled: true, role: claims.fieldRole };
   const user = {
     uid: "user-1",
     displayName: "브링 담당자",
@@ -27,6 +34,10 @@ function createDependencies(
         throw options.provisionError;
       }
     }),
+    getFieldUser: vi.fn(async (uid: string) => {
+      calls.push(`userRecord:${uid}`);
+      return userRecord;
+    }),
     signOut: vi.fn(async () => {
       calls.push("signOut");
     }),
@@ -36,7 +47,7 @@ function createDependencies(
 }
 
 describe("loginFieldUser", () => {
-  it("signs in, provisions claims, and refreshes the token in order", async () => {
+  it("restores an enabled claimed login without provisioning again", async () => {
     const { calls, dependencies } = createDependencies({
       fieldPlatform: true,
       fieldRole: "staff",
@@ -44,7 +55,7 @@ describe("loginFieldUser", () => {
 
     const session = await loginFieldUser(dependencies);
 
-    expect(calls).toEqual(["signIn", "provision", "token:true"]);
+    expect(calls).toEqual(["signIn", "token:false", "userRecord:user-1"]);
     expect(session).toMatchObject({ uid: "user-1", role: "staff" });
   });
 
@@ -52,7 +63,7 @@ describe("loginFieldUser", () => {
     const { calls, dependencies } = createDependencies({});
 
     await expect(loginFieldUser(dependencies)).rejects.toThrow("field_access_denied");
-    expect(calls).toEqual(["signIn", "provision", "token:true", "signOut"]);
+    expect(calls).toEqual(["signIn", "token:false", "provision", "token:true", "signOut"]);
   });
 
   it("signs out and rejects the former approved email without field claims", async () => {
@@ -64,7 +75,7 @@ describe("loginFieldUser", () => {
     );
 
     await expect(loginFieldUser(dependencies)).rejects.toThrow("field_access_denied");
-    expect(calls).toEqual(["signIn", "provision", "token:true", "signOut"]);
+    expect(calls).toEqual(["signIn", "token:false", "provision", "token:true", "signOut"]);
   });
 
   it("maps a denied provisioning callable to access denied", async () => {
@@ -74,7 +85,7 @@ describe("loginFieldUser", () => {
     const { calls, dependencies } = createDependencies({}, { provisionError: denied });
 
     await expect(loginFieldUser(dependencies)).rejects.toThrow("field_access_denied");
-    expect(calls).toEqual(["signIn", "provision", "signOut"]);
+    expect(calls).toEqual(["signIn", "token:false", "provision", "signOut"]);
   });
 
   it("maps other provisioning failures to a retryable provisioning error", async () => {
@@ -84,6 +95,21 @@ describe("loginFieldUser", () => {
     const { calls, dependencies } = createDependencies({}, { provisionError: unavailable });
 
     await expect(loginFieldUser(dependencies)).rejects.toThrow("field_provision_failed");
-    expect(calls).toEqual(["signIn", "provision", "signOut"]);
+    expect(calls).toEqual(["signIn", "token:false", "provision", "signOut"]);
+  });
+
+  it("signs out instead of returning a claimed session for a disabled user record", async () => {
+    const { calls, dependencies } = createDependencies(
+      { fieldPlatform: true, fieldRole: "staff" },
+      { userRecord: { enabled: false, role: "staff" } },
+    );
+
+    await expect(loginFieldUser(dependencies)).rejects.toThrow("field_access_denied");
+    expect(calls).toEqual([
+      "signIn",
+      "token:false",
+      "userRecord:user-1",
+      "signOut",
+    ]);
   });
 });
