@@ -18,7 +18,7 @@ export interface ProjectionBuilding {
 }
 
 export interface ProjectionListing {
-  listingId: string;
+  id: string;
   buildingId: string;
   status: string;
   advertisingApproved?: unknown;
@@ -148,7 +148,7 @@ export function buildMapProjection(input: {
         (item): item is ProjectionListing =>
           isRecord(item) &&
           item.buildingId === buildingId &&
-          isNonEmptyString(item.listingId) &&
+          isNonEmptyString(item.id) &&
           isNonEmptyString(item.status),
       )
     : [];
@@ -170,7 +170,7 @@ export function buildMapProjection(input: {
     )
     .reduce<ProjectionListing | undefined>(
       (selected, listing) =>
-        selected === undefined || listing.listingId < selected.listingId
+        selected === undefined || listing.id < selected.id
           ? listing
           : selected,
       undefined,

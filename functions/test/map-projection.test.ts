@@ -26,7 +26,7 @@ const activeBuilding: ProjectionBuilding = {
 };
 
 const approvedOpenListing: ProjectionListing = {
-  listingId: "listing-1",
+  id: "listing-1",
   buildingId: BUILDING_ID,
   status: "advertising",
   advertisingApproved: true,
@@ -53,6 +53,33 @@ describe("buildMapProjection", () => {
         approvedRentSummary: "보증금 300만 · 월세 35만 · 관리비 0원",
         parkingSummary: "주차 가능 · 총 8대",
         captureStatus: "inProgress",
+      }),
+    );
+  });
+
+  it("projects a persisted listing identified by id", () => {
+    const persistedListing: ProjectionListing = {
+      id: "listing-persisted",
+      buildingId: BUILDING_ID,
+      status: "advertising",
+      advertisingApproved: true,
+      depositWon: 3_000_000,
+      monthlyRentWon: 350_000,
+      maintenanceFeeWon: 0,
+    };
+
+    expect(
+      buildMapProjection({
+        building: activeBuilding,
+        listings: [persistedListing],
+        media: [],
+        updatedAt: UPDATED_AT,
+      }),
+    ).toEqual(
+      expect.objectContaining({
+        markerStatus: "vacant",
+        vacancyCount: 1,
+        approvedRentSummary: "보증금 300만 · 월세 35만 · 관리비 0원",
       }),
     );
   });
@@ -228,7 +255,7 @@ describe("buildMapProjection", () => {
       building: activeBuilding,
       listings: [
         {
-          listingId: "listing-unapproved",
+          id: "listing-unapproved",
           buildingId: BUILDING_ID,
           status: "ready",
           advertisingApproved: false,
@@ -237,7 +264,7 @@ describe("buildMapProjection", () => {
           maintenanceFeeWon: 999_000_000,
         },
         {
-          listingId: "listing-closed",
+          id: "listing-closed",
           buildingId: BUILDING_ID,
           status: "closed",
           advertisingApproved: true,
@@ -246,7 +273,7 @@ describe("buildMapProjection", () => {
           maintenanceFeeWon: 888_000_000,
         },
         {
-          listingId: "listing-approved",
+          id: "listing-approved",
           buildingId: BUILDING_ID,
           status: "advertising",
           advertisingApproved: true,
@@ -272,7 +299,7 @@ describe("buildMapProjection", () => {
       listings: [
         {
           ...approvedOpenListing,
-          listingId: "listing-other-building",
+          id: "listing-other-building",
           buildingId: "building-2",
         },
       ],
@@ -294,14 +321,14 @@ describe("buildMapProjection", () => {
   it("selects the same approved listing regardless of input order", () => {
     const listingA: ProjectionListing = {
       ...approvedOpenListing,
-      listingId: "listing-a",
+      id: "listing-a",
       depositWon: 100_000_000,
       monthlyRentWon: 400_000,
       maintenanceFeeWon: 10_000,
     };
     const listingZ: ProjectionListing = {
       ...approvedOpenListing,
-      listingId: "listing-z",
+      id: "listing-z",
       depositWon: 200_000_000,
       monthlyRentWon: 900_000,
       maintenanceFeeWon: 90_000,
@@ -380,7 +407,7 @@ describe("buildMapProjection", () => {
       building: activeBuilding,
       listings: [
         {
-          listingId: "listing-amount",
+          id: "listing-amount",
           buildingId: BUILDING_ID,
           status: "ready",
           advertisingApproved: true,
