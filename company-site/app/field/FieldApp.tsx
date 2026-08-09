@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 
 import AppShell, { type FieldDestination } from "./components/AppShell";
 import AuthGate from "./components/AuthGate";
@@ -14,6 +14,7 @@ import FieldMapPanel from "./components/FieldMapPanel";
 import FieldServiceWorker from "./components/FieldServiceWorker";
 import { useFieldSession } from "./components/FieldSessionContext";
 import ManagementContractQueue from "./components/ManagementContractQueue";
+import { logoutFieldUser } from "./lib/auth.client";
 import {
   excludeFieldMedia,
   getFieldMediaAccess,
@@ -24,6 +25,7 @@ import {
   type StartFieldCaptureSessionResult,
 } from "./lib/field-api.client";
 import { createFirebaseMediaUploadPort } from "./lib/firebase-media-upload";
+import { fieldAppCheckConfigurationError } from "./lib/firebase.client";
 import { MediaUploadCoordinator } from "./lib/media-upload";
 import {
   openOfflineQueue,
@@ -92,6 +94,8 @@ interface FieldWorkspaceProps {
   loadOpenCaptureSessions?: () => Promise<import("./lib/types").CaptureSessionRecord[]>;
   getMediaAccess?: typeof getFieldMediaAccess;
   excludeMedia?: typeof excludeFieldMedia;
+  logout?: typeof logoutFieldUser;
+  confirmExit?: (message: string) => boolean;
 }
 
 interface RuntimeCaptureCoordinator extends CaptureUploadCoordinator {
@@ -102,6 +106,23 @@ function createDefaultCaptureCoordinator(
   queue: OfflineQueuePort,
 ): RuntimeCaptureCoordinator {
   return new MediaUploadCoordinator(queue, createFirebaseMediaUploadPort());
+}
+
+function createDefaultCaptureLoaders(uid: string) {
+  let pending: ReturnType<typeof loadFieldCaptureWorkspace> | null = null;
+  const load = () => {
+    if (!uid) return Promise.reject(new Error("field_session_required"));
+    if (!pending) {
+      pending = loadFieldCaptureWorkspace().finally(() => {
+        pending = null;
+      });
+    }
+    return pending;
+  };
+  return {
+    targets: async () => (await load()).targets,
+    sessions: async () => (await load()).openSessions,
+  };
 }
 
 const destinationTitles: Record<
@@ -160,6 +181,8 @@ export function FieldWorkspace({
   loadOpenCaptureSessions: suppliedSessionLoader,
   getMediaAccess = getFieldMediaAccess,
   excludeMedia = excludeFieldMedia,
+  logout = logoutFieldUser,
+  confirmExit = (message) => window.confirm(message),
 }: FieldWorkspaceProps = {}) {
   const session = useFieldSession();
   const [active, setActive] = useState<FieldDestination>("home");
@@ -167,21 +190,17 @@ export function FieldWorkspace({
   const [coordinator, setCoordinator] = useState<CaptureUploadCoordinator | null>(
     suppliedCoordinator ?? null,
   );
-  const captureLoaders = useMemo(() => {
-    let pending: ReturnType<typeof loadFieldCaptureWorkspace> | null = null;
-    const load = () => {
-      if (!pending) {
-        pending = loadFieldCaptureWorkspace().finally(() => {
-          pending = null;
-        });
-      }
-      return pending;
-    };
-    return {
-      targets: suppliedTargetLoader ?? (async () => (await load()).targets),
-      sessions: suppliedSessionLoader ?? (async () => (await load()).openSessions),
-    };
-  }, [session.uid, suppliedSessionLoader, suppliedTargetLoader]);
+  const [pendingCount, setPendingCount] = useState(0);
+  const [logoutBusy, setLogoutBusy] = useState(false);
+  const [logoutError, setLogoutError] = useState<string>();
+  const stopCoordinatorRef = useRef<(() => void) | undefined>(undefined);
+  const runtimeCoordinatorRef = useRef<RuntimeCaptureCoordinator | null>(null);
+  const defaultCaptureLoaders = useMemo(
+    () => createDefaultCaptureLoaders(session.uid),
+    [session.uid],
+  );
+  const captureTargetLoader = suppliedTargetLoader ?? defaultCaptureLoaders.targets;
+  const captureSessionLoader = suppliedSessionLoader ?? defaultCaptureLoaders.sessions;
 
   useEffect(() => {
     let cancelled = false;
@@ -197,24 +216,68 @@ export function FieldWorkspace({
         const nextCoordinator = suppliedCoordinator
           ?? coordinatorFactory(nextQueue);
         if (!suppliedCoordinator) {
-          stopCoordinator = (nextCoordinator as RuntimeCaptureCoordinator)
-            .start(session.uid);
+          runtimeCoordinatorRef.current = nextCoordinator as RuntimeCaptureCoordinator;
+          stopCoordinator = runtimeCoordinatorRef.current.start(session.uid);
+          stopCoordinatorRef.current = stopCoordinator;
         }
         setQueue(nextQueue);
         setCoordinator(nextCoordinator);
+        void nextQueue.countPending(session.uid).then((count) => {
+          if (!cancelled) setPendingCount(count);
+        }).catch(() => undefined);
       })
       .catch(() => {
         if (!cancelled) setQueue(null);
       });
     return () => {
       cancelled = true;
-      stopCoordinator?.();
+      const stop = stopCoordinatorRef.current;
+      if (stop && stop === stopCoordinator) {
+        stop();
+        stopCoordinatorRef.current = undefined;
+      }
+      runtimeCoordinatorRef.current = null;
       openedQueue?.close();
     };
   }, [coordinatorFactory, queueFactory, session.uid, suppliedCoordinator]);
 
+  async function handleLogout() {
+    if (logoutBusy) return;
+    setLogoutBusy(true);
+    setLogoutError(undefined);
+    let stoppedRuntime: RuntimeCaptureCoordinator | null = null;
+    try {
+      if (!queue) throw new Error("capture_queue_unavailable");
+      const count = await queue.countPending(session.uid);
+      setPendingCount(count);
+      if (count > 0 && !confirmExit(
+        `서버 등록 대기 파일이 ${count}개 있습니다. 로그아웃하면 이 계정으로 다시 로그인할 때까지 업로드가 멈춥니다. 로그아웃할까요?`,
+      )) return;
+      stoppedRuntime = runtimeCoordinatorRef.current;
+      stopCoordinatorRef.current?.();
+      stopCoordinatorRef.current = undefined;
+      setActive("home");
+      await logout();
+    } catch {
+      if (stoppedRuntime && !stopCoordinatorRef.current) {
+        stopCoordinatorRef.current = stoppedRuntime.start(session.uid);
+      }
+      setLogoutError("로그아웃에 실패했습니다. 네트워크 상태를 확인한 뒤 다시 시도해 주세요.");
+    } finally {
+      setLogoutBusy(false);
+    }
+  }
+
   return (
-    <AppShell active={active} onNavigate={setActive}>
+    <AppShell
+      active={active}
+      session={session}
+      pendingCount={pendingCount}
+      logoutBusy={logoutBusy}
+      logoutError={logoutError}
+      onLogout={() => void handleLogout()}
+      onNavigate={setActive}
+    >
       {active === "home" ? (
         <Dashboard onNavigate={setActive} />
       ) : active === "map" ? (
@@ -244,8 +307,8 @@ export function FieldWorkspace({
       ) : active === "capture" ? (
         queue && coordinator ? (
           <CaptureWorkspace
-            loadTargets={captureLoaders.targets}
-            loadOpenSessions={captureLoaders.sessions}
+            loadTargets={captureTargetLoader}
+            loadOpenSessions={captureSessionLoader}
             startSession={startCaptureSession}
             queue={queue}
             coordinator={coordinator}
@@ -269,6 +332,17 @@ export function FieldWorkspace({
 }
 
 export default function FieldApp() {
+  if (fieldAppCheckConfigurationError) {
+    return (
+      <main className="field-auth-screen">
+        <section className="field-auth-card" role="alert">
+          <p className="field-eyebrow">SECURITY CONFIGURATION</p>
+          <h1>서비스 설정 확인 필요</h1>
+          <p>{fieldAppCheckConfigurationError}</p>
+        </section>
+      </main>
+    );
+  }
   return (
     <>
       <FieldServiceWorker />

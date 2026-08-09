@@ -116,7 +116,7 @@ function dispatchFetch(
 }
 
 describe("FieldServiceWorker registration", () => {
-  it("registers the field worker once with the narrow /field/ scope", async () => {
+  it("registers once with a scope that controls the exact /field start URL", async () => {
     const register = vi.fn(async () => ({ scope: "https://bring.test/field/" }));
     Object.defineProperty(navigator, "serviceWorker", {
       configurable: true,
@@ -126,7 +126,7 @@ describe("FieldServiceWorker registration", () => {
     render(createElement(FieldServiceWorker));
 
     await waitFor(() => expect(register).toHaveBeenCalledOnce());
-    expect(register).toHaveBeenCalledWith("/field-sw.js", { scope: "/field/" });
+    expect(register).toHaveBeenCalledWith("/field-sw.js", { scope: "/field" });
   });
 
   it("does nothing when the browser has no service worker support", async () => {

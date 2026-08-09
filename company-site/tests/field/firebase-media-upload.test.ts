@@ -90,6 +90,7 @@ function dependencies(
       driveSyncState: "queued",
       finalizedAt: "2026-08-10T00:01:00.000Z",
     })),
+    excludeFieldMedia: vi.fn(async () => undefined),
     ...overrides,
   };
 }
@@ -220,5 +221,19 @@ describe("Firebase media upload port", () => {
       uploadState: "finalized",
       driveSyncState: "queued",
     }));
+  });
+
+  it("delegates exclusion without changing the callable payload", async () => {
+    const excludeFieldMedia = vi.fn(async () => undefined);
+    const port = createFirebaseMediaUploadPort(dependencies({ excludeFieldMedia }));
+    const input = {
+      mediaId: MEDIA_ID,
+      requestId: "44444444-4444-4444-8444-444444444444",
+    };
+
+    await port.exclude?.(input);
+
+    expect(excludeFieldMedia).toHaveBeenCalledOnce();
+    expect(excludeFieldMedia).toHaveBeenCalledWith(input);
   });
 });

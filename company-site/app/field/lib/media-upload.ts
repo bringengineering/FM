@@ -48,6 +48,11 @@ export interface FinalizeFieldMediaResult {
   finalizedAt: string;
 }
 
+export interface ExcludeUploadedMediaInput {
+  mediaId: string;
+  requestId: string;
+}
+
 export interface MediaUploadPort {
   inspect(path: string): Promise<StoredMediaObject | null>;
   upload(
@@ -55,6 +60,7 @@ export interface MediaUploadPort {
     onProgress: (percent: number) => void,
   ): Promise<StoredMediaObject>;
   finalize(input: FinalizeFieldMediaInput): Promise<FinalizeFieldMediaResult>;
+  exclude?(input: ExcludeUploadedMediaInput): Promise<void>;
 }
 
 interface OnlineEventTarget {
@@ -84,6 +90,7 @@ const EXPECTED_CUSTOM_METADATA = [
 ] as const;
 
 const REPLAY_STATES = new Set<UploadState>(["objectStored", "finalizing"]);
+const EXCLUDED_MARKER = "capture_excluded";
 
 function defaultIsOnline(): boolean {
   return typeof navigator === "undefined" || navigator.onLine;
@@ -240,7 +247,6 @@ export class MediaUploadCoordinator {
             uploadState: "queued",
             uploadProgress: 0,
             failureCode: undefined,
-            replacesMediaId: item.mediaId,
           },
           binding: item.binding,
           blob: item.blob,
@@ -255,13 +261,13 @@ export class MediaUploadCoordinator {
           },
         });
       } else {
-        const replayable = REPLAY_STATES.has(item.descriptor.uploadState)
-          && Boolean(item.objectGeneration);
+        const replayable = Boolean(item.objectGeneration)
+          && Boolean(item.stagingPath);
         await this.queue.patch(uid, mediaId, {
           lastError: undefined,
           descriptor: {
             ...item.descriptor,
-            uploadState: replayable ? item.descriptor.uploadState : "queued",
+            uploadState: replayable ? "finalizing" : "queued",
             uploadProgress: replayable ? item.descriptor.uploadProgress : 0,
             failureCode: undefined,
           },
@@ -269,6 +275,42 @@ export class MediaUploadCoordinator {
       }
 
       await this.resumePass(uid, () => true);
+    });
+  }
+
+  exclude(
+    uid: string,
+    mediaId: string,
+    requestServerExclusion = true,
+  ): Promise<void> {
+    return this.serialize(async () => {
+      const item = await this.queue.get(uid, mediaId);
+      if (!item) throw new Error("capture_queue_item_missing");
+
+      const isAlreadyExcluded = item.lastError === EXCLUDED_MARKER
+        || item.descriptor.failureCode === EXCLUDED_MARKER;
+      const hasFinalizedServerMedia = item.descriptor.uploadState === "finalized"
+        && Boolean(item.storagePath)
+        && !isAlreadyExcluded;
+
+      if (requestServerExclusion && hasFinalizedServerMedia) {
+        if (!this.port.exclude) throw new Error("capture_exclude_unavailable");
+        await this.port.exclude({
+          mediaId,
+          requestId: this.createId(),
+        });
+      }
+
+      await this.queue.patch(uid, mediaId, {
+        blob: undefined,
+        lastError: EXCLUDED_MARKER,
+        descriptor: {
+          ...item.descriptor,
+          uploadState: "finalized",
+          uploadProgress: 100,
+          failureCode: EXCLUDED_MARKER,
+        },
+      });
     });
   }
 
@@ -497,7 +539,7 @@ export class MediaUploadCoordinator {
         objectGeneration,
       ));
     } catch (error) {
-      return this.failItem(item, redactedFailureCode(error), "finalizing", isActive);
+      return this.failItem(item, redactedFailureCode(error), "failed", isActive);
     }
     if (!isActive()) return undefined;
     if (
@@ -505,7 +547,7 @@ export class MediaUploadCoordinator {
       || result.uploadState !== "finalized"
       || result.driveSyncState !== "queued"
     ) {
-      return this.failItem(item, "storage_upload_failed", "finalizing", isActive);
+      return this.failItem(item, "storage_upload_failed", "failed", isActive);
     }
 
     await this.queue.markFinalized(item.uid, item.mediaId, {

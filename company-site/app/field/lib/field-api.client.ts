@@ -147,6 +147,9 @@ const roles = new Set<UserRole>(["admin", "staff", "reviewer"]);
 const PATH_ID_MAX_BYTES = 128;
 const RENDERED_STRING_MAX_LENGTH = 4_096;
 const DATE_ONLY_PATTERN = /^(\d{4})-(\d{2})-(\d{2})$/;
+const REPLAY_PROTECTED_CALLABLE_OPTIONS = {
+  limitedUseAppCheckTokens: true,
+} as const;
 
 function isUserRole(value: unknown): value is UserRole {
   return typeof value === "string" && roles.has(value as UserRole);
@@ -338,7 +341,11 @@ async function defaultStartCaptureSessionInvoker(
   const callable = httpsCallable<
     StartFieldCaptureSessionInput,
     StartFieldCaptureSessionResult
-  >(functions, "startFieldCaptureSession");
+  >(
+    functions,
+    "startFieldCaptureSession",
+    REPLAY_PROTECTED_CALLABLE_OPTIONS,
+  );
   return callable(input);
 }
 
@@ -346,6 +353,7 @@ async function defaultLoadFieldCaptureWorkspaceInvoker() {
   const callable = httpsCallable<undefined, FieldCaptureWorkspaceResult>(
     functions,
     "listFieldCaptureWorkspace",
+    REPLAY_PROTECTED_CALLABLE_OPTIONS,
   );
   return callable(undefined);
 }
@@ -356,7 +364,7 @@ async function defaultFinalizeFieldMediaInvoker(
   const callable = httpsCallable<
     FinalizeFieldMediaInput,
     FinalizeFieldMediaResult
-  >(functions, "finalizeFieldMedia");
+  >(functions, "finalizeFieldMedia", REPLAY_PROTECTED_CALLABLE_OPTIONS);
   return callable(input);
 }
 
@@ -364,7 +372,7 @@ async function defaultGetFieldMediaAccessInvoker(input: { mediaId: string }) {
   const callable = httpsCallable<
     { mediaId: string },
     FieldMediaAccessResult
-  >(functions, "getFieldMediaAccess");
+  >(functions, "getFieldMediaAccess", REPLAY_PROTECTED_CALLABLE_OPTIONS);
   return callable(input);
 }
 
@@ -372,7 +380,7 @@ async function defaultExcludeFieldMediaInvoker(input: ExcludeFieldMediaInput) {
   const callable = httpsCallable<
     ExcludeFieldMediaInput,
     ExcludeFieldMediaResult
-  >(functions, "excludeFieldMedia");
+  >(functions, "excludeFieldMedia", REPLAY_PROTECTED_CALLABLE_OPTIONS);
   return callable(input);
 }
 

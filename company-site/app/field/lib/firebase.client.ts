@@ -23,16 +23,38 @@ export const firebaseApp = getApps().length > 0 ? getApp() : initializeApp(fireb
 const appCheckSiteKey = process.env.NEXT_PUBLIC_FIREBASE_APPCHECK_SITE_KEY;
 const appCheckState = globalThis as typeof globalThis & {
   __bringFieldAppCheckApps?: Set<string>;
+  FIREBASE_APPCHECK_DEBUG_TOKEN?: boolean;
 };
 const initializedAppCheckApps = appCheckState.__bringFieldAppCheckApps ??= new Set<string>();
 
+export function resolveFieldAppCheckConfigurationError(
+  nodeEnv: string | undefined,
+  siteKey: string | undefined,
+): string | null {
+  if (nodeEnv !== "production" || siteKey?.trim()) return null;
+  return "보안 설정(App Check)이 완료되지 않아 서비스를 시작할 수 없습니다. 관리자에게 배포 설정 확인을 요청해 주세요.";
+}
+
+export const fieldAppCheckConfigurationError = resolveFieldAppCheckConfigurationError(
+  process.env.NODE_ENV,
+  appCheckSiteKey,
+);
+
 if (
-  appCheckSiteKey &&
+  process.env.NODE_ENV !== "production"
+  && process.env.NEXT_PUBLIC_FIREBASE_APPCHECK_DEBUG_TOKEN === "true"
+  && typeof window !== "undefined"
+) {
+  appCheckState.FIREBASE_APPCHECK_DEBUG_TOKEN = true;
+}
+
+if (
+  appCheckSiteKey?.trim() &&
   typeof window !== "undefined" &&
   !initializedAppCheckApps.has(firebaseApp.name)
 ) {
   initializeAppCheck(firebaseApp, {
-    provider: new ReCaptchaEnterpriseProvider(appCheckSiteKey),
+    provider: new ReCaptchaEnterpriseProvider(appCheckSiteKey.trim()),
     isTokenAutoRefreshEnabled: true,
   });
   initializedAppCheckApps.add(firebaseApp.name);

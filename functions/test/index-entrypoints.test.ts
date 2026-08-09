@@ -597,6 +597,22 @@ describe("Firebase entrypoint metadata", () => {
     expect(registrations.databaseGet).not.toHaveBeenCalled();
   });
 
+  it.each([
+    ["start", entrypoints.startFieldCaptureSession],
+    ["finalize", entrypoints.finalizeFieldMedia],
+    ["access", entrypoints.getFieldMediaAccess],
+    ["exclude", entrypoints.excludeFieldMedia],
+    ["workspace", entrypoints.listFieldCaptureWorkspace],
+  ])("rejects a consumed limited-use App Check token for %s", async (_name, callable) => {
+    await expect(callableHandler(callable)({
+      ...validCallableRequest({}),
+      app: { alreadyConsumed: true },
+    })).rejects.toMatchObject({
+      code: "unauthenticated",
+      message: "field_app_check_replayed",
+    });
+  });
+
   it("rate-limits media access by UID/media and signs only the finalized path", async () => {
     const now = vi.spyOn(Date, "now").mockReturnValue(1_000);
     registrations.pathValues.set("fieldPlatform/users/staff-1/enabled", true);

@@ -141,6 +141,7 @@ describe("field callable client", () => {
     expect(firebase.httpsCallable).toHaveBeenCalledWith(
       firebase.functions,
       "listFieldCaptureWorkspace",
+      { limitedUseAppCheckTokens: true },
     );
     expect(firebase.callableInvoke).toHaveBeenCalledWith(
       "listFieldCaptureWorkspace",

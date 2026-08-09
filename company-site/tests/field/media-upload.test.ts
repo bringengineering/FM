@@ -302,6 +302,54 @@ describe("MediaUploadCoordinator reconciliation", () => {
 });
 
 describe("MediaUploadCoordinator failure and retry", () => {
+  it("serializes exclusion behind an in-flight finalization and excludes the server result", async () => {
+    const queue = await createQueue();
+    const item = await enqueuePhoto(queue);
+    const order: string[] = [];
+    let releaseFinalize!: () => void;
+    const finalizeGate = new Promise<void>((resolve) => {
+      releaseFinalize = resolve;
+    });
+    const port = createPort(item, {
+      finalize: vi.fn(async () => {
+        order.push("finalize-start");
+        await finalizeGate;
+        order.push("finalize-end");
+        return finalizedResult(item);
+      }),
+      exclude: vi.fn(async (input) => {
+        order.push("exclude");
+        expect(input).toEqual({
+          mediaId: MEDIA_1,
+          requestId: REPLACEMENT_REQUEST,
+        });
+      }),
+    });
+    const coordinator = new MediaUploadCoordinator(queue, port, {
+      isOnline: () => true,
+      createId: () => REPLACEMENT_REQUEST,
+      now: () => NOW,
+    });
+
+    const resume = coordinator.resume("u1");
+    await vi.waitFor(() => expect(order).toEqual(["finalize-start"]));
+    const exclusion = coordinator.exclude("u1", MEDIA_1, true);
+    releaseFinalize();
+    await Promise.all([resume, exclusion]);
+
+    expect(order).toEqual(["finalize-start", "finalize-end", "exclude"]);
+    expect(port.exclude).toHaveBeenCalledOnce();
+    expect(await queue.get("u1", MEDIA_1)).toEqual(expect.objectContaining({
+      blob: undefined,
+      lastError: "capture_excluded",
+      descriptor: expect.objectContaining({
+        uploadState: "finalized",
+        uploadProgress: 100,
+        failureCode: "capture_excluded",
+      }),
+    }));
+  });
+
   it("retains the Blob, increments retry state, and redacts raw failures", async () => {
     const queue = await createQueue();
     const item = await enqueuePhoto(queue);
@@ -353,6 +401,40 @@ describe("MediaUploadCoordinator failure and retry", () => {
       .toBe("field_claim_required");
   });
 
+  it("shows finalization failures as retryable and replays only finalization", async () => {
+    const queue = await createQueue();
+    const item = await enqueuePhoto(queue);
+    const finalize = vi.fn()
+      .mockRejectedValueOnce(Object.assign(new Error("denied"), {
+        code: "functions/permission-denied",
+      }))
+      .mockResolvedValueOnce(finalizedResult(item));
+    const port = createPort(item, { finalize });
+    const coordinator = new MediaUploadCoordinator(queue, port, {
+      isOnline: () => true,
+      now: () => NOW,
+    });
+
+    await coordinator.resume("u1");
+
+    expect(await queue.get("u1", MEDIA_1)).toEqual(expect.objectContaining({
+      objectGeneration: "7",
+      lastError: "field_claim_required",
+      descriptor: expect.objectContaining({
+        uploadState: "failed",
+        failureCode: "field_claim_required",
+      }),
+    }));
+
+    await coordinator.retry("u1", MEDIA_1);
+
+    expect(finalize).toHaveBeenCalledTimes(2);
+    expect(port.inspect).toHaveBeenCalledOnce();
+    expect(port.upload).toHaveBeenCalledOnce();
+    expect((await queue.get("u1", MEDIA_1))?.descriptor.uploadState)
+      .toBe("finalized");
+  });
+
   it("retries a conflict under fresh stable IDs without overwriting the old path", async () => {
     const queue = await createQueue();
     const item = await enqueuePhoto(queue);
@@ -388,10 +470,10 @@ describe("MediaUploadCoordinator failure and retry", () => {
       blob: expect.any(NodeBlob),
       descriptor: expect.objectContaining({
         mediaId: REPLACEMENT_MEDIA,
-        replacesMediaId: MEDIA_1,
         uploadState: "queued",
       }),
     }));
+    expect(replacement?.descriptor).not.toHaveProperty("replacesMediaId");
     expect(replacement?.stagingPath).toBeUndefined();
     expect(port.upload).not.toHaveBeenCalled();
   });

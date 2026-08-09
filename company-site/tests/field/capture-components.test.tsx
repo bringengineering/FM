@@ -288,6 +288,47 @@ describe("CaptureGuide", () => {
     await waitFor(() => expect(coordinator.resume).toHaveBeenCalledOnce());
   });
 
+  it("revokes a pending video preview when its enqueue finishes after unmount", async () => {
+    let commit!: () => void;
+    const queue = createQueue();
+    queue.enqueue = vi.fn(async () => {
+      await new Promise<void>((resolve) => {
+        commit = resolve;
+      });
+    });
+    const view = renderGuide(queue);
+    await screen.findAllByTestId("capture-zone");
+    const videoZone = screen.getAllByTestId("capture-zone").find(
+      (zone) => zone.getAttribute("data-zone") === "verticalVideo",
+    );
+    const input = videoZone?.querySelector("input[type='file']");
+    expect(input).toBeInstanceOf(HTMLInputElement);
+    fireEvent.change(input as HTMLInputElement, {
+      target: {
+        files: [new File(["video"], "walk.mp4", { type: "video/mp4" })],
+      },
+    });
+    await waitFor(() => {
+      expect(videoZone?.querySelector("video")).toBeInstanceOf(HTMLVideoElement);
+    });
+    const preview = videoZone?.querySelector("video");
+    if (!(preview instanceof HTMLVideoElement)) {
+      throw new Error("pending_video_preview_missing");
+    }
+    Object.defineProperties(preview, {
+      duration: { configurable: true, value: 12 },
+      videoWidth: { configurable: true, value: 1080 },
+      videoHeight: { configurable: true, value: 1920 },
+    });
+    fireEvent.loadedMetadata(preview);
+    await waitFor(() => expect(queue.enqueue).toHaveBeenCalledOnce());
+
+    view.unmount();
+    await act(async () => commit());
+
+    expect(URL.revokeObjectURL).toHaveBeenCalledWith("blob:test-1");
+  });
+
   it("queues a video after the five-second metadata timeout and shows a warning", async () => {
     vi.useFakeTimers();
     try {
@@ -370,7 +411,7 @@ describe("CaptureGuide", () => {
     const replacement = vi.mocked(queue.enqueue).mock.calls[0][0];
     expect(replacement.mediaId).not.toBe(MEDIA_ID);
     expect(replacement.requestId).not.toBe(REQUEST_ID);
-    expect(replacement.descriptor.replacesMediaId).toBe(MEDIA_ID);
+    expect(replacement.descriptor).not.toHaveProperty("replacesMediaId");
     await waitFor(() => expect(queue.patch).toHaveBeenCalledWith(
       "staff-1",
       MEDIA_ID,

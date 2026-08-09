@@ -7,7 +7,7 @@ export default function FieldServiceWorker() {
     if (!("serviceWorker" in navigator) || !navigator.serviceWorker) return;
 
     void navigator.serviceWorker
-      .register("/field-sw.js", { scope: "/field/" })
+      .register("/field-sw.js", { scope: "/field" })
       .catch(() => undefined);
   }, []);
 

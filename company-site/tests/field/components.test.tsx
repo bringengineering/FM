@@ -1308,7 +1308,7 @@ describe("BuildingWizard", () => {
 describe("AppShell", () => {
   it("renders the five approved platform destinations", () => {
     render(
-      <AppShell active="home">
+      <AppShell active="home" session={staffSession} onLogout={() => undefined}>
         <div>내용</div>
       </AppShell>,
     );
@@ -1320,7 +1320,7 @@ describe("AppShell", () => {
 
   it("marks the active destination for assistive technology", () => {
     render(
-      <AppShell active="buildings">
+      <AppShell active="buildings" session={staffSession} onLogout={() => undefined}>
         <div>내용</div>
       </AppShell>,
     );
@@ -1329,6 +1329,20 @@ describe("AppShell", () => {
       expect(button).toHaveAttribute("aria-current", "page");
     }
   });
+
+  it("shows the authenticated staff identity and exposes logout", () => {
+    const onLogout = vi.fn();
+    render(
+      <AppShell active="home" session={staffSession} onLogout={onLogout}>
+        <div>내용</div>
+      </AppShell>,
+    );
+
+    expect(screen.getByText(staffSession.displayName)).toBeInTheDocument();
+    expect(screen.getByText("내부 직원")).toBeInTheDocument();
+    fireEvent.click(screen.getAllByRole("button", { name: "로그아웃" })[0]);
+    expect(onLogout).toHaveBeenCalledOnce();
+  });
 });
 
 describe("FieldWorkspace capture integration", () => {
@@ -1336,6 +1350,7 @@ describe("FieldWorkspace capture integration", () => {
     const queue = {
       listPending: vi.fn(async () => []),
       list: vi.fn(async () => []),
+      countPending: vi.fn(async () => 0),
       close: vi.fn(),
     } as unknown as OfflineQueuePort;
     const stopCoordinator = vi.fn();
@@ -1370,6 +1385,77 @@ describe("FieldWorkspace capture integration", () => {
     view.unmount();
     expect(stopCoordinator).toHaveBeenCalledOnce();
     expect(queue.close).toHaveBeenCalledOnce();
+  });
+
+  it("shows the active UID pending count and cancels logout without stopping uploads", async () => {
+    const queue = {
+      countPending: vi.fn(async () => 2),
+      close: vi.fn(),
+    } as unknown as OfflineQueuePort;
+    const stopCoordinator = vi.fn();
+    const coordinator = {
+      resume: vi.fn(async () => undefined),
+      retry: vi.fn(async () => undefined),
+      start: vi.fn(() => stopCoordinator),
+    };
+    const confirmExit = vi.fn(() => false);
+    const logout = vi.fn(async () => undefined);
+
+    render(
+      <FieldSessionProvider session={staffSession}>
+        <FieldWorkspace
+          queueFactory={async () => queue}
+          coordinatorFactory={() => coordinator}
+          confirmExit={confirmExit}
+          logout={logout}
+        />
+      </FieldSessionProvider>,
+    );
+
+    await waitFor(() => expect(coordinator.start).toHaveBeenCalledWith(staffSession.uid));
+    fireEvent.click(screen.getAllByRole("button", { name: "로그아웃" })[0]);
+
+    await waitFor(() => {
+      expect(queue.countPending).toHaveBeenCalledWith(staffSession.uid);
+      expect(confirmExit).toHaveBeenCalledWith(
+        "서버 등록 대기 파일이 2개 있습니다. 로그아웃하면 이 계정으로 다시 로그인할 때까지 업로드가 멈춥니다. 로그아웃할까요?",
+      );
+    });
+    expect(logout).not.toHaveBeenCalled();
+    expect(stopCoordinator).not.toHaveBeenCalled();
+  });
+
+  it("stops the coordinator before confirmed logout", async () => {
+    const calls: string[] = [];
+    const queue = {
+      countPending: vi.fn(async () => 1),
+      close: vi.fn(),
+    } as unknown as OfflineQueuePort;
+    const coordinator = {
+      resume: vi.fn(async () => undefined),
+      retry: vi.fn(async () => undefined),
+      start: vi.fn(() => () => calls.push("stop")),
+    };
+    const logout = vi.fn(async () => {
+      calls.push("logout");
+    });
+
+    render(
+      <FieldSessionProvider session={staffSession}>
+        <FieldWorkspace
+          queueFactory={async () => queue}
+          coordinatorFactory={() => coordinator}
+          confirmExit={() => true}
+          logout={logout}
+        />
+      </FieldSessionProvider>,
+    );
+
+    await waitFor(() => expect(coordinator.start).toHaveBeenCalledWith(staffSession.uid));
+    fireEvent.click(screen.getAllByRole("button", { name: "로그아웃" })[0]);
+
+    await waitFor(() => expect(logout).toHaveBeenCalledOnce());
+    expect(calls).toEqual(["stop", "logout"]);
   });
 });
 

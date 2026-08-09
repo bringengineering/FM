@@ -2,6 +2,8 @@
 
 import type { ReactNode } from "react";
 
+import type { FieldSession } from "../lib/auth.client";
+
 export type FieldDestination =
   | "home"
   | "map"
@@ -12,6 +14,11 @@ export type FieldDestination =
 type AppShellProps = {
   active: FieldDestination;
   children: ReactNode;
+  session: FieldSession;
+  pendingCount?: number;
+  logoutBusy?: boolean;
+  logoutError?: string;
+  onLogout: () => void;
   onNavigate?: (destination: FieldDestination) => void;
 };
 
@@ -100,8 +107,20 @@ function Navigation({
 export default function AppShell({
   active,
   children,
+  session,
+  pendingCount = 0,
+  logoutBusy = false,
+  logoutError,
+  onLogout,
   onNavigate,
 }: AppShellProps) {
+  const roleLabel = session.role === "admin"
+    ? "관리자"
+    : session.role === "reviewer"
+      ? "검수 담당자"
+      : "내부 직원";
+  const avatar = session.displayName.trim().slice(0, 2).toUpperCase() || "BR";
+
   return (
     <div className="field-platform">
       <a className="field-skip-link" href="#field-main">
@@ -125,12 +144,20 @@ export default function AppShell({
         />
         <div className="field-sidebar-footer">
           <span className="field-avatar" aria-hidden="true">
-            BR
+            {avatar}
           </span>
           <span>
-            <strong>브링 담당자</strong>
-            <small>내부 직원</small>
+            <strong>{session.displayName}</strong>
+            <small>{roleLabel}</small>
           </span>
+          <button
+            className="field-nav-item"
+            type="button"
+            disabled={logoutBusy}
+            onClick={onLogout}
+          >
+            로그아웃
+          </button>
         </div>
       </aside>
 
@@ -149,13 +176,24 @@ export default function AppShell({
             <p>원주 건물 유지보수 지도</p>
             <strong>현장 매물 관리</strong>
           </div>
-          <div className="field-sync-status" role="status">
-            <span aria-hidden="true" />
-            동기화 완료
+          <div>
+            <div className="field-sync-status" role="status">
+              <span aria-hidden="true" />
+              {pendingCount > 0 ? `서버 등록 대기 ${pendingCount}개` : "동기화 완료"}
+            </div>
+            <button
+              className="field-sync-status"
+              type="button"
+              disabled={logoutBusy}
+              onClick={onLogout}
+            >
+              {logoutBusy ? "로그아웃 중…" : "로그아웃"}
+            </button>
           </div>
         </header>
 
         <main id="field-main" className="field-main" tabIndex={-1}>
+          {logoutError ? <p className="field-inline-error" role="alert">{logoutError}</p> : null}
           {children}
         </main>
       </div>

@@ -117,6 +117,12 @@ function denyFieldAccess(): never {
   throw new HttpsError("permission-denied", "field_access_denied");
 }
 
+function rejectConsumedAppCheckToken(request: CallableRequest<unknown>): void {
+  if (request.app?.alreadyConsumed === true) {
+    throw new HttpsError("unauthenticated", "field_app_check_replayed");
+  }
+}
+
 export async function requireFieldActor(
   request: CallableRequest<unknown>,
 ): Promise<FieldActor> {
@@ -944,6 +950,7 @@ export const startFieldCaptureSession = onCall<StartCaptureSessionInput>(
     if (!request.auth) {
       throw new HttpsError("unauthenticated", "field_auth_required");
     }
+    rejectConsumedAppCheckToken(request);
     try {
       const actor = await requireFieldActor(request);
       return await startCaptureSessionCore(
@@ -969,6 +976,7 @@ export const finalizeFieldMedia = onCall<FinalizeFieldMediaInput>(
     if (!request.auth) {
       throw new HttpsError("unauthenticated", "field_auth_required");
     }
+    rejectConsumedAppCheckToken(request);
     try {
       const actor = await requireFieldActor(request);
       await consumeRateLimit(
@@ -996,6 +1004,7 @@ export const getFieldMediaAccess = onCall<{ mediaId: string }>(
     if (!request.auth) {
       throw new HttpsError("unauthenticated", "field_auth_required");
     }
+    rejectConsumedAppCheckToken(request);
     try {
       const actor = await requireFieldActor(request);
       await consumeRateLimit(
@@ -1019,6 +1028,7 @@ export const excludeFieldMedia = onCall<ExcludeFieldMediaInput>(
     if (!request.auth) {
       throw new HttpsError("unauthenticated", "field_auth_required");
     }
+    rejectConsumedAppCheckToken(request);
     try {
       const actor = await requireFieldActor(request);
       await consumeRateLimit(
@@ -1042,6 +1052,7 @@ export const listFieldCaptureWorkspace = onCall<Record<string, never>>(
     if (!request.auth) {
       throw new HttpsError("unauthenticated", "field_auth_required");
     }
+    rejectConsumedAppCheckToken(request);
     try {
       const actor = await requireFieldActor(request);
       await consumeRateLimit(

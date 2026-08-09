@@ -10,7 +10,10 @@ import {
   type UploadMetadata,
 } from "firebase/storage";
 
-import { finalizeFieldMedia as callFinalizeFieldMedia } from "./field-api.client";
+import {
+  excludeFieldMedia as callExcludeFieldMedia,
+  finalizeFieldMedia as callFinalizeFieldMedia,
+} from "./field-api.client";
 import { storage as firebaseStorage } from "./firebase.client";
 import type {
   FinalizeFieldMediaInput,
@@ -60,6 +63,10 @@ export interface FirebaseMediaUploadDependencies {
   finalizeFieldMedia(
     input: FinalizeFieldMediaInput,
   ): Promise<FinalizeFieldMediaResult>;
+  excludeFieldMedia(input: {
+    mediaId: string;
+    requestId: string;
+  }): Promise<unknown>;
 }
 
 function firebaseMetadata(metadata: FullMetadata): FirebaseStorageMetadata {
@@ -108,6 +115,7 @@ const defaultDependencies: FirebaseMediaUploadDependencies = {
     };
   },
   finalizeFieldMedia: callFinalizeFieldMedia,
+  excludeFieldMedia: callExcludeFieldMedia,
 };
 
 function toStoredMediaObject(
@@ -194,6 +202,10 @@ export function createFirebaseMediaUploadPort(
 
     finalize(input) {
       return resolved.finalizeFieldMedia(input);
+    },
+
+    async exclude(input) {
+      await resolved.excludeFieldMedia(input);
     },
   };
 }

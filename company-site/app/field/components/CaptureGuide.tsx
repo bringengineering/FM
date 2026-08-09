@@ -47,6 +47,11 @@ export type CaptureContext =
 export interface CaptureUploadCoordinator {
   resume(uid: string): Promise<void>;
   retry(uid: string, mediaId: string): Promise<void>;
+  exclude?(
+    uid: string,
+    mediaId: string,
+    requestServerExclusion?: boolean,
+  ): Promise<void>;
 }
 
 export interface CaptureGuideProps {
@@ -448,6 +453,16 @@ export default function CaptureGuide({
     requestServerExclusion = true,
   ) => {
     if (!activeQueue) throw new Error("capture_queue_unavailable");
+    if (coordinator?.exclude) {
+      await coordinator.exclude(
+        session.uid,
+        record.mediaId,
+        requestServerExclusion,
+      );
+      revokeLocalPreview(record.mediaId);
+      if (activeScope.current === committedScope) await loadRecords();
+      return;
+    }
     if (requestServerExclusion && record.descriptor.uploadState === "finalized") {
       if (!excludeFieldMedia) throw new Error("capture_exclude_unavailable");
       await excludeFieldMedia({
@@ -456,6 +471,7 @@ export default function CaptureGuide({
       });
     }
     await activeQueue.patch(session.uid, record.mediaId, {
+      blob: undefined,
       lastError: EXCLUDED_MARKER,
       descriptor: {
         ...record.descriptor,
@@ -466,7 +482,14 @@ export default function CaptureGuide({
     });
     revokeLocalPreview(record.mediaId);
     if (activeScope.current === committedScope) await loadRecords();
-  }, [activeQueue, excludeFieldMedia, loadRecords, revokeLocalPreview, session.uid]);
+  }, [
+    activeQueue,
+    coordinator,
+    excludeFieldMedia,
+    loadRecords,
+    revokeLocalPreview,
+    session.uid,
+  ]);
 
   const enqueueCommittedFile = useCallback(async (
     enqueueInput: EnqueueInput,
@@ -482,7 +505,13 @@ export default function CaptureGuide({
     // The finalizer excludes the predecessor in the same authorized multi-path
     // commit as the replacement. Hide it locally now, but keep the server copy
     // available if the new upload is interrupted or rejected.
-    if (replaces) await markExcluded(replaces, committedScope, false);
+    if (replaces) {
+      await markExcluded(
+        replaces,
+        committedScope,
+        enqueueInput.descriptor.replacesMediaId === undefined,
+      );
+    }
     await loadRecords();
     input.value = "";
     resumeAfterCommit(committedScope);
@@ -517,6 +546,10 @@ export default function CaptureGuide({
         pending.fileInput,
         pending.replaces,
       );
+      if (activeScope.current !== pending.scopeKey) {
+        URL.revokeObjectURL(pending.previewUrl);
+        return;
+      }
       localPreviewUrls.current.set(mediaId, pending.previewUrl);
       refreshPreviewSources();
       if (timedOut && activeScope.current === pending.scopeKey) {
@@ -528,8 +561,10 @@ export default function CaptureGuide({
     } catch (caught) {
       URL.revokeObjectURL(pending.previewUrl);
       pending.fileInput.value = "";
-      if (activeScope.current === pending.scopeKey) setError(errorMessage(caught));
-      setPendingVideo(null);
+      if (activeScope.current === pending.scopeKey) {
+        setError(errorMessage(caught));
+        setPendingVideo(null);
+      }
     }
   }, [enqueueCommittedFile, refreshPreviewSources]);
 
@@ -552,7 +587,12 @@ export default function CaptureGuide({
       ? replacementRef.current
       : undefined;
     replacementRef.current = null;
-    const nextDescriptor = replaces
+    const replacesFinalizedServerMedia = replaces
+      && replaces.descriptor.uploadState === "finalized"
+      && Boolean(replaces.storagePath)
+      && !replaces.descriptor.failureCode
+      && !isExcluded(replaces);
+    const nextDescriptor = replacesFinalizedServerMedia
       ? { ...descriptor, replacesMediaId: replaces.mediaId }
       : descriptor;
     return {
