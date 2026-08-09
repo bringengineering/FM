@@ -1723,6 +1723,362 @@
   white-space: nowrap;
 }
 
+.field-capture-workspace {
+  width: 100%;
+  min-width: 0;
+  box-sizing: border-box;
+  overflow-x: clip;
+  padding-bottom: calc(32px + var(--field-mobile-nav-height) + env(safe-area-inset-bottom));
+}
+
+.field-capture-workspace-header {
+  display: grid;
+  min-width: 0;
+  gap: 16px;
+  margin-bottom: 16px;
+}
+
+.field-capture-workspace-header h1 {
+  margin: 5px 0 0;
+  color: var(--field-navy);
+  font-size: clamp(28px, 9vw, 42px);
+  line-height: 1.15;
+  letter-spacing: -0.055em;
+}
+
+.field-capture-workspace-header p:not(.field-eyebrow) {
+  margin: 10px 0 0;
+  color: var(--field-muted);
+  font-size: 12px;
+  line-height: 1.65;
+  overflow-wrap: anywhere;
+}
+
+.field-capture-workspace-summary {
+  display: grid;
+  min-width: 0;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.field-capture-workspace-summary span {
+  display: grid;
+  min-width: 0;
+  min-height: 48px;
+  place-items: center;
+  border: 1px solid #cbdcf8;
+  border-radius: 12px;
+  background: var(--field-blue-soft);
+  padding: 9px;
+  color: #315a8f;
+  font-size: 10px;
+  font-weight: 850;
+  line-height: 1.35;
+  text-align: center;
+  overflow-wrap: anywhere;
+}
+
+.field-capture-workspace-summary span:last-child {
+  border-color: #f1d2aa;
+  background: var(--field-orange-soft);
+  color: #92510e;
+}
+
+.field-capture-workspace-status,
+.field-capture-workspace-empty,
+.field-capture-workspace-error {
+  margin: 0;
+  border-radius: 14px;
+  padding: 16px;
+  font-size: 12px;
+  font-weight: 750;
+  line-height: 1.6;
+  overflow-wrap: anywhere;
+}
+
+.field-capture-workspace-status,
+.field-capture-workspace-empty {
+  border: 1px dashed #cbd6e4;
+  background: #f8fafc;
+  color: var(--field-muted);
+}
+
+.field-capture-workspace-error {
+  display: grid;
+  gap: 10px;
+  border: 1px solid #f0caca;
+  background: #fff0f0;
+  color: #a92d2d;
+}
+
+.field-capture-workspace-error p {
+  margin: 0;
+}
+
+.field-capture-workspace-error button,
+.field-capture-start,
+.field-open-session-card button,
+.field-active-capture > header button {
+  min-width: 0;
+  min-height: 46px;
+  border-radius: 11px;
+  cursor: pointer;
+  font-size: 11px;
+  font-weight: 850;
+  touch-action: manipulation;
+}
+
+.field-capture-workspace-error button {
+  border: 1px solid #e6b9b9;
+  background: #fff;
+  color: #9e2929;
+}
+
+.field-capture-target-panel,
+.field-open-session-section,
+.field-active-capture {
+  min-width: 0;
+  box-sizing: border-box;
+  border: 1px solid var(--field-line);
+  border-radius: 18px;
+  background: var(--field-white);
+  padding: 18px;
+  box-shadow: 0 10px 30px rgba(11, 35, 66, 0.07);
+}
+
+.field-capture-target-panel,
+.field-open-session-section {
+  margin-top: 14px;
+}
+
+.field-capture-target-panel h2,
+.field-open-session-heading h2,
+.field-active-capture > header h2 {
+  margin: 0;
+  color: var(--field-navy);
+  font-size: 18px;
+  line-height: 1.35;
+  letter-spacing: -0.035em;
+  overflow-wrap: anywhere;
+}
+
+.field-capture-target-panel > div:first-child > p,
+.field-open-session-heading p {
+  margin: 6px 0 0;
+  color: var(--field-muted);
+  font-size: 11px;
+  line-height: 1.55;
+  overflow-wrap: anywhere;
+}
+
+.field-capture-target-control {
+  display: grid;
+  min-width: 0;
+  gap: 9px;
+  margin-top: 16px;
+}
+
+.field-capture-target-control label {
+  color: var(--field-navy);
+  font-size: 11px;
+  font-weight: 850;
+}
+
+.field-capture-target-control select {
+  width: 100%;
+  min-width: 0;
+  min-height: 48px;
+  box-sizing: border-box;
+  border: 1px solid #cbd6e4;
+  border-radius: 11px;
+  background: #fff;
+  padding: 0 38px 0 12px;
+  color: var(--field-ink);
+  font: inherit;
+  font-size: 16px;
+}
+
+.field-capture-target-meta {
+  display: flex;
+  min-width: 0;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  border-radius: 11px;
+  background: #f8fafc;
+  padding: 10px;
+}
+
+.field-capture-target-meta strong {
+  min-width: 0;
+  color: var(--field-ink);
+  font-size: 11px;
+  overflow-wrap: anywhere;
+}
+
+.field-capture-source-badge {
+  display: inline-flex;
+  min-height: 24px;
+  flex: 0 0 auto;
+  align-items: center;
+  border-radius: 999px;
+  padding: 4px 9px;
+  font-size: 9px;
+  font-weight: 900;
+  line-height: 1;
+  white-space: nowrap;
+}
+
+.field-capture-source-badge.management {
+  background: var(--field-green-soft);
+  color: #087548;
+}
+
+.field-capture-source-badge.advertising {
+  background: var(--field-blue-soft);
+  color: #1b5ec7;
+}
+
+.field-capture-start {
+  border: 0;
+  background: var(--field-blue);
+  color: #fff;
+  box-shadow: 0 7px 16px rgba(34, 105, 232, 0.2);
+}
+
+.field-capture-start:disabled {
+  cursor: not-allowed;
+  opacity: 0.45;
+  box-shadow: none;
+}
+
+.field-capture-start-error {
+  margin: 0;
+  border-radius: 10px;
+  background: #fff0f0;
+  padding: 10px;
+  color: #a92d2d;
+  font-size: 10px;
+  font-weight: 750;
+  line-height: 1.55;
+}
+
+.field-open-session-heading {
+  display: flex;
+  min-width: 0;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.field-open-session-heading > span {
+  display: inline-flex;
+  min-height: 28px;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: center;
+  border-radius: 999px;
+  background: #eef2f7;
+  padding: 5px 10px;
+  color: #53647a;
+  font-size: 10px;
+  font-weight: 900;
+}
+
+.field-open-session-list {
+  display: grid;
+  min-width: 0;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 10px;
+  margin-top: 14px;
+}
+
+.field-open-session-card {
+  min-width: 0;
+  border: 1px solid var(--field-line);
+  border-radius: 14px;
+  background: #f8fafc;
+  padding: 13px;
+}
+
+.field-open-session-card > div {
+  min-width: 0;
+}
+
+.field-open-session-card-heading {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.field-open-session-card time {
+  color: var(--field-muted);
+  font-size: 9px;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.field-open-session-card h3 {
+  margin: 10px 0 0;
+  color: var(--field-navy);
+  font-size: 14px;
+  line-height: 1.4;
+  overflow-wrap: anywhere;
+}
+
+.field-open-session-card p {
+  margin: 5px 0 0;
+  color: var(--field-muted);
+  font-size: 10px;
+  font-weight: 750;
+}
+
+.field-open-session-card button {
+  width: 100%;
+  margin-top: 12px;
+  border: 1px solid #b8cdf0;
+  background: #fff;
+  color: var(--field-blue);
+}
+
+.field-active-capture {
+  margin-top: 18px;
+}
+
+.field-active-capture > header {
+  display: grid;
+  min-width: 0;
+  gap: 12px;
+  margin-bottom: 20px;
+  border-bottom: 1px solid var(--field-line);
+  padding-bottom: 16px;
+}
+
+.field-active-capture > header > div {
+  min-width: 0;
+}
+
+.field-active-capture > header h2 {
+  margin-top: 8px;
+}
+
+.field-active-capture > header button {
+  border: 1px solid #cad5e3;
+  background: #fff;
+  color: #53647a;
+}
+
+.field-capture-workspace :is(button, select):focus-visible {
+  outline: 3px solid rgba(34, 105, 232, 0.3);
+  outline-offset: 2px;
+}
+
+.field-capture-workspace button:not(:disabled):active {
+  opacity: 0.78;
+}
+
 .field-capture-guide {
   width: 100%;
   min-width: 0;
@@ -2041,6 +2397,19 @@
 }
 
 @media (min-width: 620px) {
+  .field-capture-workspace-summary {
+    max-width: 420px;
+  }
+
+  .field-open-session-list {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .field-active-capture > header {
+    grid-template-columns: minmax(0, 1fr) auto;
+    align-items: center;
+  }
+
   .field-wizard-header {
     grid-template-columns: minmax(0, 1fr) auto;
     align-items: start;
@@ -2073,6 +2442,31 @@
 }
 
 @media (min-width: 960px) {
+  .field-capture-workspace {
+    padding-bottom: 72px;
+  }
+
+  .field-capture-workspace-header {
+    grid-template-columns: minmax(0, 1fr) minmax(300px, 0.55fr);
+    align-items: end;
+  }
+
+  .field-capture-workspace-summary {
+    width: 100%;
+    max-width: none;
+  }
+
+  .field-capture-target-panel {
+    display: grid;
+    grid-template-columns: minmax(220px, 0.7fr) minmax(0, 1.3fr);
+    align-items: start;
+    gap: 24px;
+  }
+
+  .field-capture-target-control {
+    margin-top: 0;
+  }
+
   .field-capture-guide {
     padding-bottom: 90px;
   }
