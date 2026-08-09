@@ -1,0 +1,1399 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>BRING 원주 건물 유지보수 지도</title>
+  <script src="./data/building-maintenance-companies.js?v=20260809-mode-switch-1"></script>
+  <script src="./data/field-map-model.js?v=20260809-managed-2"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.12.5/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.12.5/firebase-auth-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.12.5/firebase-database-compat.js"></script>
+  <style>
+    :root {
+      --ink: #172033;
+      --muted: #667085;
+      --line: #d7dee8;
+      --panel: #ffffff;
+      --bg: #f3f6f9;
+      --brand: #163b6d;
+      --brand-2: #0f766e;
+      --warn: #9a3412;
+      --excel: #111827;
+      --sheet: #0f766e;
+    }
+
+    * { box-sizing: border-box; }
+    html, body { width: 100%; height: 100%; margin: 0; }
+    body {
+      color: var(--ink);
+      background: var(--bg);
+      font-family: "Apple SD Gothic Neo", "Malgun Gothic", "Noto Sans KR", Arial, sans-serif;
+      -webkit-font-smoothing: antialiased;
+    }
+
+    .app {
+      display: grid;
+      grid-template-columns: minmax(390px, 470px) 1fr;
+      height: 100%;
+      min-height: 0;
+    }
+
+    .sidebar {
+      display: flex;
+      flex-direction: column;
+      min-width: 0;
+      min-height: 0;
+      background: var(--panel);
+      border-right: 1px solid var(--line);
+    }
+
+    .topbar {
+      padding: 16px 18px 14px;
+      color: #fff;
+      background: linear-gradient(135deg, #163b6d, #0f766e);
+    }
+
+    .topbar a {
+      color: rgba(255,255,255,.82);
+      font-size: 12px;
+      text-decoration: none;
+    }
+
+    h1 {
+      margin: 8px 0 6px;
+      font-size: 21px;
+      line-height: 1.25;
+      font-weight: 800;
+      letter-spacing: 0;
+    }
+
+    .subtitle {
+      margin: 0;
+      color: rgba(255,255,255,.82);
+      font-size: 13px;
+      line-height: 1.5;
+    }
+
+    .stats {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 8px;
+      padding: 12px;
+      border-bottom: 1px solid var(--line);
+      background: #f8fafc;
+    }
+
+    .stat {
+      min-width: 0;
+      padding: 10px 8px;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: #fff;
+    }
+
+    .stat b {
+      display: block;
+      font-size: 19px;
+      line-height: 1.1;
+    }
+
+    .stat span {
+      display: block;
+      margin-top: 4px;
+      color: var(--muted);
+      font-size: 12px;
+    }
+
+    .filters {
+      display: grid;
+      gap: 8px;
+      padding: 12px;
+      border-bottom: 1px solid var(--line);
+    }
+
+    .search {
+      width: 100%;
+      height: 40px;
+      padding: 0 12px;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      font: inherit;
+      color: var(--ink);
+      background: #fff;
+      outline: none;
+    }
+
+    .filter-row {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) 128px 122px;
+      gap: 8px;
+    }
+
+    select {
+      width: 100%;
+      height: 38px;
+      padding: 0 10px;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      color: var(--ink);
+      background: #fff;
+      font: inherit;
+      font-size: 13px;
+    }
+
+    .notice {
+      margin: 0;
+      padding: 10px 12px;
+      color: #475467;
+      background: #fff7ed;
+      border-bottom: 1px solid #fed7aa;
+      font-size: 12px;
+      line-height: 1.55;
+    }
+
+    .list {
+      flex: 1;
+      min-height: 0;
+      overflow: auto;
+      padding: 10px 12px 18px;
+    }
+
+    .company {
+      width: 100%;
+      margin: 0 0 8px;
+      padding: 13px 13px 12px;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: #fff;
+      text-align: left;
+      color: inherit;
+      cursor: pointer;
+      font: inherit;
+      border-left-width: 5px;
+    }
+
+    .company:hover { border-color: #98a2b3; background: #fbfcfe; }
+    .company.active { border-color: var(--brand-2); box-shadow: 0 0 0 2px rgba(15,118,110,.14); }
+    .company.excel { border-left-color: var(--excel); }
+    .company.google-sheet { border-left-color: var(--sheet); }
+
+    .company-head {
+      display: flex;
+      gap: 8px;
+      align-items: flex-start;
+      justify-content: space-between;
+    }
+
+    .company-name {
+      margin: 0;
+      font-size: 15px;
+      line-height: 1.35;
+      font-weight: 800;
+    }
+
+    .source-badge {
+      display: inline-flex;
+      align-items: center;
+      height: 22px;
+      padding: 0 7px;
+      border-radius: 999px;
+      color: #fff;
+      font-size: 11px;
+      font-weight: 800;
+      white-space: nowrap;
+      flex: none;
+    }
+
+    .source-badge.excel { background: var(--excel); }
+    .source-badge.google-sheet { background: var(--sheet); }
+
+    .badge {
+      display: inline-flex;
+      align-items: center;
+      max-width: 150px;
+      min-height: 22px;
+      padding: 3px 7px;
+      border-radius: 8px;
+      color: #fff;
+      font-size: 11px;
+      line-height: 1.25;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      flex: none;
+    }
+
+    .card-tags {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 8px;
+      margin-top: 9px;
+    }
+
+    .meta {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 6px;
+      margin: 9px 0 0;
+      color: var(--muted);
+      font-size: 12px;
+    }
+
+    .meta span {
+      padding: 3px 6px;
+      border-radius: 7px;
+      background: #f2f4f7;
+    }
+
+    .desc {
+      margin: 9px 0 0;
+      color: #344054;
+      font-size: 13px;
+      line-height: 1.45;
+      display: -webkit-box;
+      -webkit-line-clamp: 2;
+      -webkit-box-orient: vertical;
+      overflow: hidden;
+    }
+
+    .contact-line {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 7px;
+      margin-top: 9px;
+      color: #475467;
+      font-size: 12px;
+    }
+
+    .contact-line a {
+      color: var(--brand);
+      font-weight: 700;
+      text-decoration: none;
+    }
+
+    .map-wrap {
+      position: relative;
+      min-width: 0;
+      min-height: 0;
+    }
+
+    #map {
+      width: 100%;
+      height: 100%;
+      background: #dce6ef;
+    }
+
+    .map-error {
+      position: absolute;
+      inset: 16px;
+      display: none;
+      place-items: center;
+      padding: 24px;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: rgba(255,255,255,.94);
+      text-align: center;
+      z-index: 5;
+    }
+
+    .map-error.show { display: grid; }
+    .map-error b { display: block; margin-bottom: 8px; font-size: 17px; }
+    .map-error p { max-width: 520px; margin: 0; color: var(--muted); line-height: 1.6; }
+
+    .map-count {
+      position: absolute;
+      top: 14px;
+      right: 14px;
+      z-index: 3;
+      padding: 9px 11px;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: rgba(255,255,255,.96);
+      font-size: 13px;
+      box-shadow: 0 8px 24px rgba(16,24,40,.13);
+    }
+
+    .legend {
+      position: absolute;
+      left: 14px;
+      bottom: 14px;
+      z-index: 3;
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      padding: 10px 12px;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: rgba(255,255,255,.96);
+      box-shadow: 0 8px 24px rgba(16,24,40,.13);
+      font-size: 12px;
+      color: #344054;
+    }
+
+    .legend span {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      white-space: nowrap;
+    }
+
+    .legend i {
+      display: inline-block;
+      width: 11px;
+      height: 11px;
+      border-radius: 999px;
+      background: var(--excel);
+    }
+
+    .legend .sheet-dot { background: var(--sheet); }
+    .legend .electric-dot { background: #f59e0b; }
+    .legend .leak-dot { background: #2563eb; }
+    .legend .hvac-dot { background: #16a34a; }
+    .legend .managed-vacant-dot { background: #f79009; }
+    .legend .managed-full-dot { background: #12b76a; }
+
+    .map-mode-tabs {
+      display: flex;
+      gap: 8px;
+      margin-top: 12px;
+    }
+
+    .map-mode-tabs label {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      flex: 1;
+      gap: 7px;
+      min-height: 38px;
+      border: 1px solid rgba(255,255,255,.42);
+      border-radius: 999px;
+      background: rgba(255,255,255,.12);
+      padding: 8px 11px;
+      color: #fff;
+      font-size: 12px;
+      font-weight: 800;
+      cursor: pointer;
+    }
+
+    .map-mode-tabs label:has(input:checked) {
+      color: var(--brand);
+      background: #fff;
+    }
+
+    .map-mode-tabs input { accent-color: var(--brand); }
+
+    .mode-panel {
+      display: flex;
+      flex: 1;
+      flex-direction: column;
+      min-height: 0;
+    }
+
+    [data-mode-panel][hidden] { display: none !important; }
+
+    body.embedded .standalone-only { display: none; }
+    body.embedded .topbar { padding-top: 12px; }
+    body.embedded .map-mode-tabs { margin-top: 0; }
+
+    .managed-section {
+      margin: 12px;
+      border: 1px solid #fedf89;
+      border-radius: 14px;
+      background: #fffaeb;
+      padding: 12px;
+    }
+
+    .managed-section-head {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 10px;
+    }
+
+    .managed-section-head span {
+      color: #b54708;
+      font-size: 11px;
+      font-weight: 800;
+    }
+
+    .managed-login {
+      width: 100%;
+      margin-top: 10px;
+      border: 0;
+      border-radius: 10px;
+      background: #163b6d;
+      padding: 10px;
+      color: #fff;
+      font-weight: 900;
+      cursor: pointer;
+    }
+
+    .managed-list {
+      display: grid;
+      align-content: start;
+      flex: 1;
+      gap: 7px;
+      min-height: 0;
+      overflow: auto;
+      padding: 0 12px 18px;
+    }
+
+    .managed-card {
+      border: 1px solid #fde68a;
+      border-radius: 10px;
+      background: #fff;
+      padding: 10px;
+    }
+
+    .managed-card b { display: block; font-size: 13px; }
+    .managed-card span { display: block; margin-top: 3px; color: #667085; font-size: 11px; }
+    .managed-empty { color: #667085; font-size: 11px; line-height: 1.55; }
+
+    .pin {
+      display: grid;
+      place-items: center;
+      width: 34px;
+      height: 34px;
+      border: 2px solid #fff;
+      border-radius: 50% 50% 50% 8px;
+      color: #fff;
+      font-size: 12px;
+      font-weight: 800;
+      transform: rotate(-45deg);
+      box-shadow: 0 5px 14px rgba(16,24,40,.28);
+    }
+
+    .pin span {
+      transform: rotate(45deg);
+    }
+
+    .pin.excel {
+      background: var(--excel) !important;
+    }
+
+    .pin.google-sheet {
+      border-color: #fff;
+    }
+
+    .pin.base {
+      width: 34px;
+      height: 34px;
+      background: #111827;
+    }
+
+    .info {
+      min-width: 240px;
+      max-width: 320px;
+      padding: 12px;
+      line-height: 1.45;
+      color: var(--ink);
+      font-family: "Apple SD Gothic Neo", "Malgun Gothic", "Noto Sans KR", Arial, sans-serif;
+    }
+
+    .info h2 {
+      margin: 0 0 8px;
+      font-size: 16px;
+      line-height: 1.35;
+    }
+
+    .info p {
+      margin: 6px 0 0;
+      color: #344054;
+      font-size: 13px;
+    }
+
+    .info a {
+      display: inline-block;
+      margin-top: 9px;
+      color: var(--brand);
+      font-size: 13px;
+      font-weight: 700;
+      text-decoration: none;
+    }
+
+    .empty {
+      margin: 30px 4px;
+      color: var(--muted);
+      text-align: center;
+      font-size: 14px;
+      line-height: 1.6;
+    }
+
+    @media (max-width: 900px) {
+      .app {
+        grid-template-columns: 1fr;
+        grid-template-rows: minmax(390px, 52vh) minmax(420px, 48vh);
+      }
+
+      .sidebar {
+        order: 2;
+        border-right: 0;
+        border-top: 1px solid var(--line);
+      }
+
+      .map-wrap { order: 1; }
+      .filter-row { grid-template-columns: 1fr; }
+      .stats { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+    }
+  </style>
+</head>
+<body>
+  <main class="app">
+    <section class="sidebar" aria-label="회사 목록">
+      <div class="topbar">
+        <div class="standalone-only">
+          <a href="./index.html">← 이루 대시보드</a>
+          <h1>BRING 원주 건물 유지보수 지도</h1>
+          <p class="subtitle">유지보수 업체와 BRING 관리 건물 업무를 분리해서 확인합니다.</p>
+        </div>
+        <div class="map-mode-tabs" role="radiogroup" aria-label="지도 업무 선택">
+          <label><input type="radio" name="mapMode" value="vendors" /> 유지보수 업체 지도</label>
+          <label><input type="radio" name="mapMode" value="managed" /> BRING 관리계약 건물</label>
+        </div>
+      </div>
+
+      <section class="mode-panel" data-mode-panel="vendors">
+        <div class="stats" aria-label="유지보수 업체 요약">
+          <div class="stat"><b id="totalCount">0</b><span>전체</span></div>
+          <div class="stat"><b id="excelCount">0</b><span>경쟁사</span></div>
+          <div class="stat"><b id="sheetCount">0</b><span>원주업체</span></div>
+          <div class="stat"><b id="electricCount">0</b><span>전기업체</span></div>
+          <div class="stat"><b id="leakCount">0</b><span>누수/하수구</span></div>
+          <div class="stat"><b id="hvacCount">0</b><span>냉난방</span></div>
+          <div class="stat"><b id="mapCount">0</b><span>지도 표시</span></div>
+        </div>
+
+        <div class="filters">
+          <input class="search" id="searchInput" type="search" placeholder="회사명, 서비스, 지역 검색" />
+          <div class="filter-row">
+            <select id="categoryFilter" aria-label="대분류 필터"></select>
+            <select id="sourceFilter" aria-label="출처 필터">
+              <option value="all">전체 출처</option>
+              <option value="excel">경쟁사</option>
+              <option value="google-sheet">원주업체</option>
+              <option value="electric-vendor">전기업체</option>
+              <option value="leak-vendor">누수,하수구업체</option>
+              <option value="hvac-vendor">냉난방업체</option>
+            </select>
+            <select id="locationFilter" aria-label="위치 필터">
+              <option value="all">전체</option>
+              <option value="mapped">지도 표시 가능</option>
+              <option value="missing">위치 미입력</option>
+            </select>
+          </div>
+        </div>
+
+        <p class="notice">검은 핀은 경쟁사 엑셀, 컬러 핀은 원주 유지보수 구글시트입니다. 구글시트 업체는 주소의 동/읍/면 기준으로 우선 표시합니다.</p>
+        <div class="list" id="companyList"></div>
+      </section>
+
+      <section class="mode-panel" data-mode-panel="managed" hidden>
+        <div class="stats" aria-label="BRING 관리 건물 요약">
+          <div class="stat"><b id="managedCount">0</b><span>관리 건물</span></div>
+          <div class="stat"><b id="managedVacancyCount">0</b><span>공실 건물</span></div>
+          <div class="stat"><b id="managedVisibleCount">0</b><span>검색 결과</span></div>
+        </div>
+        <div class="filters">
+          <input class="search" id="managedSearchInput" type="search" placeholder="건물명, 주소 검색" />
+          <div class="filter-row">
+            <select id="managedVacancyFilter" aria-label="공실 필터">
+              <option value="all">전체 공실 상태</option>
+              <option value="hasVacancy">공실 있음</option>
+              <option value="full">공실 없음</option>
+            </select>
+            <select id="managedCaptureFilter" aria-label="촬영 필터">
+              <option value="all">전체 촬영 상태</option>
+              <option value="notStarted">촬영 전</option>
+              <option value="inProgress">촬영 중</option>
+              <option value="complete">촬영 완료</option>
+            </select>
+          </div>
+        </div>
+        <section class="managed-section" aria-label="관리 건물 동기화 상태">
+          <div class="managed-section-head">
+            <b>BRING 관리 건물</b>
+            <span id="managedSyncStatus">내부 로그인 확인 중</span>
+          </div>
+          <button class="managed-login" id="managedLogin" type="button" hidden>Google로 관리 지도 로그인</button>
+        </section>
+        <div class="managed-list" id="managedList"><div class="managed-empty">관리 건물 데이터를 불러오는 중입니다.</div></div>
+      </section>
+    </section>
+
+    <section class="map-wrap" aria-label="네이버 지도">
+      <div id="map"></div>
+      <div class="map-count" id="visibleMapCount">지도 표시 0개</div>
+      <div class="legend" data-mode-panel="vendors">
+        <span><i></i>경쟁사 엑셀</span>
+        <span><i class="sheet-dot"></i>원주 유지보수</span>
+        <span><i class="electric-dot"></i>전기업체</span>
+        <span><i class="leak-dot"></i>누수/하수구</span>
+        <span><i class="hvac-dot"></i>냉난방</span>
+      </div>
+      <div class="legend" data-mode-panel="managed" hidden>
+        <span><i class="managed-vacant-dot"></i>공실 있음</span>
+        <span><i class="managed-full-dot"></i>공실 없음</span>
+      </div>
+      <div class="map-error" id="mapError">
+        <div>
+          <b>네이버 지도를 불러오지 못했습니다.</b>
+          <p>네이버 클라우드 콘솔의 Web 서비스 URL에 https://bringengineering1008-pixel.github.io 를 추가해 주세요. 공식 주소까지 쓰려면 https://bringengineering.github.io 도 같이 추가하면 됩니다.</p>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <script>
+    const DEFAULT_NAVER_MAPS_KEY = "1iu68jzhci";
+    const NAVER_MAPS_KEY_STORAGE = "bring_naver_maps_key";
+    const MAP_MODE_STORAGE = "bring_map_mode";
+    const params = new URLSearchParams(window.location.search);
+    const REQUESTED_COMPANY_ID = String(params.get("company") || "").trim();
+    const FIELD_MODEL = window.BRING_FIELD_MAP_MODEL;
+    const VALID_FIELD_ROLES = new Set(["admin", "staff", "reviewer"]);
+    const CAPTURE_LABELS = Object.freeze({
+      notStarted: "촬영 전",
+      inProgress: "촬영 중",
+      complete: "촬영 완료"
+    });
+    const FIELD_FIREBASE_CONFIG = {
+      apiKey: "AIzaSyAeAvJIeu5hOHQ-aT6YurHdPh1thO-NYmo",
+      authDomain: "bring-fm-hj.firebaseapp.com",
+      databaseURL: "https://bring-fm-hj-default-rtdb.asia-southeast1.firebasedatabase.app",
+      projectId: "bring-fm-hj",
+      storageBucket: "bring-fm-hj.firebasestorage.app",
+      messagingSenderId: "975975605634",
+      appId: "1:975975605634:web:34ae9d7af84b3ee9ea5b9b"
+    };
+
+    const embedded = params.get("embedded") === "field";
+    let storedMapMode = null;
+    try {
+      storedMapMode = localStorage.getItem(MAP_MODE_STORAGE);
+    } catch (error) {
+      storedMapMode = null;
+    }
+    let mapMode = FIELD_MODEL.resolveMapMode({
+      requestedMode: params.get("mode"),
+      storedMode: storedMapMode,
+      embedded
+    });
+    if (embedded) document.body.classList.add("embedded");
+
+    function isValidNaverKey(value) {
+      return /^[A-Za-z0-9_-]{8,40}$/.test(value || "");
+    }
+
+    const requestedNaverKey = params.get("ncpKeyId") || localStorage.getItem(NAVER_MAPS_KEY_STORAGE);
+    const NAVER_MAPS_KEY = isValidNaverKey(requestedNaverKey) ? requestedNaverKey : DEFAULT_NAVER_MAPS_KEY;
+    if (requestedNaverKey && !isValidNaverKey(requestedNaverKey)) {
+      localStorage.removeItem(NAVER_MAPS_KEY_STORAGE);
+      params.delete("ncpKeyId");
+      const cleanUrl = `${window.location.pathname}${params.toString() ? `?${params}` : ""}${window.location.hash}`;
+      window.history.replaceState(null, "", cleanUrl);
+    }
+    const DATA = window.BRING_BUILDING_MAINTENANCE_DATA || { companies: [], categories: [] };
+    const WONJU = { lat: 37.3422, lng: 127.9202 };
+    const LEAK_VENDOR_CATEGORY = "누수·배관";
+    const HVAC_VENDOR_CATEGORIES = new Set(["냉난방·보일러", "냉난방·에어컨"]);
+    const ELECTRIC_VENDOR_IDS = new Set([
+      "sheet-003",
+      "sheet-030", "sheet-031", "sheet-032", "sheet-033", "sheet-034",
+      "sheet-035", "sheet-036", "sheet-038", "sheet-039", "sheet-040",
+      "sheet-041", "sheet-042", "sheet-043", "sheet-044", "sheet-045",
+      "sheet-046", "sheet-047", "sheet-048", "sheet-049", "sheet-050"
+    ]);
+    const CATEGORY_COLORS = {
+      "대기업 종합FM/보안": "#163b6d",
+      "시설관리 SaaS/소프트웨어": "#7c3aed",
+      "프롭테크 플랫폼(비상주)": "#0f766e",
+      "임대관리 특화": "#b45309",
+      "행정/법무 대행": "#475467",
+      "견적비교/마켓플레이스": "#c026d3",
+      "공유주거 개발사(관리아님)": "#0891b2",
+      "지역 전통 종합관리": "#2563eb",
+      "수리/시공 소규모": "#dc2626",
+      "기타/생활서비스": "#16a34a",
+      "누수·배관": "#0f766e",
+      "전기·조명": "#f59e0b",
+      "전자·전기": "#ea580c",
+      "통신·방송장비": "#2563eb",
+      "설비·수도·가스": "#0d9488",
+      "도배공사": "#8b5cf6",
+      "방수·코킹": "#0284c7",
+      "문·창호·도어락": "#475569",
+      "냉난방·보일러": "#dc2626",
+      "냉난방·에어컨": "#0891b2",
+      "청소·위생": "#16a34a",
+      "소방·안전": "#b91c1c",
+      "타일공사": "#9333ea"
+    };
+
+    let map = null;
+    let infoWindow = null;
+    let baseMarker = null;
+    let markers = [];
+    let managedMarkers = [];
+    let managedRecords = [];
+    let fieldSubscriptions = [];
+    let authGeneration = 0;
+    let activeCompanyId = "";
+
+    const els = {
+      search: document.getElementById("searchInput"),
+      category: document.getElementById("categoryFilter"),
+      source: document.getElementById("sourceFilter"),
+      location: document.getElementById("locationFilter"),
+      list: document.getElementById("companyList"),
+      total: document.getElementById("totalCount"),
+      excel: document.getElementById("excelCount"),
+      sheet: document.getElementById("sheetCount"),
+      electric: document.getElementById("electricCount"),
+      leak: document.getElementById("leakCount"),
+      hvac: document.getElementById("hvacCount"),
+      mapped: document.getElementById("mapCount"),
+      visibleMapCount: document.getElementById("visibleMapCount"),
+      mapError: document.getElementById("mapError"),
+      managedCount: document.getElementById("managedCount"),
+      managedVacancyCount: document.getElementById("managedVacancyCount"),
+      managedVisibleCount: document.getElementById("managedVisibleCount"),
+      managedSearch: document.getElementById("managedSearchInput"),
+      managedVacancy: document.getElementById("managedVacancyFilter"),
+      managedCapture: document.getElementById("managedCaptureFilter"),
+      managedList: document.getElementById("managedList"),
+      managedSyncStatus: document.getElementById("managedSyncStatus"),
+      managedLogin: document.getElementById("managedLogin"),
+      modeRadios: [...document.querySelectorAll('input[name="mapMode"]')],
+      modePanels: [...document.querySelectorAll("[data-mode-panel]")]
+    };
+
+    function esc(value) {
+      return String(value ?? "").replace(/[&<>"']/g, ch => ({
+        "&": "&amp;",
+        "<": "&lt;",
+        ">": "&gt;",
+        '"': "&quot;",
+        "'": "&#39;"
+      }[ch]));
+    }
+
+    function colorFor(category) {
+      return CATEGORY_COLORS[category] || "#344054";
+    }
+
+    function markerColorFor(company) {
+      if (sourceKey(company) === "electric-vendor") return "#f59e0b";
+      if (sourceKey(company) === "leak-vendor") return "#2563eb";
+      if (sourceKey(company) === "hvac-vendor") return "#16a34a";
+      return company.source === "google-sheet" ? colorFor(company.category) : "#111827";
+    }
+
+    function sourceKey(company) {
+      if (company.source !== "google-sheet") return "excel";
+      if (ELECTRIC_VENDOR_IDS.has(company.id)) return "electric-vendor";
+      if (company.category === LEAK_VENDOR_CATEGORY) return "leak-vendor";
+      if (HVAC_VENDOR_CATEGORIES.has(company.category)) return "hvac-vendor";
+      return "google-sheet";
+    }
+
+    function sourceClass(company) {
+      return sourceKey(company) === "excel" ? "excel" : "google-sheet";
+    }
+
+    function sourceName(company) {
+      const key = sourceKey(company);
+      if (key === "electric-vendor") return "전기업체";
+      if (key === "leak-vendor") return "누수,하수구업체";
+      if (key === "hvac-vendor") return "냉난방업체";
+      return key === "google-sheet" ? "원주업체" : "경쟁사";
+    }
+
+    function hasLocation(company) {
+      return Array.isArray(company.locations) && company.locations.length > 0;
+    }
+
+    function showMapError(message) {
+      if (message) {
+        const copy = els.mapError.querySelector("p");
+        if (copy) copy.textContent = message;
+      }
+      els.mapError.classList.add("show");
+    }
+
+    function hideMapError() {
+      els.mapError.classList.remove("show");
+    }
+
+    function optionLabel(category) {
+      const count = DATA.companies.filter(company => company.category === category).length;
+      return `${category} (${count})`;
+    }
+
+    function setupFilters() {
+      els.category.innerHTML = `<option value="all">전체 대분류</option>` +
+        DATA.categories.map(category => `<option value="${esc(category)}">${esc(optionLabel(category))}</option>`).join("");
+
+      const requestedCompany = DATA.companies.find(company => company.id === REQUESTED_COMPANY_ID);
+      if (requestedCompany) {
+        activeCompanyId = requestedCompany.id;
+        els.search.value = requestedCompany.name;
+        els.category.value = requestedCompany.category;
+        els.source.value = sourceKey(requestedCompany);
+        els.location.value = "all";
+      }
+
+      els.search.addEventListener("input", renderActiveMode);
+      els.category.addEventListener("change", renderActiveMode);
+      els.source.addEventListener("change", renderActiveMode);
+      els.location.addEventListener("change", renderActiveMode);
+    }
+
+    function getFilteredCompanies() {
+      const query = els.search.value.trim().toLowerCase();
+      const category = els.category.value;
+      const source = els.source.value;
+      const locationMode = els.location.value;
+
+      return DATA.companies.filter(company => {
+        const text = [
+          company.name,
+          company.category,
+          company.service,
+          company.feature,
+          company.operation,
+          company.region,
+          company.address,
+          company.scale,
+          company.phone,
+          company.rating,
+          company.sourceLabel,
+          sourceName(company)
+        ].join(" ").toLowerCase();
+        const matchesQuery = !query || text.includes(query);
+        const matchesCategory = category === "all" || company.category === category;
+        const matchesSource = source === "all" || sourceKey(company) === source;
+        const mapped = hasLocation(company);
+        const matchesLocation =
+          locationMode === "all" ||
+          (locationMode === "mapped" && mapped) ||
+          (locationMode === "missing" && !mapped);
+        return matchesQuery && matchesCategory && matchesSource && matchesLocation;
+      });
+    }
+
+    function renderVendorStats(filtered) {
+      const mappedAll = DATA.companies.filter(hasLocation).length;
+      els.total.textContent = DATA.companies.length;
+      els.excel.textContent = DATA.companies.filter(company => sourceKey(company) === "excel").length;
+      els.sheet.textContent = DATA.companies.filter(company => sourceKey(company) === "google-sheet").length;
+      els.electric.textContent = DATA.companies.filter(company => sourceKey(company) === "electric-vendor").length;
+      els.leak.textContent = DATA.companies.filter(company => sourceKey(company) === "leak-vendor").length;
+      els.hvac.textContent = DATA.companies.filter(company => sourceKey(company) === "hvac-vendor").length;
+      els.mapped.textContent = mappedAll;
+      els.visibleMapCount.textContent = `지도 표시 ${filtered.filter(hasLocation).length}개`;
+    }
+
+    function getFilteredManagedBuildings() {
+      return FIELD_MODEL.filterManagedBuildings(managedRecords, {
+        query: els.managedSearch.value,
+        vacancy: els.managedVacancy.value,
+        capture: els.managedCapture.value
+      });
+    }
+
+    function captureLabel(status) {
+      return CAPTURE_LABELS[status] || CAPTURE_LABELS.notStarted;
+    }
+
+    function renderManagedStats(filtered) {
+      els.managedCount.textContent = managedRecords.length;
+      els.managedVacancyCount.textContent = managedRecords.filter(record => record.vacancyCount > 0).length;
+      els.managedVisibleCount.textContent = filtered.length;
+      els.visibleMapCount.textContent = `지도 표시 ${filtered.length}개`;
+    }
+
+    function setMarkerMapSafely(marker, nextMap) {
+      try {
+        marker.setMap(nextMap);
+      } catch (error) {
+        // A partially loaded map SDK must not interrupt mode rendering or other marker cleanup.
+      }
+    }
+
+    function clearManagedMarkers() {
+      const staleMarkers = managedMarkers;
+      managedMarkers = [];
+      staleMarkers.forEach(marker => setMarkerMapSafely(marker, null));
+    }
+
+    function renderManagedList(records) {
+      if (!records.length) {
+        els.managedList.innerHTML = `<div class="managed-empty">조건에 맞는 관리 건물이 없습니다.</div>`;
+        return;
+      }
+      els.managedList.innerHTML = records.map(record => `
+        <article class="managed-card">
+          <b>${esc(record.name)}</b>
+          <span>${esc(record.roadAddress || "주소 확인 필요")}</span>
+          <span>공실 ${record.vacancyCount}건 · ${esc(record.approvedRentSummary)}</span>
+          <span>${esc(record.parkingSummary)} · ${esc(captureLabel(record.captureStatus))}</span>
+        </article>
+      `).join("");
+    }
+
+    function managedInfoContent(record) {
+      const safe = FIELD_MODEL.safePropertyPopupModel(record);
+      return `<div class="info">
+        <h2>${esc(safe.name)}</h2>
+        <p><b>주소</b> ${esc(safe.roadAddress || "주소 확인 필요")}</p>
+        <p><b>공실</b> ${safe.vacancyCount}건</p>
+        <p><b>승인 광고조건</b> ${esc(safe.approvedRentSummary)}</p>
+        <p><b>주차</b> ${esc(safe.parkingSummary)}</p>
+        <p><b>촬영</b> ${esc(captureLabel(safe.captureStatus))}</p>
+      </div>`;
+    }
+
+    function renderManagedMarkers(records) {
+      clearManagedMarkers();
+      if (!map || !window.naver || !naver.maps || mapMode !== "managed") return;
+      const bounds = new naver.maps.LatLngBounds();
+      records.forEach(record => {
+        const position = new naver.maps.LatLng(record.latitude, record.longitude);
+        const color = FIELD_MODEL.propertyMarkerColor(record.markerStatus);
+        const marker = new naver.maps.Marker({
+          position,
+          map,
+          title: record.name,
+          icon: {
+            content: `<div class="pin" title="${esc(record.name)}" style="background:${color}"><span>집</span></div>`,
+            size: new naver.maps.Size(34, 34),
+            anchor: new naver.maps.Point(17, 17)
+          }
+        });
+        naver.maps.Event.addListener(marker, "click", () => {
+          infoWindow.setContent(managedInfoContent(record));
+          infoWindow.open(map, marker);
+        });
+        managedMarkers.push(marker);
+        bounds.extend(position);
+      });
+      if (managedMarkers.length) {
+        map.fitBounds(bounds, { top: 60, right: 60, bottom: 60, left: 60 });
+      } else {
+        map.setCenter(new naver.maps.LatLng(WONJU.lat, WONJU.lng));
+        map.setZoom(12);
+      }
+    }
+
+    function renderManagedMode(records = getFilteredManagedBuildings()) {
+      renderManagedStats(records);
+      renderManagedList(records);
+      renderManagedMarkers(records);
+    }
+
+    function stopFieldSubscriptions() {
+      fieldSubscriptions.forEach(unsubscribe => unsubscribe());
+      fieldSubscriptions = [];
+    }
+
+    function resetManagedState() {
+      managedRecords = [];
+      clearManagedMarkers();
+      if (mapMode === "managed") renderManagedMode();
+    }
+
+    function startFieldManagedSync() {
+      if (!window.firebase || !FIELD_MODEL) {
+        els.managedSyncStatus.textContent = "Firebase 연결 확인 필요";
+        resetManagedState();
+        return;
+      }
+      const app = firebase.apps.length ? firebase.app() : firebase.initializeApp(FIELD_FIREBASE_CONFIG);
+      const auth = app.auth();
+      const database = app.database();
+
+      els.managedLogin.addEventListener("click", async () => {
+        try {
+          const provider = new firebase.auth.GoogleAuthProvider();
+          provider.setCustomParameters({ prompt: "select_account" });
+          await auth.signInWithPopup(provider);
+        } catch (error) {
+          els.managedSyncStatus.textContent = "Firebase 연결 확인 필요";
+        }
+      });
+
+      auth.onAuthStateChanged(user => {
+        const generation = ++authGeneration;
+        stopFieldSubscriptions();
+        resetManagedState();
+        els.managedLogin.hidden = true;
+        if (!user) {
+          els.managedSyncStatus.textContent = "내부 로그인 필요";
+          els.managedLogin.hidden = embedded;
+          return;
+        }
+        els.managedSyncStatus.textContent = "Firebase 동기화 중";
+
+        void (async () => {
+          try {
+            const tokenResult = await user.getIdTokenResult();
+            if (
+              generation !== authGeneration ||
+              !auth.currentUser ||
+              auth.currentUser.uid !== user.uid
+            ) return;
+
+            const claims = tokenResult.claims || {};
+            const hasFieldClaim = claims.fieldPlatform === true;
+            if (!hasFieldClaim || !VALID_FIELD_ROLES.has(claims.fieldRole)) {
+              els.managedSyncStatus.textContent = "권한 등록 필요";
+              els.managedLogin.hidden = embedded;
+              return;
+            }
+
+            const enabledReference = database.ref(`fieldPlatform/users/${user.uid}/enabled`);
+            const enabledSnapshot = await enabledReference.once("value");
+            if (
+              generation !== authGeneration ||
+              !auth.currentUser ||
+              auth.currentUser.uid !== user.uid
+            ) return;
+
+            if (enabledSnapshot.val() !== true) {
+              els.managedSyncStatus.textContent = "비활성화된 계정";
+              els.managedLogin.hidden = embedded;
+              return;
+            }
+
+            const projectionReference = database.ref("fieldPlatform/mapProjections");
+            const onValue = snapshot => {
+              if (
+                generation !== authGeneration ||
+                !auth.currentUser ||
+                auth.currentUser.uid !== user.uid
+              ) return;
+              managedRecords = FIELD_MODEL.toManagedBuildingMarkers(snapshot.val() || {});
+              els.managedSyncStatus.textContent = "Firebase 실시간 연결됨";
+              if (mapMode === "managed") renderManagedMode();
+            };
+            const onError = () => {
+              if (generation !== authGeneration) return;
+              stopFieldSubscriptions();
+              resetManagedState();
+              els.managedSyncStatus.textContent = "Firebase 연결 확인 필요";
+            };
+            projectionReference.on("value", onValue, onError);
+            fieldSubscriptions.push(() => projectionReference.off("value", onValue));
+          } catch (error) {
+            if (generation !== authGeneration) return;
+            stopFieldSubscriptions();
+            resetManagedState();
+            els.managedSyncStatus.textContent = "Firebase 연결 확인 필요";
+          }
+        })();
+      });
+    }
+
+    function renderList(companies) {
+      if (!companies.length) {
+        els.list.innerHTML = `<div class="empty">조건에 맞는 회사가 없습니다.</div>`;
+        return;
+      }
+
+      els.list.innerHTML = companies.map(company => {
+        const mapped = hasLocation(company);
+        const badgeText = mapped ? company.locations.map(item => item.label).join(", ") : "위치 미입력";
+        const sClass = sourceClass(company);
+        const primaryLink = company.naverUrl || company.url || company.extraUrl;
+        const phone = company.phone || company.operation;
+        const contact = [
+          company.address ? `<span>${esc(company.address)}</span>` : "",
+          company.region ? `<span>${esc(company.region)}</span>` : "",
+          phone ? `<span>${esc(phone).replace(/\n/g, " / ")}</span>` : "",
+          company.rating ? `<span>${esc(company.rating)}</span>` : "",
+          primaryLink ? `<a href="${esc(primaryLink)}" target="_blank" rel="noopener">링크 열기</a>` : ""
+        ].filter(Boolean).join("");
+        return `
+          <button class="company ${sClass} ${activeCompanyId === company.id ? "active" : ""}" data-id="${esc(company.id)}">
+            <div class="company-head">
+              <h2 class="company-name">${esc(company.name)}</h2>
+              <span class="source-badge ${sClass}">${sourceName(company)}</span>
+            </div>
+            <div class="card-tags">
+              <span class="badge" style="background:${company.source === "google-sheet" ? colorFor(company.category) : "#111827"}">${esc(badgeText)}</span>
+            </div>
+            <div class="meta">
+              <span>${esc(company.category)}</span>
+              <span>${esc(company.operation || "운영정보 없음")}</span>
+              <span>${esc(company.status || "상태 없음")}</span>
+            </div>
+            <p class="desc">${esc(company.service)}</p>
+            ${company.feature ? `<p class="desc">${esc(company.feature)}</p>` : ""}
+            ${contact ? `<div class="contact-line">${contact}</div>` : ""}
+          </button>
+        `;
+      }).join("");
+    }
+
+    function clearMarkers() {
+      const staleMarkers = markers;
+      markers = [];
+      staleMarkers.forEach(marker => setMarkerMapSafely(marker, null));
+    }
+
+    function markerContent(company, label) {
+      const initial = company.name.trim().slice(0, 1) || "B";
+      const sClass = sourceClass(company);
+      const color = markerColorFor(company);
+      return `<div class="pin ${sClass}" title="${esc(company.name)}" style="background:${color}"><span>${esc(initial)}</span></div>`;
+    }
+
+    function infoContent(company, location) {
+      const regionText = location ? `${esc(location.label)} 지역 기준 표시` : "정확 위치 미입력";
+      const links = [
+        company.naverUrl ? `<a href="${esc(company.naverUrl)}" target="_blank" rel="noopener">네이버 지도 열기</a>` : "",
+        company.url ? `<a href="${esc(company.url)}" target="_blank" rel="noopener">홍보/공식 링크</a>` : "",
+        company.extraUrl ? `<a href="${esc(company.extraUrl)}" target="_blank" rel="noopener">추가 링크</a>` : ""
+      ].filter(Boolean).join(" ");
+      return `
+        <div class="info">
+          <h2>${esc(company.name)}</h2>
+          <p><b>출처</b> ${esc(sourceName(company))}</p>
+          <p><b>분류</b> ${esc(company.category)}</p>
+          ${company.address ? `<p><b>주소</b> ${esc(company.address)}</p>` : ""}
+          <p><b>지역</b> ${esc(company.region || regionText)}</p>
+          <p><b>운영</b> ${esc(company.operation || "-")}</p>
+          ${company.rating ? `<p><b>평점</b> ${esc(company.rating)}</p>` : ""}
+          <p>${esc(company.service)}</p>
+          ${company.feature ? `<p>${esc(company.feature)}</p>` : ""}
+          ${links}
+        </div>
+      `;
+    }
+
+    function offsetLocation(location, index) {
+      if (index === 0) return location;
+      const angle = index * 1.12;
+      const radius = 0.007 + Math.min(index, 8) * 0.0015;
+      return {
+        lat: location.lat + Math.sin(angle) * radius,
+        lng: location.lng + Math.cos(angle) * radius
+      };
+    }
+
+    function renderMarkers(companies) {
+      if (!map || !window.naver || !naver.maps) return;
+      clearMarkers();
+
+      const bounds = new naver.maps.LatLngBounds();
+      bounds.extend(new naver.maps.LatLng(WONJU.lat, WONJU.lng));
+      const duplicateCounts = {};
+
+      companies.forEach(company => {
+        company.locations.forEach(location => {
+          const key = `${location.lat},${location.lng}`;
+          const duplicateIndex = duplicateCounts[key] || 0;
+          duplicateCounts[key] = duplicateIndex + 1;
+          const adjusted = offsetLocation(location, duplicateIndex);
+          const position = new naver.maps.LatLng(adjusted.lat, adjusted.lng);
+          const marker = new naver.maps.Marker({
+            position,
+            map,
+            title: company.name,
+            icon: {
+              content: markerContent(company, location.label),
+              size: new naver.maps.Size(34, 34),
+              anchor: new naver.maps.Point(17, 17)
+            }
+          });
+
+          marker.__companyId = company.id;
+          naver.maps.Event.addListener(marker, "click", () => {
+            activeCompanyId = company.id;
+            infoWindow.setContent(infoContent(company, location));
+            infoWindow.open(map, marker);
+            renderList(getFilteredCompanies());
+          });
+
+          markers.push(marker);
+          bounds.extend(position);
+        });
+      });
+
+      if (markers.length) {
+        map.fitBounds(bounds, { top: 60, right: 60, bottom: 60, left: 60 });
+      } else {
+        map.setCenter(new naver.maps.LatLng(WONJU.lat, WONJU.lng));
+        map.setZoom(12);
+      }
+    }
+
+    function focusCompany(id) {
+      const marker = markers.find(item => item.__companyId === id);
+      activeCompanyId = id;
+      renderList(getFilteredCompanies());
+      requestAnimationFrame(() => {
+        const activeItem = [...els.list.querySelectorAll(".company")]
+          .find(item => item.dataset.id === id);
+        activeItem?.scrollIntoView({ block: "nearest" });
+      });
+      if (!marker || !map) return;
+      const company = DATA.companies.find(item => item.id === id);
+      if (!company) return;
+      map.setCenter(marker.getPosition());
+      map.setZoom(Math.max(map.getZoom(), 12));
+      infoWindow.setContent(infoContent(company, company.locations[0]));
+      infoWindow.open(map, marker);
+    }
+
+    function focusRequestedCompany() {
+      if (!REQUESTED_COMPANY_ID) return;
+      const company = DATA.companies.find(item => item.id === REQUESTED_COMPANY_ID);
+      if (company) focusCompany(company.id);
+    }
+
+    function renderVendorMode(companies) {
+      renderVendorStats(companies);
+      renderList(companies);
+      renderMarkers(companies);
+    }
+
+    function renderActiveMode() {
+      const filteredVendors = getFilteredCompanies();
+      const filteredManaged = getFilteredManagedBuildings();
+      const visible = FIELD_MODEL.filterMapItems({
+        vendors: filteredVendors,
+        managedBuildings: filteredManaged
+      }, mapMode);
+
+      if (mapMode === "managed") {
+        clearMarkers();
+        renderManagedMode(visible.managedBuildings);
+      } else {
+        clearManagedMarkers();
+        renderVendorMode(visible.vendors);
+      }
+      if (baseMarker) setMarkerMapSafely(baseMarker, mapMode === "vendors" ? map : null);
+    }
+
+    function setMapMode(mode, { persist }) {
+      mapMode = mode === "managed" ? "managed" : "vendors";
+      els.modeRadios.forEach(radio => {
+        radio.checked = radio.value === mapMode;
+      });
+      els.modePanels.forEach(panel => {
+        panel.hidden = panel.dataset.modePanel !== mapMode;
+      });
+      if (infoWindow) infoWindow.close();
+      if (persist) {
+        try {
+          localStorage.setItem(MAP_MODE_STORAGE, mapMode);
+        } catch (error) {
+          // The explicit in-memory selection remains usable when storage is unavailable.
+        }
+      }
+      renderActiveMode();
+    }
+
+    function initMap() {
+      if (map) return;
+      if (!window.naver || !naver.maps) {
+        showMapError("네이버 지도 SDK를 불러오지 못했습니다. 현재 사이트 주소가 네이버 클라우드 Web 서비스 URL에 등록됐는지 확인해 주세요.");
+        renderActiveMode();
+        return;
+      }
+      hideMapError();
+
+      map = new naver.maps.Map("map", {
+        center: new naver.maps.LatLng(WONJU.lat, WONJU.lng),
+        zoom: 8,
+        minZoom: 6,
+        mapDataControl: false
+      });
+      infoWindow = new naver.maps.InfoWindow({ borderWidth: 0, backgroundColor: "#fff" });
+
+      baseMarker = new naver.maps.Marker({
+        position: new naver.maps.LatLng(WONJU.lat, WONJU.lng),
+        map: mapMode === "vendors" ? map : null,
+        title: "BRING 원주 기준점",
+        icon: {
+          content: `<div class="pin base" title="BRING 원주 기준점"><span>B</span></div>`,
+          size: new naver.maps.Size(34, 34),
+          anchor: new naver.maps.Point(17, 17)
+        }
+      });
+      naver.maps.Event.addListener(baseMarker, "click", () => {
+        infoWindow.setContent(`
+          <div class="info">
+            <h2>BRING 원주 기준점</h2>
+            <p>원주 건물 유지보수/경쟁사 검토를 시작하는 기준 위치입니다.</p>
+          </div>
+        `);
+        infoWindow.open(map, baseMarker);
+      });
+
+      renderActiveMode();
+      if (mapMode === "vendors") focusRequestedCompany();
+    }
+
+    function loadNaverMaps() {
+      if (window.naver && window.naver.maps) {
+        initMap();
+        return;
+      }
+
+      window.navermap_authFailure = () => {
+        showMapError("네이버 지도 Open API 인증에 실패했습니다. 현재 사이트 주소를 네이버 클라우드 Web 서비스 URL에 등록해 주세요.");
+        renderActiveMode();
+      };
+      window.__bringNaverMapsReady = () => initMap();
+
+      const script = document.createElement("script");
+      script.src = `https://oapi.map.naver.com/openapi/v3/maps.js?ncpKeyId=${encodeURIComponent(NAVER_MAPS_KEY)}&callback=__bringNaverMapsReady`;
+      script.async = true;
+      script.onload = () => {
+        setTimeout(() => {
+          if (!map && window.naver && window.naver.maps) initMap();
+        }, 100);
+      };
+      script.onerror = () => {
+        showMapError("네이버 지도 SDK 로드가 차단되었습니다. 목록과 필터는 계속 사용할 수 있습니다.");
+        renderActiveMode();
+      };
+      document.head.appendChild(script);
+
+      setTimeout(() => {
+        if (!map && (!window.naver || !window.naver.maps)) {
+          showMapError("네이버 지도 SDK 응답이 지연되고 있습니다. 목록과 필터는 계속 사용할 수 있습니다.");
+          renderActiveMode();
+        } else if (map && document.querySelector("#map")?.children.length === 0) {
+          showMapError("네이버 지도 인증 또는 타일 로딩이 완료되지 않았습니다. 현재 사이트 주소 등록을 확인해 주세요.");
+        }
+      }, 5000);
+    }
+
+    els.list.addEventListener("click", event => {
+      const item = event.target.closest(".company");
+      if (!item) return;
+      focusCompany(item.dataset.id);
+    });
+
+    els.modeRadios.forEach(radio => {
+      radio.addEventListener("change", event => {
+        if (event.target.checked) setMapMode(event.target.value, { persist: true });
+      });
+    });
+    els.managedSearch.addEventListener("input", renderActiveMode);
+    els.managedVacancy.addEventListener("change", renderActiveMode);
+    els.managedCapture.addEventListener("change", renderActiveMode);
+
+    setupFilters();
+    setMapMode(mapMode, { persist: false });
+    if (mapMode === "vendors") focusRequestedCompany();
+    startFieldManagedSync();
+    loadNaverMaps();
+  </script>
+</body>
+</html>
