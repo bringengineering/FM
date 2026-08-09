@@ -107,7 +107,19 @@ export async function requireFieldActor(
     return denyFieldAccess();
   }
 
-  return { uid, role: claimedRole, enabled: true };
+  const tokenDisplayName = request.auth.token.name;
+  const authTime = request.auth.token.auth_time;
+  return {
+    uid,
+    role: claimedRole,
+    enabled: true,
+    ...(typeof tokenDisplayName === "string"
+      ? { tokenDisplayName }
+      : {}),
+    ...(typeof authTime === "number" && Number.isFinite(authTime)
+      ? { sessionId: authTime.toString(10) }
+      : {}),
+  };
 }
 
 function rethrowAsCallableError(error: unknown): never {
@@ -116,7 +128,6 @@ function rethrowAsCallableError(error: unknown): never {
 
   if (
     message === "field_invalid_registration" ||
-    message === "field_owner_notes_not_enabled" ||
     message === "field_management_transition_invalid"
   ) {
     throw new HttpsError("invalid-argument", message);
@@ -225,6 +236,13 @@ const saveDependencies: SaveFieldRegistrationDependencies = {
   },
   async updateRoot(patch) {
     await adminDatabase.ref().update(patch);
+  },
+  async getUserDisplayName(uid) {
+    const snapshot = await adminDatabase
+      .ref(`fieldPlatform/users/${uid}/displayName`)
+      .get();
+    const value: unknown = snapshot.val();
+    return typeof value === "string" ? value : null;
   },
   now: () => new Date().toISOString(),
 };

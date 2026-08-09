@@ -20,6 +20,8 @@ const staffActor: FieldActor = {
   uid: "staff-1",
   role: "staff",
   enabled: true,
+  tokenDisplayName: "인증 토큰 이름",
+  sessionId: "1723181696",
 };
 
 const adminActor: FieldActor = {
@@ -75,7 +77,13 @@ function validRegistrationInput(): SaveFieldRegistrationInput {
       requested: true,
       startedOn: "2026-08-09",
     },
-    ownerNoteDrafts: [],
+    ownerNoteDrafts: [
+      {
+        localId: "note_12345678",
+        body: "  현관 비밀번호는 광고 담당자에게만 전달  ",
+        recordedAt: "2026-08-09T01:30:00.000Z",
+      },
+    ],
   };
 }
 
@@ -184,6 +192,7 @@ function createInMemoryAdapter(options: InMemoryAdapterOptions = {}) {
         }
       }
     }),
+    getUserDisplayName: vi.fn(async () => "서버 프로필 이름"),
     now: vi.fn(options.now ?? (() => NOW)),
   };
 
@@ -266,6 +275,17 @@ describe("saveFieldRegistrationCore", () => {
       updatedBy: staffActor.uid,
     });
     expect(patch[`fieldPlatform/mapProjections/${result.buildingId}`]).toBeNull();
+    expect(
+      patch[`fieldPlatform/ownerNotes/${result.buildingId}/note_12345678`],
+    ).toEqual({
+      id: "note_12345678",
+      buildingId: result.buildingId,
+      body: "현관 비밀번호는 광고 담당자에게만 전달",
+      recordedAt: "2026-08-09T01:30:00.000Z",
+      createdAt: NOW,
+      createdBy: staffActor.uid,
+      createdByName: "서버 프로필 이름",
+    });
     expect(dependencies.now).toHaveBeenCalledTimes(1);
   });
 
@@ -297,7 +317,7 @@ describe("saveFieldRegistrationCore", () => {
     });
     expect(Object.keys(projection)).toHaveLength(11);
     expect(JSON.stringify(projection)).not.toMatch(
-      /TEST-OWNER-PHONE|TEST-SECURE-NOTE|3000000|350000|50000/,
+      /TEST-OWNER-PHONE|TEST-SECURE-NOTE|3000000|350000|50000|현관 비밀번호|ownerNote|createdByName/,
     );
   });
 
@@ -343,6 +363,15 @@ describe("saveFieldRegistrationCore", () => {
     expect(dependencies.reserveRegistration).toHaveBeenCalledTimes(1);
     expect(dependencies.updateRoot).toHaveBeenCalledTimes(1);
     expect(dependencies.now).toHaveBeenCalledTimes(1);
+    expect(dependencies.getUserDisplayName).toHaveBeenCalledTimes(1);
+    const committedPatch = vi.mocked(dependencies.updateRoot).mock.calls[0][0];
+    expect(
+      Object.keys(committedPatch).filter((path) =>
+        path.startsWith(`fieldPlatform/ownerNotes/${first.buildingId}/`),
+      ),
+    ).toEqual([
+      `fieldPlatform/ownerNotes/${first.buildingId}/note_12345678`,
+    ]);
   });
 
   it("atomically rejects one of two simultaneous different inputs sharing a request ID", async () => {
@@ -568,6 +597,22 @@ describe("saveFieldRegistrationCore", () => {
     expect(dependencies.updateRoot).toHaveBeenCalledTimes(1);
   });
 
+  it("rejects reuse of a request ID when a canonical owner note changes", async () => {
+    const { dependencies } = createInMemoryAdapter();
+    await saveFieldRegistrationCore(
+      validRegistrationInput(),
+      staffActor,
+      dependencies,
+    );
+    const changed = validRegistrationInput();
+    changed.ownerNoteDrafts![0].body = "현관 비밀번호 변경됨";
+
+    await expect(
+      saveFieldRegistrationCore(changed, staffActor, dependencies),
+    ).rejects.toThrow("field_request_id_conflict");
+    expect(dependencies.updateRoot).toHaveBeenCalledTimes(1);
+  });
+
   it.each([
     ["reviewer", { uid: "reviewer-1", role: "reviewer", enabled: true }],
     ["disabled staff", { uid: "staff-1", role: "staff", enabled: false }],
@@ -585,22 +630,48 @@ describe("saveFieldRegistrationCore", () => {
     },
   );
 
-  it("rejects non-empty owner note drafts instead of silently discarding them", async () => {
+  it("strips caller-forged note audit stamps and uses the reservation timestamp", async () => {
     const input = validRegistrationInput();
-    input.ownerNoteDrafts = [
-      {
-        localId: "owner-note-1",
-        body: "현관 비밀번호는 별도 확인",
-        recordedAt: NOW,
-      },
-    ];
-    const { dependencies } = createInMemoryAdapter();
+    Object.assign(input.ownerNoteDrafts![0], {
+      createdAt: "2000-01-01T00:00:00.000Z",
+      createdBy: "attacker",
+      createdByName: "위조 이름",
+      archivedAt: "2000-01-01T00:00:00.000Z",
+      archivedBy: "attacker",
+    });
+    const { dependencies, patches } = createInMemoryAdapter();
 
-    await expect(
-      saveFieldRegistrationCore(input, staffActor, dependencies),
-    ).rejects.toThrow("field_owner_notes_not_enabled");
-    expect(dependencies.getReceipt).not.toHaveBeenCalled();
-    expect(dependencies.updateRoot).not.toHaveBeenCalled();
+    const result = await saveFieldRegistrationCore(input, staffActor, dependencies);
+
+    expect(
+      patches[0][`fieldPlatform/ownerNotes/${result.buildingId}/note_12345678`],
+    ).toEqual({
+      id: "note_12345678",
+      buildingId: result.buildingId,
+      body: "현관 비밀번호는 광고 담당자에게만 전달",
+      recordedAt: "2026-08-09T01:30:00.000Z",
+      createdAt: NOW,
+      createdBy: staffActor.uid,
+      createdByName: "서버 프로필 이름",
+    });
+  });
+
+  it("does not resolve a profile or add a note path when initial notes are empty", async () => {
+    const input = validRegistrationInput();
+    input.ownerNoteDrafts = [];
+    const { dependencies, patches } = createInMemoryAdapter();
+    vi.mocked(dependencies.getUserDisplayName).mockRejectedValue(
+      new Error("profile lookup must not run"),
+    );
+
+    const result = await saveFieldRegistrationCore(input, staffActor, dependencies);
+
+    expect(dependencies.getUserDisplayName).not.toHaveBeenCalled();
+    expect(
+      Object.keys(patches[0]).filter((path) =>
+        path.startsWith(`fieldPlatform/ownerNotes/${result.buildingId}/`),
+      ),
+    ).toEqual([]);
   });
 
   it.each([
@@ -796,7 +867,7 @@ describe("saveFieldRegistrationCore", () => {
     await expectInvalid(input);
   });
 
-  it("writes exactly one atomic root patch containing every entity, unit, audit, projection, and receipt path", async () => {
+  it("writes exactly one atomic root patch containing every entity, note, unit, audit, projection, and receipt path", async () => {
     const input = validRegistrationInput();
     input.units.push({
       localId: "unit-2",
@@ -825,13 +896,14 @@ describe("saveFieldRegistrationCore", () => {
         .sort(),
     );
     expect(auditPaths).toHaveLength(2);
-    expect(paths).toHaveLength(10);
+    expect(paths).toHaveLength(11);
     expect(new Set(paths)).toEqual(
       new Set([
         `fieldPlatform/buildings/${result.buildingId}`,
         ...unitPaths,
         `fieldPlatform/listings/${result.listingId}`,
         `fieldPlatform/visits/${result.visitId}`,
+        `fieldPlatform/ownerNotes/${result.buildingId}/note_12345678`,
         `fieldPlatform/buildingAssignments/${result.buildingId}/${staffActor.uid}`,
         ...auditPaths,
         `fieldPlatform/mapProjections/${result.buildingId}`,

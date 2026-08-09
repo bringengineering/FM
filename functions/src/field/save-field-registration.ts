@@ -11,6 +11,12 @@ import type {
   UnitDraftPayload,
 } from "./contracts.js";
 import { buildMapProjection } from "./map-projection.js";
+import {
+  buildInitialOwnerNotePatch,
+  normalizeOwnerNoteDrafts,
+  type OwnerNoteActor,
+  type OwnerNoteDraftInput,
+} from "./owner-notes.js";
 
 export const FIELD_REGISTRATION_LIMITS = Object.freeze({
   idBytes: 128,
@@ -54,6 +60,7 @@ export interface SaveFieldRegistrationDependencies {
     proposed: RegistrationReservation,
   ): Promise<RegistrationReservationOutcome>;
   updateRoot(patch: Record<string, unknown>): Promise<void>;
+  getUserDisplayName(uid: string): Promise<string | null>;
   now(): string;
 }
 
@@ -69,6 +76,7 @@ interface NormalizedRegistrationInput {
   managementContract:
     | { requested: false }
     | { requested: true; startedOn: string };
+  ownerNoteDrafts: OwnerNoteDraftInput[];
 }
 
 function invalidRegistration(): never {
@@ -350,6 +358,7 @@ function normalizeRegistrationInput(
     listing: normalizeListing(value.listing),
     primaryUnitLocalId,
     managementContract: normalizeManagementContract(value.managementContract),
+    ownerNoteDrafts: normalizeOwnerNoteDrafts(value.ownerNoteDrafts),
   };
 }
 
@@ -399,15 +408,6 @@ export async function saveFieldRegistrationCore(
   dependencies: SaveFieldRegistrationDependencies,
 ): Promise<SaveFieldRegistrationResult> {
   assertAuthorizedActor(actor);
-
-  const rawInput: unknown = input;
-  if (
-    isRecord(rawInput) &&
-    Array.isArray(rawInput.ownerNoteDrafts) &&
-    rawInput.ownerNoteDrafts.length > 0
-  ) {
-    throw new Error("field_owner_notes_not_enabled");
-  }
 
   const normalized = normalizeRegistrationInput(input);
   const normalizedHash = requestHash(serializeNormalizedInput(normalized));
@@ -625,6 +625,23 @@ export async function saveFieldRegistrationCore(
   for (const unit of units) {
     patch[`fieldPlatform/units/${unit.id}`] = unit;
   }
+
+  const ownerNoteActor: OwnerNoteActor = {
+    uid: actor.uid,
+    role: actor.role,
+    tokenDisplayName: actor.tokenDisplayName,
+    sessionId: actor.sessionId,
+  };
+  Object.assign(
+    patch,
+    await buildInitialOwnerNotePatch({
+      buildingId,
+      drafts: normalized.ownerNoteDrafts,
+      actor: ownerNoteActor,
+      createdAt: now,
+      getUserDisplayName: dependencies.getUserDisplayName,
+    }),
+  );
 
   await dependencies.updateRoot(patch);
   return result;

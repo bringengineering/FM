@@ -1,3 +1,7 @@
+import type { OwnerNoteDraftInput } from "./owner-notes.js";
+
+export type { OwnerNoteDraftInput } from "./owner-notes.js";
+
 export type FieldRole = "admin" | "staff" | "reviewer";
 
 export type ManagementContractStatus =
@@ -11,6 +15,8 @@ export interface FieldActor {
   uid: string;
   role: FieldRole;
   enabled: boolean;
+  tokenDisplayName?: string;
+  sessionId?: string;
 }
 
 export interface ManagementContractInfo {
@@ -38,12 +44,6 @@ export interface FieldMapProjection {
 export interface ManagementContractDraft {
   requested: boolean;
   startedOn?: string;
-}
-
-export interface OwnerNoteDraftInput {
-  localId: string;
-  body: string;
-  recordedAt: string;
 }
 
 export interface BuildingDraftPayload {

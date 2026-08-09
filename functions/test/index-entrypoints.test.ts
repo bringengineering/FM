@@ -14,6 +14,12 @@ const registrations = vi.hoisted(() => {
       };
     },
   );
+  const fieldUser = {
+    value: { enabled: true, role: "staff" } as unknown,
+  };
+  const databaseGet = vi.fn(async () => ({
+    val: () => fieldUser.value,
+  }));
   return {
     onCall: vi.fn((options: unknown, handler: unknown) => ({
       kind: "callable",
@@ -28,7 +34,12 @@ const registrations = vi.hoisted(() => {
     initializeApp: vi.fn(),
     rebuildMapProjectionForBuilding: vi.fn(async () => undefined),
     databaseTransaction,
-    databaseRef: vi.fn(() => ({ transaction: databaseTransaction })),
+    databaseGet,
+    databaseRef: vi.fn(() => ({
+      get: databaseGet,
+      transaction: databaseTransaction,
+    })),
+    fieldUser,
     transactionStates,
     transactionCurrent,
   };
@@ -104,11 +115,42 @@ beforeEach(() => {
   registrations.rebuildMapProjectionForBuilding.mockClear();
   registrations.databaseRef.mockClear();
   registrations.databaseTransaction.mockClear();
+  registrations.databaseGet.mockClear();
+  registrations.fieldUser.value = { enabled: true, role: "staff" };
   registrations.transactionStates.length = 0;
   registrations.transactionCurrent.value = null;
 });
 
 describe("Firebase entrypoint metadata", () => {
+  it("derives the note actor name and decimal session ID only from verified claims", async () => {
+    const actor = await entrypoints.requireFieldActor({
+      auth: {
+        uid: "staff-1",
+        token: {
+          fieldPlatform: true,
+          fieldRole: "staff",
+          name: "인증된 이름",
+          auth_time: 1_723_181_696,
+        },
+      },
+      data: {
+        tokenDisplayName: "위조 이름",
+        sessionId: "위조 세션",
+      },
+    } as never);
+
+    expect(actor).toEqual({
+      uid: "staff-1",
+      role: "staff",
+      enabled: true,
+      tokenDisplayName: "인증된 이름",
+      sessionId: "1723181696",
+    });
+    expect(registrations.databaseRef).toHaveBeenCalledWith(
+      "fieldPlatform/users/staff-1",
+    );
+  });
+
   it("exports both App Check enforced field callables in asia-northeast3", () => {
     expect(registration(entrypoints.saveFieldRegistration)).toMatchObject({
       kind: "callable",

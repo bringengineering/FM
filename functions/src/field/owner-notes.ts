@@ -177,6 +177,34 @@ export function buildOwnerNoteRecord(input: {
   };
 }
 
+export async function buildInitialOwnerNotePatch(input: {
+  buildingId: string;
+  drafts: unknown;
+  actor: OwnerNoteActor;
+  createdAt: string;
+  getUserDisplayName(uid: string): Promise<string | null>;
+}): Promise<Record<string, OwnerNoteRecord>> {
+  const drafts = normalizeOwnerNoteDrafts(input.drafts);
+  if (drafts.length === 0) return {};
+
+  const profileName = (await input.getUserDisplayName(input.actor.uid))?.trim();
+  const actorName =
+    profileName || input.actor.tokenDisplayName?.trim() || "브링 담당자";
+
+  return Object.fromEntries(
+    drafts.map((draft) => [
+      `fieldPlatform/ownerNotes/${input.buildingId}/${draft.localId}`,
+      buildOwnerNoteRecord({
+        buildingId: input.buildingId,
+        draft,
+        actorUid: input.actor.uid,
+        actorName,
+        createdAt: input.createdAt,
+      }),
+    ]),
+  );
+}
+
 async function canAppend(
   buildingId: string,
   actor: OwnerNoteActor,
