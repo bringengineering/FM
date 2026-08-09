@@ -72,6 +72,7 @@ const roles = new Set<UserRole>(["admin", "staff", "reviewer"]);
 const PATH_ID_MAX_BYTES = 128;
 const RENDERED_STRING_MAX_LENGTH = 4_096;
 const DATE_ONLY_PATTERN = /^(\d{4})-(\d{2})-(\d{2})$/;
+const STORED_ACTOR_ID_PATTERN = /^[A-Za-z0-9_-]{1,128}$/;
 
 function isUserRole(value: unknown): value is UserRole {
   return typeof value === "string" && roles.has(value as UserRole);
@@ -105,20 +106,29 @@ function isCanonicalUtcIso(value: unknown): value is string {
   return Number.isFinite(timestamp) && new Date(timestamp).toISOString() === value;
 }
 
-function normalizeOwnerNote(key: string, value: unknown): OwnerNote | null {
+function isStoredActorId(value: unknown): value is string {
+  return typeof value === "string" && STORED_ACTOR_ID_PATTERN.test(value);
+}
+
+function normalizeOwnerNote(
+  key: string,
+  value: unknown,
+  expectedBuildingId?: string,
+): OwnerNote | null {
   if (
     !isPathSafeId(key)
     || !isRecord(value)
     || value.id !== key
     || !isPathSafeId(value.id)
     || !isPathSafeId(value.buildingId)
+    || (expectedBuildingId !== undefined && value.buildingId !== expectedBuildingId)
     || typeof value.body !== "string"
     || value.body.length === 0
     || value.body.length > 2_000
     || value.body !== value.body.trim()
     || !isCanonicalUtcIso(value.recordedAt)
     || !isCanonicalUtcIso(value.createdAt)
-    || !isPathSafeId(value.createdBy)
+    || !isStoredActorId(value.createdBy)
     || typeof value.createdByName !== "string"
     || value.createdByName.trim().length === 0
     || value.createdByName !== value.createdByName.trim()
@@ -128,12 +138,12 @@ function normalizeOwnerNote(key: string, value: unknown): OwnerNote | null {
     return null;
   }
 
-  const hasArchivedAt = value.archivedAt !== undefined;
-  const hasArchivedBy = value.archivedBy !== undefined;
+  const hasArchivedAt = Object.prototype.hasOwnProperty.call(value, "archivedAt");
+  const hasArchivedBy = Object.prototype.hasOwnProperty.call(value, "archivedBy");
   if (hasArchivedAt !== hasArchivedBy) return null;
   if (
     hasArchivedAt
-    && (!isCanonicalUtcIso(value.archivedAt) || !isPathSafeId(value.archivedBy))
+    && (!isCanonicalUtcIso(value.archivedAt) || !isStoredActorId(value.archivedBy))
   ) {
     return null;
   }
@@ -152,6 +162,20 @@ function normalizeOwnerNote(key: string, value: unknown): OwnerNote | null {
           archivedBy: value.archivedBy as string,
         }
       : {}),
+  };
+}
+
+function normalizeArchiveOwnerNoteResult(value: unknown): ArchiveOwnerNoteResult | null {
+  if (
+    !isRecord(value)
+    || !isCanonicalUtcIso(value.archivedAt)
+    || !isStoredActorId(value.archivedBy)
+  ) {
+    return null;
+  }
+  return {
+    archivedAt: value.archivedAt,
+    archivedBy: value.archivedBy,
   };
 }
 
@@ -281,7 +305,11 @@ export async function appendOwnerNote(
     recordedAt: input.recordedAt,
   };
   const result = await invoke(payload);
-  return result.data.note;
+  const note = isRecord(result.data)
+    ? normalizeOwnerNote(input.localId, result.data.note, input.buildingId)
+    : null;
+  if (!note) throw new Error("field_owner_note_response_invalid");
+  return note;
 }
 
 export async function archiveOwnerNote(
@@ -293,7 +321,9 @@ export async function archiveOwnerNote(
     noteId: input.noteId,
   };
   const result = await invoke(payload);
-  return result.data;
+  const archive = normalizeArchiveOwnerNoteResult(result.data);
+  if (!archive) throw new Error("field_owner_note_archive_response_invalid");
+  return archive;
 }
 
 export async function getCurrentFieldRole(): Promise<UserRole | null> {
@@ -338,12 +368,15 @@ export function subscribePendingManagementContracts(
   );
 }
 
-export function sortOwnerNotes(value: unknown): OwnerNote[] {
+export function sortOwnerNotes(
+  value: unknown,
+  expectedBuildingId?: string,
+): OwnerNote[] {
   if (!isRecord(value)) return [];
 
   return Object.entries(value)
     .flatMap(([key, candidate]) => {
-      const note = normalizeOwnerNote(key, candidate);
+      const note = normalizeOwnerNote(key, candidate, expectedBuildingId);
       return note && !note.archivedAt ? [note] : [];
     })
     .sort((left, right) => Date.parse(right.createdAt) - Date.parse(left.createdAt));
@@ -383,7 +416,7 @@ export function subscribeOwnerNotes(
 
   return onValue(
     notesQuery,
-    (snapshot) => listener(sortOwnerNotes(snapshot.val())),
+    (snapshot) => listener(sortOwnerNotes(snapshot.val(), buildingId)),
     (error) => onError(
       error instanceof Error ? error : new Error("field_owner_note_load_failed"),
     ),

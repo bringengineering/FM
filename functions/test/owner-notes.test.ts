@@ -5,6 +5,7 @@ import {
   archiveOwnerNoteCore,
   buildOwnerNoteRecord,
   isStableId,
+  normalizeStoredOwnerNoteRecord,
   normalizeOwnerNoteDrafts,
   resolveOwnerNoteActorName,
   type OwnerNoteDependencies,
@@ -115,6 +116,62 @@ describe("owner note normalization", () => {
 });
 
 describe("owner note record construction", () => {
+  it("reconstructs a stored record and strips fields outside the owner-note schema", () => {
+    expect(normalizeStoredOwnerNoteRecord({
+      ...note(),
+      ignoredServerField: "must not escape",
+    }, "building-1", "note_12345678")).toEqual(note());
+
+    expect(normalizeStoredOwnerNoteRecord({
+      ...note(),
+      archivedAt: "2026-08-09T02:30:00.000Z",
+      archivedBy: "admin-original",
+      ignoredArchiveField: "must not escape",
+    }, "building-1", "note_12345678")).toEqual({
+      ...note(),
+      archivedAt: "2026-08-09T02:30:00.000Z",
+      archivedBy: "admin-original",
+    });
+  });
+
+  it.each([
+    ["scalar", "invalid"],
+    ["mismatched note id", note({ id: "note_87654321" })],
+    ["mismatched building id", note({ buildingId: "building-2" })],
+    ["padded body", note({ body: " padded " })],
+    ["empty body", note({ body: "" })],
+    ["oversized body", note({ body: "a".repeat(2001) })],
+    ["invalid recordedAt", note({ recordedAt: "2026-08-09" })],
+    ["invalid createdAt", note({ createdAt: "not-a-date" })],
+    ["invalid createdBy", note({ createdBy: "bad/path" })],
+    ["padded owner name", note({ createdByName: " Padded staff " })],
+    ["oversized owner name", note({ createdByName: "가".repeat(86) })],
+    ["control owner name", note({ createdByName: "Bad\u0000name" })],
+    ["only archivedAt", note({ archivedAt: NOW })],
+    ["only archivedBy", note({ archivedBy: "admin-original" })],
+    ["invalid archivedAt", note({ archivedAt: "not-a-date", archivedBy: "admin-original" })],
+    ["invalid archivedBy", note({ archivedAt: NOW, archivedBy: "bad/path" })],
+  ])("rejects a malformed stored record: %s", (_label, stored) => {
+    expect(() => normalizeStoredOwnerNoteRecord(
+      stored,
+      "building-1",
+      "note_12345678",
+    )).toThrow("owner_note_stored_record_invalid");
+  });
+
+  it("rejects unstable expected path identities", () => {
+    expect(() => normalizeStoredOwnerNoteRecord(
+      note(),
+      "bad/path",
+      "note_12345678",
+    )).toThrow("owner_note_stored_record_invalid");
+    expect(() => normalizeStoredOwnerNoteRecord(
+      note(),
+      "building-1",
+      "bad/path",
+    )).toThrow("owner_note_stored_record_invalid");
+  });
+
   it("accepts an actor name at the exact 256-byte boundary", async () => {
     const exactBoundaryName = "a".repeat(256);
 
@@ -481,6 +538,7 @@ describe("owner note archive policy", () => {
     [{ archivedAt: "not-a-date", archivedBy: "admin-1" }],
     [{ archivedAt: NOW, archivedBy: "" }],
     [{ archivedAt: NOW, archivedBy: 123 }],
+    [{ archivedAt: NOW, archivedBy: "bad/path" }],
   ])("rejects invalid atomic archive metadata %#", async (archiveResult) => {
     const deps = dependencies({
       readNote: vi.fn(async () => note()),

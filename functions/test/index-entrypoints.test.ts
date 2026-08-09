@@ -498,6 +498,95 @@ describe("Firebase entrypoint metadata", () => {
     expect(registrations.mutationPaths).not.toContain(OWNER_NOTE_PATH);
   });
 
+  it("rejects a malformed append transaction winner without mutation", async () => {
+    seedOwnerNoteAccess();
+    const malformedWinner = ownerNoteRecord({ createdAt: "not-a-date" });
+    registrations.readSequences.set(OWNER_NOTE_PATH, [null]);
+    registrations.pathValues.set(OWNER_NOTE_PATH, malformedWinner);
+
+    await expect(callableHandler(entrypoints.appendOwnerNote)(
+      validOwnerCallableRequest(validOwnerNoteData()),
+    )).rejects.toMatchObject({
+      code: "internal",
+      message: "owner_note_internal",
+    });
+
+    expect(registrations.pathValues.get(OWNER_NOTE_PATH)).toEqual(malformedWinner);
+    expect(registrations.mutationPaths).not.toContain(OWNER_NOTE_PATH);
+  });
+
+  it("rejects a malformed append candidate before the note transaction", async () => {
+    const uid = "staff:unsafe";
+    registrations.pathValues.set(`fieldPlatform/users/${uid}`, {
+      enabled: true,
+      role: "staff",
+    });
+    registrations.pathValues.set(`fieldPlatform/users/${uid}/enabled`, true);
+    registrations.pathValues.set(
+      `fieldPlatform/users/${uid}/displayName`,
+      "Verified staff",
+    );
+    registrations.pathValues.set("fieldPlatform/buildings/building-1", {
+      id: "building-1",
+    });
+    registrations.pathValues.set(
+      `fieldPlatform/buildingAssignments/building-1/${uid}`,
+      true,
+    );
+
+    await expect(callableHandler(entrypoints.appendOwnerNote)({
+      auth: {
+        uid,
+        token: {
+          fieldPlatform: true,
+          fieldRole: "staff",
+          name: "Verified staff",
+          auth_time: 1_723_181_696,
+        },
+      },
+      data: validOwnerNoteData(),
+    })).rejects.toMatchObject({
+      code: "internal",
+      message: "owner_note_internal",
+    });
+
+    expect(registrations.pathValues.has(OWNER_NOTE_PATH)).toBe(false);
+    expect(registrations.transactionPaths).not.toContain(OWNER_NOTE_PATH);
+  });
+
+  it("rejects malformed stored state on the append pre-read", async () => {
+    seedOwnerNoteAccess();
+    const malformedStored = ownerNoteRecord({
+      createdByName: "Bad\u007fname",
+    });
+    registrations.pathValues.set(OWNER_NOTE_PATH, malformedStored);
+
+    await expect(callableHandler(entrypoints.appendOwnerNote)(
+      validOwnerCallableRequest(validOwnerNoteData()),
+    )).rejects.toMatchObject({
+      code: "internal",
+      message: "owner_note_internal",
+    });
+
+    expect(registrations.pathValues.get(OWNER_NOTE_PATH)).toEqual(malformedStored);
+    expect(registrations.transactionPaths).not.toContain(OWNER_NOTE_PATH);
+  });
+
+  it("strips extra stored fields from an idempotent append response", async () => {
+    seedOwnerNoteAccess();
+    registrations.pathValues.set(OWNER_NOTE_PATH, ownerNoteRecord({
+      ignoredServerField: "must not escape",
+    }));
+
+    const result = await callableHandler(entrypoints.appendOwnerNote)(
+      validOwnerCallableRequest(validOwnerNoteData()),
+    );
+
+    expect(result).toEqual({ note: ownerNoteRecord() });
+    expect(result).not.toHaveProperty("note.ignoredServerField");
+    expect(registrations.transactionPaths).not.toContain(OWNER_NOTE_PATH);
+  });
+
   it("preserves and returns the first archive winner in a transaction race", async () => {
     seedOwnerNoteAccess("admin");
     const active = ownerNoteRecord({ createdBy: "staff-1" });
@@ -538,6 +627,28 @@ describe("Firebase entrypoint metadata", () => {
     });
 
     expect(registrations.pathValues.has(OWNER_NOTE_PATH)).toBe(false);
+    expect(registrations.mutationPaths).not.toContain(OWNER_NOTE_PATH);
+  });
+
+  it("rejects malformed archive transaction state without mutating it", async () => {
+    seedOwnerNoteAccess("admin");
+    const malformedWinner = ownerNoteRecord({
+      archivedAt: "2026-08-09T02:30:00.000Z",
+    });
+    registrations.readSequences.set(OWNER_NOTE_PATH, [ownerNoteRecord()]);
+    registrations.pathValues.set(OWNER_NOTE_PATH, malformedWinner);
+
+    await expect(callableHandler(entrypoints.archiveOwnerNote)(
+      validOwnerCallableRequest(
+        { buildingId: "building-1", noteId: "note_12345678" },
+        "admin",
+      ),
+    )).rejects.toMatchObject({
+      code: "internal",
+      message: "owner_note_internal",
+    });
+
+    expect(registrations.pathValues.get(OWNER_NOTE_PATH)).toEqual(malformedWinner);
     expect(registrations.mutationPaths).not.toContain(OWNER_NOTE_PATH);
   });
 

@@ -32,8 +32,8 @@ import type {
 import {
   appendOwnerNoteCore,
   archiveOwnerNoteCore,
+  normalizeStoredOwnerNoteRecord,
   type OwnerNoteDependencies,
-  type OwnerNoteRecord,
 } from "./field/owner-notes.js";
 import {
   rebuildMapProjectionForBuilding,
@@ -353,22 +353,26 @@ const ownerNoteDependencies: OwnerNoteDependencies = {
       .ref(`fieldPlatform/ownerNotes/${buildingId}/${noteId}`)
       .get();
     const value: unknown = snapshot.val();
-    return isRecord(value) ? value as unknown as OwnerNoteRecord : null;
+    return value === null
+      ? null
+      : normalizeStoredOwnerNoteRecord(value, buildingId, noteId);
   },
   async createNoteIfAbsent(buildingId, noteId, note) {
     const noteReference = adminDatabase.ref(
       `fieldPlatform/ownerNotes/${buildingId}/${noteId}`,
     );
+    const candidate = normalizeStoredOwnerNoteRecord(
+      note,
+      buildingId,
+      noteId,
+    );
     const result = await noteReference.transaction(
-      (current) => current ?? note,
+      (current) => current ?? candidate,
       undefined,
       false,
     );
     const stored: unknown = result.snapshot.val();
-    if (!isRecord(stored)) {
-      throw new Error("owner_note_create_result_invalid");
-    }
-    return stored as unknown as OwnerNoteRecord;
+    return normalizeStoredOwnerNoteRecord(stored, buildingId, noteId);
   },
   async archiveNote(buildingId, noteId, archive) {
     const noteReference = adminDatabase.ref(
@@ -376,9 +380,14 @@ const ownerNoteDependencies: OwnerNoteDependencies = {
     );
     const result = await noteReference.transaction(
       (current: unknown) => {
-        if (!isRecord(current)) return undefined;
-        if ("archivedAt" in current || "archivedBy" in current) return current;
-        return { ...current, ...archive };
+        if (current === null || current === undefined) return undefined;
+        const stored = normalizeStoredOwnerNoteRecord(
+          current,
+          buildingId,
+          noteId,
+        );
+        if (stored.archivedAt && stored.archivedBy) return current;
+        return { ...stored, ...archive };
       },
       undefined,
       false,
@@ -387,12 +396,14 @@ const ownerNoteDependencies: OwnerNoteDependencies = {
     if (stored === null || stored === undefined) {
       throw new Error("owner_note_not_found");
     }
-    if (!isRecord(stored)) {
-      throw new Error("owner_note_archive_result_invalid");
-    }
+    const normalized = normalizeStoredOwnerNoteRecord(
+      stored,
+      buildingId,
+      noteId,
+    );
     return {
-      archivedAt: stored.archivedAt as string,
-      archivedBy: stored.archivedBy as string,
+      archivedAt: normalized.archivedAt as string,
+      archivedBy: normalized.archivedBy as string,
     };
   },
 };

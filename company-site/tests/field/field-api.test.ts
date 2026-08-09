@@ -127,7 +127,11 @@ describe("field callable client", () => {
   });
 
   it("sends only client-owned fields to appendOwnerNote", async () => {
-    firebase.callableInvoke.mockResolvedValue({ data: { note: serverNote } });
+    firebase.callableInvoke.mockResolvedValue({
+      data: {
+        note: { ...serverNote, ignoredServerField: "must not escape" },
+      },
+    });
 
     await expect(appendOwnerNote({
       buildingId: "building-1",
@@ -153,12 +157,35 @@ describe("field callable client", () => {
       .not.toMatch(/createdAt|createdBy|createdByName|archivedAt/);
   });
 
+  it.each([
+    ["invalid createdAt", { createdAt: "not-a-date" }],
+    ["oversized name", { createdByName: "가".repeat(86) }],
+    ["control name", { createdByName: "Bad\u0000name" }],
+    ["unstable creator", { createdBy: "bad:uid" }],
+    ["partial archive", { archivedAt: "2026-08-09T02:30:00.000Z" }],
+    ["mismatched id", { id: "note_87654321" }],
+    ["mismatched building", { buildingId: "building-2" }],
+  ])("rejects an append callable response with %s", async (_label, override) => {
+    firebase.callableInvoke.mockResolvedValue({
+      data: { note: { ...serverNote, ...override } },
+    });
+
+    await expect(appendOwnerNote({
+      buildingId: "building-1",
+      localId: "note_12345678",
+      body: "Check boiler pressure",
+      recordedAt: "2026-08-09T01:30:00.000Z",
+    })).rejects.toThrow("field_owner_note_response_invalid");
+  });
+
   it("sends only the building and note IDs to archiveOwnerNote", async () => {
     const archive = {
       archivedAt: "2026-08-09T02:30:00.000Z",
       archivedBy: "admin-1",
     };
-    firebase.callableInvoke.mockResolvedValue({ data: archive });
+    firebase.callableInvoke.mockResolvedValue({
+      data: { ...archive, ignoredServerField: "must not escape" },
+    });
 
     await expect(archiveOwnerNote({
       buildingId: "building-1",
@@ -171,6 +198,26 @@ describe("field callable client", () => {
       "archiveOwnerNote",
       { buildingId: "building-1", noteId: "note_12345678" },
     );
+  });
+
+  it.each([
+    ["invalid archivedAt", { archivedAt: "not-a-date", archivedBy: "admin-1" }],
+    ["missing archivedBy", { archivedAt: "2026-08-09T02:30:00.000Z" }],
+    ["unsafe archivedBy", {
+      archivedAt: "2026-08-09T02:30:00.000Z",
+      archivedBy: "bad/path",
+    }],
+    ["unstable archivedBy", {
+      archivedAt: "2026-08-09T02:30:00.000Z",
+      archivedBy: "bad:uid",
+    }],
+  ])("rejects an archive callable response with %s", async (_label, data) => {
+    firebase.callableInvoke.mockResolvedValue({ data });
+
+    await expect(archiveOwnerNote({
+      buildingId: "building-1",
+      noteId: "note_12345678",
+    })).rejects.toThrow("field_owner_note_archive_response_invalid");
   });
 });
 
@@ -215,8 +262,23 @@ describe("owner note read adapter", () => {
         id: "padded-name",
         createdByName: " Padded staff ",
       },
+      "partial-archive": {
+        ...serverNote,
+        id: "partial-archive",
+        archivedAt: "2026-08-09T02:30:00.000Z",
+      },
+      "unstable-creator": {
+        ...serverNote,
+        id: "unstable-creator",
+        createdBy: "bad:uid",
+      },
+      "wrong-building": {
+        ...serverNote,
+        id: "wrong-building",
+        buildingId: "building-2",
+      },
       scalar: "skip-me",
-    })).toEqual([
+    }, "building-1")).toEqual([
       { ...serverNote, id: "newer-note", createdAt: "2026-08-09T03:00:00.000Z" },
       { ...serverNote, id: "older-note", createdAt: "2026-08-09T01:00:00.000Z" },
     ]);
@@ -227,6 +289,11 @@ describe("owner note read adapter", () => {
     firebase.onValue.mockImplementation((_query, listener) => {
       listener({ val: () => ({
         "note_12345678": serverNote,
+        "wrong-building": {
+          ...serverNote,
+          id: "wrong-building",
+          buildingId: "building-2",
+        },
       }) });
       return unsubscribe;
     });

@@ -63,6 +63,7 @@ export interface OwnerNoteDependencies {
 }
 
 const STABLE_ID = /^[A-Za-z0-9_-]{8,128}$/;
+const STORED_ACTOR_ID = /^[A-Za-z0-9_-]{1,128}$/;
 const DEFAULT_OWNER_NOTE_ACTOR_NAME = "브링 담당자";
 export const OWNER_NOTE_ACTOR_NAME_MAX_BYTES = 256;
 
@@ -96,6 +97,82 @@ function isCanonicalUtcIso(value: unknown): value is string {
   if (typeof value !== "string") return false;
   const timestamp = Date.parse(value);
   return Number.isFinite(timestamp) && new Date(timestamp).toISOString() === value;
+}
+
+function isStoredActorId(value: unknown): value is string {
+  return typeof value === "string" && STORED_ACTOR_ID.test(value);
+}
+
+function storedRecordInvalid(): never {
+  throw new Error("owner_note_stored_record_invalid");
+}
+
+export function normalizeStoredOwnerNoteRecord(
+  value: unknown,
+  expectedBuildingId: string,
+  expectedNoteId: string,
+): OwnerNoteRecord {
+  if (
+    !isStableId(expectedBuildingId)
+    || !isStableId(expectedNoteId)
+    || !isRecord(value)
+  ) {
+    return storedRecordInvalid();
+  }
+
+  const id = value.id;
+  const buildingId = value.buildingId;
+  const body = value.body;
+  const recordedAt = value.recordedAt;
+  const createdAt = value.createdAt;
+  const createdBy = value.createdBy;
+  const createdByName = normalizeOwnerNoteActorName(value.createdByName);
+  if (
+    id !== expectedNoteId
+    || !isStableId(id)
+    || buildingId !== expectedBuildingId
+    || !isStableId(buildingId)
+    || typeof body !== "string"
+    || body.length === 0
+    || body.length > 2000
+    || body !== body.trim()
+    || !isCanonicalUtcIso(recordedAt)
+    || !isCanonicalUtcIso(createdAt)
+    || !isStoredActorId(createdBy)
+    || createdByName === null
+    || createdByName !== value.createdByName
+  ) {
+    return storedRecordInvalid();
+  }
+
+  const hasArchivedAt = Object.prototype.hasOwnProperty.call(value, "archivedAt");
+  const hasArchivedBy = Object.prototype.hasOwnProperty.call(value, "archivedBy");
+  if (hasArchivedAt !== hasArchivedBy) return storedRecordInvalid();
+
+  let archive: OwnerNoteArchiveMetadata | undefined;
+  if (hasArchivedAt) {
+    if (
+      !isCanonicalUtcIso(value.archivedAt)
+      || !isStoredActorId(value.archivedBy)
+    ) {
+      return storedRecordInvalid();
+    }
+    archive = {
+      archivedAt: value.archivedAt,
+      archivedBy: value.archivedBy,
+    };
+  }
+
+  return {
+    id,
+    buildingId,
+    body,
+    recordedAt,
+    createdAt,
+    createdBy,
+    createdByName,
+    ...(archive ?? {}),
+  };
 }
 
 export function normalizeOwnerNoteDrafts(value: unknown): OwnerNoteDraftInput[] {
@@ -170,10 +247,7 @@ function normalizeArchiveMetadata(value: unknown): OwnerNoteArchiveMetadata {
   const archivedBy = source?.archivedBy;
   if (
     !isCanonicalUtcIso(archivedAt)
-    || typeof archivedBy !== "string"
-    || archivedBy.length === 0
-    || archivedBy.length > 128
-    || archivedBy.trim() !== archivedBy
+    || !isStoredActorId(archivedBy)
   ) {
     throw new Error("owner_note_archive_result_invalid");
   }
