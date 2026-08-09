@@ -4,6 +4,7 @@ import {
   appendOwnerNoteCore,
   archiveOwnerNoteCore,
   buildOwnerNoteRecord,
+  isStableId,
   normalizeOwnerNoteDrafts,
   type OwnerNoteDependencies,
   type OwnerNoteRecord,
@@ -42,12 +43,20 @@ function dependencies(
     isAssigned: vi.fn(async () => true),
     readNote: vi.fn(async () => null),
     createNoteIfAbsent: vi.fn(async (_buildingId, _noteId, candidate) => candidate),
-    archiveNote: vi.fn(async () => undefined),
+    archiveNote: vi.fn(async (_buildingId, _noteId, archive) => archive),
     ...overrides,
   };
 }
 
 describe("owner note normalization", () => {
+  it("checks stable IDs without coercing unknown runtime values", () => {
+    expect(isStableId("note_12345678")).toBe(true);
+    expect(isStableId("bad/key")).toBe(false);
+    expect(isStableId(12345678)).toBe(false);
+    expect(isStableId(null)).toBe(false);
+    expect(isStableId(undefined)).toBe(false);
+  });
+
   it("accepts omitted drafts and trims valid drafts", () => {
     expect(normalizeOwnerNoteDrafts(undefined)).toEqual([]);
     expect(normalizeOwnerNoteDrafts([
@@ -78,6 +87,18 @@ describe("owner note normalization", () => {
     ])).toThrow("owner_note_body_too_long");
     expect(() => normalizeOwnerNoteDrafts([
       { localId: "note_12345678", body: "메모", recordedAt: "not-a-date" },
+    ])).toThrow("owner_note_recorded_at_invalid");
+  });
+
+  it.each([
+    "2026-02-30T02:00:00.000Z",
+    "2026/08/09 02:00:00",
+    "2026-08-09",
+    "2026-08-09T02:00:00.000",
+    0,
+  ])("rejects non-canonical recordedAt value %s", (recordedAt) => {
+    expect(() => normalizeOwnerNoteDrafts([
+      { localId: "note_12345678", body: "메모", recordedAt },
     ])).toThrow("owner_note_recorded_at_invalid");
   });
 
@@ -143,6 +164,88 @@ describe("owner note append policy", () => {
       "note_12345678",
       note(),
     );
+  });
+
+  it("validates the complete runtime payload before any dependency call", async () => {
+    const malformed: Array<[unknown, string]> = [
+      [undefined, "owner_note_building_id_invalid"],
+      [null, "owner_note_building_id_invalid"],
+      [{}, "owner_note_building_id_invalid"],
+      [{ ...input, buildingId: 12345678 }, "owner_note_building_id_invalid"],
+      [{ ...input, localId: 12345678 }, "owner_note_id_invalid"],
+      [{ ...input, body: 42 }, "owner_note_body_required"],
+      [{ ...input, recordedAt: "2026-08-09" }, "owner_note_recorded_at_invalid"],
+    ];
+
+    for (const [payload, code] of malformed) {
+      const deps = dependencies();
+      await expect(appendOwnerNoteCore(payload as never, actor, deps))
+        .rejects.toThrow(code);
+      expect(deps.isEnabled).not.toHaveBeenCalled();
+      expect(deps.consumeRateLimit).not.toHaveBeenCalled();
+      expect(deps.isAssigned).not.toHaveBeenCalled();
+      expect(deps.buildingExists).not.toHaveBeenCalled();
+    }
+  });
+
+  it("orders enabled, rate, assignment, and building checks before data access", async () => {
+    const calls: string[] = [];
+    const deps = dependencies({
+      isEnabled: vi.fn(async () => { calls.push("enabled"); return true; }),
+      consumeRateLimit: vi.fn(async () => { calls.push("rate"); return true; }),
+      isAssigned: vi.fn(async () => { calls.push("assignment"); return true; }),
+      buildingExists: vi.fn(async () => { calls.push("building"); return true; }),
+      getUserDisplayName: vi.fn(async () => { calls.push("profile"); return "서버 프로필 이름"; }),
+      readNote: vi.fn(async () => { calls.push("read"); return null; }),
+      createNoteIfAbsent: vi.fn(async (_buildingId, _noteId, candidate) => {
+        calls.push("create");
+        return candidate;
+      }),
+    });
+
+    await appendOwnerNoteCore(input, actor, deps);
+
+    expect(calls).toEqual([
+      "enabled",
+      "rate",
+      "assignment",
+      "building",
+      "profile",
+      "read",
+      "create",
+    ]);
+  });
+
+  it("rate-limits before assignment and building fanout", async () => {
+    const deps = dependencies({ consumeRateLimit: vi.fn(async () => false) });
+
+    await expect(appendOwnerNoteCore(input, actor, deps))
+      .rejects.toThrow("owner_note_rate_limited");
+    expect(deps.isEnabled).toHaveBeenCalledOnce();
+    expect(deps.consumeRateLimit).toHaveBeenCalledOnce();
+    expect(deps.isAssigned).not.toHaveBeenCalled();
+    expect(deps.buildingExists).not.toHaveBeenCalled();
+    expect(deps.getUserDisplayName).not.toHaveBeenCalled();
+    expect(deps.readNote).not.toHaveBeenCalled();
+  });
+
+  it("bounds reviewer and unassigned denials without building fanout", async () => {
+    const reviewerDeps = dependencies();
+    await expect(appendOwnerNoteCore(
+      input,
+      { ...actor, role: "reviewer" },
+      reviewerDeps,
+    )).rejects.toThrow("owner_note_forbidden");
+    expect(reviewerDeps.consumeRateLimit).toHaveBeenCalledOnce();
+    expect(reviewerDeps.isAssigned).not.toHaveBeenCalled();
+    expect(reviewerDeps.buildingExists).not.toHaveBeenCalled();
+
+    const staffDeps = dependencies({ isAssigned: vi.fn(async () => false) });
+    await expect(appendOwnerNoteCore(input, actor, staffDeps))
+      .rejects.toThrow("owner_note_forbidden");
+    expect(staffDeps.consumeRateLimit).toHaveBeenCalledOnce();
+    expect(staffDeps.isAssigned).toHaveBeenCalledOnce();
+    expect(staffDeps.buildingExists).not.toHaveBeenCalled();
   });
 
   it("replays an identical retry without creating a second note", async () => {
@@ -259,6 +362,40 @@ describe("owner note archive policy", () => {
     );
   });
 
+  it("validates the complete runtime payload before dependencies", async () => {
+    const malformed: Array<[unknown, string]> = [
+      [undefined, "owner_note_building_id_invalid"],
+      [null, "owner_note_building_id_invalid"],
+      [{}, "owner_note_building_id_invalid"],
+      [{ ...input, buildingId: 12345678 }, "owner_note_building_id_invalid"],
+      [{ ...input, noteId: 12345678 }, "owner_note_id_invalid"],
+    ];
+
+    for (const [payload, code] of malformed) {
+      const deps = dependencies();
+      await expect(archiveOwnerNoteCore(payload as never, admin, deps))
+        .rejects.toThrow(code);
+      expect(deps.isEnabled).not.toHaveBeenCalled();
+      expect(deps.consumeRateLimit).not.toHaveBeenCalled();
+      expect(deps.readNote).not.toHaveBeenCalled();
+      expect(deps.archiveNote).not.toHaveBeenCalled();
+    }
+  });
+
+  it("rate-limits before role denial and note reads", async () => {
+    const staffDeps = dependencies();
+    await expect(archiveOwnerNoteCore(input, actor, staffDeps))
+      .rejects.toThrow("owner_note_archive_forbidden");
+    expect(staffDeps.consumeRateLimit).toHaveBeenCalledOnce();
+    expect(staffDeps.readNote).not.toHaveBeenCalled();
+
+    const limitedDeps = dependencies({ consumeRateLimit: vi.fn(async () => false) });
+    await expect(archiveOwnerNoteCore(input, admin, limitedDeps))
+      .rejects.toThrow("owner_note_rate_limited");
+    expect(limitedDeps.readNote).not.toHaveBeenCalled();
+    expect(limitedDeps.archiveNote).not.toHaveBeenCalled();
+  });
+
   it("returns existing archive metadata on an idempotent retry", async () => {
     const archived = note({
       archivedAt: "2026-08-09T01:00:00.000Z",
@@ -271,6 +408,33 @@ describe("owner note archive policy", () => {
       archivedBy: archived.archivedBy,
     });
     expect(deps.archiveNote).not.toHaveBeenCalled();
+  });
+
+  it("returns the atomic archive winner when another administrator wins the race", async () => {
+    const winningArchive = {
+      archivedAt: "2026-08-09T01:59:59.000Z",
+      archivedBy: "admin-winner",
+    };
+    const deps = dependencies({
+      readNote: vi.fn(async () => note()),
+      archiveNote: vi.fn(async () => winningArchive),
+    });
+
+    await expect(archiveOwnerNoteCore(input, admin, deps)).resolves.toEqual(winningArchive);
+  });
+
+  it.each([
+    [{ archivedAt: "not-a-date", archivedBy: "admin-1" }],
+    [{ archivedAt: NOW, archivedBy: "" }],
+    [{ archivedAt: NOW, archivedBy: 123 }],
+  ])("rejects invalid atomic archive metadata %#", async (archiveResult) => {
+    const deps = dependencies({
+      readNote: vi.fn(async () => note()),
+      archiveNote: vi.fn(async () => archiveResult as never),
+    });
+
+    await expect(archiveOwnerNoteCore(input, admin, deps))
+      .rejects.toThrow("owner_note_archive_result_invalid");
   });
 
   it.each([

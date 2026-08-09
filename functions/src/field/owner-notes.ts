@@ -25,6 +25,11 @@ export interface OwnerNoteActor {
   sessionId?: string;
 }
 
+export interface OwnerNoteArchiveMetadata {
+  archivedAt: string;
+  archivedBy: string;
+}
+
 export interface OwnerNoteDependencies {
   nowIso(): string;
   consumeRateLimit(
@@ -43,14 +48,33 @@ export interface OwnerNoteDependencies {
     noteId: string,
     note: OwnerNoteRecord,
   ): Promise<OwnerNoteRecord>;
+  /**
+   * Atomically archives an existing note and returns the metadata that won.
+   * The adapter must preserve an existing archive, fail if the note was deleted,
+   * and never recreate a missing note.
+   */
   archiveNote(
     buildingId: string,
     noteId: string,
-    archive: { archivedAt: string; archivedBy: string },
-  ): Promise<void>;
+    archive: OwnerNoteArchiveMetadata,
+  ): Promise<OwnerNoteArchiveMetadata>;
 }
 
 const STABLE_ID = /^[A-Za-z0-9_-]{8,128}$/;
+
+export function isStableId(value: unknown): value is string {
+  return typeof value === "string" && STABLE_ID.test(value);
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return Boolean(value) && typeof value === "object" && !Array.isArray(value);
+}
+
+function isCanonicalUtcIso(value: unknown): value is string {
+  if (typeof value !== "string") return false;
+  const timestamp = Date.parse(value);
+  return Number.isFinite(timestamp) && new Date(timestamp).toISOString() === value;
+}
 
 export function normalizeOwnerNoteDrafts(value: unknown): OwnerNoteDraftInput[] {
   if (value === undefined) return [];
@@ -60,26 +84,78 @@ export function normalizeOwnerNoteDrafts(value: unknown): OwnerNoteDraftInput[] 
 
   const seen = new Set<string>();
   return value.map((candidate) => {
-    if (!candidate || typeof candidate !== "object" || Array.isArray(candidate)) {
+    if (!isRecord(candidate)) {
       throw new Error("owner_note_draft_invalid");
     }
 
-    const source = candidate as Record<string, unknown>;
-    const localId = typeof source.localId === "string" ? source.localId : "";
-    const body = typeof source.body === "string" ? source.body.trim() : "";
-    const recordedAt = typeof source.recordedAt === "string" ? source.recordedAt : "";
+    const localId = typeof candidate.localId === "string" ? candidate.localId : "";
+    const body = typeof candidate.body === "string" ? candidate.body.trim() : "";
+    const recordedAt = candidate.recordedAt;
 
-    if (!STABLE_ID.test(localId)) throw new Error("owner_note_id_invalid");
+    if (!isStableId(localId)) throw new Error("owner_note_id_invalid");
     if (seen.has(localId)) throw new Error("owner_note_id_duplicate");
     if (!body) throw new Error("owner_note_body_required");
     if (body.length > 2000) throw new Error("owner_note_body_too_long");
-    if (!Number.isFinite(Date.parse(recordedAt))) {
+    if (!isCanonicalUtcIso(recordedAt)) {
       throw new Error("owner_note_recorded_at_invalid");
     }
 
     seen.add(localId);
     return { localId, body, recordedAt };
   });
+}
+
+function normalizeAppendInput(value: unknown): {
+  buildingId: string;
+  localId: string;
+  body: string;
+  recordedAt: string;
+} {
+  if (!isRecord(value)) {
+    throw new Error("owner_note_building_id_invalid");
+  }
+  const source = value;
+  const buildingId = source.buildingId;
+  if (!isStableId(buildingId)) {
+    throw new Error("owner_note_building_id_invalid");
+  }
+
+  const [draft] = normalizeOwnerNoteDrafts([{
+    localId: source.localId,
+    body: source.body,
+    recordedAt: source.recordedAt,
+  }]);
+  return { buildingId, ...draft };
+}
+
+function normalizeArchiveInput(value: unknown): { buildingId: string; noteId: string } {
+  if (!isRecord(value)) {
+    throw new Error("owner_note_building_id_invalid");
+  }
+  const source = value;
+  const buildingId = source.buildingId;
+  if (!isStableId(buildingId)) {
+    throw new Error("owner_note_building_id_invalid");
+  }
+  const noteId = source.noteId;
+  if (!isStableId(noteId)) throw new Error("owner_note_id_invalid");
+  return { buildingId, noteId };
+}
+
+function normalizeArchiveMetadata(value: unknown): OwnerNoteArchiveMetadata {
+  const source = isRecord(value) ? value : null;
+  const archivedAt = source?.archivedAt;
+  const archivedBy = source?.archivedBy;
+  if (
+    !isCanonicalUtcIso(archivedAt)
+    || typeof archivedBy !== "string"
+    || archivedBy.length === 0
+    || archivedBy.length > 128
+    || archivedBy.trim() !== archivedBy
+  ) {
+    throw new Error("owner_note_archive_result_invalid");
+  }
+  return { archivedAt, archivedBy };
 }
 
 export function buildOwnerNoteRecord(input: {
@@ -128,17 +204,9 @@ export async function appendOwnerNoteCore(
   actor: OwnerNoteActor,
   dependencies: OwnerNoteDependencies,
 ): Promise<OwnerNoteRecord> {
-  if (!STABLE_ID.test(input.buildingId)) {
-    throw new Error("owner_note_building_id_invalid");
-  }
+  const normalized = normalizeAppendInput(input);
   if (!(await dependencies.isEnabled(actor.uid))) {
     throw new Error("owner_note_forbidden");
-  }
-  if (!(await canAppend(input.buildingId, actor, dependencies))) {
-    throw new Error("owner_note_forbidden");
-  }
-  if (!(await dependencies.buildingExists(input.buildingId))) {
-    throw new Error("owner_note_building_not_found");
   }
   if (!(await dependencies.consumeRateLimit(
     actor.uid,
@@ -148,18 +216,23 @@ export async function appendOwnerNoteCore(
   ))) {
     throw new Error("owner_note_rate_limited");
   }
+  if (!(await canAppend(normalized.buildingId, actor, dependencies))) {
+    throw new Error("owner_note_forbidden");
+  }
+  if (!(await dependencies.buildingExists(normalized.buildingId))) {
+    throw new Error("owner_note_building_not_found");
+  }
 
-  const [draft] = normalizeOwnerNoteDrafts([input]);
   const profileName = (await dependencies.getUserDisplayName(actor.uid))?.trim();
   const actorName = profileName || actor.tokenDisplayName?.trim() || "브링 담당자";
   const candidate = buildOwnerNoteRecord({
-    buildingId: input.buildingId,
-    draft,
+    buildingId: normalized.buildingId,
+    draft: normalized,
     actorUid: actor.uid,
     actorName,
     createdAt: dependencies.nowIso(),
   });
-  const existing = await dependencies.readNote(input.buildingId, draft.localId);
+  const existing = await dependencies.readNote(normalized.buildingId, normalized.localId);
   if (existing) {
     if (!sameImmutableNote(existing, candidate)) {
       throw new Error("owner_note_id_conflict");
@@ -168,8 +241,8 @@ export async function appendOwnerNoteCore(
   }
 
   const stored = await dependencies.createNoteIfAbsent(
-    input.buildingId,
-    draft.localId,
+    normalized.buildingId,
+    normalized.localId,
     candidate,
   );
   if (!sameImmutableNote(stored, candidate)) {
@@ -183,13 +256,8 @@ export async function archiveOwnerNoteCore(
   actor: OwnerNoteActor,
   dependencies: OwnerNoteDependencies,
 ): Promise<{ archivedAt: string; archivedBy: string }> {
-  if (!STABLE_ID.test(input.buildingId)) {
-    throw new Error("owner_note_building_id_invalid");
-  }
+  const normalized = normalizeArchiveInput(input);
   if (!(await dependencies.isEnabled(actor.uid))) {
-    throw new Error("owner_note_archive_forbidden");
-  }
-  if (actor.role !== "admin") {
     throw new Error("owner_note_archive_forbidden");
   }
   if (!(await dependencies.consumeRateLimit(
@@ -200,15 +268,27 @@ export async function archiveOwnerNoteCore(
   ))) {
     throw new Error("owner_note_rate_limited");
   }
-  if (!STABLE_ID.test(input.noteId)) throw new Error("owner_note_id_invalid");
-
-  const existing = await dependencies.readNote(input.buildingId, input.noteId);
-  if (!existing) throw new Error("owner_note_not_found");
-  if (existing.archivedAt && existing.archivedBy) {
-    return { archivedAt: existing.archivedAt, archivedBy: existing.archivedBy };
+  if (actor.role !== "admin") {
+    throw new Error("owner_note_archive_forbidden");
   }
 
-  const archive = { archivedAt: dependencies.nowIso(), archivedBy: actor.uid };
-  await dependencies.archiveNote(input.buildingId, input.noteId, archive);
-  return archive;
+  const existing = await dependencies.readNote(normalized.buildingId, normalized.noteId);
+  if (!existing) throw new Error("owner_note_not_found");
+  if (existing.archivedAt && existing.archivedBy) {
+    return normalizeArchiveMetadata({
+      archivedAt: existing.archivedAt,
+      archivedBy: existing.archivedBy,
+    });
+  }
+
+  const archive = normalizeArchiveMetadata({
+    archivedAt: dependencies.nowIso(),
+    archivedBy: actor.uid,
+  });
+  const stored = await dependencies.archiveNote(
+    normalized.buildingId,
+    normalized.noteId,
+    archive,
+  );
+  return normalizeArchiveMetadata(stored);
 }
