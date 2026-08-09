@@ -44,6 +44,7 @@ import {
   appendOwnerNote,
   archiveOwnerNote,
   getCurrentFieldRole,
+  loadFieldCaptureWorkspace,
   saveFieldRegistration,
   setManagementContractStatus,
   sortOwnerNotes,
@@ -110,6 +111,41 @@ describe("field callable client", () => {
 
     await expect(saveFieldRegistration(registrationInput, invoke)).resolves.toBe(result);
     expect(invoke).toHaveBeenCalledWith(registrationInput);
+  });
+
+  it("loads and validates assigned capture targets with owned open sessions", async () => {
+    const data = {
+      targets: [{
+        id: "managed-building-1-unit-1",
+        buildingId: "building-1",
+        buildingName: "브링 관리 건물",
+        unitId: "unit-1",
+        unitLabel: "201호",
+        source: "management",
+      }],
+      openSessions: [{
+        id: "11111111-1111-4111-8111-111111111111",
+        requestId: "22222222-2222-4222-8222-222222222222",
+        buildingId: "building-1",
+        unitId: "unit-1",
+        visitId: "33333333-3333-4333-8333-333333333333",
+        createdBy: "staff-1",
+        status: "open",
+        createdAt: "2026-08-09T00:00:00.000Z",
+        updatedAt: "2026-08-09T01:00:00.000Z",
+      }],
+    };
+    firebase.callableInvoke.mockResolvedValue({ data });
+
+    await expect(loadFieldCaptureWorkspace()).resolves.toEqual(data);
+    expect(firebase.httpsCallable).toHaveBeenCalledWith(
+      firebase.functions,
+      "listFieldCaptureWorkspace",
+    );
+    expect(firebase.callableInvoke).toHaveBeenCalledWith(
+      "listFieldCaptureWorkspace",
+      undefined,
+    );
   });
 
   it("sends the exact management-contract transition request", async () => {

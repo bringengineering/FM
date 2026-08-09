@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 
 import AppShell, { type FieldDestination } from "./components/AppShell";
 import AuthGate from "./components/AuthGate";
@@ -11,11 +11,13 @@ import CaptureWorkspace, {
 } from "./components/CaptureWorkspace";
 import Dashboard from "./components/Dashboard";
 import FieldMapPanel from "./components/FieldMapPanel";
+import FieldServiceWorker from "./components/FieldServiceWorker";
 import { useFieldSession } from "./components/FieldSessionContext";
 import ManagementContractQueue from "./components/ManagementContractQueue";
 import {
   excludeFieldMedia,
   getFieldMediaAccess,
+  loadFieldCaptureWorkspace,
   saveFieldRegistration,
   startFieldCaptureSession,
   type StartFieldCaptureSessionInput,
@@ -154,8 +156,8 @@ export function FieldWorkspace({
   coordinator: suppliedCoordinator,
   coordinatorFactory = createDefaultCaptureCoordinator,
   requestIdFactory = () => crypto.randomUUID(),
-  loadCaptureTargets = async () => [],
-  loadOpenCaptureSessions = async () => [],
+  loadCaptureTargets: suppliedTargetLoader,
+  loadOpenCaptureSessions: suppliedSessionLoader,
   getMediaAccess = getFieldMediaAccess,
   excludeMedia = excludeFieldMedia,
 }: FieldWorkspaceProps = {}) {
@@ -165,6 +167,21 @@ export function FieldWorkspace({
   const [coordinator, setCoordinator] = useState<CaptureUploadCoordinator | null>(
     suppliedCoordinator ?? null,
   );
+  const captureLoaders = useMemo(() => {
+    let pending: ReturnType<typeof loadFieldCaptureWorkspace> | null = null;
+    const load = () => {
+      if (!pending) {
+        pending = loadFieldCaptureWorkspace().finally(() => {
+          pending = null;
+        });
+      }
+      return pending;
+    };
+    return {
+      targets: suppliedTargetLoader ?? (async () => (await load()).targets),
+      sessions: suppliedSessionLoader ?? (async () => (await load()).openSessions),
+    };
+  }, [session.uid, suppliedSessionLoader, suppliedTargetLoader]);
 
   useEffect(() => {
     let cancelled = false;
@@ -227,8 +244,8 @@ export function FieldWorkspace({
       ) : active === "capture" ? (
         queue && coordinator ? (
           <CaptureWorkspace
-            loadTargets={loadCaptureTargets}
-            loadOpenSessions={loadOpenCaptureSessions}
+            loadTargets={captureLoaders.targets}
+            loadOpenSessions={captureLoaders.sessions}
             startSession={startCaptureSession}
             queue={queue}
             coordinator={coordinator}
@@ -252,5 +269,10 @@ export function FieldWorkspace({
 }
 
 export default function FieldApp() {
-  return <AuthGate><FieldWorkspace /></AuthGate>;
+  return (
+    <>
+      <FieldServiceWorker />
+      <AuthGate><FieldWorkspace /></AuthGate>
+    </>
+  );
 }

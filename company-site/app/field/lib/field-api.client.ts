@@ -19,7 +19,12 @@ import type {
   FinalizeFieldMediaResult,
 } from "./media-upload";
 import { auth, database, functions } from "./firebase.client";
-import type { Building, OwnerNote, UserRole } from "./types";
+import type {
+  Building,
+  CaptureSessionRecord,
+  OwnerNote,
+  UserRole,
+} from "./types";
 
 export interface SetManagementContractStatusInput {
   requestId: string;
@@ -47,6 +52,21 @@ export interface StartFieldCaptureSessionInput {
 export interface StartFieldCaptureSessionResult {
   captureSessionId: string;
   visitId: string;
+}
+
+export interface CaptureTarget {
+  id: string;
+  buildingId: string;
+  buildingName: string;
+  unitId?: string;
+  unitLabel?: string;
+  listingId?: string;
+  source: "management" | "advertising";
+}
+
+export interface FieldCaptureWorkspaceResult {
+  targets: CaptureTarget[];
+  openSessions: CaptureSessionRecord[];
 }
 
 export interface FieldMediaAccessResult {
@@ -93,6 +113,10 @@ export type SetContractInvoker = (
 export type StartCaptureSessionInvoker = (
   input: StartFieldCaptureSessionInput,
 ) => Promise<{ data: StartFieldCaptureSessionResult }>;
+
+export type LoadFieldCaptureWorkspaceInvoker = () => Promise<{
+  data: FieldCaptureWorkspaceResult;
+}>;
 
 export type FinalizeFieldMediaInvoker = (
   input: FinalizeFieldMediaInput,
@@ -318,6 +342,14 @@ async function defaultStartCaptureSessionInvoker(
   return callable(input);
 }
 
+async function defaultLoadFieldCaptureWorkspaceInvoker() {
+  const callable = httpsCallable<undefined, FieldCaptureWorkspaceResult>(
+    functions,
+    "listFieldCaptureWorkspace",
+  );
+  return callable(undefined);
+}
+
 async function defaultFinalizeFieldMediaInvoker(
   input: FinalizeFieldMediaInput,
 ) {
@@ -400,6 +432,100 @@ export async function startFieldCaptureSession(
   return {
     captureSessionId: result.data.captureSessionId,
     visitId: result.data.visitId,
+  };
+}
+
+function normalizeCaptureTarget(value: unknown): CaptureTarget | null {
+  if (
+    !isRecord(value)
+    || !isPathSafeId(value.id)
+    || !isPathSafeId(value.buildingId)
+    || !isNonEmptyString(value.buildingName)
+    || (value.source !== "management" && value.source !== "advertising")
+  ) {
+    return null;
+  }
+  const hasUnitId = value.unitId !== undefined;
+  const hasUnitLabel = value.unitLabel !== undefined;
+  if (
+    hasUnitId !== hasUnitLabel
+    || (hasUnitId && !isPathSafeId(value.unitId))
+    || (hasUnitLabel && !isNonEmptyString(value.unitLabel))
+    || (value.source === "management" && value.listingId !== undefined)
+    || (value.source === "advertising" && !isPathSafeId(value.listingId))
+  ) {
+    return null;
+  }
+  return {
+    id: value.id,
+    buildingId: value.buildingId,
+    buildingName: value.buildingName,
+    ...(hasUnitId ? { unitId: value.unitId as string } : {}),
+    ...(hasUnitLabel ? { unitLabel: value.unitLabel as string } : {}),
+    ...(value.source === "advertising"
+      ? { listingId: value.listingId as string }
+      : {}),
+    source: value.source,
+  };
+}
+
+function normalizeOpenCaptureSession(value: unknown): CaptureSessionRecord | null {
+  if (
+    !isRecord(value)
+    || !isPathSafeId(value.id)
+    || !isPathSafeId(value.requestId)
+    || !isPathSafeId(value.buildingId)
+    || !isPathSafeId(value.visitId)
+    || !isPathSafeId(value.createdBy)
+    || value.status !== "open"
+    || !isCanonicalUtcIso(value.createdAt)
+    || !isCanonicalUtcIso(value.updatedAt)
+    || (value.unitId !== undefined && !isPathSafeId(value.unitId))
+    || (value.listingId !== undefined && !isPathSafeId(value.listingId))
+  ) {
+    return null;
+  }
+  return {
+    id: value.id,
+    requestId: value.requestId,
+    buildingId: value.buildingId,
+    ...(value.unitId === undefined ? {} : { unitId: value.unitId }),
+    ...(value.listingId === undefined ? {} : { listingId: value.listingId }),
+    visitId: value.visitId,
+    createdBy: value.createdBy,
+    status: "open",
+    createdAt: value.createdAt,
+    updatedAt: value.updatedAt,
+  };
+}
+
+export async function loadFieldCaptureWorkspace(
+  invoke: LoadFieldCaptureWorkspaceInvoker = defaultLoadFieldCaptureWorkspaceInvoker,
+): Promise<FieldCaptureWorkspaceResult> {
+  const result = await invoke();
+  if (
+    !isRecord(result.data)
+    || !Array.isArray(result.data.targets)
+    || !Array.isArray(result.data.openSessions)
+  ) {
+    throw new Error("field_capture_workspace_response_invalid");
+  }
+  const targets = result.data.targets.map(normalizeCaptureTarget);
+  const openSessions = result.data.openSessions.map(normalizeOpenCaptureSession);
+  if (
+    targets.some((value) => value === null)
+    || openSessions.some((value) => value === null)
+    || new Set(targets.map((value) => value!.id)).size !== targets.length
+    || new Set(openSessions.map((value) => value!.id)).size !== openSessions.length
+  ) {
+    throw new Error("field_capture_workspace_response_invalid");
+  }
+  return {
+    targets: targets as CaptureTarget[],
+    openSessions: (openSessions as CaptureSessionRecord[]).sort((left, right) => (
+      Date.parse(right.updatedAt) - Date.parse(left.updatedAt)
+      || right.id.localeCompare(left.id)
+    )),
   };
 }
 
