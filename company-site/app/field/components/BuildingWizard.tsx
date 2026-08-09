@@ -1,6 +1,7 @@
 "use client";
 
 import {
+  useCallback,
   useEffect,
   useMemo,
   useRef,
@@ -11,6 +12,7 @@ import {
 
 import {
   LEGACY_WIZARD_DRAFT_KEY,
+  REGISTRATION_DRAFT_VERSION,
   commitPreparedWizardDraft,
   createRegistrationDraft,
   prepareWizardDraft,
@@ -29,7 +31,11 @@ import {
   type UnitDraftState,
 } from "../lib/registration-draft";
 import type { FieldSession } from "../lib/auth.client";
+import type { OfflineQueuePort } from "../lib/offline-queue";
 import { bindFieldVisualViewport } from "../lib/visual-viewport";
+import CaptureGuide, {
+  type CaptureUploadCoordinator,
+} from "./CaptureGuide";
 import OwnerNotesPanel from "./OwnerNotesPanel";
 import {
   validateBuildingDraft,
@@ -67,6 +73,15 @@ export interface BuildingWizardProps {
   onComplete?: (
     input: SaveFieldRegistrationInput,
   ) => SaveFieldRegistrationResult | Promise<SaveFieldRegistrationResult>;
+  onCompleteWithCapture?: (
+    input: SaveFieldRegistrationInput,
+    capture: {
+      captureSessionId: string;
+      primaryUnitLocalId: string;
+    },
+  ) => SaveFieldRegistrationResult | Promise<SaveFieldRegistrationResult>;
+  queue?: OfflineQueuePort;
+  coordinator?: CaptureUploadCoordinator;
 }
 
 function defaultNow() {
@@ -168,6 +183,9 @@ export default function BuildingWizard({
     existingBuilding: null,
   }),
   onComplete,
+  onCompleteWithCapture,
+  queue,
+  coordinator,
 }: BuildingWizardProps) {
   const [step, setStep] = useState(Math.min(Math.max(initialStep, 0), STEPS.length - 1));
   const resolvedStorage = storage ?? browserStorage();
@@ -262,6 +280,20 @@ export default function BuildingWizard({
         updatedAt: now(),
       });
       status = "로컬 자동저장 완료";
+      if (queue) {
+        const serializableDraft = JSON.parse(JSON.stringify(draft)) as Record<
+          string,
+          unknown
+        >;
+        void queue.putDraft(
+          session.uid,
+          draft.draftId,
+          REGISTRATION_DRAFT_VERSION,
+          serializableDraft,
+        ).catch(() => {
+          if (active) setLocalSave({ draft, status: "로컬 자동저장 실패" });
+        });
+      }
     } catch {
       status = "로컬 자동저장 실패";
     }
@@ -280,6 +312,7 @@ export default function BuildingWizard({
     now,
     resolvedDraftId,
     resolvedStorage,
+    queue,
     session.uid,
   ]);
 
@@ -288,6 +321,23 @@ export default function BuildingWizard({
   ) {
     setEnvelope((current) => ({ ...current, value: updater(current.value) }));
   }
+
+  const updateCaptureAttachments = useCallback((
+    captureAttachments: BuildingWizardDraft["captureAttachments"],
+  ) => {
+    setEnvelope((current) => {
+      if (
+        JSON.stringify(current.value.captureAttachments)
+        === JSON.stringify(captureAttachments)
+      ) {
+        return current;
+      }
+      return {
+        ...current,
+        value: { ...current.value, captureAttachments },
+      };
+    });
+  }, []);
 
   const saveStatus = completedSave?.draft === draft
     ? completedSave.status
@@ -411,19 +461,26 @@ export default function BuildingWizard({
 
   async function complete() {
     if (incompatibleDraft || submittingRef.current || completedRef.current) return;
-    if (!onComplete) {
+    if (!onComplete && !onCompleteWithCapture) {
       setCompletedSave({ draft, status: "로컬 초안 저장 완료" });
       return;
     }
     submittingRef.current = true;
     setSubmitting(true);
     try {
-      const result = await onComplete(toSaveFieldRegistrationInput(draft));
+      const input = toSaveFieldRegistrationInput(draft);
+      const result = onCompleteWithCapture
+        ? await onCompleteWithCapture(input, {
+            captureSessionId: draft.captureSessionId,
+            primaryUnitLocalId: draft.units[0]?.localId ?? "unit-1",
+          })
+        : await onComplete!(input);
       completedRef.current = true;
       setSavedBuildingId(result.buildingId);
       let cleanupFailed = false;
       try {
         removeWizardDraft(resolvedStorage, session.uid, draft.draftId);
+        if (queue) await queue.removeDraft(session.uid, draft.draftId);
       } catch {
         cleanupFailed = true;
       }
@@ -580,7 +637,19 @@ export default function BuildingWizard({
 
         {step === 2 && <SimpleStep title="상태점검"><Field wide label="공실 사유"><input id="vacancyReason" value={draft.listing.vacancyReason} onChange={(event) => updateListing("vacancyReason", event.target.value)} /></Field><Field label="공실 시작일"><input id="vacantSince" type="date" value={draft.listing.vacantSince} onChange={(event) => updateListing("vacantSince", event.target.value)} /></Field><Field wide label="호실 상태 메모"><textarea id="conditionNote" value={draft.listing.conditionNote} onChange={(event) => updateListing("conditionNote", event.target.value)} /></Field></SimpleStep>}
         {step === 3 && <OptionsStep selected={draft.listing.options} onChange={(options) => updateListing("options", options)} />}
-        {step === 4 && <SimpleStep title="촬영 준비"><div className="field-step-notice"><b>다음 기능에서 촬영 체크리스트가 연결됩니다.</b><p>외관, 진입부, 주차, 공동현관, 호실, 주방, 욕실, 옵션, 설비, 세로영상 순서로 촬영합니다.</p></div></SimpleStep>}
+        {step === 4 && (
+          <CaptureGuide
+            context={{
+              mode: "draft",
+              draftId: draft.draftId,
+              captureSessionId: draft.captureSessionId,
+              unitLocalId: draft.units[0]?.localId ?? "unit-1",
+            }}
+            queue={queue}
+            coordinator={coordinator}
+            onDescriptorsChange={updateCaptureAttachments}
+          />
+        )}
         {step === 5 && <SimpleStep title="입지와 GPS 확인">{gpsDistance !== null && gpsDistance > 150 && <div className="field-gps-warning" role="alert">현재 위치와 검색 주소가 {gpsDistance}m 떨어져 있습니다. 검색 주소를 유지하거나 지도 핀을 보정해 주세요.</div>}<Field wide label="입지 설명"><textarea id="locationNote" value={draft.listing.locationNote} onChange={(event) => updateListing("locationNote", event.target.value)} placeholder="편의점, 버스정류장, 학교, 생활권 정보를 기록하세요." /></Field></SimpleStep>}
         {step === 6 && <ReviewStep draft={draft} />}
       </div>

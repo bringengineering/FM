@@ -12,6 +12,7 @@ import {
 import FieldMapPanel from "../../app/field/components/FieldMapPanel";
 import BuildingWizard from "../../app/field/components/BuildingWizard";
 import Dashboard from "../../app/field/components/Dashboard";
+import { saveAndBindCaptureRegistration } from "../../app/field/FieldApp";
 import OwnerNotesPanel, {
   type OwnerNotesPanelProps,
 } from "../../app/field/components/OwnerNotesPanel";
@@ -19,7 +20,12 @@ import ManagementContractQueue, {
   createApprovalRequestId,
 } from "../../app/field/components/ManagementContractQueue";
 import type { FieldSession } from "../../app/field/lib/auth.client";
+import type {
+  OfflineQueuePort,
+  QueuedMediaRecord,
+} from "../../app/field/lib/offline-queue";
 import {
+  REGISTRATION_DRAFT_VERSION,
   activeWizardDraftKey,
   type SaveFieldRegistrationInput,
   wizardDraftStorageKey,
@@ -542,6 +548,92 @@ describe("OwnerNotesPanel", () => {
 });
 
 describe("BuildingWizard", () => {
+  it("saves, starts the capture session, binds IDs, then resumes uploads in order", async () => {
+    const events: string[] = [];
+    const registration = {
+      buildingId: "building-1",
+      unitIds: { "unit-1": "unit-server-1" },
+      listingId: "listing-1",
+      visitId: "visit-1",
+    };
+    const bindRegistration = vi.fn(async () => { events.push("bind"); });
+    const resume = vi.fn(async () => { events.push("resume"); });
+
+    await saveAndBindCaptureRegistration({
+      input: {} as SaveFieldRegistrationInput,
+      capture: {
+        captureSessionId: "11111111-1111-4111-8111-111111111111",
+        primaryUnitLocalId: "unit-1",
+      },
+      uid: staffSession.uid,
+      requestId: "22222222-2222-4222-8222-222222222222",
+      saveRegistration: async () => {
+        events.push("save");
+        return registration;
+      },
+      startCaptureSession: async () => {
+        events.push("session");
+        return { captureSessionId: "11111111-1111-4111-8111-111111111111", visitId: "visit-1" };
+      },
+      queue: { bindRegistration } as unknown as OfflineQueuePort,
+      coordinator: { resume },
+    });
+
+    expect(events).toEqual(["save", "session", "bind", "resume"]);
+  });
+
+  it("uses the guided camera in step five and persists descriptors without binary data", async () => {
+    const requestId = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
+    const captureSessionId = "11111111-1111-4111-8111-111111111111";
+    const generatedIds = [requestId, captureSessionId];
+    const records: QueuedMediaRecord[] = [];
+    const queue = {
+      putDraft: vi.fn(async () => undefined),
+      removeDraft: vi.fn(async () => undefined),
+      list: vi.fn(async () => records),
+      enqueue: vi.fn(async (input: Parameters<OfflineQueuePort["enqueue"]>[0]) => {
+        records.push({
+          ...input,
+          key: `${input.uid}:${input.mediaId}`,
+          retryCount: 0,
+          driveSyncState: "notRequested",
+        });
+      }),
+      patch: vi.fn(),
+    } as unknown as OfflineQueuePort;
+    const draftId = "capture-wizard";
+
+    render(
+      <FieldSessionProvider session={staffSession}>
+        <BuildingWizard
+          session={staffSession}
+          draftId={draftId}
+          initialStep={4}
+          idFactory={() => generatedIds.shift() ?? crypto.randomUUID()}
+          queue={queue}
+        />
+      </FieldSessionProvider>,
+    );
+
+    const input = await screen.findByLabelText("외관 사진 촬영");
+    fireEvent.change(input, {
+      target: {
+        files: [new File(["outside"], "outside.jpg", { type: "image/jpeg" })],
+      },
+    });
+
+    expect(await screen.findByText("기기에 저장됨 · 서버 등록 대기"))
+      .toBeInTheDocument();
+    await waitFor(() => {
+      const stored = window.localStorage.getItem(
+        wizardDraftStorageKey(staffSession.uid, draftId),
+      );
+      expect(stored).toContain("outside.jpg");
+      expect(stored).toContain(captureSessionId);
+      expect(stored).not.toMatch(/blob:|data:|base64/);
+    });
+  });
+
   it("binds and cleans the field visual viewport while mounted", () => {
     const root = document.documentElement;
     root.style.setProperty("--field-visual-viewport-height", "321px");
@@ -815,7 +907,7 @@ describe("BuildingWizard", () => {
   it("preserves a future-version draft and blocks completion", async () => {
     const legacyDraftKey = "future-version-draft";
     const stored = JSON.stringify({
-      draftVersion: 4,
+      draftVersion: 5,
       draftId: "future-draft",
       requestId: "future-request",
       futureOnlyData: { keep: true },
@@ -1161,7 +1253,9 @@ describe("BuildingWizard", () => {
       )).toBeDefined();
       expect(values.get(legacyDraftKey)).toBeUndefined();
     });
-    expect([...values.keys()].filter((key) => key.startsWith("bring-field-wizard:v3:")))
+    expect([...values.keys()].filter((key) => key.startsWith(
+      `bring-field-wizard:v${REGISTRATION_DRAFT_VERSION}:`,
+    )))
       .toEqual([wizardDraftStorageKey(staffSession.uid, "strict-mode-draft")]);
   });
 

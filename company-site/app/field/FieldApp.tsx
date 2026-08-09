@@ -1,15 +1,84 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 
 import AppShell, { type FieldDestination } from "./components/AppShell";
 import AuthGate from "./components/AuthGate";
 import BuildingWizard from "./components/BuildingWizard";
+import type { CaptureUploadCoordinator } from "./components/CaptureGuide";
 import Dashboard from "./components/Dashboard";
 import FieldMapPanel from "./components/FieldMapPanel";
 import { useFieldSession } from "./components/FieldSessionContext";
 import ManagementContractQueue from "./components/ManagementContractQueue";
-import { saveFieldRegistration } from "./lib/field-api.client";
+import {
+  saveFieldRegistration,
+  startFieldCaptureSession,
+  type StartFieldCaptureSessionInput,
+  type StartFieldCaptureSessionResult,
+} from "./lib/field-api.client";
+import {
+  openOfflineQueue,
+  type OfflineQueuePort,
+} from "./lib/offline-queue";
+import type {
+  SaveFieldRegistrationInput,
+  SaveFieldRegistrationResult,
+} from "./lib/registration-draft";
+
+interface CaptureRegistrationContext {
+  captureSessionId: string;
+  primaryUnitLocalId: string;
+}
+
+interface SaveAndBindCaptureRegistrationInput {
+  input: SaveFieldRegistrationInput;
+  capture: CaptureRegistrationContext;
+  uid: string;
+  requestId: string;
+  saveRegistration: (
+    input: SaveFieldRegistrationInput,
+  ) => Promise<SaveFieldRegistrationResult>;
+  startCaptureSession: (
+    input: StartFieldCaptureSessionInput,
+  ) => Promise<StartFieldCaptureSessionResult>;
+  queue: Pick<OfflineQueuePort, "bindRegistration">;
+  coordinator?: Pick<CaptureUploadCoordinator, "resume">;
+}
+
+export async function saveAndBindCaptureRegistration({
+  input,
+  capture,
+  uid,
+  requestId,
+  saveRegistration,
+  startCaptureSession,
+  queue,
+  coordinator,
+}: SaveAndBindCaptureRegistrationInput): Promise<SaveFieldRegistrationResult> {
+  const ids = await saveRegistration(input);
+  const unitId = ids.unitIds[capture.primaryUnitLocalId];
+  if (!unitId) throw new Error("capture_unit_binding_missing");
+  await startCaptureSession({
+    requestId,
+    captureSessionId: capture.captureSessionId,
+    visitId: ids.visitId,
+    buildingId: ids.buildingId,
+    unitId,
+    listingId: ids.listingId,
+    visitType: "initial",
+  });
+  await queue.bindRegistration(uid, capture.captureSessionId, ids);
+  await coordinator?.resume(uid);
+  return ids;
+}
+
+interface FieldWorkspaceProps {
+  saveRegistration?: typeof saveFieldRegistration;
+  startCaptureSession?: typeof startFieldCaptureSession;
+  queueFactory?: typeof openOfflineQueue;
+  coordinator?: CaptureUploadCoordinator;
+  requestIdFactory?: () => string;
+}
 
 const destinationTitles: Record<
   Exclude<FieldDestination, "home">,
@@ -56,9 +125,37 @@ function DestinationScreen({ destination }: { destination: Exclude<FieldDestinat
   );
 }
 
-function FieldWorkspace() {
+export function FieldWorkspace({
+  saveRegistration = saveFieldRegistration,
+  startCaptureSession = startFieldCaptureSession,
+  queueFactory = openOfflineQueue,
+  coordinator,
+  requestIdFactory = () => crypto.randomUUID(),
+}: FieldWorkspaceProps = {}) {
   const session = useFieldSession();
   const [active, setActive] = useState<FieldDestination>("home");
+  const [queue, setQueue] = useState<OfflineQueuePort | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    let openedQueue: OfflineQueuePort | null = null;
+    void queueFactory()
+      .then((nextQueue) => {
+        if (cancelled) {
+          nextQueue.close();
+          return;
+        }
+        openedQueue = nextQueue;
+        setQueue(nextQueue);
+      })
+      .catch(() => {
+        if (!cancelled) setQueue(null);
+      });
+    return () => {
+      cancelled = true;
+      openedQueue?.close();
+    };
+  }, [queueFactory, session.uid]);
 
   return (
     <AppShell active={active} onNavigate={setActive}>
@@ -71,7 +168,21 @@ function FieldWorkspace() {
           <ManagementContractQueue />
           <BuildingWizard
             session={session}
-            onComplete={saveFieldRegistration}
+            queue={queue ?? undefined}
+            coordinator={coordinator}
+            onCompleteWithCapture={async (input, capture) => {
+              if (!queue) throw new Error("capture_queue_unavailable");
+              return saveAndBindCaptureRegistration({
+                input,
+                capture,
+                uid: session.uid,
+                requestId: requestIdFactory(),
+                saveRegistration,
+                startCaptureSession,
+                queue,
+                coordinator,
+              });
+            }}
           />
         </section>
       ) : (
