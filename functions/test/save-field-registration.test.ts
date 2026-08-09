@@ -8,6 +8,8 @@ import type {
 } from "../src/field/contracts.js";
 import {
   saveFieldRegistrationCore,
+  type RegistrationReservation,
+  type RegistrationReservationOutcome,
   type RegistrationRequestReceipt,
   type SaveFieldRegistrationDependencies,
 } from "../src/field/save-field-registration.js";
@@ -90,16 +92,86 @@ function deterministicEntityId(
   return `${prefix}_${digest}`;
 }
 
-function createInMemoryAdapter() {
+interface InMemoryAdapterOptions {
+  beforeReceiptRead?: () => Promise<void>;
+  persistReceipts?: boolean;
+  now?: () => string;
+}
+
+function cloneReservation(
+  reservation: RegistrationReservation,
+): RegistrationReservation {
+  return {
+    ...reservation,
+    result: {
+      ...reservation.result,
+      unitIds: { ...reservation.result.unitIds },
+    },
+  };
+}
+
+function createBarrier(participants: number): () => Promise<void> {
+  let arrivals = 0;
+  let release: (() => void) | undefined;
+  const ready = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+
+  return async () => {
+    arrivals += 1;
+    if (arrivals === participants) release?.();
+    await ready;
+  };
+}
+
+function createInMemoryAdapter(options: InMemoryAdapterOptions = {}) {
   const receipts = new Map<string, RegistrationRequestReceipt>();
+  const reservationsByRequest = new Map<string, RegistrationReservation>();
+  const reservationsByDraft = new Map<string, RegistrationReservation>();
   const patches: Record<string, unknown>[] = [];
 
   const dependencies: SaveFieldRegistrationDependencies = {
     getReceipt: vi.fn(async (uid, requestId) => {
+      await options.beforeReceiptRead?.();
       return receipts.get(`${uid}\0${requestId}`) ?? null;
     }),
+    reserveRegistration: vi.fn(
+      async (
+        proposed: RegistrationReservation,
+      ): Promise<RegistrationReservationOutcome> => {
+        const requestKey = `${proposed.uid}\0${proposed.requestId}`;
+        const draftKey = `${proposed.uid}\0${proposed.draftId}`;
+        const requestReservation = reservationsByRequest.get(requestKey);
+        if (requestReservation) {
+          if (
+            requestReservation.requestHash !== proposed.requestHash ||
+            requestReservation.draftId !== proposed.draftId
+          ) {
+            return { status: "requestConflict" };
+          }
+          return {
+            status: "acquired",
+            reservation: cloneReservation(requestReservation),
+          };
+        }
+
+        const draftReservation = reservationsByDraft.get(draftKey);
+        if (
+          draftReservation &&
+          draftReservation.requestId !== proposed.requestId
+        ) {
+          return { status: "draftConflict" };
+        }
+
+        const stored = cloneReservation(proposed);
+        reservationsByRequest.set(requestKey, stored);
+        reservationsByDraft.set(draftKey, stored);
+        return { status: "acquired", reservation: cloneReservation(stored) };
+      },
+    ),
     updateRoot: vi.fn(async (patch) => {
       patches.push(patch);
+      if (options.persistReceipts === false) return;
       for (const [path, value] of Object.entries(patch)) {
         const match = /^fieldPlatform\/registrationRequests\/([^/]+)\/([^/]+)$/.exec(
           path,
@@ -112,10 +184,16 @@ function createInMemoryAdapter() {
         }
       }
     }),
-    now: vi.fn(() => NOW),
+    now: vi.fn(options.now ?? (() => NOW)),
   };
 
-  return { dependencies, patches, receipts };
+  return {
+    dependencies,
+    patches,
+    receipts,
+    reservationsByRequest,
+    reservationsByDraft,
+  };
 }
 
 async function expectInvalid(input: SaveFieldRegistrationInput): Promise<void> {
@@ -124,6 +202,7 @@ async function expectInvalid(input: SaveFieldRegistrationInput): Promise<void> {
   await expect(
     saveFieldRegistrationCore(input, staffActor, dependencies),
   ).rejects.toThrow("field_invalid_registration");
+  expect(dependencies.reserveRegistration).not.toHaveBeenCalled();
   expect(dependencies.updateRoot).not.toHaveBeenCalled();
 }
 
@@ -261,8 +340,157 @@ describe("saveFieldRegistrationCore", () => {
 
     expect(second).toEqual(first);
     expect(dependencies.getReceipt).toHaveBeenCalledTimes(2);
+    expect(dependencies.reserveRegistration).toHaveBeenCalledTimes(1);
     expect(dependencies.updateRoot).toHaveBeenCalledTimes(1);
     expect(dependencies.now).toHaveBeenCalledTimes(1);
+  });
+
+  it("atomically rejects one of two simultaneous different inputs sharing a request ID", async () => {
+    const changed = validRegistrationInput();
+    changed.listing.monthlyRentWon += 1;
+    const { dependencies, patches } = createInMemoryAdapter({
+      beforeReceiptRead: createBarrier(2),
+    });
+
+    const settled = await Promise.allSettled([
+      saveFieldRegistrationCore(
+        validRegistrationInput(),
+        staffActor,
+        dependencies,
+      ),
+      saveFieldRegistrationCore(changed, staffActor, dependencies),
+    ]);
+    const fulfilled = settled.filter(
+      (result): result is PromiseFulfilledResult<Awaited<ReturnType<typeof saveFieldRegistrationCore>>> =>
+        result.status === "fulfilled",
+    );
+    const rejected = settled.filter(
+      (result): result is PromiseRejectedResult => result.status === "rejected",
+    );
+
+    expect(fulfilled).toHaveLength(1);
+    expect(rejected).toHaveLength(1);
+    expect(rejected[0].reason).toEqual(
+      expect.objectContaining({ message: "field_request_id_conflict" }),
+    );
+    expect(dependencies.getReceipt).toHaveBeenCalledTimes(2);
+    expect(dependencies.reserveRegistration).toHaveBeenCalledTimes(2);
+    expect(dependencies.updateRoot).toHaveBeenCalledTimes(1);
+    expect(patches).toHaveLength(1);
+  });
+
+  it("uses one stored reservation for two simultaneous identical calls", async () => {
+    let clockIndex = 0;
+    const clock = [NOW, "2026-08-09T12:35:56.000Z"];
+    const { dependencies, patches } = createInMemoryAdapter({
+      beforeReceiptRead: createBarrier(2),
+      now: () => clock[clockIndex++] ?? clock[clock.length - 1],
+    });
+
+    const [first, second] = await Promise.all([
+      saveFieldRegistrationCore(
+        validRegistrationInput(),
+        staffActor,
+        dependencies,
+      ),
+      saveFieldRegistrationCore(
+        validRegistrationInput(),
+        staffActor,
+        dependencies,
+      ),
+    ]);
+
+    expect(second).toEqual(first);
+    expect(dependencies.reserveRegistration).toHaveBeenCalledTimes(2);
+    expect(dependencies.updateRoot).toHaveBeenCalledTimes(2);
+    expect(patches).toHaveLength(2);
+    expect(patches[1]).toEqual(patches[0]);
+    expect(Object.keys(patches[1]).sort()).toEqual(
+      Object.keys(patches[0]).sort(),
+    );
+  });
+
+  it("rejects a new request ID for an already reserved draft before overwriting entities", async () => {
+    const { dependencies, patches } = createInMemoryAdapter();
+    const first = await saveFieldRegistrationCore(
+      validRegistrationInput(),
+      staffActor,
+      dependencies,
+    );
+    const reusedDraft = validRegistrationInput();
+    reusedDraft.requestId = "request-2";
+
+    await expect(
+      saveFieldRegistrationCore(reusedDraft, staffActor, dependencies),
+    ).rejects.toThrow("field_draft_id_conflict");
+
+    expect(dependencies.updateRoot).toHaveBeenCalledTimes(1);
+    expect(patches).toHaveLength(1);
+    expect(patches[0][`fieldPlatform/buildings/${first.buildingId}`]).toMatchObject({
+      createdAt: NOW,
+    });
+  });
+
+  it("atomically rejects one of two simultaneous request IDs sharing a draft", async () => {
+    const secondInput = validRegistrationInput();
+    secondInput.requestId = "request-2";
+    const { dependencies, patches } = createInMemoryAdapter({
+      beforeReceiptRead: createBarrier(2),
+    });
+
+    const settled = await Promise.allSettled([
+      saveFieldRegistrationCore(
+        validRegistrationInput(),
+        staffActor,
+        dependencies,
+      ),
+      saveFieldRegistrationCore(secondInput, staffActor, dependencies),
+    ]);
+
+    expect(settled.filter((result) => result.status === "fulfilled")).toHaveLength(1);
+    const rejection = settled.find(
+      (result): result is PromiseRejectedResult => result.status === "rejected",
+    );
+    expect(rejection?.reason).toEqual(
+      expect.objectContaining({ message: "field_draft_id_conflict" }),
+    );
+    expect(dependencies.updateRoot).toHaveBeenCalledTimes(1);
+    expect(patches).toHaveLength(1);
+  });
+
+  it("replays an acquired reservation with its original result and claimedAt while the receipt is stale", async () => {
+    let clockIndex = 0;
+    const clock = [NOW, "2026-08-09T13:34:56.000Z"];
+    const { dependencies, patches } = createInMemoryAdapter({
+      persistReceipts: false,
+      now: () => clock[clockIndex++] ?? clock[clock.length - 1],
+    });
+
+    const first = await saveFieldRegistrationCore(
+      validRegistrationInput(),
+      staffActor,
+      dependencies,
+    );
+    const second = await saveFieldRegistrationCore(
+      validRegistrationInput(),
+      staffActor,
+      dependencies,
+    );
+
+    expect(second).toEqual(first);
+    expect(dependencies.getReceipt).toHaveBeenCalledTimes(2);
+    expect(dependencies.reserveRegistration).toHaveBeenCalledTimes(2);
+    expect(dependencies.updateRoot).toHaveBeenCalledTimes(2);
+    expect(patches[1]).toEqual(patches[0]);
+    expect(patches[1][`fieldPlatform/buildings/${first.buildingId}`]).toMatchObject({
+      createdAt: NOW,
+      updatedAt: NOW,
+    });
+    expect(
+      patches[1][
+        `fieldPlatform/registrationRequests/${staffActor.uid}/request-1`
+      ],
+    ).toMatchObject({ completedAt: NOW });
   });
 
   it("normalizes non-semantic surrounding whitespace before hashing and persistence", async () => {
@@ -290,6 +518,37 @@ describe("saveFieldRegistrationCore", () => {
     });
     expect(patches[0][`fieldPlatform/units/${first.unitIds["unit-1"]}`]).toMatchObject({
       unitLabel: "101호",
+    });
+  });
+
+  it("canonicalizes set-valued options before hashing and persistence", async () => {
+    const firstInput = validRegistrationInput();
+    firstInput.units[0].options = ["washer", "aircon", "washer"];
+    firstInput.listing.options = ["washer", "aircon", "washer"];
+    const retryInput = validRegistrationInput();
+    retryInput.units[0].options = ["aircon", "washer"];
+    retryInput.listing.options = ["aircon", "washer"];
+    const { dependencies, patches } = createInMemoryAdapter();
+
+    const first = await saveFieldRegistrationCore(
+      firstInput,
+      staffActor,
+      dependencies,
+    );
+    const second = await saveFieldRegistrationCore(
+      retryInput,
+      staffActor,
+      dependencies,
+    );
+
+    expect(second).toEqual(first);
+    expect(dependencies.updateRoot).toHaveBeenCalledTimes(1);
+    expect(patches[0][`fieldPlatform/units/${first.unitIds["unit-1"]}`]).toMatchObject({
+      options: ["aircon", "washer"],
+    });
+    expect(patches[0][`fieldPlatform/listings/${first.listingId}`]).toMatchObject({
+      options: ["aircon", "washer"],
+      maintenanceFeeItems: ["수도", "공용전기"],
     });
   });
 
@@ -352,10 +611,43 @@ describe("saveFieldRegistrationCore", () => {
       "unsafe local unit ID",
       (input: SaveFieldRegistrationInput) => (input.units[0].localId = "unit.1"),
     ],
+    [
+      "a request ID over 128 UTF-8 bytes",
+      (input: SaveFieldRegistrationInput) =>
+        (input.requestId = "한".repeat(43)),
+    ],
+    [
+      "a draft ID over 128 UTF-8 bytes",
+      (input: SaveFieldRegistrationInput) =>
+        (input.draftId = "한".repeat(43)),
+    ],
+    [
+      "a local unit ID over 128 UTF-8 bytes",
+      (input: SaveFieldRegistrationInput) => {
+        const oversizedId = "한".repeat(43);
+        input.units[0].localId = oversizedId;
+        input.primaryUnitLocalId = oversizedId;
+      },
+    ],
   ])("rejects %s", async (_label, mutate) => {
     const input = validRegistrationInput();
     mutate(input);
     await expectInvalid(input);
+  });
+
+  it("rejects an actor UID over 128 UTF-8 bytes before reading or writing", async () => {
+    const { dependencies } = createInMemoryAdapter();
+    const actor: FieldActor = {
+      ...staffActor,
+      uid: "한".repeat(43),
+    };
+
+    await expect(
+      saveFieldRegistrationCore(validRegistrationInput(), actor, dependencies),
+    ).rejects.toThrow("field_invalid_registration");
+    expect(dependencies.getReceipt).not.toHaveBeenCalled();
+    expect(dependencies.reserveRegistration).not.toHaveBeenCalled();
+    expect(dependencies.updateRoot).not.toHaveBeenCalled();
   });
 
   it.each([
@@ -391,6 +683,53 @@ describe("saveFieldRegistrationCore", () => {
   ])("rejects %s", async (_label, coordinates) => {
     const input = validRegistrationInput();
     Object.assign(input.building, coordinates);
+    await expectInvalid(input);
+  });
+
+  it.each([
+    [
+      "a domain string over 4096 UTF-8 bytes",
+      (input: SaveFieldRegistrationInput) => {
+        input.building.name = "x".repeat(4_097);
+      },
+    ],
+    [
+      "more than 100 string-array items",
+      (input: SaveFieldRegistrationInput) => {
+        input.listing.options = Array.from(
+          { length: 101 },
+          (_, index) => `option-${index}`,
+        );
+      },
+    ],
+    [
+      "a string-array item over 4096 UTF-8 bytes",
+      (input: SaveFieldRegistrationInput) => {
+        input.units[0].options = ["x".repeat(4_097)];
+      },
+    ],
+    [
+      "more than 200 units",
+      (input: SaveFieldRegistrationInput) => {
+        input.units = Array.from({ length: 201 }, (_, index) => ({
+          ...input.units[0],
+          localId: `unit-${index + 1}`,
+          unitLabel: `${index + 1}호`,
+        }));
+      },
+    ],
+    [
+      "a normalized aggregate payload over 256 KiB",
+      (input: SaveFieldRegistrationInput) => {
+        input.listing.options = Array.from(
+          { length: 100 },
+          (_, index) => `${index}-${"x".repeat(3_000)}`,
+        );
+      },
+    ],
+  ])("rejects %s before hashing or reserving", async (_label, mutate) => {
+    const input = validRegistrationInput();
+    mutate(input);
     await expectInvalid(input);
   });
 

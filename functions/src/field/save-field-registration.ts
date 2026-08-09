@@ -1,3 +1,4 @@
+import { Buffer } from "node:buffer";
 import { createHash } from "node:crypto";
 
 import type {
@@ -11,17 +12,47 @@ import type {
 } from "./contracts.js";
 import { buildMapProjection } from "./map-projection.js";
 
+export const FIELD_REGISTRATION_LIMITS = Object.freeze({
+  idBytes: 128,
+  domainStringBytes: 4_096,
+  units: 200,
+  stringArrayItems: 100,
+  normalizedPayloadBytes: 256 * 1_024,
+});
+
 export interface RegistrationRequestReceipt {
   requestHash: string;
   result: SaveFieldRegistrationResult;
   completedAt: string;
 }
 
+export interface RegistrationReservation {
+  uid: string;
+  requestId: string;
+  draftId: string;
+  requestHash: string;
+  result: SaveFieldRegistrationResult;
+  claimedAt: string;
+}
+
+export type RegistrationReservationOutcome =
+  | { status: "acquired"; reservation: RegistrationReservation }
+  | { status: "requestConflict" }
+  | { status: "draftConflict" };
+
 export interface SaveFieldRegistrationDependencies {
   getReceipt(
     uid: string,
     requestId: string,
   ): Promise<RegistrationRequestReceipt | null>;
+  /**
+   * Atomically claims both requestId and draftId below one UID-scoped
+   * transaction boundary. A same-request/hash retry must return the original
+   * reservation unchanged so a crash before the root patch can replay it.
+   */
+  reserveRegistration(
+    proposed: RegistrationReservation,
+  ): Promise<RegistrationReservationOutcome>;
   updateRoot(patch: Record<string, unknown>): Promise<void>;
   now(): string;
 }
@@ -52,6 +83,7 @@ function isPathSafeId(value: unknown): value is string {
   if (
     typeof value !== "string" ||
     value.length === 0 ||
+    Buffer.byteLength(value, "utf8") > FIELD_REGISTRATION_LIMITS.idBytes ||
     value !== value.trim() ||
     /[\u0000-\u001f\u007f]/u.test(value)
   ) {
@@ -69,7 +101,12 @@ function normalizeId(value: unknown): string {
 }
 
 function normalizeRequiredString(value: unknown): string {
-  if (typeof value !== "string" || value.trim().length === 0) {
+  if (
+    typeof value !== "string" ||
+    Buffer.byteLength(value, "utf8") >
+      FIELD_REGISTRATION_LIMITS.domainStringBytes ||
+    value.trim().length === 0
+  ) {
     invalidRegistration();
   }
   return value.trim();
@@ -77,14 +114,32 @@ function normalizeRequiredString(value: unknown): string {
 
 function normalizeOptionalString(value: unknown): string | undefined {
   if (value === undefined) return undefined;
-  if (typeof value !== "string") invalidRegistration();
+  if (
+    typeof value !== "string" ||
+    Buffer.byteLength(value, "utf8") >
+      FIELD_REGISTRATION_LIMITS.domainStringBytes
+  ) {
+    invalidRegistration();
+  }
   const normalized = value.trim();
   return normalized.length > 0 ? normalized : undefined;
 }
 
 function normalizeStringArray(value: unknown): string[] {
-  if (!Array.isArray(value)) invalidRegistration();
+  if (
+    !Array.isArray(value) ||
+    value.length > FIELD_REGISTRATION_LIMITS.stringArrayItems
+  ) {
+    invalidRegistration();
+  }
   return value.map((item) => normalizeRequiredString(item));
+}
+
+function normalizeStringSet(value: unknown): string[] {
+  const normalized = normalizeStringArray(value);
+  return [...new Set(normalized)].sort((left, right) =>
+    left < right ? -1 : left > right ? 1 : 0,
+  );
 }
 
 function normalizeBoolean(value: unknown): boolean {
@@ -199,7 +254,7 @@ function normalizeUnit(value: unknown): UnitDraftPayload {
   const unit: UnitDraftPayload = {
     localId: normalizeId(value.localId),
     unitLabel: normalizeRequiredString(value.unitLabel),
-    options: normalizeStringArray(value.options),
+    options: normalizeStringSet(value.options),
     isVacant: normalizeBoolean(value.isVacant),
   };
   const structure = normalizeOptionalString(value.structure);
@@ -219,7 +274,7 @@ function normalizeListing(value: unknown): ListingDraftPayload {
     maintenanceFeeItems: normalizeStringArray(value.maintenanceFeeItems),
     parkingDescription: normalizeRequiredString(value.parkingDescription),
     petPolicy: normalizeRequiredString(value.petPolicy),
-    options: normalizeStringArray(value.options),
+    options: normalizeStringSet(value.options),
   };
 
   const availableFrom = normalizeOptionalDate(value.availableFrom);
@@ -269,7 +324,11 @@ function normalizeRegistrationInput(
   ) {
     invalidRegistration();
   }
-  if (!Array.isArray(value.units) || value.units.length === 0) {
+  if (
+    !Array.isArray(value.units) ||
+    value.units.length === 0 ||
+    value.units.length > FIELD_REGISTRATION_LIMITS.units
+  ) {
     invalidRegistration();
   }
 
@@ -299,15 +358,26 @@ function assertAuthorizedActor(actor: FieldActor): void {
   if (
     !isRecord(value) ||
     value.enabled !== true ||
-    (value.role !== "admin" && value.role !== "staff") ||
-    !isPathSafeId(value.uid)
+    (value.role !== "admin" && value.role !== "staff")
   ) {
     throw new Error("field_registration_forbidden");
   }
+  if (!isPathSafeId(value.uid)) invalidRegistration();
 }
 
-function requestHash(input: NormalizedRegistrationInput): string {
-  return createHash("sha256").update(JSON.stringify(input)).digest("hex");
+function serializeNormalizedInput(input: NormalizedRegistrationInput): string {
+  const serialized = JSON.stringify(input);
+  if (
+    Buffer.byteLength(serialized, "utf8") >
+    FIELD_REGISTRATION_LIMITS.normalizedPayloadBytes
+  ) {
+    invalidRegistration();
+  }
+  return serialized;
+}
+
+function requestHash(serializedInput: string): string {
+  return createHash("sha256").update(serializedInput).digest("hex");
 }
 
 function entityId(
@@ -340,7 +410,7 @@ export async function saveFieldRegistrationCore(
   }
 
   const normalized = normalizeRegistrationInput(input);
-  const normalizedHash = requestHash(normalized);
+  const normalizedHash = requestHash(serializeNormalizedInput(normalized));
   const storedReceipt = await dependencies.getReceipt(
     actor.uid,
     normalized.requestId,
@@ -352,38 +422,54 @@ export async function saveFieldRegistrationCore(
     return storedReceipt.result;
   }
 
-  const buildingId = entityId(
+  const proposedBuildingId = entityId(
     "building",
     actor.uid,
     normalized.draftId,
     normalized.draftId,
   );
-  const unitIds = Object.fromEntries(
+  const proposedUnitIds = Object.fromEntries(
     normalized.units.map((unit) => [
       unit.localId,
       entityId("unit", actor.uid, normalized.draftId, unit.localId),
     ]),
   );
-  const listingId = entityId(
+  const proposedListingId = entityId(
     "listing",
     actor.uid,
     normalized.draftId,
     normalized.primaryUnitLocalId,
   );
-  const visitId = entityId(
+  const proposedVisitId = entityId(
     "visit",
     actor.uid,
     normalized.draftId,
     normalized.primaryUnitLocalId,
   );
-  const result: SaveFieldRegistrationResult = {
-    buildingId,
-    unitIds,
-    listingId,
-    visitId,
+  const proposedResult: SaveFieldRegistrationResult = {
+    buildingId: proposedBuildingId,
+    unitIds: proposedUnitIds,
+    listingId: proposedListingId,
+    visitId: proposedVisitId,
   };
 
-  const now = dependencies.now();
+  const reservationOutcome = await dependencies.reserveRegistration({
+    uid: actor.uid,
+    requestId: normalized.requestId,
+    draftId: normalized.draftId,
+    requestHash: normalizedHash,
+    result: proposedResult,
+    claimedAt: dependencies.now(),
+  });
+  if (reservationOutcome.status === "requestConflict") {
+    throw new Error("field_request_id_conflict");
+  }
+  if (reservationOutcome.status === "draftConflict") {
+    throw new Error("field_draft_id_conflict");
+  }
+
+  const { claimedAt: now, result } = reservationOutcome.reservation;
+  const { buildingId, unitIds, listingId, visitId } = result;
   const auditStamp = {
     createdAt: now,
     createdBy: actor.uid,

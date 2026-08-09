@@ -55,6 +55,7 @@ const LISTING_KEYS = [
   "availableFrom",
   "contractTermMonths",
   "moveInCondition",
+  "locationDescription",
   "parkingDescription",
   "petPolicy",
   "vacancyReason",

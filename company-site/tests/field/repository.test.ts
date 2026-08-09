@@ -147,6 +147,7 @@ describe("field repository", () => {
     const repository = adapter();
     const unsafeListing = {
       ...testListing(),
+      locationDescription: "상지대학교 정문 도보 5분",
       commonDoorAccess: "TEST-DOOR-SECRET",
       ownerContact: "TEST-OWNER-PHONE",
       internalMemo: "TEST-INTERNAL-MEMO",
@@ -160,7 +161,10 @@ describe("field repository", () => {
       /commonDoorAccess|ownerContact|internalMemo|TEST-DOOR-SECRET|TEST-OWNER-PHONE|TEST-INTERNAL-MEMO/,
     );
     expect(patch["fieldPlatform/listings/listing-1"]).toEqual(
-      expect.objectContaining({ maintenanceFeeWon: 0 }),
+      expect.objectContaining({
+        maintenanceFeeWon: 0,
+        locationDescription: "상지대학교 정문 도보 5분",
+      }),
     );
   });
 
