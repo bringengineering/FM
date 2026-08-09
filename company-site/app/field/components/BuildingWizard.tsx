@@ -184,7 +184,6 @@ export default function BuildingWizard({
         envelope: prepared.envelope,
         legacyKeyToRemove: prepared.legacyKeyToRemove,
         legacyClaim: prepared.legacyClaim,
-        legacyClaimKeyToRemove: prepared.legacyClaimKeyToRemove,
         needsInitialSave: prepared.needsInitialSave,
         incompatibleDraft: false,
         storageLoadFailed: false,
@@ -201,7 +200,6 @@ export default function BuildingWizard({
         ),
         legacyKeyToRemove: null,
         legacyClaim: null,
-        legacyClaimKeyToRemove: null,
         needsInitialSave: true,
         incompatibleDraft,
         storageLoadFailed: !incompatibleDraft,
@@ -241,7 +239,6 @@ export default function BuildingWizard({
         envelope,
         legacyKeyToRemove: initialLoad.legacyKeyToRemove,
         legacyClaim: initialLoad.legacyClaim,
-        legacyClaimKeyToRemove: initialLoad.legacyClaimKeyToRemove,
         needsInitialSave: initialLoad.needsInitialSave,
       }, {
         activeUid: draftId ? undefined : session.uid,

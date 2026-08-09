@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 
 import {
   REGISTRATION_DRAFT_VERSION,
+  activeWizardDraftKey,
   commitPreparedWizardDraft,
   getOrCreateActiveWizardDraftId,
   legacyWizardDraftClaimKey,
@@ -131,19 +132,11 @@ describe("wizard draft persistence", () => {
     expect(replacement.legacyClaim).toMatchObject({ ownerUid: "staff-b", draftId: "draft-b" });
   });
 
-  it("cleans an owned stale claim after legacy removal succeeds", () => {
+  it("keeps a durable tombstone after legacy removal succeeds", () => {
     const legacyKey = "bring-field-building-draft";
     const claimKey = legacyWizardDraftClaimKey(legacyKey);
-    const values = new Map<string, string>([[legacyKey, JSON.stringify(legacyDraft)]]);
-    let failClaimCleanup = true;
-    const storage = {
-      getItem: (key: string) => values.get(key) ?? null,
-      setItem: (key: string, value: string) => { values.set(key, value); },
-      removeItem: (key: string) => {
-        if (key === claimKey && failClaimCleanup) throw new Error("claim cleanup failed");
-        values.delete(key);
-      },
-    };
+    const storage = memoryStorage();
+    storage.setItem(legacyKey, JSON.stringify(legacyDraft));
     const first = prepareWizardDraft(storage, {
       uid: "staff-a",
       draftId: "draft-a",
@@ -151,23 +144,99 @@ describe("wizard draft persistence", () => {
       idFactory: () => "request-a",
     });
 
-    expect(() => commitPreparedWizardDraft(storage, first))
-      .toThrow("claim cleanup failed");
+    commitPreparedWizardDraft(storage, first);
     expect(storage.getItem(legacyKey)).toBeNull();
     expect(storage.getItem(claimKey)).not.toBeNull();
+    expect(loadWizardDraft(storage, {
+      uid: "staff-a",
+      draftId: "draft-a",
+      legacyKey,
+      idFactory: () => "unused",
+    }).value.building.name).toBe("legacy building");
+    expect(storage.getItem(wizardDraftStorageKey("staff-a", "draft-a"))).not.toBeNull();
+  });
 
-    failClaimCleanup = false;
-    const retry = prepareWizardDraft(storage, {
+  it("rejects a second UID that prepared the same legacy draft before the first commit", () => {
+    const storage = memoryStorage();
+    const legacyKey = "bring-field-building-draft";
+    storage.setItem(legacyKey, JSON.stringify(legacyDraft));
+    const preparedA = prepareWizardDraft(storage, {
+      uid: "staff-a",
+      draftId: "draft-a",
+      legacyKey,
+      idFactory: () => "request-a",
+    });
+    const preparedB = prepareWizardDraft(storage, {
+      uid: "staff-b",
+      draftId: "draft-b",
+      legacyKey,
+      idFactory: () => "request-b",
+    });
+
+    commitPreparedWizardDraft(storage, preparedA, { activeUid: "staff-a" });
+    expect(() => commitPreparedWizardDraft(storage, preparedB, { activeUid: "staff-b" }))
+      .toThrow("registration_draft_legacy_changed");
+
+    expect(storage.getItem(activeWizardDraftKey("staff-b"))).toBeNull();
+    expect(storage.getItem(wizardDraftStorageKey("staff-b", "draft-b"))).toBeNull();
+    expect(storage.getItem(legacyWizardDraftClaimKey(legacyKey))).toContain("staff-a");
+  });
+
+  it("does not delete a new legacy value when an unrelated scoped draft exists", () => {
+    const storage = memoryStorage();
+    const legacyKey = "bring-field-building-draft";
+    const initial = prepareWizardDraft(storage, {
+      uid: "staff-a",
+      draftId: "draft-a",
+      idFactory: () => "request-a",
+    });
+    commitPreparedWizardDraft(storage, initial);
+    const replacement = JSON.stringify({
+      ...legacyDraft,
+      building: { ...legacyDraft.building, name: "new replacement legacy" },
+    });
+    storage.setItem(legacyKey, replacement);
+
+    const scoped = prepareWizardDraft(storage, {
       uid: "staff-a",
       draftId: "draft-a",
       legacyKey,
       idFactory: () => "unused",
     });
-    expect(retry.legacyClaimKeyToRemove).toBe(claimKey);
-    commitPreparedWizardDraft(storage, retry);
+    expect(scoped.legacyClaim).toBeNull();
+    commitPreparedWizardDraft(storage, scoped);
 
-    expect(storage.getItem(claimKey)).toBeNull();
-    expect(storage.getItem(wizardDraftStorageKey("staff-a", "draft-a"))).not.toBeNull();
+    expect(storage.getItem(legacyKey)).toBe(replacement);
+    expect(scoped.envelope.value.building.name).toBe("");
+  });
+
+  it("aborts a stale prepared migration when the legacy fingerprint changes", () => {
+    const storage = memoryStorage();
+    const legacyKey = "bring-field-building-draft";
+    storage.setItem(legacyKey, JSON.stringify(legacyDraft));
+    const stale = prepareWizardDraft(storage, {
+      uid: "staff-a",
+      draftId: "draft-a",
+      legacyKey,
+      idFactory: () => "request-a",
+    });
+    storage.setItem(legacyKey, JSON.stringify({
+      ...legacyDraft,
+      building: { ...legacyDraft.building, name: "changed before commit" },
+    }));
+
+    expect(() => commitPreparedWizardDraft(storage, stale, { activeUid: "staff-a" }))
+      .toThrow("registration_draft_legacy_changed");
+    expect(storage.getItem(activeWizardDraftKey("staff-a"))).toBeNull();
+    expect(storage.getItem(wizardDraftStorageKey("staff-a", "draft-a"))).toBeNull();
+
+    const fresh = prepareWizardDraft(storage, {
+      uid: "staff-b",
+      draftId: "draft-b",
+      legacyKey,
+      idFactory: () => "request-b",
+    });
+    expect(fresh.envelope.value.building.name).toBe("changed before commit");
   });
 
   it("upgrades the managed-map version-2 draft without changing idempotency IDs", () => {

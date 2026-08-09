@@ -165,7 +165,6 @@ export interface PreparedRegistrationDraft {
   envelope: StoredRegistrationDraft;
   legacyKeyToRemove: string | null;
   legacyClaim: LegacyRegistrationDraftClaim | null;
-  legacyClaimKeyToRemove: string | null;
   needsInitialSave: boolean;
 }
 
@@ -634,7 +633,7 @@ export function prepareWizardDraft(
   const legacyClaimedElsewhere = Boolean(matchingClaim && !claimOwnedByCurrentDraft);
   const scoped = parseRecord(storage.getItem(key));
   if (scoped?.ownerUid === options.uid && scoped.draftId === options.draftId) {
-    const shouldCleanLegacy = Boolean(legacy && !legacyClaimedElsewhere && legacyKey);
+    const shouldCleanLegacy = Boolean(legacy && claimOwnedByCurrentDraft && legacyKey);
     const nextClaim = shouldCleanLegacy && fingerprint
       ? {
           ownerUid: options.uid,
@@ -651,10 +650,6 @@ export function prepareWizardDraft(
       },
       legacyKeyToRemove: shouldCleanLegacy ? legacyKey : null,
       legacyClaim: nextClaim,
-      legacyClaimKeyToRemove: !legacyRaw && storedClaim &&
-        storedClaim.ownerUid === options.uid && storedClaim.draftId === options.draftId
-        ? claimKey
-        : null,
       needsInitialSave: false,
     };
   }
@@ -683,10 +678,6 @@ export function prepareWizardDraft(
     envelope,
     legacyKeyToRemove: nextClaim ? legacyKey : null,
     legacyClaim: nextClaim,
-    legacyClaimKeyToRemove: !legacyRaw && storedClaim &&
-      storedClaim.ownerUid === options.uid && storedClaim.draftId === options.draftId
-      ? claimKey
-      : null,
     needsInitialSave: true,
   };
 }
@@ -707,12 +698,6 @@ export function commitPreparedWizardDraft(
   if (options.activeUid && options.activeUid !== prepared.envelope.ownerUid) {
     throw new Error("registration_draft_active_uid_mismatch");
   }
-  if (options.activeUid) {
-    storage.setItem(
-      activeWizardDraftKey(options.activeUid),
-      prepared.envelope.draftId,
-    );
-  }
 
   let shouldCleanLegacy = false;
   if (prepared.legacyClaim && prepared.legacyKeyToRemove) {
@@ -720,17 +705,30 @@ export function commitPreparedWizardDraft(
     const currentFingerprint = currentLegacyRaw === null
       ? null
       : legacyDraftFingerprint(currentLegacyRaw);
-    if (currentFingerprint === prepared.legacyClaim.fingerprint) {
-      const claimKey = legacyWizardDraftClaimKey(prepared.legacyKeyToRemove);
-      const currentClaim = parseLegacyDraftClaim(storage.getItem(claimKey));
-      if (currentClaim && currentClaim.fingerprint === currentFingerprint &&
-        (currentClaim.ownerUid !== prepared.legacyClaim.ownerUid ||
-          currentClaim.draftId !== prepared.legacyClaim.draftId)) {
+    const claimKey = legacyWizardDraftClaimKey(prepared.legacyKeyToRemove);
+    const currentClaim = parseLegacyDraftClaim(storage.getItem(claimKey));
+    const ownedClaim = currentClaim?.fingerprint === prepared.legacyClaim.fingerprint &&
+      currentClaim.ownerUid === prepared.legacyClaim.ownerUid &&
+      currentClaim.draftId === prepared.legacyClaim.draftId;
+    if (currentLegacyRaw === null) {
+      if (!ownedClaim) throw new Error("registration_draft_legacy_changed");
+    } else {
+      if (currentFingerprint !== prepared.legacyClaim.fingerprint) {
+        throw new Error("registration_draft_legacy_changed");
+      }
+      if (currentClaim && currentClaim.fingerprint === currentFingerprint && !ownedClaim) {
         throw new Error("registration_draft_legacy_claimed");
       }
       storage.setItem(claimKey, JSON.stringify(prepared.legacyClaim));
       shouldCleanLegacy = true;
     }
+  }
+
+  if (options.activeUid) {
+    storage.setItem(
+      activeWizardDraftKey(options.activeUid),
+      prepared.envelope.draftId,
+    );
   }
 
   saveWizardDraft(
@@ -740,11 +738,7 @@ export function commitPreparedWizardDraft(
   );
 
   if (shouldCleanLegacy && prepared.legacyKeyToRemove) {
-    const claimKey = legacyWizardDraftClaimKey(prepared.legacyKeyToRemove);
     storage.removeItem(prepared.legacyKeyToRemove);
-    storage.removeItem(claimKey);
-  } else if (prepared.legacyClaimKeyToRemove) {
-    storage.removeItem(prepared.legacyClaimKeyToRemove);
   }
 }
 
