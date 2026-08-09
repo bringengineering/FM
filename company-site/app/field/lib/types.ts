@@ -47,7 +47,13 @@ export type MediaZone =
   | "repairEvidence"
   | "verticalVideo";
 
-export type UploadState = "queued" | "uploading" | "firebaseComplete" | "failed";
+export type UploadState =
+  | "queued"
+  | "uploading"
+  | "objectStored"
+  | "finalizing"
+  | "finalized"
+  | "failed";
 
 export type DriveSyncState =
   | "notRequested"
@@ -55,6 +61,51 @@ export type DriveSyncState =
   | "syncing"
   | "complete"
   | "failed";
+
+export interface CaptureBinding {
+  buildingId?: string;
+  unitId?: string;
+  listingId?: string;
+  visitId?: string;
+  draftId?: string;
+  unitLocalId?: string;
+}
+
+export interface CaptureAttachmentDescriptor {
+  mediaId: string;
+  captureSessionId: string;
+  kind: MediaKind;
+  zone: MediaZone;
+  slotId: string;
+  required: boolean;
+  originalFileName: string;
+  mimeType: string;
+  sizeBytes: number;
+  lastModified: number;
+  capturedAt: ISODateTime;
+  uploadState: UploadState;
+  uploadProgress: number;
+  failureCode?: string;
+  replacesMediaId?: string;
+  videoMetadata?: {
+    durationSeconds: number;
+    width: number;
+    height: number;
+  };
+}
+
+export interface CaptureSessionRecord {
+  id: string;
+  requestId: string;
+  buildingId: string;
+  unitId?: string;
+  listingId?: string;
+  visitId: string;
+  createdBy: string;
+  status: "open" | "complete";
+  createdAt: ISODateTime;
+  updatedAt: ISODateTime;
+}
 
 export type ChecklistFieldKind =
   | "text"
@@ -274,6 +325,7 @@ export interface ChecklistSubmission {
 
 export interface MediaRecord {
   id: EntityId;
+  requestId: EntityId;
   buildingId: EntityId;
   unitId?: EntityId;
   listingId?: EntityId;
@@ -287,7 +339,7 @@ export interface MediaRecord {
   originalFileName: string;
   mimeType: string;
   sizeBytes: number;
-  contentHash: string;
+  contentHash?: string;
   capturedAt: ISODateTime;
   storagePath?: string;
   previewStoragePath?: string;
@@ -298,6 +350,12 @@ export interface MediaRecord {
   advertisingApproved: boolean;
   advertisingOrder?: number;
   failureCode?: string;
+  captureQualityState: "valid" | "warning";
+  objectGeneration?: string;
+  objectMd5Hash?: string;
+  replacesMediaId?: string;
+  excludedAt?: ISODateTime;
+  excludedBy?: EntityId;
 }
 
 export interface AdPackage {

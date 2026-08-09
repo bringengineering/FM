@@ -2,14 +2,87 @@ import { describe, expect, it } from "vitest";
 
 import type {
   Building,
+  CaptureAttachmentDescriptor,
+  CaptureBinding,
+  CaptureSessionRecord,
   FieldUser,
   Listing,
+  MediaRecord,
   SecureAccess,
+  UploadState,
 } from "../../app/field/lib/types";
 
 const NOW = "2026-08-09T00:00:00.000Z";
 
 describe("field platform domain types", () => {
+  it("uses the canonical six-state capture contracts without transient media data", () => {
+    const states: UploadState[] = [
+      "queued",
+      "uploading",
+      "objectStored",
+      "finalizing",
+      "finalized",
+      "failed",
+    ];
+    const binding: CaptureBinding = {
+      buildingId: "building-1",
+      unitLocalId: "unit-local-1",
+    };
+    const descriptor: CaptureAttachmentDescriptor = {
+      mediaId: "22222222-2222-4222-8222-222222222222",
+      captureSessionId: "11111111-1111-4111-8111-111111111111",
+      kind: "photo",
+      zone: "exterior",
+      slotId: "exterior-1",
+      required: true,
+      originalFileName: "building.jpg",
+      mimeType: "image/jpeg",
+      sizeBytes: 1024,
+      lastModified: 10,
+      capturedAt: NOW,
+      uploadState: "queued",
+      uploadProgress: 0,
+    };
+    const session: CaptureSessionRecord = {
+      id: descriptor.captureSessionId,
+      requestId: "33333333-3333-4333-8333-333333333333",
+      buildingId: "building-1",
+      visitId: "44444444-4444-4444-8444-444444444444",
+      createdBy: "staff-1",
+      status: "open",
+      createdAt: NOW,
+      updatedAt: NOW,
+    };
+    const media: MediaRecord = {
+      id: descriptor.mediaId,
+      requestId: "55555555-5555-4555-8555-555555555555",
+      buildingId: session.buildingId,
+      visitId: session.visitId,
+      captureSessionId: session.id,
+      capturedBy: session.createdBy,
+      kind: descriptor.kind,
+      zone: descriptor.zone,
+      slotId: descriptor.slotId,
+      required: descriptor.required,
+      originalFileName: descriptor.originalFileName,
+      mimeType: descriptor.mimeType,
+      sizeBytes: descriptor.sizeBytes,
+      capturedAt: descriptor.capturedAt,
+      uploadState: "finalized",
+      uploadProgress: 100,
+      driveSyncState: "queued",
+      captureQualityState: "valid",
+      objectGeneration: "2",
+      objectMd5Hash: "trusted-server-hash",
+      advertisingApproved: false,
+    };
+
+    expect(states).toHaveLength(6);
+    expect(binding.unitLocalId).toBe("unit-local-1");
+    expect(JSON.stringify(descriptor)).not.toMatch(/blob:|base64|data:|signedUrl|downloadToken/);
+    expect(media).not.toHaveProperty("contentHash");
+  });
+
   it("models public listing data separately from secure access data", () => {
     const user: FieldUser = {
       id: "user-1",

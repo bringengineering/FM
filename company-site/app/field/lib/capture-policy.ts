@@ -1,4 +1,8 @@
-import type { MediaKind, MediaZone } from "./types";
+import type {
+  CaptureAttachmentDescriptor,
+  MediaKind,
+  MediaZone,
+} from "./types";
 
 const MEBIBYTE = 1_024 * 1_024;
 const MAX_FILE_NAME_LENGTH = 255;
@@ -177,22 +181,6 @@ export interface CaptureFileLike {
   type: string;
   size: number;
   lastModified?: number;
-}
-
-export interface CaptureAttachmentDescriptor {
-  mediaId: string;
-  captureSessionId: string;
-  kind: MediaKind;
-  zone: MediaZone;
-  slotId: string;
-  required: boolean;
-  originalFileName: string;
-  mimeType: AllowedMediaMime;
-  sizeBytes: number;
-  lastModified: number;
-  capturedAt: string;
-  uploadState: "queued";
-  uploadProgress: 0;
 }
 
 export interface DescribeCaptureFileInput {
