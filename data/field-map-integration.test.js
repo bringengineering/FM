@@ -2,13 +2,72 @@ const test = require("node:test");
 const assert = require("node:assert/strict");
 const { readFileSync } = require("node:fs");
 const path = require("node:path");
+const {
+  JSDOM,
+  VirtualConsole,
+  requestInterceptor,
+} = require("../company-site/node_modules/jsdom");
 
 const repository = path.resolve(__dirname, "..");
 const html = readFileSync(path.join(repository, "wonju-map.html"), "utf8");
+const vendorData = readFileSync(
+  path.join(repository, "data", "building-maintenance-companies.js"),
+  "utf8",
+);
+const fieldMapModel = readFileSync(
+  path.join(repository, "data", "field-map-model.js"),
+  "utf8",
+);
 const panel = readFileSync(
   path.join(repository, "company-site", "app", "field", "components", "FieldMapPanel.tsx"),
   "utf8",
 );
+
+test("managed-first entry restores all vendors when switching modes", async () => {
+  const scriptResponse = (source) =>
+    new Response(source, { headers: { "Content-Type": "application/javascript" } });
+  const virtualConsole = new VirtualConsole();
+  const dom = new JSDOM(html, {
+    url: "http://bring.test/wonju-map.html?embedded=field&mode=managed",
+    runScripts: "dangerously",
+    resources: {
+      interceptors: [
+        requestInterceptor((request) => {
+          const url = new URL(request.url);
+          if (url.pathname.endsWith("/data/building-maintenance-companies.js")) {
+            if (url.searchParams.get("v") === "20260702-hvac-vendors-5") {
+              return scriptResponse("");
+            }
+            return scriptResponse(vendorData);
+          }
+          if (url.pathname.endsWith("/data/field-map-model.js")) {
+            return scriptResponse(fieldMapModel);
+          }
+          return scriptResponse("");
+        }),
+      ],
+    },
+    virtualConsole,
+  });
+
+  try {
+    await new Promise((resolve) => dom.window.addEventListener("load", resolve, { once: true }));
+    assert.equal(
+      dom.window.document.querySelector('input[name="mapMode"]:checked').value,
+      "managed",
+    );
+    assert.equal(dom.window.document.getElementById("managedCount").textContent, "0");
+
+    const vendorRadio = dom.window.document.querySelector('input[value="vendors"]');
+    vendorRadio.checked = true;
+    vendorRadio.dispatchEvent(new dom.window.Event("change", { bubbles: true }));
+
+    assert.equal(dom.window.document.getElementById("totalCount").textContent, "182");
+    assert.equal(dom.window.document.getElementById("companyList").children.length, 182);
+  } finally {
+    dom.window.close();
+  }
+});
 
 test("field panel embeds only the same-origin managed map", () => {
   assert.match(panel, /\/wonju-map\.html\?embedded=field&mode=managed/);
