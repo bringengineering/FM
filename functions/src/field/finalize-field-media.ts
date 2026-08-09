@@ -391,13 +391,16 @@ function replacementRecord(
   input: FinalizeFieldMediaInput,
 ): UnknownRecord | null {
   if (input.replacesMediaId === undefined) return null;
+  const hasExcludedAt = isRecord(value) && value.excludedAt !== undefined;
+  const hasExcludedBy = isRecord(value) && value.excludedBy !== undefined;
   if (
     !isRecord(value)
     || value.id !== input.replacesMediaId
     || value.buildingId !== input.buildingId
     || value.uploadState !== "finalized"
-    || value.excludedAt !== undefined
-    || value.excludedBy !== undefined
+    || hasExcludedAt !== hasExcludedBy
+    || (hasExcludedAt && !isCanonicalIsoDateTime(value.excludedAt))
+    || (hasExcludedBy && !isSafeMediaPathSegment(value.excludedBy))
   ) {
     throw new Error("field_media_replacement_conflict");
   }
@@ -505,6 +508,8 @@ export async function finalizeFieldMediaCore(
     finalGeneration,
     now,
   );
+  const shouldExcludeReplacement = replacement !== null
+    && replacement.excludedAt === undefined;
   let replacementFound = false;
   const mediaForProjection = existingBuildingMedia.map((item) => {
     if (
@@ -514,14 +519,18 @@ export async function finalizeFieldMediaCore(
       return item;
     }
     replacementFound = true;
-    return { ...item, excludedAt: now, excludedBy: actor.uid };
+    return shouldExcludeReplacement
+      ? { ...item, excludedAt: now, excludedBy: actor.uid }
+      : replacement as unknown as ProjectionMedia;
   });
   if (replacement !== null && !replacementFound) {
-    mediaForProjection.push({
-      ...(replacement as unknown as ProjectionMedia),
-      excludedAt: now,
-      excludedBy: actor.uid,
-    });
+    mediaForProjection.push(shouldExcludeReplacement
+      ? {
+          ...(replacement as unknown as ProjectionMedia),
+          excludedAt: now,
+          excludedBy: actor.uid,
+        }
+      : replacement as unknown as ProjectionMedia);
   }
   mediaForProjection.push(mediaRecord as unknown as ProjectionMedia);
   const projection = buildMapProjection({
@@ -548,7 +557,7 @@ export async function finalizeFieldMediaCore(
       occurredAt: now,
       requestId: input.requestId,
     },
-    ...(replacement === null
+    ...(!shouldExcludeReplacement
       ? {}
       : {
           [`fieldPlatform/media/${replacement.id as string}/excludedAt`]: now,

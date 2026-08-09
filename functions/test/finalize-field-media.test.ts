@@ -847,6 +847,53 @@ describe("finalizeFieldMediaCore", () => {
       SOURCE_GENERATION,
     );
   });
+
+  it("finalizes a replacement whose predecessor was already safely excluded", async () => {
+    const excludedAt = "2026-08-09T00:00:05.000Z";
+    const replaced = {
+      ...baseExistingMedia({
+        id: REPLACED_MEDIA_ID,
+        requestId: "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
+        storagePath: `field-media-finalized/building-1/${REPLACED_MEDIA_ID}.jpg`,
+      }),
+      excludedAt,
+      excludedBy: "staff-1",
+    };
+    const deps = dependencies({
+      readMedia: vi.fn(async (mediaId) =>
+        mediaId === REPLACED_MEDIA_ID ? replaced : null),
+      listFinalizedBuildingMedia: vi.fn(async () => [
+        replaced as unknown as ProjectionMedia,
+      ]),
+    });
+
+    await expect(finalizeFieldMediaCore(
+      { ...input, replacesMediaId: REPLACED_MEDIA_ID },
+      { uid: "staff-1", role: "staff" },
+      deps,
+    )).resolves.toMatchObject({
+      mediaId: MEDIA_ID,
+      uploadState: "finalized",
+    });
+
+    const patch = vi.mocked(deps.writePatch).mock.calls[0][0];
+    expect(Object.hasOwn(
+      patch,
+      `fieldPlatform/media/${REPLACED_MEDIA_ID}/excludedAt`,
+    )).toBe(false);
+    expect(Object.hasOwn(
+      patch,
+      `fieldPlatform/media/${REPLACED_MEDIA_ID}/excludedBy`,
+    )).toBe(false);
+    expect(Object.hasOwn(
+      patch,
+      `fieldPlatform/auditLogs/media-excluded-${REQUEST_ID}`,
+    )).toBe(false);
+    expect(deps.deleteStaging).toHaveBeenCalledWith(
+      STAGING_PATH,
+      SOURCE_GENERATION,
+    );
+  });
 });
 
 describe("safe map projection capture completion", () => {
