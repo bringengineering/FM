@@ -445,9 +445,10 @@ export default function CaptureGuide({
   const markExcluded = useCallback(async (
     record: QueuedMediaRecord,
     committedScope: string,
+    requestServerExclusion = true,
   ) => {
     if (!activeQueue) throw new Error("capture_queue_unavailable");
-    if (record.descriptor.uploadState === "finalized") {
+    if (requestServerExclusion && record.descriptor.uploadState === "finalized") {
       if (!excludeFieldMedia) throw new Error("capture_exclude_unavailable");
       await excludeFieldMedia({
         mediaId: record.mediaId,
@@ -478,7 +479,10 @@ export default function CaptureGuide({
     void requestPersistentCaptureStorage();
     if (activeScope.current !== committedScope) return;
     setMessage("기기에 저장됨 · 서버 등록 대기");
-    if (replaces) await markExcluded(replaces, committedScope);
+    // The finalizer excludes the predecessor in the same authorized multi-path
+    // commit as the replacement. Hide it locally now, but keep the server copy
+    // available if the new upload is interrupted or rejected.
+    if (replaces) await markExcluded(replaces, committedScope, false);
     await loadRecords();
     input.value = "";
     resumeAfterCommit(committedScope);

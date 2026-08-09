@@ -387,6 +387,49 @@ describe("CaptureGuide", () => {
     });
   });
 
+  it("keeps a finalized predecessor on the server until replacement finalization is atomic", async () => {
+    const finalized = queuedRecord({
+      descriptor: photoDescriptor({ uploadState: "finalized", uploadProgress: 100 }),
+      blob: undefined,
+      storagePath: "field-media-finalized/building-1/photo.jpg",
+      driveSyncState: "complete",
+      binding: {
+        buildingId: "building-1",
+        unitId: "unit-1",
+        listingId: "listing-1",
+        visitId: "visit-1",
+      },
+    });
+    const queue = createQueue([finalized]);
+    const excludeFieldMedia = vi.fn(async () => undefined);
+    renderGuide(queue, {
+      context: visitContext,
+      excludeFieldMedia,
+      getFieldMediaAccess: async () => ({
+        url: "https://signed.example/photo",
+        expiresAt: new Date(Date.now() + 300_000).toISOString(),
+      }),
+    });
+
+    await screen.findByAltText("외관 미리보기");
+    fireEvent.click(screen.getByRole("button", { name: "외관 사진 교체" }));
+    fireEvent.change(screen.getByLabelText("외관 사진 촬영"), {
+      target: {
+        files: [new File(["new"], "outside-new.jpg", { type: "image/jpeg" })],
+      },
+    });
+
+    await waitFor(() => expect(queue.enqueue).toHaveBeenCalledOnce());
+    expect(vi.mocked(queue.enqueue).mock.calls[0][0].descriptor.replacesMediaId)
+      .toBe(MEDIA_ID);
+    await waitFor(() => expect(queue.patch).toHaveBeenCalledWith(
+      "staff-1",
+      MEDIA_ID,
+      expect.objectContaining({ lastError: "capture_excluded" }),
+    ));
+    expect(excludeFieldMedia).not.toHaveBeenCalled();
+  });
+
   it("calls the authorized exclusion requester for finalized media without deleting originals", async () => {
     const finalized = queuedRecord({
       descriptor: photoDescriptor({ uploadState: "finalized", uploadProgress: 100 }),
