@@ -136,7 +136,10 @@ export default function BuildingWizard({
   const [draft, setDraft] = useState<BuildingWizardDraft>(initialLoad.draft);
   const incompatibleDraft = initialLoad.incompatibleDraft;
   const [errors, setErrors] = useState<string[]>([]);
-  const [saveStatus, setSaveStatus] = useState("로컬 저장 준비");
+  const [completedSave, setCompletedSave] = useState<{
+    draft: BuildingWizardDraft;
+    status: string;
+  } | null>(null);
   const [addressStatus, setAddressStatus] = useState("");
   const [checkingAddress, setCheckingAddress] = useState(false);
   const [submitting, setSubmitting] = useState(false);
@@ -144,8 +147,13 @@ export default function BuildingWizard({
   useEffect(() => {
     if (incompatibleDraft) return;
     window.localStorage.setItem(draftKey, JSON.stringify(draft));
-    setSaveStatus("로컬 자동저장 완료");
   }, [draft, draftKey, incompatibleDraft]);
+
+  const saveStatus = completedSave?.draft === draft
+    ? completedSave.status
+    : incompatibleDraft
+      ? "로컬 저장 준비"
+      : "로컬 자동저장 완료";
 
   const progress = Math.round(((step + 1) / STEPS.length) * 100);
   const gpsDistance = useMemo(() => {
@@ -266,7 +274,10 @@ export default function BuildingWizard({
     setSubmitting(true);
     try {
       await onComplete?.(draft);
-      setSaveStatus(onComplete ? "서버 저장 요청 완료" : "로컬 초안 저장 완료");
+      setCompletedSave({
+        draft,
+        status: onComplete ? "서버 저장 요청 완료" : "로컬 초안 저장 완료",
+      });
     } finally {
       setSubmitting(false);
     }
