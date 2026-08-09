@@ -10,12 +10,11 @@ import {
 
 import {
   LEGACY_WIZARD_DRAFT_KEY,
-  activeWizardDraftKey,
+  commitPreparedWizardDraft,
   createRegistrationDraft,
   prepareWizardDraft,
   readActiveWizardDraftId,
   RegistrationDraftCompatibilityError,
-  saveWizardDraft,
   type BuildingDraftState,
   type BuildingWizardDraft,
   type ListingDraftState,
@@ -184,6 +183,9 @@ export default function BuildingWizard({
       return {
         envelope: prepared.envelope,
         legacyKeyToRemove: prepared.legacyKeyToRemove,
+        legacyClaim: prepared.legacyClaim,
+        legacyClaimKeyToRemove: prepared.legacyClaimKeyToRemove,
+        needsInitialSave: prepared.needsInitialSave,
         incompatibleDraft: false,
         storageLoadFailed: false,
       };
@@ -198,6 +200,9 @@ export default function BuildingWizard({
           now,
         ),
         legacyKeyToRemove: null,
+        legacyClaim: null,
+        legacyClaimKeyToRemove: null,
+        needsInitialSave: true,
         incompatibleDraft,
         storageLoadFailed: !incompatibleDraft,
       };
@@ -232,13 +237,16 @@ export default function BuildingWizard({
     }
     let status: "로컬 자동저장 완료" | "로컬 자동저장 실패";
     try {
-      if (!draftId) {
-        resolvedStorage.setItem(activeWizardDraftKey(session.uid), resolvedDraftId);
-      }
-      saveWizardDraft(resolvedStorage, envelope, now());
-      if (initialLoad.legacyKeyToRemove) {
-        resolvedStorage.removeItem(initialLoad.legacyKeyToRemove);
-      }
+      commitPreparedWizardDraft(resolvedStorage, {
+        envelope,
+        legacyKeyToRemove: initialLoad.legacyKeyToRemove,
+        legacyClaim: initialLoad.legacyClaim,
+        legacyClaimKeyToRemove: initialLoad.legacyClaimKeyToRemove,
+        needsInitialSave: initialLoad.needsInitialSave,
+      }, {
+        activeUid: draftId ? undefined : session.uid,
+        updatedAt: now(),
+      });
       status = "로컬 자동저장 완료";
     } catch {
       status = "로컬 자동저장 실패";

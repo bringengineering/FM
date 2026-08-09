@@ -155,9 +155,17 @@ export interface StoredRegistrationDraft {
   value: BuildingWizardDraft;
 }
 
+export interface LegacyRegistrationDraftClaim {
+  ownerUid: string;
+  draftId: string;
+  fingerprint: string;
+}
+
 export interface PreparedRegistrationDraft {
   envelope: StoredRegistrationDraft;
   legacyKeyToRemove: string | null;
+  legacyClaim: LegacyRegistrationDraftClaim | null;
+  legacyClaimKeyToRemove: string | null;
   needsInitialSave: boolean;
 }
 
@@ -524,6 +532,10 @@ export function activeWizardDraftKey(uid: string): string {
   return `bring-field-wizard:active:${encodeURIComponent(uid)}`;
 }
 
+export function legacyWizardDraftClaimKey(legacyKey: string): string {
+  return `bring-field-wizard:legacy-claim:v${REGISTRATION_DRAFT_VERSION}:${encodeURIComponent(legacyKey)}`;
+}
+
 export function getOrCreateActiveWizardDraftId(
   storage: RegistrationDraftStorage,
   uid: string,
@@ -551,6 +563,27 @@ function parseRecord(raw: string | null): Record<string, unknown> | null {
   } catch {
     return null;
   }
+}
+
+function legacyDraftFingerprint(raw: string): string {
+  let hash = 0x811c9dc5;
+  for (let index = 0; index < raw.length; index += 1) {
+    hash ^= raw.charCodeAt(index);
+    hash = Math.imul(hash, 0x01000193);
+  }
+  return `${raw.length.toString(36)}-${(hash >>> 0).toString(36)}`;
+}
+
+function parseLegacyDraftClaim(raw: string | null): LegacyRegistrationDraftClaim | null {
+  const value = parseRecord(raw);
+  if (!value || typeof value.ownerUid !== "string" || !value.ownerUid ||
+    typeof value.draftId !== "string" || !value.draftId ||
+    typeof value.fingerprint !== "string" || !value.fingerprint) return null;
+  return {
+    ownerUid: value.ownerUid,
+    draftId: value.draftId,
+    fingerprint: value.fingerprint,
+  };
 }
 
 function scopedDraftValue(
@@ -582,8 +615,33 @@ export function prepareWizardDraft(
   let generatedId = 0;
   const idFactory = options.idFactory ??
     (() => `${options.draftId}-generated-${++generatedId}`);
+  const legacyKey = options.legacyKey ?? null;
+  const legacyRaw = legacyKey ? storage.getItem(legacyKey) : null;
+  const legacy = parseRecord(legacyRaw);
+  const fingerprint = legacyRaw !== null && legacy
+    ? legacyDraftFingerprint(legacyRaw)
+    : null;
+  const claimKey = legacyKey ? legacyWizardDraftClaimKey(legacyKey) : null;
+  const storedClaim = claimKey
+    ? parseLegacyDraftClaim(storage.getItem(claimKey))
+    : null;
+  const matchingClaim = storedClaim && fingerprint &&
+    storedClaim.fingerprint === fingerprint
+    ? storedClaim
+    : null;
+  const claimOwnedByCurrentDraft = matchingClaim?.ownerUid === options.uid &&
+    matchingClaim.draftId === options.draftId;
+  const legacyClaimedElsewhere = Boolean(matchingClaim && !claimOwnedByCurrentDraft);
   const scoped = parseRecord(storage.getItem(key));
   if (scoped?.ownerUid === options.uid && scoped.draftId === options.draftId) {
+    const shouldCleanLegacy = Boolean(legacy && !legacyClaimedElsewhere && legacyKey);
+    const nextClaim = shouldCleanLegacy && fingerprint
+      ? {
+          ownerUid: options.uid,
+          draftId: options.draftId,
+          fingerprint,
+        }
+      : null;
     return {
       envelope: {
         ownerUid: options.uid,
@@ -591,39 +649,103 @@ export function prepareWizardDraft(
         updatedAt: typeof scoped.updatedAt === "string" ? scoped.updatedAt : "",
         value: scopedDraftValue(scoped.value, options.draftId, options.initial, idFactory),
       },
-      legacyKeyToRemove: null,
+      legacyKeyToRemove: shouldCleanLegacy ? legacyKey : null,
+      legacyClaim: nextClaim,
+      legacyClaimKeyToRemove: !legacyRaw && storedClaim &&
+        storedClaim.ownerUid === options.uid && storedClaim.draftId === options.draftId
+        ? claimKey
+        : null,
       needsInitialSave: false,
     };
   }
 
-  const legacyRaw = options.legacyKey ? storage.getItem(options.legacyKey) : null;
-  const legacy = parseRecord(legacyRaw);
-  const migrated = scopedDraftValue(legacy, options.draftId, options.initial, idFactory);
+  const eligibleLegacy = legacy && !legacyClaimedElsewhere ? legacy : null;
+  const migrated = scopedDraftValue(
+    eligibleLegacy,
+    options.draftId,
+    options.initial,
+    idFactory,
+  );
   const envelope: StoredRegistrationDraft = {
     ownerUid: options.uid,
     draftId: options.draftId,
     updatedAt: (options.now ?? (() => new Date().toISOString()))(),
     value: migrated,
   };
+  const nextClaim = eligibleLegacy && fingerprint
+    ? {
+        ownerUid: options.uid,
+        draftId: options.draftId,
+        fingerprint,
+      }
+    : null;
   return {
     envelope,
-    legacyKeyToRemove: legacy && options.legacyKey ? options.legacyKey : null,
+    legacyKeyToRemove: nextClaim ? legacyKey : null,
+    legacyClaim: nextClaim,
+    legacyClaimKeyToRemove: !legacyRaw && storedClaim &&
+      storedClaim.ownerUid === options.uid && storedClaim.draftId === options.draftId
+      ? claimKey
+      : null,
     needsInitialSave: true,
   };
 }
 
+/** Read and migrate a draft without mutating browser storage. */
 export function loadWizardDraft(
   storage: RegistrationDraftStorage,
   options: Parameters<typeof prepareWizardDraft>[1],
 ): StoredRegistrationDraft {
-  const prepared = prepareWizardDraft(storage, options);
-  if (prepared.needsInitialSave) {
-    saveWizardDraft(storage, prepared.envelope, prepared.envelope.updatedAt);
+  return prepareWizardDraft(storage, options).envelope;
+}
+
+export function commitPreparedWizardDraft(
+  storage: RegistrationDraftStorage,
+  prepared: PreparedRegistrationDraft,
+  options: { activeUid?: string; updatedAt?: string } = {},
+): void {
+  if (options.activeUid && options.activeUid !== prepared.envelope.ownerUid) {
+    throw new Error("registration_draft_active_uid_mismatch");
   }
-  if (prepared.legacyKeyToRemove) {
+  if (options.activeUid) {
+    storage.setItem(
+      activeWizardDraftKey(options.activeUid),
+      prepared.envelope.draftId,
+    );
+  }
+
+  let shouldCleanLegacy = false;
+  if (prepared.legacyClaim && prepared.legacyKeyToRemove) {
+    const currentLegacyRaw = storage.getItem(prepared.legacyKeyToRemove);
+    const currentFingerprint = currentLegacyRaw === null
+      ? null
+      : legacyDraftFingerprint(currentLegacyRaw);
+    if (currentFingerprint === prepared.legacyClaim.fingerprint) {
+      const claimKey = legacyWizardDraftClaimKey(prepared.legacyKeyToRemove);
+      const currentClaim = parseLegacyDraftClaim(storage.getItem(claimKey));
+      if (currentClaim && currentClaim.fingerprint === currentFingerprint &&
+        (currentClaim.ownerUid !== prepared.legacyClaim.ownerUid ||
+          currentClaim.draftId !== prepared.legacyClaim.draftId)) {
+        throw new Error("registration_draft_legacy_claimed");
+      }
+      storage.setItem(claimKey, JSON.stringify(prepared.legacyClaim));
+      shouldCleanLegacy = true;
+    }
+  }
+
+  saveWizardDraft(
+    storage,
+    prepared.envelope,
+    options.updatedAt ?? prepared.envelope.updatedAt,
+  );
+
+  if (shouldCleanLegacy && prepared.legacyKeyToRemove) {
+    const claimKey = legacyWizardDraftClaimKey(prepared.legacyKeyToRemove);
     storage.removeItem(prepared.legacyKeyToRemove);
+    storage.removeItem(claimKey);
+  } else if (prepared.legacyClaimKeyToRemove) {
+    storage.removeItem(prepared.legacyClaimKeyToRemove);
   }
-  return prepared.envelope;
 }
 
 export function saveWizardDraft(

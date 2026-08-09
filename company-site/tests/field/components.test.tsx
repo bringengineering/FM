@@ -560,7 +560,7 @@ describe("BuildingWizard", () => {
       },
     };
 
-    render(
+    const view = render(
       <BuildingWizard
         session={staffSession}
         draftId="legacy-cleanup-draft"
@@ -582,6 +582,18 @@ describe("BuildingWizard", () => {
         .toBe("edited cleanup legacy building");
     });
     expect(values.get(legacyDraftKey)).toContain("cleanup legacy building");
+
+    view.unmount();
+    render(
+      <BuildingWizard
+        session={{ ...staffSession, uid: "staff-b", displayName: "Staff B" }}
+        draftId="legacy-cleanup-draft-b"
+        legacyDraftKey={legacyDraftKey}
+        storage={storage}
+      />,
+    );
+    expect(screen.getByLabelText("건물명")).toHaveValue("");
+    expect(screen.queryByDisplayValue("cleanup legacy building")).not.toBeInTheDocument();
   });
 
   it("leaves an uncommitted render untouched and commits one draft safely in StrictMode", async () => {
