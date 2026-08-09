@@ -35,7 +35,6 @@ export type FieldSessionListener = (session: FieldSession | null) => void;
 export type FieldSessionObserver = (listener: FieldSessionListener) => () => void;
 
 const roles = new Set<UserRole>(["admin", "staff", "reviewer"]);
-const existingFirebaseAdmins = new Set(["dpvld858@gmail.com"]);
 
 function isUserRole(value: unknown): value is UserRole {
   return typeof value === "string" && roles.has(value as UserRole);
@@ -50,16 +49,7 @@ async function sessionFromUser(
     tokenResult.claims.fieldPlatform !== true ||
     !isUserRole(tokenResult.claims.fieldRole)
   ) {
-    const normalizedEmail = user.email?.trim().toLocaleLowerCase("en-US");
-    if (!normalizedEmail || !existingFirebaseAdmins.has(normalizedEmail)) {
-      return null;
-    }
-
-    return {
-      uid: user.uid,
-      displayName: user.displayName?.trim() || "브링 관리자",
-      role: "admin",
-    };
+    return null;
   }
 
   return {
@@ -96,10 +86,16 @@ export async function loginFieldUser(
   const credential = await dependencies.signInWithGoogle();
   try {
     await dependencies.provisionFieldUser();
-  } catch {
-    // The existing BRING Firebase project predates field-platform claims.
-    // Approved company accounts can use the legacy Auth session until the
-    // server-side claim function is deployed.
+  } catch (error) {
+    await dependencies.signOut();
+    const code = typeof error === "object" && error !== null && "code" in error
+      ? (error as { code?: unknown }).code
+      : undefined;
+    throw new Error(
+      code === "functions/permission-denied"
+        ? "field_access_denied"
+        : "field_provision_failed",
+    );
   }
   const session = await sessionFromUser(credential.user, true);
 

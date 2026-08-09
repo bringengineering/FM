@@ -7,6 +7,9 @@ import AuthGate from "./components/AuthGate";
 import BuildingWizard from "./components/BuildingWizard";
 import Dashboard from "./components/Dashboard";
 import FieldMapPanel from "./components/FieldMapPanel";
+import ManagementContractQueue from "./components/ManagementContractQueue";
+import { saveFieldRegistration } from "./lib/field-api.client";
+import { toSaveFieldRegistrationInput } from "./lib/registration-draft";
 
 const destinationTitles: Record<
   Exclude<FieldDestination, "home">,
@@ -64,7 +67,14 @@ export default function FieldApp() {
         ) : active === "map" ? (
           <FieldMapPanel />
         ) : active === "buildings" ? (
-          <BuildingWizard />
+          <section className="field-building-workspace">
+            <ManagementContractQueue />
+            <BuildingWizard
+              onComplete={async (draft) => {
+                await saveFieldRegistration(toSaveFieldRegistrationInput(draft));
+              }}
+            />
+          </section>
         ) : (
           <DestinationPlaceholder destination={active} />
         )}

@@ -4,7 +4,7 @@ import { loginFieldUser, type FieldAuthDependencies } from "../../app/field/lib/
 
 function createDependencies(
   claims: Record<string, unknown>,
-  options: { email?: string; provisionError?: Error } = {},
+  options: { email?: string; provisionError?: Error & { code?: string } } = {},
 ) {
   const calls: string[] = [];
   const user = {
@@ -55,19 +55,35 @@ describe("loginFieldUser", () => {
     expect(calls).toEqual(["signIn", "provision", "token:true", "signOut"]);
   });
 
-  it("reuses the existing Firebase login for the approved company account", async () => {
+  it("signs out and rejects the former approved email without field claims", async () => {
     const { calls, dependencies } = createDependencies(
       {},
       {
         email: "dpvld858@gmail.com",
-        provisionError: new Error("functions/not-found"),
       },
     );
 
-    await expect(loginFieldUser(dependencies)).resolves.toMatchObject({
-      uid: "user-1",
-      role: "admin",
+    await expect(loginFieldUser(dependencies)).rejects.toThrow("field_access_denied");
+    expect(calls).toEqual(["signIn", "provision", "token:true", "signOut"]);
+  });
+
+  it("maps a denied provisioning callable to access denied", async () => {
+    const denied = Object.assign(new Error("permission denied"), {
+      code: "functions/permission-denied",
     });
-    expect(calls).toEqual(["signIn", "provision", "token:true"]);
+    const { calls, dependencies } = createDependencies({}, { provisionError: denied });
+
+    await expect(loginFieldUser(dependencies)).rejects.toThrow("field_access_denied");
+    expect(calls).toEqual(["signIn", "provision", "signOut"]);
+  });
+
+  it("maps other provisioning failures to a retryable provisioning error", async () => {
+    const unavailable = Object.assign(new Error("unavailable"), {
+      code: "functions/unavailable",
+    });
+    const { calls, dependencies } = createDependencies({}, { provisionError: unavailable });
+
+    await expect(loginFieldUser(dependencies)).rejects.toThrow("field_provision_failed");
+    expect(calls).toEqual(["signIn", "provision", "signOut"]);
   });
 });

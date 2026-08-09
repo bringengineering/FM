@@ -6,6 +6,29 @@ import AuthGate from "../../app/field/components/AuthGate";
 import FieldMapPanel from "../../app/field/components/FieldMapPanel";
 import BuildingWizard from "../../app/field/components/BuildingWizard";
 import Dashboard from "../../app/field/components/Dashboard";
+import ManagementContractQueue from "../../app/field/components/ManagementContractQueue";
+import type { Building } from "../../app/field/lib/types";
+
+const pendingBuilding: Building = {
+  id: "building-1",
+  managementNumber: "BR-0001",
+  name: "테스트 빌딩",
+  roadAddress: "강원특별자치도 원주시 서원대로 1",
+  latitude: 37.3422,
+  longitude: 127.9202,
+  parking: { available: true, totalSpaces: 8 },
+  managementContract: {
+    status: "pending",
+    startedOn: "2026-08-08",
+    updatedAt: "2026-08-08T00:00:00.000Z",
+    updatedBy: "staff-1",
+  },
+  assignedStaffIds: ["staff-1"],
+  createdAt: "2026-08-08T00:00:00.000Z",
+  createdBy: "staff-1",
+  updatedAt: "2026-08-08T00:00:00.000Z",
+  updatedBy: "staff-1",
+};
 
 describe("FieldMapPanel", () => {
   it("embeds the real BRING Wonju map instead of a placeholder", () => {
@@ -24,6 +47,102 @@ describe("Dashboard", () => {
     expect(screen.getByText("오늘의 현장 업무")).toBeInTheDocument();
     expect(screen.getByText("담당 구역")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "새 건물·매물 등록" })).toBeInTheDocument();
+  });
+});
+
+describe("ManagementContractQueue", () => {
+  it("lets an admin approve a pending building with an editable start date", async () => {
+    const approve = vi.fn(async () => ({
+      buildingId: "building-1",
+      status: "active" as const,
+    }));
+    const unsubscribe = vi.fn();
+    const subscribe = vi.fn((listener: (buildings: Building[]) => void) => {
+      listener([pendingBuilding]);
+      return unsubscribe;
+    });
+
+    render(
+      <ManagementContractQueue
+        resolveRole={async () => "admin"}
+        subscribe={subscribe}
+        approve={approve}
+      />,
+    );
+
+    expect(await screen.findByRole("region", { name: "관리계약 승인 대기" }))
+      .toBeInTheDocument();
+    expect(screen.getByText("테스트 빌딩")).toBeInTheDocument();
+    fireEvent.change(screen.getByLabelText("테스트 빌딩 관리 시작일"), {
+      target: { value: "2026-08-09" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "관리 중으로 승인" }));
+
+    await waitFor(() => {
+      expect(approve).toHaveBeenCalledWith({
+        requestId: expect.any(String),
+        buildingId: "building-1",
+        status: "active",
+        startedOn: "2026-08-09",
+      });
+    });
+    await waitFor(() => expect(screen.queryByText("테스트 빌딩")).not.toBeInTheDocument());
+  });
+
+  it("does not render the approval region for staff", async () => {
+    render(
+      <ManagementContractQueue
+        resolveRole={async () => "staff"}
+        subscribe={vi.fn()}
+        approve={vi.fn()}
+      />,
+    );
+
+    await waitFor(() => {
+      expect(screen.queryByRole("region", { name: "관리계약 승인 대기" }))
+        .not.toBeInTheDocument();
+    });
+  });
+
+  it("keeps a failed approval visible and allows retry", async () => {
+    const approve = vi.fn(async () => {
+      throw new Error("network unavailable");
+    });
+    render(
+      <ManagementContractQueue
+        resolveRole={async () => "admin"}
+        subscribe={(listener) => {
+          listener([pendingBuilding]);
+          return () => undefined;
+        }}
+        approve={approve}
+      />,
+    );
+
+    fireEvent.click(await screen.findByRole("button", { name: "관리 중으로 승인" }));
+
+    expect(await screen.findByText("승인 실패 · 다시 시도해 주세요")).toBeInTheDocument();
+    expect(screen.getByText("테스트 빌딩")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "관리 중으로 승인" })).toBeEnabled();
+  });
+
+  it("removes a row when the live pending query omits it", async () => {
+    let emit: ((buildings: Building[]) => void) | undefined;
+    render(
+      <ManagementContractQueue
+        resolveRole={async () => "admin"}
+        subscribe={(listener) => {
+          emit = listener;
+          listener([pendingBuilding]);
+          return () => undefined;
+        }}
+        approve={vi.fn()}
+      />,
+    );
+
+    expect(await screen.findByText("테스트 빌딩")).toBeInTheDocument();
+    emit?.([]);
+    await waitFor(() => expect(screen.queryByText("테스트 빌딩")).not.toBeInTheDocument());
   });
 });
 
