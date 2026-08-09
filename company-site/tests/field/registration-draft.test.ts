@@ -338,12 +338,14 @@ describe("registration draft migration", () => {
   it("rejects short and long bare binary magic strings but preserves long ASCII prose", () => {
     const shortPngPayload = "iVBORw0KGgoAAAANSUhE";
     const longJpegPayload = `/9j/${"A".repeat(300)}`;
+    const lowDiversityIdentifier = "A".repeat(300);
     const longAsciiProse = (
       "owner asked staff to confirm parking access and repair the entrance before move in "
     ).repeat(8).trim();
 
     const draft = migrateRegistrationDraft({
       building: {
+        managementNumber: lowDiversityIdentifier,
         purpose: shortPngPayload,
         jibunAddress: longAsciiProse,
       },
@@ -355,8 +357,32 @@ describe("registration draft migration", () => {
 
     expect(draft.building.purpose).toBe("");
     expect(draft.listing.conditionNote).toBe("");
+    expect(draft.building.managementNumber).toBe(lowDiversityIdentifier);
     expect(draft.building.jibunAddress).toBe(longAsciiProse);
     expect(draft.listing.locationNote).toBe(longAsciiProse);
+  });
+
+  it("rejects encoded MP4, QuickTime, WebM, and Ogg capture payloads", () => {
+    const mp4Payload = "AAAAGGZ0eXBpc29tAAACAGlzb21pc28y";
+    const quickTimePayload = "AAAAGGZ0eXBxdCAgAAAAAHF0ICBtcDQy";
+    const webmPayload = "GkXfo59ChoEBQveBAULygQRC84EIQoKEd2VibQ==";
+    const oggPayload = "T2dnUwACAAAAAAAAAABCUklORwAAAAA=";
+
+    const draft = migrateRegistrationDraft({
+      building: {
+        purpose: mp4Payload,
+        jibunAddress: quickTimePayload,
+      },
+      listing: {
+        conditionNote: webmPayload,
+        locationNote: oggPayload,
+      },
+    }, undefined, () => "fixed-id");
+
+    expect(draft.building.purpose).toBe("");
+    expect(draft.building.jibunAddress).toBe("");
+    expect(draft.listing.conditionNote).toBe("");
+    expect(draft.listing.locationNote).toBe("");
   });
 
   it("rejects Blob and File objects from string fields", () => {

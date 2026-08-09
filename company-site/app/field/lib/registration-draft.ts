@@ -222,6 +222,50 @@ function isRecord(value: unknown): value is Record<string, unknown> {
     !isBinaryValue(value);
 }
 
+function startsWithBytes(bytes: Uint8Array, signature: readonly number[]): boolean {
+  return signature.every((byte, index) => bytes[index] === byte);
+}
+
+function hasAsciiAt(bytes: Uint8Array, offset: number, signature: string): boolean {
+  if (bytes.length < offset + signature.length) return false;
+  return [...signature].every((character, index) =>
+    bytes[offset + index] === character.charCodeAt(0));
+}
+
+function decodeBase64Prefix(value: string): Uint8Array | null {
+  const prefix = value.slice(0, 64);
+  if (prefix.length % 4 === 1 || typeof globalThis.atob !== "function") return null;
+  const padded = prefix + "=".repeat((4 - (prefix.length % 4)) % 4);
+  try {
+    const decoded = globalThis.atob(padded);
+    return Uint8Array.from(decoded, (character) => character.charCodeAt(0));
+  } catch {
+    return null;
+  }
+}
+
+function hasBinaryFileSignature(bytes: Uint8Array): boolean {
+  const png = [0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a];
+  const jpeg = [0xff, 0xd8, 0xff];
+  const ebml = [0x1a, 0x45, 0xdf, 0xa3];
+  const zipLocal = [0x50, 0x4b, 0x03, 0x04];
+  const zipEmpty = [0x50, 0x4b, 0x05, 0x06];
+  const zipSpanned = [0x50, 0x4b, 0x07, 0x08];
+
+  return startsWithBytes(bytes, png) ||
+    startsWithBytes(bytes, jpeg) ||
+    hasAsciiAt(bytes, 0, "GIF87a") ||
+    hasAsciiAt(bytes, 0, "GIF89a") ||
+    hasAsciiAt(bytes, 0, "%PDF-") ||
+    (hasAsciiAt(bytes, 0, "RIFF") && hasAsciiAt(bytes, 8, "WEBP")) ||
+    startsWithBytes(bytes, zipLocal) ||
+    startsWithBytes(bytes, zipEmpty) ||
+    startsWithBytes(bytes, zipSpanned) ||
+    hasAsciiAt(bytes, 4, "ftyp") ||
+    startsWithBytes(bytes, ebml) ||
+    hasAsciiAt(bytes, 0, "OggS");
+}
+
 function isBlockedString(value: string): boolean {
   const trimmed = value.trim();
   const normalized = trimmed.toLowerCase();
@@ -234,12 +278,12 @@ function isBlockedString(value: string): boolean {
   }
 
   const compact = trimmed.replace(/\s+/g, "");
-  if (compact.length < 16 || !/^[A-Za-z0-9+/]+={0,2}$/.test(compact)) {
+  if (compact.length < 4 || !/^[A-Za-z0-9+/]+={0,2}$/.test(compact)) {
     return false;
   }
 
-  const hasBinaryMagic = /^(?:iVBORw0KGgo|\/9j\/|R0lGOD|JVBERi0|UklGR|UEsDB)/.test(compact);
-  return hasBinaryMagic;
+  const decoded = decodeBase64Prefix(compact);
+  return decoded ? hasBinaryFileSignature(decoded) : false;
 }
 
 function ownerNoteDraftValue(value: unknown, draftId: string): OwnerNoteDraft | null {
