@@ -8,6 +8,7 @@ import {
   type FieldSession,
   type FieldSessionObserver,
 } from "../lib/auth.client";
+import { FieldSessionProvider } from "./FieldSessionContext";
 
 type AuthGateProps = {
   children: ReactNode;
@@ -125,7 +126,11 @@ export default function AuthGate({
   }
 
   if (state.status === "authenticated") {
-    return children;
+    return (
+      <FieldSessionProvider key={state.session.uid} session={state.session}>
+        {children}
+      </FieldSessionProvider>
+    );
   }
 
   return <SignInScreen state={state} onLogin={() => void handleLogin()} />;

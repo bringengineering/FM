@@ -1,15 +1,30 @@
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { useState } from "react";
+import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 
 import AppShell from "../../app/field/components/AppShell";
 import AuthGate from "../../app/field/components/AuthGate";
+import { useFieldSession } from "../../app/field/components/FieldSessionContext";
 import FieldMapPanel from "../../app/field/components/FieldMapPanel";
 import BuildingWizard from "../../app/field/components/BuildingWizard";
 import Dashboard from "../../app/field/components/Dashboard";
 import ManagementContractQueue, {
   createApprovalRequestId,
 } from "../../app/field/components/ManagementContractQueue";
+import type { FieldSession } from "../../app/field/lib/auth.client";
 import type { Building } from "../../app/field/lib/types";
+
+function SessionProbe() {
+  const session = useFieldSession();
+  const [mountedFor] = useState(session.uid);
+
+  return (
+    <div>
+      <span>session:{session.uid}</span>
+      <span>mounted-for:{mountedFor}</span>
+    </div>
+  );
+}
 
 const pendingBuilding: Building = {
   id: "building-1",
@@ -513,6 +528,38 @@ describe("AppShell", () => {
 });
 
 describe("AuthGate", () => {
+  it("provides the active session and remounts descendants when the uid changes", async () => {
+    let emitSession: ((session: FieldSession | null) => void) | undefined;
+
+    render(
+      <AuthGate
+        observeSession={(listener) => {
+          emitSession = listener;
+          return () => undefined;
+        }}
+      >
+        <SessionProbe />
+      </AuthGate>,
+    );
+
+    await waitFor(() => expect(emitSession).toBeDefined());
+    act(() => {
+      emitSession?.({ uid: "staff-a", displayName: "Staff A", role: "staff" });
+    });
+
+    expect(await screen.findByText("session:staff-a")).toBeInTheDocument();
+    expect(screen.getByText("mounted-for:staff-a")).toBeInTheDocument();
+
+    act(() => {
+      emitSession?.({ uid: "admin-b", displayName: "Admin B", role: "admin" });
+    });
+
+    expect(await screen.findByText("session:admin-b")).toBeInTheDocument();
+    expect(screen.queryByText("session:staff-a")).not.toBeInTheDocument();
+    expect(screen.queryByText("mounted-for:staff-a")).not.toBeInTheDocument();
+    expect(screen.getByText("mounted-for:admin-b")).toBeInTheDocument();
+  });
+
   it("shows only the internal Google login before authentication", async () => {
     render(
       <AuthGate
