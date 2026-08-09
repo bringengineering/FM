@@ -21,6 +21,23 @@ type GateState =
   | { status: "signingIn" }
   | { status: "authenticated"; session: FieldSession };
 
+function authErrorMessage(error: unknown): string {
+  const message = error instanceof Error ? error.message : "";
+  if (message === "field_access_denied") {
+    return "승인되지 않은 계정입니다. 관리자에게 내부 직원 등록을 요청해 주세요.";
+  }
+  if (message === "field_login_domain_not_authorized") {
+    return "현재 접속 주소가 Google 로그인 허용 도메인에 등록되지 않았습니다. 관리자에게 문의해 주세요.";
+  }
+  if (message === "field_login_browser_unsupported") {
+    return "현재 브라우저에서는 Google 로그인을 시작할 수 없습니다. Chrome 또는 Safari에서 다시 열어 주세요.";
+  }
+  if (message === "field_provision_failed") {
+    return "직원 권한 확인 서버를 사용할 수 없습니다. 잠시 후 다시 시도해 주세요.";
+  }
+  return "로그인에 실패했습니다. 네트워크 상태를 확인한 뒤 다시 시도해 주세요.";
+}
+
 function SignInScreen({
   state,
   onLogin,
@@ -83,9 +100,14 @@ export default function AuthGate({
 
   useEffect(
     () =>
-      observeSession((session) => {
-        setState(session ? { status: "authenticated", session } : { status: "signedOut" });
-      }),
+      observeSession(
+        (session) => {
+          setState(session ? { status: "authenticated", session } : { status: "signedOut" });
+        },
+        (error) => {
+          setState({ status: "signedOut", message: authErrorMessage(error) });
+        },
+      ),
     [observeSession],
   );
 
@@ -95,12 +117,9 @@ export default function AuthGate({
       const session = await login();
       setState({ status: "authenticated", session });
     } catch (error) {
-      const denied = error instanceof Error && error.message === "field_access_denied";
       setState({
         status: "signedOut",
-        message: denied
-          ? "승인되지 않은 계정입니다. 관리자에게 내부 직원 등록을 요청해 주세요."
-          : "로그인에 실패했습니다. 네트워크 상태를 확인한 뒤 다시 시도해 주세요.",
+        message: authErrorMessage(error),
       });
     }
   }

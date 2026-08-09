@@ -1,9 +1,8 @@
 import {
   GoogleAuthProvider,
   onAuthStateChanged,
-  signInWithPopup,
+  signInWithRedirect,
   signOut as firebaseSignOut,
-  type User,
 } from "firebase/auth";
 import { httpsCallable } from "firebase/functions";
 
@@ -32,7 +31,11 @@ export interface FieldSession {
 }
 
 export type FieldSessionListener = (session: FieldSession | null) => void;
-export type FieldSessionObserver = (listener: FieldSessionListener) => () => void;
+export type FieldSessionErrorListener = (error: Error) => void;
+export type FieldSessionObserver = (
+  listener: FieldSessionListener,
+  errorListener?: FieldSessionErrorListener,
+) => () => void;
 
 const roles = new Set<UserRole>(["admin", "staff", "reviewer"]);
 
@@ -68,9 +71,8 @@ const provisionCallable = httpsCallable<undefined, { enabled: boolean; role: Use
 );
 
 const defaultDependencies: FieldAuthDependencies = {
-  async signInWithGoogle() {
-    const credential = await signInWithPopup(auth, googleProvider);
-    return { user: credential.user as User };
+  signInWithGoogle() {
+    return signInWithRedirect(auth, googleProvider);
   },
   async provisionFieldUser() {
     await provisionCallable();
@@ -80,22 +82,69 @@ const defaultDependencies: FieldAuthDependencies = {
   },
 };
 
+function errorCode(error: unknown): unknown {
+  return typeof error === "object" && error !== null && "code" in error
+    ? (error as { code?: unknown }).code
+    : undefined;
+}
+
+function loginStartError(error: unknown): Error {
+  const code = errorCode(error);
+  if (code === "auth/unauthorized-domain") {
+    return new Error("field_login_domain_not_authorized");
+  }
+  if (
+    code === "auth/operation-not-supported-in-this-environment" ||
+    code === "auth/web-storage-unsupported"
+  ) {
+    return new Error("field_login_browser_unsupported");
+  }
+  return new Error("field_login_start_failed");
+}
+
+function provisioningError(error: unknown): Error {
+  return new Error(
+    errorCode(error) === "functions/permission-denied"
+      ? "field_access_denied"
+      : "field_provision_failed",
+  );
+}
+
+async function restoreFieldSession(
+  user: FieldAuthUser,
+  dependencies: Pick<FieldAuthDependencies, "provisionFieldUser">,
+): Promise<FieldSession> {
+  const restored = await sessionFromUser(user, false);
+  if (restored) return restored;
+
+  try {
+    await dependencies.provisionFieldUser();
+  } catch (error) {
+    throw provisioningError(error);
+  }
+
+  const provisioned = await sessionFromUser(user, true);
+  if (!provisioned) {
+    throw new Error("field_access_denied");
+  }
+
+  return provisioned;
+}
+
 export async function loginFieldUser(
   dependencies: FieldAuthDependencies = defaultDependencies,
 ): Promise<FieldSession> {
-  const credential = await dependencies.signInWithGoogle();
+  let credential: { user: FieldAuthUser };
+  try {
+    credential = await dependencies.signInWithGoogle();
+  } catch (error) {
+    throw loginStartError(error);
+  }
   try {
     await dependencies.provisionFieldUser();
   } catch (error) {
     await dependencies.signOut();
-    const code = typeof error === "object" && error !== null && "code" in error
-      ? (error as { code?: unknown }).code
-      : undefined;
-    throw new Error(
-      code === "functions/permission-denied"
-        ? "field_access_denied"
-        : "field_provision_failed",
-    );
+    throw provisioningError(error);
   }
   const session = await sessionFromUser(credential.user, true);
 
@@ -113,23 +162,50 @@ export async function logoutFieldUser(
   await dependencies.signOut();
 }
 
-export const observeFieldSession: FieldSessionObserver = (listener) => {
+export const observeFieldSession: FieldSessionObserver = (listener, errorListener) => {
   let active = true;
+  let currentUser: FieldAuthUser | null = null;
+  let revision = 0;
+  let suppressSignedOut = false;
 
   const unsubscribe = onAuthStateChanged(auth, (user) => {
+    currentUser = user;
+    const currentRevision = ++revision;
     if (!user) {
-      listener(null);
+      if (!suppressSignedOut) {
+        listener(null);
+      }
       return;
     }
 
-    void sessionFromUser(user, false)
+    void restoreFieldSession(user, defaultDependencies)
       .then((session) => {
-        if (active) {
+        if (active && revision === currentRevision) {
           listener(session);
         }
       })
-      .catch(() => {
-        if (active) {
+      .catch(async (error: unknown) => {
+        if (!active || revision !== currentRevision) return;
+
+        const failure = error instanceof Error
+          ? error
+          : new Error("field_session_restore_failed");
+        if (
+          failure.message === "field_access_denied" ||
+          failure.message === "field_provision_failed"
+        ) {
+          suppressSignedOut = true;
+          try {
+            await defaultDependencies.signOut().catch(() => undefined);
+          } finally {
+            suppressSignedOut = false;
+          }
+        }
+
+        if (!active || (currentUser !== null && currentUser !== user)) return;
+        if (errorListener) {
+          errorListener(failure);
+        } else {
           listener(null);
         }
       });
@@ -137,6 +213,7 @@ export const observeFieldSession: FieldSessionObserver = (listener) => {
 
   return () => {
     active = false;
+    revision += 1;
     unsubscribe();
   };
 };
