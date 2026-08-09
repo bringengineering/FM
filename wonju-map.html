@@ -914,9 +914,18 @@
       els.visibleMapCount.textContent = `지도 표시 ${filtered.length}개`;
     }
 
+    function setMarkerMapSafely(marker, nextMap) {
+      try {
+        marker.setMap(nextMap);
+      } catch (error) {
+        // A partially loaded map SDK must not interrupt mode rendering or other marker cleanup.
+      }
+    }
+
     function clearManagedMarkers() {
-      managedMarkers.forEach(marker => marker.setMap(null));
+      const staleMarkers = managedMarkers;
       managedMarkers = [];
+      staleMarkers.forEach(marker => setMarkerMapSafely(marker, null));
     }
 
     function renderManagedList(records) {
@@ -1129,8 +1138,9 @@
     }
 
     function clearMarkers() {
-      markers.forEach(marker => marker.setMap(null));
+      const staleMarkers = markers;
       markers = [];
+      staleMarkers.forEach(marker => setMarkerMapSafely(marker, null));
     }
 
     function markerContent(company, label) {
@@ -1265,7 +1275,7 @@
         clearManagedMarkers();
         renderVendorMode(visible.vendors);
       }
-      if (baseMarker) baseMarker.setMap(mapMode === "vendors" ? map : null);
+      if (baseMarker) setMarkerMapSafely(baseMarker, mapMode === "vendors" ? map : null);
     }
 
     function setMapMode(mode, { persist }) {
