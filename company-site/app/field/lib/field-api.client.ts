@@ -2,6 +2,7 @@
 
 import {
   equalTo,
+  limitToLast,
   onValue,
   orderByChild,
   query,
@@ -14,7 +15,7 @@ import type {
   SaveFieldRegistrationResult,
 } from "./registration-draft";
 import { auth, database, functions } from "./firebase.client";
-import type { Building, UserRole } from "./types";
+import type { Building, OwnerNote, UserRole } from "./types";
 
 export interface SetManagementContractStatusInput {
   requestId: string;
@@ -29,6 +30,23 @@ export interface SetManagementContractStatusResult {
   status: "active" | "paused" | "ended";
 }
 
+export interface AppendOwnerNoteInput {
+  buildingId: string;
+  localId: string;
+  body: string;
+  recordedAt: string;
+}
+
+export interface ArchiveOwnerNoteInput {
+  buildingId: string;
+  noteId: string;
+}
+
+export interface ArchiveOwnerNoteResult {
+  archivedAt: string;
+  archivedBy: string;
+}
+
 export type SaveRegistrationInvoker = (
   input: SaveFieldRegistrationInput,
 ) => Promise<{ data: SaveFieldRegistrationResult }>;
@@ -36,6 +54,14 @@ export type SaveRegistrationInvoker = (
 export type SetContractInvoker = (
   input: SetManagementContractStatusInput,
 ) => Promise<{ data: SetManagementContractStatusResult }>;
+
+export type AppendOwnerNoteInvoker = (
+  input: AppendOwnerNoteInput,
+) => Promise<{ data: { note: OwnerNote } }>;
+
+export type ArchiveOwnerNoteInvoker = (
+  input: ArchiveOwnerNoteInput,
+) => Promise<{ data: ArchiveOwnerNoteResult }>;
 
 export type PendingManagementContractSubscriber = (
   listener: (buildings: Building[]) => void,
@@ -71,6 +97,62 @@ function isPathSafeId(value: unknown): value is string {
     utf8ByteLength(value) <= PATH_ID_MAX_BYTES &&
     !/[.#$\[\]\/]/u.test(value) &&
     !/[\u0000-\u001f\u007f]/u.test(value);
+}
+
+function isCanonicalUtcIso(value: unknown): value is string {
+  if (typeof value !== "string") return false;
+  const timestamp = Date.parse(value);
+  return Number.isFinite(timestamp) && new Date(timestamp).toISOString() === value;
+}
+
+function normalizeOwnerNote(key: string, value: unknown): OwnerNote | null {
+  if (
+    !isPathSafeId(key)
+    || !isRecord(value)
+    || value.id !== key
+    || !isPathSafeId(value.id)
+    || !isPathSafeId(value.buildingId)
+    || typeof value.body !== "string"
+    || value.body.length === 0
+    || value.body.length > 2_000
+    || value.body !== value.body.trim()
+    || !isCanonicalUtcIso(value.recordedAt)
+    || !isCanonicalUtcIso(value.createdAt)
+    || !isPathSafeId(value.createdBy)
+    || typeof value.createdByName !== "string"
+    || value.createdByName.trim().length === 0
+    || value.createdByName !== value.createdByName.trim()
+    || utf8ByteLength(value.createdByName.trim()) > 256
+    || /[\u0000-\u001f\u007f]/u.test(value.createdByName)
+  ) {
+    return null;
+  }
+
+  const hasArchivedAt = value.archivedAt !== undefined;
+  const hasArchivedBy = value.archivedBy !== undefined;
+  if (hasArchivedAt !== hasArchivedBy) return null;
+  if (
+    hasArchivedAt
+    && (!isCanonicalUtcIso(value.archivedAt) || !isPathSafeId(value.archivedBy))
+  ) {
+    return null;
+  }
+
+  return {
+    id: value.id,
+    buildingId: value.buildingId,
+    body: value.body,
+    recordedAt: value.recordedAt,
+    createdAt: value.createdAt,
+    createdBy: value.createdBy,
+    createdByName: value.createdByName,
+    ...(hasArchivedAt
+      ? {
+          archivedAt: value.archivedAt as string,
+          archivedBy: value.archivedBy as string,
+        }
+      : {}),
+  };
 }
 
 function isNonEmptyString(value: unknown): value is string {
@@ -156,6 +238,22 @@ async function defaultSetContractInvoker(input: SetManagementContractStatusInput
   return callable(input);
 }
 
+async function defaultAppendOwnerNoteInvoker(input: AppendOwnerNoteInput) {
+  const callable = httpsCallable<
+    AppendOwnerNoteInput,
+    { note: OwnerNote }
+  >(functions, "appendOwnerNote");
+  return callable(input);
+}
+
+async function defaultArchiveOwnerNoteInvoker(input: ArchiveOwnerNoteInput) {
+  const callable = httpsCallable<
+    ArchiveOwnerNoteInput,
+    ArchiveOwnerNoteResult
+  >(functions, "archiveOwnerNote");
+  return callable(input);
+}
+
 export async function saveFieldRegistration(
   input: SaveFieldRegistrationInput,
   invoke: SaveRegistrationInvoker = defaultSaveInvoker,
@@ -169,6 +267,32 @@ export async function setManagementContractStatus(
   invoke: SetContractInvoker = defaultSetContractInvoker,
 ): Promise<SetManagementContractStatusResult> {
   const result = await invoke(input);
+  return result.data;
+}
+
+export async function appendOwnerNote(
+  input: AppendOwnerNoteInput,
+  invoke: AppendOwnerNoteInvoker = defaultAppendOwnerNoteInvoker,
+): Promise<OwnerNote> {
+  const payload: AppendOwnerNoteInput = {
+    buildingId: input.buildingId,
+    localId: input.localId,
+    body: input.body,
+    recordedAt: input.recordedAt,
+  };
+  const result = await invoke(payload);
+  return result.data.note;
+}
+
+export async function archiveOwnerNote(
+  input: ArchiveOwnerNoteInput,
+  invoke: ArchiveOwnerNoteInvoker = defaultArchiveOwnerNoteInvoker,
+): Promise<ArchiveOwnerNoteResult> {
+  const payload: ArchiveOwnerNoteInput = {
+    buildingId: input.buildingId,
+    noteId: input.noteId,
+  };
+  const result = await invoke(payload);
   return result.data;
 }
 
@@ -211,5 +335,57 @@ export function subscribePendingManagementContracts(
     pendingContracts,
     (snapshot) => listener(normalizePendingBuildings(snapshot.val())),
     (error) => onError?.(error instanceof Error ? error : new Error("field_pending_load_failed")),
+  );
+}
+
+export function sortOwnerNotes(value: unknown): OwnerNote[] {
+  if (!isRecord(value)) return [];
+
+  return Object.entries(value)
+    .flatMap(([key, candidate]) => {
+      const note = normalizeOwnerNote(key, candidate);
+      return note && !note.archivedAt ? [note] : [];
+    })
+    .sort((left, right) => Date.parse(right.createdAt) - Date.parse(left.createdAt));
+}
+
+export function subscribeOwnerNotes(
+  buildingId: string,
+  listener: (notes: OwnerNote[]) => void,
+  onError: (error: Error) => void,
+  options: { limit?: number } = { limit: 50 },
+): () => void {
+  if (!isPathSafeId(buildingId)) {
+    throw new Error("field_owner_note_building_id_invalid");
+  }
+  if (!isRecord(options)) {
+    throw new Error("field_owner_note_options_invalid");
+  }
+  const limit = options.limit;
+  if (
+    limit !== undefined
+    && (
+      typeof limit !== "number"
+      || !Number.isSafeInteger(limit)
+      || limit <= 0
+    )
+  ) {
+    throw new Error("field_owner_note_limit_invalid");
+  }
+
+  const ordered = query(
+    ref(database, `fieldPlatform/ownerNotes/${buildingId}`),
+    orderByChild("createdAt"),
+  );
+  const notesQuery = limit === undefined
+    ? ordered
+    : query(ordered, limitToLast(limit));
+
+  return onValue(
+    notesQuery,
+    (snapshot) => listener(sortOwnerNotes(snapshot.val())),
+    (error) => onError(
+      error instanceof Error ? error : new Error("field_owner_note_load_failed"),
+    ),
   );
 }

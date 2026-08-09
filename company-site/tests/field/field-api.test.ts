@@ -2,16 +2,24 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import type { SaveFieldRegistrationInput } from "../../app/field/lib/registration-draft";
 
-const firebase = vi.hoisted(() => ({
-  auth: { currentUser: null as null | { getIdTokenResult(): Promise<{ claims: Record<string, unknown> }> } },
-  database: {},
-  functions: {},
-  onValue: vi.fn(),
-  query: vi.fn(() => "pending-query"),
-  ref: vi.fn(() => "buildings-ref"),
-  orderByChild: vi.fn(() => "status-order"),
-  equalTo: vi.fn(() => "pending-filter"),
-}));
+const firebase = vi.hoisted(() => {
+  const callableInvoke = vi.fn();
+  return {
+    auth: { currentUser: null as null | { getIdTokenResult(): Promise<{ claims: Record<string, unknown> }> } },
+    database: {},
+    functions: {},
+    callableInvoke,
+    httpsCallable: vi.fn((_functions: unknown, name: string) => (
+      input: unknown,
+    ) => callableInvoke(name, input)),
+    onValue: vi.fn(),
+    query: vi.fn((...constraints: unknown[]) => ({ constraints })),
+    ref: vi.fn((_database: unknown, path: string) => ({ path })),
+    orderByChild: vi.fn((path: string) => ({ orderByChild: path })),
+    equalTo: vi.fn((value: unknown) => ({ equalTo: value })),
+    limitToLast: vi.fn((limit: number) => ({ limitToLast: limit })),
+  };
+});
 
 vi.mock("../../app/field/lib/firebase.client", () => ({
   auth: firebase.auth,
@@ -25,14 +33,33 @@ vi.mock("firebase/database", () => ({
   ref: firebase.ref,
   orderByChild: firebase.orderByChild,
   equalTo: firebase.equalTo,
+  limitToLast: firebase.limitToLast,
+}));
+
+vi.mock("firebase/functions", () => ({
+  httpsCallable: firebase.httpsCallable,
 }));
 
 import {
+  appendOwnerNote,
+  archiveOwnerNote,
   getCurrentFieldRole,
   saveFieldRegistration,
   setManagementContractStatus,
+  sortOwnerNotes,
+  subscribeOwnerNotes,
   subscribePendingManagementContracts,
 } from "../../app/field/lib/field-api.client";
+
+const serverNote = {
+  id: "note_12345678",
+  buildingId: "building-1",
+  body: "Check boiler pressure",
+  recordedAt: "2026-08-09T01:30:00.000Z",
+  createdAt: "2026-08-09T02:00:00.000Z",
+  createdBy: "staff-1",
+  createdByName: "Assigned staff",
+};
 
 const registrationInput: SaveFieldRegistrationInput = {
   requestId: "request-12345678",
@@ -67,6 +94,11 @@ const registrationInput: SaveFieldRegistrationInput = {
 };
 
 describe("field callable client", () => {
+  beforeEach(() => {
+    firebase.callableInvoke.mockReset();
+    firebase.httpsCallable.mockClear();
+  });
+
   it("returns the save callable data unchanged", async () => {
     const result = {
       buildingId: "building-1",
@@ -92,6 +124,158 @@ describe("field callable client", () => {
 
     await expect(setManagementContractStatus(input, invoke)).resolves.toBe(result);
     expect(invoke).toHaveBeenCalledWith(input);
+  });
+
+  it("sends only client-owned fields to appendOwnerNote", async () => {
+    firebase.callableInvoke.mockResolvedValue({ data: { note: serverNote } });
+
+    await expect(appendOwnerNote({
+      buildingId: "building-1",
+      localId: "note_12345678",
+      body: "Check boiler pressure",
+      recordedAt: "2026-08-09T01:30:00.000Z",
+      createdAt: "forged-client-time",
+      createdBy: "attacker",
+      createdByName: "spoofed",
+      archivedAt: "forged-archive",
+    } as never)).resolves.toEqual(serverNote);
+
+    expect(firebase.callableInvoke).toHaveBeenCalledWith(
+      "appendOwnerNote",
+      {
+        buildingId: "building-1",
+        localId: "note_12345678",
+        body: "Check boiler pressure",
+        recordedAt: "2026-08-09T01:30:00.000Z",
+      },
+    );
+    expect(JSON.stringify(firebase.callableInvoke.mock.calls[0]?.[1]))
+      .not.toMatch(/createdAt|createdBy|createdByName|archivedAt/);
+  });
+
+  it("sends only the building and note IDs to archiveOwnerNote", async () => {
+    const archive = {
+      archivedAt: "2026-08-09T02:30:00.000Z",
+      archivedBy: "admin-1",
+    };
+    firebase.callableInvoke.mockResolvedValue({ data: archive });
+
+    await expect(archiveOwnerNote({
+      buildingId: "building-1",
+      noteId: "note_12345678",
+      archivedAt: "forged-client-time",
+      archivedBy: "attacker",
+    } as never)).resolves.toEqual(archive);
+
+    expect(firebase.callableInvoke).toHaveBeenCalledWith(
+      "archiveOwnerNote",
+      { buildingId: "building-1", noteId: "note_12345678" },
+    );
+  });
+});
+
+describe("owner note read adapter", () => {
+  beforeEach(() => {
+    firebase.onValue.mockReset();
+    firebase.query.mockClear();
+    firebase.ref.mockClear();
+    firebase.orderByChild.mockClear();
+    firebase.limitToLast.mockClear();
+  });
+
+  it("sorts only well-formed active notes by server creation time newest first", () => {
+    expect(sortOwnerNotes({
+      "older-note": {
+        ...serverNote,
+        id: "older-note",
+        createdAt: "2026-08-09T01:00:00.000Z",
+      },
+      "archived-note": {
+        ...serverNote,
+        id: "archived-note",
+        archivedAt: "2026-08-09T02:00:00.000Z",
+        archivedBy: "admin-1",
+      },
+      "newer-note": {
+        ...serverNote,
+        id: "newer-note",
+        createdAt: "2026-08-09T03:00:00.000Z",
+        ignoredServerField: "not exposed",
+      },
+      "bad-created": { ...serverNote, id: "bad-created", createdAt: null },
+      mismatchedKey: { ...serverNote, id: "different-id" },
+      malformedBody: { ...serverNote, id: "malformedBody", body: 42 },
+      "oversized-name": {
+        ...serverNote,
+        id: "oversized-name",
+        createdByName: "가".repeat(86),
+      },
+      "padded-name": {
+        ...serverNote,
+        id: "padded-name",
+        createdByName: " Padded staff ",
+      },
+      scalar: "skip-me",
+    })).toEqual([
+      { ...serverNote, id: "newer-note", createdAt: "2026-08-09T03:00:00.000Z" },
+      { ...serverNote, id: "older-note", createdAt: "2026-08-09T01:00:00.000Z" },
+    ]);
+  });
+
+  it("subscribes in createdAt order with the omitted-options default limit of 50", () => {
+    const unsubscribe = vi.fn();
+    firebase.onValue.mockImplementation((_query, listener) => {
+      listener({ val: () => ({
+        "note_12345678": serverNote,
+      }) });
+      return unsubscribe;
+    });
+    const listener = vi.fn();
+
+    expect(subscribeOwnerNotes(
+      "building-1",
+      listener,
+      vi.fn(),
+    )).toBe(unsubscribe);
+
+    expect(firebase.ref).toHaveBeenCalledWith(
+      firebase.database,
+      "fieldPlatform/ownerNotes/building-1",
+    );
+    expect(firebase.orderByChild).toHaveBeenCalledWith("createdAt");
+    expect(firebase.limitToLast).toHaveBeenCalledWith(50);
+    expect(listener).toHaveBeenCalledWith([serverNote]);
+  });
+
+  it("treats an explicit empty options object as an unbounded show-all query", () => {
+    firebase.onValue.mockReturnValue(vi.fn());
+
+    subscribeOwnerNotes("building-1", vi.fn(), vi.fn(), {});
+
+    expect(firebase.limitToLast).not.toHaveBeenCalled();
+    expect(firebase.query).toHaveBeenCalledTimes(1);
+  });
+
+  it.each([
+    ["bad/path", {}],
+    [" building-1", {}],
+    ["building-1", { limit: 0 }],
+    ["building-1", { limit: -1 }],
+    ["building-1", { limit: 1.5 }],
+    ["building-1", { limit: Number.NaN }],
+    ["building-1", { limit: Number.POSITIVE_INFINITY }],
+  ])("rejects an unsafe building or invalid numeric limit before database access", (
+    buildingId,
+    options,
+  ) => {
+    expect(() => subscribeOwnerNotes(
+      buildingId,
+      vi.fn(),
+      vi.fn(),
+      options,
+    )).toThrow();
+    expect(firebase.ref).not.toHaveBeenCalled();
+    expect(firebase.onValue).not.toHaveBeenCalled();
   });
 });
 

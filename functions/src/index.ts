@@ -30,6 +30,12 @@ import type {
   ProjectionMedia,
 } from "./field/map-projection.js";
 import {
+  appendOwnerNoteCore,
+  archiveOwnerNoteCore,
+  type OwnerNoteDependencies,
+  type OwnerNoteRecord,
+} from "./field/owner-notes.js";
+import {
   rebuildMapProjectionForBuilding,
   type RebuildMapProjectionDependencies,
 } from "./field/rebuild-map-projection.js";
@@ -149,6 +155,45 @@ function rethrowAsCallableError(error: unknown): never {
   throw error;
 }
 
+const OWNER_NOTE_INPUT_ERRORS = new Set([
+  "owner_note_building_id_invalid",
+  "owner_note_id_invalid",
+  "owner_note_id_duplicate",
+  "owner_note_drafts_invalid",
+  "owner_note_draft_invalid",
+  "owner_note_body_required",
+  "owner_note_body_too_long",
+  "owner_note_recorded_at_invalid",
+]);
+
+function rethrowOwnerNoteCallableError(error: unknown): never {
+  if (error instanceof HttpsError) throw error;
+  const message = error instanceof Error ? error.message : "owner_note_unknown";
+
+  if (
+    message === "owner_note_forbidden"
+    || message === "owner_note_archive_forbidden"
+  ) {
+    throw new HttpsError("permission-denied", message);
+  }
+  if (
+    message === "owner_note_building_not_found"
+    || message === "owner_note_not_found"
+  ) {
+    throw new HttpsError("not-found", message);
+  }
+  if (message === "owner_note_id_conflict") {
+    throw new HttpsError("already-exists", message);
+  }
+  if (message === "owner_note_rate_limited") {
+    throw new HttpsError("resource-exhausted", message);
+  }
+  if (OWNER_NOTE_INPUT_ERRORS.has(message)) {
+    throw new HttpsError("invalid-argument", message);
+  }
+  throw new HttpsError("internal", "owner_note_internal");
+}
+
 async function getBuilding(
   buildingId: string,
 ): Promise<ProjectionBuilding | null> {
@@ -245,6 +290,111 @@ const saveDependencies: SaveFieldRegistrationDependencies = {
     return typeof value === "string" ? value : null;
   },
   now: () => new Date().toISOString(),
+};
+
+const ownerNoteDependencies: OwnerNoteDependencies = {
+  nowIso: () => new Date().toISOString(),
+  async consumeRateLimit(uid, sessionId, action, limit) {
+    const safeSessionId = /^\d{1,20}$/.test(sessionId) ? sessionId : "current";
+    const rateReference = adminDatabase.ref(
+      `fieldPlatform/serverState/rateLimits/ownerNotes/${uid}/${safeSessionId}/${action}`,
+    );
+    const now = Date.now();
+    const result = await rateReference.transaction(
+      (current: { windowStartedAt?: number; count?: number } | null) => {
+        if (
+          !current
+          || typeof current.windowStartedAt !== "number"
+          || !Number.isFinite(current.windowStartedAt)
+          || now - current.windowStartedAt >= 60_000
+          || now < current.windowStartedAt
+        ) {
+          return { windowStartedAt: now, count: 1 };
+        }
+        const count = typeof current.count === "number" && Number.isFinite(current.count)
+          ? Math.max(0, Math.floor(current.count))
+          : 0;
+        return count >= limit
+          ? undefined
+          : { windowStartedAt: current.windowStartedAt, count: count + 1 };
+      },
+      undefined,
+      false,
+    );
+    return result.committed;
+  },
+  async isEnabled(uid) {
+    const snapshot = await adminDatabase
+      .ref(`fieldPlatform/users/${uid}/enabled`)
+      .get();
+    return snapshot.val() === true;
+  },
+  async buildingExists(buildingId) {
+    const snapshot = await adminDatabase
+      .ref(`fieldPlatform/buildings/${buildingId}`)
+      .get();
+    return snapshot.exists();
+  },
+  async getUserDisplayName(uid) {
+    const snapshot = await adminDatabase
+      .ref(`fieldPlatform/users/${uid}/displayName`)
+      .get();
+    const value: unknown = snapshot.val();
+    return typeof value === "string" ? value : null;
+  },
+  async isAssigned(buildingId, uid) {
+    const snapshot = await adminDatabase
+      .ref(`fieldPlatform/buildingAssignments/${buildingId}/${uid}`)
+      .get();
+    return snapshot.val() === true;
+  },
+  async readNote(buildingId, noteId) {
+    const snapshot = await adminDatabase
+      .ref(`fieldPlatform/ownerNotes/${buildingId}/${noteId}`)
+      .get();
+    const value: unknown = snapshot.val();
+    return isRecord(value) ? value as unknown as OwnerNoteRecord : null;
+  },
+  async createNoteIfAbsent(buildingId, noteId, note) {
+    const noteReference = adminDatabase.ref(
+      `fieldPlatform/ownerNotes/${buildingId}/${noteId}`,
+    );
+    const result = await noteReference.transaction(
+      (current) => current ?? note,
+      undefined,
+      false,
+    );
+    const stored: unknown = result.snapshot.val();
+    if (!isRecord(stored)) {
+      throw new Error("owner_note_create_result_invalid");
+    }
+    return stored as unknown as OwnerNoteRecord;
+  },
+  async archiveNote(buildingId, noteId, archive) {
+    const noteReference = adminDatabase.ref(
+      `fieldPlatform/ownerNotes/${buildingId}/${noteId}`,
+    );
+    const result = await noteReference.transaction(
+      (current: unknown) => {
+        if (!isRecord(current)) return undefined;
+        if ("archivedAt" in current || "archivedBy" in current) return current;
+        return { ...current, ...archive };
+      },
+      undefined,
+      false,
+    );
+    const stored: unknown = result.snapshot.val();
+    if (stored === null || stored === undefined) {
+      throw new Error("owner_note_not_found");
+    }
+    if (!isRecord(stored)) {
+      throw new Error("owner_note_archive_result_invalid");
+    }
+    return {
+      archivedAt: stored.archivedAt as string,
+      archivedBy: stored.archivedBy as string,
+    };
+  },
 };
 
 const contractDependencies: SetManagementContractStatusDependencies = {
@@ -404,6 +554,39 @@ export const setManagementContractStatus = onCall<SetManagementContractStatusInp
       );
     } catch (error) {
       return rethrowAsCallableError(error);
+    }
+  },
+);
+
+export const appendOwnerNote = onCall(
+  { region: "asia-northeast3", enforceAppCheck: true },
+  async (request) => {
+    try {
+      const actor = await requireFieldActor(request);
+      const note = await appendOwnerNoteCore(
+        request.data,
+        actor,
+        ownerNoteDependencies,
+      );
+      return { note };
+    } catch (error) {
+      return rethrowOwnerNoteCallableError(error);
+    }
+  },
+);
+
+export const archiveOwnerNote = onCall(
+  { region: "asia-northeast3", enforceAppCheck: true },
+  async (request) => {
+    try {
+      const actor = await requireFieldActor(request);
+      return await archiveOwnerNoteCore(
+        request.data,
+        actor,
+        ownerNoteDependencies,
+      );
+    } catch (error) {
+      return rethrowOwnerNoteCallableError(error);
     }
   },
 );

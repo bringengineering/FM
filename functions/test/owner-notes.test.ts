@@ -337,6 +337,21 @@ describe("owner note append policy", () => {
     )).rejects.toThrow(code);
   });
 
+  it.each([
+    ["disabled actor", { isEnabled: vi.fn(async () => false) }, actor],
+    ["unassigned staff", { isAssigned: vi.fn(async () => false) }, actor],
+    ["reviewer", {}, { ...actor, role: "reviewer" as const }],
+    ["rate limit", { consumeRateLimit: vi.fn(async () => false) }, actor],
+    ["missing building", { buildingExists: vi.fn(async () => false) }, actor],
+  ])("never mutates a note for %s", async (_label, overrides, rejectedActor) => {
+    const deps = dependencies(overrides);
+
+    await expect(appendOwnerNoteCore(input, rejectedActor, deps)).rejects.toThrow();
+
+    expect(deps.createNoteIfAbsent).not.toHaveBeenCalled();
+    expect(deps.archiveNote).not.toHaveBeenCalled();
+  });
+
   it("rejects invalid building IDs before dependencies are called", async () => {
     const deps = dependencies();
 

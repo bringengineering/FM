@@ -2,24 +2,65 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const registrations = vi.hoisted(() => {
   const transactionStates: unknown[] = [];
+  const transactionPaths: string[] = [];
+  const mutationPaths: string[] = [];
   const transactionCurrent = { value: null as unknown };
+  const pathValues = new Map<string, unknown>();
+  const readSequences = new Map<string, unknown[]>();
   const databaseTransaction = vi.fn(
-    async (update: (current: unknown) => unknown) => {
-      const state = update(transactionCurrent.value);
-      transactionCurrent.value = state;
+    async (
+      update: (current: unknown) => unknown,
+      _onComplete: unknown,
+      _applyLocally: unknown,
+      path: string,
+    ) => {
+      const current = path === "fieldPlatform"
+        ? transactionCurrent.value
+        : (pathValues.get(path) ?? null);
+      const state = update(current);
+      const committed = state !== undefined;
+      if (committed) {
+        if (path === "fieldPlatform") {
+          transactionCurrent.value = state;
+        } else {
+          pathValues.set(path, state);
+        }
+        if (JSON.stringify(state) !== JSON.stringify(current)) {
+          mutationPaths.push(path);
+        }
+      }
       transactionStates.push(state);
+      transactionPaths.push(path);
       return {
-        committed: true,
-        snapshot: { val: () => state },
+        committed,
+        snapshot: {
+          val: () => committed ? state : current,
+          exists: () => (committed ? state : current) !== null,
+        },
       };
     },
   );
   const fieldUser = {
     value: { enabled: true, role: "staff" } as unknown,
   };
-  const databaseGet = vi.fn(async () => ({
-    val: () => fieldUser.value,
-  }));
+  const databaseGet = vi.fn(async (path: string) => {
+    const sequence = readSequences.get(path);
+    const value = sequence && sequence.length > 0
+      ? sequence.shift()
+      : pathValues.has(path)
+        ? pathValues.get(path)
+        : path === "fieldPlatform/users/staff-1"
+          ? fieldUser.value
+          : undefined;
+    return {
+      val: () => value ?? null,
+      exists: () => value !== undefined && value !== null,
+    };
+  });
+  const databaseUpdate = vi.fn(async (path: string, patch: Record<string, unknown>) => {
+    pathValues.set(path, { ...(pathValues.get(path) as object || {}), ...patch });
+    mutationPaths.push(path);
+  });
   return {
     onCall: vi.fn((options: unknown, handler: unknown) => ({
       kind: "callable",
@@ -35,12 +76,22 @@ const registrations = vi.hoisted(() => {
     rebuildMapProjectionForBuilding: vi.fn(async () => undefined),
     databaseTransaction,
     databaseGet,
-    databaseRef: vi.fn(() => ({
-      get: databaseGet,
-      transaction: databaseTransaction,
+    databaseUpdate,
+    databaseRef: vi.fn((path = "") => ({
+      get: () => databaseGet(path),
+      transaction: (
+        update: (current: unknown) => unknown,
+        onComplete?: unknown,
+        applyLocally?: unknown,
+      ) => databaseTransaction(update, onComplete, applyLocally, path),
+      update: (patch: Record<string, unknown>) => databaseUpdate(path, patch),
     })),
     fieldUser,
+    mutationPaths,
+    pathValues,
+    readSequences,
     transactionStates,
+    transactionPaths,
     transactionCurrent,
   };
 });
@@ -172,6 +223,68 @@ function validCallableRequest(data: unknown) {
   };
 }
 
+const OWNER_NOTE_PATH = "fieldPlatform/ownerNotes/building-1/note_12345678";
+const OWNER_RATE_PATH =
+  "fieldPlatform/serverState/rateLimits/ownerNotes/staff-1/1723181696/append";
+
+function validOwnerNoteData() {
+  return {
+    buildingId: "building-1",
+    localId: "note_12345678",
+    body: "Owner requested a follow-up",
+    recordedAt: "2026-08-09T01:30:00.000Z",
+  };
+}
+
+function ownerNoteRecord(overrides: Record<string, unknown> = {}) {
+  return {
+    id: "note_12345678",
+    buildingId: "building-1",
+    body: "Owner requested a follow-up",
+    recordedAt: "2026-08-09T01:30:00.000Z",
+    createdAt: "2026-08-09T02:00:00.000Z",
+    createdBy: "staff-1",
+    createdByName: "Verified staff",
+    ...overrides,
+  };
+}
+
+function seedOwnerNoteAccess(role: "admin" | "staff" | "reviewer" = "staff") {
+  registrations.fieldUser.value = { enabled: true, role };
+  registrations.pathValues.set(
+    `fieldPlatform/users/${role === "admin" ? "admin-1" : "staff-1"}`,
+    { enabled: true, role },
+  );
+  const uid = role === "admin" ? "admin-1" : "staff-1";
+  registrations.pathValues.set(`fieldPlatform/users/${uid}/enabled`, true);
+  registrations.pathValues.set(`fieldPlatform/users/${uid}/displayName`,
+    role === "admin" ? "Administrator" : "Verified staff");
+  registrations.pathValues.set("fieldPlatform/buildings/building-1", { id: "building-1" });
+  registrations.pathValues.set(
+    `fieldPlatform/buildingAssignments/building-1/${uid}`,
+    true,
+  );
+}
+
+function validOwnerCallableRequest(
+  data: unknown,
+  role: "admin" | "staff" | "reviewer" = "staff",
+) {
+  const uid = role === "admin" ? "admin-1" : "staff-1";
+  return {
+    auth: {
+      uid,
+      token: {
+        fieldPlatform: true,
+        fieldRole: role,
+        name: role === "admin" ? "Administrator" : "Verified staff",
+        auth_time: 1_723_181_696,
+      },
+    },
+    data,
+  };
+}
+
 const EVENT_VERSION = {
   eventTime: "2026-08-09T12:00:02.000Z",
   revision: "database-event-2",
@@ -182,8 +295,13 @@ beforeEach(() => {
   registrations.databaseRef.mockClear();
   registrations.databaseTransaction.mockClear();
   registrations.databaseGet.mockClear();
+  registrations.databaseUpdate.mockClear();
   registrations.fieldUser.value = { enabled: true, role: "staff" };
+  registrations.mutationPaths.length = 0;
+  registrations.pathValues.clear();
+  registrations.readSequences.clear();
   registrations.transactionStates.length = 0;
+  registrations.transactionPaths.length = 0;
   registrations.transactionCurrent.value = null;
 });
 
@@ -247,7 +365,7 @@ describe("Firebase entrypoint metadata", () => {
     );
   });
 
-  it("exports both App Check enforced field callables in asia-northeast3", () => {
+  it("exports all four App Check enforced field callables in asia-northeast3", () => {
     expect(registration(entrypoints.saveFieldRegistration)).toMatchObject({
       kind: "callable",
       options: {
@@ -273,6 +391,23 @@ describe("Firebase entrypoint metadata", () => {
       region: "asia-northeast3",
       enforceAppCheck: true,
     });
+
+    for (const callable of [
+      entrypoints.appendOwnerNote,
+      entrypoints.archiveOwnerNote,
+    ]) {
+      expect(registration(callable)).toMatchObject({
+        kind: "callable",
+        options: {
+          region: "asia-northeast3",
+          enforceAppCheck: true,
+        },
+      });
+      expect(registration(callable).options).toEqual({
+        region: "asia-northeast3",
+        enforceAppCheck: true,
+      });
+    }
   });
 
   it.each([
@@ -300,15 +435,214 @@ describe("Firebase entrypoint metadata", () => {
     });
   });
 
-  it("keeps provisionFieldUser exported while registering exactly five Task 5 entrypoints", () => {
+  it("keeps provisionFieldUser exported while registering exactly seven entrypoints", () => {
     expect(entrypoints.provisionFieldUser).toBeDefined();
     expect(registration(entrypoints.provisionFieldUser)).toMatchObject({
       kind: "callable",
       options: { region: "asia-northeast3" },
     });
     expect(registrations.initializeApp).toHaveBeenCalledTimes(1);
-    expect(registrations.onCall).toHaveBeenCalledTimes(3);
+    expect(registrations.onCall).toHaveBeenCalledTimes(5);
     expect(registrations.onValueWritten).toHaveBeenCalledTimes(3);
+  });
+
+  it("creates an owner note through one current-or-candidate transaction", async () => {
+    seedOwnerNoteAccess();
+
+    const result = await callableHandler(entrypoints.appendOwnerNote)(
+      validOwnerCallableRequest(validOwnerNoteData()),
+    );
+
+    expect(result).toEqual({
+      note: expect.objectContaining({
+        id: "note_12345678",
+        buildingId: "building-1",
+        body: "Owner requested a follow-up",
+        createdBy: "staff-1",
+        createdByName: "Verified staff",
+      }),
+    });
+    expect(registrations.transactionPaths).toContain(OWNER_NOTE_PATH);
+    expect(registrations.pathValues.get(OWNER_NOTE_PATH)).toEqual(
+      (result as { note: unknown }).note,
+    );
+  });
+
+  it("uses a bounded current-session rate key when auth_time is unavailable", async () => {
+    seedOwnerNoteAccess();
+    const request = validOwnerCallableRequest(validOwnerNoteData());
+    delete (request.auth.token as { auth_time?: number }).auth_time;
+
+    await callableHandler(entrypoints.appendOwnerNote)(request);
+
+    expect(registrations.transactionPaths).toContain(
+      "fieldPlatform/serverState/rateLimits/ownerNotes/staff-1/current/append",
+    );
+    expect(registrations.transactionPaths.join("\n")).not.toContain("undefined");
+  });
+
+  it("returns an id conflict without overwriting the transaction winner", async () => {
+    seedOwnerNoteAccess();
+    const winner = ownerNoteRecord({ body: "Concurrent winner" });
+    registrations.readSequences.set(OWNER_NOTE_PATH, [null]);
+    registrations.pathValues.set(OWNER_NOTE_PATH, winner);
+
+    await expect(callableHandler(entrypoints.appendOwnerNote)(
+      validOwnerCallableRequest(validOwnerNoteData()),
+    )).rejects.toMatchObject({
+      code: "already-exists",
+      message: "owner_note_id_conflict",
+    });
+
+    expect(registrations.pathValues.get(OWNER_NOTE_PATH)).toEqual(winner);
+    expect(registrations.mutationPaths).not.toContain(OWNER_NOTE_PATH);
+  });
+
+  it("preserves and returns the first archive winner in a transaction race", async () => {
+    seedOwnerNoteAccess("admin");
+    const active = ownerNoteRecord({ createdBy: "staff-1" });
+    const winner = ownerNoteRecord({
+      createdBy: "staff-1",
+      archivedAt: "2026-08-09T02:30:00.000Z",
+      archivedBy: "admin-winner",
+    });
+    registrations.readSequences.set(OWNER_NOTE_PATH, [active]);
+    registrations.pathValues.set(OWNER_NOTE_PATH, winner);
+
+    await expect(callableHandler(entrypoints.archiveOwnerNote)(
+      validOwnerCallableRequest(
+        { buildingId: "building-1", noteId: "note_12345678" },
+        "admin",
+      ),
+    )).resolves.toEqual({
+      archivedAt: "2026-08-09T02:30:00.000Z",
+      archivedBy: "admin-winner",
+    });
+
+    expect(registrations.pathValues.get(OWNER_NOTE_PATH)).toEqual(winner);
+    expect(registrations.mutationPaths).not.toContain(OWNER_NOTE_PATH);
+  });
+
+  it("never recreates a note deleted between the archive read and transaction", async () => {
+    seedOwnerNoteAccess("admin");
+    registrations.readSequences.set(OWNER_NOTE_PATH, [ownerNoteRecord()]);
+
+    await expect(callableHandler(entrypoints.archiveOwnerNote)(
+      validOwnerCallableRequest(
+        { buildingId: "building-1", noteId: "note_12345678" },
+        "admin",
+      ),
+    )).rejects.toMatchObject({
+      code: "not-found",
+      message: "owner_note_not_found",
+    });
+
+    expect(registrations.pathValues.has(OWNER_NOTE_PATH)).toBe(false);
+    expect(registrations.mutationPaths).not.toContain(OWNER_NOTE_PATH);
+  });
+
+  it("maps archive role and input failures without mutating a note", async () => {
+    seedOwnerNoteAccess("reviewer");
+    registrations.pathValues.set(OWNER_NOTE_PATH, ownerNoteRecord());
+
+    await expect(callableHandler(entrypoints.archiveOwnerNote)(
+      validOwnerCallableRequest(
+        { buildingId: "building-1", noteId: "note_12345678" },
+        "reviewer",
+      ),
+    )).rejects.toMatchObject({
+      code: "permission-denied",
+      message: "owner_note_archive_forbidden",
+    });
+
+    seedOwnerNoteAccess("admin");
+    await expect(callableHandler(entrypoints.archiveOwnerNote)(
+      validOwnerCallableRequest(
+        { buildingId: "bad/path", noteId: "note_12345678" },
+        "admin",
+      ),
+    )).rejects.toMatchObject({
+      code: "invalid-argument",
+      message: "owner_note_building_id_invalid",
+    });
+    expect(registrations.mutationPaths).not.toContain(OWNER_NOTE_PATH);
+  });
+
+  it.each([
+    ["unsafe input", "invalid-argument", "owner_note_building_id_invalid"],
+    ["unassigned staff", "permission-denied", "owner_note_forbidden"],
+    ["reviewer", "permission-denied", "owner_note_forbidden"],
+    ["rate limit", "resource-exhausted", "owner_note_rate_limited"],
+    ["missing building", "not-found", "owner_note_building_not_found"],
+  ])("maps %s and performs no owner-note mutation", async (scenario, code, message) => {
+    const role = scenario === "reviewer" ? "reviewer" : "staff";
+    seedOwnerNoteAccess(role);
+    let data = validOwnerNoteData();
+    if (scenario === "unsafe input") data = { ...data, buildingId: "bad/path" };
+    if (scenario === "unassigned staff") {
+      registrations.pathValues.set(
+        "fieldPlatform/buildingAssignments/building-1/staff-1",
+        false,
+      );
+    }
+    if (scenario === "rate limit") {
+      registrations.pathValues.set(OWNER_RATE_PATH, {
+        windowStartedAt: Date.now(),
+        count: 30,
+      });
+    }
+    if (scenario === "missing building") {
+      registrations.pathValues.delete("fieldPlatform/buildings/building-1");
+    }
+
+    await expect(callableHandler(entrypoints.appendOwnerNote)(
+      validOwnerCallableRequest(data, role),
+    )).rejects.toMatchObject({ code, message });
+
+    expect(registrations.pathValues.has(OWNER_NOTE_PATH)).toBe(false);
+    expect(registrations.mutationPaths).not.toContain(OWNER_NOTE_PATH);
+  });
+
+  it("maps disabled authentication and unexpected database failures safely", async () => {
+    seedOwnerNoteAccess();
+    registrations.pathValues.set("fieldPlatform/users/staff-1", {
+      enabled: false,
+      role: "staff",
+    });
+    await expect(callableHandler(entrypoints.appendOwnerNote)(
+      validOwnerCallableRequest(validOwnerNoteData()),
+    )).rejects.toMatchObject({
+      code: "permission-denied",
+      message: "field_access_denied",
+    });
+    expect(registrations.mutationPaths).not.toContain(OWNER_NOTE_PATH);
+
+    registrations.databaseGet.mockRejectedValueOnce(new Error("database_offline"));
+    await expect(callableHandler(entrypoints.appendOwnerNote)(
+      validOwnerCallableRequest(validOwnerNoteData()),
+    )).rejects.toMatchObject({
+      code: "internal",
+      message: "owner_note_internal",
+    });
+  });
+
+  it("maps malformed atomic archive results to internal, not invalid-argument", async () => {
+    seedOwnerNoteAccess("admin");
+    registrations.readSequences.set(OWNER_NOTE_PATH, [ownerNoteRecord()]);
+    registrations.pathValues.set(OWNER_NOTE_PATH, ownerNoteRecord({
+      archivedAt: "not-a-date",
+      archivedBy: "admin-winner",
+    }));
+
+    await expect(callableHandler(entrypoints.archiveOwnerNote)(
+      validOwnerCallableRequest(
+        { buildingId: "building-1", noteId: "note_12345678" },
+        "admin",
+      ),
+    )).rejects.toMatchObject({
+      code: "internal",
+      message: "owner_note_internal",
+    });
   });
 
   it("rebuilds from transaction-current state instead of an obsolete pre-read candidate", async () => {
