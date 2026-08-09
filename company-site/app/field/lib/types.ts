@@ -91,6 +91,18 @@ export interface FieldUser {
   updatedAt: ISODateTime;
 }
 
+export interface OwnerNote {
+  id: EntityId;
+  buildingId: EntityId;
+  body: string;
+  recordedAt: ISODateTime;
+  createdAt: ISODateTime;
+  createdBy: EntityId;
+  createdByName: string;
+  archivedAt?: ISODateTime;
+  archivedBy?: EntityId;
+}
+
 export interface OwnerNoteDraft {
   localId: EntityId;
   draftId: EntityId;
@@ -335,7 +347,8 @@ export interface AuditEvent {
     | "media"
     | "adPackage"
     | "secureAccess"
-    | "managementContract";
+    | "managementContract"
+    | "ownerNote";
   entityId: EntityId;
   occurredAt: ISODateTime;
   changes?: Record<string, { before?: unknown; after?: unknown }>;
