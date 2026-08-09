@@ -546,6 +546,28 @@ describe("saveFieldRegistrationCore", () => {
     expect(patches[1]).toEqual(patches[0]);
   });
 
+  it("rejects an oversized owner-note name returned by a broken reservation dependency", async () => {
+    const { dependencies } = createInMemoryAdapter();
+    vi.mocked(dependencies.reserveRegistration).mockImplementation(
+      async (proposed) => ({
+        status: "acquired",
+        reservation: {
+          ...cloneReservation(proposed),
+          ownerNoteCreatedByName: "x".repeat(257),
+        },
+      }),
+    );
+
+    await expect(
+      saveFieldRegistrationCore(
+        validRegistrationInput(),
+        staffActor,
+        dependencies,
+      ),
+    ).rejects.toThrow("field_registration_claim_state_invalid");
+    expect(dependencies.updateRoot).not.toHaveBeenCalled();
+  });
+
   it("normalizes non-semantic surrounding whitespace before hashing and persistence", async () => {
     const firstInput = validRegistrationInput();
     firstInput.building.name = "  상지 하우스  ";

@@ -1,3 +1,5 @@
+import { Buffer } from "node:buffer";
+
 export type FieldRole = "admin" | "staff" | "reviewer";
 
 export interface OwnerNoteDraftInput {
@@ -62,6 +64,25 @@ export interface OwnerNoteDependencies {
 
 const STABLE_ID = /^[A-Za-z0-9_-]{8,128}$/;
 const DEFAULT_OWNER_NOTE_ACTOR_NAME = "브링 담당자";
+export const OWNER_NOTE_ACTOR_NAME_MAX_BYTES = 256;
+
+export function normalizeOwnerNoteActorName(value: unknown): string | null {
+  if (
+    typeof value !== "string"
+    || /[\u0000-\u001f\u007f]/u.test(value)
+  ) {
+    return null;
+  }
+
+  const normalized = value.trim();
+  if (
+    normalized.length === 0
+    || Buffer.byteLength(normalized, "utf8") > OWNER_NOTE_ACTOR_NAME_MAX_BYTES
+  ) {
+    return null;
+  }
+  return normalized;
+}
 
 export function isStableId(value: unknown): value is string {
   return typeof value === "string" && STABLE_ID.test(value);
@@ -182,9 +203,11 @@ export async function resolveOwnerNoteActorName(
   actor: OwnerNoteActor,
   getUserDisplayName: (uid: string) => Promise<string | null>,
 ): Promise<string> {
-  const profileName = (await getUserDisplayName(actor.uid))?.trim();
+  const profileName = normalizeOwnerNoteActorName(
+    await getUserDisplayName(actor.uid),
+  );
   return profileName
-    || actor.tokenDisplayName?.trim()
+    || normalizeOwnerNoteActorName(actor.tokenDisplayName)
     || DEFAULT_OWNER_NOTE_ACTOR_NAME;
 }
 

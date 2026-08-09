@@ -13,6 +13,7 @@ import type {
 import { buildMapProjection } from "./map-projection.js";
 import {
   buildInitialOwnerNotePatch,
+  normalizeOwnerNoteActorName,
   normalizeOwnerNoteDrafts,
   resolveOwnerNoteActorName,
   type OwnerNoteActor,
@@ -518,6 +519,15 @@ export async function saveFieldRegistrationCore(
     result,
     ownerNoteCreatedByName,
   } = reservationOutcome.reservation;
+  const canonicalOwnerNoteCreatedByName = normalizeOwnerNoteActorName(
+    ownerNoteCreatedByName,
+  );
+  if (
+    ownerNoteCreatedByName !== undefined
+    && canonicalOwnerNoteCreatedByName !== ownerNoteCreatedByName
+  ) {
+    throw new Error("field_registration_claim_state_invalid");
+  }
   const { buildingId, unitIds, listingId, visitId } = result;
   const auditStamp = {
     createdAt: now,
@@ -676,7 +686,7 @@ export async function saveFieldRegistrationCore(
   }
 
   if (normalized.ownerNoteDrafts.length > 0) {
-    if (!ownerNoteCreatedByName) {
+    if (canonicalOwnerNoteCreatedByName === null) {
       throw new Error("field_registration_claim_state_invalid");
     }
     Object.assign(
@@ -686,7 +696,7 @@ export async function saveFieldRegistrationCore(
         drafts: normalized.ownerNoteDrafts,
         actor: ownerNoteActor,
         createdAt: now,
-        createdByName: ownerNoteCreatedByName,
+        createdByName: canonicalOwnerNoteCreatedByName,
       }),
     );
   }

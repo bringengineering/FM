@@ -6,6 +6,7 @@ import {
   buildOwnerNoteRecord,
   isStableId,
   normalizeOwnerNoteDrafts,
+  resolveOwnerNoteActorName,
   type OwnerNoteDependencies,
   type OwnerNoteRecord,
 } from "../src/field/owner-notes.js";
@@ -114,6 +115,44 @@ describe("owner note normalization", () => {
 });
 
 describe("owner note record construction", () => {
+  it("accepts an actor name at the exact 256-byte boundary", async () => {
+    const exactBoundaryName = "a".repeat(256);
+
+    await expect(
+      resolveOwnerNoteActorName(
+        actor,
+        vi.fn(async () => `  ${exactBoundaryName}  `),
+      ),
+    ).resolves.toBe(exactBoundaryName);
+  });
+
+  it("falls back to the verified token name when a multibyte profile name exceeds 256 bytes", async () => {
+    const oversizedKoreanName = "가".repeat(86);
+
+    await expect(
+      resolveOwnerNoteActorName(
+        { ...actor, tokenDisplayName: "  Verified token name  " },
+        vi.fn(async () => oversizedKoreanName),
+      ),
+    ).resolves.toBe("Verified token name");
+  });
+
+  it("falls back when a candidate contains a C0 or DEL control character", async () => {
+    await expect(
+      resolveOwnerNoteActorName(
+        { ...actor, tokenDisplayName: "Verified token name" },
+        vi.fn(async () => "Bad\u0000profile"),
+      ),
+    ).resolves.toBe("Verified token name");
+
+    await expect(
+      resolveOwnerNoteActorName(
+        { ...actor, tokenDisplayName: "Bad\u007ftoken" },
+        vi.fn(async () => null),
+      ),
+    ).resolves.toBe("브링 담당자");
+  });
+
   it("uses only normalized draft data and server actor/profile/time fields", () => {
     expect(buildOwnerNoteRecord({
       buildingId: "building-1",

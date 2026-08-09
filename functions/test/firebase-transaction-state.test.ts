@@ -126,6 +126,19 @@ describe("registration claim reducer", () => {
     });
   });
 
+  it("accepts a persisted initial owner-note name at exactly 256 UTF-8 bytes", () => {
+    const exactBoundaryName = "a".repeat(256);
+    const proposed = {
+      ...registrationReservation(),
+      ownerNoteCreatedByName: exactBoundaryName,
+    } as RegistrationReservation;
+
+    expect(reduceRegistrationClaim(null, proposed)).toMatchObject({
+      status: "acquired",
+      reservation: { ownerNoteCreatedByName: exactBoundaryName },
+    });
+  });
+
   it("atomically upgrades a compatible legacy reservation with the proposed note name", () => {
     const legacy = reduceRegistrationClaim(
       null,
@@ -153,12 +166,17 @@ describe("registration claim reducer", () => {
     });
   });
 
-  it("fails closed for a malformed persisted initial owner-note name", () => {
+  it.each([
+    ["blank", "   "],
+    ["oversized", "x".repeat(257)],
+    ["C0 control", "Bad\u0000name"],
+    ["DEL control", "Bad\u007fname"],
+  ])("fails closed for a %s persisted initial owner-note name", (_label, name) => {
     const malformed = {
       requests: {
         "request-1": {
           ...registrationReservation(),
-          ownerNoteCreatedByName: "   ",
+          ownerNoteCreatedByName: name,
         },
       },
       drafts: {

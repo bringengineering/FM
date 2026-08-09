@@ -8,6 +8,7 @@ import type {
   RegistrationReservation,
   RegistrationReservationOutcome,
 } from "./save-field-registration.js";
+import { normalizeOwnerNoteActorName } from "./owner-notes.js";
 import {
   managementContractFingerprint,
   type ContractTransitionCommitInput,
@@ -106,13 +107,12 @@ function cloneRegistrationReservation(
   }
 
   const ownerNoteCreatedByName = value.ownerNoteCreatedByName;
+  const canonicalOwnerNoteCreatedByName = normalizeOwnerNoteActorName(
+    ownerNoteCreatedByName,
+  );
   if (
     ownerNoteCreatedByName !== undefined
-    && (
-      typeof ownerNoteCreatedByName !== "string"
-      || ownerNoteCreatedByName.length === 0
-      || ownerNoteCreatedByName.trim() !== ownerNoteCreatedByName
-    )
+    && canonicalOwnerNoteCreatedByName !== ownerNoteCreatedByName
   ) {
     return invalidRegistrationClaim();
   }
@@ -129,9 +129,9 @@ function cloneRegistrationReservation(
       visitId: value.result.visitId,
     },
     claimedAt: value.claimedAt,
-    ...(ownerNoteCreatedByName === undefined
+    ...(canonicalOwnerNoteCreatedByName === null
       ? {}
-      : { ownerNoteCreatedByName }),
+      : { ownerNoteCreatedByName: canonicalOwnerNoteCreatedByName }),
   };
 }
 
