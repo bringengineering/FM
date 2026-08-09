@@ -7,57 +7,21 @@ import {
 
 import type { SaveFieldRegistrationResult } from "./registration-draft";
 import type {
-  DriveSyncState as DomainDriveSyncState,
-  ISODateTime,
-  MediaKind,
-  MediaZone,
+  CaptureAttachmentDescriptor,
+  CaptureBinding,
+  DriveSyncState,
+  UploadState,
+} from "./types";
+export type {
+  CaptureAttachmentDescriptor,
+  CaptureBinding,
+  DriveSyncState,
+  UploadState,
 } from "./types";
 
 const DEFAULT_DATABASE_NAME = "bring-field-offline";
 const DATABASE_VERSION = 1;
 const FIVE_MEBIBYTES = 5 * 1_024 * 1_024;
-
-export type UploadState =
-  | "queued"
-  | "uploading"
-  | "objectStored"
-  | "finalizing"
-  | "finalized"
-  | "failed";
-
-export type DriveSyncState = DomainDriveSyncState;
-
-export interface CaptureBinding {
-  buildingId?: string;
-  unitId?: string;
-  listingId?: string;
-  visitId?: string;
-  draftId?: string;
-  unitLocalId?: string;
-}
-
-export interface CaptureAttachmentDescriptor {
-  mediaId: string;
-  captureSessionId: string;
-  kind: MediaKind;
-  zone: MediaZone;
-  slotId: string;
-  required: boolean;
-  originalFileName: string;
-  mimeType: string;
-  sizeBytes: number;
-  lastModified: number;
-  capturedAt: ISODateTime;
-  uploadState: UploadState;
-  uploadProgress: number;
-  failureCode?: string;
-  replacesMediaId?: string;
-  videoMetadata?: {
-    durationSeconds: number;
-    width: number;
-    height: number;
-  };
-}
 
 export interface QueuedMediaRecord {
   key: string;

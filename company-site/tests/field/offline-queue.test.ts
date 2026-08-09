@@ -1,6 +1,8 @@
 import "fake-indexeddb/auto";
 
 import { Blob as NodeBlob } from "node:buffer";
+import { readFile } from "node:fs/promises";
+import { resolve } from "node:path";
 import { deleteDB, openDB } from "idb";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -81,6 +83,18 @@ async function enqueueQueuedPhoto(
 }
 
 describe("offline capture queue schema", () => {
+  it("re-exports the canonical capture contracts without redeclaring them", async () => {
+    const source = await readFile(resolve(
+      process.cwd(),
+      "app/field/lib/offline-queue.ts",
+    ), "utf8");
+
+    expect(source).toContain('from "./types"');
+    expect(source).not.toMatch(/export type UploadState\s*=/);
+    expect(source).not.toMatch(/export interface CaptureBinding\s*\{/);
+    expect(source).not.toMatch(/export interface CaptureAttachmentDescriptor\s*\{/);
+  });
+
   it("creates only the approved version-one stores and indexes", async () => {
     const queue = await createQueue();
     const database = await openDB(dbName, 1);
