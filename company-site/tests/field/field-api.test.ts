@@ -121,16 +121,54 @@ describe("field claim and pending subscription", () => {
 
   it("queries pending contracts and restores each building id from its snapshot key", () => {
     const unsubscribe = vi.fn();
+    const persistedPendingBuilding = {
+      managementNumber: "BR-0001",
+      name: "테스트 빌딩",
+      roadAddress: "강원특별자치도 원주시 서원대로 1",
+      latitude: 37.3422,
+      longitude: 127.9202,
+      parking: { available: true, totalSpaces: 8 },
+      assignedStaffIds: ["staff-1"],
+      managementContract: {
+        status: "pending",
+        startedOn: "2026-08-09",
+        updatedAt: "2026-08-09T00:00:00.000Z",
+        updatedBy: "staff-1",
+      },
+      createdAt: "2026-08-09T00:00:00.000Z",
+      createdBy: "staff-1",
+      updatedAt: "2026-08-09T00:00:00.000Z",
+      updatedBy: "staff-1",
+    };
     firebase.onValue.mockImplementation((_pendingQuery, listener) => {
       listener({
         val: () => ({
-          "building-1": {
-            managementNumber: "BR-0001",
-            name: "테스트 빌딩",
-            roadAddress: "강원특별자치도 원주시 서원대로 1",
-            managementContract: { status: "pending", startedOn: "2026-08-09" },
-          },
+          "building-1": persistedPendingBuilding,
           malformed: "skip-me",
+          "unsafe/id": {
+            ...persistedPendingBuilding,
+            name: "잘못된 ID",
+          },
+          "object-name": {
+            ...persistedPendingBuilding,
+            name: { text: "객체 이름" },
+          },
+          "numeric-address": {
+            ...persistedPendingBuilding,
+            roadAddress: 12345,
+          },
+          "invalid-start-date": {
+            ...persistedPendingBuilding,
+            managementContract: {
+              ...persistedPendingBuilding.managementContract,
+              startedOn: "2026-02-30",
+            },
+          },
+          "legacy-missing-name": {
+            ...persistedPendingBuilding,
+            name: undefined,
+            roadAddress: "강원특별자치도 원주시 중앙로 4",
+          },
         }),
       });
       return unsubscribe;

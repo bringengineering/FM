@@ -177,6 +177,57 @@ describe("ManagementContractQueue", () => {
     expect(screen.getByRole("button", { name: "관리 중으로 승인" })).toBeEnabled();
   });
 
+  it("reuses the same request id when a response is lost and the row is retried", async () => {
+    const approve = vi.fn()
+      .mockRejectedValueOnce(new Error("response lost"))
+      .mockResolvedValueOnce({ buildingId: "building-1", status: "active" as const });
+    render(
+      <ManagementContractQueue
+        resolveRole={async () => "admin"}
+        subscribe={(listener) => {
+          listener([pendingBuilding]);
+          return () => undefined;
+        }}
+        approve={approve}
+      />,
+    );
+
+    fireEvent.click(await screen.findByRole("button", { name: "관리 중으로 승인" }));
+    expect(await screen.findByText("승인 실패 · 다시 시도해 주세요")).toBeInTheDocument();
+    const firstRequestId = approve.mock.calls[0][0].requestId;
+
+    fireEvent.click(screen.getByRole("button", { name: "관리 중으로 승인" }));
+    await waitFor(() => expect(approve).toHaveBeenCalledTimes(2));
+
+    expect(approve.mock.calls[1][0].requestId).toBe(firstRequestId);
+    await waitFor(() => expect(screen.queryByText("테스트 빌딩")).not.toBeInTheDocument());
+  });
+
+  it("allows only one approval call across two immediate clicks", async () => {
+    let resolveApproval: ((result: { buildingId: string; status: "active" }) => void) | undefined;
+    const approve = vi.fn(() => new Promise<{ buildingId: string; status: "active" }>((resolve) => {
+      resolveApproval = resolve;
+    }));
+    render(
+      <ManagementContractQueue
+        resolveRole={async () => "admin"}
+        subscribe={(listener) => {
+          listener([pendingBuilding]);
+          return () => undefined;
+        }}
+        approve={approve}
+      />,
+    );
+
+    const approveButton = await screen.findByRole("button", { name: "관리 중으로 승인" });
+    fireEvent.click(approveButton);
+    fireEvent.click(approveButton);
+
+    expect(approve).toHaveBeenCalledOnce();
+    resolveApproval?.({ buildingId: "building-1", status: "active" });
+    await waitFor(() => expect(screen.queryByText("테스트 빌딩")).not.toBeInTheDocument());
+  });
+
   it("removes a row when the live pending query omits it", async () => {
     let emit: ((buildings: Building[]) => void) | undefined;
     render(

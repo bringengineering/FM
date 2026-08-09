@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 import {
   getCurrentFieldRole,
@@ -69,6 +69,8 @@ export default function ManagementContractQueue({
   const [approving, setApproving] = useState<Set<string>>(() => new Set());
   const [failed, setFailed] = useState<Set<string>>(() => new Set());
   const [completed, setCompleted] = useState<Set<string>>(() => new Set());
+  const requestIds = useRef(new Map<string, string>());
+  const inFlight = useRef(new Set<string>());
 
   useEffect(() => {
     let active = true;
@@ -82,6 +84,9 @@ export default function ManagementContractQueue({
           (nextBuildings) => {
             if (!active) return;
             const liveIds = new Set(nextBuildings.map((building) => building.id));
+            for (const buildingId of requestIds.current.keys()) {
+              if (!liveIds.has(buildingId)) requestIds.current.delete(buildingId);
+            }
             setBuildings(nextBuildings);
             setStartDates((current) => {
               const next = { ...current };
@@ -118,8 +123,9 @@ export default function ManagementContractQueue({
 
   async function approveBuilding(building: Building) {
     const startedOn = startDates[building.id] || "";
-    if (!DATE_PATTERN.test(startedOn) || approving.has(building.id)) return;
+    if (!DATE_PATTERN.test(startedOn) || inFlight.current.has(building.id)) return;
 
+    inFlight.current.add(building.id);
     setApproving((current) => new Set(current).add(building.id));
     setFailed((current) => {
       const next = new Set(current);
@@ -128,12 +134,18 @@ export default function ManagementContractQueue({
     });
 
     try {
+      let requestId = requestIds.current.get(building.id);
+      if (!requestId) {
+        requestId = createApprovalRequestId();
+        requestIds.current.set(building.id, requestId);
+      }
       await approve({
-        requestId: createApprovalRequestId(),
+        requestId,
         buildingId: building.id,
         status: "active",
         startedOn,
       });
+      requestIds.current.delete(building.id);
       setCompleted((current) => new Set(current).add(building.id));
     } catch {
       setFailed((current) => new Set(current).add(building.id));
@@ -143,6 +155,7 @@ export default function ManagementContractQueue({
         next.delete(building.id);
         return next;
       });
+      inFlight.current.delete(building.id);
     }
   }
 
