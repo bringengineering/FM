@@ -14,6 +14,10 @@ import type {
   SaveFieldRegistrationInput,
   SaveFieldRegistrationResult,
 } from "./registration-draft";
+import type {
+  FinalizeFieldMediaInput,
+  FinalizeFieldMediaResult,
+} from "./media-upload";
 import { auth, database, functions } from "./firebase.client";
 import type { Building, OwnerNote, UserRole } from "./types";
 
@@ -45,6 +49,22 @@ export interface StartFieldCaptureSessionResult {
   visitId: string;
 }
 
+export interface FieldMediaAccessResult {
+  url: string;
+  expiresAt: string;
+}
+
+export interface ExcludeFieldMediaInput {
+  mediaId: string;
+  requestId: string;
+}
+
+export interface ExcludeFieldMediaResult {
+  mediaId: string;
+  excludedAt: string;
+  excludedBy: string;
+}
+
 export interface AppendOwnerNoteInput {
   buildingId: string;
   localId: string;
@@ -73,6 +93,18 @@ export type SetContractInvoker = (
 export type StartCaptureSessionInvoker = (
   input: StartFieldCaptureSessionInput,
 ) => Promise<{ data: StartFieldCaptureSessionResult }>;
+
+export type FinalizeFieldMediaInvoker = (
+  input: FinalizeFieldMediaInput,
+) => Promise<{ data: FinalizeFieldMediaResult }>;
+
+export type GetFieldMediaAccessInvoker = (
+  input: { mediaId: string },
+) => Promise<{ data: FieldMediaAccessResult }>;
+
+export type ExcludeFieldMediaInvoker = (
+  input: ExcludeFieldMediaInput,
+) => Promise<{ data: ExcludeFieldMediaResult }>;
 
 export type AppendOwnerNoteInvoker = (
   input: AppendOwnerNoteInput,
@@ -286,6 +318,32 @@ async function defaultStartCaptureSessionInvoker(
   return callable(input);
 }
 
+async function defaultFinalizeFieldMediaInvoker(
+  input: FinalizeFieldMediaInput,
+) {
+  const callable = httpsCallable<
+    FinalizeFieldMediaInput,
+    FinalizeFieldMediaResult
+  >(functions, "finalizeFieldMedia");
+  return callable(input);
+}
+
+async function defaultGetFieldMediaAccessInvoker(input: { mediaId: string }) {
+  const callable = httpsCallable<
+    { mediaId: string },
+    FieldMediaAccessResult
+  >(functions, "getFieldMediaAccess");
+  return callable(input);
+}
+
+async function defaultExcludeFieldMediaInvoker(input: ExcludeFieldMediaInput) {
+  const callable = httpsCallable<
+    ExcludeFieldMediaInput,
+    ExcludeFieldMediaResult
+  >(functions, "excludeFieldMedia");
+  return callable(input);
+}
+
 async function defaultAppendOwnerNoteInvoker(input: AppendOwnerNoteInput) {
   const callable = httpsCallable<
     AppendOwnerNoteInput,
@@ -342,6 +400,64 @@ export async function startFieldCaptureSession(
   return {
     captureSessionId: result.data.captureSessionId,
     visitId: result.data.visitId,
+  };
+}
+
+export async function finalizeFieldMedia(
+  input: FinalizeFieldMediaInput,
+  invoke: FinalizeFieldMediaInvoker = defaultFinalizeFieldMediaInvoker,
+): Promise<FinalizeFieldMediaResult> {
+  const result = await invoke({ ...input });
+  if (
+    !isRecord(result.data)
+    || result.data.mediaId !== input.mediaId
+    || result.data.uploadState !== "finalized"
+    || result.data.driveSyncState !== "queued"
+    || typeof result.data.storagePath !== "string"
+    || !result.data.storagePath.startsWith("field-media-finalized/")
+    || !isCanonicalUtcIso(result.data.finalizedAt)
+  ) {
+    throw new Error("field_media_finalize_response_invalid");
+  }
+  return result.data as unknown as FinalizeFieldMediaResult;
+}
+
+export async function getFieldMediaAccess(
+  mediaId: string,
+  invoke: GetFieldMediaAccessInvoker = defaultGetFieldMediaAccessInvoker,
+): Promise<FieldMediaAccessResult> {
+  const result = await invoke({ mediaId });
+  if (
+    !isRecord(result.data)
+    || typeof result.data.url !== "string"
+    || !result.data.url.startsWith("https://")
+    || !isCanonicalUtcIso(result.data.expiresAt)
+  ) {
+    throw new Error("field_media_access_response_invalid");
+  }
+  return {
+    url: result.data.url,
+    expiresAt: result.data.expiresAt,
+  };
+}
+
+export async function excludeFieldMedia(
+  input: ExcludeFieldMediaInput,
+  invoke: ExcludeFieldMediaInvoker = defaultExcludeFieldMediaInvoker,
+): Promise<ExcludeFieldMediaResult> {
+  const result = await invoke({ mediaId: input.mediaId, requestId: input.requestId });
+  if (
+    !isRecord(result.data)
+    || result.data.mediaId !== input.mediaId
+    || !isCanonicalUtcIso(result.data.excludedAt)
+    || !isPathSafeId(result.data.excludedBy)
+  ) {
+    throw new Error("field_media_exclusion_response_invalid");
+  }
+  return {
+    mediaId: result.data.mediaId,
+    excludedAt: result.data.excludedAt,
+    excludedBy: result.data.excludedBy,
   };
 }
 

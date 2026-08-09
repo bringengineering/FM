@@ -386,6 +386,24 @@ function driveJob(
   };
 }
 
+function replacementRecord(
+  value: unknown,
+  input: FinalizeFieldMediaInput,
+): UnknownRecord | null {
+  if (input.replacesMediaId === undefined) return null;
+  if (
+    !isRecord(value)
+    || value.id !== input.replacesMediaId
+    || value.buildingId !== input.buildingId
+    || value.uploadState !== "finalized"
+    || value.excludedAt !== undefined
+    || value.excludedBy !== undefined
+  ) {
+    throw new Error("field_media_replacement_conflict");
+  }
+  return value;
+}
+
 export async function finalizeFieldMediaCore(
   input: FinalizeFieldMediaInput,
   actor: { uid: string; role: "admin" | "staff" | "reviewer" },
@@ -413,6 +431,12 @@ export async function finalizeFieldMediaCore(
       actor.uid,
     );
   }
+  const replacement = input.replacesMediaId === undefined
+    ? null
+    : replacementRecord(
+        await dependencies.readMedia(input.replacesMediaId),
+        input,
+      );
 
   const [visit, session] = await Promise.all([
     dependencies.readVisit(input.visitId),
@@ -481,10 +505,25 @@ export async function finalizeFieldMediaCore(
     finalGeneration,
     now,
   );
-  const mediaForProjection = [
-    ...existingBuildingMedia,
-    mediaRecord as unknown as ProjectionMedia,
-  ];
+  let replacementFound = false;
+  const mediaForProjection = existingBuildingMedia.map((item) => {
+    if (
+      replacement === null
+      || (item as ProjectionMedia & { id?: unknown }).id !== replacement.id
+    ) {
+      return item;
+    }
+    replacementFound = true;
+    return { ...item, excludedAt: now, excludedBy: actor.uid };
+  });
+  if (replacement !== null && !replacementFound) {
+    mediaForProjection.push({
+      ...(replacement as unknown as ProjectionMedia),
+      excludedAt: now,
+      excludedBy: actor.uid,
+    });
+  }
+  mediaForProjection.push(mediaRecord as unknown as ProjectionMedia);
   const projection = buildMapProjection({
     building,
     listings,
@@ -509,6 +548,24 @@ export async function finalizeFieldMediaCore(
       occurredAt: now,
       requestId: input.requestId,
     },
+    ...(replacement === null
+      ? {}
+      : {
+          [`fieldPlatform/media/${replacement.id as string}/excludedAt`]: now,
+          [`fieldPlatform/media/${replacement.id as string}/excludedBy`]: actor.uid,
+          [`fieldPlatform/auditLogs/media-excluded-${input.requestId}`]: {
+            id: `media-excluded-${input.requestId}`,
+            actorId: actor.uid,
+            action: "media.excluded",
+            entityType: "media",
+            entityId: replacement.id,
+            occurredAt: now,
+            requestId: input.requestId,
+            changes: {
+              replacedByMediaId: { after: input.mediaId },
+            },
+          },
+        }),
     [`fieldPlatform/captureSessions/${input.captureSessionId}/updatedAt`]: now,
     [`fieldPlatform/captureSessions/${input.captureSessionId}/status`]:
       captureSessionMeetsRequiredPolicy(

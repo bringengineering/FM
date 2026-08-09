@@ -22,6 +22,7 @@ import {
 
 const REQUEST_ID = "11111111-1111-4111-8111-111111111111";
 const MEDIA_ID = "22222222-2222-4222-8222-222222222222";
+const REPLACED_MEDIA_ID = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
 const SESSION_ID = "33333333-3333-4333-8333-333333333333";
 const VISIT_ID = "44444444-4444-4444-8444-444444444444";
 const NOW = "2026-08-09T00:00:10.000Z";
@@ -802,6 +803,49 @@ describe("finalizeFieldMediaCore", () => {
       .toBe("complete");
     expect(patch["fieldPlatform/mapProjections/building-1"])
       .toMatchObject({ captureStatus: "complete" });
+  });
+
+  it("atomically excludes replacement media without deleting its Storage or changing its Drive job", async () => {
+    const replaced = {
+      ...baseExistingMedia({
+        id: REPLACED_MEDIA_ID,
+        requestId: "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
+        storagePath: `field-media-finalized/building-1/${REPLACED_MEDIA_ID}.jpg`,
+      }),
+    };
+    const deps = dependencies({
+      readMedia: vi.fn(async (mediaId) =>
+        mediaId === REPLACED_MEDIA_ID ? replaced : null),
+      listFinalizedBuildingMedia: vi.fn(async () => [
+        replaced as unknown as ProjectionMedia,
+      ]),
+    });
+
+    await finalizeFieldMediaCore(
+      { ...input, replacesMediaId: REPLACED_MEDIA_ID },
+      { uid: "staff-1", role: "staff" },
+      deps,
+    );
+
+    const patch = vi.mocked(deps.writePatch).mock.calls[0][0];
+    expect(patch[`fieldPlatform/media/${REPLACED_MEDIA_ID}/excludedAt`])
+      .toBe(NOW);
+    expect(patch[`fieldPlatform/media/${REPLACED_MEDIA_ID}/excludedBy`])
+      .toBe("staff-1");
+    expect(patch[`fieldPlatform/auditLogs/media-excluded-${REQUEST_ID}`])
+      .toMatchObject({
+        action: "media.excluded",
+        entityId: REPLACED_MEDIA_ID,
+        requestId: REQUEST_ID,
+      });
+    expect(Object.keys(patch).join("\n")).not.toContain(
+      `driveSyncJobs/${REPLACED_MEDIA_ID}`,
+    );
+    expect(deps.deleteStaging).toHaveBeenCalledTimes(1);
+    expect(deps.deleteStaging).toHaveBeenCalledWith(
+      STAGING_PATH,
+      SOURCE_GENERATION,
+    );
   });
 });
 

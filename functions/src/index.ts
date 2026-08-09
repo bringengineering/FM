@@ -3,6 +3,7 @@ import { Buffer } from "node:buffer";
 import { getApps, initializeApp } from "firebase-admin/app";
 import { getAuth } from "firebase-admin/auth";
 import { getDatabase, ServerValue } from "firebase-admin/database";
+import { getStorage } from "firebase-admin/storage";
 import { onValueWritten } from "firebase-functions/v2/database";
 import {
   HttpsError,
@@ -18,6 +19,21 @@ import type {
   FieldActor,
   SaveFieldRegistrationInput,
 } from "./field/contracts.js";
+import {
+  excludeFieldMediaCore,
+  type ExcludeFieldMediaDependencies,
+  type ExcludeFieldMediaInput,
+} from "./field/exclude-field-media.js";
+import {
+  finalizeFieldMediaCore,
+  type FinalizeFieldMediaDependencies,
+  type FinalizeFieldMediaInput,
+  type StoredObject,
+} from "./field/finalize-field-media.js";
+import {
+  getFieldMediaAccessCore,
+  type FieldMediaAccessDependencies,
+} from "./field/get-field-media-access.js";
 import {
   reduceAuthoritativeProjectionRebuild,
   reduceRegistrationClaim,
@@ -57,6 +73,7 @@ import {
   type StartCaptureSessionDependencies,
   type StartCaptureSessionInput,
 } from "./field/start-capture-session.js";
+import { consumeRateLimit } from "./security/rate-limit.js";
 
 if (getApps().length === 0) {
   initializeApp();
@@ -64,6 +81,7 @@ if (getApps().length === 0) {
 
 const adminAuth = getAuth();
 const adminDatabase = getDatabase();
+const mediaBucket = getStorage().bucket();
 const FIELD_ID_BYTES = 128;
 
 type UnknownRecord = Record<string, unknown>;
@@ -226,6 +244,69 @@ function rethrowCaptureSessionCallableError(error: unknown): never {
     throw new HttpsError("already-exists", message);
   }
   throw new HttpsError("internal", "field_capture_session_internal");
+}
+
+const MEDIA_INVALID_ERRORS = new Set([
+  "field_media_invalid",
+  "field_media_access_invalid",
+  "field_media_exclusion_invalid",
+  "field_rate_limit_invalid",
+]);
+const MEDIA_FORBIDDEN_ERRORS = new Set([
+  "field_media_forbidden",
+  "field_media_access_forbidden",
+  "field_media_exclusion_forbidden",
+  "field_building_assignment_required",
+]);
+const MEDIA_NOT_FOUND_ERRORS = new Set([
+  "field_media_not_found",
+  "field_media_object_missing",
+]);
+const MEDIA_CONFLICT_ERRORS = new Set([
+  "field_media_id_conflict",
+  "field_media_destination_conflict",
+  "field_media_exclusion_conflict",
+  "field_media_exclusion_request_conflict",
+  "field_media_replacement_conflict",
+]);
+const MEDIA_PRECONDITION_ERRORS = new Set([
+  "field_media_not_finalized",
+  "field_media_path_invalid",
+  "field_media_path_mismatch",
+  "field_media_generation_mismatch",
+  "field_media_mime_not_allowed",
+  "field_media_kind_mismatch",
+  "field_media_size_invalid",
+  "field_media_too_large",
+  "field_media_metadata_mismatch",
+  "field_media_visit_mismatch",
+  "field_media_session_mismatch",
+  "field_media_unit_mismatch",
+  "field_media_listing_mismatch",
+]);
+
+function rethrowMediaCallableError(error: unknown): never {
+  if (error instanceof HttpsError) throw error;
+  const message = error instanceof Error ? error.message : "field_media_unknown";
+  if (message === "field_rate_limit_exceeded") {
+    throw new HttpsError("resource-exhausted", message);
+  }
+  if (MEDIA_INVALID_ERRORS.has(message)) {
+    throw new HttpsError("invalid-argument", message);
+  }
+  if (MEDIA_FORBIDDEN_ERRORS.has(message)) {
+    throw new HttpsError("permission-denied", message);
+  }
+  if (MEDIA_NOT_FOUND_ERRORS.has(message)) {
+    throw new HttpsError("not-found", message);
+  }
+  if (MEDIA_CONFLICT_ERRORS.has(message)) {
+    throw new HttpsError("already-exists", message);
+  }
+  if (MEDIA_PRECONDITION_ERRORS.has(message)) {
+    throw new HttpsError("failed-precondition", message);
+  }
+  throw new HttpsError("internal", "field_media_internal");
 }
 
 async function getBuilding(
@@ -485,6 +566,183 @@ const captureSessionDependencies: StartCaptureSessionDependencies = {
   now: () => new Date().toISOString(),
 };
 
+function gcsErrorCode(error: unknown): number | null {
+  if (!isRecord(error)) return null;
+  const code = error.code;
+  if (typeof code === "number" && Number.isInteger(code)) return code;
+  if (typeof code === "string" && /^\d{3}$/.test(code)) return Number(code);
+  return null;
+}
+
+function stringMetadata(value: unknown): Record<string, string> | undefined {
+  if (!isRecord(value)) return undefined;
+  const entries = Object.entries(value);
+  if (entries.some(([, item]) => typeof item !== "string")) return undefined;
+  return Object.fromEntries(entries) as Record<string, string>;
+}
+
+function storedObjectFromMetadata(value: unknown): StoredObject {
+  if (!isRecord(value)) throw new Error("field_media_storage_state_invalid");
+  const size = typeof value.size === "string" ? Number(value.size) : value.size;
+  if (
+    typeof value.generation !== "string"
+    || typeof size !== "number"
+    || !Number.isSafeInteger(size)
+    || typeof value.contentType !== "string"
+  ) {
+    throw new Error("field_media_storage_state_invalid");
+  }
+  return {
+    generation: value.generation,
+    sizeBytes: size,
+    contentType: value.contentType,
+    ...(typeof value.md5Hash === "string" ? { md5Hash: value.md5Hash } : {}),
+    ...(typeof value.crc32c === "string" ? { crc32c: value.crc32c } : {}),
+    ...(typeof value.timeCreated === "string"
+      ? { timeCreated: value.timeCreated }
+      : {}),
+    ...(stringMetadata(value.metadata) === undefined
+      ? {}
+      : { customMetadata: stringMetadata(value.metadata) }),
+  };
+}
+
+async function inspectStorageObject(
+  path: string,
+  generation?: string,
+): Promise<StoredObject | null> {
+  try {
+    const [metadata] = await mediaBucket.file(
+      path,
+      generation === undefined ? undefined : { generation },
+    ).getMetadata();
+    return storedObjectFromMetadata(metadata);
+  } catch (error) {
+    if (gcsErrorCode(error) === 404) return null;
+    throw error;
+  }
+}
+
+async function isEnabledFieldUser(uid: string): Promise<boolean> {
+  const snapshot = await adminDatabase
+    .ref(`fieldPlatform/users/${uid}/enabled`)
+    .get();
+  return snapshot.val() === true;
+}
+
+async function isAssignedFieldUser(
+  buildingId: string,
+  uid: string,
+): Promise<boolean> {
+  const snapshot = await adminDatabase
+    .ref(`fieldPlatform/buildingAssignments/${buildingId}/${uid}`)
+    .get();
+  return snapshot.val() === true;
+}
+
+async function readFieldRecord(path: string): Promise<unknown | null> {
+  const snapshot = await adminDatabase.ref(path).get();
+  return snapshot.val() as unknown | null;
+}
+
+const finalizeMediaDependencies: FinalizeFieldMediaDependencies = {
+  isEnabled: isEnabledFieldUser,
+  isAssigned: isAssignedFieldUser,
+  readMedia: (mediaId) => readFieldRecord(`fieldPlatform/media/${mediaId}`),
+  readFinalizationAudit: (requestId) => readFieldRecord(
+    `fieldPlatform/auditLogs/media-finalized-${requestId}`,
+  ),
+  readVisit: (visitId) => readFieldRecord(`fieldPlatform/visits/${visitId}`),
+  readSession: (captureSessionId) => readFieldRecord(
+    `fieldPlatform/captureSessions/${captureSessionId}`,
+  ),
+  readUnit: (unitId) => readFieldRecord(`fieldPlatform/units/${unitId}`),
+  readListing: (listingId) => readFieldRecord(
+    `fieldPlatform/listings/${listingId}`,
+  ),
+  readBuilding: getBuilding,
+  listBuildingListings: getListings,
+  listFinalizedBuildingMedia: getMedia,
+  inspectStagingObject: inspectStorageObject,
+  async copyToFinalized(input) {
+    const source = mediaBucket.file(input.sourcePath, {
+      generation: input.sourceGeneration,
+    });
+    const destination = mediaBucket.file(input.destinationPath);
+    try {
+      const [copied] = await source.copy(destination, {
+        preconditionOpts: { ifGenerationMatch: input.ifGenerationMatch },
+      });
+      const [metadata] = await copied.getMetadata();
+      if (!isRecord(metadata) || typeof metadata.generation !== "string") {
+        throw new Error("field_media_storage_state_invalid");
+      }
+      return {
+        status: "copied",
+        path: input.destinationPath,
+        generation: metadata.generation,
+      };
+    } catch (error) {
+      if (gcsErrorCode(error) === 412) return { status: "alreadyExists" };
+      throw error;
+    }
+  },
+  inspectFinalizedObject: (path) => inspectStorageObject(path),
+  async writePatch(patch) {
+    await adminDatabase.ref().update(patch);
+  },
+  async deleteStaging(path, generation) {
+    await mediaBucket.file(path, { generation }).delete({
+      ifGenerationMatch: generation,
+    });
+  },
+  now: () => new Date().toISOString(),
+};
+
+const mediaAccessDependencies: FieldMediaAccessDependencies = {
+  isEnabled: isEnabledFieldUser,
+  isAssigned: isAssignedFieldUser,
+  readMedia: (mediaId) => readFieldRecord(`fieldPlatform/media/${mediaId}`),
+  async signReadUrl(path, expiresAt) {
+    const [url] = await mediaBucket.file(path).getSignedUrl({
+      version: "v4",
+      action: "read",
+      expires: expiresAt,
+    });
+    return url;
+  },
+  nowMs: () => Date.now(),
+};
+
+const excludeMediaDependencies: ExcludeFieldMediaDependencies = {
+  isEnabled: isEnabledFieldUser,
+  isAssigned: isAssignedFieldUser,
+  readMedia: (mediaId) => readFieldRecord(`fieldPlatform/media/${mediaId}`),
+  readAudit: (requestId) => readFieldRecord(
+    `fieldPlatform/auditLogs/media-excluded-${requestId}`,
+  ),
+  readBuilding: getBuilding,
+  listBuildingListings: getListings,
+  listBuildingMedia: getMedia,
+  async writePatch(patch) {
+    await adminDatabase.ref().update(patch);
+  },
+  now: () => new Date().toISOString(),
+};
+
+function mediaRateReference(
+  operation: "finalize" | "mediaAccess" | "exclude",
+  uid: string,
+  sessionId: string,
+) {
+  if (!isPathSafeId(uid) || !isPathSafeId(sessionId)) {
+    throw new Error("field_rate_limit_invalid");
+  }
+  return adminDatabase.ref(
+    `fieldPlatform/rateLimits/${operation}/${uid}/${sessionId}`,
+  );
+}
+
 const contractDependencies: SetManagementContractStatusDependencies = {
   getBuilding,
   getListings,
@@ -665,6 +923,85 @@ export const startFieldCaptureSession = onCall<StartCaptureSessionInput>(
       );
     } catch (error) {
       return rethrowCaptureSessionCallableError(error);
+    }
+  },
+);
+
+const protectedMediaCallableOptions = {
+  region: "asia-northeast3" as const,
+  enforceAppCheck: true,
+  consumeAppCheckToken: true,
+};
+
+export const finalizeFieldMedia = onCall<FinalizeFieldMediaInput>(
+  protectedMediaCallableOptions,
+  async (request) => {
+    if (!request.auth) {
+      throw new HttpsError("unauthenticated", "field_auth_required");
+    }
+    try {
+      const actor = await requireFieldActor(request);
+      await consumeRateLimit(
+        mediaRateReference(
+          "finalize",
+          actor.uid,
+          request.data.captureSessionId,
+        ),
+        { limit: 60, windowMs: 600_000, nowMs: Date.now() },
+      );
+      return await finalizeFieldMediaCore(
+        request.data,
+        { uid: actor.uid, role: actor.role },
+        finalizeMediaDependencies,
+      );
+    } catch (error) {
+      return rethrowMediaCallableError(error);
+    }
+  },
+);
+
+export const getFieldMediaAccess = onCall<{ mediaId: string }>(
+  protectedMediaCallableOptions,
+  async (request) => {
+    if (!request.auth) {
+      throw new HttpsError("unauthenticated", "field_auth_required");
+    }
+    try {
+      const actor = await requireFieldActor(request);
+      await consumeRateLimit(
+        mediaRateReference("mediaAccess", actor.uid, request.data.mediaId),
+        { limit: 120, windowMs: 600_000, nowMs: Date.now() },
+      );
+      return await getFieldMediaAccessCore(
+        request.data,
+        { uid: actor.uid, role: actor.role },
+        mediaAccessDependencies,
+      );
+    } catch (error) {
+      return rethrowMediaCallableError(error);
+    }
+  },
+);
+
+export const excludeFieldMedia = onCall<ExcludeFieldMediaInput>(
+  protectedMediaCallableOptions,
+  async (request) => {
+    if (!request.auth) {
+      throw new HttpsError("unauthenticated", "field_auth_required");
+    }
+    try {
+      const actor = await requireFieldActor(request);
+      await consumeRateLimit(
+        mediaRateReference("exclude", actor.uid, request.data.mediaId),
+        { limit: 60, windowMs: 600_000, nowMs: Date.now() },
+      );
+      return await excludeFieldMediaCore(
+        request.data,
+        { uid: actor.uid, role: actor.role },
+        excludeMediaDependencies,
+      );
+    } catch (error) {
+      return rethrowMediaCallableError(error);
     }
   },
 );

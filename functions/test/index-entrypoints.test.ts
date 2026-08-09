@@ -86,6 +86,23 @@ const registrations = vi.hoisted(() => {
       ) => databaseTransaction(update, onComplete, applyLocally, path),
       update: (patch: Record<string, unknown>) => databaseUpdate(path, patch),
     })),
+    storageFile: vi.fn((path: string) => ({
+      name: path,
+      getMetadata: vi.fn(async () => [{
+        generation: "1",
+        size: "1024",
+        contentType: "image/jpeg",
+        md5Hash: "md5",
+        crc32c: "crc",
+        metadata: {},
+      }]),
+      copy: vi.fn(async () => [{
+        name: path,
+        getMetadata: vi.fn(async () => [{ generation: "2" }]),
+      }]),
+      delete: vi.fn(async () => undefined),
+      getSignedUrl: vi.fn(async () => ["https://signed.example/read"]),
+    })),
     fieldUser,
     mutationPaths,
     pathValues,
@@ -108,6 +125,12 @@ vi.mock("firebase-admin/auth", () => ({
 vi.mock("firebase-admin/database", () => ({
   getDatabase: () => ({ ref: registrations.databaseRef }),
   ServerValue: { TIMESTAMP: { ".sv": "timestamp" } },
+}));
+
+vi.mock("firebase-admin/storage", () => ({
+  getStorage: () => ({
+    bucket: () => ({ file: registrations.storageFile }),
+  }),
 }));
 
 vi.mock("firebase-functions/v2/https", () => ({
@@ -296,6 +319,7 @@ beforeEach(() => {
   registrations.databaseTransaction.mockClear();
   registrations.databaseGet.mockClear();
   registrations.databaseUpdate.mockClear();
+  registrations.storageFile.mockClear();
   registrations.fieldUser.value = { enabled: true, role: "staff" };
   registrations.mutationPaths.length = 0;
   registrations.pathValues.clear();
@@ -407,6 +431,26 @@ describe("Firebase entrypoint metadata", () => {
     });
 
     for (const callable of [
+      entrypoints.finalizeFieldMedia,
+      entrypoints.getFieldMediaAccess,
+      entrypoints.excludeFieldMedia,
+    ]) {
+      expect(registration(callable)).toMatchObject({
+        kind: "callable",
+        options: {
+          region: "asia-northeast3",
+          enforceAppCheck: true,
+          consumeAppCheckToken: true,
+        },
+      });
+      expect(registration(callable).options).toEqual({
+        region: "asia-northeast3",
+        enforceAppCheck: true,
+        consumeAppCheckToken: true,
+      });
+    }
+
+    for (const callable of [
       entrypoints.appendOwnerNote,
       entrypoints.archiveOwnerNote,
     ]) {
@@ -449,15 +493,60 @@ describe("Firebase entrypoint metadata", () => {
     });
   });
 
-  it("keeps provisionFieldUser exported while registering exactly nine entrypoints", () => {
+  it("keeps provisionFieldUser exported while registering exactly twelve entrypoints", () => {
     expect(entrypoints.provisionFieldUser).toBeDefined();
     expect(registration(entrypoints.provisionFieldUser)).toMatchObject({
       kind: "callable",
       options: { region: "asia-northeast3" },
     });
     expect(registrations.initializeApp).toHaveBeenCalledTimes(1);
-    expect(registrations.onCall).toHaveBeenCalledTimes(6);
+    expect(registrations.onCall).toHaveBeenCalledTimes(9);
     expect(registrations.onValueWritten).toHaveBeenCalledTimes(3);
+  });
+
+  it("rate-limits media access by UID/media and signs only the finalized path", async () => {
+    const now = vi.spyOn(Date, "now").mockReturnValue(1_000);
+    registrations.pathValues.set("fieldPlatform/users/staff-1/enabled", true);
+    registrations.pathValues.set(
+      "fieldPlatform/buildingAssignments/b1/staff-1",
+      true,
+    );
+    registrations.pathValues.set("fieldPlatform/media/media-1", {
+      id: "media-1",
+      buildingId: "b1",
+      uploadState: "finalized",
+      storagePath: "field-media-finalized/b1/media-1.jpg",
+    });
+
+    await expect(callableHandler(entrypoints.getFieldMediaAccess)(
+      validCallableRequest({ mediaId: "media-1" }),
+    )).resolves.toEqual({
+      url: "https://signed.example/read",
+      expiresAt: "1970-01-01T00:05:01.000Z",
+    });
+    expect(registrations.transactionPaths).toContain(
+      "fieldPlatform/rateLimits/mediaAccess/staff-1/media-1",
+    );
+    expect(registrations.storageFile).toHaveBeenCalledWith(
+      "field-media-finalized/b1/media-1.jpg",
+    );
+    now.mockRestore();
+  });
+
+  it("maps a media rate-limit rejection without reaching Storage", async () => {
+    const now = vi.spyOn(Date, "now").mockReturnValue(1_000);
+    registrations.pathValues.set(
+      "fieldPlatform/rateLimits/mediaAccess/staff-1/media-1",
+      { windowStartedAt: 1_000, count: 120 },
+    );
+    await expect(callableHandler(entrypoints.getFieldMediaAccess)(
+      validCallableRequest({ mediaId: "media-1" }),
+    )).rejects.toMatchObject({
+      code: "resource-exhausted",
+      message: "field_rate_limit_exceeded",
+    });
+    expect(registrations.storageFile).not.toHaveBeenCalled();
+    now.mockRestore();
   });
 
   it("creates an owner note through one current-or-candidate transaction", async () => {
