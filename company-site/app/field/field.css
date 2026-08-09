@@ -1101,7 +1101,7 @@
 .field-owner-notes {
   position: sticky;
   z-index: 6;
-  top: 12px;
+  top: 70px;
   margin-top: 20px;
   border: 1px solid #cfdced;
   border-radius: 18px;
@@ -1109,6 +1109,12 @@
   padding: 14px;
   box-shadow: 0 12px 30px rgba(11, 35, 66, 0.11);
   backdrop-filter: blur(14px);
+}
+
+@media (min-width: 960px) {
+  .field-owner-notes {
+    top: 78px;
+  }
 }
 
 .field-owner-notes-header {

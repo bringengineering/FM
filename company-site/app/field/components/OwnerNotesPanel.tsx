@@ -133,7 +133,6 @@ export default function OwnerNotesPanel({
   const [body, setBody] = useState("");
   const [serverNotes, setServerNotes] = useState<OwnerNote[]>([]);
   const [optimisticNotes, setOptimisticNotes] = useState<OwnerNote[]>([]);
-  const [failedIds, setFailedIds] = useState<Set<string>>(() => new Set());
   const [busyAction, setBusyAction] = useState<string | null>(null);
   const [showAllForBuilding, setShowAllForBuilding] = useState<string | null>(null);
   const [status, setStatus] = useState("");
@@ -202,7 +201,6 @@ export default function OwnerNotesPanel({
   useEffect(() => {
     setServerNotes([]);
     setOptimisticNotes([]);
-    setFailedIds(new Set());
     setLoadError("");
     setStatus("");
   }, [buildingId]);
@@ -224,11 +222,6 @@ export default function OwnerNotesPanel({
           setOptimisticNotes((current) => current.filter(
             (note) => !receivedIds.has(note.id),
           ));
-          setFailedIds((current) => {
-            const next = new Set(current);
-            for (const id of receivedIds) next.delete(id);
-            return next;
-          });
           setLoadError("");
         },
         () => {
@@ -255,7 +248,6 @@ export default function OwnerNotesPanel({
     () => mergeNotes(serverNotes, optimisticNotes, draftNotes),
     [draftNotes, optimisticNotes, serverNotes],
   );
-  const currentTime = milliseconds(now());
 
   const sendDraftToServer = useCallback(async (
     note: OwnerNoteDraft,
@@ -285,15 +277,9 @@ export default function OwnerNotesPanel({
       updateDraftNotes((current) => current.filter(
         (item) => item.localId !== note.localId,
       ));
-      setFailedIds((current) => {
-        const next = new Set(current);
-        next.delete(note.localId);
-        return next;
-      });
       setStatus("서버 저장 완료");
     } catch {
       if (!mountedRef.current || buildingIdRef.current !== targetBuildingId) return;
-      setFailedIds((current) => new Set(current).add(note.localId));
       setStatus("서버 저장 대기 · 다시 시도");
     } finally {
       releaseBusy(actionKey);
@@ -346,11 +332,11 @@ export default function OwnerNotesPanel({
   }, [body, claimBusy, createId, draftId, now, releaseBusy, sendDraftToServer, updateDraftNotes]);
 
   const handleRetry = useCallback((note: OwnerNoteDraft) => {
-    if (!buildingIdRef.current || !failedIds.has(note.localId)) return;
+    if (!buildingIdRef.current) return;
     const actionKey = `retry:${note.localId}`;
     if (!claimBusy(actionKey)) return;
     void sendDraftToServer(note, actionKey);
-  }, [claimBusy, failedIds, sendDraftToServer]);
+  }, [claimBusy, sendDraftToServer]);
 
   const handleArchive = useCallback(async (note: OwnerNote) => {
     const targetBuildingId = buildingIdRef.current;
@@ -402,7 +388,7 @@ export default function OwnerNotesPanel({
       {expanded ? (
         <div id={bodyId} className="field-owner-notes-body">
           <div className="field-owner-notes-editor">
-            <label htmlFor={editorId}>새 전달사항</label>
+            <label htmlFor={editorId}>새 건물주 전달사항</label>
             <textarea
               ref={editorRef}
               id={editorId}
@@ -437,11 +423,13 @@ export default function OwnerNotesPanel({
             <ol className="field-owner-notes-list" aria-label="기록된 건물주 전달사항">
               {visibleNotes.map((note) => {
                 const delayed = Boolean(
-                  buildingId
-                  && note.source === "draft"
-                  && currentTime - milliseconds(note.recordedAt) >= OFFLINE_DELAY_MS,
+                  note.source === "server"
+                  && note.server
+                  && Math.abs(
+                    milliseconds(note.server.createdAt)
+                    - milliseconds(note.server.recordedAt),
+                  ) > OFFLINE_DELAY_MS,
                 );
-                const failed = note.source === "draft" && failedIds.has(note.id);
                 const archiveInFlight = busyAction === `archive:${note.id}`;
 
                 return (
@@ -454,7 +442,7 @@ export default function OwnerNotesPanel({
                       </span>
                       {delayed ? <span>오프라인에서 기록됨</span> : null}
                     </div>
-                    {failed && note.draft && buildingId ? (
+                    {note.source === "draft" && note.draft && buildingId ? (
                       <button
                         type="button"
                         className="field-owner-notes-secondary"
@@ -483,14 +471,16 @@ export default function OwnerNotesPanel({
             <p className="field-owner-notes-empty">첫 전달사항을 기록해 주세요.</p>
           )}
 
-          {buildingId && !showingAll ? (
+          {buildingId ? (
             <button
               type="button"
               className="field-owner-notes-show-all"
               disabled={Boolean(busyAction)}
-              onClick={() => setShowAllForBuilding(buildingId)}
+              onClick={() => setShowAllForBuilding((current) => (
+                current === buildingId ? null : buildingId
+              ))}
             >
-              전체 메모 보기
+              {showingAll ? "최근 메모만 보기" : "전체 메모 보기"}
             </button>
           ) : null}
         </div>
