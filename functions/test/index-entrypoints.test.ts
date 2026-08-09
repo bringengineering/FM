@@ -365,7 +365,7 @@ describe("Firebase entrypoint metadata", () => {
     );
   });
 
-  it("exports all four App Check enforced field callables in asia-northeast3", () => {
+  it("exports all field callables with their exact App Check options", () => {
     expect(registration(entrypoints.saveFieldRegistration)).toMatchObject({
       kind: "callable",
       options: {
@@ -390,6 +390,20 @@ describe("Firebase entrypoint metadata", () => {
     ).toEqual({
       region: "asia-northeast3",
       enforceAppCheck: true,
+    });
+
+    expect(registration(entrypoints.startFieldCaptureSession)).toMatchObject({
+      kind: "callable",
+      options: {
+        region: "asia-northeast3",
+        enforceAppCheck: true,
+        consumeAppCheckToken: true,
+      },
+    });
+    expect(registration(entrypoints.startFieldCaptureSession).options).toEqual({
+      region: "asia-northeast3",
+      enforceAppCheck: true,
+      consumeAppCheckToken: true,
     });
 
     for (const callable of [
@@ -435,14 +449,14 @@ describe("Firebase entrypoint metadata", () => {
     });
   });
 
-  it("keeps provisionFieldUser exported while registering exactly seven entrypoints", () => {
+  it("keeps provisionFieldUser exported while registering exactly nine entrypoints", () => {
     expect(entrypoints.provisionFieldUser).toBeDefined();
     expect(registration(entrypoints.provisionFieldUser)).toMatchObject({
       kind: "callable",
       options: { region: "asia-northeast3" },
     });
     expect(registrations.initializeApp).toHaveBeenCalledTimes(1);
-    expect(registrations.onCall).toHaveBeenCalledTimes(5);
+    expect(registrations.onCall).toHaveBeenCalledTimes(6);
     expect(registrations.onValueWritten).toHaveBeenCalledTimes(3);
   });
 

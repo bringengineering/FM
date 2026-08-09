@@ -52,6 +52,11 @@ import {
   type SetManagementContractStatusDependencies,
   type SetManagementContractStatusInput,
 } from "./field/set-management-contract-status.js";
+import {
+  startCaptureSessionCore,
+  type StartCaptureSessionDependencies,
+  type StartCaptureSessionInput,
+} from "./field/start-capture-session.js";
 
 if (getApps().length === 0) {
   initializeApp();
@@ -193,6 +198,34 @@ function rethrowOwnerNoteCallableError(error: unknown): never {
     throw new HttpsError("invalid-argument", message);
   }
   throw new HttpsError("internal", "owner_note_internal");
+}
+
+function rethrowCaptureSessionCallableError(error: unknown): never {
+  if (error instanceof HttpsError) throw error;
+  const message = error instanceof Error
+    ? error.message
+    : "field_capture_session_unknown";
+
+  if (
+    message === "field_capture_session_invalid"
+    || message === "field_capture_unit_mismatch"
+    || message === "field_capture_listing_mismatch"
+  ) {
+    throw new HttpsError("invalid-argument", message);
+  }
+  if (
+    message === "field_capture_session_forbidden"
+    || message === "field_building_assignment_required"
+  ) {
+    throw new HttpsError("permission-denied", message);
+  }
+  if (
+    message === "field_capture_session_conflict"
+    || message === "field_capture_visit_conflict"
+  ) {
+    throw new HttpsError("already-exists", message);
+  }
+  throw new HttpsError("internal", "field_capture_session_internal");
 }
 
 async function getBuilding(
@@ -409,6 +442,49 @@ const ownerNoteDependencies: OwnerNoteDependencies = {
   },
 };
 
+const captureSessionDependencies: StartCaptureSessionDependencies = {
+  async isEnabled(uid) {
+    const snapshot = await adminDatabase
+      .ref(`fieldPlatform/users/${uid}/enabled`)
+      .get();
+    return snapshot.val() === true;
+  },
+  async isAssigned(buildingId, uid) {
+    const snapshot = await adminDatabase
+      .ref(`fieldPlatform/buildingAssignments/${buildingId}/${uid}`)
+      .get();
+    return snapshot.val() === true;
+  },
+  async readSession(captureSessionId) {
+    const snapshot = await adminDatabase
+      .ref(`fieldPlatform/captureSessions/${captureSessionId}`)
+      .get();
+    return snapshot.val() as unknown | null;
+  },
+  async readVisit(visitId) {
+    const snapshot = await adminDatabase
+      .ref(`fieldPlatform/visits/${visitId}`)
+      .get();
+    return snapshot.val() as unknown | null;
+  },
+  async readUnit(unitId) {
+    const snapshot = await adminDatabase
+      .ref(`fieldPlatform/units/${unitId}`)
+      .get();
+    return snapshot.val() as unknown | null;
+  },
+  async readListing(listingId) {
+    const snapshot = await adminDatabase
+      .ref(`fieldPlatform/listings/${listingId}`)
+      .get();
+    return snapshot.val() as unknown | null;
+  },
+  async writePatch(patch) {
+    await adminDatabase.ref().update(patch);
+  },
+  now: () => new Date().toISOString(),
+};
+
 const contractDependencies: SetManagementContractStatusDependencies = {
   getBuilding,
   getListings,
@@ -566,6 +642,29 @@ export const setManagementContractStatus = onCall<SetManagementContractStatusInp
       );
     } catch (error) {
       return rethrowAsCallableError(error);
+    }
+  },
+);
+
+export const startFieldCaptureSession = onCall<StartCaptureSessionInput>(
+  {
+    region: "asia-northeast3",
+    enforceAppCheck: true,
+    consumeAppCheckToken: true,
+  },
+  async (request) => {
+    if (!request.auth) {
+      throw new HttpsError("unauthenticated", "field_auth_required");
+    }
+    try {
+      const actor = await requireFieldActor(request);
+      return await startCaptureSessionCore(
+        request.data,
+        { uid: actor.uid, role: actor.role },
+        captureSessionDependencies,
+      );
+    } catch (error) {
+      return rethrowCaptureSessionCallableError(error);
     }
   },
 );

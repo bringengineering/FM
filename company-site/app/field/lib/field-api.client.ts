@@ -30,6 +30,21 @@ export interface SetManagementContractStatusResult {
   status: "active" | "paused" | "ended";
 }
 
+export interface StartFieldCaptureSessionInput {
+  requestId: string;
+  captureSessionId: string;
+  visitId: string;
+  buildingId: string;
+  unitId?: string;
+  listingId?: string;
+  visitType: "initial" | "vacancyRefresh";
+}
+
+export interface StartFieldCaptureSessionResult {
+  captureSessionId: string;
+  visitId: string;
+}
+
 export interface AppendOwnerNoteInput {
   buildingId: string;
   localId: string;
@@ -54,6 +69,10 @@ export type SaveRegistrationInvoker = (
 export type SetContractInvoker = (
   input: SetManagementContractStatusInput,
 ) => Promise<{ data: SetManagementContractStatusResult }>;
+
+export type StartCaptureSessionInvoker = (
+  input: StartFieldCaptureSessionInput,
+) => Promise<{ data: StartFieldCaptureSessionResult }>;
 
 export type AppendOwnerNoteInvoker = (
   input: AppendOwnerNoteInput,
@@ -257,6 +276,16 @@ async function defaultSetContractInvoker(input: SetManagementContractStatusInput
   return callable(input);
 }
 
+async function defaultStartCaptureSessionInvoker(
+  input: StartFieldCaptureSessionInput,
+) {
+  const callable = httpsCallable<
+    StartFieldCaptureSessionInput,
+    StartFieldCaptureSessionResult
+  >(functions, "startFieldCaptureSession");
+  return callable(input);
+}
+
 async function defaultAppendOwnerNoteInvoker(input: AppendOwnerNoteInput) {
   const callable = httpsCallable<
     AppendOwnerNoteInput,
@@ -287,6 +316,33 @@ export async function setManagementContractStatus(
 ): Promise<SetManagementContractStatusResult> {
   const result = await invoke(input);
   return result.data;
+}
+
+export async function startFieldCaptureSession(
+  input: StartFieldCaptureSessionInput,
+  invoke: StartCaptureSessionInvoker = defaultStartCaptureSessionInvoker,
+): Promise<StartFieldCaptureSessionResult> {
+  const payload: StartFieldCaptureSessionInput = {
+    requestId: input.requestId,
+    captureSessionId: input.captureSessionId,
+    visitId: input.visitId,
+    buildingId: input.buildingId,
+    ...(input.unitId === undefined ? {} : { unitId: input.unitId }),
+    ...(input.listingId === undefined ? {} : { listingId: input.listingId }),
+    visitType: input.visitType,
+  };
+  const result = await invoke(payload);
+  if (
+    !isRecord(result.data)
+    || result.data.captureSessionId !== input.captureSessionId
+    || result.data.visitId !== input.visitId
+  ) {
+    throw new Error("field_capture_session_response_invalid");
+  }
+  return {
+    captureSessionId: result.data.captureSessionId,
+    visitId: result.data.visitId,
+  };
 }
 
 export async function appendOwnerNote(
