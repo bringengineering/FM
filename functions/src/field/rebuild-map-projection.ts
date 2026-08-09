@@ -1,7 +1,6 @@
 import { Buffer } from "node:buffer";
 
 import type { FieldMapProjection } from "./contracts.js";
-import type { ProjectionWriteVersion } from "./firebase-transaction-state.js";
 import {
   buildMapProjection,
   type ProjectionBuilding,
@@ -18,7 +17,6 @@ export interface RebuildMapProjectionDependencies {
   setProjection(
     buildingId: string,
     projection: FieldMapProjection | null,
-    version: ProjectionWriteVersion,
   ): Promise<void>;
   now(): string;
 }
@@ -36,16 +34,11 @@ function isPathSafeBuildingId(value: unknown): value is string {
 export async function rebuildMapProjectionForBuilding(
   buildingId: string,
   dependencies: RebuildMapProjectionDependencies,
-  version?: ProjectionWriteVersion,
 ): Promise<void> {
   if (!isPathSafeBuildingId(buildingId)) {
     throw new Error("field_projection_building_id_invalid");
   }
 
-  const writeVersion = version ?? {
-    eventTime: dependencies.now(),
-    revision: "manual",
-  };
   const [storedBuilding, listings, media] = await Promise.all([
     dependencies.getBuilding(buildingId),
     dependencies.getListings(buildingId),
@@ -56,8 +49,8 @@ export async function rebuildMapProjectionForBuilding(
     building,
     listings,
     media,
-    updatedAt: writeVersion.eventTime,
+    updatedAt: dependencies.now(),
   });
 
-  await dependencies.setProjection(buildingId, projection, writeVersion);
+  await dependencies.setProjection(buildingId, projection);
 }

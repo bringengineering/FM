@@ -8,7 +8,6 @@ import type { ProjectionBuilding } from "../src/field/map-projection.js";
 
 const BUILDING_ID = "building-1";
 const NOW = "2026-08-09T12:00:00.000Z";
-const DEFAULT_VERSION = { eventTime: NOW, revision: "manual" };
 
 const activeBuilding: ProjectionBuilding = {
   id: BUILDING_ID,
@@ -65,6 +64,10 @@ function createDependencies(
 }
 
 describe("rebuildMapProjectionForBuilding", () => {
+  it("preserves the exact two-argument Task 5 function contract", () => {
+    expect(rebuildMapProjectionForBuilding).toHaveLength(2);
+  });
+
   it("reads only the requested building scope and writes the eleven safe keys", async () => {
     const dependencies = createDependencies({
       ...activeBuilding,
@@ -81,8 +84,8 @@ describe("rebuildMapProjectionForBuilding", () => {
     expect(dependencies.setProjection).toHaveBeenCalledWith(
       BUILDING_ID,
       expect.any(Object),
-      DEFAULT_VERSION,
     );
+    expect(vi.mocked(dependencies.setProjection).mock.calls[0]).toHaveLength(2);
 
     const projection = vi.mocked(dependencies.setProjection).mock.calls[0][1];
     expect(projection).toMatchObject({
@@ -135,29 +138,23 @@ describe("rebuildMapProjectionForBuilding", () => {
     expect(dependencies.setProjection).toHaveBeenCalledWith(
       BUILDING_ID,
       null,
-      DEFAULT_VERSION,
     );
+    expect(vi.mocked(dependencies.setProjection).mock.calls[0]).toHaveLength(2);
   });
 
-  it("uses the supplied event version as the deterministic projection timestamp", async () => {
+  it("uses the dependency clock as the deterministic projection timestamp", async () => {
     const dependencies = createDependencies();
-    const version = {
-      eventTime: "2026-08-09T12:00:05.000Z",
-      revision: "database-event-5",
-    };
+    const eventTime = "2026-08-09T12:00:05.000Z";
+    dependencies.now = vi.fn(() => eventTime);
 
-    await rebuildMapProjectionForBuilding(
-      BUILDING_ID,
-      dependencies,
-      version,
-    );
+    await rebuildMapProjectionForBuilding(BUILDING_ID, dependencies);
 
-    expect(dependencies.now).not.toHaveBeenCalled();
+    expect(dependencies.now).toHaveBeenCalledTimes(1);
     expect(dependencies.setProjection).toHaveBeenCalledWith(
       BUILDING_ID,
-      expect.objectContaining({ updatedAt: version.eventTime }),
-      version,
+      expect.objectContaining({ updatedAt: eventTime }),
     );
+    expect(vi.mocked(dependencies.setProjection).mock.calls[0]).toHaveLength(2);
   });
 
   it.each(["bad/id", " building-1", "x".repeat(129)])(

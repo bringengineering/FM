@@ -1,19 +1,35 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-const registrations = vi.hoisted(() => ({
-  onCall: vi.fn((options: unknown, handler: unknown) => ({
-    kind: "callable",
-    options,
-    handler,
-  })),
-  onValueWritten: vi.fn((options: unknown, handler: unknown) => ({
-    kind: "database",
-    options,
-    handler,
-  })),
-  initializeApp: vi.fn(),
-  rebuildMapProjectionForBuilding: vi.fn(async () => undefined),
-}));
+const registrations = vi.hoisted(() => {
+  const transactionStates: unknown[] = [];
+  const databaseTransaction = vi.fn(
+    async (update: (current: unknown) => unknown) => {
+      const state = update(null);
+      transactionStates.push(state);
+      return {
+        committed: true,
+        snapshot: { val: () => state },
+      };
+    },
+  );
+  return {
+    onCall: vi.fn((options: unknown, handler: unknown) => ({
+      kind: "callable",
+      options,
+      handler,
+    })),
+    onValueWritten: vi.fn((options: unknown, handler: unknown) => ({
+      kind: "database",
+      options,
+      handler,
+    })),
+    initializeApp: vi.fn(),
+    rebuildMapProjectionForBuilding: vi.fn(async () => undefined),
+    databaseTransaction,
+    databaseRef: vi.fn(() => ({ transaction: databaseTransaction })),
+    transactionStates,
+  };
+});
 
 vi.mock("firebase-admin/app", () => ({
   getApps: () => [],
@@ -25,7 +41,7 @@ vi.mock("firebase-admin/auth", () => ({
 }));
 
 vi.mock("firebase-admin/database", () => ({
-  getDatabase: () => ({}),
+  getDatabase: () => ({ ref: registrations.databaseRef }),
   ServerValue: { TIMESTAMP: { ".sv": "timestamp" } },
 }));
 
@@ -63,6 +79,11 @@ interface DatabaseWriteEvent {
 
 type DatabaseWriteHandler = (event: DatabaseWriteEvent) => Promise<void>;
 
+interface EventScopedProjectionDependencies {
+  now(): string;
+  setProjection(buildingId: string, projection: null): Promise<void>;
+}
+
 function registration(value: unknown): RegisteredEntrypoint {
   return value as RegisteredEntrypoint;
 }
@@ -78,6 +99,9 @@ const EVENT_VERSION = {
 
 beforeEach(() => {
   registrations.rebuildMapProjectionForBuilding.mockClear();
+  registrations.databaseRef.mockClear();
+  registrations.databaseTransaction.mockClear();
+  registrations.transactionStates.length = 0;
 });
 
 describe("Firebase entrypoint metadata", () => {
@@ -160,11 +184,21 @@ describe("Firebase entrypoint metadata", () => {
 
     expect(
       registrations.rebuildMapProjectionForBuilding,
-    ).toHaveBeenCalledWith(
-      "building-1",
-      expect.any(Object),
-      EVENT_VERSION,
-    );
+    ).toHaveBeenCalledWith("building-1", expect.any(Object));
+    const call = registrations.rebuildMapProjectionForBuilding.mock.calls[0];
+    expect(call).toHaveLength(2);
+    const dependencies = call[1] as EventScopedProjectionDependencies;
+    expect(dependencies.now()).toBe(EVENT_VERSION.eventTime);
+
+    await dependencies.setProjection("building-1", null);
+
+    expect(registrations.databaseRef).toHaveBeenCalledWith("fieldPlatform");
+    expect(registrations.databaseTransaction).toHaveBeenCalledTimes(1);
+    expect(registrations.transactionStates[0]).toMatchObject({
+      mapProjectionVersions: {
+        "building-1": EVENT_VERSION,
+      },
+    });
   });
 
   it.each([
@@ -193,7 +227,10 @@ describe("Firebase entrypoint metadata", () => {
         registrations.rebuildMapProjectionForBuilding,
       ).toHaveBeenCalledTimes(2);
       for (const call of registrations.rebuildMapProjectionForBuilding.mock.calls) {
-        expect(call[2]).toEqual(EVENT_VERSION);
+        expect(call).toHaveLength(2);
+        expect(
+          (call[1] as EventScopedProjectionDependencies).now(),
+        ).toBe(EVENT_VERSION.eventTime);
       }
 
       registrations.rebuildMapProjectionForBuilding.mockClear();
@@ -211,7 +248,7 @@ describe("Firebase entrypoint metadata", () => {
       ).toHaveBeenCalledTimes(1);
       expect(
         registrations.rebuildMapProjectionForBuilding,
-      ).toHaveBeenCalledWith("building-same", expect.any(Object), EVENT_VERSION);
+      ).toHaveBeenCalledWith("building-same", expect.any(Object));
     },
   );
 });

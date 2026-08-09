@@ -16,6 +16,7 @@ import {
 } from "./auth/provision-field-user.js";
 import type {
   FieldActor,
+  FieldMapProjection,
   SaveFieldRegistrationInput,
 } from "./field/contracts.js";
 import {
@@ -166,35 +167,46 @@ async function getMedia(buildingId: string): Promise<ProjectionMedia[]> {
   return snapshotValues<ProjectionMedia>(snapshot.val());
 }
 
-const mapProjectionDependencies: RebuildMapProjectionDependencies = {
-  getBuilding,
-  getListings,
-  getMedia,
-  async setProjection(buildingId, projection, version) {
-    const input = { buildingId, projection, version };
-    const transaction = await adminDatabase.ref("fieldPlatform").transaction(
-      (current) => {
-        const decision = reduceProjectionWrite(current, input);
-        return decision.write ? decision.state : undefined;
-      },
-      undefined,
-      false,
-    );
-    const finalDecision = reduceProjectionWrite(
-      transaction.snapshot.val(),
-      input,
-    );
-    if (transaction.committed) {
-      if (finalDecision.status !== "stale") {
-        throw new Error("field_projection_state_invalid");
-      }
-      return;
+async function setProjectionWithVersion(
+  buildingId: string,
+  projection: FieldMapProjection | null,
+  version: ProjectionWriteVersion,
+): Promise<void> {
+  const input = { buildingId, projection, version };
+  const transaction = await adminDatabase.ref("fieldPlatform").transaction(
+    (current) => {
+      const decision = reduceProjectionWrite(current, input);
+      return decision.write ? decision.state : undefined;
+    },
+    undefined,
+    false,
+  );
+  const finalDecision = reduceProjectionWrite(
+    transaction.snapshot.val(),
+    input,
+  );
+  if (transaction.committed) {
+    if (finalDecision.status !== "stale") {
+      throw new Error("field_projection_state_invalid");
     }
-    if (finalDecision.status === "stale") return;
-    throw new Error("field_projection_state_invalid");
-  },
-  now: () => new Date().toISOString(),
-};
+    return;
+  }
+  if (finalDecision.status === "stale") return;
+  throw new Error("field_projection_state_invalid");
+}
+
+function projectionDependenciesForVersion(
+  version: ProjectionWriteVersion,
+): RebuildMapProjectionDependencies {
+  return {
+    getBuilding,
+    getListings,
+    getMedia,
+    setProjection: (buildingId, projection) =>
+      setProjectionWithVersion(buildingId, projection, version),
+    now: () => version.eventTime,
+  };
+}
 
 const saveDependencies: SaveFieldRegistrationDependencies = {
   async getReceipt(uid, requestId) {
@@ -423,10 +435,12 @@ export const rebuildMapProjectionOnBuildingWrite = onValueWritten(
   async (event) => {
     const buildingId = event.params.buildingId;
     if (!isPathSafeId(buildingId)) return;
+    const dependencies = projectionDependenciesForVersion(
+      projectionWriteVersion(event),
+    );
     await rebuildMapProjectionForBuilding(
       buildingId,
-      mapProjectionDependencies,
-      projectionWriteVersion(event),
+      dependencies,
     );
   },
 );
@@ -443,12 +457,12 @@ export const rebuildMapProjectionOnListingWrite = onValueWritten(
       event.data.after.val(),
     );
     const version = projectionWriteVersion(event);
+    const dependencies = projectionDependenciesForVersion(version);
     await Promise.all(
       buildingIds.map((buildingId) =>
         rebuildMapProjectionForBuilding(
           buildingId,
-          mapProjectionDependencies,
-          version,
+          dependencies,
         ),
       ),
     );
@@ -467,12 +481,12 @@ export const rebuildMapProjectionOnMediaWrite = onValueWritten(
       event.data.after.val(),
     );
     const version = projectionWriteVersion(event);
+    const dependencies = projectionDependenciesForVersion(version);
     await Promise.all(
       buildingIds.map((buildingId) =>
         rebuildMapProjectionForBuilding(
           buildingId,
-          mapProjectionDependencies,
-          version,
+          dependencies,
         ),
       ),
     );
