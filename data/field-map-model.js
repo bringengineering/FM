@@ -9,135 +9,161 @@
 })(typeof globalThis !== "undefined" ? globalThis : this, function createFieldMapModel() {
   "use strict";
 
+  const MAP_MODES = Object.freeze(["vendors", "managed"]);
+  const MARKER_STATUSES = Object.freeze(["vacant", "managed"]);
+  const CAPTURE_STATUSES = Object.freeze(["notStarted", "inProgress", "complete"]);
   const STATUS_COLORS = Object.freeze({
-    lead: "#8b5cf6",
     vacant: "#f79009",
     managed: "#12b76a",
-    archived: "#98a2b3",
   });
 
-  function values(collection) {
+  function isRecord(value) {
+    return typeof value === "object" && value !== null && !Array.isArray(value);
+  }
+
+  function collectionValues(collection) {
     if (Array.isArray(collection)) return collection.filter(Boolean);
-    if (!collection || typeof collection !== "object") return [];
-    return Object.entries(collection).map(([id, item]) => ({ id, ...(item || {}) }));
+    if (!isRecord(collection)) return [];
+    return Object.values(collection).filter(Boolean);
   }
 
-  function validCoordinate(latitude, longitude) {
+  function isOneOf(value, allowedValues) {
+    return allowedValues.includes(value);
+  }
+
+  function isNonEmptyString(value) {
+    return typeof value === "string" && value.trim().length > 0;
+  }
+
+  function isValidCoordinate(value, minimum, maximum) {
     return (
-      Number.isFinite(latitude) &&
-      Number.isFinite(longitude) &&
-      latitude >= -90 &&
-      latitude <= 90 &&
-      longitude >= -180 &&
-      longitude <= 180
+      typeof value === "number" &&
+      Number.isFinite(value) &&
+      value >= minimum &&
+      value <= maximum
     );
   }
 
-  function propertyMarkerColor(status) {
-    return STATUS_COLORS[status] || STATUS_COLORS.managed;
+  function isValidVacancyCount(value) {
+    return Number.isSafeInteger(value) && value >= 0;
   }
 
-  function wonLabel(amount) {
-    if (!Number.isInteger(amount) || amount < 0) return "확인 필요";
-    if (amount === 0) return "0원";
-    if (amount % 100_000_000 === 0) return `${amount / 100_000_000}억`;
-    if (amount % 10_000 === 0) return `${amount / 10_000}만`;
-    return `${amount.toLocaleString("ko-KR")}원`;
-  }
-
-  function listingIsActive(listing) {
-    return listing.status !== "closed" && listing.status !== "archived";
-  }
-
-  function markerStatus(building, listings) {
-    if (building.archivedAt || building.status === "archived") return "archived";
-    if (building.status === "lead") return "lead";
-    if (listings.some(listingIsActive)) return "vacant";
-    return "managed";
-  }
-
-  function approvedRentSummary(listings) {
-    const approved = listings.find(
-      (listing) => listing.advertisingApproved === true && listingIsActive(listing),
+  function isValidProjection(value) {
+    return (
+      isRecord(value) &&
+      isNonEmptyString(value.buildingId) &&
+      isNonEmptyString(value.name) &&
+      isNonEmptyString(value.roadAddress) &&
+      isValidCoordinate(value.latitude, -90, 90) &&
+      isValidCoordinate(value.longitude, -180, 180) &&
+      isOneOf(value.markerStatus, MARKER_STATUSES) &&
+      isValidVacancyCount(value.vacancyCount) &&
+      isNonEmptyString(value.approvedRentSummary) &&
+      isNonEmptyString(value.parkingSummary) &&
+      isOneOf(value.captureStatus, CAPTURE_STATUSES) &&
+      isNonEmptyString(value.updatedAt)
     );
-    if (!approved) return "광고 승인 임대조건 없음";
-    const fee = Number.isInteger(approved.maintenanceFeeWon)
-      ? ` · 관리비 ${wonLabel(approved.maintenanceFeeWon)}`
-      : "";
-    return `보증금 ${wonLabel(approved.depositWon)} · 월세 ${wonLabel(approved.monthlyRentWon)}${fee}`;
   }
 
-  function parkingLabel(parking) {
-    if (!parking || parking.available !== true) return "주차 불가 또는 확인 필요";
-    return Number.isInteger(parking.totalSpaces)
-      ? `주차 가능 · 총 ${parking.totalSpaces}대`
-      : "주차 가능";
-  }
-
-  function toPropertyMarkers(source) {
-    const buildings = values(source && source.buildings);
-    const listings = values(source && source.listings);
-    const media = values(source && source.media);
-
-    return buildings
-      .filter((building) => validCoordinate(building.latitude, building.longitude))
-      .map((building) => {
-        const buildingListings = listings.filter(
-          (listing) => listing.buildingId === building.id,
-        );
-        const completedMedia = media.filter(
-          (item) =>
-            item.buildingId === building.id &&
-            (item.uploadState === "firebaseComplete" || item.uploadState === "complete"),
-        );
-        const status = markerStatus(building, buildingListings);
-
-        return {
-          id: String(building.id),
-          name: String(building.name || building.managementNumber || "이름 없는 건물"),
-          managementNumber: String(building.managementNumber || ""),
-          roadAddress: String(building.roadAddress || ""),
-          latitude: Number(building.latitude),
-          longitude: Number(building.longitude),
-          status,
-          color: propertyMarkerColor(status),
-          vacancyCount: buildingListings.filter(listingIsActive).length,
-          approvedRentSummary: approvedRentSummary(buildingListings),
-          parking: parkingLabel(building.parking),
-          captureStatus: completedMedia.length
-            ? `촬영 자료 ${completedMedia.length}개`
-            : "촬영 자료 없음",
-        };
-      });
-  }
-
-  function safePropertyPopupModel(marker) {
+  function copyProjection(projection) {
     return {
-      id: String(marker.id || ""),
-      name: String(marker.name || "이름 없는 건물"),
-      managementNumber: String(marker.managementNumber || ""),
-      roadAddress: String(marker.roadAddress || ""),
-      status: String(marker.status || "managed"),
-      vacancyCount: Number.isInteger(marker.vacancyCount) ? marker.vacancyCount : 0,
-      approvedRentSummary: String(marker.approvedRentSummary || "광고 승인 임대조건 없음"),
-      parking: String(marker.parking || "주차 확인 필요"),
-      captureStatus: String(marker.captureStatus || "촬영 자료 없음"),
+      buildingId: projection.buildingId,
+      name: projection.name,
+      roadAddress: projection.roadAddress,
+      latitude: projection.latitude,
+      longitude: projection.longitude,
+      markerStatus: projection.markerStatus,
+      vacancyCount: projection.vacancyCount,
+      approvedRentSummary: projection.approvedRentSummary,
+      parkingSummary: projection.parkingSummary,
+      captureStatus: projection.captureStatus,
+      updatedAt: projection.updatedAt,
     };
   }
 
-  function filterMapItems(layers, options) {
-    const settings = options || {};
+  function resolveMapMode(options) {
+    const settings = isRecord(options) ? options : {};
+    if (isOneOf(settings.requestedMode, MAP_MODES)) return settings.requestedMode;
+    if (isOneOf(settings.storedMode, MAP_MODES)) return settings.storedMode;
+    return settings.embedded === true ? "managed" : "vendors";
+  }
+
+  function filterMapItems(layers, mode) {
+    const source = isRecord(layers) ? layers : {};
+    const vendors = collectionValues(source.vendors);
+    const managedBuildings = collectionValues(source.managedBuildings);
+
+    if (mode === "managed") {
+      return { vendors: [], managedBuildings };
+    }
+
+    return { vendors, managedBuildings: [] };
+  }
+
+  function toManagedBuildingMarkers(projections) {
+    return collectionValues(projections)
+      .filter(isValidProjection)
+      .map(copyProjection);
+  }
+
+  function filterManagedBuildings(records, filters) {
+    const settings = isRecord(filters) ? filters : {};
+    const query =
+      typeof settings.query === "string" ? settings.query.trim().toLowerCase() : "";
+    const vacancy =
+      settings.vacancy === "hasVacancy" || settings.vacancy === "full"
+        ? settings.vacancy
+        : "all";
+    const capture = isOneOf(settings.capture, CAPTURE_STATUSES)
+      ? settings.capture
+      : "all";
+
+    return toManagedBuildingMarkers(records).filter((record) => {
+      const matchesQuery =
+        query.length === 0 ||
+        record.name.toLowerCase().includes(query) ||
+        record.roadAddress.toLowerCase().includes(query);
+      const matchesVacancy =
+        vacancy === "all" ||
+        (vacancy === "hasVacancy" && record.vacancyCount > 0) ||
+        (vacancy === "full" && record.vacancyCount === 0);
+      const matchesCapture = capture === "all" || record.captureStatus === capture;
+
+      return matchesQuery && matchesVacancy && matchesCapture;
+    });
+  }
+
+  function propertyMarkerColor(markerStatus) {
+    return markerStatus === "vacant" ? STATUS_COLORS.vacant : STATUS_COLORS.managed;
+  }
+
+  function safeString(value, fallback) {
+    return isNonEmptyString(value) ? value : fallback;
+  }
+
+  function safePropertyPopupModel(marker) {
+    const source = isRecord(marker) ? marker : {};
     return {
-      vendors: settings.showVendors === false ? [] : values(layers && layers.vendors),
-      properties:
-        settings.showProperties === false ? [] : values(layers && layers.properties),
+      name: safeString(source.name, "이름 없는 건물"),
+      roadAddress: safeString(source.roadAddress, "주소 확인 필요"),
+      vacancyCount: isValidVacancyCount(source.vacancyCount) ? source.vacancyCount : 0,
+      approvedRentSummary: safeString(
+        source.approvedRentSummary,
+        "광고 승인 임대조건 없음",
+      ),
+      parkingSummary: safeString(source.parkingSummary, "주차 확인 필요"),
+      captureStatus: isOneOf(source.captureStatus, CAPTURE_STATUSES)
+        ? source.captureStatus
+        : "notStarted",
     };
   }
 
   return {
+    filterManagedBuildings,
     filterMapItems,
     propertyMarkerColor,
+    resolveMapMode,
     safePropertyPopupModel,
-    toPropertyMarkers,
+    toManagedBuildingMarkers,
   };
 });
