@@ -402,7 +402,9 @@ function nextContract(
   };
 }
 
-function contractFingerprint(contract: ContractTransitionSnapshot): string {
+export function managementContractFingerprint(
+  contract: ContractTransitionSnapshot,
+): string {
   return sha256(
     JSON.stringify({
       status: contract.status,
@@ -501,14 +503,14 @@ function validateReservation(
     value.claimedAt,
     expected.uid,
   );
-  const previousFingerprint = contractFingerprint(previousContract);
-  const nextFingerprint = contractFingerprint(next);
+  const previousFingerprint = managementContractFingerprint(previousContract);
+  const nextFingerprint = managementContractFingerprint(next);
   if (
     value.previousContractStatus !== previousContract.status ||
     value.previousContractUpdatedAt !== previousContract.updatedAt ||
     value.previousContractFingerprint !== previousFingerprint ||
     value.nextContractFingerprint !== nextFingerprint ||
-    nextFingerprint !== contractFingerprint(expectedNext) ||
+    nextFingerprint !== managementContractFingerprint(expectedNext) ||
     next.status !== expected.result.status ||
     next.updatedAt !== value.claimedAt ||
     next.updatedBy !== expected.uid
@@ -709,9 +711,11 @@ export async function setManagementContractStatusCore(
     requestHash: expected.requestHash,
     previousContractStatus: building.contract.status,
     previousContractUpdatedAt: building.contract.updatedAt,
-    previousContractFingerprint: contractFingerprint(building.contract),
+    previousContractFingerprint: managementContractFingerprint(
+      building.contract,
+    ),
     previousContract: building.contract,
-    nextContractFingerprint: contractFingerprint(next),
+    nextContractFingerprint: managementContractFingerprint(next),
     nextContract: next,
     result: expected.result,
     claimedAt,
