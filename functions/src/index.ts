@@ -35,6 +35,10 @@ import {
   type FieldMediaAccessDependencies,
 } from "./field/get-field-media-access.js";
 import {
+  listCaptureWorkspaceCore,
+  type ListCaptureWorkspaceDependencies,
+} from "./field/list-capture-workspace.js";
+import {
   reduceAuthoritativeProjectionRebuild,
   reduceRegistrationClaim,
   reduceTransitionClaim,
@@ -730,8 +734,34 @@ const excludeMediaDependencies: ExcludeFieldMediaDependencies = {
   now: () => new Date().toISOString(),
 };
 
+async function listFieldCollection(path: string): Promise<unknown[]> {
+  const snapshot = await adminDatabase.ref(path).get();
+  return snapshotValues<unknown>(snapshot.val());
+}
+
+const captureWorkspaceDependencies: ListCaptureWorkspaceDependencies = {
+  async listAssignedBuildingIds(uid) {
+    const snapshot = await adminDatabase
+      .ref("fieldPlatform/buildingAssignments")
+      .get();
+    const assignments = snapshot.val();
+    if (!isRecord(assignments)) return [];
+    return Object.entries(assignments)
+      .filter(([buildingId, value]) => (
+        isPathSafeId(buildingId)
+        && isRecord(value)
+        && value[uid] === true
+      ))
+      .map(([buildingId]) => buildingId);
+  },
+  listBuildings: () => listFieldCollection("fieldPlatform/buildings"),
+  listUnits: () => listFieldCollection("fieldPlatform/units"),
+  listListings: () => listFieldCollection("fieldPlatform/listings"),
+  listCaptureSessions: () => listFieldCollection("fieldPlatform/captureSessions"),
+};
+
 function mediaRateReference(
-  operation: "finalize" | "mediaAccess" | "exclude",
+  operation: "finalize" | "mediaAccess" | "exclude" | "captureWorkspace",
   uid: string,
   sessionId: string,
 ) {
@@ -999,6 +1029,32 @@ export const excludeFieldMedia = onCall<ExcludeFieldMediaInput>(
         request.data,
         { uid: actor.uid, role: actor.role },
         excludeMediaDependencies,
+      );
+    } catch (error) {
+      return rethrowMediaCallableError(error);
+    }
+  },
+);
+
+export const listFieldCaptureWorkspace = onCall<Record<string, never>>(
+  protectedMediaCallableOptions,
+  async (request) => {
+    if (!request.auth) {
+      throw new HttpsError("unauthenticated", "field_auth_required");
+    }
+    try {
+      const actor = await requireFieldActor(request);
+      await consumeRateLimit(
+        mediaRateReference(
+          "captureWorkspace",
+          actor.uid,
+          actor.sessionId ?? "current",
+        ),
+        { limit: 60, windowMs: 600_000, nowMs: Date.now() },
+      );
+      return await listCaptureWorkspaceCore(
+        { uid: actor.uid, role: actor.role },
+        captureWorkspaceDependencies,
       );
     } catch (error) {
       return rethrowMediaCallableError(error);

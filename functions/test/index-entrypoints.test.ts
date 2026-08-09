@@ -434,6 +434,7 @@ describe("Firebase entrypoint metadata", () => {
       entrypoints.finalizeFieldMedia,
       entrypoints.getFieldMediaAccess,
       entrypoints.excludeFieldMedia,
+      entrypoints.listFieldCaptureWorkspace,
     ]) {
       expect(registration(callable)).toMatchObject({
         kind: "callable",
@@ -493,15 +494,107 @@ describe("Firebase entrypoint metadata", () => {
     });
   });
 
-  it("keeps provisionFieldUser exported while registering exactly twelve entrypoints", () => {
+  it("keeps provisionFieldUser exported while registering exactly thirteen entrypoints", () => {
     expect(entrypoints.provisionFieldUser).toBeDefined();
     expect(registration(entrypoints.provisionFieldUser)).toMatchObject({
       kind: "callable",
       options: { region: "asia-northeast3" },
     });
     expect(registrations.initializeApp).toHaveBeenCalledTimes(1);
-    expect(registrations.onCall).toHaveBeenCalledTimes(9);
+    expect(registrations.onCall).toHaveBeenCalledTimes(10);
     expect(registrations.onValueWritten).toHaveBeenCalledTimes(3);
+  });
+
+  it("returns assigned capture workspace data through one protected rate-limited callable", async () => {
+    const now = vi.spyOn(Date, "now").mockReturnValue(10_000);
+    registrations.pathValues.set("fieldPlatform/buildingAssignments", {
+      "building-1": { "staff-1": true },
+      "foreign-building": { "other-staff": true },
+    });
+    registrations.pathValues.set("fieldPlatform/buildings", {
+      "building-1": {
+        id: "building-1",
+        name: "관리 건물",
+        managementContract: { status: "active" },
+      },
+      "foreign-building": {
+        id: "foreign-building",
+        name: "미배정 건물",
+        managementContract: { status: "active" },
+      },
+    });
+    registrations.pathValues.set("fieldPlatform/units", {
+      "unit-1": { id: "unit-1", buildingId: "building-1", unitLabel: "201호" },
+    });
+    registrations.pathValues.set("fieldPlatform/listings", {
+      "listing-1": {
+        id: "listing-1",
+        buildingId: "building-1",
+        unitId: "unit-1",
+        unitLabel: "201호",
+        status: "capturing",
+      },
+    });
+    registrations.pathValues.set("fieldPlatform/captureSessions", {
+      "11111111-1111-4111-8111-111111111111": {
+        id: "11111111-1111-4111-8111-111111111111",
+        requestId: "22222222-2222-4222-8222-222222222222",
+        buildingId: "building-1",
+        unitId: "unit-1",
+        listingId: "listing-1",
+        visitId: "33333333-3333-4333-8333-333333333333",
+        createdBy: "staff-1",
+        status: "open",
+        createdAt: "2026-08-09T09:00:00.000Z",
+        updatedAt: "2026-08-09T09:30:00.000Z",
+      },
+    });
+
+    await expect(callableHandler(entrypoints.listFieldCaptureWorkspace)(
+      validCallableRequest({}),
+    )).resolves.toEqual({
+      targets: [
+        {
+          id: "management:building-1:unit-1",
+          buildingId: "building-1",
+          buildingName: "관리 건물",
+          unitId: "unit-1",
+          unitLabel: "201호",
+          source: "management",
+        },
+        {
+          id: "advertising:listing-1",
+          buildingId: "building-1",
+          buildingName: "관리 건물",
+          unitId: "unit-1",
+          unitLabel: "201호",
+          listingId: "listing-1",
+          source: "advertising",
+        },
+      ],
+      openSessions: [expect.objectContaining({
+        id: "11111111-1111-4111-8111-111111111111",
+        createdBy: "staff-1",
+        status: "open",
+      })],
+    });
+    expect(registrations.transactionPaths).toContain(
+      "fieldPlatform/rateLimits/captureWorkspace/staff-1/1723181696",
+    );
+    expect(registrations.databaseRef).not.toHaveBeenCalledWith(
+      "fieldPlatform/buildings/foreign-building",
+    );
+    now.mockRestore();
+  });
+
+  it("rejects unauthenticated capture workspace reads before database access", async () => {
+    await expect(callableHandler(entrypoints.listFieldCaptureWorkspace)({
+      data: {},
+    })).rejects.toMatchObject({
+      code: "unauthenticated",
+      message: "field_auth_required",
+    });
+    expect(registrations.databaseGet).not.toHaveBeenCalled();
   });
 
   it("rate-limits media access by UID/media and signs only the finalized path", async () => {
