@@ -10,7 +10,6 @@ import FieldMapPanel from "./components/FieldMapPanel";
 import { useFieldSession } from "./components/FieldSessionContext";
 import ManagementContractQueue from "./components/ManagementContractQueue";
 import { saveFieldRegistration } from "./lib/field-api.client";
-import { toSaveFieldRegistrationInput } from "./lib/registration-draft";
 
 const destinationTitles: Record<
   Exclude<FieldDestination, "home">,
@@ -38,7 +37,7 @@ const destinationTitles: Record<
   },
 };
 
-function DestinationPlaceholder({ destination }: { destination: Exclude<FieldDestination, "home"> }) {
+function DestinationScreen({ destination }: { destination: Exclude<FieldDestination, "home"> }) {
   const copy = destinationTitles[destination];
 
   return (
@@ -72,13 +71,11 @@ function FieldWorkspace() {
           <ManagementContractQueue />
           <BuildingWizard
             session={session}
-            onComplete={async (draft) => {
-              await saveFieldRegistration(toSaveFieldRegistrationInput(draft));
-            }}
+            onComplete={saveFieldRegistration}
           />
         </section>
       ) : (
-        <DestinationPlaceholder destination={active} />
+        <DestinationScreen destination={active} />
       )}
     </AppShell>
   );

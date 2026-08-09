@@ -725,6 +725,43 @@ describe("registration draft migration", () => {
     expect(input.managementContract).not.toHaveProperty("status");
   });
 
+  it("maps local owner notes to the callable without client-owned server stamps", () => {
+    const draft = migrateRegistrationDraft({}, undefined, () => "draft-12345678");
+    draft.ownerNoteDrafts = [{
+      localId: "note_12345678",
+      draftId: draft.draftId,
+      body: "  주차 위치 확인  ",
+      recordedAt: "2026-08-09T01:30:00.000Z",
+      createdAt: "client-must-not-send-this",
+      createdBy: "staff-1",
+      createdByName: "BRING staff",
+    } as typeof draft.ownerNoteDrafts[number] & Record<string, string>];
+
+    const input = toSaveFieldRegistrationInput(draft);
+
+    expect(input.ownerNoteDrafts).toEqual([{
+      localId: "note_12345678",
+      body: "주차 위치 확인",
+      recordedAt: "2026-08-09T01:30:00.000Z",
+    }]);
+    expect(JSON.stringify(input.ownerNoteDrafts)).not.toMatch(
+      /createdAt|createdBy|createdByName|draftId/,
+    );
+  });
+
+  it("rejects owner notes copied from another registration draft", () => {
+    const draft = migrateRegistrationDraft({}, undefined, () => "draft-12345678");
+    draft.ownerNoteDrafts = [{
+      localId: "note_12345678",
+      draftId: "another-draft",
+      body: "다른 초안 메모",
+      recordedAt: "2026-08-09T01:30:00.000Z",
+    }];
+
+    expect(() => toSaveFieldRegistrationInput(draft))
+      .toThrowError("registration_draft_owner_note_mismatch");
+  });
+
   it("fails deliberately when projecting a draft without units", () => {
     const draft = migrateRegistrationDraft({}, undefined, () => "fixed-id");
     draft.units = [];

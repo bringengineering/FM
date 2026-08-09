@@ -5,7 +5,10 @@ import { describe, expect, it, vi } from "vitest";
 
 import AppShell from "../../app/field/components/AppShell";
 import AuthGate from "../../app/field/components/AuthGate";
-import { useFieldSession } from "../../app/field/components/FieldSessionContext";
+import {
+  FieldSessionProvider,
+  useFieldSession,
+} from "../../app/field/components/FieldSessionContext";
 import FieldMapPanel from "../../app/field/components/FieldMapPanel";
 import BuildingWizard from "../../app/field/components/BuildingWizard";
 import Dashboard from "../../app/field/components/Dashboard";
@@ -18,6 +21,7 @@ import ManagementContractQueue, {
 import type { FieldSession } from "../../app/field/lib/auth.client";
 import {
   activeWizardDraftKey,
+  type SaveFieldRegistrationInput,
   wizardDraftStorageKey,
 } from "../../app/field/lib/registration-draft";
 import type { Building, OwnerNote, OwnerNoteDraft } from "../../app/field/lib/types";
@@ -375,7 +379,7 @@ describe("OwnerNotesPanel", () => {
     expect(toggle).toHaveAttribute("aria-expanded", "false");
 
     fireEvent.click(toggle);
-    const editor = screen.getByLabelText("새 전달사항");
+    const editor = screen.getByLabelText("새 건물주 전달사항");
     await waitFor(() => expect(editor).toHaveFocus());
     expect(editor).toHaveAttribute("maxlength", "2000");
     expect(screen.getByText("0 / 2,000")).toBeInTheDocument();
@@ -420,7 +424,7 @@ describe("OwnerNotesPanel", () => {
     );
 
     fireEvent.click(screen.getByRole("button", { name: "메모 추가" }));
-    fireEvent.change(screen.getByLabelText("새 전달사항"), {
+    fireEvent.change(screen.getByLabelText("새 건물주 전달사항"), {
       target: { value: "옥상 출입 전 연락" },
     });
     fireEvent.click(screen.getByRole("button", { name: "메모 저장" }));
@@ -538,6 +542,215 @@ describe("OwnerNotesPanel", () => {
 });
 
 describe("BuildingWizard", () => {
+  it("keeps the same owner-note panel mounted while wizard steps change", () => {
+    render(
+      <BuildingWizard
+        session={staffSession}
+        draftId="persistent-owner-note-panel"
+        initialStep={2}
+      />,
+    );
+
+    const panel = screen.getByRole("complementary", { name: "건물주 전달사항" });
+    expect(screen.getAllByRole("complementary", { name: "건물주 전달사항" }))
+      .toHaveLength(1);
+    fireEvent.click(screen.getByRole("button", { name: "메모 추가" }));
+    const editor = screen.getByLabelText("새 건물주 전달사항");
+    fireEvent.change(editor, { target: { value: "도배 색상 확인" } });
+
+    fireEvent.click(screen.getByRole("button", { name: "다음 단계" }));
+
+    expect(screen.getByRole("complementary", { name: "건물주 전달사항" })).toBe(panel);
+    expect(screen.getByLabelText("새 건물주 전달사항")).toBe(editor);
+    expect(editor).toHaveValue("도배 색상 확인");
+  });
+
+  it("submits owner notes once, then removes only the completed UID draft", async () => {
+    const values = new Map<string, string>();
+    const storage = {
+      getItem: (key: string) => values.get(key) ?? null,
+      setItem: (key: string, value: string) => { values.set(key, value); },
+      removeItem: (key: string) => { values.delete(key); },
+    };
+    const draftId = "successful-owner-note-registration";
+    const scopedKey = wizardDraftStorageKey(staffSession.uid, draftId);
+    values.set(activeWizardDraftKey(staffSession.uid), draftId);
+    values.set(wizardDraftStorageKey("another-staff", draftId), "keep-me");
+
+    let finish!: (result: {
+      buildingId: string;
+      unitIds: Record<string, string>;
+      listingId: string;
+      visitId: string;
+    }) => void;
+    const pending = new Promise<{
+      buildingId: string;
+      unitIds: Record<string, string>;
+      listingId: string;
+      visitId: string;
+    }>((resolve) => { finish = resolve; });
+    const onComplete = vi.fn((_input: SaveFieldRegistrationInput) => pending);
+
+    render(
+      <BuildingWizard
+        session={staffSession}
+        draftId={draftId}
+        initialStep={6}
+        storage={storage}
+        onComplete={onComplete}
+      />,
+    );
+    fireEvent.click(screen.getByRole("button", { name: "메모 추가" }));
+    const ownerNoteEditor = screen.getByLabelText("새 건물주 전달사항");
+    fireEvent.change(ownerNoteEditor, {
+      target: { value: "  방문 전 연락  " },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "메모 저장" }));
+    await waitFor(() => expect(values.get(scopedKey)).toContain("방문 전 연락"));
+
+    const completeButton = screen.getByRole("button", { name: "등록 내용 저장" });
+    act(() => {
+      fireEvent.click(completeButton);
+      fireEvent.click(completeButton);
+    });
+    expect(onComplete).toHaveBeenCalledTimes(1);
+    expect(ownerNoteEditor).toBeDisabled();
+    expect(onComplete).toHaveBeenCalledWith(expect.objectContaining({
+      draftId,
+      ownerNoteDrafts: [expect.objectContaining({ body: "방문 전 연락" })],
+    }));
+    const submitted = onComplete.mock.calls[0]?.[0];
+    expect(submitted?.ownerNoteDrafts?.[0]).not.toHaveProperty("draftId");
+
+    await act(async () => finish({
+      buildingId: "building-1",
+      unitIds: { "unit-1": "unit-server-1" },
+      listingId: "listing-1",
+      visitId: "visit-1",
+    }));
+
+    expect(await screen.findByText("서버 저장 완료")).toBeInTheDocument();
+    expect(values.get(scopedKey)).toBeUndefined();
+    expect(values.get(activeWizardDraftKey(staffSession.uid))).toBeUndefined();
+    expect(values.get(wizardDraftStorageKey("another-staff", draftId))).toBe("keep-me");
+    await waitFor(() => expect(values.get(scopedKey)).toBeUndefined());
+  });
+
+  it("retains owner notes and the local draft when server registration fails", async () => {
+    const values = new Map<string, string>();
+    const storage = {
+      getItem: (key: string) => values.get(key) ?? null,
+      setItem: (key: string, value: string) => { values.set(key, value); },
+      removeItem: (key: string) => { values.delete(key); },
+    };
+    const draftId = "failed-owner-note-registration";
+    const scopedKey = wizardDraftStorageKey(staffSession.uid, draftId);
+
+    render(
+      <BuildingWizard
+        session={staffSession}
+        draftId={draftId}
+        initialStep={6}
+        storage={storage}
+        onComplete={vi.fn().mockRejectedValue(new Error("offline"))}
+      />,
+    );
+    fireEvent.click(screen.getByRole("button", { name: "메모 추가" }));
+    fireEvent.change(screen.getByLabelText("새 건물주 전달사항"), {
+      target: { value: "실패해도 남을 메모" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "메모 저장" }));
+    await waitFor(() => expect(values.get(scopedKey)).toContain("실패해도 남을 메모"));
+    fireEvent.click(screen.getByRole("button", { name: "등록 내용 저장" }));
+
+    expect(await screen.findByText("서버 저장 실패 · 로컬 초안 유지"))
+      .toBeInTheDocument();
+    expect(values.get(scopedKey)).toContain("실패해도 남을 메모");
+    expect(screen.getAllByText("실패해도 남을 메모").length).toBeGreaterThan(0);
+  });
+
+  it("does not report a local cleanup error as a server registration failure", async () => {
+    const values = new Map<string, string>();
+    const draftId = "cleanup-failure-after-registration";
+    const scopedKey = wizardDraftStorageKey(staffSession.uid, draftId);
+    const storage = {
+      getItem: (key: string) => values.get(key) ?? null,
+      setItem: (key: string, value: string) => { values.set(key, value); },
+      removeItem: (key: string) => {
+        if (key === scopedKey) throw new Error("cleanup failed");
+        values.delete(key);
+      },
+    };
+
+    render(
+      <BuildingWizard
+        session={staffSession}
+        draftId={draftId}
+        initialStep={6}
+        storage={storage}
+        onComplete={async () => ({
+          buildingId: "building-1",
+          unitIds: { "unit-1": "unit-server-1" },
+          listingId: "listing-1",
+          visitId: "visit-1",
+        })}
+      />,
+    );
+    await waitFor(() => expect(values.get(scopedKey)).toBeDefined());
+    fireEvent.click(screen.getByRole("button", { name: "등록 내용 저장" }));
+
+    expect(await screen.findByText("서버 저장 완료 · 로컬 초안 정리 필요"))
+      .toBeInTheDocument();
+    expect(screen.queryByText("서버 저장 실패 · 로컬 초안 유지"))
+      .not.toBeInTheDocument();
+    expect(values.get(scopedKey)).toBeDefined();
+  });
+
+  it("restores only the active UID's pending owner notes after account switches", async () => {
+    const sessionA = { ...staffSession, uid: "owner-note-staff-a", displayName: "직원 A" };
+    const sessionB = { ...staffSession, uid: "owner-note-staff-b", displayName: "직원 B" };
+    const draftId = "owner-note-switch-draft";
+    const view = render(
+      <FieldSessionProvider key={sessionA.uid} session={sessionA}>
+        <BuildingWizard session={sessionA} draftId={draftId} />
+      </FieldSessionProvider>,
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "메모 추가" }));
+    fireEvent.change(screen.getByLabelText("새 건물주 전달사항"), {
+      target: { value: "A 전용 메모" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "메모 저장" }));
+    await waitFor(() => {
+      const stored = window.localStorage.getItem(wizardDraftStorageKey(sessionA.uid, draftId));
+      expect(stored).toContain("A 전용 메모");
+    });
+
+    view.rerender(
+      <FieldSessionProvider key={sessionB.uid} session={sessionB}>
+        <BuildingWizard session={sessionB} draftId={draftId} />
+      </FieldSessionProvider>,
+    );
+    expect(screen.queryAllByText("A 전용 메모")).toHaveLength(0);
+    fireEvent.click(screen.getByRole("button", { name: "메모 추가" }));
+    fireEvent.change(screen.getByLabelText("새 건물주 전달사항"), {
+      target: { value: "B 전용 메모" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "메모 저장" }));
+    await waitFor(() => {
+      const stored = window.localStorage.getItem(wizardDraftStorageKey(sessionB.uid, draftId));
+      expect(stored).toContain("B 전용 메모");
+    });
+
+    view.rerender(
+      <FieldSessionProvider key={sessionA.uid} session={sessionA}>
+        <BuildingWizard session={sessionA} draftId={draftId} />
+      </FieldSessionProvider>,
+    );
+    expect(screen.getAllByText("A 전용 메모").length).toBeGreaterThan(0);
+    expect(screen.queryAllByText("B 전용 메모")).toHaveLength(0);
+  });
+
   it("preserves a future-version draft and blocks completion", async () => {
     const legacyDraftKey = "future-version-draft";
     const stored = JSON.stringify({

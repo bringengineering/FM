@@ -3,6 +3,7 @@
 import {
   useEffect,
   useMemo,
+  useRef,
   useState,
   type ReactElement,
   type ReactNode,
@@ -14,16 +15,21 @@ import {
   createRegistrationDraft,
   prepareWizardDraft,
   readActiveWizardDraftId,
+  removeWizardDraft,
   RegistrationDraftCompatibilityError,
+  toSaveFieldRegistrationInput,
   type BuildingDraftState,
   type BuildingWizardDraft,
   type ListingDraftState,
   type RegistrationDraftStorage,
   type RegistrationDraftInitial,
+  type SaveFieldRegistrationInput,
+  type SaveFieldRegistrationResult,
   type StoredRegistrationDraft,
   type UnitDraftState,
 } from "../lib/registration-draft";
 import type { FieldSession } from "../lib/auth.client";
+import OwnerNotesPanel from "./OwnerNotesPanel";
 import {
   validateBuildingDraft,
   validateListingDraft,
@@ -57,7 +63,9 @@ export interface BuildingWizardProps {
   initialDraft?: RegistrationDraftInitial;
   currentPosition?: { latitude: number; longitude: number };
   checkAddress?: (query: string) => Promise<AddressCheckResult>;
-  onComplete?: (draft: BuildingWizardDraft) => void | Promise<void>;
+  onComplete?: (
+    input: SaveFieldRegistrationInput,
+  ) => SaveFieldRegistrationResult | Promise<SaveFieldRegistrationResult>;
 }
 
 function defaultNow() {
@@ -221,9 +229,12 @@ export default function BuildingWizard({
   const [addressStatus, setAddressStatus] = useState("");
   const [checkingAddress, setCheckingAddress] = useState(false);
   const [submitting, setSubmitting] = useState(false);
+  const [savedBuildingId, setSavedBuildingId] = useState<string>();
+  const submittingRef = useRef(false);
+  const completedRef = useRef(false);
 
   useEffect(() => {
-    if (incompatibleDraft) return;
+    if (incompatibleDraft || completedRef.current) return;
     let active = true;
     if (initialLoad.storageLoadFailed && envelope === initialLoad.envelope) {
       queueMicrotask(() => {
@@ -393,15 +404,36 @@ export default function BuildingWizard({
   }
 
   async function complete() {
-    if (incompatibleDraft) return;
+    if (incompatibleDraft || submittingRef.current || completedRef.current) return;
+    if (!onComplete) {
+      setCompletedSave({ draft, status: "로컬 초안 저장 완료" });
+      return;
+    }
+    submittingRef.current = true;
     setSubmitting(true);
     try {
-      await onComplete?.(draft);
+      const result = await onComplete(toSaveFieldRegistrationInput(draft));
+      completedRef.current = true;
+      setSavedBuildingId(result.buildingId);
+      let cleanupFailed = false;
+      try {
+        removeWizardDraft(resolvedStorage, session.uid, draft.draftId);
+      } catch {
+        cleanupFailed = true;
+      }
       setCompletedSave({
         draft,
-        status: onComplete ? "서버 저장 요청 완료" : "로컬 초안 저장 완료",
+        status: cleanupFailed
+          ? "서버 저장 완료 · 로컬 초안 정리 필요"
+          : "서버 저장 완료",
+      });
+    } catch {
+      setCompletedSave({
+        draft,
+        status: "서버 저장 실패 · 로컬 초안 유지",
       });
     } finally {
+      submittingRef.current = false;
       setSubmitting(false);
     }
   }
@@ -421,6 +453,20 @@ export default function BuildingWizard({
         <p className="field-gps-warning" role="alert">
           더 최신 버전에서 작성된 초안이라 현재 화면에서 수정할 수 없습니다.
         </p>
+      )}
+
+      {!incompatibleDraft && (
+        <OwnerNotesPanel
+          buildingId={savedBuildingId}
+          draftId={draft.draftId}
+          currentUser={session}
+          draftNotes={draft.ownerNoteDrafts}
+          disabled={submitting}
+          onDraftNotesChange={(ownerNoteDrafts) => updateDraft((current) => ({
+            ...current,
+            ownerNoteDrafts,
+          }))}
+        />
       )}
 
       <div className="field-wizard-progress" aria-label={`등록 진행률 ${progress}%`}>
@@ -539,7 +585,7 @@ export default function BuildingWizard({
         {step < STEPS.length - 1 ? (
           <button type="button" className="field-wizard-next" onClick={nextStep} disabled={incompatibleDraft || (step === 0 && !buildingStepValid)}>다음 단계</button>
         ) : (
-          <button type="button" className="field-wizard-next" onClick={complete} disabled={incompatibleDraft || submitting}>{submitting ? "저장 중" : "등록 내용 저장"}</button>
+          <button type="button" className="field-wizard-next" onClick={complete} disabled={incompatibleDraft || submitting || Boolean(savedBuildingId)}>{submitting ? "저장 중" : savedBuildingId ? "저장 완료" : "등록 내용 저장"}</button>
         )}
       </footer>
     </section>

@@ -21,6 +21,15 @@ export class RegistrationDraftProjectionError extends Error {
   }
 }
 
+export class RegistrationDraftOwnerNoteMismatchError extends Error {
+  readonly code = "registration_draft_owner_note_mismatch";
+
+  constructor() {
+    super("registration_draft_owner_note_mismatch");
+    this.name = "RegistrationDraftOwnerNoteMismatchError";
+  }
+}
+
 export interface ManagementContractDraft {
   requested: boolean;
   startedOn?: string;
@@ -798,6 +807,9 @@ export function toSaveFieldRegistrationInput(
   if (draft.units.length === 0) {
     throw new RegistrationDraftProjectionError();
   }
+  if (draft.ownerNoteDrafts.some((note) => note.draftId !== draft.draftId)) {
+    throw new RegistrationDraftOwnerNoteMismatchError();
+  }
 
   const units = draft.units.map((unit) => ({
     localId: trimmedString(unit.localId),
@@ -853,6 +865,10 @@ export function toSaveFieldRegistrationInput(
         ? optionalString(draft.building.managementStartedOn)
         : undefined,
     },
-    ownerNoteDrafts: [],
+    ownerNoteDrafts: draft.ownerNoteDrafts.map(({ localId, body, recordedAt }) => ({
+      localId,
+      body: body.trim(),
+      recordedAt,
+    })),
   };
 }

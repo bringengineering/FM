@@ -39,6 +39,7 @@ export interface OwnerNotesPanelProps {
   currentUser: FieldSession;
   draftNotes: OwnerNoteDraft[];
   onDraftNotesChange(notes: OwnerNoteDraft[]): void;
+  disabled?: boolean;
   createId?: () => string;
   now?: () => string;
   initialExpanded?: boolean;
@@ -118,6 +119,7 @@ export default function OwnerNotesPanel({
   currentUser,
   draftNotes,
   onDraftNotesChange,
+  disabled = false,
   createId = defaultCreateId,
   now = defaultNow,
   initialExpanded = false,
@@ -287,6 +289,7 @@ export default function OwnerNotesPanel({
   }, [appendNote, releaseBusy, updateDraftNotes]);
 
   const handleSave = useCallback(() => {
+    if (disabled) return;
     const trimmed = body.trim();
     if (!trimmed) {
       setValidationError("메모 내용을 입력해 주세요.");
@@ -329,16 +332,17 @@ export default function OwnerNotesPanel({
       return;
     }
     void sendDraftToServer(note, actionKey);
-  }, [body, claimBusy, createId, draftId, now, releaseBusy, sendDraftToServer, updateDraftNotes]);
+  }, [body, claimBusy, createId, disabled, draftId, now, releaseBusy, sendDraftToServer, updateDraftNotes]);
 
   const handleRetry = useCallback((note: OwnerNoteDraft) => {
-    if (!buildingIdRef.current) return;
+    if (disabled || !buildingIdRef.current) return;
     const actionKey = `retry:${note.localId}`;
     if (!claimBusy(actionKey)) return;
     void sendDraftToServer(note, actionKey);
-  }, [claimBusy, sendDraftToServer]);
+  }, [claimBusy, disabled, sendDraftToServer]);
 
   const handleArchive = useCallback(async (note: OwnerNote) => {
+    if (disabled) return;
     const targetBuildingId = buildingIdRef.current;
     if (!targetBuildingId || currentUser.role !== "admin") return;
     const actionKey = `archive:${note.id}`;
@@ -359,7 +363,7 @@ export default function OwnerNotesPanel({
     } finally {
       releaseBusy(actionKey);
     }
-  }, [archiveNote, claimBusy, currentUser.role, releaseBusy]);
+  }, [archiveNote, claimBusy, currentUser.role, disabled, releaseBusy]);
 
   const summary = visibleNotes[0]?.body || "아직 기록된 전달사항이 없습니다.";
 
@@ -375,6 +379,7 @@ export default function OwnerNotesPanel({
           className="field-owner-notes-toggle"
           aria-expanded={expanded}
           aria-controls={bodyId}
+          disabled={disabled}
           onClick={() => setExpanded((current) => !current)}
         >
           메모 추가
@@ -394,6 +399,7 @@ export default function OwnerNotesPanel({
               id={editorId}
               value={body}
               maxLength={NOTE_MAX_LENGTH}
+              disabled={disabled}
               aria-invalid={Boolean(validationError)}
               aria-describedby={validationError ? `${editorId}-error` : `${editorId}-counter`}
               onChange={(event) => {
@@ -404,7 +410,7 @@ export default function OwnerNotesPanel({
             />
             <div className="field-owner-notes-editor-meta">
               <span id={`${editorId}-counter`}>{body.length.toLocaleString("ko-KR")} / 2,000</span>
-              <button type="button" disabled={Boolean(busyAction)} onClick={handleSave}>
+              <button type="button" disabled={disabled || Boolean(busyAction)} onClick={handleSave}>
                 {busyAction?.startsWith("save:") ? "저장 중" : "메모 저장"}
               </button>
             </div>
@@ -446,7 +452,7 @@ export default function OwnerNotesPanel({
                       <button
                         type="button"
                         className="field-owner-notes-secondary"
-                        disabled={Boolean(busyAction)}
+                        disabled={disabled || Boolean(busyAction)}
                         onClick={() => handleRetry(note.draft as OwnerNoteDraft)}
                       >
                         {busyAction === `retry:${note.id}` ? "재시도 중" : "다시 시도"}
@@ -457,7 +463,7 @@ export default function OwnerNotesPanel({
                         <button
                           type="button"
                           className="field-owner-notes-secondary"
-                          disabled={Boolean(busyAction)}
+                          disabled={disabled || Boolean(busyAction)}
                           onClick={() => void handleArchive(note.server as OwnerNote)}
                         >
                           {archiveInFlight ? "보관 중" : "메모 보관"}
@@ -475,7 +481,7 @@ export default function OwnerNotesPanel({
             <button
               type="button"
               className="field-owner-notes-show-all"
-              disabled={Boolean(busyAction)}
+              disabled={disabled || Boolean(busyAction)}
               onClick={() => setShowAllForBuilding((current) => (
                 current === buildingId ? null : buildingId
               ))}
