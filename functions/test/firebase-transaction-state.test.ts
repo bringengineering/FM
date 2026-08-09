@@ -456,6 +456,65 @@ describe("authoritative map projection transaction reducer", () => {
     });
     expect(current).not.toHaveProperty("mapProjectionVersions");
   });
+
+  it("keeps the newer projection timestamp while rebuilding current content for a delayed older event", () => {
+    const initial = authoritativeProjectionRoot();
+    initial.mapProjections["building-1"].updatedAt =
+      "2026-08-09T12:00:00.000Z";
+    const afterE2 = reduceAuthoritativeProjectionRebuild(initial, {
+      buildingId: "building-1",
+      updatedAt: "2026-08-09T12:00:02.000Z",
+    }).state as ReturnType<typeof authoritativeProjectionRoot>;
+    afterE2.buildings["building-1"] = {
+      ...authoritativeActiveBuilding,
+      name: "Current content when delayed E1 commits",
+    };
+
+    const afterDelayedE1 = reduceAuthoritativeProjectionRebuild(afterE2, {
+      buildingId: "building-1",
+      updatedAt: "2026-08-09T12:00:01.000Z",
+    }).state;
+
+    expect(afterDelayedE1).toMatchObject({
+      mapProjections: {
+        "building-1": {
+          name: "Current content when delayed E1 commits",
+          updatedAt: "2026-08-09T12:00:02.000Z",
+        },
+      },
+    });
+  });
+
+  it("preserves the existing timestamp string when parsed milliseconds are equal", () => {
+    const current = authoritativeProjectionRoot();
+    current.mapProjections["building-1"].updatedAt =
+      "2026-08-09T12:00:02.123456Z";
+
+    const decision = reduceAuthoritativeProjectionRebuild(current, {
+      buildingId: "building-1",
+      updatedAt: "2026-08-09T12:00:02.123999Z",
+    });
+
+    expect(decision.state).toHaveProperty(
+      "mapProjections.building-1.updatedAt",
+      "2026-08-09T12:00:02.123456Z",
+    );
+  });
+
+  it("uses the requested timestamp when the existing projection timestamp is malformed", () => {
+    const current = authoritativeProjectionRoot();
+    current.mapProjections["building-1"].updatedAt = "not-a-timestamp";
+
+    const decision = reduceAuthoritativeProjectionRebuild(current, {
+      buildingId: "building-1",
+      updatedAt: "2026-08-09T12:00:03.000Z",
+    });
+
+    expect(decision.state).toHaveProperty(
+      "mapProjections.building-1.updatedAt",
+      "2026-08-09T12:00:03.000Z",
+    );
+  });
 });
 
 describe("contract transition CAS reducer", () => {

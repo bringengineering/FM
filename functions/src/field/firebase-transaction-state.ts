@@ -321,6 +321,24 @@ function projectionRecordOrEmpty(value: unknown): UnknownRecord {
   return value;
 }
 
+function monotonicProjectionUpdatedAt(
+  existingProjection: unknown,
+  requestedUpdatedAt: string,
+): string {
+  const requestedMilliseconds = Date.parse(requestedUpdatedAt);
+  if (!Number.isFinite(requestedMilliseconds)) return invalidProjectionState();
+  if (!isRecord(existingProjection)) return requestedUpdatedAt;
+
+  const existingUpdatedAt = existingProjection.updatedAt;
+  if (typeof existingUpdatedAt !== "string") return requestedUpdatedAt;
+  const existingMilliseconds = Date.parse(existingUpdatedAt);
+  if (!Number.isFinite(existingMilliseconds)) return requestedUpdatedAt;
+
+  return existingMilliseconds >= requestedMilliseconds
+    ? existingUpdatedAt
+    : requestedUpdatedAt;
+}
+
 export function reduceAuthoritativeProjectionRebuild(
   current: unknown,
   input: AuthoritativeProjectionRebuildInput,
@@ -334,6 +352,10 @@ export function reduceAuthoritativeProjectionRebuild(
   const listings = projectionRecordOrEmpty(state.listings);
   const media = projectionRecordOrEmpty(state.media);
   const projections = projectionRecordOrEmpty(state.mapProjections);
+  const updatedAt = monotonicProjectionUpdatedAt(
+    projections[input.buildingId],
+    input.updatedAt,
+  );
   const storedBuilding = buildings[input.buildingId];
   const building =
     isRecord(storedBuilding) && storedBuilding.id === input.buildingId
@@ -343,7 +365,7 @@ export function reduceAuthoritativeProjectionRebuild(
     building,
     listings: Object.values(listings) as ProjectionListing[],
     media: Object.values(media) as ProjectionMedia[],
-    updatedAt: input.updatedAt,
+    updatedAt,
   });
 
   const nextProjections = { ...projections };
