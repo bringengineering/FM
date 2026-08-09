@@ -6,16 +6,23 @@ import AppShell, { type FieldDestination } from "./components/AppShell";
 import AuthGate from "./components/AuthGate";
 import BuildingWizard from "./components/BuildingWizard";
 import type { CaptureUploadCoordinator } from "./components/CaptureGuide";
+import CaptureWorkspace, {
+  type CaptureTarget,
+} from "./components/CaptureWorkspace";
 import Dashboard from "./components/Dashboard";
 import FieldMapPanel from "./components/FieldMapPanel";
 import { useFieldSession } from "./components/FieldSessionContext";
 import ManagementContractQueue from "./components/ManagementContractQueue";
 import {
+  excludeFieldMedia,
+  getFieldMediaAccess,
   saveFieldRegistration,
   startFieldCaptureSession,
   type StartFieldCaptureSessionInput,
   type StartFieldCaptureSessionResult,
 } from "./lib/field-api.client";
+import { createFirebaseMediaUploadPort } from "./lib/firebase-media-upload";
+import { MediaUploadCoordinator } from "./lib/media-upload";
 import {
   openOfflineQueue,
   type OfflineQueuePort,
@@ -77,7 +84,22 @@ interface FieldWorkspaceProps {
   startCaptureSession?: typeof startFieldCaptureSession;
   queueFactory?: typeof openOfflineQueue;
   coordinator?: CaptureUploadCoordinator;
+  coordinatorFactory?: (queue: OfflineQueuePort) => RuntimeCaptureCoordinator;
   requestIdFactory?: () => string;
+  loadCaptureTargets?: () => Promise<CaptureTarget[]>;
+  loadOpenCaptureSessions?: () => Promise<import("./lib/types").CaptureSessionRecord[]>;
+  getMediaAccess?: typeof getFieldMediaAccess;
+  excludeMedia?: typeof excludeFieldMedia;
+}
+
+interface RuntimeCaptureCoordinator extends CaptureUploadCoordinator {
+  start(uid: string): () => void;
+}
+
+function createDefaultCaptureCoordinator(
+  queue: OfflineQueuePort,
+): RuntimeCaptureCoordinator {
+  return new MediaUploadCoordinator(queue, createFirebaseMediaUploadPort());
 }
 
 const destinationTitles: Record<
@@ -129,16 +151,25 @@ export function FieldWorkspace({
   saveRegistration = saveFieldRegistration,
   startCaptureSession = startFieldCaptureSession,
   queueFactory = openOfflineQueue,
-  coordinator,
+  coordinator: suppliedCoordinator,
+  coordinatorFactory = createDefaultCaptureCoordinator,
   requestIdFactory = () => crypto.randomUUID(),
+  loadCaptureTargets = async () => [],
+  loadOpenCaptureSessions = async () => [],
+  getMediaAccess = getFieldMediaAccess,
+  excludeMedia = excludeFieldMedia,
 }: FieldWorkspaceProps = {}) {
   const session = useFieldSession();
   const [active, setActive] = useState<FieldDestination>("home");
   const [queue, setQueue] = useState<OfflineQueuePort | null>(null);
+  const [coordinator, setCoordinator] = useState<CaptureUploadCoordinator | null>(
+    suppliedCoordinator ?? null,
+  );
 
   useEffect(() => {
     let cancelled = false;
     let openedQueue: OfflineQueuePort | null = null;
+    let stopCoordinator: (() => void) | undefined;
     void queueFactory()
       .then((nextQueue) => {
         if (cancelled) {
@@ -146,16 +177,24 @@ export function FieldWorkspace({
           return;
         }
         openedQueue = nextQueue;
+        const nextCoordinator = suppliedCoordinator
+          ?? coordinatorFactory(nextQueue);
+        if (!suppliedCoordinator) {
+          stopCoordinator = (nextCoordinator as RuntimeCaptureCoordinator)
+            .start(session.uid);
+        }
         setQueue(nextQueue);
+        setCoordinator(nextCoordinator);
       })
       .catch(() => {
         if (!cancelled) setQueue(null);
       });
     return () => {
       cancelled = true;
+      stopCoordinator?.();
       openedQueue?.close();
     };
-  }, [queueFactory, session.uid]);
+  }, [coordinatorFactory, queueFactory, session.uid, suppliedCoordinator]);
 
   return (
     <AppShell active={active} onNavigate={setActive}>
@@ -169,7 +208,7 @@ export function FieldWorkspace({
           <BuildingWizard
             session={session}
             queue={queue ?? undefined}
-            coordinator={coordinator}
+            coordinator={coordinator ?? undefined}
             onCompleteWithCapture={async (input, capture) => {
               if (!queue) throw new Error("capture_queue_unavailable");
               return saveAndBindCaptureRegistration({
@@ -180,11 +219,31 @@ export function FieldWorkspace({
                 saveRegistration,
                 startCaptureSession,
                 queue,
-                coordinator,
+                coordinator: coordinator ?? undefined,
               });
             }}
           />
         </section>
+      ) : active === "capture" ? (
+        queue && coordinator ? (
+          <CaptureWorkspace
+            loadTargets={loadCaptureTargets}
+            loadOpenSessions={loadOpenCaptureSessions}
+            startSession={startCaptureSession}
+            queue={queue}
+            coordinator={coordinator}
+            getFieldMediaAccess={getMediaAccess}
+            excludeFieldMedia={async (input) => {
+              await excludeMedia(input);
+            }}
+          />
+        ) : (
+          <section className="field-placeholder" aria-live="polite">
+            <p className="field-eyebrow">FIELD CAPTURE</p>
+            <h1>현장 촬영 준비 중</h1>
+            <p>기기 저장소와 안전한 업로드 연결을 확인하고 있습니다.</p>
+          </section>
+        )
       ) : (
         <DestinationScreen destination={active} />
       )}

@@ -12,7 +12,10 @@ import {
 import FieldMapPanel from "../../app/field/components/FieldMapPanel";
 import BuildingWizard from "../../app/field/components/BuildingWizard";
 import Dashboard from "../../app/field/components/Dashboard";
-import { saveAndBindCaptureRegistration } from "../../app/field/FieldApp";
+import {
+  FieldWorkspace,
+  saveAndBindCaptureRegistration,
+} from "../../app/field/FieldApp";
 import OwnerNotesPanel, {
   type OwnerNotesPanelProps,
 } from "../../app/field/components/OwnerNotesPanel";
@@ -1325,6 +1328,48 @@ describe("AppShell", () => {
     for (const button of screen.getAllByRole("button", { name: "건물" })) {
       expect(button).toHaveAttribute("aria-current", "page");
     }
+  });
+});
+
+describe("FieldWorkspace capture integration", () => {
+  it("opens the real assigned capture workspace instead of a placeholder", async () => {
+    const queue = {
+      listPending: vi.fn(async () => []),
+      list: vi.fn(async () => []),
+      close: vi.fn(),
+    } as unknown as OfflineQueuePort;
+    const stopCoordinator = vi.fn();
+    const coordinator = {
+      resume: vi.fn(async () => undefined),
+      retry: vi.fn(async () => undefined),
+      start: vi.fn(() => stopCoordinator),
+    };
+
+    const view = render(
+      <FieldSessionProvider session={staffSession}>
+        <FieldWorkspace
+          queueFactory={async () => queue}
+          coordinatorFactory={() => coordinator}
+          loadCaptureTargets={async () => [{
+            id: "managed-building-1",
+            buildingId: "building-1",
+            buildingName: "브링 관리 건물",
+            source: "management",
+          }]}
+          loadOpenCaptureSessions={async () => []}
+        />
+      </FieldSessionProvider>,
+    );
+
+    fireEvent.click(screen.getAllByRole("button", { name: "촬영" })[0]);
+
+    expect(await screen.findByRole("option", { name: "브링 관리 건물" }))
+      .toBeInTheDocument();
+    expect(coordinator.start).toHaveBeenCalledWith(staffSession.uid);
+    expect(screen.queryByText("기능을 연결하고 있습니다")).not.toBeInTheDocument();
+    view.unmount();
+    expect(stopCoordinator).toHaveBeenCalledOnce();
+    expect(queue.close).toHaveBeenCalledOnce();
   });
 });
 

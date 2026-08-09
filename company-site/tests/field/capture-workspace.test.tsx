@@ -271,6 +271,37 @@ describe("CaptureWorkspace", () => {
     expect(await screen.findByLabelText("외관 사진 촬영")).toBeInTheDocument();
   });
 
+  it("passes protected preview access into the shared capture guide", async () => {
+    const existing = openSession();
+    const finalized = queuedRecord(SESSION_OLD, "final-photo", "final.jpg", {
+      blob: undefined,
+      storagePath: "field-media-finalized/building-managed/final-photo.jpg",
+      driveSyncState: "queued",
+      descriptor: photoDescriptor(
+        SESSION_OLD,
+        "final-photo",
+        "final.jpg",
+        "finalized",
+      ),
+    });
+    const queue = createQueue([finalized]);
+    const getFieldMediaAccess = vi.fn(async () => ({
+      url: "https://signed.example/final-photo",
+      expiresAt: new Date(Date.now() + 300_000).toISOString(),
+    }));
+    renderWorkspace({
+      queue,
+      loadOpenSessions: async () => [existing],
+      getFieldMediaAccess,
+    });
+
+    fireEvent.click(await screen.findByRole("button", {
+      name: "진행 중 촬영 이어서 하기",
+    }));
+
+    await waitFor(() => expect(getFieldMediaAccess).toHaveBeenCalledWith("final-photo"));
+  });
+
   it("reuses the same request, session, and visit IDs when starting is retried", async () => {
     const startSession = vi.fn()
       .mockRejectedValueOnce(new Error("offline"))

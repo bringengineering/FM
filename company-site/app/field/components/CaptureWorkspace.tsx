@@ -20,6 +20,7 @@ import type {
 import type { CaptureSessionRecord } from "../lib/types";
 import CaptureGuide, {
   type CaptureContext,
+  type CaptureGuideProps,
   type CaptureUploadCoordinator,
 } from "./CaptureGuide";
 import { useFieldSession } from "./FieldSessionContext";
@@ -42,6 +43,8 @@ export interface CaptureWorkspaceProps {
   ) => Promise<StartFieldCaptureSessionResult>;
   queue: OfflineQueuePort;
   coordinator: CaptureUploadCoordinator;
+  getFieldMediaAccess?: CaptureGuideProps["getFieldMediaAccess"];
+  excludeFieldMedia?: CaptureGuideProps["excludeFieldMedia"];
 }
 
 interface WorkspaceSnapshot {
@@ -186,6 +189,8 @@ export default function CaptureWorkspace({
   startSession,
   queue,
   coordinator,
+  getFieldMediaAccess,
+  excludeFieldMedia,
 }: CaptureWorkspaceProps) {
   const session = useFieldSession();
   const [loadVersion, setLoadVersion] = useState(0);
@@ -595,6 +600,8 @@ export default function CaptureWorkspace({
             context={captureContext(currentActiveCapture)}
             queue={queue}
             coordinator={coordinator}
+            getFieldMediaAccess={getFieldMediaAccess}
+            excludeFieldMedia={excludeFieldMedia}
             onDescriptorsChange={handleDescriptorsChange}
           />
         </section>
