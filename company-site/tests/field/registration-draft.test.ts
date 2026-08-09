@@ -32,6 +32,9 @@ const legacyDraft = {
   duplicateBuilding: null,
 };
 
+const CAPTURE_SESSION_ID = "11111111-1111-4111-8111-111111111111";
+const MEDIA_ID = "22222222-2222-4222-8222-222222222222";
+
 describe("wizard draft persistence", () => {
   it("reads the old shared draft without claiming it until commit", () => {
     const storage = memoryStorage();
@@ -289,7 +292,95 @@ describe("wizard draft persistence", () => {
       requestId: "request-existing",
       ownerNoteDrafts: [],
     });
-    expect(idFactory).not.toHaveBeenCalled();
+    expect(migrated.captureSessionId).toBe("unused");
+    expect(migrated.captureAttachments).toEqual([]);
+    expect(idFactory).toHaveBeenCalledOnce();
+  });
+
+  it("upgrades a version-3 owner-note draft to version 4 without changing stable IDs", () => {
+    const idFactory = vi.fn(() => CAPTURE_SESSION_ID);
+    const migrated = migrateRegistrationDraft({
+      ...legacyDraft,
+      draftVersion: 3,
+      draftId: "draft-existing",
+      requestId: "request-existing",
+      ownerNoteDrafts: [{
+        localId: "note_12345678",
+        draftId: "draft-existing",
+        body: "건물주 전달사항",
+        recordedAt: "2026-08-09T01:00:00.000Z",
+      }],
+    }, undefined, idFactory);
+
+    expect(migrated).toMatchObject({
+      draftVersion: 4,
+      draftId: "draft-existing",
+      requestId: "request-existing",
+      captureSessionId: CAPTURE_SESSION_ID,
+      captureAttachments: [],
+      ownerNoteDrafts: [{ localId: "note_12345678" }],
+    });
+    expect(idFactory).toHaveBeenCalledOnce();
+  });
+
+  it("keeps only allowlisted serializable capture descriptors", () => {
+    const migrated = migrateRegistrationDraft({
+      ...legacyDraft,
+      draftVersion: 3,
+      draftId: "draft-capture",
+      requestId: "request-capture",
+      captureSessionId: CAPTURE_SESSION_ID,
+      captureAttachments: [
+        {
+          mediaId: MEDIA_ID,
+          captureSessionId: CAPTURE_SESSION_ID,
+          kind: "photo",
+          zone: "exterior",
+          slotId: "exterior-1",
+          required: true,
+          originalFileName: "outside.jpg",
+          mimeType: "image/jpeg",
+          sizeBytes: 1024,
+          lastModified: 10,
+          capturedAt: "2026-08-09T01:00:00.000Z",
+          uploadState: "queued",
+          uploadProgress: 0,
+          signedUrl: "https://signed.example/private",
+        },
+        {
+          mediaId: "33333333-3333-4333-8333-333333333333",
+          captureSessionId: CAPTURE_SESSION_ID,
+          kind: "photo",
+          zone: "exterior",
+          slotId: "exterior-2",
+          required: true,
+          originalFileName: "blob:https://bring.example/private",
+          mimeType: "image/jpeg",
+          sizeBytes: 1024,
+          lastModified: 10,
+          capturedAt: "2026-08-09T01:00:00.000Z",
+          uploadState: "queued",
+          uploadProgress: 0,
+        },
+      ],
+    }, undefined, () => "unused");
+
+    expect(migrated.captureAttachments).toEqual([{
+      mediaId: MEDIA_ID,
+      captureSessionId: CAPTURE_SESSION_ID,
+      kind: "photo",
+      zone: "exterior",
+      slotId: "exterior-1",
+      required: true,
+      originalFileName: "outside.jpg",
+      mimeType: "image/jpeg",
+      sizeBytes: 1024,
+      lastModified: 10,
+      capturedAt: "2026-08-09T01:00:00.000Z",
+      uploadState: "queued",
+      uploadProgress: 0,
+    }]);
+    expect(JSON.stringify(migrated)).not.toMatch(/blob:|signedUrl|downloadToken|base64|data:/);
   });
 
   it("preserves the legacy request ID while rebinding the value to its scoped draft key", () => {
@@ -519,7 +610,7 @@ describe("registration draft migration", () => {
     let thrown: unknown;
 
     try {
-      migrateRegistrationDraft({ draftVersion: 4 }, undefined, () => "unused-id");
+      migrateRegistrationDraft({ draftVersion: 5 }, undefined, () => "unused-id");
     } catch (error) {
       thrown = error;
     }
@@ -527,7 +618,7 @@ describe("registration draft migration", () => {
     expect(thrown).toMatchObject({
       name: "RegistrationDraftCompatibilityError",
       code: "registration_draft_future_version",
-      draftVersion: 4,
+      draftVersion: 5,
     });
   });
 

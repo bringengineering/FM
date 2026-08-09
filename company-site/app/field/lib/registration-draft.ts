@@ -1,6 +1,12 @@
-import type { OwnerNoteDraft } from "./types";
+import { CAPTURE_ZONES, MEDIA_POLICY } from "./capture-policy";
+import type {
+  CaptureAttachmentDescriptor,
+  MediaKind,
+  OwnerNoteDraft,
+  UploadState,
+} from "./types";
 
-export const REGISTRATION_DRAFT_VERSION = 3 as const;
+export const REGISTRATION_DRAFT_VERSION = 4 as const;
 export const LEGACY_WIZARD_DRAFT_KEY = "bring-field-building-draft";
 
 export class RegistrationDraftCompatibilityError extends Error {
@@ -155,6 +161,8 @@ export interface BuildingWizardDraft {
   addressVerified: boolean;
   duplicateBuilding: DuplicateBuildingDraft | null;
   ownerNoteDrafts: OwnerNoteDraft[];
+  captureSessionId: string;
+  captureAttachments: CaptureAttachmentDescriptor[];
 }
 
 export interface StoredRegistrationDraft {
@@ -300,6 +308,147 @@ function isBlockedString(value: string): boolean {
 
   const decoded = decodeBase64Prefix(compact);
   return decoded ? hasBinaryFileSignature(decoded) : false;
+}
+
+const CAPTURE_UUID_PATTERN =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;
+const CAPTURE_SLOT_PATTERN = /^[A-Za-z0-9_-]{1,80}$/;
+const CAPTURE_FILE_NAME_MAX_LENGTH = 255;
+const CAPTURE_UPLOAD_STATES = new Set<UploadState>([
+  "queued",
+  "uploading",
+  "objectStored",
+  "finalizing",
+  "finalized",
+  "failed",
+]);
+const CAPTURE_ZONE_KINDS = new Map(
+  CAPTURE_ZONES.map((zone) => [zone.id, zone.kind] as const),
+);
+
+function canonicalIsoTimestamp(value: unknown): value is string {
+  if (typeof value !== "string") return false;
+  const parsed = Date.parse(value);
+  return Number.isFinite(parsed) && new Date(parsed).toISOString() === value;
+}
+
+function mediaKindForMime(value: unknown): MediaKind | null {
+  if (typeof value !== "string") return null;
+  if (Object.prototype.hasOwnProperty.call(MEDIA_POLICY.photo.mimeToExtension, value)) {
+    return "photo";
+  }
+  if (Object.prototype.hasOwnProperty.call(MEDIA_POLICY.video.mimeToExtension, value)) {
+    return "video";
+  }
+  return null;
+}
+
+function captureAttachmentValue(
+  value: unknown,
+  captureSessionId: string,
+): CaptureAttachmentDescriptor | null {
+  if (!isRecord(value)) return null;
+  const mimeKind = mediaKindForMime(value.mimeType);
+  const zoneKind = typeof value.zone === "string"
+    ? CAPTURE_ZONE_KINDS.get(value.zone as never)
+    : undefined;
+  if (
+    typeof value.mediaId !== "string"
+    || !CAPTURE_UUID_PATTERN.test(value.mediaId)
+    || value.captureSessionId !== captureSessionId
+    || !CAPTURE_UUID_PATTERN.test(captureSessionId)
+    || (value.kind !== "photo" && value.kind !== "video")
+    || mimeKind !== value.kind
+    || zoneKind !== value.kind
+    || typeof value.zone !== "string"
+    || typeof value.slotId !== "string"
+    || !CAPTURE_SLOT_PATTERN.test(value.slotId)
+    || typeof value.required !== "boolean"
+    || typeof value.originalFileName !== "string"
+    || value.originalFileName.length === 0
+    || value.originalFileName.length > CAPTURE_FILE_NAME_MAX_LENGTH
+    || isBlockedString(value.originalFileName)
+    || /[\\/\u0000-\u001f\u007f]/u.test(value.originalFileName)
+    || typeof value.mimeType !== "string"
+    || !Number.isSafeInteger(value.sizeBytes)
+    || (value.sizeBytes as number) <= 0
+    || (value.sizeBytes as number) > MEDIA_POLICY[value.kind].maxBytes
+    || !Number.isSafeInteger(value.lastModified)
+    || (value.lastModified as number) < 0
+    || !canonicalIsoTimestamp(value.capturedAt)
+    || typeof value.uploadState !== "string"
+    || !CAPTURE_UPLOAD_STATES.has(value.uploadState as UploadState)
+    || !Number.isSafeInteger(value.uploadProgress)
+    || (value.uploadProgress as number) < 0
+    || (value.uploadProgress as number) > 100
+  ) {
+    return null;
+  }
+
+  if (
+    value.failureCode !== undefined
+    && (
+      typeof value.failureCode !== "string"
+      || !value.failureCode
+      || isBlockedString(value.failureCode)
+    )
+  ) {
+    return null;
+  }
+  if (
+    value.replacesMediaId !== undefined
+    && (
+      typeof value.replacesMediaId !== "string"
+      || !CAPTURE_UUID_PATTERN.test(value.replacesMediaId)
+    )
+  ) {
+    return null;
+  }
+
+  let videoMetadata: CaptureAttachmentDescriptor["videoMetadata"];
+  if (value.videoMetadata !== undefined) {
+    if (
+      value.kind !== "video"
+      || !isRecord(value.videoMetadata)
+      || typeof value.videoMetadata.durationSeconds !== "number"
+      || !Number.isFinite(value.videoMetadata.durationSeconds)
+      || value.videoMetadata.durationSeconds <= 0
+      || typeof value.videoMetadata.width !== "number"
+      || !Number.isFinite(value.videoMetadata.width)
+      || value.videoMetadata.width <= 0
+      || typeof value.videoMetadata.height !== "number"
+      || !Number.isFinite(value.videoMetadata.height)
+      || value.videoMetadata.height <= 0
+    ) {
+      return null;
+    }
+    videoMetadata = {
+      durationSeconds: value.videoMetadata.durationSeconds,
+      width: value.videoMetadata.width,
+      height: value.videoMetadata.height,
+    };
+  }
+
+  return {
+    mediaId: value.mediaId,
+    captureSessionId,
+    kind: value.kind,
+    zone: value.zone as CaptureAttachmentDescriptor["zone"],
+    slotId: value.slotId,
+    required: value.required,
+    originalFileName: value.originalFileName,
+    mimeType: value.mimeType,
+    sizeBytes: value.sizeBytes as number,
+    lastModified: value.lastModified as number,
+    capturedAt: value.capturedAt,
+    uploadState: value.uploadState as UploadState,
+    uploadProgress: value.uploadProgress as number,
+    ...(value.failureCode === undefined ? {} : { failureCode: value.failureCode }),
+    ...(value.replacesMediaId === undefined
+      ? {}
+      : { replacesMediaId: value.replacesMediaId }),
+    ...(videoMetadata ? { videoMetadata } : {}),
+  };
 }
 
 function ownerNoteDraftValue(value: unknown, draftId: string): OwnerNoteDraft | null {
@@ -472,12 +621,22 @@ function mergeRegistrationDraft(
 
   const draftId = identifierValue(raw.draftId, base.draftId);
   const requestId = identifierValue(raw.requestId, base.requestId);
+  const rawCaptureSessionId = identifierValue(raw.captureSessionId, "");
+  const captureSessionId = CAPTURE_UUID_PATTERN.test(rawCaptureSessionId)
+    ? rawCaptureSessionId
+    : base.captureSessionId;
   const ownerNoteDrafts = Array.isArray(raw.ownerNoteDrafts)
     ? raw.ownerNoteDrafts.flatMap((note) => {
       const projected = ownerNoteDraftValue(note, draftId);
       return projected ? [projected] : [];
     })
     : base.ownerNoteDrafts;
+  const captureAttachments = Array.isArray(raw.captureAttachments)
+    ? raw.captureAttachments.flatMap((attachment) => {
+      const projected = captureAttachmentValue(attachment, captureSessionId);
+      return projected ? [projected] : [];
+    })
+    : base.captureAttachments;
 
   return {
     draftVersion: REGISTRATION_DRAFT_VERSION,
@@ -489,6 +648,8 @@ function mergeRegistrationDraft(
     addressVerified: booleanValue(raw.addressVerified, base.addressVerified),
     duplicateBuilding,
     ownerNoteDrafts,
+    captureSessionId,
+    captureAttachments,
   };
 }
 
@@ -497,6 +658,7 @@ export function createRegistrationDraft(
   idFactory: () => string = () => crypto.randomUUID(),
 ): BuildingWizardDraft {
   const id = idFactory();
+  const captureSessionId = idFactory();
   const draft: BuildingWizardDraft = {
     draftVersion: REGISTRATION_DRAFT_VERSION,
     draftId: id,
@@ -507,6 +669,8 @@ export function createRegistrationDraft(
     addressVerified: false,
     duplicateBuilding: null,
     ownerNoteDrafts: [],
+    captureSessionId,
+    captureAttachments: [],
   };
 
   return mergeRegistrationDraft(draft, initial);
@@ -526,9 +690,23 @@ export function migrateRegistrationDraft(
   }
   const existingDraftId = isRecord(raw) ? identifierValue(raw.draftId, "") : "";
   const existingRequestId = isRecord(raw) ? identifierValue(raw.requestId, "") : "";
-  const baseIdFactory = existingDraftId && existingRequestId
-    ? () => existingDraftId
-    : idFactory;
+  const rawCaptureSessionId = isRecord(raw)
+    ? identifierValue(raw.captureSessionId, "")
+    : "";
+  const existingCaptureSessionId = CAPTURE_UUID_PATTERN.test(rawCaptureSessionId)
+    ? rawCaptureSessionId
+    : "";
+  let baseIdCall = 0;
+  const baseIdFactory = () => {
+    baseIdCall += 1;
+    if (baseIdCall === 1 && existingDraftId && existingRequestId) {
+      return existingDraftId;
+    }
+    if (baseIdCall === 2 && existingCaptureSessionId) {
+      return existingCaptureSessionId;
+    }
+    return idFactory();
+  };
   return mergeRegistrationDraft(createRegistrationDraft(initial, baseIdFactory), raw);
 }
 
