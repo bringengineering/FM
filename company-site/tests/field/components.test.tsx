@@ -203,6 +203,40 @@ describe("ManagementContractQueue", () => {
     await waitFor(() => expect(screen.queryByText("테스트 빌딩")).not.toBeInTheDocument());
   });
 
+  it("creates a new request id when the start date changes after a failed attempt", async () => {
+    const approve = vi.fn()
+      .mockRejectedValueOnce(new Error("response lost"))
+      .mockResolvedValueOnce({ buildingId: "building-1", status: "active" as const });
+    render(
+      <ManagementContractQueue
+        resolveRole={async () => "admin"}
+        subscribe={(listener) => {
+          listener([pendingBuilding]);
+          return () => undefined;
+        }}
+        approve={approve}
+      />,
+    );
+
+    fireEvent.click(await screen.findByRole("button", { name: "관리 중으로 승인" }));
+    expect(await screen.findByText("승인 실패 · 다시 시도해 주세요")).toBeInTheDocument();
+    const firstAttempt = approve.mock.calls[0][0];
+
+    fireEvent.change(screen.getByLabelText("테스트 빌딩 관리 시작일"), {
+      target: { value: "2026-08-09" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "관리 중으로 승인" }));
+    await waitFor(() => expect(approve).toHaveBeenCalledTimes(2));
+
+    const secondAttempt = approve.mock.calls[1][0];
+    expect(firstAttempt.startedOn).toBe("2026-08-08");
+    expect(secondAttempt.startedOn).toBe("2026-08-09");
+    expect(secondAttempt.requestId).not.toBe(firstAttempt.requestId);
+    expect(secondAttempt.requestId).toMatch(
+      /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/,
+    );
+  });
+
   it("allows only one approval call across two immediate clicks", async () => {
     let resolveApproval: ((result: { buildingId: string; status: "active" }) => void) | undefined;
     const approve = vi.fn(() => new Promise<{ buildingId: string; status: "active" }>((resolve) => {

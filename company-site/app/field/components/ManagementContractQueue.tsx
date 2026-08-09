@@ -30,6 +30,11 @@ interface SecureUuidCrypto {
   getRandomValues?: (values: Uint8Array) => Uint8Array;
 }
 
+interface ApprovalAttempt {
+  requestId: string;
+  startedOn: string;
+}
+
 export function createApprovalRequestId(
   secureCrypto: SecureUuidCrypto | null | undefined = globalThis.crypto,
 ): string {
@@ -69,7 +74,7 @@ export default function ManagementContractQueue({
   const [approving, setApproving] = useState<Set<string>>(() => new Set());
   const [failed, setFailed] = useState<Set<string>>(() => new Set());
   const [completed, setCompleted] = useState<Set<string>>(() => new Set());
-  const requestIds = useRef(new Map<string, string>());
+  const approvalAttempts = useRef(new Map<string, ApprovalAttempt>());
   const inFlight = useRef(new Set<string>());
 
   useEffect(() => {
@@ -84,8 +89,8 @@ export default function ManagementContractQueue({
           (nextBuildings) => {
             if (!active) return;
             const liveIds = new Set(nextBuildings.map((building) => building.id));
-            for (const buildingId of requestIds.current.keys()) {
-              if (!liveIds.has(buildingId)) requestIds.current.delete(buildingId);
+            for (const buildingId of approvalAttempts.current.keys()) {
+              if (!liveIds.has(buildingId)) approvalAttempts.current.delete(buildingId);
             }
             setBuildings(nextBuildings);
             setStartDates((current) => {
@@ -134,18 +139,21 @@ export default function ManagementContractQueue({
     });
 
     try {
-      let requestId = requestIds.current.get(building.id);
-      if (!requestId) {
-        requestId = createApprovalRequestId();
-        requestIds.current.set(building.id, requestId);
+      let attempt = approvalAttempts.current.get(building.id);
+      if (!attempt || attempt.startedOn !== startedOn) {
+        attempt = {
+          requestId: createApprovalRequestId(),
+          startedOn,
+        };
+        approvalAttempts.current.set(building.id, attempt);
       }
       await approve({
-        requestId,
+        requestId: attempt.requestId,
         buildingId: building.id,
         status: "active",
-        startedOn,
+        startedOn: attempt.startedOn,
       });
-      requestIds.current.delete(building.id);
+      approvalAttempts.current.delete(building.id);
       setCompleted((current) => new Set(current).add(building.id));
     } catch {
       setFailed((current) => new Set(current).add(building.id));
