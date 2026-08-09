@@ -1,10 +1,12 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  reduceProjectionWrite,
   reduceRegistrationClaim,
   reduceTransitionClaim,
   reduceTransitionCommit,
 } from "../src/field/firebase-transaction-state.js";
+import type { FieldMapProjection } from "../src/field/contracts.js";
 import type { RegistrationReservation } from "../src/field/save-field-registration.js";
 import {
   managementContractFingerprint,
@@ -164,6 +166,16 @@ describe("registration claim reducer", () => {
       ),
     ).toMatchObject({ status: "draftConflict", write: false });
   });
+
+  it.each([
+    ["claim root", []],
+    ["requests container", { requests: [] }],
+    ["drafts container", { drafts: "malformed" }],
+  ])("fails closed for a malformed non-null %s", (_label, current) => {
+    expect(() =>
+      reduceRegistrationClaim(current, registrationReservation()),
+    ).toThrow("field_registration_claim_state_invalid");
+  });
 });
 
 describe("contract transition claim reducer", () => {
@@ -266,6 +278,161 @@ describe("contract transition claim reducer", () => {
         },
       },
     });
+  });
+
+  it.each([
+    ["claim root", []],
+    ["requests container", { requests: [] }],
+    ["actor request bucket", { requests: { "admin-1": [] } }],
+    ["buildingVersions container", { buildingVersions: "malformed" }],
+    [
+      "building version bucket",
+      { buildingVersions: { "building-1": [] } },
+    ],
+  ])("fails closed for a malformed non-null %s", (_label, current) => {
+    expect(() =>
+      reduceTransitionClaim(current, transitionReservation()),
+    ).toThrow("field_management_transition_state_invalid");
+  });
+
+  it("fails closed for malformed building version claims even on a matching request retry", () => {
+    const proposed = transitionReservation();
+    const acquired = reduceTransitionClaim(null, proposed);
+    const malformed = {
+      ...(acquired.state as Record<string, unknown>),
+      buildingVersions: [],
+    };
+
+    expect(() => reduceTransitionClaim(malformed, proposed)).toThrow(
+      "field_management_transition_state_invalid",
+    );
+  });
+});
+
+const publicProjection: FieldMapProjection = {
+  buildingId: "building-1",
+  name: "New projection",
+  roadAddress: "1 Sangji-ro, Wonju",
+  latitude: 37.369,
+  longitude: 127.928,
+  markerStatus: "managed",
+  vacancyCount: 0,
+  approvedRentSummary: "none",
+  parkingSummary: "available",
+  captureStatus: "notStarted",
+  updatedAt: "2026-08-09T12:00:02.000Z",
+};
+
+describe("map projection version CAS reducer", () => {
+  it("keeps a newer projection when an older trigger finishes afterward", () => {
+    const newer = reduceProjectionWrite(null, {
+      buildingId: "building-1",
+      projection: publicProjection,
+      version: {
+        eventTime: "2026-08-09T12:00:02.000Z",
+        revision: "event-newer",
+      },
+    });
+    expect(newer).toMatchObject({ status: "committed", write: true });
+
+    const olderProjection = {
+      ...publicProjection,
+      name: "Old projection",
+      updatedAt: "2026-08-09T12:00:01.000Z",
+    };
+    const older = reduceProjectionWrite(newer.state, {
+      buildingId: "building-1",
+      projection: olderProjection,
+      version: {
+        eventTime: "2026-08-09T12:00:01.000Z",
+        revision: "event-older",
+      },
+    });
+
+    expect(older).toEqual({
+      status: "stale",
+      write: false,
+      state: newer.state,
+    });
+    expect(older.state).toMatchObject({
+      mapProjections: { "building-1": publicProjection },
+      mapProjectionVersions: {
+        "building-1": {
+          eventTime: "2026-08-09T12:00:02.000Z",
+          revision: "event-newer",
+        },
+      },
+    });
+    expect(Object.keys(publicProjection)).toHaveLength(11);
+    expect(publicProjection).not.toHaveProperty("version");
+    expect(publicProjection).not.toHaveProperty("eventTime");
+    expect(publicProjection).not.toHaveProperty("revision");
+  });
+
+  it("retains a private version when the public projection is deleted", () => {
+    const current = {
+      mapProjections: { "building-1": publicProjection },
+      unrelated: { retained: true },
+    };
+
+    const decision = reduceProjectionWrite(current, {
+      buildingId: "building-1",
+      projection: null,
+      version: {
+        eventTime: "2026-08-09T12:00:03.000Z",
+        revision: "event-delete",
+      },
+    });
+
+    expect(decision).toEqual({
+      status: "committed",
+      write: true,
+      state: {
+        mapProjectionVersions: {
+          "building-1": {
+            eventTime: "2026-08-09T12:00:03.000Z",
+            revision: "event-delete",
+          },
+        },
+        unrelated: { retained: true },
+      },
+    });
+  });
+
+  it("orders equal timestamps by revision and rejects an identical retry", () => {
+    const first = reduceProjectionWrite(null, {
+      buildingId: "building-1",
+      projection: { ...publicProjection, name: "First revision" },
+      version: {
+        eventTime: "2026-08-09T12:00:04.000Z",
+        revision: "database-event-001",
+      },
+    });
+    const second = reduceProjectionWrite(first.state, {
+      buildingId: "building-1",
+      projection: { ...publicProjection, name: "Second revision" },
+      version: {
+        eventTime: "2026-08-09T12:00:04.000Z",
+        revision: "database-event-002",
+      },
+    });
+
+    expect(second).toMatchObject({ status: "committed", write: true });
+    expect(second.state).toMatchObject({
+      mapProjections: {
+        "building-1": { name: "Second revision" },
+      },
+    });
+    expect(
+      reduceProjectionWrite(second.state, {
+        buildingId: "building-1",
+        projection: { ...publicProjection, name: "Retry must not write" },
+        version: {
+          eventTime: "2026-08-09T12:00:04.000Z",
+          revision: "database-event-002",
+        },
+      }),
+    ).toEqual({ status: "stale", write: false, state: second.state });
   });
 });
 

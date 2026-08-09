@@ -19,9 +19,11 @@ import type {
   SaveFieldRegistrationInput,
 } from "./field/contracts.js";
 import {
+  reduceProjectionWrite,
   reduceRegistrationClaim,
   reduceTransitionClaim,
   reduceTransitionCommit,
+  type ProjectionWriteVersion,
 } from "./field/firebase-transaction-state.js";
 import type {
   ProjectionBuilding,
@@ -168,10 +170,28 @@ const mapProjectionDependencies: RebuildMapProjectionDependencies = {
   getBuilding,
   getListings,
   getMedia,
-  async setProjection(buildingId, projection) {
-    await adminDatabase
-      .ref(`fieldPlatform/mapProjections/${buildingId}`)
-      .set(projection);
+  async setProjection(buildingId, projection, version) {
+    const input = { buildingId, projection, version };
+    const transaction = await adminDatabase.ref("fieldPlatform").transaction(
+      (current) => {
+        const decision = reduceProjectionWrite(current, input);
+        return decision.write ? decision.state : undefined;
+      },
+      undefined,
+      false,
+    );
+    const finalDecision = reduceProjectionWrite(
+      transaction.snapshot.val(),
+      input,
+    );
+    if (transaction.committed) {
+      if (finalDecision.status !== "stale") {
+        throw new Error("field_projection_state_invalid");
+      }
+      return;
+    }
+    if (finalDecision.status === "stale") return;
+    throw new Error("field_projection_state_invalid");
   },
   now: () => new Date().toISOString(),
 };
@@ -374,16 +394,24 @@ export const setManagementContractStatus = onCall<SetManagementContractStatusInp
   },
 );
 
-function buildingIdFromWriteValues(
-  afterValue: unknown,
+function buildingIdsFromWriteValues(
   beforeValue: unknown,
-): string | null {
-  for (const value of [afterValue, beforeValue]) {
+  afterValue: unknown,
+): string[] {
+  const buildingIds = new Set<string>();
+  for (const value of [beforeValue, afterValue]) {
     if (isRecord(value) && isPathSafeId(value.buildingId)) {
-      return value.buildingId;
+      buildingIds.add(value.buildingId);
     }
   }
-  return null;
+  return [...buildingIds];
+}
+
+function projectionWriteVersion(event: {
+  id: string;
+  time: string;
+}): ProjectionWriteVersion {
+  return { eventTime: event.time, revision: event.id };
 }
 
 export const rebuildMapProjectionOnBuildingWrite = onValueWritten(
@@ -398,6 +426,7 @@ export const rebuildMapProjectionOnBuildingWrite = onValueWritten(
     await rebuildMapProjectionForBuilding(
       buildingId,
       mapProjectionDependencies,
+      projectionWriteVersion(event),
     );
   },
 );
@@ -409,14 +438,19 @@ export const rebuildMapProjectionOnListingWrite = onValueWritten(
     region: "asia-southeast1",
   },
   async (event) => {
-    const buildingId = buildingIdFromWriteValues(
-      event.data.after.val(),
+    const buildingIds = buildingIdsFromWriteValues(
       event.data.before.val(),
+      event.data.after.val(),
     );
-    if (buildingId === null) return;
-    await rebuildMapProjectionForBuilding(
-      buildingId,
-      mapProjectionDependencies,
+    const version = projectionWriteVersion(event);
+    await Promise.all(
+      buildingIds.map((buildingId) =>
+        rebuildMapProjectionForBuilding(
+          buildingId,
+          mapProjectionDependencies,
+          version,
+        ),
+      ),
     );
   },
 );
@@ -428,14 +462,19 @@ export const rebuildMapProjectionOnMediaWrite = onValueWritten(
     region: "asia-southeast1",
   },
   async (event) => {
-    const buildingId = buildingIdFromWriteValues(
-      event.data.after.val(),
+    const buildingIds = buildingIdsFromWriteValues(
       event.data.before.val(),
+      event.data.after.val(),
     );
-    if (buildingId === null) return;
-    await rebuildMapProjectionForBuilding(
-      buildingId,
-      mapProjectionDependencies,
+    const version = projectionWriteVersion(event);
+    await Promise.all(
+      buildingIds.map((buildingId) =>
+        rebuildMapProjectionForBuilding(
+          buildingId,
+          mapProjectionDependencies,
+          version,
+        ),
+      ),
     );
   },
 );

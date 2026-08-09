@@ -1,3 +1,4 @@
+import type { FieldMapProjection } from "./contracts.js";
 import type {
   RegistrationReservation,
   RegistrationReservationOutcome,
@@ -38,12 +39,36 @@ type TransitionCommitDecision = ContractTransitionCommitOutcome & {
   state: unknown;
 };
 
+export interface ProjectionWriteVersion {
+  eventTime: string;
+  revision: string;
+}
+
+export interface ProjectionWriteInput {
+  buildingId: string;
+  projection: FieldMapProjection | null;
+  version: ProjectionWriteVersion;
+}
+
+export type ProjectionWriteDecision =
+  | { status: "committed"; write: true; state: unknown }
+  | { status: "stale"; write: false; state: unknown };
+
 function isRecord(value: unknown): value is UnknownRecord {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
 function recordOrEmpty(value: unknown): UnknownRecord {
   return isRecord(value) ? value : {};
+}
+
+function claimRecordOrEmpty(
+  value: unknown,
+  invalid: () => never,
+): UnknownRecord {
+  if (value === undefined || value === null) return {};
+  if (!isRecord(value)) return invalid();
+  return value;
 }
 
 function invalidRegistrationClaim(): never {
@@ -109,9 +134,12 @@ export function reduceRegistrationClaim(
   current: unknown,
   proposed: RegistrationReservation,
 ): RegistrationClaimDecision {
-  const state = recordOrEmpty(current);
-  const requests = recordOrEmpty(state.requests);
-  const drafts = recordOrEmpty(state.drafts);
+  const state = claimRecordOrEmpty(current, invalidRegistrationClaim);
+  const requests = claimRecordOrEmpty(
+    state.requests,
+    invalidRegistrationClaim,
+  );
+  const drafts = claimRecordOrEmpty(state.drafts, invalidRegistrationClaim);
   const storedRequest = requests[proposed.requestId];
 
   if (storedRequest !== undefined && storedRequest !== null) {
@@ -212,9 +240,20 @@ export function reduceTransitionClaim(
   current: unknown,
   proposed: ContractTransitionReservation,
 ): TransitionClaimDecision {
-  const state = recordOrEmpty(current);
-  const requests = recordOrEmpty(state.requests);
-  const actorRequests = recordOrEmpty(requests[proposed.uid]);
+  const state = claimRecordOrEmpty(current, invalidTransitionState);
+  const requests = claimRecordOrEmpty(state.requests, invalidTransitionState);
+  const actorRequests = claimRecordOrEmpty(
+    requests[proposed.uid],
+    invalidTransitionState,
+  );
+  const buildingVersions = claimRecordOrEmpty(
+    state.buildingVersions,
+    invalidTransitionState,
+  );
+  const versionClaims = claimRecordOrEmpty(
+    buildingVersions[proposed.buildingId],
+    invalidTransitionState,
+  );
   const storedRequest = actorRequests[proposed.requestId];
 
   if (storedRequest !== undefined && storedRequest !== null) {
@@ -235,10 +274,6 @@ export function reduceTransitionClaim(
     };
   }
 
-  const buildingVersions = recordOrEmpty(state.buildingVersions);
-  const versionClaims = recordOrEmpty(
-    buildingVersions[proposed.buildingId],
-  );
   const storedVersion = versionClaims[proposed.previousContractFingerprint];
   if (storedVersion !== undefined && storedVersion !== null) {
     buildingVersionClaimIdentity(storedVersion);
@@ -273,6 +308,83 @@ export function reduceTransitionClaim(
     write: true,
     state: nextState,
   };
+}
+
+function invalidProjectionState(): never {
+  throw new Error("field_projection_state_invalid");
+}
+
+function projectionRecordOrEmpty(value: unknown): UnknownRecord {
+  if (value === undefined || value === null) return {};
+  if (!isRecord(value)) return invalidProjectionState();
+  return value;
+}
+
+function projectionVersion(value: unknown): ProjectionWriteVersion {
+  if (
+    !isRecord(value) ||
+    typeof value.eventTime !== "string" ||
+    !Number.isFinite(Date.parse(value.eventTime)) ||
+    typeof value.revision !== "string" ||
+    value.revision.length === 0 ||
+    value.revision.length > 4_096
+  ) {
+    return invalidProjectionState();
+  }
+  return { eventTime: value.eventTime, revision: value.revision };
+}
+
+function compareProjectionVersions(
+  left: ProjectionWriteVersion,
+  right: ProjectionWriteVersion,
+): number {
+  const timeDifference =
+    Date.parse(left.eventTime) - Date.parse(right.eventTime);
+  if (timeDifference !== 0) return timeDifference;
+  return left.revision < right.revision
+    ? -1
+    : left.revision > right.revision
+      ? 1
+      : 0;
+}
+
+export function reduceProjectionWrite(
+  current: unknown,
+  input: ProjectionWriteInput,
+): ProjectionWriteDecision {
+  const state = projectionRecordOrEmpty(current);
+  const versions = projectionRecordOrEmpty(state.mapProjectionVersions);
+  const projections = projectionRecordOrEmpty(state.mapProjections);
+  const proposedVersion = projectionVersion(input.version);
+  const storedVersionValue = versions[input.buildingId];
+  if (storedVersionValue !== undefined && storedVersionValue !== null) {
+    const storedVersion = projectionVersion(storedVersionValue);
+    if (compareProjectionVersions(storedVersion, proposedVersion) >= 0) {
+      return { status: "stale", write: false, state: current };
+    }
+  }
+
+  const nextProjections = { ...projections };
+  if (input.projection === null) {
+    delete nextProjections[input.buildingId];
+  } else {
+    nextProjections[input.buildingId] = input.projection;
+  }
+
+  const nextState: UnknownRecord = {
+    ...state,
+    mapProjectionVersions: {
+      ...versions,
+      [input.buildingId]: proposedVersion,
+    },
+  };
+  if (Object.keys(nextProjections).length === 0) {
+    delete nextState.mapProjections;
+  } else {
+    nextState.mapProjections = nextProjections;
+  }
+
+  return { status: "committed", write: true, state: nextState };
 }
 
 function getPath(root: unknown, segments: string[]): unknown {

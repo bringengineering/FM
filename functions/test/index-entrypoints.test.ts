@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const registrations = vi.hoisted(() => ({
   onCall: vi.fn((options: unknown, handler: unknown) => ({
@@ -12,6 +12,7 @@ const registrations = vi.hoisted(() => ({
     handler,
   })),
   initializeApp: vi.fn(),
+  rebuildMapProjectionForBuilding: vi.fn(async () => undefined),
 }));
 
 vi.mock("firebase-admin/app", () => ({
@@ -37,6 +38,11 @@ vi.mock("firebase-functions/v2/database", () => ({
   onValueWritten: registrations.onValueWritten,
 }));
 
+vi.mock("../src/field/rebuild-map-projection.js", () => ({
+  rebuildMapProjectionForBuilding:
+    registrations.rebuildMapProjectionForBuilding,
+}));
+
 import * as entrypoints from "../src/index.js";
 
 interface RegisteredEntrypoint {
@@ -45,9 +51,34 @@ interface RegisteredEntrypoint {
   handler: unknown;
 }
 
+interface DatabaseWriteEvent {
+  id: string;
+  time: string;
+  params: Record<string, string>;
+  data: {
+    before: { val(): unknown };
+    after: { val(): unknown };
+  };
+}
+
+type DatabaseWriteHandler = (event: DatabaseWriteEvent) => Promise<void>;
+
 function registration(value: unknown): RegisteredEntrypoint {
   return value as RegisteredEntrypoint;
 }
+
+function databaseHandler(value: unknown): DatabaseWriteHandler {
+  return registration(value).handler as DatabaseWriteHandler;
+}
+
+const EVENT_VERSION = {
+  eventTime: "2026-08-09T12:00:02.000Z",
+  revision: "database-event-2",
+};
+
+beforeEach(() => {
+  registrations.rebuildMapProjectionForBuilding.mockClear();
+});
 
 describe("Firebase entrypoint metadata", () => {
   it("exports both App Check enforced field callables in asia-northeast3", () => {
@@ -113,4 +144,74 @@ describe("Firebase entrypoint metadata", () => {
     expect(registrations.onCall).toHaveBeenCalledTimes(3);
     expect(registrations.onValueWritten).toHaveBeenCalledTimes(3);
   });
+
+  it("passes the building event time and revision to the projection rebuild", async () => {
+    await databaseHandler(
+      entrypoints.rebuildMapProjectionOnBuildingWrite,
+    )({
+      id: EVENT_VERSION.revision,
+      time: EVENT_VERSION.eventTime,
+      params: { buildingId: "building-1" },
+      data: {
+        before: { val: () => null },
+        after: { val: () => null },
+      },
+    });
+
+    expect(
+      registrations.rebuildMapProjectionForBuilding,
+    ).toHaveBeenCalledWith(
+      "building-1",
+      expect.any(Object),
+      EVENT_VERSION,
+    );
+  });
+
+  it.each([
+    ["listing", entrypoints.rebuildMapProjectionOnListingWrite],
+    ["media", entrypoints.rebuildMapProjectionOnMediaWrite],
+  ])(
+    "refreshes both distinct path-safe building IDs once for a %s move",
+    async (_name, trigger) => {
+      const handler = databaseHandler(trigger);
+      await handler({
+        id: EVENT_VERSION.revision,
+        time: EVENT_VERSION.eventTime,
+        params: {},
+        data: {
+          before: { val: () => ({ buildingId: "building-before" }) },
+          after: { val: () => ({ buildingId: "building-after" }) },
+        },
+      });
+
+      expect(
+        registrations.rebuildMapProjectionForBuilding.mock.calls.map(
+          ([buildingId]) => buildingId,
+        ),
+      ).toEqual(["building-before", "building-after"]);
+      expect(
+        registrations.rebuildMapProjectionForBuilding,
+      ).toHaveBeenCalledTimes(2);
+      for (const call of registrations.rebuildMapProjectionForBuilding.mock.calls) {
+        expect(call[2]).toEqual(EVENT_VERSION);
+      }
+
+      registrations.rebuildMapProjectionForBuilding.mockClear();
+      await handler({
+        id: EVENT_VERSION.revision,
+        time: EVENT_VERSION.eventTime,
+        params: {},
+        data: {
+          before: { val: () => ({ buildingId: "building-same" }) },
+          after: { val: () => ({ buildingId: "building-same" }) },
+        },
+      });
+      expect(
+        registrations.rebuildMapProjectionForBuilding,
+      ).toHaveBeenCalledTimes(1);
+      expect(
+        registrations.rebuildMapProjectionForBuilding,
+      ).toHaveBeenCalledWith("building-same", expect.any(Object), EVENT_VERSION);
+    },
+  );
 });

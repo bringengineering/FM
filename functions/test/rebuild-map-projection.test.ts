@@ -8,6 +8,7 @@ import type { ProjectionBuilding } from "../src/field/map-projection.js";
 
 const BUILDING_ID = "building-1";
 const NOW = "2026-08-09T12:00:00.000Z";
+const DEFAULT_VERSION = { eventTime: NOW, revision: "manual" };
 
 const activeBuilding: ProjectionBuilding = {
   id: BUILDING_ID,
@@ -77,6 +78,11 @@ describe("rebuildMapProjectionForBuilding", () => {
     expect(dependencies.getMedia).toHaveBeenCalledWith(BUILDING_ID);
     expect(dependencies.now).toHaveBeenCalledTimes(1);
     expect(dependencies.setProjection).toHaveBeenCalledTimes(1);
+    expect(dependencies.setProjection).toHaveBeenCalledWith(
+      BUILDING_ID,
+      expect.any(Object),
+      DEFAULT_VERSION,
+    );
 
     const projection = vi.mocked(dependencies.setProjection).mock.calls[0][1];
     expect(projection).toMatchObject({
@@ -126,7 +132,32 @@ describe("rebuildMapProjectionForBuilding", () => {
     expect(dependencies.getBuilding).toHaveBeenCalledWith(BUILDING_ID);
     expect(dependencies.getListings).toHaveBeenCalledWith(BUILDING_ID);
     expect(dependencies.getMedia).toHaveBeenCalledWith(BUILDING_ID);
-    expect(dependencies.setProjection).toHaveBeenCalledWith(BUILDING_ID, null);
+    expect(dependencies.setProjection).toHaveBeenCalledWith(
+      BUILDING_ID,
+      null,
+      DEFAULT_VERSION,
+    );
+  });
+
+  it("uses the supplied event version as the deterministic projection timestamp", async () => {
+    const dependencies = createDependencies();
+    const version = {
+      eventTime: "2026-08-09T12:00:05.000Z",
+      revision: "database-event-5",
+    };
+
+    await rebuildMapProjectionForBuilding(
+      BUILDING_ID,
+      dependencies,
+      version,
+    );
+
+    expect(dependencies.now).not.toHaveBeenCalled();
+    expect(dependencies.setProjection).toHaveBeenCalledWith(
+      BUILDING_ID,
+      expect.objectContaining({ updatedAt: version.eventTime }),
+      version,
+    );
   });
 
   it.each(["bad/id", " building-1", "x".repeat(129)])(
