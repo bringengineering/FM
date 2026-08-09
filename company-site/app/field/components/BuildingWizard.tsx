@@ -140,20 +140,37 @@ export default function BuildingWizard({
     draft: BuildingWizardDraft;
     status: string;
   } | null>(null);
+  const [localSave, setLocalSave] = useState<{
+    draft: BuildingWizardDraft;
+    status: "로컬 자동저장 완료" | "로컬 자동저장 실패";
+  } | null>(null);
   const [addressStatus, setAddressStatus] = useState("");
   const [checkingAddress, setCheckingAddress] = useState(false);
   const [submitting, setSubmitting] = useState(false);
 
   useEffect(() => {
     if (incompatibleDraft) return;
-    window.localStorage.setItem(draftKey, JSON.stringify(draft));
+    let active = true;
+    let status: "로컬 자동저장 완료" | "로컬 자동저장 실패";
+    try {
+      window.localStorage.setItem(draftKey, JSON.stringify(draft));
+      status = "로컬 자동저장 완료";
+    } catch {
+      status = "로컬 자동저장 실패";
+    }
+    queueMicrotask(() => {
+      if (active) setLocalSave({ draft, status });
+    });
+    return () => {
+      active = false;
+    };
   }, [draft, draftKey, incompatibleDraft]);
 
   const saveStatus = completedSave?.draft === draft
     ? completedSave.status
-    : incompatibleDraft
-      ? "로컬 저장 준비"
-      : "로컬 자동저장 완료";
+    : localSave?.draft === draft
+      ? localSave.status
+      : "로컬 저장 준비";
 
   const progress = Math.round(((step + 1) / STEPS.length) * 100);
   const gpsDistance = useMemo(() => {

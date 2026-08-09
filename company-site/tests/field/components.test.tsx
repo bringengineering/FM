@@ -436,10 +436,49 @@ describe("BuildingWizard", () => {
     expect(screen.getByLabelText("건물명")).toHaveAttribute("aria-invalid", "true");
   });
 
-  it("autosaves and restores a draft after remount", () => {
+  it("claims local autosave completion only after the storage write succeeds", async () => {
+    const originalSetItem = Storage.prototype.setItem;
+    const statusAtWrite: string[] = [];
+    const setItem = vi.spyOn(Storage.prototype, "setItem").mockImplementation(function (
+      this: Storage,
+      key,
+      value,
+    ) {
+      statusAtWrite.push(
+        screen.queryByText("로컬 자동저장 완료") ? "complete" : "pending",
+      );
+      return originalSetItem.call(this, key, value);
+    });
+
+    try {
+      render(<BuildingWizard draftKey="autosave-write-order" />);
+
+      expect(statusAtWrite).toEqual(["pending"]);
+      expect(await screen.findByText("로컬 자동저장 완료")).toBeInTheDocument();
+    } finally {
+      setItem.mockRestore();
+    }
+  });
+
+  it("reports local autosave failure without claiming completion", async () => {
+    const setItem = vi.spyOn(Storage.prototype, "setItem").mockImplementation(() => {
+      throw new DOMException("Storage quota exceeded", "QuotaExceededError");
+    });
+
+    try {
+      render(<BuildingWizard draftKey="autosave-write-failure" />);
+
+      expect(screen.queryByText("로컬 자동저장 완료")).not.toBeInTheDocument();
+      expect(await screen.findByText("로컬 자동저장 실패")).toBeInTheDocument();
+    } finally {
+      setItem.mockRestore();
+    }
+  });
+
+  it("autosaves and restores a draft after remount", async () => {
     const first = render(<BuildingWizard draftKey="restore-draft" />);
     fireEvent.change(screen.getByLabelText("건물명"), { target: { value: "복원 빌딩" } });
-    expect(screen.getByText("로컬 자동저장 완료")).toBeInTheDocument();
+    expect(await screen.findByText("로컬 자동저장 완료")).toBeInTheDocument();
     first.unmount();
 
     render(<BuildingWizard draftKey="restore-draft" />);
