@@ -97,6 +97,7 @@ async function seed() {
         "reviewer-1": user("reviewer-1", "reviewer"),
         "admin-1": user("admin-1", "admin"),
         "disabled-1": user("disabled-1", "admin", false),
+        "stale-admin": user("stale-admin", "staff"),
       },
       buildings: {
         "building-1": {
@@ -104,18 +105,36 @@ async function seed() {
           managementContract: managementContract("active"),
         },
         "building-legacy": building("building-legacy"),
+        "building-unassigned": building("building-unassigned"),
       },
       buildingAssignments: {
         "building-1": { "staff-1": true, "disabled-1": true },
       },
       units: {
         "unit-1": { id: "unit-1", buildingId: "building-1", unitLabel: "201호" },
+        "unit-unassigned": {
+          id: "unit-unassigned",
+          buildingId: "building-unassigned",
+          unitLabel: "301호",
+        },
       },
-      listings: { "listing-1": listing() },
+      listings: {
+        "listing-1": listing(),
+        "listing-unassigned": {
+          ...listing("listing-unassigned"),
+          buildingId: "building-unassigned",
+        },
+      },
       visits: {
         "visit-1": {
           id: "visit-1",
           buildingId: "building-1",
+          type: "initial",
+          assignedUserId: "staff-1",
+        },
+        "visit-unassigned": {
+          id: "visit-unassigned",
+          buildingId: "building-unassigned",
           type: "initial",
           assignedUserId: "staff-1",
         },
@@ -124,6 +143,13 @@ async function seed() {
         "media-1": {
           id: "media-1",
           buildingId: "building-1",
+          capturedBy: "staff-1",
+          uploadState: "uploaded",
+          driveSyncState: "queued",
+        },
+        "media-unassigned": {
+          id: "media-unassigned",
+          buildingId: "building-unassigned",
           capturedBy: "staff-1",
           uploadState: "uploaded",
           driveSyncState: "queued",
@@ -266,6 +292,38 @@ describe.runIf(databaseEmulatorAvailable)("fieldPlatform database rules", () => 
     await assertFails(update(ref(database, "fieldPlatform/buildings/building-2"), { name: "차단" }));
   });
 
+  it.each([
+    ["admin", "admin-1", "admin"],
+    ["assigned staff", "staff-1", "staff"],
+  ] as const)("denies an %s client from deleting a contracted building", async (_label, uid, role) => {
+    const database = environment.authenticatedContext(uid, claims(role)).database();
+
+    await assertFails(set(ref(database, "fieldPlatform/buildings/building-1"), null));
+  });
+
+  it("preserves admin creation and updates of buildings without a contract", async () => {
+    const admin = environment.authenticatedContext("admin-1", claims("admin")).database();
+
+    await assertSucceeds(set(
+      ref(admin, "fieldPlatform/buildings/building-new"),
+      building("building-new"),
+    ));
+    await assertSucceeds(update(ref(admin, "fieldPlatform/buildings/building-new"), {
+      name: "새 미계약 건물",
+    }));
+  });
+
+  it.each([
+    ["unit", "fieldPlatform/units/unit-unassigned"],
+    ["listing", "fieldPlatform/listings/listing-unassigned"],
+    ["visit", "fieldPlatform/visits/visit-unassigned"],
+    ["media", "fieldPlatform/media/media-unassigned"],
+  ])("denies staff from reparenting an existing %s into an assigned building", async (_kind, path) => {
+    const staff = environment.authenticatedContext("staff-1", claims("staff")).database();
+
+    await assertFails(update(ref(staff, path), { buildingId: "building-1" }));
+  });
+
   it("lets a claimed user read only their own user record while disabled", async () => {
     const disabled = environment
       .authenticatedContext("disabled-1", claims("admin"))
@@ -279,6 +337,123 @@ describe.runIf(databaseEmulatorAvailable)("fieldPlatform database rules", () => 
     await assertFails(get(ref(disabled, "fieldPlatform/users/staff-1")));
     await assertSucceeds(get(ref(admin, "fieldPlatform/users/disabled-1")));
   });
+
+  it("keeps the self-record exception but denies cross-user reads with a stale admin token", async () => {
+    const staleAdmin = environment
+      .authenticatedContext("stale-admin", claims("admin"))
+      .database();
+
+    await assertSucceeds(get(ref(staleAdmin, "fieldPlatform/users/stale-admin")));
+    await assertFails(get(ref(staleAdmin, "fieldPlatform/users/staff-1")));
+  });
+
+  it.each([
+    ["building assignment", "fieldPlatform/buildingAssignments/building-1/staff-1"],
+    ["secure-access assignment", "fieldPlatform/secureAccessAssignments/building-1/staff-1"],
+    ["building", "fieldPlatform/buildings/building-1"],
+    ["unit", "fieldPlatform/units/unit-1"],
+    ["listing", "fieldPlatform/listings/listing-1"],
+    ["visit", "fieldPlatform/visits/visit-1"],
+    ["media", "fieldPlatform/media/media-1"],
+    ["secure access", "fieldPlatform/secureAccess/access-1"],
+    ["ad package", "fieldPlatform/adPackages/package-1"],
+    ["checklist template", "fieldPlatform/checklistTemplates/template-1"],
+    ["checklist submission", "fieldPlatform/checklistSubmissions/submission-1"],
+    ["audit log", "fieldPlatform/auditLogs/event-1"],
+    ["drive-sync job", "fieldPlatform/driveSyncJobs/job-1"],
+    ["map projection", "fieldPlatform/mapProjections/building-1"],
+  ])("denies stale admin-token reads from the operational %s path", async (_label, path) => {
+    const staleAdmin = environment
+      .authenticatedContext("stale-admin", claims("admin"))
+      .database();
+
+    await assertFails(get(ref(staleAdmin, path)));
+  });
+
+  it.each([
+    [
+      "building",
+      "update",
+      "fieldPlatform/buildings/building-1",
+      { name: "만료 토큰 조작" },
+    ],
+    [
+      "unit",
+      "set",
+      "fieldPlatform/units/stale-unit",
+      { id: "stale-unit", buildingId: "building-1", unitLabel: "401호" },
+    ],
+    [
+      "listing",
+      "set",
+      "fieldPlatform/listings/stale-listing",
+      {
+        ...listing("stale-listing"),
+        createdBy: "stale-admin",
+        updatedBy: "stale-admin",
+      },
+    ],
+    [
+      "visit",
+      "set",
+      "fieldPlatform/visits/stale-visit",
+      {
+        id: "stale-visit",
+        buildingId: "building-1",
+        type: "initial",
+        assignedUserId: "stale-admin",
+      },
+    ],
+    [
+      "media",
+      "set",
+      "fieldPlatform/media/stale-media",
+      {
+        id: "stale-media",
+        buildingId: "building-1",
+        capturedBy: "stale-admin",
+        uploadState: "queued",
+        driveSyncState: "queued",
+      },
+    ],
+    [
+      "secure access",
+      "update",
+      "fieldPlatform/secureAccess/access-1",
+      { updatedBy: "stale-admin" },
+    ],
+    [
+      "ad package",
+      "update",
+      "fieldPlatform/adPackages/package-1",
+      { status: "reviewed", reviewerId: "stale-admin" },
+    ],
+    [
+      "checklist template",
+      "set",
+      "fieldPlatform/checklistTemplates/stale-template",
+      { id: "stale-template" },
+    ],
+    [
+      "checklist submission",
+      "set",
+      "fieldPlatform/checklistSubmissions/stale-submission",
+      { id: "stale-submission" },
+    ],
+  ] as const)(
+    "denies stale admin-token writes to the operational %s path",
+    async (_label, method, path, value) => {
+      const staleAdmin = environment
+        .authenticatedContext("stale-admin", claims("admin"))
+        .database();
+
+      if (method === "set") {
+        await assertFails(set(ref(staleAdmin, path), value));
+        return;
+      }
+      await assertFails(update(ref(staleAdmin, path), value));
+    },
+  );
 
   it("denies every operational read to a disabled user with valid-looking claims", async () => {
     const disabled = environment
