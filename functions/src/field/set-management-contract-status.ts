@@ -16,6 +16,7 @@ type UnknownRecord = Record<string, unknown>;
 
 const ID_BYTES = 128;
 const STORED_STRING_BYTES = 4_096;
+const SHA_256_PATTERN = /^[a-f0-9]{64}$/;
 
 export interface SetManagementContractStatusInput {
   requestId: string;
@@ -39,6 +40,14 @@ export interface ContractRequestReceipt {
   completedAt: string;
 }
 
+export interface ContractTransitionSnapshot {
+  status: ManagementContractStatus;
+  startedOn?: string;
+  endedOn?: string;
+  updatedAt: string;
+  updatedBy: string;
+}
+
 export interface ContractTransitionReservation {
   uid: string;
   requestId: string;
@@ -47,6 +56,9 @@ export interface ContractTransitionReservation {
   previousContractStatus: ManagementContractStatus;
   previousContractUpdatedAt: string;
   previousContractFingerprint: string;
+  previousContract: ContractTransitionSnapshot;
+  nextContractFingerprint: string;
+  nextContract: ContractTransitionSnapshot;
   result: SetManagementContractStatusResult;
   claimedAt: string;
 }
@@ -65,16 +77,30 @@ export interface SetManagementContractStatusDependencies {
     requestId: string,
   ): Promise<ContractRequestReceipt | null>;
   /**
+   * Reads an already claimed actor/request reservation. This lookup is the
+   * recovery source of truth after a missing or stale completed receipt and
+   * must return the originally stored reservation without regenerating it.
+   */
+  getReservation(
+    uid: string,
+    requestId: string,
+  ): Promise<ContractTransitionReservation | null>;
+  /**
    * Atomically claims both the actor-scoped request ID and the building's
    * current contract fingerprint/version at one shared claims ancestor.
-   * A same UID/request/hash retry must return the original stored reservation
-   * unchanged. Reusing a request for different semantics returns
-   * requestConflict; competing claims on the same building version return
-   * buildingConflict. No entity root patch may run before acquisition.
+   * A same UID/request/hash retry returns the original reservation unchanged.
+   * A competing request for the same building/fingerprint returns
+   * buildingConflict, while a later claim for a newer fingerprint may acquire.
+   * No entity root patch may run before acquisition.
    */
   reserveTransition(
     proposed: ContractTransitionReservation,
   ): Promise<ContractTransitionReservationOutcome>;
+  /**
+   * Applies every supplied Firebase-style multipath entry atomically and
+   * all-or-nothing. Implementations must not decompose this into sequential
+   * writes.
+   */
   updateRoot(patch: Record<string, unknown>): Promise<void>;
   now(): string;
 }
@@ -87,17 +113,22 @@ interface NormalizedTransitionInput {
   endedOn: string | null;
 }
 
-interface ValidatedContract {
-  status: ManagementContractStatus;
-  startedOn?: string;
-  endedOn?: string;
-  updatedAt: string;
-  updatedBy: string;
-}
-
 interface ValidatedBuilding {
   value: ProjectionBuilding & UnknownRecord;
-  contract: ValidatedContract;
+  contract: ContractTransitionSnapshot;
+}
+
+interface ExpectedRequest {
+  uid: string;
+  input: NormalizedTransitionInput;
+  requestHash: string;
+  result: SetManagementContractStatusResult;
+}
+
+interface ValidatedReservation {
+  value: ContractTransitionReservation;
+  previousContract: ContractTransitionSnapshot;
+  nextContract: ContractTransitionSnapshot;
 }
 
 function invalidTransition(): never {
@@ -135,6 +166,12 @@ function isBoundedNonEmptyString(value: unknown): value is string {
     value.trim().length > 0 &&
     Buffer.byteLength(value, "utf8") <= STORED_STRING_BYTES
   );
+}
+
+function isCanonicalUtcTimestamp(value: unknown): value is string {
+  if (!isBoundedNonEmptyString(value)) return false;
+  const parsed = new Date(value);
+  return !Number.isNaN(parsed.getTime()) && parsed.toISOString() === value;
 }
 
 function isValidIsoDate(value: string): boolean {
@@ -185,13 +222,10 @@ function normalizeInput(
 
   const startedOn = normalizeOptionalDate(value.startedOn);
   const endedOn = normalizeOptionalDate(value.endedOn);
-
   return {
     requestId: normalizeId(value.requestId),
     buildingId: normalizeId(value.buildingId),
     status,
-    // Only dates that can affect the requested target participate in the
-    // semantic hash. Valid but irrelevant date fields are deliberately ignored.
     startedOn: status === "active" ? startedOn : null,
     endedOn: status === "ended" ? endedOn : null,
   };
@@ -199,11 +233,7 @@ function normalizeInput(
 
 function assertAuthorizedActor(actor: FieldActor): void {
   const value: unknown = actor;
-  if (
-    !isRecord(value) ||
-    value.enabled !== true ||
-    value.role !== "admin"
-  ) {
+  if (!isRecord(value) || value.enabled !== true || value.role !== "admin") {
     throw new Error("field_management_admin_required");
   }
   normalizeId(value.uid);
@@ -217,7 +247,7 @@ function hashInput(input: NormalizedTransitionInput): string {
   return sha256(JSON.stringify(input));
 }
 
-function normalizeStoredContract(value: unknown): ValidatedContract {
+function normalizeStoredContract(value: unknown): ContractTransitionSnapshot {
   if (!isRecord(value)) invalidTransition();
 
   const { status, startedOn, endedOn, updatedAt, updatedBy } = value;
@@ -230,7 +260,7 @@ function normalizeStoredContract(value: unknown): ValidatedContract {
   ) {
     invalidTransition();
   }
-  if (!isBoundedNonEmptyString(updatedAt) || !isPathSafeId(updatedBy)) {
+  if (!isCanonicalUtcTimestamp(updatedAt) || !isPathSafeId(updatedBy)) {
     invalidTransition();
   }
   if (
@@ -241,7 +271,6 @@ function normalizeStoredContract(value: unknown): ValidatedContract {
   ) {
     invalidTransition();
   }
-
   if (
     (status === "none" && (startedOn !== undefined || endedOn !== undefined)) ||
     (status === "pending" &&
@@ -249,7 +278,9 @@ function normalizeStoredContract(value: unknown): ValidatedContract {
     ((status === "active" || status === "paused") &&
       (typeof startedOn !== "string" || endedOn !== undefined)) ||
     (status === "ended" &&
-      (typeof startedOn !== "string" || typeof endedOn !== "string"))
+      (typeof startedOn !== "string" ||
+        typeof endedOn !== "string" ||
+        endedOn < startedOn))
   ) {
     invalidTransition();
   }
@@ -306,11 +337,11 @@ function assertAllowedTransition(
 }
 
 function nextContract(
-  current: ValidatedContract,
+  current: ContractTransitionSnapshot,
   input: NormalizedTransitionInput,
   updatedAt: string,
   updatedBy: string,
-): ValidatedContract {
+): ContractTransitionSnapshot {
   if (input.status === "active") {
     const startedOn = input.startedOn ??
       (current.status === "paused" ? current.startedOn : undefined);
@@ -328,7 +359,11 @@ function nextContract(
     };
   }
 
-  if (input.endedOn === null || current.startedOn === undefined) {
+  if (
+    input.endedOn === null ||
+    current.startedOn === undefined ||
+    input.endedOn < current.startedOn
+  ) {
     invalidTransition();
   }
   return {
@@ -340,7 +375,7 @@ function nextContract(
   };
 }
 
-function contractFingerprint(contract: ValidatedContract): string {
+function contractFingerprint(contract: ContractTransitionSnapshot): string {
   return sha256(
     JSON.stringify({
       status: contract.status,
@@ -357,8 +392,8 @@ function auditId(uid: string, buildingId: string, requestId: string): string {
 }
 
 function buildChanges(
-  before: ValidatedContract,
-  after: ValidatedContract,
+  before: ContractTransitionSnapshot,
+  after: ContractTransitionSnapshot,
 ): Record<string, unknown> {
   const changes: Record<string, unknown> = {
     status: { before: before.status, after: after.status },
@@ -378,27 +413,184 @@ function buildChanges(
   return changes;
 }
 
-function validateAcquiredReservation(
-  reservation: ContractTransitionReservation,
-  proposed: ContractTransitionReservation,
-): void {
+function validateReceipt(
+  value: unknown,
+  expected: ExpectedRequest,
+): SetManagementContractStatusResult | null {
+  if (value === null) return null;
   if (
-    !isRecord(reservation) ||
-    reservation.uid !== proposed.uid ||
-    reservation.requestId !== proposed.requestId ||
-    reservation.buildingId !== proposed.buildingId ||
-    reservation.requestHash !== proposed.requestHash ||
-    reservation.previousContractStatus !== proposed.previousContractStatus ||
-    reservation.previousContractUpdatedAt !== proposed.previousContractUpdatedAt ||
-    reservation.previousContractFingerprint !==
-      proposed.previousContractFingerprint ||
-    !isBoundedNonEmptyString(reservation.claimedAt) ||
-    !isRecord(reservation.result) ||
-    reservation.result.buildingId !== proposed.result.buildingId ||
-    reservation.result.status !== proposed.result.status
+    !isRecord(value) ||
+    typeof value.requestHash !== "string" ||
+    !SHA_256_PATTERN.test(value.requestHash)
   ) {
     invalidTransition();
   }
+  if (value.requestHash !== expected.requestHash) {
+    throw new Error("field_request_id_conflict");
+  }
+  if (
+    !isRecord(value.result) ||
+    value.result.buildingId !== expected.result.buildingId ||
+    value.result.status !== expected.result.status ||
+    !isCanonicalUtcTimestamp(value.completedAt)
+  ) {
+    invalidTransition();
+  }
+  return { ...expected.result };
+}
+
+function validateReservation(
+  value: unknown,
+  expected: ExpectedRequest,
+): ValidatedReservation {
+  if (
+    !isRecord(value) ||
+    typeof value.requestHash !== "string" ||
+    !SHA_256_PATTERN.test(value.requestHash)
+  ) {
+    invalidTransition();
+  }
+  if (value.requestHash !== expected.requestHash) {
+    throw new Error("field_request_id_conflict");
+  }
+  if (
+    value.uid !== expected.uid ||
+    value.requestId !== expected.input.requestId ||
+    value.buildingId !== expected.input.buildingId ||
+    !isCanonicalUtcTimestamp(value.claimedAt) ||
+    !isRecord(value.result) ||
+    value.result.buildingId !== expected.result.buildingId ||
+    value.result.status !== expected.result.status
+  ) {
+    invalidTransition();
+  }
+
+  const previousContract = normalizeStoredContract(value.previousContract);
+  const next = normalizeStoredContract(value.nextContract);
+  assertAllowedTransition(previousContract.status, expected.input.status);
+  const expectedNext = nextContract(
+    previousContract,
+    expected.input,
+    value.claimedAt,
+    expected.uid,
+  );
+  const previousFingerprint = contractFingerprint(previousContract);
+  const nextFingerprint = contractFingerprint(next);
+  if (
+    value.previousContractStatus !== previousContract.status ||
+    value.previousContractUpdatedAt !== previousContract.updatedAt ||
+    value.previousContractFingerprint !== previousFingerprint ||
+    value.nextContractFingerprint !== nextFingerprint ||
+    nextFingerprint !== contractFingerprint(expectedNext) ||
+    next.status !== expected.result.status ||
+    next.updatedAt !== value.claimedAt ||
+    next.updatedBy !== expected.uid
+  ) {
+    invalidTransition();
+  }
+
+  const reservation: ContractTransitionReservation = {
+    uid: expected.uid,
+    requestId: expected.input.requestId,
+    buildingId: expected.input.buildingId,
+    requestHash: expected.requestHash,
+    previousContractStatus: previousContract.status,
+    previousContractUpdatedAt: previousContract.updatedAt,
+    previousContractFingerprint: previousFingerprint,
+    previousContract,
+    nextContractFingerprint: nextFingerprint,
+    nextContract: next,
+    result: { ...expected.result },
+    claimedAt: value.claimedAt,
+  };
+  return {
+    value: reservation,
+    previousContract,
+    nextContract: next,
+  };
+}
+
+async function persistReservation(
+  reservation: ValidatedReservation,
+  building: ValidatedBuilding,
+  expected: ExpectedRequest,
+  dependencies: SetManagementContractStatusDependencies,
+): Promise<SetManagementContractStatusResult> {
+  const currentFingerprint = contractFingerprint(building.contract);
+  if (currentFingerprint === reservation.value.nextContractFingerprint) {
+    return reservation.value.result;
+  }
+  if (currentFingerprint !== reservation.value.previousContractFingerprint) {
+    return reservation.value.result;
+  }
+
+  const { claimedAt, result } = reservation.value;
+  const projectionBuilding = {
+    ...building.value,
+    managementContract: reservation.nextContract,
+    updatedAt: claimedAt,
+    updatedBy: expected.uid,
+  };
+  let projection = null;
+  if (result.status === "active") {
+    const [listings, media] = await Promise.all([
+      dependencies.getListings(result.buildingId),
+      dependencies.getMedia(result.buildingId),
+    ]);
+    projection = buildMapProjection({
+      building: projectionBuilding,
+      listings,
+      media,
+      updatedAt: claimedAt,
+    });
+    if (projection === null) invalidTransition();
+  }
+
+  const id = auditId(expected.uid, result.buildingId, expected.input.requestId);
+  const audit = {
+    id,
+    actorId: expected.uid,
+    action: `managementContract.${result.status}`,
+    entityType: "managementContract",
+    entityId: result.buildingId,
+    occurredAt: claimedAt,
+    changes: buildChanges(
+      reservation.previousContract,
+      reservation.nextContract,
+    ),
+    requestId: expected.input.requestId,
+  };
+  const receipt: ContractRequestReceipt = {
+    requestHash: expected.requestHash,
+    result,
+    completedAt: claimedAt,
+  };
+
+  await dependencies.updateRoot({
+    [`fieldPlatform/buildings/${result.buildingId}/managementContract`]:
+      reservation.nextContract,
+    [`fieldPlatform/buildings/${result.buildingId}/updatedAt`]: claimedAt,
+    [`fieldPlatform/buildings/${result.buildingId}/updatedBy`]: expected.uid,
+    [`fieldPlatform/auditLogs/${id}`]: audit,
+    [`fieldPlatform/mapProjections/${result.buildingId}`]: projection,
+    [`fieldPlatform/managementContractRequests/${expected.uid}/${expected.input.requestId}`]:
+      receipt,
+  });
+  return result;
+}
+
+async function recoverReservation(
+  rawReservation: unknown,
+  expected: ExpectedRequest,
+  dependencies: SetManagementContractStatusDependencies,
+  building?: ValidatedBuilding,
+): Promise<SetManagementContractStatusResult> {
+  const reservation = validateReservation(rawReservation, expected);
+  const current = building ?? validateBuilding(
+    await dependencies.getBuilding(expected.input.buildingId),
+    expected.input.buildingId,
+  );
+  return persistReservation(reservation, current, expected, dependencies);
 }
 
 export async function setManagementContractStatusCore(
@@ -408,49 +600,84 @@ export async function setManagementContractStatusCore(
 ): Promise<SetManagementContractStatusResult> {
   assertAuthorizedActor(actor);
   const normalized = normalizeInput(input);
-  const requestHash = hashInput(normalized);
+  const expected: ExpectedRequest = {
+    uid: actor.uid,
+    input: normalized,
+    requestHash: hashInput(normalized),
+    result: { buildingId: normalized.buildingId, status: normalized.status },
+  };
 
-  const storedReceipt = await dependencies.getReceipt(
+  const receipt = validateReceipt(
+    await dependencies.getReceipt(actor.uid, normalized.requestId),
+    expected,
+  );
+  if (receipt !== null) return receipt;
+
+  const existingReservation = await dependencies.getReservation(
     actor.uid,
     normalized.requestId,
   );
-  if (storedReceipt) {
-    if (storedReceipt.requestHash !== requestHash) {
-      throw new Error("field_request_id_conflict");
-    }
-    return storedReceipt.result;
+  if (existingReservation !== null) {
+    return recoverReservation(existingReservation, expected, dependencies);
   }
 
-  const validated = validateBuilding(
+  const building = validateBuilding(
     await dependencies.getBuilding(normalized.buildingId),
     normalized.buildingId,
   );
-  assertAllowedTransition(validated.contract.status, normalized.status);
+  const racedReservation = await dependencies.getReservation(
+    actor.uid,
+    normalized.requestId,
+  );
+  if (racedReservation !== null) {
+    return recoverReservation(
+      racedReservation,
+      expected,
+      dependencies,
+      building,
+    );
+  }
 
-  // Validate all transition-specific dates before claiming either key.
-  nextContract(
-    validated.contract,
+  try {
+    assertAllowedTransition(building.contract.status, normalized.status);
+  } catch (error) {
+    const lateReservation = await dependencies.getReservation(
+      actor.uid,
+      normalized.requestId,
+    );
+    if (lateReservation !== null) {
+      return recoverReservation(
+        lateReservation,
+        expected,
+        dependencies,
+        building,
+      );
+    }
+    throw error;
+  }
+
+  const claimedAt = dependencies.now();
+  if (!isCanonicalUtcTimestamp(claimedAt)) invalidTransition();
+  const next = nextContract(
+    building.contract,
     normalized,
-    validated.contract.updatedAt,
+    claimedAt,
     actor.uid,
   );
-
-  const result: SetManagementContractStatusResult = {
-    buildingId: normalized.buildingId,
-    status: normalized.status,
-  };
   const proposed: ContractTransitionReservation = {
     uid: actor.uid,
     requestId: normalized.requestId,
     buildingId: normalized.buildingId,
-    requestHash,
-    previousContractStatus: validated.contract.status,
-    previousContractUpdatedAt: validated.contract.updatedAt,
-    previousContractFingerprint: contractFingerprint(validated.contract),
-    result,
-    claimedAt: dependencies.now(),
+    requestHash: expected.requestHash,
+    previousContractStatus: building.contract.status,
+    previousContractUpdatedAt: building.contract.updatedAt,
+    previousContractFingerprint: contractFingerprint(building.contract),
+    previousContract: building.contract,
+    nextContractFingerprint: contractFingerprint(next),
+    nextContract: next,
+    result: expected.result,
+    claimedAt,
   };
-  if (!isBoundedNonEmptyString(proposed.claimedAt)) invalidTransition();
 
   const outcome = await dependencies.reserveTransition(proposed);
   if (outcome.status === "requestConflict") {
@@ -459,60 +686,15 @@ export async function setManagementContractStatusCore(
   if (outcome.status === "buildingConflict") {
     throw new Error("field_management_transition_conflict");
   }
-  validateAcquiredReservation(outcome.reservation, proposed);
-
-  const reservation = outcome.reservation;
-  const managementContract = nextContract(
-    validated.contract,
-    normalized,
-    reservation.claimedAt,
-    actor.uid,
+  const reservation = validateReservation(outcome.reservation, expected);
+  const latestBuilding = validateBuilding(
+    await dependencies.getBuilding(normalized.buildingId),
+    normalized.buildingId,
   );
-  const updatedBuilding = {
-    ...validated.value,
-    managementContract,
-    updatedAt: reservation.claimedAt,
-    updatedBy: actor.uid,
-  };
-  const id = auditId(actor.uid, normalized.buildingId, normalized.requestId);
-  const audit = {
-    id,
-    actorId: actor.uid,
-    action: `managementContract.${reservation.result.status}`,
-    entityType: "managementContract",
-    entityId: reservation.result.buildingId,
-    occurredAt: reservation.claimedAt,
-    changes: buildChanges(validated.contract, managementContract),
-    requestId: normalized.requestId,
-  };
-
-  let projection = null;
-  if (reservation.result.status === "active") {
-    const [listings, media] = await Promise.all([
-      dependencies.getListings(normalized.buildingId),
-      dependencies.getMedia(normalized.buildingId),
-    ]);
-    projection = buildMapProjection({
-      building: updatedBuilding,
-      listings,
-      media,
-      updatedAt: reservation.claimedAt,
-    });
-    if (projection === null) invalidTransition();
-  }
-
-  const receipt: ContractRequestReceipt = {
-    requestHash,
-    result: reservation.result,
-    completedAt: reservation.claimedAt,
-  };
-  await dependencies.updateRoot({
-    [`fieldPlatform/buildings/${reservation.result.buildingId}`]: updatedBuilding,
-    [`fieldPlatform/auditLogs/${id}`]: audit,
-    [`fieldPlatform/mapProjections/${reservation.result.buildingId}`]: projection,
-    [`fieldPlatform/managementContractRequests/${actor.uid}/${normalized.requestId}`]:
-      receipt,
-  });
-
-  return reservation.result;
+  return persistReservation(
+    reservation,
+    latestBuilding,
+    expected,
+    dependencies,
+  );
 }

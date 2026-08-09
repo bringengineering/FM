@@ -94,6 +94,28 @@ function cloneReservation(
   return {
     ...reservation,
     result: { ...reservation.result },
+    previousContract: { ...reservation.previousContract },
+    nextContract: { ...reservation.nextContract },
+  };
+}
+
+function cloneBuilding(
+  building: ProjectionBuilding | null,
+): ProjectionBuilding | null {
+  if (building === null) return null;
+  return {
+    ...building,
+    ...(building.parking === undefined
+      ? {}
+      : { parking: building.parking === null ? null : { ...building.parking } }),
+    ...(building.managementContract === undefined
+      ? {}
+      : {
+          managementContract:
+            building.managementContract === null
+              ? null
+              : { ...building.managementContract },
+        }),
   };
 }
 
@@ -113,7 +135,10 @@ function createBarrier(participants: number): () => Promise<void> {
 
 interface AdapterOptions {
   beforeBuildingRead?: () => Promise<void>;
+  afterBuildingRead?: () => Promise<void>;
+  beforeUpdateRoot?: () => Promise<void>;
   building?: ProjectionBuilding | null;
+  failUpdateRootOnce?: boolean;
   listings?: ProjectionListing[];
   media?: ProjectionMedia[];
   persistReceipts?: boolean;
@@ -123,22 +148,32 @@ interface AdapterOptions {
 function createInMemoryAdapter(options: AdapterOptions = {}) {
   const receipts = new Map<string, ContractRequestReceipt>();
   const reservationsByRequest = new Map<string, ContractTransitionReservation>();
-  const reservationsByBuilding = new Map<string, ContractTransitionReservation>();
+  const reservationsByBuildingVersion = new Map<
+    string,
+    ContractTransitionReservation
+  >();
   const patches: Record<string, unknown>[] = [];
-  const building = options.building === undefined
+  let currentBuilding = options.building === undefined
     ? buildingWith("pending")
     : options.building;
+  let shouldFailUpdate = options.failUpdateRootOnce === true;
 
   const dependencies: SetManagementContractStatusDependencies = {
     getBuilding: vi.fn(async () => {
       await options.beforeBuildingRead?.();
-      return building;
+      const snapshot = cloneBuilding(currentBuilding);
+      await options.afterBuildingRead?.();
+      return snapshot;
     }),
     getListings: vi.fn(async () => options.listings ?? []),
     getMedia: vi.fn(async () => options.media ?? []),
     getReceipt: vi.fn(async (uid, requestId) =>
       receipts.get(`${uid}\0${requestId}`) ?? null,
     ),
+    getReservation: vi.fn(async (uid, requestId) => {
+      const reservation = reservationsByRequest.get(`${uid}\0${requestId}`);
+      return reservation === undefined ? null : cloneReservation(reservation);
+    }),
     reserveTransition: vi.fn(
       async (
         proposed: ContractTransitionReservation,
@@ -158,25 +193,42 @@ function createInMemoryAdapter(options: AdapterOptions = {}) {
           };
         }
 
-        const buildingReservation = reservationsByBuilding.get(
-          proposed.buildingId,
-        );
+        const versionKey =
+          `${proposed.buildingId}\0${proposed.previousContractFingerprint}`;
+        const buildingReservation = reservationsByBuildingVersion.get(versionKey);
         if (buildingReservation) return { status: "buildingConflict" };
 
         const stored = cloneReservation(proposed);
         reservationsByRequest.set(requestKey, stored);
-        reservationsByBuilding.set(proposed.buildingId, stored);
+        reservationsByBuildingVersion.set(versionKey, stored);
         return { status: "acquired", reservation: cloneReservation(stored) };
       },
     ),
     updateRoot: vi.fn(async (patch) => {
       patches.push(patch);
-      if (options.persistReceipts === false) return;
+      await options.beforeUpdateRoot?.();
+      if (shouldFailUpdate) {
+        shouldFailUpdate = false;
+        throw new Error("simulated_crash_before_root_write");
+      }
+
       for (const [path, value] of Object.entries(patch)) {
+        if (path === `fieldPlatform/buildings/${BUILDING_ID}`) {
+          currentBuilding = cloneBuilding(value as ProjectionBuilding);
+        }
+        const buildingChild = new RegExp(
+          `^fieldPlatform/buildings/${BUILDING_ID}/(managementContract|updatedAt|updatedBy)$`,
+        ).exec(path);
+        if (buildingChild && currentBuilding !== null) {
+          currentBuilding = {
+            ...currentBuilding,
+            [buildingChild[1]]: value,
+          } as ProjectionBuilding;
+        }
         const match = /^fieldPlatform\/managementContractRequests\/([^/]+)\/([^/]+)$/.exec(
           path,
         );
-        if (match) {
+        if (match && options.persistReceipts !== false) {
           receipts.set(`${match[1]}\0${match[2]}`, value as ContractRequestReceipt);
         }
       }
@@ -189,7 +241,11 @@ function createInMemoryAdapter(options: AdapterOptions = {}) {
     patches,
     receipts,
     reservationsByRequest,
-    reservationsByBuilding,
+    reservationsByBuildingVersion,
+    getCurrentBuilding: () => cloneBuilding(currentBuilding),
+    setCurrentBuilding: (building: ProjectionBuilding | null) => {
+      currentBuilding = cloneBuilding(building);
+    },
   };
 }
 
@@ -259,28 +315,32 @@ describe("setManagementContractStatusCore", () => {
     const auditPaths = Object.keys(patch).filter((path) =>
       path.startsWith("fieldPlatform/auditLogs/"),
     );
-    expect(Object.keys(patch)).toHaveLength(4);
+    expect(Object.keys(patch)).toHaveLength(6);
     expect(auditPaths).toHaveLength(1);
     expect(new Set(Object.keys(patch))).toEqual(
       new Set([
-        `fieldPlatform/buildings/${BUILDING_ID}`,
+        `fieldPlatform/buildings/${BUILDING_ID}/managementContract`,
+        `fieldPlatform/buildings/${BUILDING_ID}/updatedAt`,
+        `fieldPlatform/buildings/${BUILDING_ID}/updatedBy`,
         auditPaths[0],
         `fieldPlatform/mapProjections/${BUILDING_ID}`,
         `fieldPlatform/managementContractRequests/${adminActor.uid}/${input.requestId}`,
       ]),
     );
 
-    expect(patch[`fieldPlatform/buildings/${BUILDING_ID}`]).toEqual({
-      ...buildingWith("pending"),
-      managementContract: {
-        status: "active",
-        startedOn: "2026-08-09",
-        updatedAt: NOW,
-        updatedBy: adminActor.uid,
-      },
+    expect(patch).not.toHaveProperty(`fieldPlatform/buildings/${BUILDING_ID}`);
+    expect(
+      patch[`fieldPlatform/buildings/${BUILDING_ID}/managementContract`],
+    ).toEqual({
+      status: "active",
+      startedOn: "2026-08-09",
       updatedAt: NOW,
       updatedBy: adminActor.uid,
     });
+    expect(patch[`fieldPlatform/buildings/${BUILDING_ID}/updatedAt`]).toBe(NOW);
+    expect(patch[`fieldPlatform/buildings/${BUILDING_ID}/updatedBy`]).toBe(
+      adminActor.uid,
+    );
     expect(patch[auditPaths[0]]).toMatchObject({
       id: auditPaths[0].slice("fieldPlatform/auditLogs/".length),
       actorId: adminActor.uid,
@@ -320,6 +380,45 @@ describe("setManagementContractStatusCore", () => {
     });
   });
 
+  it("preserves private, created, history, and post-read unrelated building children", async () => {
+    const source = buildingWith("pending") as StoredBuilding & {
+      unrelatedEdit?: string;
+    };
+    let afterRead = false;
+    const adapter = createInMemoryAdapter({
+      building: source,
+      afterBuildingRead: async () => {
+        if (afterRead) return;
+        afterRead = true;
+        const current = adapter.getCurrentBuilding() as StoredBuilding & {
+          unrelatedEdit?: string;
+        };
+        adapter.setCurrentBuilding({
+          ...current,
+          unrelatedEdit: "written-after-read",
+        });
+      },
+    });
+
+    await setManagementContractStatusCore(
+      { ...inputFor("active"), startedOn: "2026-08-09" },
+      adminActor,
+      adapter.dependencies,
+    );
+
+    const persisted = adapter.getCurrentBuilding() as StoredBuilding & {
+      unrelatedEdit?: string;
+    };
+    expect(persisted.contractHistory).toEqual(source.contractHistory);
+    expect(persisted.createdAt).toBe(source.createdAt);
+    expect(persisted.createdBy).toBe(source.createdBy);
+    expect(persisted.ownerPhone).toBe(source.ownerPhone);
+    expect(persisted.unrelatedEdit).toBe("written-after-read");
+    expect(adapter.patches[0]).not.toHaveProperty(
+      `fieldPlatform/buildings/${BUILDING_ID}`,
+    );
+  });
+
   it("requires a valid activation date for a first activation", async () => {
     for (const startedOn of [undefined, "2026-02-30", "09-08-2026"]) {
       const { dependencies } = createInMemoryAdapter();
@@ -333,6 +432,39 @@ describe("setManagementContractStatusCore", () => {
     }
   });
 
+  it("rejects an end date earlier than the preserved contract start", async () => {
+    const { dependencies } = createInMemoryAdapter({
+      building: buildingWith("active"),
+    });
+
+    await expect(
+      setManagementContractStatusCore(
+        { ...inputFor("ended"), endedOn: "2026-06-30" },
+        adminActor,
+        dependencies,
+      ),
+    ).rejects.toThrow("field_management_transition_invalid");
+    expect(dependencies.reserveTransition).not.toHaveBeenCalled();
+    expect(dependencies.updateRoot).not.toHaveBeenCalled();
+  });
+
+  it.each(["2026-07-01", "2026-12-31"])(
+    "accepts the chronological end date %s",
+    async (endedOn) => {
+      const { dependencies } = createInMemoryAdapter({
+        building: buildingWith("active"),
+      });
+
+      await expect(
+        setManagementContractStatusCore(
+          { ...inputFor("ended"), endedOn },
+          adminActor,
+          dependencies,
+        ),
+      ).resolves.toEqual({ buildingId: BUILDING_ID, status: "ended" });
+    },
+  );
+
   it("ends an active contract while retaining building history and removing its projection", async () => {
     const source = buildingWith("active");
     const { dependencies, patches } = createInMemoryAdapter({ building: source });
@@ -344,18 +476,16 @@ describe("setManagementContractStatusCore", () => {
     );
 
     expect(result).toEqual({ buildingId: BUILDING_ID, status: "ended" });
-    expect(patches[0][`fieldPlatform/buildings/${BUILDING_ID}`]).toEqual({
-      ...source,
-      managementContract: {
-        status: "ended",
-        startedOn: "2026-07-01",
-        endedOn: "2026-12-31",
-        updatedAt: NOW,
-        updatedBy: adminActor.uid,
-      },
+    expect(
+      patches[0][`fieldPlatform/buildings/${BUILDING_ID}/managementContract`],
+    ).toEqual({
+      status: "ended",
+      startedOn: "2026-07-01",
+      endedOn: "2026-12-31",
       updatedAt: NOW,
       updatedBy: adminActor.uid,
     });
+    expect(patches[0]).not.toHaveProperty(`fieldPlatform/buildings/${BUILDING_ID}`);
     expect(patches[0][`fieldPlatform/mapProjections/${BUILDING_ID}`]).toBeNull();
     expect(dependencies.getListings).not.toHaveBeenCalled();
     expect(dependencies.getMedia).not.toHaveBeenCalled();
@@ -372,17 +502,16 @@ describe("setManagementContractStatusCore", () => {
       dependencies,
     );
 
-    expect(patches[0][`fieldPlatform/buildings/${BUILDING_ID}`]).toMatchObject({
-      managementContract: {
-        status: "paused",
-        startedOn: "2026-07-01",
-        updatedAt: NOW,
-        updatedBy: adminActor.uid,
-      },
+    expect(
+      patches[0][`fieldPlatform/buildings/${BUILDING_ID}/managementContract`],
+    ).toEqual({
+      status: "paused",
+      startedOn: "2026-07-01",
+      updatedAt: NOW,
+      updatedBy: adminActor.uid,
     });
     expect(
-      (patches[0][`fieldPlatform/buildings/${BUILDING_ID}`] as StoredBuilding)
-        .managementContract,
+      patches[0][`fieldPlatform/buildings/${BUILDING_ID}/managementContract`],
     ).not.toHaveProperty("endedOn");
   });
 
@@ -401,13 +530,13 @@ describe("setManagementContractStatusCore", () => {
         dependencies,
       );
 
-      expect(patches[0][`fieldPlatform/buildings/${BUILDING_ID}`]).toMatchObject({
-        managementContract: {
-          status: "active",
-          startedOn: expected,
-          updatedAt: NOW,
-          updatedBy: adminActor.uid,
-        },
+      expect(
+        patches[0][`fieldPlatform/buildings/${BUILDING_ID}/managementContract`],
+      ).toEqual({
+        status: "active",
+        startedOn: expected,
+        updatedAt: NOW,
+        updatedBy: adminActor.uid,
       });
     }
   });
@@ -502,6 +631,40 @@ describe("setManagementContractStatusCore", () => {
     expect(dependencies.updateRoot).not.toHaveBeenCalled();
   });
 
+  it.each(["not-a-timestamp", "2026-08-01T09:00:00Z", "2026-08-01"])(
+    "rejects the non-canonical stored contract timestamp %s",
+    async (updatedAt) => {
+      const building = buildingWith("pending");
+      building.managementContract.updatedAt = updatedAt;
+      const { dependencies } = createInMemoryAdapter({ building });
+
+      await expect(
+        setManagementContractStatusCore(
+          { ...inputFor("active"), startedOn: "2026-08-09" },
+          adminActor,
+          dependencies,
+        ),
+      ).rejects.toThrow("field_management_transition_invalid");
+      expect(dependencies.reserveTransition).not.toHaveBeenCalled();
+    },
+  );
+
+  it.each(["not-a-timestamp", "2026-08-09T12:34:56Z", "2026-08-09"])(
+    "rejects the non-canonical dependency timestamp %s",
+    async (now) => {
+      const { dependencies } = createInMemoryAdapter({ now: () => now });
+
+      await expect(
+        setManagementContractStatusCore(
+          { ...inputFor("active"), startedOn: "2026-08-09" },
+          adminActor,
+          dependencies,
+        ),
+      ).rejects.toThrow("field_management_transition_invalid");
+      expect(dependencies.updateRoot).not.toHaveBeenCalled();
+    },
+  );
+
   it.each([
     ["unsafe request ID", { ...inputFor("active"), requestId: "bad/request", startedOn: "2026-08-09" }],
     ["unsafe building ID", { ...inputFor("active"), buildingId: "bad#building", startedOn: "2026-08-09" }],
@@ -531,6 +694,8 @@ describe("setManagementContractStatusCore", () => {
       adminActor,
       dependencies,
     );
+    const buildingReadsAfterFirst = vi.mocked(dependencies.getBuilding).mock
+      .calls.length;
     const second = await setManagementContractStatusCore(
       { ...input },
       adminActor,
@@ -538,10 +703,63 @@ describe("setManagementContractStatusCore", () => {
     );
 
     expect(second).toEqual(first);
-    expect(dependencies.getBuilding).toHaveBeenCalledTimes(1);
+    expect(dependencies.getBuilding).toHaveBeenCalledTimes(
+      buildingReadsAfterFirst,
+    );
     expect(dependencies.reserveTransition).toHaveBeenCalledTimes(1);
     expect(dependencies.updateRoot).toHaveBeenCalledTimes(1);
     expect(dependencies.now).toHaveBeenCalledTimes(1);
+  });
+
+  it.each([
+    ["non-record", "receipt"],
+    ["missing fields", {}],
+  ])("rejects a malformed completed receipt: %s", async (_label, malformed) => {
+    const adapter = createInMemoryAdapter();
+    const input = { ...inputFor("active"), startedOn: "2026-08-09" };
+    await setManagementContractStatusCore(input, adminActor, adapter.dependencies);
+    adapter.receipts.set(
+      `${adminActor.uid}\0${input.requestId}`,
+      malformed as ContractRequestReceipt,
+    );
+
+    await expect(
+      setManagementContractStatusCore(input, adminActor, adapter.dependencies),
+    ).rejects.toThrow("field_management_transition_invalid");
+  });
+
+  it.each([
+    ["wrong building", { buildingId: "building-2", status: "active" }],
+    ["wrong status", { buildingId: BUILDING_ID, status: "paused" }],
+  ])("rejects a completed receipt with the %s result", async (_label, result) => {
+    const adapter = createInMemoryAdapter();
+    const input = { ...inputFor("active"), startedOn: "2026-08-09" };
+    await setManagementContractStatusCore(input, adminActor, adapter.dependencies);
+    const key = `${adminActor.uid}\0${input.requestId}`;
+    const receipt = adapter.receipts.get(key);
+    expect(receipt).toBeDefined();
+    adapter.receipts.set(key, {
+      ...receipt!,
+      result: result as ContractRequestReceipt["result"],
+    });
+
+    await expect(
+      setManagementContractStatusCore(input, adminActor, adapter.dependencies),
+    ).rejects.toThrow("field_management_transition_invalid");
+  });
+
+  it("rejects a completed receipt with a non-canonical completedAt timestamp", async () => {
+    const adapter = createInMemoryAdapter();
+    const input = { ...inputFor("active"), startedOn: "2026-08-09" };
+    await setManagementContractStatusCore(input, adminActor, adapter.dependencies);
+    const key = `${adminActor.uid}\0${input.requestId}`;
+    const receipt = adapter.receipts.get(key);
+    expect(receipt).toBeDefined();
+    adapter.receipts.set(key, { ...receipt!, completedAt: "2026-08-09T12:34:56Z" });
+
+    await expect(
+      setManagementContractStatusCore(input, adminActor, adapter.dependencies),
+    ).rejects.toThrow("field_management_transition_invalid");
   });
 
   it("rejects reuse of a completed request ID for a different semantic transition", async () => {
@@ -551,6 +769,8 @@ describe("setManagementContractStatusCore", () => {
       adminActor,
       dependencies,
     );
+    const buildingReadsAfterFirst = vi.mocked(dependencies.getBuilding).mock
+      .calls.length;
 
     await expect(
       setManagementContractStatusCore(
@@ -559,8 +779,190 @@ describe("setManagementContractStatusCore", () => {
         dependencies,
       ),
     ).rejects.toThrow("field_request_id_conflict");
-    expect(dependencies.getBuilding).toHaveBeenCalledTimes(1);
+    expect(dependencies.getBuilding).toHaveBeenCalledTimes(
+      buildingReadsAfterFirst,
+    );
     expect(dependencies.updateRoot).toHaveBeenCalledTimes(1);
+  });
+
+  it("rejects an acquired reservation with a non-canonical claimedAt", async () => {
+    const adapter = createInMemoryAdapter();
+    adapter.dependencies.reserveTransition = vi.fn(async (proposed) => ({
+      status: "acquired" as const,
+      reservation: {
+        ...proposed,
+        claimedAt: "2026-08-09T12:34:56Z",
+      },
+    }));
+
+    await expect(
+      setManagementContractStatusCore(
+        { ...inputFor("active"), startedOn: "2026-08-09" },
+        adminActor,
+        adapter.dependencies,
+      ),
+    ).rejects.toThrow("field_management_transition_invalid");
+    expect(adapter.dependencies.updateRoot).not.toHaveBeenCalled();
+  });
+
+  it("recovers when a stale receipt miss races an identical committed transition", async () => {
+    const adapter = createInMemoryAdapter();
+    const input = { ...inputFor("active"), startedOn: "2026-08-09" };
+    let releaseStaleReceipt: (() => void) | undefined;
+    let announceStaleReceipt: (() => void) | undefined;
+    const staleReceiptRead = new Promise<void>((resolve) => {
+      announceStaleReceipt = resolve;
+    });
+    const waitForCommit = new Promise<void>((resolve) => {
+      releaseStaleReceipt = resolve;
+    });
+    let receiptReads = 0;
+    adapter.dependencies.getReceipt = vi.fn(async (uid, requestId) => {
+      receiptReads += 1;
+      const snapshot =
+        adapter.receipts.get(`${uid}\0${requestId}`) ?? null;
+      if (receiptReads === 1) {
+        announceStaleReceipt?.();
+        await waitForCommit;
+      }
+      return snapshot;
+    });
+
+    const callB = setManagementContractStatusCore(
+      input,
+      adminActor,
+      adapter.dependencies,
+    );
+    await staleReceiptRead;
+    const callAResult = await setManagementContractStatusCore(
+      { ...input },
+      adminActor,
+      adapter.dependencies,
+    );
+    releaseStaleReceipt?.();
+    const callBResult = await callB;
+
+    expect(callBResult).toEqual(callAResult);
+    expect(adapter.dependencies.getReservation).toHaveBeenCalled();
+    expect(adapter.dependencies.updateRoot).toHaveBeenCalledTimes(1);
+    expect(
+      adapter.getCurrentBuilding()?.managementContract,
+    ).toMatchObject({ status: "active", updatedAt: NOW });
+  });
+
+  it("replays an identical patch from a self-sufficient reservation after a crash before root write", async () => {
+    const adapter = createInMemoryAdapter({ failUpdateRootOnce: true });
+    const input = { ...inputFor("active"), startedOn: "2026-08-09" };
+
+    await expect(
+      setManagementContractStatusCore(input, adminActor, adapter.dependencies),
+    ).rejects.toThrow("simulated_crash_before_root_write");
+    const stored = adapter.reservationsByRequest.get(
+      `${adminActor.uid}\0${input.requestId}`,
+    );
+    expect(stored).toMatchObject({
+      claimedAt: NOW,
+      previousContract: {
+        status: "pending",
+        startedOn: "2026-07-01",
+        updatedAt: PREVIOUS_UPDATE,
+      },
+      nextContract: {
+        status: "active",
+        startedOn: "2026-08-09",
+        updatedAt: NOW,
+        updatedBy: adminActor.uid,
+      },
+    });
+
+    await expect(
+      setManagementContractStatusCore(
+        { ...input },
+        adminActor,
+        adapter.dependencies,
+      ),
+    ).resolves.toEqual({ buildingId: BUILDING_ID, status: "active" });
+    expect(adapter.dependencies.getReservation).toHaveBeenCalled();
+    expect(adapter.dependencies.updateRoot).toHaveBeenCalledTimes(2);
+    expect(adapter.patches[1]).toEqual(adapter.patches[0]);
+  });
+
+  it.each([
+    [
+      "different hash",
+      (reservation: ContractTransitionReservation) => {
+        reservation.requestHash = "0".repeat(64);
+      },
+      "field_request_id_conflict",
+    ],
+    [
+      "different building",
+      (reservation: ContractTransitionReservation) => {
+        reservation.buildingId = "building-2";
+      },
+      "field_management_transition_invalid",
+    ],
+    [
+      "different target status",
+      (reservation: ContractTransitionReservation) => {
+        reservation.result.status = "paused";
+      },
+      "field_management_transition_invalid",
+    ],
+  ])(
+    "rejects a stored reservation with a %s",
+    async (_label, mutate, expectedError) => {
+      const adapter = createInMemoryAdapter({ failUpdateRootOnce: true });
+      const input = { ...inputFor("active"), startedOn: "2026-08-09" };
+      await expect(
+        setManagementContractStatusCore(input, adminActor, adapter.dependencies),
+      ).rejects.toThrow("simulated_crash_before_root_write");
+      const stored = adapter.reservationsByRequest.get(
+        `${adminActor.uid}\0${input.requestId}`,
+      );
+      expect(stored).toBeDefined();
+      mutate(stored!);
+
+      await expect(
+        setManagementContractStatusCore(
+          { ...input },
+          adminActor,
+          adapter.dependencies,
+        ),
+      ).rejects.toThrow(expectedError);
+      expect(adapter.dependencies.updateRoot).toHaveBeenCalledTimes(1);
+    },
+  );
+
+  it("does not let an old reservation roll back a genuinely newer contract", async () => {
+    const adapter = createInMemoryAdapter({ persistReceipts: false });
+    const original = { ...inputFor("active"), startedOn: "2026-08-09" };
+    await setManagementContractStatusCore(
+      original,
+      adminActor,
+      adapter.dependencies,
+    );
+    await setManagementContractStatusCore(
+      inputFor("paused", "request-pause-after-active"),
+      adminActor,
+      adapter.dependencies,
+    );
+    expect(adapter.dependencies.reserveTransition).toHaveBeenCalledTimes(2);
+    expect(adapter.getCurrentBuilding()?.managementContract).toMatchObject({
+      status: "paused",
+    });
+
+    const result = await setManagementContractStatusCore(
+      { ...original },
+      adminActor,
+      adapter.dependencies,
+    );
+
+    expect(result).toEqual({ buildingId: BUILDING_ID, status: "active" });
+    expect(adapter.dependencies.updateRoot).toHaveBeenCalledTimes(2);
+    expect(adapter.getCurrentBuilding()?.managementContract).toMatchObject({
+      status: "paused",
+    });
   });
 
   it("atomically allows only one of two different transitions for one building", async () => {
