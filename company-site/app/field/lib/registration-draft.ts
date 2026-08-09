@@ -155,6 +155,12 @@ export interface StoredRegistrationDraft {
   value: BuildingWizardDraft;
 }
 
+export interface PreparedRegistrationDraft {
+  envelope: StoredRegistrationDraft;
+  legacyKeyToRemove: string | null;
+  needsInitialSave: boolean;
+}
+
 export type RegistrationDraftStorage = Pick<Storage, "getItem" | "setItem" | "removeItem">;
 
 export interface RegistrationDraftInitial {
@@ -228,12 +234,12 @@ function isBlockedString(value: string): boolean {
   }
 
   const compact = trimmed.replace(/\s+/g, "");
-  if (compact.length < 64 || !/^[A-Za-z0-9+/]+={0,2}$/.test(compact)) {
+  if (compact.length < 16 || !/^[A-Za-z0-9+/]+={0,2}$/.test(compact)) {
     return false;
   }
 
   const hasBinaryMagic = /^(?:iVBORw0KGgo|\/9j\/|R0lGOD|JVBERi0|UklGR|UEsDB)/.test(compact);
-  return hasBinaryMagic || compact.length >= 256;
+  return hasBinaryMagic;
 }
 
 function ownerNoteDraftValue(value: unknown, draftId: string): OwnerNoteDraft | null {
@@ -486,6 +492,13 @@ export function getOrCreateActiveWizardDraftId(
   return created;
 }
 
+export function readActiveWizardDraftId(
+  storage: RegistrationDraftStorage,
+  uid: string,
+): string | null {
+  return storage.getItem(activeWizardDraftKey(uid));
+}
+
 function parseRecord(raw: string | null): Record<string, unknown> | null {
   if (!raw) return null;
   try {
@@ -510,7 +523,7 @@ function scopedDraftValue(
   };
 }
 
-export function loadWizardDraft(
+export function prepareWizardDraft(
   storage: RegistrationDraftStorage,
   options: {
     uid: string;
@@ -520,7 +533,7 @@ export function loadWizardDraft(
     idFactory?: Parameters<typeof createRegistrationDraft>[1];
     now?: () => string;
   },
-): StoredRegistrationDraft {
+): PreparedRegistrationDraft {
   const key = wizardDraftStorageKey(options.uid, options.draftId);
   let generatedId = 0;
   const idFactory = options.idFactory ??
@@ -528,10 +541,14 @@ export function loadWizardDraft(
   const scoped = parseRecord(storage.getItem(key));
   if (scoped?.ownerUid === options.uid && scoped.draftId === options.draftId) {
     return {
-      ownerUid: options.uid,
-      draftId: options.draftId,
-      updatedAt: typeof scoped.updatedAt === "string" ? scoped.updatedAt : "",
-      value: scopedDraftValue(scoped.value, options.draftId, options.initial, idFactory),
+      envelope: {
+        ownerUid: options.uid,
+        draftId: options.draftId,
+        updatedAt: typeof scoped.updatedAt === "string" ? scoped.updatedAt : "",
+        value: scopedDraftValue(scoped.value, options.draftId, options.initial, idFactory),
+      },
+      legacyKeyToRemove: null,
+      needsInitialSave: false,
     };
   }
 
@@ -544,9 +561,25 @@ export function loadWizardDraft(
     updatedAt: (options.now ?? (() => new Date().toISOString()))(),
     value: migrated,
   };
-  storage.setItem(key, JSON.stringify(envelope));
-  if (legacy && options.legacyKey) storage.removeItem(options.legacyKey);
-  return envelope;
+  return {
+    envelope,
+    legacyKeyToRemove: legacy && options.legacyKey ? options.legacyKey : null,
+    needsInitialSave: true,
+  };
+}
+
+export function loadWizardDraft(
+  storage: RegistrationDraftStorage,
+  options: Parameters<typeof prepareWizardDraft>[1],
+): StoredRegistrationDraft {
+  const prepared = prepareWizardDraft(storage, options);
+  if (prepared.needsInitialSave) {
+    saveWizardDraft(storage, prepared.envelope, prepared.envelope.updatedAt);
+  }
+  if (prepared.legacyKeyToRemove) {
+    storage.removeItem(prepared.legacyKeyToRemove);
+  }
+  return prepared.envelope;
 }
 
 export function saveWizardDraft(

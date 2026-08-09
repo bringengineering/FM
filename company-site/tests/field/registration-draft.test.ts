@@ -223,14 +223,20 @@ describe("wizard draft persistence", () => {
     expect(JSON.stringify(migrated)).not.toContain("blob:");
   });
 
-  it("projects the persisted envelope and never serializes binary fields or base64 payloads", () => {
+  it("projects the persisted envelope without serializing binary fields or erasing prose", () => {
     const storage = memoryStorage();
     const envelope = loadWizardDraft(storage, {
       uid: "staff-a",
       draftId: "draft-binary",
       idFactory: () => "request-binary",
     });
-    envelope.value.listing.locationNote = "A".repeat(300);
+    const longAsciiProse = (
+      "owner requested repair before tenant move in and staff should confirm completion "
+    ).repeat(8).trim();
+    envelope.value.listing.locationNote = longAsciiProse;
+    envelope.value.listing.conditionNote = (
+      "건물주가 입주 전 수리 완료 여부를 확인해 달라고 요청했습니다. "
+    ).repeat(20).trim();
     envelope.value.ownerNoteDrafts = [{
       localId: "note_12345678",
       draftId: "draft-binary",
@@ -253,7 +259,8 @@ describe("wizard draft persistence", () => {
       body: "valid note",
       recordedAt: "2026-08-09T01:00:00.000Z",
     });
-    expect(serialized).not.toContain("A".repeat(300));
+    expect(serialized).toContain(longAsciiProse);
+    expect(serialized).toContain("건물주가 입주 전 수리 완료 여부");
     expect(serialized).not.toContain("attachment");
     expect(serialized).not.toContain("clientCreatedAt");
   });
@@ -326,6 +333,42 @@ describe("registration draft migration", () => {
     expect(serializedInput).not.toContain(dataUrl);
     expect(serializedInput).not.toContain(blobUrl);
     expect(serializedInput).not.toContain(bareBase64);
+  });
+
+  it("rejects short and long bare binary magic strings but preserves long ASCII prose", () => {
+    const shortPngPayload = "iVBORw0KGgoAAAANSUhE";
+    const longJpegPayload = `/9j/${"A".repeat(300)}`;
+    const longAsciiProse = (
+      "owner asked staff to confirm parking access and repair the entrance before move in "
+    ).repeat(8).trim();
+
+    const draft = migrateRegistrationDraft({
+      building: {
+        purpose: shortPngPayload,
+        jibunAddress: longAsciiProse,
+      },
+      listing: {
+        conditionNote: longJpegPayload,
+        locationNote: longAsciiProse,
+      },
+    }, undefined, () => "fixed-id");
+
+    expect(draft.building.purpose).toBe("");
+    expect(draft.listing.conditionNote).toBe("");
+    expect(draft.building.jibunAddress).toBe(longAsciiProse);
+    expect(draft.listing.locationNote).toBe(longAsciiProse);
+  });
+
+  it("rejects Blob and File objects from string fields", () => {
+    const draft = migrateRegistrationDraft({
+      building: {
+        name: new Blob(["private binary"]),
+        purpose: new File(["private binary"], "private.jpg", { type: "image/jpeg" }),
+      },
+    }, undefined, () => "fixed-id");
+
+    expect(draft.building.name).toBe("");
+    expect(draft.building.purpose).toBe("");
   });
 
   it("preserves address coordinates and defaults management contract fields", () => {

@@ -1,4 +1,5 @@
-import { useState } from "react";
+import { StrictMode, useState } from "react";
+import { renderToString } from "react-dom/server";
 import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 
@@ -12,7 +13,10 @@ import ManagementContractQueue, {
   createApprovalRequestId,
 } from "../../app/field/components/ManagementContractQueue";
 import type { FieldSession } from "../../app/field/lib/auth.client";
-import { wizardDraftStorageKey } from "../../app/field/lib/registration-draft";
+import {
+  activeWizardDraftKey,
+  wizardDraftStorageKey,
+} from "../../app/field/lib/registration-draft";
 import type { Building } from "../../app/field/lib/types";
 
 const staffSession = {
@@ -509,6 +513,134 @@ describe("BuildingWizard", () => {
     } finally {
       setItem.mockRestore();
     }
+  });
+
+  it("keeps a migrated legacy draft in memory when the scoped write fails", async () => {
+    const legacyDraftKey = "legacy-write-failure";
+    const values = new Map<string, string>([[legacyDraftKey, JSON.stringify({
+      building: { name: "legacy building" },
+    })]]);
+    const storage = {
+      getItem: (key: string) => values.get(key) ?? null,
+      setItem: (key: string, value: string) => {
+        if (key !== legacyDraftKey) throw new Error("quota");
+        values.set(key, value);
+      },
+      removeItem: (key: string) => { values.delete(key); },
+    };
+
+    render(
+      <BuildingWizard
+        session={staffSession}
+        draftId="legacy-write-draft"
+        legacyDraftKey={legacyDraftKey}
+        storage={storage}
+      />,
+    );
+
+    const name = screen.getByDisplayValue("legacy building");
+    fireEvent.change(name, { target: { value: "edited legacy building" } });
+
+    expect(name).toHaveValue("edited legacy building");
+    expect(await screen.findByText("로컬 자동저장 실패")).toBeInTheDocument();
+    expect(values.get(legacyDraftKey)).toContain("legacy building");
+  });
+
+  it("keeps a migrated legacy draft in memory when legacy cleanup fails", async () => {
+    const legacyDraftKey = "legacy-cleanup-failure";
+    const values = new Map<string, string>([[legacyDraftKey, JSON.stringify({
+      building: { name: "cleanup legacy building" },
+    })]]);
+    const storage = {
+      getItem: (key: string) => values.get(key) ?? null,
+      setItem: (key: string, value: string) => { values.set(key, value); },
+      removeItem: (key: string) => {
+        if (key === legacyDraftKey) throw new Error("cleanup failed");
+        values.delete(key);
+      },
+    };
+
+    render(
+      <BuildingWizard
+        session={staffSession}
+        draftId="legacy-cleanup-draft"
+        legacyDraftKey={legacyDraftKey}
+        storage={storage}
+      />,
+    );
+
+    const name = screen.getByDisplayValue("cleanup legacy building");
+    fireEvent.change(name, { target: { value: "edited cleanup legacy building" } });
+
+    expect(name).toHaveValue("edited cleanup legacy building");
+    expect(await screen.findByText("로컬 자동저장 실패")).toBeInTheDocument();
+    await waitFor(() => {
+      const stored = values.get(
+        wizardDraftStorageKey(staffSession.uid, "legacy-cleanup-draft"),
+      );
+      expect(JSON.parse(stored || "{}").value.building.name)
+        .toBe("edited cleanup legacy building");
+    });
+    expect(values.get(legacyDraftKey)).toContain("cleanup legacy building");
+  });
+
+  it("leaves an uncommitted render untouched and commits one draft safely in StrictMode", async () => {
+    const legacyDraftKey = "legacy-render-boundary";
+    const values = new Map<string, string>([[legacyDraftKey, JSON.stringify({
+      building: { name: "render boundary building" },
+    })]]);
+    const mutations: string[] = [];
+    const storage = {
+      getItem: (key: string) => values.get(key) ?? null,
+      setItem: (key: string, value: string) => {
+        mutations.push(`set:${key}`);
+        values.set(key, value);
+      },
+      removeItem: (key: string) => {
+        mutations.push(`remove:${key}`);
+        values.delete(key);
+      },
+    };
+    const idFactory = () => "strict-mode-draft";
+
+    renderToString(
+      <BuildingWizard
+        session={staffSession}
+        legacyDraftKey={legacyDraftKey}
+        storage={storage}
+        idFactory={idFactory}
+      />,
+    );
+
+    expect(mutations).toEqual([]);
+    expect(values.get(legacyDraftKey)).toContain("render boundary building");
+    expect(values.get(activeWizardDraftKey(staffSession.uid))).toBeUndefined();
+    expect(values.get(
+      wizardDraftStorageKey(staffSession.uid, "strict-mode-draft"),
+    )).toBeUndefined();
+
+    render(
+      <StrictMode>
+        <BuildingWizard
+          session={staffSession}
+          legacyDraftKey={legacyDraftKey}
+          storage={storage}
+          idFactory={idFactory}
+        />
+      </StrictMode>,
+    );
+
+    expect(await screen.findByDisplayValue("render boundary building")).toBeInTheDocument();
+    await waitFor(() => {
+      expect(values.get(activeWizardDraftKey(staffSession.uid)))
+        .toBe("strict-mode-draft");
+      expect(values.get(
+        wizardDraftStorageKey(staffSession.uid, "strict-mode-draft"),
+      )).toBeDefined();
+      expect(values.get(legacyDraftKey)).toBeUndefined();
+    });
+    expect([...values.keys()].filter((key) => key.startsWith("bring-field-wizard:v3:")))
+      .toEqual([wizardDraftStorageKey(staffSession.uid, "strict-mode-draft")]);
   });
 
   it("autosaves and restores a draft after remount", async () => {

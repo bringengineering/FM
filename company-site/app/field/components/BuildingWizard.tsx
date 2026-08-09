@@ -10,9 +10,10 @@ import {
 
 import {
   LEGACY_WIZARD_DRAFT_KEY,
+  activeWizardDraftKey,
   createRegistrationDraft,
-  getOrCreateActiveWizardDraftId,
-  loadWizardDraft,
+  prepareWizardDraft,
+  readActiveWizardDraftId,
   RegistrationDraftCompatibilityError,
   saveWizardDraft,
   type BuildingDraftState,
@@ -165,22 +166,24 @@ export default function BuildingWizard({
   const [resolvedDraftId] = useState(() => {
     if (draftId) return draftId;
     try {
-      return getOrCreateActiveWizardDraftId(resolvedStorage, session.uid, idFactory);
+      return readActiveWizardDraftId(resolvedStorage, session.uid) || idFactory();
     } catch {
       return idFactory();
     }
   });
   const [initialLoad] = useState(() => {
     try {
+      const prepared = prepareWizardDraft(resolvedStorage, {
+        uid: session.uid,
+        draftId: resolvedDraftId,
+        legacyKey: legacyDraftKey,
+        initial: initialDraft,
+        idFactory,
+        now,
+      });
       return {
-        envelope: loadWizardDraft(resolvedStorage, {
-          uid: session.uid,
-          draftId: resolvedDraftId,
-          legacyKey: legacyDraftKey,
-          initial: initialDraft,
-          idFactory,
-          now,
-        }),
+        envelope: prepared.envelope,
+        legacyKeyToRemove: prepared.legacyKeyToRemove,
         incompatibleDraft: false,
         storageLoadFailed: false,
       };
@@ -194,6 +197,7 @@ export default function BuildingWizard({
           idFactory,
           now,
         ),
+        legacyKeyToRemove: null,
         incompatibleDraft,
         storageLoadFailed: !incompatibleDraft,
       };
@@ -228,7 +232,13 @@ export default function BuildingWizard({
     }
     let status: "로컬 자동저장 완료" | "로컬 자동저장 실패";
     try {
+      if (!draftId) {
+        resolvedStorage.setItem(activeWizardDraftKey(session.uid), resolvedDraftId);
+      }
       saveWizardDraft(resolvedStorage, envelope, now());
+      if (initialLoad.legacyKeyToRemove) {
+        resolvedStorage.removeItem(initialLoad.legacyKeyToRemove);
+      }
       status = "로컬 자동저장 완료";
     } catch {
       status = "로컬 자동저장 실패";
@@ -239,7 +249,17 @@ export default function BuildingWizard({
     return () => {
       active = false;
     };
-  }, [draft, envelope, incompatibleDraft, initialLoad, now, resolvedStorage]);
+  }, [
+    draft,
+    draftId,
+    envelope,
+    incompatibleDraft,
+    initialLoad,
+    now,
+    resolvedDraftId,
+    resolvedStorage,
+    session.uid,
+  ]);
 
   function updateDraft(
     updater: (current: BuildingWizardDraft) => BuildingWizardDraft,
