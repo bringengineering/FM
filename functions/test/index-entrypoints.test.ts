@@ -2,9 +2,11 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const registrations = vi.hoisted(() => {
   const transactionStates: unknown[] = [];
+  const transactionCurrent = { value: null as unknown };
   const databaseTransaction = vi.fn(
     async (update: (current: unknown) => unknown) => {
-      const state = update(null);
+      const state = update(transactionCurrent.value);
+      transactionCurrent.value = state;
       transactionStates.push(state);
       return {
         committed: true,
@@ -28,6 +30,7 @@ const registrations = vi.hoisted(() => {
     databaseTransaction,
     databaseRef: vi.fn(() => ({ transaction: databaseTransaction })),
     transactionStates,
+    transactionCurrent,
   };
 });
 
@@ -81,7 +84,7 @@ type DatabaseWriteHandler = (event: DatabaseWriteEvent) => Promise<void>;
 
 interface EventScopedProjectionDependencies {
   now(): string;
-  setProjection(buildingId: string, projection: null): Promise<void>;
+  setProjection(buildingId: string, projection: unknown): Promise<void>;
 }
 
 function registration(value: unknown): RegisteredEntrypoint {
@@ -102,6 +105,7 @@ beforeEach(() => {
   registrations.databaseRef.mockClear();
   registrations.databaseTransaction.mockClear();
   registrations.transactionStates.length = 0;
+  registrations.transactionCurrent.value = null;
 });
 
 describe("Firebase entrypoint metadata", () => {
@@ -169,7 +173,7 @@ describe("Firebase entrypoint metadata", () => {
     expect(registrations.onValueWritten).toHaveBeenCalledTimes(3);
   });
 
-  it("passes the building event time and revision to the projection rebuild", async () => {
+  it("rebuilds from transaction-current state instead of an obsolete pre-read candidate", async () => {
     await databaseHandler(
       entrypoints.rebuildMapProjectionOnBuildingWrite,
     )({
@@ -190,15 +194,47 @@ describe("Firebase entrypoint metadata", () => {
     const dependencies = call[1] as EventScopedProjectionDependencies;
     expect(dependencies.now()).toBe(EVENT_VERSION.eventTime);
 
-    await dependencies.setProjection("building-1", null);
+    registrations.transactionCurrent.value = {
+      buildings: {
+        "building-1": {
+          id: "building-1",
+          name: "Current paused building",
+          roadAddress: "1 Current-ro, Wonju",
+          latitude: 37.369,
+          longitude: 127.928,
+          managementContract: {
+            status: "paused",
+            startedOn: "2026-08-01",
+            updatedAt: "2026-08-09T12:00:03.000Z",
+            updatedBy: "admin-1",
+          },
+        },
+      },
+      listings: {},
+      media: {},
+    };
+    await dependencies.setProjection("building-1", {
+      buildingId: "building-1",
+      name: "Obsolete active projection",
+      roadAddress: "1 Old-ro, Wonju",
+      latitude: 37.369,
+      longitude: 127.928,
+      markerStatus: "managed",
+      vacancyCount: 0,
+      approvedRentSummary: "obsolete",
+      parkingSummary: "obsolete",
+      captureStatus: "notStarted",
+      updatedAt: "2026-08-09T12:00:01.000Z",
+    });
 
     expect(registrations.databaseRef).toHaveBeenCalledWith("fieldPlatform");
     expect(registrations.databaseTransaction).toHaveBeenCalledTimes(1);
-    expect(registrations.transactionStates[0]).toMatchObject({
-      mapProjectionVersions: {
-        "building-1": EVENT_VERSION,
-      },
-    });
+    expect(registrations.transactionStates[0]).not.toHaveProperty(
+      "mapProjections.building-1",
+    );
+    expect(registrations.transactionStates[0]).not.toHaveProperty(
+      "mapProjectionVersions",
+    );
   });
 
   it.each([
@@ -251,4 +287,59 @@ describe("Firebase entrypoint metadata", () => {
       ).toHaveBeenCalledWith("building-same", expect.any(Object));
     },
   );
+
+  it("ignores reversed CloudEvent IDs at the same timestamp", async () => {
+    const handler = databaseHandler(
+      entrypoints.rebuildMapProjectionOnBuildingWrite,
+    );
+    registrations.transactionCurrent.value = {
+      buildings: {
+        "building-1": {
+          id: "building-1",
+          name: "Authoritative same-time building",
+          roadAddress: "1 Current-ro, Wonju",
+          latitude: 37.369,
+          longitude: 127.928,
+          managementContract: {
+            status: "active",
+            startedOn: "2026-08-01",
+            updatedAt: "2026-08-09T12:00:06.000Z",
+            updatedBy: "admin-1",
+          },
+        },
+      },
+      listings: {},
+      media: {},
+    };
+
+    for (const id of ["zzzz-event", "aaaa-event"]) {
+      await handler({
+        id,
+        time: "2026-08-09T12:00:06.123456Z",
+        params: { buildingId: "building-1" },
+        data: {
+          before: { val: () => null },
+          after: { val: () => null },
+        },
+      });
+      const call = registrations.rebuildMapProjectionForBuilding.mock.calls.at(-1);
+      expect(call).toHaveLength(2);
+      await (call?.[1] as EventScopedProjectionDependencies).setProjection(
+        "building-1",
+        { name: `obsolete-${id}` },
+      );
+    }
+
+    expect(registrations.transactionCurrent.value).toMatchObject({
+      mapProjections: {
+        "building-1": {
+          name: "Authoritative same-time building",
+          updatedAt: "2026-08-09T12:00:06.123456Z",
+        },
+      },
+    });
+    expect(registrations.transactionCurrent.value).not.toHaveProperty(
+      "mapProjectionVersions",
+    );
+  });
 });

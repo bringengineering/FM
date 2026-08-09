@@ -16,15 +16,13 @@ import {
 } from "./auth/provision-field-user.js";
 import type {
   FieldActor,
-  FieldMapProjection,
   SaveFieldRegistrationInput,
 } from "./field/contracts.js";
 import {
-  reduceProjectionWrite,
+  reduceAuthoritativeProjectionRebuild,
   reduceRegistrationClaim,
   reduceTransitionClaim,
   reduceTransitionCommit,
-  type ProjectionWriteVersion,
 } from "./field/firebase-transaction-state.js";
 import type {
   ProjectionBuilding,
@@ -167,44 +165,30 @@ async function getMedia(buildingId: string): Promise<ProjectionMedia[]> {
   return snapshotValues<ProjectionMedia>(snapshot.val());
 }
 
-async function setProjectionWithVersion(
+async function rebuildProjectionFromAuthoritativeState(
   buildingId: string,
-  projection: FieldMapProjection | null,
-  version: ProjectionWriteVersion,
+  updatedAt: string,
 ): Promise<void> {
-  const input = { buildingId, projection, version };
-  const transaction = await adminDatabase.ref("fieldPlatform").transaction(
+  const input = { buildingId, updatedAt };
+  await adminDatabase.ref("fieldPlatform").transaction(
     (current) => {
-      const decision = reduceProjectionWrite(current, input);
-      return decision.write ? decision.state : undefined;
+      return reduceAuthoritativeProjectionRebuild(current, input).state;
     },
     undefined,
     false,
   );
-  const finalDecision = reduceProjectionWrite(
-    transaction.snapshot.val(),
-    input,
-  );
-  if (transaction.committed) {
-    if (finalDecision.status !== "stale") {
-      throw new Error("field_projection_state_invalid");
-    }
-    return;
-  }
-  if (finalDecision.status === "stale") return;
-  throw new Error("field_projection_state_invalid");
 }
 
-function projectionDependenciesForVersion(
-  version: ProjectionWriteVersion,
+function projectionDependenciesForEvent(
+  eventTime: string,
 ): RebuildMapProjectionDependencies {
   return {
     getBuilding,
     getListings,
     getMedia,
-    setProjection: (buildingId, projection) =>
-      setProjectionWithVersion(buildingId, projection, version),
-    now: () => version.eventTime,
+    setProjection: (buildingId, _projection) =>
+      rebuildProjectionFromAuthoritativeState(buildingId, eventTime),
+    now: () => eventTime,
   };
 }
 
@@ -419,13 +403,6 @@ function buildingIdsFromWriteValues(
   return [...buildingIds];
 }
 
-function projectionWriteVersion(event: {
-  id: string;
-  time: string;
-}): ProjectionWriteVersion {
-  return { eventTime: event.time, revision: event.id };
-}
-
 export const rebuildMapProjectionOnBuildingWrite = onValueWritten(
   {
     ref: "/fieldPlatform/buildings/{buildingId}",
@@ -435,9 +412,7 @@ export const rebuildMapProjectionOnBuildingWrite = onValueWritten(
   async (event) => {
     const buildingId = event.params.buildingId;
     if (!isPathSafeId(buildingId)) return;
-    const dependencies = projectionDependenciesForVersion(
-      projectionWriteVersion(event),
-    );
+    const dependencies = projectionDependenciesForEvent(event.time);
     await rebuildMapProjectionForBuilding(
       buildingId,
       dependencies,
@@ -456,8 +431,7 @@ export const rebuildMapProjectionOnListingWrite = onValueWritten(
       event.data.before.val(),
       event.data.after.val(),
     );
-    const version = projectionWriteVersion(event);
-    const dependencies = projectionDependenciesForVersion(version);
+    const dependencies = projectionDependenciesForEvent(event.time);
     await Promise.all(
       buildingIds.map((buildingId) =>
         rebuildMapProjectionForBuilding(
@@ -480,8 +454,7 @@ export const rebuildMapProjectionOnMediaWrite = onValueWritten(
       event.data.before.val(),
       event.data.after.val(),
     );
-    const version = projectionWriteVersion(event);
-    const dependencies = projectionDependenciesForVersion(version);
+    const dependencies = projectionDependenciesForEvent(event.time);
     await Promise.all(
       buildingIds.map((buildingId) =>
         rebuildMapProjectionForBuilding(

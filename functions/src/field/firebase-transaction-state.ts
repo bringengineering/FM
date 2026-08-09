@@ -1,4 +1,9 @@
-import type { FieldMapProjection } from "./contracts.js";
+import {
+  buildMapProjection,
+  type ProjectionBuilding,
+  type ProjectionListing,
+  type ProjectionMedia,
+} from "./map-projection.js";
 import type {
   RegistrationReservation,
   RegistrationReservationOutcome,
@@ -39,20 +44,16 @@ type TransitionCommitDecision = ContractTransitionCommitOutcome & {
   state: unknown;
 };
 
-export interface ProjectionWriteVersion {
-  eventTime: string;
-  revision: string;
-}
-
-export interface ProjectionWriteInput {
+export interface AuthoritativeProjectionRebuildInput {
   buildingId: string;
-  projection: FieldMapProjection | null;
-  version: ProjectionWriteVersion;
+  updatedAt: string;
 }
 
-export type ProjectionWriteDecision =
-  | { status: "committed"; write: true; state: unknown }
-  | { status: "stale"; write: false; state: unknown };
+export interface AuthoritativeProjectionRebuildDecision {
+  status: "committed";
+  write: true;
+  state: unknown;
+}
 
 function isRecord(value: unknown): value is UnknownRecord {
   return typeof value === "object" && value !== null && !Array.isArray(value);
@@ -320,64 +321,40 @@ function projectionRecordOrEmpty(value: unknown): UnknownRecord {
   return value;
 }
 
-function projectionVersion(value: unknown): ProjectionWriteVersion {
-  if (
-    !isRecord(value) ||
-    typeof value.eventTime !== "string" ||
-    !Number.isFinite(Date.parse(value.eventTime)) ||
-    typeof value.revision !== "string" ||
-    value.revision.length === 0 ||
-    value.revision.length > 4_096
-  ) {
+export function reduceAuthoritativeProjectionRebuild(
+  current: unknown,
+  input: AuthoritativeProjectionRebuildInput,
+): AuthoritativeProjectionRebuildDecision {
+  if (typeof input.updatedAt !== "string" || input.updatedAt.length === 0) {
     return invalidProjectionState();
   }
-  return { eventTime: value.eventTime, revision: value.revision };
-}
 
-function compareProjectionVersions(
-  left: ProjectionWriteVersion,
-  right: ProjectionWriteVersion,
-): number {
-  const timeDifference =
-    Date.parse(left.eventTime) - Date.parse(right.eventTime);
-  if (timeDifference !== 0) return timeDifference;
-  return left.revision < right.revision
-    ? -1
-    : left.revision > right.revision
-      ? 1
-      : 0;
-}
-
-export function reduceProjectionWrite(
-  current: unknown,
-  input: ProjectionWriteInput,
-): ProjectionWriteDecision {
   const state = projectionRecordOrEmpty(current);
-  const versions = projectionRecordOrEmpty(state.mapProjectionVersions);
+  const buildings = projectionRecordOrEmpty(state.buildings);
+  const listings = projectionRecordOrEmpty(state.listings);
+  const media = projectionRecordOrEmpty(state.media);
   const projections = projectionRecordOrEmpty(state.mapProjections);
-  const proposedVersion = projectionVersion(input.version);
-  const storedVersionValue = versions[input.buildingId];
-  if (storedVersionValue !== undefined && storedVersionValue !== null) {
-    const storedVersion = projectionVersion(storedVersionValue);
-    if (compareProjectionVersions(storedVersion, proposedVersion) >= 0) {
-      return { status: "stale", write: false, state: current };
-    }
-  }
+  const storedBuilding = buildings[input.buildingId];
+  const building =
+    isRecord(storedBuilding) && storedBuilding.id === input.buildingId
+      ? (storedBuilding as unknown as ProjectionBuilding)
+      : null;
+  const projection = buildMapProjection({
+    building,
+    listings: Object.values(listings) as ProjectionListing[],
+    media: Object.values(media) as ProjectionMedia[],
+    updatedAt: input.updatedAt,
+  });
 
   const nextProjections = { ...projections };
-  if (input.projection === null) {
+  if (projection === null) {
     delete nextProjections[input.buildingId];
   } else {
-    nextProjections[input.buildingId] = input.projection;
+    nextProjections[input.buildingId] = projection;
   }
 
-  const nextState: UnknownRecord = {
-    ...state,
-    mapProjectionVersions: {
-      ...versions,
-      [input.buildingId]: proposedVersion,
-    },
-  };
+  const nextState: UnknownRecord = { ...state };
+  delete nextState.mapProjectionVersions;
   if (Object.keys(nextProjections).length === 0) {
     delete nextState.mapProjections;
   } else {

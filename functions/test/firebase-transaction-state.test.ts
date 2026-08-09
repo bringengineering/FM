@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import {
-  reduceProjectionWrite,
+  reduceAuthoritativeProjectionRebuild,
   reduceRegistrationClaim,
   reduceTransitionClaim,
   reduceTransitionCommit,
@@ -323,116 +323,138 @@ const publicProjection: FieldMapProjection = {
   updatedAt: "2026-08-09T12:00:02.000Z",
 };
 
-describe("map projection version CAS reducer", () => {
-  it("keeps a newer projection when an older trigger finishes afterward", () => {
-    const newer = reduceProjectionWrite(null, {
-      buildingId: "building-1",
-      projection: publicProjection,
-      version: {
-        eventTime: "2026-08-09T12:00:02.000Z",
-        revision: "event-newer",
-      },
-    });
-    expect(newer).toMatchObject({ status: "committed", write: true });
+const authoritativeActiveBuilding = {
+  id: "building-1",
+  name: "Authoritative building",
+  roadAddress: "1 Current-ro, Wonju",
+  latitude: 37.369,
+  longitude: 127.928,
+  parking: { available: true, totalSpaces: 3 },
+  managementContract: {
+    status: "active" as const,
+    startedOn: "2026-08-01",
+    updatedAt: "2026-08-09T12:00:02.000Z",
+    updatedBy: "admin-1",
+  },
+  privateOwnerPhone: "DO-NOT-PROJECT",
+};
 
-    const olderProjection = {
-      ...publicProjection,
-      name: "Old projection",
-      updatedAt: "2026-08-09T12:00:01.000Z",
-    };
-    const older = reduceProjectionWrite(newer.state, {
-      buildingId: "building-1",
-      projection: olderProjection,
-      version: {
-        eventTime: "2026-08-09T12:00:01.000Z",
-        revision: "event-older",
-      },
-    });
-
-    expect(older).toEqual({
-      status: "stale",
-      write: false,
-      state: newer.state,
-    });
-    expect(older.state).toMatchObject({
-      mapProjections: { "building-1": publicProjection },
-      mapProjectionVersions: {
-        "building-1": {
-          eventTime: "2026-08-09T12:00:02.000Z",
-          revision: "event-newer",
-        },
-      },
-    });
-    expect(Object.keys(publicProjection)).toHaveLength(11);
-    expect(publicProjection).not.toHaveProperty("version");
-    expect(publicProjection).not.toHaveProperty("eventTime");
-    expect(publicProjection).not.toHaveProperty("revision");
-  });
-
-  it("retains a private version when the public projection is deleted", () => {
-    const current = {
-      mapProjections: { "building-1": publicProjection },
-      unrelated: { retained: true },
-    };
-
-    const decision = reduceProjectionWrite(current, {
-      buildingId: "building-1",
-      projection: null,
-      version: {
-        eventTime: "2026-08-09T12:00:03.000Z",
-        revision: "event-delete",
-      },
-    });
-
-    expect(decision).toEqual({
-      status: "committed",
-      write: true,
-      state: {
-        mapProjectionVersions: {
-          "building-1": {
-            eventTime: "2026-08-09T12:00:03.000Z",
-            revision: "event-delete",
-          },
-        },
-        unrelated: { retained: true },
-      },
-    });
-  });
-
-  it("orders equal timestamps by revision and rejects an identical retry", () => {
-    const first = reduceProjectionWrite(null, {
-      buildingId: "building-1",
-      projection: { ...publicProjection, name: "First revision" },
-      version: {
-        eventTime: "2026-08-09T12:00:04.000Z",
-        revision: "database-event-001",
-      },
-    });
-    const second = reduceProjectionWrite(first.state, {
-      buildingId: "building-1",
-      projection: { ...publicProjection, name: "Second revision" },
-      version: {
-        eventTime: "2026-08-09T12:00:04.000Z",
-        revision: "database-event-002",
-      },
-    });
-
-    expect(second).toMatchObject({ status: "committed", write: true });
-    expect(second.state).toMatchObject({
-      mapProjections: {
-        "building-1": { name: "Second revision" },
-      },
-    });
-    expect(
-      reduceProjectionWrite(second.state, {
+function authoritativeProjectionRoot() {
+  return {
+    buildings: { "building-1": authoritativeActiveBuilding },
+    listings: {
+      "listing-current": {
+        id: "listing-current",
         buildingId: "building-1",
-        projection: { ...publicProjection, name: "Retry must not write" },
-        version: {
-          eventTime: "2026-08-09T12:00:04.000Z",
-          revision: "database-event-002",
+        status: "advertising",
+        advertisingApproved: true,
+        depositWon: 3_000_000,
+        monthlyRentWon: 350_000,
+        maintenanceFeeWon: 0,
+      },
+      "listing-foreign": {
+        id: "listing-foreign",
+        buildingId: "building-foreign",
+        status: "advertising",
+      },
+    },
+    media: {
+      "media-current": {
+        buildingId: "building-1",
+        uploadState: "finalized",
+      },
+    },
+    mapProjections: {
+      "building-1": { ...publicProjection, name: "Obsolete candidate" },
+    },
+    mapProjectionVersions: {
+      "building-1": {
+        eventTime: "2026-08-09T12:00:01.000Z",
+        revision: "legacy-event",
+      },
+    },
+    unrelated: { retained: true },
+  };
+}
+
+describe("authoritative map projection transaction reducer", () => {
+  it("rebuilds the eleven-key projection only from transaction-current state", () => {
+    const decision = reduceAuthoritativeProjectionRebuild(
+      authoritativeProjectionRoot(),
+      {
+        buildingId: "building-1",
+        updatedAt: "2026-08-09T12:00:03.000Z",
+      },
+    );
+
+    expect(decision).toMatchObject({ status: "committed", write: true });
+    const state = decision.state as Record<string, unknown>;
+    const projection = (state.mapProjections as Record<string, unknown>)[
+      "building-1"
+    ] as Record<string, unknown>;
+    expect(projection).toMatchObject({
+      buildingId: "building-1",
+      name: "Authoritative building",
+      vacancyCount: 1,
+      captureStatus: "inProgress",
+    });
+    expect(Object.keys(projection)).toHaveLength(11);
+    expect(JSON.stringify(projection)).not.toContain("DO-NOT-PROJECT");
+    expect(state).not.toHaveProperty("mapProjectionVersions");
+  });
+
+  it("does not restore an obsolete projection after a callable pauses the contract", () => {
+    const obsoletePreReadCandidate = {
+      ...publicProjection,
+      name: "Obsolete active projection",
+    };
+    const currentAfterCallable = authoritativeProjectionRoot();
+    currentAfterCallable.buildings["building-1"] = {
+      ...authoritativeActiveBuilding,
+      managementContract: {
+        ...authoritativeActiveBuilding.managementContract,
+        status: "paused",
+        updatedAt: "2026-08-09T12:00:04.000Z",
+      },
+    };
+    delete currentAfterCallable.mapProjections["building-1"];
+
+    const delayedTrigger = reduceAuthoritativeProjectionRebuild(
+      currentAfterCallable,
+      {
+        buildingId: "building-1",
+        updatedAt: "2026-08-09T12:00:01.000Z",
+      },
+    );
+
+    expect(delayedTrigger).toMatchObject({ status: "committed", write: true });
+    expect(delayedTrigger.state).not.toHaveProperty(
+      "mapProjections.building-1",
+    );
+    expect(JSON.stringify(delayedTrigger.state)).not.toContain(
+      obsoletePreReadCandidate.name,
+    );
+  });
+
+  it("is independent of reversed CloudEvent IDs at the same timestamp", () => {
+    let current: unknown = authoritativeProjectionRoot();
+    for (const _reversedEventId of ["zzzz-event", "aaaa-event"]) {
+      current = reduceAuthoritativeProjectionRebuild(current, {
+        buildingId: "building-1",
+        updatedAt: "2026-08-09T12:00:05.123456Z",
+      }).state;
+    }
+
+    expect(current).toMatchObject({
+      mapProjections: {
+        "building-1": {
+          name: "Authoritative building",
+          vacancyCount: 1,
+          updatedAt: "2026-08-09T12:00:05.123456Z",
         },
-      }),
-    ).toEqual({ status: "stale", write: false, state: second.state });
+      },
+    });
+    expect(current).not.toHaveProperty("mapProjectionVersions");
   });
 });
 
