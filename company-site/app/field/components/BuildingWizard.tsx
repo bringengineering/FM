@@ -29,6 +29,7 @@ import {
   type UnitDraftState,
 } from "../lib/registration-draft";
 import type { FieldSession } from "../lib/auth.client";
+import { bindFieldVisualViewport } from "../lib/visual-viewport";
 import OwnerNotesPanel from "./OwnerNotesPanel";
 import {
   validateBuildingDraft,
@@ -232,6 +233,11 @@ export default function BuildingWizard({
   const [savedBuildingId, setSavedBuildingId] = useState<string>();
   const submittingRef = useRef(false);
   const completedRef = useRef(false);
+
+  useEffect(
+    () => bindFieldVisualViewport(document.documentElement, window),
+    [],
+  );
 
   useEffect(() => {
     if (incompatibleDraft || completedRef.current) return;
@@ -579,11 +585,10 @@ export default function BuildingWizard({
         {step === 6 && <ReviewStep draft={draft} />}
       </div>
 
-      <footer className="field-wizard-actions">
-        <button type="button" className="field-wizard-back" onClick={() => setStep((current) => Math.max(current - 1, 0))} disabled={incompatibleDraft || step === 0}>이전</button>
-        {step === 0 && <button type="button" className="field-wizard-check" onClick={validateCurrentStep} disabled={incompatibleDraft}>입력 확인</button>}
+      <footer className="field-wizard-actions" role="group" aria-label="등록 단계 이동">
+        <button type="button" className="field-wizard-back" onClick={() => setStep((current) => Math.max(current - 1, 0))} disabled={incompatibleDraft || submitting || Boolean(savedBuildingId) || step === 0}>이전</button>
         {step < STEPS.length - 1 ? (
-          <button type="button" className="field-wizard-next" onClick={nextStep} disabled={incompatibleDraft || (step === 0 && !buildingStepValid)}>다음 단계</button>
+          <button type="button" className="field-wizard-next" onClick={nextStep} disabled={incompatibleDraft || submitting || Boolean(savedBuildingId)}>다음 단계</button>
         ) : (
           <button type="button" className="field-wizard-next" onClick={complete} disabled={incompatibleDraft || submitting || Boolean(savedBuildingId)}>{submitting ? "저장 중" : savedBuildingId ? "저장 완료" : "등록 내용 저장"}</button>
         )}

@@ -1,4 +1,6 @@
 .field-platform {
+  --field-sidebar-width: 0px;
+  --field-mobile-nav-height: 70px;
   --field-navy: #0b2342;
   --field-navy-soft: #17395e;
   --field-blue: #2269e8;
@@ -303,6 +305,7 @@
 .field-main {
   min-height: calc(100vh - 70px);
   padding: 26px 18px 112px;
+  scroll-padding-bottom: calc(190px + env(safe-area-inset-bottom));
 }
 
 .field-welcome {
@@ -832,6 +835,7 @@
 
   .field-main {
     padding: 34px 30px 116px;
+    scroll-padding-bottom: calc(190px + env(safe-area-inset-bottom));
   }
 
   .field-welcome {
@@ -875,6 +879,7 @@
 
 @media (min-width: 960px) {
   .field-platform {
+    --field-sidebar-width: 238px;
     display: grid;
     grid-template-columns: 238px minmax(0, 1fr);
   }
@@ -1000,6 +1005,7 @@
   .field-main {
     min-height: calc(100vh - 78px);
     padding: 42px clamp(36px, 5vw, 72px) 60px;
+    scroll-padding-bottom: 110px;
   }
 
   .field-welcome {
@@ -1026,6 +1032,7 @@
 
 @media (min-width: 1260px) {
   .field-platform {
+    --field-sidebar-width: 258px;
     grid-template-columns: 258px minmax(0, 1fr);
   }
 
@@ -1049,6 +1056,11 @@
 }
 
 /* Building and vacancy registration */
+.field-building-workspace {
+  min-width: 0;
+  padding-bottom: 84px;
+}
+
 .field-wizard {
   width: min(100%, 980px);
   margin: 0 auto;
@@ -1457,6 +1469,11 @@
   min-width: 0;
 }
 
+.field-wizard-card :is(input, textarea, select, button),
+.field-owner-notes :is(textarea, button) {
+  scroll-margin-bottom: 190px;
+}
+
 .field-form-field > label {
   display: block;
   margin-bottom: 7px;
@@ -1647,19 +1664,29 @@
 }
 
 .field-wizard-actions {
-  position: sticky;
-  z-index: 5;
-  bottom: 70px;
+  position: fixed;
+  z-index: 25;
+  right: max(12px, env(safe-area-inset-right));
+  bottom: calc(var(--field-mobile-nav-height) + env(safe-area-inset-bottom) + 8px);
+  left: max(12px, env(safe-area-inset-left));
   display: grid;
-  grid-template-columns: auto auto minmax(120px, 1fr);
+  grid-template-columns: minmax(88px, 0.7fr) minmax(0, 1.3fr);
   gap: 8px;
-  margin-top: 14px;
+  width: auto;
+  max-width: 980px;
+  box-sizing: border-box;
+  margin: 0 auto;
   border: 1px solid rgba(211, 220, 231, 0.9);
   border-radius: 16px;
-  background: rgba(255, 255, 255, 0.94);
+  background: rgba(255, 255, 255, 0.96);
   padding: 10px;
-  box-shadow: 0 12px 35px rgba(11, 35, 66, 0.13);
+  box-shadow: 0 12px 35px rgba(11, 35, 66, 0.16);
   backdrop-filter: blur(14px);
+}
+
+.field-wizard-actions button {
+  min-width: 0;
+  min-height: 46px;
 }
 
 .field-wizard-back {
@@ -1677,6 +1704,13 @@
   cursor: not-allowed;
   opacity: 0.43;
   box-shadow: none;
+}
+
+@media (max-width: 959px) {
+  html[data-field-keyboard-open="true"] .field-wizard-actions {
+    visibility: hidden;
+    pointer-events: none;
+  }
 }
 
 .field-sr-only {
@@ -1722,13 +1756,26 @@
 }
 
 @media (min-width: 960px) {
+  .field-building-workspace {
+    padding-bottom: 56px;
+  }
+
   .field-wizard-card {
     padding: 30px;
   }
 
+  .field-wizard-card :is(input, textarea, select, button),
+  .field-owner-notes :is(textarea, button) {
+    scroll-margin-bottom: 110px;
+  }
+
   .field-wizard-actions {
+    right: max(24px, env(safe-area-inset-right));
     bottom: 18px;
-    margin-left: auto;
+    left: calc(var(--field-sidebar-width) + max(24px, env(safe-area-inset-left)));
+    width: auto;
+    max-width: 980px;
+    margin: 0 auto;
     padding: 9px;
   }
 }

@@ -1,6 +1,6 @@
 import { StrictMode, useState } from "react";
 import { renderToString } from "react-dom/server";
-import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 
 import AppShell from "../../app/field/components/AppShell";
@@ -542,6 +542,67 @@ describe("OwnerNotesPanel", () => {
 });
 
 describe("BuildingWizard", () => {
+  it("binds and cleans the field visual viewport while mounted", () => {
+    const root = document.documentElement;
+    root.style.setProperty("--field-visual-viewport-height", "321px");
+    const view = render(
+      <BuildingWizard session={staffSession} draftId="viewport-binding" />,
+    );
+
+    try {
+      expect(root.style.getPropertyValue("--field-visual-viewport-height"))
+        .not.toBe("321px");
+      view.unmount();
+      expect(root.style.getPropertyValue("--field-visual-viewport-height"))
+        .toBe("321px");
+    } finally {
+      view.unmount();
+      root.style.removeProperty("--field-visual-viewport-height");
+      root.removeAttribute("data-field-keyboard-open");
+    }
+  });
+
+  it("keeps two 등록 단계 이동 slots and validates through the enabled primary action", () => {
+    render(<BuildingWizard session={staffSession} draftId="dock-first-step" />);
+
+    const dock = screen.getByRole("group", { name: "등록 단계 이동" });
+    expect(within(dock).getAllByRole("button")).toHaveLength(2);
+    expect(within(dock).getByRole("button", { name: "이전" })).toBeDisabled();
+    const next = within(dock).getByRole("button", { name: "다음 단계" });
+    expect(next).toBeEnabled();
+    expect(within(dock).queryByRole("button", { name: "입력 확인" }))
+      .not.toBeInTheDocument();
+
+    fireEvent.click(next);
+
+    expect(screen.getByText("내부 관리번호를 입력해 주세요.")).toBeInTheDocument();
+    expect(screen.getByRole("group", { name: "건물 기본정보" })).toBeInTheDocument();
+  });
+
+  it("keeps the same two-slot action dock node at a 320px viewport", () => {
+    const previousWidth = Object.getOwnPropertyDescriptor(window, "innerWidth");
+    Object.defineProperty(window, "innerWidth", { configurable: true, value: 320 });
+
+    try {
+      render(
+        <BuildingWizard
+          session={staffSession}
+          draftId="dock-stable-320"
+          initialStep={2}
+        />,
+      );
+      const dock = screen.getByRole("group", { name: "등록 단계 이동" });
+      expect(within(dock).getAllByRole("button")).toHaveLength(2);
+
+      fireEvent.click(within(dock).getByRole("button", { name: "다음 단계" }));
+
+      expect(screen.getByRole("group", { name: "등록 단계 이동" })).toBe(dock);
+      expect(screen.getByRole("group", { name: "옵션·비품" })).toBeInTheDocument();
+    } finally {
+      if (previousWidth) Object.defineProperty(window, "innerWidth", previousWidth);
+    }
+  });
+
   it("keeps the same owner-note panel mounted while wizard steps change", () => {
     render(
       <BuildingWizard
@@ -847,12 +908,18 @@ describe("BuildingWizard", () => {
       target: { value: "강원특별자치도 원주시 서원대로 1" },
     });
 
-    expect(screen.getByRole("button", { name: "다음 단계" })).toBeDisabled();
+    const next = screen.getByRole("button", { name: "다음 단계" });
+    expect(next).toBeEnabled();
+    fireEvent.click(next);
+    expect(screen.getByText("주소 확인으로 지도 위치를 설정해 주세요."))
+      .toBeInTheDocument();
+    expect(screen.getByRole("group", { name: "건물 기본정보" })).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "주소 중복 확인" }));
 
     expect(await screen.findByText("새 건물로 등록할 수 있는 주소입니다.")).toBeInTheDocument();
     expect(checkAddress).toHaveBeenCalledWith("강원특별자치도 원주시 서원대로 1");
-    expect(screen.getByRole("button", { name: "다음 단계" })).toBeEnabled();
+    fireEvent.click(next);
+    expect(screen.getByRole("group", { name: "호실과 임대조건" })).toBeInTheDocument();
   });
 
   it("blocks creation when the normalized address already exists", async () => {
@@ -876,7 +943,10 @@ describe("BuildingWizard", () => {
     fireEvent.click(screen.getByRole("button", { name: "주소 중복 확인" }));
 
     expect(await screen.findByText("기존 빌딩과 주소가 같습니다.")).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "다음 단계" })).toBeDisabled();
+    const next = screen.getByRole("button", { name: "다음 단계" });
+    expect(next).toBeEnabled();
+    fireEvent.click(next);
+    expect(screen.getByRole("group", { name: "건물 기본정보" })).toBeInTheDocument();
   });
 
   it("models multiple units under one building and preserves zero maintenance fee", async () => {
@@ -909,7 +979,7 @@ describe("BuildingWizard", () => {
 
   it("shows field-level validation errors", () => {
     render(<BuildingWizard session={staffSession} draftId="validation-errors" />);
-    fireEvent.click(screen.getByRole("button", { name: "입력 확인" }));
+    fireEvent.click(screen.getByRole("button", { name: "다음 단계" }));
     expect(screen.getByText("내부 관리번호를 입력해 주세요.")).toBeInTheDocument();
     expect(screen.getByText("건물명을 입력해 주세요.")).toBeInTheDocument();
     expect(screen.getByLabelText("건물명")).toHaveAttribute("aria-invalid", "true");
