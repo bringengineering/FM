@@ -20,6 +20,10 @@ test("field panel embeds only the same-origin managed map", () => {
 test("map exposes exclusive URL-aware vendor and managed modes", () => {
   assert.match(html, /name="mapMode"\s+value="vendors"/);
   assert.match(html, /name="mapMode"\s+value="managed"/);
+  assert.match(
+    html,
+    /name="mapMode"\s+value="managed"\s*\/>\s*BRING 관리계약 건물<\/label>/,
+  );
   assert.match(html, /data-mode-panel="vendors"/);
   assert.match(html, /data-mode-panel="managed"/);
   assert.match(html, /resolveMapMode/);
