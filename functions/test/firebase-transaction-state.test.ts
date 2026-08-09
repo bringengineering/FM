@@ -106,6 +106,71 @@ function transitionCommitInput(
 }
 
 describe("registration claim reducer", () => {
+  it("stores the canonical initial owner-note name in the winning reservation", () => {
+    const proposed = {
+      ...registrationReservation(),
+      ownerNoteCreatedByName: "Original profile name",
+    } as RegistrationReservation;
+
+    const decision = reduceRegistrationClaim(null, proposed);
+
+    expect(decision).toMatchObject({
+      status: "acquired",
+      write: true,
+      reservation: { ownerNoteCreatedByName: "Original profile name" },
+    });
+    expect(decision.state).toMatchObject({
+      requests: {
+        "request-1": { ownerNoteCreatedByName: "Original profile name" },
+      },
+    });
+  });
+
+  it("atomically upgrades a compatible legacy reservation with the proposed note name", () => {
+    const legacy = reduceRegistrationClaim(
+      null,
+      registrationReservation(),
+    ).state;
+    const proposed = {
+      ...registrationReservation({ claimedAt: "2026-08-09T13:00:00.000Z" }),
+      ownerNoteCreatedByName: "Migration profile name",
+    } as RegistrationReservation;
+
+    const decision = reduceRegistrationClaim(legacy, proposed);
+
+    expect(decision).toMatchObject({
+      status: "acquired",
+      write: true,
+      reservation: {
+        claimedAt: NOW,
+        ownerNoteCreatedByName: "Migration profile name",
+      },
+    });
+    expect(decision.state).toMatchObject({
+      requests: {
+        "request-1": { ownerNoteCreatedByName: "Migration profile name" },
+      },
+    });
+  });
+
+  it("fails closed for a malformed persisted initial owner-note name", () => {
+    const malformed = {
+      requests: {
+        "request-1": {
+          ...registrationReservation(),
+          ownerNoteCreatedByName: "   ",
+        },
+      },
+      drafts: {
+        "draft-1": { requestId: "request-1", requestHash: REQUEST_HASH },
+      },
+    };
+
+    expect(() =>
+      reduceRegistrationClaim(malformed, registrationReservation()),
+    ).toThrow("field_registration_claim_state_invalid");
+  });
+
   it("atomically stores the full request reservation and the draft identity", () => {
     const proposed = registrationReservation();
 

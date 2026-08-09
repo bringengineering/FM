@@ -105,6 +105,18 @@ function cloneRegistrationReservation(
     unitIds[localId] = unitId;
   }
 
+  const ownerNoteCreatedByName = value.ownerNoteCreatedByName;
+  if (
+    ownerNoteCreatedByName !== undefined
+    && (
+      typeof ownerNoteCreatedByName !== "string"
+      || ownerNoteCreatedByName.length === 0
+      || ownerNoteCreatedByName.trim() !== ownerNoteCreatedByName
+    )
+  ) {
+    return invalidRegistrationClaim();
+  }
+
   return {
     uid: value.uid,
     requestId: value.requestId,
@@ -117,6 +129,9 @@ function cloneRegistrationReservation(
       visitId: value.result.visitId,
     },
     claimedAt: value.claimedAt,
+    ...(ownerNoteCreatedByName === undefined
+      ? {}
+      : { ownerNoteCreatedByName }),
   };
 }
 
@@ -135,21 +150,22 @@ export function reduceRegistrationClaim(
   current: unknown,
   proposed: RegistrationReservation,
 ): RegistrationClaimDecision {
+  const normalizedProposed = cloneRegistrationReservation(proposed);
   const state = claimRecordOrEmpty(current, invalidRegistrationClaim);
   const requests = claimRecordOrEmpty(
     state.requests,
     invalidRegistrationClaim,
   );
   const drafts = claimRecordOrEmpty(state.drafts, invalidRegistrationClaim);
-  const storedRequest = requests[proposed.requestId];
+  const storedRequest = requests[normalizedProposed.requestId];
 
   if (storedRequest !== undefined && storedRequest !== null) {
     const reservation = cloneRegistrationReservation(storedRequest);
     if (
-      reservation.uid !== proposed.uid ||
-      reservation.requestId !== proposed.requestId ||
-      reservation.draftId !== proposed.draftId ||
-      reservation.requestHash !== proposed.requestHash
+      reservation.uid !== normalizedProposed.uid ||
+      reservation.requestId !== normalizedProposed.requestId ||
+      reservation.draftId !== normalizedProposed.draftId ||
+      reservation.requestHash !== normalizedProposed.requestHash
     ) {
       return { status: "requestConflict", write: false, state: current };
     }
@@ -161,6 +177,27 @@ export function reduceRegistrationClaim(
     ) {
       return invalidRegistrationClaim();
     }
+    if (
+      reservation.ownerNoteCreatedByName === undefined
+      && normalizedProposed.ownerNoteCreatedByName !== undefined
+    ) {
+      const migratedReservation: RegistrationReservation = {
+        ...reservation,
+        ownerNoteCreatedByName: normalizedProposed.ownerNoteCreatedByName,
+      };
+      return {
+        status: "acquired",
+        reservation: migratedReservation,
+        write: true,
+        state: {
+          ...state,
+          requests: {
+            ...requests,
+            [normalizedProposed.requestId]: migratedReservation,
+          },
+        },
+      };
+    }
     return {
       status: "acquired",
       reservation,
@@ -169,27 +206,27 @@ export function reduceRegistrationClaim(
     };
   }
 
-  const storedDraft = drafts[proposed.draftId];
+  const storedDraft = drafts[normalizedProposed.draftId];
   if (storedDraft !== undefined && storedDraft !== null) {
     const identity = draftClaimIdentity(storedDraft);
     if (
-      identity.requestId !== proposed.requestId ||
-      identity.requestHash !== proposed.requestHash
+      identity.requestId !== normalizedProposed.requestId ||
+      identity.requestHash !== normalizedProposed.requestHash
     ) {
       return { status: "draftConflict", write: false, state: current };
     }
     return invalidRegistrationClaim();
   }
 
-  const reservation = cloneRegistrationReservation(proposed);
+  const reservation = normalizedProposed;
   const nextState = {
     ...state,
-    requests: { ...requests, [proposed.requestId]: reservation },
+    requests: { ...requests, [normalizedProposed.requestId]: reservation },
     drafts: {
       ...drafts,
-      [proposed.draftId]: {
-        requestId: proposed.requestId,
-        requestHash: proposed.requestHash,
+      [normalizedProposed.draftId]: {
+        requestId: normalizedProposed.requestId,
+        requestHash: normalizedProposed.requestHash,
       },
     },
   };

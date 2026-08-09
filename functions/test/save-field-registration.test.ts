@@ -522,6 +522,30 @@ describe("saveFieldRegistrationCore", () => {
     ).toMatchObject({ completedAt: NOW });
   });
 
+  it("replays a stale-receipt reservation with the originally claimed owner-note name", async () => {
+    const { dependencies, patches } = createInMemoryAdapter({
+      persistReceipts: false,
+    });
+    vi.mocked(dependencies.getUserDisplayName)
+      .mockResolvedValueOnce("Original profile name")
+      .mockResolvedValueOnce("Changed profile name");
+
+    await saveFieldRegistrationCore(
+      validRegistrationInput(),
+      staffActor,
+      dependencies,
+    );
+    await saveFieldRegistrationCore(
+      validRegistrationInput(),
+      staffActor,
+      dependencies,
+    );
+
+    expect(dependencies.getUserDisplayName).toHaveBeenCalledTimes(2);
+    expect(patches).toHaveLength(2);
+    expect(patches[1]).toEqual(patches[0]);
+  });
+
   it("normalizes non-semantic surrounding whitespace before hashing and persistence", async () => {
     const firstInput = validRegistrationInput();
     firstInput.building.name = "  상지 하우스  ";

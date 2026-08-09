@@ -60,7 +60,14 @@ vi.mock("firebase-admin/database", () => ({
 }));
 
 vi.mock("firebase-functions/v2/https", () => ({
-  HttpsError: class MockHttpsError extends Error {},
+  HttpsError: class MockHttpsError extends Error {
+    readonly code: string;
+
+    constructor(code: string, message: string) {
+      super(message);
+      this.code = code;
+    }
+  },
   onCall: registrations.onCall,
 }));
 
@@ -93,6 +100,8 @@ interface DatabaseWriteEvent {
 
 type DatabaseWriteHandler = (event: DatabaseWriteEvent) => Promise<void>;
 
+type CallableHandler = (request: unknown) => Promise<unknown>;
+
 interface EventScopedProjectionDependencies {
   now(): string;
   setProjection(buildingId: string, projection: unknown): Promise<void>;
@@ -104,6 +113,63 @@ function registration(value: unknown): RegisteredEntrypoint {
 
 function databaseHandler(value: unknown): DatabaseWriteHandler {
   return registration(value).handler as DatabaseWriteHandler;
+}
+
+function callableHandler(value: unknown): CallableHandler {
+  return registration(value).handler as CallableHandler;
+}
+
+function validRegistrationData() {
+  return {
+    requestId: "request-1",
+    draftId: "draft-1",
+    building: {
+      managementNumber: "MGMT-001",
+      name: "Test building",
+      roadAddress: "1 Test-ro, Wonju",
+      latitude: 37.369,
+      longitude: 127.928,
+      elevator: true,
+      parking: { available: true },
+    },
+    units: [{
+      localId: "unit-1",
+      unitLabel: "101",
+      options: [],
+      isVacant: true,
+    }],
+    listing: {
+      depositWon: 3_000_000,
+      monthlyRentWon: 350_000,
+      maintenanceFeeWon: 50_000,
+      maintenanceFeeItems: [],
+      parkingDescription: "Available",
+      petPolicy: "Ask owner",
+      options: [],
+    },
+    primaryUnitLocalId: "unit-1",
+    managementContract: { requested: false },
+    ownerNoteDrafts: [{
+      localId: "note_12345678",
+      body: "Owner requested a follow-up",
+      recordedAt: "2026-08-09T01:30:00.000Z",
+    }],
+  };
+}
+
+function validCallableRequest(data: unknown) {
+  return {
+    auth: {
+      uid: "staff-1",
+      token: {
+        fieldPlatform: true,
+        fieldRole: "staff",
+        name: "Verified staff",
+        auth_time: 1_723_181_696,
+      },
+    },
+    data,
+  };
 }
 
 const EVENT_VERSION = {
@@ -122,6 +188,36 @@ beforeEach(() => {
 });
 
 describe("Firebase entrypoint metadata", () => {
+  it.each([
+    ["blank body", (data: ReturnType<typeof validRegistrationData>) => {
+      data.ownerNoteDrafts[0].body = "   ";
+    }],
+    ["duplicate IDs", (data: ReturnType<typeof validRegistrationData>) => {
+      data.ownerNoteDrafts.push({ ...data.ownerNoteDrafts[0] });
+    }],
+    ["more than 100 drafts", (data: ReturnType<typeof validRegistrationData>) => {
+      data.ownerNoteDrafts = Array.from({ length: 101 }, (_, index) => ({
+        ...data.ownerNoteDrafts[0],
+        localId: `note_${String(index).padStart(8, "0")}`,
+      }));
+    }],
+    ["noncanonical recordedAt", (data: ReturnType<typeof validRegistrationData>) => {
+      data.ownerNoteDrafts[0].recordedAt = "2026-08-09T01:30:00Z";
+    }],
+  ])("maps an initial owner-note %s to invalid-argument", async (_label, mutate) => {
+    const data = validRegistrationData();
+    mutate(data);
+
+    await expect(
+      callableHandler(entrypoints.saveFieldRegistration)(
+        validCallableRequest(data),
+      ),
+    ).rejects.toMatchObject({
+      code: "invalid-argument",
+      message: "field_invalid_registration",
+    });
+  });
+
   it("derives the note actor name and decimal session ID only from verified claims", async () => {
     const actor = await entrypoints.requireFieldActor({
       auth: {

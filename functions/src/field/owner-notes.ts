@@ -61,6 +61,7 @@ export interface OwnerNoteDependencies {
 }
 
 const STABLE_ID = /^[A-Za-z0-9_-]{8,128}$/;
+const DEFAULT_OWNER_NOTE_ACTOR_NAME = "브링 담당자";
 
 export function isStableId(value: unknown): value is string {
   return typeof value === "string" && STABLE_ID.test(value);
@@ -177,19 +178,25 @@ export function buildOwnerNoteRecord(input: {
   };
 }
 
+export async function resolveOwnerNoteActorName(
+  actor: OwnerNoteActor,
+  getUserDisplayName: (uid: string) => Promise<string | null>,
+): Promise<string> {
+  const profileName = (await getUserDisplayName(actor.uid))?.trim();
+  return profileName
+    || actor.tokenDisplayName?.trim()
+    || DEFAULT_OWNER_NOTE_ACTOR_NAME;
+}
+
 export async function buildInitialOwnerNotePatch(input: {
   buildingId: string;
   drafts: unknown;
   actor: OwnerNoteActor;
   createdAt: string;
-  getUserDisplayName(uid: string): Promise<string | null>;
+  createdByName: string;
 }): Promise<Record<string, OwnerNoteRecord>> {
   const drafts = normalizeOwnerNoteDrafts(input.drafts);
   if (drafts.length === 0) return {};
-
-  const profileName = (await input.getUserDisplayName(input.actor.uid))?.trim();
-  const actorName =
-    profileName || input.actor.tokenDisplayName?.trim() || "브링 담당자";
 
   return Object.fromEntries(
     drafts.map((draft) => [
@@ -198,7 +205,7 @@ export async function buildInitialOwnerNotePatch(input: {
         buildingId: input.buildingId,
         draft,
         actorUid: input.actor.uid,
-        actorName,
+        actorName: input.createdByName,
         createdAt: input.createdAt,
       }),
     ]),
@@ -251,8 +258,10 @@ export async function appendOwnerNoteCore(
     throw new Error("owner_note_building_not_found");
   }
 
-  const profileName = (await dependencies.getUserDisplayName(actor.uid))?.trim();
-  const actorName = profileName || actor.tokenDisplayName?.trim() || "브링 담당자";
+  const actorName = await resolveOwnerNoteActorName(
+    actor,
+    dependencies.getUserDisplayName,
+  );
   const candidate = buildOwnerNoteRecord({
     buildingId: normalized.buildingId,
     draft: normalized,

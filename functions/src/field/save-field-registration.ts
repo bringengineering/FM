@@ -14,6 +14,7 @@ import { buildMapProjection } from "./map-projection.js";
 import {
   buildInitialOwnerNotePatch,
   normalizeOwnerNoteDrafts,
+  resolveOwnerNoteActorName,
   type OwnerNoteActor,
   type OwnerNoteDraftInput,
 } from "./owner-notes.js";
@@ -39,6 +40,7 @@ export interface RegistrationReservation {
   requestHash: string;
   result: SaveFieldRegistrationResult;
   claimedAt: string;
+  ownerNoteCreatedByName?: string;
 }
 
 export type RegistrationReservationOutcome =
@@ -81,6 +83,32 @@ interface NormalizedRegistrationInput {
 
 function invalidRegistration(): never {
   throw new Error("field_invalid_registration");
+}
+
+const OWNER_NOTE_REGISTRATION_VALIDATION_ERRORS = new Set([
+  "owner_note_drafts_invalid",
+  "owner_note_draft_invalid",
+  "owner_note_id_invalid",
+  "owner_note_id_duplicate",
+  "owner_note_body_required",
+  "owner_note_body_too_long",
+  "owner_note_recorded_at_invalid",
+]);
+
+function normalizeRegistrationOwnerNoteDrafts(
+  value: unknown,
+): OwnerNoteDraftInput[] {
+  try {
+    return normalizeOwnerNoteDrafts(value);
+  } catch (error) {
+    if (
+      error instanceof Error
+      && OWNER_NOTE_REGISTRATION_VALIDATION_ERRORS.has(error.message)
+    ) {
+      invalidRegistration();
+    }
+    throw error;
+  }
 }
 
 function isRecord(value: unknown): value is UnknownRecord {
@@ -358,7 +386,7 @@ function normalizeRegistrationInput(
     listing: normalizeListing(value.listing),
     primaryUnitLocalId,
     managementContract: normalizeManagementContract(value.managementContract),
-    ownerNoteDrafts: normalizeOwnerNoteDrafts(value.ownerNoteDrafts),
+    ownerNoteDrafts: normalizeRegistrationOwnerNoteDrafts(value.ownerNoteDrafts),
   };
 }
 
@@ -422,6 +450,20 @@ export async function saveFieldRegistrationCore(
     return storedReceipt.result;
   }
 
+  const ownerNoteActor: OwnerNoteActor = {
+    uid: actor.uid,
+    role: actor.role,
+    tokenDisplayName: actor.tokenDisplayName,
+    sessionId: actor.sessionId,
+  };
+  const proposedOwnerNoteCreatedByName =
+    normalized.ownerNoteDrafts.length === 0
+      ? undefined
+      : await resolveOwnerNoteActorName(
+        ownerNoteActor,
+        dependencies.getUserDisplayName,
+      );
+
   const proposedBuildingId = entityId(
     "building",
     actor.uid,
@@ -460,6 +502,9 @@ export async function saveFieldRegistrationCore(
     requestHash: normalizedHash,
     result: proposedResult,
     claimedAt: dependencies.now(),
+    ...(proposedOwnerNoteCreatedByName === undefined
+      ? {}
+      : { ownerNoteCreatedByName: proposedOwnerNoteCreatedByName }),
   });
   if (reservationOutcome.status === "requestConflict") {
     throw new Error("field_request_id_conflict");
@@ -468,7 +513,11 @@ export async function saveFieldRegistrationCore(
     throw new Error("field_draft_id_conflict");
   }
 
-  const { claimedAt: now, result } = reservationOutcome.reservation;
+  const {
+    claimedAt: now,
+    result,
+    ownerNoteCreatedByName,
+  } = reservationOutcome.reservation;
   const { buildingId, unitIds, listingId, visitId } = result;
   const auditStamp = {
     createdAt: now,
@@ -626,22 +675,21 @@ export async function saveFieldRegistrationCore(
     patch[`fieldPlatform/units/${unit.id}`] = unit;
   }
 
-  const ownerNoteActor: OwnerNoteActor = {
-    uid: actor.uid,
-    role: actor.role,
-    tokenDisplayName: actor.tokenDisplayName,
-    sessionId: actor.sessionId,
-  };
-  Object.assign(
-    patch,
-    await buildInitialOwnerNotePatch({
-      buildingId,
-      drafts: normalized.ownerNoteDrafts,
-      actor: ownerNoteActor,
-      createdAt: now,
-      getUserDisplayName: dependencies.getUserDisplayName,
-    }),
-  );
+  if (normalized.ownerNoteDrafts.length > 0) {
+    if (!ownerNoteCreatedByName) {
+      throw new Error("field_registration_claim_state_invalid");
+    }
+    Object.assign(
+      patch,
+      await buildInitialOwnerNotePatch({
+        buildingId,
+        drafts: normalized.ownerNoteDrafts,
+        actor: ownerNoteActor,
+        createdAt: now,
+        createdByName: ownerNoteCreatedByName,
+      }),
+    );
+  }
 
   await dependencies.updateRoot(patch);
   return result;
