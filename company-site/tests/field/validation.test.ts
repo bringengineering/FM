@@ -3,8 +3,20 @@ import { describe, expect, it } from "vitest";
 import {
   validateBuildingDraft,
   validateListingDraft,
+  validateManagementContractDraft,
   validateVisitCompletion,
 } from "../../app/field/lib/validation";
+
+describe("validateManagementContractDraft", () => {
+  it("requires a YYYY-MM-DD start date for a requested contract", () => {
+    expect(validateManagementContractDraft({ requested: true, startedOn: "09/08/2026" }))
+      .toEqual(["managementStartedOn"]);
+  });
+
+  it("does not require a start date when management is not requested", () => {
+    expect(validateManagementContractDraft({ requested: false })).toEqual([]);
+  });
+});
 
 describe("validateListingDraft", () => {
   it("requires the approved core advertising fields", () => {

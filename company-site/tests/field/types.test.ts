@@ -7,6 +7,8 @@ import type {
   SecureAccess,
 } from "../../app/field/lib/types";
 
+const NOW = "2026-08-09T00:00:00.000Z";
+
 describe("field platform domain types", () => {
   it("models public listing data separately from secure access data", () => {
     const user: FieldUser = {
@@ -15,8 +17,8 @@ describe("field platform domain types", () => {
       role: "staff",
       enabled: true,
       assignedBuildingIds: ["building-1"],
-      createdAt: "2026-08-09T00:00:00.000Z",
-      updatedAt: "2026-08-09T00:00:00.000Z",
+      createdAt: NOW,
+      updatedAt: NOW,
     };
     const building: Building = {
       id: "building-1",
@@ -29,10 +31,16 @@ describe("field platform domain types", () => {
       purpose: "다가구주택",
       elevator: true,
       parking: { available: true, totalSpaces: 8 },
+      managementContract: {
+        status: "active",
+        startedOn: "2026-08-09",
+        updatedAt: NOW,
+        updatedBy: user.id,
+      },
       assignedStaffIds: [user.id],
-      createdAt: "2026-08-09T00:00:00.000Z",
+      createdAt: NOW,
       createdBy: user.id,
-      updatedAt: "2026-08-09T00:00:00.000Z",
+      updatedAt: NOW,
       updatedBy: user.id,
     };
     const listing: Listing = {
@@ -69,6 +77,7 @@ describe("field platform domain types", () => {
     };
 
     expect(building).not.toHaveProperty("ownerContact");
+    expect(building.managementContract?.status).toBe("active");
     expect(listing).not.toHaveProperty("commonDoorAccess");
     expect(secureAccess.ownerContact).toBe("TEST-OWNER-PHONE");
   });

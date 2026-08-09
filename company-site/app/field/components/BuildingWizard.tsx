@@ -8,7 +8,22 @@ import {
   type ReactNode,
 } from "react";
 
-import { validateBuildingDraft, validateListingDraft } from "../lib/validation";
+import {
+  createRegistrationDraft,
+  migrateRegistrationDraft,
+  type BuildingDraftState,
+  type BuildingWizardDraft,
+  type ListingDraftState,
+  type RegistrationDraftInitial,
+  type UnitDraftState,
+} from "../lib/registration-draft";
+import {
+  validateBuildingDraft,
+  validateListingDraft,
+  validateManagementContractDraft,
+} from "../lib/validation";
+
+export type { BuildingWizardDraft } from "../lib/registration-draft";
 
 const STEPS = ["건물", "임대조건", "상태점검", "옵션", "촬영", "입지", "검토"] as const;
 
@@ -24,107 +39,23 @@ interface AddressCheckResult {
   existingBuilding: { id: string; name: string } | null;
 }
 
-interface BuildingDraftState {
-  managementNumber: string;
-  name: string;
-  roadAddress: string;
-  jibunAddress: string;
-  latitude: number | "";
-  longitude: number | "";
-  purpose: string;
-  completionYear: number | "";
-  floorCount: number | "";
-  elevator: boolean;
-  parkingAvailable: boolean;
-  parkingSpaces: number | "";
-}
-
-interface UnitDraftState {
-  localId: string;
-  unitLabel: string;
-  structure: string;
-  floor: number | "";
-}
-
-interface ListingDraftState {
-  depositWon: number | "";
-  monthlyRentWon: number | "";
-  maintenanceFeeWon: number | "";
-  maintenanceFeeItems: string;
-  availableFrom: string;
-  contractTermMonths: number | "";
-  parkingDescription: string;
-  petPolicy: string;
-  vacancyReason: string;
-  vacantSince: string;
-  conditionNote: string;
-  options: string[];
-  locationNote: string;
-}
-
-export interface BuildingWizardDraft {
-  building: BuildingDraftState;
-  units: UnitDraftState[];
-  listing: ListingDraftState;
-  addressVerified: boolean;
-  duplicateBuilding: { id: string; name: string } | null;
-}
-
 export interface BuildingWizardProps {
   draftKey?: string;
   initialStep?: number;
-  initialDraft?: {
-    building?: Partial<BuildingDraftState>;
-    units?: UnitDraftState[];
-    listing?: Partial<ListingDraftState>;
-  };
+  initialDraft?: RegistrationDraftInitial;
   currentPosition?: { latitude: number; longitude: number };
   checkAddress?: (query: string) => Promise<AddressCheckResult>;
   onComplete?: (draft: BuildingWizardDraft) => void | Promise<void>;
 }
 
-const EMPTY_BUILDING: BuildingDraftState = {
-  managementNumber: "",
-  name: "",
-  roadAddress: "",
-  jibunAddress: "",
-  latitude: "",
-  longitude: "",
-  purpose: "",
-  completionYear: "",
-  floorCount: "",
-  elevator: false,
-  parkingAvailable: false,
-  parkingSpaces: "",
-};
-
-const EMPTY_LISTING: ListingDraftState = {
-  depositWon: "",
-  monthlyRentWon: "",
-  maintenanceFeeWon: "",
-  maintenanceFeeItems: "",
-  availableFrom: "",
-  contractTermMonths: "",
-  parkingDescription: "",
-  petPolicy: "확인 필요",
-  vacancyReason: "",
-  vacantSince: "",
-  conditionNote: "",
-  options: [],
-  locationNote: "",
-};
-
 function emptyUnit(index = 1): UnitDraftState {
-  return { localId: `unit-${index}`, unitLabel: "", structure: "", floor: "" };
-}
-
-function buildInitialDraft(initial?: BuildingWizardProps["initialDraft"]): BuildingWizardDraft {
   return {
-    building: { ...EMPTY_BUILDING, ...initial?.building },
-    units: initial?.units?.length ? initial.units : [emptyUnit()],
-    listing: { ...EMPTY_LISTING, ...initial?.listing },
-    addressVerified: false,
-    duplicateBuilding: null,
+    localId: `unit-${index}`,
+    unitLabel: "",
+    structure: "",
+    floor: "",
+    options: [],
+    isVacant: true,
   };
 }
 
@@ -152,8 +83,6 @@ const ERROR_COPY: Record<string, string> = {
   managementNumber: "내부 관리번호를 입력해 주세요.",
   name: "건물명을 입력해 주세요.",
   roadAddress: "도로명주소를 입력해 주세요.",
-  latitude: "주소 확인 후 위도를 확인해 주세요.",
-  longitude: "주소 확인 후 경도를 확인해 주세요.",
   unitLabel: "호실명을 입력해 주세요.",
   depositWon: "보증금을 0원 이상 정수로 입력해 주세요.",
   monthlyRentWon: "월세를 0원 이상 정수로 입력해 주세요.",
@@ -180,10 +109,12 @@ export default function BuildingWizard({
     if (typeof window !== "undefined") {
       const stored = window.localStorage.getItem(draftKey);
       if (stored) {
-        try { return JSON.parse(stored) as BuildingWizardDraft; } catch { /* use initial */ }
+        let raw: unknown = stored;
+        try { raw = JSON.parse(stored); } catch { /* migrate invalid storage to an empty draft */ }
+        return migrateRegistrationDraft(raw, initialDraft);
       }
     }
-    return buildInitialDraft(initialDraft);
+    return createRegistrationDraft(initialDraft);
   });
   const [errors, setErrors] = useState<string[]>([]);
   const [saveStatus, setSaveStatus] = useState("로컬 저장 준비");
@@ -213,7 +144,12 @@ export default function BuildingWizard({
     latitude: draft.building.latitude === "" ? undefined : draft.building.latitude,
     longitude: draft.building.longitude === "" ? undefined : draft.building.longitude,
   });
-  const buildingStepValid = buildingErrors.length === 0 &&
+  const contractErrors = validateManagementContractDraft({
+    requested: draft.building.managementContractRequested,
+    startedOn: draft.building.managementStartedOn,
+  });
+  const buildingStepErrors = [...buildingErrors, ...contractErrors];
+  const buildingStepValid = buildingStepErrors.length === 0 &&
     draft.addressVerified && !draft.duplicateBuilding;
 
   function updateBuilding<Key extends keyof BuildingDraftState>(
@@ -259,7 +195,7 @@ export default function BuildingWizard({
 
   function validateCurrentStep() {
     if (step === 0) {
-      setErrors(buildingErrors);
+      setErrors(buildingStepErrors);
       return buildingStepValid;
     }
     if (step === 1) {
@@ -352,10 +288,41 @@ export default function BuildingWizard({
                   <button type="button" onClick={verifyAddress} disabled={checkingAddress}>{checkingAddress ? "확인 중" : "주소 중복 확인"}</button>
                 </div>
                 {addressStatus && <p className={draft.duplicateBuilding ? "field-inline-error" : "field-inline-success"} role="status">{addressStatus}</p>}
+                {(errors.includes("latitude") || errors.includes("longitude")) && (
+                  <p className="field-inline-error" role="alert">
+                    주소 확인으로 지도 위치를 설정해 주세요.
+                  </p>
+                )}
               </Field>
+              <div className="field-form-field wide">
+                <Toggle
+                  label="BRING 관리계약 건물"
+                  checked={draft.building.managementContractRequested}
+                  onChange={(checked) => updateBuilding("managementContractRequested", checked)}
+                />
+                <p className="field-form-help">
+                  직원 등록은 관리계약 확인 요청으로 저장되며, 관리자 확인 후 지도에 표시됩니다.
+                </p>
+              </div>
+              {draft.building.managementContractRequested && (
+                <Field
+                  label="관리 시작일"
+                  required
+                  error={errors.includes("managementStartedOn")
+                    ? "관리 시작일을 입력해 주세요."
+                    : ""}
+                >
+                  <input
+                    id="managementStartedOn"
+                    type="date"
+                    required
+                    value={draft.building.managementStartedOn}
+                    onChange={(event) => updateBuilding("managementStartedOn", event.target.value)}
+                    aria-invalid={errors.includes("managementStartedOn")}
+                  />
+                </Field>
+              )}
               <Field wide label="지번주소"><input id="jibunAddress" value={draft.building.jibunAddress} onChange={(event) => updateBuilding("jibunAddress", event.target.value)} /></Field>
-              <Field label="위도" error={errors.includes("latitude") ? ERROR_COPY.latitude : ""}><input id="latitude" type="number" step="any" value={draft.building.latitude} onChange={(event) => updateBuilding("latitude", numericInput(event.target.value))} /></Field>
-              <Field label="경도" error={errors.includes("longitude") ? ERROR_COPY.longitude : ""}><input id="longitude" type="number" step="any" value={draft.building.longitude} onChange={(event) => updateBuilding("longitude", numericInput(event.target.value))} /></Field>
               <Field label="건물 용도"><input id="purpose" value={draft.building.purpose} onChange={(event) => updateBuilding("purpose", event.target.value)} placeholder="다가구주택" /></Field>
               <Field label="준공연도"><input id="completionYear" type="number" value={draft.building.completionYear} onChange={(event) => updateBuilding("completionYear", numericInput(event.target.value))} /></Field>
               <Field label="층수"><input id="floorCount" type="number" value={draft.building.floorCount} onChange={(event) => updateBuilding("floorCount", numericInput(event.target.value))} /></Field>

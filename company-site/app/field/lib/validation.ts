@@ -105,6 +105,16 @@ export function validateListingDraft(draft: ListingDraft): string[] {
   return errors;
 }
 
+export function validateManagementContractDraft(input: {
+  requested: boolean;
+  startedOn?: string;
+}): string[] {
+  if (!input.requested) return [];
+  return /^\d{4}-\d{2}-\d{2}$/.test(input.startedOn || "")
+    ? []
+    : ["managementStartedOn"];
+}
+
 export function validateVisitCompletion(input: VisitCompletionInput): string[] {
   const errors: string[] = [];
 

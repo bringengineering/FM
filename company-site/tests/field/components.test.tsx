@@ -1,4 +1,4 @@
-import { fireEvent, render, screen } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 
 import AppShell from "../../app/field/components/AppShell";
@@ -28,6 +28,43 @@ describe("Dashboard", () => {
 });
 
 describe("BuildingWizard", () => {
+  it("hides coordinate inputs while preserving the checked address position", async () => {
+    render(
+      <BuildingWizard
+        draftKey="hidden-map-position"
+        checkAddress={async () => ({
+          selection: {
+            roadAddress: "강원특별자치도 원주시 서원대로 1",
+            latitude: 37.3422,
+            longitude: 127.9202,
+          },
+          existingBuilding: null,
+        })}
+      />,
+    );
+
+    expect(screen.queryByLabelText("위도")).not.toBeInTheDocument();
+    expect(screen.queryByLabelText("경도")).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByLabelText("BRING 관리계약 건물"));
+    expect(screen.getByLabelText("관리 시작일")).toBeInTheDocument();
+
+    fireEvent.change(screen.getByLabelText("도로명주소"), {
+      target: { value: "강원특별자치도 원주시 서원대로 1" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "주소 중복 확인" }));
+
+    expect(await screen.findByText("새 건물로 등록할 수 있는 주소입니다.")).toBeInTheDocument();
+    await waitFor(() => {
+      const stored = window.localStorage.getItem("hidden-map-position");
+      expect(stored).not.toBeNull();
+      expect(JSON.parse(stored || "{}").building).toMatchObject({
+        latitude: 37.3422,
+        longitude: 127.9202,
+      });
+    });
+  });
+
   it("requires an address duplicate check before the building step can continue", async () => {
     const checkAddress = vi.fn(async () => ({
       selection: {

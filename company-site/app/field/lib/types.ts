@@ -4,6 +4,16 @@ export type MoneyWon = number;
 
 export type UserRole = "admin" | "staff" | "reviewer";
 
+export type ManagementContractStatus = "none" | "pending" | "active" | "paused" | "ended";
+
+export interface ManagementContractInfo {
+  status: ManagementContractStatus;
+  startedOn?: string;
+  endedOn?: string;
+  updatedAt: ISODateTime;
+  updatedBy: EntityId;
+}
+
 export type ListingStatus =
   | "draft"
   | "capturing"
@@ -106,9 +116,24 @@ export interface Building extends AuditStamp {
   managerName?: string;
   existingManagementCompany?: string;
   existingCleaningCompany?: string;
+  managementContract?: ManagementContractInfo;
   assignedStaffIds: EntityId[];
   lastVisitedAt?: ISODateTime;
   archivedAt?: ISODateTime;
+}
+
+export interface FieldMapProjection {
+  buildingId: EntityId;
+  name: string;
+  roadAddress: string;
+  latitude: number;
+  longitude: number;
+  markerStatus: "vacant" | "managed";
+  vacancyCount: number;
+  approvedRentSummary: string;
+  parkingSummary: string;
+  captureStatus: "notStarted" | "inProgress" | "complete";
+  updatedAt: ISODateTime;
 }
 
 export interface Unit extends AuditStamp {
@@ -138,6 +163,7 @@ export interface Listing extends AuditStamp {
   availableFrom?: string;
   contractTermMonths?: number;
   moveInCondition?: string;
+  locationDescription?: string;
   parkingDescription: string;
   petPolicy: string;
   vacancyReason?: string;
@@ -301,7 +327,8 @@ export interface AuditEvent {
     | "checklistSubmission"
     | "media"
     | "adPackage"
-    | "secureAccess";
+    | "secureAccess"
+    | "managementContract";
   entityId: EntityId;
   occurredAt: ISODateTime;
   changes?: Record<string, { before?: unknown; after?: unknown }>;
