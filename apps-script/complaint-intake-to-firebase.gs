@@ -35,12 +35,13 @@ const PAYMENT_SCHEDULE_HEADERS = [
   "상태",
   "비고"
 ];
-const AUTOMATION_BUILD = "complaint-workflow-20260803-v53";
+const AUTOMATION_BUILD = "complaint-workflow-20260810-v54";
 const OWNER_RECOMMENDATION_IMAGE_VERSION = "owner-summary-v4";
 const OWNER_DECISION_VIEW = "owner-decision";
 const PAYMENT_NOTIFICATION_CONFIG_PROPERTY = "PAYMENT_NOTIFICATION_AUTOMATION_CONFIG";
 const PAYMENT_NOTIFICATION_LEDGER_PREFIX = "PAYMENT_NOTIFICATION_LEDGER_";
 const PAYMENT_NOTIFICATION_CONFIRMED_BASELINE_PROPERTY = "PAYMENT_NOTIFICATION_CONFIRMED_BASELINE";
+const PAYMENT_CALENDAR_WORKSPACE_ID = "shared";
 const PAYMENT_DUE_ALERT_HOUR = 9;
 const PAYMENT_OVERDUE_ALERT_HOUR = 13;
 const OWNER_PAYMENT_ACCOUNT = {
@@ -7565,7 +7566,7 @@ function firebasePaymentCalendarUrl_(uid, childPath, idToken) {
   const child = String(childPath || "").split("/").filter(Boolean).map(part => encodeURIComponent(part)).join("/");
   const token = String(idToken || "").trim();
   if (!token) throw new Error("로그인 인증정보가 없습니다. 다시 로그인해 주세요.");
-  return base + "/paymentCalendars/" + encodeURIComponent(safeUid) + (child ? "/" + child : "") + ".json?auth=" + encodeURIComponent(token);
+  return base + "/paymentCalendars/" + encodeURIComponent(PAYMENT_CALENDAR_WORKSPACE_ID) + (child ? "/" + child : "") + ".json?auth=" + encodeURIComponent(token);
 }
 
 function firebaseReadJson_(url, label) {
@@ -10032,6 +10033,111 @@ function testSensSmsSetup() {
   if (!to) throw new Error("Script Properties에 NCP_SENS_TEST_TO를 테스트 수신번호로 넣어주세요.");
   const result = sendSensSms_(to, "[BRING Care]\nSENS 문자 연동 테스트입니다.", "테스트");
   Logger.log(JSON.stringify(result));
+}
+
+function testPaymentAlimTalkTemplates() {
+  const props = PropertiesService.getScriptProperties();
+  const to = normalizePhoneForSms_(props.getProperty("NCP_SENS_TEST_TO") || "");
+  if (!to) throw new Error("Script Properties에 NCP_SENS_TEST_TO를 테스트 수신번호로 넣어주세요.");
+  const config = getKakaoAlimTalkConfig_();
+  if (!config.enabled) {
+    throw new Error("카카오 알림톡과 NCP 인증 설정을 확인해 주세요.");
+  }
+
+  const dueDate = Utilities.formatDate(new Date(), "Asia/Seoul", "yyyy-MM-dd");
+  const schedule = {
+    tenantName: "테스트 세입자",
+    buildingName: "BRING Care 테스트 건물",
+    unit: "303호",
+    amount: 600000
+  };
+  const buildings = [{
+    buildingId: "test_building",
+    buildingName: schedule.buildingName,
+    rows: [{
+      dueDate: dueDate,
+      schedule: schedule,
+      payment: {
+        date: dueDate,
+        payerName: "테스트입금",
+        amount: schedule.amount
+      }
+    }]
+  }];
+  const requests = [
+    {
+      label: "테스트 세입자 납부일 안내",
+      templateCode: config.templates.paymentReminder,
+      content: paymentReminderAlimTalkContent_(schedule, dueDate, "due")
+    },
+    {
+      label: "테스트 세입자 미입금 안내",
+      templateCode: config.templates.paymentReminderOverdue,
+      content: paymentReminderAlimTalkContent_(schedule, dueDate, "unpaid")
+    },
+    {
+      label: "테스트 건물주 월세 현황 안내",
+      templateCode: config.templates.paymentOwnerGroup,
+      content: paymentOwnerSummaryAlimTalkContent_("테스트 수신자", buildings, "due")
+    },
+    {
+      label: "테스트 건물주 입금완료 안내",
+      templateCode: config.templates.paymentOwnerConfirmedGroup,
+      content: paymentOwnerConfirmedAlimTalkContent_("테스트 수신자", buildings)
+    }
+  ];
+  const results = requests.map(request => {
+    const result = sendSensAlimTalk_(
+      to,
+      request.content,
+      request.label,
+      request.templateCode,
+      { fallbackContent: request.content },
+      config
+    );
+    Utilities.sleep(300);
+    return Object.assign({ label: request.label }, result);
+  });
+  Logger.log(JSON.stringify(results));
+  const failed = results.filter(result => result.ok !== true);
+  if (failed.length) {
+    throw new Error(failed.map(result => result.message || result.label).join(" / "));
+  }
+  props.setProperty("LAST_PAYMENT_ALIMTALK_TEST", JSON.stringify({
+    sentAt: new Date().toISOString(),
+    results: results.map(result => ({
+      label: result.label,
+      templateCode: result.templateCode,
+      requestId: result.requestId,
+      messageId: result.messageId
+    }))
+  }));
+  return results;
+}
+
+function checkPaymentAlimTalkTemplateTestStatus() {
+  const props = PropertiesService.getScriptProperties();
+  const saved = JSON.parse(props.getProperty("LAST_PAYMENT_ALIMTALK_TEST") || "{}");
+  const items = Array.isArray(saved.results) ? saved.results : [];
+  if (!items.length) throw new Error("먼저 testPaymentAlimTalkTemplates를 실행해 주세요.");
+  const config = getKakaoAlimTalkConfig_();
+  const results = items.map(item => {
+    const uri = "/alimtalk/v2/services/" + encodeURIComponent(config.serviceId) +
+      "/messages/" + encodeURIComponent(String(item.messageId || ""));
+    const response = sensGetJson_(uri, config);
+    const status = response.json && typeof response.json === "object" ? response.json : {};
+    return {
+      label: item.label,
+      templateCode: item.templateCode,
+      ok: response.ok === true,
+      messageStatusCode: String(status.messageStatusCode || ""),
+      messageStatusName: String(status.messageStatusName || ""),
+      messageStatusDesc: String(status.messageStatusDesc || ""),
+      completeTime: String(status.completeTime || "")
+    };
+  });
+  Logger.log(JSON.stringify(results));
+  return results;
 }
 
 function testKakaoAlimTalkSetup() {

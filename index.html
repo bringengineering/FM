@@ -5648,6 +5648,7 @@ const paymentAlertBadgeEl=document.getElementById("paymentAlertBadge");
 const paymentScheduleModal=document.getElementById("paymentScheduleModal");
 const paymentTransactionModal=document.getElementById("paymentTransactionModal");
 const paymentBankModal=document.getElementById("paymentBankModal");
+const PAYMENT_WORKSPACE_ID="shared";
 let paymentRef=null, paymentValueHandler=null, paymentData={profile:{},schedules:{},transactions:{},overrides:{},rentSms:{},bankSync:{},bankBindings:{},audit:{}};
 let paymentMonth=paymentTodayKey().slice(0,7), paymentBuildingId="", selectedPaymentScheduleId="", editingPaymentScheduleId="";
 let editingPaymentBankBuildingId="";
@@ -5713,7 +5714,7 @@ function paymentEnsureData(){
   if(!paymentData||typeof paymentData!=="object") paymentData={};
   ["profile","schedules","transactions","overrides","rentSms","bankSync","bankBindings","audit"].forEach(key=>{ if(!paymentData[key]||typeof paymentData[key]!=="object") paymentData[key]={}; });
 }
-function paymentLocalKey(){ return "fm_payment_calendar_"+(authedUser&&authedUser.uid||"local"); }
+function paymentLocalKey(){ return "fm_payment_calendar_"+PAYMENT_WORKSPACE_ID; }
 function loadPaymentLocal(){ try{ return JSON.parse(localStorage.getItem(paymentLocalKey()))||{}; }catch(e){ return {}; } }
 function savePaymentLocal(){ try{ localStorage.setItem(paymentLocalKey(),JSON.stringify(paymentData)); }catch(e){} }
 function paymentSetLocalPath(path,value){
@@ -5733,17 +5734,58 @@ function recordPaymentAudit(action,details){
   if(paymentRef) paymentRef.child("audit/"+id).set(row).catch(err=>console.warn("입금 감사기록 저장 실패",err));
 }
 function detachPaymentCalendarRef(){ if(paymentRef&&paymentValueHandler) paymentRef.off("value",paymentValueHandler); paymentRef=null; paymentValueHandler=null; paymentData={profile:{},schedules:{},transactions:{},overrides:{},rentSms:{},bankSync:{},bankBindings:{},audit:{}}; }
-function attachPaymentCalendarRef(user){
+function paymentSharedNewest(left,right){
+  const leftTime=Date.parse(left&&(left.updatedAt||left.lastSuccessfulAt)||"")||0;
+  const rightTime=Date.parse(right&&(right.updatedAt||right.lastSuccessfulAt)||"")||0;
+  return rightTime>leftTime?right:left;
+}
+function paymentMergeLegacyIntoShared(shared,legacy,user){
+  const current=shared&&typeof shared==="object"?shared:{};
+  const old=legacy&&typeof legacy==="object"?legacy:{};
+  const merged=Object.assign({},old,current);
+  ["schedules","transactions","overrides","rentSms","bankBindings","audit"].forEach(key=>{
+    merged[key]=Object.assign({},old[key]&&typeof old[key]==="object"?old[key]:{},current[key]&&typeof current[key]==="object"?current[key]:{});
+  });
+  merged.sheetSync=paymentSharedNewest(old.sheetSync||{},current.sheetSync||{})||{};
+  merged.bankSync=paymentSharedNewest(old.bankSync||{},current.bankSync||{})||{};
+  const oldProfile=old.profile&&typeof old.profile==="object"?old.profile:{};
+  const currentProfile=current.profile&&typeof current.profile==="object"?current.profile:{};
+  merged.profile=Object.assign({},oldProfile,currentProfile,{
+    workspaceId:PAYMENT_WORKSPACE_ID,
+    workspaceName:"BRING Care",
+    shared:true,
+    members:Object.assign({},oldProfile.members||{},currentProfile.members||{})
+  });
+  if(user&&user.uid){
+    merged.profile.members[user.uid]={email:user.email||"",lastSeenAt:new Date().toISOString()};
+  }
+  delete merged._migration;
+  return merged;
+}
+async function migratePaymentCalendarToShared(user,sharedRef){
+  const legacyRef=db.ref("paymentCalendars/"+user.uid);
+  const legacySnap=await legacyRef.once("value");
+  const legacy=legacySnap.val();
+  if(!legacy||legacy._migration&&legacy._migration.sharedAt) return;
+  await sharedRef.transaction(current=>paymentMergeLegacyIntoShared(current,legacy,user),null,false);
+  await legacyRef.child("_migration").set({workspaceId:PAYMENT_WORKSPACE_ID,sharedAt:new Date().toISOString(),by:user.email||user.uid});
+}
+function rememberPaymentWorkspaceMember(user){
+  if(!paymentRef||!user||!user.uid) return;
+  paymentRef.child("profile").update({workspaceId:PAYMENT_WORKSPACE_ID,workspaceName:"BRING Care",shared:true});
+  paymentRef.child("profile/members/"+user.uid).update({email:user.email||"",lastSeenAt:new Date().toISOString()});
+}
+async function attachPaymentCalendarRef(user){
   detachPaymentCalendarRef();
   if(!user){ updatePaymentAlertBadge(); return; }
   if(!db){ paymentData=loadPaymentLocal(); paymentEnsureData(); renderPaymentCalendar(); return; }
-  paymentRef=db.ref("paymentCalendars/"+user.uid);
+  const sharedRef=db.ref("paymentCalendars/"+PAYMENT_WORKSPACE_ID);
+  try{ await migratePaymentCalendarToShared(user,sharedRef); }
+  catch(err){ console.warn("기존 입금 캘린더 공용 전환 실패",err); }
+  if(authedUser!==user) return;
+  paymentRef=sharedRef;
   paymentValueHandler=s=>{
     paymentData=s.val()||{}; paymentEnsureData();
-    if(!paymentData.profile.adminEmail){
-      const profile={adminUid:user.uid,adminEmail:user.email||"",role:"admin",createdAt:new Date().toISOString()};
-      paymentData.profile=profile; paymentRef.child("profile").set(profile);
-    }
     renderPaymentCalendar();
   };
   paymentRef.on("value",paymentValueHandler,e=>{
@@ -5752,6 +5794,7 @@ function attachPaymentCalendarRef(user){
     paymentRef=null; paymentValueHandler=null;
     paymentData=loadPaymentLocal(); paymentEnsureData(); renderPaymentCalendar();
   });
+  rememberPaymentWorkspaceMember(user);
 }
 function paymentBuildingRecords(){
   const out=[],seen={},seenIds={};
@@ -6224,8 +6267,9 @@ document.getElementById("noticeBtn").addEventListener("click", openNoticePanel);
 document.getElementById("noticeBanner").addEventListener("click", openNoticePanel);
 
 /* ===== 업데이트 알림(What's New) — 새 버전 나오면 자동 팝업 ===== */
-const APP_VERSION = "5.41";
+const APP_VERSION = "5.42";
 const CHANGELOG = [
+  { v:"5.42", d:"2026-08-10", items:["입금확인 캘린더를 BRING Care 공용 데이터로 전환","다른 Google 계정에서도 일정·입금내역·팝빌 계좌 연결·발송기록을 동일하게 공유","기존 계정별 입금 캘린더 데이터를 첫 로그인 시 공용 영역으로 자동 병합"] },
   { v:"5.41", d:"2026-08-07", items:["⑬ 작업 전·후 사진 분리 업로드 및 Drive 저장","⑬ 사진 비교 보기와 개별 목록 제거","⑭ B/A 보고서에 작업 사진 자동 참조"] },
   { v:"5.40", d:"2026-08-07", items:["브링 견적서 가산율을 10%에서 5%로 변경","최종 합계금액은 기존처럼 100원 단위 반올림","기존 견적은 브링 양식 재작성 시 5% 적용"] },
   { v:"5.39", d:"2026-07-30", items:["동일한 건물주 전화번호로 등록된 여러 건물의 납부예정·미입금·입금완료 알림을 한 건으로 통합"] },

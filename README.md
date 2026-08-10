@@ -47,7 +47,8 @@ GPT·클로드·커서에 **파일을 통째로** 넣고 "○○ 기능 추가/�
 ## 📂 데이터 구조 (Firebase Realtime Database)
 
 - 운영 프로젝트: `BRING-FM-HJ` (`bring-fm-hj`), 소유 계정 `ameejin92@gmail.com`
-- `paymentCalendars/{Google UID}`: 현재 로그인한 구글 계정 전용 입금 캘린더(월 납부 일정, 거래, 건물별 팝빌 계좌 연결, 수동 보정, 감사 기록)
+- `paymentCalendars/shared`: 로그인한 BRING Care 사용자가 함께 보는 공용 입금 캘린더(월 납부 일정, 거래, 건물별 팝빌 계좌 연결, 수동 보정, 발송 기록, 감사 기록)
+- 기존 `paymentCalendars/{Google UID}` 데이터는 해당 계정이 새 버전에 처음 로그인할 때 공용 경로에 병합되고, 이후 변경사항은 공용 경로에만 저장됩니다.
 - `caseSettings/paymentBuildings`: 온보딩 Drive 폴더에서 동기화한 건물명·주소·원본 파일 링크. 계좌번호나 토큰은 저장하지 않습니다.
 
 입금캘린더의 건물 카드에서 팝빌 등록계좌를 연결합니다. 연결정보에는 서버가 만든 익명 계좌 ID, 은행명, 계좌번호 끝 4자리만 저장하며 전체 계좌번호·조회 비밀번호·SecretKey는 브라우저나 Realtime Database에 넣지 않습니다. 실제 입금은 같은 계좌에 연결된 건물의 세입자 일정과만 비교합니다.
