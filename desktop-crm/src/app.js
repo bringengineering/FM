@@ -589,14 +589,14 @@
       Sales.createSalesUnit({ id: "sun_demo_03", prospectId: "spr_demo_03", label: "데모 101호", status: "upcoming", moveOutAt: date(12), note: "화면검증용 가상 호실" }, demoActor)
     ];
     data.salesActivities = [
-      Sales.createSalesActivity({ id: "sac_demo_01", prospectId: "spr_demo_01", contactId: "sct_demo_01", type: "call", result: "replied", occurredAt: date(-1), summary: "공실 매물접수 범위 확인", responseText: "광고 등록 진행 요청", scriptId: "S3", scriptVersion: "1.0", nextAction: "광고 게시 증거 확인", nextActionAt: date(0), owner: "황우중" }, { contacts: data.salesContacts }),
-      Sales.createSalesActivity({ id: "sac_demo_02", prospectId: "spr_demo_02", contactId: "sct_demo_02", type: "sms", result: "follow_up", occurredAt: date(-3), summary: "공실 여부 확인 문자 발송", scriptId: "S1", scriptVersion: "1.0", nextAction: "건물주 답변 확인", nextActionAt: date(-1), owner: "김현진" }, { contacts: data.salesContacts })
+      Sales.createSalesActivity({ id: "sac_demo_01", prospectId: "spr_demo_01", contactId: "sct_demo_01", type: "call", result: "replied", occurredAt: date(-1), summary: "공실 매물접수 범위 확인", responseText: "광고 등록 진행 요청", scriptId: "S3", scriptVersion: "1.0", nextAction: "광고 게시 증거 확인", nextActionAt: date(0), owner: "황우중" }, { prospects: data.salesProspects, contacts: data.salesContacts, units: data.salesUnits, opportunities: data.salesOpportunities, actor: demoActor }),
+      Sales.createSalesActivity({ id: "sac_demo_02", prospectId: "spr_demo_02", contactId: "sct_demo_02", type: "sms", result: "follow_up", occurredAt: date(-3), summary: "공실 여부 확인 문자 발송", scriptId: "S1", scriptVersion: "1.0", nextAction: "건물주 답변 확인", nextActionAt: date(-1), owner: "김현진" }, { prospects: data.salesProspects, contacts: data.salesContacts, units: data.salesUnits, opportunities: data.salesOpportunities, actor: demoActor })
     ];
-    const demoEvent = values => Sales.createSalesEvent(Object.assign({ evidenceType: "demo_record", evidenceNote: "화면검증용 가상 완료 증거", occurredAt: date(-2), owner: "데모 담당자" }, values), demoActor);
+    const demoEvent = values => Sales.createSalesEvent(Object.assign({ evidenceType: "demo_record", evidenceNote: "화면검증용 가상 완료 증거", occurredAt: date(-2), owner: "데모 담당자" }, values), { prospects: data.salesProspects, contacts: data.salesContacts, units: data.salesUnits, opportunities: data.salesOpportunities, actor: demoActor });
     data.salesEvents = [
       demoEvent({ id: "sev_demo_01", prospectId: "spr_demo_01", type: "prospect_created", occurredAt: date(-12) }),
       demoEvent({ id: "sev_demo_02", prospectId: "spr_demo_01", contactId: "sct_demo_01", type: "contact_verified", occurredAt: date(-10) }),
-      demoEvent({ id: "sev_demo_03", prospectId: "spr_demo_01", type: "contact_attempted", occurredAt: date(-9) }),
+      demoEvent({ id: "sev_demo_03", prospectId: "spr_demo_01", type: "contact_attempted", channel: "call", result: "replied", occurredAt: date(-9) }),
       demoEvent({ id: "sev_demo_04", prospectId: "spr_demo_01", type: "reply_received", occurredAt: date(-8) }),
       demoEvent({ id: "sev_demo_05", prospectId: "spr_demo_01", type: "interest_qualified", occurredAt: date(-7) }),
       demoEvent({ id: "sev_demo_06", prospectId: "spr_demo_01", type: "meeting_confirmed", occurredAt: date(-6) }),
@@ -604,9 +604,9 @@
       demoEvent({ id: "sev_demo_08", prospectId: "spr_demo_01", unitId: "sun_demo_01", type: "listing_received", occurredAt: date(-2), evidenceType: "broker_handoff", evidenceNote: "화면검증용 매물접수 확인" }),
       demoEvent({ id: "sev_demo_09", prospectId: "spr_demo_02", type: "prospect_created", occurredAt: date(-6) }),
       demoEvent({ id: "sev_demo_10", prospectId: "spr_demo_02", contactId: "sct_demo_02", type: "contact_verified", occurredAt: date(-5) }),
-      demoEvent({ id: "sev_demo_11", prospectId: "spr_demo_02", type: "contact_attempted", occurredAt: date(-3) }),
+      demoEvent({ id: "sev_demo_11", prospectId: "spr_demo_02", type: "contact_attempted", channel: "sms", result: "follow_up", occurredAt: date(-3) }),
       demoEvent({ id: "sev_demo_12", prospectId: "spr_demo_03", type: "prospect_created", occurredAt: date(-20) }),
-      demoEvent({ id: "sev_demo_13", prospectId: "spr_demo_03", type: "paid_management_started", occurredAt: date(-2), evidenceType: "management_start", evidenceNote: "화면검증용 유료관리 시작 확인" })
+      demoEvent({ id: "sev_demo_13", prospectId: "spr_demo_03", type: "paid_management_started", occurredAt: date(-2), managementStartedAt: date(-2), serviceScope: "공실·입퇴실 일정과 민원 접수", evidenceType: "management_start", evidenceNote: "화면검증용 유료관리 시작 확인" })
     ];
     data.salesOpportunities = [
       Sales.createSalesOpportunity({ id: "sop_demo_01", prospectId: "spr_demo_01", unitId: "sun_demo_01", serviceType: "waterproofing", stage: "quote_requested", requirements: "데모 지하실 방수 견적", owner: "김현진", dueAt: date(3), quoteAmount: 850000 }, demoActor),
@@ -1410,14 +1410,18 @@
 
   function renderPipeline() {
     ensureSalesStore();
+    const now = new Date().toISOString();
+    const kpis = Sales.calculateKpis(store, { now });
     main.innerHTML = SalesUI.renderPipeline({
       store,
       stages: Sales.SALES_STAGES,
-      kpis: Sales.calculateKpis(store, { now: new Date().toISOString() }),
+      kpis,
+      periodLabel: "전체 기간 누계",
+      ownerCounts: kpis.activeProspectsByOwner || kpis.activeByOwner || {},
       selectedStage: salesStageFilter,
       boardMode: salesBoardMode,
       query: searchEl.value,
-      now: new Date().toISOString(),
+      now,
       writable: canWriteCRM()
     }) + renderArchivedSalesProspects();
   }
@@ -1942,9 +1946,33 @@
   const salesUnitById = id => (store.salesUnits || []).find(item => item && item.id === id) || null;
   const salesOpportunityById = id => (store.salesOpportunities || []).find(item => item && item.id === id) || null;
   const activeSalesRecords = (collection, prospectId) => (store[collection] || []).filter(item => item && item.prospectId === prospectId && !item.archivedAt);
+  function salesRelationContext(actor) {
+    return {
+      prospects: (store.salesProspects || []).filter(Boolean),
+      contacts: (store.salesContacts || []).filter(Boolean),
+      units: (store.salesUnits || []).filter(Boolean),
+      opportunities: (store.salesOpportunities || []).filter(Boolean),
+      actor: actor || salesActor()
+    };
+  }
   const salesStageFromEvents = prospectId => Sales.stageFromEvents(store.salesEvents, {
-    prospectId, contacts: store.salesContacts, units: store.salesUnits, opportunities: store.salesOpportunities
+    prospectId,
+    prospects: store.salesProspects,
+    contacts: store.salesContacts,
+    units: store.salesUnits,
+    opportunities: store.salesOpportunities
   });
+  function salesAuditLogsForProspect(prospectId) {
+    const relatedIds = new Set([prospectId]);
+    ["salesContacts", "salesUnits", "salesActivities", "salesEvents", "salesOpportunities"].forEach(collection => {
+      (store[collection] || []).forEach(item => {
+        if (item && item.prospectId === prospectId && item.id) relatedIds.add(item.id);
+      });
+    });
+    return (store.auditLogs || [])
+      .filter(log => log && !log.archivedAt && relatedIds.has(log.targetId))
+      .sort((left, right) => String(right.occurredAt || right.createdAt || "").localeCompare(String(left.occurredAt || left.createdAt || "")));
+  }
   const salesOptionLabeler = labels => value => value ? salesLabel(labels, value) : "선택 안 함";
   const salesCheckbox = (label, name, checked, value) => `<label class="field sales-checkbox-field"><span>${esc(label)}</span><input type="checkbox" name="${attr(name)}" value="${attr(value || "true")}" ${checked ? "checked" : ""}></label>`;
 
@@ -1954,10 +1982,14 @@
       meeting_confirmed: "meeting_booked", listing_received: "listing_intake", ad_published: "ad_posted", tenant_visit: "property_visit"
     };
     const standardByEvent = new Map((SalesStandards.funnelEvents || []).map(item => [item.event, item]));
+    const evidenceGuidance = {
+      lease_signed: "협력 공인중개사의 계약완료 확인이 필요합니다. 계약조건 협의나 계약서 작성은 공인중개사가 진행합니다.",
+      paid_management_started: "관리 시작일, 서비스 범위, 관리계약 또는 시작 확인 증거를 함께 기록합니다."
+    };
     return Sales.SALES_STAGES.flatMap(stage => stage.events.map(event => {
       const standard = standardByEvent.get(standardAliases[event] || event) || {};
       const eventLabels = { tenant_inquiry: "임차 문의", tenant_visit: "임차 방문", prospect_paused: "영업 보류", prospect_closed: "영업 종료" };
-      return { event, label: eventLabels[event] || standard.label || stage.label, evidence: standard.evidence || (event === "prospect_paused" || event === "prospect_closed" ? "보류·종료 사유와 재연락 여부" : "완료 사실을 다시 확인할 수 있는 메모 또는 링크") };
+      return { event, label: eventLabels[event] || standard.label || stage.label, evidence: evidenceGuidance[event] || standard.evidence || (event === "prospect_paused" || event === "prospect_closed" ? "보류·종료 사유와 재연락 여부" : "완료 사실을 다시 확인할 수 있는 메모 또는 링크") };
     }));
   }
 
@@ -2037,13 +2069,26 @@
     if (!prospect) return showToast("영업 대상 건물을 찾지 못했습니다.", "error");
     const contacts = activeSalesRecords("salesContacts", prospect.id);
     const units = activeSalesRecords("salesUnits", prospect.id);
+    const opportunities = activeSalesRecords("salesOpportunities", prospect.id);
     const checklists = SalesStandards.checklists || [];
     modalContent.innerHTML = `<div class="modal-head"><div><h2>단계 완료 증거</h2><p>실제 완료 사실과 다시 확인할 수 있는 증거를 함께 남깁니다.</p></div><button class="close-button" data-action="close-modal">×</button></div>${SalesUI.renderEventForm({ prospect, units, eventTypes: salesEventOptions() })}`;
     const form = modalContent.querySelector("#salesEventForm");
     if (!form) return;
     form.dataset.salesProspectId = prospect.id;
+    const evidenceType = form.elements.evidenceType;
+    [
+      ["broker_confirmation", "협력 공인중개사 계약완료 확인"],
+      ["management_start", "유료관리 시작 확인"],
+      ["service_contract", "관리 서비스 계약서"]
+    ].forEach(([value, label]) => {
+      if (!evidenceType || Array.from(evidenceType.options).some(option => option.value === value)) return;
+      const option = document.createElement("option");
+      option.value = value;
+      option.textContent = label;
+      evidenceType.appendChild(option);
+    });
     const grid = form.querySelector(".sales-form-grid");
-    grid?.insertAdjacentHTML("beforeend", `${selectField("확인 연락처", "contactId", ["", ...contacts.map(item => item.id)], "", id => id ? `${salesContactById(id)?.name || "연락처"} · ${salesContactById(id)?.phone || ""}` : "연락처 확인 단계에서 선택")}${selectField("접촉 채널", "channel", ["", ...Sales.SALES_CHANNELS], "", salesOptionLabeler(SALES_CHANNEL_LABELS))}${selectField("접촉 결과", "result", ["", ...Sales.SALES_RESULTS], "", salesOptionLabeler(SALES_RESULT_LABELS))}${field("기록 담당자", "owner", salesActorName())}<fieldset class="sales-checklist-picker wide"><legend>적용 체크리스트</legend>${checklists.map(item => `<label><input type="checkbox" name="checklistIds" value="${attr(item.id)}" ${(suggestedChecklistIds || []).includes(item.id) ? "checked" : ""}><span>${esc(item.id)} · ${esc(item.title)}</span></label>`).join("")}</fieldset>`);
+    grid?.insertAdjacentHTML("beforeend", `${selectField("확인 연락처", "contactId", ["", ...contacts.map(item => item.id)], "", id => id ? `${salesContactById(id)?.name || "연락처"} · ${salesContactById(id)?.phone || ""}` : "연락처 확인 단계에서 선택")}${selectField("접촉 채널", "channel", ["", ...Sales.SALES_CHANNELS], "", salesOptionLabeler(SALES_CHANNEL_LABELS))}${selectField("접촉 결과", "result", ["", ...Sales.SALES_RESULTS], "", salesOptionLabeler(SALES_RESULT_LABELS))}${field("기록 담당자", "owner", salesActorName())}${selectField("관련 추가서비스", "opportunityId", ["", ...opportunities.map(item => item.id)], "", id => { const item = salesOpportunityById(id); return id ? `${salesLabel(SALES_SERVICE_LABELS, item?.serviceType)} · ${salesLabel(SALES_OPPORTUNITY_LABELS, item?.stage)}` : "연결하지 않음"; })}${field("유료관리 시작일", "managementStartedAt", "", "datetime-local")}${areaField("유료관리 서비스 범위", "serviceScope", "", "wide")}<fieldset class="sales-checklist-picker wide"><legend>적용 체크리스트</legend>${checklists.map(item => `<label><input type="checkbox" name="checklistIds" value="${attr(item.id)}" ${(suggestedChecklistIds || []).includes(item.id) ? "checked" : ""}><span>${esc(item.id)} · ${esc(item.title)}</span></label>`).join("")}</fieldset>`);
     if (form.elements.occurredAt) form.elements.occurredAt.value = datetimeValue(new Date().toISOString());
     if (suggestedType && form.elements.type) form.elements.type.value = suggestedType;
     openModal();
@@ -2084,7 +2129,7 @@
     selectedSalesProspectId = prospect.id;
     drawer.classList.remove("customer-centered");
     const writable = canWriteCRM() && !prospect.archivedAt;
-    drawerContent.innerHTML = `<div class="drawer-head"><div><h2>건물 영업 상세</h2><p>${esc(prospect.id)}</p></div><button class="close-button" data-action="close-drawer">×</button></div><div class="drawer-body sales-drawer-body">${SalesUI.renderProspectDetail({ prospect, contacts: store.salesContacts, units: store.salesUnits, activities: store.salesActivities, events: store.salesEvents, opportunities: store.salesOpportunities, stages: Sales.SALES_STAGES, writable, now: new Date().toISOString() })}${canWriteCRM() ? salesManagementMarkup(prospect) : ""}<section class="record-danger-zone"><div><b>${prospect.archivedAt ? "보관된 영업 대상" : "영업 대상 보관"}</b><span>기록은 삭제하지 않고 모든 활동과 완료 증거를 그대로 보존합니다.</span></div><button type="button" class="${prospect.archivedAt ? "secondary-button" : "danger-outline-button"}" data-sales-prospect-${prospect.archivedAt ? "restore" : "archive"}="${attr(prospect.id)}">${prospect.archivedAt ? "영업 대상 복원" : "영업 대상 보관"}</button></section></div>`;
+    drawerContent.innerHTML = `<div class="drawer-head"><div><h2>건물 영업 상세</h2><p>${esc(prospect.id)}</p></div><button class="close-button" data-action="close-drawer">×</button></div><div class="drawer-body sales-drawer-body">${SalesUI.renderProspectDetail({ prospect, contacts: store.salesContacts, units: store.salesUnits, activities: store.salesActivities, events: store.salesEvents, opportunities: store.salesOpportunities, auditLogs: salesAuditLogsForProspect(prospect.id), stages: Sales.SALES_STAGES, writable, now: new Date().toISOString() })}${canWriteCRM() ? salesManagementMarkup(prospect) : ""}<section class="record-danger-zone"><div><b>${prospect.archivedAt ? "보관된 영업 대상" : "영업 대상 보관"}</b><span>기록은 삭제하지 않고 모든 활동과 완료 증거를 그대로 보존합니다.</span></div><button type="button" class="${prospect.archivedAt ? "secondary-button" : "danger-outline-button"}" data-sales-prospect-${prospect.archivedAt ? "restore" : "archive"}="${attr(prospect.id)}">${prospect.archivedAt ? "영업 대상 복원" : "영업 대상 보관"}</button></section></div>`;
     openDrawer();
   }
 
@@ -2484,6 +2529,15 @@
     if (salesStage) {
       salesStageFilter = salesStage.dataset.salesStageFilter || "all";
       renderPipeline();
+      return;
+    }
+    const salesBoardModeControl = event.target.closest("[data-sales-board-mode]");
+    if (salesBoardModeControl) {
+      const nextMode = salesBoardModeControl.dataset.salesBoardMode;
+      if (["focus", "flow"].includes(nextMode)) {
+        salesBoardMode = nextMode;
+        renderPipeline();
+      }
       return;
     }
     const salesProspectOpen = event.target.closest("[data-sales-prospect-open]");
@@ -3114,7 +3168,7 @@
       if (!assertSalesInputSafe(raw)) return;
       try {
         const existing = salesProspectById(form.dataset.salesProspectId || raw.id);
-        const candidate = Sales.createSalesProspect(Object.assign({}, existing || {}, {
+        const prospectValues = Object.assign({}, existing || {}, {
           id: existing?.id || raw.id || undefined,
           name: String(raw.name || "").trim(), address: String(raw.address || "").trim(), region: String(raw.region || "").trim(),
           buildingType: raw.buildingType, demandAnchors: String(raw.demandAnchors || "").split(",").map(item => item.trim()).filter(Boolean),
@@ -3122,14 +3176,17 @@
           vacancyCount: Number(raw.vacancyCount) || 0, upcomingVacancyCount: Number(raw.upcomingVacancyCount) || 0,
           nextAction: String(raw.nextAction || "").trim(), nextActionAt: raw.nextActionAt ? new Date(raw.nextActionAt).toISOString() : "",
           crmBuildingId: String(raw.crmBuildingId || "")
-        }), salesActor());
+        });
+        Sales.assertProspect(prospectValues);
+        const candidate = Sales.createSalesProspect(prospectValues, salesActor());
         const duplicates = typeof Sales.duplicateProspects === "function" ? Sales.duplicateProspects(store.salesProspects, candidate) : [];
         if (duplicates.length && !await requestConfirmation({ title: "같은 주소의 영업 대상이 있습니다", description: "별동 등 다른 건물이 맞는지 확인해 주세요.", target: duplicates.map(item => item.name || item.address).join(" · "), warning: "계속하면 별도 영업 대상으로 저장됩니다.", confirmLabel: "별도 건물로 저장", tone: "warning" })) return;
         if (existing) {
           store.salesProspects[store.salesProspects.findIndex(item => item.id === existing.id)] = candidate;
         } else {
           store.salesProspects.push(candidate);
-          const createdEvent = Sales.createSalesEvent({ prospectId: candidate.id, type: "prospect_created", occurredAt: candidate.createdAt || new Date().toISOString(), evidenceType: "crm_record", evidenceNote: "CRM에서 영업 대상 건물 등록", owner: salesActorName() }, salesActor());
+          const actor = salesActor();
+          const createdEvent = Sales.createSalesEvent({ prospectId: candidate.id, type: "prospect_created", occurredAt: candidate.createdAt || new Date().toISOString(), evidenceType: "crm_record", evidenceNote: "CRM에서 영업 대상 건물 등록", owner: salesActorName() }, salesRelationContext(actor));
           store.salesEvents.push(createdEvent);
           candidate.stage = salesStageFromEvents(candidate.id);
         }
@@ -3141,11 +3198,13 @@
       if (!assertSalesInputSafe(raw)) return;
       try {
         const existing = salesContactById(form.dataset.salesContactId);
-        const item = Sales.createSalesContact(Object.assign({}, existing || {}, {
+        const contactValues = Object.assign({}, existing || {}, {
           prospectId: form.dataset.salesProspectId, name: String(raw.name || "").trim(), role: String(raw.role || "").trim(), phone: String(raw.phone || "").trim(),
           source: raw.source, sourceEvidence: String(raw.sourceEvidence || "").trim(), verifiedAt: raw.verifiedAt ? new Date(raw.verifiedAt).toISOString() : "",
           doNotContact: !!raw.doNotContact, doNotContactReason: String(raw.doNotContactReason || "").trim(), crmCustomerId: String(raw.crmCustomerId || "")
-        }), salesActor());
+        });
+        Sales.assertContact(contactValues);
+        const item = Sales.createSalesContact(contactValues, salesActor());
         if (existing) store.salesContacts[store.salesContacts.findIndex(record => record.id === existing.id)] = item;
         else store.salesContacts.push(item);
         const optOutChanged = existing && !!(existing.doNotContact || existing.optOut) !== !!item.doNotContact;
@@ -3157,11 +3216,13 @@
       if (!assertSalesInputSafe(raw)) return;
       try {
         const existing = salesUnitById(form.dataset.salesUnitId);
-        const item = Sales.createSalesUnit(Object.assign({}, existing || {}, {
+        const unitValues = Object.assign({}, existing || {}, {
           prospectId: form.dataset.salesProspectId, label: String(raw.label || "").trim(), status: raw.status,
           moveOutAt: raw.moveOutAt || "", deposit: Number(raw.deposit) || 0, rent: Number(raw.rent) || 0, maintenanceFee: Number(raw.maintenanceFee) || 0,
           photoUrl: String(raw.photoUrl || "").trim(), evidenceUrl: String(raw.evidenceUrl || "").trim(), note: String(raw.note || "").trim()
-        }), salesActor());
+        });
+        Sales.assertUnit(unitValues);
+        const item = Sales.createSalesUnit(unitValues, salesActor());
         if (existing) store.salesUnits[store.salesUnits.findIndex(record => record.id === existing.id)] = item;
         else store.salesUnits.push(item);
         recalculateSalesProspectVacancies(item.prospectId);
@@ -3175,14 +3236,17 @@
       try {
         const script = (SalesStandards.scripts || []).find(item => item.id === raw.scriptId);
         const actor = salesActor();
-        const item = Sales.createSalesActivity({
+        const activityValues = {
           prospectId: form.dataset.salesProspectId, contactId: String(raw.contactId || ""), unitId: String(raw.unitId || ""), type: raw.type,
           occurredAt: raw.occurredAt ? new Date(raw.occurredAt).toISOString() : new Date().toISOString(), result: raw.result,
           responseCode: String(raw.responseCode || ""), failureReason: String(raw.failureReason || ""), summary: String(raw.summary || "").trim(), responseText: String(raw.responseText || "").trim(),
           scriptId: String(raw.scriptId || ""), scriptVersion: script?.version || form.dataset.scriptVersion || "", nextAction: String(raw.nextAction || "").trim(),
           nextActionAt: raw.nextActionAt ? new Date(raw.nextActionAt).toISOString() : "", owner: String(raw.owner || "").trim() || salesActorName(), createdBy: actor.email, updatedBy: actor.email
-        }, { contacts: activeSalesRecords("salesContacts", form.dataset.salesProspectId) });
-        if (typeof Sales.assertActivity === "function") Sales.assertActivity(item, { contacts: store.salesContacts, scripts: SalesStandards.scripts });
+        };
+        const activityContext = salesRelationContext(actor);
+        activityContext.scripts = SalesStandards.scripts;
+        Sales.assertActivity(activityValues, activityContext);
+        const item = Sales.createSalesActivity(activityValues, activityContext);
         store.salesActivities.push(item);
         const prospect = salesProspectById(item.prospectId);
         if (prospect) {
@@ -3208,12 +3272,16 @@
         if (raw.type === "contact_attempted" && (!raw.channel || !raw.result)) return showToast("최초접촉 완료 증거에는 채널과 결과가 필요합니다.", "error");
         if (raw.type === "ad_published" && !raw.channel) return showToast("광고게시 완료 증거에는 게시 채널이 필요합니다.", "error");
         const actor = salesActor();
-        const item = Sales.createSalesEvent({
+        const eventValues = {
           prospectId, contactId: String(raw.contactId || ""), unitId: String(raw.unitId || ""), type: raw.type,
-          occurredAt: raw.occurredAt ? new Date(raw.occurredAt).toISOString() : "", evidenceType: raw.evidenceType,
+          opportunityId: String(raw.opportunityId || ""), occurredAt: String(raw.occurredAt || "").trim(), evidenceType: raw.evidenceType,
           evidenceUrl: String(raw.evidenceUrl || "").trim(), evidenceNote: String(raw.evidenceNote || "").trim(), channel: String(raw.channel || ""), result: String(raw.result || ""),
+          managementStartedAt: String(raw.managementStartedAt || "").trim(), serviceScope: String(raw.serviceScope || "").trim(),
           checklistIds: formData.getAll("checklistIds").map(String), owner: String(raw.owner || "").trim() || salesActorName(), createdBy: actor.email
-        }, { contacts: activeSalesRecords("salesContacts", prospectId), units: activeSalesRecords("salesUnits", prospectId), opportunities: activeSalesRecords("salesOpportunities", prospectId) });
+        };
+        const eventContext = salesRelationContext(actor);
+        Sales.assertEvent(eventValues, eventContext);
+        const item = Sales.createSalesEvent(eventValues, eventContext);
         store.salesEvents.push(item);
         const prospect = salesProspectById(prospectId);
         if (prospect) {
@@ -3233,12 +3301,16 @@
         const existing = salesOpportunityById(form.dataset.salesOpportunityId);
         if (!existing && raw.stage !== "discovered") return showToast("새 추가서비스는 ‘기회 발견’에서 시작해 주세요.", "error");
         if (existing && raw.stage !== existing.stage && !Sales.canTransitionOpportunityStage(existing.stage, raw.stage)) return showToast("추가서비스 상태는 한 단계씩 진행해 주세요.", "error");
-        const item = Sales.createSalesOpportunity(Object.assign({}, existing || {}, {
+        const opportunityValues = Object.assign({}, existing || {}, {
           prospectId: form.dataset.salesProspectId, unitId: String(raw.unitId || ""), serviceType: raw.serviceType, stage: raw.stage,
           requirements: String(raw.requirements || "").trim(), owner: String(raw.owner || "").trim() || salesActorName(), dueAt: raw.dueAt || "",
           quoteAmount: Number(raw.quoteAmount) || 0, revenueAmount: Number(raw.revenueAmount) || 0,
           evidenceUrl: String(raw.evidenceUrl || "").trim(), evidenceNote: String(raw.evidenceNote || "").trim(), workflowCaseId: String(raw.workflowCaseId || "").trim()
-        }), salesActor());
+        });
+        const actor = salesActor();
+        Sales.assertOpportunity(opportunityValues, { prospects: store.salesProspects, units: store.salesUnits });
+        const transitionAt = new Date().toISOString();
+        const item = Sales.createSalesOpportunity(opportunityValues, actor, transitionAt);
         if (existing) store.salesOpportunities[store.salesOpportunities.findIndex(record => record.id === existing.id)] = item;
         else store.salesOpportunities.push(item);
         logAudit({ category: existing ? "변경" : "등록", targetType: "추가서비스 기회", targetId: item.id, targetLabel: salesLabel(SALES_SERVICE_LABELS, item.serviceType), action: `${salesLabel(SALES_OPPORTUNITY_LABELS, item.stage)}${item.stage === "revenue_recorded" ? ` · ${krw(item.revenueAmount)}` : ""}`, reason: item.requirements });
