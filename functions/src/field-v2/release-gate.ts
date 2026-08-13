@@ -9,6 +9,7 @@ import {
 } from "./contracts.js";
 
 const STRICT_VERSION_PATTERN = /^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)$/u;
+const SHA_256_PATTERN = /^[a-f0-9]{64}$/u;
 const OPERATOR_ID_PATTERN = /^[^.#$\[\]/\u0000-\u001f\u007f]+$/u;
 const MUTATION_KINDS = new Set([
   "createJob",
@@ -144,8 +145,25 @@ export function assertFieldReleaseCompatible(
   return { compatible: true };
 }
 
-function isRecoveryOperation(kind: string): boolean {
-  return kind === "receiptReplay" || kind === "uploadRecovery";
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function assertExactReceiptReplay(operation: unknown): void {
+  if (!isRecord(operation) || operation.kind !== "receiptReplay") {
+    throw new Error("field_receipt_replay_invalid");
+  }
+  const receipt = operation.receipt;
+  if (
+    !isFieldRequestId(operation.requestId)
+    || typeof operation.requestHash !== "string"
+    || !SHA_256_PATTERN.test(operation.requestHash)
+    || !isRecord(receipt)
+    || receipt.requestId !== operation.requestId
+    || receipt.requestHash !== operation.requestHash
+  ) {
+    throw new Error("field_receipt_replay_invalid");
+  }
 }
 
 export function assertFieldReleaseAllows(
@@ -158,13 +176,18 @@ export function assertFieldReleaseAllows(
   }
   if (operation.kind === "read") return { allowed: true };
 
+  if (operation.kind === "receiptReplay") {
+    assertExactReceiptReplay(operation);
+    return { allowed: true };
+  }
+
   if (
     !isFieldRequestId(operation.requestId)
-    || (!isRecoveryOperation(operation.kind) && !MUTATION_KINDS.has(operation.kind))
+    || (operation.kind !== "uploadRecovery" && !MUTATION_KINDS.has(operation.kind))
   ) {
     throw new Error("field_release_operation_invalid");
   }
-  if (isRecoveryOperation(operation.kind)) return { allowed: true };
+  if (operation.kind === "uploadRecovery") return { allowed: true };
   if (config.safeMode) throw new Error("field_safe_mode_read_only");
   if (!config.v2WritesEnabled) throw new Error("field_v2_writes_disabled");
   if (operation.kind === "canonicalCrmWrite" && !config.canonicalCrmEnabled) {

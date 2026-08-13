@@ -8,6 +8,7 @@ import {
 } from "../src/field-v2/release-gate.js";
 
 const REQUEST_ID = "8f738cdc-cc9a-4f23-8b27-a87661232806";
+const REQUEST_HASH = "a".repeat(64);
 
 const RELEASE_ACTIVE: FieldReleaseConfiguration = {
   protocolVersion: 2,
@@ -95,6 +96,8 @@ describe("FIELD v2 release write gate", () => {
     expect(assertFieldReleaseAllows(safe, {
       kind: "receiptReplay",
       requestId: REQUEST_ID,
+      requestHash: REQUEST_HASH,
+      receipt: { requestId: REQUEST_ID, requestHash: REQUEST_HASH },
     })).toEqual({ allowed: true });
     expect(assertFieldReleaseAllows(safe, {
       kind: "uploadRecovery",
@@ -135,7 +138,54 @@ describe("FIELD v2 release write gate", () => {
   it("rejects malformed replay identifiers instead of treating them as exact", () => {
     expect(() => assertFieldReleaseAllows(
       { ...RELEASE_ACTIVE, safeMode: true },
-      { kind: "receiptReplay", requestId: "not-a-request-id" },
-    )).toThrow("field_release_operation_invalid");
+      {
+        kind: "receiptReplay",
+        requestId: "not-a-request-id",
+        requestHash: REQUEST_HASH,
+        receipt: { requestId: "not-a-request-id", requestHash: REQUEST_HASH },
+      },
+    )).toThrow("field_receipt_replay_invalid");
+  });
+
+  it.each([
+    [
+      "missing receipt",
+      { kind: "receiptReplay", requestId: REQUEST_ID, requestHash: REQUEST_HASH },
+    ],
+    [
+      "wrong receipt request ID",
+      {
+        kind: "receiptReplay",
+        requestId: REQUEST_ID,
+        requestHash: REQUEST_HASH,
+        receipt: {
+          requestId: "28dc7c9e-7f1c-4c4e-969c-b9b940e9e844",
+          requestHash: REQUEST_HASH,
+        },
+      },
+    ],
+    [
+      "wrong request fingerprint",
+      {
+        kind: "receiptReplay",
+        requestId: REQUEST_ID,
+        requestHash: "b".repeat(64),
+        receipt: { requestId: REQUEST_ID, requestHash: REQUEST_HASH },
+      },
+    ],
+    [
+      "empty request fingerprint",
+      {
+        kind: "receiptReplay",
+        requestId: REQUEST_ID,
+        requestHash: "",
+        receipt: { requestId: REQUEST_ID, requestHash: "" },
+      },
+    ],
+  ])("rejects %s instead of bypassing safe mode", (_label, operation) => {
+    expect(() => assertFieldReleaseAllows(
+      { ...RELEASE_ACTIVE, safeMode: true },
+      operation as never,
+    )).toThrow("field_receipt_replay_invalid");
   });
 });

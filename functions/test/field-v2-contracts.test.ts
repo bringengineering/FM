@@ -10,6 +10,7 @@ import {
   type FieldCommandEnvelope,
 } from "../src/field-v2/contracts.js";
 import {
+  FIELD_WORKFLOW_STATUS_LABELS,
   fieldJobPolicies,
   nextFieldAction,
   transitionFieldStatus,
@@ -165,6 +166,16 @@ describe("FIELD v2 job policies", () => {
       .not.toContain("ad_package");
   });
 
+  it("keeps move-out completion proposal-only in CRM", () => {
+    expect(fieldJobPolicies.move_out_check.completion).toMatchObject({
+      outcome: "move_out_report_ready",
+      crmEffect: "vacancy_transition_proposed",
+      createsAdPackage: false,
+    });
+    expect(fieldJobPolicies.move_out_check.completion.crmEffect)
+      .not.toMatch(/updated|confirmed/u);
+  });
+
   it("pins the six checklist versions from the approved operating design", () => {
     expect(Object.fromEntries(FIELD_JOB_TYPES.map((jobType) => [
       jobType,
@@ -228,6 +239,43 @@ describe("FIELD v2 job policies", () => {
       "evidence_ready",
       "completed",
     )).toBe("completed");
+  });
+
+  it("selects the maintenance evidence-ready action from the inspection outcome", () => {
+    expect(nextFieldAction(
+      "maintenance_inspection",
+      "evidence_ready",
+      { inspectionOutcome: "no_issue" },
+    )).toEqual({ action: "complete", label: "완료" });
+    expect(nextFieldAction(
+      "maintenance_inspection",
+      "evidence_ready",
+      { inspectionOutcome: "issue_found" },
+    )).toEqual({ action: "requestReview", label: "검수 요청" });
+    expect(nextFieldAction("maintenance_inspection", "evidence_ready"))
+      .toEqual({ action: "recordInspectionOutcome", label: "점검 결과 기록" });
+  });
+
+  it("publishes an immutable Korean label for every workflow status", () => {
+    expect(Object.keys(FIELD_WORKFLOW_STATUS_LABELS))
+      .toEqual([...FIELD_WORKFLOW_STATUSES]);
+    expect(FIELD_WORKFLOW_STATUS_LABELS).toEqual({
+      requested: "요청됨",
+      assigned: "배정됨",
+      accepted: "수락됨",
+      in_progress: "진행 중",
+      evidence_ready: "증거 작성 완료",
+      review_pending: "검수 대기",
+      changes_requested: "수정 요청",
+      approved: "승인됨",
+      completed: "완료",
+      cancelled: "취소됨",
+    });
+    expect(Object.isFrozen(FIELD_WORKFLOW_STATUS_LABELS)).toBe(true);
+    for (const status of FIELD_WORKFLOW_STATUSES) {
+      expect(FIELD_WORKFLOW_STATUS_LABELS[status]).not.toBe(status);
+      expect(FIELD_WORKFLOW_STATUS_LABELS[status]).toMatch(/[가-힣]/u);
+    }
   });
 
   it("allows the reviewed workflow including correction resumption", () => {

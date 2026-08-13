@@ -22,7 +22,7 @@ export type FieldCompletionOutcome =
 
 export type FieldCrmEffect =
   | "vacancy_marketing_ready"
-  | "move_out_condition_updated"
+  | "vacancy_transition_proposed"
   | "cleaning_service_updated"
   | "building_condition_updated"
   | "complaint_case_updated"
@@ -59,9 +59,30 @@ export interface FieldNextAction {
     | "review"
     | "resume"
     | "complete"
+    | "recordInspectionOutcome"
     | "none";
   label: string;
 }
+
+export interface FieldNextActionContext {
+  inspectionOutcome?: "no_issue" | "issue_found";
+}
+
+export const FIELD_WORKFLOW_STATUS_LABELS: Readonly<Record<
+  FieldWorkflowStatus,
+  string
+>> = Object.freeze({
+  requested: "요청됨",
+  assigned: "배정됨",
+  accepted: "수락됨",
+  in_progress: "진행 중",
+  evidence_ready: "증거 작성 완료",
+  review_pending: "검수 대기",
+  changes_requested: "수정 요청",
+  approved: "승인됨",
+  completed: "완료",
+  cancelled: "취소됨",
+});
 
 function freezeEvidence(
   items: readonly FieldEvidenceRequirement[],
@@ -144,7 +165,7 @@ export const fieldJobPolicies: Readonly<Record<FieldJobType, FieldJobPolicy>> =
       completion: {
         rule: "review_required",
         outcome: "move_out_report_ready",
-        crmEffect: "move_out_condition_updated",
+        crmEffect: "vacancy_transition_proposed",
         createsAdPackage: false,
       },
     }),
@@ -261,6 +282,7 @@ const ACCEPTED_LABELS: Readonly<Record<FieldJobType, string>> = Object.freeze({
 export function nextFieldAction(
   jobType: FieldJobType,
   status: FieldWorkflowStatus,
+  context: FieldNextActionContext = {},
 ): FieldNextAction {
   if (!isJobType(jobType) || !isWorkflowStatus(status)) {
     throw new Error("field_policy_invalid");
@@ -270,7 +292,21 @@ export function nextFieldAction(
     case "assigned": return { action: "accept", label: "수락" };
     case "accepted": return { action: "start", label: ACCEPTED_LABELS[jobType] };
     case "in_progress": return { action: "evidenceReady", label: "증거 완료" };
-    case "evidence_ready": return { action: "requestReview", label: "검수 요청" };
+    case "evidence_ready": {
+      if (jobType !== "maintenance_inspection") {
+        return { action: "requestReview", label: "검수 요청" };
+      }
+      if (context.inspectionOutcome === "no_issue") {
+        return { action: "complete", label: "완료" };
+      }
+      if (context.inspectionOutcome === "issue_found") {
+        return { action: "requestReview", label: "검수 요청" };
+      }
+      return {
+        action: "recordInspectionOutcome",
+        label: "점검 결과 기록",
+      };
+    }
     case "review_pending": return { action: "review", label: "검수하기" };
     case "changes_requested": return { action: "resume", label: "재촬영" };
     case "approved": return { action: "complete", label: "완료" };

@@ -92,6 +92,11 @@ export type FieldMutationOperationKind =
   | "createAdPackage"
   | "canonicalCrmWrite";
 
+export interface FieldRequestReceiptProof {
+  readonly requestId: string;
+  readonly requestHash: string;
+}
+
 /**
  * `receiptReplay` is constructed only after the orchestration layer has found
  * a receipt whose request ID and immutable request fingerprint both match.
@@ -99,7 +104,12 @@ export type FieldMutationOperationKind =
  */
 export type FieldReleaseOperation =
   | { kind: "read" }
-  | { kind: "receiptReplay"; requestId: string }
+  | {
+    kind: "receiptReplay";
+    requestId: string;
+    requestHash: string;
+    receipt: FieldRequestReceiptProof;
+  }
   | { kind: "uploadRecovery"; requestId: string }
   | { kind: FieldMutationOperationKind; requestId: string };
 
