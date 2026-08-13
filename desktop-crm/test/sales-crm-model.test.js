@@ -148,6 +148,45 @@ test("nextStageFromEvents follows canonical pause resume and archived-event sema
   assert.equal(Sales.nextStageFromEvents("p1", events), Sales.stageFromEvents(events, { prospectId: "p1" }));
 });
 
+test("equal occurrence times use createdAt chronology regardless of input array order", () => {
+  const occurredAt = "2026-08-13T09:00:00.000Z";
+  const common = { prospectId: "p1", occurredAt, evidenceType: "note", evidenceNote: "확인" };
+  const interest = { ...common, id: "sev_300_interest", createdAt: "2026-08-13T09:01:00.000Z", type: "interest_qualified" };
+  const paused = { ...common, id: "sev_200_pause", createdAt: "2026-08-13T09:02:00.000Z", type: "prospect_paused" };
+  const resumed = {
+    ...common, id: "sev_100_resume", createdAt: "2026-08-13T09:03:00.000Z",
+    type: "prospect_resumed", resumeStage: "qualified_interest"
+  };
+  const permutations = [
+    [interest, paused, resumed], [interest, resumed, paused],
+    [paused, interest, resumed], [paused, resumed, interest],
+    [resumed, interest, paused], [resumed, paused, interest]
+  ];
+
+  for (const events of permutations) {
+    assert.equal(Sales.stageFromEvents(events, { prospectId: "p1" }), "qualified_interest");
+    assert.equal(Sales.nextStageFromEvents("p1", events), "qualified_interest");
+  }
+});
+
+test("identical occurrence and creation times use durable event ids for pause resume order", () => {
+  const timestamp = "2026-08-13T09:00:00.000Z";
+  const common = { prospectId: "p1", occurredAt: timestamp, createdAt: timestamp, evidenceType: "note", evidenceNote: "확인" };
+  const interest = { ...common, id: "sev_100_interest", type: "interest_qualified" };
+  const paused = { ...common, id: "sev_200_pause", type: "prospect_paused" };
+  const resumed = { ...common, id: "sev_300_resume", type: "prospect_resumed", resumeStage: "qualified_interest" };
+  const permutations = [
+    [interest, paused, resumed], [interest, resumed, paused],
+    [paused, interest, resumed], [paused, resumed, interest],
+    [resumed, interest, paused], [resumed, paused, interest]
+  ];
+
+  for (const events of permutations) {
+    assert.equal(Sales.stageFromEvents(events, { prospectId: "p1" }), "qualified_interest");
+    assert.equal(Sales.nextStageFromEvents("p1", events), "qualified_interest");
+  }
+});
+
 test("opted-out contacts block new sms and call attempts", () => {
   const contacts = [{ id: "sct_1", prospectId: "spr_1", phone: "010-1111-2222", doNotContact: true }];
   const result = Sales.validateContactAttempt({ prospectId: "spr_1", contactId: "sct_1", type: "sms" }, contacts);

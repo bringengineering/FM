@@ -479,18 +479,28 @@
     return fromIndex >= 0 && toIndex === fromIndex + 1;
   }
 
+  function compareEventTime(left, right) {
+    const leftTime = validIso(left) ? new Date(left).getTime() : Number.NEGATIVE_INFINITY;
+    const rightTime = validIso(right) ? new Date(right).getTime() : Number.NEGATIVE_INFINITY;
+    return leftTime === rightTime ? 0 : (leftTime < rightTime ? -1 : 1);
+  }
+
+  function compareEventId(left, right) {
+    const leftId = text(left);
+    const rightId = text(right);
+    return leftId === rightId ? 0 : (leftId < rightId ? -1 : 1);
+  }
+
   function stageFromEvents(events, options) {
     const prospectId = options && options.prospectId;
     let currentStage = "candidate";
     let highest = 0;
-    const chronological = (Array.isArray(events) ? events : []).map((event, order) => ({ event, order }))
-      .sort((left, right) => {
-        const timeDifference = new Date(left.event && (left.event.occurredAt || left.event.createdAt) || 0).getTime()
-          - new Date(right.event && (right.event.occurredAt || right.event.createdAt) || 0).getTime();
-        return (Number.isNaN(timeDifference) ? 0 : timeDifference) || left.order - right.order;
-      });
-    for (const entry of chronological) {
-      const event = entry.event;
+    const chronological = [...(Array.isArray(events) ? events : [])].sort((left, right) => (
+      compareEventTime(left && left.occurredAt, right && right.occurredAt)
+      || compareEventTime(left && left.createdAt, right && right.createdAt)
+      || compareEventId(left && left.id, right && right.id)
+    ));
+    for (const event of chronological) {
       if (!event || event.archivedAt || (prospectId && event.prospectId !== prospectId)) continue;
       if (!validateEvent(event, Object.assign({}, options, { historical: true })).valid) continue;
       if (event.type === RESUME_EVENT_TYPE) {
