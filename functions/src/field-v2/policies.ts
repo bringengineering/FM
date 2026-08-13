@@ -72,16 +72,16 @@ export const FIELD_WORKFLOW_STATUS_LABELS: Readonly<Record<
   FieldWorkflowStatus,
   string
 >> = Object.freeze({
-  requested: "요청됨",
-  assigned: "배정됨",
-  accepted: "수락됨",
+  requested: "요청",
+  assigned: "배정",
+  accepted: "수락",
   in_progress: "진행 중",
   evidence_ready: "증거 작성 완료",
   review_pending: "검수 대기",
   changes_requested: "수정 요청",
-  approved: "승인됨",
+  approved: "승인",
   completed: "완료",
-  cancelled: "취소됨",
+  cancelled: "취소",
 });
 
 function freezeEvidence(
