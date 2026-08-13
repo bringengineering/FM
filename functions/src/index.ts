@@ -12,6 +12,7 @@ import {
 import {
   HttpsError,
   onCall,
+  onRequest,
   type CallableRequest,
 } from "firebase-functions/v2/https";
 import { defineSecret } from "firebase-functions/params";
@@ -129,6 +130,14 @@ import {
 import {
   resolveFieldActorCore,
 } from "./field-v2/access.js";
+import {
+  commitCanonicalCrmEntityCore,
+  reduceCanonicalCrmEntityRoot,
+  type CanonicalCrmCommitResult,
+  type CanonicalCrmDependencies,
+  type CanonicalCrmEntityInput,
+  type CanonicalCrmTransactionCommand,
+} from "./field-v2/canonical-crm.js";
 import {
   FIELD_PROTOCOL_VERSION,
   FieldV2Error,
@@ -2703,6 +2712,213 @@ const fieldV2CallableOptions = {
   region: "asia-northeast3" as const,
   enforceAppCheck: true,
 };
+
+const CANONICAL_CRM_HTTP_BODY_BYTES = 32_768;
+const CANONICAL_CRM_RATE_WINDOW_MS = 10 * 60 * 1_000;
+const CANONICAL_CRM_IP_RATE_LIMIT = 120;
+const CANONICAL_CRM_UID_RATE_LIMIT = 60;
+
+function canonicalCrmDependencies(): CanonicalCrmDependencies {
+  return {
+    authenticatedEmail: "",
+    now: () => new Date().toISOString(),
+    async transact(command: CanonicalCrmTransactionCommand): Promise<CanonicalCrmCommitResult> {
+      let decision: ReturnType<typeof reduceCanonicalCrmEntityRoot> | null = null;
+      let rejection: unknown = null;
+      let transaction;
+      try {
+        transaction = await adminDatabase.ref().transaction(
+          (current) => {
+            try {
+              decision = reduceCanonicalCrmEntityRoot(current, command);
+              rejection = null;
+              return decision.repeated ? undefined : decision.root;
+            } catch (error) {
+              decision = null;
+              rejection = error;
+              return undefined;
+            }
+          },
+          undefined,
+          false,
+        );
+      } catch {
+        throw new FieldV2Error("crm_transaction_unavailable");
+      }
+      if (rejection) throw rejection;
+      const finalDecision = decision as ReturnType<typeof reduceCanonicalCrmEntityRoot> | null;
+      if (!finalDecision) throw new FieldV2Error("crm_transaction_unavailable");
+      if (!finalDecision.repeated && transaction.committed !== true) {
+        throw new FieldV2Error("crm_transaction_unavailable");
+      }
+      return finalDecision.result;
+    },
+  };
+}
+
+function canonicalCrmHttpStatus(code: string): number {
+  if (code === "crm_method_not_allowed") return 405;
+  if (code === "crm_body_too_large") return 413;
+  if (code === "crm_rate_limited") return 429;
+  if (code === "crm_auth_required") return 401;
+  if (
+    code === "crm_access_forbidden"
+    || code === "crm_operator_inactive"
+    || code === "crm_mutation_forbidden"
+    || code === "field_access_forbidden"
+    || code === "field_operator_inactive"
+    || code === "field_operator_not_enabled"
+  ) return 403;
+  if (code === "crm_entity_not_found" || code === "crm_parent_not_found") return 404;
+  if (
+    code === "crm_entity_version_conflict"
+    || code === "crm_request_id_conflict"
+    || code === "crm_building_unit_label_conflict"
+    || code === "crm_entity_already_archived"
+    || code === "crm_entity_not_archived"
+  ) return 409;
+  if (
+    code === "crm_safe_mode_read_only"
+    || code === "crm_canonical_writes_disabled"
+    || code === "crm_entity_upgrade_required"
+    || code === "crm_parent_archived"
+    || code === "crm_parent_mismatch"
+    || code === "crm_owner_change_requires_atomic_link"
+    || code === "field_protocol_mismatch"
+    || code === "field_client_upgrade_required"
+    || code === "field_client_version_unsupported"
+  ) return 412;
+  if (code === "crm_transaction_unavailable" || code === "crm_service_unavailable") return 503;
+  return code.startsWith("crm_") || code.startsWith("field_") ? 400 : 503;
+}
+
+function canonicalCrmHttpCode(error: unknown): string {
+  const code = error instanceof FieldV2Error
+    ? error.code
+    : error instanceof Error
+      ? error.message
+      : "";
+  if (code === "field_rate_limit_exceeded") return "crm_rate_limited";
+  if (code === "crm_transaction_unavailable") return "crm_service_unavailable";
+  if (
+    code.startsWith("crm_")
+    || code === "field_access_forbidden"
+    || code === "field_operator_inactive"
+    || code === "field_operator_not_enabled"
+    || code === "field_protocol_mismatch"
+    || code === "field_client_upgrade_required"
+    || code === "field_client_version_unsupported"
+  ) return code;
+  return "crm_service_unavailable";
+}
+
+function canonicalCrmRawBody(request: {
+  rawBody?: unknown;
+  get(name: string): string | undefined;
+}): unknown {
+  const rawContentLength = request.get("content-length");
+  if (rawContentLength !== undefined) {
+    if (!/^\d+$/u.test(rawContentLength)) throw new FieldV2Error("crm_body_invalid");
+    if (Number(rawContentLength) > CANONICAL_CRM_HTTP_BODY_BYTES) {
+      throw new FieldV2Error("crm_body_too_large");
+    }
+  }
+  const contentType = request.get("content-type")?.split(";", 1)[0]?.trim().toLowerCase();
+  if (contentType !== "application/json") throw new FieldV2Error("crm_json_required");
+  if (!Buffer.isBuffer(request.rawBody)) throw new FieldV2Error("crm_body_invalid");
+  if (request.rawBody.byteLength === 0) throw new FieldV2Error("crm_body_invalid");
+  if (request.rawBody.byteLength > CANONICAL_CRM_HTTP_BODY_BYTES) {
+    throw new FieldV2Error("crm_body_too_large");
+  }
+  try {
+    return JSON.parse(request.rawBody.toString("utf8")) as unknown;
+  } catch {
+    throw new FieldV2Error("crm_body_invalid");
+  }
+}
+
+export const commitCanonicalCrmEntity = onRequest(
+  {
+    region: "asia-northeast3",
+    cors: false,
+  },
+  async (request, response) => {
+    response.set("Cache-Control", "no-store");
+    response.set("X-Content-Type-Options", "nosniff");
+    try {
+      if (request.method !== "POST") {
+        response.set("Allow", "POST");
+        throw new FieldV2Error("crm_method_not_allowed");
+      }
+      const body = canonicalCrmRawBody(request);
+      const authorization = request.get("authorization") ?? "";
+      const bearer = /^Bearer ([A-Za-z0-9._~-]{1,12000})$/u.exec(authorization);
+      if (!bearer) throw new FieldV2Error("crm_auth_required");
+
+      const requestIp = typeof request.ip === "string" && request.ip.length > 0
+        ? request.ip.slice(0, 128)
+        : "unknown";
+      await consumeRateLimit(
+        adminDatabase.ref(
+          `fieldPlatform/v2/rateLimits/commitCanonicalCrmEntity/ip/${desktopRateKey(requestIp)}`,
+        ),
+        {
+          limit: CANONICAL_CRM_IP_RATE_LIMIT,
+          windowMs: CANONICAL_CRM_RATE_WINDOW_MS,
+          nowMs: Date.now(),
+        },
+      );
+
+      let decoded;
+      try {
+        decoded = await adminAuth.verifyIdToken(bearer[1], true);
+      } catch {
+        throw new FieldV2Error("crm_auth_required");
+      }
+      if (
+        !isPathSafeId(decoded.uid)
+        || typeof decoded.email !== "string"
+        || decoded.email_verified !== true
+      ) throw new FieldV2Error("crm_auth_required");
+      const authenticatedEmail = decoded.email.trim().toLowerCase();
+      if (!authenticatedEmail) throw new FieldV2Error("crm_auth_required");
+
+      await consumeRateLimit(
+        adminDatabase.ref(
+          `fieldPlatform/v2/rateLimits/commitCanonicalCrmEntity/uid/${desktopRateKey(decoded.uid)}`,
+        ),
+        {
+          limit: CANONICAL_CRM_UID_RATE_LIMIT,
+          windowMs: CANONICAL_CRM_RATE_WINDOW_MS,
+          nowMs: Date.now(),
+        },
+      );
+      const bodyRecord = isRecord(body) ? body : {};
+      const actor = await resolveFieldActorCore({
+        authUid: decoded.uid,
+        operatorId: typeof bodyRecord.operatorId === "string" ? bodyRecord.operatorId : "",
+      }, {
+        authenticatedEmail,
+        async read(path) {
+          return (await adminDatabase.ref(path).get()).val();
+        },
+      });
+      const dependencies = canonicalCrmDependencies();
+      const result = await commitCanonicalCrmEntityCore(
+        body as CanonicalCrmEntityInput,
+        actor,
+        { ...dependencies, authenticatedEmail },
+      );
+      response.status(200).json({ ok: true, result });
+    } catch (error) {
+      const code = canonicalCrmHttpCode(error);
+      response.status(canonicalCrmHttpStatus(code)).json({
+        ok: false,
+        error: { code },
+      });
+    }
+  },
+);
 
 export const createFieldJobs = onCall<CreateFieldJobsInput & FieldV2CallableData>(
   fieldV2CallableOptions,

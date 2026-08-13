@@ -238,6 +238,11 @@ const registrations = vi.hoisted(() => {
       options,
       handler,
     })),
+    onRequest: vi.fn((options: unknown, handler: unknown) => ({
+      kind: "request",
+      options,
+      handler,
+    })),
     onValueWritten: vi.fn((options: unknown, handler: unknown) => ({
       kind: "database",
       options,
@@ -340,6 +345,7 @@ vi.mock("firebase-functions/v2/https", () => ({
     }
   },
   onCall: registrations.onCall,
+  onRequest: registrations.onRequest,
 }));
 
 vi.mock("firebase-functions/v2/database", () => ({
@@ -363,7 +369,7 @@ vi.mock("../src/field/rebuild-map-projection.js", () => ({
 import * as entrypoints from "../src/index.js";
 
 interface RegisteredEntrypoint {
-  kind: "callable" | "database" | "database-created" | "schedule";
+  kind: "callable" | "request" | "database" | "database-created" | "schedule";
   options: Record<string, unknown>;
   handler: unknown;
 }
@@ -381,6 +387,7 @@ interface DatabaseWriteEvent {
 type DatabaseWriteHandler = (event: DatabaseWriteEvent) => Promise<void>;
 
 type CallableHandler = (request: unknown) => Promise<unknown>;
+type RequestHandler = (request: unknown, response: unknown) => Promise<unknown>;
 
 interface EventScopedProjectionDependencies {
   now(): string;
@@ -397,6 +404,10 @@ function databaseHandler(value: unknown): DatabaseWriteHandler {
 
 function callableHandler(value: unknown): CallableHandler {
   return registration(value).handler as CallableHandler;
+}
+
+function requestHandler(value: unknown): RequestHandler {
+  return registration(value).handler as RequestHandler;
 }
 
 function validRegistrationData() {
@@ -517,6 +528,169 @@ function validFieldV2Request(data: Record<string, unknown>) {
       ...data,
     },
   };
+}
+
+function canonicalCrmRoot(role: "admin" | "member" | "viewer" = "member") {
+  return {
+    crmCompany: {
+      access: {
+        shared_uid: { enabled: true, role, email: "team@bringcare.kr" },
+      },
+      teamProfiles: {
+        operator_kim: { active: true, displayName: "김현진", sortOrder: 1 },
+      },
+      data: {
+        customers: {
+          customer_1: { id: "customer_1", archivedAt: "" },
+        },
+        buildings: {
+          building_1: {
+            id: "building_1",
+            name: "상지 원룸",
+            address: "강원 원주시 상지대길 1",
+            ownerCustomerId: "customer_1",
+            externalRefs: { fieldBuildingIds: ["field_building_1"] },
+            entityVersion: 4,
+            createdAt: "2026-08-01T00:00:00.000Z",
+            createdByAuthUid: "shared_uid",
+            createdByOperatorId: "operator_kim",
+            updatedAt: "2026-08-10T00:00:00.000Z",
+            updatedByAuthUid: "shared_uid",
+            updatedByOperatorId: "operator_kim",
+            archivedAt: "",
+            archivedByAuthUid: "",
+            archivedByOperatorId: "",
+          },
+        },
+        buildingUnits: {
+          unit_1: {
+            id: "unit_1",
+            crmBuildingId: "building_1",
+            label: "201호",
+            status: "active",
+            memo: "",
+            entityVersion: 4,
+            createdAt: "2026-08-01T00:00:00.000Z",
+            createdByAuthUid: "shared_uid",
+            createdByOperatorId: "operator_kim",
+            updatedAt: "2026-08-10T00:00:00.000Z",
+            updatedByAuthUid: "shared_uid",
+            updatedByOperatorId: "operator_kim",
+            archivedAt: "",
+            archivedByAuthUid: "",
+            archivedByOperatorId: "",
+          },
+        },
+        salesProspects: {},
+        salesUnits: {},
+      },
+      fieldSummaries: {},
+    },
+    fieldPlatform: {
+      v2: {
+        config: {
+          release: {
+            protocolVersion: 2,
+            minDesktopVersion: "1.7.0",
+            maxDesktopVersion: "2.0.0",
+            minPwaVersion: "1.0.0",
+            enabledOperatorIds: ["operator_kim"],
+            v2WritesEnabled: true,
+            canonicalCrmEnabled: true,
+            safeMode: false,
+            cutoverAt: null,
+          },
+        },
+        links: {
+          crmBuildings: { building_1: "field_building_1" },
+          crmBuildingUnits: {},
+          crmSalesUnits: {},
+        },
+        workItems: {},
+        requestReceipts: { commitCanonicalCrmEntity: {} },
+        auditLogs: {},
+      },
+    },
+  };
+}
+
+function seedCanonicalCrmAccess(role: "admin" | "member" | "viewer" = "member") {
+  registrations.pathValues.set("crmCompany/access/shared_uid", {
+    enabled: true,
+    role,
+    email: "team@bringcare.kr",
+  });
+  registrations.pathValues.set("crmCompany/teamProfiles/operator_kim", {
+    active: true,
+    displayName: "김현진",
+    sortOrder: 1,
+  });
+}
+
+function validCanonicalCrmBody(overrides: Record<string, unknown> = {}) {
+  return {
+    protocolVersion: 2,
+    clientKind: "desktop",
+    buildVersion: "1.8.0",
+    operatorId: "operator_kim",
+    requestId: "123e4567-e89b-42d3-a456-426614174000",
+    entityType: "buildingUnits",
+    entityId: "unit_1",
+    operation: "update",
+    expectedVersion: 4,
+    patch: { label: "203호" },
+    reason: "현장 표기 확인",
+    ...overrides,
+  };
+}
+
+function canonicalHttpRequest(
+  body: unknown,
+  overrides: Record<string, unknown> = {},
+) {
+  const headers: Record<string, string> = {
+    authorization: "Bearer current-project-id-token",
+    "content-type": "application/json",
+    ...(isRecord(overrides.headers) ? overrides.headers as Record<string, string> : {}),
+  };
+  return {
+    method: "POST",
+    ip: "127.0.0.1",
+    headers,
+    rawBody: Buffer.from(JSON.stringify(body), "utf8"),
+    get(name: string) {
+      return headers[name.toLowerCase()];
+    },
+    ...overrides,
+    headers,
+  };
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function httpResponseHarness() {
+  const state: { status: number; body: unknown; headers: Record<string, string> } = {
+    status: 200,
+    body: undefined,
+    headers: {},
+  };
+  const response = {
+    status(code: number) {
+      state.status = code;
+      return response;
+    },
+    set(name: string, value: string) {
+      state.headers[name.toLowerCase()] = value;
+      return response;
+    },
+    json(body: unknown) {
+      state.body = body;
+      return response;
+    },
+  };
+  return { state, response };
 }
 
 function fieldV2WorkItem(overrides: Record<string, unknown> = {}) {
@@ -2320,6 +2494,139 @@ describe("Firebase entrypoint metadata", () => {
     ]);
   });
 
+  it("registers the canonical CRM endpoint as a regional POST-only surface without CORS", () => {
+    expect(registration(entrypoints.commitCanonicalCrmEntity)).toMatchObject({
+      kind: "request",
+      options: { region: "asia-northeast3", cors: false },
+    });
+  });
+
+  it("commits a canonical entity after current-project auth and bounded IP and UID rate limits", async () => {
+    seedCanonicalCrmAccess();
+    registrations.adminVerifyIdToken.mockResolvedValueOnce({
+      uid: "shared_uid",
+      email: "team@bringcare.kr",
+      email_verified: true,
+    });
+    registrations.transactionCurrent.value = canonicalCrmRoot();
+    const output = httpResponseHarness();
+
+    await requestHandler(entrypoints.commitCanonicalCrmEntity)(
+      canonicalHttpRequest(validCanonicalCrmBody()),
+      output.response,
+    );
+
+    expect(output.state.status).toBe(200);
+    expect(output.state.body).toMatchObject({
+      ok: true,
+      result: {
+        entityType: "buildingUnits",
+        entityId: "unit_1",
+        entityVersion: 5,
+        repeated: false,
+      },
+    });
+    expect(registrations.adminVerifyIdToken).toHaveBeenCalledWith(
+      "current-project-id-token",
+      true,
+    );
+    expect(registrations.transactionPaths.filter(path => path === "")).toHaveLength(1);
+    expect(registrations.transactionPaths).toEqual(expect.arrayContaining([
+      expect.stringMatching(/^fieldPlatform\/v2\/rateLimits\/commitCanonicalCrmEntity\/ip\//),
+      expect.stringMatching(/^fieldPlatform\/v2\/rateLimits\/commitCanonicalCrmEntity\/uid\//),
+      "",
+    ]));
+    expect((registrations.transactionCurrent.value as any)
+      .crmCompany.data.buildingUnits.unit_1).toMatchObject({
+      label: "203호",
+      entityVersion: 5,
+    });
+  });
+
+  it.each([
+    ["non-POST", canonicalHttpRequest(validCanonicalCrmBody(), { method: "GET" }), 405, "crm_method_not_allowed"],
+    ["non-JSON", canonicalHttpRequest(validCanonicalCrmBody(), { headers: { "content-type": "text/plain", authorization: "Bearer current-project-id-token" } }), 400, "crm_json_required"],
+    ["missing raw body", { ...canonicalHttpRequest(validCanonicalCrmBody()), rawBody: undefined }, 400, "crm_body_invalid"],
+    ["oversized body", { ...canonicalHttpRequest(validCanonicalCrmBody()), rawBody: Buffer.alloc(32_769, 65) }, 413, "crm_body_too_large"],
+    ["missing bearer", canonicalHttpRequest(validCanonicalCrmBody(), { headers: { "content-type": "application/json", authorization: "" } }), 401, "crm_auth_required"],
+  ])("rejects canonical HTTP %s before canonical mutation", async (_label, request, status, code) => {
+    const output = httpResponseHarness();
+    await requestHandler(entrypoints.commitCanonicalCrmEntity)(request, output.response);
+    expect(output.state).toMatchObject({
+      status,
+      body: { ok: false, error: { code } },
+    });
+    expect(registrations.transactionPaths.filter(path => path === "")).toHaveLength(0);
+  });
+
+  it("rejects unverified tokens without exposing verifier details", async () => {
+    registrations.adminVerifyIdToken.mockResolvedValueOnce({
+      uid: "shared_uid",
+      email: "team@bringcare.kr",
+      email_verified: false,
+    });
+    const output = httpResponseHarness();
+    await requestHandler(entrypoints.commitCanonicalCrmEntity)(
+      canonicalHttpRequest(validCanonicalCrmBody()),
+      output.response,
+    );
+    expect(output.state).toMatchObject({
+      status: 401,
+      body: { ok: false, error: { code: "crm_auth_required" } },
+    });
+    expect(JSON.stringify(output.state.body)).not.toContain("current-project-id-token");
+  });
+
+  it("maps bounded endpoint rate exhaustion to HTTP 429", async () => {
+    registrations.pathValues.set(
+      "fieldPlatform/v2/rateLimits/commitCanonicalCrmEntity/ip/" + createHash("sha256").update("127.0.0.1").digest("base64url").slice(0, 43),
+      { windowStartedAt: Date.now(), count: 120 },
+    );
+    const output = httpResponseHarness();
+    await requestHandler(entrypoints.commitCanonicalCrmEntity)(
+      canonicalHttpRequest(validCanonicalCrmBody()),
+      output.response,
+    );
+    expect(output.state).toMatchObject({
+      status: 429,
+      body: { ok: false, error: { code: "crm_rate_limited" } },
+    });
+    expect(registrations.adminVerifyIdToken).not.toHaveBeenCalled();
+  });
+
+  it("returns a stable 503 without leaking patches when the canonical transaction is unavailable", async () => {
+    seedCanonicalCrmAccess();
+    registrations.adminVerifyIdToken.mockResolvedValueOnce({
+      uid: "shared_uid",
+      email: "team@bringcare.kr",
+      email_verified: true,
+    });
+    registrations.transactionCurrent.value = canonicalCrmRoot();
+    registrations.databaseTransaction
+      .mockImplementationOnce(async (update, _complete, _local, path) => {
+        const state = update(null);
+        registrations.transactionPaths.push(path);
+        return { committed: true, snapshot: { val: () => state, exists: () => true } };
+      })
+      .mockImplementationOnce(async (update, _complete, _local, path) => {
+        const state = update(null);
+        registrations.transactionPaths.push(path);
+        return { committed: true, snapshot: { val: () => state, exists: () => true } };
+      })
+      .mockRejectedValueOnce(new Error("database unavailable: patch=secret"));
+    const output = httpResponseHarness();
+    await requestHandler(entrypoints.commitCanonicalCrmEntity)(
+      canonicalHttpRequest(validCanonicalCrmBody()),
+      output.response,
+    );
+    expect(output.state).toMatchObject({
+      status: 503,
+      body: { ok: false, error: { code: "crm_service_unavailable" } },
+    });
+    expect(JSON.stringify(output.state.body)).not.toContain("patch");
+    expect(JSON.stringify(output.state.body)).not.toContain("secret");
+  });
+
   it("registers the handoff cleanup schedule and all entrypoints", () => {
     expect(entrypoints.provisionFieldUser).toBeDefined();
     expect(registration(entrypoints.provisionFieldUser)).toMatchObject({
@@ -2343,6 +2650,7 @@ describe("Firebase entrypoint metadata", () => {
     expect(registrations.getAuth).toHaveBeenCalledTimes(1);
     expect(registrations.getAuth).toHaveBeenCalledWith();
     expect(registrations.onCall).toHaveBeenCalledTimes(20);
+    expect(registrations.onRequest).toHaveBeenCalledTimes(1);
     expect(registrations.onValueWritten).toHaveBeenCalledTimes(3);
     expect(registrations.onValueCreated).toHaveBeenCalledTimes(2);
     expect(registrations.onSchedule).toHaveBeenCalledTimes(3);
