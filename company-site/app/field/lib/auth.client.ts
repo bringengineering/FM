@@ -206,6 +206,16 @@ export async function logoutFieldUser(
   await dependencies.signOut();
 }
 
+export function observeDesktopLogout(
+  logout: () => Promise<void> = logoutFieldUser,
+): () => void {
+  const listener = () => {
+    void logout();
+  };
+  window.addEventListener("bring-crm-logout", listener);
+  return () => window.removeEventListener("bring-crm-logout", listener);
+}
+
 export function observeFieldSession(
   listener: FieldSessionListener,
   errorListener?: FieldSessionErrorListener,

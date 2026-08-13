@@ -1,6 +1,10 @@
 import { describe, expect, it, vi } from "vitest";
 
-import { loginFieldUser, type FieldAuthDependencies } from "../../app/field/lib/auth.client";
+import {
+  loginFieldUser,
+  observeDesktopLogout,
+  type FieldAuthDependencies,
+} from "../../app/field/lib/auth.client";
 
 function createDependencies(
   claims: Record<string, unknown>,
@@ -111,5 +115,21 @@ describe("loginFieldUser", () => {
       "userRecord:user-1",
       "signOut",
     ]);
+  });
+});
+
+describe("observeDesktopLogout", () => {
+  it("signs Firebase Auth out on the CRM bridge event and removes its listener", async () => {
+    const logout = vi.fn(async () => undefined);
+    const stop = observeDesktopLogout(logout);
+
+    window.dispatchEvent(new Event("bring-crm-logout"));
+    await Promise.resolve();
+    expect(logout).toHaveBeenCalledTimes(1);
+
+    stop();
+    window.dispatchEvent(new Event("bring-crm-logout"));
+    await Promise.resolve();
+    expect(logout).toHaveBeenCalledTimes(1);
   });
 });
