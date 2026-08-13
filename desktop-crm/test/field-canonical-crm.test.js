@@ -758,6 +758,137 @@ test("a verified refresh candidate is not exposed when durable session persisten
   assert.equal(client.session.expiresAt, 0);
 });
 
+test("a refresh candidate with a different uid is rejected before access checks or persistence", async () => {
+  let accessChecks = 0;
+  let persists = 0;
+  const { client } = makeClient({
+    fetchImpl: async url => {
+      if (url.includes("securetoken")) {
+        return jsonResponse({ id_token: "foreign-token", refresh_token: "foreign-refresh", expires_in: "3600", user_id: "user_b" });
+      }
+      if (url.includes("accounts:lookup")) {
+        return jsonResponse({ users: [{ localId: "user_b", email: "user_b@bring.test" }] });
+      }
+      throw new Error(`Unexpected request ${url}`);
+    }
+  });
+  client.session = Object.assign(session("user_a"), { idToken: "safe-token", expiresAt: 0 });
+  const before = Object.assign({}, client.session);
+  client.verifyAccess = async () => { accessChecks += 1; return { enabled: true, role: "member" }; };
+  client.persistSession = async () => { persists += 1; return true; };
+  const first = client.ensureIdToken(true);
+  const joined = client.ensureIdToken(false);
+
+  const results = await Promise.allSettled([first, joined]);
+  assert.deepEqual(results.map(result => [result.status, result.reason && result.reason.code]), [
+    ["rejected", "AUTH_EXPIRED"],
+    ["rejected", "AUTH_EXPIRED"]
+  ]);
+  assert.deepEqual(client.session, before);
+  assert.equal(accessChecks, 0);
+  assert.equal(persists, 0);
+});
+
+test("a refresh candidate with a changed email is rejected before access checks or persistence", async () => {
+  let accessChecks = 0;
+  let persists = 0;
+  const { client } = makeClient({
+    fetchImpl: async url => {
+      if (url.includes("securetoken")) {
+        return jsonResponse({ id_token: "changed-email-token", refresh_token: "changed-email-refresh", expires_in: "3600", user_id: "user_a" });
+      }
+      if (url.includes("accounts:lookup")) {
+        return jsonResponse({ users: [{ localId: "user_a", email: "other@bring.test" }] });
+      }
+      throw new Error(`Unexpected request ${url}`);
+    }
+  });
+  client.session = Object.assign(session("user_a"), { idToken: "safe-token", expiresAt: 0 });
+  const before = Object.assign({}, client.session);
+  client.verifyAccess = async () => { accessChecks += 1; return { enabled: true, role: "member" }; };
+  client.persistSession = async () => { persists += 1; return true; };
+
+  await assert.rejects(client.ensureIdToken(true), error => error && error.code === "AUTH_EXPIRED");
+  assert.deepEqual(client.session, before);
+  assert.equal(accessChecks, 0);
+  assert.equal(persists, 0);
+});
+
+test("refresh identity comparison normalizes email case and surrounding whitespace only", async () => {
+  let accessChecks = 0;
+  let persists = 0;
+  const { client } = makeClient({
+    fetchImpl: async url => {
+      if (url.includes("securetoken")) {
+        return jsonResponse({ id_token: "normalized-token", refresh_token: "normalized-refresh", expires_in: "3600", user_id: "  user_a  " });
+      }
+      if (url.includes("accounts:lookup")) {
+        return jsonResponse({ users: [{ localId: "user_a", email: "  USER_A@BRING.TEST  " }] });
+      }
+      throw new Error(`Unexpected request ${url}`);
+    }
+  });
+  client.session = Object.assign(session("user_a"), { idToken: "safe-token", expiresAt: 0 });
+  client.verifyAccess = async () => { accessChecks += 1; return { enabled: true, role: "member" }; };
+  client.persistSession = async () => { persists += 1; return true; };
+
+  assert.equal(await client.ensureIdToken(true), "normalized-token");
+  assert.equal(client.session.uid, "user_a");
+  assert.equal(client.session.email, "user_a@bring.test");
+  assert.equal(accessChecks, 1);
+  assert.equal(persists, 1);
+});
+
+test("a refresh response with missing identity is rejected instead of borrowing persisted hints", async () => {
+  let accessChecks = 0;
+  let persists = 0;
+  const { client } = makeClient({
+    fetchImpl: async url => {
+      if (url.includes("securetoken")) {
+        return jsonResponse({ id_token: "missing-email-token", refresh_token: "missing-email-refresh", expires_in: "3600", user_id: "user_a" });
+      }
+      if (url.includes("accounts:lookup")) {
+        return jsonResponse({ users: [{ localId: "user_a" }] });
+      }
+      throw new Error(`Unexpected request ${url}`);
+    }
+  });
+  client.session = Object.assign(session("user_a"), { idToken: "safe-token", expiresAt: 0 });
+  const before = Object.assign({}, client.session);
+  client.verifyAccess = async () => { accessChecks += 1; return { enabled: true, role: "member" }; };
+  client.persistSession = async () => { persists += 1; return true; };
+
+  await assert.rejects(client.ensureIdToken(true), error => error && error.code === "AUTH_EXPIRED");
+  assert.deepEqual(client.session, before);
+  assert.equal(accessChecks, 0);
+  assert.equal(persists, 0);
+});
+
+test("persisted-session refresh rejects identity substitution before installing the session", async () => {
+  const { client } = makeClient({
+    fetchImpl: async url => {
+      if (url.includes("securetoken")) {
+        return jsonResponse({ id_token: "foreign-token", refresh_token: "foreign-refresh", expires_in: "3600", user_id: "user_b" });
+      }
+      if (url.includes("accounts:lookup")) {
+        return jsonResponse({ users: [{ localId: "user_b", email: "user_b@bring.test" }] });
+      }
+      throw new Error(`Unexpected request ${url}`);
+    }
+  });
+  client.session = null;
+
+  await assert.rejects(
+    client.refreshFirebaseSession("user_a-refresh", {
+      uid: "user_a",
+      email: "user_a@bring.test",
+      fieldAuthIntegrated: true
+    }),
+    error => error && error.code === "AUTH_EXPIRED"
+  );
+  assert.equal(client.session, null);
+});
+
 test("an old canonical commit response returns no stale result or refresh after a session switch", async () => {
   const postResponse = deferred();
   const writes = [];

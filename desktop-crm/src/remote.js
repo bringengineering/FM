@@ -231,6 +231,14 @@ function createError(message, code, cause) {
   return error;
 }
 
+function normalizedUid(value) {
+  return String(value || "").trim();
+}
+
+function normalizedEmail(value) {
+  return String(value || "").trim().toLowerCase();
+}
+
 function safeStorageAvailable(safeStorage) {
   return Boolean(safeStorage && typeof safeStorage.isEncryptionAvailable === "function" && safeStorage.isEncryptionAvailable());
 }
@@ -671,12 +679,29 @@ class FirebaseRemoteClient {
     }, "AUTH_EXPIRED");
     assertCurrent();
     const user = lookup && lookup.users && lookup.users[0] || {};
+    const expectedUid = normalizedUid(context.sessionRef && context.sessionRef.uid || hints && hints.uid);
+    const expectedEmail = normalizedEmail(context.sessionRef && context.sessionRef.email || hints && hints.email);
+    const tokenUid = normalizedUid(token.user_id);
+    const lookupUid = normalizedUid(user.localId);
+    const candidateUid = tokenUid || lookupUid;
+    const candidateEmail = normalizedEmail(user.email);
+    if (
+      !expectedUid
+      || !expectedEmail
+      || !candidateUid
+      || !candidateEmail
+      || candidateUid !== expectedUid
+      || candidateEmail !== expectedEmail
+      || tokenUid && lookupUid && tokenUid !== lookupUid
+    ) {
+      throw createError("로그인 계정 정보를 다시 확인해 주세요.", "AUTH_EXPIRED");
+    }
     const nextSession = {
       idToken: token.id_token,
       refreshToken: token.refresh_token || refreshToken,
       expiresAt: Date.now() + Math.max(60, Number(token.expires_in || 3600) - 60) * 1000,
-      uid: token.user_id || user.localId || hints && hints.uid || "",
-      email: user.email || hints && hints.email || "",
+      uid: candidateUid,
+      email: candidateEmail,
       displayName: user.displayName || hints && hints.displayName || "",
       photoUrl: user.photoUrl || hints && hints.photoUrl || "",
       role: hints && hints.role || "viewer",
@@ -712,6 +737,11 @@ class FirebaseRemoteClient {
     promise = (async () => {
       const candidate = await this.refreshFirebaseSession(context.sessionRef.refreshToken, context.sessionRef, context, false);
       if (!this.sessionContextActive(context)) throw createError("로그인 세션이 변경되었습니다.", "SESSION_CHANGED");
+      const currentUid = normalizedUid(context.uid);
+      const currentEmail = normalizedEmail(context.sessionRef.email);
+      if (!candidate.uid || !candidate.email || candidate.uid !== currentUid || candidate.email !== currentEmail) {
+        throw createError("로그인 계정 정보를 다시 확인해 주세요.", "AUTH_EXPIRED");
+      }
       const candidateContext = Object.assign({}, context, { sessionRef: candidate });
       await this.verifyAccess(candidateContext, candidate.idToken);
       if (!this.sessionContextActive(context)) throw createError("로그인 세션이 변경되었습니다.", "SESSION_CHANGED");
