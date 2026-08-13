@@ -302,6 +302,13 @@ describe("field media database rule source", () => {
         ".write": false,
       });
     }
+    expect(fieldPlatform.desktopHandoffs[".read"]).toBe(false);
+    expect(fieldPlatform.desktopHandoffs[".write"]).toBe(false);
+    expect(fieldPlatform.desktopHandoffs[".indexOn"]).toContain("expiresAt");
+    expect(fieldPlatform.desktopHandoffRateLimits).toEqual({
+      ".read": false,
+      ".write": false,
+    });
     expect(fieldPlatform.driveSyncAlerts[".write"]).toBe(false);
     expect(String(fieldPlatform.driveSyncAlerts[".read"])).toContain(
       "auth.token.fieldRole === 'admin'",

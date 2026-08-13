@@ -21,6 +21,15 @@
       }
     },
     "fieldPlatform": {
+      "desktopHandoffs": {
+        ".read": false,
+        ".write": false,
+        ".indexOn": ["expiresAt"]
+      },
+      "desktopHandoffRateLimits": {
+        ".read": false,
+        ".write": false
+      },
       "users": {
         "$uid": {
           ".read": "auth != null && auth.token.fieldPlatform === true && (auth.uid === $uid || (auth.token.fieldRole === 'admin' && root.child('fieldPlatform/users').child(auth.uid).child('enabled').val() === true && root.child('fieldPlatform/users').child(auth.uid).child('role').val() === auth.token.fieldRole))",

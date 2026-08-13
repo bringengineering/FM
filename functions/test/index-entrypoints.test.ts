@@ -704,6 +704,22 @@ describe("Firebase entrypoint metadata", () => {
   });
 
   it("exports all field callables with their exact App Check options", () => {
+    for (const callable of [
+      entrypoints.createDesktopFieldHandoff,
+      entrypoints.exchangeDesktopFieldHandoff,
+    ]) {
+      expect(registration(callable)).toMatchObject({
+        kind: "callable",
+        options: {
+          region: "asia-northeast3",
+          cors: [
+            "https://bring-fm.web.app",
+            "https://bring-fm.firebaseapp.com",
+          ],
+        },
+      });
+    }
+
     expect(registration(entrypoints.saveFieldRegistration)).toMatchObject({
       kind: "callable",
       options: {
@@ -1013,17 +1029,29 @@ describe("Firebase entrypoint metadata", () => {
     ]);
   });
 
-  it("keeps provisionFieldUser exported while registering all nineteen entrypoints", () => {
+  it("registers the handoff cleanup schedule and all entrypoints", () => {
     expect(entrypoints.provisionFieldUser).toBeDefined();
     expect(registration(entrypoints.provisionFieldUser)).toMatchObject({
       kind: "callable",
       options: { region: "asia-northeast3" },
     });
-    expect(registrations.initializeApp).toHaveBeenCalledTimes(1);
-    expect(registrations.onCall).toHaveBeenCalledTimes(12);
+    expect(registration(entrypoints.cleanupDesktopFieldHandoffs)).toMatchObject({
+      kind: "schedule",
+      options: {
+        schedule: "every 60 minutes",
+        timeZone: "Asia/Seoul",
+        region: "asia-northeast3",
+      },
+    });
+    expect(registrations.initializeApp).toHaveBeenCalledTimes(2);
+    expect(registrations.initializeApp).toHaveBeenCalledWith(
+      { projectId: "bring-fm-hj" },
+      "crm-auth-verifier",
+    );
+    expect(registrations.onCall).toHaveBeenCalledTimes(14);
     expect(registrations.onValueWritten).toHaveBeenCalledTimes(3);
     expect(registrations.onValueCreated).toHaveBeenCalledTimes(2);
-    expect(registrations.onSchedule).toHaveBeenCalledTimes(2);
+    expect(registrations.onSchedule).toHaveBeenCalledTimes(3);
   });
 
   it("scans package recovery by the nested composite index with live time and hard limits", async () => {

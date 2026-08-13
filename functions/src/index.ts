@@ -1,5 +1,5 @@
 import { Buffer } from "node:buffer";
-import { randomUUID } from "node:crypto";
+import { randomBytes, randomUUID } from "node:crypto";
 
 import { getApps, initializeApp } from "firebase-admin/app";
 import { getAuth } from "firebase-admin/auth";
@@ -21,6 +21,13 @@ import {
   provisionFieldUserCore,
   type FieldRole,
 } from "./auth/provision-field-user.js";
+import {
+  consumeDesktopFieldHandoffCore,
+  issueDesktopFieldHandoffCore,
+  sha256Base64Url,
+  type DesktopHandoffDependencies,
+  type DesktopHandoffRecord,
+} from "./auth/desktop-field-handoff.js";
 import {
   createFinalizedMediaStorageAdapter,
   createGoogleDriveMediaAdapterFromOAuth,
@@ -128,6 +135,9 @@ if (getApps().length === 0) {
 const adminAuth = getAuth();
 const adminDatabase = getDatabase();
 const mediaBucket = getStorage().bucket();
+const crmVerifierApp = getApps().find((app) => app.name === "crm-auth-verifier")
+  ?? initializeApp({ projectId: "bring-fm-hj" }, "crm-auth-verifier");
+const crmVerifierAuth = getAuth(crmVerifierApp);
 const FIELD_ID_BYTES = 128;
 
 const driveClientId = defineSecret("DRIVE_CLIENT_ID");
@@ -151,6 +161,145 @@ function isRecord(value: unknown): value is UnknownRecord {
 
 function isFieldRole(value: unknown): value is FieldRole {
   return value === "admin" || value === "staff" || value === "reviewer";
+}
+
+function boundedCallableString(value: unknown, maximumBytes: number): string {
+  if (
+    typeof value !== "string"
+    || value.length === 0
+    || value !== value.trim()
+    || Buffer.byteLength(value, "utf8") > maximumBytes
+    || /[\u0000-\u001f\u007f]/u.test(value)
+  ) {
+    throw new Error("desktop_handoff_invalid");
+  }
+  return value;
+}
+
+function desktopRateKey(value: string): string {
+  return sha256Base64Url(value).slice(0, 43);
+}
+
+function safeRequestIp(request: CallableRequest<unknown>): string {
+  const ip = request.rawRequest?.ip;
+  return typeof ip === "string" && ip.length > 0 ? ip.slice(0, 128) : "unknown";
+}
+
+function desktopHandoffReference(codeHash: string) {
+  return adminDatabase.ref(`fieldPlatform/desktopHandoffs/${codeHash}`);
+}
+
+function normalizeDesktopHandoffRecord(value: unknown): DesktopHandoffRecord | null {
+  if (!isRecord(value)) return null;
+  if (
+    typeof value.crmUid !== "string"
+    || typeof value.fieldUid !== "string"
+    || typeof value.emailHash !== "string"
+    || !isFieldRole(value.role)
+    || typeof value.displayName !== "string"
+    || !Number.isSafeInteger(value.issuedAt)
+    || !Number.isSafeInteger(value.expiresAt)
+    || (value.usedAt !== null && !Number.isSafeInteger(value.usedAt))
+  ) return null;
+  return value as unknown as DesktopHandoffRecord;
+}
+
+function createDesktopHandoffDependencies(): DesktopHandoffDependencies {
+  return {
+    now: () => Date.now(),
+    randomBytes: (size) => randomBytes(size),
+    async getAllowedEmail(emailHash) {
+      const snapshot = await adminDatabase
+        .ref(`fieldPlatformAllowedEmails/${emailHash}`)
+        .get();
+      const value = snapshot.val() as { active?: unknown; role?: unknown } | null;
+      if (!value || value.active !== true || !isFieldRole(value.role)) return null;
+      return { active: true, role: value.role };
+    },
+    async resolveFieldUser(input) {
+      let user;
+      try {
+        user = await adminAuth.getUserByEmail(input.email);
+      } catch (error) {
+        const code = isRecord(error) && typeof error.code === "string" ? error.code : "";
+        if (code !== "auth/user-not-found") throw error;
+        user = await adminAuth.createUser({
+          email: input.email,
+          emailVerified: true,
+          displayName: input.displayName || undefined,
+        });
+      }
+      await adminAuth.setCustomUserClaims(user.uid, {
+        ...user.customClaims,
+        fieldPlatform: true,
+        fieldRole: input.role,
+      });
+      await adminDatabase.ref(`fieldPlatform/users/${user.uid}`).update({
+        role: input.role,
+        enabled: true,
+        displayName: input.displayName,
+        updatedAt: ServerValue.TIMESTAMP,
+      });
+      return user.uid;
+    },
+    async save(codeHash, record) {
+      await desktopHandoffReference(codeHash).set(record);
+    },
+    async consume(codeHash, now) {
+      let rejection = "desktop_handoff_invalid";
+      const transaction = await desktopHandoffReference(codeHash).transaction(
+        (current) => {
+          const record = normalizeDesktopHandoffRecord(current);
+          if (!record) {
+            rejection = "desktop_handoff_invalid";
+            return undefined;
+          }
+          if (record.usedAt !== null) {
+            rejection = "desktop_handoff_used";
+            return undefined;
+          }
+          if (record.expiresAt <= now) {
+            rejection = "desktop_handoff_expired";
+            return undefined;
+          }
+          return { ...record, usedAt: now };
+        },
+        undefined,
+        false,
+      );
+      if (!transaction.committed) throw new Error(rejection);
+      const record = normalizeDesktopHandoffRecord(transaction.snapshot.val());
+      if (!record) throw new Error("desktop_handoff_invalid");
+      return record;
+    },
+    async createCustomToken(uid, claims) {
+      return adminAuth.createCustomToken(uid, claims);
+    },
+  };
+}
+
+function rethrowDesktopHandoffError(error: unknown): never {
+  const message = error instanceof Error ? error.message : "";
+  if (message === "field_rate_limit_exceeded") {
+    throw new HttpsError("resource-exhausted", "desktop_handoff_rate_limited");
+  }
+  if (message === "desktop_handoff_expired") {
+    throw new HttpsError("deadline-exceeded", "desktop_handoff_expired");
+  }
+  if (message === "desktop_handoff_not_allowed") {
+    throw new HttpsError("permission-denied", "desktop_handoff_not_allowed");
+  }
+  if (message === "desktop_handoff_email_unverified") {
+    throw new HttpsError("unauthenticated", "desktop_handoff_email_unverified");
+  }
+  if (
+    message === "desktop_handoff_invalid"
+    || message === "desktop_handoff_used"
+    || message === "desktop_handoff_invalid_identity"
+  ) {
+    throw new HttpsError("failed-precondition", "desktop_handoff_invalid");
+  }
+  throw new HttpsError("internal", "desktop_handoff_unavailable");
 }
 
 function isPathSafeId(value: unknown): value is string {
@@ -1209,6 +1358,92 @@ const contractDependencies: SetManagementContractStatusDependencies = {
   },
   now: () => new Date().toISOString(),
 };
+
+const desktopHandoffCallableOptions = {
+  region: "asia-northeast3" as const,
+  cors: [
+    "https://bring-fm.web.app",
+    "https://bring-fm.firebaseapp.com",
+  ],
+};
+
+export const createDesktopFieldHandoff = onCall<{ crmIdToken: string }>(
+  desktopHandoffCallableOptions,
+  async (request) => {
+    try {
+      const requestIp = safeRequestIp(request);
+      await consumeRateLimit(
+        adminDatabase.ref(
+          `fieldPlatform/desktopHandoffRateLimits/create-ip/${desktopRateKey(requestIp)}`,
+        ),
+        { limit: 30, windowMs: 600_000, nowMs: Date.now() },
+      );
+      const crmIdToken = boundedCallableString(request.data?.crmIdToken, 12_000);
+      const decoded = await crmVerifierAuth.verifyIdToken(crmIdToken);
+      await consumeRateLimit(
+        adminDatabase.ref(
+          `fieldPlatform/desktopHandoffRateLimits/create-user/${desktopRateKey(decoded.uid)}`,
+        ),
+        { limit: 30, windowMs: 600_000, nowMs: Date.now() },
+      );
+      return await issueDesktopFieldHandoffCore(
+        {
+          crmUid: decoded.uid,
+          email: typeof decoded.email === "string" ? decoded.email : "",
+          emailVerified: decoded.email_verified === true,
+          displayName: typeof decoded.name === "string" ? decoded.name : "",
+        },
+        createDesktopHandoffDependencies(),
+      );
+    } catch (error) {
+      return rethrowDesktopHandoffError(error);
+    }
+  },
+);
+
+export const exchangeDesktopFieldHandoff = onCall<{ code: string }>(
+  desktopHandoffCallableOptions,
+  async (request) => {
+    try {
+      const code = boundedCallableString(request.data?.code, 64);
+      await consumeRateLimit(
+        adminDatabase.ref(
+          `fieldPlatform/desktopHandoffRateLimits/exchange/${desktopRateKey(`${safeRequestIp(request)}:${sha256Base64Url(code)}`)}`,
+        ),
+        { limit: 20, windowMs: 600_000, nowMs: Date.now() },
+      );
+      return await consumeDesktopFieldHandoffCore(
+        { code },
+        createDesktopHandoffDependencies(),
+      );
+    } catch (error) {
+      return rethrowDesktopHandoffError(error);
+    }
+  },
+);
+
+export const cleanupDesktopFieldHandoffs = onSchedule(
+  {
+    schedule: "every 60 minutes",
+    timeZone: "Asia/Seoul",
+    region: "asia-northeast3",
+  },
+  async () => {
+    const snapshot = await adminDatabase
+      .ref("fieldPlatform/desktopHandoffs")
+      .orderByChild("expiresAt")
+      .endAt(Date.now())
+      .limitToFirst(500)
+      .get();
+    const patch: Record<string, null> = {};
+    snapshot.forEach((child) => {
+      if (child.key) patch[child.key] = null;
+    });
+    if (Object.keys(patch).length > 0) {
+      await adminDatabase.ref("fieldPlatform/desktopHandoffs").update(patch);
+    }
+  },
+);
 
 export const provisionFieldUser = onCall(
   { region: "asia-northeast3" },
