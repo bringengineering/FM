@@ -37,12 +37,16 @@ The temporary plaintext snapshot is removed after the destination verification s
 
 ## Security Boundaries
 
+- **Non-negotiable source immutability:** no `PUT`, `PATCH`, `POST`, or `DELETE` request may be sent to any `bring-fm-hj` endpoint. The migration stops before network access if a source request method is anything other than `GET`.
 - Source requests are GET-only and are restricted to an explicit path allowlist.
+- The source Firebase project configuration, Realtime Database rules, Authentication users, OAuth settings, Hosting files, and billing settings are never changed.
+- The source reader and destination writer are separate modules. The destination writer rejects every host or project ID other than `bring-fm`, so a programming error cannot redirect an import back to `bring-fm-hj`.
 - The DPAPI refresh token and refreshed ID token are never printed, logged, committed, or included in the snapshot.
 - `crmMigrationStaging` is denied to all client SDK reads and writes by Realtime Database rules. Only Firebase administrative tooling can access it.
 - The destination import never writes to live FIELD roots or a future live `/crm` root.
 - The current CRM Firebase configuration remains `bring-fm-hj` during this phase.
 - The original CRM project is not deleted, modified, disabled, or switched to read-only.
+- No deployment command is run with `--project bring-fm-hj`.
 
 ## Data Validation
 
@@ -62,6 +66,8 @@ Empty optional roots such as `caseSettings` are valid, but `crmShared/data`, `ca
 ## Testing
 
 Automated tests cover canonical JSON checksums, root allowlisting, secret exclusion, required-root validation, count generation, manifest construction, destination path validation, exact read-back verification, and rejection of mismatched payloads. A dry run must complete before the first administrative destination write.
+
+Tests must also prove that every non-GET source method is rejected before `fetch`, that every destination other than `bring-fm` is rejected, and that the migration command contains no source-project deployment or write target.
 
 ## Out of Scope
 
