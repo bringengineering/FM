@@ -13,7 +13,14 @@ test("export entrypoint uses DPAPI session and contains no source mutation targe
   const exporter = await source("export-crm-staging.js");
 
   assert.match(exporter, /safeStorage/);
-  assert.match(exporter, /bring-crm-desktop["'],\s*["']bring-crm-auth\.json/);
+  assert.match(exporter, /path\.join\(appData,\s*["']bring-crm-desktop["']\)/);
+  assert.match(exporter, /path\.join\(crmProfileDirectory,\s*["']bring-crm-auth\.json["']\)/);
+  assert.match(exporter, /app\.setPath\("userData",\s*crmProfileDirectory\)/);
+  assert.ok(
+    exporter.indexOf('app.setPath("userData", crmProfileDirectory)')
+      < exporter.indexOf("app.whenReady()"),
+    "the installed CRM profile must be selected before Electron initializes safeStorage",
+  );
   assert.match(exporter, /readCrmSource/);
   assert.match(exporter, /createStagedSnapshot/);
   assert.doesNotMatch(exporter, /database:(set|update|remove)/i);

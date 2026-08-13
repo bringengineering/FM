@@ -7,6 +7,11 @@ const Core = require("../src/core");
 const { FirebaseRemoteClient } = require("../src/remote");
 const { createStagedSnapshot, readCrmSource } = require("../src/crm-staged-migration");
 
+const appData = process.env.APPDATA;
+if (!appData) throw new Error("MIGRATION_APPDATA_UNAVAILABLE");
+const crmProfileDirectory = path.join(appData, "bring-crm-desktop");
+app.setPath("userData", crmProfileDirectory);
+
 function argument(name) {
   const index = process.argv.indexOf(name);
   return index >= 0 ? process.argv[index + 1] : "";
@@ -45,9 +50,7 @@ async function run() {
   await app.whenReady();
   const output = assertTemporaryOutput(argument("--out"));
   if (!safeStorage.isEncryptionAvailable()) throw new Error("MIGRATION_DPAPI_UNAVAILABLE");
-  const appData = process.env.APPDATA;
-  if (!appData) throw new Error("MIGRATION_APPDATA_UNAVAILABLE");
-  const sessionFile = path.join(appData, "bring-crm-desktop", "bring-crm-auth.json");
+  const sessionFile = path.join(crmProfileDirectory, "bring-crm-auth.json");
   const client = new FirebaseRemoteClient({
     Core,
     fs,
