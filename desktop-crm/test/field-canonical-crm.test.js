@@ -680,6 +680,84 @@ test("concurrent refreshes deduplicate only within the same session generation",
   assert.equal(tokenRequests, 1);
 });
 
+test("a refreshed token stays private until access verification and persistence both succeed", async () => {
+  const beforeVerify = deferred();
+  const finishVerify = deferred();
+  const persisted = [];
+  const { client } = makeClient({
+    fetchImpl: async url => {
+      if (url.includes("securetoken")) {
+        return jsonResponse({ id_token: "unverified-new-token", refresh_token: "unverified-new-refresh", expires_in: "3600", user_id: "user_a" });
+      }
+      if (url.includes("accounts:lookup")) {
+        return jsonResponse({ users: [{ localId: "user_a", email: "user_a@bring.test" }] });
+      }
+      throw new Error(`Unexpected request ${url}`);
+    }
+  });
+  client.session = Object.assign(session("user_a"), {
+    idToken: "previous-safe-token",
+    refreshToken: "previous-safe-refresh",
+    expiresAt: 0
+  });
+  client.verifyAccess = async () => {
+    beforeVerify.resolve();
+    await finishVerify.promise;
+    const error = new Error("access denied");
+    error.code = "ACCESS_DENIED";
+    throw error;
+  };
+  client.persistSession = async () => { persisted.push(client.session.idToken); return true; };
+  const first = client.ensureIdToken(true);
+  await beforeVerify.promise;
+
+  let secondSettled = false;
+  const second = client.ensureIdToken(false).finally(() => { secondSettled = true; });
+  await Promise.resolve();
+  await Promise.resolve();
+  assert.equal(secondSettled, false);
+  assert.equal(client.session.idToken, "previous-safe-token");
+  assert.equal(client.session.refreshToken, "previous-safe-refresh");
+  assert.equal(client.session.expiresAt, 0);
+
+  finishVerify.resolve();
+  const [firstResult, secondResult] = await Promise.allSettled([first, second]);
+  assert.equal(firstResult.status, "rejected");
+  assert.equal(firstResult.reason.code, "ACCESS_DENIED");
+  assert.equal(secondResult.status, "rejected");
+  assert.equal(secondResult.reason.code, "ACCESS_DENIED");
+  assert.equal(client.session.idToken, "previous-safe-token");
+  assert.equal(client.session.refreshToken, "previous-safe-refresh");
+  assert.equal(client.session.expiresAt, 0);
+  assert.deepEqual(persisted, []);
+});
+
+test("a verified refresh candidate is not exposed when durable session persistence fails", async () => {
+  const { client } = makeClient({
+    fetchImpl: async url => {
+      if (url.includes("securetoken")) {
+        return jsonResponse({ id_token: "verified-new-token", refresh_token: "verified-new-refresh", expires_in: "3600", user_id: "user_a" });
+      }
+      if (url.includes("accounts:lookup")) {
+        return jsonResponse({ users: [{ localId: "user_a", email: "user_a@bring.test" }] });
+      }
+      throw new Error(`Unexpected request ${url}`);
+    }
+  });
+  client.session = Object.assign(session("user_a"), {
+    idToken: "previous-safe-token",
+    refreshToken: "previous-safe-refresh",
+    expiresAt: 0
+  });
+  client.verifyAccess = async () => ({ enabled: true, role: "member" });
+  client.persistSession = async () => false;
+
+  await assert.rejects(client.ensureIdToken(true), error => error && error.code === "SESSION_PERSIST_FAILED");
+  assert.equal(client.session.idToken, "previous-safe-token");
+  assert.equal(client.session.refreshToken, "previous-safe-refresh");
+  assert.equal(client.session.expiresAt, 0);
+});
+
 test("an old canonical commit response returns no stale result or refresh after a session switch", async () => {
   const postResponse = deferred();
   const writes = [];

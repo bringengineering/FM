@@ -591,9 +591,9 @@ class FirebaseRemoteClient {
     return running;
   }
 
-  async persistSession(contextValue) {
+  async persistSession(contextValue, sessionValue) {
     const context = contextValue || this.captureSessionContext();
-    const sessionRef = context.sessionRef;
+    const sessionRef = sessionValue || context.sessionRef;
     if (!sessionRef || !sessionRef.refreshToken || !this.safeStorage.isEncryptionAvailable() || !this.sessionContextActive(context)) return false;
     const encrypted = this.safeStorage.encryptString(sessionRef.refreshToken).toString("base64");
     const payload = JSON.stringify({
@@ -650,7 +650,7 @@ class FirebaseRemoteClient {
     return data;
   }
 
-  async refreshFirebaseSession(refreshToken, hints, contextValue) {
+  async refreshFirebaseSession(refreshToken, hints, contextValue, commit = true) {
     const context = contextValue || this.captureSessionContext();
     const assertCurrent = () => {
       if (!this.sessionContextActive(context)) {
@@ -684,6 +684,7 @@ class FirebaseRemoteClient {
       fieldAuthIntegrated: hints && hints.fieldAuthIntegrated === true
     };
     assertCurrent();
+    if (!commit) return nextSession;
     if (context.sessionRef) {
       Object.assign(nextSession, {
         fieldAuthIntegrated: this.session.fieldAuthIntegrated === true
@@ -698,7 +699,6 @@ class FirebaseRemoteClient {
 
   async ensureIdToken(force) {
     if (!this.session) throw createError("로그인이 필요합니다.", "AUTH_REQUIRED");
-    if (!force && this.session.idToken && this.session.expiresAt > Date.now()) return this.session.idToken;
     const context = this.captureSessionContext();
     const existing = this.tokenRefreshTask;
     if (
@@ -707,14 +707,18 @@ class FirebaseRemoteClient {
       && existing.uid === context.uid
       && existing.generation === context.generation
     ) return existing.promise;
+    if (!force && this.session.idToken && this.session.expiresAt > Date.now()) return this.session.idToken;
     let promise;
     promise = (async () => {
-      await this.refreshFirebaseSession(context.sessionRef.refreshToken, context.sessionRef, context);
+      const candidate = await this.refreshFirebaseSession(context.sessionRef.refreshToken, context.sessionRef, context, false);
       if (!this.sessionContextActive(context)) throw createError("로그인 세션이 변경되었습니다.", "SESSION_CHANGED");
-      await this.verifyAccess(context);
+      const candidateContext = Object.assign({}, context, { sessionRef: candidate });
+      await this.verifyAccess(candidateContext, candidate.idToken);
       if (!this.sessionContextActive(context)) throw createError("로그인 세션이 변경되었습니다.", "SESSION_CHANGED");
-      await this.persistSession(context);
+      const persisted = await this.persistSession(context, candidate);
       if (!this.sessionContextActive(context)) throw createError("로그인 세션이 변경되었습니다.", "SESSION_CHANGED");
+      if (!persisted) throw createError("로그인 세션을 안전하게 저장하지 못했습니다.", "SESSION_PERSIST_FAILED");
+      Object.assign(context.sessionRef, candidate);
       return context.sessionRef.idToken;
     })();
     this.tokenRefreshTask = Object.assign({}, context, { promise });
@@ -764,12 +768,20 @@ class FirebaseRemoteClient {
     }
   }
 
-  async verifyAccess(contextValue) {
+  async verifyAccess(contextValue, idTokenOverride) {
     const context = contextValue || this.captureSessionContext();
     const sessionRef = context.sessionRef;
-    if (!sessionRef || !sessionRef.uid || !this.sessionContextActive(context)) throw createError("로그인 정보를 확인할 수 없습니다.", "AUTH_REQUIRED");
-    const access = await this.dbRequest(`crmAccess/${sessionRef.uid}`, { method: "GET" }, true);
-    if (!this.sessionContextActive(context)) throw createError("로그인 세션이 변경되었습니다.", "SESSION_CHANGED");
+    const currentContext = this.captureSessionContext();
+    if (!sessionRef || !sessionRef.uid || !this.sessionContextActive(currentContext)) throw createError("로그인 정보를 확인할 수 없습니다.", "AUTH_REQUIRED");
+    let access;
+    if (idTokenOverride) {
+      const rootedLocation = resolveDatabaseLocation(`crmAccess/${sessionRef.uid}`, this.databaseRoot);
+      const url = `${this.firebase.databaseUrl}/${rootedLocation}.json?auth=${encodeURIComponent(idTokenOverride)}`;
+      access = await this.requestJson(url, { method: "GET", headers: { "Content-Type": "application/json" } }, "DATABASE_ERROR");
+    } else {
+      access = await this.dbRequest(`crmAccess/${sessionRef.uid}`, { method: "GET" }, true);
+    }
+    if (!this.sessionContextActive(currentContext)) throw createError("로그인 세션이 변경되었습니다.", "SESSION_CHANGED");
     const sameEmail = access && String(access.email || "").toLowerCase() === String(sessionRef.email || "").toLowerCase();
     if (!access || access.enabled !== true || !sameEmail) {
       throw createError("회사에서 허용한 이메일이 아닙니다.", "ACCESS_DENIED");
