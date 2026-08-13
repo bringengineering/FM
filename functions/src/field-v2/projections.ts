@@ -162,6 +162,29 @@ export function calculateFieldKpis(
   });
 }
 
+/**
+ * Personal KPI semantics are deliberately narrower than the personal list:
+ * every metric here covers only active work assigned to the selected operator.
+ * The workspace API may separately add the authoritative team-wide unassigned
+ * count for admin/member actors who are allowed to see that queue.
+ */
+export function calculateFieldOperatorKpis(
+  items: readonly FieldWorkItem[],
+  operatorId: string,
+  now: Date,
+): FieldKpis {
+  if (typeof operatorId !== "string" || operatorId.trim().length === 0) {
+    throw new FieldV2Error("field_operator_invalid");
+  }
+  if (!Array.isArray(items)) throw new FieldV2Error("field_kpi_items_invalid");
+  const assigned = items.filter((item) => {
+    assertProjectableItem(item);
+    return item.assignedOperatorId === operatorId;
+  });
+  const result = calculateFieldKpis(assigned, now);
+  return Object.freeze({ ...result, unassigned: 0 });
+}
+
 export function buildOperatorProjection(
   item: FieldWorkItem,
 ): FieldOperatorJobProjection {

@@ -178,6 +178,7 @@ import {
 } from "./field-v2/work-items.js";
 import {
   calculateFieldKpis,
+  calculateFieldOperatorKpis,
   type FieldKpis,
   type FieldTeamActiveProjection,
 } from "./field-v2/projections.js";
@@ -1704,6 +1705,14 @@ const FIELD_TEAM_KPI_KEYS = Object.freeze([
 
 type FieldTeamKpiKey = typeof FIELD_TEAM_KPI_KEYS[number];
 
+const FIELD_OPERATOR_KPI_KEYS = Object.freeze([
+  "capturePending",
+  "uploadFailures",
+  "reviewPending",
+  "overdue",
+  "adminActionRequired",
+] as const);
+
 function fieldSeoulDate(now: Date): string {
   if (!Number.isFinite(now.getTime())) throw new FieldV2Error("field_kpi_now_invalid");
   const parts = Object.fromEntries(new Intl.DateTimeFormat("en-CA", {
@@ -1775,6 +1784,24 @@ function parseStoredTeamKpis(value: unknown, today: string): FieldKpis {
   return result;
 }
 
+function parseStoredOperatorKpis(
+  value: unknown,
+  today: string,
+  operatorId: string,
+): FieldKpis {
+  if (!isRecord(value) || value.operatorId !== operatorId) {
+    throw new FieldV2Error("field_kpi_stale");
+  }
+  const result = parseStoredTeamKpis(value, today);
+  if (result.unassigned !== 0) throw new FieldV2Error("field_kpi_stale");
+  return result;
+}
+
+function sameFieldKpis(left: FieldKpis, right: FieldKpis): boolean {
+  return (["todayVisits", ...FIELD_TEAM_KPI_KEYS] as const)
+    .every((key) => left[key] === right[key]);
+}
+
 function visitCountsForToday(items: Iterable<FieldWorkItem>, today: string): Map<string, number> {
   const counts = new Map<string, number>();
   for (const item of items) {
@@ -1785,6 +1812,49 @@ function visitCountsForToday(items: Iterable<FieldWorkItem>, today: string): Map
     counts.set(item.visitId, (counts.get(item.visitId) ?? 0) + 1);
   }
   return counts;
+}
+
+function operatorItems(
+  items: Iterable<FieldWorkItem>,
+  operatorId: string,
+): FieldWorkItem[] {
+  return [...items].filter((item) => item.assignedOperatorId === operatorId);
+}
+
+function affectedFieldOperatorIds(
+  changes: readonly { before: FieldWorkItem | null; after: FieldWorkItem | null }[],
+): string[] {
+  const result = new Set<string>();
+  for (const { before, after } of changes) {
+    for (const operatorId of [
+      before?.assignedOperatorId,
+      after?.assignedOperatorId,
+      after?.updatedByOperatorId,
+    ]) {
+      if (operatorId !== null && operatorId !== undefined) {
+        if (!isPathSafeId(operatorId)) throw new FieldV2Error("field_kpi_stale");
+        result.add(operatorId);
+      }
+    }
+  }
+  return [...result].sort();
+}
+
+function assertStoredOperatorVisitState(
+  value: unknown,
+  operatorId: string,
+  visitId: string,
+  seoulDate: string,
+): number {
+  if (
+    !isRecord(value)
+    || value.operatorId !== operatorId
+    || value.visitId !== visitId
+    || value.seoulDate !== seoulDate
+    || !Number.isSafeInteger(value.activeTodayItemCount)
+    || (value.activeTodayItemCount as number) <= 0
+  ) throw new FieldV2Error("field_kpi_stale");
+  return value.activeTodayItemCount as number;
 }
 
 function augmentFieldTeamAggregatePatch(
@@ -1915,6 +1985,173 @@ function augmentFieldTeamAggregatePatch(
     updatedAt: timestamp,
   };
   return augmented;
+}
+
+function augmentFieldOperatorAggregatePatch(
+  current: unknown,
+  patch: Readonly<Record<string, unknown>>,
+): Readonly<Record<string, unknown>> {
+  const timestamp = fieldTeamMutationTimestamp(patch);
+  const now = new Date(timestamp);
+  const today = fieldSeoulDate(now);
+  const augmented: Record<string, unknown> = { ...patch };
+  const changes = changedFieldWorkItems(current, patch);
+  const currentItems = fieldWorkItemsAt(current);
+  const afterItems = fieldWorkItemsAt(applyRootPatch(current, patch));
+
+  for (const operatorId of affectedFieldOperatorIds(changes)) {
+    const kpiPath = [
+      "fieldPlatform", "v2", "projections", "operatorKpis", operatorId, "current",
+    ] as const;
+    const visitStatePath = [
+      "fieldPlatform", "v2", "projections", "operatorVisitState", operatorId,
+    ] as const;
+    const currentKpis = readNestedRecord(current, kpiPath);
+    const currentVisitState = readNestedRecord(current, visitStatePath);
+    const priorSeoulDate = isRecord(currentKpis) && typeof currentKpis.seoulDate === "string"
+      ? currentKpis.seoulDate
+      : null;
+    const rollsToNewDay = priorSeoulDate !== null && priorSeoulDate !== today;
+
+    if (currentKpis !== null && priorSeoulDate === null) {
+      throw new FieldV2Error("field_kpi_stale");
+    }
+    if (currentKpis === null || rollsToNewDay) {
+      if (currentKpis === null && currentVisitState !== null) {
+        throw new FieldV2Error("field_kpi_stale");
+      }
+      if (rollsToNewDay) {
+        parseStoredOperatorKpis(currentKpis, priorSeoulDate!, operatorId);
+        if (currentVisitState !== null && !isRecord(currentVisitState)) {
+          throw new FieldV2Error("field_kpi_stale");
+        }
+        for (const [visitId, state] of Object.entries(currentVisitState ?? {})) {
+          if (!isPathSafeId(visitId)) throw new FieldV2Error("field_kpi_stale");
+          assertStoredOperatorVisitState(
+            state,
+            operatorId,
+            visitId,
+            priorSeoulDate!,
+          );
+          augmented[
+            `fieldPlatform/v2/projections/operatorVisitState/${operatorId}/${visitId}`
+          ] = null;
+        }
+      }
+      const assignedAfter = operatorItems(afterItems.values(), operatorId);
+      const kpis = calculateFieldOperatorKpis(assignedAfter, operatorId, now);
+      augmented[`fieldPlatform/v2/projections/operatorKpis/${operatorId}/current`] = {
+        operatorId,
+        seoulDate: today,
+        ...kpis,
+        updatedAt: timestamp,
+      };
+      for (const [visitId, count] of visitCountsForToday(assignedAfter, today)) {
+        augmented[
+          `fieldPlatform/v2/projections/operatorVisitState/${operatorId}/${visitId}`
+        ] = {
+          operatorId,
+          visitId,
+          seoulDate: today,
+          activeTodayItemCount: count,
+          updatedAt: timestamp,
+        };
+      }
+      continue;
+    }
+
+    const nextKpis: Record<keyof FieldKpis, number> = {
+      ...parseStoredOperatorKpis(currentKpis, today, operatorId),
+    };
+    const assignedBefore = operatorItems(currentItems.values(), operatorId);
+    const derivedBeforeKpis = calculateFieldOperatorKpis(assignedBefore, operatorId, now);
+    if (!sameFieldKpis(nextKpis, derivedBeforeKpis)) {
+      throw new FieldV2Error("field_kpi_stale");
+    }
+    for (const { before, after } of changes) {
+      const beforeKpis = before === null
+        ? null
+        : calculateFieldOperatorKpis([before], operatorId, now);
+      const afterKpis = after === null
+        ? null
+        : calculateFieldOperatorKpis([after], operatorId, now);
+      for (const key of FIELD_OPERATOR_KPI_KEYS) {
+        nextKpis[key] += (afterKpis?.[key] ?? 0) - (beforeKpis?.[key] ?? 0);
+      }
+    }
+    nextKpis.unassigned = 0;
+
+    const derivedBeforeVisitCounts = visitCountsForToday(assignedBefore, today);
+    const affectedVisits = new Set(changes.flatMap(({ before, after }) => [
+      ...(before === null ? [] : [before.visitId]),
+      ...(after === null ? [] : [after.visitId]),
+    ]));
+    for (const visitId of affectedVisits) {
+      const storedState = readNestedRecord(current, [...visitStatePath, visitId]);
+      const derivedBeforeCount = derivedBeforeVisitCounts.get(visitId) ?? 0;
+      if (storedState === null && derivedBeforeCount > 0) {
+        throw new FieldV2Error("field_kpi_stale");
+      }
+      const beforeCount = storedState === null
+        ? 0
+        : assertStoredOperatorVisitState(storedState, operatorId, visitId, today);
+      if (beforeCount !== derivedBeforeCount) {
+        throw new FieldV2Error("field_kpi_stale");
+      }
+      let afterCount = beforeCount;
+      for (const change of changes) {
+        if (change.before?.visitId === visitId) {
+          afterCount -= calculateFieldOperatorKpis(
+            [change.before],
+            operatorId,
+            now,
+          ).todayVisits;
+        }
+        if (change.after?.visitId === visitId) {
+          afterCount += calculateFieldOperatorKpis(
+            [change.after],
+            operatorId,
+            now,
+          ).todayVisits;
+        }
+      }
+      if (!Number.isSafeInteger(afterCount) || afterCount < 0) {
+        throw new FieldV2Error("field_kpi_stale");
+      }
+      nextKpis.todayVisits += Number(afterCount > 0) - Number(beforeCount > 0);
+      augmented[
+        `fieldPlatform/v2/projections/operatorVisitState/${operatorId}/${visitId}`
+      ] = afterCount === 0
+        ? null
+        : {
+          operatorId,
+          visitId,
+          seoulDate: today,
+          activeTodayItemCount: afterCount,
+          updatedAt: timestamp,
+        };
+    }
+    if (Object.values(nextKpis).some((count) => !Number.isSafeInteger(count) || count < 0)) {
+      throw new FieldV2Error("field_kpi_stale");
+    }
+    augmented[`fieldPlatform/v2/projections/operatorKpis/${operatorId}/current`] = {
+      operatorId,
+      seoulDate: today,
+      ...nextKpis,
+      updatedAt: timestamp,
+    };
+  }
+  return augmented;
+}
+
+function augmentFieldAggregatePatch(
+  current: unknown,
+  patch: Readonly<Record<string, unknown>>,
+): Readonly<Record<string, unknown>> {
+  return augmentFieldOperatorAggregatePatch(
+    current,
+    augmentFieldTeamAggregatePatch(current, patch),
+  );
 }
 
 function parseReceipt(
@@ -2187,7 +2424,7 @@ async function runFieldRootTransaction<Result>(
       if ("replay" in chosen) return undefined;
       return applyRootPatch(
         current,
-        augmentFieldTeamAggregatePatch(current, chosen.patch),
+        augmentFieldAggregatePatch(current, chosen.patch),
       );
     },
     undefined,
@@ -2317,7 +2554,7 @@ const baseFieldV2WorkDependencies: WorkItemDependencies = {
         outcome = { kind: "created", result: command.result };
         return applyRootPatch(
           current,
-          augmentFieldTeamAggregatePatch(current, command.patch),
+          augmentFieldAggregatePatch(current, command.patch),
         );
       },
       undefined,
@@ -2388,7 +2625,43 @@ const baseFieldV2WorkDependencies: WorkItemDependencies = {
         return unassignedQuery.limitToFirst(scanLimit + 1).get();
       })()
       : Promise.resolve(null);
-    const [mine, unassigned] = await Promise.all([minePromise, unassignedPromise]);
+    const operatorKpiPromise = adminDatabase
+      .ref(`fieldPlatform/v2/projections/operatorKpis/${actor.operatorId}/current`)
+      .get();
+    const teamKpiPromise = includeUnassigned
+      ? adminDatabase.ref("fieldPlatform/v2/projections/teamKpis/current").get()
+      : Promise.resolve(null);
+    const [mine, unassigned, operatorKpiSnapshot, teamKpiSnapshot] = await Promise.all([
+      minePromise,
+      unassignedPromise,
+      operatorKpiPromise,
+      teamKpiPromise,
+    ]);
+    const rawOperatorKpis: unknown = operatorKpiSnapshot.val();
+    const operatorKpisValid = isRecord(rawOperatorKpis)
+      && rawOperatorKpis.operatorId === actor.operatorId
+      && typeof rawOperatorKpis.seoulDate === "string"
+      && rawOperatorKpis.unassigned === 0;
+    let authoritativeKpis: unknown = operatorKpisValid ? rawOperatorKpis : undefined;
+    let kpiSeoulDate = operatorKpisValid ? rawOperatorKpis.seoulDate as string : "";
+    if (includeUnassigned) {
+      const rawTeamKpis: unknown = teamKpiSnapshot?.val();
+      if (
+        operatorKpisValid
+        && isRecord(rawTeamKpis)
+        && typeof rawTeamKpis.seoulDate === "string"
+      ) {
+        authoritativeKpis = {
+          ...rawOperatorKpis,
+          unassigned: rawTeamKpis.unassigned,
+        };
+        if (rawTeamKpis.seoulDate !== rawOperatorKpis.seoulDate) {
+          kpiSeoulDate = "";
+        }
+      } else {
+        authoritativeKpis = undefined;
+      }
+    }
     const expected = new Map<string, {
       id: string;
       mine: boolean;
@@ -2454,6 +2727,8 @@ const baseFieldV2WorkDependencies: WorkItemDependencies = {
     const lastConsumed = scanCandidates[consumedCount - 1];
     return {
       items,
+      kpis: authoritativeKpis as FieldKpis,
+      kpiSeoulDate,
       ...(lastConsumed && consumedCount < selected.length
         ? { nextCursor: encodeFieldPersonalCursor(lastConsumed.updatedAt, lastConsumed.id) }
         : {}),

@@ -6,6 +6,7 @@ import {
   buildTeamActiveProjection,
   buildUnassignedProjection,
   calculateFieldKpis,
+  calculateFieldOperatorKpis,
 } from "../src/field-v2/projections.js";
 import type { FieldWorkItem } from "../src/field-v2/work-items.js";
 
@@ -80,6 +81,40 @@ describe("FIELD v2 deterministic projections", () => {
     expect(calculateFieldKpis([
       workItem({ dueDate: "2026-08-15" }),
     ], new Date("2026-08-14T15:00:00.000Z")).todayVisits).toBe(1);
+  });
+
+  it("calculates one operator's assigned workload and deduplicates shared visits", () => {
+    const items = [
+      workItem({ id: "mine_a", visitId: "visit_shared" }),
+      workItem({ id: "mine_b", visitId: "visit_shared" }),
+      workItem({
+        id: "other",
+        visitId: "visit_other",
+        assignedOperatorId: "operator_hwang",
+        uploadStatus: "failed",
+        adminActionRequired: true,
+      }),
+      workItem({
+        id: "free",
+        visitId: "visit_free",
+        assignedOperatorId: null,
+        workflowStatus: "requested",
+      }),
+    ];
+
+    expect(calculateFieldOperatorKpis(
+      items,
+      "operator_kim",
+      new Date("2026-08-14T15:00:00.000Z"),
+    )).toEqual({
+      todayVisits: 1,
+      capturePending: 2,
+      uploadFailures: 0,
+      reviewPending: 0,
+      unassigned: 0,
+      overdue: 0,
+      adminActionRequired: 0,
+    });
   });
 
   it("counts only job policies with unconditional photo capture in capturePending", () => {

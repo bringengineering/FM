@@ -509,6 +509,35 @@ function seedFieldV2Access(
     cutoverAt: null,
     ...releaseOverrides,
   });
+  const seoulDate = new Intl.DateTimeFormat("en-CA", {
+    timeZone: "Asia/Seoul",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).format(new Date());
+  registrations.pathValues.set("fieldPlatform/v2/projections/operatorKpis/operator_kim/current", {
+    operatorId: "operator_kim",
+    seoulDate,
+    todayVisits: 0,
+    capturePending: 0,
+    uploadFailures: 0,
+    reviewPending: 0,
+    unassigned: 0,
+    overdue: 0,
+    adminActionRequired: 0,
+    updatedAt: new Date().toISOString(),
+  });
+  registrations.pathValues.set("fieldPlatform/v2/projections/teamKpis/current", {
+    seoulDate,
+    todayVisits: 0,
+    capturePending: 0,
+    uploadFailures: 0,
+    reviewPending: 0,
+    unassigned: 0,
+    overdue: 0,
+    adminActionRequired: 0,
+    updatedAt: new Date().toISOString(),
+  });
 }
 
 function validFieldV2Request(data: Record<string, unknown>) {
@@ -1311,6 +1340,18 @@ describe("Firebase entrypoint metadata", () => {
       adminActionRequired: 0,
       updatedAt: expect.any(String),
     });
+    expect(root).toHaveProperty("fieldPlatform.v2.projections.operatorKpis.operator_kim.current", {
+      operatorId: "operator_kim",
+      seoulDate: today,
+      todayVisits: 0,
+      capturePending: 0,
+      uploadFailures: 0,
+      reviewPending: 0,
+      unassigned: 0,
+      overdue: 0,
+      adminActionRequired: 0,
+      updatedAt: expect.any(String),
+    });
     expect(root).toHaveProperty(`crmCompany.fieldSummaries.${result.jobIds[0]}`);
     expect(registrations.databaseRef).not.toHaveBeenCalledWith(
       "fieldPlatform/users/shared_uid",
@@ -1390,6 +1431,256 @@ describe("Firebase entrypoint metadata", () => {
     expect(root.fieldPlatform.v2.projections.teamActive.job_1).toBeNull();
   });
 
+  it("moves authoritative operator KPIs exactly once across an assignment transfer", async () => {
+    seedFieldV2Access();
+    const today = new Intl.DateTimeFormat("en-CA", {
+      timeZone: "Asia/Seoul",
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit",
+    }).format(new Date());
+    const item = fieldV2WorkItem({
+      assignedOperatorId: "operator_kim",
+      workflowStatus: "assigned",
+      dueDate: today,
+    });
+    const visit = fieldV2Visit({ assignedOperatorId: "operator_kim", dueDate: today });
+    const zeroKpis = {
+      todayVisits: 0,
+      capturePending: 0,
+      uploadFailures: 0,
+      reviewPending: 0,
+      unassigned: 0,
+      overdue: 0,
+      adminActionRequired: 0,
+    };
+    registrations.transactionCurrent.value = {
+      crmCompany: {
+        access: { shared_uid: { enabled: true, role: "member", email: "team@bringcare.kr" } },
+        teamProfiles: {
+          operator_kim: { active: true, displayName: "김현진" },
+          operator_hwang: { active: true, displayName: "황우중" },
+        },
+      },
+      fieldPlatform: { v2: {
+        config: { release: registrations.pathValues.get("fieldPlatform/v2/config/release") },
+        workItems: { job_1: item },
+        visits: { visit_1: visit },
+        projections: {
+          operatorJobs: { operator_kim: { job_1: fieldV2TeamProjection(item) } },
+          teamActive: { job_1: fieldV2TeamProjection(item) },
+          teamKpis: { current: {
+            seoulDate: today,
+            todayVisits: 1,
+            capturePending: 1,
+            uploadFailures: 0,
+            reviewPending: 0,
+            unassigned: 0,
+            overdue: 0,
+            adminActionRequired: 0,
+            updatedAt: item.updatedAt,
+          } },
+          teamVisitState: { visit_1: {
+            visitId: "visit_1",
+            seoulDate: today,
+            activeTodayItemCount: 1,
+            updatedAt: item.updatedAt,
+          } },
+          operatorKpis: {
+            operator_kim: { current: {
+              operatorId: "operator_kim",
+              seoulDate: today,
+              todayVisits: 1,
+              capturePending: 1,
+              uploadFailures: 0,
+              reviewPending: 0,
+              unassigned: 0,
+              overdue: 0,
+              adminActionRequired: 0,
+              updatedAt: item.updatedAt,
+            } },
+            operator_hwang: { current: {
+              operatorId: "operator_hwang",
+              seoulDate: today,
+              ...zeroKpis,
+              updatedAt: item.updatedAt,
+            } },
+          },
+          operatorVisitState: {
+            operator_kim: { visit_1: {
+              operatorId: "operator_kim",
+              visitId: "visit_1",
+              seoulDate: today,
+              activeTodayItemCount: 1,
+              updatedAt: item.updatedAt,
+            } },
+          },
+        },
+      } },
+    };
+    const request = validFieldV2Request({
+      requestId: "333e4567-e89b-42d3-a456-426614174000",
+      jobId: "job_1",
+      assignedOperatorId: "operator_hwang",
+      reason: "현장 일정 조정",
+    });
+
+    await expect(callableHandler(entrypoints.assignFieldJob)(request))
+      .resolves.toMatchObject({ assignedOperatorId: "operator_hwang" });
+    const root = registrations.transactionCurrent.value as any;
+    expect(root.fieldPlatform.v2.projections.operatorKpis.operator_kim.current)
+      .toMatchObject({ ...zeroKpis, operatorId: "operator_kim", seoulDate: today });
+    expect(root.fieldPlatform.v2.projections.operatorKpis.operator_hwang.current)
+      .toMatchObject({
+        operatorId: "operator_hwang",
+        seoulDate: today,
+        todayVisits: 1,
+        capturePending: 1,
+        unassigned: 0,
+      });
+    expect(root.fieldPlatform.v2.projections.operatorVisitState.operator_kim.visit_1).toBeNull();
+    expect(root.fieldPlatform.v2.projections.operatorVisitState.operator_hwang.visit_1)
+      .toMatchObject({ activeTodayItemCount: 1 });
+
+    const aggregatesBeforeReplay = structuredClone({
+      kpis: root.fieldPlatform.v2.projections.operatorKpis,
+      visits: root.fieldPlatform.v2.projections.operatorVisitState,
+    });
+    registrations.pathValues.set(
+      "fieldPlatform/v2/requestReceipts/assignFieldJob/333e4567-e89b-42d3-a456-426614174000",
+      root.fieldPlatform.v2.requestReceipts.assignFieldJob[
+        "333e4567-e89b-42d3-a456-426614174000"
+      ],
+    );
+    await callableHandler(entrypoints.assignFieldJob)(request);
+    expect({
+      kpis: root.fieldPlatform.v2.projections.operatorKpis,
+      visits: root.fieldPlatform.v2.projections.operatorVisitState,
+    }).toEqual(aggregatesBeforeReplay);
+
+    await callableHandler(entrypoints.assignFieldJob)(validFieldV2Request({
+      requestId: "633e4567-e89b-42d3-a456-426614174000",
+      jobId: "job_1",
+      assignedOperatorId: null,
+      reason: "미배정 업무함으로 회수",
+    }));
+    const unassignedProjections = (registrations.transactionCurrent.value as any)
+      .fieldPlatform.v2.projections;
+    expect(unassignedProjections.operatorKpis.operator_hwang.current)
+      .toMatchObject({ ...zeroKpis, operatorId: "operator_hwang", seoulDate: today });
+    expect(unassignedProjections.teamKpis.current).toMatchObject({ unassigned: 1 });
+  });
+
+  it("keeps one operator visit count when one of two jobs in the visit changes status", async () => {
+    seedFieldV2Access();
+    const today = new Intl.DateTimeFormat("en-CA", {
+      timeZone: "Asia/Seoul",
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit",
+    }).format(new Date());
+    const first = fieldV2WorkItem({
+      assignedOperatorId: "operator_kim",
+      workflowStatus: "assigned",
+      dueDate: today,
+    });
+    const second = fieldV2WorkItem({
+      id: "job_2",
+      crmSalesUnitId: "sales_unit_2",
+      assignedOperatorId: "operator_kim",
+      workflowStatus: "assigned",
+      dueDate: today,
+      sourceSnapshot: {
+        ...fieldV2WorkItem().sourceSnapshot,
+        unitId: "sales_unit_2",
+        unitLabel: "102호",
+      },
+    });
+    registrations.transactionCurrent.value = {
+      crmCompany: {
+        access: { shared_uid: { enabled: true, role: "member", email: "team@bringcare.kr" } },
+        teamProfiles: { operator_kim: { active: true, displayName: "김현진" } },
+      },
+      fieldPlatform: { v2: {
+        config: { release: registrations.pathValues.get("fieldPlatform/v2/config/release") },
+        workItems: { job_1: first, job_2: second },
+        visits: { visit_1: fieldV2Visit({
+          workItemIds: ["job_1", "job_2"],
+          assignedOperatorId: "operator_kim",
+          dueDate: today,
+        }) },
+        projections: {
+          teamKpis: { current: {
+            seoulDate: today,
+            todayVisits: 1,
+            capturePending: 2,
+            uploadFailures: 0,
+            reviewPending: 0,
+            unassigned: 0,
+            overdue: 0,
+            adminActionRequired: 0,
+            updatedAt: first.updatedAt,
+          } },
+          teamVisitState: { visit_1: {
+            visitId: "visit_1",
+            seoulDate: today,
+            activeTodayItemCount: 2,
+            updatedAt: first.updatedAt,
+          } },
+          operatorKpis: { operator_kim: { current: {
+            operatorId: "operator_kim",
+            seoulDate: today,
+            todayVisits: 1,
+            capturePending: 2,
+            uploadFailures: 0,
+            reviewPending: 0,
+            unassigned: 0,
+            overdue: 0,
+            adminActionRequired: 0,
+            updatedAt: first.updatedAt,
+          } } },
+          operatorVisitState: { operator_kim: { visit_1: {
+            operatorId: "operator_kim",
+            visitId: "visit_1",
+            seoulDate: today,
+            activeTodayItemCount: 2,
+            updatedAt: first.updatedAt,
+          } } },
+        },
+      } },
+    };
+
+    await callableHandler(entrypoints.transitionFieldJob)(validFieldV2Request({
+      requestId: "433e4567-e89b-42d3-a456-426614174000",
+      jobId: "job_1",
+      toStatus: "accepted",
+    }));
+    const projections = (registrations.transactionCurrent.value as any)
+      .fieldPlatform.v2.projections;
+    expect(projections.operatorKpis.operator_kim.current)
+      .toMatchObject({ todayVisits: 1, capturePending: 2 });
+    expect(projections.operatorVisitState.operator_kim.visit_1)
+      .toMatchObject({ activeTodayItemCount: 2 });
+
+    const tomorrow = new Intl.DateTimeFormat("en-CA", {
+      timeZone: "Asia/Seoul",
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit",
+    }).format(new Date(Date.now() + 86_400_000));
+    await callableHandler(entrypoints.changeFieldVisit)(validFieldV2Request({
+      requestId: "533e4567-e89b-42d3-a456-426614174000",
+      visitId: "visit_1",
+      dueDate: tomorrow,
+      reason: "방문 일정 변경",
+    }));
+    const changedProjections = (registrations.transactionCurrent.value as any)
+      .fieldPlatform.v2.projections;
+    expect(changedProjections.operatorKpis.operator_kim.current)
+      .toMatchObject({ todayVisits: 0, capturePending: 2 });
+    expect(changedProjections.operatorVisitState.operator_kim.visit_1).toBeNull();
+  });
+
   it("atomically rolls a prior-day team aggregate forward on the first mutation after KST midnight", async () => {
     seedFieldV2Access();
     const now = new Date();
@@ -1433,6 +1724,25 @@ describe("Firebase entrypoint metadata", () => {
             activeTodayItemCount: 9,
             updatedAt: item.updatedAt,
           } },
+          operatorKpis: { operator_kim: { current: {
+            operatorId: "operator_kim",
+            seoulDate: yesterday,
+            todayVisits: 9,
+            capturePending: 9,
+            uploadFailures: 9,
+            reviewPending: 9,
+            unassigned: 0,
+            overdue: 9,
+            adminActionRequired: 9,
+            updatedAt: item.updatedAt,
+          } } },
+          operatorVisitState: { operator_kim: { visit_1: {
+            operatorId: "operator_kim",
+            visitId: "visit_1",
+            seoulDate: yesterday,
+            activeTodayItemCount: 9,
+            updatedAt: item.updatedAt,
+          } } },
         },
       } },
     };
@@ -1454,6 +1764,23 @@ describe("Firebase entrypoint metadata", () => {
       adminActionRequired: 0,
     });
     expect(aggregate.teamVisitState.visit_1).toMatchObject({
+      visitId: "visit_1",
+      seoulDate: today,
+      activeTodayItemCount: 1,
+    });
+    expect(aggregate.operatorKpis.operator_kim.current).toMatchObject({
+      operatorId: "operator_kim",
+      seoulDate: today,
+      todayVisits: 1,
+      capturePending: 1,
+      uploadFailures: 0,
+      reviewPending: 0,
+      unassigned: 0,
+      overdue: 0,
+      adminActionRequired: 0,
+    });
+    expect(aggregate.operatorVisitState.operator_kim.visit_1).toMatchObject({
+      operatorId: "operator_kim",
       visitId: "visit_1",
       seoulDate: today,
       activeTodayItemCount: 1,
@@ -1993,7 +2320,154 @@ describe("Firebase entrypoint metadata", () => {
     expect(registrations.databaseRef).not.toHaveBeenCalledWith(
       "fieldPlatform/v2/projections/unassigned",
     );
+    expect(registrations.databaseRef).toHaveBeenCalledWith(
+      "fieldPlatform/v2/projections/operatorKpis/operator_kim/current",
+    );
+    expect(registrations.databaseRef).not.toHaveBeenCalledWith(
+      "fieldPlatform/v2/projections/teamKpis/current",
+    );
 
+  });
+
+  it("keeps a nonzero personal KPI when a bounded stale page is empty but resumable", async () => {
+    seedFieldV2Access("viewer");
+    const staleProjections: Record<string, unknown> = {};
+    for (let number = 1; number <= 3; number += 1) {
+      const id = `stale_${number}`;
+      staleProjections[id] = {
+        fieldJobId: id,
+        updatedAt: `2026-08-14T0${number}:00:00.000Z`,
+      };
+      registrations.pathValues.set(`fieldPlatform/v2/workItems/${id}`, fieldV2WorkItem({
+        id,
+        visitId: `visit_${id}`,
+        assignedOperatorId: "operator_hwang",
+        workflowStatus: "assigned",
+      }));
+    }
+    registrations.pathValues.set(
+      "fieldPlatform/v2/projections/operatorJobs/operator_kim",
+      staleProjections,
+    );
+    const aggregate = registrations.pathValues.get(
+      "fieldPlatform/v2/projections/operatorKpis/operator_kim/current",
+    ) as Record<string, unknown>;
+    registrations.pathValues.set(
+      "fieldPlatform/v2/projections/operatorKpis/operator_kim/current",
+      { ...aggregate, todayVisits: 4, capturePending: 7, overdue: 2 },
+    );
+
+    const workspace = await callableHandler(entrypoints.listFieldOperationsWorkspace)(
+      validFieldV2Request({ limit: 1 }),
+    ) as { items: unknown[]; nextCursor: string | null; kpis: Record<string, number> };
+    expect(workspace.items).toEqual([]);
+    expect(workspace.nextCursor).toEqual(expect.any(String));
+    expect(workspace.kpis).toMatchObject({ todayVisits: 4, capturePending: 7, overdue: 2 });
+  });
+
+  it("returns one authoritative personal KPI snapshot unchanged across pages", async () => {
+    seedFieldV2Access("viewer");
+    registrations.pathValues.set("fieldPlatform/v2/projections/operatorJobs/operator_kim", {
+      job_1: { fieldJobId: "job_1", updatedAt: "2026-08-14T01:00:00.000Z" },
+      job_2: { fieldJobId: "job_2", updatedAt: "2026-08-14T02:00:00.000Z" },
+    });
+    registrations.pathValues.set("fieldPlatform/v2/workItems/job_1", fieldV2WorkItem({
+      id: "job_1",
+      visitId: "visit_1",
+      assignedOperatorId: "operator_kim",
+      workflowStatus: "assigned",
+    }));
+    registrations.pathValues.set("fieldPlatform/v2/workItems/job_2", fieldV2WorkItem({
+      id: "job_2",
+      visitId: "visit_2",
+      assignedOperatorId: "operator_kim",
+      workflowStatus: "assigned",
+      sourceSnapshot: {
+        ...fieldV2WorkItem().sourceSnapshot,
+        unitId: "sales_unit_2",
+        unitLabel: "102호",
+      },
+      crmSalesUnitId: "sales_unit_2",
+    }));
+    const aggregate = registrations.pathValues.get(
+      "fieldPlatform/v2/projections/operatorKpis/operator_kim/current",
+    ) as Record<string, unknown>;
+    registrations.pathValues.set(
+      "fieldPlatform/v2/projections/operatorKpis/operator_kim/current",
+      { ...aggregate, todayVisits: 9, capturePending: 12, uploadFailures: 3 },
+    );
+
+    const first = await callableHandler(entrypoints.listFieldOperationsWorkspace)(
+      validFieldV2Request({ limit: 1 }),
+    ) as { kpis: Record<string, number>; nextCursor: string };
+    const second = await callableHandler(entrypoints.listFieldOperationsWorkspace)(
+      validFieldV2Request({ limit: 1, cursor: first.nextCursor }),
+    ) as { kpis: Record<string, number> };
+    expect(first.kpis).toEqual(second.kpis);
+    expect(first.kpis).toMatchObject({ todayVisits: 9, capturePending: 12, uploadFailures: 3 });
+  });
+
+  it("defines member personal KPIs as selected-operator workload plus the team unassigned count", async () => {
+    seedFieldV2Access("member");
+    const operatorAggregate = registrations.pathValues.get(
+      "fieldPlatform/v2/projections/operatorKpis/operator_kim/current",
+    ) as Record<string, unknown>;
+    const teamAggregate = registrations.pathValues.get(
+      "fieldPlatform/v2/projections/teamKpis/current",
+    ) as Record<string, unknown>;
+    registrations.pathValues.set(
+      "fieldPlatform/v2/projections/operatorKpis/operator_kim/current",
+      {
+        ...operatorAggregate,
+        todayVisits: 2,
+        capturePending: 4,
+        uploadFailures: 1,
+        overdue: 1,
+        unassigned: 0,
+      },
+    );
+    registrations.pathValues.set("fieldPlatform/v2/projections/teamKpis/current", {
+      ...teamAggregate,
+      todayVisits: 99,
+      capturePending: 99,
+      uploadFailures: 99,
+      overdue: 99,
+      unassigned: 5,
+    });
+
+    await expect(callableHandler(entrypoints.listFieldOperationsWorkspace)(
+      validFieldV2Request({ limit: 10 }),
+    )).resolves.toMatchObject({
+      kpis: {
+        todayVisits: 2,
+        capturePending: 4,
+        uploadFailures: 1,
+        reviewPending: 0,
+        unassigned: 5,
+        overdue: 1,
+        adminActionRequired: 0,
+      },
+    });
+  });
+
+  it.each([
+    ["malformed", { overdue: -1 }],
+    ["stale", { seoulDate: "2000-01-01" }],
+  ])("fails a personal workspace when its operator KPI is %s", async (_label, override) => {
+    seedFieldV2Access("viewer");
+    const aggregate = registrations.pathValues.get(
+      "fieldPlatform/v2/projections/operatorKpis/operator_kim/current",
+    ) as Record<string, unknown>;
+    registrations.pathValues.set(
+      "fieldPlatform/v2/projections/operatorKpis/operator_kim/current",
+      { ...aggregate, ...override },
+    );
+    await expect(callableHandler(entrypoints.listFieldOperationsWorkspace)(
+      validFieldV2Request({}),
+    )).rejects.toMatchObject({
+      code: _label === "stale" ? "failed-precondition" : "unavailable",
+      message: _label === "stale" ? "field_kpi_stale" : "field_workspace_invalid",
+    });
   });
 
   it("lets a member combine mine and unassigned while filtering stale reassigned projections", async () => {

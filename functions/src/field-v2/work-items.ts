@@ -21,7 +21,6 @@ import {
   buildOperatorProjection,
   buildTeamActiveProjection,
   buildUnassignedProjection,
-  calculateFieldKpis,
   type CrmFieldSummary,
   type FieldKpis,
   type FieldOperatorJobProjection,
@@ -2049,15 +2048,13 @@ export async function listFieldOperationsWorkspaceCore(
     return frozenItem(item);
   });
   const now = new Date(currentTimestamp(dependencies));
-  if (scope === "team" && records.kpiSeoulDate !== seoulDateFromTimestamp(now)) {
+  const authoritativeKpis = storedFieldKpis(records.kpis);
+  if (records.kpiSeoulDate !== seoulDateFromTimestamp(now)) {
     fail("field_kpi_stale");
   }
-  const teamKpis = scope === "team" ? storedFieldKpis(records.kpis) : undefined;
   return Object.freeze({
     items: Object.freeze(items),
-    kpis: teamKpis
-      ? teamKpis
-      : calculateFieldKpis(items as readonly FieldWorkItem[], now),
+    kpis: authoritativeKpis,
     scope,
     nextCursor,
   });

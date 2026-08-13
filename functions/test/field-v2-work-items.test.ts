@@ -644,6 +644,83 @@ describe("FIELD v2 CRM-backed work creation", () => {
 });
 
 describe("FIELD v2 workspace reads", () => {
+  const PERSONAL_KPIS = Object.freeze({
+    todayVisits: 4,
+    capturePending: 7,
+    uploadFailures: 2,
+    reviewPending: 1,
+    unassigned: 3,
+    overdue: 2,
+    adminActionRequired: 1,
+  });
+
+  it("returns authoritative personal KPIs even when a stale page is empty but has a cursor", async () => {
+    const dependencies = deps();
+    dependencies.readWorkspace.mockResolvedValue({
+      items: [],
+      kpis: PERSONAL_KPIS,
+      kpiSeoulDate: "2026-08-14",
+      nextCursor: "next-page",
+    });
+
+    await expect(listFieldOperationsWorkspaceCore({
+      operatorId: "operator_kim",
+      limit: 1,
+    }, ACTOR, dependencies)).resolves.toEqual({
+      items: [],
+      kpis: PERSONAL_KPIS,
+      scope: "personal",
+      nextCursor: "next-page",
+    });
+  });
+
+  it("returns the same authoritative KPI snapshot on every personal page", async () => {
+    const dependencies = deps();
+    dependencies.readWorkspace
+      .mockResolvedValueOnce({
+        items: [baseItem({ assignedOperatorId: "operator_kim", workflowStatus: "assigned" })],
+        kpis: PERSONAL_KPIS,
+        kpiSeoulDate: "2026-08-14",
+        nextCursor: "page-two",
+      })
+      .mockResolvedValueOnce({
+        items: [baseItem({
+          id: "job_2",
+          crmSalesUnitId: "sales_unit_2",
+          assignedOperatorId: "operator_kim",
+          workflowStatus: "assigned",
+        })],
+        kpis: PERSONAL_KPIS,
+        kpiSeoulDate: "2026-08-14",
+      });
+
+    const first = await listFieldOperationsWorkspaceCore({
+      operatorId: "operator_kim",
+      limit: 1,
+    }, ACTOR, dependencies);
+    const second = await listFieldOperationsWorkspaceCore({
+      operatorId: "operator_kim",
+      limit: 1,
+      cursor: first.nextCursor!,
+    }, ACTOR, dependencies);
+    expect(first.kpis).toEqual(PERSONAL_KPIS);
+    expect(second.kpis).toEqual(PERSONAL_KPIS);
+  });
+
+  it.each([
+    ["missing", undefined, "2026-08-14"],
+    ["malformed", { ...PERSONAL_KPIS, overdue: -1 }, "2026-08-14"],
+    ["stale", PERSONAL_KPIS, "2026-08-13"],
+  ])("fails closed for a %s personal KPI projection", async (_label, kpis, kpiSeoulDate) => {
+    const dependencies = deps();
+    dependencies.readWorkspace.mockResolvedValue({ items: [], kpis, kpiSeoulDate });
+    await expect(listFieldOperationsWorkspaceCore({
+      operatorId: "operator_kim",
+    }, ACTOR, dependencies)).rejects.toThrow(
+      _label === "stale" ? "field_kpi_stale" : "field_workspace_invalid",
+    );
+  });
+
   it("propagates a workspace query failure instead of reporting zero KPIs", async () => {
     const dependencies = deps();
     dependencies.readWorkspace.mockRejectedValue(new Error("network"));
