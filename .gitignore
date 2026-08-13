@@ -15,3 +15,5 @@ company-site/public/data/
 # Recreated from the tracked public guide by `company-site export:firebase`.
 company-site/firebase-public/popbill-guide/
 *-debug.log
+desktop-crm/node_modules/
+desktop-crm/dist/

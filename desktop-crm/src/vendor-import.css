@@ -1,0 +1,85 @@
+.quote-url-import {
+  display: grid;
+  grid-template-columns: 170px minmax(0, 1fr);
+  gap: 12px 16px;
+  align-items: center;
+  margin-bottom: 16px;
+  padding: 14px;
+  border: 1px solid #acd9ec;
+  border-radius: 12px;
+  background: linear-gradient(105deg, #edf9fe, #f8fdff);
+}
+
+.quote-url-import > div:first-child b,
+.quote-url-import > div:first-child span {
+  display: block;
+}
+
+.quote-url-import > div:first-child b {
+  color: #277fae;
+  font-size: 11px;
+}
+
+.quote-url-import > div:first-child span {
+  margin-top: 5px;
+  color: #7594a6;
+  font-size: 9px;
+  line-height: 1.45;
+}
+
+.quote-url-import-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 8px;
+}
+
+.quote-url-import-row input {
+  min-width: 0;
+  height: 42px;
+  padding: 0 12px;
+  border: 1px solid #bdddea;
+  border-radius: 10px;
+  outline: 0;
+  background: #fff;
+  color: #244b63;
+  font: inherit;
+  font-size: 11px;
+}
+
+.quote-url-import-row input:focus {
+  border-color: #57acd7;
+  box-shadow: 0 0 0 3px rgba(70, 165, 215, 0.12);
+}
+
+.quote-url-import-row button {
+  min-width: 138px;
+  border: 0;
+  border-radius: 10px;
+  background: linear-gradient(135deg, #54b5e7, #3499d0);
+  color: #fff;
+  font-size: 10px;
+  font-weight: 900;
+  cursor: pointer;
+  box-shadow: 0 7px 16px rgba(52, 153, 208, 0.2);
+}
+
+.quote-url-import-row button:disabled {
+  cursor: wait;
+  opacity: 0.65;
+}
+
+.quote-url-import > p {
+  grid-column: 2;
+  margin: -5px 0 0;
+  color: #7895a6;
+  font-size: 9px;
+}
+
+.quote-url-import > p.loading { color: #3e91bc; }
+.quote-url-import > p.success { color: #2f9876; font-weight: 800; }
+.quote-url-import > p.error { color: #d45d68; font-weight: 800; }
+
+@media (max-width: 1100px) {
+  .quote-url-import { grid-template-columns: 1fr; }
+  .quote-url-import > p { grid-column: 1; }
+}
