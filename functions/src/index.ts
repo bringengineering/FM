@@ -135,9 +135,6 @@ if (getApps().length === 0) {
 const adminAuth = getAuth();
 const adminDatabase = getDatabase();
 const mediaBucket = getStorage().bucket();
-const crmVerifierApp = getApps().find((app) => app.name === "crm-auth-verifier")
-  ?? initializeApp({ projectId: "bring-fm-hj" }, "crm-auth-verifier");
-const crmVerifierAuth = getAuth(crmVerifierApp);
 const FIELD_ID_BYTES = 128;
 
 const driveClientId = defineSecret("DRIVE_CLIENT_ID");
@@ -1379,7 +1376,7 @@ export const createDesktopFieldHandoff = onCall<{ crmIdToken: string }>(
         { limit: 30, windowMs: 600_000, nowMs: Date.now() },
       );
       const crmIdToken = boundedCallableString(request.data?.crmIdToken, 12_000);
-      const decoded = await crmVerifierAuth.verifyIdToken(crmIdToken);
+      const decoded = await adminAuth.verifyIdToken(crmIdToken);
       await consumeRateLimit(
         adminDatabase.ref(
           `fieldPlatform/desktopHandoffRateLimits/create-user/${desktopRateKey(decoded.uid)}`,

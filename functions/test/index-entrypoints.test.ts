@@ -9,6 +9,15 @@ const registrations = vi.hoisted(() => {
     ["DRIVE_ROOT_MODE", "appCreated"],
   ]);
   const definedSecrets: Array<{ name: string; value(): string }> = [];
+  const adminVerifyIdToken = vi.fn();
+  const adminAuth = {
+    verifyIdToken: adminVerifyIdToken,
+    getUserByEmail: vi.fn(),
+    createUser: vi.fn(),
+    setCustomUserClaims: vi.fn(),
+    createCustomToken: vi.fn(),
+  };
+  const getAuth = vi.fn(() => adminAuth);
   const transactionStates: unknown[] = [];
   const transactionPaths: string[] = [];
   const mutationPaths: string[] = [];
@@ -241,6 +250,9 @@ const registrations = vi.hoisted(() => {
       return secret;
     }),
     initializeApp: vi.fn(),
+    getAuth,
+    adminAuth,
+    adminVerifyIdToken,
     rebuildMapProjectionForBuilding: vi.fn(async () => undefined),
     databaseTransaction,
     databaseGet,
@@ -291,7 +303,7 @@ vi.mock("firebase-admin/app", () => ({
 }));
 
 vi.mock("firebase-admin/auth", () => ({
-  getAuth: () => ({}),
+  getAuth: registrations.getAuth,
 }));
 
 vi.mock("firebase-admin/database", () => ({
@@ -621,6 +633,7 @@ const EVENT_VERSION = {
 };
 
 beforeEach(() => {
+  registrations.adminVerifyIdToken.mockReset();
   registrations.rebuildMapProjectionForBuilding.mockClear();
   registrations.databaseRef.mockClear();
   registrations.databaseTransaction.mockClear();
@@ -1043,15 +1056,38 @@ describe("Firebase entrypoint metadata", () => {
         region: "asia-northeast3",
       },
     });
-    expect(registrations.initializeApp).toHaveBeenCalledTimes(2);
-    expect(registrations.initializeApp).toHaveBeenCalledWith(
+    expect(registrations.initializeApp).toHaveBeenCalledTimes(1);
+    expect(registrations.initializeApp).toHaveBeenCalledWith();
+    expect(registrations.initializeApp).not.toHaveBeenCalledWith(
       { projectId: "bring-fm-hj" },
       "crm-auth-verifier",
     );
+    expect(registrations.getAuth).toHaveBeenCalledTimes(1);
+    expect(registrations.getAuth).toHaveBeenCalledWith();
     expect(registrations.onCall).toHaveBeenCalledTimes(14);
     expect(registrations.onValueWritten).toHaveBeenCalledTimes(3);
     expect(registrations.onValueCreated).toHaveBeenCalledTimes(2);
     expect(registrations.onSchedule).toHaveBeenCalledTimes(3);
+  });
+
+  it("verifies desktop handoff tokens with the current default Firebase Auth", async () => {
+    registrations.adminVerifyIdToken.mockResolvedValueOnce({
+      uid: "crm-current-user",
+      email: "team@bringcare.kr",
+      email_verified: true,
+      name: "브링케어 팀",
+    });
+
+    await expect(callableHandler(entrypoints.createDesktopFieldHandoff)({
+      data: { crmIdToken: "current-project-id-token" },
+      rawRequest: { ip: "127.0.0.1" },
+    })).rejects.toMatchObject({
+      code: "permission-denied",
+      message: "desktop_handoff_not_allowed",
+    });
+
+    expect(registrations.adminVerifyIdToken)
+      .toHaveBeenCalledWith("current-project-id-token");
   });
 
   it("scans package recovery by the nested composite index with live time and hard limits", async () => {
