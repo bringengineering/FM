@@ -322,6 +322,21 @@ describe("field media database rule source", () => {
     expect(JSON.stringify(sessions)).toContain("status");
   });
 
+  it("keeps CRM migration staging inaccessible to every client", async () => {
+    const source = JSON.parse(
+      await readFile(resolve("../database.rules.json"), "utf8"),
+    ) as {
+      rules: {
+        crmMigrationStaging?: Record<string, unknown>;
+      };
+    };
+
+    expect(source.rules.crmMigrationStaging).toEqual({
+      ".read": false,
+      ".write": false,
+    });
+  });
+
   it("indexes bounded ad review queries and keeps package indexes server-owned", async () => {
     const source = JSON.parse(
       await readFile(resolve("../database.rules.json"), "utf8"),
