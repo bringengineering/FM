@@ -4,7 +4,7 @@ const fs = require("node:fs/promises");
 const path = require("node:path");
 const { fileURLToPath } = require("node:url");
 const Core = require("./core");
-const { FirebaseRemoteClient, encodeProtectedJson, decodeProtectedJson } = require("./remote");
+const { FirebaseRemoteClient, createSerializedProtectedStoreCoordinator, decodeProtectedJson } = require("./remote");
 const VendorExtractor = require("./vendor-extractor");
 const { fieldBounds, isAllowedFieldAuthPopup, isAllowedFieldNavigation } = require("./field-view-policy");
 const FIELD_PLATFORM_URL = "https://bring-fm.web.app/field";
@@ -275,13 +275,22 @@ function pendingFile() {
   return path.join(path.dirname(dataFile()), "bring-crm-pending.json");
 }
 
-async function readLocalStore() {
+let localStoreCoordinator = null;
+
+function getLocalStoreCoordinator() {
+  if (!localStoreCoordinator) {
+    localStoreCoordinator = createSerializedProtectedStoreCoordinator({ fs, safeStorage, target: dataFile() });
+  }
+  return localStoreCoordinator;
+}
+
+async function readLocalStore(commitGuard) {
   try {
     const raw = await fs.readFile(dataFile(), "utf8");
     const decoded = decodeProtectedJson(safeStorage, raw);
     const data = Core.sanitizeSharedStore(decoded.value);
     Core.assertNoProhibitedSecrets(data);
-    if (!decoded.encrypted) await writeProtectedStoreFile(dataFile(), data);
+    if (!decoded.encrypted) await getLocalStoreCoordinator().write(data, commitGuard);
     return data;
   } catch (error) {
     if (error.code !== "ENOENT") {
@@ -292,26 +301,15 @@ async function readLocalStore() {
   }
 }
 
-async function writeProtectedStoreFile(target, value) {
-  const temp = `${target}.tmp`;
-  await fs.mkdir(path.dirname(target), { recursive: true });
-  await fs.writeFile(temp, encodeProtectedJson(safeStorage, value), "utf8");
-  await fs.rename(temp, target);
-}
-
-async function writeLocalStore(input) {
-  const target = dataFile();
+async function writeLocalStore(input, commitGuard) {
   Core.assertNoProhibitedSecrets(input);
   const data = Core.sanitizeSharedStore(input);
   data.updatedAt = new Date().toISOString();
-  await writeProtectedStoreFile(target, data);
-  return data;
+  return getLocalStoreCoordinator().write(data, commitGuard);
 }
 
 async function clearLocalStore() {
-  for (const target of [dataFile(), `${dataFile()}.tmp`]) {
-    try { await fs.unlink(target); } catch (error) { if (error.code !== "ENOENT") throw error; }
-  }
+  await getLocalStoreCoordinator().clear();
 }
 
 function sendToRenderer(channel, payload) {

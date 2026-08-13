@@ -6,6 +6,8 @@ const {
   CANONICAL_CRM_ENDPOINT_URL,
   FirebaseRemoteClient,
   SHARED_COLLECTIONS,
+  createSerializedProtectedStoreCoordinator,
+  decodeProtectedJson,
   mergeRemoteStore,
   toRemoteStore
 } = require("../src/remote");
@@ -40,7 +42,16 @@ function session(uid) {
     role: "member",
     email: `${uid}@bring.test`,
     idToken: `${uid}-token`,
+    refreshToken: `${uid}-refresh`,
     expiresAt: Date.now() + 60_000
+  };
+}
+
+function jsonResponse(value, status = 200) {
+  return {
+    ok: status >= 200 && status < 300,
+    status,
+    text: async () => JSON.stringify(value)
   };
 }
 
@@ -522,6 +533,151 @@ test("an old session canonical refresh is discarded after logout and a different
   assert.equal(remoteStores.length, 0);
   assert.equal(syncStates.length, 0);
   assert.equal(client.remotePayload, null);
+});
+
+test("serialized cache commits cannot let a stale rename overwrite or delete the new session cache", async () => {
+  const firstRename = deferred();
+  const firstRenameStarted = deferred();
+  const files = new Map();
+  let renameCount = 0;
+  const fs = {
+    mkdir: async () => undefined,
+    writeFile: async (target, value) => { files.set(target, value); },
+    rename: async (source, target) => {
+      renameCount += 1;
+      if (renameCount === 1) {
+        firstRenameStarted.resolve();
+        await firstRename.promise;
+      }
+      files.set(target, files.get(source));
+      files.delete(source);
+    },
+    unlink: async target => {
+      if (!files.delete(target)) throw missingFileError(target);
+    }
+  };
+  const target = "bring-crm.json";
+  const coordinator = createSerializedProtectedStoreCoordinator({ fs, safeStorage: safeStorageStub(), target });
+  let active = "user_a";
+  const guard = uid => ({ actorUid: uid, generation: uid === "user_a" ? 1 : 2, isCurrent: () => active === uid });
+  const oldWrite = coordinator.write({ customers: [{ id: "customer_a" }] }, guard("user_a"));
+  await firstRenameStarted.promise;
+
+  active = "";
+  const clear = coordinator.clear();
+  active = "user_b";
+  const newWrite = coordinator.write({ customers: [{ id: "customer_b" }] }, guard("user_b"));
+  firstRename.resolve();
+  assert.equal(await oldWrite, null);
+  await clear;
+  await newWrite;
+
+  const persisted = decodeProtectedJson(safeStorageStub(), files.get(target)).value;
+  assert.equal(persisted.customers[0].id, "customer_b");
+  assert.equal([...files.keys()].filter(name => name !== target).length, 0);
+});
+
+test("a session-bound local write rechecks its guard inside the durable writer before renderer emit", async () => {
+  const writeStarted = deferred();
+  const finishWrite = deferred();
+  let durable = null;
+  const remoteStores = [];
+  const { client } = makeClient({
+    readLocalStore: async () => Core.blankSharedStore(),
+    writeLocalStore: async (value, guard) => {
+      writeStarted.resolve();
+      await finishWrite.promise;
+      if (!guard || guard.isCurrent()) durable = value;
+      return durable;
+    },
+    clearLocalStore: async () => { durable = null; },
+    onRemoteStore: value => { remoteStores.push(value); }
+  });
+  client.session = session("user_a");
+  client.fetchRemotePayload = async () => ({ customers: { customer_a: { id: "customer_a" } } });
+  client.loadCanonicalBuildingUnits = async () => ({});
+  client.loadFieldSummaries = async () => ({});
+  const refresh = client.refreshAfterCanonicalCommit();
+  await writeStarted.promise;
+
+  await client.logout(false);
+  client.session = session("user_b");
+  client.markSessionStarted();
+  finishWrite.resolve();
+
+  assert.equal(await refresh, null);
+  assert.equal(durable, null);
+  assert.equal(remoteStores.length, 0);
+});
+
+test("a stale token refresh cannot replace or persist a newer login session", async () => {
+  const oldToken = deferred();
+  const oldTokenStarted = deferred();
+  const persisted = [];
+  const { client } = makeClient({
+    fetchImpl: async (url, options) => {
+      if (url.includes("securetoken") && String(options.body).includes("user_a-refresh")) {
+        oldTokenStarted.resolve();
+        return oldToken.promise;
+      }
+      if (url.includes("securetoken") && String(options.body).includes("user_b-refresh")) {
+        return jsonResponse({ id_token: "user_b-new-token", refresh_token: "user_b-refresh-2", expires_in: "3600", user_id: "user_b" });
+      }
+      if (url.includes("accounts:lookup") && String(options.body).includes("user_b-new-token")) {
+        return jsonResponse({ users: [{ localId: "user_b", email: "user_b@bring.test" }] });
+      }
+      if (url.includes("accounts:lookup") && String(options.body).includes("user_a-new-token")) {
+        return jsonResponse({ users: [{ localId: "user_a", email: "user_a@bring.test" }] });
+      }
+      throw new Error(`Unexpected request ${url}`);
+    }
+  });
+  client.verifyAccess = async () => ({ enabled: true, role: "member" });
+  client.persistSession = async () => { persisted.push(client.session && client.session.uid); return true; };
+  client.session = Object.assign(session("user_a"), { expiresAt: 0 });
+  const refreshA = client.ensureIdToken(true);
+  await oldTokenStarted.promise;
+
+  await client.logout(false);
+  client.session = Object.assign(session("user_b"), { expiresAt: 0 });
+  client.markSessionStarted();
+  assert.equal(await client.ensureIdToken(true), "user_b-new-token");
+  oldToken.resolve(jsonResponse({ id_token: "user_a-new-token", refresh_token: "user_a-refresh-2", expires_in: "3600", user_id: "user_a" }));
+
+  await assert.rejects(refreshA, error => error && error.code === "SESSION_CHANGED");
+  assert.equal(client.session.uid, "user_b");
+  assert.equal(client.session.idToken, "user_b-new-token");
+  assert.deepEqual(persisted, ["user_b"]);
+});
+
+test("concurrent refreshes deduplicate only within the same session generation", async () => {
+  const tokenReply = deferred();
+  const tokenStarted = deferred();
+  let tokenRequests = 0;
+  const { client } = makeClient({
+    fetchImpl: async url => {
+      if (url.includes("securetoken")) {
+        tokenRequests += 1;
+        tokenStarted.resolve();
+        return tokenReply.promise;
+      }
+      if (url.includes("accounts:lookup")) {
+        return jsonResponse({ users: [{ localId: "user_a", email: "user_a@bring.test" }] });
+      }
+      throw new Error(`Unexpected request ${url}`);
+    }
+  });
+  client.verifyAccess = async () => ({ enabled: true, role: "member" });
+  client.persistSession = async () => true;
+  client.session = Object.assign(session("user_a"), { expiresAt: 0 });
+  const first = client.ensureIdToken(true);
+  const second = client.ensureIdToken(true);
+  await tokenStarted.promise;
+
+  assert.equal(tokenRequests, 1);
+  tokenReply.resolve(jsonResponse({ id_token: "user_a-new-token", refresh_token: "user_a-refresh-2", expires_in: "3600", user_id: "user_a" }));
+  assert.deepEqual(await Promise.all([first, second]), ["user_a-new-token", "user_a-new-token"]);
+  assert.equal(tokenRequests, 1);
 });
 
 test("an old canonical commit response returns no stale result or refresh after a session switch", async () => {
