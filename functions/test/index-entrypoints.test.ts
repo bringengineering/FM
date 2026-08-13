@@ -42,21 +42,22 @@ const registrations = vi.hoisted(() => {
       _applyLocally: unknown,
       path: string,
     ) => {
-      const current = path === "fieldPlatform"
+      const rootTransaction = path === "fieldPlatform" || path === "";
+      const current = rootTransaction
         ? transactionCurrent.value
         : (pathValues.get(path) ?? null);
-      if (path === "fieldPlatform" && transactionRetryCurrent.value !== undefined) {
+      if (rootTransaction && transactionRetryCurrent.value !== undefined) {
         update(current);
         transactionCurrent.value = transactionRetryCurrent.value;
         transactionRetryCurrent.value = undefined;
       }
-      const effectiveCurrent = path === "fieldPlatform"
+      const effectiveCurrent = rootTransaction
         ? transactionCurrent.value
         : current;
       const state = update(effectiveCurrent);
       const committed = state !== undefined;
       if (committed) {
-        if (path === "fieldPlatform") {
+        if (rootTransaction) {
           transactionCurrent.value = state;
         } else {
           pathValues.set(path, state);
@@ -454,6 +455,121 @@ function validReviewerCallableRequest(data: unknown) {
   };
 }
 
+function seedFieldV2Access(
+  role: "admin" | "member" | "viewer" = "member",
+  releaseOverrides: Record<string, unknown> = {},
+) {
+  registrations.pathValues.set("crmCompany/access/shared_uid", {
+    enabled: true,
+    role,
+    email: "team@bringcare.kr",
+  });
+  registrations.pathValues.set("crmCompany/teamProfiles/operator_kim", {
+    active: true,
+    displayName: "김현진",
+    sortOrder: 1,
+  });
+  registrations.pathValues.set("crmCompany/teamProfiles/operator_hwang", {
+    active: true,
+    displayName: "황우중",
+    sortOrder: 2,
+  });
+  registrations.pathValues.set("fieldPlatform/v2/config/release", {
+    protocolVersion: 2,
+    minDesktopVersion: "1.7.0",
+    maxDesktopVersion: "2.0.0",
+    minPwaVersion: "1.0.0",
+    enabledOperatorIds: ["operator_kim", "operator_hwang"],
+    v2WritesEnabled: true,
+    canonicalCrmEnabled: false,
+    safeMode: false,
+    cutoverAt: null,
+    ...releaseOverrides,
+  });
+}
+
+function validFieldV2Request(data: Record<string, unknown>) {
+  return {
+    auth: {
+      uid: "shared_uid",
+      token: {
+        email: "team@bringcare.kr",
+        email_verified: true,
+      },
+    },
+    data: {
+      protocolVersion: 2,
+      clientKind: "pwa",
+      buildVersion: "1.0.0",
+      operatorId: "operator_kim",
+      ...data,
+    },
+  };
+}
+
+function fieldV2WorkItem(overrides: Record<string, unknown> = {}) {
+  return {
+    id: "job_1",
+    visitId: "visit_1",
+    jobType: "vacancy_capture",
+    jobPolicyVersion: "FIELD_V2_VACANCY_CAPTURE",
+    checklistId: "VACANCY_CAPTURE_V1",
+    crmSalesProspectId: "prospect_1",
+    crmSalesUnitId: "sales_unit_1",
+    assignedOperatorId: null,
+    dueDate: "2026-08-15",
+    priority: "normal",
+    workflowStatus: "requested",
+    uploadStatus: "none",
+    sourceSnapshot: {
+      parentType: "salesProspect",
+      parentId: "prospect_1",
+      parentName: "상지 원룸",
+      address: "강원 원주시 상지대길 1",
+      unitType: "salesUnit",
+      unitId: "sales_unit_1",
+      unitLabel: "101호",
+    },
+    sourceVersion: {
+      parentUpdatedAt: "2026-08-14T01:00:00.000Z",
+      unitUpdatedAt: "2026-08-14T01:30:00.000Z",
+    },
+    sourceHash: "a".repeat(64),
+    mediaCount: 0,
+    uploadFailureCount: 0,
+    adminActionRequired: false,
+    createdAt: "2026-08-14T02:00:00.000Z",
+    createdByAuthUid: "shared_uid",
+    createdByOperatorId: "operator_kim",
+    updatedAt: "2026-08-14T02:00:00.000Z",
+    updatedByAuthUid: "shared_uid",
+    updatedByOperatorId: "operator_kim",
+    archivedAt: null,
+    ...overrides,
+  };
+}
+
+function fieldV2Visit(overrides: Record<string, unknown> = {}) {
+  return {
+    id: "visit_1",
+    crmSalesProspectId: "prospect_1",
+    workItemIds: ["job_1"],
+    assignedOperatorId: null,
+    dueDate: "2026-08-15",
+    priority: "normal",
+    accessPreparationStatus: "unknown",
+    sharedMediaIds: [],
+    createdAt: "2026-08-14T02:00:00.000Z",
+    createdByAuthUid: "shared_uid",
+    createdByOperatorId: "operator_kim",
+    updatedAt: "2026-08-14T02:00:00.000Z",
+    updatedByAuthUid: "shared_uid",
+    updatedByOperatorId: "operator_kim",
+    archivedAt: null,
+    ...overrides,
+  };
+}
+
 const AD_REQUEST_ID = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
 const AD_SESSION_ID = "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb";
 const AD_MEDIA_IDS = Array.from({ length: 10 }, (_, index) =>
@@ -812,6 +928,323 @@ describe("Firebase entrypoint metadata", () => {
         enforceAppCheck: true,
       });
     }
+
+
+    for (const callable of [
+      entrypoints.createFieldJobs,
+      entrypoints.claimFieldJob,
+      entrypoints.assignFieldJob,
+      entrypoints.changeFieldVisit,
+      entrypoints.transitionFieldJob,
+      entrypoints.listFieldOperationsWorkspace,
+    ]) {
+      expect(registration(callable)).toMatchObject({
+        kind: "callable",
+        options: {
+          region: "asia-northeast3",
+          enforceAppCheck: true,
+        },
+      });
+      expect(registration(callable).options).toEqual({
+        region: "asia-northeast3",
+        enforceAppCheck: true,
+      });
+    }
+  });
+
+  it("creates v2 work from current CRM auth with one atomic root transaction", async () => {
+    seedFieldV2Access();
+    registrations.pathValues.set("crmCompany/data/salesProspects/prospect_1", {
+      id: "prospect_1",
+      name: "상지 원룸",
+      address: "강원 원주시 상지대길 1",
+      updatedAt: "2026-08-14T01:00:00.000Z",
+      archivedAt: null,
+    });
+    registrations.pathValues.set("crmCompany/data/salesUnits/sales_unit_1", {
+      id: "sales_unit_1",
+      prospectId: "prospect_1",
+      label: "101호",
+      deposit: 3_000_000,
+      rent: 350_000,
+      maintenanceFee: 50_000,
+      updatedAt: "2026-08-14T01:30:00.000Z",
+      archivedAt: null,
+    });
+    registrations.transactionCurrent.value = {
+      crmCompany: {
+        access: {
+          shared_uid: { enabled: true, role: "member", email: "team@bringcare.kr" },
+        },
+        teamProfiles: {
+          operator_kim: { active: true, displayName: "김현진" },
+        },
+        data: {
+          salesProspects: {
+            prospect_1: registrations.pathValues.get("crmCompany/data/salesProspects/prospect_1"),
+          },
+          salesUnits: {
+            sales_unit_1: registrations.pathValues.get("crmCompany/data/salesUnits/sales_unit_1"),
+          },
+        },
+      },
+      fieldPlatform: {
+        v2: {
+          config: { release: registrations.pathValues.get("fieldPlatform/v2/config/release") },
+        },
+      },
+    };
+
+    const result = await callableHandler(entrypoints.createFieldJobs)(
+      validFieldV2Request({
+        requestId: "123e4567-e89b-42d3-a456-426614174000",
+        jobType: "vacancy_capture",
+        crmSalesProspectId: "prospect_1",
+        crmSalesUnitIds: ["sales_unit_1"],
+        dueDate: "2026-08-15",
+        priority: "normal",
+        assignedOperatorId: null,
+        authUid: "attacker_uid",
+        email: "attacker@example.com",
+      }),
+    ) as { visitId: string; jobIds: string[]; repeated: boolean };
+
+    expect(result).toMatchObject({ repeated: false });
+    expect(result.jobIds).toHaveLength(1);
+    expect(registrations.transactionPaths).toContain("");
+    const root = registrations.transactionCurrent.value as Record<string, unknown>;
+    expect(root).toHaveProperty(`fieldPlatform.v2.visits.${result.visitId}`);
+    expect(root).toHaveProperty(`fieldPlatform.v2.workItems.${result.jobIds[0]}`);
+    expect(root).toHaveProperty(`crmCompany.fieldSummaries.${result.jobIds[0]}`);
+    expect(registrations.databaseRef).not.toHaveBeenCalledWith(
+      "fieldPlatform/users/shared_uid",
+    );
+  });
+
+  it("rejects a CRM source archived between preload and the atomic create commit", async () => {
+    seedFieldV2Access();
+    registrations.pathValues.set("crmCompany/data/buildings/building_1", {
+      id: "building_1",
+      name: "브링빌",
+      address: "강원 원주시 중앙로 1",
+      updatedAt: "2026-08-14T01:00:00.000Z",
+      archivedAt: null,
+    });
+    registrations.transactionCurrent.value = {
+      crmCompany: {
+        access: {
+          shared_uid: { enabled: true, role: "member", email: "team@bringcare.kr" },
+        },
+        teamProfiles: {
+          operator_kim: { active: true, displayName: "김현진" },
+        },
+        data: {
+          buildings: {
+            building_1: registrations.pathValues.get("crmCompany/data/buildings/building_1"),
+          },
+        },
+      },
+      fieldPlatform: {
+        v2: {
+          config: { release: registrations.pathValues.get("fieldPlatform/v2/config/release") },
+        },
+      },
+    };
+    registrations.transactionRetryCurrent.value = {
+      crmCompany: {
+        access: {
+          shared_uid: { enabled: true, role: "member", email: "team@bringcare.kr" },
+        },
+        teamProfiles: {
+          operator_kim: { active: true, displayName: "김현진" },
+        },
+        data: {
+          buildings: {
+            building_1: {
+              id: "building_1",
+              name: "브링빌",
+              address: "강원 원주시 중앙로 1",
+              updatedAt: "2026-08-14T01:01:00.000Z",
+              archivedAt: "2026-08-14T01:01:00.000Z",
+            },
+          },
+        },
+      },
+      fieldPlatform: {
+        v2: {
+          config: { release: registrations.pathValues.get("fieldPlatform/v2/config/release") },
+        },
+      },
+    };
+    await expect(callableHandler(entrypoints.createFieldJobs)(validFieldV2Request({
+      requestId: "123e4567-e89b-42d3-a456-426614174000",
+      jobType: "maintenance_inspection",
+      crmBuildingId: "building_1",
+      dueDate: "2026-08-15",
+      priority: "normal",
+      assignedOperatorId: null,
+    }))).rejects.toMatchObject({
+      code: "failed-precondition",
+      message: "field_crm_reference_changed",
+    });
+  });
+
+  it("rejects an atomic same-request receipt race with a different request hash", async () => {
+    seedFieldV2Access();
+    registrations.pathValues.set("crmCompany/data/buildings/building_1", {
+      id: "building_1",
+      name: "브링빌",
+      address: "강원 원주시 중앙로 1",
+      updatedAt: "2026-08-14T01:00:00.000Z",
+      archivedAt: null,
+    });
+    registrations.transactionCurrent.value = {
+      crmCompany: {
+        access: { shared_uid: { enabled: true, role: "member", email: "team@bringcare.kr" } },
+        teamProfiles: { operator_kim: { active: true, displayName: "김현진" } },
+        data: { buildings: { building_1: registrations.pathValues.get("crmCompany/data/buildings/building_1") } },
+      },
+      fieldPlatform: { v2: { config: { release: registrations.pathValues.get("fieldPlatform/v2/config/release") } } },
+    };
+    registrations.transactionRetryCurrent.value = {
+      ...(registrations.transactionCurrent.value as Record<string, unknown>),
+      fieldPlatform: {
+        v2: {
+          config: { release: registrations.pathValues.get("fieldPlatform/v2/config/release") },
+          requestReceipts: {
+            createFieldJobs: {
+              "123e4567-e89b-42d3-a456-426614174000": {
+                scope: "createFieldJobs",
+                requestId: "123e4567-e89b-42d3-a456-426614174000",
+                requestHash: "f".repeat(64),
+                result: { visitId: "visit_attacker", jobIds: ["job_attacker"] },
+                completedAt: "2026-08-14T01:01:00.000Z",
+              },
+            },
+          },
+        },
+      },
+    };
+    await expect(callableHandler(entrypoints.createFieldJobs)(validFieldV2Request({
+      requestId: "123e4567-e89b-42d3-a456-426614174000",
+      jobType: "maintenance_inspection",
+      crmBuildingId: "building_1",
+      dueDate: "2026-08-15",
+      priority: "normal",
+      assignedOperatorId: null,
+    }))).rejects.toMatchObject({
+      code: "already-exists",
+      message: "field_request_id_conflict",
+    });
+  });
+
+  it("replays an old claim receipt without rolling a newer accepted item backward", async () => {
+    seedFieldV2Access();
+    registrations.transactionCurrent.value = {
+      crmCompany: {
+        teamProfiles: { operator_kim: { active: true, displayName: "김현진" } },
+      },
+      fieldPlatform: { v2: {
+        workItems: { job_1: fieldV2WorkItem() },
+        visits: { visit_1: fieldV2Visit() },
+      } },
+    };
+    const request = validFieldV2Request({
+      requestId: "123e4567-e89b-42d3-a456-426614174000",
+      jobId: "job_1",
+    });
+    const first = await callableHandler(entrypoints.claimFieldJob)(request) as Record<string, unknown>;
+    expect(first.workflowStatus).toBe("assigned");
+
+    const root = registrations.transactionCurrent.value as any;
+    const receipt = root.fieldPlatform.v2.requestReceipts.claimFieldJob[
+      "123e4567-e89b-42d3-a456-426614174000"
+    ];
+    const accepted = {
+      ...root.fieldPlatform.v2.workItems.job_1,
+      workflowStatus: "accepted",
+      acceptedAt: "2026-08-14T02:05:00.000Z",
+      updatedAt: "2026-08-14T02:05:00.000Z",
+    };
+    root.fieldPlatform.v2.workItems.job_1 = accepted;
+    registrations.pathValues.set(
+      "fieldPlatform/v2/requestReceipts/claimFieldJob/123e4567-e89b-42d3-a456-426614174000",
+      receipt,
+    );
+    seedFieldV2Access("member", { safeMode: true });
+    const mutationsBeforeReplay = registrations.mutationPaths.length;
+
+    await expect(callableHandler(entrypoints.claimFieldJob)(request))
+      .resolves.toMatchObject({ workflowStatus: "assigned" });
+    expect(root.fieldPlatform.v2.workItems.job_1.workflowStatus).toBe("accepted");
+    expect(registrations.mutationPaths).toHaveLength(mutationsBeforeReplay);
+  });
+
+  it("fails closed for viewer mutation and safe mode before any root transaction", async () => {
+    const data = {
+      requestId: "123e4567-e89b-42d3-a456-426614174000",
+      jobType: "maintenance_inspection",
+      crmBuildingId: "building_1",
+      dueDate: "2026-08-15",
+      priority: "normal",
+      assignedOperatorId: null,
+    };
+    seedFieldV2Access("viewer");
+    await expect(callableHandler(entrypoints.createFieldJobs)(validFieldV2Request(data)))
+      .rejects.toMatchObject({ code: "permission-denied", message: "field_mutation_forbidden" });
+    expect(registrations.transactionPaths).not.toContain("");
+
+    registrations.pathValues.clear();
+    seedFieldV2Access("member", { safeMode: true });
+    registrations.pathValues.set("crmCompany/data/buildings/building_1", {
+      id: "building_1",
+      name: "브링빌",
+      address: "강원 원주시 중앙로 1",
+      updatedAt: "2026-08-14T01:00:00.000Z",
+      archivedAt: null,
+    });
+    await expect(callableHandler(entrypoints.createFieldJobs)(validFieldV2Request(data)))
+      .rejects.toMatchObject({ code: "failed-precondition", message: "field_safe_mode_read_only" });
+    expect(registrations.transactionPaths).not.toContain("");
+  });
+
+  it("does not trust payload identity when the authenticated email is wrong", async () => {
+    seedFieldV2Access();
+    const request = validFieldV2Request({
+      requestId: "123e4567-e89b-42d3-a456-426614174000",
+      jobType: "maintenance_inspection",
+      crmBuildingId: "building_1",
+      dueDate: "2026-08-15",
+      priority: "normal",
+      assignedOperatorId: null,
+      authUid: "shared_uid",
+      email: "team@bringcare.kr",
+    });
+    request.auth.token.email = "wrong@example.com";
+    await expect(callableHandler(entrypoints.createFieldJobs)(request))
+      .rejects.toMatchObject({ code: "permission-denied", message: "field_access_forbidden" });
+  });
+
+  it("lets a viewer read the operator and unassigned workspace", async () => {
+    seedFieldV2Access("viewer");
+    await expect(callableHandler(entrypoints.listFieldOperationsWorkspace)(
+      validFieldV2Request({}),
+    )).resolves.toEqual({
+      items: [],
+      kpis: {
+        todayVisits: 0,
+        capturePending: 0,
+        uploadFailures: 0,
+        reviewPending: 0,
+        unassigned: 0,
+        overdue: 0,
+        adminActionRequired: 0,
+      },
+    });
+    expect(registrations.databaseRef).toHaveBeenCalledWith(
+      "fieldPlatform/v2/projections/unassigned",
+    );
+
   });
 
   it.each([
@@ -1064,7 +1497,7 @@ describe("Firebase entrypoint metadata", () => {
     );
     expect(registrations.getAuth).toHaveBeenCalledTimes(1);
     expect(registrations.getAuth).toHaveBeenCalledWith();
-    expect(registrations.onCall).toHaveBeenCalledTimes(14);
+    expect(registrations.onCall).toHaveBeenCalledTimes(20);
     expect(registrations.onValueWritten).toHaveBeenCalledTimes(3);
     expect(registrations.onValueCreated).toHaveBeenCalledTimes(2);
     expect(registrations.onSchedule).toHaveBeenCalledTimes(3);
