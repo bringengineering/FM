@@ -935,25 +935,25 @@ git add -- desktop-crm/package.json desktop-crm/package-lock.json desktop-crm/te
 git commit -m "release: prepare BRING CRM v1.7.0"
 ```
 
-- [ ] **Step 7: 작업 브랜치를 회사 GitHub에 올리고 릴리스 자산 게시**
+- [ ] **Step 7: 작업 브랜치를 회사 GitHub에 올리고 기준 브랜치에 병합**
 
 ```powershell
 git push -u origin codex/sales-crm-integration
-git tag -a crm-v1.7.0 -m "BRING CRM v1.7.0 building sales CRM"
-git push origin crm-v1.7.0
 ```
 
-GitHub Release `crm-v1.7.0`에 다음 세 파일을 정확히 첨부한다.
+PR의 base를 저장소 기본 브랜치가 아니라 `codex/bring-field-platform`으로 명시한다. 전체 검증이 끝난 뒤 일반 merge commit으로 병합하고, 원격 `codex/bring-field-platform`의 병합 커밋이 최종 기능 커밋을 포함하는지 확인한다.
 
-- `desktop-crm/dist/BRING.CRM.Company.Setup.1.7.0.exe`
-- `desktop-crm/dist/BRING.CRM.Company.Setup.1.7.0.exe.blockmap`
-- `desktop-crm/dist/latest.yml`
+그 병합 커밋에만 `crm-v1.7.0` 태그를 만든다. GitHub Release는 먼저 draft로 만들고, 같은 최종 빌드에서 생성된 다음 세 파일을 정확히 첨부한다.
 
-게시 후 GitHub Release API에서 태그 `crm-v1.7.0`, `draft:false`, `prerelease:false`, 자산 3개의 `state:"uploaded"`와 로컬 파일 크기 일치를 확인한다. 릴리스 게시 전에 태그가 잘못된 커밋을 가리키면 자산을 올리지 말고 중단한다.
+- `BRING.CRM.Company.Setup.1.7.0.exe`
+- `BRING.CRM.Company.Setup.1.7.0.exe.blockmap`
+- `latest.yml`
+
+draft 상태에서 태그 대상, 버전, 자산명, 자산 3개의 `state:"uploaded"`, 크기와 해시 일치를 확인한다. 모두 맞을 때만 `draft:false`, `prerelease:false`로 공개한다. 태그가 잘못된 커밋을 가리키거나 자산이 서로 다른 빌드에서 나왔다면 공개하지 않고 중단한다.
 
 - [ ] **Step 8: 기존 설치본 업데이트는 사용자 확인 뒤 검증**
 
-현재 설치본에서 `업데이트 확인`이 v1.7.0을 찾고 다운로드를 마칠 때까지 확인한다. `지금 재시작` 또는 설치 동작은 사용자 확인 후 진행한다. 업데이트 뒤 버전 v1.7.0, 기존 고객·건물 데이터 유지, Google 로그인 유지, `영업 관리`의 새 화면과 두 PC 실시간 동기화를 확인한다.
+설치된 CRM은 업데이트를 받으면 앱 종료 시 자동 설치될 수 있으므로, 현재 설치본의 `업데이트 확인`도 사용자 확인 전에는 실행하지 않는다. 승인된 별도 테스트 PC 또는 사용자 확인 뒤 버전 v1.7.0, 기존 고객·건물 데이터 유지, 기존 CRM 로그인 유지, `영업 관리`의 새 화면과 두 PC 실시간 동기화를 확인한다.
 
 ---
 
