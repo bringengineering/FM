@@ -386,6 +386,7 @@ class FirebaseRemoteClient {
     this.retryTimer = null;
     this.canonicalRefreshRetryTimer = null;
     this.streamGeneration = 0;
+    this.sessionGeneration = 0;
     this.stopped = false;
     this.caseSettings = {};
     this.vendorDirectoryCache = null;
@@ -423,6 +424,29 @@ class FirebaseRemoteClient {
     this.Core.assertMutationAllowed(this.session);
     if (value !== undefined) this.Core.assertNoProhibitedSecrets(value);
     return this.session;
+  }
+
+  markSessionStarted() {
+    this.sessionGeneration += 1;
+    this.stopped = false;
+    return this.captureSessionGuard();
+  }
+
+  captureSessionGuard() {
+    return {
+      uid: String(this.session && this.session.uid || ""),
+      generation: this.sessionGeneration
+    };
+  }
+
+  sessionGuardActive(guard) {
+    return Boolean(
+      guard
+      && guard.uid
+      && this.session
+      && String(this.session.uid || "") === guard.uid
+      && this.sessionGeneration === guard.generation
+    );
   }
 
   async init() {
@@ -499,6 +523,7 @@ class FirebaseRemoteClient {
   }
 
   async refreshFirebaseSession(refreshToken, hints) {
+    const previousUid = String(this.session && this.session.uid || "");
     const body = new URLSearchParams({ grant_type: "refresh_token", refresh_token: refreshToken });
     const token = await this.requestJson(`https://securetoken.googleapis.com/v1/token?key=${this.firebase.apiKey}`, {
       method: "POST",
@@ -523,6 +548,7 @@ class FirebaseRemoteClient {
       mustChangePassword: hints && hints.mustChangePassword === true,
       fieldAuthIntegrated: hints && hints.fieldAuthIntegrated === true
     };
+    if (!previousUid || previousUid !== String(this.session.uid || "")) this.markSessionStarted();
     return this.session;
   }
 
@@ -615,6 +641,7 @@ class FirebaseRemoteClient {
       role: "viewer",
       mustChangePassword: false
     };
+    this.markSessionStarted();
     await this.verifyAccess();
     await this.persistSession();
     this.lastError = "";
@@ -644,6 +671,7 @@ class FirebaseRemoteClient {
       role: "viewer",
       fieldAuthIntegrated: true
     };
+    this.markSessionStarted();
     await this.verifyAccess();
     await this.persistSession();
     this.lastError = "";
@@ -676,6 +704,7 @@ class FirebaseRemoteClient {
       mustChangePassword: false,
       fieldAuthIntegrated: true
     };
+    this.markSessionStarted();
     await this.verifyAccess();
     await this.persistSession();
     this.lastError = "";
@@ -818,8 +847,11 @@ class FirebaseRemoteClient {
       const data = this.session.mustChangePassword ? null : await this.loadStore();
       return { ok: true, auth: this.authState(), data };
     } catch (error) {
+      this.stopStream();
       this.session = null;
+      this.remotePayload = null;
       await this.clearPersistedSession().catch(() => {});
+      await this.clearLocalStore().catch(() => {});
       this.lastError = error.message;
       this.emitAuth();
       throw error;
@@ -834,8 +866,11 @@ class FirebaseRemoteClient {
       const data = await this.loadStore();
       return { ok: true, auth: this.authState(), data };
     } catch (error) {
+      this.stopStream();
       this.session = null;
+      this.remotePayload = null;
       await this.clearPersistedSession().catch(() => {});
+      await this.clearLocalStore().catch(() => {});
       this.lastError = error.message;
       this.emitAuth();
       throw error;
@@ -984,18 +1019,24 @@ class FirebaseRemoteClient {
     }
   }
 
-  async acceptPendingForCurrentUser(pending) {
-    const validActor = pending && pending.actorUid && pending.actorUid === String(this.session && this.session.uid || "")
+  async acceptPendingForCurrentUser(pending, guardValue) {
+    const guard = guardValue || this.captureSessionGuard();
+    if (!this.sessionGuardActive(guard)) return false;
+    const validActor = pending && pending.actorUid && pending.actorUid === guard.uid
       && ["admin", "member"].includes(pending.actorRole);
     if (!this.canMutate() || !validActor) {
+      if (!this.sessionGuardActive(guard)) return false;
       await this.clearPendingStore();
+      if (!this.sessionGuardActive(guard)) return false;
       this.emitSync("syncing", "이전 사용자 또는 권한이 확인되지 않은 저장 대기 자료를 안전하게 제거했습니다.", { pending: false });
       return false;
     }
     try {
       this.Core.assertNoProhibitedSecrets(pending.store);
     } catch (error) {
+      if (!this.sessionGuardActive(guard)) return false;
       await this.clearPendingStore();
+      if (!this.sessionGuardActive(guard)) return false;
       this.emitSync("syncing", "저장할 수 없는 민감정보가 포함된 대기 자료를 제거했습니다.", { pending: false });
       return false;
     }
@@ -1006,53 +1047,80 @@ class FirebaseRemoteClient {
     return this.dbRequest("crmShared/data", { method: "GET" });
   }
 
-  async loadCanonicalBuildingUnits() {
-    return this.dbRequest("crmShared/data/buildingUnits", { method: "GET" });
+  async loadCanonicalBuildingUnits(guardValue) {
+    const guard = guardValue || this.captureSessionGuard();
+    if (!this.sessionGuardActive(guard)) return null;
+    const value = await this.dbRequest("crmShared/data/buildingUnits", { method: "GET" });
+    return this.sessionGuardActive(guard) ? value : null;
   }
 
-  async loadFieldSummaries() {
-    return this.dbRequest("fieldSummaries", { method: "GET" });
+  async loadFieldSummaries(guardValue) {
+    const guard = guardValue || this.captureSessionGuard();
+    if (!this.sessionGuardActive(guard)) return null;
+    const value = await this.dbRequest("fieldSummaries", { method: "GET" });
+    return this.sessionGuardActive(guard) ? value : null;
   }
 
-  async loadRendererOverlays() {
+  async loadRendererOverlays(guardValue) {
+    const guard = guardValue || this.captureSessionGuard();
     const [buildingUnits, fieldSummaries] = await Promise.all([
-      this.loadCanonicalBuildingUnits(),
-      this.loadFieldSummaries()
+      this.loadCanonicalBuildingUnits(guard),
+      this.loadFieldSummaries(guard)
     ]);
+    if (!this.sessionGuardActive(guard)) return null;
     return this.Core.sanitizeRendererOverlays({ buildingUnits, fieldSummaries });
   }
 
-  async refreshRendererSnapshot(sharedStore, notify) {
+  async refreshRendererSnapshot(sharedStore, notify, guardValue) {
+    const guard = guardValue || this.captureSessionGuard();
+    if (!this.sessionGuardActive(guard)) return null;
     const shared = this.Core.sanitizeSharedStore(sharedStore || await this.readLocalStore());
-    const overlays = await this.loadRendererOverlays();
+    if (!this.sessionGuardActive(guard)) return null;
+    const overlays = await this.loadRendererOverlays(guard);
+    if (!overlays || !this.sessionGuardActive(guard)) return null;
     const renderer = mergeRendererOverlays(this.Core, shared, overlays.buildingUnits, overlays.fieldSummaries);
-    if (notify) this.onRemoteStore(renderer);
+    if (!this.sessionGuardActive(guard)) return null;
+    if (notify) {
+      if (!this.sessionGuardActive(guard)) return null;
+      this.onRemoteStore(renderer);
+    }
     return renderer;
   }
 
-  async refreshAfterCanonicalCommit() {
+  async refreshAfterCanonicalCommit(guardValue) {
+    const guard = guardValue || this.captureSessionGuard();
+    if (!this.sessionGuardActive(guard)) return null;
     const remote = await this.fetchRemotePayload();
+    if (!this.sessionGuardActive(guard)) return null;
     this.remotePayload = remote && typeof remote === "object" ? remote : {};
     const local = await this.readLocalStore();
+    if (!this.sessionGuardActive(guard)) return null;
     const merged = mergeRemoteStore(this.Core, this.remotePayload, local, this.session);
+    if (!this.sessionGuardActive(guard)) return null;
     await this.writeLocalStore(merged);
-    return this.refreshRendererSnapshot(merged, true);
+    if (!this.sessionGuardActive(guard)) return null;
+    return this.refreshRendererSnapshot(merged, true, guard);
   }
 
-  scheduleCanonicalRefreshRetry() {
+  scheduleCanonicalRefreshRetry(guardValue) {
+    const guard = guardValue || this.captureSessionGuard();
+    if (!this.sessionGuardActive(guard)) return;
     clearTimeout(this.canonicalRefreshRetryTimer);
     this.canonicalRefreshRetryTimer = setTimeout(async () => {
+      if (!this.sessionGuardActive(guard)) return;
       try {
-        await this.refreshAfterCanonicalCommit();
+        const refreshed = await this.refreshAfterCanonicalCommit(guard);
+        if (!refreshed || !this.sessionGuardActive(guard)) return;
         this.emitSync("connected", "정식 CRM 저장 결과와 최신 현장 정보를 반영했습니다.", { pending: false });
       } catch (_) {
-        if (!this.stopped && this.session) this.scheduleCanonicalRefreshRetry();
+        if (!this.stopped && this.sessionGuardActive(guard)) this.scheduleCanonicalRefreshRetry(guard);
       }
     }, 2500);
   }
 
   async commitCanonicalCrmEntity(input) {
     this.requireMutationPermission(input);
+    const guard = this.captureSessionGuard();
     const source = input && typeof input === "object" ? input : {};
     const operatorId = String(source.operatorId || "").trim();
     if (!/^[A-Za-z0-9_-]{1,120}$/.test(operatorId) || operatorId.includes("@")) {
@@ -1097,6 +1165,7 @@ class FirebaseRemoteClient {
       throw createError("정식 CRM 저장 요청이 너무 큽니다.", "CANONICAL_BODY_TOO_LARGE");
     }
     const token = await this.ensureIdToken(false);
+    if (!this.sessionGuardActive(guard)) throw createError("로그인 세션이 변경되었습니다.", "AUTH_REQUIRED");
     let response;
     try {
       response = await this.fetch(CANONICAL_CRM_ENDPOINT_URL, {
@@ -1109,6 +1178,7 @@ class FirebaseRemoteClient {
     }
     let payload = null;
     try { payload = JSON.parse(await response.text()); } catch (_) {}
+    if (!this.sessionGuardActive(guard)) return null;
     if (!response.ok) {
       const remoteCode = payload && payload.error && String(payload.error.code || "");
       const code = CANONICAL_CRM_ERROR_CODES.has(remoteCode) ? remoteCode : "CANONICAL_CRM_COMMIT_FAILED";
@@ -1132,10 +1202,12 @@ class FirebaseRemoteClient {
       || typeof result.repeated !== "boolean"
     ) throw createError("정식 CRM 저장 응답이 올바르지 않습니다.", "CANONICAL_RESPONSE_INVALID");
     try {
-      await this.refreshAfterCanonicalCommit();
+      await this.refreshAfterCanonicalCommit(guard);
+      if (!this.sessionGuardActive(guard)) return null;
     } catch (_) {
+      if (!this.sessionGuardActive(guard)) return null;
       this.emitSync("offline", "정식 CRM 저장은 완료됐지만 최신 화면 반영을 다시 시도하는 중입니다.", { pending: false });
-      this.scheduleCanonicalRefreshRetry();
+      this.scheduleCanonicalRefreshRetry(guard);
     }
     return result;
   }
@@ -1490,36 +1562,55 @@ class FirebaseRemoteClient {
     return merged;
   }
 
-  async syncPending(pendingValue) {
+  async syncPending(pendingValue, guardValue) {
+    const guard = guardValue || this.captureSessionGuard();
+    if (!this.sessionGuardActive(guard)) return null;
     const pending = pendingValue || await this.readPendingStore();
-    if (!pending || !this.session) return null;
-    if (!await this.acceptPendingForCurrentUser(pending)) return null;
+    if (!this.sessionGuardActive(guard) || !pending) return null;
+    if (!await this.acceptPendingForCurrentUser(pending, guard)) return null;
+    if (!this.sessionGuardActive(guard)) return null;
     this.emitSync("syncing", "저장 대기 자료를 서버로 보내는 중", { pending: true });
     const currentRemote = await this.fetchRemotePayload() || {};
+    if (!this.sessionGuardActive(guard)) return null;
     const desired = toRemoteStore(pending.store, this.session.email);
     const patch = pendingSyncPatch(this.Core, pending.baseRemote || {}, desired, currentRemote, pending.presentCollections);
     assertNoCanonicalSharedPatch(patch);
     if (Object.keys(patch).length) {
+      if (!this.sessionGuardActive(guard)) return null;
       await this.dbRequest("crmShared/data", { method: "PATCH", body: patch, query: "print=silent" });
+      if (!this.sessionGuardActive(guard)) return null;
     }
-    this.remotePayload = await this.fetchRemotePayload() || {};
+    const refreshedRemote = await this.fetchRemotePayload() || {};
+    if (!this.sessionGuardActive(guard)) return null;
+    this.remotePayload = refreshedRemote;
     const local = await this.readLocalStore();
+    if (!this.sessionGuardActive(guard)) return null;
     const merged = mergeRemoteStore(this.Core, this.remotePayload, Object.assign({}, local, { settings: pending.store.settings }), this.session);
+    if (!this.sessionGuardActive(guard)) return null;
     await this.writeLocalStore(merged);
+    if (!this.sessionGuardActive(guard)) return null;
     await this.clearPendingStore();
+    if (!this.sessionGuardActive(guard)) return null;
     this.emitSync("connected", "저장 대기 자료를 공용 서버에 반영했습니다.", { updatedAt: merged.updatedAt, pending: false });
-    const renderer = await this.refreshRendererSnapshot(merged, false);
+    if (!this.sessionGuardActive(guard)) return null;
+    const renderer = await this.refreshRendererSnapshot(merged, false, guard);
+    if (!renderer || !this.sessionGuardActive(guard)) return null;
     this.onRemoteStore(renderer);
+    if (!this.sessionGuardActive(guard)) return null;
     this.startStream();
     return renderer;
   }
 
-  schedulePendingRetry() {
+  schedulePendingRetry(guardValue) {
+    const guard = guardValue || this.captureSessionGuard();
+    if (!this.sessionGuardActive(guard)) return;
     clearTimeout(this.retryTimer);
     this.retryTimer = setTimeout(async () => {
-      try { await this.syncPending(); }
+      if (!this.sessionGuardActive(guard)) return;
+      try { await this.syncPending(undefined, guard); }
       catch (error) {
-        if (retryableSyncError(error)) this.schedulePendingRetry();
+        if (!this.sessionGuardActive(guard)) return;
+        if (retryableSyncError(error)) this.schedulePendingRetry(guard);
         else this.emitSync("error", error.message || "저장 대기 자료를 동기화하지 못했습니다.", { pending: true });
       }
     }, 8000);
@@ -1528,27 +1619,38 @@ class FirebaseRemoteClient {
   async loadStore() {
     if (!this.session) throw createError("로그인이 필요합니다.", "AUTH_REQUIRED");
     if (this.session.mustChangePassword) throw createError("새 비밀번호를 먼저 설정해 주세요.", "PASSWORD_CHANGE_REQUIRED");
+    const guard = this.captureSessionGuard();
     const local = await this.readLocalStore();
+    if (!this.sessionGuardActive(guard)) return null;
     this.emitSync("syncing", "공용 서버에서 최신 자료를 확인하는 중");
-    this.remotePayload = await this.fetchRemotePayload();
+    const remote = await this.fetchRemotePayload();
+    if (!this.sessionGuardActive(guard)) return null;
+    this.remotePayload = remote;
     const pending = await this.readPendingStore();
+    if (!this.sessionGuardActive(guard)) return null;
     if (pending) {
       try {
-        const synced = await this.syncPending(pending);
+        const synced = await this.syncPending(pending, guard);
+        if (!this.sessionGuardActive(guard)) return null;
         if (synced) return synced;
       }
       catch (error) {
+        if (!this.sessionGuardActive(guard)) return null;
         if (!retryableSyncError(error)) throw error;
         this.emitSync("pending", "인터넷 연결 시 자동으로 다시 동기화합니다.", { pending: true });
-        this.schedulePendingRetry();
+        this.schedulePendingRetry(guard);
         return local;
       }
     }
     const merged = mergeRemoteStore(this.Core, this.remotePayload, local, this.session);
+    if (!this.sessionGuardActive(guard)) return null;
     await this.writeLocalStore(merged);
+    if (!this.sessionGuardActive(guard)) return null;
     this.emitSync("connected", "공용 서버와 동기화됨", { updatedAt: merged.updatedAt, pending: false });
+    if (!this.sessionGuardActive(guard)) return null;
     this.startStream();
-    return this.refreshRendererSnapshot(merged, false);
+    if (!this.sessionGuardActive(guard)) return null;
+    return this.refreshRendererSnapshot(merged, false, guard);
   }
 
   async saveStore(input) {
@@ -1571,37 +1673,57 @@ class FirebaseRemoteClient {
   }
 
   scheduleRemoteReload() {
+    const guard = this.captureSessionGuard();
+    if (!this.sessionGuardActive(guard)) return;
     clearTimeout(this.reloadTimer);
-    this.reloadTimer = setTimeout(() => this.reloadFromRemote().catch(error => {
-      this.emitSync("offline", error.message || "공용 서버 연결이 끊겼습니다.");
+    this.reloadTimer = setTimeout(() => this.reloadFromRemote(guard).catch(error => {
+      if (this.sessionGuardActive(guard)) {
+        this.emitSync("offline", error.message || "공용 서버 연결이 끊겼습니다.");
+      }
     }), 180);
   }
 
   scheduleOverlayReload() {
+    const guard = this.captureSessionGuard();
+    if (!this.sessionGuardActive(guard)) return;
     clearTimeout(this.overlayReloadTimer);
-    this.overlayReloadTimer = setTimeout(() => this.reloadRendererOverlays().catch(() => {
-      this.emitSync("offline", "현장 요약 정보를 다시 불러오는 중입니다.", { pending: false });
+    this.overlayReloadTimer = setTimeout(() => this.reloadRendererOverlays(guard).catch(() => {
+      if (this.sessionGuardActive(guard)) {
+        this.emitSync("offline", "현장 요약 정보를 다시 불러오는 중입니다.", { pending: false });
+      }
     }), 180);
   }
 
-  async reloadRendererOverlays() {
+  async reloadRendererOverlays(guardValue) {
+    const guard = guardValue || this.captureSessionGuard();
+    if (!this.sessionGuardActive(guard)) return null;
     const local = await this.readLocalStore();
-    return this.refreshRendererSnapshot(local, true);
+    if (!this.sessionGuardActive(guard)) return null;
+    return this.refreshRendererSnapshot(local, true, guard);
   }
 
-  async reloadFromRemote() {
+  async reloadFromRemote(guardValue) {
+    const guard = guardValue || this.captureSessionGuard();
+    if (!this.sessionGuardActive(guard)) return null;
     const pending = await this.readPendingStore();
+    if (!this.sessionGuardActive(guard)) return null;
     if (pending) {
-      const synced = await this.syncPending(pending);
+      const synced = await this.syncPending(pending, guard);
+      if (!this.sessionGuardActive(guard)) return null;
       if (synced) return;
     }
     const remote = await this.fetchRemotePayload();
+    if (!this.sessionGuardActive(guard)) return null;
     this.remotePayload = remote || {};
     const local = await this.readLocalStore();
+    if (!this.sessionGuardActive(guard)) return null;
     const merged = mergeRemoteStore(this.Core, this.remotePayload, local, this.session);
+    if (!this.sessionGuardActive(guard)) return null;
     await this.writeLocalStore(merged);
+    if (!this.sessionGuardActive(guard)) return null;
     this.emitSync("connected", "다른 사용자의 최신 변경을 반영했습니다.", { updatedAt: merged.updatedAt, pending: false });
-    await this.refreshRendererSnapshot(merged, true);
+    if (!this.sessionGuardActive(guard)) return null;
+    return this.refreshRendererSnapshot(merged, true, guard);
   }
 
   startStream() {
@@ -1626,6 +1748,7 @@ class FirebaseRemoteClient {
 
   stopStream() {
     this.stopped = true;
+    this.sessionGeneration += 1;
     this.streamGeneration += 1;
     if (this.streamController) this.streamController.abort();
     if (this.summaryStreamController) this.summaryStreamController.abort();
@@ -1645,6 +1768,7 @@ class FirebaseRemoteClient {
     }
     if (eventName === "auth_revoked" || eventName === "cancel") {
       if (this.session) this.session.expiresAt = 0;
+      this.sessionGeneration += 1;
       if (this.streamController) this.streamController.abort();
       if (this.summaryStreamController) this.summaryStreamController.abort();
     }
@@ -1653,11 +1777,18 @@ class FirebaseRemoteClient {
 
   async streamLoop(location, kind, generation) {
     const controllerKey = kind === "fieldSummaries" ? "summaryStreamController" : "streamController";
-    while (!this.stopped && this.session && generation === this.streamGeneration) {
+    const sessionGuard = this.captureSessionGuard();
+    while (
+      !this.stopped
+      && this.session
+      && generation === this.streamGeneration
+      && this.sessionGuardActive(sessionGuard)
+    ) {
       const controller = new AbortController();
       this[controllerKey] = controller;
       try {
         const token = await this.ensureIdToken(false);
+        if (!this.sessionGuardActive(sessionGuard)) break;
         const rootedLocation = resolveDatabaseLocation(location, this.databaseRoot);
         const url = `${this.firebase.databaseUrl}/${rootedLocation}.json?auth=${encodeURIComponent(token)}`;
         const response = await this.fetch(url, { headers: { Accept: "text/event-stream" }, signal: controller.signal });
@@ -1669,7 +1800,7 @@ class FirebaseRemoteClient {
         let eventName = "";
         let dataLines = [];
         const dispatch = () => {
-          this.handleStreamEvent(kind, eventName);
+          if (this.sessionGuardActive(sessionGuard)) this.handleStreamEvent(kind, eventName);
           eventName = "";
           dataLines = [];
         };
@@ -1693,7 +1824,7 @@ class FirebaseRemoteClient {
       } finally {
         if (this[controllerKey] === controller) this[controllerKey] = null;
       }
-      if (!this.stopped && this.session && generation === this.streamGeneration) await delay(2500);
+      if (!this.stopped && this.sessionGuardActive(sessionGuard) && generation === this.streamGeneration) await delay(2500);
     }
   }
 

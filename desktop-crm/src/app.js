@@ -62,6 +62,7 @@
   let synchronizedStore = null;
   let appInitialized = false;
   let overlayRefreshPromise = null;
+  let authGeneration = 0;
   let loginInProgress = false;
   let operations = { cases: [], payments: {}, caseSettings: {}, loadedAt: "" };
   let operationsLoading = false;
@@ -318,12 +319,29 @@
     return Core.sanitizeRendererStore(Object.assign({}, source, overlays));
   }
 
+  function currentAuthUid() {
+    return String(currentAuth && currentAuth.user && currentAuth.user.uid || "");
+  }
+
+  function setCurrentAuth(value) {
+    const previousUid = currentAuthUid();
+    currentAuth = value || currentAuth;
+    if (previousUid !== currentAuthUid()) {
+      authGeneration += 1;
+      overlayRefreshPromise = null;
+    }
+    return currentAuth;
+  }
+
   async function refreshRendererOverlays(renderAfter = true) {
     if (overlayRefreshPromise) return overlayRefreshPromise;
+    const generation = authGeneration;
+    const uid = currentAuthUid();
     overlayRefreshPromise = Promise.all([
       api.loadCanonicalBuildingUnits(),
       api.loadFieldSummaries()
     ]).then(([buildingUnits, fieldSummaries]) => {
+      if (generation !== authGeneration || uid !== currentAuthUid()) return null;
       const overlays = Core.sanitizeRendererOverlays({ buildingUnits, fieldSummaries });
       const merge = value => value ? Core.sanitizeRendererStore(Object.assign({}, value, overlays)) : value;
       store = merge(store);
@@ -332,7 +350,9 @@
       queuedSave = merge(queuedSave);
       if (renderAfter && appInitialized) render();
       return overlays;
-    }).finally(() => { overlayRefreshPromise = null; });
+    }).finally(() => {
+      if (generation === authGeneration && uid === currentAuthUid()) overlayRefreshPromise = null;
+    });
     return overlayRefreshPromise;
   }
 
@@ -390,7 +410,7 @@
   }
 
   function showPasswordChange(auth, message, isError) {
-    currentAuth = auth || currentAuth;
+    setCurrentAuth(auth);
     appShell.classList.add("app-locked");
     appShell.setAttribute("aria-hidden", "true");
     loginGate.hidden = false;
@@ -409,7 +429,7 @@
   }
 
   function showApplication(auth) {
-    currentAuth = auth || currentAuth;
+    setCurrentAuth(auth);
     loginGate.hidden = true;
     appShell.classList.remove("app-locked");
     appShell.setAttribute("aria-hidden", "false");
@@ -3925,7 +3945,7 @@ document.addEventListener("keydown", event => {
   });
 
   api.onAuthState(state => {
-    currentAuth = state || currentAuth;
+    setCurrentAuth(state);
     if (currentAuth.required && !currentAuth.user) showLogin(currentAuth.error || "회사 이메일과 비밀번호로 로그인해 주세요.", Boolean(currentAuth.error));
     else if (currentAuth.user && currentAuth.user.mustChangePassword) showPasswordChange(currentAuth);
     else showApplication(currentAuth);
@@ -3958,7 +3978,7 @@ document.addEventListener("keydown", event => {
         showLogin(result.error || "Google 로그인에 실패했습니다. 다시 시도해 주세요.", true);
         return;
       }
-      currentAuth = result.auth;
+      setCurrentAuth(result.auth);
       showApplication(currentAuth);
       await loadApplication(result.data);
       showToast("회사 Google 계정으로 CRM 서버에 연결했습니다.", "success");
@@ -3983,7 +4003,7 @@ document.addEventListener("keydown", event => {
         showLogin(result.error || "로그인하지 못했습니다. 다시 시도해 주세요.", true);
         return;
       }
-      currentAuth = result.auth;
+      setCurrentAuth(result.auth);
       loginPassword.value = "";
       if (currentAuth.user && currentAuth.user.mustChangePassword) {
         showPasswordChange(currentAuth);
@@ -4015,7 +4035,7 @@ document.addEventListener("keydown", event => {
         showPasswordChange(currentAuth, result.error || "비밀번호를 변경하지 못했습니다.", true);
         return;
       }
-      currentAuth = result.auth;
+      setCurrentAuth(result.auth);
       newPassword.value = "";
       confirmPassword.value = "";
       showApplication(currentAuth);
@@ -4053,7 +4073,7 @@ document.addEventListener("keydown", event => {
 
   async function init() {
     try {
-      currentAuth = await api.authState();
+      setCurrentAuth(await api.authState());
       if (currentAuth.required && !currentAuth.user) {
         showLogin(currentAuth.error || "dpvld858@gmail.com Google 계정으로 로그인해 주세요.", Boolean(currentAuth.error));
         return;

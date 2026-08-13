@@ -24,6 +24,26 @@ function missingFileError(target) {
   return error;
 }
 
+function deferred() {
+  let resolve;
+  let reject;
+  const promise = new Promise((onResolve, onReject) => {
+    resolve = onResolve;
+    reject = onReject;
+  });
+  return { promise, resolve, reject };
+}
+
+function session(uid) {
+  return {
+    uid,
+    role: "member",
+    email: `${uid}@bring.test`,
+    idToken: `${uid}-token`,
+    expiresAt: Date.now() + 60_000
+  };
+}
+
 function makeClient(overrides = {}) {
   const writes = [];
   const remoteStores = [];
@@ -474,6 +494,243 @@ test("shared and field-summary streams start and stop together, and auth revocat
   assert.equal(client.summaryStreamController, null);
 });
 
+test("an old session canonical refresh is discarded after logout and a different login", async () => {
+  const oldRemote = deferred();
+  const writes = [];
+  const remoteStores = [];
+  const syncStates = [];
+  const { client } = makeClient({
+    readLocalStore: async () => Core.sanitizeSharedStore({ customers: [{ id: "customer_b", name: "B" }] }),
+    writeLocalStore: async value => { writes.push(value); },
+    onRemoteStore: value => { remoteStores.push(value); },
+    onSyncState: value => { syncStates.push(value); }
+  });
+  client.session = session("user_a");
+  client.fetchRemotePayload = async () => oldRemote.promise;
+  client.loadCanonicalBuildingUnits = async () => ({ unit_a: { id: "unit_a", label: "A 호실" } });
+  client.loadFieldSummaries = async () => ({ job_a: { fieldJobId: "job_a" } });
+  const refresh = client.refreshAfterCanonicalCommit();
+
+  await client.logout(false);
+  client.session = session("user_b");
+  client.markSessionStarted();
+  oldRemote.resolve({ customers: { customer_a: { id: "customer_a", name: "A" } } });
+  const result = await refresh;
+
+  assert.equal(result, null);
+  assert.equal(writes.length, 0);
+  assert.equal(remoteStores.length, 0);
+  assert.equal(syncStates.length, 0);
+  assert.equal(client.remotePayload, null);
+});
+
+test("an old canonical commit response returns no stale result or refresh after a session switch", async () => {
+  const postResponse = deferred();
+  const writes = [];
+  const remoteStores = [];
+  const { client } = makeClient({
+    writeLocalStore: async value => { writes.push(value); },
+    onRemoteStore: value => { remoteStores.push(value); }
+  });
+  client.session = session("user_a");
+  client.fetch = async () => postResponse.promise;
+  let postStartedResolve;
+  const postStarted = new Promise(resolve => { postStartedResolve = resolve; });
+  client.fetch = async () => {
+    postStartedResolve();
+    return postResponse.promise;
+  };
+  let refreshes = 0;
+  client.refreshAfterCanonicalCommit = async () => { refreshes += 1; };
+  const commit = client.commitCanonicalCrmEntity({
+    buildVersion: "1.7.0",
+    requestId: "550e8400-e29b-41d4-a716-446655440000",
+    operatorId: "operator_a",
+    entityType: "buildingUnits",
+    entityId: "unit_a",
+    operation: "update",
+    expectedVersion: 1,
+    patch: { label: "A 호실" }
+  });
+
+  await postStarted;
+  await client.logout(false);
+  client.session = session("user_b");
+  client.markSessionStarted();
+  postResponse.resolve({
+    ok: true,
+    status: 200,
+    text: async () => JSON.stringify({
+      ok: true,
+      result: {
+        entityType: "buildingUnits",
+        entityId: "unit_a",
+        entityVersion: 2,
+        updatedAt: "2026-08-14T00:00:00.000Z",
+        archivedAt: "",
+        repeated: false
+      }
+    })
+  });
+
+  assert.equal(await commit, null);
+  assert.equal(refreshes, 0);
+  assert.equal(writes.length, 0);
+  assert.equal(remoteStores.length, 0);
+});
+
+test("a canonical commit result is discarded when its post-commit refresh crosses sessions", async () => {
+  const refreshFinished = deferred();
+  const { client } = makeClient();
+  client.session = session("user_a");
+  client.fetch = async () => ({
+    ok: true,
+    status: 200,
+    text: async () => JSON.stringify({
+      ok: true,
+      result: {
+        entityType: "buildingUnits",
+        entityId: "unit_a",
+        entityVersion: 2,
+        updatedAt: "2026-08-14T00:00:00.000Z",
+        archivedAt: "",
+        repeated: false
+      }
+    })
+  });
+  let refreshStartedResolve;
+  const refreshStarted = new Promise(resolve => { refreshStartedResolve = resolve; });
+  client.refreshAfterCanonicalCommit = async () => {
+    refreshStartedResolve();
+    return refreshFinished.promise;
+  };
+  let retries = 0;
+  client.scheduleCanonicalRefreshRetry = () => { retries += 1; };
+  const commit = client.commitCanonicalCrmEntity({
+    buildVersion: "1.7.0",
+    requestId: "550e8400-e29b-41d4-a716-446655440000",
+    operatorId: "operator_a",
+    entityType: "buildingUnits",
+    entityId: "unit_a",
+    operation: "update",
+    expectedVersion: 1,
+    patch: { label: "A 호실" }
+  });
+
+  await refreshStarted;
+  await client.logout(false);
+  client.session = session("user_b");
+  client.markSessionStarted();
+  refreshFinished.resolve(null);
+
+  assert.equal(await commit, null);
+  assert.equal(retries, 0);
+});
+
+test("an old session summary overlay response is discarded while the new session can still refresh", async () => {
+  const oldSummaries = deferred();
+  const remoteStores = [];
+  const { client } = makeClient({
+    readLocalStore: async () => Core.sanitizeSharedStore({ customers: [{ id: "customer_b", name: "B" }] }),
+    onRemoteStore: value => { remoteStores.push(value); }
+  });
+  client.session = session("user_a");
+  client.loadCanonicalBuildingUnits = async () => ({ unit_a: { id: "unit_a", label: "A 호실" } });
+  client.loadFieldSummaries = async () => oldSummaries.promise;
+  const oldRefresh = client.reloadRendererOverlays();
+
+  await client.logout(false);
+  client.session = session("user_b");
+  client.markSessionStarted();
+  oldSummaries.resolve({ job_a: { fieldJobId: "job_a", workflowStatus: "approved" } });
+  assert.equal(await oldRefresh, null);
+  assert.equal(remoteStores.length, 0);
+
+  client.loadCanonicalBuildingUnits = async () => ({ unit_b: { id: "unit_b", label: "B 호실" } });
+  client.loadFieldSummaries = async () => ({ job_b: { fieldJobId: "job_b", workflowStatus: "accepted" } });
+  const current = await client.reloadRendererOverlays();
+  assert.equal(current.buildingUnits[0].id, "unit_b");
+  assert.equal(remoteStores.at(-1).fieldSummaries[0].fieldJobId, "job_b");
+});
+
+test("an old shared stream reload cannot write or emit after a different user logs in", async () => {
+  const oldRemote = deferred();
+  const writes = [];
+  const remoteStores = [];
+  const syncStates = [];
+  const { client } = makeClient({
+    readLocalStore: async () => Core.sanitizeSharedStore({ customers: [{ id: "customer_b", name: "B" }] }),
+    writeLocalStore: async value => { writes.push(value); },
+    onRemoteStore: value => { remoteStores.push(value); },
+    onSyncState: value => { syncStates.push(value); }
+  });
+  client.session = session("user_a");
+  client.fetchRemotePayload = async () => oldRemote.promise;
+  const reload = client.reloadFromRemote();
+
+  await client.logout(false);
+  client.session = session("user_b");
+  client.markSessionStarted();
+  oldRemote.resolve({ customers: { customer_a: { id: "customer_a", name: "A" } } });
+
+  assert.equal(await reload, null);
+  assert.equal(writes.length, 0);
+  assert.equal(remoteStores.length, 0);
+  assert.equal(syncStates.length, 0);
+  assert.equal(client.remotePayload, null);
+});
+
+test("an old initial store load cannot populate a different user's local session", async () => {
+  const oldRemote = deferred();
+  const writes = [];
+  const syncStates = [];
+  const { client } = makeClient({
+    readLocalStore: async () => Core.sanitizeSharedStore({ customers: [{ id: "customer_b", name: "B" }] }),
+    writeLocalStore: async value => { writes.push(value); },
+    onSyncState: value => { syncStates.push(value); }
+  });
+  client.session = session("user_a");
+  client.fetchRemotePayload = async () => oldRemote.promise;
+  const load = client.loadStore();
+
+  await client.logout(false);
+  client.session = session("user_b");
+  client.markSessionStarted();
+  oldRemote.resolve({ customers: { customer_a: { id: "customer_a", name: "A" } } });
+
+  assert.equal(await load, null);
+  assert.equal(writes.length, 0);
+  assert.equal(syncStates.filter(state => state && state.state === "connected").length, 0);
+  assert.equal(client.remotePayload, null);
+});
+
+test("a login load failure stops both streams and clears the failed session lifecycle", async () => {
+  const { client } = makeClient();
+  client.receiveEmailCredential = async () => ({ idToken: "id", refreshToken: "refresh" });
+  client.exchangeFirebaseCredential = async () => {
+    client.session = session("user_a");
+    client.markSessionStarted();
+  };
+  let sharedAborts = 0;
+  let summaryAborts = 0;
+  client.loadStore = async () => {
+    client.streamTask = Promise.resolve();
+    client.summaryStreamTask = Promise.resolve();
+    client.streamController = { abort: () => { sharedAborts += 1; } };
+    client.summaryStreamController = { abort: () => { summaryAborts += 1; } };
+    throw new Error("overlay load failed");
+  };
+
+  await assert.rejects(client.login({ email: "a@bring.test", password: "secret" }), /overlay load failed/);
+
+  assert.equal(client.session, null);
+  assert.equal(client.stopped, true);
+  assert.equal(client.streamTask, null);
+  assert.equal(client.summaryStreamTask, null);
+  assert.equal(sharedAborts, 1);
+  assert.equal(summaryAborts, 1);
+});
+
 test("pending synchronization returns and publishes freshly loaded renderer overlays", async () => {
   const { client, remoteStores } = makeClient();
   client.fetchRemotePayload = async () => ({ customers: { customer_1: { id: "customer_1" } } });
@@ -510,6 +767,10 @@ test("renderer refreshes overlays on load and reconnect without mixing them into
   assert.match(appSource, /const next = preserveRendererOverlays\(data, store\)/);
   assert.match(appSource, /const saved = preserveRendererOverlays\(result\.data, payload\)/);
   assert.match(appSource, /if \(!result\.pending\) await refreshRendererOverlays\(false\)/);
+  assert.match(appSource, /let authGeneration = 0/);
+  assert.match(appSource, /function setCurrentAuth/);
+  assert.match(appSource, /generation !== authGeneration/);
+  assert.match(appSource, /uid !== currentAuthUid\(\)/);
 });
 
 test("current building and sales-unit editors defer only canonical mutations until operator selection", async () => {
