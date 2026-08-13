@@ -307,6 +307,7 @@ class FirebaseRemoteClient {
     this.safeStorage = options.safeStorage;
     this.shell = options.shell;
     this.openGoogleAuth = options.openGoogleAuth || (url => this.shell.openExternal(url));
+    this.openEmailAuth = options.openEmailAuth || this.openGoogleAuth;
     this.fetch = options.fetchImpl || globalThis.fetch;
     this.sessionFile = options.sessionFile;
     this.pendingFile = options.pendingFile;
@@ -588,6 +589,38 @@ class FirebaseRemoteClient {
     return this.session;
   }
 
+  async exchangeFirebaseCredential(credential) {
+    const idToken = String(credential && credential.idToken || "");
+    const refreshToken = String(credential && credential.refreshToken || "");
+    if (!idToken || idToken.length > 12000 || !refreshToken || refreshToken.length > 4096) {
+      throw createError("Firebase 로그인 세션을 받지 못했습니다.", "LOGIN_FAILED");
+    }
+    const lookup = await this.requestJson(`https://identitytoolkit.googleapis.com/v1/accounts:lookup?key=${this.firebase.apiKey}`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ idToken })
+    }, "LOGIN_FAILED");
+    const user = lookup && lookup.users && lookup.users[0] || {};
+    if (!user.localId || !user.email) throw createError("Firebase 사용자 정보를 확인하지 못했습니다.", "LOGIN_FAILED");
+    this.session = {
+      idToken,
+      refreshToken,
+      expiresAt: Date.now() + 55 * 60 * 1000,
+      uid: user.localId,
+      email: user.email,
+      displayName: user.displayName || "",
+      photoUrl: user.photoUrl || "",
+      role: "viewer",
+      mustChangePassword: false,
+      fieldAuthIntegrated: true
+    };
+    await this.verifyAccess();
+    await this.persistSession();
+    this.lastError = "";
+    this.emitAuth();
+    return this.session;
+  }
+
   async receiveGoogleCredential() {
     const state = crypto.randomBytes(32).toString("base64url");
     return new Promise((resolve, reject) => {
@@ -654,10 +687,72 @@ class FirebaseRemoteClient {
     });
   }
 
+  async receiveEmailCredential(credentials) {
+    const email = String(credentials && credentials.email || "").trim().toLowerCase();
+    const password = String(credentials && credentials.password || "");
+    if (!email || !password) throw createError("이메일과 비밀번호를 입력해 주세요.", "LOGIN_FAILED");
+    const state = crypto.randomBytes(32).toString("base64url");
+    return new Promise((resolve, reject) => {
+      let settled = false;
+      let timer = null;
+      const finish = (error, credential) => {
+        if (settled) return;
+        settled = true;
+        clearTimeout(timer);
+        server.close();
+        if (error) reject(error); else resolve(credential);
+      };
+      const server = http.createServer((request, response) => {
+        const callback = new URL(request.url, "http://127.0.0.1");
+        if (callback.pathname !== "/callback") return response.writeHead(404).end();
+        if (request.method !== "POST") return response.writeHead(405, { Allow: "POST" }).end();
+        let body = "";
+        request.setEncoding("utf8");
+        request.on("data", chunk => {
+          body += chunk;
+          if (body.length > 20000) request.destroy();
+        });
+        request.on("error", error => finish(createError("로그인 응답을 받지 못했습니다.", "LOGIN_FAILED", error)));
+        request.on("end", () => {
+          try {
+            const fields = new URLSearchParams(body);
+            if ((fields.get("state") || "") !== state) throw createError("로그인 확인값이 일치하지 않습니다.", "LOGIN_FAILED");
+            const idToken = fields.get("firebase_id_token") || "";
+            const refreshToken = fields.get("firebase_refresh_token") || "";
+            if (!idToken || idToken.length > 12000 || !refreshToken || refreshToken.length > 4096) {
+              throw createError("Firebase 로그인 세션을 받지 못했습니다.", "LOGIN_FAILED");
+            }
+            response.writeHead(200, { "Content-Type": "text/html; charset=utf-8", "Cache-Control": "no-store", "Referrer-Policy": "no-referrer" });
+            response.end("<!doctype html><meta charset='utf-8'><title>BRING CRM 로그인 완료</title><p>로그인이 완료되었습니다.</p>");
+            finish(null, { idToken, refreshToken });
+          } catch (error) {
+            response.writeHead(400, { "Content-Type": "text/plain; charset=utf-8", "Cache-Control": "no-store" });
+            response.end("로그인을 완료하지 못했습니다.");
+            finish(error);
+          }
+        });
+      });
+      server.on("error", error => finish(createError("로그인 연결을 열지 못했습니다.", "LOGIN_FAILED", error)));
+      server.listen(0, "127.0.0.1", async () => {
+        try {
+          const port = server.address().port;
+          const authUrl = new URL(this.firebase.authPageUrl);
+          authUrl.searchParams.set("port", String(port));
+          authUrl.searchParams.set("state", state);
+          await this.openEmailAuth(authUrl.toString(), credentials);
+        } catch (error) {
+          finish(createError(friendlyAuthMessage(error.message), "LOGIN_FAILED", error));
+        }
+      });
+      timer = setTimeout(() => finish(createError("로그인 시간이 초과되었습니다. 다시 시도해 주세요.", "LOGIN_TIMEOUT")), 60000);
+    });
+  }
+
   async login(credentials) {
     await this.logout(false);
     try {
-      await this.exchangeEmailPassword(credentials);
+      const credential = await this.receiveEmailCredential(credentials);
+      await this.exchangeFirebaseCredential(credential);
       const data = this.session.mustChangePassword ? null : await this.loadStore();
       return { ok: true, auth: this.authState(), data };
     } catch (error) {
@@ -688,7 +783,6 @@ class FirebaseRemoteClient {
   async changePassword(newPassword) {
     if (!this.session) throw createError("로그인이 필요합니다.", "AUTH_REQUIRED");
     const password = String(newPassword || "");
-    if (password === "123456") throw createError("임시 비밀번호와 다른 새 비밀번호를 입력해 주세요.", "WEAK_PASSWORD");
     if (password.length < 8 || !/[A-Za-z]/.test(password) || !/\d/.test(password)) {
       throw createError("새 비밀번호는 영문과 숫자를 포함해 8자 이상 입력해 주세요.", "WEAK_PASSWORD");
     }

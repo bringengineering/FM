@@ -347,14 +347,14 @@
     appShell.classList.add("app-locked");
     appShell.setAttribute("aria-hidden", "true");
     loginGate.hidden = false;
-    loginForm.hidden = true;
+    loginForm.hidden = false;
     passwordChangeForm.hidden = true;
     loginTitle.textContent = "공용 CRM 로그인";
-    loginDescription.innerHTML = "승인된 dpvld858@gmail.com Google 계정으로 로그인하면<br>모든 사용자가 동일한 최신 자료를 확인할 수 있습니다.";
-    loginMessage.textContent = message || currentAuth.error || "아래 Google 로그인 버튼을 눌러 주세요.";
+    loginDescription.innerHTML = "회사 이메일과 비밀번호로 한 번 로그인하면<br>CRM과 BRING FIELD를 함께 사용할 수 있습니다.";
+    loginMessage.textContent = message || currentAuth.error || "비밀번호를 입력한 뒤 로그인해 주세요.";
     loginMessage.className = `login-message${isError ? " error" : ""}`;
     loginButton.disabled = false;
-    googleLoginButton.hidden = false;
+    googleLoginButton.hidden = true;
     googleLoginButton.disabled = false;
   }
 
@@ -3727,7 +3727,7 @@ document.addEventListener("keydown", event => {
 
   api.onAuthState(state => {
     currentAuth = state || currentAuth;
-    if (currentAuth.required && !currentAuth.user) showLogin(currentAuth.error || "dpvld858@gmail.com Google 계정으로 로그인해 주세요.", Boolean(currentAuth.error));
+    if (currentAuth.required && !currentAuth.user) showLogin(currentAuth.error || "회사 이메일과 비밀번호로 로그인해 주세요.", Boolean(currentAuth.error));
     else if (currentAuth.user && currentAuth.user.mustChangePassword) showPasswordChange(currentAuth);
     else showApplication(currentAuth);
   });
@@ -3800,7 +3800,6 @@ document.addEventListener("keydown", event => {
     event.preventDefault();
     if (loginInProgress) return;
     if (newPassword.value !== confirmPassword.value) return showPasswordChange(currentAuth, "새 비밀번호가 서로 일치하지 않습니다.", true);
-    if (newPassword.value === "123456") return showPasswordChange(currentAuth, "임시 비밀번호와 다른 비밀번호를 입력해 주세요.", true);
     if (newPassword.value.length < 8 || !/[A-Za-z]/.test(newPassword.value) || !/\d/.test(newPassword.value)) return showPasswordChange(currentAuth, "영문과 숫자를 포함해 8자 이상 입력해 주세요.", true);
     loginInProgress = true;
     passwordChangeButton.disabled = true;

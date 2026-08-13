@@ -54,6 +54,32 @@
         appId: "1:864976295990:web:194f145b1b4dad58eb6097"
       });
 
+      const postSession = fields => {
+        const form = document.createElement("form");
+        form.method = "post";
+        form.action = `http://127.0.0.1:${port}/callback`;
+        for (const [name, value] of [["state", state], ...fields]) {
+          const input = document.createElement("input");
+          input.type = "hidden";
+          input.name = name;
+          input.value = value;
+          form.appendChild(input);
+        }
+        document.body.appendChild(form);
+        form.submit();
+      };
+
+      window.bringEmailLogin = async (email, password) => {
+        const normalizedEmail = String(email || "").trim().toLowerCase();
+        if (!normalizedEmail || typeof password !== "string" || !password) throw new Error("이메일과 비밀번호를 입력해 주세요.");
+        email = normalizedEmail;
+        const result = await firebase.auth().signInWithEmailAndPassword(email, password);
+        const idToken = await result.user.getIdToken();
+        const refreshToken = result.user.refreshToken || "";
+        if (!idToken || !refreshToken) throw new Error("Firebase 로그인 세션을 만들지 못했습니다.");
+        postSession([["firebase_id_token", idToken], ["firebase_refresh_token", refreshToken]]);
+      };
+
       button.addEventListener("click", async () => {
         button.disabled = true;
         message.className = "";
@@ -70,18 +96,7 @@
           const providerToken = googleIdToken || googleAccessToken;
           if (!providerToken) throw new Error("Google 인증 정보를 받지 못했습니다.");
           message.textContent = "로그인이 확인되었습니다. CRM으로 돌아갑니다…";
-          const form = document.createElement("form");
-          form.method = "post";
-          form.action = `http://127.0.0.1:${port}/callback`;
-          for (const [name, value] of [["state", state], ["provider_token_type", providerTokenType], ["provider_token", providerToken]]) {
-            const input = document.createElement("input");
-            input.type = "hidden";
-            input.name = name;
-            input.value = value;
-            form.appendChild(input);
-          }
-          document.body.appendChild(form);
-          form.submit();
+          postSession([["provider_token_type", providerTokenType], ["provider_token", providerToken]]);
         } catch (error) {
           if (error && ["auth/popup-closed-by-user", "auth/cancelled-popup-request"].includes(error.code)) {
             message.textContent = "로그인이 취소되었습니다.";

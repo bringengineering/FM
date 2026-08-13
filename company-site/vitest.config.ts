@@ -12,7 +12,10 @@ export default defineConfig({
   },
   test: {
     environment: "jsdom",
-    include: ["tests/field/**/*.{test,spec}.{ts,tsx}"],
+    include: [
+      "tests/field/**/*.{test,spec}.{ts,tsx}",
+      "tests/crm-auth-email.test.ts",
+    ],
     setupFiles: ["./tests/field/setup.ts"],
   },
 });

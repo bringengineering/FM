@@ -20,12 +20,11 @@
       <div class="login-logo"><img src="./assets/bring-logo.png" alt="BRING 로고"></div>
       <span>BRING ENGINEERING</span>
       <h1 id="loginTitle">공용 CRM 로그인</h1>
-      <p id="loginDescription">승인된 회사 Google 계정으로 로그인하면<br>모든 사용자가 동일한 최신 자료를 확인할 수 있습니다.</p>
-      <button id="googleLoginButton" class="email-login-button google-login-button" type="button">dpvld858@gmail.com Google 로그인</button>
-      <form id="emailLoginForm" class="login-form" hidden>
-        <label><span>이메일</span><input id="loginEmail" name="email" type="email" autocomplete="username" placeholder="name@gmail.com" required></label>
+      <p id="loginDescription">회사 이메일과 비밀번호로 한 번 로그인하면<br>CRM과 BRING FIELD를 함께 사용할 수 있습니다.</p>
+      <button id="googleLoginButton" class="email-login-button google-login-button" type="button" hidden>Google 로그인</button>
+      <form id="emailLoginForm" class="login-form">
+        <label><span>이메일</span><input id="loginEmail" name="email" type="email" autocomplete="username" value="dpvld858@gmail.com" readonly required></label>
         <label><span>비밀번호</span><input id="loginPassword" name="password" type="password" autocomplete="current-password" placeholder="비밀번호 입력" required></label>
-        <div class="temporary-password">최초 비밀번호는 <b>123456</b>입니다.</div>
         <button id="emailLoginButton" class="email-login-button" type="submit">로그인</button>
       </form>
       <form id="passwordChangeForm" class="login-form" hidden>
@@ -36,7 +35,7 @@
         <button id="passwordChangeButton" class="email-login-button" type="submit">비밀번호 변경 후 시작</button>
       </form>
       <div id="loginMessage" class="login-message">로그인 상태를 확인하고 있습니다…</div>
-      <small>Google 비밀번호는 CRM이나 회사 데이터베이스에 저장되지 않습니다.</small>
+      <small>비밀번호는 CRM 코드나 회사 데이터베이스에 저장되지 않습니다.</small>
     </section>
   </div>
 
