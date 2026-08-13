@@ -1,6 +1,7 @@
 import {
   FIELD_JOB_TYPES,
   FIELD_WORKFLOW_STATUSES,
+  FieldV2Error,
   type FieldJobType,
   type FieldWorkflowStatus,
 } from "./contracts.js";
@@ -66,6 +67,11 @@ export interface FieldNextAction {
 
 export interface FieldNextActionContext {
   inspectionOutcome?: "no_issue" | "issue_found";
+}
+
+interface MaintenanceInspectionDecision {
+  action: FieldNextAction;
+  targetStatus: "completed" | "review_pending";
 }
 
 export const FIELD_WORKFLOW_STATUS_LABELS: Readonly<Record<
@@ -258,6 +264,7 @@ export function transitionFieldStatus(
   jobType: FieldJobType,
   from: FieldWorkflowStatus,
   to: FieldWorkflowStatus,
+  context: FieldNextActionContext = {},
 ): FieldWorkflowStatus {
   if (
     !isJobType(jobType)
@@ -265,7 +272,17 @@ export function transitionFieldStatus(
     || !isWorkflowStatus(to)
     || !fieldJobPolicies[jobType].allowedTransitions[from].includes(to)
   ) {
-    throw new Error("field_transition_invalid");
+    throw new FieldV2Error("field_transition_invalid");
+  }
+  if (
+    jobType === "maintenance_inspection"
+    && from === "evidence_ready"
+    && (to === "completed" || to === "review_pending")
+  ) {
+    const decision = maintenanceInspectionDecision(context);
+    if (!decision || decision.targetStatus !== to) {
+      throw new FieldV2Error("field_inspection_outcome_invalid");
+    }
   }
   return to;
 }
@@ -279,13 +296,32 @@ const ACCEPTED_LABELS: Readonly<Record<FieldJobType, string>> = Object.freeze({
   repair_before_after: "수리 기록 시작",
 });
 
+function maintenanceInspectionDecision(
+  context: FieldNextActionContext | null | undefined,
+): MaintenanceInspectionDecision | null {
+  if (!context || typeof context !== "object") return null;
+  if (context.inspectionOutcome === "no_issue") {
+    return {
+      action: { action: "complete", label: "완료" },
+      targetStatus: "completed",
+    };
+  }
+  if (context.inspectionOutcome === "issue_found") {
+    return {
+      action: { action: "requestReview", label: "검수 요청" },
+      targetStatus: "review_pending",
+    };
+  }
+  return null;
+}
+
 export function nextFieldAction(
   jobType: FieldJobType,
   status: FieldWorkflowStatus,
   context: FieldNextActionContext = {},
 ): FieldNextAction {
   if (!isJobType(jobType) || !isWorkflowStatus(status)) {
-    throw new Error("field_policy_invalid");
+    throw new FieldV2Error("field_policy_invalid");
   }
   switch (status) {
     case "requested": return { action: "claim", label: "내가 맡기" };
@@ -296,12 +332,8 @@ export function nextFieldAction(
       if (jobType !== "maintenance_inspection") {
         return { action: "requestReview", label: "검수 요청" };
       }
-      if (context.inspectionOutcome === "no_issue") {
-        return { action: "complete", label: "완료" };
-      }
-      if (context.inspectionOutcome === "issue_found") {
-        return { action: "requestReview", label: "검수 요청" };
-      }
+      const decision = maintenanceInspectionDecision(context);
+      if (decision) return decision.action;
       return {
         action: "recordInspectionOutcome",
         label: "점검 결과 기록",

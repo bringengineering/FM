@@ -1,14 +1,16 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
 import type { FieldReleaseConfiguration } from "../src/field-v2/contracts.js";
 import {
   assertFieldReleaseAllows,
   assertFieldReleaseCompatible,
   compareFieldBuildVersions,
+  type FieldReleaseGateDependencies,
 } from "../src/field-v2/release-gate.js";
 
 const REQUEST_ID = "8f738cdc-cc9a-4f23-8b27-a87661232806";
 const REQUEST_HASH = "a".repeat(64);
+const UPLOAD_JOB_ID = "upload_job_1";
 
 const RELEASE_ACTIVE: FieldReleaseConfiguration = {
   protocolVersion: 2,
@@ -86,106 +88,253 @@ describe("FIELD v2 release compatibility", () => {
       operatorId: "operator_kim",
     })).toThrow("field_release_config_invalid");
   });
+
+  it.each([
+    ["null config", null, { protocolVersion: 2, clientKind: "desktop", buildVersion: "1.8.0", operatorId: "operator_kim" }, "field_release_config_invalid"],
+    ["undefined config", undefined, { protocolVersion: 2, clientKind: "desktop", buildVersion: "1.8.0", operatorId: "operator_kim" }, "field_release_config_invalid"],
+    ["null client", RELEASE_ACTIVE, null, "field_client_invalid"],
+    ["undefined client", RELEASE_ACTIVE, undefined, "field_client_invalid"],
+  ])("returns a stable domain error for %s", (_label, config, client, code) => {
+    expect(() => assertFieldReleaseCompatible(config as never, client as never))
+      .toThrow(expect.objectContaining({
+        name: "FieldV2Error",
+        code,
+        message: code,
+      }));
+  });
 });
 
+function gateDependencies(overrides: {
+  receipt?: unknown;
+  upload?: unknown;
+} = {}): FieldReleaseGateDependencies {
+  const receipt = Object.hasOwn(overrides, "receipt")
+    ? overrides.receipt
+    : { scope: "workItems", requestId: REQUEST_ID, requestHash: REQUEST_HASH };
+  const upload = Object.hasOwn(overrides, "upload")
+    ? overrides.upload
+    : { uploadJobId: UPLOAD_JOB_ID, requestId: REQUEST_ID, status: "failed" };
+  return {
+    readReceipt: vi.fn(async () => receipt),
+    readUploadRecovery: vi.fn(async () => upload),
+  };
+}
+
+async function releaseAllows(
+  config: unknown,
+  operation: unknown,
+  dependencies?: FieldReleaseGateDependencies | null,
+) {
+  return await assertFieldReleaseAllows(
+    config as never,
+    operation as never,
+    dependencies,
+  );
+}
+
 describe("FIELD v2 release write gate", () => {
-  it("safe mode permits reads, exact receipt replay, and upload recovery", () => {
+  it("safe mode permits reads and server-proven replay/recovery", async () => {
     const safe = { ...RELEASE_ACTIVE, safeMode: true };
-    expect(assertFieldReleaseAllows(safe, { kind: "read" }))
+    const dependencies = gateDependencies();
+    expect(await releaseAllows(safe, { kind: "read" }))
       .toEqual({ allowed: true });
-    expect(assertFieldReleaseAllows(safe, {
+    expect(await releaseAllows(safe, {
       kind: "receiptReplay",
+      scope: "workItems",
       requestId: REQUEST_ID,
       requestHash: REQUEST_HASH,
-      receipt: { requestId: REQUEST_ID, requestHash: REQUEST_HASH },
-    })).toEqual({ allowed: true });
-    expect(assertFieldReleaseAllows(safe, {
+    }, dependencies)).toEqual({ allowed: true });
+    expect(await releaseAllows(safe, {
       kind: "uploadRecovery",
       requestId: REQUEST_ID,
-    })).toEqual({ allowed: true });
+      uploadJobId: UPLOAD_JOB_ID,
+    }, dependencies)).toEqual({ allowed: true });
   });
 
-  it("safe mode blocks new work mutations", () => {
-    expect(() => assertFieldReleaseAllows(
+  it("safe mode blocks new work mutations", async () => {
+    await expect(releaseAllows(
       { ...RELEASE_ACTIVE, safeMode: true },
       { kind: "createJob", requestId: REQUEST_ID },
-    )).toThrow("field_safe_mode_read_only");
+    )).rejects.toThrow("field_safe_mode_read_only");
   });
 
-  it("disabled v2 writes still permit recovery but block a new mutation", () => {
+  it("disabled v2 writes still permit proven recovery but block a new mutation", async () => {
     const disabled = { ...RELEASE_ACTIVE, v2WritesEnabled: false };
-    expect(assertFieldReleaseAllows(disabled, {
+    expect(await releaseAllows(disabled, {
       kind: "uploadRecovery",
       requestId: REQUEST_ID,
-    })).toEqual({ allowed: true });
-    expect(() => assertFieldReleaseAllows(disabled, {
+      uploadJobId: UPLOAD_JOB_ID,
+    }, gateDependencies())).toEqual({ allowed: true });
+    await expect(releaseAllows(disabled, {
       kind: "transitionJob",
       requestId: REQUEST_ID,
-    })).toThrow("field_v2_writes_disabled");
+    })).rejects.toThrow("field_v2_writes_disabled");
   });
 
-  it("requires the separate canonical CRM switch for canonical writes", () => {
-    expect(() => assertFieldReleaseAllows(
+  it("requires the separate canonical CRM switch for canonical writes", async () => {
+    await expect(releaseAllows(
       { ...RELEASE_ACTIVE, canonicalCrmEnabled: false },
       { kind: "canonicalCrmWrite", requestId: REQUEST_ID },
-    )).toThrow("field_canonical_crm_disabled");
-    expect(assertFieldReleaseAllows(RELEASE_ACTIVE, {
+    )).rejects.toThrow("field_canonical_crm_disabled");
+    expect(await releaseAllows(RELEASE_ACTIVE, {
       kind: "canonicalCrmWrite",
       requestId: REQUEST_ID,
     })).toEqual({ allowed: true });
   });
 
-  it("rejects malformed replay identifiers instead of treating them as exact", () => {
-    expect(() => assertFieldReleaseAllows(
+  it("rejects malformed replay identifiers instead of treating them as exact", async () => {
+    await expect(releaseAllows(
       { ...RELEASE_ACTIVE, safeMode: true },
       {
         kind: "receiptReplay",
+        scope: "workItems",
         requestId: "not-a-request-id",
         requestHash: REQUEST_HASH,
-        receipt: { requestId: "not-a-request-id", requestHash: REQUEST_HASH },
       },
-    )).toThrow("field_receipt_replay_invalid");
+      gateDependencies(),
+    )).rejects.toThrow("field_receipt_replay_invalid");
   });
 
   it.each([
     [
-      "missing receipt",
-      { kind: "receiptReplay", requestId: REQUEST_ID, requestHash: REQUEST_HASH },
+      "missing dependency",
+      undefined,
     ],
     [
-      "wrong receipt request ID",
-      {
-        kind: "receiptReplay",
-        requestId: REQUEST_ID,
-        requestHash: REQUEST_HASH,
+      "missing server receipt",
+      gateDependencies({ receipt: null }),
+    ],
+    [
+      "wrong stored request ID",
+      gateDependencies({
         receipt: {
+          scope: "workItems",
           requestId: "28dc7c9e-7f1c-4c4e-969c-b9b940e9e844",
           requestHash: REQUEST_HASH,
         },
-      },
+      }),
     ],
     [
-      "wrong request fingerprint",
-      {
-        kind: "receiptReplay",
-        requestId: REQUEST_ID,
-        requestHash: "b".repeat(64),
-        receipt: { requestId: REQUEST_ID, requestHash: REQUEST_HASH },
-      },
+      "wrong stored fingerprint",
+      gateDependencies({
+        receipt: {
+          scope: "workItems",
+          requestId: REQUEST_ID,
+          requestHash: "b".repeat(64),
+        },
+      }),
     ],
     [
-      "empty request fingerprint",
-      {
-        kind: "receiptReplay",
-        requestId: REQUEST_ID,
-        requestHash: "",
-        receipt: { requestId: REQUEST_ID, requestHash: "" },
-      },
+      "wrong stored scope",
+      gateDependencies({
+        receipt: {
+          scope: "otherScope",
+          requestId: REQUEST_ID,
+          requestHash: REQUEST_HASH,
+        },
+      }),
     ],
-  ])("rejects %s instead of bypassing safe mode", (_label, operation) => {
-    expect(() => assertFieldReleaseAllows(
+    ["malformed server receipt", gateDependencies({ receipt: [] })],
+  ])("rejects receipt replay with %s", async (_label, dependencies) => {
+    await expect(releaseAllows(
       { ...RELEASE_ACTIVE, safeMode: true },
-      operation as never,
-    )).toThrow("field_receipt_replay_invalid");
+      {
+        kind: "receiptReplay",
+        scope: "workItems",
+        requestId: REQUEST_ID,
+        requestHash: REQUEST_HASH,
+      },
+      dependencies,
+    )).rejects.toThrow("field_receipt_replay_invalid");
+  });
+
+  it.each([
+    ["blank scope", { scope: "", requestHash: REQUEST_HASH }],
+    ["blank hash", { scope: "workItems", requestHash: "" }],
+    ["non-SHA-256 hash", { scope: "workItems", requestHash: "abc" }],
+  ])("rejects replay lookup with %s", async (_label, override) => {
+    await expect(releaseAllows(
+      { ...RELEASE_ACTIVE, safeMode: true },
+      {
+        kind: "receiptReplay",
+        requestId: REQUEST_ID,
+        ...override,
+      },
+      gateDependencies(),
+    )).rejects.toThrow("field_receipt_replay_invalid");
+  });
+
+  it("does not trust a client-shaped receipt embedded in the operation", async () => {
+    await expect(releaseAllows(
+      { ...RELEASE_ACTIVE, safeMode: true },
+      {
+        kind: "receiptReplay",
+        scope: "workItems",
+        requestId: REQUEST_ID,
+        requestHash: REQUEST_HASH,
+        receipt: {
+          scope: "workItems",
+          requestId: REQUEST_ID,
+          requestHash: REQUEST_HASH,
+        },
+      },
+    )).rejects.toThrow("field_receipt_replay_invalid");
+  });
+
+  it.each([
+    ["missing dependency", undefined],
+    ["missing server job", gateDependencies({ upload: null })],
+    [
+      "mismatched request ID",
+      gateDependencies({
+        upload: {
+          uploadJobId: UPLOAD_JOB_ID,
+          requestId: "28dc7c9e-7f1c-4c4e-969c-b9b940e9e844",
+          status: "failed",
+        },
+      }),
+    ],
+    [
+      "completed server job",
+      gateDependencies({
+        upload: { uploadJobId: UPLOAD_JOB_ID, requestId: REQUEST_ID, status: "synced" },
+      }),
+    ],
+    ["malformed server job", gateDependencies({ upload: { status: "failed" } })],
+  ])("rejects upload recovery with %s", async (_label, dependencies) => {
+    await expect(releaseAllows(
+      { ...RELEASE_ACTIVE, safeMode: true },
+      { kind: "uploadRecovery", requestId: REQUEST_ID, uploadJobId: UPLOAD_JOB_ID },
+      dependencies,
+    )).rejects.toThrow("field_upload_recovery_invalid");
+  });
+
+  it("does not trust a client-shaped upload record embedded in the operation", async () => {
+    await expect(releaseAllows(
+      { ...RELEASE_ACTIVE, safeMode: true },
+      {
+        kind: "uploadRecovery",
+        requestId: REQUEST_ID,
+        uploadJobId: UPLOAD_JOB_ID,
+        uploadJob: {
+          uploadJobId: UPLOAD_JOB_ID,
+          requestId: REQUEST_ID,
+          status: "failed",
+        },
+      },
+    )).rejects.toThrow("field_upload_recovery_invalid");
+  });
+
+  it.each([
+    ["null config", null, { kind: "read" }, "field_release_config_invalid"],
+    ["undefined config", undefined, { kind: "read" }, "field_release_config_invalid"],
+    ["null operation", RELEASE_ACTIVE, null, "field_release_operation_invalid"],
+    ["undefined operation", RELEASE_ACTIVE, undefined, "field_release_operation_invalid"],
+  ])("returns a stable domain error for %s", async (_label, config, operation, code) => {
+    await expect(releaseAllows(config, operation)).rejects.toMatchObject({
+      name: "FieldV2Error",
+      code,
+      message: code,
+    });
   });
 });

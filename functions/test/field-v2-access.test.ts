@@ -9,7 +9,7 @@ import {
 function dependencies(overrides: {
   access?: unknown;
   profile?: unknown;
-  authenticatedEmail?: string;
+  authenticatedEmail?: string | null;
 } = {}): FieldActorDependencies & { read: ReturnType<typeof vi.fn> } {
   const access = Object.hasOwn(overrides, "access")
     ? overrides.access
@@ -25,7 +25,9 @@ function dependencies(overrides: {
       displayName: "김현진",
     };
   return {
-    authenticatedEmail: overrides.authenticatedEmail,
+    authenticatedEmail: Object.hasOwn(overrides, "authenticatedEmail")
+      ? overrides.authenticatedEmail as string
+      : "team@bringcare.kr",
     read: vi.fn(async (path: string) => {
       if (path === "crmCompany/access/shared_uid") return access;
       if (path === "crmCompany/teamProfiles/operator_kim") return profile;
@@ -84,6 +86,31 @@ describe("FIELD v2 actor access", () => {
       operatorId: "operator_kim",
     }, dependencies({ authenticatedEmail: "other@bringcare.kr" })))
       .rejects.toThrow("field_access_forbidden");
+  });
+
+  it.each([
+    ["missing email", undefined],
+    ["null email", null],
+    ["blank email", "   "],
+  ])("fails closed for %s", async (_label, authenticatedEmail) => {
+    await expect(resolveFieldActorCore({
+      authUid: "shared_uid",
+      operatorId: "operator_kim",
+    }, dependencies({ authenticatedEmail }))).rejects.toMatchObject({
+      name: "FieldV2Error",
+      code: "field_access_forbidden",
+      message: "field_access_forbidden",
+    });
+  });
+
+  it.each([
+    ["null input", null, dependencies(), "field_access_forbidden"],
+    ["undefined input", undefined, dependencies(), "field_access_forbidden"],
+    ["null dependencies", { authUid: "shared_uid", operatorId: "operator_kim" }, null, "field_access_forbidden"],
+    ["undefined dependencies", { authUid: "shared_uid", operatorId: "operator_kim" }, undefined, "field_access_forbidden"],
+  ])("returns a stable domain error for %s", async (_label, input, deps, code) => {
+    await expect(resolveFieldActorCore(input as never, deps as never))
+      .rejects.toMatchObject({ name: "FieldV2Error", code, message: code });
   });
 
   it("rejects inactive and malformed operator profiles with stable codes", async () => {

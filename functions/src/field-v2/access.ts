@@ -1,6 +1,10 @@
 import { Buffer } from "node:buffer";
 
-import type { FieldCrmRole, FieldV2Actor } from "./contracts.js";
+import {
+  FieldV2Error,
+  type FieldCrmRole,
+  type FieldV2Actor,
+} from "./contracts.js";
 
 export interface ResolveFieldActorInput {
   authUid: string;
@@ -9,13 +13,13 @@ export interface ResolveFieldActorInput {
 
 export interface FieldActorDependencies {
   read(path: string): Promise<unknown>;
-  authenticatedEmail?: string;
+  authenticatedEmail: string;
 }
 
 interface CrmAccessRecord {
   enabled: true;
   role: FieldCrmRole;
-  email?: string;
+  email: string;
 }
 
 interface TeamProfileRecord {
@@ -48,7 +52,7 @@ function parseAccess(value: unknown): CrmAccessRecord | null {
     || value.enabled !== true
     || typeof value.role !== "string"
     || !CRM_ROLES.has(value.role as FieldCrmRole)
-    || (value.email !== undefined && typeof value.email !== "string")
+    || typeof value.email !== "string"
   ) return null;
   return value as unknown as CrmAccessRecord;
 }
@@ -71,31 +75,48 @@ export async function resolveFieldActorCore(
   input: ResolveFieldActorInput,
   dependencies: FieldActorDependencies,
 ): Promise<FieldV2Actor> {
+  if (
+    !isRecord(input)
+    || !isRecord(dependencies)
+    || typeof dependencies.read !== "function"
+  ) {
+    throw new FieldV2Error("field_access_forbidden");
+  }
   if (!isFirebaseKey(input.authUid)) {
-    throw new Error("field_access_forbidden");
+    throw new FieldV2Error("field_access_forbidden");
   }
   if (!isFirebaseKey(input.operatorId)) {
-    throw new Error("field_operator_invalid");
+    throw new FieldV2Error("field_operator_invalid");
   }
 
-  const access = parseAccess(await dependencies.read(
-    `crmCompany/access/${input.authUid}`,
-  ));
-  if (!access) throw new Error("field_access_forbidden");
-
-  if (dependencies.authenticatedEmail !== undefined) {
-    const authenticatedEmail = normalizeEmail(dependencies.authenticatedEmail);
-    const accessEmail = normalizeEmail(access.email);
-    if (!authenticatedEmail || !accessEmail || authenticatedEmail !== accessEmail) {
-      throw new Error("field_access_forbidden");
-    }
+  const authenticatedEmail = normalizeEmail(dependencies.authenticatedEmail);
+  if (!authenticatedEmail) {
+    throw new FieldV2Error("field_access_forbidden");
   }
 
-  const profile = parseProfile(await dependencies.read(
-    `crmCompany/teamProfiles/${input.operatorId}`,
-  ));
-  if (!profile) throw new Error("field_operator_invalid");
-  if (!profile.active) throw new Error("field_operator_inactive");
+  let accessValue: unknown;
+  try {
+    accessValue = await dependencies.read(`crmCompany/access/${input.authUid}`);
+  } catch {
+    throw new FieldV2Error("field_access_forbidden");
+  }
+  const access = parseAccess(accessValue);
+  const accessEmail = normalizeEmail(access?.email);
+  if (!access || !accessEmail || authenticatedEmail !== accessEmail) {
+    throw new FieldV2Error("field_access_forbidden");
+  }
+
+  let profileValue: unknown;
+  try {
+    profileValue = await dependencies.read(
+      `crmCompany/teamProfiles/${input.operatorId}`,
+    );
+  } catch {
+    throw new FieldV2Error("field_operator_invalid");
+  }
+  const profile = parseProfile(profileValue);
+  if (!profile) throw new FieldV2Error("field_operator_invalid");
+  if (!profile.active) throw new FieldV2Error("field_operator_inactive");
 
   return {
     authUid: input.authUid,
@@ -108,8 +129,11 @@ export async function resolveFieldActorCore(
 export function assertFieldActorCanMutate(
   actor: FieldV2Actor,
 ): { allowed: true } {
-  if (actor.role !== "admin" && actor.role !== "member") {
-    throw new Error("field_mutation_forbidden");
+  if (
+    !isRecord(actor)
+    || (actor.role !== "admin" && actor.role !== "member")
+  ) {
+    throw new FieldV2Error("field_mutation_forbidden");
   }
   return { allowed: true };
 }

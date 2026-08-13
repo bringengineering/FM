@@ -40,6 +40,16 @@ export type FieldWorkflowStatus = typeof FIELD_WORKFLOW_STATUSES[number];
 export type FieldUploadStatus = typeof FIELD_UPLOAD_STATUSES[number];
 export type FieldCrmRole = "admin" | "member" | "viewer";
 
+export class FieldV2Error extends Error {
+  readonly code: string;
+
+  constructor(code: string) {
+    super(code);
+    this.name = "FieldV2Error";
+    this.code = code;
+  }
+}
+
 /**
  * The operator ID identifies which teammate is doing the work while the team
  * shares one company Firebase account. It is an operational label, not an
@@ -92,25 +102,32 @@ export type FieldMutationOperationKind =
   | "createAdPackage"
   | "canonicalCrmWrite";
 
-export interface FieldRequestReceiptProof {
+export interface FieldRequestReceiptRecord {
+  readonly scope: string;
   readonly requestId: string;
   readonly requestHash: string;
 }
 
+export interface FieldUploadRecoveryRecord {
+  readonly uploadJobId: string;
+  readonly requestId: string;
+  readonly status: FieldUploadStatus;
+}
+
 /**
- * `receiptReplay` is constructed only after the orchestration layer has found
- * a receipt whose request ID and immutable request fingerprint both match.
- * The release gate deliberately does not query persistence itself.
+ * `receiptReplay` carries only server lookup keys. The release gate resolves
+ * the stored receipt through injected server dependencies and compares its
+ * request ID and immutable request fingerprint before allowing a replay.
  */
 export type FieldReleaseOperation =
   | { kind: "read" }
   | {
     kind: "receiptReplay";
+    scope: string;
     requestId: string;
     requestHash: string;
-    receipt: FieldRequestReceiptProof;
   }
-  | { kind: "uploadRecovery"; requestId: string }
+  | { kind: "uploadRecovery"; requestId: string; uploadJobId: string }
   | { kind: FieldMutationOperationKind; requestId: string };
 
 const RFC_4122_UUID_PATTERN =

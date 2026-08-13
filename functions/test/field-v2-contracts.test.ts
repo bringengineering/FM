@@ -238,7 +238,29 @@ describe("FIELD v2 job policies", () => {
       "maintenance_inspection",
       "evidence_ready",
       "completed",
+      { inspectionOutcome: "no_issue" },
     )).toBe("completed");
+    expect(transitionFieldStatus(
+      "maintenance_inspection",
+      "evidence_ready",
+      "review_pending",
+      { inspectionOutcome: "issue_found" },
+    )).toBe("review_pending");
+  });
+
+  it.each([
+    ["issue found cannot complete", "completed", { inspectionOutcome: "issue_found" }],
+    ["no issue cannot request review", "review_pending", { inspectionOutcome: "no_issue" }],
+    ["missing outcome cannot complete", "completed", undefined],
+    ["missing outcome cannot request review", "review_pending", undefined],
+    ["null outcome context cannot complete", "completed", null],
+  ] as const)("rejects maintenance transition when %s", (_label, to, context) => {
+    expect(() => transitionFieldStatus(
+      "maintenance_inspection",
+      "evidence_ready",
+      to,
+      context as never,
+    )).toThrow("field_inspection_outcome_invalid");
   });
 
   it("selects the maintenance evidence-ready action from the inspection outcome", () => {
