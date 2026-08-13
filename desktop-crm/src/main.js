@@ -5,7 +5,7 @@ const path = require("node:path");
 const Core = require("./core");
 const { FirebaseRemoteClient, encodeProtectedJson, decodeProtectedJson } = require("./remote");
 const VendorExtractor = require("./vendor-extractor");
-const { fieldBounds, isAllowedFieldNavigation } = require("./field-view-policy");
+const { fieldBounds, isAllowedFieldAuthPopup, isAllowedFieldNavigation } = require("./field-view-policy");
 const FIELD_PLATFORM_URL = "https://bring-fm.web.app/field";
 
 if (process.env.BRING_CRM_SCREENSHOT || process.env.BRING_CRM_SMOKE === "1") app.disableHardwareAcceleration();
@@ -64,7 +64,29 @@ function ensureFieldView() {
     },
   });
   const contents = fieldView.webContents;
-  contents.setWindowOpenHandler(() => ({ action: "deny" }));
+  contents.setWindowOpenHandler(({ url }) => isAllowedFieldAuthPopup(url) ? ({
+    action: "allow",
+    overrideBrowserWindowOptions: {
+      autoHideMenuBar: true,
+      width: 520,
+      height: 720,
+      webPreferences: {
+        contextIsolation: true,
+        nodeIntegration: false,
+        sandbox: true,
+        partition: "persist:bring-field",
+      },
+    },
+  }) : ({ action: "deny" }));
+  contents.on("did-create-window", popupWindow => {
+    const popup = popupWindow.webContents;
+    const guard = (event, url) => {
+      if (!isAllowedFieldAuthPopup(url)) event.preventDefault();
+    };
+    popup.setWindowOpenHandler(() => ({ action: "deny" }));
+    popup.on("will-navigate", guard);
+    popup.on("will-redirect", guard);
+  });
   contents.on("will-navigate", (event, url) => {
     if (!isAllowedFieldNavigation(url)) event.preventDefault();
   });
@@ -83,9 +105,8 @@ async function showFieldView() {
     return { ok: false, error: "CRM에 먼저 로그인해 주세요." };
   }
   try {
-    const handoff = await remoteClient.createFieldHandoff();
     const view = ensureFieldView();
-    const url = `${FIELD_PLATFORM_URL}?embedded=crm&desktop_handoff=${encodeURIComponent(handoff.code)}`;
+    const url = `${FIELD_PLATFORM_URL}?embedded=crm`;
     await view.webContents.loadURL(url);
     fieldViewVisible = true;
     view.setBounds(fieldBounds(mainWindow.getContentBounds()));

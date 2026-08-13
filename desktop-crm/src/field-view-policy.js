@@ -12,6 +12,18 @@ function isAllowedFieldNavigation(rawUrl) {
   }
 }
 
+function isAllowedFieldAuthPopup(rawUrl) {
+  if (rawUrl === "about:blank") return true;
+  try {
+    const url = new URL(String(rawUrl || ""));
+    if (url.origin === "https://accounts.google.com") return true;
+    return url.origin === "https://bring-fm.firebaseapp.com"
+      && url.pathname === "/__/auth/handler";
+  } catch (_error) {
+    return false;
+  }
+}
+
 function fieldBounds(contentBounds) {
   const width = Number(contentBounds && contentBounds.width) || 0;
   const height = Number(contentBounds && contentBounds.height) || 0;
@@ -26,5 +38,6 @@ function fieldBounds(contentBounds) {
 module.exports = {
   FIELD_ORIGIN,
   fieldBounds,
+  isAllowedFieldAuthPopup,
   isAllowedFieldNavigation,
 };

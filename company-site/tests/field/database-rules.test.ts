@@ -342,12 +342,14 @@ describe("field media database rule source", () => {
       await readFile(resolve("../database.rules.json"), "utf8"),
     ) as { rules: { crmCompany?: Record<string, unknown> } };
     const crm = source.rules.crmCompany as Record<string, Record<string, unknown>>;
+    const access = crm.access as Record<string, Record<string, unknown>>;
+    const userAccess = access.$uid;
 
     expect(crm).toBeDefined();
     expect(crm[".read"]).toBe(false);
     expect(crm[".write"]).toBe(false);
-    expect(crm.access.$uid[".read"]).toContain("auth.uid === $uid");
-    expect(crm.access.$uid[".write"]).toBe(false);
+    expect(userAccess[".read"]).toContain("auth.uid === $uid");
+    expect(userAccess[".write"]).toBe(false);
     for (const root of ["data", "cases", "paymentCalendars", "caseSettings"]) {
       const readRule = String(crm[root][".read"]);
       const writeRule = String(crm[root][".write"]);

@@ -450,8 +450,8 @@ export default function FieldApp() {
     <>
       <FieldServiceWorker />
       {embeddedMode ? (
-        <DesktopFieldBootstrap>
-          <AuthGate interactiveLogin={false}>
+        <DesktopFieldBootstrap directSession>
+          <AuthGate interactiveLogin>
             <FieldWorkspace embeddedMode />
           </AuthGate>
         </DesktopFieldBootstrap>

@@ -12,6 +12,7 @@ import BrandLogo from "./BrandLogo";
 type DesktopFieldBootstrapProps = {
   children: ReactNode;
   exchange?: () => Promise<DesktopHandoffState>;
+  directSession?: boolean;
 };
 
 type BootstrapState =
@@ -28,12 +29,16 @@ const messages = {
 export default function DesktopFieldBootstrap({
   children,
   exchange = () => consumeDesktopHandoffFromUrl(new URL(window.location.href)),
+  directSession = false,
 }: DesktopFieldBootstrapProps) {
-  const [state, setState] = useState<BootstrapState>({ status: "connecting" });
+  const [state, setState] = useState<BootstrapState>(
+    directSession ? { status: "ready" } : { status: "connecting" },
+  );
 
   useEffect(() => observeDesktopLogout(), []);
 
   useEffect(() => {
+    if (directSession) return;
     let active = true;
     void exchange()
       .then((result) => {
@@ -53,7 +58,7 @@ export default function DesktopFieldBootstrap({
     return () => {
       active = false;
     };
-  }, [exchange]);
+  }, [directSession, exchange]);
 
   if (state.status === "ready") {
     return <div className="field-embedded">{children}</div>;

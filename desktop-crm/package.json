@@ -1,6 +1,6 @@
 {
   "name": "bring-crm-desktop",
-  "version": "1.5.0",
+  "version": "1.6.0",
   "description": "BRING Engineering 고객·상담·영업 공용 데스크톱 CRM",
   "main": "src/main.js",
   "author": "BRING Engineering",
@@ -24,7 +24,7 @@
   "build": {
     "appId": "kr.co.bringengineering.crm",
     "productName": "BRING CRM",
-    "artifactName": "BRING.CRM.${ext}",
+    "artifactName": "BRING.CRM.Company.Setup.${version}.${ext}",
     "asar": true,
     "directories": {
       "output": "dist"

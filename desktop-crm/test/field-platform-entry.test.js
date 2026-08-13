@@ -33,5 +33,7 @@ test("FIELD entry uses an internal fixed-origin Electron IPC boundary", async ()
   assert.match(main, /secureHandle\("crm:show-field-platform", async \(\) =>/);
   assert.match(main, /secureHandle\("crm:hide-field-platform", async \(\) =>/);
   assert.match(main, /new WebContentsView\(/);
+  assert.match(main, /const url = `\$\{FIELD_PLATFORM_URL\}\?embedded=crm`/);
+  assert.doesNotMatch(main, /remoteClient\.createFieldHandoff\(\)/);
   assert.doesNotMatch(main, /shell\.openExternal\(FIELD_PLATFORM_URL\)/);
 });
