@@ -376,6 +376,131 @@
     },
   ];
 
+  const governance = {
+    version: "1.0",
+    owner: "브링케어 대표",
+    status: "대표 승인 및 법률검토 진행 중",
+    externalUseRule: "대외 문자·전화·광고 문구는 대표 승인과 필요한 법률검토가 모두 끝난 버전만 사용한다.",
+    changeRule: "문구·가격·역할범위를 바꾸면 버전을 올리고 승인상태를 다시 확인한다.",
+  };
+
+  const principles = [
+    {
+      id: "P1",
+      title: "공실을 첫 문제로 푼다",
+      rule: "긴 서비스 설명보다 현재 공실·퇴실예정 여부를 먼저 확인하고 실제 임대 진행으로 첫 신뢰를 만든다.",
+      ownerQuestion: "지금 이 건물의 가장 빠른 첫 성과는 무엇인가?",
+    },
+    {
+      id: "P2",
+      title: "단계는 증거로만 올린다",
+      rule: "말로 진행됐다는 보고만으로 단계를 바꾸지 않고 일시·담당자·결과·확인자료를 남긴다.",
+      ownerQuestion: "이 완료 사실을 나중에 다시 확인할 수 있는가?",
+    },
+    {
+      id: "P3",
+      title: "건물 하나로 기록을 묶는다",
+      rule: "연락처·호실·활동·완료증거·추가서비스를 해당 건물 아래에 연결해 관계와 수익 흐름을 함께 본다.",
+      ownerQuestion: "이 기록이 어느 건물과 호실에 속하는지 명확한가?",
+    },
+    {
+      id: "P4",
+      title: "신뢰 뒤에 서비스를 확장한다",
+      rule: "현장에서 확인된 문제와 고객 동의가 있을 때만 청소·수리·방수·사이니지 견적을 제안한다.",
+      ownerQuestion: "고객이 확인한 실제 문제에서 나온 제안인가?",
+    },
+    {
+      id: "P5",
+      title: "역할과 승인선을 지킨다",
+      rule: "가격·정산·법률·계약 판단은 팀원이 즉석 확정하지 않고 대표 또는 협력 공인중개사에게 원문 그대로 넘긴다.",
+      ownerQuestion: "이 판단을 최종 승인할 사람이 누구인가?",
+    },
+    {
+      id: "P6",
+      title: "거절은 즉시 전 팀에 적용한다",
+      rule: "수신거부나 명확한 거절은 설득하지 않고 기록하며 모든 담당자의 예정 연락을 중단한다.",
+      ownerQuestion: "연락중단 상태가 세 명 모두에게 보이는가?",
+    },
+  ];
+
+  const handoffRules = [
+    {
+      id: "H1",
+      from: "영업 담당자",
+      to: "대표",
+      trigger: "가격·서비스 범위·정산·예외조건처럼 대표 결정이 필요한 질문이 생겼을 때",
+      requiredEvidence: ["고객 질문 원문", "건물·호실", "희망 답변기한", "관련 사진·기존 조건"],
+      doneWhen: "대표가 수신을 확인하고 결정 담당자와 답변 예정일을 정했을 때",
+    },
+    {
+      id: "H2",
+      from: "영업 담당자",
+      to: "협력 공인중개사",
+      trigger: "매물 접수·광고 검토·법률·계약·중개보수 판단이 필요할 때",
+      requiredEvidence: ["건물주 의사", "호실 임대조건", "사진·설명자료", "질문 원문", "확인기한"],
+      doneWhen: "담당 공인중개사가 자료를 확인하고 다음 중개절차를 지정했을 때",
+    },
+    {
+      id: "H3",
+      from: "대표 또는 현장 총괄",
+      to: "협력업체",
+      trigger: "고객이 청소·수리·방수 등 견적 확인에 동의했을 때",
+      requiredEvidence: ["작업범위", "현장사진", "희망일", "출입조건", "견적 요청 동의"],
+      doneWhen: "업체가 범위·금액·일정·제외사항을 구분한 견적을 제출했을 때",
+    },
+    {
+      id: "H4",
+      from: "협력업체",
+      to: "현장 총괄·대표",
+      trigger: "승인된 작업을 완료하거나 추가 문제가 발생했을 때",
+      requiredEvidence: ["완료 전후 사진", "실제 작업내용", "검수결과", "추가비용·하자 여부"],
+      doneWhen: "팀이 완료증거를 확인하고 고객에게 결과를 보고했을 때",
+    },
+    {
+      id: "H5",
+      from: "중개 진행 담당",
+      to: "임대·건물관리 담당",
+      trigger: "협력 공인중개사가 임대차계약 완료를 확인했고 유료관리 범위가 합의됐을 때",
+      requiredEvidence: ["계약완료 확인", "관리 시작일", "관리 서비스 범위", "청구주체", "첫 보고일"],
+      doneWhen: "유료관리 시작 증거와 첫 관리일정이 기록됐을 때",
+    },
+    {
+      id: "H6",
+      from: "거절을 확인한 담당자",
+      to: "전 팀원",
+      trigger: "수신거부·연락중단·명확한 영업거절을 확인했을 때",
+      requiredEvidence: ["연락처", "확인일시·채널", "거절 원문", "예정 후속연락 취소"],
+      doneWhen: "연락처 중단상태가 공유되고 세 명의 예정 접촉이 모두 취소됐을 때",
+    },
+  ];
+
+  const phraseGuidance = [
+    { forbidden: "무조건 임대됩니다", safe: "공실 조건을 확인한 뒤 가능한 모집 절차와 진행상황을 안내드리겠습니다.", reason: "성과를 보장하지 않고 확인 가능한 업무범위만 설명한다." },
+    { forbidden: "저희가 다 책임집니다", safe: "저희 담당 범위와 협력 공인중개사·업체의 역할을 구분해 안내드리겠습니다.", reason: "계약과 작업의 실제 책임주체를 혼동시키지 않는다." },
+    { forbidden: "어디보다 쌉니다", safe: "현장과 작업범위를 확인한 견적을 비교해 승인 전에 안내드리겠습니다.", reason: "근거 없는 최저가 표현과 즉석 가격확정을 피한다." },
+    { forbidden: "법적으로 문제없습니다", safe: "계약과 법정 확인사항은 담당 공인중개사가 확인한 뒤 안내드리겠습니다.", reason: "팀원이 법률결론을 단정하지 않는다." },
+    { forbidden: "건물주 번호를 알려주세요", safe: "개인정보를 주시기보다 안내문을 임대 담당자분께 전달해 주셔도 됩니다.", reason: "동의 없는 제3자 연락처 수집을 피한다." },
+    { forbidden: "오늘 바로 끝납니다", safe: "업체가 현장범위와 일정을 확인한 뒤 가능한 완료일을 안내드리겠습니다.", reason: "승인 전 품질·일정 보장을 피한다." },
+    { forbidden: "수신거부해도 다시 연락드리겠습니다", safe: "연락을 원하지 않으시면 즉시 중단하고 팀 공용 기록에 반영하겠습니다.", reason: "연락중단 의사를 즉시 존중한다." },
+  ];
+
+  const metricDefinitions = [
+    { id: "activeProspects", label: "관리 대상 건물", formula: "보관되지 않은 영업 대상 건물의 고유 수", unit: "건물", evidence: "영업 대상 기본기록" },
+    { id: "contactedProspects", label: "최초 접촉 시도", formula: "기간 안에 유효한 contact_attempted 완료증거가 있는 건물의 고유 수", unit: "건물", evidence: "일시·채널·담당자·접촉결과" },
+    { id: "respondedProspects", label: "응답 확인", formula: "기간 안에 reply_received 완료증거가 있는 건물의 고유 수", unit: "건물", evidence: "응답 원문 또는 통화결과" },
+    { id: "qualifiedProspects", label: "유효 관심", formula: "기간 안에 qualified_interest 완료증거가 있는 건물의 고유 수", unit: "건물", evidence: "공실·퇴실예정·관리문제 확인" },
+    { id: "meetingProspects", label: "미팅 확정", formula: "기간 안에 meeting_confirmed 완료증거가 있는 건물의 고유 수", unit: "건물", evidence: "일시·장소·참석자" },
+    { id: "diagnosedProspects", label: "현장 진단", formula: "기간 안에 diagnosis_done 완료증거가 있는 건물의 고유 수", unit: "건물", evidence: "사진·기초조건·문제목록" },
+    { id: "listingUnits", label: "매물 접수", formula: "기간 안에 listing_received 완료증거가 있는 활성 호실의 고유 수", unit: "호실", evidence: "호실 임대조건과 중개사 인계 확인" },
+    { id: "adsPublished", label: "광고 게시", formula: "기간 안에 ad_published 완료증거가 있는 활성 호실의 고유 수", unit: "호실", evidence: "게시채널과 광고 확인자료" },
+    { id: "leasesSigned", label: "임대차계약", formula: "기간 안에 lease_signed 완료증거가 있는 활성 호실의 고유 수", unit: "호실", evidence: "협력 공인중개사의 계약완료 확인" },
+    { id: "paidManagement", label: "유료관리 시작", formula: "기간 안에 paid_management_started 완료증거가 있는 건물의 고유 수", unit: "건물", evidence: "관리 시작일·서비스범위·청구주체" },
+    { id: "completedOpportunities", label: "추가서비스 완료", formula: "기간 안의 workCompletedAt 증거가 있는 추가서비스 기회의 수", unit: "건", evidence: "작업완료 시각·완료사진 또는 검수메모" },
+    { id: "revenueRecorded", label: "추가서비스 매출", formula: "기간 안의 revenueRecordedAt 증거가 있는 기회의 revenueAmount 합계", unit: "원", evidence: "작업완료 후 매출·입금 또는 미수금 기록" },
+    { id: "todayFollowUps", label: "오늘 후속", formula: "한국시간 오늘이 기한인 활성 건물의 다음 행동 수", unit: "건", evidence: "다음 행동·담당자·기한" },
+    { id: "overdueFollowUps", label: "기한 지난 후속", formula: "한국시간 오늘보다 이전이 기한인 활성 건물의 다음 행동 수", unit: "건", evidence: "다음 행동·담당자·기한" },
+  ];
+
   const catalogs = {
     responseCodes: [
       { id: "R1", label: "현재 공실", nextEvent: "qualified_interest" },
@@ -466,6 +591,11 @@
 
   return Object.freeze({
     doctrine,
+    governance: Object.freeze(governance),
+    principles: Object.freeze(principles),
+    handoffRules: Object.freeze(handoffRules),
+    phraseGuidance: Object.freeze(phraseGuidance),
+    metricDefinitions: Object.freeze(metricDefinitions),
     scripts: Object.freeze(scripts),
     checklists: Object.freeze(checklists),
     catalogs: Object.freeze(catalogs),

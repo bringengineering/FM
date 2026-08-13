@@ -151,3 +151,30 @@ test("keeps the vacancy-first doctrine and labels the PoC baseline correctly", (
   assert.match(pocBaseline.note, /임대차계약률이 아니다/);
   assert.match(pocBaseline.caveat, /응답률·계약률 기준값으로 사용하지 않는다/);
 });
+
+test("defines representative principles, handoff gates, safe language and KPI formulas", () => {
+  const { governance, principles, handoffRules, phraseGuidance, metricDefinitions } = require(modulePath);
+
+  assert.equal(governance.version, "1.0");
+  assert.match(governance.externalUseRule, /대표 승인.*법률검토/);
+
+  assert.deepEqual(principles.map(item => item.id), ["P1", "P2", "P3", "P4", "P5", "P6"]);
+  assert.ok(principles.every(item => item.title && item.rule && item.ownerQuestion));
+
+  assert.deepEqual(handoffRules.map(item => item.id), ["H1", "H2", "H3", "H4", "H5", "H6"]);
+  assert.ok(handoffRules.every(item => item.from && item.to && item.trigger && item.requiredEvidence.length));
+  assert.match(handoffRules.find(item => item.id === "H2").trigger, /법률|계약|매물/);
+
+  assert.ok(phraseGuidance.length >= 6);
+  assert.ok(phraseGuidance.every(item => item.forbidden && item.safe && item.reason));
+  assert.ok(phraseGuidance.some(item => item.forbidden === "법적으로 문제없습니다" && /공인중개사/.test(item.safe)));
+
+  const metricIds = metricDefinitions.map(item => item.id);
+  for (const id of [
+    "activeProspects", "contactedProspects", "respondedProspects", "qualifiedProspects",
+    "meetingProspects", "diagnosedProspects", "listingUnits", "adsPublished",
+    "leasesSigned", "paidManagement", "completedOpportunities", "revenueRecorded",
+    "todayFollowUps", "overdueFollowUps",
+  ]) assert.ok(metricIds.includes(id), `missing metric ${id}`);
+  assert.ok(metricDefinitions.every(item => item.label && item.formula && item.unit && item.evidence));
+});
