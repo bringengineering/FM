@@ -83,6 +83,24 @@ const CRM_DATA = {
   tasks: { task_1: { id: "task_1", title: "Legacy task" } },
 };
 
+const TEAM_PROFILES = {
+  operator_lee: {
+    displayName: "이지",
+    active: true,
+    sortOrder: 10,
+  },
+  operator_kim: {
+    displayName: "김현진",
+    active: true,
+    sortOrder: 20,
+  },
+  operator_inactive: {
+    displayName: "비활성 운영자",
+    active: false,
+    sortOrder: 99,
+  },
+} as const;
+
 function user(
   id: string,
   role: "staff" | "reviewer" | "admin",
@@ -355,6 +373,7 @@ async function seed() {
     await set(ref(context.database(), "crmCompany"), {
       access: CRM_ACCESS,
       data: CRM_DATA,
+      teamProfiles: TEAM_PROFILES,
       fieldSummaries: {
         job_1: {
           fieldJobId: "job_1",
@@ -574,6 +593,28 @@ describe("field media database rule source", () => {
     expect(readRule).toContain("'member'");
     expect(readRule).toContain("'viewer'");
     expect(summaries[".write"]).toBe(false);
+  });
+
+  it("keeps CRM operator profiles readable only through exact enabled CRM access", async () => {
+    const source = JSON.parse(
+      await readFile(resolve("../database.rules.json"), "utf8"),
+    ) as { rules: { crmCompany: Record<string, Record<string, unknown>> } };
+    const profiles = source.rules.crmCompany.teamProfiles;
+    const readRule = String(profiles[".read"]);
+
+    expect(readRule).toContain("crmCompany/access");
+    expect(readRule).toContain("auth.token.email");
+    expect(readRule).toContain("'admin'");
+    expect(readRule).toContain("'member'");
+    expect(readRule).toContain("'viewer'");
+    expect(profiles[".write"]).toBe(false);
+    for (const profile of Object.values(TEAM_PROFILES)) {
+      expect(Object.keys(profile).sort()).toEqual([
+        "active",
+        "displayName",
+        "sortOrder",
+      ]);
+    }
   });
 
   it("keeps the future cutover fixture test-only and explicit about canonical boundaries", async () => {
@@ -808,6 +849,59 @@ describe.runIf(databaseEmulatorAvailable)("fieldPlatform database rules", () => 
       await assertFails(set(ref(database, "crmCompany/fieldSummaries/job_client"), {
         fieldJobId: "job_client",
       }));
+    }
+  });
+
+  it("allows exact enabled CRM roles to list operator profiles but never write them", async () => {
+    for (const [uid, email] of [
+      ["crm-admin", "admin@bring.test"],
+      ["crm-member", "member@bring.test"],
+      ["crm-viewer", "viewer@bring.test"],
+    ] as const) {
+      const database = environment.authenticatedContext(
+        uid,
+        crmClaims(email),
+      ).database();
+      const listSnapshot = await assertSucceeds(
+        get(ref(database, "crmCompany/teamProfiles")),
+      );
+      expect(listSnapshot.val()).toEqual(TEAM_PROFILES);
+      await assertSucceeds(
+        get(ref(database, "crmCompany/teamProfiles/operator_kim")),
+      );
+      await assertFails(update(
+        ref(database, "crmCompany/teamProfiles/operator_kim"),
+        { active: false },
+      ));
+    }
+
+    const rejectedReaders = [
+      environment.unauthenticatedContext().database(),
+      environment.authenticatedContext(
+        "crm-member",
+        crmClaims("wrong@bring.test"),
+      ).database(),
+      environment.authenticatedContext(
+        "crm-disabled",
+        crmClaims("disabled@bring.test"),
+      ).database(),
+      environment.authenticatedContext(
+        "crm-invalid-role",
+        crmClaims("invalid@bring.test"),
+      ).database(),
+    ];
+    for (const database of rejectedReaders) {
+      await assertFails(get(ref(database, "crmCompany/teamProfiles")));
+      await assertFails(
+        get(ref(database, "crmCompany/teamProfiles/operator_kim")),
+      );
+      await assertFails(set(
+        ref(database, "crmCompany/teamProfiles/operator_client"),
+        { displayName: "조작", active: true, sortOrder: 1 },
+      ));
+      await assertFails(
+        get(ref(database, "fieldPlatform/v2/config/release")),
+      );
     }
   });
 
