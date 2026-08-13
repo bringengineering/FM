@@ -77,6 +77,42 @@ async function openCrmGoogleAuth(url) {
   await crmAuthWindow.loadURL(target.toString());
 }
 
+async function openCrmEmailAuth(url, credentials) {
+  const target = new URL(url);
+  const callbackPort = Number(target.searchParams.get("port"));
+  if (
+    target.origin !== "https://bring-fm.web.app"
+    || target.pathname !== "/crm-auth/"
+    || !Number.isInteger(callbackPort)
+    || callbackPort < 1024
+    || callbackPort > 65535
+  ) throw new Error("CRM_AUTH_URL_DENIED");
+  const email = String(credentials && credentials.email || "").trim().toLowerCase();
+  const password = String(credentials && credentials.password || "");
+  if (!email || !password) throw new Error("LOGIN_CREDENTIALS_REQUIRED");
+
+  closeCrmAuthWindow();
+  crmAuthWindow = new BrowserWindow({
+    parent: mainWindow || undefined,
+    show: false,
+    autoHideMenuBar: true,
+    webPreferences: {
+      contextIsolation: true,
+      nodeIntegration: false,
+      sandbox: true,
+      partition: "persist:bring-field",
+    },
+  });
+  crmAuthWindow.on("closed", () => { crmAuthWindow = null; });
+  await crmAuthWindow.loadURL(target.toString());
+  const emailJson = JSON.stringify(email);
+  const passwordJson = JSON.stringify(password);
+  await crmAuthWindow.webContents.executeJavaScript(
+    `window.bringEmailLogin(${emailJson}, ${passwordJson})`,
+    true,
+  );
+}
+
 function resizeFieldView() {
   if (!mainWindow || mainWindow.isDestroyed() || !fieldView || !fieldViewVisible) return;
   fieldView.setBounds(fieldBounds(mainWindow.getContentBounds()));
@@ -618,6 +654,7 @@ async function initializeRemote() {
     safeStorage,
     shell,
     openGoogleAuth: openCrmGoogleAuth,
+    openEmailAuth: openCrmEmailAuth,
     sessionFile: authSessionFile(),
     pendingFile: pendingFile(),
     readLocalStore,
@@ -1980,6 +2017,7 @@ secureHandle("crm:auth-login", async credentials => {
   if (!remoteClient) return { ok: false, error: "로그인 모듈을 사용할 수 없습니다." };
   try { return await remoteClient.login(credentials); }
   catch (error) { return { ok: false, error: error.message, code: error.code || "LOGIN_FAILED" }; }
+  finally { closeCrmAuthWindow(); }
 });
 secureHandle("crm:auth-google-login", async () => {
   if (!remoteClient) return { ok: false, error: "로그인 모듈을 사용할 수 없습니다." };

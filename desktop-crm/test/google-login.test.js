@@ -6,7 +6,7 @@ const { FirebaseRemoteClient } = require("../src/remote");
 
 const source = file => readFile(path.join(__dirname, "..", "src", file), "utf8");
 
-test("uses the approved dpvld858 Google account instead of disabled email-password login", async () => {
+test("uses the approved dpvld858 email-password login as the only CRM login", async () => {
   const [html, app, preload, main, remote] = await Promise.all([
     source("index.html"),
     source("app.js"),
@@ -15,15 +15,19 @@ test("uses the approved dpvld858 Google account instead of disabled email-passwo
     source("remote.js"),
   ]);
 
-  assert.match(html, /id="emailLoginForm"[^>]*hidden/);
-  assert.match(html, /id="googleLoginButton"[^>]*>[^<]*dpvld858@gmail\.com/);
-  assert.match(app, /googleLoginButton\.addEventListener\("click"/);
-  assert.match(app, /await api\.loginWithGoogle\(\)/);
-  assert.match(preload, /loginWithGoogle:\s*\(\)\s*=>\s*ipcRenderer\.invoke\("crm:auth-google-login"\)/);
-  assert.match(main, /secureHandle\("crm:auth-google-login"/);
-  assert.match(remote, /async loginWithGoogle\(\)/);
-  assert.match(remote, /await this\.receiveGoogleCredential\(\)/);
-  assert.match(remote, /await this\.exchangeGoogleCredential\(credential\)/);
+  assert.match(html, /id="emailLoginForm" class="login-form">/);
+  assert.match(html, /id="loginEmail"[^>]*value="dpvld858@gmail\.com"[^>]*readonly/);
+  assert.match(html, /id="googleLoginButton"[^>]*hidden/);
+  assert.match(app, /loginForm\.hidden = false/);
+  assert.match(app, /googleLoginButton\.hidden = true/);
+  assert.match(app, /await api\.login\(\{ email: loginEmail\.value\.trim\(\), password: loginPassword\.value \}\)/);
+  assert.match(preload, /login:\s*credentials\s*=>\s*ipcRenderer\.invoke\("crm:auth-login", credentials\)/);
+  assert.match(main, /secureHandle\("crm:auth-login"/);
+  assert.match(main, /openEmailAuth:\s*openCrmEmailAuth/);
+  assert.match(remote, /async receiveEmailCredential\(credentials\)/);
+  assert.match(remote, /await this\.exchangeFirebaseCredential\(credential\)/);
+  assert.doesNotMatch(app, /newPassword\.value === "123456"/);
+  assert.doesNotMatch(remote, /password === "123456"/);
 });
 
 test("does not expose a second Google credential flow to embedded FIELD", async () => {
@@ -38,14 +42,14 @@ test("does not expose a second Google credential flow to embedded FIELD", async 
   assert.doesNotMatch(main, /crm:field-credential/);
 });
 
-test("CRM Google login shares the persistent FIELD browser session", async () => {
+test("CRM email login shares the persistent FIELD browser session", async () => {
   const [main, remote] = await Promise.all([source("main.js"), source("remote.js")]);
 
-  assert.match(main, /function openCrmGoogleAuth\(url\)/);
+  assert.match(main, /function openCrmEmailAuth\(url, credentials\)/);
   assert.match(main, /partition:\s*"persist:bring-field"/);
-  assert.match(main, /openGoogleAuth:\s*openCrmGoogleAuth/);
-  assert.match(remote, /this\.openGoogleAuth\s*=\s*options\.openGoogleAuth/);
-  assert.match(remote, /await this\.openGoogleAuth\(authUrl\.toString\(\)\)/);
+  assert.match(main, /openEmailAuth:\s*openCrmEmailAuth/);
+  assert.match(remote, /this\.openEmailAuth\s*=\s*options\.openEmailAuth/);
+  assert.match(remote, /await this\.openEmailAuth\(authUrl\.toString\(\), credentials\)/);
   assert.match(remote, /fieldAuthIntegrated:\s*this\.session\.fieldAuthIntegrated\s*===\s*true/);
 });
 
