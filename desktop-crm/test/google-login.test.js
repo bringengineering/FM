@@ -26,41 +26,43 @@ test("uses the approved dpvld858 Google account instead of disabled email-passwo
   assert.match(remote, /await this\.exchangeGoogleCredential\(credential\)/);
 });
 
-test("hands the CRM Google credential to the embedded FIELD without another login button", async () => {
+test("does not expose a second Google credential flow to embedded FIELD", async () => {
   const [main, remote, fieldPreload] = await Promise.all([
     source("main.js"),
     source("remote.js"),
     source("field-preload.js"),
   ]);
 
-  assert.match(remote, /this\.fieldCredential\s*=\s*null/);
-  assert.match(remote, /async acquireFieldCredential\(\)/);
-  assert.match(remote, /this\.fieldCredential\s*=\s*\{\s*type:\s*tokenType,\s*token:\s*providerToken\s*\}/s);
-  assert.match(fieldPreload, /contextBridge\.exposeInMainWorld\("bringCRMField"/);
-  assert.match(fieldPreload, /ipcRenderer\.invoke\("crm:field-credential"\)/);
-  assert.match(main, /ipcMain\.handle\("crm:field-credential"/);
-  assert.match(main, /event\.sender\s*!==\s*fieldView\.webContents/);
-  assert.doesNotMatch(main, /provider_token.*loadURL/);
+  assert.doesNotMatch(remote, /acquireFieldCredential/);
+  assert.doesNotMatch(fieldPreload, /requestCredential/);
+  assert.doesNotMatch(main, /crm:field-credential/);
 });
 
-test("FIELD consumes a CRM provider credential exactly once from memory", async () => {
-  const client = new FirebaseRemoteClient({
-    Core: {},
-    fs: {},
-    safeStorage: {},
-    shell: {},
-    sessionFile: "unused",
-    pendingFile: "unused",
-    readLocalStore: async () => ({}),
-    writeLocalStore: async () => undefined,
-  });
-  client.fieldCredential = { type: "id_token", token: "memory-only-token" };
+test("CRM Google login shares the persistent FIELD browser session", async () => {
+  const [main, remote] = await Promise.all([source("main.js"), source("remote.js")]);
 
-  await assert.doesNotReject(async () => {
-    assert.deepEqual(await client.acquireFieldCredential(), {
-      type: "id_token",
-      token: "memory-only-token",
-    });
+  assert.match(main, /function openCrmGoogleAuth\(url\)/);
+  assert.match(main, /partition:\s*"persist:bring-field"/);
+  assert.match(main, /openGoogleAuth:\s*openCrmGoogleAuth/);
+  assert.match(remote, /this\.openGoogleAuth\s*=\s*options\.openGoogleAuth/);
+  assert.match(remote, /await this\.openGoogleAuth\(authUrl\.toString\(\)\)/);
+  assert.match(remote, /fieldAuthIntegrated:\s*this\.session\.fieldAuthIntegrated\s*===\s*true/);
+});
+
+test("a legacy CRM session is rejected once so FIELD can never have a separate login", async () => {
+  const client = new FirebaseRemoteClient({
+    Core: {}, fs: {}, safeStorage: {}, shell: {}, sessionFile: "unused", pendingFile: "unused",
+    readLocalStore: async () => ({}), writeLocalStore: async () => undefined,
   });
-  assert.equal(client.fieldCredential, null);
+  client.readPersistedSession = async () => ({ refreshToken: "legacy-refresh-token" });
+  let refreshed = false;
+  let cleared = false;
+  client.refreshFirebaseSession = async () => { refreshed = true; };
+  client.clearPersistedSession = async () => { cleared = true; };
+
+  const state = await client.init();
+
+  assert.equal(state.user, null);
+  assert.equal(refreshed, false);
+  assert.equal(cleared, true);
 });

@@ -13,6 +13,7 @@ if (process.env.BRING_CRM_SCREENSHOT || process.env.BRING_CRM_SMOKE === "1") app
 let mainWindow = null;
 let fieldView = null;
 let fieldViewVisible = false;
+let crmAuthWindow = null;
 let remoteClient = null;
 let updaterConfigured = false;
 let updatePromptOpen = false;
@@ -26,6 +27,55 @@ if (localTestMode && !process.env.BRING_CRM_DATA_DIR) {
   app.setPath("userData", path.join(app.getPath("temp"), "bring-crm-desktop-tests", String(process.pid)));
 }
 let localOperationsData = null;
+
+function closeCrmAuthWindow() {
+  if (crmAuthWindow && !crmAuthWindow.isDestroyed()) crmAuthWindow.close();
+  crmAuthWindow = null;
+}
+
+async function openCrmGoogleAuth(url) {
+  const target = new URL(url);
+  const callbackPort = Number(target.searchParams.get("port"));
+  if (
+    target.origin !== "https://bring-fm.web.app"
+    || target.pathname !== "/crm-auth/"
+    || !Number.isInteger(callbackPort)
+    || callbackPort < 1024
+    || callbackPort > 65535
+  ) throw new Error("CRM_AUTH_URL_DENIED");
+
+  closeCrmAuthWindow();
+  crmAuthWindow = new BrowserWindow({
+    parent: mainWindow || undefined,
+    autoHideMenuBar: true,
+    width: 520,
+    height: 720,
+    webPreferences: {
+      contextIsolation: true,
+      nodeIntegration: false,
+      sandbox: true,
+      partition: "persist:bring-field",
+    },
+  });
+  crmAuthWindow.webContents.setWindowOpenHandler(({ url: popupUrl }) =>
+    isAllowedFieldAuthPopup(popupUrl) ? ({
+      action: "allow",
+      overrideBrowserWindowOptions: {
+        autoHideMenuBar: true,
+        width: 520,
+        height: 720,
+        webPreferences: {
+          contextIsolation: true,
+          nodeIntegration: false,
+          sandbox: true,
+          partition: "persist:bring-field",
+        },
+      },
+    }) : ({ action: "deny" }),
+  );
+  crmAuthWindow.on("closed", () => { crmAuthWindow = null; });
+  await crmAuthWindow.loadURL(target.toString());
+}
 
 function resizeFieldView() {
   if (!mainWindow || mainWindow.isDestroyed() || !fieldView || !fieldViewVisible) return;
@@ -134,30 +184,6 @@ async function signOutFieldView() {
 ipcMain.on("crm:field-reconnect-request", event => {
   if (!fieldView || event.sender !== fieldView.webContents) return;
   void showFieldView();
-});
-
-ipcMain.handle("crm:field-credential", async event => {
-  if (!fieldView || fieldView.webContents.isDestroyed() || event.sender !== fieldView.webContents) {
-    return { ok: false, error: "FIELD_REQUEST_DENIED" };
-  }
-  if (!remoteClient || !remoteClient.authState().user) {
-    return { ok: false, error: "CRM_AUTH_REQUIRED" };
-  }
-  try {
-    const credential = await remoteClient.acquireFieldCredential();
-    if (
-      !credential
-      || !["id_token", "access_token"].includes(credential.type)
-      || typeof credential.token !== "string"
-      || credential.token.length < 1
-      || credential.token.length > 12000
-    ) {
-      return { ok: false, error: "FIELD_CREDENTIAL_UNAVAILABLE" };
-    }
-    return { ok: true, type: credential.type, token: credential.token };
-  } catch (_error) {
-    return { ok: false, error: "FIELD_CREDENTIAL_UNAVAILABLE" };
-  }
 });
 
 function demoOperations() {
@@ -591,6 +617,7 @@ async function initializeRemote() {
     fs,
     safeStorage,
     shell,
+    openGoogleAuth: openCrmGoogleAuth,
     sessionFile: authSessionFile(),
     pendingFile: pendingFile(),
     readLocalStore,
@@ -1958,6 +1985,7 @@ secureHandle("crm:auth-google-login", async () => {
   if (!remoteClient) return { ok: false, error: "로그인 모듈을 사용할 수 없습니다." };
   try { return await remoteClient.loginWithGoogle(); }
   catch (error) { return { ok: false, error: error.message, code: error.code || "LOGIN_FAILED" }; }
+  finally { closeCrmAuthWindow(); }
 });
 secureHandle("crm:auth-change-password", async password => {
   if (!remoteClient) return { ok: false, error: "로그인 모듈을 사용할 수 없습니다." };
