@@ -115,3 +115,220 @@ test("desktop entry reuses the one existing pipeline menu and loads sales module
   assert.match(app, /salesProspectForm/);
   assert.doesNotMatch(app, /crm:sales-login|salesLogin/);
 });
+
+test("detail and event unit choices only include active records owned by the selected prospect", () => {
+  const prospect = sampleStore.salesProspects[0];
+  const shared = {
+    contacts: [
+      { id: "owned-contact", prospectId: prospect.id, name: "선택 건물 연락처" },
+      { id: "foreign-contact", prospectId: "spr_2", name: "다른 건물 연락처" },
+      { id: "orphan-contact", name: "소속 없는 연락처" }
+    ],
+    units: [
+      { id: "owned-unit", prospectId: prospect.id, label: "선택 건물 201호", status: "vacant" },
+      { id: "foreign-unit", prospectId: "spr_2", label: "다른 건물 301호", status: "vacant" },
+      { id: "orphan-unit", label: "소속 없는 401호", status: "vacant" },
+      { id: "archived-unit", prospectId: prospect.id, label: "보관된 501호", status: "vacant", archivedAt: "2026-08-01T00:00:00.000Z" }
+    ],
+    activities: [
+      { id: "owned-activity", prospectId: prospect.id, summary: "선택 건물 활동" },
+      { id: "foreign-activity", prospectId: "spr_2", summary: "다른 건물 활동" },
+      { id: "orphan-activity", summary: "소속 없는 활동" }
+    ],
+    events: [
+      { id: "owned-event", prospectId: prospect.id, type: "candidate_created", evidenceNote: "선택 건물 증거" },
+      { id: "foreign-event", prospectId: "spr_2", type: "candidate_created", evidenceNote: "다른 건물 증거" },
+      { id: "orphan-event", type: "candidate_created", evidenceNote: "소속 없는 증거" }
+    ],
+    opportunities: [
+      { id: "owned-opportunity", prospectId: prospect.id, serviceType: "repair", requirements: "선택 건물 수리" },
+      { id: "foreign-opportunity", prospectId: "spr_2", serviceType: "repair", requirements: "다른 건물 수리" },
+      { id: "orphan-opportunity", serviceType: "repair", requirements: "소속 없는 수리" }
+    ]
+  };
+
+  const detail = SalesUI.renderProspectDetail({ prospect, ...shared, stages: Sales.SALES_STAGES });
+  for (const owned of ["선택 건물 연락처", "선택 건물 201호", "선택 건물 활동", "선택 건물 증거", "선택 건물 수리"]) {
+    assert.match(detail, new RegExp(owned));
+  }
+  for (const unrelated of ["다른 건물", "소속 없는", "보관된 501호"]) {
+    assert.doesNotMatch(detail, new RegExp(unrelated));
+  }
+
+  const form = SalesUI.renderEventForm({ prospect, units: shared.units, eventTypes: Standards.funnelEvents });
+  assert.match(form, /value="owned-unit"/);
+  assert.doesNotMatch(form, /foreign-unit|orphan-unit|archived-unit/);
+});
+
+test("Korean calendar dates preserve date-only input and convert timestamps at the UTC to KST midnight boundary", () => {
+  const timestampProspect = {
+    ...sampleStore.salesProspects[0],
+    nextActionAt: "2026-08-13T15:30:00.000Z",
+    lastActivityAt: "2026-08-12T15:30:00.000Z"
+  };
+  const timestampHtml = SalesUI.renderPipeline({
+    store: { salesProspects: [timestampProspect] },
+    stages: Sales.SALES_STAGES,
+    kpis: {},
+    now: "2026-08-13T14:30:00.000Z"
+  });
+  assert.match(timestampHtml, /예정/);
+  assert.match(timestampHtml, /8월 14일/);
+  assert.match(timestampHtml, /최근 활동[^<]*<\/span>\s*<time[^>]*>8월 13일 00:30<\/time>/);
+
+  const dateOnlyHtml = SalesUI.renderPipeline({
+    store: { salesProspects: [{ ...timestampProspect, nextActionAt: "2026-08-14", lastActivityAt: "" }] },
+    stages: Sales.SALES_STAGES,
+    kpis: {},
+    now: "2026-08-13T15:30:00.000Z"
+  });
+  assert.match(dateOnlyHtml, /오늘/);
+  assert.match(dateOnlyHtml, /8월 14일/);
+
+  const form = SalesUI.renderProspectForm({ item: { nextActionAt: "2026-08-14" }, crmBuildings: [] });
+  assert.match(form, /name="nextActionAt"[^>]+value="2026-08-14T00:00"/);
+});
+
+test("read-only pipeline omits every new-building action", () => {
+  const html = SalesUI.renderPipeline({
+    store: { salesProspects: [] },
+    stages: Sales.SALES_STAGES,
+    kpis: {},
+    writable: false
+  });
+
+  assert.doesNotMatch(html, /data-action="new-sales-prospect"/);
+  assert.match(html, /data-action="open-sales-standards"/);
+});
+
+test("owner dashboard exposes the full evidence funnel, period and team workload", () => {
+  const kpis = {
+    activeProspects: 11,
+    contactedProspects: 10,
+    respondedProspects: 9,
+    qualifiedProspects: 8,
+    meetingConfirmedProspects: 7,
+    diagnosedProspects: 6,
+    listingUnits: 5,
+    adPublishedUnits: 4,
+    leaseSignedUnits: 3,
+    paidManagementProspects: 2,
+    completedOpportunities: 2,
+    revenueRecorded: 1230000,
+    todayFollowUps: 2,
+    overdueFollowUps: 1,
+    activeProspectsByOwner: { 황우중: 4, 김현진: 3, 미지정: 4 }
+  };
+  const html = SalesUI.renderPipeline({
+    store: sampleStore,
+    stages: Sales.SALES_STAGES,
+    kpis,
+    periodLabel: "2026년 8월",
+    boardMode: "focus"
+  });
+
+  for (const label of [
+    "관리 대상 건물", "최초 접촉 시도", "응답 확인", "관심 확인", "미팅 확정", "현장 진단",
+    "매물 접수", "광고 게시", "임대차 계약", "유료 관리", "부가서비스 완료", "기록 매출",
+    "오늘 후속", "기한 지난 후속"
+  ]) assert.match(html, new RegExp(label));
+  assert.match(html, /2026년 8월/);
+  assert.match(html, /1,230,000원/);
+  assert.match(html, /담당자별 진행 건물/);
+  assert.match(html, /황우중[^<]*<\/span>\s*<b>4건<\/b>/);
+  assert.doesNotMatch(html, /접촉 완료/);
+});
+
+test("board mode controls switch between a focused list and a horizontally scrollable full 13-stage flow", () => {
+  const focus = SalesUI.renderPipeline({
+    store: sampleStore,
+    stages: Sales.SALES_STAGES,
+    kpis: {},
+    boardMode: "focus"
+  });
+  assert.match(focus, /data-sales-board-mode="focus"[^>]+aria-pressed="true"/);
+  assert.match(focus, /data-sales-board-mode="flow"[^>]+aria-pressed="false"/);
+  assert.doesNotMatch(focus, /data-sales-flow-stage=/);
+
+  const flow = SalesUI.renderPipeline({
+    store: sampleStore,
+    stages: Sales.SALES_STAGES,
+    kpis: {},
+    boardMode: "flow"
+  });
+  assert.match(flow, /class="sales-flow-board"/);
+  assert.equal((flow.match(/data-sales-flow-stage=/g) || []).length, 13);
+  assert.match(flow, /data-sales-board-mode="flow"[^>]+aria-pressed="true"/);
+  assert.match(flow, /data-sales-flow-stage="listing_received"/);
+  assert.match(flow, /대학로 원룸/);
+});
+
+test("prospect detail exposes evidence links and record audit context without new edit actions", () => {
+  const html = SalesUI.renderProspectDetail({
+    prospect: { ...sampleStore.salesProspects[0], createdBy: "대표", createdAt: "2026-08-12T15:30:00.000Z", updatedBy: "김현진", updatedAt: "2026-08-13T01:00:00.000Z" },
+    contacts: [],
+    units: sampleStore.salesUnits,
+    activities: [{
+      id: "act_1", prospectId: "spr_1", channel: "sms", result: "replied", summary: "공실 1실 확인",
+      owner: "황우중", scriptId: "S1", scriptVersion: "1.0", occurredAt: "2026-08-12T15:30:00.000Z",
+      createdBy: "황우중", createdAt: "2026-08-12T15:31:00.000Z"
+    }],
+    events: [{
+      id: "evt_1", prospectId: "spr_1", unitId: "sun_1", type: "listing_received",
+      evidenceType: "broker_handoff", evidenceNote: "중개법인 접수 확인", evidenceUrl: "https://example.com/evidence",
+      owner: "대표", occurredAt: "2026-08-13T01:00:00.000Z", createdBy: "대표", createdAt: "2026-08-13T01:01:00.000Z"
+    }],
+    opportunities: [{
+      id: "opp_1", prospectId: "spr_1", serviceType: "waterproofing", requirements: "지하 방수",
+      stage: "work_completed", vendorId: "vendor_1", quoteId: "quote_1", workflowCaseId: "case_1",
+      evidenceUrl: "https://example.com/work", owner: "김현진", workCompletedAt: "2026-08-13T02:00:00.000Z",
+      createdBy: "김현진", createdAt: "2026-08-12T02:00:00.000Z"
+    }],
+    stages: Sales.SALES_STAGES,
+    writable: false
+  });
+
+  assert.match(html, /증거 보기/);
+  assert.match(html, /href="https:\/\/example\.com\/evidence"/);
+  assert.match(html, /중개법인 전달 확인|broker_handoff/);
+  assert.match(html, /S1[^<]*·[^<]*v1\.0/);
+  assert.match(html, /기록 황우중/);
+  assert.match(html, /업체 vendor_1/);
+  assert.match(html, /견적 quote_1/);
+  assert.match(html, /업무 case_1/);
+  assert.match(html, /작업 증거/);
+  assert.doesNotMatch(html, /data-sales-edit-(?:activity|event)/);
+});
+
+test("standards center renders optional operating principles, handoff, safer wording, metrics and approval version", () => {
+  const html = SalesUI.renderStandards({ standards: Standards, query: "" });
+
+  for (const value of [
+    "운영 원칙", "공실을 첫 문제로 푼다", "팀 인계 기준", "고객 질문 원문",
+    "금지 표현과 안전한 대안", "공실 조건을 확인한 뒤 가능한 모집 절차와 진행상황을 안내드리겠습니다",
+    "측정 지표", "기간 안에 유효한 contact_attempted 완료증거가 있는 건물의 고유 수",
+    "승인본 1.0", "대표 승인 및 법률검토 진행 중", "대외 문자·전화·광고 문구는 대표 승인"
+  ]) assert.match(html, new RegExp(value));
+  assert.equal((html.match(/data-sales-script=/g) || []).length, 12);
+  assert.equal((html.match(/data-sales-checklist=/g) || []).length, 8);
+  assert.doesNotMatch(html, /BRING SALES STANDARD|PoC/);
+});
+
+test("sales typography keeps owner-facing text readable and muted text at WCAG AA contrast", async () => {
+  const css = await readFile(path.join(__dirname, "..", "src", "sales.css"), "utf8");
+  const fontSizes = [...css.matchAll(/font-size:\s*(\d+)px/g)].map(match => Number(match[1]));
+  assert.ok(fontSizes.every(size => size >= 13), `found undersized text: ${fontSizes.filter(size => size < 13).join(", ")}`);
+  assert.match(css, /\.sales-crm\s*\{[^}]*font-size:\s*16px/s);
+
+  function channel(hex) {
+    const value = Number.parseInt(hex, 16) / 255;
+    return value <= 0.04045 ? value / 12.92 : ((value + 0.055) / 1.055) ** 2.4;
+  }
+  function contrast(hex) {
+    const rgb = hex.slice(1).match(/.{2}/g).map(channel);
+    const luminance = 0.2126 * rgb[0] + 0.7152 * rgb[1] + 0.0722 * rgb[2];
+    return 1.05 / (luminance + 0.05);
+  }
+  const muted = css.match(/--sales-text-muted:\s*(#[0-9a-f]{6})/i)?.[1];
+  assert.ok(muted && contrast(muted) >= 4.5, `muted contrast was ${muted ? contrast(muted) : "missing"}`);
+});

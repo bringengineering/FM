@@ -53,6 +53,14 @@
     commercial_residential: "상가주택",
     other: "기타"
   });
+  const EVIDENCE_TYPE_LABELS = Object.freeze({
+    confirmation_note: "확인 메모",
+    broker_handoff: "중개법인 전달 확인",
+    photo: "사진",
+    document: "문서",
+    link: "외부 링크"
+  });
+  const KST_TIME_ZONE = "Asia/Seoul";
 
   function esc(value) {
     return String(value == null ? "" : value)
@@ -76,16 +84,47 @@
     return Number.isFinite(number) ? number : 0;
   }
 
-  function dateKey(value) {
-    const source = String(value || "");
-    const direct = source.match(/^\d{4}-\d{2}-\d{2}/);
-    if (direct) return direct[0];
+  function isDateOnly(value) {
+    return /^\d{4}-\d{2}-\d{2}$/.test(String(value || "").trim());
+  }
+
+  function isLocalDateTime(value) {
+    return /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(?::\d{2}(?:\.\d{1,3})?)?$/.test(String(value || "").trim());
+  }
+
+  function kstParts(value) {
+    const source = String(value || "").trim();
+    if (!source) return null;
+    if (isDateOnly(source)) {
+      const [year, month, day] = source.split("-");
+      return { year, month, day, hour: "", minute: "", hasTime: false };
+    }
+    if (isLocalDateTime(source)) {
+      const [date, time] = source.split("T");
+      const [year, month, day] = date.split("-");
+      const [hour, minute] = time.split(":");
+      return { year, month, day, hour, minute, hasTime: true };
+    }
     const parsed = new Date(source);
-    if (Number.isNaN(parsed.getTime())) return "";
-    const year = parsed.getFullYear();
-    const month = String(parsed.getMonth() + 1).padStart(2, "0");
-    const day = String(parsed.getDate()).padStart(2, "0");
-    return `${year}-${month}-${day}`;
+    if (Number.isNaN(parsed.getTime())) return null;
+    const parts = new Intl.DateTimeFormat("en-CA", {
+      timeZone: KST_TIME_ZONE,
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit",
+      hour: "2-digit",
+      minute: "2-digit",
+      hourCycle: "h23"
+    }).formatToParts(parsed).reduce((result, part) => {
+      if (part.type !== "literal") result[part.type] = part.value;
+      return result;
+    }, {});
+    return { ...parts, hasTime: true };
+  }
+
+  function dateKey(value) {
+    const parts = kstParts(value);
+    return parts ? `${parts.year}-${parts.month}-${parts.day}` : "";
   }
 
   function shortDate(value) {
@@ -95,13 +134,20 @@
     return `${Number(parts[1])}월 ${Number(parts[2])}일`;
   }
 
+  function dateTimeText(value) {
+    const parts = kstParts(value);
+    if (!parts) return "시간 미기록";
+    const date = `${Number(parts.month)}월 ${Number(parts.day)}일`;
+    return parts.hasTime ? `${date} ${parts.hour}:${parts.minute}` : date;
+  }
+
   function dateTimeLocal(value) {
-    const source = String(value || "");
+    const source = String(value || "").trim();
     if (!source) return "";
-    const parsed = new Date(source);
-    if (Number.isNaN(parsed.getTime())) return "";
-    const shifted = new Date(parsed.getTime() - parsed.getTimezoneOffset() * 60000);
-    return shifted.toISOString().slice(0, 16);
+    if (isDateOnly(source)) return `${source}T00:00`;
+    if (isLocalDateTime(source)) return source.slice(0, 16);
+    const parts = kstParts(source);
+    return parts ? `${parts.year}-${parts.month}-${parts.day}T${parts.hour}:${parts.minute}` : "";
   }
 
   function dueState(value, now) {
@@ -130,12 +176,74 @@
     return labels;
   }
 
-  function renderKpi(label, value, note, tone) {
+  function actorLabel(value) {
+    if (typeof value === "string") return value.trim();
+    if (!value || typeof value !== "object") return "";
+    return String(value.name || value.displayName || value.email || "").trim();
+  }
+
+  function safeHttpUrl(value) {
+    const source = String(value || "").trim();
+    if (!source) return "";
+    try {
+      const parsed = new URL(source);
+      return parsed.protocol === "https:" || parsed.protocol === "http:" ? source : "";
+    } catch (_) {
+      return "";
+    }
+  }
+
+  function auditMarkup(record) {
+    const item = record && typeof record === "object" ? record : {};
+    const createdBy = actorLabel(item.createdBy || item.owner);
+    const updatedBy = actorLabel(item.updatedBy);
+    const chunks = [];
+    if (createdBy || item.createdAt) chunks.push(`<span>기록 ${esc(createdBy || "담당자 미기록")}${item.createdAt ? ` · ${esc(dateTimeText(item.createdAt))}` : ""}</span>`);
+    if (updatedBy || item.updatedAt) chunks.push(`<span>수정 ${esc(updatedBy || "담당자 미기록")}${item.updatedAt ? ` · ${esc(dateTimeText(item.updatedAt))}` : ""}</span>`);
+    if (item.archivedAt) chunks.push(`<span>보관 · ${esc(dateTimeText(item.archivedAt))}</span>`);
+    return chunks.length ? `<div class="sales-record-audit" aria-label="기록 이력">${chunks.join("")}</div>` : "";
+  }
+
+  function referenceMarkup(item) {
+    const references = [
+      ["업체", item && item.vendorId],
+      ["견적", item && item.quoteId],
+      ["업무", item && item.workflowCaseId]
+    ].filter(([, value]) => value);
+    return references.length ? `<div class="sales-reference-list">${references.map(([label, value]) => `<span>${esc(label)} ${esc(value)}</span>`).join("")}</div>` : "";
+  }
+
+  function evidenceLink(url, label) {
+    const safe = safeHttpUrl(url);
+    return safe ? `<a class="sales-evidence-link" href="${attr(safe)}" target="_blank" rel="noopener noreferrer">${esc(label || "증거 보기")}</a>` : "";
+  }
+
+  function renderKpi(label, value, note, tone, format) {
+    const number = asNumber(value);
+    const renderedValue = format === "currency" ? `${number.toLocaleString("ko-KR")}원` : number.toLocaleString("ko-KR");
     return `<article class="sales-kpi-card ${attr(tone || "neutral")}">
       <span class="sales-kpi-label">${esc(label)}</span>
-      <strong class="sales-kpi-value">${esc(asNumber(value).toLocaleString("ko-KR"))}</strong>
+      <strong class="sales-kpi-value">${esc(renderedValue)}</strong>
       <small>${esc(note)}</small>
     </article>`;
+  }
+
+  function ownerEntries(value) {
+    if (Array.isArray(value)) return value.map(item => {
+      if (item && typeof item === "object") return [item.owner || item.name || "미지정", asNumber(item.count || item.value)];
+      return [String(item || "미지정"), 0];
+    });
+    if (!value || typeof value !== "object") return [];
+    return Object.entries(value).map(([owner, count]) => [owner || "미지정", asNumber(count)]);
+  }
+
+  function renderOwnerSummary(value) {
+    const entries = ownerEntries(value).sort((left, right) => right[1] - left[1] || left[0].localeCompare(right[0], "ko"));
+    if (!entries.length) return "";
+    return `<section class="sales-owner-summary" aria-labelledby="salesOwnerSummaryTitle">
+      <div><span>팀 배분</span><h3 id="salesOwnerSummaryTitle">담당자별 진행 건물</h3></div>
+      <ul>${entries.map(([owner, count]) => `<li><span>${esc(owner)}</span><b>${count.toLocaleString("ko-KR")}건</b></li>`).join("")}</ul>
+    </section>`;
   }
 
   function renderStageStepper(stages, prospects, selectedStage) {
@@ -189,8 +297,31 @@
           <span class="sales-next-action"><small>다음 행동</small><b>${esc(prospect.nextAction || "후속 행동 미등록")}</b></span>
           <span class="sales-due ${attr(due.tone)}"><b>${esc(due.label)}</b><small>${esc(due.detail)}</small></span>
         </footer>
+        <div class="sales-last-activity"><span>최근 활동</span>${prospect.lastActivityAt ? `<time datetime="${attr(prospect.lastActivityAt)}">${esc(dateTimeText(prospect.lastActivityAt))}</time>` : `<span>기록 없음</span>`}</div>
       </button>
     </article>`;
+  }
+
+  function renderBoardModeToggle(boardMode) {
+    return `<div class="sales-board-mode" role="group" aria-label="영업 흐름 보기 방식">
+      <button type="button" data-sales-board-mode="focus" aria-pressed="${boardMode === "focus"}">집중 보기</button>
+      <button type="button" data-sales-board-mode="flow" aria-pressed="${boardMode === "flow"}">전체 흐름</button>
+    </div>`;
+  }
+
+  function renderFlowBoard(stages, prospects, query, now) {
+    const filtered = prospects.filter(prospect => !query || [prospect.name, prospect.address, prospect.region, prospect.owner, prospect.nextAction]
+      .some(value => String(value || "").toLocaleLowerCase("ko-KR").includes(query)));
+    return `<div class="sales-flow-board" role="region" aria-label="13단계 전체 영업 흐름" tabindex="0">
+      ${stages.map((stage, index) => {
+        const id = stage.id || stage.code;
+        const items = filtered.filter(prospect => prospect.stage === id);
+        return `<section class="sales-flow-column" data-sales-flow-stage="${attr(id)}" aria-labelledby="salesFlowStage${index + 1}">
+          <header><span>${String(index + 1).padStart(2, "0")}</span><h4 id="salesFlowStage${index + 1}">${esc(stage.label || id)}</h4><b>${items.length}건</b></header>
+          <div class="sales-flow-items">${items.length ? items.map(item => renderProspectCard(item, stages, now)).join("") : `<p class="sales-flow-empty">해당 단계 건물 없음</p>`}</div>
+        </section>`;
+      }).join("")}
+    </div>`;
   }
 
   function renderPipeline(input) {
@@ -199,6 +330,9 @@
     const stages = Array.isArray(options.stages) ? options.stages : [];
     const kpis = options.kpis && typeof options.kpis === "object" ? options.kpis : {};
     const selectedStage = options.selectedStage || "all";
+    const boardMode = options.boardMode === "flow" ? "flow" : "focus";
+    const writable = options.writable !== false;
+    const periodLabel = String(options.periodLabel || kpis.periodLabel || "전체 기간 누계");
     const query = String(options.query || "").trim().toLocaleLowerCase("ko-KR");
     const prospects = active(store.salesProspects);
     const visible = prospects.filter(prospect => {
@@ -211,43 +345,55 @@
     return `<section class="sales-crm sales-pipeline" aria-labelledby="salesPipelineHeading">
       <header class="sales-hero">
         <div class="sales-hero-copy">
-          <span class="sales-eyebrow">BUILDING SALES CRM</span>
+          <span class="sales-eyebrow">대표자 영업 현황</span>
           <h2 id="salesPipelineHeading">건물을 기준으로 영업 흐름을 관리합니다</h2>
           <p>공실 해결로 첫 관계를 만들고, 임대관리 성과를 보여준 뒤 청소·수리·건물관리로 확장한다.</p>
         </div>
         <div class="sales-hero-actions">
           <button type="button" class="secondary-button sales-button" data-action="open-sales-standards">영업 표준 보기</button>
-          <button type="button" class="primary-button sales-button" data-action="new-sales-prospect">새 건물 등록</button>
+          ${writable ? `<button type="button" class="primary-button sales-button" data-action="new-sales-prospect">새 건물 등록</button>` : ""}
         </div>
       </header>
 
-      <section class="sales-kpi-grid" aria-label="증거 기준 영업 지표">
-        ${renderKpi("관리 대상 건물", kpis.activeProspects, "보류·종료 제외", "primary")}
-        ${renderKpi("접촉 완료", kpis.contactedProspects, "접촉 증거가 있는 건물", "info")}
-        ${renderKpi("응답 확인", kpis.respondedProspects, "응답 증거가 있는 건물", "success")}
-        ${renderKpi("매물접수", kpis.listingUnits, "접수 증거가 있는 호실", "primary")}
-        ${renderKpi("오늘 후속", kpis.todayFollowUps, "오늘 처리할 다음 행동", "warning")}
-        ${renderKpi("기한 지난 후속", kpis.overdueFollowUps, "날짜와 함께 즉시 확인", "danger")}
+      <section class="sales-owner-dashboard" aria-labelledby="salesOwnerDashboardTitle">
+        <header><div><span>증거 기준 집계</span><h3 id="salesOwnerDashboardTitle">대표자 영업판</h3></div><b>${esc(periodLabel)}</b></header>
+        <div class="sales-kpi-grid" aria-label="증거 기준 영업 지표">
+          ${renderKpi("관리 대상 건물", kpis.activeProspects, "보류·종료 제외", "primary")}
+          ${renderKpi("최초 접촉 시도", kpis.contactedProspects, "접촉 시도 증거가 있는 건물", "info")}
+          ${renderKpi("응답 확인", kpis.respondedProspects, "응답 증거가 있는 건물", "success")}
+          ${renderKpi("관심 확인", kpis.qualifiedProspects, "공실·퇴실·관리 문제 확인", "success")}
+          ${renderKpi("미팅 확정", kpis.meetingConfirmedProspects, "일시·장소 확인", "info")}
+          ${renderKpi("현장 진단", kpis.diagnosedProspects, "현장 확인 증거", "info")}
+          ${renderKpi("매물 접수", kpis.listingUnits, "접수된 활성 호실", "primary")}
+          ${renderKpi("광고 게시", kpis.adPublishedUnits, "게시 확인 호실", "primary")}
+          ${renderKpi("임대차 계약", kpis.leaseSignedUnits, "중개법인 완료 확인", "success")}
+          ${renderKpi("유료 관리", kpis.paidManagementProspects, "관리 시작 증거", "success")}
+          ${renderKpi("부가서비스 완료", kpis.completedOpportunities, "완료 확인 작업", "primary")}
+          ${renderKpi("기록 매출", kpis.revenueRecorded, "매출 기록 합계", "primary", "currency")}
+          ${renderKpi("오늘 후속", kpis.todayFollowUps, "오늘 처리할 다음 행동", "warning")}
+          ${renderKpi("기한 지난 후속", kpis.overdueFollowUps, "즉시 확인할 다음 행동", "danger")}
+        </div>
+        ${renderOwnerSummary(options.ownerCounts || kpis.ownerCounts || kpis.activeProspectsByOwner || kpis.activeByOwner)}
       </section>
 
       <section class="sales-stage-panel" aria-labelledby="salesStageHeading">
         <div class="sales-section-heading">
           <div><span>13단계 표준 흐름</span><h3 id="salesStageHeading">현재 단계별 건물</h3></div>
-          <label class="sales-search"><span>건물 검색</span><input type="search" data-sales-query value="${attr(options.query || "")}" placeholder="건물명·주소·담당자" autocomplete="off"></label>
+          <div class="sales-stage-tools">${renderBoardModeToggle(boardMode)}<label class="sales-search"><span>건물 검색</span><input type="search" data-sales-query value="${attr(options.query || "")}" placeholder="건물명·주소·담당자" autocomplete="off"></label></div>
         </div>
-        ${renderStageStepper(stages, prospects, selectedStage)}
+        ${boardMode === "focus" ? renderStageStepper(stages, prospects, selectedStage) : ""}
       </section>
 
-      <div class="sales-results-heading">
+      ${boardMode === "flow" ? renderFlowBoard(stages, prospects, query, options.now) : `<div class="sales-results-heading">
         <p><b>${visible.length}개 건물</b>이 현재 조건에 표시됩니다.</p>
         <span>단계는 완료 증거가 저장된 경우에만 올라갑니다.</span>
       </div>
       ${visible.length ? `<div class="sales-prospect-grid">${visible.map(item => renderProspectCard(item, stages, options.now)).join("")}</div>` : `
         <section class="sales-empty" role="status">
           <strong>조건에 맞는 건물이 없습니다</strong>
-          <p>검색어나 단계 필터를 바꾸거나 새 건물을 등록해 주세요.</p>
-          <button type="button" class="primary-button sales-button" data-action="new-sales-prospect">새 건물 등록</button>
-        </section>`}
+          <p>검색어나 단계 필터를 바꿔 주세요.</p>
+          ${writable ? `<button type="button" class="primary-button sales-button" data-action="new-sales-prospect">새 건물 등록</button>` : ""}
+        </section>`}`}
     </section>`;
   }
 
@@ -265,13 +411,13 @@
     const prospect = options.prospect && typeof options.prospect === "object" ? options.prospect : {};
     const id = prospect.id || "";
     const writable = options.writable !== false;
-    const contacts = active(options.contacts).filter(item => !item.prospectId || item.prospectId === id);
-    const units = active(options.units).filter(item => !item.prospectId || item.prospectId === id);
-    const activities = active(options.activities).filter(item => !item.prospectId || item.prospectId === id)
+    const contacts = active(options.contacts).filter(item => item.prospectId === id);
+    const units = active(options.units).filter(item => item.prospectId === id);
+    const activities = active(options.activities).filter(item => item.prospectId === id)
       .sort((left, right) => String(right.occurredAt || right.createdAt || "").localeCompare(String(left.occurredAt || left.createdAt || "")));
-    const events = active(options.events).filter(item => !item.prospectId || item.prospectId === id)
+    const events = active(options.events).filter(item => item.prospectId === id)
       .sort((left, right) => String(right.occurredAt || right.createdAt || "").localeCompare(String(left.occurredAt || left.createdAt || "")));
-    const opportunities = active(options.opportunities).filter(item => !item.prospectId || item.prospectId === id);
+    const opportunities = active(options.opportunities).filter(item => item.prospectId === id);
     const eventLabels = stageEventLabels(options.stages);
     const due = dueState(prospect.nextActionAt, options.now);
 
@@ -306,6 +452,7 @@
               <div><dt>발굴 경로</dt><dd>${esc(labelOf(SOURCE_LABELS, prospect.source))}</dd></div>
             </dl>
             ${active(prospect.demandAnchors).length ? `<div class="sales-tag-list" aria-label="수요 거점">${active(prospect.demandAnchors).map(item => `<span>${esc(item)}</span>`).join("")}</div>` : ""}
+            ${auditMarkup(prospect)}
           </div>
         </details>
 
@@ -314,7 +461,7 @@
           <div class="sales-detail-body">
             <div class="sales-section-toolbar">${renderSectionAction(writable, "data-sales-add-contact", id, "연락처 추가")}</div>
             ${contacts.length ? `<div class="sales-record-list">${contacts.map(contact => `<article class="sales-record-row">
-              <div><strong>${esc(contact.name || "이름 미입력")}</strong><p>${esc(contact.phone || "번호 미입력")} · ${esc(labelOf(SOURCE_LABELS, contact.source))}</p></div>
+              <div><strong>${esc(contact.name || "이름 미입력")}</strong><p>${esc(contact.phone || "번호 미입력")} · ${esc(labelOf(SOURCE_LABELS, contact.source))}</p>${contact.verifiedAt ? `<p class="sales-record-context">연락처 확인 · ${esc(dateTimeText(contact.verifiedAt))}</p>` : ""}${auditMarkup(contact)}</div>
               <span class="sales-state-label ${contact.doNotContact || contact.optOut ? "danger" : contact.verifiedAt ? "success" : "neutral"}">${contact.doNotContact || contact.optOut ? "연락 중단" : contact.verifiedAt ? "확인 완료" : "확인 필요"}</span>
             </article>`).join("")}</div>` : renderRecordEmpty("등록된 연락처가 없습니다.")}
           </div>
@@ -325,7 +472,7 @@
           <div class="sales-detail-body">
             <div class="sales-section-toolbar">${renderSectionAction(writable, "data-sales-add-unit", id, "호실 추가")}</div>
             ${units.length ? `<div class="sales-record-list">${units.map(unit => `<article class="sales-record-row">
-              <div><strong>${esc(unit.label || "호실 미입력")}</strong><p>${esc([asNumber(unit.deposit) ? `보증금 ${asNumber(unit.deposit).toLocaleString("ko-KR")}원` : "", asNumber(unit.rent) ? `월세 ${asNumber(unit.rent).toLocaleString("ko-KR")}원` : ""].filter(Boolean).join(" · ") || "임대 조건 미입력")}</p></div>
+              <div><strong>${esc(unit.label || "호실 미입력")}</strong><p>${esc([asNumber(unit.deposit) ? `보증금 ${asNumber(unit.deposit).toLocaleString("ko-KR")}원` : "", asNumber(unit.rent) ? `월세 ${asNumber(unit.rent).toLocaleString("ko-KR")}원` : ""].filter(Boolean).join(" · ") || "임대 조건 미입력")}</p>${referenceMarkup(unit)}${auditMarkup(unit)}</div>
               <span class="sales-state-label ${attr(unit.status || "unknown")}">${esc(labelOf(UNIT_STATUS_LABELS, unit.status))}</span>
             </article>`).join("")}</div>` : renderRecordEmpty("등록된 호실이 없습니다.")}
           </div>
@@ -336,8 +483,8 @@
           <div class="sales-detail-body">
             <div class="sales-section-toolbar">${renderSectionAction(writable, "data-sales-add-activity", id, "활동 기록")}</div>
             ${activities.length ? `<ol class="sales-timeline">${activities.map(activity => `<li>
-              <time>${esc(shortDate(activity.occurredAt || activity.createdAt))}</time>
-              <div><strong>${esc(labelOf(CHANNEL_LABELS, activity.channel || activity.type))} · ${esc(labelOf(RESULT_LABELS, activity.result))}</strong><p>${esc(activity.summary || activity.responseText || "내용 미입력")}</p></div>
+              <time datetime="${attr(activity.occurredAt || activity.createdAt || "")}">${esc(dateTimeText(activity.occurredAt || activity.createdAt))}</time>
+              <div><strong>${esc(labelOf(CHANNEL_LABELS, activity.channel || activity.type))} · ${esc(labelOf(RESULT_LABELS, activity.result))}</strong><p>${esc(activity.summary || activity.responseText || "내용 미입력")}</p>${activity.responseText && activity.summary ? `<p class="sales-record-context">응답 · ${esc(activity.responseText)}</p>` : ""}${activity.scriptId ? `<div class="sales-reference-list"><span>${esc(activity.scriptId)}${activity.scriptVersion ? ` · v${esc(activity.scriptVersion)}` : ""}</span></div>` : ""}${auditMarkup(activity)}</div>
             </li>`).join("")}</ol>` : renderRecordEmpty("기록된 영업 활동이 없습니다.")}
           </div>
         </details>
@@ -347,8 +494,8 @@
           <div class="sales-detail-body">
             <div class="sales-section-toolbar">${renderSectionAction(writable, "data-sales-add-event", id, "단계 완료 기록")}</div>
             ${events.length ? `<ol class="sales-timeline evidence">${events.map(event => `<li>
-              <time>${esc(shortDate(event.occurredAt || event.createdAt))}</time>
-              <div><strong>${esc(eventLabels[event.type] || event.type || "완료 이벤트")}</strong><p>${esc(event.evidenceNote || event.evidenceType || "증거 메모 없음")}</p></div>
+              <time datetime="${attr(event.occurredAt || event.createdAt || "")}">${esc(dateTimeText(event.occurredAt || event.createdAt))}</time>
+              <div><strong>${esc(eventLabels[event.type] || event.type || "완료 이벤트")}</strong><p>${esc(event.evidenceNote || "증거 메모 없음")}</p><div class="sales-evidence-context"><span>${esc(labelOf(EVIDENCE_TYPE_LABELS, event.evidenceType, "증거 유형 미입력"))}</span>${evidenceLink(event.evidenceUrl, "증거 보기")}</div>${referenceMarkup(event)}${auditMarkup(event)}</div>
             </li>`).join("")}</ol>` : renderRecordEmpty("완료 증거가 아직 없습니다. 증거 없이 단계는 올라가지 않습니다.")}
           </div>
         </details>
@@ -358,7 +505,7 @@
           <div class="sales-detail-body">
             <div class="sales-section-toolbar">${renderSectionAction(writable, "data-sales-add-opportunity", id, "서비스 기회 추가")}</div>
             ${opportunities.length ? `<div class="sales-opportunity-list">${opportunities.map(item => `<article class="sales-opportunity-card">
-              <div><span>${esc(labelOf(SERVICE_LABELS, item.serviceType))}</span><strong>${esc(item.requirements || "요청 내용 미입력")}</strong><p>담당 ${esc(item.owner || "미지정")}</p></div>
+              <div><span>${esc(labelOf(SERVICE_LABELS, item.serviceType))}</span><strong>${esc(item.requirements || "요청 내용 미입력")}</strong><p>담당 ${esc(actorLabel(item.owner) || "미지정")}</p>${item.workCompletedAt ? `<p class="sales-record-context">작업 완료 · ${esc(dateTimeText(item.workCompletedAt))}</p>` : ""}${item.revenueRecordedAt ? `<p class="sales-record-context">매출 기록 · ${esc(dateTimeText(item.revenueRecordedAt))}${asNumber(item.revenueAmount) ? ` · ${asNumber(item.revenueAmount).toLocaleString("ko-KR")}원` : ""}</p>` : ""}<div class="sales-evidence-context">${evidenceLink(item.evidenceUrl, "작업 증거")}</div>${referenceMarkup(item)}${auditMarkup(item)}</div>
               <b>${esc(labelOf(OPPORTUNITY_STAGE_LABELS, item.stage))}</b>
             </article>`).join("")}</div>` : renderRecordEmpty("확인된 추가서비스 기회가 없습니다.")}
           </div>
@@ -383,23 +530,56 @@
       checklist.id, checklist.title, checklist.purpose, checklist.completionRule,
       ...(Array.isArray(checklist.items) ? checklist.items.map(item => item.label) : [])
     ], options.query));
+    const principles = active(standards.principles).filter(item => matchesQuery([
+      item.id, item.title, item.rule, item.ownerQuestion
+    ], options.query));
+    const handoffs = active(standards.handoffRules).filter(item => matchesQuery([
+      item.id, item.from, item.to, item.trigger, item.doneWhen, ...(Array.isArray(item.requiredEvidence) ? item.requiredEvidence : [])
+    ], options.query));
+    const phraseGuidance = active(standards.phraseGuidance).filter(item => matchesQuery([
+      item.forbidden, item.safe, item.reason
+    ], options.query));
+    const metrics = active(standards.metricDefinitions).filter(item => matchesQuery([
+      item.id, item.label, item.formula, item.unit, item.evidence
+    ], options.query));
+    const governance = standards.governance && typeof standards.governance === "object" ? standards.governance : {};
     const poc = standards.pocBaseline || {};
 
     return `<section class="sales-crm sales-standards" aria-labelledby="salesStandardsTitle">
       <header class="sales-standards-hero">
-        <div><span class="sales-eyebrow">BRING SALES STANDARD</span><h2 id="salesStandardsTitle">영업 표준 센터</h2><p>${esc(standards.doctrine || "")}</p></div>
-        <label class="sales-search"><span>표준 검색</span><input type="search" data-sales-standards-search value="${attr(options.query || "")}" placeholder="대본·상황·체크리스트" autocomplete="off"></label>
+        <div><span class="sales-eyebrow">브링케어 영업 기준</span><h2 id="salesStandardsTitle">영업 표준 센터</h2><p>${esc(standards.doctrine || "")}</p></div>
+        <label class="sales-search"><span>표준 검색</span><input type="search" data-sales-standards-search value="${attr(options.query || "")}" placeholder="원칙·인계·대본·체크리스트" autocomplete="off"></label>
       </header>
 
       <div class="sales-warning-panel" role="note">
-        <strong>승인 전 대외 사용 금지</strong>
-        <p>‘법률검토’ 또는 ‘초안’ 표시는 팀 연습·검토용입니다. 협력 공인중개사와 대표의 승인 상태를 확인한 뒤 사용하세요.</p>
+        <strong>${governance.version ? `승인본 ${esc(governance.version)}` : "승인 전 대외 사용 금지"}</strong>
+        <div><b>${esc(governance.status || "대표 승인과 법률검토 상태 확인")}</b><p>${esc(governance.externalUseRule || "‘법률검토’ 또는 ‘초안’ 표시는 팀 연습·검토용입니다. 협력 공인중개사와 대표의 승인 상태를 확인한 뒤 사용하세요.")}</p>${governance.changeRule ? `<small>${esc(governance.changeRule)}</small>` : ""}</div>
       </div>
 
-      <section class="sales-poc-note" aria-labelledby="salesPocTitle">
-        <div><span>PoC 기준</span><h3 id="salesPocTitle">계약률이 아니라 매물접수 관찰치</h3></div>
+      <section class="sales-poc-note" aria-labelledby="salesObservationTitle">
+        <div><span>초기 검증 표본</span><h3 id="salesObservationTitle">계약률이 아니라 매물접수 관찰치</h3></div>
         <p>${esc(poc.note || "50건 접촉 → 매물접수 5~6건(10~12%). 전체 응답률이나 임대차계약률로 해석하지 않습니다.")}</p>
       </section>
+
+      ${principles.length ? `<section class="sales-standard-group sales-operating-group" aria-labelledby="salesPrinciplesTitle">
+        <div class="sales-group-heading"><div><span>대표 점검</span><h3 id="salesPrinciplesTitle">운영 원칙</h3></div><b>${principles.length}개</b></div>
+        <div class="sales-principle-grid">${principles.map(item => `<article><span>${esc(item.id || "원칙")}</span><h4>${esc(item.title || item.rule)}</h4><p>${esc(item.rule || "")}</p>${item.ownerQuestion ? `<blockquote>${esc(item.ownerQuestion)}</blockquote>` : ""}</article>`).join("")}</div>
+      </section>` : ""}
+
+      ${handoffs.length ? `<section class="sales-standard-group sales-operating-group" aria-labelledby="salesHandoffsTitle">
+        <div class="sales-group-heading"><div><span>책임 연결</span><h3 id="salesHandoffsTitle">팀 인계 기준</h3></div><b>${handoffs.length}개</b></div>
+        <div class="sales-standard-list">${handoffs.map(item => `<details class="sales-handoff-card"><summary><span class="sales-standard-id">${esc(item.id || "인계")}</span><span><strong>${esc(item.from || "담당자")} → ${esc(item.to || "다음 담당자")}</strong><small>${esc(item.trigger || "인계 조건 미입력")}</small></span></summary><div class="sales-standard-body"><div class="sales-rule-grid"><section><h4>필수 증거</h4><ul>${(item.requiredEvidence || []).map(value => `<li>${esc(value)}</li>`).join("")}</ul></section><section><h4>인계 완료</h4><p>${esc(item.doneWhen || "")}</p></section></div></div></details>`).join("")}</div>
+      </section>` : ""}
+
+      ${phraseGuidance.length ? `<section class="sales-standard-group sales-operating-group" aria-labelledby="salesPhrasesTitle">
+        <div class="sales-group-heading"><div><span>말의 기준</span><h3 id="salesPhrasesTitle">금지 표현과 안전한 대안</h3></div><b>${phraseGuidance.length}개</b></div>
+        <div class="sales-phrase-list">${phraseGuidance.map(item => `<article><div class="forbidden"><span>금지</span><p>${esc(item.forbidden || "")}</p></div><div class="safe"><span>대안</span><p>${esc(item.safe || "")}</p></div>${item.reason ? `<small>${esc(item.reason)}</small>` : ""}</article>`).join("")}</div>
+      </section>` : ""}
+
+      ${metrics.length ? `<section class="sales-standard-group sales-operating-group" aria-labelledby="salesMetricsTitle">
+        <div class="sales-group-heading"><div><span>같은 숫자 보기</span><h3 id="salesMetricsTitle">측정 지표</h3></div><b>${metrics.length}개</b></div>
+        <div class="sales-metric-table-wrap"><table class="sales-metric-table"><thead><tr><th>지표</th><th>계산 기준</th><th>단위</th><th>필요 증거</th></tr></thead><tbody>${metrics.map(item => `<tr><th>${esc(item.label || item.id)}</th><td>${esc(item.formula || "")}</td><td>${esc(item.unit || "")}</td><td>${esc(item.evidence || "")}</td></tr>`).join("")}</tbody></table></div>
+      </section>` : ""}
 
       <section class="sales-standard-group" aria-labelledby="salesScriptsTitle">
         <div class="sales-group-heading"><div><span>S1–S12</span><h3 id="salesScriptsTitle">상황별 영업 대본</h3></div><b>${scripts.length}개</b></div>
@@ -486,7 +666,7 @@
   function renderEventForm(input) {
     const options = input && typeof input === "object" ? input : {};
     const prospect = options.prospect && typeof options.prospect === "object" ? options.prospect : {};
-    const units = active(options.units).filter(unit => !unit.prospectId || unit.prospectId === prospect.id);
+    const units = active(options.units).filter(unit => unit.prospectId === prospect.id);
     const eventTypes = (Array.isArray(options.eventTypes) ? options.eventTypes : []).map(item => ({
       value: item.event || item.type || item.id || item.value,
       label: item.label || item.name || item.event || item.type,
