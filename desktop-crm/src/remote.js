@@ -672,35 +672,38 @@ class FirebaseRemoteClient {
       body
     }, "AUTH_EXPIRED");
     assertCurrent();
+    const tokenPayload = token && typeof token === "object" ? token : {};
+    const expectedIdentity = context.sessionRef || hints || {};
+    const expectedUid = normalizedUid(expectedIdentity.uid);
+    const expectedEmail = normalizedEmail(expectedIdentity.email);
+    const idToken = typeof tokenPayload.id_token === "string" ? tokenPayload.id_token.trim() : "";
+    const tokenUid = normalizedUid(tokenPayload.user_id);
+    if (!idToken || !expectedUid || !expectedEmail || !tokenUid || tokenUid !== expectedUid) {
+      throw createError("로그인 계정 정보를 다시 확인해 주세요.", "AUTH_EXPIRED");
+    }
     const lookup = await this.requestJson(`https://identitytoolkit.googleapis.com/v1/accounts:lookup?key=${this.firebase.apiKey}`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ idToken: token.id_token })
+      body: JSON.stringify({ idToken })
     }, "AUTH_EXPIRED");
     assertCurrent();
     const user = lookup && lookup.users && lookup.users[0] || {};
-    const expectedUid = normalizedUid(context.sessionRef && context.sessionRef.uid || hints && hints.uid);
-    const expectedEmail = normalizedEmail(context.sessionRef && context.sessionRef.email || hints && hints.email);
-    const tokenUid = normalizedUid(token.user_id);
     const lookupUid = normalizedUid(user.localId);
-    const candidateUid = tokenUid || lookupUid;
     const candidateEmail = normalizedEmail(user.email);
     if (
-      !expectedUid
-      || !expectedEmail
-      || !candidateUid
+      !lookupUid
       || !candidateEmail
-      || candidateUid !== expectedUid
+      || lookupUid !== expectedUid
       || candidateEmail !== expectedEmail
-      || tokenUid && lookupUid && tokenUid !== lookupUid
+      || tokenUid !== lookupUid
     ) {
       throw createError("로그인 계정 정보를 다시 확인해 주세요.", "AUTH_EXPIRED");
     }
     const nextSession = {
-      idToken: token.id_token,
-      refreshToken: token.refresh_token || refreshToken,
-      expiresAt: Date.now() + Math.max(60, Number(token.expires_in || 3600) - 60) * 1000,
-      uid: candidateUid,
+      idToken,
+      refreshToken: tokenPayload.refresh_token || refreshToken,
+      expiresAt: Date.now() + Math.max(60, Number(tokenPayload.expires_in || 3600) - 60) * 1000,
+      uid: tokenUid,
       email: candidateEmail,
       displayName: user.displayName || hints && hints.displayName || "",
       photoUrl: user.photoUrl || hints && hints.photoUrl || "",
