@@ -293,6 +293,7 @@ class FirebaseRemoteClient {
     this.fs = options.fs;
     this.safeStorage = options.safeStorage;
     this.shell = options.shell;
+    this.openGoogleAuth = options.openGoogleAuth || (url => this.shell.openExternal(url));
     this.fetch = options.fetchImpl || globalThis.fetch;
     this.sessionFile = options.sessionFile;
     this.pendingFile = options.pendingFile;
@@ -303,9 +304,6 @@ class FirebaseRemoteClient {
     this.onAuthState = options.onAuthState || (() => {});
     this.onSyncState = options.onSyncState || (() => {});
     this.session = null;
-    // Google provider credentials are intentionally memory-only. They are
-    // consumed by the embedded FIELD once and are never persisted or logged.
-    this.fieldCredential = null;
     this.remotePayload = null;
     this.lastError = "";
     this.streamController = null;
@@ -356,6 +354,10 @@ class FirebaseRemoteClient {
     try {
       const persisted = await this.readPersistedSession();
       if (!persisted) return this.authState();
+      if (persisted.fieldAuthIntegrated !== true) {
+        await this.clearPersistedSession().catch(() => {});
+        return this.authState();
+      }
       await this.refreshFirebaseSession(persisted.refreshToken, persisted);
       await this.verifyAccess();
       await this.persistSession();
@@ -393,7 +395,8 @@ class FirebaseRemoteClient {
       displayName: this.session.displayName || "",
       photoUrl: this.session.photoUrl || "",
       role: this.session.role || "member",
-      mustChangePassword: this.session.mustChangePassword === true
+      mustChangePassword: this.session.mustChangePassword === true,
+      fieldAuthIntegrated: this.session.fieldAuthIntegrated === true
     }), "utf8");
     return true;
   }
@@ -441,7 +444,8 @@ class FirebaseRemoteClient {
       displayName: user.displayName || hints && hints.displayName || "",
       photoUrl: user.photoUrl || hints && hints.photoUrl || "",
       role: hints && hints.role || "viewer",
-      mustChangePassword: hints && hints.mustChangePassword === true
+      mustChangePassword: hints && hints.mustChangePassword === true,
+      fieldAuthIntegrated: hints && hints.fieldAuthIntegrated === true
     };
     return this.session;
   }
@@ -561,31 +565,14 @@ class FirebaseRemoteClient {
       email: auth.email,
       displayName: auth.displayName || auth.fullName || "",
       photoUrl: auth.photoUrl || "",
-      role: "viewer"
+      role: "viewer",
+      fieldAuthIntegrated: true
     };
     await this.verifyAccess();
     await this.persistSession();
-    this.fieldCredential = { type: tokenType, token: providerToken };
     this.lastError = "";
     this.emitAuth();
     return this.session;
-  }
-
-  takeFieldCredential() {
-    const credential = this.fieldCredential;
-    this.fieldCredential = null;
-    return credential;
-  }
-
-  async acquireFieldCredential() {
-    const existing = this.takeFieldCredential();
-    if (existing) return existing;
-    if (!this.session) throw createError("CRM login is required.", "AUTH_REQUIRED");
-    const credential = await this.receiveGoogleCredential();
-    await this.exchangeGoogleCredential(credential);
-    const verified = this.takeFieldCredential();
-    if (!verified) throw createError("FIELD credential is unavailable.", "LOGIN_FAILED");
-    return verified;
   }
 
   async receiveGoogleCredential() {
@@ -645,7 +632,7 @@ class FirebaseRemoteClient {
           const authUrl = new URL(this.firebase.authPageUrl);
           authUrl.searchParams.set("port", String(port));
           authUrl.searchParams.set("state", state);
-          await this.shell.openExternal(authUrl.toString());
+          await this.openGoogleAuth(authUrl.toString());
         } catch (error) {
           finish(createError("기본 브라우저에서 로그인 페이지를 열지 못했습니다.", "LOGIN_FAILED", error));
         }
@@ -717,7 +704,6 @@ class FirebaseRemoteClient {
   async logout(notify = true) {
     this.stopStream();
     this.session = null;
-    this.fieldCredential = null;
     this.remotePayload = null;
     this.lastError = "";
     await this.clearPersistedSession().catch(() => {});

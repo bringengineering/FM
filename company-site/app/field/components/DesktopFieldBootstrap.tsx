@@ -2,7 +2,7 @@
 
 import { useEffect, useState, type ReactNode } from "react";
 
-import { ensureDesktopFieldAuth, observeDesktopLogout } from "../lib/auth.client";
+import { observeDesktopLogout } from "../lib/auth.client";
 import {
   consumeDesktopHandoffFromUrl,
   type DesktopHandoffState,
@@ -12,7 +12,6 @@ import BrandLogo from "./BrandLogo";
 type DesktopFieldBootstrapProps = {
   children: ReactNode;
   exchange?: () => Promise<DesktopHandoffState>;
-  authenticate?: () => Promise<"restored" | "connected">;
   directSession?: boolean;
 };
 
@@ -32,19 +31,18 @@ const defaultExchange = () => consumeDesktopHandoffFromUrl(new URL(window.locati
 export default function DesktopFieldBootstrap({
   children,
   exchange = defaultExchange,
-  authenticate = ensureDesktopFieldAuth,
   directSession = false,
 }: DesktopFieldBootstrapProps) {
-  const [state, setState] = useState<BootstrapState>({ status: "connecting" });
+  const [state, setState] = useState<BootstrapState>(
+    directSession ? { status: "ready" } : { status: "connecting" },
+  );
 
   useEffect(() => observeDesktopLogout(), []);
 
   useEffect(() => {
+    if (directSession) return;
     let active = true;
-    const connect = directSession
-      ? authenticate().then(() => ({ mode: "crm", consumed: true }) as DesktopHandoffState)
-      : exchange();
-    void connect
+    void exchange()
       .then((result) => {
         if (!active) return;
         if (result.mode === "crm" && result.consumed) {
@@ -62,7 +60,7 @@ export default function DesktopFieldBootstrap({
     return () => {
       active = false;
     };
-  }, [authenticate, directSession, exchange]);
+  }, [directSession, exchange]);
 
   if (state.status === "ready") {
     return <div className="field-embedded">{children}</div>;
