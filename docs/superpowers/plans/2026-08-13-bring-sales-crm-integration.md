@@ -12,7 +12,7 @@
 
 ## 작업 전제와 파일 지도
 
-작업 위치는 `FM/.worktrees/sales-crm-integration`이고 기준 커밋은 `crm-v1.6.2`를 포함한 `cc67b18`이다. 모든 명령은 저장소 루트 또는 명시된 `desktop-crm` 경로에서 실행한다. `wonju-map.html`은 어떤 단계에서도 수정하거나 스테이징하지 않는다.
+작업 위치는 `FM/.worktrees/sales-crm-integration`이고 기준 커밋은 `crm-v1.6.3`을 포함한 `ac6c24f`이다. 모든 명령은 저장소 루트 또는 명시된 `desktop-crm` 경로에서 실행한다. `wonju-map.html`은 어떤 단계에서도 수정하거나 스테이징하지 않는다.
 
 | 파일 | 책임 |
 |---|---|
@@ -896,7 +896,7 @@ Run:
 node --test desktop-crm/test/company-release.test.js
 ```
 
-Expected: 실제 `1.6.2`와 기대 `1.7.0` 차이로 FAIL.
+Expected: 실제 `1.6.3`과 기대 `1.7.0` 차이로 FAIL.
 
 - [ ] **Step 3: package와 lockfile 버전을 1.7.0으로 맞춤**
 
