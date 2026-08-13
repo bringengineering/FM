@@ -1930,6 +1930,7 @@
   const SALES_SOURCE_LABELS = Object.freeze({ building_sign: "건물 공개번호", broker: "공인중개사", storefront: "1층 상가", referral: "소개", danggeun: "당근", naver_blog: "네이버 블로그", existing_customer: "기존 고객", other: "기타" });
   const SALES_UNIT_LABELS = Object.freeze({ vacant: "공실", upcoming: "퇴실 예정", occupied: "입주 중", unknown: "미확인" });
   const SALES_CHANNEL_LABELS = Object.freeze({ sms: "문자", call: "전화", visit: "방문", meeting: "미팅", memo: "내부 메모" });
+  const SALES_AD_CHANNEL_LABELS = Object.freeze({ naver: "네이버 부동산", daangn: "당근", naver_blog: "네이버 블로그", zigbang: "직방", dabang: "다방", other: "기타 광고채널" });
   const SALES_RESULT_LABELS = Object.freeze({ no_response: "무응답", replied: "응답", callback_requested: "재연락 요청", meeting_set: "미팅 확정", not_interested: "관심 없음", invalid_contact: "연락처 오류", do_not_contact: "연락 중단", follow_up: "후속 필요" });
   const SALES_RESPONSE_LABELS = Object.freeze({ vacancy_now: "현재 공실", vacancy_upcoming: "퇴실 예정", no_vacancy: "공실 없음", interested: "관심 있음", needs_info: "추가 설명 필요", callback_later: "나중에 연락", refused: "거절", wrong_number: "잘못된 번호", do_not_contact: "연락 중단 요청" });
   const SALES_FAILURE_LABELS = Object.freeze({ no_response: "무응답", invalid_number: "잘못된 번호", not_owner: "건물주 아님", no_vacancy: "공실 없음", not_interested: "관심 없음", price: "가격", trust: "신뢰", already_managed: "기존 관리업체", do_not_contact: "연락 중단 요청", other: "기타" });
@@ -1962,6 +1963,29 @@
     units: store.salesUnits,
     opportunities: store.salesOpportunities
   });
+  function recalculateSalesProspectStage(prospectId) {
+    const prospect = salesProspectById(prospectId);
+    if (!prospect) return null;
+    const previousStage = prospect.stage;
+    const updated = typeof Sales.recalculateProspectStage === "function"
+      ? Sales.recalculateProspectStage(prospect, store.salesEvents, salesRelationContext(salesActor()), salesActor())
+      : Object.assign({}, prospect, { stage: salesStageFromEvents(prospectId), updatedAt: new Date().toISOString(), updatedBy: salesActor().email });
+    store.salesProspects[store.salesProspects.findIndex(item => item && item.id === prospectId)] = updated;
+    return { prospect: updated, previousStage };
+  }
+  function recalculateSalesProspectActivityCache(prospectId) {
+    const prospect = salesProspectById(prospectId);
+    if (!prospect) return null;
+    const latest = activeSalesRecords("salesActivities", prospectId)
+      .slice()
+      .sort((left, right) => String(right.occurredAt || right.createdAt || "").localeCompare(String(left.occurredAt || left.createdAt || "")))[0];
+    prospect.lastActivityAt = latest ? latest.occurredAt || latest.createdAt || "" : "";
+    prospect.nextAction = latest ? latest.nextAction || "" : "";
+    prospect.nextActionAt = latest ? latest.nextActionAt || "" : "";
+    prospect.updatedAt = new Date().toISOString();
+    prospect.updatedBy = salesActor().email;
+    return prospect;
+  }
   function salesAuditLogsForProspect(prospectId) {
     const relatedIds = new Set([prospectId]);
     ["salesContacts", "salesUnits", "salesActivities", "salesEvents", "salesOpportunities"].forEach(collection => {
@@ -2088,10 +2112,37 @@
       evidenceType.appendChild(option);
     });
     const grid = form.querySelector(".sales-form-grid");
-    grid?.insertAdjacentHTML("beforeend", `${selectField("확인 연락처", "contactId", ["", ...contacts.map(item => item.id)], "", id => id ? `${salesContactById(id)?.name || "연락처"} · ${salesContactById(id)?.phone || ""}` : "연락처 확인 단계에서 선택")}${selectField("접촉 채널", "channel", ["", ...Sales.SALES_CHANNELS], "", salesOptionLabeler(SALES_CHANNEL_LABELS))}${selectField("접촉 결과", "result", ["", ...Sales.SALES_RESULTS], "", salesOptionLabeler(SALES_RESULT_LABELS))}${field("기록 담당자", "owner", salesActorName())}${selectField("관련 추가서비스", "opportunityId", ["", ...opportunities.map(item => item.id)], "", id => { const item = salesOpportunityById(id); return id ? `${salesLabel(SALES_SERVICE_LABELS, item?.serviceType)} · ${salesLabel(SALES_OPPORTUNITY_LABELS, item?.stage)}` : "연결하지 않음"; })}${field("유료관리 시작일", "managementStartedAt", "", "datetime-local")}${areaField("유료관리 서비스 범위", "serviceScope", "", "wide")}<fieldset class="sales-checklist-picker wide"><legend>적용 체크리스트</legend>${checklists.map(item => `<label><input type="checkbox" name="checklistIds" value="${attr(item.id)}" ${(suggestedChecklistIds || []).includes(item.id) ? "checked" : ""}><span>${esc(item.id)} · ${esc(item.title)}</span></label>`).join("")}</fieldset>`);
+    grid?.insertAdjacentHTML("beforeend", `${selectField("확인 연락처", "contactId", ["", ...contacts.map(item => item.id)], "", id => id ? `${salesContactById(id)?.name || "연락처"} · ${salesContactById(id)?.phone || ""}` : "연락처 확인 단계에서 선택")}<div data-sales-contact-channel-field hidden>${selectField("접촉 채널", "channel", ["", ...Sales.SALES_CHANNELS], "", salesOptionLabeler(SALES_CHANNEL_LABELS))}</div><div data-sales-ad-channel-field hidden>${selectField("광고 채널", "adChannel", ["", ...Sales.AD_CHANNELS], "", salesOptionLabeler(SALES_AD_CHANNEL_LABELS))}</div>${selectField("접촉 결과", "result", ["", ...Sales.SALES_RESULTS], "", salesOptionLabeler(SALES_RESULT_LABELS))}${field("기록 담당자", "owner", salesActorName())}${selectField("관련 추가서비스", "opportunityId", ["", ...opportunities.map(item => item.id)], "", id => { const item = salesOpportunityById(id); return id ? `${salesLabel(SALES_SERVICE_LABELS, item?.serviceType)} · ${salesLabel(SALES_OPPORTUNITY_LABELS, item?.stage)}` : "연결하지 않음"; })}${field("유료관리 시작일", "managementStartedAt", "", "datetime-local")}${areaField("유료관리 서비스 범위", "serviceScope", "", "wide")}<fieldset class="sales-checklist-picker wide"><legend>적용 체크리스트</legend>${checklists.map(item => `<label><input type="checkbox" name="checklistIds" value="${attr(item.id)}" ${(suggestedChecklistIds || []).includes(item.id) ? "checked" : ""}><span>${esc(item.id)} · ${esc(item.title)}</span></label>`).join("")}</fieldset>`);
     if (form.elements.occurredAt) form.elements.occurredAt.value = datetimeValue(new Date().toISOString());
     if (suggestedType && form.elements.type) form.elements.type.value = suggestedType;
+    refreshSalesEventChannelField(form);
     openModal();
+  }
+
+  function refreshSalesEventChannelField(form) {
+    if (!form) return;
+    const type = form.elements.type && form.elements.type.value;
+    const contactField = form.querySelector("[data-sales-contact-channel-field]");
+    const adField = form.querySelector("[data-sales-ad-channel-field]");
+    if (contactField) contactField.hidden = type !== "contact_attempted";
+    if (adField) adField.hidden = type !== "ad_published";
+  }
+
+  function salesEventArchiveEditor(prospectId, eventId) {
+    const prospect = salesProspectById(prospectId);
+    const item = (store.salesEvents || []).find(event => event && event.id === eventId && event.prospectId === prospectId);
+    if (!prospect || !item || item.archivedAt) return showToast("보관할 완료 증거를 찾지 못했습니다.", "error");
+    modalContent.innerHTML = `<div class="modal-head"><div><h2>완료 증거 정정·보관</h2><p>기록은 삭제하지 않습니다. 단계가 다시 계산되므로 정정 사유를 구체적으로 남겨 주세요.</p></div><button class="close-button" data-action="close-modal">×</button></div><form id="salesEventArchiveForm" class="modal-body" data-sales-prospect-id="${attr(prospectId)}" data-sales-event-id="${attr(eventId)}"><div class="form-grid">${areaField("정정 사유 *", "correctionReason", "", "wide")}</div><div class="form-actions"><button type="button" class="secondary-button" data-action="close-modal">취소</button><button class="danger-button">증거 보관</button></div></form>`;
+    openModal();
+    setTimeout(() => modalContent.querySelector('[name="correctionReason"]')?.focus(), 30);
+  }
+
+  function salesResumeEditor(prospectId) {
+    const prospect = salesProspectById(prospectId);
+    if (!prospect || prospect.archivedAt || prospect.stage !== "paused_closed") return showToast("보류·종료 상태인 영업 대상만 재개할 수 있습니다.", "error");
+    modalContent.innerHTML = `<div class="modal-head"><div><h2>영업 재개</h2><p>재개할 단계와 실제 재개 사유를 직접 확인해 기록합니다.</p></div><button class="close-button" data-action="close-modal">×</button></div><form id="salesResumeForm" class="modal-body" data-sales-prospect-id="${attr(prospectId)}"><div class="form-grid">${selectField("재개 단계 *", "resumeStage", Sales.RESUMABLE_STAGES, Sales.RESUMABLE_STAGES[0], stage => (Sales.SALES_STAGES || []).find(item => item.id === stage)?.label || stage)}${areaField("재개 사유 *", "resumeReason", "", "wide")}</div><div class="form-actions"><button type="button" class="secondary-button" data-action="close-modal">취소</button><button class="primary-button">영업 재개 기록</button></div></form>`;
+    openModal();
+    setTimeout(() => modalContent.querySelector('[name="resumeReason"]')?.focus(), 30);
   }
 
   function salesOpportunityEditor(prospectId, opportunityId) {
@@ -2099,9 +2150,10 @@
     if (!prospect) return showToast("영업 대상 건물을 찾지 못했습니다.", "error");
     const item = salesOpportunityById(opportunityId) || {};
     const units = activeSalesRecords("salesUnits", prospect.id);
+    const workflowCases = activeCases();
     modalContent.innerHTML = `<div class="modal-head"><div><h2>${item.id ? "추가서비스 수정" : "추가서비스 기회"}</h2><p>견적과 매출을 구분합니다. 매출은 작업 증거와 1원 이상의 금액이 있을 때만 기록됩니다.</p></div><button class="close-button" data-action="close-modal">×</button></div><form id="salesOpportunityForm" class="modal-body" data-sales-prospect-id="${attr(prospect.id)}" data-sales-opportunity-id="${attr(item.id || "")}"><div class="form-grid">
       ${selectField("서비스 유형", "serviceType", Sales.SALES_SERVICE_TYPES, item.serviceType || "common_cleaning", salesOptionLabeler(SALES_SERVICE_LABELS))}${selectField("진행 상태", "stage", Sales.OPPORTUNITY_STAGES, item.stage || "discovered", salesOptionLabeler(SALES_OPPORTUNITY_LABELS))}${selectField("관련 호실", "unitId", ["", ...units.map(unit => unit.id)], item.unitId || "", id => id ? salesUnitById(id)?.label || id : "건물 전체")}${field("담당자", "owner", item.owner || salesActorName())}
-      ${areaField("요구사항 *", "requirements", item.requirements || "", "wide")}${field("처리 기한", "dueAt", item.dueAt ? Core.dayKey(item.dueAt) : "", "date")}${field("견적 금액", "quoteAmount", item.quoteAmount || 0, "number")}${field("매출 금액", "revenueAmount", item.revenueAmount || 0, "number")}${field("완료·매출 증거 링크", "evidenceUrl", item.evidenceUrl || "", "url", "https://")}${areaField("완료·매출 증거 메모", "evidenceNote", item.evidenceNote || "", "wide")}${field("연결 민원·공사 케이스 ID", "workflowCaseId", item.workflowCaseId || "", "text", "확인된 기존 케이스만 입력")}
+      ${areaField("요구사항 *", "requirements", item.requirements || "", "wide")}${field("처리 기한", "dueAt", item.dueAt ? Core.dayKey(item.dueAt) : "", "date")}${field("견적 금액", "quoteAmount", item.quoteAmount || 0, "number")}${field("매출 금액", "revenueAmount", item.revenueAmount || 0, "number")}${field("완료·매출 증거 링크", "evidenceUrl", item.evidenceUrl || "", "url", "https://")}${areaField("완료·매출 증거 메모", "evidenceNote", item.evidenceNote || "", "wide")}${selectField("연결 민원·공사 케이스", "workflowCaseId", ["", ...workflowCases.map(workflowCase => workflowCaseKey(workflowCase))], item.workflowCaseId || "", caseId => { const workflowCase = workflowCases.find(value => workflowCaseKey(value) === caseId); return caseId ? `${workflowCase?.ticketNo || workflowCase?.receiptNo || caseId} · ${workflowCase?.building || workflowCase?.name || "케이스"}` : "연결하지 않음"; })}
     </div><div class="form-actions"><button type="button" class="secondary-button" data-action="close-modal">취소</button><button class="primary-button">${item.id ? "서비스 기회 저장" : "서비스 기회 추가"}</button></div></form>`;
     openModal();
   }
@@ -2129,7 +2181,11 @@
     selectedSalesProspectId = prospect.id;
     drawer.classList.remove("customer-centered");
     const writable = canWriteCRM() && !prospect.archivedAt;
-    drawerContent.innerHTML = `<div class="drawer-head"><div><h2>건물 영업 상세</h2><p>${esc(prospect.id)}</p></div><button class="close-button" data-action="close-drawer">×</button></div><div class="drawer-body sales-drawer-body">${SalesUI.renderProspectDetail({ prospect, contacts: store.salesContacts, units: store.salesUnits, activities: store.salesActivities, events: store.salesEvents, opportunities: store.salesOpportunities, auditLogs: salesAuditLogsForProspect(prospect.id), stages: Sales.SALES_STAGES, writable, now: new Date().toISOString() })}${canWriteCRM() ? salesManagementMarkup(prospect) : ""}<section class="record-danger-zone"><div><b>${prospect.archivedAt ? "보관된 영업 대상" : "영업 대상 보관"}</b><span>기록은 삭제하지 않고 모든 활동과 완료 증거를 그대로 보존합니다.</span></div><button type="button" class="${prospect.archivedAt ? "secondary-button" : "danger-outline-button"}" data-sales-prospect-${prospect.archivedAt ? "restore" : "archive"}="${attr(prospect.id)}">${prospect.archivedAt ? "영업 대상 복원" : "영업 대상 보관"}</button></section></div>`;
+    const archiveControl = canWriteCRM() ? `<section class="record-danger-zone"><div><b>${prospect.archivedAt ? "보관된 영업 대상" : "영업 대상 보관"}</b><span>기록은 삭제하지 않고 모든 활동과 완료 증거를 그대로 보존합니다.</span></div><button type="button" class="${prospect.archivedAt ? "secondary-button" : "danger-outline-button"}" data-sales-prospect-${prospect.archivedAt ? "restore" : "archive"}="${attr(prospect.id)}">${prospect.archivedAt ? "영업 대상 복원" : "영업 대상 보관"}</button></section>` : "";
+    drawerContent.innerHTML = `<div class="drawer-head"><div><h2>건물 영업 상세</h2><p>${esc(prospect.id)}</p></div><button class="close-button" data-action="close-drawer">×</button></div><div class="drawer-body sales-drawer-body">${SalesUI.renderProspectDetail({ prospect, contacts: store.salesContacts, units: store.salesUnits, activities: store.salesActivities, events: store.salesEvents, opportunities: store.salesOpportunities, auditLogs: salesAuditLogsForProspect(prospect.id), stages: Sales.SALES_STAGES, writable, now: new Date().toISOString() })}${canWriteCRM() && !prospect.archivedAt ? salesManagementMarkup(prospect) : ""}${archiveControl}</div>`;
+    drawerContent.querySelectorAll("a.sales-evidence-link[href]").forEach(link => {
+      link.dataset.salesEvidenceLink = link.getAttribute("href") || "";
+    });
     openDrawer();
   }
 
@@ -2522,7 +2578,7 @@
       currentView = nav.dataset.view;
       if (currentView === "cases") caseListMode = "active";
       render();
-      if (currentView === "cases" || currentView === "payments" || currentView === "buildings") refreshOperations({ silent: true });
+      if (["cases", "payments", "buildings", "pipeline"].includes(currentView)) refreshOperations({ silent: true });
       return;
     }
     const salesStage = event.target.closest("[data-sales-stage-filter]");
@@ -2546,6 +2602,12 @@
     if (salesProspectEdit) {
       if (!canWriteCRM()) return showToast("조회 전용 계정은 영업 대상 건물을 수정할 수 없습니다.", "error");
       salesProspectEditor(salesProspectEdit.dataset.salesEditProspect);
+      return;
+    }
+    const salesProspectResume = event.target.closest("[data-sales-resume-prospect], [data-sales-prospect-resume]");
+    if (salesProspectResume) {
+      if (!canWriteCRM()) return showToast("조회 전용 계정은 영업을 재개할 수 없습니다.", "error");
+      salesResumeEditor(salesProspectResume.dataset.salesResumeProspect || salesProspectResume.dataset.salesProspectResume);
       return;
     }
     const salesAddContact = event.target.closest("[data-sales-add-contact]");
@@ -2586,6 +2648,60 @@
       scheduleSave(); renderSalesProspectDrawer(prospect.id); renderPipeline(); showToast("영업 대상을 복원했습니다.", "success");
       return;
     }
+    const salesActivityArchive = event.target.closest("[data-sales-activity-archive]");
+    if (salesActivityArchive) {
+      if (!canWriteCRM()) return showToast("조회 전용 계정은 영업 활동을 보관할 수 없습니다.", "error");
+      const prospectId = salesActivityArchive.dataset.salesProspectId;
+      const item = (store.salesActivities || []).find(record => record && record.id === salesActivityArchive.dataset.salesActivityArchive && record.prospectId === prospectId);
+      if (!item || !await requestConfirmation({ title: "이 영업 활동을 보관할까요?", description: "영구삭제하지 않고 활동 이력에 보존합니다.", target: item.summary || item.id, confirmLabel: "보관", tone: "danger" })) return;
+      store.salesActivities[store.salesActivities.findIndex(record => record && record.id === item.id)] = Sales.archiveRecord(item, salesActor());
+      recalculateSalesProspectActivityCache(prospectId);
+      logAudit({ category: "보관", targetType: "영업 활동", targetId: item.id, targetLabel: item.summary || item.id, action: "영업 활동 보관", reason: "사용자 확인 후 보관" });
+      scheduleSave(); renderSalesProspectDrawer(prospectId); renderPipeline(); showToast("영업 활동을 보관했습니다.", "success");
+      return;
+    }
+    const salesActivityRestore = event.target.closest("[data-sales-activity-restore]");
+    if (salesActivityRestore) {
+      if (!canWriteCRM()) return showToast("조회 전용 계정은 영업 활동을 복원할 수 없습니다.", "error");
+      const prospectId = salesActivityRestore.dataset.salesProspectId;
+      const item = (store.salesActivities || []).find(record => record && record.id === salesActivityRestore.dataset.salesActivityRestore && record.prospectId === prospectId);
+      if (!item) return;
+      try {
+        const actor = salesActor();
+        const restored = Sales.restoreRecord(item, actor);
+        const activityContext = salesRelationContext(actor);
+        activityContext.scripts = SalesStandards.scripts;
+        Sales.assertActivity(restored, activityContext);
+        store.salesActivities[store.salesActivities.findIndex(record => record && record.id === item.id)] = restored;
+        recalculateSalesProspectActivityCache(prospectId);
+        logAudit({ category: "복원", targetType: "영업 활동", targetId: item.id, targetLabel: item.summary || item.id, action: "영업 활동 복원", reason: "현재 관계정보 재검증 후 복원" });
+        scheduleSave(); renderSalesProspectDrawer(prospectId); renderPipeline(); showToast("영업 활동을 복원했습니다.", "success");
+      } catch (error) { showToast(error.message || "현재 연락처·호실 상태에서는 이 활동을 복원할 수 없습니다.", "error"); }
+      return;
+    }
+    const salesEventArchive = event.target.closest("[data-sales-event-archive]");
+    if (salesEventArchive) {
+      if (!canWriteCRM()) return showToast("조회 전용 계정은 완료 증거를 보관할 수 없습니다.", "error");
+      salesEventArchiveEditor(salesEventArchive.dataset.salesProspectId, salesEventArchive.dataset.salesEventArchive);
+      return;
+    }
+    const salesEventRestore = event.target.closest("[data-sales-event-restore]");
+    if (salesEventRestore) {
+      if (!canWriteCRM()) return showToast("조회 전용 계정은 완료 증거를 복원할 수 없습니다.", "error");
+      const prospectId = salesEventRestore.dataset.salesProspectId;
+      const item = (store.salesEvents || []).find(record => record && record.id === salesEventRestore.dataset.salesEventRestore && record.prospectId === prospectId);
+      if (!item) return;
+      try {
+        const actor = salesActor();
+        const restored = Sales.restoreRecord(item, actor);
+        Sales.assertEvent(restored, salesRelationContext(actor));
+        store.salesEvents[store.salesEvents.findIndex(record => record && record.id === item.id)] = restored;
+        const stageResult = recalculateSalesProspectStage(prospectId);
+        logAudit({ category: "복원", targetType: "영업 완료 증거", targetId: item.id, targetLabel: item.type || item.id, action: `완료 증거 복원 · ${stageResult?.previousStage || ""} → ${stageResult?.prospect?.stage || ""}`, reason: item.archiveReason || "현재 관계정보 재검증 후 복원" });
+        scheduleSave(); renderSalesProspectDrawer(prospectId); renderPipeline(); showToast("완료 증거를 복원하고 단계를 다시 계산했습니다.", "success");
+      } catch (error) { showToast(error.message || "현재 연락처·호실 상태에서는 이 증거를 복원할 수 없습니다.", "error"); }
+      return;
+    }
     const salesRecordArchive = event.target.closest("[data-sales-record-archive]");
     if (salesRecordArchive) {
       if (!canWriteCRM()) return showToast("조회 전용 계정은 영업 기록을 보관할 수 없습니다.", "error");
@@ -2595,9 +2711,11 @@
       if (!item || !await requestConfirmation({ title: "이 영업 기록을 보관할까요?", description: "영구삭제하지 않고 상세의 관리 영역에서 복원할 수 있습니다.", target: item.name || item.label || item.requirements || id, confirmLabel: "보관", tone: "danger" })) return;
       const index = store[collection].findIndex(record => record.id === id);
       store[collection][index] = Sales.archiveRecord(item, salesActor());
-      if (collection === "salesUnits") recalculateSalesProspectVacancies(salesRecordArchive.dataset.salesProspectId);
+      const prospectId = salesRecordArchive.dataset.salesProspectId;
+      if (collection === "salesUnits") recalculateSalesProspectVacancies(prospectId);
+      if (["salesContacts", "salesUnits"].includes(collection)) recalculateSalesProspectStage(prospectId);
       logAudit({ category: "보관", targetType: "영업 기록", targetId: id, targetLabel: item.name || item.label || item.requirements || id, action: `${collection} 기록 보관`, reason: "사용자 확인 후 보관" });
-      scheduleSave(); renderSalesProspectDrawer(salesRecordArchive.dataset.salesProspectId); showToast("영업 기록을 보관했습니다.", "success");
+      scheduleSave(); renderSalesProspectDrawer(prospectId); renderPipeline(); showToast("영업 기록을 보관했습니다.", "success");
       return;
     }
     const salesRecordRestore = event.target.closest("[data-sales-record-restore]");
@@ -2609,9 +2727,23 @@
       if (!item) return;
       const index = store[collection].findIndex(record => record.id === id);
       store[collection][index] = Sales.restoreRecord(item, salesActor());
-      if (collection === "salesUnits") recalculateSalesProspectVacancies(salesRecordRestore.dataset.salesProspectId);
+      const prospectId = salesRecordRestore.dataset.salesProspectId;
+      if (collection === "salesUnits") recalculateSalesProspectVacancies(prospectId);
+      if (["salesContacts", "salesUnits"].includes(collection)) recalculateSalesProspectStage(prospectId);
       logAudit({ category: "복원", targetType: "영업 기록", targetId: id, targetLabel: item.name || item.label || item.requirements || id, action: `${collection} 기록 복원`, reason: "영업 기록 재사용" });
-      scheduleSave(); renderSalesProspectDrawer(salesRecordRestore.dataset.salesProspectId); showToast("영업 기록을 복원했습니다.", "success");
+      scheduleSave(); renderSalesProspectDrawer(prospectId); renderPipeline(); showToast("영업 기록을 복원했습니다.", "success");
+      return;
+    }
+    const salesEvidenceLink = event.target.closest("[data-sales-evidence-link]");
+    if (salesEvidenceLink) {
+      event.preventDefault();
+      const rawUrl = String(salesEvidenceLink.dataset.salesEvidenceLink || "").trim();
+      try {
+        const url = new URL(rawUrl);
+        if (!["http:", "https:"].includes(url.protocol)) throw new Error("http 또는 https 링크만 열 수 있습니다.");
+        const result = await api.openExternal(url.toString());
+        if (!result.ok) showToast(result.error || "증거 링크를 열지 못했습니다.", "error");
+      } catch (error) { showToast(error.message || "올바른 증거 링크를 확인해 주세요.", "error"); }
       return;
     }
     const fieldPlatformLink = event.target.closest("[data-field-platform-link]");
@@ -3063,6 +3195,7 @@
   });
 
   document.addEventListener("change", async event => {
+    if (event.target.matches('#salesEventForm [name="type"]')) refreshSalesEventChannelField(event.target.form);
     if (event.target.matches('#workflowCaseCreateForm [name="crmBuildingId"], #workflowCaseBasicForm [name="crmBuildingId"]')) {
       const form = event.target.form;
       const building = buildingById(event.target.value);
@@ -3270,12 +3403,13 @@
       try {
         const prospectId = form.dataset.salesProspectId || raw.prospectId;
         if (raw.type === "contact_attempted" && (!raw.channel || !raw.result)) return showToast("최초접촉 완료 증거에는 채널과 결과가 필요합니다.", "error");
-        if (raw.type === "ad_published" && !raw.channel) return showToast("광고게시 완료 증거에는 게시 채널이 필요합니다.", "error");
+        if (raw.type === "contact_attempted" && !Sales.SALES_CHANNELS.includes(raw.channel)) return showToast("올바른 최초접촉 채널을 선택해 주세요.", "error");
+        if (raw.type === "ad_published" && !Sales.AD_CHANNELS.includes(raw.adChannel)) return showToast("올바른 광고 게시 채널을 선택해 주세요.", "error");
         const actor = salesActor();
         const eventValues = {
           prospectId, contactId: String(raw.contactId || ""), unitId: String(raw.unitId || ""), type: raw.type,
           opportunityId: String(raw.opportunityId || ""), occurredAt: String(raw.occurredAt || "").trim(), evidenceType: raw.evidenceType,
-          evidenceUrl: String(raw.evidenceUrl || "").trim(), evidenceNote: String(raw.evidenceNote || "").trim(), channel: String(raw.channel || ""), result: String(raw.result || ""),
+          evidenceUrl: String(raw.evidenceUrl || "").trim(), evidenceNote: String(raw.evidenceNote || "").trim(), channel: raw.type === "ad_published" ? String(raw.adChannel || "") : String(raw.channel || ""), result: String(raw.result || ""),
           managementStartedAt: String(raw.managementStartedAt || "").trim(), serviceScope: String(raw.serviceScope || "").trim(),
           checklistIds: formData.getAll("checklistIds").map(String), owner: String(raw.owner || "").trim() || salesActorName(), createdBy: actor.email
         };
@@ -3293,24 +3427,60 @@
         }
         scheduleSave(); closeModal(); render(); renderSalesProspectDrawer(prospectId); showToast("완료 증거를 저장하고 영업 단계를 반영했습니다.", "success");
       } catch (error) { showToast(error.message || "완료 증거를 저장하지 못했습니다.", "error"); }
+    } else if (form.id === "salesEventArchiveForm") {
+      const raw = Object.fromEntries(new FormData(form).entries());
+      const correctionReason = String(raw.correctionReason || "").trim();
+      if (!correctionReason) return showToast("완료 증거를 정정하는 사유를 입력해 주세요.", "error");
+      if (!assertSalesInputSafe(raw)) return;
+      try {
+        const prospectId = form.dataset.salesProspectId;
+        const item = (store.salesEvents || []).find(record => record && record.id === form.dataset.salesEventId && record.prospectId === prospectId);
+        if (!item || item.archivedAt) return showToast("보관할 완료 증거를 찾지 못했습니다.", "error");
+        const actor = salesActor();
+        const archived = Object.assign(Sales.archiveRecord(item, actor), { archiveReason: correctionReason });
+        store.salesEvents[store.salesEvents.findIndex(record => record && record.id === item.id)] = archived;
+        const stageResult = recalculateSalesProspectStage(prospectId);
+        logAudit({ category: "보관", targetType: "영업 완료 증거", targetId: item.id, targetLabel: item.type || item.id, action: `완료 증거 정정·보관 · ${stageResult?.previousStage || ""} → ${stageResult?.prospect?.stage || ""}`, reason: correctionReason });
+        scheduleSave(); closeModal(); render(); renderSalesProspectDrawer(prospectId); showToast("완료 증거를 보관하고 단계를 다시 계산했습니다.", "success");
+      } catch (error) { showToast(error.message || "완료 증거를 보관하지 못했습니다.", "error"); }
+    } else if (form.id === "salesResumeForm") {
+      const raw = Object.fromEntries(new FormData(form).entries());
+      const resumeReason = String(raw.resumeReason || "").trim();
+      if (!resumeReason) return showToast("영업 재개 사유를 입력해 주세요.", "error");
+      if (!assertSalesInputSafe(raw)) return;
+      try {
+        const prospect = salesProspectById(form.dataset.salesProspectId);
+        if (!prospect || prospect.archivedAt || prospect.stage !== "paused_closed") return showToast("보류·종료 상태인 영업 대상만 재개할 수 있습니다.", "error");
+        const actor = salesActor();
+        const eventValues = { prospectId: prospect.id, type: "prospect_resumed", resumeStage: raw.resumeStage, evidenceType: "resume_reason", evidenceNote: resumeReason, occurredAt: new Date().toISOString(), owner: salesActorName(), createdBy: actor.email };
+        const eventContext = salesRelationContext(actor);
+        const item = Sales.createSalesEvent(eventValues, eventContext);
+        store.salesEvents.push(item);
+        const stageResult = recalculateSalesProspectStage(prospect.id);
+        logAudit({ category: "단계변경", targetType: "영업 대상 건물", targetId: prospect.id, targetLabel: prospect.name || prospect.address, action: `영업 재개 · ${stageResult?.previousStage || "paused_closed"} → ${stageResult?.prospect?.stage || raw.resumeStage}`, reason: resumeReason });
+        scheduleSave(); closeModal(); render(); renderSalesProspectDrawer(prospect.id); showToast("영업 재개를 기록하고 단계를 반영했습니다.", "success");
+      } catch (error) { showToast(error.message || "영업을 재개하지 못했습니다.", "error"); }
     } else if (form.id === "salesOpportunityForm") {
       const raw = Object.fromEntries(new FormData(form).entries());
       if (!String(raw.requirements || "").trim()) return showToast("추가서비스 요구사항을 입력해 주세요.", "error");
       if (!assertSalesInputSafe(raw)) return;
       try {
         const existing = salesOpportunityById(form.dataset.salesOpportunityId);
+        const workflowCaseId = String(raw.workflowCaseId || "").trim();
+        if (workflowCaseId && !workflowCaseByKey(workflowCaseId)) return showToast("활성 민원·공사 케이스만 연결할 수 있습니다.", "error");
         if (!existing && raw.stage !== "discovered") return showToast("새 추가서비스는 ‘기회 발견’에서 시작해 주세요.", "error");
         if (existing && raw.stage !== existing.stage && !Sales.canTransitionOpportunityStage(existing.stage, raw.stage)) return showToast("추가서비스 상태는 한 단계씩 진행해 주세요.", "error");
         const opportunityValues = Object.assign({}, existing || {}, {
           prospectId: form.dataset.salesProspectId, unitId: String(raw.unitId || ""), serviceType: raw.serviceType, stage: raw.stage,
           requirements: String(raw.requirements || "").trim(), owner: String(raw.owner || "").trim() || salesActorName(), dueAt: raw.dueAt || "",
           quoteAmount: Number(raw.quoteAmount) || 0, revenueAmount: Number(raw.revenueAmount) || 0,
-          evidenceUrl: String(raw.evidenceUrl || "").trim(), evidenceNote: String(raw.evidenceNote || "").trim(), workflowCaseId: String(raw.workflowCaseId || "").trim()
+          evidenceUrl: String(raw.evidenceUrl || "").trim(), evidenceNote: String(raw.evidenceNote || "").trim(), workflowCaseId
         });
         const actor = salesActor();
-        Sales.assertOpportunity(opportunityValues, { prospects: store.salesProspects, units: store.salesUnits });
-        const transitionAt = new Date().toISOString();
-        const item = Sales.createSalesOpportunity(opportunityValues, actor, transitionAt);
+        const stageChanged = !existing || raw.stage !== existing.stage;
+        const transitionAt = stageChanged ? new Date().toISOString() : undefined;
+        const item = Sales.createSalesOpportunity(opportunityValues, actor, transitionAt, existing?.stage);
+        Sales.assertOpportunity(item, { prospects: store.salesProspects, units: store.salesUnits });
         if (existing) store.salesOpportunities[store.salesOpportunities.findIndex(record => record.id === existing.id)] = item;
         else store.salesOpportunities.push(item);
         logAudit({ category: existing ? "변경" : "등록", targetType: "추가서비스 기회", targetId: item.id, targetLabel: salesLabel(SALES_SERVICE_LABELS, item.serviceType), action: `${salesLabel(SALES_OPPORTUNITY_LABELS, item.stage)}${item.stage === "revenue_recorded" ? ` · ${krw(item.revenueAmount)}` : ""}`, reason: item.requirements });
@@ -3899,7 +4069,7 @@ document.addEventListener("keydown", event => {
   };
 
   setInterval(() => {
-    if ((currentView === "cases" || currentView === "payments" || currentView === "buildings") && !document.hidden) refreshOperations({ silent: true });
+    if (["cases", "payments", "buildings", "pipeline"].includes(currentView) && !document.hidden) refreshOperations({ silent: true });
   }, 30000);
 
   init();
