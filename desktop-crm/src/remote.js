@@ -302,6 +302,9 @@ class FirebaseRemoteClient {
     this.onAuthState = options.onAuthState || (() => {});
     this.onSyncState = options.onSyncState || (() => {});
     this.session = null;
+    // Google provider credentials are intentionally memory-only. They are
+    // consumed by the embedded FIELD once and are never persisted or logged.
+    this.fieldCredential = null;
     this.remotePayload = null;
     this.lastError = "";
     this.streamController = null;
@@ -561,9 +564,27 @@ class FirebaseRemoteClient {
     };
     await this.verifyAccess();
     await this.persistSession();
+    this.fieldCredential = { type: tokenType, token: providerToken };
     this.lastError = "";
     this.emitAuth();
     return this.session;
+  }
+
+  takeFieldCredential() {
+    const credential = this.fieldCredential;
+    this.fieldCredential = null;
+    return credential;
+  }
+
+  async acquireFieldCredential() {
+    const existing = this.takeFieldCredential();
+    if (existing) return existing;
+    if (!this.session) throw createError("CRM login is required.", "AUTH_REQUIRED");
+    const credential = await this.receiveGoogleCredential();
+    await this.exchangeGoogleCredential(credential);
+    const verified = this.takeFieldCredential();
+    if (!verified) throw createError("FIELD credential is unavailable.", "LOGIN_FAILED");
+    return verified;
   }
 
   async receiveGoogleCredential() {
@@ -695,6 +716,7 @@ class FirebaseRemoteClient {
   async logout(notify = true) {
     this.stopStream();
     this.session = null;
+    this.fieldCredential = null;
     this.remotePayload = null;
     this.lastError = "";
     await this.clearPersistedSession().catch(() => {});

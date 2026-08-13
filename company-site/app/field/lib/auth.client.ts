@@ -1,6 +1,7 @@
 import {
   GoogleAuthProvider,
   onAuthStateChanged,
+  signInWithCredential,
   signInWithPopup,
   signOut as firebaseSignOut,
 } from "firebase/auth";
@@ -43,6 +44,27 @@ export type FieldSessionObserver = (
   listener: FieldSessionListener,
   errorListener?: FieldSessionErrorListener,
 ) => () => void;
+
+type DesktopCredentialResponse = {
+  ok?: boolean;
+  type?: unknown;
+  token?: unknown;
+};
+
+export interface DesktopFieldAuthDependencies {
+  waitForAuthReady(): Promise<void>;
+  hasCurrentUser(): boolean;
+  requestCredential(): Promise<DesktopCredentialResponse>;
+  signIn(type: "id_token" | "access_token", token: string): Promise<void>;
+}
+
+declare global {
+  interface Window {
+    bringCRMField?: {
+      requestCredential(): Promise<DesktopCredentialResponse>;
+    };
+  }
+}
 
 const roles = new Set<UserRole>(["admin", "staff", "reviewer"]);
 
@@ -112,6 +134,47 @@ const defaultDependencies: FieldAuthDependencies = {
     await firebaseSignOut(auth);
   },
 };
+
+const defaultDesktopDependencies: DesktopFieldAuthDependencies = {
+  async waitForAuthReady() {
+    await auth.authStateReady();
+  },
+  hasCurrentUser() {
+    return Boolean(auth.currentUser);
+  },
+  async requestCredential() {
+    if (!window.bringCRMField) return { ok: false };
+    return window.bringCRMField.requestCredential();
+  },
+  async signIn(type, token) {
+    const credential = type === "id_token"
+      ? GoogleAuthProvider.credential(token)
+      : GoogleAuthProvider.credential(null, token);
+    await signInWithCredential(auth, credential);
+  },
+};
+
+export async function ensureDesktopFieldAuth(
+  dependencies: DesktopFieldAuthDependencies = defaultDesktopDependencies,
+): Promise<"restored" | "connected"> {
+  await dependencies.waitForAuthReady();
+  if (dependencies.hasCurrentUser()) return "restored";
+
+  const response = await dependencies.requestCredential();
+  const type = response?.type;
+  const token = response?.token;
+  if (
+    response?.ok !== true
+    || (type !== "id_token" && type !== "access_token")
+    || typeof token !== "string"
+    || token.length < 1
+    || token.length > 12000
+  ) {
+    throw new Error("field_desktop_credential_unavailable");
+  }
+  await dependencies.signIn(type, token);
+  return "connected";
+}
 
 function errorCode(error: unknown): unknown {
   return typeof error === "object" && error !== null && "code" in error

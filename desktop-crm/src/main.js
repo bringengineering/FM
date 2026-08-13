@@ -136,6 +136,30 @@ ipcMain.on("crm:field-reconnect-request", event => {
   void showFieldView();
 });
 
+ipcMain.handle("crm:field-credential", async event => {
+  if (!fieldView || fieldView.webContents.isDestroyed() || event.sender !== fieldView.webContents) {
+    return { ok: false, error: "FIELD_REQUEST_DENIED" };
+  }
+  if (!remoteClient || !remoteClient.authState().user) {
+    return { ok: false, error: "CRM_AUTH_REQUIRED" };
+  }
+  try {
+    const credential = await remoteClient.acquireFieldCredential();
+    if (
+      !credential
+      || !["id_token", "access_token"].includes(credential.type)
+      || typeof credential.token !== "string"
+      || credential.token.length < 1
+      || credential.token.length > 12000
+    ) {
+      return { ok: false, error: "FIELD_CREDENTIAL_UNAVAILABLE" };
+    }
+    return { ok: true, type: credential.type, token: credential.token };
+  } catch (_error) {
+    return { ok: false, error: "FIELD_CREDENTIAL_UNAVAILABLE" };
+  }
+});
+
 function demoOperations() {
   const now = new Date();
   const pad = value => String(value).padStart(2, "0");

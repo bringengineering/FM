@@ -14,16 +14,18 @@ function deferred<T>() {
 }
 
 describe("DesktopFieldBootstrap", () => {
-  it("uses the persistent embedded Firebase session without a paid handoff", () => {
+  it("uses the persistent embedded Firebase session without a paid handoff", async () => {
     const exchange = vi.fn();
+    const authenticate = vi.fn(async () => "restored" as const);
     render(
-      <DesktopFieldBootstrap directSession exchange={exchange}>
+      <DesktopFieldBootstrap directSession exchange={exchange} authenticate={authenticate}>
         <div>FIELD persistent session</div>
       </DesktopFieldBootstrap>,
     );
 
-    expect(screen.getByText("FIELD persistent session")).toBeInTheDocument();
+    expect(await screen.findByText("FIELD persistent session")).toBeInTheDocument();
     expect(exchange).not.toHaveBeenCalled();
+    expect(authenticate).toHaveBeenCalledOnce();
   });
 
   it("shows a connection state until the CRM handoff is consumed", async () => {
