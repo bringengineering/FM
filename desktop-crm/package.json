@@ -9,6 +9,8 @@
   "scripts": {
     "start": "electron .",
     "test": "node --test test/*.test.js",
+    "crm:migration:export": "electron scripts/export-crm-staging.js",
+    "crm:migration:verify": "node scripts/verify-crm-staging.js",
     "smoke": "set BRING_CRM_SMOKE=1&& electron .",
     "build:win": "electron-builder --win nsis --x64"
   },
