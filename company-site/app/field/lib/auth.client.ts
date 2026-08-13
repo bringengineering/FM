@@ -210,7 +210,9 @@ export function observeDesktopLogout(
   logout: () => Promise<void> = logoutFieldUser,
 ): () => void {
   const listener = () => {
-    void logout();
+    void logout().finally(() => {
+      window.dispatchEvent(new Event("bring-field-logout-complete"));
+    });
   };
   window.addEventListener("bring-crm-logout", listener);
   return () => window.removeEventListener("bring-crm-logout", listener);

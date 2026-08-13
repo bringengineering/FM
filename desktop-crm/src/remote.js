@@ -7,6 +7,7 @@ const FIREBASE = Object.freeze({
   databaseUrl: "https://bring-fm-hj-default-rtdb.asia-southeast1.firebasedatabase.app",
   authPageUrl: "https://bring-fm-hj.web.app/crm-auth/"
 });
+const FIELD_HANDOFF_CALLABLE_URL = "https://asia-northeast3-bring-fm.cloudfunctions.net/createDesktopFieldHandoff";
 
 const DEFAULT_CASE_AUTOMATION_ENDPOINT = "https://script.google.com/macros/s/AKfycbxGAdtEDoNifxkM-e_Jm7dBkCnjM4oPJqz8RxZXoMoSKod5M_m9Yj2b11-nI97zmfd6Jw/exec";
 const VENDOR_CSV_URL = "https://docs.google.com/spreadsheets/d/1SYC0CofvdPLE1AQax_IgLx3FFWmntXi4H6yQttV9y4A/export?format=csv&gid=0";
@@ -432,6 +433,25 @@ class FirebaseRemoteClient {
     await this.verifyAccess();
     await this.persistSession();
     return this.session.idToken;
+  }
+
+  async createFieldHandoff() {
+    const crmIdToken = await this.ensureIdToken(false);
+    const response = await this.requestJson(FIELD_HANDOFF_CALLABLE_URL, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ data: { crmIdToken } }),
+    }, "FIELD_HANDOFF_FAILED");
+    const result = response && response.result;
+    if (
+      !result
+      || typeof result.code !== "string"
+      || !/^[A-Za-z0-9_-]{43}$/.test(result.code)
+      || !Number.isFinite(Number(result.expiresAt))
+    ) {
+      throw createError("FIELD 연결 응답이 올바르지 않습니다.", "FIELD_HANDOFF_FAILED");
+    }
+    return { code: result.code, expiresAt: Number(result.expiresAt) };
   }
 
   async dbRequest(location, options, retried) {

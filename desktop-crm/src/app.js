@@ -2226,6 +2226,7 @@
   document.addEventListener("click", async event => {
     const nav = event.target.closest("[data-view]");
     if (nav) {
+      await api.hideFieldPlatform();
       currentView = nav.dataset.view;
       if (currentView === "cases") caseListMode = "active";
       render();
@@ -2234,7 +2235,7 @@
     }
     const fieldPlatformLink = event.target.closest("[data-field-platform-link]");
     if (fieldPlatformLink) {
-      const result = await api.openFieldPlatform();
+      const result = await api.showFieldPlatform();
       if (!result.ok) showToast(result.error || "BRING FIELD를 열지 못했습니다.", "error");
       return;
     }

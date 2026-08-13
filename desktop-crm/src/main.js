@@ -1,15 +1,18 @@
-const { app, BrowserWindow, ipcMain, dialog, Menu, safeStorage, shell } = require("electron");
+const { app, BrowserWindow, WebContentsView, ipcMain, dialog, Menu, safeStorage, shell } = require("electron");
 const { autoUpdater } = require("electron-updater");
 const fs = require("node:fs/promises");
 const path = require("node:path");
 const Core = require("./core");
 const { FirebaseRemoteClient, encodeProtectedJson, decodeProtectedJson } = require("./remote");
 const VendorExtractor = require("./vendor-extractor");
+const { fieldBounds, isAllowedFieldNavigation } = require("./field-view-policy");
 const FIELD_PLATFORM_URL = "https://bring-fm.web.app/field";
 
 if (process.env.BRING_CRM_SCREENSHOT || process.env.BRING_CRM_SMOKE === "1") app.disableHardwareAcceleration();
 
 let mainWindow = null;
+let fieldView = null;
+let fieldViewVisible = false;
 let remoteClient = null;
 let updaterConfigured = false;
 let updatePromptOpen = false;
@@ -23,6 +26,94 @@ if (localTestMode && !process.env.BRING_CRM_DATA_DIR) {
   app.setPath("userData", path.join(app.getPath("temp"), "bring-crm-desktop-tests", String(process.pid)));
 }
 let localOperationsData = null;
+
+function resizeFieldView() {
+  if (!mainWindow || mainWindow.isDestroyed() || !fieldView || !fieldViewVisible) return;
+  fieldView.setBounds(fieldBounds(mainWindow.getContentBounds()));
+}
+
+function hideFieldView() {
+  if (fieldView) fieldView.setVisible(false);
+  fieldViewVisible = false;
+  return { ok: true };
+}
+
+function destroyFieldView() {
+  if (!fieldView) return;
+  try {
+    if (mainWindow && !mainWindow.isDestroyed()) mainWindow.contentView.removeChildView(fieldView);
+  } catch (_error) {}
+  try {
+    if (!fieldView.webContents.isDestroyed()) fieldView.webContents.close();
+  } catch (_error) {}
+  fieldView = null;
+  fieldViewVisible = false;
+}
+
+function ensureFieldView() {
+  if (fieldView && !fieldView.webContents.isDestroyed()) return fieldView;
+  if (!mainWindow || mainWindow.isDestroyed()) throw new Error("CRM_WINDOW_UNAVAILABLE");
+
+  fieldView = new WebContentsView({
+    webPreferences: {
+      preload: path.join(__dirname, "field-preload.js"),
+      contextIsolation: true,
+      nodeIntegration: false,
+      sandbox: true,
+      partition: "persist:bring-field",
+    },
+  });
+  const contents = fieldView.webContents;
+  contents.setWindowOpenHandler(() => ({ action: "deny" }));
+  contents.on("will-navigate", (event, url) => {
+    if (!isAllowedFieldNavigation(url)) event.preventDefault();
+  });
+  contents.on("will-redirect", (event, url) => {
+    if (!isAllowedFieldNavigation(url)) event.preventDefault();
+  });
+  contents.session.setPermissionRequestHandler((_webContents, _permission, callback) => callback(false));
+  contents.session.on("will-download", event => event.preventDefault());
+  mainWindow.contentView.addChildView(fieldView);
+  fieldView.setVisible(false);
+  return fieldView;
+}
+
+async function showFieldView() {
+  if (!remoteClient || !remoteClient.authState().user) {
+    return { ok: false, error: "CRM에 먼저 로그인해 주세요." };
+  }
+  try {
+    const handoff = await remoteClient.createFieldHandoff();
+    const view = ensureFieldView();
+    const url = `${FIELD_PLATFORM_URL}?embedded=crm&desktop_handoff=${encodeURIComponent(handoff.code)}`;
+    await view.webContents.loadURL(url);
+    fieldViewVisible = true;
+    view.setBounds(fieldBounds(mainWindow.getContentBounds()));
+    view.setVisible(true);
+    return { ok: true };
+  } catch (_error) {
+    destroyFieldView();
+    return { ok: false, error: "BRING FIELD 연결에 실패했습니다. 잠시 후 다시 시도해 주세요." };
+  }
+}
+
+async function signOutFieldView() {
+  if (!fieldView || fieldView.webContents.isDestroyed()) return;
+  try {
+    await fieldView.webContents.executeJavaScript(`new Promise(resolve => {
+      const finish = () => resolve(true);
+      window.addEventListener("bring-field-logout-complete", finish, { once: true });
+      window.dispatchEvent(new Event("bring-crm-logout"));
+      setTimeout(finish, 1500);
+    })`, true);
+  } catch (_error) {}
+  destroyFieldView();
+}
+
+ipcMain.on("crm:field-reconnect-request", event => {
+  if (!fieldView || event.sender !== fieldView.webContents) return;
+  void showFieldView();
+});
 
 function demoOperations() {
   const now = new Date();
@@ -525,6 +616,11 @@ async function createWindow() {
   });
   mainWindow.webContents.on("will-navigate", event => event.preventDefault());
   mainWindow.webContents.setWindowOpenHandler(() => ({ action: "deny" }));
+  mainWindow.on("resize", resizeFieldView);
+  mainWindow.on("closed", () => {
+    destroyFieldView();
+    mainWindow = null;
+  });
   await mainWindow.loadFile(path.join(__dirname, "index.html"), {
     query: process.env.BRING_CRM_SCREENSHOT ? { demo: process.env.BRING_CRM_SCREENSHOT_GUIDE === "1" ? "0" : "1", view: process.env.BRING_CRM_SCREENSHOT_VIEW || "dashboard" } : {}
   });
@@ -1819,6 +1915,7 @@ secureHandle("crm:auth-change-password", async password => {
   catch (error) { return { ok: false, error: error.message, code: error.code || "PASSWORD_CHANGE_FAILED" }; }
 });
 secureHandle("crm:auth-logout", async () => {
+  await signOutFieldView();
   if (remoteClient) await remoteClient.logout();
   return { ok: true };
 });
@@ -1841,14 +1938,14 @@ secureHandle("crm:update-install", () => {
   setImmediate(() => autoUpdater.quitAndInstall(false, true));
   return { ok: true };
 });
-secureHandle("crm:open-field-platform", async () => {
+secureHandle("crm:show-field-platform", async () => {
   try {
-    await shell.openExternal(FIELD_PLATFORM_URL);
-    return { ok: true };
+    return await showFieldView();
   } catch (_error) {
     return { ok: false, error: "BRING FIELD를 열지 못했습니다." };
   }
 });
+secureHandle("crm:hide-field-platform", async () => hideFieldView());
 secureHandle("crm:open-external", async rawUrl => {
   try {
     const url = new URL(String(rawUrl || ""));

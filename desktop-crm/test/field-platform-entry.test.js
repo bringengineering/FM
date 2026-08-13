@@ -17,7 +17,7 @@ test("sidebar exposes BRING FIELD without replacing an existing CRM view", async
   assert.ok(html.indexOf("data-field-platform-link") < html.indexOf('data-view="consultations"'));
 });
 
-test("FIELD entry uses a dedicated fixed-url Electron IPC boundary", async () => {
+test("FIELD entry uses an internal fixed-origin Electron IPC boundary", async () => {
   const [app, preload, main] = await Promise.all([
     source("app.js"),
     source("preload.js"),
@@ -25,9 +25,13 @@ test("FIELD entry uses a dedicated fixed-url Electron IPC boundary", async () =>
   ]);
 
   assert.match(app, /closest\("\[data-field-platform-link\]"\)/);
-  assert.match(app, /await api\.openFieldPlatform\(\)/);
-  assert.match(preload, /openFieldPlatform:\s*\(\)\s*=>\s*ipcRenderer\.invoke\("crm:open-field-platform"\)/);
+  assert.match(app, /await api\.showFieldPlatform\(\)/);
+  assert.match(app, /await api\.hideFieldPlatform\(\)/);
+  assert.match(preload, /showFieldPlatform:\s*\(\)\s*=>\s*ipcRenderer\.invoke\("crm:show-field-platform"\)/);
+  assert.match(preload, /hideFieldPlatform:\s*\(\)\s*=>\s*ipcRenderer\.invoke\("crm:hide-field-platform"\)/);
   assert.match(main, /const FIELD_PLATFORM_URL = "https:\/\/bring-fm\.web\.app\/field";/);
-  assert.match(main, /secureHandle\("crm:open-field-platform", async \(\) =>/);
-  assert.match(main, /await shell\.openExternal\(FIELD_PLATFORM_URL\)/);
+  assert.match(main, /secureHandle\("crm:show-field-platform", async \(\) =>/);
+  assert.match(main, /secureHandle\("crm:hide-field-platform", async \(\) =>/);
+  assert.match(main, /new WebContentsView\(/);
+  assert.doesNotMatch(main, /shell\.openExternal\(FIELD_PLATFORM_URL\)/);
 });
