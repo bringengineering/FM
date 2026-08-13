@@ -78,7 +78,7 @@ test("event validation enforces common evidence and event-specific relations", (
 
   const validListing = Sales.validateEvent({
     prospectId: "spr_1", unitId: "sun_1", type: "listing_received",
-    occurredAt: "2026-08-13T00:00:00.000Z", ...evidence
+    occurredAt: "2026-08-13T00:00:00.000Z", ...evidence, evidenceType: "broker_handoff"
   });
   assert.equal(validListing.valid, true);
 });
@@ -91,6 +91,61 @@ test("stageFromEvents ignores invalid and archived events and chooses the highes
     { prospectId: "spr_1", unitId: "sun_1", type: "lease_signed", occurredAt: "2026-08-04T00:00:00.000Z", archivedAt: "2026-08-05T00:00:00.000Z", ...evidence }
   ];
   assert.equal(Sales.stageFromEvents(events, { prospectId: "spr_1", units: [{ id: "sun_1", prospectId: "spr_1" }] }), "ad_published");
+});
+
+test("an explicit resume event reopens a paused prospect at the chosen stage", () => {
+  const actor = { email: "owner@bring.test" };
+  const paused = { id: "p1", name: "대학로 원룸", stage: "paused_closed", archivedAt: "" };
+  const history = [
+    { id: "e1", prospectId: "p1", type: "prospect_created", occurredAt: "2026-08-01T00:00:00.000Z", ...evidence },
+    { id: "e2", prospectId: "p1", type: "interest_qualified", occurredAt: "2026-08-02T00:00:00.000Z", ...evidence },
+    { id: "e3", prospectId: "p1", type: "prospect_paused", occurredAt: "2026-08-03T00:00:00.000Z", evidenceType: "note", evidenceNote: "다음 학기 재연락" }
+  ];
+  const resumed = Sales.createSalesEvent({
+    prospectId: "p1", type: "prospect_resumed", resumeStage: "qualified_interest",
+    occurredAt: "2026-08-10T00:00:00.000Z", evidenceType: "resume_reason", evidenceNote: "공실 발생으로 영업 재개"
+  }, { prospects: [paused], actor });
+  const updated = Sales.recalculateProspectStage(paused, [...history, resumed], { prospects: [paused] }, actor, "2026-08-10T00:00:00.000Z");
+
+  assert.ok(Sales.SALES_EVENT_TYPES.includes("prospect_resumed"));
+  assert.equal(resumed.resumeStage, "qualified_interest");
+  assert.equal(updated.stage, "qualified_interest");
+  assert.equal(updated.updatedBy, actor.email);
+  assert.equal(paused.stage, "paused_closed");
+});
+
+test("assertEvent accepts a valid explicit resume only for a paused prospect", () => {
+  const resume = {
+    prospectId: "p1", type: "prospect_resumed", resumeStage: "qualified_interest",
+    occurredAt: "2026-08-10T00:00:00.000Z", evidenceType: "resume_reason", evidenceNote: "공실 발생으로 재개"
+  };
+  assert.equal(Sales.assertEvent(resume, { prospects: [{ id: "p1", stage: "paused_closed" }] }).type, "prospect_resumed");
+  assert.throws(
+    () => Sales.assertEvent(resume, { prospects: [{ id: "p1", stage: "qualified_interest" }] }),
+    error => error && error.code === "SALES_PROSPECT_NOT_PAUSED"
+  );
+});
+
+test("historical pause evidence remains valid during stage recalculation", () => {
+  const paused = { id: "p1", stage: "paused_closed" };
+  const events = [
+    { id: "e1", prospectId: "p1", type: "reply_received", occurredAt: "2026-08-01T00:00:00.000Z", ...evidence },
+    { id: "e2", prospectId: "p1", type: "prospect_paused", occurredAt: "2026-08-02T00:00:00.000Z", evidenceType: "note", evidenceNote: "다음 학기 재연락" }
+  ];
+  assert.equal(Sales.stageFromEvents(events, { prospectId: "p1", prospects: [paused] }), "paused_closed");
+  assert.equal(Sales.recalculateProspectStage(paused, events, { prospects: [paused] }).stage, "paused_closed");
+  assert.equal(Sales.validateEvent(events[0], { prospects: [paused] }).valid, false);
+});
+
+test("nextStageFromEvents follows canonical pause resume and archived-event semantics", () => {
+  const events = [
+    { id: "e1", prospectId: "p1", type: "interest_qualified", occurredAt: "2026-08-01T00:00:00.000Z", ...evidence },
+    { id: "e2", prospectId: "p1", type: "prospect_paused", occurredAt: "2026-08-02T00:00:00.000Z", evidenceType: "note", evidenceNote: "잠시 보류" },
+    { id: "e3", prospectId: "p1", type: "prospect_resumed", resumeStage: "replied", occurredAt: "2026-08-03T00:00:00.000Z", evidenceType: "resume_reason", evidenceNote: "공실 확인" },
+    { id: "e5", prospectId: "p1", type: "prospect_closed", occurredAt: "2026-08-05T00:00:00.000Z", archivedAt: "2026-08-06T00:00:00.000Z", evidenceType: "note", evidenceNote: "오입력" }
+  ];
+  assert.equal(Sales.nextStageFromEvents("p1", events), "replied");
+  assert.equal(Sales.nextStageFromEvents("p1", events), Sales.stageFromEvents(events, { prospectId: "p1" }));
 });
 
 test("opted-out contacts block new sms and call attempts", () => {
@@ -109,8 +164,8 @@ test("calculateKpis counts only valid completion evidence with unique prospect a
     { id: "e1", prospectId: "p1", type: "contact_attempted", channel: "sms", owner: "김현진", result: "no_response", occurredAt: "2026-08-01T00:00:00.000Z", ...evidence },
     { id: "e2", prospectId: "p1", type: "contact_attempted", channel: "call", owner: "김현진", result: "no_response", occurredAt: "2026-08-02T00:00:00.000Z", ...evidence },
     { id: "e3", prospectId: "p1", type: "reply_received", occurredAt: "2026-08-03T00:00:00.000Z", ...evidence },
-    { id: "e4", prospectId: "p1", unitId: "u1", type: "listing_received", occurredAt: "2026-08-04T00:00:00.000Z", ...evidence },
-    { id: "e5", prospectId: "p1", unitId: "u1", type: "listing_received", occurredAt: "2026-08-05T00:00:00.000Z", ...evidence },
+    { id: "e4", prospectId: "p1", unitId: "u1", type: "listing_received", occurredAt: "2026-08-04T00:00:00.000Z", ...evidence, evidenceType: "broker_handoff" },
+    { id: "e5", prospectId: "p1", unitId: "u1", type: "listing_received", occurredAt: "2026-08-05T00:00:00.000Z", ...evidence, evidenceType: "broker_handoff" },
     { id: "e6", prospectId: "p1", unitId: "u1", type: "ad_published", channel: "naver", occurredAt: "2026-08-06T00:00:00.000Z", ...evidence },
     { id: "e7", prospectId: "p1", unitId: "u2", type: "ad_published", occurredAt: "2026-08-07T00:00:00.000Z" },
     { id: "e8", prospectId: "p2", unitId: "u3", type: "lease_signed", occurredAt: "2026-08-08T00:00:00.000Z", archivedAt: "2026-08-09T00:00:00.000Z", ...evidence }
@@ -136,6 +191,17 @@ test("calculateKpis counts only valid completion evidence with unique prospect a
   assert.equal(kpis.leaseSignedUnits, 0);
   assert.equal(kpis.completedOpportunities, 1);
   assert.equal(kpis.revenueRecorded, 100000);
+});
+
+test("follow-up KPI day boundaries use Asia Seoul instead of UTC", () => {
+  const kpis = Sales.calculateKpis({
+    salesProspects: [
+      { id: "today", stage: "candidate", nextActionAt: "2026-08-13T01:00:00.000Z" },
+      { id: "overdue", stage: "candidate", nextActionAt: "2026-08-12T14:59:00.000Z" }
+    ]
+  }, { now: "2026-08-12T16:00:00.000Z" });
+  assert.equal(kpis.todayFollowUps, 1);
+  assert.equal(kpis.overdueFollowUps, 1);
 });
 
 test("opportunity transitions follow the approved five-stage order", () => {
@@ -208,7 +274,7 @@ test("normalized-address duplicates exclude the current and archived records", (
 
 test("UI KPI contract exposes the approved result names and excludes paused prospects", () => {
   const at = "2026-08-13T09:00:00.000Z";
-  const event = (id, type, unitId) => ({ id, prospectId: "p1", unitId, type, channel: type === "ad_published" ? "naver" : "", occurredAt: at, evidenceNote: "확인" });
+  const event = (id, type, unitId) => ({ id, prospectId: "p1", unitId, type, channel: type === "ad_published" ? "naver" : "", occurredAt: at, evidenceType: type === "listing_received" ? "broker_handoff" : "note", evidenceNote: "확인" });
   const kpis = Sales.computeSalesKpis({
     salesProspects: [
       { id: "p1", owner: "김현진", nextActionAt: "2026-08-12", archivedAt: "", stage: "ad_published" },
@@ -293,7 +359,7 @@ test("event relations must be active and belong to the same prospect", () => {
     assert.equal(result.valid, false);
     assert.ok(result.errors.some(error => error.code === "CONTACT_NOT_ACTIVE_FOR_PROSPECT"));
   }
-  assert.equal(Sales.validateEvent({ ...base, type: "listing_received", unitId: "u-valid" }, context).valid, true);
+  assert.equal(Sales.validateEvent({ ...base, type: "listing_received", unitId: "u-valid", evidenceType: "broker_handoff" }, context).valid, true);
   assert.equal(Sales.validateEvent({ ...base, type: "contact_verified", contactId: "c-valid" }, context).valid, true);
   const orphanProspect = Sales.validateEvent({ ...base, type: "reply_received" }, { prospects: [{ id: "p2" }] });
   assert.ok(orphanProspect.errors.some(error => error.code === "PROSPECT_NOT_ACTIVE"));
@@ -304,7 +370,7 @@ test("event relations must be active and belong to the same prospect", () => {
 });
 
 test("KPI evidence requires an active prospect and valid active relations", () => {
-  const event = { id: "e1", prospectId: "p1", unitId: "u1", type: "listing_received", occurredAt: "2026-08-13T09:00:00.000Z", ...evidence };
+  const event = { id: "e1", prospectId: "p1", unitId: "u1", type: "listing_received", occurredAt: "2026-08-13T09:00:00.000Z", ...evidence, evidenceType: "broker_handoff" };
   const orphan = Sales.calculateKpis({ salesProspects: [], salesUnits: [{ id: "u1", prospectId: "p1" }], salesEvents: [event] });
   assert.equal(orphan.listingUnits, 0);
 
@@ -336,6 +402,14 @@ test("approved event types enforce their own completion evidence", () => {
 
   const ad = Sales.validateEvent({ ...base, type: "ad_published", unitId: "u1" });
   assert.ok(ad.errors.some(error => error.code === "AD_CHANNEL_REQUIRED"));
+  assert.ok(Sales.AD_CHANNELS.includes("naver"));
+  assert.ok(Sales.AD_CHANNELS.includes("daangn"));
+  assert.ok(Sales.validateEvent({ ...base, type: "ad_published", unitId: "u1", channel: "not-blank" }).errors.some(error => error.code === "AD_CHANNEL_INVALID"));
+  assert.equal(Sales.validateEvent({ ...base, type: "ad_published", unitId: "u1", channel: "naver" }).valid, true);
+
+  const weakListing = Sales.validateEvent({ ...base, type: "listing_received", unitId: "u1", evidenceType: "note" });
+  assert.ok(weakListing.errors.some(error => error.code === "BROKER_HANDOFF_REQUIRED"));
+  assert.equal(Sales.validateEvent({ ...base, type: "listing_received", unitId: "u1", evidenceType: "broker_handoff" }).valid, true);
 
   const weakLease = Sales.validateEvent({ ...base, type: "lease_signed", unitId: "u1", evidenceType: "note" });
   assert.ok(weakLease.errors.some(error => error.code === "BROKER_CONFIRMATION_REQUIRED"));
@@ -348,7 +422,6 @@ test("approved event types enforce their own completion evidence", () => {
     ...base, type: "paid_management_started", evidenceType: "management_start",
     managementStartedAt: at, serviceScope: "공실·입퇴실 일정과 민원 접수"
   }).valid, true);
-  assert.equal(Sales.validateEvent({ ...base, type: "ad_published", unitId: "u1", channel: "not-blank" }).valid, true);
   const invalidFirstEnums = Sales.validateEvent({
     ...base, type: "contact_attempted", channel: "carrier_pigeon", owner: "김현진", result: "mystery"
   });
@@ -499,6 +572,43 @@ test("normalization does not invent a milestone date for an undated legacy oppor
   assert.equal(kpis.revenueRecorded, 0);
 });
 
+test("editing an undated legacy completed opportunity does not create a current milestone", () => {
+  const legacy = Sales.normalizeSalesOpportunity({
+    id: "legacy-undated", prospectId: "p1", serviceType: "repair", stage: "work_completed",
+    evidenceNote: "과거 완료 기록"
+  });
+  const edited = Sales.createSalesOpportunity(
+    { ...legacy, requirements: "메모만 수정" },
+    { email: "owner@bring.test" },
+    "2026-08-13T09:00:00.000Z"
+  );
+  assert.equal(edited.workCompletedAt, "");
+  assert.equal(edited.milestoneDateSource, "legacy_undated");
+});
+
+test("an explicit legacy opportunity stage transition timestamps only the milestone being crossed", () => {
+  const actor = { email: "owner@bring.test" };
+  const transitionAt = "2026-08-13T09:00:00.000Z";
+  const legacyQuote = Sales.normalizeSalesOpportunity({
+    id: "legacy-quote", prospectId: "p1", serviceType: "repair", stage: "quote_approved"
+  });
+  const completed = Sales.createSalesOpportunity({
+    ...legacyQuote, stage: "work_completed", evidenceNote: "작업 완료 확인"
+  }, actor, transitionAt, "quote_approved");
+  assert.equal(completed.workCompletedAt, transitionAt);
+  assert.equal(completed.milestoneDateSource, "transition_time");
+
+  const legacyCompleted = Sales.normalizeSalesOpportunity({
+    id: "legacy-work", prospectId: "p1", serviceType: "repair", stage: "work_completed", evidenceNote: "과거 완료"
+  });
+  const revenue = Sales.createSalesOpportunity({
+    ...legacyCompleted, stage: "revenue_recorded", revenueAmount: 100000, evidenceNote: "입금 확인"
+  }, actor, transitionAt, "work_completed");
+  assert.equal(revenue.workCompletedAt, "");
+  assert.equal(revenue.revenueRecordedAt, transitionAt);
+  assert.equal(revenue.milestoneDateSource, "legacy_undated");
+});
+
 test("opportunity relations must point to an active prospect and same-prospect active unit", () => {
   const opportunity = { id: "o1", prospectId: "p1", unitId: "u1", serviceType: "repair", stage: "quote_requested" };
   const wrongUnit = Sales.validateOpportunity(opportunity, {
@@ -527,7 +637,7 @@ test("opportunity relations must point to an active prospect and same-prospect a
 
 test("stage calculation rejects orphan related events when relation collections are provided", () => {
   const event = {
-    prospectId: "p1", unitId: "u1", type: "listing_received", occurredAt: "2026-08-13T09:00:00.000Z", ...evidence
+    prospectId: "p1", unitId: "u1", type: "listing_received", occurredAt: "2026-08-13T09:00:00.000Z", ...evidence, evidenceType: "broker_handoff"
   };
   assert.equal(Sales.stageFromEvents([event], { prospectId: "p1", units: [{ id: "u1", prospectId: "p2" }] }), "candidate");
   assert.equal(Sales.nextStageFromEvents("p1", [event], { units: [{ id: "u1", prospectId: "p2" }] }), "candidate");

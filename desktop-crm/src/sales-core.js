@@ -48,10 +48,13 @@
   const UNIT_STATUSES = Object.freeze(["vacant", "upcoming", "occupied", "unknown"]);
   const LEASE_EVIDENCE_TYPES = Object.freeze(["broker_confirmation", "broker_handoff"]);
   const MANAGEMENT_EVIDENCE_TYPES = Object.freeze(["management_start", "service_contract"]);
+  const AD_CHANNELS = Object.freeze(["naver", "daangn", "naver_blog", "zigbang", "dabang", "other"]);
+  const RESUME_EVENT_TYPE = "prospect_resumed";
+  const RESUMABLE_STAGES = Object.freeze(SALES_STAGES.map(stage => stage.id).filter(stage => stage !== "paused_closed"));
 
   const EVENT_TO_STAGE = new Map();
   SALES_STAGES.forEach(stage => stage.events.forEach(event => EVENT_TO_STAGE.set(event, stage.id)));
-  const EVENT_TYPES = Object.freeze(Array.from(EVENT_TO_STAGE.keys()));
+  const EVENT_TYPES = Object.freeze([...EVENT_TO_STAGE.keys(), RESUME_EVENT_TYPE]);
   const STAGE_INDEX = new Map(SALES_STAGES.map((stage, index) => [stage.id, index]));
   const UNIT_EVENTS = new Set(["listing_received", "ad_published", "tenant_inquiry", "tenant_visit", "lease_signed"]);
 
@@ -74,6 +77,21 @@
   function actorEmail(actor) {
     if (typeof actor === "string") return text(actor);
     return actor && typeof actor.email === "string" ? text(actor.email) : "";
+  }
+
+  function seoulDateKey(value) {
+    const source = text(value);
+    if (!source) return "";
+    if (/^\d{4}-\d{2}-\d{2}$/.test(source)) return source;
+    const date = new Date(source);
+    if (Number.isNaN(date.getTime())) return "";
+    const parts = new Intl.DateTimeFormat("en-CA", {
+      timeZone: "Asia/Seoul", year: "numeric", month: "2-digit", day: "2-digit"
+    }).formatToParts(date).reduce((result, part) => {
+      if (part.type !== "literal") result[part.type] = part.value;
+      return result;
+    }, {});
+    return `${parts.year}-${parts.month}-${parts.day}`;
   }
 
   function commonRecord(value, prefix, actor, at) {
@@ -246,6 +264,7 @@
       unitId: text(source.unitId),
       opportunityId: text(source.opportunityId),
       type: text(source.type),
+      resumeStage: text(source.resumeStage),
       occurredAt: owns(source, "occurredAt") ? explicitIso(source.occurredAt) : createdAt,
       evidenceType: text(source.evidenceType) || (text(source.evidenceUrl) ? "url" : (text(source.evidenceNote) ? "note" : "")),
       evidenceUrl: text(source.evidenceUrl),
@@ -270,10 +289,16 @@
     const errors = [];
     if (!text(event.prospectId)) errors.push(errorItem("prospectId", "PROSPECT_REQUIRED", "대상 건물이 필요합니다."));
     if (text(event.prospectId) && context && Array.isArray(context.prospects)) {
-      const prospect = context.prospects.find(item => item && item.id === event.prospectId && !item.archivedAt && item.stage !== "paused_closed");
-      if (!prospect) errors.push(errorItem("prospectId", "PROSPECT_NOT_ACTIVE", "활성 영업 대상 건물을 찾을 수 없습니다."));
+      const prospect = context.prospects.find(item => item && item.id === event.prospectId && !item.archivedAt);
+      if (!prospect) {
+        errors.push(errorItem("prospectId", "PROSPECT_NOT_ACTIVE", "활성 영업 대상 건물을 찾을 수 없습니다."));
+      } else if (context.historical !== true && event.type === RESUME_EVENT_TYPE && prospect.stage !== "paused_closed") {
+        errors.push(errorItem("prospectId", "PROSPECT_NOT_PAUSED", "보류·종료 상태인 영업 대상만 재개할 수 있습니다."));
+      } else if (context.historical !== true && event.type !== RESUME_EVENT_TYPE && prospect.stage === "paused_closed") {
+        errors.push(errorItem("prospectId", "PROSPECT_NOT_ACTIVE", "활성 영업 대상 건물을 찾을 수 없습니다."));
+      }
     }
-    if (!EVENT_TO_STAGE.has(event.type)) errors.push(errorItem("type", "EVENT_TYPE_INVALID", "올바른 영업 이벤트가 필요합니다."));
+    if (!EVENT_TO_STAGE.has(event.type) && event.type !== RESUME_EVENT_TYPE) errors.push(errorItem("type", "EVENT_TYPE_INVALID", "올바른 영업 이벤트가 필요합니다."));
     if (!text(event.occurredAt)) {
       errors.push(errorItem("occurredAt", "OCCURRED_AT_REQUIRED", "발생시각이 필요합니다."));
     } else if (!validIso(event.occurredAt)) {
@@ -314,8 +339,12 @@
       if (!text(event.result)) errors.push(errorItem("result", "CONTACT_RESULT_REQUIRED", "최초접촉 결과가 필요합니다."));
       else if (!SALES_RESULTS.includes(event.result)) errors.push(errorItem("result", "CONTACT_RESULT_INVALID", "올바른 최초접촉 결과를 선택해 주세요."));
     }
-    if (event.type === "ad_published" && !text(event.channel)) {
-      errors.push(errorItem("channel", "AD_CHANNEL_REQUIRED", "광고 게시 채널이 필요합니다."));
+    if (event.type === "listing_received" && event.evidenceType !== "broker_handoff") {
+      errors.push(errorItem("evidenceType", "BROKER_HANDOFF_REQUIRED", "협력 공인중개사에게 매물을 인계한 증거가 필요합니다."));
+    }
+    if (event.type === "ad_published") {
+      if (!text(event.channel)) errors.push(errorItem("channel", "AD_CHANNEL_REQUIRED", "광고 게시 채널이 필요합니다."));
+      else if (!AD_CHANNELS.includes(event.channel)) errors.push(errorItem("channel", "AD_CHANNEL_INVALID", "올바른 광고 게시 채널을 선택해 주세요."));
     }
     if (event.type === "lease_signed" && !LEASE_EVIDENCE_TYPES.includes(event.evidenceType)) {
       errors.push(errorItem("evidenceType", "BROKER_CONFIRMATION_REQUIRED", "협력 공인중개사의 계약완료 확인 증거가 필요합니다."));
@@ -328,6 +357,12 @@
     }
     if (["prospect_paused", "prospect_closed"].includes(event.type) && !text(event.evidenceNote)) {
       errors.push(errorItem("evidenceNote", "CLOSE_REASON_REQUIRED", "보류·종료 사유가 필요합니다."));
+    }
+    if (event.type === RESUME_EVENT_TYPE) {
+      if (!RESUMABLE_STAGES.includes(event.resumeStage)) {
+        errors.push(errorItem("resumeStage", "RESUME_STAGE_REQUIRED", "재개할 영업 단계를 선택해 주세요."));
+      }
+      if (!text(event.evidenceNote)) errors.push(errorItem("evidenceNote", "RESUME_REASON_REQUIRED", "영업 재개 사유가 필요합니다."));
     }
     return { valid: errors.length === 0, errors };
   }
@@ -347,7 +382,7 @@
     return record;
   }
 
-  function normalizeSalesOpportunity(value, actor, at) {
+  function normalizeSalesOpportunity(value, actor, at, previousStage) {
     const source = value && typeof value === "object" ? value : {};
     const record = commonRecord(source, "sop", actor, at);
     record.prospectId = text(record.prospectId);
@@ -369,16 +404,31 @@
     const hasGeneratedId = !text(source.id);
     const isLegacy = !hasGeneratedId && !hasStoredMilestones && !at;
     const transitionAt = iso(at);
+    const transitionFrom = text(previousStage);
+    const explicitTransition = Boolean(transitionFrom && transitionFrom !== record.stage);
+    const legacyUndated = source.milestoneDateSource === "legacy_undated";
+    const previousIndex = OPPORTUNITY_STAGES.indexOf(transitionFrom);
+    const currentIndex = OPPORTUNITY_STAGES.indexOf(record.stage);
+    const workIndex = OPPORTUNITY_STAGES.indexOf("work_completed");
+    const revenueIndex = OPPORTUNITY_STAGES.indexOf("revenue_recorded");
+    const crossesWork = explicitTransition && previousIndex >= 0 && previousIndex < workIndex && currentIndex >= workIndex;
+    const crossesRevenue = explicitTransition && previousIndex >= 0 && previousIndex < revenueIndex && currentIndex >= revenueIndex;
+    const stampWork = Boolean(at && (!legacyUndated || crossesWork));
+    const stampRevenue = Boolean(at && (!legacyUndated || crossesRevenue));
     record.workCompletedAt = validIso(source.workCompletedAt) ? new Date(source.workCompletedAt).toISOString()
       : (["work_completed", "revenue_recorded"].includes(record.stage)
-        ? (at ? transitionAt : (owns(source, "workCompletedAt") ? "" : (isLegacy ? legacyMilestone : transitionAt)))
+        ? (stampWork ? transitionAt : (owns(source, "workCompletedAt") ? "" : (isLegacy ? legacyMilestone : transitionAt)))
         : "");
     record.revenueRecordedAt = validIso(source.revenueRecordedAt) ? new Date(source.revenueRecordedAt).toISOString()
       : (record.stage === "revenue_recorded"
-        ? (at ? transitionAt : (owns(source, "revenueRecordedAt") ? "" : (isLegacy ? legacyMilestone : transitionAt)))
+        ? (stampRevenue ? transitionAt : (owns(source, "revenueRecordedAt") ? "" : (isLegacy ? legacyMilestone : transitionAt)))
         : "");
-    record.milestoneDateSource = text(source.milestoneDateSource)
-      || (isLegacy ? (hasStoredMetadata && legacyMilestone ? "legacy_record_metadata" : "legacy_undated") : "transition_time");
+    const requiredMilestonesDated = validIso(record.workCompletedAt)
+      && (record.stage !== "revenue_recorded" || validIso(record.revenueRecordedAt));
+    record.milestoneDateSource = legacyUndated && explicitTransition && requiredMilestonesDated
+      ? "transition_time"
+      : (text(source.milestoneDateSource)
+        || (isLegacy ? (hasStoredMetadata && legacyMilestone ? "legacy_record_metadata" : "legacy_undated") : "transition_time"));
     return record;
   }
 
@@ -409,8 +459,8 @@
     return { valid: errors.length === 0, errors };
   }
 
-  function createSalesOpportunity(value, actor, at) {
-    const record = normalizeSalesOpportunity(value, actor, at);
+  function createSalesOpportunity(value, actor, at, previousStage) {
+    const record = normalizeSalesOpportunity(value, actor, at, previousStage);
     const validation = validateOpportunity(record);
     if (!validation.valid) {
       const first = validation.errors[0];
@@ -431,15 +481,46 @@
 
   function stageFromEvents(events, options) {
     const prospectId = options && options.prospectId;
+    let currentStage = "candidate";
     let highest = 0;
-    for (const event of Array.isArray(events) ? events : []) {
+    const chronological = (Array.isArray(events) ? events : []).map((event, order) => ({ event, order }))
+      .sort((left, right) => {
+        const timeDifference = new Date(left.event && (left.event.occurredAt || left.event.createdAt) || 0).getTime()
+          - new Date(right.event && (right.event.occurredAt || right.event.createdAt) || 0).getTime();
+        return (Number.isNaN(timeDifference) ? 0 : timeDifference) || left.order - right.order;
+      });
+    for (const entry of chronological) {
+      const event = entry.event;
       if (!event || event.archivedAt || (prospectId && event.prospectId !== prospectId)) continue;
-      if (!validateEvent(event, options).valid) continue;
+      if (!validateEvent(event, Object.assign({}, options, { historical: true })).valid) continue;
+      if (event.type === RESUME_EVENT_TYPE) {
+        if (currentStage !== "paused_closed" || !RESUMABLE_STAGES.includes(event.resumeStage)) continue;
+        currentStage = event.resumeStage;
+        highest = STAGE_INDEX.get(event.resumeStage);
+        continue;
+      }
       const stageId = EVENT_TO_STAGE.get(event.type);
       const index = STAGE_INDEX.get(stageId);
-      if (index > highest) highest = index;
+      if (stageId === "paused_closed") {
+        currentStage = stageId;
+        highest = index;
+        continue;
+      }
+      if (currentStage === "paused_closed") continue;
+      if (index > highest) {
+        highest = index;
+        currentStage = stageId;
+      }
     }
-    return SALES_STAGES[highest].id;
+    return currentStage;
+  }
+
+  function recalculateProspectStage(prospect, events, context, actor, at) {
+    const source = prospect && typeof prospect === "object" ? prospect : {};
+    if (!text(source.id)) throw salesError("SALES_PROSPECT_ID_REQUIRED", "단계를 다시 계산할 영업 대상을 확인해 주세요.", "id");
+    const record = normalizeSalesProspect(source, actor, at);
+    record.stage = stageFromEvents(events, Object.assign({}, context || {}, { prospectId: record.id }));
+    return record;
   }
 
   function calculateKpis(store, options) {
@@ -474,8 +555,8 @@
     });
     const completed = opportunities.filter(item => ["work_completed", "revenue_recorded"].includes(item.stage) && inPeriod(item.workCompletedAt));
     const revenue = opportunities.filter(item => item.stage === "revenue_recorded" && inPeriod(item.revenueRecordedAt));
-    const today = text(settings.today || settings.now).slice(0, 10) || new Date().toISOString().slice(0, 10);
-    const dueDate = prospect => text(prospect.nextActionAt).slice(0, 10);
+    const today = seoulDateKey(settings.today || settings.now || new Date().toISOString());
+    const dueDate = prospect => seoulDateKey(prospect.nextActionAt);
     const ownerCounts = {};
     activeProspects.forEach(prospect => {
       const owner = prospect.owner || "미지정";
@@ -579,7 +660,7 @@
 
   function assertEvent(value, context) {
     const source = value && typeof value === "object" ? value : {};
-    if (text(source.type) && !EVENT_TO_STAGE.has(source.type)) throw salesError("SALES_EVENT_TYPE_INVALID", "올바른 영업 이벤트를 선택해 주세요.", "type");
+    if (text(source.type) && !EVENT_TO_STAGE.has(source.type) && source.type !== RESUME_EVENT_TYPE) throw salesError("SALES_EVENT_TYPE_INVALID", "올바른 영업 이벤트를 선택해 주세요.", "type");
     if (text(source.channel) && source.type === "contact_attempted" && !SALES_CHANNELS.includes(source.channel)) throw salesError("SALES_EVENT_CHANNEL_INVALID", "올바른 최초접촉 채널을 선택해 주세요.", "channel");
     if (text(source.result) && source.type === "contact_attempted" && !SALES_RESULTS.includes(source.result)) throw salesError("SALES_EVENT_RESULT_INVALID", "올바른 최초접촉 결과를 선택해 주세요.", "result");
     const event = normalizeSalesEvent(source);
@@ -642,10 +723,7 @@
   }
 
   function nextStageFromEvents(prospectId, events, context) {
-    const applicable = (Array.isArray(events) ? events : []).filter(event => event && !event.archivedAt && event.prospectId === prospectId && validateEvent(event, context).valid);
-    if (!applicable.length) return "candidate";
-    applicable.sort((left, right) => new Date(left.occurredAt).getTime() - new Date(right.occurredAt).getTime());
-    return EVENT_TO_STAGE.get(applicable[applicable.length - 1].type) || "candidate";
+    return stageFromEvents(events, Object.assign({}, context || {}, { prospectId }));
   }
 
   function computeSalesKpis(store, range) {
@@ -666,6 +744,8 @@
     OPPORTUNITY_MILESTONE_POLICY,
     LEASE_EVIDENCE_TYPES,
     MANAGEMENT_EVIDENCE_TYPES,
+    AD_CHANNELS,
+    RESUMABLE_STAGES,
     UNIT_STATUSES,
     EVENT_TYPES,
     createSalesProspect,
@@ -684,6 +764,7 @@
     validateEvent,
     validateOpportunity,
     stageFromEvents,
+    recalculateProspectStage,
     calculateKpis,
     canTransitionOpportunityStage,
     normalizeAddress,
