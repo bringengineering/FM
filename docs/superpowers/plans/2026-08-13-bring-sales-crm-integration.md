@@ -12,7 +12,7 @@
 
 ## 작업 전제와 파일 지도
 
-작업 위치는 `FM/.worktrees/sales-crm-integration`이고 기준 커밋은 `crm-v1.6.3`을 포함한 `ac6c24f`이다. 모든 명령은 저장소 루트 또는 명시된 `desktop-crm` 경로에서 실행한다. `wonju-map.html`은 어떤 단계에서도 수정하거나 스테이징하지 않는다.
+작업 위치는 `FM/.worktrees/sales-crm-integration`이고 기준 커밋은 `crm-v1.6.4`를 포함한 `fdb3d51`이다. 모든 명령은 저장소 루트 또는 명시된 `desktop-crm` 경로에서 실행한다. `wonju-map.html`은 어떤 단계에서도 수정하거나 스테이징하지 않는다.
 
 | 파일 | 책임 |
 |---|---|

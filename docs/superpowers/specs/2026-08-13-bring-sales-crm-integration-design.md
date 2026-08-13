@@ -1,7 +1,7 @@
 # BRING 건물 영업 CRM 통합 설계
 
 - 작성일: 2026-08-13
-- 기준 버전: BRING CRM Desktop `v1.6.3` (`crm-v1.6.3`, `ac6c24f`)
+- 기준 버전: BRING CRM Desktop `v1.6.4` (`crm-v1.6.4`, `fdb3d51`)
 - 상태: 사용자 승인 요구사항을 최신 데스크톱 CRM 구조에 반영
 - 대상 저장소: `bringengineering/FM`
 - 대상 사용자: 현재 BRING CRM에 로그인해 사용하는 팀원 전원
@@ -333,7 +333,7 @@ crmCompany/data/
 
 ## 11. 배포와 작업 안전
 
-- 구현 기준 브랜치는 최신 데스크톱 릴리스 `crm-v1.6.3`을 포함한 `origin/codex/bring-field-platform`이다.
+- 구현 기준 브랜치는 최신 데스크톱 릴리스 `crm-v1.6.4`를 포함한 `origin/codex/bring-field-platform`이다.
 - 별도 worktree와 `codex/sales-crm-integration` 브랜치에서 작업한다.
 - `wonju-map.html`은 수정·스테이징·커밋하지 않는다.
 - 기존 회사 Firebase 데이터의 자동 마이그레이션과 익명 PoC 자동 시딩은 하지 않는다.
