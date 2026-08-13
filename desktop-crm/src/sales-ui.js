@@ -56,6 +56,9 @@
   const EVIDENCE_TYPE_LABELS = Object.freeze({
     confirmation_note: "확인 메모",
     broker_handoff: "중개법인 전달 확인",
+    broker_confirmation: "협력 공인중개사 계약완료 확인",
+    management_start: "유료관리 시작 확인",
+    service_contract: "관리 서비스 계약서",
     photo: "사진",
     document: "문서",
     link: "외부 링크"
@@ -215,7 +218,7 @@
 
   function evidenceLink(url, label) {
     const safe = safeHttpUrl(url);
-    return safe ? `<a class="sales-evidence-link" href="${attr(safe)}" target="_blank" rel="noopener noreferrer">${esc(label || "증거 보기")}</a>` : "";
+    return safe ? `<a class="sales-evidence-link" href="${attr(safe)}" data-sales-evidence-link="${attr(safe)}" target="_blank" rel="noopener noreferrer">${esc(label || "증거 보기")}</a>` : "";
   }
 
   function renderKpi(label, value, note, tone, format) {
@@ -413,9 +416,9 @@
     const writable = options.writable !== false;
     const contacts = active(options.contacts).filter(item => item.prospectId === id);
     const units = active(options.units).filter(item => item.prospectId === id);
-    const activities = active(options.activities).filter(item => item.prospectId === id)
+    const activities = (Array.isArray(options.activities) ? options.activities : []).filter(item => item && item.prospectId === id)
       .sort((left, right) => String(right.occurredAt || right.createdAt || "").localeCompare(String(left.occurredAt || left.createdAt || "")));
-    const events = active(options.events).filter(item => item.prospectId === id)
+    const events = (Array.isArray(options.events) ? options.events : []).filter(item => item && item.prospectId === id)
       .sort((left, right) => String(right.occurredAt || right.createdAt || "").localeCompare(String(left.occurredAt || left.createdAt || "")));
     const opportunities = active(options.opportunities).filter(item => item.prospectId === id);
     const eventLabels = stageEventLabels(options.stages);
@@ -431,7 +434,7 @@
           <h2 id="salesProspectTitle">${esc(prospect.name || "이름 없는 건물")}</h2>
           <p>${esc(prospect.address || "주소 미입력")}</p>
         </div>
-        ${writable ? `<button type="button" class="secondary-button sales-button" data-sales-edit-prospect="${attr(id)}">건물 정보 수정</button>` : `<span class="sales-readonly-label">읽기 전용</span>`}
+        ${writable ? `<div class="sales-detail-actions">${prospect.stage === "paused_closed" ? `<button type="button" class="primary-button sales-button" data-sales-resume-prospect="${attr(id)}">영업 재개</button>` : ""}<button type="button" class="secondary-button sales-button" data-sales-edit-prospect="${attr(id)}">건물 정보 수정</button></div>` : `<span class="sales-readonly-label">읽기 전용</span>`}
       </header>
 
       <aside class="sales-next-panel ${attr(due.tone)}" aria-label="다음 행동">
@@ -479,23 +482,23 @@
         </details>
 
         <details class="sales-detail-section">
-          <summary><span>영업 활동</span><b>${activities.length}건</b></summary>
+          <summary><span>영업 활동</span><b>${activities.filter(activity => !activity.archivedAt).length}건${activities.some(activity => activity.archivedAt) ? ` · 보관 ${activities.filter(activity => activity.archivedAt).length}건` : ""}</b></summary>
           <div class="sales-detail-body">
             <div class="sales-section-toolbar">${renderSectionAction(writable, "data-sales-add-activity", id, "활동 기록")}</div>
-            ${activities.length ? `<ol class="sales-timeline">${activities.map(activity => `<li>
+            ${activities.length ? `<ol class="sales-timeline">${activities.map(activity => `<li class="${activity.archivedAt ? "archived" : "active"}">
               <time datetime="${attr(activity.occurredAt || activity.createdAt || "")}">${esc(dateTimeText(activity.occurredAt || activity.createdAt))}</time>
-              <div><strong>${esc(labelOf(CHANNEL_LABELS, activity.channel || activity.type))} · ${esc(labelOf(RESULT_LABELS, activity.result))}</strong><p>${esc(activity.summary || activity.responseText || "내용 미입력")}</p>${activity.responseText && activity.summary ? `<p class="sales-record-context">응답 · ${esc(activity.responseText)}</p>` : ""}${activity.scriptId ? `<div class="sales-reference-list"><span>${esc(activity.scriptId)}${activity.scriptVersion ? ` · v${esc(activity.scriptVersion)}` : ""}</span></div>` : ""}${auditMarkup(activity)}</div>
+              <div><strong>${esc(labelOf(CHANNEL_LABELS, activity.channel || activity.type))} · ${esc(labelOf(RESULT_LABELS, activity.result))}</strong><p>${esc(activity.summary || activity.responseText || "내용 미입력")}</p>${activity.responseText && activity.summary ? `<p class="sales-record-context">응답 · ${esc(activity.responseText)}</p>` : ""}${activity.scriptId ? `<div class="sales-reference-list"><span>${esc(activity.scriptId)}${activity.scriptVersion ? ` · v${esc(activity.scriptVersion)}` : ""}</span></div>` : ""}${auditMarkup(activity)}<div class="sales-event-management">${activity.archivedAt ? `<span class="sales-state-label">보관됨</span>` : ""}${writable ? `<button type="button" class="sales-event-manage-button" data-sales-activity-${activity.archivedAt ? "restore" : "archive"}="${attr(activity.id)}" data-sales-prospect-id="${attr(id)}">${activity.archivedAt ? "복원" : "보관"}</button>` : ""}</div></div>
             </li>`).join("")}</ol>` : renderRecordEmpty("기록된 영업 활동이 없습니다.")}
           </div>
         </details>
 
         <details class="sales-detail-section">
-          <summary><span>완료 증거</span><b>${events.length}건</b></summary>
+          <summary><span>완료 증거</span><b>${events.filter(event => !event.archivedAt).length}건${events.some(event => event.archivedAt) ? ` · 보관 ${events.filter(event => event.archivedAt).length}건` : ""}</b></summary>
           <div class="sales-detail-body">
             <div class="sales-section-toolbar">${renderSectionAction(writable, "data-sales-add-event", id, "단계 완료 기록")}</div>
-            ${events.length ? `<ol class="sales-timeline evidence">${events.map(event => `<li>
+            ${events.length ? `<ol class="sales-timeline evidence">${events.map(event => `<li class="${event.archivedAt ? "archived" : "active"}">
               <time datetime="${attr(event.occurredAt || event.createdAt || "")}">${esc(dateTimeText(event.occurredAt || event.createdAt))}</time>
-              <div><strong>${esc(eventLabels[event.type] || event.type || "완료 이벤트")}</strong><p>${esc(event.evidenceNote || "증거 메모 없음")}</p><div class="sales-evidence-context"><span>${esc(labelOf(EVIDENCE_TYPE_LABELS, event.evidenceType, "증거 유형 미입력"))}</span>${evidenceLink(event.evidenceUrl, "증거 보기")}</div>${referenceMarkup(event)}${auditMarkup(event)}</div>
+              <div><strong>${esc(eventLabels[event.type] || event.type || "완료 이벤트")}</strong><p>${esc(event.evidenceNote || "증거 메모 없음")}</p><div class="sales-evidence-context"><span>${esc(labelOf(EVIDENCE_TYPE_LABELS, event.evidenceType, "증거 유형 미입력"))}</span>${evidenceLink(event.evidenceUrl, "증거 보기")}</div>${referenceMarkup(event)}${auditMarkup(event)}<div class="sales-event-management">${event.archivedAt ? `<span class="sales-state-label">보관됨</span>` : ""}${writable ? `<button type="button" class="sales-event-manage-button" data-sales-event-${event.archivedAt ? "restore" : "archive"}="${attr(event.id)}" data-sales-prospect-id="${attr(id)}">${event.archivedAt ? "복원" : "보관"}</button>` : ""}</div></div>
             </li>`).join("")}</ol>` : renderRecordEmpty("완료 증거가 아직 없습니다. 증거 없이 단계는 올라가지 않습니다.")}
           </div>
         </details>
@@ -543,6 +546,10 @@
       item.id, item.label, item.formula, item.unit, item.evidence
     ], options.query));
     const governance = standards.governance && typeof standards.governance === "object" ? standards.governance : {};
+    const governanceApproved = governance.isApproved === true || /(?:최종\s*)?승인\s*(?:완료|됨)/.test(String(governance.status || ""));
+    const governanceVersionLabel = governance.version
+      ? governanceApproved ? `승인본 ${governance.version}` : `검토본 · 문서 버전 ${governance.version}`
+      : governanceApproved ? "승인본" : "검토본";
     const poc = standards.pocBaseline || {};
 
     return `<section class="sales-crm sales-standards" aria-labelledby="salesStandardsTitle">
@@ -552,7 +559,7 @@
       </header>
 
       <div class="sales-warning-panel" role="note">
-        <strong>${governance.version ? `승인본 ${esc(governance.version)}` : "승인 전 대외 사용 금지"}</strong>
+        <strong>${esc(governanceVersionLabel)}</strong>
         <div><b>${esc(governance.status || "대표 승인과 법률검토 상태 확인")}</b><p>${esc(governance.externalUseRule || "‘법률검토’ 또는 ‘초안’ 표시는 팀 연습·검토용입니다. 협력 공인중개사와 대표의 승인 상태를 확인한 뒤 사용하세요.")}</p>${governance.changeRule ? `<small>${esc(governance.changeRule)}</small>` : ""}</div>
       </div>
 

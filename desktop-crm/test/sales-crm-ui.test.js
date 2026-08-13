@@ -300,6 +300,95 @@ test("prospect detail exposes evidence links and record audit context without ne
   assert.doesNotMatch(html, /data-sales-edit-(?:activity|event)/);
 });
 
+test("evidence records show approved Korean evidence labels and app-routable links", () => {
+  const evidenceTypes = [
+    ["broker_handoff", "중개법인 전달 확인"],
+    ["broker_confirmation", "협력 공인중개사 계약완료 확인"],
+    ["management_start", "유료관리 시작 확인"],
+    ["service_contract", "관리 서비스 계약서"]
+  ];
+  const html = SalesUI.renderProspectDetail({
+    prospect: sampleStore.salesProspects[0],
+    contacts: [],
+    units: sampleStore.salesUnits,
+    activities: [],
+    events: evidenceTypes.map(([evidenceType], index) => ({
+      id: `evt_${index}`,
+      prospectId: "spr_1",
+      type: index === 0 ? "listing_received" : index === 1 ? "lease_signed" : "paid_management_started",
+      evidenceType,
+      evidenceNote: `증거 ${index + 1}`,
+      evidenceUrl: `https://example.com/evidence/${index + 1}`,
+      occurredAt: `2026-08-13T0${index}:00:00.000Z`
+    })),
+    opportunities: [],
+    stages: Sales.SALES_STAGES,
+    writable: false
+  });
+
+  for (const [code, label] of evidenceTypes) {
+    assert.match(html, new RegExp(label));
+    assert.doesNotMatch(html, new RegExp(`>${code}<`));
+  }
+  assert.equal((html.match(/data-sales-evidence-link=/g) || []).length, evidenceTypes.length);
+  assert.match(html, /data-sales-evidence-link="https:\/\/example\.com\/evidence\/1"/);
+});
+
+test("event history offers archive and restore without permanent deletion only to writers", () => {
+  const events = [
+    { id: "evt_active", prospectId: "spr_1", type: "listing_received", evidenceNote: "활성 증거", occurredAt: "2026-08-13T01:00:00.000Z" },
+    { id: "evt_archived", prospectId: "spr_1", type: "ad_published", evidenceNote: "보관 증거", occurredAt: "2026-08-13T02:00:00.000Z", archivedAt: "2026-08-13T03:00:00.000Z" }
+  ];
+  const input = {
+    prospect: sampleStore.salesProspects[0], contacts: [], units: [], activities: [], events, opportunities: [], stages: Sales.SALES_STAGES
+  };
+  const writable = SalesUI.renderProspectDetail({ ...input, writable: true });
+  assert.match(writable, /data-sales-event-archive="evt_active"/);
+  assert.match(writable, /data-sales-event-restore="evt_archived"/);
+  assert.match(writable, /data-sales-prospect-id="spr_1"/);
+  assert.match(writable, /보관됨/);
+  assert.doesNotMatch(writable, /data-sales-event-delete|>삭제</);
+
+  const readOnly = SalesUI.renderProspectDetail({ ...input, writable: false });
+  assert.match(readOnly, /보관 증거/);
+  assert.doesNotMatch(readOnly, /data-sales-event-(?:archive|restore)/);
+});
+
+test("activity history offers archive and restore without permanent deletion only to writers", () => {
+  const activities = [
+    { id: "act_active", prospectId: "spr_1", channel: "call", result: "replied", summary: "활성 활동", occurredAt: "2026-08-13T01:00:00.000Z" },
+    { id: "act_archived", prospectId: "spr_1", channel: "sms", result: "follow_up", summary: "보관 활동", occurredAt: "2026-08-13T02:00:00.000Z", archivedAt: "2026-08-13T03:00:00.000Z" }
+  ];
+  const input = {
+    prospect: sampleStore.salesProspects[0], contacts: [], units: [], activities, events: [], opportunities: [], stages: Sales.SALES_STAGES
+  };
+  const writable = SalesUI.renderProspectDetail({ ...input, writable: true });
+  assert.match(writable, /data-sales-activity-archive="act_active"/);
+  assert.match(writable, /data-sales-activity-restore="act_archived"/);
+  assert.match(writable, /보관 활동/);
+  assert.match(writable, /보관됨/);
+  assert.doesNotMatch(writable, /data-sales-activity-delete|>삭제</);
+
+  const readOnly = SalesUI.renderProspectDetail({ ...input, writable: false });
+  assert.match(readOnly, /보관 활동/);
+  assert.doesNotMatch(readOnly, /data-sales-activity-(?:archive|restore)/);
+});
+
+test("paused or closed prospects expose an explicit resume action only to writers", () => {
+  const input = {
+    prospect: { ...sampleStore.salesProspects[0], stage: "paused_closed" },
+    contacts: [], units: [], activities: [], events: [], opportunities: [], stages: Sales.SALES_STAGES
+  };
+  const writable = SalesUI.renderProspectDetail({ ...input, writable: true });
+  assert.match(writable, /data-sales-resume-prospect="spr_1"[^>]*>영업 재개</);
+
+  const readOnly = SalesUI.renderProspectDetail({ ...input, writable: false });
+  assert.doesNotMatch(readOnly, /data-sales-resume-prospect/);
+
+  const active = SalesUI.renderProspectDetail({ ...input, prospect: sampleStore.salesProspects[0], writable: true });
+  assert.doesNotMatch(active, /data-sales-resume-prospect/);
+});
+
 test("standards center renders optional operating principles, handoff, safer wording, metrics and approval version", () => {
   const html = SalesUI.renderStandards({ standards: Standards, query: "" });
 
@@ -307,8 +396,9 @@ test("standards center renders optional operating principles, handoff, safer wor
     "운영 원칙", "공실을 첫 문제로 푼다", "팀 인계 기준", "고객 질문 원문",
     "금지 표현과 안전한 대안", "공실 조건을 확인한 뒤 가능한 모집 절차와 진행상황을 안내드리겠습니다",
     "측정 지표", "기간 안에 유효한 contact_attempted 완료증거가 있는 건물의 고유 수",
-    "승인본 1.0", "대표 승인 및 법률검토 진행 중", "대외 문자·전화·광고 문구는 대표 승인"
+    "검토본 · 문서 버전 1.0", "대표 승인 및 법률검토 진행 중", "대외 문자·전화·광고 문구는 대표 승인"
   ]) assert.match(html, new RegExp(value));
+  assert.doesNotMatch(html, /승인본 1\.0/);
   assert.equal((html.match(/data-sales-script=/g) || []).length, 12);
   assert.equal((html.match(/data-sales-checklist=/g) || []).length, 8);
   assert.doesNotMatch(html, /BRING SALES STANDARD|PoC/);
@@ -331,4 +421,11 @@ test("sales typography keeps owner-facing text readable and muted text at WCAG A
   }
   const muted = css.match(/--sales-text-muted:\s*(#[0-9a-f]{6})/i)?.[1];
   assert.ok(muted && contrast(muted) >= 4.5, `muted contrast was ${muted ? contrast(muted) : "missing"}`);
+});
+
+test("sales forms fit inside the existing modal without a horizontal scrollbar", async () => {
+  const css = await readFile(path.join(__dirname, "..", "src", "sales.css"), "utf8");
+  assert.match(css, /\.sales-form\s*\{[^}]*width:\s*100%[^}]*max-width:\s*860px/s);
+  assert.doesNotMatch(css, /\.sales-form\s*\{[^}]*width:\s*min\(860px,\s*92vw\)/s);
+  assert.match(css, /\.sales-form-grid\s*>\s*\*\s*\{[^}]*min-width:\s*0/s);
 });
