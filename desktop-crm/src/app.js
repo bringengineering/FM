@@ -18,6 +18,7 @@
   const loginTitle = document.getElementById("loginTitle");
   const loginDescription = document.getElementById("loginDescription");
   const loginForm = document.getElementById("emailLoginForm");
+  const googleLoginButton = document.getElementById("googleLoginButton");
   const loginEmail = document.getElementById("loginEmail");
   const loginPassword = document.getElementById("loginPassword");
   const loginButton = document.getElementById("emailLoginButton");
@@ -332,13 +333,15 @@
     appShell.classList.add("app-locked");
     appShell.setAttribute("aria-hidden", "true");
     loginGate.hidden = false;
-    loginForm.hidden = false;
+    loginForm.hidden = true;
     passwordChangeForm.hidden = true;
     loginTitle.textContent = "공용 CRM 로그인";
-    loginDescription.innerHTML = "회사에서 등록한 이메일로 로그인하면<br>모든 사용자가 동일한 최신 자료를 확인할 수 있습니다.";
-    loginMessage.textContent = message || currentAuth.error || "이메일과 비밀번호를 입력해 주세요.";
+    loginDescription.innerHTML = "승인된 dpvld858@gmail.com Google 계정으로 로그인하면<br>모든 사용자가 동일한 최신 자료를 확인할 수 있습니다.";
+    loginMessage.textContent = message || currentAuth.error || "아래 Google 로그인 버튼을 눌러 주세요.";
     loginMessage.className = `login-message${isError ? " error" : ""}`;
     loginButton.disabled = false;
+    googleLoginButton.hidden = false;
+    googleLoginButton.disabled = false;
   }
 
   function showPasswordChange(auth, message, isError) {
@@ -347,6 +350,7 @@
     appShell.setAttribute("aria-hidden", "true");
     loginGate.hidden = false;
     loginForm.hidden = true;
+    googleLoginButton.hidden = true;
     passwordChangeForm.hidden = false;
     loginTitle.textContent = "새 비밀번호 설정";
     loginDescription.innerHTML = "처음 로그인하셨습니다.<br>안전한 새 비밀번호를 설정한 후 CRM을 시작하세요.";
@@ -3176,7 +3180,7 @@ document.addEventListener("keydown", event => {
 
   api.onAuthState(state => {
     currentAuth = state || currentAuth;
-    if (currentAuth.required && !currentAuth.user) showLogin(currentAuth.error || "이메일과 비밀번호를 입력해 주세요.", Boolean(currentAuth.error));
+    if (currentAuth.required && !currentAuth.user) showLogin(currentAuth.error || "dpvld858@gmail.com Google 계정으로 로그인해 주세요.", Boolean(currentAuth.error));
     else if (currentAuth.user && currentAuth.user.mustChangePassword) showPasswordChange(currentAuth);
     else showApplication(currentAuth);
   });
@@ -3190,6 +3194,30 @@ document.addEventListener("keydown", event => {
     if (state.status === "current" && previous === "checking") showToast("현재 최신 버전입니다.", "success");
   });
   api.updateState().then(updateUpdaterUI).catch(() => updateUpdaterUI({ status: "disabled" }));
+
+  googleLoginButton.addEventListener("click", async () => {
+    if (loginInProgress) return;
+    loginInProgress = true;
+    googleLoginButton.disabled = true;
+    loginMessage.className = "login-message";
+    loginMessage.textContent = "dpvld858@gmail.com Google 로그인을 확인하고 있습니다…";
+    try {
+      const result = await api.loginWithGoogle();
+      if (!result.ok) {
+        showLogin(result.error || "Google 로그인에 실패했습니다. 다시 시도해 주세요.", true);
+        return;
+      }
+      currentAuth = result.auth;
+      showApplication(currentAuth);
+      await loadApplication(result.data);
+      showToast("회사 Google 계정으로 CRM 서버에 연결했습니다.", "success");
+    } catch (error) {
+      showLogin(error.message || "Google 로그인에 실패했습니다.", true);
+    } finally {
+      loginInProgress = false;
+      googleLoginButton.disabled = false;
+    }
+  });
 
   loginForm.addEventListener("submit", async event => {
     event.preventDefault();
@@ -3275,7 +3303,7 @@ document.addEventListener("keydown", event => {
     try {
       currentAuth = await api.authState();
       if (currentAuth.required && !currentAuth.user) {
-        showLogin(currentAuth.error || "이메일과 비밀번호를 입력해 주세요.", Boolean(currentAuth.error));
+        showLogin(currentAuth.error || "dpvld858@gmail.com Google 계정으로 로그인해 주세요.", Boolean(currentAuth.error));
         return;
       }
       if (currentAuth.user && currentAuth.user.mustChangePassword) {

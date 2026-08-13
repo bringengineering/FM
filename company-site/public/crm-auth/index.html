@@ -60,7 +60,7 @@
         message.textContent = "Google 로그인 창을 여는 중입니다…";
         try {
           const provider = new firebase.auth.GoogleAuthProvider();
-          provider.setCustomParameters({ prompt: "select_account" });
+          provider.setCustomParameters({ prompt: "select_account", login_hint: "dpvld858@gmail.com" });
           const result = await firebase.auth().signInWithPopup(provider);
           const credential = result.credential || firebase.auth.GoogleAuthProvider.credentialFromResult(result);
           const tokenResponse = result._tokenResponse || {};

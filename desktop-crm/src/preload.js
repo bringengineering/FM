@@ -3,6 +3,7 @@ const { contextBridge, ipcRenderer } = require("electron");
 contextBridge.exposeInMainWorld("bringCRM", {
   authState: () => ipcRenderer.invoke("crm:auth-state"),
   login: credentials => ipcRenderer.invoke("crm:auth-login", credentials),
+  loginWithGoogle: () => ipcRenderer.invoke("crm:auth-google-login"),
   changePassword: password => ipcRenderer.invoke("crm:auth-change-password", password),
   logout: () => ipcRenderer.invoke("crm:auth-logout"),
   load: () => ipcRenderer.invoke("crm:load"),

@@ -1930,6 +1930,11 @@ secureHandle("crm:auth-login", async credentials => {
   try { return await remoteClient.login(credentials); }
   catch (error) { return { ok: false, error: error.message, code: error.code || "LOGIN_FAILED" }; }
 });
+secureHandle("crm:auth-google-login", async () => {
+  if (!remoteClient) return { ok: false, error: "로그인 모듈을 사용할 수 없습니다." };
+  try { return await remoteClient.loginWithGoogle(); }
+  catch (error) { return { ok: false, error: error.message, code: error.code || "LOGIN_FAILED" }; }
+});
 secureHandle("crm:auth-change-password", async password => {
   if (!remoteClient) return { ok: false, error: "로그인 모듈을 사용할 수 없습니다." };
   try { return await remoteClient.changePassword(password); }

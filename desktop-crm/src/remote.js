@@ -647,6 +647,22 @@ class FirebaseRemoteClient {
     }
   }
 
+  async loginWithGoogle() {
+    await this.logout(false);
+    try {
+      const credential = await this.receiveGoogleCredential();
+      await this.exchangeGoogleCredential(credential);
+      const data = await this.loadStore();
+      return { ok: true, auth: this.authState(), data };
+    } catch (error) {
+      this.session = null;
+      await this.clearPersistedSession().catch(() => {});
+      this.lastError = error.message;
+      this.emitAuth();
+      throw error;
+    }
+  }
+
   async changePassword(newPassword) {
     if (!this.session) throw createError("로그인이 필요합니다.", "AUTH_REQUIRED");
     const password = String(newPassword || "");

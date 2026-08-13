@@ -30,6 +30,7 @@ describe("company CRM Google auth bridge", () => {
     expect(page).toContain("GoogleAuthProvider");
     expect(page).toContain("signInWithPopup");
     expect(page).toContain("credential.accessToken");
+    expect(page).toContain('login_hint: "dpvld858@gmail.com"');
     expect(page).not.toMatch(/localStorage|sessionStorage|type=["']password/i);
   });
 });
