@@ -127,7 +127,6 @@ import {
   type StartCaptureSessionInput,
 } from "./field/start-capture-session.js";
 import {
-  assertFieldActorCanMutate,
   resolveFieldActorCore,
 } from "./field-v2/access.js";
 import {
@@ -149,6 +148,7 @@ import {
   claimFieldJobCore,
   createFieldJobsCore,
   listFieldOperationsWorkspaceCore,
+  parseFieldMutationReceipt,
   transitionFieldJobCore,
   type AssignFieldJobInput,
   type ChangeFieldVisitInput,
@@ -156,15 +156,22 @@ import {
   type CreateFieldJobsInput,
   type FieldAtomicCreateCommand,
   type FieldAtomicCreateOutcome,
+  type FieldAtomicRuntimeGuard,
   type FieldMutationReceipt,
   type FieldVisit,
   type FieldWorkItem,
   type FieldWorkTransactionDecision,
   type FieldWorkTransactionSelector,
   type FieldWorkTransactionSnapshot,
+  type ListFieldOperationsWorkspaceInput,
   type TransitionFieldJobInput,
   type WorkItemDependencies,
 } from "./field-v2/work-items.js";
+import {
+  calculateFieldKpis,
+  type FieldKpis,
+  type FieldTeamActiveProjection,
+} from "./field-v2/projections.js";
 import { consumeRateLimit } from "./security/rate-limit.js";
 
 if (getApps().length === 0) {
@@ -344,6 +351,9 @@ function isPathSafeId(value: unknown): value is string {
     value.length > 0 &&
     value === value.trim() &&
     Buffer.byteLength(value, "utf8") <= FIELD_ID_BYTES &&
+    value !== "__proto__" &&
+    value !== "prototype" &&
+    value !== "constructor" &&
     !/[\u0000-\u001f\u007f.#$\[\]\/]/u.test(value)
   );
 }
@@ -420,6 +430,26 @@ function requireFieldV2Data(value: unknown): FieldV2CallableData {
   return value as FieldV2CallableData;
 }
 
+function requireFieldV2Authentication(request: CallableRequest<unknown>): {
+  authUid: string;
+  authenticatedEmail: string;
+} {
+  const authUid = request.auth?.uid;
+  const authenticatedEmail = request.auth?.token.email;
+  if (
+    !isPathSafeId(authUid)
+    || typeof authenticatedEmail !== "string"
+    || authenticatedEmail.trim().length === 0
+    || request.auth?.token.email_verified !== true
+  ) {
+    throw new HttpsError("unauthenticated", "field_auth_required");
+  }
+  return {
+    authUid,
+    authenticatedEmail: authenticatedEmail.trim().toLowerCase(),
+  };
+}
+
 async function requireFieldV2Actor(
   request: CallableRequest<unknown>,
   data: FieldV2CallableData,
@@ -429,10 +459,13 @@ async function requireFieldV2Actor(
   const emailVerified = request.auth?.token.email_verified;
   if (
     !isPathSafeId(authUid)
+    || !isPathSafeId(data.operatorId)
     || typeof authenticatedEmail !== "string"
     || emailVerified !== true
   ) {
-    throw new FieldV2Error("field_access_forbidden");
+    throw new FieldV2Error(!isPathSafeId(data.operatorId)
+      ? "field_operator_invalid"
+      : "field_access_forbidden");
   }
   return resolveFieldActorCore({
     authUid,
@@ -491,25 +524,34 @@ async function prepareFieldV2Request(
     | "read",
 ): Promise<{
   actor: FieldV2Actor;
+  authenticatedEmail: string;
+  client: FieldReleaseClient;
   config: FieldReleaseConfiguration;
   data: FieldV2CallableData;
 }> {
+  const authenticated = requireFieldV2Authentication(request);
   const data = requireFieldV2Data(request.data);
   if (operationKind !== "read" && !isFieldRequestId(data.requestId)) {
     throw new FieldV2Error("field_request_id_invalid");
   }
   const actor = await requireFieldV2Actor(request, data);
-  if (operationKind !== "read") assertFieldActorCanMutate(actor);
   const config = await readFieldV2ReleaseConfiguration();
-  assertFieldReleaseCompatible(config, fieldV2ReleaseClient(data));
+  const client = fieldV2ReleaseClient(data);
   if (operationKind === "read") {
+    assertFieldReleaseCompatible(config, client);
     await assertFieldReleaseAllows(
       config,
       { kind: "read" },
       fieldV2ReleaseDependencies(),
     );
   }
-  return { actor, config, data };
+  return {
+    actor,
+    authenticatedEmail: authenticated.authenticatedEmail,
+    client,
+    config,
+    data,
+  };
 }
 
 const FIELD_V2_INVALID_ERRORS = new Set([
@@ -524,6 +566,7 @@ const FIELD_V2_INVALID_ERRORS = new Set([
   "field_priority_invalid",
   "field_job_type_invalid",
   "field_assignee_invalid",
+  "field_crm_reference_invalid",
   "field_change_reason_required",
   "field_visit_change_empty",
   "field_release_config_invalid",
@@ -531,6 +574,9 @@ const FIELD_V2_INVALID_ERRORS = new Set([
   "field_client_invalid",
   "field_client_kind_invalid",
   "field_build_version_invalid",
+  "field_workspace_scope_invalid",
+  "field_workspace_limit_invalid",
+  "field_workspace_cursor_invalid",
 ]);
 const FIELD_V2_PERMISSION_ERRORS = new Set([
   "field_access_forbidden",
@@ -538,6 +584,7 @@ const FIELD_V2_PERMISSION_ERRORS = new Set([
   "field_operator_inactive",
   "field_operator_not_enabled",
   "field_job_operator_forbidden",
+  "field_workspace_scope_forbidden",
 ]);
 const FIELD_V2_NOT_FOUND_ERRORS = new Set([
   "field_job_not_found",
@@ -554,6 +601,9 @@ const FIELD_V2_UNAVAILABLE_ERRORS = new Set([
   "field_workspace_unavailable",
   "field_workspace_invalid",
   "field_crm_reference_unavailable",
+  "field_request_receipt_unavailable",
+  "field_receipt_replay_invalid",
+  "field_upload_recovery_invalid",
 ]);
 const FIELD_V2_PRECONDITION_ERRORS = new Set([
   "field_safe_mode_read_only",
@@ -569,10 +619,12 @@ const FIELD_V2_PRECONDITION_ERRORS = new Set([
   "field_job_inactive",
   "field_started_job_change_forbidden",
   "field_crm_reference_archived",
+  "field_crm_reference_inactive",
   "field_crm_reference_mismatch",
   "field_crm_reference_changed",
   "field_crm_reference_adapter_unavailable",
   "field_request_receipt_invalid",
+  "field_kpi_stale",
 ]);
 
 function rethrowFieldV2CallableError(error: unknown): never {
@@ -1594,7 +1646,9 @@ const contractDependencies: SetManagementContractStatusDependencies = {
 function readNestedRecord(root: unknown, path: readonly string[]): unknown {
   let current: unknown = root;
   for (const segment of path) {
-    if (!isRecord(current)) return null;
+    if (!isPathSafeId(segment) || !isRecord(current) || !Object.hasOwn(current, segment)) {
+      return null;
+    }
     current = current[segment];
   }
   return current ?? null;
@@ -1609,8 +1663,8 @@ function writeNestedRecord(
   let current = root;
   for (let index = 0; index < path.length - 1; index += 1) {
     const segment = path[index];
-    const child = current[segment];
-    if (!isRecord(child)) current[segment] = {};
+    const child = Object.hasOwn(current, segment) ? current[segment] : undefined;
+    if (!isRecord(child)) current[segment] = Object.create(null) as UnknownRecord;
     current = current[segment] as UnknownRecord;
   }
   current[path[path.length - 1]] = value;
@@ -1630,14 +1684,240 @@ function applyRootPatch(current: unknown, patch: Readonly<Record<string, unknown
   return next;
 }
 
-function parseReceipt(value: unknown): FieldMutationReceipt | null {
-  if (
-    !isRecord(value)
-    || typeof value.scope !== "string"
-    || typeof value.requestId !== "string"
-    || typeof value.requestHash !== "string"
-  ) return null;
-  return value as unknown as FieldMutationReceipt;
+const FIELD_TEAM_KPI_KEYS = Object.freeze([
+  "capturePending",
+  "uploadFailures",
+  "reviewPending",
+  "unassigned",
+  "overdue",
+  "adminActionRequired",
+] as const);
+
+type FieldTeamKpiKey = typeof FIELD_TEAM_KPI_KEYS[number];
+
+function fieldSeoulDate(now: Date): string {
+  if (!Number.isFinite(now.getTime())) throw new FieldV2Error("field_kpi_now_invalid");
+  const parts = Object.fromEntries(new Intl.DateTimeFormat("en-CA", {
+    timeZone: "Asia/Seoul",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).formatToParts(now).map((part) => [part.type, part.value]));
+  if (!parts.year || !parts.month || !parts.day) {
+    throw new FieldV2Error("field_kpi_now_invalid");
+  }
+  return `${parts.year}-${parts.month}-${parts.day}`;
+}
+
+function fieldTeamMutationTimestamp(patch: Readonly<Record<string, unknown>>): string {
+  for (const [path, value] of Object.entries(patch)) {
+    if (
+      path.startsWith("fieldPlatform/v2/workItems/")
+      && isRecord(value)
+      && typeof value.updatedAt === "string"
+      && Number.isFinite(Date.parse(value.updatedAt))
+    ) return value.updatedAt;
+  }
+  throw new FieldV2Error("field_kpi_stale");
+}
+
+function fieldWorkItemsAt(root: unknown): Map<string, FieldWorkItem> {
+  const raw = readNestedRecord(root, ["fieldPlatform", "v2", "workItems"]);
+  if (raw === null) return new Map();
+  if (!isRecord(raw)) throw new FieldV2Error("field_kpi_stale");
+  const items = new Map<string, FieldWorkItem>();
+  for (const [id, value] of Object.entries(raw)) {
+    if (!isRecord(value) || value.id !== id) throw new FieldV2Error("field_kpi_stale");
+    items.set(id, value as unknown as FieldWorkItem);
+  }
+  return items;
+}
+
+function changedFieldWorkItems(
+  current: unknown,
+  patch: Readonly<Record<string, unknown>>,
+): Array<{ before: FieldWorkItem | null; after: FieldWorkItem | null }> {
+  const changed: Array<{ before: FieldWorkItem | null; after: FieldWorkItem | null }> = [];
+  for (const [path, value] of Object.entries(patch)) {
+    const match = /^fieldPlatform\/v2\/workItems\/([^/]+)$/u.exec(path);
+    if (!match) continue;
+    const before = readNestedRecord(current, ["fieldPlatform", "v2", "workItems", match[1]]);
+    changed.push({
+      before: isRecord(before) ? before as unknown as FieldWorkItem : null,
+      after: isRecord(value) ? value as unknown as FieldWorkItem : null,
+    });
+  }
+  if (changed.length === 0) throw new FieldV2Error("field_kpi_stale");
+  return changed;
+}
+
+function parseStoredTeamKpis(value: unknown, today: string): FieldKpis {
+  if (!isRecord(value) || value.seoulDate !== today) {
+    throw new FieldV2Error("field_kpi_stale");
+  }
+  const result = {} as Record<keyof FieldKpis, number>;
+  for (const key of ["todayVisits", ...FIELD_TEAM_KPI_KEYS] as const) {
+    const count = value[key];
+    if (!Number.isSafeInteger(count) || (count as number) < 0) {
+      throw new FieldV2Error("field_kpi_stale");
+    }
+    result[key] = count as number;
+  }
+  return result;
+}
+
+function visitCountsForToday(items: Iterable<FieldWorkItem>, today: string): Map<string, number> {
+  const counts = new Map<string, number>();
+  for (const item of items) {
+    const active = item.archivedAt === null
+      && item.workflowStatus !== "completed"
+      && item.workflowStatus !== "cancelled";
+    if (!active || item.dueDate !== today) continue;
+    counts.set(item.visitId, (counts.get(item.visitId) ?? 0) + 1);
+  }
+  return counts;
+}
+
+function augmentFieldTeamAggregatePatch(
+  current: unknown,
+  patch: Readonly<Record<string, unknown>>,
+): Readonly<Record<string, unknown>> {
+  const timestamp = fieldTeamMutationTimestamp(patch);
+  const now = new Date(timestamp);
+  const today = fieldSeoulDate(now);
+  const augmented: Record<string, unknown> = { ...patch };
+  const currentKpis = readNestedRecord(current, [
+    "fieldPlatform", "v2", "projections", "teamKpis", "current",
+  ]);
+  const changed = changedFieldWorkItems(current, patch);
+
+  const priorSeoulDate = isRecord(currentKpis) && typeof currentKpis.seoulDate === "string"
+    ? currentKpis.seoulDate
+    : null;
+  const rollsToNewDay = priorSeoulDate !== null && priorSeoulDate !== today;
+  if (currentKpis !== null && priorSeoulDate === null) {
+    throw new FieldV2Error("field_kpi_stale");
+  }
+  if (currentKpis === null || rollsToNewDay) {
+    const existingVisitState = readNestedRecord(current, [
+      "fieldPlatform", "v2", "projections", "teamVisitState",
+    ]);
+    if (currentKpis === null && existingVisitState !== null) {
+      throw new FieldV2Error("field_kpi_stale");
+    }
+    if (rollsToNewDay) {
+      parseStoredTeamKpis(currentKpis, priorSeoulDate!);
+      if (existingVisitState !== null && !isRecord(existingVisitState)) {
+        throw new FieldV2Error("field_kpi_stale");
+      }
+      for (const visitId of Object.keys(existingVisitState ?? {})) {
+        if (!isPathSafeId(visitId)) throw new FieldV2Error("field_kpi_stale");
+        augmented[`fieldPlatform/v2/projections/teamVisitState/${visitId}`] = null;
+      }
+    }
+    const afterRoot = applyRootPatch(current, patch);
+    const afterItems = fieldWorkItemsAt(afterRoot);
+    const kpis = calculateFieldKpis([...afterItems.values()], now);
+    augmented["fieldPlatform/v2/projections/teamKpis/current"] = {
+      seoulDate: today,
+      ...kpis,
+      updatedAt: timestamp,
+    };
+    for (const [visitId, count] of visitCountsForToday(afterItems.values(), today)) {
+      augmented[`fieldPlatform/v2/projections/teamVisitState/${visitId}`] = {
+        visitId,
+        seoulDate: today,
+        activeTodayItemCount: count,
+        updatedAt: timestamp,
+      };
+    }
+    return augmented;
+  }
+
+  const nextKpis: Record<keyof FieldKpis, number> = {
+    ...parseStoredTeamKpis(currentKpis, today),
+  };
+  for (const { before, after } of changed) {
+    const beforeKpis = before === null
+      ? null
+      : calculateFieldKpis([before], now);
+    const afterKpis = after === null
+      ? null
+      : calculateFieldKpis([after], now);
+    for (const key of FIELD_TEAM_KPI_KEYS) {
+      nextKpis[key] += (afterKpis?.[key] ?? 0) - (beforeKpis?.[key] ?? 0);
+    }
+  }
+
+  const currentItems = fieldWorkItemsAt(current);
+  const derivedBeforeVisitCounts = visitCountsForToday(currentItems.values(), today);
+  const affectedVisits = new Set(changed.flatMap(({ before, after }) => [
+    ...(before === null ? [] : [before.visitId]),
+    ...(after === null ? [] : [after.visitId]),
+  ]));
+  for (const visitId of affectedVisits) {
+    const storedState = readNestedRecord(current, [
+      "fieldPlatform", "v2", "projections", "teamVisitState", visitId,
+    ]);
+    if (storedState !== null && (
+      !isRecord(storedState)
+      || storedState.visitId !== visitId
+      || storedState.seoulDate !== today
+      || !Number.isSafeInteger(storedState.activeTodayItemCount)
+      || (storedState.activeTodayItemCount as number) <= 0
+    )) throw new FieldV2Error("field_kpi_stale");
+    const derivedBeforeCount = derivedBeforeVisitCounts.get(visitId) ?? 0;
+    if (
+      (storedState === null && derivedBeforeCount > 0)
+      || (storedState !== null
+        && (storedState as UnknownRecord).activeTodayItemCount !== derivedBeforeCount)
+    ) throw new FieldV2Error("field_kpi_stale");
+    const beforeCount = storedState === null
+      ? derivedBeforeCount
+      : storedState.activeTodayItemCount as number;
+    let afterCount = beforeCount;
+    for (const change of changed) {
+      if (change.before?.visitId === visitId) {
+        afterCount -= calculateFieldKpis([change.before], now).todayVisits;
+      }
+      if (change.after?.visitId === visitId) {
+        afterCount += calculateFieldKpis([change.after], now).todayVisits;
+      }
+    }
+    if (!Number.isSafeInteger(afterCount) || afterCount < 0) {
+      throw new FieldV2Error("field_kpi_stale");
+    }
+    nextKpis.todayVisits += Number(afterCount > 0) - Number(beforeCount > 0);
+    augmented[`fieldPlatform/v2/projections/teamVisitState/${visitId}`] = afterCount === 0
+      ? null
+      : {
+        visitId,
+        seoulDate: today,
+        activeTodayItemCount: afterCount,
+        updatedAt: timestamp,
+      };
+  }
+  if (Object.values(nextKpis).some((count) => !Number.isSafeInteger(count) || count < 0)) {
+    throw new FieldV2Error("field_kpi_stale");
+  }
+  augmented["fieldPlatform/v2/projections/teamKpis/current"] = {
+    seoulDate: today,
+    ...nextKpis,
+    updatedAt: timestamp,
+  };
+  return augmented;
+}
+
+function parseReceipt(
+  value: unknown,
+  expectedScope?: string,
+  expectedRequestId?: string,
+): FieldMutationReceipt | null {
+  try {
+    return parseFieldMutationReceipt(value, expectedScope, expectedRequestId);
+  } catch {
+    return null;
+  }
 }
 
 function currentCrmSourceMatches(
@@ -1645,14 +1925,28 @@ function currentCrmSourceMatches(
   expectation: FieldAtomicCreateCommand["sourceExpectations"][number],
 ): boolean {
   const value = readNestedRecord(root, expectation.path.split("/").filter(Boolean));
-  if (
-    !isRecord(value)
-    || value.id !== expectation.id
-    || value.updatedAt !== expectation.updatedAt
-    || (value.archivedAt !== undefined
-      && value.archivedAt !== null
-      && value.archivedAt !== "")
-  ) return false;
+  if (!isRecord(value)) return false;
+  if (expectation.kind === "workflowCase") {
+    if (value.deleted === true || value.archived === true) return false;
+  } else if (expectation.kind === "task") {
+    if (
+      value.id !== expectation.id
+      || typeof value.status !== "string"
+      || value.status.trim().length === 0
+      || value.status !== value.status.trim()
+      || Buffer.byteLength(value.status, "utf8") > 120
+      || value.status === "완료"
+      || value.status === "취소"
+    ) {
+      return false;
+    }
+  } else if (value.id !== expectation.id) return false;
+  if (expectation.updatedAt !== "" && value.updatedAt !== expectation.updatedAt) return false;
+  if (expectation.kind !== "workflowCase" && expectation.kind !== "task" && (
+    value.archivedAt !== undefined
+    && value.archivedAt !== null
+    && value.archivedAt !== ""
+  )) return false;
   if (expectation.parentField && expectation.parentId) {
     if (expectation.parentField === "prospectId") {
       return (value.prospectId ?? value.crmSalesProspectId) === expectation.parentId;
@@ -1674,6 +1968,134 @@ function currentOperatorsAreActive(
   });
 }
 
+function decodeFieldTeamCursor(value: string | undefined): string | undefined {
+  if (value === undefined) return undefined;
+  try {
+    const decoded = JSON.parse(Buffer.from(value, "base64url").toString("utf8")) as unknown;
+    if (
+      !isRecord(decoded)
+      || decoded.v !== 1
+      || typeof decoded.afterKey !== "string"
+      || decoded.afterKey.length === 0
+      || Buffer.byteLength(decoded.afterKey, "utf8") > 384
+      || Object.keys(decoded).sort().join(",") !== "afterKey,v"
+    ) throw new Error("invalid");
+    return decoded.afterKey;
+  } catch {
+    throw new FieldV2Error("field_workspace_cursor_invalid");
+  }
+}
+
+function encodeFieldTeamCursor(afterKey: string): string {
+  return Buffer.from(JSON.stringify({ v: 1, afterKey }), "utf8").toString("base64url");
+}
+
+function decodeFieldPersonalCursor(
+  value: string | undefined,
+): { updatedAt: string; id: string } | undefined {
+  if (value === undefined) return undefined;
+  try {
+    const decoded = JSON.parse(Buffer.from(value, "base64url").toString("utf8")) as unknown;
+    if (
+      !isRecord(decoded)
+      || decoded.v !== 1
+      || typeof decoded.updatedAt !== "string"
+      || !Number.isFinite(Date.parse(decoded.updatedAt))
+      || !isPathSafeId(decoded.id)
+      || Object.keys(decoded).sort().join(",") !== "id,updatedAt,v"
+    ) throw new Error("invalid");
+    return { updatedAt: decoded.updatedAt, id: decoded.id };
+  } catch {
+    throw new FieldV2Error("field_workspace_cursor_invalid");
+  }
+}
+
+function encodeFieldPersonalCursor(updatedAt: string, id: string): string {
+  return Buffer.from(JSON.stringify({ v: 1, updatedAt, id }), "utf8").toString("base64url");
+}
+
+function firebaseFieldKeyCompare(left: string, right: string): number {
+  if (left === right) return 0;
+  const parseIntegerKey = (value: string): number | null => {
+    if (!/^-?(0*)\d{1,10}$/u.test(value)) return null;
+    const parsed = Number(value);
+    return parsed >= -2_147_483_648 && parsed <= 2_147_483_647 ? parsed : null;
+  };
+  const leftInteger = parseIntegerKey(left);
+  const rightInteger = parseIntegerKey(right);
+  if (leftInteger !== null) {
+    if (rightInteger === null) return -1;
+    const difference = leftInteger - rightInteger;
+    return difference === 0 ? left.length - right.length : difference;
+  }
+  if (rightInteger !== null) return 1;
+  return left < right ? -1 : 1;
+}
+
+function currentActorGuardError(
+  root: unknown,
+  guard: FieldAtomicRuntimeGuard | undefined,
+): string | null {
+  if (!guard) return "field_work_transaction_guard_invalid";
+  const access = readNestedRecord(root, [
+    "crmCompany", "access", guard.authUid,
+  ]);
+  if (
+    !isRecord(access)
+    || access.enabled !== true
+    || (access.role !== "admin" && access.role !== "member" && access.role !== "viewer")
+    || typeof access.email !== "string"
+    || access.email.trim().toLowerCase() !== guard.authenticatedEmail
+  ) return "field_access_forbidden";
+  const profile = readNestedRecord(root, [
+    "crmCompany", "teamProfiles", guard.operatorId,
+  ]);
+  if (
+    !isRecord(profile)
+    || profile.active !== true
+    || typeof profile.displayName !== "string"
+    || profile.displayName.length === 0
+    || profile.displayName !== profile.displayName.trim()
+    || Buffer.byteLength(profile.displayName, "utf8") > 120
+    || /[\u0000-\u001f\u007f]/u.test(profile.displayName)
+  ) {
+    return "field_operator_inactive";
+  }
+  return null;
+}
+
+function currentMutationGuardError(
+  root: unknown,
+  guard: FieldAtomicRuntimeGuard | undefined,
+): string | null {
+  const actorError = currentActorGuardError(root, guard);
+  if (actorError || !guard) return actorError;
+  const access = readNestedRecord(root, [
+    "crmCompany", "access", guard.authUid,
+  ]);
+  if (!isRecord(access) || (access.role !== "admin" && access.role !== "member")) {
+    return "field_mutation_forbidden";
+  }
+  const release = readNestedRecord(root, [
+    "fieldPlatform", "v2", "config", "release",
+  ]);
+  try {
+    assertFieldReleaseCompatible(
+      release as FieldReleaseConfiguration,
+      guard.client,
+    );
+  } catch (error) {
+    return error instanceof FieldV2Error ? error.code : "field_release_config_invalid";
+  }
+  if ((release as FieldReleaseConfiguration).safeMode) {
+    return "field_safe_mode_read_only";
+  }
+  if (!(release as FieldReleaseConfiguration).v2WritesEnabled) {
+    return "field_v2_writes_disabled";
+  }
+  return null;
+}
+
 async function runFieldRootTransaction<Result>(
   selector: FieldWorkTransactionSelector,
   decide: (
@@ -1683,6 +2105,45 @@ async function runFieldRootTransaction<Result>(
   let chosen: FieldWorkTransactionDecision<Result> | null = null;
   const transaction = await adminDatabase.ref().transaction(
     (current) => {
+      const receiptValue = readNestedRecord(current, [
+        "fieldPlatform",
+        "v2",
+        "requestReceipts",
+        selector.scope,
+        selector.requestId,
+      ]);
+      const currentReceipt = parseReceipt(
+        receiptValue,
+        selector.scope,
+        selector.requestId,
+      );
+      if (receiptValue !== null && receiptValue !== undefined && !currentReceipt) {
+        chosen = { errorCode: "field_request_receipt_invalid" };
+        return undefined;
+      }
+      if (currentReceipt && currentReceipt.requestHash !== selector.requestHash) {
+        chosen = { errorCode: "field_request_id_conflict" };
+        return undefined;
+      }
+      if (currentReceipt) {
+        const actorError = currentActorGuardError(current, selector.runtimeGuard);
+        if (actorError) {
+          chosen = { errorCode: actorError };
+          return undefined;
+        }
+        chosen = decide({
+          workItem: null,
+          visit: null,
+          visitWorkItems: [],
+          receipt: currentReceipt,
+        });
+        return undefined;
+      }
+      const guardError = currentMutationGuardError(current, selector.runtimeGuard);
+      if (guardError) {
+        chosen = { errorCode: guardError };
+        return undefined;
+      }
       const selectedItem = selector.jobId
         ? readNestedRecord(current, ["fieldPlatform", "v2", "workItems", selector.jobId])
         : null;
@@ -1696,26 +2157,6 @@ async function runFieldRootTransaction<Result>(
       const visitIds = isRecord(visit) && Array.isArray(visit.workItemIds)
         ? visit.workItemIds.filter((id): id is string => typeof id === "string")
         : [];
-      const receiptValue = readNestedRecord(current, [
-        "fieldPlatform",
-        "v2",
-        "requestReceipts",
-        selector.scope,
-        selector.requestId,
-      ]);
-      const currentReceipt = parseReceipt(receiptValue);
-      if (receiptValue !== null && receiptValue !== undefined && !currentReceipt) {
-        chosen = { errorCode: "field_request_receipt_invalid" };
-        return undefined;
-      }
-      if (currentReceipt && currentReceipt.requestHash !== selector.requestHash) {
-        chosen = { errorCode: "field_request_id_conflict" };
-        return undefined;
-      }
-      if (!currentReceipt && selector.newMutationBlockedCode) {
-        chosen = { errorCode: selector.newMutationBlockedCode };
-        return undefined;
-      }
       const item = selectedItem ?? (visitIds.length > 0
         ? readNestedRecord(current, [
           "fieldPlatform", "v2", "workItems", visitIds[0],
@@ -1735,7 +2176,10 @@ async function runFieldRootTransaction<Result>(
       });
       if ("errorCode" in chosen) return undefined;
       if ("replay" in chosen) return undefined;
-      return applyRootPatch(current, chosen.patch);
+      return applyRootPatch(
+        current,
+        augmentFieldTeamAggregatePatch(current, chosen.patch),
+      );
     },
     undefined,
     false,
@@ -1746,6 +2190,52 @@ async function runFieldRootTransaction<Result>(
   if ("replay" in finalChoice) return finalChoice.result;
   if (!transaction.committed) throw new FieldV2Error("field_work_transaction_failed");
   return finalChoice.result;
+}
+
+async function readCreationReceiptAtomically(
+  scope: "createFieldJobs",
+  requestId: string,
+  runtime: {
+    actor: FieldV2Actor;
+    authenticatedEmail: string;
+    client: FieldReleaseClient;
+  },
+): Promise<unknown> {
+  let receipt: unknown = null;
+  let errorCode: string | null = null;
+  await adminDatabase.ref().transaction(
+    (current) => {
+      const value = readNestedRecord(current, [
+        "fieldPlatform", "v2", "requestReceipts", scope, requestId,
+      ]);
+      if (value === null) {
+        receipt = null;
+        return undefined;
+      }
+      const parsed = parseReceipt(value, scope, requestId);
+      if (!parsed) {
+        errorCode = "field_request_receipt_invalid";
+        return undefined;
+      }
+      const actorError = currentActorGuardError(current, {
+        authUid: runtime.actor.authUid,
+        operatorId: runtime.actor.operatorId,
+        authenticatedEmail: runtime.authenticatedEmail,
+        client: runtime.client,
+        operationKind: "createJob",
+      });
+      if (actorError) {
+        errorCode = actorError;
+        return undefined;
+      }
+      receipt = parsed;
+      return undefined;
+    },
+    undefined,
+    false,
+  );
+  if (errorCode) throw new FieldV2Error(errorCode);
+  return receipt;
 }
 
 const baseFieldV2WorkDependencies: WorkItemDependencies = {
@@ -1762,32 +2252,52 @@ const baseFieldV2WorkDependencies: WorkItemDependencies = {
   async readCrmSalesUnit(id) {
     return (await adminDatabase.ref(`crmCompany/data/salesUnits/${id}`).get()).val();
   },
+  async readCrmWorkflowCase(id) {
+    return (await adminDatabase.ref(`crmCompany/cases/${id}`).get()).val();
+  },
+  async readCrmTask(id) {
+    return (await adminDatabase.ref(`crmCompany/data/tasks/${id}`).get()).val();
+  },
   async readOperator(id) {
     const value: unknown = (await adminDatabase
       .ref(`crmCompany/teamProfiles/${id}`)
       .get()).val();
     return isRecord(value) ? { id, ...value } : value;
   },
+  async readCreationReceipt(scope, requestId) {
+    return (await adminDatabase
+      .ref(`fieldPlatform/v2/requestReceipts/${scope}/${requestId}`)
+      .get()).val();
+  },
   async commitCreation(command: FieldAtomicCreateCommand): Promise<FieldAtomicCreateOutcome> {
     let outcome: FieldAtomicCreateOutcome | null = null;
     const receiptSegments = command.receiptPath.split("/").filter(Boolean);
     const transaction = await adminDatabase.ref().transaction(
       (current) => {
-        const stored = parseReceipt(readNestedRecord(current, receiptSegments));
+        const receiptValue = readNestedRecord(current, receiptSegments);
+        const stored = parseReceipt(
+          receiptValue,
+          "createFieldJobs",
+          command.requestId,
+        );
+        if (receiptValue !== null && receiptValue !== undefined && !stored) {
+          throw new FieldV2Error("field_request_receipt_invalid");
+        }
         if (stored && stored.requestHash !== command.requestHash) {
           outcome = { kind: "conflict" };
           return undefined;
         }
         if (stored) {
+          const actorError = currentActorGuardError(current, command.runtimeGuard);
+          if (actorError) throw new FieldV2Error(actorError);
           outcome = {
             kind: "replayed",
             result: stored.result as FieldAtomicCreateCommand["result"],
           };
           return undefined;
         }
-        if (command.newMutationBlockedCode) {
-          throw new FieldV2Error(command.newMutationBlockedCode);
-        }
+        const guardError = currentMutationGuardError(current, command.runtimeGuard);
+        if (guardError) throw new FieldV2Error(guardError);
         if (!command.sourceExpectations.every((expectation) =>
           currentCrmSourceMatches(current, expectation))) {
           throw new FieldV2Error("field_crm_reference_changed");
@@ -1796,7 +2306,10 @@ const baseFieldV2WorkDependencies: WorkItemDependencies = {
           throw new FieldV2Error("field_assignee_invalid");
         }
         outcome = { kind: "created", result: command.result };
-        return applyRootPatch(current, command.patch);
+        return applyRootPatch(
+          current,
+          augmentFieldTeamAggregatePatch(current, command.patch),
+        );
       },
       undefined,
       false,
@@ -1809,27 +2322,133 @@ const baseFieldV2WorkDependencies: WorkItemDependencies = {
     return finalOutcome;
   },
   transactWork: runFieldRootTransaction,
-  async readWorkspace(actor) {
-    const projectionPath = `fieldPlatform/v2/projections/operatorJobs/${actor.operatorId}`;
-    const [mine, unassigned] = await Promise.all([
-      adminDatabase.ref(projectionPath).get(),
-      adminDatabase.ref("fieldPlatform/v2/projections/unassigned").get(),
-    ]);
-    const ids = new Set<string>();
-    for (const value of [mine?.val(), unassigned?.val()]) {
-      if (value === null || value === undefined) continue;
-      if (!isRecord(value)) throw new FieldV2Error("field_workspace_invalid");
-      for (const [key, projection] of Object.entries(value)) {
-        if (!isRecord(projection) || projection.fieldJobId !== key) {
+  async readWorkspace(actor, query) {
+    if (query.scope === "team") {
+      const afterKey = decodeFieldTeamCursor(query.cursor);
+      let teamQuery = adminDatabase
+        .ref("fieldPlatform/v2/projections/teamActive")
+        .orderByChild("activeOrderKey");
+      if (afterKey !== undefined) teamQuery = teamQuery.startAfter(afterKey);
+      const [teamSnapshot, kpiSnapshot] = await Promise.all([
+        teamQuery.limitToFirst(query.limit + 1).get(),
+        adminDatabase.ref("fieldPlatform/v2/projections/teamKpis/current").get(),
+      ]);
+      const entries: UnknownRecord[] = [];
+      teamSnapshot.forEach((child) => {
+        const key = child.key;
+        const value: unknown = child.val();
+        if (
+          !isPathSafeId(key)
+          || !isRecord(value)
+          || value.fieldJobId !== key
+          || typeof value.activeOrderKey !== "string"
+        ) {
           throw new FieldV2Error("field_workspace_invalid");
         }
-        ids.add(key);
+        entries.push(value);
+        return false;
+      });
+      const hasMore = entries.length > query.limit;
+      const items = entries.slice(0, query.limit);
+      const last = items.at(-1);
+      const rawKpis: unknown = kpiSnapshot.val();
+      if (!isRecord(rawKpis) || typeof rawKpis.seoulDate !== "string") {
+        throw new FieldV2Error("field_workspace_invalid");
       }
+      return {
+        items: items as unknown as readonly FieldTeamActiveProjection[],
+        kpis: rawKpis as unknown as FieldKpis,
+        kpiSeoulDate: rawKpis.seoulDate,
+        ...(hasMore && last
+          ? { nextCursor: encodeFieldTeamCursor(String(last.activeOrderKey)) }
+          : {}),
+      };
     }
-    const items = await Promise.all([...ids].sort().map(async (id) =>
-      (await adminDatabase.ref(`fieldPlatform/v2/workItems/${id}`).get()).val(),
+    const cursor = decodeFieldPersonalCursor(query.cursor);
+    const scanLimit = Math.min(100, Math.max(query.limit + 1, query.limit * 2));
+    const projectionPath = `fieldPlatform/v2/projections/operatorJobs/${actor.operatorId}`;
+    let mineQuery = adminDatabase.ref(projectionPath).orderByChild("updatedAt");
+    if (cursor) mineQuery = mineQuery.startAfter(cursor.updatedAt, cursor.id);
+    const minePromise = mineQuery.limitToFirst(scanLimit + 1).get();
+    const includeUnassigned = actor.role === "admin" || actor.role === "member";
+    const unassignedPromise = includeUnassigned
+      ? (() => {
+        let unassignedQuery = adminDatabase.ref("fieldPlatform/v2/projections/unassigned")
+          .orderByChild("updatedAt");
+        if (cursor) unassignedQuery = unassignedQuery.startAfter(cursor.updatedAt, cursor.id);
+        return unassignedQuery.limitToFirst(scanLimit + 1).get();
+      })()
+      : Promise.resolve(null);
+    const [mine, unassigned] = await Promise.all([minePromise, unassignedPromise]);
+    const expected = new Map<string, {
+      id: string;
+      mine: boolean;
+      unassigned: boolean;
+      updatedAt: string;
+    }>();
+    for (const [snapshot, kind] of [
+      [mine, "mine"],
+      [unassigned, "unassigned"],
+    ] as const) {
+      if (snapshot === null) continue;
+      snapshot.forEach((child) => {
+        const key = child.key;
+        const projection: unknown = child.val();
+        if (
+          !isPathSafeId(key)
+          || !isRecord(projection)
+          || projection.fieldJobId !== key
+          || typeof projection.updatedAt !== "string"
+          || !Number.isFinite(Date.parse(projection.updatedAt))
+        ) {
+          throw new FieldV2Error("field_workspace_invalid");
+        }
+        const previous = expected.get(key);
+        expected.set(key, {
+          id: key,
+          mine: previous?.mine === true || kind === "mine",
+          unassigned: previous?.unassigned === true || kind === "unassigned",
+          updatedAt: previous && previous.updatedAt > projection.updatedAt
+            ? previous.updatedAt
+            : projection.updatedAt,
+        });
+        return false;
+      });
+    }
+    const selected = [...expected.values()].sort((left, right) => (
+      left.updatedAt.localeCompare(right.updatedAt)
+      || firebaseFieldKeyCompare(left.id, right.id)
     ));
-    return { items: items as FieldWorkItem[] };
+    const scanCandidates = selected.slice(0, scanLimit);
+    const candidates = await Promise.all(scanCandidates.map(async (candidate) => ({
+      ...candidate,
+      value: (await adminDatabase.ref(`fieldPlatform/v2/workItems/${candidate.id}`).get()).val(),
+    })));
+    const items: FieldWorkItem[] = [];
+    let consumedCount = 0;
+    for (const { mine, unassigned: projectedUnassigned, value } of candidates) {
+      consumedCount += 1;
+      if (!isRecord(value)) continue;
+      if (value.archivedAt !== null || value.workflowStatus === "completed" || value.workflowStatus === "cancelled") {
+        continue;
+      }
+      if (
+        value.assignedOperatorId === actor.operatorId
+          ? !mine
+          : value.assignedOperatorId === null
+            ? !projectedUnassigned
+            : true
+      ) continue;
+      items.push(value as unknown as FieldWorkItem);
+      if (items.length === query.limit) break;
+    }
+    const lastConsumed = scanCandidates[consumedCount - 1];
+    return {
+      items,
+      ...(lastConsumed && consumedCount < selected.length
+        ? { nextCursor: encodeFieldPersonalCursor(lastConsumed.updatedAt, lastConsumed.id) }
+        : {}),
+    };
   },
 };
 
@@ -1842,6 +2461,11 @@ function fieldV2WorkDependenciesFor(
     | "changeVisit"
     | "transitionJob"
     | "read",
+  runtime?: {
+    actor: FieldV2Actor;
+    authenticatedEmail: string;
+    client: FieldReleaseClient;
+  },
 ): WorkItemDependencies {
   const releaseDependencies = fieldV2ReleaseDependencies();
   const newMutationBlockedCode = config.safeMode
@@ -1861,15 +2485,13 @@ function fieldV2WorkDependenciesFor(
       throw new FieldV2Error("field_release_unavailable");
     }
     if (stored !== null && stored !== undefined) {
-      if (
-        !isRecord(stored)
-        || stored.scope !== scope
-        || stored.requestId !== requestId
-        || typeof stored.requestHash !== "string"
-      ) {
+      let parsed: FieldMutationReceipt;
+      try {
+        parsed = parseFieldMutationReceipt(stored, scope, requestId);
+      } catch {
         throw new FieldV2Error("field_request_receipt_invalid");
       }
-      if (stored.requestHash !== requestHash) {
+      if (parsed.requestHash !== requestHash) {
         throw new FieldV2Error("field_request_id_conflict");
       }
       await assertFieldReleaseAllows(config, {
@@ -1892,6 +2514,10 @@ function fieldV2WorkDependenciesFor(
   };
   return {
     ...baseFieldV2WorkDependencies,
+    async readCreationReceipt(scope, requestId) {
+      if (!runtime) return baseFieldV2WorkDependencies.readCreationReceipt(scope, requestId);
+      return readCreationReceiptAtomically(scope, requestId, runtime);
+    },
     async commitCreation(command) {
       await assertOperation(
         "createFieldJobs",
@@ -1900,7 +2526,15 @@ function fieldV2WorkDependenciesFor(
       );
       return baseFieldV2WorkDependencies.commitCreation({
         ...command,
-        ...(newMutationBlockedCode === undefined ? {} : { newMutationBlockedCode }),
+        ...(runtime === undefined ? {} : {
+          runtimeGuard: {
+            authUid: runtime.actor.authUid,
+            operatorId: runtime.actor.operatorId,
+            authenticatedEmail: runtime.authenticatedEmail,
+            client: runtime.client,
+            operationKind,
+          } as FieldAtomicRuntimeGuard,
+        }),
       });
     },
     async transactWork(selector, decide) {
@@ -1911,7 +2545,15 @@ function fieldV2WorkDependenciesFor(
       );
       return baseFieldV2WorkDependencies.transactWork({
         ...selector,
-        ...(newMutationBlockedCode === undefined ? {} : { newMutationBlockedCode }),
+        ...(runtime === undefined ? {} : {
+          runtimeGuard: {
+            authUid: runtime.actor.authUid,
+            operatorId: runtime.actor.operatorId,
+            authenticatedEmail: runtime.authenticatedEmail,
+            client: runtime.client,
+            operationKind,
+          } as FieldAtomicRuntimeGuard,
+        }),
       }, decide);
     },
   };
@@ -2066,11 +2708,12 @@ export const createFieldJobs = onCall<CreateFieldJobsInput & FieldV2CallableData
   fieldV2CallableOptions,
   async (request) => {
     try {
-      const { actor, config, data } = await prepareFieldV2Request(request, "createJob");
+      const context = await prepareFieldV2Request(request, "createJob");
+      const { actor, config, data } = context;
       return await createFieldJobsCore(
         data as unknown as CreateFieldJobsInput,
         actor,
-        fieldV2WorkDependenciesFor(config, "createJob"),
+        fieldV2WorkDependenciesFor(config, "createJob", context),
       );
     } catch (error) {
       return rethrowFieldV2CallableError(error);
@@ -2082,11 +2725,12 @@ export const claimFieldJob = onCall<ClaimFieldJobInput & FieldV2CallableData>(
   fieldV2CallableOptions,
   async (request) => {
     try {
-      const { actor, config, data } = await prepareFieldV2Request(request, "claimJob");
+      const context = await prepareFieldV2Request(request, "claimJob");
+      const { actor, config, data } = context;
       return await claimFieldJobCore(
         data as unknown as ClaimFieldJobInput,
         actor,
-        fieldV2WorkDependenciesFor(config, "claimJob"),
+        fieldV2WorkDependenciesFor(config, "claimJob", context),
       );
     } catch (error) {
       return rethrowFieldV2CallableError(error);
@@ -2098,11 +2742,12 @@ export const assignFieldJob = onCall<AssignFieldJobInput & FieldV2CallableData>(
   fieldV2CallableOptions,
   async (request) => {
     try {
-      const { actor, config, data } = await prepareFieldV2Request(request, "assignJob");
+      const context = await prepareFieldV2Request(request, "assignJob");
+      const { actor, config, data } = context;
       return await assignFieldJobCore(
         data as unknown as AssignFieldJobInput,
         actor,
-        fieldV2WorkDependenciesFor(config, "assignJob"),
+        fieldV2WorkDependenciesFor(config, "assignJob", context),
       );
     } catch (error) {
       return rethrowFieldV2CallableError(error);
@@ -2114,11 +2759,12 @@ export const changeFieldVisit = onCall<ChangeFieldVisitInput & FieldV2CallableDa
   fieldV2CallableOptions,
   async (request) => {
     try {
-      const { actor, config, data } = await prepareFieldV2Request(request, "changeVisit");
+      const context = await prepareFieldV2Request(request, "changeVisit");
+      const { actor, config, data } = context;
       return await changeFieldVisitCore(
         data as unknown as ChangeFieldVisitInput,
         actor,
-        fieldV2WorkDependenciesFor(config, "changeVisit"),
+        fieldV2WorkDependenciesFor(config, "changeVisit", context),
       );
     } catch (error) {
       return rethrowFieldV2CallableError(error);
@@ -2130,11 +2776,12 @@ export const transitionFieldJob = onCall<TransitionFieldJobInput & FieldV2Callab
   fieldV2CallableOptions,
   async (request) => {
     try {
-      const { actor, config, data } = await prepareFieldV2Request(request, "transitionJob");
+      const context = await prepareFieldV2Request(request, "transitionJob");
+      const { actor, config, data } = context;
       return await transitionFieldJobCore(
         data as unknown as TransitionFieldJobInput,
         actor,
-        fieldV2WorkDependenciesFor(config, "transitionJob"),
+        fieldV2WorkDependenciesFor(config, "transitionJob", context),
       );
     } catch (error) {
       return rethrowFieldV2CallableError(error);
@@ -2148,6 +2795,7 @@ export const listFieldOperationsWorkspace = onCall<FieldV2CallableData>(
     try {
       const { actor, config } = await prepareFieldV2Request(request, "read");
       return await listFieldOperationsWorkspaceCore(
+        request.data as unknown as ListFieldOperationsWorkspaceInput,
         actor,
         fieldV2WorkDependenciesFor(config, "read"),
       );

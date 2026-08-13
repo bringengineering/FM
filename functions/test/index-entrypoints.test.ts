@@ -1,3 +1,5 @@
+import { createHash } from "node:crypto";
+
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const registrations = vi.hoisted(() => {
@@ -25,6 +27,7 @@ const registrations = vi.hoisted(() => {
   const transactionRetryCurrent = { value: undefined as unknown };
   const pathValues = new Map<string, unknown>();
   const readSequences = new Map<string, unknown[]>();
+  const unorderedQueryValPaths = new Set<string>();
   const queryCalls: Array<{
     path: string;
     orderByChild: string;
@@ -213,10 +216,18 @@ const registrations = vi.hoisted(() => {
             ? selected
             : selected.slice(-state.limitToLast)
           : selected.slice(0, state.limitToFirst);
-        const value = Object.fromEntries(limited);
+        const value = Object.fromEntries(
+          unorderedQueryValPaths.has(path) ? [...limited].reverse() : limited,
+        );
         return {
           val: () => Object.keys(value).length === 0 ? null : value,
           exists: () => Object.keys(value).length > 0,
+          forEach: (callback: (snapshot: { key: string; val(): unknown }) => unknown) => {
+            for (const [key, childValue] of limited) {
+              if (callback({ key, val: () => childValue }) === true) return true;
+            }
+            return false;
+          },
         };
       },
     };
@@ -288,6 +299,7 @@ const registrations = vi.hoisted(() => {
     mutationPaths,
     pathValues,
     readSequences,
+    unorderedQueryValPaths,
     transactionStates,
     transactionPaths,
     transactionCurrent,
@@ -508,7 +520,7 @@ function validFieldV2Request(data: Record<string, unknown>) {
 }
 
 function fieldV2WorkItem(overrides: Record<string, unknown> = {}) {
-  return {
+  const item = {
     id: "job_1",
     visitId: "visit_1",
     jobType: "vacancy_capture",
@@ -529,12 +541,15 @@ function fieldV2WorkItem(overrides: Record<string, unknown> = {}) {
       unitType: "salesUnit",
       unitId: "sales_unit_1",
       unitLabel: "101호",
+      depositWon: 3_000_000,
+      monthlyRentWon: 350_000,
+      maintenanceFeeWon: 50_000,
     },
     sourceVersion: {
       parentUpdatedAt: "2026-08-14T01:00:00.000Z",
       unitUpdatedAt: "2026-08-14T01:30:00.000Z",
     },
-    sourceHash: "a".repeat(64),
+    sourceHash: "",
     mediaCount: 0,
     uploadFailureCount: 0,
     adminActionRequired: false,
@@ -547,6 +562,36 @@ function fieldV2WorkItem(overrides: Record<string, unknown> = {}) {
     archivedAt: null,
     ...overrides,
   };
+  if (!Object.hasOwn(overrides, "sourceHash")) {
+    const canonicalize = (value: unknown): unknown => {
+      if (Array.isArray(value)) return value.map(canonicalize);
+      if (typeof value !== "object" || value === null) return value;
+      const record = value as Record<string, unknown>;
+      return Object.fromEntries(Object.keys(record).sort()
+        .map((key) => [key, canonicalize(record[key])]));
+    };
+    item.sourceHash = createHash("sha256")
+      .update(JSON.stringify(canonicalize({
+        snapshot: item.sourceSnapshot,
+        version: item.sourceVersion,
+      })))
+      .digest("hex");
+  }
+  const timestamp = "2026-08-14T02:00:00.000Z";
+  const acceptedStatuses = ["accepted", "in_progress", "evidence_ready", "review_pending", "changes_requested", "approved", "completed"];
+  const startedStatuses = ["in_progress", "evidence_ready", "review_pending", "changes_requested", "approved", "completed"];
+  const evidenceStatuses = ["evidence_ready", "review_pending", "changes_requested", "approved", "completed"];
+  const reviewStatuses = ["review_pending", "changes_requested", "approved"];
+  if (acceptedStatuses.includes(String(item.workflowStatus)) && item.acceptedAt === undefined) item.acceptedAt = timestamp;
+  if (startedStatuses.includes(String(item.workflowStatus)) && item.startedAt === undefined) item.startedAt = timestamp;
+  if (evidenceStatuses.includes(String(item.workflowStatus)) && item.evidenceReadyAt === undefined) item.evidenceReadyAt = timestamp;
+  if (reviewStatuses.includes(String(item.workflowStatus)) && item.reviewPendingAt === undefined) item.reviewPendingAt = timestamp;
+  if (item.workflowStatus === "completed" && item.completedAt === undefined) item.completedAt = timestamp;
+  if (item.workflowStatus === "cancelled" && item.cancelledAt === undefined) {
+    item.cancelledAt = timestamp;
+    item.cancelReason = "cancelled";
+  }
+  return item;
 }
 
 function fieldV2Visit(overrides: Record<string, unknown> = {}) {
@@ -567,6 +612,29 @@ function fieldV2Visit(overrides: Record<string, unknown> = {}) {
     updatedByOperatorId: "operator_kim",
     archivedAt: null,
     ...overrides,
+  };
+}
+
+function fieldV2TeamProjection(overrides: Record<string, unknown> = {}) {
+  const item = fieldV2WorkItem(overrides);
+  const priorityRank = { urgent: 0, high: 1, normal: 2, low: 3 } as const;
+  return {
+    fieldJobId: item.id,
+    visitId: item.visitId,
+    jobType: item.jobType,
+    parentName: item.sourceSnapshot.parentName,
+    address: item.sourceSnapshot.address,
+    unitLabel: item.sourceSnapshot.unitLabel ?? null,
+    assignedOperatorId: item.assignedOperatorId,
+    dueDate: item.dueDate,
+    priority: item.priority,
+    workflowStatus: item.workflowStatus,
+    uploadStatus: item.uploadStatus,
+    mediaCount: item.mediaCount,
+    uploadFailureCount: item.uploadFailureCount,
+    adminActionRequired: item.adminActionRequired,
+    updatedAt: item.updatedAt,
+    activeOrderKey: `${item.dueDate}|${priorityRank[item.priority as keyof typeof priorityRank]}|${item.updatedAt}|${item.id}`,
   };
 }
 
@@ -760,6 +828,7 @@ beforeEach(() => {
   registrations.mutationPaths.length = 0;
   registrations.pathValues.clear();
   registrations.readSequences.clear();
+  registrations.unorderedQueryValPaths.clear();
   registrations.transactionStates.length = 0;
   registrations.transactionPaths.length = 0;
   registrations.transactionCurrent.value = null;
@@ -952,7 +1021,42 @@ describe("Firebase entrypoint metadata", () => {
     }
   });
 
+  it.each([
+    ["create malformed", entrypoints.createFieldJobs, null],
+    ["claim missing operator", entrypoints.claimFieldJob, { requestId: "bad" }],
+    ["assign valid-shaped", entrypoints.assignFieldJob, validFieldV2Request({
+      requestId: "123e4567-e89b-42d3-a456-426614174000",
+      jobId: "job_1",
+      assignedOperatorId: null,
+      reason: "reassign",
+    }).data],
+    ["change empty", entrypoints.changeFieldVisit, {}],
+    ["transition non-record", entrypoints.transitionFieldJob, "bad"],
+    ["workspace missing operator", entrypoints.listFieldOperationsWorkspace, {
+      protocolVersion: 2,
+      clientKind: "pwa",
+      buildVersion: "1.0.0",
+    }],
+  ])("rejects unauthenticated v2 %s before payload or database access", async (
+    _label,
+    callable,
+    data,
+  ) => {
+    registrations.databaseRef.mockClear();
+    await expect(callableHandler(callable)({ data })).rejects.toMatchObject({
+      code: "unauthenticated",
+      message: "field_auth_required",
+    });
+    expect(registrations.databaseRef).not.toHaveBeenCalled();
+  });
+
   it("creates v2 work from current CRM auth with one atomic root transaction", async () => {
+    const today = new Intl.DateTimeFormat("en-CA", {
+      timeZone: "Asia/Seoul",
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit",
+    }).format(new Date());
     seedFieldV2Access();
     registrations.pathValues.set("crmCompany/data/salesProspects/prospect_1", {
       id: "prospect_1",
@@ -1001,7 +1105,7 @@ describe("Firebase entrypoint metadata", () => {
         jobType: "vacancy_capture",
         crmSalesProspectId: "prospect_1",
         crmSalesUnitIds: ["sales_unit_1"],
-        dueDate: "2026-08-15",
+        dueDate: today,
         priority: "normal",
         assignedOperatorId: null,
         authUid: "attacker_uid",
@@ -1015,10 +1119,222 @@ describe("Firebase entrypoint metadata", () => {
     const root = registrations.transactionCurrent.value as Record<string, unknown>;
     expect(root).toHaveProperty(`fieldPlatform.v2.visits.${result.visitId}`);
     expect(root).toHaveProperty(`fieldPlatform.v2.workItems.${result.jobIds[0]}`);
+    expect(root).toHaveProperty(`fieldPlatform.v2.projections.teamActive.${result.jobIds[0]}`);
+    expect(root).toHaveProperty(`fieldPlatform.v2.projections.teamVisitState.${result.visitId}`, {
+      visitId: result.visitId,
+      seoulDate: today,
+      activeTodayItemCount: 1,
+      updatedAt: expect.any(String),
+    });
+    expect(root).toHaveProperty("fieldPlatform.v2.projections.teamKpis.current", {
+      seoulDate: today,
+      todayVisits: 1,
+      capturePending: 1,
+      uploadFailures: 0,
+      reviewPending: 0,
+      unassigned: 1,
+      overdue: 0,
+      adminActionRequired: 0,
+      updatedAt: expect.any(String),
+    });
     expect(root).toHaveProperty(`crmCompany.fieldSummaries.${result.jobIds[0]}`);
     expect(registrations.databaseRef).not.toHaveBeenCalledWith(
       "fieldPlatform/users/shared_uid",
     );
+  });
+
+  it("updates team KPI and visit aggregates atomically when a job is claimed then cancelled", async () => {
+    seedFieldV2Access();
+    const today = new Intl.DateTimeFormat("en-CA", {
+      timeZone: "Asia/Seoul",
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit",
+    }).format(new Date());
+    const item = fieldV2WorkItem({ dueDate: today });
+    const visit = fieldV2Visit({ dueDate: today });
+    registrations.transactionCurrent.value = {
+      crmCompany: {
+        access: { shared_uid: { enabled: true, role: "member", email: "team@bringcare.kr" } },
+        teamProfiles: { operator_kim: { active: true, displayName: "operator" } },
+      },
+      fieldPlatform: { v2: {
+        config: { release: registrations.pathValues.get("fieldPlatform/v2/config/release") },
+        workItems: { job_1: item },
+        visits: { visit_1: visit },
+        projections: {
+          unassigned: { job_1: fieldV2TeamProjection({ dueDate: today }) },
+          teamActive: { job_1: fieldV2TeamProjection({ dueDate: today }) },
+          teamKpis: { current: {
+            seoulDate: today,
+            todayVisits: 1,
+            capturePending: 1,
+            uploadFailures: 0,
+            reviewPending: 0,
+            unassigned: 1,
+            overdue: 0,
+            adminActionRequired: 0,
+            updatedAt: item.updatedAt,
+          } },
+          teamVisitState: { visit_1: {
+            visitId: "visit_1",
+            seoulDate: today,
+            activeTodayItemCount: 1,
+            updatedAt: item.updatedAt,
+          } },
+        },
+      } },
+    };
+
+    await callableHandler(entrypoints.claimFieldJob)(validFieldV2Request({
+      requestId: "123e4567-e89b-42d3-a456-426614174000",
+      jobId: "job_1",
+    }));
+    let root = registrations.transactionCurrent.value as any;
+    expect(root.fieldPlatform.v2.projections.teamKpis.current).toMatchObject({
+      seoulDate: today,
+      todayVisits: 1,
+      capturePending: 1,
+      unassigned: 0,
+    });
+    expect(root.fieldPlatform.v2.projections.teamVisitState.visit_1.activeTodayItemCount).toBe(1);
+
+    await callableHandler(entrypoints.transitionFieldJob)(validFieldV2Request({
+      requestId: "223e4567-e89b-42d3-a456-426614174000",
+      jobId: "job_1",
+      toStatus: "cancelled",
+      reason: "owner withdrew the request",
+    }));
+    root = registrations.transactionCurrent.value as any;
+    expect(root.fieldPlatform.v2.projections.teamKpis.current).toMatchObject({
+      seoulDate: today,
+      todayVisits: 0,
+      capturePending: 0,
+      unassigned: 0,
+    });
+    expect(root.fieldPlatform.v2.projections.teamVisitState.visit_1).toBeNull();
+    expect(root.fieldPlatform.v2.projections.teamActive.job_1).toBeNull();
+  });
+
+  it("atomically rolls a prior-day team aggregate forward on the first mutation after KST midnight", async () => {
+    seedFieldV2Access();
+    const now = new Date();
+    const today = new Intl.DateTimeFormat("en-CA", {
+      timeZone: "Asia/Seoul",
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit",
+    }).format(now);
+    const yesterday = new Intl.DateTimeFormat("en-CA", {
+      timeZone: "Asia/Seoul",
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit",
+    }).format(new Date(now.getTime() - 86_400_000));
+    const item = fieldV2WorkItem({ dueDate: today });
+    registrations.transactionCurrent.value = {
+      crmCompany: {
+        access: { shared_uid: { enabled: true, role: "member", email: "team@bringcare.kr" } },
+        teamProfiles: { operator_kim: { active: true, displayName: "operator" } },
+      },
+      fieldPlatform: { v2: {
+        config: { release: registrations.pathValues.get("fieldPlatform/v2/config/release") },
+        workItems: { job_1: item },
+        visits: { visit_1: fieldV2Visit({ dueDate: today }) },
+        projections: {
+          teamKpis: { current: {
+            seoulDate: yesterday,
+            todayVisits: 9,
+            capturePending: 9,
+            uploadFailures: 9,
+            reviewPending: 9,
+            unassigned: 9,
+            overdue: 9,
+            adminActionRequired: 9,
+            updatedAt: item.updatedAt,
+          } },
+          teamVisitState: { visit_1: {
+            visitId: "visit_1",
+            seoulDate: yesterday,
+            activeTodayItemCount: 9,
+            updatedAt: item.updatedAt,
+          } },
+        },
+      } },
+    };
+
+    await expect(callableHandler(entrypoints.claimFieldJob)(validFieldV2Request({
+      requestId: "123e4567-e89b-42d3-a456-426614174000",
+      jobId: "job_1",
+    }))).resolves.toMatchObject({ workflowStatus: "assigned" });
+    const aggregate = (registrations.transactionCurrent.value as any)
+      .fieldPlatform.v2.projections;
+    expect(aggregate.teamKpis.current).toMatchObject({
+      seoulDate: today,
+      todayVisits: 1,
+      capturePending: 1,
+      uploadFailures: 0,
+      reviewPending: 0,
+      unassigned: 0,
+      overdue: 0,
+      adminActionRequired: 0,
+    });
+    expect(aggregate.teamVisitState.visit_1).toMatchObject({
+      visitId: "visit_1",
+      seoulDate: today,
+      activeTodayItemCount: 1,
+    });
+  });
+
+  it("atomically replays creation before CRM reads but blocks a currently disabled account", async () => {
+    seedFieldV2Access();
+    const building = {
+      id: "building_1",
+      name: "building",
+      address: "Wonju 1",
+      updatedAt: "2026-08-14T01:00:00.000Z",
+      archivedAt: null,
+    };
+    registrations.pathValues.set("crmCompany/data/buildings/building_1", building);
+    registrations.transactionCurrent.value = {
+      crmCompany: {
+        access: { shared_uid: { enabled: true, role: "member", email: "team@bringcare.kr" } },
+        teamProfiles: { operator_kim: { active: true, displayName: "operator" } },
+        data: { buildings: { building_1: building } },
+      },
+      fieldPlatform: { v2: {
+        config: { release: registrations.pathValues.get("fieldPlatform/v2/config/release") },
+      } },
+    };
+    const request = validFieldV2Request({
+      requestId: "123e4567-e89b-42d3-a456-426614174000",
+      jobType: "maintenance_inspection",
+      crmBuildingId: "building_1",
+      dueDate: "2026-08-15",
+      priority: "normal",
+      assignedOperatorId: null,
+    });
+    const first = await callableHandler(entrypoints.createFieldJobs)(request) as Record<string, unknown>;
+
+    seedFieldV2Access("viewer", { safeMode: true });
+    const root = registrations.transactionCurrent.value as any;
+    root.crmCompany.access.shared_uid.role = "viewer";
+    root.fieldPlatform.v2.config.release = registrations.pathValues.get("fieldPlatform/v2/config/release");
+    registrations.pathValues.delete("crmCompany/data/buildings/building_1");
+    registrations.databaseRef.mockClear();
+    await expect(callableHandler(entrypoints.createFieldJobs)(request)).resolves.toEqual({
+      ...first,
+      repeated: true,
+    });
+    expect(registrations.databaseRef).not.toHaveBeenCalledWith(
+      "crmCompany/data/buildings/building_1",
+    );
+
+    root.crmCompany.access.shared_uid.enabled = false;
+    await expect(callableHandler(entrypoints.createFieldJobs)(request)).rejects.toMatchObject({
+      code: "permission-denied",
+      message: "field_access_forbidden",
+    });
   });
 
   it("rejects a CRM source archived between preload and the atomic create commit", async () => {
@@ -1118,7 +1434,7 @@ describe("Firebase entrypoint metadata", () => {
                 requestId: "123e4567-e89b-42d3-a456-426614174000",
                 requestHash: "f".repeat(64),
                 result: { visitId: "visit_attacker", jobIds: ["job_attacker"] },
-                completedAt: "2026-08-14T01:01:00.000Z",
+                createdAt: "2026-08-14T01:01:00.000Z",
               },
             },
           },
@@ -1138,13 +1454,102 @@ describe("Firebase entrypoint metadata", () => {
     });
   });
 
+  it("fails closed when a malformed same-hash receipt wins between preflight and transaction", async () => {
+    seedFieldV2Access();
+    const root = {
+      crmCompany: {
+        access: { shared_uid: { enabled: true, role: "member", email: "team@bringcare.kr" } },
+        teamProfiles: { operator_kim: { active: true, displayName: "김현진" } },
+      },
+      fieldPlatform: { v2: {
+        config: { release: registrations.pathValues.get("fieldPlatform/v2/config/release") },
+        workItems: { job_1: fieldV2WorkItem() },
+        visits: { visit_1: fieldV2Visit() },
+      } },
+    };
+    const request = validFieldV2Request({
+      requestId: "123e4567-e89b-42d3-a456-426614174000",
+      jobId: "job_1",
+    });
+    registrations.transactionCurrent.value = structuredClone(root);
+    await callableHandler(entrypoints.claimFieldJob)(request);
+    const validReceipt = (registrations.transactionCurrent.value as any)
+      .fieldPlatform.v2.requestReceipts.claimFieldJob[
+        "123e4567-e89b-42d3-a456-426614174000"
+      ];
+
+    registrations.transactionCurrent.value = structuredClone(root);
+    registrations.transactionRetryCurrent.value = {
+      ...structuredClone(root),
+      fieldPlatform: { v2: {
+        ...(structuredClone(root) as any).fieldPlatform.v2,
+        requestReceipts: { claimFieldJob: {
+          "123e4567-e89b-42d3-a456-426614174000": {
+            ...validReceipt,
+            result: { arbitrary: true },
+          },
+        } },
+      } },
+    };
+    registrations.pathValues.delete(
+      "fieldPlatform/v2/requestReceipts/claimFieldJob/123e4567-e89b-42d3-a456-426614174000",
+    );
+
+    await expect(callableHandler(entrypoints.claimFieldJob)(request))
+      .rejects.toMatchObject({
+        code: "failed-precondition",
+        message: "field_request_receipt_invalid",
+    });
+  });
+
+  it("rejects a malformed operation result in a preliminary exact receipt", async () => {
+    seedFieldV2Access();
+    const root = {
+      crmCompany: {
+        access: { shared_uid: { enabled: true, role: "member", email: "team@bringcare.kr" } },
+        teamProfiles: { operator_kim: { active: true, displayName: "김현진" } },
+      },
+      fieldPlatform: { v2: {
+        config: { release: registrations.pathValues.get("fieldPlatform/v2/config/release") },
+        workItems: { job_1: fieldV2WorkItem() },
+        visits: { visit_1: fieldV2Visit() },
+      } },
+    };
+    const request = validFieldV2Request({
+      requestId: "123e4567-e89b-42d3-a456-426614174000",
+      jobId: "job_1",
+    });
+    registrations.transactionCurrent.value = structuredClone(root);
+    await callableHandler(entrypoints.claimFieldJob)(request);
+    const receipt = (registrations.transactionCurrent.value as any)
+      .fieldPlatform.v2.requestReceipts.claimFieldJob[
+        "123e4567-e89b-42d3-a456-426614174000"
+      ];
+    registrations.pathValues.set(
+      "fieldPlatform/v2/requestReceipts/claimFieldJob/123e4567-e89b-42d3-a456-426614174000",
+      { ...receipt, result: { arbitrary: true } },
+    );
+    registrations.transactionCurrent.value = structuredClone(root);
+
+    await expect(callableHandler(entrypoints.claimFieldJob)(request))
+      .rejects.toMatchObject({
+        code: "failed-precondition",
+        message: "field_request_receipt_invalid",
+      });
+    expect(registrations.transactionCurrent.value).toEqual(root);
+  });
+
   it("replays an old claim receipt without rolling a newer accepted item backward", async () => {
     seedFieldV2Access();
     registrations.transactionCurrent.value = {
       crmCompany: {
+        access: {
+          shared_uid: { enabled: true, role: "member", email: "team@bringcare.kr" },
+        },
         teamProfiles: { operator_kim: { active: true, displayName: "김현진" } },
       },
       fieldPlatform: { v2: {
+        config: { release: registrations.pathValues.get("fieldPlatform/v2/config/release") },
         workItems: { job_1: fieldV2WorkItem() },
         visits: { visit_1: fieldV2Visit() },
       } },
@@ -1171,7 +1576,7 @@ describe("Firebase entrypoint metadata", () => {
       "fieldPlatform/v2/requestReceipts/claimFieldJob/123e4567-e89b-42d3-a456-426614174000",
       receipt,
     );
-    seedFieldV2Access("member", { safeMode: true });
+    seedFieldV2Access("member", { safeMode: true, minPwaVersion: "9.0.0" });
     const mutationsBeforeReplay = registrations.mutationPaths.length;
 
     await expect(callableHandler(entrypoints.claimFieldJob)(request))
@@ -1180,7 +1585,137 @@ describe("Firebase entrypoint metadata", () => {
     expect(registrations.mutationPaths).toHaveLength(mutationsBeforeReplay);
   });
 
-  it("fails closed for viewer mutation and safe mode before any root transaction", async () => {
+  it.each([
+    ["disabled access", { enabled: false, role: "member", email: "team@bringcare.kr" }, true],
+    ["email mismatch", { enabled: true, role: "member", email: "other@bringcare.kr" }, true],
+    ["viewer role", { enabled: true, role: "viewer", email: "team@bringcare.kr" }, false],
+  ] as const)("checks current account state before exact replay with %s", async (
+    _label,
+    currentAccess,
+    shouldReject,
+  ) => {
+    seedFieldV2Access("member");
+    registrations.transactionCurrent.value = {
+      crmCompany: {
+        access: {
+          shared_uid: { enabled: true, role: "member", email: "team@bringcare.kr" },
+        },
+        teamProfiles: { operator_kim: { active: true, displayName: "김현진" } },
+      },
+      fieldPlatform: { v2: {
+        config: { release: registrations.pathValues.get("fieldPlatform/v2/config/release") },
+        workItems: { job_1: fieldV2WorkItem() },
+        visits: { visit_1: fieldV2Visit() },
+      } },
+    };
+    const request = validFieldV2Request({
+      requestId: "123e4567-e89b-42d3-a456-426614174000",
+      jobId: "job_1",
+    });
+    await callableHandler(entrypoints.claimFieldJob)(request);
+    const receipt = (registrations.transactionCurrent.value as any)
+      .fieldPlatform.v2.requestReceipts.claimFieldJob[
+        "123e4567-e89b-42d3-a456-426614174000"
+      ];
+    registrations.pathValues.set(
+      "fieldPlatform/v2/requestReceipts/claimFieldJob/123e4567-e89b-42d3-a456-426614174000",
+      receipt,
+    );
+    registrations.transactionCurrent.value = {
+      crmCompany: {
+        access: { shared_uid: currentAccess },
+        teamProfiles: { operator_kim: { active: true, displayName: "김현진" } },
+      },
+      fieldPlatform: { v2: {
+        config: { release: registrations.pathValues.get("fieldPlatform/v2/config/release") },
+        requestReceipts: { claimFieldJob: {
+          "123e4567-e89b-42d3-a456-426614174000": receipt,
+        } },
+      } },
+    };
+    seedFieldV2Access("member", { safeMode: true });
+
+    const promise = callableHandler(entrypoints.claimFieldJob)(request);
+    if (shouldReject) {
+      await expect(promise).rejects.toMatchObject({
+        code: "permission-denied",
+        message: "field_access_forbidden",
+      });
+    } else {
+      await expect(promise).resolves.toMatchObject({ workflowStatus: "assigned" });
+    }
+  });
+
+  it.each([
+    ["safe mode enabled", { role: "member", safeMode: true }, "field_safe_mode_read_only"],
+    ["access downgraded", { role: "viewer", safeMode: false }, "field_mutation_forbidden"],
+    ["operator disabled", { role: "member", safeMode: false, active: false }, "field_operator_inactive"],
+  ] as const)("revalidates current root mutation authority when %s after preflight", async (
+    _label,
+    changed,
+    expectedCode,
+  ) => {
+    seedFieldV2Access("member");
+    const release = {
+      ...(registrations.pathValues.get("fieldPlatform/v2/config/release") as Record<string, unknown>),
+      safeMode: changed.safeMode,
+    };
+    registrations.transactionCurrent.value = {
+      crmCompany: {
+        access: {
+          shared_uid: {
+            enabled: true,
+            role: changed.role,
+            email: "team@bringcare.kr",
+          },
+        },
+        teamProfiles: {
+          operator_kim: {
+            active: "active" in changed ? changed.active : true,
+            displayName: "김현진",
+          },
+        },
+      },
+      fieldPlatform: { v2: {
+        config: { release },
+        workItems: { job_1: fieldV2WorkItem() },
+        visits: { visit_1: fieldV2Visit() },
+      } },
+    };
+
+    await expect(callableHandler(entrypoints.claimFieldJob)(validFieldV2Request({
+      requestId: "123e4567-e89b-42d3-a456-426614174000",
+      jobId: "job_1",
+    }))).rejects.toMatchObject({ message: expectedCode });
+    expect((registrations.transactionCurrent.value as any)
+      .fieldPlatform.v2.workItems.job_1.workflowStatus).toBe("requested");
+  });
+
+  it("uses the current root release instead of a stale preflight safe-mode snapshot", async () => {
+    seedFieldV2Access("member", { safeMode: true });
+    const currentRelease = {
+      ...(registrations.pathValues.get("fieldPlatform/v2/config/release") as Record<string, unknown>),
+      safeMode: false,
+    };
+    registrations.transactionCurrent.value = {
+      crmCompany: {
+        access: { shared_uid: { enabled: true, role: "member", email: "team@bringcare.kr" } },
+        teamProfiles: { operator_kim: { active: true, displayName: "operator" } },
+      },
+      fieldPlatform: { v2: {
+        config: { release: currentRelease },
+        workItems: { job_1: fieldV2WorkItem() },
+        visits: { visit_1: fieldV2Visit() },
+      } },
+    };
+
+    await expect(callableHandler(entrypoints.claimFieldJob)(validFieldV2Request({
+      requestId: "123e4567-e89b-42d3-a456-426614174000",
+      jobId: "job_1",
+    }))).resolves.toMatchObject({ workflowStatus: "assigned" });
+  });
+
+  it("fails closed for viewer mutation and safe mode without committing root writes", async () => {
     const data = {
       requestId: "123e4567-e89b-42d3-a456-426614174000",
       jobType: "maintenance_inspection",
@@ -1192,9 +1727,11 @@ describe("Firebase entrypoint metadata", () => {
     seedFieldV2Access("viewer");
     await expect(callableHandler(entrypoints.createFieldJobs)(validFieldV2Request(data)))
       .rejects.toMatchObject({ code: "permission-denied", message: "field_mutation_forbidden" });
-    expect(registrations.transactionPaths).not.toContain("");
+    expect(registrations.transactionPaths).toContain("");
+    expect(registrations.transactionCurrent.value).toBeNull();
 
     registrations.pathValues.clear();
+    registrations.transactionPaths.length = 0;
     seedFieldV2Access("member", { safeMode: true });
     registrations.pathValues.set("crmCompany/data/buildings/building_1", {
       id: "building_1",
@@ -1203,9 +1740,23 @@ describe("Firebase entrypoint metadata", () => {
       updatedAt: "2026-08-14T01:00:00.000Z",
       archivedAt: null,
     });
+    registrations.transactionCurrent.value = {
+      crmCompany: {
+        access: { shared_uid: { enabled: true, role: "member", email: "team@bringcare.kr" } },
+        teamProfiles: { operator_kim: { active: true, displayName: "operator" } },
+        data: { buildings: {
+          building_1: registrations.pathValues.get("crmCompany/data/buildings/building_1"),
+        } },
+      },
+      fieldPlatform: { v2: {
+        config: { release: registrations.pathValues.get("fieldPlatform/v2/config/release") },
+      } },
+    };
+    const safeRoot = structuredClone(registrations.transactionCurrent.value);
     await expect(callableHandler(entrypoints.createFieldJobs)(validFieldV2Request(data)))
       .rejects.toMatchObject({ code: "failed-precondition", message: "field_safe_mode_read_only" });
-    expect(registrations.transactionPaths).not.toContain("");
+    expect(registrations.transactionPaths).toContain("");
+    expect(registrations.transactionCurrent.value).toEqual(safeRoot);
   });
 
   it("does not trust payload identity when the authenticated email is wrong", async () => {
@@ -1225,7 +1776,29 @@ describe("Firebase entrypoint metadata", () => {
       .rejects.toMatchObject({ code: "permission-denied", message: "field_access_forbidden" });
   });
 
-  it("lets a viewer read the operator and unassigned workspace", async () => {
+  it("maps malformed authoritative CRM records to a stable invalid-argument error", async () => {
+    seedFieldV2Access();
+    registrations.pathValues.set("crmCompany/data/buildings/building_1", {
+      id: "building_1",
+      name: "x".repeat(513),
+      address: "강원 원주시",
+      updatedAt: "2026-08-14T01:00:00.000Z",
+      archivedAt: null,
+    });
+    await expect(callableHandler(entrypoints.createFieldJobs)(validFieldV2Request({
+      requestId: "123e4567-e89b-42d3-a456-426614174000",
+      jobType: "maintenance_inspection",
+      crmBuildingId: "building_1",
+      dueDate: "2026-08-15",
+      priority: "normal",
+      assignedOperatorId: null,
+    }))).rejects.toMatchObject({
+      code: "invalid-argument",
+      message: "field_crm_reference_invalid",
+    });
+  });
+
+  it("lets a viewer read only the operator workspace and never queries unassigned", async () => {
     seedFieldV2Access("viewer");
     await expect(callableHandler(entrypoints.listFieldOperationsWorkspace)(
       validFieldV2Request({}),
@@ -1240,11 +1813,283 @@ describe("Firebase entrypoint metadata", () => {
         overdue: 0,
         adminActionRequired: 0,
       },
+      scope: "personal",
+      nextCursor: null,
     });
-    expect(registrations.databaseRef).toHaveBeenCalledWith(
+    expect(registrations.databaseRef).not.toHaveBeenCalledWith(
       "fieldPlatform/v2/projections/unassigned",
     );
 
+  });
+
+  it("lets a member combine mine and unassigned while filtering stale reassigned projections", async () => {
+    seedFieldV2Access("member");
+    registrations.pathValues.set("fieldPlatform/v2/projections/operatorJobs/operator_kim", {
+      stale_job: { fieldJobId: "stale_job", updatedAt: "2026-08-14T01:00:00.000Z" },
+    });
+    registrations.pathValues.set("fieldPlatform/v2/projections/unassigned", {
+      free_job: { fieldJobId: "free_job", updatedAt: "2026-08-14T02:00:00.000Z" },
+    });
+    registrations.pathValues.set("fieldPlatform/v2/workItems/stale_job", fieldV2WorkItem({
+      id: "stale_job",
+      visitId: "visit_stale",
+      assignedOperatorId: "operator_hwang",
+      workflowStatus: "assigned",
+    }));
+    registrations.pathValues.set("fieldPlatform/v2/workItems/free_job", fieldV2WorkItem({
+      id: "free_job",
+      visitId: "visit_free",
+      assignedOperatorId: null,
+      workflowStatus: "requested",
+    }));
+
+    const workspace = await callableHandler(entrypoints.listFieldOperationsWorkspace)(
+      validFieldV2Request({ limit: 10 }),
+    ) as { items: Array<{ id: string }> };
+    expect(workspace.items.map((item) => item.id)).toEqual(["free_job"]);
+    expect(registrations.databaseRef).toHaveBeenCalledWith(
+      "fieldPlatform/v2/projections/unassigned",
+    );
+  });
+
+  it("does not let a stale personal projection consume the requested page", async () => {
+    seedFieldV2Access("member");
+    registrations.pathValues.set("fieldPlatform/v2/projections/operatorJobs/operator_kim", {
+      a_stale: { fieldJobId: "a_stale", updatedAt: "2026-08-14T01:00:00.000Z" },
+      z_valid: { fieldJobId: "z_valid", updatedAt: "2026-08-14T02:00:00.000Z" },
+    });
+    registrations.pathValues.set("fieldPlatform/v2/workItems/a_stale", fieldV2WorkItem({
+      id: "a_stale",
+      visitId: "visit_stale",
+      assignedOperatorId: "operator_hwang",
+      workflowStatus: "assigned",
+    }));
+    registrations.pathValues.set("fieldPlatform/v2/workItems/z_valid", fieldV2WorkItem({
+      id: "z_valid",
+      visitId: "visit_valid",
+      assignedOperatorId: "operator_kim",
+      workflowStatus: "assigned",
+    }));
+
+    const workspace = await callableHandler(entrypoints.listFieldOperationsWorkspace)(
+      validFieldV2Request({ limit: 1 }),
+    ) as { items: Array<{ id: string }> };
+    expect(workspace.items.map((item) => item.id)).toEqual(["z_valid"]);
+  });
+
+  it("uses current assignment when stale mine and current unassigned projections overlap", async () => {
+    seedFieldV2Access("member");
+    registrations.pathValues.set("fieldPlatform/v2/projections/operatorJobs/operator_kim", {
+      job_overlap: { fieldJobId: "job_overlap", updatedAt: "2026-08-14T01:00:00.000Z" },
+    });
+    registrations.pathValues.set("fieldPlatform/v2/projections/unassigned", {
+      job_overlap: { fieldJobId: "job_overlap", updatedAt: "2026-08-14T02:00:00.000Z" },
+    });
+    registrations.pathValues.set("fieldPlatform/v2/workItems/job_overlap", fieldV2WorkItem({
+      id: "job_overlap",
+      visitId: "visit_overlap",
+      assignedOperatorId: null,
+      workflowStatus: "requested",
+    }));
+
+    const workspace = await callableHandler(entrypoints.listFieldOperationsWorkspace)(
+      validFieldV2Request({ limit: 1 }),
+    ) as { items: Array<{ id: string }> };
+    expect(workspace.items.map((item) => item.id)).toEqual(["job_overlap"]);
+  });
+
+  it("continues a bounded personal workspace page with a stable projection cursor", async () => {
+    seedFieldV2Access("viewer");
+    registrations.pathValues.set("fieldPlatform/v2/projections/operatorJobs/operator_kim", {
+      job_1: { fieldJobId: "job_1", updatedAt: "2026-08-14T01:00:00.000Z" },
+      job_2: { fieldJobId: "job_2", updatedAt: "2026-08-14T02:00:00.000Z" },
+      job_3: { fieldJobId: "job_3", updatedAt: "2026-08-14T03:00:00.000Z" },
+    });
+    for (const number of [1, 2, 3]) {
+      registrations.pathValues.set(`fieldPlatform/v2/workItems/job_${number}`, fieldV2WorkItem({
+        id: `job_${number}`,
+        visitId: `visit_${number}`,
+        assignedOperatorId: "operator_kim",
+        workflowStatus: "assigned",
+      }));
+    }
+
+    const first = await callableHandler(entrypoints.listFieldOperationsWorkspace)(
+      validFieldV2Request({ limit: 1 }),
+    ) as { items: Array<{ id: string }>; nextCursor: string | null };
+    expect(first.items.map((item) => item.id)).toEqual(["job_1"]);
+    expect(first.nextCursor).toEqual(expect.any(String));
+
+    const second = await callableHandler(entrypoints.listFieldOperationsWorkspace)(
+      validFieldV2Request({ limit: 1, cursor: first.nextCursor }),
+    ) as { items: Array<{ id: string }> };
+    expect(second.items.map((item) => item.id)).toEqual(["job_2"]);
+    expect(registrations.queryCalls).toContainEqual(expect.objectContaining({
+      path: "fieldPlatform/v2/projections/operatorJobs/operator_kim",
+      startAfter: { value: "2026-08-14T01:00:00.000Z", key: "job_1" },
+      limitToFirst: 3,
+    }));
+  });
+
+  it("advances through an adversarial stale prefix until personal work is reachable", async () => {
+    seedFieldV2Access("viewer");
+    const projections: Record<string, unknown> = {};
+    for (let number = 1; number <= 5; number += 1) {
+      const id = `stale_${number}`;
+      projections[id] = {
+        fieldJobId: id,
+        updatedAt: `2026-08-14T0${number}:00:00.000Z`,
+      };
+      registrations.pathValues.set(`fieldPlatform/v2/workItems/${id}`, fieldV2WorkItem({
+        id,
+        visitId: `visit_${id}`,
+        assignedOperatorId: "operator_hwang",
+        workflowStatus: "assigned",
+      }));
+    }
+    projections.valid_job = {
+      fieldJobId: "valid_job",
+      updatedAt: "2026-08-14T06:00:00.000Z",
+    };
+    registrations.pathValues.set("fieldPlatform/v2/workItems/valid_job", fieldV2WorkItem({
+      id: "valid_job",
+      visitId: "visit_valid",
+      assignedOperatorId: "operator_kim",
+      workflowStatus: "assigned",
+    }));
+    registrations.pathValues.set(
+      "fieldPlatform/v2/projections/operatorJobs/operator_kim",
+      projections,
+    );
+
+    let cursor: string | null = null;
+    const seen: string[] = [];
+    for (let page = 0; page < 4; page += 1) {
+      const workspace = await callableHandler(entrypoints.listFieldOperationsWorkspace)(
+        validFieldV2Request({
+          limit: 1,
+          ...(cursor === null ? {} : { cursor }),
+        }),
+      ) as { items: Array<{ id: string }>; nextCursor: string | null };
+      seen.push(...workspace.items.map((item) => item.id));
+      cursor = workspace.nextCursor;
+      if (seen.length > 0 || cursor === null) break;
+    }
+    expect(seen).toEqual(["valid_job"]);
+  });
+
+  it.each(["__proto__", "prototype", "constructor"])(
+    "rejects a reserved workspace projection key %s before any item lookup",
+    async (reserved) => {
+      seedFieldV2Access("member");
+      registrations.pathValues.set("fieldPlatform/v2/projections/unassigned", {
+        [reserved]: { fieldJobId: reserved, updatedAt: "2026-08-14T02:00:00.000Z" },
+      });
+      registrations.databaseRef.mockClear();
+      await expect(callableHandler(entrypoints.listFieldOperationsWorkspace)(
+        validFieldV2Request({ limit: 10 }),
+      )).rejects.toMatchObject({
+        code: "unavailable",
+        message: "field_workspace_unavailable",
+      });
+      expect(registrations.databaseRef).not.toHaveBeenCalledWith(
+        `fieldPlatform/v2/workItems/${reserved}`,
+      );
+      expect(Object.prototype).not.toHaveProperty("polluted");
+    },
+  );
+
+  it("paginates the admin team projection with a bounded query and stored whole-team KPI", async () => {
+    seedFieldV2Access("admin");
+    const today = new Intl.DateTimeFormat("en-CA", {
+      timeZone: "Asia/Seoul",
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit",
+    }).format(new Date());
+    const projections = Object.fromEntries([1, 2, 3].map((number) => {
+      const id = `job_${number}`;
+      return [id, fieldV2TeamProjection({
+        id,
+        visitId: `visit_${number}`,
+        dueDate: `2026-08-${String(14 + number).padStart(2, "0")}`,
+        updatedAt: `2026-08-14T0${number}:00:00.000Z`,
+      })];
+    }));
+    registrations.pathValues.set("fieldPlatform/v2/projections/teamActive", projections);
+    registrations.unorderedQueryValPaths.add("fieldPlatform/v2/projections/teamActive");
+    registrations.pathValues.set("fieldPlatform/v2/projections/teamKpis/current", {
+      seoulDate: today,
+      todayVisits: 2,
+      capturePending: 3,
+      uploadFailures: 0,
+      reviewPending: 0,
+      unassigned: 3,
+      overdue: 0,
+      adminActionRequired: 0,
+      updatedAt: "2026-08-14T03:00:00.000Z",
+    });
+
+    const first = await callableHandler(entrypoints.listFieldOperationsWorkspace)(
+      validFieldV2Request({ scope: "team", limit: 2 }),
+    ) as { items: Array<{ fieldJobId: string }>; nextCursor: string; kpis: Record<string, number> };
+    expect(first.items.map((item) => item.fieldJobId)).toEqual(["job_1", "job_2"]);
+    expect(first.nextCursor).toEqual(expect.any(String));
+    expect(first.kpis.capturePending).toBe(3);
+    expect(Object.keys(first.kpis).sort()).toEqual([
+      "adminActionRequired",
+      "capturePending",
+      "overdue",
+      "reviewPending",
+      "todayVisits",
+      "unassigned",
+      "uploadFailures",
+    ]);
+    expect(registrations.queryCalls).toContainEqual({
+      path: "fieldPlatform/v2/projections/teamActive",
+      orderByChild: "activeOrderKey",
+      limitToFirst: 3,
+    });
+    expect(registrations.databaseRef).not.toHaveBeenCalledWith(
+      expect.stringMatching(/^fieldPlatform\/v2\/workItems\//u),
+    );
+
+    const second = await callableHandler(entrypoints.listFieldOperationsWorkspace)(
+      validFieldV2Request({ scope: "team", limit: 2, cursor: first.nextCursor }),
+    ) as { items: Array<{ fieldJobId: string }>; nextCursor: string | null };
+    expect(second.items.map((item) => item.fieldJobId)).toEqual(["job_3"]);
+    expect(second.nextCursor).toBeNull();
+  });
+
+  it("fails an admin team workspace when its stored KPI date is stale", async () => {
+    seedFieldV2Access("admin");
+    registrations.pathValues.set("fieldPlatform/v2/projections/teamKpis/current", {
+      seoulDate: "2000-01-01",
+      todayVisits: 0,
+      capturePending: 0,
+      uploadFailures: 0,
+      reviewPending: 0,
+      unassigned: 0,
+      overdue: 0,
+      adminActionRequired: 0,
+      updatedAt: "2026-08-14T03:00:00.000Z",
+    });
+    await expect(callableHandler(entrypoints.listFieldOperationsWorkspace)(
+      validFieldV2Request({ scope: "team" }),
+    )).rejects.toMatchObject({
+      code: "failed-precondition",
+      message: "field_kpi_stale",
+    });
+  });
+
+  it("maps a malformed versioned team cursor to invalid-argument", async () => {
+    seedFieldV2Access("admin");
+    await expect(callableHandler(entrypoints.listFieldOperationsWorkspace)(
+      validFieldV2Request({ scope: "team", cursor: "not-a-valid-cursor" }),
+    )).rejects.toMatchObject({
+      code: "invalid-argument",
+      message: "field_workspace_cursor_invalid",
+    });
   });
 
   it.each([

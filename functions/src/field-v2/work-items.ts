@@ -4,9 +4,13 @@ import { createHash } from "node:crypto";
 import { assertFieldActorCanMutate } from "./access.js";
 import {
   FIELD_JOB_TYPES,
+  FIELD_UPLOAD_STATUSES,
+  FIELD_WORKFLOW_STATUSES,
   FieldV2Error,
   isFieldRequestId,
   type FieldJobType,
+  type FieldMutationOperationKind,
+  type FieldReleaseClient,
   type FieldUploadStatus,
   type FieldV2Actor,
   type FieldWorkflowStatus,
@@ -15,11 +19,13 @@ import { fieldJobPolicies, transitionFieldStatus } from "./policies.js";
 import {
   buildCrmFieldSummary,
   buildOperatorProjection,
+  buildTeamActiveProjection,
   buildUnassignedProjection,
   calculateFieldKpis,
   type CrmFieldSummary,
   type FieldKpis,
   type FieldOperatorJobProjection,
+  type FieldTeamActiveProjection,
   type FieldUnassignedProjection,
 } from "./projections.js";
 
@@ -43,6 +49,8 @@ export interface FieldSourceSnapshot {
   readonly depositWon?: number;
   readonly monthlyRentWon?: number;
   readonly maintenanceFeeWon?: number;
+  readonly moveOutAt?: string;
+  readonly availableFrom?: string;
 }
 
 export interface FieldSourceVersion {
@@ -185,6 +193,7 @@ export interface CrmSalesProspectSource {
   address: string;
   updatedAt: string;
   archivedAt?: string | null;
+  crmBuildingId?: string;
 }
 
 export interface CrmBuildingUnitSource {
@@ -204,6 +213,8 @@ export interface CrmSalesUnitSource {
   deposit: number;
   rent: number;
   maintenanceFee: number;
+  moveOutAt?: string;
+  availableFrom?: string;
   updatedAt: string;
   archivedAt?: string | null;
 }
@@ -221,10 +232,16 @@ export interface FieldAtomicCreateCommand {
   readonly result: Omit<CreateFieldJobsResult, "repeated">;
   readonly sourceExpectations: readonly FieldCrmSourceExpectation[];
   readonly requiredActiveOperatorIds: readonly string[];
-  readonly newMutationBlockedCode?:
-    | "field_safe_mode_read_only"
-    | "field_v2_writes_disabled";
+  readonly runtimeGuard?: FieldAtomicRuntimeGuard;
   readonly patch: Readonly<Record<string, unknown>>;
+}
+
+export interface FieldAtomicRuntimeGuard {
+  readonly authUid: string;
+  readonly operatorId: string;
+  readonly authenticatedEmail: string;
+  readonly client: FieldReleaseClient;
+  readonly operationKind: FieldMutationOperationKind;
 }
 
 export interface FieldCrmSourceExpectation {
@@ -233,6 +250,8 @@ export interface FieldCrmSourceExpectation {
   readonly updatedAt: string;
   readonly parentField?: "crmBuildingId" | "crmSalesProspectId" | "prospectId";
   readonly parentId?: string;
+  readonly kind?: "entity" | "workflowCase" | "task";
+  readonly prospectBuildingId?: string;
 }
 
 export type FieldAtomicCreateOutcome =
@@ -245,7 +264,7 @@ export interface FieldMutationReceipt {
   readonly requestId: string;
   readonly requestHash: string;
   readonly result: unknown;
-  readonly completedAt: string;
+  readonly createdAt: string;
 }
 
 export interface FieldWorkTransactionSnapshot {
@@ -267,18 +286,34 @@ export interface FieldWorkTransactionSelector {
   readonly jobId?: string;
   readonly visitId?: string;
   readonly requiredActiveOperatorIds?: readonly string[];
-  readonly newMutationBlockedCode?:
-    | "field_safe_mode_read_only"
-    | "field_v2_writes_disabled";
+  readonly runtimeGuard?: FieldAtomicRuntimeGuard;
 }
 
 export interface FieldWorkspaceRecords {
-  readonly items: readonly FieldWorkItem[];
+  readonly items: readonly (FieldWorkItem | FieldTeamActiveProjection)[];
+  readonly kpis?: FieldKpis;
+  readonly kpiSeoulDate?: string;
+  readonly nextCursor?: string;
 }
 
 export interface FieldOperationsWorkspace {
-  readonly items: readonly FieldWorkItem[];
+  readonly items: readonly (FieldWorkItem | FieldTeamActiveProjection)[];
   readonly kpis: FieldKpis;
+  readonly scope: "personal" | "team";
+  readonly nextCursor: string | null;
+}
+
+export interface ListFieldOperationsWorkspaceInput {
+  operatorId: string;
+  scope?: "personal" | "team";
+  limit?: number;
+  cursor?: string;
+}
+
+export interface FieldWorkspaceQuery {
+  readonly scope: "personal" | "team";
+  readonly limit: number;
+  readonly cursor?: string;
 }
 
 export interface WorkItemDependencies {
@@ -287,22 +322,57 @@ export interface WorkItemDependencies {
   readCrmSalesProspect(id: string): Promise<unknown>;
   readCrmBuildingUnit(id: string): Promise<unknown>;
   readCrmSalesUnit(id: string): Promise<unknown>;
+  readCrmWorkflowCase(id: string): Promise<unknown>;
+  readCrmTask(id: string): Promise<unknown>;
   readOperator(id: string): Promise<unknown>;
+  readCreationReceipt(scope: "createFieldJobs", requestId: string): Promise<unknown>;
   commitCreation(command: FieldAtomicCreateCommand): Promise<FieldAtomicCreateOutcome>;
   transactWork<Result>(
     selector: FieldWorkTransactionSelector,
     decide: (snapshot: FieldWorkTransactionSnapshot) => FieldWorkTransactionDecision<Result>,
   ): Promise<Result>;
-  readWorkspace(actor: FieldV2Actor): Promise<FieldWorkspaceRecords>;
+  readWorkspace(actor: FieldV2Actor, query: FieldWorkspaceQuery): Promise<FieldWorkspaceRecords>;
 }
 
 type UnknownRecord = Record<string, unknown>;
 
 const ID_PATTERN = /^[^.#$\[\]/\u0000-\u001f\u007f]+$/u;
+const RESERVED_PATH_SEGMENTS = new Set(["__proto__", "prototype", "constructor"]);
 const ISO_DATE_PATTERN = /^(\d{4})-(\d{2})-(\d{2})$/u;
 const HASH_PATTERN = /^[a-f0-9]{64}$/u;
 const MAX_REASON_BYTES = 2_000;
+const MAX_CRM_NAME_BYTES = 512;
+const MAX_CRM_ADDRESS_BYTES = 2_048;
+const MAX_CRM_UNIT_LABEL_BYTES = 256;
 const MAX_UNIT_COUNT = 200;
+const FIELD_SOURCE_SNAPSHOT_KEYS = new Set([
+  "parentType", "parentId", "parentName", "address", "unitType", "unitId", "unitLabel",
+  "depositWon", "monthlyRentWon", "maintenanceFeeWon", "moveOutAt", "availableFrom",
+]);
+const FIELD_SOURCE_VERSION_KEYS = new Set(["parentUpdatedAt", "unitUpdatedAt"]);
+const FIELD_WORK_ITEM_KEYS = new Set([
+  "id", "visitId", "jobType", "jobPolicyVersion", "checklistId",
+  "crmBuildingId", "crmBuildingUnitId", "crmSalesProspectId", "crmSalesUnitId",
+  "crmWorkflowCaseId", "crmTaskId", "assignedOperatorId", "dueDate", "priority",
+  "workflowStatus", "uploadStatus", "sourceSnapshot", "sourceVersion", "sourceHash",
+  "mediaCount", "uploadFailureCount", "adminActionRequired", "adPackageId",
+  "acceptedAt", "startedAt", "evidenceReadyAt", "reviewPendingAt", "completedAt",
+  "cancelledAt", "cancelReason", "createdAt", "createdByAuthUid", "createdByOperatorId",
+  "updatedAt", "updatedByAuthUid", "updatedByOperatorId", "archivedAt",
+]);
+const FIELD_VISIT_KEYS = new Set([
+  "id", "crmBuildingId", "crmSalesProspectId", "workItemIds", "assignedOperatorId",
+  "dueDate", "priority", "accessPreparationStatus", "sharedMediaIds", "createdAt",
+  "createdByAuthUid", "createdByOperatorId", "updatedAt", "updatedByAuthUid",
+  "updatedByOperatorId", "archivedAt",
+]);
+const FIELD_RECEIPT_KEYS = new Set([
+  "scope", "requestId", "requestHash", "result", "createdAt",
+]);
+const FIELD_CREATION_RESULT_KEYS = new Set(["visitId", "jobIds"]);
+const FIELD_CHANGE_RESULT_KEYS = new Set([
+  "visitId", "newVisitId", "updatedJobIds", "workItems",
+]);
 const NOT_STARTED_STATUSES = new Set<FieldWorkflowStatus>([
   "requested",
   "assigned",
@@ -311,6 +381,10 @@ const NOT_STARTED_STATUSES = new Set<FieldWorkflowStatus>([
 
 function isRecord(value: unknown): value is UnknownRecord {
   return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function hasOnlyKeys(value: UnknownRecord, allowed: ReadonlySet<string>): boolean {
+  return Object.keys(value).every((key) => allowed.has(key));
 }
 
 function fail(code: string): never {
@@ -322,6 +396,7 @@ function isPathSafeId(value: unknown): value is string {
     && value.length > 0
     && value === value.trim()
     && Buffer.byteLength(value, "utf8") <= 128
+    && !RESERVED_PATH_SEGMENTS.has(value)
     && ID_PATTERN.test(value);
 }
 
@@ -353,6 +428,12 @@ function requiredDate(value: unknown): string {
   return value;
 }
 
+function optionalCrmDate(value: unknown): string | undefined {
+  if (value === undefined || value === null || value === "") return undefined;
+  if (!isDate(value)) fail("field_crm_reference_invalid");
+  return value;
+}
+
 function isTimestamp(value: unknown): value is string {
   if (typeof value !== "string") return false;
   try {
@@ -371,6 +452,20 @@ function currentTimestamp(dependencies: WorkItemDependencies): string {
   }
   if (!isTimestamp(value)) fail("field_server_time_invalid");
   return value;
+}
+
+function seoulDateFromTimestamp(now: Date): string {
+  if (!(now instanceof Date) || !Number.isFinite(now.getTime())) {
+    fail("field_kpi_now_invalid");
+  }
+  const parts = Object.fromEntries(new Intl.DateTimeFormat("en-CA", {
+    timeZone: "Asia/Seoul",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).formatToParts(now).map((part) => [part.type, part.value]));
+  if (!parts.year || !parts.month || !parts.day) fail("field_kpi_now_invalid");
+  return `${parts.year}-${parts.month}-${parts.day}`;
 }
 
 function requiredText(value: unknown, code: string, maximumBytes = 4_096): string {
@@ -403,7 +498,6 @@ function jobType(value: unknown): FieldJobType {
 }
 
 function assertActor(inputOperatorId: unknown, actor: FieldV2Actor): void {
-  assertFieldActorCanMutate(actor);
   const operatorId = requiredId(inputOperatorId, "field_operator_invalid");
   if (operatorId !== actor.operatorId) fail("field_operator_mismatch");
 }
@@ -462,25 +556,23 @@ function parseParent(
   if (
     !isRecord(value)
     || value.id !== expectedId
-    || typeof value.name !== "string"
-    || value.name.trim().length === 0
-    || value.name !== value.name.trim()
-    || typeof value.address !== "string"
-    || value.address.trim().length === 0
-    || value.address !== value.address.trim()
     || !isTimestamp(value.updatedAt)
   ) fail("field_crm_reference_invalid");
+  const name = requiredText(value.name, "field_crm_reference_invalid", MAX_CRM_NAME_BYTES);
+  const address = requiredText(value.address, "field_crm_reference_invalid", MAX_CRM_ADDRESS_BYTES);
   if (value.archivedAt !== undefined && value.archivedAt !== null && value.archivedAt !== "") {
     if (!isTimestamp(value.archivedAt)) fail("field_crm_reference_invalid");
     fail("field_crm_reference_archived");
   }
   return {
     id: expectedId,
-    name: value.name,
-    address: value.address,
+    name,
+    address,
     updatedAt: value.updatedAt,
     archivedAt: null,
-    ...(parentType === "building" ? {} : {}),
+    ...(parentType === "salesProspect" && isPathSafeId(value.crmBuildingId)
+      ? { crmBuildingId: value.crmBuildingId }
+      : {}),
   };
 }
 
@@ -493,9 +585,6 @@ function parseBuildingUnit(
     !isRecord(value)
     || value.id !== expectedId
     || value.crmBuildingId !== parentId
-    || typeof value.label !== "string"
-    || value.label.trim().length === 0
-    || value.label !== value.label.trim()
     || !isTimestamp(value.updatedAt)
   ) {
     if (isRecord(value) && value.id === expectedId && value.crmBuildingId !== parentId) {
@@ -503,6 +592,7 @@ function parseBuildingUnit(
     }
     fail("field_crm_reference_invalid");
   }
+  const label = requiredText(value.label, "field_crm_reference_invalid", MAX_CRM_UNIT_LABEL_BYTES);
   if (value.archivedAt !== undefined && value.archivedAt !== null && value.archivedAt !== "") {
     if (!isTimestamp(value.archivedAt)) fail("field_crm_reference_invalid");
     fail("field_crm_reference_archived");
@@ -510,7 +600,7 @@ function parseBuildingUnit(
   return {
     id: expectedId,
     crmBuildingId: parentId,
-    label: value.label,
+    label,
     updatedAt: value.updatedAt,
     archivedAt: null,
   };
@@ -527,11 +617,11 @@ function parseSalesUnit(
     : value.crmSalesProspectId ?? value.prospectId;
   if (actualParent !== parent.id) fail("field_crm_reference_mismatch");
   if (
-    typeof value.label !== "string"
-    || value.label.trim().length === 0
-    || value.label !== value.label.trim()
-    || !isTimestamp(value.updatedAt)
+    !isTimestamp(value.updatedAt)
   ) fail("field_crm_reference_invalid");
+  const label = requiredText(value.label, "field_crm_reference_invalid", MAX_CRM_UNIT_LABEL_BYTES);
+  const moveOutAt = optionalCrmDate(value.moveOutAt);
+  const availableFrom = optionalCrmDate(value.availableFrom);
   if (value.archivedAt !== undefined && value.archivedAt !== null && value.archivedAt !== "") {
     if (!isTimestamp(value.archivedAt)) fail("field_crm_reference_invalid");
     fail("field_crm_reference_archived");
@@ -541,10 +631,12 @@ function parseSalesUnit(
     ...(typeof value.crmBuildingId === "string" ? { crmBuildingId: value.crmBuildingId } : {}),
     ...(typeof value.crmSalesProspectId === "string" ? { crmSalesProspectId: value.crmSalesProspectId } : {}),
     ...(typeof value.crmBuildingUnitId === "string" ? { crmBuildingUnitId: value.crmBuildingUnitId } : {}),
-    label: value.label,
+    label,
     deposit: optionalMoney(value.deposit),
     rent: optionalMoney(value.rent),
     maintenanceFee: optionalMoney(value.maintenanceFee),
+    ...(moveOutAt === undefined ? {} : { moveOutAt }),
+    ...(availableFrom === undefined ? {} : { availableFrom }),
     updatedAt: value.updatedAt,
     archivedAt: null,
   };
@@ -635,7 +727,7 @@ function receipt(
   result: unknown,
   now: string,
 ): FieldMutationReceipt {
-  return Object.freeze({ scope, requestId, requestHash, result, completedAt: now });
+  return Object.freeze({ scope, requestId, requestHash, result, createdAt: now });
 }
 
 function projectionPatch(item: FieldWorkItem, previous?: FieldWorkItem): Record<string, unknown> {
@@ -657,6 +749,7 @@ function projectionPatch(item: FieldWorkItem, previous?: FieldWorkItem): Record<
     patch[`fieldPlatform/v2/projections/unassigned/${item.id}`] = buildUnassignedProjection(item);
   }
   patch[`crmCompany/fieldSummaries/${item.id}`] = buildCrmFieldSummary(item);
+  patch[`fieldPlatform/v2/projections/teamActive/${item.id}`] = buildTeamActiveProjection(item);
   return patch;
 }
 
@@ -691,9 +784,8 @@ function normalizeCreateInput(input: CreateFieldJobsInput, actor: FieldV2Actor):
   const assignedOperatorId = input.assignedOperatorId === undefined || input.assignedOperatorId === null
     ? null
     : requiredId(input.assignedOperatorId, "field_assignee_invalid");
-  if (input.crmWorkflowCaseId !== undefined || input.crmTaskId !== undefined) {
-    fail("field_crm_reference_adapter_unavailable");
-  }
+  const crmWorkflowCaseId = optionalId(input.crmWorkflowCaseId);
+  const crmTaskId = optionalId(input.crmTaskId);
   return {
     requestId,
     operatorId: actor.operatorId,
@@ -702,6 +794,8 @@ function normalizeCreateInput(input: CreateFieldJobsInput, actor: FieldV2Actor):
     parentId: buildingId ?? prospectId!,
     ...(buildingUnitIds === undefined ? {} : { crmBuildingUnitIds: buildingUnitIds }),
     ...(salesUnitIds === undefined ? {} : { crmSalesUnitIds: salesUnitIds }),
+    ...(crmWorkflowCaseId === undefined ? {} : { crmWorkflowCaseId }),
+    ...(crmTaskId === undefined ? {} : { crmTaskId }),
     dueDate: requiredDate(input.dueDate),
     priority: priority(input.priority),
     assignedOperatorId,
@@ -753,6 +847,80 @@ async function resolveCreateSources(
   return { parent, units };
 }
 
+interface ResolvedAuxiliaryCrmRefs {
+  workflowCase?: { id: string; updatedAt?: string; crmBuildingId: string };
+  task?: { id: string; updatedAt?: string };
+}
+
+async function resolveAuxiliaryCrmRefs(
+  input: NormalizedCreateInput,
+  parent: CrmBuildingSource | CrmSalesProspectSource,
+  dependencies: WorkItemDependencies,
+): Promise<ResolvedAuxiliaryCrmRefs> {
+  const resolved: {
+    workflowCase?: { id: string; updatedAt?: string; crmBuildingId: string };
+    task?: { id: string; updatedAt?: string };
+  } = {};
+  if (input.crmWorkflowCaseId) {
+    let value: unknown;
+    try {
+      value = await dependencies.readCrmWorkflowCase(input.crmWorkflowCaseId);
+    } catch {
+      fail("field_crm_reference_unavailable");
+    }
+    if (!isRecord(value)) fail("field_crm_reference_invalid");
+    if (value.deleted === true || value.archived === true) {
+      fail("field_crm_reference_inactive");
+    }
+    if (!isPathSafeId(value.crmBuildingId)) fail("field_crm_reference_mismatch");
+    if (input.parentType === "building") {
+      if (value.crmBuildingId !== input.parentId) fail("field_crm_reference_mismatch");
+    } else {
+      const prospectBuildingId = (parent as unknown as UnknownRecord).crmBuildingId;
+      if (!isPathSafeId(prospectBuildingId) || value.crmBuildingId !== prospectBuildingId) {
+        fail("field_crm_reference_mismatch");
+      }
+    }
+    if (value.updatedAt !== undefined && !isTimestamp(value.updatedAt)) {
+      fail("field_crm_reference_invalid");
+    }
+    resolved.workflowCase = {
+      id: input.crmWorkflowCaseId,
+      crmBuildingId: value.crmBuildingId,
+      ...(typeof value.updatedAt === "string" ? { updatedAt: value.updatedAt } : {}),
+    };
+  }
+  if (input.crmTaskId) {
+    let value: unknown;
+    try {
+      value = await dependencies.readCrmTask(input.crmTaskId);
+    } catch {
+      fail("field_crm_reference_unavailable");
+    }
+    if (
+      !isRecord(value)
+      || value.id !== input.crmTaskId
+      || typeof value.status !== "string"
+      || value.status.trim().length === 0
+      || value.status !== value.status.trim()
+      || Buffer.byteLength(value.status, "utf8") > 120
+    ) {
+      fail("field_crm_reference_invalid");
+    }
+    if (value.status === "완료" || value.status === "취소") {
+      fail("field_crm_reference_inactive");
+    }
+    if (value.updatedAt !== undefined && !isTimestamp(value.updatedAt)) {
+      fail("field_crm_reference_invalid");
+    }
+    resolved.task = {
+      id: input.crmTaskId,
+      ...(typeof value.updatedAt === "string" ? { updatedAt: value.updatedAt } : {}),
+    };
+  }
+  return Object.freeze(resolved);
+}
+
 function sourceFor(
   input: NormalizedCreateInput,
   parent: CrmBuildingSource | CrmSalesProspectSource,
@@ -772,6 +940,8 @@ function sourceFor(
       depositWon: unit.value.deposit,
       monthlyRentWon: unit.value.rent,
       maintenanceFeeWon: unit.value.maintenanceFee,
+      ...(unit.value.moveOutAt === undefined ? {} : { moveOutAt: unit.value.moveOutAt }),
+      ...(unit.value.availableFrom === undefined ? {} : { availableFrom: unit.value.availableFrom }),
     } : {}),
   });
   const version: FieldSourceVersion = Object.freeze({
@@ -790,10 +960,48 @@ export async function createFieldJobsCore(
     fail("field_work_dependencies_invalid");
   }
   const normalized = normalizeCreateInput(input, actor);
-  await assertActiveOperator(normalized.assignedOperatorId, dependencies);
-  const { parent, units } = await resolveCreateSources(normalized, dependencies);
-  const now = currentTimestamp(dependencies);
   const requestHash = sha256(normalized);
+  const readReplay = async (): Promise<CreateFieldJobsResult | null> => {
+    let stored: unknown;
+    try {
+      stored = await dependencies.readCreationReceipt(
+        "createFieldJobs",
+        normalized.requestId,
+      );
+    } catch (error) {
+      if (error instanceof FieldV2Error) throw error;
+      fail("field_request_receipt_unavailable");
+    }
+    if (stored === null || stored === undefined) return null;
+    const parsed = parseFieldMutationReceipt(
+      stored,
+      "createFieldJobs",
+      normalized.requestId,
+    );
+    if (parsed.requestHash !== requestHash) fail("field_request_id_conflict");
+    const result = creationReceiptResult(parsed.result);
+    return Object.freeze({
+      visitId: result.visitId,
+      jobIds: result.jobIds,
+      repeated: true,
+    });
+  };
+  const replay = await readReplay();
+  if (replay) return replay;
+  assertFieldActorCanMutate(actor);
+  let sources: Awaited<ReturnType<typeof resolveCreateSources>>;
+  let auxiliaryRefs: Awaited<ReturnType<typeof resolveAuxiliaryCrmRefs>>;
+  try {
+    await assertActiveOperator(normalized.assignedOperatorId, dependencies);
+    sources = await resolveCreateSources(normalized, dependencies);
+    auxiliaryRefs = await resolveAuxiliaryCrmRefs(normalized, sources.parent, dependencies);
+  } catch (error) {
+    const racedReplay = await readReplay();
+    if (racedReplay) return racedReplay;
+    throw error;
+  }
+  const { parent, units } = sources;
+  const now = currentTimestamp(dependencies);
   const visitId = stableId("visit", normalized.requestId, `${normalized.parentType}:${normalized.parentId}`);
   const workSources: Array<ResolvedUnit | undefined> = units.length === 0 ? [undefined] : units;
   const jobIds = workSources.map((unit, index) => stableId(
@@ -895,6 +1103,12 @@ export async function createFieldJobsCore(
       : `crmCompany/data/salesProspects/${normalized.parentId}`,
     id: normalized.parentId,
     updatedAt: parent.updatedAt,
+    ...(normalized.parentType === "salesProspect" && auxiliaryRefs.workflowCase
+      ? {
+        parentField: "crmBuildingId" as const,
+        parentId: auxiliaryRefs.workflowCase.crmBuildingId,
+      }
+      : {}),
   }];
   for (const unit of units) {
     sourceExpectations.push({
@@ -909,6 +1123,24 @@ export async function createFieldJobsCore(
           ? "crmBuildingId"
           : "prospectId",
       parentId: normalized.parentId,
+    });
+  }
+  if (auxiliaryRefs.workflowCase) {
+    sourceExpectations.push({
+      path: `crmCompany/cases/${auxiliaryRefs.workflowCase.id}`,
+      id: auxiliaryRefs.workflowCase.id,
+      updatedAt: auxiliaryRefs.workflowCase.updatedAt ?? "",
+      parentField: "crmBuildingId",
+      parentId: auxiliaryRefs.workflowCase.crmBuildingId,
+      kind: "workflowCase",
+    });
+  }
+  if (auxiliaryRefs.task) {
+    sourceExpectations.push({
+      path: `crmCompany/data/tasks/${auxiliaryRefs.task.id}`,
+      id: auxiliaryRefs.task.id,
+      updatedAt: auxiliaryRefs.task.updatedAt ?? "",
+      kind: "task",
     });
   }
   const outcome = await dependencies.commitCreation(Object.freeze({
@@ -935,23 +1167,168 @@ export async function createFieldJobsCore(
 }
 
 function assertStoredWorkItem(value: unknown, expectedId?: string): asserts value is FieldWorkItem {
+  const snapshot = isRecord(value) && isRecord(value.sourceSnapshot)
+    ? value.sourceSnapshot
+    : null;
+  const version = isRecord(value) && isRecord(value.sourceVersion)
+    ? value.sourceVersion
+    : null;
+  const assignedOperatorId = isRecord(value) ? value.assignedOperatorId : undefined;
+  const status = isRecord(value) ? value.workflowStatus : undefined;
+  const policy = typeof (isRecord(value) ? value.jobType : undefined) === "string"
+    ? fieldJobPolicies[(value as UnknownRecord).jobType as FieldJobType]
+    : undefined;
+  const crmBuildingId = isRecord(value) ? value.crmBuildingId : undefined;
+  const crmSalesProspectId = isRecord(value) ? value.crmSalesProspectId : undefined;
+  const crmBuildingUnitId = isRecord(value) ? value.crmBuildingUnitId : undefined;
+  const crmSalesUnitId = isRecord(value) ? value.crmSalesUnitId : undefined;
+  const optionalTimestamps = isRecord(value)
+    ? [
+      value.acceptedAt,
+      value.startedAt,
+      value.evidenceReadyAt,
+      value.reviewPendingAt,
+      value.completedAt,
+      value.cancelledAt,
+    ]
+    : [];
   if (
     !isRecord(value)
+    || !hasOnlyKeys(value, FIELD_WORK_ITEM_KEYS)
     || !isPathSafeId(value.id)
     || (expectedId !== undefined && value.id !== expectedId)
     || !isPathSafeId(value.visitId)
     || !isPathSafeId(value.createdByAuthUid)
     || !isPathSafeId(value.createdByOperatorId)
+    || !isPathSafeId(value.updatedByAuthUid)
+    || !isPathSafeId(value.updatedByOperatorId)
+    || typeof value.jobType !== "string"
+    || !(FIELD_JOB_TYPES as readonly string[]).includes(value.jobType)
+    || typeof value.workflowStatus !== "string"
+    || !(FIELD_WORKFLOW_STATUSES as readonly string[]).includes(value.workflowStatus)
+    || typeof value.uploadStatus !== "string"
+    || !(FIELD_UPLOAD_STATUSES as readonly string[]).includes(value.uploadStatus)
+    || typeof value.priority !== "string"
+    || !(FIELD_PRIORITIES as readonly string[]).includes(value.priority)
+    || !isDate(value.dueDate)
+    || typeof value.jobPolicyVersion !== "string"
+    || value.jobPolicyVersion.length === 0
+    || !policy
+    || value.jobPolicyVersion !== policy.policyVersion
+    || typeof value.checklistId !== "string"
+    || value.checklistId.length === 0
+    || value.checklistId !== policy.checklistId
+    || (crmBuildingId !== undefined && !isPathSafeId(crmBuildingId))
+    || (crmSalesProspectId !== undefined && !isPathSafeId(crmSalesProspectId))
+    || ((crmBuildingId === undefined) === (crmSalesProspectId === undefined))
+    || (crmBuildingUnitId !== undefined && !isPathSafeId(crmBuildingUnitId))
+    || (crmSalesUnitId !== undefined && !isPathSafeId(crmSalesUnitId))
+    || (value.crmWorkflowCaseId !== undefined && !isPathSafeId(value.crmWorkflowCaseId))
+    || (value.crmTaskId !== undefined && !isPathSafeId(value.crmTaskId))
+    || (value.adPackageId !== undefined
+      && value.adPackageId !== null
+      && !isPathSafeId(value.adPackageId))
+    || (assignedOperatorId !== null && !isPathSafeId(assignedOperatorId))
+    || (status === "requested" ? assignedOperatorId !== null : assignedOperatorId === null)
+    || typeof value.mediaCount !== "number"
+    || !Number.isSafeInteger(value.mediaCount)
+    || value.mediaCount < 0
+    || typeof value.uploadFailureCount !== "number"
+    || !Number.isSafeInteger(value.uploadFailureCount)
+    || value.uploadFailureCount < 0
+    || typeof value.adminActionRequired !== "boolean"
     || !isTimestamp(value.createdAt)
     || !isTimestamp(value.updatedAt)
+    || optionalTimestamps.some((timestamp) => timestamp !== undefined && !isTimestamp(timestamp))
     || (value.archivedAt !== null && !isTimestamp(value.archivedAt))
     || !HASH_PATTERN.test(String(value.sourceHash))
+    || !snapshot
+    || !hasOnlyKeys(snapshot, FIELD_SOURCE_SNAPSHOT_KEYS)
+    || (snapshot.parentType !== "building" && snapshot.parentType !== "salesProspect")
+    || !isPathSafeId(snapshot.parentId)
+    || (snapshot.parentType === "building"
+      ? snapshot.parentId !== crmBuildingId
+      : snapshot.parentId !== crmSalesProspectId)
+    || typeof snapshot.parentName !== "string"
+    || snapshot.parentName.length === 0
+    || snapshot.parentName !== snapshot.parentName.trim()
+    || /[\u0000-\u001f\u007f]/u.test(snapshot.parentName)
+    || Buffer.byteLength(snapshot.parentName, "utf8") > MAX_CRM_NAME_BYTES
+    || typeof snapshot.address !== "string"
+    || snapshot.address.length === 0
+    || snapshot.address !== snapshot.address.trim()
+    || /[\u0000-\u001f\u007f]/u.test(snapshot.address)
+    || Buffer.byteLength(snapshot.address, "utf8") > MAX_CRM_ADDRESS_BYTES
+    || (snapshot.unitType !== undefined
+      && snapshot.unitType !== "buildingUnit"
+      && snapshot.unitType !== "salesUnit")
+    || (snapshot.unitId !== undefined && !isPathSafeId(snapshot.unitId))
+    || ((snapshot.unitType === undefined) !== (snapshot.unitId === undefined))
+    || ((snapshot.unitType === undefined) !== (snapshot.unitLabel === undefined))
+    || (crmSalesUnitId !== undefined
+      ? snapshot.unitType !== "salesUnit" || snapshot.unitId !== crmSalesUnitId
+      : crmBuildingUnitId !== undefined
+        ? snapshot.unitType !== "buildingUnit" || snapshot.unitId !== crmBuildingUnitId
+        : snapshot.unitType !== undefined || snapshot.unitId !== undefined)
+    || (snapshot.unitLabel !== undefined
+      && (typeof snapshot.unitLabel !== "string"
+        || snapshot.unitLabel.length === 0
+        || snapshot.unitLabel !== snapshot.unitLabel.trim()
+        || /[\u0000-\u001f\u007f]/u.test(snapshot.unitLabel)
+        || Buffer.byteLength(snapshot.unitLabel, "utf8") > MAX_CRM_UNIT_LABEL_BYTES))
+    || [snapshot.depositWon, snapshot.monthlyRentWon, snapshot.maintenanceFeeWon]
+      .some((money) => money !== undefined
+        && (!Number.isSafeInteger(money) || (money as number) < 0))
+    || [snapshot.moveOutAt, snapshot.availableFrom]
+      .some((date) => date !== undefined && !isDate(date))
+    || (snapshot.unitType === "salesUnit"
+      ? [snapshot.depositWon, snapshot.monthlyRentWon, snapshot.maintenanceFeeWon]
+        .some((money) => money === undefined)
+      : [
+        snapshot.depositWon,
+        snapshot.monthlyRentWon,
+        snapshot.maintenanceFeeWon,
+        snapshot.moveOutAt,
+        snapshot.availableFrom,
+      ].some((field) => field !== undefined))
+    || !version
+    || !hasOnlyKeys(version, FIELD_SOURCE_VERSION_KEYS)
+    || !isTimestamp(version.parentUpdatedAt)
+    || (version.unitUpdatedAt !== undefined && !isTimestamp(version.unitUpdatedAt))
+    || ((snapshot.unitType === undefined) !== (version.unitUpdatedAt === undefined))
+    || value.sourceHash !== sha256({ snapshot, version })
+    || ([
+      "accepted", "in_progress", "evidence_ready", "review_pending",
+      "changes_requested", "approved", "completed",
+    ].includes(String(status)) && !isTimestamp(value.acceptedAt))
+    || ([
+      "in_progress", "evidence_ready", "review_pending",
+      "changes_requested", "approved", "completed",
+    ].includes(String(status)) && !isTimestamp(value.startedAt))
+    || ([
+      "evidence_ready", "review_pending", "changes_requested", "approved", "completed",
+    ].includes(String(status)) && !isTimestamp(value.evidenceReadyAt))
+    || (["review_pending", "changes_requested", "approved"].includes(String(status))
+      && !isTimestamp(value.reviewPendingAt))
+    || ((status === "requested" || status === "assigned") && value.acceptedAt !== undefined)
+    || ((status === "requested" || status === "assigned" || status === "accepted")
+      && value.startedAt !== undefined)
+    || (status === "completed" && !isTimestamp(value.completedAt))
+    || (status !== "completed" && value.completedAt !== undefined)
+    || (status === "cancelled" && (
+      !isTimestamp(value.cancelledAt)
+      || typeof value.cancelReason !== "string"
+      || value.cancelReason.trim().length === 0
+    ))
+    || (status !== "cancelled"
+      && (value.cancelledAt !== undefined || value.cancelReason !== undefined))
   ) fail("field_work_item_state_invalid");
 }
 
 function assertStoredVisit(value: unknown, expectedId?: string): asserts value is FieldVisit {
   if (
     !isRecord(value)
+    || !hasOnlyKeys(value, FIELD_VISIT_KEYS)
     || !isPathSafeId(value.id)
     || (expectedId !== undefined && value.id !== expectedId)
     || !Array.isArray(value.workItemIds)
@@ -960,10 +1337,103 @@ function assertStoredVisit(value: unknown, expectedId?: string): asserts value i
     || new Set(value.workItemIds).size !== value.workItemIds.length
     || !Array.isArray(value.sharedMediaIds)
     || value.sharedMediaIds.some((id) => !isPathSafeId(id))
+    || new Set(value.sharedMediaIds).size !== value.sharedMediaIds.length
+    || ((value.crmBuildingId === undefined) === (value.crmSalesProspectId === undefined))
+    || (value.crmBuildingId !== undefined && !isPathSafeId(value.crmBuildingId))
+    || (value.crmSalesProspectId !== undefined && !isPathSafeId(value.crmSalesProspectId))
+    || (value.assignedOperatorId !== null && !isPathSafeId(value.assignedOperatorId))
+    || !isDate(value.dueDate)
+    || typeof value.priority !== "string"
+    || !(FIELD_PRIORITIES as readonly string[]).includes(value.priority)
+    || value.accessPreparationStatus !== "unknown"
+      && value.accessPreparationStatus !== "ready"
+      && value.accessPreparationStatus !== "blocked"
+    || !isPathSafeId(value.createdByAuthUid)
+    || !isPathSafeId(value.createdByOperatorId)
+    || !isPathSafeId(value.updatedByAuthUid)
+    || !isPathSafeId(value.updatedByOperatorId)
     || !isTimestamp(value.createdAt)
     || !isTimestamp(value.updatedAt)
     || (value.archivedAt !== null && !isTimestamp(value.archivedAt))
   ) fail("field_visit_state_invalid");
+}
+
+function assertTeamActiveProjection(value: unknown): asserts value is FieldTeamActiveProjection {
+  const priorityRank: Readonly<Record<FieldPriority, number>> = {
+    urgent: 0,
+    high: 1,
+    normal: 2,
+    low: 3,
+  };
+  if (
+    !isRecord(value)
+    || !isPathSafeId(value.fieldJobId)
+    || !isPathSafeId(value.visitId)
+    || typeof value.jobType !== "string"
+    || !(FIELD_JOB_TYPES as readonly string[]).includes(value.jobType)
+    || typeof value.parentName !== "string"
+    || value.parentName.length === 0
+    || Buffer.byteLength(value.parentName, "utf8") > MAX_CRM_NAME_BYTES
+    || typeof value.address !== "string"
+    || value.address.length === 0
+    || Buffer.byteLength(value.address, "utf8") > MAX_CRM_ADDRESS_BYTES
+    || (value.unitLabel !== null && (
+      typeof value.unitLabel !== "string"
+      || value.unitLabel.length === 0
+      || Buffer.byteLength(value.unitLabel, "utf8") > MAX_CRM_UNIT_LABEL_BYTES
+    ))
+    || (value.assignedOperatorId !== null && !isPathSafeId(value.assignedOperatorId))
+    || !isDate(value.dueDate)
+    || typeof value.priority !== "string"
+    || !(FIELD_PRIORITIES as readonly string[]).includes(value.priority)
+    || typeof value.workflowStatus !== "string"
+    || !(FIELD_WORKFLOW_STATUSES as readonly string[]).includes(value.workflowStatus)
+    || value.workflowStatus === "completed"
+    || value.workflowStatus === "cancelled"
+    || typeof value.uploadStatus !== "string"
+    || !(FIELD_UPLOAD_STATUSES as readonly string[]).includes(value.uploadStatus)
+    || typeof value.mediaCount !== "number"
+    || !Number.isSafeInteger(value.mediaCount)
+    || value.mediaCount < 0
+    || typeof value.uploadFailureCount !== "number"
+    || !Number.isSafeInteger(value.uploadFailureCount)
+    || value.uploadFailureCount < 0
+    || typeof value.adminActionRequired !== "boolean"
+    || typeof value.activeOrderKey !== "string"
+    || !isTimestamp(value.updatedAt)
+    || value.activeOrderKey !== [
+      value.dueDate,
+      priorityRank[value.priority as FieldPriority],
+      value.updatedAt,
+      value.fieldJobId,
+    ].join("|")
+  ) fail("field_workspace_invalid");
+}
+
+function storedFieldKpis(value: unknown): FieldKpis {
+  if (!isRecord(value)) fail("field_workspace_invalid");
+  for (const key of [
+    "todayVisits",
+    "capturePending",
+    "uploadFailures",
+    "reviewPending",
+    "unassigned",
+    "overdue",
+    "adminActionRequired",
+  ]) {
+    if (typeof value[key] !== "number" || !Number.isSafeInteger(value[key]) || value[key] < 0) {
+      fail("field_workspace_invalid");
+    }
+  }
+  return Object.freeze({
+    todayVisits: value.todayVisits as number,
+    capturePending: value.capturePending as number,
+    uploadFailures: value.uploadFailures as number,
+    reviewPending: value.reviewPending as number,
+    unassigned: value.unassigned as number,
+    overdue: value.overdue as number,
+    adminActionRequired: value.adminActionRequired as number,
+  });
 }
 
 function assertTransactionBundle(
@@ -990,6 +1460,16 @@ function assertTransactionBundle(
     new Set(ids).size !== ids.length
     || JSON.stringify(ids) !== JSON.stringify([...snapshot.visit.workItemIds].sort())
   ) fail("field_visit_relation_invalid");
+  if (visitItems.some((item) => item.assignedOperatorId !== snapshot.visit!.assignedOperatorId)) {
+    fail("field_visit_relation_invalid");
+  }
+  if (visitItems.some((item) =>
+    item.dueDate !== snapshot.visit!.dueDate
+    || item.priority !== snapshot.visit!.priority
+    || item.crmBuildingId !== snapshot.visit!.crmBuildingId
+    || item.crmSalesProspectId !== snapshot.visit!.crmSalesProspectId)) {
+    fail("field_visit_relation_invalid");
+  }
   return { item: snapshot.workItem, visit: snapshot.visit, visitItems };
 }
 
@@ -1014,15 +1494,91 @@ function itemResult(value: unknown): FieldWorkItem {
 }
 
 function changeResult(value: unknown): ChangeFieldVisitResult {
-  if (!isRecord(value) || !isPathSafeId(value.visitId) || !Array.isArray(value.updatedJobIds) || !Array.isArray(value.workItems)) {
+  if (
+    !isRecord(value)
+    || !hasOnlyKeys(value, FIELD_CHANGE_RESULT_KEYS)
+    || !isPathSafeId(value.visitId)
+    || (value.newVisitId !== undefined && !isPathSafeId(value.newVisitId))
+    || value.newVisitId === value.visitId
+    || !Array.isArray(value.updatedJobIds)
+    || value.updatedJobIds.length === 0
+    || value.updatedJobIds.length > MAX_UNIT_COUNT
+    || value.updatedJobIds.some((id) => !isPathSafeId(id))
+    || new Set(value.updatedJobIds).size !== value.updatedJobIds.length
+    || !Array.isArray(value.workItems)
+    || value.workItems.length !== value.updatedJobIds.length
+  ) {
     fail("field_request_receipt_invalid");
   }
   const workItems = value.workItems.map((item) => itemResult(item));
+  const updatedIds = [...value.updatedJobIds].sort() as string[];
+  if (
+    JSON.stringify(updatedIds) !== JSON.stringify(workItems.map((item) => item.id).sort())
+    || workItems.some((item) => item.visitId !== (value.newVisitId ?? value.visitId))
+  ) fail("field_request_receipt_invalid");
   return Object.freeze({
     visitId: value.visitId,
-    ...(isPathSafeId(value.newVisitId) ? { newVisitId: value.newVisitId } : {}),
-    updatedJobIds: Object.freeze(value.updatedJobIds.map((id) => requiredId(id))),
+    ...(value.newVisitId === undefined ? {} : { newVisitId: value.newVisitId }),
+    updatedJobIds: Object.freeze(updatedIds),
     workItems: Object.freeze(workItems),
+  });
+}
+
+function creationReceiptResult(value: unknown): Omit<CreateFieldJobsResult, "repeated"> {
+  if (
+    !isRecord(value)
+    || !hasOnlyKeys(value, FIELD_CREATION_RESULT_KEYS)
+    || !isPathSafeId(value.visitId)
+    || !Array.isArray(value.jobIds)
+    || value.jobIds.length === 0
+    || value.jobIds.some((id) => !isPathSafeId(id))
+    || new Set(value.jobIds).size !== value.jobIds.length
+  ) fail("field_request_receipt_invalid");
+  return Object.freeze({
+    visitId: value.visitId,
+    jobIds: Object.freeze([...value.jobIds] as string[]),
+  });
+}
+
+export function parseFieldMutationReceipt(
+  value: unknown,
+  expectedScope?: string,
+  expectedRequestId?: string,
+): FieldMutationReceipt {
+  if (
+    !isRecord(value)
+    || !hasOnlyKeys(value, FIELD_RECEIPT_KEYS)
+    || typeof value.scope !== "string"
+    || ![
+      "createFieldJobs",
+      "claimFieldJob",
+      "assignFieldJob",
+      "changeFieldVisit",
+      "transitionFieldJob",
+    ].includes(value.scope)
+    || (expectedScope !== undefined && value.scope !== expectedScope)
+    || !isFieldRequestId(value.requestId)
+    || (expectedRequestId !== undefined && value.requestId !== expectedRequestId)
+    || typeof value.requestHash !== "string"
+    || !HASH_PATTERN.test(value.requestHash)
+    || !isTimestamp(value.createdAt)
+  ) fail("field_request_receipt_invalid");
+  let result: unknown;
+  try {
+    result = value.scope === "createFieldJobs"
+      ? creationReceiptResult(value.result)
+      : value.scope === "changeFieldVisit"
+        ? changeResult(value.result)
+        : itemResult(value.result);
+  } catch {
+    fail("field_request_receipt_invalid");
+  }
+  return Object.freeze({
+    scope: value.scope,
+    requestId: value.requestId,
+    requestHash: value.requestHash,
+    result,
+    createdAt: value.createdAt,
   });
 }
 
@@ -1069,6 +1625,12 @@ function updatedWorkItem(
   return frozenItem({ ...item, ...changes, ...updatedStamp(actor, now) });
 }
 
+function resetAcceptance(item: FieldWorkItem): FieldWorkItem {
+  if (item.workflowStatus !== "accepted") return item;
+  const { acceptedAt: _acceptedAt, ...reset } = item;
+  return reset as FieldWorkItem;
+}
+
 function splitVisit(
   visit: FieldVisit,
   selectedItems: readonly FieldWorkItem[],
@@ -1090,7 +1652,9 @@ function splitVisit(
     id: newVisitId,
     workItemIds: selectedItems.map((item) => item.id).sort(),
     sharedMediaIds: [],
-    assignedOperatorId: changes.assignedOperatorId ?? visit.assignedOperatorId,
+    assignedOperatorId: Object.hasOwn(changes, "assignedOperatorId")
+      ? changes.assignedOperatorId!
+      : visit.assignedOperatorId,
     dueDate: changes.dueDate ?? visit.dueDate,
     priority: changes.priority ?? visit.priority,
     ...auditStamp(actor, now),
@@ -1170,7 +1734,7 @@ function targetedAssignmentDecision(
     return { errorCode: "field_job_inactive" };
   }
   if (item.assignedOperatorId === input.target) return { errorCode: "field_assignment_unchanged" };
-  if (visitItems.length > 1 && !NOT_STARTED_STATUSES.has(item.workflowStatus)) {
+  if (!NOT_STARTED_STATUSES.has(item.workflowStatus)) {
     return { errorCode: "field_started_job_change_forbidden" };
   }
   const patch: Record<string, unknown> = {};
@@ -1189,12 +1753,10 @@ function targetedAssignmentDecision(
       ...updatedStamp(actor, now),
     });
   }
-  const workflowStatus: FieldWorkflowStatus = item.workflowStatus === "requested" && input.target !== null
-    ? "assigned"
-    : item.workflowStatus === "assigned" && input.target === null
-      ? "requested"
-      : item.workflowStatus;
-  const result = updatedWorkItem(item, actor, now, {
+  const workflowStatus: FieldWorkflowStatus = input.target === null
+    ? "requested"
+    : "assigned";
+  const result = updatedWorkItem(resetAcceptance(item), actor, now, {
     visitId: nextVisitId,
     assignedOperatorId: input.target,
     workflowStatus,
@@ -1217,7 +1779,6 @@ export async function assignFieldJobCore(
     ? null
     : requiredId(input.assignedOperatorId, "field_assignee_invalid");
   const reason = requiredReason(input.reason);
-  await assertActiveOperator(target, dependencies);
   const requestHash = sha256({ ...normalized, target, reason, action: "assign" });
   const now = currentTimestamp(dependencies);
   return dependencies.transactWork({
@@ -1257,7 +1818,6 @@ export async function changeFieldVisitCore(
     fail("field_visit_change_empty");
   }
   const reason = requiredReason(input.reason);
-  if (assignedOperatorId !== undefined) await assertActiveOperator(assignedOperatorId, dependencies);
   const requestHash = sha256({
     ...normalized,
     selectedJobId,
@@ -1295,8 +1855,13 @@ export async function changeFieldVisitCore(
     if (selected.some((item) => item.archivedAt !== null || item.workflowStatus === "completed" || item.workflowStatus === "cancelled")) {
       return { errorCode: "field_job_inactive" };
     }
+    const assigneeChanged = hasAssignee
+      && selected.some((item) => item.assignedOperatorId !== assignedOperatorId);
     if (selectedJobId !== undefined && visitItems.length > 1
       && selected.some((item) => !NOT_STARTED_STATUSES.has(item.workflowStatus))) {
+      return { errorCode: "field_started_job_change_forbidden" };
+    }
+    if (assigneeChanged && selected.some((item) => !NOT_STARTED_STATUSES.has(item.workflowStatus))) {
       return { errorCode: "field_started_job_change_forbidden" };
     }
     selected = [...selected].sort((left, right) => left.id.localeCompare(right.id));
@@ -1323,12 +1888,12 @@ export async function changeFieldVisitCore(
       patch[`fieldPlatform/v2/visits/${visit.id}`] = targetVisit;
     }
     const changedItems = selected.map((item) => {
-      const status = item.workflowStatus === "requested" && assignedOperatorId
-        ? "assigned"
-        : item.workflowStatus === "assigned" && hasAssignee && assignedOperatorId === null
+      const status: FieldWorkflowStatus = assigneeChanged
+        ? assignedOperatorId === null
           ? "requested"
-          : item.workflowStatus;
-      const changed = updatedWorkItem(item, actor, now, {
+          : "assigned"
+        : item.workflowStatus;
+      const changed = updatedWorkItem(assigneeChanged ? resetAcceptance(item) : item, actor, now, {
         visitId: targetVisit.id,
         ...(hasAssignee ? { assignedOperatorId: assignedOperatorId! } : {}),
         ...(dueDate === undefined ? {} : { dueDate }),
@@ -1432,29 +1997,69 @@ export async function transitionFieldJobCore(
 }
 
 export async function listFieldOperationsWorkspaceCore(
+  input: ListFieldOperationsWorkspaceInput,
   actor: FieldV2Actor,
   dependencies: WorkItemDependencies,
 ): Promise<FieldOperationsWorkspace> {
-  if (!isRecord(actor) || !isPathSafeId(actor.authUid) || !isPathSafeId(actor.operatorId)) {
+  if (
+    !isRecord(input)
+    || !isRecord(actor)
+    || !isPathSafeId(actor.authUid)
+    || !isPathSafeId(actor.operatorId)
+  ) {
     fail("field_access_forbidden");
   }
+  assertActor(input.operatorId, actor);
+  const scope = input.scope === undefined ? "personal" : input.scope;
+  if (scope !== "personal" && scope !== "team") fail("field_workspace_scope_invalid");
+  if (scope === "team" && actor.role !== "admin") fail("field_workspace_scope_forbidden");
+  const limit = input.limit === undefined ? 50 : input.limit;
+  if (!Number.isInteger(limit) || limit < 1 || limit > 100) {
+    fail("field_workspace_limit_invalid");
+  }
+  const cursor = input.cursor === undefined
+    ? undefined
+    : requiredText(input.cursor, "field_workspace_cursor_invalid", 512);
   let records: FieldWorkspaceRecords;
   try {
-    records = await dependencies.readWorkspace(actor);
-  } catch {
+    records = await dependencies.readWorkspace(actor, {
+      scope,
+      limit,
+      ...(cursor === undefined ? {} : { cursor }),
+    });
+  } catch (error) {
+    if (error instanceof FieldV2Error && error.code === "field_workspace_cursor_invalid") {
+      throw error;
+    }
     fail("field_workspace_unavailable");
   }
   if (!isRecord(records) || !Array.isArray(records.items)) {
     fail("field_workspace_invalid");
   }
+  if (records.items.length > limit) fail("field_workspace_invalid");
+  const nextCursor = records.nextCursor === undefined
+    ? null
+    : requiredText(records.nextCursor, "field_workspace_invalid", 512);
   const items = records.items.map((item) => {
+    if (scope === "team") {
+      assertTeamActiveProjection(item);
+      return Object.freeze({ ...item });
+    }
     assertStoredWorkItem(item);
     return frozenItem(item);
   });
   const now = new Date(currentTimestamp(dependencies));
+  if (scope === "team" && records.kpiSeoulDate !== seoulDateFromTimestamp(now)) {
+    fail("field_kpi_stale");
+  }
+  const teamKpis = scope === "team" ? storedFieldKpis(records.kpis) : undefined;
   return Object.freeze({
     items: Object.freeze(items),
-    kpis: calculateFieldKpis(items, now),
+    kpis: teamKpis
+      ? teamKpis
+      : calculateFieldKpis(items as readonly FieldWorkItem[], now),
+    scope,
+    nextCursor,
   });
 }
 

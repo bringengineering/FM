@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import {
   buildCrmFieldSummary,
   buildOperatorProjection,
+  buildTeamActiveProjection,
   buildUnassignedProjection,
   calculateFieldKpis,
 } from "../src/field-v2/projections.js";
@@ -81,6 +82,25 @@ describe("FIELD v2 deterministic projections", () => {
     ], new Date("2026-08-14T15:00:00.000Z")).todayVisits).toBe(1);
   });
 
+  it("counts only job policies with unconditional photo capture in capturePending", () => {
+    const jobTypes = [
+      "vacancy_capture",
+      "move_out_check",
+      "cleaning_before_after",
+      "maintenance_inspection",
+      "complaint_check",
+      "repair_before_after",
+    ] as const;
+    const items = jobTypes.map((jobType, index) => workItem({
+      id: `job_${index}`,
+      visitId: `visit_${index}`,
+      jobType,
+      workflowStatus: "accepted",
+    }));
+    expect(calculateFieldKpis(items, new Date("2026-08-14T15:00:00.000Z")))
+      .toMatchObject({ capturePending: 4 });
+  });
+
   it.each([new Date("invalid"), null, undefined])(
     "returns a stable domain error for invalid now %p",
     (now) => {
@@ -145,5 +165,16 @@ describe("FIELD v2 deterministic projections", () => {
     expect(buildUnassignedProjection(workItem())).toBeNull();
     expect(buildUnassignedProjection(workItem({ assignedOperatorId: null, workflowStatus: "completed" }))).toBeNull();
     expect(buildUnassignedProjection(workItem({ assignedOperatorId: null, archivedAt: "2026-08-14T03:00:00.000Z" }))).toBeNull();
+  });
+
+  it("builds a deterministic ordered team projection only for active work", () => {
+    const projection = buildTeamActiveProjection(workItem({ priority: "urgent" }));
+    expect(projection).toMatchObject({
+      fieldJobId: "job_1",
+      activeOrderKey: "2026-08-15|0|2026-08-14T02:00:00.000Z|job_1",
+    });
+    expect(Object.isFrozen(projection)).toBe(true);
+    expect(buildTeamActiveProjection(workItem({ workflowStatus: "completed" }))).toBeNull();
+    expect(buildTeamActiveProjection(workItem({ archivedAt: "2026-08-14T03:00:00.000Z" }))).toBeNull();
   });
 });

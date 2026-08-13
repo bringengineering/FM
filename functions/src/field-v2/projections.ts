@@ -30,6 +30,9 @@ export interface FieldOperatorJobProjection {
 }
 
 export type FieldUnassignedProjection = FieldOperatorJobProjection;
+export interface FieldTeamActiveProjection extends FieldOperatorJobProjection {
+  readonly activeOrderKey: string;
+}
 
 export interface CrmFieldSummary {
   readonly fieldJobId: string;
@@ -55,6 +58,12 @@ const ACTIVE_CAPTURE_STATUSES = new Set<FieldWorkflowStatus>([
   "assigned",
   "accepted",
   "in_progress",
+]);
+const CAPTURE_PENDING_JOB_TYPES = new Set<FieldJobType>([
+  "vacancy_capture",
+  "cleaning_before_after",
+  "complaint_check",
+  "repair_before_after",
 ]);
 const UPLOAD_FAILURE_STATUSES = new Set<FieldUploadStatus>([
   "partial_failure",
@@ -129,7 +138,10 @@ export function calculateFieldKpis(
     assertProjectableItem(value);
     if (!isActive(value)) continue;
     if (value.dueDate === today) todayVisitIds.add(value.visitId);
-    if (ACTIVE_CAPTURE_STATUSES.has(value.workflowStatus)) capturePending += 1;
+    if (
+      CAPTURE_PENDING_JOB_TYPES.has(value.jobType)
+      && ACTIVE_CAPTURE_STATUSES.has(value.workflowStatus)
+    ) capturePending += 1;
     if (UPLOAD_FAILURE_STATUSES.has(value.uploadStatus)) uploadFailures += 1;
     if (value.jobType === "vacancy_capture" && value.workflowStatus === "review_pending") {
       reviewPending += 1;
@@ -179,6 +191,28 @@ export function buildUnassignedProjection(
   assertProjectableItem(item);
   if (item.assignedOperatorId !== null || !isActive(item)) return null;
   return buildOperatorProjection(item);
+}
+
+export function buildTeamActiveProjection(
+  item: FieldWorkItem,
+): FieldTeamActiveProjection | null {
+  assertProjectableItem(item);
+  if (!isActive(item)) return null;
+  const priorityRank: Readonly<Record<FieldPriority, number>> = {
+    urgent: 0,
+    high: 1,
+    normal: 2,
+    low: 3,
+  };
+  return Object.freeze({
+    ...buildOperatorProjection(item),
+    activeOrderKey: [
+      item.dueDate,
+      priorityRank[item.priority],
+      item.updatedAt,
+      item.id,
+    ].join("|"),
+  });
 }
 
 export function buildCrmFieldSummary(item: FieldWorkItem): CrmFieldSummary {
