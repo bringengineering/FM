@@ -1,0 +1,266 @@
+const assert = require("node:assert/strict");
+const { readFile } = require("node:fs/promises");
+const path = require("node:path");
+const test = require("node:test");
+
+const Core = require("../src/core");
+const Sales = require("../src/sales-core");
+const Remote = require("../src/remote");
+
+const SALES_COLLECTIONS = [
+  "salesProspects",
+  "salesContacts",
+  "salesUnits",
+  "salesActivities",
+  "salesEvents",
+  "salesOpportunities"
+];
+
+const evidence = {
+  evidenceType: "note",
+  evidenceNote: "담당자가 사실관계를 확인함"
+};
+
+test("sales domain exposes the approved 13-stage funnel and supporting code sets", () => {
+  assert.deepEqual(Sales.SALES_STAGES.map(stage => stage.id), [
+    "candidate", "contact_ready", "first_contact", "replied", "qualified_interest",
+    "meeting_confirmed", "diagnosis_done", "listing_received", "ad_published",
+    "tenant_inquiry_visit", "lease_signed", "paid_management", "paused_closed"
+  ]);
+  assert.ok(Sales.SALES_CHANNELS.includes("sms"));
+  assert.ok(Sales.SALES_SOURCES.includes("building_sign"));
+  assert.ok(Sales.SALES_RESULTS.includes("no_response"));
+  assert.ok(Sales.SALES_RESPONSE_CODES.includes("vacancy_now"));
+  assert.ok(Sales.SALES_FAILURE_REASONS.includes("invalid_number"));
+  assert.ok(Sales.SALES_SERVICE_TYPES.includes("waterproofing"));
+  assert.deepEqual(Sales.OPPORTUNITY_STAGES, [
+    "discovered", "quote_requested", "quote_approved", "work_completed", "revenue_recorded"
+  ]);
+});
+
+test("all six sales record types have create and normalize functions", () => {
+  const actor = "sales@bring.local";
+  const prospect = Sales.createSalesProspect({ name: "대학로 원룸", createdBy: actor });
+  const contact = Sales.createSalesContact({ prospectId: prospect.id, phone: "010-1111-2222", createdBy: actor });
+  const unit = Sales.createSalesUnit({ prospectId: prospect.id, label: "201호", rent: "350000", createdBy: actor });
+  const activity = Sales.createSalesActivity({ prospectId: prospect.id, type: "memo", summary: "첫 메모", createdBy: actor });
+  const event = Sales.createSalesEvent({ prospectId: prospect.id, type: "prospect_created", ...evidence, createdBy: actor });
+  const opportunity = Sales.createSalesOpportunity({ prospectId: prospect.id, serviceType: "waterproofing", createdBy: actor });
+
+  assert.match(prospect.id, /^spr_/);
+  assert.equal(Sales.normalizeSalesProspect(prospect).stage, "candidate");
+  assert.match(contact.id, /^sct_/);
+  assert.equal(Sales.normalizeSalesContact(contact).phone, "010-1111-2222");
+  assert.match(unit.id, /^sun_/);
+  assert.equal(Sales.normalizeSalesUnit(unit).rent, 350000);
+  assert.match(activity.id, /^sac_/);
+  assert.equal(Sales.normalizeSalesActivity(activity).type, "memo");
+  assert.match(event.id, /^sev_/);
+  assert.equal(Sales.normalizeSalesEvent(event).type, "prospect_created");
+  assert.match(opportunity.id, /^sop_/);
+  assert.equal(Sales.normalizeSalesOpportunity(opportunity).stage, "discovered");
+});
+
+test("event validation enforces common evidence and event-specific relations", () => {
+  const missingEvidence = Sales.validateEvent({
+    prospectId: "spr_1", type: "reply_received", occurredAt: "2026-08-13T00:00:00.000Z"
+  });
+  assert.equal(missingEvidence.valid, false);
+  assert.ok(missingEvidence.errors.some(error => error.field === "evidenceType"));
+
+  const missingUnit = Sales.validateEvent({
+    prospectId: "spr_1", type: "listing_received", occurredAt: "2026-08-13T00:00:00.000Z", ...evidence
+  });
+  assert.equal(missingUnit.valid, false);
+  assert.ok(missingUnit.errors.some(error => error.field === "unitId"));
+
+  const validListing = Sales.validateEvent({
+    prospectId: "spr_1", unitId: "sun_1", type: "listing_received",
+    occurredAt: "2026-08-13T00:00:00.000Z", ...evidence
+  });
+  assert.equal(validListing.valid, true);
+});
+
+test("stageFromEvents ignores invalid and archived events and chooses the highest evidenced stage", () => {
+  const events = [
+    { prospectId: "spr_1", type: "prospect_created", occurredAt: "2026-08-01T00:00:00.000Z", ...evidence },
+    { prospectId: "spr_1", type: "reply_received", occurredAt: "2026-08-02T00:00:00.000Z" },
+    { prospectId: "spr_1", unitId: "sun_1", type: "ad_published", occurredAt: "2026-08-03T00:00:00.000Z", ...evidence },
+    { prospectId: "spr_1", unitId: "sun_1", type: "lease_signed", occurredAt: "2026-08-04T00:00:00.000Z", archivedAt: "2026-08-05T00:00:00.000Z", ...evidence }
+  ];
+  assert.equal(Sales.stageFromEvents(events, { prospectId: "spr_1" }), "ad_published");
+});
+
+test("opted-out contacts block new sms and call attempts", () => {
+  const contacts = [{ id: "sct_1", prospectId: "spr_1", phone: "010-1111-2222", doNotContact: true }];
+  const result = Sales.validateContactAttempt({ prospectId: "spr_1", contactId: "sct_1", type: "sms" }, contacts);
+  assert.equal(result.valid, false);
+  assert.ok(result.errors.some(error => error.code === "CONTACT_OPTED_OUT"));
+  assert.throws(
+    () => Sales.createSalesActivity({ prospectId: "spr_1", contactId: "sct_1", type: "call" }, { contacts }),
+    error => error && error.code === "CONTACT_OPTED_OUT"
+  );
+});
+
+test("calculateKpis counts only valid completion evidence with unique prospect and unit semantics", () => {
+  const events = [
+    { id: "e1", prospectId: "p1", type: "contact_attempted", occurredAt: "2026-08-01T00:00:00.000Z", ...evidence },
+    { id: "e2", prospectId: "p1", type: "contact_attempted", occurredAt: "2026-08-02T00:00:00.000Z", ...evidence },
+    { id: "e3", prospectId: "p1", type: "reply_received", occurredAt: "2026-08-03T00:00:00.000Z", ...evidence },
+    { id: "e4", prospectId: "p1", unitId: "u1", type: "listing_received", occurredAt: "2026-08-04T00:00:00.000Z", ...evidence },
+    { id: "e5", prospectId: "p1", unitId: "u1", type: "listing_received", occurredAt: "2026-08-05T00:00:00.000Z", ...evidence },
+    { id: "e6", prospectId: "p1", unitId: "u1", type: "ad_published", occurredAt: "2026-08-06T00:00:00.000Z", ...evidence },
+    { id: "e7", prospectId: "p1", unitId: "u2", type: "ad_published", occurredAt: "2026-08-07T00:00:00.000Z" },
+    { id: "e8", prospectId: "p2", unitId: "u3", type: "lease_signed", occurredAt: "2026-08-08T00:00:00.000Z", archivedAt: "2026-08-09T00:00:00.000Z", ...evidence }
+  ];
+  const opportunities = [
+    { id: "o1", prospectId: "p1", serviceType: "waterproofing", stage: "quote_approved", quoteAmount: 500000 },
+    { id: "o2", prospectId: "p1", serviceType: "move_out_cleaning", stage: "revenue_recorded", revenueAmount: 100000, evidenceUrl: "https://example.test/receipt" },
+    { id: "o3", prospectId: "p2", serviceType: "repair", stage: "revenue_recorded", revenueAmount: 200000 },
+    { id: "o4", prospectId: "p2", serviceType: "repair", stage: "revenue_recorded", revenueAmount: 900000, evidenceUrl: "https://example.test/receipt", archivedAt: "2026-08-10T00:00:00.000Z" }
+  ];
+  const kpis = Sales.calculateKpis({
+    salesProspects: [{ id: "p1" }, { id: "p2" }, { id: "p3", archivedAt: "2026-08-01T00:00:00.000Z" }],
+    salesUnits: [{ id: "u1", prospectId: "p1" }, { id: "u2", prospectId: "p1" }],
+    salesEvents: events,
+    salesOpportunities: opportunities
+  });
+
+  assert.equal(kpis.activeProspects, 2);
+  assert.equal(kpis.contactedProspects, 1);
+  assert.equal(kpis.respondedProspects, 1);
+  assert.equal(kpis.listingUnits, 1);
+  assert.equal(kpis.adPublishedUnits, 1);
+  assert.equal(kpis.leaseSignedUnits, 0);
+  assert.equal(kpis.completedOpportunities, 1);
+  assert.equal(kpis.revenueRecorded, 100000);
+});
+
+test("opportunity transitions follow the approved five-stage order", () => {
+  assert.equal(Sales.canTransitionOpportunityStage("discovered", "quote_requested"), true);
+  assert.equal(Sales.canTransitionOpportunityStage("quote_requested", "work_completed"), false);
+  assert.equal(Sales.canTransitionOpportunityStage("revenue_recorded", "work_completed"), false);
+});
+
+test("core store and existing Firebase serializer preserve all six sales collections", () => {
+  const blank = Core.blankStore();
+  for (const collection of SALES_COLLECTIONS) assert.deepEqual(blank[collection], []);
+  assert.ok(blank.schemaVersion >= 3);
+
+  const input = Object.fromEntries(SALES_COLLECTIONS.map((collection, index) => [collection, [{ id: `${collection}_${index}` }]]));
+  const sanitized = Core.sanitizeStore(input);
+  for (const collection of SALES_COLLECTIONS) assert.equal(sanitized[collection].length, 1);
+
+  const remote = Remote.toRemoteStore(sanitized, "sales@bring.local");
+  for (const collection of SALES_COLLECTIONS) assert.equal(Object.keys(remote[collection]).length, 1);
+  const merged = Remote.mergeRemoteStore(Core, remote, Core.blankStore(), { displayName: "영업 담당" });
+  for (const collection of SALES_COLLECTIONS) assert.equal(merged[collection].length, 1);
+
+  assert.ok(SALES_COLLECTIONS.every(collection => Remote.SHARED_COLLECTIONS.includes(collection)));
+});
+
+test("sales-core is loaded after core and before app without adding another page", async () => {
+  const html = await readFile(path.join(__dirname, "..", "src", "index.html"), "utf8");
+  assert.ok(html.indexOf("./core.js") < html.indexOf("./sales-core.js"));
+  assert.ok(html.indexOf("./sales-core.js") < html.indexOf("./app.js"));
+});
+
+test("public aliases support the shared UI contract and stable actor metadata", () => {
+  const at = "2026-08-13T09:00:00.000Z";
+  const actor = { email: "owner@bring.test" };
+  assert.equal(Sales.SALES_STAGES[0].code, "candidate");
+  assert.equal(Sales.SALES_EVENT_TYPES, Sales.EVENT_TYPES);
+  assert.equal(Sales.SERVICE_TYPES, Sales.SALES_SERVICE_TYPES);
+  const prospect = Sales.createProspect({ name: "대학로 원룸" }, actor, at);
+  assert.equal(prospect.createdAt, at);
+  assert.equal(prospect.createdBy, actor.email);
+  assert.equal(prospect.updatedBy, actor.email);
+  assert.doesNotThrow(() => Sales.assertProspect(prospect));
+  assert.equal(Sales.createContact({ prospectId: prospect.id, phone: "010-1234-5678" }, actor, at).createdBy, actor.email);
+  assert.equal(Sales.createUnit({ prospectId: prospect.id, label: "201호" }, actor, at).createdBy, actor.email);
+});
+
+test("shared UI assertions use stable errors and helpers do not mutate records", () => {
+  assert.throws(() => Sales.assertProspect({ name: "", address: "" }), error => error.code === "SALES_PROSPECT_IDENTITY_REQUIRED");
+  assert.throws(() => Sales.assertContact({ prospectId: "", phone: "" }), error => error.code === "SALES_CONTACT_REQUIRED");
+  assert.throws(() => Sales.assertUnit({ prospectId: "p1", label: "" }), error => error.code === "SALES_UNIT_REQUIRED");
+
+  const original = { id: "p1", archivedAt: "", updatedAt: "old" };
+  const archived = Sales.archiveRecord(original, { email: "owner@bring.test" }, "2026-08-13T10:00:00.000Z");
+  assert.equal(original.archivedAt, "");
+  assert.equal(archived.archivedBy, "owner@bring.test");
+  const restored = Sales.restoreRecord(archived, { email: "owner@bring.test" }, "2026-08-13T11:00:00.000Z");
+  assert.equal(restored.archivedAt, "");
+  assert.equal(restored.updatedAt, "2026-08-13T11:00:00.000Z");
+});
+
+test("normalized-address duplicates exclude the current and archived records", () => {
+  const candidate = { id: "current", address: "강원도 원주시 대학로 1" };
+  const records = [
+    { id: "same", address: "강원 원주시 대학로 1" },
+    { id: "archived", address: "강원도 원주시 대학로 1", archivedAt: "2026-08-01" },
+    candidate
+  ];
+  assert.deepEqual(Sales.duplicateProspects(records, candidate).map(item => item.id), ["same"]);
+});
+
+test("UI KPI contract exposes the approved result names and excludes paused prospects", () => {
+  const at = "2026-08-13T09:00:00.000Z";
+  const event = (id, type, unitId) => ({ id, prospectId: "p1", unitId, type, occurredAt: at, evidenceNote: "확인" });
+  const kpis = Sales.computeSalesKpis({
+    salesProspects: [
+      { id: "p1", owner: "김현진", nextActionAt: "2026-08-12", archivedAt: "", stage: "ad_published" },
+      { id: "p2", owner: "김현진", archivedAt: "", stage: "paused_closed" }
+    ],
+    salesEvents: [event("e1", "listing_received", "u1"), event("e2", "listing_received", "u1"), event("e3", "ad_published", "u1")],
+    salesOpportunities: []
+  }, { from: "2026-08-13T00:00:00.000Z", to: "2026-08-14T00:00:00.000Z", now: at });
+  assert.equal(kpis.activeProspects, 1);
+  assert.equal(kpis.listingReceivedUnits, 1);
+  assert.equal(kpis.adPublishedUnits, 1);
+  assert.equal(kpis.overdueFollowups, 1);
+  assert.deepEqual(kpis.activeByOwner, { "김현진": 1 });
+});
+
+test("events and revenue never leak through when every known prospect is paused or archived", () => {
+  const at = "2026-08-13T09:00:00.000Z";
+  const kpis = Sales.calculateKpis({
+    salesProspects: [
+      { id: "p1", stage: "paused_closed", archivedAt: "" },
+      { id: "p2", stage: "lease_signed", archivedAt: "2026-08-12T00:00:00.000Z" }
+    ],
+    salesEvents: [{ id: "e1", prospectId: "p1", unitId: "u1", type: "lease_signed", occurredAt: at, evidenceNote: "확인" }],
+    salesOpportunities: [{ id: "o1", prospectId: "p1", serviceType: "repair", stage: "revenue_recorded", revenueAmount: 100000, evidenceNote: "입금 확인" }]
+  });
+  assert.equal(kpis.activeProspects, 0);
+  assert.equal(kpis.leaseSignedUnits, 0);
+  assert.equal(kpis.revenueRecorded, 0);
+});
+
+test("event normalization preserves creation metadata and records editor metadata", () => {
+  const event = Sales.normalizeSalesEvent({
+    id: "e1", prospectId: "p1", type: "prospect_created", evidenceNote: "등록",
+    createdAt: "2026-08-01T00:00:00.000Z", createdBy: "creator@bring.test"
+  }, { email: "editor@bring.test" }, "2026-08-13T09:00:00.000Z");
+  assert.equal(event.createdAt, "2026-08-01T00:00:00.000Z");
+  assert.equal(event.createdBy, "creator@bring.test");
+  assert.equal(event.updatedAt, "2026-08-13T09:00:00.000Z");
+  assert.equal(event.updatedBy, "editor@bring.test");
+});
+
+test("validation context can carry actor metadata for activities and events", () => {
+  const at = "2026-08-13T09:00:00.000Z";
+  const actor = { email: "owner@bring.test" };
+  const contact = { id: "c1", prospectId: "p1", phone: "010-1234-5678", doNotContact: false };
+  const activity = Sales.createSalesActivity({
+    prospectId: "p1", contactId: "c1", type: "sms", summary: "공실 확인"
+  }, { contacts: [contact], actor }, at);
+  assert.equal(activity.createdBy, actor.email);
+  assert.equal(activity.updatedBy, actor.email);
+
+  const event = Sales.createSalesEvent({
+    prospectId: "p1", contactId: "c1", type: "contact_verified", evidenceNote: "통화로 확인"
+  }, { contacts: [contact], units: [], actor }, at);
+  assert.equal(event.createdBy, actor.email);
+  assert.equal(event.updatedBy, actor.email);
+});

@@ -163,7 +163,7 @@
 
   function blankStore() {
     return {
-      schemaVersion: 2,
+      schemaVersion: 3,
       company: { name: "BRING Care", workspace: "원주 건물 운영" },
       settings: {
         owner: "김현진",
@@ -173,6 +173,7 @@
         onboardingComplete: false
       },
       customers: [], buildings: [], activities: [], contracts: [], partnerVendors: [], partnerQuotes: [], tasks: [], securityAssets: [], auditLogs: [], securityIncidents: [],
+      salesProspects: [], salesContacts: [], salesUnits: [], salesActivities: [], salesEvents: [], salesOpportunities: [],
       accessRoles: [
         createAccessRole({ name: "데이터·운영책임자", canView: true, canEdit: true, canDownload: true, canManageSecurity: true }),
         createAccessRole({ name: "업무 담당자", canView: true, canEdit: true, canDownload: false, canManageSecurity: false }),
@@ -197,7 +198,7 @@
       }
     });
     return {
-      schemaVersion: 2,
+      schemaVersion: 3,
       company: Object.assign({}, base.company, src.company || {}),
       settings: Object.assign({}, base.settings, src.settings || {}),
       customers: Array.isArray(src.customers) ? src.customers.filter(Boolean).map(customer => Object.assign({}, customer, { stage: normalizePipelineStage(customer.stage) })) : [],
@@ -211,6 +212,12 @@
       accessRoles: Array.isArray(src.accessRoles) && src.accessRoles.length ? src.accessRoles.filter(Boolean) : base.accessRoles,
       auditLogs: Array.isArray(src.auditLogs) ? src.auditLogs.filter(Boolean) : [],
       securityIncidents: Array.isArray(src.securityIncidents) ? src.securityIncidents.filter(Boolean) : [],
+      salesProspects: Array.isArray(src.salesProspects) ? src.salesProspects.filter(Boolean) : [],
+      salesContacts: Array.isArray(src.salesContacts) ? src.salesContacts.filter(Boolean) : [],
+      salesUnits: Array.isArray(src.salesUnits) ? src.salesUnits.filter(Boolean) : [],
+      salesActivities: Array.isArray(src.salesActivities) ? src.salesActivities.filter(Boolean) : [],
+      salesEvents: Array.isArray(src.salesEvents) ? src.salesEvents.filter(Boolean) : [],
+      salesOpportunities: Array.isArray(src.salesOpportunities) ? src.salesOpportunities.filter(Boolean) : [],
       updatedAt: src.updatedAt || iso()
     };
   }

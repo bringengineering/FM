@@ -28,7 +28,8 @@ const WORKFLOW_ACTIONS = new Set([
 
 const SHARED_COLLECTIONS = Object.freeze([
   "customers", "buildings", "activities", "contracts", "partnerVendors", "partnerQuotes", "tasks",
-  "securityAssets", "auditLogs", "securityIncidents"
+  "securityAssets", "auditLogs", "securityIncidents",
+  "salesProspects", "salesContacts", "salesUnits", "salesActivities", "salesEvents", "salesOpportunities"
 ]);
 const PROTECTED_JSON_FORMAT = "bring-crm-protected-json";
 const PROTECTED_JSON_VERSION = 1;
@@ -53,7 +54,7 @@ function listFromMap(value) {
 
 function toRemoteStore(input, actor) {
   const payload = {
-    schemaVersion: Number(input.schemaVersion) || 2,
+    schemaVersion: Number(input.schemaVersion) || 3,
     company: input.company || {},
     updatedAt: input.updatedAt || new Date().toISOString(),
     updatedBy: actor || ""
