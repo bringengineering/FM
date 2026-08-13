@@ -14,6 +14,10 @@ import type {
   SaveFieldRegistrationInput,
   SaveFieldRegistrationResult,
 } from "./registration-draft";
+import {
+  normalizeAdPackageReviewWorkspace,
+  type AdPackageReviewWorkspacePage,
+} from "./ad-package";
 import type {
   FinalizeFieldMediaInput,
   FinalizeFieldMediaResult,
@@ -85,6 +89,20 @@ export interface ExcludeFieldMediaResult {
   excludedBy: string;
 }
 
+export interface CreateAdPackageInput {
+  requestId: string;
+  listingId: string;
+  approvedMediaIds: string[];
+  representativeMediaIds: string[];
+}
+
+export interface CreateAdPackageResult {
+  packageId: string;
+  listingId: string;
+  version: number;
+  status: "reviewed";
+}
+
 export interface AppendOwnerNoteInput {
   buildingId: string;
   localId: string;
@@ -129,6 +147,18 @@ export type GetFieldMediaAccessInvoker = (
 export type ExcludeFieldMediaInvoker = (
   input: ExcludeFieldMediaInput,
 ) => Promise<{ data: ExcludeFieldMediaResult }>;
+
+export type CreateAdPackageInvoker = (
+  input: CreateAdPackageInput,
+) => Promise<{ data: CreateAdPackageResult }>;
+
+export interface LoadAdReviewWorkspaceInput {
+  cursor?: string;
+}
+
+export type LoadAdReviewWorkspaceInvoker = (
+  input: LoadAdReviewWorkspaceInput,
+) => Promise<{ data: unknown }>;
 
 export type AppendOwnerNoteInvoker = (
   input: AppendOwnerNoteInput,
@@ -384,6 +414,24 @@ async function defaultExcludeFieldMediaInvoker(input: ExcludeFieldMediaInput) {
   return callable(input);
 }
 
+async function defaultCreateAdPackageInvoker(input: CreateAdPackageInput) {
+  const callable = httpsCallable<CreateAdPackageInput, CreateAdPackageResult>(
+    functions,
+    "createAdPackage",
+    REPLAY_PROTECTED_CALLABLE_OPTIONS,
+  );
+  return callable(input);
+}
+
+async function defaultLoadAdReviewWorkspaceInvoker(input: LoadAdReviewWorkspaceInput) {
+  const callable = httpsCallable<LoadAdReviewWorkspaceInput, unknown>(
+    functions,
+    "listAdPackageReviewCandidates",
+    REPLAY_PROTECTED_CALLABLE_OPTIONS,
+  );
+  return callable(input);
+}
+
 async function defaultAppendOwnerNoteInvoker(input: AppendOwnerNoteInput) {
   const callable = httpsCallable<
     AppendOwnerNoteInput,
@@ -593,6 +641,49 @@ export async function excludeFieldMedia(
     excludedAt: result.data.excludedAt,
     excludedBy: result.data.excludedBy,
   };
+}
+
+export async function createAdPackage(
+  input: CreateAdPackageInput,
+  invoke: CreateAdPackageInvoker = defaultCreateAdPackageInvoker,
+): Promise<CreateAdPackageResult> {
+  const payload: CreateAdPackageInput = {
+    requestId: input.requestId,
+    listingId: input.listingId,
+    approvedMediaIds: [...input.approvedMediaIds],
+    representativeMediaIds: [...input.representativeMediaIds],
+  };
+  const result = await invoke(payload);
+  if (
+    !isRecord(result.data)
+    || !isPathSafeId(result.data.packageId)
+    || result.data.listingId !== input.listingId
+    || !Number.isSafeInteger(result.data.version)
+    || result.data.version < 1
+    || result.data.status !== "reviewed"
+  ) {
+    throw new Error("ad_package_response_invalid");
+  }
+  return {
+    packageId: result.data.packageId,
+    listingId: result.data.listingId,
+    version: result.data.version,
+    status: "reviewed",
+  };
+}
+
+export async function loadAdReviewWorkspace(
+  input: LoadAdReviewWorkspaceInput = {},
+  invoke: LoadAdReviewWorkspaceInvoker = defaultLoadAdReviewWorkspaceInvoker,
+): Promise<AdPackageReviewWorkspacePage> {
+  const payload = input.cursor === undefined ? {} : { cursor: input.cursor };
+  if (payload.cursor !== undefined && !isPathSafeId(payload.cursor)) {
+    throw new Error("ad_review_workspace_request_invalid");
+  }
+  const result = await invoke(payload);
+  const page = normalizeAdPackageReviewWorkspace(result.data);
+  if (!page) throw new Error("ad_review_workspace_response_invalid");
+  return page;
 }
 
 export async function appendOwnerNote(

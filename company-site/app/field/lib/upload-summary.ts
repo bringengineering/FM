@@ -38,6 +38,11 @@ function isComplete(record: QueuedMediaRecord): boolean {
     && record.driveSyncState === "complete";
 }
 
+function isFailed(record: QueuedMediaRecord): boolean {
+  return record.descriptor.uploadState === "failed"
+    || record.driveSyncState === "failed";
+}
+
 export function summarizeUploadRecords(
   records: QueuedMediaRecord[],
   now = new Date().toISOString(),
@@ -55,12 +60,10 @@ export function summarizeUploadRecords(
   return {
     todayTotal: today.length,
     uploading: records.filter((record) => (
-      record.descriptor.uploadState !== "failed" && !isComplete(record)
+      !isFailed(record) && !isComplete(record)
     )).length,
     completedToday: today.filter(isComplete).length,
-    failed: records.filter(
-      (record) => record.descriptor.uploadState === "failed",
-    ).length,
+    failed: records.filter(isFailed).length,
     progressPercent: today.length === 0
       ? 0
       : Math.round(totalProgress / today.length),

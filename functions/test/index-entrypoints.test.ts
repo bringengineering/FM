@@ -1,12 +1,31 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const registrations = vi.hoisted(() => {
+  const secretValues = new Map<string, string>([
+    ["DRIVE_CLIENT_ID", "client-id.apps.googleusercontent.com"],
+    ["DRIVE_CLIENT_SECRET", "client-secret"],
+    ["DRIVE_REFRESH_TOKEN", "refresh-token"],
+    ["DRIVE_ROOT_FOLDER_ID", "root-1"],
+    ["DRIVE_ROOT_MODE", "appCreated"],
+  ]);
+  const definedSecrets: Array<{ name: string; value(): string }> = [];
   const transactionStates: unknown[] = [];
   const transactionPaths: string[] = [];
   const mutationPaths: string[] = [];
   const transactionCurrent = { value: null as unknown };
+  const transactionRetryCurrent = { value: undefined as unknown };
   const pathValues = new Map<string, unknown>();
   const readSequences = new Map<string, unknown[]>();
+  const queryCalls: Array<{
+    path: string;
+    orderByChild: string;
+    equalTo?: unknown;
+    startAt?: { value: unknown; key?: string };
+    startAfter?: { value: unknown; key?: string };
+    endAt?: { value: unknown; key?: string };
+    limitToFirst?: number;
+    limitToLast?: number;
+  }> = [];
   const databaseTransaction = vi.fn(
     async (
       update: (current: unknown) => unknown,
@@ -17,7 +36,15 @@ const registrations = vi.hoisted(() => {
       const current = path === "fieldPlatform"
         ? transactionCurrent.value
         : (pathValues.get(path) ?? null);
-      const state = update(current);
+      if (path === "fieldPlatform" && transactionRetryCurrent.value !== undefined) {
+        update(current);
+        transactionCurrent.value = transactionRetryCurrent.value;
+        transactionRetryCurrent.value = undefined;
+      }
+      const effectiveCurrent = path === "fieldPlatform"
+        ? transactionCurrent.value
+        : current;
+      const state = update(effectiveCurrent);
       const committed = state !== undefined;
       if (committed) {
         if (path === "fieldPlatform") {
@@ -25,7 +52,7 @@ const registrations = vi.hoisted(() => {
         } else {
           pathValues.set(path, state);
         }
-        if (JSON.stringify(state) !== JSON.stringify(current)) {
+        if (JSON.stringify(state) !== JSON.stringify(effectiveCurrent)) {
           mutationPaths.push(path);
         }
       }
@@ -34,8 +61,8 @@ const registrations = vi.hoisted(() => {
       return {
         committed,
         snapshot: {
-          val: () => committed ? state : current,
-          exists: () => (committed ? state : current) !== null,
+          val: () => committed ? state : effectiveCurrent,
+          exists: () => (committed ? state : effectiveCurrent) !== null,
         },
       };
     },
@@ -61,6 +88,129 @@ const registrations = vi.hoisted(() => {
     pathValues.set(path, { ...(pathValues.get(path) as object || {}), ...patch });
     mutationPaths.push(path);
   });
+  const firebaseIntegerKey = (value: string): number | null => {
+    if (!/^-?(0*)\d{1,10}$/u.test(value)) return null;
+    const parsed = Number(value);
+    return parsed >= -2_147_483_648 && parsed <= 2_147_483_647 ? parsed : null;
+  };
+  const firebaseKeyCompare = (left: string, right: string): number => {
+    if (left === right) return 0;
+    const leftInteger = firebaseIntegerKey(left);
+    const rightInteger = firebaseIntegerKey(right);
+    if (leftInteger !== null) {
+      if (rightInteger === null) return -1;
+      const difference = leftInteger - rightInteger;
+      return difference === 0 ? left.length - right.length : difference;
+    }
+    if (rightInteger !== null) return 1;
+    return left < right ? -1 : 1;
+  };
+  function queryFor(
+    path: string,
+    state: {
+      orderByChild?: string;
+      equalTo?: unknown;
+      startAt?: { value: unknown; key?: string };
+      startAfter?: { value: unknown; key?: string };
+      endAt?: { value: unknown; key?: string };
+      limitToFirst?: number;
+      limitToLast?: number;
+    } = {},
+  ): Record<string, unknown> {
+    const next = (patch: Partial<typeof state>) => queryFor(path, { ...state, ...patch });
+    return {
+      orderByChild: (child: string) => next({ orderByChild: child }),
+      equalTo: (value: unknown) => next({ equalTo: value }),
+      startAt: (value: unknown, key?: string) => next({
+        startAt: { value, ...(key === undefined ? {} : { key }) },
+      }),
+      startAfter: (value: unknown, key?: string) => next({
+        startAfter: { value, ...(key === undefined ? {} : { key }) },
+      }),
+      endAt: (value: unknown, key?: string) => next({
+        endAt: { value, ...(key === undefined ? {} : { key }) },
+      }),
+      limitToFirst: (limit: number) => next({ limitToFirst: limit }),
+      limitToLast: (limit: number) => next({ limitToLast: limit }),
+      get: async () => {
+        if (!state.orderByChild) return databaseGet(path);
+        queryCalls.push({
+          path,
+          orderByChild: state.orderByChild,
+          ...(state.equalTo === undefined ? {} : { equalTo: state.equalTo }),
+          ...(state.startAt === undefined ? {} : { startAt: state.startAt }),
+          ...(state.startAfter === undefined ? {} : { startAfter: state.startAfter }),
+          ...(state.endAt === undefined ? {} : { endAt: state.endAt }),
+          ...(state.limitToFirst === undefined ? {} : { limitToFirst: state.limitToFirst }),
+          ...(state.limitToLast === undefined ? {} : { limitToLast: state.limitToLast }),
+        });
+        const raw = pathValues.get(path);
+        const entries = (raw && typeof raw === "object"
+          ? Object.entries(raw as Record<string, unknown>)
+          : []).sort(([leftKey, leftValue], [rightKey, rightValue]) => {
+            const leftChild = leftValue && typeof leftValue === "object"
+              ? (leftValue as Record<string, unknown>)[state.orderByChild!]
+              : undefined;
+            const rightChild = rightValue && typeof rightValue === "object"
+              ? (rightValue as Record<string, unknown>)[state.orderByChild!]
+              : undefined;
+            const childComparison = String(leftChild) < String(rightChild)
+              ? -1
+              : String(leftChild) > String(rightChild)
+                ? 1
+                : 0;
+            return childComparison || firebaseKeyCompare(leftKey, rightKey);
+          });
+        const selected = entries.filter(([key, value]) => {
+          if (!value || typeof value !== "object") return false;
+          const child = (value as Record<string, unknown>)[state.orderByChild!];
+          if (state.equalTo !== undefined && child !== state.equalTo) return false;
+          if (state.startAt !== undefined) {
+            const childComparison = String(child) < String(state.startAt.value)
+              ? -1
+              : String(child) > String(state.startAt.value)
+                ? 1
+                : 0;
+            if (childComparison < 0) return false;
+            if (childComparison === 0 && state.startAt.key !== undefined
+              && firebaseKeyCompare(key, state.startAt.key) < 0) return false;
+          }
+          if (state.startAfter !== undefined) {
+            const childComparison = String(child) < String(state.startAfter.value)
+              ? -1
+              : String(child) > String(state.startAfter.value)
+                ? 1
+                : 0;
+            if (childComparison < 0) return false;
+            if (childComparison === 0 && state.startAfter.key !== undefined
+              && firebaseKeyCompare(key, state.startAfter.key) <= 0) return false;
+            if (childComparison === 0 && state.startAfter.key === undefined) return false;
+          }
+          if (state.endAt !== undefined) {
+            const childComparison = String(child) < String(state.endAt.value)
+              ? -1
+              : String(child) > String(state.endAt.value)
+                ? 1
+                : 0;
+            if (childComparison > 0) return false;
+            if (childComparison === 0 && state.endAt.key !== undefined
+              && firebaseKeyCompare(key, state.endAt.key) > 0) return false;
+          }
+          return true;
+        });
+        const limited = state.limitToFirst === undefined
+          ? state.limitToLast === undefined
+            ? selected
+            : selected.slice(-state.limitToLast)
+          : selected.slice(0, state.limitToFirst);
+        const value = Object.fromEntries(limited);
+        return {
+          val: () => Object.keys(value).length === 0 ? null : value,
+          exists: () => Object.keys(value).length > 0,
+        };
+      },
+    };
+  }
   return {
     onCall: vi.fn((options: unknown, handler: unknown) => ({
       kind: "callable",
@@ -72,13 +222,31 @@ const registrations = vi.hoisted(() => {
       options,
       handler,
     })),
+    onValueCreated: vi.fn((options: unknown, handler: unknown) => ({
+      kind: "database-created",
+      options,
+      handler,
+    })),
+    onSchedule: vi.fn((options: unknown, handler: unknown) => ({
+      kind: "schedule",
+      options,
+      handler,
+    })),
+    defineSecret: vi.fn((name: string) => {
+      const secret = {
+        name,
+        value: () => secretValues.get(name) ?? "",
+      };
+      definedSecrets.push(secret);
+      return secret;
+    }),
     initializeApp: vi.fn(),
     rebuildMapProjectionForBuilding: vi.fn(async () => undefined),
     databaseTransaction,
     databaseGet,
     databaseUpdate,
     databaseRef: vi.fn((path = "") => ({
-      get: () => databaseGet(path),
+      ...queryFor(path),
       transaction: (
         update: (current: unknown) => unknown,
         onComplete?: unknown,
@@ -110,6 +278,10 @@ const registrations = vi.hoisted(() => {
     transactionStates,
     transactionPaths,
     transactionCurrent,
+    transactionRetryCurrent,
+    queryCalls,
+    definedSecrets,
+    secretValues,
   };
 });
 
@@ -146,7 +318,16 @@ vi.mock("firebase-functions/v2/https", () => ({
 }));
 
 vi.mock("firebase-functions/v2/database", () => ({
+  onValueCreated: registrations.onValueCreated,
   onValueWritten: registrations.onValueWritten,
+}));
+
+vi.mock("firebase-functions/v2/scheduler", () => ({
+  onSchedule: registrations.onSchedule,
+}));
+
+vi.mock("firebase-functions/params", () => ({
+  defineSecret: registrations.defineSecret,
 }));
 
 vi.mock("../src/field/rebuild-map-projection.js", () => ({
@@ -157,7 +338,7 @@ vi.mock("../src/field/rebuild-map-projection.js", () => ({
 import * as entrypoints from "../src/index.js";
 
 interface RegisteredEntrypoint {
-  kind: "callable" | "database";
+  kind: "callable" | "database" | "database-created" | "schedule";
   options: Record<string, unknown>;
   handler: unknown;
 }
@@ -246,6 +427,132 @@ function validCallableRequest(data: unknown) {
   };
 }
 
+function validReviewerCallableRequest(data: unknown) {
+  return {
+    auth: {
+      uid: "reviewer-1",
+      token: {
+        fieldPlatform: true,
+        fieldRole: "reviewer",
+        name: "Verified reviewer",
+        auth_time: 1_723_181_696,
+      },
+    },
+    data,
+  };
+}
+
+const AD_REQUEST_ID = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
+const AD_SESSION_ID = "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb";
+const AD_MEDIA_IDS = Array.from({ length: 10 }, (_, index) =>
+  `cccccccc-cccc-4ccc-8ccc-${String(index + 1).padStart(12, "0")}`,
+);
+const AD_ZONES = [
+  ["exterior", "photo"],
+  ["accessRoad", "photo"],
+  ["commonEntrance", "photo"],
+  ["roomOverview", "photo"],
+  ["roomOverview", "photo"],
+  ["windowDaylight", "photo"],
+  ["kitchen", "photo"],
+  ["bathroom", "photo"],
+  ["boilerEquipment", "photo"],
+  ["verticalVideo", "video"],
+] as const;
+
+function validAdMedia(id: string, index: number) {
+  const [zone, kind] = AD_ZONES[index];
+  const mimeType = kind === "photo" ? "image/jpeg" : "video/mp4";
+  return {
+    id,
+    requestId: `request-${index}`,
+    buildingId: "building-1",
+    unitId: "unit-1",
+    listingId: "listing-1",
+    visitId: "visit-1",
+    captureSessionId: AD_SESSION_ID,
+    capturedBy: "staff-1",
+    kind,
+    zone,
+    slotId: `slot-${index + 1}`,
+    required: true,
+    mimeType,
+    sizeBytes: 2_048,
+    capturedAt: `2026-08-10T04:${String(index).padStart(2, "0")}:00.000Z`,
+    storagePath: `field-media-finalized/building-1/${id}.${kind === "photo" ? "jpg" : "mp4"}`,
+    objectGeneration: String(1_000 + index),
+    objectMd5Hash: "1B2M2Y8AsgTpgAmY7PhCfg==",
+    uploadState: "finalized",
+    uploadProgress: 100,
+    driveSyncState: "queued",
+    advertisingApproved: true,
+    ...(kind === "video" ? { captureQualityState: "valid" } : {}),
+  };
+}
+
+function validAdPlatformRoot() {
+  return {
+    buildings: {
+      "building-1": {
+        id: "building-1",
+        managementNumber: "BR-001",
+        name: "Bring House",
+        roadAddress: "1 Bring-ro, Wonju",
+        parking: { available: true },
+      },
+    },
+    units: {
+      "unit-1": {
+        id: "unit-1",
+        buildingId: "building-1",
+        unitLabel: "201",
+        options: [],
+      },
+    },
+    listings: {
+      "listing-1": {
+        id: "listing-1",
+        buildingId: "building-1",
+        unitId: "unit-1",
+        unitLabel: "201",
+        status: "ready",
+        advertisingApproved: true,
+        depositWon: 5_000_000,
+        monthlyRentWon: 450_000,
+        maintenanceFeeWon: 50_000,
+        maintenanceFeeItems: [],
+        availableFrom: "2026-08-11",
+        locationDescription: "near terminal",
+        parkingDescription: "one car",
+        petPolicy: "ask owner",
+        options: [],
+      },
+    },
+    captureSessions: {
+      [AD_SESSION_ID]: {
+        id: AD_SESSION_ID,
+        buildingId: "building-1",
+        unitId: "unit-1",
+        listingId: "listing-1",
+        status: "complete",
+      },
+    },
+    media: Object.fromEntries(AD_MEDIA_IDS.map((id, index) => [id, validAdMedia(id, index)])),
+    adPackages: {},
+    adPackageVersions: {},
+    auditLogs: {},
+  };
+}
+
+function validCreateAdPackageData() {
+  return {
+    requestId: AD_REQUEST_ID,
+    listingId: "listing-1",
+    approvedMediaIds: [...AD_MEDIA_IDS],
+    representativeMediaIds: [AD_MEDIA_IDS[0]],
+  };
+}
+
 const OWNER_NOTE_PATH = "fieldPlatform/ownerNotes/building-1/note_12345678";
 const OWNER_RATE_PATH =
   "fieldPlatform/serverState/rateLimits/ownerNotes/staff-1/1723181696/append";
@@ -327,6 +634,13 @@ beforeEach(() => {
   registrations.transactionStates.length = 0;
   registrations.transactionPaths.length = 0;
   registrations.transactionCurrent.value = null;
+  registrations.transactionRetryCurrent.value = undefined;
+  registrations.queryCalls.length = 0;
+  registrations.secretValues.set("DRIVE_CLIENT_ID", "client-id.apps.googleusercontent.com");
+  registrations.secretValues.set("DRIVE_CLIENT_SECRET", "client-secret");
+  registrations.secretValues.set("DRIVE_REFRESH_TOKEN", "refresh-token");
+  registrations.secretValues.set("DRIVE_ROOT_FOLDER_ID", "root-1");
+  registrations.secretValues.set("DRIVE_ROOT_MODE", "appCreated");
 });
 
 describe("Firebase entrypoint metadata", () => {
@@ -435,6 +749,8 @@ describe("Firebase entrypoint metadata", () => {
       entrypoints.getFieldMediaAccess,
       entrypoints.excludeFieldMedia,
       entrypoints.listFieldCaptureWorkspace,
+      entrypoints.createAdPackage,
+      entrypoints.listAdPackageReviewCandidates,
     ]) {
       expect(registration(callable)).toMatchObject({
         kind: "callable",
@@ -494,15 +810,476 @@ describe("Firebase entrypoint metadata", () => {
     });
   });
 
-  it("keeps provisionFieldUser exported while registering exactly thirteen entrypoints", () => {
+  it("binds the five Drive runtime secrets to the retried create trigger", () => {
+    expect(registrations.defineSecret.mock.calls.map(([name]) => name)).toEqual([
+      "DRIVE_CLIENT_ID",
+      "DRIVE_CLIENT_SECRET",
+      "DRIVE_REFRESH_TOKEN",
+      "DRIVE_ROOT_FOLDER_ID",
+      "DRIVE_ROOT_MODE",
+    ]);
+    expect(registration(entrypoints.syncFieldMediaToDrive)).toMatchObject({
+      kind: "database-created",
+      options: {
+        ref: "/fieldPlatform/driveSyncJobs/{jobId}",
+        instance: "bring-fm-hj-default-rtdb",
+        region: "asia-southeast1",
+        retry: true,
+        timeoutSeconds: 540,
+        memory: "1GiB",
+        maxInstances: 10,
+        concurrency: 4,
+      },
+    });
+    expect(
+      (registration(entrypoints.syncFieldMediaToDrive).options.secrets as Array<{
+        name: string;
+      }>).map((secret) => secret.name),
+    ).toEqual([
+      "DRIVE_CLIENT_ID",
+      "DRIVE_CLIENT_SECRET",
+      "DRIVE_REFRESH_TOKEN",
+      "DRIVE_ROOT_FOLDER_ID",
+      "DRIVE_ROOT_MODE",
+    ]);
+  });
+
+  it("registers bounded five-minute Drive recovery with the same secrets", () => {
+    expect(registration(entrypoints.recoverFieldMediaDriveSync)).toMatchObject({
+      kind: "schedule",
+      options: {
+        schedule: "every 5 minutes",
+        timeZone: "Asia/Seoul",
+        region: "asia-southeast1",
+        retryCount: 0,
+        timeoutSeconds: 540,
+        memory: "1GiB",
+        maxInstances: 1,
+        concurrency: 1,
+      },
+    });
+    expect(
+      (registration(entrypoints.recoverFieldMediaDriveSync).options.secrets as Array<{
+        name: string;
+      }>).map((secret) => secret.name),
+    ).toEqual([
+      "DRIVE_CLIENT_ID",
+      "DRIVE_CLIENT_SECRET",
+      "DRIVE_REFRESH_TOKEN",
+      "DRIVE_ROOT_FOLDER_ID",
+      "DRIVE_ROOT_MODE",
+    ]);
+  });
+
+  it("registers retried ad-package generation and bounded recovery with the five Drive secrets", () => {
+    expect(registration(entrypoints.generateFieldAdPackageToDrive)).toMatchObject({
+      kind: "database-created",
+      options: {
+        ref: "/fieldPlatform/adPackages/{packageId}",
+        instance: "bring-fm-hj-default-rtdb",
+        region: "asia-southeast1",
+        retry: true,
+        timeoutSeconds: 540,
+        memory: "1GiB",
+        maxInstances: 5,
+        concurrency: 2,
+      },
+    });
+    expect(registration(entrypoints.recoverFieldAdPackageGeneration)).toMatchObject({
+      kind: "schedule",
+      options: {
+        schedule: "every 5 minutes",
+        timeZone: "Asia/Seoul",
+        region: "asia-southeast1",
+        retryCount: 0,
+        timeoutSeconds: 540,
+        memory: "1GiB",
+        maxInstances: 1,
+        concurrency: 1,
+      },
+    });
+    for (const value of [
+      entrypoints.generateFieldAdPackageToDrive,
+      entrypoints.recoverFieldAdPackageGeneration,
+    ]) {
+      expect((registration(value).options.secrets as Array<{ name: string }>)
+        .map((secret) => secret.name)).toEqual([
+          "DRIVE_CLIENT_ID",
+          "DRIVE_CLIENT_SECRET",
+          "DRIVE_REFRESH_TOKEN",
+          "DRIVE_ROOT_FOLDER_ID",
+          "DRIVE_ROOT_MODE",
+        ]);
+    }
+  });
+
+  it("claims then records an alertable safe failure when OAuth runtime config is invalid", async () => {
+    const mediaId = "22222222-2222-4222-8222-222222222222";
+    registrations.secretValues.set("DRIVE_REFRESH_TOKEN", "sensitive-refresh-token");
+    registrations.secretValues.set("DRIVE_ROOT_MODE", "invalid-mode");
+    registrations.transactionCurrent.value = {
+      media: {
+        [mediaId]: {
+          id: mediaId,
+          buildingId: "building-1",
+          storagePath: `field-media-finalized/building-1/${mediaId}.jpg`,
+          objectGeneration: "1740000000000001",
+          driveSyncState: "queued",
+        },
+      },
+      driveSyncJobs: {
+        [mediaId]: {
+          id: mediaId,
+          mediaId,
+          buildingId: "building-1",
+          storagePath: `field-media-finalized/building-1/${mediaId}.jpg`,
+          objectGeneration: "1740000000000001",
+          status: "queued",
+          attemptCount: 0,
+          createdAt: "2026-08-10T03:00:00.000Z",
+          updatedAt: "2026-08-10T03:00:00.000Z",
+        },
+      },
+    };
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-08-10T04:00:00.000Z"));
+    try {
+      await expect((registration(entrypoints.syncFieldMediaToDrive).handler as (
+        event: { params: { jobId: string } },
+      ) => Promise<void>)({ params: { jobId: mediaId } })).rejects.toThrow(
+        "drive_sync_retryable",
+      );
+    } finally {
+      vi.useRealTimers();
+    }
+
+    expect(registrations.transactionPaths.filter((path) => path === "fieldPlatform"))
+      .toHaveLength(2);
+    expect(registrations.transactionCurrent.value).toMatchObject({
+      driveSyncJobs: {
+        [mediaId]: {
+          status: "failed",
+          lastErrorCode: "drive_oauth_config_invalid",
+        },
+      },
+      driveSyncAlerts: {
+        [mediaId]: {
+          mediaId,
+          status: "open",
+          code: "drive_oauth_config_invalid",
+        },
+      },
+    });
+    expect(JSON.stringify(registrations.transactionCurrent.value)).not.toContain(
+      "sensitive-refresh-token",
+    );
+  });
+
+  it("scans Drive recovery jobs by three indexed statuses with hard limits", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-08-10T04:00:00.000Z"));
+    try {
+      await expect(
+        (registration(entrypoints.recoverFieldMediaDriveSync).handler as (
+          event: { scheduleTime: string },
+        ) => Promise<void>)({ scheduleTime: "2026-08-10T03:00:00.000Z" }),
+      ).resolves.toBeUndefined();
+    } finally {
+      vi.useRealTimers();
+    }
+
+    expect(registrations.queryCalls).toEqual([
+      {
+        path: "fieldPlatform/driveSyncJobs",
+        orderByChild: "recoveryKey",
+        startAt: { value: "queued|" },
+        endAt: { value: "queued|\uf8ff" },
+        limitToFirst: 20,
+      },
+      {
+        path: "fieldPlatform/driveSyncJobs",
+        orderByChild: "recoveryKey",
+        startAt: { value: "failed|" },
+        endAt: { value: "failed|2026-08-10T04:00:00.000Z|\uf8ff" },
+        limitToFirst: 20,
+      },
+      {
+        path: "fieldPlatform/driveSyncJobs",
+        orderByChild: "recoveryKey",
+        startAt: { value: "syncing|" },
+        endAt: { value: "syncing|2026-08-10T04:00:00.000Z|\uf8ff" },
+        limitToFirst: 20,
+      },
+    ]);
+  });
+
+  it("keeps provisionFieldUser exported while registering all nineteen entrypoints", () => {
     expect(entrypoints.provisionFieldUser).toBeDefined();
     expect(registration(entrypoints.provisionFieldUser)).toMatchObject({
       kind: "callable",
       options: { region: "asia-northeast3" },
     });
     expect(registrations.initializeApp).toHaveBeenCalledTimes(1);
-    expect(registrations.onCall).toHaveBeenCalledTimes(10);
+    expect(registrations.onCall).toHaveBeenCalledTimes(12);
     expect(registrations.onValueWritten).toHaveBeenCalledTimes(3);
+    expect(registrations.onValueCreated).toHaveBeenCalledTimes(2);
+    expect(registrations.onSchedule).toHaveBeenCalledTimes(2);
+  });
+
+  it("scans package recovery by the nested composite index with live time and hard limits", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-08-10T06:00:00.000Z"));
+    try {
+      await expect((registration(entrypoints.recoverFieldAdPackageGeneration).handler as (
+        event: { scheduleTime: string },
+      ) => Promise<void>)({ scheduleTime: "1999-01-01T00:00:00.000Z" }))
+        .resolves.toBeUndefined();
+    } finally {
+      vi.useRealTimers();
+    }
+
+    expect(registrations.queryCalls).toEqual([
+      {
+        path: "fieldPlatform/adPackages",
+        orderByChild: "generation/recoveryKey",
+        startAt: { value: "reviewed|" },
+        endAt: { value: "reviewed|2026-08-10T06:00:00.000Z|\uf8ff" },
+        limitToFirst: 8,
+      },
+      {
+        path: "fieldPlatform/adPackages",
+        orderByChild: "generation/recoveryKey",
+        startAt: { value: "failed|" },
+        endAt: { value: "failed|2026-08-10T06:00:00.000Z|\uf8ff" },
+        limitToFirst: 8,
+      },
+      {
+        path: "fieldPlatform/adPackages",
+        orderByChild: "generation/recoveryKey",
+        startAt: { value: "generating|" },
+        endAt: { value: "generating|2026-08-10T06:00:00.000Z|\uf8ff" },
+        limitToFirst: 8,
+      },
+    ]);
+  });
+
+  it("commits an ad package with exactly one fieldPlatform root transaction", async () => {
+    registrations.pathValues.set("fieldPlatform/users/reviewer-1", {
+      enabled: true,
+      role: "reviewer",
+    });
+    registrations.pathValues.set("fieldPlatform/users/reviewer-1/enabled", true);
+    registrations.transactionCurrent.value = validAdPlatformRoot();
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-08-10T05:00:00.000Z"));
+    try {
+      await expect(callableHandler(entrypoints.createAdPackage)(
+        validReviewerCallableRequest(validCreateAdPackageData()),
+      )).resolves.toEqual({
+        packageId: `ad-package-${AD_REQUEST_ID}`,
+        listingId: "listing-1",
+        version: 1,
+        status: "reviewed",
+      });
+
+      expect(registrations.transactionPaths.filter((path) => path === "fieldPlatform"))
+        .toEqual(["fieldPlatform"]);
+      expect(registrations.transactionPaths).toContain(
+        "fieldPlatform/rateLimits/createPackage/reviewer-1/1723181696",
+      );
+      expect(registrations.transactionPaths).not.toContain(
+        "fieldPlatform/rateLimits/createPackage/reviewer-1/listing-1",
+      );
+      expect(registrations.databaseUpdate).not.toHaveBeenCalledWith(
+        "",
+        expect.objectContaining({
+          [`fieldPlatform/adPackages/ad-package-${AD_REQUEST_ID}`]: expect.anything(),
+        }),
+      );
+      expect(registrations.transactionCurrent.value).toMatchObject({
+        adPackageVersions: { "listing-1": 1 },
+        adPackageLatest: {
+          "listing-1": `ad-package-${AD_REQUEST_ID}`,
+        },
+        adPackages: {
+          [`ad-package-${AD_REQUEST_ID}`]: {
+            requestId: AD_REQUEST_ID,
+            status: "reviewed",
+          },
+        },
+      });
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("revalidates transaction retry state and commits nothing when listing becomes stale", async () => {
+    registrations.pathValues.set("fieldPlatform/users/reviewer-1", {
+      enabled: true,
+      role: "reviewer",
+    });
+    registrations.pathValues.set("fieldPlatform/users/reviewer-1/enabled", true);
+    registrations.transactionCurrent.value = validAdPlatformRoot();
+    const stale = validAdPlatformRoot();
+    stale.listings["listing-1"].status = "closed";
+    registrations.transactionRetryCurrent.value = stale;
+
+    await expect(callableHandler(entrypoints.createAdPackage)(
+      validReviewerCallableRequest(validCreateAdPackageData()),
+    )).rejects.toMatchObject({
+      code: "failed-precondition",
+      message: "ad_package_listing_incomplete",
+    });
+    expect(registrations.transactionPaths.filter((path) => path === "fieldPlatform"))
+      .toEqual([]);
+    expect(registrations.transactionCurrent.value).not.toHaveProperty(
+      `adPackages.ad-package-${AD_REQUEST_ID}`,
+    );
+  });
+
+  it("lists review candidates through bounded indexed queries and point reads", async () => {
+    registrations.pathValues.set("fieldPlatform/users/reviewer-1", {
+      enabled: true,
+      role: "reviewer",
+    });
+    registrations.pathValues.set("fieldPlatform/users/reviewer-1/enabled", true);
+    const root = validAdPlatformRoot();
+    (root.listings["listing-1"] as Record<string, unknown>).ownerPhone = "SECRET-OWNER";
+    registrations.pathValues.set("fieldPlatform/listings", root.listings);
+    const sharedMedia = structuredClone(root.media);
+    delete (sharedMedia[AD_MEDIA_IDS[0]] as Record<string, unknown>).unitId;
+    delete (sharedMedia[AD_MEDIA_IDS[0]] as Record<string, unknown>).listingId;
+    registrations.pathValues.set("fieldPlatform/media", sharedMedia);
+    registrations.pathValues.set("fieldPlatform/adPackages", {
+      "ad-package-old": {
+        id: "ad-package-old",
+        listingId: "listing-1",
+        version: 1,
+        representativeMediaIds: [AD_MEDIA_IDS[0]],
+        allApprovedMediaIds: AD_MEDIA_IDS,
+        status: "complete",
+        driveFolderId: "SECRET-DRIVE",
+      },
+    });
+    registrations.pathValues.set(
+      "fieldPlatform/adPackageLatest/listing-1",
+      "ad-package-latest",
+    );
+    registrations.pathValues.set(
+      "fieldPlatform/adPackages/ad-package-latest",
+      {
+        id: "ad-package-latest",
+        listingId: "listing-1",
+        version: 99,
+        representativeMediaIds: [AD_MEDIA_IDS[1]],
+        allApprovedMediaIds: AD_MEDIA_IDS,
+        status: "reviewed",
+        driveFolderId: "SECRET-LATEST-DRIVE",
+      },
+    );
+    registrations.pathValues.set(
+      "fieldPlatform/buildings/building-1",
+      { ...root.buildings["building-1"], commonDoorPassword: "SECRET-DOOR" },
+    );
+    registrations.pathValues.set("fieldPlatform/units/unit-1", root.units["unit-1"]);
+    registrations.pathValues.set(
+      `fieldPlatform/captureSessions/${AD_SESSION_ID}`,
+      root.captureSessions[AD_SESSION_ID],
+    );
+
+    const result = await callableHandler(entrypoints.listAdPackageReviewCandidates)(
+      validReviewerCallableRequest(undefined),
+    );
+
+    expect(result).toMatchObject({
+      candidates: [{
+        listing: { id: "listing-1", status: "ready" },
+        building: { id: "building-1" },
+        unit: { id: "unit-1" },
+        media: expect.arrayContaining([
+          expect.objectContaining({ id: AD_MEDIA_IDS[0] }),
+        ]),
+        captureSessions: [{ id: AD_SESSION_ID, status: "complete" }],
+        packages: [
+          { id: "ad-package-latest", version: 99 },
+          { id: "ad-package-old", version: 1 },
+        ],
+      }],
+    });
+    expect((result as { candidates: Array<{ media: unknown[] }> }).candidates[0].media)
+      .toHaveLength(10);
+    expect(JSON.stringify(result)).not.toMatch(/SECRET-/);
+    expect(registrations.queryCalls).toEqual(expect.arrayContaining([
+      { path: "fieldPlatform/listings", orderByChild: "status", equalTo: "reviewPending", limitToFirst: 50 },
+      { path: "fieldPlatform/listings", orderByChild: "status", equalTo: "ready", limitToFirst: 50 },
+      { path: "fieldPlatform/listings", orderByChild: "status", equalTo: "advertising", limitToFirst: 50 },
+      { path: "fieldPlatform/media", orderByChild: "listingId", equalTo: "listing-1", limitToFirst: 100 },
+      { path: "fieldPlatform/media", orderByChild: "buildingId", equalTo: "building-1", limitToFirst: 100 },
+      { path: "fieldPlatform/adPackages", orderByChild: "listingId", equalTo: "listing-1", limitToLast: 20 },
+    ]));
+    expect(registrations.transactionPaths).toContain(
+      "fieldPlatform/rateLimits/reviewCandidates/reviewer-1/1723181696",
+    );
+    expect(registrations.databaseGet).toHaveBeenCalledWith(
+      "fieldPlatform/adPackageLatest/listing-1",
+    );
+    expect(registrations.databaseGet).toHaveBeenCalledWith(
+      "fieldPlatform/adPackages/ad-package-latest",
+    );
+    for (const path of [
+      "fieldPlatform/listings",
+      "fieldPlatform/buildings",
+      "fieldPlatform/units",
+      "fieldPlatform/media",
+      "fieldPlatform/adPackages",
+      "fieldPlatform/captureSessions",
+    ]) {
+      expect(registrations.databaseGet).not.toHaveBeenCalledWith(path);
+    }
+
+    const paged = await callableHandler(entrypoints.listAdPackageReviewCandidates)(
+      validReviewerCallableRequest({ cursor: "listing-0" }),
+    );
+    expect((paged as { candidates: unknown[] }).candidates).toHaveLength(1);
+    expect(registrations.queryCalls).toEqual(expect.arrayContaining([
+      {
+        path: "fieldPlatform/listings",
+        orderByChild: "status",
+        startAfter: { value: "reviewPending", key: "listing-0" },
+        endAt: { value: "reviewPending" },
+        limitToFirst: 50,
+      },
+      {
+        path: "fieldPlatform/listings",
+        orderByChild: "status",
+        startAfter: { value: "ready", key: "listing-0" },
+        endAt: { value: "ready" },
+        limitToFirst: 50,
+      },
+      {
+        path: "fieldPlatform/listings",
+        orderByChild: "status",
+        startAfter: { value: "advertising", key: "listing-0" },
+        endAt: { value: "advertising" },
+        limitToFirst: 50,
+      },
+    ]));
+  });
+
+  it("blocks staff from review candidates before any listing query", async () => {
+    registrations.pathValues.set("fieldPlatform/users/staff-1", {
+      enabled: true,
+      role: "staff",
+    });
+    registrations.pathValues.set("fieldPlatform/users/staff-1/enabled", true);
+
+    await expect(callableHandler(entrypoints.listAdPackageReviewCandidates)(
+      validCallableRequest({}),
+    )).rejects.toMatchObject({
+      code: "permission-denied",
+      message: "ad_package_forbidden",
+    });
+    expect(registrations.queryCalls).toEqual([]);
   });
 
   it("returns assigned capture workspace data through one protected rate-limited callable", async () => {
@@ -603,6 +1380,7 @@ describe("Firebase entrypoint metadata", () => {
     ["access", entrypoints.getFieldMediaAccess],
     ["exclude", entrypoints.excludeFieldMedia],
     ["workspace", entrypoints.listFieldCaptureWorkspace],
+    ["ad review candidates", entrypoints.listAdPackageReviewCandidates],
   ])("rejects a consumed limited-use App Check token for %s", async (_name, callable) => {
     await expect(callableHandler(callable)({
       ...validCallableRequest({}),

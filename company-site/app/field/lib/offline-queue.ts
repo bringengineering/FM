@@ -36,6 +36,10 @@ export interface QueuedMediaRecord {
   objectGeneration?: string;
   objectMd5Hash?: string;
   storagePath?: string;
+  driveFileId?: string;
+  driveFolderId?: string;
+  driveResumableUri?: string;
+  driveUploadedBytes?: number;
   driveSyncState: DriveSyncState;
   retryCount: number;
   lastError?: string;

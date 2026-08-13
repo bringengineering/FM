@@ -639,14 +639,14 @@
       <div class="map-error" id="mapError">
         <div>
           <b>네이버 지도를 불러오지 못했습니다.</b>
-          <p>네이버 클라우드 콘솔의 Web 서비스 URL에 https://bringengineering1008-pixel.github.io 를 추가해 주세요. 공식 주소까지 쓰려면 https://bringengineering.github.io 도 같이 추가하면 됩니다.</p>
+          <p>네이버 클라우드 콘솔의 Web 서비스 URL에 현재 운영 주소 https://bring-fm.web.app 을 추가해 주세요. 기존 GitHub 지도도 함께 쓰려면 https://bringengineering1008-pixel.github.io 와 https://bringengineering.github.io 도 유지해 주세요.</p>
         </div>
       </div>
     </section>
   </main>
 
   <script>
-    const DEFAULT_NAVER_MAPS_KEY = "1iu68jzhci";
+    const DEFAULT_NAVER_MAPS_KEY = "x8ss41zmo0";
     const NAVER_MAPS_KEY_STORAGE = "bring_naver_maps_key";
     const MAP_MODE_STORAGE = "bring_map_mode";
     const params = new URLSearchParams(window.location.search);
@@ -659,13 +659,13 @@
       complete: "촬영 완료"
     });
     const FIELD_FIREBASE_CONFIG = {
-      apiKey: "AIzaSyAeAvJIeu5hOHQ-aT6YurHdPh1thO-NYmo",
-      authDomain: "bring-fm-hj.firebaseapp.com",
-      databaseURL: "https://bring-fm-hj-default-rtdb.asia-southeast1.firebasedatabase.app",
-      projectId: "bring-fm-hj",
-      storageBucket: "bring-fm-hj.firebasestorage.app",
-      messagingSenderId: "975975605634",
-      appId: "1:975975605634:web:34ae9d7af84b3ee9ea5b9b"
+      apiKey: "AIzaSyBKOTIuQ8pOKSuaeKFQs_6UDdDnxdjCTZg",
+      authDomain: "bring-fm.firebaseapp.com",
+      databaseURL: "https://bring-fm-default-rtdb.asia-southeast1.firebasedatabase.app",
+      projectId: "bring-fm",
+      storageBucket: "bring-fm.firebasestorage.app",
+      messagingSenderId: "864976295990",
+      appId: "1:864976295990:web:194f145b1b4dad58eb6097"
     };
 
     const embedded = params.get("embedded") === "field";
@@ -936,6 +936,7 @@
       els.managedList.innerHTML = records.map(record => `
         <article class="managed-card">
           <b>${esc(record.name)}</b>
+          <span>${esc(record.managementNumber || "관리번호 확인 필요")}</span>
           <span>${esc(record.roadAddress || "주소 확인 필요")}</span>
           <span>공실 ${record.vacancyCount}건 · ${esc(record.approvedRentSummary)}</span>
           <span>${esc(record.parkingSummary)} · ${esc(captureLabel(record.captureStatus))}</span>
@@ -947,6 +948,7 @@
       const safe = FIELD_MODEL.safePropertyPopupModel(record);
       return `<div class="info">
         <h2>${esc(safe.name)}</h2>
+        <p><b>관리번호</b> ${esc(safe.managementNumber)}</p>
         <p><b>주소</b> ${esc(safe.roadAddress || "주소 확인 필요")}</p>
         <p><b>공실</b> ${safe.vacancyCount}건</p>
         <p><b>승인 광고조건</b> ${esc(safe.approvedRentSummary)}</p>

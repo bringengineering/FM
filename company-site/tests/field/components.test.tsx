@@ -30,7 +30,9 @@ import type {
 import {
   REGISTRATION_DRAFT_VERSION,
   activeWizardDraftKey,
+  createRegistrationDraft,
   type SaveFieldRegistrationInput,
+  type StoredRegistrationDraft,
   wizardDraftStorageKey,
 } from "../../app/field/lib/registration-draft";
 import type { Building, OwnerNote, OwnerNoteDraft } from "../../app/field/lib/types";
@@ -40,6 +42,39 @@ const staffSession = {
   displayName: "BRING staff",
   role: "staff" as const,
 };
+
+function uploadRecord(
+  mediaId: string,
+  uploadState: "queued" | "uploading" | "failed" | "finalized",
+  uploadProgress: number,
+  driveSyncState: "notRequested" | "complete" = "notRequested",
+): QueuedMediaRecord {
+  return {
+    key: `${staffSession.uid}:${mediaId}`,
+    uid: staffSession.uid,
+    mediaId,
+    requestId: `request-${mediaId}`,
+    captureSessionId: "session-live",
+    descriptor: {
+      mediaId,
+      captureSessionId: "session-live",
+      kind: "photo",
+      zone: "roomOverview",
+      slotId: `slot-${mediaId}`,
+      required: true,
+      originalFileName: `${mediaId}.jpg`,
+      mimeType: "image/jpeg",
+      sizeBytes: 1024,
+      lastModified: 0,
+      capturedAt: "2026-08-13T06:00:00.000Z",
+      uploadState,
+      uploadProgress,
+    },
+    binding: {},
+    driveSyncState,
+    retryCount: 0,
+  };
+}
 
 function SessionProbe() {
   const session = useFieldSession();
@@ -551,6 +586,61 @@ describe("OwnerNotesPanel", () => {
 });
 
 describe("BuildingWizard", () => {
+  it("restores a newer Firebase draft and saves subsequent changes back to the server", async () => {
+    let idCall = 0;
+    const value = createRegistrationDraft(undefined, () => (
+      ++idCall === 1
+        ? "server-sync-draft"
+        : "11111111-1111-4111-8111-111111111111"
+    ));
+    const remote: StoredRegistrationDraft = {
+      ownerUid: staffSession.uid,
+      draftId: "server-sync-draft",
+      updatedAt: "2099-08-12T12:00:00.000Z",
+      value: {
+        ...value,
+        building: { ...value.building, name: "서버에서 작성한 건물" },
+      },
+    };
+    const draftServer = {
+      load: vi.fn(async () => remote),
+      save: vi.fn(async () => undefined),
+      remove: vi.fn(async () => undefined),
+    };
+
+    render(
+      <BuildingWizard
+        session={staffSession}
+        draftId="server-sync-draft"
+        draftServer={draftServer}
+      />,
+    );
+
+    expect(await screen.findByDisplayValue("서버에서 작성한 건물")).toBeInTheDocument();
+    fireEvent.change(screen.getByLabelText("건물명"), {
+      target: { value: "서버 자동저장 건물" },
+    });
+
+    await waitFor(() => expect(draftServer.save).toHaveBeenCalledWith(
+      expect.objectContaining({
+        ownerUid: staffSession.uid,
+        draftId: "server-sync-draft",
+        value: expect.objectContaining({
+          building: expect.objectContaining({ name: "서버 자동저장 건물" }),
+        }),
+      }),
+    ));
+    expect(await screen.findByText("Firebase 서버 자동저장 완료"))
+      .toBeInTheDocument();
+  });
+
+  it("shows management numbers as server-issued instead of editable", () => {
+    render(<BuildingWizard session={staffSession} draftId="automatic-management-number" />);
+
+    const field = screen.getByLabelText("내부 관리번호");
+    expect(field).toHaveAttribute("readonly");
+    expect(field).toHaveValue("저장 시 자동 발급");
+  });
   it("saves, starts the capture session, binds IDs, then resumes uploads in order", async () => {
     const events: string[] = [];
     const registration = {
@@ -625,7 +715,7 @@ describe("BuildingWizard", () => {
       },
     });
 
-    expect(await screen.findByText("기기에 저장됨 · 서버 등록 대기"))
+    expect(await screen.findByText("기기에 저장됨 · Drive 업로드 대기"))
       .toBeInTheDocument();
     await waitFor(() => {
       const stored = window.localStorage.getItem(
@@ -670,7 +760,7 @@ describe("BuildingWizard", () => {
 
     fireEvent.click(next);
 
-    expect(screen.getByText("내부 관리번호를 입력해 주세요.")).toBeInTheDocument();
+    expect(screen.getByLabelText("내부 관리번호")).toHaveValue("저장 시 자동 발급");
     expect(screen.getByRole("group", { name: "건물 기본정보" })).toBeInTheDocument();
   });
 
@@ -1075,7 +1165,7 @@ describe("BuildingWizard", () => {
   it("shows field-level validation errors", () => {
     render(<BuildingWizard session={staffSession} draftId="validation-errors" />);
     fireEvent.click(screen.getByRole("button", { name: "다음 단계" }));
-    expect(screen.getByText("내부 관리번호를 입력해 주세요.")).toBeInTheDocument();
+    expect(screen.getByLabelText("내부 관리번호")).toHaveValue("저장 시 자동 발급");
     expect(screen.getByText("건물명을 입력해 주세요.")).toBeInTheDocument();
     expect(screen.getByLabelText("건물명")).toHaveAttribute("aria-invalid", "true");
   });
@@ -1306,6 +1396,19 @@ describe("BuildingWizard", () => {
 });
 
 describe("AppShell", () => {
+  it("uses the supplied Bring Care logo for desktop and mobile branding", () => {
+    render(
+      <AppShell active="home" session={staffSession} onLogout={() => undefined}>
+        <div>내용</div>
+      </AppShell>,
+    );
+
+    const logos = screen.getAllByRole("img", { name: "Bring Care" });
+    expect(logos).toHaveLength(2);
+    expect(logos.every((logo) => logo.getAttribute("src") === "/bring-care-logo.png"))
+      .toBe(true);
+  });
+
   it("renders the five approved platform destinations", () => {
     render(
       <AppShell active="home" session={staffSession} onLogout={() => undefined}>
@@ -1346,6 +1449,62 @@ describe("AppShell", () => {
 });
 
 describe("FieldWorkspace capture integration", () => {
+  it("refreshes the device-wide upload summary every second and on connectivity events", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-08-13T07:00:00.000Z"));
+    let records = [uploadRecord("queued", "queued", 0)];
+    const listUploads = vi.fn(async () => records);
+    const queue = {
+      list: listUploads,
+      countPending: vi.fn(async () => records.length),
+      close: vi.fn(),
+    } as unknown as OfflineQueuePort;
+    const coordinator = {
+      resume: vi.fn(async () => undefined),
+      retry: vi.fn(async () => undefined),
+      start: vi.fn(() => vi.fn()),
+    };
+    const view = render(
+      <FieldSessionProvider session={staffSession}>
+        <FieldWorkspace
+          queueFactory={async () => queue}
+          coordinatorFactory={() => coordinator}
+        />
+      </FieldSessionProvider>,
+    );
+
+    try {
+      await act(async () => {
+        await Promise.resolve();
+        await Promise.resolve();
+      });
+      expect(screen.getByRole("status", { name: "업로드 현황" }))
+        .toHaveTextContent("오늘 1업로드 중 1완료 0실패 0");
+
+      records = [
+        uploadRecord("complete", "finalized", 100, "complete"),
+        uploadRecord("failed", "failed", 25),
+      ];
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(1_000);
+      });
+      expect(screen.getByRole("status", { name: "업로드 현황" }))
+        .toHaveTextContent("오늘 2업로드 중 0완료 1실패 1");
+
+      window.dispatchEvent(new Event("online"));
+      window.dispatchEvent(new Event("focus"));
+      await act(async () => {
+        await Promise.resolve();
+        await Promise.resolve();
+      });
+      expect(queue.list).toHaveBeenCalledWith(staffSession.uid);
+      expect(listUploads.mock.calls.length).toBeGreaterThanOrEqual(4);
+    } finally {
+      view.unmount();
+      vi.useRealTimers();
+    }
+  });
+
   it("opens the real assigned capture workspace instead of a placeholder", async () => {
     const queue = {
       listPending: vi.fn(async () => []),
@@ -1418,7 +1577,7 @@ describe("FieldWorkspace capture integration", () => {
     await waitFor(() => {
       expect(queue.countPending).toHaveBeenCalledWith(staffSession.uid);
       expect(confirmExit).toHaveBeenCalledWith(
-        "서버 등록 대기 파일이 2개 있습니다. 로그아웃하면 이 계정으로 다시 로그인할 때까지 업로드가 멈춥니다. 로그아웃할까요?",
+        "Drive 업로드 대기 파일이 2개 있습니다. 로그아웃하면 이 계정으로 다시 로그인할 때까지 업로드가 멈춥니다. 로그아웃할까요?",
       );
     });
     expect(logout).not.toHaveBeenCalled();

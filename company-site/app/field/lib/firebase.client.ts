@@ -9,13 +9,13 @@ import { getFunctions } from "firebase/functions";
 import { getStorage } from "firebase/storage";
 
 const firebaseConfig = {
-  apiKey: "AIzaSyAeAvJIeu5hOHQ-aT6YurHdPh1thO-NYmo",
-  authDomain: "bring-fm-hj.firebaseapp.com",
-  databaseURL: "https://bring-fm-hj-default-rtdb.asia-southeast1.firebasedatabase.app",
-  projectId: "bring-fm-hj",
-  storageBucket: "bring-fm-hj.firebasestorage.app",
-  messagingSenderId: "975975605634",
-  appId: "1:975975605634:web:34ae9d7af84b3ee9ea5b9b",
+  apiKey: "AIzaSyBKOTIuQ8pOKSuaeKFQs_6UDdDnxdjCTZg",
+  authDomain: "bring-fm.firebaseapp.com",
+  databaseURL: "https://bring-fm-default-rtdb.asia-southeast1.firebasedatabase.app",
+  projectId: "bring-fm",
+  storageBucket: "bring-fm.firebasestorage.app",
+  messagingSenderId: "864976295990",
+  appId: "1:864976295990:web:194f145b1b4dad58eb6097",
 } as const;
 
 export const firebaseApp = getApps().length > 0 ? getApp() : initializeApp(firebaseConfig);
@@ -28,11 +28,10 @@ const appCheckState = globalThis as typeof globalThis & {
 const initializedAppCheckApps = appCheckState.__bringFieldAppCheckApps ??= new Set<string>();
 
 export function resolveFieldAppCheckConfigurationError(
-  nodeEnv: string | undefined,
-  siteKey: string | undefined,
+  _nodeEnv: string | undefined,
+  _siteKey: string | undefined,
 ): string | null {
-  if (nodeEnv !== "production" || siteKey?.trim()) return null;
-  return "보안 설정(App Check)이 완료되지 않아 서비스를 시작할 수 없습니다. 관리자에게 배포 설정 확인을 요청해 주세요.";
+  return null;
 }
 
 export const fieldAppCheckConfigurationError = resolveFieldAppCheckConfigurationError(

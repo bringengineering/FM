@@ -11,11 +11,13 @@ import {
 
 import type { FieldSession } from "../lib/auth.client";
 import {
-  appendOwnerNote as defaultAppendOwnerNote,
-  archiveOwnerNote as defaultArchiveOwnerNote,
   subscribeOwnerNotes as defaultSubscribeOwnerNotes,
   type AppendOwnerNoteInput,
 } from "../lib/field-api.client";
+import {
+  appendOwnerNoteDirect as defaultAppendOwnerNote,
+  archiveOwnerNoteDirect as defaultArchiveOwnerNote,
+} from "../lib/direct-owner-notes.client";
 import type { OwnerNote, OwnerNoteDraft } from "../lib/types";
 
 const NOTE_MAX_LENGTH = 2_000;

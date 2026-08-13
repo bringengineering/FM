@@ -175,10 +175,34 @@ describe("CaptureGuide", () => {
       "capture",
       "environment",
     );
+    expect(screen.getByLabelText("외관 사진첩에서 추가")).toHaveAttribute(
+      "multiple",
+    );
+    expect(screen.getByLabelText("외관 사진첩에서 추가")).not.toHaveAttribute(
+      "capture",
+    );
+    expect(screen.getByLabelText("10~20초 세로영상 사진첩에서 추가"))
+      .not.toHaveAttribute("capture");
     expect(
       screen.getAllByTestId("capture-zone").map((card) =>
         card.getAttribute("data-zone")),
     ).toEqual(CAPTURE_ZONES.map((zone) => zone.id));
+  });
+
+  it("adds every selected gallery photo to the existing capture zone", async () => {
+    const queue = createQueue([queuedRecord()]);
+    renderGuide(queue);
+    const gallery = await screen.findByLabelText("외관 사진첩에서 추가");
+    const first = new File(["one"], "one.jpg", { type: "image/jpeg" });
+    const second = new File(["two"], "two.jpg", { type: "image/jpeg" });
+
+    fireEvent.change(gallery, { target: { files: [first, second] } });
+
+    await waitFor(() => expect(queue.enqueue).toHaveBeenCalledTimes(2));
+    expect(vi.mocked(queue.enqueue).mock.calls.map(([item]) => item.blob))
+      .toEqual([first, second]);
+    expect(queue.records.filter((record) => record.descriptor.zone === "exterior"))
+      .toHaveLength(3);
   });
 
   it("shows local saved status only after enqueue commits and resets the input", async () => {
@@ -213,11 +237,11 @@ describe("CaptureGuide", () => {
 
     fireEvent.change(input, { target: { files: [file] } });
     await waitFor(() => expect(queue.enqueue).toHaveBeenCalledOnce());
-    expect(screen.queryByText("기기에 저장됨 · 서버 등록 대기")).not.toBeInTheDocument();
+    expect(screen.queryByText("기기에 저장됨 · Drive 업로드 대기")).not.toBeInTheDocument();
     expect(coordinator.resume).not.toHaveBeenCalled();
 
     await act(async () => commit?.());
-    expect(await screen.findByText("기기에 저장됨 · 서버 등록 대기"))
+    expect(await screen.findByText("기기에 저장됨 · Drive 업로드 대기"))
       .toBeInTheDocument();
     expect(queue.enqueue).toHaveBeenCalledWith(expect.objectContaining({
       uid: "staff-1",

@@ -1,20 +1,62 @@
 import { Buffer } from "node:buffer";
+import { randomUUID } from "node:crypto";
 
 import { getApps, initializeApp } from "firebase-admin/app";
 import { getAuth } from "firebase-admin/auth";
 import { getDatabase, ServerValue } from "firebase-admin/database";
 import { getStorage } from "firebase-admin/storage";
-import { onValueWritten } from "firebase-functions/v2/database";
+import {
+  onValueCreated,
+  onValueWritten,
+} from "firebase-functions/v2/database";
 import {
   HttpsError,
   onCall,
   type CallableRequest,
 } from "firebase-functions/v2/https";
+import { defineSecret } from "firebase-functions/params";
+import { onSchedule } from "firebase-functions/v2/scheduler";
 
 import {
   provisionFieldUserCore,
   type FieldRole,
 } from "./auth/provision-field-user.js";
+import {
+  createFinalizedMediaStorageAdapter,
+  createGoogleDriveMediaAdapterFromOAuth,
+  type FinalizedMediaBucketLike,
+} from "./drive/google-drive-adapter.js";
+import { readDriveOAuthConfig } from "./drive/google-auth.js";
+import { driveRecoveryRange } from "./drive/recovery-key.js";
+import {
+  DriveSyncRetryableError,
+  processDriveSyncJob,
+  runDriveSyncRecovery,
+  type DriveSyncRuntimeDatabase,
+  type DriveSyncRuntimeDependencies,
+  type RecoveryJobRecord,
+} from "./drive/runtime.js";
+import type { DriveMediaAdapter } from "./drive/sync-media.js";
+import {
+  createAdPackageCore,
+  reduceAdPackageCommit,
+  type CreateAdPackageDependencies,
+  type CreateAdPackageInput,
+} from "./packages/create-ad-package.js";
+import { adPackageRecoveryRange } from "./packages/generation-recovery-key.js";
+import {
+  AD_PACKAGE_RECOVERY_LIMIT,
+  AdPackageGenerationRetryableError,
+  processAdPackageGeneration,
+  runAdPackageGenerationRecovery,
+  type AdPackageGenerationRuntimeDatabase,
+  type AdPackageGenerationRuntimeDependencies,
+  type AdPackageRecoveryRecord,
+} from "./packages/generation-runtime.js";
+import {
+  listAdPackageReviewCandidatesCore,
+  type ListAdPackageReviewCandidatesDependencies,
+} from "./packages/list-ad-package-review-candidates.js";
 import type {
   FieldActor,
   SaveFieldRegistrationInput,
@@ -88,6 +130,19 @@ const adminDatabase = getDatabase();
 const mediaBucket = getStorage().bucket();
 const FIELD_ID_BYTES = 128;
 
+const driveClientId = defineSecret("DRIVE_CLIENT_ID");
+const driveClientSecret = defineSecret("DRIVE_CLIENT_SECRET");
+const driveRefreshToken = defineSecret("DRIVE_REFRESH_TOKEN");
+const driveRootFolderId = defineSecret("DRIVE_ROOT_FOLDER_ID");
+const driveRootMode = defineSecret("DRIVE_ROOT_MODE");
+const driveSecrets = [
+  driveClientId,
+  driveClientSecret,
+  driveRefreshToken,
+  driveRootFolderId,
+  driveRootMode,
+];
+
 type UnknownRecord = Record<string, unknown>;
 
 function isRecord(value: unknown): value is UnknownRecord {
@@ -111,6 +166,11 @@ function isPathSafeId(value: unknown): value is string {
 function snapshotValues<T>(value: unknown): T[] {
   if (typeof value !== "object" || value === null) return [];
   return Object.values(value) as T[];
+}
+
+function snapshotKeyedValues(value: unknown): unknown[] {
+  if (typeof value !== "object" || value === null) return [];
+  return Object.entries(value).map(([key, record]) => ({ key, value: record }));
 }
 
 function denyFieldAccess(): never {
@@ -317,6 +377,38 @@ function rethrowMediaCallableError(error: unknown): never {
     throw new HttpsError("failed-precondition", message);
   }
   throw new HttpsError("internal", "field_media_internal");
+}
+
+function rethrowAdPackageCallableError(error: unknown): never {
+  if (error instanceof HttpsError) throw error;
+  const message = error instanceof Error ? error.message : "ad_package_unknown";
+  if (message === "field_rate_limit_exceeded") {
+    throw new HttpsError("resource-exhausted", message);
+  }
+  if (
+    message === "ad_package_invalid"
+    || message === "ad_review_candidates_invalid"
+    || message === "ad_package_representative_media_invalid"
+    || message === "ad_package_approved_media_invalid"
+  ) {
+    throw new HttpsError("invalid-argument", message);
+  }
+  if (message === "ad_package_forbidden") {
+    throw new HttpsError("permission-denied", message);
+  }
+  if (message === "ad_package_request_conflict") {
+    throw new HttpsError("already-exists", message);
+  }
+  if (
+    message === "ad_package_listing_incomplete"
+    || message === "ad_package_listing_not_approved"
+    || message === "ad_package_required_media_missing"
+    || message === "ad_package_capture_session_invalid"
+    || message === "ad_package_media_state_invalid"
+  ) {
+    throw new HttpsError("failed-precondition", message);
+  }
+  throw new HttpsError("internal", "ad_package_internal");
 }
 
 async function getBuilding(
@@ -766,8 +858,270 @@ const captureWorkspaceDependencies: ListCaptureWorkspaceDependencies = {
   listCaptureSessions: () => listFieldCollection("fieldPlatform/captureSessions"),
 };
 
+const adPackageDependencies: CreateAdPackageDependencies = {
+  isEnabled: isEnabledFieldUser,
+  async commit(input) {
+    const reference = adminDatabase.ref("fieldPlatform");
+    const transaction = await reference.transaction(
+      (current) => {
+        const decision = reduceAdPackageCommit(current, input);
+        return decision.write ? decision.state : undefined;
+      },
+      undefined,
+      false,
+    );
+    const finalDecision = reduceAdPackageCommit(
+      transaction.snapshot.val(),
+      input,
+    );
+    if (transaction.committed && finalDecision.status === "alreadyCommitted") {
+      return {
+        status: "committed",
+        write: true,
+        state: transaction.snapshot.val(),
+        result: finalDecision.result,
+      };
+    }
+    return finalDecision;
+  },
+  now: () => new Date().toISOString(),
+};
+
+const adReviewCandidateDependencies: ListAdPackageReviewCandidatesDependencies = {
+  isEnabled: isEnabledFieldUser,
+  async listListingsByStatus(status, limit, cursor) {
+    let query = adminDatabase
+      .ref("fieldPlatform/listings")
+      .orderByChild("status");
+    query = cursor === undefined
+      ? query.equalTo(status)
+      : query.startAfter(status, cursor).endAt(status);
+    const snapshot = await query.limitToFirst(limit).get();
+    return snapshotKeyedValues(snapshot.val());
+  },
+  readBuilding: (buildingId) => readFieldRecord(
+    `fieldPlatform/buildings/${buildingId}`,
+  ),
+  readUnit: (unitId) => readFieldRecord(`fieldPlatform/units/${unitId}`),
+  async listMediaByListing(listingId, limit) {
+    const snapshot = await adminDatabase
+      .ref("fieldPlatform/media")
+      .orderByChild("listingId")
+      .equalTo(listingId)
+      .limitToFirst(limit)
+      .get();
+    return snapshotValues<unknown>(snapshot.val());
+  },
+  async listMediaByBuilding(buildingId, limit) {
+    const snapshot = await adminDatabase
+      .ref("fieldPlatform/media")
+      .orderByChild("buildingId")
+      .equalTo(buildingId)
+      .limitToFirst(limit)
+      .get();
+    return snapshotValues<unknown>(snapshot.val());
+  },
+  readCaptureSession: (captureSessionId) => readFieldRecord(
+    `fieldPlatform/captureSessions/${captureSessionId}`,
+  ),
+  async listPackagesByListing(listingId, limit) {
+    const snapshot = await adminDatabase
+      .ref("fieldPlatform/adPackages")
+      .orderByChild("listingId")
+      .equalTo(listingId)
+      .limitToLast(limit)
+      .get();
+    return snapshotValues<unknown>(snapshot.val());
+  },
+  readLatestPackageId: (listingId) => readFieldRecord(
+    `fieldPlatform/adPackageLatest/${listingId}`,
+  ),
+  readPackage: (packageId) => readFieldRecord(
+    `fieldPlatform/adPackages/${packageId}`,
+  ),
+};
+
+const driveSyncRuntimeDatabase: DriveSyncRuntimeDatabase = {
+  async transactionRoot(update) {
+    const transaction = await adminDatabase.ref("fieldPlatform").transaction(
+      update,
+      undefined,
+      false,
+    );
+    return {
+      committed: transaction.committed,
+      state: transaction.snapshot.val(),
+    };
+  },
+  async listRecoveryJobs(input) {
+    const reference = adminDatabase.ref("fieldPlatform/driveSyncJobs");
+    const range = input.kind === "queued"
+      ? driveRecoveryRange("queued")
+      : driveRecoveryRange(
+        input.kind === "failedDue" ? "failed" : "syncing",
+        input.dueAtOrBefore,
+      );
+    const query = reference
+      .orderByChild("recoveryKey")
+      .startAt(range.startAt)
+      .endAt(range.endAt)
+      .limitToFirst(input.limit);
+    const snapshot = await query.get();
+    const value: unknown = snapshot.val();
+    if (!isRecord(value)) return [];
+    return Object.entries(value).map(([id, job]): RecoveryJobRecord => ({
+      id,
+      value: job,
+    }));
+  },
+};
+
+function createDriveSyncRuntimeDependencies(
+  now: () => string = () => new Date().toISOString(),
+): DriveSyncRuntimeDependencies {
+  let config: ReturnType<typeof readDriveOAuthConfig> | undefined;
+  const readConfig = () => {
+    config ??= readDriveOAuthConfig({
+      DRIVE_CLIENT_ID: driveClientId.value(),
+      DRIVE_CLIENT_SECRET: driveClientSecret.value(),
+      DRIVE_REFRESH_TOKEN: driveRefreshToken.value(),
+      DRIVE_ROOT_FOLDER_ID: driveRootFolderId.value(),
+      DRIVE_ROOT_MODE: driveRootMode.value(),
+    });
+    return config;
+  };
+  let validatedDrive: Promise<ReturnType<
+    typeof createGoogleDriveMediaAdapterFromOAuth
+  >> | undefined;
+  const resolveDrive = () => {
+    validatedDrive ??= (async () => {
+      const currentConfig = readConfig();
+      const adapter = createGoogleDriveMediaAdapterFromOAuth(currentConfig);
+      await adapter.validateRootFolder({
+        rootFolderId: currentConfig.rootFolderId,
+        rootMode: currentConfig.rootMode,
+      });
+      return adapter;
+    })();
+    return validatedDrive;
+  };
+  const drive: DriveMediaAdapter = {
+    async listExactFolders(input) {
+      return (await resolveDrive()).listExactFolders(input);
+    },
+    async createFolder(input) {
+      return (await resolveDrive()).createFolder(input);
+    },
+    async listExactMediaFiles(input) {
+      return (await resolveDrive()).listExactMediaFiles(input);
+    },
+    async uploadMediaFile(input) {
+      return (await resolveDrive()).uploadMediaFile(input);
+    },
+    async startResumableMediaUpload(input) {
+      return (await resolveDrive()).startResumableMediaUpload(input);
+    },
+    async probeResumableMediaUpload(input) {
+      return (await resolveDrive()).probeResumableMediaUpload(input);
+    },
+    async uploadResumableMediaChunk(input) {
+      return (await resolveDrive()).uploadResumableMediaChunk(input);
+    },
+  };
+  return {
+    database: driveSyncRuntimeDatabase,
+    storage: createFinalizedMediaStorageAdapter(
+      mediaBucket as unknown as FinalizedMediaBucketLike,
+    ),
+    drive,
+    get rootFolderId() {
+      return readConfig().rootFolderId;
+    },
+    now,
+    randomToken: () => randomUUID(),
+  };
+}
+
+const adPackageGenerationRuntimeDatabase: AdPackageGenerationRuntimeDatabase = {
+  async transactionRoot(update) {
+    const transaction = await adminDatabase.ref("fieldPlatform").transaction(
+      update,
+      undefined,
+      false,
+    );
+    return {
+      committed: transaction.committed,
+      state: transaction.snapshot.val(),
+    };
+  },
+  async listRecoveryPackages(input) {
+    const status = input.kind === "reviewed"
+      ? "reviewed"
+      : input.kind === "failedDue"
+        ? "failed"
+        : "generating";
+    const range = adPackageRecoveryRange(status, input.dueAtOrBefore);
+    const snapshot = await adminDatabase
+      .ref("fieldPlatform/adPackages")
+      .orderByChild("generation/recoveryKey")
+      .startAt(range.startAt)
+      .endAt(range.endAt)
+      .limitToFirst(Math.min(input.limit, AD_PACKAGE_RECOVERY_LIMIT))
+      .get();
+    const value: unknown = snapshot.val();
+    if (!isRecord(value)) return [];
+    return Object.entries(value).map(([id, pkg]): AdPackageRecoveryRecord => ({
+      id,
+      value: pkg,
+    }));
+  },
+};
+
+function createAdPackageGenerationRuntimeDependencies(
+  now: () => string = () => new Date().toISOString(),
+): AdPackageGenerationRuntimeDependencies {
+  let config: ReturnType<typeof readDriveOAuthConfig> | undefined;
+  const readConfig = () => {
+    config ??= readDriveOAuthConfig({
+      DRIVE_CLIENT_ID: driveClientId.value(),
+      DRIVE_CLIENT_SECRET: driveClientSecret.value(),
+      DRIVE_REFRESH_TOKEN: driveRefreshToken.value(),
+      DRIVE_ROOT_FOLDER_ID: driveRootFolderId.value(),
+      DRIVE_ROOT_MODE: driveRootMode.value(),
+    });
+    return config;
+  };
+  let validatedDrive: Promise<ReturnType<
+    typeof createGoogleDriveMediaAdapterFromOAuth
+  >> | undefined;
+  const resolveDrive = () => {
+    validatedDrive ??= (async () => {
+      const currentConfig = readConfig();
+      const adapter = createGoogleDriveMediaAdapterFromOAuth(currentConfig);
+      await adapter.validateRootFolder({
+        rootFolderId: currentConfig.rootFolderId,
+        rootMode: currentConfig.rootMode,
+      });
+      return adapter;
+    })();
+    return validatedDrive;
+  };
+  return {
+    database: adPackageGenerationRuntimeDatabase,
+    resolveDrive,
+    now,
+    randomToken: () => randomUUID(),
+  };
+}
+
 function mediaRateReference(
-  operation: "finalize" | "mediaAccess" | "exclude" | "captureWorkspace",
+  operation:
+    | "finalize"
+    | "mediaAccess"
+    | "exclude"
+    | "captureWorkspace"
+    | "createPackage"
+    | "reviewCandidates",
   uid: string,
   sessionId: string,
 ) {
@@ -1073,6 +1427,64 @@ export const listFieldCaptureWorkspace = onCall<Record<string, never>>(
   },
 );
 
+export const createAdPackage = onCall<CreateAdPackageInput>(
+  protectedMediaCallableOptions,
+  async (request) => {
+    if (!request.auth) {
+      throw new HttpsError("unauthenticated", "field_auth_required");
+    }
+    rejectConsumedAppCheckToken(request);
+    try {
+      const actor = await requireFieldActor(request);
+      await consumeRateLimit(
+        mediaRateReference(
+          "createPackage",
+          actor.uid,
+          actor.sessionId ?? "current",
+        ),
+        { limit: 30, windowMs: 600_000, nowMs: Date.now() },
+      );
+      return await createAdPackageCore(
+        request.data,
+        { uid: actor.uid, role: actor.role },
+        adPackageDependencies,
+      );
+    } catch (error) {
+      return rethrowAdPackageCallableError(error);
+    }
+  },
+);
+
+export const listAdPackageReviewCandidates = onCall<
+  undefined | { cursor?: string }
+>(
+  protectedMediaCallableOptions,
+  async (request) => {
+    if (!request.auth) {
+      throw new HttpsError("unauthenticated", "field_auth_required");
+    }
+    rejectConsumedAppCheckToken(request);
+    try {
+      const actor = await requireFieldActor(request);
+      await consumeRateLimit(
+        mediaRateReference(
+          "reviewCandidates",
+          actor.uid,
+          actor.sessionId ?? "current",
+        ),
+        { limit: 60, windowMs: 600_000, nowMs: Date.now() },
+      );
+      return await listAdPackageReviewCandidatesCore(
+        request.data,
+        { uid: actor.uid, role: actor.role },
+        adReviewCandidateDependencies,
+      );
+    } catch (error) {
+      return rethrowAdPackageCallableError(error);
+    }
+  },
+);
+
 export const appendOwnerNote = onCall(
   { region: "asia-northeast3", enforceAppCheck: true },
   async (request) => {
@@ -1102,6 +1514,96 @@ export const archiveOwnerNote = onCall(
       );
     } catch (error) {
       return rethrowOwnerNoteCallableError(error);
+    }
+  },
+);
+
+export const syncFieldMediaToDrive = onValueCreated(
+  {
+    ref: "/fieldPlatform/driveSyncJobs/{jobId}",
+    instance: "bring-fm-hj-default-rtdb",
+    region: "asia-southeast1",
+    retry: true,
+    timeoutSeconds: 540,
+    memory: "1GiB",
+    maxInstances: 10,
+    concurrency: 4,
+    secrets: driveSecrets,
+  },
+  async (event) => {
+    const dependencies = createDriveSyncRuntimeDependencies();
+    try {
+      await processDriveSyncJob(event.params.jobId, dependencies);
+    } catch (error) {
+      if (error instanceof DriveSyncRetryableError) throw error;
+      throw new Error("drive_sync_runtime_failed");
+    }
+  },
+);
+
+export const recoverFieldMediaDriveSync = onSchedule(
+  {
+    schedule: "every 5 minutes",
+    timeZone: "Asia/Seoul",
+    region: "asia-southeast1",
+    retryCount: 0,
+    timeoutSeconds: 540,
+    memory: "1GiB",
+    maxInstances: 1,
+    concurrency: 1,
+    secrets: driveSecrets,
+  },
+  async () => {
+    const dependencies = createDriveSyncRuntimeDependencies();
+    try {
+      await runDriveSyncRecovery(dependencies);
+    } catch {
+      throw new Error("drive_recovery_failed");
+    }
+  },
+);
+
+export const generateFieldAdPackageToDrive = onValueCreated(
+  {
+    ref: "/fieldPlatform/adPackages/{packageId}",
+    instance: "bring-fm-hj-default-rtdb",
+    region: "asia-southeast1",
+    retry: true,
+    timeoutSeconds: 540,
+    memory: "1GiB",
+    maxInstances: 5,
+    concurrency: 2,
+    secrets: driveSecrets,
+  },
+  async (event) => {
+    const dependencies = createAdPackageGenerationRuntimeDependencies();
+    try {
+      await processAdPackageGeneration(event.params.packageId, dependencies);
+    } catch (error) {
+      if (error instanceof AdPackageGenerationRetryableError) throw error;
+      throw new Error("ad_package_generation_runtime_failed");
+    }
+  },
+);
+
+export const recoverFieldAdPackageGeneration = onSchedule(
+  {
+    schedule: "every 5 minutes",
+    timeZone: "Asia/Seoul",
+    region: "asia-southeast1",
+    retryCount: 0,
+    timeoutSeconds: 540,
+    memory: "1GiB",
+    maxInstances: 1,
+    concurrency: 1,
+    secrets: driveSecrets,
+  },
+  async () => {
+    const dependencies = createAdPackageGenerationRuntimeDependencies();
+    try {
+      await runAdPackageGenerationRecovery(dependencies);
+    } catch {
+      throw new Error("ad_package_generation_recovery_failed");
     }
   },
 );

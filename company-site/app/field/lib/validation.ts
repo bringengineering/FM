@@ -54,9 +54,6 @@ function hasAnswer(value: ChecklistAnswer | undefined): boolean {
 export function validateBuildingDraft(draft: BuildingDraft): string[] {
   const errors: string[] = [];
 
-  if (!isNonBlankString(draft.managementNumber)) {
-    errors.push("managementNumber");
-  }
   if (!isNonBlankString(draft.name)) {
     errors.push("name");
   }

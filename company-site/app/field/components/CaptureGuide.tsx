@@ -149,14 +149,14 @@ function uploadStatus(record: QueuedMediaRecord): string {
   if (record.driveSyncState === "complete") return "Drive 동기화 완료";
   switch (record.descriptor.uploadState) {
     case "queued":
-      return "서버 등록 대기";
+      return "Drive 업로드 대기";
     case "uploading":
-      return `서버 전송 중 ${Math.round(record.descriptor.uploadProgress)}%`;
+      return `Drive 업로드 중 ${Math.round(record.descriptor.uploadProgress)}%`;
     case "objectStored":
     case "finalizing":
-      return "서버 등록 중";
+      return "Drive 등록 중";
     case "finalized":
-      return "서버 등록 완료";
+      return "Drive 등록 완료";
     case "failed":
       return "업로드 실패 · 다시 시도해 주세요";
   }
@@ -174,7 +174,16 @@ function errorMessage(error: unknown): string {
     return "지원하지 않는 파일 형식입니다. 기본 카메라 형식으로 다시 촬영해 주세요.";
   }
   if (code === "capture_exclude_unavailable") {
-    return "서버 등록 사진을 제외할 수 없습니다. 연결을 확인한 뒤 다시 시도해 주세요.";
+    return "Drive 저장 사진을 제외할 수 없습니다. 연결을 확인한 뒤 다시 시도해 주세요.";
+  }
+  if (code === "drive_connection_required" || code === "drive_authorization_required") {
+    return "화면 위의 ‘Google Drive 연결’을 먼저 눌러 회사 계정으로 연결해 주세요.";
+  }
+  if (code === "drive_root_access_denied") {
+    return "BRING Drive 폴더 편집 권한이 없습니다. 회사 계정과 폴더 권한을 확인해 주세요.";
+  }
+  if (code === "drive_temporarily_unavailable") {
+    return "Google Drive 연결이 일시적으로 불안정합니다. 잠시 뒤 다시 시도해 주세요.";
   }
   return "촬영 파일을 저장하지 못했습니다. 다시 시도해 주세요.";
 }
@@ -219,6 +228,7 @@ export default function CaptureGuide({
   const signedPreviews = useRef(new Map<string, SignedPreview>());
   const signedTimers = useRef(new Map<string, ReturnType<typeof setTimeout>>());
   const inputRefs = useRef(new Map<MediaZone, HTMLInputElement>());
+  const galleryInputRefs = useRef(new Map<MediaZone, HTMLInputElement>());
   const replacementRef = useRef<QueuedMediaRecord | null>(null);
   const pendingVideoRef = useRef<PendingVideo | null>(null);
   const pendingVideoTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -397,7 +407,7 @@ export default function CaptureGuide({
         timers.set(mediaId, timer);
       } catch {
         if (!cancelled && activeScope.current === expectedScope) {
-          setWarning("서버 미리보기를 불러오지 못했습니다. 잠시 후 다시 시도해 주세요.");
+          setWarning("Drive 미리보기를 불러오지 못했습니다. 잠시 후 다시 시도해 주세요.");
         }
       }
     };
@@ -442,7 +452,7 @@ export default function CaptureGuide({
       .then(() => loadRecords())
       .catch(() => {
         if (activeScope.current === committedScope) {
-          setWarning("서버 전송을 시작하지 못했습니다. 연결되면 다시 시도합니다.");
+          setWarning("Drive 업로드를 시작하지 못했습니다. 연결되면 다시 시도합니다.");
         }
       });
   }, [coordinator, loadRecords, session.uid]);
@@ -501,7 +511,7 @@ export default function CaptureGuide({
     await activeQueue.enqueue(enqueueInput);
     void requestPersistentCaptureStorage();
     if (activeScope.current !== committedScope) return;
-    setMessage("기기에 저장됨 · 서버 등록 대기");
+    setMessage("기기에 저장됨 · Drive 업로드 대기");
     // The finalizer excludes the predecessor in the same authorized multi-path
     // commit as the replacement. Hide it locally now, but keep the server copy
     // available if the new upload is interrupted or rejected.
@@ -554,7 +564,7 @@ export default function CaptureGuide({
       refreshPreviewSources();
       if (timedOut && activeScope.current === pending.scopeKey) {
         setWarning(
-          "영상 정보를 확인하지 못했습니다. 원본은 저장되었으며 서버에서 다시 확인합니다.",
+          "영상 정보를 확인하지 못했습니다. 원본은 저장되었으며 Drive 업로드 전에 다시 확인합니다.",
         );
       }
       setPendingVideo(null);
@@ -616,21 +626,23 @@ export default function CaptureGuide({
     event: ChangeEvent<HTMLInputElement>,
   ) => {
     const input = event.currentTarget;
-    const file = input.files?.[0];
-    if (!file) {
+    const files = Array.from(input.files ?? []);
+    if (files.length === 0) {
       replacementRef.current = null;
       return;
     }
     setError("");
     setWarning("");
     try {
-      const prepared = await prepareCapture(zone, file, input);
-      await enqueueCommittedFile(
-        prepared.enqueueInput,
-        prepared.scopeKey,
-        input,
-        prepared.replaces,
-      );
+      for (const file of files) {
+        const prepared = await prepareCapture(zone, file, input);
+        await enqueueCommittedFile(
+          prepared.enqueueInput,
+          prepared.scopeKey,
+          input,
+          prepared.replaces,
+        );
+      }
     } catch (caught) {
       input.value = "";
       if (activeScope.current === scopeKey) setError(errorMessage(caught));
@@ -714,6 +726,11 @@ export default function CaptureGuide({
     inputRefs.current.get(zone.id)?.click();
   }, []);
 
+  const openGallery = useCallback((zone: CaptureZoneDefinition) => {
+    replacementRef.current = null;
+    galleryInputRefs.current.get(zone.id)?.click();
+  }, []);
+
   const excludeRecord = useCallback(async (record: QueuedMediaRecord) => {
     const operationScope = scopeKey;
     setBusyMediaIds((current) => new Set(current).add(record.mediaId));
@@ -773,7 +790,7 @@ export default function CaptureGuide({
           <h2>광고용 사진·영상 촬영</h2>
           <p>구역별 안내에 맞춰 촬영하면 기기에 먼저 안전하게 저장됩니다.</p>
         </div>
-        <span>촬영본은 서버 등록 후에도 Drive 동기화 상태를 별도로 표시합니다.</span>
+        <span>촬영본은 기기에 먼저 보관되고 Google Drive로 자동 업로드됩니다.</span>
       </header>
 
       {message ? <p className="field-upload-state" aria-live="polite">{message}</p> : null}
@@ -825,40 +842,77 @@ export default function CaptureGuide({
                 : <em className="complete">촬영 기준 충족</em>}
 
               {zone.kind === "photo" ? (
-                <input
-                  ref={(node) => {
-                    if (node) inputRefs.current.set(zone.id, node);
-                    else inputRefs.current.delete(zone.id);
-                  }}
-                  className="field-sr-only"
-                  type="file"
-                  accept="image/*"
-                  capture="environment"
-                  aria-label={`${zone.label} 사진 촬영`}
-                  onChange={(event) => void handlePhoto(zone, event)}
-                />
+                <>
+                  <input
+                    ref={(node) => {
+                      if (node) inputRefs.current.set(zone.id, node);
+                      else inputRefs.current.delete(zone.id);
+                    }}
+                    className="field-sr-only"
+                    type="file"
+                    accept="image/*"
+                    capture="environment"
+                    aria-label={`${zone.label} 사진 촬영`}
+                    onChange={(event) => void handlePhoto(zone, event)}
+                  />
+                  <input
+                    ref={(node) => {
+                      if (node) galleryInputRefs.current.set(zone.id, node);
+                      else galleryInputRefs.current.delete(zone.id);
+                    }}
+                    className="field-sr-only"
+                    type="file"
+                    accept="image/*"
+                    multiple
+                    aria-label={`${zone.label} 사진첩에서 추가`}
+                    onChange={(event) => void handlePhoto(zone, event)}
+                  />
+                </>
               ) : (
-                <input
-                  ref={(node) => {
-                    if (node) inputRefs.current.set(zone.id, node);
-                    else inputRefs.current.delete(zone.id);
-                  }}
-                  className="field-sr-only"
-                  type="file"
-                  accept="video/*"
-                  capture="environment"
-                  aria-label={`${zone.label} 촬영`}
-                  onChange={(event) => void handleVideo(zone, event)}
-                />
+                <>
+                  <input
+                    ref={(node) => {
+                      if (node) inputRefs.current.set(zone.id, node);
+                      else inputRefs.current.delete(zone.id);
+                    }}
+                    className="field-sr-only"
+                    type="file"
+                    accept="video/*"
+                    capture="environment"
+                    aria-label={`${zone.label} 촬영`}
+                    onChange={(event) => void handleVideo(zone, event)}
+                  />
+                  <input
+                    ref={(node) => {
+                      if (node) galleryInputRefs.current.set(zone.id, node);
+                      else galleryInputRefs.current.delete(zone.id);
+                    }}
+                    className="field-sr-only"
+                    type="file"
+                    accept="video/*"
+                    aria-label={`${zone.label} 사진첩에서 추가`}
+                    onChange={(event) => void handleVideo(zone, event)}
+                  />
+                </>
               )}
-              <button
-                className="field-capture-camera"
-                type="button"
-                disabled={!activeQueue || Boolean(pendingVideo)}
-                onClick={() => openCamera(zone)}
-              >
-                {zone.kind === "photo" ? "사진 촬영" : "영상 촬영"}
-              </button>
+              <div className="field-capture-add-actions">
+                <button
+                  className="field-capture-camera"
+                  type="button"
+                  disabled={!activeQueue || Boolean(pendingVideo)}
+                  onClick={() => openCamera(zone)}
+                >
+                  {zone.kind === "photo" ? "카메라로 촬영" : "영상 촬영"}
+                </button>
+                <button
+                  className="field-capture-gallery"
+                  type="button"
+                  disabled={!activeQueue || Boolean(pendingVideo)}
+                  onClick={() => openGallery(zone)}
+                >
+                  사진첩에서 추가
+                </button>
+              </div>
 
               <div className="field-capture-preview-grid">
                 {pendingForZone ? (
@@ -923,7 +977,7 @@ export default function CaptureGuide({
                       {record.descriptor.kind === "video"
                         && !record.descriptor.videoMetadata ? (
                           <small className="field-capture-warning">
-                            영상 정보 확인 대기 · 서버에서 다시 확인합니다.
+                            영상 정보 확인 대기 · Drive 업로드 전에 다시 확인합니다.
                           </small>
                         ) : null}
                       {videoEvaluation?.warnings.map((item) => (

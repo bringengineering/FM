@@ -1,13 +1,18 @@
 import {
   GoogleAuthProvider,
   onAuthStateChanged,
-  signInWithRedirect,
+  signInWithPopup,
   signOut as firebaseSignOut,
 } from "firebase/auth";
 import { get, ref } from "firebase/database";
 import { httpsCallable } from "firebase/functions";
 
 import { auth, database, functions } from "./firebase.client";
+import {
+  BRING_COMPANY_GOOGLE_ACCOUNT,
+  GOOGLE_DRIVE_FILE_SCOPE,
+  driveTokenManager,
+} from "./drive-auth.client";
 import type { UserRole } from "./types";
 
 export interface FieldAuthUser {
@@ -75,17 +80,26 @@ async function sessionFromUser(
   };
 }
 
-const googleProvider = new GoogleAuthProvider();
-googleProvider.setCustomParameters({ prompt: "select_account" });
-
 const provisionCallable = httpsCallable<undefined, { enabled: boolean; role: UserRole }>(
   functions,
   "provisionFieldUser",
 );
 
 const defaultDependencies: FieldAuthDependencies = {
-  signInWithGoogle() {
-    return signInWithRedirect(auth, googleProvider);
+  async signInWithGoogle() {
+    const provider = new GoogleAuthProvider();
+    provider.addScope(GOOGLE_DRIVE_FILE_SCOPE);
+    provider.setCustomParameters({ login_hint: BRING_COMPANY_GOOGLE_ACCOUNT });
+    const result = await signInWithPopup(auth, provider);
+    if (result.user.email?.trim().toLowerCase() !== BRING_COMPANY_GOOGLE_ACCOUNT) {
+      await firebaseSignOut(auth).catch(() => undefined);
+      throw new Error("field_company_account_required");
+    }
+    const oauthCredential = GoogleAuthProvider.credentialFromResult(result);
+    if (oauthCredential?.accessToken) {
+      driveTokenManager.adoptAccessToken(oauthCredential.accessToken);
+    }
+    return result;
   },
   async provisionFieldUser() {
     await provisionCallable();
@@ -106,6 +120,9 @@ function errorCode(error: unknown): unknown {
 }
 
 function loginStartError(error: unknown): Error {
+  if (error instanceof Error && error.message === "field_company_account_required") {
+    return error;
+  }
   const code = errorCode(error);
   if (code === "auth/unauthorized-domain") {
     return new Error("field_login_domain_not_authorized");

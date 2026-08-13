@@ -19,6 +19,7 @@ import {
   type ProjectionBuilding,
   type ProjectionMedia,
 } from "../src/field/map-projection.js";
+import { buildDriveRecoveryKey } from "../src/drive/recovery-key.js";
 
 const REQUEST_ID = "11111111-1111-4111-8111-111111111111";
 const MEDIA_ID = "22222222-2222-4222-8222-222222222222";
@@ -406,6 +407,7 @@ describe("finalizeFieldMediaCore", () => {
       buildingId: "building-1",
       storagePath: FINAL_PATH,
       status: "queued",
+      recoveryKey: buildDriveRecoveryKey("queued", NOW, MEDIA_ID),
     });
     expect(patch[`fieldPlatform/auditLogs/media-finalized-${REQUEST_ID}`])
       .toMatchObject({

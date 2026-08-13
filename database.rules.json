@@ -31,15 +31,19 @@
         "$buildingId": {
           "$uid": {
             ".read": "auth != null && auth.token.fieldPlatform === true && root.child('fieldPlatform/users').child(auth.uid).child('enabled').val() === true && root.child('fieldPlatform/users').child(auth.uid).child('role').val() === auth.token.fieldRole && (auth.uid === $uid || auth.token.fieldRole === 'admin')",
-            ".write": false
+            ".write": "auth != null && auth.token.fieldPlatform === true && root.child('fieldPlatform/users').child(auth.uid).child('enabled').val() === true && root.child('fieldPlatform/users').child(auth.uid).child('role').val() === auth.token.fieldRole && (auth.token.fieldRole === 'admin' || (auth.token.fieldRole === 'staff' && auth.uid === $uid && newData.val() === true))",
+            ".validate": "newData.val() === true"
           }
         }
       },
       "ownerNotes": {
         "$buildingId": {
           ".read": "auth != null && auth.token.fieldPlatform === true && root.child('fieldPlatform/users').child(auth.uid).child('enabled').val() === true && root.child('fieldPlatform/users').child(auth.uid).child('role').val() === auth.token.fieldRole && (auth.token.fieldRole === 'admin' || (auth.token.fieldRole === 'staff' && root.child('fieldPlatform/buildingAssignments').child($buildingId).child(auth.uid).val() === true))",
-          ".write": false,
-          ".indexOn": ["createdAt"]
+          ".indexOn": ["createdAt"],
+          "$noteId": {
+            ".write": "auth != null && auth.token.fieldPlatform === true && newData.exists() && root.child('fieldPlatform/users').child(auth.uid).child('enabled').val() === true && root.child('fieldPlatform/users').child(auth.uid).child('role').val() === auth.token.fieldRole && (auth.token.fieldRole === 'admin' || (auth.token.fieldRole === 'staff' && root.child('fieldPlatform/buildingAssignments').child($buildingId).child(auth.uid).val() === true))",
+            ".validate": "newData.hasChildren(['id', 'buildingId', 'body', 'recordedAt', 'createdAt', 'createdBy', 'createdByName']) && newData.child('id').val() === $noteId && newData.child('buildingId').val() === $buildingId && newData.child('body').isString() && newData.child('body').val().length > 0 && newData.child('body').val().length <= 2000 && newData.child('recordedAt').isString() && newData.child('recordedAt').val().matches(/^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}[.][0-9]{3}Z$/) && newData.child('createdAt').isString() && newData.child('createdAt').val().matches(/^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}[.][0-9]{3}Z$/) && newData.child('createdBy').isString() && newData.child('createdByName').isString() && newData.child('createdByName').val().length > 0 && newData.child('createdByName').val().length <= 80 && ((!data.exists() && newData.child('createdBy').val() === auth.uid && !newData.child('archivedAt').exists() && !newData.child('archivedBy').exists()) || (data.exists() && !data.child('archivedAt').exists() && newData.child('id').val() === data.child('id').val() && newData.child('buildingId').val() === data.child('buildingId').val() && newData.child('body').val() === data.child('body').val() && newData.child('recordedAt').val() === data.child('recordedAt').val() && newData.child('createdAt').val() === data.child('createdAt').val() && newData.child('createdBy').val() === data.child('createdBy').val() && newData.child('createdByName').val() === data.child('createdByName').val() && newData.child('archivedAt').isString() && newData.child('archivedAt').val().matches(/^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}[.][0-9]{3}Z$/) && newData.child('archivedBy').val() === auth.uid))"
+          }
         }
       },
       "secureAccessAssignments": {
@@ -50,12 +54,21 @@
           }
         }
       },
+      "managementNumberCounters": {
+        "$year": {
+          "$area": {
+            ".read": "auth != null && auth.token.fieldPlatform === true && root.child('fieldPlatform/users').child(auth.uid).child('enabled').val() === true && (auth.token.fieldRole === 'admin' || auth.token.fieldRole === 'staff')",
+            ".write": "auth != null && auth.token.fieldPlatform === true && root.child('fieldPlatform/users').child(auth.uid).child('enabled').val() === true && (auth.token.fieldRole === 'admin' || auth.token.fieldRole === 'staff')",
+            ".validate": "newData.isNumber() && newData.val() % 1 === 0 && newData.val() === (data.exists() ? data.val() + 1 : 1)"
+          }
+        }
+      },
       "buildings": {
         ".read": "auth != null && auth.token.fieldPlatform === true && root.child('fieldPlatform/users').child(auth.uid).child('enabled').val() === true && root.child('fieldPlatform/users').child(auth.uid).child('role').val() === auth.token.fieldRole",
         ".indexOn": ["managementContract/status"],
         "$buildingId": {
-          ".write": "auth != null && auth.token.fieldPlatform === true && root.child('fieldPlatform/users').child(auth.uid).child('enabled').val() === true && root.child('fieldPlatform/users').child(auth.uid).child('role').val() === auth.token.fieldRole && newData.exists() && newData.child('managementContract/status').val() === data.child('managementContract/status').val() && newData.child('managementContract/startedOn').val() === data.child('managementContract/startedOn').val() && newData.child('managementContract/endedOn').val() === data.child('managementContract/endedOn').val() && newData.child('managementContract/updatedBy').val() === data.child('managementContract/updatedBy').val() && newData.child('managementContract/updatedAt').val() === data.child('managementContract/updatedAt').val() && (auth.token.fieldRole === 'admin' || (auth.token.fieldRole === 'staff' && data.exists() && root.child('fieldPlatform/buildingAssignments').child($buildingId).child(auth.uid).val() === true))",
-          ".validate": "newData.hasChildren(['id', 'managementNumber', 'name', 'roadAddress', 'latitude', 'longitude']) && newData.child('id').val() === $buildingId && (!data.exists() || data.child('id').val() === newData.child('id').val()) && newData.child('latitude').isNumber() && newData.child('latitude').val() >= -90 && newData.child('latitude').val() <= 90 && newData.child('longitude').isNumber() && newData.child('longitude').val() >= -180 && newData.child('longitude').val() <= 180 && newData.child('managementContract/status').val() === data.child('managementContract/status').val() && newData.child('managementContract/startedOn').val() === data.child('managementContract/startedOn').val() && newData.child('managementContract/endedOn').val() === data.child('managementContract/endedOn').val() && newData.child('managementContract/updatedBy').val() === data.child('managementContract/updatedBy').val() && newData.child('managementContract/updatedAt').val() === data.child('managementContract/updatedAt').val() && (!newData.child('managementContract').exists() || ((newData.child('managementContract/status').val() === 'none' || newData.child('managementContract/status').val() === 'pending' || newData.child('managementContract/status').val() === 'active' || newData.child('managementContract/status').val() === 'paused' || newData.child('managementContract/status').val() === 'ended') && (!newData.child('managementContract/startedOn').exists() || (newData.child('managementContract/startedOn').isString() && newData.child('managementContract/startedOn').val().matches(/^[0-9]{4}-[0-9]{2}-[0-9]{2}$/))) && (!newData.child('managementContract/endedOn').exists() || (newData.child('managementContract/endedOn').isString() && newData.child('managementContract/endedOn').val().matches(/^[0-9]{4}-[0-9]{2}-[0-9]{2}$/))) && newData.child('managementContract/updatedBy').isString() && newData.child('managementContract/updatedBy').val().replace(' ', '').replace('\\t', '').replace('\\n', '').replace('\\r', '').length > 0 && newData.child('managementContract/updatedAt').isString()))",
+          ".write": "auth != null && auth.token.fieldPlatform === true && root.child('fieldPlatform/users').child(auth.uid).child('enabled').val() === true && root.child('fieldPlatform/users').child(auth.uid).child('role').val() === auth.token.fieldRole && newData.exists() && (auth.token.fieldRole === 'admin' || auth.token.fieldRole === 'staff')",
+".validate": "newData.hasChildren(['id', 'managementNumber', 'name', 'roadAddress', 'latitude', 'longitude']) && newData.child('id').val() === $buildingId && (!data.exists() || data.child('id').val() === newData.child('id').val()) && ((!data.exists() && newData.child('managementNumber').isString() && newData.child('managementNumber').val().matches(/^BR-WJ-[A-Z]+-[0-9]{2}-[0-9]{4,}$/)) || (data.exists() && newData.child('managementNumber').val() === data.child('managementNumber').val())) && newData.child('latitude').isNumber() && newData.child('latitude').val() >= -90 && newData.child('latitude').val() <= 90 && newData.child('longitude').isNumber() && newData.child('longitude').val() >= -180 && newData.child('longitude').val() <= 180 && (!data.child('managementContract').exists() || newData.child('managementContract').exists()) && (!data.exists() || auth.token.fieldRole === 'admin' || newData.child('managementContract').val() === data.child('managementContract').val()) && (!newData.child('managementContract').exists() || ((newData.child('managementContract/status').val() === 'none' || newData.child('managementContract/status').val() === 'pending' || newData.child('managementContract/status').val() === 'active' || newData.child('managementContract/status').val() === 'paused' || newData.child('managementContract/status').val() === 'ended') && (!newData.child('managementContract/startedOn').exists() || (newData.child('managementContract/startedOn').isString() && newData.child('managementContract/startedOn').val().matches(/^[0-9]{4}-[0-9]{2}-[0-9]{2}$/))) && (!newData.child('managementContract/endedOn').exists() || (newData.child('managementContract/endedOn').isString() && newData.child('managementContract/endedOn').val().matches(/^[0-9]{4}-[0-9]{2}-[0-9]{2}$/))) && newData.child('managementContract/updatedBy').val() === auth.uid && newData.child('managementContract/updatedAt').isString()))",
           "managementContract": {
             "$contractField": {
               ".validate": "$contractField === 'status' || $contractField === 'startedOn' || $contractField === 'endedOn' || $contractField === 'updatedBy' || $contractField === 'updatedAt'"
@@ -66,39 +79,40 @@
       "units": {
         ".read": "auth != null && auth.token.fieldPlatform === true && root.child('fieldPlatform/users').child(auth.uid).child('enabled').val() === true && root.child('fieldPlatform/users').child(auth.uid).child('role').val() === auth.token.fieldRole",
         "$unitId": {
-          ".write": "auth != null && auth.token.fieldPlatform === true && root.child('fieldPlatform/users').child(auth.uid).child('enabled').val() === true && root.child('fieldPlatform/users').child(auth.uid).child('role').val() === auth.token.fieldRole && (auth.token.fieldRole === 'admin' || (auth.token.fieldRole === 'staff' && root.child('fieldPlatform/buildingAssignments').child(newData.child('buildingId').val()).child(auth.uid).val() === true))",
-          ".validate": "newData.hasChildren(['id', 'buildingId', 'unitLabel']) && newData.child('id').val() === $unitId && (!data.exists() || data.child('id').val() === newData.child('id').val()) && (!data.exists() || newData.child('buildingId').val() === data.child('buildingId').val()) && root.child('fieldPlatform/buildings').child(newData.child('buildingId').val()).exists()"
+          ".write": "auth != null && auth.token.fieldPlatform === true && root.child('fieldPlatform/users').child(auth.uid).child('enabled').val() === true && root.child('fieldPlatform/users').child(auth.uid).child('role').val() === auth.token.fieldRole && (auth.token.fieldRole === 'admin' || auth.token.fieldRole === 'staff')",
+          ".validate": "newData.hasChildren(['id', 'buildingId', 'unitLabel']) && newData.child('id').val() === $unitId && (!data.exists() || data.child('id').val() === newData.child('id').val()) && (!data.exists() || newData.child('buildingId').val() === data.child('buildingId').val()) && (root.child('fieldPlatform/buildings').child(newData.child('buildingId').val()).exists() || (!data.exists() && newData.child('createdBy').val() === auth.uid))"
         }
       },
       "listings": {
         ".read": "auth != null && auth.token.fieldPlatform === true && root.child('fieldPlatform/users').child(auth.uid).child('enabled').val() === true && root.child('fieldPlatform/users').child(auth.uid).child('role').val() === auth.token.fieldRole",
-        ".indexOn": ["buildingId"],
+        ".indexOn": ["buildingId", "status"],
         "$listingId": {
-          ".write": "auth != null && auth.token.fieldPlatform === true && root.child('fieldPlatform/users').child(auth.uid).child('enabled').val() === true && root.child('fieldPlatform/users').child(auth.uid).child('role').val() === auth.token.fieldRole && (auth.token.fieldRole === 'admin' || (auth.token.fieldRole === 'staff' && root.child('fieldPlatform/buildingAssignments').child(newData.child('buildingId').val()).child(auth.uid).val() === true))",
+          ".write": "auth != null && auth.token.fieldPlatform === true && root.child('fieldPlatform/users').child(auth.uid).child('enabled').val() === true && root.child('fieldPlatform/users').child(auth.uid).child('role').val() === auth.token.fieldRole && (auth.token.fieldRole === 'admin' || auth.token.fieldRole === 'staff' || auth.token.fieldRole === 'reviewer')",
           ".validate": "newData.hasChildren(['id', 'buildingId', 'unitId', 'unitLabel', 'status', 'depositWon', 'monthlyRentWon', 'maintenanceFeeWon']) && newData.child('id').val() === $listingId && (!data.exists() || data.child('id').val() === newData.child('id').val()) && (!data.exists() || newData.child('buildingId').val() === data.child('buildingId').val()) && (newData.child('status').val() === 'draft' || newData.child('status').val() === 'capturing' || newData.child('status').val() === 'reviewPending' || newData.child('status').val() === 'ready' || newData.child('status').val() === 'advertising' || newData.child('status').val() === 'closed') && newData.child('depositWon').isNumber() && newData.child('depositWon').val() >= 0 && newData.child('depositWon').val() % 1 === 0 && newData.child('monthlyRentWon').isNumber() && newData.child('monthlyRentWon').val() >= 0 && newData.child('monthlyRentWon').val() % 1 === 0 && newData.child('maintenanceFeeWon').isNumber() && newData.child('maintenanceFeeWon').val() >= 0 && newData.child('maintenanceFeeWon').val() % 1 === 0"
         }
       },
       "visits": {
         ".read": "auth != null && auth.token.fieldPlatform === true && root.child('fieldPlatform/users').child(auth.uid).child('enabled').val() === true && root.child('fieldPlatform/users').child(auth.uid).child('role').val() === auth.token.fieldRole",
         "$visitId": {
-          ".write": "auth != null && auth.token.fieldPlatform === true && root.child('fieldPlatform/users').child(auth.uid).child('enabled').val() === true && root.child('fieldPlatform/users').child(auth.uid).child('role').val() === auth.token.fieldRole && (auth.token.fieldRole === 'admin' || (auth.token.fieldRole === 'staff' && newData.child('assignedUserId').val() === auth.uid && root.child('fieldPlatform/buildingAssignments').child(newData.child('buildingId').val()).child(auth.uid).val() === true))",
+          ".write": "auth != null && auth.token.fieldPlatform === true && root.child('fieldPlatform/users').child(auth.uid).child('enabled').val() === true && root.child('fieldPlatform/users').child(auth.uid).child('role').val() === auth.token.fieldRole && (auth.token.fieldRole === 'admin' || (auth.token.fieldRole === 'staff' && newData.child('assignedUserId').val() === auth.uid))",
           ".validate": "newData.hasChildren(['id', 'buildingId', 'type', 'assignedUserId']) && newData.child('id').val() === $visitId && (!data.exists() || data.child('id').val() === newData.child('id').val()) && (!data.exists() || newData.child('buildingId').val() === data.child('buildingId').val())"
         }
       },
       "captureSessions": {
-        ".write": false,
+        ".read": "auth != null && auth.token.fieldPlatform === true && root.child('fieldPlatform/users').child(auth.uid).child('enabled').val() === true && root.child('fieldPlatform/users').child(auth.uid).child('role').val() === auth.token.fieldRole && (auth.token.fieldRole === 'admin' || auth.token.fieldRole === 'reviewer' || (auth.token.fieldRole === 'staff' && query.orderByChild === 'createdBy' && query.equalTo === auth.uid))",
+        ".write": "auth != null && auth.token.fieldPlatform === true && root.child('fieldPlatform/users').child(auth.uid).child('enabled').val() === true && root.child('fieldPlatform/users').child(auth.uid).child('role').val() === auth.token.fieldRole && (auth.token.fieldRole === 'admin' || auth.token.fieldRole === 'staff')",
         ".indexOn": ["buildingId", "createdBy"],
         "$captureSessionId": {
           ".read": "auth != null && auth.token.fieldPlatform === true && root.child('fieldPlatform/users').child(auth.uid).child('enabled').val() === true && root.child('fieldPlatform/users').child(auth.uid).child('role').val() === auth.token.fieldRole && (auth.token.fieldRole === 'admin' || auth.token.fieldRole === 'reviewer' || root.child('fieldPlatform/buildingAssignments').child(data.child('buildingId').val()).child(auth.uid).val() === true || (data.child('createdBy').val() === auth.uid && data.child('status').val() === 'open'))",
-          ".validate": "newData.hasChildren(['id', 'requestId', 'buildingId', 'visitId', 'createdBy', 'status', 'createdAt', 'updatedAt']) && newData.child('id').val() === $captureSessionId && (newData.child('status').val() === 'open' || newData.child('status').val() === 'complete') && (!data.exists() || (newData.child('id').val() === data.child('id').val() && newData.child('requestId').val() === data.child('requestId').val() && newData.child('buildingId').val() === data.child('buildingId').val() && newData.child('visitId').val() === data.child('visitId').val() && newData.child('createdBy').val() === data.child('createdBy').val()))"
+          ".validate": "newData.hasChildren(['id', 'requestId', 'buildingId', 'visitId', 'createdBy', 'status', 'createdAt', 'updatedAt']) && newData.child('id').val() === $captureSessionId && newData.child('createdBy').val() === auth.uid && (newData.child('status').val() === 'open' || newData.child('status').val() === 'complete') && (!data.exists() || (newData.child('id').val() === data.child('id').val() && newData.child('requestId').val() === data.child('requestId').val() && newData.child('buildingId').val() === data.child('buildingId').val() && newData.child('visitId').val() === data.child('visitId').val() && newData.child('createdBy').val() === data.child('createdBy').val()))"
         }
       },
       "media": {
-        ".write": false,
-        ".indexOn": ["buildingId"],
+        ".write": "auth != null && auth.token.fieldPlatform === true && root.child('fieldPlatform/users').child(auth.uid).child('enabled').val() === true && root.child('fieldPlatform/users').child(auth.uid).child('role').val() === auth.token.fieldRole && (auth.token.fieldRole === 'admin' || auth.token.fieldRole === 'reviewer' || auth.token.fieldRole === 'staff')",
+        ".indexOn": ["buildingId", "listingId"],
         "$mediaId": {
           ".read": "auth != null && auth.token.fieldPlatform === true && root.child('fieldPlatform/users').child(auth.uid).child('enabled').val() === true && root.child('fieldPlatform/users').child(auth.uid).child('role').val() === auth.token.fieldRole && (auth.token.fieldRole === 'admin' || auth.token.fieldRole === 'reviewer' || root.child('fieldPlatform/buildingAssignments').child(data.child('buildingId').val()).child(auth.uid).val() === true || (data.child('capturedBy').val() === auth.uid && root.child('fieldPlatform/captureSessions').child(data.child('captureSessionId').val()).child('createdBy').val() === auth.uid && root.child('fieldPlatform/captureSessions').child(data.child('captureSessionId').val()).child('status').val() === 'open'))",
-          ".validate": "newData.hasChildren(['id', 'requestId', 'buildingId', 'visitId', 'captureSessionId', 'capturedBy', 'uploadState', 'uploadProgress', 'driveSyncState']) && newData.child('id').val() === $mediaId && (newData.child('uploadState').val() === 'queued' || newData.child('uploadState').val() === 'uploading' || newData.child('uploadState').val() === 'objectStored' || newData.child('uploadState').val() === 'finalizing' || newData.child('uploadState').val() === 'finalized' || newData.child('uploadState').val() === 'failed') && newData.child('uploadProgress').isNumber() && newData.child('uploadProgress').val() >= 0 && newData.child('uploadProgress').val() <= 100 && newData.child('uploadProgress').val() % 1 === 0 && (newData.child('driveSyncState').val() === 'notRequested' || newData.child('driveSyncState').val() === 'queued' || newData.child('driveSyncState').val() === 'syncing' || newData.child('driveSyncState').val() === 'complete' || newData.child('driveSyncState').val() === 'failed') && root.child('fieldPlatform/captureSessions').child(newData.child('captureSessionId').val()).child('id').val() === newData.child('captureSessionId').val() && root.child('fieldPlatform/captureSessions').child(newData.child('captureSessionId').val()).child('buildingId').val() === newData.child('buildingId').val() && root.child('fieldPlatform/captureSessions').child(newData.child('captureSessionId').val()).child('visitId').val() === newData.child('visitId').val() && root.child('fieldPlatform/captureSessions').child(newData.child('captureSessionId').val()).child('createdBy').val() === newData.child('capturedBy').val() && (!data.exists() || (newData.child('id').val() === data.child('id').val() && newData.child('requestId').val() === data.child('requestId').val() && newData.child('buildingId').val() === data.child('buildingId').val() && newData.child('visitId').val() === data.child('visitId').val() && newData.child('captureSessionId').val() === data.child('captureSessionId').val() && newData.child('capturedBy').val() === data.child('capturedBy').val()))"
+          ".validate": "newData.hasChildren(['id', 'requestId', 'buildingId', 'visitId', 'captureSessionId', 'capturedBy', 'uploadState', 'uploadProgress', 'driveSyncState', 'driveFileId']) && newData.child('id').val() === $mediaId && newData.child('driveFileId').isString() && newData.child('driveFileId').val().length > 0 && newData.child('uploadState').val() === 'finalized' && newData.child('uploadProgress').val() === 100 && newData.child('driveSyncState').val() === 'complete' && root.child('fieldPlatform/captureSessions').child(newData.child('captureSessionId').val()).child('id').val() === newData.child('captureSessionId').val() && root.child('fieldPlatform/captureSessions').child(newData.child('captureSessionId').val()).child('buildingId').val() === newData.child('buildingId').val() && root.child('fieldPlatform/captureSessions').child(newData.child('captureSessionId').val()).child('unitId').val() === newData.child('unitId').val() && root.child('fieldPlatform/captureSessions').child(newData.child('captureSessionId').val()).child('listingId').val() === newData.child('listingId').val() && root.child('fieldPlatform/captureSessions').child(newData.child('captureSessionId').val()).child('visitId').val() === newData.child('visitId').val() && root.child('fieldPlatform/captureSessions').child(newData.child('captureSessionId').val()).child('createdBy').val() === newData.child('capturedBy').val() && (auth.token.fieldRole === 'admin' || auth.token.fieldRole === 'reviewer' || newData.child('capturedBy').val() === auth.uid) && (!data.exists() || (newData.child('id').val() === data.child('id').val() && newData.child('requestId').val() === data.child('requestId').val() && newData.child('buildingId').val() === data.child('buildingId').val() && newData.child('visitId').val() === data.child('visitId').val() && newData.child('captureSessionId').val() === data.child('captureSessionId').val() && newData.child('capturedBy').val() === data.child('capturedBy').val() && newData.child('driveFileId').val() === data.child('driveFileId').val()))"
         }
       },
       "secureAccess": {
@@ -110,10 +124,23 @@
       },
       "adPackages": {
         ".read": "auth != null && auth.token.fieldPlatform === true && root.child('fieldPlatform/users').child(auth.uid).child('enabled').val() === true && root.child('fieldPlatform/users').child(auth.uid).child('role').val() === auth.token.fieldRole",
+        ".indexOn": ["listingId", "generation/recoveryKey"],
         "$packageId": {
-          ".write": "auth != null && auth.token.fieldPlatform === true && root.child('fieldPlatform/users').child(auth.uid).child('enabled').val() === true && root.child('fieldPlatform/users').child(auth.uid).child('role').val() === auth.token.fieldRole && (auth.token.fieldRole === 'reviewer' || auth.token.fieldRole === 'admin')",
-          ".validate": "newData.hasChildren(['id', 'listingId', 'status']) && newData.child('id').val() === $packageId && (!data.exists() || data.child('id').val() === newData.child('id').val()) && (newData.child('status').val() === 'draft' || newData.child('status').val() === 'reviewed' || newData.child('status').val() === data.child('status').val()) && newData.child('driveFolderId').val() === data.child('driveFolderId').val() && newData.child('driveFileIds').val() === data.child('driveFileIds').val()"
+          ".write": "auth != null && auth.token.fieldPlatform === true && root.child('fieldPlatform/users').child(auth.uid).child('enabled').val() === true && root.child('fieldPlatform/users').child(auth.uid).child('role').val() === auth.token.fieldRole && (auth.token.fieldRole === 'admin' || auth.token.fieldRole === 'reviewer') && newData.child('reviewerId').val() === auth.uid",
+          ".validate": "newData.hasChildren(['id', 'listingId', 'status', 'version', 'driveFolderId', 'driveFileIds']) && newData.child('id').val() === $packageId && (!data.exists() || data.child('id').val() === newData.child('id').val()) && (newData.child('status').val() === 'complete' || newData.child('status').val() === data.child('status').val())"
         }
+      },
+      "adPackageVersions": {
+        ".read": false,
+        ".write": false
+      },
+      "adPackageLatest": {
+        ".read": false,
+        ".write": false
+      },
+      "adPackageGenerationAlerts": {
+        ".read": "auth != null && auth.token.fieldPlatform === true && root.child('fieldPlatform/users').child(auth.uid).child('enabled').val() === true && root.child('fieldPlatform/users').child(auth.uid).child('role').val() === auth.token.fieldRole && auth.token.fieldRole === 'admin'",
+        ".write": false
       },
       "checklistTemplates": {
         ".read": "auth != null && auth.token.fieldPlatform === true && root.child('fieldPlatform/users').child(auth.uid).child('enabled').val() === true && root.child('fieldPlatform/users').child(auth.uid).child('role').val() === auth.token.fieldRole",
@@ -129,15 +156,49 @@
       },
       "driveSyncJobs": {
         ".read": "auth != null && auth.token.fieldPlatform === true && root.child('fieldPlatform/users').child(auth.uid).child('enabled').val() === true && root.child('fieldPlatform/users').child(auth.uid).child('role').val() === auth.token.fieldRole && auth.token.fieldRole === 'admin'",
+        ".indexOn": ["recoveryKey"],
+        ".write": false
+      },
+      "driveSyncAlerts": {
+        ".read": "auth != null && auth.token.fieldPlatform === true && root.child('fieldPlatform/users').child(auth.uid).child('enabled').val() === true && root.child('fieldPlatform/users').child(auth.uid).child('role').val() === auth.token.fieldRole && auth.token.fieldRole === 'admin'",
+        ".write": false
+      },
+      "driveFolderLeases": {
+        ".read": false,
+        ".write": false
+      },
+      "driveFolderCaches": {
+        ".read": false,
+        ".write": false
+      },
+      "driveUploadSessions": {
+        ".read": false,
         ".write": false
       },
       "mapProjections": {
         ".read": "auth != null && auth.token.fieldPlatform === true && root.child('fieldPlatform/users').child(auth.uid).child('enabled').val() === true && root.child('fieldPlatform/users').child(auth.uid).child('role').val() === auth.token.fieldRole",
-        ".write": false
+        "$buildingId": {
+          ".write": "auth != null && auth.token.fieldPlatform === true && root.child('fieldPlatform/users').child(auth.uid).child('enabled').val() === true && root.child('fieldPlatform/users').child(auth.uid).child('role').val() === auth.token.fieldRole && (auth.token.fieldRole === 'admin' || auth.token.fieldRole === 'staff')",
+          ".validate": "newData.hasChildren(['buildingId', 'name', 'roadAddress', 'latitude', 'longitude', 'markerStatus', 'vacancyCount', 'approvedRentSummary', 'parkingSummary', 'captureStatus', 'updatedAt']) && newData.child('buildingId').val() === $buildingId && root.child('fieldPlatform/buildings').child($buildingId).child('managementContract/status').val() === 'active' && newData.child('name').val() === root.child('fieldPlatform/buildings').child($buildingId).child('name').val() && newData.child('roadAddress').val() === root.child('fieldPlatform/buildings').child($buildingId).child('roadAddress').val() && newData.child('latitude').val() === root.child('fieldPlatform/buildings').child($buildingId).child('latitude').val() && newData.child('longitude').val() === root.child('fieldPlatform/buildings').child($buildingId).child('longitude').val() && newData.child('name').isString() && newData.child('roadAddress').isString() && newData.child('latitude').isNumber() && newData.child('latitude').val() >= -90 && newData.child('latitude').val() <= 90 && newData.child('longitude').isNumber() && newData.child('longitude').val() >= -180 && newData.child('longitude').val() <= 180 && (newData.child('markerStatus').val() === 'managed' || newData.child('markerStatus').val() === 'vacant') && newData.child('vacancyCount').isNumber() && newData.child('vacancyCount').val() >= 0 && newData.child('vacancyCount').val() % 1 === 0 && (newData.child('captureStatus').val() === 'notStarted' || newData.child('captureStatus').val() === 'inProgress' || newData.child('captureStatus').val() === 'complete') && newData.child('updatedAt').isString()"
+        }
+      },
+      "registrationDrafts": {
+        "$uid": {
+          ".read": "auth != null && auth.uid === $uid && auth.token.fieldPlatform === true && root.child('fieldPlatform/users').child(auth.uid).child('enabled').val() === true && root.child('fieldPlatform/users').child(auth.uid).child('role').val() === auth.token.fieldRole",
+          "$draftId": {
+            ".write": "auth != null && auth.uid === $uid && auth.token.fieldPlatform === true && root.child('fieldPlatform/users').child(auth.uid).child('enabled').val() === true && root.child('fieldPlatform/users').child(auth.uid).child('role').val() === auth.token.fieldRole && (auth.token.fieldRole === 'admin' || auth.token.fieldRole === 'staff')",
+            ".validate": "newData.hasChildren(['ownerUid', 'draftId', 'updatedAt', 'value']) && newData.child('ownerUid').val() === $uid && newData.child('draftId').val() === $draftId && newData.child('updatedAt').isString() && newData.child('updatedAt').val().matches(/^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}[.][0-9]{3}Z$/) && newData.child('value/draftId').val() === $draftId && newData.child('value/draftVersion').val() === 4"
+          }
+        }
       },
       "registrationRequests": {
-        ".read": false,
-        ".write": false
+        "$uid": {
+          ".read": "auth != null && auth.uid === $uid && auth.token.fieldPlatform === true",
+          "$requestId": {
+            ".write": "auth != null && auth.uid === $uid && auth.token.fieldPlatform === true && root.child('fieldPlatform/users').child(auth.uid).child('enabled').val() === true && newData.exists()",
+            ".validate": "newData.hasChildren(['result', 'completedAt']) && newData.child('completedAt').isString() && newData.child('result').hasChildren(['buildingId', 'managementNumber', 'unitIds', 'listingId', 'visitId']) && newData.child('result/buildingId').isString() && newData.child('result/managementNumber').isString() && newData.child('result/listingId').isString() && newData.child('result/visitId').isString() && newData.child('result/unitIds').exists()"
+          }
+        }
       },
       "managementContractRequests": {
         ".read": false,

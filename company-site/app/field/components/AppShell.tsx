@@ -3,6 +3,11 @@
 import type { ReactNode } from "react";
 
 import type { FieldSession } from "../lib/auth.client";
+import {
+  EMPTY_UPLOAD_SUMMARY,
+  type UploadSummary,
+} from "../lib/upload-summary";
+import BrandLogo from "./BrandLogo";
 
 export type FieldDestination =
   | "home"
@@ -15,9 +20,11 @@ type AppShellProps = {
   active: FieldDestination;
   children: ReactNode;
   session: FieldSession;
-  pendingCount?: number;
+  uploadSummary?: UploadSummary;
+  uploadSummaryDelayed?: boolean;
   logoutBusy?: boolean;
   logoutError?: string;
+  driveControl?: ReactNode;
   onLogout: () => void;
   onNavigate?: (destination: FieldDestination) => void;
 };
@@ -108,9 +115,11 @@ export default function AppShell({
   active,
   children,
   session,
-  pendingCount = 0,
+  uploadSummary = EMPTY_UPLOAD_SUMMARY,
+  uploadSummaryDelayed = false,
   logoutBusy = false,
   logoutError,
+  driveControl,
   onLogout,
   onNavigate,
 }: AppShellProps) {
@@ -128,14 +137,8 @@ export default function AppShell({
       </a>
 
       <aside className="field-sidebar">
-        <div className="field-brand" aria-label="BRING FIELD">
-          <span className="field-brand-mark" aria-hidden="true">
-            B
-          </span>
-          <span>
-            <strong>BRING</strong>
-            <small>FIELD</small>
-          </span>
+        <div className="field-brand">
+          <BrandLogo />
         </div>
         <Navigation
           active={active}
@@ -164,22 +167,26 @@ export default function AppShell({
       <div className="field-workspace">
         <header className="field-topbar">
           <div className="field-mobile-brand">
-            <span className="field-brand-mark" aria-hidden="true">
-              B
-            </span>
-            <span>
-              <strong>BRING</strong>
-              <small>FIELD</small>
-            </span>
+            <BrandLogo />
           </div>
           <div className="field-topbar-title">
             <p>원주 건물 유지보수 지도</p>
             <strong>현장 매물 관리</strong>
           </div>
-          <div>
-            <div className="field-sync-status" role="status">
+          <div className="field-topbar-actions">
+            {driveControl}
+            <div
+              className="field-sync-status field-upload-summary-compact"
+              role="status"
+              aria-label="업로드 현황"
+              title={uploadSummaryDelayed ? "업로드 현황 갱신이 지연되고 있습니다." : undefined}
+            >
               <span aria-hidden="true" />
-              {pendingCount > 0 ? `서버 등록 대기 ${pendingCount}개` : "동기화 완료"}
+              <span>오늘 <strong>{uploadSummary.todayTotal}</strong></span>
+              <span>업로드 중 <strong>{uploadSummary.uploading}</strong></span>
+              <span>완료 <strong>{uploadSummary.completedToday}</strong></span>
+              <span>실패 <strong>{uploadSummary.failed}</strong></span>
+              {uploadSummaryDelayed ? <small>갱신 지연</small> : null}
             </div>
             <button
               className="field-sync-status"

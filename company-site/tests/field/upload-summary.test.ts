@@ -30,6 +30,7 @@ function record(input: {
       originalFileName: `${input.id}.jpg`,
       mimeType: "image/jpeg",
       sizeBytes: 1024,
+      lastModified: 0,
       capturedAt: input.capturedAt,
       uploadState: input.uploadState,
       uploadProgress: input.uploadProgress,
@@ -77,6 +78,19 @@ describe("upload summary", () => {
       failed: 0,
       progressPercent: 100,
     });
+  });
+
+  it("counts a Drive synchronization failure as failed instead of uploading", () => {
+    const records = [record({
+      id: "drive-failed",
+      capturedAt: "2026-08-13T15:05:00.000Z",
+      uploadState: "finalized",
+      uploadProgress: 100,
+      driveSyncState: "failed",
+    })];
+
+    expect(summarizeUploadRecords(records, "2026-08-13T16:00:00.000Z"))
+      .toMatchObject({ uploading: 0, completedToday: 0, failed: 1 });
   });
 
   it("returns the stable empty snapshot when no files exist", () => {

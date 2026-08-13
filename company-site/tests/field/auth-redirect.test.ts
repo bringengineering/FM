@@ -16,13 +16,22 @@ const firebaseMocks = vi.hoisted(() => ({
   fieldUserRecord: { enabled: true, role: "staff" } as unknown,
   signInWithPopup: vi.fn(),
   signInWithRedirect: vi.fn(),
+  signInWithCredential: vi.fn(),
+  driveConnect: vi.fn(),
+  driveAdopt: vi.fn(),
+  popupCredential: { accessToken: "drive-access-token" } as { accessToken?: string } | null,
+  providerAddScope: vi.fn(),
+  providerSetCustomParameters: vi.fn(),
   signOut: vi.fn(),
   unsubscribe: vi.fn(),
 }));
 
 vi.mock("firebase/auth", () => ({
-  GoogleAuthProvider: class {
-    setCustomParameters = vi.fn();
+  GoogleAuthProvider: class GoogleAuthProvider {
+    static credential = vi.fn((_idToken: unknown, accessToken: string) => ({ accessToken }));
+    static credentialFromResult = vi.fn(() => firebaseMocks.popupCredential);
+    addScope = firebaseMocks.providerAddScope;
+    setCustomParameters = firebaseMocks.providerSetCustomParameters;
   },
   onAuthStateChanged: vi.fn(
     (
@@ -35,7 +44,17 @@ vi.mock("firebase/auth", () => ({
   ),
   signInWithPopup: firebaseMocks.signInWithPopup,
   signInWithRedirect: firebaseMocks.signInWithRedirect,
+  signInWithCredential: firebaseMocks.signInWithCredential,
   signOut: firebaseMocks.signOut,
+}));
+
+vi.mock("../../app/field/lib/drive-auth.client", () => ({
+  BRING_COMPANY_GOOGLE_ACCOUNT: "bringengineering1008@gmail.com",
+  GOOGLE_DRIVE_FILE_SCOPE: "drive-scope",
+  driveTokenManager: {
+    connect: firebaseMocks.driveConnect,
+    adoptAccessToken: firebaseMocks.driveAdopt,
+  },
 }));
 
 vi.mock("firebase/functions", () => ({
@@ -60,9 +79,11 @@ import {
 
 function fieldUser(
   tokenResults: Array<{ claims: Record<string, unknown> }>,
+  email = "bringengineering1008@gmail.com",
 ) {
   return {
     uid: "user-1",
+    email,
     displayName: "브링 담당자",
     getIdTokenResult: vi.fn(async () => {
       const next = tokenResults.shift();
@@ -72,7 +93,7 @@ function fieldUser(
   };
 }
 
-describe("redirect-based field authentication", () => {
+describe("mobile-safe popup field authentication", () => {
   beforeEach(() => {
     firebaseMocks.authStateListener = undefined;
     firebaseMocks.fieldUserRecord = { enabled: true, role: "staff" };
@@ -85,25 +106,55 @@ describe("redirect-based field authentication", () => {
     firebaseMocks.provision.mockReset().mockResolvedValue(undefined);
     firebaseMocks.signInWithPopup.mockReset();
     firebaseMocks.signInWithRedirect.mockReset();
+    firebaseMocks.signInWithCredential.mockReset();
+    firebaseMocks.driveConnect.mockReset().mockResolvedValue("drive-access-token");
+    firebaseMocks.driveAdopt.mockReset();
+    firebaseMocks.popupCredential = { accessToken: "drive-access-token" };
+    firebaseMocks.providerAddScope.mockReset();
+    firebaseMocks.providerSetCustomParameters.mockReset();
     firebaseMocks.signOut.mockReset().mockResolvedValue(undefined);
     firebaseMocks.unsubscribe.mockReset();
   });
 
-  it("starts Google sign-in with redirect and maps an unauthorized-domain initiation failure", async () => {
-    firebaseMocks.signInWithPopup.mockRejectedValue(new Error("popup path must not run"));
-    firebaseMocks.signInWithRedirect.mockRejectedValue(
-      Object.assign(new Error("domain is not authorized"), {
-        code: "auth/unauthorized-domain",
-      }),
-    );
+  it("uses one Firebase Google popup for login and Drive", async () => {
+    const user = fieldUser([{ claims: { fieldPlatform: true, fieldRole: "staff" } }]);
+    firebaseMocks.signInWithPopup.mockResolvedValue({ user });
 
-    await expect(loginFieldUser()).rejects.toThrow(
-      "field_login_domain_not_authorized",
-    );
+    await expect(loginFieldUser()).resolves.toMatchObject({
+      uid: "user-1",
+      role: "staff",
+    });
 
-    expect(firebaseMocks.signInWithRedirect).toHaveBeenCalledOnce();
-    expect(firebaseMocks.signInWithPopup).not.toHaveBeenCalled();
+    expect(firebaseMocks.providerAddScope).toHaveBeenCalledWith("drive-scope");
+    expect(firebaseMocks.providerSetCustomParameters).toHaveBeenCalledWith({
+      login_hint: "bringengineering1008@gmail.com",
+    });
+    expect(firebaseMocks.signInWithPopup).toHaveBeenCalledOnce();
+    expect(firebaseMocks.driveAdopt).toHaveBeenCalledWith("drive-access-token");
+    expect(firebaseMocks.driveConnect).not.toHaveBeenCalled();
+    expect(firebaseMocks.signInWithCredential).not.toHaveBeenCalled();
+    expect(firebaseMocks.signInWithRedirect).not.toHaveBeenCalled();
     expect(firebaseMocks.provision).not.toHaveBeenCalled();
+  });
+
+  it("rejects a different Google account before adopting its Drive token", async () => {
+    const user = fieldUser(
+      [{ claims: { fieldPlatform: true, fieldRole: "admin" } }],
+      "dpvld858@gmail.com",
+    );
+    firebaseMocks.signInWithPopup.mockResolvedValue({ user });
+
+    await expect(loginFieldUser()).rejects.toThrow("field_company_account_required");
+
+    expect(firebaseMocks.driveAdopt).not.toHaveBeenCalled();
+    expect(firebaseMocks.signOut).toHaveBeenCalledOnce();
+  });
+
+  it("maps a denied Google popup to a stable login error", async () => {
+    firebaseMocks.signInWithPopup.mockRejectedValue(new Error("popup closed"));
+
+    await expect(loginFieldUser()).rejects.toThrow("field_login_start_failed");
+    expect(firebaseMocks.driveAdopt).not.toHaveBeenCalled();
   });
 
   it("provisions a redirected Google user and refreshes claims before restoring the session", async () => {

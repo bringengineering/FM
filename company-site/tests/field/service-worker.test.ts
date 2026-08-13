@@ -16,6 +16,8 @@ interface WorkerHarness {
   cachePut: ReturnType<typeof vi.fn>;
   cacheAddAll: ReturnType<typeof vi.fn>;
   cacheDelete: ReturnType<typeof vi.fn>;
+  skipWaiting: ReturnType<typeof vi.fn>;
+  clientsClaim: ReturnType<typeof vi.fn>;
 }
 
 const originalServiceWorker = Object.getOwnPropertyDescriptor(
@@ -59,8 +61,12 @@ async function createWorkerHarness(): Promise<WorkerHarness> {
     delete: cacheDelete,
   };
   const fetch = vi.fn();
+  const skipWaiting = vi.fn(async () => undefined);
+  const clientsClaim = vi.fn(async () => undefined);
   const worker = {
     location: { origin: "https://bring.test" },
+    skipWaiting,
+    clients: { claim: clientsClaim },
     addEventListener(type: string, listener: WorkerListener) {
       listeners.set(type, listener);
     },
@@ -75,6 +81,8 @@ async function createWorkerHarness(): Promise<WorkerHarness> {
     cachePut,
     cacheAddAll,
     cacheDelete,
+    skipWaiting,
+    clientsClaim,
   };
 }
 
@@ -116,8 +124,36 @@ function dispatchFetch(
 }
 
 describe("FieldServiceWorker registration", () => {
+  it("keeps the service worker and field shell revalidatable on Firebase Hosting", async () => {
+    const firebaseConfig = JSON.parse(
+      await readFile(resolve("../firebase.json"), "utf8"),
+    ) as {
+      hosting?: {
+        headers?: Array<{
+          source?: string;
+          headers?: Array<{ key?: string; value?: string }>;
+        }>;
+      };
+    };
+    const rules = firebaseConfig.hosting?.headers ?? [];
+    const cacheControl = (source: string) => rules
+      .find((rule) => rule.source === source)
+      ?.headers?.find((header) => header.key?.toLowerCase() === "cache-control")
+      ?.value;
+
+    expect(cacheControl("/field-sw.js")).toBe("no-cache, no-store, must-revalidate");
+    expect(cacheControl("/field")).toBe("no-cache, no-store, must-revalidate");
+    expect(cacheControl("/field/**")).toBe("no-cache, no-store, must-revalidate");
+    expect(rules.some((rule) => rule.source === "**/*.@(js|css)")).toBe(false);
+    expect(cacheControl("/assets/*.@(js|css)")).toBe("public,max-age=31536000,immutable");
+  });
+
   it("registers once with a scope that controls the exact /field start URL", async () => {
-    const register = vi.fn(async () => ({ scope: "https://bring.test/field/" }));
+    const update = vi.fn(async () => undefined);
+    const register = vi.fn(async () => ({
+      scope: "https://bring.test/field/",
+      update,
+    }));
     Object.defineProperty(navigator, "serviceWorker", {
       configurable: true,
       value: { register },
@@ -126,7 +162,11 @@ describe("FieldServiceWorker registration", () => {
     render(createElement(FieldServiceWorker));
 
     await waitFor(() => expect(register).toHaveBeenCalledOnce());
-    expect(register).toHaveBeenCalledWith("/field-sw.js", { scope: "/field" });
+    expect(register).toHaveBeenCalledWith("/field-sw.js?v=20260812-4", {
+      scope: "/field",
+      updateViaCache: "none",
+    });
+    expect(update).toHaveBeenCalledOnce();
   });
 
   it("does nothing when the browser has no service worker support", async () => {
@@ -138,7 +178,7 @@ describe("FieldServiceWorker registration", () => {
     expect(view.container).toBeEmptyDOMElement();
   });
 
-  it("is mounted by FieldApp without update or reload loops", async () => {
+  it("is mounted by FieldApp and explicitly requests an update", async () => {
     const fieldApp = await readFile(resolve("app/field/FieldApp.tsx"), "utf8");
     const registration = await readFile(
       resolve("app/field/components/FieldServiceWorker.tsx"),
@@ -146,7 +186,8 @@ describe("FieldServiceWorker registration", () => {
     );
 
     expect(fieldApp).toContain("<FieldServiceWorker />");
-    expect(registration).not.toMatch(/\.update\s*\(|location\.reload\s*\(/u);
+    expect(registration).toMatch(/\.update\s*\(/u);
+    expect(registration).not.toMatch(/location\.reload\s*\(/u);
   });
 });
 
@@ -160,6 +201,7 @@ describe("field service worker cache boundary", () => {
       },
     });
     await installWork;
+    expect(harness.skipWaiting).toHaveBeenCalledOnce();
     expect(harness.cacheAddAll).toHaveBeenCalledWith([
       "/field",
       "/field/manifest.webmanifest",
@@ -174,6 +216,7 @@ describe("field service worker cache boundary", () => {
       },
     });
     await activateWork;
+    expect(harness.clientsClaim).toHaveBeenCalledOnce();
     expect(harness.cacheDelete).toHaveBeenCalledWith("bring-field-shell-v0");
     expect(harness.cacheDelete).not.toHaveBeenCalledWith("unrelated-cache");
   });

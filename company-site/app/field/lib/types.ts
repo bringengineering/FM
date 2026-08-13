@@ -194,6 +194,7 @@ export interface Building extends AuditStamp {
 
 export interface FieldMapProjection {
   buildingId: EntityId;
+  managementNumber?: string;
   name: string;
   roadAddress: string;
   latitude: number;

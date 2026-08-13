@@ -44,7 +44,7 @@ export interface FinalizeFieldMediaResult {
   mediaId: string;
   uploadState: "finalized";
   storagePath: string;
-  driveSyncState: "queued";
+  driveSyncState: "queued" | "complete";
   finalizedAt: string;
 }
 

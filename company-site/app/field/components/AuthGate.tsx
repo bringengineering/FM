@@ -9,6 +9,7 @@ import {
   type FieldSessionObserver,
 } from "../lib/auth.client";
 import { FieldSessionProvider } from "./FieldSessionContext";
+import BrandLogo from "./BrandLogo";
 
 type AuthGateProps = {
   children: ReactNode;
@@ -24,6 +25,9 @@ type GateState =
 
 function authErrorMessage(error: unknown): string {
   const message = error instanceof Error ? error.message : "";
+  if (message === "field_company_account_required") {
+    return "회사 계정 bringengineering1008@gmail.com으로 로그인해 주세요.";
+  }
   if (message === "field_access_denied") {
     return "승인되지 않은 계정입니다. 관리자에게 내부 직원 등록을 요청해 주세요.";
   }
@@ -52,14 +56,8 @@ function SignInScreen({
   return (
     <main className="field-auth-screen">
       <section className="field-auth-card" aria-labelledby="field-auth-title">
-        <div className="field-auth-brand" aria-label="BRING FIELD">
-          <span className="field-brand-mark" aria-hidden="true">
-            B
-          </span>
-          <span>
-            <strong>BRING</strong>
-            <small>FIELD</small>
-          </span>
+        <div className="field-auth-brand">
+          <BrandLogo />
         </div>
         <p className="field-eyebrow">INTERNAL PLATFORM</p>
         <h1 id="field-auth-title">현장 매물 관리</h1>

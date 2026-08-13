@@ -153,14 +153,11 @@ describe("OwnerNotesPanel persistence hardening", () => {
     expect(screen.getByLabelText("새 건물주 전달사항")).toBeInTheDocument();
   });
 
-  it("keeps the sticky panel below the mobile and desktop headers", async () => {
+  it("keeps the panel in the document flow instead of following scroll", async () => {
     const css = await readFile(resolve("app/field/field.css"), "utf8");
 
-    expect(css).toMatch(
-      /\.field-owner-notes\s*\{(?=[^}]*position:\s*sticky)[^}]*top:\s*70px;/,
-    );
-    expect(css).toMatch(
-      /@media \(min-width:\s*960px\)\s*\{\s*\.field-owner-notes\s*\{\s*top:\s*78px;\s*\}\s*\}/,
-    );
+    const rule = css.match(/\.field-owner-notes\s*\{([^}]*)\}/)?.[1] ?? "";
+    expect(rule).not.toMatch(/position:\s*(sticky|fixed)/);
+    expect(rule).not.toMatch(/(?:^|;)\s*top\s*:/);
   });
 });

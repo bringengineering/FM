@@ -32,6 +32,7 @@ import {
 } from "../lib/registration-draft";
 import type { FieldSession } from "../lib/auth.client";
 import type { OfflineQueuePort } from "../lib/offline-queue";
+import type { RegistrationDraftServer } from "../lib/server-registration-draft.client";
 import { bindFieldVisualViewport } from "../lib/visual-viewport";
 import CaptureGuide, {
   type CaptureUploadCoordinator,
@@ -82,6 +83,7 @@ export interface BuildingWizardProps {
   ) => SaveFieldRegistrationResult | Promise<SaveFieldRegistrationResult>;
   queue?: OfflineQueuePort;
   coordinator?: CaptureUploadCoordinator;
+  draftServer?: RegistrationDraftServer;
 }
 
 function defaultNow() {
@@ -155,7 +157,6 @@ function distanceMeters(
 }
 
 const ERROR_COPY: Record<string, string> = {
-  managementNumber: "내부 관리번호를 입력해 주세요.",
   name: "건물명을 입력해 주세요.",
   roadAddress: "도로명주소를 입력해 주세요.",
   unitLabel: "호실명을 입력해 주세요.",
@@ -186,6 +187,7 @@ export default function BuildingWizard({
   onCompleteWithCapture,
   queue,
   coordinator,
+  draftServer,
 }: BuildingWizardProps) {
   const [step, setStep] = useState(Math.min(Math.max(initialStep, 0), STEPS.length - 1));
   const resolvedStorage = storage ?? browserStorage();
@@ -245,10 +247,15 @@ export default function BuildingWizard({
     draft: BuildingWizardDraft;
     status: "로컬 자동저장 완료" | "로컬 자동저장 실패";
   } | null>(null);
+  const [remoteLoaded, setRemoteLoaded] = useState(!draftServer);
+  const [serverSaveStatus, setServerSaveStatus] = useState<
+    "loading" | "saving" | "saved" | "failed" | null
+  >(draftServer ? "loading" : null);
   const [addressStatus, setAddressStatus] = useState("");
   const [checkingAddress, setCheckingAddress] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [savedBuildingId, setSavedBuildingId] = useState<string>();
+  const [savedManagementNumber, setSavedManagementNumber] = useState<string>();
   const submittingRef = useRef(false);
   const completedRef = useRef(false);
 
@@ -256,6 +263,32 @@ export default function BuildingWizard({
     () => bindFieldVisualViewport(document.documentElement, window),
     [],
   );
+
+  useEffect(() => {
+    if (!draftServer) return;
+    let active = true;
+    void draftServer.load(session.uid, resolvedDraftId)
+      .then((remote) => {
+        if (!active || completedRef.current) return;
+        if (remote) {
+          setEnvelope((current) => (
+            Date.parse(remote.updatedAt) > Date.parse(current.updatedAt)
+              ? remote
+              : current
+          ));
+        }
+        setServerSaveStatus("saving");
+      })
+      .catch(() => {
+        if (active) setServerSaveStatus("failed");
+      })
+      .finally(() => {
+        if (active) setRemoteLoaded(true);
+      });
+    return () => {
+      active = false;
+    };
+  }, [draftServer, resolvedDraftId, session.uid]);
 
   useEffect(() => {
     if (incompatibleDraft || completedRef.current) return;
@@ -316,6 +349,44 @@ export default function BuildingWizard({
     session.uid,
   ]);
 
+  useEffect(() => {
+    if (!draftServer || !remoteLoaded || incompatibleDraft || completedRef.current) return;
+    let active = true;
+    const updatedAt = now();
+    const serverEnvelope: StoredRegistrationDraft = {
+      ...envelope,
+      ownerUid: session.uid,
+      draftId: resolvedDraftId,
+      updatedAt,
+      value: { ...draft, draftId: resolvedDraftId },
+    };
+    queueMicrotask(() => {
+      if (active) setServerSaveStatus("saving");
+    });
+    const timer = window.setTimeout(() => {
+      void draftServer.save(serverEnvelope)
+        .then(() => {
+          if (active) setServerSaveStatus("saved");
+        })
+        .catch(() => {
+          if (active) setServerSaveStatus("failed");
+        });
+    }, 350);
+    return () => {
+      active = false;
+      window.clearTimeout(timer);
+    };
+  }, [
+    draft,
+    draftServer,
+    envelope,
+    incompatibleDraft,
+    now,
+    remoteLoaded,
+    resolvedDraftId,
+    session.uid,
+  ]);
+
   function updateDraft(
     updater: (current: BuildingWizardDraft) => BuildingWizardDraft,
   ) {
@@ -341,6 +412,14 @@ export default function BuildingWizard({
 
   const saveStatus = completedSave?.draft === draft
     ? completedSave.status
+    : serverSaveStatus === "loading"
+      ? "Firebase 서버 초안 확인 중"
+      : serverSaveStatus === "saving"
+        ? "Firebase 서버 자동저장 중"
+        : serverSaveStatus === "saved"
+          ? "Firebase 서버 자동저장 완료"
+          : serverSaveStatus === "failed"
+            ? "서버 자동저장 재시도 예정 · 기기 보관 완료"
     : localSave?.draft === draft
       ? localSave.status
       : "로컬 저장 준비";
@@ -356,7 +435,6 @@ export default function BuildingWizard({
   }, [currentPosition, draft.building.latitude, draft.building.longitude]);
 
   const buildingErrors = validateBuildingDraft({
-    managementNumber: draft.building.managementNumber,
     name: draft.building.name,
     roadAddress: draft.building.roadAddress,
     latitude: draft.building.latitude === "" ? undefined : draft.building.latitude,
@@ -421,7 +499,7 @@ export default function BuildingWizard({
     }
     if (step === 1) {
       const listingErrors = validateListingDraft({
-        buildingId: draft.building.managementNumber || "building-draft",
+        buildingId: "building-draft",
         unitLabel: draft.units[0]?.unitLabel,
         depositWon: draft.listing.depositWon === "" ? undefined : draft.listing.depositWon,
         monthlyRentWon: draft.listing.monthlyRentWon === "" ? undefined : draft.listing.monthlyRentWon,
@@ -477,10 +555,12 @@ export default function BuildingWizard({
         : await onComplete!(input);
       completedRef.current = true;
       setSavedBuildingId(result.buildingId);
+      setSavedManagementNumber(result.managementNumber);
       let cleanupFailed = false;
       try {
         removeWizardDraft(resolvedStorage, session.uid, draft.draftId);
         if (queue) await queue.removeDraft(session.uid, draft.draftId);
+        if (draftServer) await draftServer.remove(session.uid, draft.draftId);
       } catch {
         cleanupFailed = true;
       }
@@ -551,8 +631,8 @@ export default function BuildingWizard({
             <legend>건물 기본정보</legend>
             <p className="field-form-help">주소 중복 확인을 완료해야 다음 단계로 이동할 수 있습니다.</p>
             <div className="field-form-grid">
-              <Field label="내부 관리번호" required error={errors.includes("managementNumber") ? ERROR_COPY.managementNumber : ""}>
-                <input id="managementNumber" required value={draft.building.managementNumber} onChange={(event) => updateBuilding("managementNumber", event.target.value)} aria-invalid={errors.includes("managementNumber")} />
+              <Field label="내부 관리번호">
+                <input id="managementNumber" readOnly value={savedManagementNumber ?? "저장 시 자동 발급"} />
               </Field>
               <Field label="건물명" required error={errors.includes("name") ? ERROR_COPY.name : ""}>
                 <input id="name" required value={draft.building.name} onChange={(event) => updateBuilding("name", event.target.value)} aria-invalid={errors.includes("name")} />

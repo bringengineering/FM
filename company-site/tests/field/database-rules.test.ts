@@ -274,7 +274,7 @@ beforeAll(async () => {
 });
 
 describe("field media database rule source", () => {
-  it("declares server ownership and canonical media lifecycle validation", async () => {
+  it("allows only claimed internal users to persist completed direct-Drive media", async () => {
     const source = JSON.parse(
       await readFile(resolve("../database.rules.json"), "utf8"),
     ) as { rules: { fieldPlatform: Record<string, unknown> } };
@@ -285,28 +285,82 @@ describe("field media database rule source", () => {
     const media = fieldPlatform.media;
     const sessions = fieldPlatform.captureSessions;
 
-    expect(media[".write"]).toBe(false);
-    expect(sessions[".write"]).toBe(false);
+    expect(String(media[".write"])).toContain("auth.token.fieldPlatform === true");
+    expect(String(media[".write"])).toContain("root.child('fieldPlatform/users')");
+    expect(String(sessions[".write"])).toContain("auth.token.fieldPlatform === true");
     expect(fieldPlatform.auditLogs[".write"]).toBe(false);
     expect(fieldPlatform.driveSyncJobs[".write"]).toBe(false);
-    expect(fieldPlatform.mapProjections[".write"]).toBe(false);
+    expect(String((fieldPlatform.mapProjections.$buildingId as Record<string, unknown>)[".write"]))
+      .toContain("auth.token.fieldPlatform === true");
+    for (const collection of [
+      "driveFolderLeases",
+      "driveFolderCaches",
+      "driveUploadSessions",
+    ]) {
+      expect(fieldPlatform[collection]).toEqual({
+        ".read": false,
+        ".write": false,
+      });
+    }
+    expect(fieldPlatform.driveSyncAlerts[".write"]).toBe(false);
+    expect(String(fieldPlatform.driveSyncAlerts[".read"])).toContain(
+      "auth.token.fieldRole === 'admin'",
+    );
 
     const mediaValidation = JSON.stringify(media);
-    for (const state of [
-      "queued",
-      "uploading",
-      "objectStored",
-      "finalizing",
-      "finalized",
-      "failed",
-      "notRequested",
-      "syncing",
-      "complete",
-    ]) {
+    for (const state of ["finalized", "complete", "driveFileId"]) {
       expect(mediaValidation).toContain(state);
     }
     expect(mediaValidation).toContain("uploadProgress");
     expect(JSON.stringify(sessions)).toContain("status");
+  });
+
+  it("indexes bounded ad review queries and keeps package indexes server-owned", async () => {
+    const source = JSON.parse(
+      await readFile(resolve("../database.rules.json"), "utf8"),
+    ) as { rules: { fieldPlatform: Record<string, unknown> } };
+    const fieldPlatform = source.rules.fieldPlatform as Record<
+      string,
+      Record<string, unknown>
+    >;
+
+    expect(fieldPlatform.listings[".indexOn"]).toEqual(["buildingId", "status"]);
+    expect(fieldPlatform.media[".indexOn"]).toEqual(["buildingId", "listingId"]);
+    expect(fieldPlatform.adPackages[".indexOn"]).toEqual([
+      "listingId",
+      "generation/recoveryKey",
+    ]);
+    expect(fieldPlatform.driveSyncJobs[".indexOn"]).toEqual(["recoveryKey"]);
+    expect(fieldPlatform.adPackageVersions).toEqual({
+      ".read": false,
+      ".write": false,
+    });
+    expect(fieldPlatform.adPackageLatest).toEqual({
+      ".read": false,
+      ".write": false,
+    });
+    expect(fieldPlatform.adPackageVersionClaims).toBeUndefined();
+    expect(fieldPlatform.adPackageGenerationAlerts[".write"]).toBe(false);
+    expect(String(fieldPlatform.adPackageGenerationAlerts[".read"]))
+      .toContain("auth.token.fieldRole === 'admin'");
+  });
+
+  it("keeps registration drafts private to their authenticated owner", async () => {
+    const source = JSON.parse(
+      await readFile(resolve("../database.rules.json"), "utf8"),
+    ) as { rules: { fieldPlatform: Record<string, unknown> } };
+    const fieldPlatform = source.rules.fieldPlatform as Record<
+      string,
+      Record<string, unknown>
+    >;
+    const drafts = fieldPlatform.registrationDrafts as Record<string, unknown>;
+    const ownerRule = drafts.$uid as Record<string, unknown>;
+    const draftRule = ownerRule.$draftId as Record<string, unknown>;
+
+    expect(String(ownerRule[".read"])).toContain("auth.uid === $uid");
+    expect(String(draftRule[".write"])).toContain("auth.uid === $uid");
+    expect(String(draftRule[".validate"])).toContain("ownerUid");
+    expect(String(draftRule[".validate"])).toContain("draftVersion");
   });
 });
 
@@ -330,6 +384,9 @@ describe.runIf(databaseEmulatorAvailable)("fieldPlatform database rules", () => 
           buildings: { ".indexOn"?: string[] };
           listings: { ".indexOn"?: string[] };
           media: { ".indexOn"?: string[] };
+          adPackages: { ".indexOn"?: string[] };
+          driveSyncJobs: { ".indexOn"?: string[] };
+          captureSessions: { ".read"?: string };
           ownerNotes: {
             $buildingId: { ".indexOn"?: string[] };
           };
@@ -340,11 +397,30 @@ describe.runIf(databaseEmulatorAvailable)("fieldPlatform database rules", () => 
     expect(source.rules.fieldPlatform.buildings[".indexOn"]).toEqual([
       "managementContract/status",
     ]);
-    expect(source.rules.fieldPlatform.listings[".indexOn"]).toEqual(["buildingId"]);
-    expect(source.rules.fieldPlatform.media[".indexOn"]).toEqual(["buildingId"]);
+    expect(source.rules.fieldPlatform.listings[".indexOn"]).toEqual([
+      "buildingId",
+      "status",
+    ]);
+    expect(source.rules.fieldPlatform.media[".indexOn"]).toEqual([
+      "buildingId",
+      "listingId",
+    ]);
+    expect(source.rules.fieldPlatform.adPackages[".indexOn"]).toEqual([
+      "listingId",
+      "generation/recoveryKey",
+    ]);
+    expect(source.rules.fieldPlatform.driveSyncJobs[".indexOn"]).toEqual([
+      "recoveryKey",
+    ]);
     expect(source.rules.fieldPlatform.ownerNotes.$buildingId[".indexOn"]).toEqual([
       "createdAt",
     ]);
+    expect(source.rules.fieldPlatform.captureSessions[".read"]).toContain(
+      "query.orderByChild === 'createdBy'",
+    );
+    expect(source.rules.fieldPlatform.captureSessions[".read"]).toContain(
+      "query.equalTo === auth.uid",
+    );
   });
 
   it("allows only current authority to read finalized media and capture sessions", async () => {
@@ -441,29 +517,53 @@ describe.runIf(databaseEmulatorAvailable)("fieldPlatform database rules", () => 
     }
   });
 
-  it("rejects every direct client owner-note create, update, and delete", async () => {
+  it("allows assigned staff and admins to create/archive notes but blocks tampering", async () => {
     for (const [uid, role] of [
       ["staff-1", "staff"],
-      ["reviewer-1", "reviewer"],
       ["admin-1", "admin"],
     ] as const) {
       const database = environment.authenticatedContext(uid, claims(role)).database();
       const existingPath = "fieldPlatform/ownerNotes/building-1/note_12345678";
       const newPath = `fieldPlatform/ownerNotes/building-1/note_${role}_new`;
 
+      await assertSucceeds(set(ref(database, newPath), {
+        id: `note_${role}_new`,
+        buildingId: "building-1",
+        body: "건물주 전달사항",
+        recordedAt: NOW,
+        createdAt: NOW,
+        createdBy: uid,
+        createdByName: role === "admin" ? "관리자" : "담당 직원",
+      }));
+      await assertSucceeds(update(ref(database, newPath), {
+        archivedAt: "2026-08-09T03:00:00.000Z",
+        archivedBy: uid,
+      }));
       await assertFails(update(ref(database, existingPath), {
         body: "위조",
         createdAt: "2000-01-01T00:00:00.000Z",
       }));
       await assertFails(set(ref(database, existingPath), null));
-      await assertFails(set(ref(database, newPath), {
-        id: `note_${role}_new`,
+    }
+
+    const reviewer = environment
+      .authenticatedContext("reviewer-1", claims("reviewer"))
+      .database();
+    const unassigned = environment
+      .authenticatedContext("staff-2", claims("staff"))
+      .database();
+    for (const [database, id, uid] of [
+      [reviewer, "note_reviewer_new", "reviewer-1"],
+      [unassigned, "note_unassigned_new", "staff-2"],
+    ] as const) {
+      await assertFails(set(ref(database, `fieldPlatform/ownerNotes/building-1/${id}`), {
+        id,
         buildingId: "building-1",
-        body: "클라이언트 생성",
+        body: "권한 없는 메모",
         recordedAt: NOW,
         createdAt: NOW,
         createdBy: uid,
-        createdByName: "위조 이름",
+        createdByName: "권한 없음",
       }));
     }
   });
@@ -777,7 +877,7 @@ describe.runIf(databaseEmulatorAvailable)("fieldPlatform database rules", () => 
     }
   });
 
-  it("keeps management contracts immutable to staff and admin clients", async () => {
+  it("keeps contracts immutable to staff while allowing admin approval transitions", async () => {
     const staff = environment.authenticatedContext("staff-1", claims("staff")).database();
     const admin = environment.authenticatedContext("admin-1", claims("admin")).database();
 
@@ -789,7 +889,7 @@ describe.runIf(databaseEmulatorAvailable)("fieldPlatform database rules", () => 
         updatedBy: "staff-1",
       },
     ));
-    await assertFails(update(
+    await assertSucceeds(update(
       ref(admin, "fieldPlatform/buildings/building-1/managementContract"),
       {
         status: "paused",
@@ -801,7 +901,7 @@ describe.runIf(databaseEmulatorAvailable)("fieldPlatform database rules", () => 
       ref(admin, "fieldPlatform/buildings/building-1/managementContract"),
       null,
     ));
-    await assertFails(set(
+    await assertSucceeds(set(
       ref(admin, "fieldPlatform/buildings/building-legacy/managementContract"),
       managementContract("active"),
     ));
@@ -906,9 +1006,13 @@ describe.runIf(databaseEmulatorAvailable)("fieldPlatform database rules", () => 
       .database();
 
     await assertSucceeds(get(ref(reviewer, "fieldPlatform/listings/listing-1")));
-    await assertSucceeds(update(ref(reviewer, "fieldPlatform/adPackages/package-1"), {
+    await assertFails(update(ref(reviewer, "fieldPlatform/adPackages/package-1"), {
       status: "reviewed",
       reviewerId: "reviewer-1",
+    }));
+    await assertFails(update(ref(admin, "fieldPlatform/adPackages/package-1"), {
+      status: "reviewed",
+      reviewerId: "admin-1",
     }));
     await assertFails(get(ref(reviewer, "fieldPlatform/secureAccess/access-1")));
     await assertSucceeds(get(ref(admin, "fieldPlatform/secureAccess/access-1")));

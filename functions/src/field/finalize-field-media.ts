@@ -13,6 +13,7 @@ import {
   type ProjectionListing,
   type ProjectionMedia,
 } from "./map-projection.js";
+import { buildDriveRecoveryKey } from "../drive/recovery-key.js";
 
 export interface FinalizeFieldMediaInput {
   requestId: string;
@@ -380,6 +381,7 @@ function driveJob(
     storagePath,
     objectGeneration: finalGeneration,
     status: "queued",
+    recoveryKey: buildDriveRecoveryKey("queued", now, input.mediaId),
     attemptCount: 0,
     createdAt: now,
     updatedAt: now,

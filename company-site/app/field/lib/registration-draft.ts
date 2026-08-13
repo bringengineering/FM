@@ -99,6 +99,7 @@ export interface SaveFieldRegistrationInput {
 
 export interface SaveFieldRegistrationResult {
   buildingId: string;
+  managementNumber?: string;
   unitIds: Record<string, string>;
   listingId: string;
   visitId: string;

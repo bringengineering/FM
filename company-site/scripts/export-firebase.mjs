@@ -32,11 +32,11 @@ const routes = [
 
 for (const route of routes) {
   const response = await worker.fetch(
-    new Request(`https://bring-fm-hj.web.app${route.pathname}`, {
+    new Request(`https://bring-fm.web.app${route.pathname}`, {
       headers: {
         accept: "text/html",
-        host: "bring-fm-hj.web.app",
-        "x-forwarded-host": "bring-fm-hj.web.app",
+        host: "bring-fm.web.app",
+        "x-forwarded-host": "bring-fm.web.app",
         "x-forwarded-proto": "https",
       },
     }),

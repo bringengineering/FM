@@ -181,6 +181,23 @@ function renderWorkspace(
 }
 
 describe("CaptureWorkspace", () => {
+  it("shows the phone-wide upload totals and today's progress", async () => {
+    renderWorkspace({
+      uploadSummary: {
+        todayTotal: 7,
+        uploading: 2,
+        completedToday: 4,
+        failed: 1,
+        progressPercent: 64,
+      },
+    });
+
+    expect(await screen.findByLabelText("휴대전화 전체 업로드 현황"))
+      .toHaveTextContent("오늘 7업로드 중 2완료 4실패 1");
+    expect(screen.getByRole("progressbar", { name: "오늘 업로드 진행률" }))
+      .toHaveAttribute("aria-valuenow", "64");
+  });
+
   it("keeps managed-building and advertising targets in separate selector groups", async () => {
     renderWorkspace();
 
@@ -240,8 +257,7 @@ describe("CaptureWorkspace", () => {
     const cards = await screen.findAllByTestId("open-capture-session");
     expect(cards.map((card) => card.getAttribute("data-session-id")))
       .toEqual([SESSION_NEW, SESSION_OLD]);
-    expect(screen.getByText("서버 등록 대기 3개")).toBeInTheDocument();
-    expect(screen.getByText("재시도 필요 1개")).toBeInTheDocument();
+    expect(screen.getByLabelText("휴대전화 전체 업로드 현황")).toBeInTheDocument();
     expect(within(cards[0]).getByText("2개 대기 · 1개 재시도"))
       .toBeInTheDocument();
     expect(queue.listPending).toHaveBeenCalledWith(staffOne.uid);

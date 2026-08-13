@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 
 import AppShell, { type FieldDestination } from "./components/AppShell";
+import AdPackageReview from "./components/AdPackageReview";
 import AuthGate from "./components/AuthGate";
 import BuildingWizard from "./components/BuildingWizard";
 import type { CaptureUploadCoordinator } from "./components/CaptureGuide";
@@ -10,6 +11,7 @@ import CaptureWorkspace, {
   type CaptureTarget,
 } from "./components/CaptureWorkspace";
 import Dashboard from "./components/Dashboard";
+import DriveConnectionControl from "./components/DriveConnectionControl";
 import FieldMapPanel from "./components/FieldMapPanel";
 import FieldServiceWorker from "./components/FieldServiceWorker";
 import { useFieldSession } from "./components/FieldSessionContext";
@@ -24,17 +26,25 @@ import {
   type StartFieldCaptureSessionInput,
   type StartFieldCaptureSessionResult,
 } from "./lib/field-api.client";
-import { createFirebaseMediaUploadPort } from "./lib/firebase-media-upload";
+import { createFirebaseDirectAdPackageApi } from "./lib/direct-ad-package.client";
+import { createFirebaseDirectDriveMediaUploadPort } from "./lib/direct-drive-media-upload";
+import { createFirebaseDirectFieldApi } from "./lib/direct-field-api.client";
 import { fieldAppCheckConfigurationError } from "./lib/firebase.client";
 import { MediaUploadCoordinator } from "./lib/media-upload";
 import {
   openOfflineQueue,
   type OfflineQueuePort,
 } from "./lib/offline-queue";
+import {
+  EMPTY_UPLOAD_SUMMARY,
+  summarizeUploadRecords,
+  type UploadSummary,
+} from "./lib/upload-summary";
 import type {
   SaveFieldRegistrationInput,
   SaveFieldRegistrationResult,
 } from "./lib/registration-draft";
+import { firebaseRegistrationDraftServer } from "./lib/server-registration-draft.client";
 
 interface CaptureRegistrationContext {
   captureSessionId: string;
@@ -102,18 +112,27 @@ interface RuntimeCaptureCoordinator extends CaptureUploadCoordinator {
   start(uid: string): () => void;
 }
 
+interface UploadSummarySnapshot {
+  ownerUid: string;
+  summary: UploadSummary;
+  delayed: boolean;
+}
+
 function createDefaultCaptureCoordinator(
   queue: OfflineQueuePort,
 ): RuntimeCaptureCoordinator {
-  return new MediaUploadCoordinator(queue, createFirebaseMediaUploadPort());
+  return new MediaUploadCoordinator(queue, createFirebaseDirectDriveMediaUploadPort(queue));
 }
 
-function createDefaultCaptureLoaders(uid: string) {
-  let pending: ReturnType<typeof loadFieldCaptureWorkspace> | null = null;
+function createDefaultCaptureLoaders(
+  uid: string,
+  loadFieldCaptureWorkspaceDirect: () => ReturnType<typeof loadFieldCaptureWorkspace>,
+) {
+  let pending: ReturnType<typeof loadFieldCaptureWorkspaceDirect> | null = null;
   const load = () => {
     if (!uid) return Promise.reject(new Error("field_session_required"));
     if (!pending) {
-      pending = loadFieldCaptureWorkspace().finally(() => {
+      pending = loadFieldCaptureWorkspaceDirect().finally(() => {
         pending = null;
       });
     }
@@ -171,16 +190,16 @@ function DestinationScreen({ destination }: { destination: Exclude<FieldDestinat
 }
 
 export function FieldWorkspace({
-  saveRegistration = saveFieldRegistration,
-  startCaptureSession = startFieldCaptureSession,
+  saveRegistration: suppliedSaveRegistration,
+  startCaptureSession: suppliedStartCaptureSession,
   queueFactory = openOfflineQueue,
   coordinator: suppliedCoordinator,
   coordinatorFactory = createDefaultCaptureCoordinator,
   requestIdFactory = () => crypto.randomUUID(),
   loadCaptureTargets: suppliedTargetLoader,
   loadOpenCaptureSessions: suppliedSessionLoader,
-  getMediaAccess = getFieldMediaAccess,
-  excludeMedia = excludeFieldMedia,
+  getMediaAccess: suppliedGetMediaAccess,
+  excludeMedia: suppliedExcludeMedia,
   logout = logoutFieldUser,
   confirmExit = (message) => window.confirm(message),
 }: FieldWorkspaceProps = {}) {
@@ -190,22 +209,50 @@ export function FieldWorkspace({
   const [coordinator, setCoordinator] = useState<CaptureUploadCoordinator | null>(
     suppliedCoordinator ?? null,
   );
-  const [pendingCount, setPendingCount] = useState(0);
+  const [uploadSnapshot, setUploadSnapshot] = useState<UploadSummarySnapshot>({
+    ownerUid: session.uid,
+    summary: EMPTY_UPLOAD_SUMMARY,
+    delayed: false,
+  });
   const [logoutBusy, setLogoutBusy] = useState(false);
   const [logoutError, setLogoutError] = useState<string>();
   const stopCoordinatorRef = useRef<(() => void) | undefined>(undefined);
   const runtimeCoordinatorRef = useRef<RuntimeCaptureCoordinator | null>(null);
+  const refreshUploadsRef = useRef<() => Promise<void>>(async () => undefined);
+  const directFieldApi = useMemo(() => createFirebaseDirectFieldApi({
+    uid: session.uid,
+    role: session.role,
+    displayName: session.displayName,
+  }), [session.displayName, session.role, session.uid]);
+  const directAdApi = useMemo(() => (
+    session.role === "admin" || session.role === "reviewer"
+      ? createFirebaseDirectAdPackageApi({ uid: session.uid, role: session.role })
+      : null
+  ), [session.role, session.uid]);
+  const saveRegistration = suppliedSaveRegistration ?? directFieldApi.saveRegistration;
+  const startCaptureSession = suppliedStartCaptureSession ?? directFieldApi.startCaptureSession;
+  const getMediaAccess = suppliedGetMediaAccess ?? directAdApi?.mediaAccess ?? getFieldMediaAccess;
+  const excludeMedia = suppliedExcludeMedia ?? directAdApi?.exclude ?? excludeFieldMedia;
   const defaultCaptureLoaders = useMemo(
-    () => createDefaultCaptureLoaders(session.uid),
-    [session.uid],
+    () => createDefaultCaptureLoaders(session.uid, directFieldApi.loadCaptureWorkspace),
+    [directFieldApi, session.uid],
   );
   const captureTargetLoader = suppliedTargetLoader ?? defaultCaptureLoaders.targets;
   const captureSessionLoader = suppliedSessionLoader ?? defaultCaptureLoaders.sessions;
+  const uploadSummary = uploadSnapshot.ownerUid === session.uid
+    ? uploadSnapshot.summary
+    : EMPTY_UPLOAD_SUMMARY;
+  const uploadSummaryDelayed = uploadSnapshot.ownerUid === session.uid
+    ? uploadSnapshot.delayed
+    : false;
 
   useEffect(() => {
     let cancelled = false;
+    let refreshRevision = 0;
     let openedQueue: OfflineQueuePort | null = null;
     let stopCoordinator: (() => void) | undefined;
+    let refreshInterval: number | undefined;
+    let refreshOnEvent: (() => void) | undefined;
     void queueFactory()
       .then((nextQueue) => {
         if (cancelled) {
@@ -222,9 +269,33 @@ export function FieldWorkspace({
         }
         setQueue(nextQueue);
         setCoordinator(nextCoordinator);
-        void nextQueue.countPending(session.uid).then((count) => {
-          if (!cancelled) setPendingCount(count);
-        }).catch(() => undefined);
+        const refreshUploads = async () => {
+          const revision = ++refreshRevision;
+          try {
+            const records = await nextQueue.list(session.uid);
+            if (cancelled || revision !== refreshRevision) return;
+            setUploadSnapshot({
+              ownerUid: session.uid,
+              summary: summarizeUploadRecords(records),
+              delayed: false,
+            });
+          } catch {
+            if (cancelled || revision !== refreshRevision) return;
+            setUploadSnapshot((current) => current.ownerUid === session.uid
+              ? { ...current, delayed: true }
+              : {
+                  ownerUid: session.uid,
+                  summary: EMPTY_UPLOAD_SUMMARY,
+                  delayed: true,
+                });
+          }
+        };
+        refreshUploadsRef.current = refreshUploads;
+        refreshOnEvent = () => void refreshUploads();
+        window.addEventListener("focus", refreshOnEvent);
+        window.addEventListener("online", refreshOnEvent);
+        refreshInterval = window.setInterval(refreshOnEvent, 1_000);
+        void refreshUploads();
       })
       .catch(() => {
         if (!cancelled) setQueue(null);
@@ -237,6 +308,12 @@ export function FieldWorkspace({
         stopCoordinatorRef.current = undefined;
       }
       runtimeCoordinatorRef.current = null;
+      refreshUploadsRef.current = async () => undefined;
+      if (refreshOnEvent) {
+        window.removeEventListener("focus", refreshOnEvent);
+        window.removeEventListener("online", refreshOnEvent);
+      }
+      if (refreshInterval !== undefined) window.clearInterval(refreshInterval);
       openedQueue?.close();
     };
   }, [coordinatorFactory, queueFactory, session.uid, suppliedCoordinator]);
@@ -249,9 +326,8 @@ export function FieldWorkspace({
     try {
       if (!queue) throw new Error("capture_queue_unavailable");
       const count = await queue.countPending(session.uid);
-      setPendingCount(count);
       if (count > 0 && !confirmExit(
-        `서버 등록 대기 파일이 ${count}개 있습니다. 로그아웃하면 이 계정으로 다시 로그인할 때까지 업로드가 멈춥니다. 로그아웃할까요?`,
+        `Drive 업로드 대기 파일이 ${count}개 있습니다. 로그아웃하면 이 계정으로 다시 로그인할 때까지 업로드가 멈춥니다. 로그아웃할까요?`,
       )) return;
       stoppedRuntime = runtimeCoordinatorRef.current;
       stopCoordinatorRef.current?.();
@@ -272,9 +348,18 @@ export function FieldWorkspace({
     <AppShell
       active={active}
       session={session}
-      pendingCount={pendingCount}
+      uploadSummary={uploadSummary}
+      uploadSummaryDelayed={uploadSummaryDelayed}
       logoutBusy={logoutBusy}
       logoutError={logoutError}
+      driveControl={(
+        <DriveConnectionControl
+          onConnected={async () => {
+            await coordinator?.resume(session.uid);
+            await refreshUploadsRef.current();
+          }}
+        />
+      )}
       onLogout={() => void handleLogout()}
       onNavigate={setActive}
     >
@@ -284,9 +369,10 @@ export function FieldWorkspace({
         <FieldMapPanel />
       ) : active === "buildings" ? (
         <section className="field-building-workspace">
-          <ManagementContractQueue />
+          <ManagementContractQueue approve={directFieldApi.setManagementContractStatus} />
           <BuildingWizard
             session={session}
+            draftServer={firebaseRegistrationDraftServer}
             queue={queue ?? undefined}
             coordinator={coordinator ?? undefined}
             onCompleteWithCapture={async (input, capture) => {
@@ -312,6 +398,8 @@ export function FieldWorkspace({
             startSession={startCaptureSession}
             queue={queue}
             coordinator={coordinator}
+            uploadSummary={uploadSummary}
+            uploadSummaryDelayed={uploadSummaryDelayed}
             getFieldMediaAccess={getMediaAccess}
             excludeFieldMedia={async (input) => {
               await excludeMedia(input);
@@ -324,6 +412,15 @@ export function FieldWorkspace({
             <p>기기 저장소와 안전한 업로드 연결을 확인하고 있습니다.</p>
           </section>
         )
+      ) : active === "packages" ? (
+        directAdApi ? (
+          <AdPackageReview
+            load={directAdApi.load}
+            create={directAdApi.create}
+            exclude={directAdApi.exclude}
+            mediaAccess={directAdApi.mediaAccess}
+          />
+        ) : <AdPackageReview />
       ) : (
         <DestinationScreen destination={active} />
       )}

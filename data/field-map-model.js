@@ -68,6 +68,7 @@
   function copyProjection(projection) {
     return {
       buildingId: projection.buildingId,
+      managementNumber: safeString(projection.managementNumber, "관리번호 확인 필요"),
       name: projection.name,
       roadAddress: projection.roadAddress,
       latitude: projection.latitude,
@@ -144,6 +145,7 @@
   function safePropertyPopupModel(marker) {
     const source = isRecord(marker) ? marker : {};
     return {
+      managementNumber: safeString(source.managementNumber, "관리번호 확인 필요"),
       name: safeString(source.name, "이름 없는 건물"),
       roadAddress: safeString(source.roadAddress, "주소 확인 필요"),
       vacancyCount: isValidVacancyCount(source.vacancyCount) ? source.vacancyCount : 0,

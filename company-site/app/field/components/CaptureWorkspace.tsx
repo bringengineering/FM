@@ -18,6 +18,10 @@ import type {
   QueuedMediaRecord,
 } from "../lib/offline-queue";
 import type { CaptureSessionRecord } from "../lib/types";
+import {
+  EMPTY_UPLOAD_SUMMARY,
+  type UploadSummary,
+} from "../lib/upload-summary";
 import CaptureGuide, {
   type CaptureContext,
   type CaptureGuideProps,
@@ -45,6 +49,8 @@ export interface CaptureWorkspaceProps {
   coordinator: CaptureUploadCoordinator;
   getFieldMediaAccess?: CaptureGuideProps["getFieldMediaAccess"];
   excludeFieldMedia?: CaptureGuideProps["excludeFieldMedia"];
+  uploadSummary?: UploadSummary;
+  uploadSummaryDelayed?: boolean;
 }
 
 interface WorkspaceSnapshot {
@@ -191,6 +197,8 @@ export default function CaptureWorkspace({
   coordinator,
   getFieldMediaAccess,
   excludeFieldMedia,
+  uploadSummary = EMPTY_UPLOAD_SUMMARY,
+  uploadSummaryDelayed = false,
 }: CaptureWorkspaceProps) {
   const session = useFieldSession();
   const [loadVersion, setLoadVersion] = useState(0);
@@ -412,9 +420,6 @@ export default function CaptureWorkspace({
   };
 
   const pendingRecords = currentSnapshot?.pendingRecords ?? [];
-  const failedCount = pendingRecords.filter(
-    (record) => record.descriptor.uploadState === "failed",
-  ).length;
   const retryingSelectedTarget = Boolean(
     currentStartState?.failed
     && currentStartState.targetId === selectedTarget?.id,
@@ -428,9 +433,30 @@ export default function CaptureWorkspace({
           <h1 id="capture-workspace-title">현장 촬영</h1>
           <p>배정받은 관리 건물과 광고 매물을 구분해 촬영합니다.</p>
         </div>
-        <div className="field-capture-workspace-summary" aria-label="업로드 현황">
-          <span>서버 등록 대기 {pendingRecords.length}개</span>
-          <span>재시도 필요 {failedCount}개</span>
+        <div
+          className="field-capture-workspace-summary"
+          aria-label="휴대전화 전체 업로드 현황"
+        >
+          <div className="field-capture-upload-counts">
+            <span>오늘 <strong>{uploadSummary.todayTotal}</strong></span>
+            <span>업로드 중 <strong>{uploadSummary.uploading}</strong></span>
+            <span>완료 <strong>{uploadSummary.completedToday}</strong></span>
+            <span>실패 <strong>{uploadSummary.failed}</strong></span>
+          </div>
+          <div
+            className="field-capture-upload-progress"
+            role="progressbar"
+            aria-label="오늘 업로드 진행률"
+            aria-valuemin={0}
+            aria-valuemax={100}
+            aria-valuenow={uploadSummary.progressPercent}
+          >
+            <span style={{ width: `${uploadSummary.progressPercent}%` }} />
+          </div>
+          <small>
+            오늘 진행률 {uploadSummary.progressPercent}%
+            {uploadSummaryDelayed ? " · 갱신 지연" : ""}
+          </small>
         </div>
       </header>
 

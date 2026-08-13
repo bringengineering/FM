@@ -2,13 +2,14 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 
 const firebaseMocks = vi.hoisted(() => ({
   initializeAppCheck: vi.fn(),
+  initializeApp: vi.fn(() => ({ name: "[DEFAULT]" })),
   providerKeys: [] as string[],
 }));
 
 vi.mock("firebase/app", () => ({
   getApp: vi.fn(() => ({ name: "[DEFAULT]" })),
   getApps: vi.fn(() => []),
-  initializeApp: vi.fn(() => ({ name: "[DEFAULT]" })),
+  initializeApp: firebaseMocks.initializeApp,
 }));
 
 vi.mock("firebase/app-check", () => ({
@@ -35,17 +36,24 @@ afterEach(() => {
 });
 
 describe("Firebase App Check configuration", () => {
-  it("returns a blocking Korean configuration error only for a production build without a site key", async () => {
+  it("connects the field app to the company bring-fm Firebase project", async () => {
+    await import("../../app/field/lib/firebase.client");
+
+    expect(firebaseMocks.initializeApp).toHaveBeenCalledWith(expect.objectContaining({
+      projectId: "bring-fm",
+      authDomain: "bring-fm.firebaseapp.com",
+      databaseURL: "https://bring-fm-default-rtdb.asia-southeast1.firebasedatabase.app",
+      storageBucket: "bring-fm.firebasestorage.app",
+    }));
+  });
+
+  it("keeps App Check optional until the company site key is configured", async () => {
     const { resolveFieldAppCheckConfigurationError } = await import(
       "../../app/field/lib/firebase.client"
     );
 
-    expect(resolveFieldAppCheckConfigurationError("production", "")).toContain(
-      "App Check",
-    );
-    expect(resolveFieldAppCheckConfigurationError("production", "   ")).toContain(
-      "관리자",
-    );
+    expect(resolveFieldAppCheckConfigurationError("production", "")).toBeNull();
+    expect(resolveFieldAppCheckConfigurationError("production", "   ")).toBeNull();
     expect(resolveFieldAppCheckConfigurationError("development", "")).toBeNull();
     expect(resolveFieldAppCheckConfigurationError("production", "site-key")).toBeNull();
   });

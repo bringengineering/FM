@@ -74,7 +74,7 @@ test("mail bridge accepts only the two published Bring Care origins", async () =
     new URL("../public/consult-mail-bridge.html", import.meta.url),
     "utf8",
   );
-  assert.match(bridge, /https:\/\/bring-fm-hj\.web\.app/);
+  assert.match(bridge, /https:\/\/bring-fm\.web\.app/);
   assert.match(
     bridge,
     /https:\/\/bring-care-fm\.bringengineering1008\.chatgpt\.site/,
