@@ -127,6 +127,50 @@ function verifyStagedSnapshot(local, remote) {
   return { ok: true };
 }
 
+function createCompanyCrmPayload(snapshot, accessRecords, promotedAt) {
+  if (!verifyStagedSnapshot(snapshot, snapshot).ok) throw new Error("MIGRATION_SNAPSHOT_INVALID");
+  if (Number.isNaN(Date.parse(String(promotedAt || "")))) throw new Error("MIGRATION_PROMOTION_DATE_INVALID");
+  if (!Array.isArray(accessRecords) || !accessRecords.length) throw new Error("MIGRATION_ACCESS_INVALID");
+
+  const access = {};
+  for (const record of accessRecords) {
+    const uid = String(record && record.uid || "");
+    const email = String(record && record.email || "").trim().toLowerCase();
+    const role = String(record && record.role || "");
+    if (!/^[A-Za-z0-9:_-]{1,128}$/.test(uid) || !email || !["admin", "member", "viewer"].includes(role)) {
+      throw new Error("MIGRATION_ACCESS_INVALID");
+    }
+    if (access[uid]) throw new Error("MIGRATION_ACCESS_DUPLICATE");
+    access[uid] = {
+      uid,
+      email,
+      role,
+      enabled: true,
+      mustChangePassword: false,
+      createdAt: promotedAt,
+      source: "company-cutover",
+    };
+  }
+  if (!Object.values(access).some(record => record.role === "admin")) {
+    throw new Error("MIGRATION_ADMIN_REQUIRED");
+  }
+
+  assertNoSecrets(access);
+  return sortForCanonicalJson({
+    schemaVersion: 1,
+    data: snapshot.payload.crmSharedData,
+    cases: snapshot.payload.cases,
+    paymentCalendars: { shared: snapshot.payload.paymentCalendarsShared },
+    caseSettings: snapshot.payload.caseSettings,
+    access,
+    migration: {
+      sourceMigrationId: snapshot.manifest.migrationId,
+      sourcePayloadSha256: snapshot.manifest.payloadSha256,
+      promotedAt,
+    },
+  });
+}
+
 function assertAllowedSourcePath(path) {
   if (STATIC_SOURCE_PATHS.has(path)) return;
   if (/^crmAccess\/[A-Za-z0-9:_-]{1,128}$/.test(path)) return;
@@ -167,6 +211,7 @@ async function readCrmSource({ uid, idToken, fetchImpl = globalThis.fetch }) {
 module.exports = {
   SOURCE_DATABASE_URL,
   canonicalJson,
+  createCompanyCrmPayload,
   createStagedSnapshot,
   guardedSourceRequest,
   readCrmSource,

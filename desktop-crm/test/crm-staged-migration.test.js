@@ -3,6 +3,7 @@ const test = require("node:test");
 
 const {
   canonicalJson,
+  createCompanyCrmPayload,
   createStagedSnapshot,
   guardedSourceRequest,
   readCrmSource,
@@ -158,4 +159,27 @@ test("source reader rejects invalid UIDs before fetch", async () => {
     },
   }), /SOURCE_UID_INVALID/);
   assert.equal(called, false);
+});
+
+test("maps a verified staging snapshot into the isolated company CRM namespace", () => {
+  const snapshot = createStagedSnapshot({
+    migrationId: "crm-20260813-190000-ab12cd34",
+    exportedAt: "2026-08-13T19:00:00.000Z",
+    actor: { uid: "legacy-uid", email: "legacy@example.com" },
+    roots: validRoots(),
+  });
+  const payload = createCompanyCrmPayload(snapshot, [
+    { uid: "uid-admin", email: "admin@example.com", role: "admin" },
+    { uid: "uid-member", email: "member@example.com", role: "member" },
+  ], "2026-08-13T20:00:00.000Z");
+
+  assert.deepEqual(payload.data, snapshot.payload.crmSharedData);
+  assert.deepEqual(payload.cases, snapshot.payload.cases);
+  assert.deepEqual(payload.paymentCalendars.shared, snapshot.payload.paymentCalendarsShared);
+  assert.deepEqual(payload.caseSettings, snapshot.payload.caseSettings);
+  assert.equal(payload.access["uid-admin"].enabled, true);
+  assert.equal(payload.access["uid-admin"].role, "admin");
+  assert.equal(payload.access["uid-member"].role, "member");
+  assert.equal(payload.migration.sourceMigrationId, snapshot.manifest.migrationId);
+  assert.equal(Object.hasOwn(payload, "currentAccess"), false);
 });

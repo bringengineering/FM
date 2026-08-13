@@ -2,10 +2,15 @@ const crypto = require("node:crypto");
 const http = require("node:http");
 const path = require("node:path");
 
-const FIREBASE = Object.freeze({
+const LEGACY_FIREBASE = Object.freeze({
   apiKey: "AIzaSyAeAvJIeu5hOHQ-aT6YurHdPh1thO-NYmo",
   databaseUrl: "https://bring-fm-hj-default-rtdb.asia-southeast1.firebasedatabase.app",
   authPageUrl: "https://bring-fm-hj.web.app/crm-auth/"
+});
+const FIREBASE = Object.freeze({
+  apiKey: "AIzaSyBKOTIuQ8pOKSuaeKFQs_6UDdDnxdjCTZg",
+  databaseUrl: "https://bring-fm-default-rtdb.asia-southeast1.firebasedatabase.app",
+  authPageUrl: "https://bring-fm.web.app/crm-auth/"
 });
 const FIELD_HANDOFF_CALLABLE_URL = "https://asia-northeast3-bring-fm.cloudfunctions.net/createDesktopFieldHandoff";
 
@@ -272,6 +277,8 @@ function vendorDirectoryFromCsv(text) {
 
 class FirebaseRemoteClient {
   constructor(options) {
+    this.firebase = options.firebaseConfig || FIREBASE;
+    this.databaseRoot = options.databaseRoot ?? "crmCompany";
     this.Core = options.Core;
     this.fs = options.fs;
     this.safeStorage = options.safeStorage;
@@ -401,12 +408,12 @@ class FirebaseRemoteClient {
 
   async refreshFirebaseSession(refreshToken, hints) {
     const body = new URLSearchParams({ grant_type: "refresh_token", refresh_token: refreshToken });
-    const token = await this.requestJson(`https://securetoken.googleapis.com/v1/token?key=${FIREBASE.apiKey}`, {
+    const token = await this.requestJson(`https://securetoken.googleapis.com/v1/token?key=${this.firebase.apiKey}`, {
       method: "POST",
       headers: { "Content-Type": "application/x-www-form-urlencoded" },
       body
     }, "AUTH_EXPIRED");
-    const lookup = await this.requestJson(`https://identitytoolkit.googleapis.com/v1/accounts:lookup?key=${FIREBASE.apiKey}`, {
+    const lookup = await this.requestJson(`https://identitytoolkit.googleapis.com/v1/accounts:lookup?key=${this.firebase.apiKey}`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ idToken: token.id_token })
@@ -457,7 +464,11 @@ class FirebaseRemoteClient {
   async dbRequest(location, options, retried) {
     const token = await this.ensureIdToken(false);
     const suffix = options && options.query ? `&${options.query}` : "";
-    const url = `${FIREBASE.databaseUrl}/${location}.json?auth=${encodeURIComponent(token)}${suffix}`;
+    const normalizedLocation = String(location || "").replace(/^\/+/, "");
+    const rootedLocation = this.databaseRoot
+      ? (normalizedLocation ? `${this.databaseRoot}/${normalizedLocation}` : this.databaseRoot)
+      : normalizedLocation;
+    const url = `${this.firebase.databaseUrl}/${rootedLocation}.json?auth=${encodeURIComponent(token)}${suffix}`;
     try {
       return await this.requestJson(url, {
         method: options && options.method || "GET",
@@ -495,7 +506,7 @@ class FirebaseRemoteClient {
     if (!email || !password) throw createError("이메일과 비밀번호를 입력해 주세요.", "LOGIN_FAILED");
     let auth;
     try {
-      auth = await this.requestJson(`https://identitytoolkit.googleapis.com/v1/accounts:signInWithPassword?key=${FIREBASE.apiKey}`, {
+      auth = await this.requestJson(`https://identitytoolkit.googleapis.com/v1/accounts:signInWithPassword?key=${this.firebase.apiKey}`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ email, password, returnSecureToken: true })
@@ -526,7 +537,7 @@ class FirebaseRemoteClient {
     const providerToken = credential && credential.token || "";
     if (!providerToken) throw createError("Google 인증 정보를 받지 못했습니다.", "LOGIN_FAILED");
     const postBody = new URLSearchParams({ [tokenType]: providerToken, providerId: "google.com" }).toString();
-    const auth = await this.requestJson(`https://identitytoolkit.googleapis.com/v1/accounts:signInWithIdp?key=${FIREBASE.apiKey}`, {
+    const auth = await this.requestJson(`https://identitytoolkit.googleapis.com/v1/accounts:signInWithIdp?key=${this.firebase.apiKey}`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ postBody, requestUri: "http://localhost", returnIdpCredential: true, returnSecureToken: true })
@@ -603,7 +614,7 @@ class FirebaseRemoteClient {
       server.listen(0, "127.0.0.1", async () => {
         try {
           const port = server.address().port;
-          const authUrl = new URL(FIREBASE.authPageUrl);
+          const authUrl = new URL(this.firebase.authPageUrl);
           authUrl.searchParams.set("port", String(port));
           authUrl.searchParams.set("state", state);
           await this.shell.openExternal(authUrl.toString());
@@ -639,7 +650,7 @@ class FirebaseRemoteClient {
     }
     let updated;
     try {
-      updated = await this.requestJson(`https://identitytoolkit.googleapis.com/v1/accounts:update?key=${FIREBASE.apiKey}`, {
+      updated = await this.requestJson(`https://identitytoolkit.googleapis.com/v1/accounts:update?key=${this.firebase.apiKey}`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ idToken: await this.ensureIdToken(false), password, returnSecureToken: true })
@@ -1226,7 +1237,9 @@ class FirebaseRemoteClient {
       this.streamController = new AbortController();
       try {
         const token = await this.ensureIdToken(false);
-        const url = `${FIREBASE.databaseUrl}/crmShared/data.json?auth=${encodeURIComponent(token)}`;
+        const normalizedLocation = "crmShared/data";
+        const rootedLocation = this.databaseRoot ? `${this.databaseRoot}/${normalizedLocation}` : normalizedLocation;
+        const url = `${this.firebase.databaseUrl}/${rootedLocation}.json?auth=${encodeURIComponent(token)}`;
         const response = await this.fetch(url, { headers: { Accept: "text/event-stream" }, signal: this.streamController.signal });
         if (!response.ok || !response.body) throw createError(`실시간 연결 실패 (${response.status})`, "STREAM_ERROR");
         this.emitSync("connected", "공용 서버 실시간 연결됨", { pending: false });
@@ -1273,6 +1286,7 @@ class FirebaseRemoteClient {
 
 module.exports = {
   FIREBASE,
+  LEGACY_FIREBASE,
   DEFAULT_CASE_AUTOMATION_ENDPOINT,
   VENDOR_CSV_URL,
   WORKFLOW_ACTIONS,

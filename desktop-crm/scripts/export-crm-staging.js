@@ -4,7 +4,7 @@ const os = require("node:os");
 const path = require("node:path");
 const crypto = require("node:crypto");
 const Core = require("../src/core");
-const { FirebaseRemoteClient } = require("../src/remote");
+const { FirebaseRemoteClient, LEGACY_FIREBASE } = require("../src/remote");
 const { createStagedSnapshot, readCrmSource } = require("../src/crm-staged-migration");
 
 const appData = process.env.APPDATA;
@@ -52,6 +52,8 @@ async function run() {
   if (!safeStorage.isEncryptionAvailable()) throw new Error("MIGRATION_DPAPI_UNAVAILABLE");
   const sessionFile = path.join(crmProfileDirectory, "bring-crm-auth.json");
   const client = new FirebaseRemoteClient({
+    firebaseConfig: LEGACY_FIREBASE,
+    databaseRoot: "",
     Core,
     fs,
     safeStorage,
