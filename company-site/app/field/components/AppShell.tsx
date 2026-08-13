@@ -25,6 +25,7 @@ type AppShellProps = {
   logoutBusy?: boolean;
   logoutError?: string;
   driveControl?: ReactNode;
+  embeddedMode?: boolean;
   onLogout: () => void;
   onNavigate?: (destination: FieldDestination) => void;
 };
@@ -120,6 +121,7 @@ export default function AppShell({
   logoutBusy = false,
   logoutError,
   driveControl,
+  embeddedMode = false,
   onLogout,
   onNavigate,
 }: AppShellProps) {
@@ -131,7 +133,7 @@ export default function AppShell({
   const avatar = session.displayName.trim().slice(0, 2).toUpperCase() || "BR";
 
   return (
-    <div className="field-platform">
+    <div className={`field-platform${embeddedMode ? " field-platform-embedded" : ""}`}>
       <a className="field-skip-link" href="#field-main">
         본문 바로가기
       </a>
@@ -153,14 +155,16 @@ export default function AppShell({
             <strong>{session.displayName}</strong>
             <small>{roleLabel}</small>
           </span>
-          <button
-            className="field-nav-item"
-            type="button"
-            disabled={logoutBusy}
-            onClick={onLogout}
-          >
-            로그아웃
-          </button>
+          {!embeddedMode ? (
+            <button
+              className="field-nav-item"
+              type="button"
+              disabled={logoutBusy}
+              onClick={onLogout}
+            >
+              로그아웃
+            </button>
+          ) : null}
         </div>
       </aside>
 
@@ -174,7 +178,7 @@ export default function AppShell({
             <strong>현장 매물 관리</strong>
           </div>
           <div className="field-topbar-actions">
-            {driveControl}
+            {!embeddedMode ? driveControl : null}
             <div
               className="field-sync-status field-upload-summary-compact"
               role="status"
@@ -188,14 +192,16 @@ export default function AppShell({
               <span>실패 <strong>{uploadSummary.failed}</strong></span>
               {uploadSummaryDelayed ? <small>갱신 지연</small> : null}
             </div>
-            <button
-              className="field-sync-status"
-              type="button"
-              disabled={logoutBusy}
-              onClick={onLogout}
-            >
-              {logoutBusy ? "로그아웃 중…" : "로그아웃"}
-            </button>
+            {!embeddedMode ? (
+              <button
+                className="field-sync-status"
+                type="button"
+                disabled={logoutBusy}
+                onClick={onLogout}
+              >
+                {logoutBusy ? "로그아웃 중…" : "로그아웃"}
+              </button>
+            ) : null}
           </div>
         </header>
 

@@ -15,6 +15,7 @@ type AuthGateProps = {
   children: ReactNode;
   login?: () => Promise<FieldSession>;
   observeSession?: FieldSessionObserver;
+  interactiveLogin?: boolean;
 };
 
 type GateState =
@@ -46,12 +47,27 @@ function authErrorMessage(error: unknown): string {
 function SignInScreen({
   state,
   onLogin,
+  interactiveLogin,
 }: {
   state: Exclude<GateState, { status: "authenticated" }>;
   onLogin: () => void;
+  interactiveLogin: boolean;
 }) {
   const checking = state.status === "checking";
   const signingIn = state.status === "signingIn";
+
+  if (!interactiveLogin) {
+    return (
+      <main className="field-auth-screen">
+        <section className="field-auth-card" role="status" aria-live="polite">
+          <div className="field-auth-brand"><BrandLogo /></div>
+          <p className="field-eyebrow">BRING CRM · FIELD</p>
+          <h1>CRM 계정 확인</h1>
+          <p>{checking ? "CRM 계정을 확인하고 있습니다." : "CRM에서 다시 연결해 주세요."}</p>
+        </section>
+      </main>
+    );
+  }
 
   return (
     <main className="field-auth-screen">
@@ -94,6 +110,7 @@ export default function AuthGate({
   children,
   login = loginFieldUser,
   observeSession = observeFieldSession,
+  interactiveLogin = true,
 }: AuthGateProps) {
   const [state, setState] = useState<GateState>({ status: "checking" });
 
@@ -131,5 +148,11 @@ export default function AuthGate({
     );
   }
 
-  return <SignInScreen state={state} onLogin={() => void handleLogin()} />;
+  return (
+    <SignInScreen
+      state={state}
+      interactiveLogin={interactiveLogin}
+      onLogin={() => void handleLogin()}
+    />
+  );
 }

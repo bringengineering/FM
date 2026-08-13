@@ -9,6 +9,17 @@ const signedOutObserver = (listener: (session: null) => void) => {
 };
 
 describe("AuthGate redirect initiation", () => {
+  it("never offers Google login while CRM owns the embedded session", async () => {
+    render(
+      <AuthGate interactiveLogin={false} observeSession={signedOutObserver}>
+        <div>내부 플랫폼</div>
+      </AuthGate>,
+    );
+
+    expect(await screen.findByRole("status")).toHaveTextContent("CRM에서 다시 연결");
+    expect(screen.queryByRole("button", { name: "Google濡?濡쒓렇??" })).not.toBeInTheDocument();
+  });
+
   it("re-enables sign-in with an actionable message when the current domain is unauthorized", async () => {
     const login = vi.fn(async () => {
       throw new Error("field_login_domain_not_authorized");

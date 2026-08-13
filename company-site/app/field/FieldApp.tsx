@@ -11,6 +11,7 @@ import CaptureWorkspace, {
   type CaptureTarget,
 } from "./components/CaptureWorkspace";
 import Dashboard from "./components/Dashboard";
+import DesktopFieldBootstrap from "./components/DesktopFieldBootstrap";
 import DriveConnectionControl from "./components/DriveConnectionControl";
 import FieldMapPanel from "./components/FieldMapPanel";
 import FieldServiceWorker from "./components/FieldServiceWorker";
@@ -106,6 +107,7 @@ interface FieldWorkspaceProps {
   excludeMedia?: typeof excludeFieldMedia;
   logout?: typeof logoutFieldUser;
   confirmExit?: (message: string) => boolean;
+  embeddedMode?: boolean;
 }
 
 interface RuntimeCaptureCoordinator extends CaptureUploadCoordinator {
@@ -202,6 +204,7 @@ export function FieldWorkspace({
   excludeMedia: suppliedExcludeMedia,
   logout = logoutFieldUser,
   confirmExit = (message) => window.confirm(message),
+  embeddedMode = false,
 }: FieldWorkspaceProps = {}) {
   const session = useFieldSession();
   const [active, setActive] = useState<FieldDestination>("home");
@@ -352,6 +355,7 @@ export function FieldWorkspace({
       uploadSummaryDelayed={uploadSummaryDelayed}
       logoutBusy={logoutBusy}
       logoutError={logoutError}
+      embeddedMode={embeddedMode}
       driveControl={(
         <DriveConnectionControl
           onConnected={async () => {
@@ -440,10 +444,20 @@ export default function FieldApp() {
       </main>
     );
   }
+  const embeddedMode = typeof window !== "undefined"
+    && new URL(window.location.href).searchParams.get("embedded") === "crm";
   return (
     <>
       <FieldServiceWorker />
-      <AuthGate><FieldWorkspace /></AuthGate>
+      {embeddedMode ? (
+        <DesktopFieldBootstrap>
+          <AuthGate interactiveLogin={false}>
+            <FieldWorkspace embeddedMode />
+          </AuthGate>
+        </DesktopFieldBootstrap>
+      ) : (
+        <AuthGate><FieldWorkspace /></AuthGate>
+      )}
     </>
   );
 }

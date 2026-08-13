@@ -27,6 +27,16 @@
     sans-serif;
 }
 
+.field-embedded,
+.field-platform-embedded,
+.field-embedded-bootstrap {
+  min-height: 100%;
+}
+
+.field-platform-embedded {
+  --field-mobile-nav-height: 52px;
+}
+
 .field-auth-screen {
   display: grid;
   min-height: 100vh;
