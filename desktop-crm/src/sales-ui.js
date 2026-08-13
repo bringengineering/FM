@@ -59,6 +59,11 @@
     broker_confirmation: "협력 공인중개사 계약완료 확인",
     management_start: "유료관리 시작 확인",
     service_contract: "관리 서비스 계약서",
+    resume_reason: "영업 재개 사유",
+    note: "확인 메모",
+    url: "증거 링크",
+    crm_record: "CRM 등록 기록",
+    demo_record: "화면검증 기록",
     photo: "사진",
     document: "문서",
     link: "외부 링크"
@@ -176,7 +181,14 @@
     (Array.isArray(stages) ? stages : []).forEach(stage => {
       (Array.isArray(stage && stage.events) ? stage.events : []).forEach(event => { labels[event] = stage.label; });
     });
+    labels.prospect_resumed = "영업 재개";
     return labels;
+  }
+
+  function evidenceTypeLabel(value) {
+    const code = String(value || "").trim();
+    if (!code) return "증거 유형 미입력";
+    return EVIDENCE_TYPE_LABELS[code] || "기타 확인 증거";
   }
 
   function actorLabel(value) {
@@ -498,7 +510,7 @@
             <div class="sales-section-toolbar">${renderSectionAction(writable, "data-sales-add-event", id, "단계 완료 기록")}</div>
             ${events.length ? `<ol class="sales-timeline evidence">${events.map(event => `<li class="${event.archivedAt ? "archived" : "active"}">
               <time datetime="${attr(event.occurredAt || event.createdAt || "")}">${esc(dateTimeText(event.occurredAt || event.createdAt))}</time>
-              <div><strong>${esc(eventLabels[event.type] || event.type || "완료 이벤트")}</strong><p>${esc(event.evidenceNote || "증거 메모 없음")}</p><div class="sales-evidence-context"><span>${esc(labelOf(EVIDENCE_TYPE_LABELS, event.evidenceType, "증거 유형 미입력"))}</span>${evidenceLink(event.evidenceUrl, "증거 보기")}</div>${referenceMarkup(event)}${auditMarkup(event)}<div class="sales-event-management">${event.archivedAt ? `<span class="sales-state-label">보관됨</span>` : ""}${writable ? `<button type="button" class="sales-event-manage-button" data-sales-event-${event.archivedAt ? "restore" : "archive"}="${attr(event.id)}" data-sales-prospect-id="${attr(id)}">${event.archivedAt ? "복원" : "보관"}</button>` : ""}</div></div>
+              <div><strong>${esc(eventLabels[event.type] || event.type || "완료 이벤트")}</strong><p>${esc(event.evidenceNote || "증거 메모 없음")}</p><div class="sales-evidence-context"><span>${esc(evidenceTypeLabel(event.evidenceType))}</span>${evidenceLink(event.evidenceUrl, "증거 보기")}</div>${referenceMarkup(event)}${auditMarkup(event)}<div class="sales-event-management">${event.archivedAt ? `<span class="sales-state-label">보관됨</span>` : ""}${writable ? `<button type="button" class="sales-event-manage-button" data-sales-event-${event.archivedAt ? "restore" : "archive"}="${attr(event.id)}" data-sales-prospect-id="${attr(id)}">${event.archivedAt ? "복원" : "보관"}</button>` : ""}</div></div>
             </li>`).join("")}</ol>` : renderRecordEmpty("완료 증거가 아직 없습니다. 증거 없이 단계는 올라가지 않습니다.")}
           </div>
         </details>

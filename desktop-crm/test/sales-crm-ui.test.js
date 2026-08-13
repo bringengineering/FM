@@ -334,6 +334,36 @@ test("evidence records show approved Korean evidence labels and app-routable lin
   assert.match(html, /data-sales-evidence-link="https:\/\/example\.com\/evidence\/1"/);
 });
 
+test("resume history and every stored evidence code render as Korean business labels", () => {
+  const evidenceTypes = [
+    ["resume_reason", "영업 재개 사유"],
+    ["note", "확인 메모"],
+    ["url", "증거 링크"],
+    ["crm_record", "CRM 등록 기록"]
+  ];
+  const html = SalesUI.renderProspectDetail({
+    prospect: sampleStore.salesProspects[0],
+    contacts: [], units: [], activities: [], opportunities: [], stages: Sales.SALES_STAGES,
+    events: evidenceTypes.map(([evidenceType], index) => ({
+      id: `evt_code_${index}`,
+      prospectId: "spr_1",
+      type: index === 0 ? "prospect_resumed" : "prospect_created",
+      resumeStage: index === 0 ? "replied" : "",
+      evidenceType,
+      evidenceNote: `확인 ${index + 1}`,
+      occurredAt: `2026-08-13T0${index}:00:00.000Z`
+    })),
+    writable: false
+  });
+
+  assert.match(html, />영업 재개<\/strong>/);
+  for (const [code, label] of evidenceTypes) {
+    assert.match(html, new RegExp(label));
+    assert.doesNotMatch(html, new RegExp(`>${code}<`));
+  }
+  assert.doesNotMatch(html, /증거 유형 미입력/);
+});
+
 test("event history offers archive and restore without permanent deletion only to writers", () => {
   const events = [
     { id: "evt_active", prospectId: "spr_1", type: "listing_received", evidenceNote: "활성 증거", occurredAt: "2026-08-13T01:00:00.000Z" },
@@ -428,4 +458,15 @@ test("sales forms fit inside the existing modal without a horizontal scrollbar",
   assert.match(css, /\.sales-form\s*\{[^}]*width:\s*100%[^}]*max-width:\s*860px/s);
   assert.doesNotMatch(css, /\.sales-form\s*\{[^}]*width:\s*min\(860px,\s*92vw\)/s);
   assert.match(css, /\.sales-form-grid\s*>\s*\*\s*\{[^}]*min-width:\s*0/s);
+});
+
+test("archived sales history preserves full text contrast without whole-row opacity", async () => {
+  const css = await readFile(path.join(__dirname, "..", "src", "sales.css"), "utf8");
+  const archivedRule = css.match(/\.sales-timeline li\.archived\s*\{([^}]*)\}/s)?.[1] || "";
+  assert.ok(archivedRule, "archived history styling is missing");
+  assert.doesNotMatch(archivedRule, /opacity\s*:/);
+  assert.match(archivedRule, /background\s*:/);
+  assert.match(archivedRule, /(?:border|box-shadow)\s*:/);
+  assert.match(css, /\.sales-timeline li\.archived\s*>\s*time\s*\{[^}]*color\s*:[^;}]+[^}]*font-weight\s*:/s);
+  assert.match(css, /\.sales-timeline li\.archived\s+\.sales-state-label\s*\{[^}]*color\s*:/s);
 });

@@ -763,7 +763,9 @@
 .sales-timeline strong { font-size: 15px; }
 .sales-timeline p { margin: 3px 0 0; color: var(--sales-text-secondary); white-space: pre-wrap; overflow-wrap: anywhere; }
 .sales-timeline.evidence li { border-left: 3px solid var(--sales-success); padding-left: 12px; }
-.sales-timeline li.archived { background: var(--sales-surface-subtle); opacity: .82; }
+.sales-timeline li.archived { background: #edf3f6; box-shadow: inset 0 0 0 1px #b8ccd7; }
+.sales-timeline li.archived > time { color: #36586c; font-weight: 800; }
+.sales-timeline li.archived .sales-state-label { border: 1px solid #9eb8c6; background: #fff; color: #36586c; }
 .sales-timeline.evidence li.archived { border-left-color: #9cafba; }
 .sales-event-management { display: flex; align-items: center; justify-content: flex-end; gap: 8px; margin-top: 9px; }
 .sales-event-management:empty { display: none; }
