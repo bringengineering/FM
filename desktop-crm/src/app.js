@@ -61,6 +61,7 @@
   let pendingRemoteStore = null;
   let synchronizedStore = null;
   let appInitialized = false;
+  let overlayRefreshPromise = null;
   let loginInProgress = false;
   let operations = { cases: [], payments: {}, caseSettings: {}, loadedAt: "" };
   let operationsLoading = false;
@@ -305,6 +306,36 @@
     return Core.sanitizeStore(JSON.parse(JSON.stringify(value || store)));
   }
 
+  function preserveRendererOverlays(value, fallback) {
+    const source = value && typeof value === "object" ? value : {};
+    const previous = fallback && typeof fallback === "object" ? fallback : {};
+    const overlays = {};
+    ["buildingUnits", "fieldSummaries"].forEach(collection => {
+      overlays[collection] = Object.prototype.hasOwnProperty.call(source, collection)
+        ? source[collection]
+        : previous[collection];
+    });
+    return Core.sanitizeRendererStore(Object.assign({}, source, overlays));
+  }
+
+  async function refreshRendererOverlays(renderAfter = true) {
+    if (overlayRefreshPromise) return overlayRefreshPromise;
+    overlayRefreshPromise = Promise.all([
+      api.loadCanonicalBuildingUnits(),
+      api.loadFieldSummaries()
+    ]).then(([buildingUnits, fieldSummaries]) => {
+      const overlays = Core.sanitizeRendererOverlays({ buildingUnits, fieldSummaries });
+      const merge = value => value ? Core.sanitizeRendererStore(Object.assign({}, value, overlays)) : value;
+      store = merge(store);
+      synchronizedStore = merge(synchronizedStore);
+      pendingRemoteStore = merge(pendingRemoteStore);
+      queuedSave = merge(queuedSave);
+      if (renderAfter && appInitialized) render();
+      return overlays;
+    }).finally(() => { overlayRefreshPromise = null; });
+    return overlayRefreshPromise;
+  }
+
   function ensureSalesStore(target) {
     const value = target || store;
     ["salesProspects", "salesContacts", "salesUnits", "salesActivities", "salesEvents", "salesOpportunities"]
@@ -401,7 +432,7 @@
   }
 
   function applyRemoteStore(data) {
-    const next = Core.sanitizeStore(data);
+    const next = preserveRendererOverlays(data, store);
     if (saveTimer || saveInFlight || modal.classList.contains("open") || drawer.classList.contains("open") || confirmationLayer.classList.contains("open")) {
       pendingRemoteStore = next;
       return;
@@ -458,6 +489,11 @@
     return (!currentAuth.required && !currentAuth.enforceRoles) || currentAuth.user && currentAuth.user.role === "admin";
   }
 
+  function deferCanonicalMutation(label) {
+    showToast(`${label} 변경은 담당 작업자 선택 기능이 연결된 뒤 사용할 수 있습니다.`, "error");
+    return true;
+  }
+
   function containsProhibitedSecret(value) {
     return Core.findProhibitedSecrets(value).length > 0;
   }
@@ -499,8 +535,10 @@
     saveInFlight = true;
     try {
       const result = await api.save(payload);
-      synchronizedStore = cloneStore(result.data);
-      if (!queuedSave) store = cloneStore(result.data);
+      const saved = preserveRendererOverlays(result.data, payload);
+      synchronizedStore = cloneStore(saved);
+      if (!queuedSave) store = cloneStore(saved);
+      if (!result.pending) await refreshRendererOverlays(false).catch(() => undefined);
       updateSyncUI(result.pending ? { status: "pending", message: "서버 연결 시 자동 저장됩니다." } : { status: "connected", message: "공용 서버와 동기화됨", updatedAt: store.updatedAt });
       if (rebasedRemote) {
         render();
@@ -1721,7 +1759,6 @@
     const editing = customerById(customerId);
     const customer = editing ? JSON.parse(JSON.stringify(editing)) : Core.createCustomer({ owner: store.settings.owner || "김현진" });
     const linkedBuildings = customerBuildings(customer);
-    const building = linkedBuildings.length === 1 ? linkedBuildings[0] : {};
     modalContent.innerHTML = `<div class="modal-head"><div><h2>${editing ? "고객 정보 수정" : "새 고객 등록"}</h2><p>먼저 필요한 내용만 입력하세요. 나머지는 나중에 추가해도 됩니다.</p></div><button class="close-button" data-action="close-modal">×</button></div><form id="customerForm" class="modal-body simple-customer-form" data-customer-id="${attr(editing && editing.id || "")}"><div class="essential-label"><b>기본 정보</b><span>이 화면만 입력해도 고객 등록이 완료됩니다.</span></div><div class="form-grid">
       ${field("고객명 *", "name", customer.name, "text", "예: 홍길동 또는 원주에셋")}
       ${field("연락처", "phone", customer.phone, "tel", "010-0000-0000")}
@@ -1736,12 +1773,13 @@
       ${field("예상 계약금액", "expectedValue", customer.expectedValue || "", "number", "원 단위")}${field("관심 서비스", "interestServices", (customer.interestServices || []).join(", "), "text", "예: 건물관리, 누수 대응")}
       ${field("태그", "tags", (customer.tags || []).join(", "), "text", "예: 원주, 다가구, 소개")}${field("마지막 연락일", "lastContactAt", datetimeValue(customer.lastContactAt), "datetime-local")}
       ${areaField("고객 메모", "notes", customer.notes, "wide")}
-    </div></details>${linkedBuildings.length > 1 ? `<div class="info-box">이 고객은 건물 ${linkedBuildings.length}곳과 연결되어 있습니다. 잘못된 건물이 수정되지 않도록 고객 화면에서는 건물 정보를 바꾸지 않습니다. 건물 관리에서 수정해 주세요.</div>` : `<details class="optional-form"><summary><b>건물 정보 추가</b><span>건물이 정해져 있다면 펼치세요</span></summary><div class="form-grid optional-form-body">${field("건물명", "buildingName", building.name || "")}${selectField("건물 유형", "buildingType", ["다가구", "원룸", "상가", "아파트", "빌딩", "오피스텔", "기타"], building.type || "다가구")}${field("건물 주소", "buildingAddress", building.address || customer.address || "", "text", "원주시부터 입력", "wide")}${field("호실 수", "unitCount", building.unitCount || "", "number")}${selectField("건물 상태", "buildingStatus", ["영업후보", "현장방문", "견적중", "계약예정", "관리중", "보류"], building.status || "영업후보")}</div></details>`}<div class="form-actions"><button type="button" class="secondary-button" data-action="close-modal">취소</button><button type="submit" class="primary-button">${editing ? "수정 저장" : "고객 등록"}</button></div></form>`;
+    </div></details><div class="info-box" data-canonical-mutation-deferred="buildings">${linkedBuildings.length ? `연결된 건물 ${linkedBuildings.length}곳은 이 고객 화면에서 그대로 유지됩니다.` : "고객을 먼저 등록할 수 있습니다."} 건물 등록·수정은 담당 작업자 선택 기능이 연결된 뒤 건물 관리에서 사용할 수 있습니다.</div><div class="form-actions"><button type="button" class="secondary-button" data-action="close-modal">취소</button><button type="submit" class="primary-button">${editing ? "수정 저장" : "고객 등록"}</button></div></form>`;
     openModal();
     setTimeout(() => document.querySelector('#customerForm [name="name"]')?.focus(), 30);
   }
 
   function buildingEditor(buildingId) {
+    if (deferCanonicalMutation("건물")) return;
     const editing = buildingById(buildingId);
     const building = editing ? JSON.parse(JSON.stringify(editing)) : Core.createBuilding({ manager: store.settings.owner || "김현진" });
     const customerOptions = ["", ...store.customers.map(customer => customer.id)];
@@ -2061,6 +2099,7 @@
   }
 
   function salesUnitEditor(prospectId, unitId) {
+    if (deferCanonicalMutation("영업 호실")) return;
     const prospect = salesProspectById(prospectId);
     if (!prospect) return showToast("영업 대상 건물을 찾지 못했습니다.", "error");
     const item = salesUnitById(unitId) || {};
@@ -2361,21 +2400,6 @@
     });
     if (customer.stage === "계약 확정" && previousStage !== "계약 확정") beginRelationship(customer);
     if (!existing) store.customers.push(customer);
-    const linkedBuildings = customerBuildings(customer);
-    const firstBuilding = linkedBuildings.length === 1 ? linkedBuildings[0] : null;
-    if (String(raw.buildingName || "").trim() && linkedBuildings.length <= 1) {
-      const building = firstBuilding || Core.createBuilding({ ownerCustomerId: customer.type === "건물주" ? customer.id : "", manager: customer.owner });
-      const nextName = raw.buildingName.trim();
-      const aliases = new Set(building.aliases || []);
-      if (building.name && Core.normalizeText(building.name) !== Core.normalizeText(nextName)) aliases.add(building.name);
-      const paymentIds = new Set(building.externalRefs && building.externalRefs.paymentBuildingIds || []);
-      Object.values(operations.payments && operations.payments.schedules || {}).forEach(schedule => {
-        if (scheduleBelongsToBuilding(schedule, building) && schedule.buildingId) paymentIds.add(String(schedule.buildingId));
-      });
-      Object.assign(building, { name: nextName, type: raw.buildingType, address: raw.buildingAddress.trim(), unitCount: Number(raw.unitCount) || 0, status: raw.buildingStatus, ownerCustomerId: customer.type === "건물주" ? customer.id : building.ownerCustomerId || "", manager: customer.owner, aliases: [...aliases], externalRefs: Object.assign({}, building.externalRefs || {}, { paymentBuildingIds: [...paymentIds] }), updatedAt: new Date().toISOString() });
-      if (!firstBuilding) { store.buildings.push(building); customer.buildingIds.push(building.id); }
-      customer.address = building.address;
-    }
     return customer;
   }
 
@@ -2544,6 +2568,7 @@
   }
 
   async function deleteBuildingRecord(buildingId) {
+    if (deferCanonicalMutation("건물")) return;
     if (!canWriteCRM()) return showToast("조회 전용 계정은 건물을 삭제할 수 없습니다.", "error");
     let building = store.buildings.find(item => item.id === buildingId);
     if (!building) return showToast("삭제할 건물을 찾지 못했습니다.", "error");
@@ -2706,6 +2731,7 @@
     if (salesRecordArchive) {
       if (!canWriteCRM()) return showToast("조회 전용 계정은 영업 기록을 보관할 수 없습니다.", "error");
       const collection = salesRecordArchive.dataset.salesCollection;
+      if (collection === "salesUnits" && deferCanonicalMutation("영업 호실")) return;
       const id = salesRecordArchive.dataset.salesRecordArchive;
       const item = (store[collection] || []).find(record => record.id === id);
       if (!item || !await requestConfirmation({ title: "이 영업 기록을 보관할까요?", description: "영구삭제하지 않고 상세의 관리 영역에서 복원할 수 있습니다.", target: item.name || item.label || item.requirements || id, confirmLabel: "보관", tone: "danger" })) return;
@@ -2722,6 +2748,7 @@
     if (salesRecordRestore) {
       if (!canWriteCRM()) return showToast("조회 전용 계정은 영업 기록을 복원할 수 없습니다.", "error");
       const collection = salesRecordRestore.dataset.salesCollection;
+      if (collection === "salesUnits" && deferCanonicalMutation("영업 호실")) return;
       const id = salesRecordRestore.dataset.salesRecordRestore;
       const item = (store[collection] || []).find(record => record.id === id);
       if (!item) return;
@@ -3345,6 +3372,7 @@
         scheduleSave(); closeModal(); render(); renderSalesProspectDrawer(item.prospectId); showToast("연락처를 저장했습니다.", "success");
       } catch (error) { showToast(error.message || "연락처를 저장하지 못했습니다.", "error"); }
     } else if (form.id === "salesUnitForm") {
+      if (deferCanonicalMutation("영업 호실")) return;
       const raw = Object.fromEntries(new FormData(form).entries());
       if (!assertSalesInputSafe(raw)) return;
       try {
@@ -3539,6 +3567,7 @@
       await refreshOperations({ silent: true, render: false });
       closeModal(); currentView = "payments"; render(); showToast("입금 상태를 공용 캘린더에 반영했습니다.", "success");
     } else if (form.id === "buildingForm") {
+      if (deferCanonicalMutation("건물")) return;
       const raw = Object.fromEntries(new FormData(form).entries());
       const name = String(raw.name || "").trim();
       if (!name) return showToast("건물명을 입력해 주세요.", "error");
@@ -3902,7 +3931,12 @@ document.addEventListener("keydown", event => {
     else showApplication(currentAuth);
   });
 
-  api.onSyncState(updateSyncUI);
+  api.onSyncState(state => {
+    updateSyncUI(state);
+    if (state && state.status === "connected" && appInitialized) {
+      void refreshRendererOverlays().catch(() => undefined);
+    }
+  });
   api.onRemoteData(applyRemoteStore);
   api.onUpdateState(state => {
     const previous = currentUpdate.status;
@@ -3999,6 +4033,7 @@ document.addEventListener("keydown", event => {
     try {
       store = Core.sanitizeStore(initialData || await api.load());
       ensureSalesStore(store);
+      await refreshRendererOverlays(false).catch(() => undefined);
       dataPath = await api.dataPath();
       const query = new URLSearchParams(location.search);
       if (query.get("demo") === "1" && !store.customers.length) store = demoStore();

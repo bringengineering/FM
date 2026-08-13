@@ -278,7 +278,7 @@ async function readLocalStore() {
   try {
     const raw = await fs.readFile(dataFile(), "utf8");
     const decoded = decodeProtectedJson(safeStorage, raw);
-    const data = Core.sanitizeStore(decoded.value);
+    const data = Core.sanitizeSharedStore(decoded.value);
     Core.assertNoProhibitedSecrets(data);
     if (!decoded.encrypted) await writeProtectedStoreFile(dataFile(), data);
     return data;
@@ -287,7 +287,7 @@ async function readLocalStore() {
       console.warn("CRM data read failed", error.message);
       if (["LOCAL_ENCRYPTION_UNAVAILABLE", "PROTECTED_DATA_INVALID"].includes(error.code)) throw error;
     }
-    return Core.blankStore();
+    return Core.blankSharedStore();
   }
 }
 
@@ -301,7 +301,7 @@ async function writeProtectedStoreFile(target, value) {
 async function writeLocalStore(input) {
   const target = dataFile();
   Core.assertNoProhibitedSecrets(input);
-  const data = Core.sanitizeStore(input);
+  const data = Core.sanitizeSharedStore(input);
   data.updatedAt = new Date().toISOString();
   await writeProtectedStoreFile(target, data);
   return data;
@@ -735,6 +735,11 @@ async function createWindow() {
   });
 
   if (process.env.BRING_CRM_SMOKE === "1") {
+    for (let attempt = 0; attempt < 50; attempt += 1) {
+      const ready = await mainWindow.webContents.executeJavaScript("window.__crmTest && window.__crmTest.snapshot().initialized", true);
+      if (ready) break;
+      await new Promise(resolve => setTimeout(resolve, 100));
+    }
     const snapshot = await mainWindow.webContents.executeJavaScript("window.__crmTest && window.__crmTest.snapshot()", true);
     console.log(JSON.stringify(snapshot));
     app.quit();
@@ -2037,6 +2042,20 @@ secureHandle("crm:auth-logout", async () => {
 });
 secureHandle("crm:load", readStore);
 secureHandle("crm:save", data => writeStore(data));
+secureHandle("crm:canonical-building-units-load", async () => {
+  if (localTestMode) return {};
+  if (!remoteClient || !remoteClient.authState().user) throw new Error("로그인이 필요합니다.");
+  return remoteClient.loadCanonicalBuildingUnits();
+});
+secureHandle("crm:field-summaries-load", async () => {
+  if (localTestMode) return {};
+  if (!remoteClient || !remoteClient.authState().user) throw new Error("로그인이 필요합니다.");
+  return remoteClient.loadFieldSummaries();
+});
+secureHandle("crm:canonical-entity-commit", async input => {
+  if (!remoteClient || !remoteClient.authState().user) throw new Error("로그인이 필요합니다.");
+  return remoteClient.commitCanonicalCrmEntity(Object.assign(Object.create(null), input, { buildVersion: app.getVersion() }));
+});
 secureHandle("crm:operations-load", readOperations);
 secureHandle("crm:case-save", input => saveWorkflowCase(input));
 secureHandle("crm:payment-override", input => savePaymentOverride(input));
@@ -2082,7 +2101,7 @@ secureHandle("crm:vendor-lookup", async rawUrl => {
 secureHandle("crm:backup", async input => {
   if (!localTestMode && (!authState().user || authState().user.role !== "admin")) return { ok: false, error: "관리자만 암호화 백업을 저장할 수 있습니다." };
   if (!safeStorage.isEncryptionAvailable()) return { ok: false, error: "이 PC에서 안전한 백업 암호화를 사용할 수 없습니다." };
-  const data = Core.sanitizeStore(input);
+  const data = Core.sanitizeSharedStore(input);
   const result = await dialog.showSaveDialog({
     title: "BRING CRM 암호화 백업 저장",
     defaultPath: `BRING-CRM-backup-${Core.dayKey()}.bringbackup`,
@@ -2101,7 +2120,7 @@ secureHandle("crm:restore", async () => {
   let decoded;
   try { decoded = safeStorage.decryptString(await fs.readFile(result.filePaths[0])); }
   catch (_error) { return { ok: false, error: "이 PC에서 만든 올바른 BRING CRM 백업 파일이 아닙니다." }; }
-  const data = Core.sanitizeStore(JSON.parse(decoded));
+  const data = Core.sanitizeSharedStore(JSON.parse(decoded));
   const saved = await writeStore(data);
   return { ok: true, data: saved.data, pending: saved.pending, path: result.filePaths[0] };
 });

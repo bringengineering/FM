@@ -161,7 +161,7 @@
     return user;
   }
 
-  function blankStore() {
+  function blankSharedStore() {
     return {
       schemaVersion: 3,
       company: { name: "BRING Care", workspace: "원주 건물 운영" },
@@ -183,8 +183,12 @@
     };
   }
 
-  function sanitizeStore(input) {
-    const base = blankStore();
+  function blankStore() {
+    return Object.assign(blankSharedStore(), { buildingUnits: [], fieldSummaries: [] });
+  }
+
+  function sanitizeSharedStore(input) {
+    const base = blankSharedStore();
     const src = input && typeof input === "object" ? input : {};
     const partnerQuotes = Array.isArray(src.partnerQuotes) ? src.partnerQuotes.filter(Boolean).map(quote => normalizePartnerQuote(quote)) : [];
     const partnerVendors = Array.isArray(src.partnerVendors) ? src.partnerVendors.filter(Boolean).map(vendor => normalizePartnerVendor(vendor)) : [];
@@ -220,6 +224,51 @@
       salesOpportunities: Array.isArray(src.salesOpportunities) ? src.salesOpportunities.filter(Boolean) : [],
       updatedAt: src.updatedAt || iso()
     };
+  }
+
+  const FORBIDDEN_OVERLAY_KEYS = new Set(["__proto__", "prototype", "constructor"]);
+  const OVERLAY_ID = /^[A-Za-z0-9_-]{1,120}$/;
+
+  function cloneOverlayValue(value, depth) {
+    if (value === null || ["string", "number", "boolean"].includes(typeof value)) return value;
+    if (depth >= 10) return null;
+    if (Array.isArray(value)) return value.slice(0, 500).map(item => cloneOverlayValue(item, depth + 1));
+    if (!value || typeof value !== "object") return null;
+    const result = {};
+    Object.entries(value).forEach(([key, item]) => {
+      if (!FORBIDDEN_OVERLAY_KEYS.has(key)) result[key] = cloneOverlayValue(item, depth + 1);
+    });
+    return result;
+  }
+
+  function sanitizeOverlayCollection(value, identityField) {
+    const entries = Array.isArray(value)
+      ? value.map(item => ["", item])
+      : value && typeof value === "object" ? Object.entries(value) : [];
+    return entries.slice(0, 10000).flatMap(([fallbackId, item]) => {
+      if (!item || typeof item !== "object" || Array.isArray(item)) return [];
+      const copy = cloneOverlayValue(item, 0);
+      const id = String(copy[identityField] || (identityField === "id" ? copy.id : "") || fallbackId || "").trim();
+      if (!OVERLAY_ID.test(id) || FORBIDDEN_OVERLAY_KEYS.has(id)) return [];
+      copy[identityField] = id;
+      return [copy];
+    });
+  }
+
+  function sanitizeRendererOverlays(input) {
+    const source = input && typeof input === "object" ? input : {};
+    return {
+      buildingUnits: sanitizeOverlayCollection(source.buildingUnits, "id"),
+      fieldSummaries: sanitizeOverlayCollection(source.fieldSummaries, "fieldJobId")
+    };
+  }
+
+  function sanitizeRendererStore(input) {
+    return Object.assign(sanitizeSharedStore(input), sanitizeRendererOverlays(input));
+  }
+
+  function sanitizeStore(input) {
+    return sanitizeRendererStore(input);
   }
 
   function normalizePartnerQuote(value) {
@@ -563,7 +612,7 @@
 
   return {
     PIPELINE_STAGES, PARTNER_QUOTE_STATUSES, PARTNER_INDUSTRIES, CONTRACT_TYPES, CONTRACT_STATUSES, WORKFLOW_STEPS, SECURITY_ASSET_TYPES, SECURITY_ASSET_STATUSES, AUDIT_CATEGORIES,
-    blankStore, sanitizeStore, createCustomer, createBuilding, normalizeBuilding, createActivity, createContract, normalizeContractTypes, createPartnerVendor, createPartnerQuote, createTask, createSecurityAsset,
+    blankStore, blankSharedStore, sanitizeStore, sanitizeSharedStore, sanitizeRendererStore, sanitizeRendererOverlays, createCustomer, createBuilding, normalizeBuilding, createActivity, createContract, normalizeContractTypes, createPartnerVendor, createPartnerQuote, createTask, createSecurityAsset,
     createAccessRole, createAuditLog, createSecurityIncident, calculateDashboard, calculateSecurityStatus,
     workflowProgress, buildWorkflowCase, matchWorkflowCustomer, paymentNormalizeName, paymentMonthRows,
     normalizePhone, normalizeText, normalizePipelineStage, money, dayKey, iso,

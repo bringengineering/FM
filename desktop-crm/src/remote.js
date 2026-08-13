@@ -13,6 +13,7 @@ const FIREBASE = Object.freeze({
   authPageUrl: "https://bring-fm.web.app/crm-auth/"
 });
 const FIELD_HANDOFF_CALLABLE_URL = "https://asia-northeast3-bring-fm.cloudfunctions.net/createDesktopFieldHandoff";
+const CANONICAL_CRM_ENDPOINT_URL = "https://asia-northeast3-bring-fm.cloudfunctions.net/commitCanonicalCrmEntity";
 
 const DEFAULT_CASE_AUTOMATION_ENDPOINT = "https://script.google.com/macros/s/AKfycbxGAdtEDoNifxkM-e_Jm7dBkCnjM4oPJqz8RxZXoMoSKod5M_m9Yj2b11-nI97zmfd6Jw/exec";
 const VENDOR_CSV_URL = "https://docs.google.com/spreadsheets/d/1SYC0CofvdPLE1AQax_IgLx3FFWmntXi4H6yQttV9y4A/export?format=csv&gid=0";
@@ -31,7 +32,24 @@ const SHARED_COLLECTIONS = Object.freeze([
   "securityAssets", "auditLogs", "securityIncidents",
   "salesProspects", "salesContacts", "salesUnits", "salesActivities", "salesEvents", "salesOpportunities"
 ]);
-const PENDING_STORE_VERSION = 4;
+const CANONICAL_SHARED_COLLECTIONS = Object.freeze(["buildings", "salesUnits"]);
+const PENDING_STORE_VERSION = 5;
+const CANONICAL_CRM_BODY_MAX_BYTES = 32 * 1024;
+const CANONICAL_CRM_PATCH_MAX_BYTES = 24_000;
+const CANONICAL_CRM_REQUEST_ID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+const CANONICAL_CRM_ENTITY_TYPES = new Set(["buildings", "buildingUnits", "salesUnits"]);
+const CANONICAL_CRM_OPERATIONS = new Set(["create", "update", "archive", "restore"]);
+const CANONICAL_CRM_ERROR_CODES = new Set([
+  "crm_method_not_allowed", "crm_body_too_large", "crm_rate_limited", "crm_auth_required",
+  "crm_access_forbidden", "crm_operator_inactive", "crm_mutation_forbidden", "crm_entity_not_found",
+  "crm_parent_not_found", "crm_entity_version_conflict", "crm_request_id_conflict",
+  "crm_building_unit_label_conflict", "crm_entity_already_archived", "crm_entity_not_archived",
+  "crm_safe_mode_read_only", "crm_canonical_writes_disabled", "crm_entity_upgrade_required",
+  "crm_parent_archived", "crm_parent_mismatch", "crm_owner_change_requires_atomic_link",
+  "crm_service_unavailable", "field_access_forbidden", "field_operator_inactive",
+  "field_operator_not_enabled", "field_protocol_mismatch", "field_client_upgrade_required",
+  "field_client_version_unsupported"
+]);
 const PROTECTED_JSON_FORMAT = "bring-crm-protected-json";
 const PROTECTED_JSON_VERSION = 1;
 
@@ -72,17 +90,27 @@ function toRemoteStore(input, actor) {
 }
 
 function mergeRemoteStore(Core, remote, local, user) {
-  const base = Core.sanitizeStore(local || Core.blankStore());
+  const base = Core.sanitizeSharedStore(local || Core.blankSharedStore());
   const source = remote && typeof remote === "object" ? remote : {};
   const merged = Object.assign({}, base, {
     company: Object.assign({}, base.company, source.company || {}),
     updatedAt: source.updatedAt || base.updatedAt
   });
-  for (const collection of SHARED_COLLECTIONS) merged[collection] = listFromMap(source[collection]);
+  const hasRemoteRoot = Boolean(remote && typeof remote === "object");
+  if (hasRemoteRoot) {
+    for (const collection of SHARED_COLLECTIONS) merged[collection] = listFromMap(source[collection]);
+  }
   merged.settings = Object.assign({}, base.settings, {
     owner: user && (user.displayName || user.email) || base.settings.owner
   });
-  return Core.sanitizeStore(merged);
+  return Core.sanitizeSharedStore(merged);
+}
+
+function mergeRendererOverlays(Core, sharedStore, buildingUnits, fieldSummaries) {
+  return Core.sanitizeRendererStore(Object.assign({}, sharedStore || {}, {
+    buildingUnits: listFromMap(buildingUnits),
+    fieldSummaries: listFromMap(fieldSummaries)
+  }));
 }
 
 function diffRemoteStores(previous, next) {
@@ -118,7 +146,7 @@ function pendingSyncPatch(Core, baseRemote, desired, currentRemote, presentColle
     const baseQuote = baseQuotes[quoteId];
     if (!vendorId.startsWith("pvd_legacy_") || !baseQuote || String(baseQuote.vendorId || "").trim()) return;
     const quoteWithoutLink = Object.assign({}, desiredQuote);
-    const normalizedBaseQuote = Core.sanitizeStore({ partnerQuotes: [baseQuote] }).partnerQuotes[0] || {};
+    const normalizedBaseQuote = Core.sanitizeSharedStore({ partnerQuotes: [baseQuote] }).partnerQuotes[0] || {};
     const legacyBaseQuote = Object.assign({}, normalizedBaseQuote);
     delete quoteWithoutLink.vendorId;
     delete legacyBaseQuote.vendorId;
@@ -154,6 +182,13 @@ function pendingSyncPatch(Core, baseRemote, desired, currentRemote, presentColle
   return patch;
 }
 
+function assertNoCanonicalSharedPatch(patch) {
+  const keys = Object.keys(patch && typeof patch === "object" ? patch : {});
+  const collection = CANONICAL_SHARED_COLLECTIONS.find(name => keys.some(key => key === name || key.startsWith(`${name}/`)));
+  if (!collection) return patch;
+  throw createError("건물·공실 호실 변경은 현재 작업자를 선택한 뒤 정식 저장으로 처리해 주세요.", "CANONICAL_COMMIT_REQUIRED");
+}
+
 function caseDeleteAuditId(caseKey) {
   return `case_delete_${String(caseKey || "")}`;
 }
@@ -161,9 +196,8 @@ function caseDeleteAuditId(caseKey) {
 function resolveDatabaseLocation(location, databaseRoot) {
   const normalizedLocation = String(location || "").replace(/^\/+/, "");
   if (!databaseRoot) return normalizedLocation;
-  const companyLocation = normalizedLocation === "crmShared/data"
-    ? "data"
-    : normalizedLocation.replace(/^crmAccess(?=\/|$)/, "access");
+  const companyLocation = normalizedLocation.replace(/^crmShared\/data(?=\/|$)/, "data")
+    .replace(/^crmAccess(?=\/|$)/, "access");
   return companyLocation ? `${databaseRoot}/${companyLocation}` : databaseRoot;
 }
 
@@ -829,7 +863,17 @@ class FirebaseRemoteClient {
           version: PENDING_STORE_VERSION,
           actorUid: String(raw.actorUid || ""),
           actorRole: String(raw.actorRole || ""),
-          store: this.Core.sanitizeStore(raw.store),
+          store: this.Core.sanitizeSharedStore(raw.store),
+          presentCollections: presentSharedCollections(raw.store, raw.presentCollections),
+          baseRemote: raw.baseRemote && typeof raw.baseRemote === "object" ? raw.baseRemote : {},
+          createdAt: raw.createdAt || ""
+        };
+      } else if (raw && raw.version === 4 && raw.store) {
+        pending = {
+          version: 4,
+          actorUid: String(raw.actorUid || ""),
+          actorRole: String(raw.actorRole || ""),
+          store: this.Core.sanitizeSharedStore(raw.store),
           presentCollections: presentSharedCollections(raw.store, raw.presentCollections),
           baseRemote: raw.baseRemote && typeof raw.baseRemote === "object" ? raw.baseRemote : {},
           createdAt: raw.createdAt || ""
@@ -839,7 +883,7 @@ class FirebaseRemoteClient {
           version: 3,
           actorUid: String(raw.actorUid || ""),
           actorRole: String(raw.actorRole || ""),
-          store: this.Core.sanitizeStore(raw.store),
+          store: this.Core.sanitizeSharedStore(raw.store),
           presentCollections: presentSharedCollections(raw.store),
           baseRemote: raw.baseRemote && typeof raw.baseRemote === "object" ? raw.baseRemote : {},
           createdAt: raw.createdAt || ""
@@ -849,7 +893,7 @@ class FirebaseRemoteClient {
           version: 2,
           actorUid: "",
           actorRole: "",
-          store: this.Core.sanitizeStore(raw.store),
+          store: this.Core.sanitizeSharedStore(raw.store),
           presentCollections: presentSharedCollections(raw.store),
           baseRemote: raw.baseRemote && typeof raw.baseRemote === "object" ? raw.baseRemote : {},
           legacyUnbound: true
@@ -859,7 +903,7 @@ class FirebaseRemoteClient {
           version: 1,
           actorUid: "",
           actorRole: "",
-          store: this.Core.sanitizeStore(raw),
+          store: this.Core.sanitizeSharedStore(raw),
           presentCollections: presentSharedCollections(raw),
           baseRemote: {},
           legacyUnbound: true
@@ -889,7 +933,7 @@ class FirebaseRemoteClient {
 
   async writePendingStore(data, baseRemote) {
     const session = this.requireMutationPermission(data);
-    const store = this.Core.sanitizeStore(data);
+    const store = this.Core.sanitizeSharedStore(data);
     await this.writePendingPayload({
       version: PENDING_STORE_VERSION,
       actorUid: session.uid,
@@ -927,6 +971,119 @@ class FirebaseRemoteClient {
 
   async fetchRemotePayload() {
     return this.dbRequest("crmShared/data", { method: "GET" });
+  }
+
+  async loadCanonicalBuildingUnits() {
+    return this.dbRequest("crmShared/data/buildingUnits", { method: "GET" });
+  }
+
+  async loadFieldSummaries() {
+    return this.dbRequest("fieldSummaries", { method: "GET" });
+  }
+
+  async loadRendererOverlays() {
+    const [buildingUnits, fieldSummaries] = await Promise.all([
+      this.loadCanonicalBuildingUnits(),
+      this.loadFieldSummaries()
+    ]);
+    return this.Core.sanitizeRendererOverlays({ buildingUnits, fieldSummaries });
+  }
+
+  async refreshRendererSnapshot(sharedStore, notify) {
+    const shared = this.Core.sanitizeSharedStore(sharedStore || await this.readLocalStore());
+    const overlays = await this.loadRendererOverlays();
+    const renderer = mergeRendererOverlays(this.Core, shared, overlays.buildingUnits, overlays.fieldSummaries);
+    if (notify) this.onRemoteStore(renderer);
+    return renderer;
+  }
+
+  async commitCanonicalCrmEntity(input) {
+    this.requireMutationPermission(input);
+    const source = input && typeof input === "object" ? input : {};
+    const operatorId = String(source.operatorId || "").trim();
+    if (!/^[A-Za-z0-9_-]{1,120}$/.test(operatorId) || operatorId.includes("@")) {
+      throw createError("현재 작업자를 먼저 선택해 주세요.", "CANONICAL_OPERATOR_REQUIRED");
+    }
+    const allowedKeys = new Set([
+      "buildVersion", "operatorId", "requestId", "entityType", "entityId",
+      "operation", "expectedVersion", "patch", "reason"
+    ]);
+    const buildVersion = String(source.buildVersion || "").trim();
+    const requestId = String(source.requestId || "").trim();
+    const entityType = String(source.entityType || "").trim();
+    const entityId = String(source.entityId || "").trim();
+    const operation = String(source.operation || "").trim();
+    const expectedVersion = source.expectedVersion;
+    const patchKeys = source.patch && typeof source.patch === "object" && !Array.isArray(source.patch)
+      ? Object.keys(source.patch)
+      : [];
+    const reasonValid = source.reason === undefined
+      || (typeof source.reason === "string" && Buffer.byteLength(source.reason, "utf8") <= 1_000);
+    if (
+      Object.keys(source).some(key => !allowedKeys.has(key))
+      || !buildVersion || Buffer.byteLength(buildVersion, "utf8") > 64
+      || !CANONICAL_CRM_REQUEST_ID.test(requestId)
+      || !CANONICAL_CRM_ENTITY_TYPES.has(entityType)
+      || !/^[A-Za-z0-9_-]{1,120}$/.test(entityId)
+      || !CANONICAL_CRM_OPERATIONS.has(operation)
+      || !Number.isSafeInteger(expectedVersion)
+      || expectedVersion < 0
+      || (operation === "create" ? expectedVersion !== 0 : expectedVersion === 0)
+      || !source.patch || typeof source.patch !== "object" || Array.isArray(source.patch)
+      || (operation === "update" && patchKeys.length === 0)
+      || (["archive", "restore"].includes(operation) && patchKeys.length > 0)
+      || !reasonValid
+    ) throw createError("정식 CRM 저장 요청이 올바르지 않습니다.", "CANONICAL_REQUEST_INVALID");
+    const envelope = Object.assign({ protocolVersion: 2, clientKind: "desktop" }, source);
+    if (Buffer.byteLength(JSON.stringify(source.patch), "utf8") > CANONICAL_CRM_PATCH_MAX_BYTES) {
+      throw createError("정식 CRM 변경 내용이 너무 큽니다.", "CANONICAL_BODY_TOO_LARGE");
+    }
+    const body = JSON.stringify(envelope);
+    if (Buffer.byteLength(body, "utf8") > CANONICAL_CRM_BODY_MAX_BYTES) {
+      throw createError("정식 CRM 저장 요청이 너무 큽니다.", "CANONICAL_BODY_TOO_LARGE");
+    }
+    const token = await this.ensureIdToken(false);
+    let response;
+    try {
+      response = await this.fetch(CANONICAL_CRM_ENDPOINT_URL, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+        body
+      });
+    } catch (error) {
+      throw createError("정식 CRM 저장 서버에 연결할 수 없습니다.", "NETWORK", error);
+    }
+    let payload = null;
+    try { payload = JSON.parse(await response.text()); } catch (_) {}
+    if (!response.ok) {
+      const remoteCode = payload && payload.error && String(payload.error.code || "");
+      const code = CANONICAL_CRM_ERROR_CODES.has(remoteCode) ? remoteCode : "CANONICAL_CRM_COMMIT_FAILED";
+      const error = createError(`정식 CRM 저장에 실패했습니다. (${code})`, code);
+      error.status = Number(response.status) || 0;
+      throw error;
+    }
+    const result = payload && payload.ok === true && payload.result;
+    const payloadKeys = payload && typeof payload === "object" && !Array.isArray(payload) ? Object.keys(payload).sort() : [];
+    const resultKeys = result && typeof result === "object" && !Array.isArray(result) ? Object.keys(result).sort() : [];
+    if (
+      !jsonEqual(payloadKeys, ["ok", "result"])
+      || !result || typeof result !== "object" || Array.isArray(result)
+      || !jsonEqual(resultKeys, ["archivedAt", "entityId", "entityType", "entityVersion", "repeated", "updatedAt"])
+      || !CANONICAL_CRM_ENTITY_TYPES.has(String(result.entityType || ""))
+      || String(result.entityType) !== entityType
+      || String(result.entityId || "") !== entityId
+      || !Number.isSafeInteger(result.entityVersion) || result.entityVersion < 1
+      || typeof result.updatedAt !== "string"
+      || typeof result.archivedAt !== "string"
+      || typeof result.repeated !== "boolean"
+    ) throw createError("정식 CRM 저장 응답이 올바르지 않습니다.", "CANONICAL_RESPONSE_INVALID");
+    const remote = await this.fetchRemotePayload();
+    this.remotePayload = remote && typeof remote === "object" ? remote : {};
+    const local = await this.readLocalStore();
+    const merged = mergeRemoteStore(this.Core, this.remotePayload, local, this.session);
+    await this.writeLocalStore(merged);
+    await this.refreshRendererSnapshot(merged, true);
+    return result;
   }
 
   async loadOperations() {
@@ -1261,15 +1418,15 @@ class FirebaseRemoteClient {
 
   async pushStore(input) {
     this.requireMutationPermission(input);
-    const data = this.Core.sanitizeStore(input);
+    const data = this.Core.sanitizeSharedStore(input);
     data.updatedAt = new Date().toISOString();
     const next = toRemoteStore(data, this.session && this.session.email);
-    if (!this.remotePayload) {
-      await this.dbRequest("crmShared/data", { method: "PUT", body: next, query: "print=silent" });
-    } else {
-      const patch = diffRemoteStores(this.remotePayload, next);
-      if (Object.keys(patch).length) await this.dbRequest("crmShared/data", { method: "PATCH", body: patch, query: "print=silent" });
-    }
+    const current = this.remotePayload && typeof this.remotePayload === "object"
+      ? this.remotePayload
+      : await this.fetchRemotePayload() || {};
+    const patch = diffRemoteStores(current, next);
+    assertNoCanonicalSharedPatch(patch);
+    if (Object.keys(patch).length) await this.dbRequest("crmShared/data", { method: "PATCH", body: patch, query: "print=silent" });
     this.remotePayload = next;
     const local = await this.readLocalStore();
     const merged = mergeRemoteStore(this.Core, next, Object.assign({}, local, { settings: data.settings }), this.session);
@@ -1287,6 +1444,7 @@ class FirebaseRemoteClient {
     const currentRemote = await this.fetchRemotePayload() || {};
     const desired = toRemoteStore(pending.store, this.session.email);
     const patch = pendingSyncPatch(this.Core, pending.baseRemote || {}, desired, currentRemote, pending.presentCollections);
+    assertNoCanonicalSharedPatch(patch);
     if (Object.keys(patch).length) {
       await this.dbRequest("crmShared/data", { method: "PATCH", body: patch, query: "print=silent" });
     }
@@ -1296,9 +1454,10 @@ class FirebaseRemoteClient {
     await this.writeLocalStore(merged);
     await this.clearPendingStore();
     this.emitSync("connected", "저장 대기 자료를 공용 서버에 반영했습니다.", { updatedAt: merged.updatedAt, pending: false });
-    this.onRemoteStore(merged);
+    const renderer = await this.refreshRendererSnapshot(merged, false);
+    this.onRemoteStore(renderer);
     this.startStream();
-    return merged;
+    return renderer;
   }
 
   schedulePendingRetry() {
@@ -1331,29 +1490,29 @@ class FirebaseRemoteClient {
         return local;
       }
     }
-    if (!this.remotePayload && this.canMutate()) return this.pushStore(local);
     const merged = mergeRemoteStore(this.Core, this.remotePayload, local, this.session);
     await this.writeLocalStore(merged);
     this.emitSync("connected", "공용 서버와 동기화됨", { updatedAt: merged.updatedAt, pending: false });
     this.startStream();
-    return merged;
+    return this.refreshRendererSnapshot(merged, false);
   }
 
   async saveStore(input) {
     this.requireMutationPermission(input);
-    const local = this.Core.sanitizeStore(input);
+    const overlays = this.Core.sanitizeRendererOverlays(input);
+    const local = this.Core.sanitizeSharedStore(input);
     local.updatedAt = new Date().toISOString();
     try {
       const result = await this.pushStore(local);
       this.startStream();
-      return { ok: true, data: result, pending: false };
+      return { ok: true, data: mergeRendererOverlays(this.Core, result, overlays.buildingUnits, overlays.fieldSummaries), pending: false };
     } catch (error) {
       if (!retryableSyncError(error)) throw error;
       await this.writeLocalStore(local);
       await this.writePendingStore(local, this.remotePayload);
       this.emitSync("pending", "서버 연결 시 자동으로 저장됩니다.", { pending: true });
       this.schedulePendingRetry();
-      return { ok: true, data: local, pending: true, warning: error.message };
+      return { ok: true, data: mergeRendererOverlays(this.Core, local, overlays.buildingUnits, overlays.fieldSummaries), pending: true, warning: error.message };
     }
   }
 
@@ -1376,7 +1535,7 @@ class FirebaseRemoteClient {
     const merged = mergeRemoteStore(this.Core, this.remotePayload, local, this.session);
     await this.writeLocalStore(merged);
     this.emitSync("connected", "다른 사용자의 최신 변경을 반영했습니다.", { updatedAt: merged.updatedAt, pending: false });
-    this.onRemoteStore(merged);
+    await this.refreshRendererSnapshot(merged, true);
   }
 
   startStream() {
@@ -1448,6 +1607,7 @@ class FirebaseRemoteClient {
 module.exports = {
   FIREBASE,
   LEGACY_FIREBASE,
+  CANONICAL_CRM_ENDPOINT_URL,
   DEFAULT_CASE_AUTOMATION_ENDPOINT,
   VENDOR_CSV_URL,
   WORKFLOW_ACTIONS,
@@ -1463,6 +1623,7 @@ module.exports = {
   listFromMap,
   toRemoteStore,
   mergeRemoteStore,
+  mergeRendererOverlays,
   diffRemoteStores,
   pendingSyncPatch,
   caseDeleteAuditId,

@@ -124,9 +124,40 @@ test("current pending writes declare every shared collection and preserve an int
   const desired = toRemoteStore(pending.store, client.session.email);
   const patch = pendingSyncPatch(Core, pending.baseRemote, desired, baseRemote, pending.presentCollections);
 
-  assert.equal(decoded.version, 4);
+  assert.equal(decoded.version, 5);
   assert.deepEqual(decoded.presentCollections, SHARED_COLLECTIONS);
   assert.equal(patch["salesProspects/prospect_1"], null);
+});
+
+test("version 4 pending work is preserved while injected renderer overlays cannot sync or delete", async () => {
+  const baseRemote = {
+    customers: { customer_1: { id: "customer_1", name: "Before" } },
+    buildingUnits: { unit_remote: { id: "unit_remote", label: "Keep" } },
+    fieldSummaries: { job_remote: { fieldJobId: "job_remote" } }
+  };
+  const client = clientReading({
+    version: 4,
+    actorUid: "member_1",
+    actorRole: "member",
+    store: {
+      customers: [{ id: "customer_1", name: "After" }],
+      buildingUnits: [{ id: "unit_injected", label: "Overwrite" }],
+      fieldSummaries: [{ fieldJobId: "job_injected", workflowStatus: "approved" }]
+    },
+    presentCollections: [...SHARED_COLLECTIONS, "buildingUnits", "fieldSummaries"],
+    baseRemote
+  });
+
+  const pending = await client.readPendingStore();
+  const desired = toRemoteStore(pending.store, "member@bring.test");
+  const patch = pendingSyncPatch(Core, pending.baseRemote, desired, baseRemote, pending.presentCollections);
+
+  assert.equal(pending.version, 4);
+  assert.equal(pending.store.customers[0].name, "After");
+  assert.equal(Object.hasOwn(pending.store, "buildingUnits"), false);
+  assert.equal(Object.hasOwn(pending.store, "fieldSummaries"), false);
+  assert.equal(patch["customers/customer_1"].name, "After");
+  assert.equal(Object.keys(patch).some(key => /buildingUnits|fieldSummaries/.test(key)), false);
 });
 
 test("normal online diffs remain authoritative for all shared collections", () => {
