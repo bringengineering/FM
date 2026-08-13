@@ -1,6 +1,7 @@
 const assert = require("node:assert/strict");
 const { readFile } = require("node:fs/promises");
 const path = require("node:path");
+const { fileURLToPath, pathToFileURL } = require("node:url");
 const test = require("node:test");
 const { resolveDatabaseLocation } = require("../src/remote");
 
@@ -39,15 +40,42 @@ test("desktop exposes only the three narrow canonical overlay IPC routes", async
     "crm:field-summaries-load",
     "crm:canonical-entity-commit"
   ]) {
-    assert.match(main, new RegExp(`secureHandle\\(\\"${channel}\\"`));
+    assert.match(main, new RegExp(`secureCanonicalHandle\\(\\"${channel}\\"`));
     assert.match(preload, new RegExp(`ipcRenderer\\.invoke\\(\\"${channel}\\"`));
   }
   assert.match(main, /remoteClient\.commitCanonicalCrmEntity\(Object\.assign\(Object\.create\(null\), input, \{ buildVersion: app\.getVersion\(\) \}\)\)/);
   assert.doesNotMatch(main, /buildVersion: app\.getVersion\(\), operatorId:/);
   assert.deepEqual(
-    [...main.matchAll(/secureHandle\("(crm:(?:canonical-[^"]+|field-summaries-load))"/g)].map(match => match[1]),
+    [...main.matchAll(/secureCanonicalHandle\("(crm:(?:canonical-[^"]+|field-summaries-load))"/g)].map(match => match[1]),
     ["crm:canonical-building-units-load", "crm:field-summaries-load", "crm:canonical-entity-commit"]
   );
+});
+
+test("canonical IPC trusts only the exact main CRM frame and index file", async () => {
+  const main = await source("main.js");
+  const start = main.indexOf("function trustedCanonicalIpc");
+  const end = main.indexOf("\nfunction secureHandle", start);
+  assert.ok(start >= 0 && end > start, "trustedCanonicalIpc must be independently testable");
+  const block = main.slice(start, end);
+  const trustedCanonicalIpc = Function(
+    "path",
+    "fileURLToPath",
+    `${block}; return trustedCanonicalIpc;`
+  )(path, fileURLToPath);
+  const entryPath = path.resolve("C:\\workspace\\desktop-crm\\src\\index.html");
+  const mainFrame = { url: `${pathToFileURL(entryPath).href}?view=dashboard` };
+  const mainContents = { mainFrame, getURL: () => mainFrame.url };
+  const mainWindow = { isDestroyed: () => false, webContents: mainContents };
+
+  assert.equal(trustedCanonicalIpc({ sender: mainContents, senderFrame: mainFrame }, mainWindow, entryPath), true);
+  assert.equal(trustedCanonicalIpc({ sender: { mainFrame, getURL: () => mainFrame.url }, senderFrame: mainFrame }, mainWindow, entryPath), false);
+  assert.equal(trustedCanonicalIpc({ sender: mainContents, senderFrame: { url: mainFrame.url } }, mainWindow, entryPath), false);
+
+  const otherPath = path.resolve("C:\\workspace\\desktop-crm\\src\\other.html");
+  const otherFrame = { url: pathToFileURL(otherPath).href };
+  const otherContents = { mainFrame: otherFrame, getURL: () => otherFrame.url };
+  const otherWindow = { isDestroyed: () => false, webContents: otherContents };
+  assert.equal(trustedCanonicalIpc({ sender: otherContents, senderFrame: otherFrame }, otherWindow, entryPath), false);
 });
 
 test("local smoke mode loads empty read-only overlays without requiring a remote login", async () => {
@@ -55,11 +83,11 @@ test("local smoke mode loads empty read-only overlays without requiring a remote
 
   assert.match(
     main,
-    /secureHandle\("crm:canonical-building-units-load"[\s\S]*?if \(localTestMode\) return \{\};[\s\S]*?remoteClient\.loadCanonicalBuildingUnits\(\)/
+    /secureCanonicalHandle\("crm:canonical-building-units-load"[\s\S]*?if \(localTestMode\) return \{\};[\s\S]*?remoteClient\.loadCanonicalBuildingUnits\(\)/
   );
   assert.match(
     main,
-    /secureHandle\("crm:field-summaries-load"[\s\S]*?if \(localTestMode\) return \{\};[\s\S]*?remoteClient\.loadFieldSummaries\(\)/
+    /secureCanonicalHandle\("crm:field-summaries-load"[\s\S]*?if \(localTestMode\) return \{\};[\s\S]*?remoteClient\.loadFieldSummaries\(\)/
   );
 });
 

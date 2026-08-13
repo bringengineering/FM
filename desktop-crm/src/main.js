@@ -2,6 +2,7 @@ const { app, BrowserWindow, WebContentsView, ipcMain, dialog, Menu, safeStorage,
 const { autoUpdater } = require("electron-updater");
 const fs = require("node:fs/promises");
 const path = require("node:path");
+const { fileURLToPath } = require("node:url");
 const Core = require("./core");
 const { FirebaseRemoteClient, encodeProtectedJson, decodeProtectedJson } = require("./remote");
 const VendorExtractor = require("./vendor-extractor");
@@ -676,9 +677,34 @@ function trustedIpc(event) {
   }
 }
 
+function trustedCanonicalIpc(event, windowRef, entryPath) {
+  try {
+    if (!windowRef || windowRef.isDestroyed() || !event || event.sender !== windowRef.webContents) return false;
+    if (!event.senderFrame || !event.sender.mainFrame || event.senderFrame !== event.sender.mainFrame) return false;
+    const url = new URL(event.senderFrame.url || event.sender.getURL());
+    if (url.protocol !== "file:") return false;
+    const actualPath = path.resolve(fileURLToPath(url));
+    const expectedPath = path.resolve(entryPath);
+    return process.platform === "win32"
+      ? actualPath.toLowerCase() === expectedPath.toLowerCase()
+      : actualPath === expectedPath;
+  } catch (_) {
+    return false;
+  }
+}
+
 function secureHandle(channel, handler) {
   ipcMain.handle(channel, (event, ...args) => {
     if (!trustedIpc(event)) throw new Error("허용되지 않은 요청입니다.");
+    return handler(...args);
+  });
+}
+
+function secureCanonicalHandle(channel, handler) {
+  ipcMain.handle(channel, (event, ...args) => {
+    if (!trustedCanonicalIpc(event, mainWindow, path.join(__dirname, "index.html"))) {
+      throw new Error("허용되지 않은 요청입니다.");
+    }
     return handler(...args);
   });
 }
@@ -2042,17 +2068,17 @@ secureHandle("crm:auth-logout", async () => {
 });
 secureHandle("crm:load", readStore);
 secureHandle("crm:save", data => writeStore(data));
-secureHandle("crm:canonical-building-units-load", async () => {
+secureCanonicalHandle("crm:canonical-building-units-load", async () => {
   if (localTestMode) return {};
   if (!remoteClient || !remoteClient.authState().user) throw new Error("로그인이 필요합니다.");
   return remoteClient.loadCanonicalBuildingUnits();
 });
-secureHandle("crm:field-summaries-load", async () => {
+secureCanonicalHandle("crm:field-summaries-load", async () => {
   if (localTestMode) return {};
   if (!remoteClient || !remoteClient.authState().user) throw new Error("로그인이 필요합니다.");
   return remoteClient.loadFieldSummaries();
 });
-secureHandle("crm:canonical-entity-commit", async input => {
+secureCanonicalHandle("crm:canonical-entity-commit", async input => {
   if (!remoteClient || !remoteClient.authState().user) throw new Error("로그인이 필요합니다.");
   return remoteClient.commitCanonicalCrmEntity(Object.assign(Object.create(null), input, { buildVersion: app.getVersion() }));
 });

@@ -89,6 +89,29 @@ function toRemoteStore(input, actor) {
   return payload;
 }
 
+function sharedRemoteProjection(Core, input) {
+  const source = input && typeof input === "object" && !Array.isArray(input) ? input : {};
+  const localShape = {};
+  for (const collection of SHARED_COLLECTIONS) {
+    if (Object.prototype.hasOwnProperty.call(source, collection)) {
+      localShape[collection] = listFromMap(source[collection]);
+    }
+  }
+  if (Object.prototype.hasOwnProperty.call(source, "schemaVersion")) localShape.schemaVersion = source.schemaVersion;
+  if (Object.prototype.hasOwnProperty.call(source, "company")) localShape.company = source.company;
+  if (Object.prototype.hasOwnProperty.call(source, "updatedAt")) localShape.updatedAt = source.updatedAt;
+  const sanitized = Core.sanitizeSharedStore(localShape);
+  const result = {};
+  if (Object.prototype.hasOwnProperty.call(source, "schemaVersion")) result.schemaVersion = sanitized.schemaVersion;
+  if (Object.prototype.hasOwnProperty.call(source, "company")) result.company = sanitized.company;
+  if (Object.prototype.hasOwnProperty.call(source, "updatedAt")) result.updatedAt = sanitized.updatedAt;
+  if (Object.prototype.hasOwnProperty.call(source, "updatedBy")) result.updatedBy = String(source.updatedBy || "").slice(0, 320);
+  for (const collection of SHARED_COLLECTIONS) {
+    if (Object.prototype.hasOwnProperty.call(source, collection)) result[collection] = mapById(sanitized[collection]);
+  }
+  return result;
+}
+
 function mergeRemoteStore(Core, remote, local, user) {
   const base = Core.sanitizeSharedStore(local || Core.blankSharedStore());
   const source = remote && typeof remote === "object" ? remote : {};
@@ -356,8 +379,13 @@ class FirebaseRemoteClient {
     this.lastError = "";
     this.streamController = null;
     this.streamTask = null;
+    this.summaryStreamController = null;
+    this.summaryStreamTask = null;
     this.reloadTimer = null;
+    this.overlayReloadTimer = null;
     this.retryTimer = null;
+    this.canonicalRefreshRetryTimer = null;
+    this.streamGeneration = 0;
     this.stopped = false;
     this.caseSettings = {};
     this.vendorDirectoryCache = null;
@@ -865,7 +893,7 @@ class FirebaseRemoteClient {
           actorRole: String(raw.actorRole || ""),
           store: this.Core.sanitizeSharedStore(raw.store),
           presentCollections: presentSharedCollections(raw.store, raw.presentCollections),
-          baseRemote: raw.baseRemote && typeof raw.baseRemote === "object" ? raw.baseRemote : {},
+          baseRemote: sharedRemoteProjection(this.Core, raw.baseRemote),
           createdAt: raw.createdAt || ""
         };
       } else if (raw && raw.version === 4 && raw.store) {
@@ -875,7 +903,7 @@ class FirebaseRemoteClient {
           actorRole: String(raw.actorRole || ""),
           store: this.Core.sanitizeSharedStore(raw.store),
           presentCollections: presentSharedCollections(raw.store, raw.presentCollections),
-          baseRemote: raw.baseRemote && typeof raw.baseRemote === "object" ? raw.baseRemote : {},
+          baseRemote: sharedRemoteProjection(this.Core, raw.baseRemote),
           createdAt: raw.createdAt || ""
         };
       } else if (raw && raw.version === 3 && raw.store) {
@@ -885,7 +913,7 @@ class FirebaseRemoteClient {
           actorRole: String(raw.actorRole || ""),
           store: this.Core.sanitizeSharedStore(raw.store),
           presentCollections: presentSharedCollections(raw.store),
-          baseRemote: raw.baseRemote && typeof raw.baseRemote === "object" ? raw.baseRemote : {},
+          baseRemote: sharedRemoteProjection(this.Core, raw.baseRemote),
           createdAt: raw.createdAt || ""
         };
       } else if (raw && raw.version === 2 && raw.store) {
@@ -895,7 +923,7 @@ class FirebaseRemoteClient {
           actorRole: "",
           store: this.Core.sanitizeSharedStore(raw.store),
           presentCollections: presentSharedCollections(raw.store),
-          baseRemote: raw.baseRemote && typeof raw.baseRemote === "object" ? raw.baseRemote : {},
+          baseRemote: sharedRemoteProjection(this.Core, raw.baseRemote),
           legacyUnbound: true
         };
       } else {
@@ -926,8 +954,13 @@ class FirebaseRemoteClient {
   async writePendingPayload(payload) {
     const target = this.pendingFile;
     const temp = `${target}.tmp`;
+    const safePayload = payload && payload.store ? Object.assign({}, payload, {
+      store: this.Core.sanitizeSharedStore(payload.store),
+      presentCollections: presentSharedCollections(payload.store, payload.presentCollections),
+      baseRemote: sharedRemoteProjection(this.Core, payload.baseRemote)
+    }) : payload;
     await this.fs.mkdir(path.dirname(target), { recursive: true });
-    await this.fs.writeFile(temp, encodeProtectedJson(this.safeStorage, payload), "utf8");
+    await this.fs.writeFile(temp, encodeProtectedJson(this.safeStorage, safePayload), "utf8");
     await this.fs.rename(temp, target);
   }
 
@@ -940,7 +973,7 @@ class FirebaseRemoteClient {
       actorRole: session.role || "member",
       store,
       presentCollections: SHARED_COLLECTIONS.slice(),
-      baseRemote: baseRemote && typeof baseRemote === "object" ? baseRemote : {},
+      baseRemote: sharedRemoteProjection(this.Core, baseRemote),
       createdAt: new Date().toISOString()
     });
   }
@@ -995,6 +1028,27 @@ class FirebaseRemoteClient {
     const renderer = mergeRendererOverlays(this.Core, shared, overlays.buildingUnits, overlays.fieldSummaries);
     if (notify) this.onRemoteStore(renderer);
     return renderer;
+  }
+
+  async refreshAfterCanonicalCommit() {
+    const remote = await this.fetchRemotePayload();
+    this.remotePayload = remote && typeof remote === "object" ? remote : {};
+    const local = await this.readLocalStore();
+    const merged = mergeRemoteStore(this.Core, this.remotePayload, local, this.session);
+    await this.writeLocalStore(merged);
+    return this.refreshRendererSnapshot(merged, true);
+  }
+
+  scheduleCanonicalRefreshRetry() {
+    clearTimeout(this.canonicalRefreshRetryTimer);
+    this.canonicalRefreshRetryTimer = setTimeout(async () => {
+      try {
+        await this.refreshAfterCanonicalCommit();
+        this.emitSync("connected", "정식 CRM 저장 결과와 최신 현장 정보를 반영했습니다.", { pending: false });
+      } catch (_) {
+        if (!this.stopped && this.session) this.scheduleCanonicalRefreshRetry();
+      }
+    }, 2500);
   }
 
   async commitCanonicalCrmEntity(input) {
@@ -1077,12 +1131,12 @@ class FirebaseRemoteClient {
       || typeof result.archivedAt !== "string"
       || typeof result.repeated !== "boolean"
     ) throw createError("정식 CRM 저장 응답이 올바르지 않습니다.", "CANONICAL_RESPONSE_INVALID");
-    const remote = await this.fetchRemotePayload();
-    this.remotePayload = remote && typeof remote === "object" ? remote : {};
-    const local = await this.readLocalStore();
-    const merged = mergeRemoteStore(this.Core, this.remotePayload, local, this.session);
-    await this.writeLocalStore(merged);
-    await this.refreshRendererSnapshot(merged, true);
+    try {
+      await this.refreshAfterCanonicalCommit();
+    } catch (_) {
+      this.emitSync("offline", "정식 CRM 저장은 완료됐지만 최신 화면 반영을 다시 시도하는 중입니다.", { pending: false });
+      this.scheduleCanonicalRefreshRetry();
+    }
     return result;
   }
 
@@ -1523,6 +1577,18 @@ class FirebaseRemoteClient {
     }), 180);
   }
 
+  scheduleOverlayReload() {
+    clearTimeout(this.overlayReloadTimer);
+    this.overlayReloadTimer = setTimeout(() => this.reloadRendererOverlays().catch(() => {
+      this.emitSync("offline", "현장 요약 정보를 다시 불러오는 중입니다.", { pending: false });
+    }), 180);
+  }
+
+  async reloadRendererOverlays() {
+    const local = await this.readLocalStore();
+    return this.refreshRendererSnapshot(local, true);
+  }
+
   async reloadFromRemote() {
     const pending = await this.readPendingStore();
     if (pending) {
@@ -1539,41 +1605,71 @@ class FirebaseRemoteClient {
   }
 
   startStream() {
-    if (!this.session || this.streamTask) return;
+    if (!this.session) return;
     this.stopped = false;
-    this.streamTask = this.streamLoop().finally(() => { this.streamTask = null; });
+    const generation = this.streamGeneration;
+    if (!this.streamTask) {
+      let trackedShared;
+      trackedShared = this.streamLoop("crmShared/data", "shared", generation).finally(() => {
+        if (this.streamTask === trackedShared) this.streamTask = null;
+      });
+      this.streamTask = trackedShared;
+    }
+    if (!this.summaryStreamTask) {
+      let trackedSummary;
+      trackedSummary = this.streamLoop("fieldSummaries", "fieldSummaries", generation).finally(() => {
+        if (this.summaryStreamTask === trackedSummary) this.summaryStreamTask = null;
+      });
+      this.summaryStreamTask = trackedSummary;
+    }
   }
 
   stopStream() {
     this.stopped = true;
+    this.streamGeneration += 1;
     if (this.streamController) this.streamController.abort();
+    if (this.summaryStreamController) this.summaryStreamController.abort();
     this.streamController = null;
+    this.summaryStreamController = null;
     this.streamTask = null;
+    this.summaryStreamTask = null;
     clearTimeout(this.reloadTimer);
+    clearTimeout(this.overlayReloadTimer);
     clearTimeout(this.retryTimer);
+    clearTimeout(this.canonicalRefreshRetryTimer);
   }
 
-  async streamLoop() {
-    while (!this.stopped && this.session) {
-      this.streamController = new AbortController();
+  handleStreamEvent(kind, eventName) {
+    if (eventName === "put" || eventName === "patch") {
+      return kind === "fieldSummaries" ? this.scheduleOverlayReload() : this.scheduleRemoteReload();
+    }
+    if (eventName === "auth_revoked" || eventName === "cancel") {
+      if (this.session) this.session.expiresAt = 0;
+      if (this.streamController) this.streamController.abort();
+      if (this.summaryStreamController) this.summaryStreamController.abort();
+    }
+    return undefined;
+  }
+
+  async streamLoop(location, kind, generation) {
+    const controllerKey = kind === "fieldSummaries" ? "summaryStreamController" : "streamController";
+    while (!this.stopped && this.session && generation === this.streamGeneration) {
+      const controller = new AbortController();
+      this[controllerKey] = controller;
       try {
         const token = await this.ensureIdToken(false);
-        const rootedLocation = resolveDatabaseLocation("crmShared/data", this.databaseRoot);
+        const rootedLocation = resolveDatabaseLocation(location, this.databaseRoot);
         const url = `${this.firebase.databaseUrl}/${rootedLocation}.json?auth=${encodeURIComponent(token)}`;
-        const response = await this.fetch(url, { headers: { Accept: "text/event-stream" }, signal: this.streamController.signal });
+        const response = await this.fetch(url, { headers: { Accept: "text/event-stream" }, signal: controller.signal });
         if (!response.ok || !response.body) throw createError(`실시간 연결 실패 (${response.status})`, "STREAM_ERROR");
-        this.emitSync("connected", "공용 서버 실시간 연결됨", { pending: false });
+        if (kind === "shared") this.emitSync("connected", "공용 서버 실시간 연결됨", { pending: false });
         const reader = response.body.getReader();
         const decoder = new TextDecoder();
         let buffer = "";
         let eventName = "";
         let dataLines = [];
         const dispatch = () => {
-          if (eventName === "put" || eventName === "patch") this.scheduleRemoteReload();
-          if (eventName === "auth_revoked" || eventName === "cancel") {
-            this.session.expiresAt = 0;
-            this.streamController.abort();
-          }
+          this.handleStreamEvent(kind, eventName);
           eventName = "";
           dataLines = [];
         };
@@ -1591,11 +1687,13 @@ class FirebaseRemoteClient {
           }
         }
       } catch (error) {
-        if (!this.stopped && error.name !== "AbortError") this.emitSync("offline", "실시간 연결을 다시 시도하는 중");
+        if (!this.stopped && error.name !== "AbortError" && kind === "shared") {
+          this.emitSync("offline", "실시간 연결을 다시 시도하는 중");
+        }
       } finally {
-        this.streamController = null;
+        if (this[controllerKey] === controller) this[controllerKey] = null;
       }
-      if (!this.stopped && this.session) await delay(2500);
+      if (!this.stopped && this.session && generation === this.streamGeneration) await delay(2500);
     }
   }
 
@@ -1622,6 +1720,7 @@ module.exports = {
   mapById,
   listFromMap,
   toRemoteStore,
+  sharedRemoteProjection,
   mergeRemoteStore,
   mergeRendererOverlays,
   diffRemoteStores,

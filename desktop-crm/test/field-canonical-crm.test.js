@@ -385,6 +385,95 @@ test("canonical HTTP errors expose only an allowlisted code and status", async (
   );
 });
 
+test("a successful canonical POST still resolves when the post-commit overlay refresh fails", async () => {
+  const syncStates = [];
+  const { client } = makeClient({ onSyncState: state => { syncStates.push(state); } });
+  let posts = 0;
+  let retrySchedules = 0;
+  client.fetch = async () => {
+    posts += 1;
+    return {
+      ok: true,
+      status: 200,
+      text: async () => JSON.stringify({
+        ok: true,
+        result: {
+          entityType: "buildingUnits",
+          entityId: "unit_1",
+          entityVersion: 2,
+          updatedAt: "2026-08-14T00:00:00.000Z",
+          archivedAt: "",
+          repeated: false
+        }
+      })
+    };
+  };
+  client.fetchRemotePayload = async () => ({ customers: {} });
+  client.loadCanonicalBuildingUnits = async () => ({ unit_1: { id: "unit_1", label: "202호" } });
+  client.loadFieldSummaries = async () => { throw new Error("summary refresh unavailable"); };
+  client.scheduleCanonicalRefreshRetry = () => { retrySchedules += 1; };
+
+  const result = await client.commitCanonicalCrmEntity({
+    buildVersion: "1.7.0",
+    requestId: "550e8400-e29b-41d4-a716-446655440000",
+    operatorId: "operator_kim",
+    entityType: "buildingUnits",
+    entityId: "unit_1",
+    operation: "update",
+    expectedVersion: 1,
+    patch: { label: "202호" }
+  });
+
+  assert.equal(result.entityVersion, 2);
+  assert.equal(posts, 1);
+  assert.equal(retrySchedules, 1);
+  assert.equal(syncStates.at(-1).status, "offline");
+  assert.match(syncStates.at(-1).message, /저장은 완료/);
+});
+
+test("a field-summary stream event refreshes renderer overlays without reloading or writing shared CRM", async () => {
+  const local = Core.sanitizeSharedStore({ customers: [{ id: "customer_1", name: "Keep" }] });
+  const { client, writes, remoteStores } = makeClient({ readLocalStore: async () => local });
+  let sharedReloads = 0;
+  client.loadCanonicalBuildingUnits = async () => ({ unit_1: { id: "unit_1", label: "101호" } });
+  client.loadFieldSummaries = async () => ({ job_1: { fieldJobId: "job_1", workflowStatus: "approved" } });
+  client.scheduleRemoteReload = () => { sharedReloads += 1; };
+  client.scheduleOverlayReload = () => client.reloadRendererOverlays();
+
+  await client.handleStreamEvent("fieldSummaries", "put");
+
+  assert.equal(sharedReloads, 0);
+  assert.equal(writes.length, 0);
+  assert.equal(remoteStores.length, 1);
+  assert.equal(remoteStores[0].customers[0].name, "Keep");
+  assert.equal(remoteStores[0].fieldSummaries[0].workflowStatus, "approved");
+});
+
+test("shared and field-summary streams start and stop together, and auth revocation aborts both", async () => {
+  const { client } = makeClient();
+  const starts = [];
+  client.streamLoop = async (location, kind) => { starts.push({ location, kind }); };
+
+  client.startStream();
+  assert.deepEqual(starts, [
+    { location: "crmShared/data", kind: "shared" },
+    { location: "fieldSummaries", kind: "fieldSummaries" }
+  ]);
+
+  let sharedAborts = 0;
+  let summaryAborts = 0;
+  client.streamController = { abort: () => { sharedAborts += 1; } };
+  client.summaryStreamController = { abort: () => { summaryAborts += 1; } };
+  client.handleStreamEvent("fieldSummaries", "auth_revoked");
+  assert.equal(client.session.expiresAt, 0);
+  assert.equal(sharedAborts, 1);
+  assert.equal(summaryAborts, 1);
+
+  client.stopStream();
+  assert.equal(client.streamController, null);
+  assert.equal(client.summaryStreamController, null);
+});
+
 test("pending synchronization returns and publishes freshly loaded renderer overlays", async () => {
   const { client, remoteStores } = makeClient();
   client.fetchRemotePayload = async () => ({ customers: { customer_1: { id: "customer_1" } } });

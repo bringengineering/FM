@@ -113,7 +113,9 @@ test("current pending writes declare every shared collection and preserve an int
   const client = clientUsing(fs);
   client.session = { uid: "member_1", role: "member", email: "member@bring.test" };
   const baseRemote = {
-    salesProspects: { prospect_1: { id: "prospect_1", name: "Delete me" } }
+    salesProspects: { prospect_1: { id: "prospect_1", name: "Delete me" } },
+    buildingUnits: { unit_overlay: { id: "unit_overlay", label: "Must not persist" } },
+    fieldSummaries: { job_overlay: { fieldJobId: "job_overlay" } }
   };
   const store = Core.blankStore();
   store.salesProspects = [];
@@ -126,6 +128,8 @@ test("current pending writes declare every shared collection and preserve an int
 
   assert.equal(decoded.version, 5);
   assert.deepEqual(decoded.presentCollections, SHARED_COLLECTIONS);
+  assert.equal(Object.hasOwn(decoded.baseRemote, "buildingUnits"), false);
+  assert.equal(Object.hasOwn(decoded.baseRemote, "fieldSummaries"), false);
   assert.equal(patch["salesProspects/prospect_1"], null);
 });
 
@@ -156,6 +160,8 @@ test("version 4 pending work is preserved while injected renderer overlays canno
   assert.equal(pending.store.customers[0].name, "After");
   assert.equal(Object.hasOwn(pending.store, "buildingUnits"), false);
   assert.equal(Object.hasOwn(pending.store, "fieldSummaries"), false);
+  assert.equal(Object.hasOwn(pending.baseRemote, "buildingUnits"), false);
+  assert.equal(Object.hasOwn(pending.baseRemote, "fieldSummaries"), false);
   assert.equal(patch["customers/customer_1"].name, "After");
   assert.equal(Object.keys(patch).some(key => /buildingUnits|fieldSummaries/.test(key)), false);
 });
