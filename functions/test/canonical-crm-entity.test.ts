@@ -425,6 +425,144 @@ describe("canonical CRM entity commits", () => {
         fieldBuildingIds: ["legacy_field_1"],
       },
     });
+    const audits = Object.values(readPath(fixture.state.current, "fieldPlatform/v2/auditLogs") as Record<string, unknown>);
+    expect(audits).toHaveLength(1);
+    expect(audits[0]).toMatchObject({
+      changedFields: ["externalRefs.paymentBuildingIds"],
+    });
+  });
+
+  it.each([
+    ["building FIELD building IDs", input({
+      entityType: "buildings",
+      entityId: "building_1",
+      expectedVersion: 4,
+      patch: { externalRefs: { fieldBuildingIds: ["forged_field_building"] } },
+    })],
+    ["building FIELD work-item IDs mixed with payment IDs", input({
+      entityType: "buildings",
+      entityId: "building_1",
+      expectedVersion: 4,
+      patch: {
+        externalRefs: {
+          paymentBuildingIds: ["pay_2"],
+          fieldWorkItemIds: ["forged_work_item"],
+        },
+      },
+    })],
+    ["building-unit external references", input({
+      patch: { externalRefs: { fieldUnitIds: ["forged_field_unit"] } },
+    })],
+    ["sales-unit external references", input({
+      entityType: "salesUnits",
+      entityId: "sales_unit_1",
+      expectedVersion: 2,
+      patch: { externalRefs: { fieldListingIds: ["forged_listing"] } },
+    })],
+  ])("rejects client-controlled %s", async (_label, request) => {
+    const fixture = dependencies();
+    await expect(commitCanonicalCrmEntityCore(request, ACTOR, fixture.deps))
+      .rejects.toThrow("crm_patch_field_forbidden");
+    expect(fixture.transact).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ["building type", "buildings", "crmCompany/data/buildings/building_1", (entity: Record<string, unknown>) => { entity.type = "x".repeat(257); }],
+    ["building status", "buildings", "crmCompany/data/buildings/building_1", (entity: Record<string, unknown>) => { entity.status = "x".repeat(257); }],
+    ["building manager", "buildings", "crmCompany/data/buildings/building_1", (entity: Record<string, unknown>) => { entity.manager = "x".repeat(257); }],
+    ["building memo", "buildings", "crmCompany/data/buildings/building_1", (entity: Record<string, unknown>) => { entity.memo = "x".repeat(4_001); }],
+    ["building unit count", "buildings", "crmCompany/data/buildings/building_1", (entity: Record<string, unknown>) => { entity.unitCount = -1; }],
+    ["building alias list", "buildings", "crmCompany/data/buildings/building_1", (entity: Record<string, unknown>) => { entity.aliases = Array.from({ length: 101 }, (_, index) => `alias_${index}`); }],
+    ["building undefined optional owner", "buildings", "crmCompany/data/buildings/building_1", (entity: Record<string, unknown>) => { entity.ownerCustomerId = undefined; }],
+    ["building-unit status", "buildingUnits", "crmCompany/data/buildingUnits/unit_1", (entity: Record<string, unknown>) => { entity.status = "x".repeat(257); }],
+    ["building-unit memo", "buildingUnits", "crmCompany/data/buildingUnits/unit_1", (entity: Record<string, unknown>) => { entity.memo = "x".repeat(4_001); }],
+    ["building-unit undefined external references", "buildingUnits", "crmCompany/data/buildingUnits/unit_1", (entity: Record<string, unknown>) => { entity.externalRefs = undefined; }],
+    ["sales-unit money", "salesUnits", "crmCompany/data/salesUnits/sales_unit_1", (entity: Record<string, unknown>) => { entity.deposit = -1; }],
+    ["sales-unit date", "salesUnits", "crmCompany/data/salesUnits/sales_unit_1", (entity: Record<string, unknown>) => { entity.availableFrom = "2026-99-99"; }],
+    ["sales-unit URL", "salesUnits", "crmCompany/data/salesUnits/sales_unit_1", (entity: Record<string, unknown>) => { entity.photoUrl = "x".repeat(4_001); }],
+    ["sales-unit note", "salesUnits", "crmCompany/data/salesUnits/sales_unit_1", (entity: Record<string, unknown>) => { entity.note = "x".repeat(4_001); }],
+    ["sales-unit status", "salesUnits", "crmCompany/data/salesUnits/sales_unit_1", (entity: Record<string, unknown>) => { entity.status = "x".repeat(257); }],
+    ["sales-unit undefined formal-room link", "salesUnits", "crmCompany/data/salesUnits/sales_unit_1", (entity: Record<string, unknown>) => { entity.crmBuildingUnitId = undefined; }],
+  ])("fails closed before updating a record with invalid stored %s", async (
+    _label,
+    entityType,
+    path,
+    mutate,
+  ) => {
+    const fixtureRoot = root();
+    mutate(readPath(fixtureRoot, path) as Record<string, unknown>);
+    const fixture = dependencies(fixtureRoot);
+    const request = entityType === "buildings"
+      ? input({
+        entityType: "buildings",
+        entityId: "building_1",
+        expectedVersion: 4,
+        patch: { name: "Updated building" },
+      })
+      : entityType === "salesUnits"
+        ? input({
+          entityType: "salesUnits",
+          entityId: "sales_unit_1",
+          expectedVersion: 2,
+          patch: { note: "Unrelated update" },
+        })
+        : input({ patch: { label: "203" } });
+    await expect(commitCanonicalCrmEntityCore(request, ACTOR, fixture.deps))
+      .rejects.toThrow("crm_entity_invalid");
+  });
+
+  it.each([
+    "2026-99-99",
+    "2025-02-29",
+  ])("rejects a non-Gregorian calendar date %s", async (moveOutAt) => {
+    const fixture = dependencies();
+    await expect(commitCanonicalCrmEntityCore(input({
+      entityType: "salesUnits",
+      entityId: "sales_unit_1",
+      expectedVersion: 2,
+      patch: { moveOutAt },
+    }), ACTOR, fixture.deps)).rejects.toThrow("crm_moveOutAt_invalid");
+    expect(fixture.transact).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    "2024-02-29",
+    "2026-08-14T04:00:00.000Z",
+  ])("accepts a real calendar date or canonical timestamp %s", async (moveOutAt) => {
+    const fixture = dependencies();
+    await expect(commitCanonicalCrmEntityCore(input({
+      entityType: "salesUnits",
+      entityId: "sales_unit_1",
+      expectedVersion: 2,
+      patch: { moveOutAt },
+    }), ACTOR, fixture.deps)).resolves.toMatchObject({ entityVersion: 3 });
+  });
+
+  it.each([
+    ["audit log collection", (fixtureRoot: ReturnType<typeof root>) => {
+      fixtureRoot.fieldPlatform.v2.auditLogs = "corrupt" as never;
+    }, "fieldPlatform/v2/auditLogs"],
+    ["receipt scope", (fixtureRoot: ReturnType<typeof root>) => {
+      fixtureRoot.fieldPlatform.v2.requestReceipts.commitCanonicalCrmEntity = "corrupt" as never;
+    }, "fieldPlatform/v2/requestReceipts/commitCanonicalCrmEntity"],
+    ["entity collection", (fixtureRoot: ReturnType<typeof root>) => {
+      fixtureRoot.crmCompany.data.buildingUnits = "corrupt" as never;
+    }, "crmCompany/data/buildingUnits"],
+  ])("fails closed instead of overwriting a scalar %s", async (_label, corrupt, path) => {
+    const fixtureRoot = root();
+    corrupt(fixtureRoot);
+    const fixture = dependencies(fixtureRoot);
+    const request = path.endsWith("buildingUnits")
+      ? input({
+        entityId: "unit_3",
+        operation: "create",
+        expectedVersion: 0,
+        patch: { crmBuildingId: "building_1", label: "301" },
+      })
+      : input();
+    await expect(commitCanonicalCrmEntityCore(request, ACTOR, fixture.deps))
+      .rejects.toThrow("crm_transaction_invalid");
+    expect(readPath(fixtureRoot, path)).toBe("corrupt");
   });
 
   it("maintains the owner customer's building backlink atomically on create", async () => {

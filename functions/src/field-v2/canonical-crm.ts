@@ -137,12 +137,21 @@ const BUILDING_FIELDS = new Set([
   "manager", "memo", "aliases", "externalRefs",
 ]);
 const BUILDING_UNIT_FIELDS = new Set([
-  "crmBuildingId", "label", "unitLabel", "status", "memo", "externalRefs",
+  "crmBuildingId", "label", "unitLabel", "status", "memo",
 ]);
 const SALES_UNIT_FIELDS = new Set([
   "prospectId", "crmBuildingUnitId", "label", "status", "moveOutAt",
   "availableFrom", "deposit", "rent", "maintenanceFee", "photoUrl",
-  "evidenceUrl", "note", "externalRefs",
+  "evidenceUrl", "note",
+]);
+
+const BUILDING_STORED_FIELDS = new Set(BUILDING_FIELDS);
+const BUILDING_UNIT_STORED_FIELDS = new Set([
+  "crmBuildingId", "label", "status", "memo", "externalRefs",
+]);
+const SALES_UNIT_STORED_FIELDS = new Set([
+  ...SALES_UNIT_FIELDS,
+  "externalRefs",
 ]);
 
 const EXTERNAL_REF_FIELDS = new Set([
@@ -263,7 +272,11 @@ function normalizeText(
 function normalizeOptionalDate(value: unknown, field: string): string {
   if (value === "") return "";
   if (typeof value !== "string") fail(`crm_${field}_invalid`);
-  if (/^\d{4}-\d{2}-\d{2}$/u.test(value) || isCanonicalTimestamp(value)) return value;
+  if (/^\d{4}-\d{2}-\d{2}$/u.test(value)) {
+    const candidate = new Date(`${value}T00:00:00.000Z`);
+    if (!Number.isNaN(candidate.getTime()) && candidate.toISOString().slice(0, 10) === value) return value;
+  }
+  if (isCanonicalTimestamp(value)) return value;
   fail(`crm_${field}_invalid`);
 }
 
@@ -284,14 +297,12 @@ function normalizeStringList(value: unknown, field: string): readonly string[] {
   return Object.freeze(normalized);
 }
 
-function normalizeExternalRefs(value: unknown): Readonly<Record<string, readonly string[]>> {
+function normalizeBuildingExternalRefsPatch(value: unknown): Readonly<Record<string, readonly string[]>> {
   if (!isRecord(value)) fail("crm_external_refs_invalid");
-  const result: Record<string, readonly string[]> = {};
-  for (const [key, list] of Object.entries(value)) {
-    if (!EXTERNAL_REF_FIELDS.has(key)) fail("crm_patch_field_forbidden");
-    result[key] = normalizeStringList(list, "external_refs");
-  }
-  return Object.freeze(result);
+  if (!exactKeys(value, ["paymentBuildingIds"])) fail("crm_patch_field_forbidden");
+  return Object.freeze({
+    paymentBuildingIds: normalizeStringList(value.paymentBuildingIds, "external_refs"),
+  });
 }
 
 function fieldAllowlist(entityType: CanonicalCrmEntityType): ReadonlySet<string> {
@@ -325,7 +336,7 @@ function normalizePatch(
         if (typeof fieldValue !== "number" || !Number.isSafeInteger(fieldValue) || fieldValue < 0 || fieldValue > 100_000) fail("crm_unit_count_invalid");
         result[key] = fieldValue;
       } else if (key === "aliases") result[key] = normalizeStringList(fieldValue, "aliases");
-      else if (key === "externalRefs") result[key] = normalizeExternalRefs(fieldValue);
+      else if (key === "externalRefs") result[key] = normalizeBuildingExternalRefsPatch(fieldValue);
     } else if (entityType === "buildingUnits") {
       if (key === "crmBuildingId") {
         if (!isSafeId(fieldValue)) fail("crm_parent_id_invalid");
@@ -335,7 +346,6 @@ function normalizePatch(
         result.label = normalizeText(fieldValue, "unit_label", { maximumBytes: SHORT_TEXT_MAX_BYTES, required: true });
       } else if (key === "status") result[key] = normalizeText(fieldValue, key, { maximumBytes: SHORT_TEXT_MAX_BYTES });
       else if (key === "memo") result[key] = normalizeText(fieldValue, key);
-      else if (key === "externalRefs") result[key] = normalizeExternalRefs(fieldValue);
     } else {
       if (key === "prospectId" || key === "crmBuildingUnitId") {
         if (!isSafeId(fieldValue)) fail("crm_parent_id_invalid");
@@ -345,7 +355,6 @@ function normalizePatch(
       else if (key === "moveOutAt" || key === "availableFrom") result[key] = normalizeOptionalDate(fieldValue, key);
       else if (key === "deposit" || key === "rent" || key === "maintenanceFee") result[key] = normalizeMoney(fieldValue, key);
       else if (key === "photoUrl" || key === "evidenceUrl" || key === "note") result[key] = normalizeText(fieldValue, key);
-      else if (key === "externalRefs") result[key] = normalizeExternalRefs(fieldValue);
     }
   }
   if (operation === "create") {
@@ -410,13 +419,29 @@ function writePath(root: UnknownRecord, path: readonly string[], value: unknown)
   for (let index = 0; index < path.length - 1; index += 1) {
     const segment = path[index];
     if (!isSafeId(segment)) fail("crm_transaction_invalid");
-    const child = Object.hasOwn(current, segment) ? current[segment] : undefined;
-    if (!isRecord(child)) current[segment] = Object.create(null) as UnknownRecord;
+    const hasChild = Object.hasOwn(current, segment);
+    const child = hasChild ? current[segment] : undefined;
+    if (hasChild && child !== null && !isRecord(child)) fail("crm_transaction_invalid");
+    if (!hasChild || child === null) current[segment] = Object.create(null) as UnknownRecord;
     current = current[segment] as UnknownRecord;
   }
   const leaf = path[path.length - 1];
   if (!isSafeId(leaf)) fail("crm_transaction_invalid");
   current[leaf] = value;
+}
+
+function assertWritablePathParents(root: unknown, path: readonly string[]): void {
+  if (!isRecord(root)) fail("crm_transaction_invalid");
+  let current = root;
+  for (let index = 0; index < path.length - 1; index += 1) {
+    const segment = path[index];
+    if (!isSafeId(segment)) fail("crm_transaction_invalid");
+    if (!Object.hasOwn(current, segment)) return;
+    const child = current[segment];
+    if (child === null) return;
+    if (!isRecord(child)) fail("crm_transaction_invalid");
+    current = child;
+  }
 }
 
 function parseReceipt(value: unknown, requestId: string): CanonicalCrmReceipt | null {
@@ -471,15 +496,17 @@ function assertCurrentRelease(root: unknown, command: CanonicalCrmTransactionCom
 }
 
 function assertStoredExternalRefs(value: unknown): void {
-  if (value === undefined) return;
   if (!isRecord(value)) fail("crm_entity_invalid");
   for (const [key, list] of Object.entries(value)) {
-    if (!EXTERNAL_REF_FIELDS.has(key)
-      || !Array.isArray(list)
-      || list.length > LIST_MAX_ITEMS
-      || !list.every((item) => typeof item === "string" && item.length > 0 && item === item.trim() && Buffer.byteLength(item, "utf8") <= LIST_ITEM_MAX_BYTES)
-      || new Set(list).size !== list.length) fail("crm_entity_invalid");
+    if (!EXTERNAL_REF_FIELDS.has(key)) fail("crm_entity_invalid");
+    normalizeStringList(list, "external_refs");
   }
+}
+
+function storedFieldAllowlist(entityType: CanonicalCrmEntityType): ReadonlySet<string> {
+  if (entityType === "buildings") return BUILDING_STORED_FIELDS;
+  if (entityType === "buildingUnits") return BUILDING_UNIT_STORED_FIELDS;
+  return SALES_UNIT_STORED_FIELDS;
 }
 
 function assertStoredCanonicalEntity(
@@ -487,10 +514,10 @@ function assertStoredCanonicalEntity(
   entityId: string,
   value: UnknownRecord,
 ): void {
-  const allowed = new Set([...CANONICAL_SYSTEM_FIELDS, ...fieldAllowlist(entityType)]);
-  if (entityType === "buildingUnits") allowed.delete("unitLabel");
+  const allowed = new Set([...CANONICAL_SYSTEM_FIELDS, ...storedFieldAllowlist(entityType)]);
   assertNoSecretKeys(value);
   if (Object.keys(value).some((key) => !allowed.has(key))
+    || CANONICAL_SYSTEM_FIELDS.some((key) => !Object.hasOwn(value, key))
     || value.id !== entityId
     || !Number.isSafeInteger(value.entityVersion)
     || (value.entityVersion as number) < 1
@@ -511,17 +538,39 @@ function assertStoredCanonicalEntity(
     if (entityType === "buildings") {
       normalizeText(value.name, "name", { maximumBytes: 1_000, required: true });
       normalizeText(value.address, "address", { maximumBytes: 1_000, required: true });
-      if (value.ownerCustomerId !== undefined && value.ownerCustomerId !== "" && !isSafeId(value.ownerCustomerId)) fail("crm_entity_invalid");
-      if (value.aliases !== undefined) normalizeStringList(value.aliases, "aliases");
+      if (Object.hasOwn(value, "type")) normalizeText(value.type, "type", { maximumBytes: SHORT_TEXT_MAX_BYTES });
+      if (Object.hasOwn(value, "status")) normalizeText(value.status, "status", { maximumBytes: SHORT_TEXT_MAX_BYTES });
+      if (Object.hasOwn(value, "manager")) normalizeText(value.manager, "manager", { maximumBytes: SHORT_TEXT_MAX_BYTES });
+      if (Object.hasOwn(value, "memo")) normalizeText(value.memo, "memo");
+      if (Object.hasOwn(value, "ownerCustomerId") && value.ownerCustomerId !== "" && !isSafeId(value.ownerCustomerId)) fail("crm_entity_invalid");
+      if (Object.hasOwn(value, "unitCount")
+        && (typeof value.unitCount !== "number"
+          || !Number.isSafeInteger(value.unitCount)
+          || value.unitCount < 0
+          || value.unitCount > 100_000)) fail("crm_entity_invalid");
+      if (Object.hasOwn(value, "aliases")) normalizeStringList(value.aliases, "aliases");
+      if (Object.hasOwn(value, "externalRefs")) assertStoredExternalRefs(value.externalRefs);
     } else if (entityType === "buildingUnits") {
       if (!isSafeId(value.crmBuildingId)) fail("crm_entity_invalid");
       normalizeText(value.label, "unit_label", { maximumBytes: SHORT_TEXT_MAX_BYTES, required: true });
+      if (Object.hasOwn(value, "status")) normalizeText(value.status, "status", { maximumBytes: SHORT_TEXT_MAX_BYTES });
+      if (Object.hasOwn(value, "memo")) normalizeText(value.memo, "memo");
+      if (Object.hasOwn(value, "externalRefs")) assertStoredExternalRefs(value.externalRefs);
     } else {
       if (!isSafeId(value.prospectId)) fail("crm_entity_invalid");
-      if (value.crmBuildingUnitId !== undefined && !isSafeId(value.crmBuildingUnitId)) fail("crm_entity_invalid");
+      if (Object.hasOwn(value, "crmBuildingUnitId") && !isSafeId(value.crmBuildingUnitId)) fail("crm_entity_invalid");
       normalizeText(value.label, "unit_label", { maximumBytes: SHORT_TEXT_MAX_BYTES, required: true });
+      if (Object.hasOwn(value, "status")) normalizeText(value.status, "status", { maximumBytes: SHORT_TEXT_MAX_BYTES });
+      if (Object.hasOwn(value, "moveOutAt")) normalizeOptionalDate(value.moveOutAt, "moveOutAt");
+      if (Object.hasOwn(value, "availableFrom")) normalizeOptionalDate(value.availableFrom, "availableFrom");
+      if (Object.hasOwn(value, "deposit")) normalizeMoney(value.deposit, "deposit");
+      if (Object.hasOwn(value, "rent")) normalizeMoney(value.rent, "rent");
+      if (Object.hasOwn(value, "maintenanceFee")) normalizeMoney(value.maintenanceFee, "maintenanceFee");
+      if (Object.hasOwn(value, "photoUrl")) normalizeText(value.photoUrl, "photoUrl");
+      if (Object.hasOwn(value, "evidenceUrl")) normalizeText(value.evidenceUrl, "evidenceUrl");
+      if (Object.hasOwn(value, "note")) normalizeText(value.note, "note");
+      if (Object.hasOwn(value, "externalRefs")) assertStoredExternalRefs(value.externalRefs);
     }
-    assertStoredExternalRefs(value.externalRefs);
   } catch {
     fail("crm_entity_invalid");
   }
@@ -672,7 +721,9 @@ function makeAudit(
     changedFields: Object.freeze(
       input.operation === "archive" || input.operation === "restore"
         ? ["archivedAt"]
-        : Object.keys(input.patch).sort(),
+        : Object.keys(input.patch).flatMap((field) => field === "externalRefs"
+          ? ["externalRefs.paymentBuildingIds"]
+          : [field]).sort(),
     ),
     occurredAt: command.now,
   });
@@ -803,6 +854,7 @@ export function reduceCanonicalCrmEntityRoot(
     next.archivedByOperatorId = "";
   }
   mergePreservedExternalRefs(existing, input.patch, next);
+  assertStoredCanonicalEntity(input.entityType, input.entityId, next);
   validateParentIntegrity(currentRoot, input, existing, next);
   const linked = canonicalCrmEntityHasFieldLinks(currentRoot, input.entityType, input.entityId, existing);
   const resultBase = Object.freeze({
@@ -819,12 +871,14 @@ export function reduceCanonicalCrmEntityRoot(
     result: resultBase,
     createdAt: command.now,
   });
+  const audit = makeAudit(input, command, input.operation === "create" ? 0 : input.expectedVersion, entityVersion, linked);
+  const auditPath = ["fieldPlatform", "v2", "auditLogs", audit.id as string] as const;
+  for (const path of [entityPath, receiptPath, auditPath]) assertWritablePathParents(currentRoot, path);
   const nextRoot = cloneRoot(currentRoot);
   writeOwnerBuildingBacklink(nextRoot, input, next);
   writePath(nextRoot, entityPath, Object.freeze(next));
   writePath(nextRoot, receiptPath, receipt);
-  const audit = makeAudit(input, command, input.operation === "create" ? 0 : input.expectedVersion, entityVersion, linked);
-  writePath(nextRoot, ["fieldPlatform", "v2", "auditLogs", audit.id as string], audit);
+  writePath(nextRoot, auditPath, audit);
   return {
     root: nextRoot,
     result: Object.freeze({ ...resultBase, repeated: false }),
