@@ -10,6 +10,36 @@
       ".read": true,
       ".write": true
     },
+    "crmCompany": {
+      ".read": false,
+      ".write": false,
+      "access": {
+        "$uid": {
+          ".read": "auth != null && auth.uid === $uid",
+          ".write": false
+        }
+      },
+      "data": {
+        ".read": "auth != null && root.child('crmCompany/access').child(auth.uid).child('enabled').val() === true && root.child('crmCompany/access').child(auth.uid).child('email').val() === auth.token.email",
+        ".write": "auth != null && root.child('crmCompany/access').child(auth.uid).child('enabled').val() === true && (root.child('crmCompany/access').child(auth.uid).child('role').val() === 'admin' || root.child('crmCompany/access').child(auth.uid).child('role').val() === 'member')"
+      },
+      "cases": {
+        ".read": "auth != null && root.child('crmCompany/access').child(auth.uid).child('enabled').val() === true && root.child('crmCompany/access').child(auth.uid).child('email').val() === auth.token.email",
+        ".write": "auth != null && root.child('crmCompany/access').child(auth.uid).child('enabled').val() === true && (root.child('crmCompany/access').child(auth.uid).child('role').val() === 'admin' || root.child('crmCompany/access').child(auth.uid).child('role').val() === 'member')"
+      },
+      "paymentCalendars": {
+        ".read": "auth != null && root.child('crmCompany/access').child(auth.uid).child('enabled').val() === true && root.child('crmCompany/access').child(auth.uid).child('email').val() === auth.token.email",
+        ".write": "auth != null && root.child('crmCompany/access').child(auth.uid).child('enabled').val() === true && (root.child('crmCompany/access').child(auth.uid).child('role').val() === 'admin' || root.child('crmCompany/access').child(auth.uid).child('role').val() === 'member')"
+      },
+      "caseSettings": {
+        ".read": "auth != null && root.child('crmCompany/access').child(auth.uid).child('enabled').val() === true && root.child('crmCompany/access').child(auth.uid).child('email').val() === auth.token.email",
+        ".write": "auth != null && root.child('crmCompany/access').child(auth.uid).child('enabled').val() === true && (root.child('crmCompany/access').child(auth.uid).child('role').val() === 'admin' || root.child('crmCompany/access').child(auth.uid).child('role').val() === 'member')"
+      },
+      "migration": {
+        ".read": false,
+        ".write": false
+      }
+    },
     "crmMigrationStaging": {
       ".read": false,
       ".write": false

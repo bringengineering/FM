@@ -144,6 +144,15 @@ function caseDeleteAuditId(caseKey) {
   return `case_delete_${String(caseKey || "")}`;
 }
 
+function resolveDatabaseLocation(location, databaseRoot) {
+  const normalizedLocation = String(location || "").replace(/^\/+/, "");
+  if (!databaseRoot) return normalizedLocation;
+  const companyLocation = normalizedLocation === "crmShared/data"
+    ? "data"
+    : normalizedLocation.replace(/^crmAccess(?=\/|$)/, "access");
+  return companyLocation ? `${databaseRoot}/${companyLocation}` : databaseRoot;
+}
+
 function createError(message, code, cause) {
   const error = new Error(message);
   error.code = code;
@@ -464,10 +473,7 @@ class FirebaseRemoteClient {
   async dbRequest(location, options, retried) {
     const token = await this.ensureIdToken(false);
     const suffix = options && options.query ? `&${options.query}` : "";
-    const normalizedLocation = String(location || "").replace(/^\/+/, "");
-    const rootedLocation = this.databaseRoot
-      ? (normalizedLocation ? `${this.databaseRoot}/${normalizedLocation}` : this.databaseRoot)
-      : normalizedLocation;
+    const rootedLocation = resolveDatabaseLocation(location, this.databaseRoot);
     const url = `${this.firebase.databaseUrl}/${rootedLocation}.json?auth=${encodeURIComponent(token)}${suffix}`;
     try {
       return await this.requestJson(url, {
@@ -1237,8 +1243,7 @@ class FirebaseRemoteClient {
       this.streamController = new AbortController();
       try {
         const token = await this.ensureIdToken(false);
-        const normalizedLocation = "crmShared/data";
-        const rootedLocation = this.databaseRoot ? `${this.databaseRoot}/${normalizedLocation}` : normalizedLocation;
+        const rootedLocation = resolveDatabaseLocation("crmShared/data", this.databaseRoot);
         const url = `${this.firebase.databaseUrl}/${rootedLocation}.json?auth=${encodeURIComponent(token)}`;
         const response = await this.fetch(url, { headers: { Accept: "text/event-stream" }, signal: this.streamController.signal });
         if (!response.ok || !response.body) throw createError(`실시간 연결 실패 (${response.status})`, "STREAM_ERROR");
@@ -1295,6 +1300,7 @@ module.exports = {
   encodeProtectedJson,
   decodeProtectedJson,
   retryableSyncError,
+  resolveDatabaseLocation,
   parseCsvRows,
   vendorDirectoryFromCsv,
   mapById,

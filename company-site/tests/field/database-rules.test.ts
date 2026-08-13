@@ -337,6 +337,29 @@ describe("field media database rule source", () => {
     });
   });
 
+  it("isolates company CRM access and permits writes only for enabled admin or member roles", async () => {
+    const source = JSON.parse(
+      await readFile(resolve("../database.rules.json"), "utf8"),
+    ) as { rules: { crmCompany?: Record<string, unknown> } };
+    const crm = source.rules.crmCompany as Record<string, Record<string, unknown>>;
+
+    expect(crm).toBeDefined();
+    expect(crm[".read"]).toBe(false);
+    expect(crm[".write"]).toBe(false);
+    expect(crm.access.$uid[".read"]).toContain("auth.uid === $uid");
+    expect(crm.access.$uid[".write"]).toBe(false);
+    for (const root of ["data", "cases", "paymentCalendars", "caseSettings"]) {
+      const readRule = String(crm[root][".read"]);
+      const writeRule = String(crm[root][".write"]);
+      expect(readRule).toContain("crmCompany/access");
+      expect(readRule).toContain("enabled");
+      expect(writeRule).toContain("role");
+      expect(writeRule).toContain("admin");
+      expect(writeRule).toContain("member");
+    }
+    expect(crm.migration).toEqual({ ".read": false, ".write": false });
+  });
+
   it("indexes bounded ad review queries and keeps package indexes server-owned", async () => {
     const source = JSON.parse(
       await readFile(resolve("../database.rules.json"), "utf8"),
