@@ -1,0 +1,71 @@
+{
+  "rules": {
+    ".read": false,
+    ".write": false,
+    "crmCompany": {
+      ".read": false,
+      ".write": false,
+      "access": {
+        "$uid": {
+          ".read": "auth != null && auth.uid === $uid",
+          ".write": false
+        }
+      },
+      "data": {
+        ".read": "auth != null && root.child('crmCompany/access').child(auth.uid).child('enabled').val() === true && root.child('crmCompany/access').child(auth.uid).child('email').val() === auth.token.email && (root.child('crmCompany/access').child(auth.uid).child('role').val() === 'admin' || root.child('crmCompany/access').child(auth.uid).child('role').val() === 'member' || root.child('crmCompany/access').child(auth.uid).child('role').val() === 'viewer')",
+        ".write": false,
+        "buildings": {
+          ".write": false
+        },
+        "buildingUnits": {
+          ".write": false
+        },
+        "salesUnits": {
+          ".write": false
+        },
+        "customers": {
+          ".write": "auth != null && root.child('crmCompany/access').child(auth.uid).child('enabled').val() === true && (root.child('crmCompany/access').child(auth.uid).child('role').val() === 'admin' || root.child('crmCompany/access').child(auth.uid).child('role').val() === 'member')"
+        },
+        "activities": {
+          ".write": "auth != null && root.child('crmCompany/access').child(auth.uid).child('enabled').val() === true && (root.child('crmCompany/access').child(auth.uid).child('role').val() === 'admin' || root.child('crmCompany/access').child(auth.uid).child('role').val() === 'member')"
+        },
+        "contracts": {
+          ".write": "auth != null && root.child('crmCompany/access').child(auth.uid).child('enabled').val() === true && (root.child('crmCompany/access').child(auth.uid).child('role').val() === 'admin' || root.child('crmCompany/access').child(auth.uid).child('role').val() === 'member')"
+        },
+        "partnerVendors": {
+          ".write": "auth != null && root.child('crmCompany/access').child(auth.uid).child('enabled').val() === true && (root.child('crmCompany/access').child(auth.uid).child('role').val() === 'admin' || root.child('crmCompany/access').child(auth.uid).child('role').val() === 'member')"
+        },
+        "partnerQuotes": {
+          ".write": "auth != null && root.child('crmCompany/access').child(auth.uid).child('enabled').val() === true && (root.child('crmCompany/access').child(auth.uid).child('role').val() === 'admin' || root.child('crmCompany/access').child(auth.uid).child('role').val() === 'member')"
+        },
+        "tasks": {
+          ".write": "auth != null && root.child('crmCompany/access').child(auth.uid).child('enabled').val() === true && (root.child('crmCompany/access').child(auth.uid).child('role').val() === 'admin' || root.child('crmCompany/access').child(auth.uid).child('role').val() === 'member')"
+        },
+        "securityAssets": {
+          ".write": "auth != null && root.child('crmCompany/access').child(auth.uid).child('enabled').val() === true && (root.child('crmCompany/access').child(auth.uid).child('role').val() === 'admin' || root.child('crmCompany/access').child(auth.uid).child('role').val() === 'member')"
+        },
+        "auditLogs": {
+          ".write": "auth != null && root.child('crmCompany/access').child(auth.uid).child('enabled').val() === true && (root.child('crmCompany/access').child(auth.uid).child('role').val() === 'admin' || root.child('crmCompany/access').child(auth.uid).child('role').val() === 'member')"
+        },
+        "securityIncidents": {
+          ".write": "auth != null && root.child('crmCompany/access').child(auth.uid).child('enabled').val() === true && (root.child('crmCompany/access').child(auth.uid).child('role').val() === 'admin' || root.child('crmCompany/access').child(auth.uid).child('role').val() === 'member')"
+        },
+        "salesProspects": {
+          ".write": "auth != null && root.child('crmCompany/access').child(auth.uid).child('enabled').val() === true && (root.child('crmCompany/access').child(auth.uid).child('role').val() === 'admin' || root.child('crmCompany/access').child(auth.uid).child('role').val() === 'member')"
+        },
+        "salesContacts": {
+          ".write": "auth != null && root.child('crmCompany/access').child(auth.uid).child('enabled').val() === true && (root.child('crmCompany/access').child(auth.uid).child('role').val() === 'admin' || root.child('crmCompany/access').child(auth.uid).child('role').val() === 'member')"
+        },
+        "salesActivities": {
+          ".write": "auth != null && root.child('crmCompany/access').child(auth.uid).child('enabled').val() === true && (root.child('crmCompany/access').child(auth.uid).child('role').val() === 'admin' || root.child('crmCompany/access').child(auth.uid).child('role').val() === 'member')"
+        },
+        "salesEvents": {
+          ".write": "auth != null && root.child('crmCompany/access').child(auth.uid).child('enabled').val() === true && (root.child('crmCompany/access').child(auth.uid).child('role').val() === 'admin' || root.child('crmCompany/access').child(auth.uid).child('role').val() === 'member')"
+        },
+        "salesOpportunities": {
+          ".write": "auth != null && root.child('crmCompany/access').child(auth.uid).child('enabled').val() === true && (root.child('crmCompany/access').child(auth.uid).child('role').val() === 'admin' || root.child('crmCompany/access').child(auth.uid).child('role').val() === 'member')"
+        }
+      }
+    }
+  }
+}

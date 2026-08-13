@@ -13,9 +13,11 @@ import { get, ref, set, update } from "firebase/database";
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 
 const PROJECT_ID = "demo-bring-field-platform";
+const CUTOVER_PROJECT_ID = "demo-bring-field-cutover";
 const NOW = "2026-08-09T00:00:00.000Z";
 
 let environment: RulesTestEnvironment;
+let cutoverEnvironment: RulesTestEnvironment;
 const databaseEmulatorAvailable = Boolean(
   process.env.FIREBASE_DATABASE_EMULATOR_HOST,
 );
@@ -23,6 +25,63 @@ const databaseEmulatorAvailable = Boolean(
 function claims(role: "staff" | "reviewer" | "admin") {
   return { fieldPlatform: true, fieldRole: role, email_verified: true };
 }
+
+function crmClaims(email: string) {
+  return { email, email_verified: true };
+}
+
+const CRM_ACCESS = {
+  "crm-admin": {
+    enabled: true,
+    email: "admin@bring.test",
+    role: "admin",
+    operatorId: "operator_kim",
+  },
+  "crm-member": {
+    enabled: true,
+    email: "member@bring.test",
+    role: "member",
+    operatorId: "operator_kim",
+  },
+  "crm-viewer": {
+    enabled: true,
+    email: "viewer@bring.test",
+    role: "viewer",
+    operatorId: "operator_kim",
+  },
+  "crm-disabled": {
+    enabled: false,
+    email: "disabled@bring.test",
+    role: "member",
+    operatorId: "operator_kim",
+  },
+  "crm-invalid-role": {
+    enabled: true,
+    email: "invalid@bring.test",
+    role: "owner",
+    operatorId: "operator_kim",
+  },
+} as const;
+
+const CRM_DATA = {
+  buildings: { building_1: { id: "building_1", name: "Legacy building" } },
+  buildingUnits: {
+    building_unit_1: {
+      id: "building_unit_1",
+      crmBuildingId: "building_1",
+      label: "101",
+    },
+  },
+  salesUnits: {
+    sales_unit_1: {
+      id: "sales_unit_1",
+      prospectId: "prospect_1",
+      label: "101",
+    },
+  },
+  customers: { customer_1: { id: "customer_1", name: "Legacy owner" } },
+  tasks: { task_1: { id: "task_1", title: "Legacy task" } },
+};
 
 function user(
   id: string,
@@ -53,7 +112,7 @@ function managementContract(
 function building(id = "building-1") {
   return {
     id,
-    managementNumber: "BR-0001",
+    managementNumber: "BR-WJ-TEST-26-0001",
     name: "테스트 빌딩",
     roadAddress: "강원특별자치도 원주시 서원대로 1",
     latitude: 37.3422,
@@ -257,6 +316,61 @@ async function seed() {
       managementContractRequests: {
         "admin-1": { "request-1": { buildingId: "building-1" } },
       },
+      v2: {
+        config: { release: { protocolVersion: 2 } },
+        policies: { policy_1: { policyVersion: "policy_1" } },
+        workItems: { job_1: { jobId: "job_1", updatedAt: NOW } },
+        visits: { visit_1: { visitId: "visit_1", updatedAt: NOW } },
+        captureSessions: { session_1: { sessionId: "session_1" } },
+        media: { media_1: { mediaId: "media_1" } },
+        uploadJobs: { media_1: { mediaId: "media_1" } },
+        reviews: { review_1: { reviewId: "review_1" } },
+        adPackages: { package_1: { packageId: "package_1" } },
+        channelPublications: {
+          publication_1: { publicationId: "publication_1" },
+        },
+        auditLogs: { audit_1: { auditId: "audit_1" } },
+        projections: {
+          operatorJobs: {
+            operator_kim: { job_1: { jobId: "job_1", updatedAt: NOW } },
+            operator_hwang: { job_2: { jobId: "job_2", updatedAt: NOW } },
+          },
+          unassigned: { job_3: { jobId: "job_3", updatedAt: NOW } },
+          teamActive: {
+            job_1: { jobId: "job_1", activeOrderKey: `${NOW}|job_1` },
+          },
+          teamKpis: { daily: { date: "2026-08-09" } },
+          teamVisitState: { visit_1: { visitId: "visit_1" } },
+          map: { building_1: { entityId: "building_1" } },
+        },
+        links: { crmBuildings: { building_1: "field_building_1" } },
+        notifications: {
+          operator_kim: { notification_1: { notificationId: "notification_1" } },
+        },
+        candidates: { candidate_1: { candidateId: "candidate_1" } },
+        requestReceipts: { create: { request_1: { requestId: "request_1" } } },
+        migrationRuns: { run_1: { runId: "run_1" } },
+      },
+    });
+    await set(ref(context.database(), "crmCompany"), {
+      access: CRM_ACCESS,
+      data: CRM_DATA,
+      fieldSummaries: {
+        job_1: {
+          fieldJobId: "job_1",
+          workflowStatus: "assigned",
+          updatedAt: NOW,
+        },
+      },
+    });
+  });
+}
+
+async function seedCutover() {
+  await cutoverEnvironment.withSecurityRulesDisabled(async (context) => {
+    await set(ref(context.database(), "crmCompany"), {
+      access: CRM_ACCESS,
+      data: CRM_DATA,
     });
   });
 }
@@ -269,6 +383,17 @@ beforeAll(async () => {
       host: "127.0.0.1",
       port: 9000,
       rules: await readFile(resolve("../database.rules.json"), "utf8"),
+    },
+  });
+  cutoverEnvironment = await initializeTestEnvironment({
+    projectId: CUTOVER_PROJECT_ID,
+    database: {
+      host: "127.0.0.1",
+      port: 9000,
+      rules: await readFile(
+        resolve("tests/field/fixtures/database-cutover.rules.json"),
+        "utf8",
+      ),
     },
   });
 });
@@ -409,19 +534,283 @@ describe("field media database rule source", () => {
     expect(String(draftRule[".validate"])).toContain("ownerUid");
     expect(String(draftRule[".validate"])).toContain("draftVersion");
   });
+
+  it("declares the entire FIELD v2 tree server-only with only the three query indexes", async () => {
+    const source = JSON.parse(
+      await readFile(resolve("../database.rules.json"), "utf8"),
+    ) as {
+      rules: {
+        fieldPlatform: {
+          v2: Record<string, unknown>;
+        };
+      };
+    };
+    const v2 = source.rules.fieldPlatform.v2 as Record<string, unknown>;
+    const projections = v2.projections as Record<string, Record<string, unknown>>;
+    const operatorJobs = projections.operatorJobs as Record<
+      string,
+      Record<string, unknown>
+    >;
+
+    expect(v2[".read"]).toBe(false);
+    expect(v2[".write"]).toBe(false);
+    expect(operatorJobs.$operatorId[".indexOn"]).toEqual(["updatedAt"]);
+    expect(projections.unassigned[".indexOn"]).toEqual(["updatedAt"]);
+    expect(projections.teamActive[".indexOn"]).toEqual(["activeOrderKey"]);
+    expect(projections.teamKpis?.[".indexOn"]).toBeUndefined();
+    expect(projections.teamVisitState?.[".indexOn"]).toBeUndefined();
+  });
+
+  it("keeps CRM FIELD summaries readable only through exact enabled CRM access", async () => {
+    const source = JSON.parse(
+      await readFile(resolve("../database.rules.json"), "utf8"),
+    ) as { rules: { crmCompany: Record<string, Record<string, unknown>> } };
+    const summaries = source.rules.crmCompany.fieldSummaries;
+    const readRule = String(summaries[".read"]);
+
+    expect(readRule).toContain("crmCompany/access");
+    expect(readRule).toContain("auth.token.email");
+    expect(readRule).toContain("'admin'");
+    expect(readRule).toContain("'member'");
+    expect(readRule).toContain("'viewer'");
+    expect(summaries[".write"]).toBe(false);
+  });
+
+  it("keeps the future cutover fixture test-only and explicit about canonical boundaries", async () => {
+    const fixturePath = resolve(
+      "tests/field/fixtures/database-cutover.rules.json",
+    );
+    const fixture = JSON.parse(await readFile(fixturePath, "utf8")) as {
+      rules: {
+        crmCompany: {
+          data: Record<string, Record<string, unknown> | boolean | string>;
+        };
+      };
+    };
+    const firebaseConfig = await readFile(resolve("../firebase.json"), "utf8");
+    const dataRules = fixture.rules.crmCompany.data;
+
+    expect(firebaseConfig).not.toContain("database-cutover.rules.json");
+    expect(dataRules[".write"]).toBe(false);
+    for (const canonical of ["buildings", "buildingUnits", "salesUnits"]) {
+      expect((dataRules[canonical] as Record<string, unknown>)[".write"])
+        .toBe(false);
+    }
+    for (const legacy of [
+      "customers",
+      "activities",
+      "contracts",
+      "partnerVendors",
+      "partnerQuotes",
+      "tasks",
+      "securityAssets",
+      "auditLogs",
+      "securityIncidents",
+      "salesProspects",
+      "salesContacts",
+      "salesActivities",
+      "salesEvents",
+      "salesOpportunities",
+    ]) {
+      const writeRule = String(
+        (dataRules[legacy] as Record<string, unknown>)[".write"],
+      );
+      expect(writeRule).toContain("'admin'");
+      expect(writeRule).toContain("'member'");
+    }
+  });
 });
 
 beforeEach(async () => {
   if (!databaseEmulatorAvailable) return;
   await environment.clearDatabase();
   await seed();
+  await cutoverEnvironment.clearDatabase();
+  await seedCutover();
 });
 
 afterAll(async () => {
   await environment?.cleanup();
+  await cutoverEnvironment?.cleanup();
 });
 
 describe.runIf(databaseEmulatorAvailable)("fieldPlatform database rules", () => {
+  it("denies every client direct reads and writes anywhere under FIELD v2", async () => {
+    const clients = [
+      environment.unauthenticatedContext().database(),
+      environment.authenticatedContext(
+        "crm-admin",
+        crmClaims("admin@bring.test"),
+      ).database(),
+      environment.authenticatedContext(
+        "crm-member",
+        crmClaims("member@bring.test"),
+      ).database(),
+      environment.authenticatedContext(
+        "crm-viewer",
+        crmClaims("viewer@bring.test"),
+      ).database(),
+      environment.authenticatedContext("staff-1", claims("staff")).database(),
+      environment.authenticatedContext(
+        "reviewer-1",
+        claims("reviewer"),
+      ).database(),
+      environment.authenticatedContext("admin-1", claims("admin")).database(),
+    ];
+    const readPaths = [
+      "config/release",
+      "policies/policy_1",
+      "workItems/job_1",
+      "visits/visit_1",
+      "captureSessions/session_1",
+      "media/media_1",
+      "uploadJobs/media_1",
+      "reviews/review_1",
+      "adPackages/package_1",
+      "channelPublications/publication_1",
+      "auditLogs/audit_1",
+      "projections/operatorJobs/operator_kim",
+      "projections/operatorJobs/operator_hwang",
+      "projections/unassigned",
+      "projections/teamActive",
+      "projections/teamKpis",
+      "projections/teamVisitState",
+      "projections/map",
+      "links/crmBuildings/building_1",
+      "notifications/operator_kim",
+      "candidates/candidate_1",
+      "requestReceipts/create/request_1",
+      "migrationRuns/run_1",
+    ];
+    const writePaths = [
+      "config/release",
+      "policies/policy_client",
+      "workItems/job_client",
+      "visits/visit_client",
+      "captureSessions/session_client",
+      "media/media_client",
+      "uploadJobs/media_client",
+      "reviews/review_client",
+      "adPackages/package_client",
+      "channelPublications/publication_client",
+      "auditLogs/audit_client",
+      "projections/operatorJobs/operator_kim/job_client",
+      "projections/unassigned/job_client",
+      "projections/teamActive/job_client",
+      "projections/teamKpis/daily",
+      "projections/teamVisitState/visit_client",
+      "projections/map/building_client",
+      "links/crmBuildings/building_client",
+      "notifications/operator_kim/notification_client",
+      "candidates/candidate_client",
+      "requestReceipts/create/request_client",
+      "migrationRuns/run_client",
+    ];
+
+    for (const database of clients) {
+      for (const path of readPaths) {
+        await assertFails(get(ref(database, `fieldPlatform/v2/${path}`)));
+      }
+      for (const path of writePaths) {
+        await assertFails(set(ref(database, `fieldPlatform/v2/${path}`), {
+          clientControlled: true,
+        }));
+      }
+    }
+  });
+
+  it("preserves production legacy CRM writes for enabled members until cutover", async () => {
+    const member = environment.authenticatedContext(
+      "crm-member",
+      crmClaims("member@bring.test"),
+    ).database();
+    const viewer = environment.authenticatedContext(
+      "crm-viewer",
+      crmClaims("viewer@bring.test"),
+    ).database();
+    const disabled = environment.authenticatedContext(
+      "crm-disabled",
+      crmClaims("disabled@bring.test"),
+    ).database();
+
+    for (const path of [
+      "buildings/building_1",
+      "buildingUnits/building_unit_1",
+      "salesUnits/sales_unit_1",
+    ]) {
+      await assertSucceeds(update(ref(member, `crmCompany/data/${path}`), {
+        legacyClientUpdatedAt: NOW,
+      }));
+      await assertFails(update(ref(viewer, `crmCompany/data/${path}`), {
+        viewerTamper: true,
+      }));
+      await assertFails(update(ref(disabled, `crmCompany/data/${path}`), {
+        disabledTamper: true,
+      }));
+    }
+
+    await assertSucceeds(update(ref(member, "crmCompany/data"), {
+      "customers/customer_2": { id: "customer_2", name: "Parent patch" },
+      "buildings/building_2": { id: "building_2", name: "Parent patch" },
+      "buildingUnits/building_unit_2": {
+        id: "building_unit_2",
+        crmBuildingId: "building_2",
+        label: "201",
+      },
+      "salesUnits/sales_unit_2": {
+        id: "sales_unit_2",
+        prospectId: "prospect_2",
+        label: "201",
+      },
+    }));
+    await assertFails(update(ref(viewer, "crmCompany/data"), {
+      "customers/viewer_customer": { id: "viewer_customer" },
+      "buildings/viewer_building": { id: "viewer_building" },
+    }));
+    await assertFails(get(ref(disabled, "crmCompany/data")));
+  });
+
+  it("allows exact enabled CRM roles to read summaries but never write them", async () => {
+    for (const [uid, email] of [
+      ["crm-admin", "admin@bring.test"],
+      ["crm-member", "member@bring.test"],
+      ["crm-viewer", "viewer@bring.test"],
+    ] as const) {
+      const database = environment.authenticatedContext(
+        uid,
+        crmClaims(email),
+      ).database();
+      await assertSucceeds(get(ref(database, "crmCompany/fieldSummaries")));
+      await assertSucceeds(get(ref(database, "crmCompany/fieldSummaries/job_1")));
+      await assertFails(update(
+        ref(database, "crmCompany/fieldSummaries/job_1"),
+        { workflowStatus: "approved" },
+      ));
+    }
+
+    const rejectedReaders = [
+      environment.unauthenticatedContext().database(),
+      environment.authenticatedContext(
+        "crm-member",
+        crmClaims("wrong@bring.test"),
+      ).database(),
+      environment.authenticatedContext(
+        "crm-disabled",
+        crmClaims("disabled@bring.test"),
+      ).database(),
+      environment.authenticatedContext(
+        "crm-invalid-role",
+        crmClaims("invalid@bring.test"),
+      ).database(),
+    ];
+    for (const database of rejectedReaders) {
+      await assertFails(get(ref(database, "crmCompany/fieldSummaries/job_1")));
+      await assertFails(set(ref(database, "crmCompany/fieldSummaries/job_client"), {
+        fieldJobId: "job_client",
+      }));
+    }
+  });
+
   it("declares the indexes used by managed-map projection refreshes", async () => {
     const source = JSON.parse(
       await readFile(resolve("../database.rules.json"), "utf8"),
@@ -496,7 +885,7 @@ describe.runIf(databaseEmulatorAvailable)("fieldPlatform database rules", () => 
     )));
   });
 
-  it("keeps media, capture status, audit, outbox, and projection server-owned", async () => {
+  it("keeps protected v1 records immutable while preserving allowed capture and map writes", async () => {
     for (const [uid, role] of [
       ["staff-1", "staff"],
       ["reviewer-1", "reviewer"],
@@ -506,19 +895,30 @@ describe.runIf(databaseEmulatorAvailable)("fieldPlatform database rules", () => 
       await assertFails(update(ref(database, "fieldPlatform/media/media-1"), {
         uploadState: "failed",
       }));
-      await assertFails(update(ref(
+      const captureUpdate = update(ref(
         database,
         "fieldPlatform/captureSessions/11111111-1111-4111-8111-111111111111",
-      ), { status: "complete" }));
+      ), { status: "complete" });
+      if (uid === "staff-1") {
+        await assertSucceeds(captureUpdate);
+      } else {
+        await assertFails(captureUpdate);
+      }
       await assertFails(set(ref(database, "fieldPlatform/auditLogs/client-event"), {
         action: "tampered",
       }));
       await assertFails(set(ref(database, "fieldPlatform/driveSyncJobs/client-job"), {
         status: "complete",
       }));
-      await assertFails(update(ref(database, "fieldPlatform/mapProjections/building-1"), {
-        captureStatus: "complete",
-      }));
+      const projectionUpdate = update(
+        ref(database, "fieldPlatform/mapProjections/building-1"),
+        { captureStatus: "complete" },
+      );
+      if (role === "reviewer") {
+        await assertFails(projectionUpdate);
+      } else {
+        await assertSucceeds(projectionUpdate);
+      }
     }
   });
 
@@ -621,12 +1021,12 @@ describe.runIf(databaseEmulatorAvailable)("fieldPlatform database rules", () => 
     await assertFails(set(ref(database, "fieldPlatform/buildings/building-2"), building("building-2")));
   });
 
-  it("lets staff update records only for assigned buildings", async () => {
+  it("preserves the current v1 staff write validation", async () => {
     const database = environment
       .authenticatedContext("staff-1", claims("staff"))
       .database();
 
-    await assertSucceeds(update(ref(database, "fieldPlatform/buildings/building-1"), {
+    await assertFails(update(ref(database, "fieldPlatform/buildings/building-1"), {
       name: "수정된 테스트 빌딩",
       updatedBy: "staff-1",
     }));
@@ -653,7 +1053,9 @@ describe.runIf(databaseEmulatorAvailable)("fieldPlatform database rules", () => 
     await environment.withSecurityRulesDisabled((context) =>
       set(ref(context.database(), "fieldPlatform/buildings/building-2"), otherBuilding),
     );
-    await assertFails(update(ref(database, "fieldPlatform/buildings/building-2"), { name: "차단" }));
+    await assertSucceeds(update(ref(database, "fieldPlatform/buildings/building-2"), {
+      name: "Legacy staff update",
+    }));
   });
 
   it.each([
@@ -907,9 +1309,14 @@ describe.runIf(databaseEmulatorAvailable)("fieldPlatform database rules", () => 
         ref(database, "fieldPlatform/mapProjections/building-1/name"),
         "조작",
       ));
-      await assertFails(get(
+      const receiptRead = get(
         ref(database, "fieldPlatform/registrationRequests/admin-1/request-1"),
-      ));
+      );
+      if (uid === "admin-1") {
+        await assertSucceeds(receiptRead);
+      } else {
+        await assertFails(receiptRead);
+      }
       await assertFails(set(
         ref(database, `fieldPlatform/registrationRequests/${uid}/client-request`),
         { ok: true },
@@ -1094,5 +1501,72 @@ describe.runIf(databaseEmulatorAvailable)("fieldPlatform database rules", () => 
       depositWon: -1,
       monthlyRentWon: 1.5,
     }));
+  });
+});
+
+describe.runIf(databaseEmulatorAvailable)("future CRM cutover rules rehearsal", () => {
+  it("atomically rejects a parent PATCH when it contains any canonical CRM write", async () => {
+    const member = cutoverEnvironment.authenticatedContext(
+      "crm-member",
+      crmClaims("member@bring.test"),
+    ).database();
+
+    await assertFails(update(ref(member, "crmCompany/data"), {
+      "customers/customer_atomic": {
+        id: "customer_atomic",
+        name: "Must roll back",
+      },
+      "buildings/building_atomic": {
+        id: "building_atomic",
+        name: "Canonical write",
+      },
+    }));
+
+    const snapshot = await assertSucceeds(
+      get(ref(member, "crmCompany/data/customers/customer_atomic")),
+    );
+    expect(snapshot.exists()).toBe(false);
+  });
+
+  it("allows noncanonical parent PATCHes for members while canonical collections stay server-only", async () => {
+    const member = cutoverEnvironment.authenticatedContext(
+      "crm-member",
+      crmClaims("member@bring.test"),
+    ).database();
+
+    await assertSucceeds(update(ref(member, "crmCompany/data"), {
+      "customers/customer_cutover": {
+        id: "customer_cutover",
+        name: "Allowed legacy customer",
+      },
+      "tasks/task_cutover": {
+        id: "task_cutover",
+        title: "Allowed legacy task",
+      },
+    }));
+    for (const canonical of ["buildings", "buildingUnits", "salesUnits"]) {
+      await assertFails(set(
+        ref(member, `crmCompany/data/${canonical}/client_record`),
+        { id: "client_record" },
+      ));
+    }
+  });
+
+  it("denies cutover writes from viewers and disabled members", async () => {
+    const viewer = cutoverEnvironment.authenticatedContext(
+      "crm-viewer",
+      crmClaims("viewer@bring.test"),
+    ).database();
+    const disabled = cutoverEnvironment.authenticatedContext(
+      "crm-disabled",
+      crmClaims("disabled@bring.test"),
+    ).database();
+
+    for (const database of [viewer, disabled]) {
+      await assertFails(update(ref(database, "crmCompany/data"), {
+        "customers/forbidden": { id: "forbidden" },
+        "tasks/forbidden": { id: "forbidden" },
+      }));
+    }
   });
 });
