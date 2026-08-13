@@ -28,10 +28,19 @@ const WORKFLOW_ACTIONS = new Set([
 
 const SHARED_COLLECTIONS = Object.freeze([
   "customers", "buildings", "activities", "contracts", "partnerVendors", "partnerQuotes", "tasks",
-  "securityAssets", "auditLogs", "securityIncidents"
+  "securityAssets", "auditLogs", "securityIncidents",
+  "salesProspects", "salesContacts", "salesUnits", "salesActivities", "salesEvents", "salesOpportunities"
 ]);
+const PENDING_STORE_VERSION = 4;
 const PROTECTED_JSON_FORMAT = "bring-crm-protected-json";
 const PROTECTED_JSON_VERSION = 1;
+
+function presentSharedCollections(store, declaredCollections) {
+  const source = store && typeof store === "object" ? store : {};
+  const declared = Array.isArray(declaredCollections) ? new Set(declaredCollections) : null;
+  return SHARED_COLLECTIONS.filter(collection => Object.prototype.hasOwnProperty.call(source, collection)
+    && (!declared || declared.has(collection)));
+}
 
 function jsonEqual(left, right) {
   return JSON.stringify(left ?? null) === JSON.stringify(right ?? null);
@@ -53,7 +62,7 @@ function listFromMap(value) {
 
 function toRemoteStore(input, actor) {
   const payload = {
-    schemaVersion: Number(input.schemaVersion) || 2,
+    schemaVersion: Number(input.schemaVersion) || 3,
     company: input.company || {},
     updatedAt: input.updatedAt || new Date().toISOString(),
     updatedBy: actor || ""
@@ -92,10 +101,11 @@ function diffRemoteStores(previous, next) {
   return patch;
 }
 
-function pendingSyncPatch(Core, baseRemote, desired, currentRemote) {
+function pendingSyncPatch(Core, baseRemote, desired, currentRemote, presentCollections) {
   const base = baseRemote && typeof baseRemote === "object" ? baseRemote : {};
   const current = currentRemote && typeof currentRemote === "object" ? currentRemote : {};
   const patch = diffRemoteStores(base, desired);
+  const authoritativeCollections = new Set(Array.isArray(presentCollections) ? presentCollections : SHARED_COLLECTIONS);
   const baseQuotes = base.partnerQuotes && typeof base.partnerQuotes === "object" ? base.partnerQuotes : {};
   const desiredQuotes = desired && desired.partnerQuotes && typeof desired.partnerQuotes === "object" ? desired.partnerQuotes : {};
   const currentQuotes = current.partnerQuotes && typeof current.partnerQuotes === "object" ? current.partnerQuotes : {};
@@ -136,6 +146,10 @@ function pendingSyncPatch(Core, baseRemote, desired, currentRemote) {
       if (currentVendor) delete patch[`partnerVendors/${vendorId}`];
       else patch[`partnerVendors/${vendorId}`] = Core.partnerVendorFromQuote(currentQuote, vendorId);
     }
+  });
+  Object.keys(patch).forEach(key => {
+    const collection = key.split("/", 1)[0];
+    if (SHARED_COLLECTIONS.includes(collection) && !authoritativeCollections.has(collection)) delete patch[key];
   });
   return patch;
 }
@@ -810,12 +824,23 @@ class FirebaseRemoteClient {
       const decoded = decodeProtectedJson(this.safeStorage, await this.fs.readFile(this.pendingFile, "utf8"));
       const raw = decoded.value;
       let pending;
-      if (raw && raw.version === 3 && raw.store) {
+      if (raw && raw.version === PENDING_STORE_VERSION && raw.store) {
+        pending = {
+          version: PENDING_STORE_VERSION,
+          actorUid: String(raw.actorUid || ""),
+          actorRole: String(raw.actorRole || ""),
+          store: this.Core.sanitizeStore(raw.store),
+          presentCollections: presentSharedCollections(raw.store, raw.presentCollections),
+          baseRemote: raw.baseRemote && typeof raw.baseRemote === "object" ? raw.baseRemote : {},
+          createdAt: raw.createdAt || ""
+        };
+      } else if (raw && raw.version === 3 && raw.store) {
         pending = {
           version: 3,
           actorUid: String(raw.actorUid || ""),
           actorRole: String(raw.actorRole || ""),
           store: this.Core.sanitizeStore(raw.store),
+          presentCollections: presentSharedCollections(raw.store),
           baseRemote: raw.baseRemote && typeof raw.baseRemote === "object" ? raw.baseRemote : {},
           createdAt: raw.createdAt || ""
         };
@@ -825,13 +850,24 @@ class FirebaseRemoteClient {
           actorUid: "",
           actorRole: "",
           store: this.Core.sanitizeStore(raw.store),
+          presentCollections: presentSharedCollections(raw.store),
           baseRemote: raw.baseRemote && typeof raw.baseRemote === "object" ? raw.baseRemote : {},
           legacyUnbound: true
         };
       } else {
-        pending = { version: 1, actorUid: "", actorRole: "", store: this.Core.sanitizeStore(raw), baseRemote: {}, legacyUnbound: true };
+        pending = {
+          version: 1,
+          actorUid: "",
+          actorRole: "",
+          store: this.Core.sanitizeStore(raw),
+          presentCollections: presentSharedCollections(raw),
+          baseRemote: {},
+          legacyUnbound: true
+        };
       }
-      if (!decoded.encrypted && pending.actorUid) await this.writePendingPayload(pending);
+      if (!decoded.encrypted && pending.actorUid) {
+        await this.writePendingPayload(Object.assign({}, pending, { version: PENDING_STORE_VERSION }));
+      }
       return pending;
     } catch (error) {
       if (error.code !== "ENOENT") console.warn("CRM pending sync read failed", error.message);
@@ -853,11 +889,13 @@ class FirebaseRemoteClient {
 
   async writePendingStore(data, baseRemote) {
     const session = this.requireMutationPermission(data);
+    const store = this.Core.sanitizeStore(data);
     await this.writePendingPayload({
-      version: 3,
+      version: PENDING_STORE_VERSION,
       actorUid: session.uid,
       actorRole: session.role || "member",
-      store: this.Core.sanitizeStore(data),
+      store,
+      presentCollections: SHARED_COLLECTIONS.slice(),
       baseRemote: baseRemote && typeof baseRemote === "object" ? baseRemote : {},
       createdAt: new Date().toISOString()
     });
@@ -1248,7 +1286,7 @@ class FirebaseRemoteClient {
     this.emitSync("syncing", "저장 대기 자료를 서버로 보내는 중", { pending: true });
     const currentRemote = await this.fetchRemotePayload() || {};
     const desired = toRemoteStore(pending.store, this.session.email);
-    const patch = pendingSyncPatch(this.Core, pending.baseRemote || {}, desired, currentRemote);
+    const patch = pendingSyncPatch(this.Core, pending.baseRemote || {}, desired, currentRemote, pending.presentCollections);
     if (Object.keys(patch).length) {
       await this.dbRequest("crmShared/data", { method: "PATCH", body: patch, query: "print=silent" });
     }
