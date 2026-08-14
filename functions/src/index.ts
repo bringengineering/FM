@@ -152,6 +152,14 @@ import {
   type FieldReleaseGateDependencies,
 } from "./field-v2/release-gate.js";
 import {
+  normalizeFieldOperatorSwitchInput,
+  reduceFieldOperatorSwitchRoot,
+  recordFieldOperatorSwitchCore,
+  type FieldOperatorSwitchRootDecision,
+  type FieldOperatorSwitchTransactionCommand,
+  type RecordFieldOperatorSwitchInput,
+} from "./field-v2/operator-switch.js";
+import {
   assignFieldJobCore,
   changeFieldVisitCore,
   claimFieldJobCore,
@@ -531,6 +539,7 @@ async function prepareFieldV2Request(
     | "assignJob"
     | "changeVisit"
     | "transitionJob"
+    | "operatorSwitch"
     | "read",
 ): Promise<{
   actor: FieldV2Actor;
@@ -540,7 +549,10 @@ async function prepareFieldV2Request(
   data: FieldV2CallableData;
 }> {
   const authenticated = requireFieldV2Authentication(request);
-  const data = requireFieldV2Data(request.data);
+  const rawData = requireFieldV2Data(request.data);
+  const data = operationKind === "operatorSwitch"
+    ? normalizeFieldOperatorSwitchInput(rawData) as unknown as FieldV2CallableData
+    : rawData;
   if (operationKind !== "read" && !isFieldRequestId(data.requestId)) {
     throw new FieldV2Error("field_request_id_invalid");
   }
@@ -587,6 +599,7 @@ const FIELD_V2_INVALID_ERRORS = new Set([
   "field_workspace_scope_invalid",
   "field_workspace_limit_invalid",
   "field_workspace_cursor_invalid",
+  "field_operator_switch_input_invalid",
 ]);
 const FIELD_V2_PERMISSION_ERRORS = new Set([
   "field_access_forbidden",
@@ -614,6 +627,11 @@ const FIELD_V2_UNAVAILABLE_ERRORS = new Set([
   "field_request_receipt_unavailable",
   "field_receipt_replay_invalid",
   "field_upload_recovery_invalid",
+  "field_operator_switch_storage_invalid",
+  "field_operator_switch_transaction_invalid",
+  "field_operator_switch_transaction_failed",
+  "field_operator_switch_timestamp_invalid",
+  "field_operator_switch_rate_limit_unavailable",
 ]);
 const FIELD_V2_PRECONDITION_ERRORS = new Set([
   "field_safe_mode_read_only",
@@ -635,6 +653,7 @@ const FIELD_V2_PRECONDITION_ERRORS = new Set([
   "field_crm_reference_adapter_unavailable",
   "field_request_receipt_invalid",
   "field_kpi_stale",
+  "field_operator_switch_previous_invalid",
 ]);
 
 function rethrowFieldV2CallableError(error: unknown): never {
@@ -655,6 +674,9 @@ function rethrowFieldV2CallableError(error: unknown): never {
   }
   if (FIELD_V2_CONFLICT_ERRORS.has(code)) {
     throw new HttpsError("already-exists", code);
+  }
+  if (code === "field_operator_switch_rate_limited") {
+    throw new HttpsError("resource-exhausted", code);
   }
   if (FIELD_V2_UNAVAILABLE_ERRORS.has(code)) {
     throw new HttpsError("unavailable", code);
@@ -3402,6 +3424,51 @@ const fieldV2CallableOptions = {
   enforceAppCheck: true,
 };
 
+const FIELD_OPERATOR_SWITCH_RATE_WINDOW_MS = 10 * 60 * 1_000;
+const FIELD_OPERATOR_SWITCH_UID_RATE_LIMIT = 60;
+
+function fieldOperatorSwitchDependencies(authenticatedEmail: string) {
+  return {
+    authenticatedEmail,
+    now: () => new Date().toISOString(),
+    async transact(
+      command: FieldOperatorSwitchTransactionCommand,
+    ): Promise<ReturnType<typeof reduceFieldOperatorSwitchRoot>["result"]> {
+      let decision: FieldOperatorSwitchRootDecision | null = null;
+      let rejection: unknown = null;
+      let transaction;
+      try {
+        transaction = await adminDatabase.ref().transaction(
+          (current) => {
+            try {
+              decision = reduceFieldOperatorSwitchRoot(current, command);
+              rejection = null;
+              return decision.repeated ? undefined : decision.root;
+            } catch (error) {
+              decision = null;
+              rejection = error;
+              return undefined;
+            }
+          },
+          undefined,
+          false,
+        );
+      } catch {
+        throw new FieldV2Error("field_operator_switch_transaction_failed");
+      }
+      if (rejection) throw rejection;
+      const finalDecision = decision as FieldOperatorSwitchRootDecision | null;
+      if (!finalDecision) {
+        throw new FieldV2Error("field_operator_switch_transaction_failed");
+      }
+      if (!finalDecision.repeated && transaction.committed !== true) {
+        throw new FieldV2Error("field_operator_switch_transaction_failed");
+      }
+      return finalDecision.result;
+    },
+  };
+}
+
 const CANONICAL_CRM_HTTP_BODY_BYTES = 32_768;
 const CANONICAL_CRM_RATE_WINDOW_MS = 10 * 60 * 1_000;
 const CANONICAL_CRM_IP_RATE_LIMIT = 120;
@@ -3687,6 +3754,40 @@ export const transitionFieldJob = onCall<TransitionFieldJobInput & FieldV2Callab
         data as unknown as TransitionFieldJobInput,
         actor,
         fieldV2WorkDependenciesFor(config, "transitionJob", context),
+      );
+    } catch (error) {
+      return rethrowFieldV2CallableError(error);
+    }
+  },
+);
+
+export const recordFieldOperatorSwitch = onCall<RecordFieldOperatorSwitchInput>(
+  fieldV2CallableOptions,
+  async (request) => {
+    try {
+      const context = await prepareFieldV2Request(request, "operatorSwitch");
+      assertFieldReleaseCompatible(context.config, context.client);
+      try {
+        await consumeRateLimit(
+          adminDatabase.ref(
+            `fieldPlatform/v2/rateLimits/recordFieldOperatorSwitch/uid/${desktopRateKey(context.actor.authUid)}`,
+          ),
+          {
+            limit: FIELD_OPERATOR_SWITCH_UID_RATE_LIMIT,
+            windowMs: FIELD_OPERATOR_SWITCH_RATE_WINDOW_MS,
+            nowMs: Date.now(),
+          },
+        );
+      } catch (error) {
+        const message = error instanceof Error ? error.message : "";
+        throw new FieldV2Error(message === "field_rate_limit_exceeded"
+          ? "field_operator_switch_rate_limited"
+          : "field_operator_switch_rate_limit_unavailable");
+      }
+      return await recordFieldOperatorSwitchCore(
+        context.data as unknown as RecordFieldOperatorSwitchInput,
+        context.actor,
+        fieldOperatorSwitchDependencies(context.authenticatedEmail),
       );
     } catch (error) {
       return rethrowFieldV2CallableError(error);

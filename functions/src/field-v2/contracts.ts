@@ -96,6 +96,7 @@ export type FieldMutationOperationKind =
   | "assignJob"
   | "changeVisit"
   | "transitionJob"
+  | "operatorSwitch"
   | "startCapture"
   | "finalizeMedia"
   | "reviewEvidence"

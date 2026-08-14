@@ -595,6 +595,25 @@ function validFieldV2Request(data: Record<string, unknown>) {
   };
 }
 
+function validOperatorSwitchRequest(overrides: Record<string, unknown> = {}) {
+  return validFieldV2Request({
+    requestId: "123e4567-e89b-42d3-a456-426614174000",
+    operatorId: "operator_hwang",
+    fromOperatorId: "operator_kim",
+    toOperatorId: "operator_hwang",
+    reason: "manual_switch",
+    ...overrides,
+  });
+}
+
+function operatorSwitchRatePath(): string {
+  const key = createHash("sha256")
+    .update("shared_uid")
+    .digest("base64url")
+    .slice(0, 43);
+  return `fieldPlatform/v2/rateLimits/recordFieldOperatorSwitch/uid/${key}`;
+}
+
 function canonicalCrmRoot(role: "admin" | "member" | "viewer" = "member") {
   return {
     crmCompany: {
@@ -1244,6 +1263,7 @@ describe("Firebase entrypoint metadata", () => {
       entrypoints.assignFieldJob,
       entrypoints.changeFieldVisit,
       entrypoints.transitionFieldJob,
+      entrypoints.recordFieldOperatorSwitch,
       entrypoints.listFieldOperationsWorkspace,
     ]) {
       expect(registration(callable)).toMatchObject({
@@ -1271,6 +1291,7 @@ describe("Firebase entrypoint metadata", () => {
     }).data],
     ["change empty", entrypoints.changeFieldVisit, {}],
     ["transition non-record", entrypoints.transitionFieldJob, "bad"],
+    ["operator switch malformed", entrypoints.recordFieldOperatorSwitch, null],
     ["workspace missing operator", entrypoints.listFieldOperationsWorkspace, {
       protocolVersion: 2,
       clientKind: "pwa",
@@ -1287,6 +1308,120 @@ describe("Firebase entrypoint metadata", () => {
       message: "field_auth_required",
     });
     expect(registrations.databaseRef).not.toHaveBeenCalled();
+  });
+
+  it("records a viewer operator switch with one root transaction and a bounded UID rate limit", async () => {
+    seedFieldV2Access("viewer");
+    seedFieldV2WorkspaceRoot("viewer");
+
+    const result = await callableHandler(entrypoints.recordFieldOperatorSwitch)(
+      validOperatorSwitchRequest(),
+    ) as Record<string, unknown>;
+
+    expect(result).toMatchObject({
+      requestId: "123e4567-e89b-42d3-a456-426614174000",
+      fromOperatorId: "operator_kim",
+      toOperatorId: "operator_hwang",
+      reason: "manual_switch",
+      recordedAt: expect.any(String),
+      repeated: false,
+    });
+    expect(registrations.transactionPaths.filter((path) => path === "")).toHaveLength(1);
+    expect(registrations.transactionPaths).toContain(operatorSwitchRatePath());
+    const root = registrations.transactionCurrent.value as any;
+    expect(Object.keys(root.fieldPlatform.v2.auditLogs)).toHaveLength(1);
+    expect(root.fieldPlatform.v2.requestReceipts.recordFieldOperatorSwitch)
+      .toHaveProperty("123e4567-e89b-42d3-a456-426614174000");
+    expect(root.fieldPlatform.v2).not.toHaveProperty("selectedOperator");
+    expect(root.crmCompany).not.toHaveProperty("selectedOperator");
+  });
+
+  it("rejects malformed switch data before profile, release, rate-limit, or root access", async () => {
+    registrations.databaseRef.mockClear();
+    const request = validOperatorSwitchRequest({ secretToken: "must-not-leak" });
+    await expect(callableHandler(entrypoints.recordFieldOperatorSwitch)(request))
+      .rejects.toMatchObject({
+        code: "invalid-argument",
+        message: "field_operator_switch_input_invalid",
+      });
+    expect(registrations.databaseRef).not.toHaveBeenCalled();
+  });
+
+  it("fails closed when access changes between preflight and the root transaction", async () => {
+    seedFieldV2Access("viewer");
+    seedFieldV2WorkspaceRoot("member");
+    await expect(callableHandler(entrypoints.recordFieldOperatorSwitch)(
+      validOperatorSwitchRequest(),
+    )).rejects.toMatchObject({
+      code: "permission-denied",
+      message: "field_access_forbidden",
+    });
+    expect(registrations.transactionPaths.filter((path) => path === "")).toHaveLength(1);
+    const root = registrations.transactionCurrent.value as any;
+    expect(root.fieldPlatform.v2).not.toHaveProperty("auditLogs");
+    expect(root.fieldPlatform.v2).not.toHaveProperty("requestReceipts");
+  });
+
+  it("allows exact replay during safe mode but blocks a new switch request", async () => {
+    seedFieldV2Access("viewer");
+    seedFieldV2WorkspaceRoot("viewer");
+    const first = await callableHandler(entrypoints.recordFieldOperatorSwitch)(
+      validOperatorSwitchRequest(),
+    ) as Record<string, unknown>;
+    const safeRelease = {
+      ...(registrations.pathValues.get("fieldPlatform/v2/config/release") as object),
+      safeMode: true,
+    };
+    registrations.pathValues.set("fieldPlatform/v2/config/release", safeRelease);
+    (registrations.transactionCurrent.value as any)
+      .fieldPlatform.v2.config.release = safeRelease;
+
+    await expect(callableHandler(entrypoints.recordFieldOperatorSwitch)(
+      validOperatorSwitchRequest(),
+    )).resolves.toEqual({ ...first, repeated: true });
+    await expect(callableHandler(entrypoints.recordFieldOperatorSwitch)(
+      validOperatorSwitchRequest({
+        requestId: "223e4567-e89b-42d3-a456-426614174000",
+      }),
+    )).rejects.toMatchObject({
+      code: "failed-precondition",
+      message: "field_safe_mode_read_only",
+    });
+    const root = registrations.transactionCurrent.value as any;
+    expect(Object.keys(root.fieldPlatform.v2.auditLogs)).toHaveLength(1);
+  });
+
+  it("maps request-ID hash conflicts without changing the first audit", async () => {
+    seedFieldV2Access("viewer");
+    seedFieldV2WorkspaceRoot("viewer");
+    await callableHandler(entrypoints.recordFieldOperatorSwitch)(
+      validOperatorSwitchRequest(),
+    );
+    await expect(callableHandler(entrypoints.recordFieldOperatorSwitch)(
+      validOperatorSwitchRequest({ reason: "desktop_navigation" }),
+    )).rejects.toMatchObject({
+      code: "already-exists",
+      message: "field_request_id_conflict",
+    });
+    const root = registrations.transactionCurrent.value as any;
+    expect(Object.keys(root.fieldPlatform.v2.auditLogs)).toHaveLength(1);
+  });
+
+  it("maps the operator-switch UID rate limit and never opens the root transaction", async () => {
+    seedFieldV2Access("viewer");
+    seedFieldV2WorkspaceRoot("viewer");
+    registrations.pathValues.set(operatorSwitchRatePath(), {
+      windowStartedAt: Date.now(),
+      count: 60,
+    });
+
+    await expect(callableHandler(entrypoints.recordFieldOperatorSwitch)(
+      validOperatorSwitchRequest(),
+    )).rejects.toMatchObject({
+      code: "resource-exhausted",
+      message: "field_operator_switch_rate_limited",
+    });
+    expect(registrations.transactionPaths).not.toContain("");
   });
 
   it("creates v2 work from current CRM auth with one atomic root transaction", async () => {
@@ -3821,7 +3956,7 @@ describe("Firebase entrypoint metadata", () => {
     );
     expect(registrations.getAuth).toHaveBeenCalledTimes(1);
     expect(registrations.getAuth).toHaveBeenCalledWith();
-    expect(registrations.onCall).toHaveBeenCalledTimes(20);
+    expect(registrations.onCall).toHaveBeenCalledTimes(21);
     expect(registrations.onRequest).toHaveBeenCalledTimes(1);
     expect(registrations.onValueWritten).toHaveBeenCalledTimes(3);
     expect(registrations.onValueCreated).toHaveBeenCalledTimes(2);

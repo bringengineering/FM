@@ -25,6 +25,7 @@ const MUTATION_KINDS = new Set([
   "assignJob",
   "changeVisit",
   "transitionJob",
+  "operatorSwitch",
   "startCapture",
   "finalizeMedia",
   "reviewEvidence",
