@@ -218,13 +218,19 @@ function retryableSyncError(error) {
 }
 
 function friendlyAuthMessage(message) {
-  const code = String(message || "").split(" : ")[0];
-  if (["INVALID_LOGIN_CREDENTIALS", "INVALID_PASSWORD", "EMAIL_NOT_FOUND"].includes(code)) return "이메일 또는 비밀번호가 올바르지 않습니다.";
-  if (code === "USER_DISABLED") return "사용이 중지된 계정입니다. 관리자에게 문의해 주세요.";
-  if (code === "TOO_MANY_ATTEMPTS_TRY_LATER") return "로그인 시도가 많습니다. 잠시 후 다시 시도해 주세요.";
-  if (code.startsWith("WEAK_PASSWORD")) return "새 비밀번호는 8자 이상으로 입력해 주세요.";
-  if (code === "PASSWORD_LOGIN_DISABLED") return "이메일 로그인이 아직 서버에서 활성화되지 않았습니다.";
-  return String(message || "로그인 처리 중 오류가 발생했습니다.");
+  const raw = String(message || "");
+  const code = raw.split(" : ")[0];
+  const normalized = raw.toLowerCase();
+  if (
+    ["INVALID_LOGIN_CREDENTIALS", "INVALID_PASSWORD", "EMAIL_NOT_FOUND"].includes(code)
+    || /auth\/(?:invalid-credential|wrong-password|user-not-found|invalid-email)/.test(normalized)
+  ) return "이메일 또는 비밀번호가 올바르지 않습니다.";
+  if (code === "USER_DISABLED" || normalized.includes("auth/user-disabled")) return "사용이 중지된 계정입니다. 관리자에게 문의해 주세요.";
+  if (code === "TOO_MANY_ATTEMPTS_TRY_LATER" || normalized.includes("auth/too-many-requests")) return "로그인 시도가 많습니다. 잠시 후 다시 시도해 주세요.";
+  if (code.startsWith("WEAK_PASSWORD") || normalized.includes("auth/weak-password")) return "새 비밀번호는 8자 이상으로 입력해 주세요.";
+  if (code === "PASSWORD_LOGIN_DISABLED" || normalized.includes("auth/operation-not-allowed")) return "이메일 로그인이 아직 서버에서 활성화되지 않았습니다. 관리자에게 문의해 주세요.";
+  if (normalized.includes("auth/network-request-failed") || /(?:network|fetch|econn|etimedout)/.test(normalized)) return "네트워크 연결을 확인한 뒤 다시 로그인해 주세요.";
+  return "로그인 처리 중 오류가 발생했습니다. 잠시 후 다시 시도해 주세요.";
 }
 
 function delay(ms) {
