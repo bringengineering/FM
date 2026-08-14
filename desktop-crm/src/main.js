@@ -2112,7 +2112,7 @@ async function createWindow() {
           document.querySelector('[data-relationship-followup="' + ids.paidCustomer + '"]')?.click();
           await wait(80);
           const relationshipForm = document.getElementById('consultationForm');
-          const relationshipSummary = 'QA 유료관리 관계 문맥 ' + Date.now();
+          const relationshipSummary = 'QA 유료관리 관계 문맥 ' + Date.now().toString(36);
           const relationshipContextUi = !!relationshipForm
             && relationshipForm.dataset.returnView === 'relationships'
             && relationshipForm.elements.customerId?.value === ids.paidCustomer
@@ -2126,10 +2126,11 @@ async function createWindow() {
           }
           await wait(420);
           const relationshipActivity = window.__crmTest.getStore().activities.find(item => item.summary === relationshipSummary);
+          const relationshipSaveHealthy = isViewer || !document.querySelector('.toast.error.show');
           const relationshipContextSaved = isViewer
             ? !relationshipActivity && JSON.stringify(window.__crmTest.getStore()) === relationshipStoreBefore
             : relationshipActivity?.customerId === ids.paidCustomer && relationshipActivity?.context === 'relationship';
-          const relationshipConsultationContext = relationshipContextUi && relationshipContextSaved;
+          const relationshipConsultationContext = relationshipContextUi && relationshipContextSaved && relationshipSaveHealthy;
           if (document.getElementById('modal')?.classList.contains('open')) document.querySelector('#modal [data-action="close-modal"]')?.click();
           if (document.getElementById('drawer')?.classList.contains('open')) document.querySelector('#drawer [data-action="close-drawer"]')?.click();
           await wait(60);
@@ -2245,7 +2246,7 @@ async function createWindow() {
             pass, role: isViewer ? 'viewer' : 'writer', explicitWins, addressFallback, nameAliasFallback, duplicateCrmNeedsReview, duplicateProspectNeedsReview,
             archivedExcluded, linkedElsewhereProtected, noBuilding, mixedStages, paidManagementDerived, pausedClosedDerived, mixedActivePaused,
             relationshipCountAndList, relationshipNavCount, relationshipListCount: relationshipCards.length, paidRelationshipIncluded, legacyContractStillIncluded,
-            relationshipContextUi, relationshipContextSaved, relationshipConsultationContext,
+            relationshipContextUi, relationshipContextSaved, relationshipSaveHealthy, relationshipConsultationContext,
             dashboardPausedExcluded, pausedFocusExcluded, dashboardOverdueExcludesPaused, displayedOverdue, expectedOverdue,
             dashboardPipelineExcludesPaused, displayedPipeline, expectedPipeline: compactMoney(expectedPipelineValue) + '원', dashboardMixedActiveIncluded, mixedFocusIncluded,
             tableUsesSalesStage, manualCustomerStageRemoved, filterAnyBuildingStage,
