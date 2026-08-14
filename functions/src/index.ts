@@ -2154,6 +2154,366 @@ function augmentFieldAggregatePatch(
   );
 }
 
+interface FieldPersonalKpiSnapshot {
+  readonly kpis: FieldKpis;
+  readonly kpiSeoulDate: string;
+}
+
+type FieldAggregateInspection =
+  | { readonly state: "missing" }
+  | {
+    readonly state: "current" | "stale";
+    readonly seoulDate: string;
+    readonly kpis: FieldKpis;
+    readonly updatedAt: string;
+  };
+
+function isExactIsoTimestamp(value: unknown): value is string {
+  if (typeof value !== "string") return false;
+  try {
+    return new Date(value).toISOString() === value;
+  } catch {
+    return false;
+  }
+}
+
+function inspectTeamKpiAggregate(
+  value: unknown,
+  today: string,
+): FieldAggregateInspection {
+  if (value === null || value === undefined) return { state: "missing" };
+  if (
+    !isRecord(value)
+    || typeof value.seoulDate !== "string"
+    || !isExactIsoTimestamp(value.updatedAt)
+  ) throw new FieldV2Error("field_kpi_stale");
+  return {
+    state: value.seoulDate === today ? "current" : "stale",
+    seoulDate: value.seoulDate,
+    kpis: parseStoredTeamKpis(value, value.seoulDate),
+    updatedAt: value.updatedAt,
+  };
+}
+
+function inspectOperatorKpiAggregate(
+  value: unknown,
+  today: string,
+  operatorId: string,
+): FieldAggregateInspection {
+  if (value === null || value === undefined) return { state: "missing" };
+  if (
+    !isRecord(value)
+    || value.operatorId !== operatorId
+    || typeof value.seoulDate !== "string"
+    || !isExactIsoTimestamp(value.updatedAt)
+  ) throw new FieldV2Error("field_kpi_stale");
+  return {
+    state: value.seoulDate === today ? "current" : "stale",
+    seoulDate: value.seoulDate,
+    kpis: parseStoredOperatorKpis(value, value.seoulDate, operatorId),
+    updatedAt: value.updatedAt,
+  };
+}
+
+function sameFieldAggregateInspection(
+  left: FieldAggregateInspection,
+  right: FieldAggregateInspection,
+): boolean {
+  if (left.state !== right.state) return false;
+  if (left.state === "missing" || right.state === "missing") return true;
+  return left.seoulDate === right.seoulDate
+    && left.updatedAt === right.updatedAt
+    && sameFieldKpis(left.kpis, right.kpis);
+}
+
+function activeVisitStateEntries(value: unknown): Array<[string, unknown]> {
+  if (value === null || value === undefined) return [];
+  if (!isRecord(value)) throw new FieldV2Error("field_kpi_stale");
+  return Object.entries(value).filter(([, state]) => state !== null && state !== undefined);
+}
+
+function assertCurrentTeamVisitState(
+  value: unknown,
+  expected: ReadonlyMap<string, number>,
+  today: string,
+): void {
+  const entries = activeVisitStateEntries(value);
+  if (entries.length !== expected.size) throw new FieldV2Error("field_kpi_stale");
+  for (const [visitId, state] of entries) {
+    if (
+      !isPathSafeId(visitId)
+      || !isRecord(state)
+      || state.visitId !== visitId
+      || state.seoulDate !== today
+      || !Number.isSafeInteger(state.activeTodayItemCount)
+      || state.activeTodayItemCount !== expected.get(visitId)
+    ) throw new FieldV2Error("field_kpi_stale");
+  }
+}
+
+function assertCurrentOperatorVisitState(
+  value: unknown,
+  expected: ReadonlyMap<string, number>,
+  operatorId: string,
+  today: string,
+): void {
+  const entries = activeVisitStateEntries(value);
+  if (entries.length !== expected.size) throw new FieldV2Error("field_kpi_stale");
+  for (const [visitId, state] of entries) {
+    const count = assertStoredOperatorVisitState(state, operatorId, visitId, today);
+    if (count !== expected.get(visitId)) throw new FieldV2Error("field_kpi_stale");
+  }
+}
+
+function replaceTeamAggregatePatch(
+  current: unknown,
+  items: readonly FieldWorkItem[],
+  today: string,
+  timestamp: string,
+): { readonly patch: Readonly<Record<string, unknown>>; readonly kpis: FieldKpis } {
+  const patch: Record<string, unknown> = {};
+  const currentState = readNestedRecord(current, [
+    "fieldPlatform", "v2", "projections", "teamVisitState",
+  ]);
+  for (const [visitId] of activeVisitStateEntries(currentState)) {
+    if (!isPathSafeId(visitId)) throw new FieldV2Error("field_kpi_stale");
+    patch[`fieldPlatform/v2/projections/teamVisitState/${visitId}`] = null;
+  }
+  const kpis = calculateFieldKpis(items, new Date(timestamp));
+  patch["fieldPlatform/v2/projections/teamKpis/current"] = {
+    seoulDate: today,
+    ...kpis,
+    updatedAt: timestamp,
+  };
+  for (const [visitId, count] of visitCountsForToday(items, today)) {
+    patch[`fieldPlatform/v2/projections/teamVisitState/${visitId}`] = {
+      visitId,
+      seoulDate: today,
+      activeTodayItemCount: count,
+      updatedAt: timestamp,
+    };
+  }
+  return { patch, kpis };
+}
+
+function replaceOperatorAggregatePatch(
+  current: unknown,
+  items: readonly FieldWorkItem[],
+  operatorId: string,
+  today: string,
+  timestamp: string,
+): { readonly patch: Readonly<Record<string, unknown>>; readonly kpis: FieldKpis } {
+  const patch: Record<string, unknown> = {};
+  const currentState = readNestedRecord(current, [
+    "fieldPlatform", "v2", "projections", "operatorVisitState", operatorId,
+  ]);
+  for (const [visitId] of activeVisitStateEntries(currentState)) {
+    if (!isPathSafeId(visitId)) throw new FieldV2Error("field_kpi_stale");
+    patch[`fieldPlatform/v2/projections/operatorVisitState/${operatorId}/${visitId}`] = null;
+  }
+  const assigned = operatorItems(items, operatorId);
+  const kpis = calculateFieldOperatorKpis(assigned, operatorId, new Date(timestamp));
+  patch[`fieldPlatform/v2/projections/operatorKpis/${operatorId}/current`] = {
+    operatorId,
+    seoulDate: today,
+    ...kpis,
+    updatedAt: timestamp,
+  };
+  for (const [visitId, count] of visitCountsForToday(assigned, today)) {
+    patch[`fieldPlatform/v2/projections/operatorVisitState/${operatorId}/${visitId}`] = {
+      operatorId,
+      visitId,
+      seoulDate: today,
+      activeTodayItemCount: count,
+      updatedAt: timestamp,
+    };
+  }
+  return { patch, kpis };
+}
+
+async function repairPersonalKpiAggregates(
+  runtime: {
+    actor: FieldV2Actor;
+    authenticatedEmail: string;
+    client: FieldReleaseClient;
+  },
+  includeUnassigned: boolean,
+): Promise<FieldPersonalKpiSnapshot> {
+  let result: FieldPersonalKpiSnapshot | null = null;
+  let errorCode: string | null = null;
+  await adminDatabase.ref().transaction((current) => {
+    const timestamp = new Date().toISOString();
+    const today = fieldSeoulDate(new Date(timestamp));
+    const actorError = currentActorGuardError(current, {
+      authUid: runtime.actor.authUid,
+      operatorId: runtime.actor.operatorId,
+      authenticatedEmail: runtime.authenticatedEmail,
+      client: runtime.client,
+    });
+    if (actorError) {
+      errorCode = actorError;
+      return undefined;
+    }
+    const access = readNestedRecord(current, [
+      "crmCompany", "access", runtime.actor.authUid,
+    ]);
+    if (!isRecord(access) || access.role !== runtime.actor.role) {
+      errorCode = "field_access_forbidden";
+      return undefined;
+    }
+    const release = readNestedRecord(current, [
+      "fieldPlatform", "v2", "config", "release",
+    ]);
+    try {
+      assertFieldReleaseCompatible(release as FieldReleaseConfiguration, runtime.client);
+    } catch (error) {
+      errorCode = error instanceof FieldV2Error
+        ? error.code
+        : "field_release_config_invalid";
+      return undefined;
+    }
+
+    const allItems = [...fieldWorkItemsAt(current).values()];
+    const patch: Record<string, unknown> = {};
+    const operatorId = runtime.actor.operatorId;
+    const operatorValue = readNestedRecord(current, [
+      "fieldPlatform", "v2", "projections", "operatorKpis", operatorId, "current",
+    ]);
+    const operatorAggregate = inspectOperatorKpiAggregate(operatorValue, today, operatorId);
+    let operatorKpis: FieldKpis;
+    if (operatorAggregate.state === "current") {
+      operatorKpis = operatorAggregate.kpis;
+      const assigned = operatorItems(allItems, operatorId);
+      const expected = calculateFieldOperatorKpis(assigned, operatorId, new Date(timestamp));
+      if (!sameFieldKpis(operatorKpis, expected)) {
+        errorCode = "field_kpi_stale";
+        return undefined;
+      }
+      assertCurrentOperatorVisitState(
+        readNestedRecord(current, [
+          "fieldPlatform", "v2", "projections", "operatorVisitState", operatorId,
+        ]),
+        visitCountsForToday(assigned, today),
+        operatorId,
+        today,
+      );
+    } else {
+      const replacement = replaceOperatorAggregatePatch(
+        current,
+        allItems,
+        operatorId,
+        today,
+        timestamp,
+      );
+      Object.assign(patch, replacement.patch);
+      operatorKpis = replacement.kpis;
+    }
+
+    let unassigned = 0;
+    if (includeUnassigned) {
+      const teamValue = readNestedRecord(current, [
+        "fieldPlatform", "v2", "projections", "teamKpis", "current",
+      ]);
+      const teamAggregate = inspectTeamKpiAggregate(teamValue, today);
+      let teamKpis: FieldKpis;
+      if (teamAggregate.state === "current") {
+        teamKpis = teamAggregate.kpis;
+        const expected = calculateFieldKpis(allItems, new Date(timestamp));
+        if (!sameFieldKpis(teamKpis, expected)) {
+          errorCode = "field_kpi_stale";
+          return undefined;
+        }
+        assertCurrentTeamVisitState(
+          readNestedRecord(current, [
+            "fieldPlatform", "v2", "projections", "teamVisitState",
+          ]),
+          visitCountsForToday(allItems, today),
+          today,
+        );
+      } else {
+        const replacement = replaceTeamAggregatePatch(
+          current,
+          allItems,
+          today,
+          timestamp,
+        );
+        Object.assign(patch, replacement.patch);
+        teamKpis = replacement.kpis;
+      }
+      unassigned = teamKpis.unassigned;
+    }
+    result = Object.freeze({
+      kpis: Object.freeze({ ...operatorKpis, unassigned }),
+      kpiSeoulDate: today,
+    });
+    return Object.keys(patch).length === 0
+      ? undefined
+      : applyRootPatch(current, patch);
+  }, undefined, false);
+  if (errorCode) throw new FieldV2Error(errorCode);
+  if (!result) throw new FieldV2Error("field_workspace_unavailable");
+  return result;
+}
+
+async function ensurePersonalKpiSnapshot(
+  runtime: {
+    actor: FieldV2Actor;
+    authenticatedEmail: string;
+    client: FieldReleaseClient;
+  },
+): Promise<FieldPersonalKpiSnapshot> {
+  const includeUnassigned = runtime.actor.role === "admin" || runtime.actor.role === "member";
+  const readCandidates = () => Promise.all([
+    adminDatabase.ref(
+      `fieldPlatform/v2/projections/operatorKpis/${runtime.actor.operatorId}/current`,
+    ).get(),
+    includeUnassigned
+      ? adminDatabase.ref("fieldPlatform/v2/projections/teamKpis/current").get()
+      : Promise.resolve(null),
+  ] as const);
+  const first = await readCandidates();
+  // Operator and team aggregates are siblings updated by one root transaction.
+  // Two unchanged collections prevent returning a torn pair without forcing a
+  // database-root transaction on every normal read. The bounded page is read
+  // afterwards and is intentionally read-committed, never a KPI input.
+  const second = includeUnassigned ? await readCandidates() : first;
+  const timestamp = new Date().toISOString();
+  const today = fieldSeoulDate(new Date(timestamp));
+  const firstOperatorAggregate = inspectOperatorKpiAggregate(
+    first[0].val(),
+    today,
+    runtime.actor.operatorId,
+  );
+  const operatorAggregate = inspectOperatorKpiAggregate(
+    second[0].val(),
+    today,
+    runtime.actor.operatorId,
+  );
+  const firstTeamAggregate = includeUnassigned
+    ? inspectTeamKpiAggregate(first[1]?.val(), today)
+    : null;
+  const teamAggregate = includeUnassigned
+    ? inspectTeamKpiAggregate(second[1]?.val(), today)
+    : null;
+  if (
+    operatorAggregate.state === "current"
+    && (!teamAggregate || teamAggregate.state === "current")
+    && sameFieldAggregateInspection(firstOperatorAggregate, operatorAggregate)
+    && (!teamAggregate
+      || (firstTeamAggregate !== null
+        && sameFieldAggregateInspection(firstTeamAggregate, teamAggregate)))
+  ) {
+    return Object.freeze({
+      kpis: Object.freeze({
+        ...operatorAggregate.kpis,
+        unassigned: teamAggregate?.kpis.unassigned ?? 0,
+      }),
+      kpiSeoulDate: today,
+    });
+  }
+  return repairPersonalKpiAggregates(runtime, includeUnassigned);
+}
+
 function parseReceipt(
   value: unknown,
   expectedScope?: string,
@@ -2280,7 +2640,10 @@ function firebaseFieldKeyCompare(left: string, right: string): number {
 
 function currentActorGuardError(
   root: unknown,
-  guard: FieldAtomicRuntimeGuard | undefined,
+  guard: Pick<
+    FieldAtomicRuntimeGuard,
+    "authUid" | "operatorId" | "authenticatedEmail" | "client"
+  > | undefined,
 ): string | null {
   if (!guard) return "field_work_transaction_guard_invalid";
   const access = readNestedRecord(root, [
@@ -2468,7 +2831,6 @@ async function readCreationReceiptAtomically(
         operatorId: runtime.actor.operatorId,
         authenticatedEmail: runtime.authenticatedEmail,
         client: runtime.client,
-        operationKind: "createJob",
       });
       if (actorError) {
         errorCode = actorError;
@@ -2625,41 +2987,48 @@ const baseFieldV2WorkDependencies: WorkItemDependencies = {
         return unassignedQuery.limitToFirst(scanLimit + 1).get();
       })()
       : Promise.resolve(null);
-    const operatorKpiPromise = adminDatabase
-      .ref(`fieldPlatform/v2/projections/operatorKpis/${actor.operatorId}/current`)
-      .get();
-    const teamKpiPromise = includeUnassigned
-      ? adminDatabase.ref("fieldPlatform/v2/projections/teamKpis/current").get()
-      : Promise.resolve(null);
+    const suppliedKpis = query.authoritativePersonalKpis;
+    const operatorKpiPromise = suppliedKpis
+      ? Promise.resolve(null)
+      : adminDatabase
+        .ref(`fieldPlatform/v2/projections/operatorKpis/${actor.operatorId}/current`)
+        .get();
+    const teamKpiPromise = suppliedKpis || !includeUnassigned
+      ? Promise.resolve(null)
+      : adminDatabase.ref("fieldPlatform/v2/projections/teamKpis/current").get();
     const [mine, unassigned, operatorKpiSnapshot, teamKpiSnapshot] = await Promise.all([
       minePromise,
       unassignedPromise,
       operatorKpiPromise,
       teamKpiPromise,
     ]);
-    const rawOperatorKpis: unknown = operatorKpiSnapshot.val();
-    const operatorKpisValid = isRecord(rawOperatorKpis)
-      && rawOperatorKpis.operatorId === actor.operatorId
-      && typeof rawOperatorKpis.seoulDate === "string"
-      && rawOperatorKpis.unassigned === 0;
-    let authoritativeKpis: unknown = operatorKpisValid ? rawOperatorKpis : undefined;
-    let kpiSeoulDate = operatorKpisValid ? rawOperatorKpis.seoulDate as string : "";
-    if (includeUnassigned) {
-      const rawTeamKpis: unknown = teamKpiSnapshot?.val();
-      if (
-        operatorKpisValid
-        && isRecord(rawTeamKpis)
-        && typeof rawTeamKpis.seoulDate === "string"
-      ) {
-        authoritativeKpis = {
-          ...rawOperatorKpis,
-          unassigned: rawTeamKpis.unassigned,
-        };
-        if (rawTeamKpis.seoulDate !== rawOperatorKpis.seoulDate) {
-          kpiSeoulDate = "";
+    let authoritativeKpis: unknown = suppliedKpis?.kpis;
+    let kpiSeoulDate = suppliedKpis?.kpiSeoulDate ?? "";
+    if (!suppliedKpis) {
+      const rawOperatorKpis: unknown = operatorKpiSnapshot?.val();
+      const operatorKpisValid = isRecord(rawOperatorKpis)
+        && rawOperatorKpis.operatorId === actor.operatorId
+        && typeof rawOperatorKpis.seoulDate === "string"
+        && rawOperatorKpis.unassigned === 0;
+      authoritativeKpis = operatorKpisValid ? rawOperatorKpis : undefined;
+      kpiSeoulDate = operatorKpisValid ? rawOperatorKpis.seoulDate as string : "";
+      if (includeUnassigned) {
+        const rawTeamKpis: unknown = teamKpiSnapshot?.val();
+        if (
+          operatorKpisValid
+          && isRecord(rawTeamKpis)
+          && typeof rawTeamKpis.seoulDate === "string"
+        ) {
+          authoritativeKpis = {
+            ...rawOperatorKpis,
+            unassigned: rawTeamKpis.unassigned,
+          };
+          if (rawTeamKpis.seoulDate !== rawOperatorKpis.seoulDate) {
+            kpiSeoulDate = "";
+          }
+        } else {
+          authoritativeKpis = undefined;
         }
-      } else {
-        authoritativeKpis = undefined;
       }
     }
     const expected = new Map<string, {
@@ -2798,6 +3167,16 @@ function fieldV2WorkDependenciesFor(
   };
   return {
     ...baseFieldV2WorkDependencies,
+    async readWorkspace(actor, query) {
+      if (query.scope !== "personal" || !runtime) {
+        return baseFieldV2WorkDependencies.readWorkspace(actor, query);
+      }
+      const snapshot = await ensurePersonalKpiSnapshot(runtime);
+      return baseFieldV2WorkDependencies.readWorkspace(actor, {
+        ...query,
+        authoritativePersonalKpis: snapshot,
+      });
+    },
     async readCreationReceipt(scope, requestId) {
       if (!runtime) return baseFieldV2WorkDependencies.readCreationReceipt(scope, requestId);
       return readCreationReceiptAtomically(scope, requestId, runtime);
@@ -3284,11 +3663,12 @@ export const listFieldOperationsWorkspace = onCall<FieldV2CallableData>(
   fieldV2CallableOptions,
   async (request) => {
     try {
-      const { actor, config } = await prepareFieldV2Request(request, "read");
+      const context = await prepareFieldV2Request(request, "read");
+      const { actor, config } = context;
       return await listFieldOperationsWorkspaceCore(
         request.data as unknown as ListFieldOperationsWorkspaceInput,
         actor,
-        fieldV2WorkDependenciesFor(config, "read"),
+        fieldV2WorkDependenciesFor(config, "read", context),
       );
     } catch (error) {
       return rethrowFieldV2CallableError(error);
