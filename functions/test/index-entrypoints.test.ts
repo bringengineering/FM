@@ -540,6 +540,42 @@ function seedFieldV2Access(
   });
 }
 
+function fieldV2WorkspaceItemsFromPaths(): Record<string, unknown> {
+  const prefix = "fieldPlatform/v2/workItems/";
+  return Object.fromEntries([...registrations.pathValues.entries()]
+    .filter(([path]) => path.startsWith(prefix) && !path.slice(prefix.length).includes("/"))
+    .map(([path, value]) => [path.slice(prefix.length), value]));
+}
+
+function seedFieldV2WorkspaceRoot(
+  role: "admin" | "member" | "viewer" = "member",
+  options: {
+    workItems?: Record<string, unknown>;
+    projections?: Record<string, unknown>;
+  } = {},
+): void {
+  registrations.transactionCurrent.value = {
+    crmCompany: {
+      access: {
+        shared_uid: { enabled: true, role, email: "team@bringcare.kr" },
+      },
+      teamProfiles: {
+        operator_kim: { active: true, displayName: "김현진", sortOrder: 1 },
+        operator_hwang: { active: true, displayName: "황우중", sortOrder: 2 },
+      },
+    },
+    fieldPlatform: {
+      v2: {
+        config: {
+          release: registrations.pathValues.get("fieldPlatform/v2/config/release"),
+        },
+        workItems: options.workItems ?? fieldV2WorkspaceItemsFromPaths(),
+        projections: options.projections ?? {},
+      },
+    },
+  };
+}
+
 function validFieldV2Request(data: Record<string, unknown>) {
   return {
     auth: {
@@ -1795,6 +1831,108 @@ describe("Firebase entrypoint metadata", () => {
     });
   });
 
+  it("uses transaction-time KST date when a claim crosses midnight after its patch was built", async () => {
+    const originalTransaction = registrations.databaseTransaction.getMockImplementation()!;
+    vi.useFakeTimers();
+    try {
+      const beforeMidnight = new Date("2026-08-14T14:59:59.999Z");
+      const afterMidnight = new Date("2026-08-14T15:00:00.001Z");
+      vi.setSystemTime(beforeMidnight);
+      seedFieldV2Access("member");
+      const item = fieldV2WorkItem({ dueDate: "2026-08-15" });
+      registrations.transactionCurrent.value = {
+        crmCompany: {
+          access: { shared_uid: { enabled: true, role: "member", email: "team@bringcare.kr" } },
+          teamProfiles: { operator_kim: { active: true, displayName: "김현진" } },
+        },
+        fieldPlatform: { v2: {
+          config: { release: registrations.pathValues.get("fieldPlatform/v2/config/release") },
+          workItems: { job_1: item },
+          visits: { visit_1: fieldV2Visit({ dueDate: "2026-08-15" }) },
+          projections: { teamKpis: { current: {
+            seoulDate: "2026-08-14",
+            todayVisits: 0,
+            capturePending: 1,
+            uploadFailures: 0,
+            reviewPending: 0,
+            unassigned: 1,
+            overdue: 0,
+            adminActionRequired: 0,
+            updatedAt: beforeMidnight.toISOString(),
+          } } },
+        } },
+      };
+      let rootTransactions = 0;
+      registrations.databaseTransaction.mockImplementation(async (...args: any[]) => {
+        if (args[3] === "" && ++rootTransactions === 1) vi.setSystemTime(afterMidnight);
+        return originalTransaction(...args as Parameters<typeof originalTransaction>);
+      });
+
+      await callableHandler(entrypoints.claimFieldJob)(validFieldV2Request({
+        requestId: "723e4567-e89b-42d3-a456-426614174000",
+        jobId: "job_1",
+      }));
+
+      const projections = (registrations.transactionCurrent.value as any)
+        .fieldPlatform.v2.projections;
+      expect(projections.teamKpis.current).toMatchObject({
+        seoulDate: "2026-08-15",
+        todayVisits: 1,
+        capturePending: 1,
+        unassigned: 0,
+        updatedAt: afterMidnight.toISOString(),
+      });
+      expect(projections.operatorKpis.operator_kim.current)
+        .toMatchObject({ seoulDate: "2026-08-15", todayVisits: 1 });
+    } finally {
+      registrations.databaseTransaction.mockImplementation(originalTransaction);
+      vi.useRealTimers();
+    }
+  });
+
+  it("fails closed instead of rolling a future-dated KPI aggregate backward", async () => {
+    vi.useFakeTimers();
+    try {
+      vi.setSystemTime(new Date("2026-08-14T01:00:00.000Z"));
+      seedFieldV2Access("member");
+      const item = fieldV2WorkItem({ dueDate: "2026-08-14" });
+      registrations.transactionCurrent.value = {
+        crmCompany: {
+          access: { shared_uid: { enabled: true, role: "member", email: "team@bringcare.kr" } },
+          teamProfiles: { operator_kim: { active: true, displayName: "김현진" } },
+        },
+        fieldPlatform: { v2: {
+          config: { release: registrations.pathValues.get("fieldPlatform/v2/config/release") },
+          workItems: { job_1: item },
+          visits: { visit_1: fieldV2Visit({ dueDate: "2026-08-14" }) },
+          projections: { teamKpis: { current: {
+            seoulDate: "2026-08-15",
+            todayVisits: 0,
+            capturePending: 1,
+            uploadFailures: 0,
+            reviewPending: 0,
+            unassigned: 1,
+            overdue: 0,
+            adminActionRequired: 0,
+            updatedAt: "2026-08-14T15:00:00.000Z",
+          } } },
+        } },
+      };
+
+      await expect(callableHandler(entrypoints.claimFieldJob)(validFieldV2Request({
+        requestId: "823e4567-e89b-42d3-a456-426614174000",
+        jobId: "job_1",
+      }))).rejects.toMatchObject({
+        code: "failed-precondition",
+        message: "field_kpi_stale",
+      });
+      expect((registrations.transactionCurrent.value as any)
+        .fieldPlatform.v2.workItems.job_1.workflowStatus).toBe("requested");
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it("atomically replays creation before CRM reads but blocks a currently disabled account", async () => {
     seedFieldV2Access();
     const building = {
@@ -2309,6 +2447,7 @@ describe("Firebase entrypoint metadata", () => {
 
   it("lets a viewer read only the operator workspace and never queries unassigned", async () => {
     seedFieldV2Access("viewer");
+    seedFieldV2WorkspaceRoot("viewer");
     await expect(callableHandler(entrypoints.listFieldOperationsWorkspace)(
       validFieldV2Request({}),
     )).resolves.toEqual({
@@ -2328,13 +2467,13 @@ describe("Firebase entrypoint metadata", () => {
     expect(registrations.databaseRef).not.toHaveBeenCalledWith(
       "fieldPlatform/v2/projections/unassigned",
     );
-    expect(registrations.databaseRef).toHaveBeenCalledWith(
+    expect(registrations.databaseRef).not.toHaveBeenCalledWith(
       "fieldPlatform/v2/projections/operatorKpis/operator_kim/current",
     );
     expect(registrations.databaseRef).not.toHaveBeenCalledWith(
       "fieldPlatform/v2/projections/teamKpis/current",
     );
-
+    expect(registrations.transactionPaths).toContain("");
   });
 
   it("keeps a nonzero personal KPI when a bounded stale page is empty but resumable", async () => {
@@ -2357,20 +2496,27 @@ describe("Firebase entrypoint metadata", () => {
       "fieldPlatform/v2/projections/operatorJobs/operator_kim",
       staleProjections,
     );
-    const aggregate = registrations.pathValues.get(
-      "fieldPlatform/v2/projections/operatorKpis/operator_kim/current",
-    ) as Record<string, unknown>;
-    registrations.pathValues.set(
-      "fieldPlatform/v2/projections/operatorKpis/operator_kim/current",
-      { ...aggregate, todayVisits: 4, capturePending: 7, overdue: 2 },
-    );
+    const authoritativeItem = fieldV2WorkItem({
+      id: "authoritative_job",
+      visitId: "visit_authoritative",
+      assignedOperatorId: "operator_kim",
+      workflowStatus: "assigned",
+      dueDate: "2099-01-01",
+    });
+    seedFieldV2WorkspaceRoot("viewer", {
+      workItems: { authoritative_job: authoritativeItem },
+    });
 
     const workspace = await callableHandler(entrypoints.listFieldOperationsWorkspace)(
       validFieldV2Request({ limit: 1 }),
     ) as { items: unknown[]; nextCursor: string | null; kpis: Record<string, number> };
     expect(workspace.items).toEqual([]);
     expect(workspace.nextCursor).toEqual(expect.any(String));
-    expect(workspace.kpis).toMatchObject({ todayVisits: 4, capturePending: 7, overdue: 2 });
+    expect(workspace.kpis).toMatchObject({
+      todayVisits: 0,
+      capturePending: 1,
+      overdue: 0,
+    });
   });
 
   it("rebuilds a selected operator's stale KPI on the first read after KST midnight", async () => {
@@ -2458,6 +2604,11 @@ describe("Firebase entrypoint metadata", () => {
         adminActionRequired: 0,
         updatedAt: afterMidnight.toISOString(),
       };
+      seedFieldV2WorkspaceRoot("viewer", {
+        projections: {
+          operatorKpis: { operator_kim: { current: aggregate } },
+        },
+      });
       const snapshot = (value: unknown) => ({
         val: () => value,
         exists: () => value !== null && value !== undefined,
@@ -2472,12 +2623,10 @@ describe("Firebase entrypoint metadata", () => {
           active: true,
           displayName: "김현진",
         }))
-        .mockImplementationOnce(async () => snapshot(
-          registrations.pathValues.get("fieldPlatform/v2/config/release"),
-        ))
         .mockImplementationOnce(async () => {
+          const release = registrations.pathValues.get("fieldPlatform/v2/config/release");
           vi.setSystemTime(afterMidnight);
-          return snapshot(aggregate);
+          return snapshot(release);
         });
 
       await expect(callableHandler(entrypoints.listFieldOperationsWorkspace)(
@@ -2485,7 +2634,10 @@ describe("Firebase entrypoint metadata", () => {
       )).resolves.toMatchObject({
         kpis: { todayVisits: 0, capturePending: 0, unassigned: 0 },
       });
-      expect(registrations.transactionPaths).not.toContain("");
+      expect(registrations.transactionPaths).toContain("");
+      expect((registrations.transactionCurrent.value as any)
+        .fieldPlatform.v2.projections.operatorKpis.operator_kim.current.seoulDate)
+        .toBe("2026-08-15");
     } finally {
       vi.useRealTimers();
     }
@@ -2658,7 +2810,7 @@ describe("Firebase entrypoint metadata", () => {
     expect(registrations.transactionPaths).toContain("");
   });
 
-  it("treats the bounded page as a later read-committed view, never as a KPI source", async () => {
+  it("treats the bounded page as an independent read-committed view, never as a KPI source", async () => {
     seedFieldV2Access("viewer");
     const laterItem = fieldV2WorkItem({
       assignedOperatorId: "operator_kim",
@@ -2669,6 +2821,7 @@ describe("Firebase entrypoint metadata", () => {
       job_1: { fieldJobId: "job_1", updatedAt: laterItem.updatedAt },
     });
     registrations.pathValues.set("fieldPlatform/v2/workItems/job_1", laterItem);
+    seedFieldV2WorkspaceRoot("viewer", { workItems: {} });
 
     const workspace = await callableHandler(entrypoints.listFieldOperationsWorkspace)(
       validFieldV2Request({ limit: 10 }),
@@ -2676,7 +2829,7 @@ describe("Firebase entrypoint metadata", () => {
 
     expect(workspace.items).toHaveLength(1);
     expect(workspace.kpis).toMatchObject({ capturePending: 0, unassigned: 0 });
-    expect(registrations.transactionPaths).not.toContain("");
+    expect(registrations.transactionPaths).toContain("");
   });
 
   it("initializes an authoritative zero KPI for a selected operator with no assignments", async () => {
@@ -2725,12 +2878,14 @@ describe("Firebase entrypoint metadata", () => {
       visitId: "visit_1",
       assignedOperatorId: "operator_kim",
       workflowStatus: "assigned",
+      dueDate: "2099-01-01",
     }));
     registrations.pathValues.set("fieldPlatform/v2/workItems/job_2", fieldV2WorkItem({
       id: "job_2",
       visitId: "visit_2",
       assignedOperatorId: "operator_kim",
       workflowStatus: "assigned",
+      dueDate: "2099-01-01",
       sourceSnapshot: {
         ...fieldV2WorkItem().sourceSnapshot,
         unitId: "sales_unit_2",
@@ -2738,13 +2893,7 @@ describe("Firebase entrypoint metadata", () => {
       },
       crmSalesUnitId: "sales_unit_2",
     }));
-    const aggregate = registrations.pathValues.get(
-      "fieldPlatform/v2/projections/operatorKpis/operator_kim/current",
-    ) as Record<string, unknown>;
-    registrations.pathValues.set(
-      "fieldPlatform/v2/projections/operatorKpis/operator_kim/current",
-      { ...aggregate, todayVisits: 9, capturePending: 12, uploadFailures: 3 },
-    );
+    seedFieldV2WorkspaceRoot("viewer");
 
     const first = await callableHandler(entrypoints.listFieldOperationsWorkspace)(
       validFieldV2Request({ limit: 1 }),
@@ -2753,47 +2902,43 @@ describe("Firebase entrypoint metadata", () => {
       validFieldV2Request({ limit: 1, cursor: first.nextCursor }),
     ) as { kpis: Record<string, number> };
     expect(first.kpis).toEqual(second.kpis);
-    expect(first.kpis).toMatchObject({ todayVisits: 9, capturePending: 12, uploadFailures: 3 });
+    expect(first.kpis).toMatchObject({
+      todayVisits: 0,
+      capturePending: 2,
+      uploadFailures: 0,
+    });
   });
 
   it("defines member personal KPIs as selected-operator workload plus the team unassigned count", async () => {
     seedFieldV2Access("member");
-    const operatorAggregate = registrations.pathValues.get(
-      "fieldPlatform/v2/projections/operatorKpis/operator_kim/current",
-    ) as Record<string, unknown>;
-    const teamAggregate = registrations.pathValues.get(
-      "fieldPlatform/v2/projections/teamKpis/current",
-    ) as Record<string, unknown>;
-    registrations.pathValues.set(
-      "fieldPlatform/v2/projections/operatorKpis/operator_kim/current",
-      {
-        ...operatorAggregate,
-        todayVisits: 2,
-        capturePending: 4,
-        uploadFailures: 1,
-        overdue: 1,
-        unassigned: 0,
-      },
-    );
-    registrations.pathValues.set("fieldPlatform/v2/projections/teamKpis/current", {
-      ...teamAggregate,
-      todayVisits: 99,
-      capturePending: 99,
-      uploadFailures: 99,
-      overdue: 99,
-      unassigned: 5,
+    const assigned = fieldV2WorkItem({
+      id: "assigned_job",
+      visitId: "visit_assigned",
+      assignedOperatorId: "operator_kim",
+      workflowStatus: "assigned",
+      dueDate: "2099-01-01",
+    });
+    const unassigned = fieldV2WorkItem({
+      id: "unassigned_job",
+      visitId: "visit_unassigned",
+      assignedOperatorId: null,
+      workflowStatus: "requested",
+      dueDate: "2099-01-01",
+    });
+    seedFieldV2WorkspaceRoot("member", {
+      workItems: { assigned_job: assigned, unassigned_job: unassigned },
     });
 
     await expect(callableHandler(entrypoints.listFieldOperationsWorkspace)(
       validFieldV2Request({ limit: 10 }),
     )).resolves.toMatchObject({
       kpis: {
-        todayVisits: 2,
-        capturePending: 4,
-        uploadFailures: 1,
+        todayVisits: 0,
+        capturePending: 1,
+        uploadFailures: 0,
         reviewPending: 0,
-        unassigned: 5,
-        overdue: 1,
+        unassigned: 1,
+        overdue: 0,
         adminActionRequired: 0,
       },
     });
@@ -2828,6 +2973,83 @@ describe("Firebase entrypoint metadata", () => {
     });
   });
 
+  it("fails closed when an otherwise valid personal KPI contains an unknown field", async () => {
+    seedFieldV2Access("viewer");
+    const aggregate = {
+      ...(registrations.pathValues.get(
+        "fieldPlatform/v2/projections/operatorKpis/operator_kim/current",
+      ) as Record<string, unknown>),
+      unexpected: true,
+    };
+    registrations.pathValues.set(
+      "fieldPlatform/v2/projections/operatorKpis/operator_kim/current",
+      aggregate,
+    );
+    registrations.transactionCurrent.value = {
+      crmCompany: {
+        access: { shared_uid: { enabled: true, role: "viewer", email: "team@bringcare.kr" } },
+        teamProfiles: { operator_kim: { active: true, displayName: "김현진" } },
+      },
+      fieldPlatform: { v2: {
+        config: { release: registrations.pathValues.get("fieldPlatform/v2/config/release") },
+        workItems: {},
+        projections: { operatorKpis: { operator_kim: { current: aggregate } } },
+      } },
+    };
+
+    await expect(callableHandler(entrypoints.listFieldOperationsWorkspace)(
+      validFieldV2Request({}),
+    )).rejects.toMatchObject({
+      code: "failed-precondition",
+      message: "field_kpi_stale",
+    });
+  });
+
+  it.each([
+    ["email changed", {
+      access: { enabled: true, role: "viewer", email: "other@bringcare.kr" },
+      profile: { active: true, displayName: "김현진" },
+      release: {},
+    }],
+    ["profile disabled", {
+      access: { enabled: true, role: "viewer", email: "team@bringcare.kr" },
+      profile: { active: false, displayName: "김현진" },
+      release: {},
+    }],
+    ["operator removed from release", {
+      access: { enabled: true, role: "viewer", email: "team@bringcare.kr" },
+      profile: { active: true, displayName: "김현진" },
+      release: { enabledOperatorIds: ["operator_hwang"] },
+    }],
+  ] as const)("revalidates personal workspace authority when %s after preflight", async (
+    _label,
+    changed,
+  ) => {
+    seedFieldV2Access("viewer");
+    const release = {
+      ...(registrations.pathValues.get("fieldPlatform/v2/config/release") as Record<string, unknown>),
+      ...changed.release,
+    };
+    registrations.transactionCurrent.value = {
+      crmCompany: {
+        access: { shared_uid: changed.access },
+        teamProfiles: { operator_kim: changed.profile },
+      },
+      fieldPlatform: { v2: {
+        config: { release },
+        workItems: {},
+        projections: { operatorKpis: { operator_kim: { current:
+          registrations.pathValues.get(
+            "fieldPlatform/v2/projections/operatorKpis/operator_kim/current",
+          ) } } },
+      } },
+    };
+
+    await expect(callableHandler(entrypoints.listFieldOperationsWorkspace)(
+      validFieldV2Request({}),
+    )).rejects.toMatchObject({ code: "permission-denied" });
+  });
+
   it("lets a member combine mine and unassigned while filtering stale reassigned projections", async () => {
     seedFieldV2Access("member");
     registrations.pathValues.set("fieldPlatform/v2/projections/operatorJobs/operator_kim", {
@@ -2848,6 +3070,7 @@ describe("Firebase entrypoint metadata", () => {
       assignedOperatorId: null,
       workflowStatus: "requested",
     }));
+    seedFieldV2WorkspaceRoot("member");
 
     const workspace = await callableHandler(entrypoints.listFieldOperationsWorkspace)(
       validFieldV2Request({ limit: 10 }),
@@ -2876,6 +3099,7 @@ describe("Firebase entrypoint metadata", () => {
       assignedOperatorId: "operator_kim",
       workflowStatus: "assigned",
     }));
+    seedFieldV2WorkspaceRoot("member");
 
     const workspace = await callableHandler(entrypoints.listFieldOperationsWorkspace)(
       validFieldV2Request({ limit: 1 }),
@@ -2897,6 +3121,7 @@ describe("Firebase entrypoint metadata", () => {
       assignedOperatorId: null,
       workflowStatus: "requested",
     }));
+    seedFieldV2WorkspaceRoot("member");
 
     const workspace = await callableHandler(entrypoints.listFieldOperationsWorkspace)(
       validFieldV2Request({ limit: 1 }),
@@ -2919,6 +3144,7 @@ describe("Firebase entrypoint metadata", () => {
         workflowStatus: "assigned",
       }));
     }
+    seedFieldV2WorkspaceRoot("viewer");
 
     const first = await callableHandler(entrypoints.listFieldOperationsWorkspace)(
       validFieldV2Request({ limit: 1 }),
@@ -2967,6 +3193,7 @@ describe("Firebase entrypoint metadata", () => {
       "fieldPlatform/v2/projections/operatorJobs/operator_kim",
       projections,
     );
+    seedFieldV2WorkspaceRoot("viewer");
 
     let cursor: string | null = null;
     const seen: string[] = [];
@@ -2996,7 +3223,7 @@ describe("Firebase entrypoint metadata", () => {
         validFieldV2Request({ limit: 10 }),
       )).rejects.toMatchObject({
         code: "unavailable",
-        message: "field_workspace_unavailable",
+        message: "field_workspace_invalid",
       });
       expect(registrations.databaseRef).not.toHaveBeenCalledWith(
         `fieldPlatform/v2/workItems/${reserved}`,
@@ -3013,20 +3240,22 @@ describe("Firebase entrypoint metadata", () => {
       month: "2-digit",
       day: "2-digit",
     }).format(new Date());
-    const projections = Object.fromEntries([1, 2, 3].map((number) => {
+    const workItems = Object.fromEntries([1, 2, 3].map((number) => {
       const id = `job_${number}`;
-      return [id, fieldV2TeamProjection({
+      return [id, fieldV2WorkItem({
         id,
         visitId: `visit_${number}`,
-        dueDate: `2026-08-${String(14 + number).padStart(2, "0")}`,
+        dueDate: `2099-01-0${number}`,
         updatedAt: `2026-08-14T0${number}:00:00.000Z`,
       })];
     }));
+    const projections = Object.fromEntries(Object.entries(workItems)
+      .map(([id, item]) => [id, fieldV2TeamProjection(item as Record<string, unknown>)]));
     registrations.pathValues.set("fieldPlatform/v2/projections/teamActive", projections);
     registrations.unorderedQueryValPaths.add("fieldPlatform/v2/projections/teamActive");
-    registrations.pathValues.set("fieldPlatform/v2/projections/teamKpis/current", {
+    const teamKpis = {
       seoulDate: today,
-      todayVisits: 2,
+      todayVisits: 0,
       capturePending: 3,
       uploadFailures: 0,
       reviewPending: 0,
@@ -3034,6 +3263,11 @@ describe("Firebase entrypoint metadata", () => {
       overdue: 0,
       adminActionRequired: 0,
       updatedAt: "2026-08-14T03:00:00.000Z",
+    };
+    registrations.pathValues.set("fieldPlatform/v2/projections/teamKpis/current", teamKpis);
+    seedFieldV2WorkspaceRoot("admin", {
+      workItems,
+      projections: { teamKpis: { current: teamKpis } },
     });
 
     const first = await callableHandler(entrypoints.listFieldOperationsWorkspace)(
@@ -3067,19 +3301,125 @@ describe("Firebase entrypoint metadata", () => {
     expect(second.nextCursor).toBeNull();
   });
 
-  it("fails an admin team workspace when its stored KPI date is stale", async () => {
+  it.each(["stale", "missing"] as const)(
+    "rebuilds a %s team KPI from authoritative work on the admin's first team read",
+    async (aggregateState) => {
+      seedFieldV2Access("admin");
+      const now = new Date();
+      const today = new Intl.DateTimeFormat("en-CA", {
+        timeZone: "Asia/Seoul",
+        year: "numeric",
+        month: "2-digit",
+        day: "2-digit",
+      }).format(now);
+      const yesterday = new Intl.DateTimeFormat("en-CA", {
+        timeZone: "Asia/Seoul",
+        year: "numeric",
+        month: "2-digit",
+        day: "2-digit",
+      }).format(new Date(now.getTime() - 86_400_000));
+      const item = fieldV2WorkItem({ dueDate: today });
+      const stale = {
+        seoulDate: yesterday,
+        todayVisits: 9,
+        capturePending: 9,
+        uploadFailures: 9,
+        reviewPending: 9,
+        unassigned: 9,
+        overdue: 9,
+        adminActionRequired: 9,
+        updatedAt: item.updatedAt,
+      };
+      if (aggregateState === "stale") {
+        registrations.pathValues.set("fieldPlatform/v2/projections/teamKpis/current", stale);
+      } else {
+        registrations.pathValues.delete("fieldPlatform/v2/projections/teamKpis/current");
+      }
+      registrations.pathValues.set("fieldPlatform/v2/projections/teamActive", {
+        job_1: fieldV2TeamProjection(item),
+      });
+      registrations.transactionCurrent.value = {
+        crmCompany: {
+          access: { shared_uid: { enabled: true, role: "admin", email: "team@bringcare.kr" } },
+          teamProfiles: { operator_kim: { active: true, displayName: "김현진" } },
+        },
+        fieldPlatform: { v2: {
+          config: { release: registrations.pathValues.get("fieldPlatform/v2/config/release") },
+          workItems: { job_1: item },
+          projections: aggregateState === "stale" ? {
+            teamKpis: { current: stale },
+            teamVisitState: { visit_1: {
+              visitId: "visit_1",
+              seoulDate: yesterday,
+              activeTodayItemCount: 9,
+              updatedAt: item.updatedAt,
+            } },
+          } : {},
+        } },
+      };
+
+      await expect(callableHandler(entrypoints.listFieldOperationsWorkspace)(
+        validFieldV2Request({ scope: "team" }),
+      )).resolves.toMatchObject({
+        kpis: {
+          todayVisits: 1,
+          capturePending: 1,
+          unassigned: 1,
+        },
+      });
+      expect((registrations.transactionCurrent.value as any)
+        .fieldPlatform.v2.projections.teamKpis.current)
+        .toMatchObject({ seoulDate: today, todayVisits: 1, capturePending: 1, unassigned: 1 });
+    },
+  );
+
+  it("denies a team response when the current root role was downgraded after preflight", async () => {
     seedFieldV2Access("admin");
-    registrations.pathValues.set("fieldPlatform/v2/projections/teamKpis/current", {
-      seoulDate: "2000-01-01",
-      todayVisits: 0,
-      capturePending: 0,
-      uploadFailures: 0,
-      reviewPending: 0,
-      unassigned: 0,
-      overdue: 0,
-      adminActionRequired: 0,
-      updatedAt: "2026-08-14T03:00:00.000Z",
+    registrations.transactionCurrent.value = {
+      crmCompany: {
+        access: { shared_uid: { enabled: true, role: "viewer", email: "team@bringcare.kr" } },
+        teamProfiles: { operator_kim: { active: true, displayName: "김현진" } },
+      },
+      fieldPlatform: { v2: {
+        config: { release: registrations.pathValues.get("fieldPlatform/v2/config/release") },
+        workItems: {},
+        projections: { teamKpis: { current:
+          registrations.pathValues.get("fieldPlatform/v2/projections/teamKpis/current") } },
+      } },
+    };
+
+    await expect(callableHandler(entrypoints.listFieldOperationsWorkspace)(
+      validFieldV2Request({ scope: "team" }),
+    )).rejects.toMatchObject({
+      code: "permission-denied",
+      message: "field_access_forbidden",
     });
+  });
+
+  it.each([
+    ["invalid updatedAt", { updatedAt: "not-an-iso-timestamp" }],
+    ["unknown field", { unexpected: true }],
+  ] as const)("fails closed for a team KPI with %s", async (_label, override) => {
+    seedFieldV2Access("admin");
+    const aggregate = {
+      ...(registrations.pathValues.get(
+        "fieldPlatform/v2/projections/teamKpis/current",
+      ) as Record<string, unknown>),
+      ...override,
+    };
+    registrations.pathValues.set("fieldPlatform/v2/projections/teamKpis/current", aggregate);
+    registrations.transactionCurrent.value = {
+      crmCompany: {
+        access: { shared_uid: { enabled: true, role: "admin", email: "team@bringcare.kr" } },
+        teamProfiles: { operator_kim: { active: true, displayName: "김현진" } },
+      },
+      fieldPlatform: { v2: {
+        config: { release: registrations.pathValues.get("fieldPlatform/v2/config/release") },
+        workItems: {},
+        projections: { teamKpis: { current: aggregate } },
+      } },
+    };
+
     await expect(callableHandler(entrypoints.listFieldOperationsWorkspace)(
       validFieldV2Request({ scope: "team" }),
     )).rejects.toMatchObject({

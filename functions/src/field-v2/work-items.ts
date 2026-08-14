@@ -313,7 +313,7 @@ export interface FieldWorkspaceQuery {
   readonly scope: "personal" | "team";
   readonly limit: number;
   readonly cursor?: string;
-  readonly authoritativePersonalKpis?: {
+  readonly authoritativeKpis?: {
     readonly kpis: FieldKpis;
     readonly kpiSeoulDate: string;
   };
@@ -2031,12 +2031,7 @@ export async function listFieldOperationsWorkspaceCore(
       ...(cursor === undefined ? {} : { cursor }),
     });
   } catch (error) {
-    if (
-      error instanceof FieldV2Error
-      && (error.code === "field_workspace_cursor_invalid" || error.code === "field_kpi_stale")
-    ) {
-      throw error;
-    }
+    if (error instanceof FieldV2Error) throw error;
     fail("field_workspace_unavailable");
   }
   if (!isRecord(records) || !Array.isArray(records.items)) {
