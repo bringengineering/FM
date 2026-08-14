@@ -30,6 +30,7 @@ function restoreProperty(
 }
 
 beforeEach(() => {
+  if (typeof window !== "undefined") window.localStorage.clear();
   objectUrlSequence = 0;
   Object.defineProperty(URL, "createObjectURL", {
     configurable: true,
@@ -52,6 +53,7 @@ beforeEach(() => {
 
 afterEach(() => {
   cleanup();
+  if (typeof window !== "undefined") window.localStorage.clear();
   restoreProperty(URL, "createObjectURL", originalCreateObjectUrl);
   restoreProperty(URL, "revokeObjectURL", originalRevokeObjectUrl);
   restoreProperty(navigator, "storage", originalNavigatorStorage);

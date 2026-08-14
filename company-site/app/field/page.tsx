@@ -1,5 +1,5 @@
-import FieldApp from "./FieldApp";
+import FieldV2App from "./components/v2/FieldV2App";
 
 export default function FieldPage() {
-  return <FieldApp />;
+  return <FieldV2App />;
 }

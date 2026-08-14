@@ -2,6 +2,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 
 const firebaseMocks = vi.hoisted(() => ({
   initializeAppCheck: vi.fn(),
+  getToken: vi.fn(),
   initializeApp: vi.fn(() => ({ name: "[DEFAULT]" })),
   providerKeys: [] as string[],
 }));
@@ -13,6 +14,7 @@ vi.mock("firebase/app", () => ({
 }));
 
 vi.mock("firebase/app-check", () => ({
+  getToken: firebaseMocks.getToken,
   initializeAppCheck: firebaseMocks.initializeAppCheck,
   ReCaptchaEnterpriseProvider: class ReCaptchaEnterpriseProvider {
     constructor(siteKey: string) {
@@ -32,6 +34,7 @@ afterEach(() => {
   firebaseMocks.initializeAppCheck.mockClear();
   firebaseMocks.providerKeys.length = 0;
   Reflect.deleteProperty(globalThis, "__bringFieldAppCheckApps");
+  Reflect.deleteProperty(globalThis, "__bringFieldAppCheckInstances");
   Reflect.deleteProperty(globalThis, "FIREBASE_APPCHECK_DEBUG_TOKEN");
 });
 
@@ -47,15 +50,19 @@ describe("Firebase App Check configuration", () => {
     }));
   });
 
-  it("keeps App Check optional until the company site key is configured", async () => {
+  it("fails closed without App Check in production or CRM embedded mode", async () => {
     const { resolveFieldAppCheckConfigurationError } = await import(
       "../../app/field/lib/firebase.client"
     );
 
-    expect(resolveFieldAppCheckConfigurationError("production", "")).toBeNull();
-    expect(resolveFieldAppCheckConfigurationError("production", "   ")).toBeNull();
-    expect(resolveFieldAppCheckConfigurationError("development", "")).toBeNull();
-    expect(resolveFieldAppCheckConfigurationError("production", "site-key")).toBeNull();
+    expect(resolveFieldAppCheckConfigurationError("production", "", false, false))
+      .toBe("현장 업무 보안 연결 설정을 확인해 주세요.");
+    expect(resolveFieldAppCheckConfigurationError("production", "   ", false, false))
+      .toBe("현장 업무 보안 연결 설정을 확인해 주세요.");
+    expect(resolveFieldAppCheckConfigurationError("development", "", true, false))
+      .toBe("현장 업무 보안 연결 설정을 확인해 주세요.");
+    expect(resolveFieldAppCheckConfigurationError("development", "", false, true)).toBeNull();
+    expect(resolveFieldAppCheckConfigurationError("production", "site-key", true, false)).toBeNull();
   });
 
   it("enables the debug token only outside production and initializes App Check once", async () => {
