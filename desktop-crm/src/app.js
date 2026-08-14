@@ -37,6 +37,7 @@
   let currentView = "dashboard";
   let selectedCustomerId = "";
   let selectedBuildingId = "";
+  let selectedConsultationBuildingId = "all";
   let selectedSalesProspectId = "";
   let selectedCustomerDrawerMode = "customer";
   let saveTimer = null;
@@ -1424,9 +1425,78 @@
       <div class="building-detail-grid">${rentalSummary}<section class="building-detail-section"><header><b>연결 고객</b><span>${customers.length}명</span></header><div class="building-detail-body">${customerRecords || `<div class="building-detail-empty">연결된 고객이 없습니다. 건물 정보 수정에서 건물주를 선택하세요.</div>`}</div></section><section class="building-detail-section"><header><b>계약</b><span>${contracts.length}건</span></header><div class="building-detail-body">${contractRecords || `<div class="building-detail-empty">연결된 계약이 없습니다.</div>`}</div></section><section class="building-detail-section"><header><b>케이스</b><span>${cases.length}건</span></header><div class="building-detail-body">${caseRecords || `<div class="building-detail-empty">연결된 케이스가 없습니다.</div>`}</div></section><section class="building-detail-section"><header><b>${esc(paymentMonthLabel(paymentMonth))} 입금 일정</b><span>${rows.length}건</span></header><div class="building-detail-body">${paymentRecords || `<div class="building-detail-empty">이번 달 납부 일정이 없습니다.</div>`}</div></section>${building.memo ? `<section class="building-detail-section wide"><header><b>건물 메모</b><span>공용 정보</span></header><div class="building-detail-body"><div class="building-detail-record"><div><b>관리 참고사항</b><span>${esc(building.memo)}</span></div></div></div></section>` : ""}</div></div>`;
   }
 
+  function consultationBuildingResolution(activity) {
+    const explicitId = String(activity && activity.buildingId || "").trim();
+    if (explicitId) {
+      const explicitBuilding = buildingById(explicitId);
+      return explicitBuilding
+        ? { building: explicitBuilding, source: "explicit" }
+        : { building: null, source: "invalid-explicit" };
+    }
+    const customer = customerById(activity && activity.customerId);
+    const linkedBuildings = customer ? customerBuildings(customer) : [];
+    return linkedBuildings.length === 1
+      ? { building: linkedBuildings[0], source: "legacy-single" }
+      : { building: null, source: linkedBuildings.length > 1 ? "legacy-ambiguous" : "legacy-unlinked" };
+  }
+
+  function consultationSearchText(activity, resolution) {
+    const customer = customerById(activity && activity.customerId);
+    const building = resolution && resolution.building;
+    return Core.normalizeText([
+      activity && activity.type, activity && activity.summary, activity && activity.result,
+      activity && activity.nextAction, activity && activity.owner, activity && activity.occurredAt,
+      customer && customer.name, customer && customer.company, customer && customer.phone,
+      building && building.name, building && building.address, building && building.buildingNo
+    ].filter(Boolean).join(" "));
+  }
+
+  function consultationActivityCard(activity) {
+    const customer = customerById(activity.customerId);
+    const resolution = consultationBuildingResolution(activity);
+    const building = resolution.building;
+    const result = String(activity.result || "").trim();
+    const nextAction = String(activity.nextAction || "").trim();
+    const nextContact = activity.nextContactAt ? dateText(activity.nextContactAt) : "";
+    return `<article class="consultation-history-card" data-consultation-activity-id="${attr(activity.id)}"><header><div><span class="activity-method">${activityIcon(activity.type)} ${esc(activity.type || "상담")}</span><time>${esc(dateText(activity.occurredAt))}</time></div><div class="consultation-history-actions">${customer ? `<button type="button" class="mini-button" data-customer-open="${attr(customer.id)}">고객 보기</button>` : ""}<button type="button" class="record-delete-button" data-activity-delete="${attr(activity.id)}">삭제</button></div></header><div class="consultation-history-person"><div><b>${esc(customer && customer.name || "연결 고객 없음")}</b><span>${esc([customer && (customer.company || customer.type), customer && customer.phone].filter(Boolean).join(" · ") || "고객 정보 미연결")}</span></div><em>${esc(building && building.name || "건물 확인 필요")}</em></div><section><span>상담 내용</span><p>${esc(activity.summary || "내용 미입력")}</p></section>${result || nextAction || nextContact ? `<footer>${result ? `<div><span>고객 반응·결과</span><b>${esc(result)}</b></div>` : ""}${nextAction ? `<div><span>다음 할 일</span><b>${esc(nextAction)}</b></div>` : ""}${nextContact ? `<div><span>다음 연락</span><b>${esc(nextContact)}</b></div>` : ""}</footer>` : ""}<small>담당자 ${esc(activity.owner || "미입력")}</small></article>`;
+  }
+
   function renderConsultations() {
-    const activities = [...store.activities].sort((a, b) => String(b.occurredAt).localeCompare(String(a.occurredAt)));
-    main.innerHTML = `<div class="section-head"><div><h2>고객과 나눈 내용을 기록합니다</h2><p>전화·문자·방문·미팅 내용을 남기면 다음 상담 때 바로 확인할 수 있습니다.</p></div><div class="section-head-actions"><button class="primary-button" data-action="new-consultation">＋ 상담 기록</button></div></div>${activities.length ? `<div class="data-table-wrap"><table class="data-table consultation-table"><thead><tr><th>상담일</th><th>고객</th><th>방식</th><th>상담 내용</th><th>결과·다음 할 일</th><th>담당자</th><th>관리</th></tr></thead><tbody>${activities.map(activity => { const customer = customerById(activity.customerId); return `<tr data-customer-open="${attr(activity.customerId)}"><td>${esc(dateText(activity.occurredAt))}</td><td><strong>${esc(customer && customer.name || "연결 고객 없음")}</strong></td><td><span class="activity-method">${activityIcon(activity.type)} ${esc(activity.type)}</span></td><td>${esc(activity.summary || "-")}</td><td>${esc(activity.result || activity.nextAction || "-")}</td><td>${esc(activity.owner || "-")}</td><td><button type="button" class="record-delete-button" data-activity-delete="${attr(activity.id)}">삭제</button></td></tr>`; }).join("")}</tbody></table></div>` : empty("아직 상담 기록이 없습니다", "첫 상담 내용을 기록하면 고객별 이력이 자동으로 쌓입니다.", `<button class="primary-button" data-action="new-consultation">＋ 첫 상담 기록</button>`)}`;
+    const query = Core.normalizeText(searchEl.value);
+    const activities = [...store.activities].sort((a, b) => String(b.occurredAt || b.createdAt || "").localeCompare(String(a.occurredAt || a.createdAt || "")));
+    const resolutions = new Map(activities.map(activity => [activity.id, consultationBuildingResolution(activity)]));
+    const activitiesByBuilding = buildingId => activities.filter(activity => resolutions.get(activity.id)?.building?.id === buildingId);
+    const unlinkedActivities = activities.filter(activity => !resolutions.get(activity.id)?.building);
+    const buildings = [...store.buildings].sort((left, right) => (left.status === "관리중" ? -1 : 0) - (right.status === "관리중" ? -1 : 0) || String(left.name || "").localeCompare(String(right.name || ""), "ko"));
+    const visibleBuildings = buildings.filter(building => {
+      if (!query) return true;
+      const customers = buildingCustomers(building);
+      const buildingText = Core.normalizeText([building.name, building.address, building.buildingNo, building.status, customers.map(customer => `${customer.name} ${customer.phone}`).join(" ")].join(" "));
+      return buildingText.includes(query) || activitiesByBuilding(building.id).some(activity => consultationSearchText(activity, resolutions.get(activity.id)).includes(query));
+    });
+    const selectableIds = new Set(["all", "unlinked", ...visibleBuildings.map(building => building.id)]);
+    if (!selectableIds.has(selectedConsultationBuildingId)) selectedConsultationBuildingId = "all";
+    const selectedBuilding = buildingById(selectedConsultationBuildingId);
+    const selectedActivities = selectedConsultationBuildingId === "all"
+      ? activities
+      : selectedConsultationBuildingId === "unlinked"
+        ? unlinkedActivities
+        : activitiesByBuilding(selectedConsultationBuildingId);
+    const shownActivities = selectedActivities.filter(activity => !query || consultationSearchText(activity, resolutions.get(activity.id)).includes(query));
+    const selectedCustomers = unique(selectedActivities.map(activity => activity.customerId).filter(customerId => customerById(customerId)));
+    const nextContacts = selectedActivities.map(activity => activity.nextContactAt).filter(Boolean).sort();
+    const newest = selectedActivities[0] || null;
+    const detailTitle = selectedBuilding ? selectedBuilding.name || "건물명 미입력" : selectedConsultationBuildingId === "unlinked" ? "미연결·확인 필요" : "전체 상담";
+    const detailMeta = selectedBuilding ? selectedBuilding.address || "주소 미입력" : selectedConsultationBuildingId === "unlinked" ? "건물이 없거나 고객에게 여러 건물이 연결된 상담입니다." : `등록된 상담 ${activities.length.toLocaleString("ko-KR")}건을 최신순으로 봅니다.`;
+    const registrationBuildingId = selectedBuilding && selectedBuilding.id || "";
+    const allCard = `<button type="button" class="consultation-building-card consultation-summary-card ${selectedConsultationBuildingId === "all" ? "selected" : ""}" data-consultation-building-open="all"><div><strong>전체 상담</strong><em>${activities.length.toLocaleString("ko-KR")}건</em></div><p>모든 건물과 미연결 상담을 함께 봅니다.</p><small>${activities[0] ? `최근 ${dateText(activities[0].occurredAt)}` : "아직 상담 기록 없음"}</small></button>`;
+    const buildingCards = visibleBuildings.map(building => {
+      const buildingActivities = activitiesByBuilding(building.id);
+      const customers = buildingCustomers(building);
+      return `<button type="button" class="consultation-building-card ${building.id === selectedConsultationBuildingId ? "selected" : ""}" data-consultation-building-open="${attr(building.id)}"><div><strong>${esc(building.name || "건물명 미입력")}</strong><em>${buildingActivities.length.toLocaleString("ko-KR")}건</em></div><p>${esc(building.address || "주소 미입력")}</p><small>${esc(customers[0]?.name || "고객 미연결")} · ${buildingActivities[0] ? `최근 ${dateText(buildingActivities[0].occurredAt)}` : "상담 없음"}</small></button>`;
+    }).join("");
+    const unlinkedCard = `<button type="button" class="consultation-building-card consultation-unlinked-card ${selectedConsultationBuildingId === "unlinked" ? "selected" : ""}" data-consultation-building-open="unlinked"><div><strong>미연결·확인 필요</strong><em>${unlinkedActivities.length.toLocaleString("ko-KR")}건</em></div><p>건물을 특정할 수 없는 기존 상담입니다.</p><small>${unlinkedActivities.length ? "고객 연결 건물을 확인해 주세요." : "확인할 상담 없음"}</small></button>`;
+    main.innerHTML = `<section class="consultation-hub-hero"><div><span>건물별 상담 이력</span><h2>건물을 선택해 상담한 날짜와 내용을 확인합니다</h2><p>명시 저장된 건물을 우선 사용하고, 기존 기록은 고객에게 연결된 건물이 한 곳일 때만 자동 분류합니다.</p></div><button class="primary-button" data-action="new-consultation" data-consultation-building="${attr(registrationBuildingId)}">＋ 상담 기록</button></section><section class="consultation-hub-layout" data-consultation-hub><aside class="consultation-building-browser"><header><div><b>건물 목록</b><small>전체 → 건물 → 미연결 순서</small></div><span>${visibleBuildings.length.toLocaleString("ko-KR")}곳</span></header><div class="consultation-building-list">${allCard}${buildingCards || `<div class="consultation-building-empty">${query ? "검색 조건에 맞는 건물이 없습니다." : "등록된 건물이 없습니다."}</div>`}${unlinkedCard}</div></aside><section class="consultation-detail"><header class="consultation-detail-head"><div><span>${selectedBuilding ? esc(selectedBuilding.buildingNo || selectedBuilding.id) : selectedConsultationBuildingId === "unlinked" ? "확인 대기" : "ALL"}</span><h2>${esc(detailTitle)}</h2><p>${esc(detailMeta)}</p></div><button class="primary-button" data-action="new-consultation" data-consultation-building="${attr(registrationBuildingId)}">＋ 상담 기록</button></header><div class="consultation-detail-scroll"><div class="consultation-kpis"><div><span>상담 기록</span><b>${selectedActivities.length.toLocaleString("ko-KR")}건</b><small>${query ? `검색 결과 ${shownActivities.length.toLocaleString("ko-KR")}건` : "전체 기간"}</small></div><div><span>최근 상담</span><b>${esc(newest ? dateText(newest.occurredAt) : "없음")}</b><small>${esc(newest && newest.type || "기록 없음")}</small></div><div><span>상담 고객</span><b>${selectedCustomers.length.toLocaleString("ko-KR")}명</b><small>${esc(selectedCustomers.length ? "연결 고객 기준" : "연결 고객 없음")}</small></div><div><span>다음 연락</span><b>${esc(nextContacts[0] ? dateText(nextContacts[0]) : "미정")}</b><small>${nextContacts.length ? `${nextContacts.length.toLocaleString("ko-KR")}건 예정` : "예정 없음"}</small></div></div><section class="consultation-history-section"><header><div><b>상담 이력</b><span>${query ? `검색어 “${esc(searchEl.value.trim())}”` : "최신 상담부터 표시"}</span></div><em>${shownActivities.length.toLocaleString("ko-KR")}건</em></header><div class="consultation-history-list">${shownActivities.length ? shownActivities.map(consultationActivityCard).join("") : `<div class="consultation-history-empty"><b>${query ? "검색 조건에 맞는 상담이 없습니다" : "아직 상담 기록이 없습니다"}</b><span>${query ? "검색어를 지우거나 다른 건물을 선택해 주세요." : "상담 기록을 추가하면 진행 날짜와 내용이 이곳에 쌓입니다."}</span><button class="secondary-button" data-action="new-consultation" data-consultation-building="${attr(registrationBuildingId)}">＋ 상담 기록</button></div>`}</div></section></div></section></section>`;
   }
 
   function renderPipeline() {
@@ -2004,13 +2074,15 @@
   function consultationCustomerPickerRows(form) {
     const type = String(form && form.elements.customerType && form.elements.customerType.value || "");
     const selectedId = String(form && form.elements.customerId && form.elements.customerId.value || "");
+    const buildingId = String(form && form.elements.buildingId && form.elements.buildingId.value || "");
     const query = Core.normalizeText(form && form.querySelector("[data-consultation-customer-search]")?.value || "");
     if (!type) return [];
     return store.customers.filter(customer => {
       const selected = String(customer.id) === selectedId;
       const typeMatch = String(customer.type || "기타") === type;
+      const buildingMatch = !buildingId || customerBuildings(customer).some(building => String(building.id) === buildingId);
       const searchMatch = !query || customerPickerSearchText(customer).includes(query);
-      return query ? typeMatch && searchMatch : typeMatch || selected;
+      return buildingMatch && (query ? typeMatch && searchMatch : typeMatch || selected);
     }).sort((a, b) => {
       if (String(a.id) === selectedId) return -1;
       if (String(b.id) === selectedId) return 1;
@@ -2029,6 +2101,7 @@
     if (!form) return;
     const type = String(form.elements.customerType && form.elements.customerType.value || "");
     const selectedId = String(form.elements.customerId && form.elements.customerId.value || "");
+    const buildingId = String(form.elements.buildingId && form.elements.buildingId.value || "");
     const search = form.querySelector("[data-consultation-customer-search]");
     const count = form.querySelector("[data-consultation-customer-count]");
     const results = form.querySelector("[data-consultation-customer-options]");
@@ -2041,8 +2114,8 @@
     } else {
       const rows = consultationCustomerPickerRows(form);
       const query = Core.normalizeText(search && search.value || "");
-      const matchingCount = store.customers.filter(customer => String(customer.type || "기타") === type).length;
-      if (count) count.textContent = `${type} 고객 ${matchingCount.toLocaleString("ko-KR")}명${search && search.value.trim() ? ` · 검색 결과 ${rows.filter(customer => String(customer.type || "기타") === type).length}명` : ""}`;
+      const matchingCount = store.customers.filter(customer => String(customer.type || "기타") === type && (!buildingId || customerBuildings(customer).some(building => String(building.id) === buildingId))).length;
+      if (count) count.textContent = `${buildingId ? `${buildingById(buildingId)?.name || "선택 건물"} 연결 · ` : ""}${type} 고객 ${matchingCount.toLocaleString("ko-KR")}명${search && search.value.trim() ? ` · 검색 결과 ${rows.filter(customer => String(customer.type || "기타") === type).length}명` : ""}`;
       results.innerHTML = rows.length ? rows.map(customer => {
         const selected = String(customer.id) === selectedId;
         const buildings = customerBuildings(customer);
@@ -2122,13 +2195,21 @@
     openModal();
   }
 
-  function consultationEditor(customerId, returnView) {
-    const customer = customerById(customerId);
+  function consultationEditor(customerId, returnView, buildingId) {
     const relationshipMode = returnView === "relationships";
+    let preferredBuilding = relationshipMode ? null : buildingById(buildingId);
+    let customer = customerById(customerId);
+    if (!preferredBuilding && customer && !relationshipMode) {
+      const linkedBuildings = customerBuildings(customer);
+      if (linkedBuildings.length === 1) preferredBuilding = linkedBuildings[0];
+    }
+    if (preferredBuilding && customer && !customerBuildings(customer).some(building => building.id === preferredBuilding.id)) customer = null;
     const cycle = Number(customer && customer.relationshipCycleDays) || 30;
     const nextContactAt = relationshipMode ? (customer && customer.relationshipNextContactAt || addDaysIso(new Date(), cycle)) : "";
     const nextAction = relationshipMode ? (customer && customer.relationshipNextAction || "서비스 만족도 및 추가 요청 확인") : "";
-    modalContent.innerHTML = `<div class="modal-head"><div><h2>${relationshipMode ? "후속 연락 기록" : "상담 기록 추가"}</h2><p>${relationshipMode ? "계약 고객과 나눈 내용과 다음 연락 약속을 함께 남기세요." : "고객과 나눈 핵심 내용과 다음 할 일을 간단히 남기세요."}</p></div><button class="close-button" data-action="close-modal">×</button></div><form id="consultationForm" class="modal-body" data-return-view="${attr(returnView || "consultations")}"><div class="form-grid">${selectField("고객 *", "customerId", ["", ...store.customers.map(item => item.id)], customerId || "", id => id ? (customerById(id)?.name || id) : "고객을 선택하세요")}${selectField("연락 방식", "type", ["전화", "문자", "카카오", "이메일", "미팅", "방문", "메모"], "전화")}${field("연락 일시", "occurredAt", datetimeValue(new Date().toISOString()), "datetime-local")}${field("담당자", "owner", store.settings.owner || "김현진")}${areaField("연락 내용 *", "summary", "", "wide")}${field("고객 반응·결과", "result", "", "text", relationshipMode ? "예: 서비스에 만족, 추가 요청 없음" : "예: 견적 요청 접수")}${field("다음 할 일", "nextAction", nextAction, "text", relationshipMode ? "예: 정기 안부 및 추가 요청 확인" : "예: 비교견적 전달")}${field("다음 연락일", "nextContactAt", datetimeValue(nextContactAt), "datetime-local")}</div><div class="form-actions"><button type="button" class="secondary-button" data-action="close-modal">취소</button><button class="primary-button">${relationshipMode ? "후속 연락 저장" : "상담 기록 저장"}</button></div></form>`;
+    const buildingOptions = ["", ...[...store.buildings].sort((a, b) => String(a.name || "").localeCompare(String(b.name || ""), "ko")).map(item => item.id)];
+    const buildingField = relationshipMode ? "" : `${selectField("연결 건물 (선택)", "buildingId", buildingOptions, preferredBuilding && preferredBuilding.id || "", id => id ? buildingChoiceLabel(buildingById(id)) : "미연결로 기록")}<div class="consultation-building-help">${preferredBuilding ? `${esc(preferredBuilding.name || "선택 건물")} 상담으로 저장됩니다. 이 건물에 연결된 고객만 표시됩니다.` : "건물을 선택하면 연결된 고객만 표시됩니다. 기존처럼 건물 없이도 상담을 기록할 수 있습니다."}</div>`;
+    modalContent.innerHTML = `<div class="modal-head"><div><h2>${relationshipMode ? "후속 연락 기록" : "상담 기록 추가"}</h2><p>${relationshipMode ? "계약 고객과 나눈 내용과 다음 연락 약속을 함께 남기세요." : "고객과 나눈 핵심 내용과 다음 할 일을 간단히 남기세요."}</p></div><button class="close-button" data-action="close-modal">×</button></div><form id="consultationForm" class="modal-body" data-return-view="${attr(returnView || "consultations")}"><div class="form-grid">${buildingField}${selectField("고객 *", "customerId", ["", ...store.customers.map(item => item.id)], customer && customer.id || "", id => id ? (customerById(id)?.name || id) : "고객을 선택하세요")}${selectField("연락 방식", "type", ["전화", "문자", "카카오", "이메일", "미팅", "방문", "메모"], "전화")}${field("연락 일시", "occurredAt", datetimeValue(new Date().toISOString()), "datetime-local")}${field("담당자", "owner", store.settings.owner || "김현진")}${areaField("연락 내용 *", "summary", "", "wide")}${field("고객 반응·결과", "result", "", "text", relationshipMode ? "예: 서비스에 만족, 추가 요청 없음" : "예: 견적 요청 접수")}${field("다음 할 일", "nextAction", nextAction, "text", relationshipMode ? "예: 정기 안부 및 추가 요청 확인" : "예: 비교견적 전달")}${field("다음 연락일", "nextContactAt", datetimeValue(nextContactAt), "datetime-local")}</div><div class="form-actions"><button type="button" class="secondary-button" data-action="close-modal">취소</button><button class="primary-button">${relationshipMode ? "후속 연락 저장" : "상담 기록 저장"}</button></div></form>`;
     openModal();
     const form = document.getElementById("consultationForm");
     setupConsultationCustomerPicker(form, customer);
@@ -2825,6 +2906,10 @@
       const form = consultationCustomerOption.closest("#consultationForm");
       if (!form || !form.elements.customerId) return;
       form.elements.customerId.value = consultationCustomerOption.dataset.consultationCustomerOption || "";
+      if (form.elements.buildingId && !form.elements.buildingId.value) {
+        const linkedBuildings = customerBuildings(customerById(form.elements.customerId.value));
+        if (linkedBuildings.length === 1) form.elements.buildingId.value = linkedBuildings[0].id;
+      }
       renderConsultationCustomerPicker(form);
       form.querySelector("[data-consultation-customer-search]")?.focus();
       return;
@@ -3353,6 +3438,13 @@
       pageMeta();
       return;
     }
+    const consultationBuildingOpen = event.target.closest("[data-consultation-building-open]");
+    if (consultationBuildingOpen) {
+      selectedConsultationBuildingId = consultationBuildingOpen.dataset.consultationBuildingOpen || "all";
+      renderConsultations();
+      pageMeta();
+      return;
+    }
     const relationshipFollowup = event.target.closest("[data-relationship-followup]");
     if (relationshipFollowup) { consultationEditor(relationshipFollowup.dataset.relationshipFollowup, "relationships"); return; }
     const relationshipPlan = event.target.closest("[data-relationship-plan]");
@@ -3381,7 +3473,8 @@
     if (taskFilter) { taskStatusFilter = taskFilter.dataset.taskFilter; renderTasks(); return; }
     const partnerQuoteFilter = event.target.closest("[data-partner-quote-filter]");
     if (partnerQuoteFilter) { partnerQuoteStatusFilter = partnerQuoteFilter.dataset.partnerQuoteFilter; renderPartnerQuotes(); return; }
-    const action = event.target.closest("[data-action]")?.dataset.action;
+    const actionControl = event.target.closest("[data-action]");
+    const action = actionControl?.dataset.action;
     if (!action) return;
     if (action === "logout") {
       await api.logout();
@@ -3423,7 +3516,7 @@
       closeDrawer();
       customerEditor(customerId);
     }
-    else if (action === "new-consultation") consultationEditor(selectedCustomerId, currentView);
+    else if (action === "new-consultation") consultationEditor(selectedCustomerId, currentView, actionControl.dataset.consultationBuilding || "");
     else if (action === "new-partner-vendor") {
       if (!canWriteCRM()) return showToast("조회 전용 계정은 연락 업체를 등록할 수 없습니다.", "error");
       partnerVendorEditor("");
@@ -3558,6 +3651,12 @@
       const form = event.target.form;
       const selectedCustomer = customerById(form && form.elements.customerId && form.elements.customerId.value);
       if (selectedCustomer && String(selectedCustomer.type || "기타") !== event.target.value) form.elements.customerId.value = "";
+      renderConsultationCustomerPicker(form);
+    }
+    if (event.target.matches('#consultationForm [name="buildingId"]')) {
+      const form = event.target.form;
+      const selectedCustomer = customerById(form && form.elements.customerId && form.elements.customerId.value);
+      if (selectedCustomer && event.target.value && !customerBuildings(selectedCustomer).some(building => String(building.id) === String(event.target.value))) form.elements.customerId.value = "";
       renderConsultationCustomerPicker(form);
     }
   });
@@ -4018,7 +4117,9 @@
       if (!raw.customerId) return showToast("고객을 선택해 주세요.", "error");
       if (!raw.summary.trim()) return showToast("상담 내용을 입력해 주세요.", "error");
       const customer = customerById(raw.customerId);
-      const activity = Core.createActivity({ customerId: raw.customerId, context: returnView === "relationships" || customer && customer.stage === "계약 확정" ? "relationship" : "consultation", type: raw.type, occurredAt: raw.occurredAt ? new Date(raw.occurredAt).toISOString() : new Date().toISOString(), summary: raw.summary.trim(), result: raw.result.trim(), nextAction: raw.nextAction.trim(), nextContactAt: raw.nextContactAt ? new Date(raw.nextContactAt).toISOString() : "", owner: raw.owner.trim() || store.settings.owner || "김현진" });
+      const buildingId = returnView === "consultations" ? String(raw.buildingId || "").trim() : "";
+      if (buildingId && (!customer || !customerBuildings(customer).some(building => String(building.id) === buildingId))) return showToast("선택한 고객과 연결된 건물을 선택해 주세요.", "error");
+      const activity = Core.createActivity({ customerId: raw.customerId, buildingId, context: returnView === "relationships" || customer && customer.stage === "계약 확정" ? "relationship" : "consultation", type: raw.type, occurredAt: raw.occurredAt ? new Date(raw.occurredAt).toISOString() : new Date().toISOString(), summary: raw.summary.trim(), result: raw.result.trim(), nextAction: raw.nextAction.trim(), nextContactAt: raw.nextContactAt ? new Date(raw.nextContactAt).toISOString() : "", owner: raw.owner.trim() || store.settings.owner || "김현진" });
       store.activities.push(activity);
       if (customer) {
         customer.lastContactAt = activity.occurredAt;
@@ -4033,6 +4134,7 @@
         customer.updatedAt = new Date().toISOString();
       }
       logAudit({ category: "변경", targetType: "고객", targetId: raw.customerId, targetLabel: customer && customer.name || "고객", action: `${activity.type} 상담 기록 추가`, reason: "상담 이력 관리" });
+      if (returnView === "consultations" && selectedConsultationBuildingId === "unlinked" && buildingId) selectedConsultationBuildingId = buildingId;
       scheduleSave(); closeModal(); currentView = returnView; render(); if (returnView === "relationships") renderRelationshipDrawer(raw.customerId); showToast(returnView === "relationships" ? "후속 연락을 기록했습니다." : "상담 기록을 저장했습니다.", "success");
     } else if (form.id === "relationshipPlanForm") {
       const raw = Object.fromEntries(new FormData(form).entries());
@@ -4126,12 +4228,13 @@
     if (currentView === "cases") renderCases();
     if (currentView === "customers") renderCustomers();
     if (currentView === "buildings") renderBuildings();
+    if (currentView === "consultations") renderConsultations();
     if (currentView === "contracts") renderContracts();
     if (currentView === "partnerVendors") renderPartnerVendors();
     if (currentView === "partnerQuotes") renderPartnerQuotes();
     if (currentView === "pipeline") renderPipeline();
   });
-  searchEl.addEventListener("keydown", event => { if (event.key === "Enter") { if (!["cases", "buildings", "contracts", "partnerVendors", "partnerQuotes", "pipeline"].includes(currentView)) currentView = "customers"; render(); } });
+  searchEl.addEventListener("keydown", event => { if (event.key === "Enter") { if (!["cases", "buildings", "consultations", "contracts", "partnerVendors", "partnerQuotes", "pipeline"].includes(currentView)) currentView = "customers"; render(); } });
   document.addEventListener("input", event => {
     if (event.target.matches("[data-partner-vendor-search]")) {
       renderPartnerVendorPicker(event.target.closest("#partnerQuoteForm"));

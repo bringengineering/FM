@@ -349,7 +349,7 @@
   function createActivity(values) {
     const now = iso();
     return Object.assign({
-      id: random("act"), customerId: "", type: "전화", occurredAt: now, summary: "", result: "",
+      id: random("act"), customerId: "", buildingId: "", type: "전화", occurredAt: now, summary: "", result: "",
       nextAction: "", nextContactAt: "", owner: "김현진", workflowCaseId: "", createdAt: now
     }, values || {});
   }

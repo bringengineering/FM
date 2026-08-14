@@ -1146,6 +1146,245 @@ async function createWindow() {
         await wait(80);
         return { pass, isReadOnly, validationBlocked, saved, reopened, detailText, noHorizontalOverflow, state: window.__crmTest.snapshot() };
       })().catch(error => ({ pass: false, error: String(error && error.stack || error) }))`, true);
+    } else if (process.env.BRING_CRM_SCREENSHOT_ACTION === "consultation-building-hub") {
+      actionResult = await mainWindow.webContents.executeJavaScript(`Promise.race([(async () => {
+        window.__consultationQaStage = 'starting';
+        const wait = ms => new Promise(resolve => setTimeout(resolve, ms));
+        const buildingPrefix = 'bld_consult_qa_';
+        const customerPrefix = 'cus_consult_qa_';
+        const activityPrefix = 'act_consult_qa_';
+        const pad = value => String(value).padStart(3, '0');
+        const visible = element => !!element && getComputedStyle(element).display !== 'none' && getComputedStyle(element).visibility !== 'hidden';
+        const overflowState = root => {
+          if (!root) return { pass: false, reason: 'consultation hub missing', viewportWidth: innerWidth };
+          const rootRect = root.getBoundingClientRect();
+          const candidates = [root, ...root.querySelectorAll('.consultation-building-card, [data-consultation-activity-id]')];
+          const outside = candidates.filter(element => {
+            const rect = element.getBoundingClientRect();
+            return rect.left < -1 || rect.right > innerWidth + 1;
+          }).map(element => ({
+            selector: element.dataset.consultationActivityId || element.dataset.consultationBuildingOpen || element.className || element.tagName,
+            left: element.getBoundingClientRect().left,
+            right: element.getBoundingClientRect().right,
+            width: element.getBoundingClientRect().width
+          }));
+          const documentOverflow = document.documentElement.scrollWidth > innerWidth + 1;
+          return {
+            pass: !documentOverflow && !outside.length && rootRect.left >= -1 && rootRect.right <= innerWidth + 1,
+            viewportWidth: innerWidth,
+            documentWidth: document.documentElement.scrollWidth,
+            root: { left: rootRect.left, right: rootRect.right, width: rootRect.width, scrollWidth: root.scrollWidth, clientWidth: root.clientWidth },
+            outside
+          };
+        };
+        const rowIds = () => [...document.querySelectorAll('[data-consultation-activity-id]')].map(row => row.dataset.consultationActivityId);
+        const rowText = id => document.querySelector('[data-consultation-activity-id="' + id + '"]')?.textContent || '';
+        const selectBuilding = async id => {
+          const button = document.querySelector('[data-consultation-building-open="' + id + '"]');
+          button?.click();
+          await wait(80);
+          return button;
+        };
+        try {
+          const seed = window.__crmTest.getStore();
+          const stamp = new Date(Date.now() + 86400000).toISOString();
+          seed.buildings = (seed.buildings || []).filter(item => !String(item.id || '').startsWith(buildingPrefix));
+          seed.customers = (seed.customers || []).filter(item => !String(item.id || '').startsWith(customerPrefix));
+          seed.activities = (seed.activities || []).filter(item => !String(item.id || '').startsWith(activityPrefix));
+          const baseBuilding = seed.buildings[0] || {};
+          const baseCustomer = seed.customers[0] || {};
+          for (let index = 0; index < 100; index += 1) {
+            const suffix = pad(index);
+            const buildingId = buildingPrefix + suffix;
+            const customerId = customerPrefix + suffix;
+            seed.buildings.push(Object.assign({}, baseBuilding, {
+              id: buildingId,
+              name: index === 73 ? 'QA 초장문 상담 건물 ' + '가'.repeat(70) : 'QA 상담 건물 ' + suffix,
+              address: '원주시 QA 상담로 ' + (index + 1),
+              ownerCustomerId: customerId,
+              status: index === 73 ? '관리중' : '영업후보',
+              aliases: [],
+              createdAt: stamp,
+              updatedAt: stamp
+            }));
+            seed.customers.push(Object.assign({}, baseCustomer, {
+              id: customerId,
+              customerNo: 'QA-CONSULT-' + suffix,
+              name: 'QA 상담 고객 ' + suffix,
+              company: 'QA 상담 회사 ' + suffix,
+              phone: '010-96' + String(index).padStart(2, '0') + '-' + String(1000 + index),
+              email: '',
+              type: '건물주',
+              buildingIds: [buildingId],
+              createdAt: stamp,
+              updatedAt: stamp
+            }));
+          }
+          const targetBuildingId = buildingPrefix + '073';
+          const otherBuildingId = buildingPrefix + '074';
+          const targetCustomerId = customerPrefix + '073';
+          const otherCustomerId = customerPrefix + '074';
+          const multiCustomerId = customerPrefix + 'multi';
+          const unlinkedCustomerId = customerPrefix + 'unlinked';
+          seed.customers.push(Object.assign({}, baseCustomer, {
+            id: multiCustomerId,
+            customerNo: 'QA-CONSULT-MULTI',
+            name: 'QA 다건물 고객',
+            company: 'QA 다건물 관리사',
+            phone: '010-9600-9001',
+            email: '',
+            type: '법인',
+            buildingIds: [targetBuildingId, otherBuildingId],
+            createdAt: stamp,
+            updatedAt: stamp
+          }), Object.assign({}, baseCustomer, {
+            id: unlinkedCustomerId,
+            customerNo: 'QA-CONSULT-UNLINKED',
+            name: 'QA 미연결 고객',
+            company: 'QA 미연결 회사',
+            phone: '010-9600-9002',
+            email: '',
+            type: '법인',
+            buildingIds: [],
+            createdAt: stamp,
+            updatedAt: stamp
+          }));
+          const qaActivities = [
+            { id: activityPrefix + 'explicit', customerId: targetCustomerId, buildingId: targetBuildingId, type: '방문', occurredAt: '2026-08-14T01:23:00.000Z', summary: 'QA 명시 연결 상담 내용', result: '현장 확인 완료', nextAction: '견적 전달', owner: '김현진', createdAt: stamp },
+            { id: activityPrefix + 'legacy', customerId: targetCustomerId, type: '전화', occurredAt: '2026-08-13T05:10:00.000Z', summary: 'QA 단일건물 자동 귀속 상담', result: '방문 일정 협의', nextAction: '', owner: '김현진', createdAt: stamp },
+            { id: activityPrefix + 'other', customerId: otherCustomerId, buildingId: otherBuildingId, type: '문자', occurredAt: '2026-08-12T02:00:00.000Z', summary: 'QA 다른 건물 상담 내용', result: '답변 대기', nextAction: '', owner: '김현진', createdAt: stamp },
+            { id: activityPrefix + 'multi', customerId: multiCustomerId, type: '미팅', occurredAt: '2026-08-11T03:00:00.000Z', summary: 'QA 다건물 확인 필요 상담', result: '건물 확인 필요', nextAction: '', owner: '김현진', createdAt: stamp },
+            { id: activityPrefix + 'unlinked', customerId: unlinkedCustomerId, type: '메모', occurredAt: '2026-08-10T04:00:00.000Z', summary: 'QA 미연결 확인 필요 상담', result: '연결 정보 없음', nextAction: '', owner: '김현진', createdAt: stamp },
+            { id: activityPrefix + 'invalid', customerId: targetCustomerId, buildingId: buildingPrefix + 'missing', type: '전화', occurredAt: '2026-08-09T05:00:00.000Z', summary: 'QA 잘못된 건물 확인 필요 상담', result: '건물 재선택 필요', nextAction: '', owner: '김현진', createdAt: stamp }
+          ];
+          seed.activities.push(...qaActivities);
+          seed.updatedAt = stamp;
+          window.__crmTest.applyRemoteForTest(seed);
+          await wait(180);
+          window.__consultationQaStage = 'seeded';
+          document.querySelector('[data-view="consultations"]')?.click();
+          await wait(140);
+          window.__consultationQaStage = 'consultations-open';
+
+          const isReadOnly = document.body.classList.contains('crm-read-only');
+          const hub = document.querySelector('[data-consultation-hub]');
+          const buildingButtons = [...document.querySelectorAll('[data-consultation-building-open]')].filter(item => String(item.dataset.consultationBuildingOpen || '').startsWith(buildingPrefix));
+          const allButton = document.querySelector('[data-consultation-building-open="all"]');
+          const unlinkedButton = document.querySelector('[data-consultation-building-open="unlinked"]');
+          const targetButton = await selectBuilding(targetBuildingId);
+          const targetIds = rowIds().filter(id => id.startsWith(activityPrefix));
+          const targetExplicitText = rowText(activityPrefix + 'explicit');
+          const targetLegacyText = rowText(activityPrefix + 'legacy');
+          const targetSeparated = targetIds.length === 2
+            && targetIds.includes(activityPrefix + 'explicit')
+            && targetIds.includes(activityPrefix + 'legacy')
+            && !targetIds.includes(activityPrefix + 'other')
+            && !targetIds.includes(activityPrefix + 'multi')
+            && !targetIds.includes(activityPrefix + 'unlinked')
+            && !targetIds.includes(activityPrefix + 'invalid');
+          const consultationDateShown = targetExplicitText.includes('08. 14.') && targetLegacyText.includes('08. 13.');
+          const consultationContentShown = targetExplicitText.includes('QA 명시 연결 상담 내용') && targetLegacyText.includes('QA 단일건물 자동 귀속 상담');
+
+          await selectBuilding(otherBuildingId);
+          const otherIds = rowIds().filter(id => id.startsWith(activityPrefix));
+          const otherSeparated = otherIds.length === 1 && otherIds[0] === activityPrefix + 'other' && rowText(activityPrefix + 'other').includes('QA 다른 건물 상담 내용');
+
+          await selectBuilding('unlinked');
+          const unlinkedIds = rowIds().filter(id => id.startsWith(activityPrefix));
+          const unlinkedSafe = unlinkedIds.length === 3
+            && [activityPrefix + 'multi', activityPrefix + 'unlinked', activityPrefix + 'invalid'].every(id => unlinkedIds.includes(id))
+            && ![activityPrefix + 'explicit', activityPrefix + 'legacy', activityPrefix + 'other'].some(id => unlinkedIds.includes(id));
+
+          await selectBuilding('all');
+          const allIds = rowIds().filter(id => id.startsWith(activityPrefix));
+          const allVisible = qaActivities.every(activity => allIds.includes(activity.id));
+          await selectBuilding(targetBuildingId);
+          window.__consultationQaStage = 'associations-checked';
+
+          const beforeViewerStore = JSON.stringify(window.__crmTest.getStore());
+          const overflow = overflowState(document.querySelector('[data-consultation-hub]'));
+          if (isReadOnly) {
+            window.__consultationQaStage = 'viewer-checks';
+            const mutationControls = [...document.querySelectorAll('[data-action="new-consultation"], [data-activity-delete], [data-consultation-edit]')];
+            const mutationControlsHidden = mutationControls.every(control => !visible(control));
+            document.querySelector('[data-activity-delete="' + activityPrefix + 'explicit"]')?.click();
+            await wait(100);
+            const viewerStoreUnchanged = JSON.stringify(window.__crmTest.getStore()) === beforeViewerStore;
+            const pass = !!hub && buildingButtons.length === 100 && !!allButton && !!unlinkedButton && !!targetButton
+              && targetSeparated && otherSeparated && unlinkedSafe && allVisible && consultationDateShown && consultationContentShown
+              && mutationControlsHidden && viewerStoreUnchanged && !window.__crmTest.snapshot().confirmationOpen && overflow.pass;
+            return {
+              pass, isReadOnly, buildingCount: buildingButtons.length,
+              association: { targetIds, otherIds, unlinkedIds, allCount: allIds.length, targetSeparated, otherSeparated, unlinkedSafe, allVisible },
+              display: { consultationDateShown, consultationContentShown, targetExplicitText, targetLegacyText },
+              viewer: { mutationControls: mutationControls.length, mutationControlsHidden, viewerStoreUnchanged },
+              overflow,
+              state: window.__crmTest.snapshot()
+            };
+          }
+
+          const newButton = document.querySelector('[data-action="new-consultation"][data-consultation-building="' + targetBuildingId + '"]');
+          newButton?.click();
+          await wait(100);
+          let form = document.getElementById('consultationForm');
+          if (!form) return { pass: false, reason: 'consultation form missing', buildingCount: buildingButtons.length, association: { targetIds, otherIds, unlinkedIds }, overflow };
+          const prefilledBuildingId = form.elements.buildingId?.value || form.dataset.buildingId || '';
+          if (form.elements.customerType && form.elements.customerType.value !== '건물주') {
+            form.elements.customerType.value = '건물주';
+            form.elements.customerType.dispatchEvent(new Event('change', { bubbles: true }));
+            await wait(30);
+          }
+          if (form.elements.customerId && form.elements.customerId.value !== targetCustomerId) {
+            const option = form.querySelector('[data-consultation-customer-option="' + targetCustomerId + '"]');
+            if (option) option.click();
+            else {
+              form.elements.customerId.value = targetCustomerId;
+              form.elements.customerId.dispatchEvent(new Event('change', { bubbles: true }));
+            }
+            await wait(30);
+          }
+          const savedSummary = 'QA 선택 건물 신규 상담 저장';
+          if (form.elements.occurredAt) form.elements.occurredAt.value = '2026-08-14T10:45';
+          form.elements.summary.value = savedSummary;
+          if (form.elements.result) form.elements.result.value = 'QA 등록 결과';
+          if (form.elements.nextAction) form.elements.nextAction.value = 'QA 후속 확인';
+          form.requestSubmit();
+          await wait(220);
+          const afterSave = window.__crmTest.getStore();
+          const savedActivity = [...afterSave.activities].reverse().find(item => item.summary === savedSummary && item.customerId === targetCustomerId);
+          await selectBuilding(targetBuildingId);
+          const savedRowText = savedActivity ? rowText(savedActivity.id) : '';
+          const explicitBuildingSaved = !!savedActivity && savedActivity.buildingId === targetBuildingId;
+          const savedVisible = !!savedActivity && savedRowText.includes(savedSummary) && savedRowText.includes('08. 14.');
+
+          const deleteButton = savedActivity && document.querySelector('[data-activity-delete="' + savedActivity.id + '"]');
+          deleteButton?.click();
+          await wait(60);
+          const deleteConfirmationOpened = window.__crmTest.snapshot().confirmationOpen;
+          if (deleteConfirmationOpened) window.__crmTest.confirmPending();
+          await wait(220);
+          const deleted = !!savedActivity && !window.__crmTest.getStore().activities.some(item => item.id === savedActivity.id);
+          const deletedFromView = !!savedActivity && !document.querySelector('[data-consultation-activity-id="' + savedActivity.id + '"]');
+          const finalOverflow = overflowState(document.querySelector('[data-consultation-hub]'));
+          const pass = !!hub && buildingButtons.length === 100 && !!allButton && !!unlinkedButton && !!targetButton
+            && targetSeparated && otherSeparated && unlinkedSafe && allVisible && consultationDateShown && consultationContentShown
+            && prefilledBuildingId === targetBuildingId && explicitBuildingSaved && savedVisible
+            && !!deleteButton && deleteConfirmationOpened && deleted && deletedFromView
+            && overflow.pass && finalOverflow.pass && window.__crmTest.snapshot().view === 'consultations' && !window.__crmTest.snapshot().modalOpen;
+          return {
+            pass, isReadOnly, buildingCount: buildingButtons.length,
+            association: { targetIds, otherIds, unlinkedIds, allCount: allIds.length, targetSeparated, otherSeparated, unlinkedSafe, allVisible },
+            display: { consultationDateShown, consultationContentShown, targetExplicitText, targetLegacyText },
+            create: { prefilledBuildingId, explicitBuildingSaved, savedVisible, savedActivityId: savedActivity?.id || '', savedBuildingId: savedActivity?.buildingId || '' },
+            remove: { deleteButton: !!deleteButton, deleteConfirmationOpened, deleted, deletedFromView },
+            overflow: finalOverflow,
+            initialOverflow: overflow,
+            state: window.__crmTest.snapshot()
+          };
+        } catch (error) {
+          return { pass: false, error: String(error && error.stack || error), state: window.__crmTest?.snapshot() };
+        }
+      })(), new Promise(resolve => setTimeout(() => resolve({ pass: false, timeout: true, stage: window.__consultationQaStage || 'unknown', state: window.__crmTest?.snapshot() }), 12000))])`, true);
     } else if (process.env.BRING_CRM_SCREENSHOT_ACTION === "readability-layout") {
       actionResult = await mainWindow.webContents.executeJavaScript(`(async () => {
         const wait = ms => new Promise(resolve => setTimeout(resolve, ms));
@@ -2351,7 +2590,7 @@ async function createWindow() {
     const uiState = await mainWindow.webContents.executeJavaScript("window.__crmTest && window.__crmTest.snapshot()", true);
     const image = await mainWindow.webContents.capturePage();
     await fs.writeFile(target, image.toPNG());
-    if (process.env.BRING_CRM_SCREENSHOT_ACTION === "building-rental-info") {
+    if (["building-rental-info", "consultation-building-hub"].includes(process.env.BRING_CRM_SCREENSHOT_ACTION)) {
       await fs.writeFile(`${target}.result.json`, JSON.stringify({ actionResult, uiState }, null, 2), "utf8");
     }
     console.log(target, JSON.stringify({ empty: image.isEmpty(), size: image.getSize(), actionResult, uiState }));

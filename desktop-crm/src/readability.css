@@ -693,9 +693,43 @@ textarea { font-size: 14px; }
 
 @media (max-height: 800px) {
   .case-workspace,
-  .building-hub-layout { min-height: 430px; }
+  .building-hub-layout,
+  .consultation-hub-layout { min-height: 430px; }
   .payment-day { min-height: 68px; padding: 6px; }
   .payment-event b { font-size: 10px; }
   .payment-event span,
   .payment-more { font-size: 9px; }
 }
+
+/* Building-centered consultation history */
+.consultation-hub-hero span { font-size: 12px; }
+.consultation-hub-hero h2 { font-size: 22px; }
+.consultation-hub-hero p { color: #5f7889; font-size: 12px; }
+.consultation-building-browser > header b { font-size: 14px; }
+.consultation-building-browser > header small,
+.consultation-building-browser > header > span { font-size: 10px; }
+.consultation-building-card strong { font-size: 14px; }
+.consultation-building-card p { color: #617b8c; font-size: 11px; }
+.consultation-building-card em,
+.consultation-building-card small { font-size: 10px; }
+.consultation-detail-head span { font-size: 10px; }
+.consultation-detail-head h2 { font-size: 23px; }
+.consultation-detail-head p { color: #607a8c; font-size: 11px; }
+.consultation-kpis span { font-size: 11px; }
+.consultation-kpis b { font-size: 20px; }
+.consultation-kpis small { color: #708797; font-size: 10px; }
+.consultation-history-section > header b { font-size: 13px; }
+.consultation-history-section > header span,
+.consultation-history-section > header em { font-size: 10px; }
+.consultation-history-card time,
+.consultation-history-person span,
+.consultation-history-person em { font-size: 10px; }
+.consultation-history-person b { font-size: 13px; }
+.consultation-history-card > section > span { font-size: 10px; }
+.consultation-history-card > section > p { color: #294d63; font-size: 12px; }
+.consultation-history-card > footer span,
+.consultation-history-card > small { font-size: 10px; }
+.consultation-history-card > footer b { font-size: 11px; }
+.consultation-history-empty b { font-size: 14px; }
+.consultation-history-empty span,
+.consultation-building-help { font-size: 11px; }
