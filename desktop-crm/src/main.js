@@ -1634,6 +1634,284 @@ async function createWindow() {
         const pass = beforeBuildings.length === 2 && noBuildingEditor && JSON.stringify(stableFields(beforeBuildings)) === JSON.stringify(stableFields(afterBuildings)) && savedCustomer?.phone === '010-4215-8080';
         return { pass, noBuildingEditor, submittedPhone, formPhone, formCustomerId, immediatePhone, beforeBuildings: stableFields(beforeBuildings), afterBuildings: stableFields(afterBuildings), phone: savedCustomer?.phone, state: window.__crmTest.snapshot() };
       })()`, true);
+    } else if (process.env.BRING_CRM_SCREENSHOT_ACTION === "customer-sales-status") {
+      actionResult = await mainWindow.webContents.executeJavaScript(`Promise.race([
+        (async () => {
+          const wait = ms => new Promise(resolve => setTimeout(resolve, ms));
+          const prefix = 'qa_customer_sales_';
+          const ids = {
+            explicitCustomer: prefix + 'customer_explicit', explicitBuilding: prefix + 'building_explicit', explicitProspect: prefix + 'prospect_explicit',
+            addressCustomer: prefix + 'customer_address', addressBuilding: prefix + 'building_address', addressProspect: prefix + 'prospect_address',
+            nameCustomer: prefix + 'customer_name', nameBuilding: prefix + 'building_name', nameProspect: prefix + 'prospect_name',
+            duplicateCrmCustomer: prefix + 'customer_duplicate_crm', duplicateCrmBuilding: prefix + 'building_duplicate_crm_a', duplicateCrmOtherBuilding: prefix + 'building_duplicate_crm_b', duplicateCrmProspect: prefix + 'prospect_duplicate_crm',
+            duplicateProspectCustomer: prefix + 'customer_duplicate_prospect', duplicateProspectBuilding: prefix + 'building_duplicate_prospect', duplicateProspectA: prefix + 'prospect_duplicate_a', duplicateProspectB: prefix + 'prospect_duplicate_b',
+            archivedCustomer: prefix + 'customer_archived', archivedBuilding: prefix + 'building_archived', archivedProspect: prefix + 'prospect_archived',
+            elsewhereCustomer: prefix + 'customer_elsewhere', elsewhereBuilding: prefix + 'building_elsewhere', elsewhereOwnerBuilding: prefix + 'building_elsewhere_owner', elsewhereProspect: prefix + 'prospect_elsewhere',
+            noBuildingCustomer: prefix + 'customer_no_building',
+            multiCustomer: prefix + 'customer_multi', multiBuildingA: prefix + 'building_multi_a', multiBuildingB: prefix + 'building_multi_b', multiProspectA: prefix + 'prospect_multi_a', multiProspectB: prefix + 'prospect_multi_b',
+            paidCustomer: prefix + 'customer_paid', paidBuilding: prefix + 'building_paid', paidProspect: prefix + 'prospect_paid',
+            pausedCustomer: prefix + 'customer_paused', pausedBuilding: prefix + 'building_paused', pausedProspect: prefix + 'prospect_paused',
+            mixedPausedCustomer: prefix + 'customer_mixed_paused', mixedPausedBuildingA: prefix + 'building_mixed_active', mixedPausedBuildingB: prefix + 'building_mixed_paused', mixedPausedProspectA: prefix + 'prospect_mixed_active', mixedPausedProspectB: prefix + 'prospect_mixed_paused'
+          };
+          const seed = window.__crmTest.getStore();
+          const clean = list => (Array.isArray(list) ? list : []).filter(item => !String(item && item.id || '').startsWith(prefix));
+          seed.customers = clean(seed.customers);
+          seed.buildings = clean(seed.buildings);
+          seed.salesProspects = clean(seed.salesProspects);
+          seed.salesContacts = clean(seed.salesContacts);
+          seed.salesUnits = clean(seed.salesUnits);
+          seed.salesActivities = clean(seed.salesActivities);
+          seed.salesEvents = clean(seed.salesEvents);
+          seed.salesOpportunities = clean(seed.salesOpportunities);
+          const stamp = new Date().toISOString();
+          const baseCustomer = seed.customers[0] || {};
+          const baseBuilding = seed.buildings[0] || {};
+          const customer = (id, name, buildingIds, extra) => Object.assign({}, baseCustomer, {
+            id, customerNo: 'QA-' + id.slice(prefix.length), name, company: '', phone: '010-7000-0000', email: '', type: '건물주', address: '', source: 'QA',
+            interestServices: [], currentIssue: '영업 단계 자동 연결 점검', stage: '상담 중', lastContactAt: '', nextContactAt: '', nextAction: '영업 단계 확인', owner: 'QA 담당자',
+            expectedValue: 0, lostReason: '', priority: '보통', relationshipCycleDays: 30, relationshipStartedAt: '', relationshipLastContactAt: '', relationshipNextContactAt: '',
+            relationshipNextAction: '', relationshipNote: '', tags: [], notes: '', buildingIds: [...buildingIds], workflowCaseIds: [], createdAt: stamp, updatedAt: stamp
+          }, extra || {});
+          const building = (id, name, address, ownerCustomerId, aliases) => Object.assign({}, baseBuilding, {
+            id, buildingNo: 'QA-' + id.slice(prefix.length), name, address, type: '다가구', status: '영업후보', ownerCustomerId: ownerCustomerId || '', unitCount: 0,
+            aliases: Array.isArray(aliases) ? aliases : [], externalRefs: { paymentBuildingIds: [] }, createdAt: stamp, updatedAt: stamp
+          });
+          const prospect = (id, name, address, stage, crmBuildingId, archivedAt) => ({
+            id, name, address, region: '원주', buildingType: 'one_room_multi_family', demandAnchors: [], source: 'other', owner: 'QA 담당자', priority: 'normal', stage,
+            vacancyCount: 0, upcomingVacancyCount: 0, lastActivityAt: '', nextAction: '', nextActionAt: '', crmBuildingId: crmBuildingId || '', archivedAt: archivedAt || '',
+            archivedBy: archivedAt ? 'qa@bring.local' : '', createdAt: stamp, createdBy: 'qa@bring.local', updatedAt: stamp, updatedBy: 'qa@bring.local'
+          });
+
+          seed.customers.push(
+            customer(ids.explicitCustomer, 'QA 명시 연결 고객', [ids.explicitBuilding], { stage: '계약 확정', lostReason: 'QA 기존 보류 사유 보존' }),
+            customer(ids.addressCustomer, 'QA 주소 연결 고객', [ids.addressBuilding]),
+            customer(ids.nameCustomer, 'QA 이름 연결 고객', [ids.nameBuilding]),
+            customer(ids.duplicateCrmCustomer, 'QA CRM 중복주소 고객', [ids.duplicateCrmBuilding]),
+            customer(ids.duplicateProspectCustomer, 'QA 영업 중복주소 고객', [ids.duplicateProspectBuilding]),
+            customer(ids.archivedCustomer, 'QA 보관 제외 고객', [ids.archivedBuilding]),
+            customer(ids.elsewhereCustomer, 'QA 타건물 보호 고객', [ids.elsewhereBuilding]),
+            customer(ids.noBuildingCustomer, 'QA 건물 미연결 고객', []),
+            customer(ids.multiCustomer, 'QA 다건물 고객', [ids.multiBuildingA, ids.multiBuildingB]),
+            customer(ids.paidCustomer, 'QA 유료관리 자동 고객', [ids.paidBuilding], { stage: '신규 고객', relationshipNextAction: '정기 만족도 확인', relationshipNextContactAt: '2026-08-20T01:00:00.000Z' }),
+            customer(ids.pausedCustomer, 'QA 보류종료 제외 고객', [ids.pausedBuilding], { nextContactAt: '2020-01-01T01:00:00.000Z', nextAction: '대시보드에서 제외되어야 함', expectedValue: 7777777 }),
+            customer(ids.mixedPausedCustomer, 'QA 활성보류 혼합 고객', [ids.mixedPausedBuildingA, ids.mixedPausedBuildingB], { nextContactAt: '2020-01-02T01:00:00.000Z', nextAction: '혼합 단계는 대시보드에 유지', expectedValue: 2222222 })
+          );
+          seed.buildings.push(
+            building(ids.explicitBuilding, 'QA 명시연결 CRM 건물', '강원 원주시 QA명시로 11', ids.explicitCustomer),
+            building(ids.addressBuilding, 'QA 주소 CRM 건물', '강원 원주시 QA주소로 22-1', ids.addressCustomer),
+            building(ids.nameBuilding, 'QA 정식 건물명', '', ids.nameCustomer, ['QA 별칭 건물']),
+            building(ids.duplicateCrmBuilding, 'QA CRM 중복주소 A', '강원 원주시 QA중복로 33', ids.duplicateCrmCustomer),
+            building(ids.duplicateCrmOtherBuilding, 'QA CRM 중복주소 B', '강원도 원주시 QA중복로 33', ''),
+            building(ids.duplicateProspectBuilding, 'QA 영업 중복주소 건물', '강원 원주시 QA영업중복로 44', ids.duplicateProspectCustomer),
+            building(ids.archivedBuilding, 'QA 보관 제외 건물', '강원 원주시 QA보관로 55', ids.archivedCustomer),
+            building(ids.elsewhereBuilding, 'QA 타건물 보호 대상', '강원 원주시 QA보호로 66', ids.elsewhereCustomer),
+            building(ids.elsewhereOwnerBuilding, 'QA 실제 명시 연결 건물', '강원 원주시 QA실제로 77', ''),
+            building(ids.multiBuildingA, 'QA 다건물 최초접촉', '강원 원주시 QA다건물로 81', ids.multiCustomer),
+            building(ids.multiBuildingB, 'QA 다건물 임대차계약', '강원 원주시 QA다건물로 82', ids.multiCustomer),
+            building(ids.paidBuilding, 'QA 유료관리 전환 건물', '강원 원주시 QA관리로 91', ids.paidCustomer),
+            building(ids.pausedBuilding, 'QA 보류종료 건물', '강원 원주시 QA종료로 92', ids.pausedCustomer),
+            building(ids.mixedPausedBuildingA, 'QA 혼합 활성 건물', '강원 원주시 QA혼합로 93-1', ids.mixedPausedCustomer),
+            building(ids.mixedPausedBuildingB, 'QA 혼합 보류 건물', '강원 원주시 QA혼합로 93-2', ids.mixedPausedCustomer)
+          );
+          seed.salesProspects.push(
+            prospect(ids.explicitProspect, 'QA 텍스트가 전혀 다른 영업 건물', '강원 원주시 완전히다른로 999', 'diagnosis_done', ids.explicitBuilding),
+            prospect(prefix + 'prospect_explicit_conflict', 'QA 명시연결 CRM 건물', '강원 원주시 QA명시로 11', 'first_contact', ''),
+            prospect(ids.addressProspect, 'QA 주소로만 찾는 영업 건물', '강원도 원주시 QA주소로 22-1', 'replied', ''),
+            prospect(ids.nameProspect, 'QA 별칭 건물', '', 'qualified_interest', ''),
+            prospect(ids.duplicateCrmProspect, 'QA CRM 중복주소 영업 건물', '강원 원주시 QA중복로 33', 'meeting_confirmed', ''),
+            prospect(ids.duplicateProspectA, 'QA 영업 중복 A', '강원 원주시 QA영업중복로 44', 'first_contact', ''),
+            prospect(ids.duplicateProspectB, 'QA 영업 중복 B', '강원도 원주시 QA영업중복로 44', 'lease_signed', ''),
+            prospect(ids.archivedProspect, 'QA 보관 제외 건물', '강원 원주시 QA보관로 55', 'paid_management', ids.archivedBuilding, '2026-08-01T00:00:00.000Z'),
+            prospect(ids.elsewhereProspect, 'QA 타건물 보호 대상', '강원 원주시 QA보호로 66', 'paid_management', ids.elsewhereOwnerBuilding),
+            prospect(ids.multiProspectA, 'QA 다건물 최초접촉', '강원 원주시 QA다건물로 81', 'first_contact', ids.multiBuildingA),
+            prospect(ids.multiProspectB, 'QA 다건물 임대차계약', '강원 원주시 QA다건물로 82', 'lease_signed', ids.multiBuildingB),
+            prospect(ids.paidProspect, 'QA 유료관리 전환 건물', '강원 원주시 QA관리로 91', 'paid_management', ids.paidBuilding),
+            prospect(ids.pausedProspect, 'QA 보류종료 건물', '강원 원주시 QA종료로 92', 'paused_closed', ids.pausedBuilding),
+            prospect(ids.mixedPausedProspectA, 'QA 혼합 활성 건물', '강원 원주시 QA혼합로 93-1', 'first_contact', ids.mixedPausedBuildingA),
+            prospect(ids.mixedPausedProspectB, 'QA 혼합 보류 건물', '강원 원주시 QA혼합로 93-2', 'paused_closed', ids.mixedPausedBuildingB)
+          );
+          seed.updatedAt = new Date(Date.now() + 60000).toISOString();
+          window.__crmTest.applyRemoteForTest(seed);
+          await wait(100);
+
+          const progress = customerId => window.__crmTest.customerSalesProgress(customerId);
+          const results = {
+            explicit: progress(ids.explicitCustomer), address: progress(ids.addressCustomer), name: progress(ids.nameCustomer),
+            duplicateCrm: progress(ids.duplicateCrmCustomer), duplicateProspect: progress(ids.duplicateProspectCustomer), archived: progress(ids.archivedCustomer),
+            elsewhere: progress(ids.elsewhereCustomer), noBuilding: progress(ids.noBuildingCustomer), multi: progress(ids.multiCustomer),
+            paid: progress(ids.paidCustomer), paused: progress(ids.pausedCustomer), mixedPaused: progress(ids.mixedPausedCustomer)
+          };
+          const explicitWins = results.explicit.stateId === 'diagnosis_done' && results.explicit.rows[0]?.prospect?.id === ids.explicitProspect && results.explicit.rows[0]?.matchedBy === 'crmBuildingId';
+          const addressFallback = results.address.stateId === 'replied' && results.address.rows[0]?.prospect?.id === ids.addressProspect && results.address.rows[0]?.matchedBy === 'address';
+          const nameAliasFallback = results.name.stateId === 'qualified_interest' && results.name.rows[0]?.prospect?.id === ids.nameProspect && results.name.rows[0]?.matchedBy === 'name';
+          const duplicateCrmNeedsReview = results.duplicateCrm.stateId === 'needs-review' && results.duplicateCrm.rows[0]?.ambiguous === true;
+          const duplicateProspectNeedsReview = results.duplicateProspect.stateId === 'needs-review' && results.duplicateProspect.rows[0]?.ambiguous === true;
+          const archivedExcluded = results.archived.stateId === 'unregistered' && !results.archived.rows[0]?.prospect;
+          const linkedElsewhereProtected = results.elsewhere.stateId === 'unregistered' && !results.elsewhere.rows[0]?.prospect;
+          const noBuilding = results.noBuilding.stateId === 'no-building' && results.noBuilding.rows.length === 0;
+          const mixedStages = results.multi.stateId === 'mixed' && results.multi.filterIds.includes('first_contact') && results.multi.filterIds.includes('lease_signed');
+          const paidManagementDerived = results.paid.stateId === 'paid_management' && results.paid.rows[0]?.prospect?.id === ids.paidProspect;
+          const pausedClosedDerived = results.paused.stateId === 'paused_closed' && results.paused.rows[0]?.prospect?.id === ids.pausedProspect;
+          const mixedActivePaused = results.mixedPaused.stateId === 'mixed' && results.mixedPaused.filterIds.includes('first_contact') && results.mixedPaused.filterIds.includes('paused_closed');
+
+          const isViewer = document.body.classList.contains('crm-read-only');
+          const relationshipNavCount = Number(document.getElementById('navRelationshipCount')?.textContent || 0);
+          document.querySelector('[data-view="relationships"]')?.click();
+          await wait(100);
+          const relationshipCards = [...document.querySelectorAll('[data-relationship-open]')];
+          const relationshipIds = relationshipCards.map(card => card.dataset.relationshipOpen);
+          const paidRelationshipIncluded = relationshipIds.includes(ids.paidCustomer);
+          const legacyContractStillIncluded = relationshipIds.includes(ids.explicitCustomer);
+          const relationshipCountAndList = paidRelationshipIncluded && legacyContractStillIncluded && relationshipNavCount === relationshipCards.length;
+          const relationshipStoreBefore = JSON.stringify(window.__crmTest.getStore());
+          document.querySelector('[data-relationship-followup="' + ids.paidCustomer + '"]')?.click();
+          await wait(80);
+          const relationshipForm = document.getElementById('consultationForm');
+          const relationshipSummary = 'QA 유료관리 관계 문맥 ' + Date.now();
+          const relationshipContextUi = !!relationshipForm
+            && relationshipForm.dataset.returnView === 'relationships'
+            && relationshipForm.elements.customerId?.value === ids.paidCustomer
+            && !relationshipForm.elements.namedItem('buildingId')
+            && (document.querySelector('#modal')?.textContent || '').includes('후속 연락 기록');
+          if (relationshipForm) {
+            relationshipForm.elements.summary.value = relationshipSummary;
+            relationshipForm.elements.result.value = '유료관리 만족도 확인';
+            relationshipForm.elements.nextAction.value = '다음 정기 연락';
+            relationshipForm.requestSubmit();
+          }
+          await wait(420);
+          const relationshipActivity = window.__crmTest.getStore().activities.find(item => item.summary === relationshipSummary);
+          const relationshipContextSaved = isViewer
+            ? !relationshipActivity && JSON.stringify(window.__crmTest.getStore()) === relationshipStoreBefore
+            : relationshipActivity?.customerId === ids.paidCustomer && relationshipActivity?.context === 'relationship';
+          const relationshipConsultationContext = relationshipContextUi && relationshipContextSaved;
+          if (document.getElementById('modal')?.classList.contains('open')) document.querySelector('#modal [data-action="close-modal"]')?.click();
+          if (document.getElementById('drawer')?.classList.contains('open')) document.querySelector('#drawer [data-action="close-drawer"]')?.click();
+          await wait(60);
+
+          document.querySelector('[data-view="dashboard"]')?.click();
+          await wait(120);
+          const seoulDayKey = value => {
+            const parts = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Seoul', year: 'numeric', month: '2-digit', day: '2-digit' })
+              .formatToParts(new Date(value)).reduce((result, part) => { if (part.type !== 'literal') result[part.type] = part.value; return result; }, {});
+            return parts.year + '-' + parts.month + '-' + parts.day;
+          };
+          const money = value => Number(String(value ?? 0).replace(/[^0-9.-]/g, '')) || 0;
+          const compactMoney = value => {
+            const amount = money(value);
+            if (amount >= 100000000) return (amount / 100000000).toFixed(amount % 100000000 ? 1 : 0) + '억';
+            if (amount >= 10000) return Math.round(amount / 10000).toLocaleString('ko-KR') + '만';
+            return amount.toLocaleString('ko-KR');
+          };
+          const dashboardStore = window.__crmTest.getStore();
+          const today = seoulDayKey(new Date());
+          const dashboardActiveCustomers = dashboardStore.customers.filter(item => progress(item.id).stateId !== 'paused_closed');
+          const expectedOverdue = dashboardActiveCustomers.filter(item => item.nextContactAt && seoulDayKey(item.nextContactAt) < today).length;
+          const expectedPipelineValue = dashboardActiveCustomers.reduce((sum, item) => sum + money(item.expectedValue), 0);
+          const overdueCard = [...document.querySelectorAll('.kpi-card')].find(card => card.querySelector('.kpi-label')?.textContent.trim() === '늦어진 연락');
+          const displayedOverdue = Number((overdueCard?.querySelector('.kpi-value')?.textContent || '').replace(/[^0-9-]/g, ''));
+          const displayedPipeline = document.querySelector('.brief-value b')?.textContent.trim() || '';
+          const pausedFocusExcluded = !document.querySelector('.focus-row[data-customer-open="' + ids.pausedCustomer + '"]');
+          const mixedFocusIncluded = !!document.querySelector('.focus-row[data-customer-open="' + ids.mixedPausedCustomer + '"]');
+          const dashboardOverdueExcludesPaused = displayedOverdue === expectedOverdue;
+          const dashboardPipelineExcludesPaused = displayedPipeline === compactMoney(expectedPipelineValue) + '원';
+          const dashboardPausedExcluded = pausedFocusExcluded && dashboardOverdueExcludesPaused && dashboardPipelineExcludesPaused;
+          const dashboardMixedActiveIncluded = mixedFocusIncluded && expectedPipelineValue >= money(dashboardStore.customers.find(item => item.id === ids.mixedPausedCustomer)?.expectedValue);
+
+          document.querySelector('[data-view="customers"]')?.click();
+          await wait(100);
+          const tableText = document.querySelector('.data-table-wrap')?.textContent || '';
+          const filter = document.querySelector('[data-customer-sales-stage-filter]');
+          const filterLabels = filter ? [...filter.options].map(option => option.textContent.trim()) : [];
+          const explicitRow = document.querySelector('[data-customer-open="' + ids.explicitCustomer + '"]');
+          const tableUsesSalesStage = tableText.includes('건물 영업 단계') && explicitRow?.querySelector('[data-customer-sales-stage="diagnosis_done"]')?.textContent.trim() === '현장진단 완료';
+          const manualCustomerStageRemoved = !document.querySelector('[data-stage-filter]') && !filterLabels.includes('신규 고객') && !filterLabels.includes('상담 준비') && !explicitRow?.textContent.includes('계약 확정');
+          if (filter) {
+            filter.value = 'first_contact';
+            filter.dispatchEvent(new Event('change', { bubbles: true }));
+          }
+          await wait(100);
+          const filteredQaIds = [...document.querySelectorAll('[data-customer-open]')].map(row => row.dataset.customerOpen).filter(id => id.startsWith(prefix));
+          const expectedFirstContactQaIds = [ids.mixedPausedCustomer, ids.multiCustomer].sort();
+          const filterAnyBuildingStage = JSON.stringify([...filteredQaIds].sort()) === JSON.stringify(expectedFirstContactQaIds) && document.querySelector('[data-customer-sales-stage-filter]')?.value === 'first_contact';
+          const resetFilter = document.querySelector('[data-customer-sales-stage-filter]');
+          if (resetFilter) {
+            resetFilter.value = 'all';
+            resetFilter.dispatchEvent(new Event('change', { bubbles: true }));
+          }
+          await wait(100);
+
+          document.querySelector('[data-customer-open="' + ids.multiCustomer + '"]')?.click();
+          await wait(100);
+          const multiRecords = [...document.querySelectorAll('#drawer .customer-building-sales-record')];
+          const recordFor = buildingId => multiRecords.find(record => record.querySelector('[data-building-jump="' + buildingId + '"]'));
+          const multiARecord = recordFor(ids.multiBuildingA);
+          const multiBRecord = recordFor(ids.multiBuildingB);
+          const drawerPerBuildingStages = multiRecords.length === 2
+            && multiARecord?.querySelector('[data-customer-sales-stage="first_contact"]')?.textContent.trim() === '최초접촉'
+            && multiBRecord?.querySelector('[data-customer-sales-stage="lease_signed"]')?.textContent.trim() === '임대차계약';
+          const salesButtons = [...document.querySelectorAll('#drawer [data-sales-prospect-open]')];
+          const drawerHasSalesLinks = salesButtons.length === 2 && salesButtons.every(button => button.textContent.includes('영업 보기'));
+          salesButtons[0]?.click();
+          await wait(100);
+          const salesLinkNavigates = window.__crmTest.snapshot().drawerOpen && (document.querySelector('#drawer')?.textContent || '').includes('QA 다건물 최초접촉');
+          document.querySelector('#drawer [data-action="close-drawer"]')?.click();
+          await wait(40);
+
+          document.querySelector('[data-customer-open="' + ids.explicitCustomer + '"]')?.click();
+          await wait(100);
+          const viewerDrawerControls = [...document.querySelectorAll('#drawer form input, #drawer form select, #drawer form textarea, #drawer form button')];
+          const viewerDrawerLocked = !isViewer || (viewerDrawerControls.length > 0 && viewerDrawerControls.every(control => control.disabled && control.getAttribute('aria-disabled') === 'true'));
+          const beforeEditStore = JSON.stringify(window.__crmTest.getStore());
+          document.querySelector('[data-action="edit-selected-customer"]')?.click();
+          await wait(80);
+          const form = document.getElementById('customerForm');
+          const manualFieldsAbsent = !!form && !form.elements.namedItem('stage') && !form.elements.namedItem('buildingStatus');
+          if (form) {
+            form.elements.phone.value = isViewer ? '010-9999-9999' : '010-7788-9900';
+            form.requestSubmit();
+          }
+          await wait(520);
+          const savedCustomer = window.__crmTest.getStore().customers.find(item => item.id === ids.explicitCustomer);
+          const legacyFieldsPreserved = savedCustomer?.stage === '계약 확정' && savedCustomer?.lostReason === 'QA 기존 보류 사유 보존';
+          const adminSaveWorks = isViewer || savedCustomer?.phone === '010-7788-9900';
+          const viewerNoMutation = !isViewer || JSON.stringify(window.__crmTest.getStore()) === beforeEditStore;
+          if (document.getElementById('modal')?.classList.contains('open')) document.querySelector('#modal [data-action="close-modal"]')?.click();
+          await wait(50);
+          document.querySelector('[data-view="customers"]')?.click();
+          await wait(60);
+          document.querySelector('[data-customer-open="' + ids.multiCustomer + '"]')?.click();
+          await wait(100);
+          const detailPanel = document.querySelector('#drawer .detail-drawer');
+          const detailBody = document.querySelector('#drawer .drawer-body');
+          const panelRect = detailPanel?.getBoundingClientRect();
+          const noHorizontalOverflow = document.documentElement.scrollWidth <= document.documentElement.clientWidth + 1
+            && document.body.scrollWidth <= document.body.clientWidth + 1
+            && (!detailBody || detailBody.scrollWidth <= detailBody.clientWidth + 1)
+            && !!panelRect && panelRect.left >= -1 && panelRect.right <= innerWidth + 1;
+          const viewport = { width: innerWidth, height: innerHeight, documentWidth: document.documentElement.scrollWidth, bodyWidth: document.body.scrollWidth, panel: panelRect && { left: panelRect.left, right: panelRect.right, width: panelRect.width } };
+          const pass = explicitWins && addressFallback && nameAliasFallback && duplicateCrmNeedsReview && duplicateProspectNeedsReview
+            && archivedExcluded && linkedElsewhereProtected && noBuilding && mixedStages && paidManagementDerived && pausedClosedDerived && mixedActivePaused
+            && relationshipCountAndList && relationshipConsultationContext && dashboardPausedExcluded && dashboardMixedActiveIncluded
+            && tableUsesSalesStage && manualCustomerStageRemoved
+            && filterAnyBuildingStage && drawerPerBuildingStages && drawerHasSalesLinks && salesLinkNavigates && manualFieldsAbsent
+            && legacyFieldsPreserved && adminSaveWorks && viewerDrawerLocked && viewerNoMutation && noHorizontalOverflow;
+          return {
+            pass, role: isViewer ? 'viewer' : 'writer', explicitWins, addressFallback, nameAliasFallback, duplicateCrmNeedsReview, duplicateProspectNeedsReview,
+            archivedExcluded, linkedElsewhereProtected, noBuilding, mixedStages, paidManagementDerived, pausedClosedDerived, mixedActivePaused,
+            relationshipCountAndList, relationshipNavCount, relationshipListCount: relationshipCards.length, paidRelationshipIncluded, legacyContractStillIncluded,
+            relationshipContextUi, relationshipContextSaved, relationshipConsultationContext,
+            dashboardPausedExcluded, pausedFocusExcluded, dashboardOverdueExcludesPaused, displayedOverdue, expectedOverdue,
+            dashboardPipelineExcludesPaused, displayedPipeline, expectedPipeline: compactMoney(expectedPipelineValue) + '원', dashboardMixedActiveIncluded, mixedFocusIncluded,
+            tableUsesSalesStage, manualCustomerStageRemoved, filterAnyBuildingStage,
+            filteredQaIds, drawerPerBuildingStages, drawerHasSalesLinks, salesLinkNavigates, manualFieldsAbsent, legacyFieldsPreserved, adminSaveWorks,
+            viewerDrawerLocked, viewerNoMutation, noHorizontalOverflow, viewport,
+            progress: Object.fromEntries(Object.entries(results).map(([key, value]) => [key, { stateId: value.stateId, label: value.label, filterIds: value.filterIds, rows: value.rows.map(row => ({ buildingId: row.building?.id, prospectId: row.prospect?.id || '', stageId: row.stage?.id || '', matchedBy: row.matchedBy, ambiguous: row.ambiguous })) }])),
+            state: window.__crmTest.snapshot()
+          };
+        })().catch(error => ({ pass: false, error: String(error && error.stack || error), state: window.__crmTest?.snapshot() })),
+        new Promise(resolve => setTimeout(() => resolve({ pass: false, timeout: true, state: window.__crmTest?.snapshot() }), 15000))
+      ])`, true);
     } else if (process.env.BRING_CRM_SCREENSHOT_ACTION === "viewer-dom-invariant") {
       actionResult = await mainWindow.webContents.executeJavaScript(`(async () => {
         const wait = ms => new Promise(resolve => setTimeout(resolve, ms));
@@ -2590,7 +2868,7 @@ async function createWindow() {
     const uiState = await mainWindow.webContents.executeJavaScript("window.__crmTest && window.__crmTest.snapshot()", true);
     const image = await mainWindow.webContents.capturePage();
     await fs.writeFile(target, image.toPNG());
-    if (["building-rental-info", "consultation-building-hub"].includes(process.env.BRING_CRM_SCREENSHOT_ACTION)) {
+    if (["building-rental-info", "consultation-building-hub", "customer-sales-status"].includes(process.env.BRING_CRM_SCREENSHOT_ACTION)) {
       await fs.writeFile(`${target}.result.json`, JSON.stringify({ actionResult, uiState }, null, 2), "utf8");
     }
     console.log(target, JSON.stringify({ empty: image.isEmpty(), size: image.getSize(), actionResult, uiState }));
