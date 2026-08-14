@@ -4474,7 +4474,7 @@ document.addEventListener("keydown", event => {
     loginInProgress = true;
     googleLoginButton.disabled = true;
     loginMessage.className = "login-message";
-    loginMessage.textContent = "dpvld858@gmail.com Google 로그인을 확인하고 있습니다…";
+    loginMessage.textContent = "회사 Google 로그인을 확인하고 있습니다…";
     try {
       const result = await api.loginWithGoogle();
       if (!result.ok) {
@@ -4579,7 +4579,7 @@ document.addEventListener("keydown", event => {
     try {
       setCurrentAuth(await api.authState());
       if (currentAuth.required && !currentAuth.user) {
-        showLogin(currentAuth.error || "dpvld858@gmail.com Google 계정으로 로그인해 주세요.", Boolean(currentAuth.error));
+        showLogin(currentAuth.error || "승인된 회사 이메일로 로그인해 주세요.", Boolean(currentAuth.error));
         return;
       }
       if (currentAuth.user && currentAuth.user.mustChangePassword) {

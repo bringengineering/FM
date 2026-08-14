@@ -6,7 +6,7 @@ const { FirebaseRemoteClient } = require("../src/remote");
 
 const source = file => readFile(path.join(__dirname, "..", "src", file), "utf8");
 
-test("uses the approved dpvld858 email-password login as the only CRM login", async () => {
+test("allows every server-approved CRM email to use email-password login", async () => {
   const [html, app, preload, main, remote] = await Promise.all([
     source("index.html"),
     source("app.js"),
@@ -16,7 +16,8 @@ test("uses the approved dpvld858 email-password login as the only CRM login", as
   ]);
 
   assert.match(html, /id="emailLoginForm" class="login-form">/);
-  assert.match(html, /id="loginEmail"[^>]*value="dpvld858@gmail\.com"[^>]*readonly/);
+  assert.match(html, /id="loginEmail"[^>]*placeholder="회사 이메일 입력"/);
+  assert.doesNotMatch(html, /id="loginEmail"[^>]*(?:readonly|value="dpvld858@gmail\.com")/);
   assert.match(html, /id="googleLoginButton"[^>]*hidden/);
   assert.match(app, /loginForm\.hidden = false/);
   assert.match(app, /googleLoginButton\.hidden = true/);
@@ -26,6 +27,7 @@ test("uses the approved dpvld858 email-password login as the only CRM login", as
   assert.match(main, /openEmailAuth:\s*openCrmEmailAuth/);
   assert.match(remote, /async receiveEmailCredential\(credentials\)/);
   assert.match(remote, /await this\.exchangeFirebaseCredential\(credential\)/);
+  assert.doesNotMatch(app, /dpvld858@gmail\.com/);
   assert.doesNotMatch(app, /newPassword\.value === "123456"/);
   assert.doesNotMatch(remote, /password === "123456"/);
 });
