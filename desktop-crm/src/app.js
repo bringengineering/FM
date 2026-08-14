@@ -46,6 +46,8 @@
   let customerSalesStageFilter = "all";
   let salesStageFilter = "all";
   let salesBoardMode = "focus";
+  let customerBoardQuery = "";
+  let customerBoardDropUntil = 0;
   let contractTypeFilter = "전체";
   let contractStatusFilter = "전체";
   let partnerVendorIndustryFilter = "전체 업종";
@@ -1581,7 +1583,121 @@
       query: searchEl.value,
       now,
       writable: canWriteCRM()
-    }) + renderArchivedSalesProspects();
+    }) + renderArchivedSalesProspects() + renderCustomerSalesBoard();
+    bindCustomerSalesBoard();
+  }
+
+  function renderCustomerSalesBoard() {
+    const stages = Core.PIPELINE_STAGES;
+    const writable = canWriteCRM();
+    const query = Core.normalizeText(customerBoardQuery);
+    const rows = [...store.customers]
+      .filter(customer => {
+        if (!query) return true;
+        const buildings = customerBuildings(customer);
+        return Core.normalizeText([
+          customer.name, customer.company, customer.type, customer.phone, customer.email,
+          customer.owner, customer.currentIssue, customer.nextAction,
+          buildings.map(building => `${building.name || ""} ${building.address || ""}`).join(" ")
+        ].filter(Boolean).join(" ")).includes(query);
+      })
+      .sort((left, right) => String(right.updatedAt || right.createdAt || "").localeCompare(String(left.updatedAt || left.createdAt || "")) || String(left.name || "").localeCompare(String(right.name || ""), "ko"));
+    const customersByStage = new Map(stages.map(stage => [stage, []]));
+    rows.forEach(customer => {
+      const stage = stages.includes(customer.stage) ? customer.stage : stages[0];
+      customersByStage.get(stage).push(customer);
+    });
+    const card = customer => {
+      const buildings = customerBuildings(customer);
+      const buildingText = buildings.length
+        ? `${buildings[0].name || "건물명 미입력"}${buildings.length > 1 ? ` 외 ${buildings.length - 1}곳` : ""}`
+        : "연결 건물 없음";
+      const nextContact = customer.nextContactAt ? shortDate(customer.nextContactAt) : "연락일 미정";
+      return `<article class="sales-kanban-card customer-sales-card" ${writable ? `draggable="true"` : `draggable="false"`} data-customer-board-card="${attr(customer.id)}" data-drag-customer="${attr(customer.id)}" data-customer-open="${attr(customer.id)}" tabindex="0" aria-label="${attr(`${customer.name || "이름 미입력"}, ${customer.stage || stages[0]}`)}"><div class="card-top"><strong>${esc(customer.name || "이름 미입력")}</strong>${priorityClass(customer.priority)}</div><span class="customer-sales-card-company">${esc(customer.company || customer.type || "고객 정보 미입력")}</span><p>${esc(customer.nextAction || customer.currentIssue || "다음 할 일 미입력")}</p><div class="customer-sales-card-building"><span>연결 건물</span><b title="${attr(buildings.map(building => building.name || "건물명 미입력").join(", "))}">${esc(buildingText)}</b></div><footer><span>${esc(customer.owner || "담당자 없음")}</span><b>${esc(nextContact)}</b></footer></article>`;
+    };
+    const columns = stages.map((stage, index) => {
+      const customers = customersByStage.get(stage);
+      return `<section class="sales-kanban-column customer-sales-column" data-customer-board-stage="${attr(stage)}" data-drop-stage="${attr(stage)}"><header class="sales-kanban-head"><div><small>${String(index + 1).padStart(2, "0")}</small><strong>${esc(stage)}</strong></div><span>${customers.length.toLocaleString("ko-KR")}명</span></header><div class="sales-kanban-body">${customers.length ? customers.map(card).join("") : `<div class="customer-sales-column-empty">${query ? "검색 결과 없음" : "고객 없음"}</div>`}</div></section>`;
+    }).join("");
+    return `<section class="customer-sales-board" data-customer-board aria-labelledby="customerSalesBoardTitle"><header class="customer-sales-board-head"><div><span>고객 응대 단계 · ${writable ? "수동 관리" : "조회 전용"}</span><h3 id="customerSalesBoardTitle">${writable ? "고객을 드래그해 다음 단계로 옮깁니다" : "고객별 영업 단계를 확인합니다"}</h3><p>신규 고객은 첫 단계에 자동 등록됩니다. 이 보드는 위의 대표자 영업판과 13단계 건물 프로세스에 영향을 주지 않습니다.</p></div><div class="customer-sales-board-tools"><label><span>고객 검색</span><input type="search" data-customer-board-query value="${attr(customerBoardQuery)}" placeholder="고객명·연락처·건물명" autocomplete="off"></label>${writable ? `<button type="button" class="primary-button" data-action="new-customer">＋ 새 고객</button>` : ""}</div></header><div class="customer-sales-board-summary"><b data-customer-board-count>${rows.length.toLocaleString("ko-KR")}명</b><span>${query ? "검색된 고객" : `전체 고객 ${store.customers.length.toLocaleString("ko-KR")}명`}</span><em>카드를 누르면 고객 상세를 볼 수 있습니다.</em></div><div class="sales-kanban customer-sales-kanban">${columns}</div></section>`;
+  }
+
+  function moveCustomerSalesStage(customerId, nextStage) {
+    if (!canWriteCRM()) return showToast("조회 전용 계정은 고객 단계를 변경할 수 없습니다.", "error");
+    if (!Core.PIPELINE_STAGES.includes(nextStage)) return showToast("변경할 고객 단계를 확인하지 못했습니다.", "error");
+    const customer = customerById(customerId);
+    if (!customer) return showToast("이동할 고객을 찾지 못했습니다.", "error");
+    const storedStage = String(customer.stage || "");
+    const previousStage = Core.PIPELINE_STAGES.includes(storedStage) ? storedStage : "미분류";
+    if (storedStage === nextStage) return;
+    customer.stage = nextStage;
+    customer.updatedAt = new Date().toISOString();
+    if (nextStage === "계약 확정") beginRelationship(customer);
+    logAudit({
+      category: "변경",
+      targetType: "고객",
+      targetId: customer.id,
+      targetLabel: customer.name,
+      action: `고객 영업 단계 변경 · ${previousStage} → ${nextStage}`,
+      reason: "영업 관리 고객 보드 드래그 이동"
+    });
+    scheduleSave();
+    render();
+    showToast(`${customer.name || "고객"} → ${nextStage}`, "success");
+  }
+
+  function bindCustomerSalesBoard() {
+    if (!canWriteCRM()) return;
+    const board = document.querySelector("[data-customer-board]");
+    if (!board) return;
+    board.querySelectorAll("[data-customer-board-card]").forEach(card => {
+      card.addEventListener("dragstart", event => {
+        const customerId = card.dataset.customerBoardCard || "";
+        event.dataTransfer.setData("text/customer-id", customerId);
+        event.dataTransfer.setData("text/plain", customerId);
+        event.dataTransfer.effectAllowed = "move";
+        card.dataset.dragged = "true";
+        card.classList.add("dragging");
+      });
+      card.addEventListener("dragend", () => {
+        card.classList.remove("dragging");
+        board.querySelectorAll(".dragover").forEach(column => column.classList.remove("dragover"));
+        setTimeout(() => { delete card.dataset.dragged; }, 120);
+      });
+      card.addEventListener("click", event => {
+        if (card.dataset.dragged !== "true") return;
+        event.preventDefault();
+        event.stopPropagation();
+      });
+    });
+    board.querySelectorAll("[data-customer-board-stage]").forEach(column => {
+      column.addEventListener("dragover", event => {
+        if (!event.dataTransfer.types.includes("text/customer-id") && !event.dataTransfer.types.includes("text/plain")) return;
+        event.preventDefault();
+        event.dataTransfer.dropEffect = "move";
+        column.classList.add("dragover");
+      });
+      column.addEventListener("dragleave", event => {
+        if (!column.contains(event.relatedTarget)) column.classList.remove("dragover");
+      });
+      column.addEventListener("drop", event => {
+        event.preventDefault();
+        column.classList.remove("dragover");
+        customerBoardDropUntil = Date.now() + 250;
+        const customerId = event.dataTransfer.getData("text/customer-id") || event.dataTransfer.getData("text/plain");
+        moveCustomerSalesStage(customerId, column.dataset.customerBoardStage || "");
+      });
+    });
+  }
+
+  function updateCustomerBoardSearch(input) {
+    const nextQuery = String(input && input.value || "");
+    if (nextQuery === customerBoardQuery) return;
+    customerBoardQuery = nextQuery;
+    renderPipeline();
+    const nextInput = document.querySelector("[data-customer-board-query]");
+    nextInput?.focus();
+    nextInput?.setSelectionRange(nextInput.value.length, nextInput.value.length);
   }
 
   function renderArchivedSalesProspects() {
@@ -3511,7 +3627,10 @@
     const relationshipOpen = event.target.closest("[data-relationship-open]");
     if (relationshipOpen) { renderRelationshipDrawer(relationshipOpen.dataset.relationshipOpen); return; }
     const customerOpen = event.target.closest("[data-customer-open]");
-    if (customerOpen) { renderCustomerDrawer(customerOpen.dataset.customerOpen); return; }
+    if (customerOpen) {
+      if (Date.now() < customerBoardDropUntil && customerOpen.closest("[data-customer-board]")) return;
+      renderCustomerDrawer(customerOpen.dataset.customerOpen); return;
+    }
     const taskToggle = event.target.closest("[data-task-toggle]");
     if (taskToggle) {
       const task = store.tasks.find(item => item.id === taskToggle.dataset.taskToggle);
@@ -4309,9 +4428,15 @@
       const input = document.querySelector("[data-sales-query]");
       input?.focus();
       input?.setSelectionRange(input.value.length, input.value.length);
+    } else if (event.target.matches("[data-customer-board-query]")) {
+      if (event.isComposing) return;
+      updateCustomerBoardSearch(event.target);
     } else if (event.target.matches("[data-sales-standards-search]")) {
       openSalesStandards(event.target.value);
     }
+  });
+  document.addEventListener("compositionend", event => {
+    if (event.target.matches("[data-customer-board-query]")) updateCustomerBoardSearch(event.target);
   });
   confirmationLayer.addEventListener("click", event => {
     const choice = event.target.closest("[data-confirm-choice]")?.dataset.confirmChoice;

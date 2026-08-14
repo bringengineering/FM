@@ -2004,6 +2004,197 @@ async function createWindow() {
         const renderedColumn = rendered?.closest('[data-drop-stage]');
         return { pass: saved?.stage === next && renderedColumn?.dataset.dropStage === next, before, after: saved?.stage, columns: document.querySelectorAll('[data-drop-stage]').length, state: window.__crmTest.snapshot() };
       })()`, true);
+    } else if (process.env.BRING_CRM_SCREENSHOT_ACTION === "customer-stage-board") {
+      actionResult = await mainWindow.webContents.executeJavaScript(`Promise.race([
+        (async () => {
+          const wait = ms => new Promise(resolve => setTimeout(resolve, ms));
+          const prefix = 'qa_customer_board_';
+          const stages = ['신규 고객', '상담 준비', '상담 중', '상담 완료', '계약 중', '계약 확정'];
+          const salesStages = ['candidate', 'contact_ready', 'first_contact', 'replied', 'qualified_interest', 'meeting_confirmed', 'diagnosis_done', 'listing_received', 'ad_published', 'tenant_inquiry_visit', 'lease_signed', 'paid_management', 'paused_closed'];
+          const seed = window.__crmTest.getStore();
+          seed.customers = (seed.customers || []).filter(item => !String(item && item.id || '').startsWith(prefix));
+          const stamp = new Date().toISOString();
+          const base = seed.customers[0] || {};
+          const seededIds = stages.map((stage, index) => prefix + 'customer_' + (index + 1));
+          stages.forEach((stage, index) => {
+            seed.customers.push(Object.assign({}, base, {
+              id: seededIds[index], customerNo: 'QA-BOARD-' + (index + 1), name: index === 5 ? 'QA 기존 계약확정 고객' : 'QA 고객보드 ' + (index + 1),
+              company: '', phone: '010-8800-00' + String(index + 1).padStart(2, '0'), email: '', type: '건물주', address: '', source: 'QA',
+              interestServices: [], currentIssue: '고객 6단계 보드 점검', stage, lastContactAt: '', nextContactAt: '', nextAction: '다음 단계 확인',
+              owner: 'QA 담당자', expectedValue: 0, lostReason: '', priority: '보통', tags: [], notes: '', buildingIds: [], workflowCaseIds: [],
+              createdAt: stamp, updatedAt: stamp
+            }));
+          });
+          seed.updatedAt = new Date(Date.now() + 60000).toISOString();
+          window.__crmTest.applyRemoteForTest(seed);
+          await wait(100);
+
+          const isViewer = document.body.classList.contains('crm-read-only');
+          const salesData = value => JSON.stringify({
+            salesProspects: value.salesProspects, salesContacts: value.salesContacts, salesUnits: value.salesUnits,
+            salesActivities: value.salesActivities, salesEvents: value.salesEvents, salesOpportunities: value.salesOpportunities,
+            buildings: value.buildings
+          });
+          const normalizeText = value => String(value || '').replace(/\s+/g, ' ').trim();
+          const renderPipelineFlow = async () => {
+            document.querySelector('[data-view="pipeline"]')?.click();
+            await wait(100);
+            document.querySelector('[data-sales-board-mode="flow"]')?.click();
+            await wait(100);
+          };
+          const salesDomSnapshot = () => ({
+            ownerDashboard: normalizeText(document.querySelector('.sales-owner-dashboard')?.textContent),
+            stageFilters: [...document.querySelectorAll('[data-sales-stage-filter]')].map(item => ({ id: item.dataset.salesStageFilter, text: normalizeText(item.textContent) })),
+            flowStages: [...document.querySelectorAll('[data-sales-flow-stage]')].map(column => ({
+              id: column.dataset.salesFlowStage,
+              text: normalizeText(column.querySelector('header')?.textContent),
+              prospectIds: [...column.querySelectorAll('[data-sales-prospect-open]')].map(item => item.dataset.salesProspectOpen).sort()
+            }))
+          });
+
+          await renderPipelineFlow();
+          const initialStore = window.__crmTest.getStore();
+          const salesDataBefore = salesData(initialStore);
+          const salesDomBefore = salesDomSnapshot();
+          const salesBoardPresent = !!document.querySelector('.sales-owner-dashboard') && salesDomBefore.flowStages.map(item => item.id).join('|') === salesStages.join('|');
+
+          let createdCustomer = null;
+          let adminNewCustomerCreated = true;
+          let initialSaveSucceeded = true;
+          if (!isViewer) {
+            const createdName = 'QA 보드 신규등록 ' + Date.now().toString(36);
+            document.querySelector('[data-action="new-customer"]')?.click();
+            await wait(60);
+            const form = document.getElementById('customerForm');
+            if (form) {
+              form.elements.name.value = createdName;
+              form.elements.phone.value = '010-8811-9922';
+              form.requestSubmit();
+            }
+            await wait(420);
+            createdCustomer = window.__crmTest.getStore().customers.find(item => item.name === createdName) || null;
+            initialSaveSucceeded = !String(document.getElementById('toast')?.textContent || '').includes('저장 실패');
+            adminNewCustomerCreated = !!createdCustomer && createdCustomer.stage === '신규 고객' && initialSaveSucceeded;
+            if (document.getElementById('drawer')?.classList.contains('open')) document.querySelector('#drawer [data-action="close-drawer"]')?.click();
+            if (document.getElementById('modal')?.classList.contains('open')) document.querySelector('#modal [data-action="close-modal"]')?.click();
+            await wait(50);
+          }
+
+          await renderPipelineFlow();
+          const board = document.querySelector('[data-customer-board]');
+          const columns = [...document.querySelectorAll('[data-customer-board-stage]')];
+          const columnOrder = columns.map(column => column.dataset.customerBoardStage);
+          const dualColumnSelectors = columns.every(column => column.dataset.dropStage === column.dataset.customerBoardStage);
+          const seededFirstCard = document.querySelector('[data-customer-board-stage="신규 고객"] [data-customer-board-card="' + seededIds[0] + '"]');
+          const createdFirstCard = !createdCustomer || !!document.querySelector('[data-customer-board-stage="신규 고객"] [data-customer-board-card="' + createdCustomer.id + '"]');
+          const newCustomerStartsFirst = !!seededFirstCard && adminNewCustomerCreated && createdFirstCard;
+          const contractCard = document.querySelector('[data-customer-board-stage="계약 확정"] [data-customer-board-card="' + seededIds[5] + '"]');
+          const contractConfirmedCompatible = !!contractCard && contractCard.dataset.dragCustomer === seededIds[5];
+          const sixStageOrder = columnOrder.join('|') === stages.join('|') && dualColumnSelectors;
+
+          const dragCard = seededFirstCard;
+          const dropColumn = document.querySelector('[data-customer-board-stage="상담 중"]');
+          const beforeDragStore = window.__crmTest.getStore();
+          const beforeTarget = beforeDragStore.customers.find(item => item.id === seededIds[0]);
+          const beforeOtherCustomers = JSON.stringify(beforeDragStore.customers.filter(item => item.id !== seededIds[0]));
+          const relationshipCountBefore = Number(document.getElementById('navRelationshipCount')?.textContent || 0);
+          const auditCountBefore = beforeDragStore.auditLogs.length;
+          const viewerStoreBefore = isViewer ? JSON.stringify(beforeDragStore) : '';
+          const dragAvailability = isViewer ? !dragCard?.draggable : dragCard?.draggable === true;
+          if (dragCard && dropColumn) {
+            const transfer = new DataTransfer();
+            dragCard.dispatchEvent(new DragEvent('dragstart', { bubbles: true, cancelable: true, dataTransfer: transfer }));
+            dropColumn.dispatchEvent(new DragEvent('dragover', { bubbles: true, cancelable: true, dataTransfer: transfer }));
+            dropColumn.dispatchEvent(new DragEvent('drop', { bubbles: true, cancelable: true, dataTransfer: transfer }));
+            dragCard.dispatchEvent(new DragEvent('dragend', { bubbles: true, dataTransfer: transfer }));
+          }
+          const movedImmediately = document.querySelector('[data-customer-board-stage="상담 중"] [data-customer-board-card="' + seededIds[0] + '"]');
+          if (!isViewer) movedImmediately?.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }));
+          const dragDropDidNotOpenDrawer = isViewer || !window.__crmTest.snapshot().drawerOpen;
+          await wait(520);
+          const firstDragSaveSucceeded = isViewer || !String(document.getElementById('toast')?.textContent || '').includes('저장 실패');
+          const afterDragStore = window.__crmTest.getStore();
+          const afterTarget = afterDragStore.customers.find(item => item.id === seededIds[0]);
+          const withoutStage = value => {
+            const copy = JSON.parse(JSON.stringify(value || {}));
+            delete copy.stage;
+            delete copy.updatedAt;
+            return copy;
+          };
+          const stageOnlyChanged = isViewer || (beforeTarget?.stage === '신규 고객' && afterTarget?.stage === '상담 중'
+            && JSON.stringify(withoutStage(beforeTarget)) === JSON.stringify(withoutStage(afterTarget))
+            && beforeOtherCustomers === JSON.stringify(afterDragStore.customers.filter(item => item.id !== seededIds[0])));
+          const movedCardRendered = isViewer
+            ? !!document.querySelector('[data-customer-board-stage="신규 고객"] [data-customer-board-card="' + seededIds[0] + '"]')
+            : !!document.querySelector('[data-customer-board-stage="상담 중"] [data-customer-board-card="' + seededIds[0] + '"]');
+
+          const contractMoveCard = document.querySelector('[data-customer-board-stage="계약 중"] [data-customer-board-card="' + seededIds[4] + '"]');
+          const contractDropColumn = document.querySelector('[data-customer-board-stage="계약 확정"]');
+          const beforeContractTarget = afterDragStore.customers.find(item => item.id === seededIds[4]);
+          const beforeContractOtherCustomers = JSON.stringify(afterDragStore.customers.filter(item => item.id !== seededIds[4]));
+          if (contractMoveCard && contractDropColumn) {
+            const transfer = new DataTransfer();
+            contractMoveCard.dispatchEvent(new DragEvent('dragstart', { bubbles: true, cancelable: true, dataTransfer: transfer }));
+            contractDropColumn.dispatchEvent(new DragEvent('dragover', { bubbles: true, cancelable: true, dataTransfer: transfer }));
+            contractDropColumn.dispatchEvent(new DragEvent('drop', { bubbles: true, cancelable: true, dataTransfer: transfer }));
+            contractMoveCard.dispatchEvent(new DragEvent('dragend', { bubbles: true, dataTransfer: transfer }));
+          }
+          await wait(520);
+          const contractDragSaveSucceeded = isViewer || !String(document.getElementById('toast')?.textContent || '').includes('저장 실패');
+          const finalStore = window.__crmTest.getStore();
+          const afterContractTarget = finalStore.customers.find(item => item.id === seededIds[4]);
+          const withoutContractTransition = value => {
+            const copy = JSON.parse(JSON.stringify(value || {}));
+            ['stage', 'updatedAt', 'relationshipCycleDays', 'relationshipStartedAt', 'relationshipNextContactAt', 'relationshipNextAction'].forEach(key => delete copy[key]);
+            return copy;
+          };
+          const relationshipCountAfter = Number(document.getElementById('navRelationshipCount')?.textContent || 0);
+          const relationshipInitialized = isViewer || (!!afterContractTarget?.relationshipStartedAt && !!afterContractTarget?.relationshipNextContactAt && !!afterContractTarget?.relationshipNextAction);
+          const contractEntryCompatible = isViewer
+            ? beforeContractTarget?.stage === '계약 중' && afterContractTarget?.stage === '계약 중' && relationshipCountAfter === relationshipCountBefore
+            : beforeContractTarget?.stage === '계약 중' && afterContractTarget?.stage === '계약 확정'
+              && JSON.stringify(withoutContractTransition(beforeContractTarget)) === JSON.stringify(withoutContractTransition(afterContractTarget))
+              && beforeContractOtherCustomers === JSON.stringify(finalStore.customers.filter(item => item.id !== seededIds[4]))
+              && relationshipInitialized && relationshipCountAfter === relationshipCountBefore + 1
+              && !!document.querySelector('[data-customer-board-stage="계약 확정"] [data-customer-board-card="' + seededIds[4] + '"]');
+          const expectedAuditAdds = isViewer ? 0 : 2;
+          const dragAudits = finalStore.auditLogs.slice(0, expectedAuditAdds);
+          const auditTrailCorrect = finalStore.auditLogs.length === auditCountBefore + expectedAuditAdds
+            && (isViewer || [seededIds[0], seededIds[4]].every(id => dragAudits.some(item => item.targetId === id && String(item.action || '').includes('고객 영업 단계 변경'))));
+          const viewerNoMutation = !isViewer || JSON.stringify(finalStore) === viewerStoreBefore;
+          const salesDataUnchanged = salesData(finalStore) === salesDataBefore;
+          const salesDomAfter = salesDomSnapshot();
+          const ownerKpiUnchanged = salesDomAfter.ownerDashboard === salesDomBefore.ownerDashboard;
+          const thirteenStageDomUnchanged = JSON.stringify(salesDomAfter) === JSON.stringify(salesDomBefore)
+            && salesDomAfter.flowStages.map(item => item.id).join('|') === salesStages.join('|');
+
+          const finalBoard = document.querySelector('[data-customer-board]');
+          finalBoard?.scrollIntoView({ block: 'start' });
+          await new Promise(resolve => requestAnimationFrame(() => resolve()));
+          const boardRect = finalBoard?.getBoundingClientRect();
+          const boardStyle = finalBoard && getComputedStyle(finalBoard);
+          const cardsContained = [...document.querySelectorAll('[data-customer-board-card]')].every(card => card.scrollWidth <= card.clientWidth + 1);
+          const documentNoOverflow = document.documentElement.scrollWidth <= document.documentElement.clientWidth + 1
+            && document.body.scrollWidth <= document.body.clientWidth + 1;
+          const boardOverflowContained = !!finalBoard && !!boardRect && boardRect.left >= -1 && boardRect.right <= innerWidth + 1
+            && (finalBoard.scrollWidth <= finalBoard.clientWidth + 1 || ['auto', 'scroll'].includes(boardStyle?.overflowX));
+          const noHorizontalOverflow = documentNoOverflow && boardOverflowContained;
+          const savePathSucceeded = isViewer || (initialSaveSucceeded && firstDragSaveSucceeded && contractDragSaveSucceeded);
+          const pass = !!board && salesBoardPresent && sixStageOrder && newCustomerStartsFirst && contractConfirmedCompatible && contractEntryCompatible && relationshipInitialized && dragAvailability
+            && stageOnlyChanged && movedCardRendered && dragDropDidNotOpenDrawer && cardsContained && auditTrailCorrect && viewerNoMutation && salesDataUnchanged && ownerKpiUnchanged && thirteenStageDomUnchanged && noHorizontalOverflow && savePathSucceeded;
+          return {
+            pass, role: isViewer ? 'viewer' : 'writer', boardPresent: !!board, salesBoardPresent, sixStageOrder, columnOrder, dualColumnSelectors,
+            newCustomerStartsFirst, adminNewCustomerCreated, initialSaveSucceeded, firstDragSaveSucceeded, contractDragSaveSucceeded, savePathSucceeded, createdCustomerId: createdCustomer?.id || '', contractConfirmedCompatible, contractEntryCompatible, relationshipInitialized,
+            relationshipCountBefore, relationshipCountAfter, contractStageBefore: beforeContractTarget?.stage || '', contractStageAfter: afterContractTarget?.stage || '', dragAvailability,
+            stageOnlyChanged, stageBefore: beforeTarget?.stage || '', stageAfter: afterTarget?.stage || '', movedCardRendered, dragDropDidNotOpenDrawer, cardsContained, auditTrailCorrect, auditCountBefore, auditCountAfter: finalStore.auditLogs.length, viewerNoMutation,
+            salesDataUnchanged, ownerKpiUnchanged, thirteenStageDomUnchanged, salesStageOrder: salesDomAfter.flowStages.map(item => item.id),
+            noHorizontalOverflow, documentNoOverflow, boardOverflowContained,
+            viewport: { width: innerWidth, height: innerHeight, documentWidth: document.documentElement.scrollWidth, board: boardRect && { left: boardRect.left, right: boardRect.right, width: boardRect.width, clientWidth: finalBoard.clientWidth, scrollWidth: finalBoard.scrollWidth, overflowX: boardStyle?.overflowX } },
+            state: window.__crmTest.snapshot()
+          };
+        })().catch(error => ({ pass: false, error: String(error && error.stack || error), state: window.__crmTest?.snapshot() })),
+        new Promise(resolve => setTimeout(() => resolve({ pass: false, timeout: true, state: window.__crmTest?.snapshot() }), 15000))
+      ])`, true);
     } else if (process.env.BRING_CRM_SCREENSHOT_ACTION === "save-partner-quote") {
       actionResult = await mainWindow.webContents.executeJavaScript(`(async () => {
         const wait = ms => new Promise(resolve => setTimeout(resolve, ms));
@@ -2869,7 +3060,7 @@ async function createWindow() {
     const uiState = await mainWindow.webContents.executeJavaScript("window.__crmTest && window.__crmTest.snapshot()", true);
     const image = await mainWindow.webContents.capturePage();
     await fs.writeFile(target, image.toPNG());
-    if (["building-rental-info", "consultation-building-hub", "customer-sales-status"].includes(process.env.BRING_CRM_SCREENSHOT_ACTION)) {
+    if (["building-rental-info", "consultation-building-hub", "customer-sales-status", "customer-stage-board"].includes(process.env.BRING_CRM_SCREENSHOT_ACTION)) {
       await fs.writeFile(`${target}.result.json`, JSON.stringify({ actionResult, uiState }, null, 2), "utf8");
     }
     console.log(target, JSON.stringify({ empty: image.isEmpty(), size: image.getSize(), actionResult, uiState }));
