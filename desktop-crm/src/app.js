@@ -2123,9 +2123,12 @@
     const editing = buildingById(buildingId);
     const building = editing ? JSON.parse(JSON.stringify(editing)) : Core.createBuilding({ manager: store.settings.owner || "김현진" });
     const customerOptions = ["", ...store.customers.map(customer => customer.id)];
+    const ownerCustomerField = editing
+      ? `<label class="field"><span>건물주·대표 고객</span><select disabled aria-disabled="true"><option>${esc(building.ownerCustomerId ? (customerById(building.ownerCustomerId)?.name || building.ownerCustomerId) : "아직 연결하지 않음")}</option></select><input type="hidden" name="ownerCustomerId" value="${attr(building.ownerCustomerId || "")}"><small>건물주 변경은 연결된 고객·건물 관계를 함께 옮기는 별도 이전 절차에서 처리합니다.</small></label>`
+      : selectField("건물주·대표 고객", "ownerCustomerId", customerOptions, building.ownerCustomerId || "", id => id ? (customerById(id)?.name || id) : "아직 연결하지 않음");
     modalContent.innerHTML = `<div class="modal-head"><div><h2>${editing ? "건물 정보 수정" : "새 건물 등록"}</h2><p>건물 고유 ID를 기준으로 고객·계약·케이스·입금 자료가 연결됩니다.</p></div><button class="close-button" data-action="close-modal">×</button></div><form id="buildingForm" class="modal-body" data-building-id="${attr(editing && editing.id || "")}"><div class="info-box">같은 건물을 다시 등록하지 말고 기존 건물을 수정해 주세요. 건물명이 바뀌어도 연결된 업무는 유지됩니다.</div><div class="form-grid" style="margin-top:14px">
       ${field("건물명 *", "name", building.name, "text", "예: 햇빛빌라")}
-      ${selectField("건물주·대표 고객", "ownerCustomerId", customerOptions, building.ownerCustomerId || "", id => id ? (customerById(id)?.name || id) : "아직 연결하지 않음")}
+      ${ownerCustomerField}
       ${selectField("건물 유형", "type", ["다가구", "원룸", "상가", "아파트", "빌딩", "오피스텔", "기타"], building.type || "다가구")}
       ${selectField("운영 상태", "status", ["영업후보", "현장방문", "견적중", "계약예정", "관리중", "보류"], building.status || "영업후보")}
       ${field("건물 주소 *", "address", building.address, "text", "원주시부터 입력", "wide")}
@@ -4041,11 +4044,12 @@
         if (matched && schedule.buildingId) paymentIds.add(String(schedule.buildingId));
       });
       const patch = buildCanonicalBuildingPatch({
-        name, ownerCustomerId: raw.ownerCustomerId, type: raw.type, status: raw.status,
+        name, ownerCustomerId: existing ? existing.ownerCustomerId : raw.ownerCustomerId, type: raw.type, status: raw.status,
         address, unitCount: raw.unitCount,
         manager: String(raw.manager || "").trim() || store.settings.owner || "김현진", memo: raw.memo,
         aliases: [...aliases], paymentBuildingIds: [...paymentIds],
       });
+      if (existing && !Object.hasOwn(existing, "ownerCustomerId")) delete patch.ownerCustomerId;
       try {
         await commitCanonicalEntity({
           entityType: "buildings",
@@ -4423,8 +4427,16 @@ document.addEventListener("keydown", event => {
   api.onFieldEvent(envelope => {
     if (!envelope || typeof envelope !== "object" || !envelope.payload) return;
     if (envelope.type === "field.ready") {
-      fieldConnectionState = Object.assign({}, fieldConnectionState, { status: "ready", message: "현장 업무가 연결되었습니다.", ready: true });
-      saveFieldNavigationState();
+      if (envelope.payload.session === "authenticated") {
+        fieldConnectionState = Object.assign({}, fieldConnectionState, { status: "ready", message: "현장 업무가 연결되었습니다.", ready: true });
+        saveFieldNavigationState();
+      } else if (["missing", "expired"].includes(envelope.payload.session)) {
+        fieldConnectionState = Object.assign({}, fieldConnectionState, {
+          status: "connecting",
+          message: "CRM 로그인으로 현장 업무를 자동 연결하고 있습니다.",
+          ready: false,
+        });
+      }
     } else if (envelope.type === "field.routeChanged") {
       fieldNavigationState = Object.assign({}, fieldNavigationState, {
         route: envelope.payload.route,

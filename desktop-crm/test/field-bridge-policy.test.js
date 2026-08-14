@@ -4,14 +4,19 @@ const test = require("node:test");
 const {
   FIELD_MAX_MESSAGE_BYTES,
   FIELD_ORIGIN,
+  coordinateFieldExit,
   coordinateFieldLogout,
+  createFieldExitCoordinator,
   createFieldEnvelope,
   createFieldRequestCoordinator,
+  createFieldSessionRecoveryCoordinator,
   externalFieldLinkDecision,
+  isAllowedFieldBootstrapNavigation,
   isAllowedFieldNavigation,
   isAllowedFieldPermission,
   isMatchingFieldAuthSignoutAck,
   sanitizeFieldTeamProfiles,
+  validateFieldCommandResult,
   validateFieldMessage,
 } = require("../src/field-view-policy");
 
@@ -29,6 +34,39 @@ const crmSender = overrides => ({
   frameUrl: "file:///C:/Bring/desktop-crm/src/index.html",
   expectedFrameUrl: "file:///C:/Bring/desktop-crm/src/index.html",
   isMainFrame: true,
+  ...overrides,
+});
+
+const persistedWorkItem = overrides => ({
+  id: "job_1",
+  visitId: "visit_1",
+  jobType: "vacancy_capture",
+  jobPolicyVersion: "2.0.0",
+  checklistId: "vacancy_capture_v2",
+  crmBuildingId: "building_1",
+  assignedOperatorId: "operator_kim",
+  dueDate: "2026-08-14",
+  priority: "normal",
+  workflowStatus: "assigned",
+  uploadStatus: "none",
+  sourceSnapshot: {
+    parentType: "building",
+    parentId: "building_1",
+    parentName: "햇빛빌라",
+    address: "강원 원주시 우산동 1",
+  },
+  sourceVersion: { parentUpdatedAt: "2026-08-14T01:02:03.000Z" },
+  sourceHash: "a".repeat(64),
+  mediaCount: 0,
+  uploadFailureCount: 0,
+  adminActionRequired: false,
+  createdAt: "2026-08-14T01:02:03.000Z",
+  createdByAuthUid: "auth_uid_1",
+  createdByOperatorId: "operator_kim",
+  updatedAt: "2026-08-14T01:02:03.000Z",
+  updatedByAuthUid: "auth_uid_1",
+  updatedByOperatorId: "operator_kim",
+  archivedAt: null,
   ...overrides,
 });
 
@@ -130,6 +168,67 @@ test("create opens only the local composer and mutation commands use exact argum
   assert.equal(command("reviewJob", { jobId: "job_1", decision: "skip_review" }, "0028"), false);
 });
 
+test("acknowledgements and command results use closed success and error schemas", () => {
+  const context = { direction: "fieldToCrm", sender: fieldSender() };
+  const valid = (type, payload, suffix) => validateFieldMessage(
+    createFieldEnvelope(type, payload, requestId(suffix)),
+    context,
+  ).ok;
+  const item = persistedWorkItem();
+
+  assert.equal(valid("field.ack", { ok: true }, "0033"), true);
+  assert.equal(valid("field.ack", { ok: true, error: { code: "NO" } }, "0034"), false);
+  assert.equal(valid("field.ack", { ok: false, error: { code: "FIELD_NAVIGATION_FAILED" } }, "0035"), true);
+  assert.equal(valid("field.ack", { ok: false }, "0036"), false);
+  assert.equal(valid("field.ack", { ok: false, error: { code: "NO", extra: true } }, "0037"), false);
+
+  assert.equal(valid("field.commandResult", { ok: true, result: item }, "0038"), true);
+  assert.equal(valid("field.commandResult", { ok: true, result: { unexpected: "accepted" } }, "0039"), false);
+  assert.equal(valid("field.commandResult", { ok: false, error: { code: "FIELD_REQUEST_FAILED" } }, "0040"), true);
+  assert.equal(valid("field.commandResult", { ok: false, error: { code: "ANY", extra: "accepted" } }, "0041"), false);
+  assert.equal(valid("field.commandResult", { ok: false, error: { code: "ANY", token: "secret" } }, "0042"), false);
+  assert.equal(valid("field.commandResult", { ok: true, result: item, error: { code: "NO" } }, "0043"), false);
+});
+
+test("command result validation is correlated to the original command and server result shape", async () => {
+  const item = persistedWorkItem();
+  const createResult = { visitId: "visit_1", jobIds: ["job_1", "job_2"], repeated: false };
+  const changedItem = persistedWorkItem({ id: "job_2", visitId: "visit_2" });
+  const changeResult = {
+    visitId: "visit_1",
+    newVisitId: "visit_2",
+    updatedJobIds: ["job_2"],
+    workItems: [changedItem],
+  };
+
+  assert.equal(validateFieldCommandResult("openCreateJob", { ok: true, result: createResult }), true);
+  assert.equal(validateFieldCommandResult("openCreateJob", { ok: true, result: { ...createResult, extra: true } }), false);
+  assert.equal(validateFieldCommandResult("claimJob", { ok: true, result: item }), true);
+  assert.equal(validateFieldCommandResult("assignJob", { ok: true, result: item }), true);
+  assert.equal(validateFieldCommandResult("transitionStatus", { ok: true, result: item }), true);
+  assert.equal(validateFieldCommandResult("changeVisit", { ok: true, result: changeResult }), true);
+  assert.equal(validateFieldCommandResult("changeVisit", { ok: true, result: { ...changeResult, updatedJobIds: ["job_wrong"] } }), false);
+  assert.equal(validateFieldCommandResult("reviewJob", { ok: true, result: item }), false);
+  assert.equal(validateFieldCommandResult("claimJob", { ok: false, error: { code: "FIELD_REQUEST_FAILED" } }), true);
+  assert.equal(validateFieldCommandResult("claimJob", { ok: false, error: { code: "FIELD_REQUEST_FAILED", detail: "secret" } }), false);
+
+  const coordinator = createFieldRequestCoordinator({
+    send: () => undefined,
+    setTimer: () => 1,
+    clearTimer: () => undefined,
+  });
+  coordinator.setSession("session-a");
+  const command = createFieldEnvelope("field.command", {
+    command: "assignJob",
+    operatorId: "operator_kim",
+    args: { jobId: "job_1", assignedOperatorId: "operator_kim", reason: "담당 배정" },
+  }, requestId("0044"));
+  const pending = coordinator.request(command);
+  const mismatched = createFieldEnvelope("field.commandResult", { ok: true, result: createResult }, command.requestId);
+  assert.equal(coordinator.handleResponse(mismatched, "session-a"), false);
+  await assert.rejects(pending, error => error && error.code === "FIELD_BRIDGE_RESPONSE_INVALID");
+});
+
 test("approved external hosts open directly while other HTTPS hosts require confirmation", () => {
   assert.deepEqual(externalFieldLinkDecision("https://drive.google.com/file/d/1"), {
     ok: true,
@@ -165,6 +264,13 @@ test("FIELD navigation and camera permission use the same exact-origin policy", 
   assert.equal(isAllowedFieldNavigation(`${FIELD_ORIGIN}/field?search=door%20code`), false);
   assert.equal(isAllowedFieldNavigation(`${FIELD_ORIGIN}/field?unexpected=1`), false);
   assert.equal(isAllowedFieldNavigation(`${FIELD_ORIGIN}/field?token=secret`), false);
+  const handoffCode = "A".repeat(43);
+  assert.equal(isAllowedFieldNavigation(`${FIELD_ORIGIN}/field?embedded=crm&desktop_handoff=${handoffCode}`), false);
+  assert.equal(isAllowedFieldBootstrapNavigation(`${FIELD_ORIGIN}/field?embedded=crm&desktop_handoff=${handoffCode}`), true);
+  assert.equal(isAllowedFieldBootstrapNavigation(`${FIELD_ORIGIN}/field?desktop_handoff=${handoffCode}&embedded=crm`), true);
+  assert.equal(isAllowedFieldBootstrapNavigation(`${FIELD_ORIGIN}/field?embedded=crm&desktop_handoff=short`), false);
+  assert.equal(isAllowedFieldBootstrapNavigation(`${FIELD_ORIGIN}/field?embedded=crm&desktop_handoff=${handoffCode}&tab=today`), false);
+  assert.equal(isAllowedFieldBootstrapNavigation(`https://evil.test/field?embedded=crm&desktop_handoff=${handoffCode}`), false);
   assert.equal(isAllowedFieldNavigation(`${FIELD_ORIGIN}/field#capture`), false);
   assert.equal(isAllowedFieldPermission("media", `${FIELD_ORIGIN}/field?embedded=crm&tab=jobs`, ["video"]), true);
   assert.equal(isAllowedFieldPermission("media", `${FIELD_ORIGIN}/field?embedded=crm&tab=jobs`, ["audio"]), false);
@@ -305,6 +411,121 @@ test("logout coordinator preserves upload data and fails closed until FIELD auth
   });
   assert.equal(failed.code, "FIELD_SESSION_CLEAR_FAILED");
   assert.deepEqual(order, ["ready", "pending", "field-signout-failed"]);
+});
+
+test("application exit checks pending uploads, fails closed on unknown state, and requires explicit confirmation", async () => {
+  const queue = [{ id: "upload_1", blob: "untouched" }];
+  const snapshot = JSON.stringify(queue);
+  const order = [];
+  const base = {
+    reason: "window",
+    ensureReady: async () => { order.push("ready"); return { id: "field-view" }; },
+    checkPending: async handle => {
+      assert.equal(handle.id, "field-view");
+      order.push("pending");
+      return { count: 2, risk: "high" };
+    },
+    finishApplicationExit: async reason => { order.push(`finish:${reason}`); },
+  };
+
+  const cancelled = await coordinateFieldExit({
+    ...base,
+    confirmPending: async pending => { order.push(`confirm:${pending.count}`); return false; },
+  });
+  assert.equal(cancelled.code, "FIELD_EXIT_CANCELLED");
+  assert.deepEqual(order, ["ready", "pending", "confirm:2"]);
+  assert.equal(JSON.stringify(queue), snapshot);
+
+  order.length = 0;
+  const confirmed = await coordinateFieldExit({
+    ...base,
+    reason: "update",
+    confirmPending: async pending => { order.push(`confirm:${pending.count}`); return true; },
+  });
+  assert.deepEqual(confirmed, { ok: true });
+  assert.deepEqual(order, ["ready", "pending", "confirm:2", "finish:update"]);
+
+  order.length = 0;
+  const unknown = await coordinateFieldExit({
+    ...base,
+    checkPending: async () => { throw new Error("renderer unavailable"); },
+    confirmPending: async () => true,
+  });
+  assert.equal(unknown.code, "FIELD_EXIT_CHECK_FAILED");
+  assert.deepEqual(order, ["ready"]);
+});
+
+test("application exit coordinator collapses close re-entry and runs update install only once", async () => {
+  let release;
+  const waiting = new Promise(resolve => { release = resolve; });
+  const order = [];
+  const coordinator = createFieldExitCoordinator({
+    ensureReady: async () => { order.push("ready"); await waiting; return { id: "field-view" }; },
+    checkPending: async () => ({ count: 0, risk: "none" }),
+    confirmPending: async () => true,
+    finishApplicationExit: async reason => { order.push(`finish:${reason}`); },
+  });
+
+  const first = coordinator.request("update");
+  const reentered = coordinator.request("update");
+  assert.equal(first, reentered);
+  release();
+  assert.deepEqual(await first, { ok: true });
+  assert.deepEqual(await reentered, { ok: true });
+  assert.deepEqual(order, ["ready", "finish:update"]);
+  assert.deepEqual(await coordinator.request("update"), { ok: true, alreadyApproved: true, reason: "update" });
+  assert.deepEqual(order, ["ready", "finish:update"]);
+});
+
+test("session recovery issues one 60-second one-use handoff per view session and rejects stale recovery", async () => {
+  let now = 1_000;
+  let release;
+  const waiting = new Promise(resolve => { release = resolve; });
+  const loaded = [];
+  let createCalls = 0;
+  const recovery = createFieldSessionRecoveryCoordinator({
+    now: () => now,
+    createHandoff: async () => {
+      createCalls += 1;
+      await waiting;
+      return { code: "H".repeat(43), expiresAt: now + 60_000 };
+    },
+    loadHandoff: async code => { loaded.push(code); },
+  });
+  let current = true;
+  const first = recovery.recover("crm-session-a:view-41", () => current);
+  const duplicate = recovery.recover("crm-session-a:view-41", () => current);
+  assert.equal(first, duplicate);
+  release();
+  assert.deepEqual(await first, { ok: true });
+  assert.equal(createCalls, 1);
+  assert.deepEqual(loaded, ["H".repeat(43)]);
+  assert.deepEqual(await recovery.recover("crm-session-a:view-41", () => current), {
+    ok: false,
+    code: "FIELD_HANDOFF_ALREADY_ATTEMPTED",
+  });
+
+  recovery.reset();
+  current = false;
+  assert.deepEqual(await recovery.recover("crm-session-b:view-42", () => current), {
+    ok: false,
+    code: "FIELD_SESSION_CHANGED",
+  });
+  assert.equal(loaded.length, 1);
+
+  recovery.reset();
+  current = true;
+  now = 100_000;
+  const expired = createFieldSessionRecoveryCoordinator({
+    now: () => now,
+    createHandoff: async () => ({ code: "E".repeat(43), expiresAt: now }),
+    loadHandoff: async code => { loaded.push(code); },
+  });
+  assert.deepEqual(await expired.recover("crm-session-c:view-43", () => true), {
+    ok: false,
+    code: "FIELD_HANDOFF_INVALID",
+  });
+  assert.equal(loaded.length, 1);
 });
 
 test("FIELD auth signout acknowledgements require the same request, renderer, and session", () => {

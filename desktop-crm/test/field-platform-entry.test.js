@@ -100,3 +100,25 @@ test("CRM and FIELD keep separate search values when switching views", async () 
   assert.match(app, /nextView === "fieldOperations"[\s\S]*?crmSearchValue\s*=\s*searchEl\.value/);
   assert.match(app, /currentView === "fieldOperations"[\s\S]*?nextView !== "fieldOperations"[\s\S]*?searchEl\.value\s*=\s*crmSearchValue/);
 });
+
+test("existing buildings keep their canonical owner fixed while new buildings can select one", async () => {
+  const app = await source("app.js");
+  const editor = app.slice(app.indexOf("function buildingEditor"), app.indexOf("function buildingUnitEditor"));
+  const save = app.slice(app.indexOf('form.id === "buildingForm"'), app.indexOf('form.id === "contractForm"'));
+
+  assert.match(editor, /editing[\s\S]*?disabled[\s\S]*?ownerCustomerId/);
+  assert.match(editor, /type="hidden" name="ownerCustomerId"/);
+  assert.match(editor, /건물주 변경은[\s\S]*?별도 이전 절차/);
+  assert.match(editor, /selectField\("건물주·대표 고객", "ownerCustomerId"/);
+  assert.match(save, /ownerCustomerId:\s*existing\s*\?\s*existing\.ownerCustomerId\s*:\s*raw\.ownerCustomerId/);
+  assert.match(save, /existing\s*&&\s*!Object\.hasOwn\(existing,\s*"ownerCustomerId"\)[\s\S]*?delete patch\.ownerCustomerId/);
+});
+
+test("renderer reports FIELD ready only for an authenticated session", async () => {
+  const app = await source("app.js");
+  const handler = app.slice(app.indexOf("api.onFieldEvent"), app.indexOf("api.onFieldState"));
+
+  assert.match(handler, /envelope\.payload\.session === "authenticated"/);
+  assert.match(handler, /\["missing", "expired"\]\.includes\(envelope\.payload\.session\)/);
+  assert.match(handler, /status:\s*"connecting"[\s\S]*?ready:\s*false/);
+});

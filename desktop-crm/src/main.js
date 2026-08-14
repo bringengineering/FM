@@ -10,11 +10,14 @@ const {
   FIELD_BRIDGE_TIMEOUT_MS,
   FIELD_ORIGIN,
   coordinateFieldLogout,
+  createFieldExitCoordinator,
   createFieldEnvelope,
   createFieldRequestCoordinator,
+  createFieldSessionRecoveryCoordinator,
   externalFieldLinkDecision,
   fieldBounds,
   isAllowedFieldAuthPopup,
+  isAllowedFieldBootstrapNavigation,
   isAllowedFieldNavigation,
   isAllowedFieldPermission,
   isMatchingFieldAuthSignoutAck,
@@ -41,10 +44,15 @@ let fieldVisibilityEpoch = 0;
 const fieldReadyWaiters = new Set();
 let fieldAuthSignoutWaiter = null;
 let fieldLogoutInFlight = null;
+let fieldRecoveryInFlight = null;
 let crmAuthWindow = null;
 let remoteClient = null;
 let updaterConfigured = false;
 let updatePromptOpen = false;
+let updateInstallScheduled = false;
+let applicationExitAllowed = false;
+let applicationExitFailureDialogOpen = false;
+let applicationResourcesClosed = false;
 let updateState = { status: "disabled", currentVersion: app.getVersion(), availableVersion: "", percent: 0, message: "" };
 const authPreview = process.env.BRING_CRM_AUTH_PREVIEW === "1";
 const passwordPreview = process.env.BRING_CRM_PASSWORD_PREVIEW === "1";
@@ -62,6 +70,39 @@ const fieldRequestCoordinator = createFieldRequestCoordinator({
     if (!fieldView || fieldView.webContents.isDestroyed()) throw new Error("FIELD_VIEW_UNAVAILABLE");
     fieldView.webContents.send("crm:field-message", envelope);
   },
+});
+
+const fieldSessionRecoveryCoordinator = createFieldSessionRecoveryCoordinator({
+  createHandoff: async () => {
+    if (!remoteClient || !authState().user) {
+      throw Object.assign(new Error("FIELD_HANDOFF_SESSION_REQUIRED"), { code: "FIELD_HANDOFF_SESSION_REQUIRED" });
+    }
+    return remoteClient.createFieldHandoff();
+  },
+  loadHandoff: async code => {
+    const view = fieldView;
+    const sessionKey = fieldSessionKey;
+    if (!view || view.webContents.isDestroyed()) {
+      throw Object.assign(new Error("FIELD_SESSION_CHANGED"), { code: "SESSION_CHANGED" });
+    }
+    fieldViewReady = false;
+    fieldViewLoaded = false;
+    await view.webContents.loadURL(`${FIELD_PLATFORM_URL}?embedded=crm&desktop_handoff=${encodeURIComponent(code)}`);
+    if (!fieldView
+      || fieldView !== view
+      || view.webContents.isDestroyed()
+      || fieldSessionKey !== sessionKey) {
+      throw Object.assign(new Error("FIELD_SESSION_CHANGED"), { code: "SESSION_CHANGED" });
+    }
+    fieldViewLoaded = true;
+  },
+});
+
+const applicationExitCoordinator = createFieldExitCoordinator({
+  ensureReady: async () => ensureFieldReadyForLogout(),
+  checkPending: async () => requestFieldPendingUploads(),
+  confirmPending: async (pendingUploads, reason) => confirmApplicationExitWithPending(pendingUploads, reason),
+  finishApplicationExit: async reason => finishApplicationExit(reason),
 });
 
 function closeCrmAuthWindow() {
@@ -200,6 +241,8 @@ function syncFieldSession(state = authState()) {
   const nextUserId = String(state && state.user && state.user.uid || "");
   if (nextUserId !== fieldSessionUserId) {
     if (fieldView) destroyFieldView();
+    fieldSessionRecoveryCoordinator.reset();
+    fieldRecoveryInFlight = null;
     fieldSessionUserId = nextUserId;
     fieldSessionSequence += 1;
     fieldSessionKey = nextUserId ? `${nextUserId}:${fieldSessionSequence}` : `signed-out:${fieldSessionSequence}`;
@@ -214,6 +257,8 @@ function syncFieldSession(state = authState()) {
 
 function destroyFieldView() {
   cancelFieldAuthSignout("FIELD_RENDERER_DESTROYED");
+  fieldSessionRecoveryCoordinator.reset();
+  fieldRecoveryInFlight = null;
   if (!fieldView) return;
   fieldVisibilityEpoch += 1;
   const view = fieldView;
@@ -269,13 +314,16 @@ function ensureFieldView() {
     popup.on("will-redirect", guard);
   });
   contents.on("will-navigate", (event, url) => {
-    if (!isAllowedFieldNavigation(url)) event.preventDefault();
+    if (!isAllowedFieldNavigation(url) && !isAllowedFieldBootstrapNavigation(url)) event.preventDefault();
   });
   contents.on("will-redirect", (event, url) => {
-    if (!isAllowedFieldNavigation(url)) event.preventDefault();
+    if (!isAllowedFieldNavigation(url) && !isAllowedFieldBootstrapNavigation(url)) event.preventDefault();
   });
   contents.on("did-start-navigation", (_event, url, _isInPlace, isMainFrame) => {
-    if (!fieldView || fieldView.webContents !== contents || !isMainFrame || !isAllowedFieldNavigation(url)) return;
+    if (!fieldView
+      || fieldView.webContents !== contents
+      || !isMainFrame
+      || (!isAllowedFieldNavigation(url) && !isAllowedFieldBootstrapNavigation(url))) return;
     fieldViewReady = false;
     emitFieldState("connecting", "현장 업무에 연결하고 있습니다.");
   });
@@ -356,6 +404,57 @@ async function ensureFieldReadyForLogout() {
     throw Object.assign(new Error("FIELD_SESSION_CHANGED"), { code: "FIELD_SESSION_CHANGED" });
   }
   return { view, sessionKey };
+}
+
+async function requestFieldPendingUploads() {
+  const decision = await fieldRequestCoordinator.request(
+    createFieldEnvelope("crm.logoutCheck", { reason: "logout" }),
+  );
+  if (decision.type !== "field.logoutDecision") {
+    throw Object.assign(new Error("FIELD_LOGOUT_DECISION_INVALID"), { code: "FIELD_LOGOUT_DECISION_INVALID" });
+  }
+  fieldPendingUploads = { count: decision.payload.count, risk: decision.payload.risk };
+  return fieldPendingUploads;
+}
+
+async function recoverFieldSession() {
+  if (fieldRecoveryInFlight) return fieldRecoveryInFlight;
+  const view = fieldView;
+  const sessionKey = fieldSessionKey;
+  const userId = String(authState().user && authState().user.uid || "");
+  if (!view || view.webContents.isDestroyed() || !userId || !remoteClient) {
+    const error = Object.assign(new Error("FIELD_HANDOFF_SESSION_REQUIRED"), { code: "FIELD_HANDOFF_SESSION_REQUIRED" });
+    resolveFieldReadyWaiters(error);
+    emitFieldState("disconnected", "현장 업무 자동 연결에 실패했습니다. CRM 연결을 확인한 뒤 다시 연결해 주세요.");
+    return { ok: false, code: error.code };
+  }
+  const contents = view.webContents;
+  const recoveryKey = `${sessionKey}:view-${contents.id}`;
+  emitFieldState("connecting", "CRM 로그인으로 현장 업무를 자동 연결하고 있습니다.");
+  const task = fieldSessionRecoveryCoordinator.recover(recoveryKey, () => Boolean(
+    fieldView
+      && fieldView === view
+      && !contents.isDestroyed()
+      && fieldSessionKey === sessionKey
+      && String(authState().user && authState().user.uid || "") === userId,
+  ));
+  const wrapped = task.then(result => {
+    const authenticatedWhileRecovering = result.code === "FIELD_SESSION_CHANGED"
+      && fieldViewReady
+      && fieldView === view
+      && !contents.isDestroyed()
+      && fieldSessionKey === sessionKey;
+    if (!result.ok && !authenticatedWhileRecovering) {
+      const error = Object.assign(new Error(result.code), { code: result.code });
+      resolveFieldReadyWaiters(error);
+      emitFieldState("disconnected", "현장 업무 자동 연결에 실패했습니다. CRM 연결을 확인한 뒤 다시 연결해 주세요.");
+    }
+    return authenticatedWhileRecovering ? { ok: true, alreadyAuthenticated: true } : result;
+  }).finally(() => {
+    if (fieldRecoveryInFlight === wrapped) fieldRecoveryInFlight = null;
+  });
+  fieldRecoveryInFlight = wrapped;
+  return wrapped;
 }
 
 async function signOutFieldAuthentication(fieldHandle) {
@@ -517,8 +616,24 @@ async function showFieldView(input = {}, crmEvent) {
     const code = error && error.code || "FIELD_CONNECT_FAILED";
     const cancelled = ["FIELD_VIEW_HIDDEN", "FIELD_SESSION_CHANGED", "FIELD_RENDERER_DESTROYED"].includes(code);
     const timedOut = code === "FIELD_BRIDGE_TIMEOUT";
-    if (!cancelled) emitFieldState(timedOut ? "timeout" : "disconnected", timedOut ? "현장 업무 응답이 늦어지고 있습니다. 다시 연결해 주세요." : "현장 업무에 연결하지 못했습니다.");
-    return { ok: false, code, error: cancelled ? "현장 업무 화면을 닫았습니다." : "BRING FIELD 연결에 실패했습니다. 잠시 후 다시 시도해 주세요." };
+    const recoveryFailed = code.startsWith("FIELD_HANDOFF_");
+    if (!cancelled) emitFieldState(
+      timedOut ? "timeout" : "disconnected",
+      timedOut
+        ? "현장 업무 응답이 늦어지고 있습니다. 다시 연결해 주세요."
+        : recoveryFailed
+          ? "현장 업무 자동 연결에 실패했습니다. CRM 연결을 확인한 뒤 다시 연결해 주세요."
+          : "현장 업무에 연결하지 못했습니다.",
+    );
+    return {
+      ok: false,
+      code,
+      error: cancelled
+        ? "현장 업무 화면을 닫았습니다."
+        : recoveryFailed
+          ? "현장 업무 자동 연결에 실패했습니다. CRM 연결을 확인한 뒤 다시 연결해 주세요."
+          : "BRING FIELD 연결에 실패했습니다. 잠시 후 다시 시도해 주세요.",
+    };
   }
 }
 
@@ -527,6 +642,8 @@ async function reconnectFieldView() {
   try {
     const view = ensureFieldView();
     cancelFieldRequests("FIELD_RECONNECTING");
+    fieldSessionRecoveryCoordinator.reset();
+    fieldRecoveryInFlight = null;
     fieldViewReady = false;
     fieldViewLoaded = false;
     emitFieldState("connecting", "현장 업무에 다시 연결하고 있습니다.");
@@ -579,10 +696,16 @@ ipcMain.on("crm:field-message", (event, envelopeInput) => {
     return;
   }
   if (envelope.type === "field.ready") {
-    fieldViewReady = true;
-    fieldLastRoute = normalizeFieldRoute(envelope.payload.route) || fieldLastRoute;
-    resolveFieldReadyWaiters();
-    emitFieldState("ready", "현장 업무가 연결되었습니다.");
+    if (envelope.payload.session === "authenticated") {
+      fieldViewReady = true;
+      fieldSessionRecoveryCoordinator.reset();
+      fieldLastRoute = normalizeFieldRoute(envelope.payload.route) || fieldLastRoute;
+      resolveFieldReadyWaiters();
+      emitFieldState("ready", "현장 업무가 연결되었습니다.");
+    } else if (["missing", "expired"].includes(envelope.payload.session)) {
+      fieldViewReady = false;
+      void recoverFieldSession();
+    }
   } else if (envelope.type === "field.routeChanged") {
     fieldLastRoute = normalizeFieldRoute(envelope.payload.route) || fieldLastRoute;
   } else if (envelope.type === "field.pendingUploads") {
@@ -692,6 +815,78 @@ function setUpdateState(patch) {
   return updateState;
 }
 
+async function confirmApplicationExitWithPending(pendingUploads, reason) {
+  fieldPendingUploads = { count: pendingUploads.count, risk: pendingUploads.risk };
+  const updateRestart = reason === "update";
+  const options = {
+    type: "warning",
+    title: updateRestart ? "업데이트 전에 현장 자료 확인" : "종료 전에 현장 자료 확인",
+    message: `아직 업로드하지 못한 현장 자료가 ${pendingUploads.count}건 있습니다.`,
+    detail: updateRestart
+      ? "지금 재시작하면 업로드가 중단됩니다. 자료는 이 PC에 보존되지만, 다음 실행 후 업로드를 다시 확인해야 합니다."
+      : "지금 종료하면 업로드가 중단됩니다. 자료는 이 PC에 보존되지만, 다음 실행 후 업로드를 다시 확인해야 합니다.",
+    buttons: ["업로드를 마치고 돌아가기", updateRestart ? "그래도 재시작" : "그래도 종료"],
+    defaultId: 0,
+    cancelId: 0,
+    noLink: true,
+  };
+  const result = mainWindow && !mainWindow.isDestroyed()
+    ? await dialog.showMessageBox(mainWindow, options)
+    : await dialog.showMessageBox(options);
+  return result.response === 1;
+}
+
+async function finishApplicationExit(reason) {
+  applicationExitAllowed = true;
+  if (reason === "update") {
+    if (updateInstallScheduled) return;
+    updateInstallScheduled = true;
+    setImmediate(() => {
+      try {
+        autoUpdater.quitAndInstall(false, true);
+      } catch (_error) {
+        updateInstallScheduled = false;
+        applicationExitAllowed = false;
+        applicationExitCoordinator.reset();
+        emitFieldState("disconnected", "업데이트 재시작을 완료하지 못했습니다. 다시 시도해 주세요.");
+      }
+    });
+    return;
+  }
+  setImmediate(() => {
+    if (reason === "window" && mainWindow && !mainWindow.isDestroyed()) mainWindow.close();
+    else app.quit();
+  });
+}
+
+async function requestApplicationExit(reason) {
+  const result = await applicationExitCoordinator.request(reason);
+  if (result.ok || result.code === "FIELD_EXIT_CANCELLED") return result;
+  if (result.code === "FIELD_EXIT_CHECK_FAILED") {
+    emitFieldState("disconnected", "현장 업무 자동 연결에 실패했습니다. CRM 연결을 확인한 뒤 다시 연결해 주세요.");
+  }
+  if (!applicationExitFailureDialogOpen) {
+    applicationExitFailureDialogOpen = true;
+    try {
+      const options = {
+        type: "error",
+        title: "종료할 수 없습니다",
+        message: result.error || "현장 자료 상태를 확인하지 못했습니다.",
+        detail: "BRING FIELD를 다시 연결한 뒤 종료해 주세요. 저장된 현장 자료는 삭제하지 않았습니다.",
+        buttons: ["확인"],
+        defaultId: 0,
+        cancelId: 0,
+        noLink: true,
+      };
+      if (mainWindow && !mainWindow.isDestroyed()) await dialog.showMessageBox(mainWindow, options);
+      else await dialog.showMessageBox(options);
+    } finally {
+      applicationExitFailureDialogOpen = false;
+    }
+  }
+  return result;
+}
+
 async function promptToInstallUpdate() {
   if (updatePromptOpen || updateState.status !== "ready" || !mainWindow || mainWindow.isDestroyed()) return;
   updatePromptOpen = true;
@@ -706,7 +901,7 @@ async function promptToInstallUpdate() {
       cancelId: 1,
       noLink: true
     });
-    if (result.response === 0) autoUpdater.quitAndInstall(false, true);
+    if (result.response === 0) await requestApplicationExit("update");
   } finally {
     updatePromptOpen = false;
   }
@@ -1088,7 +1283,7 @@ function buildMenu() {
       { type: "separator" },
       { label: "업데이트 확인", click: () => checkForUpdates(true) },
       { type: "separator" },
-      { role: "quit", label: "종료" }
+      { label: "종료", click: () => { void requestApplicationExit("menu"); } }
     ]},
     { label: "보기", submenu: [
       { role: "reload", label: "새로고침" },
@@ -1122,6 +1317,11 @@ async function createWindow() {
   });
   mainWindow.webContents.on("will-navigate", event => event.preventDefault());
   mainWindow.webContents.setWindowOpenHandler(() => ({ action: "deny" }));
+  mainWindow.on("close", event => {
+    if (applicationExitAllowed) return;
+    event.preventDefault();
+    void requestApplicationExit("window");
+  });
   mainWindow.on("closed", () => {
     destroyFieldView();
     mainWindow = null;
@@ -1138,6 +1338,7 @@ async function createWindow() {
     }
     const snapshot = await mainWindow.webContents.executeJavaScript("window.__crmTest && window.__crmTest.snapshot()", true);
     console.log(JSON.stringify(snapshot));
+    applicationExitAllowed = true;
     app.quit();
   }
   if (process.env.BRING_CRM_SCREENSHOT) {
@@ -2409,6 +2610,7 @@ async function createWindow() {
     const image = await mainWindow.webContents.capturePage();
     await fs.writeFile(target, image.toPNG());
     console.log(target, JSON.stringify({ empty: image.isEmpty(), size: image.getSize(), actionResult, uiState }));
+    applicationExitAllowed = true;
     app.quit();
   }
 }
@@ -2436,14 +2638,7 @@ secureCanonicalHandle("crm:auth-logout", async input => {
   fieldLogoutInFlight = coordinateFieldLogout({
     confirmed: Boolean(input && input.confirmed === true),
     ensureReady: async () => ensureFieldReadyForLogout(),
-    checkPending: async () => {
-      const decision = await fieldRequestCoordinator.request(
-        createFieldEnvelope("crm.logoutCheck", { reason: "logout" }),
-      );
-      if (decision.type !== "field.logoutDecision") throw new Error("FIELD_LOGOUT_DECISION_INVALID");
-      fieldPendingUploads = { count: decision.payload.count, risk: decision.payload.risk };
-      return fieldPendingUploads;
-    },
+    checkPending: async () => requestFieldPendingUploads(),
     signOutFieldAuthentication: fieldHandle => signOutFieldAuthentication(fieldHandle),
     finishCrmLogout: async () => {
       cancelFieldRequests("FIELD_LOGOUT");
@@ -2507,10 +2702,9 @@ secureHandle("crm:workflow-files", input => pickWorkflowFiles(input));
 secureHandle("crm:data-path", () => dataFile());
 secureHandle("crm:update-state", () => updateState);
 secureHandle("crm:update-check", () => checkForUpdates(true));
-secureHandle("crm:update-install", () => {
+secureHandle("crm:update-install", async () => {
   if (updateState.status !== "ready") return { ok: false, error: "설치할 업데이트가 아직 준비되지 않았습니다." };
-  setImmediate(() => autoUpdater.quitAndInstall(false, true));
-  return { ok: true };
+  return requestApplicationExit("update");
 });
 secureCanonicalHandle("crm:field-bounds", async rect => {
   const measured = fieldBounds(rect);
@@ -2595,5 +2789,15 @@ app.whenReady().then(async () => {
   console.error(error);
   app.exit(1);
 });
-app.on("before-quit", () => { if (remoteClient) remoteClient.close(); });
+app.on("before-quit", event => {
+  if (!applicationExitAllowed) {
+    event.preventDefault();
+    void requestApplicationExit("quit");
+    return;
+  }
+  if (!applicationResourcesClosed && remoteClient) {
+    applicationResourcesClosed = true;
+    remoteClient.close();
+  }
+});
 app.on("window-all-closed", () => { if (process.platform !== "darwin") app.quit(); });

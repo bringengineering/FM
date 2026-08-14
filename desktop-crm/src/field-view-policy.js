@@ -8,6 +8,9 @@ const FIELD_REQUEST_ID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-
 const FIELD_ID = /^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$/;
 const FIELD_BUILD_VERSION = /^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)$/;
 const FIELD_ROUTE_SLUG = /^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$/;
+const FIELD_HANDOFF_CODE = /^[A-Za-z0-9_-]{43}$/;
+const FIELD_HANDOFF_TTL_MS = 60_000;
+const FIELD_HASH = /^[a-f0-9]{64}$/;
 const FIELD_ROUTE_TAB = new Set(["today", "unassigned", "map", "jobs", "review", "uploads"]);
 const FIELD_ROUTE_SCOPE = new Set(["mine", "team", "unassigned"]);
 const FIELD_ROUTE_FILTER = new Set([
@@ -19,6 +22,11 @@ const FIELD_WORKFLOW_STATUS = new Set([
   "requested", "assigned", "accepted", "in_progress", "evidence_ready",
   "review_pending", "changes_requested", "approved", "completed", "cancelled",
 ]);
+const FIELD_JOB_TYPES = new Set([
+  "vacancy_capture", "move_out_check", "cleaning_before_after",
+  "maintenance_inspection", "complaint_check", "repair_before_after",
+]);
+const FIELD_UPLOAD_STATUS = new Set(["none", "queued", "uploading", "partial_failure", "failed", "synced"]);
 const FIELD_PRIORITY = new Set(["low", "normal", "high", "urgent"]);
 const FORBIDDEN_OBJECT_KEYS = new Set(["__proto__", "prototype", "constructor"]);
 const SECRET_KEY = /(?:password|passcode|secret|token|credential|doorlock|accesscode|keylocation|oauth|privatekey)/i;
@@ -70,6 +78,18 @@ const RESPONSE_TYPE = Object.freeze({
   "field.command": "field.commandResult",
   "crm.logoutCheck": "field.logoutDecision",
 });
+const FIELD_WORK_ITEM_REQUIRED_KEYS = [
+  "id", "visitId", "jobType", "jobPolicyVersion", "checklistId", "assignedOperatorId",
+  "dueDate", "priority", "workflowStatus", "uploadStatus", "sourceSnapshot", "sourceVersion",
+  "sourceHash", "mediaCount", "uploadFailureCount", "adminActionRequired", "createdAt",
+  "createdByAuthUid", "createdByOperatorId", "updatedAt", "updatedByAuthUid",
+  "updatedByOperatorId", "archivedAt",
+];
+const FIELD_WORK_ITEM_OPTIONAL_KEYS = [
+  "crmBuildingId", "crmBuildingUnitId", "crmSalesProspectId", "crmSalesUnitId",
+  "crmWorkflowCaseId", "crmTaskId", "adPackageId", "acceptedAt", "startedAt",
+  "evidenceReadyAt", "reviewPendingAt", "completedAt", "cancelledAt", "cancelReason",
+];
 
 function isPlainRecord(value) {
   if (!value || typeof value !== "object" || Array.isArray(value)) return false;
@@ -111,6 +131,12 @@ function isFieldDate(value) {
   return date.getUTCFullYear() === year
     && date.getUTCMonth() === month - 1
     && date.getUTCDate() === day;
+}
+
+function isFieldTimestamp(value) {
+  if (typeof value !== "string" || value.length < 20 || value.length > 35) return false;
+  const timestamp = Date.parse(value);
+  return Number.isFinite(timestamp) && new Date(timestamp).toISOString() === value;
 }
 
 function hasExactKeys(value, required, optional = []) {
@@ -166,6 +192,21 @@ function isAllowedFieldNavigation(rawUrl) {
     const url = new URL(String(rawUrl || ""));
     if (url.username || url.password || url.origin !== FIELD_ORIGIN || url.hash) return false;
     return Boolean(normalizeFieldRoute(`${url.pathname}${url.search}`));
+  } catch (_error) {
+    return false;
+  }
+}
+
+function isAllowedFieldBootstrapNavigation(rawUrl) {
+  try {
+    const url = new URL(String(rawUrl || ""));
+    if (url.username || url.password || url.origin !== FIELD_ORIGIN || url.hash || url.pathname !== "/field") return false;
+    const entries = [...url.searchParams.entries()];
+    return entries.length === 2
+      && url.searchParams.getAll("embedded").length === 1
+      && url.searchParams.get("embedded") === "crm"
+      && url.searchParams.getAll("desktop_handoff").length === 1
+      && FIELD_HANDOFF_CODE.test(String(url.searchParams.get("desktop_handoff") || ""));
   } catch (_error) {
     return false;
   }
@@ -312,6 +353,132 @@ function validFieldCommandArgs(command, args) {
   return false;
 }
 
+function validBridgeError(value) {
+  return hasExactKeys(value, ["code"])
+    && isBoundedString(value.code, 128, false);
+}
+
+function validStringArray(value, maximum = 200) {
+  return Array.isArray(value)
+    && value.length > 0
+    && value.length <= maximum
+    && value.every(isSafeId)
+    && new Set(value).size === value.length;
+}
+
+function validFieldSourceSnapshot(value, workItem) {
+  if (!hasExactKeys(value, ["parentType", "parentId", "parentName", "address"], [
+    "unitType", "unitId", "unitLabel", "depositWon", "monthlyRentWon",
+    "maintenanceFeeWon", "moveOutAt", "availableFrom",
+  ])) return false;
+  if (!["building", "salesProspect"].includes(value.parentType)
+    || !isSafeId(value.parentId)
+    || !isBoundedString(value.parentName, 512, false)
+    || !isBoundedString(value.address, 2_048, false)) return false;
+  if (value.parentType === "building") {
+    if (value.parentId !== workItem.crmBuildingId || workItem.crmSalesProspectId !== undefined) return false;
+  } else if (value.parentId !== workItem.crmSalesProspectId || workItem.crmBuildingId !== undefined) return false;
+  const hasUnit = value.unitType !== undefined || value.unitId !== undefined || value.unitLabel !== undefined;
+  if (hasUnit) {
+    if (!["buildingUnit", "salesUnit"].includes(value.unitType)
+      || !isSafeId(value.unitId)
+      || !isBoundedString(value.unitLabel, 256, false)) return false;
+    if (value.unitType === "buildingUnit" && (value.unitId !== workItem.crmBuildingUnitId || workItem.crmSalesUnitId !== undefined)) return false;
+    if (value.unitType === "salesUnit" && (value.unitId !== workItem.crmSalesUnitId || workItem.crmBuildingUnitId !== undefined)) return false;
+  } else if (workItem.crmBuildingUnitId !== undefined || workItem.crmSalesUnitId !== undefined) return false;
+  for (const key of ["depositWon", "monthlyRentWon", "maintenanceFeeWon"]) {
+    if (value[key] !== undefined && (!Number.isSafeInteger(value[key]) || value[key] < 0)) return false;
+  }
+  if (value.moveOutAt !== undefined && !isFieldDate(value.moveOutAt)) return false;
+  if (value.availableFrom !== undefined && !isFieldDate(value.availableFrom)) return false;
+  if (value.unitType === "salesUnit") {
+    if (!["depositWon", "monthlyRentWon", "maintenanceFeeWon"].every(key => Object.hasOwn(value, key))) return false;
+  } else if (["depositWon", "monthlyRentWon", "maintenanceFeeWon", "moveOutAt", "availableFrom"].some(key => Object.hasOwn(value, key))) return false;
+  return true;
+}
+
+function validPersistedFieldWorkItem(value) {
+  if (!hasExactKeys(value, FIELD_WORK_ITEM_REQUIRED_KEYS, FIELD_WORK_ITEM_OPTIONAL_KEYS)) return false;
+  if (!isSafeId(value.id)
+    || !isSafeId(value.visitId)
+    || !FIELD_JOB_TYPES.has(value.jobType)
+    || !isBoundedString(value.jobPolicyVersion, 128, false)
+    || !isBoundedString(value.checklistId, 128, false)
+    || !isFieldDate(value.dueDate)
+    || !FIELD_PRIORITY.has(value.priority)
+    || !FIELD_WORKFLOW_STATUS.has(value.workflowStatus)
+    || !FIELD_UPLOAD_STATUS.has(value.uploadStatus)
+    || !FIELD_HASH.test(String(value.sourceHash || ""))
+    || !Number.isSafeInteger(value.mediaCount) || value.mediaCount < 0
+    || !Number.isSafeInteger(value.uploadFailureCount) || value.uploadFailureCount < 0
+    || typeof value.adminActionRequired !== "boolean"
+    || !isFieldTimestamp(value.createdAt)
+    || !isFieldTimestamp(value.updatedAt)
+    || !isSafeId(value.createdByAuthUid)
+    || !isSafeId(value.createdByOperatorId)
+    || !isSafeId(value.updatedByAuthUid)
+    || !isSafeId(value.updatedByOperatorId)
+    || (value.archivedAt !== null && !isFieldTimestamp(value.archivedAt))) return false;
+  if ((value.crmBuildingId === undefined) === (value.crmSalesProspectId === undefined)) return false;
+  for (const key of [
+    "crmBuildingId", "crmBuildingUnitId", "crmSalesProspectId", "crmSalesUnitId",
+    "crmWorkflowCaseId", "crmTaskId",
+  ]) {
+    if (value[key] !== undefined && !isSafeId(value[key])) return false;
+  }
+  if (value.assignedOperatorId !== null && !isSafeId(value.assignedOperatorId)) return false;
+  if (value.workflowStatus === "requested" ? value.assignedOperatorId !== null : value.assignedOperatorId === null) return false;
+  if (value.adPackageId !== undefined && value.adPackageId !== null && !isSafeId(value.adPackageId)) return false;
+  for (const key of ["acceptedAt", "startedAt", "evidenceReadyAt", "reviewPendingAt", "completedAt", "cancelledAt"]) {
+    if (value[key] !== undefined && !isFieldTimestamp(value[key])) return false;
+  }
+  if (value.cancelReason !== undefined && !isBoundedString(value.cancelReason, 2_000, false)) return false;
+  if (!validFieldSourceSnapshot(value.sourceSnapshot, value)) return false;
+  if (!hasExactKeys(value.sourceVersion, ["parentUpdatedAt"], ["unitUpdatedAt"])
+    || !isFieldTimestamp(value.sourceVersion.parentUpdatedAt)
+    || (value.sourceVersion.unitUpdatedAt !== undefined && !isFieldTimestamp(value.sourceVersion.unitUpdatedAt))) return false;
+  return (value.sourceSnapshot.unitType === undefined) === (value.sourceVersion.unitUpdatedAt === undefined);
+}
+
+function validCreateFieldJobsResult(value) {
+  return hasExactKeys(value, ["visitId", "jobIds", "repeated"])
+    && isSafeId(value.visitId)
+    && validStringArray(value.jobIds)
+    && typeof value.repeated === "boolean";
+}
+
+function validChangeFieldVisitResult(value) {
+  if (!hasExactKeys(value, ["visitId", "updatedJobIds", "workItems"], ["newVisitId"])
+    || !isSafeId(value.visitId)
+    || (value.newVisitId !== undefined && (!isSafeId(value.newVisitId) || value.newVisitId === value.visitId))
+    || !validStringArray(value.updatedJobIds)
+    || !Array.isArray(value.workItems)
+    || value.workItems.length !== value.updatedJobIds.length
+    || !value.workItems.every(validPersistedFieldWorkItem)) return false;
+  const expectedVisitId = value.newVisitId || value.visitId;
+  if (value.workItems.some(item => item.visitId !== expectedVisitId)) return false;
+  const workItemIds = value.workItems.map(item => item.id);
+  return workItemIds.length === new Set(workItemIds).size
+    && [...workItemIds].sort().join("\u0000") === [...value.updatedJobIds].sort().join("\u0000");
+}
+
+function validCommandResultSuccess(value) {
+  return validCreateFieldJobsResult(value)
+    || validPersistedFieldWorkItem(value)
+    || validChangeFieldVisitResult(value);
+}
+
+function validateFieldCommandResult(command, payload) {
+  if (!FIELD_COMMANDS.has(command) || !isPlainRecord(payload) || typeof payload.ok !== "boolean") return false;
+  if (payload.ok === false) return hasExactKeys(payload, ["ok", "error"])
+    && validBridgeError(payload.error);
+  if (!hasExactKeys(payload, ["ok", "result"])) return false;
+  if (command === "openCreateJob") return validCreateFieldJobsResult(payload.result);
+  if (["claimJob", "assignJob", "transitionStatus"].includes(command)) return validPersistedFieldWorkItem(payload.result);
+  if (command === "changeVisit") return validChangeFieldVisitResult(payload.result);
+  return false;
+}
+
 function validatePayload(type, payload) {
   if (!isPlainRecord(payload) || !isSafeBridgeValue(payload)) return false;
   if (type === "field.ready") {
@@ -352,15 +519,19 @@ function validatePayload(type, payload) {
       && ["none", "low", "medium", "high"].includes(payload.risk);
   }
   if (type === "field.ack") {
-    return hasExactKeys(payload, ["ok"], ["error"])
-      && typeof payload.ok === "boolean"
-      && (payload.error === undefined || (isPlainRecord(payload.error) && isBoundedString(payload.error.code, 128, false)));
+    return payload.ok === true
+      ? hasExactKeys(payload, ["ok"])
+      : payload.ok === false
+        && hasExactKeys(payload, ["ok", "error"])
+        && validBridgeError(payload.error);
   }
   if (type === "field.commandResult") {
-    return hasExactKeys(payload, ["ok"], ["result", "error"])
-      && typeof payload.ok === "boolean"
-      && (payload.result === undefined || isSafeBridgeValue(payload.result))
-      && (payload.error === undefined || (isPlainRecord(payload.error) && isBoundedString(payload.error.code, 128, false)));
+    return payload.ok === true
+      ? hasExactKeys(payload, ["ok", "result"])
+        && validCommandResultSuccess(payload.result)
+      : payload.ok === false
+        && hasExactKeys(payload, ["ok", "error"])
+        && validBridgeError(payload.error);
   }
   if (type === "field.cancel") {
     return hasExactKeys(payload, ["targetRequestId"])
@@ -463,6 +634,13 @@ function createFieldRequestCoordinator(options = {}) {
     handleResponse(envelope, responseSessionKey) {
       const entry = pending.get(envelope && envelope.requestId);
       if (!entry || entry.sessionKey !== sessionKey || responseSessionKey !== sessionKey || envelope.type !== entry.expectedType) return false;
+      const validResponse = envelope.type === "field.commandResult"
+        ? validateFieldCommandResult(entry.envelope.payload.command, envelope.payload)
+        : validatePayload(envelope.type, envelope.payload);
+      if (!validResponse) {
+        rejectPending(entry, "FIELD_BRIDGE_RESPONSE_INVALID", false);
+        return false;
+      }
       pending.delete(envelope.requestId);
       clearTimer(entry.timer);
       completed.set(envelope.requestId, { fingerprint: entry.fingerprint, response: envelope });
@@ -481,13 +659,9 @@ function createFieldRequestCoordinator(options = {}) {
   return coordinator;
 }
 
-async function coordinateFieldLogout(options = {}) {
-  const confirmed = options.confirmed === true;
-  let fieldHandle;
-  let pendingUploads;
-
+async function inspectFieldPendingUploads(options = {}) {
   try {
-    fieldHandle = await options.ensureReady();
+    const fieldHandle = await options.ensureReady();
     const decision = await options.checkPending(fieldHandle);
     if (!isPlainRecord(decision)
       || !Number.isInteger(decision.count)
@@ -496,14 +670,23 @@ async function coordinateFieldLogout(options = {}) {
       || !["none", "low", "medium", "high"].includes(decision.risk)) {
       throw bridgeError("FIELD_LOGOUT_DECISION_INVALID");
     }
-    pendingUploads = { count: decision.count, risk: decision.risk };
+    return { ok: true, fieldHandle, pendingUploads: { count: decision.count, risk: decision.risk } };
   } catch (_error) {
+    return { ok: false };
+  }
+}
+
+async function coordinateFieldLogout(options = {}) {
+  const confirmed = options.confirmed === true;
+  const inspection = await inspectFieldPendingUploads(options);
+  if (!inspection.ok) {
     return {
       ok: false,
       code: "FIELD_LOGOUT_CHECK_FAILED",
       error: "현장 업로드 상태를 확인하지 못했습니다. 다시 시도해 주세요.",
     };
   }
+  const { fieldHandle, pendingUploads } = inspection;
 
   if (pendingUploads.count > 0 && !confirmed) {
     return {
@@ -536,6 +719,126 @@ async function coordinateFieldLogout(options = {}) {
   }
 }
 
+async function coordinateFieldExit(options = {}) {
+  const reason = isBoundedString(options.reason, 32, false) ? options.reason : "window";
+  const inspection = await inspectFieldPendingUploads(options);
+  if (!inspection.ok) {
+    return {
+      ok: false,
+      code: "FIELD_EXIT_CHECK_FAILED",
+      error: "현장 업로드 상태를 확인하지 못했습니다. 연결을 확인한 뒤 다시 시도해 주세요.",
+    };
+  }
+  if (inspection.pendingUploads.count > 0) {
+    let confirmed = false;
+    try {
+      confirmed = await options.confirmPending(inspection.pendingUploads, reason) === true;
+    } catch (_error) {
+      confirmed = false;
+    }
+    if (!confirmed) {
+      return {
+        ok: false,
+        code: "FIELD_EXIT_CANCELLED",
+        error: "아직 업로드하지 못한 현장 자료가 있어 종료를 취소했습니다.",
+        pendingUploads: inspection.pendingUploads,
+      };
+    }
+  }
+  try {
+    await options.finishApplicationExit(reason);
+    return { ok: true };
+  } catch (_error) {
+    return {
+      ok: false,
+      code: "FIELD_EXIT_FAILED",
+      error: "프로그램 종료를 완료하지 못했습니다. 다시 시도해 주세요.",
+    };
+  }
+}
+
+function createFieldExitCoordinator(options = {}) {
+  let inFlight = null;
+  let approved = false;
+  let approvedReason = "";
+  return Object.freeze({
+    request(reason) {
+      if (approved) return Promise.resolve({ ok: true, alreadyApproved: true, reason: approvedReason });
+      if (inFlight) return inFlight;
+      const task = coordinateFieldExit({ ...options, reason }).then(result => {
+        if (result.ok) {
+          approved = true;
+          approvedReason = String(reason || "window");
+        }
+        return result;
+      });
+      const wrapped = task.finally(() => {
+        if (inFlight === wrapped) inFlight = null;
+      });
+      inFlight = wrapped;
+      return wrapped;
+    },
+    isApproved() { return approved; },
+    reset() {
+      if (inFlight) return false;
+      approved = false;
+      approvedReason = "";
+      return true;
+    },
+  });
+}
+
+function createFieldSessionRecoveryCoordinator(options = {}) {
+  const now = typeof options.now === "function" ? options.now : Date.now;
+  let active = null;
+  let attemptedKey = "";
+  let generation = 0;
+  return Object.freeze({
+    recover(recoveryKey, isCurrent = () => true) {
+      const key = String(recoveryKey || "");
+      if (!isBoundedString(key, 512, false)) return Promise.resolve({ ok: false, code: "FIELD_HANDOFF_INVALID" });
+      if (active) return active.key === key
+        ? active.promise
+        : Promise.resolve({ ok: false, code: "FIELD_HANDOFF_IN_PROGRESS" });
+      if (attemptedKey === key) return Promise.resolve({ ok: false, code: "FIELD_HANDOFF_ALREADY_ATTEMPTED" });
+      attemptedKey = key;
+      const recoveryGeneration = generation;
+      const task = (async () => {
+        try {
+          const handoff = await options.createHandoff();
+          const currentTime = Number(now());
+          if (generation !== recoveryGeneration || isCurrent() !== true) return { ok: false, code: "FIELD_SESSION_CHANGED" };
+          if (!hasExactKeys(handoff, ["code", "expiresAt"])
+            || !FIELD_HANDOFF_CODE.test(handoff.code)
+            || !Number.isSafeInteger(handoff.expiresAt)
+            || handoff.expiresAt <= currentTime
+            || handoff.expiresAt - currentTime > FIELD_HANDOFF_TTL_MS) {
+            return { ok: false, code: "FIELD_HANDOFF_INVALID" };
+          }
+          await options.loadHandoff(handoff.code);
+          if (generation !== recoveryGeneration || isCurrent() !== true) return { ok: false, code: "FIELD_SESSION_CHANGED" };
+          return { ok: true };
+        } catch (error) {
+          return {
+            ok: false,
+            code: error && error.code === "SESSION_CHANGED" ? "FIELD_SESSION_CHANGED" : "FIELD_HANDOFF_FAILED",
+          };
+        }
+      })();
+      const wrapped = task.finally(() => {
+        if (active && active.promise === wrapped) active = null;
+      });
+      active = { key, promise: wrapped };
+      return wrapped;
+    },
+    reset() {
+      generation += 1;
+      active = null;
+      attemptedKey = "";
+    },
+  });
+}
+
 module.exports = {
   CRM_TO_FIELD_TYPES,
   FIELD_BRIDGE_TIMEOUT_MS,
@@ -546,12 +849,16 @@ module.exports = {
   FIELD_ORIGIN,
   FIELD_PROTOCOL_VERSION,
   FIELD_TO_CRM_TYPES,
+  coordinateFieldExit,
   coordinateFieldLogout,
+  createFieldExitCoordinator,
   createFieldEnvelope,
   createFieldRequestCoordinator,
+  createFieldSessionRecoveryCoordinator,
   externalFieldLinkDecision,
   fieldBounds,
   isAllowedFieldAuthPopup,
+  isAllowedFieldBootstrapNavigation,
   isAllowedFieldNavigation,
   isAllowedFieldPermission,
   isFieldRequestId,
@@ -559,5 +866,6 @@ module.exports = {
   isSafeId,
   normalizeFieldRoute,
   sanitizeFieldTeamProfiles,
+  validateFieldCommandResult,
   validateFieldMessage,
 };
