@@ -658,6 +658,19 @@ textarea { font-size: 14px; }
 .building-detail-record em { font-size: 10px; }
 .building-identity-strip b { font-size: 10px; }
 .building-identity-strip span { font-size: 12px; }
+.building-form-section > header h3 { font-size: 14px; }
+.building-form-section > header p { color: #688393; font-size: 11px; }
+.building-form-section > header > span { font-size: 10px; }
+.building-check-field > legend { font-size: 12px; }
+.building-check-field > p,
+.building-other-field > span { font-size: 10px; }
+.building-check-grid label,
+.building-other-field input { font-size: 11px; }
+.building-rental-facts span { font-size: 10px; }
+.building-rental-facts b { font-size: 14px; }
+.building-rental-facts small,
+.building-rental-lines b { font-size: 10px; }
+.building-rental-lines span { font-size: 11px; }
 
 @media (max-width: 1380px) {
   .topbar h1 { font-size: 25px; }

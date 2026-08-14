@@ -119,6 +119,10 @@
     { label: "계약 확정", value: "계약 확정", matches: ["계약 확정", "계약", "관리중"] }
   ]);
 
+  const BUILDING_MAINTENANCE_ITEMS = Core.BUILDING_MAINTENANCE_INCLUDES;
+  const BUILDING_ROOM_LAYOUTS = Core.BUILDING_ROOM_TYPES;
+  const BUILDING_ROOM_OPTIONS = Core.BUILDING_ROOM_OPTIONS;
+
   const INDUSTRY_CHECKLISTS = Object.freeze({
     "누수": [
       ["symptom", "누수 위치·증상 확인"], ["inspectionFee", "탐지비 별도 여부"], ["noFind", "미탐지 시 비용"],
@@ -1731,6 +1735,15 @@
   const buildingUnitsForBuilding = building => (store.buildingUnits || []).filter(item => item && String(item.crmBuildingId || item.buildingId || "") === String(building.id));
   const buildingPaymentRows = building => Core.paymentMonthRows(operations.payments || {}, paymentMonth, todayKey(), "all").filter(row => scheduleBelongsToBuilding(row.schedule, building));
   const buildingStatusBadge = status => `<span class="contract-status ${status === "관리중" ? "active" : status === "보류" ? "closed" : "preparing"}">${esc(status || "상태 미입력")}</span>`;
+  const buildingArray = value => Array.isArray(value) ? value.map(item => String(item || "").trim()).filter(Boolean) : [];
+  const buildingListSummary = (value, otherValue) => {
+    const values = buildingArray(value);
+    const other = String(otherValue || "").trim();
+    const labels = values.filter(item => item !== "기타");
+    if (values.includes("기타") || other) labels.push(other ? `기타: ${other}` : "기타");
+    return labels.join(" · ") || "미입력";
+  };
+  const buildingMoneySummary = value => Core.money(value) > 0 ? krw(value) : "미입력";
 
   function renderBuildings() {
     const query = Core.normalizeText(searchEl.value);
@@ -1798,10 +1811,13 @@
     const unitRecords = units.map(item => `<button type="button" class="building-detail-record clickable building-unit-record" data-building-unit-edit="${attr(item.id)}" data-building-id="${attr(building.id)}"><div><b>${esc(item.label || item.unitLabel || "호실명 미입력")}</b><span>${esc([item.status, item.memo].filter(Boolean).join(" · ") || "상태 미입력")}</span></div><em>수정</em></button>`).join("");
     const archivedUnitRecords = archivedUnits.length ? `<details class="building-units-archived"><summary>보관된 호실 ${archivedUnits.length}개</summary>${archivedUnits.map(item => `<div class="building-detail-record"><div><b>${esc(item.label || item.unitLabel || "호실")}</b><span>${esc(dateText(item.archivedAt))}</span></div>${canWriteCRM() ? `<button type="button" class="mini-button return" data-building-unit-restore="${attr(item.id)}" data-building-id="${attr(building.id)}">복원</button>` : ""}</div>`).join("")}</details>` : "";
     const customerRecords = customers.map(customer => `<div class="building-detail-record clickable" data-customer-open="${attr(customer.id)}"><div><b>${esc(customer.name || "이름 미입력")}${customer.id === building.ownerCustomerId ? " · 건물주" : ""}</b><span>${esc([customer.type, customer.phone, customer.company].filter(Boolean).join(" · ") || "연락처 미입력")}</span></div><em>고객 보기</em></div>`).join("");
+    const vacantUnits = buildingArray(building.vacantUnits);
+    const vacancyLabel = `${Math.max(0, Number(building.vacantUnitCount) || 0).toLocaleString("ko-KR")}개`;
+    const rentalSummary = `<section class="building-detail-section building-rental-detail wide"><header><b>임대·공실 정보</b><span>건물 공용 정보</span></header><div class="building-detail-body"><div class="building-rental-facts"><div><span>보증금</span><b>${esc(buildingMoneySummary(building.rentDeposit))}</b></div><div><span>월세</span><b>${esc(buildingMoneySummary(building.monthlyRent))}</b></div><div><span>관리비</span><b>${esc(buildingMoneySummary(building.maintenanceFee))}</b></div><div><span>공실</span><b>${esc(vacancyLabel)}</b><small>${esc(vacantUnits.join(", ") || "호실 미입력")}</small></div></div><div class="building-rental-lines"><div><b>관리비 포함</b><span>${esc(buildingListSummary(building.maintenanceIncludes, building.maintenanceIncludeOther))}</span></div><div><b>구조</b><span>${esc(buildingListSummary(building.roomTypes, building.roomTypeOther))}</span></div><div><b>호실 옵션</b><span>${esc(buildingListSummary(building.roomOptions, building.roomOptionOther))}</span></div></div></div></section>`;
     return `<header class="building-hub-detail-head"><div class="building-hub-title"><span>${esc(building.buildingNo || building.id)}</span><h2>${esc(building.name || "건물명 미입력")}</h2><p>${esc(building.address || "주소 미입력")}</p></div><div class="building-hub-head-actions"><button class="secondary-button" data-building-edit="${attr(building.id)}">건물 정보 수정</button><button class="secondary-button" data-building-payments="${attr(building.id)}">입금 캘린더</button><button class="primary-button" data-building-new-case="${attr(building.id)}">＋ 새 케이스</button></div></header>
       <div class="building-hub-detail-scroll"><div class="building-hub-kpis"><div class="building-hub-kpi"><span>연결 고객</span><b>${customers.length}명</b><small>${esc(owner ? `대표 ${owner.name}` : "건물주 연결 필요")}</small></div><div class="building-hub-kpi"><span>진행 계약</span><b>${activeContracts.length}건</b><small>${esc(activeContracts.length ? contractTypes(activeContracts[0]).join("·") : "활성 계약 없음")}</small></div><div class="building-hub-kpi"><span>진행 케이스</span><b>${openCases.length}건</b><small>${esc(openCases[0] ? Core.workflowProgress(openCases[0]).current : "진행 업무 없음")}</small></div><div class="building-hub-kpi ${overdueRows.length ? "alert" : ""}"><span>이번 달 입금</span><b>${rows.length}건</b><small>${esc(overdueRows.length ? `확인 필요 ${overdueRows.length}건` : amount ? `예정 ${krw(amount)}` : "납부 일정 없음")}</small></div></div>
       <div class="building-identity-strip"><div><b>건물 유형</b><span>${esc(building.type || "미입력")}</span></div><div><b>운영 상태</b><span>${buildingStatusBadge(building.status)}</span></div><div><b>호실 수</b><span>${Number(building.unitCount) ? `${Number(building.unitCount).toLocaleString("ko-KR")}개` : "미입력"}</span></div><div><b>담당자</b><span>${esc(building.manager || "미입력")}</span></div></div>
-      <div class="building-detail-grid"><section class="building-detail-section"><header><b>연결 고객</b><span>${customers.length}명</span></header><div class="building-detail-body">${customerRecords || `<div class="building-detail-empty">연결된 고객이 없습니다. 건물 정보 수정에서 건물주를 선택하세요.</div>`}</div></section><section class="building-detail-section"><header><b>건물 호실</b><button type="button" class="mini-button" data-building-unit-add="${attr(building.id)}">＋ 호실</button></header><div class="building-detail-body">${unitRecords || `<div class="building-detail-empty">등록된 호실이 없습니다.</div>`}${archivedUnitRecords}</div></section><section class="building-detail-section"><header><b>계약</b><span>${contracts.length}건</span></header><div class="building-detail-body">${contractRecords || `<div class="building-detail-empty">연결된 계약이 없습니다.</div>`}</div></section><section class="building-detail-section"><header><b>케이스</b><span>${cases.length}건</span></header><div class="building-detail-body">${caseRecords || `<div class="building-detail-empty">연결된 케이스가 없습니다.</div>`}</div></section><section class="building-detail-section"><header><b>${esc(paymentMonthLabel(paymentMonth))} 입금 일정</b><span>${rows.length}건</span></header><div class="building-detail-body">${paymentRecords || `<div class="building-detail-empty">이번 달 납부 일정이 없습니다.</div>`}</div></section>${building.memo ? `<section class="building-detail-section wide"><header><b>건물 메모</b><span>공용 정보</span></header><div class="building-detail-body"><div class="building-detail-record"><div><b>관리 참고사항</b><span>${esc(building.memo)}</span></div></div></div></section>` : ""}</div></div>`;
+      <div class="building-detail-grid">${rentalSummary}<section class="building-detail-section"><header><b>연결 고객</b><span>${customers.length}명</span></header><div class="building-detail-body">${customerRecords || `<div class="building-detail-empty">연결된 고객이 없습니다. 건물 정보 수정에서 건물주를 선택하세요.</div>`}</div></section><section class="building-detail-section"><header><b>건물 호실</b><button type="button" class="mini-button" data-building-unit-add="${attr(building.id)}">＋ 호실</button></header><div class="building-detail-body">${unitRecords || `<div class="building-detail-empty">등록된 호실이 없습니다.</div>`}${archivedUnitRecords}</div></section><section class="building-detail-section"><header><b>계약</b><span>${contracts.length}건</span></header><div class="building-detail-body">${contractRecords || `<div class="building-detail-empty">연결된 계약이 없습니다.</div>`}</div></section><section class="building-detail-section"><header><b>케이스</b><span>${cases.length}건</span></header><div class="building-detail-body">${caseRecords || `<div class="building-detail-empty">연결된 케이스가 없습니다.</div>`}</div></section><section class="building-detail-section"><header><b>${esc(paymentMonthLabel(paymentMonth))} 입금 일정</b><span>${rows.length}건</span></header><div class="building-detail-body">${paymentRecords || `<div class="building-detail-empty">이번 달 납부 일정이 없습니다.</div>`}</div></section>${building.memo ? `<section class="building-detail-section wide"><header><b>건물 메모</b><span>공용 정보</span></header><div class="building-detail-body"><div class="building-detail-record"><div><b>관리 참고사항</b><span>${esc(building.memo)}</span></div></div></div></section>` : ""}</div></div>`;
   }
 
   function renderConsultations() {
@@ -2141,6 +2157,18 @@
     setTimeout(() => document.querySelector('#customerForm [name="name"]')?.focus(), 30);
   }
 
+  function buildingNumberField(label, name, value, suffix, placeholder) {
+    const number = Number(value);
+    const displayValue = Number.isFinite(number) && number > 0 ? Math.round(number) : "";
+    return `<label class="field building-number-field"><span>${esc(label)}</span><div><input name="${attr(name)}" type="number" min="0" step="1" inputmode="numeric" value="${attr(displayValue)}" placeholder="${attr(placeholder || "숫자만 입력")}"><em>${esc(suffix || "")}</em></div></label>`;
+  }
+
+  function buildingChecklistField(label, name, options, selected, help, otherName, otherValue, otherPlaceholder) {
+    const checked = new Set(buildingArray(selected));
+    const other = String(otherValue || "").trim();
+    return `<fieldset class="building-check-field wide"><legend>${esc(label)}</legend>${help ? `<p>${esc(help)}</p>` : ""}<div class="building-check-grid">${options.map(option => `<label><input type="checkbox" name="${attr(name)}" value="${attr(option)}" ${checked.has(option) || option === "기타" && !!other ? "checked" : ""}><span>${esc(option)}</span></label>`).join("")}</div>${otherName ? `<label class="building-other-field"><span>기타 설명</span><input name="${attr(otherName)}" value="${attr(other)}" placeholder="${attr(otherPlaceholder || "기타 내용을 입력하세요")}"></label>` : ""}</fieldset>`;
+  }
+
   function buildingEditor(buildingId) {
     if (deferCanonicalMutation("건물")) return;
     const editing = buildingById(buildingId);
@@ -2149,16 +2177,30 @@
     const ownerCustomerField = editing
       ? `<label class="field"><span>건물주·대표 고객</span><select disabled aria-disabled="true"><option>${esc(building.ownerCustomerId ? (customerById(building.ownerCustomerId)?.name || building.ownerCustomerId) : "아직 연결하지 않음")}</option></select><input type="hidden" name="ownerCustomerId" value="${attr(building.ownerCustomerId || "")}"><small>건물주 변경은 연결된 고객·건물 관계를 함께 옮기는 별도 이전 절차에서 처리합니다.</small></label>`
       : selectField("건물주·대표 고객", "ownerCustomerId", customerOptions, building.ownerCustomerId || "", id => id ? (customerById(id)?.name || id) : "아직 연결하지 않음");
-    modalContent.innerHTML = `<div class="modal-head"><div><h2>${editing ? "건물 정보 수정" : "새 건물 등록"}</h2><p>건물 고유 ID를 기준으로 고객·계약·케이스·입금 자료가 연결됩니다.</p></div><button class="close-button" data-action="close-modal">×</button></div><form id="buildingForm" class="modal-body" data-building-id="${attr(editing && editing.id || "")}"><div class="info-box">같은 건물을 다시 등록하지 말고 기존 건물을 수정해 주세요. 건물명이 바뀌어도 연결된 업무는 유지됩니다.</div><div class="form-grid" style="margin-top:14px">
-      ${field("건물명 *", "name", building.name, "text", "예: 햇빛빌라")}
-      ${ownerCustomerField}
-      ${selectField("건물 유형", "type", ["다가구", "원룸", "상가", "아파트", "빌딩", "오피스텔", "기타"], building.type || "다가구")}
-      ${selectField("운영 상태", "status", ["영업후보", "현장방문", "견적중", "계약예정", "관리중", "보류"], building.status || "영업후보")}
-      ${field("건물 주소 *", "address", building.address, "text", "원주시부터 입력", "wide")}
-      ${field("호실 수", "unitCount", building.unitCount || "", "number", "숫자만 입력")}
-      ${field("담당자", "manager", building.manager || store.settings.owner || "김현진")}
-      ${areaField("건물 메모", "memo", building.memo, "wide")}
-    </div><div class="form-actions">${editing ? `<button type="button" class="danger-outline-button form-delete-left" data-building-delete="${attr(editing.id)}">건물 보관</button>` : ""}<button type="button" class="secondary-button" data-action="close-modal">취소</button><button type="submit" class="primary-button">${editing ? "수정 저장" : "건물 등록"}</button></div></form>`;
+    modalContent.innerHTML = `<div class="modal-head"><div><h2>${editing ? "건물 정보 수정" : "새 건물 등록"}</h2><p>건물 고유 ID를 기준으로 고객·계약·케이스·입금 자료가 연결됩니다.</p></div><button class="close-button" data-action="close-modal">×</button></div><form id="buildingForm" class="modal-body building-form" data-building-id="${attr(editing && editing.id || "")}"><div class="info-box">같은 건물을 다시 등록하지 말고 기존 건물을 수정해 주세요. 건물명이 바뀌어도 연결된 업무는 유지됩니다.</div>
+      <section class="building-form-section"><header><div><h3>기본 정보</h3><p>건물과 담당 고객을 구분하는 공용 정보입니다.</p></div></header><div class="form-grid building-form-section-body">
+        ${field("건물명 *", "name", building.name, "text", "예: 햇빛빌라")}
+        ${ownerCustomerField}
+        ${selectField("건물 유형", "type", ["다가구", "원룸", "상가", "아파트", "빌딩", "오피스텔", "기타"], building.type || "다가구")}
+        ${selectField("운영 상태", "status", ["영업후보", "현장방문", "견적중", "계약예정", "관리중", "보류"], building.status || "영업후보")}
+        ${field("건물 주소", "address", building.address, "text", "원주시부터 입력", "wide")}
+        ${field("전체 호실 수", "unitCount", building.unitCount || "", "number", "숫자만 입력")}
+        ${field("담당자", "manager", building.manager || store.settings.owner || "김현진")}
+      </div></section>
+      <section class="building-form-section building-rental-form-section"><header><div><h3>임대·공실 정보</h3><p>대표 임대 조건과 현재 확인된 공실을 입력하세요.</p></div><span>금액은 원 단위</span></header><div class="form-grid building-form-section-body">
+        ${buildingNumberField("보증금", "rentDeposit", building.rentDeposit, "원", "예: 3000000")}
+        ${buildingNumberField("월세", "monthlyRent", building.monthlyRent, "원", "예: 330000")}
+        ${buildingNumberField("관리비", "maintenanceFee", building.maintenanceFee, "원", "예: 50000")}
+        ${buildingNumberField("공실 수", "vacantUnitCount", building.vacantUnitCount, "개", "예: 2")}
+        ${field("공실 호실", "vacantUnits", buildingArray(building.vacantUnits).join(", "), "text", "예: 101호, 203호", "wide")}
+        ${buildingChecklistField("관리비 포함 항목", "maintenanceIncludes", BUILDING_MAINTENANCE_ITEMS, building.maintenanceIncludes, "관리비에 포함되는 항목을 모두 선택하세요.", "maintenanceIncludeOther", building.maintenanceIncludeOther, "예: 승강기 유지비, 복도 청소")}
+        ${buildingChecklistField("호실 구조", "roomTypes", BUILDING_ROOM_LAYOUTS, building.roomTypes, "건물에 있는 구조를 모두 선택하세요.", "roomTypeOther", building.roomTypeOther, "예: 복층, 쓰리룸")}
+      </div></section>
+      <section class="building-form-section building-options-form-section"><header><div><h3>호실 옵션</h3><p>세입자에게 제공되는 기본 옵션을 모두 선택하세요.</p></div></header><div class="form-grid building-form-section-body">
+        ${buildingChecklistField("제공 옵션", "roomOptions", BUILDING_ROOM_OPTIONS, building.roomOptions, "선택한 내용은 건물 상세에서 한눈에 확인할 수 있습니다.", "roomOptionOther", building.roomOptionOther, "예: 건조기, 인덕션")}
+      </div></section>
+      <section class="building-form-section"><header><div><h3>관리 메모</h3><p>건물 운영 시 함께 확인할 내용을 적어 주세요.</p></div></header><div class="form-grid building-form-section-body">${areaField("건물 메모", "memo", building.memo, "wide")}</div></section>
+      <div class="form-actions">${editing ? `<button type="button" class="danger-outline-button form-delete-left" data-building-delete="${attr(editing.id)}">건물 보관</button>` : ""}<button type="button" class="secondary-button" data-action="close-modal">취소</button><button type="submit" class="primary-button">${editing ? "수정 저장" : "건물 등록"}</button></div></form>`;
     openModal();
     setTimeout(() => document.querySelector('#buildingForm [name="name"]')?.focus(), 30);
   }
@@ -4294,8 +4336,24 @@
       } catch (error) { showToast(error.message || "건물 호실을 저장하지 못했습니다.", "error"); }
     } else if (form.id === "buildingForm") {
       if (deferCanonicalMutation("건물")) return;
-      const raw = Object.fromEntries(new FormData(form).entries());
+      const formData = new FormData(form);
+      const raw = Object.fromEntries(formData.entries());
       const name = String(raw.name || "").trim();
+      if (!name) return showToast("건물명을 입력해 주세요.", "error");
+      const nonNegativeInteger = Core.nonNegativeInteger;
+      const checkedValues = fieldName => [...new Set(formData.getAll(fieldName).map(value => String(value || "").trim()).filter(Boolean))];
+      const vacantUnits = [...new Set(String(raw.vacantUnits || "").split(/[\n,，;]+/).map(value => value.trim()).filter(Boolean))];
+      const vacantUnitCount = nonNegativeInteger(raw.vacantUnitCount);
+      if (vacantUnits.length > vacantUnitCount) return showToast(`공실 호실을 ${vacantUnits.length}개 입력했습니다. 공실 수를 ${vacantUnits.length}개 이상으로 입력해 주세요.`, "error");
+      const maintenanceIncludes = checkedValues("maintenanceIncludes");
+      const roomTypes = checkedValues("roomTypes");
+      const roomOptions = checkedValues("roomOptions");
+      const maintenanceIncludeOther = String(raw.maintenanceIncludeOther || "").trim();
+      const roomTypeOther = String(raw.roomTypeOther || "").trim();
+      const roomOptionOther = String(raw.roomOptionOther || "").trim();
+      if (maintenanceIncludeOther && !maintenanceIncludes.includes("기타")) maintenanceIncludes.push("기타");
+      if (roomTypeOther && !roomTypes.includes("기타")) roomTypes.push("기타");
+      if (roomOptionOther && !roomOptions.includes("기타")) roomOptions.push("기타");
       const address = String(raw.address || "").trim();
       if (!name || !address) return showToast("건물명과 주소를 입력해 주세요.", "error");
       const existing = buildingById(form.dataset.buildingId);
@@ -4320,6 +4378,8 @@
       const patch = buildCanonicalBuildingPatch({
         name, ownerCustomerId: existing ? existing.ownerCustomerId : raw.ownerCustomerId, type: raw.type, status: raw.status,
         address, unitCount: raw.unitCount,
+        rentDeposit: nonNegativeInteger(raw.rentDeposit), monthlyRent: nonNegativeInteger(raw.monthlyRent), maintenanceFee: nonNegativeInteger(raw.maintenanceFee),
+        maintenanceIncludes, maintenanceIncludeOther, vacantUnitCount, vacantUnits, roomTypes, roomTypeOther, roomOptions, roomOptionOther,
         manager: String(raw.manager || "").trim() || store.settings.owner || "김현진", memo: raw.memo,
         aliases: [...aliases], paymentBuildingIds: [...paymentIds],
       });
