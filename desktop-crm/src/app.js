@@ -32,6 +32,9 @@
   const loginMessage = document.getElementById("loginMessage");
   const userPill = document.getElementById("userPill");
   const updateButton = document.getElementById("updateButton");
+  const primaryActionButton = document.getElementById("primaryActionButton");
+  const fieldOperatorControl = document.getElementById("fieldOperatorControl");
+  const fieldOperatorSelect = document.getElementById("fieldOperatorSelect");
 
   let store = Core.blankStore();
   let currentView = "dashboard";
@@ -75,6 +78,16 @@
   let selectedCaseKey = "";
   let openCaseStepKey = "";
   let caseListMode = "active";
+  let fieldTeamProfiles = [];
+  let fieldProfilesAvailable = false;
+  let fieldProfilesError = "";
+  let selectedFieldOperatorId = "";
+  let fieldConnectionState = { status: "idle", message: "현장 업무를 준비하고 있습니다.", ready: false, pendingUploads: { count: 0, risk: "none" } };
+  let fieldNavigationState = { route: "/field?embedded=crm", selectedJobId: "", filter: {}, scrollTop: 0, search: "" };
+  let fieldResizeObserver = null;
+  let fieldOpenGeneration = 0;
+  let fieldSearchTimer = null;
+  let crmSearchValue = "";
   const sessionViewedCustomers = new Set();
 
   const viewMeta = {
@@ -83,6 +96,7 @@
     payments: ["건물별 납부 예정과 입금 확인", "입금 캘린더"],
     customers: ["고객 정보", "고객 관리"],
     buildings: ["건물별 업무를 한곳에서", "건물 관리"],
+    fieldOperations: ["BRING FIELD", "현장 업무"],
     consultations: ["전화·방문·미팅 내용", "상담 기록"],
     pipeline: ["건물 발굴부터 유료관리 전환까지", "영업 관리"],
     contracts: ["유형별 계약 조건과 기간", "계약 관리"],
@@ -323,12 +337,100 @@
     return String(currentAuth && currentAuth.user && currentAuth.user.uid || "");
   }
 
+  function fieldOperatorStorageKey() {
+    return `bring-crm:field-operator:${currentAuthUid() || "signed-out"}`;
+  }
+
+  function fieldRouteStorageKey() {
+    return `bring-crm:field-route:${currentAuthUid() || "signed-out"}`;
+  }
+
+  function saveFieldNavigationState() {
+    try {
+      sessionStorage.setItem(fieldRouteStorageKey(), JSON.stringify(fieldNavigationState));
+    } catch (_error) {}
+  }
+
+  function restoreFieldNavigationState() {
+    const fallback = { route: "/field?embedded=crm", selectedJobId: "", filter: {}, scrollTop: 0, search: "" };
+    try {
+      const parsed = JSON.parse(sessionStorage.getItem(fieldRouteStorageKey()) || "null");
+      if (!parsed || typeof parsed !== "object" || typeof parsed.route !== "string" || !parsed.route.startsWith("/field")) return fallback;
+      return {
+        route: parsed.route.slice(0, 1024),
+        selectedJobId: /^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$/.test(String(parsed.selectedJobId || "")) ? String(parsed.selectedJobId || "") : "",
+        filter: parsed.filter && typeof parsed.filter === "object" && !Array.isArray(parsed.filter) ? parsed.filter : {},
+        scrollTop: Number.isInteger(parsed.scrollTop) && parsed.scrollTop >= 0 ? Math.min(parsed.scrollTop, 10000000) : 0,
+        search: String(parsed.search || "").slice(0, 256),
+      };
+    } catch (_error) {
+      return fallback;
+    }
+  }
+
+  function activeFieldOperator() {
+    return fieldTeamProfiles.find(profile => profile.active === true && profile.id === selectedFieldOperatorId) || null;
+  }
+
+  function readStoredFieldOperatorId() {
+    try {
+      const raw = localStorage.getItem(fieldOperatorStorageKey());
+      if (!raw || raw.length > 512) return "";
+      const stored = JSON.parse(raw);
+      if (!stored || typeof stored !== "object" || Array.isArray(stored)) return "";
+      const keys = Object.keys(stored).sort();
+      if (keys.length !== 2 || keys[0] !== "operatorId" || keys[1] !== "selectedAt") return "";
+      if (typeof stored.operatorId !== "string" || !/^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$/.test(stored.operatorId)) return "";
+      if (typeof stored.selectedAt !== "string" || !/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/.test(stored.selectedAt)) return "";
+      const selectedAt = Date.parse(stored.selectedAt);
+      if (!Number.isFinite(selectedAt) || selectedAt < Date.UTC(2020, 0, 1) || selectedAt > Date.now() + 5 * 60_000) return "";
+      return stored.operatorId;
+    } catch (_error) {
+      return "";
+    }
+  }
+
+  function renderFieldOperatorControl() {
+    if (!fieldOperatorSelect || !fieldOperatorControl) return;
+    fieldOperatorControl.hidden = false;
+    const selected = activeFieldOperator();
+    fieldOperatorSelect.innerHTML = `<option value="">${fieldProfilesAvailable ? "작업자를 선택해 주세요" : "작업자 명단 확인 필요"}</option>${fieldTeamProfiles.map(profile => `<option value="${attr(profile.id)}" ${profile.id === selectedFieldOperatorId ? "selected" : ""}>${esc(profile.name)}</option>`).join("")}`;
+    fieldOperatorSelect.disabled = !fieldProfilesAvailable || !fieldTeamProfiles.length;
+    fieldOperatorSelect.setAttribute("aria-label", selected ? `현재 작업자 ${selected.name}` : "현재 작업자 선택");
+  }
+
+  async function loadFieldTeamProfiles() {
+    fieldProfilesAvailable = false;
+    fieldProfilesError = "";
+    fieldTeamProfiles = [];
+    selectedFieldOperatorId = "";
+    try {
+      const result = await api.loadFieldTeamProfiles();
+      fieldProfilesAvailable = result && result.available === true;
+      fieldProfilesError = String(result && result.error || "");
+      fieldTeamProfiles = (result && Array.isArray(result.profiles) ? result.profiles : []).filter(profile => profile && profile.active === true && /^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$/.test(String(profile.id || "")))
+        .map(profile => ({ id: String(profile.id), name: String(profile.displayName || "작업자"), sortOrder: Number.isInteger(profile.sortOrder) ? profile.sortOrder : 999999, active: true }))
+        .sort((left, right) => left.sortOrder - right.sortOrder || left.name.localeCompare(right.name, "ko"));
+      const storedId = readStoredFieldOperatorId();
+      if (fieldTeamProfiles.some(profile => profile.id === storedId)) selectedFieldOperatorId = storedId;
+    } catch (error) {
+      fieldProfilesError = error && error.message || "작업자 명단을 불러오지 못했습니다.";
+    }
+    renderFieldOperatorControl();
+    return fieldTeamProfiles;
+  }
+
   function setCurrentAuth(value) {
     const previousUid = currentAuthUid();
     currentAuth = value || currentAuth;
     if (previousUid !== currentAuthUid()) {
       authGeneration += 1;
       overlayRefreshPromise = null;
+      fieldOpenGeneration += 1;
+      fieldTeamProfiles = [];
+      fieldProfilesAvailable = false;
+      selectedFieldOperatorId = "";
+      fieldNavigationState = restoreFieldNavigationState();
     }
     return currentAuth;
   }
@@ -510,8 +612,97 @@
   }
 
   function deferCanonicalMutation(label) {
-    showToast(`${label} 변경은 담당 작업자 선택 기능이 연결된 뒤 사용할 수 있습니다.`, "error");
-    return true;
+    if (!canWriteCRM()) {
+      showToast("조회 전용 계정은 내용을 변경할 수 없습니다.", "error");
+      return true;
+    }
+    if (!activeFieldOperator()) {
+      showToast(fieldProfilesAvailable ? `${label} 변경 전 현재 작업자를 선택해 주세요.` : (fieldProfilesError || "작업자 명단을 확인할 수 없어 변경을 잠시 막았습니다."), "error");
+      fieldOperatorSelect?.focus();
+      return true;
+    }
+    return false;
+  }
+
+  function buildCanonicalBuildingPatch(values = {}) {
+    const aliases = Array.isArray(values.aliases) ? [...new Set(values.aliases.map(value => String(value || "").trim()).filter(Boolean))] : [];
+    const paymentBuildingIds = Array.isArray(values.paymentBuildingIds) ? [...new Set(values.paymentBuildingIds.map(value => String(value || "").trim()).filter(Boolean))] : [];
+    return {
+      name: String(values.name || "").trim(),
+      ownerCustomerId: String(values.ownerCustomerId || ""),
+      type: String(values.type || ""),
+      status: String(values.status || ""),
+      address: String(values.address || "").trim(),
+      unitCount: Number(values.unitCount) || 0,
+      manager: String(values.manager || "").trim(),
+      memo: String(values.memo || "").trim(),
+      aliases,
+      externalRefs: { paymentBuildingIds },
+    };
+  }
+
+  function buildCanonicalBuildingUnitPatch(values = {}) {
+    return {
+      crmBuildingId: String(values.buildingId || ""),
+      label: String(values.label || "").trim(),
+      status: String(values.status || ""),
+      memo: String(values.memo || "").trim(),
+    };
+  }
+
+  function buildCanonicalSalesUnitPatch(values = {}) {
+    const patch = {
+      prospectId: String(values.prospectId || ""),
+      label: String(values.label || "").trim(),
+      status: String(values.status || ""),
+      moveOutAt: String(values.moveOutAt || ""),
+      availableFrom: String(values.availableFrom || ""),
+      deposit: Number(values.deposit) || 0,
+      rent: Number(values.rent) || 0,
+      maintenanceFee: Number(values.maintenanceFee) || 0,
+      photoUrl: String(values.photoUrl || "").trim(),
+      evidenceUrl: String(values.evidenceUrl || "").trim(),
+      note: String(values.note || "").trim(),
+    };
+    const crmBuildingUnitId = String(values.crmBuildingUnitId || "").trim();
+    if (crmBuildingUnitId) patch.crmBuildingUnitId = crmBuildingUnitId;
+    return patch;
+  }
+
+  async function commitCanonicalEntity({ entityType, entityId, operation, expectedVersion, patch, reason }) {
+    if (deferCanonicalMutation(entityType === "buildings" ? "건물" : entityType === "buildingUnits" ? "건물 호실" : "영업 호실")) return null;
+    const commitGeneration = authGeneration;
+    const commitUid = currentAuthUid();
+    const result = await api.commitCanonicalCrmEntity({
+      requestId: crypto.randomUUID(),
+      entityType,
+      entityId,
+      operation,
+      expectedVersion: Number(expectedVersion) || 0,
+      operatorId: selectedFieldOperatorId,
+      reason: String(reason || "CRM에서 변경").slice(0, 500),
+      patch: patch && typeof patch === "object" ? patch : {},
+    });
+    if (!result || commitGeneration !== authGeneration || commitUid !== currentAuthUid()) throw new Error("로그인 세션이 변경되어 결과를 반영하지 않았습니다.");
+    try {
+      const latest = await api.load();
+      if (commitGeneration !== authGeneration || commitUid !== currentAuthUid()) throw new Error("로그인 세션이 변경되어 결과를 반영하지 않았습니다.");
+      store = preserveRendererOverlays(latest, store);
+      ensureSalesStore(store);
+      synchronizedStore = cloneStore(store);
+      await refreshRendererOverlays(false).catch(() => undefined);
+    } catch (_error) {
+      if (commitGeneration !== authGeneration || commitUid !== currentAuthUid()) throw new Error("로그인 세션이 변경되어 결과를 반영하지 않았습니다.");
+      if (typeof showToast === "function") showToast("저장은 완료됐지만 최신 화면을 불러오지 못했습니다. 연결되면 자동으로 반영합니다.", "warning");
+      void api.load().then(latest => {
+        if (commitGeneration !== authGeneration || commitUid !== currentAuthUid()) return;
+        store = preserveRendererOverlays(latest, store);
+        ensureSalesStore(store);
+        synchronizedStore = cloneStore(store);
+        return refreshRendererOverlays(false);
+      }).catch(() => undefined);
+    }
+    return result;
   }
 
   function containsProhibitedSecret(value) {
@@ -689,6 +880,19 @@
     document.getElementById("navPartnerQuoteCount").textContent = store.partnerQuotes.filter(item => item.status !== "제외").length;
     document.getElementById("navTaskCount").textContent = store.tasks.filter(item => item.status !== "완료" && item.status !== "취소").length;
     document.body.classList.toggle("crm-read-only", !canWriteCRM());
+    const fieldView = currentView === "fieldOperations";
+    searchEl.placeholder = fieldView ? "현장 업무 검색" : "고객·건물·연락처 검색";
+    searchEl.value = fieldView ? fieldNavigationState.search : crmSearchValue;
+    primaryActionButton.hidden = fieldView && !canWriteCRM();
+    if (fieldView) {
+      primaryActionButton.dataset.action = "new-field-job";
+      primaryActionButton.textContent = "＋ 현장 업무 (준비 중)";
+    } else {
+      primaryActionButton.dataset.action = "new-customer";
+      primaryActionButton.textContent = "＋ 새 고객";
+    }
+    fieldOperatorControl.hidden = !["fieldOperations", "buildings", "pipeline"].includes(currentView);
+    if (!fieldOperatorControl.hidden) renderFieldOperatorControl();
   }
 
   function render() {
@@ -698,6 +902,7 @@
     else if (currentView === "payments") renderPayments();
     else if (currentView === "customers") renderCustomers();
     else if (currentView === "buildings") renderBuildings();
+    else if (currentView === "fieldOperations") renderFieldOperations();
     else if (currentView === "consultations") renderConsultations();
     else if (currentView === "pipeline") renderPipeline();
     else if (currentView === "contracts") renderContracts();
@@ -707,6 +912,108 @@
     else if (currentView === "tasks") renderTasks();
     else if (currentView === "security") renderSecurity();
     else renderSettings();
+  }
+
+  function renderFieldOperations() {
+    const selected = activeFieldOperator();
+    const disconnected = ["disconnected", "timeout", "error"].includes(fieldConnectionState.status);
+    const operatorMessage = fieldProfilesAvailable
+      ? selected ? `현재 작업자: ${selected.name}` : "현장 업무를 등록하거나 변경하려면 현재 작업자를 선택해 주세요."
+      : fieldProfilesError || "작업자 명단을 확인할 수 없습니다. 조회는 가능하지만 등록·변경은 잠시 막힙니다.";
+    main.innerHTML = `<section id="fieldWorkspaceState" class="field-workspace-state" data-state="${attr(fieldConnectionState.status)}">
+      <div class="field-state-card" role="status" aria-live="polite">
+        <span class="field-state-mark" aria-hidden="true"></span>
+        <div><b>${esc(disconnected ? "현장 업무 연결을 확인해 주세요" : "현장 업무를 불러오고 있습니다")}</b><p>${esc(fieldConnectionState.message || "잠시만 기다려 주세요.")}</p><small>${esc(operatorMessage)}</small></div>
+        ${disconnected ? `<button type="button" class="secondary-button" data-action="reconnect-field">다시 연결</button>` : ""}
+      </div>
+    </section>`;
+    void measureFieldWorkspace();
+    if (!disconnected) {
+      const generation = ++fieldOpenGeneration;
+      requestAnimationFrame(() => { void openFieldOperations(generation); });
+    }
+  }
+
+  async function measureFieldWorkspace() {
+    const rect = main.getBoundingClientRect();
+    let result = { ok: false, code: "FIELD_BOUNDS_INVALID" };
+    if (rect.width > 0 && rect.height > 0) {
+      try {
+        result = await api.setFieldBounds({ x: rect.x, y: rect.y, width: rect.width, height: rect.height });
+      } catch (_error) {}
+    }
+    if (!fieldResizeObserver && typeof ResizeObserver === "function") {
+      fieldResizeObserver = new ResizeObserver(() => {
+        if (currentView === "fieldOperations") void measureFieldWorkspace();
+      });
+      fieldResizeObserver.observe(main);
+    }
+    return result;
+  }
+
+  async function openFieldOperations(generation) {
+    fieldConnectionState = Object.assign({}, fieldConnectionState, { status: "connecting", message: "현장 업무에 연결하고 있습니다.", ready: false });
+    await measureFieldWorkspace();
+    const result = await api.showFieldPlatform(Object.assign({}, fieldNavigationState, { operatorId: selectedFieldOperatorId }));
+    if (generation !== fieldOpenGeneration || currentView !== "fieldOperations") return;
+    if (!result.ok) {
+      fieldConnectionState = Object.assign({}, fieldConnectionState, { status: result.code === "FIELD_BRIDGE_TIMEOUT" ? "timeout" : "disconnected", message: result.error || "현장 업무에 연결하지 못했습니다.", ready: false });
+      renderFieldOperations();
+    }
+  }
+
+  async function sendFieldCommand(command, args = {}) {
+    if (!canWriteCRM()) {
+      showToast("조회 전용 계정은 현장 업무를 변경할 수 없습니다.", "error");
+      return null;
+    }
+    if (!activeFieldOperator()) {
+      showToast(fieldProfilesAvailable ? "현재 작업자를 먼저 선택해 주세요." : (fieldProfilesError || "작업자 명단을 확인할 수 없습니다."), "error");
+      fieldOperatorSelect?.focus();
+      return null;
+    }
+    const response = await api.fieldRequest({
+      protocolVersion: 2,
+      type: "field.command",
+      requestId: crypto.randomUUID(),
+      payload: { command, operatorId: selectedFieldOperatorId, args },
+    });
+    if (!response || response.ok === false || response.payload && response.payload.ok === false) {
+      showToast("현장 업무 요청을 처리하지 못했습니다. 연결 상태를 확인해 주세요.", "error");
+      return null;
+    }
+    return response;
+  }
+
+  async function sendFieldNavigation() {
+    return api.fieldRequest({
+      protocolVersion: 2,
+      type: "field.navigate",
+      requestId: crypto.randomUUID(),
+      payload: Object.assign({}, fieldNavigationState, { operatorId: selectedFieldOperatorId }),
+    });
+  }
+
+  async function navigateFromField(entityType, entityId) {
+    saveFieldNavigationState();
+    if (["buildings", "buildingUnits"].includes(entityType)) {
+      if (entityType === "buildingUnits") {
+        const unit = Object.values(store.buildingUnits || {}).find(item => item && String(item.id) === entityId);
+        selectedBuildingId = String(unit && (unit.crmBuildingId || unit.buildingId) || "");
+      } else selectedBuildingId = entityId;
+      currentView = "buildings";
+    } else if (["salesProspects", "salesUnits"].includes(entityType)) {
+      if (entityType === "salesUnits") selectedSalesProspectId = String(salesUnitById(entityId)?.prospectId || "");
+      else selectedSalesProspectId = entityId;
+      currentView = "pipeline";
+    } else if (entityType === "workflowCases") {
+      selectedCaseKey = entityId;
+      currentView = "cases";
+    } else if (entityType === "tasks") currentView = "tasks";
+    else return;
+    fieldOpenGeneration += 1;
+    await api.hideFieldPlatform();
+    render();
   }
 
   function renderDashboard() {
@@ -1417,12 +1724,14 @@
   };
   const paymentFilterIdForBuilding = building => String(building && building.id || "all");
   const buildingCases = building => activeCases().filter(item => caseBelongsToBuilding(item, building));
+  const buildingUnitsForBuilding = building => (store.buildingUnits || []).filter(item => item && String(item.crmBuildingId || item.buildingId || "") === String(building.id));
   const buildingPaymentRows = building => Core.paymentMonthRows(operations.payments || {}, paymentMonth, todayKey(), "all").filter(row => scheduleBelongsToBuilding(row.schedule, building));
   const buildingStatusBadge = status => `<span class="contract-status ${status === "관리중" ? "active" : status === "보류" ? "closed" : "preparing"}">${esc(status || "상태 미입력")}</span>`;
 
   function renderBuildings() {
     const query = Core.normalizeText(searchEl.value);
     const buildings = [...store.buildings]
+      .filter(building => !building.archivedAt)
       .filter(building => {
         const customers = buildingCustomers(building);
         return !query || Core.normalizeText([building.name, building.address, building.type, building.status, building.buildingNo, building.manager, customers.map(item => `${item.name} ${item.phone}`).join(" ")].join(" ")).includes(query);
@@ -1435,7 +1744,13 @@
         const customers = buildingCustomers(item);
         const cases = buildingCases(item);
         return `<button type="button" class="building-hub-card ${item.id === selectedBuildingId ? "selected" : ""}" data-building-open="${attr(item.id)}"><div><strong>${esc(item.name || "건물명 미입력")}</strong><em>${esc(item.status || "미입력")}</em></div><p>${esc(item.address || "주소 미입력")}</p><small>${esc(customers[0]?.name || "고객 미연결")} · 진행 케이스 ${cases.length}건</small></button>`;
-      }).join("") : `<div class="building-hub-empty">${query ? "검색 조건에 맞는 건물이 없습니다." : "등록된 건물이 없습니다."}<br>건물을 먼저 등록해 업무를 연결하세요.</div>`}</div></aside><section class="building-hub-detail">${building ? renderBuildingDetail(building) : `<div class="case-detail-empty"><strong>${query ? "건물을 찾지 못했습니다" : "첫 건물을 등록해 주세요"}</strong><span>건물을 등록하면 고객·계약·케이스·입금 현황이 이곳에 모입니다.</span><button class="primary-button" data-action="new-building">＋ 건물 등록</button></div>`}</section></section>`;
+      }).join("") : `<div class="building-hub-empty">${query ? "검색 조건에 맞는 건물이 없습니다." : "등록된 건물이 없습니다."}<br>건물을 먼저 등록해 업무를 연결하세요.</div>`}</div></aside><section class="building-hub-detail">${building ? renderBuildingDetail(building) : `<div class="case-detail-empty"><strong>${query ? "건물을 찾지 못했습니다" : "첫 건물을 등록해 주세요"}</strong><span>건물을 등록하면 고객·계약·케이스·입금 현황이 이곳에 모입니다.</span><button class="primary-button" data-action="new-building">＋ 건물 등록</button></div>`}</section></section>${renderArchivedBuildings()}`;
+  }
+
+  function renderArchivedBuildings() {
+    const archived = (store.buildings || []).filter(item => item && item.archivedAt);
+    if (!archived.length) return "";
+    return `<details class="sales-crm sales-archived-panel"><summary><span>보관된 건물</span><b>${archived.length}곳</b></summary><div class="sales-archived-list">${archived.map(item => `<article><div><strong>${esc(item.name || "건물명 미입력")}</strong><p>${esc(item.address || "주소 미입력")} · ${esc(dateText(item.archivedAt))}</p></div>${canWriteCRM() ? `<button type="button" class="mini-button return" data-building-restore="${attr(item.id)}">복원</button>` : ""}</article>`).join("")}</div></details>`;
   }
 
   function renderBuildingDetail(building) {
@@ -1454,11 +1769,16 @@
       return `<div class="building-detail-record clickable" data-building-case-open="${attr(workflowCaseKey(item))}"><div><b>${esc(item.ticketNo || item.receiptNo || item.id || "케이스")}</b><span>${esc([item.room, item.issueType, progress.current].filter(Boolean).join(" · ") || "업무 내용 미입력")}</span></div><em class="${String(item.urgency || "").includes("긴급") ? "warning" : ""}">${progress.percent}%</em></div>`;
     }).join("");
     const paymentRecords = rows.slice(0, 6).map(row => `<div class="building-detail-record clickable" data-building-payment-open="${attr(row.schedule.id)}" data-building-payment-id="${attr(building.id)}"><div><b>${esc([row.schedule.unit, row.schedule.tenantName].filter(Boolean).join(" · ") || "납부 일정")}</b><span>${esc(`${row.dueDate} · ${paymentStatusLabel(row.status)}`)}</span></div><em class="${row.status === "overdue" || row.status === "manual_unpaid" || row.status === "review" ? "warning" : ""}">${esc(krw(row.schedule.amount))}</em></div>`).join("");
+    const allUnits = buildingUnitsForBuilding(building);
+    const units = allUnits.filter(item => !item.archivedAt);
+    const archivedUnits = allUnits.filter(item => item.archivedAt);
+    const unitRecords = units.map(item => `<button type="button" class="building-detail-record clickable building-unit-record" data-building-unit-edit="${attr(item.id)}" data-building-id="${attr(building.id)}"><div><b>${esc(item.label || item.unitLabel || "호실명 미입력")}</b><span>${esc([item.status, item.memo].filter(Boolean).join(" · ") || "상태 미입력")}</span></div><em>수정</em></button>`).join("");
+    const archivedUnitRecords = archivedUnits.length ? `<details class="building-units-archived"><summary>보관된 호실 ${archivedUnits.length}개</summary>${archivedUnits.map(item => `<div class="building-detail-record"><div><b>${esc(item.label || item.unitLabel || "호실")}</b><span>${esc(dateText(item.archivedAt))}</span></div>${canWriteCRM() ? `<button type="button" class="mini-button return" data-building-unit-restore="${attr(item.id)}" data-building-id="${attr(building.id)}">복원</button>` : ""}</div>`).join("")}</details>` : "";
     const customerRecords = customers.map(customer => `<div class="building-detail-record clickable" data-customer-open="${attr(customer.id)}"><div><b>${esc(customer.name || "이름 미입력")}${customer.id === building.ownerCustomerId ? " · 건물주" : ""}</b><span>${esc([customer.type, customer.phone, customer.company].filter(Boolean).join(" · ") || "연락처 미입력")}</span></div><em>고객 보기</em></div>`).join("");
     return `<header class="building-hub-detail-head"><div class="building-hub-title"><span>${esc(building.buildingNo || building.id)}</span><h2>${esc(building.name || "건물명 미입력")}</h2><p>${esc(building.address || "주소 미입력")}</p></div><div class="building-hub-head-actions"><button class="secondary-button" data-building-edit="${attr(building.id)}">건물 정보 수정</button><button class="secondary-button" data-building-payments="${attr(building.id)}">입금 캘린더</button><button class="primary-button" data-building-new-case="${attr(building.id)}">＋ 새 케이스</button></div></header>
       <div class="building-hub-detail-scroll"><div class="building-hub-kpis"><div class="building-hub-kpi"><span>연결 고객</span><b>${customers.length}명</b><small>${esc(owner ? `대표 ${owner.name}` : "건물주 연결 필요")}</small></div><div class="building-hub-kpi"><span>진행 계약</span><b>${activeContracts.length}건</b><small>${esc(activeContracts.length ? contractTypes(activeContracts[0]).join("·") : "활성 계약 없음")}</small></div><div class="building-hub-kpi"><span>진행 케이스</span><b>${openCases.length}건</b><small>${esc(openCases[0] ? Core.workflowProgress(openCases[0]).current : "진행 업무 없음")}</small></div><div class="building-hub-kpi ${overdueRows.length ? "alert" : ""}"><span>이번 달 입금</span><b>${rows.length}건</b><small>${esc(overdueRows.length ? `확인 필요 ${overdueRows.length}건` : amount ? `예정 ${krw(amount)}` : "납부 일정 없음")}</small></div></div>
       <div class="building-identity-strip"><div><b>건물 유형</b><span>${esc(building.type || "미입력")}</span></div><div><b>운영 상태</b><span>${buildingStatusBadge(building.status)}</span></div><div><b>호실 수</b><span>${Number(building.unitCount) ? `${Number(building.unitCount).toLocaleString("ko-KR")}개` : "미입력"}</span></div><div><b>담당자</b><span>${esc(building.manager || "미입력")}</span></div></div>
-      <div class="building-detail-grid"><section class="building-detail-section"><header><b>연결 고객</b><span>${customers.length}명</span></header><div class="building-detail-body">${customerRecords || `<div class="building-detail-empty">연결된 고객이 없습니다. 건물 정보 수정에서 건물주를 선택하세요.</div>`}</div></section><section class="building-detail-section"><header><b>계약</b><span>${contracts.length}건</span></header><div class="building-detail-body">${contractRecords || `<div class="building-detail-empty">연결된 계약이 없습니다.</div>`}</div></section><section class="building-detail-section"><header><b>케이스</b><span>${cases.length}건</span></header><div class="building-detail-body">${caseRecords || `<div class="building-detail-empty">연결된 케이스가 없습니다.</div>`}</div></section><section class="building-detail-section"><header><b>${esc(paymentMonthLabel(paymentMonth))} 입금 일정</b><span>${rows.length}건</span></header><div class="building-detail-body">${paymentRecords || `<div class="building-detail-empty">이번 달 납부 일정이 없습니다.</div>`}</div></section>${building.memo ? `<section class="building-detail-section wide"><header><b>건물 메모</b><span>공용 정보</span></header><div class="building-detail-body"><div class="building-detail-record"><div><b>관리 참고사항</b><span>${esc(building.memo)}</span></div></div></div></section>` : ""}</div></div>`;
+      <div class="building-detail-grid"><section class="building-detail-section"><header><b>연결 고객</b><span>${customers.length}명</span></header><div class="building-detail-body">${customerRecords || `<div class="building-detail-empty">연결된 고객이 없습니다. 건물 정보 수정에서 건물주를 선택하세요.</div>`}</div></section><section class="building-detail-section"><header><b>건물 호실</b><button type="button" class="mini-button" data-building-unit-add="${attr(building.id)}">＋ 호실</button></header><div class="building-detail-body">${unitRecords || `<div class="building-detail-empty">등록된 호실이 없습니다.</div>`}${archivedUnitRecords}</div></section><section class="building-detail-section"><header><b>계약</b><span>${contracts.length}건</span></header><div class="building-detail-body">${contractRecords || `<div class="building-detail-empty">연결된 계약이 없습니다.</div>`}</div></section><section class="building-detail-section"><header><b>케이스</b><span>${cases.length}건</span></header><div class="building-detail-body">${caseRecords || `<div class="building-detail-empty">연결된 케이스가 없습니다.</div>`}</div></section><section class="building-detail-section"><header><b>${esc(paymentMonthLabel(paymentMonth))} 입금 일정</b><span>${rows.length}건</span></header><div class="building-detail-body">${paymentRecords || `<div class="building-detail-empty">이번 달 납부 일정이 없습니다.</div>`}</div></section>${building.memo ? `<section class="building-detail-section wide"><header><b>건물 메모</b><span>공용 정보</span></header><div class="building-detail-body"><div class="building-detail-record"><div><b>관리 참고사항</b><span>${esc(building.memo)}</span></div></div></div></section>` : ""}</div></div>`;
   }
 
   function renderConsultations() {
@@ -1793,7 +2113,7 @@
       ${field("예상 계약금액", "expectedValue", customer.expectedValue || "", "number", "원 단위")}${field("관심 서비스", "interestServices", (customer.interestServices || []).join(", "), "text", "예: 건물관리, 누수 대응")}
       ${field("태그", "tags", (customer.tags || []).join(", "), "text", "예: 원주, 다가구, 소개")}${field("마지막 연락일", "lastContactAt", datetimeValue(customer.lastContactAt), "datetime-local")}
       ${areaField("고객 메모", "notes", customer.notes, "wide")}
-    </div></details><div class="info-box" data-canonical-mutation-deferred="buildings">${linkedBuildings.length ? `연결된 건물 ${linkedBuildings.length}곳은 이 고객 화면에서 그대로 유지됩니다.` : "고객을 먼저 등록할 수 있습니다."} 건물 등록·수정은 담당 작업자 선택 기능이 연결된 뒤 건물 관리에서 사용할 수 있습니다.</div><div class="form-actions"><button type="button" class="secondary-button" data-action="close-modal">취소</button><button type="submit" class="primary-button">${editing ? "수정 저장" : "고객 등록"}</button></div></form>`;
+    </div></details><div class="info-box">${linkedBuildings.length ? `연결된 건물 ${linkedBuildings.length}곳은 이 고객 화면에서 그대로 유지됩니다.` : "고객을 먼저 등록할 수 있습니다."} 건물 등록·수정은 건물 관리에서 현재 작업자를 선택한 뒤 진행해 주세요.</div><div class="form-actions"><button type="button" class="secondary-button" data-action="close-modal">취소</button><button type="submit" class="primary-button">${editing ? "수정 저장" : "고객 등록"}</button></div></form>`;
     openModal();
     setTimeout(() => document.querySelector('#customerForm [name="name"]')?.focus(), 30);
   }
@@ -1808,13 +2128,27 @@
       ${selectField("건물주·대표 고객", "ownerCustomerId", customerOptions, building.ownerCustomerId || "", id => id ? (customerById(id)?.name || id) : "아직 연결하지 않음")}
       ${selectField("건물 유형", "type", ["다가구", "원룸", "상가", "아파트", "빌딩", "오피스텔", "기타"], building.type || "다가구")}
       ${selectField("운영 상태", "status", ["영업후보", "현장방문", "견적중", "계약예정", "관리중", "보류"], building.status || "영업후보")}
-      ${field("건물 주소", "address", building.address, "text", "원주시부터 입력", "wide")}
+      ${field("건물 주소 *", "address", building.address, "text", "원주시부터 입력", "wide")}
       ${field("호실 수", "unitCount", building.unitCount || "", "number", "숫자만 입력")}
       ${field("담당자", "manager", building.manager || store.settings.owner || "김현진")}
       ${areaField("건물 메모", "memo", building.memo, "wide")}
-    </div><div class="form-actions">${editing ? `<button type="button" class="danger-outline-button form-delete-left" data-building-delete="${attr(editing.id)}">건물 삭제</button>` : ""}<button type="button" class="secondary-button" data-action="close-modal">취소</button><button type="submit" class="primary-button">${editing ? "수정 저장" : "건물 등록"}</button></div></form>`;
+    </div><div class="form-actions">${editing ? `<button type="button" class="danger-outline-button form-delete-left" data-building-delete="${attr(editing.id)}">건물 보관</button>` : ""}<button type="button" class="secondary-button" data-action="close-modal">취소</button><button type="submit" class="primary-button">${editing ? "수정 저장" : "건물 등록"}</button></div></form>`;
     openModal();
     setTimeout(() => document.querySelector('#buildingForm [name="name"]')?.focus(), 30);
+  }
+
+  function buildingUnitEditor(buildingId, unitId) {
+    if (deferCanonicalMutation("건물 호실")) return;
+    const building = buildingById(buildingId);
+    if (!building) return showToast("건물을 찾지 못했습니다.", "error");
+    const item = (store.buildingUnits || []).find(unit => unit && unit.id === unitId && String(unit.crmBuildingId || unit.buildingId || "") === String(building.id)) || {};
+    modalContent.innerHTML = `<div class="modal-head"><div><h2>${item.id ? "건물 호실 수정" : "건물 호실 등록"}</h2><p>${esc(building.name || "건물")}에 속한 실제 호실을 관리합니다.</p></div><button class="close-button" data-action="close-modal">×</button></div><form id="buildingUnitForm" class="modal-body" data-building-id="${attr(building.id)}" data-building-unit-id="${attr(item.id || "")}"><div class="form-grid">
+      ${field("호실명 *", "label", item.label || item.unitLabel || "", "text", "예: 201호")}
+      ${selectField("호실 상태", "status", ["unknown", "occupied", "vacant", "move_out_scheduled", "maintenance"], item.status || "unknown", value => ({ unknown: "확인 필요", occupied: "입주 중", vacant: "공실", move_out_scheduled: "퇴실 예정", maintenance: "정비 중" })[value] || value)}
+      ${areaField("호실 메모", "memo", item.memo || "", "wide")}
+    </div><div class="form-actions">${item.id ? `<button type="button" class="danger-outline-button form-delete-left" data-building-unit-archive="${attr(item.id)}" data-building-id="${attr(building.id)}">호실 보관</button>` : ""}<button type="button" class="secondary-button" data-action="close-modal">취소</button><button type="submit" class="primary-button">${item.id ? "호실 저장" : "호실 등록"}</button></div></form>`;
+    openModal();
+    setTimeout(() => document.querySelector('#buildingUnitForm [name="label"]')?.focus(), 30);
   }
 
   function contractTypeChecklist(selectedTypes) {
@@ -2592,35 +2926,32 @@
     if (!canWriteCRM()) return showToast("조회 전용 계정은 건물을 삭제할 수 없습니다.", "error");
     let building = store.buildings.find(item => item.id === buildingId);
     if (!building) return showToast("삭제할 건물을 찾지 못했습니다.", "error");
-    const linkedCases = (operations.cases || []).filter(item => item && caseBelongsToBuilding(item, building));
-    const linkedSchedules = Object.values(operations.payments && operations.payments.schedules || {}).filter(item => scheduleBelongsToBuilding(item, building));
-    const linkedContracts = store.contracts.filter(item => item.buildingId === building.id);
-    const linkedSecurityAssets = (store.securityAssets || []).filter(item => String(item.buildingId || "") === String(building.id));
-    const bindingEntry = paymentBindingEntryForBuilding(building);
-    const hasBankBinding = !!(bindingEntry && bindingEntry.binding && bindingEntry.binding.accountRef);
-    if (linkedCases.length || linkedSchedules.length || linkedContracts.length || linkedSecurityAssets.length || hasBankBinding) {
-      await showCRMNotice({ title: "이 건물은 삭제할 수 없습니다", description: "업무 데이터에 연결된 건물입니다.", target: building.name || "건물", message: `케이스 ${linkedCases.length}건 · 입금 일정 ${linkedSchedules.length}건 · 계약 ${linkedContracts.length}건 · 열쇠·문서 ${linkedSecurityAssets.length}건 · 계좌 연결 ${hasBankBinding ? 1 : 0}건`, warning: "연결된 자료와 계좌 연결을 먼저 정리해 주세요.", tone: "warning" });
-      return;
-    }
-    if (!await requestConfirmation({ title: "이 건물 정보를 삭제할까요?", description: "삭제할 건물이 맞는지 확인해 주세요.", target: building.name || "건물", warning: "삭제하면 연결 고객의 건물 목록에서도 사라집니다.", confirmLabel: "건물 삭제", tone: "danger" })) return;
+    if (!await requestConfirmation({ title: "이 건물을 보관할까요?", description: "활성 건물 목록에서는 숨기고 기록은 안전하게 남깁니다.", target: building.name || "건물", warning: "필요하면 관리자 확인 후 다시 복원할 수 있습니다.", confirmLabel: "건물 보관", tone: "danger" })) return;
     building = store.buildings.find(item => item.id === buildingId);
     if (!building) return showToast("이미 삭제되었거나 변경된 건물입니다.", "error");
-    store.buildings = store.buildings.filter(item => item.id !== building.id);
-    store.customers.forEach(customer => { customer.buildingIds = (customer.buildingIds || []).filter(id => id !== building.id); });
-    logAudit({ category: "삭제", targetType: "건물", targetId: building.id, targetLabel: building.name, action: "연결 건물 삭제", reason: "사용자 확인 후 삭제" });
-    scheduleSave();
-    if (document.getElementById("buildingForm")?.dataset.buildingId === building.id) closeModal();
-    if (selectedBuildingId === building.id) selectedBuildingId = store.buildings[0]?.id || "";
-    render();
-    if (selectedCustomerId && customerById(selectedCustomerId)) renderCustomerDrawer(selectedCustomerId);
-    showToast("건물 정보를 삭제했습니다.", "success");
+    if (!Number.isInteger(building.entityVersion) || building.entityVersion < 1) return showToast("최신 건물 버전을 확인한 뒤 다시 시도해 주세요.", "error");
+    try {
+      await commitCanonicalEntity({ entityType: "buildings", entityId: building.id, operation: "archive", expectedVersion: building.entityVersion, patch: {}, reason: "CRM 건물 보관" });
+      if (document.getElementById("buildingForm")?.dataset.buildingId === building.id) closeModal();
+      if (selectedBuildingId === building.id) selectedBuildingId = store.buildings.find(item => item.id !== building.id && !item.archivedAt)?.id || "";
+      render();
+      if (selectedCustomerId && customerById(selectedCustomerId)) renderCustomerDrawer(selectedCustomerId);
+      showToast("건물을 기록과 함께 보관했습니다.", "success");
+    } catch (error) { showToast(error.message || "건물을 보관하지 못했습니다.", "error"); }
   }
 
   document.addEventListener("click", async event => {
     const nav = event.target.closest("[data-view]");
     if (nav) {
-      await api.hideFieldPlatform();
-      currentView = nav.dataset.view;
+      const nextView = nav.dataset.view;
+      if (currentView !== "fieldOperations" && nextView === "fieldOperations") crmSearchValue = searchEl.value;
+      if (currentView === "fieldOperations" && nextView !== "fieldOperations") {
+        fieldOpenGeneration += 1;
+        saveFieldNavigationState();
+        await api.hideFieldPlatform();
+        searchEl.value = crmSearchValue;
+      }
+      currentView = nextView;
       if (currentView === "cases") caseListMode = "active";
       render();
       if (["cases", "payments", "buildings", "pipeline"].includes(currentView)) refreshOperations({ silent: true });
@@ -2755,10 +3086,17 @@
       const id = salesRecordArchive.dataset.salesRecordArchive;
       const item = (store[collection] || []).find(record => record.id === id);
       if (!item || !await requestConfirmation({ title: "이 영업 기록을 보관할까요?", description: "영구삭제하지 않고 상세의 관리 영역에서 복원할 수 있습니다.", target: item.name || item.label || item.requirements || id, confirmLabel: "보관", tone: "danger" })) return;
+      const prospectId = salesRecordArchive.dataset.salesProspectId;
+      if (collection === "salesUnits") {
+        if (!Number.isInteger(item.entityVersion) || item.entityVersion < 1) return showToast("최신 호실 버전을 확인한 뒤 다시 시도해 주세요.", "error");
+        try {
+          await commitCanonicalEntity({ entityType: "salesUnits", entityId: id, operation: "archive", expectedVersion: item.entityVersion, patch: {}, reason: "CRM 영업 호실 보관" });
+          render(); renderSalesProspectDrawer(prospectId); showToast("영업 호실을 보관했습니다.", "success");
+        } catch (error) { showToast(error.message || "영업 호실을 보관하지 못했습니다.", "error"); }
+        return;
+      }
       const index = store[collection].findIndex(record => record.id === id);
       store[collection][index] = Sales.archiveRecord(item, salesActor());
-      const prospectId = salesRecordArchive.dataset.salesProspectId;
-      if (collection === "salesUnits") recalculateSalesProspectVacancies(prospectId);
       if (["salesContacts", "salesUnits"].includes(collection)) recalculateSalesProspectStage(prospectId);
       logAudit({ category: "보관", targetType: "영업 기록", targetId: id, targetLabel: item.name || item.label || item.requirements || id, action: `${collection} 기록 보관`, reason: "사용자 확인 후 보관" });
       scheduleSave(); renderSalesProspectDrawer(prospectId); renderPipeline(); showToast("영업 기록을 보관했습니다.", "success");
@@ -2772,10 +3110,17 @@
       const id = salesRecordRestore.dataset.salesRecordRestore;
       const item = (store[collection] || []).find(record => record.id === id);
       if (!item) return;
+      const prospectId = salesRecordRestore.dataset.salesProspectId;
+      if (collection === "salesUnits") {
+        if (!Number.isInteger(item.entityVersion) || item.entityVersion < 1) return showToast("최신 호실 버전을 확인한 뒤 다시 시도해 주세요.", "error");
+        try {
+          await commitCanonicalEntity({ entityType: "salesUnits", entityId: id, operation: "restore", expectedVersion: item.entityVersion, patch: {}, reason: "CRM 영업 호실 복원" });
+          render(); renderSalesProspectDrawer(prospectId); showToast("영업 호실을 복원했습니다.", "success");
+        } catch (error) { showToast(error.message || "영업 호실을 복원하지 못했습니다.", "error"); }
+        return;
+      }
       const index = store[collection].findIndex(record => record.id === id);
       store[collection][index] = Sales.restoreRecord(item, salesActor());
-      const prospectId = salesRecordRestore.dataset.salesProspectId;
-      if (collection === "salesUnits") recalculateSalesProspectVacancies(prospectId);
       if (["salesContacts", "salesUnits"].includes(collection)) recalculateSalesProspectStage(prospectId);
       logAudit({ category: "복원", targetType: "영업 기록", targetId: id, targetLabel: item.name || item.label || item.requirements || id, action: `${collection} 기록 복원`, reason: "영업 기록 재사용" });
       scheduleSave(); renderSalesProspectDrawer(prospectId); renderPipeline(); showToast("영업 기록을 복원했습니다.", "success");
@@ -2791,12 +3136,6 @@
         const result = await api.openExternal(url.toString());
         if (!result.ok) showToast(result.error || "증거 링크를 열지 못했습니다.", "error");
       } catch (error) { showToast(error.message || "올바른 증거 링크를 확인해 주세요.", "error"); }
-      return;
-    }
-    const fieldPlatformLink = event.target.closest("[data-field-platform-link]");
-    if (fieldPlatformLink) {
-      const result = await api.showFieldPlatform();
-      if (!result.ok) showToast(result.error || "BRING FIELD를 열지 못했습니다.", "error");
       return;
     }
     const workflowAction = event.target.closest("[data-workflow-action]");
@@ -3099,6 +3438,44 @@
     }
     const buildingEdit = event.target.closest("[data-building-edit]");
     if (buildingEdit) { buildingEditor(buildingEdit.dataset.buildingEdit); return; }
+    const buildingRestore = event.target.closest("[data-building-restore]");
+    if (buildingRestore) {
+      if (deferCanonicalMutation("건물")) return;
+      const item = (store.buildings || []).find(building => building && building.id === buildingRestore.dataset.buildingRestore);
+      if (!item || !Number.isInteger(item.entityVersion) || item.entityVersion < 1) return showToast("최신 건물 버전을 확인한 뒤 다시 시도해 주세요.", "error");
+      try {
+        await commitCanonicalEntity({ entityType: "buildings", entityId: item.id, operation: "restore", expectedVersion: item.entityVersion, patch: {}, reason: "CRM 건물 복원" });
+        selectedBuildingId = item.id; render(); showToast("건물을 복원했습니다.", "success");
+      } catch (error) { showToast(error.message || "건물을 복원하지 못했습니다.", "error"); }
+      return;
+    }
+    const buildingUnitAdd = event.target.closest("[data-building-unit-add]");
+    if (buildingUnitAdd) { buildingUnitEditor(buildingUnitAdd.dataset.buildingUnitAdd, ""); return; }
+    const buildingUnitEdit = event.target.closest("[data-building-unit-edit]");
+    if (buildingUnitEdit) { buildingUnitEditor(buildingUnitEdit.dataset.buildingId, buildingUnitEdit.dataset.buildingUnitEdit); return; }
+    const buildingUnitArchive = event.target.closest("[data-building-unit-archive]");
+    if (buildingUnitArchive) {
+      if (deferCanonicalMutation("건물 호실")) return;
+      const item = (store.buildingUnits || []).find(unit => unit && unit.id === buildingUnitArchive.dataset.buildingUnitArchive);
+      if (!item || !Number.isInteger(item.entityVersion) || item.entityVersion < 1) return showToast("최신 호실 버전을 확인한 뒤 다시 시도해 주세요.", "error");
+      if (!await requestConfirmation({ title: "이 호실을 보관할까요?", description: "활성 호실 목록에서는 숨기고 기록은 남깁니다.", target: item.label || item.unitLabel || "호실", confirmLabel: "호실 보관", tone: "danger" })) return;
+      try {
+        await commitCanonicalEntity({ entityType: "buildingUnits", entityId: item.id, operation: "archive", expectedVersion: item.entityVersion, patch: {}, reason: "CRM 건물 호실 보관" });
+        closeModal(); render(); showToast("건물 호실을 보관했습니다.", "success");
+      } catch (error) { showToast(error.message || "건물 호실을 보관하지 못했습니다.", "error"); }
+      return;
+    }
+    const buildingUnitRestore = event.target.closest("[data-building-unit-restore]");
+    if (buildingUnitRestore) {
+      if (deferCanonicalMutation("건물 호실")) return;
+      const item = (store.buildingUnits || []).find(unit => unit && unit.id === buildingUnitRestore.dataset.buildingUnitRestore);
+      if (!item || !Number.isInteger(item.entityVersion) || item.entityVersion < 1) return showToast("최신 호실 버전을 확인한 뒤 다시 시도해 주세요.", "error");
+      try {
+        await commitCanonicalEntity({ entityType: "buildingUnits", entityId: item.id, operation: "restore", expectedVersion: item.entityVersion, patch: {}, reason: "CRM 건물 호실 복원" });
+        selectedBuildingId = buildingUnitRestore.dataset.buildingId; render(); showToast("건물 호실을 복원했습니다.", "success");
+      } catch (error) { showToast(error.message || "건물 호실을 복원하지 못했습니다.", "error"); }
+      return;
+    }
     const buildingNewCase = event.target.closest("[data-building-new-case]");
     if (buildingNewCase) { workflowCaseEditor(buildingNewCase.dataset.buildingNewCase); return; }
     const buildingPayments = event.target.closest("[data-building-payments]");
@@ -3174,7 +3551,21 @@
     const action = event.target.closest("[data-action]")?.dataset.action;
     if (!action) return;
     if (action === "logout") {
-      await api.logout();
+      let result = await api.logout({ confirmed: false });
+      if (result && result.code === "FIELD_LOGOUT_PENDING") {
+        const count = Number(result.pendingUploads && result.pendingUploads.count || 0);
+        const confirmed = await requestConfirmation({
+          title: "미완료 업로드가 있습니다",
+          description: "로그아웃하면 현장 사진이나 서류 전송이 끝나지 않을 수 있습니다.",
+          target: `미완료 업로드 ${count}건`,
+          warning: "가능하면 업로드를 마친 뒤 로그아웃해 주세요.",
+          confirmLabel: "그래도 로그아웃",
+          tone: "warning",
+        });
+        if (!confirmed) return;
+        result = await api.logout({ confirmed: true });
+      }
+      if (!result || !result.ok) return showToast(result && result.error || "로그아웃 전에 현장 업무 저장 상태를 확인해 주세요.", "error");
       location.reload();
     }
     else if (action === "check-update") {
@@ -3189,6 +3580,19 @@
     else if (action === "new-sales-prospect") {
       if (!canWriteCRM()) return showToast("조회 전용 계정은 영업 대상 건물을 등록할 수 없습니다.", "error");
       salesProspectEditor("");
+    }
+    else if (action === "new-field-job") showToast("현장 업무 등록 화면은 연결 정보를 준비하고 있습니다. 현재 현장 업무 조회는 그대로 사용할 수 있습니다.");
+    else if (action === "reconnect-field") {
+      fieldConnectionState = Object.assign({}, fieldConnectionState, { status: "connecting", message: "현장 업무에 다시 연결하고 있습니다.", ready: false });
+      const result = await api.reconnectFieldPlatform();
+      if (!result.ok) {
+        fieldConnectionState = Object.assign({}, fieldConnectionState, { status: "disconnected", message: result.error || "다시 연결하지 못했습니다.", ready: false });
+        renderFieldOperations();
+      } else {
+        fieldConnectionState = Object.assign({}, fieldConnectionState, { status: "connecting", message: "이전 현장 업무 화면을 복원하고 있습니다.", ready: true });
+        const generation = ++fieldOpenGeneration;
+        await openFieldOperations(generation);
+      }
     }
     else if (action === "open-sales-standards") openSalesStandards("");
     else if (action === "new-customer") customerEditor("");
@@ -3397,18 +3801,23 @@
       if (!assertSalesInputSafe(raw)) return;
       try {
         const existing = salesUnitById(form.dataset.salesUnitId);
+        if (existing && (!Number.isInteger(existing.entityVersion) || existing.entityVersion < 1)) return showToast("최신 호실 버전을 확인한 뒤 다시 시도해 주세요.", "error");
         const unitValues = Object.assign({}, existing || {}, {
           prospectId: form.dataset.salesProspectId, label: String(raw.label || "").trim(), status: raw.status,
           moveOutAt: raw.moveOutAt || "", deposit: Number(raw.deposit) || 0, rent: Number(raw.rent) || 0, maintenanceFee: Number(raw.maintenanceFee) || 0,
           photoUrl: String(raw.photoUrl || "").trim(), evidenceUrl: String(raw.evidenceUrl || "").trim(), note: String(raw.note || "").trim()
         });
         Sales.assertUnit(unitValues);
-        const item = Sales.createSalesUnit(unitValues, salesActor());
-        if (existing) store.salesUnits[store.salesUnits.findIndex(record => record.id === existing.id)] = item;
-        else store.salesUnits.push(item);
-        recalculateSalesProspectVacancies(item.prospectId);
-        logAudit({ category: existing ? "변경" : "등록", targetType: "영업 호실", targetId: item.id, targetLabel: item.label, action: `${existing ? "호실 정보 수정" : "호실 등록"} · ${salesLabel(SALES_UNIT_LABELS, item.status)}`, reason: "공실·퇴실예정 관리" });
-        scheduleSave(); closeModal(); render(); renderSalesProspectDrawer(item.prospectId); showToast("호실을 저장했습니다.", "success");
+        const item = Sales.createSalesUnit(Object.assign({}, unitValues, { id: existing && existing.id || crypto.randomUUID() }), salesActor());
+        await commitCanonicalEntity({
+          entityType: "salesUnits",
+          entityId: item.id,
+          operation: existing ? "update" : "create",
+          expectedVersion: existing ? existing.entityVersion : 0,
+          patch: buildCanonicalSalesUnitPatch(item),
+          reason: existing ? "CRM 영업 호실 수정" : "CRM 영업 호실 등록",
+        });
+        closeModal(); render(); renderSalesProspectDrawer(item.prospectId); showToast("호실을 저장했습니다.", "success");
       } catch (error) { showToast(error.message || "호실을 저장하지 못했습니다.", "error"); }
     } else if (form.id === "salesActivityForm") {
       const raw = Object.fromEntries(new FormData(form).entries());
@@ -3586,17 +3995,37 @@
       if (!result.ok) return showToast(result.error || "입금 상태를 저장하지 못했습니다.", "error");
       await refreshOperations({ silent: true, render: false });
       closeModal(); currentView = "payments"; render(); showToast("입금 상태를 공용 캘린더에 반영했습니다.", "success");
+    } else if (form.id === "buildingUnitForm") {
+      if (deferCanonicalMutation("건물 호실")) return;
+      const raw = Object.fromEntries(new FormData(form).entries());
+      const label = String(raw.label || "").trim();
+      if (!label) return showToast("호실명을 입력해 주세요.", "error");
+      const existing = (store.buildingUnits || []).find(item => item && item.id === form.dataset.buildingUnitId);
+      if (existing && (!Number.isInteger(existing.entityVersion) || existing.entityVersion < 1)) return showToast("최신 호실 버전을 확인한 뒤 다시 시도해 주세요.", "error");
+      const entityId = existing && existing.id || crypto.randomUUID();
+      try {
+        await commitCanonicalEntity({
+          entityType: "buildingUnits",
+          entityId,
+          operation: existing ? "update" : "create",
+          expectedVersion: existing ? existing.entityVersion : 0,
+          patch: buildCanonicalBuildingUnitPatch({ buildingId: form.dataset.buildingId, label, status: raw.status, memo: raw.memo }),
+          reason: existing ? "CRM 건물 호실 수정" : "CRM 건물 호실 등록",
+        });
+        selectedBuildingId = form.dataset.buildingId;
+        closeModal(); currentView = "buildings"; render(); showToast("건물 호실을 저장했습니다.", "success");
+      } catch (error) { showToast(error.message || "건물 호실을 저장하지 못했습니다.", "error"); }
     } else if (form.id === "buildingForm") {
       if (deferCanonicalMutation("건물")) return;
       const raw = Object.fromEntries(new FormData(form).entries());
       const name = String(raw.name || "").trim();
-      if (!name) return showToast("건물명을 입력해 주세요.", "error");
-      const existing = buildingById(form.dataset.buildingId);
       const address = String(raw.address || "").trim();
+      if (!name || !address) return showToast("건물명과 주소를 입력해 주세요.", "error");
+      const existing = buildingById(form.dataset.buildingId);
       const duplicate = store.buildings.find(building => building.id !== (existing && existing.id) && Core.normalizeText(building.name) === Core.normalizeText(name) && Core.normalizeText(building.address) === Core.normalizeText(address));
       if (duplicate) return showToast("같은 이름과 주소의 건물이 이미 등록되어 있습니다.", "error");
-      const item = existing || Core.createBuilding({ manager: store.settings.owner || "김현진" });
-      const previousOwnerId = String(item.ownerCustomerId || "");
+      if (existing && (!Number.isInteger(existing.entityVersion) || existing.entityVersion < 1)) return showToast("최신 건물 버전을 확인한 뒤 다시 시도해 주세요.", "error");
+      const item = existing || Core.createBuilding({ id: crypto.randomUUID(), manager: store.settings.owner || "김현진" });
       const previousName = String(item.name || "").trim();
       const aliases = new Set(item.aliases || []);
       if (previousName && Core.normalizeText(previousName) !== Core.normalizeText(name)) aliases.add(previousName);
@@ -3611,22 +4040,24 @@
         const matched = existing ? scheduleBelongsToBuilding(schedule, existing) : Core.normalizeText(schedule.buildingName) === Core.normalizeText(name) && (addressMatch || unambiguousNameOnly);
         if (matched && schedule.buildingId) paymentIds.add(String(schedule.buildingId));
       });
-      Object.assign(item, {
-        name, ownerCustomerId: String(raw.ownerCustomerId || ""), type: raw.type, status: raw.status,
-        address, unitCount: Number(raw.unitCount) || 0,
-        manager: String(raw.manager || "").trim() || store.settings.owner || "김현진", memo: String(raw.memo || "").trim(),
-        aliases: [...aliases], externalRefs: Object.assign({}, item.externalRefs || {}, { paymentBuildingIds: [...paymentIds] }), updatedAt: new Date().toISOString()
+      const patch = buildCanonicalBuildingPatch({
+        name, ownerCustomerId: raw.ownerCustomerId, type: raw.type, status: raw.status,
+        address, unitCount: raw.unitCount,
+        manager: String(raw.manager || "").trim() || store.settings.owner || "김현진", memo: raw.memo,
+        aliases: [...aliases], paymentBuildingIds: [...paymentIds],
       });
-      if (!existing) store.buildings.push(item);
-      if (previousOwnerId && previousOwnerId !== item.ownerCustomerId) {
-        const previousOwner = customerById(previousOwnerId);
-        if (previousOwner) previousOwner.buildingIds = (previousOwner.buildingIds || []).filter(id => id !== item.id);
-      }
-      const owner = customerById(item.ownerCustomerId);
-      if (owner && !(owner.buildingIds || []).includes(item.id)) owner.buildingIds = [...(owner.buildingIds || []), item.id];
-      logAudit({ category: existing ? "변경" : "등록", targetType: "건물", targetId: item.id, targetLabel: item.name, action: existing ? "건물 기본정보 수정" : "건물 마스터 등록", reason: "건물 관리" });
-      selectedBuildingId = item.id;
-      scheduleSave(); closeModal(); currentView = "buildings"; render(); showToast(`${item.name} 건물을 저장했습니다.`, "success");
+      try {
+        await commitCanonicalEntity({
+          entityType: "buildings",
+          entityId: item.id,
+          operation: existing ? "update" : "create",
+          expectedVersion: existing ? existing.entityVersion : 0,
+          patch,
+          reason: existing ? "CRM 건물 기본정보 수정" : "CRM 건물 등록",
+        });
+        selectedBuildingId = item.id;
+        closeModal(); currentView = "buildings"; render(); showToast(`${name} 건물을 저장했습니다.`, "success");
+      } catch (error) { showToast(error.message || "건물을 저장하지 못했습니다.", "error"); }
     } else if (form.id === "contractForm") {
       const formData = new FormData(form);
       const raw = Object.fromEntries(formData.entries());
@@ -3883,6 +4314,16 @@
   });
 
   searchEl.addEventListener("input", () => {
+    if (currentView === "fieldOperations") {
+      fieldNavigationState.search = searchEl.value.slice(0, 256);
+      saveFieldNavigationState();
+      clearTimeout(fieldSearchTimer);
+      fieldSearchTimer = setTimeout(() => {
+        void sendFieldNavigation();
+      }, 180);
+      return;
+    }
+    crmSearchValue = searchEl.value;
     if (currentView === "cases") renderCases();
     if (currentView === "customers") renderCustomers();
     if (currentView === "buildings") renderBuildings();
@@ -3891,7 +4332,28 @@
     if (currentView === "partnerQuotes") renderPartnerQuotes();
     if (currentView === "pipeline") renderPipeline();
   });
-  searchEl.addEventListener("keydown", event => { if (event.key === "Enter") { if (!["cases", "buildings", "contracts", "partnerVendors", "partnerQuotes", "pipeline"].includes(currentView)) currentView = "customers"; render(); } });
+  searchEl.addEventListener("keydown", event => { if (event.key === "Enter") { if (currentView === "fieldOperations") return; if (!["cases", "buildings", "contracts", "partnerVendors", "partnerQuotes", "pipeline"].includes(currentView)) currentView = "customers"; render(); } });
+  fieldOperatorSelect.addEventListener("change", async () => {
+    const previousOperatorId = selectedFieldOperatorId;
+    const nextOperatorId = String(fieldOperatorSelect.value || "");
+    if (nextOperatorId && !fieldTeamProfiles.some(profile => profile.active === true && profile.id === nextOperatorId)) {
+      fieldOperatorSelect.value = previousOperatorId;
+      return showToast("선택할 수 없는 작업자입니다.", "error");
+    }
+    selectedFieldOperatorId = nextOperatorId;
+    try {
+      if (selectedFieldOperatorId) localStorage.setItem(fieldOperatorStorageKey(), JSON.stringify({ operatorId: selectedFieldOperatorId, selectedAt: new Date().toISOString() }));
+      else localStorage.removeItem(fieldOperatorStorageKey());
+    } catch (_error) {}
+    renderFieldOperatorControl();
+    if (nextOperatorId && previousOperatorId !== nextOperatorId && fieldConnectionState.ready) {
+      await sendFieldNavigation();
+    } else if (!nextOperatorId && previousOperatorId && fieldConnectionState.ready) {
+      await sendFieldNavigation();
+    }
+    const selected = activeFieldOperator();
+    showToast(selected ? `현재 작업자를 ${selected.name}(으)로 선택했습니다.` : "현재 작업자 선택을 해제했습니다.", selected ? "success" : "");
+  });
   document.addEventListener("input", event => {
     if (event.target.matches("[data-sales-query]")) {
       searchEl.value = event.target.value;
@@ -3958,6 +4420,35 @@ document.addEventListener("keydown", event => {
     }
   });
   api.onRemoteData(applyRemoteStore);
+  api.onFieldEvent(envelope => {
+    if (!envelope || typeof envelope !== "object" || !envelope.payload) return;
+    if (envelope.type === "field.ready") {
+      fieldConnectionState = Object.assign({}, fieldConnectionState, { status: "ready", message: "현장 업무가 연결되었습니다.", ready: true });
+      saveFieldNavigationState();
+    } else if (envelope.type === "field.routeChanged") {
+      fieldNavigationState = Object.assign({}, fieldNavigationState, {
+        route: envelope.payload.route,
+        selectedJobId: String(envelope.payload.selectedJobId || ""),
+        filter: envelope.payload.filter && typeof envelope.payload.filter === "object" ? envelope.payload.filter : {},
+        scrollTop: Number.isInteger(envelope.payload.scrollTop) ? envelope.payload.scrollTop : 0,
+        search: String(envelope.payload.search || "").slice(0, 256),
+      });
+      saveFieldNavigationState();
+      if (currentView === "fieldOperations" && searchEl.value !== fieldNavigationState.search) searchEl.value = fieldNavigationState.search;
+    } else if (envelope.type === "field.pendingUploads") {
+      fieldConnectionState.pendingUploads = { count: envelope.payload.count, risk: envelope.payload.risk };
+    } else if (envelope.type === "field.openCrmEntity") {
+      void navigateFromField(envelope.payload.entityType, envelope.payload.entityId);
+    }
+  });
+  api.onFieldState(state => {
+    fieldConnectionState = Object.assign({}, fieldConnectionState, state || {});
+    if (currentView === "fieldOperations" && ["disconnected", "timeout", "error"].includes(fieldConnectionState.status)) {
+      fieldOpenGeneration += 1;
+      void api.hideFieldPlatform();
+      renderFieldOperations();
+    }
+  });
   api.onUpdateState(state => {
     const previous = currentUpdate.status;
     updateUpdaterUI(state);
@@ -4054,12 +4545,13 @@ document.addEventListener("keydown", event => {
       store = Core.sanitizeStore(initialData || await api.load());
       ensureSalesStore(store);
       await refreshRendererOverlays(false).catch(() => undefined);
+      await loadFieldTeamProfiles();
       dataPath = await api.dataPath();
       const query = new URLSearchParams(location.search);
       if (query.get("demo") === "1" && !store.customers.length) store = demoStore();
       synchronizedStore = cloneStore(store);
       store.partnerVendors = Array.isArray(store.partnerVendors) ? store.partnerVendors : [];
-      if (["dashboard", "cases", "payments", "customers", "buildings", "consultations", "pipeline", "contracts", "relationships", "partnerVendors", "partnerQuotes", "tasks", "security", "settings"].includes(query.get("view"))) currentView = query.get("view");
+      if (["dashboard", "cases", "payments", "customers", "buildings", "fieldOperations", "consultations", "pipeline", "contracts", "relationships", "partnerVendors", "partnerQuotes", "tasks", "security", "settings"].includes(query.get("view"))) currentView = query.get("view");
       await refreshOperations({ silent: true, render: false });
       document.getElementById("lastSaved").textContent = store.updatedAt ? `최신 반영 ${dateText(store.updatedAt)}` : "새 데이터";
       render();

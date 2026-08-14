@@ -2,11 +2,26 @@ const { app, BrowserWindow, WebContentsView, ipcMain, dialog, Menu, safeStorage,
 const { autoUpdater } = require("electron-updater");
 const fs = require("node:fs/promises");
 const path = require("node:path");
-const { fileURLToPath } = require("node:url");
+const { fileURLToPath, pathToFileURL } = require("node:url");
 const Core = require("./core");
 const { FirebaseRemoteClient, createSerializedProtectedStoreCoordinator, decodeProtectedJson } = require("./remote");
 const VendorExtractor = require("./vendor-extractor");
-const { fieldBounds, isAllowedFieldAuthPopup, isAllowedFieldNavigation } = require("./field-view-policy");
+const {
+  FIELD_BRIDGE_TIMEOUT_MS,
+  FIELD_ORIGIN,
+  coordinateFieldLogout,
+  createFieldEnvelope,
+  createFieldRequestCoordinator,
+  externalFieldLinkDecision,
+  fieldBounds,
+  isAllowedFieldAuthPopup,
+  isAllowedFieldNavigation,
+  isAllowedFieldPermission,
+  isMatchingFieldAuthSignoutAck,
+  normalizeFieldRoute,
+  sanitizeFieldTeamProfiles,
+  validateFieldMessage,
+} = require("./field-view-policy");
 const FIELD_PLATFORM_URL = "https://bring-fm.web.app/field";
 
 if (process.env.BRING_CRM_SCREENSHOT || process.env.BRING_CRM_SMOKE === "1") app.disableHardwareAcceleration();
@@ -14,6 +29,18 @@ if (process.env.BRING_CRM_SCREENSHOT || process.env.BRING_CRM_SMOKE === "1") app
 let mainWindow = null;
 let fieldView = null;
 let fieldViewVisible = false;
+let fieldViewLoaded = false;
+let fieldViewReady = false;
+let fieldMeasuredBounds = null;
+let fieldLastRoute = "/field?embedded=crm";
+let fieldPendingUploads = { count: 0, risk: "none" };
+let fieldSessionKey = "";
+let fieldSessionUserId = "";
+let fieldSessionSequence = 0;
+let fieldVisibilityEpoch = 0;
+const fieldReadyWaiters = new Set();
+let fieldAuthSignoutWaiter = null;
+let fieldLogoutInFlight = null;
 let crmAuthWindow = null;
 let remoteClient = null;
 let updaterConfigured = false;
@@ -28,6 +55,14 @@ if (localTestMode && !process.env.BRING_CRM_DATA_DIR) {
   app.setPath("userData", path.join(app.getPath("temp"), "bring-crm-desktop-tests", String(process.pid)));
 }
 let localOperationsData = null;
+
+const fieldRequestCoordinator = createFieldRequestCoordinator({
+  timeoutMs: FIELD_BRIDGE_TIMEOUT_MS,
+  send: envelope => {
+    if (!fieldView || fieldView.webContents.isDestroyed()) throw new Error("FIELD_VIEW_UNAVAILABLE");
+    fieldView.webContents.send("crm:field-message", envelope);
+  },
+});
 
 function closeCrmAuthWindow() {
   if (crmAuthWindow && !crmAuthWindow.isDestroyed()) crmAuthWindow.close();
@@ -114,27 +149,86 @@ async function openCrmEmailAuth(url, credentials) {
   );
 }
 
-function resizeFieldView() {
-  if (!mainWindow || mainWindow.isDestroyed() || !fieldView || !fieldViewVisible) return;
-  fieldView.setBounds(fieldBounds(mainWindow.getContentBounds()));
-}
-
 function hideFieldView() {
+  fieldVisibilityEpoch += 1;
   if (fieldView) fieldView.setVisible(false);
   fieldViewVisible = false;
+  cancelFieldRequests("FIELD_VIEW_HIDDEN");
+  resolveFieldReadyWaiters(Object.assign(new Error("FIELD_VIEW_HIDDEN"), { code: "FIELD_VIEW_HIDDEN" }));
   return { ok: true };
 }
 
+function emitFieldState(status, message = "") {
+  sendToRenderer("crm:field-state", {
+    status,
+    message,
+    ready: fieldViewReady,
+    route: fieldLastRoute,
+    pendingUploads: fieldPendingUploads,
+  });
+}
+
+function resolveFieldReadyWaiters(error) {
+  for (const waiter of [...fieldReadyWaiters]) {
+    fieldReadyWaiters.delete(waiter);
+    clearTimeout(waiter.timer);
+    if (error) waiter.reject(error);
+    else waiter.resolve(true);
+  }
+}
+
+function cancelFieldAuthSignout(code = "FIELD_SESSION_CLEAR_FAILED") {
+  const waiter = fieldAuthSignoutWaiter;
+  if (!waiter) return false;
+  fieldAuthSignoutWaiter = null;
+  clearTimeout(waiter.timer);
+  try {
+    if (fieldView && !fieldView.webContents.isDestroyed() && fieldView.webContents.id === waiter.webContentsId) {
+      fieldView.webContents.send("crm:field-auth-signout-cancel", { requestId: waiter.requestId });
+    }
+  } catch (_error) {}
+  const error = Object.assign(new Error(code), { code });
+  waiter.reject(error);
+  return true;
+}
+
+function cancelFieldRequests(code = "FIELD_BRIDGE_CANCELLED") {
+  fieldRequestCoordinator.cancelAll(code);
+}
+
+function syncFieldSession(state = authState()) {
+  const nextUserId = String(state && state.user && state.user.uid || "");
+  if (nextUserId !== fieldSessionUserId) {
+    if (fieldView) destroyFieldView();
+    fieldSessionUserId = nextUserId;
+    fieldSessionSequence += 1;
+    fieldSessionKey = nextUserId ? `${nextUserId}:${fieldSessionSequence}` : `signed-out:${fieldSessionSequence}`;
+    fieldRequestCoordinator.setSession(fieldSessionKey);
+    fieldViewReady = false;
+    fieldPendingUploads = { count: 0, risk: "none" };
+    fieldLastRoute = "/field?embedded=crm";
+    resolveFieldReadyWaiters(Object.assign(new Error("FIELD_SESSION_CHANGED"), { code: "FIELD_SESSION_CHANGED" }));
+  }
+  return fieldSessionKey;
+}
+
 function destroyFieldView() {
+  cancelFieldAuthSignout("FIELD_RENDERER_DESTROYED");
   if (!fieldView) return;
-  try {
-    if (mainWindow && !mainWindow.isDestroyed()) mainWindow.contentView.removeChildView(fieldView);
-  } catch (_error) {}
-  try {
-    if (!fieldView.webContents.isDestroyed()) fieldView.webContents.close();
-  } catch (_error) {}
+  fieldVisibilityEpoch += 1;
+  const view = fieldView;
   fieldView = null;
+  fieldViewLoaded = false;
+  fieldViewReady = false;
   fieldViewVisible = false;
+  cancelFieldRequests("FIELD_RENDERER_DESTROYED");
+  resolveFieldReadyWaiters(Object.assign(new Error("FIELD_RENDERER_DESTROYED"), { code: "FIELD_RENDERER_DESTROYED" }));
+  try {
+    if (mainWindow && !mainWindow.isDestroyed()) mainWindow.contentView.removeChildView(view);
+  } catch (_error) {}
+  try {
+    if (!view.webContents.isDestroyed()) view.webContents.close();
+  } catch (_error) {}
 }
 
 function ensureFieldView() {
@@ -180,47 +274,323 @@ function ensureFieldView() {
   contents.on("will-redirect", (event, url) => {
     if (!isAllowedFieldNavigation(url)) event.preventDefault();
   });
-  contents.session.setPermissionRequestHandler((_webContents, _permission, callback) => callback(false));
+  contents.on("did-start-navigation", (_event, url, _isInPlace, isMainFrame) => {
+    if (!fieldView || fieldView.webContents !== contents || !isMainFrame || !isAllowedFieldNavigation(url)) return;
+    fieldViewReady = false;
+    emitFieldState("connecting", "현장 업무에 연결하고 있습니다.");
+  });
+  contents.on("did-finish-load", () => {
+    if (!fieldView || fieldView.webContents !== contents) return;
+    fieldViewLoaded = true;
+  });
+  contents.on("render-process-gone", () => {
+    if (!fieldView || fieldView.webContents !== contents) return;
+    fieldViewLoaded = false;
+    fieldViewReady = false;
+    cancelFieldAuthSignout("FIELD_RENDERER_GONE");
+    cancelFieldRequests("FIELD_RENDERER_GONE");
+    resolveFieldReadyWaiters(Object.assign(new Error("FIELD_RENDERER_GONE"), { code: "FIELD_RENDERER_GONE" }));
+    emitFieldState("disconnected", "현장 업무 연결이 끊겼습니다. 다시 연결해 주세요.");
+  });
+  contents.on("destroyed", () => {
+    if (!fieldView || contents !== fieldView.webContents) return;
+    fieldView = null;
+    fieldViewLoaded = false;
+    fieldViewReady = false;
+    fieldViewVisible = false;
+    cancelFieldAuthSignout("FIELD_RENDERER_DESTROYED");
+    cancelFieldRequests("FIELD_RENDERER_DESTROYED");
+    resolveFieldReadyWaiters(Object.assign(new Error("FIELD_RENDERER_DESTROYED"), { code: "FIELD_RENDERER_DESTROYED" }));
+  });
+  contents.session.setPermissionRequestHandler((requestingContents, permission, callback, details) => {
+    const requestingUrl = String(details && details.requestingUrl || requestingContents && requestingContents.getURL() || "");
+    const exactFieldContents = requestingContents === contents;
+    const isMainFrame = Boolean(details && details.isMainFrame === true);
+    callback(exactFieldContents && isMainFrame && isAllowedFieldPermission(permission, requestingUrl, details && details.mediaTypes));
+  });
+  contents.session.setPermissionCheckHandler((requestingContents, permission, requestingOrigin, details) => {
+    const requestingUrl = String(details && details.requestingUrl || requestingOrigin || "");
+    const mediaTypes = details && details.mediaType ? [details.mediaType] : [];
+    return requestingContents === contents
+      && Boolean(details && details.isMainFrame === true)
+      && isAllowedFieldPermission(permission, requestingUrl, mediaTypes);
+  });
   contents.session.on("will-download", event => event.preventDefault());
   mainWindow.contentView.addChildView(fieldView);
   fieldView.setVisible(false);
   return fieldView;
 }
 
-async function showFieldView() {
-  if (!remoteClient || !remoteClient.authState().user) {
-    return { ok: false, error: "CRM에 먼저 로그인해 주세요." };
+function waitForFieldReady() {
+  if (fieldViewReady) return Promise.resolve(true);
+  return new Promise((resolve, reject) => {
+    const waiter = { resolve, reject, timer: null };
+    waiter.timer = setTimeout(() => {
+      fieldReadyWaiters.delete(waiter);
+      const error = Object.assign(new Error("FIELD_BRIDGE_TIMEOUT"), { code: "FIELD_BRIDGE_TIMEOUT" });
+      reject(error);
+    }, FIELD_BRIDGE_TIMEOUT_MS);
+    fieldReadyWaiters.add(waiter);
+  });
+}
+
+async function ensureFieldReadyForLogout() {
+  syncFieldSession();
+  const sessionKey = fieldSessionKey;
+  const view = ensureFieldView();
+  const contents = view.webContents;
+  if (!fieldViewLoaded) {
+    emitFieldState("connecting", "로그아웃 전에 현장 자료를 확인하고 있습니다.");
+    await contents.loadURL(`${FIELD_PLATFORM_URL}?embedded=crm`);
+    if (!fieldView || fieldView.webContents !== contents || sessionKey !== fieldSessionKey) {
+      throw Object.assign(new Error("FIELD_SESSION_CHANGED"), { code: "FIELD_SESSION_CHANGED" });
+    }
+    fieldViewLoaded = true;
   }
+  await waitForFieldReady();
+  if (!fieldView
+    || fieldView.webContents !== contents
+    || contents.isDestroyed()
+    || sessionKey !== fieldSessionKey
+    || !fieldViewReady) {
+    throw Object.assign(new Error("FIELD_SESSION_CHANGED"), { code: "FIELD_SESSION_CHANGED" });
+  }
+  return { view, sessionKey };
+}
+
+async function signOutFieldAuthentication(fieldHandle) {
+  const view = fieldHandle && fieldHandle.view;
+  const sessionKey = fieldHandle && fieldHandle.sessionKey;
+  if (!view
+    || !fieldView
+    || fieldView !== view
+    || view.webContents.isDestroyed()
+    || sessionKey !== fieldSessionKey) {
+    throw Object.assign(new Error("FIELD_SESSION_CLEAR_FAILED"), { code: "FIELD_SESSION_CLEAR_FAILED" });
+  }
+  if (fieldAuthSignoutWaiter) {
+    throw Object.assign(new Error("FIELD_SESSION_CLEAR_IN_PROGRESS"), { code: "FIELD_SESSION_CLEAR_IN_PROGRESS" });
+  }
+
+  const requestId = createFieldEnvelope("crm.logoutCheck", { reason: "logout" }).requestId;
+  return new Promise((resolve, reject) => {
+    const waiter = {
+      requestId,
+      sessionKey,
+      webContentsId: view.webContents.id,
+      resolve,
+      reject,
+      timer: null,
+    };
+    waiter.timer = setTimeout(() => {
+      if (fieldAuthSignoutWaiter !== waiter) return;
+      fieldAuthSignoutWaiter = null;
+      try {
+        if (fieldView && fieldView === view && !view.webContents.isDestroyed()) {
+          view.webContents.send("crm:field-auth-signout-cancel", { requestId });
+        }
+      } catch (_error) {}
+      reject(Object.assign(new Error("FIELD_SESSION_CLEAR_FAILED"), { code: "FIELD_SESSION_CLEAR_FAILED" }));
+    }, FIELD_BRIDGE_TIMEOUT_MS);
+    fieldAuthSignoutWaiter = waiter;
+    try {
+      view.webContents.send("crm:field-auth-signout", { requestId });
+    } catch (_error) {
+      if (fieldAuthSignoutWaiter === waiter) fieldAuthSignoutWaiter = null;
+      clearTimeout(waiter.timer);
+      reject(Object.assign(new Error("FIELD_SESSION_CLEAR_FAILED"), { code: "FIELD_SESSION_CLEAR_FAILED" }));
+    }
+  });
+}
+
+function applyFieldBounds() {
+  if (!fieldView || !fieldMeasuredBounds || !fieldViewVisible) return false;
+  fieldView.setBounds(fieldMeasuredBounds);
+  return true;
+}
+
+function crmBridgeSenderContext(event) {
+  const entryUrl = pathToFileURL(path.join(__dirname, "index.html")).toString();
+  return {
+    webContentsId: event.sender.id,
+    expectedWebContentsId: mainWindow && mainWindow.webContents.id,
+    frameUrl: event.senderFrame && event.senderFrame.url,
+    expectedFrameUrl: entryUrl,
+    isMainFrame: Boolean(event.senderFrame && event.senderFrame === event.sender.mainFrame),
+  };
+}
+
+function fieldBridgeSenderContext(event) {
+  return {
+    webContentsId: event.sender.id,
+    expectedWebContentsId: fieldView && fieldView.webContents.id,
+    frameUrl: event.senderFrame && event.senderFrame.url,
+    isMainFrame: Boolean(event.senderFrame && event.senderFrame === event.sender.mainFrame),
+  };
+}
+
+function trustedFieldIpc(event) {
+  if (!fieldView || fieldView.webContents.isDestroyed()) return false;
+  if (!(event.sender === fieldView.webContents)) return false;
+  if (!event.senderFrame || event.senderFrame !== event.sender.mainFrame) return false;
   try {
-    const view = ensureFieldView();
-    const url = `${FIELD_PLATFORM_URL}?embedded=crm`;
-    await view.webContents.loadURL(url);
-    fieldViewVisible = true;
-    view.setBounds(fieldBounds(mainWindow.getContentBounds()));
-    view.setVisible(true);
-    return { ok: true };
+    const frame = new URL(event.senderFrame.url);
+    return frame.origin === FIELD_ORIGIN && isAllowedFieldNavigation(frame.toString());
   } catch (_error) {
-    destroyFieldView();
-    return { ok: false, error: "BRING FIELD 연결에 실패했습니다. 잠시 후 다시 시도해 주세요." };
+    return false;
   }
 }
 
-async function signOutFieldView() {
-  if (!fieldView || fieldView.webContents.isDestroyed()) return;
+async function openFieldExternal(rawUrl) {
+  const decision = externalFieldLinkDecision(rawUrl);
+  if (!decision.ok) return { ok: false, code: decision.code };
+  if (decision.requiresConfirmation) {
+    const result = await dialog.showMessageBox(mainWindow, {
+      type: "question",
+      title: "외부 사이트 열기",
+      message: `${decision.host} 사이트를 브라우저에서 열까요?`,
+      detail: "현장 업무 화면에서 요청한 안전한 HTTPS 링크입니다.",
+      buttons: ["열기", "취소"],
+      defaultId: 1,
+      cancelId: 1,
+      noLink: true,
+    });
+    if (result.response !== 0) return { ok: false, code: "FIELD_EXTERNAL_CANCELLED" };
+  }
+  await shell.openExternal(decision.url);
+  return { ok: true };
+}
+
+async function showFieldView(input = {}, crmEvent) {
+  if (!authState().user) {
+    return { ok: false, error: "CRM에 먼저 로그인해 주세요." };
+  }
+  let visibilityEpoch = 0;
+  const assertCurrentVisibility = () => {
+    if (visibilityEpoch !== fieldVisibilityEpoch || !fieldView || fieldView.webContents.isDestroyed()) {
+      throw Object.assign(new Error("FIELD_VIEW_HIDDEN"), { code: "FIELD_VIEW_HIDDEN" });
+    }
+  };
   try {
-    await fieldView.webContents.executeJavaScript(`new Promise(resolve => {
-      const finish = () => resolve(true);
-      window.addEventListener("bring-field-logout-complete", finish, { once: true });
-      window.dispatchEvent(new Event("bring-crm-logout"));
-      setTimeout(finish, 1500);
-    })`, true);
-  } catch (_error) {}
-  destroyFieldView();
+    syncFieldSession();
+    visibilityEpoch = ++fieldVisibilityEpoch;
+    const view = ensureFieldView();
+    if (!fieldMeasuredBounds || fieldMeasuredBounds.width < 1 || fieldMeasuredBounds.height < 1) {
+      return { ok: false, code: "FIELD_BOUNDS_REQUIRED", error: "현장 업무 화면 크기를 확인하고 있습니다." };
+    }
+    if (!fieldViewLoaded) {
+      emitFieldState("connecting", "현장 업무에 연결하고 있습니다.");
+      await view.webContents.loadURL(`${FIELD_PLATFORM_URL}?embedded=crm`);
+      assertCurrentVisibility();
+      fieldViewLoaded = true;
+    }
+    await waitForFieldReady();
+    assertCurrentVisibility();
+    fieldViewVisible = true;
+    applyFieldBounds();
+    view.setVisible(true);
+    const route = normalizeFieldRoute(input.route || fieldLastRoute) || "/field?embedded=crm";
+    const navigation = createFieldEnvelope("field.navigate", {
+      route,
+      operatorId: String(input.operatorId || ""),
+      selectedJobId: String(input.selectedJobId || ""),
+      filter: input.filter && typeof input.filter === "object" ? input.filter : {},
+      scrollTop: Number.isInteger(input.scrollTop) ? input.scrollTop : 0,
+      search: String(input.search || "").slice(0, 256),
+    });
+    const navigationValidation = validateFieldMessage(navigation, {
+      direction: "crmToField",
+      sender: crmBridgeSenderContext(crmEvent),
+    });
+    if (!navigationValidation.ok) throw Object.assign(new Error(navigationValidation.code), { code: navigationValidation.code });
+    const response = await fieldRequestCoordinator.request(navigationValidation.value);
+    assertCurrentVisibility();
+    if (!response.payload.ok) throw Object.assign(new Error("FIELD_NAVIGATION_FAILED"), { code: "FIELD_NAVIGATION_FAILED" });
+    fieldLastRoute = route;
+    emitFieldState("ready", "현장 업무가 연결되었습니다.");
+    return { ok: true, route: fieldLastRoute };
+  } catch (error) {
+    if (visibilityEpoch && visibilityEpoch === fieldVisibilityEpoch) {
+      if (fieldView) fieldView.setVisible(false);
+      fieldViewVisible = false;
+    }
+    const code = error && error.code || "FIELD_CONNECT_FAILED";
+    const cancelled = ["FIELD_VIEW_HIDDEN", "FIELD_SESSION_CHANGED", "FIELD_RENDERER_DESTROYED"].includes(code);
+    const timedOut = code === "FIELD_BRIDGE_TIMEOUT";
+    if (!cancelled) emitFieldState(timedOut ? "timeout" : "disconnected", timedOut ? "현장 업무 응답이 늦어지고 있습니다. 다시 연결해 주세요." : "현장 업무에 연결하지 못했습니다.");
+    return { ok: false, code, error: cancelled ? "현장 업무 화면을 닫았습니다." : "BRING FIELD 연결에 실패했습니다. 잠시 후 다시 시도해 주세요." };
+  }
+}
+
+async function reconnectFieldView() {
+  if (!authState().user) return { ok: false, error: "CRM에 먼저 로그인해 주세요." };
+  try {
+    const view = ensureFieldView();
+    cancelFieldRequests("FIELD_RECONNECTING");
+    fieldViewReady = false;
+    fieldViewLoaded = false;
+    emitFieldState("connecting", "현장 업무에 다시 연결하고 있습니다.");
+    await view.webContents.loadURL(`${FIELD_PLATFORM_URL}?embedded=crm`);
+    fieldViewLoaded = true;
+    await waitForFieldReady();
+    return { ok: true };
+  } catch (error) {
+    emitFieldState("disconnected", "현장 업무에 다시 연결하지 못했습니다.");
+    return { ok: false, code: error && error.code || "FIELD_RECONNECT_FAILED", error: "다시 연결하지 못했습니다." };
+  }
 }
 
 ipcMain.on("crm:field-reconnect-request", event => {
-  if (!fieldView || event.sender !== fieldView.webContents) return;
-  void showFieldView();
+  if (!trustedFieldIpc(event)) return;
+  void reconnectFieldView();
+});
+
+function settleFieldAuthSignout(event, input, succeeded) {
+  if (!trustedFieldIpc(event) || !fieldAuthSignoutWaiter) return;
+  const waiter = fieldAuthSignoutWaiter;
+  if (!isMatchingFieldAuthSignoutAck(input, waiter, {
+    webContentsId: event.sender.id,
+    sessionKey: fieldSessionKey,
+  })) return;
+  fieldAuthSignoutWaiter = null;
+  clearTimeout(waiter.timer);
+  if (succeeded) waiter.resolve(true);
+  else waiter.reject(Object.assign(new Error("FIELD_SESSION_CLEAR_FAILED"), { code: "FIELD_SESSION_CLEAR_FAILED" }));
+}
+
+ipcMain.on("crm:field-auth-signout-complete", (event, input) => {
+  settleFieldAuthSignout(event, input, true);
+});
+
+ipcMain.on("crm:field-auth-signout-failed", (event, input) => {
+  settleFieldAuthSignout(event, input, false);
+});
+
+ipcMain.on("crm:field-message", (event, envelopeInput) => {
+  if (!trustedFieldIpc(event)) return;
+  const result = validateFieldMessage(envelopeInput, {
+    direction: "fieldToCrm",
+    sender: fieldBridgeSenderContext(event),
+  });
+  if (!result.ok) return;
+  const envelope = result.value;
+  if (["field.ack", "field.commandResult", "field.logoutDecision"].includes(envelope.type)) {
+    fieldRequestCoordinator.handleResponse(envelope, fieldSessionKey);
+    return;
+  }
+  if (envelope.type === "field.ready") {
+    fieldViewReady = true;
+    fieldLastRoute = normalizeFieldRoute(envelope.payload.route) || fieldLastRoute;
+    resolveFieldReadyWaiters();
+    emitFieldState("ready", "현장 업무가 연결되었습니다.");
+  } else if (envelope.type === "field.routeChanged") {
+    fieldLastRoute = normalizeFieldRoute(envelope.payload.route) || fieldLastRoute;
+  } else if (envelope.type === "field.pendingUploads") {
+    fieldPendingUploads = { count: envelope.payload.count, risk: envelope.payload.risk };
+  } else if (envelope.type === "field.openExternal") {
+    void openFieldExternal(envelope.payload.url);
+  }
+  sendToRenderer("crm:field-event", envelope);
 });
 
 function demoOperations() {
@@ -660,7 +1030,10 @@ async function initializeRemote() {
     writeLocalStore,
     clearLocalStore,
     onRemoteStore: data => sendToRenderer("crm:remote-data", data),
-    onAuthState: state => sendToRenderer("crm:auth-state", state),
+    onAuthState: state => {
+      syncFieldSession(state);
+      sendToRenderer("crm:auth-state", state);
+    },
     onSyncState: state => sendToRenderer("crm:sync-state", state)
   });
   await remoteClient.init();
@@ -703,7 +1076,7 @@ function secureCanonicalHandle(channel, handler) {
     if (!trustedCanonicalIpc(event, mainWindow, path.join(__dirname, "index.html"))) {
       throw new Error("허용되지 않은 요청입니다.");
     }
-    return handler(...args);
+    return handler(...args, event);
   });
 }
 
@@ -749,7 +1122,6 @@ async function createWindow() {
   });
   mainWindow.webContents.on("will-navigate", event => event.preventDefault());
   mainWindow.webContents.setWindowOpenHandler(() => ({ action: "deny" }));
-  mainWindow.on("resize", resizeFieldView);
   mainWindow.on("closed", () => {
     destroyFieldView();
     mainWindow = null;
@@ -2059,10 +2431,35 @@ secureHandle("crm:auth-change-password", async password => {
   try { return await remoteClient.changePassword(password); }
   catch (error) { return { ok: false, error: error.message, code: error.code || "PASSWORD_CHANGE_FAILED" }; }
 });
-secureHandle("crm:auth-logout", async () => {
-  await signOutFieldView();
-  if (remoteClient) await remoteClient.logout();
-  return { ok: true };
+secureCanonicalHandle("crm:auth-logout", async input => {
+  if (fieldLogoutInFlight) return fieldLogoutInFlight;
+  fieldLogoutInFlight = coordinateFieldLogout({
+    confirmed: Boolean(input && input.confirmed === true),
+    ensureReady: async () => ensureFieldReadyForLogout(),
+    checkPending: async () => {
+      const decision = await fieldRequestCoordinator.request(
+        createFieldEnvelope("crm.logoutCheck", { reason: "logout" }),
+      );
+      if (decision.type !== "field.logoutDecision") throw new Error("FIELD_LOGOUT_DECISION_INVALID");
+      fieldPendingUploads = { count: decision.payload.count, risk: decision.payload.risk };
+      return fieldPendingUploads;
+    },
+    signOutFieldAuthentication: fieldHandle => signOutFieldAuthentication(fieldHandle),
+    finishCrmLogout: async () => {
+      cancelFieldRequests("FIELD_LOGOUT");
+      if (fieldView) fieldView.setVisible(false);
+      fieldViewVisible = false;
+      closeCrmAuthWindow();
+      destroyFieldView();
+      if (remoteClient) await remoteClient.logout();
+      syncFieldSession(authState());
+    },
+  });
+  try {
+    return await fieldLogoutInFlight;
+  } finally {
+    fieldLogoutInFlight = null;
+  }
 });
 secureHandle("crm:load", readStore);
 secureHandle("crm:save", data => writeStore(data));
@@ -2079,6 +2476,24 @@ secureCanonicalHandle("crm:field-summaries-load", async () => {
 secureCanonicalHandle("crm:canonical-entity-commit", async input => {
   if (!remoteClient || !remoteClient.authState().user) throw new Error("로그인이 필요합니다.");
   return remoteClient.commitCanonicalCrmEntity(Object.assign(Object.create(null), input, { buildVersion: app.getVersion() }));
+});
+secureCanonicalHandle("crm:field-team-profiles", async () => {
+  if (localTestMode) return {
+    available: true,
+    profiles: sanitizeFieldTeamProfiles({
+      representative: { displayName: "대표", active: true, sortOrder: 10 },
+      "hwang-woojung": { displayName: "황우중", active: true, sortOrder: 20 },
+      "kim-hyunjin": { displayName: "김현진", active: true, sortOrder: 30 },
+    }),
+  };
+  if (!remoteClient || !remoteClient.authState().user) return { available: false, profiles: [], error: "로그인이 필요합니다." };
+  try {
+    const result = await remoteClient.dbRequest("teamProfiles", { method: "GET" });
+    const profiles = sanitizeFieldTeamProfiles(result);
+    return { available: true, profiles };
+  } catch (_error) {
+    return { available: false, profiles: [], error: "현재 작업자 명단을 불러올 수 없습니다. 관리자에게 확인해 주세요." };
+  }
 });
 secureHandle("crm:operations-load", readOperations);
 secureHandle("crm:case-save", input => saveWorkflowCase(input));
@@ -2097,14 +2512,36 @@ secureHandle("crm:update-install", () => {
   setImmediate(() => autoUpdater.quitAndInstall(false, true));
   return { ok: true };
 });
-secureHandle("crm:show-field-platform", async () => {
+secureCanonicalHandle("crm:field-bounds", async rect => {
+  const measured = fieldBounds(rect);
+  if (measured.width < 1 || measured.height < 1) return { ok: false, code: "FIELD_BOUNDS_INVALID" };
+  fieldMeasuredBounds = measured;
+  applyFieldBounds();
+  return { ok: true, bounds: measured };
+});
+secureCanonicalHandle("crm:field-request", async (envelope, event) => {
+  const validation = validateFieldMessage(envelope, {
+    direction: "crmToField",
+    sender: crmBridgeSenderContext(event),
+  });
+  if (!validation.ok) return { ok: false, code: validation.code };
+  if (!fieldView || fieldView.webContents.isDestroyed() || !fieldViewReady) return { ok: false, code: "FIELD_NOT_READY" };
   try {
-    return await showFieldView();
+    return await fieldRequestCoordinator.request(validation.value);
+  } catch (error) {
+    return { ok: false, code: error && error.code || "FIELD_REQUEST_FAILED" };
+  }
+});
+secureCanonicalHandle("crm:field-cancel", async requestId => ({ ok: fieldRequestCoordinator.cancel(String(requestId || "")) }));
+secureCanonicalHandle("crm:show-field-platform", async (input, event) => {
+  try {
+    return await showFieldView(input, event);
   } catch (_error) {
     return { ok: false, error: "BRING FIELD를 열지 못했습니다." };
   }
 });
-secureHandle("crm:hide-field-platform", async () => hideFieldView());
+secureCanonicalHandle("crm:hide-field-platform", async () => hideFieldView());
+secureCanonicalHandle("crm:field-reconnect", async () => reconnectFieldView());
 secureHandle("crm:open-external", async rawUrl => {
   try {
     const url = new URL(String(rawUrl || ""));

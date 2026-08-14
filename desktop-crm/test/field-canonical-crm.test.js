@@ -1138,9 +1138,10 @@ test("renderer refreshes overlays on load and reconnect without mixing them into
   assert.match(appSource, /uid !== currentAuthUid\(\)/);
 });
 
-test("current building and sales-unit editors defer only canonical mutations until operator selection", async () => {
+test("building, building-unit, and sales-unit UI mutations require an operator and execute through the canonical endpoint", async () => {
   const { readFile } = require("node:fs/promises");
   const path = require("node:path");
+  const vm = require("node:vm");
   const appSource = await readFile(path.join(__dirname, "..", "src", "app.js"), "utf8");
 
   assert.match(appSource, /function deferCanonicalMutation/);
@@ -1155,5 +1156,128 @@ test("current building and sales-unit editors defer only canonical mutations unt
   assert.match(appSource, /function salesUnitEditor[\s\S]*?if \(deferCanonicalMutation\("영업 호실"\)\) return;/);
   assert.match(appSource, /form\.id === "salesUnitForm"[\s\S]*?if \(deferCanonicalMutation\("영업 호실"\)\) return;/);
   assert.match(appSource, /if \(collection === "salesUnits" && deferCanonicalMutation\("영업 호실"\)\) return;/);
-  assert.match(appSource, /data-canonical-mutation-deferred="buildings"/);
+  assert.match(appSource, /form\.id === "buildingUnitForm"[\s\S]*?entityType: "buildingUnits"[\s\S]*?operation: existing \? "update" : "create"/);
+  assert.match(appSource, /form\.id === "buildingForm"[\s\S]*?entityType: "buildings"[\s\S]*?operation: existing \? "update" : "create"/);
+  assert.match(appSource, /form\.id === "salesUnitForm"[\s\S]*?entityType: "salesUnits"[\s\S]*?operation: existing \? "update" : "create"/);
+  for (const [entityType, operation] of [["buildings", "archive"], ["buildings", "restore"], ["buildingUnits", "archive"], ["buildingUnits", "restore"], ["salesUnits", "archive"], ["salesUnits", "restore"]]) {
+    assert.match(appSource, new RegExp(`entityType: "${entityType}"[^}]+operation: "${operation}"`));
+  }
+
+  const functionStart = appSource.indexOf("async function commitCanonicalEntity");
+  assert.notEqual(functionStart, -1);
+  let depth = 0;
+  let functionEnd = -1;
+  const functionBodyStart = appSource.indexOf("}) {", functionStart) + 3;
+  for (let index = functionBodyStart; index < appSource.length; index += 1) {
+    if (appSource[index] === "{") depth += 1;
+    if (appSource[index] === "}") depth -= 1;
+    if (depth === 0) { functionEnd = index + 1; break; }
+  }
+  const calls = [];
+  const warnings = [];
+  let activeUid = "member_1";
+  const sandbox = {
+    api: {
+      commitCanonicalCrmEntity: async input => { calls.push(input); return { entityVersion: input.expectedVersion + 1 }; },
+      load: async () => ({ salesUnits: [], buildings: [] }),
+    },
+    crypto: { randomUUID: () => "550e8400-e29b-41d4-a716-446655440000" },
+    selectedFieldOperatorId: "operator_kim",
+    authGeneration: 1,
+    currentAuthUid: () => activeUid,
+    deferCanonicalMutation: () => false,
+    preserveRendererOverlays: value => value,
+    ensureSalesStore: () => undefined,
+    cloneStore: value => value,
+    refreshRendererOverlays: async () => undefined,
+    showToast: (message, tone) => { warnings.push({ message, tone }); },
+    store: {},
+    synchronizedStore: null,
+  };
+  vm.runInNewContext(`${appSource.slice(functionStart, functionEnd)}; globalThis.runCanonical = commitCanonicalEntity;`, sandbox);
+  for (const entityType of ["buildings", "buildingUnits", "salesUnits"]) {
+    for (const operation of ["create", "update", "archive", "restore"]) {
+      await sandbox.runCanonical({ entityType, entityId: `${entityType}_1`, operation, expectedVersion: operation === "create" ? 0 : 4, patch: operation === "create" || operation === "update" ? { label: "테스트" } : {}, reason: "test" });
+    }
+  }
+  assert.equal(calls.length, 12);
+  assert.ok(calls.every(input => input.operatorId === "operator_kim" && input.requestId === "550e8400-e29b-41d4-a716-446655440000"));
+
+  const committedBeforeRefreshFailure = calls.length;
+  sandbox.api.load = async () => { throw new Error("post-commit refresh unavailable"); };
+  const committedDespiteRefreshFailure = await sandbox.runCanonical({
+    entityType: "buildings",
+    entityId: "building_refresh_failure",
+    operation: "update",
+    expectedVersion: 4,
+    patch: { name: "저장 완료" },
+    reason: "test",
+  });
+  assert.equal(committedDespiteRefreshFailure.entityVersion, 5);
+  assert.equal(calls.length, committedBeforeRefreshFailure + 1);
+  assert.deepEqual(warnings.at(-1), {
+    message: "저장은 완료됐지만 최신 화면을 불러오지 못했습니다. 연결되면 자동으로 반영합니다.",
+    tone: "warning",
+  });
+  sandbox.api.load = async () => ({ salesUnits: [], buildings: [] });
+
+  sandbox.api.commitCanonicalCrmEntity = async input => {
+    calls.push(input);
+    activeUid = "member_2";
+    return { entityVersion: input.expectedVersion + 1 };
+  };
+  await assert.rejects(
+    sandbox.runCanonical({ entityType: "buildings", entityId: "building_cross_session", operation: "update", expectedVersion: 4, patch: { name: "변경" }, reason: "test" }),
+    /로그인 세션이 변경/
+  );
+  activeUid = "member_1";
+
+  const canonicalFormSlice = appSource.slice(appSource.indexOf('form.id === "salesUnitForm"'), appSource.indexOf('form.id === "salesActivityForm"'))
+    + appSource.slice(appSource.indexOf('form.id === "buildingUnitForm"'), appSource.indexOf('form.id === "contractForm"'));
+  assert.doesNotMatch(canonicalFormSlice, /scheduleSave\(/);
+  const buildingUnitFormSlice = appSource.slice(appSource.indexOf('form.id === "buildingUnitForm"'), appSource.indexOf('form.id === "buildingForm"'));
+  assert.match(buildingUnitFormSlice, /buildCanonicalBuildingUnitPatch\(/);
+  assert.doesNotMatch(buildingUnitFormSlice, /unitLabel\s*:/);
+  const buildingFormSlice = appSource.slice(appSource.indexOf('form.id === "buildingForm"'), appSource.indexOf('form.id === "contractForm"'));
+  assert.match(buildingFormSlice, /buildCanonicalBuildingPatch\(/);
+  assert.doesNotMatch(buildingFormSlice, /externalRefs:\s*Object\.assign/);
+  assert.match(buildingFormSlice, /if \(!name \|\| !address\) return showToast\("건물명과 주소를 입력해 주세요\.", "error"\)/);
+
+  const extractFunction = name => {
+    const start = appSource.indexOf(`function ${name}`);
+    assert.notEqual(start, -1);
+    const bodyStart = appSource.indexOf(") {", start) + 2;
+    let functionDepth = 0;
+    for (let index = bodyStart; index < appSource.length; index += 1) {
+      if (appSource[index] === "{") functionDepth += 1;
+      if (appSource[index] === "}") functionDepth -= 1;
+      if (functionDepth === 0) return appSource.slice(start, index + 1);
+    }
+    throw new Error(`Could not extract ${name}`);
+  };
+  const patchSandbox = {};
+  vm.runInNewContext([
+    extractFunction("buildCanonicalBuildingPatch"),
+    extractFunction("buildCanonicalBuildingUnitPatch"),
+    extractFunction("buildCanonicalSalesUnitPatch"),
+    "globalThis.builders = { buildCanonicalBuildingPatch, buildCanonicalBuildingUnitPatch, buildCanonicalSalesUnitPatch };",
+  ].join("\n"), patchSandbox);
+  const plain = value => JSON.parse(JSON.stringify(value));
+  assert.deepEqual(plain(patchSandbox.builders.buildCanonicalBuildingUnitPatch({ buildingId: "building_1", label: " 201호 ", status: "vacant", memo: " 확인 " })), {
+    crmBuildingId: "building_1", label: "201호", status: "vacant", memo: "확인",
+  });
+  assert.deepEqual(plain(patchSandbox.builders.buildCanonicalBuildingPatch({
+    name: " 건물 ", address: " 주소 ", ownerCustomerId: "customer_1", type: "다가구", status: "관리중",
+    unitCount: 9, manager: " 담당 ", memo: " 메모 ", aliases: ["이전명"], paymentBuildingIds: ["payment_1"],
+  })).externalRefs, { paymentBuildingIds: ["payment_1"] });
+  assert.equal(Object.hasOwn(patchSandbox.builders.buildCanonicalSalesUnitPatch({
+    prospectId: "prospect_1", crmBuildingUnitId: "", label: "101호", status: "vacant",
+  }), "crmBuildingUnitId"), false);
+  assert.equal(patchSandbox.builders.buildCanonicalSalesUnitPatch({
+    prospectId: "prospect_1", crmBuildingUnitId: "unit_1", label: "101호", status: "vacant",
+  }).crmBuildingUnitId, "unit_1");
+
+  const archiveBuildingSlice = appSource.slice(appSource.indexOf("async function deleteBuildingRecord"), appSource.indexOf('document.addEventListener("click"'));
+  assert.match(archiveBuildingSlice, /operation:\s*"archive"/);
+  assert.doesNotMatch(archiveBuildingSlice, /이 건물은 삭제할 수 없습니다/);
 });
