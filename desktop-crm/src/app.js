@@ -1817,6 +1817,7 @@
   }
 
   function industryChecklistFields(industry, checked) {
+    if (!industry) return `<section id="partnerIndustryChecklist" class="industry-checklist" data-industry=""><header><div><b>업종별 상담 체크리스트</b><span>업종을 선택하면 통화 중 확인할 항목이 표시됩니다.</span></div><em>선택 전</em></header></section>`;
     const rows = INDUSTRY_CHECKLISTS[industry] || INDUSTRY_CHECKLISTS["기타"];
     const values = checked && typeof checked === "object" ? checked : {};
     return `<section id="partnerIndustryChecklist" class="industry-checklist" data-industry="${attr(industry)}"><header><div><b>${esc(industry)} 상담 체크리스트</b><span>통화하면서 확인한 항목을 바로 체크하세요.</span></div><em>${rows.length}개 항목</em></header><div>${rows.map(([key, label]) => `<label><input type="checkbox" name="check__${attr(key)}" ${values[key] === true ? "checked" : ""}><span>${esc(label)}</span></label>`).join("")}</div></section>`;
@@ -1853,12 +1854,189 @@
     return vendor;
   }
 
+  const CONSULTATION_CUSTOMER_TYPES = Object.freeze(["건물주", "임차인", "법인", "협력업체", "기타"]);
+
+  function partnerVendorPickerSearchText(vendor) {
+    return Core.normalizeText([
+      partnerVendorName(vendor), vendor && vendor.phone, vendor && vendor.alternatePhone,
+      Core.normalizePhone(vendor && vendor.phone), Core.normalizePhone(vendor && vendor.alternatePhone),
+      vendor && vendor.region, vendor && (vendor.service || vendor.category), partnerIndustry(vendor)
+    ].filter(Boolean).join(" "));
+  }
+
+  function partnerVendorPickerRows(form) {
+    const industry = String(form && form.elements.industry && form.elements.industry.value || "");
+    const selectedId = String(form && form.elements.vendorId && form.elements.vendorId.value || "");
+    const query = Core.normalizeText(form && form.querySelector("[data-partner-vendor-search]")?.value || "");
+    if (!industry) return [];
+    return partnerVendorRows().filter(vendor => {
+      const selected = String(vendor.id) === selectedId;
+      const industryMatch = partnerIndustry(vendor) === industry;
+      const searchMatch = !query || partnerVendorPickerSearchText(vendor).includes(query);
+      return query ? industryMatch && searchMatch : industryMatch || selected;
+    }).sort((a, b) => {
+      if (String(a.id) === selectedId) return -1;
+      if (String(b.id) === selectedId) return 1;
+      return partnerVendorName(a).localeCompare(partnerVendorName(b), "ko");
+    });
+  }
+
+  function renderPartnerVendorPicker(form) {
+    if (!form) return;
+    const industry = String(form.elements.industry && form.elements.industry.value || "");
+    const selectedId = String(form.elements.vendorId && form.elements.vendorId.value || "");
+    const search = form.querySelector("[data-partner-vendor-search]");
+    const count = form.querySelector("[data-partner-vendor-count]");
+    const results = form.querySelector("[data-partner-vendor-options]");
+    if (search) search.disabled = !industry;
+    if (!results) return;
+    if (!industry) {
+      if (count) count.textContent = "업종을 먼저 선택해 주세요";
+      results.innerHTML = `<div class="entity-picker-empty"><b>1단계에서 업종을 선택하세요</b><span>선택한 업종의 연락 업체만 표시됩니다.</span></div>`;
+      return;
+    }
+    const rows = partnerVendorPickerRows(form);
+    const matchingCount = partnerVendorRows().filter(vendor => partnerIndustry(vendor) === industry).length;
+    if (count) count.textContent = `${industry} 업체 ${matchingCount.toLocaleString("ko-KR")}개${search && search.value.trim() ? ` · 검색 결과 ${rows.filter(vendor => partnerIndustry(vendor) === industry).length}개` : ""}`;
+    results.innerHTML = rows.length ? rows.map(vendor => {
+      const selected = String(vendor.id) === selectedId;
+      const currentIndustry = partnerIndustry(vendor);
+      const meta = [partnerPhoneText(vendor), vendor.region, vendor.service || vendor.category].filter(Boolean).join(" · ");
+      const note = currentIndustry === industry ? currentIndustry : `기존 연결 · 현재 업종 ${currentIndustry}`;
+      return `<button type="button" tabindex="-1" class="entity-picker-option ${selected ? "selected" : ""}" data-partner-vendor-option="${attr(vendor.id)}" aria-pressed="${selected ? "true" : "false"}"><span class="entity-picker-option-main"><b>${esc(partnerVendorName(vendor) || "업체명 미입력")}</b><small>${esc(note)}</small></span><span class="entity-picker-option-meta">${esc(meta || "추가 정보 미입력")}</span></button>`;
+    }).join("") : `<div class="entity-picker-empty"><b>조건에 맞는 연락 업체가 없습니다</b><span>검색어를 지우거나 연락 업체에서 새 업체를 등록해 주세요.</span></div>`;
+  }
+
+  function setupPartnerVendorPicker(form, initialIndustry, initialChecklist) {
+    if (!form || form.querySelector("[data-partner-vendor-options]")) return;
+    const vendorSelect = form.elements.vendorId;
+    const industrySelect = form.elements.industry;
+    const host = form.querySelector(".partner-quote-vendor-picker");
+    if (!vendorSelect || !industrySelect || !host) return;
+    form._partnerChecklistDrafts = initialIndustry ? { [initialIndustry]: Object.assign({}, initialChecklist || {}) } : {};
+    if (!industrySelect.querySelector('option[value=""]')) {
+      const emptyOption = document.createElement("option");
+      emptyOption.value = "";
+      emptyOption.textContent = "업종을 선택하세요";
+      industrySelect.prepend(emptyOption);
+    }
+    if (initialIndustry && ![...industrySelect.options].some(option => option.value === initialIndustry)) {
+      const legacyOption = document.createElement("option");
+      legacyOption.value = initialIndustry;
+      legacyOption.textContent = initialIndustry;
+      industrySelect.appendChild(legacyOption);
+    }
+    unique(partnerVendorRows().map(partnerIndustry)).forEach(industry => {
+      if (!industry || [...industrySelect.options].some(option => option.value === industry)) return;
+      const option = document.createElement("option");
+      option.value = industry;
+      option.textContent = industry;
+      industrySelect.appendChild(option);
+    });
+    industrySelect.value = initialIndustry || "";
+    const selectedId = vendorSelect.value;
+    const vendorField = vendorSelect.closest(".field");
+    const vendorGrid = vendorField && vendorField.closest(".form-grid");
+    const industryField = industrySelect.closest(".field");
+    const summary = host.querySelector("[data-partner-vendor-summary]");
+    const picker = document.createElement("div");
+    picker.className = "entity-picker";
+    picker.innerHTML = `<div class="entity-picker-steps"><section class="entity-picker-step"><div class="entity-picker-step-label"><b>1. 업종 선택</b><span>먼저 상담할 업종을 고르세요.</span></div><div data-partner-industry-field></div></section><section class="entity-picker-step"><div class="entity-picker-step-label"><b>2. 연락 업체 선택</b><span>업체명·연락처·지역·작업내용으로 검색할 수 있습니다.</span></div><label class="field"><span>업체 검색</span><input class="entity-picker-search" type="search" data-partner-vendor-search placeholder="업체명·연락처·지역 검색" autocomplete="off"></label><div class="entity-picker-count" data-partner-vendor-count aria-live="polite"></div><div class="entity-picker-results" data-partner-vendor-options role="group" aria-label="연락 업체 검색 결과"></div></section></div><input type="hidden" name="vendorId" value="${attr(selectedId)}">`;
+    picker.querySelector("[data-partner-industry-field]").appendChild(industryField);
+    if (vendorGrid) vendorGrid.remove();
+    host.insertBefore(picker, summary || host.firstChild);
+    renderPartnerVendorPicker(form);
+  }
+
+  function customerPickerSearchText(customer) {
+    const buildings = customerBuildings(customer);
+    return Core.normalizeText([
+      customer && customer.name, customer && customer.company, customer && customer.phone,
+      Core.normalizePhone(customer && customer.phone),
+      customer && customer.email, customer && customer.type,
+      ...(Array.isArray(customer && customer.tags) ? customer.tags : []),
+      ...buildings.flatMap(building => [building.name, building.address])
+    ].filter(Boolean).join(" "));
+  }
+
+  function consultationCustomerPickerRows(form) {
+    const type = String(form && form.elements.customerType && form.elements.customerType.value || "");
+    const selectedId = String(form && form.elements.customerId && form.elements.customerId.value || "");
+    const query = Core.normalizeText(form && form.querySelector("[data-consultation-customer-search]")?.value || "");
+    if (!type) return [];
+    return store.customers.filter(customer => {
+      const selected = String(customer.id) === selectedId;
+      const typeMatch = String(customer.type || "기타") === type;
+      const searchMatch = !query || customerPickerSearchText(customer).includes(query);
+      return query ? typeMatch && searchMatch : typeMatch || selected;
+    }).sort((a, b) => {
+      if (String(a.id) === selectedId) return -1;
+      if (String(b.id) === selectedId) return 1;
+      return String(a.name || "").localeCompare(String(b.name || ""), "ko");
+    });
+  }
+
+  function customerPickerSummaryMarkup(customer) {
+    if (!customer) return `<div class="entity-picker-empty"><b>고객을 선택해 주세요</b><span>선택 후 상담 내용을 입력할 수 있습니다.</span></div>`;
+    const buildings = customerBuildings(customer);
+    const buildingText = buildings.map(building => buildingChoiceLabel(building)).join(" · ");
+    return `<div class="partner-vendor-summary customer-picker-summary"><div><span>선택 고객</span><h3>${esc(customer.name || "이름 미입력")}</h3><p>${esc([customer.type || "기타", customer.company, customer.phone].filter(Boolean).join(" · ") || "연락처 미입력")}</p></div><div><span>연결 건물</span><b>${esc(buildings.length ? `${buildings.length}곳` : "미연결")}</b><small>${esc(buildingText || "연결 건물 없음")}</small></div></div>`;
+  }
+
+  function renderConsultationCustomerPicker(form) {
+    if (!form) return;
+    const type = String(form.elements.customerType && form.elements.customerType.value || "");
+    const selectedId = String(form.elements.customerId && form.elements.customerId.value || "");
+    const search = form.querySelector("[data-consultation-customer-search]");
+    const count = form.querySelector("[data-consultation-customer-count]");
+    const results = form.querySelector("[data-consultation-customer-options]");
+    const summary = form.querySelector("[data-consultation-customer-summary]");
+    if (search) search.disabled = !type;
+    if (!results) return;
+    if (!type) {
+      if (count) count.textContent = "고객 유형을 먼저 선택해 주세요";
+      results.innerHTML = `<div class="entity-picker-empty"><b>1단계에서 고객 유형을 선택하세요</b><span>선택한 유형의 고객만 표시됩니다.</span></div>`;
+    } else {
+      const rows = consultationCustomerPickerRows(form);
+      const query = Core.normalizeText(search && search.value || "");
+      const matchingCount = store.customers.filter(customer => String(customer.type || "기타") === type).length;
+      if (count) count.textContent = `${type} 고객 ${matchingCount.toLocaleString("ko-KR")}명${search && search.value.trim() ? ` · 검색 결과 ${rows.filter(customer => String(customer.type || "기타") === type).length}명` : ""}`;
+      results.innerHTML = rows.length ? rows.map(customer => {
+        const selected = String(customer.id) === selectedId;
+        const buildings = customerBuildings(customer);
+        const matchedBuilding = query ? buildings.find(building => Core.normalizeText([building.name, building.address].filter(Boolean).join(" ")).includes(query)) : null;
+        const shownBuilding = matchedBuilding || buildings[0];
+        const buildingMeta = shownBuilding ? `${buildingChoiceLabel(shownBuilding)}${buildings.length > 1 ? ` · 외 ${buildings.length - 1}곳` : ""}` : "";
+        const currentType = String(customer.type || "기타");
+        const note = currentType === type ? currentType : `기존 연결 · 현재 유형 ${currentType}`;
+        const meta = [customer.company, customer.phone, buildingMeta].filter(Boolean).join(" · ");
+        return `<button type="button" tabindex="-1" class="entity-picker-option ${selected ? "selected" : ""}" data-consultation-customer-option="${attr(customer.id)}" aria-pressed="${selected ? "true" : "false"}"><span class="entity-picker-option-main"><b>${esc(customer.name || "이름 미입력")}</b><small>${esc(note)}</small></span><span class="entity-picker-option-meta">${esc(meta || "추가 정보 미입력")}</span></button>`;
+      }).join("") : `<div class="entity-picker-empty"><b>조건에 맞는 고객이 없습니다</b><span>검색어를 지우거나 고객 관리에서 새 고객을 등록해 주세요.</span></div>`;
+    }
+    if (summary) summary.innerHTML = customerPickerSummaryMarkup(customerById(selectedId));
+  }
+
+  function setupConsultationCustomerPicker(form, preselectedCustomer) {
+    if (!form || form.querySelector("[data-consultation-customer-options]")) return;
+    const customerSelect = form.elements.customerId;
+    if (!customerSelect) return;
+    const selectedId = customerSelect.value;
+    const customerField = customerSelect.closest(".field");
+    const picker = document.createElement("div");
+    picker.className = "entity-picker wide";
+    const selectedType = preselectedCustomer && (preselectedCustomer.type || "기타") || "";
+    const types = ["", ...unique([...CONSULTATION_CUSTOMER_TYPES, ...store.customers.map(customer => customer.type || "기타"), selectedType])];
+    picker.innerHTML = `<div class="entity-picker-steps"><section class="entity-picker-step"><div class="entity-picker-step-label"><b>1. 고객 유형 선택</b><span>상담할 고객 유형을 먼저 고르세요.</span></div>${selectField("고객 유형 *", "customerType", types, selectedType, value => value || "고객 유형을 선택하세요")}</section><section class="entity-picker-step"><div class="entity-picker-step-label"><b>2. 고객 선택</b><span>이름·상호·연락처·연결 건물로 검색할 수 있습니다.</span></div><label class="field"><span>고객 검색</span><input class="entity-picker-search" type="search" data-consultation-customer-search placeholder="이름·상호·연락처·건물 검색" autocomplete="off"></label><div class="entity-picker-count" data-consultation-customer-count aria-live="polite"></div><div class="entity-picker-results" data-consultation-customer-options role="group" aria-label="고객 검색 결과"></div></section></div><input type="hidden" name="customerId" value="${attr(selectedId)}"><div data-consultation-customer-summary>${customerPickerSummaryMarkup(preselectedCustomer)}</div>`;
+    customerField.replaceWith(picker);
+    renderConsultationCustomerPicker(form);
+  }
+
   function partnerQuoteEditor(quoteId) {
     const editing = store.partnerQuotes.find(item => item.id === quoteId);
     const item = editing ? JSON.parse(JSON.stringify(editing)) : Core.createPartnerQuote({ owner: store.settings.owner || "김현진" });
     const linkedVendor = partnerVendorForQuote(item);
     item.vendorId = linkedVendor && linkedVendor.id || "";
-    item.industry = partnerIndustry(item);
+    item.industry = editing ? partnerIndustry(item) : "";
     item.status = item.status === "견적 요청" ? "상담 중" : item.status === "견적 받음" ? "상담 완료" : item.status;
     item.consultationContent = item.consultationContent || item.memo || "";
     item.consultedAt = item.consultedAt || item.receivedAt || item.contactedAt || "";
@@ -1888,7 +2066,13 @@
       ${field("가격 안내받은 날", "receivedAt", item.receivedAt || "", "date")}${areaField("추가 비고", "memo", item.memo, "wide")}
     </div></details><div class="form-actions">${editing ? `<button type="button" class="danger-outline-button form-delete-left" data-partner-quote-delete="${attr(editing.id)}">상담 기록 삭제</button>` : ""}<button type="button" class="secondary-button" data-action="close-modal">취소</button><button type="submit" class="primary-button">${editing ? "수정 저장" : "상담 기록 저장"}</button></div></form>`;
     openModal();
-    setTimeout(() => document.querySelector('#partnerQuoteForm [name="vendorId"]')?.focus(), 30);
+    const form = document.getElementById("partnerQuoteForm");
+    setupPartnerVendorPicker(form, item.industry, item.checklist);
+    setTimeout(() => {
+      const industry = form && form.elements.industry;
+      const search = form && form.querySelector("[data-partner-vendor-search]");
+      (industry && industry.value ? search : industry)?.focus();
+    }, 30);
   }
 
   function taskEditor(customerId) {
@@ -1904,6 +2088,13 @@
     const nextAction = relationshipMode ? (customer && customer.relationshipNextAction || "서비스 만족도 및 추가 요청 확인") : "";
     modalContent.innerHTML = `<div class="modal-head"><div><h2>${relationshipMode ? "후속 연락 기록" : "상담 기록 추가"}</h2><p>${relationshipMode ? "계약 고객과 나눈 내용과 다음 연락 약속을 함께 남기세요." : "고객과 나눈 핵심 내용과 다음 할 일을 간단히 남기세요."}</p></div><button class="close-button" data-action="close-modal">×</button></div><form id="consultationForm" class="modal-body" data-return-view="${attr(returnView || "consultations")}"><div class="form-grid">${selectField("고객 *", "customerId", ["", ...store.customers.map(item => item.id)], customerId || "", id => id ? (customerById(id)?.name || id) : "고객을 선택하세요")}${selectField("연락 방식", "type", ["전화", "문자", "카카오", "이메일", "미팅", "방문", "메모"], "전화")}${field("연락 일시", "occurredAt", datetimeValue(new Date().toISOString()), "datetime-local")}${field("담당자", "owner", store.settings.owner || "김현진")}${areaField("연락 내용 *", "summary", "", "wide")}${field("고객 반응·결과", "result", "", "text", relationshipMode ? "예: 서비스에 만족, 추가 요청 없음" : "예: 견적 요청 접수")}${field("다음 할 일", "nextAction", nextAction, "text", relationshipMode ? "예: 정기 안부 및 추가 요청 확인" : "예: 비교견적 전달")}${field("다음 연락일", "nextContactAt", datetimeValue(nextContactAt), "datetime-local")}</div><div class="form-actions"><button type="button" class="secondary-button" data-action="close-modal">취소</button><button class="primary-button">${relationshipMode ? "후속 연락 저장" : "상담 기록 저장"}</button></div></form>`;
     openModal();
+    const form = document.getElementById("consultationForm");
+    setupConsultationCustomerPicker(form, customer);
+    setTimeout(() => {
+      const type = form && form.elements.customerType;
+      const search = form && form.querySelector("[data-consultation-customer-search]");
+      (type && type.value ? search : type)?.focus();
+    }, 30);
   }
 
   function relationshipEditor(customerId) {
@@ -2577,6 +2768,25 @@
   }
 
   document.addEventListener("click", async event => {
+    const partnerVendorOption = event.target.closest("[data-partner-vendor-option]");
+    if (partnerVendorOption) {
+      const form = partnerVendorOption.closest("#partnerQuoteForm");
+      if (!form || !form.elements.vendorId) return;
+      form.elements.vendorId.value = partnerVendorOption.dataset.partnerVendorOption || "";
+      refreshPartnerQuoteVendorSummary(form, false);
+      renderPartnerVendorPicker(form);
+      form.querySelector("[data-partner-vendor-search]")?.focus();
+      return;
+    }
+    const consultationCustomerOption = event.target.closest("[data-consultation-customer-option]");
+    if (consultationCustomerOption) {
+      const form = consultationCustomerOption.closest("#consultationForm");
+      if (!form || !form.elements.customerId) return;
+      form.elements.customerId.value = consultationCustomerOption.dataset.consultationCustomerOption || "";
+      renderConsultationCustomerPicker(form);
+      form.querySelector("[data-consultation-customer-search]")?.focus();
+      return;
+    }
     const nav = event.target.closest("[data-view]");
     if (nav) {
       await api.hideFieldPlatform();
@@ -3288,12 +3498,25 @@
     }
     if (event.target.matches('#contractForm input[name="types"]')) refreshContractTypeFields(event.target.form);
     if (event.target.matches('#contractForm [name="customerId"]')) refreshContractBuildings(event.target.form);
-    if (event.target.matches('#partnerQuoteForm [name="vendorId"]')) refreshPartnerQuoteVendorSummary(event.target.form, true);
     if (event.target.matches('#partnerQuoteForm [name="industry"]')) {
+      const form = event.target.form;
+      const selectedVendor = partnerVendorById(form && form.elements.vendorId && form.elements.vendorId.value);
+      if (selectedVendor && partnerIndustry(selectedVendor) !== event.target.value) form.elements.vendorId.value = "";
       const current = {};
       document.querySelectorAll('#partnerIndustryChecklist input[type="checkbox"]').forEach(input => { current[input.name.replace("check__", "")] = input.checked; });
       const checklist = document.getElementById("partnerIndustryChecklist");
-      if (checklist) checklist.outerHTML = industryChecklistFields(event.target.value, current);
+      const previousIndustry = String(checklist && checklist.dataset.industry || "");
+      form._partnerChecklistDrafts ||= {};
+      if (previousIndustry) form._partnerChecklistDrafts[previousIndustry] = current;
+      if (checklist) checklist.outerHTML = industryChecklistFields(event.target.value, form._partnerChecklistDrafts[event.target.value] || {});
+      refreshPartnerQuoteVendorSummary(form, false);
+      renderPartnerVendorPicker(form);
+    }
+    if (event.target.matches('#consultationForm [name="customerType"]')) {
+      const form = event.target.form;
+      const selectedCustomer = customerById(form && form.elements.customerId && form.elements.customerId.value);
+      if (selectedCustomer && String(selectedCustomer.type || "기타") !== event.target.value) form.elements.customerId.value = "";
+      renderConsultationCustomerPicker(form);
     }
   });
 
@@ -3644,6 +3867,7 @@
       scheduleSave(); closeModal(); currentView = "partnerVendors"; render(); showToast(`${partnerVendorName(item)} 업체 정보를 저장했습니다.`, "success");
     } else if (form.id === "partnerQuoteForm") {
       const raw = Object.fromEntries(new FormData(form).entries());
+      if (!String(raw.industry || "").trim()) return showToast("업종을 먼저 선택해 주세요.", "error");
       const selectedVendor = partnerVendorById(raw.vendorId);
       if (!selectedVendor) return showToast("저장된 연락 업체를 선택해 주세요.", "error");
       if (!String(raw.scenario || "").trim()) return showToast("문의한 작업 조건을 입력해 주세요.", "error");
@@ -3731,6 +3955,7 @@
     } else if (form.id === "consultationForm") {
       const raw = Object.fromEntries(new FormData(form).entries());
       const returnView = form.dataset.returnView || "consultations";
+      if (!String(raw.customerType || "").trim()) return showToast("고객 유형을 먼저 선택해 주세요.", "error");
       if (!raw.customerId) return showToast("고객을 선택해 주세요.", "error");
       if (!raw.summary.trim()) return showToast("상담 내용을 입력해 주세요.", "error");
       const customer = customerById(raw.customerId);
@@ -3849,7 +4074,11 @@
   });
   searchEl.addEventListener("keydown", event => { if (event.key === "Enter") { if (!["cases", "buildings", "contracts", "partnerVendors", "partnerQuotes", "pipeline"].includes(currentView)) currentView = "customers"; render(); } });
   document.addEventListener("input", event => {
-    if (event.target.matches("[data-sales-query]")) {
+    if (event.target.matches("[data-partner-vendor-search]")) {
+      renderPartnerVendorPicker(event.target.closest("#partnerQuoteForm"));
+    } else if (event.target.matches("[data-consultation-customer-search]")) {
+      renderConsultationCustomerPicker(event.target.closest("#consultationForm"));
+    } else if (event.target.matches("[data-sales-query]")) {
       searchEl.value = event.target.value;
       renderPipeline();
       const input = document.querySelector("[data-sales-query]");
@@ -3878,6 +4107,39 @@ document.addEventListener("keydown", event => {
         if (event.shiftKey && document.activeElement === first) { event.preventDefault(); last.focus(); }
         else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first.focus(); }
       }
+    }
+    return;
+  }
+  const pickerSearch = event.target.closest?.("[data-partner-vendor-search], [data-consultation-customer-search]");
+  if (pickerSearch && event.key === "Enter" && (event.isComposing || event.keyCode === 229)) return;
+  if (pickerSearch && event.key === "Escape" && pickerSearch.value) {
+    event.preventDefault();
+    event.stopPropagation();
+    pickerSearch.value = "";
+    pickerSearch.dispatchEvent(new Event("input", { bubbles: true }));
+    return;
+  }
+  if (pickerSearch && ["Enter", "ArrowDown"].includes(event.key)) {
+    event.preventDefault();
+    const form = pickerSearch.closest("form");
+    const selector = pickerSearch.matches("[data-partner-vendor-search]") ? "[data-partner-vendor-option]" : "[data-consultation-customer-option]";
+    form?.querySelector(selector)?.focus();
+    if (event.key === "Enter") form?.querySelector(selector)?.click();
+    return;
+  }
+  const pickerOption = event.target.closest?.("[data-partner-vendor-option], [data-consultation-customer-option]");
+  if (pickerOption && ["ArrowDown", "ArrowUp", "Home", "End", "Escape"].includes(event.key)) {
+    event.preventDefault();
+    const form = pickerOption.closest("form");
+    const partner = pickerOption.matches("[data-partner-vendor-option]");
+    const selector = partner ? "[data-partner-vendor-option]" : "[data-consultation-customer-option]";
+    const options = [...(form?.querySelectorAll(selector) || [])];
+    const index = options.indexOf(pickerOption);
+    if (event.key === "Escape") {
+      form?.querySelector(partner ? "[data-partner-vendor-search]" : "[data-consultation-customer-search]")?.focus();
+    } else {
+      const nextIndex = event.key === "Home" ? 0 : event.key === "End" ? options.length - 1 : event.key === "ArrowDown" ? Math.min(options.length - 1, index + 1) : Math.max(0, index - 1);
+      options[nextIndex]?.focus();
     }
     return;
   }
