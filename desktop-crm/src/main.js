@@ -1493,9 +1493,18 @@ async function createWindow() {
         return { openerFound: !!opener, buttonFound: !!button, state: window.__crmTest?.snapshot() };
       })()`, true);
     } else if (process.env.BRING_CRM_SCREENSHOT_ACTION === "new-partner-quote") {
-      actionResult = await mainWindow.webContents.executeJavaScript(`(() => {
+      actionResult = await mainWindow.webContents.executeJavaScript(`(async () => {
         document.querySelector('[data-view="partnerQuotes"]')?.click();
+        await new Promise(resolve => setTimeout(resolve, 80));
         const button = document.querySelector('[data-action="new-partner-quote"]');
+        button?.click();
+        return { buttonFound: !!button, state: window.__crmTest?.snapshot() };
+      })()`, true);
+    } else if (process.env.BRING_CRM_SCREENSHOT_ACTION === "new-consultation") {
+      actionResult = await mainWindow.webContents.executeJavaScript(`(async () => {
+        document.querySelector('[data-view="consultations"]')?.click();
+        await new Promise(resolve => setTimeout(resolve, 80));
+        const button = document.querySelector('[data-action="new-consultation"]');
         button?.click();
         return { buttonFound: !!button, state: window.__crmTest?.snapshot() };
       })()`, true);
@@ -1892,8 +1901,9 @@ async function createWindow() {
         }
         const restoredStep = document.querySelector('[data-case-step-status="' + stepKey + '"]')?.value || '';
         document.querySelector('[data-view="customers"]')?.click();
+        await wait(80);
         document.querySelector('[data-customer-open]')?.click();
-        await wait(30);
+        await wait(80);
         const drawerControls = [...document.querySelectorAll('#drawer form input, #drawer form select, #drawer form textarea, #drawer form button')];
         const drawerFormsLocked = drawerControls.length > 0 && drawerControls.every(control => control.disabled && control.getAttribute('aria-disabled') === 'true');
         document.querySelector('[data-building-delete]')?.click();
@@ -1965,7 +1975,9 @@ async function createWindow() {
       })()`, true);
     } else if (process.env.BRING_CRM_SCREENSHOT_ACTION === "save-partner-quote") {
       actionResult = await mainWindow.webContents.executeJavaScript(`(async () => {
+        const wait = ms => new Promise(resolve => setTimeout(resolve, ms));
         document.querySelector('[data-view="partnerVendors"]')?.click();
+        await wait(80);
         document.querySelector('[data-action="new-partner-vendor"]')?.click();
         const vendorForm = document.getElementById('partnerVendorForm');
         if (!vendorForm) return { pass: false, reason: 'vendor form missing' };
@@ -1975,16 +1987,25 @@ async function createWindow() {
         vendorForm.elements.phone.value = '010-5555-6666';
         vendorForm.elements.service.value = '누수 탐지·시공';
         vendorForm.requestSubmit();
-        await new Promise(resolve => setTimeout(resolve, 80));
+        await wait(80);
         const vendor = [...window.__crmTest.getStore().partnerVendors].reverse().find(item => item.name === vendorName);
         if (!vendor) return { pass: false, reason: 'vendor save failed' };
         document.querySelector('[data-view="partnerQuotes"]')?.click();
+        await wait(80);
         const before = window.__crmTest.getStore().partnerQuotes.length;
         document.querySelector('[data-action="new-partner-quote"]')?.click();
         const form = document.getElementById('partnerQuoteForm');
         if (!form) return { pass: false, reason: 'form missing' };
-        form.elements.vendorId.value = vendor.id;
-        form.elements.vendorId.dispatchEvent(new Event('change', { bubbles: true }));
+        const search = form.querySelector('[data-partner-vendor-search]');
+        if (!search || !form.elements.industry || !form.elements.vendorId) return { pass: false, reason: 'partner picker missing' };
+        const startsIndustryFirst = form.elements.industry?.value === '' && search?.disabled === true && form.elements.vendorId?.value === '';
+        form.elements.industry.value = '누수';
+        form.elements.industry.dispatchEvent(new Event('change', { bubbles: true }));
+        search.value = vendor.phone;
+        search.dispatchEvent(new Event('input', { bubbles: true }));
+        const vendorOption = [...form.querySelectorAll('[data-partner-vendor-option]')].find(option => option.dataset.partnerVendorOption === vendor.id);
+        vendorOption?.click();
+        const selectedThroughPicker = !!vendorOption && form.elements.vendorId.value === vendor.id && form.querySelector('[data-partner-vendor-summary]')?.textContent.includes(vendor.name);
         form.elements.scenario.value = '원주 다가구 누수 가상조건';
         form.elements.status.value = '상담 완료';
         form.elements.totalMin.value = '700000';
@@ -1999,8 +2020,190 @@ async function createWindow() {
         const latestStore = window.__crmTest.getStore();
         const saved = [...latestStore.partnerQuotes].reverse().find(item => item.vendorId === vendor.id);
         const state = window.__crmTest.snapshot();
-        const pass = latestStore.partnerQuotes.length === before + 1 && !!saved && saved.vendorId === vendor.id && saved.vendor === vendor.name && saved.industry === '누수' && saved.status === '상담 완료' && saved.totalMin === 700000 && saved.totalMax === 1100000 && saved.consultedAt === '2026-08-12' && saved.consultationContent === '가격 범위와 방문 가능 일정을 전화로 안내받음' && saved.constructionMin === 600000 && saved.constructionMax === 900000 && saved.checklist?.symptom === true && !Object.prototype.hasOwnProperty.call(saved, 'customerId') && state.modalOpen === false && state.view === 'partnerQuotes';
-        return { pass, vendor: { id: vendor.id, name: vendor.name }, saved: saved && { vendorId: saved.vendorId, industry: saved.industry, scenario: saved.scenario, vendor: saved.vendor, totalMin: saved.totalMin, totalMax: saved.totalMax, consultedAt: saved.consultedAt, consultationContent: saved.consultationContent, constructionMin: saved.constructionMin, constructionMax: saved.constructionMax, status: saved.status, checklist: saved.checklist, hasCustomerId: Object.prototype.hasOwnProperty.call(saved, 'customerId') }, state };
+        const pass = startsIndustryFirst && selectedThroughPicker && latestStore.partnerQuotes.length === before + 1 && !!saved && saved.vendorId === vendor.id && saved.vendor === vendor.name && saved.industry === '누수' && saved.status === '상담 완료' && saved.totalMin === 700000 && saved.totalMax === 1100000 && saved.consultedAt === '2026-08-12' && saved.consultationContent === '가격 범위와 방문 가능 일정을 전화로 안내받음' && saved.constructionMin === 600000 && saved.constructionMax === 900000 && saved.checklist?.symptom === true && !Object.prototype.hasOwnProperty.call(saved, 'customerId') && state.modalOpen === false && state.view === 'partnerQuotes';
+        return { pass, startsIndustryFirst, selectedThroughPicker, vendor: { id: vendor.id, name: vendor.name }, saved: saved && { vendorId: saved.vendorId, industry: saved.industry, scenario: saved.scenario, vendor: saved.vendor, totalMin: saved.totalMin, totalMax: saved.totalMax, consultedAt: saved.consultedAt, consultationContent: saved.consultationContent, constructionMin: saved.constructionMin, constructionMax: saved.constructionMax, status: saved.status, checklist: saved.checklist, hasCustomerId: Object.prototype.hasOwnProperty.call(saved, 'customerId') }, state };
+      })()`, true);
+    } else if (process.env.BRING_CRM_SCREENSHOT_ACTION === "search-picker-scale") {
+      actionResult = await mainWindow.webContents.executeJavaScript(`(async () => {
+        const wait = ms => new Promise(resolve => setTimeout(resolve, ms));
+        const vendorPrefix = 'pvd_picker_qa_';
+        const customerPrefix = 'cus_picker_qa_';
+        const pad = value => String(value).padStart(3, '0');
+        const overflowState = root => {
+          if (!root) return { pass: false, reason: 'picker missing' };
+          const nodes = [root, ...root.querySelectorAll('.entity-picker-results, .entity-picker-option')];
+          const overflow = nodes.filter(node => node.scrollWidth > node.clientWidth + 1).map(node => ({
+            name: node.className || node.tagName,
+            clientWidth: node.clientWidth,
+            scrollWidth: node.scrollWidth
+          }));
+          const rect = root.getBoundingClientRect();
+          return { pass: !overflow.length && rect.left >= -1 && rect.right <= innerWidth + 1, overflow, left: rect.left, right: rect.right, viewportWidth: innerWidth };
+        };
+        try {
+          const seed = window.__crmTest.getStore();
+          const stamp = new Date(Date.now() + 86400000).toISOString();
+          seed.partnerVendors = seed.partnerVendors.filter(item => !String(item.id || '').startsWith(vendorPrefix));
+          seed.customers = seed.customers.filter(item => !String(item.id || '').startsWith(customerPrefix));
+          const baseVendor = seed.partnerVendors[0] || {};
+          const baseCustomer = seed.customers[0] || {};
+          for (let index = 0; index < 100; index += 1) {
+            const suffix = pad(index);
+            const vendorName = 'QA 대량 업체 ' + suffix;
+            const vendorService = index === 73 ? '초장문작업내용' + '가'.repeat(90) : '시설 점검 ' + suffix;
+            seed.partnerVendors.push(Object.assign({}, baseVendor, {
+              id: vendorPrefix + suffix,
+              vendor: vendorName,
+              name: vendorName,
+              industry: index < 50 ? '누수' : '청소',
+              phone: '010-97' + String(index).padStart(2, '0') + '-' + String(1000 + index),
+              alternatePhone: '',
+              quoteUrl: '',
+              region: '원주 QA지역 ' + suffix,
+              service: vendorService,
+              category: vendorService,
+              memo: '',
+              active: true,
+              createdAt: stamp,
+              updatedAt: stamp
+            }));
+            const customerName = 'QA 대량 고객 ' + suffix;
+            seed.customers.push(Object.assign({}, baseCustomer, {
+              id: customerPrefix + suffix,
+              customerNo: 'QA-C-' + suffix,
+              name: customerName,
+              company: index === 73 ? 'QA초장문회사' + '나'.repeat(90) : 'QA 회사 ' + suffix,
+              phone: '010-98' + String(index).padStart(2, '0') + '-' + String(1000 + index),
+              email: '',
+              type: index < 50 ? '건물주' : '법인',
+              address: '원주시 QA주소 ' + suffix,
+              buildingIds: [],
+              tags: ['대량선택QA'],
+              stage: '상담 중',
+              createdAt: stamp,
+              updatedAt: stamp
+            }));
+          }
+          seed.updatedAt = stamp;
+          window.__crmTest.applyRemoteForTest(seed);
+          await wait(120);
+          const seeded = window.__crmTest.getStore();
+          const seededVendorCount = seeded.partnerVendors.filter(item => String(item.id || '').startsWith(vendorPrefix)).length;
+          const seededCustomerCount = seeded.customers.filter(item => String(item.id || '').startsWith(customerPrefix)).length;
+          const targetVendor = seeded.partnerVendors.find(item => item.id === vendorPrefix + '073');
+          const targetCustomer = seeded.customers.find(item => item.id === customerPrefix + '073');
+          if (!targetVendor || !targetCustomer) return { pass: false, reason: 'scale seed failed', seededVendorCount, seededCustomerCount };
+
+          document.querySelector('[data-view="partnerQuotes"]')?.click();
+          await wait(40);
+          document.querySelector('[data-action="new-partner-quote"]')?.click();
+          await wait(40);
+          let form = document.getElementById('partnerQuoteForm');
+          let search = form?.querySelector('[data-partner-vendor-search]');
+          if (!form || !search || !form.elements.industry || !form.elements.vendorId) return { pass: false, reason: 'partner picker controls missing' };
+          const partnerStartsWithIndustry = form.elements.industry.value === '' && search.disabled && form.elements.vendorId.value === '';
+          form.elements.industry.value = '청소';
+          form.elements.industry.dispatchEvent(new Event('change', { bubbles: true }));
+          const vendorIndustryIds = [...form.querySelectorAll('[data-partner-vendor-option]')].map(option => option.dataset.partnerVendorOption).filter(id => id.startsWith(vendorPrefix));
+          const vendorIndustryFiltered = vendorIndustryIds.length === 50 && vendorIndustryIds.every(id => Number(id.slice(vendorPrefix.length)) >= 50);
+          search.value = targetVendor.phone;
+          search.dispatchEvent(new Event('input', { bubbles: true }));
+          const searchedVendorOptions = [...form.querySelectorAll('[data-partner-vendor-option]')].filter(option => option.dataset.partnerVendorOption.startsWith(vendorPrefix));
+          const vendorOption = searchedVendorOptions.find(option => option.dataset.partnerVendorOption === targetVendor.id);
+          const vendorSearchFiltered = searchedVendorOptions.length === 1 && !!vendorOption;
+          search.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', keyCode: 229, isComposing: true, bubbles: true, cancelable: true }));
+          const vendorImeSafe = form.elements.vendorId.value === '';
+          search.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true }));
+          const vendorSelected = form.elements.vendorId.value === targetVendor.id && form.querySelector('[data-partner-vendor-summary]')?.textContent.includes(targetVendor.name);
+          const partnerOverflow = overflowState(form.querySelector('.entity-picker'));
+          const scenario = 'QA 대량선택 업체 상담 ' + targetVendor.id;
+          form.elements.scenario.value = scenario;
+          form.elements.status.value = '상담 완료';
+          form.elements.consultationContent.value = '100개 업체 검색·선택 저장 자동 점검';
+          form.requestSubmit();
+          await wait(100);
+          const savedQuote = [...window.__crmTest.getStore().partnerQuotes].reverse().find(item => item.vendorId === targetVendor.id && item.scenario === scenario);
+          const quoteSaved = !!savedQuote && savedQuote.industry === '청소' && savedQuote.vendor === targetVendor.name;
+
+          const editButton = [...document.querySelectorAll('[data-partner-quote-edit]')].find(item => item.dataset.partnerQuoteEdit === savedQuote?.id && item.tagName === 'BUTTON')
+            || [...document.querySelectorAll('[data-partner-quote-edit]')].find(item => item.dataset.partnerQuoteEdit === savedQuote?.id);
+          editButton?.click();
+          await wait(60);
+          form = document.getElementById('partnerQuoteForm');
+          search = form?.querySelector('[data-partner-vendor-search]');
+          const editInitiallyPreserved = !!form && form.elements.industry.value === '청소' && form.elements.vendorId.value === targetVendor.id && form.querySelector('[data-partner-vendor-summary]')?.textContent.includes(targetVendor.name);
+          if (search) {
+            search.value = '검색결과에없는문구';
+            search.dispatchEvent(new Event('input', { bubbles: true }));
+          }
+          const editSelectionPreserved = !!form && form.elements.vendorId.value === targetVendor.id && form.querySelector('[data-partner-vendor-summary]')?.textContent.includes(targetVendor.name) && !form.querySelector('[data-partner-vendor-option]');
+          const editOverflow = overflowState(form?.querySelector('.entity-picker'));
+          form?.querySelector('[data-action="close-modal"]')?.click();
+          await wait(40);
+
+          document.querySelector('[data-view="consultations"]')?.click();
+          await wait(40);
+          document.querySelector('[data-action="new-consultation"]')?.click();
+          await wait(40);
+          let consultationForm = document.getElementById('consultationForm');
+          let customerSearch = consultationForm?.querySelector('[data-consultation-customer-search]');
+          if (!consultationForm || !customerSearch || !consultationForm.elements.customerType || !consultationForm.elements.customerId) return { pass: false, reason: 'consultation picker controls missing' };
+          const consultationStartsWithType = consultationForm.elements.customerType.value === '' && customerSearch.disabled && consultationForm.elements.customerId.value === '';
+          consultationForm.elements.customerType.value = '법인';
+          consultationForm.elements.customerType.dispatchEvent(new Event('change', { bubbles: true }));
+          const customerTypeIds = [...consultationForm.querySelectorAll('[data-consultation-customer-option]')].map(option => option.dataset.consultationCustomerOption).filter(id => id.startsWith(customerPrefix));
+          const customerTypeFiltered = customerTypeIds.length === 50 && customerTypeIds.every(id => Number(id.slice(customerPrefix.length)) >= 50);
+          customerSearch.value = targetCustomer.phone;
+          customerSearch.dispatchEvent(new Event('input', { bubbles: true }));
+          const searchedCustomerOptions = [...consultationForm.querySelectorAll('[data-consultation-customer-option]')].filter(option => option.dataset.consultationCustomerOption.startsWith(customerPrefix));
+          const customerOption = searchedCustomerOptions.find(option => option.dataset.consultationCustomerOption === targetCustomer.id);
+          const customerSearchFiltered = searchedCustomerOptions.length === 1 && !!customerOption;
+          customerSearch.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', keyCode: 229, isComposing: true, bubbles: true, cancelable: true }));
+          const customerImeSafe = consultationForm.elements.customerId.value === '';
+          customerSearch.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true }));
+          const customerSelected = consultationForm.elements.customerId.value === targetCustomer.id && consultationForm.querySelector('[data-consultation-customer-summary]')?.textContent.includes(targetCustomer.name);
+          const consultationOverflow = overflowState(consultationForm.querySelector('.entity-picker'));
+          const consultationSummary = 'QA 100명 고객 검색·선택 저장 ' + targetCustomer.id;
+          consultationForm.elements.summary.value = consultationSummary;
+          consultationForm.requestSubmit();
+          await wait(100);
+          const savedActivity = [...window.__crmTest.getStore().activities].reverse().find(item => item.customerId === targetCustomer.id && item.summary === consultationSummary);
+
+          document.querySelector('[data-view="customers"]')?.click();
+          await wait(60);
+          const customerRow = [...document.querySelectorAll('[data-customer-open]')].find(item => item.dataset.customerOpen === targetCustomer.id);
+          customerRow?.click();
+          await wait(60);
+          const customerDrawerOpened = window.__crmTest.snapshot().drawerOpen;
+          document.querySelector('[data-view="consultations"]')?.click();
+          await wait(40);
+          document.querySelector('[data-action="new-consultation"]')?.click();
+          await wait(40);
+          consultationForm = document.getElementById('consultationForm');
+          customerSearch = consultationForm?.querySelector('[data-consultation-customer-search]');
+          const customerPrefillPreserved = !!consultationForm && consultationForm.elements.customerType.value === '법인' && consultationForm.elements.customerId.value === targetCustomer.id && !customerSearch?.disabled && !!consultationForm.querySelector('[data-consultation-customer-option][aria-pressed="true"]') && consultationForm.querySelector('[data-consultation-customer-summary]')?.textContent.includes(targetCustomer.name);
+          const prefillOverflow = overflowState(consultationForm?.querySelector('.entity-picker'));
+          consultationForm?.querySelector('[data-action="close-modal"]')?.click();
+          await wait(40);
+
+          const state = window.__crmTest.snapshot();
+          const pass = seededVendorCount === 100 && seededCustomerCount === 100
+            && partnerStartsWithIndustry && vendorIndustryFiltered && vendorSearchFiltered && vendorImeSafe && vendorSelected && quoteSaved
+            && editInitiallyPreserved && editSelectionPreserved
+            && consultationStartsWithType && customerTypeFiltered && customerSearchFiltered && customerImeSafe && customerSelected && !!savedActivity
+            && !!customerRow && customerDrawerOpened && customerPrefillPreserved
+            && partnerOverflow.pass && editOverflow.pass && consultationOverflow.pass && prefillOverflow.pass
+            && state.view === 'consultations' && state.modalOpen === false;
+          return {
+            pass,
+            seeded: { vendors: seededVendorCount, customers: seededCustomerCount },
+            partner: { partnerStartsWithIndustry, vendorIndustryFiltered, industryRows: vendorIndustryIds.length, vendorSearchFiltered, searchRows: searchedVendorOptions.length, vendorImeSafe, vendorSelected, quoteSaved, editInitiallyPreserved, editSelectionPreserved, overflow: partnerOverflow, editOverflow },
+            consultation: { consultationStartsWithType, customerTypeFiltered, typeRows: customerTypeIds.length, customerSearchFiltered, searchRows: searchedCustomerOptions.length, customerImeSafe, customerSelected, activitySaved: !!savedActivity, customerDrawerOpened, customerPrefillPreserved, overflow: consultationOverflow, prefillOverflow },
+            state
+          };
+        } catch (error) {
+          return { pass: false, error: String(error && error.stack || error), state: window.__crmTest?.snapshot() };
+        }
       })()`, true);
     } else if (process.env.BRING_CRM_SCREENSHOT_ACTION === "partner-snapshot-history") {
       actionResult = await mainWindow.webContents.executeJavaScript(`(async () => {
@@ -2013,6 +2216,7 @@ async function createWindow() {
         const before = Object.fromEntries(snapshotFields.map(field => [field, quote[field] ?? '']));
         const renamed = vendor.name + ' 최신';
         document.querySelector('[data-view="partnerVendors"]')?.click();
+        await wait(80);
         document.querySelector('[data-partner-vendor-edit="' + vendor.id + '"]')?.click();
         const vendorForm = document.getElementById('partnerVendorForm');
         if (!vendorForm) return { pass: false, reason: 'vendor form missing' };
@@ -2021,6 +2225,7 @@ async function createWindow() {
         vendorForm.requestSubmit();
         await wait(80);
         document.querySelector('[data-view="partnerQuotes"]')?.click();
+        await wait(80);
         document.querySelector('[data-partner-quote-edit="' + quote.id + '"]')?.click();
         const quoteForm = document.getElementById('partnerQuoteForm');
         if (!quoteForm) return { pass: false, reason: 'consultation form missing' };
@@ -2570,30 +2775,54 @@ async function createWindow() {
         return { pass, tabCount, manualLabel, overdueVisible, returned, disposed, incident: data.securityIncidents.find(item => item.id === incident.id), auditCount: data.auditLogs.length, policies, state };
       })()`, true);
     } else if (process.env.BRING_CRM_SCREENSHOT_ACTION === "form-matrix") {
-      actionResult = await mainWindow.webContents.executeJavaScript(`(() => {
+      actionResult = await mainWindow.webContents.executeJavaScript(`(async () => {
+        const wait = ms => new Promise(resolve => setTimeout(resolve, ms));
         const state = () => ({ modal: document.getElementById("modal").classList.contains("open"), drawer: document.getElementById("drawer").classList.contains("open"), view: window.__crmTest?.snapshot().view });
         const results = {};
         document.querySelector('[data-view="customers"]')?.click();
+        await wait(80);
         document.querySelector("[data-customer-open]")?.click();
+        await wait(60);
         document.querySelector('[data-action="edit-selected-customer"]')?.click();
+        await wait(40);
         document.getElementById("customerForm")?.requestSubmit();
+        await wait(80);
         results.customerSave = state();
         document.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
         document.querySelector('[data-view="consultations"]')?.click();
+        await wait(80);
         document.querySelector('[data-action="new-consultation"]')?.click();
+        await wait(40);
         const consultationForm = document.getElementById("consultationForm");
         if (consultationForm) {
-          consultationForm.elements.customerId.value = window.__crmTest.getStore().customers[0].id;
+          const customer = window.__crmTest.getStore().customers[0];
+          const customerSearch = consultationForm.querySelector('[data-consultation-customer-search]');
+          if (!customer || !customerSearch || !consultationForm.elements.customerType || !consultationForm.elements.customerId) return { pass: false, reason: 'consultation picker missing', results };
+          consultationForm.elements.customerType.value = customer.type || '기타';
+          consultationForm.elements.customerType.dispatchEvent(new Event('change', { bubbles: true }));
+          customerSearch.value = customer.phone || customer.name;
+          customerSearch.dispatchEvent(new Event('input', { bubbles: true }));
+          const customerOption = [...consultationForm.querySelectorAll('[data-consultation-customer-option]')].find(option => option.dataset.consultationCustomerOption === customer.id);
+          customerOption?.click();
+          results.consultationPicker = {
+            selected: consultationForm.elements.customerId.value === customer.id,
+            type: consultationForm.elements.customerType.value,
+            optionFound: !!customerOption
+          };
           consultationForm.elements.summary.value = "UI 자동 점검 상담 기록";
           consultationForm.requestSubmit();
+          await wait(80);
         }
         results.consultationSave = state();
         document.querySelector('[data-view="tasks"]')?.click();
+        await wait(80);
         document.querySelector('[data-action="new-task"]')?.click();
+        await wait(40);
         const taskForm = document.getElementById("taskForm");
         if (taskForm) {
           taskForm.elements.title.value = "UI 자동 점검 할 일";
           taskForm.requestSubmit();
+          await wait(80);
         }
         results.taskSave = state();
         const expected = {
@@ -2601,7 +2830,7 @@ async function createWindow() {
           consultationSave: { modal: false, drawer: false, view: "consultations" },
           taskSave: { modal: false, drawer: false, view: "tasks" }
         };
-        const pass = Object.entries(expected).every(([key, value]) => Object.entries(value).every(([field, expectedValue]) => results[key]?.[field] === expectedValue));
+        const pass = results.consultationPicker?.selected && results.consultationPicker?.optionFound && Object.entries(expected).every(([key, value]) => Object.entries(value).every(([field, expectedValue]) => results[key]?.[field] === expectedValue));
         return { pass, results };
       })()`, true);
     }
