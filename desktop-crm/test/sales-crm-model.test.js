@@ -681,3 +681,50 @@ test("stage calculation rejects orphan related events when relation collections 
   assert.equal(Sales.stageFromEvents([event], { prospectId: "p1", units: [{ id: "u1", prospectId: "p2" }] }), "candidate");
   assert.equal(Sales.nextStageFromEvents("p1", [event], { units: [{ id: "u1", prospectId: "p2" }] }), "candidate");
 });
+
+test("CRM building matching prefers explicit links and only uses safe unique fallbacks", () => {
+  const building = { id: "bld_1", name: "우산오피스텔", aliases: ["우산 오피스텔"], address: "강원 원주시 복원로 247번길 65" };
+  const explicit = { id: "spr_explicit", crmBuildingId: "bld_1", name: "이름이 달라도 명시 연결", address: "" };
+  const duplicateAddress = { id: "spr_address", crmBuildingId: "", name: "우산오피스텔", address: "강원도 원주시 복원로 247번길 65" };
+  assert.equal(Sales.matchProspectToCrmBuilding([duplicateAddress, explicit], building).prospect.id, explicit.id);
+  assert.equal(Sales.matchProspectToCrmBuilding([duplicateAddress, explicit], building).matchedBy, "crmBuildingId");
+
+  const addressOnly = Sales.matchProspectToCrmBuilding([duplicateAddress], building);
+  assert.equal(addressOnly.prospect.id, duplicateAddress.id);
+  assert.equal(addressOnly.matchedBy, "address");
+
+  const nameOnly = { id: "spr_name", crmBuildingId: "", name: "우산 오피스텔", address: "" };
+  const nameResult = Sales.matchProspectToCrmBuilding([nameOnly], building);
+  assert.equal(nameResult.prospect.id, nameOnly.id);
+  assert.equal(nameResult.matchedBy, "name");
+});
+
+test("CRM building matching rejects ambiguous, archived, and conflicting fallback records", () => {
+  const building = { id: "bld_1", name: "햇빛빌라", address: "강원 원주시 이화3길 28-5" };
+  const duplicateAddress = [
+    { id: "spr_a", name: "햇빛빌라", address: building.address },
+    { id: "spr_b", name: "다른 동", address: building.address }
+  ];
+  const ambiguous = Sales.matchProspectToCrmBuilding(duplicateAddress, building);
+  assert.equal(ambiguous.prospect, null);
+  assert.equal(ambiguous.matchedBy, "address");
+  assert.equal(ambiguous.ambiguous, true);
+
+  const duplicateCrmAddress = Sales.matchProspectToCrmBuilding(
+    [{ id: "spr_unique", name: building.name, address: building.address }],
+    building,
+    [building, { id: "bld_2", name: "같은 주소 별동", address: building.address }]
+  );
+  assert.equal(duplicateCrmAddress.prospect, null);
+  assert.equal(duplicateCrmAddress.ambiguous, true);
+  assert.equal(Sales.matchProspectToCrmBuilding([], building, [building, { id: "bld_2", address: building.address }]).ambiguous, false);
+
+  const conflictingAddress = { id: "spr_conflict", name: building.name, address: "강원 원주시 완전히 다른 주소" };
+  assert.equal(Sales.matchProspectToCrmBuilding([conflictingAddress], building).prospect, null);
+
+  const linkedElsewhere = { id: "spr_other", crmBuildingId: "bld_other", name: building.name, address: building.address };
+  assert.equal(Sales.matchProspectToCrmBuilding([linkedElsewhere], building).prospect, null);
+
+  const archived = { id: "spr_archived", crmBuildingId: building.id, name: building.name, archivedAt: "2026-08-01T00:00:00.000Z" };
+  assert.equal(Sales.matchProspectToCrmBuilding([archived], building).prospect, null);
+});

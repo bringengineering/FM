@@ -114,6 +114,55 @@
     return text(value).normalize("NFKC").toLowerCase().replace(/강원도/g, "강원").replace(/[\p{P}\p{S}\s]+/gu, "");
   }
 
+  function normalizeBuildingName(value) {
+    return text(value).normalize("NFKC").toLowerCase().replace(/[\p{P}\p{S}\s]+/gu, "");
+  }
+
+  function salesProspectMatchResult(prospect, matchedBy, ambiguous) {
+    return { prospect: prospect || null, matchedBy: matchedBy || "none", ambiguous: Boolean(ambiguous) };
+  }
+
+  function matchProspectToCrmBuilding(records, building, crmBuildings) {
+    const target = building && typeof building === "object" ? building : {};
+    const buildingId = text(target.id);
+    const prospects = (Array.isArray(records) ? records : []).filter(item => item && !item.archivedAt);
+    const uniqueMatch = (matches, matchedBy) => matches.length === 1
+      ? salesProspectMatchResult(matches[0], matchedBy, false)
+      : salesProspectMatchResult(null, matches.length ? matchedBy : "none", matches.length > 1);
+
+    if (buildingId) {
+      const explicit = prospects.filter(item => text(item.crmBuildingId) === buildingId);
+      if (explicit.length) return uniqueMatch(explicit, "crmBuildingId");
+    }
+
+    // A prospect explicitly linked to another CRM building must never be reassigned by a name/address fallback.
+    const unlinked = prospects.filter(item => !text(item.crmBuildingId));
+    const addressKey = normalizeAddress(target.address);
+    if (addressKey) {
+      const crmAddressMatches = (Array.isArray(crmBuildings) ? crmBuildings : []).filter(item => normalizeAddress(item && item.address) === addressKey);
+      const byAddress = unlinked.filter(item => normalizeAddress(item.address) === addressKey);
+      if (byAddress.length) {
+        if (crmAddressMatches.length > 1) return salesProspectMatchResult(null, "address", true);
+        return uniqueMatch(byAddress, "address");
+      }
+    }
+
+    const nameKeys = new Set([target.name, ...(Array.isArray(target.aliases) ? target.aliases : [])].map(normalizeBuildingName).filter(Boolean));
+    if (!nameKeys.size) return salesProspectMatchResult(null, "none", false);
+    const crmNameMatches = (Array.isArray(crmBuildings) ? crmBuildings : []).filter(item => {
+      const keys = [item && item.name, ...(Array.isArray(item && item.aliases) ? item.aliases : [])].map(normalizeBuildingName).filter(Boolean);
+      return keys.some(key => nameKeys.has(key));
+    });
+    const byName = unlinked.filter(item => {
+      if (!nameKeys.has(normalizeBuildingName(item.name))) return false;
+      const prospectAddress = normalizeAddress(item.address);
+      // When both sides have an address, a mismatch is stronger evidence than an identical display name.
+      return !addressKey || !prospectAddress;
+    });
+    if (byName.length && crmNameMatches.length > 1) return salesProspectMatchResult(null, "name", true);
+    return uniqueMatch(byName, "name");
+  }
+
   function normalizeSalesProspect(value, actor, at) {
     const record = commonRecord(value, "spr", actor, at);
     record.name = text(record.name);
@@ -778,6 +827,8 @@
     calculateKpis,
     canTransitionOpportunityStage,
     normalizeAddress,
+    normalizeBuildingName,
+    matchProspectToCrmBuilding,
     createProspect: createSalesProspect,
     createContact: createSalesContact,
     createUnit: createSalesUnit,
