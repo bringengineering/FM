@@ -158,12 +158,17 @@ function caseDeleteAuditId(caseKey) {
   return `case_delete_${String(caseKey || "")}`;
 }
 
-function resolveDatabaseLocation(location, databaseRoot) {
+function resolveDatabasePatchLocation(location, databaseRoot) {
   const normalizedLocation = String(location || "").replace(/^\/+/, "");
   if (!databaseRoot) return normalizedLocation;
-  const companyLocation = normalizedLocation === "crmShared/data"
-    ? "data"
-    : normalizedLocation.replace(/^crmAccess(?=\/|$)/, "access");
+  return normalizedLocation
+    .replace(/^crmShared\/data(?=\/|$)/, "data")
+    .replace(/^crmAccess(?=\/|$)/, "access");
+}
+
+function resolveDatabaseLocation(location, databaseRoot) {
+  const companyLocation = resolveDatabasePatchLocation(location, databaseRoot);
+  if (!databaseRoot) return companyLocation;
   return companyLocation ? `${databaseRoot}/${companyLocation}` : databaseRoot;
 }
 
@@ -1048,8 +1053,8 @@ class FirebaseRemoteClient {
         reason: "휴지통 케이스 영구 삭제"
       });
       await this.dbRequest("", { method: "PATCH", body: {
-        [`cases/${caseKey}`]: null,
-        [`crmShared/data/auditLogs/${audit.id}`]: audit
+        [resolveDatabasePatchLocation(`cases/${caseKey}`, this.databaseRoot)]: null,
+        [resolveDatabasePatchLocation(`crmShared/data/auditLogs/${audit.id}`, this.databaseRoot)]: audit
       }, query: "print=silent" });
       return { ok: true, caseKey, deleted: true, auditId: audit.id };
     }
@@ -1462,6 +1467,7 @@ module.exports = {
   encodeProtectedJson,
   decodeProtectedJson,
   retryableSyncError,
+  resolveDatabasePatchLocation,
   resolveDatabaseLocation,
   parseCsvRows,
   vendorDirectoryFromCsv,
