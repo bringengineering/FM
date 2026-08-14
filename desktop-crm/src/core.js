@@ -19,6 +19,9 @@
     "견적 받음": "상담 완료"
   });
   const PARTNER_INDUSTRIES = ["누수", "설비·배관", "전기·조명", "청소", "타일·방수", "도배·장판", "보일러·냉난방", "소방", "CCTV·보안", "방역", "폐기물", "기타"];
+  const BUILDING_MAINTENANCE_INCLUDES = ["수도", "인터넷", "TV", "공용전기", "기타"];
+  const BUILDING_ROOM_TYPES = ["원룸", "1.5룸", "투룸", "기타"];
+  const BUILDING_ROOM_OPTIONS = ["냉장고", "세탁기", "에어컨", "전자레인지", "TV", "침대", "책상·의자", "옷장·행거", "신발장", "기타"];
   const CONTRACT_TYPES = ["청소", "건물관리", "부동산관리"];
   const CONTRACT_STATUSES = ["계약 준비", "진행 중", "종료 예정", "종료"];
   const WORKFLOW_STEPS = [
@@ -44,6 +47,23 @@
   const normalizePhone = value => String(value || "").replace(/\D/g, "");
   const normalizeText = value => String(value || "").trim().toLowerCase().replace(/\s+/g, "");
   const money = value => Number(String(value || 0).replace(/[^0-9.-]/g, "")) || 0;
+  const nonNegativeInteger = value => {
+    const parsed = typeof value === "number" ? value : Number(String(value ?? "").replace(/,/g, "").replace(/원/g, "").trim());
+    if (!Number.isFinite(parsed) || parsed <= 0) return 0;
+    return Math.min(Number.MAX_SAFE_INTEGER, Math.trunc(parsed));
+  };
+
+  function normalizeStringList(value) {
+    let source = [];
+    if (Array.isArray(value)) source = value;
+    else if (typeof value === "string") source = value.split(/[,\n\r]+/);
+    else if (value && typeof value === "object") {
+      source = Object.keys(value)
+        .sort((left, right) => Number(left) - Number(right))
+        .map(key => value[key]);
+    }
+    return [...new Set(source.map(item => String(item ?? "").trim()).filter(Boolean))];
+  }
   const RESIDENT_REGISTRATION_NUMBER = /(?<!\d)\d{6}\s*-?\s*[1-8]\d{6}(?!\d)/;
   const SECRET_VALUE = /(?:비밀번호|비번|패스워드|암호|password|passcode|\bpw\b|\bpin\b|도어락(?:\s*번호)?|공동\s*현관(?:\s*번호)?|출입\s*번호|현관\s*번호|문\s*열림\s*번호)\s*(?:은|는|이|가|번호|코드|:|=|-|is)?\s*([0-9a-z!@#$%^&*._-](?:\s?[0-9a-z!@#$%^&*._-]){3,})/i;
   const SECRET_FIELD = /^(?:비밀번호|비번|패스워드|암호|도어락번호|공동현관번호|출입번호|현관번호|password|passcode|pw|pin|doorlockcode|accesscode)$/i;
@@ -299,12 +319,25 @@
     return normalizeBuilding(Object.assign({
       id: random("bld"), buildingNo: `B-${dayKey(now).replace(/-/g, "")}-${String(Date.now()).slice(-4)}`,
       name: "", address: "", type: "다가구", status: "영업후보", ownerCustomerId: "", unitCount: 0,
+      rentDeposit: 0, monthlyRent: 0, maintenanceFee: 0, maintenanceIncludes: [], maintenanceIncludeOther: "",
+      vacantUnitCount: 0, vacantUnits: [], roomTypes: [], roomTypeOther: "", roomOptions: [], roomOptionOther: "",
       manager: "김현진", memo: "", aliases: [], externalRefs: { paymentBuildingIds: [] }, createdAt: now, updatedAt: now
     }, values || {}));
   }
 
   function normalizeBuilding(value) {
     const building = Object.assign({}, value || {});
+    building.rentDeposit = nonNegativeInteger(building.rentDeposit);
+    building.monthlyRent = nonNegativeInteger(building.monthlyRent);
+    building.maintenanceFee = nonNegativeInteger(building.maintenanceFee);
+    building.maintenanceIncludes = normalizeStringList(building.maintenanceIncludes);
+    building.maintenanceIncludeOther = String(building.maintenanceIncludeOther || "").trim();
+    building.vacantUnitCount = nonNegativeInteger(building.vacantUnitCount);
+    building.vacantUnits = normalizeStringList(building.vacantUnits);
+    building.roomTypes = normalizeStringList(building.roomTypes);
+    building.roomTypeOther = String(building.roomTypeOther || "").trim();
+    building.roomOptions = normalizeStringList(building.roomOptions);
+    building.roomOptionOther = String(building.roomOptionOther || "").trim();
     building.aliases = [...new Set((Array.isArray(building.aliases) ? building.aliases : []).map(item => String(item || "").trim()).filter(Boolean))];
     const refs = building.externalRefs && typeof building.externalRefs === "object" ? building.externalRefs : {};
     building.externalRefs = Object.assign({}, refs, {
@@ -562,11 +595,11 @@
   }
 
   return {
-    PIPELINE_STAGES, PARTNER_QUOTE_STATUSES, PARTNER_INDUSTRIES, CONTRACT_TYPES, CONTRACT_STATUSES, WORKFLOW_STEPS, SECURITY_ASSET_TYPES, SECURITY_ASSET_STATUSES, AUDIT_CATEGORIES,
+    PIPELINE_STAGES, PARTNER_QUOTE_STATUSES, PARTNER_INDUSTRIES, BUILDING_MAINTENANCE_INCLUDES, BUILDING_ROOM_TYPES, BUILDING_ROOM_OPTIONS, CONTRACT_TYPES, CONTRACT_STATUSES, WORKFLOW_STEPS, SECURITY_ASSET_TYPES, SECURITY_ASSET_STATUSES, AUDIT_CATEGORIES,
     blankStore, sanitizeStore, createCustomer, createBuilding, normalizeBuilding, createActivity, createContract, normalizeContractTypes, createPartnerVendor, createPartnerQuote, createTask, createSecurityAsset,
     createAccessRole, createAuditLog, createSecurityIncident, calculateDashboard, calculateSecurityStatus,
     workflowProgress, buildWorkflowCase, matchWorkflowCustomer, paymentNormalizeName, paymentMonthRows,
-    normalizePhone, normalizeText, normalizePipelineStage, money, dayKey, iso,
+    normalizePhone, normalizeText, normalizePipelineStage, normalizeStringList, nonNegativeInteger, money, dayKey, iso,
     prohibitedSecretType, findProhibitedSecrets, assertNoProhibitedSecrets, canMutate, assertMutationAllowed,
     normalizePartnerVendor, partnerVendorFromQuote, legacyPartnerVendorId
   };
