@@ -37,7 +37,8 @@ vm.runInContext([
   extractFunction("extractOnboardingOwnerName_"),
   extractFunction("onboardingBuildingFromFileName_"),
   extractFunction("isSupportedDriveImportMime_"),
-  extractFunction("buildDriveImportCandidate_")
+  extractFunction("buildDriveImportCandidate_"),
+  extractFunction("mergeDriveImportCandidate_")
 ].join("\n"), context);
 
 const DOCX = "application/vnd.openxmlformats-officedocument.wordprocessingml.document";
@@ -90,5 +91,41 @@ const pdfFallback = context.buildDriveImportCandidate_({
 assert.equal(pdfFallback.suggested.name, "북원로 2475번길 93");
 assert.equal(pdfFallback.warnings.includes("PDF OCR 실패"), true);
 assert.equal(pdfFallback.confidence.name, "medium");
+
+const unchanged = context.mergeDriveImportCandidate_(candidate, { ...candidate });
+assert.equal(unchanged.changed, false);
+assert.equal(unchanged.candidate.status, "pending");
+
+const pendingChanged = context.mergeDriveImportCandidate_(candidate, {
+  ...candidate,
+  sourceHash: "new-hash",
+  sourceModifiedAt: "2026-08-16T00:00:00.000Z",
+  suggested: { ...candidate.suggested, address: "원주시 북원로 2475번길 93" }
+});
+assert.equal(pendingChanged.changed, true);
+assert.equal(pendingChanged.candidate.status, "pending");
+assert.equal(pendingChanged.candidate.createdAt, candidate.createdAt);
+
+const approvedChanged = context.mergeDriveImportCandidate_({
+  ...candidate,
+  status: "approved",
+  approvedAt: "2026-08-16T01:00:00.000Z",
+  approvedByUid: "admin_uid",
+  crmBuildingId: "building_1"
+}, {
+  ...candidate,
+  sourceHash: "third-hash",
+  sourceModifiedAt: "2026-08-17T00:00:00.000Z"
+});
+assert.equal(approvedChanged.changed, true);
+assert.equal(approvedChanged.candidate.status, "stale");
+assert.equal(approvedChanged.candidate.approvedAt, "2026-08-16T01:00:00.000Z");
+assert.equal(approvedChanged.candidate.crmBuildingId, "building_1");
+
+assert.doesNotMatch(
+  extractFunction("syncDriveCrmImportCandidates_"),
+  /firebaseCaseSettingsUrl_\("paymentBuildings"\)|"put"/,
+  "새 후보 동기화는 기존 입금관리 전체 PUT을 사용하지 않는다"
+);
 
 console.log("Drive CRM import candidate tests passed");

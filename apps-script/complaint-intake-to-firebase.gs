@@ -7269,6 +7269,88 @@ function buildDriveImportCandidate_(input) {
   };
 }
 
+function mergeDriveImportCandidate_(existing, incoming) {
+  const previous = existing && typeof existing === "object" ? existing : null;
+  const next = incoming && typeof incoming === "object" ? incoming : {};
+  if (!previous) return { changed: true, candidate: next };
+  if (String(previous.sourceHash || "") === String(next.sourceHash || "")) {
+    return { changed: false, candidate: previous };
+  }
+  const reviewed = previous.status === "approved" || previous.status === "rejected";
+  return {
+    changed: true,
+    candidate: Object.assign({}, next, {
+      status: reviewed ? "stale" : "pending",
+      createdAt: previous.createdAt || next.createdAt,
+      approvedAt: previous.approvedAt || null,
+      approvedByUid: previous.approvedByUid || null,
+      crmBuildingId: previous.crmBuildingId || null,
+      rejectionReason: previous.rejectionReason || null
+    })
+  };
+}
+
+function driveImportSourceHash_(file) {
+  const checksum = typeof file.getMd5Checksum === "function" ? String(file.getMd5Checksum() || "") : "";
+  if (checksum) return checksum;
+  const raw = [file.getId(), file.getLastUpdated().toISOString(), file.getSize()].join("|");
+  const digest = Utilities.computeDigest(Utilities.DigestAlgorithm.SHA_256, raw, Utilities.Charset.UTF_8);
+  return digest.map(value => (value + 256).toString(16).slice(-2)).join("");
+}
+
+function crmCompanyImportUrl_(childPath) {
+  const props = PropertiesService.getScriptProperties();
+  const base = String(props.getProperty("CRM_FIREBASE_DATABASE_URL") || "https://bring-fm-default-rtdb.asia-southeast1.firebasedatabase.app").replace(/\/$/, "");
+  const child = String(childPath || "").split("/").filter(Boolean).map(part => encodeURIComponent(part)).join("/");
+  return base + "/crmCompany" + (child ? "/" + child : "") + ".json";
+}
+
+function firebaseOauthRequest_(url, method, payload, label) {
+  const options = {
+    method: method,
+    headers: { Authorization: "Bearer " + ScriptApp.getOAuthToken() },
+    muteHttpExceptions: true
+  };
+  if (payload !== undefined) {
+    options.contentType = "application/json; charset=utf-8";
+    options.payload = JSON.stringify(payload);
+  }
+  const response = UrlFetchApp.fetch(url, options);
+  const code = response.getResponseCode();
+  if (code < 200 || code >= 300) throw new Error(label + ": HTTP " + code + " / " + response.getContentText());
+  const body = response.getContentText();
+  return body && body !== "null" ? JSON.parse(body) : null;
+}
+
+function syncDriveCrmImportCandidates_() {
+  const listed = listDriveOnboardingCandidates_();
+  if (!listed.ok) throw new Error(listed.error || "Drive 검토 후보를 읽지 못했습니다.");
+  const existing = firebaseOauthRequest_(crmCompanyImportUrl_("driveImportCandidates"), "get", undefined, "CRM 검토 후보 조회 실패") || {};
+  const now = new Date().toISOString();
+  const patch = {};
+  listed.candidates.forEach(item => {
+    const file = item.file;
+    const incoming = buildDriveImportCandidate_({
+      driveFileId: file.getId(),
+      fileName: file.getName(),
+      fileUrl: file.getUrl(),
+      mimeType: file.getMimeType(),
+      sourceFolderId: extractDriveId_(COMPLAINT_CONFIG.CONTRACT_DRIVE_FOLDER_ID),
+      sourceModifiedAt: file.getLastUpdated().toISOString(),
+      sourceHash: driveImportSourceHash_(file),
+      text: item.text,
+      extractionWarning: item.text ? "" : "문서 본문 추출 실패",
+      now: now
+    });
+    const merged = mergeDriveImportCandidate_(existing[incoming.driveFileId], incoming);
+    if (merged.changed) patch[incoming.driveFileId] = merged.candidate;
+  });
+  if (Object.keys(patch).length) {
+    firebaseOauthRequest_(crmCompanyImportUrl_("driveImportCandidates"), "patch", patch, "CRM 검토 후보 저장 실패");
+  }
+  return { ok: true, scanned: listed.candidates.length, changed: Object.keys(patch).length, syncedAt: now };
+}
+
 function extractOnboardingField_(text, labels) {
   const source = String(text || "").replace(/\r/g, "\n").replace(/[\t ]+/g, " ").replace(/\n+/g, " ").trim();
   const stopLabels = "(?:건물명|건물 주소|주소|소재지|담당자명|담당자|건물주명|건물주 성명|건물주|소유자명|소유자|임대인명|임대인|대표자|연락처|전화번호|전화|휴대폰|등급|비고)";
