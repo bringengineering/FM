@@ -1148,7 +1148,7 @@ test("building, building-unit, and sales-unit UI mutations require an operator a
   assert.match(appSource, /function customerFromForm[\s\S]*?if \(!existing\) store\.customers\.push\(customer\);[\s\S]*?return customer;/);
   const customerFormHandler = appSource.slice(
     appSource.indexOf("function customerFromForm"),
-    appSource.indexOf("function bindKanban")
+    appSource.indexOf("async function deleteActivityRecord")
   );
   assert.doesNotMatch(customerFormHandler, /store\.buildings|Core\.createBuilding/);
   assert.match(appSource, /function buildingEditor[\s\S]*?if \(deferCanonicalMutation\("건물"\)\) return;/);

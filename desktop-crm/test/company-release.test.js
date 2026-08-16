@@ -4,7 +4,7 @@ const test = require("node:test");
 const packageJson = require("../package.json");
 
 test("builds a clearly named company-server installer without auto-publishing", () => {
-  assert.equal(packageJson.version, "1.7.7");
+  assert.equal(packageJson.version, "1.7.8");
   assert.equal(packageJson.build.artifactName, "BRING.CRM.Company.Setup.${version}.${ext}");
   assert.equal(packageJson.build.appId, "kr.co.bringengineering.crm");
 });

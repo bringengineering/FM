@@ -1,5 +1,6 @@
 const { app, BrowserWindow, WebContentsView, ipcMain, dialog, Menu, safeStorage, shell } = require("electron");
 const { autoUpdater } = require("electron-updater");
+const CrmUpdatePolicy = require("./crm-update-policy");
 const fs = require("node:fs/promises");
 const path = require("node:path");
 const { fileURLToPath, pathToFileURL } = require("node:url");
@@ -938,7 +939,7 @@ async function checkForUpdates(manual) {
   if (updateState.status === "checking" || updateState.status === "downloading") return updateState;
   try {
     setUpdateState({ status: "checking", message: manual ? "사용자가 새 버전을 확인하고 있습니다." : "새 버전을 확인하고 있습니다." });
-    await autoUpdater.checkForUpdates();
+    await CrmUpdatePolicy.checkCrmUpdates({ updater: autoUpdater });
   } catch (error) {
     console.warn("CRM update check failed", error && error.message ? error.message : error);
     setUpdateState({ status: "error", message: "업데이트 서버에 연결하지 못했습니다. CRM은 계속 사용할 수 있습니다." });
