@@ -7189,9 +7189,15 @@ function listDriveOnboardingCandidates_() {
     const candidates = [];
     while (files.hasNext()) {
       const file = files.next();
-      if (file.isTrashed() || file.getMimeType() !== "application/vnd.openxmlformats-officedocument.wordprocessingml.document") continue;
+      if (file.isTrashed() || !isSupportedDriveImportMime_(file.getMimeType())) continue;
       let text = "";
-      try { text = extractDocxText_(file.getId()) || ""; } catch (err) { Logger.log("온보딩 DOCX 본문 추출 실패: " + file.getName() + " / " + err.message); }
+      try {
+        text = file.getMimeType() === "application/pdf"
+          ? extractPdfTextForReview_(file.getId())
+          : extractDocxText_(file.getId());
+      } catch (err) {
+        Logger.log("온보딩 문서 본문 추출 실패: " + file.getName() + " / " + err.message);
+      }
       candidates.push({
         file: file,
         text: text,
@@ -7207,9 +7213,65 @@ function listDriveOnboardingCandidates_() {
   }
 }
 
+function isSupportedDriveImportMime_(mimeType) {
+  return [
+    "application/pdf",
+    "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+  ].indexOf(String(mimeType || "")) >= 0;
+}
+
+function buildDriveImportCandidate_(input) {
+  input = input && typeof input === "object" ? input : {};
+  const text = String(input.text || "");
+  const extractedName = extractOnboardingField_(text, ["건물명", "건물"]);
+  const fileNameFallback = onboardingBuildingFromFileName_(input.fileName)
+    .replace(/[_-]*(?:통합\s*)?건물\s*체크리스트.*$/i, "")
+    .replace(/[_-]*체크리스트.*$/i, "")
+    .trim();
+  const name = String(extractedName || fileNameFallback || "").slice(0, 120).trim();
+  const address = String(extractOnboardingField_(text, ["건물 주소", "주소", "소재지"]) || "").slice(0, 240).trim();
+  const manager = String(extractOnboardingField_(text, ["담당자", "담당자명"]) || "").slice(0, 60).trim();
+  const warnings = [];
+  if (input.extractionWarning) warnings.push(String(input.extractionWarning).slice(0, 240));
+  if (!text.trim()) warnings.push("문서 본문을 확인하지 못해 파일명만 제안했습니다.");
+  if (/손글씨|필기/i.test(text)) warnings.push("손글씨 값은 Drive 원본 확인이 필요합니다.");
+  return {
+    id: String(input.driveFileId || ""),
+    driveFileId: String(input.driveFileId || ""),
+    fileName: String(input.fileName || "").slice(0, 240),
+    fileUrl: String(input.fileUrl || "").slice(0, 500),
+    mimeType: String(input.mimeType || ""),
+    sourceFolderId: String(input.sourceFolderId || ""),
+    sourceModifiedAt: String(input.sourceModifiedAt || ""),
+    sourceHash: String(input.sourceHash || ""),
+    suggested: {
+      name: name,
+      address: address,
+      manager: manager,
+      type: "다가구",
+      status: "영업후보",
+      unitCount: 0,
+      memo: "Drive 원본: " + String(input.fileName || "").slice(0, 180)
+    },
+    confidence: {
+      name: extractedName ? "high" : (name ? "medium" : "low"),
+      address: address ? "medium" : "low",
+      manager: manager ? "medium" : "low"
+    },
+    warnings: Array.from(new Set(warnings)),
+    status: "pending",
+    createdAt: String(input.now || input.sourceModifiedAt || ""),
+    updatedAt: String(input.now || input.sourceModifiedAt || ""),
+    approvedAt: null,
+    approvedByUid: null,
+    crmBuildingId: null,
+    rejectionReason: null
+  };
+}
+
 function extractOnboardingField_(text, labels) {
   const source = String(text || "").replace(/\r/g, "\n").replace(/[\t ]+/g, " ").replace(/\n+/g, " ").trim();
-  const stopLabels = "(?:건물명|건물 주소|주소|소재지|건물주명|건물주 성명|건물주|소유자명|소유자|임대인명|임대인|대표자|연락처|전화번호|전화|휴대폰|등급|비고)";
+  const stopLabels = "(?:건물명|건물 주소|주소|소재지|담당자명|담당자|건물주명|건물주 성명|건물주|소유자명|소유자|임대인명|임대인|대표자|연락처|전화번호|전화|휴대폰|등급|비고)";
   const isInstruction = value => /(?:주소로\s*계약\s*건물을?\s*확인|계약\s*건물\s*인덱스|확인하기\s*위한|간단\s*기록용|응답\s*시트|동일하게\s*입력|입력하면|자동\s*매칭)/i.test(String(value || ""));
   for (const label of labels || []) {
     const escaped = String(label).replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
@@ -9994,6 +10056,30 @@ function extractDocxText_(driveFileId) {
   } catch (err) {
     Logger.log("DOCX 본문 추출 실패: " + err.message);
     return "";
+  }
+}
+
+function extractPdfTextForReview_(driveFileId) {
+  let convertedId = "";
+  try {
+    const sourceFile = DriveApp.getFileById(driveFileId);
+    const converted = Drive.Files.insert({
+      title: "CRM 검토 OCR " + driveFileId,
+      mimeType: "application/vnd.google-apps.document"
+    }, sourceFile.getBlob(), {
+      convert: true,
+      ocr: true,
+      ocrLanguage: "ko"
+    });
+    convertedId = String(converted && converted.id || "");
+    if (!convertedId) throw new Error("OCR 변환 문서 ID가 없습니다.");
+    return String(DocumentApp.openById(convertedId).getBody().getText() || "").replace(/\s+/g, " ").trim();
+  } finally {
+    if (convertedId) {
+      try { DriveApp.getFileById(convertedId).setTrashed(true); } catch (cleanupError) {
+        Logger.log("임시 OCR 문서 정리 실패: " + cleanupError.message);
+      }
+    }
   }
 }
 
