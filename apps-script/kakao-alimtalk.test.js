@@ -203,7 +203,7 @@ const quoteContent = context.makeOwnerRecommendationAlimTalkContent_({
 assert.match(quoteContent, /추천 업체: 브링설비/);
 assert.match(quoteContent, /추천 금액: 1,100,000원/);
 
-assert.match(quoteContent, /010-2773-3076/);
+assert.match(quoteContent, /033-748-8919/);
 
 const paymentReminderContent = context.paymentReminderAlimTalkContent_({
   tenantName: "테스트세입자",
