@@ -10,6 +10,8 @@ contextBridge.exposeInMainWorld("bringCRM", {
   save: data => ipcRenderer.invoke("crm:save", data),
   loadCanonicalBuildingUnits: () => ipcRenderer.invoke("crm:canonical-building-units-load"),
   loadFieldSummaries: () => ipcRenderer.invoke("crm:field-summaries-load"),
+  loadDriveImportCandidates: () => ipcRenderer.invoke("crm:drive-import-candidates-load"),
+  decideDriveImport: input => ipcRenderer.invoke("crm:drive-import-decision", input),
   commitCanonicalCrmEntity: input => ipcRenderer.invoke("crm:canonical-entity-commit", input),
   loadOperations: () => ipcRenderer.invoke("crm:operations-load"),
   saveWorkflowCase: input => ipcRenderer.invoke("crm:case-save", input),

@@ -2668,6 +2668,15 @@ secureCanonicalHandle("crm:field-summaries-load", async () => {
   if (!remoteClient || !remoteClient.authState().user) throw new Error("로그인이 필요합니다.");
   return remoteClient.loadFieldSummaries();
 });
+secureCanonicalHandle("crm:drive-import-candidates-load", async () => {
+  if (localTestMode) return {};
+  if (!remoteClient || !remoteClient.authState().user) throw new Error("로그인이 필요합니다.");
+  return remoteClient.loadDriveImportCandidates();
+});
+secureCanonicalHandle("crm:drive-import-decision", async input => {
+  if (!remoteClient || !remoteClient.authState().user) throw new Error("로그인이 필요합니다.");
+  return remoteClient.decideDriveImport(input);
+});
 secureCanonicalHandle("crm:canonical-entity-commit", async input => {
   if (!remoteClient || !remoteClient.authState().user) throw new Error("로그인이 필요합니다.");
   return remoteClient.commitCanonicalCrmEntity(Object.assign(Object.create(null), input, { buildVersion: app.getVersion() }));

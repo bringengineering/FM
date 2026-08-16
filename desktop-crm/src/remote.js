@@ -1273,6 +1273,45 @@ class FirebaseRemoteClient {
     return this.sessionGuardActive(guard) ? value : null;
   }
 
+  async loadDriveImportCandidates() {
+    if (!this.session) throw createError("로그인이 필요합니다.", "AUTH_REQUIRED");
+    const value = await this.dbRequest("driveImportCandidates", { method: "GET" });
+    return value && typeof value === "object" && !Array.isArray(value) ? value : {};
+  }
+
+  async decideDriveImport(input) {
+    if (!this.session || this.session.role !== "admin") throw createError("관리자만 Drive 자료를 승인하거나 반려할 수 있습니다.", "PERMISSION_DENIED");
+    const source = input && typeof input === "object" && !Array.isArray(input) ? input : {};
+    const action = String(source.action || "");
+    if (!new Set(["approveDriveImport", "rejectDriveImport"]).has(action)) throw createError("허용되지 않은 Drive 검토 요청입니다.", "INVALID_DRIVE_IMPORT_ACTION");
+    const driveFileId = String(source.driveFileId || "");
+    const requestId = String(source.requestId || "");
+    if (!/^[A-Za-z0-9_-]{1,120}$/.test(driveFileId) || !/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(requestId)) throw createError("Drive 검토 요청을 확인해 주세요.", "INVALID_DRIVE_IMPORT_REQUEST");
+    const allowed = action === "approveDriveImport"
+      ? new Set(["action", "driveFileId", "requestId", "approved"])
+      : new Set(["action", "driveFileId", "requestId", "reason"]);
+    if (Object.keys(source).some(key => !allowed.has(key))) throw createError("Drive 검토 요청에 허용되지 않은 값이 있습니다.", "INVALID_DRIVE_IMPORT_REQUEST");
+    const idToken = await this.ensureIdToken(false);
+    let response;
+    try {
+      response = await this.fetch(DEFAULT_CASE_AUTOMATION_ENDPOINT, {
+        method: "POST",
+        redirect: "follow",
+        headers: { "Content-Type": "text/plain;charset=utf-8" },
+        body: JSON.stringify(Object.assign({}, source, { idToken }))
+      });
+    } catch (error) {
+      throw createError("Drive 검토 서버에 연결할 수 없습니다.", "NETWORK", error);
+    }
+    const raw = await response.text();
+    let result = null;
+    try { result = raw ? JSON.parse(raw) : null; } catch (_) { result = null; }
+    if (!response.ok || !result || result.ok !== true || !result.result || result.result.requestId !== requestId) {
+      throw createError(result && result.message || "Drive 검토 결과를 확인하지 못했습니다.", "DRIVE_IMPORT_FAILED");
+    }
+    return result;
+  }
+
   async loadRendererOverlays(guardValue) {
     const guard = guardValue || this.captureSessionGuard();
     const [buildingUnits, fieldSummaries] = await Promise.all([

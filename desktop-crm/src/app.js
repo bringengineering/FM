@@ -5,6 +5,7 @@
   const Sales = window.BringSalesCore;
   const SalesUI = window.BringSalesUI;
   const SalesStandards = window.BringSalesStandards;
+  const DriveImportUI = window.BringDriveImportUI;
   const api = window.bringCRM;
   const main = document.getElementById("main");
   const modal = document.getElementById("modal");
@@ -65,6 +66,7 @@
   let synchronizedStore = null;
   let appInitialized = false;
   let overlayRefreshPromise = null;
+  let driveImportCandidates = [];
   let authGeneration = 0;
   let loginInProgress = false;
   let operations = { cases: [], payments: {}, caseSettings: {}, loadedAt: "" };
@@ -441,9 +443,11 @@
     const uid = currentAuthUid();
     overlayRefreshPromise = Promise.all([
       api.loadCanonicalBuildingUnits(),
-      api.loadFieldSummaries()
-    ]).then(([buildingUnits, fieldSummaries]) => {
+      api.loadFieldSummaries(),
+      typeof api.loadDriveImportCandidates === "function" ? api.loadDriveImportCandidates() : Promise.resolve({})
+    ]).then(([buildingUnits, fieldSummaries, driveCandidates]) => {
       if (generation !== authGeneration || uid !== currentAuthUid()) return null;
+      driveImportCandidates = DriveImportUI.sanitizeCandidates(driveCandidates);
       const overlays = Core.sanitizeRendererOverlays({ buildingUnits, fieldSummaries });
       const merge = value => value ? Core.sanitizeRendererStore(Object.assign({}, value, overlays)) : value;
       store = merge(store);
@@ -1739,7 +1743,7 @@
       .sort((left, right) => (left.status === "관리중" ? -1 : 0) - (right.status === "관리중" ? -1 : 0) || String(left.name || "").localeCompare(String(right.name || ""), "ko"));
     if (buildings.length && !buildings.some(item => item.id === selectedBuildingId)) selectedBuildingId = buildings[0].id;
     const building = buildings.find(item => item.id === selectedBuildingId) || null;
-    main.innerHTML = `<section class="building-hub-hero"><div><span>건물 기준으로 연결된 업무를 확인합니다</span><h2>고객·계약·케이스·입금을 한곳에서 봅니다</h2><p>이름이 같아도 섞이지 않도록 건물 고유 ID를 기준으로 연결합니다.</p></div><button class="primary-button" data-action="new-building">＋ 건물 등록</button></section>
+    main.innerHTML = `${DriveImportUI.renderReviewPanel(driveImportCandidates, currentAuth.user || {})}<section class="building-hub-hero"><div><span>건물 기준으로 연결된 업무를 확인합니다</span><h2>고객·계약·케이스·입금을 한곳에서 봅니다</h2><p>이름이 같아도 섞이지 않도록 건물 고유 ID를 기준으로 연결합니다.</p></div><button class="primary-button" data-action="new-building">＋ 건물 등록</button></section>
       <section class="building-hub-layout"><aside class="building-hub-browser"><header><b>건물 목록</b><span>${buildings.length}곳</span></header><div class="building-hub-list">${buildings.length ? buildings.map(item => {
         const customers = buildingCustomers(item);
         const cases = buildingCases(item);
@@ -1751,6 +1755,25 @@
     const archived = (store.buildings || []).filter(item => item && item.archivedAt);
     if (!archived.length) return "";
     return `<details class="sales-crm sales-archived-panel"><summary><span>보관된 건물</span><b>${archived.length}곳</b></summary><div class="sales-archived-list">${archived.map(item => `<article><div><strong>${esc(item.name || "건물명 미입력")}</strong><p>${esc(item.address || "주소 미입력")} · ${esc(dateText(item.archivedAt))}</p></div>${canWriteCRM() ? `<button type="button" class="mini-button return" data-building-restore="${attr(item.id)}">복원</button>` : ""}</article>`).join("")}</div></details>`;
+  }
+
+  function driveImportCandidateById(id) {
+    return driveImportCandidates.find(item => item.id === String(id || "")) || null;
+  }
+
+  function driveImportApprovalEditor(id) {
+    const item = driveImportCandidateById(id);
+    if (!item || !canAdministerSecurity()) return showToast("관리자만 Drive 자료를 승인할 수 있습니다.", "error");
+    const value = item.suggested;
+    modalContent.innerHTML = `<div class="modal-head"><div><h2>Drive 건물 검토</h2><p>${esc(item.fileName)}</p></div><button class="close-button" data-action="close-modal">×</button></div><form id="driveImportApprovalForm" class="modal-body" data-drive-file-id="${attr(item.id)}"><div class="info-box">Drive 원본과 대조한 값만 승인해 주세요. 전화번호·임대조건·출입정보는 자동 등록하지 않습니다.</div><div class="form-grid" style="margin-top:14px">${field("건물명 *", "name", value.name, "text")}${field("주소 *", "address", value.address, "text")}${field("담당자", "manager", value.manager, "text")}${field("건물 유형", "type", value.type, "text")}${field("상태", "status", value.status, "text")}${field("호실 수", "unitCount", value.unitCount, "number")}${field("확인 메모", "memo", value.memo, "text")}</div><div class="form-actions"><button type="button" class="secondary-button" data-action="close-modal">취소</button><button type="submit" class="primary-button">승인하여 건물 등록</button></div></form>`;
+    openModal();
+  }
+
+  function driveImportRejectionEditor(id) {
+    const item = driveImportCandidateById(id);
+    if (!item || !canAdministerSecurity()) return showToast("관리자만 Drive 자료를 반려할 수 있습니다.", "error");
+    modalContent.innerHTML = `<div class="modal-head"><div><h2>Drive 자료 반려</h2><p>${esc(item.fileName)}</p></div><button class="close-button" data-action="close-modal">×</button></div><form id="driveImportRejectionForm" class="modal-body" data-drive-file-id="${attr(item.id)}"><label class="field full"><span>반려 사유 *</span><textarea name="reason" rows="4" maxlength="500" required placeholder="예: 주소 원본 재확인 필요"></textarea></label><div class="form-actions"><button type="button" class="secondary-button" data-action="close-modal">취소</button><button type="submit" class="danger-button">반려 기록</button></div></form>`;
+    openModal();
   }
 
   function renderBuildingDetail(building) {
@@ -3439,6 +3462,16 @@
       pageMeta();
       return;
     }
+    const driveImportOpen = event.target.closest("[data-drive-import-open]");
+    if (driveImportOpen) {
+      const result = await api.openExternal(driveImportOpen.dataset.driveImportOpen);
+      if (!result || result.ok !== true) showToast(result && result.error || "Drive 원본을 열지 못했습니다.", "error");
+      return;
+    }
+    const driveImportApprove = event.target.closest("[data-drive-import-approve]");
+    if (driveImportApprove) { driveImportApprovalEditor(driveImportApprove.dataset.driveImportApprove); return; }
+    const driveImportReject = event.target.closest("[data-drive-import-reject]");
+    if (driveImportReject) { driveImportRejectionEditor(driveImportReject.dataset.driveImportReject); return; }
     const buildingEdit = event.target.closest("[data-building-edit]");
     if (buildingEdit) { buildingEditor(buildingEdit.dataset.buildingEdit); return; }
     const buildingRestore = event.target.closest("[data-building-restore]");
@@ -3750,7 +3783,25 @@
     event.preventDefault();
     const form = event.target;
     if (!canWriteCRM() && !["emailLoginForm", "passwordChangeForm"].includes(form.id)) return showToast("조회 전용 계정은 내용을 변경할 수 없습니다.", "error");
-    if (form.id === "salesProspectForm") {
+    if (form.id === "driveImportApprovalForm" || form.id === "driveImportRejectionForm") {
+      if (!canAdministerSecurity()) return showToast("관리자만 Drive 자료를 승인하거나 반려할 수 있습니다.", "error");
+      const item = driveImportCandidateById(form.dataset.driveFileId);
+      if (!item) return showToast("검토 후보를 찾지 못했습니다.", "error");
+      const values = Object.fromEntries(new FormData(form).entries());
+      try {
+        const request = DriveImportUI.buildDecisionRequest(form.id === "driveImportApprovalForm" ? "approve" : "reject", item, Object.assign(values, { requestId: crypto.randomUUID() }));
+        await api.decideDriveImport(request);
+        const latest = await api.load();
+        store = preserveRendererOverlays(latest, store);
+        ensureSalesStore(store);
+        synchronizedStore = cloneStore(store);
+        overlayRefreshPromise = null;
+        await refreshRendererOverlays(false);
+        closeModal();
+        render();
+        showToast(form.id === "driveImportApprovalForm" ? "Drive 자료를 승인해 건물을 등록했습니다." : "Drive 자료를 반려했습니다.", "success");
+      } catch (error) { showToast(error.message || "Drive 검토 결과를 저장하지 못했습니다.", "error"); }
+    } else if (form.id === "salesProspectForm") {
       const raw = Object.fromEntries(new FormData(form).entries());
       if (!assertSalesInputSafe(raw)) return;
       try {
