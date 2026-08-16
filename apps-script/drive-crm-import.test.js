@@ -30,7 +30,7 @@ function extractFunction(name) {
   throw new Error(`Unclosed function: ${name}`);
 }
 
-const context = { String, Number, Date, RegExp, Array, Object };
+const context = { String, Number, Date, RegExp, Array, Object, Error };
 vm.createContext(context);
 vm.runInContext([
   extractFunction("extractOnboardingField_"),
@@ -38,7 +38,11 @@ vm.runInContext([
   extractFunction("onboardingBuildingFromFileName_"),
   extractFunction("isSupportedDriveImportMime_"),
   extractFunction("buildDriveImportCandidate_"),
-  extractFunction("mergeDriveImportCandidate_")
+  extractFunction("mergeDriveImportCandidate_"),
+  extractFunction("assertDriveImportApprover_"),
+  extractFunction("normalizeDriveImportKey_"),
+  extractFunction("buildDriveImportApprovalPatch_"),
+  extractFunction("buildDriveImportRejectionPatch_")
 ].join("\n"), context);
 
 const DOCX = "application/vnd.openxmlformats-officedocument.wordprocessingml.document";
@@ -127,5 +131,82 @@ assert.doesNotMatch(
   /firebaseCaseSettingsUrl_\("paymentBuildings"\)|"put"/,
   "새 후보 동기화는 기존 입금관리 전체 PUT을 사용하지 않는다"
 );
+
+assert.throws(
+  () => context.assertDriveImportApprover_({ enabled: true, role: "member", email: "member@example.com" }, { email: "member@example.com" }),
+  /관리자만/
+);
+assert.throws(
+  () => context.assertDriveImportApprover_({ enabled: false, role: "admin", email: "admin@example.com" }, { email: "admin@example.com" }),
+  /비활성/
+);
+assert.throws(
+  () => context.assertDriveImportApprover_({ enabled: true, role: "admin", email: "admin@example.com" }, { email: "other@example.com" }),
+  /이메일/
+);
+assert.doesNotThrow(
+  () => context.assertDriveImportApprover_({ enabled: true, role: "admin", email: "ADMIN@example.com" }, { email: "admin@example.com" })
+);
+
+const approval = context.buildDriveImportApprovalPatch_({
+  requestId: "123e4567-e89b-42d3-a456-426614174000",
+  now: "2026-08-17T12:00:00.000Z",
+  actor: { uid: "admin_uid", email: "admin@example.com" },
+  candidate,
+  approved: {
+    name: "북원로2475번길 93",
+    address: "원주시 북원로2475번길 93",
+    manager: "황우중",
+    type: "다가구",
+    status: "영업후보",
+    unitCount: 0,
+    memo: "Drive 체크리스트 확인"
+  },
+  buildings: {}
+});
+
+assert.equal(approval.result.repeated, false);
+assert.equal(approval.result.crmBuildingId, "building_drive_1k-tsv1uchfsqwp4yww2lrkibflqzfbih");
+assert.equal(approval.patch[`data/buildings/${approval.result.crmBuildingId}`].externalRefs.driveFileIds[0], candidate.driveFileId);
+assert.equal(approval.patch[`driveImportCandidates/${candidate.driveFileId}`].status, "approved");
+assert.equal(approval.patch[`driveImportAuditLogs/${approval.result.auditId}`].action, "drive_building_approved");
+assert.equal(approval.patch[`driveImportRequestReceipts/${approval.result.requestId}`].crmBuildingId, approval.result.crmBuildingId);
+
+assert.throws(() => context.buildDriveImportApprovalPatch_({
+  requestId: "123e4567-e89b-42d3-a456-426614174001",
+  now: "2026-08-17T12:00:00.000Z",
+  actor: { uid: "admin_uid", email: "admin@example.com" },
+  candidate,
+  approved: { name: "북원로2475번길 93", address: "원주시 북원로2475번길 93" },
+  buildings: { existing: { id: "existing", name: "북원로 2475번길 93", address: "원주시 북원로 2475번길 93" } }
+}), /중복/);
+
+const repeat = context.buildDriveImportApprovalPatch_({
+  requestId: approval.result.requestId,
+  now: "2026-08-17T12:05:00.000Z",
+  actor: { uid: "admin_uid", email: "admin@example.com" },
+  candidate,
+  approved: approval.patch[`data/buildings/${approval.result.crmBuildingId}`],
+  buildings: {},
+  receipt: approval.patch[`driveImportRequestReceipts/${approval.result.requestId}`]
+});
+assert.equal(repeat.result.repeated, true);
+assert.equal(Object.keys(repeat.patch).length, 0);
+
+const rejection = context.buildDriveImportRejectionPatch_({
+  requestId: "123e4567-e89b-42d3-a456-426614174002",
+  now: "2026-08-17T12:10:00.000Z",
+  actor: { uid: "admin_uid" },
+  candidate,
+  reason: "주소 원본 재확인 필요"
+});
+assert.equal(rejection.patch[`driveImportCandidates/${candidate.driveFileId}`].status, "rejected");
+assert.equal(rejection.patch[`driveImportCandidates/${candidate.driveFileId}`].rejectionReason, "주소 원본 재확인 필요");
+assert.equal(rejection.patch[`driveImportAuditLogs/${rejection.result.auditId}`].action, "drive_building_rejected");
+
+assert.match(extractFunction("doPost"), /payload\.action === "approveDriveImport"/);
+assert.match(extractFunction("doPost"), /payload\.action === "rejectDriveImport"/);
+assert.match(extractFunction("handleApproveDriveImport_"), /verifyFirebaseIdTokenForDriveImport_/);
+assert.match(extractFunction("handleApproveDriveImport_"), /firebaseOauthRequest_\(crmCompanyImportUrl_\(""\), "patch"/);
 
 console.log("Drive CRM import candidate tests passed");
