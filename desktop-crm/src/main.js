@@ -2,6 +2,7 @@ const { app, BrowserWindow, WebContentsView, ipcMain, dialog, Menu, safeStorage,
 const { autoUpdater } = require("electron-updater");
 const CrmUpdatePolicy = require("./crm-update-policy");
 const fs = require("node:fs/promises");
+const crypto = require("node:crypto");
 const path = require("node:path");
 const { fileURLToPath, pathToFileURL } = require("node:url");
 const Core = require("./core");
@@ -64,6 +65,10 @@ if (localTestMode && !process.env.BRING_CRM_DATA_DIR) {
   app.setPath("userData", path.join(app.getPath("temp"), "bring-crm-desktop-tests", String(process.pid)));
 }
 let localOperationsData = null;
+let localCanonicalBuildingUnits = Object.create(null);
+let localCanonicalBuildingVacancyState = Object.create(null);
+const localCanonicalBuildingUnitReceipts = new Map();
+const localCanonicalCrmReceipts = new Map();
 
 const fieldRequestCoordinator = createFieldRequestCoordinator({
   timeoutMs: FIELD_BRIDGE_TIMEOUT_MS,
@@ -968,6 +973,30 @@ function workflowMutationForValidation(input) {
   return source;
 }
 
+function canonicalEntityMutationForValidation(input) {
+  const source = input && typeof input === "object" ? Object.assign(Object.create(null), input) : input;
+  if (source) {
+    delete source.requestId;
+    delete source.entityId;
+    delete source.expectedVersion;
+  }
+  return source;
+}
+
+function buildingUnitsMutationForValidation(input) {
+  const source = canonicalEntityMutationForValidation(input);
+  if (source && Array.isArray(source.units)) {
+    source.units = source.units.map(item => {
+      if (!item || typeof item !== "object" || Array.isArray(item)) return item;
+      const copy = Object.assign(Object.create(null), item);
+      delete copy.entityId;
+      delete copy.expectedVersion;
+      return copy;
+    });
+  }
+  return source;
+}
+
 async function readStore() {
   if (localTestMode) return readLocalStore();
   if (!remoteClient || !remoteClient.authState().user) throw new Error("로그인이 필요합니다.");
@@ -1209,6 +1238,329 @@ async function writeStore(input) {
   if (!remoteClient || !remoteClient.authState().user) throw new Error("로그인이 필요합니다.");
   const result = await remoteClient.saveStore(input);
   return Object.assign({ path: dataFile() }, result);
+}
+
+function planLocalBuildingVacancyMirror(buildingId, currentUnits, finalUnits, fail) {
+  const normalizeLabel = value => String(value || "")
+    .normalize("NFKC").trim().toLocaleLowerCase("ko-KR").replace(/\s+/gu, "");
+  const activeRecords = units => Object.values(units).filter(unit => unit
+    && unit.crmBuildingId === buildingId && !unit.archivedAt);
+  const currentActive = activeRecords(currentUnits);
+  const currentActiveLabels = new Set();
+  const currentVacantLabels = new Set();
+  let currentFormalVacant = 0;
+  currentActive.forEach(unit => {
+    const label = normalizeLabel(unit.label);
+    if (!label || currentActiveLabels.has(label)) fail("crm_building_unit_label_conflict");
+    currentActiveLabels.add(label);
+    if (unit.status === "vacant") {
+      currentFormalVacant += 1;
+      currentVacantLabels.add(label);
+    }
+  });
+  const hasLegacyState = Object.prototype.hasOwnProperty.call(localCanonicalBuildingVacancyState, buildingId);
+  const legacy = hasLegacyState && localCanonicalBuildingVacancyState[buildingId]
+    && typeof localCanonicalBuildingVacancyState[buildingId] === "object"
+    ? localCanonicalBuildingVacancyState[buildingId]
+    : {};
+  const legacyNamed = Array.isArray(legacy.vacantUnits) ? legacy.vacantUnits.slice() : [];
+  const legacyCount = legacy.vacantUnitCount === undefined ? legacyNamed.length : legacy.vacantUnitCount;
+  if (legacyNamed.length > 200
+    || legacyNamed.some(label => typeof label !== "string" || !label.trim())
+    || !Number.isSafeInteger(legacyCount) || legacyCount < 0 || legacyCount > 100_000) fail("crm_request_invalid");
+  const legacyLabels = new Set();
+  legacyNamed.forEach(label => {
+    const normalized = normalizeLabel(label);
+    if (!normalized || legacyLabels.has(normalized)) fail("crm_request_invalid");
+    legacyLabels.add(normalized);
+  });
+  const missingLegacyBefore = hasLegacyState
+    ? [...legacyLabels].filter(label => !currentVacantLabels.has(label))
+    : [];
+  const vacancyShortfallBefore = hasLegacyState
+    ? Math.max(legacyCount - currentFormalVacant, 0)
+    : 0;
+  const resolvedBefore = missingLegacyBefore.length === 0 && vacancyShortfallBefore === 0;
+  const finalActive = activeRecords(finalUnits);
+  const finalLabels = new Set();
+  const vacantRecords = [];
+  finalActive.forEach(unit => {
+    const normalized = normalizeLabel(unit.label);
+    if (!normalized || finalLabels.has(normalized)) fail("crm_building_unit_label_conflict");
+    finalLabels.add(normalized);
+    if (unit.status === "vacant") vacantRecords.push({ unit, normalized });
+  });
+  const vacantLabels = new Set(vacantRecords.map(item => item.normalized));
+  const missingLegacyAfter = hasLegacyState
+    ? [...legacyLabels].filter(label => !vacantLabels.has(label))
+    : [];
+  const vacancyShortfallAfter = hasLegacyState
+    ? Math.max(legacyCount - vacantRecords.length, 0)
+    : 0;
+  const migrationResolved = resolvedBefore
+    || (missingLegacyAfter.length === 0 && vacancyShortfallAfter === 0);
+  const vacantUnits = vacantRecords
+    .sort((left, right) => Number(left.unit.floorOrder ?? Number.MAX_SAFE_INTEGER)
+      - Number(right.unit.floorOrder ?? Number.MAX_SAFE_INTEGER)
+      || Number(left.unit.unitOrder ?? Number.MAX_SAFE_INTEGER)
+        - Number(right.unit.unitOrder ?? Number.MAX_SAFE_INTEGER)
+      || String(left.unit.label).localeCompare(String(right.unit.label), "ko-KR"))
+    .map(item => String(item.unit.label));
+  if (vacantUnits.length > 200) fail("crm_building_unit_batch_too_large");
+  return {
+    migrationResolvedBefore: resolvedBefore,
+    migrationResolved,
+    missingLegacyBefore,
+    missingLegacyAfter,
+    vacancyShortfallBefore,
+    vacancyShortfallAfter,
+    activeUnitCount: finalActive.length,
+    vacantUnitCount: vacantUnits.length,
+    vacantUnits
+  };
+}
+
+function configureLocalBuildingUnits(input) {
+  const source = input && typeof input === "object" && !Array.isArray(input) ? input : {};
+  const buildingId = typeof source.buildingId === "string" ? source.buildingId : "";
+  const operatorId = typeof source.operatorId === "string" ? source.operatorId : "";
+  const requestId = typeof source.requestId === "string" && source.requestId
+    ? source.requestId
+    : crypto.randomUUID();
+  const units = source.units;
+  const fail = code => { throw Object.assign(new Error(code), { code }); };
+  if (!/^[A-Za-z0-9_-]{1,120}$/.test(buildingId)
+    || !["representative", "hwang-woojung", "kim-hyunjin"].includes(operatorId)
+    || !/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(requestId)
+    || !Array.isArray(units)) fail("crm_request_invalid");
+  if (units.length === 0) fail("crm_building_unit_batch_empty");
+  if (units.length > 200) fail("crm_building_unit_batch_too_large");
+  if (Buffer.byteLength(JSON.stringify(units), "utf8") > 156 * 1024) fail("crm_building_unit_batch_too_large");
+  const statuses = new Set(["unknown", "occupied", "vacant", "move_out_scheduled", "maintenance"]);
+  const itemKeys = new Set([
+    "entityId", "expectedVersion", "label", "floorLabel", "floorOrder", "unitOrder", "status",
+  ]);
+  const normalized = new Set();
+  const checked = units.map((unit, index) => {
+    if (!unit || typeof unit !== "object" || Array.isArray(unit)
+      || Object.keys(unit).some(key => !itemKeys.has(key))) fail("crm_request_invalid");
+    const label = typeof unit.label === "string" ? unit.label : "";
+    const floorLabel = typeof unit.floorLabel === "string" ? unit.floorLabel : "";
+    const normalizedLabel = label.normalize("NFKC").trim().toLocaleLowerCase("ko-KR").replace(/\s+/gu, "");
+    const status = unit.status === undefined ? "unknown" : unit.status;
+    const hasEntityId = Object.prototype.hasOwnProperty.call(unit, "entityId");
+    const hasExpectedVersion = Object.prototype.hasOwnProperty.call(unit, "expectedVersion");
+    if (!label || label !== label.trim() || Buffer.byteLength(label, "utf8") > 256
+      || !floorLabel || floorLabel !== floorLabel.trim() || Buffer.byteLength(floorLabel, "utf8") > 256
+      || !Number.isSafeInteger(unit.floorOrder) || unit.floorOrder < -1_000 || unit.floorOrder > 1_000
+      || !Number.isSafeInteger(unit.unitOrder) || unit.unitOrder < 0 || unit.unitOrder > 100_000
+      || hasEntityId !== hasExpectedVersion
+      || (hasEntityId && (!/^[A-Za-z0-9_-]{1,120}$/.test(unit.entityId)
+        || !Number.isSafeInteger(unit.expectedVersion) || unit.expectedVersion < 1))
+      || !statuses.has(status) || normalized.has(normalizedLabel)) {
+      fail(normalized.has(normalizedLabel) ? "crm_building_unit_label_conflict" : "crm_request_invalid");
+    }
+    normalized.add(normalizedLabel);
+    return {
+      ...(hasEntityId ? { entityId: unit.entityId, expectedVersion: unit.expectedVersion } : {}),
+      label,
+      normalizedLabel,
+      floorLabel,
+      floorOrder: unit.floorOrder,
+      unitOrder: unit.unitOrder,
+      status,
+      index,
+    };
+  });
+  const requestHash = crypto.createHash("sha256").update(JSON.stringify({ buildingId, units: checked })).digest("hex");
+  const prior = localCanonicalBuildingUnitReceipts.get(requestId);
+  if (prior) {
+    if (prior.requestHash !== requestHash) fail("crm_request_id_conflict");
+    return Object.assign({}, prior.result, { repeated: true });
+  }
+  const activeByLabel = new Map();
+  Object.entries(localCanonicalBuildingUnits).forEach(([entityId, unit]) => {
+    if (!unit || unit.crmBuildingId !== buildingId || unit.archivedAt) return;
+    if (!Number.isSafeInteger(unit.entityVersion) || unit.entityVersion < 1) fail("crm_entity_upgrade_required");
+    const normalizedLabel = String(unit.label || "").normalize("NFKC").trim().toLocaleLowerCase("ko-KR").replace(/\s+/gu, "");
+    if (!normalizedLabel || activeByLabel.has(normalizedLabel)) fail("crm_building_unit_label_conflict");
+    activeByLabel.set(normalizedLabel, { entityId, unit });
+  });
+  const now = new Date().toISOString();
+  const authUid = `local-${localTestRole}`;
+  const next = Object.assign(Object.create(null), localCanonicalBuildingUnits);
+  const entityIds = [];
+  let createdCount = 0;
+  let updatedCount = 0;
+  let unchangedCount = 0;
+  const plannedIds = new Set();
+  checked.forEach(item => {
+    const identifiesExisting = item.entityId !== undefined && item.expectedVersion !== undefined;
+    let existing = null;
+    let id = "";
+    if (identifiesExisting) {
+      id = item.entityId;
+      const candidate = localCanonicalBuildingUnits[id];
+      const candidateLabel = candidate && String(candidate.label || "")
+        .normalize("NFKC").trim().toLocaleLowerCase("ko-KR").replace(/\s+/gu, "");
+      if (!candidate || candidate.id !== id || candidate.archivedAt
+        || candidate.crmBuildingId !== buildingId
+        || candidate.entityVersion !== item.expectedVersion
+        || candidateLabel !== item.normalizedLabel) fail("crm_entity_version_conflict");
+      existing = candidate;
+    } else {
+      if (activeByLabel.has(item.normalizedLabel)) fail("crm_entity_version_conflict");
+      id = `unit_${crypto.createHash("sha256").update(`${buildingId}\n${item.normalizedLabel}`).digest("hex").slice(0, 32)}`;
+    }
+    if (plannedIds.has(id)) fail("crm_entity_version_conflict");
+    plannedIds.add(id);
+    if (!existing && item.status === "move_out_scheduled") fail("crm_move_out_date_required");
+    if (!existing && next[id]) fail("crm_entity_version_conflict");
+    let record = existing
+      ? Object.assign({}, existing, {
+        label: item.label,
+        floorLabel: item.floorLabel,
+        floorOrder: item.floorOrder,
+        unitOrder: item.unitOrder,
+      })
+      : {
+        id,
+        crmBuildingId: buildingId,
+        label: item.label,
+        floorLabel: item.floorLabel,
+        floorOrder: item.floorOrder,
+        unitOrder: item.unitOrder,
+        status: item.status,
+        memo: "",
+        moveOutAt: "",
+        availableFrom: "",
+        entityVersion: 1,
+        createdAt: now,
+        createdByAuthUid: authUid,
+        createdByOperatorId: operatorId,
+        updatedAt: now,
+        updatedByAuthUid: authUid,
+        updatedByOperatorId: operatorId,
+        archivedAt: "",
+        archivedByAuthUid: "",
+        archivedByOperatorId: "",
+      };
+    const changed = !existing || ["label", "floorLabel", "floorOrder", "unitOrder"]
+      .some(key => existing[key] !== record[key]);
+    if (!existing) createdCount += 1;
+    else if (changed) {
+      updatedCount += 1;
+      record = Object.assign({}, record, {
+        entityVersion: Number(existing.entityVersion) + 1,
+        updatedAt: now,
+        updatedByAuthUid: authUid,
+        updatedByOperatorId: operatorId,
+      });
+    }
+    else unchangedCount += 1;
+    next[id] = record;
+    entityIds.push(id);
+  });
+  const vacancyMirror = planLocalBuildingVacancyMirror(
+    buildingId,
+    localCanonicalBuildingUnits,
+    next,
+    fail
+  );
+  if (vacancyMirror.activeUnitCount > 200) fail("crm_building_unit_batch_too_large");
+  if (!vacancyMirror.migrationResolved) fail("crm_vacancy_migration_required");
+  const result = { buildingId, totalUnits: checked.length, createdCount, updatedCount, unchangedCount, entityIds, updatedAt: now, repeated: false };
+  localCanonicalBuildingUnits = next;
+  localCanonicalBuildingVacancyState = Object.assign(Object.create(null), localCanonicalBuildingVacancyState, {
+    [buildingId]: {
+      vacantUnitCount: vacancyMirror.vacantUnitCount,
+      vacantUnits: vacancyMirror.vacantUnits.slice()
+    }
+  });
+  localCanonicalBuildingUnitReceipts.set(requestId, { requestHash, result });
+  return result;
+}
+
+function commitLocalCanonicalCrmEntity(input) {
+  const source = input && typeof input === "object" && !Array.isArray(input) ? input : {};
+  const fail = code => { throw Object.assign(new Error(code), { code }); };
+  if (source.entityType !== "buildingUnits" || source.operation !== "update"
+    || !/^[A-Za-z0-9_-]{1,120}$/.test(String(source.entityId || ""))
+    || !["representative", "hwang-woojung", "kim-hyunjin"].includes(source.operatorId)
+    || !/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(String(source.requestId || ""))
+    || !source.patch || typeof source.patch !== "object" || Array.isArray(source.patch)) fail("crm_request_invalid");
+  const existing = localCanonicalBuildingUnits[source.entityId];
+  if (!existing || existing.archivedAt) fail("crm_entity_not_found");
+  if (!Number.isSafeInteger(source.expectedVersion) || source.expectedVersion !== existing.entityVersion) {
+    fail("crm_entity_version_conflict");
+  }
+  const allowed = new Set(["label", "floorLabel", "floorOrder", "unitOrder", "status", "moveOutAt", "availableFrom", "memo"]);
+  if (Object.keys(source.patch).length === 0 || Object.keys(source.patch).some(key => !allowed.has(key))) fail("crm_request_invalid");
+  const requestHash = crypto.createHash("sha256").update(JSON.stringify({
+    entityId: source.entityId,
+    expectedVersion: source.expectedVersion,
+    patch: source.patch,
+  })).digest("hex");
+  const prior = localCanonicalCrmReceipts.get(source.requestId);
+  if (prior) {
+    if (prior.requestHash !== requestHash) fail("crm_request_id_conflict");
+    return Object.assign({}, prior.result, { repeated: true });
+  }
+  const next = Object.assign({}, existing, source.patch);
+  if (typeof next.label !== "string" || !next.label.trim() || next.label !== next.label.trim()) fail("crm_unit_label_invalid");
+  if (typeof next.floorLabel !== "string" || !next.floorLabel.trim() || next.floorLabel !== next.floorLabel.trim()) fail("crm_floorLabel_invalid");
+  if (!new Set(["unknown", "occupied", "vacant", "move_out_scheduled", "maintenance"]).has(next.status)) fail("crm_status_invalid");
+  if (["status", "moveOutAt", "availableFrom"].some(key => Object.prototype.hasOwnProperty.call(source.patch, key))
+    && next.status === "move_out_scheduled"
+    && !String(next.moveOutAt || next.availableFrom || "")) fail("crm_move_out_date_required");
+  const normalizedLabel = next.label.normalize("NFKC").trim().toLocaleLowerCase("ko-KR").replace(/\s+/gu, "");
+  if (Object.values(localCanonicalBuildingUnits).some(unit => unit && unit.id !== existing.id
+    && unit.crmBuildingId === existing.crmBuildingId && !unit.archivedAt
+    && String(unit.label || "").normalize("NFKC").trim().toLocaleLowerCase("ko-KR").replace(/\s+/gu, "") === normalizedLabel)) {
+    fail("crm_building_unit_label_conflict");
+  }
+  const currentTime = Date.parse(existing.updatedAt || "") || 0;
+  const updatedAt = new Date(Math.max(Date.now(), currentTime + 1)).toISOString();
+  const record = Object.assign({}, next, {
+    entityVersion: existing.entityVersion + 1,
+    updatedAt,
+    updatedByAuthUid: `local-${localTestRole}`,
+    updatedByOperatorId: source.operatorId,
+  });
+  const finalUnits = Object.assign(Object.create(null), localCanonicalBuildingUnits, { [record.id]: record });
+  const vacancyMirror = planLocalBuildingVacancyMirror(
+    existing.crmBuildingId,
+    localCanonicalBuildingUnits,
+    finalUnits,
+    fail
+  );
+  if (!vacancyMirror.migrationResolvedBefore) {
+    const missingBefore = new Set(vacancyMirror.missingLegacyBefore);
+    const addedMissingLegacy = vacancyMirror.missingLegacyAfter
+      .some(label => !missingBefore.has(label));
+    if (addedMissingLegacy || vacancyMirror.vacancyShortfallAfter > vacancyMirror.vacancyShortfallBefore) {
+      fail("crm_vacancy_migration_required");
+    }
+  }
+  localCanonicalBuildingUnits = finalUnits;
+  if (vacancyMirror.migrationResolved) {
+    localCanonicalBuildingVacancyState = Object.assign(Object.create(null), localCanonicalBuildingVacancyState, {
+      [existing.crmBuildingId]: {
+        vacantUnitCount: vacancyMirror.vacantUnitCount,
+        vacantUnits: vacancyMirror.vacantUnits.slice()
+      }
+    });
+  }
+  const result = {
+    entityType: "buildingUnits",
+    entityId: record.id,
+    entityVersion: record.entityVersion,
+    updatedAt,
+    archivedAt: String(record.archivedAt || ""),
+    repeated: false,
+  };
+  localCanonicalCrmReceipts.set(source.requestId, { requestHash, result });
+  return result;
 }
 
 async function initializeRemote() {
@@ -1748,6 +2100,115 @@ async function createWindow() {
         if (card) card.scrollTop = card.scrollHeight;
         await wait(80);
         return { pass, isReadOnly, validationBlocked, saved, reopened, detailText, noHorizontalOverflow, state: window.__crmTest.snapshot() };
+      })().catch(error => ({ pass: false, error: String(error && error.stack || error) }))`, true);
+    } else if (process.env.BRING_CRM_SCREENSHOT_ACTION === "vacancy-layout-scale") {
+      actionResult = await mainWindow.webContents.executeJavaScript(`(async () => {
+        const wait = ms => new Promise(resolve => setTimeout(resolve, ms));
+        const initial = window.__crmTest.getStore();
+        const building = initial.buildings.find(item => item && !item.archivedAt);
+        if (!building) return { pass: false, reason: 'building missing' };
+        const operatorSelect = document.getElementById('fieldOperatorSelect');
+        if (operatorSelect) {
+          operatorSelect.value = 'kim-hyunjin';
+          operatorSelect.dispatchEvent(new Event('change', { bubbles: true }));
+          await wait(40);
+        }
+        const units = Array.from({ length: 100 }, (_, index) => ({
+          label: String(Math.floor(index / 10) + 1) + String(index % 10 + 1).padStart(2, '0') + '호',
+          floorLabel: String(Math.floor(index / 10) + 1) + '층',
+          floorOrder: Math.floor(index / 10) + 1,
+          unitOrder: index % 10 + 1,
+          status: index % 10 === 0 ? 'vacant' : 'occupied'
+        }));
+        const configured = await window.bringCRM.configureBuildingUnits({
+          buildingId: building.id,
+          operatorId: 'kim-hyunjin',
+          requestId: '550e8400-e29b-41d4-a716-446655440100',
+          units
+        });
+        const statusUpdated = await window.bringCRM.commitCanonicalCrmEntity({
+          requestId: '550e8400-e29b-41d4-a716-446655440102',
+          operatorId: 'kim-hyunjin',
+          entityType: 'buildingUnits',
+          entityId: configured.entityIds[1],
+          operation: 'update',
+          expectedVersion: 1,
+          patch: { status: 'move_out_scheduled', availableFrom: '2026-09-01' },
+          reason: 'vacancy Electron QA status update'
+        });
+        const loaded = await window.bringCRM.loadCanonicalBuildingUnits();
+        window.__crmTest.applyRemoteForTest(Object.assign({}, initial, { buildingUnits: Object.values(loaded || {}) }));
+        await wait(120);
+        document.querySelector('[data-view="vacancies"]')?.click();
+        await wait(160);
+        document.querySelector('[data-vacancy-building="' + building.id + '"]')?.click();
+        await wait(100);
+        document.querySelector('[data-vacancy-configure="' + building.id + '"]')?.click();
+        await wait(100);
+        const firstWizard = document.getElementById('vacancyConfigurationForm');
+        if (!firstWizard) return { pass: false, reason: 'wizard missing before submit' };
+        const operatorAtSubmit = document.getElementById('fieldOperatorSelect')?.value || '';
+        const formValidAtSubmit = firstWizard.checkValidity();
+        firstWizard.requestSubmit();
+        await wait(450);
+        const submitToast = document.getElementById('toast')?.textContent || '';
+        const wizardSubmitClosed = !document.getElementById('modal')?.classList.contains('open');
+        const loadedAfterSubmit = await window.bringCRM.loadCanonicalBuildingUnits();
+        document.querySelector('[data-view="vacancies"]')?.click();
+        await wait(100);
+        document.querySelector('[data-vacancy-building="' + building.id + '"]')?.click();
+        await wait(80);
+        const root = document.querySelector('[data-vacancy-view]');
+        const filters = [...document.querySelectorAll('[data-vacancy-filter]')];
+        const cards = document.querySelectorAll('[data-vacancy-unit]');
+        const floors = document.querySelectorAll('[data-vacancy-floor]');
+        document.querySelector('[data-vacancy-configure="' + building.id + '"]')?.click();
+        await wait(100);
+        const wizard = document.getElementById('vacancyConfigurationForm');
+        const preview = wizard?.querySelector('[data-vacancy-configuration-preview]');
+        const floorRows = wizard?.querySelectorAll('[data-vacancy-floor-row]').length || 0;
+        const labels = wizard?.querySelectorAll('[data-vacancy-unit-label]').length || 0;
+        const viewport = { width: innerWidth, height: innerHeight, documentWidth: document.documentElement.scrollWidth };
+        const noHorizontalOverflow = viewport.documentWidth <= viewport.width + 1
+          && !!root && root.scrollWidth <= root.clientWidth + 1
+          && (!wizard || wizard.scrollWidth <= wizard.clientWidth + 1);
+        const pass = configured.totalUnits === 100 && configured.createdCount === 100
+          && statusUpdated.entityVersion === 2
+          && wizardSubmitClosed && Object.keys(loadedAfterSubmit || {}).length === 100
+          && Object.keys(loaded || {}).length === 100 && cards.length === 100 && floors.length === 10
+          && filters[0]?.dataset.vacancyFilter === 'all' && filters[0]?.classList.contains('active')
+          && !!wizard && !!preview && floorRows === 10 && labels === 100 && noHorizontalOverflow
+          && window.__crmTest.snapshot().view === 'vacancies';
+        return { pass, configured, statusUpdated, operatorAtSubmit, formValidAtSubmit, submitToast, wizardSubmitClosed, loadedUnits: Object.keys(loaded || {}).length, loadedAfterSubmit: Object.keys(loadedAfterSubmit || {}).length, cards: cards.length, floors: floors.length, floorRows, labels, allFirst: filters[0]?.dataset.vacancyFilter, allActive: filters[0]?.classList.contains('active'), noHorizontalOverflow, viewport, state: window.__crmTest.snapshot() };
+      })().catch(error => ({ pass: false, error: String(error && error.stack || error) }))`, true);
+    } else if (process.env.BRING_CRM_SCREENSHOT_ACTION === "vacancy-viewer-invariant") {
+      actionResult = await mainWindow.webContents.executeJavaScript(`(async () => {
+        const wait = ms => new Promise(resolve => setTimeout(resolve, ms));
+        const data = window.__crmTest.getStore();
+        const building = data.buildings.find(item => item && !item.archivedAt);
+        let rejected = false;
+        let rejectionCode = '';
+        try {
+          await window.bringCRM.configureBuildingUnits({
+            buildingId: building?.id || 'building_1',
+            operatorId: 'kim-hyunjin',
+            requestId: '550e8400-e29b-41d4-a716-446655440101',
+            units: [{ label: '101호', floorLabel: '1층', floorOrder: 1, unitOrder: 1, status: 'unknown' }]
+          });
+        } catch (error) {
+          rejected = true;
+          rejectionCode = String(error && (error.code || error.message) || '');
+        }
+        document.querySelector('[data-view="vacancies"]')?.click();
+        await wait(120);
+        const configureButtons = document.querySelectorAll('[data-vacancy-configure]').length;
+        const editButtons = document.querySelectorAll('[data-vacancy-unit-edit]').length;
+        const filters = [...document.querySelectorAll('[data-vacancy-filter]')];
+        const noHorizontalOverflow = document.documentElement.scrollWidth <= innerWidth + 1;
+        const pass = rejected && configureButtons === 0 && editButtons === 0
+          && filters[0]?.dataset.vacancyFilter === 'all' && noHorizontalOverflow
+          && window.__crmTest.snapshot().view === 'vacancies';
+        return { pass, rejected, rejectionCode, configureButtons, editButtons, allFirst: filters[0]?.dataset.vacancyFilter, noHorizontalOverflow, viewport: { width: innerWidth, height: innerHeight }, state: window.__crmTest.snapshot() };
       })().catch(error => ({ pass: false, error: String(error && error.stack || error) }))`, true);
     } else if (process.env.BRING_CRM_SCREENSHOT_ACTION === "readability-layout") {
       actionResult = await mainWindow.webContents.executeJavaScript(`(async () => {
@@ -3233,7 +3694,7 @@ async function createWindow() {
     const uiState = await mainWindow.webContents.executeJavaScript("window.__crmTest && window.__crmTest.snapshot()", true);
     const image = await mainWindow.webContents.capturePage();
     await fs.writeFile(target, image.toPNG());
-    if (["building-rental-info", "consultation-building-hub", "customer-sales-status"].includes(process.env.BRING_CRM_SCREENSHOT_ACTION)) {
+    if (["building-rental-info", "consultation-building-hub", "customer-sales-status", "vacancy-layout-scale", "vacancy-viewer-invariant"].includes(process.env.BRING_CRM_SCREENSHOT_ACTION)) {
       await fs.writeFile(`${target}.result.json`, JSON.stringify({ actionResult, uiState }, null, 2), "utf8");
     }
     console.log(target, JSON.stringify({ empty: image.isEmpty(), size: image.getSize(), actionResult, uiState }));
@@ -3286,7 +3747,7 @@ secureCanonicalHandle("crm:auth-logout", async input => {
 secureHandle("crm:load", readStore);
 secureHandle("crm:save", data => writeStore(data));
 secureCanonicalHandle("crm:canonical-building-units-load", async () => {
-  if (localTestMode) return {};
+  if (localTestMode) return JSON.parse(JSON.stringify(localCanonicalBuildingUnits));
   if (!remoteClient || !remoteClient.authState().user) throw new Error("로그인이 필요합니다.");
   return remoteClient.loadCanonicalBuildingUnits();
 });
@@ -3305,8 +3766,18 @@ secureCanonicalHandle("crm:drive-import-decision", async input => {
   return remoteClient.decideDriveImport(input);
 });
 secureCanonicalHandle("crm:canonical-entity-commit", async input => {
+  assertMainMutationAllowed(canonicalEntityMutationForValidation(input));
+  const payload = Object.assign(Object.create(null), input, { buildVersion: app.getVersion() });
+  if (localTestMode) return commitLocalCanonicalCrmEntity(payload);
   if (!remoteClient || !remoteClient.authState().user) throw new Error("로그인이 필요합니다.");
-  return remoteClient.commitCanonicalCrmEntity(Object.assign(Object.create(null), input, { buildVersion: app.getVersion() }));
+  return remoteClient.commitCanonicalCrmEntity(payload);
+});
+secureCanonicalHandle("crm:canonical-building-units-configure", async input => {
+  assertMainMutationAllowed(buildingUnitsMutationForValidation(input));
+  const payload = Object.assign(Object.create(null), input, { buildVersion: app.getVersion() });
+  if (localTestMode) return configureLocalBuildingUnits(payload);
+  if (!remoteClient || !remoteClient.authState().user) throw new Error("로그인이 필요합니다.");
+  return remoteClient.configureBuildingUnits(payload);
 });
 secureCanonicalHandle("crm:field-team-profiles", async () => {
   if (localTestMode) return {

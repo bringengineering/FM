@@ -13,6 +13,7 @@ contextBridge.exposeInMainWorld("bringCRM", {
   loadDriveImportCandidates: () => ipcRenderer.invoke("crm:drive-import-candidates-load"),
   decideDriveImport: input => ipcRenderer.invoke("crm:drive-import-decision", input),
   commitCanonicalCrmEntity: input => ipcRenderer.invoke("crm:canonical-entity-commit", input),
+  configureBuildingUnits: input => ipcRenderer.invoke("crm:canonical-building-units-configure", input),
   loadOperations: () => ipcRenderer.invoke("crm:operations-load"),
   saveWorkflowCase: input => ipcRenderer.invoke("crm:case-save", input),
   savePaymentOverride: input => ipcRenderer.invoke("crm:payment-override", input),

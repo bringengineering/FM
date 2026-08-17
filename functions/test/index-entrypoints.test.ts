@@ -728,6 +728,25 @@ function validCanonicalCrmBody(overrides: Record<string, unknown> = {}) {
   };
 }
 
+function validBuildingUnitsBatchBody(overrides: Record<string, unknown> = {}) {
+  return {
+    protocolVersion: 2,
+    clientKind: "desktop",
+    buildVersion: "1.8.1",
+    operatorId: "operator_kim",
+    requestId: "123e4567-e89b-42d3-a456-426614174010",
+    buildingId: "building_1",
+    units: [{
+      label: "101호",
+      floorLabel: "1층",
+      floorOrder: 1,
+      unitOrder: 1,
+      status: "unknown",
+    }],
+    ...overrides,
+  };
+}
+
 function canonicalHttpRequest(
   body: unknown,
   overrides: Record<string, unknown> = {},
@@ -3806,6 +3825,232 @@ describe("Firebase entrypoint metadata", () => {
       kind: "request",
       options: { region: "asia-northeast3", cors: false },
     });
+    expect(registration(entrypoints.configureBuildingUnits)).toMatchObject({
+      kind: "request",
+      options: { region: "asia-northeast3", cors: false },
+    });
+  });
+
+  it("configures 100 building units atomically through one canonical root transaction", async () => {
+    seedCanonicalCrmAccess();
+    registrations.adminVerifyIdToken.mockResolvedValueOnce({
+      uid: "shared_uid",
+      email: "team@bringcare.kr",
+      email_verified: true,
+    });
+    registrations.transactionCurrent.value = canonicalCrmRoot();
+    const units = Array.from({ length: 100 }, (_, index) => ({
+      label: `${Math.floor(index / 10) + 1}${String(index % 10 + 1).padStart(2, "0")}호`,
+      floorLabel: `${Math.floor(index / 10) + 1}층`,
+      floorOrder: Math.floor(index / 10) + 1,
+      unitOrder: index % 10,
+      status: "unknown",
+    }));
+    units[10] = {
+      ...units[10],
+      entityId: "unit_1",
+      expectedVersion: 4,
+    } as typeof units[number];
+    const output = httpResponseHarness();
+
+    await requestHandler(entrypoints.configureBuildingUnits)(
+      canonicalHttpRequest(validBuildingUnitsBatchBody({ units })),
+      output.response,
+    );
+
+    expect(output.state.status).toBe(200);
+    expect(output.state.body).toMatchObject({
+      ok: true,
+      result: {
+        buildingId: "building_1",
+        totalUnits: 100,
+        createdCount: 99,
+        updatedCount: 1,
+        unchangedCount: 0,
+        repeated: false,
+      },
+    });
+    expect(registrations.transactionPaths.filter(path => path === "")).toHaveLength(1);
+    expect(registrations.transactionPaths).toEqual(expect.arrayContaining([
+      expect.stringMatching(/^fieldPlatform\/v2\/rateLimits\/commitCanonicalCrmEntity\/ip\//),
+      expect.stringMatching(/^fieldPlatform\/v2\/rateLimits\/commitCanonicalCrmEntity\/uid\//),
+      "",
+    ]));
+    const storedUnits = (registrations.transactionCurrent.value as any)
+      .crmCompany.data.buildingUnits;
+    expect(Object.values(storedUnits).filter((unit: any) => unit.crmBuildingId === "building_1"))
+      .toHaveLength(100);
+  });
+
+  it("keeps the single-entity endpoint at 32 KiB while the batch endpoint accepts a valid larger body", async () => {
+    seedCanonicalCrmAccess();
+    registrations.adminVerifyIdToken.mockResolvedValueOnce({
+      uid: "shared_uid",
+      email: "team@bringcare.kr",
+      email_verified: true,
+    });
+    registrations.transactionCurrent.value = canonicalCrmRoot();
+    const units = Array.from({ length: 100 }, (_, index) => ({
+      label: `${String(index).padStart(3, "0")}-${"가".repeat(55)}`,
+      floorLabel: `${Math.floor(index / 10) + 1}층-${"나".repeat(25)}`,
+      floorOrder: Math.floor(index / 10) + 1,
+      unitOrder: index,
+      status: "unknown",
+    }));
+    const request = canonicalHttpRequest(validBuildingUnitsBatchBody({ units }));
+    expect(request.rawBody.byteLength).toBeGreaterThan(32_768);
+    expect(request.rawBody.byteLength).toBeLessThanOrEqual(160 * 1_024);
+    const output = httpResponseHarness();
+    await requestHandler(entrypoints.configureBuildingUnits)(request, output.response);
+    expect(output.state.status).toBe(200);
+
+    const singleOutput = httpResponseHarness();
+    await requestHandler(entrypoints.commitCanonicalCrmEntity)(request, singleOutput.response);
+    expect(singleOutput.state).toMatchObject({
+      status: 413,
+      body: { ok: false, error: { code: "crm_body_too_large" } },
+    });
+  });
+
+  it("accepts a valid 200-room concurrency snapshot above the former 128 KiB cap", async () => {
+    seedCanonicalCrmAccess();
+    registrations.adminVerifyIdToken.mockResolvedValueOnce({
+      uid: "shared_uid",
+      email: "team@bringcare.kr",
+      email_verified: true,
+    });
+    const fixtureRoot = canonicalCrmRoot();
+    const template = (fixtureRoot as any).crmCompany.data.buildingUnits.unit_1;
+    const records: Record<string, unknown> = {};
+    const units = Array.from({ length: 200 }, (_, index) => {
+      const entityId = `${String(index).padStart(3, "0")}_${"i".repeat(116)}`;
+      const label = `${String(index).padStart(3, "0")}${"l".repeat(253)}`;
+      const floorLabel = "f".repeat(256);
+      records[entityId] = {
+        ...structuredClone(template),
+        id: entityId,
+        label,
+        floorLabel,
+        floorOrder: 1,
+        unitOrder: index,
+        status: "occupied",
+      };
+      return {
+        entityId,
+        expectedVersion: 4,
+        label,
+        floorLabel,
+        floorOrder: 1,
+        unitOrder: index,
+        status: "occupied",
+      };
+    });
+    (fixtureRoot as any).crmCompany.data.buildingUnits = records;
+    registrations.transactionCurrent.value = fixtureRoot;
+    const request = canonicalHttpRequest(validBuildingUnitsBatchBody({ units }));
+    expect(request.rawBody.byteLength).toBeGreaterThan(128 * 1_024);
+    expect(request.rawBody.byteLength).toBeLessThanOrEqual(160 * 1_024);
+    const output = httpResponseHarness();
+
+    await requestHandler(entrypoints.configureBuildingUnits)(request, output.response);
+    expect(output.state.status).toBe(200);
+    expect(output.state.body).toMatchObject({
+      ok: true,
+      result: { totalUnits: 200, unchangedCount: 200, repeated: false },
+    });
+    expect(registrations.transactionPaths.filter(path => path === "")).toHaveLength(1);
+  });
+
+  it("rejects a batch above 160 KiB before authentication or canonical mutation", async () => {
+    const output = httpResponseHarness();
+    await requestHandler(entrypoints.configureBuildingUnits)({
+      ...canonicalHttpRequest(validBuildingUnitsBatchBody()),
+      rawBody: Buffer.alloc(160 * 1_024 + 1, 65),
+    }, output.response);
+    expect(output.state).toMatchObject({
+      status: 413,
+      body: { ok: false, error: { code: "crm_body_too_large" } },
+    });
+    expect(registrations.adminVerifyIdToken).not.toHaveBeenCalled();
+    expect(registrations.transactionPaths.filter(path => path === "")).toHaveLength(0);
+  });
+
+  it("rejects a viewer batch without attempting the canonical root transaction", async () => {
+    seedCanonicalCrmAccess("viewer");
+    registrations.adminVerifyIdToken.mockResolvedValueOnce({
+      uid: "shared_uid",
+      email: "team@bringcare.kr",
+      email_verified: true,
+    });
+    registrations.transactionCurrent.value = canonicalCrmRoot("viewer");
+    const output = httpResponseHarness();
+    await requestHandler(entrypoints.configureBuildingUnits)(
+      canonicalHttpRequest(validBuildingUnitsBatchBody()),
+      output.response,
+    );
+    expect(output.state).toMatchObject({
+      status: 403,
+      body: { ok: false, error: { code: "crm_mutation_forbidden" } },
+    });
+    expect(registrations.transactionPaths.filter(path => path === "")).toHaveLength(0);
+  });
+
+  it("returns a conflict and zero canonical writes for a stale existing-room snapshot", async () => {
+    seedCanonicalCrmAccess();
+    registrations.adminVerifyIdToken.mockResolvedValueOnce({
+      uid: "shared_uid",
+      email: "team@bringcare.kr",
+      email_verified: true,
+    });
+    registrations.transactionCurrent.value = canonicalCrmRoot();
+    const before = JSON.stringify(registrations.transactionCurrent.value);
+    const output = httpResponseHarness();
+    await requestHandler(entrypoints.configureBuildingUnits)(
+      canonicalHttpRequest(validBuildingUnitsBatchBody({
+        units: [{
+          entityId: "unit_1",
+          expectedVersion: 3,
+          label: "201\uD638",
+          floorLabel: "2\uCE35",
+          floorOrder: 2,
+          unitOrder: 1,
+          status: "occupied",
+        }],
+      })),
+      output.response,
+    );
+
+    expect(output.state).toMatchObject({
+      status: 409,
+      body: { ok: false, error: { code: "crm_entity_version_conflict" } },
+    });
+    expect(JSON.stringify(registrations.transactionCurrent.value)).toBe(before);
+    expect(registrations.transactionPaths.filter(path => path === "")).toHaveLength(1);
+  });
+
+  it("returns the same receipt on an idempotent building-unit batch retry", async () => {
+    seedCanonicalCrmAccess();
+    registrations.adminVerifyIdToken.mockResolvedValue({
+      uid: "shared_uid",
+      email: "team@bringcare.kr",
+      email_verified: true,
+    });
+    registrations.transactionCurrent.value = canonicalCrmRoot();
+    const request = canonicalHttpRequest(validBuildingUnitsBatchBody());
+    const first = httpResponseHarness();
+    const second = httpResponseHarness();
+    await requestHandler(entrypoints.configureBuildingUnits)(request, first.response);
+    const rootAfterFirst = JSON.stringify(registrations.transactionCurrent.value);
+    await requestHandler(entrypoints.configureBuildingUnits)(request, second.response);
+
+    expect(first.state.status).toBe(200);
+    expect(second.state.status).toBe(200);
+    expect((first.state.body as any).result.repeated).toBe(false);
+    expect((second.state.body as any).result).toEqual({
+      ...(first.state.body as any).result,
+      repeated: true,
+    });
+    expect(JSON.stringify(registrations.transactionCurrent.value)).toBe(rootAfterFirst);
   });
 
   it("commits a canonical entity after current-project auth and bounded IP and UID rate limits", async () => {
@@ -3957,7 +4202,7 @@ describe("Firebase entrypoint metadata", () => {
     expect(registrations.getAuth).toHaveBeenCalledTimes(1);
     expect(registrations.getAuth).toHaveBeenCalledWith();
     expect(registrations.onCall).toHaveBeenCalledTimes(21);
-    expect(registrations.onRequest).toHaveBeenCalledTimes(1);
+    expect(registrations.onRequest).toHaveBeenCalledTimes(2);
     expect(registrations.onValueWritten).toHaveBeenCalledTimes(3);
     expect(registrations.onValueCreated).toHaveBeenCalledTimes(2);
     expect(registrations.onSchedule).toHaveBeenCalledTimes(3);

@@ -3,6 +3,7 @@ const test = require("node:test");
 
 const Core = require("../src/core");
 const {
+  CANONICAL_BUILDING_UNITS_BATCH_ENDPOINT_URL,
   CANONICAL_CRM_ENDPOINT_URL,
   FirebaseRemoteClient,
   SHARED_COLLECTIONS,
@@ -342,6 +343,303 @@ test("canonical commit requires a caller-selected operator and refreshes rendere
   assert.equal(calls.length, 1);
 });
 
+test("a 100-unit building configuration uses one canonical request and one overlay refresh", async () => {
+  const calls = [];
+  let refreshes = 0;
+  const units = Array.from({ length: 100 }, (_, index) => ({
+    label: `${Math.floor(index / 10) + 1}${String(index % 10 + 1).padStart(2, "0")}호`,
+    floorLabel: `${Math.floor(index / 10) + 1}층`,
+    floorOrder: Math.floor(index / 10) + 1,
+    unitOrder: index % 10,
+    status: "unknown"
+  }));
+  units[0] = Object.assign({ entityId: "unit_existing", expectedVersion: 7 }, units[0]);
+  const entityIds = units.map((_, index) => `unit_${String(index + 1).padStart(3, "0")}`);
+  const { client } = makeClient();
+  client.fetch = async (url, options) => {
+    calls.push({ url, options });
+    return jsonResponse({
+      ok: true,
+      result: {
+        buildingId: "building_1",
+        totalUnits: 100,
+        createdCount: 99,
+        updatedCount: 1,
+        unchangedCount: 0,
+        entityIds,
+        updatedAt: "2026-08-17T00:00:00.000Z",
+        repeated: false
+      }
+    });
+  };
+  client.refreshAfterCanonicalCommit = async () => { refreshes += 1; return {}; };
+
+  const result = await client.configureBuildingUnits({
+    buildVersion: "1.8.1",
+    requestId: "550e8400-e29b-41d4-a716-446655440000",
+    operatorId: "operator_kim",
+    buildingId: "building_1",
+    units
+  });
+
+  assert.equal(result.totalUnits, 100);
+  assert.equal(calls.length, 1);
+  assert.equal(refreshes, 1);
+  assert.equal(calls[0].url, CANONICAL_BUILDING_UNITS_BATCH_ENDPOINT_URL);
+  assert.equal(calls[0].options.method, "POST");
+  assert.equal(calls[0].options.headers.Authorization, "Bearer crm-id-token");
+  const body = JSON.parse(calls[0].options.body);
+  assert.equal(body.protocolVersion, 2);
+  assert.equal(body.clientKind, "desktop");
+  assert.equal(body.units.length, 100);
+  assert.deepEqual(
+    { entityId: body.units[0].entityId, expectedVersion: body.units[0].expectedVersion },
+    { entityId: "unit_existing", expectedVersion: 7 }
+  );
+  assert.equal(body.units[99].floorLabel, "10층");
+});
+
+test("canonical secret scanning ignores immutable IDs but still scans user-entered room content", async () => {
+  const falsePositiveId = "unit_1234567123456";
+  assert.ok(Core.findProhibitedSecrets({ entityId: falsePositiveId }).length > 0);
+  let requests = 0;
+  const { client } = makeClient();
+  client.fetch = async (url, options) => {
+    requests += 1;
+    const body = JSON.parse(options.body);
+    if (url === CANONICAL_CRM_ENDPOINT_URL) {
+      return jsonResponse({
+        ok: true,
+        result: {
+          entityType: "buildingUnits",
+          entityId: falsePositiveId,
+          entityVersion: 2,
+          updatedAt: "2026-08-17T00:00:00.000Z",
+          archivedAt: "",
+          repeated: false
+        }
+      });
+    }
+    assert.equal(url, CANONICAL_BUILDING_UNITS_BATCH_ENDPOINT_URL);
+    return jsonResponse({
+      ok: true,
+      result: {
+        buildingId: body.buildingId,
+        totalUnits: 1,
+        createdCount: 0,
+        updatedCount: 0,
+        unchangedCount: 1,
+        entityIds: [falsePositiveId],
+        updatedAt: "2026-08-17T00:00:00.000Z",
+        repeated: false
+      }
+    });
+  };
+  client.refreshAfterCanonicalCommit = async () => ({});
+
+  await assert.doesNotReject(client.commitCanonicalCrmEntity({
+    buildVersion: "1.8.1",
+    requestId: "550e8400-e29b-41d4-a716-446655440011",
+    operatorId: "operator_kim",
+    entityType: "buildingUnits",
+    entityId: falsePositiveId,
+    operation: "update",
+    expectedVersion: 1,
+    patch: { memo: "safe note" }
+  }));
+  await assert.doesNotReject(client.configureBuildingUnits({
+    buildVersion: "1.8.1",
+    requestId: "550e8400-e29b-41d4-a716-446655440012",
+    operatorId: "operator_kim",
+    buildingId: "building_1",
+    units: [{
+      entityId: falsePositiveId,
+      expectedVersion: 1,
+      label: "101호",
+      floorLabel: "1층",
+      floorOrder: 1,
+      unitOrder: 1,
+      status: "occupied"
+    }]
+  }));
+  await assert.rejects(client.commitCanonicalCrmEntity({
+    buildVersion: "1.8.1",
+    requestId: "550e8400-e29b-41d4-a716-446655440013",
+    operatorId: "operator_kim",
+    entityType: "buildingUnits",
+    entityId: falsePositiveId,
+    operation: "update",
+    expectedVersion: 1,
+    patch: { memo: "비밀번호 1234" }
+  }), error => error && error.code === "PROHIBITED_SENSITIVE_VALUE");
+  assert.equal(requests, 2);
+});
+
+test("a 200-item existing-room snapshot with maximum field sizes stays within the dedicated batch cap", async () => {
+  const units = Array.from({ length: 200 }, (_, index) => ({
+    entityId: `${String(index).padStart(3, "0")}_${"i".repeat(116)}`,
+    expectedVersion: Number.MAX_SAFE_INTEGER,
+    label: `${String(index).padStart(3, "0")}${"l".repeat(253)}`,
+    floorLabel: "f".repeat(256),
+    floorOrder: 1,
+    unitOrder: index,
+    status: "occupied"
+  }));
+  const entityIds = units.map(unit => unit.entityId);
+  let requests = 0;
+  const { client } = makeClient();
+  client.fetch = async (_url, options) => {
+    requests += 1;
+    assert.ok(Buffer.byteLength(options.body, "utf8") > 128 * 1024);
+    assert.ok(Buffer.byteLength(options.body, "utf8") <= 160 * 1024);
+    return jsonResponse({
+      ok: true,
+      result: {
+        buildingId: "building_1",
+        totalUnits: 200,
+        createdCount: 0,
+        updatedCount: 0,
+        unchangedCount: 200,
+        entityIds,
+        updatedAt: "2026-08-17T00:00:00.000Z",
+        repeated: false
+      }
+    });
+  };
+  client.refreshAfterCanonicalCommit = async () => ({});
+
+  await assert.doesNotReject(client.configureBuildingUnits({
+    buildVersion: "1.8.1",
+    requestId: "550e8400-e29b-41d4-a716-446655440010",
+    operatorId: "operator_kim",
+    buildingId: "building_1",
+    units
+  }));
+  assert.equal(requests, 1);
+});
+
+test("building configuration accepts an idempotent retry result without extra requests", async () => {
+  let requests = 0;
+  let refreshes = 0;
+  const { client } = makeClient();
+  client.fetch = async () => {
+    requests += 1;
+    return jsonResponse({
+      ok: true,
+      result: {
+        buildingId: "building_1",
+        totalUnits: 1,
+        createdCount: 1,
+        updatedCount: 0,
+        unchangedCount: 0,
+        entityIds: ["unit_001"],
+        updatedAt: "2026-08-17T00:00:00.000Z",
+        repeated: true
+      }
+    });
+  };
+  client.refreshAfterCanonicalCommit = async () => { refreshes += 1; return {}; };
+  const result = await client.configureBuildingUnits({
+    buildVersion: "1.8.1",
+    requestId: "550e8400-e29b-41d4-a716-446655440000",
+    operatorId: "operator_kim",
+    buildingId: "building_1",
+    units: [{ label: "101호", floorLabel: "1층", floorOrder: 1, unitOrder: 1 }]
+  });
+
+  assert.equal(result.repeated, true);
+  assert.equal(requests, 1);
+  assert.equal(refreshes, 1);
+});
+
+test("viewer and malformed building configurations are rejected before token or network access", async () => {
+  const valid = {
+    buildVersion: "1.8.1",
+    requestId: "550e8400-e29b-41d4-a716-446655440000",
+    operatorId: "operator_kim",
+    buildingId: "building_1",
+    units: [{ label: "101호", floorLabel: "1층", floorOrder: 1, unitOrder: 1 }]
+  };
+  const cases = [
+    { operatorId: "" },
+    { buildingId: "building/1" },
+    { units: [] },
+    { units: [{ label: "101호", floorLabel: "", floorOrder: 1, unitOrder: 1 }] },
+    { units: [{ label: "101호", floorLabel: "1층", floorOrder: 1.5, unitOrder: 1 }] },
+    { units: [{ label: "101호", floorLabel: "1층", floorOrder: 1, unitOrder: 1, status: "active" }] },
+    { units: [{ entityId: "unit_1", label: "101호", floorLabel: "1층", floorOrder: 1, unitOrder: 1 }] },
+    { units: [{ expectedVersion: 1, label: "101호", floorLabel: "1층", floorOrder: 1, unitOrder: 1 }] },
+    { units: [{ entityId: "unit_1", expectedVersion: 0, label: "101호", floorLabel: "1층", floorOrder: 1, unitOrder: 1 }] },
+    { units: [
+      { label: "１０１ 호", floorLabel: "1층", floorOrder: 1, unitOrder: 1 },
+      { label: "101호", floorLabel: "1층", floorOrder: 1, unitOrder: 2 }
+    ] },
+    { units: Array.from({ length: 201 }, (_, index) => ({ label: `${index}호`, floorLabel: "1층", floorOrder: 1, unitOrder: index })) },
+    { protocolVersion: 2 }
+  ];
+  for (const changes of cases) {
+    let tokenCalls = 0;
+    let networkCalls = 0;
+    const { client } = makeClient();
+    client.ensureIdToken = async () => { tokenCalls += 1; return "token"; };
+    client.fetch = async () => { networkCalls += 1; throw new Error("must not fetch"); };
+    await assert.rejects(client.configureBuildingUnits(Object.assign({}, valid, changes)));
+    assert.equal(tokenCalls, 0);
+    assert.equal(networkCalls, 0);
+  }
+
+  let viewerTokenCalls = 0;
+  let viewerNetworkCalls = 0;
+  const { client: viewer } = makeClient();
+  viewer.session.role = "viewer";
+  viewer.ensureIdToken = async () => { viewerTokenCalls += 1; return "token"; };
+  viewer.fetch = async () => { viewerNetworkCalls += 1; throw new Error("must not fetch"); };
+  await assert.rejects(viewer.configureBuildingUnits(valid));
+  assert.equal(viewerTokenCalls, 0);
+  assert.equal(viewerNetworkCalls, 0);
+});
+
+test("building configuration rejects malformed success envelopes", async () => {
+  const { client } = makeClient({
+    fetchImpl: async () => jsonResponse({
+      ok: true,
+      result: {
+        buildingId: "building_1",
+        totalUnits: 1,
+        createdCount: 1,
+        updatedCount: 1,
+        unchangedCount: 0,
+        entityIds: ["unit_001"],
+        updatedAt: "not-a-timestamp",
+        repeated: false
+      }
+    })
+  });
+  await assert.rejects(client.configureBuildingUnits({
+    buildVersion: "1.8.1",
+    operatorId: "operator_kim",
+    buildingId: "building_1",
+    units: [{ label: "101호", floorLabel: "1층", floorOrder: 1, unitOrder: 1 }]
+  }), error => error && error.code === "CANONICAL_RESPONSE_INVALID");
+});
+
+test("building configuration surfaces an actionable legacy vacancy migration conflict", async () => {
+  const { client } = makeClient({
+    fetchImpl: async () => jsonResponse({
+      ok: false,
+      error: { code: "crm_vacancy_migration_required" }
+    }, 409)
+  });
+  await assert.rejects(client.configureBuildingUnits({
+    buildVersion: "1.8.1",
+    operatorId: "operator_kim",
+    buildingId: "building_1",
+    units: [{ label: "101호", floorLabel: "1층", floorOrder: 1, unitOrder: 1, status: "vacant" }]
+  }), error => error
+    && error.code === "crm_vacancy_migration_required"
+    && /기존 공실 정보/.test(error.message));
+});
+
 test("canonical commit fails closed on invalid commands, oversized UTF-8, and malformed success envelopes", async () => {
   const { client } = makeClient();
   const valid = {
@@ -414,6 +712,31 @@ test("canonical HTTP errors expose only an allowlisted code and status", async (
       && error.status === 409
       && !String(error.message).includes(secret)
   );
+});
+
+test("move-out scheduling errors remain actionable without exposing server details", async () => {
+  const secret = "server-internal-secret";
+  const { client } = makeClient({
+    fetchImpl: async () => jsonResponse({
+      ok: false,
+      error: { code: "crm_move_out_date_required", message: secret }
+    }, 400)
+  });
+
+  await assert.rejects(client.commitCanonicalCrmEntity({
+    buildVersion: "1.8.1",
+    requestId: "550e8400-e29b-41d4-a716-446655440000",
+    operatorId: "operator_kim",
+    entityType: "buildingUnits",
+    entityId: "unit_1",
+    operation: "update",
+    expectedVersion: 1,
+    patch: { status: "move_out_scheduled" }
+  }), error => error
+    && error.code === "crm_move_out_date_required"
+    && error.status === 400
+    && /퇴실 예정일/.test(error.message)
+    && !String(error.message).includes(secret));
 });
 
 test("a successful canonical POST still resolves when the post-commit overlay refresh fails", async () => {
@@ -1255,7 +1578,7 @@ test("building, building-unit, and sales-unit UI mutations require an operator a
     }
     throw new Error(`Could not extract ${name}`);
   };
-  const patchSandbox = {};
+  const patchSandbox = { Core };
   vm.runInNewContext([
     extractFunction("buildCanonicalBuildingPatch"),
     extractFunction("buildCanonicalBuildingUnitPatch"),
@@ -1264,7 +1587,8 @@ test("building, building-unit, and sales-unit UI mutations require an operator a
   ].join("\n"), patchSandbox);
   const plain = value => JSON.parse(JSON.stringify(value));
   assert.deepEqual(plain(patchSandbox.builders.buildCanonicalBuildingUnitPatch({ buildingId: "building_1", label: " 201호 ", status: "vacant", memo: " 확인 " })), {
-    crmBuildingId: "building_1", label: "201호", status: "vacant", memo: "확인",
+    crmBuildingId: "building_1", label: "201호", floorLabel: "", floorOrder: 0, unitOrder: 0,
+    status: "vacant", moveOutAt: "", availableFrom: "", memo: "확인",
   });
   assert.deepEqual(plain(patchSandbox.builders.buildCanonicalBuildingPatch({
     name: " 건물 ", address: " 주소 ", ownerCustomerId: "customer_1", type: "다가구", status: "관리중",

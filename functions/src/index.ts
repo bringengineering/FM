@@ -131,8 +131,14 @@ import {
   resolveFieldActorCore,
 } from "./field-v2/access.js";
 import {
+  commitCanonicalBuildingUnitsBatch,
   commitCanonicalCrmEntityCore,
+  reduceCanonicalBuildingUnitsBatchRoot,
   reduceCanonicalCrmEntityRoot,
+  type CanonicalBuildingUnitsBatchDependencies,
+  type CanonicalBuildingUnitsBatchInput,
+  type CanonicalBuildingUnitsBatchResult,
+  type CanonicalBuildingUnitsBatchTransactionCommand,
   type CanonicalCrmCommitResult,
   type CanonicalCrmDependencies,
   type CanonicalCrmEntityInput,
@@ -3470,6 +3476,7 @@ function fieldOperatorSwitchDependencies(authenticatedEmail: string) {
 }
 
 const CANONICAL_CRM_HTTP_BODY_BYTES = 32_768;
+const CANONICAL_BUILDING_UNITS_BATCH_HTTP_BODY_BYTES = 160 * 1_024;
 const CANONICAL_CRM_RATE_WINDOW_MS = 10 * 60 * 1_000;
 const CANONICAL_CRM_IP_RATE_LIMIT = 120;
 const CANONICAL_CRM_UID_RATE_LIMIT = 60;
@@ -3512,6 +3519,46 @@ function canonicalCrmDependencies(): CanonicalCrmDependencies {
   };
 }
 
+function canonicalBuildingUnitsBatchDependencies(): CanonicalBuildingUnitsBatchDependencies {
+  return {
+    authenticatedEmail: "",
+    now: () => new Date().toISOString(),
+    async transact(
+      command: CanonicalBuildingUnitsBatchTransactionCommand,
+    ): Promise<CanonicalBuildingUnitsBatchResult> {
+      let decision: ReturnType<typeof reduceCanonicalBuildingUnitsBatchRoot> | null = null;
+      let rejection: unknown = null;
+      let transaction;
+      try {
+        transaction = await adminDatabase.ref().transaction(
+          (current) => {
+            try {
+              decision = reduceCanonicalBuildingUnitsBatchRoot(current, command);
+              rejection = null;
+              return decision.repeated ? undefined : decision.root;
+            } catch (error) {
+              decision = null;
+              rejection = error;
+              return undefined;
+            }
+          },
+          undefined,
+          false,
+        );
+      } catch {
+        throw new FieldV2Error("crm_transaction_unavailable");
+      }
+      if (rejection) throw rejection;
+      const finalDecision = decision as ReturnType<typeof reduceCanonicalBuildingUnitsBatchRoot> | null;
+      if (!finalDecision) throw new FieldV2Error("crm_transaction_unavailable");
+      if (!finalDecision.repeated && transaction.committed !== true) {
+        throw new FieldV2Error("crm_transaction_unavailable");
+      }
+      return finalDecision.result;
+    },
+  };
+}
+
 function canonicalCrmHttpStatus(code: string): number {
   if (code === "crm_method_not_allowed") return 405;
   if (code === "crm_body_too_large") return 413;
@@ -3530,6 +3577,7 @@ function canonicalCrmHttpStatus(code: string): number {
     code === "crm_entity_version_conflict"
     || code === "crm_request_id_conflict"
     || code === "crm_building_unit_label_conflict"
+    || code === "crm_vacancy_migration_required"
     || code === "crm_entity_already_archived"
     || code === "crm_entity_not_archived"
   ) return 409;
@@ -3571,11 +3619,11 @@ function canonicalCrmHttpCode(error: unknown): string {
 function canonicalCrmRawBody(request: {
   rawBody?: unknown;
   get(name: string): string | undefined;
-}): unknown {
+}, maximumBytes = CANONICAL_CRM_HTTP_BODY_BYTES): unknown {
   const rawContentLength = request.get("content-length");
   if (rawContentLength !== undefined) {
     if (!/^\d+$/u.test(rawContentLength)) throw new FieldV2Error("crm_body_invalid");
-    if (Number(rawContentLength) > CANONICAL_CRM_HTTP_BODY_BYTES) {
+    if (Number(rawContentLength) > maximumBytes) {
       throw new FieldV2Error("crm_body_too_large");
     }
   }
@@ -3583,7 +3631,7 @@ function canonicalCrmRawBody(request: {
   if (contentType !== "application/json") throw new FieldV2Error("crm_json_required");
   if (!Buffer.isBuffer(request.rawBody)) throw new FieldV2Error("crm_body_invalid");
   if (request.rawBody.byteLength === 0) throw new FieldV2Error("crm_body_invalid");
-  if (request.rawBody.byteLength > CANONICAL_CRM_HTTP_BODY_BYTES) {
+  if (request.rawBody.byteLength > maximumBytes) {
     throw new FieldV2Error("crm_body_too_large");
   }
   try {
@@ -3662,6 +3710,95 @@ export const commitCanonicalCrmEntity = onRequest(
       const dependencies = canonicalCrmDependencies();
       const result = await commitCanonicalCrmEntityCore(
         body as CanonicalCrmEntityInput,
+        actor,
+        { ...dependencies, authenticatedEmail },
+      );
+      response.status(200).json({ ok: true, result });
+    } catch (error) {
+      const code = canonicalCrmHttpCode(error);
+      response.status(canonicalCrmHttpStatus(code)).json({
+        ok: false,
+        error: { code },
+      });
+    }
+  },
+);
+
+export const configureBuildingUnits = onRequest(
+  {
+    region: "asia-northeast3",
+    cors: false,
+  },
+  async (request, response) => {
+    response.set("Cache-Control", "no-store");
+    response.set("X-Content-Type-Options", "nosniff");
+    try {
+      if (request.method !== "POST") {
+        response.set("Allow", "POST");
+        throw new FieldV2Error("crm_method_not_allowed");
+      }
+      const body = canonicalCrmRawBody(
+        request,
+        CANONICAL_BUILDING_UNITS_BATCH_HTTP_BODY_BYTES,
+      );
+      const authorization = request.get("authorization") ?? "";
+      const bearer = /^Bearer ([A-Za-z0-9._~-]{1,12000})$/u.exec(authorization);
+      if (!bearer) throw new FieldV2Error("crm_auth_required");
+
+      const requestIp = typeof request.ip === "string" && request.ip.length > 0
+        ? request.ip.slice(0, 128)
+        : "unknown";
+      await consumeRateLimit(
+        adminDatabase.ref(
+          `fieldPlatform/v2/rateLimits/commitCanonicalCrmEntity/ip/${desktopRateKey(requestIp)}`,
+        ),
+        {
+          limit: CANONICAL_CRM_IP_RATE_LIMIT,
+          windowMs: CANONICAL_CRM_RATE_WINDOW_MS,
+          nowMs: Date.now(),
+        },
+      );
+
+      let decoded;
+      try {
+        decoded = await adminAuth.verifyIdToken(bearer[1], true);
+      } catch {
+        throw new FieldV2Error("crm_auth_required");
+      }
+      if (
+        !isPathSafeId(decoded.uid)
+        || typeof decoded.email !== "string"
+        || decoded.email_verified !== true
+      ) throw new FieldV2Error("crm_auth_required");
+      const authenticatedEmail = decoded.email.trim().toLowerCase();
+      if (!authenticatedEmail) throw new FieldV2Error("crm_auth_required");
+
+      await consumeRateLimit(
+        adminDatabase.ref(
+          `fieldPlatform/v2/rateLimits/commitCanonicalCrmEntity/uid/${desktopRateKey(decoded.uid)}`,
+        ),
+        {
+          limit: CANONICAL_CRM_UID_RATE_LIMIT,
+          windowMs: CANONICAL_CRM_RATE_WINDOW_MS,
+          nowMs: Date.now(),
+        },
+      );
+      const bodyRecord = isRecord(body) ? body : {};
+      const actor = await resolveFieldActorCore({
+        authUid: decoded.uid,
+        operatorId: typeof bodyRecord.operatorId === "string" ? bodyRecord.operatorId : "",
+      }, {
+        authenticatedEmail,
+        async read(path) {
+          return (await adminDatabase.ref(path).get()).val();
+        },
+      });
+      if (actor.role !== "admin" && actor.role !== "member") {
+        throw new FieldV2Error("crm_mutation_forbidden");
+      }
+      const dependencies = canonicalBuildingUnitsBatchDependencies();
+      const result = await commitCanonicalBuildingUnitsBatch(
+        body as CanonicalBuildingUnitsBatchInput,
         actor,
         { ...dependencies, authenticatedEmail },
       );

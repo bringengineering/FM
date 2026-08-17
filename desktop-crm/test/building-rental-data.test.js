@@ -80,6 +80,14 @@ test("vacancy count remains independent from the entered vacant-unit labels", ()
   assert.deepEqual(moreLabels.vacantUnits, ["101호", "201호", "301호"]);
 });
 
+test("Core preserves large legacy vacancy inventories without truncating the 201st label", () => {
+  const vacantUnits = Array.from({ length: 201 }, (_, index) => `legacy-${index + 1}`);
+  const building = Core.normalizeBuilding({ vacantUnitCount: 201, vacantUnits });
+  assert.equal(building.vacantUnitCount, 201);
+  assert.equal(building.vacantUnits.length, 201);
+  assert.equal(building.vacantUnits[200], "legacy-201");
+});
+
 test("sanitize and encrypted-backup JSON round trips preserve rental details", () => {
   const source = Core.sanitizeStore({
     buildings: [{

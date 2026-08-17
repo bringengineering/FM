@@ -22,6 +22,8 @@
   const BUILDING_MAINTENANCE_INCLUDES = ["수도", "인터넷", "TV", "공용전기", "기타"];
   const BUILDING_ROOM_TYPES = ["원룸", "1.5룸", "투룸", "기타"];
   const BUILDING_ROOM_OPTIONS = ["냉장고", "세탁기", "에어컨", "전자레인지", "TV", "침대", "책상·의자", "옷장·행거", "신발장", "기타"];
+  const BUILDING_UNIT_STATUSES = ["unknown", "occupied", "vacant", "move_out_scheduled", "maintenance"];
+  const LEGACY_BUILDING_UNIT_STATUS_MAP = Object.freeze({ active: "occupied" });
   const CONTRACT_TYPES = ["청소", "건물관리", "부동산관리"];
   const CONTRACT_STATUSES = ["계약 준비", "진행 중", "종료 예정", "종료"];
   const WORKFLOW_STEPS = [
@@ -51,6 +53,20 @@
     const parsed = typeof value === "number" ? value : Number(String(value ?? "").replace(/,/g, "").replace(/원/g, "").trim());
     if (!Number.isFinite(parsed) || parsed <= 0) return 0;
     return Math.min(Number.MAX_SAFE_INTEGER, Math.trunc(parsed));
+  };
+  const boundedInteger = (value, minimum, maximum, fallback = 0) => {
+    const parsed = typeof value === "number" ? value : Number(String(value ?? "").trim());
+    return Number.isSafeInteger(parsed) && parsed >= minimum && parsed <= maximum ? parsed : fallback;
+  };
+  const optionalDate = value => {
+    const text = String(value || "").trim();
+    if (!text) return "";
+    if (/^\d{4}-\d{2}-\d{2}$/.test(text)) {
+      const candidate = new Date(`${text}T00:00:00.000Z`);
+      return !Number.isNaN(candidate.getTime()) && candidate.toISOString().slice(0, 10) === text ? text : "";
+    }
+    try { return new Date(text).toISOString() === text ? text : ""; }
+    catch (_error) { return ""; }
   };
 
   function normalizeStringList(value) {
@@ -306,10 +322,26 @@
     });
   }
 
+  function normalizeBuildingUnit(value) {
+    const unit = Object.assign({}, value || {});
+    unit.id = String(unit.id || "").trim();
+    unit.crmBuildingId = String(unit.crmBuildingId || unit.buildingId || "").trim();
+    unit.label = String(unit.label || unit.unitLabel || "").trim();
+    unit.floorLabel = String(unit.floorLabel || "").trim();
+    unit.floorOrder = boundedInteger(unit.floorOrder, -1_000, 1_000);
+    unit.unitOrder = boundedInteger(unit.unitOrder, 0, 100_000);
+    const legacyStatus = LEGACY_BUILDING_UNIT_STATUS_MAP[String(unit.status || "")];
+    unit.status = legacyStatus || (BUILDING_UNIT_STATUSES.includes(unit.status) ? unit.status : "unknown");
+    unit.moveOutAt = optionalDate(unit.moveOutAt);
+    unit.availableFrom = optionalDate(unit.availableFrom);
+    unit.memo = String(unit.memo || "").trim();
+    return unit;
+  }
+
   function sanitizeRendererOverlays(input) {
     const source = input && typeof input === "object" ? input : {};
     return {
-      buildingUnits: sanitizeOverlayCollection(source.buildingUnits, "id"),
+      buildingUnits: sanitizeOverlayCollection(source.buildingUnits, "id").map(normalizeBuildingUnit),
       fieldSummaries: sanitizeOverlayCollection(source.fieldSummaries, "fieldJobId")
     };
   }
@@ -675,8 +707,8 @@
   }
 
   return {
-    PIPELINE_STAGES, PARTNER_QUOTE_STATUSES, PARTNER_INDUSTRIES, BUILDING_MAINTENANCE_INCLUDES, BUILDING_ROOM_TYPES, BUILDING_ROOM_OPTIONS, CONTRACT_TYPES, CONTRACT_STATUSES, WORKFLOW_STEPS, SECURITY_ASSET_TYPES, SECURITY_ASSET_STATUSES, AUDIT_CATEGORIES,
-    blankStore, blankSharedStore, sanitizeStore, sanitizeSharedStore, sanitizeRendererStore, sanitizeRendererOverlays, createCustomer, createBuilding, normalizeBuilding, createActivity, createContract, normalizeContractTypes, createPartnerVendor, createPartnerQuote, createTask, createSecurityAsset,
+    PIPELINE_STAGES, PARTNER_QUOTE_STATUSES, PARTNER_INDUSTRIES, BUILDING_MAINTENANCE_INCLUDES, BUILDING_ROOM_TYPES, BUILDING_ROOM_OPTIONS, BUILDING_UNIT_STATUSES, CONTRACT_TYPES, CONTRACT_STATUSES, WORKFLOW_STEPS, SECURITY_ASSET_TYPES, SECURITY_ASSET_STATUSES, AUDIT_CATEGORIES,
+    blankStore, blankSharedStore, sanitizeStore, sanitizeSharedStore, sanitizeRendererStore, sanitizeRendererOverlays, createCustomer, createBuilding, normalizeBuilding, normalizeBuildingUnit, createActivity, createContract, normalizeContractTypes, createPartnerVendor, createPartnerQuote, createTask, createSecurityAsset,
     createAccessRole, createAuditLog, createSecurityIncident, calculateDashboard, calculateSecurityStatus,
     workflowProgress, buildWorkflowCase, matchWorkflowCustomer, paymentNormalizeName, paymentMonthRows,
     normalizePhone, normalizeText, normalizePipelineStage, normalizeStringList, nonNegativeInteger, money, dayKey, iso,

@@ -12,6 +12,7 @@ import {
 import { assertFieldReleaseCompatible } from "./release-gate.js";
 
 export const CANONICAL_CRM_RECEIPT_SCOPE = "commitCanonicalCrmEntity" as const;
+export const CANONICAL_BUILDING_UNITS_BATCH_RECEIPT_SCOPE = "commitCanonicalBuildingUnitsBatch" as const;
 export const CANONICAL_CRM_ENTITY_TYPES = [
   "buildings",
   "buildingUnits",
@@ -89,6 +90,79 @@ export interface CanonicalCrmRootDecision {
   readonly repeated: boolean;
 }
 
+interface CanonicalBuildingUnitsBatchReceipt {
+  readonly scope: typeof CANONICAL_BUILDING_UNITS_BATCH_RECEIPT_SCOPE;
+  readonly requestId: string;
+  readonly requestHash: string;
+  readonly result: Omit<CanonicalBuildingUnitsBatchResult, "repeated">;
+  readonly createdAt: string;
+}
+
+export interface CanonicalBuildingUnitBatchItemInput {
+  readonly entityId?: string;
+  readonly expectedVersion?: number;
+  readonly label: string;
+  readonly floorLabel: string;
+  readonly floorOrder: number;
+  readonly unitOrder: number;
+  readonly status?: string;
+}
+
+export interface CanonicalBuildingUnitsBatchInput {
+  readonly protocolVersion: typeof FIELD_PROTOCOL_VERSION;
+  readonly clientKind: "desktop";
+  readonly buildVersion: string;
+  readonly operatorId: string;
+  readonly requestId: string;
+  readonly buildingId: string;
+  readonly units: readonly CanonicalBuildingUnitBatchItemInput[];
+}
+
+export interface CanonicalBuildingUnitsBatchResult {
+  readonly buildingId: string;
+  readonly totalUnits: number;
+  readonly createdCount: number;
+  readonly updatedCount: number;
+  readonly unchangedCount: number;
+  readonly entityIds: readonly string[];
+  readonly updatedAt: string;
+  readonly repeated: boolean;
+}
+
+interface NormalizedCanonicalBuildingUnitBatchItemInput {
+  readonly entityId?: string;
+  readonly expectedVersion?: number;
+  readonly label: string;
+  readonly floorLabel: string;
+  readonly floorOrder: number;
+  readonly unitOrder: number;
+  readonly status: string;
+}
+
+interface NormalizedCanonicalBuildingUnitsBatchInput extends CanonicalBuildingUnitsBatchInput {
+  readonly units: readonly Readonly<NormalizedCanonicalBuildingUnitBatchItemInput>[];
+}
+
+export interface CanonicalBuildingUnitsBatchTransactionCommand {
+  readonly input: NormalizedCanonicalBuildingUnitsBatchInput;
+  readonly requestHash: string;
+  readonly actor: FieldV2Actor;
+  readonly runtimeGuard: CanonicalCrmRuntimeGuard;
+  readonly now: string;
+}
+
+export interface CanonicalBuildingUnitsBatchDependencies {
+  readonly authenticatedEmail: string;
+  now(): string;
+  transact(command: CanonicalBuildingUnitsBatchTransactionCommand): Promise<CanonicalBuildingUnitsBatchResult>;
+}
+
+export interface CanonicalBuildingUnitsBatchRootDecision {
+  readonly root: Record<string, unknown>;
+  readonly result: CanonicalBuildingUnitsBatchResult;
+  readonly repeated: boolean;
+}
+
 type UnknownRecord = Record<string, unknown>;
 
 const ID_MAX_BYTES = 128;
@@ -97,12 +171,22 @@ const REASON_MAX_BYTES = 1_000;
 const TEXT_MAX_BYTES = 4_000;
 const SHORT_TEXT_MAX_BYTES = 256;
 const LIST_MAX_ITEMS = 100;
+const VACANT_UNITS_LIST_MAX_ITEMS = 200;
 const LIST_ITEM_MAX_BYTES = 256;
+const BUILDING_UNITS_BATCH_MAX_ITEMS = 200;
+const BUILDING_UNITS_BATCH_MAX_BYTES = 156 * 1_024;
+const BUILDING_UNIT_FLOOR_ORDER_MIN = -1_000;
+const BUILDING_UNIT_FLOOR_ORDER_MAX = 1_000;
+const BUILDING_UNIT_ORDER_MAX = 100_000;
 const FORBIDDEN_KEY = /(?:password|passcode|secret|token|credential|doorlock|door_lock|accesscode|access_code|keylocation|key_location|oauth|privatekey|private_key)/iu;
 const PATH_FORBIDDEN = /[\u0000-\u001f\u007f.#$\[\]\/]/u;
 
 const ENTITY_TYPE_SET = new Set<string>(CANONICAL_CRM_ENTITY_TYPES);
 const OPERATION_SET = new Set<string>(CANONICAL_CRM_OPERATIONS);
+const BUILDING_UNIT_STATUSES = new Set([
+  "unknown", "occupied", "vacant", "move_out_scheduled", "maintenance",
+]);
+const LEGACY_BUILDING_UNIT_STORED_STATUSES = new Set(["active"]);
 
 const SYSTEM_FIELDS = new Set([
   "id",
@@ -135,9 +219,13 @@ const CANONICAL_SYSTEM_FIELDS = [
 const BUILDING_FIELDS = new Set([
   "name", "address", "type", "status", "ownerCustomerId", "unitCount",
   "manager", "memo", "aliases", "externalRefs",
+  "rentDeposit", "monthlyRent", "maintenanceFee", "maintenanceIncludes",
+  "maintenanceIncludeOther", "roomTypes", "roomTypeOther", "roomOptions",
+  "roomOptionOther", "vacantUnitCount", "vacantUnits",
 ]);
 const BUILDING_UNIT_FIELDS = new Set([
-  "crmBuildingId", "label", "unitLabel", "status", "memo",
+  "crmBuildingId", "label", "unitLabel", "floorLabel", "floorOrder",
+  "unitOrder", "status", "moveOutAt", "availableFrom", "memo",
 ]);
 const SALES_UNIT_FIELDS = new Set([
   "prospectId", "crmBuildingUnitId", "label", "status", "moveOutAt",
@@ -147,7 +235,8 @@ const SALES_UNIT_FIELDS = new Set([
 
 const BUILDING_STORED_FIELDS = new Set(BUILDING_FIELDS);
 const BUILDING_UNIT_STORED_FIELDS = new Set([
-  "crmBuildingId", "label", "status", "memo", "externalRefs",
+  "crmBuildingId", "label", "floorLabel", "floorOrder", "unitOrder",
+  "status", "moveOutAt", "availableFrom", "memo", "externalRefs",
 ]);
 const SALES_UNIT_STORED_FIELDS = new Set([
   ...SALES_UNIT_FIELDS,
@@ -168,6 +257,13 @@ const CLOSED_RECEIPT_KEYS = [
 ] as const;
 const CLOSED_RESULT_KEYS = [
   "archivedAt", "entityId", "entityType", "entityVersion", "updatedAt",
+] as const;
+const CLOSED_BATCH_RECEIPT_KEYS = [
+  "createdAt", "requestHash", "requestId", "result", "scope",
+] as const;
+const CLOSED_BATCH_RESULT_KEYS = [
+  "buildingId", "createdCount", "entityIds", "totalUnits", "unchangedCount",
+  "updatedAt", "updatedCount",
 ] as const;
 
 function fail(code: string): never {
@@ -287,8 +383,32 @@ function normalizeMoney(value: unknown, field: string): number {
   return value;
 }
 
-function normalizeStringList(value: unknown, field: string): readonly string[] {
-  if (!Array.isArray(value) || value.length > LIST_MAX_ITEMS) fail(`crm_${field}_invalid`);
+function normalizeBoundedInteger(
+  value: unknown,
+  field: string,
+  minimum: number,
+  maximum: number,
+): number {
+  if (typeof value !== "number"
+    || !Number.isSafeInteger(value)
+    || value < minimum
+    || value > maximum) {
+    fail(`crm_${field}_invalid`);
+  }
+  return value;
+}
+
+function normalizeBuildingUnitStatus(value: unknown, allowLegacy = false): string {
+  if (typeof value !== "string"
+    || (!BUILDING_UNIT_STATUSES.has(value)
+      && !(allowLegacy && LEGACY_BUILDING_UNIT_STORED_STATUSES.has(value)))) {
+    fail("crm_status_invalid");
+  }
+  return value;
+}
+
+function normalizeStringList(value: unknown, field: string, maximumItems = LIST_MAX_ITEMS): readonly string[] {
+  if (!Array.isArray(value) || value.length > maximumItems) fail(`crm_${field}_invalid`);
   const normalized = value.map((item) => normalizeText(item, field, {
     maximumBytes: LIST_ITEM_MAX_BYTES,
     required: true,
@@ -335,6 +455,16 @@ function normalizePatch(
       } else if (key === "unitCount") {
         if (typeof fieldValue !== "number" || !Number.isSafeInteger(fieldValue) || fieldValue < 0 || fieldValue > 100_000) fail("crm_unit_count_invalid");
         result[key] = fieldValue;
+      } else if (key === "rentDeposit" || key === "monthlyRent" || key === "maintenanceFee") {
+        result[key] = normalizeMoney(fieldValue, key);
+      } else if (key === "vacantUnitCount") {
+        result[key] = normalizeBoundedInteger(fieldValue, key, 0, 100_000);
+      } else if (key === "maintenanceIncludes" || key === "roomTypes" || key === "roomOptions") {
+        result[key] = normalizeStringList(fieldValue, key);
+      } else if (key === "vacantUnits") {
+        result[key] = normalizeStringList(fieldValue, key, VACANT_UNITS_LIST_MAX_ITEMS);
+      } else if (key === "maintenanceIncludeOther" || key === "roomTypeOther" || key === "roomOptionOther") {
+        result[key] = normalizeText(fieldValue, key);
       } else if (key === "aliases") result[key] = normalizeStringList(fieldValue, "aliases");
       else if (key === "externalRefs") result[key] = normalizeBuildingExternalRefsPatch(fieldValue);
     } else if (entityType === "buildingUnits") {
@@ -344,7 +474,13 @@ function normalizePatch(
       } else if (key === "label" || key === "unitLabel") {
         if ((key === "unitLabel" && Object.hasOwn(value, "label")) || Object.hasOwn(result, "label")) fail("crm_patch_field_forbidden");
         result.label = normalizeText(fieldValue, "unit_label", { maximumBytes: SHORT_TEXT_MAX_BYTES, required: true });
-      } else if (key === "status") result[key] = normalizeText(fieldValue, key, { maximumBytes: SHORT_TEXT_MAX_BYTES });
+      } else if (key === "floorLabel") result[key] = normalizeText(fieldValue, key, { maximumBytes: SHORT_TEXT_MAX_BYTES });
+      else if (key === "floorOrder") result[key] = normalizeBoundedInteger(
+        fieldValue, key, BUILDING_UNIT_FLOOR_ORDER_MIN, BUILDING_UNIT_FLOOR_ORDER_MAX,
+      );
+      else if (key === "unitOrder") result[key] = normalizeBoundedInteger(fieldValue, key, 0, BUILDING_UNIT_ORDER_MAX);
+      else if (key === "status") result[key] = normalizeBuildingUnitStatus(fieldValue);
+      else if (key === "moveOutAt" || key === "availableFrom") result[key] = normalizeOptionalDate(fieldValue, key);
       else if (key === "memo") result[key] = normalizeText(fieldValue, key);
     } else {
       if (key === "prospectId" || key === "crmBuildingUnitId") {
@@ -398,6 +534,65 @@ function normalizeInput(value: unknown): NormalizedCanonicalCrmInput {
     expectedVersion: value.expectedVersion,
     patch,
     ...(reason === undefined ? {} : { reason }),
+  });
+}
+
+function normalizeBuildingUnitsBatchInput(value: unknown): NormalizedCanonicalBuildingUnitsBatchInput {
+  if (!isRecord(value)) fail("crm_request_invalid");
+  const allowed = new Set([
+    "protocolVersion", "clientKind", "buildVersion", "operatorId", "requestId",
+    "buildingId", "units",
+  ]);
+  if (Object.keys(value).some((key) => !allowed.has(key))) fail("crm_request_invalid");
+  if (value.protocolVersion !== FIELD_PROTOCOL_VERSION || value.clientKind !== "desktop") fail("crm_request_invalid");
+  if (!isSafeId(value.operatorId) || !isFieldRequestId(value.requestId) || !isSafeId(value.buildingId)) fail("crm_request_invalid");
+  if (typeof value.buildVersion !== "string"
+    || value.buildVersion.length === 0
+    || Buffer.byteLength(value.buildVersion, "utf8") > 64) fail("crm_request_invalid");
+  if (!Array.isArray(value.units)) fail("crm_request_invalid");
+  if (value.units.length === 0) fail("crm_building_unit_batch_empty");
+  if (value.units.length > BUILDING_UNITS_BATCH_MAX_ITEMS) fail("crm_building_unit_batch_too_large");
+  if (Buffer.byteLength(JSON.stringify(value.units), "utf8") > BUILDING_UNITS_BATCH_MAX_BYTES) {
+    fail("crm_building_unit_batch_too_large");
+  }
+  const seenLabels = new Set<string>();
+  const units = value.units.map((item): Readonly<NormalizedCanonicalBuildingUnitBatchItemInput> => {
+    if (!isRecord(item)) fail("crm_request_invalid");
+    const itemKeys = Object.keys(item);
+    const itemAllowed = new Set([
+      "entityId", "expectedVersion", "label", "floorLabel", "floorOrder", "unitOrder", "status",
+    ]);
+    if (itemKeys.some((key) => !itemAllowed.has(key))) fail("crm_patch_field_forbidden");
+    const hasEntityId = Object.hasOwn(item, "entityId");
+    const hasExpectedVersion = Object.hasOwn(item, "expectedVersion");
+    if (hasEntityId !== hasExpectedVersion) fail("crm_request_invalid");
+    if (hasEntityId && (!isSafeId(item.entityId)
+      || typeof item.expectedVersion !== "number"
+      || !Number.isSafeInteger(item.expectedVersion)
+      || item.expectedVersion < 1)) fail("crm_request_invalid");
+    const label = normalizeText(item.label, "unit_label", { maximumBytes: SHORT_TEXT_MAX_BYTES, required: true });
+    const normalizedLabel = normalizeUnitLabel(label);
+    if (!normalizedLabel || seenLabels.has(normalizedLabel)) fail("crm_building_unit_label_conflict");
+    seenLabels.add(normalizedLabel);
+    return Object.freeze({
+      ...(hasEntityId ? { entityId: item.entityId as string, expectedVersion: item.expectedVersion as number } : {}),
+      label,
+      floorLabel: normalizeText(item.floorLabel, "floorLabel", { maximumBytes: SHORT_TEXT_MAX_BYTES, required: true }),
+      floorOrder: normalizeBoundedInteger(
+        item.floorOrder, "floorOrder", BUILDING_UNIT_FLOOR_ORDER_MIN, BUILDING_UNIT_FLOOR_ORDER_MAX,
+      ),
+      unitOrder: normalizeBoundedInteger(item.unitOrder, "unitOrder", 0, BUILDING_UNIT_ORDER_MAX),
+      status: item.status === undefined ? "unknown" : normalizeBuildingUnitStatus(item.status),
+    });
+  });
+  return Object.freeze({
+    protocolVersion: FIELD_PROTOCOL_VERSION,
+    clientKind: "desktop",
+    buildVersion: value.buildVersion,
+    operatorId: value.operatorId,
+    requestId: value.requestId,
+    buildingId: value.buildingId,
+    units: Object.freeze(units),
   });
 }
 
@@ -466,7 +661,46 @@ function parseReceipt(value: unknown, requestId: string): CanonicalCrmReceipt | 
   return value as unknown as CanonicalCrmReceipt;
 }
 
-function assertCurrentActor(root: unknown, command: CanonicalCrmTransactionCommand): "admin" | "member" | "viewer" {
+function parseBuildingUnitsBatchReceipt(
+  value: unknown,
+  requestId: string,
+): CanonicalBuildingUnitsBatchReceipt | null {
+  if (!isRecord(value)) return null;
+  if (!exactKeys(value, CLOSED_BATCH_RECEIPT_KEYS)
+    || value.scope !== CANONICAL_BUILDING_UNITS_BATCH_RECEIPT_SCOPE
+    || value.requestId !== requestId
+    || typeof value.requestHash !== "string"
+    || !/^[a-f0-9]{64}$/u.test(value.requestHash)
+    || !isCanonicalTimestamp(value.createdAt)
+    || !isRecord(value.result)
+    || !exactKeys(value.result, CLOSED_BATCH_RESULT_KEYS)
+    || !isSafeId(value.result.buildingId)
+    || !Number.isSafeInteger(value.result.totalUnits)
+    || (value.result.totalUnits as number) < 1
+    || (value.result.totalUnits as number) > BUILDING_UNITS_BATCH_MAX_ITEMS
+    || !Number.isSafeInteger(value.result.createdCount)
+    || (value.result.createdCount as number) < 0
+    || !Number.isSafeInteger(value.result.updatedCount)
+    || (value.result.updatedCount as number) < 0
+    || !Number.isSafeInteger(value.result.unchangedCount)
+    || (value.result.unchangedCount as number) < 0
+    || (value.result.createdCount as number)
+      + (value.result.updatedCount as number)
+      + (value.result.unchangedCount as number) !== value.result.totalUnits
+    || !Array.isArray(value.result.entityIds)
+    || value.result.entityIds.length !== value.result.totalUnits
+    || !value.result.entityIds.every(isSafeId)
+    || new Set(value.result.entityIds).size !== value.result.entityIds.length
+    || !isCanonicalTimestamp(value.result.updatedAt)) {
+    return null;
+  }
+  return value as unknown as CanonicalBuildingUnitsBatchReceipt;
+}
+
+function assertCurrentActor(
+  root: unknown,
+  command: CanonicalCrmTransactionCommand | CanonicalBuildingUnitsBatchTransactionCommand,
+): "admin" | "member" | "viewer" {
   const { runtimeGuard } = command;
   const access = readPath(root, ["crmCompany", "access", runtimeGuard.authUid]);
   if (!isRecord(access)
@@ -483,7 +717,10 @@ function assertCurrentActor(root: unknown, command: CanonicalCrmTransactionComma
   return access.role;
 }
 
-function assertCurrentRelease(root: unknown, command: CanonicalCrmTransactionCommand): void {
+function assertCurrentRelease(
+  root: unknown,
+  command: CanonicalCrmTransactionCommand | CanonicalBuildingUnitsBatchTransactionCommand,
+): void {
   const release = readPath(root, ["fieldPlatform", "v2", "config", "release"]);
   assertFieldReleaseCompatible(
     release as FieldReleaseConfiguration,
@@ -548,12 +785,32 @@ function assertStoredCanonicalEntity(
           || !Number.isSafeInteger(value.unitCount)
           || value.unitCount < 0
           || value.unitCount > 100_000)) fail("crm_entity_invalid");
+      if (Object.hasOwn(value, "rentDeposit")) normalizeMoney(value.rentDeposit, "rentDeposit");
+      if (Object.hasOwn(value, "monthlyRent")) normalizeMoney(value.monthlyRent, "monthlyRent");
+      if (Object.hasOwn(value, "maintenanceFee")) normalizeMoney(value.maintenanceFee, "maintenanceFee");
+      if (Object.hasOwn(value, "vacantUnitCount")) normalizeBoundedInteger(value.vacantUnitCount, "vacantUnitCount", 0, 100_000);
+      if (Object.hasOwn(value, "maintenanceIncludes")) normalizeStringList(value.maintenanceIncludes, "maintenanceIncludes");
+      if (Object.hasOwn(value, "roomTypes")) normalizeStringList(value.roomTypes, "roomTypes");
+      if (Object.hasOwn(value, "roomOptions")) normalizeStringList(value.roomOptions, "roomOptions");
+      if (Object.hasOwn(value, "vacantUnits")) {
+        normalizeStringList(value.vacantUnits, "vacantUnits", VACANT_UNITS_LIST_MAX_ITEMS);
+      }
+      if (Object.hasOwn(value, "maintenanceIncludeOther")) normalizeText(value.maintenanceIncludeOther, "maintenanceIncludeOther");
+      if (Object.hasOwn(value, "roomTypeOther")) normalizeText(value.roomTypeOther, "roomTypeOther");
+      if (Object.hasOwn(value, "roomOptionOther")) normalizeText(value.roomOptionOther, "roomOptionOther");
       if (Object.hasOwn(value, "aliases")) normalizeStringList(value.aliases, "aliases");
       if (Object.hasOwn(value, "externalRefs")) assertStoredExternalRefs(value.externalRefs);
     } else if (entityType === "buildingUnits") {
       if (!isSafeId(value.crmBuildingId)) fail("crm_entity_invalid");
       normalizeText(value.label, "unit_label", { maximumBytes: SHORT_TEXT_MAX_BYTES, required: true });
-      if (Object.hasOwn(value, "status")) normalizeText(value.status, "status", { maximumBytes: SHORT_TEXT_MAX_BYTES });
+      if (Object.hasOwn(value, "floorLabel")) normalizeText(value.floorLabel, "floorLabel", { maximumBytes: SHORT_TEXT_MAX_BYTES });
+      if (Object.hasOwn(value, "floorOrder")) normalizeBoundedInteger(
+        value.floorOrder, "floorOrder", BUILDING_UNIT_FLOOR_ORDER_MIN, BUILDING_UNIT_FLOOR_ORDER_MAX,
+      );
+      if (Object.hasOwn(value, "unitOrder")) normalizeBoundedInteger(value.unitOrder, "unitOrder", 0, BUILDING_UNIT_ORDER_MAX);
+      if (Object.hasOwn(value, "status")) normalizeBuildingUnitStatus(value.status, true);
+      if (Object.hasOwn(value, "moveOutAt")) normalizeOptionalDate(value.moveOutAt, "moveOutAt");
+      if (Object.hasOwn(value, "availableFrom")) normalizeOptionalDate(value.availableFrom, "availableFrom");
       if (Object.hasOwn(value, "memo")) normalizeText(value.memo, "memo");
       if (Object.hasOwn(value, "externalRefs")) assertStoredExternalRefs(value.externalRefs);
     } else {
@@ -632,6 +889,189 @@ function validateParentIntegrity(
     const unit = requireActiveParent(root, "buildingUnits", next.crmBuildingUnitId);
     if (!isSafeId(prospect.crmBuildingId) || unit.crmBuildingId !== prospect.crmBuildingId) fail("crm_parent_mismatch");
   }
+}
+
+function planBuildingVacancyMirror(
+  currentRoot: unknown,
+  buildingId: string,
+  replacements: ReadonlyMap<string, UnknownRecord>,
+  actor: FieldV2Actor,
+  now: string,
+): {
+  readonly path: readonly string[];
+  readonly entity: UnknownRecord;
+  readonly activeUnitCount: number;
+  readonly vacantUnits: readonly string[];
+  readonly migrationResolvedBefore: boolean;
+  readonly migrationResolved: boolean;
+  readonly missingLegacyBefore: readonly string[];
+  readonly missingLegacyAfter: readonly string[];
+  readonly vacancyShortfallBefore: number;
+  readonly vacancyShortfallAfter: number;
+} {
+  const currentBuilding = requireActiveParent(currentRoot, "buildings", buildingId);
+  assertStoredCanonicalEntity("buildings", buildingId, currentBuilding);
+  const collectionValue = readPath(currentRoot, ["crmCompany", "data", "buildingUnits"]);
+  if (collectionValue !== null && !isRecord(collectionValue)) fail("crm_transaction_invalid");
+  const finalUnits = new Map<string, UnknownRecord>();
+  if (isRecord(collectionValue)) {
+    for (const [entityId, candidate] of Object.entries(collectionValue)) {
+      if (isRecord(candidate)) finalUnits.set(entityId, candidate);
+    }
+  }
+  const currentActiveLabels = new Set<string>();
+  const currentVacantLabels = new Set<string>();
+  let currentFormalVacant = 0;
+  for (const [entityId, candidate] of finalUnits) {
+    if (candidate.crmBuildingId !== buildingId || isArchived(candidate)) continue;
+    assertStoredCanonicalEntity("buildingUnits", entityId, candidate);
+    const normalizedLabel = normalizeUnitLabel(candidate.label);
+    if (!normalizedLabel) fail("crm_entity_invalid");
+    if (currentActiveLabels.has(normalizedLabel)) fail("crm_building_unit_label_conflict");
+    currentActiveLabels.add(normalizedLabel);
+    if (candidate.status === "vacant") {
+      currentFormalVacant += 1;
+      currentVacantLabels.add(normalizedLabel);
+    }
+  }
+  const legacyNamed = Object.hasOwn(currentBuilding, "vacantUnits")
+    ? normalizeStringList(currentBuilding.vacantUnits, "vacantUnits", VACANT_UNITS_LIST_MAX_ITEMS)
+    : [];
+  const legacyCount = Object.hasOwn(currentBuilding, "vacantUnitCount")
+    ? normalizeBoundedInteger(currentBuilding.vacantUnitCount, "vacantUnitCount", 0, 100_000)
+    : legacyNamed.length;
+  const legacyNormalizedLabels = new Set<string>();
+  for (const label of legacyNamed) {
+    const normalizedLabel = normalizeUnitLabel(label);
+    if (!normalizedLabel || legacyNormalizedLabels.has(normalizedLabel)) fail("crm_entity_invalid");
+    legacyNormalizedLabels.add(normalizedLabel);
+  }
+  const missingLegacyBefore = [...legacyNormalizedLabels]
+    .filter((label) => !currentVacantLabels.has(label));
+  const vacancyShortfallBefore = Math.max(legacyCount - currentFormalVacant, 0);
+  const migrationResolvedBefore = missingLegacyBefore.length === 0
+    && vacancyShortfallBefore === 0;
+  for (const [entityId, entity] of replacements) finalUnits.set(entityId, entity);
+  const normalizedVacantLabels = new Set<string>();
+  const finalActiveLabels = new Set<string>();
+  const vacantRecords: UnknownRecord[] = [];
+  let activeUnitCount = 0;
+  for (const [entityId, candidate] of finalUnits) {
+    if (candidate.crmBuildingId !== buildingId || isArchived(candidate)) continue;
+    assertStoredCanonicalEntity("buildingUnits", entityId, candidate);
+    activeUnitCount += 1;
+    const activeLabel = normalizeUnitLabel(candidate.label);
+    if (!activeLabel) fail("crm_entity_invalid");
+    if (finalActiveLabels.has(activeLabel)) fail("crm_building_unit_label_conflict");
+    finalActiveLabels.add(activeLabel);
+    if (candidate.status !== "vacant") continue;
+    const normalizedLabel = activeLabel;
+    if (!normalizedLabel || normalizedVacantLabels.has(normalizedLabel)) fail("crm_building_unit_label_conflict");
+    normalizedVacantLabels.add(normalizedLabel);
+    vacantRecords.push(candidate);
+  }
+  const missingLegacyAfter = [...legacyNormalizedLabels]
+    .filter((label) => !normalizedVacantLabels.has(label));
+  const vacancyShortfallAfter = Math.max(legacyCount - vacantRecords.length, 0);
+  const migrationResolved = migrationResolvedBefore
+    || (missingLegacyAfter.length === 0 && vacancyShortfallAfter === 0);
+  const vacantUnits = normalizeStringList(
+    vacantRecords
+      .sort((left, right) => {
+        const leftFloor = Number.isSafeInteger(left.floorOrder) ? left.floorOrder as number : Number.MAX_SAFE_INTEGER;
+        const rightFloor = Number.isSafeInteger(right.floorOrder) ? right.floorOrder as number : Number.MAX_SAFE_INTEGER;
+        if (leftFloor !== rightFloor) return leftFloor - rightFloor;
+        const leftUnit = Number.isSafeInteger(left.unitOrder) ? left.unitOrder as number : Number.MAX_SAFE_INTEGER;
+        const rightUnit = Number.isSafeInteger(right.unitOrder) ? right.unitOrder as number : Number.MAX_SAFE_INTEGER;
+        if (leftUnit !== rightUnit) return leftUnit - rightUnit;
+        return String(left.label || "").localeCompare(String(right.label || ""), "ko-KR");
+      })
+      .map((unit) => String(unit.label || "")),
+    "vacantUnits",
+    VACANT_UNITS_LIST_MAX_ITEMS,
+  );
+  const nextBuilding = migrationResolved
+    ? {
+      ...structuredClone(currentBuilding),
+      vacantUnitCount: vacantUnits.length,
+      vacantUnits,
+      entityVersion: (currentBuilding.entityVersion as number) + 1,
+      updatedAt: timestampAfter(now, currentBuilding.updatedAt),
+      updatedByAuthUid: actor.authUid,
+      updatedByOperatorId: actor.operatorId,
+    }
+    : currentBuilding;
+  if (migrationResolved) assertStoredCanonicalEntity("buildings", buildingId, nextBuilding);
+  return Object.freeze({
+    path: Object.freeze(["crmCompany", "data", "buildings", buildingId]),
+    entity: nextBuilding,
+    activeUnitCount,
+    vacantUnits,
+    migrationResolvedBefore,
+    migrationResolved,
+    missingLegacyBefore: Object.freeze(missingLegacyBefore),
+    missingLegacyAfter: Object.freeze(missingLegacyAfter),
+    vacancyShortfallBefore,
+    vacancyShortfallAfter,
+  });
+}
+
+function sameNormalizedVacancyLabels(left: readonly string[], right: readonly string[]): boolean {
+  const leftLabels = new Set(left.map(normalizeUnitLabel));
+  const rightLabels = new Set(right.map(normalizeUnitLabel));
+  return leftLabels.size === left.length
+    && rightLabels.size === right.length
+    && leftLabels.size === rightLabels.size
+    && [...leftLabels].every((label) => label.length > 0 && rightLabels.has(label));
+}
+
+function enforceManagedBuildingVacancyPatch(
+  currentRoot: unknown,
+  input: NormalizedCanonicalCrmInput,
+  existing: UnknownRecord | null,
+  next: UnknownRecord,
+  actor: FieldV2Actor,
+  now: string,
+): void {
+  if (input.entityType !== "buildings"
+    || !existing
+    || (!Object.hasOwn(input.patch, "vacantUnitCount") && !Object.hasOwn(input.patch, "vacantUnits"))) return;
+  const projection = planBuildingVacancyMirror(
+    currentRoot,
+    input.entityId,
+    new Map(),
+    actor,
+    now,
+  );
+  if (projection.activeUnitCount === 0) return;
+  const requestedUnits = Object.hasOwn(next, "vacantUnits")
+    ? normalizeStringList(next.vacantUnits, "vacantUnits", VACANT_UNITS_LIST_MAX_ITEMS)
+    : [];
+  const requestedCount = Object.hasOwn(next, "vacantUnitCount")
+    ? normalizeBoundedInteger(next.vacantUnitCount, "vacantUnitCount", 0, 100_000)
+    : requestedUnits.length;
+  if (!projection.migrationResolvedBefore) {
+    const storedUnits = Object.hasOwn(existing, "vacantUnits")
+      ? normalizeStringList(existing.vacantUnits, "vacantUnits", VACANT_UNITS_LIST_MAX_ITEMS)
+      : [];
+    const storedCount = Object.hasOwn(existing, "vacantUnitCount")
+      ? normalizeBoundedInteger(existing.vacantUnitCount, "vacantUnitCount", 0, 100_000)
+      : storedUnits.length;
+    if (requestedCount !== storedCount || !sameNormalizedVacancyLabels(requestedUnits, storedUnits)) {
+      fail("crm_patch_field_forbidden");
+    }
+    if (Object.hasOwn(existing, "vacantUnitCount")) next.vacantUnitCount = existing.vacantUnitCount;
+    else delete next.vacantUnitCount;
+    if (Object.hasOwn(existing, "vacantUnits")) next.vacantUnits = structuredClone(existing.vacantUnits);
+    else delete next.vacantUnits;
+    return;
+  }
+  if (requestedCount !== projection.vacantUnits.length
+    || !sameNormalizedVacancyLabels(requestedUnits, projection.vacantUnits)) {
+    fail("crm_patch_field_forbidden");
+  }
+  next.vacantUnitCount = projection.vacantUnits.length;
+  next.vacantUnits = projection.vacantUnits;
 }
 
 function immutableParentField(entityType: CanonicalCrmEntityType): string | null {
@@ -853,9 +1293,43 @@ export function reduceCanonicalCrmEntityRoot(
     next.archivedByAuthUid = "";
     next.archivedByOperatorId = "";
   }
+  if (input.entityType === "buildingUnits"
+    && ["status", "moveOutAt", "availableFrom"].some((field) => Object.hasOwn(input.patch, field))
+    && next.status === "move_out_scheduled") {
+    const moveOutAt = typeof next.moveOutAt === "string" ? next.moveOutAt : "";
+    const availableFrom = typeof next.availableFrom === "string" ? next.availableFrom : "";
+    if (!moveOutAt && !availableFrom) fail("crm_move_out_date_required");
+  }
   mergePreservedExternalRefs(existing, input.patch, next);
+  enforceManagedBuildingVacancyPatch(currentRoot, input, existing, next, command.actor, command.now);
   assertStoredCanonicalEntity(input.entityType, input.entityId, next);
   validateParentIntegrity(currentRoot, input, existing, next);
+  const buildingMirror = input.entityType === "buildingUnits"
+    ? planBuildingVacancyMirror(
+      currentRoot,
+      next.crmBuildingId as string,
+      new Map([[input.entityId, next]]),
+      command.actor,
+      command.now,
+    )
+    : null;
+  if (buildingMirror
+    && (input.operation === "create" || input.operation === "restore")
+    && buildingMirror.activeUnitCount > BUILDING_UNITS_BATCH_MAX_ITEMS) {
+    fail("crm_building_unit_batch_too_large");
+  }
+  if (buildingMirror && !buildingMirror.migrationResolvedBefore) {
+    if (input.operation === "create" || input.operation === "restore") {
+      fail("crm_vacancy_migration_required");
+    }
+    const missingBefore = new Set(buildingMirror.missingLegacyBefore);
+    const addedMissingLegacy = buildingMirror.missingLegacyAfter
+      .some((label) => !missingBefore.has(label));
+    if (addedMissingLegacy
+      || buildingMirror.vacancyShortfallAfter > buildingMirror.vacancyShortfallBefore) {
+      fail("crm_vacancy_migration_required");
+    }
+  }
   const linked = canonicalCrmEntityHasFieldLinks(currentRoot, input.entityType, input.entityId, existing);
   const resultBase = Object.freeze({
     entityType: input.entityType,
@@ -873,10 +1347,224 @@ export function reduceCanonicalCrmEntityRoot(
   });
   const audit = makeAudit(input, command, input.operation === "create" ? 0 : input.expectedVersion, entityVersion, linked);
   const auditPath = ["fieldPlatform", "v2", "auditLogs", audit.id as string] as const;
-  for (const path of [entityPath, receiptPath, auditPath]) assertWritablePathParents(currentRoot, path);
+  for (const path of [
+    entityPath,
+    receiptPath,
+    auditPath,
+    ...(buildingMirror?.migrationResolved ? [buildingMirror.path] : []),
+  ]) {
+    assertWritablePathParents(currentRoot, path);
+  }
   const nextRoot = cloneRoot(currentRoot);
   writeOwnerBuildingBacklink(nextRoot, input, next);
   writePath(nextRoot, entityPath, Object.freeze(next));
+  if (buildingMirror?.migrationResolved) {
+    writePath(nextRoot, buildingMirror.path, Object.freeze(buildingMirror.entity));
+  }
+  writePath(nextRoot, receiptPath, receipt);
+  writePath(nextRoot, auditPath, audit);
+  return {
+    root: nextRoot,
+    result: Object.freeze({ ...resultBase, repeated: false }),
+    repeated: false,
+  };
+}
+
+function deterministicBuildingUnitId(buildingId: string, normalizedLabel: string): string {
+  return `unit_${hashCanonical({ buildingId, normalizedLabel }).slice(0, 32)}`;
+}
+
+function makeBuildingUnitsBatchAudit(
+  command: CanonicalBuildingUnitsBatchTransactionCommand,
+  result: Omit<CanonicalBuildingUnitsBatchResult, "repeated">,
+): Readonly<Record<string, unknown>> {
+  const id = `audit_${hashCanonical({
+    scope: CANONICAL_BUILDING_UNITS_BATCH_RECEIPT_SCOPE,
+    requestId: command.input.requestId,
+    buildingId: command.input.buildingId,
+  }).slice(0, 32)}`;
+  return Object.freeze({
+    id,
+    action: "crm.canonical.buildingUnits.configure",
+    entityType: "buildingUnits",
+    entityId: command.input.buildingId,
+    requestId: command.input.requestId,
+    authUid: command.actor.authUid,
+    operatorId: command.actor.operatorId,
+    createdCount: result.createdCount,
+    updatedCount: result.updatedCount,
+    unchangedCount: result.unchangedCount,
+    changedFields: Object.freeze([
+      "floorLabel", "floorOrder", "label", "unitOrder", "building.vacantUnitCount", "building.vacantUnits",
+    ]),
+    occurredAt: command.now,
+  });
+}
+
+export function reduceCanonicalBuildingUnitsBatchRoot(
+  currentRoot: unknown,
+  command: CanonicalBuildingUnitsBatchTransactionCommand,
+): CanonicalBuildingUnitsBatchRootDecision {
+  if (!isRecord(command) || !isRecord(command.input) || !isRecord(command.runtimeGuard)) fail("crm_transaction_invalid");
+  const input = command.input;
+  const receiptPath = [
+    "fieldPlatform", "v2", "requestReceipts", CANONICAL_BUILDING_UNITS_BATCH_RECEIPT_SCOPE, input.requestId,
+  ] as const;
+  const receiptValue = readPath(currentRoot, receiptPath);
+  if (receiptValue !== null) {
+    const receipt = parseBuildingUnitsBatchReceipt(receiptValue, input.requestId);
+    if (!receipt) fail("crm_request_receipt_invalid");
+    if (receipt.requestHash !== command.requestHash) fail("crm_request_id_conflict");
+    assertCurrentActor(currentRoot, command);
+    return {
+      root: isRecord(currentRoot) ? currentRoot : {},
+      result: Object.freeze({ ...receipt.result, repeated: true }),
+      repeated: true,
+    };
+  }
+  const currentRole = assertCurrentActor(currentRoot, command);
+  if (currentRole !== "admin" && currentRole !== "member") fail("crm_mutation_forbidden");
+  assertCurrentRelease(currentRoot, command);
+  requireActiveParent(currentRoot, "buildings", input.buildingId);
+
+  const collectionPath = ["crmCompany", "data", "buildingUnits"] as const;
+  const rawCollection = readPath(currentRoot, collectionPath);
+  if (rawCollection !== null && !isRecord(rawCollection)) fail("crm_transaction_invalid");
+  const collection = isRecord(rawCollection) ? rawCollection : {};
+  const activeByLabel = new Map<string, { entityId: string; entity: UnknownRecord }>();
+  for (const [entityId, candidate] of Object.entries(collection)) {
+    if (!isRecord(candidate)
+      || candidate.crmBuildingId !== input.buildingId
+      || isArchived(candidate)) continue;
+    if (!Number.isSafeInteger(candidate.entityVersion) || (candidate.entityVersion as number) < 1) {
+      fail("crm_entity_upgrade_required");
+    }
+    assertStoredCanonicalEntity("buildingUnits", entityId, candidate);
+    const normalizedLabel = normalizeUnitLabel(candidate.label);
+    if (!normalizedLabel) fail("crm_entity_invalid");
+    if (activeByLabel.has(normalizedLabel)) fail("crm_building_unit_label_conflict");
+    activeByLabel.set(normalizedLabel, { entityId, entity: candidate });
+  }
+
+  const planned: Array<{ path: readonly string[]; entity: UnknownRecord }> = [];
+  const entityIds: string[] = [];
+  const plannedIds = new Set<string>();
+  let createdCount = 0;
+  let updatedCount = 0;
+  let unchangedCount = 0;
+  for (const requested of input.units) {
+    const normalizedLabel = normalizeUnitLabel(requested.label);
+    const identifiesExisting = requested.entityId !== undefined && requested.expectedVersion !== undefined;
+    let existing: UnknownRecord | null = null;
+    let entityId: string;
+    if (identifiesExisting) {
+      entityId = requested.entityId as string;
+      const candidate = collection[entityId];
+      if (!isRecord(candidate)
+        || candidate.id !== entityId
+        || isArchived(candidate)
+        || candidate.crmBuildingId !== input.buildingId
+        || !Number.isSafeInteger(candidate.entityVersion)
+        || candidate.entityVersion !== requested.expectedVersion
+        || normalizeUnitLabel(candidate.label) !== normalizedLabel) {
+        fail("crm_entity_version_conflict");
+      }
+      assertStoredCanonicalEntity("buildingUnits", entityId, candidate);
+      existing = candidate;
+    } else {
+      if (activeByLabel.has(normalizedLabel)) fail("crm_entity_version_conflict");
+      entityId = deterministicBuildingUnitId(input.buildingId, normalizedLabel);
+    }
+    if (!isSafeId(entityId) || plannedIds.has(entityId)) fail("crm_entity_version_conflict");
+    plannedIds.add(entityId);
+    entityIds.push(entityId);
+    if (!existing && Object.hasOwn(collection, entityId)) fail("crm_entity_version_conflict");
+    const requestedStructure = {
+      label: requested.label,
+      floorLabel: requested.floorLabel,
+      floorOrder: requested.floorOrder,
+      unitOrder: requested.unitOrder,
+    };
+    if (existing) {
+      const changed = Object.entries(requestedStructure).some(([key, value]) => existing[key] !== value);
+      if (!changed) {
+        unchangedCount += 1;
+        continue;
+      }
+      const next = {
+        ...structuredClone(existing),
+        ...requestedStructure,
+        entityVersion: (existing.entityVersion as number) + 1,
+        updatedAt: timestampAfter(command.now, existing.updatedAt),
+        updatedByAuthUid: command.actor.authUid,
+        updatedByOperatorId: command.actor.operatorId,
+      };
+      assertStoredCanonicalEntity("buildingUnits", entityId, next);
+      planned.push({ path: [...collectionPath, entityId], entity: next });
+      updatedCount += 1;
+      continue;
+    }
+    if (requested.status === "move_out_scheduled") fail("crm_move_out_date_required");
+    const next = {
+      id: entityId,
+      crmBuildingId: input.buildingId,
+      ...requestedStructure,
+      status: requested.status,
+      moveOutAt: "",
+      availableFrom: "",
+      memo: "",
+      entityVersion: 1,
+      createdAt: command.now,
+      createdByAuthUid: command.actor.authUid,
+      createdByOperatorId: command.actor.operatorId,
+      updatedAt: command.now,
+      updatedByAuthUid: command.actor.authUid,
+      updatedByOperatorId: command.actor.operatorId,
+      archivedAt: "",
+      archivedByAuthUid: "",
+      archivedByOperatorId: "",
+    };
+    assertStoredCanonicalEntity("buildingUnits", entityId, next);
+    planned.push({ path: [...collectionPath, entityId], entity: next });
+    createdCount += 1;
+  }
+
+  const buildingMirror = planBuildingVacancyMirror(
+    currentRoot,
+    input.buildingId,
+    new Map(planned.map((item) => [String(item.entity.id || ""), item.entity])),
+    command.actor,
+    command.now,
+  );
+  if (buildingMirror.activeUnitCount > BUILDING_UNITS_BATCH_MAX_ITEMS) {
+    fail("crm_building_unit_batch_too_large");
+  }
+  if (!buildingMirror.migrationResolved) fail("crm_vacancy_migration_required");
+
+  const resultBase = Object.freeze({
+    buildingId: input.buildingId,
+    totalUnits: input.units.length,
+    createdCount,
+    updatedCount,
+    unchangedCount,
+    entityIds: Object.freeze(entityIds.slice()),
+    updatedAt: command.now,
+  });
+  const receipt: CanonicalBuildingUnitsBatchReceipt = Object.freeze({
+    scope: CANONICAL_BUILDING_UNITS_BATCH_RECEIPT_SCOPE,
+    requestId: input.requestId,
+    requestHash: command.requestHash,
+    result: resultBase,
+    createdAt: command.now,
+  });
+  const audit = makeBuildingUnitsBatchAudit(command, resultBase);
+  const auditPath = ["fieldPlatform", "v2", "auditLogs", audit.id as string] as const;
+  for (const path of [receiptPath, auditPath, buildingMirror.path, ...planned.map((item) => item.path)]) {
+    assertWritablePathParents(currentRoot, path);
+  }
+  const nextRoot = cloneRoot(currentRoot);
+  for (const item of planned) writePath(nextRoot, item.path, Object.freeze(item.entity));
+  writePath(nextRoot, buildingMirror.path, Object.freeze(buildingMirror.entity));
   writePath(nextRoot, receiptPath, receipt);
   writePath(nextRoot, auditPath, audit);
   return {
@@ -895,6 +1583,44 @@ export async function commitCanonicalCrmEntityCore(
     fail("crm_request_invalid");
   }
   const normalized = normalizeInput(input);
+  if (normalized.operatorId !== actor.operatorId) fail("crm_operator_mismatch");
+  if (actor.role !== "admin" && actor.role !== "member" && actor.role !== "viewer") fail("crm_access_forbidden");
+  const authenticatedEmail = typeof dependencies.authenticatedEmail === "string"
+    ? dependencies.authenticatedEmail.trim().toLowerCase()
+    : "";
+  if (!authenticatedEmail || Buffer.byteLength(authenticatedEmail, "utf8") > 320) fail("crm_access_forbidden");
+  const now = dependencies.now();
+  if (!isCanonicalTimestamp(now)) fail("crm_timestamp_invalid");
+  const requestHash = hashCanonical(normalized);
+  return dependencies.transact(Object.freeze({
+    input: normalized,
+    requestHash,
+    actor: Object.freeze({ ...actor }),
+    runtimeGuard: Object.freeze({
+      authUid: actor.authUid,
+      authenticatedEmail,
+      operatorId: actor.operatorId,
+      client: Object.freeze({
+        protocolVersion: normalized.protocolVersion,
+        clientKind: normalized.clientKind,
+        buildVersion: normalized.buildVersion,
+        operatorId: normalized.operatorId,
+      }),
+    }),
+    now,
+  }));
+}
+
+export async function commitCanonicalBuildingUnitsBatch(
+  input: CanonicalBuildingUnitsBatchInput,
+  actor: FieldV2Actor,
+  dependencies: CanonicalBuildingUnitsBatchDependencies,
+): Promise<CanonicalBuildingUnitsBatchResult> {
+  if (!isRecord(actor)
+    || !isRecord(dependencies)
+    || typeof dependencies.now !== "function"
+    || typeof dependencies.transact !== "function") fail("crm_request_invalid");
+  const normalized = normalizeBuildingUnitsBatchInput(input);
   if (normalized.operatorId !== actor.operatorId) fail("crm_operator_mismatch");
   if (actor.role !== "admin" && actor.role !== "member" && actor.role !== "viewer") fail("crm_access_forbidden");
   const authenticatedEmail = typeof dependencies.authenticatedEmail === "string"

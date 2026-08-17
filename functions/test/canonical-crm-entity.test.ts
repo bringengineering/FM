@@ -1,8 +1,12 @@
 import { describe, expect, it, vi } from "vitest";
 
 import {
+  commitCanonicalBuildingUnitsBatch,
   commitCanonicalCrmEntityCore,
+  reduceCanonicalBuildingUnitsBatchRoot,
   reduceCanonicalCrmEntityRoot,
+  type CanonicalBuildingUnitsBatchDependencies,
+  type CanonicalBuildingUnitsBatchInput,
   type CanonicalCrmDependencies,
   type CanonicalCrmEntityInput,
 } from "../src/field-v2/canonical-crm.js";
@@ -207,6 +211,52 @@ function dependencies(initial = root()): {
   };
 }
 
+function batchInput(overrides: Partial<CanonicalBuildingUnitsBatchInput> = {}): CanonicalBuildingUnitsBatchInput {
+  return {
+    protocolVersion: 2,
+    clientKind: "desktop",
+    buildVersion: "1.8.0",
+    operatorId: "operator_kim",
+    requestId: "323e4567-e89b-42d3-a456-426614174000",
+    buildingId: "building_1",
+    units: [
+      {
+        entityId: "unit_1",
+        expectedVersion: 4,
+        label: "201\uD638",
+        floorLabel: "2\uCE35",
+        floorOrder: 2,
+        unitOrder: 1,
+        status: "vacant",
+      },
+      { label: "203\uD638", floorLabel: "2\uCE35", floorOrder: 2, unitOrder: 3, status: "unknown" },
+    ],
+    ...overrides,
+  };
+}
+
+function batchDependencies(initial = root()): {
+  deps: CanonicalBuildingUnitsBatchDependencies;
+  state: { current: unknown };
+  transact: ReturnType<typeof vi.fn>;
+} {
+  const state = { current: initial as unknown };
+  const transact = vi.fn(async (command) => {
+    const decision = reduceCanonicalBuildingUnitsBatchRoot(state.current, command);
+    if (!decision.repeated) state.current = decision.root;
+    return decision.result;
+  });
+  return {
+    state,
+    transact,
+    deps: {
+      authenticatedEmail: "team@bringcare.kr",
+      now: () => NOW,
+      transact,
+    },
+  };
+}
+
 function readPath(value: unknown, path: string): unknown {
   let current = value as Record<string, unknown>;
   for (const segment of path.split("/")) {
@@ -256,7 +306,7 @@ describe("canonical CRM entity commits", () => {
       patch: {
         crmBuildingId: "building_1",
         label: "301호",
-        status: "active",
+        status: "occupied",
         memo: "",
       },
     }), ACTOR, fixture.deps);
@@ -749,5 +799,712 @@ describe("canonical CRM entity commits", () => {
       reasonProvided: true,
       changedFields: ["label"],
     });
+  });
+});
+
+describe("canonical building vacancy fields", () => {
+  it("stores the additive room location and availability fields", async () => {
+    const fixture = dependencies();
+    await commitCanonicalCrmEntityCore(input({
+      patch: {
+        floorLabel: "2층",
+        floorOrder: 2,
+        unitOrder: 1,
+        status: "move_out_scheduled",
+        moveOutAt: "2026-09-01",
+        availableFrom: "2026-09-03T00:00:00.000Z",
+      },
+    }), ACTOR, fixture.deps);
+
+    expect(readPath(fixture.state.current, "crmCompany/data/buildingUnits/unit_1")).toMatchObject({
+      floorLabel: "2층",
+      floorOrder: 2,
+      unitOrder: 1,
+      status: "move_out_scheduled",
+      moveOutAt: "2026-09-01",
+      availableFrom: "2026-09-03T00:00:00.000Z",
+    });
+  });
+
+  it.each([
+    ["legacy patch status", { status: "active" }, "crm_status_invalid"],
+    ["unknown status", { status: "ready" }, "crm_status_invalid"],
+    ["fractional floor order", { floorOrder: 1.5 }, "crm_floorOrder_invalid"],
+    ["floor order out of range", { floorOrder: 1_001 }, "crm_floorOrder_invalid"],
+    ["unit order out of range", { unitOrder: 100_001 }, "crm_unitOrder_invalid"],
+    ["invalid move out date", { moveOutAt: "tomorrow" }, "crm_moveOutAt_invalid"],
+    ["invalid available date", { availableFrom: "2026-02-30" }, "crm_availableFrom_invalid"],
+  ])("rejects %s", async (_label, patch, code) => {
+    const fixture = dependencies();
+    await expect(commitCanonicalCrmEntityCore(input({ patch }), ACTOR, fixture.deps)).rejects.toThrow(code);
+    expect(fixture.transact).not.toHaveBeenCalled();
+  });
+
+  it("requires a date only when a single mutation newly sets move-out-scheduled", async () => {
+    const missingDate = dependencies();
+    await expect(commitCanonicalCrmEntityCore(input({
+      patch: { status: "move_out_scheduled" },
+    }), ACTOR, missingDate.deps)).rejects.toThrow("crm_move_out_date_required");
+    expect(missingDate.transact).toHaveBeenCalledTimes(1);
+
+    const legacyRoot = root();
+    const legacyUnit = readPath(legacyRoot, "crmCompany/data/buildingUnits/unit_1") as Record<string, unknown>;
+    legacyUnit.status = "move_out_scheduled";
+    delete legacyUnit.moveOutAt;
+    delete legacyUnit.availableFrom;
+    const legacy = dependencies(legacyRoot);
+    await expect(commitCanonicalCrmEntityCore(input({ patch: { memo: "legacy note repair" } }), ACTOR, legacy.deps))
+      .resolves.toMatchObject({ entityVersion: 5 });
+  });
+
+  it("accepts and preserves the building rental and legacy vacancy fields", async () => {
+    const fixtureRoot = root();
+    (readPath(fixtureRoot, "crmCompany/data") as Record<string, unknown>).buildingUnits = {};
+    const fixture = dependencies(fixtureRoot);
+    await commitCanonicalCrmEntityCore(input({
+      entityType: "buildings",
+      entityId: "building_1",
+      expectedVersion: 4,
+      patch: {
+        rentDeposit: 33_000_000,
+        monthlyRent: 330_000,
+        maintenanceFee: 50_000,
+        maintenanceIncludes: ["water", "internet"],
+        maintenanceIncludeOther: "electricity usage",
+        roomTypes: ["studio"],
+        roomTypeOther: "duplex",
+        roomOptions: ["air-conditioner", "washer"],
+        roomOptionOther: "desk",
+        vacantUnitCount: 2,
+        vacantUnits: ["201호", "301호"],
+      },
+    }), ACTOR, fixture.deps);
+    expect(readPath(fixture.state.current, "crmCompany/data/buildings/building_1")).toMatchObject({
+      rentDeposit: 33_000_000,
+      monthlyRent: 330_000,
+      maintenanceFee: 50_000,
+      maintenanceIncludes: ["water", "internet"],
+      roomOptions: ["air-conditioner", "washer"],
+      vacantUnitCount: 2,
+      vacantUnits: ["201호", "301호"],
+    });
+  });
+
+  it("allows 200 formal vacant-unit labels without raising the general 100-item list limit", async () => {
+    const vacantUnits = Array.from({ length: 200 }, (_, index) => `unit-${index + 1}`);
+    const fixtureRoot = root();
+    (readPath(fixtureRoot, "crmCompany/data") as Record<string, unknown>).buildingUnits = {};
+    const fixture = dependencies(fixtureRoot);
+    await expect(commitCanonicalCrmEntityCore(input({
+      entityType: "buildings",
+      entityId: "building_1",
+      expectedVersion: 4,
+      patch: { vacantUnitCount: 200, vacantUnits },
+    }), ACTOR, fixture.deps)).resolves.toMatchObject({ entityVersion: 5 });
+    expect(readPath(fixture.state.current, "crmCompany/data/buildings/building_1")).toMatchObject({
+      vacantUnitCount: 200,
+      vacantUnits,
+    });
+
+    const tooManyRoot = root();
+    (readPath(tooManyRoot, "crmCompany/data") as Record<string, unknown>).buildingUnits = {};
+    const tooManyVacancies = dependencies(tooManyRoot);
+    await expect(commitCanonicalCrmEntityCore(input({
+      entityType: "buildings",
+      entityId: "building_1",
+      expectedVersion: 4,
+      patch: { vacantUnits: [...vacantUnits, "unit-201"] },
+    }), ACTOR, tooManyVacancies.deps)).rejects.toThrow("crm_vacantUnits_invalid");
+    expect(tooManyVacancies.transact).not.toHaveBeenCalled();
+
+    const generalListRoot = root();
+    (readPath(generalListRoot, "crmCompany/data") as Record<string, unknown>).buildingUnits = {};
+    const generalList = dependencies(generalListRoot);
+    await expect(commitCanonicalCrmEntityCore(input({
+      entityType: "buildings",
+      entityId: "building_1",
+      expectedVersion: 4,
+      patch: { aliases: Array.from({ length: 101 }, (_, index) => `alias-${index + 1}`) },
+    }), ACTOR, generalList.deps)).rejects.toThrow("crm_aliases_invalid");
+    expect(generalList.transact).not.toHaveBeenCalled();
+  });
+
+  it("accepts only the server-derived vacancy mirror once formal rooms are active", async () => {
+    const fixtureRoot = root();
+    const collection = readPath(fixtureRoot, "crmCompany/data/buildingUnits") as Record<string, Record<string, unknown>>;
+    collection.unit_1.status = "vacant";
+    collection.unit_1.floorOrder = 2;
+    collection.unit_1.unitOrder = 1;
+    collection.unit_2.status = "vacant";
+    collection.unit_2.floorOrder = 2;
+    collection.unit_2.unitOrder = 2;
+    const building = readPath(fixtureRoot, "crmCompany/data/buildings/building_1") as Record<string, unknown>;
+    building.vacantUnitCount = 2;
+    building.vacantUnits = ["201\uD638", "202\uD638"];
+    const fixture = dependencies(fixtureRoot);
+
+    await expect(commitCanonicalCrmEntityCore(input({
+      entityType: "buildings",
+      entityId: "building_1",
+      expectedVersion: 4,
+      patch: { vacantUnitCount: 2, vacantUnits: ["202\uD638", "201\uD638"] },
+    }), ACTOR, fixture.deps)).resolves.toMatchObject({ entityVersion: 5 });
+    expect(readPath(fixture.state.current, "crmCompany/data/buildings/building_1")).toMatchObject({
+      vacantUnitCount: 2,
+      vacantUnits: ["201\uD638", "202\uD638"],
+    });
+
+    const mismatchRoot = structuredClone(fixtureRoot);
+    const mismatch = dependencies(mismatchRoot);
+    const before = structuredClone(mismatch.state.current);
+    await expect(commitCanonicalCrmEntityCore(input({
+      entityType: "buildings",
+      entityId: "building_1",
+      expectedVersion: 4,
+      patch: { vacantUnitCount: 1, vacantUnits: ["201\uD638"] },
+    }), ACTOR, mismatch.deps)).rejects.toThrow("crm_patch_field_forbidden");
+    expect(mismatch.state.current).toEqual(before);
+  });
+
+  it("allows an unresolved building editor to echo but not alter stored legacy vacancies", async () => {
+    const fixtureRoot = root();
+    const building = readPath(fixtureRoot, "crmCompany/data/buildings/building_1") as Record<string, unknown>;
+    building.vacantUnitCount = 2;
+    building.vacantUnits = ["101\uD638", "102\uD638"];
+    const fixture = dependencies(fixtureRoot);
+    await expect(commitCanonicalCrmEntityCore(input({
+      entityType: "buildings",
+      entityId: "building_1",
+      expectedVersion: 4,
+      patch: { vacantUnitCount: 2, vacantUnits: ["102\uD638", "101\uD638"], manager: "new manager" },
+    }), ACTOR, fixture.deps)).resolves.toMatchObject({ entityVersion: 5 });
+    expect(readPath(fixture.state.current, "crmCompany/data/buildings/building_1")).toMatchObject({
+      vacantUnitCount: 2,
+      vacantUnits: ["101\uD638", "102\uD638"],
+      manager: "new manager",
+    });
+
+    const alteredRoot = root();
+    const alteredBuilding = readPath(alteredRoot, "crmCompany/data/buildings/building_1") as Record<string, unknown>;
+    alteredBuilding.vacantUnitCount = 2;
+    alteredBuilding.vacantUnits = ["101\uD638", "102\uD638"];
+    const altered = dependencies(alteredRoot);
+    const before = structuredClone(altered.state.current);
+    await expect(commitCanonicalCrmEntityCore(input({
+      entityType: "buildings",
+      entityId: "building_1",
+      expectedVersion: 4,
+      patch: { vacantUnitCount: 1, vacantUnits: ["101\uD638"] },
+    }), ACTOR, altered.deps)).rejects.toThrow("crm_patch_field_forbidden");
+    expect(altered.state.current).toEqual(before);
+  });
+
+  it("atomically mirrors vacant rename, status, archive, and restore mutations to the parent building", async () => {
+    const fixtureRoot = root();
+    const unit = readPath(fixtureRoot, "crmCompany/data/buildingUnits/unit_1") as Record<string, unknown>;
+    unit.status = "vacant";
+    const building = readPath(fixtureRoot, "crmCompany/data/buildings/building_1") as Record<string, unknown>;
+    building.manager = "latest concurrent manager";
+    building.memo = "must survive vacancy mirrors";
+    building.vacantUnitCount = 1;
+    building.vacantUnits = ["201\uD638"];
+    const fixture = dependencies(fixtureRoot);
+
+    await commitCanonicalCrmEntityCore(input({
+      requestId: "123e4567-e89b-42d3-a456-426614174101",
+      expectedVersion: 4,
+      patch: { label: "299\uD638" },
+    }), ACTOR, fixture.deps);
+    expect(readPath(fixture.state.current, "crmCompany/data/buildings/building_1")).toMatchObject({
+      manager: "latest concurrent manager",
+      memo: "must survive vacancy mirrors",
+      vacantUnitCount: 1,
+      vacantUnits: ["299\uD638"],
+      entityVersion: 5,
+    });
+
+    await commitCanonicalCrmEntityCore(input({
+      requestId: "123e4567-e89b-42d3-a456-426614174102",
+      expectedVersion: 5,
+      patch: { status: "occupied" },
+    }), ACTOR, fixture.deps);
+    expect(readPath(fixture.state.current, "crmCompany/data/buildings/building_1")).toMatchObject({
+      vacantUnitCount: 0,
+      vacantUnits: [],
+      entityVersion: 6,
+    });
+
+    await commitCanonicalCrmEntityCore(input({
+      requestId: "123e4567-e89b-42d3-a456-426614174103",
+      expectedVersion: 6,
+      patch: { status: "vacant" },
+    }), ACTOR, fixture.deps);
+    await commitCanonicalCrmEntityCore(input({
+      requestId: "123e4567-e89b-42d3-a456-426614174104",
+      operation: "archive",
+      expectedVersion: 7,
+      patch: {},
+    }), ACTOR, fixture.deps);
+    expect(readPath(fixture.state.current, "crmCompany/data/buildings/building_1")).toMatchObject({
+      vacantUnitCount: 0,
+      vacantUnits: [],
+      entityVersion: 8,
+      manager: "latest concurrent manager",
+    });
+
+    await commitCanonicalCrmEntityCore(input({
+      requestId: "123e4567-e89b-42d3-a456-426614174105",
+      operation: "restore",
+      expectedVersion: 8,
+      patch: {},
+    }), ACTOR, fixture.deps);
+    expect(readPath(fixture.state.current, "crmCompany/data/buildings/building_1")).toMatchObject({
+      vacantUnitCount: 1,
+      vacantUnits: ["299\uD638"],
+      entityVersion: 9,
+      manager: "latest concurrent manager",
+      memo: "must survive vacancy mirrors",
+    });
+  });
+
+  it("blocks create and restore above 200 active rooms while allowing over-limit cleanup", async () => {
+    const makeLimitRoot = (activeCount: number) => {
+      const fixtureRoot = root();
+      const collection = readPath(fixtureRoot, "crmCompany/data/buildingUnits") as Record<string, Record<string, unknown>>;
+      const template = collection.unit_1;
+      let index = 0;
+      while (Object.values(collection).filter((candidate) => !candidate.archivedAt).length < activeCount) {
+        const entityId = `limit_unit_${index}`;
+        collection[entityId] = {
+          ...structuredClone(template),
+          id: entityId,
+          label: `limit-${index}`,
+          status: "occupied",
+          entityVersion: 1,
+        };
+        index += 1;
+      }
+      return fixtureRoot;
+    };
+
+    const createFixture = dependencies(makeLimitRoot(200));
+    const beforeCreate = structuredClone(createFixture.state.current);
+    await expect(commitCanonicalCrmEntityCore(input({
+      requestId: "123e4567-e89b-42d3-a456-426614174110",
+      entityId: "unit_overflow_create",
+      operation: "create",
+      expectedVersion: 0,
+      patch: { crmBuildingId: "building_1", label: "overflow-create", status: "occupied" },
+    }), ACTOR, createFixture.deps)).rejects.toThrow("crm_building_unit_batch_too_large");
+    expect(createFixture.state.current).toEqual(beforeCreate);
+
+    const restoreRoot = makeLimitRoot(200);
+    const restoreCollection = readPath(restoreRoot, "crmCompany/data/buildingUnits") as Record<string, Record<string, unknown>>;
+    restoreCollection.unit_overflow_restore = {
+      ...structuredClone(restoreCollection.unit_1),
+      id: "unit_overflow_restore",
+      label: "overflow-restore",
+      entityVersion: 1,
+      status: "occupied",
+      archivedAt: "2026-08-15T00:00:00.000Z",
+      archivedByAuthUid: "shared_uid",
+      archivedByOperatorId: "operator_kim",
+    };
+    const restoreFixture = dependencies(restoreRoot);
+    const beforeRestore = structuredClone(restoreFixture.state.current);
+    await expect(commitCanonicalCrmEntityCore(input({
+      requestId: "123e4567-e89b-42d3-a456-426614174111",
+      entityId: "unit_overflow_restore",
+      operation: "restore",
+      expectedVersion: 1,
+      patch: {},
+    }), ACTOR, restoreFixture.deps)).rejects.toThrow("crm_building_unit_batch_too_large");
+    expect(restoreFixture.state.current).toEqual(beforeRestore);
+
+    const cleanupFixture = dependencies(makeLimitRoot(201));
+    await expect(commitCanonicalCrmEntityCore(input({
+      requestId: "123e4567-e89b-42d3-a456-426614174112",
+      entityId: "unit_1",
+      operation: "update",
+      expectedVersion: 4,
+      patch: { memo: "cleanup can proceed while over the limit" },
+    }), ACTOR, cleanupFixture.deps)).resolves.toMatchObject({ entityVersion: 5 });
+    await expect(commitCanonicalCrmEntityCore(input({
+      requestId: "123e4567-e89b-42d3-a456-426614174113",
+      entityId: "unit_1",
+      operation: "archive",
+      expectedVersion: 5,
+      patch: {},
+    }), ACTOR, cleanupFixture.deps)).resolves.toMatchObject({ entityVersion: 6 });
+  });
+
+  it("preserves unresolved legacy vacancy fields during an unrelated single-room edit", async () => {
+    const fixtureRoot = root();
+    const building = readPath(fixtureRoot, "crmCompany/data/buildings/building_1") as Record<string, unknown>;
+    building.vacantUnitCount = 3;
+    building.vacantUnits = ["201\uD638", "102\uD638"];
+    building.manager = "legacy migration owner";
+    const beforeBuilding = structuredClone(building);
+    const fixture = dependencies(fixtureRoot);
+
+    await expect(commitCanonicalCrmEntityCore(input({
+      requestId: "123e4567-e89b-42d3-a456-426614174120",
+      expectedVersion: 4,
+      patch: { memo: "unrelated memo edit" },
+    }), ACTOR, fixture.deps)).resolves.toMatchObject({ entityVersion: 5 });
+    expect(readPath(fixture.state.current, "crmCompany/data/buildings/building_1")).toEqual(beforeBuilding);
+    expect(readPath(fixture.state.current, "crmCompany/data/buildingUnits/unit_1")).toMatchObject({
+      memo: "unrelated memo edit",
+      entityVersion: 5,
+    });
+  });
+
+  it("blocks unresolved single-room changes that add migration loss while allowing improvement", async () => {
+    const worseningRoot = root();
+    const worseningBuilding = readPath(worseningRoot, "crmCompany/data/buildings/building_1") as Record<string, unknown>;
+    worseningBuilding.vacantUnitCount = 2;
+    worseningBuilding.vacantUnits = ["201\uD638"];
+    const worseningUnits = readPath(worseningRoot, "crmCompany/data/buildingUnits") as Record<string, Record<string, unknown>>;
+    worseningUnits.unit_1.status = "vacant";
+    worseningUnits.unit_2.status = "occupied";
+    const worsening = dependencies(worseningRoot);
+    const before = structuredClone(worsening.state.current);
+    await expect(commitCanonicalCrmEntityCore(input({
+      requestId: "123e4567-e89b-42d3-a456-426614174121",
+      patch: { status: "occupied" },
+    }), ACTOR, worsening.deps)).rejects.toThrow("crm_vacancy_migration_required");
+    expect(worsening.state.current).toEqual(before);
+
+    const improvingRoot = structuredClone(worseningRoot);
+    const improving = dependencies(improvingRoot);
+    await expect(commitCanonicalCrmEntityCore(input({
+      requestId: "123e4567-e89b-42d3-a456-426614174122",
+      entityId: "unit_2",
+      expectedVersion: 1,
+      patch: { status: "vacant" },
+    }), ACTOR, improving.deps)).resolves.toMatchObject({ entityVersion: 2 });
+    expect(readPath(improving.state.current, "crmCompany/data/buildings/building_1")).toMatchObject({
+      vacantUnitCount: 2,
+      vacantUnits: ["201\uD638", "202\uD638"],
+    });
+
+    const createRoot = structuredClone(worseningRoot);
+    const create = dependencies(createRoot);
+    const beforeCreate = structuredClone(create.state.current);
+    await expect(commitCanonicalCrmEntityCore(input({
+      requestId: "123e4567-e89b-42d3-a456-426614174123",
+      entityId: "unit_new_during_migration",
+      operation: "create",
+      expectedVersion: 0,
+      patch: { crmBuildingId: "building_1", label: "203\uD638", status: "vacant" },
+    }), ACTOR, create.deps)).rejects.toThrow("crm_vacancy_migration_required");
+    expect(create.state.current).toEqual(beforeCreate);
+  });
+
+  it("rejects removing the final scheduled-vacancy date but keeps legacy memo repair compatible", async () => {
+    const fixtureRoot = root();
+    const unit = readPath(fixtureRoot, "crmCompany/data/buildingUnits/unit_1") as Record<string, unknown>;
+    unit.status = "move_out_scheduled";
+    unit.availableFrom = "2026-09-01";
+    unit.moveOutAt = "";
+    const fixture = dependencies(fixtureRoot);
+    const before = structuredClone(fixture.state.current);
+    await expect(commitCanonicalCrmEntityCore(input({
+      requestId: "123e4567-e89b-42d3-a456-426614174124",
+      patch: { availableFrom: "" },
+    }), ACTOR, fixture.deps)).rejects.toThrow("crm_move_out_date_required");
+    expect(fixture.state.current).toEqual(before);
+  });
+});
+
+describe("canonical building-unit batch configuration", () => {
+  it("atomically creates and updates rooms while preserving operational fields", async () => {
+    const fixtureRoot = root();
+    const existing = readPath(fixtureRoot, "crmCompany/data/buildingUnits/unit_1") as Record<string, unknown>;
+    existing.status = "occupied";
+    existing.memo = "tenant retained";
+    existing.moveOutAt = "2026-09-01";
+    existing.availableFrom = "2026-09-03";
+    const fixture = batchDependencies(fixtureRoot);
+
+    const result = await commitCanonicalBuildingUnitsBatch(batchInput(), ACTOR, fixture.deps);
+    expect(result).toMatchObject({
+      buildingId: "building_1",
+      totalUnits: 2,
+      createdCount: 1,
+      updatedCount: 1,
+      unchangedCount: 0,
+      repeated: false,
+    });
+    expect(fixture.transact).toHaveBeenCalledTimes(1);
+    expect(result.entityIds[0]).toBe("unit_1");
+    expect(readPath(fixture.state.current, "crmCompany/data/buildingUnits/unit_1")).toMatchObject({
+      label: "201호",
+      floorLabel: "2층",
+      floorOrder: 2,
+      unitOrder: 1,
+      status: "occupied",
+      memo: "tenant retained",
+      moveOutAt: "2026-09-01",
+      availableFrom: "2026-09-03",
+      entityVersion: 5,
+    });
+    expect(readPath(fixture.state.current, "crmCompany/data/buildingUnits/unit_2")).toMatchObject({
+      archivedAt: "",
+      entityVersion: 1,
+    });
+    expect(readPath(
+      fixture.state.current,
+      `crmCompany/data/buildingUnits/${result.entityIds[1]}`,
+    )).toMatchObject({
+      crmBuildingId: "building_1",
+      label: "203호",
+      status: "unknown",
+      entityVersion: 1,
+    });
+  });
+
+  it("resolves named and unnamed legacy vacancies and mirrors the latest building in one transaction", async () => {
+    const fixtureRoot = root();
+    const building = readPath(fixtureRoot, "crmCompany/data/buildings/building_1") as Record<string, unknown>;
+    building.vacantUnitCount = 3;
+    building.vacantUnits = ["101\uD638", "102\uD638"];
+    building.manager = "concurrent manager preserved";
+    building.memo = "latest building edit";
+    building.entityVersion = 9;
+    building.updatedAt = "2026-08-16T00:00:00.000Z";
+    const fixture = batchDependencies(fixtureRoot);
+    const units = [
+      {
+        entityId: "unit_1",
+        expectedVersion: 4,
+        label: "201\uD638",
+        floorLabel: "2\uCE35",
+        floorOrder: 2,
+        unitOrder: 1,
+        status: "occupied",
+      },
+      { label: "101\uD638", floorLabel: "1\uCE35", floorOrder: 1, unitOrder: 1, status: "vacant" },
+      { label: "102\uD638", floorLabel: "1\uCE35", floorOrder: 1, unitOrder: 2, status: "vacant" },
+      { label: "103\uD638", floorLabel: "1\uCE35", floorOrder: 1, unitOrder: 3, status: "vacant" },
+    ];
+
+    await expect(commitCanonicalBuildingUnitsBatch(batchInput({ units }), ACTOR, fixture.deps))
+      .resolves.toMatchObject({ totalUnits: 4, createdCount: 3, updatedCount: 1 });
+    expect(readPath(fixture.state.current, "crmCompany/data/buildings/building_1")).toMatchObject({
+      vacantUnitCount: 3,
+      vacantUnits: ["101\uD638", "102\uD638", "103\uD638"],
+      manager: "concurrent manager preserved",
+      memo: "latest building edit",
+      entityVersion: 10,
+    });
+  });
+
+  it.each([
+    [
+      "an unmatched named legacy room",
+      [
+        { label: "101\uD638", floorLabel: "1\uCE35", floorOrder: 1, unitOrder: 1, status: "vacant" },
+        { label: "103\uD638", floorLabel: "1\uCE35", floorOrder: 1, unitOrder: 3, status: "vacant" },
+        { label: "104\uD638", floorLabel: "1\uCE35", floorOrder: 1, unitOrder: 4, status: "vacant" },
+      ],
+    ],
+    [
+      "the unnamed residual vacancy minimum",
+      [
+        { label: "101\uD638", floorLabel: "1\uCE35", floorOrder: 1, unitOrder: 1, status: "vacant" },
+        { label: "102\uD638", floorLabel: "1\uCE35", floorOrder: 1, unitOrder: 2, status: "vacant" },
+      ],
+    ],
+    [
+      "a named legacy vacancy converted to occupied while unrelated vacancy count is padded",
+      [
+        { label: "101\uD638", floorLabel: "1\uCE35", floorOrder: 1, unitOrder: 1, status: "occupied" },
+        { label: "102\uD638", floorLabel: "1\uCE35", floorOrder: 1, unitOrder: 2, status: "vacant" },
+        { label: "103\uD638", floorLabel: "1\uCE35", floorOrder: 1, unitOrder: 3, status: "vacant" },
+        { label: "104\uD638", floorLabel: "1\uCE35", floorOrder: 1, unitOrder: 4, status: "vacant" },
+      ],
+    ],
+  ])("rejects a partial legacy migration missing %s with zero writes", async (_label, units) => {
+    const fixtureRoot = root();
+    const building = readPath(fixtureRoot, "crmCompany/data/buildings/building_1") as Record<string, unknown>;
+    building.vacantUnitCount = 3;
+    building.vacantUnits = ["101\uD638", "102\uD638"];
+    const fixture = batchDependencies(fixtureRoot);
+    const before = structuredClone(fixture.state.current);
+
+    await expect(commitCanonicalBuildingUnitsBatch(batchInput({ units }), ACTOR, fixture.deps))
+      .rejects.toThrow("crm_vacancy_migration_required");
+    expect(fixture.state.current).toEqual(before);
+  });
+
+  it("returns an idempotent receipt and rejects request-id payload changes", async () => {
+    const fixture = batchDependencies();
+    const first = await commitCanonicalBuildingUnitsBatch(batchInput(), ACTOR, fixture.deps);
+    const second = await commitCanonicalBuildingUnitsBatch(batchInput(), ACTOR, fixture.deps);
+    expect(second).toEqual({ ...first, repeated: true });
+
+    await expect(commitCanonicalBuildingUnitsBatch(batchInput({
+      units: [{ label: "999호", floorLabel: "9층", floorOrder: 9, unitOrder: 9 }],
+    }), ACTOR, fixture.deps)).rejects.toThrow("crm_request_id_conflict");
+  });
+
+  it.each([
+    [
+      "normalized duplicate labels",
+      [{ label: "２０３호", floorLabel: "2층", floorOrder: 2, unitOrder: 3 }, { label: "203호", floorLabel: "2층", floorOrder: 2, unitOrder: 4 }],
+      "crm_building_unit_label_conflict",
+    ],
+    [
+      "missing floor label",
+      [{ label: "203호", floorLabel: "  ", floorOrder: 2, unitOrder: 3 }],
+      "crm_floorLabel_invalid",
+    ],
+    [
+      "new scheduled room without a date",
+      [{ label: "999호", floorLabel: "9층", floorOrder: 9, unitOrder: 9, status: "move_out_scheduled" }],
+      "crm_move_out_date_required",
+    ],
+  ])("rejects %s without partial writes", async (_label, units, code) => {
+    const fixture = batchDependencies();
+    const before = structuredClone(fixture.state.current);
+    await expect(commitCanonicalBuildingUnitsBatch(batchInput({ units }), ACTOR, fixture.deps)).rejects.toThrow(code);
+    expect(fixture.state.current).toEqual(before);
+  });
+
+  it("allows a matched legacy scheduled room and preserves its missing date", async () => {
+    const fixtureRoot = root();
+    const existing = readPath(fixtureRoot, "crmCompany/data/buildingUnits/unit_1") as Record<string, unknown>;
+    existing.status = "move_out_scheduled";
+    delete existing.moveOutAt;
+    delete existing.availableFrom;
+    const fixture = batchDependencies(fixtureRoot);
+    await expect(commitCanonicalBuildingUnitsBatch(batchInput({
+      units: [{
+        entityId: "unit_1",
+        expectedVersion: 4,
+        label: "201호",
+        floorLabel: "2층",
+        floorOrder: 2,
+        unitOrder: 1,
+        status: "move_out_scheduled",
+      }],
+    }), ACTOR, fixture.deps)).resolves.toMatchObject({ updatedCount: 1 });
+    expect(readPath(fixture.state.current, "crmCompany/data/buildingUnits/unit_1")).not.toHaveProperty("availableFrom");
+  });
+
+  it.each([
+    [
+      "stale floor move",
+      (fixtureRoot: ReturnType<typeof root>) => fixtureRoot,
+      [{
+        entityId: "unit_1",
+        expectedVersion: 3,
+        label: "201\uD638",
+        floorLabel: "3\uCE35",
+        floorOrder: 3,
+        unitOrder: 1,
+      }],
+    ],
+    [
+      "rename through a stale structural snapshot",
+      (fixtureRoot: ReturnType<typeof root>) => fixtureRoot,
+      [{
+        entityId: "unit_1",
+        expectedVersion: 4,
+        label: "renamed-201",
+        floorLabel: "2\uCE35",
+        floorOrder: 2,
+        unitOrder: 1,
+      }],
+    ],
+    [
+      "archived room",
+      (fixtureRoot: ReturnType<typeof root>) => {
+        const archived = readPath(fixtureRoot, "crmCompany/data/buildingUnits/unit_1") as Record<string, unknown>;
+        archived.archivedAt = "2026-08-15T00:00:00.000Z";
+        archived.archivedByAuthUid = "shared_uid";
+        archived.archivedByOperatorId = "operator_kim";
+        return fixtureRoot;
+      },
+      [{
+        entityId: "unit_1",
+        expectedVersion: 4,
+        label: "201\uD638",
+        floorLabel: "2\uCE35",
+        floorOrder: 2,
+        unitOrder: 1,
+      }],
+    ],
+    [
+      "unseen active room with the same normalized label",
+      (fixtureRoot: ReturnType<typeof root>) => fixtureRoot,
+      [{ label: "２０１ \uD638", floorLabel: "2\uCE35", floorOrder: 2, unitOrder: 1 }],
+    ],
+  ])("rejects %s with zero writes", async (_label, prepare, units) => {
+    const fixtureRoot = prepare(root());
+    const fixture = batchDependencies(fixtureRoot);
+    const before = structuredClone(fixture.state.current);
+    await expect(commitCanonicalBuildingUnitsBatch(batchInput({ units }), ACTOR, fixture.deps))
+      .rejects.toThrow("crm_entity_version_conflict");
+    expect(fixture.state.current).toEqual(before);
+  });
+
+  it("requires entityId and expectedVersion together for existing rooms before a transaction", async () => {
+    const fixture = batchDependencies();
+    await expect(commitCanonicalBuildingUnitsBatch(batchInput({
+      units: [{
+        entityId: "unit_1",
+        label: "201\uD638",
+        floorLabel: "2\uCE35",
+        floorOrder: 2,
+        unitOrder: 1,
+      }],
+    }), ACTOR, fixture.deps)).rejects.toThrow("crm_request_invalid");
+    expect(fixture.transact).not.toHaveBeenCalled();
+  });
+
+  it("creates 200 rooms in one transaction or fails before committing", async () => {
+    const fixtureRoot = root();
+    (readPath(fixtureRoot, "crmCompany/data") as Record<string, unknown>).buildingUnits = {};
+    const fixture = batchDependencies(fixtureRoot);
+    const units = Array.from({ length: 200 }, (_, index) => ({
+      label: `batch-${index + 1}`,
+      floorLabel: `${Math.floor(index / 20) + 1}층`,
+      floorOrder: Math.floor(index / 20) + 1,
+      unitOrder: index + 1,
+      status: "unknown",
+    }));
+    const result = await commitCanonicalBuildingUnitsBatch(batchInput({ units }), ACTOR, fixture.deps);
+    expect(result).toMatchObject({ totalUnits: 200, createdCount: 200, updatedCount: 0 });
+    expect(fixture.transact).toHaveBeenCalledTimes(1);
+
+    const tooMany = batchDependencies();
+    await expect(commitCanonicalBuildingUnitsBatch(batchInput({ units: [
+      ...units,
+      { label: "201-extra", floorLabel: "11층", floorOrder: 11, unitOrder: 201 },
+    ] }), ACTOR, tooMany.deps)).rejects.toThrow("crm_building_unit_batch_too_large");
+    expect(tooMany.transact).not.toHaveBeenCalled();
+  });
+
+  it("never overwrites an archived deterministic-id collision", async () => {
+    const fixture = batchDependencies();
+    const firstRequest = batchInput({
+      units: [{ label: "999호", floorLabel: "9층", floorOrder: 9, unitOrder: 9 }],
+    });
+    const first = await commitCanonicalBuildingUnitsBatch(firstRequest, ACTOR, fixture.deps);
+    const entityId = first.entityIds[0];
+    fixture.state.current = structuredClone(fixture.state.current);
+    const archived = readPath(fixture.state.current, `crmCompany/data/buildingUnits/${entityId}`) as Record<string, unknown>;
+    archived.archivedAt = "2026-08-15T00:00:00.000Z";
+    archived.archivedByAuthUid = "shared_uid";
+    archived.archivedByOperatorId = "operator_kim";
+    const before = structuredClone(archived);
+
+    await expect(commitCanonicalBuildingUnitsBatch({
+      ...firstRequest,
+      requestId: "423e4567-e89b-42d3-a456-426614174000",
+    }, ACTOR, fixture.deps)).rejects.toThrow("crm_entity_version_conflict");
+    expect(readPath(fixture.state.current, `crmCompany/data/buildingUnits/${entityId}`)).toEqual(before);
   });
 });

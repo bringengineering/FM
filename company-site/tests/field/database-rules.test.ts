@@ -9,7 +9,7 @@ import {
   initializeTestEnvironment,
   type RulesTestEnvironment,
 } from "@firebase/rules-unit-testing";
-import { get, ref, set, update } from "firebase/database";
+import { get, ref, remove, set, update } from "firebase/database";
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 
 const PROJECT_ID = "demo-bring-field-platform";
@@ -481,7 +481,7 @@ describe("field media database rule source", () => {
     });
   });
 
-  it("isolates company CRM access and permits writes only for enabled admin or member roles", async () => {
+  it("isolates company CRM access and permits only noncanonical data writes for enabled members", async () => {
     const source = JSON.parse(
       await readFile(resolve("../database.rules.json"), "utf8"),
     ) as { rules: { crmCompany?: Record<string, unknown> } };
@@ -494,7 +494,7 @@ describe("field media database rule source", () => {
     expect(crm[".write"]).toBe(false);
     expect(userAccess[".read"]).toContain("auth.uid === $uid");
     expect(userAccess[".write"]).toBe(false);
-    for (const root of ["data", "cases", "paymentCalendars", "caseSettings"]) {
+    for (const root of ["cases", "paymentCalendars", "caseSettings"]) {
       const readRule = String(crm[root][".read"]);
       const writeRule = String(crm[root][".write"]);
       expect(readRule).toContain("crmCompany/access");
@@ -502,6 +502,24 @@ describe("field media database rule source", () => {
       expect(writeRule).toContain("role");
       expect(writeRule).toContain("admin");
       expect(writeRule).toContain("member");
+    }
+    const data = crm.data as Record<string, Record<string, unknown> | boolean | string>;
+    expect(String(data[".read"])).toContain("auth.token.email");
+    expect(data[".write"]).toBe(false);
+    for (const canonical of ["buildings", "buildingUnits", "salesUnits"]) {
+      expect((data[canonical] as Record<string, unknown>)[".write"]).toBe(false);
+    }
+    for (const writable of [
+      "schemaVersion", "company", "updatedAt", "updatedBy",
+      "customers", "activities", "contracts", "partnerVendors", "partnerQuotes", "tasks",
+      "serviceRecords", "serviceContracts", "serviceSchedules", "securityAssets", "auditLogs",
+      "securityIncidents", "salesProspects", "salesContacts", "salesActivities", "salesEvents",
+      "salesOpportunities",
+    ]) {
+      const writeRule = String((data[writable] as Record<string, unknown>)[".write"]);
+      expect(writeRule).toContain("auth.token.email");
+      expect(writeRule).toContain("'admin'");
+      expect(writeRule).toContain("'member'");
     }
     expect(crm.migration).toEqual({ ".read": false, ".write": false });
   });
@@ -617,7 +635,7 @@ describe("field media database rule source", () => {
     }
   });
 
-  it("keeps the future cutover fixture test-only and explicit about canonical boundaries", async () => {
+  it("keeps the emulator cutover fixture identical to the production CRM data boundary", async () => {
     const fixturePath = resolve(
       "tests/field/fixtures/database-cutover.rules.json",
     );
@@ -630,8 +648,12 @@ describe("field media database rule source", () => {
     };
     const firebaseConfig = await readFile(resolve("../firebase.json"), "utf8");
     const dataRules = fixture.rules.crmCompany.data;
+    const production = JSON.parse(
+      await readFile(resolve("../database.rules.json"), "utf8"),
+    ) as { rules: { crmCompany: { data: Record<string, unknown> } } };
 
     expect(firebaseConfig).not.toContain("database-cutover.rules.json");
+    expect(dataRules).toEqual(production.rules.crmCompany.data);
     expect(dataRules[".write"]).toBe(false);
     for (const canonical of ["buildings", "buildingUnits", "salesUnits"]) {
       expect((dataRules[canonical] as Record<string, unknown>)[".write"])
@@ -644,6 +666,9 @@ describe("field media database rule source", () => {
       "partnerVendors",
       "partnerQuotes",
       "tasks",
+      "serviceRecords",
+      "serviceContracts",
+      "serviceSchedules",
       "securityAssets",
       "auditLogs",
       "securityIncidents",
@@ -652,6 +677,10 @@ describe("field media database rule source", () => {
       "salesActivities",
       "salesEvents",
       "salesOpportunities",
+      "schemaVersion",
+      "company",
+      "updatedAt",
+      "updatedBy",
     ]) {
       const writeRule = String(
         (dataRules[legacy] as Record<string, unknown>)[".write"],
@@ -760,7 +789,11 @@ describe.runIf(databaseEmulatorAvailable)("fieldPlatform database rules", () => 
     }
   });
 
-  it("preserves production legacy CRM writes for enabled members until cutover", async () => {
+  it("enforces the production canonical cutover while preserving every noncanonical shared write", async () => {
+    const admin = environment.authenticatedContext(
+      "crm-admin",
+      crmClaims("admin@bring.test"),
+    ).database();
     const member = environment.authenticatedContext(
       "crm-member",
       crmClaims("member@bring.test"),
@@ -774,39 +807,68 @@ describe.runIf(databaseEmulatorAvailable)("fieldPlatform database rules", () => 
       crmClaims("disabled@bring.test"),
     ).database();
 
-    for (const path of [
-      "buildings/building_1",
-      "buildingUnits/building_unit_1",
-      "salesUnits/sales_unit_1",
-    ]) {
-      await assertSucceeds(update(ref(member, `crmCompany/data/${path}`), {
-        legacyClientUpdatedAt: NOW,
-      }));
-      await assertFails(update(ref(viewer, `crmCompany/data/${path}`), {
-        viewerTamper: true,
-      }));
-      await assertFails(update(ref(disabled, `crmCompany/data/${path}`), {
-        disabledTamper: true,
-      }));
+    for (const database of [admin, member, viewer]) {
+      await assertSucceeds(get(ref(database, "crmCompany/data")));
+    }
+    for (const database of [admin, member, viewer, disabled]) {
+      for (const [collection, existingId] of [
+        ["buildings", "building_1"],
+        ["buildingUnits", "building_unit_1"],
+        ["salesUnits", "sales_unit_1"],
+      ] as const) {
+        await assertFails(update(ref(database, `crmCompany/data/${collection}/${existingId}`), {
+          clientTamper: true,
+        }));
+        await assertFails(set(ref(database, `crmCompany/data/${collection}/client_record`), {
+          id: "client_record",
+        }));
+        await assertFails(remove(ref(database, `crmCompany/data/${collection}/${existingId}`)));
+      }
     }
 
+    await assertFails(update(ref(member, "crmCompany/data"), {
+      "customers/customer_atomic": { id: "customer_atomic", name: "Must roll back" },
+      "buildings/building_atomic": { id: "building_atomic", name: "Canonical write" },
+    }));
+    const rolledBack = await assertSucceeds(
+      get(ref(member, "crmCompany/data/customers/customer_atomic")),
+    );
+    expect(rolledBack.exists()).toBe(false);
+
     await assertSucceeds(update(ref(member, "crmCompany/data"), {
-      "customers/customer_2": { id: "customer_2", name: "Parent patch" },
-      "buildings/building_2": { id: "building_2", name: "Parent patch" },
-      "buildingUnits/building_unit_2": {
-        id: "building_unit_2",
-        crmBuildingId: "building_2",
-        label: "201",
-      },
-      "salesUnits/sales_unit_2": {
-        id: "sales_unit_2",
-        prospectId: "prospect_2",
-        label: "201",
-      },
+      schemaVersion: 3,
+      company: { name: "BRING" },
+      updatedAt: NOW,
+      updatedBy: "crm-member",
+      "customers/customer_cutover": { id: "customer_cutover" },
+      "activities/activity_cutover": { id: "activity_cutover" },
+      "contracts/contract_cutover": { id: "contract_cutover" },
+      "partnerVendors/vendor_cutover": { id: "vendor_cutover" },
+      "partnerQuotes/quote_cutover": { id: "quote_cutover" },
+      "tasks/task_cutover": { id: "task_cutover" },
+      "serviceRecords/service_record_cutover": { id: "service_record_cutover" },
+      "serviceContracts/service_contract_cutover": { id: "service_contract_cutover" },
+      "serviceSchedules/service_schedule_cutover": { id: "service_schedule_cutover" },
+      "securityAssets/security_asset_cutover": { id: "security_asset_cutover" },
+      "auditLogs/audit_cutover": { id: "audit_cutover" },
+      "securityIncidents/incident_cutover": { id: "incident_cutover" },
+      "salesProspects/prospect_cutover": { id: "prospect_cutover" },
+      "salesContacts/contact_cutover": { id: "contact_cutover" },
+      "salesActivities/sales_activity_cutover": { id: "sales_activity_cutover" },
+      "salesEvents/event_cutover": { id: "event_cutover" },
+      "salesOpportunities/opportunity_cutover": { id: "opportunity_cutover" },
+    }));
+    await assertSucceeds(get(ref(member, "crmCompany/data/serviceRecords/service_record_cutover")));
+    await assertSucceeds(update(ref(admin, "crmCompany/data"), {
+      updatedBy: "crm-admin",
+      "customers/admin_customer": { id: "admin_customer" },
     }));
     await assertFails(update(ref(viewer, "crmCompany/data"), {
       "customers/viewer_customer": { id: "viewer_customer" },
-      "buildings/viewer_building": { id: "viewer_building" },
+      "tasks/viewer_task": { id: "viewer_task" },
+    }));
+    await assertFails(update(ref(disabled, "crmCompany/data"), {
+      "customers/disabled_customer": { id: "disabled_customer" },
     }));
     await assertFails(get(ref(disabled, "crmCompany/data")));
   });

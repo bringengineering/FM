@@ -14,6 +14,7 @@ const FIREBASE = Object.freeze({
 });
 const FIELD_HANDOFF_CALLABLE_URL = "https://asia-northeast3-bring-fm.cloudfunctions.net/createDesktopFieldHandoff";
 const CANONICAL_CRM_ENDPOINT_URL = "https://asia-northeast3-bring-fm.cloudfunctions.net/commitCanonicalCrmEntity";
+const CANONICAL_BUILDING_UNITS_BATCH_ENDPOINT_URL = "https://asia-northeast3-bring-fm.cloudfunctions.net/configureBuildingUnits";
 
 const DEFAULT_CASE_AUTOMATION_ENDPOINT = "https://script.google.com/macros/s/AKfycbxGAdtEDoNifxkM-e_Jm7dBkCnjM4oPJqz8RxZXoMoSKod5M_m9Yj2b11-nI97zmfd6Jw/exec";
 const VENDOR_CSV_URL = "https://docs.google.com/spreadsheets/d/1SYC0CofvdPLE1AQax_IgLx3FFWmntXi4H6yQttV9y4A/export?format=csv&gid=0";
@@ -35,21 +36,63 @@ const SHARED_COLLECTIONS = Object.freeze([
 const CANONICAL_SHARED_COLLECTIONS = Object.freeze(["buildings", "salesUnits"]);
 const PENDING_STORE_VERSION = 5;
 const CANONICAL_CRM_BODY_MAX_BYTES = 32 * 1024;
+const CANONICAL_BUILDING_UNITS_BATCH_BODY_MAX_BYTES = 160 * 1024;
+const CANONICAL_BUILDING_UNITS_BATCH_UNITS_MAX_BYTES = 156 * 1024;
 const CANONICAL_CRM_PATCH_MAX_BYTES = 24_000;
 const CANONICAL_CRM_REQUEST_ID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const CANONICAL_CRM_ENTITY_TYPES = new Set(["buildings", "buildingUnits", "salesUnits"]);
 const CANONICAL_CRM_OPERATIONS = new Set(["create", "update", "archive", "restore"]);
+const CANONICAL_BUILDING_UNIT_STATUSES = new Set(["unknown", "occupied", "vacant", "move_out_scheduled", "maintenance"]);
 const CANONICAL_CRM_ERROR_CODES = new Set([
   "crm_method_not_allowed", "crm_body_too_large", "crm_rate_limited", "crm_auth_required",
   "crm_access_forbidden", "crm_operator_inactive", "crm_mutation_forbidden", "crm_entity_not_found",
   "crm_parent_not_found", "crm_entity_version_conflict", "crm_request_id_conflict",
   "crm_building_unit_label_conflict", "crm_entity_already_archived", "crm_entity_not_archived",
+  "crm_vacancy_migration_required",
+  "crm_request_invalid", "crm_building_unit_batch_empty", "crm_building_unit_batch_too_large",
+  "crm_unit_label_invalid", "crm_floorLabel_invalid", "crm_floorOrder_invalid", "crm_unitOrder_invalid",
+  "crm_status_invalid", "crm_move_out_date_required", "crm_patch_field_forbidden", "crm_secret_field_forbidden",
   "crm_safe_mode_read_only", "crm_canonical_writes_disabled", "crm_entity_upgrade_required",
   "crm_parent_archived", "crm_parent_mismatch", "crm_owner_change_requires_atomic_link",
   "crm_service_unavailable", "field_access_forbidden", "field_operator_inactive",
   "field_operator_not_enabled", "field_protocol_mismatch", "field_client_upgrade_required",
   "field_client_version_unsupported"
 ]);
+
+function normalizedBuildingUnitLabel(value) {
+  return typeof value === "string"
+    ? value.normalize("NFKC").trim().toLocaleLowerCase("ko-KR").replace(/\s+/gu, "")
+    : "";
+}
+
+function canonicalEntityMutationForValidation(input) {
+  if (!input || typeof input !== "object" || Array.isArray(input)) return input;
+  const source = Object.assign(Object.create(null), input);
+  delete source.requestId;
+  delete source.entityId;
+  delete source.expectedVersion;
+  return source;
+}
+
+function buildingUnitsMutationForValidation(input) {
+  const source = canonicalEntityMutationForValidation(input);
+  if (source && Array.isArray(source.units)) {
+    source.units = source.units.map(item => {
+      if (!item || typeof item !== "object" || Array.isArray(item)) return item;
+      const copy = Object.assign(Object.create(null), item);
+      delete copy.entityId;
+      delete copy.expectedVersion;
+      return copy;
+    });
+  }
+  return source;
+}
+
+function canonicalTimestamp(value) {
+  if (typeof value !== "string") return false;
+  try { return new Date(value).toISOString() === value; }
+  catch (_) { return false; }
+}
 const PROTECTED_JSON_FORMAT = "bring-crm-protected-json";
 const PROTECTED_JSON_VERSION = 1;
 
@@ -1383,7 +1426,7 @@ class FirebaseRemoteClient {
   }
 
   async commitCanonicalCrmEntity(input) {
-    this.requireMutationPermission(input);
+    this.requireMutationPermission(canonicalEntityMutationForValidation(input));
     const guard = this.captureSessionGuard();
     const source = input && typeof input === "object" ? input : {};
     const operatorId = String(source.operatorId || "").trim();
@@ -1446,7 +1489,10 @@ class FirebaseRemoteClient {
     if (!response.ok) {
       const remoteCode = payload && payload.error && String(payload.error.code || "");
       const code = CANONICAL_CRM_ERROR_CODES.has(remoteCode) ? remoteCode : "CANONICAL_CRM_COMMIT_FAILED";
-      const error = createError(`정식 CRM 저장에 실패했습니다. (${code})`, code);
+      const message = code === "crm_move_out_date_required"
+        ? "공실 예정 상태에는 퇴실 예정일을 입력해 주세요."
+        : `정식 CRM 저장에 실패했습니다. (${code})`;
+      const error = createError(message, code);
       error.status = Number(response.status) || 0;
       throw error;
     }
@@ -1471,6 +1517,144 @@ class FirebaseRemoteClient {
     } catch (_) {
       if (!this.sessionGuardActive(guard)) return null;
       this.emitSync("offline", "정식 CRM 저장은 완료됐지만 최신 화면 반영을 다시 시도하는 중입니다.", { pending: false });
+      this.scheduleCanonicalRefreshRetry(guard);
+    }
+    return result;
+  }
+
+  async configureBuildingUnits(input) {
+    this.requireMutationPermission(buildingUnitsMutationForValidation(input));
+    const guard = this.captureSessionGuard();
+    const source = input && typeof input === "object" && !Array.isArray(input) ? input : null;
+    const allowedKeys = new Set(["buildVersion", "operatorId", "requestId", "buildingId", "units"]);
+    if (!source || Object.keys(source).some(key => !allowedKeys.has(key))) {
+      throw createError("호실 구성 저장 요청이 올바르지 않습니다.", "CANONICAL_REQUEST_INVALID");
+    }
+    const buildVersion = typeof source.buildVersion === "string" ? source.buildVersion : "";
+    const operatorId = typeof source.operatorId === "string" ? source.operatorId : "";
+    const buildingId = typeof source.buildingId === "string" ? source.buildingId : "";
+    const requestId = source.requestId === undefined || source.requestId === ""
+      ? crypto.randomUUID()
+      : String(source.requestId);
+    const units = source.units;
+    if (
+      !buildVersion || buildVersion !== buildVersion.trim() || Buffer.byteLength(buildVersion, "utf8") > 64
+      || !/^[A-Za-z0-9_-]{1,120}$/.test(operatorId) || operatorId.includes("@")
+      || !/^[A-Za-z0-9_-]{1,120}$/.test(buildingId)
+      || !CANONICAL_CRM_REQUEST_ID.test(requestId)
+      || !Array.isArray(units)
+    ) throw createError("호실 구성 저장 요청이 올바르지 않습니다.", "CANONICAL_REQUEST_INVALID");
+    if (units.length === 0) {
+      throw createError("저장할 호실을 한 개 이상 입력해 주세요.", "crm_building_unit_batch_empty");
+    }
+    if (units.length > 200) {
+      throw createError("한 번에 최대 200개 호실까지 저장할 수 있습니다.", "crm_building_unit_batch_too_large");
+    }
+    const itemKeys = new Set([
+      "entityId", "expectedVersion", "label", "floorLabel", "floorOrder", "unitOrder", "status",
+    ]);
+    const normalizedLabels = new Set();
+    const normalizedUnits = units.map(item => {
+      if (!item || typeof item !== "object" || Array.isArray(item) || Object.keys(item).some(key => !itemKeys.has(key))) {
+        throw createError("호실 구성 항목이 올바르지 않습니다.", "CANONICAL_REQUEST_INVALID");
+      }
+      const label = typeof item.label === "string" ? item.label : "";
+      const floorLabel = typeof item.floorLabel === "string" ? item.floorLabel : "";
+      const status = item.status === undefined ? "unknown" : item.status;
+      const hasEntityId = Object.prototype.hasOwnProperty.call(item, "entityId");
+      const hasExpectedVersion = Object.prototype.hasOwnProperty.call(item, "expectedVersion");
+      const normalizedLabel = normalizedBuildingUnitLabel(label);
+      if (
+        hasEntityId !== hasExpectedVersion
+        || (hasEntityId && (!/^[A-Za-z0-9_-]{1,120}$/.test(item.entityId)
+          || !Number.isSafeInteger(item.expectedVersion) || item.expectedVersion < 1))
+        || !label || label !== label.trim() || Buffer.byteLength(label, "utf8") > 256 || /[\u0000-\u001f\u007f]/u.test(label)
+        || !floorLabel || floorLabel !== floorLabel.trim() || Buffer.byteLength(floorLabel, "utf8") > 256 || /[\u0000-\u001f\u007f]/u.test(floorLabel)
+        || !Number.isSafeInteger(item.floorOrder) || item.floorOrder < -1_000 || item.floorOrder > 1_000
+        || !Number.isSafeInteger(item.unitOrder) || item.unitOrder < 0 || item.unitOrder > 100_000
+        || !CANONICAL_BUILDING_UNIT_STATUSES.has(status)
+      ) throw createError("호실 구성 항목이 올바르지 않습니다.", "CANONICAL_REQUEST_INVALID");
+      if (!normalizedLabel || normalizedLabels.has(normalizedLabel)) {
+        throw createError("같은 건물에 중복된 호실명이 있습니다.", "crm_building_unit_label_conflict");
+      }
+      normalizedLabels.add(normalizedLabel);
+      return {
+        ...(hasEntityId ? { entityId: item.entityId, expectedVersion: item.expectedVersion } : {}),
+        label,
+        floorLabel,
+        floorOrder: item.floorOrder,
+        unitOrder: item.unitOrder,
+        status,
+      };
+    });
+    const envelope = {
+      protocolVersion: 2,
+      clientKind: "desktop",
+      buildVersion,
+      operatorId,
+      requestId,
+      buildingId,
+      units: normalizedUnits,
+    };
+    if (Buffer.byteLength(JSON.stringify(normalizedUnits), "utf8") > CANONICAL_BUILDING_UNITS_BATCH_UNITS_MAX_BYTES) {
+      throw createError("호실 구성 저장 요청이 너무 큽니다.", "crm_building_unit_batch_too_large");
+    }
+    const body = JSON.stringify(envelope);
+    if (Buffer.byteLength(body, "utf8") > CANONICAL_BUILDING_UNITS_BATCH_BODY_MAX_BYTES) {
+      throw createError("호실 구성 저장 요청이 너무 큽니다.", "CANONICAL_BODY_TOO_LARGE");
+    }
+    const token = await this.ensureIdToken(false);
+    if (!this.sessionGuardActive(guard)) throw createError("로그인 세션이 변경되었습니다.", "AUTH_REQUIRED");
+    let response;
+    try {
+      response = await this.fetch(CANONICAL_BUILDING_UNITS_BATCH_ENDPOINT_URL, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+        body,
+      });
+    } catch (error) {
+      throw createError("호실 구성 저장 서버에 연결할 수 없습니다.", "NETWORK", error);
+    }
+    let payload = null;
+    try { payload = JSON.parse(await response.text()); } catch (_) {}
+    if (!this.sessionGuardActive(guard)) return null;
+    if (!response.ok) {
+      const remoteCode = payload && payload.error && String(payload.error.code || "");
+      const code = CANONICAL_CRM_ERROR_CODES.has(remoteCode) ? remoteCode : "CANONICAL_BUILDING_UNITS_COMMIT_FAILED";
+      const message = code === "crm_entity_version_conflict"
+        ? "다른 사용자가 호실 정보를 변경했습니다. 창을 닫고 최신 상태를 확인한 뒤 다시 시도해 주세요."
+        : code === "crm_vacancy_migration_required"
+          ? "기존 공실 정보가 모두 호실로 전환되지 않았습니다. 기존 공실과 미지정 공실 수를 확인해 다시 저장해 주세요."
+        : `호실 구성 저장에 실패했습니다. (${code})`;
+      const error = createError(message, code);
+      error.status = Number(response.status) || 0;
+      throw error;
+    }
+    const result = payload && payload.ok === true && payload.result;
+    const payloadKeys = payload && typeof payload === "object" && !Array.isArray(payload) ? Object.keys(payload).sort() : [];
+    const resultKeys = result && typeof result === "object" && !Array.isArray(result) ? Object.keys(result).sort() : [];
+    const entityIds = result && Array.isArray(result.entityIds) ? result.entityIds : [];
+    const counts = result ? [result.createdCount, result.updatedCount, result.unchangedCount] : [];
+    if (
+      !jsonEqual(payloadKeys, ["ok", "result"])
+      || !result || typeof result !== "object" || Array.isArray(result)
+      || !jsonEqual(resultKeys, ["buildingId", "createdCount", "entityIds", "repeated", "totalUnits", "unchangedCount", "updatedAt", "updatedCount"])
+      || result.buildingId !== buildingId
+      || !Number.isSafeInteger(result.totalUnits) || result.totalUnits !== normalizedUnits.length
+      || counts.some(count => !Number.isSafeInteger(count) || count < 0)
+      || counts.reduce((sum, count) => sum + count, 0) !== result.totalUnits
+      || entityIds.length !== result.totalUnits
+      || entityIds.some(id => typeof id !== "string" || !/^[A-Za-z0-9_-]{1,120}$/.test(id))
+      || new Set(entityIds).size !== entityIds.length
+      || !canonicalTimestamp(result.updatedAt)
+      || typeof result.repeated !== "boolean"
+    ) throw createError("호실 구성 저장 응답이 올바르지 않습니다.", "CANONICAL_RESPONSE_INVALID");
+    try {
+      await this.refreshAfterCanonicalCommit(guard);
+      if (!this.sessionGuardActive(guard)) return null;
+    } catch (_) {
+      if (!this.sessionGuardActive(guard)) return null;
+      this.emitSync("offline", "호실 구성은 저장됐지만 최신 화면 반영을 다시 시도하는 중입니다.", { pending: false });
       this.scheduleCanonicalRefreshRetry(guard);
     }
     return result;
@@ -2118,6 +2302,7 @@ module.exports = {
   FIREBASE,
   LEGACY_FIREBASE,
   CANONICAL_CRM_ENDPOINT_URL,
+  CANONICAL_BUILDING_UNITS_BATCH_ENDPOINT_URL,
   DEFAULT_CASE_AUTOMATION_ENDPOINT,
   VENDOR_CSV_URL,
   WORKFLOW_ACTIONS,

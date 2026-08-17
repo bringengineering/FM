@@ -43,6 +43,8 @@
   let currentView = "dashboard";
   let selectedCustomerId = "";
   let selectedBuildingId = "";
+  let selectedVacancyBuildingId = "";
+  let vacancyStatusFilter = "all";
   let selectedSalesProspectId = "";
   let selectedCustomerDrawerMode = "customer";
   let saveTimer = null;
@@ -101,6 +103,7 @@
     payments: ["건물별 납부 예정과 입금 확인", "입금 캘린더"],
     customers: ["고객 정보", "고객 관리"],
     buildings: ["건물별 업무를 한곳에서", "건물 관리"],
+    vacancies: ["층별 호실과 입퇴실 예정", "공실 현황"],
     workManagement: ["예정부터 완료·비용·증빙까지", "작업관리"],
     fieldOperations: ["BRING FIELD", "현장 업무"],
     consultations: ["전화·방문·미팅 내용", "상담 기록"],
@@ -117,6 +120,10 @@
   const BUILDING_MAINTENANCE_ITEMS = Core.BUILDING_MAINTENANCE_INCLUDES;
   const BUILDING_ROOM_LAYOUTS = Core.BUILDING_ROOM_TYPES;
   const BUILDING_ROOM_OPTIONS = Core.BUILDING_ROOM_OPTIONS;
+  const VACANCY_STATUS_ORDER = Object.freeze(["all", "vacant", "move_out_scheduled", "occupied", "maintenance", "unknown"]);
+  const VACANCY_STATUS_LABELS = Object.freeze({
+    all: "전체", occupied: "입주 중", vacant: "공실", move_out_scheduled: "공실 예정", maintenance: "정비 중", unknown: "확인 필요"
+  });
 
   const INDUSTRY_CHECKLISTS = Object.freeze({
     "누수": [
@@ -693,6 +700,7 @@
   function buildCanonicalBuildingPatch(values = {}) {
     const aliases = Array.isArray(values.aliases) ? [...new Set(values.aliases.map(value => String(value || "").trim()).filter(Boolean))] : [];
     const paymentBuildingIds = Array.isArray(values.paymentBuildingIds) ? [...new Set(values.paymentBuildingIds.map(value => String(value || "").trim()).filter(Boolean))] : [];
+    const stringList = value => Array.isArray(value) ? [...new Set(value.map(item => String(item || "").trim()).filter(Boolean))] : [];
     return {
       name: String(values.name || "").trim(),
       ownerCustomerId: String(values.ownerCustomerId || ""),
@@ -700,6 +708,17 @@
       status: String(values.status || ""),
       address: String(values.address || "").trim(),
       unitCount: Number(values.unitCount) || 0,
+      rentDeposit: Core.nonNegativeInteger(values.rentDeposit),
+      monthlyRent: Core.nonNegativeInteger(values.monthlyRent),
+      maintenanceFee: Core.nonNegativeInteger(values.maintenanceFee),
+      maintenanceIncludes: stringList(values.maintenanceIncludes),
+      maintenanceIncludeOther: String(values.maintenanceIncludeOther || "").trim(),
+      vacantUnitCount: Core.nonNegativeInteger(values.vacantUnitCount),
+      vacantUnits: stringList(values.vacantUnits),
+      roomTypes: stringList(values.roomTypes),
+      roomTypeOther: String(values.roomTypeOther || "").trim(),
+      roomOptions: stringList(values.roomOptions),
+      roomOptionOther: String(values.roomOptionOther || "").trim(),
       manager: String(values.manager || "").trim(),
       memo: String(values.memo || "").trim(),
       aliases,
@@ -708,10 +727,17 @@
   }
 
   function buildCanonicalBuildingUnitPatch(values = {}) {
+    const floorOrder = Number(values.floorOrder);
+    const unitOrder = Number(values.unitOrder);
     return {
       crmBuildingId: String(values.buildingId || ""),
       label: String(values.label || "").trim(),
+      floorLabel: String(values.floorLabel || "").trim(),
+      floorOrder: Number.isFinite(floorOrder) ? Math.max(-1000, Math.min(1000, Math.trunc(floorOrder))) : 0,
+      unitOrder: Number.isFinite(unitOrder) ? Math.max(0, Math.min(100000, Math.trunc(unitOrder))) : 0,
       status: String(values.status || ""),
+      moveOutAt: String(values.moveOutAt || ""),
+      availableFrom: String(values.availableFrom || ""),
       memo: String(values.memo || "").trim(),
     };
   }
@@ -939,6 +965,7 @@
     document.getElementById("navPaymentCount").textContent = paymentRows("all").filter(item => item.status === "overdue" || item.status === "manual_unpaid" || item.status === "review").length;
     document.getElementById("navCustomerCount").textContent = store.customers.length;
     document.getElementById("navBuildingCount").textContent = store.buildings.length;
+    document.getElementById("navVacancyCount").textContent = vacancyNavigationCount();
     document.getElementById("navConsultationCount").textContent = store.activities.length;
     document.getElementById("navContractCount").textContent = store.contracts.filter(item => item.status !== "종료").length;
     document.getElementById("navRelationshipCount").textContent = store.customers.filter(customerIsRelationshipCustomer).length;
@@ -957,11 +984,18 @@
       primaryActionButton.hidden = !canWriteCRM();
       primaryActionButton.dataset.action = "new-work-record";
       primaryActionButton.textContent = "＋ 새 작업";
+    } else if (currentView === "vacancies") {
+      const vacancyBuildings = (store.buildings || []).filter(building => building && !building.archivedAt);
+      if (!vacancyBuildings.some(building => building.id === selectedVacancyBuildingId)) selectedVacancyBuildingId = vacancyBuildings[0]?.id || "";
+      primaryActionButton.hidden = !canWriteCRM() || !selectedVacancyBuildingId;
+      primaryActionButton.dataset.action = "configure-vacancy";
+      primaryActionButton.textContent = "＋ 층·호실 구성";
     } else {
+      primaryActionButton.hidden = false;
       primaryActionButton.dataset.action = "new-customer";
       primaryActionButton.textContent = "＋ 새 고객";
     }
-    fieldOperatorControl.hidden = !["fieldOperations", "buildings", "pipeline"].includes(currentView);
+    fieldOperatorControl.hidden = !["fieldOperations", "buildings", "vacancies", "pipeline"].includes(currentView);
     if (!fieldOperatorControl.hidden) renderFieldOperatorControl();
   }
 
@@ -972,6 +1006,7 @@
     else if (currentView === "payments") renderPayments();
     else if (currentView === "customers") renderCustomers();
     else if (currentView === "buildings") renderBuildings();
+    else if (currentView === "vacancies") renderVacancies();
     else if (currentView === "workManagement") renderWorkManagement();
     else if (currentView === "fieldOperations") renderFieldOperations();
     else if (currentView === "consultations") renderConsultations();
@@ -1826,6 +1861,110 @@
   };
   const buildingMoneySummary = value => Core.money(value) > 0 ? krw(value) : "미입력";
 
+  const activeBuildingUnitsForBuilding = building => buildingUnitsForBuilding(building).filter(item => !item.archivedAt);
+  const vacancyUnitStatus = unit => VACANCY_STATUS_ORDER.includes(String(unit && unit.status || "")) && unit.status !== "all" ? unit.status : "unknown";
+  const normalizeVacancyUnitLabel = value => String(value || "").normalize("NFKC").trim().toLocaleLowerCase("ko-KR").replace(/\s+/g, "");
+  const legacyVacancyLabels = building => new Set(buildingArray(building && building.vacantUnits).map(normalizeVacancyUnitLabel));
+
+  function vacancyLegacyMigrationState(building) {
+    const formalUnits = activeBuildingUnitsForBuilding(building);
+    const formalActiveLabels = new Set(formalUnits.map(unit => normalizeVacancyUnitLabel(unit.label || unit.unitLabel)).filter(Boolean));
+    const formalVacantLabels = new Set(formalUnits
+      .filter(unit => vacancyUnitStatus(unit) === "vacant")
+      .map(unit => normalizeVacancyUnitLabel(unit.label || unit.unitLabel))
+      .filter(Boolean));
+    const namedByLabel = new Map();
+    buildingArray(building && building.vacantUnits).forEach(label => {
+      const normalized = normalizeVacancyUnitLabel(label);
+      if (normalized && !namedByLabel.has(normalized)) namedByLabel.set(normalized, label);
+    });
+    const namedLabels = [...namedByLabel.values()];
+    const unmatchedNamedLabels = [...namedByLabel.entries()].filter(([normalized]) => !formalVacantLabels.has(normalized)).map(([, label]) => label);
+    const missingNamedLabels = [...namedByLabel.entries()].filter(([normalized]) => !formalActiveLabels.has(normalized)).map(([, label]) => label);
+    const statusConflictNamedLabels = [...namedByLabel.entries()]
+      .filter(([normalized]) => formalActiveLabels.has(normalized) && !formalVacantLabels.has(normalized))
+      .map(([, label]) => label);
+    const legacyVacantCount = Math.max(Core.nonNegativeInteger(building && building.vacantUnitCount), namedByLabel.size);
+    const unnamedCount = Math.max(0, legacyVacantCount - namedByLabel.size);
+    const formalVacantCount = formalUnits.filter(unit => vacancyUnitStatus(unit) === "vacant").length;
+    return {
+      formalUnits,
+      namedLabels,
+      unmatchedNamedLabels,
+      missingNamedLabels,
+      statusConflictNamedLabels,
+      unnamedCount,
+      formalVacantCount,
+      requiredVacantCount: legacyVacantCount,
+      unresolvedCount: Math.max(unmatchedNamedLabels.length, legacyVacantCount - formalVacantCount, 0),
+    };
+  }
+
+  function inferredVacancyFloorLabel(unit) {
+    const stored = String(unit && unit.floorLabel || "").trim();
+    if (stored) return stored;
+    const label = String(unit && (unit.label || unit.unitLabel) || "").normalize("NFKC").trim();
+    const basement = label.match(/^(?:b|지하\s*)(\d+)/i);
+    if (basement) return `B${Number(basement[1])}`;
+    const number = label.match(/(\d+)/);
+    if (number) {
+      const roomNumber = Number(number[1]);
+      if (roomNumber >= 100) return `${Math.floor(roomNumber / 100)}층`;
+    }
+    return "층 미확인";
+  }
+
+  function vacancyFloorOrder(unit, floorLabel) {
+    const stored = Number(unit && unit.floorOrder);
+    if (Number.isFinite(stored) && stored !== 0) return Math.max(-1000, Math.min(1000, Math.trunc(stored)));
+    const label = String(floorLabel || inferredVacancyFloorLabel(unit)).trim();
+    const basement = label.match(/^(?:b|지하\s*)(\d+)/i);
+    if (basement) return Math.max(-1000, -Number(basement[1]));
+    const number = label.match(/-?\d+/);
+    if (number) return Math.max(-1000, Math.min(1000, Number(number[0])));
+    if (/옥탑|roof/i.test(label)) return 999;
+    return 1000;
+  }
+
+  function vacancyUnitOrder(unit) {
+    const stored = Number(unit && unit.unitOrder);
+    if (Number.isFinite(stored) && stored > 0) return Math.trunc(stored);
+    const number = String(unit && (unit.label || unit.unitLabel) || "").match(/(\d+)(?!.*\d)/);
+    return number ? Number(number[1]) : 999999;
+  }
+
+  function sortedVacancyUnits(units) {
+    return [...units].sort((left, right) => {
+      const leftFloor = inferredVacancyFloorLabel(left);
+      const rightFloor = inferredVacancyFloorLabel(right);
+      return vacancyFloorOrder(left, leftFloor) - vacancyFloorOrder(right, rightFloor)
+        || leftFloor.localeCompare(rightFloor, "ko", { numeric: true })
+        || vacancyUnitOrder(left) - vacancyUnitOrder(right)
+        || String(left.label || left.unitLabel || "").localeCompare(String(right.label || right.unitLabel || ""), "ko", { numeric: true });
+    });
+  }
+
+  function vacancySummaryForBuilding(building) {
+    const units = activeBuildingUnitsForBuilding(building);
+    const counts = { total: units.length, occupied: 0, vacant: 0, move_out_scheduled: 0, maintenance: 0, unknown: 0, formal: units.length > 0 };
+    if (units.length) units.forEach(unit => { counts[vacancyUnitStatus(unit)] += 1; });
+    else {
+      const legacyCount = Math.max(Core.nonNegativeInteger(building && building.vacantUnitCount), buildingArray(building && building.vacantUnits).length);
+      counts.total = Math.max(Core.nonNegativeInteger(building && building.unitCount), legacyCount);
+      counts.vacant = legacyCount;
+      counts.unknown = Math.max(0, counts.total - legacyCount);
+    }
+    counts.actionable = counts.vacant + counts.move_out_scheduled;
+    return counts;
+  }
+
+  function vacancyNavigationCount() {
+    return (store.buildings || []).filter(building => building && !building.archivedAt)
+      .reduce((total, building) => total + vacancySummaryForBuilding(building).actionable, 0);
+  }
+
+  const vacancyStatusBadge = status => `<span class="vacancy-status ${attr(status)}">${esc(VACANCY_STATUS_LABELS[status] || VACANCY_STATUS_LABELS.unknown)}</span>`;
+
   function renderBuildings() {
     const query = Core.normalizeText(searchEl.value);
     const buildings = [...store.buildings]
@@ -1889,17 +2028,186 @@
     const allUnits = buildingUnitsForBuilding(building);
     const units = allUnits.filter(item => !item.archivedAt);
     const archivedUnits = allUnits.filter(item => item.archivedAt);
-    const unitRecords = units.map(item => `<button type="button" class="building-detail-record clickable building-unit-record" data-building-unit-edit="${attr(item.id)}" data-building-id="${attr(building.id)}"><div><b>${esc(item.label || item.unitLabel || "호실명 미입력")}</b><span>${esc([item.status, item.memo].filter(Boolean).join(" · ") || "상태 미입력")}</span></div><em>수정</em></button>`).join("");
+    const unitRecords = units.map(item => `<button type="button" class="building-detail-record clickable building-unit-record" data-building-unit-edit="${attr(item.id)}" data-building-id="${attr(building.id)}"><div><b>${esc(item.label || item.unitLabel || "호실명 미입력")}</b><span>${esc([inferredVacancyFloorLabel(item), VACANCY_STATUS_LABELS[vacancyUnitStatus(item)], item.memo].filter(Boolean).join(" · "))}</span></div><em>수정</em></button>`).join("");
     const archivedUnitRecords = archivedUnits.length ? `<details class="building-units-archived"><summary>보관된 호실 ${archivedUnits.length}개</summary>${archivedUnits.map(item => `<div class="building-detail-record"><div><b>${esc(item.label || item.unitLabel || "호실")}</b><span>${esc(dateText(item.archivedAt))}</span></div>${canWriteCRM() ? `<button type="button" class="mini-button return" data-building-unit-restore="${attr(item.id)}" data-building-id="${attr(building.id)}">복원</button>` : ""}</div>`).join("")}</details>` : "";
     const customerRecords = customers.map(customer => `<div class="building-detail-record clickable" data-customer-open="${attr(customer.id)}"><div><b>${esc(customer.name || "이름 미입력")}${customer.id === building.ownerCustomerId ? " · 건물주" : ""}</b><span>${esc([customer.type, customer.phone, customer.company].filter(Boolean).join(" · ") || "연락처 미입력")}</span></div><em>고객 보기</em></div>`).join("");
-    const vacantUnits = buildingArray(building.vacantUnits);
-    const vacancyLabel = `${Math.max(0, Number(building.vacantUnitCount) || 0).toLocaleString("ko-KR")}개`;
-    const rentalSummary = `<section class="building-detail-section building-rental-detail wide"><header><b>임대·공실 정보</b><span>건물 공용 정보</span></header><div class="building-detail-body"><div class="building-rental-facts"><div><span>보증금</span><b>${esc(buildingMoneySummary(building.rentDeposit))}</b></div><div><span>월세</span><b>${esc(buildingMoneySummary(building.monthlyRent))}</b></div><div><span>관리비</span><b>${esc(buildingMoneySummary(building.maintenanceFee))}</b></div><div><span>공실</span><b>${esc(vacancyLabel)}</b><small>${esc(vacantUnits.join(", ") || "호실 미입력")}</small></div></div><div class="building-rental-lines"><div><b>관리비 포함</b><span>${esc(buildingListSummary(building.maintenanceIncludes, building.maintenanceIncludeOther))}</span></div><div><b>구조</b><span>${esc(buildingListSummary(building.roomTypes, building.roomTypeOther))}</span></div><div><b>호실 옵션</b><span>${esc(buildingListSummary(building.roomOptions, building.roomOptionOther))}</span></div></div></div></section>`;
-    return `<header class="building-hub-detail-head"><div class="building-hub-title"><span>${esc(building.buildingNo || building.id)}</span><h2>${esc(building.name || "건물명 미입력")}</h2><p>${esc(building.address || "주소 미입력")}</p></div><div class="building-hub-head-actions"><button class="secondary-button" data-building-edit="${attr(building.id)}">건물 정보 수정</button><button class="secondary-button" data-building-payments="${attr(building.id)}">입금 캘린더</button><button class="primary-button" data-building-new-case="${attr(building.id)}">＋ 새 케이스</button></div></header>
+    const vacancySummary = vacancySummaryForBuilding(building);
+    const vacantUnits = vacancySummary.formal ? units.filter(item => vacancyUnitStatus(item) === "vacant").map(item => item.label || item.unitLabel).filter(Boolean) : buildingArray(building.vacantUnits);
+    const vacancyLabel = `${vacancySummary.vacant.toLocaleString("ko-KR")}개`;
+    const vacancySubline = [vacantUnits.join(", "), vacancySummary.move_out_scheduled ? `공실 예정 ${vacancySummary.move_out_scheduled}개` : ""].filter(Boolean).join(" · ") || "호실 미입력";
+    const rentalSummary = `<section class="building-detail-section building-rental-detail wide"><header><b>임대·공실 정보</b><button type="button" class="mini-button" data-building-vacancies="${attr(building.id)}">공실 현황 보기</button></header><div class="building-detail-body"><div class="building-rental-facts"><div><span>보증금</span><b>${esc(buildingMoneySummary(building.rentDeposit))}</b></div><div><span>월세</span><b>${esc(buildingMoneySummary(building.monthlyRent))}</b></div><div><span>관리비</span><b>${esc(buildingMoneySummary(building.maintenanceFee))}</b></div><div><span>공실</span><b>${esc(vacancyLabel)}</b><small>${esc(vacancySubline)}</small></div></div><div class="building-rental-lines"><div><b>관리비 포함</b><span>${esc(buildingListSummary(building.maintenanceIncludes, building.maintenanceIncludeOther))}</span></div><div><b>구조</b><span>${esc(buildingListSummary(building.roomTypes, building.roomTypeOther))}</span></div><div><b>호실 옵션</b><span>${esc(buildingListSummary(building.roomOptions, building.roomOptionOther))}</span></div></div></div></section>`;
+    return `<header class="building-hub-detail-head"><div class="building-hub-title"><span>${esc(building.buildingNo || building.id)}</span><h2>${esc(building.name || "건물명 미입력")}</h2><p>${esc(building.address || "주소 미입력")}</p></div><div class="building-hub-head-actions"><button class="secondary-button" data-building-edit="${attr(building.id)}">건물 정보 수정</button><button class="secondary-button" data-building-vacancies="${attr(building.id)}">공실 현황</button><button class="secondary-button" data-building-payments="${attr(building.id)}">입금 캘린더</button><button class="primary-button" data-building-new-case="${attr(building.id)}">＋ 새 케이스</button></div></header>
       <div class="building-hub-detail-scroll"><div class="building-hub-kpis"><div class="building-hub-kpi"><span>연결 고객</span><b>${customers.length}명</b><small>${esc(owner ? `대표 ${owner.name}` : "건물주 연결 필요")}</small></div><div class="building-hub-kpi"><span>진행 계약</span><b>${activeContracts.length}건</b><small>${esc(activeContracts.length ? contractTypes(activeContracts[0]).join("·") : "활성 계약 없음")}</small></div><div class="building-hub-kpi"><span>진행 케이스</span><b>${openCases.length}건</b><small>${esc(openCases[0] ? Core.workflowProgress(openCases[0]).current : "진행 업무 없음")}</small></div><div class="building-hub-kpi ${overdueRows.length ? "alert" : ""}"><span>이번 달 입금</span><b>${rows.length}건</b><small>${esc(overdueRows.length ? `확인 필요 ${overdueRows.length}건` : amount ? `예정 ${krw(amount)}` : "납부 일정 없음")}</small></div></div>
-      <div class="building-identity-strip"><div><b>건물 유형</b><span>${esc(building.type || "미입력")}</span></div><div><b>운영 상태</b><span>${buildingStatusBadge(building.status)}</span></div><div><b>호실 수</b><span>${Number(building.unitCount) ? `${Number(building.unitCount).toLocaleString("ko-KR")}개` : "미입력"}</span></div><div><b>담당자</b><span>${esc(building.manager || "미입력")}</span></div></div>
+      <div class="building-identity-strip"><div><b>건물 유형</b><span>${esc(building.type || "미입력")}</span></div><div><b>운영 상태</b><span>${buildingStatusBadge(building.status)}</span></div><div><b>호실 수</b><span>${vacancySummary.formal ? `${vacancySummary.total.toLocaleString("ko-KR")}개` : Number(building.unitCount) ? `${Number(building.unitCount).toLocaleString("ko-KR")}개` : "미입력"}</span></div><div><b>담당자</b><span>${esc(building.manager || "미입력")}</span></div></div>
       <div class="building-detail-grid">${rentalSummary}<section class="building-detail-section"><header><b>연결 고객</b><span>${customers.length}명</span></header><div class="building-detail-body">${customerRecords || `<div class="building-detail-empty">연결된 고객이 없습니다. 건물 정보 수정에서 건물주를 선택하세요.</div>`}</div></section><section class="building-detail-section"><header><b>건물 호실</b><button type="button" class="mini-button" data-building-unit-add="${attr(building.id)}">＋ 호실</button></header><div class="building-detail-body">${unitRecords || `<div class="building-detail-empty">등록된 호실이 없습니다.</div>`}${archivedUnitRecords}</div></section><section class="building-detail-section"><header><b>계약</b><span>${contracts.length}건</span></header><div class="building-detail-body">${contractRecords || `<div class="building-detail-empty">연결된 계약이 없습니다.</div>`}</div></section><section class="building-detail-section"><header><b>케이스</b><span>${cases.length}건</span></header><div class="building-detail-body">${caseRecords || `<div class="building-detail-empty">연결된 케이스가 없습니다.</div>`}</div></section><section class="building-detail-section"><header><b>${esc(paymentMonthLabel(paymentMonth))} 입금 일정</b><span>${rows.length}건</span></header><div class="building-detail-body">${paymentRecords || `<div class="building-detail-empty">이번 달 납부 일정이 없습니다.</div>`}</div></section>${building.memo ? `<section class="building-detail-section wide"><header><b>건물 메모</b><span>공용 정보</span></header><div class="building-detail-body"><div class="building-detail-record"><div><b>관리 참고사항</b><span>${esc(building.memo)}</span></div></div></div></section>` : ""}</div></div>`;
     main.querySelector(".building-detail-grid")?.insertAdjacentHTML("afterbegin", ServiceOperationsUI.renderBuildingServices(building, store));
+  }
+
+  function vacancyUnitSearchText(unit) {
+    return Core.normalizeText([
+      unit && (unit.label || unit.unitLabel), inferredVacancyFloorLabel(unit),
+      VACANCY_STATUS_LABELS[vacancyUnitStatus(unit)], unit && (unit.availableFrom || unit.moveOutAt), unit && unit.memo
+    ].filter(Boolean).join(" "));
+  }
+
+  function renderVacancyUnitCard(unit, building) {
+    const status = vacancyUnitStatus(unit);
+    const availableFrom = String(unit.availableFrom || unit.moveOutAt || "").slice(0, 10);
+    const pastDue = status === "move_out_scheduled" && /^\d{4}-\d{2}-\d{2}$/.test(availableFrom) && availableFrom < todayKey();
+    const meta = status === "move_out_scheduled"
+      ? availableFrom ? `${shortDate(availableFrom)} 공실 예정${pastDue ? " · 날짜 확인 필요" : ""}` : "공실 예정일 미입력"
+      : String(unit.memo || "").trim() || "메모 없음";
+    return `<article class="vacancy-unit-card ${attr(status)} ${pastDue ? "date-warning" : ""}" data-vacancy-unit="${attr(unit.id)}"><header><strong>${esc(unit.label || unit.unitLabel || "호실명 미입력")}</strong>${vacancyStatusBadge(status)}</header><p>${esc(meta)}</p>${status === "move_out_scheduled" && unit.memo ? `<small>${esc(unit.memo)}</small>` : ""}<footer><span>${esc(inferredVacancyFloorLabel(unit))}</span>${canWriteCRM() ? `<button type="button" class="mini-button" data-vacancy-unit-edit="${attr(unit.id)}" data-building-id="${attr(building.id)}">수정</button>` : ""}</footer></article>`;
+  }
+
+  function renderVacancyDetail(building, query) {
+    const units = sortedVacancyUnits(activeBuildingUnitsForBuilding(building));
+    const summary = vacancySummaryForBuilding(building);
+    const buildingMatchesQuery = !query || Core.normalizeText([building.name, building.address, building.buildingNo, building.manager].join(" ")).includes(query);
+    const filteredUnits = units.filter(unit => (vacancyStatusFilter === "all" || vacancyUnitStatus(unit) === vacancyStatusFilter)
+      && (buildingMatchesQuery || vacancyUnitSearchText(unit).includes(query)));
+    const grouped = new Map();
+    filteredUnits.forEach(unit => {
+      const floorLabel = inferredVacancyFloorLabel(unit);
+      const key = `${vacancyFloorOrder(unit, floorLabel)}::${floorLabel}`;
+      if (!grouped.has(key)) grouped.set(key, { floorLabel, floorOrder: vacancyFloorOrder(unit, floorLabel), units: [] });
+      grouped.get(key).units.push(unit);
+    });
+    const floors = [...grouped.values()].sort((left, right) => left.floorOrder - right.floorOrder || left.floorLabel.localeCompare(right.floorLabel, "ko", { numeric: true }));
+    const statusTabs = VACANCY_STATUS_ORDER.map(status => {
+      const count = status === "all" ? summary.total : summary[status];
+      return `<button type="button" class="${vacancyStatusFilter === status ? "active" : ""}" data-vacancy-filter="${attr(status)}"><span>${esc(VACANCY_STATUS_LABELS[status])}</span><b>${Number(count || 0).toLocaleString("ko-KR")}</b></button>`;
+    }).join("");
+    const formalMismatch = summary.formal && Number(building.unitCount) > 0 && Number(building.unitCount) !== summary.total;
+    const legacyLabels = buildingArray(building.vacantUnits);
+    const legacyMigration = vacancyLegacyMigrationState(building);
+    const floorMarkup = floors.map(floor => {
+      const floorVacant = floor.units.filter(unit => vacancyUnitStatus(unit) === "vacant").length;
+      const floorUpcoming = floor.units.filter(unit => vacancyUnitStatus(unit) === "move_out_scheduled").length;
+      return `<section class="vacancy-floor-card" data-vacancy-floor="${attr(floor.floorLabel)}"><header><div><h3>${esc(floor.floorLabel)}</h3><span>${floor.units.length.toLocaleString("ko-KR")}개 호실</span></div><p>${floorVacant ? `공실 ${floorVacant}` : ""}${floorVacant && floorUpcoming ? " · " : ""}${floorUpcoming ? `공실 예정 ${floorUpcoming}` : floorVacant ? "" : "확인 완료"}</p></header><div class="vacancy-unit-grid">${floor.units.map(unit => renderVacancyUnitCard(unit, building)).join("")}</div></section>`;
+    }).join("");
+    const emptyMarkup = summary.formal
+      ? `<div class="vacancy-detail-empty"><b>${query ? "검색 조건에 맞는 호실이 없습니다" : "선택한 상태의 호실이 없습니다"}</b><span>${query ? "검색어를 지우거나 다른 건물을 선택해 주세요." : "상단에서 전체 상태를 선택해 모든 호실을 확인하세요."}</span></div>`
+      : `<div class="vacancy-detail-empty legacy"><b>층·호실 구성이 필요합니다</b><span>${legacyLabels.length ? `기존 공실 메모: ${esc(legacyLabels.join(", "))}` : "층과 층별 호실 수를 입력하면 공실 체크 현황을 시작할 수 있습니다."}</span>${canWriteCRM() ? `<button type="button" class="primary-button" data-vacancy-configure="${attr(building.id)}">층·호실 구성 시작</button>` : ""}</div>`;
+    return `<header class="vacancy-detail-head"><div><span>${esc(building.buildingNo || building.id)}</span><h2>${esc(building.name || "건물명 미입력")}</h2><p>${esc(building.address || "주소 미입력")}</p></div>${canWriteCRM() ? `<button type="button" class="secondary-button" data-vacancy-configure="${attr(building.id)}">층·호실 구성</button>` : ""}</header>
+      <div class="vacancy-detail-scroll"><div class="vacancy-kpis" data-vacancy-kpis><article><span>전체 호실</span><b>${summary.total.toLocaleString("ko-KR")}</b><small>${summary.formal ? `등록된 층 ${new Set(units.map(inferredVacancyFloorLabel)).size}개` : "기존 건물 정보 기준"}</small></article><article class="occupied"><span>입주 중</span><b>${summary.occupied.toLocaleString("ko-KR")}</b><small>${summary.formal && summary.total ? `입주율 ${Math.round(summary.occupied / summary.total * 100)}%` : "정식 호실 등록 필요"}</small></article><article class="vacant"><span>현재 공실</span><b>${summary.vacant.toLocaleString("ko-KR")}</b><small>즉시 확인할 호실</small></article><article class="upcoming"><span>공실 예정</span><b>${summary.move_out_scheduled.toLocaleString("ko-KR")}</b><small>예정일 확인 필요</small></article></div>${formalMismatch ? `<div class="vacancy-count-warning">건물 정보의 전체 호실 ${Number(building.unitCount).toLocaleString("ko-KR")}개와 등록된 정식 호실 ${summary.total.toLocaleString("ko-KR")}개가 다릅니다. 층·호실 구성을 확인해 주세요.</div>` : ""}${legacyMigration.unresolvedCount ? `<div class="vacancy-count-warning" data-vacancy-legacy-resolution>정식 공실로 옮기지 않은 기존 공실이 ${legacyMigration.unresolvedCount.toLocaleString("ko-KR")}실 있습니다.${legacyMigration.missingNamedLabels.length ? ` 아직 없는 호실: ${esc(legacyMigration.missingNamedLabels.join(", "))}.` : ""}${legacyMigration.statusConflictNamedLabels.length ? ` 상태 변경 필요: ${esc(legacyMigration.statusConflictNamedLabels.join(", "))}. 해당 호실 단건 수정에서 먼저 공실로 변경해 주세요.` : ""}${legacyMigration.unnamedCount ? ` 기존 기록 중 호실명 미지정 ${legacyMigration.unnamedCount.toLocaleString("ko-KR")}실.` : ""} 층·호실 구성에서 실제 호실로 지정해 주세요.</div>` : ""}<nav class="vacancy-status-tabs" aria-label="호실 상태 필터">${statusTabs}</nav><div class="vacancy-floor-list">${floorMarkup || emptyMarkup}</div></div>`;
+  }
+
+  function renderVacancies() {
+    const query = Core.normalizeText(searchEl.value);
+    const buildings = (store.buildings || []).filter(building => building && !building.archivedAt)
+      .filter(building => {
+        if (!query) return true;
+        const buildingText = Core.normalizeText([building.name, building.address, building.buildingNo, building.manager].join(" "));
+        return buildingText.includes(query) || activeBuildingUnitsForBuilding(building).some(unit => vacancyUnitSearchText(unit).includes(query));
+      })
+      .sort((left, right) => (left.status === "관리중" ? -1 : 0) - (right.status === "관리중" ? -1 : 0) || String(left.name || "").localeCompare(String(right.name || ""), "ko"));
+    if (buildings.length && !buildings.some(building => building.id === selectedVacancyBuildingId)) selectedVacancyBuildingId = buildings[0].id;
+    const building = buildings.find(item => item.id === selectedVacancyBuildingId) || null;
+    const buildingCards = buildings.map(item => {
+      const summary = vacancySummaryForBuilding(item);
+      return `<button type="button" class="vacancy-building-card ${item.id === selectedVacancyBuildingId ? "selected" : ""}" data-vacancy-building="${attr(item.id)}"><div><strong>${esc(item.name || "건물명 미입력")}</strong><em>${summary.actionable.toLocaleString("ko-KR")}</em></div><p>${esc(item.address || "주소 미입력")}</p><small>전체 ${summary.total.toLocaleString("ko-KR")} · 공실 ${summary.vacant.toLocaleString("ko-KR")} · 예정 ${summary.move_out_scheduled.toLocaleString("ko-KR")}${summary.formal ? "" : " · 구성 필요"}</small></button>`;
+    }).join("");
+    main.innerHTML = `<section class="vacancy-hero" data-vacancy-view><div><span>건물별 공실 체크</span><h2>층마다 입주·공실·공실 예정 호실을 확인합니다</h2><p>체크박스처럼 빠르게 훑되, 각 호실 상태는 한 번에 하나만 선택하도록 관리합니다.</p></div>${building && canWriteCRM() ? `<button type="button" class="primary-button" data-vacancy-configure="${attr(building.id)}">＋ 층·호실 구성</button>` : ""}</section><section class="vacancy-layout"><aside class="vacancy-building-browser"><header><div><b>건물 목록</b><span>공실·예정 호실을 먼저 확인하세요.</span></div><em>${buildings.length.toLocaleString("ko-KR")}곳</em></header><div class="vacancy-building-list">${buildingCards || `<div class="vacancy-building-empty">${query ? "검색 조건에 맞는 건물이 없습니다." : "등록된 건물이 없습니다."}</div>`}</div></aside><section class="vacancy-detail">${building ? renderVacancyDetail(building, query) : `<div class="vacancy-detail-empty"><b>${query ? "건물을 찾지 못했습니다" : "건물을 먼저 등록해 주세요"}</b><span>건물 관리에 등록된 건물을 기준으로 층과 호실을 구성합니다.</span></div>`}</section></section>`;
+  }
+
+  function vacancyConfigurationDraft(building) {
+    const groups = new Map();
+    const legacyMigration = vacancyLegacyMigrationState(building);
+    const formalUnits = legacyMigration.formalUnits;
+    const sourceUnits = [
+      ...formalUnits,
+      ...legacyMigration.missingNamedLabels.map(label => ({ id: "", label, status: "vacant" }))
+    ];
+    sortedVacancyUnits(sourceUnits).forEach(unit => {
+      const floorLabel = inferredVacancyFloorLabel(unit);
+      const floorOrder = vacancyFloorOrder(unit, floorLabel);
+      const key = `${floorOrder}::${floorLabel}`;
+      if (!groups.has(key)) groups.set(key, { key: crypto.randomUUID(), floorLabel, floorOrder, units: [] });
+      groups.get(key).units.push({
+        entityId: formalUnits.length ? unit.id : "",
+        expectedVersion: formalUnits.length ? Number(unit.entityVersion) || 0 : 0,
+        label: unit.label || unit.unitLabel || "",
+        status: vacancyUnitStatus(unit)
+      });
+    });
+    const floors = [...groups.values()];
+    return floors.length ? floors : [{ key: crypto.randomUUID(), floorLabel: "1층", floorOrder: 1, units: [] }];
+  }
+
+  function captureVacancyConfiguration(form) {
+    return [...form.querySelectorAll("[data-vacancy-floor-row]")].map(row => ({
+      key: row.dataset.floorKey,
+      floorLabel: String(row.querySelector("[data-vacancy-floor-label]")?.value || "").trim(),
+      floorOrder: Number(row.querySelector("[data-vacancy-floor-order]")?.value) || 0,
+      units: [...row.querySelectorAll("[data-vacancy-unit-label]")].map(input => ({
+        entityId: input.dataset.entityId || "",
+        expectedVersion: Number(input.dataset.expectedVersion) || 0,
+        label: String(input.value || "").trim(),
+        status: (() => {
+          const selected = input.closest("label")?.querySelector("[data-vacancy-unit-status]")?.value || input.dataset.status;
+          return VACANCY_STATUS_ORDER.includes(selected) && selected !== "all" ? selected : "unknown";
+        })()
+      }))
+    }));
+  }
+
+  function generatedVacancyUnitLabel(floorLabel, unitNumber) {
+    const label = String(floorLabel || "").normalize("NFKC").trim();
+    const basement = label.match(/^(?:b|지하\s*)(\d+)/i);
+    if (basement) return `B${Number(basement[1])}${String(unitNumber).padStart(2, "0")}호`;
+    const floorNumber = label.match(/-?\d+/);
+    if (floorNumber && Number(floorNumber[0]) > 0) return `${Number(floorNumber[0])}${String(unitNumber).padStart(2, "0")}호`;
+    return `${label || "호실"}-${unitNumber}호`;
+  }
+
+  function renderVacancyConfigurationPreview(form) {
+    const preview = form.querySelector("[data-vacancy-configuration-preview]");
+    if (!preview) return;
+    const floors = captureVacancyConfiguration(form);
+    const units = floors.flatMap(floor => floor.units.map((unit, index) => ({ ...unit, floorLabel: floor.floorLabel, unitOrder: index + 1 })));
+    preview.innerHTML = `<header><div><b>구성 미리보기</b><span>${floors.filter(floor => floor.units.length).length}개 층 · ${units.length}개 호실</span></div><em>기존 ${units.filter(unit => unit.entityId).length} · 신규 ${units.filter(unit => !unit.entityId).length}</em></header><div>${units.length ? units.map(unit => `<span class="${attr(unit.status)}">${esc(unit.floorLabel)} · ${esc(unit.label || "호실명 필요")}</span>`).join("") : `<p>층별 호실 수를 입력하고 자동 라벨을 만들어 주세요.</p>`}</div>`;
+  }
+
+  function renderVacancyConfigurationFloors(form, floors) {
+    form._vacancyFloorDrafts = floors;
+    const list = form.querySelector("[data-vacancy-floor-list]");
+    list.innerHTML = floors.map(floor => {
+      const hasExisting = floor.units.some(unit => unit.entityId);
+      return `<article class="vacancy-config-floor" data-vacancy-floor-row data-floor-key="${attr(floor.key)}"><header><label><span>층명</span><input data-vacancy-floor-label value="${attr(floor.floorLabel)}" placeholder="예: 2층, B1"></label><label><span>정렬 순서</span><input data-vacancy-floor-order type="number" min="-1000" max="1000" value="${attr(floor.floorOrder)}" step="1"></label><label><span>호실 수</span><input data-vacancy-floor-count type="number" min="0" max="200" value="${attr(floor.units.length)}" inputmode="numeric"></label><div><button type="button" class="secondary-button" data-vacancy-auto-label="${attr(floor.key)}">자동 라벨</button><button type="button" class="record-delete-button" data-vacancy-floor-remove="${attr(floor.key)}" ${hasExisting ? "disabled title=\"기존 호실이 있는 층은 제거할 수 없습니다\"" : ""}>층 제거</button></div></header><div class="vacancy-config-labels">${floor.units.length ? floor.units.map((unit, index) => `<label><span>${index + 1}</span><input data-vacancy-unit-label data-entity-id="${attr(unit.entityId || "")}" data-expected-version="${attr(unit.expectedVersion || 0)}" data-status="${attr(unit.status || "unknown")}" value="${attr(unit.label)}" ${unit.entityId ? "readonly title=\"기존 호실명은 호실 단건 수정에서 변경하세요\"" : ""}>${unit.entityId ? `<em>${esc(VACANCY_STATUS_LABELS[unit.status] || "기존")}</em>` : `<select data-vacancy-unit-status aria-label="${attr(`${unit.label || `${index + 1}번`} 상태`)}">${["unknown", "occupied", "vacant", "maintenance"].map(status => `<option value="${status}" ${status === unit.status ? "selected" : ""}>${esc(VACANCY_STATUS_LABELS[status])}</option>`).join("")}</select>`}</label>`).join("") : `<p>호실 수를 입력한 뒤 자동 라벨을 눌러 주세요.</p>`}</div></article>`;
+    }).join("");
+    renderVacancyConfigurationPreview(form);
+  }
+
+  function vacancyConfigurationEditor(buildingId) {
+    if (deferCanonicalMutation("층·호실 구성")) return;
+    const building = buildingById(buildingId);
+    if (!building || building.archivedAt) return showToast("건물을 찾지 못했습니다.", "error");
+    const initialFloors = vacancyConfigurationDraft(building);
+    const legacyMigration = vacancyLegacyMigrationState(building);
+    modalContent.innerHTML = `<div class="modal-head"><div><h2>층·호실 구성</h2><p>${esc(building.name || "건물")}의 실제 층과 호실을 등록합니다.</p></div><button class="close-button" data-action="close-modal">×</button></div><form id="vacancyConfigurationForm" class="modal-body vacancy-config-form" data-building-id="${attr(building.id)}"><div class="info-box">기존 호실과 상태는 그대로 보존합니다. 이 화면에서 빠진 기존 호실도 자동 보관되지 않습니다.</div>${legacyMigration.unresolvedCount ? `<div class="vacancy-legacy-warning" data-vacancy-legacy-resolution>정식 공실로 옮기지 않은 기존 공실이 ${legacyMigration.unresolvedCount.toLocaleString("ko-KR")}실 있습니다.${legacyMigration.missingNamedLabels.length ? ` 아직 없는 호실 ${esc(legacyMigration.missingNamedLabels.join(", "))}은 아래에 공실로 미리 넣었습니다.` : ""}${legacyMigration.statusConflictNamedLabels.length ? ` ${esc(legacyMigration.statusConflictNamedLabels.join(", "))}은 이미 정식 호실이지만 현재 공실이 아닙니다. 해당 호실 단건 수정에서 먼저 공실로 변경해 주세요.` : ""}${legacyMigration.unnamedCount ? ` 호실명 없는 ${legacyMigration.unnamedCount.toLocaleString("ko-KR")}실은 임의로 만들지 않습니다.` : ""} 실제 호실을 추가해 총 ${legacyMigration.requiredVacantCount.toLocaleString("ko-KR")}실을 ‘공실’로 지정해야 저장할 수 있습니다.</div>` : ""}<section class="vacancy-floor-builder"><header><div><b>층 구성</b><span>지상 층 수를 한 번에 만들거나 층을 직접 추가하세요.</span></div><label><span>지상 층 수</span><input data-vacancy-floor-total type="number" min="1" max="200" value="${Math.max(1, initialFloors.filter(floor => floor.floorOrder > 0 && floor.floorOrder < 999).length)}"></label><button type="button" class="secondary-button" data-vacancy-floor-range>1층부터 만들기</button><button type="button" class="secondary-button" data-vacancy-floor-add>＋ 층 추가</button></header><div data-vacancy-floor-list></div></section><section class="vacancy-config-preview" data-vacancy-configuration-preview></section><div class="form-actions"><button type="button" class="secondary-button" data-action="close-modal">취소</button><button type="submit" class="primary-button">층·호실 구성 저장</button></div></form>`;
+    openModal();
+    const form = document.getElementById("vacancyConfigurationForm");
+    renderVacancyConfigurationFloors(form, initialFloors);
+    setTimeout(() => form.querySelector("[data-vacancy-floor-label]")?.focus(), 30);
+  }
+
+  function isVacancyConfigurationConflict(value) {
+    const text = [value && value.code, value && value.errorCode, value && value.error, value && value.message]
+      .filter(Boolean).join(" ").toLocaleLowerCase("ko-KR");
+    return text.includes("crm_entity_version_conflict") || text.includes("crm_building_unit_label_conflict")
+      || text.includes("version conflict") || text.includes("버전 충돌") || text.includes("최신 버전");
+  }
+
+  async function recoverVacancyConfigurationConflict(buildingId) {
+    await refreshRendererOverlays(false).catch(() => undefined);
+    selectedBuildingId = buildingId;
+    selectedVacancyBuildingId = buildingId;
+    vacancyStatusFilter = "all";
+    closeModal();
+    currentView = "vacancies";
+    render();
+    showToast("다른 컴퓨터의 호실 변경을 반영했습니다. 층·호실 구성을 다시 열어 확인해 주세요.", "error");
   }
 
   function renderWorkManagement() {
@@ -2272,6 +2580,13 @@
     if (deferCanonicalMutation("건물")) return;
     const editing = buildingById(buildingId);
     const building = editing ? JSON.parse(JSON.stringify(editing)) : Core.createBuilding({ manager: store.settings.owner || "김현진" });
+    const formalUnits = editing ? activeBuildingUnitsForBuilding(editing) : [];
+    const formalVacantUnits = formalUnits.filter(unit => vacancyUnitStatus(unit) === "vacant");
+    const formalUpcomingUnits = formalUnits.filter(unit => vacancyUnitStatus(unit) === "move_out_scheduled");
+    const legacyMigration = editing ? vacancyLegacyMigrationState(editing) : null;
+    const vacancyFields = formalUnits.length
+      ? `<div class="building-derived-vacancy wide"><div><span>현재 공실</span><b>${formalVacantUnits.length.toLocaleString("ko-KR")}개</b><small>${esc(formalVacantUnits.map(unit => unit.label || unit.unitLabel).filter(Boolean).join(", ") || "없음")}</small></div><div><span>공실 예정</span><b>${formalUpcomingUnits.length.toLocaleString("ko-KR")}개</b><small>${esc(formalUpcomingUnits.map(unit => unit.label || unit.unitLabel).filter(Boolean).join(", ") || "없음")}</small></div><button type="button" class="secondary-button" data-vacancy-manage="${attr(editing.id)}">공실 현황에서 수정</button>${legacyMigration.unresolvedCount ? `<p class="building-derived-vacancy-warning" data-vacancy-legacy-resolution>기존 공실 ${legacyMigration.unresolvedCount.toLocaleString("ko-KR")}실은 실제 호실로 옮길 때까지 원본 값으로 보존됩니다. 다른 건물 정보는 그대로 저장할 수 있습니다.</p>` : ""}</div>`
+      : `${buildingNumberField("공실 수", "vacantUnitCount", building.vacantUnitCount, "개", "예: 2")}${field("공실 호실", "vacantUnits", buildingArray(building.vacantUnits).join(", "), "text", "예: 101호, 203호", "wide")}`;
     const customerOptions = ["", ...store.customers.map(customer => customer.id)];
     const ownerCustomerField = editing
       ? `<label class="field"><span>건물주·대표 고객</span><select disabled aria-disabled="true"><option>${esc(building.ownerCustomerId ? (customerById(building.ownerCustomerId)?.name || building.ownerCustomerId) : "아직 연결하지 않음")}</option></select><input type="hidden" name="ownerCustomerId" value="${attr(building.ownerCustomerId || "")}"><small>건물주 변경은 연결된 고객·건물 관계를 함께 옮기는 별도 이전 절차에서 처리합니다.</small></label>`
@@ -2290,8 +2605,7 @@
         ${buildingNumberField("보증금", "rentDeposit", building.rentDeposit, "원", "예: 3000000")}
         ${buildingNumberField("월세", "monthlyRent", building.monthlyRent, "원", "예: 330000")}
         ${buildingNumberField("관리비", "maintenanceFee", building.maintenanceFee, "원", "예: 50000")}
-        ${buildingNumberField("공실 수", "vacantUnitCount", building.vacantUnitCount, "개", "예: 2")}
-        ${field("공실 호실", "vacantUnits", buildingArray(building.vacantUnits).join(", "), "text", "예: 101호, 203호", "wide")}
+        ${vacancyFields}
         ${buildingChecklistField("관리비 포함 항목", "maintenanceIncludes", BUILDING_MAINTENANCE_ITEMS, building.maintenanceIncludes, "관리비에 포함되는 항목을 모두 선택하세요.", "maintenanceIncludeOther", building.maintenanceIncludeOther, "예: 승강기 유지비, 복도 청소")}
         ${buildingChecklistField("호실 구조", "roomTypes", BUILDING_ROOM_LAYOUTS, building.roomTypes, "건물에 있는 구조를 모두 선택하세요.", "roomTypeOther", building.roomTypeOther, "예: 복층, 쓰리룸")}
       </div></section>
@@ -2309,12 +2623,22 @@
     const building = buildingById(buildingId);
     if (!building) return showToast("건물을 찾지 못했습니다.", "error");
     const item = (store.buildingUnits || []).find(unit => unit && unit.id === unitId && String(unit.crmBuildingId || unit.buildingId || "") === String(building.id)) || {};
-    modalContent.innerHTML = `<div class="modal-head"><div><h2>${item.id ? "건물 호실 수정" : "건물 호실 등록"}</h2><p>${esc(building.name || "건물")}에 속한 실제 호실을 관리합니다.</p></div><button class="close-button" data-action="close-modal">×</button></div><form id="buildingUnitForm" class="modal-body" data-building-id="${attr(building.id)}" data-building-unit-id="${attr(item.id || "")}"><div class="form-grid">
+    const floorLabel = inferredVacancyFloorLabel(item);
+    const availableFrom = String(item.availableFrom || item.moveOutAt || "").slice(0, 10);
+    const dateWarning = vacancyUnitStatus(item) === "move_out_scheduled" && availableFrom && availableFrom < todayKey();
+    modalContent.innerHTML = `<div class="modal-head"><div><h2>${item.id ? "건물 호실 수정" : "건물 호실 등록"}</h2><p>${esc(building.name || "건물")}에 속한 실제 호실을 관리합니다.</p></div><button class="close-button" data-action="close-modal">×</button></div><form id="buildingUnitForm" class="modal-body" data-building-id="${attr(building.id)}" data-building-unit-id="${attr(item.id || "")}" data-return-view="${attr(currentView === "vacancies" ? "vacancies" : "buildings")}"><div class="form-grid">
       ${field("호실명 *", "label", item.label || item.unitLabel || "", "text", "예: 201호")}
-      ${selectField("호실 상태", "status", ["unknown", "occupied", "vacant", "move_out_scheduled", "maintenance"], item.status || "unknown", value => ({ unknown: "확인 필요", occupied: "입주 중", vacant: "공실", move_out_scheduled: "퇴실 예정", maintenance: "정비 중" })[value] || value)}
+      ${field("층명 *", "floorLabel", floorLabel === "층 미확인" ? "" : floorLabel, "text", "예: 2층, B1")}
+      ${field("층 정렬 순서", "floorOrder", vacancyFloorOrder(item, floorLabel), "number", "지하층은 음수")}
+      ${field("층 내 순서", "unitOrder", vacancyUnitOrder(item) === 999999 ? "" : vacancyUnitOrder(item), "number", "예: 1")}
+      ${selectField("호실 상태", "status", ["unknown", "occupied", "vacant", "move_out_scheduled", "maintenance"], item.status || "unknown", value => ({ unknown: "확인 필요", occupied: "입주 중", vacant: "공실", move_out_scheduled: "공실 예정", maintenance: "정비 중" })[value] || value)}
+      ${field("공실 예정일", "availableFrom", availableFrom, "date")}
+      <div class="info-box wide vacancy-date-guide ${dateWarning ? "warning" : ""}">${dateWarning ? "공실 예정일이 지났습니다. 실제 상태를 확인해 주세요. 날짜가 지났다고 자동으로 공실 처리하지 않습니다." : "공실 예정 상태를 선택하면 공실 예정일을 반드시 입력해 주세요."}</div>
       ${areaField("호실 메모", "memo", item.memo || "", "wide")}
     </div><div class="form-actions">${item.id ? `<button type="button" class="danger-outline-button form-delete-left" data-building-unit-archive="${attr(item.id)}" data-building-id="${attr(building.id)}">호실 보관</button>` : ""}<button type="button" class="secondary-button" data-action="close-modal">취소</button><button type="submit" class="primary-button">${item.id ? "호실 저장" : "호실 등록"}</button></div></form>`;
     openModal();
+    const availableFromInput = document.querySelector('#buildingUnitForm [name="availableFrom"]');
+    if (availableFromInput) availableFromInput.required = vacancyUnitStatus(item) === "move_out_scheduled";
     setTimeout(() => document.querySelector('#buildingUnitForm [name="label"]')?.focus(), 30);
   }
 
@@ -3826,6 +4150,124 @@
     if (driveImportApprove) { driveImportApprovalEditor(driveImportApprove.dataset.driveImportApprove); return; }
     const driveImportReject = event.target.closest("[data-drive-import-reject]");
     if (driveImportReject) { driveImportRejectionEditor(driveImportReject.dataset.driveImportReject); return; }
+    const buildingVacancies = event.target.closest("[data-building-vacancies], [data-vacancy-manage]");
+    if (buildingVacancies) {
+      const buildingId = buildingVacancies.dataset.buildingVacancies || buildingVacancies.dataset.vacancyManage;
+      const building = buildingById(buildingId);
+      if (!building || building.archivedAt) return showToast("건물을 찾지 못했습니다.", "error");
+      selectedBuildingId = building.id;
+      selectedVacancyBuildingId = building.id;
+      vacancyStatusFilter = "all";
+      closeModal();
+      closeDrawer();
+      currentView = "vacancies";
+      render();
+      return;
+    }
+    const vacancyBuilding = event.target.closest("[data-vacancy-building]");
+    if (vacancyBuilding) {
+      selectedVacancyBuildingId = vacancyBuilding.dataset.vacancyBuilding;
+      vacancyStatusFilter = "all";
+      renderVacancies();
+      pageMeta();
+      return;
+    }
+    const vacancyFilter = event.target.closest("[data-vacancy-filter]");
+    if (vacancyFilter) {
+      const nextFilter = vacancyFilter.dataset.vacancyFilter;
+      vacancyStatusFilter = VACANCY_STATUS_ORDER.includes(nextFilter) ? nextFilter : "all";
+      renderVacancies();
+      return;
+    }
+    const vacancyConfigure = event.target.closest("[data-vacancy-configure]");
+    if (vacancyConfigure) {
+      if (!canWriteCRM()) return showToast("조회 전용 계정은 층·호실 구성을 변경할 수 없습니다.", "error");
+      vacancyConfigurationEditor(vacancyConfigure.dataset.vacancyConfigure);
+      return;
+    }
+    const vacancyUnitEdit = event.target.closest("[data-vacancy-unit-edit]");
+    if (vacancyUnitEdit) {
+      if (!canWriteCRM()) return showToast("조회 전용 계정은 호실 상태를 변경할 수 없습니다.", "error");
+      buildingUnitEditor(vacancyUnitEdit.dataset.buildingId, vacancyUnitEdit.dataset.vacancyUnitEdit);
+      return;
+    }
+    const vacancyFloorAdd = event.target.closest("[data-vacancy-floor-add]");
+    if (vacancyFloorAdd) {
+      if (!canWriteCRM()) return showToast("조회 전용 계정은 층 구성을 변경할 수 없습니다.", "error");
+      const form = vacancyFloorAdd.closest("#vacancyConfigurationForm");
+      if (!form) return;
+      const floors = captureVacancyConfiguration(form);
+      const ordinaryOrders = floors.map(floor => floor.floorOrder).filter(order => Number.isFinite(order) && order > 0 && order < 999);
+      const floorOrder = ordinaryOrders.length ? Math.max(...ordinaryOrders) + 1 : 1;
+      floors.push({ key: crypto.randomUUID(), floorLabel: `${floorOrder}층`, floorOrder, units: [] });
+      renderVacancyConfigurationFloors(form, floors);
+      form.querySelector(`[data-floor-key="${attr(floors.at(-1).key)}"] [data-vacancy-floor-label]`)?.focus();
+      return;
+    }
+    const vacancyFloorRange = event.target.closest("[data-vacancy-floor-range]");
+    if (vacancyFloorRange) {
+      if (!canWriteCRM()) return showToast("조회 전용 계정은 층 구성을 변경할 수 없습니다.", "error");
+      const form = vacancyFloorRange.closest("#vacancyConfigurationForm");
+      if (!form) return;
+      const total = Math.min(200, Math.max(1, Core.nonNegativeInteger(form.querySelector("[data-vacancy-floor-total]")?.value)));
+      form.querySelector("[data-vacancy-floor-total]").value = total;
+      const floors = captureVacancyConfiguration(form);
+      for (let floorOrder = 1; floorOrder <= total; floorOrder += 1) {
+        const label = `${floorOrder}층`;
+        const exists = floors.some(floor => floor.floorOrder === floorOrder || normalizeVacancyUnitLabel(floor.floorLabel) === normalizeVacancyUnitLabel(label));
+        if (!exists) floors.push({ key: crypto.randomUUID(), floorLabel: label, floorOrder, units: [] });
+      }
+      floors.sort((left, right) => left.floorOrder - right.floorOrder || left.floorLabel.localeCompare(right.floorLabel, "ko", { numeric: true }));
+      renderVacancyConfigurationFloors(form, floors);
+      return;
+    }
+    const vacancyAutoLabel = event.target.closest("[data-vacancy-auto-label]");
+    if (vacancyAutoLabel) {
+      if (!canWriteCRM()) return showToast("조회 전용 계정은 호실 구성을 변경할 수 없습니다.", "error");
+      const form = vacancyAutoLabel.closest("#vacancyConfigurationForm");
+      if (!form) return;
+      const floorKey = vacancyAutoLabel.dataset.vacancyAutoLabel;
+      const floors = captureVacancyConfiguration(form);
+      const floor = floors.find(item => item.key === floorKey);
+      const row = [...form.querySelectorAll("[data-vacancy-floor-row]")].find(item => item.dataset.floorKey === floorKey);
+      if (!floor || !row) return;
+      if (!floor.floorLabel) return showToast("자동 라벨을 만들 층명을 입력해 주세요.", "error");
+      const requestedCount = Math.min(200, Core.nonNegativeInteger(row.querySelector("[data-vacancy-floor-count]")?.value));
+      const existingUnits = floor.units.filter(unit => unit.entityId);
+      const desiredCount = Math.max(requestedCount, existingUnits.length);
+      if (requestedCount < existingUnits.length) showToast(`기존 호실 ${existingUnits.length}개는 유지됩니다.`);
+      const draftUnits = floor.units.filter(unit => !unit.entityId).slice(0, Math.max(0, desiredCount - existingUnits.length));
+      floor.units = [...existingUnits, ...draftUnits];
+      const usedLabels = new Set(floors.filter(item => item.key !== floorKey).flatMap(item => item.units).map(unit => normalizeVacancyUnitLabel(unit.label)).filter(Boolean));
+      floor.units.forEach(unit => usedLabels.add(normalizeVacancyUnitLabel(unit.label)));
+      const legacyLabels = legacyVacancyLabels(buildingById(form.dataset.buildingId));
+      let sequence = 1;
+      while (floor.units.length < desiredCount) {
+        let label = generatedVacancyUnitLabel(floor.floorLabel, sequence);
+        while (usedLabels.has(normalizeVacancyUnitLabel(label))) {
+          sequence += 1;
+          label = generatedVacancyUnitLabel(floor.floorLabel, sequence);
+        }
+        const normalizedLabel = normalizeVacancyUnitLabel(label);
+        floor.units.push({ entityId: "", expectedVersion: 0, label, status: legacyLabels.has(normalizedLabel) ? "vacant" : "unknown" });
+        usedLabels.add(normalizedLabel);
+        sequence += 1;
+      }
+      renderVacancyConfigurationFloors(form, floors);
+      return;
+    }
+    const vacancyFloorRemove = event.target.closest("[data-vacancy-floor-remove]");
+    if (vacancyFloorRemove) {
+      if (!canWriteCRM()) return showToast("조회 전용 계정은 층 구성을 변경할 수 없습니다.", "error");
+      const form = vacancyFloorRemove.closest("#vacancyConfigurationForm");
+      if (!form) return;
+      const floors = captureVacancyConfiguration(form);
+      const target = floors.find(floor => floor.key === vacancyFloorRemove.dataset.vacancyFloorRemove);
+      if (target?.units.some(unit => unit.entityId)) return showToast("기존 호실이 있는 층은 제거할 수 없습니다.", "error");
+      if (floors.length <= 1) return showToast("층을 한 개 이상 유지해 주세요.", "error");
+      renderVacancyConfigurationFloors(form, floors.filter(floor => floor.key !== vacancyFloorRemove.dataset.vacancyFloorRemove));
+      return;
+    }
     const buildingEdit = event.target.closest("[data-building-edit]");
     if (buildingEdit) { buildingEditor(buildingEdit.dataset.buildingEdit); return; }
     const buildingRestore = event.target.closest("[data-building-restore]");
@@ -3986,6 +4428,12 @@
     else if (action === "open-sales-standards") openSalesStandards("");
     else if (action === "new-customer") customerEditor("");
     else if (action === "new-building") buildingEditor("");
+    else if (action === "configure-vacancy") {
+      if (!canWriteCRM()) return showToast("조회 전용 계정은 층·호실 구성을 변경할 수 없습니다.", "error");
+      const buildingId = selectedVacancyBuildingId || (store.buildings || []).find(building => building && !building.archivedAt)?.id || "";
+      if (!buildingId) return showToast("층·호실을 구성할 건물을 먼저 등록해 주세요.", "error");
+      vacancyConfigurationEditor(buildingId);
+    }
     else if (action === "new-contract") contractEditor("");
     else if (action === "new-workflow-case") workflowCaseEditor();
     else if (action === "new-payment-schedule") paymentScheduleEditor("");
@@ -4035,6 +4483,26 @@
   });
 
   document.addEventListener("change", async event => {
+    if (event.target.matches("#vacancyConfigurationForm [data-vacancy-unit-status]")) {
+      renderVacancyConfigurationPreview(event.target.closest("#vacancyConfigurationForm"));
+      return;
+    }
+    if (event.target.matches('#buildingUnitForm [name="status"], #buildingUnitForm [name="availableFrom"]')) {
+      const form = event.target.closest("#buildingUnitForm");
+      const status = form?.elements.status?.value || "unknown";
+      const dateInput = form?.elements.availableFrom;
+      const guide = form?.querySelector(".vacancy-date-guide");
+      const requiresDate = status === "move_out_scheduled";
+      if (dateInput) dateInput.required = requiresDate;
+      const pastDue = requiresDate && /^\d{4}-\d{2}-\d{2}$/.test(dateInput?.value || "") && dateInput.value < todayKey();
+      if (guide) {
+        guide.classList.toggle("warning", pastDue);
+        guide.textContent = pastDue
+          ? "공실 예정일이 지났습니다. 실제 상태를 확인해 주세요. 날짜가 지났다고 자동으로 공실 처리하지 않습니다."
+          : requiresDate ? "공실 예정 상태에는 공실 예정일을 반드시 입력해 주세요." : "공실 예정 상태를 선택할 때만 예정일이 저장됩니다.";
+      }
+      return;
+    }
     const workFilter = event.target.closest("[data-work-filter]");
     if (workFilter) {
       workFilters[workFilter.dataset.workFilter] = workFilter.value || "all";
@@ -4449,13 +4917,108 @@
       if (!result.ok) return showToast(result.error || "입금 상태를 저장하지 못했습니다.", "error");
       await refreshOperations({ silent: true, render: false });
       closeModal(); currentView = "payments"; render(); showToast("입금 상태를 공용 캘린더에 반영했습니다.", "success");
+    } else if (form.id === "vacancyConfigurationForm") {
+      if (deferCanonicalMutation("층·호실 구성")) return;
+      if (pendingRemoteStore) {
+        const latest = pendingRemoteStore;
+        pendingRemoteStore = null;
+        closeModal();
+        applyRemoteStore(latest);
+        flushPendingRemote();
+        currentView = "vacancies";
+        render();
+        return showToast("다른 컴퓨터의 최신 변경을 반영했습니다. 층·호실 구성을 다시 열어 확인해 주세요.", "error");
+      }
+      const building = buildingById(form.dataset.buildingId);
+      if (!building || building.archivedAt) return showToast("건물을 찾지 못했습니다.", "error");
+      const floors = captureVacancyConfiguration(form);
+      if (!floors.length) return showToast("한 개 이상의 층을 구성해 주세요.", "error");
+      if (floors.some(floor => !floor.floorLabel)) return showToast("모든 층의 층명을 입력해 주세요.", "error");
+      const normalizedFloors = floors.map(floor => normalizeVacancyUnitLabel(floor.floorLabel));
+      if (new Set(normalizedFloors).size !== normalizedFloors.length) return showToast("같은 층명이 두 번 입력되어 있습니다.", "error");
+      const configuredUnits = floors.flatMap(floor => floor.units.map((unit, index) => ({
+        entityId: unit.entityId,
+        expectedVersion: unit.expectedVersion,
+        label: String(unit.label || "").trim(),
+        floorLabel: floor.floorLabel,
+        floorOrder: Math.max(-1000, Math.min(1000, Math.trunc(Number(floor.floorOrder) || 0))),
+        unitOrder: index + 1,
+        status: vacancyUnitStatus(unit),
+      })));
+      if (!configuredUnits.length) return showToast("한 개 이상의 호실을 구성해 주세요.", "error");
+      if (configuredUnits.length > 200) return showToast("한 건물의 호실은 최대 200개까지 구성할 수 있습니다.", "error");
+      if (configuredUnits.some(unit => !unit.label)) return showToast("모든 호실명을 입력해 주세요.", "error");
+      const normalizedLabels = configuredUnits.map(unit => normalizeVacancyUnitLabel(unit.label));
+      if (new Set(normalizedLabels).size !== normalizedLabels.length) return showToast("같은 호실명이 두 번 입력되어 있습니다.", "error");
+      if (configuredUnits.some(unit => unit.entityId && (!Number.isInteger(unit.expectedVersion) || unit.expectedVersion < 1))) return showToast("기존 호실의 최신 버전을 확인할 수 없습니다. 창을 닫고 다시 열어 주세요.", "error");
+      const legacyMigration = vacancyLegacyMigrationState(building);
+      const legacyVacancyMinimum = legacyMigration.requiredVacantCount;
+      const configuredVacancies = configuredUnits.filter(unit => unit.status === "vacant").length;
+      const configuredVacantLabels = new Set(configuredUnits
+        .filter(unit => unit.status === "vacant")
+        .map(unit => normalizeVacancyUnitLabel(unit.label))
+        .filter(Boolean));
+      const statusConflictNamedVacancy = legacyMigration.statusConflictNamedLabels[0];
+      if (statusConflictNamedVacancy) return showToast(`${statusConflictNamedVacancy} 기존 공실은 이미 정식 호실로 등록되어 있습니다. 해당 호실 단건 수정에서 먼저 공실로 변경해 주세요.`, "error");
+      const unresolvedNamedVacancy = legacyMigration.namedLabels.find(label => !configuredVacantLabels.has(normalizeVacancyUnitLabel(label)));
+      if (unresolvedNamedVacancy) return showToast(`${unresolvedNamedVacancy} 기존 공실은 최초 이전 시 동일한 호실명으로 공실 지정해 주세요.`, "error");
+      if (legacyVacancyMinimum > configuredVacancies) return showToast(`기존 공실을 실제 호실에 지정해 주세요. 필요한 ${legacyVacancyMinimum}실 중 ${configuredVacancies}실이 공실로 지정되었습니다.`, "error");
+      const existingIds = new Set(activeBuildingUnitsForBuilding(building).map(unit => String(unit.id || "")).filter(Boolean));
+      const configuredExistingIds = new Set(configuredUnits.map(unit => String(unit.entityId || "")).filter(Boolean));
+      if ([...existingIds].some(id => !configuredExistingIds.has(id))) return showToast("기존 호실이 구성에서 누락되었습니다. 창을 닫고 최신 상태를 다시 확인해 주세요.", "error");
+      if (typeof api.configureBuildingUnits !== "function") return showToast("층·호실 구성 기능을 불러오지 못했습니다. 앱을 다시 실행해 주세요.", "error");
+      const submitButton = form.querySelector('button[type="submit"]');
+      if (submitButton) submitButton.disabled = true;
+      try {
+        const result = await api.configureBuildingUnits({
+          buildingId: building.id,
+          operatorId: selectedFieldOperatorId,
+          units: configuredUnits.map(unit => Object.assign(
+            { label: unit.label, floorLabel: unit.floorLabel, floorOrder: unit.floorOrder, unitOrder: unit.unitOrder, status: unit.status },
+            unit.entityId ? { entityId: unit.entityId, expectedVersion: unit.expectedVersion } : {}
+          )),
+        });
+        if (!result || result.ok === false || result.error) {
+          if (isVacancyConfigurationConflict(result)) return await recoverVacancyConfigurationConflict(building.id);
+          return showToast(result && result.error || "층·호실 구성을 저장하지 못했습니다.", "error");
+        }
+        const configuredVacantLabels = configuredUnits.filter(unit => unit.status === "vacant").map(unit => unit.label);
+        const localBuilding = buildingById(building.id);
+        if (localBuilding) {
+          localBuilding.vacantUnitCount = configuredVacantLabels.length;
+          localBuilding.vacantUnits = configuredVacantLabels;
+        }
+        await refreshRendererOverlays(false);
+        selectedBuildingId = building.id;
+        selectedVacancyBuildingId = building.id;
+        vacancyStatusFilter = "all";
+        closeModal();
+        currentView = "vacancies";
+        render();
+        const changed = Number(result.createdCount || 0) + Number(result.updatedCount || 0);
+        showToast(changed ? `층·호실 ${Number(result.totalUnits || configuredUnits.length).toLocaleString("ko-KR")}개 구성을 저장했습니다.` : "층·호실 구성이 최신 상태입니다.", "success");
+      } catch (error) {
+        if (isVacancyConfigurationConflict(error)) return await recoverVacancyConfigurationConflict(building.id);
+        showToast(error.message || "층·호실 구성을 저장하지 못했습니다.", "error");
+      } finally {
+        if (submitButton && submitButton.isConnected) submitButton.disabled = false;
+      }
     } else if (form.id === "buildingUnitForm") {
       if (deferCanonicalMutation("건물 호실")) return;
       const raw = Object.fromEntries(new FormData(form).entries());
       const label = String(raw.label || "").trim();
       if (!label) return showToast("호실명을 입력해 주세요.", "error");
+      const floorLabel = String(raw.floorLabel || "").trim();
+      if (!floorLabel) return showToast("층명을 입력해 주세요.", "error");
+      const status = VACANCY_STATUS_ORDER.includes(raw.status) && raw.status !== "all" ? raw.status : "unknown";
+      const availableFrom = status === "move_out_scheduled" ? String(raw.availableFrom || "").slice(0, 10) : "";
+      if (status === "move_out_scheduled" && !availableFrom) return showToast("공실 예정 상태에는 공실 예정일을 입력해 주세요.", "error");
+      const unitBuilding = buildingById(form.dataset.buildingId);
+      if (!unitBuilding || unitBuilding.archivedAt) return showToast("건물을 찾지 못했습니다.", "error");
       const existing = (store.buildingUnits || []).find(item => item && item.id === form.dataset.buildingUnitId);
       if (existing && (!Number.isInteger(existing.entityVersion) || existing.entityVersion < 1)) return showToast("최신 호실 버전을 확인한 뒤 다시 시도해 주세요.", "error");
+      const duplicate = activeBuildingUnitsForBuilding(unitBuilding).find(unit => unit.id !== (existing && existing.id) && normalizeVacancyUnitLabel(unit.label || unit.unitLabel) === normalizeVacancyUnitLabel(label));
+      if (duplicate) return showToast("같은 건물에 동일한 호실명이 이미 등록되어 있습니다.", "error");
       const entityId = existing && existing.id || crypto.randomUUID();
       try {
         await commitCanonicalEntity({
@@ -4463,11 +5026,14 @@
           entityId,
           operation: existing ? "update" : "create",
           expectedVersion: existing ? existing.entityVersion : 0,
-          patch: buildCanonicalBuildingUnitPatch({ buildingId: form.dataset.buildingId, label, status: raw.status, memo: raw.memo }),
+          patch: buildCanonicalBuildingUnitPatch({ buildingId: form.dataset.buildingId, label, floorLabel, floorOrder: raw.floorOrder, unitOrder: raw.unitOrder, status, moveOutAt: "", availableFrom, memo: raw.memo }),
           reason: existing ? "CRM 건물 호실 수정" : "CRM 건물 호실 등록",
         });
         selectedBuildingId = form.dataset.buildingId;
-        closeModal(); currentView = "buildings"; render(); showToast("건물 호실을 저장했습니다.", "success");
+        selectedVacancyBuildingId = form.dataset.buildingId;
+        const returnView = form.dataset.returnView === "vacancies" ? "vacancies" : "buildings";
+        closeModal(); currentView = returnView; render();
+        showToast(status === "move_out_scheduled" && availableFrom < todayKey() ? "호실을 저장했습니다. 지난 공실 예정일의 실제 상태를 확인해 주세요." : "건물 호실을 저장했습니다.", status === "move_out_scheduled" && availableFrom < todayKey() ? "" : "success");
       } catch (error) { showToast(error.message || "건물 호실을 저장하지 못했습니다.", "error"); }
     } else if (form.id === "buildingForm") {
       if (deferCanonicalMutation("건물")) return;
@@ -4477,9 +5043,16 @@
       if (!name) return showToast("건물명을 입력해 주세요.", "error");
       const nonNegativeInteger = Core.nonNegativeInteger;
       const checkedValues = fieldName => [...new Set(formData.getAll(fieldName).map(value => String(value || "").trim()).filter(Boolean))];
-      const vacantUnits = [...new Set(String(raw.vacantUnits || "").split(/[\n,，;]+/).map(value => value.trim()).filter(Boolean))];
-      const vacantUnitCount = nonNegativeInteger(raw.vacantUnitCount);
-      if (vacantUnits.length > vacantUnitCount) return showToast(`공실 호실을 ${vacantUnits.length}개 입력했습니다. 공실 수를 ${vacantUnits.length}개 이상으로 입력해 주세요.`, "error");
+      const existing = buildingById(form.dataset.buildingId);
+      const formalUnits = existing ? activeBuildingUnitsForBuilding(existing) : [];
+      const legacyMigration = existing ? vacancyLegacyMigrationState(existing) : null;
+      const vacantUnits = formalUnits.length
+        ? legacyMigration.unresolvedCount
+          ? buildingArray(existing.vacantUnits)
+          : formalUnits.filter(unit => vacancyUnitStatus(unit) === "vacant").map(unit => String(unit.label || unit.unitLabel || "").trim()).filter(Boolean)
+        : [...new Set(String(raw.vacantUnits || "").split(/[\n,，;]+/).map(value => value.trim()).filter(Boolean))];
+      const vacantUnitCount = formalUnits.length ? legacyMigration.unresolvedCount ? nonNegativeInteger(existing.vacantUnitCount) : vacantUnits.length : nonNegativeInteger(raw.vacantUnitCount);
+      if (!(formalUnits.length && legacyMigration.unresolvedCount) && vacantUnits.length > vacantUnitCount) return showToast(`공실 호실을 ${vacantUnits.length}개 입력했습니다. 공실 수를 ${vacantUnits.length}개 이상으로 입력해 주세요.`, "error");
       const maintenanceIncludes = checkedValues("maintenanceIncludes");
       const roomTypes = checkedValues("roomTypes");
       const roomOptions = checkedValues("roomOptions");
@@ -4491,7 +5064,6 @@
       if (roomOptionOther && !roomOptions.includes("기타")) roomOptions.push("기타");
       const address = String(raw.address || "").trim();
       if (!name || !address) return showToast("건물명과 주소를 입력해 주세요.", "error");
-      const existing = buildingById(form.dataset.buildingId);
       const duplicate = store.buildings.find(building => building.id !== (existing && existing.id) && Core.normalizeText(building.name) === Core.normalizeText(name) && Core.normalizeText(building.address) === Core.normalizeText(address));
       if (duplicate) return showToast("같은 이름과 주소의 건물이 이미 등록되어 있습니다.", "error");
       if (existing && (!Number.isInteger(existing.entityVersion) || existing.entityVersion < 1)) return showToast("최신 건물 버전을 확인한 뒤 다시 시도해 주세요.", "error");
@@ -4518,6 +5090,10 @@
         manager: String(raw.manager || "").trim() || store.settings.owner || "김현진", memo: raw.memo,
         aliases: [...aliases], paymentBuildingIds: [...paymentIds],
       });
+      if (formalUnits.length) {
+        delete patch.vacantUnitCount;
+        delete patch.vacantUnits;
+      }
       if (existing && !Object.hasOwn(existing, "ownerCustomerId")) delete patch.ownerCustomerId;
       try {
         await commitCanonicalEntity({
@@ -4804,12 +5380,13 @@
     if (currentView === "cases") renderCases();
     if (currentView === "customers") renderCustomers();
     if (currentView === "buildings") renderBuildings();
+    if (currentView === "vacancies") renderVacancies();
     if (currentView === "contracts") renderContracts();
     if (currentView === "partnerVendors") renderPartnerVendors();
     if (currentView === "partnerQuotes") renderPartnerQuotes();
     if (currentView === "pipeline") renderPipeline();
   });
-  searchEl.addEventListener("keydown", event => { if (event.key === "Enter") { if (currentView === "fieldOperations") return; if (!["cases", "buildings", "contracts", "partnerVendors", "partnerQuotes", "pipeline"].includes(currentView)) currentView = "customers"; render(); } });
+  searchEl.addEventListener("keydown", event => { if (event.key === "Enter") { if (currentView === "fieldOperations") return; if (!["cases", "buildings", "vacancies", "contracts", "partnerVendors", "partnerQuotes", "pipeline"].includes(currentView)) currentView = "customers"; render(); } });
   fieldOperatorSelect.addEventListener("change", async () => {
     const previousOperatorId = selectedFieldOperatorId;
     const nextOperatorId = String(fieldOperatorSelect.value || "");
@@ -4832,7 +5409,9 @@
     showToast(selected ? `현재 작업자를 ${selected.name}(으)로 선택했습니다.` : "현재 작업자 선택을 해제했습니다.", selected ? "success" : "");
   });
   document.addEventListener("input", event => {
-    if (event.target.matches("[data-partner-vendor-search]")) {
+    if (event.target.matches("#vacancyConfigurationForm [data-vacancy-floor-label], #vacancyConfigurationForm [data-vacancy-floor-order], #vacancyConfigurationForm [data-vacancy-floor-count], #vacancyConfigurationForm [data-vacancy-unit-label]")) {
+      renderVacancyConfigurationPreview(event.target.closest("#vacancyConfigurationForm"));
+    } else if (event.target.matches("[data-partner-vendor-search]")) {
       renderPartnerVendorPicker(event.target.closest("#partnerQuoteForm"));
     } else if (event.target.matches("[data-consultation-customer-search]")) {
       renderConsultationCustomerPicker(event.target.closest("#consultationForm"));
@@ -5073,7 +5652,7 @@ document.addEventListener("keydown", event => {
       if (query.get("demo") === "1" && !store.customers.length) store = demoStore();
       synchronizedStore = cloneStore(store);
       store.partnerVendors = Array.isArray(store.partnerVendors) ? store.partnerVendors : [];
-      if (["dashboard", "cases", "payments", "customers", "buildings", "fieldOperations", "consultations", "pipeline", "contracts", "relationships", "partnerVendors", "partnerQuotes", "tasks", "security", "settings"].includes(query.get("view"))) currentView = query.get("view");
+      if (["dashboard", "cases", "payments", "customers", "buildings", "vacancies", "fieldOperations", "consultations", "pipeline", "contracts", "relationships", "partnerVendors", "partnerQuotes", "tasks", "security", "settings"].includes(query.get("view"))) currentView = query.get("view");
       await refreshOperations({ silent: true, render: false });
       document.getElementById("lastSaved").textContent = store.updatedAt ? `최신 반영 ${dateText(store.updatedAt)}` : "새 데이터";
       render();
@@ -5117,6 +5696,10 @@ document.addEventListener("keydown", event => {
       partnerVendors: partnerVendorRows().length,
       partnerQuotes: store.partnerQuotes.length,
       cases: activeCases().length,
+      vacancyBuildings: (store.buildings || []).filter(building => building && !building.archivedAt).length,
+      vacancyUnits: (store.buildingUnits || []).filter(unit => unit && !unit.archivedAt).length,
+      selectedVacancyBuildingId,
+      vacancyStatusFilter,
       paymentRows: paymentRows("all").length,
       tasks: store.tasks.length,
       title: document.getElementById("pageTitle").textContent,
