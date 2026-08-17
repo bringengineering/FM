@@ -76,16 +76,59 @@ function currentVersionCrmFeed(version) {
 }
 
 function parseCrmUpdateManifest(text) {
-  const source = String(text || "");
-  const version = source.match(/^version:\s*['"]?([^'"\s]+)['"]?\s*$/m)?.[1] || "";
-  const fileUrl = source.match(/^\s*-\s+url:\s*['"]?([^'"\r\n]+?)['"]?\s*$/m)?.[1] || "";
-  const size = Number(source.match(/^\s+size:\s*(\d+)\s*$/m)?.[1] || 0);
-  const installerPath = source.match(/^path:\s*['"]?([^'"\r\n]+?)['"]?\s*$/m)?.[1] || "";
-  const sha512 = source.match(/^sha512:\s*['"]?([A-Za-z0-9+/]+={0,2})['"]?\s*$/m)?.[1] || "";
-  if (!version || !fileUrl || !Number.isSafeInteger(size) || size <= 0 || !installerPath || !/^[A-Za-z0-9+/]{86}==$/.test(sha512)) {
+  const lines = String(text || "").replace(/\r\n?/g, "\n").split("\n");
+  const unquote = value => {
+    const trimmed = String(value || "").trim();
+    if (trimmed.length >= 2 && ((trimmed[0] === "'" && trimmed.at(-1) === "'") || (trimmed[0] === '"' && trimmed.at(-1) === '"'))) {
+      return trimmed.slice(1, -1);
+    }
+    return trimmed;
+  };
+  const topValue = key => {
+    const matches = lines.map(line => line.match(new RegExp(`^${key}:\\s*(.+?)\\s*$`))).filter(Boolean);
+    return matches.length === 1 ? unquote(matches[0][1]) : "";
+  };
+  const filesIndexes = lines.map((line, index) => line.trim() === "files:" && !/^\s/.test(line) ? index : -1).filter(index => index >= 0);
+  const fileEntries = [];
+  if (filesIndexes.length === 1) {
+    let current = null;
+    for (let index = filesIndexes[0] + 1; index < lines.length; index += 1) {
+      const line = lines[index];
+      if (line && !/^\s/.test(line)) break;
+      if (!line.trim()) continue;
+      const urlMatch = line.match(/^\s*-\s+url:\s*(.+?)\s*$/);
+      if (urlMatch) {
+        current = { url: unquote(urlMatch[1]), sha512: "", size: 0, valid: true };
+        fileEntries.push(current);
+        continue;
+      }
+      const shaMatch = line.match(/^\s+sha512:\s*(.+?)\s*$/);
+      const sizeMatch = line.match(/^\s+size:\s*(\d+)\s*$/);
+      if (!current || (!shaMatch && !sizeMatch)) {
+        if (current) current.valid = false;
+        else fileEntries.push({ url: "", sha512: "", size: 0, valid: false });
+        continue;
+      }
+      if (shaMatch) {
+        if (current.sha512) current.valid = false;
+        current.sha512 = unquote(shaMatch[1]);
+      }
+      if (sizeMatch) {
+        if (current.size) current.valid = false;
+        current.size = Number(sizeMatch[1]);
+      }
+    }
+  }
+  const version = topValue("version");
+  const installerPath = topValue("path");
+  const sha512 = topValue("sha512");
+  const file = fileEntries.length === 1 ? fileEntries[0] : null;
+  if (!version || !installerPath || !/^[A-Za-z0-9+/]{86}==$/.test(sha512)
+    || !file || !file.valid || !file.url || !Number.isSafeInteger(file.size) || file.size <= 0
+    || !/^[A-Za-z0-9+/]{86}==$/.test(file.sha512) || file.sha512 !== sha512) {
     throw updateChannelError("CRM_UPDATE_MANIFEST_INVALID", "CRM 업데이트 파일 정보 형식이 올바르지 않습니다.");
   }
-  return { version, fileUrl, size, path: installerPath, sha512 };
+  return { version, fileUrl: file.url, size: file.size, path: installerPath, sha512 };
 }
 
 function assertCrmUpdateManifest(text, release) {

@@ -90,6 +90,14 @@ test("rejects a CRM release whose manifest points at another version or installe
   );
 });
 
+test("rejects extra manifest file entries that could redirect an architecture-specific update", () => {
+  const manifest = `${crmManifest("1.7.8").replace("path:", "  - url: https://example.com/x64.exe\n    sha512: ${'B'.repeat(86)}==\n    size: 123456\npath:")}`;
+  assert.throws(
+    () => Channel.assertCrmUpdateManifest(manifest, { version: "1.7.8", installerSize: 94967021 }),
+    error => error.code === "CRM_UPDATE_MANIFEST_INVALID"
+  );
+});
+
 test("keeps the abort timeout active while reading the release body", async () => {
   const fetchImpl = async (_url, options) => ({
     ok: true,
