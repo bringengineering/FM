@@ -181,6 +181,34 @@
     return user;
   }
 
+  function normalizeServiceRecords(input) {
+    const seenDriveFiles = new Set();
+    return (Array.isArray(input) ? input : []).filter(Boolean).map(item => Object.assign({}, item, {
+      id: String(item.id || ""), buildingId: String(item.buildingId || ""), driveFileId: String(item.driveFileId || ""),
+      serviceType: String(item.serviceType || ""), status: String(item.status || ""), completedAt: String(item.completedAt || ""),
+      amount: money(item.amount), vendorName: String(item.vendorName || ""), vendorPhone: normalizePhone(item.vendorPhone),
+      summary: String(item.summary || ""), evidenceUrl: String(item.evidenceUrl || "")
+    })).filter(item => {
+      if (!item.driveFileId) return true;
+      if (seenDriveFiles.has(item.driveFileId)) return false;
+      seenDriveFiles.add(item.driveFileId);
+      return true;
+    });
+  }
+
+  function normalizeServiceContracts(input) {
+    return (Array.isArray(input) ? input : []).filter(Boolean).map(item => Object.assign({}, item, {
+      id: String(item.id || ""), buildingId: String(item.buildingId || ""), serviceType: String(item.serviceType || ""),
+      cadence: String(item.cadence || ""), monthlyAmount: money(item.monthlyAmount), status: String(item.status || "planned"),
+      startDate: String(item.startDate || "")
+    }));
+  }
+
+  function serviceSchedulesForContract(contract) {
+    if (!contract || contract.status !== "active" || !/^\d{4}-\d{2}-\d{2}$/.test(String(contract.startDate || ""))) return [];
+    return [];
+  }
+
   function blankSharedStore() {
     return {
       schemaVersion: 3,
@@ -192,7 +220,7 @@
         autoSync: true,
         onboardingComplete: false
       },
-      customers: [], buildings: [], activities: [], contracts: [], partnerVendors: [], partnerQuotes: [], tasks: [], securityAssets: [], auditLogs: [], securityIncidents: [],
+      customers: [], buildings: [], activities: [], contracts: [], partnerVendors: [], partnerQuotes: [], tasks: [], serviceRecords: [], serviceContracts: [], serviceSchedules: [], securityAssets: [], auditLogs: [], securityIncidents: [],
       salesProspects: [], salesContacts: [], salesUnits: [], salesActivities: [], salesEvents: [], salesOpportunities: [],
       accessRoles: [
         createAccessRole({ name: "데이터·운영책임자", canView: true, canEdit: true, canDownload: true, canManageSecurity: true }),
@@ -232,6 +260,9 @@
       partnerVendors,
       partnerQuotes,
       tasks: Array.isArray(src.tasks) ? src.tasks.filter(Boolean) : [],
+      serviceRecords: normalizeServiceRecords(src.serviceRecords),
+      serviceContracts: normalizeServiceContracts(src.serviceContracts),
+      serviceSchedules: Array.isArray(src.serviceSchedules) ? src.serviceSchedules.filter(Boolean) : [],
       securityAssets: Array.isArray(src.securityAssets) ? src.securityAssets.filter(Boolean) : [],
       accessRoles: Array.isArray(src.accessRoles) && src.accessRoles.length ? src.accessRoles.filter(Boolean) : base.accessRoles,
       auditLogs: Array.isArray(src.auditLogs) ? src.auditLogs.filter(Boolean) : [],
@@ -650,6 +681,7 @@
     workflowProgress, buildWorkflowCase, matchWorkflowCustomer, paymentNormalizeName, paymentMonthRows,
     normalizePhone, normalizeText, normalizePipelineStage, normalizeStringList, nonNegativeInteger, money, dayKey, iso,
     prohibitedSecretType, findProhibitedSecrets, assertNoProhibitedSecrets, canMutate, assertMutationAllowed,
-    normalizePartnerVendor, partnerVendorFromQuote, legacyPartnerVendorId
+    normalizePartnerVendor, partnerVendorFromQuote, legacyPartnerVendorId,
+    normalizeServiceRecords, normalizeServiceContracts, serviceSchedulesForContract
   };
 });

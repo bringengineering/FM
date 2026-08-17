@@ -28,7 +28,7 @@ const WORKFLOW_ACTIONS = new Set([
 ]);
 
 const SHARED_COLLECTIONS = Object.freeze([
-  "customers", "buildings", "activities", "contracts", "partnerVendors", "partnerQuotes", "tasks",
+  "customers", "buildings", "activities", "contracts", "partnerVendors", "partnerQuotes", "tasks", "serviceRecords", "serviceContracts", "serviceSchedules",
   "securityAssets", "auditLogs", "securityIncidents",
   "salesProspects", "salesContacts", "salesUnits", "salesActivities", "salesEvents", "salesOpportunities"
 ]);
