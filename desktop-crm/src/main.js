@@ -1355,7 +1355,25 @@ async function createWindow() {
       }
     }
     let actionResult = null;
-    if (process.env.BRING_CRM_SCREENSHOT_ACTION === "new-customer") {
+    if (process.env.BRING_CRM_SCREENSHOT_ACTION === "login-email-editable") {
+      actionResult = await mainWindow.webContents.executeJavaScript(`(() => {
+        const input = document.getElementById('loginEmail');
+        const password = document.getElementById('loginPassword');
+        const description = document.getElementById('loginDescription')?.textContent || '';
+        if (!input || !password) return { pass: false, error: 'login controls missing' };
+        input.value = 'first@example.com';
+        input.dispatchEvent(new Event('input', { bubbles: true }));
+        input.value = '';
+        input.dispatchEvent(new Event('input', { bubbles: true }));
+        input.value = 'second@example.com';
+        input.dispatchEvent(new Event('input', { bubbles: true }));
+        const pass = !input.readOnly && !input.disabled && !password.readOnly && !password.disabled
+          && input.value === 'second@example.com'
+          && description.includes('허용된 회사 이메일')
+          && description.includes('비밀번호');
+        return { pass, email: input.value, readOnly: input.readOnly, disabled: input.disabled, passwordDisabled: password.disabled, description };
+      })()`, true);
+    } else if (process.env.BRING_CRM_SCREENSHOT_ACTION === "new-customer") {
       actionResult = await mainWindow.webContents.executeJavaScript('document.querySelector("[data-action=\\"new-customer\\"]")?.click(); window.__crmTest?.snapshot()', true);
     } else if (process.env.BRING_CRM_SCREENSHOT_ACTION === "edit-first-customer") {
       actionResult = await mainWindow.webContents.executeJavaScript(`(() => {

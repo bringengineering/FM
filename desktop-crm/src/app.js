@@ -564,12 +564,17 @@
     loginForm.hidden = false;
     passwordChangeForm.hidden = true;
     loginTitle.textContent = "공용 CRM 로그인";
-    loginDescription.innerHTML = "회사 이메일과 비밀번호로 한 번 로그인하면<br>CRM과 BRING FIELD를 함께 사용할 수 있습니다.";
-    loginMessage.textContent = message || currentAuth.error || "비밀번호를 입력한 뒤 로그인해 주세요.";
+    loginDescription.innerHTML = "허용된 회사 이메일과 비밀번호로 로그인하면<br>CRM과 BRING FIELD를 함께 사용할 수 있습니다.";
+    loginMessage.textContent = message || currentAuth.error || "허용된 회사 이메일과 비밀번호를 입력해 주세요.";
     loginMessage.className = `login-message${isError ? " error" : ""}`;
+    loginEmail.readOnly = false;
+    loginEmail.disabled = false;
+    loginPassword.readOnly = false;
+    loginPassword.disabled = false;
     loginButton.disabled = false;
     googleLoginButton.hidden = true;
     googleLoginButton.disabled = false;
+    setTimeout(() => (loginEmail.value.trim() ? loginPassword : loginEmail).focus(), 0);
   }
 
   function showPasswordChange(auth, message, isError) {
@@ -5084,7 +5089,7 @@ document.addEventListener("keydown", event => {
     try {
       setCurrentAuth(await api.authState());
       if (currentAuth.required && !currentAuth.user) {
-        showLogin(currentAuth.error || "승인된 회사 이메일로 로그인해 주세요.", Boolean(currentAuth.error));
+        showLogin(currentAuth.error || "허용된 회사 이메일과 비밀번호를 입력해 주세요.", Boolean(currentAuth.error));
         return;
       }
       if (currentAuth.user && currentAuth.user.mustChangePassword) {

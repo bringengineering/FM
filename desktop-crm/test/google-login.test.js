@@ -6,7 +6,7 @@ const { FirebaseRemoteClient } = require("../src/remote");
 
 const source = file => readFile(path.join(__dirname, "..", "src", file), "utf8");
 
-test("allows every server-approved CRM email to use email-password login", async () => {
+test("uses an editable approved email-password login as the only CRM login", async () => {
   const [html, app, preload, main, remote] = await Promise.all([
     source("index.html"),
     source("app.js"),
@@ -16,11 +16,18 @@ test("allows every server-approved CRM email to use email-password login", async
   ]);
 
   assert.match(html, /id="emailLoginForm" class="login-form">/);
-  assert.match(html, /id="loginEmail"[^>]*placeholder="회사 이메일 입력"/);
-  assert.doesNotMatch(html, /id="loginEmail"[^>]*(?:readonly|value="dpvld858@gmail\.com")/);
+  const emailInput = html.match(/<input\b[^>]*id="loginEmail"[^>]*>/)?.[0] || "";
+  assert.ok(emailInput);
+  assert.doesNotMatch(emailInput, /\b(?:readonly|disabled)\b/i);
+  assert.doesNotMatch(emailInput, /\bvalue\s*=\s*"[^"]+"/i);
+  assert.doesNotMatch(html, /dpvld858@gmail\.com/i);
+  assert.doesNotMatch(app, /dpvld858@gmail\.com/i);
+  assert.match(html, /허용된 회사 이메일과 비밀번호/);
   assert.match(html, /id="googleLoginButton"[^>]*hidden/);
   assert.match(app, /loginForm\.hidden = false/);
   assert.match(app, /googleLoginButton\.hidden = true/);
+  assert.match(app, /loginEmail\.readOnly = false/);
+  assert.match(app, /loginEmail\.disabled = false/);
   assert.match(app, /await api\.login\(\{ email: loginEmail\.value\.trim\(\), password: loginPassword\.value \}\)/);
   assert.match(preload, /login:\s*credentials\s*=>\s*ipcRenderer\.invoke\("crm:auth-login", credentials\)/);
   assert.match(main, /secureHandle\("crm:auth-login"/);
