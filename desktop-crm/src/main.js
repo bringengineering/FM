@@ -3,6 +3,7 @@ const { autoUpdater } = require("electron-updater");
 const fs = require("node:fs/promises");
 const path = require("node:path");
 const Core = require("./core");
+const UpdateChannel = require("./update-channel");
 const { FirebaseRemoteClient, encodeProtectedJson, decodeProtectedJson } = require("./remote");
 const VendorExtractor = require("./vendor-extractor");
 const { fieldBounds, isAllowedFieldAuthPopup, isAllowedFieldNavigation } = require("./field-view-policy");
@@ -18,6 +19,9 @@ let remoteClient = null;
 let updaterConfigured = false;
 let updatePromptOpen = false;
 let updateState = { status: "disabled", currentVersion: app.getVersion(), availableVersion: "", percent: 0, message: "" };
+let updateFeedCache = null;
+let lastUpdateCheck = null;
+let activeUpdateFeedSource = "";
 const authPreview = process.env.BRING_CRM_AUTH_PREVIEW === "1";
 const passwordPreview = process.env.BRING_CRM_PASSWORD_PREVIEW === "1";
 const localTestMode = (Boolean(process.env.BRING_CRM_SCREENSHOT) || process.env.BRING_CRM_SMOKE === "1" || process.env.BRING_CRM_LOCAL_ONLY === "1") && !authPreview && !passwordPreview;
@@ -355,7 +359,14 @@ function configureUpdater() {
   autoUpdater.allowPrerelease = false;
   autoUpdater.on("checking-for-update", () => setUpdateState({ status: "checking", percent: 0, message: "새 버전을 확인하고 있습니다." }));
   autoUpdater.on("update-available", info => setUpdateState({ status: "downloading", availableVersion: info.version || "", percent: 0, message: "새 버전을 받고 있습니다." }));
-  autoUpdater.on("update-not-available", info => setUpdateState({ status: "current", availableVersion: info && info.version || "", percent: 0, message: "최신 버전입니다." }));
+  autoUpdater.on("update-not-available", info => setUpdateState({
+    status: activeUpdateFeedSource === "installed-version-fallback" ? "warning" : "current",
+    availableVersion: info && info.version || "",
+    percent: 0,
+    message: activeUpdateFeedSource === "installed-version-fallback"
+      ? "현재 버전은 사용할 수 있지만 새 버전 조회가 잠시 지연되고 있습니다. 잠시 후 다시 확인해 주세요."
+      : "최신 버전입니다."
+  }));
   autoUpdater.on("download-progress", progress => setUpdateState({ status: "downloading", percent: Math.max(0, Math.min(100, Math.round(progress.percent || 0))), message: "새 버전을 받고 있습니다." }));
   autoUpdater.on("update-downloaded", info => {
     setUpdateState({ status: "ready", availableVersion: info.version || updateState.availableVersion, percent: 100, message: "재시작하면 업데이트가 적용됩니다." });
@@ -369,17 +380,73 @@ function configureUpdater() {
   setTimeout(() => checkForUpdates(false), 5000);
 }
 
-async function checkForUpdates(manual) {
+async function checkForUpdates(manual, options = {}) {
   if (!app.isPackaged || localTestMode || authPreview || passwordPreview) return setUpdateState({ status: "disabled", message: "설치된 프로그램에서 사용할 수 있습니다." });
   if (updateState.status === "checking" || updateState.status === "downloading") return updateState;
   try {
     setUpdateState({ status: "checking", message: manual ? "사용자가 새 버전을 확인하고 있습니다." : "새 버전을 확인하고 있습니다." });
-    await autoUpdater.checkForUpdates();
+    const now = Date.now();
+    const resolveFeed = async () => {
+      if (updateFeedCache && updateFeedCache.expiresAt > now) {
+        activeUpdateFeedSource = updateFeedCache.value.source;
+        return updateFeedCache.value;
+      }
+      try {
+        const value = await UpdateChannel.resolveCrmUpdateFeed();
+        updateFeedCache = { value, expiresAt: now + 5 * 60 * 1000 };
+        activeUpdateFeedSource = value.source;
+        return value;
+      } catch (error) {
+        if (options.strictChannel) throw error;
+        console.warn("CRM release index failed; checking the installed-version feed", error && error.message ? error.message : error);
+        const value = UpdateChannel.currentVersionCrmFeed(app.getVersion());
+        updateFeedCache = { value, expiresAt: now + 60 * 1000 };
+        activeUpdateFeedSource = value.source;
+        return value;
+      }
+    };
+    lastUpdateCheck = await UpdateChannel.runCrmUpdateCheck(autoUpdater, { resolveFeed });
   } catch (error) {
     console.warn("CRM update check failed", error && error.message ? error.message : error);
     setUpdateState({ status: "error", message: "업데이트 서버에 연결하지 못했습니다. CRM은 계속 사용할 수 있습니다." });
   }
   return updateState;
+}
+
+async function runPackagedUpdateProbe() {
+  if (!app.isPackaged || process.env.BRING_CRM_UPDATE_PROBE !== "1") return;
+  const events = [];
+  const eventNames = ["checking-for-update", "update-available", "update-not-available", "download-progress", "update-downloaded", "error"];
+  for (const eventName of eventNames) autoUpdater.on(eventName, () => events.push(eventName));
+  const state = await checkForUpdates(true, { strictChannel: true });
+  const payload = {
+    currentVersion: app.getVersion(),
+    selectedTag: lastUpdateCheck && lastUpdateCheck.resolved.release.tagName || "",
+    selectedVersion: lastUpdateCheck && lastUpdateCheck.resolved.release.version || "",
+    selectedFeed: lastUpdateCheck && lastUpdateCheck.resolved.feed.url || "",
+    selectedSource: lastUpdateCheck && lastUpdateCheck.resolved.source || "",
+    isUpdateAvailable: Boolean(lastUpdateCheck && lastUpdateCheck.result && lastUpdateCheck.result.isUpdateAvailable),
+    updateVersion: lastUpdateCheck && lastUpdateCheck.result && lastUpdateCheck.result.updateInfo && lastUpdateCheck.result.updateInfo.version || "",
+    events,
+    finalStatus: state.status,
+    errorCount: events.filter(eventName => eventName === "error").length
+  };
+  const target = path.join(app.getPath("temp"), "bring-crm-update-probe.json");
+  const expectedTag = String(process.env.BRING_CRM_UPDATE_EXPECT_TAG || "").trim();
+  const forbiddenEvents = ["update-available", "download-progress", "update-downloaded", "error"];
+  const passed = payload.selectedSource === "release-index"
+    && /^crm-v\d+\.\d+\.\d+$/.test(payload.selectedTag)
+    && (!expectedTag || payload.selectedTag === expectedTag)
+    && payload.selectedFeed === UpdateChannel.crmReleaseDownloadUrl(payload.selectedTag)
+    && payload.isUpdateAvailable === false
+    && payload.events.includes("checking-for-update")
+    && payload.events.includes("update-not-available")
+    && forbiddenEvents.every(eventName => !payload.events.includes(eventName))
+    && payload.finalStatus === "current"
+    && payload.errorCount === 0;
+  payload.passed = passed;
+  await fs.writeFile(target, JSON.stringify(payload, null, 2), "utf8");
+  app.exit(passed ? 0 : 2);
 }
 
 function authState() {
@@ -3166,6 +3233,7 @@ app.whenReady().then(async () => {
   Menu.setApplicationMenu(buildMenu());
   await createWindow();
   configureUpdater();
+  await runPackagedUpdateProbe();
   app.on("activate", () => { if (BrowserWindow.getAllWindows().length === 0) createWindow(); });
 }).catch(error => {
   console.error(error);

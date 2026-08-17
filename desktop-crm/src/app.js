@@ -347,11 +347,12 @@
       return;
     }
     updateButton.hidden = false;
-    updateButton.className = `update-button ${currentUpdate.status === "ready" ? "ready" : currentUpdate.status === "error" ? "error" : ""}`;
+    updateButton.className = `update-button ${currentUpdate.status === "ready" ? "ready" : currentUpdate.status === "error" ? "error" : currentUpdate.status === "warning" ? "warning" : ""}`;
     if (currentUpdate.status === "checking") updateButton.textContent = "업데이트 확인 중…";
     else if (currentUpdate.status === "downloading") updateButton.textContent = `업데이트 받는 중 ${currentUpdate.percent || 0}%`;
     else if (currentUpdate.status === "ready") updateButton.textContent = `새 버전 ${currentUpdate.availableVersion || ""} 재시작`;
     else if (currentUpdate.status === "error") updateButton.textContent = "업데이트 재확인";
+    else if (currentUpdate.status === "warning") updateButton.textContent = "업데이트 확인 지연";
     else updateButton.textContent = `v${currentUpdate.currentVersion || ""} 최신 확인`;
     updateButton.title = currentUpdate.message || "새 버전 확인";
     updateButton.disabled = currentUpdate.status === "checking" || currentUpdate.status === "downloading";
