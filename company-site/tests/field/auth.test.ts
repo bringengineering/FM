@@ -119,16 +119,34 @@ describe("loginFieldUser", () => {
 });
 
 describe("observeDesktopLogout", () => {
+  it("ignores malformed, non-UUID, and extra-key logout details", async () => {
+    const logout = vi.fn(async () => undefined);
+    const stop = observeDesktopLogout(logout);
+    for (const detail of [
+      { requestId: "not-a-uuid" },
+      { requestId: "123e4567-e89b-42d3-a456-426614174000", extra: true },
+      { requestId: "123e4567-e89b-02d3-a456-426614174000" },
+      null,
+    ]) window.dispatchEvent(new CustomEvent("bring-crm-logout", { detail }));
+    await Promise.resolve();
+    expect(logout).not.toHaveBeenCalled();
+    stop();
+  });
+
   it("signs Firebase Auth out on the CRM bridge event and removes its listener", async () => {
     const logout = vi.fn(async () => undefined);
     const stop = observeDesktopLogout(logout);
 
-    window.dispatchEvent(new Event("bring-crm-logout"));
+    window.dispatchEvent(new CustomEvent("bring-crm-logout", {
+      detail: { requestId: "123e4567-e89b-42d3-a456-426614174000" },
+    }));
     await Promise.resolve();
     expect(logout).toHaveBeenCalledTimes(1);
 
     stop();
-    window.dispatchEvent(new Event("bring-crm-logout"));
+    window.dispatchEvent(new CustomEvent("bring-crm-logout", {
+      detail: { requestId: "223e4567-e89b-42d3-a456-426614174000" },
+    }));
     await Promise.resolve();
     expect(logout).toHaveBeenCalledTimes(1);
   });

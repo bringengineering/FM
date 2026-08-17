@@ -46,10 +46,29 @@ function errorCode(error: unknown): string {
     : "";
 }
 
-function cleanHandoffUrl(url: URL): string {
-  const clean = new URL(url.toString());
-  clean.searchParams.delete("desktop_handoff");
-  return `${clean.pathname}${clean.search}${clean.hash}`;
+const EXACT_CRM_URL = "/field?embedded=crm";
+
+function hasExactQueryKeys(url: URL, expected: readonly string[]): boolean {
+  const entries = [...url.searchParams.entries()];
+  return entries.length === expected.length
+    && expected.every((key) => entries.filter(([candidate]) => candidate === key).length === 1);
+}
+
+export function isExactCrmEmbeddedUrl(url: URL): boolean {
+  return url.pathname === "/field"
+    && url.hash === ""
+    && hasExactQueryKeys(url, ["embedded"])
+    && url.searchParams.get("embedded") === "crm";
+}
+
+export function isDesktopHandoffBootstrapUrl(url: URL): boolean {
+  const code = url.searchParams.get("desktop_handoff");
+  return url.pathname === "/field"
+    && url.hash === ""
+    && hasExactQueryKeys(url, ["embedded", "desktop_handoff"])
+    && url.searchParams.get("embedded") === "crm"
+    && typeof code === "string"
+    && HANDOFF_CODE_PATTERN.test(code);
 }
 
 function isValidCustomToken(value: unknown): value is string {
@@ -74,23 +93,25 @@ export async function consumeDesktopHandoffFromUrl(
   url: URL,
   dependencies: DesktopHandoffClientDependencies = defaultDependencies,
 ): Promise<DesktopHandoffState> {
-  const embeddedValues = url.searchParams.getAll("embedded");
-  const codeValues = url.searchParams.getAll("desktop_handoff");
-  if (embeddedValues.length === 0 && codeValues.length === 0) {
+  if (isExactCrmEmbeddedUrl(url)) {
+    return { mode: "crm", consumed: false };
+  }
+  if (url.pathname === "/field" && url.search === "" && url.hash === "") {
     return { mode: "standalone", consumed: false };
   }
-  if (
-    embeddedValues.length !== 1
-    || embeddedValues[0] !== "crm"
-    || codeValues.length !== 1
-    || !HANDOFF_CODE_PATTERN.test(codeValues[0])
-  ) {
+  const hasEmbedded = url.searchParams.has("embedded");
+  const hasHandoff = url.searchParams.has("desktop_handoff");
+  if (!hasEmbedded && !hasHandoff) {
+    return { mode: "standalone", consumed: false };
+  }
+  if (!isDesktopHandoffBootstrapUrl(url)) {
     return { mode: "crm", consumed: false, error: "denied" };
   }
 
-  dependencies.replaceUrl(cleanHandoffUrl(url));
+  const code = url.searchParams.get("desktop_handoff") as string;
+  dependencies.replaceUrl(EXACT_CRM_URL);
   try {
-    const result = await dependencies.exchange(codeValues[0]);
+    const result = await dependencies.exchange(code);
     if (!isValidCustomToken(result.customToken)) {
       return { mode: "crm", consumed: false, error: "unavailable" };
     }

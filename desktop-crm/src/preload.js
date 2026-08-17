@@ -5,9 +5,14 @@ contextBridge.exposeInMainWorld("bringCRM", {
   login: credentials => ipcRenderer.invoke("crm:auth-login", credentials),
   loginWithGoogle: () => ipcRenderer.invoke("crm:auth-google-login"),
   changePassword: password => ipcRenderer.invoke("crm:auth-change-password", password),
-  logout: () => ipcRenderer.invoke("crm:auth-logout"),
+  logout: input => ipcRenderer.invoke("crm:auth-logout", input),
   load: () => ipcRenderer.invoke("crm:load"),
   save: data => ipcRenderer.invoke("crm:save", data),
+  loadCanonicalBuildingUnits: () => ipcRenderer.invoke("crm:canonical-building-units-load"),
+  loadFieldSummaries: () => ipcRenderer.invoke("crm:field-summaries-load"),
+  loadDriveImportCandidates: () => ipcRenderer.invoke("crm:drive-import-candidates-load"),
+  decideDriveImport: input => ipcRenderer.invoke("crm:drive-import-decision", input),
+  commitCanonicalCrmEntity: input => ipcRenderer.invoke("crm:canonical-entity-commit", input),
   loadOperations: () => ipcRenderer.invoke("crm:operations-load"),
   saveWorkflowCase: input => ipcRenderer.invoke("crm:case-save", input),
   savePaymentOverride: input => ipcRenderer.invoke("crm:payment-override", input),
@@ -23,8 +28,13 @@ contextBridge.exposeInMainWorld("bringCRM", {
   updateState: () => ipcRenderer.invoke("crm:update-state"),
   checkForUpdates: () => ipcRenderer.invoke("crm:update-check"),
   installUpdate: () => ipcRenderer.invoke("crm:update-install"),
-  showFieldPlatform: () => ipcRenderer.invoke("crm:show-field-platform"),
+  loadFieldTeamProfiles: () => ipcRenderer.invoke("crm:field-team-profiles"),
+  showFieldPlatform: input => ipcRenderer.invoke("crm:show-field-platform", input),
   hideFieldPlatform: () => ipcRenderer.invoke("crm:hide-field-platform"),
+  setFieldBounds: rect => ipcRenderer.invoke("crm:field-bounds", rect),
+  fieldRequest: envelope => ipcRenderer.invoke("crm:field-request", envelope),
+  cancelFieldRequest: requestId => ipcRenderer.invoke("crm:field-cancel", requestId),
+  reconnectFieldPlatform: () => ipcRenderer.invoke("crm:field-reconnect"),
   openExternal: url => ipcRenderer.invoke("crm:open-external", url),
   lookupVendor: url => ipcRenderer.invoke("crm:vendor-lookup", url),
   onShortcut: callback => ipcRenderer.on("app:shortcut", (_event, action) => callback(action)),
@@ -47,5 +57,15 @@ contextBridge.exposeInMainWorld("bringCRM", {
     const listener = (_event, state) => callback(state);
     ipcRenderer.on("crm:update-state", listener);
     return () => ipcRenderer.removeListener("crm:update-state", listener);
+  },
+  onFieldEvent: callback => {
+    const listener = (_event, envelope) => callback(envelope);
+    ipcRenderer.on("crm:field-event", listener);
+    return () => ipcRenderer.removeListener("crm:field-event", listener);
+  },
+  onFieldState: callback => {
+    const listener = (_event, state) => callback(state);
+    ipcRenderer.on("crm:field-state", listener);
+    return () => ipcRenderer.removeListener("crm:field-state", listener);
   }
 });

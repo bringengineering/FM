@@ -34,6 +34,7 @@ test("uses an editable approved email-password login as the only CRM login", asy
   assert.match(main, /openEmailAuth:\s*openCrmEmailAuth/);
   assert.match(remote, /async receiveEmailCredential\(credentials\)/);
   assert.match(remote, /await this\.exchangeFirebaseCredential\(credential\)/);
+  assert.doesNotMatch(app, /dpvld858@gmail\.com/);
   assert.doesNotMatch(app, /newPassword\.value === "123456"/);
   assert.doesNotMatch(remote, /password === "123456"/);
 });

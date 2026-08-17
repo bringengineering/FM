@@ -169,7 +169,7 @@ test("archiving or restoring related contacts and units recalculates the prospec
   const app = await appSource();
   assert.match(app, /function recalculateSalesProspectStage\(prospectId\)/);
   const archiveHandler = app.match(/const salesRecordArchive = event\.target\.closest\("\[data-sales-record-archive\]"\);([\s\S]*?)const salesRecordRestore/)?.[1] || "";
-  const restoreHandler = app.match(/const salesRecordRestore = event\.target\.closest\("\[data-sales-record-restore\]"\);([\s\S]*?)const fieldPlatformLink/)?.[1] || "";
+  const restoreHandler = app.match(/const salesRecordRestore = event\.target\.closest\("\[data-sales-record-restore\]"\);([\s\S]*?)const salesEvidenceLink/)?.[1] || "";
   assert.match(archiveHandler, /\["salesContacts", "salesUnits"\]\.includes\(collection\)[\s\S]*?recalculateSalesProspectStage\(prospectId\)/);
   assert.match(restoreHandler, /\["salesContacts", "salesUnits"\]\.includes\(collection\)[\s\S]*?recalculateSalesProspectStage\(prospectId\)/);
 });
@@ -230,7 +230,7 @@ test("archived prospect detail hides write controls and exposes restore only to 
 test("sales evidence links open through the desktop API after http protocol validation", async () => {
   const app = await appSource();
   assert.match(app, /link\.dataset\.salesEvidenceLink = link\.getAttribute\("href"\)/);
-  const handler = app.match(/const salesEvidenceLink = event\.target\.closest\("\[data-sales-evidence-link\]"\);([\s\S]*?)const fieldPlatformLink/)?.[1] || "";
+  const handler = app.match(/const salesEvidenceLink = event\.target\.closest\("\[data-sales-evidence-link\]"\);([\s\S]*?)const workflowAction/)?.[1] || "";
   assert.match(handler, /new URL\(rawUrl\)/);
   assert.match(handler, /\["http:", "https:"\]\.includes\(url\.protocol\)/);
   assert.match(handler, /api\.openExternal\(url\.toString\(\)\)/);

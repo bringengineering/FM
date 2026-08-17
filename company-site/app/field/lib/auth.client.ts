@@ -14,6 +14,7 @@ import {
   driveTokenManager,
 } from "./drive-auth.client";
 import type { UserRole } from "./types";
+import { isFieldRequestId, isPlainFieldRecord } from "./v2/contracts";
 
 export interface FieldAuthUser {
   uid: string;
@@ -209,10 +210,22 @@ export async function logoutFieldUser(
 export function observeDesktopLogout(
   logout: () => Promise<void> = logoutFieldUser,
 ): () => void {
-  const listener = () => {
-    void logout().finally(() => {
-      window.dispatchEvent(new Event("bring-field-logout-complete"));
-    });
+  let running = false;
+  const listener = (event: Event) => {
+    if (running) return;
+    const requestId = event instanceof CustomEvent
+      && isPlainFieldRecord(event.detail)
+      && Object.keys(event.detail).length === 1
+      && isFieldRequestId(event.detail.requestId)
+      ? event.detail.requestId
+      : "";
+    if (!requestId) return;
+    running = true;
+    void logout().then(() => {
+      window.dispatchEvent(new CustomEvent("bring-field-logout-complete", { detail: { requestId } }));
+    }).catch(() => {
+      window.dispatchEvent(new CustomEvent("bring-field-logout-failed", { detail: { requestId } }));
+    }).finally(() => { running = false; });
   };
   window.addEventListener("bring-crm-logout", listener);
   return () => window.removeEventListener("bring-crm-logout", listener);

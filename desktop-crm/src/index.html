@@ -49,7 +49,8 @@
         <button class="nav-item active" data-view="dashboard"><span>▦</span><b>한눈에 보기</b></button>
         <button class="nav-item" data-view="customers"><span>♙</span><b>고객 관리</b><em id="navCustomerCount">0</em></button>
         <button class="nav-item" data-view="buildings"><span>▥</span><b>건물 관리</b><em id="navBuildingCount">0</em></button>
-        <button class="nav-item" data-field-platform-link><span>⌂</span><b>BRING FIELD</b></button>
+        <button class="nav-item" data-view="workManagement"><span>✓</span><b>작업관리</b></button>
+        <button class="nav-item" data-view="fieldOperations"><span aria-hidden="true">▣</span><span class="nav-copy"><b>현장 업무</b><small data-field-subtitle>BRING FIELD</small></span></button>
         <button class="nav-item" data-view="consultations"><span>☎</span><b>상담 기록</b><em id="navConsultationCount">0</em></button>
         <button class="nav-item" data-view="pipeline"><span>≋</span><b>영업 관리</b></button>
         <button class="nav-item" data-view="tasks"><span>✓</span><b>영업 할 일</b><em id="navTaskCount">0</em></button>
@@ -75,14 +76,15 @@
           <h1 id="pageTitle">한눈에 보기</h1>
         </div>
         <div class="top-actions">
+          <label id="fieldOperatorControl" class="field-operator-control" hidden><span>현재 작업자</span><select id="fieldOperatorSelect" aria-label="현재 작업자 선택"><option value="">작업자를 선택해 주세요</option></select></label>
           <label class="global-search"><span>⌕</span><input id="globalSearch" type="search" placeholder="고객·건물·연락처 검색"></label>
           <button id="updateButton" class="update-button" data-action="check-update" hidden>업데이트 확인</button>
           <div id="userPill" class="user-pill" hidden><span><b id="currentUserName">사용자</b><small id="currentUserEmail"></small></span><button data-action="logout" title="로그아웃">로그아웃</button></div>
           <button class="help-button" data-action="open-guide" title="처음 사용 안내">? 도움말</button>
-          <button class="primary-button" data-action="new-customer">＋ 새 고객</button>
+          <button id="primaryActionButton" class="primary-button" data-action="new-customer">＋ 새 고객</button>
         </div>
       </header>
-      <main id="main" class="main-content" aria-live="polite"></main>
+      <main id="main" class="main-content" aria-live="polite"><section id="fieldWorkspaceState" class="field-workspace-state" hidden><div role="status" aria-live="polite">현장 업무를 준비하고 있습니다.</div></section></main>
     </section>
   </div>
 
@@ -95,6 +97,9 @@
   <script src="./sales-core.js"></script>
   <script src="./sales-standards.js"></script>
   <script src="./sales-ui.js"></script>
+  <script src="./drive-import-ui.js"></script>
+  <script src="./work-management.js"></script>
+  <script src="./service-operations-ui.js"></script>
   <script src="./app.js"></script>
 </body>
 </html>

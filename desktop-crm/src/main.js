@@ -1,11 +1,31 @@
 const { app, BrowserWindow, WebContentsView, ipcMain, dialog, Menu, safeStorage, shell } = require("electron");
 const { autoUpdater } = require("electron-updater");
+const CrmUpdatePolicy = require("./crm-update-policy");
 const fs = require("node:fs/promises");
 const path = require("node:path");
+const { fileURLToPath, pathToFileURL } = require("node:url");
 const Core = require("./core");
-const { FirebaseRemoteClient, encodeProtectedJson, decodeProtectedJson } = require("./remote");
+const { FirebaseRemoteClient, createSerializedProtectedStoreCoordinator, decodeProtectedJson } = require("./remote");
 const VendorExtractor = require("./vendor-extractor");
-const { fieldBounds, isAllowedFieldAuthPopup, isAllowedFieldNavigation } = require("./field-view-policy");
+const {
+  FIELD_BRIDGE_TIMEOUT_MS,
+  FIELD_ORIGIN,
+  coordinateFieldLogout,
+  createFieldExitCoordinator,
+  createFieldEnvelope,
+  createFieldRequestCoordinator,
+  createFieldSessionRecoveryCoordinator,
+  externalFieldLinkDecision,
+  fieldBounds,
+  isAllowedFieldAuthPopup,
+  isAllowedFieldBootstrapNavigation,
+  isAllowedFieldNavigation,
+  isAllowedFieldPermission,
+  isMatchingFieldAuthSignoutAck,
+  normalizeFieldRoute,
+  sanitizeFieldTeamProfiles,
+  validateFieldMessage,
+} = require("./field-view-policy");
 const FIELD_PLATFORM_URL = "https://bring-fm.web.app/field";
 
 if (process.env.BRING_CRM_SCREENSHOT || process.env.BRING_CRM_SMOKE === "1") app.disableHardwareAcceleration();
@@ -13,10 +33,27 @@ if (process.env.BRING_CRM_SCREENSHOT || process.env.BRING_CRM_SMOKE === "1") app
 let mainWindow = null;
 let fieldView = null;
 let fieldViewVisible = false;
+let fieldViewLoaded = false;
+let fieldViewReady = false;
+let fieldMeasuredBounds = null;
+let fieldLastRoute = "/field?embedded=crm";
+let fieldPendingUploads = { count: 0, risk: "none" };
+let fieldSessionKey = "";
+let fieldSessionUserId = "";
+let fieldSessionSequence = 0;
+let fieldVisibilityEpoch = 0;
+const fieldReadyWaiters = new Set();
+let fieldAuthSignoutWaiter = null;
+let fieldLogoutInFlight = null;
+let fieldRecoveryInFlight = null;
 let crmAuthWindow = null;
 let remoteClient = null;
 let updaterConfigured = false;
 let updatePromptOpen = false;
+let updateInstallScheduled = false;
+let applicationExitAllowed = false;
+let applicationExitFailureDialogOpen = false;
+let applicationResourcesClosed = false;
 let updateState = { status: "disabled", currentVersion: app.getVersion(), availableVersion: "", percent: 0, message: "" };
 const authPreview = process.env.BRING_CRM_AUTH_PREVIEW === "1";
 const passwordPreview = process.env.BRING_CRM_PASSWORD_PREVIEW === "1";
@@ -27,6 +64,47 @@ if (localTestMode && !process.env.BRING_CRM_DATA_DIR) {
   app.setPath("userData", path.join(app.getPath("temp"), "bring-crm-desktop-tests", String(process.pid)));
 }
 let localOperationsData = null;
+
+const fieldRequestCoordinator = createFieldRequestCoordinator({
+  timeoutMs: FIELD_BRIDGE_TIMEOUT_MS,
+  send: envelope => {
+    if (!fieldView || fieldView.webContents.isDestroyed()) throw new Error("FIELD_VIEW_UNAVAILABLE");
+    fieldView.webContents.send("crm:field-message", envelope);
+  },
+});
+
+const fieldSessionRecoveryCoordinator = createFieldSessionRecoveryCoordinator({
+  createHandoff: async () => {
+    if (!remoteClient || !authState().user) {
+      throw Object.assign(new Error("FIELD_HANDOFF_SESSION_REQUIRED"), { code: "FIELD_HANDOFF_SESSION_REQUIRED" });
+    }
+    return remoteClient.createFieldHandoff();
+  },
+  loadHandoff: async code => {
+    const view = fieldView;
+    const sessionKey = fieldSessionKey;
+    if (!view || view.webContents.isDestroyed()) {
+      throw Object.assign(new Error("FIELD_SESSION_CHANGED"), { code: "SESSION_CHANGED" });
+    }
+    fieldViewReady = false;
+    fieldViewLoaded = false;
+    await view.webContents.loadURL(`${FIELD_PLATFORM_URL}?embedded=crm&desktop_handoff=${encodeURIComponent(code)}`);
+    if (!fieldView
+      || fieldView !== view
+      || view.webContents.isDestroyed()
+      || fieldSessionKey !== sessionKey) {
+      throw Object.assign(new Error("FIELD_SESSION_CHANGED"), { code: "SESSION_CHANGED" });
+    }
+    fieldViewLoaded = true;
+  },
+});
+
+const applicationExitCoordinator = createFieldExitCoordinator({
+  ensureReady: async () => ensureFieldReadyForLogout(),
+  checkPending: async () => requestFieldPendingUploads(),
+  confirmPending: async (pendingUploads, reason) => confirmApplicationExitWithPending(pendingUploads, reason),
+  finishApplicationExit: async reason => finishApplicationExit(reason),
+});
 
 function closeCrmAuthWindow() {
   if (crmAuthWindow && !crmAuthWindow.isDestroyed()) crmAuthWindow.close();
@@ -113,27 +191,90 @@ async function openCrmEmailAuth(url, credentials) {
   );
 }
 
-function resizeFieldView() {
-  if (!mainWindow || mainWindow.isDestroyed() || !fieldView || !fieldViewVisible) return;
-  fieldView.setBounds(fieldBounds(mainWindow.getContentBounds()));
-}
-
 function hideFieldView() {
+  fieldVisibilityEpoch += 1;
   if (fieldView) fieldView.setVisible(false);
   fieldViewVisible = false;
+  cancelFieldRequests("FIELD_VIEW_HIDDEN");
+  resolveFieldReadyWaiters(Object.assign(new Error("FIELD_VIEW_HIDDEN"), { code: "FIELD_VIEW_HIDDEN" }));
   return { ok: true };
 }
 
+function emitFieldState(status, message = "") {
+  sendToRenderer("crm:field-state", {
+    status,
+    message,
+    ready: fieldViewReady,
+    route: fieldLastRoute,
+    pendingUploads: fieldPendingUploads,
+  });
+}
+
+function resolveFieldReadyWaiters(error) {
+  for (const waiter of [...fieldReadyWaiters]) {
+    fieldReadyWaiters.delete(waiter);
+    clearTimeout(waiter.timer);
+    if (error) waiter.reject(error);
+    else waiter.resolve(true);
+  }
+}
+
+function cancelFieldAuthSignout(code = "FIELD_SESSION_CLEAR_FAILED") {
+  const waiter = fieldAuthSignoutWaiter;
+  if (!waiter) return false;
+  fieldAuthSignoutWaiter = null;
+  clearTimeout(waiter.timer);
+  try {
+    if (fieldView && !fieldView.webContents.isDestroyed() && fieldView.webContents.id === waiter.webContentsId) {
+      fieldView.webContents.send("crm:field-auth-signout-cancel", { requestId: waiter.requestId });
+    }
+  } catch (_error) {}
+  const error = Object.assign(new Error(code), { code });
+  waiter.reject(error);
+  return true;
+}
+
+function cancelFieldRequests(code = "FIELD_BRIDGE_CANCELLED") {
+  fieldRequestCoordinator.cancelAll(code);
+}
+
+function syncFieldSession(state = authState()) {
+  const nextUserId = String(state && state.user && state.user.uid || "");
+  if (nextUserId !== fieldSessionUserId) {
+    if (fieldView) destroyFieldView();
+    fieldSessionRecoveryCoordinator.reset();
+    fieldRecoveryInFlight = null;
+    fieldSessionUserId = nextUserId;
+    fieldSessionSequence += 1;
+    fieldSessionKey = nextUserId ? `${nextUserId}:${fieldSessionSequence}` : `signed-out:${fieldSessionSequence}`;
+    fieldRequestCoordinator.setSession(fieldSessionKey);
+    fieldViewReady = false;
+    fieldPendingUploads = { count: 0, risk: "none" };
+    fieldLastRoute = "/field?embedded=crm";
+    resolveFieldReadyWaiters(Object.assign(new Error("FIELD_SESSION_CHANGED"), { code: "FIELD_SESSION_CHANGED" }));
+  }
+  return fieldSessionKey;
+}
+
 function destroyFieldView() {
+  cancelFieldAuthSignout("FIELD_RENDERER_DESTROYED");
+  fieldSessionRecoveryCoordinator.reset();
+  fieldRecoveryInFlight = null;
   if (!fieldView) return;
-  try {
-    if (mainWindow && !mainWindow.isDestroyed()) mainWindow.contentView.removeChildView(fieldView);
-  } catch (_error) {}
-  try {
-    if (!fieldView.webContents.isDestroyed()) fieldView.webContents.close();
-  } catch (_error) {}
+  fieldVisibilityEpoch += 1;
+  const view = fieldView;
   fieldView = null;
+  fieldViewLoaded = false;
+  fieldViewReady = false;
   fieldViewVisible = false;
+  cancelFieldRequests("FIELD_RENDERER_DESTROYED");
+  resolveFieldReadyWaiters(Object.assign(new Error("FIELD_RENDERER_DESTROYED"), { code: "FIELD_RENDERER_DESTROYED" }));
+  try {
+    if (mainWindow && !mainWindow.isDestroyed()) mainWindow.contentView.removeChildView(view);
+  } catch (_error) {}
+  try {
+    if (!view.webContents.isDestroyed()) view.webContents.close();
+  } catch (_error) {}
 }
 
 function ensureFieldView() {
@@ -174,52 +315,406 @@ function ensureFieldView() {
     popup.on("will-redirect", guard);
   });
   contents.on("will-navigate", (event, url) => {
-    if (!isAllowedFieldNavigation(url)) event.preventDefault();
+    if (!isAllowedFieldNavigation(url) && !isAllowedFieldBootstrapNavigation(url)) event.preventDefault();
   });
   contents.on("will-redirect", (event, url) => {
-    if (!isAllowedFieldNavigation(url)) event.preventDefault();
+    if (!isAllowedFieldNavigation(url) && !isAllowedFieldBootstrapNavigation(url)) event.preventDefault();
   });
-  contents.session.setPermissionRequestHandler((_webContents, _permission, callback) => callback(false));
+  contents.on("did-start-navigation", (_event, url, _isInPlace, isMainFrame) => {
+    if (!fieldView
+      || fieldView.webContents !== contents
+      || !isMainFrame
+      || (!isAllowedFieldNavigation(url) && !isAllowedFieldBootstrapNavigation(url))) return;
+    fieldViewReady = false;
+    emitFieldState("connecting", "현장 업무에 연결하고 있습니다.");
+  });
+  contents.on("did-finish-load", () => {
+    if (!fieldView || fieldView.webContents !== contents) return;
+    fieldViewLoaded = true;
+  });
+  contents.on("render-process-gone", () => {
+    if (!fieldView || fieldView.webContents !== contents) return;
+    fieldViewLoaded = false;
+    fieldViewReady = false;
+    cancelFieldAuthSignout("FIELD_RENDERER_GONE");
+    cancelFieldRequests("FIELD_RENDERER_GONE");
+    resolveFieldReadyWaiters(Object.assign(new Error("FIELD_RENDERER_GONE"), { code: "FIELD_RENDERER_GONE" }));
+    emitFieldState("disconnected", "현장 업무 연결이 끊겼습니다. 다시 연결해 주세요.");
+  });
+  contents.on("destroyed", () => {
+    if (!fieldView || contents !== fieldView.webContents) return;
+    fieldView = null;
+    fieldViewLoaded = false;
+    fieldViewReady = false;
+    fieldViewVisible = false;
+    cancelFieldAuthSignout("FIELD_RENDERER_DESTROYED");
+    cancelFieldRequests("FIELD_RENDERER_DESTROYED");
+    resolveFieldReadyWaiters(Object.assign(new Error("FIELD_RENDERER_DESTROYED"), { code: "FIELD_RENDERER_DESTROYED" }));
+  });
+  contents.session.setPermissionRequestHandler((requestingContents, permission, callback, details) => {
+    const requestingUrl = String(details && details.requestingUrl || requestingContents && requestingContents.getURL() || "");
+    const exactFieldContents = requestingContents === contents;
+    const isMainFrame = Boolean(details && details.isMainFrame === true);
+    callback(exactFieldContents && isMainFrame && isAllowedFieldPermission(permission, requestingUrl, details && details.mediaTypes));
+  });
+  contents.session.setPermissionCheckHandler((requestingContents, permission, requestingOrigin, details) => {
+    const requestingUrl = String(details && details.requestingUrl || requestingOrigin || "");
+    const mediaTypes = details && details.mediaType ? [details.mediaType] : [];
+    return requestingContents === contents
+      && Boolean(details && details.isMainFrame === true)
+      && isAllowedFieldPermission(permission, requestingUrl, mediaTypes);
+  });
   contents.session.on("will-download", event => event.preventDefault());
   mainWindow.contentView.addChildView(fieldView);
   fieldView.setVisible(false);
   return fieldView;
 }
 
-async function showFieldView() {
-  if (!remoteClient || !remoteClient.authState().user) {
-    return { ok: false, error: "CRM에 먼저 로그인해 주세요." };
+function waitForFieldReady() {
+  if (fieldViewReady) return Promise.resolve(true);
+  return new Promise((resolve, reject) => {
+    const waiter = { resolve, reject, timer: null };
+    waiter.timer = setTimeout(() => {
+      fieldReadyWaiters.delete(waiter);
+      const error = Object.assign(new Error("FIELD_BRIDGE_TIMEOUT"), { code: "FIELD_BRIDGE_TIMEOUT" });
+      reject(error);
+    }, FIELD_BRIDGE_TIMEOUT_MS);
+    fieldReadyWaiters.add(waiter);
+  });
+}
+
+async function ensureFieldReadyForLogout() {
+  syncFieldSession();
+  const sessionKey = fieldSessionKey;
+  const view = ensureFieldView();
+  const contents = view.webContents;
+  if (!fieldViewLoaded) {
+    emitFieldState("connecting", "로그아웃 전에 현장 자료를 확인하고 있습니다.");
+    await contents.loadURL(`${FIELD_PLATFORM_URL}?embedded=crm`);
+    if (!fieldView || fieldView.webContents !== contents || sessionKey !== fieldSessionKey) {
+      throw Object.assign(new Error("FIELD_SESSION_CHANGED"), { code: "FIELD_SESSION_CHANGED" });
+    }
+    fieldViewLoaded = true;
   }
+  await waitForFieldReady();
+  if (!fieldView
+    || fieldView.webContents !== contents
+    || contents.isDestroyed()
+    || sessionKey !== fieldSessionKey
+    || !fieldViewReady) {
+    throw Object.assign(new Error("FIELD_SESSION_CHANGED"), { code: "FIELD_SESSION_CHANGED" });
+  }
+  return { view, sessionKey };
+}
+
+async function requestFieldPendingUploads() {
+  const decision = await fieldRequestCoordinator.request(
+    createFieldEnvelope("crm.logoutCheck", { reason: "logout" }),
+  );
+  if (decision.type !== "field.logoutDecision") {
+    throw Object.assign(new Error("FIELD_LOGOUT_DECISION_INVALID"), { code: "FIELD_LOGOUT_DECISION_INVALID" });
+  }
+  fieldPendingUploads = { count: decision.payload.count, risk: decision.payload.risk };
+  return fieldPendingUploads;
+}
+
+async function recoverFieldSession() {
+  if (fieldRecoveryInFlight) return fieldRecoveryInFlight;
+  const view = fieldView;
+  const sessionKey = fieldSessionKey;
+  const userId = String(authState().user && authState().user.uid || "");
+  if (!view || view.webContents.isDestroyed() || !userId || !remoteClient) {
+    const error = Object.assign(new Error("FIELD_HANDOFF_SESSION_REQUIRED"), { code: "FIELD_HANDOFF_SESSION_REQUIRED" });
+    resolveFieldReadyWaiters(error);
+    emitFieldState("disconnected", "현장 업무 자동 연결에 실패했습니다. CRM 연결을 확인한 뒤 다시 연결해 주세요.");
+    return { ok: false, code: error.code };
+  }
+  const contents = view.webContents;
+  const recoveryKey = `${sessionKey}:view-${contents.id}`;
+  emitFieldState("connecting", "CRM 로그인으로 현장 업무를 자동 연결하고 있습니다.");
+  const task = fieldSessionRecoveryCoordinator.recover(recoveryKey, () => Boolean(
+    fieldView
+      && fieldView === view
+      && !contents.isDestroyed()
+      && fieldSessionKey === sessionKey
+      && String(authState().user && authState().user.uid || "") === userId,
+  ));
+  const wrapped = task.then(result => {
+    const authenticatedWhileRecovering = result.code === "FIELD_SESSION_CHANGED"
+      && fieldViewReady
+      && fieldView === view
+      && !contents.isDestroyed()
+      && fieldSessionKey === sessionKey;
+    if (!result.ok && !authenticatedWhileRecovering) {
+      const error = Object.assign(new Error(result.code), { code: result.code });
+      resolveFieldReadyWaiters(error);
+      emitFieldState("disconnected", "현장 업무 자동 연결에 실패했습니다. CRM 연결을 확인한 뒤 다시 연결해 주세요.");
+    }
+    return authenticatedWhileRecovering ? { ok: true, alreadyAuthenticated: true } : result;
+  }).finally(() => {
+    if (fieldRecoveryInFlight === wrapped) fieldRecoveryInFlight = null;
+  });
+  fieldRecoveryInFlight = wrapped;
+  return wrapped;
+}
+
+async function signOutFieldAuthentication(fieldHandle) {
+  const view = fieldHandle && fieldHandle.view;
+  const sessionKey = fieldHandle && fieldHandle.sessionKey;
+  if (!view
+    || !fieldView
+    || fieldView !== view
+    || view.webContents.isDestroyed()
+    || sessionKey !== fieldSessionKey) {
+    throw Object.assign(new Error("FIELD_SESSION_CLEAR_FAILED"), { code: "FIELD_SESSION_CLEAR_FAILED" });
+  }
+  if (fieldAuthSignoutWaiter) {
+    throw Object.assign(new Error("FIELD_SESSION_CLEAR_IN_PROGRESS"), { code: "FIELD_SESSION_CLEAR_IN_PROGRESS" });
+  }
+
+  const requestId = createFieldEnvelope("crm.logoutCheck", { reason: "logout" }).requestId;
+  return new Promise((resolve, reject) => {
+    const waiter = {
+      requestId,
+      sessionKey,
+      webContentsId: view.webContents.id,
+      resolve,
+      reject,
+      timer: null,
+    };
+    waiter.timer = setTimeout(() => {
+      if (fieldAuthSignoutWaiter !== waiter) return;
+      fieldAuthSignoutWaiter = null;
+      try {
+        if (fieldView && fieldView === view && !view.webContents.isDestroyed()) {
+          view.webContents.send("crm:field-auth-signout-cancel", { requestId });
+        }
+      } catch (_error) {}
+      reject(Object.assign(new Error("FIELD_SESSION_CLEAR_FAILED"), { code: "FIELD_SESSION_CLEAR_FAILED" }));
+    }, FIELD_BRIDGE_TIMEOUT_MS);
+    fieldAuthSignoutWaiter = waiter;
+    try {
+      view.webContents.send("crm:field-auth-signout", { requestId });
+    } catch (_error) {
+      if (fieldAuthSignoutWaiter === waiter) fieldAuthSignoutWaiter = null;
+      clearTimeout(waiter.timer);
+      reject(Object.assign(new Error("FIELD_SESSION_CLEAR_FAILED"), { code: "FIELD_SESSION_CLEAR_FAILED" }));
+    }
+  });
+}
+
+function applyFieldBounds() {
+  if (!fieldView || !fieldMeasuredBounds || !fieldViewVisible) return false;
+  fieldView.setBounds(fieldMeasuredBounds);
+  return true;
+}
+
+function crmBridgeSenderContext(event) {
+  const entryUrl = pathToFileURL(path.join(__dirname, "index.html")).toString();
+  return {
+    webContentsId: event.sender.id,
+    expectedWebContentsId: mainWindow && mainWindow.webContents.id,
+    frameUrl: event.senderFrame && event.senderFrame.url,
+    expectedFrameUrl: entryUrl,
+    isMainFrame: Boolean(event.senderFrame && event.senderFrame === event.sender.mainFrame),
+  };
+}
+
+function fieldBridgeSenderContext(event) {
+  return {
+    webContentsId: event.sender.id,
+    expectedWebContentsId: fieldView && fieldView.webContents.id,
+    frameUrl: event.senderFrame && event.senderFrame.url,
+    isMainFrame: Boolean(event.senderFrame && event.senderFrame === event.sender.mainFrame),
+  };
+}
+
+function trustedFieldIpc(event) {
+  if (!fieldView || fieldView.webContents.isDestroyed()) return false;
+  if (!(event.sender === fieldView.webContents)) return false;
+  if (!event.senderFrame || event.senderFrame !== event.sender.mainFrame) return false;
   try {
-    const view = ensureFieldView();
-    const url = `${FIELD_PLATFORM_URL}?embedded=crm`;
-    await view.webContents.loadURL(url);
-    fieldViewVisible = true;
-    view.setBounds(fieldBounds(mainWindow.getContentBounds()));
-    view.setVisible(true);
-    return { ok: true };
+    const frame = new URL(event.senderFrame.url);
+    return frame.origin === FIELD_ORIGIN && isAllowedFieldNavigation(frame.toString());
   } catch (_error) {
-    destroyFieldView();
-    return { ok: false, error: "BRING FIELD 연결에 실패했습니다. 잠시 후 다시 시도해 주세요." };
+    return false;
   }
 }
 
-async function signOutFieldView() {
-  if (!fieldView || fieldView.webContents.isDestroyed()) return;
+async function openFieldExternal(rawUrl) {
+  const decision = externalFieldLinkDecision(rawUrl);
+  if (!decision.ok) return { ok: false, code: decision.code };
+  if (decision.requiresConfirmation) {
+    const result = await dialog.showMessageBox(mainWindow, {
+      type: "question",
+      title: "외부 사이트 열기",
+      message: `${decision.host} 사이트를 브라우저에서 열까요?`,
+      detail: "현장 업무 화면에서 요청한 안전한 HTTPS 링크입니다.",
+      buttons: ["열기", "취소"],
+      defaultId: 1,
+      cancelId: 1,
+      noLink: true,
+    });
+    if (result.response !== 0) return { ok: false, code: "FIELD_EXTERNAL_CANCELLED" };
+  }
+  await shell.openExternal(decision.url);
+  return { ok: true };
+}
+
+async function showFieldView(input = {}, crmEvent) {
+  if (!authState().user) {
+    return { ok: false, error: "CRM에 먼저 로그인해 주세요." };
+  }
+  let visibilityEpoch = 0;
+  const assertCurrentVisibility = () => {
+    if (visibilityEpoch !== fieldVisibilityEpoch || !fieldView || fieldView.webContents.isDestroyed()) {
+      throw Object.assign(new Error("FIELD_VIEW_HIDDEN"), { code: "FIELD_VIEW_HIDDEN" });
+    }
+  };
   try {
-    await fieldView.webContents.executeJavaScript(`new Promise(resolve => {
-      const finish = () => resolve(true);
-      window.addEventListener("bring-field-logout-complete", finish, { once: true });
-      window.dispatchEvent(new Event("bring-crm-logout"));
-      setTimeout(finish, 1500);
-    })`, true);
-  } catch (_error) {}
-  destroyFieldView();
+    syncFieldSession();
+    visibilityEpoch = ++fieldVisibilityEpoch;
+    const view = ensureFieldView();
+    if (!fieldMeasuredBounds || fieldMeasuredBounds.width < 1 || fieldMeasuredBounds.height < 1) {
+      return { ok: false, code: "FIELD_BOUNDS_REQUIRED", error: "현장 업무 화면 크기를 확인하고 있습니다." };
+    }
+    if (!fieldViewLoaded) {
+      emitFieldState("connecting", "현장 업무에 연결하고 있습니다.");
+      await view.webContents.loadURL(`${FIELD_PLATFORM_URL}?embedded=crm`);
+      assertCurrentVisibility();
+      fieldViewLoaded = true;
+    }
+    await waitForFieldReady();
+    assertCurrentVisibility();
+    fieldViewVisible = true;
+    applyFieldBounds();
+    view.setVisible(true);
+    const route = normalizeFieldRoute(input.route || fieldLastRoute) || "/field?embedded=crm";
+    const navigation = createFieldEnvelope("field.navigate", {
+      route,
+      operatorId: String(input.operatorId || ""),
+      selectedJobId: String(input.selectedJobId || ""),
+      filter: input.filter && typeof input.filter === "object" ? input.filter : {},
+      scrollTop: Number.isInteger(input.scrollTop) ? input.scrollTop : 0,
+      search: String(input.search || "").slice(0, 256),
+    });
+    const navigationValidation = validateFieldMessage(navigation, {
+      direction: "crmToField",
+      sender: crmBridgeSenderContext(crmEvent),
+    });
+    if (!navigationValidation.ok) throw Object.assign(new Error(navigationValidation.code), { code: navigationValidation.code });
+    const response = await fieldRequestCoordinator.request(navigationValidation.value);
+    assertCurrentVisibility();
+    if (!response.payload.ok) throw Object.assign(new Error("FIELD_NAVIGATION_FAILED"), { code: "FIELD_NAVIGATION_FAILED" });
+    fieldLastRoute = route;
+    emitFieldState("ready", "현장 업무가 연결되었습니다.");
+    return { ok: true, route: fieldLastRoute };
+  } catch (error) {
+    if (visibilityEpoch && visibilityEpoch === fieldVisibilityEpoch) {
+      if (fieldView) fieldView.setVisible(false);
+      fieldViewVisible = false;
+    }
+    const code = error && error.code || "FIELD_CONNECT_FAILED";
+    const cancelled = ["FIELD_VIEW_HIDDEN", "FIELD_SESSION_CHANGED", "FIELD_RENDERER_DESTROYED"].includes(code);
+    const timedOut = code === "FIELD_BRIDGE_TIMEOUT";
+    const recoveryFailed = code.startsWith("FIELD_HANDOFF_");
+    if (!cancelled) emitFieldState(
+      timedOut ? "timeout" : "disconnected",
+      timedOut
+        ? "현장 업무 응답이 늦어지고 있습니다. 다시 연결해 주세요."
+        : recoveryFailed
+          ? "현장 업무 자동 연결에 실패했습니다. CRM 연결을 확인한 뒤 다시 연결해 주세요."
+          : "현장 업무에 연결하지 못했습니다.",
+    );
+    return {
+      ok: false,
+      code,
+      error: cancelled
+        ? "현장 업무 화면을 닫았습니다."
+        : recoveryFailed
+          ? "현장 업무 자동 연결에 실패했습니다. CRM 연결을 확인한 뒤 다시 연결해 주세요."
+          : "BRING FIELD 연결에 실패했습니다. 잠시 후 다시 시도해 주세요.",
+    };
+  }
+}
+
+async function reconnectFieldView() {
+  if (!authState().user) return { ok: false, error: "CRM에 먼저 로그인해 주세요." };
+  try {
+    const view = ensureFieldView();
+    cancelFieldRequests("FIELD_RECONNECTING");
+    fieldSessionRecoveryCoordinator.reset();
+    fieldRecoveryInFlight = null;
+    fieldViewReady = false;
+    fieldViewLoaded = false;
+    emitFieldState("connecting", "현장 업무에 다시 연결하고 있습니다.");
+    await view.webContents.loadURL(`${FIELD_PLATFORM_URL}?embedded=crm`);
+    fieldViewLoaded = true;
+    await waitForFieldReady();
+    return { ok: true };
+  } catch (error) {
+    emitFieldState("disconnected", "현장 업무에 다시 연결하지 못했습니다.");
+    return { ok: false, code: error && error.code || "FIELD_RECONNECT_FAILED", error: "다시 연결하지 못했습니다." };
+  }
 }
 
 ipcMain.on("crm:field-reconnect-request", event => {
-  if (!fieldView || event.sender !== fieldView.webContents) return;
-  void showFieldView();
+  if (!trustedFieldIpc(event)) return;
+  void reconnectFieldView();
+});
+
+function settleFieldAuthSignout(event, input, succeeded) {
+  if (!trustedFieldIpc(event) || !fieldAuthSignoutWaiter) return;
+  const waiter = fieldAuthSignoutWaiter;
+  if (!isMatchingFieldAuthSignoutAck(input, waiter, {
+    webContentsId: event.sender.id,
+    sessionKey: fieldSessionKey,
+  })) return;
+  fieldAuthSignoutWaiter = null;
+  clearTimeout(waiter.timer);
+  if (succeeded) waiter.resolve(true);
+  else waiter.reject(Object.assign(new Error("FIELD_SESSION_CLEAR_FAILED"), { code: "FIELD_SESSION_CLEAR_FAILED" }));
+}
+
+ipcMain.on("crm:field-auth-signout-complete", (event, input) => {
+  settleFieldAuthSignout(event, input, true);
+});
+
+ipcMain.on("crm:field-auth-signout-failed", (event, input) => {
+  settleFieldAuthSignout(event, input, false);
+});
+
+ipcMain.on("crm:field-message", (event, envelopeInput) => {
+  if (!trustedFieldIpc(event)) return;
+  const result = validateFieldMessage(envelopeInput, {
+    direction: "fieldToCrm",
+    sender: fieldBridgeSenderContext(event),
+  });
+  if (!result.ok) return;
+  const envelope = result.value;
+  if (["field.ack", "field.commandResult", "field.logoutDecision"].includes(envelope.type)) {
+    fieldRequestCoordinator.handleResponse(envelope, fieldSessionKey);
+    return;
+  }
+  if (envelope.type === "field.ready") {
+    if (envelope.payload.session === "authenticated") {
+      fieldViewReady = true;
+      fieldSessionRecoveryCoordinator.reset();
+      fieldLastRoute = normalizeFieldRoute(envelope.payload.route) || fieldLastRoute;
+      resolveFieldReadyWaiters();
+      emitFieldState("ready", "현장 업무가 연결되었습니다.");
+    } else if (["missing", "expired"].includes(envelope.payload.session)) {
+      fieldViewReady = false;
+      void recoverFieldSession();
+    }
+  } else if (envelope.type === "field.routeChanged") {
+    fieldLastRoute = normalizeFieldRoute(envelope.payload.route) || fieldLastRoute;
+  } else if (envelope.type === "field.pendingUploads") {
+    fieldPendingUploads = { count: envelope.payload.count, risk: envelope.payload.risk };
+  } else if (envelope.type === "field.openExternal") {
+    void openFieldExternal(envelope.payload.url);
+  }
+  sendToRenderer("crm:field-event", envelope);
 });
 
 function demoOperations() {
@@ -274,43 +769,41 @@ function pendingFile() {
   return path.join(path.dirname(dataFile()), "bring-crm-pending.json");
 }
 
-async function readLocalStore() {
+let localStoreCoordinator = null;
+
+function getLocalStoreCoordinator() {
+  if (!localStoreCoordinator) {
+    localStoreCoordinator = createSerializedProtectedStoreCoordinator({ fs, safeStorage, target: dataFile() });
+  }
+  return localStoreCoordinator;
+}
+
+async function readLocalStore(commitGuard) {
   try {
     const raw = await fs.readFile(dataFile(), "utf8");
     const decoded = decodeProtectedJson(safeStorage, raw);
-    const data = Core.sanitizeStore(decoded.value);
+    const data = Core.sanitizeSharedStore(decoded.value);
     Core.assertNoProhibitedSecrets(data);
-    if (!decoded.encrypted) await writeProtectedStoreFile(dataFile(), data);
+    if (!decoded.encrypted) await getLocalStoreCoordinator().write(data, commitGuard);
     return data;
   } catch (error) {
     if (error.code !== "ENOENT") {
       console.warn("CRM data read failed", error.message);
       if (["LOCAL_ENCRYPTION_UNAVAILABLE", "PROTECTED_DATA_INVALID"].includes(error.code)) throw error;
     }
-    return Core.blankStore();
+    return Core.blankSharedStore();
   }
 }
 
-async function writeProtectedStoreFile(target, value) {
-  const temp = `${target}.tmp`;
-  await fs.mkdir(path.dirname(target), { recursive: true });
-  await fs.writeFile(temp, encodeProtectedJson(safeStorage, value), "utf8");
-  await fs.rename(temp, target);
-}
-
-async function writeLocalStore(input) {
-  const target = dataFile();
+async function writeLocalStore(input, commitGuard) {
   Core.assertNoProhibitedSecrets(input);
-  const data = Core.sanitizeStore(input);
+  const data = Core.sanitizeSharedStore(input);
   data.updatedAt = new Date().toISOString();
-  await writeProtectedStoreFile(target, data);
-  return data;
+  return getLocalStoreCoordinator().write(data, commitGuard);
 }
 
 async function clearLocalStore() {
-  for (const target of [dataFile(), `${dataFile()}.tmp`]) {
-    try { await fs.unlink(target); } catch (error) { if (error.code !== "ENOENT") throw error; }
-  }
+  await getLocalStoreCoordinator().clear();
 }
 
 function sendToRenderer(channel, payload) {
@@ -321,6 +814,78 @@ function setUpdateState(patch) {
   updateState = Object.assign({}, updateState, patch);
   sendToRenderer("crm:update-state", updateState);
   return updateState;
+}
+
+async function confirmApplicationExitWithPending(pendingUploads, reason) {
+  fieldPendingUploads = { count: pendingUploads.count, risk: pendingUploads.risk };
+  const updateRestart = reason === "update";
+  const options = {
+    type: "warning",
+    title: updateRestart ? "업데이트 전에 현장 자료 확인" : "종료 전에 현장 자료 확인",
+    message: `아직 업로드하지 못한 현장 자료가 ${pendingUploads.count}건 있습니다.`,
+    detail: updateRestart
+      ? "지금 재시작하면 업로드가 중단됩니다. 자료는 이 PC에 보존되지만, 다음 실행 후 업로드를 다시 확인해야 합니다."
+      : "지금 종료하면 업로드가 중단됩니다. 자료는 이 PC에 보존되지만, 다음 실행 후 업로드를 다시 확인해야 합니다.",
+    buttons: ["업로드를 마치고 돌아가기", updateRestart ? "그래도 재시작" : "그래도 종료"],
+    defaultId: 0,
+    cancelId: 0,
+    noLink: true,
+  };
+  const result = mainWindow && !mainWindow.isDestroyed()
+    ? await dialog.showMessageBox(mainWindow, options)
+    : await dialog.showMessageBox(options);
+  return result.response === 1;
+}
+
+async function finishApplicationExit(reason) {
+  applicationExitAllowed = true;
+  if (reason === "update") {
+    if (updateInstallScheduled) return;
+    updateInstallScheduled = true;
+    setImmediate(() => {
+      try {
+        autoUpdater.quitAndInstall(false, true);
+      } catch (_error) {
+        updateInstallScheduled = false;
+        applicationExitAllowed = false;
+        applicationExitCoordinator.reset();
+        emitFieldState("disconnected", "업데이트 재시작을 완료하지 못했습니다. 다시 시도해 주세요.");
+      }
+    });
+    return;
+  }
+  setImmediate(() => {
+    if (reason === "window" && mainWindow && !mainWindow.isDestroyed()) mainWindow.close();
+    else app.quit();
+  });
+}
+
+async function requestApplicationExit(reason) {
+  const result = await applicationExitCoordinator.request(reason);
+  if (result.ok || result.code === "FIELD_EXIT_CANCELLED") return result;
+  if (result.code === "FIELD_EXIT_CHECK_FAILED") {
+    emitFieldState("disconnected", "현장 업무 자동 연결에 실패했습니다. CRM 연결을 확인한 뒤 다시 연결해 주세요.");
+  }
+  if (!applicationExitFailureDialogOpen) {
+    applicationExitFailureDialogOpen = true;
+    try {
+      const options = {
+        type: "error",
+        title: "종료할 수 없습니다",
+        message: result.error || "현장 자료 상태를 확인하지 못했습니다.",
+        detail: "BRING FIELD를 다시 연결한 뒤 종료해 주세요. 저장된 현장 자료는 삭제하지 않았습니다.",
+        buttons: ["확인"],
+        defaultId: 0,
+        cancelId: 0,
+        noLink: true,
+      };
+      if (mainWindow && !mainWindow.isDestroyed()) await dialog.showMessageBox(mainWindow, options);
+      else await dialog.showMessageBox(options);
+    } finally {
+      applicationExitFailureDialogOpen = false;
+    }
+  }
+  return result;
 }
 
 async function promptToInstallUpdate() {
@@ -337,7 +902,7 @@ async function promptToInstallUpdate() {
       cancelId: 1,
       noLink: true
     });
-    if (result.response === 0) autoUpdater.quitAndInstall(false, true);
+    if (result.response === 0) await requestApplicationExit("update");
   } finally {
     updatePromptOpen = false;
   }
@@ -374,7 +939,7 @@ async function checkForUpdates(manual) {
   if (updateState.status === "checking" || updateState.status === "downloading") return updateState;
   try {
     setUpdateState({ status: "checking", message: manual ? "사용자가 새 버전을 확인하고 있습니다." : "새 버전을 확인하고 있습니다." });
-    await autoUpdater.checkForUpdates();
+    await CrmUpdatePolicy.checkCrmUpdates({ updater: autoUpdater });
   } catch (error) {
     console.warn("CRM update check failed", error && error.message ? error.message : error);
     setUpdateState({ status: "error", message: "업데이트 서버에 연결하지 못했습니다. CRM은 계속 사용할 수 있습니다." });
@@ -661,7 +1226,10 @@ async function initializeRemote() {
     writeLocalStore,
     clearLocalStore,
     onRemoteStore: data => sendToRenderer("crm:remote-data", data),
-    onAuthState: state => sendToRenderer("crm:auth-state", state),
+    onAuthState: state => {
+      syncFieldSession(state);
+      sendToRenderer("crm:auth-state", state);
+    },
     onSyncState: state => sendToRenderer("crm:sync-state", state)
   });
   await remoteClient.init();
@@ -676,10 +1244,35 @@ function trustedIpc(event) {
   }
 }
 
+function trustedCanonicalIpc(event, windowRef, entryPath) {
+  try {
+    if (!windowRef || windowRef.isDestroyed() || !event || event.sender !== windowRef.webContents) return false;
+    if (!event.senderFrame || !event.sender.mainFrame || event.senderFrame !== event.sender.mainFrame) return false;
+    const url = new URL(event.senderFrame.url || event.sender.getURL());
+    if (url.protocol !== "file:") return false;
+    const actualPath = path.resolve(fileURLToPath(url));
+    const expectedPath = path.resolve(entryPath);
+    return process.platform === "win32"
+      ? actualPath.toLowerCase() === expectedPath.toLowerCase()
+      : actualPath === expectedPath;
+  } catch (_) {
+    return false;
+  }
+}
+
 function secureHandle(channel, handler) {
   ipcMain.handle(channel, (event, ...args) => {
     if (!trustedIpc(event)) throw new Error("허용되지 않은 요청입니다.");
     return handler(...args);
+  });
+}
+
+function secureCanonicalHandle(channel, handler) {
+  ipcMain.handle(channel, (event, ...args) => {
+    if (!trustedCanonicalIpc(event, mainWindow, path.join(__dirname, "index.html"))) {
+      throw new Error("허용되지 않은 요청입니다.");
+    }
+    return handler(...args, event);
   });
 }
 
@@ -691,7 +1284,7 @@ function buildMenu() {
       { type: "separator" },
       { label: "업데이트 확인", click: () => checkForUpdates(true) },
       { type: "separator" },
-      { role: "quit", label: "종료" }
+      { label: "종료", click: () => { void requestApplicationExit("menu"); } }
     ]},
     { label: "보기", submenu: [
       { role: "reload", label: "새로고침" },
@@ -725,7 +1318,11 @@ async function createWindow() {
   });
   mainWindow.webContents.on("will-navigate", event => event.preventDefault());
   mainWindow.webContents.setWindowOpenHandler(() => ({ action: "deny" }));
-  mainWindow.on("resize", resizeFieldView);
+  mainWindow.on("close", event => {
+    if (applicationExitAllowed) return;
+    event.preventDefault();
+    void requestApplicationExit("window");
+  });
   mainWindow.on("closed", () => {
     destroyFieldView();
     mainWindow = null;
@@ -735,8 +1332,14 @@ async function createWindow() {
   });
 
   if (process.env.BRING_CRM_SMOKE === "1") {
+    for (let attempt = 0; attempt < 50; attempt += 1) {
+      const ready = await mainWindow.webContents.executeJavaScript("window.__crmTest && window.__crmTest.snapshot().initialized", true);
+      if (ready) break;
+      await new Promise(resolve => setTimeout(resolve, 100));
+    }
     const snapshot = await mainWindow.webContents.executeJavaScript("window.__crmTest && window.__crmTest.snapshot()", true);
     console.log(JSON.stringify(snapshot));
+    applicationExitAllowed = true;
     app.quit();
   }
   if (process.env.BRING_CRM_SCREENSHOT) {
@@ -909,9 +1512,18 @@ async function createWindow() {
         return { openerFound: !!opener, buttonFound: !!button, state: window.__crmTest?.snapshot() };
       })()`, true);
     } else if (process.env.BRING_CRM_SCREENSHOT_ACTION === "new-partner-quote") {
-      actionResult = await mainWindow.webContents.executeJavaScript(`(() => {
+      actionResult = await mainWindow.webContents.executeJavaScript(`(async () => {
         document.querySelector('[data-view="partnerQuotes"]')?.click();
+        await new Promise(resolve => setTimeout(resolve, 80));
         const button = document.querySelector('[data-action="new-partner-quote"]');
+        button?.click();
+        return { buttonFound: !!button, state: window.__crmTest?.snapshot() };
+      })()`, true);
+    } else if (process.env.BRING_CRM_SCREENSHOT_ACTION === "new-consultation") {
+      actionResult = await mainWindow.webContents.executeJavaScript(`(async () => {
+        document.querySelector('[data-view="consultations"]')?.click();
+        await new Promise(resolve => setTimeout(resolve, 80));
+        const button = document.querySelector('[data-action="new-consultation"]');
         button?.click();
         return { buttonFound: !!button, state: window.__crmTest?.snapshot() };
       })()`, true);
@@ -1040,6 +1652,103 @@ async function createWindow() {
         form?.querySelector('[data-action="close-modal"]')?.click();
         return { pass, buildingId, title, kpis, sections, linkedBuildingId, linkedCustomerId, buildingName, state: window.__crmTest.snapshot() };
       })()`, true);
+    } else if (process.env.BRING_CRM_SCREENSHOT_ACTION === "building-rental-info") {
+      actionResult = await mainWindow.webContents.executeJavaScript(`(async () => {
+        const wait = ms => new Promise(resolve => setTimeout(resolve, ms));
+        const isReadOnly = document.body.classList.contains('crm-read-only');
+        let seed = window.__crmTest.getStore();
+        let first = seed.buildings[0];
+        if (!first) return { pass: false, reason: 'seed building missing', isReadOnly };
+        if (isReadOnly) {
+          Object.assign(first, {
+            rentDeposit: 3000000, monthlyRent: 330000, maintenanceFee: 50000,
+            maintenanceIncludes: ['수도', '인터넷', '기타'], maintenanceIncludeOther: '복도 청소',
+            vacantUnitCount: 3, vacantUnits: ['101호', '203호'],
+            roomTypes: ['원룸', '투룸', '기타'], roomTypeOther: '복층',
+            roomOptions: ['냉장고', '세탁기', '에어컨', '기타'], roomOptionOther: '인덕션'
+          });
+          seed.updatedAt = new Date().toISOString();
+          window.__crmTest.applyRemoteForTest(seed);
+          await wait(100);
+          document.querySelector('[data-view="buildings"]')?.click();
+          await wait(80);
+          document.querySelector('[data-building-open="' + first.id + '"]')?.click();
+          const detail = document.querySelector('.building-rental-detail');
+          const editButton = document.querySelector('[data-building-edit="' + first.id + '"]');
+          const editHidden = !editButton || getComputedStyle(editButton).display === 'none';
+          const detailText = detail?.textContent || '';
+          const pass = !!detail && editHidden && detailText.includes('3,000,000원') && detailText.includes('101호, 203호') && detailText.includes('기타: 복도 청소') && detailText.includes('기타: 인덕션');
+          return { pass, isReadOnly, editHidden, detailText, state: window.__crmTest.snapshot() };
+        }
+
+        document.querySelector('[data-view="buildings"]')?.click();
+        await wait(80);
+        document.querySelector('[data-building-open="' + first.id + '"]')?.click();
+        document.querySelector('[data-building-edit="' + first.id + '"]')?.click();
+        let form = document.getElementById('buildingForm');
+        if (!form) return { pass: false, reason: 'building form missing', isReadOnly };
+        const check = (name, value) => {
+          const input = [...form.querySelectorAll('input[name="' + name + '"]')].find(item => item.value === value);
+          if (input) input.checked = true;
+          return !!input;
+        };
+        form.elements.rentDeposit.value = '3000000';
+        form.elements.monthlyRent.value = '330000';
+        form.elements.maintenanceFee.value = '50000';
+        form.elements.vacantUnitCount.value = '1';
+        form.elements.vacantUnits.value = '101호, 203호';
+        check('maintenanceIncludes', '수도');
+        check('maintenanceIncludes', '인터넷');
+        check('maintenanceIncludes', '기타');
+        form.elements.maintenanceIncludeOther.value = '복도 청소';
+        check('roomTypes', '원룸');
+        check('roomTypes', '투룸');
+        check('roomTypes', '기타');
+        form.elements.roomTypeOther.value = '복층';
+        check('roomOptions', '냉장고');
+        check('roomOptions', '세탁기');
+        check('roomOptions', '에어컨');
+        check('roomOptions', '기타');
+        form.elements.roomOptionOther.value = '인덕션';
+        form.requestSubmit();
+        await wait(80);
+        const validationBlocked = !!document.getElementById('buildingForm') && (document.getElementById('toast')?.textContent || '').includes('공실 수를 2개 이상');
+        form = document.getElementById('buildingForm');
+        form.elements.vacantUnitCount.value = '3';
+        form.requestSubmit();
+        await wait(220);
+        const saved = window.__crmTest.getStore().buildings.find(item => item.id === first.id);
+        const detail = document.querySelector('.building-rental-detail');
+        const detailText = detail?.textContent || '';
+        document.querySelector('[data-building-edit="' + first.id + '"]')?.click();
+        form = document.getElementById('buildingForm');
+        const checkedValues = name => [...form.querySelectorAll('input[name="' + name + '"]:checked')].map(item => item.value);
+        const reopened = {
+          rentDeposit: form.elements.rentDeposit.value,
+          vacantUnitCount: form.elements.vacantUnitCount.value,
+          vacantUnits: form.elements.vacantUnits.value,
+          maintenanceIncludes: checkedValues('maintenanceIncludes'),
+          roomTypes: checkedValues('roomTypes'),
+          roomOptions: checkedValues('roomOptions'),
+          maintenanceIncludeOther: form.elements.maintenanceIncludeOther.value,
+          roomTypeOther: form.elements.roomTypeOther.value,
+          roomOptionOther: form.elements.roomOptionOther.value
+        };
+        const card = document.querySelector('.modal-card');
+        const noHorizontalOverflow = !!card && card.scrollWidth <= card.clientWidth + 1 && form.scrollWidth <= form.clientWidth + 1;
+        const pass = validationBlocked && saved?.rentDeposit === 3000000 && saved?.monthlyRent === 330000 && saved?.maintenanceFee === 50000
+          && saved?.vacantUnitCount === 3 && JSON.stringify(saved?.vacantUnits) === JSON.stringify(['101호', '203호'])
+          && ['수도', '인터넷', '기타'].every(value => saved?.maintenanceIncludes?.includes(value)) && saved?.maintenanceIncludeOther === '복도 청소'
+          && ['원룸', '투룸', '기타'].every(value => saved?.roomTypes?.includes(value)) && saved?.roomTypeOther === '복층'
+          && ['냉장고', '세탁기', '에어컨', '기타'].every(value => saved?.roomOptions?.includes(value)) && saved?.roomOptionOther === '인덕션'
+          && reopened.rentDeposit === '3000000' && reopened.vacantUnitCount === '3' && reopened.vacantUnits === '101호, 203호'
+          && reopened.maintenanceIncludes.length === 3 && reopened.roomTypes.length === 3 && reopened.roomOptions.length === 4
+          && detailText.includes('3,000,000원') && detailText.includes('101호, 203호') && detailText.includes('기타: 복도 청소') && detailText.includes('기타: 인덕션')
+          && noHorizontalOverflow;
+        if (card) card.scrollTop = card.scrollHeight;
+        await wait(80);
+        return { pass, isReadOnly, validationBlocked, saved, reopened, detailText, noHorizontalOverflow, state: window.__crmTest.snapshot() };
+      })().catch(error => ({ pass: false, error: String(error && error.stack || error) }))`, true);
     } else if (process.env.BRING_CRM_SCREENSHOT_ACTION === "readability-layout") {
       actionResult = await mainWindow.webContents.executeJavaScript(`(async () => {
         const wait = ms => new Promise(resolve => setTimeout(resolve, ms));
@@ -1289,6 +1998,285 @@ async function createWindow() {
         const pass = beforeBuildings.length === 2 && noBuildingEditor && JSON.stringify(stableFields(beforeBuildings)) === JSON.stringify(stableFields(afterBuildings)) && savedCustomer?.phone === '010-4215-8080';
         return { pass, noBuildingEditor, submittedPhone, formPhone, formCustomerId, immediatePhone, beforeBuildings: stableFields(beforeBuildings), afterBuildings: stableFields(afterBuildings), phone: savedCustomer?.phone, state: window.__crmTest.snapshot() };
       })()`, true);
+    } else if (process.env.BRING_CRM_SCREENSHOT_ACTION === "customer-sales-status") {
+      actionResult = await mainWindow.webContents.executeJavaScript(`Promise.race([
+        (async () => {
+          const wait = ms => new Promise(resolve => setTimeout(resolve, ms));
+          const prefix = 'qa_customer_sales_';
+          const ids = {
+            explicitCustomer: prefix + 'customer_explicit', explicitBuilding: prefix + 'building_explicit', explicitProspect: prefix + 'prospect_explicit',
+            addressCustomer: prefix + 'customer_address', addressBuilding: prefix + 'building_address', addressProspect: prefix + 'prospect_address',
+            nameCustomer: prefix + 'customer_name', nameBuilding: prefix + 'building_name', nameProspect: prefix + 'prospect_name',
+            duplicateCrmCustomer: prefix + 'customer_duplicate_crm', duplicateCrmBuilding: prefix + 'building_duplicate_crm_a', duplicateCrmOtherBuilding: prefix + 'building_duplicate_crm_b', duplicateCrmProspect: prefix + 'prospect_duplicate_crm',
+            duplicateProspectCustomer: prefix + 'customer_duplicate_prospect', duplicateProspectBuilding: prefix + 'building_duplicate_prospect', duplicateProspectA: prefix + 'prospect_duplicate_a', duplicateProspectB: prefix + 'prospect_duplicate_b',
+            archivedCustomer: prefix + 'customer_archived', archivedBuilding: prefix + 'building_archived', archivedProspect: prefix + 'prospect_archived',
+            elsewhereCustomer: prefix + 'customer_elsewhere', elsewhereBuilding: prefix + 'building_elsewhere', elsewhereOwnerBuilding: prefix + 'building_elsewhere_owner', elsewhereProspect: prefix + 'prospect_elsewhere',
+            noBuildingCustomer: prefix + 'customer_no_building',
+            multiCustomer: prefix + 'customer_multi', multiBuildingA: prefix + 'building_multi_a', multiBuildingB: prefix + 'building_multi_b', multiProspectA: prefix + 'prospect_multi_a', multiProspectB: prefix + 'prospect_multi_b',
+            paidCustomer: prefix + 'customer_paid', paidBuilding: prefix + 'building_paid', paidProspect: prefix + 'prospect_paid',
+            pausedCustomer: prefix + 'customer_paused', pausedBuilding: prefix + 'building_paused', pausedProspect: prefix + 'prospect_paused',
+            mixedPausedCustomer: prefix + 'customer_mixed_paused', mixedPausedBuildingA: prefix + 'building_mixed_active', mixedPausedBuildingB: prefix + 'building_mixed_paused', mixedPausedProspectA: prefix + 'prospect_mixed_active', mixedPausedProspectB: prefix + 'prospect_mixed_paused'
+          };
+          const seed = window.__crmTest.getStore();
+          const clean = list => (Array.isArray(list) ? list : []).filter(item => !String(item && item.id || '').startsWith(prefix));
+          seed.customers = clean(seed.customers);
+          seed.buildings = clean(seed.buildings);
+          seed.salesProspects = clean(seed.salesProspects);
+          seed.salesContacts = clean(seed.salesContacts);
+          seed.salesUnits = clean(seed.salesUnits);
+          seed.salesActivities = clean(seed.salesActivities);
+          seed.salesEvents = clean(seed.salesEvents);
+          seed.salesOpportunities = clean(seed.salesOpportunities);
+          const stamp = new Date().toISOString();
+          const baseCustomer = seed.customers[0] || {};
+          const baseBuilding = seed.buildings[0] || {};
+          const customer = (id, name, buildingIds, extra) => Object.assign({}, baseCustomer, {
+            id, customerNo: 'QA-' + id.slice(prefix.length), name, company: '', phone: '010-7000-0000', email: '', type: '건물주', address: '', source: 'QA',
+            interestServices: [], currentIssue: '영업 단계 자동 연결 점검', stage: '상담 중', lastContactAt: '', nextContactAt: '', nextAction: '영업 단계 확인', owner: 'QA 담당자',
+            expectedValue: 0, lostReason: '', priority: '보통', relationshipCycleDays: 30, relationshipStartedAt: '', relationshipLastContactAt: '', relationshipNextContactAt: '',
+            relationshipNextAction: '', relationshipNote: '', tags: [], notes: '', buildingIds: [...buildingIds], workflowCaseIds: [], createdAt: stamp, updatedAt: stamp
+          }, extra || {});
+          const building = (id, name, address, ownerCustomerId, aliases) => Object.assign({}, baseBuilding, {
+            id, buildingNo: 'QA-' + id.slice(prefix.length), name, address, type: '다가구', status: '영업후보', ownerCustomerId: ownerCustomerId || '', unitCount: 0,
+            aliases: Array.isArray(aliases) ? aliases : [], externalRefs: { paymentBuildingIds: [] }, createdAt: stamp, updatedAt: stamp
+          });
+          const prospect = (id, name, address, stage, crmBuildingId, archivedAt) => ({
+            id, name, address, region: '원주', buildingType: 'one_room_multi_family', demandAnchors: [], source: 'other', owner: 'QA 담당자', priority: 'normal', stage,
+            vacancyCount: 0, upcomingVacancyCount: 0, lastActivityAt: '', nextAction: '', nextActionAt: '', crmBuildingId: crmBuildingId || '', archivedAt: archivedAt || '',
+            archivedBy: archivedAt ? 'qa@bring.local' : '', createdAt: stamp, createdBy: 'qa@bring.local', updatedAt: stamp, updatedBy: 'qa@bring.local'
+          });
+
+          seed.customers.push(
+            customer(ids.explicitCustomer, 'QA 명시 연결 고객', [ids.explicitBuilding], { stage: '계약 확정', lostReason: 'QA 기존 보류 사유 보존' }),
+            customer(ids.addressCustomer, 'QA 주소 연결 고객', [ids.addressBuilding]),
+            customer(ids.nameCustomer, 'QA 이름 연결 고객', [ids.nameBuilding]),
+            customer(ids.duplicateCrmCustomer, 'QA CRM 중복주소 고객', [ids.duplicateCrmBuilding]),
+            customer(ids.duplicateProspectCustomer, 'QA 영업 중복주소 고객', [ids.duplicateProspectBuilding]),
+            customer(ids.archivedCustomer, 'QA 보관 제외 고객', [ids.archivedBuilding]),
+            customer(ids.elsewhereCustomer, 'QA 타건물 보호 고객', [ids.elsewhereBuilding]),
+            customer(ids.noBuildingCustomer, 'QA 건물 미연결 고객', []),
+            customer(ids.multiCustomer, 'QA 다건물 고객', [ids.multiBuildingA, ids.multiBuildingB]),
+            customer(ids.paidCustomer, 'QA 유료관리 자동 고객', [ids.paidBuilding], { stage: '신규 고객', relationshipNextAction: '정기 만족도 확인', relationshipNextContactAt: '2026-08-20T01:00:00.000Z' }),
+            customer(ids.pausedCustomer, 'QA 보류종료 제외 고객', [ids.pausedBuilding], { nextContactAt: '2020-01-01T01:00:00.000Z', nextAction: '대시보드에서 제외되어야 함', expectedValue: 7777777 }),
+            customer(ids.mixedPausedCustomer, 'QA 활성보류 혼합 고객', [ids.mixedPausedBuildingA, ids.mixedPausedBuildingB], { nextContactAt: '2020-01-02T01:00:00.000Z', nextAction: '혼합 단계는 대시보드에 유지', expectedValue: 2222222 })
+          );
+          seed.buildings.push(
+            building(ids.explicitBuilding, 'QA 명시연결 CRM 건물', '강원 원주시 QA명시로 11', ids.explicitCustomer),
+            building(ids.addressBuilding, 'QA 주소 CRM 건물', '강원 원주시 QA주소로 22-1', ids.addressCustomer),
+            building(ids.nameBuilding, 'QA 정식 건물명', '', ids.nameCustomer, ['QA 별칭 건물']),
+            building(ids.duplicateCrmBuilding, 'QA CRM 중복주소 A', '강원 원주시 QA중복로 33', ids.duplicateCrmCustomer),
+            building(ids.duplicateCrmOtherBuilding, 'QA CRM 중복주소 B', '강원도 원주시 QA중복로 33', ''),
+            building(ids.duplicateProspectBuilding, 'QA 영업 중복주소 건물', '강원 원주시 QA영업중복로 44', ids.duplicateProspectCustomer),
+            building(ids.archivedBuilding, 'QA 보관 제외 건물', '강원 원주시 QA보관로 55', ids.archivedCustomer),
+            building(ids.elsewhereBuilding, 'QA 타건물 보호 대상', '강원 원주시 QA보호로 66', ids.elsewhereCustomer),
+            building(ids.elsewhereOwnerBuilding, 'QA 실제 명시 연결 건물', '강원 원주시 QA실제로 77', ''),
+            building(ids.multiBuildingA, 'QA 다건물 최초접촉', '강원 원주시 QA다건물로 81', ids.multiCustomer),
+            building(ids.multiBuildingB, 'QA 다건물 임대차계약', '강원 원주시 QA다건물로 82', ids.multiCustomer),
+            building(ids.paidBuilding, 'QA 유료관리 전환 건물', '강원 원주시 QA관리로 91', ids.paidCustomer),
+            building(ids.pausedBuilding, 'QA 보류종료 건물', '강원 원주시 QA종료로 92', ids.pausedCustomer),
+            building(ids.mixedPausedBuildingA, 'QA 혼합 활성 건물', '강원 원주시 QA혼합로 93-1', ids.mixedPausedCustomer),
+            building(ids.mixedPausedBuildingB, 'QA 혼합 보류 건물', '강원 원주시 QA혼합로 93-2', ids.mixedPausedCustomer)
+          );
+          seed.salesProspects.push(
+            prospect(ids.explicitProspect, 'QA 텍스트가 전혀 다른 영업 건물', '강원 원주시 완전히다른로 999', 'diagnosis_done', ids.explicitBuilding),
+            prospect(prefix + 'prospect_explicit_conflict', 'QA 명시연결 CRM 건물', '강원 원주시 QA명시로 11', 'first_contact', ''),
+            prospect(ids.addressProspect, 'QA 주소로만 찾는 영업 건물', '강원도 원주시 QA주소로 22-1', 'replied', ''),
+            prospect(ids.nameProspect, 'QA 별칭 건물', '', 'qualified_interest', ''),
+            prospect(ids.duplicateCrmProspect, 'QA CRM 중복주소 영업 건물', '강원 원주시 QA중복로 33', 'meeting_confirmed', ''),
+            prospect(ids.duplicateProspectA, 'QA 영업 중복 A', '강원 원주시 QA영업중복로 44', 'first_contact', ''),
+            prospect(ids.duplicateProspectB, 'QA 영업 중복 B', '강원도 원주시 QA영업중복로 44', 'lease_signed', ''),
+            prospect(ids.archivedProspect, 'QA 보관 제외 건물', '강원 원주시 QA보관로 55', 'paid_management', ids.archivedBuilding, '2026-08-01T00:00:00.000Z'),
+            prospect(ids.elsewhereProspect, 'QA 타건물 보호 대상', '강원 원주시 QA보호로 66', 'paid_management', ids.elsewhereOwnerBuilding),
+            prospect(ids.multiProspectA, 'QA 다건물 최초접촉', '강원 원주시 QA다건물로 81', 'first_contact', ids.multiBuildingA),
+            prospect(ids.multiProspectB, 'QA 다건물 임대차계약', '강원 원주시 QA다건물로 82', 'lease_signed', ids.multiBuildingB),
+            prospect(ids.paidProspect, 'QA 유료관리 전환 건물', '강원 원주시 QA관리로 91', 'paid_management', ids.paidBuilding),
+            prospect(ids.pausedProspect, 'QA 보류종료 건물', '강원 원주시 QA종료로 92', 'paused_closed', ids.pausedBuilding),
+            prospect(ids.mixedPausedProspectA, 'QA 혼합 활성 건물', '강원 원주시 QA혼합로 93-1', 'first_contact', ids.mixedPausedBuildingA),
+            prospect(ids.mixedPausedProspectB, 'QA 혼합 보류 건물', '강원 원주시 QA혼합로 93-2', 'paused_closed', ids.mixedPausedBuildingB)
+          );
+          seed.updatedAt = new Date(Date.now() + 60000).toISOString();
+          window.__crmTest.applyRemoteForTest(seed);
+          await wait(100);
+
+          const progress = customerId => window.__crmTest.customerSalesProgress(customerId);
+          const results = {
+            explicit: progress(ids.explicitCustomer), address: progress(ids.addressCustomer), name: progress(ids.nameCustomer),
+            duplicateCrm: progress(ids.duplicateCrmCustomer), duplicateProspect: progress(ids.duplicateProspectCustomer), archived: progress(ids.archivedCustomer),
+            elsewhere: progress(ids.elsewhereCustomer), noBuilding: progress(ids.noBuildingCustomer), multi: progress(ids.multiCustomer),
+            paid: progress(ids.paidCustomer), paused: progress(ids.pausedCustomer), mixedPaused: progress(ids.mixedPausedCustomer)
+          };
+          const explicitWins = results.explicit.stateId === 'diagnosis_done' && results.explicit.rows[0]?.prospect?.id === ids.explicitProspect && results.explicit.rows[0]?.matchedBy === 'crmBuildingId';
+          const addressFallback = results.address.stateId === 'replied' && results.address.rows[0]?.prospect?.id === ids.addressProspect && results.address.rows[0]?.matchedBy === 'address';
+          const nameAliasFallback = results.name.stateId === 'qualified_interest' && results.name.rows[0]?.prospect?.id === ids.nameProspect && results.name.rows[0]?.matchedBy === 'name';
+          const duplicateCrmNeedsReview = results.duplicateCrm.stateId === 'needs-review' && results.duplicateCrm.rows[0]?.ambiguous === true;
+          const duplicateProspectNeedsReview = results.duplicateProspect.stateId === 'needs-review' && results.duplicateProspect.rows[0]?.ambiguous === true;
+          const archivedExcluded = results.archived.stateId === 'unregistered' && !results.archived.rows[0]?.prospect;
+          const linkedElsewhereProtected = results.elsewhere.stateId === 'unregistered' && !results.elsewhere.rows[0]?.prospect;
+          const noBuilding = results.noBuilding.stateId === 'no-building' && results.noBuilding.rows.length === 0;
+          const mixedStages = results.multi.stateId === 'mixed' && results.multi.filterIds.includes('first_contact') && results.multi.filterIds.includes('lease_signed');
+          const paidManagementDerived = results.paid.stateId === 'paid_management' && results.paid.rows[0]?.prospect?.id === ids.paidProspect;
+          const pausedClosedDerived = results.paused.stateId === 'paused_closed' && results.paused.rows[0]?.prospect?.id === ids.pausedProspect;
+          const mixedActivePaused = results.mixedPaused.stateId === 'mixed' && results.mixedPaused.filterIds.includes('first_contact') && results.mixedPaused.filterIds.includes('paused_closed');
+
+          const isViewer = document.body.classList.contains('crm-read-only');
+          const relationshipNavCount = Number(document.getElementById('navRelationshipCount')?.textContent || 0);
+          document.querySelector('[data-view="relationships"]')?.click();
+          await wait(100);
+          const relationshipCards = [...document.querySelectorAll('[data-relationship-open]')];
+          const relationshipIds = relationshipCards.map(card => card.dataset.relationshipOpen);
+          const paidRelationshipIncluded = relationshipIds.includes(ids.paidCustomer);
+          const legacyContractStillIncluded = relationshipIds.includes(ids.explicitCustomer);
+          const relationshipCountAndList = paidRelationshipIncluded && legacyContractStillIncluded && relationshipNavCount === relationshipCards.length;
+          const relationshipStoreBefore = JSON.stringify(window.__crmTest.getStore());
+          document.querySelector('[data-relationship-followup="' + ids.paidCustomer + '"]')?.click();
+          await wait(80);
+          const relationshipForm = document.getElementById('consultationForm');
+          const relationshipSummary = 'QA 유료관리 관계 문맥 ' + Date.now().toString(36);
+          const relationshipContextUi = !!relationshipForm
+            && relationshipForm.dataset.returnView === 'relationships'
+            && relationshipForm.elements.customerId?.value === ids.paidCustomer
+            && !relationshipForm.elements.namedItem('buildingId')
+            && (document.querySelector('#modal')?.textContent || '').includes('후속 연락 기록');
+          if (relationshipForm) {
+            relationshipForm.elements.summary.value = relationshipSummary;
+            relationshipForm.elements.result.value = '유료관리 만족도 확인';
+            relationshipForm.elements.nextAction.value = '다음 정기 연락';
+            relationshipForm.requestSubmit();
+          }
+          await wait(420);
+          const relationshipActivity = window.__crmTest.getStore().activities.find(item => item.summary === relationshipSummary);
+          const relationshipSaveHealthy = isViewer || !document.querySelector('.toast.error.show');
+          const relationshipContextSaved = isViewer
+            ? !relationshipActivity && JSON.stringify(window.__crmTest.getStore()) === relationshipStoreBefore
+            : relationshipActivity?.customerId === ids.paidCustomer && relationshipActivity?.context === 'relationship';
+          const relationshipConsultationContext = relationshipContextUi && relationshipContextSaved && relationshipSaveHealthy;
+          if (document.getElementById('modal')?.classList.contains('open')) document.querySelector('#modal [data-action="close-modal"]')?.click();
+          if (document.getElementById('drawer')?.classList.contains('open')) document.querySelector('#drawer [data-action="close-drawer"]')?.click();
+          await wait(60);
+
+          document.querySelector('[data-view="dashboard"]')?.click();
+          await wait(120);
+          const seoulDayKey = value => {
+            const parts = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Seoul', year: 'numeric', month: '2-digit', day: '2-digit' })
+              .formatToParts(new Date(value)).reduce((result, part) => { if (part.type !== 'literal') result[part.type] = part.value; return result; }, {});
+            return parts.year + '-' + parts.month + '-' + parts.day;
+          };
+          const money = value => Number(String(value ?? 0).replace(/[^0-9.-]/g, '')) || 0;
+          const compactMoney = value => {
+            const amount = money(value);
+            if (amount >= 100000000) return (amount / 100000000).toFixed(amount % 100000000 ? 1 : 0) + '억';
+            if (amount >= 10000) return Math.round(amount / 10000).toLocaleString('ko-KR') + '만';
+            return amount.toLocaleString('ko-KR');
+          };
+          const dashboardStore = window.__crmTest.getStore();
+          const today = seoulDayKey(new Date());
+          const dashboardActiveCustomers = dashboardStore.customers.filter(item => progress(item.id).stateId !== 'paused_closed');
+          const expectedOverdue = dashboardActiveCustomers.filter(item => item.nextContactAt && seoulDayKey(item.nextContactAt) < today).length;
+          const expectedPipelineValue = dashboardActiveCustomers.reduce((sum, item) => sum + money(item.expectedValue), 0);
+          const overdueCard = [...document.querySelectorAll('.kpi-card')].find(card => card.querySelector('.kpi-label')?.textContent.trim() === '늦어진 연락');
+          const displayedOverdue = Number((overdueCard?.querySelector('.kpi-value')?.textContent || '').replace(/[^0-9-]/g, ''));
+          const displayedPipeline = document.querySelector('.brief-value b')?.textContent.trim() || '';
+          const pausedFocusExcluded = !document.querySelector('.focus-row[data-customer-open="' + ids.pausedCustomer + '"]');
+          const mixedFocusIncluded = !!document.querySelector('.focus-row[data-customer-open="' + ids.mixedPausedCustomer + '"]');
+          const dashboardOverdueExcludesPaused = displayedOverdue === expectedOverdue;
+          const dashboardPipelineExcludesPaused = displayedPipeline === compactMoney(expectedPipelineValue) + '원';
+          const dashboardPausedExcluded = pausedFocusExcluded && dashboardOverdueExcludesPaused && dashboardPipelineExcludesPaused;
+          const dashboardMixedActiveIncluded = mixedFocusIncluded && expectedPipelineValue >= money(dashboardStore.customers.find(item => item.id === ids.mixedPausedCustomer)?.expectedValue);
+
+          document.querySelector('[data-view="customers"]')?.click();
+          await wait(100);
+          const tableText = document.querySelector('.data-table-wrap')?.textContent || '';
+          const filter = document.querySelector('[data-customer-sales-stage-filter]');
+          const filterLabels = filter ? [...filter.options].map(option => option.textContent.trim()) : [];
+          const explicitRow = document.querySelector('[data-customer-open="' + ids.explicitCustomer + '"]');
+          const tableUsesSalesStage = tableText.includes('건물 영업 단계') && explicitRow?.querySelector('[data-customer-sales-stage="diagnosis_done"]')?.textContent.trim() === '현장진단 완료';
+          const manualCustomerStageRemoved = !document.querySelector('[data-stage-filter]') && !filterLabels.includes('신규 고객') && !filterLabels.includes('상담 준비') && !explicitRow?.textContent.includes('계약 확정');
+          if (filter) {
+            filter.value = 'first_contact';
+            filter.dispatchEvent(new Event('change', { bubbles: true }));
+          }
+          await wait(100);
+          const filteredQaIds = [...document.querySelectorAll('[data-customer-open]')].map(row => row.dataset.customerOpen).filter(id => id.startsWith(prefix));
+          const expectedFirstContactQaIds = [ids.mixedPausedCustomer, ids.multiCustomer].sort();
+          const filterAnyBuildingStage = JSON.stringify([...filteredQaIds].sort()) === JSON.stringify(expectedFirstContactQaIds) && document.querySelector('[data-customer-sales-stage-filter]')?.value === 'first_contact';
+          const resetFilter = document.querySelector('[data-customer-sales-stage-filter]');
+          if (resetFilter) {
+            resetFilter.value = 'all';
+            resetFilter.dispatchEvent(new Event('change', { bubbles: true }));
+          }
+          await wait(100);
+
+          document.querySelector('[data-customer-open="' + ids.multiCustomer + '"]')?.click();
+          await wait(100);
+          const multiRecords = [...document.querySelectorAll('#drawer .customer-building-sales-record')];
+          const recordFor = buildingId => multiRecords.find(record => record.querySelector('[data-building-jump="' + buildingId + '"]'));
+          const multiARecord = recordFor(ids.multiBuildingA);
+          const multiBRecord = recordFor(ids.multiBuildingB);
+          const drawerPerBuildingStages = multiRecords.length === 2
+            && multiARecord?.querySelector('[data-customer-sales-stage="first_contact"]')?.textContent.trim() === '최초접촉'
+            && multiBRecord?.querySelector('[data-customer-sales-stage="lease_signed"]')?.textContent.trim() === '임대차계약';
+          const salesButtons = [...document.querySelectorAll('#drawer [data-sales-prospect-open]')];
+          const drawerHasSalesLinks = salesButtons.length === 2 && salesButtons.every(button => button.textContent.includes('영업 보기'));
+          salesButtons[0]?.click();
+          await wait(100);
+          const salesLinkNavigates = window.__crmTest.snapshot().drawerOpen && (document.querySelector('#drawer')?.textContent || '').includes('QA 다건물 최초접촉');
+          document.querySelector('#drawer [data-action="close-drawer"]')?.click();
+          await wait(40);
+
+          document.querySelector('[data-customer-open="' + ids.explicitCustomer + '"]')?.click();
+          await wait(100);
+          const viewerDrawerControls = [...document.querySelectorAll('#drawer form input, #drawer form select, #drawer form textarea, #drawer form button')];
+          const viewerDrawerLocked = !isViewer || (viewerDrawerControls.length > 0 && viewerDrawerControls.every(control => control.disabled && control.getAttribute('aria-disabled') === 'true'));
+          const beforeEditStore = JSON.stringify(window.__crmTest.getStore());
+          document.querySelector('[data-action="edit-selected-customer"]')?.click();
+          await wait(80);
+          const form = document.getElementById('customerForm');
+          const manualFieldsAbsent = !!form && !form.elements.namedItem('stage') && !form.elements.namedItem('buildingStatus');
+          if (form) {
+            form.elements.phone.value = isViewer ? '010-9999-9999' : '010-7788-9900';
+            form.requestSubmit();
+          }
+          await wait(520);
+          const savedCustomer = window.__crmTest.getStore().customers.find(item => item.id === ids.explicitCustomer);
+          const legacyFieldsPreserved = savedCustomer?.stage === '계약 확정' && savedCustomer?.lostReason === 'QA 기존 보류 사유 보존';
+          const adminSaveWorks = isViewer || savedCustomer?.phone === '010-7788-9900';
+          const viewerNoMutation = !isViewer || JSON.stringify(window.__crmTest.getStore()) === beforeEditStore;
+          if (document.getElementById('modal')?.classList.contains('open')) document.querySelector('#modal [data-action="close-modal"]')?.click();
+          await wait(50);
+          document.querySelector('[data-view="customers"]')?.click();
+          await wait(60);
+          document.querySelector('[data-customer-open="' + ids.multiCustomer + '"]')?.click();
+          await wait(100);
+          const detailPanel = document.querySelector('#drawer .detail-drawer');
+          const detailBody = document.querySelector('#drawer .drawer-body');
+          const panelRect = detailPanel?.getBoundingClientRect();
+          const noHorizontalOverflow = document.documentElement.scrollWidth <= document.documentElement.clientWidth + 1
+            && document.body.scrollWidth <= document.body.clientWidth + 1
+            && (!detailBody || detailBody.scrollWidth <= detailBody.clientWidth + 1)
+            && !!panelRect && panelRect.left >= -1 && panelRect.right <= innerWidth + 1;
+          const viewport = { width: innerWidth, height: innerHeight, documentWidth: document.documentElement.scrollWidth, bodyWidth: document.body.scrollWidth, panel: panelRect && { left: panelRect.left, right: panelRect.right, width: panelRect.width } };
+          const pass = explicitWins && addressFallback && nameAliasFallback && duplicateCrmNeedsReview && duplicateProspectNeedsReview
+            && archivedExcluded && linkedElsewhereProtected && noBuilding && mixedStages && paidManagementDerived && pausedClosedDerived && mixedActivePaused
+            && relationshipCountAndList && relationshipConsultationContext && dashboardPausedExcluded && dashboardMixedActiveIncluded
+            && tableUsesSalesStage && manualCustomerStageRemoved
+            && filterAnyBuildingStage && drawerPerBuildingStages && drawerHasSalesLinks && salesLinkNavigates && manualFieldsAbsent
+            && legacyFieldsPreserved && adminSaveWorks && viewerDrawerLocked && viewerNoMutation && noHorizontalOverflow;
+          return {
+            pass, role: isViewer ? 'viewer' : 'writer', explicitWins, addressFallback, nameAliasFallback, duplicateCrmNeedsReview, duplicateProspectNeedsReview,
+            archivedExcluded, linkedElsewhereProtected, noBuilding, mixedStages, paidManagementDerived, pausedClosedDerived, mixedActivePaused,
+            relationshipCountAndList, relationshipNavCount, relationshipListCount: relationshipCards.length, paidRelationshipIncluded, legacyContractStillIncluded,
+            relationshipContextUi, relationshipContextSaved, relationshipSaveHealthy, relationshipConsultationContext,
+            dashboardPausedExcluded, pausedFocusExcluded, dashboardOverdueExcludesPaused, displayedOverdue, expectedOverdue,
+            dashboardPipelineExcludesPaused, displayedPipeline, expectedPipeline: compactMoney(expectedPipelineValue) + '원', dashboardMixedActiveIncluded, mixedFocusIncluded,
+            tableUsesSalesStage, manualCustomerStageRemoved, filterAnyBuildingStage,
+            filteredQaIds, drawerPerBuildingStages, drawerHasSalesLinks, salesLinkNavigates, manualFieldsAbsent, legacyFieldsPreserved, adminSaveWorks,
+            viewerDrawerLocked, viewerNoMutation, noHorizontalOverflow, viewport,
+            progress: Object.fromEntries(Object.entries(results).map(([key, value]) => [key, { stateId: value.stateId, label: value.label, filterIds: value.filterIds, rows: value.rows.map(row => ({ buildingId: row.building?.id, prospectId: row.prospect?.id || '', stageId: row.stage?.id || '', matchedBy: row.matchedBy, ambiguous: row.ambiguous })) }])),
+            state: window.__crmTest.snapshot()
+          };
+        })().catch(error => ({ pass: false, error: String(error && error.stack || error), state: window.__crmTest?.snapshot() })),
+        new Promise(resolve => setTimeout(() => resolve({ pass: false, timeout: true, state: window.__crmTest?.snapshot() }), 15000))
+      ])`, true);
     } else if (process.env.BRING_CRM_SCREENSHOT_ACTION === "viewer-dom-invariant") {
       actionResult = await mainWindow.webContents.executeJavaScript(`(async () => {
         const wait = ms => new Promise(resolve => setTimeout(resolve, ms));
@@ -1308,8 +2296,9 @@ async function createWindow() {
         }
         const restoredStep = document.querySelector('[data-case-step-status="' + stepKey + '"]')?.value || '';
         document.querySelector('[data-view="customers"]')?.click();
+        await wait(80);
         document.querySelector('[data-customer-open]')?.click();
-        await wait(30);
+        await wait(80);
         const drawerControls = [...document.querySelectorAll('#drawer form input, #drawer form select, #drawer form textarea, #drawer form button')];
         const drawerFormsLocked = drawerControls.length > 0 && drawerControls.every(control => control.disabled && control.getAttribute('aria-disabled') === 'true');
         document.querySelector('[data-building-delete]')?.click();
@@ -1381,7 +2370,9 @@ async function createWindow() {
       })()`, true);
     } else if (process.env.BRING_CRM_SCREENSHOT_ACTION === "save-partner-quote") {
       actionResult = await mainWindow.webContents.executeJavaScript(`(async () => {
+        const wait = ms => new Promise(resolve => setTimeout(resolve, ms));
         document.querySelector('[data-view="partnerVendors"]')?.click();
+        await wait(80);
         document.querySelector('[data-action="new-partner-vendor"]')?.click();
         const vendorForm = document.getElementById('partnerVendorForm');
         if (!vendorForm) return { pass: false, reason: 'vendor form missing' };
@@ -1391,16 +2382,25 @@ async function createWindow() {
         vendorForm.elements.phone.value = '010-5555-6666';
         vendorForm.elements.service.value = '누수 탐지·시공';
         vendorForm.requestSubmit();
-        await new Promise(resolve => setTimeout(resolve, 80));
+        await wait(80);
         const vendor = [...window.__crmTest.getStore().partnerVendors].reverse().find(item => item.name === vendorName);
         if (!vendor) return { pass: false, reason: 'vendor save failed' };
         document.querySelector('[data-view="partnerQuotes"]')?.click();
+        await wait(80);
         const before = window.__crmTest.getStore().partnerQuotes.length;
         document.querySelector('[data-action="new-partner-quote"]')?.click();
         const form = document.getElementById('partnerQuoteForm');
         if (!form) return { pass: false, reason: 'form missing' };
-        form.elements.vendorId.value = vendor.id;
-        form.elements.vendorId.dispatchEvent(new Event('change', { bubbles: true }));
+        const search = form.querySelector('[data-partner-vendor-search]');
+        if (!search || !form.elements.industry || !form.elements.vendorId) return { pass: false, reason: 'partner picker missing' };
+        const startsIndustryFirst = form.elements.industry?.value === '' && search?.disabled === true && form.elements.vendorId?.value === '';
+        form.elements.industry.value = '누수';
+        form.elements.industry.dispatchEvent(new Event('change', { bubbles: true }));
+        search.value = vendor.phone;
+        search.dispatchEvent(new Event('input', { bubbles: true }));
+        const vendorOption = [...form.querySelectorAll('[data-partner-vendor-option]')].find(option => option.dataset.partnerVendorOption === vendor.id);
+        vendorOption?.click();
+        const selectedThroughPicker = !!vendorOption && form.elements.vendorId.value === vendor.id && form.querySelector('[data-partner-vendor-summary]')?.textContent.includes(vendor.name);
         form.elements.scenario.value = '원주 다가구 누수 가상조건';
         form.elements.status.value = '상담 완료';
         form.elements.totalMin.value = '700000';
@@ -1415,8 +2415,190 @@ async function createWindow() {
         const latestStore = window.__crmTest.getStore();
         const saved = [...latestStore.partnerQuotes].reverse().find(item => item.vendorId === vendor.id);
         const state = window.__crmTest.snapshot();
-        const pass = latestStore.partnerQuotes.length === before + 1 && !!saved && saved.vendorId === vendor.id && saved.vendor === vendor.name && saved.industry === '누수' && saved.status === '상담 완료' && saved.totalMin === 700000 && saved.totalMax === 1100000 && saved.consultedAt === '2026-08-12' && saved.consultationContent === '가격 범위와 방문 가능 일정을 전화로 안내받음' && saved.constructionMin === 600000 && saved.constructionMax === 900000 && saved.checklist?.symptom === true && !Object.prototype.hasOwnProperty.call(saved, 'customerId') && state.modalOpen === false && state.view === 'partnerQuotes';
-        return { pass, vendor: { id: vendor.id, name: vendor.name }, saved: saved && { vendorId: saved.vendorId, industry: saved.industry, scenario: saved.scenario, vendor: saved.vendor, totalMin: saved.totalMin, totalMax: saved.totalMax, consultedAt: saved.consultedAt, consultationContent: saved.consultationContent, constructionMin: saved.constructionMin, constructionMax: saved.constructionMax, status: saved.status, checklist: saved.checklist, hasCustomerId: Object.prototype.hasOwnProperty.call(saved, 'customerId') }, state };
+        const pass = startsIndustryFirst && selectedThroughPicker && latestStore.partnerQuotes.length === before + 1 && !!saved && saved.vendorId === vendor.id && saved.vendor === vendor.name && saved.industry === '누수' && saved.status === '상담 완료' && saved.totalMin === 700000 && saved.totalMax === 1100000 && saved.consultedAt === '2026-08-12' && saved.consultationContent === '가격 범위와 방문 가능 일정을 전화로 안내받음' && saved.constructionMin === 600000 && saved.constructionMax === 900000 && saved.checklist?.symptom === true && !Object.prototype.hasOwnProperty.call(saved, 'customerId') && state.modalOpen === false && state.view === 'partnerQuotes';
+        return { pass, startsIndustryFirst, selectedThroughPicker, vendor: { id: vendor.id, name: vendor.name }, saved: saved && { vendorId: saved.vendorId, industry: saved.industry, scenario: saved.scenario, vendor: saved.vendor, totalMin: saved.totalMin, totalMax: saved.totalMax, consultedAt: saved.consultedAt, consultationContent: saved.consultationContent, constructionMin: saved.constructionMin, constructionMax: saved.constructionMax, status: saved.status, checklist: saved.checklist, hasCustomerId: Object.prototype.hasOwnProperty.call(saved, 'customerId') }, state };
+      })()`, true);
+    } else if (process.env.BRING_CRM_SCREENSHOT_ACTION === "search-picker-scale") {
+      actionResult = await mainWindow.webContents.executeJavaScript(`(async () => {
+        const wait = ms => new Promise(resolve => setTimeout(resolve, ms));
+        const vendorPrefix = 'pvd_picker_qa_';
+        const customerPrefix = 'cus_picker_qa_';
+        const pad = value => String(value).padStart(3, '0');
+        const overflowState = root => {
+          if (!root) return { pass: false, reason: 'picker missing' };
+          const nodes = [root, ...root.querySelectorAll('.entity-picker-results, .entity-picker-option')];
+          const overflow = nodes.filter(node => node.scrollWidth > node.clientWidth + 1).map(node => ({
+            name: node.className || node.tagName,
+            clientWidth: node.clientWidth,
+            scrollWidth: node.scrollWidth
+          }));
+          const rect = root.getBoundingClientRect();
+          return { pass: !overflow.length && rect.left >= -1 && rect.right <= innerWidth + 1, overflow, left: rect.left, right: rect.right, viewportWidth: innerWidth };
+        };
+        try {
+          const seed = window.__crmTest.getStore();
+          const stamp = new Date(Date.now() + 86400000).toISOString();
+          seed.partnerVendors = seed.partnerVendors.filter(item => !String(item.id || '').startsWith(vendorPrefix));
+          seed.customers = seed.customers.filter(item => !String(item.id || '').startsWith(customerPrefix));
+          const baseVendor = seed.partnerVendors[0] || {};
+          const baseCustomer = seed.customers[0] || {};
+          for (let index = 0; index < 100; index += 1) {
+            const suffix = pad(index);
+            const vendorName = 'QA 대량 업체 ' + suffix;
+            const vendorService = index === 73 ? '초장문작업내용' + '가'.repeat(90) : '시설 점검 ' + suffix;
+            seed.partnerVendors.push(Object.assign({}, baseVendor, {
+              id: vendorPrefix + suffix,
+              vendor: vendorName,
+              name: vendorName,
+              industry: index < 50 ? '누수' : '청소',
+              phone: '010-97' + String(index).padStart(2, '0') + '-' + String(1000 + index),
+              alternatePhone: '',
+              quoteUrl: '',
+              region: '원주 QA지역 ' + suffix,
+              service: vendorService,
+              category: vendorService,
+              memo: '',
+              active: true,
+              createdAt: stamp,
+              updatedAt: stamp
+            }));
+            const customerName = 'QA 대량 고객 ' + suffix;
+            seed.customers.push(Object.assign({}, baseCustomer, {
+              id: customerPrefix + suffix,
+              customerNo: 'QA-C-' + suffix,
+              name: customerName,
+              company: index === 73 ? 'QA초장문회사' + '나'.repeat(90) : 'QA 회사 ' + suffix,
+              phone: '010-98' + String(index).padStart(2, '0') + '-' + String(1000 + index),
+              email: '',
+              type: index < 50 ? '건물주' : '법인',
+              address: '원주시 QA주소 ' + suffix,
+              buildingIds: [],
+              tags: ['대량선택QA'],
+              stage: '상담 중',
+              createdAt: stamp,
+              updatedAt: stamp
+            }));
+          }
+          seed.updatedAt = stamp;
+          window.__crmTest.applyRemoteForTest(seed);
+          await wait(120);
+          const seeded = window.__crmTest.getStore();
+          const seededVendorCount = seeded.partnerVendors.filter(item => String(item.id || '').startsWith(vendorPrefix)).length;
+          const seededCustomerCount = seeded.customers.filter(item => String(item.id || '').startsWith(customerPrefix)).length;
+          const targetVendor = seeded.partnerVendors.find(item => item.id === vendorPrefix + '073');
+          const targetCustomer = seeded.customers.find(item => item.id === customerPrefix + '073');
+          if (!targetVendor || !targetCustomer) return { pass: false, reason: 'scale seed failed', seededVendorCount, seededCustomerCount };
+
+          document.querySelector('[data-view="partnerQuotes"]')?.click();
+          await wait(40);
+          document.querySelector('[data-action="new-partner-quote"]')?.click();
+          await wait(40);
+          let form = document.getElementById('partnerQuoteForm');
+          let search = form?.querySelector('[data-partner-vendor-search]');
+          if (!form || !search || !form.elements.industry || !form.elements.vendorId) return { pass: false, reason: 'partner picker controls missing' };
+          const partnerStartsWithIndustry = form.elements.industry.value === '' && search.disabled && form.elements.vendorId.value === '';
+          form.elements.industry.value = '청소';
+          form.elements.industry.dispatchEvent(new Event('change', { bubbles: true }));
+          const vendorIndustryIds = [...form.querySelectorAll('[data-partner-vendor-option]')].map(option => option.dataset.partnerVendorOption).filter(id => id.startsWith(vendorPrefix));
+          const vendorIndustryFiltered = vendorIndustryIds.length === 50 && vendorIndustryIds.every(id => Number(id.slice(vendorPrefix.length)) >= 50);
+          search.value = targetVendor.phone;
+          search.dispatchEvent(new Event('input', { bubbles: true }));
+          const searchedVendorOptions = [...form.querySelectorAll('[data-partner-vendor-option]')].filter(option => option.dataset.partnerVendorOption.startsWith(vendorPrefix));
+          const vendorOption = searchedVendorOptions.find(option => option.dataset.partnerVendorOption === targetVendor.id);
+          const vendorSearchFiltered = searchedVendorOptions.length === 1 && !!vendorOption;
+          search.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', keyCode: 229, isComposing: true, bubbles: true, cancelable: true }));
+          const vendorImeSafe = form.elements.vendorId.value === '';
+          search.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true }));
+          const vendorSelected = form.elements.vendorId.value === targetVendor.id && form.querySelector('[data-partner-vendor-summary]')?.textContent.includes(targetVendor.name);
+          const partnerOverflow = overflowState(form.querySelector('.entity-picker'));
+          const scenario = 'QA 대량선택 업체 상담 ' + targetVendor.id;
+          form.elements.scenario.value = scenario;
+          form.elements.status.value = '상담 완료';
+          form.elements.consultationContent.value = '100개 업체 검색·선택 저장 자동 점검';
+          form.requestSubmit();
+          await wait(100);
+          const savedQuote = [...window.__crmTest.getStore().partnerQuotes].reverse().find(item => item.vendorId === targetVendor.id && item.scenario === scenario);
+          const quoteSaved = !!savedQuote && savedQuote.industry === '청소' && savedQuote.vendor === targetVendor.name;
+
+          const editButton = [...document.querySelectorAll('[data-partner-quote-edit]')].find(item => item.dataset.partnerQuoteEdit === savedQuote?.id && item.tagName === 'BUTTON')
+            || [...document.querySelectorAll('[data-partner-quote-edit]')].find(item => item.dataset.partnerQuoteEdit === savedQuote?.id);
+          editButton?.click();
+          await wait(60);
+          form = document.getElementById('partnerQuoteForm');
+          search = form?.querySelector('[data-partner-vendor-search]');
+          const editInitiallyPreserved = !!form && form.elements.industry.value === '청소' && form.elements.vendorId.value === targetVendor.id && form.querySelector('[data-partner-vendor-summary]')?.textContent.includes(targetVendor.name);
+          if (search) {
+            search.value = '검색결과에없는문구';
+            search.dispatchEvent(new Event('input', { bubbles: true }));
+          }
+          const editSelectionPreserved = !!form && form.elements.vendorId.value === targetVendor.id && form.querySelector('[data-partner-vendor-summary]')?.textContent.includes(targetVendor.name) && !form.querySelector('[data-partner-vendor-option]');
+          const editOverflow = overflowState(form?.querySelector('.entity-picker'));
+          form?.querySelector('[data-action="close-modal"]')?.click();
+          await wait(40);
+
+          document.querySelector('[data-view="consultations"]')?.click();
+          await wait(40);
+          document.querySelector('[data-action="new-consultation"]')?.click();
+          await wait(40);
+          let consultationForm = document.getElementById('consultationForm');
+          let customerSearch = consultationForm?.querySelector('[data-consultation-customer-search]');
+          if (!consultationForm || !customerSearch || !consultationForm.elements.customerType || !consultationForm.elements.customerId) return { pass: false, reason: 'consultation picker controls missing' };
+          const consultationStartsWithType = consultationForm.elements.customerType.value === '' && customerSearch.disabled && consultationForm.elements.customerId.value === '';
+          consultationForm.elements.customerType.value = '법인';
+          consultationForm.elements.customerType.dispatchEvent(new Event('change', { bubbles: true }));
+          const customerTypeIds = [...consultationForm.querySelectorAll('[data-consultation-customer-option]')].map(option => option.dataset.consultationCustomerOption).filter(id => id.startsWith(customerPrefix));
+          const customerTypeFiltered = customerTypeIds.length === 50 && customerTypeIds.every(id => Number(id.slice(customerPrefix.length)) >= 50);
+          customerSearch.value = targetCustomer.phone;
+          customerSearch.dispatchEvent(new Event('input', { bubbles: true }));
+          const searchedCustomerOptions = [...consultationForm.querySelectorAll('[data-consultation-customer-option]')].filter(option => option.dataset.consultationCustomerOption.startsWith(customerPrefix));
+          const customerOption = searchedCustomerOptions.find(option => option.dataset.consultationCustomerOption === targetCustomer.id);
+          const customerSearchFiltered = searchedCustomerOptions.length === 1 && !!customerOption;
+          customerSearch.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', keyCode: 229, isComposing: true, bubbles: true, cancelable: true }));
+          const customerImeSafe = consultationForm.elements.customerId.value === '';
+          customerSearch.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true }));
+          const customerSelected = consultationForm.elements.customerId.value === targetCustomer.id && consultationForm.querySelector('[data-consultation-customer-summary]')?.textContent.includes(targetCustomer.name);
+          const consultationOverflow = overflowState(consultationForm.querySelector('.entity-picker'));
+          const consultationSummary = 'QA 100명 고객 검색·선택 저장 ' + targetCustomer.id;
+          consultationForm.elements.summary.value = consultationSummary;
+          consultationForm.requestSubmit();
+          await wait(100);
+          const savedActivity = [...window.__crmTest.getStore().activities].reverse().find(item => item.customerId === targetCustomer.id && item.summary === consultationSummary);
+
+          document.querySelector('[data-view="customers"]')?.click();
+          await wait(60);
+          const customerRow = [...document.querySelectorAll('[data-customer-open]')].find(item => item.dataset.customerOpen === targetCustomer.id);
+          customerRow?.click();
+          await wait(60);
+          const customerDrawerOpened = window.__crmTest.snapshot().drawerOpen;
+          document.querySelector('[data-view="consultations"]')?.click();
+          await wait(40);
+          document.querySelector('[data-action="new-consultation"]')?.click();
+          await wait(40);
+          consultationForm = document.getElementById('consultationForm');
+          customerSearch = consultationForm?.querySelector('[data-consultation-customer-search]');
+          const customerPrefillPreserved = !!consultationForm && consultationForm.elements.customerType.value === '법인' && consultationForm.elements.customerId.value === targetCustomer.id && !customerSearch?.disabled && !!consultationForm.querySelector('[data-consultation-customer-option][aria-pressed="true"]') && consultationForm.querySelector('[data-consultation-customer-summary]')?.textContent.includes(targetCustomer.name);
+          const prefillOverflow = overflowState(consultationForm?.querySelector('.entity-picker'));
+          consultationForm?.querySelector('[data-action="close-modal"]')?.click();
+          await wait(40);
+
+          const state = window.__crmTest.snapshot();
+          const pass = seededVendorCount === 100 && seededCustomerCount === 100
+            && partnerStartsWithIndustry && vendorIndustryFiltered && vendorSearchFiltered && vendorImeSafe && vendorSelected && quoteSaved
+            && editInitiallyPreserved && editSelectionPreserved
+            && consultationStartsWithType && customerTypeFiltered && customerSearchFiltered && customerImeSafe && customerSelected && !!savedActivity
+            && !!customerRow && customerDrawerOpened && customerPrefillPreserved
+            && partnerOverflow.pass && editOverflow.pass && consultationOverflow.pass && prefillOverflow.pass
+            && state.view === 'consultations' && state.modalOpen === false;
+          return {
+            pass,
+            seeded: { vendors: seededVendorCount, customers: seededCustomerCount },
+            partner: { partnerStartsWithIndustry, vendorIndustryFiltered, industryRows: vendorIndustryIds.length, vendorSearchFiltered, searchRows: searchedVendorOptions.length, vendorImeSafe, vendorSelected, quoteSaved, editInitiallyPreserved, editSelectionPreserved, overflow: partnerOverflow, editOverflow },
+            consultation: { consultationStartsWithType, customerTypeFiltered, typeRows: customerTypeIds.length, customerSearchFiltered, searchRows: searchedCustomerOptions.length, customerImeSafe, customerSelected, activitySaved: !!savedActivity, customerDrawerOpened, customerPrefillPreserved, overflow: consultationOverflow, prefillOverflow },
+            state
+          };
+        } catch (error) {
+          return { pass: false, error: String(error && error.stack || error), state: window.__crmTest?.snapshot() };
+        }
       })()`, true);
     } else if (process.env.BRING_CRM_SCREENSHOT_ACTION === "partner-snapshot-history") {
       actionResult = await mainWindow.webContents.executeJavaScript(`(async () => {
@@ -1429,6 +2611,7 @@ async function createWindow() {
         const before = Object.fromEntries(snapshotFields.map(field => [field, quote[field] ?? '']));
         const renamed = vendor.name + ' 최신';
         document.querySelector('[data-view="partnerVendors"]')?.click();
+        await wait(80);
         document.querySelector('[data-partner-vendor-edit="' + vendor.id + '"]')?.click();
         const vendorForm = document.getElementById('partnerVendorForm');
         if (!vendorForm) return { pass: false, reason: 'vendor form missing' };
@@ -1437,6 +2620,7 @@ async function createWindow() {
         vendorForm.requestSubmit();
         await wait(80);
         document.querySelector('[data-view="partnerQuotes"]')?.click();
+        await wait(80);
         document.querySelector('[data-partner-quote-edit="' + quote.id + '"]')?.click();
         const quoteForm = document.getElementById('partnerQuoteForm');
         if (!quoteForm) return { pass: false, reason: 'consultation form missing' };
@@ -1986,30 +3170,54 @@ async function createWindow() {
         return { pass, tabCount, manualLabel, overdueVisible, returned, disposed, incident: data.securityIncidents.find(item => item.id === incident.id), auditCount: data.auditLogs.length, policies, state };
       })()`, true);
     } else if (process.env.BRING_CRM_SCREENSHOT_ACTION === "form-matrix") {
-      actionResult = await mainWindow.webContents.executeJavaScript(`(() => {
+      actionResult = await mainWindow.webContents.executeJavaScript(`(async () => {
+        const wait = ms => new Promise(resolve => setTimeout(resolve, ms));
         const state = () => ({ modal: document.getElementById("modal").classList.contains("open"), drawer: document.getElementById("drawer").classList.contains("open"), view: window.__crmTest?.snapshot().view });
         const results = {};
         document.querySelector('[data-view="customers"]')?.click();
+        await wait(80);
         document.querySelector("[data-customer-open]")?.click();
+        await wait(60);
         document.querySelector('[data-action="edit-selected-customer"]')?.click();
+        await wait(40);
         document.getElementById("customerForm")?.requestSubmit();
+        await wait(80);
         results.customerSave = state();
         document.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
         document.querySelector('[data-view="consultations"]')?.click();
+        await wait(80);
         document.querySelector('[data-action="new-consultation"]')?.click();
+        await wait(40);
         const consultationForm = document.getElementById("consultationForm");
         if (consultationForm) {
-          consultationForm.elements.customerId.value = window.__crmTest.getStore().customers[0].id;
+          const customer = window.__crmTest.getStore().customers[0];
+          const customerSearch = consultationForm.querySelector('[data-consultation-customer-search]');
+          if (!customer || !customerSearch || !consultationForm.elements.customerType || !consultationForm.elements.customerId) return { pass: false, reason: 'consultation picker missing', results };
+          consultationForm.elements.customerType.value = customer.type || '기타';
+          consultationForm.elements.customerType.dispatchEvent(new Event('change', { bubbles: true }));
+          customerSearch.value = customer.phone || customer.name;
+          customerSearch.dispatchEvent(new Event('input', { bubbles: true }));
+          const customerOption = [...consultationForm.querySelectorAll('[data-consultation-customer-option]')].find(option => option.dataset.consultationCustomerOption === customer.id);
+          customerOption?.click();
+          results.consultationPicker = {
+            selected: consultationForm.elements.customerId.value === customer.id,
+            type: consultationForm.elements.customerType.value,
+            optionFound: !!customerOption
+          };
           consultationForm.elements.summary.value = "UI 자동 점검 상담 기록";
           consultationForm.requestSubmit();
+          await wait(80);
         }
         results.consultationSave = state();
         document.querySelector('[data-view="tasks"]')?.click();
+        await wait(80);
         document.querySelector('[data-action="new-task"]')?.click();
+        await wait(40);
         const taskForm = document.getElementById("taskForm");
         if (taskForm) {
           taskForm.elements.title.value = "UI 자동 점검 할 일";
           taskForm.requestSubmit();
+          await wait(80);
         }
         results.taskSave = state();
         const expected = {
@@ -2017,7 +3225,7 @@ async function createWindow() {
           consultationSave: { modal: false, drawer: false, view: "consultations" },
           taskSave: { modal: false, drawer: false, view: "tasks" }
         };
-        const pass = Object.entries(expected).every(([key, value]) => Object.entries(value).every(([field, expectedValue]) => results[key]?.[field] === expectedValue));
+        const pass = results.consultationPicker?.selected && results.consultationPicker?.optionFound && Object.entries(expected).every(([key, value]) => Object.entries(value).every(([field, expectedValue]) => results[key]?.[field] === expectedValue));
         return { pass, results };
       })()`, true);
     }
@@ -2025,7 +3233,11 @@ async function createWindow() {
     const uiState = await mainWindow.webContents.executeJavaScript("window.__crmTest && window.__crmTest.snapshot()", true);
     const image = await mainWindow.webContents.capturePage();
     await fs.writeFile(target, image.toPNG());
+    if (["building-rental-info", "consultation-building-hub", "customer-sales-status"].includes(process.env.BRING_CRM_SCREENSHOT_ACTION)) {
+      await fs.writeFile(`${target}.result.json`, JSON.stringify({ actionResult, uiState }, null, 2), "utf8");
+    }
     console.log(target, JSON.stringify({ empty: image.isEmpty(), size: image.getSize(), actionResult, uiState }));
+    applicationExitAllowed = true;
     app.quit();
   }
 }
@@ -2048,13 +3260,72 @@ secureHandle("crm:auth-change-password", async password => {
   try { return await remoteClient.changePassword(password); }
   catch (error) { return { ok: false, error: error.message, code: error.code || "PASSWORD_CHANGE_FAILED" }; }
 });
-secureHandle("crm:auth-logout", async () => {
-  await signOutFieldView();
-  if (remoteClient) await remoteClient.logout();
-  return { ok: true };
+secureCanonicalHandle("crm:auth-logout", async input => {
+  if (fieldLogoutInFlight) return fieldLogoutInFlight;
+  fieldLogoutInFlight = coordinateFieldLogout({
+    confirmed: Boolean(input && input.confirmed === true),
+    ensureReady: async () => ensureFieldReadyForLogout(),
+    checkPending: async () => requestFieldPendingUploads(),
+    signOutFieldAuthentication: fieldHandle => signOutFieldAuthentication(fieldHandle),
+    finishCrmLogout: async () => {
+      cancelFieldRequests("FIELD_LOGOUT");
+      if (fieldView) fieldView.setVisible(false);
+      fieldViewVisible = false;
+      closeCrmAuthWindow();
+      destroyFieldView();
+      if (remoteClient) await remoteClient.logout();
+      syncFieldSession(authState());
+    },
+  });
+  try {
+    return await fieldLogoutInFlight;
+  } finally {
+    fieldLogoutInFlight = null;
+  }
 });
 secureHandle("crm:load", readStore);
 secureHandle("crm:save", data => writeStore(data));
+secureCanonicalHandle("crm:canonical-building-units-load", async () => {
+  if (localTestMode) return {};
+  if (!remoteClient || !remoteClient.authState().user) throw new Error("로그인이 필요합니다.");
+  return remoteClient.loadCanonicalBuildingUnits();
+});
+secureCanonicalHandle("crm:field-summaries-load", async () => {
+  if (localTestMode) return {};
+  if (!remoteClient || !remoteClient.authState().user) throw new Error("로그인이 필요합니다.");
+  return remoteClient.loadFieldSummaries();
+});
+secureCanonicalHandle("crm:drive-import-candidates-load", async () => {
+  if (localTestMode) return {};
+  if (!remoteClient || !remoteClient.authState().user) throw new Error("로그인이 필요합니다.");
+  return remoteClient.loadDriveImportCandidates();
+});
+secureCanonicalHandle("crm:drive-import-decision", async input => {
+  if (!remoteClient || !remoteClient.authState().user) throw new Error("로그인이 필요합니다.");
+  return remoteClient.decideDriveImport(input);
+});
+secureCanonicalHandle("crm:canonical-entity-commit", async input => {
+  if (!remoteClient || !remoteClient.authState().user) throw new Error("로그인이 필요합니다.");
+  return remoteClient.commitCanonicalCrmEntity(Object.assign(Object.create(null), input, { buildVersion: app.getVersion() }));
+});
+secureCanonicalHandle("crm:field-team-profiles", async () => {
+  if (localTestMode) return {
+    available: true,
+    profiles: sanitizeFieldTeamProfiles({
+      representative: { displayName: "대표", active: true, sortOrder: 10 },
+      "hwang-woojung": { displayName: "황우중", active: true, sortOrder: 20 },
+      "kim-hyunjin": { displayName: "김현진", active: true, sortOrder: 30 },
+    }),
+  };
+  if (!remoteClient || !remoteClient.authState().user) return { available: false, profiles: [], error: "로그인이 필요합니다." };
+  try {
+    const result = await remoteClient.dbRequest("teamProfiles", { method: "GET" });
+    const profiles = sanitizeFieldTeamProfiles(result);
+    return { available: true, profiles };
+  } catch (_error) {
+    return { available: false, profiles: [], error: "현재 작업자 명단을 불러올 수 없습니다. 관리자에게 확인해 주세요." };
+  }
+});
 secureHandle("crm:operations-load", readOperations);
 secureHandle("crm:case-save", input => saveWorkflowCase(input));
 secureHandle("crm:payment-override", input => savePaymentOverride(input));
@@ -2067,19 +3338,40 @@ secureHandle("crm:workflow-files", input => pickWorkflowFiles(input));
 secureHandle("crm:data-path", () => dataFile());
 secureHandle("crm:update-state", () => updateState);
 secureHandle("crm:update-check", () => checkForUpdates(true));
-secureHandle("crm:update-install", () => {
+secureHandle("crm:update-install", async () => {
   if (updateState.status !== "ready") return { ok: false, error: "설치할 업데이트가 아직 준비되지 않았습니다." };
-  setImmediate(() => autoUpdater.quitAndInstall(false, true));
-  return { ok: true };
+  return requestApplicationExit("update");
 });
-secureHandle("crm:show-field-platform", async () => {
+secureCanonicalHandle("crm:field-bounds", async rect => {
+  const measured = fieldBounds(rect);
+  if (measured.width < 1 || measured.height < 1) return { ok: false, code: "FIELD_BOUNDS_INVALID" };
+  fieldMeasuredBounds = measured;
+  applyFieldBounds();
+  return { ok: true, bounds: measured };
+});
+secureCanonicalHandle("crm:field-request", async (envelope, event) => {
+  const validation = validateFieldMessage(envelope, {
+    direction: "crmToField",
+    sender: crmBridgeSenderContext(event),
+  });
+  if (!validation.ok) return { ok: false, code: validation.code };
+  if (!fieldView || fieldView.webContents.isDestroyed() || !fieldViewReady) return { ok: false, code: "FIELD_NOT_READY" };
   try {
-    return await showFieldView();
+    return await fieldRequestCoordinator.request(validation.value);
+  } catch (error) {
+    return { ok: false, code: error && error.code || "FIELD_REQUEST_FAILED" };
+  }
+});
+secureCanonicalHandle("crm:field-cancel", async requestId => ({ ok: fieldRequestCoordinator.cancel(String(requestId || "")) }));
+secureCanonicalHandle("crm:show-field-platform", async (input, event) => {
+  try {
+    return await showFieldView(input, event);
   } catch (_error) {
     return { ok: false, error: "BRING FIELD를 열지 못했습니다." };
   }
 });
-secureHandle("crm:hide-field-platform", async () => hideFieldView());
+secureCanonicalHandle("crm:hide-field-platform", async () => hideFieldView());
+secureCanonicalHandle("crm:field-reconnect", async () => reconnectFieldView());
 secureHandle("crm:open-external", async rawUrl => {
   try {
     const url = new URL(String(rawUrl || ""));
@@ -2100,7 +3392,7 @@ secureHandle("crm:vendor-lookup", async rawUrl => {
 secureHandle("crm:backup", async input => {
   if (!localTestMode && (!authState().user || authState().user.role !== "admin")) return { ok: false, error: "관리자만 암호화 백업을 저장할 수 있습니다." };
   if (!safeStorage.isEncryptionAvailable()) return { ok: false, error: "이 PC에서 안전한 백업 암호화를 사용할 수 없습니다." };
-  const data = Core.sanitizeStore(input);
+  const data = Core.sanitizeSharedStore(input);
   const result = await dialog.showSaveDialog({
     title: "BRING CRM 암호화 백업 저장",
     defaultPath: `BRING-CRM-backup-${Core.dayKey()}.bringbackup`,
@@ -2119,7 +3411,7 @@ secureHandle("crm:restore", async () => {
   let decoded;
   try { decoded = safeStorage.decryptString(await fs.readFile(result.filePaths[0])); }
   catch (_error) { return { ok: false, error: "이 PC에서 만든 올바른 BRING CRM 백업 파일이 아닙니다." }; }
-  const data = Core.sanitizeStore(JSON.parse(decoded));
+  const data = Core.sanitizeSharedStore(JSON.parse(decoded));
   const saved = await writeStore(data);
   return { ok: true, data: saved.data, pending: saved.pending, path: result.filePaths[0] };
 });
@@ -2133,5 +3425,15 @@ app.whenReady().then(async () => {
   console.error(error);
   app.exit(1);
 });
-app.on("before-quit", () => { if (remoteClient) remoteClient.close(); });
+app.on("before-quit", event => {
+  if (!applicationExitAllowed) {
+    event.preventDefault();
+    void requestApplicationExit("quit");
+    return;
+  }
+  if (!applicationResourcesClosed && remoteClient) {
+    applicationResourcesClosed = true;
+    remoteClient.close();
+  }
+});
 app.on("window-all-closed", () => { if (process.platform !== "darwin") app.quit(); });

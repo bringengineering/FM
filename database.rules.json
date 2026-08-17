@@ -19,9 +19,17 @@
           ".write": false
         }
       },
+      "teamProfiles": {
+        ".read": "auth != null && root.child('crmCompany/access').child(auth.uid).child('enabled').val() === true && root.child('crmCompany/access').child(auth.uid).child('email').val() === auth.token.email && (root.child('crmCompany/access').child(auth.uid).child('role').val() === 'admin' || root.child('crmCompany/access').child(auth.uid).child('role').val() === 'member' || root.child('crmCompany/access').child(auth.uid).child('role').val() === 'viewer')",
+        ".write": false
+      },
       "data": {
         ".read": "auth != null && root.child('crmCompany/access').child(auth.uid).child('enabled').val() === true && root.child('crmCompany/access').child(auth.uid).child('email').val() === auth.token.email",
         ".write": "auth != null && root.child('crmCompany/access').child(auth.uid).child('enabled').val() === true && (root.child('crmCompany/access').child(auth.uid).child('role').val() === 'admin' || root.child('crmCompany/access').child(auth.uid).child('role').val() === 'member')"
+      },
+      "fieldSummaries": {
+        ".read": "auth != null && root.child('crmCompany/access').child(auth.uid).child('enabled').val() === true && root.child('crmCompany/access').child(auth.uid).child('email').val() === auth.token.email && (root.child('crmCompany/access').child(auth.uid).child('role').val() === 'admin' || root.child('crmCompany/access').child(auth.uid).child('role').val() === 'member' || root.child('crmCompany/access').child(auth.uid).child('role').val() === 'viewer')",
+        ".write": false
       },
       "cases": {
         ".read": "auth != null && root.child('crmCompany/access').child(auth.uid).child('enabled').val() === true && root.child('crmCompany/access').child(auth.uid).child('email').val() === auth.token.email",
@@ -55,6 +63,23 @@
       }
     },
     "fieldPlatform": {
+      "v2": {
+        ".read": false,
+        ".write": false,
+        "projections": {
+          "operatorJobs": {
+            "$operatorId": {
+              ".indexOn": ["updatedAt"]
+            }
+          },
+          "unassigned": {
+            ".indexOn": ["updatedAt"]
+          },
+          "teamActive": {
+            ".indexOn": ["activeOrderKey"]
+          }
+        }
+      },
       "desktopHandoffs": {
         ".read": false,
         ".write": false,

@@ -13,6 +13,7 @@ const FIREBASE = Object.freeze({
   authPageUrl: "https://bring-fm.web.app/crm-auth/"
 });
 const FIELD_HANDOFF_CALLABLE_URL = "https://asia-northeast3-bring-fm.cloudfunctions.net/createDesktopFieldHandoff";
+const CANONICAL_CRM_ENDPOINT_URL = "https://asia-northeast3-bring-fm.cloudfunctions.net/commitCanonicalCrmEntity";
 
 const DEFAULT_CASE_AUTOMATION_ENDPOINT = "https://script.google.com/macros/s/AKfycbxGAdtEDoNifxkM-e_Jm7dBkCnjM4oPJqz8RxZXoMoSKod5M_m9Yj2b11-nI97zmfd6Jw/exec";
 const VENDOR_CSV_URL = "https://docs.google.com/spreadsheets/d/1SYC0CofvdPLE1AQax_IgLx3FFWmntXi4H6yQttV9y4A/export?format=csv&gid=0";
@@ -27,11 +28,28 @@ const WORKFLOW_ACTIONS = new Set([
 ]);
 
 const SHARED_COLLECTIONS = Object.freeze([
-  "customers", "buildings", "activities", "contracts", "partnerVendors", "partnerQuotes", "tasks",
+  "customers", "buildings", "activities", "contracts", "partnerVendors", "partnerQuotes", "tasks", "serviceRecords", "serviceContracts", "serviceSchedules",
   "securityAssets", "auditLogs", "securityIncidents",
   "salesProspects", "salesContacts", "salesUnits", "salesActivities", "salesEvents", "salesOpportunities"
 ]);
-const PENDING_STORE_VERSION = 4;
+const CANONICAL_SHARED_COLLECTIONS = Object.freeze(["buildings", "salesUnits"]);
+const PENDING_STORE_VERSION = 5;
+const CANONICAL_CRM_BODY_MAX_BYTES = 32 * 1024;
+const CANONICAL_CRM_PATCH_MAX_BYTES = 24_000;
+const CANONICAL_CRM_REQUEST_ID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+const CANONICAL_CRM_ENTITY_TYPES = new Set(["buildings", "buildingUnits", "salesUnits"]);
+const CANONICAL_CRM_OPERATIONS = new Set(["create", "update", "archive", "restore"]);
+const CANONICAL_CRM_ERROR_CODES = new Set([
+  "crm_method_not_allowed", "crm_body_too_large", "crm_rate_limited", "crm_auth_required",
+  "crm_access_forbidden", "crm_operator_inactive", "crm_mutation_forbidden", "crm_entity_not_found",
+  "crm_parent_not_found", "crm_entity_version_conflict", "crm_request_id_conflict",
+  "crm_building_unit_label_conflict", "crm_entity_already_archived", "crm_entity_not_archived",
+  "crm_safe_mode_read_only", "crm_canonical_writes_disabled", "crm_entity_upgrade_required",
+  "crm_parent_archived", "crm_parent_mismatch", "crm_owner_change_requires_atomic_link",
+  "crm_service_unavailable", "field_access_forbidden", "field_operator_inactive",
+  "field_operator_not_enabled", "field_protocol_mismatch", "field_client_upgrade_required",
+  "field_client_version_unsupported"
+]);
 const PROTECTED_JSON_FORMAT = "bring-crm-protected-json";
 const PROTECTED_JSON_VERSION = 1;
 
@@ -71,18 +89,51 @@ function toRemoteStore(input, actor) {
   return payload;
 }
 
+function sharedRemoteProjection(Core, input) {
+  const source = input && typeof input === "object" && !Array.isArray(input) ? input : {};
+  const localShape = {};
+  for (const collection of SHARED_COLLECTIONS) {
+    if (Object.prototype.hasOwnProperty.call(source, collection)) {
+      localShape[collection] = listFromMap(source[collection]);
+    }
+  }
+  if (Object.prototype.hasOwnProperty.call(source, "schemaVersion")) localShape.schemaVersion = source.schemaVersion;
+  if (Object.prototype.hasOwnProperty.call(source, "company")) localShape.company = source.company;
+  if (Object.prototype.hasOwnProperty.call(source, "updatedAt")) localShape.updatedAt = source.updatedAt;
+  const sanitized = Core.sanitizeSharedStore(localShape);
+  const result = {};
+  if (Object.prototype.hasOwnProperty.call(source, "schemaVersion")) result.schemaVersion = sanitized.schemaVersion;
+  if (Object.prototype.hasOwnProperty.call(source, "company")) result.company = sanitized.company;
+  if (Object.prototype.hasOwnProperty.call(source, "updatedAt")) result.updatedAt = sanitized.updatedAt;
+  if (Object.prototype.hasOwnProperty.call(source, "updatedBy")) result.updatedBy = String(source.updatedBy || "").slice(0, 320);
+  for (const collection of SHARED_COLLECTIONS) {
+    if (Object.prototype.hasOwnProperty.call(source, collection)) result[collection] = mapById(sanitized[collection]);
+  }
+  return result;
+}
+
 function mergeRemoteStore(Core, remote, local, user) {
-  const base = Core.sanitizeStore(local || Core.blankStore());
+  const base = Core.sanitizeSharedStore(local || Core.blankSharedStore());
   const source = remote && typeof remote === "object" ? remote : {};
   const merged = Object.assign({}, base, {
     company: Object.assign({}, base.company, source.company || {}),
     updatedAt: source.updatedAt || base.updatedAt
   });
-  for (const collection of SHARED_COLLECTIONS) merged[collection] = listFromMap(source[collection]);
+  const hasRemoteRoot = Boolean(remote && typeof remote === "object");
+  if (hasRemoteRoot) {
+    for (const collection of SHARED_COLLECTIONS) merged[collection] = listFromMap(source[collection]);
+  }
   merged.settings = Object.assign({}, base.settings, {
     owner: user && (user.displayName || user.email) || base.settings.owner
   });
-  return Core.sanitizeStore(merged);
+  return Core.sanitizeSharedStore(merged);
+}
+
+function mergeRendererOverlays(Core, sharedStore, buildingUnits, fieldSummaries) {
+  return Core.sanitizeRendererStore(Object.assign({}, sharedStore || {}, {
+    buildingUnits: listFromMap(buildingUnits),
+    fieldSummaries: listFromMap(fieldSummaries)
+  }));
 }
 
 function diffRemoteStores(previous, next) {
@@ -118,7 +169,7 @@ function pendingSyncPatch(Core, baseRemote, desired, currentRemote, presentColle
     const baseQuote = baseQuotes[quoteId];
     if (!vendorId.startsWith("pvd_legacy_") || !baseQuote || String(baseQuote.vendorId || "").trim()) return;
     const quoteWithoutLink = Object.assign({}, desiredQuote);
-    const normalizedBaseQuote = Core.sanitizeStore({ partnerQuotes: [baseQuote] }).partnerQuotes[0] || {};
+    const normalizedBaseQuote = Core.sanitizeSharedStore({ partnerQuotes: [baseQuote] }).partnerQuotes[0] || {};
     const legacyBaseQuote = Object.assign({}, normalizedBaseQuote);
     delete quoteWithoutLink.vendorId;
     delete legacyBaseQuote.vendorId;
@@ -154,16 +205,28 @@ function pendingSyncPatch(Core, baseRemote, desired, currentRemote, presentColle
   return patch;
 }
 
+function assertNoCanonicalSharedPatch(patch) {
+  const keys = Object.keys(patch && typeof patch === "object" ? patch : {});
+  const collection = CANONICAL_SHARED_COLLECTIONS.find(name => keys.some(key => key === name || key.startsWith(`${name}/`)));
+  if (!collection) return patch;
+  throw createError("건물·공실 호실 변경은 현재 작업자를 선택한 뒤 정식 저장으로 처리해 주세요.", "CANONICAL_COMMIT_REQUIRED");
+}
+
 function caseDeleteAuditId(caseKey) {
   return `case_delete_${String(caseKey || "")}`;
 }
 
-function resolveDatabaseLocation(location, databaseRoot) {
+function resolveDatabasePatchLocation(location, databaseRoot) {
   const normalizedLocation = String(location || "").replace(/^\/+/, "");
   if (!databaseRoot) return normalizedLocation;
-  const companyLocation = normalizedLocation === "crmShared/data"
-    ? "data"
-    : normalizedLocation.replace(/^crmAccess(?=\/|$)/, "access");
+  return normalizedLocation
+    .replace(/^crmShared\/data(?=\/|$)/, "data")
+    .replace(/^crmAccess(?=\/|$)/, "access");
+}
+
+function resolveDatabaseLocation(location, databaseRoot) {
+  const companyLocation = resolveDatabasePatchLocation(location, databaseRoot);
+  if (!databaseRoot) return companyLocation;
   return companyLocation ? `${databaseRoot}/${companyLocation}` : databaseRoot;
 }
 
@@ -172,6 +235,14 @@ function createError(message, code, cause) {
   error.code = code;
   if (cause) error.cause = cause;
   return error;
+}
+
+function normalizedUid(value) {
+  return String(value || "").trim();
+}
+
+function normalizedEmail(value) {
+  return String(value || "").trim().toLowerCase();
 }
 
 function safeStorageAvailable(safeStorage) {
@@ -209,6 +280,61 @@ function decodeProtectedJson(safeStorage, rawValue) {
   } catch (error) {
     throw createError("이 Windows 사용자에게 허용된 CRM 보호 자료가 아닙니다.", "PROTECTED_DATA_INVALID", error);
   }
+}
+
+function createSerializedProtectedStoreCoordinator(options) {
+  const fs = options.fs;
+  const safeStorage = options.safeStorage;
+  const target = String(options.target || "");
+  let queue = Promise.resolve();
+  let sequence = 0;
+  const enqueue = operation => {
+    const running = queue.then(operation, operation);
+    queue = running.catch(() => {});
+    return running;
+  };
+  const guardActive = guard => {
+    if (!guard) return true;
+    if (typeof guard.isCurrent !== "function") return false;
+    try { return guard.isCurrent() === true; } catch (_) { return false; }
+  };
+  const remove = async file => {
+    try { await fs.unlink(file); } catch (error) { if (error.code !== "ENOENT") throw error; }
+  };
+  const tempName = guard => {
+    const actor = String(guard && guard.actorUid || "local").replace(/[^A-Za-z0-9_-]/g, "_").slice(0, 80) || "local";
+    const generation = Number.isSafeInteger(guard && guard.generation) ? guard.generation : 0;
+    sequence += 1;
+    return `${target}.tmp.${actor}.${generation}.${process.pid}.${sequence}`;
+  };
+  return {
+    write(value, guard) {
+      return enqueue(async () => {
+        if (!guardActive(guard)) return null;
+        const temp = tempName(guard);
+        await fs.mkdir(path.dirname(target), { recursive: true });
+        await fs.writeFile(temp, encodeProtectedJson(safeStorage, value), "utf8");
+        if (!guardActive(guard)) {
+          await remove(temp);
+          return null;
+        }
+        await fs.rename(temp, target);
+        if (!guardActive(guard)) {
+          // This operation still owns the serialized writer here, so removing the
+          // just-renamed stale value cannot delete a later session's commit.
+          await remove(target);
+          return null;
+        }
+        return value;
+      });
+    },
+    clear() {
+      return enqueue(async () => {
+        await remove(target);
+        await remove(`${target}.tmp`);
+      });
+    }
+  };
 }
 
 function retryableSyncError(error) {
@@ -328,8 +454,17 @@ class FirebaseRemoteClient {
     this.lastError = "";
     this.streamController = null;
     this.streamTask = null;
+    this.summaryStreamController = null;
+    this.summaryStreamTask = null;
     this.reloadTimer = null;
+    this.overlayReloadTimer = null;
     this.retryTimer = null;
+    this.canonicalRefreshRetryTimer = null;
+    this.tokenRefreshTask = null;
+    this.sessionFileQueue = Promise.resolve();
+    this.sessionFileSequence = 0;
+    this.streamGeneration = 0;
+    this.sessionGeneration = 0;
     this.stopped = false;
     this.caseSettings = {};
     this.vendorDirectoryCache = null;
@@ -369,6 +504,72 @@ class FirebaseRemoteClient {
     return this.session;
   }
 
+  markSessionStarted() {
+    this.sessionGeneration += 1;
+    this.stopped = false;
+    return this.captureSessionGuard();
+  }
+
+  captureSessionGuard() {
+    return {
+      sessionRef: this.session,
+      uid: String(this.session && this.session.uid || ""),
+      generation: this.sessionGeneration
+    };
+  }
+
+  sessionGuardActive(guard) {
+    return Boolean(
+      guard
+      && guard.uid
+      && this.session
+      && (!Object.prototype.hasOwnProperty.call(guard, "sessionRef") || this.session === guard.sessionRef)
+      && String(this.session.uid || "") === guard.uid
+      && this.sessionGeneration === guard.generation
+    );
+  }
+
+  captureSessionContext() {
+    return {
+      sessionRef: this.session,
+      uid: String(this.session && this.session.uid || ""),
+      generation: this.sessionGeneration
+    };
+  }
+
+  sessionContextActive(context) {
+    return Boolean(
+      context
+      && this.session === context.sessionRef
+      && String(this.session && this.session.uid || "") === context.uid
+      && this.sessionGeneration === context.generation
+    );
+  }
+
+  localStoreCommitGuard(guardValue) {
+    const guard = guardValue || this.captureSessionGuard();
+    return Object.freeze({
+      actorUid: guard.uid,
+      generation: guard.generation,
+      isCurrent: () => this.sessionGuardActive(guard)
+    });
+  }
+
+  async readSessionLocalStore(guardValue) {
+    const guard = guardValue || this.captureSessionGuard();
+    if (!this.sessionGuardActive(guard)) return null;
+    const value = await this.readLocalStore(this.localStoreCommitGuard(guard));
+    return this.sessionGuardActive(guard) ? value : null;
+  }
+
+  async writeSessionLocalStore(value, guardValue) {
+    const guard = guardValue || this.captureSessionGuard();
+    if (!this.sessionGuardActive(guard)) return null;
+    const written = await this.writeLocalStore(value, this.localStoreCommitGuard(guard));
+    if (!this.sessionGuardActive(guard) || written === null) return null;
+    return written === undefined ? value : written;
+  }
+
   async init() {
     this.stopped = false;
     try {
@@ -404,25 +605,52 @@ class FirebaseRemoteClient {
     }
   }
 
-  async persistSession() {
-    if (!this.session || !this.session.refreshToken || !this.safeStorage.isEncryptionAvailable()) return false;
-    const encrypted = this.safeStorage.encryptString(this.session.refreshToken).toString("base64");
-    await this.fs.mkdir(require("node:path").dirname(this.sessionFile), { recursive: true });
-    await this.fs.writeFile(this.sessionFile, JSON.stringify({
+  enqueueSessionFileOperation(operation) {
+    const running = this.sessionFileQueue.then(operation, operation);
+    this.sessionFileQueue = running.catch(() => {});
+    return running;
+  }
+
+  async persistSession(contextValue, sessionValue) {
+    const context = contextValue || this.captureSessionContext();
+    const sessionRef = sessionValue || context.sessionRef;
+    if (!sessionRef || !sessionRef.refreshToken || !this.safeStorage.isEncryptionAvailable() || !this.sessionContextActive(context)) return false;
+    const encrypted = this.safeStorage.encryptString(sessionRef.refreshToken).toString("base64");
+    const payload = JSON.stringify({
       refreshToken: encrypted,
-      uid: this.session.uid,
-      email: this.session.email,
-      displayName: this.session.displayName || "",
-      photoUrl: this.session.photoUrl || "",
-      role: this.session.role || "member",
-      mustChangePassword: this.session.mustChangePassword === true,
-      fieldAuthIntegrated: this.session.fieldAuthIntegrated === true
-    }), "utf8");
-    return true;
+      uid: sessionRef.uid,
+      email: sessionRef.email,
+      displayName: sessionRef.displayName || "",
+      photoUrl: sessionRef.photoUrl || "",
+      role: sessionRef.role || "member",
+      mustChangePassword: sessionRef.mustChangePassword === true,
+      fieldAuthIntegrated: sessionRef.fieldAuthIntegrated === true
+    });
+    return this.enqueueSessionFileOperation(async () => {
+      if (!this.sessionContextActive(context)) return false;
+      this.sessionFileSequence += 1;
+      const temp = `${this.sessionFile}.tmp.${String(sessionRef.uid || "session").replace(/[^A-Za-z0-9_-]/g, "_")}.${context.generation}.${process.pid}.${this.sessionFileSequence}`;
+      await this.fs.mkdir(path.dirname(this.sessionFile), { recursive: true });
+      await this.fs.writeFile(temp, payload, "utf8");
+      if (!this.sessionContextActive(context)) {
+        try { await this.fs.unlink(temp); } catch (error) { if (error.code !== "ENOENT") throw error; }
+        return false;
+      }
+      await this.fs.rename(temp, this.sessionFile);
+      if (!this.sessionContextActive(context)) {
+        try { await this.fs.unlink(this.sessionFile); } catch (error) { if (error.code !== "ENOENT") throw error; }
+        return false;
+      }
+      return true;
+    });
   }
 
   async clearPersistedSession() {
-    try { await this.fs.unlink(this.sessionFile); } catch (error) { if (error.code !== "ENOENT") throw error; }
+    return this.enqueueSessionFileOperation(async () => {
+      for (const target of [this.sessionFile, `${this.sessionFile}.tmp`]) {
+        try { await this.fs.unlink(target); } catch (error) { if (error.code !== "ENOENT") throw error; }
+      }
+    });
   }
 
   async requestJson(url, options, errorCode) {
@@ -442,41 +670,108 @@ class FirebaseRemoteClient {
     return data;
   }
 
-  async refreshFirebaseSession(refreshToken, hints) {
+  async refreshFirebaseSession(refreshToken, hints, contextValue, commit = true) {
+    const context = contextValue || this.captureSessionContext();
+    const assertCurrent = () => {
+      if (!this.sessionContextActive(context)) {
+        throw createError("로그인 세션이 변경되었습니다.", "SESSION_CHANGED");
+      }
+    };
     const body = new URLSearchParams({ grant_type: "refresh_token", refresh_token: refreshToken });
     const token = await this.requestJson(`https://securetoken.googleapis.com/v1/token?key=${this.firebase.apiKey}`, {
       method: "POST",
       headers: { "Content-Type": "application/x-www-form-urlencoded" },
       body
     }, "AUTH_EXPIRED");
+    assertCurrent();
+    const tokenPayload = token && typeof token === "object" ? token : {};
+    const expectedIdentity = context.sessionRef || hints || {};
+    const expectedUid = normalizedUid(expectedIdentity.uid);
+    const expectedEmail = normalizedEmail(expectedIdentity.email);
+    const idToken = typeof tokenPayload.id_token === "string" ? tokenPayload.id_token.trim() : "";
+    const tokenUid = normalizedUid(tokenPayload.user_id);
+    if (!idToken || !expectedUid || !expectedEmail || !tokenUid || tokenUid !== expectedUid) {
+      throw createError("로그인 계정 정보를 다시 확인해 주세요.", "AUTH_EXPIRED");
+    }
     const lookup = await this.requestJson(`https://identitytoolkit.googleapis.com/v1/accounts:lookup?key=${this.firebase.apiKey}`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ idToken: token.id_token })
+      body: JSON.stringify({ idToken })
     }, "AUTH_EXPIRED");
+    assertCurrent();
     const user = lookup && lookup.users && lookup.users[0] || {};
-    this.session = {
-      idToken: token.id_token,
-      refreshToken: token.refresh_token || refreshToken,
-      expiresAt: Date.now() + Math.max(60, Number(token.expires_in || 3600) - 60) * 1000,
-      uid: token.user_id || user.localId || hints && hints.uid || "",
-      email: user.email || hints && hints.email || "",
+    const lookupUid = normalizedUid(user.localId);
+    const candidateEmail = normalizedEmail(user.email);
+    if (
+      !lookupUid
+      || !candidateEmail
+      || lookupUid !== expectedUid
+      || candidateEmail !== expectedEmail
+      || tokenUid !== lookupUid
+    ) {
+      throw createError("로그인 계정 정보를 다시 확인해 주세요.", "AUTH_EXPIRED");
+    }
+    const nextSession = {
+      idToken,
+      refreshToken: tokenPayload.refresh_token || refreshToken,
+      expiresAt: Date.now() + Math.max(60, Number(tokenPayload.expires_in || 3600) - 60) * 1000,
+      uid: tokenUid,
+      email: candidateEmail,
       displayName: user.displayName || hints && hints.displayName || "",
       photoUrl: user.photoUrl || hints && hints.photoUrl || "",
       role: hints && hints.role || "viewer",
       mustChangePassword: hints && hints.mustChangePassword === true,
       fieldAuthIntegrated: hints && hints.fieldAuthIntegrated === true
     };
+    assertCurrent();
+    if (!commit) return nextSession;
+    if (context.sessionRef) {
+      Object.assign(nextSession, {
+        fieldAuthIntegrated: this.session.fieldAuthIntegrated === true
+      });
+      Object.assign(context.sessionRef, nextSession);
+    } else {
+      this.session = nextSession;
+      this.markSessionStarted();
+    }
     return this.session;
   }
 
   async ensureIdToken(force) {
     if (!this.session) throw createError("로그인이 필요합니다.", "AUTH_REQUIRED");
+    const context = this.captureSessionContext();
+    const existing = this.tokenRefreshTask;
+    if (
+      existing
+      && existing.sessionRef === context.sessionRef
+      && existing.uid === context.uid
+      && existing.generation === context.generation
+    ) return existing.promise;
     if (!force && this.session.idToken && this.session.expiresAt > Date.now()) return this.session.idToken;
-    await this.refreshFirebaseSession(this.session.refreshToken, this.session);
-    await this.verifyAccess();
-    await this.persistSession();
-    return this.session.idToken;
+    let promise;
+    promise = (async () => {
+      const candidate = await this.refreshFirebaseSession(context.sessionRef.refreshToken, context.sessionRef, context, false);
+      if (!this.sessionContextActive(context)) throw createError("로그인 세션이 변경되었습니다.", "SESSION_CHANGED");
+      const currentUid = normalizedUid(context.uid);
+      const currentEmail = normalizedEmail(context.sessionRef.email);
+      if (!candidate.uid || !candidate.email || candidate.uid !== currentUid || candidate.email !== currentEmail) {
+        throw createError("로그인 계정 정보를 다시 확인해 주세요.", "AUTH_EXPIRED");
+      }
+      const candidateContext = Object.assign({}, context, { sessionRef: candidate });
+      await this.verifyAccess(candidateContext, candidate.idToken);
+      if (!this.sessionContextActive(context)) throw createError("로그인 세션이 변경되었습니다.", "SESSION_CHANGED");
+      const persisted = await this.persistSession(context, candidate);
+      if (!this.sessionContextActive(context)) throw createError("로그인 세션이 변경되었습니다.", "SESSION_CHANGED");
+      if (!persisted) throw createError("로그인 세션을 안전하게 저장하지 못했습니다.", "SESSION_PERSIST_FAILED");
+      Object.assign(context.sessionRef, candidate);
+      return context.sessionRef.idToken;
+    })();
+    this.tokenRefreshTask = Object.assign({}, context, { promise });
+    try {
+      return await promise;
+    } finally {
+      if (this.tokenRefreshTask && this.tokenRefreshTask.promise === promise) this.tokenRefreshTask = null;
+    }
   }
 
   async createFieldHandoff() {
@@ -518,10 +813,21 @@ class FirebaseRemoteClient {
     }
   }
 
-  async verifyAccess() {
-    if (!this.session || !this.session.uid) throw createError("로그인 정보를 확인할 수 없습니다.", "AUTH_REQUIRED");
-    const access = await this.dbRequest(`crmAccess/${this.session.uid}`, { method: "GET" }, true);
-    const sameEmail = access && String(access.email || "").toLowerCase() === String(this.session.email || "").toLowerCase();
+  async verifyAccess(contextValue, idTokenOverride) {
+    const context = contextValue || this.captureSessionContext();
+    const sessionRef = context.sessionRef;
+    const currentContext = this.captureSessionContext();
+    if (!sessionRef || !sessionRef.uid || !this.sessionContextActive(currentContext)) throw createError("로그인 정보를 확인할 수 없습니다.", "AUTH_REQUIRED");
+    let access;
+    if (idTokenOverride) {
+      const rootedLocation = resolveDatabaseLocation(`crmAccess/${sessionRef.uid}`, this.databaseRoot);
+      const url = `${this.firebase.databaseUrl}/${rootedLocation}.json?auth=${encodeURIComponent(idTokenOverride)}`;
+      access = await this.requestJson(url, { method: "GET", headers: { "Content-Type": "application/json" } }, "DATABASE_ERROR");
+    } else {
+      access = await this.dbRequest(`crmAccess/${sessionRef.uid}`, { method: "GET" }, true);
+    }
+    if (!this.sessionContextActive(currentContext)) throw createError("로그인 세션이 변경되었습니다.", "SESSION_CHANGED");
+    const sameEmail = access && String(access.email || "").toLowerCase() === String(sessionRef.email || "").toLowerCase();
     if (!access || access.enabled !== true || !sameEmail) {
       throw createError("회사에서 허용한 이메일이 아닙니다.", "ACCESS_DENIED");
     }
@@ -529,8 +835,8 @@ class FirebaseRemoteClient {
     if (!["admin", "member", "viewer"].includes(role)) {
       throw createError("계정 권한이 올바르게 설정되지 않았습니다. 관리자에게 문의해 주세요.", "ACCESS_DENIED");
     }
-    this.session.role = role;
-    this.session.mustChangePassword = access.mustChangePassword === true;
+    sessionRef.role = role;
+    sessionRef.mustChangePassword = access.mustChangePassword === true;
     return access;
   }
 
@@ -559,6 +865,7 @@ class FirebaseRemoteClient {
       role: "viewer",
       mustChangePassword: false
     };
+    this.markSessionStarted();
     await this.verifyAccess();
     await this.persistSession();
     this.lastError = "";
@@ -588,6 +895,7 @@ class FirebaseRemoteClient {
       role: "viewer",
       fieldAuthIntegrated: true
     };
+    this.markSessionStarted();
     await this.verifyAccess();
     await this.persistSession();
     this.lastError = "";
@@ -620,6 +928,7 @@ class FirebaseRemoteClient {
       mustChangePassword: false,
       fieldAuthIntegrated: true
     };
+    this.markSessionStarted();
     await this.verifyAccess();
     await this.persistSession();
     this.lastError = "";
@@ -762,8 +1071,11 @@ class FirebaseRemoteClient {
       const data = this.session.mustChangePassword ? null : await this.loadStore();
       return { ok: true, auth: this.authState(), data };
     } catch (error) {
+      this.stopStream();
       this.session = null;
+      this.remotePayload = null;
       await this.clearPersistedSession().catch(() => {});
+      await this.clearLocalStore().catch(() => {});
       this.lastError = error.message;
       this.emitAuth();
       throw error;
@@ -778,8 +1090,11 @@ class FirebaseRemoteClient {
       const data = await this.loadStore();
       return { ok: true, auth: this.authState(), data };
     } catch (error) {
+      this.stopStream();
       this.session = null;
+      this.remotePayload = null;
       await this.clearPersistedSession().catch(() => {});
+      await this.clearLocalStore().catch(() => {});
       this.lastError = error.message;
       this.emitAuth();
       throw error;
@@ -835,9 +1150,19 @@ class FirebaseRemoteClient {
           version: PENDING_STORE_VERSION,
           actorUid: String(raw.actorUid || ""),
           actorRole: String(raw.actorRole || ""),
-          store: this.Core.sanitizeStore(raw.store),
+          store: this.Core.sanitizeSharedStore(raw.store),
           presentCollections: presentSharedCollections(raw.store, raw.presentCollections),
-          baseRemote: raw.baseRemote && typeof raw.baseRemote === "object" ? raw.baseRemote : {},
+          baseRemote: sharedRemoteProjection(this.Core, raw.baseRemote),
+          createdAt: raw.createdAt || ""
+        };
+      } else if (raw && raw.version === 4 && raw.store) {
+        pending = {
+          version: 4,
+          actorUid: String(raw.actorUid || ""),
+          actorRole: String(raw.actorRole || ""),
+          store: this.Core.sanitizeSharedStore(raw.store),
+          presentCollections: presentSharedCollections(raw.store, raw.presentCollections),
+          baseRemote: sharedRemoteProjection(this.Core, raw.baseRemote),
           createdAt: raw.createdAt || ""
         };
       } else if (raw && raw.version === 3 && raw.store) {
@@ -845,9 +1170,9 @@ class FirebaseRemoteClient {
           version: 3,
           actorUid: String(raw.actorUid || ""),
           actorRole: String(raw.actorRole || ""),
-          store: this.Core.sanitizeStore(raw.store),
+          store: this.Core.sanitizeSharedStore(raw.store),
           presentCollections: presentSharedCollections(raw.store),
-          baseRemote: raw.baseRemote && typeof raw.baseRemote === "object" ? raw.baseRemote : {},
+          baseRemote: sharedRemoteProjection(this.Core, raw.baseRemote),
           createdAt: raw.createdAt || ""
         };
       } else if (raw && raw.version === 2 && raw.store) {
@@ -855,9 +1180,9 @@ class FirebaseRemoteClient {
           version: 2,
           actorUid: "",
           actorRole: "",
-          store: this.Core.sanitizeStore(raw.store),
+          store: this.Core.sanitizeSharedStore(raw.store),
           presentCollections: presentSharedCollections(raw.store),
-          baseRemote: raw.baseRemote && typeof raw.baseRemote === "object" ? raw.baseRemote : {},
+          baseRemote: sharedRemoteProjection(this.Core, raw.baseRemote),
           legacyUnbound: true
         };
       } else {
@@ -865,7 +1190,7 @@ class FirebaseRemoteClient {
           version: 1,
           actorUid: "",
           actorRole: "",
-          store: this.Core.sanitizeStore(raw),
+          store: this.Core.sanitizeSharedStore(raw),
           presentCollections: presentSharedCollections(raw),
           baseRemote: {},
           legacyUnbound: true
@@ -888,21 +1213,26 @@ class FirebaseRemoteClient {
   async writePendingPayload(payload) {
     const target = this.pendingFile;
     const temp = `${target}.tmp`;
+    const safePayload = payload && payload.store ? Object.assign({}, payload, {
+      store: this.Core.sanitizeSharedStore(payload.store),
+      presentCollections: presentSharedCollections(payload.store, payload.presentCollections),
+      baseRemote: sharedRemoteProjection(this.Core, payload.baseRemote)
+    }) : payload;
     await this.fs.mkdir(path.dirname(target), { recursive: true });
-    await this.fs.writeFile(temp, encodeProtectedJson(this.safeStorage, payload), "utf8");
+    await this.fs.writeFile(temp, encodeProtectedJson(this.safeStorage, safePayload), "utf8");
     await this.fs.rename(temp, target);
   }
 
   async writePendingStore(data, baseRemote) {
     const session = this.requireMutationPermission(data);
-    const store = this.Core.sanitizeStore(data);
+    const store = this.Core.sanitizeSharedStore(data);
     await this.writePendingPayload({
       version: PENDING_STORE_VERSION,
       actorUid: session.uid,
       actorRole: session.role || "member",
       store,
       presentCollections: SHARED_COLLECTIONS.slice(),
-      baseRemote: baseRemote && typeof baseRemote === "object" ? baseRemote : {},
+      baseRemote: sharedRemoteProjection(this.Core, baseRemote),
       createdAt: new Date().toISOString()
     });
   }
@@ -913,18 +1243,24 @@ class FirebaseRemoteClient {
     }
   }
 
-  async acceptPendingForCurrentUser(pending) {
-    const validActor = pending && pending.actorUid && pending.actorUid === String(this.session && this.session.uid || "")
+  async acceptPendingForCurrentUser(pending, guardValue) {
+    const guard = guardValue || this.captureSessionGuard();
+    if (!this.sessionGuardActive(guard)) return false;
+    const validActor = pending && pending.actorUid && pending.actorUid === guard.uid
       && ["admin", "member"].includes(pending.actorRole);
     if (!this.canMutate() || !validActor) {
+      if (!this.sessionGuardActive(guard)) return false;
       await this.clearPendingStore();
+      if (!this.sessionGuardActive(guard)) return false;
       this.emitSync("syncing", "이전 사용자 또는 권한이 확인되지 않은 저장 대기 자료를 안전하게 제거했습니다.", { pending: false });
       return false;
     }
     try {
       this.Core.assertNoProhibitedSecrets(pending.store);
     } catch (error) {
+      if (!this.sessionGuardActive(guard)) return false;
       await this.clearPendingStore();
+      if (!this.sessionGuardActive(guard)) return false;
       this.emitSync("syncing", "저장할 수 없는 민감정보가 포함된 대기 자료를 제거했습니다.", { pending: false });
       return false;
     }
@@ -933,6 +1269,211 @@ class FirebaseRemoteClient {
 
   async fetchRemotePayload() {
     return this.dbRequest("crmShared/data", { method: "GET" });
+  }
+
+  async loadCanonicalBuildingUnits(guardValue) {
+    const guard = guardValue || this.captureSessionGuard();
+    if (!this.sessionGuardActive(guard)) return null;
+    const value = await this.dbRequest("crmShared/data/buildingUnits", { method: "GET" });
+    return this.sessionGuardActive(guard) ? value : null;
+  }
+
+  async loadFieldSummaries(guardValue) {
+    const guard = guardValue || this.captureSessionGuard();
+    if (!this.sessionGuardActive(guard)) return null;
+    const value = await this.dbRequest("fieldSummaries", { method: "GET" });
+    return this.sessionGuardActive(guard) ? value : null;
+  }
+
+  async loadDriveImportCandidates() {
+    if (!this.session) throw createError("로그인이 필요합니다.", "AUTH_REQUIRED");
+    const value = await this.dbRequest("driveImportCandidates", { method: "GET" });
+    return value && typeof value === "object" && !Array.isArray(value) ? value : {};
+  }
+
+  async decideDriveImport(input) {
+    if (!this.session || this.session.role !== "admin") throw createError("관리자만 Drive 자료를 승인하거나 반려할 수 있습니다.", "PERMISSION_DENIED");
+    const source = input && typeof input === "object" && !Array.isArray(input) ? input : {};
+    const action = String(source.action || "");
+    if (!new Set(["approveDriveImport", "rejectDriveImport"]).has(action)) throw createError("허용되지 않은 Drive 검토 요청입니다.", "INVALID_DRIVE_IMPORT_ACTION");
+    const driveFileId = String(source.driveFileId || "");
+    const requestId = String(source.requestId || "");
+    if (!/^[A-Za-z0-9_-]{1,120}$/.test(driveFileId) || !/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(requestId)) throw createError("Drive 검토 요청을 확인해 주세요.", "INVALID_DRIVE_IMPORT_REQUEST");
+    const allowed = action === "approveDriveImport"
+      ? new Set(["action", "driveFileId", "requestId", "approved"])
+      : new Set(["action", "driveFileId", "requestId", "reason"]);
+    if (Object.keys(source).some(key => !allowed.has(key))) throw createError("Drive 검토 요청에 허용되지 않은 값이 있습니다.", "INVALID_DRIVE_IMPORT_REQUEST");
+    const idToken = await this.ensureIdToken(false);
+    let response;
+    try {
+      response = await this.fetch(DEFAULT_CASE_AUTOMATION_ENDPOINT, {
+        method: "POST",
+        redirect: "follow",
+        headers: { "Content-Type": "text/plain;charset=utf-8" },
+        body: JSON.stringify(Object.assign({}, source, { idToken }))
+      });
+    } catch (error) {
+      throw createError("Drive 검토 서버에 연결할 수 없습니다.", "NETWORK", error);
+    }
+    const raw = await response.text();
+    let result = null;
+    try { result = raw ? JSON.parse(raw) : null; } catch (_) { result = null; }
+    if (!response.ok || !result || result.ok !== true || !result.result || result.result.requestId !== requestId) {
+      throw createError(result && result.message || "Drive 검토 결과를 확인하지 못했습니다.", "DRIVE_IMPORT_FAILED");
+    }
+    return result;
+  }
+
+  async loadRendererOverlays(guardValue) {
+    const guard = guardValue || this.captureSessionGuard();
+    const [buildingUnits, fieldSummaries] = await Promise.all([
+      this.loadCanonicalBuildingUnits(guard),
+      this.loadFieldSummaries(guard)
+    ]);
+    if (!this.sessionGuardActive(guard)) return null;
+    return this.Core.sanitizeRendererOverlays({ buildingUnits, fieldSummaries });
+  }
+
+  async refreshRendererSnapshot(sharedStore, notify, guardValue) {
+    const guard = guardValue || this.captureSessionGuard();
+    if (!this.sessionGuardActive(guard)) return null;
+    const shared = this.Core.sanitizeSharedStore(sharedStore || await this.readSessionLocalStore(guard));
+    if (!this.sessionGuardActive(guard)) return null;
+    const overlays = await this.loadRendererOverlays(guard);
+    if (!overlays || !this.sessionGuardActive(guard)) return null;
+    const renderer = mergeRendererOverlays(this.Core, shared, overlays.buildingUnits, overlays.fieldSummaries);
+    if (!this.sessionGuardActive(guard)) return null;
+    if (notify) {
+      if (!this.sessionGuardActive(guard)) return null;
+      this.onRemoteStore(renderer);
+    }
+    return renderer;
+  }
+
+  async refreshAfterCanonicalCommit(guardValue) {
+    const guard = guardValue || this.captureSessionGuard();
+    if (!this.sessionGuardActive(guard)) return null;
+    const remote = await this.fetchRemotePayload();
+    if (!this.sessionGuardActive(guard)) return null;
+    this.remotePayload = remote && typeof remote === "object" ? remote : {};
+    const local = await this.readSessionLocalStore(guard);
+    if (!this.sessionGuardActive(guard)) return null;
+    const merged = mergeRemoteStore(this.Core, this.remotePayload, local, this.session);
+    if (!this.sessionGuardActive(guard)) return null;
+    const written = await this.writeSessionLocalStore(merged, guard);
+    if (!written) return null;
+    if (!this.sessionGuardActive(guard)) return null;
+    return this.refreshRendererSnapshot(merged, true, guard);
+  }
+
+  scheduleCanonicalRefreshRetry(guardValue) {
+    const guard = guardValue || this.captureSessionGuard();
+    if (!this.sessionGuardActive(guard)) return;
+    clearTimeout(this.canonicalRefreshRetryTimer);
+    this.canonicalRefreshRetryTimer = setTimeout(async () => {
+      if (!this.sessionGuardActive(guard)) return;
+      try {
+        const refreshed = await this.refreshAfterCanonicalCommit(guard);
+        if (!refreshed || !this.sessionGuardActive(guard)) return;
+        this.emitSync("connected", "정식 CRM 저장 결과와 최신 현장 정보를 반영했습니다.", { pending: false });
+      } catch (_) {
+        if (!this.stopped && this.sessionGuardActive(guard)) this.scheduleCanonicalRefreshRetry(guard);
+      }
+    }, 2500);
+  }
+
+  async commitCanonicalCrmEntity(input) {
+    this.requireMutationPermission(input);
+    const guard = this.captureSessionGuard();
+    const source = input && typeof input === "object" ? input : {};
+    const operatorId = String(source.operatorId || "").trim();
+    if (!/^[A-Za-z0-9_-]{1,120}$/.test(operatorId) || operatorId.includes("@")) {
+      throw createError("현재 작업자를 먼저 선택해 주세요.", "CANONICAL_OPERATOR_REQUIRED");
+    }
+    const allowedKeys = new Set([
+      "buildVersion", "operatorId", "requestId", "entityType", "entityId",
+      "operation", "expectedVersion", "patch", "reason"
+    ]);
+    const buildVersion = String(source.buildVersion || "").trim();
+    const requestId = String(source.requestId || "").trim();
+    const entityType = String(source.entityType || "").trim();
+    const entityId = String(source.entityId || "").trim();
+    const operation = String(source.operation || "").trim();
+    const expectedVersion = source.expectedVersion;
+    const patchKeys = source.patch && typeof source.patch === "object" && !Array.isArray(source.patch)
+      ? Object.keys(source.patch)
+      : [];
+    const reasonValid = source.reason === undefined
+      || (typeof source.reason === "string" && Buffer.byteLength(source.reason, "utf8") <= 1_000);
+    if (
+      Object.keys(source).some(key => !allowedKeys.has(key))
+      || !buildVersion || Buffer.byteLength(buildVersion, "utf8") > 64
+      || !CANONICAL_CRM_REQUEST_ID.test(requestId)
+      || !CANONICAL_CRM_ENTITY_TYPES.has(entityType)
+      || !/^[A-Za-z0-9_-]{1,120}$/.test(entityId)
+      || !CANONICAL_CRM_OPERATIONS.has(operation)
+      || !Number.isSafeInteger(expectedVersion)
+      || expectedVersion < 0
+      || (operation === "create" ? expectedVersion !== 0 : expectedVersion === 0)
+      || !source.patch || typeof source.patch !== "object" || Array.isArray(source.patch)
+      || (operation === "update" && patchKeys.length === 0)
+      || (["archive", "restore"].includes(operation) && patchKeys.length > 0)
+      || !reasonValid
+    ) throw createError("정식 CRM 저장 요청이 올바르지 않습니다.", "CANONICAL_REQUEST_INVALID");
+    const envelope = Object.assign({ protocolVersion: 2, clientKind: "desktop" }, source);
+    if (Buffer.byteLength(JSON.stringify(source.patch), "utf8") > CANONICAL_CRM_PATCH_MAX_BYTES) {
+      throw createError("정식 CRM 변경 내용이 너무 큽니다.", "CANONICAL_BODY_TOO_LARGE");
+    }
+    const body = JSON.stringify(envelope);
+    if (Buffer.byteLength(body, "utf8") > CANONICAL_CRM_BODY_MAX_BYTES) {
+      throw createError("정식 CRM 저장 요청이 너무 큽니다.", "CANONICAL_BODY_TOO_LARGE");
+    }
+    const token = await this.ensureIdToken(false);
+    if (!this.sessionGuardActive(guard)) throw createError("로그인 세션이 변경되었습니다.", "AUTH_REQUIRED");
+    let response;
+    try {
+      response = await this.fetch(CANONICAL_CRM_ENDPOINT_URL, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+        body
+      });
+    } catch (error) {
+      throw createError("정식 CRM 저장 서버에 연결할 수 없습니다.", "NETWORK", error);
+    }
+    let payload = null;
+    try { payload = JSON.parse(await response.text()); } catch (_) {}
+    if (!this.sessionGuardActive(guard)) return null;
+    if (!response.ok) {
+      const remoteCode = payload && payload.error && String(payload.error.code || "");
+      const code = CANONICAL_CRM_ERROR_CODES.has(remoteCode) ? remoteCode : "CANONICAL_CRM_COMMIT_FAILED";
+      const error = createError(`정식 CRM 저장에 실패했습니다. (${code})`, code);
+      error.status = Number(response.status) || 0;
+      throw error;
+    }
+    const result = payload && payload.ok === true && payload.result;
+    const payloadKeys = payload && typeof payload === "object" && !Array.isArray(payload) ? Object.keys(payload).sort() : [];
+    const resultKeys = result && typeof result === "object" && !Array.isArray(result) ? Object.keys(result).sort() : [];
+    if (
+      !jsonEqual(payloadKeys, ["ok", "result"])
+      || !result || typeof result !== "object" || Array.isArray(result)
+      || !jsonEqual(resultKeys, ["archivedAt", "entityId", "entityType", "entityVersion", "repeated", "updatedAt"])
+      || !CANONICAL_CRM_ENTITY_TYPES.has(String(result.entityType || ""))
+      || String(result.entityType) !== entityType
+      || String(result.entityId || "") !== entityId
+      || !Number.isSafeInteger(result.entityVersion) || result.entityVersion < 1
+      || typeof result.updatedAt !== "string"
+      || typeof result.archivedAt !== "string"
+      || typeof result.repeated !== "boolean"
+    ) throw createError("정식 CRM 저장 응답이 올바르지 않습니다.", "CANONICAL_RESPONSE_INVALID");
+    try {
+      await this.refreshAfterCanonicalCommit(guard);
+      if (!this.sessionGuardActive(guard)) return null;
+    } catch (_) {
+      if (!this.sessionGuardActive(guard)) return null;
+      this.emitSync("offline", "정식 CRM 저장은 완료됐지만 최신 화면 반영을 다시 시도하는 중입니다.", { pending: false });
+      this.scheduleCanonicalRefreshRetry(guard);
+    }
+    return result;
   }
 
   async loadOperations() {
@@ -1048,8 +1589,8 @@ class FirebaseRemoteClient {
         reason: "휴지통 케이스 영구 삭제"
       });
       await this.dbRequest("", { method: "PATCH", body: {
-        [`cases/${caseKey}`]: null,
-        [`crmShared/data/auditLogs/${audit.id}`]: audit
+        [resolveDatabasePatchLocation(`cases/${caseKey}`, this.databaseRoot)]: null,
+        [resolveDatabasePatchLocation(`crmShared/data/auditLogs/${audit.id}`, this.databaseRoot)]: audit
       }, query: "print=silent" });
       return { ok: true, caseKey, deleted: true, auditId: audit.id };
     }
@@ -1265,54 +1806,85 @@ class FirebaseRemoteClient {
     return { ok: true, binding };
   }
 
-  async pushStore(input) {
+  async pushStore(input, guardValue) {
     this.requireMutationPermission(input);
-    const data = this.Core.sanitizeStore(input);
+    const guard = guardValue || this.captureSessionGuard();
+    if (!this.sessionGuardActive(guard)) throw createError("로그인 세션이 변경되었습니다.", "SESSION_CHANGED");
+    const data = this.Core.sanitizeSharedStore(input);
     data.updatedAt = new Date().toISOString();
     const next = toRemoteStore(data, this.session && this.session.email);
-    if (!this.remotePayload) {
-      await this.dbRequest("crmShared/data", { method: "PUT", body: next, query: "print=silent" });
-    } else {
-      const patch = diffRemoteStores(this.remotePayload, next);
-      if (Object.keys(patch).length) await this.dbRequest("crmShared/data", { method: "PATCH", body: patch, query: "print=silent" });
+    const current = this.remotePayload && typeof this.remotePayload === "object"
+      ? this.remotePayload
+      : await this.fetchRemotePayload() || {};
+    if (!this.sessionGuardActive(guard)) return null;
+    const patch = diffRemoteStores(current, next);
+    assertNoCanonicalSharedPatch(patch);
+    if (Object.keys(patch).length) {
+      await this.dbRequest("crmShared/data", { method: "PATCH", body: patch, query: "print=silent" });
+      if (!this.sessionGuardActive(guard)) return null;
     }
     this.remotePayload = next;
-    const local = await this.readLocalStore();
+    const local = await this.readSessionLocalStore(guard);
+    if (!local || !this.sessionGuardActive(guard)) return null;
     const merged = mergeRemoteStore(this.Core, next, Object.assign({}, local, { settings: data.settings }), this.session);
-    await this.writeLocalStore(merged);
+    const written = await this.writeSessionLocalStore(merged, guard);
+    if (!written || !this.sessionGuardActive(guard)) return null;
     await this.clearPendingStore();
+    if (!this.sessionGuardActive(guard)) return null;
     this.emitSync("connected", "공용 서버와 동기화됨", { updatedAt: merged.updatedAt, pending: false });
     return merged;
   }
 
-  async syncPending(pendingValue) {
+  async syncPending(pendingValue, guardValue) {
+    const guard = guardValue || this.captureSessionGuard();
+    if (!this.sessionGuardActive(guard)) return null;
     const pending = pendingValue || await this.readPendingStore();
-    if (!pending || !this.session) return null;
-    if (!await this.acceptPendingForCurrentUser(pending)) return null;
+    if (!this.sessionGuardActive(guard) || !pending) return null;
+    if (!await this.acceptPendingForCurrentUser(pending, guard)) return null;
+    if (!this.sessionGuardActive(guard)) return null;
     this.emitSync("syncing", "저장 대기 자료를 서버로 보내는 중", { pending: true });
     const currentRemote = await this.fetchRemotePayload() || {};
+    if (!this.sessionGuardActive(guard)) return null;
     const desired = toRemoteStore(pending.store, this.session.email);
     const patch = pendingSyncPatch(this.Core, pending.baseRemote || {}, desired, currentRemote, pending.presentCollections);
+    assertNoCanonicalSharedPatch(patch);
     if (Object.keys(patch).length) {
+      if (!this.sessionGuardActive(guard)) return null;
       await this.dbRequest("crmShared/data", { method: "PATCH", body: patch, query: "print=silent" });
+      if (!this.sessionGuardActive(guard)) return null;
     }
-    this.remotePayload = await this.fetchRemotePayload() || {};
-    const local = await this.readLocalStore();
+    const refreshedRemote = await this.fetchRemotePayload() || {};
+    if (!this.sessionGuardActive(guard)) return null;
+    this.remotePayload = refreshedRemote;
+    const local = await this.readSessionLocalStore(guard);
+    if (!this.sessionGuardActive(guard)) return null;
     const merged = mergeRemoteStore(this.Core, this.remotePayload, Object.assign({}, local, { settings: pending.store.settings }), this.session);
-    await this.writeLocalStore(merged);
+    if (!this.sessionGuardActive(guard)) return null;
+    const written = await this.writeSessionLocalStore(merged, guard);
+    if (!written) return null;
+    if (!this.sessionGuardActive(guard)) return null;
     await this.clearPendingStore();
+    if (!this.sessionGuardActive(guard)) return null;
     this.emitSync("connected", "저장 대기 자료를 공용 서버에 반영했습니다.", { updatedAt: merged.updatedAt, pending: false });
-    this.onRemoteStore(merged);
+    if (!this.sessionGuardActive(guard)) return null;
+    const renderer = await this.refreshRendererSnapshot(merged, false, guard);
+    if (!renderer || !this.sessionGuardActive(guard)) return null;
+    this.onRemoteStore(renderer);
+    if (!this.sessionGuardActive(guard)) return null;
     this.startStream();
-    return merged;
+    return renderer;
   }
 
-  schedulePendingRetry() {
+  schedulePendingRetry(guardValue) {
+    const guard = guardValue || this.captureSessionGuard();
+    if (!this.sessionGuardActive(guard)) return;
     clearTimeout(this.retryTimer);
     this.retryTimer = setTimeout(async () => {
-      try { await this.syncPending(); }
+      if (!this.sessionGuardActive(guard)) return;
+      try { await this.syncPending(undefined, guard); }
       catch (error) {
-        if (retryableSyncError(error)) this.schedulePendingRetry();
+        if (!this.sessionGuardActive(guard)) return;
+        if (retryableSyncError(error)) this.schedulePendingRetry(guard);
         else this.emitSync("error", error.message || "저장 대기 자료를 동기화하지 못했습니다.", { pending: true });
       }
     }, 8000);
@@ -1321,106 +1893,195 @@ class FirebaseRemoteClient {
   async loadStore() {
     if (!this.session) throw createError("로그인이 필요합니다.", "AUTH_REQUIRED");
     if (this.session.mustChangePassword) throw createError("새 비밀번호를 먼저 설정해 주세요.", "PASSWORD_CHANGE_REQUIRED");
-    const local = await this.readLocalStore();
+    const guard = this.captureSessionGuard();
+    const local = await this.readSessionLocalStore(guard);
+    if (!this.sessionGuardActive(guard)) return null;
     this.emitSync("syncing", "공용 서버에서 최신 자료를 확인하는 중");
-    this.remotePayload = await this.fetchRemotePayload();
+    const remote = await this.fetchRemotePayload();
+    if (!this.sessionGuardActive(guard)) return null;
+    this.remotePayload = remote;
     const pending = await this.readPendingStore();
+    if (!this.sessionGuardActive(guard)) return null;
     if (pending) {
       try {
-        const synced = await this.syncPending(pending);
+        const synced = await this.syncPending(pending, guard);
+        if (!this.sessionGuardActive(guard)) return null;
         if (synced) return synced;
       }
       catch (error) {
+        if (!this.sessionGuardActive(guard)) return null;
         if (!retryableSyncError(error)) throw error;
         this.emitSync("pending", "인터넷 연결 시 자동으로 다시 동기화합니다.", { pending: true });
-        this.schedulePendingRetry();
+        this.schedulePendingRetry(guard);
         return local;
       }
     }
-    if (!this.remotePayload && this.canMutate()) return this.pushStore(local);
     const merged = mergeRemoteStore(this.Core, this.remotePayload, local, this.session);
-    await this.writeLocalStore(merged);
+    if (!this.sessionGuardActive(guard)) return null;
+    const written = await this.writeSessionLocalStore(merged, guard);
+    if (!written) return null;
+    if (!this.sessionGuardActive(guard)) return null;
     this.emitSync("connected", "공용 서버와 동기화됨", { updatedAt: merged.updatedAt, pending: false });
+    if (!this.sessionGuardActive(guard)) return null;
     this.startStream();
-    return merged;
+    if (!this.sessionGuardActive(guard)) return null;
+    return this.refreshRendererSnapshot(merged, false, guard);
   }
 
   async saveStore(input) {
     this.requireMutationPermission(input);
-    const local = this.Core.sanitizeStore(input);
+    const guard = this.captureSessionGuard();
+    const overlays = this.Core.sanitizeRendererOverlays(input);
+    const local = this.Core.sanitizeSharedStore(input);
     local.updatedAt = new Date().toISOString();
     try {
-      const result = await this.pushStore(local);
+      const result = await this.pushStore(local, guard);
+      if (!result || !this.sessionGuardActive(guard)) throw createError("로그인 세션이 변경되었습니다.", "SESSION_CHANGED");
       this.startStream();
-      return { ok: true, data: result, pending: false };
+      return { ok: true, data: mergeRendererOverlays(this.Core, result, overlays.buildingUnits, overlays.fieldSummaries), pending: false };
     } catch (error) {
+      if (!this.sessionGuardActive(guard)) throw createError("로그인 세션이 변경되었습니다.", "SESSION_CHANGED", error);
       if (!retryableSyncError(error)) throw error;
-      await this.writeLocalStore(local);
+      const written = await this.writeSessionLocalStore(local, guard);
+      if (!written || !this.sessionGuardActive(guard)) throw createError("로그인 세션이 변경되었습니다.", "SESSION_CHANGED");
       await this.writePendingStore(local, this.remotePayload);
+      if (!this.sessionGuardActive(guard)) throw createError("로그인 세션이 변경되었습니다.", "SESSION_CHANGED");
       this.emitSync("pending", "서버 연결 시 자동으로 저장됩니다.", { pending: true });
-      this.schedulePendingRetry();
-      return { ok: true, data: local, pending: true, warning: error.message };
+      this.schedulePendingRetry(guard);
+      return { ok: true, data: mergeRendererOverlays(this.Core, local, overlays.buildingUnits, overlays.fieldSummaries), pending: true, warning: error.message };
     }
   }
 
   scheduleRemoteReload() {
+    const guard = this.captureSessionGuard();
+    if (!this.sessionGuardActive(guard)) return;
     clearTimeout(this.reloadTimer);
-    this.reloadTimer = setTimeout(() => this.reloadFromRemote().catch(error => {
-      this.emitSync("offline", error.message || "공용 서버 연결이 끊겼습니다.");
+    this.reloadTimer = setTimeout(() => this.reloadFromRemote(guard).catch(error => {
+      if (this.sessionGuardActive(guard)) {
+        this.emitSync("offline", error.message || "공용 서버 연결이 끊겼습니다.");
+      }
     }), 180);
   }
 
-  async reloadFromRemote() {
+  scheduleOverlayReload() {
+    const guard = this.captureSessionGuard();
+    if (!this.sessionGuardActive(guard)) return;
+    clearTimeout(this.overlayReloadTimer);
+    this.overlayReloadTimer = setTimeout(() => this.reloadRendererOverlays(guard).catch(() => {
+      if (this.sessionGuardActive(guard)) {
+        this.emitSync("offline", "현장 요약 정보를 다시 불러오는 중입니다.", { pending: false });
+      }
+    }), 180);
+  }
+
+  async reloadRendererOverlays(guardValue) {
+    const guard = guardValue || this.captureSessionGuard();
+    if (!this.sessionGuardActive(guard)) return null;
+    const local = await this.readSessionLocalStore(guard);
+    if (!this.sessionGuardActive(guard)) return null;
+    return this.refreshRendererSnapshot(local, true, guard);
+  }
+
+  async reloadFromRemote(guardValue) {
+    const guard = guardValue || this.captureSessionGuard();
+    if (!this.sessionGuardActive(guard)) return null;
     const pending = await this.readPendingStore();
+    if (!this.sessionGuardActive(guard)) return null;
     if (pending) {
-      const synced = await this.syncPending(pending);
+      const synced = await this.syncPending(pending, guard);
+      if (!this.sessionGuardActive(guard)) return null;
       if (synced) return;
     }
     const remote = await this.fetchRemotePayload();
+    if (!this.sessionGuardActive(guard)) return null;
     this.remotePayload = remote || {};
-    const local = await this.readLocalStore();
+    const local = await this.readSessionLocalStore(guard);
+    if (!this.sessionGuardActive(guard)) return null;
     const merged = mergeRemoteStore(this.Core, this.remotePayload, local, this.session);
-    await this.writeLocalStore(merged);
+    if (!this.sessionGuardActive(guard)) return null;
+    const written = await this.writeSessionLocalStore(merged, guard);
+    if (!written) return null;
+    if (!this.sessionGuardActive(guard)) return null;
     this.emitSync("connected", "다른 사용자의 최신 변경을 반영했습니다.", { updatedAt: merged.updatedAt, pending: false });
-    this.onRemoteStore(merged);
+    if (!this.sessionGuardActive(guard)) return null;
+    return this.refreshRendererSnapshot(merged, true, guard);
   }
 
   startStream() {
-    if (!this.session || this.streamTask) return;
+    if (!this.session) return;
     this.stopped = false;
-    this.streamTask = this.streamLoop().finally(() => { this.streamTask = null; });
+    const generation = this.streamGeneration;
+    if (!this.streamTask) {
+      let trackedShared;
+      trackedShared = this.streamLoop("crmShared/data", "shared", generation).finally(() => {
+        if (this.streamTask === trackedShared) this.streamTask = null;
+      });
+      this.streamTask = trackedShared;
+    }
+    if (!this.summaryStreamTask) {
+      let trackedSummary;
+      trackedSummary = this.streamLoop("fieldSummaries", "fieldSummaries", generation).finally(() => {
+        if (this.summaryStreamTask === trackedSummary) this.summaryStreamTask = null;
+      });
+      this.summaryStreamTask = trackedSummary;
+    }
   }
 
   stopStream() {
     this.stopped = true;
+    this.sessionGeneration += 1;
+    this.streamGeneration += 1;
     if (this.streamController) this.streamController.abort();
+    if (this.summaryStreamController) this.summaryStreamController.abort();
     this.streamController = null;
+    this.summaryStreamController = null;
     this.streamTask = null;
+    this.summaryStreamTask = null;
     clearTimeout(this.reloadTimer);
+    clearTimeout(this.overlayReloadTimer);
     clearTimeout(this.retryTimer);
+    clearTimeout(this.canonicalRefreshRetryTimer);
   }
 
-  async streamLoop() {
-    while (!this.stopped && this.session) {
-      this.streamController = new AbortController();
+  handleStreamEvent(kind, eventName) {
+    if (eventName === "put" || eventName === "patch") {
+      return kind === "fieldSummaries" ? this.scheduleOverlayReload() : this.scheduleRemoteReload();
+    }
+    if (eventName === "auth_revoked" || eventName === "cancel") {
+      if (this.session) this.session.expiresAt = 0;
+      this.sessionGeneration += 1;
+      if (this.streamController) this.streamController.abort();
+      if (this.summaryStreamController) this.summaryStreamController.abort();
+    }
+    return undefined;
+  }
+
+  async streamLoop(location, kind, generation) {
+    const controllerKey = kind === "fieldSummaries" ? "summaryStreamController" : "streamController";
+    const sessionGuard = this.captureSessionGuard();
+    while (
+      !this.stopped
+      && this.session
+      && generation === this.streamGeneration
+      && this.sessionGuardActive(sessionGuard)
+    ) {
+      const controller = new AbortController();
+      this[controllerKey] = controller;
       try {
         const token = await this.ensureIdToken(false);
-        const rootedLocation = resolveDatabaseLocation("crmShared/data", this.databaseRoot);
+        if (!this.sessionGuardActive(sessionGuard)) break;
+        const rootedLocation = resolveDatabaseLocation(location, this.databaseRoot);
         const url = `${this.firebase.databaseUrl}/${rootedLocation}.json?auth=${encodeURIComponent(token)}`;
-        const response = await this.fetch(url, { headers: { Accept: "text/event-stream" }, signal: this.streamController.signal });
+        const response = await this.fetch(url, { headers: { Accept: "text/event-stream" }, signal: controller.signal });
         if (!response.ok || !response.body) throw createError(`실시간 연결 실패 (${response.status})`, "STREAM_ERROR");
-        this.emitSync("connected", "공용 서버 실시간 연결됨", { pending: false });
+        if (kind === "shared") this.emitSync("connected", "공용 서버 실시간 연결됨", { pending: false });
         const reader = response.body.getReader();
         const decoder = new TextDecoder();
         let buffer = "";
         let eventName = "";
         let dataLines = [];
         const dispatch = () => {
-          if (eventName === "put" || eventName === "patch") this.scheduleRemoteReload();
-          if (eventName === "auth_revoked" || eventName === "cancel") {
-            this.session.expiresAt = 0;
-            this.streamController.abort();
-          }
+          if (this.sessionGuardActive(sessionGuard)) this.handleStreamEvent(kind, eventName);
           eventName = "";
           dataLines = [];
         };
@@ -1438,11 +2099,13 @@ class FirebaseRemoteClient {
           }
         }
       } catch (error) {
-        if (!this.stopped && error.name !== "AbortError") this.emitSync("offline", "실시간 연결을 다시 시도하는 중");
+        if (!this.stopped && error.name !== "AbortError" && kind === "shared") {
+          this.emitSync("offline", "실시간 연결을 다시 시도하는 중");
+        }
       } finally {
-        this.streamController = null;
+        if (this[controllerKey] === controller) this[controllerKey] = null;
       }
-      if (!this.stopped && this.session) await delay(2500);
+      if (!this.stopped && this.sessionGuardActive(sessionGuard) && generation === this.streamGeneration) await delay(2500);
     }
   }
 
@@ -1454,6 +2117,7 @@ class FirebaseRemoteClient {
 module.exports = {
   FIREBASE,
   LEGACY_FIREBASE,
+  CANONICAL_CRM_ENDPOINT_URL,
   DEFAULT_CASE_AUTOMATION_ENDPOINT,
   VENDOR_CSV_URL,
   WORKFLOW_ACTIONS,
@@ -1461,14 +2125,18 @@ module.exports = {
   PROTECTED_JSON_FORMAT,
   encodeProtectedJson,
   decodeProtectedJson,
+  createSerializedProtectedStoreCoordinator,
   retryableSyncError,
+  resolveDatabasePatchLocation,
   resolveDatabaseLocation,
   parseCsvRows,
   vendorDirectoryFromCsv,
   mapById,
   listFromMap,
   toRemoteStore,
+  sharedRemoteProjection,
   mergeRemoteStore,
+  mergeRendererOverlays,
   diffRemoteStores,
   pendingSyncPatch,
   caseDeleteAuditId,
