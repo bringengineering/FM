@@ -61,3 +61,9 @@ def peer_median(values):
     if len(clean) < 20:
         return None, "잠정"
     return median(clean), "확정"
+
+
+def choose_candidate(candidates):
+    eligible = [item for item in candidates if not item.get("cooldown_active")]
+    eligible.sort(key=lambda item: (-item["score"], item["id"]))
+    return eligible[0] if eligible else None
