@@ -6,6 +6,7 @@
   const SalesUI = window.BringSalesUI;
   const SalesStandards = window.BringSalesStandards;
   const DriveImportUI = window.BringDriveImportUI;
+  const ServiceOperationsUI = window.BringServiceOperationsUI;
   const api = window.bringCRM;
   const main = document.getElementById("main");
   const modal = document.getElementById("modal");
