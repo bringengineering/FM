@@ -6,6 +6,7 @@
   const SalesUI = window.BringSalesUI;
   const SalesStandards = window.BringSalesStandards;
   const DriveImportUI = window.BringDriveImportUI;
+  const WorkManagement = window.BringWorkManagement;
   const ServiceOperationsUI = window.BringServiceOperationsUI;
   const api = window.bringCRM;
   const main = document.getElementById("main");
@@ -56,6 +57,7 @@
   let partnerQuoteIndustryFilter = "전체 업종";
   let partnerQuoteStatusFilter = "전체";
   let taskStatusFilter = "전체";
+  let workFilters = { status: "all", buildingId: "all", serviceType: "all" };
   let securityTab = "assets";
   let dataPath = "";
   let currentAuth = { required: true, user: null, error: "" };
@@ -99,6 +101,7 @@
     payments: ["건물별 납부 예정과 입금 확인", "입금 캘린더"],
     customers: ["고객 정보", "고객 관리"],
     buildings: ["건물별 업무를 한곳에서", "건물 관리"],
+    workManagement: ["예정부터 완료·비용·증빙까지", "작업관리"],
     fieldOperations: ["BRING FIELD", "현장 업무"],
     consultations: ["전화·방문·미팅 내용", "상담 기록"],
     pipeline: ["건물 발굴부터 유료관리 전환까지", "영업 관리"],
@@ -945,6 +948,10 @@
     if (fieldView) {
       primaryActionButton.dataset.action = "new-field-job";
       primaryActionButton.textContent = "＋ 현장 업무 (준비 중)";
+    } else if (currentView === "workManagement") {
+      primaryActionButton.hidden = !canWriteCRM();
+      primaryActionButton.dataset.action = "new-work-record";
+      primaryActionButton.textContent = "＋ 새 작업";
     } else {
       primaryActionButton.dataset.action = "new-customer";
       primaryActionButton.textContent = "＋ 새 고객";
@@ -960,6 +967,7 @@
     else if (currentView === "payments") renderPayments();
     else if (currentView === "customers") renderCustomers();
     else if (currentView === "buildings") renderBuildings();
+    else if (currentView === "workManagement") renderWorkManagement();
     else if (currentView === "fieldOperations") renderFieldOperations();
     else if (currentView === "consultations") renderConsultations();
     else if (currentView === "pipeline") renderPipeline();
@@ -1887,6 +1895,22 @@
       <div class="building-identity-strip"><div><b>건물 유형</b><span>${esc(building.type || "미입력")}</span></div><div><b>운영 상태</b><span>${buildingStatusBadge(building.status)}</span></div><div><b>호실 수</b><span>${Number(building.unitCount) ? `${Number(building.unitCount).toLocaleString("ko-KR")}개` : "미입력"}</span></div><div><b>담당자</b><span>${esc(building.manager || "미입력")}</span></div></div>
       <div class="building-detail-grid">${rentalSummary}<section class="building-detail-section"><header><b>연결 고객</b><span>${customers.length}명</span></header><div class="building-detail-body">${customerRecords || `<div class="building-detail-empty">연결된 고객이 없습니다. 건물 정보 수정에서 건물주를 선택하세요.</div>`}</div></section><section class="building-detail-section"><header><b>건물 호실</b><button type="button" class="mini-button" data-building-unit-add="${attr(building.id)}">＋ 호실</button></header><div class="building-detail-body">${unitRecords || `<div class="building-detail-empty">등록된 호실이 없습니다.</div>`}${archivedUnitRecords}</div></section><section class="building-detail-section"><header><b>계약</b><span>${contracts.length}건</span></header><div class="building-detail-body">${contractRecords || `<div class="building-detail-empty">연결된 계약이 없습니다.</div>`}</div></section><section class="building-detail-section"><header><b>케이스</b><span>${cases.length}건</span></header><div class="building-detail-body">${caseRecords || `<div class="building-detail-empty">연결된 케이스가 없습니다.</div>`}</div></section><section class="building-detail-section"><header><b>${esc(paymentMonthLabel(paymentMonth))} 입금 일정</b><span>${rows.length}건</span></header><div class="building-detail-body">${paymentRecords || `<div class="building-detail-empty">이번 달 납부 일정이 없습니다.</div>`}</div></section>${building.memo ? `<section class="building-detail-section wide"><header><b>건물 메모</b><span>공용 정보</span></header><div class="building-detail-body"><div class="building-detail-record"><div><b>관리 참고사항</b><span>${esc(building.memo)}</span></div></div></div></section>` : ""}</div></div>`;
     main.querySelector(".building-detail-grid")?.insertAdjacentHTML("afterbegin", ServiceOperationsUI.renderBuildingServices(building, store));
+  }
+
+  function renderWorkManagement() {
+    const model = WorkManagement.buildModel(store, { month: Core.dayKey().slice(0, 7), today: Core.dayKey() });
+    main.innerHTML = WorkManagement.renderDashboard(model, { canWrite: canWriteCRM(), filters: workFilters });
+    Object.entries(workFilters).forEach(([key, value]) => {
+      const field = main.querySelector(`[data-work-filter="${key}"]`);
+      if (field) field.value = value;
+    });
+  }
+
+  function workRecordEditor(recordId) {
+    if (!canWriteCRM()) return showToast("조회 전용 계정은 작업을 기록할 수 없습니다.", "error");
+    const item = store.serviceRecords.find(record => record.id === recordId) || { id: "", buildingId: selectedBuildingId || "", serviceType: "grounds_cutting", status: "planned", scheduledDate: "", completedAt: "", amount: 0, vendorName: "", summary: "", evidenceUrl: "" };
+    modalContent.innerHTML = `<div class="modal-head"><div><h2>${item.id ? "작업 상세·수정" : "새 작업 등록"}</h2><p>건물별 작업 일정·비용·완료 증빙을 공용 CRM에 기록합니다.</p></div><button class="close-button" data-action="close-modal">×</button></div><form id="workRecordForm" class="modal-body" data-work-id="${attr(item.id)}"><div class="form-grid">${selectField("건물 *", "buildingId", store.buildings.map(building => building.id), item.buildingId, id => buildingById(id)?.name || id)}${selectField("작업 종류", "serviceType", ["grounds_cutting", "stair_cleaning", "cleaning", "repair", "inspection"], item.serviceType, value => WorkManagement.typeLabel(value))}${selectField("상태", "status", ["planned", "in_progress", "completed", "cancelled"], item.status, value => WorkManagement.statusLabel(value))}${field("예정일", "scheduledDate", item.scheduledDate || "", "date")}${field("완료일", "completedAt", item.completedAt || "", "date")}${field("비용", "amount", item.amount || "", "number", "원 단위")}${field("담당 업체", "vendorName", item.vendorName || "")}${field("Drive 증빙 URL", "evidenceUrl", item.evidenceUrl || "", "url", "https://drive.google.com/...")}${areaField("작업 내용·다음 행동", "summary", item.summary || "", "wide")}</div><div class="form-actions"><button type="button" class="secondary-button" data-action="close-modal">취소</button><button class="primary-button">공용 CRM에 저장</button></div></form>`;
+    openModal();
   }
 
   function renderConsultations() {
@@ -3253,6 +3277,18 @@
   }
 
   document.addEventListener("click", async event => {
+    const workEvidence = event.target.closest("[data-work-evidence]");
+    if (workEvidence) {
+      try {
+        const url = new URL(workEvidence.dataset.workEvidence || "");
+        if (url.protocol !== "https:" || url.hostname !== "drive.google.com") throw new Error("허용되지 않은 증빙 주소입니다.");
+        const result = await api.openExternal(url.toString());
+        if (!result || result.ok === false) throw new Error(result && result.error || "Drive 증빙을 열지 못했습니다.");
+      } catch (error) { showToast(error.message, "error"); }
+      return;
+    }
+    const workEdit = event.target.closest("[data-work-edit]");
+    if (workEdit) { workRecordEditor(workEdit.dataset.workEdit); return; }
     const partnerVendorOption = event.target.closest("[data-partner-vendor-option]");
     if (partnerVendorOption) {
       const form = partnerVendorOption.closest("#partnerQuoteForm");
@@ -3929,6 +3965,7 @@
       salesProspectEditor("");
     }
     else if (action === "new-field-job") showToast("현장 업무 등록 화면은 연결 정보를 준비하고 있습니다. 현재 현장 업무 조회는 그대로 사용할 수 있습니다.");
+    else if (action === "new-work-record") workRecordEditor("");
     else if (action === "reconnect-field") {
       fieldConnectionState = Object.assign({}, fieldConnectionState, { status: "connecting", message: "현장 업무에 다시 연결하고 있습니다.", ready: false });
       const result = await api.reconnectFieldPlatform();
@@ -3993,6 +4030,12 @@
   });
 
   document.addEventListener("change", async event => {
+    const workFilter = event.target.closest("[data-work-filter]");
+    if (workFilter) {
+      workFilters[workFilter.dataset.workFilter] = workFilter.value || "all";
+      renderWorkManagement();
+      return;
+    }
     if (event.target.matches('#salesEventForm [name="type"]')) refreshSalesEventChannelField(event.target.form);
     const customerSalesFilter = event.target.closest("[data-customer-sales-stage-filter]");
     if (customerSalesFilter) {
@@ -4113,7 +4156,29 @@
     event.preventDefault();
     const form = event.target;
     if (!canWriteCRM() && !["emailLoginForm", "passwordChangeForm"].includes(form.id)) return showToast("조회 전용 계정은 내용을 변경할 수 없습니다.", "error");
-    if (form.id === "driveImportApprovalForm" || form.id === "driveImportRejectionForm") {
+    if (form.id === "workRecordForm") {
+      if (!canWriteCRM()) return showToast("조회 전용 계정은 작업을 저장할 수 없습니다.", "error");
+      const raw = Object.fromEntries(new FormData(form).entries());
+      if (!buildingById(raw.buildingId)) return showToast("연결할 건물을 선택해 주세요.", "error");
+      if (raw.status === "completed" && !raw.completedAt) return showToast("완료 작업은 완료일을 입력해 주세요.", "error");
+      if (raw.evidenceUrl) {
+        try { const url = new URL(raw.evidenceUrl); if (url.protocol !== "https:" || url.hostname !== "drive.google.com") throw new Error(); }
+        catch (_) { return showToast("Drive 증빙은 https://drive.google.com 주소만 입력해 주세요.", "error"); }
+      }
+      const existing = store.serviceRecords.find(item => item.id === form.dataset.workId);
+      const now = new Date().toISOString();
+      const item = {
+        id: existing && existing.id || `service_${crypto.randomUUID()}`, buildingId: raw.buildingId, serviceType: raw.serviceType,
+        status: raw.status, scheduledDate: raw.scheduledDate || "", completedAt: raw.completedAt || "", amount: Math.max(0, Math.round(Number(raw.amount) || 0)),
+        vendorName: String(raw.vendorName || "").trim(), summary: String(raw.summary || "").trim(), evidenceUrl: String(raw.evidenceUrl || "").trim(),
+        createdAt: existing && existing.createdAt || now, updatedAt: now,
+      };
+      Core.assertNoProhibitedSecrets(item);
+      const index = existing ? store.serviceRecords.findIndex(record => record.id === existing.id) : -1;
+      if (index >= 0) store.serviceRecords[index] = Object.assign({}, existing, item); else store.serviceRecords.push(item);
+      logAudit({ category: "작업관리", targetType: "건물 작업", targetId: item.id, targetLabel: WorkManagement.typeLabel(item.serviceType), action: existing ? "작업 수정" : "작업 등록", reason: item.summary || "작업관리 화면에서 저장" });
+      scheduleSave(); closeModal(); currentView = "workManagement"; render(); showToast("작업을 공용 CRM에 저장했습니다.", "success");
+    } else if (form.id === "driveImportApprovalForm" || form.id === "driveImportRejectionForm") {
       if (!canAdministerSecurity()) return showToast("관리자만 Drive 자료를 승인하거나 반려할 수 있습니다.", "error");
       const item = driveImportCandidateById(form.dataset.driveFileId);
       if (!item) return showToast("검토 후보를 찾지 못했습니다.", "error");
