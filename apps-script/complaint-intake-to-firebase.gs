@@ -251,6 +251,58 @@ function doPost(e) {
   }
 }
 
+// Apps Script 편집기에서만 직접 실행하는 bring-fm 전환 점검입니다.
+// 공개 doPost 라우팅에는 연결하지 않으며, 임시 레코드는 항상 삭제합니다.
+function verifyFirebaseCutover() {
+  const probeId = "cutover-smoke-" + Utilities.getUuid();
+  const probeUrl = firebaseCaseSettingsUrl_("system/cutoverSmoke/" + probeId);
+  let created = false;
+
+  try {
+    const schemaVersion = firebaseOauthRequest_(
+      crmCompanyImportUrl_("data/schemaVersion"),
+      "get",
+      undefined,
+      "bring-fm 인증 조회 실패"
+    );
+    if (schemaVersion === null || schemaVersion === undefined) {
+      throw new Error("bring-fm 스키마 버전을 확인하지 못했습니다.");
+    }
+
+    const probe = {
+      purpose: "cutover-smoke",
+      createdAt: new Date().toISOString()
+    };
+    firebaseOauthRequest_(probeUrl, "put", probe, "bring-fm 점검 쓰기 실패");
+    created = true;
+
+    const stored = firebaseOauthRequest_(probeUrl, "get", undefined, "bring-fm 점검 조회 실패");
+    if (!stored || stored.purpose !== probe.purpose || stored.createdAt !== probe.createdAt) {
+      throw new Error("bring-fm 점검 자료가 일치하지 않습니다.");
+    }
+
+    firebaseOauthRequest_(probeUrl, "delete", undefined, "bring-fm 점검 정리 실패");
+    created = false;
+    const removed = firebaseOauthRequest_(probeUrl, "get", undefined, "bring-fm 점검 정리 확인 실패");
+    if (removed !== null) throw new Error("bring-fm 점검 자료가 완전히 정리되지 않았습니다.");
+
+    return {
+      ok: true,
+      accessVerified: true,
+      writeVerified: true,
+      cleanupVerified: true
+    };
+  } finally {
+    if (created) {
+      try {
+        firebaseOauthRequest_(probeUrl, "delete", undefined, "bring-fm 점검 정리 실패");
+      } catch (cleanupError) {
+        Logger.log("bring-fm cutover smoke cleanup failed");
+      }
+    }
+  }
+}
+
 function isKakaoChatbotSkillPayload_(payload) {
   return !!(
     payload &&
