@@ -15,11 +15,10 @@ const {
   createFieldExitCoordinator,
   createFieldEnvelope,
   createFieldRequestCoordinator,
-  createFieldSessionRecoveryCoordinator,
+  createFieldSharedSessionRecoveryCoordinator,
   externalFieldLinkDecision,
   fieldBounds,
   isAllowedFieldAuthPopup,
-  isAllowedFieldBootstrapNavigation,
   isAllowedFieldNavigation,
   isAllowedFieldPermission,
   isMatchingFieldAuthSignoutAck,
@@ -78,14 +77,14 @@ const fieldRequestCoordinator = createFieldRequestCoordinator({
   },
 });
 
-const fieldSessionRecoveryCoordinator = createFieldSessionRecoveryCoordinator({
-  createHandoff: async () => {
+const fieldSessionRecoveryCoordinator = createFieldSharedSessionRecoveryCoordinator({
+  refreshCrmSession: async () => {
     if (!remoteClient || !authState().user) {
-      throw Object.assign(new Error("FIELD_HANDOFF_SESSION_REQUIRED"), { code: "FIELD_HANDOFF_SESSION_REQUIRED" });
+      throw Object.assign(new Error("FIELD_SESSION_REQUIRED"), { code: "FIELD_SESSION_REQUIRED" });
     }
-    return remoteClient.createFieldHandoff();
+    await remoteClient.ensureIdToken(false);
   },
-  loadHandoff: async code => {
+  reloadSharedSession: async () => {
     const view = fieldView;
     const sessionKey = fieldSessionKey;
     if (!view || view.webContents.isDestroyed()) {
@@ -93,7 +92,7 @@ const fieldSessionRecoveryCoordinator = createFieldSessionRecoveryCoordinator({
     }
     fieldViewReady = false;
     fieldViewLoaded = false;
-    await view.webContents.loadURL(`${FIELD_PLATFORM_URL}?embedded=crm&desktop_handoff=${encodeURIComponent(code)}`);
+    await view.webContents.loadURL(`${FIELD_PLATFORM_URL}?embedded=crm`);
     if (!fieldView
       || fieldView !== view
       || view.webContents.isDestroyed()
@@ -320,16 +319,16 @@ function ensureFieldView() {
     popup.on("will-redirect", guard);
   });
   contents.on("will-navigate", (event, url) => {
-    if (!isAllowedFieldNavigation(url) && !isAllowedFieldBootstrapNavigation(url)) event.preventDefault();
+    if (!isAllowedFieldNavigation(url)) event.preventDefault();
   });
   contents.on("will-redirect", (event, url) => {
-    if (!isAllowedFieldNavigation(url) && !isAllowedFieldBootstrapNavigation(url)) event.preventDefault();
+    if (!isAllowedFieldNavigation(url)) event.preventDefault();
   });
   contents.on("did-start-navigation", (_event, url, _isInPlace, isMainFrame) => {
     if (!fieldView
       || fieldView.webContents !== contents
       || !isMainFrame
-      || (!isAllowedFieldNavigation(url) && !isAllowedFieldBootstrapNavigation(url))) return;
+      || !isAllowedFieldNavigation(url)) return;
     fieldViewReady = false;
     emitFieldState("connecting", "현장 업무에 연결하고 있습니다.");
   });
@@ -429,7 +428,7 @@ async function recoverFieldSession() {
   const sessionKey = fieldSessionKey;
   const userId = String(authState().user && authState().user.uid || "");
   if (!view || view.webContents.isDestroyed() || !userId || !remoteClient) {
-    const error = Object.assign(new Error("FIELD_HANDOFF_SESSION_REQUIRED"), { code: "FIELD_HANDOFF_SESSION_REQUIRED" });
+    const error = Object.assign(new Error("FIELD_SESSION_REQUIRED"), { code: "FIELD_SESSION_REQUIRED" });
     resolveFieldReadyWaiters(error);
     emitFieldState("disconnected", "현장 업무 자동 연결에 실패했습니다. CRM 연결을 확인한 뒤 다시 연결해 주세요.");
     return { ok: false, code: error.code };
@@ -622,7 +621,7 @@ async function showFieldView(input = {}, crmEvent) {
     const code = error && error.code || "FIELD_CONNECT_FAILED";
     const cancelled = ["FIELD_VIEW_HIDDEN", "FIELD_SESSION_CHANGED", "FIELD_RENDERER_DESTROYED"].includes(code);
     const timedOut = code === "FIELD_BRIDGE_TIMEOUT";
-    const recoveryFailed = code.startsWith("FIELD_HANDOFF_");
+    const recoveryFailed = code.startsWith("FIELD_SHARED_SESSION_") || code.startsWith("FIELD_SESSION_RECOVERY_");
     if (!cancelled) emitFieldState(
       timedOut ? "timeout" : "disconnected",
       timedOut
@@ -772,6 +771,10 @@ function authSessionFile() {
 
 function pendingFile() {
   return path.join(path.dirname(dataFile()), "bring-crm-pending.json");
+}
+
+function canonicalPendingFile() {
+  return path.join(path.dirname(dataFile()), "bring-crm-canonical-pending.json");
 }
 
 let localStoreCoordinator = null;
@@ -1574,6 +1577,7 @@ async function initializeRemote() {
     openEmailAuth: openCrmEmailAuth,
     sessionFile: authSessionFile(),
     pendingFile: pendingFile(),
+    canonicalPendingFile: canonicalPendingFile(),
     readLocalStore,
     writeLocalStore,
     clearLocalStore,

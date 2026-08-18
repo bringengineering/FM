@@ -108,6 +108,25 @@
     return `${cleaned.slice(0, 88)}_${stableKeyHash(raw)}`.slice(0, 100);
   };
 
+  function normalizeCustomer(value) {
+    const customer = Object.assign({}, value || {});
+    customer.stage = normalizePipelineStage(customer.stage);
+    customer.buildingIds = normalizeStringList(customer.buildingIds);
+    const rawLinks = customer.buildingIdLinks && typeof customer.buildingIdLinks === "object" && !Array.isArray(customer.buildingIdLinks)
+      ? customer.buildingIdLinks
+      : {};
+    customer.buildingIdLinks = Object.fromEntries(Object.entries(rawLinks)
+      .filter(([buildingId, linked]) => linked === true
+        && !["__proto__", "prototype", "constructor"].includes(buildingId)
+        && firebaseSafeKey(buildingId) === buildingId));
+    return customer;
+  }
+
+  function customerBuildingIds(value) {
+    const customer = normalizeCustomer(value);
+    return [...new Set([...customer.buildingIds, ...Object.keys(customer.buildingIdLinks)])];
+  }
+
   const stableObjectText = value => {
     if (Array.isArray(value)) return `[${value.map(stableObjectText).join(",")}]`;
     if (value && typeof value === "object") return `{${Object.keys(value).sort().map(key => `${JSON.stringify(key)}:${stableObjectText(value[key])}`).join(",")}}`;
@@ -232,7 +251,7 @@
       settings: {
         owner: "김현진",
         workflowUrl: "https://bringengineering.github.io/FM/",
-        firebaseDatabaseUrl: "https://bring-fm-hj-default-rtdb.asia-southeast1.firebasedatabase.app",
+        firebaseDatabaseUrl: "https://bring-fm-default-rtdb.asia-southeast1.firebasedatabase.app",
         autoSync: true,
         onboardingComplete: false
       },
@@ -269,7 +288,7 @@
       schemaVersion: 3,
       company: Object.assign({}, base.company, src.company || {}),
       settings: Object.assign({}, base.settings, src.settings || {}),
-      customers: Array.isArray(src.customers) ? src.customers.filter(Boolean).map(customer => Object.assign({}, customer, { stage: normalizePipelineStage(customer.stage) })) : [],
+      customers: Array.isArray(src.customers) ? src.customers.filter(Boolean).map(customer => normalizeCustomer(customer)) : [],
       buildings: Array.isArray(src.buildings) ? src.buildings.filter(Boolean).map(building => normalizeBuilding(building)) : [],
       activities: Array.isArray(src.activities) ? src.activities.filter(Boolean) : [],
       contracts: Array.isArray(src.contracts) ? src.contracts.filter(Boolean).map(contract => normalizeContract(contract)) : [],
@@ -420,7 +439,7 @@
       nextAction: "첫 연락", owner: "김현진", expectedValue: 0, lostReason: "", priority: "보통",
       relationshipCycleDays: 30, relationshipStartedAt: "", relationshipLastContactAt: "", relationshipNextContactAt: "",
       relationshipNextAction: "", relationshipNote: "",
-      tags: [], notes: "", buildingIds: [], workflowCaseIds: [], createdAt: now, updatedAt: now
+      tags: [], notes: "", buildingIds: [], buildingIdLinks: {}, workflowCaseIds: [], createdAt: now, updatedAt: now
     }, values || {});
     customer.stage = normalizePipelineStage(customer.stage);
     return customer;
@@ -711,7 +730,7 @@
     blankStore, blankSharedStore, sanitizeStore, sanitizeSharedStore, sanitizeRendererStore, sanitizeRendererOverlays, createCustomer, createBuilding, normalizeBuilding, normalizeBuildingUnit, createActivity, createContract, normalizeContractTypes, createPartnerVendor, createPartnerQuote, createTask, createSecurityAsset,
     createAccessRole, createAuditLog, createSecurityIncident, calculateDashboard, calculateSecurityStatus,
     workflowProgress, buildWorkflowCase, matchWorkflowCustomer, paymentNormalizeName, paymentMonthRows,
-    normalizePhone, normalizeText, normalizePipelineStage, normalizeStringList, nonNegativeInteger, money, dayKey, iso,
+    normalizePhone, normalizeText, normalizePipelineStage, normalizeStringList, normalizeCustomer, customerBuildingIds, nonNegativeInteger, money, dayKey, iso,
     prohibitedSecretType, findProhibitedSecrets, assertNoProhibitedSecrets, canMutate, assertMutationAllowed,
     normalizePartnerVendor, partnerVendorFromQuote, legacyPartnerVendorId,
     normalizeServiceRecords, normalizeServiceContracts, serviceSchedulesForContract

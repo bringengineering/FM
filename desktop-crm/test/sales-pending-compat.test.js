@@ -104,7 +104,8 @@ test("legacy version 3 pending data cannot delete collections absent from its ra
   client.startStream = () => undefined;
   await client.syncPending(pending);
 
-  assert.ok(patch["customers/customer_1"]);
+  assert.equal(patch["customers/customer_1/name"], "After");
+  assert.equal(Object.hasOwn(patch, "customers/customer_1"), false);
   assert.equal(Object.hasOwn(patch, "salesProspects/prospect_1"), false);
 });
 
@@ -162,7 +163,8 @@ test("version 4 pending work is preserved while injected renderer overlays canno
   assert.equal(Object.hasOwn(pending.store, "fieldSummaries"), false);
   assert.equal(Object.hasOwn(pending.baseRemote, "buildingUnits"), false);
   assert.equal(Object.hasOwn(pending.baseRemote, "fieldSummaries"), false);
-  assert.equal(patch["customers/customer_1"].name, "After");
+  assert.equal(patch["customers/customer_1/name"], "After");
+  assert.equal(Object.hasOwn(patch, "customers/customer_1"), false);
   assert.equal(Object.keys(patch).some(key => /buildingUnits|fieldSummaries/.test(key)), false);
 });
 
@@ -173,6 +175,88 @@ test("normal online diffs remain authoritative for all shared collections", () =
   );
 
   assert.equal(patch["salesProspects/prospect_1"], null);
+});
+
+test("customer diffs use field-scoped paths, retain deletes, and append only true building links", () => {
+  const patch = diffRemoteStores({
+    customers: {
+      customer_1: {
+        id: "customer_1",
+        name: "Before",
+        phone: "010-0000-0000",
+        buildingIdLinks: { building_existing: true }
+      }
+    }
+  }, {
+    customers: {
+      customer_1: {
+        id: "customer_1",
+        name: "After",
+        tags: ["priority"],
+        buildingIdLinks: {
+          building_existing: true,
+          building_new: true
+        }
+      }
+    }
+  });
+
+  assert.equal(patch["customers/customer_1/name"], "After");
+  assert.equal(patch["customers/customer_1/phone"], null);
+  assert.deepEqual(patch["customers/customer_1/tags"], ["priority"]);
+  assert.equal(patch["customers/customer_1/buildingIdLinks/building_new"], true);
+  assert.equal(Object.hasOwn(patch, "customers/customer_1/buildingIdLinks/building_existing"), false);
+  assert.equal(Object.hasOwn(patch, "customers/customer_1"), false);
+});
+
+test("customer creation and unlinked deletion never emit a whole-record overwrite", () => {
+  const created = diffRemoteStores({ customers: {} }, {
+    customers: {
+      customer_new: { id: "customer_new", name: "New customer" }
+    }
+  });
+  assert.equal(created["customers/customer_new/id"], "customer_new");
+  assert.equal(created["customers/customer_new/name"], "New customer");
+  assert.equal(Object.hasOwn(created, "customers/customer_new"), false);
+
+  const deleted = diffRemoteStores({
+    customers: {
+      customer_old: { id: "customer_old", name: "Old customer", memo: "remove" }
+    }
+  }, { customers: {} });
+  assert.equal(deleted["customers/customer_old/id"], null);
+  assert.equal(deleted["customers/customer_old/name"], null);
+  assert.equal(deleted["customers/customer_old/memo"], null);
+  assert.equal(Object.hasOwn(deleted, "customers/customer_old"), false);
+});
+
+test("customer diffs fail closed when an existing building link is removed or changed", () => {
+  const before = {
+    customers: {
+      customer_1: {
+        id: "customer_1",
+        buildingIdLinks: { building_1: true }
+      }
+    }
+  };
+  assert.throws(
+    () => diffRemoteStores(before, {
+      customers: { customer_1: { id: "customer_1", buildingIdLinks: {} } }
+    }),
+    error => error && error.code === "CUSTOMER_BUILDING_LINK_IMMUTABLE"
+  );
+  assert.throws(
+    () => diffRemoteStores(before, {
+      customers: { customer_1: { id: "customer_1", buildingIdLinks: { building_1: false } } }
+    }),
+    error => error && error.code === "CUSTOMER_BUILDING_LINK_IMMUTABLE"
+  );
+  assert.throws(
+    () => diffRemoteStores({ customers: {} }, {
+      customers: { customer_1: { id: "customer_1", buildingIdLinks: { building_1: "true" } } }
+    }),
+    error => error && error.code === "CUSTOMER_BUILDING_LINK_INVALID"
+  );
 });
 
 test("pending data from another user is still rejected and removed", async () => {

@@ -1,0 +1,53 @@
+{
+  "schemaVersion": 1,
+  "primary": {
+    "projectId": "bring-fm",
+    "functionsDeploymentAllowed": false,
+    "archivedFunctionNames": [
+      "appendOwnerNote",
+      "archiveOwnerNote",
+      "assignFieldJob",
+      "changeFieldVisit",
+      "claimFieldJob",
+      "cleanupDesktopFieldHandoffs",
+      "commitCanonicalCrmEntity",
+      "configureBuildingUnits",
+      "createAdPackage",
+      "createDesktopFieldHandoff",
+      "createFieldJobs",
+      "exchangeDesktopFieldHandoff",
+      "excludeFieldMedia",
+      "finalizeFieldMedia",
+      "getFieldMediaAccess",
+      "listAdPackageReviewCandidates",
+      "listFieldCaptureWorkspace",
+      "listFieldOperationsWorkspace",
+      "provisionFieldUser",
+      "recordFieldOperatorSwitch",
+      "saveFieldRegistration",
+      "setManagementContractStatus",
+      "startFieldCaptureSession",
+      "transitionFieldJob"
+    ],
+    "databaseRules": true
+  },
+  "retiredLegacy": {
+    "projectId": "bring-fm-hj",
+    "status": "retired",
+    "deploymentAllowed": false,
+    "archivedFunctionNames": [
+      "generateFieldAdPackageToDrive",
+      "rebuildMapProjectionOnBuildingWrite",
+      "rebuildMapProjectionOnListingWrite",
+      "rebuildMapProjectionOnMediaWrite",
+      "recoverFieldAdPackageGeneration",
+      "recoverFieldMediaDriveSync",
+      "syncFieldMediaToDrive"
+    ],
+    "databaseRules": false
+  },
+  "crmAutomaticRelease": {
+    "projectId": "bring-fm",
+    "databaseRules": true
+  }
+}

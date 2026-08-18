@@ -3,8 +3,6 @@ const test = require("node:test");
 
 const Core = require("../src/core");
 const {
-  CANONICAL_BUILDING_UNITS_BATCH_ENDPOINT_URL,
-  CANONICAL_CRM_ENDPOINT_URL,
   FirebaseRemoteClient,
   SHARED_COLLECTIONS,
   createSerializedProtectedStoreCoordinator,
@@ -86,6 +84,49 @@ function makeClient(overrides = {}) {
     expiresAt: Date.now() + 60_000
   };
   return { client, writes, remoteStores };
+}
+
+function canonicalSparkData(uid = "user_a", operatorId = "operator_a") {
+  const stamp = "2026-08-13T00:00:00.000Z";
+  const system = {
+    entityVersion: 1,
+    createdAt: stamp,
+    createdByAuthUid: uid,
+    createdByOperatorId: operatorId,
+    updatedAt: stamp,
+    updatedByAuthUid: uid,
+    updatedByOperatorId: operatorId,
+    archivedAt: "",
+    archivedByAuthUid: "",
+    archivedByOperatorId: "",
+  };
+  return {
+    buildings: {
+      building_a: {
+        id: "building_a",
+        name: "Building A",
+        address: "Wonju",
+        vacantUnitCount: 0,
+        vacantUnits: [],
+        ...system,
+      },
+    },
+    buildingUnits: {
+      unit_a: {
+        id: "unit_a",
+        crmBuildingId: "building_a",
+        label: "A unit",
+        floorLabel: "1F",
+        floorOrder: 1,
+        unitOrder: 1,
+        status: "occupied",
+        moveOutAt: "",
+        availableFrom: "",
+        memo: "",
+        ...system,
+      },
+    },
+  };
 }
 
 test("renderer overlays survive renderer sanitization but never enter the shared serializer", () => {
@@ -189,7 +230,8 @@ test("pushStore uses a collection PATCH and cannot overwrite unknown or overlay 
   assert.equal(mutations.length, 1);
   assert.equal(mutations[0].location, "crmShared/data");
   assert.equal(mutations[0].method, "PATCH");
-  assert.equal(mutations[0].body["customers/customer_1"].name, "변경");
+  assert.equal(mutations[0].body["customers/customer_1/name"], "변경");
+  assert.equal(Object.hasOwn(mutations[0].body, "customers/customer_1"), false);
   assert.equal(Object.keys(mutations[0].body).some(key => /buildingUnits|fieldSummaries|unknownFutureCollection/.test(key)), false);
 });
 
@@ -210,7 +252,8 @@ test("pushStore fetches an unknown baseline before PATCH so omitted future data 
 
   assert.equal(mutations.length, 1);
   assert.equal(mutations[0].method, "PATCH");
-  assert.equal(mutations[0].body["customers/customer_1"].name, "After");
+  assert.equal(mutations[0].body["customers/customer_1/name"], "After");
+  assert.equal(Object.hasOwn(mutations[0].body, "customers/customer_1"), false);
   assert.equal(Object.keys(mutations[0].body).some(key => key.startsWith("futureCollection")), false);
 });
 
@@ -247,7 +290,8 @@ test("an unrelated save succeeds when canonical buildings and sales units are un
 
   assert.equal(mutations.length, 1);
   assert.equal(mutations[0].method, "PATCH");
-  assert.equal(mutations[0].body["customers/customer_1"].name, "After");
+  assert.equal(mutations[0].body["customers/customer_1/name"], "After");
+  assert.equal(Object.hasOwn(mutations[0].body, "customers/customer_1"), false);
   assert.equal(Object.keys(mutations[0].body).some(key => /^(buildings|salesUnits)(\/|$)/.test(key)), false);
 });
 
@@ -269,520 +313,6 @@ test("legacy pending files cannot replay direct canonical building or sales-unit
       baseRemote: { [collection]: { [before.id]: before } }
     }), error => error && error.code === "CANONICAL_COMMIT_REQUIRED");
   }
-});
-
-test("canonical commit requires a caller-selected operator and refreshes renderer overlays", async () => {
-  const calls = [];
-  const { client, remoteStores, writes } = makeClient({
-    readLocalStore: async () => Core.sanitizeSharedStore({ customers: [{ id: "customer_1" }] })
-  });
-  client.fetch = async (url, options) => {
-    calls.push({ url, options });
-    return {
-      ok: true,
-      status: 200,
-      text: async () => JSON.stringify({ ok: true, result: { entityType: "buildingUnits", entityId: "unit_1", entityVersion: 2, updatedAt: "2026-08-14T00:00:00.000Z", archivedAt: "", repeated: false } })
-    };
-  };
-  client.dbRequest = async (location, options) => {
-    if (location === "crmShared/data") return { customers: { customer_1: { id: "customer_1" } } };
-    if (location === "crmShared/data/buildingUnits") return { unit_1: { id: "unit_1", crmBuildingId: "building_1", label: "202호" } };
-    if (location === "fieldSummaries") return { job_1: { fieldJobId: "job_1", crmBuildingUnitId: "unit_1" } };
-    throw new Error(`Unexpected ${options.method} ${location}`);
-  };
-
-  await assert.rejects(
-    client.commitCanonicalCrmEntity({ requestId: "550e8400-e29b-41d4-a716-446655440000", entityType: "buildingUnits", entityId: "unit_1", operation: "update", expectedVersion: 1, patch: { label: "202호" } }),
-    error => error && error.code === "CANONICAL_OPERATOR_REQUIRED"
-  );
-
-  const result = await client.commitCanonicalCrmEntity({
-    buildVersion: "1.7.0",
-    requestId: "550e8400-e29b-41d4-a716-446655440000",
-    operatorId: "operator_kim",
-    entityType: "buildingUnits",
-    entityId: "unit_1",
-    operation: "update",
-    expectedVersion: 1,
-    patch: { label: "202호" }
-  });
-
-  assert.equal(result.entityVersion, 2);
-  assert.equal(calls.length, 1);
-  assert.equal(calls[0].url, CANONICAL_CRM_ENDPOINT_URL);
-  assert.equal(calls[0].options.method, "POST");
-  assert.equal(calls[0].options.headers.Authorization, "Bearer crm-id-token");
-  assert.deepEqual(JSON.parse(calls[0].options.body), {
-    protocolVersion: 2,
-    clientKind: "desktop",
-    buildVersion: "1.7.0",
-    requestId: "550e8400-e29b-41d4-a716-446655440000",
-    operatorId: "operator_kim",
-    entityType: "buildingUnits",
-    entityId: "unit_1",
-    operation: "update",
-    expectedVersion: 1,
-    patch: { label: "202호" }
-  });
-  assert.equal(remoteStores.at(-1).buildingUnits[0].label, "202호");
-  assert.equal(remoteStores.at(-1).fieldSummaries[0].fieldJobId, "job_1");
-  assert.equal(Object.hasOwn(writes.at(-1), "buildingUnits"), false);
-
-  await assert.rejects(
-    client.commitCanonicalCrmEntity({
-      requestId: "550e8400-e29b-41d4-a716-446655440001",
-      operatorId: "member@bring.test",
-      entityType: "buildingUnits",
-      entityId: "unit_1",
-      operation: "update",
-      expectedVersion: 2,
-      patch: { label: "203호" }
-    }),
-    error => error && error.code === "CANONICAL_OPERATOR_REQUIRED"
-  );
-  assert.equal(calls.length, 1);
-});
-
-test("a 100-unit building configuration uses one canonical request and one overlay refresh", async () => {
-  const calls = [];
-  let refreshes = 0;
-  const units = Array.from({ length: 100 }, (_, index) => ({
-    label: `${Math.floor(index / 10) + 1}${String(index % 10 + 1).padStart(2, "0")}호`,
-    floorLabel: `${Math.floor(index / 10) + 1}층`,
-    floorOrder: Math.floor(index / 10) + 1,
-    unitOrder: index % 10,
-    status: "unknown"
-  }));
-  units[0] = Object.assign({ entityId: "unit_existing", expectedVersion: 7 }, units[0]);
-  const entityIds = units.map((_, index) => `unit_${String(index + 1).padStart(3, "0")}`);
-  const { client } = makeClient();
-  client.fetch = async (url, options) => {
-    calls.push({ url, options });
-    return jsonResponse({
-      ok: true,
-      result: {
-        buildingId: "building_1",
-        totalUnits: 100,
-        createdCount: 99,
-        updatedCount: 1,
-        unchangedCount: 0,
-        entityIds,
-        updatedAt: "2026-08-17T00:00:00.000Z",
-        repeated: false
-      }
-    });
-  };
-  client.refreshAfterCanonicalCommit = async () => { refreshes += 1; return {}; };
-
-  const result = await client.configureBuildingUnits({
-    buildVersion: "1.8.1",
-    requestId: "550e8400-e29b-41d4-a716-446655440000",
-    operatorId: "operator_kim",
-    buildingId: "building_1",
-    units
-  });
-
-  assert.equal(result.totalUnits, 100);
-  assert.equal(calls.length, 1);
-  assert.equal(refreshes, 1);
-  assert.equal(calls[0].url, CANONICAL_BUILDING_UNITS_BATCH_ENDPOINT_URL);
-  assert.equal(calls[0].options.method, "POST");
-  assert.equal(calls[0].options.headers.Authorization, "Bearer crm-id-token");
-  const body = JSON.parse(calls[0].options.body);
-  assert.equal(body.protocolVersion, 2);
-  assert.equal(body.clientKind, "desktop");
-  assert.equal(body.units.length, 100);
-  assert.deepEqual(
-    { entityId: body.units[0].entityId, expectedVersion: body.units[0].expectedVersion },
-    { entityId: "unit_existing", expectedVersion: 7 }
-  );
-  assert.equal(body.units[99].floorLabel, "10층");
-});
-
-test("canonical secret scanning ignores immutable IDs but still scans user-entered room content", async () => {
-  const falsePositiveId = "unit_1234567123456";
-  assert.ok(Core.findProhibitedSecrets({ entityId: falsePositiveId }).length > 0);
-  let requests = 0;
-  const { client } = makeClient();
-  client.fetch = async (url, options) => {
-    requests += 1;
-    const body = JSON.parse(options.body);
-    if (url === CANONICAL_CRM_ENDPOINT_URL) {
-      return jsonResponse({
-        ok: true,
-        result: {
-          entityType: "buildingUnits",
-          entityId: falsePositiveId,
-          entityVersion: 2,
-          updatedAt: "2026-08-17T00:00:00.000Z",
-          archivedAt: "",
-          repeated: false
-        }
-      });
-    }
-    assert.equal(url, CANONICAL_BUILDING_UNITS_BATCH_ENDPOINT_URL);
-    return jsonResponse({
-      ok: true,
-      result: {
-        buildingId: body.buildingId,
-        totalUnits: 1,
-        createdCount: 0,
-        updatedCount: 0,
-        unchangedCount: 1,
-        entityIds: [falsePositiveId],
-        updatedAt: "2026-08-17T00:00:00.000Z",
-        repeated: false
-      }
-    });
-  };
-  client.refreshAfterCanonicalCommit = async () => ({});
-
-  await assert.doesNotReject(client.commitCanonicalCrmEntity({
-    buildVersion: "1.8.1",
-    requestId: "550e8400-e29b-41d4-a716-446655440011",
-    operatorId: "operator_kim",
-    entityType: "buildingUnits",
-    entityId: falsePositiveId,
-    operation: "update",
-    expectedVersion: 1,
-    patch: { memo: "safe note" }
-  }));
-  await assert.doesNotReject(client.configureBuildingUnits({
-    buildVersion: "1.8.1",
-    requestId: "550e8400-e29b-41d4-a716-446655440012",
-    operatorId: "operator_kim",
-    buildingId: "building_1",
-    units: [{
-      entityId: falsePositiveId,
-      expectedVersion: 1,
-      label: "101호",
-      floorLabel: "1층",
-      floorOrder: 1,
-      unitOrder: 1,
-      status: "occupied"
-    }]
-  }));
-  await assert.rejects(client.commitCanonicalCrmEntity({
-    buildVersion: "1.8.1",
-    requestId: "550e8400-e29b-41d4-a716-446655440013",
-    operatorId: "operator_kim",
-    entityType: "buildingUnits",
-    entityId: falsePositiveId,
-    operation: "update",
-    expectedVersion: 1,
-    patch: { memo: "비밀번호 1234" }
-  }), error => error && error.code === "PROHIBITED_SENSITIVE_VALUE");
-  assert.equal(requests, 2);
-});
-
-test("a 200-item existing-room snapshot with maximum field sizes stays within the dedicated batch cap", async () => {
-  const units = Array.from({ length: 200 }, (_, index) => ({
-    entityId: `${String(index).padStart(3, "0")}_${"i".repeat(116)}`,
-    expectedVersion: Number.MAX_SAFE_INTEGER,
-    label: `${String(index).padStart(3, "0")}${"l".repeat(253)}`,
-    floorLabel: "f".repeat(256),
-    floorOrder: 1,
-    unitOrder: index,
-    status: "occupied"
-  }));
-  const entityIds = units.map(unit => unit.entityId);
-  let requests = 0;
-  const { client } = makeClient();
-  client.fetch = async (_url, options) => {
-    requests += 1;
-    assert.ok(Buffer.byteLength(options.body, "utf8") > 128 * 1024);
-    assert.ok(Buffer.byteLength(options.body, "utf8") <= 160 * 1024);
-    return jsonResponse({
-      ok: true,
-      result: {
-        buildingId: "building_1",
-        totalUnits: 200,
-        createdCount: 0,
-        updatedCount: 0,
-        unchangedCount: 200,
-        entityIds,
-        updatedAt: "2026-08-17T00:00:00.000Z",
-        repeated: false
-      }
-    });
-  };
-  client.refreshAfterCanonicalCommit = async () => ({});
-
-  await assert.doesNotReject(client.configureBuildingUnits({
-    buildVersion: "1.8.1",
-    requestId: "550e8400-e29b-41d4-a716-446655440010",
-    operatorId: "operator_kim",
-    buildingId: "building_1",
-    units
-  }));
-  assert.equal(requests, 1);
-});
-
-test("building configuration accepts an idempotent retry result without extra requests", async () => {
-  let requests = 0;
-  let refreshes = 0;
-  const { client } = makeClient();
-  client.fetch = async () => {
-    requests += 1;
-    return jsonResponse({
-      ok: true,
-      result: {
-        buildingId: "building_1",
-        totalUnits: 1,
-        createdCount: 1,
-        updatedCount: 0,
-        unchangedCount: 0,
-        entityIds: ["unit_001"],
-        updatedAt: "2026-08-17T00:00:00.000Z",
-        repeated: true
-      }
-    });
-  };
-  client.refreshAfterCanonicalCommit = async () => { refreshes += 1; return {}; };
-  const result = await client.configureBuildingUnits({
-    buildVersion: "1.8.1",
-    requestId: "550e8400-e29b-41d4-a716-446655440000",
-    operatorId: "operator_kim",
-    buildingId: "building_1",
-    units: [{ label: "101호", floorLabel: "1층", floorOrder: 1, unitOrder: 1 }]
-  });
-
-  assert.equal(result.repeated, true);
-  assert.equal(requests, 1);
-  assert.equal(refreshes, 1);
-});
-
-test("viewer and malformed building configurations are rejected before token or network access", async () => {
-  const valid = {
-    buildVersion: "1.8.1",
-    requestId: "550e8400-e29b-41d4-a716-446655440000",
-    operatorId: "operator_kim",
-    buildingId: "building_1",
-    units: [{ label: "101호", floorLabel: "1층", floorOrder: 1, unitOrder: 1 }]
-  };
-  const cases = [
-    { operatorId: "" },
-    { buildingId: "building/1" },
-    { units: [] },
-    { units: [{ label: "101호", floorLabel: "", floorOrder: 1, unitOrder: 1 }] },
-    { units: [{ label: "101호", floorLabel: "1층", floorOrder: 1.5, unitOrder: 1 }] },
-    { units: [{ label: "101호", floorLabel: "1층", floorOrder: 1, unitOrder: 1, status: "active" }] },
-    { units: [{ entityId: "unit_1", label: "101호", floorLabel: "1층", floorOrder: 1, unitOrder: 1 }] },
-    { units: [{ expectedVersion: 1, label: "101호", floorLabel: "1층", floorOrder: 1, unitOrder: 1 }] },
-    { units: [{ entityId: "unit_1", expectedVersion: 0, label: "101호", floorLabel: "1층", floorOrder: 1, unitOrder: 1 }] },
-    { units: [
-      { label: "１０１ 호", floorLabel: "1층", floorOrder: 1, unitOrder: 1 },
-      { label: "101호", floorLabel: "1층", floorOrder: 1, unitOrder: 2 }
-    ] },
-    { units: Array.from({ length: 201 }, (_, index) => ({ label: `${index}호`, floorLabel: "1층", floorOrder: 1, unitOrder: index })) },
-    { protocolVersion: 2 }
-  ];
-  for (const changes of cases) {
-    let tokenCalls = 0;
-    let networkCalls = 0;
-    const { client } = makeClient();
-    client.ensureIdToken = async () => { tokenCalls += 1; return "token"; };
-    client.fetch = async () => { networkCalls += 1; throw new Error("must not fetch"); };
-    await assert.rejects(client.configureBuildingUnits(Object.assign({}, valid, changes)));
-    assert.equal(tokenCalls, 0);
-    assert.equal(networkCalls, 0);
-  }
-
-  let viewerTokenCalls = 0;
-  let viewerNetworkCalls = 0;
-  const { client: viewer } = makeClient();
-  viewer.session.role = "viewer";
-  viewer.ensureIdToken = async () => { viewerTokenCalls += 1; return "token"; };
-  viewer.fetch = async () => { viewerNetworkCalls += 1; throw new Error("must not fetch"); };
-  await assert.rejects(viewer.configureBuildingUnits(valid));
-  assert.equal(viewerTokenCalls, 0);
-  assert.equal(viewerNetworkCalls, 0);
-});
-
-test("building configuration rejects malformed success envelopes", async () => {
-  const { client } = makeClient({
-    fetchImpl: async () => jsonResponse({
-      ok: true,
-      result: {
-        buildingId: "building_1",
-        totalUnits: 1,
-        createdCount: 1,
-        updatedCount: 1,
-        unchangedCount: 0,
-        entityIds: ["unit_001"],
-        updatedAt: "not-a-timestamp",
-        repeated: false
-      }
-    })
-  });
-  await assert.rejects(client.configureBuildingUnits({
-    buildVersion: "1.8.1",
-    operatorId: "operator_kim",
-    buildingId: "building_1",
-    units: [{ label: "101호", floorLabel: "1층", floorOrder: 1, unitOrder: 1 }]
-  }), error => error && error.code === "CANONICAL_RESPONSE_INVALID");
-});
-
-test("building configuration surfaces an actionable legacy vacancy migration conflict", async () => {
-  const { client } = makeClient({
-    fetchImpl: async () => jsonResponse({
-      ok: false,
-      error: { code: "crm_vacancy_migration_required" }
-    }, 409)
-  });
-  await assert.rejects(client.configureBuildingUnits({
-    buildVersion: "1.8.1",
-    operatorId: "operator_kim",
-    buildingId: "building_1",
-    units: [{ label: "101호", floorLabel: "1층", floorOrder: 1, unitOrder: 1, status: "vacant" }]
-  }), error => error
-    && error.code === "crm_vacancy_migration_required"
-    && /기존 공실 정보/.test(error.message));
-});
-
-test("canonical commit fails closed on invalid commands, oversized UTF-8, and malformed success envelopes", async () => {
-  const { client } = makeClient();
-  const valid = {
-    buildVersion: "1.7.0",
-    requestId: "550e8400-e29b-41d4-a716-446655440000",
-    operatorId: "operator_kim",
-    entityType: "buildingUnits",
-    entityId: "unit_1",
-    operation: "update",
-    expectedVersion: 1,
-    patch: { label: "202호" }
-  };
-  let calls = 0;
-  client.fetch = async () => {
-    calls += 1;
-    return { ok: true, status: 200, text: async () => JSON.stringify({ ok: true, result: null }) };
-  };
-
-  for (const [changes, code] of [
-    [{ requestId: "not-a-uuid" }, "CANONICAL_REQUEST_INVALID"],
-    [{ operation: "delete" }, "CANONICAL_REQUEST_INVALID"],
-    [{ expectedVersion: -1 }, "CANONICAL_REQUEST_INVALID"],
-    [{ patch: {} }, "CANONICAL_REQUEST_INVALID"],
-    [{ operation: "archive", patch: { label: "no" } }, "CANONICAL_REQUEST_INVALID"],
-    [{ reason: "가".repeat(334) }, "CANONICAL_REQUEST_INVALID"],
-    [{ protocolVersion: 99 }, "CANONICAL_REQUEST_INVALID"]
-  ]) {
-    await assert.rejects(client.commitCanonicalCrmEntity(Object.assign({}, valid, changes)), error => error && error.code === code);
-  }
-  await assert.rejects(
-    client.commitCanonicalCrmEntity(Object.assign({}, valid, { patch: { memo: "가".repeat(11_000) } })),
-    error => error && error.code === "CANONICAL_BODY_TOO_LARGE"
-  );
-  assert.equal(calls, 0);
-
-  await assert.rejects(
-    client.commitCanonicalCrmEntity(valid),
-    error => error && error.code === "CANONICAL_RESPONSE_INVALID"
-  );
-  assert.equal(calls, 1);
-});
-
-test("canonical HTTP errors expose only an allowlisted code and status", async () => {
-  const secret = "super-secret-token-and-patch";
-  const { client } = makeClient({
-    fetchImpl: async () => ({
-      ok: false,
-      status: 409,
-      text: async () => JSON.stringify({
-        ok: false,
-        error: { code: "crm_entity_version_conflict", message: secret },
-        patch: secret
-      })
-    })
-  });
-
-  await assert.rejects(
-    client.commitCanonicalCrmEntity({
-      buildVersion: "1.7.0",
-      requestId: "550e8400-e29b-41d4-a716-446655440000",
-      operatorId: "operator_kim",
-      entityType: "buildingUnits",
-      entityId: "unit_1",
-      operation: "update",
-      expectedVersion: 1,
-      patch: { label: "202호" }
-    }),
-    error => error
-      && error.code === "crm_entity_version_conflict"
-      && error.status === 409
-      && !String(error.message).includes(secret)
-  );
-});
-
-test("move-out scheduling errors remain actionable without exposing server details", async () => {
-  const secret = "server-internal-secret";
-  const { client } = makeClient({
-    fetchImpl: async () => jsonResponse({
-      ok: false,
-      error: { code: "crm_move_out_date_required", message: secret }
-    }, 400)
-  });
-
-  await assert.rejects(client.commitCanonicalCrmEntity({
-    buildVersion: "1.8.1",
-    requestId: "550e8400-e29b-41d4-a716-446655440000",
-    operatorId: "operator_kim",
-    entityType: "buildingUnits",
-    entityId: "unit_1",
-    operation: "update",
-    expectedVersion: 1,
-    patch: { status: "move_out_scheduled" }
-  }), error => error
-    && error.code === "crm_move_out_date_required"
-    && error.status === 400
-    && /퇴실 예정일/.test(error.message)
-    && !String(error.message).includes(secret));
-});
-
-test("a successful canonical POST still resolves when the post-commit overlay refresh fails", async () => {
-  const syncStates = [];
-  const { client } = makeClient({ onSyncState: state => { syncStates.push(state); } });
-  let posts = 0;
-  let retrySchedules = 0;
-  client.fetch = async () => {
-    posts += 1;
-    return {
-      ok: true,
-      status: 200,
-      text: async () => JSON.stringify({
-        ok: true,
-        result: {
-          entityType: "buildingUnits",
-          entityId: "unit_1",
-          entityVersion: 2,
-          updatedAt: "2026-08-14T00:00:00.000Z",
-          archivedAt: "",
-          repeated: false
-        }
-      })
-    };
-  };
-  client.fetchRemotePayload = async () => ({ customers: {} });
-  client.loadCanonicalBuildingUnits = async () => ({ unit_1: { id: "unit_1", label: "202호" } });
-  client.loadFieldSummaries = async () => { throw new Error("summary refresh unavailable"); };
-  client.scheduleCanonicalRefreshRetry = () => { retrySchedules += 1; };
-
-  const result = await client.commitCanonicalCrmEntity({
-    buildVersion: "1.7.0",
-    requestId: "550e8400-e29b-41d4-a716-446655440000",
-    operatorId: "operator_kim",
-    entityType: "buildingUnits",
-    entityId: "unit_1",
-    operation: "update",
-    expectedVersion: 1,
-    patch: { label: "202호" }
-  });
-
-  assert.equal(result.entityVersion, 2);
-  assert.equal(posts, 1);
-  assert.equal(retrySchedules, 1);
-  assert.equal(syncStates.at(-1).status, "offline");
-  assert.match(syncStates.at(-1).message, /저장은 완료/);
 });
 
 test("a field-summary stream event refreshes renderer overlays without reloading or writing shared CRM", async () => {
@@ -1213,7 +743,7 @@ test("persisted-session refresh rejects identity substitution before installing 
 });
 
 test("an old canonical commit response returns no stale result or refresh after a session switch", async () => {
-  const postResponse = deferred();
+  const patchResponse = deferred();
   const writes = [];
   const remoteStores = [];
   const { client } = makeClient({
@@ -1221,12 +751,13 @@ test("an old canonical commit response returns no stale result or refresh after 
     onRemoteStore: value => { remoteStores.push(value); }
   });
   client.session = session("user_a");
-  client.fetch = async () => postResponse.promise;
-  let postStartedResolve;
-  const postStarted = new Promise(resolve => { postStartedResolve = resolve; });
-  client.fetch = async () => {
-    postStartedResolve();
-    return postResponse.promise;
+  client.verifyAccess = async () => ({ enabled: true, role: "member" });
+  client.dbReadWithEtag = async () => ({ value: canonicalSparkData(), etag: '"etag-a"' });
+  let patchStartedResolve;
+  const patchStarted = new Promise(resolve => { patchStartedResolve = resolve; });
+  client.dbAtomicPatch = async () => {
+    patchStartedResolve();
+    return patchResponse.promise;
   };
   let refreshes = 0;
   client.refreshAfterCanonicalCommit = async () => { refreshes += 1; };
@@ -1241,25 +772,11 @@ test("an old canonical commit response returns no stale result or refresh after 
     patch: { label: "A 호실" }
   });
 
-  await postStarted;
+  await patchStarted;
   await client.logout(false);
   client.session = session("user_b");
   client.markSessionStarted();
-  postResponse.resolve({
-    ok: true,
-    status: 200,
-    text: async () => JSON.stringify({
-      ok: true,
-      result: {
-        entityType: "buildingUnits",
-        entityId: "unit_a",
-        entityVersion: 2,
-        updatedAt: "2026-08-14T00:00:00.000Z",
-        archivedAt: "",
-        repeated: false
-      }
-    })
-  });
+  patchResponse.resolve(true);
 
   assert.equal(await commit, null);
   assert.equal(refreshes, 0);
@@ -1271,21 +788,9 @@ test("a canonical commit result is discarded when its post-commit refresh crosse
   const refreshFinished = deferred();
   const { client } = makeClient();
   client.session = session("user_a");
-  client.fetch = async () => ({
-    ok: true,
-    status: 200,
-    text: async () => JSON.stringify({
-      ok: true,
-      result: {
-        entityType: "buildingUnits",
-        entityId: "unit_a",
-        entityVersion: 2,
-        updatedAt: "2026-08-14T00:00:00.000Z",
-        archivedAt: "",
-        repeated: false
-      }
-    })
-  });
+  client.verifyAccess = async () => ({ enabled: true, role: "member" });
+  client.dbReadWithEtag = async () => ({ value: canonicalSparkData(), etag: '"etag-a"' });
+  client.dbAtomicPatch = async () => true;
   let refreshStartedResolve;
   const refreshStarted = new Promise(resolve => { refreshStartedResolve = resolve; });
   client.refreshAfterCanonicalCommit = async () => {
@@ -1461,7 +966,7 @@ test("renderer refreshes overlays on load and reconnect without mixing them into
   assert.match(appSource, /uid !== currentAuthUid\(\)/);
 });
 
-test("building, building-unit, and sales-unit UI mutations require an operator and execute through the canonical endpoint", async () => {
+test("building, building-unit, and sales-unit UI mutations require an operator and execute through canonical IPC", async () => {
   const { readFile } = require("node:fs/promises");
   const path = require("node:path");
   const vm = require("node:vm");
@@ -1563,6 +1068,7 @@ test("building, building-unit, and sales-unit UI mutations require an operator a
   assert.doesNotMatch(buildingUnitFormSlice, /unitLabel\s*:/);
   const buildingFormSlice = appSource.slice(appSource.indexOf('form.id === "buildingForm"'), appSource.indexOf('form.id === "contractForm"'));
   assert.match(buildingFormSlice, /buildCanonicalBuildingPatch\(/);
+  assert.match(buildingFormSlice, /const commitResult = await commitCanonicalEntity\([\s\S]*?selectedBuildingId = String\(commitResult && commitResult\.entityId \|\| item\.id\)/);
   assert.doesNotMatch(buildingFormSlice, /externalRefs:\s*Object\.assign/);
   assert.match(buildingFormSlice, /if \(!name \|\| !address\) return showToast\("건물명과 주소를 입력해 주세요\.", "error"\)/);
 

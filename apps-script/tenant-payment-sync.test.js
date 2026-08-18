@@ -102,7 +102,7 @@ assert.match(smsContent, /납부금액: 500,000원/);
 assert.match(smsContent, /문의: 033-748-8919/);
 
 assert.match(source, /payload\.action === "syncPaymentSchedules"/);
-assert.match(source, /paymentCalendars\/" \+ encodeURIComponent\(safeUid\)/, "로그인 사용자 전용 Firebase 경로를 사용한다");
+assert.match(source, /FIREBASE_PAYMENT_CALENDARS_PATH \|\| "crmCompany\/paymentCalendars"/, "로그인 사용자 전용 Firebase 경로를 사용한다");
 assert.match(source, /function movePaymentScheduleSheetToBringCareFolder\(/, "관리대장을 BRING CARE 공유 폴더의 독립 파일로 이동할 수 있다");
 assert.match(source, /PAYMENT_SCHEDULE_SPREADSHEET_ID/, "이동한 독립 관리대장 파일 ID를 자동화가 계속 사용한다");
 assert.match(source, /function onPaymentScheduleSheetEdit\(/, "관리대장 편집을 감지하는 자동 반영 트리거가 있다");

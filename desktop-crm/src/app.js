@@ -276,7 +276,7 @@
   const buildingById = id => store.buildings.find(item => item.id === id) || null;
   const customerBuildings = customer => {
     if (!customer) return [];
-    const linkedIds = new Set(customer.buildingIds || []);
+    const linkedIds = new Set(Core.customerBuildingIds(customer));
     return store.buildings.filter(building => linkedIds.has(building.id) || building.ownerCustomerId === customer.id);
   };
   const salesStageById = stageId => (Sales.SALES_STAGES || []).find(stage => stage.id === stageId) || null;
@@ -1809,7 +1809,7 @@
     return `<tr data-customer-open="${attr(customer.id)}"><td><div class="customer-cell"><i class="avatar">${esc(initials(customer.name))}</i><div><strong>${esc(customer.name || "이름 미입력")}</strong><span>${esc(customer.company || customer.type || customer.customerNo || "")}</span></div></div></td><td>${esc(customer.phone || "-")}</td><td>${esc(buildingLabel)}</td><td>${customerSalesStageBadge(progress)}</td><td>${esc(customer.nextAction || "-")}</td><td>${esc(dateText(customer.nextContactAt))}</td><td>${priorityClass(customer.priority)}</td></tr>`;
   }
 
-  const buildingCustomers = building => store.customers.filter(customer => customer.id === building.ownerCustomerId || (customer.buildingIds || []).includes(building.id));
+  const buildingCustomers = building => store.customers.filter(customer => customer.id === building.ownerCustomerId || Core.customerBuildingIds(customer).includes(building.id));
   const buildingContracts = building => store.contracts.filter(contract => String(contract.buildingId || "") === String(building.id));
   const buildingNames = building => [building && building.name, ...(building && building.aliases || [])].map(Core.normalizeText).filter(Boolean);
   const buildingChoiceLabel = building => [building && building.name || "건물명 미입력", building && (building.address || building.buildingNo)].filter(Boolean).join(" · ");
@@ -5096,7 +5096,7 @@
       }
       if (existing && !Object.hasOwn(existing, "ownerCustomerId")) delete patch.ownerCustomerId;
       try {
-        await commitCanonicalEntity({
+        const commitResult = await commitCanonicalEntity({
           entityType: "buildings",
           entityId: item.id,
           operation: existing ? "update" : "create",
@@ -5104,7 +5104,7 @@
           patch,
           reason: existing ? "CRM 건물 기본정보 수정" : "CRM 건물 등록",
         });
-        selectedBuildingId = item.id;
+        selectedBuildingId = String(commitResult && commitResult.entityId || item.id);
         closeModal(); currentView = "buildings"; render(); showToast(`${name} 건물을 저장했습니다.`, "success");
       } catch (error) { showToast(error.message || "건물을 저장하지 못했습니다.", "error"); }
     } else if (form.id === "contractForm") {

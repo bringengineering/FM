@@ -8,7 +8,7 @@
 
 이 폴더의 `complaint-intake-to-firebase.gs`는 Google Form 응답 시트에서 새 민원이 들어올 때 자동으로 분석하고, FM GitHub.io 앱의 Firebase `/cases` 경로에 케이스를 등록하는 Apps Script 코드입니다.
 
-현재 연결된 Realtime Database는 `BRING-FM-HJ` 프로젝트의 `https://bring-fm-hj-default-rtdb.asia-southeast1.firebasedatabase.app`입니다.
+현재 연결된 Realtime Database는 `BRING-FM` 프로젝트의 `https://bring-fm-default-rtdb.asia-southeast1.firebasedatabase.app`입니다. 공개 민원 호환 자료는 `cases`/`caseSettings`, 로그인 사용자 입금 자료는 `crmCompany/paymentCalendars`에 저장됩니다.
 
 ## 설치 순서
 

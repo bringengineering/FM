@@ -6,7 +6,6 @@ const test = require("node:test");
 const {
   fieldBounds,
   isAllowedFieldAuthPopup,
-  isAllowedFieldBootstrapNavigation,
   isAllowedFieldNavigation,
 } = require("../src/field-view-policy");
 
@@ -19,7 +18,7 @@ test("allows only exact deployed FIELD navigation and approved authentication po
   assert.equal(isAllowedFieldNavigation("https://bring-fm.web.app.evil.test/field"), false);
   assert.equal(isAllowedFieldNavigation("https://bring-fm.web.app/other"), false);
   assert.equal(isAllowedFieldNavigation("javascript:alert(1)"), false);
-  assert.equal(isAllowedFieldBootstrapNavigation(`https://bring-fm.web.app/field?embedded=crm&desktop_handoff=${"A".repeat(43)}`), true);
+  assert.equal(isAllowedFieldNavigation(`https://bring-fm.web.app/field?embedded=crm&desktop_handoff=${"A".repeat(43)}`), false);
 
   assert.equal(isAllowedFieldAuthPopup("https://bring-fm.firebaseapp.com/__/auth/handler?apiKey=x"), true);
   assert.equal(isAllowedFieldAuthPopup("https://accounts.google.com/v3/signin/accountchooser"), true);
@@ -27,14 +26,16 @@ test("allows only exact deployed FIELD navigation and approved authentication po
   assert.equal(isAllowedFieldAuthPopup("javascript:alert(1)"), false);
 });
 
-test("missing or expired FIELD auth uses the current CRM session for one bounded handoff recovery", async () => {
+test("missing or expired FIELD auth refreshes the shared partition once without Functions", async () => {
   const main = await source("main.js");
   const messageHandler = main.slice(main.indexOf('ipcMain.on("crm:field-message"'), main.indexOf("function demoOperations"));
 
-  assert.match(main, /createFieldSessionRecoveryCoordinator/);
-  assert.match(main, /remoteClient\.createFieldHandoff\(\)/);
-  assert.match(main, /desktop_handoff=/);
-  assert.match(main, /isAllowedFieldBootstrapNavigation/);
+  assert.match(main, /createFieldSharedSessionRecoveryCoordinator/);
+  assert.match(main, /remoteClient\.ensureIdToken\(false\)/);
+  assert.match(main, /reloadSharedSession/);
+  assert.doesNotMatch(main, /remoteClient\.createFieldHandoff\(\)/);
+  assert.doesNotMatch(main, /desktop_handoff=/);
+  assert.doesNotMatch(main, /isAllowedFieldBootstrapNavigation|desktop_handoff/);
   assert.match(messageHandler, /envelope\.payload\.session === "authenticated"/);
   assert.match(messageHandler, /envelope\.payload\.session === "authenticated"[\s\S]*?fieldSessionRecoveryCoordinator\.reset\(\)/);
   assert.match(messageHandler, /\["missing", "expired"\]\.includes\(envelope\.payload\.session\)/);

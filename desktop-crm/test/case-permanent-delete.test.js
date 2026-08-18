@@ -51,7 +51,7 @@ function clientFor(databaseRoot, calls) {
   return client;
 }
 
-test("company database permanent delete writes the case and audit under valid sibling paths", async () => {
+test("company database permanent delete writes the public compatibility case and canonical audit atomically", async () => {
   const calls = [];
   const client = clientFor("crmCompany", calls);
 
@@ -59,11 +59,11 @@ test("company database permanent delete writes the case and audit under valid si
 
   assert.equal(result.ok, true);
   assert.equal(calls.length, 2);
-  assert.match(calls[0].url, /\/crmCompany\/cases\/case_live_01\.json\?/);
-  assert.match(calls[1].url, /\/crmCompany\.json\?/);
+  assert.match(calls[0].url, /\/cases\/case_live_01\.json\?/);
+  assert.match(calls[1].url, /\/\.json\?/);
   assert.equal(calls[1].method, "PATCH");
   assert.equal(calls[1].body["cases/case_live_01"], null);
-  assert.equal(calls[1].body["data/auditLogs/case_delete_case_live_01"].targetId, "case_live_01");
+  assert.equal(calls[1].body["crmCompany/data/auditLogs/case_delete_case_live_01"].targetId, "case_live_01");
   assert.equal(Object.keys(calls[1].body).some(path => path.startsWith("crmShared/")), false);
 });
 

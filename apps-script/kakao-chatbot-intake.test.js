@@ -83,7 +83,8 @@ const context = {
   Logger: { log() {} },
   COMPLAINT_CONFIG: {
     FIREBASE_DATABASE_URL: "https://example-default-rtdb.firebaseio.com",
-    FIREBASE_CASES_PATH: "cases"
+    FIREBASE_CASES_PATH: "cases",
+    FIREBASE_CASE_SETTINGS_PATH: "caseSettings"
   },
   PropertiesService: {
     getScriptProperties() {

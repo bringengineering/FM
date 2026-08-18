@@ -23,6 +23,8 @@ test("export entrypoint uses DPAPI session and contains no source mutation targe
   );
   assert.match(exporter, /readCrmSource/);
   assert.match(exporter, /createStagedSnapshot/);
+  assert.match(exporter, /LEGACY_MIGRATION_FIREBASE/);
+  assert.doesNotMatch(exporter, /LEGACY_FIREBASE(?:\W|$)/);
   assert.doesNotMatch(exporter, /database:(set|update|remove)/i);
   assert.doesNotMatch(exporter, /--project\s+bring-fm-hj/);
   assert.doesNotMatch(exporter, /method:\s*["'](?:PUT|PATCH|POST|DELETE)["']/);

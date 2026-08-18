@@ -64,12 +64,45 @@ const CRM_ACCESS = {
 } as const;
 
 const CRM_DATA = {
-  buildings: { building_1: { id: "building_1", name: "Legacy building" } },
+  buildings: { building_1: {
+    id: "building_1",
+    name: "Canonical building",
+    address: "원주시 우산동",
+    entityVersion: 1,
+    createdAt: NOW,
+    createdByAuthUid: "crm-member",
+    createdByOperatorId: "operator_kim",
+    updatedAt: NOW,
+    updatedByAuthUid: "crm-member",
+    updatedByOperatorId: "operator_kim",
+    archivedAt: "",
+    archivedByAuthUid: "",
+    archivedByOperatorId: "",
+    vacantUnitCount: 0,
+    vacantUnits: [],
+  } },
   buildingUnits: {
     building_unit_1: {
       id: "building_unit_1",
       crmBuildingId: "building_1",
       label: "101",
+      floorLabel: "1층",
+      floorOrder: 1,
+      unitOrder: 1,
+      status: "occupied",
+      moveOutAt: "",
+      availableFrom: "",
+      memo: "",
+      entityVersion: 1,
+      createdAt: NOW,
+      createdByAuthUid: "crm-member",
+      createdByOperatorId: "operator_kim",
+      updatedAt: NOW,
+      updatedByAuthUid: "crm-member",
+      updatedByOperatorId: "operator_kim",
+      archivedAt: "",
+      archivedByAuthUid: "",
+      archivedByOperatorId: "",
     },
   },
   salesUnits: {
@@ -77,9 +110,26 @@ const CRM_DATA = {
       id: "sales_unit_1",
       prospectId: "prospect_1",
       label: "101",
+      entityVersion: 1,
+      createdAt: NOW,
+      createdByAuthUid: "crm-member",
+      createdByOperatorId: "operator_kim",
+      updatedAt: NOW,
+      updatedByAuthUid: "crm-member",
+      updatedByOperatorId: "operator_kim",
+      archivedAt: "",
+      archivedByAuthUid: "",
+      archivedByOperatorId: "",
     },
   },
-  customers: { customer_1: { id: "customer_1", name: "Legacy owner" } },
+  salesProspects: { prospect_1: { id: "prospect_1", name: "Canonical prospect" } },
+  customers: {
+    customer_1: {
+      id: "customer_1",
+      name: "Legacy owner",
+      buildingIdLinks: { building_1: true },
+    },
+  },
   tasks: { task_1: { id: "task_1", title: "Legacy task" } },
 };
 
@@ -389,9 +439,165 @@ async function seedCutover() {
   await cutoverEnvironment.withSecurityRulesDisabled(async (context) => {
     await set(ref(context.database(), "crmCompany"), {
       access: CRM_ACCESS,
+      teamProfiles: TEAM_PROFILES,
       data: CRM_DATA,
     });
   });
+}
+
+async function exerciseCustomerBuildingLinkRules(testEnvironment: RulesTestEnvironment) {
+  const unauthenticated = testEnvironment.unauthenticatedContext().database();
+  const admin = testEnvironment.authenticatedContext(
+    "crm-admin",
+    crmClaims("admin@bring.test"),
+  ).database();
+  const member = testEnvironment.authenticatedContext(
+    "crm-member",
+    crmClaims("member@bring.test"),
+  ).database();
+  const viewer = testEnvironment.authenticatedContext(
+    "crm-viewer",
+    crmClaims("viewer@bring.test"),
+  ).database();
+  const disabled = testEnvironment.authenticatedContext(
+    "crm-disabled",
+    crmClaims("disabled@bring.test"),
+  ).database();
+  const wrongEmail = testEnvironment.authenticatedContext(
+    "crm-member",
+    crmClaims("wrong@bring.test"),
+  ).database();
+  const customerPath = "crmCompany/data/customers/customer_1";
+
+  await assertSucceeds(update(ref(member, customerPath), { phone: "010-1234-5678" }));
+  await assertSucceeds(update(ref(admin, customerPath), { memo: "admin field update" }));
+
+  for (const [database, buildingId] of [
+    [unauthenticated, "building_unauthenticated"],
+    [viewer, "building_viewer"],
+    [disabled, "building_disabled"],
+    [wrongEmail, "building_wrong_email"],
+  ] as const) {
+    await assertFails(set(
+      ref(database, `${customerPath}/buildingIdLinks/${buildingId}`),
+      true,
+    ));
+  }
+  await assertFails(set(
+    ref(member, `${customerPath}/buildingIdLinks/building_false`),
+    false,
+  ));
+  await assertFails(set(
+    ref(member, `${customerPath}/buildingIdLinks/building_1`),
+    true,
+  ));
+  await assertFails(remove(
+    ref(member, `${customerPath}/buildingIdLinks/building_1`),
+  ));
+
+  await assertSucceeds(set(
+    ref(member, `${customerPath}/buildingIdLinks/building_member`),
+    true,
+  ));
+  await assertSucceeds(set(
+    ref(admin, `${customerPath}/buildingIdLinks/building_admin`),
+    true,
+  ));
+  await assertFails(remove(
+    ref(admin, `${customerPath}/buildingIdLinks/building_admin`),
+  ));
+
+  const linkedCustomer = (await assertSucceeds(get(ref(member, customerPath)))).val();
+  await assertFails(set(ref(member, customerPath), {
+    ...linkedCustomer,
+    name: "whole-record overwrite must be rejected",
+  }));
+
+  const legacyPath = "crmCompany/data/customers/customer_legacy_unlinked";
+  await assertSucceeds(set(ref(member, legacyPath), {
+    id: "customer_legacy_unlinked",
+    name: "Legacy compatible customer",
+  }));
+  await assertSucceeds(set(ref(member, legacyPath), {
+    id: "customer_legacy_unlinked",
+    name: "Legacy compatible customer updated",
+  }));
+  await assertSucceeds(remove(ref(member, legacyPath)));
+
+  await assertSucceeds(update(ref(member, "crmCompany/data"), {
+    "customers/customer_field_patch/id": "customer_field_patch",
+    "customers/customer_field_patch/name": "Field-scoped customer",
+  }));
+  expect((await get(ref(member, "crmCompany/data/customers/customer_field_patch/name"))).val())
+    .toBe("Field-scoped customer");
+  await assertSucceeds(update(ref(member, "crmCompany/data"), {
+    "customers/customer_field_patch/id": null,
+    "customers/customer_field_patch/name": null,
+  }));
+  expect((await get(ref(member, "crmCompany/data/customers/customer_field_patch"))).exists())
+    .toBe(false);
+}
+
+async function exerciseAtomicBuildingCreateWithCustomerLink(
+  testEnvironment: RulesTestEnvironment,
+) {
+  const member = testEnvironment.authenticatedContext(
+    "crm-member",
+    crmClaims("member@bring.test"),
+  ).database();
+  const buildingId = "building_atomic_link";
+  const requestId = "request_atomic_link";
+  const auditId = "audit_atomic_link";
+  const createdAt = "2026-08-09T00:00:02.000Z";
+  const patch = {
+    [`buildings/${buildingId}`]: {
+      id: buildingId,
+      name: "Atomic linked building",
+      address: "Wonju atomic address",
+      ownerCustomerId: "customer_1",
+      entityVersion: 1,
+      createdAt,
+      createdByAuthUid: "crm-member",
+      createdByOperatorId: "operator_kim",
+      updatedAt: createdAt,
+      updatedByAuthUid: "crm-member",
+      updatedByOperatorId: "operator_kim",
+      archivedAt: "",
+      archivedByAuthUid: "",
+      archivedByOperatorId: "",
+    },
+    [`customers/customer_1/buildingIdLinks/${buildingId}`]: true,
+    [`canonicalReceipts/${requestId}`]: {
+      scope: "sparkCanonicalCrmEntityV1",
+      requestId,
+      requestHash: "b".repeat(64),
+      actorUid: "crm-member",
+      result: { entityId: buildingId, entityVersion: 1 },
+      createdAt,
+    },
+    [`canonicalAuditLogs/${auditId}`]: {
+      id: auditId,
+      scope: "sparkCanonicalCrmEntityV1",
+      requestId,
+      authUid: "crm-member",
+      operatorId: "operator_kim",
+      occurredAt: createdAt,
+      action: "crm.canonical.buildings.create",
+      entityType: "buildings",
+      entityId: buildingId,
+      beforeVersion: 0,
+      afterVersion: 1,
+      changedFields: ["ownerCustomerId"],
+      reason: "atomic building create test",
+    },
+  };
+
+  await assertSucceeds(update(ref(member, "crmCompany/data"), patch));
+  expect((await get(ref(
+    member,
+    `crmCompany/data/customers/customer_1/buildingIdLinks/${buildingId}`,
+  ))).val()).toBe(true);
+  await assertFails(update(ref(member, "crmCompany/data"), patch));
 }
 
 beforeAll(async () => {
@@ -481,7 +687,7 @@ describe("field media database rule source", () => {
     });
   });
 
-  it("isolates company CRM access and permits only noncanonical data writes for enabled members", async () => {
+  it("isolates company CRM access and validates Spark-safe canonical writes for enabled members", async () => {
     const source = JSON.parse(
       await readFile(resolve("../database.rules.json"), "utf8"),
     ) as { rules: { crmCompany?: Record<string, unknown> } };
@@ -508,10 +714,35 @@ describe("field media database rule source", () => {
     expect(data[".write"]).toBe(false);
     for (const canonical of ["buildings", "buildingUnits", "salesUnits"]) {
       expect((data[canonical] as Record<string, unknown>)[".write"]).toBe(false);
+      const entityRule = (data[canonical] as Record<string, Record<string, unknown>>).$entityId;
+      expect(String(entityRule[".write"])).toContain("newData.exists()");
+      expect(String(entityRule[".write"])).toContain("auth.token.email");
+      expect(String(entityRule[".validate"])).toContain("entityVersion");
+      expect(String(entityRule[".validate"])).toContain("updatedByAuthUid");
+      expect(String(entityRule[".validate"])).toContain("teamProfiles");
+      expect(entityRule.$other).toEqual({ ".validate": false });
     }
+    for (const immutable of ["canonicalReceipts", "canonicalAuditLogs"]) {
+      expect(JSON.stringify(data[immutable])).toContain("!data.exists()");
+      expect(JSON.stringify(data[immutable])).toContain("newData.exists()");
+    }
+    const customerRule = data.customers as Record<string, Record<string, unknown>>;
+    const customer = customerRule.$customerId;
+    const customerFieldWrite = String(
+      (customer.$field as Record<string, unknown>)[".write"],
+    );
+    const buildingLink = (customer.buildingIdLinks as Record<string, Record<string, unknown>>).$buildingId;
+    expect(customerRule[".write"]).toBeUndefined();
+    expect(String(customer[".write"])).toContain("!data.child('buildingIdLinks').exists()");
+    expect(customerFieldWrite).toContain("$field !== 'buildingIdLinks'");
+    expect(customerFieldWrite).toContain("auth.token.email");
+    expect(String(buildingLink[".write"])).toContain("!data.exists()");
+    expect(String(buildingLink[".write"])).toContain("newData.val() === true");
+    expect(String(buildingLink[".write"])).toContain("auth.token.email");
+    expect(String(buildingLink[".validate"])).toContain("newData.isBoolean()");
     for (const writable of [
       "schemaVersion", "company", "updatedAt", "updatedBy",
-      "customers", "activities", "contracts", "partnerVendors", "partnerQuotes", "tasks",
+      "activities", "contracts", "partnerVendors", "partnerQuotes", "tasks",
       "serviceRecords", "serviceContracts", "serviceSchedules", "securityAssets", "auditLogs",
       "securityIncidents", "salesProspects", "salesContacts", "salesActivities", "salesEvents",
       "salesOpportunities",
@@ -658,9 +889,20 @@ describe("field media database rule source", () => {
     for (const canonical of ["buildings", "buildingUnits", "salesUnits"]) {
       expect((dataRules[canonical] as Record<string, unknown>)[".write"])
         .toBe(false);
+      expect(JSON.stringify(dataRules[canonical])).toContain("entityVersion");
+      expect(JSON.stringify(dataRules[canonical])).toContain("newData.exists()");
     }
+    const fixtureCustomer = dataRules.customers as Record<string, Record<string, unknown>>;
+    const fixtureCustomerRecord = fixtureCustomer.$customerId;
+    const fixtureLink = (fixtureCustomerRecord.buildingIdLinks as Record<string, Record<string, unknown>>).$buildingId;
+    expect(fixtureCustomer[".write"]).toBeUndefined();
+    expect(String(fixtureCustomerRecord[".write"])).toContain("!newData.child('buildingIdLinks').exists()");
+    expect(String(
+      (fixtureCustomerRecord.$field as Record<string, unknown>)[".write"],
+    )).toContain("$field !== 'buildingIdLinks'");
+    expect(String(fixtureLink[".write"])).toContain("!data.exists()");
+    expect(String(fixtureLink[".write"])).toContain("newData.val() === true");
     for (const legacy of [
-      "customers",
       "activities",
       "contracts",
       "partnerVendors",
@@ -688,6 +930,33 @@ describe("field media database rule source", () => {
       expect(writeRule).toContain("'admin'");
       expect(writeRule).toContain("'member'");
     }
+  });
+
+  it("closes public case data and exposes only the public signage catalogue", async () => {
+    const source = JSON.parse(
+      await readFile(resolve("../database.rules.json"), "utf8"),
+    ) as { rules: Record<string, Record<string, unknown>> };
+    const rules = source.rules;
+    for (const root of ["workflow", "caseSettings", "cases"]) {
+      const readRule = String(rules[root][".read"]);
+      const writeRule = String(rules[root][".write"]);
+      expect(readRule).toContain("crmCompany/access");
+      expect(readRule).toContain("'viewer'");
+      expect(writeRule).toContain("auth.token.email");
+      expect(writeRule).toContain("'admin'");
+      expect(writeRule).toContain("'member'");
+    }
+    const crmData = (rules.crmCompany.data as Record<string, unknown>);
+    expect(String(crmData[".read"])).toContain("'viewer'");
+    const signage = rules.signage as Record<string, Record<string, unknown>>;
+    expect(signage[".read"]).toBeUndefined();
+    expect(signage[".write"]).toBeUndefined();
+    expect(signage.consign[".read"]).toBe(true);
+    expect(signage.settings[".read"]).toBe(true);
+    expect(String(signage.orders[".read"])).toContain("crmCompany/access");
+    const order = (signage.orders as Record<string, Record<string, unknown>>).$orderId;
+    expect(String(order[".write"])).toContain("!data.exists()");
+    expect(order.$other).toEqual({ ".validate": false });
   });
 });
 
@@ -871,6 +1140,85 @@ describe.runIf(databaseEmulatorAvailable)("fieldPlatform database rules", () => 
       "customers/disabled_customer": { id: "disabled_customer" },
     }));
     await assertFails(get(ref(disabled, "crmCompany/data")));
+  });
+
+  it("keeps customer building links append-only while preserving ordinary and unlinked legacy customer writes", async () => {
+    await exerciseCustomerBuildingLinkRules(environment);
+  });
+
+  it("accepts an atomic canonical building create with its narrow customer backlink", async () => {
+    await exerciseAtomicBuildingCreateWithCustomerLink(environment);
+  });
+
+  it("protects operational roots and keeps public signage orders create-only", async () => {
+    await environment.withSecurityRulesDisabled(async (context) => {
+      const database = context.database();
+      await set(ref(database, "workflow"), { board: { title: "internal" } });
+      await set(ref(database, "caseSettings"), { setting: true });
+      await set(ref(database, "cases/case_1"), { id: "case_1", name: "private" });
+      await set(ref(database, "signage/consign/product_1"), { name: "catalogue" });
+      await set(ref(database, "signage/settings"), { footer: "public" });
+    });
+
+    const unauthenticated = environment.unauthenticatedContext().database();
+    const admin = environment.authenticatedContext(
+      "crm-admin",
+      crmClaims("admin@bring.test"),
+    ).database();
+    const member = environment.authenticatedContext(
+      "crm-member",
+      crmClaims("member@bring.test"),
+    ).database();
+    const viewer = environment.authenticatedContext(
+      "crm-viewer",
+      crmClaims("viewer@bring.test"),
+    ).database();
+    const wrongEmail = environment.authenticatedContext(
+      "crm-member",
+      crmClaims("wrong@bring.test"),
+    ).database();
+    const invalidRole = environment.authenticatedContext(
+      "crm-invalid-role",
+      crmClaims("invalid@bring.test"),
+    ).database();
+
+    for (const path of ["workflow", "caseSettings", "cases", "signage/orders"]) {
+      await assertFails(get(ref(unauthenticated, path)));
+      await assertFails(get(ref(wrongEmail, path)));
+      await assertFails(get(ref(invalidRole, path)));
+      await assertSucceeds(get(ref(admin, path)));
+      await assertSucceeds(get(ref(member, path)));
+      await assertSucceeds(get(ref(viewer, path)));
+    }
+    await assertFails(get(ref(invalidRole, "crmCompany/data")));
+    await assertFails(set(ref(unauthenticated, "cases/case_2"), { id: "case_2" }));
+    await assertFails(set(ref(viewer, "cases/case_2"), { id: "case_2" }));
+    await assertFails(set(ref(wrongEmail, "cases/case_2"), { id: "case_2" }));
+    await assertSucceeds(set(ref(member, "cases/case_2"), { id: "case_2" }));
+
+    await assertSucceeds(get(ref(unauthenticated, "signage/consign")));
+    await assertSucceeds(get(ref(unauthenticated, "signage/settings")));
+    const order = {
+      productId: "product_1",
+      productName: "상품",
+      option: "",
+      vendor: "",
+      price: 1000,
+      qty: 1,
+      amount: 1000,
+      name: "주문자",
+      phone: "01012345678",
+      receive: "배송",
+      addr: "배송 주소",
+      memo: "",
+      status: "신규",
+      createdAt: 1_787_000_000_000,
+    };
+    await assertSucceeds(set(ref(unauthenticated, "signage/orders/order_1"), order));
+    await assertFails(update(ref(unauthenticated, "signage/orders/order_1"), { status: "변조" }));
+    await assertFails(remove(ref(unauthenticated, "signage/orders/order_1")));
+    await assertFails(set(ref(unauthenticated, "signage/orders/order_bad"), { ...order, secret: "extra" }));
+    await assertSucceeds(update(ref(admin, "signage/orders/order_1"), { status: "확인" }));
   });
 
   it("allows exact enabled CRM roles to read summaries but never write them", async () => {
@@ -1661,7 +2009,12 @@ describe.runIf(databaseEmulatorAvailable)("fieldPlatform database rules", () => 
 });
 
 describe.runIf(databaseEmulatorAvailable)("future CRM cutover rules rehearsal", () => {
-  it("atomically rejects a parent PATCH when it contains any canonical CRM write", async () => {
+  it("keeps the fixture customer backlink contract identical in the emulator", async () => {
+    await exerciseCustomerBuildingLinkRules(cutoverEnvironment);
+    await exerciseAtomicBuildingCreateWithCustomerLink(cutoverEnvironment);
+  });
+
+  it("atomically rejects malformed canonical records in a parent PATCH", async () => {
     const member = cutoverEnvironment.authenticatedContext(
       "crm-member",
       crmClaims("member@bring.test"),
@@ -1684,7 +2037,7 @@ describe.runIf(databaseEmulatorAvailable)("future CRM cutover rules rehearsal", 
     expect(snapshot.exists()).toBe(false);
   });
 
-  it("allows noncanonical parent PATCHes for members while canonical collections stay server-only", async () => {
+  it("allows noncanonical parent PATCHes while malformed canonical records stay blocked", async () => {
     const member = cutoverEnvironment.authenticatedContext(
       "crm-member",
       crmClaims("member@bring.test"),
@@ -1706,6 +2059,84 @@ describe.runIf(databaseEmulatorAvailable)("future CRM cutover rules rehearsal", 
         { id: "client_record" },
       ));
     }
+  });
+
+  it("accepts one child-scoped atomic Spark patch and rejects stale versions, deletion, and unknown fields", async () => {
+    const member = cutoverEnvironment.authenticatedContext(
+      "crm-member",
+      crmClaims("member@bring.test"),
+    ).database();
+    const viewer = cutoverEnvironment.authenticatedContext(
+      "crm-viewer",
+      crmClaims("viewer@bring.test"),
+    ).database();
+    const current = (await assertSucceeds(get(ref(member, "crmCompany/data")))).val();
+    const nextUnit = {
+      ...current.buildingUnits.building_unit_1,
+      status: "vacant",
+      entityVersion: 2,
+      updatedAt: "2026-08-09T00:00:01.000Z",
+      updatedByAuthUid: "crm-member",
+      updatedByOperatorId: "operator_kim",
+    };
+    const nextBuilding = {
+      ...current.buildings.building_1,
+      vacantUnitCount: 1,
+      vacantUnits: ["101"],
+      entityVersion: 2,
+      updatedAt: "2026-08-09T00:00:01.000Z",
+      updatedByAuthUid: "crm-member",
+      updatedByOperatorId: "operator_kim",
+    };
+    const receipt = {
+        scope: "sparkCanonicalCrmEntityV1",
+        requestId: "request_1",
+        requestHash: "a".repeat(64),
+        actorUid: "crm-member",
+        result: { entityId: "building_unit_1", entityVersion: 2 },
+        createdAt: "2026-08-09T00:00:01.000Z",
+    };
+    const audit = {
+        id: "audit_1",
+        scope: "sparkCanonicalCrmEntityV1",
+        requestId: "request_1",
+        authUid: "crm-member",
+        operatorId: "operator_kim",
+        occurredAt: "2026-08-09T00:00:01.000Z",
+        action: "crm.canonical.buildingUnits.update",
+        entityType: "buildingUnits",
+        entityId: "building_unit_1",
+        beforeVersion: 1,
+        afterVersion: 2,
+        changedFields: ["status"],
+        reason: "공실 확인",
+    };
+
+    const atomicPatch = {
+      "buildingUnits/building_unit_1": nextUnit,
+      "buildings/building_1": nextBuilding,
+      "canonicalReceipts/request_1": receipt,
+      "canonicalAuditLogs/audit_1": audit,
+    };
+    await assertSucceeds(update(ref(member, "crmCompany/data"), atomicPatch));
+    expect((await get(ref(member, "crmCompany/data/tasks/task_1"))).val().title)
+      .toBe("Legacy task");
+
+    await assertFails(set(ref(member, "crmCompany/data/buildingUnits/building_unit_1"), {
+      ...nextUnit,
+      label: "stale overwrite",
+    }));
+
+    await assertFails(set(ref(member, "crmCompany/data/canonicalAuditLogs/audit_1"), null));
+    await assertFails(set(ref(member, "crmCompany/data/buildingUnits/building_unit_1"), null));
+
+    await assertFails(set(ref(member, "crmCompany/data/buildings/building_1"), {
+      ...nextBuilding,
+      clientTamper: true,
+      entityVersion: 3,
+    }));
+    await assertFails(update(ref(viewer, "crmCompany/data"), atomicPatch));
+    await assertFails(set(ref(member, "crmCompany/data"), current));
   });
 
   it("denies cutover writes from viewers and disabled members", async () => {

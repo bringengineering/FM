@@ -14,8 +14,10 @@ const COMPLAINT_CONFIG = {
   VENDOR_QUOTE_REPLY_EMAIL: "bringengineering1008@gmail.com",
   WEB_APP_URL: "https://script.google.com/macros/s/AKfycbxGAdtEDoNifxkM-e_Jm7dBkCnjM4oPJqz8RxZXoMoSKod5M_m9Yj2b11-nI97zmfd6Jw/exec",
   OWNER_DECISION_SHORT_URL: "https://bringengineering.github.io/FM/approve.html?c=",
-  FIREBASE_DATABASE_URL: "https://bring-fm-hj-default-rtdb.asia-southeast1.firebasedatabase.app",
+  FIREBASE_DATABASE_URL: "https://bring-fm-default-rtdb.asia-southeast1.firebasedatabase.app",
   FIREBASE_CASES_PATH: "cases",
+  FIREBASE_CASE_SETTINGS_PATH: "caseSettings",
+  FIREBASE_PAYMENT_CALENDARS_PATH: "crmCompany/paymentCalendars",
   RESPONSE_SHEET_URL: "https://docs.google.com/spreadsheets/d/1HI6KzIMomL6vOUPs8zZDhXHktL1cWRDcg93lflsuojA/edit",
   PAYMENT_SCHEDULE_DRIVE_FOLDER_ID: "1q1uKquSngjyi0upoCRmjnRxm_CD1sAcN",
   PAYMENT_SCHEDULE_SPREADSHEET_NAME: "BRING CARE 세입자 월세 관리대장"
@@ -836,8 +838,10 @@ function saveKakaoComplaintPhotosToDrive_(photoUrls, ticketNo) {
 function verifyKakaoContractBuilding_(building, address) {
   let registry = null;
   try {
-    registry = firebaseReadJson_(
+    registry = firebaseOauthRequest_(
       firebaseCaseSettingsUrl_("paymentBuildings"),
+      "get",
+      undefined,
       "카카오 계약 건물 목록 조회 실패"
     );
   } catch (err) {
@@ -886,8 +890,10 @@ function verifyKakaoContractBuilding_(building, address) {
 
 function kakaoChatbotCaseStatusResponse_(userHash) {
   try {
-    const link = firebaseReadJson_(
+    const link = firebaseOauthRequest_(
       firebaseCaseSettingsUrl_("kakaoChatbotIntake/users/" + userHash),
+      "get",
+      undefined,
       "카카오 민원 연결 조회 실패"
     );
     const caseId = String(link && link.lastCaseId || "").trim();
@@ -992,7 +998,8 @@ function writeKakaoPendingCaseLink_(ticketNo, pendingCase, userHash, now) {
   const casesPath = COMPLAINT_CONFIG.FIREBASE_CASES_PATH.replace(/^\/|\/$/g, "");
   const updates = {};
   updates[casesPath + "/" + ticketNo] = pendingCase;
-  updates["caseSettings/kakaoChatbotIntake/users/" + userHash] = {
+  const caseSettingsPath = String(COMPLAINT_CONFIG.FIREBASE_CASE_SETTINGS_PATH || "caseSettings").replace(/^\/|\/$/g, "");
+  updates[caseSettingsPath + "/kakaoChatbotIntake/users/" + userHash] = {
     lastCaseId: ticketNo,
     updatedAt: now.toISOString()
   };
@@ -1162,7 +1169,10 @@ function ensureOwnerDecisionShortLink_(caseId, state) {
   if (!/^\d{4}-\d{4,}$/.test(shortCode)) {
     throw new Error("승인 짧은 링크용 접수번호가 올바르지 않습니다.");
   }
-  const shortDecisionUrl = String(COMPLAINT_CONFIG.OWNER_DECISION_SHORT_URL || "") + encodeURIComponent(shortCode);
+  const shortDecisionUrl = String(current.decisionUrl || "").trim();
+  if (!shortDecisionUrl) {
+    throw new Error("Secure owner decision URL is missing.");
+  }
   const now = new Date().toISOString();
   return Object.assign({}, current, {
     shortCode: shortCode,
@@ -3096,6 +3106,7 @@ function makeOwnerRecommendationMmsNote_(result) {
 function readCaseFromFirebase_(caseId) {
   const response = UrlFetchApp.fetch(firebaseCaseUrl_(caseId), {
     method: "get",
+    headers: { Authorization: "Bearer " + ScriptApp.getOAuthToken() },
     muteHttpExceptions: true
   });
   const code = response.getResponseCode();
@@ -7807,7 +7818,12 @@ function setupPaymentScheduleSheet_() {
 }
 
 function paymentBuildingRegistryRecords_() {
-  const registry = firebaseReadJson_(firebaseCaseSettingsUrl_("paymentBuildings"), "입금 캘린더 건물 조회 실패") || {};
+  const registry = firebaseOauthRequest_(
+    firebaseCaseSettingsUrl_("paymentBuildings"),
+    "get",
+    undefined,
+    "입금 캘린더 건물 조회 실패"
+  ) || {};
   return Object.keys(registry).map(key => {
     const item = registry[key] || {};
     return {
@@ -7917,10 +7933,11 @@ function firebasePaymentCalendarUrl_(uid, childPath, idToken) {
   const safeUid = String(uid || "").trim();
   if (!/^[A-Za-z0-9:_-]{6,160}$/.test(safeUid)) throw new Error("로그인 사용자 ID가 올바르지 않습니다.");
   const base = COMPLAINT_CONFIG.FIREBASE_DATABASE_URL.replace(/\/$/, "");
+  const calendarsPath = String(COMPLAINT_CONFIG.FIREBASE_PAYMENT_CALENDARS_PATH || "crmCompany/paymentCalendars").replace(/^\/|\/$/g, "");
   const child = String(childPath || "").split("/").filter(Boolean).map(part => encodeURIComponent(part)).join("/");
   const token = String(idToken || "").trim();
   if (!token) throw new Error("로그인 인증정보가 없습니다. 다시 로그인해 주세요.");
-  return base + "/paymentCalendars/" + encodeURIComponent(safeUid) + (child ? "/" + child : "") + ".json?auth=" + encodeURIComponent(token);
+  return base + "/" + calendarsPath + "/" + encodeURIComponent(safeUid) + (child ? "/" + child : "") + ".json?auth=" + encodeURIComponent(token);
 }
 
 function firebaseReadJson_(url, label) {
@@ -7945,7 +7962,17 @@ function writePaymentSheetSyncStatus_(payload, status) {
 }
 
 function firebaseAuthorizedWriteRequest_(url, method, payload, label) {
-  return firebaseWriteRequest_(url, method, payload, label);
+  const response = UrlFetchApp.fetch(url, {
+    method: method,
+    contentType: "application/json; charset=utf-8",
+    payload: JSON.stringify(payload),
+    muteHttpExceptions: true
+  });
+  const code = response.getResponseCode();
+  if (code < 200 || code >= 300) {
+    throw new Error(label + ": HTTP " + code + " / " + response.getContentText());
+  }
+  return response;
 }
 
 function syncPaymentSchedulesFromSheet_(payload) {
@@ -10885,13 +10912,15 @@ function firebaseCaseUrl_(caseId, childPath) {
 
 function firebaseCaseSettingsUrl_(childPath) {
   const base = COMPLAINT_CONFIG.FIREBASE_DATABASE_URL.replace(/\/$/, "");
+  const path = String(COMPLAINT_CONFIG.FIREBASE_CASE_SETTINGS_PATH || "caseSettings").replace(/^\/|\/$/g, "");
   const child = String(childPath || "").split("/").filter(Boolean).map(part => encodeURIComponent(part)).join("/");
-  return base + "/caseSettings" + (child ? "/" + child : "") + ".json";
+  return base + "/" + path + (child ? "/" + child : "") + ".json";
 }
 
 function firebaseWriteRequest_(url, method, payload, label) {
   const response = UrlFetchApp.fetch(url, {
     method: method,
+    headers: { Authorization: "Bearer " + ScriptApp.getOAuthToken() },
     contentType: "application/json; charset=utf-8",
     payload: JSON.stringify(payload),
     muteHttpExceptions: true

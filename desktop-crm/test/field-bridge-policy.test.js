@@ -9,9 +9,8 @@ const {
   createFieldExitCoordinator,
   createFieldEnvelope,
   createFieldRequestCoordinator,
-  createFieldSessionRecoveryCoordinator,
+  createFieldSharedSessionRecoveryCoordinator,
   externalFieldLinkDecision,
-  isAllowedFieldBootstrapNavigation,
   isAllowedFieldNavigation,
   isAllowedFieldPermission,
   isMatchingFieldAuthSignoutAck,
@@ -264,13 +263,7 @@ test("FIELD navigation and camera permission use the same exact-origin policy", 
   assert.equal(isAllowedFieldNavigation(`${FIELD_ORIGIN}/field?search=door%20code`), false);
   assert.equal(isAllowedFieldNavigation(`${FIELD_ORIGIN}/field?unexpected=1`), false);
   assert.equal(isAllowedFieldNavigation(`${FIELD_ORIGIN}/field?token=secret`), false);
-  const handoffCode = "A".repeat(43);
-  assert.equal(isAllowedFieldNavigation(`${FIELD_ORIGIN}/field?embedded=crm&desktop_handoff=${handoffCode}`), false);
-  assert.equal(isAllowedFieldBootstrapNavigation(`${FIELD_ORIGIN}/field?embedded=crm&desktop_handoff=${handoffCode}`), true);
-  assert.equal(isAllowedFieldBootstrapNavigation(`${FIELD_ORIGIN}/field?desktop_handoff=${handoffCode}&embedded=crm`), true);
-  assert.equal(isAllowedFieldBootstrapNavigation(`${FIELD_ORIGIN}/field?embedded=crm&desktop_handoff=short`), false);
-  assert.equal(isAllowedFieldBootstrapNavigation(`${FIELD_ORIGIN}/field?embedded=crm&desktop_handoff=${handoffCode}&tab=today`), false);
-  assert.equal(isAllowedFieldBootstrapNavigation(`https://evil.test/field?embedded=crm&desktop_handoff=${handoffCode}`), false);
+  assert.equal(isAllowedFieldNavigation(`${FIELD_ORIGIN}/field?embedded=crm&desktop_handoff=${"A".repeat(43)}`), false);
   assert.equal(isAllowedFieldNavigation(`${FIELD_ORIGIN}/field#capture`), false);
   assert.equal(isAllowedFieldPermission("media", `${FIELD_ORIGIN}/field?embedded=crm&tab=jobs`, ["video"]), true);
   assert.equal(isAllowedFieldPermission("media", `${FIELD_ORIGIN}/field?embedded=crm&tab=jobs`, ["audio"]), false);
@@ -477,32 +470,18 @@ test("application exit coordinator collapses close re-entry and runs update inst
   assert.deepEqual(order, ["ready", "finish:update"]);
 });
 
-test("session recovery issues one 60-second one-use handoff per view session and rejects stale recovery", async () => {
-  let now = 1_000;
-  let release;
-  const waiting = new Promise(resolve => { release = resolve; });
-  const loaded = [];
-  let createCalls = 0;
-  const recovery = createFieldSessionRecoveryCoordinator({
-    now: () => now,
-    createHandoff: async () => {
-      createCalls += 1;
-      await waiting;
-      return { code: "H".repeat(43), expiresAt: now + 60_000 };
-    },
-    loadHandoff: async code => { loaded.push(code); },
-  });
+test("Spark shared-session recovery refreshes and reloads once without a handoff token", async () => {
+  const order = [];
   let current = true;
-  const first = recovery.recover("crm-session-a:view-41", () => current);
-  const duplicate = recovery.recover("crm-session-a:view-41", () => current);
-  assert.equal(first, duplicate);
-  release();
-  assert.deepEqual(await first, { ok: true });
-  assert.equal(createCalls, 1);
-  assert.deepEqual(loaded, ["H".repeat(43)]);
+  const recovery = createFieldSharedSessionRecoveryCoordinator({
+    refreshCrmSession: async () => { order.push("refresh"); },
+    reloadSharedSession: async () => { order.push("reload"); },
+  });
+  assert.deepEqual(await recovery.recover("crm-session-a:view-41", () => current), { ok: true });
+  assert.deepEqual(order, ["refresh", "reload"]);
   assert.deepEqual(await recovery.recover("crm-session-a:view-41", () => current), {
     ok: false,
-    code: "FIELD_HANDOFF_ALREADY_ATTEMPTED",
+    code: "FIELD_SESSION_RECOVERY_ALREADY_ATTEMPTED",
   });
 
   recovery.reset();
@@ -511,21 +490,7 @@ test("session recovery issues one 60-second one-use handoff per view session and
     ok: false,
     code: "FIELD_SESSION_CHANGED",
   });
-  assert.equal(loaded.length, 1);
-
-  recovery.reset();
-  current = true;
-  now = 100_000;
-  const expired = createFieldSessionRecoveryCoordinator({
-    now: () => now,
-    createHandoff: async () => ({ code: "E".repeat(43), expiresAt: now }),
-    loadHandoff: async code => { loaded.push(code); },
-  });
-  assert.deepEqual(await expired.recover("crm-session-c:view-43", () => true), {
-    ok: false,
-    code: "FIELD_HANDOFF_INVALID",
-  });
-  assert.equal(loaded.length, 1);
+  assert.deepEqual(order, ["refresh", "reload", "refresh"]);
 });
 
 test("FIELD auth signout acknowledgements require the same request, renderer, and session", () => {

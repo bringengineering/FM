@@ -1,21 +1,13 @@
 const crypto = require("node:crypto");
 const http = require("node:http");
 const path = require("node:path");
+const SparkCanonical = require("./spark-canonical");
 
-const LEGACY_FIREBASE = Object.freeze({
-  apiKey: "AIzaSyAeAvJIeu5hOHQ-aT6YurHdPh1thO-NYmo",
-  databaseUrl: "https://bring-fm-hj-default-rtdb.asia-southeast1.firebasedatabase.app",
-  authPageUrl: "https://bring-fm-hj.web.app/crm-auth/"
-});
 const FIREBASE = Object.freeze({
   apiKey: "AIzaSyBKOTIuQ8pOKSuaeKFQs_6UDdDnxdjCTZg",
   databaseUrl: "https://bring-fm-default-rtdb.asia-southeast1.firebasedatabase.app",
   authPageUrl: "https://bring-fm.web.app/crm-auth/"
 });
-const FIELD_HANDOFF_CALLABLE_URL = "https://asia-northeast3-bring-fm.cloudfunctions.net/createDesktopFieldHandoff";
-const CANONICAL_CRM_ENDPOINT_URL = "https://asia-northeast3-bring-fm.cloudfunctions.net/commitCanonicalCrmEntity";
-const CANONICAL_BUILDING_UNITS_BATCH_ENDPOINT_URL = "https://asia-northeast3-bring-fm.cloudfunctions.net/configureBuildingUnits";
-
 const DEFAULT_CASE_AUTOMATION_ENDPOINT = "https://script.google.com/macros/s/AKfycbxGAdtEDoNifxkM-e_Jm7dBkCnjM4oPJqz8RxZXoMoSKod5M_m9Yj2b11-nI97zmfd6Jw/exec";
 const VENDOR_CSV_URL = "https://docs.google.com/spreadsheets/d/1SYC0CofvdPLE1AQax_IgLx3FFWmntXi4H6yQttV9y4A/export?format=csv&gid=0";
 const WORKFLOW_ACTIONS = new Set([
@@ -35,36 +27,7 @@ const SHARED_COLLECTIONS = Object.freeze([
 ]);
 const CANONICAL_SHARED_COLLECTIONS = Object.freeze(["buildings", "salesUnits"]);
 const PENDING_STORE_VERSION = 5;
-const CANONICAL_CRM_BODY_MAX_BYTES = 32 * 1024;
-const CANONICAL_BUILDING_UNITS_BATCH_BODY_MAX_BYTES = 160 * 1024;
-const CANONICAL_BUILDING_UNITS_BATCH_UNITS_MAX_BYTES = 156 * 1024;
-const CANONICAL_CRM_PATCH_MAX_BYTES = 24_000;
-const CANONICAL_CRM_REQUEST_ID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
-const CANONICAL_CRM_ENTITY_TYPES = new Set(["buildings", "buildingUnits", "salesUnits"]);
-const CANONICAL_CRM_OPERATIONS = new Set(["create", "update", "archive", "restore"]);
-const CANONICAL_BUILDING_UNIT_STATUSES = new Set(["unknown", "occupied", "vacant", "move_out_scheduled", "maintenance"]);
-const CANONICAL_CRM_ERROR_CODES = new Set([
-  "crm_method_not_allowed", "crm_body_too_large", "crm_rate_limited", "crm_auth_required",
-  "crm_access_forbidden", "crm_operator_inactive", "crm_mutation_forbidden", "crm_entity_not_found",
-  "crm_parent_not_found", "crm_entity_version_conflict", "crm_request_id_conflict",
-  "crm_building_unit_label_conflict", "crm_entity_already_archived", "crm_entity_not_archived",
-  "crm_vacancy_migration_required",
-  "crm_request_invalid", "crm_building_unit_batch_empty", "crm_building_unit_batch_too_large",
-  "crm_unit_label_invalid", "crm_floorLabel_invalid", "crm_floorOrder_invalid", "crm_unitOrder_invalid",
-  "crm_status_invalid", "crm_move_out_date_required", "crm_patch_field_forbidden", "crm_secret_field_forbidden",
-  "crm_safe_mode_read_only", "crm_canonical_writes_disabled", "crm_entity_upgrade_required",
-  "crm_parent_archived", "crm_parent_mismatch", "crm_owner_change_requires_atomic_link",
-  "crm_service_unavailable", "field_access_forbidden", "field_operator_inactive",
-  "field_operator_not_enabled", "field_protocol_mismatch", "field_client_upgrade_required",
-  "field_client_version_unsupported"
-]);
-
-function normalizedBuildingUnitLabel(value) {
-  return typeof value === "string"
-    ? value.normalize("NFKC").trim().toLocaleLowerCase("ko-KR").replace(/\s+/gu, "")
-    : "";
-}
-
+const CANONICAL_PENDING_VERSION = 1;
 function canonicalEntityMutationForValidation(input) {
   if (!input || typeof input !== "object" || Array.isArray(input)) return input;
   const source = Object.assign(Object.create(null), input);
@@ -88,11 +51,16 @@ function buildingUnitsMutationForValidation(input) {
   return source;
 }
 
-function canonicalTimestamp(value) {
-  if (typeof value !== "string") return false;
-  try { return new Date(value).toISOString() === value; }
-  catch (_) { return false; }
+function canonicalMutationIntent(kind, input) {
+  const source = input && typeof input === "object" && !Array.isArray(input)
+    ? structuredClone(input)
+    : {};
+  delete source.requestId;
+  delete source.buildVersion;
+  if (kind === "entity" && source.operation === "create") delete source.entityId;
+  return SparkCanonical.hash({ kind, input: source });
 }
+
 const PROTECTED_JSON_FORMAT = "bring-crm-protected-json";
 const PROTECTED_JSON_VERSION = 1;
 
@@ -179,6 +147,54 @@ function mergeRendererOverlays(Core, sharedStore, buildingUnits, fieldSummaries)
   }));
 }
 
+function customerBuildingLinks(value) {
+  const source = value && typeof value === "object" && !Array.isArray(value)
+    ? value.buildingIdLinks
+    : null;
+  return source && typeof source === "object" && !Array.isArray(source) ? source : {};
+}
+
+function appendCustomerPatch(patch, customerId, previousValue, nextValue) {
+  const before = previousValue && typeof previousValue === "object" && !Array.isArray(previousValue)
+    ? previousValue
+    : {};
+  const next = nextValue && typeof nextValue === "object" && !Array.isArray(nextValue)
+    ? nextValue
+    : {};
+  const beforeLinks = customerBuildingLinks(before);
+  const nextLinks = customerBuildingLinks(next);
+
+  for (const [buildingId, linked] of Object.entries(beforeLinks)) {
+    if (linked === true && nextLinks[buildingId] !== true) {
+      throw createError(
+        "A customer-to-building link is append-only and cannot be changed or removed.",
+        "CUSTOMER_BUILDING_LINK_IMMUTABLE"
+      );
+    }
+  }
+  for (const [buildingId, linked] of Object.entries(nextLinks)) {
+    if (linked !== true) {
+      throw createError(
+        "A customer-to-building link must be the boolean value true.",
+        "CUSTOMER_BUILDING_LINK_INVALID"
+      );
+    }
+    if (beforeLinks[buildingId] !== true) {
+      patch[`customers/${customerId}/buildingIdLinks/${buildingId}`] = true;
+    }
+  }
+
+  const fields = new Set([...Object.keys(before), ...Object.keys(next)]);
+  fields.delete("buildingIdLinks");
+  for (const field of fields) {
+    if (!jsonEqual(before[field], next[field])) {
+      patch[`customers/${customerId}/${field}`] = Object.prototype.hasOwnProperty.call(next, field)
+        ? next[field]
+        : null;
+    }
+  }
+}
+
 function diffRemoteStores(previous, next) {
   const before = previous && typeof previous === "object" ? previous : {};
   const patch = {};
@@ -189,7 +205,9 @@ function diffRemoteStores(previous, next) {
     const oldMap = before[collection] && typeof before[collection] === "object" ? before[collection] : {};
     const newMap = next[collection] && typeof next[collection] === "object" ? next[collection] : {};
     for (const id of new Set([...Object.keys(oldMap), ...Object.keys(newMap)])) {
-      if (!jsonEqual(oldMap[id], newMap[id])) patch[`${collection}/${id}`] = newMap[id] ?? null;
+      if (jsonEqual(oldMap[id], newMap[id])) continue;
+      if (collection === "customers") appendCustomerPatch(patch, id, oldMap[id], newMap[id]);
+      else patch[`${collection}/${id}`] = newMap[id] ?? null;
     }
   }
   return patch;
@@ -278,6 +296,26 @@ function createError(message, code, cause) {
   error.code = code;
   if (cause) error.cause = cause;
   return error;
+}
+
+function friendlySparkCanonicalError(value) {
+  const code = value && typeof value.code === "string" ? value.code : "CANONICAL_CRM_COMMIT_FAILED";
+  const messages = {
+    crm_entity_version_conflict: "다른 컴퓨터에서 먼저 변경했습니다. 최신 내용을 다시 불러온 뒤 저장해 주세요.",
+    crm_request_id_conflict: "같은 저장 요청의 내용이 달라 안전하게 중단했습니다. 창을 닫고 다시 시도해 주세요.",
+    crm_building_unit_label_conflict: "같은 건물에 동일한 호실명이 이미 있습니다.",
+    crm_vacancy_migration_required: "기존 공실을 실제 호실에 모두 지정한 뒤 다시 저장해 주세요.",
+    crm_move_out_date_required: "공실 예정 상태에는 공실 예정일을 입력해 주세요.",
+    crm_parent_not_found: "연결된 고객·건물 정보를 찾지 못했습니다. 최신 내용을 다시 불러와 주세요.",
+    crm_parent_archived: "보관된 고객·건물에는 새 내용을 연결할 수 없습니다.",
+    crm_parent_mismatch: "선택한 건물과 호실의 연결 정보가 일치하지 않습니다.",
+    crm_mutation_forbidden: "현재 계정은 CRM 내용을 변경할 수 없습니다.",
+    crm_patch_field_forbidden: "현재 화면에서 변경할 수 없는 값이 포함되어 저장하지 않았습니다.",
+    crm_immutable_field_forbidden: "이미 연결된 고객·건물 관계는 이 화면에서 바꿀 수 없습니다.",
+    crm_entity_not_found: "변경할 자료를 찾지 못했습니다. 최신 내용을 다시 불러와 주세요.",
+    crm_entity_upgrade_required: "이 자료는 최신 형식으로 전환한 뒤 변경할 수 있습니다.",
+  };
+  return createError(messages[code] || "입력 내용을 확인한 뒤 다시 저장해 주세요.", code);
 }
 
 function normalizedUid(value) {
@@ -486,6 +524,7 @@ class FirebaseRemoteClient {
     this.fetch = options.fetchImpl || globalThis.fetch;
     this.sessionFile = options.sessionFile;
     this.pendingFile = options.pendingFile;
+    this.canonicalPendingFile = String(options.canonicalPendingFile || "");
     this.readLocalStore = options.readLocalStore;
     this.writeLocalStore = options.writeLocalStore;
     this.clearLocalStore = options.clearLocalStore || (async () => {});
@@ -506,6 +545,8 @@ class FirebaseRemoteClient {
     this.tokenRefreshTask = null;
     this.sessionFileQueue = Promise.resolve();
     this.sessionFileSequence = 0;
+    this.canonicalPendingMemory = null;
+    this.canonicalMutationQueue = Promise.resolve();
     this.streamGeneration = 0;
     this.sessionGeneration = 0;
     this.stopped = false;
@@ -817,29 +858,10 @@ class FirebaseRemoteClient {
     }
   }
 
-  async createFieldHandoff() {
-    const crmIdToken = await this.ensureIdToken(false);
-    const response = await this.requestJson(FIELD_HANDOFF_CALLABLE_URL, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ data: { crmIdToken } }),
-    }, "FIELD_HANDOFF_FAILED");
-    const result = response && response.result;
-    if (
-      !result
-      || typeof result.code !== "string"
-      || !/^[A-Za-z0-9_-]{43}$/.test(result.code)
-      || !Number.isFinite(Number(result.expiresAt))
-    ) {
-      throw createError("FIELD 연결 응답이 올바르지 않습니다.", "FIELD_HANDOFF_FAILED");
-    }
-    return { code: result.code, expiresAt: Number(result.expiresAt) };
-  }
-
-  async dbRequest(location, options, retried) {
+  async dbRequestForRoot(location, options, databaseRoot, retried) {
     const token = await this.ensureIdToken(false);
     const suffix = options && options.query ? `&${options.query}` : "";
-    const rootedLocation = resolveDatabaseLocation(location, this.databaseRoot);
+    const rootedLocation = resolveDatabaseLocation(location, databaseRoot);
     const url = `${this.firebase.databaseUrl}/${rootedLocation}.json?auth=${encodeURIComponent(token)}${suffix}`;
     try {
       return await this.requestJson(url, {
@@ -850,10 +872,18 @@ class FirebaseRemoteClient {
     } catch (error) {
       if (!retried && error.code === "DATABASE_ERROR" && /auth|credential|token|permission/i.test(error.message)) {
         await this.ensureIdToken(true);
-        return this.dbRequest(location, options, true);
+        return this.dbRequestForRoot(location, options, databaseRoot, true);
       }
       throw error;
     }
+  }
+
+  async dbRequest(location, options, retried) {
+    return this.dbRequestForRoot(location, options, this.databaseRoot, retried);
+  }
+
+  async rootDbRequest(location, options, retried) {
+    return this.dbRequestForRoot(location, options, "", retried);
   }
 
   async verifyAccess(contextValue, idTokenOverride) {
@@ -1409,6 +1439,134 @@ class FirebaseRemoteClient {
     return this.refreshRendererSnapshot(merged, true, guard);
   }
 
+  enqueueCanonicalMutation(operation) {
+    const running = this.canonicalMutationQueue.then(operation, operation);
+    this.canonicalMutationQueue = running.catch(() => {});
+    return running;
+  }
+
+  async readCanonicalPendingMutation() {
+    if (!this.canonicalPendingFile) {
+      return this.canonicalPendingMemory ? structuredClone(this.canonicalPendingMemory) : null;
+    }
+    try {
+      const decoded = decodeProtectedJson(this.safeStorage, await this.fs.readFile(this.canonicalPendingFile, "utf8"));
+      const raw = decoded.value;
+      if (!decoded.encrypted || !raw || raw.version !== CANONICAL_PENDING_VERSION
+        || !["entity", "buildingUnits"].includes(raw.kind)
+        || typeof raw.actorUid !== "string" || !raw.actorUid
+        || !["admin", "member"].includes(raw.actorRole)
+        || !raw.input || typeof raw.input !== "object" || Array.isArray(raw.input)) {
+        throw createError("보호된 정식 CRM 저장 대기 자료가 올바르지 않습니다.", "PROTECTED_DATA_INVALID");
+      }
+      const intent = canonicalMutationIntent(raw.kind, raw.input);
+      if (raw.intent !== intent) {
+        throw createError("보호된 정식 CRM 저장 대기 자료가 변경되었습니다.", "PROTECTED_DATA_INVALID");
+      }
+      return {
+        version: CANONICAL_PENDING_VERSION,
+        actorUid: raw.actorUid,
+        actorRole: raw.actorRole,
+        kind: raw.kind,
+        intent,
+        input: structuredClone(raw.input),
+        createdAt: String(raw.createdAt || ""),
+      };
+    } catch (error) {
+      if (error && error.code === "ENOENT") return null;
+      throw error;
+    }
+  }
+
+  async writeCanonicalPendingMutation(kind, input) {
+    const session = this.requireMutationPermission();
+    const payload = {
+      version: CANONICAL_PENDING_VERSION,
+      actorUid: session.uid,
+      actorRole: session.role,
+      kind,
+      intent: canonicalMutationIntent(kind, input),
+      input: structuredClone(input),
+      createdAt: new Date().toISOString(),
+    };
+    if (!this.canonicalPendingFile) {
+      this.canonicalPendingMemory = payload;
+      return payload;
+    }
+    const target = this.canonicalPendingFile;
+    const temp = `${target}.tmp`;
+    await this.fs.mkdir(path.dirname(target), { recursive: true });
+    await this.fs.writeFile(temp, encodeProtectedJson(this.safeStorage, payload), "utf8");
+    await this.fs.rename(temp, target);
+    return payload;
+  }
+
+  async clearCanonicalPendingMutation() {
+    this.canonicalPendingMemory = null;
+    if (!this.canonicalPendingFile) return;
+    for (const target of [this.canonicalPendingFile, `${this.canonicalPendingFile}.tmp`]) {
+      try { await this.fs.unlink(target); } catch (error) { if (error.code !== "ENOENT") throw error; }
+    }
+  }
+
+  async recoverCanonicalPendingMutationLocked() {
+    const pending = await this.readCanonicalPendingMutation();
+    if (!pending) return null;
+    const session = this.requireMutationPermission();
+    if (pending.actorUid !== session.uid) {
+      throw createError("다른 로그인 계정의 확인되지 않은 저장 요청이 남아 있습니다. 해당 계정으로 다시 로그인해 먼저 확인해 주세요.", "CANONICAL_PENDING_USER_MISMATCH");
+    }
+    const reducer = pending.kind === "entity" ? SparkCanonical.reduceEntity : SparkCanonical.reduceBuildingUnits;
+    let result;
+    try {
+      result = await this.runSparkCanonicalTransaction(pending.input, reducer);
+    } catch (error) {
+      // A canonical reducer/rules rejection after a receipt lookup is
+      // definitive: the atomic receipt is absent, so this request did not
+      // commit. Remove only those proven failures; transport failures keep the
+      // exact request journal for another confirmation attempt.
+      if (error && String(error.code || "").startsWith("crm_")) {
+        await this.clearCanonicalPendingMutation();
+      }
+      throw error;
+    }
+    if (!result) throw createError("저장 결과를 확인하기 전에 로그인 세션이 변경되었습니다.", "SESSION_CHANGED");
+    await this.clearCanonicalPendingMutation();
+    return { pending, result };
+  }
+
+  async resumeCanonicalPendingMutation() {
+    return this.enqueueCanonicalMutation(() => this.recoverCanonicalPendingMutationLocked());
+  }
+
+  async executeCanonicalMutation(kind, input, reducer) {
+    return this.enqueueCanonicalMutation(async () => {
+      const pending = await this.readCanonicalPendingMutation();
+      if (pending) {
+        const sameIntent = pending.kind === kind && pending.intent === canonicalMutationIntent(kind, input);
+        const recovered = await this.recoverCanonicalPendingMutationLocked();
+        if (sameIntent) return recovered.result;
+        throw createError("이전에 결과 확인이 중단된 저장을 먼저 복구했습니다. 최신 화면을 확인한 뒤 현재 작업을 다시 저장해 주세요.", "CANONICAL_PENDING_RECOVERED");
+      }
+      await this.writeCanonicalPendingMutation(kind, input);
+      try {
+        const result = await this.runSparkCanonicalTransaction(input, reducer);
+        // Preserve the existing stale-session contract: the renderer receives
+        // no result, while the encrypted journal remains for the original user
+        // to confirm with the same request after signing in again.
+        if (!result) return null;
+        await this.clearCanonicalPendingMutation();
+        return result;
+      } catch (error) {
+        const code = String(error && error.code || "");
+        const definitive = code.startsWith("crm_")
+          || ["CANONICAL_PENDING_USER_MISMATCH", "PROTECTED_DATA_INVALID", "LOCAL_ENCRYPTION_UNAVAILABLE"].includes(code);
+        if (definitive) await this.clearCanonicalPendingMutation();
+        throw error;
+      }
+    });
+  }
+
   scheduleCanonicalRefreshRetry(guardValue) {
     const guard = guardValue || this.captureSessionGuard();
     if (!this.sessionGuardActive(guard)) return;
@@ -1427,234 +1585,147 @@ class FirebaseRemoteClient {
 
   async commitCanonicalCrmEntity(input) {
     this.requireMutationPermission(canonicalEntityMutationForValidation(input));
+    const source = input && typeof input === "object" && !Array.isArray(input) ? input : {};
+    const request = Object.assign({}, source, {
+      requestId: source.requestId || crypto.randomUUID(),
+    });
+    const result = await this.executeCanonicalMutation("entity", request, SparkCanonical.reduceEntity);
+    if (!result) return null;
     const guard = this.captureSessionGuard();
-    const source = input && typeof input === "object" ? input : {};
-    const operatorId = String(source.operatorId || "").trim();
-    if (!/^[A-Za-z0-9_-]{1,120}$/.test(operatorId) || operatorId.includes("@")) {
-      throw createError("현재 작업자를 먼저 선택해 주세요.", "CANONICAL_OPERATOR_REQUIRED");
-    }
-    const allowedKeys = new Set([
-      "buildVersion", "operatorId", "requestId", "entityType", "entityId",
-      "operation", "expectedVersion", "patch", "reason"
-    ]);
-    const buildVersion = String(source.buildVersion || "").trim();
-    const requestId = String(source.requestId || "").trim();
-    const entityType = String(source.entityType || "").trim();
-    const entityId = String(source.entityId || "").trim();
-    const operation = String(source.operation || "").trim();
-    const expectedVersion = source.expectedVersion;
-    const patchKeys = source.patch && typeof source.patch === "object" && !Array.isArray(source.patch)
-      ? Object.keys(source.patch)
-      : [];
-    const reasonValid = source.reason === undefined
-      || (typeof source.reason === "string" && Buffer.byteLength(source.reason, "utf8") <= 1_000);
-    if (
-      Object.keys(source).some(key => !allowedKeys.has(key))
-      || !buildVersion || Buffer.byteLength(buildVersion, "utf8") > 64
-      || !CANONICAL_CRM_REQUEST_ID.test(requestId)
-      || !CANONICAL_CRM_ENTITY_TYPES.has(entityType)
-      || !/^[A-Za-z0-9_-]{1,120}$/.test(entityId)
-      || !CANONICAL_CRM_OPERATIONS.has(operation)
-      || !Number.isSafeInteger(expectedVersion)
-      || expectedVersion < 0
-      || (operation === "create" ? expectedVersion !== 0 : expectedVersion === 0)
-      || !source.patch || typeof source.patch !== "object" || Array.isArray(source.patch)
-      || (operation === "update" && patchKeys.length === 0)
-      || (["archive", "restore"].includes(operation) && patchKeys.length > 0)
-      || !reasonValid
-    ) throw createError("정식 CRM 저장 요청이 올바르지 않습니다.", "CANONICAL_REQUEST_INVALID");
-    const envelope = Object.assign({ protocolVersion: 2, clientKind: "desktop" }, source);
-    if (Buffer.byteLength(JSON.stringify(source.patch), "utf8") > CANONICAL_CRM_PATCH_MAX_BYTES) {
-      throw createError("정식 CRM 변경 내용이 너무 큽니다.", "CANONICAL_BODY_TOO_LARGE");
-    }
-    const body = JSON.stringify(envelope);
-    if (Buffer.byteLength(body, "utf8") > CANONICAL_CRM_BODY_MAX_BYTES) {
-      throw createError("정식 CRM 저장 요청이 너무 큽니다.", "CANONICAL_BODY_TOO_LARGE");
-    }
-    const token = await this.ensureIdToken(false);
-    if (!this.sessionGuardActive(guard)) throw createError("로그인 세션이 변경되었습니다.", "AUTH_REQUIRED");
-    let response;
-    try {
-      response = await this.fetch(CANONICAL_CRM_ENDPOINT_URL, {
-        method: "POST",
-        headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
-        body
-      });
-    } catch (error) {
-      throw createError("정식 CRM 저장 서버에 연결할 수 없습니다.", "NETWORK", error);
-    }
-    let payload = null;
-    try { payload = JSON.parse(await response.text()); } catch (_) {}
-    if (!this.sessionGuardActive(guard)) return null;
-    if (!response.ok) {
-      const remoteCode = payload && payload.error && String(payload.error.code || "");
-      const code = CANONICAL_CRM_ERROR_CODES.has(remoteCode) ? remoteCode : "CANONICAL_CRM_COMMIT_FAILED";
-      const message = code === "crm_move_out_date_required"
-        ? "공실 예정 상태에는 퇴실 예정일을 입력해 주세요."
-        : `정식 CRM 저장에 실패했습니다. (${code})`;
-      const error = createError(message, code);
-      error.status = Number(response.status) || 0;
-      throw error;
-    }
-    const result = payload && payload.ok === true && payload.result;
-    const payloadKeys = payload && typeof payload === "object" && !Array.isArray(payload) ? Object.keys(payload).sort() : [];
-    const resultKeys = result && typeof result === "object" && !Array.isArray(result) ? Object.keys(result).sort() : [];
-    if (
-      !jsonEqual(payloadKeys, ["ok", "result"])
-      || !result || typeof result !== "object" || Array.isArray(result)
-      || !jsonEqual(resultKeys, ["archivedAt", "entityId", "entityType", "entityVersion", "repeated", "updatedAt"])
-      || !CANONICAL_CRM_ENTITY_TYPES.has(String(result.entityType || ""))
-      || String(result.entityType) !== entityType
-      || String(result.entityId || "") !== entityId
-      || !Number.isSafeInteger(result.entityVersion) || result.entityVersion < 1
-      || typeof result.updatedAt !== "string"
-      || typeof result.archivedAt !== "string"
-      || typeof result.repeated !== "boolean"
-    ) throw createError("정식 CRM 저장 응답이 올바르지 않습니다.", "CANONICAL_RESPONSE_INVALID");
     try {
       await this.refreshAfterCanonicalCommit(guard);
       if (!this.sessionGuardActive(guard)) return null;
     } catch (_) {
       if (!this.sessionGuardActive(guard)) return null;
-      this.emitSync("offline", "정식 CRM 저장은 완료됐지만 최신 화면 반영을 다시 시도하는 중입니다.", { pending: false });
       this.scheduleCanonicalRefreshRetry(guard);
     }
     return result;
   }
 
-  async configureBuildingUnits(input) {
-    this.requireMutationPermission(buildingUnitsMutationForValidation(input));
-    const guard = this.captureSessionGuard();
-    const source = input && typeof input === "object" && !Array.isArray(input) ? input : null;
-    const allowedKeys = new Set(["buildVersion", "operatorId", "requestId", "buildingId", "units"]);
-    if (!source || Object.keys(source).some(key => !allowedKeys.has(key))) {
-      throw createError("호실 구성 저장 요청이 올바르지 않습니다.", "CANONICAL_REQUEST_INVALID");
-    }
-    const buildVersion = typeof source.buildVersion === "string" ? source.buildVersion : "";
-    const operatorId = typeof source.operatorId === "string" ? source.operatorId : "";
-    const buildingId = typeof source.buildingId === "string" ? source.buildingId : "";
-    const requestId = source.requestId === undefined || source.requestId === ""
-      ? crypto.randomUUID()
-      : String(source.requestId);
-    const units = source.units;
-    if (
-      !buildVersion || buildVersion !== buildVersion.trim() || Buffer.byteLength(buildVersion, "utf8") > 64
-      || !/^[A-Za-z0-9_-]{1,120}$/.test(operatorId) || operatorId.includes("@")
-      || !/^[A-Za-z0-9_-]{1,120}$/.test(buildingId)
-      || !CANONICAL_CRM_REQUEST_ID.test(requestId)
-      || !Array.isArray(units)
-    ) throw createError("호실 구성 저장 요청이 올바르지 않습니다.", "CANONICAL_REQUEST_INVALID");
-    if (units.length === 0) {
-      throw createError("저장할 호실을 한 개 이상 입력해 주세요.", "crm_building_unit_batch_empty");
-    }
-    if (units.length > 200) {
-      throw createError("한 번에 최대 200개 호실까지 저장할 수 있습니다.", "crm_building_unit_batch_too_large");
-    }
-    const itemKeys = new Set([
-      "entityId", "expectedVersion", "label", "floorLabel", "floorOrder", "unitOrder", "status",
-    ]);
-    const normalizedLabels = new Set();
-    const normalizedUnits = units.map(item => {
-      if (!item || typeof item !== "object" || Array.isArray(item) || Object.keys(item).some(key => !itemKeys.has(key))) {
-        throw createError("호실 구성 항목이 올바르지 않습니다.", "CANONICAL_REQUEST_INVALID");
-      }
-      const label = typeof item.label === "string" ? item.label : "";
-      const floorLabel = typeof item.floorLabel === "string" ? item.floorLabel : "";
-      const status = item.status === undefined ? "unknown" : item.status;
-      const hasEntityId = Object.prototype.hasOwnProperty.call(item, "entityId");
-      const hasExpectedVersion = Object.prototype.hasOwnProperty.call(item, "expectedVersion");
-      const normalizedLabel = normalizedBuildingUnitLabel(label);
-      if (
-        hasEntityId !== hasExpectedVersion
-        || (hasEntityId && (!/^[A-Za-z0-9_-]{1,120}$/.test(item.entityId)
-          || !Number.isSafeInteger(item.expectedVersion) || item.expectedVersion < 1))
-        || !label || label !== label.trim() || Buffer.byteLength(label, "utf8") > 256 || /[\u0000-\u001f\u007f]/u.test(label)
-        || !floorLabel || floorLabel !== floorLabel.trim() || Buffer.byteLength(floorLabel, "utf8") > 256 || /[\u0000-\u001f\u007f]/u.test(floorLabel)
-        || !Number.isSafeInteger(item.floorOrder) || item.floorOrder < -1_000 || item.floorOrder > 1_000
-        || !Number.isSafeInteger(item.unitOrder) || item.unitOrder < 0 || item.unitOrder > 100_000
-        || !CANONICAL_BUILDING_UNIT_STATUSES.has(status)
-      ) throw createError("호실 구성 항목이 올바르지 않습니다.", "CANONICAL_REQUEST_INVALID");
-      if (!normalizedLabel || normalizedLabels.has(normalizedLabel)) {
-        throw createError("같은 건물에 중복된 호실명이 있습니다.", "crm_building_unit_label_conflict");
-      }
-      normalizedLabels.add(normalizedLabel);
-      return {
-        ...(hasEntityId ? { entityId: item.entityId, expectedVersion: item.expectedVersion } : {}),
-        label,
-        floorLabel,
-        floorOrder: item.floorOrder,
-        unitOrder: item.unitOrder,
-        status,
-      };
-    });
-    const envelope = {
-      protocolVersion: 2,
-      clientKind: "desktop",
-      buildVersion,
-      operatorId,
-      requestId,
-      buildingId,
-      units: normalizedUnits,
-    };
-    if (Buffer.byteLength(JSON.stringify(normalizedUnits), "utf8") > CANONICAL_BUILDING_UNITS_BATCH_UNITS_MAX_BYTES) {
-      throw createError("호실 구성 저장 요청이 너무 큽니다.", "crm_building_unit_batch_too_large");
-    }
-    const body = JSON.stringify(envelope);
-    if (Buffer.byteLength(body, "utf8") > CANONICAL_BUILDING_UNITS_BATCH_BODY_MAX_BYTES) {
-      throw createError("호실 구성 저장 요청이 너무 큽니다.", "CANONICAL_BODY_TOO_LARGE");
-    }
+  async dbReadWithEtag(location, retried) {
     const token = await this.ensureIdToken(false);
-    if (!this.sessionGuardActive(guard)) throw createError("로그인 세션이 변경되었습니다.", "AUTH_REQUIRED");
+    const rootedLocation = resolveDatabaseLocation(location, this.databaseRoot);
+    const url = `${this.firebase.databaseUrl}/${rootedLocation}.json?auth=${encodeURIComponent(token)}`;
     let response;
     try {
-      response = await this.fetch(CANONICAL_BUILDING_UNITS_BATCH_ENDPOINT_URL, {
-        method: "POST",
-        headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
-        body,
+      response = await this.fetch(url, {
+        method: "GET",
+        headers: { Accept: "application/json", "X-Firebase-ETag": "true" },
       });
-    } catch (error) {
-      throw createError("호실 구성 저장 서버에 연결할 수 없습니다.", "NETWORK", error);
+    } catch (cause) {
+      throw createError("공용 서버에 연결할 수 없습니다.", "NETWORK", cause);
     }
-    let payload = null;
-    try { payload = JSON.parse(await response.text()); } catch (_) {}
-    if (!this.sessionGuardActive(guard)) return null;
+    const raw = await response.text();
+    let value = null;
+    try { value = raw ? JSON.parse(raw) : null; } catch (_) { value = null; }
     if (!response.ok) {
-      const remoteCode = payload && payload.error && String(payload.error.code || "");
-      const code = CANONICAL_CRM_ERROR_CODES.has(remoteCode) ? remoteCode : "CANONICAL_BUILDING_UNITS_COMMIT_FAILED";
-      const message = code === "crm_entity_version_conflict"
-        ? "다른 사용자가 호실 정보를 변경했습니다. 창을 닫고 최신 상태를 확인한 뒤 다시 시도해 주세요."
-        : code === "crm_vacancy_migration_required"
-          ? "기존 공실 정보가 모두 호실로 전환되지 않았습니다. 기존 공실과 미지정 공실 수를 확인해 다시 저장해 주세요."
-        : `호실 구성 저장에 실패했습니다. (${code})`;
-      const error = createError(message, code);
+      const detail = value && value.error || `HTTP ${response.status}`;
+      if (!retried && /auth|credential|token|permission/i.test(String(detail))) {
+        await this.ensureIdToken(true);
+        return this.dbReadWithEtag(location, true);
+      }
+      throw createError(String(detail), "DATABASE_ERROR");
+    }
+    const etag = response.headers && typeof response.headers.get === "function"
+      ? String(response.headers.get("etag") || response.headers.get("ETag") || "")
+      : "";
+    if (!etag) throw createError("동시 편집 확인값을 받지 못했습니다.", "DATABASE_ETAG_MISSING");
+    return { value, etag };
+  }
+
+  async dbAtomicPatch(location, patch, retried) {
+    const token = await this.ensureIdToken(false);
+    const rootedLocation = resolveDatabaseLocation(location, this.databaseRoot);
+    const url = `${this.firebase.databaseUrl}/${rootedLocation}.json?auth=${encodeURIComponent(token)}&print=silent`;
+    let response;
+    try {
+      response = await this.fetch(url, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(patch),
+      });
+    } catch (cause) {
+      throw createError("공용 서버에 연결할 수 없습니다.", "NETWORK", cause);
+    }
+    const raw = await response.text();
+    let payload = null;
+    try { payload = raw ? JSON.parse(raw) : null; } catch (_) { payload = null; }
+    if (!response.ok) {
+      const detail = payload && payload.error || `HTTP ${response.status}`;
+      if (!retried && (response.status === 401 || /auth|credential|token/i.test(String(detail)))) {
+        await this.ensureIdToken(true);
+        return this.dbAtomicPatch(location, patch, true);
+      }
+      const error = createError("서버가 동시 저장 또는 데이터 규칙 위반으로 변경을 거부했습니다.", "DATABASE_WRITE_REJECTED");
       error.status = Number(response.status) || 0;
       throw error;
     }
-    const result = payload && payload.ok === true && payload.result;
-    const payloadKeys = payload && typeof payload === "object" && !Array.isArray(payload) ? Object.keys(payload).sort() : [];
-    const resultKeys = result && typeof result === "object" && !Array.isArray(result) ? Object.keys(result).sort() : [];
-    const entityIds = result && Array.isArray(result.entityIds) ? result.entityIds : [];
-    const counts = result ? [result.createdCount, result.updatedCount, result.unchangedCount] : [];
-    if (
-      !jsonEqual(payloadKeys, ["ok", "result"])
-      || !result || typeof result !== "object" || Array.isArray(result)
-      || !jsonEqual(resultKeys, ["buildingId", "createdCount", "entityIds", "repeated", "totalUnits", "unchangedCount", "updatedAt", "updatedCount"])
-      || result.buildingId !== buildingId
-      || !Number.isSafeInteger(result.totalUnits) || result.totalUnits !== normalizedUnits.length
-      || counts.some(count => !Number.isSafeInteger(count) || count < 0)
-      || counts.reduce((sum, count) => sum + count, 0) !== result.totalUnits
-      || entityIds.length !== result.totalUnits
-      || entityIds.some(id => typeof id !== "string" || !/^[A-Za-z0-9_-]{1,120}$/.test(id))
-      || new Set(entityIds).size !== entityIds.length
-      || !canonicalTimestamp(result.updatedAt)
-      || typeof result.repeated !== "boolean"
-    ) throw createError("호실 구성 저장 응답이 올바르지 않습니다.", "CANONICAL_RESPONSE_INVALID");
+    return true;
+  }
+
+  async runSparkCanonicalTransaction(input, reducer) {
+    this.requireMutationPermission();
+    const guard = this.captureSessionGuard();
+    await this.verifyAccess();
+    if (!this.sessionGuardActive(guard)) throw createError("로그인 세션이 변경되었습니다.", "SESSION_CHANGED");
+    const actor = { uid: this.session.uid, operatorId: input.operatorId, role: this.session.role };
+    let lastConflict = null;
+    for (let attempt = 0; attempt < 5; attempt += 1) {
+      const snapshot = await this.dbReadWithEtag("crmShared/data");
+      if (!this.sessionGuardActive(guard)) throw createError("로그인 세션이 변경되었습니다.", "SESSION_CHANGED");
+      let decision;
+      try {
+        decision = reducer(snapshot.value || {}, input, actor, new Date().toISOString());
+      } catch (error) {
+        throw friendlySparkCanonicalError(error);
+      }
+      if (decision.result && decision.result.repeated === true) return decision.result;
+      try {
+        await this.dbAtomicPatch("crmShared/data", SparkCanonical.atomicMutationPatch(snapshot.value || {}, decision.data));
+        if (!this.sessionGuardActive(guard)) return null;
+        return decision.result;
+      } catch (error) {
+        if (error && ["NETWORK", "DATABASE_WRITE_REJECTED"].includes(error.code)) {
+          // A PATCH can commit even if its response is lost. The append-only
+          // receipt makes the retry idempotent; the ETag reveals intervening
+          // server state before a Rules version conflict is retried.
+          try {
+            const check = await this.dbReadWithEtag("crmShared/data");
+            const repeated = reducer(check.value || {}, input, actor, new Date().toISOString());
+            if (repeated.result && repeated.result.repeated === true) return repeated.result;
+            if (error.code === "NETWORK" || check.etag !== snapshot.etag) {
+              lastConflict = createError("다른 컴퓨터의 변경과 충돌했습니다.", "crm_entity_version_conflict");
+              continue;
+            }
+          } catch (checkError) {
+            if (checkError && typeof checkError.code === "string" && checkError.code.startsWith("crm_")) {
+              throw friendlySparkCanonicalError(checkError);
+            }
+          }
+        }
+        if (error && error.code === "DATABASE_WRITE_REJECTED") {
+          throw createError("저장 권한 또는 데이터 규칙을 확인해 주세요.", "crm_mutation_forbidden", error);
+        }
+        throw error;
+      }
+    }
+    throw lastConflict || createError("다른 컴퓨터의 변경과 충돌했습니다.", "crm_entity_version_conflict");
+  }
+
+  async configureBuildingUnits(input) {
+    this.requireMutationPermission(buildingUnitsMutationForValidation(input));
+    const source = input && typeof input === "object" && !Array.isArray(input) ? input : {};
+    const request = Object.assign({}, source, {
+      requestId: source.requestId || crypto.randomUUID(),
+    });
+    const result = await this.executeCanonicalMutation("buildingUnits", request, SparkCanonical.reduceBuildingUnits);
+    if (!result) return null;
+    const guard = this.captureSessionGuard();
     try {
       await this.refreshAfterCanonicalCommit(guard);
       if (!this.sessionGuardActive(guard)) return null;
     } catch (_) {
       if (!this.sessionGuardActive(guard)) return null;
-      this.emitSync("offline", "호실 구성은 저장됐지만 최신 화면 반영을 다시 시도하는 중입니다.", { pending: false });
       this.scheduleCanonicalRefreshRetry(guard);
     }
     return result;
@@ -1663,9 +1734,9 @@ class FirebaseRemoteClient {
   async loadOperations() {
     if (!this.session) throw createError("로그인이 필요합니다.", "AUTH_REQUIRED");
     const [casePayload, paymentPayload, caseSettings] = await Promise.all([
-      this.dbRequest("cases", { method: "GET" }),
+      this.rootDbRequest("cases", { method: "GET" }),
       this.dbRequest("paymentCalendars/shared", { method: "GET" }),
-      this.dbRequest("caseSettings", { method: "GET" }).catch(() => ({}))
+      this.rootDbRequest("caseSettings", { method: "GET" }).catch(() => ({}))
     ]);
     this.caseSettings = caseSettings && typeof caseSettings === "object" ? caseSettings : {};
     const cases = Object.entries(casePayload || {}).map(([key, value]) => Object.assign({ id: key }, value || {}, { firebaseKey: key }));
@@ -1758,7 +1829,7 @@ class FirebaseRemoteClient {
     const trashAction = String(source.trashAction || "");
     if (trashAction === "delete") {
       if (isNew || source.fields || source.stepKey || source.vendorSelection) throw createError("영구 삭제 요청을 확인해 주세요.", "INVALID_CASE");
-      const existing = await this.dbRequest(`cases/${caseKey}`, { method: "GET" });
+      const existing = await this.rootDbRequest(`cases/${caseKey}`, { method: "GET" });
       if (!existing || existing.deleted !== true) throw createError("휴지통에 있는 케이스만 영구 삭제할 수 있습니다.", "INVALID_CASE");
       const audit = this.Core.createAuditLog({
         id: caseDeleteAuditId(caseKey),
@@ -1772,9 +1843,12 @@ class FirebaseRemoteClient {
         actorEmail: this.session.email || "",
         reason: "휴지통 케이스 영구 삭제"
       });
-      await this.dbRequest("", { method: "PATCH", body: {
-        [resolveDatabasePatchLocation(`cases/${caseKey}`, this.databaseRoot)]: null,
-        [resolveDatabasePatchLocation(`crmShared/data/auditLogs/${audit.id}`, this.databaseRoot)]: audit
+      const auditPath = this.databaseRoot
+        ? `${this.databaseRoot}/${resolveDatabasePatchLocation(`crmShared/data/auditLogs/${audit.id}`, this.databaseRoot)}`
+        : `crmShared/data/auditLogs/${audit.id}`;
+      await this.rootDbRequest("", { method: "PATCH", body: {
+        [`cases/${caseKey}`]: null,
+        [auditPath]: audit
       }, query: "print=silent" });
       return { ok: true, caseKey, deleted: true, auditId: audit.id };
     }
@@ -1870,7 +1944,7 @@ class FirebaseRemoteClient {
     patch.crmUpdatedBy = this.session.email || "CRM 사용자";
     if (!Object.keys(patch).length) throw createError("저장할 케이스 내용이 없습니다.", "INVALID_CASE");
 
-    await this.dbRequest(`cases/${caseKey}`, { method: "PATCH", body: patch, query: "print=silent" });
+    await this.rootDbRequest(`cases/${caseKey}`, { method: "PATCH", body: patch, query: "print=silent" });
     return { ok: true, caseKey, updatedAt: now, patch };
   }
 
@@ -2080,6 +2154,20 @@ class FirebaseRemoteClient {
     const guard = this.captureSessionGuard();
     const local = await this.readSessionLocalStore(guard);
     if (!this.sessionGuardActive(guard)) return null;
+    try {
+      const recovered = await this.resumeCanonicalPendingMutation();
+      if (!this.sessionGuardActive(guard)) return null;
+      if (recovered) this.emitSync("syncing", "중단되었던 정식 CRM 저장 결과를 안전하게 복구했습니다.", { pending: false });
+    } catch (error) {
+      if (!this.sessionGuardActive(guard)) return null;
+      if (error && error.code === "CANONICAL_PENDING_USER_MISMATCH") {
+        this.emitSync("error", error.message, { pending: true });
+      } else if (retryableSyncError(error)) {
+        this.emitSync("pending", "확인 중이던 정식 CRM 저장을 연결 시 같은 요청 번호로 다시 확인합니다.", { pending: true });
+      } else {
+        throw error;
+      }
+    }
     this.emitSync("syncing", "공용 서버에서 최신 자료를 확인하는 중");
     const remote = await this.fetchRemotePayload();
     if (!this.sessionGuardActive(guard)) return null;
@@ -2300,9 +2388,6 @@ class FirebaseRemoteClient {
 
 module.exports = {
   FIREBASE,
-  LEGACY_FIREBASE,
-  CANONICAL_CRM_ENDPOINT_URL,
-  CANONICAL_BUILDING_UNITS_BATCH_ENDPOINT_URL,
   DEFAULT_CASE_AUTOMATION_ENDPOINT,
   VENDOR_CSV_URL,
   WORKFLOW_ACTIONS,

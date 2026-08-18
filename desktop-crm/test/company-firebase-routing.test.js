@@ -8,19 +8,32 @@ const { resolveDatabaseLocation } = require("../src/remote");
 const source = file => readFile(path.join(__dirname, "..", "src", file), "utf8");
 
 test("new CRM defaults to the company Firebase project and namespace", async () => {
-  const remote = await source("remote.js");
+  const [remote, main] = await Promise.all([source("remote.js"), source("main.js")]);
 
   assert.match(remote, /apiKey:\s*"AIzaSyBKOTIuQ8pOKSuaeKFQs_6UDdDnxdjCTZg"/);
   assert.match(remote, /databaseUrl:\s*"https:\/\/bring-fm-default-rtdb\.asia-southeast1\.firebasedatabase\.app"/);
   assert.match(remote, /authPageUrl:\s*"https:\/\/bring-fm\.web\.app\/crm-auth\/"/);
   assert.match(remote, /this\.databaseRoot\s*=\s*options\.databaseRoot\s*\?\?\s*"crmCompany"/);
-  assert.match(remote, /const rootedLocation = resolveDatabaseLocation\(location, this\.databaseRoot\)/);
+  assert.match(remote, /dbRequestForRoot\(location, options, this\.databaseRoot, retried\)/);
+  assert.match(remote, /rootDbRequest\("cases", \{ method: "GET" \}\)/);
+  assert.match(remote, /rootDbRequest\("caseSettings", \{ method: "GET" \}\)/);
+  assert.match(remote, /dbRequest\("paymentCalendars\/shared", \{ method: "GET" \}\)/);
+  assert.doesNotMatch(remote, /LEGACY_(?:MIGRATION_)?FIREBASE|bring-fm-hj|crm-staged-migration/);
+  assert.doesNotMatch(main, /LEGACY_(?:MIGRATION_)?FIREBASE|bring-fm-hj|crm-staged-migration/);
 });
 
-test("migration exporter explicitly selects legacy Firebase with an empty database root", async () => {
-  const exporter = await readFile(path.join(__dirname, "..", "scripts", "export-crm-staging.js"), "utf8");
-  assert.match(exporter, /firebaseConfig:\s*LEGACY_FIREBASE/);
+test("migration exporter isolates its retired read-only source outside the production remote", async () => {
+  const [exporter, migration, remote] = await Promise.all([
+    readFile(path.join(__dirname, "..", "scripts", "export-crm-staging.js"), "utf8"),
+    source("crm-staged-migration.js"),
+    source("remote.js"),
+  ]);
+  assert.match(exporter, /firebaseConfig:\s*LEGACY_MIGRATION_FIREBASE/);
   assert.match(exporter, /databaseRoot:\s*""/);
+  assert.match(migration, /const LEGACY_MIGRATION_FIREBASE\s*=\s*Object\.freeze/);
+  assert.match(migration, /const SOURCE_DATABASE_URL\s*=\s*"https:\/\/bring-fm-hj-default-rtdb/);
+  assert.match(migration, /String\(method\s*\|\|\s*""\)\.toUpperCase\(\)\s*!==\s*"GET"/);
+  assert.doesNotMatch(remote, /LEGACY_MIGRATION_FIREBASE|LEGACY_FIREBASE|bring-fm-hj/);
 });
 
 test("company namespace maps legacy client names without changing legacy export paths", () => {
@@ -358,7 +371,13 @@ test("smoke waits for renderer initialization before taking its snapshot", async
   assert.match(smokeBlock, /snapshot\(\)/);
 });
 
-test("shared CRM data never uses a whole-root PUT", async () => {
+test("ordinary shared saves stay PATCH-only while canonical Spark writes use a version-gated atomic patch", async () => {
   const remote = await source("remote.js");
-  assert.doesNotMatch(remote, /dbRequest\("crmShared\/data",\s*\{\s*method:\s*"PUT"/);
+  assert.match(remote, /dbRequest\("crmShared\/data",\s*\{\s*method:\s*"PATCH"/);
+  assert.match(remote, /dbReadWithEtag\("crmShared\/data"\)/);
+  assert.match(remote, /dbAtomicPatch\("crmShared\/data",\s*SparkCanonical\.atomicMutationPatch/);
+  assert.match(remote, /"X-Firebase-ETag":\s*"true"/);
+  assert.doesNotMatch(remote, /"If-Match"/);
+  assert.doesNotMatch(remote, /dbAtomicPatch\("crmShared"(?:,|\/)/);
+  assert.doesNotMatch(remote, /dbAtomicPatch\(""\s*,/);
 });

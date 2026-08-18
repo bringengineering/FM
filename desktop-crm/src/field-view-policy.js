@@ -8,8 +8,6 @@ const FIELD_REQUEST_ID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-
 const FIELD_ID = /^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$/;
 const FIELD_BUILD_VERSION = /^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)$/;
 const FIELD_ROUTE_SLUG = /^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$/;
-const FIELD_HANDOFF_CODE = /^[A-Za-z0-9_-]{43}$/;
-const FIELD_HANDOFF_TTL_MS = 60_000;
 const FIELD_HASH = /^[a-f0-9]{64}$/;
 const FIELD_ROUTE_TAB = new Set(["today", "unassigned", "map", "jobs", "review", "uploads"]);
 const FIELD_ROUTE_SCOPE = new Set(["mine", "team", "unassigned"]);
@@ -192,21 +190,6 @@ function isAllowedFieldNavigation(rawUrl) {
     const url = new URL(String(rawUrl || ""));
     if (url.username || url.password || url.origin !== FIELD_ORIGIN || url.hash) return false;
     return Boolean(normalizeFieldRoute(`${url.pathname}${url.search}`));
-  } catch (_error) {
-    return false;
-  }
-}
-
-function isAllowedFieldBootstrapNavigation(rawUrl) {
-  try {
-    const url = new URL(String(rawUrl || ""));
-    if (url.username || url.password || url.origin !== FIELD_ORIGIN || url.hash || url.pathname !== "/field") return false;
-    const entries = [...url.searchParams.entries()];
-    return entries.length === 2
-      && url.searchParams.getAll("embedded").length === 1
-      && url.searchParams.get("embedded") === "crm"
-      && url.searchParams.getAll("desktop_handoff").length === 1
-      && FIELD_HANDOFF_CODE.test(String(url.searchParams.get("desktop_handoff") || ""));
   } catch (_error) {
     return false;
   }
@@ -788,40 +771,33 @@ function createFieldExitCoordinator(options = {}) {
   });
 }
 
-function createFieldSessionRecoveryCoordinator(options = {}) {
-  const now = typeof options.now === "function" ? options.now : Date.now;
+function createFieldSharedSessionRecoveryCoordinator(options = {}) {
   let active = null;
   let attemptedKey = "";
   let generation = 0;
   return Object.freeze({
     recover(recoveryKey, isCurrent = () => true) {
       const key = String(recoveryKey || "");
-      if (!isBoundedString(key, 512, false)) return Promise.resolve({ ok: false, code: "FIELD_HANDOFF_INVALID" });
+      if (!isBoundedString(key, 512, false)) return Promise.resolve({ ok: false, code: "FIELD_SESSION_INVALID" });
       if (active) return active.key === key
         ? active.promise
-        : Promise.resolve({ ok: false, code: "FIELD_HANDOFF_IN_PROGRESS" });
-      if (attemptedKey === key) return Promise.resolve({ ok: false, code: "FIELD_HANDOFF_ALREADY_ATTEMPTED" });
+        : Promise.resolve({ ok: false, code: "FIELD_SESSION_RECOVERY_IN_PROGRESS" });
+      if (attemptedKey === key) return Promise.resolve({ ok: false, code: "FIELD_SESSION_RECOVERY_ALREADY_ATTEMPTED" });
       attemptedKey = key;
       const recoveryGeneration = generation;
       const task = (async () => {
         try {
-          const handoff = await options.createHandoff();
-          const currentTime = Number(now());
+          await options.refreshCrmSession();
           if (generation !== recoveryGeneration || isCurrent() !== true) return { ok: false, code: "FIELD_SESSION_CHANGED" };
-          if (!hasExactKeys(handoff, ["code", "expiresAt"])
-            || !FIELD_HANDOFF_CODE.test(handoff.code)
-            || !Number.isSafeInteger(handoff.expiresAt)
-            || handoff.expiresAt <= currentTime
-            || handoff.expiresAt - currentTime > FIELD_HANDOFF_TTL_MS) {
-            return { ok: false, code: "FIELD_HANDOFF_INVALID" };
-          }
-          await options.loadHandoff(handoff.code);
+          await options.reloadSharedSession();
           if (generation !== recoveryGeneration || isCurrent() !== true) return { ok: false, code: "FIELD_SESSION_CHANGED" };
           return { ok: true };
         } catch (error) {
           return {
             ok: false,
-            code: error && error.code === "SESSION_CHANGED" ? "FIELD_SESSION_CHANGED" : "FIELD_HANDOFF_FAILED",
+            code: error && ["SESSION_CHANGED", "FIELD_SESSION_CHANGED"].includes(error.code)
+              ? "FIELD_SESSION_CHANGED"
+              : "FIELD_SHARED_SESSION_RECOVERY_FAILED",
           };
         }
       })();
@@ -854,11 +830,10 @@ module.exports = {
   createFieldExitCoordinator,
   createFieldEnvelope,
   createFieldRequestCoordinator,
-  createFieldSessionRecoveryCoordinator,
+  createFieldSharedSessionRecoveryCoordinator,
   externalFieldLinkDecision,
   fieldBounds,
   isAllowedFieldAuthPopup,
-  isAllowedFieldBootstrapNavigation,
   isAllowedFieldNavigation,
   isAllowedFieldPermission,
   isFieldRequestId,

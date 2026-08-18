@@ -879,13 +879,13 @@
 <script>
 /* ===== ① 실시간 공유 켜기: 아래 값을 본인 Firebase 프로젝트 값으로 교체 (교체 전엔 '로컬 모드') ===== */
 const firebaseConfig = {
-  apiKey: "AIzaSyAeAvJIeu5hOHQ-aT6YurHdPh1thO-NYmo",
-  authDomain: "bring-fm-hj.firebaseapp.com",
-  databaseURL: "https://bring-fm-hj-default-rtdb.asia-southeast1.firebasedatabase.app",
-  projectId: "bring-fm-hj",
-  storageBucket: "bring-fm-hj.firebasestorage.app",
-  messagingSenderId: "975975605634",
-  appId: "1:975975605634:web:34ae9d7af84b3ee9ea5b9b"
+  apiKey: "AIzaSyBKOTIuQ8pOKSuaeKFQs_6UDdDnxdjCTZg",
+  authDomain: "bring-fm.firebaseapp.com",
+  databaseURL: "https://bring-fm-default-rtdb.asia-southeast1.firebasedatabase.app",
+  projectId: "bring-fm",
+  storageBucket: "bring-fm.firebasestorage.app",
+  messagingSenderId: "864976295990",
+  appId: "1:864976295990:web:194f145b1b4dad58eb6097"
 };
 let boards = { main: "업무 흐름" };   // {boardId: 이름}
 let curBoard = "main";
@@ -5737,7 +5737,7 @@ function attachPaymentCalendarRef(user){
   detachPaymentCalendarRef();
   if(!user){ updatePaymentAlertBadge(); return; }
   if(!db){ paymentData=loadPaymentLocal(); paymentEnsureData(); renderPaymentCalendar(); return; }
-  paymentRef=db.ref("paymentCalendars/"+user.uid);
+  paymentRef=db.ref("crmCompany/paymentCalendars/"+user.uid);
   paymentValueHandler=s=>{
     paymentData=s.val()||{}; paymentEnsureData();
     if(!paymentData.profile.adminEmail){

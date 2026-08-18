@@ -1,6 +1,11 @@
 const crypto = require("node:crypto");
 
 const SOURCE_DATABASE_URL = "https://bring-fm-hj-default-rtdb.asia-southeast1.firebasedatabase.app";
+const LEGACY_MIGRATION_FIREBASE = Object.freeze({
+  apiKey: "AIzaSyAeAvJIeu5hOHQ-aT6YurHdPh1thO-NYmo",
+  databaseUrl: SOURCE_DATABASE_URL,
+  authPageUrl: "https://bring-fm-hj.web.app/crm-auth/",
+});
 const REQUIRED_ROOTS = Object.freeze(["crmSharedData", "cases", "paymentCalendarsShared"]);
 const ALL_ROOTS = Object.freeze([...REQUIRED_ROOTS, "caseSettings", "currentAccess"]);
 const STATIC_SOURCE_PATHS = new Set([
@@ -209,6 +214,7 @@ async function readCrmSource({ uid, idToken, fetchImpl = globalThis.fetch }) {
 }
 
 module.exports = {
+  LEGACY_MIGRATION_FIREBASE,
   SOURCE_DATABASE_URL,
   canonicalJson,
   createCompanyCrmPayload,
