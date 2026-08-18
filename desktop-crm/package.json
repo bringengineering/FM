@@ -1,0 +1,64 @@
+{
+  "name": "bring-crm-desktop",
+  "version": "1.8.0",
+  "description": "BRING Engineering 고객·상담·영업 공용 데스크톱 CRM",
+  "main": "src/main.js",
+  "author": "BRING Engineering",
+  "license": "UNLICENSED",
+  "private": true,
+  "scripts": {
+    "start": "electron .",
+    "test": "node --test test/*.test.js",
+    "crm:migration:export": "electron scripts/export-crm-staging.js",
+    "crm:migration:verify": "node scripts/verify-crm-staging.js",
+    "smoke": "set BRING_CRM_SMOKE=1&& electron .",
+    "build:win": "electron-builder --win nsis --x64"
+  },
+  "dependencies": {
+    "electron-updater": "6.8.9"
+  },
+  "devDependencies": {
+    "electron": "39.8.5",
+    "electron-builder": "26.15.3"
+  },
+  "build": {
+    "appId": "kr.co.bringengineering.crm",
+    "productName": "BRING CRM",
+    "artifactName": "BRING.CRM.Company.Setup.${version}.${ext}",
+    "asar": true,
+    "directories": {
+      "output": "dist"
+    },
+    "files": [
+      "src/**/*",
+      "package.json"
+    ],
+    "win": {
+      "icon": "src/assets/bring-logo.png",
+      "target": [
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        }
+      ]
+    },
+    "nsis": {
+      "oneClick": true,
+      "perMachine": false,
+      "allowElevation": true,
+      "createDesktopShortcut": "always",
+      "createStartMenuShortcut": true,
+      "shortcutName": "BRING CRM",
+      "deleteAppDataOnUninstall": false
+    },
+    "publish": [
+      {
+        "provider": "github",
+        "owner": "bringengineering",
+        "repo": "FM"
+      }
+    ]
+  }
+}

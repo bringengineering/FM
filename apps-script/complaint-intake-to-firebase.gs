@@ -14,8 +14,10 @@ const COMPLAINT_CONFIG = {
   VENDOR_QUOTE_REPLY_EMAIL: "bringengineering1008@gmail.com",
   WEB_APP_URL: "https://script.google.com/macros/s/AKfycbxGAdtEDoNifxkM-e_Jm7dBkCnjM4oPJqz8RxZXoMoSKod5M_m9Yj2b11-nI97zmfd6Jw/exec",
   OWNER_DECISION_SHORT_URL: "https://bringengineering.github.io/FM/approve.html?c=",
-  FIREBASE_DATABASE_URL: "https://bring-fm-hj-default-rtdb.asia-southeast1.firebasedatabase.app",
+  FIREBASE_DATABASE_URL: "https://bring-fm-default-rtdb.asia-southeast1.firebasedatabase.app",
   FIREBASE_CASES_PATH: "cases",
+  FIREBASE_CASE_SETTINGS_PATH: "caseSettings",
+  FIREBASE_PAYMENT_CALENDARS_PATH: "crmCompany/paymentCalendars",
   RESPONSE_SHEET_URL: "https://docs.google.com/spreadsheets/d/1HI6KzIMomL6vOUPs8zZDhXHktL1cWRDcg93lflsuojA/edit",
   PAYMENT_SCHEDULE_DRIVE_FOLDER_ID: "1q1uKquSngjyi0upoCRmjnRxm_CD1sAcN",
   PAYMENT_SCHEDULE_SPREADSHEET_NAME: "BRING CARE 세입자 월세 관리대장"
@@ -35,13 +37,12 @@ const PAYMENT_SCHEDULE_HEADERS = [
   "상태",
   "비고"
 ];
-const AUTOMATION_BUILD = "complaint-workflow-20260810-v54";
+const AUTOMATION_BUILD = "complaint-workflow-20260803-v53";
 const OWNER_RECOMMENDATION_IMAGE_VERSION = "owner-summary-v4";
 const OWNER_DECISION_VIEW = "owner-decision";
 const PAYMENT_NOTIFICATION_CONFIG_PROPERTY = "PAYMENT_NOTIFICATION_AUTOMATION_CONFIG";
 const PAYMENT_NOTIFICATION_LEDGER_PREFIX = "PAYMENT_NOTIFICATION_LEDGER_";
 const PAYMENT_NOTIFICATION_CONFIRMED_BASELINE_PROPERTY = "PAYMENT_NOTIFICATION_CONFIRMED_BASELINE";
-const PAYMENT_CALENDAR_WORKSPACE_ID = "shared";
 const PAYMENT_DUE_ALERT_HOUR = 9;
 const PAYMENT_OVERDUE_ALERT_HOUR = 13;
 const OWNER_PAYMENT_ACCOUNT = {
@@ -188,6 +189,12 @@ function doPost(e) {
     if (payload.action === "syncPaymentBuildings") {
       return jsonResponse_(syncPaymentBuildingsFromOnboarding_());
     }
+    if (payload.action === "approveDriveImport") {
+      return jsonResponse_(handleApproveDriveImport_(payload));
+    }
+    if (payload.action === "rejectDriveImport") {
+      return jsonResponse_(handleRejectDriveImport_(payload));
+    }
     if (payload.action === "syncPaymentSchedules") {
       return jsonResponse_(syncPaymentSchedulesFromSheet_(payload));
     }
@@ -241,6 +248,58 @@ function doPost(e) {
       Logger.log("자동화 오류 기록 실패: " + recordErr.message);
     }
     return jsonResponse_({ ok: false, message: err.message });
+  }
+}
+
+// Apps Script 편집기에서만 직접 실행하는 bring-fm 전환 점검입니다.
+// 공개 doPost 라우팅에는 연결하지 않으며, 임시 레코드는 항상 삭제합니다.
+function verifyFirebaseCutover() {
+  const probeId = "cutover-smoke-" + Utilities.getUuid();
+  const probeUrl = firebaseCaseSettingsUrl_("system/cutoverSmoke/" + probeId);
+  let created = false;
+
+  try {
+    const schemaVersion = firebaseOauthRequest_(
+      crmCompanyImportUrl_("data/schemaVersion"),
+      "get",
+      undefined,
+      "bring-fm 인증 조회 실패"
+    );
+    if (schemaVersion === null || schemaVersion === undefined) {
+      throw new Error("bring-fm 스키마 버전을 확인하지 못했습니다.");
+    }
+
+    const probe = {
+      purpose: "cutover-smoke",
+      createdAt: new Date().toISOString()
+    };
+    firebaseOauthRequest_(probeUrl, "put", probe, "bring-fm 점검 쓰기 실패");
+    created = true;
+
+    const stored = firebaseOauthRequest_(probeUrl, "get", undefined, "bring-fm 점검 조회 실패");
+    if (!stored || stored.purpose !== probe.purpose || stored.createdAt !== probe.createdAt) {
+      throw new Error("bring-fm 점검 자료가 일치하지 않습니다.");
+    }
+
+    firebaseOauthRequest_(probeUrl, "delete", undefined, "bring-fm 점검 정리 실패");
+    created = false;
+    const removed = firebaseOauthRequest_(probeUrl, "get", undefined, "bring-fm 점검 정리 확인 실패");
+    if (removed !== null) throw new Error("bring-fm 점검 자료가 완전히 정리되지 않았습니다.");
+
+    return {
+      ok: true,
+      accessVerified: true,
+      writeVerified: true,
+      cleanupVerified: true
+    };
+  } finally {
+    if (created) {
+      try {
+        firebaseOauthRequest_(probeUrl, "delete", undefined, "bring-fm 점검 정리 실패");
+      } catch (cleanupError) {
+        Logger.log("bring-fm cutover smoke cleanup failed");
+      }
+    }
   }
 }
 
@@ -831,8 +890,10 @@ function saveKakaoComplaintPhotosToDrive_(photoUrls, ticketNo) {
 function verifyKakaoContractBuilding_(building, address) {
   let registry = null;
   try {
-    registry = firebaseReadJson_(
+    registry = firebaseOauthRequest_(
       firebaseCaseSettingsUrl_("paymentBuildings"),
+      "get",
+      undefined,
       "카카오 계약 건물 목록 조회 실패"
     );
   } catch (err) {
@@ -881,8 +942,10 @@ function verifyKakaoContractBuilding_(building, address) {
 
 function kakaoChatbotCaseStatusResponse_(userHash) {
   try {
-    const link = firebaseReadJson_(
+    const link = firebaseOauthRequest_(
       firebaseCaseSettingsUrl_("kakaoChatbotIntake/users/" + userHash),
+      "get",
+      undefined,
       "카카오 민원 연결 조회 실패"
     );
     const caseId = String(link && link.lastCaseId || "").trim();
@@ -987,7 +1050,8 @@ function writeKakaoPendingCaseLink_(ticketNo, pendingCase, userHash, now) {
   const casesPath = COMPLAINT_CONFIG.FIREBASE_CASES_PATH.replace(/^\/|\/$/g, "");
   const updates = {};
   updates[casesPath + "/" + ticketNo] = pendingCase;
-  updates["caseSettings/kakaoChatbotIntake/users/" + userHash] = {
+  const caseSettingsPath = String(COMPLAINT_CONFIG.FIREBASE_CASE_SETTINGS_PATH || "caseSettings").replace(/^\/|\/$/g, "");
+  updates[caseSettingsPath + "/kakaoChatbotIntake/users/" + userHash] = {
     lastCaseId: ticketNo,
     updatedAt: now.toISOString()
   };
@@ -1157,7 +1221,10 @@ function ensureOwnerDecisionShortLink_(caseId, state) {
   if (!/^\d{4}-\d{4,}$/.test(shortCode)) {
     throw new Error("승인 짧은 링크용 접수번호가 올바르지 않습니다.");
   }
-  const shortDecisionUrl = String(COMPLAINT_CONFIG.OWNER_DECISION_SHORT_URL || "") + encodeURIComponent(shortCode);
+  const shortDecisionUrl = String(current.decisionUrl || "").trim();
+  if (!shortDecisionUrl) {
+    throw new Error("Secure owner decision URL is missing.");
+  }
   const now = new Date().toISOString();
   return Object.assign({}, current, {
     shortCode: shortCode,
@@ -3091,6 +3158,7 @@ function makeOwnerRecommendationMmsNote_(result) {
 function readCaseFromFirebase_(caseId) {
   const response = UrlFetchApp.fetch(firebaseCaseUrl_(caseId), {
     method: "get",
+    headers: { Authorization: "Bearer " + ScriptApp.getOAuthToken() },
     muteHttpExceptions: true
   });
   const code = response.getResponseCode();
@@ -7190,9 +7258,15 @@ function listDriveOnboardingCandidates_() {
     const candidates = [];
     while (files.hasNext()) {
       const file = files.next();
-      if (file.isTrashed() || file.getMimeType() !== "application/vnd.openxmlformats-officedocument.wordprocessingml.document") continue;
+      if (file.isTrashed() || !isSupportedDriveImportMime_(file.getMimeType())) continue;
       let text = "";
-      try { text = extractDocxText_(file.getId()) || ""; } catch (err) { Logger.log("온보딩 DOCX 본문 추출 실패: " + file.getName() + " / " + err.message); }
+      try {
+        text = file.getMimeType() === "application/pdf"
+          ? extractPdfTextForReview_(file.getId())
+          : extractDocxText_(file.getId());
+      } catch (err) {
+        Logger.log("온보딩 문서 본문 추출 실패: " + file.getName() + " / " + err.message);
+      }
       candidates.push({
         file: file,
         text: text,
@@ -7208,9 +7282,352 @@ function listDriveOnboardingCandidates_() {
   }
 }
 
+function isSupportedDriveImportMime_(mimeType) {
+  return [
+    "application/pdf",
+    "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+  ].indexOf(String(mimeType || "")) >= 0;
+}
+
+function buildDriveImportCandidate_(input) {
+  input = input && typeof input === "object" ? input : {};
+  const text = String(input.text || "");
+  const extractedName = extractOnboardingField_(text, ["건물명", "건물"]);
+  const fileNameFallback = onboardingBuildingFromFileName_(input.fileName)
+    .replace(/[_-]*(?:통합\s*)?건물\s*체크리스트.*$/i, "")
+    .replace(/[_-]*체크리스트.*$/i, "")
+    .trim();
+  const name = String(extractedName || fileNameFallback || "").slice(0, 120).trim();
+  const address = String(extractOnboardingField_(text, ["건물 주소", "주소", "소재지"]) || "").slice(0, 240).trim();
+  const manager = String(extractOnboardingField_(text, ["담당자", "담당자명"]) || "").slice(0, 60).trim();
+  const warnings = [];
+  if (input.extractionWarning) warnings.push(String(input.extractionWarning).slice(0, 240));
+  if (!text.trim()) warnings.push("문서 본문을 확인하지 못해 파일명만 제안했습니다.");
+  if (/손글씨|필기/i.test(text)) warnings.push("손글씨 값은 Drive 원본 확인이 필요합니다.");
+  return {
+    id: String(input.driveFileId || ""),
+    driveFileId: String(input.driveFileId || ""),
+    fileName: String(input.fileName || "").slice(0, 240),
+    fileUrl: String(input.fileUrl || "").slice(0, 500),
+    mimeType: String(input.mimeType || ""),
+    sourceFolderId: String(input.sourceFolderId || ""),
+    sourceModifiedAt: String(input.sourceModifiedAt || ""),
+    sourceHash: String(input.sourceHash || ""),
+    suggested: {
+      name: name,
+      address: address,
+      manager: manager,
+      type: "다가구",
+      status: "영업후보",
+      unitCount: 0,
+      memo: "Drive 원본: " + String(input.fileName || "").slice(0, 180)
+    },
+    confidence: {
+      name: extractedName ? "high" : (name ? "medium" : "low"),
+      address: address ? "medium" : "low",
+      manager: manager ? "medium" : "low"
+    },
+    warnings: Array.from(new Set(warnings)),
+    status: "pending",
+    createdAt: String(input.now || input.sourceModifiedAt || ""),
+    updatedAt: String(input.now || input.sourceModifiedAt || ""),
+    approvedAt: null,
+    approvedByUid: null,
+    crmBuildingId: null,
+    rejectionReason: null
+  };
+}
+
+function mergeDriveImportCandidate_(existing, incoming) {
+  const previous = existing && typeof existing === "object" ? existing : null;
+  const next = incoming && typeof incoming === "object" ? incoming : {};
+  if (!previous) return { changed: true, candidate: next };
+  if (String(previous.sourceHash || "") === String(next.sourceHash || "")) {
+    return { changed: false, candidate: previous };
+  }
+  const reviewed = previous.status === "approved" || previous.status === "rejected";
+  return {
+    changed: true,
+    candidate: Object.assign({}, next, {
+      status: reviewed ? "stale" : "pending",
+      createdAt: previous.createdAt || next.createdAt,
+      approvedAt: previous.approvedAt || null,
+      approvedByUid: previous.approvedByUid || null,
+      crmBuildingId: previous.crmBuildingId || null,
+      rejectionReason: previous.rejectionReason || null
+    })
+  };
+}
+
+function driveImportSourceHash_(file) {
+  const checksum = typeof file.getMd5Checksum === "function" ? String(file.getMd5Checksum() || "") : "";
+  if (checksum) return checksum;
+  const raw = [file.getId(), file.getLastUpdated().toISOString(), file.getSize()].join("|");
+  const digest = Utilities.computeDigest(Utilities.DigestAlgorithm.SHA_256, raw, Utilities.Charset.UTF_8);
+  return digest.map(value => (value + 256).toString(16).slice(-2)).join("");
+}
+
+function crmCompanyImportUrl_(childPath) {
+  const props = PropertiesService.getScriptProperties();
+  const base = String(props.getProperty("CRM_FIREBASE_DATABASE_URL") || "https://bring-fm-default-rtdb.asia-southeast1.firebasedatabase.app").replace(/\/$/, "");
+  const child = String(childPath || "").split("/").filter(Boolean).map(part => encodeURIComponent(part)).join("/");
+  return base + "/crmCompany" + (child ? "/" + child : "") + ".json";
+}
+
+function firebaseOauthRequest_(url, method, payload, label) {
+  const options = {
+    method: method,
+    headers: { Authorization: "Bearer " + ScriptApp.getOAuthToken() },
+    muteHttpExceptions: true
+  };
+  if (payload !== undefined) {
+    options.contentType = "application/json; charset=utf-8";
+    options.payload = JSON.stringify(payload);
+  }
+  const response = UrlFetchApp.fetch(url, options);
+  const code = response.getResponseCode();
+  if (code < 200 || code >= 300) throw new Error(label + ": HTTP " + code + " / " + response.getContentText());
+  const body = response.getContentText();
+  return body && body !== "null" ? JSON.parse(body) : null;
+}
+
+function syncDriveCrmImportCandidates_() {
+  const listed = listDriveOnboardingCandidates_();
+  if (!listed.ok) throw new Error(listed.error || "Drive 검토 후보를 읽지 못했습니다.");
+  const existing = firebaseOauthRequest_(crmCompanyImportUrl_("driveImportCandidates"), "get", undefined, "CRM 검토 후보 조회 실패") || {};
+  const now = new Date().toISOString();
+  const patch = {};
+  listed.candidates.forEach(item => {
+    const file = item.file;
+    const incoming = buildDriveImportCandidate_({
+      driveFileId: file.getId(),
+      fileName: file.getName(),
+      fileUrl: file.getUrl(),
+      mimeType: file.getMimeType(),
+      sourceFolderId: extractDriveId_(COMPLAINT_CONFIG.CONTRACT_DRIVE_FOLDER_ID),
+      sourceModifiedAt: file.getLastUpdated().toISOString(),
+      sourceHash: driveImportSourceHash_(file),
+      text: item.text,
+      extractionWarning: item.text ? "" : "문서 본문 추출 실패",
+      now: now
+    });
+    const merged = mergeDriveImportCandidate_(existing[incoming.driveFileId], incoming);
+    if (merged.changed) patch[incoming.driveFileId] = merged.candidate;
+  });
+  if (Object.keys(patch).length) {
+    firebaseOauthRequest_(crmCompanyImportUrl_("driveImportCandidates"), "patch", patch, "CRM 검토 후보 저장 실패");
+  }
+  return { ok: true, scanned: listed.candidates.length, changed: Object.keys(patch).length, syncedAt: now };
+}
+
+function assertDriveImportApprover_(access, identity) {
+  access = access && typeof access === "object" ? access : {};
+  identity = identity && typeof identity === "object" ? identity : {};
+  if (access.enabled !== true) throw new Error("비활성 CRM 계정입니다.");
+  if (String(access.role || "") !== "admin") throw new Error("관리자만 Drive 자료를 승인할 수 있습니다.");
+  const accessEmail = String(access.email || "").trim().toLowerCase();
+  const identityEmail = String(identity.email || "").trim().toLowerCase();
+  if (!accessEmail || !identityEmail || accessEmail !== identityEmail) throw new Error("로그인 이메일과 CRM 허용 이메일이 일치하지 않습니다.");
+  return true;
+}
+
+function normalizeDriveImportKey_(value) {
+  return String(value || "").toLowerCase().replace(/[^0-9a-z가-힣]/g, "");
+}
+
+function buildDriveImportApprovalPatch_(input) {
+  input = input && typeof input === "object" ? input : {};
+  const requestId = String(input.requestId || "");
+  if (!/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(requestId)) throw new Error("승인 요청 ID가 올바르지 않습니다.");
+  if (input.receipt && typeof input.receipt === "object") {
+    if (String(input.receipt.requestId || "") !== requestId) throw new Error("승인 요청 영수증이 올바르지 않습니다.");
+    return { patch: {}, result: Object.assign({}, input.receipt, { repeated: true }) };
+  }
+  const candidate = input.candidate && typeof input.candidate === "object" ? input.candidate : {};
+  if (candidate.status !== "pending") throw new Error("검토 대기 상태의 후보만 승인할 수 있습니다.");
+  const driveFileId = String(candidate.driveFileId || "");
+  if (!driveFileId || driveFileId !== String(candidate.id || "")) throw new Error("Drive 후보 식별자가 올바르지 않습니다.");
+  const approved = input.approved && typeof input.approved === "object" ? input.approved : {};
+  const name = String(approved.name || "").trim().slice(0, 120);
+  const address = String(approved.address || "").trim().slice(0, 240);
+  if (!name || !address) throw new Error("건물명과 주소를 확인해 주세요.");
+  const nameKey = normalizeDriveImportKey_(name);
+  const addressKey = normalizeDriveImportKey_(address);
+  Object.keys(input.buildings || {}).forEach(key => {
+    const building = input.buildings[key] || {};
+    const sameDrive = ((building.externalRefs && building.externalRefs.driveFileIds) || []).indexOf(driveFileId) >= 0;
+    const sameNameAddress = normalizeDriveImportKey_(building.name) === nameKey && normalizeDriveImportKey_(building.address) === addressKey;
+    if (sameDrive || sameNameAddress) throw new Error("중복 건물입니다. 같은 Drive 자료 또는 이름·주소의 건물이 이미 존재합니다.");
+  });
+  const now = String(input.now || new Date().toISOString());
+  const actor = input.actor && typeof input.actor === "object" ? input.actor : {};
+  const safeFileKey = String(driveFileId).toLowerCase().replace(/[^0-9a-z_-]/g, "-").slice(0, 100);
+  const crmBuildingId = "building_drive_" + safeFileKey;
+  const auditId = "drive_building_" + requestId.replace(/-/g, "");
+  const building = {
+    id: crmBuildingId,
+    name: name,
+    address: address,
+    manager: String(approved.manager || "").trim().slice(0, 60),
+    type: String(approved.type || "다가구").trim().slice(0, 40),
+    status: String(approved.status || "영업후보").trim().slice(0, 40),
+    unitCount: Math.max(0, Math.min(10000, Number(approved.unitCount) || 0)),
+    memo: String(approved.memo || "").trim().slice(0, 500),
+    externalRefs: { driveFileIds: [driveFileId] },
+    entityVersion: 1,
+    createdAt: now,
+    updatedAt: now,
+    createdBy: String(actor.uid || ""),
+    updatedBy: String(actor.uid || "")
+  };
+  const approvedCandidate = Object.assign({}, candidate, {
+    status: "approved",
+    approvedAt: now,
+    approvedByUid: String(actor.uid || ""),
+    crmBuildingId: crmBuildingId,
+    rejectionReason: null,
+    updatedAt: now
+  });
+  const result = {
+    requestId: requestId,
+    crmBuildingId: crmBuildingId,
+    auditId: auditId,
+    approvedAt: now,
+    repeated: false
+  };
+  const receipt = Object.assign({}, result);
+  delete receipt.repeated;
+  const patch = {};
+  patch["data/buildings/" + crmBuildingId] = building;
+  patch["driveImportCandidates/" + driveFileId] = approvedCandidate;
+  patch["driveImportAuditLogs/" + auditId] = {
+    id: auditId,
+    action: "drive_building_approved",
+    requestId: requestId,
+    driveFileId: driveFileId,
+    crmBuildingId: crmBuildingId,
+    actorUid: String(actor.uid || ""),
+    occurredAt: now
+  };
+  patch["driveImportRequestReceipts/" + requestId] = receipt;
+  return { patch: patch, result: result };
+}
+
+function buildDriveImportRejectionPatch_(input) {
+  input = input && typeof input === "object" ? input : {};
+  const requestId = String(input.requestId || "");
+  if (!/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(requestId)) throw new Error("반려 요청 ID가 올바르지 않습니다.");
+  if (input.receipt && typeof input.receipt === "object") return { patch: {}, result: Object.assign({}, input.receipt, { repeated: true }) };
+  const candidate = input.candidate && typeof input.candidate === "object" ? input.candidate : {};
+  if (["pending", "stale"].indexOf(candidate.status) < 0) throw new Error("검토 대기 또는 재검토 상태만 반려할 수 있습니다.");
+  const driveFileId = String(candidate.driveFileId || "");
+  if (!driveFileId || driveFileId !== String(candidate.id || "")) throw new Error("Drive 후보 식별자가 올바르지 않습니다.");
+  const reason = String(input.reason || "").trim().slice(0, 500);
+  if (!reason) throw new Error("반려 사유를 입력해 주세요.");
+  const now = String(input.now || new Date().toISOString());
+  const actorUid = String(input.actor && input.actor.uid || "");
+  const auditId = "drive_reject_" + requestId.replace(/-/g, "");
+  const result = { requestId: requestId, driveFileId: driveFileId, auditId: auditId, rejectedAt: now, repeated: false };
+  const receipt = Object.assign({}, result);
+  delete receipt.repeated;
+  const patch = {};
+  patch["driveImportCandidates/" + driveFileId] = Object.assign({}, candidate, {
+    status: "rejected",
+    rejectionReason: reason,
+    approvedAt: null,
+    approvedByUid: null,
+    updatedAt: now
+  });
+  patch["driveImportAuditLogs/" + auditId] = {
+    id: auditId,
+    action: "drive_building_rejected",
+    requestId: requestId,
+    driveFileId: driveFileId,
+    actorUid: actorUid,
+    reason: reason,
+    occurredAt: now
+  };
+  patch["driveImportRequestReceipts/" + requestId] = receipt;
+  return { patch: patch, result: result };
+}
+
+function verifyFirebaseIdTokenForDriveImport_(idToken) {
+  const token = String(idToken || "").trim();
+  if (!token || token.length > 4096) throw new Error("로그인 인증정보가 올바르지 않습니다.");
+  const apiKey = String(PropertiesService.getScriptProperties().getProperty("CRM_FIREBASE_WEB_API_KEY") || "").trim();
+  if (!apiKey) throw new Error("CRM Firebase 인증 설정이 없습니다.");
+  const response = UrlFetchApp.fetch("https://identitytoolkit.googleapis.com/v1/accounts:lookup?key=" + encodeURIComponent(apiKey), {
+    method: "post",
+    contentType: "application/json; charset=utf-8",
+    payload: JSON.stringify({ idToken: token }),
+    muteHttpExceptions: true
+  });
+  if (response.getResponseCode() !== 200) throw new Error("로그인 세션을 확인할 수 없습니다. 다시 로그인해 주세요.");
+  const body = JSON.parse(response.getContentText() || "{}");
+  const user = body.users && body.users[0];
+  if (!user || !user.localId || !user.email || user.emailVerified !== true) throw new Error("확인된 Firebase 이메일 계정이 필요합니다.");
+  return { uid: String(user.localId), email: String(user.email).trim().toLowerCase() };
+}
+
+function handleApproveDriveImport_(payload) {
+  payload = payload && typeof payload === "object" ? payload : {};
+  const identity = verifyFirebaseIdTokenForDriveImport_(payload.idToken);
+  const lock = LockService.getScriptLock();
+  lock.waitLock(15000);
+  try {
+    const root = firebaseOauthRequest_(crmCompanyImportUrl_(""), "get", undefined, "CRM 승인 자료 조회 실패") || {};
+    const access = root.access && root.access[identity.uid];
+    assertDriveImportApprover_(access, identity);
+    const requestId = String(payload.requestId || "");
+    const receipt = root.driveImportRequestReceipts && root.driveImportRequestReceipts[requestId];
+    const driveFileId = String(payload.driveFileId || "");
+    const candidate = root.driveImportCandidates && root.driveImportCandidates[driveFileId];
+    const built = buildDriveImportApprovalPatch_({
+      requestId: requestId,
+      now: new Date().toISOString(),
+      actor: identity,
+      candidate: candidate,
+      approved: payload.approved,
+      buildings: root.data && root.data.buildings || {},
+      receipt: receipt
+    });
+    if (Object.keys(built.patch).length) {
+      firebaseOauthRequest_(crmCompanyImportUrl_(""), "patch", built.patch, "Drive 자료 CRM 승인 실패");
+    }
+    return { ok: true, result: built.result };
+  } finally {
+    lock.releaseLock();
+  }
+}
+
+function handleRejectDriveImport_(payload) {
+  payload = payload && typeof payload === "object" ? payload : {};
+  const identity = verifyFirebaseIdTokenForDriveImport_(payload.idToken);
+  const lock = LockService.getScriptLock();
+  lock.waitLock(15000);
+  try {
+    const root = firebaseOauthRequest_(crmCompanyImportUrl_(""), "get", undefined, "CRM 반려 자료 조회 실패") || {};
+    assertDriveImportApprover_(root.access && root.access[identity.uid], identity);
+    const requestId = String(payload.requestId || "");
+    const driveFileId = String(payload.driveFileId || "");
+    const built = buildDriveImportRejectionPatch_({
+      requestId: requestId,
+      now: new Date().toISOString(),
+      actor: identity,
+      candidate: root.driveImportCandidates && root.driveImportCandidates[driveFileId],
+      reason: payload.reason,
+      receipt: root.driveImportRequestReceipts && root.driveImportRequestReceipts[requestId]
+    });
+    if (Object.keys(built.patch).length) firebaseOauthRequest_(crmCompanyImportUrl_(""), "patch", built.patch, "Drive 자료 CRM 반려 실패");
+    return { ok: true, result: built.result };
+  } finally {
+    lock.releaseLock();
+  }
+}
+
 function extractOnboardingField_(text, labels) {
   const source = String(text || "").replace(/\r/g, "\n").replace(/[\t ]+/g, " ").replace(/\n+/g, " ").trim();
-  const stopLabels = "(?:건물명|건물 주소|주소|소재지|건물주명|건물주 성명|건물주|소유자명|소유자|임대인명|임대인|대표자|연락처|전화번호|전화|휴대폰|등급|비고)";
+  const stopLabels = "(?:건물명|건물 주소|주소|소재지|담당자명|담당자|건물주명|건물주 성명|건물주|소유자명|소유자|임대인명|임대인|대표자|연락처|전화번호|전화|휴대폰|등급|비고)";
   const isInstruction = value => /(?:주소로\s*계약\s*건물을?\s*확인|계약\s*건물\s*인덱스|확인하기\s*위한|간단\s*기록용|응답\s*시트|동일하게\s*입력|입력하면|자동\s*매칭)/i.test(String(value || ""));
   for (const label of labels || []) {
     const escaped = String(label).replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
@@ -7453,7 +7870,12 @@ function setupPaymentScheduleSheet_() {
 }
 
 function paymentBuildingRegistryRecords_() {
-  const registry = firebaseReadJson_(firebaseCaseSettingsUrl_("paymentBuildings"), "입금 캘린더 건물 조회 실패") || {};
+  const registry = firebaseOauthRequest_(
+    firebaseCaseSettingsUrl_("paymentBuildings"),
+    "get",
+    undefined,
+    "입금 캘린더 건물 조회 실패"
+  ) || {};
   return Object.keys(registry).map(key => {
     const item = registry[key] || {};
     return {
@@ -7563,10 +7985,11 @@ function firebasePaymentCalendarUrl_(uid, childPath, idToken) {
   const safeUid = String(uid || "").trim();
   if (!/^[A-Za-z0-9:_-]{6,160}$/.test(safeUid)) throw new Error("로그인 사용자 ID가 올바르지 않습니다.");
   const base = COMPLAINT_CONFIG.FIREBASE_DATABASE_URL.replace(/\/$/, "");
+  const calendarsPath = String(COMPLAINT_CONFIG.FIREBASE_PAYMENT_CALENDARS_PATH || "crmCompany/paymentCalendars").replace(/^\/|\/$/g, "");
   const child = String(childPath || "").split("/").filter(Boolean).map(part => encodeURIComponent(part)).join("/");
   const token = String(idToken || "").trim();
   if (!token) throw new Error("로그인 인증정보가 없습니다. 다시 로그인해 주세요.");
-  return base + "/paymentCalendars/" + encodeURIComponent(PAYMENT_CALENDAR_WORKSPACE_ID) + (child ? "/" + child : "") + ".json?auth=" + encodeURIComponent(token);
+  return base + "/" + calendarsPath + "/" + encodeURIComponent(safeUid) + (child ? "/" + child : "") + ".json?auth=" + encodeURIComponent(token);
 }
 
 function firebaseReadJson_(url, label) {
@@ -7591,7 +8014,17 @@ function writePaymentSheetSyncStatus_(payload, status) {
 }
 
 function firebaseAuthorizedWriteRequest_(url, method, payload, label) {
-  return firebaseWriteRequest_(url, method, payload, label);
+  const response = UrlFetchApp.fetch(url, {
+    method: method,
+    contentType: "application/json; charset=utf-8",
+    payload: JSON.stringify(payload),
+    muteHttpExceptions: true
+  });
+  const code = response.getResponseCode();
+  if (code < 200 || code >= 300) {
+    throw new Error(label + ": HTTP " + code + " / " + response.getContentText());
+  }
+  return response;
 }
 
 function syncPaymentSchedulesFromSheet_(payload) {
@@ -9998,6 +10431,30 @@ function extractDocxText_(driveFileId) {
   }
 }
 
+function extractPdfTextForReview_(driveFileId) {
+  let convertedId = "";
+  try {
+    const sourceFile = DriveApp.getFileById(driveFileId);
+    const converted = Drive.Files.insert({
+      title: "CRM 검토 OCR " + driveFileId,
+      mimeType: "application/vnd.google-apps.document"
+    }, sourceFile.getBlob(), {
+      convert: true,
+      ocr: true,
+      ocrLanguage: "ko"
+    });
+    convertedId = String(converted && converted.id || "");
+    if (!convertedId) throw new Error("OCR 변환 문서 ID가 없습니다.");
+    return String(DocumentApp.openById(convertedId).getBody().getText() || "").replace(/\s+/g, " ").trim();
+  } finally {
+    if (convertedId) {
+      try { DriveApp.getFileById(convertedId).setTrashed(true); } catch (cleanupError) {
+        Logger.log("임시 OCR 문서 정리 실패: " + cleanupError.message);
+      }
+    }
+  }
+}
+
 function decodeXmlText_(xml) {
   return String(xml || "")
     .replace(/<w:tab\/>/g, " ")
@@ -10033,111 +10490,6 @@ function testSensSmsSetup() {
   if (!to) throw new Error("Script Properties에 NCP_SENS_TEST_TO를 테스트 수신번호로 넣어주세요.");
   const result = sendSensSms_(to, "[BRING Care]\nSENS 문자 연동 테스트입니다.", "테스트");
   Logger.log(JSON.stringify(result));
-}
-
-function testPaymentAlimTalkTemplates() {
-  const props = PropertiesService.getScriptProperties();
-  const to = normalizePhoneForSms_(props.getProperty("NCP_SENS_TEST_TO") || "");
-  if (!to) throw new Error("Script Properties에 NCP_SENS_TEST_TO를 테스트 수신번호로 넣어주세요.");
-  const config = getKakaoAlimTalkConfig_();
-  if (!config.enabled) {
-    throw new Error("카카오 알림톡과 NCP 인증 설정을 확인해 주세요.");
-  }
-
-  const dueDate = Utilities.formatDate(new Date(), "Asia/Seoul", "yyyy-MM-dd");
-  const schedule = {
-    tenantName: "테스트 세입자",
-    buildingName: "BRING Care 테스트 건물",
-    unit: "303호",
-    amount: 600000
-  };
-  const buildings = [{
-    buildingId: "test_building",
-    buildingName: schedule.buildingName,
-    rows: [{
-      dueDate: dueDate,
-      schedule: schedule,
-      payment: {
-        date: dueDate,
-        payerName: "테스트입금",
-        amount: schedule.amount
-      }
-    }]
-  }];
-  const requests = [
-    {
-      label: "테스트 세입자 납부일 안내",
-      templateCode: config.templates.paymentReminder,
-      content: paymentReminderAlimTalkContent_(schedule, dueDate, "due")
-    },
-    {
-      label: "테스트 세입자 미입금 안내",
-      templateCode: config.templates.paymentReminderOverdue,
-      content: paymentReminderAlimTalkContent_(schedule, dueDate, "unpaid")
-    },
-    {
-      label: "테스트 건물주 월세 현황 안내",
-      templateCode: config.templates.paymentOwnerGroup,
-      content: paymentOwnerSummaryAlimTalkContent_("테스트 수신자", buildings, "due")
-    },
-    {
-      label: "테스트 건물주 입금완료 안내",
-      templateCode: config.templates.paymentOwnerConfirmedGroup,
-      content: paymentOwnerConfirmedAlimTalkContent_("테스트 수신자", buildings)
-    }
-  ];
-  const results = requests.map(request => {
-    const result = sendSensAlimTalk_(
-      to,
-      request.content,
-      request.label,
-      request.templateCode,
-      { fallbackContent: request.content },
-      config
-    );
-    Utilities.sleep(300);
-    return Object.assign({ label: request.label }, result);
-  });
-  Logger.log(JSON.stringify(results));
-  const failed = results.filter(result => result.ok !== true);
-  if (failed.length) {
-    throw new Error(failed.map(result => result.message || result.label).join(" / "));
-  }
-  props.setProperty("LAST_PAYMENT_ALIMTALK_TEST", JSON.stringify({
-    sentAt: new Date().toISOString(),
-    results: results.map(result => ({
-      label: result.label,
-      templateCode: result.templateCode,
-      requestId: result.requestId,
-      messageId: result.messageId
-    }))
-  }));
-  return results;
-}
-
-function checkPaymentAlimTalkTemplateTestStatus() {
-  const props = PropertiesService.getScriptProperties();
-  const saved = JSON.parse(props.getProperty("LAST_PAYMENT_ALIMTALK_TEST") || "{}");
-  const items = Array.isArray(saved.results) ? saved.results : [];
-  if (!items.length) throw new Error("먼저 testPaymentAlimTalkTemplates를 실행해 주세요.");
-  const config = getKakaoAlimTalkConfig_();
-  const results = items.map(item => {
-    const uri = "/alimtalk/v2/services/" + encodeURIComponent(config.serviceId) +
-      "/messages/" + encodeURIComponent(String(item.messageId || ""));
-    const response = sensGetJson_(uri, config);
-    const status = response.json && typeof response.json === "object" ? response.json : {};
-    return {
-      label: item.label,
-      templateCode: item.templateCode,
-      ok: response.ok === true,
-      messageStatusCode: String(status.messageStatusCode || ""),
-      messageStatusName: String(status.messageStatusName || ""),
-      messageStatusDesc: String(status.messageStatusDesc || ""),
-      completeTime: String(status.completeTime || "")
-    };
-  });
-  Logger.log(JSON.stringify(results));
-  return results;
 }
 
 function testKakaoAlimTalkSetup() {
@@ -10612,13 +10964,15 @@ function firebaseCaseUrl_(caseId, childPath) {
 
 function firebaseCaseSettingsUrl_(childPath) {
   const base = COMPLAINT_CONFIG.FIREBASE_DATABASE_URL.replace(/\/$/, "");
+  const path = String(COMPLAINT_CONFIG.FIREBASE_CASE_SETTINGS_PATH || "caseSettings").replace(/^\/|\/$/g, "");
   const child = String(childPath || "").split("/").filter(Boolean).map(part => encodeURIComponent(part)).join("/");
-  return base + "/caseSettings" + (child ? "/" + child : "") + ".json";
+  return base + "/" + path + (child ? "/" + child : "") + ".json";
 }
 
 function firebaseWriteRequest_(url, method, payload, label) {
   const response = UrlFetchApp.fetch(url, {
     method: method,
+    headers: { Authorization: "Bearer " + ScriptApp.getOAuthToken() },
     contentType: "application/json; charset=utf-8",
     payload: JSON.stringify(payload),
     muteHttpExceptions: true

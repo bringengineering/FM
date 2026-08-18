@@ -3,30 +3,757 @@
     ".read": false,
     ".write": false,
     "workflow": {
-      ".read": true,
-      ".write": true
+      ".read": "auth != null && root.child('crmCompany/access').child(auth.uid).child('enabled').val() === true && root.child('crmCompany/access').child(auth.uid).child('email').val() === auth.token.email && (root.child('crmCompany/access').child(auth.uid).child('role').val() === 'admin' || root.child('crmCompany/access').child(auth.uid).child('role').val() === 'member' || root.child('crmCompany/access').child(auth.uid).child('role').val() === 'viewer')",
+      ".write": "auth != null && root.child('crmCompany/access').child(auth.uid).child('enabled').val() === true && root.child('crmCompany/access').child(auth.uid).child('email').val() === auth.token.email && (root.child('crmCompany/access').child(auth.uid).child('role').val() === 'admin' || root.child('crmCompany/access').child(auth.uid).child('role').val() === 'member')"
     },
     "caseSettings": {
-      ".read": true,
-      ".write": true
+      ".read": "auth != null && root.child('crmCompany/access').child(auth.uid).child('enabled').val() === true && root.child('crmCompany/access').child(auth.uid).child('email').val() === auth.token.email && (root.child('crmCompany/access').child(auth.uid).child('role').val() === 'admin' || root.child('crmCompany/access').child(auth.uid).child('role').val() === 'member' || root.child('crmCompany/access').child(auth.uid).child('role').val() === 'viewer')",
+      ".write": "auth != null && root.child('crmCompany/access').child(auth.uid).child('enabled').val() === true && root.child('crmCompany/access').child(auth.uid).child('email').val() === auth.token.email && (root.child('crmCompany/access').child(auth.uid).child('role').val() === 'admin' || root.child('crmCompany/access').child(auth.uid).child('role').val() === 'member')"
+    },
+    "crmCompany": {
+      ".read": false,
+      ".write": false,
+      "access": {
+        "$uid": {
+          ".read": "auth != null && auth.uid === $uid",
+          ".write": false
+        }
+      },
+      "teamProfiles": {
+        ".read": "auth != null && root.child('crmCompany/access').child(auth.uid).child('enabled').val() === true && root.child('crmCompany/access').child(auth.uid).child('email').val() === auth.token.email && (root.child('crmCompany/access').child(auth.uid).child('role').val() === 'admin' || root.child('crmCompany/access').child(auth.uid).child('role').val() === 'member' || root.child('crmCompany/access').child(auth.uid).child('role').val() === 'viewer')",
+        ".write": false
+      },
+      "data": {
+        ".read": "auth != null && root.child('crmCompany/access').child(auth.uid).child('enabled').val() === true && root.child('crmCompany/access').child(auth.uid).child('email').val() === auth.token.email && (root.child('crmCompany/access').child(auth.uid).child('role').val() === 'admin' || root.child('crmCompany/access').child(auth.uid).child('role').val() === 'member' || root.child('crmCompany/access').child(auth.uid).child('role').val() === 'viewer')",
+        ".write": false,
+        "buildings": {
+          ".write": false,
+          "$entityId": {
+            ".write": "auth != null && newData.exists() && root.child('crmCompany/access').child(auth.uid).child('enabled').val() === true && root.child('crmCompany/access').child(auth.uid).child('email').val() === auth.token.email && (root.child('crmCompany/access').child(auth.uid).child('role').val() === 'admin' || root.child('crmCompany/access').child(auth.uid).child('role').val() === 'member')",
+            ".validate": "newData.exists() && newData.child('id').val() === $entityId && newData.child('entityVersion').isNumber() && newData.child('entityVersion').val() >= 1 && newData.child('entityVersion').val() % 1 === 0 && newData.child('name').isString() && newData.child('name').val().length > 0 && newData.child('address').isString() && newData.child('address').val().length > 0 && newData.child('createdAt').isString() && newData.child('updatedAt').isString() && newData.child('updatedByAuthUid').val() === auth.uid && root.child('crmCompany/teamProfiles').child(newData.child('updatedByOperatorId').val()).child('active').val() === true && ((!data.exists() && newData.child('entityVersion').val() === 1 && newData.child('createdByAuthUid').val() === auth.uid) || (data.exists() && newData.child('id').val() === data.child('id').val() && newData.child('createdAt').val() === data.child('createdAt').val() && newData.child('createdByAuthUid').val() === data.child('createdByAuthUid').val() && newData.child('createdByOperatorId').val() === data.child('createdByOperatorId').val() && newData.child('entityVersion').val() === data.child('entityVersion').val() + 1)) && ((!newData.child('ownerCustomerId').exists() || newData.child('ownerCustomerId').val() === '' || newData.parent().parent().child('customers').child(newData.child('ownerCustomerId').val()).child('id').val() === newData.child('ownerCustomerId').val())) && ((!newData.child('archivedAt').exists() || newData.child('archivedAt').val() === '') || (newData.child('archivedByAuthUid').val() === auth.uid && newData.child('archivedByOperatorId').val() === newData.child('updatedByOperatorId').val()))",
+            "id": {
+              ".validate": true
+            },
+            "entityVersion": {
+              ".validate": true
+            },
+            "createdAt": {
+              ".validate": true
+            },
+            "createdByAuthUid": {
+              ".validate": true
+            },
+            "createdByOperatorId": {
+              ".validate": true
+            },
+            "updatedAt": {
+              ".validate": true
+            },
+            "updatedByAuthUid": {
+              ".validate": true
+            },
+            "updatedByOperatorId": {
+              ".validate": true
+            },
+            "archivedAt": {
+              ".validate": true
+            },
+            "archivedByAuthUid": {
+              ".validate": true
+            },
+            "archivedByOperatorId": {
+              ".validate": true
+            },
+            "name": {
+              ".validate": true
+            },
+            "address": {
+              ".validate": true
+            },
+            "type": {
+              ".validate": true
+            },
+            "status": {
+              ".validate": true
+            },
+            "ownerCustomerId": {
+              ".validate": true
+            },
+            "unitCount": {
+              ".validate": true
+            },
+            "manager": {
+              ".validate": true
+            },
+            "memo": {
+              ".validate": true
+            },
+            "aliases": {
+              ".validate": true
+            },
+            "externalRefs": {
+              ".validate": true
+            },
+            "rentDeposit": {
+              ".validate": true
+            },
+            "monthlyRent": {
+              ".validate": true
+            },
+            "maintenanceFee": {
+              ".validate": true
+            },
+            "maintenanceIncludes": {
+              ".validate": true
+            },
+            "maintenanceIncludeOther": {
+              ".validate": true
+            },
+            "roomTypes": {
+              ".validate": true
+            },
+            "roomTypeOther": {
+              ".validate": true
+            },
+            "roomOptions": {
+              ".validate": true
+            },
+            "roomOptionOther": {
+              ".validate": true
+            },
+            "vacantUnitCount": {
+              ".validate": true
+            },
+            "vacantUnits": {
+              ".validate": true
+            },
+            "$other": {
+              ".validate": false
+            }
+          }
+        },
+        "buildingUnits": {
+          ".write": false,
+          "$entityId": {
+            ".write": "auth != null && newData.exists() && root.child('crmCompany/access').child(auth.uid).child('enabled').val() === true && root.child('crmCompany/access').child(auth.uid).child('email').val() === auth.token.email && (root.child('crmCompany/access').child(auth.uid).child('role').val() === 'admin' || root.child('crmCompany/access').child(auth.uid).child('role').val() === 'member')",
+            ".validate": "newData.exists() && newData.child('id').val() === $entityId && newData.child('entityVersion').isNumber() && newData.child('entityVersion').val() >= 1 && newData.child('entityVersion').val() % 1 === 0 && newData.child('crmBuildingId').isString() && newData.parent().parent().child('buildings').child(newData.child('crmBuildingId').val()).child('id').val() === newData.child('crmBuildingId').val() && newData.parent().parent().child('buildings').child(newData.child('crmBuildingId').val()).child('archivedAt').val() === '' && newData.child('label').isString() && newData.child('label').val().length > 0 && (newData.child('status').val() === 'unknown' || newData.child('status').val() === 'occupied' || newData.child('status').val() === 'vacant' || newData.child('status').val() === 'move_out_scheduled' || newData.child('status').val() === 'maintenance') && (newData.child('status').val() !== 'move_out_scheduled' || (newData.child('moveOutAt').val() !== '' || newData.child('availableFrom').val() !== '')) && newData.child('createdAt').isString() && newData.child('updatedAt').isString() && newData.child('updatedByAuthUid').val() === auth.uid && root.child('crmCompany/teamProfiles').child(newData.child('updatedByOperatorId').val()).child('active').val() === true && ((!data.exists() && newData.child('entityVersion').val() === 1 && newData.child('createdByAuthUid').val() === auth.uid) || (data.exists() && newData.child('id').val() === data.child('id').val() && newData.child('crmBuildingId').val() === data.child('crmBuildingId').val() && newData.child('createdAt').val() === data.child('createdAt').val() && newData.child('createdByAuthUid').val() === data.child('createdByAuthUid').val() && newData.child('createdByOperatorId').val() === data.child('createdByOperatorId').val() && newData.child('entityVersion').val() === data.child('entityVersion').val() + 1)) && ((!newData.child('archivedAt').exists() || newData.child('archivedAt').val() === '') || (newData.child('archivedByAuthUid').val() === auth.uid && newData.child('archivedByOperatorId').val() === newData.child('updatedByOperatorId').val()))",
+            "id": {
+              ".validate": true
+            },
+            "entityVersion": {
+              ".validate": true
+            },
+            "createdAt": {
+              ".validate": true
+            },
+            "createdByAuthUid": {
+              ".validate": true
+            },
+            "createdByOperatorId": {
+              ".validate": true
+            },
+            "updatedAt": {
+              ".validate": true
+            },
+            "updatedByAuthUid": {
+              ".validate": true
+            },
+            "updatedByOperatorId": {
+              ".validate": true
+            },
+            "archivedAt": {
+              ".validate": true
+            },
+            "archivedByAuthUid": {
+              ".validate": true
+            },
+            "archivedByOperatorId": {
+              ".validate": true
+            },
+            "crmBuildingId": {
+              ".validate": true
+            },
+            "label": {
+              ".validate": true
+            },
+            "floorLabel": {
+              ".validate": true
+            },
+            "floorOrder": {
+              ".validate": true
+            },
+            "unitOrder": {
+              ".validate": true
+            },
+            "status": {
+              ".validate": true
+            },
+            "moveOutAt": {
+              ".validate": true
+            },
+            "availableFrom": {
+              ".validate": true
+            },
+            "memo": {
+              ".validate": true
+            },
+            "externalRefs": {
+              ".validate": true
+            },
+            "$other": {
+              ".validate": false
+            }
+          }
+        },
+        "salesUnits": {
+          ".write": false,
+          "$entityId": {
+            ".write": "auth != null && newData.exists() && root.child('crmCompany/access').child(auth.uid).child('enabled').val() === true && root.child('crmCompany/access').child(auth.uid).child('email').val() === auth.token.email && (root.child('crmCompany/access').child(auth.uid).child('role').val() === 'admin' || root.child('crmCompany/access').child(auth.uid).child('role').val() === 'member')",
+            ".validate": "newData.exists() && newData.child('id').val() === $entityId && newData.child('entityVersion').isNumber() && newData.child('entityVersion').val() >= 1 && newData.child('entityVersion').val() % 1 === 0 && newData.child('prospectId').isString() && newData.parent().parent().child('salesProspects').child(newData.child('prospectId').val()).child('id').val() === newData.child('prospectId').val() && newData.child('label').isString() && newData.child('label').val().length > 0 && (!newData.child('crmBuildingUnitId').exists() || newData.child('crmBuildingUnitId').val() === '' || newData.parent().parent().child('buildingUnits').child(newData.child('crmBuildingUnitId').val()).child('id').val() === newData.child('crmBuildingUnitId').val()) && newData.child('createdAt').isString() && newData.child('updatedAt').isString() && newData.child('updatedByAuthUid').val() === auth.uid && root.child('crmCompany/teamProfiles').child(newData.child('updatedByOperatorId').val()).child('active').val() === true && ((!data.exists() && newData.child('entityVersion').val() === 1 && newData.child('createdByAuthUid').val() === auth.uid) || (data.exists() && newData.child('id').val() === data.child('id').val() && newData.child('prospectId').val() === data.child('prospectId').val() && newData.child('createdAt').val() === data.child('createdAt').val() && newData.child('createdByAuthUid').val() === data.child('createdByAuthUid').val() && newData.child('createdByOperatorId').val() === data.child('createdByOperatorId').val() && newData.child('entityVersion').val() === data.child('entityVersion').val() + 1)) && ((!newData.child('archivedAt').exists() || newData.child('archivedAt').val() === '') || (newData.child('archivedByAuthUid').val() === auth.uid && newData.child('archivedByOperatorId').val() === newData.child('updatedByOperatorId').val()))",
+            "id": {
+              ".validate": true
+            },
+            "entityVersion": {
+              ".validate": true
+            },
+            "createdAt": {
+              ".validate": true
+            },
+            "createdByAuthUid": {
+              ".validate": true
+            },
+            "createdByOperatorId": {
+              ".validate": true
+            },
+            "updatedAt": {
+              ".validate": true
+            },
+            "updatedByAuthUid": {
+              ".validate": true
+            },
+            "updatedByOperatorId": {
+              ".validate": true
+            },
+            "archivedAt": {
+              ".validate": true
+            },
+            "archivedByAuthUid": {
+              ".validate": true
+            },
+            "archivedByOperatorId": {
+              ".validate": true
+            },
+            "prospectId": {
+              ".validate": true
+            },
+            "crmBuildingUnitId": {
+              ".validate": true
+            },
+            "label": {
+              ".validate": true
+            },
+            "status": {
+              ".validate": true
+            },
+            "moveOutAt": {
+              ".validate": true
+            },
+            "availableFrom": {
+              ".validate": true
+            },
+            "deposit": {
+              ".validate": true
+            },
+            "rent": {
+              ".validate": true
+            },
+            "maintenanceFee": {
+              ".validate": true
+            },
+            "photoUrl": {
+              ".validate": true
+            },
+            "evidenceUrl": {
+              ".validate": true
+            },
+            "note": {
+              ".validate": true
+            },
+            "externalRefs": {
+              ".validate": true
+            },
+            "$other": {
+              ".validate": false
+            }
+          }
+        },
+        "canonicalReceipts": {
+          "$requestId": {
+            ".write": "auth != null && newData.exists() && root.child('crmCompany/access').child(auth.uid).child('enabled').val() === true && root.child('crmCompany/access').child(auth.uid).child('email').val() === auth.token.email && (root.child('crmCompany/access').child(auth.uid).child('role').val() === 'admin' || root.child('crmCompany/access').child(auth.uid).child('role').val() === 'member') && !data.exists()",
+            ".validate": "newData.exists() && !data.exists() && newData.child('requestId').val() === $requestId && newData.child('actorUid').val() === auth.uid && newData.child('scope').isString() && newData.child('requestHash').isString() && newData.child('createdAt').isString() && newData.child('result').exists()",
+            "scope": {
+              ".validate": true
+            },
+            "requestId": {
+              ".validate": true
+            },
+            "requestHash": {
+              ".validate": true
+            },
+            "actorUid": {
+              ".validate": true
+            },
+            "result": {
+              ".validate": true
+            },
+            "createdAt": {
+              ".validate": true
+            },
+            "$other": {
+              ".validate": false
+            }
+          }
+        },
+        "canonicalAuditLogs": {
+          "$auditId": {
+            ".write": "auth != null && newData.exists() && root.child('crmCompany/access').child(auth.uid).child('enabled').val() === true && root.child('crmCompany/access').child(auth.uid).child('email').val() === auth.token.email && (root.child('crmCompany/access').child(auth.uid).child('role').val() === 'admin' || root.child('crmCompany/access').child(auth.uid).child('role').val() === 'member') && !data.exists()",
+            ".validate": "newData.exists() && !data.exists() && newData.child('id').val() === $auditId && newData.child('authUid').val() === auth.uid && newData.child('operatorId').isString() && root.child('crmCompany/teamProfiles').child(newData.child('operatorId').val()).child('active').val() === true && newData.child('requestId').isString() && newData.child('occurredAt').isString()",
+            "id": {
+              ".validate": true
+            },
+            "scope": {
+              ".validate": true
+            },
+            "requestId": {
+              ".validate": true
+            },
+            "authUid": {
+              ".validate": true
+            },
+            "operatorId": {
+              ".validate": true
+            },
+            "occurredAt": {
+              ".validate": true
+            },
+            "action": {
+              ".validate": true
+            },
+            "entityType": {
+              ".validate": true
+            },
+            "entityId": {
+              ".validate": true
+            },
+            "beforeVersion": {
+              ".validate": true
+            },
+            "afterVersion": {
+              ".validate": true
+            },
+            "changedFields": {
+              ".validate": true
+            },
+            "reason": {
+              ".validate": true
+            },
+            "createdCount": {
+              ".validate": true
+            },
+            "updatedCount": {
+              ".validate": true
+            },
+            "unchangedCount": {
+              ".validate": true
+            },
+            "$other": {
+              ".validate": false
+            }
+          }
+        },
+        "schemaVersion": {
+          ".write": "auth != null && root.child('crmCompany/access').child(auth.uid).child('enabled').val() === true && root.child('crmCompany/access').child(auth.uid).child('email').val() === auth.token.email && (root.child('crmCompany/access').child(auth.uid).child('role').val() === 'admin' || root.child('crmCompany/access').child(auth.uid).child('role').val() === 'member')"
+        },
+        "company": {
+          ".write": "auth != null && root.child('crmCompany/access').child(auth.uid).child('enabled').val() === true && root.child('crmCompany/access').child(auth.uid).child('email').val() === auth.token.email && (root.child('crmCompany/access').child(auth.uid).child('role').val() === 'admin' || root.child('crmCompany/access').child(auth.uid).child('role').val() === 'member')"
+        },
+        "updatedAt": {
+          ".write": "auth != null && root.child('crmCompany/access').child(auth.uid).child('enabled').val() === true && root.child('crmCompany/access').child(auth.uid).child('email').val() === auth.token.email && (root.child('crmCompany/access').child(auth.uid).child('role').val() === 'admin' || root.child('crmCompany/access').child(auth.uid).child('role').val() === 'member')"
+        },
+        "updatedBy": {
+          ".write": "auth != null && root.child('crmCompany/access').child(auth.uid).child('enabled').val() === true && root.child('crmCompany/access').child(auth.uid).child('email').val() === auth.token.email && (root.child('crmCompany/access').child(auth.uid).child('role').val() === 'admin' || root.child('crmCompany/access').child(auth.uid).child('role').val() === 'member')"
+        },
+        "customers": {
+          "$customerId": {
+            ".write": "auth != null && root.child('crmCompany/access').child(auth.uid).child('enabled').val() === true && root.child('crmCompany/access').child(auth.uid).child('email').val() === auth.token.email && (root.child('crmCompany/access').child(auth.uid).child('role').val() === 'admin' || root.child('crmCompany/access').child(auth.uid).child('role').val() === 'member') && !data.child('buildingIdLinks').exists() && !newData.child('buildingIdLinks').exists()",
+            "$field": {
+              ".write": "auth != null && $field !== 'buildingIdLinks' && root.child('crmCompany/access').child(auth.uid).child('enabled').val() === true && root.child('crmCompany/access').child(auth.uid).child('email').val() === auth.token.email && (root.child('crmCompany/access').child(auth.uid).child('role').val() === 'admin' || root.child('crmCompany/access').child(auth.uid).child('role').val() === 'member')"
+            },
+            "buildingIdLinks": {
+              ".write": false,
+              "$buildingId": {
+                ".write": "auth != null && !data.exists() && newData.exists() && newData.isBoolean() && newData.val() === true && root.child('crmCompany/access').child(auth.uid).child('enabled').val() === true && root.child('crmCompany/access').child(auth.uid).child('email').val() === auth.token.email && (root.child('crmCompany/access').child(auth.uid).child('role').val() === 'admin' || root.child('crmCompany/access').child(auth.uid).child('role').val() === 'member')",
+                ".validate": "newData.isBoolean() && newData.val() === true"
+              }
+            }
+          }
+        },
+        "activities": {
+          ".write": "auth != null && root.child('crmCompany/access').child(auth.uid).child('enabled').val() === true && root.child('crmCompany/access').child(auth.uid).child('email').val() === auth.token.email && (root.child('crmCompany/access').child(auth.uid).child('role').val() === 'admin' || root.child('crmCompany/access').child(auth.uid).child('role').val() === 'member')"
+        },
+        "contracts": {
+          ".write": "auth != null && root.child('crmCompany/access').child(auth.uid).child('enabled').val() === true && root.child('crmCompany/access').child(auth.uid).child('email').val() === auth.token.email && (root.child('crmCompany/access').child(auth.uid).child('role').val() === 'admin' || root.child('crmCompany/access').child(auth.uid).child('role').val() === 'member')"
+        },
+        "partnerVendors": {
+          ".write": "auth != null && root.child('crmCompany/access').child(auth.uid).child('enabled').val() === true && root.child('crmCompany/access').child(auth.uid).child('email').val() === auth.token.email && (root.child('crmCompany/access').child(auth.uid).child('role').val() === 'admin' || root.child('crmCompany/access').child(auth.uid).child('role').val() === 'member')"
+        },
+        "partnerQuotes": {
+          ".write": "auth != null && root.child('crmCompany/access').child(auth.uid).child('enabled').val() === true && root.child('crmCompany/access').child(auth.uid).child('email').val() === auth.token.email && (root.child('crmCompany/access').child(auth.uid).child('role').val() === 'admin' || root.child('crmCompany/access').child(auth.uid).child('role').val() === 'member')"
+        },
+        "tasks": {
+          ".write": "auth != null && root.child('crmCompany/access').child(auth.uid).child('enabled').val() === true && root.child('crmCompany/access').child(auth.uid).child('email').val() === auth.token.email && (root.child('crmCompany/access').child(auth.uid).child('role').val() === 'admin' || root.child('crmCompany/access').child(auth.uid).child('role').val() === 'member')"
+        },
+        "serviceRecords": {
+          ".write": "auth != null && root.child('crmCompany/access').child(auth.uid).child('enabled').val() === true && root.child('crmCompany/access').child(auth.uid).child('email').val() === auth.token.email && (root.child('crmCompany/access').child(auth.uid).child('role').val() === 'admin' || root.child('crmCompany/access').child(auth.uid).child('role').val() === 'member')"
+        },
+        "serviceContracts": {
+          ".write": "auth != null && root.child('crmCompany/access').child(auth.uid).child('enabled').val() === true && root.child('crmCompany/access').child(auth.uid).child('email').val() === auth.token.email && (root.child('crmCompany/access').child(auth.uid).child('role').val() === 'admin' || root.child('crmCompany/access').child(auth.uid).child('role').val() === 'member')"
+        },
+        "serviceSchedules": {
+          ".write": "auth != null && root.child('crmCompany/access').child(auth.uid).child('enabled').val() === true && root.child('crmCompany/access').child(auth.uid).child('email').val() === auth.token.email && (root.child('crmCompany/access').child(auth.uid).child('role').val() === 'admin' || root.child('crmCompany/access').child(auth.uid).child('role').val() === 'member')"
+        },
+        "securityAssets": {
+          ".write": "auth != null && root.child('crmCompany/access').child(auth.uid).child('enabled').val() === true && root.child('crmCompany/access').child(auth.uid).child('email').val() === auth.token.email && (root.child('crmCompany/access').child(auth.uid).child('role').val() === 'admin' || root.child('crmCompany/access').child(auth.uid).child('role').val() === 'member')"
+        },
+        "auditLogs": {
+          ".write": "auth != null && root.child('crmCompany/access').child(auth.uid).child('enabled').val() === true && root.child('crmCompany/access').child(auth.uid).child('email').val() === auth.token.email && (root.child('crmCompany/access').child(auth.uid).child('role').val() === 'admin' || root.child('crmCompany/access').child(auth.uid).child('role').val() === 'member')"
+        },
+        "securityIncidents": {
+          ".write": "auth != null && root.child('crmCompany/access').child(auth.uid).child('enabled').val() === true && root.child('crmCompany/access').child(auth.uid).child('email').val() === auth.token.email && (root.child('crmCompany/access').child(auth.uid).child('role').val() === 'admin' || root.child('crmCompany/access').child(auth.uid).child('role').val() === 'member')"
+        },
+        "salesProspects": {
+          ".write": "auth != null && root.child('crmCompany/access').child(auth.uid).child('enabled').val() === true && root.child('crmCompany/access').child(auth.uid).child('email').val() === auth.token.email && (root.child('crmCompany/access').child(auth.uid).child('role').val() === 'admin' || root.child('crmCompany/access').child(auth.uid).child('role').val() === 'member')"
+        },
+        "salesContacts": {
+          ".write": "auth != null && root.child('crmCompany/access').child(auth.uid).child('enabled').val() === true && root.child('crmCompany/access').child(auth.uid).child('email').val() === auth.token.email && (root.child('crmCompany/access').child(auth.uid).child('role').val() === 'admin' || root.child('crmCompany/access').child(auth.uid).child('role').val() === 'member')"
+        },
+        "salesActivities": {
+          ".write": "auth != null && root.child('crmCompany/access').child(auth.uid).child('enabled').val() === true && root.child('crmCompany/access').child(auth.uid).child('email').val() === auth.token.email && (root.child('crmCompany/access').child(auth.uid).child('role').val() === 'admin' || root.child('crmCompany/access').child(auth.uid).child('role').val() === 'member')"
+        },
+        "salesEvents": {
+          ".write": "auth != null && root.child('crmCompany/access').child(auth.uid).child('enabled').val() === true && root.child('crmCompany/access').child(auth.uid).child('email').val() === auth.token.email && (root.child('crmCompany/access').child(auth.uid).child('role').val() === 'admin' || root.child('crmCompany/access').child(auth.uid).child('role').val() === 'member')"
+        },
+        "salesOpportunities": {
+          ".write": "auth != null && root.child('crmCompany/access').child(auth.uid).child('enabled').val() === true && root.child('crmCompany/access').child(auth.uid).child('email').val() === auth.token.email && (root.child('crmCompany/access').child(auth.uid).child('role').val() === 'admin' || root.child('crmCompany/access').child(auth.uid).child('role').val() === 'member')"
+        }
+      },
+      "fieldSummaries": {
+        ".read": "auth != null && root.child('crmCompany/access').child(auth.uid).child('enabled').val() === true && root.child('crmCompany/access').child(auth.uid).child('email').val() === auth.token.email && (root.child('crmCompany/access').child(auth.uid).child('role').val() === 'admin' || root.child('crmCompany/access').child(auth.uid).child('role').val() === 'member' || root.child('crmCompany/access').child(auth.uid).child('role').val() === 'viewer')",
+        ".write": false
+      },
+      "cases": {
+        ".read": "auth != null && root.child('crmCompany/access').child(auth.uid).child('enabled').val() === true && root.child('crmCompany/access').child(auth.uid).child('email').val() === auth.token.email && (root.child('crmCompany/access').child(auth.uid).child('role').val() === 'admin' || root.child('crmCompany/access').child(auth.uid).child('role').val() === 'member' || root.child('crmCompany/access').child(auth.uid).child('role').val() === 'viewer')",
+        ".write": "auth != null && root.child('crmCompany/access').child(auth.uid).child('enabled').val() === true && root.child('crmCompany/access').child(auth.uid).child('email').val() === auth.token.email && (root.child('crmCompany/access').child(auth.uid).child('role').val() === 'admin' || root.child('crmCompany/access').child(auth.uid).child('role').val() === 'member')"
+      },
+      "paymentCalendars": {
+        ".read": "auth != null && root.child('crmCompany/access').child(auth.uid).child('enabled').val() === true && root.child('crmCompany/access').child(auth.uid).child('email').val() === auth.token.email && (root.child('crmCompany/access').child(auth.uid).child('role').val() === 'admin' || root.child('crmCompany/access').child(auth.uid).child('role').val() === 'member' || root.child('crmCompany/access').child(auth.uid).child('role').val() === 'viewer')",
+        ".write": "auth != null && root.child('crmCompany/access').child(auth.uid).child('enabled').val() === true && root.child('crmCompany/access').child(auth.uid).child('email').val() === auth.token.email && (root.child('crmCompany/access').child(auth.uid).child('role').val() === 'admin' || root.child('crmCompany/access').child(auth.uid).child('role').val() === 'member')"
+      },
+      "caseSettings": {
+        ".read": "auth != null && root.child('crmCompany/access').child(auth.uid).child('enabled').val() === true && root.child('crmCompany/access').child(auth.uid).child('email').val() === auth.token.email && (root.child('crmCompany/access').child(auth.uid).child('role').val() === 'admin' || root.child('crmCompany/access').child(auth.uid).child('role').val() === 'member' || root.child('crmCompany/access').child(auth.uid).child('role').val() === 'viewer')",
+        ".write": "auth != null && root.child('crmCompany/access').child(auth.uid).child('enabled').val() === true && root.child('crmCompany/access').child(auth.uid).child('email').val() === auth.token.email && (root.child('crmCompany/access').child(auth.uid).child('role').val() === 'admin' || root.child('crmCompany/access').child(auth.uid).child('role').val() === 'member')"
+      },
+      "migration": {
+        ".read": false,
+        ".write": false
+      }
+    },
+    "crmMigrationStaging": {
+      ".read": false,
+      ".write": false
     },
     "cases": {
-      ".read": true,
-      ".write": true
+      ".read": "auth != null && root.child('crmCompany/access').child(auth.uid).child('enabled').val() === true && root.child('crmCompany/access').child(auth.uid).child('email').val() === auth.token.email && (root.child('crmCompany/access').child(auth.uid).child('role').val() === 'admin' || root.child('crmCompany/access').child(auth.uid).child('role').val() === 'member' || root.child('crmCompany/access').child(auth.uid).child('role').val() === 'viewer')",
+      ".write": "auth != null && root.child('crmCompany/access').child(auth.uid).child('enabled').val() === true && root.child('crmCompany/access').child(auth.uid).child('email').val() === auth.token.email && (root.child('crmCompany/access').child(auth.uid).child('role').val() === 'admin' || root.child('crmCompany/access').child(auth.uid).child('role').val() === 'member')"
     },
     "paymentCalendars": {
-      "shared": {
-        ".read": "auth != null",
-        ".write": "auth != null"
-      },
       "$uid": {
         ".read": "auth != null && auth.uid === $uid",
         ".write": "auth != null && auth.uid === $uid"
       }
     },
+    "fieldPlatform": {
+      "v2": {
+        ".read": false,
+        ".write": false,
+        "projections": {
+          "operatorJobs": {
+            "$operatorId": {
+              ".indexOn": [
+                "updatedAt"
+              ]
+            }
+          },
+          "unassigned": {
+            ".indexOn": [
+              "updatedAt"
+            ]
+          },
+          "teamActive": {
+            ".indexOn": [
+              "activeOrderKey"
+            ]
+          }
+        }
+      },
+      "desktopHandoffs": {
+        ".read": false,
+        ".write": false,
+        ".indexOn": [
+          "expiresAt"
+        ]
+      },
+      "desktopHandoffRateLimits": {
+        ".read": false,
+        ".write": false
+      },
+      "users": {
+        "$uid": {
+          ".read": "auth != null && auth.token.fieldPlatform === true && (auth.uid === $uid || (auth.token.fieldRole === 'admin' && root.child('fieldPlatform/users').child(auth.uid).child('enabled').val() === true && root.child('fieldPlatform/users').child(auth.uid).child('role').val() === auth.token.fieldRole))",
+          ".write": false
+        }
+      },
+      "buildingAssignments": {
+        "$buildingId": {
+          "$uid": {
+            ".read": "auth != null && auth.token.fieldPlatform === true && root.child('fieldPlatform/users').child(auth.uid).child('enabled').val() === true && root.child('fieldPlatform/users').child(auth.uid).child('role').val() === auth.token.fieldRole && (auth.uid === $uid || auth.token.fieldRole === 'admin')",
+            ".write": "auth != null && auth.token.fieldPlatform === true && root.child('fieldPlatform/users').child(auth.uid).child('enabled').val() === true && root.child('fieldPlatform/users').child(auth.uid).child('role').val() === auth.token.fieldRole && (auth.token.fieldRole === 'admin' || (auth.token.fieldRole === 'staff' && auth.uid === $uid && newData.val() === true))",
+            ".validate": "newData.val() === true"
+          }
+        }
+      },
+      "ownerNotes": {
+        "$buildingId": {
+          ".read": "auth != null && auth.token.fieldPlatform === true && root.child('fieldPlatform/users').child(auth.uid).child('enabled').val() === true && root.child('fieldPlatform/users').child(auth.uid).child('role').val() === auth.token.fieldRole && (auth.token.fieldRole === 'admin' || (auth.token.fieldRole === 'staff' && root.child('fieldPlatform/buildingAssignments').child($buildingId).child(auth.uid).val() === true))",
+          ".indexOn": [
+            "createdAt"
+          ],
+          "$noteId": {
+            ".write": "auth != null && auth.token.fieldPlatform === true && newData.exists() && root.child('fieldPlatform/users').child(auth.uid).child('enabled').val() === true && root.child('fieldPlatform/users').child(auth.uid).child('role').val() === auth.token.fieldRole && (auth.token.fieldRole === 'admin' || (auth.token.fieldRole === 'staff' && root.child('fieldPlatform/buildingAssignments').child($buildingId).child(auth.uid).val() === true))",
+            ".validate": "newData.hasChildren(['id', 'buildingId', 'body', 'recordedAt', 'createdAt', 'createdBy', 'createdByName']) && newData.child('id').val() === $noteId && newData.child('buildingId').val() === $buildingId && newData.child('body').isString() && newData.child('body').val().length > 0 && newData.child('body').val().length <= 2000 && newData.child('recordedAt').isString() && newData.child('recordedAt').val().matches(/^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}[.][0-9]{3}Z$/) && newData.child('createdAt').isString() && newData.child('createdAt').val().matches(/^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}[.][0-9]{3}Z$/) && newData.child('createdBy').isString() && newData.child('createdByName').isString() && newData.child('createdByName').val().length > 0 && newData.child('createdByName').val().length <= 80 && ((!data.exists() && newData.child('createdBy').val() === auth.uid && !newData.child('archivedAt').exists() && !newData.child('archivedBy').exists()) || (data.exists() && !data.child('archivedAt').exists() && newData.child('id').val() === data.child('id').val() && newData.child('buildingId').val() === data.child('buildingId').val() && newData.child('body').val() === data.child('body').val() && newData.child('recordedAt').val() === data.child('recordedAt').val() && newData.child('createdAt').val() === data.child('createdAt').val() && newData.child('createdBy').val() === data.child('createdBy').val() && newData.child('createdByName').val() === data.child('createdByName').val() && newData.child('archivedAt').isString() && newData.child('archivedAt').val().matches(/^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}[.][0-9]{3}Z$/) && newData.child('archivedBy').val() === auth.uid))"
+          }
+        }
+      },
+      "secureAccessAssignments": {
+        "$buildingId": {
+          "$uid": {
+            ".read": "auth != null && auth.token.fieldPlatform === true && root.child('fieldPlatform/users').child(auth.uid).child('enabled').val() === true && root.child('fieldPlatform/users').child(auth.uid).child('role').val() === auth.token.fieldRole && (auth.uid === $uid || auth.token.fieldRole === 'admin')",
+            ".write": false
+          }
+        }
+      },
+      "managementNumberCounters": {
+        "$year": {
+          "$area": {
+            ".read": "auth != null && auth.token.fieldPlatform === true && root.child('fieldPlatform/users').child(auth.uid).child('enabled').val() === true && (auth.token.fieldRole === 'admin' || auth.token.fieldRole === 'staff')",
+            ".write": "auth != null && auth.token.fieldPlatform === true && root.child('fieldPlatform/users').child(auth.uid).child('enabled').val() === true && (auth.token.fieldRole === 'admin' || auth.token.fieldRole === 'staff')",
+            ".validate": "newData.isNumber() && newData.val() % 1 === 0 && newData.val() === (data.exists() ? data.val() + 1 : 1)"
+          }
+        }
+      },
+      "buildings": {
+        ".read": "auth != null && auth.token.fieldPlatform === true && root.child('fieldPlatform/users').child(auth.uid).child('enabled').val() === true && root.child('fieldPlatform/users').child(auth.uid).child('role').val() === auth.token.fieldRole",
+        ".indexOn": [
+          "managementContract/status"
+        ],
+        "$buildingId": {
+          ".write": "auth != null && auth.token.fieldPlatform === true && root.child('fieldPlatform/users').child(auth.uid).child('enabled').val() === true && root.child('fieldPlatform/users').child(auth.uid).child('role').val() === auth.token.fieldRole && newData.exists() && (auth.token.fieldRole === 'admin' || auth.token.fieldRole === 'staff')",
+          ".validate": "newData.hasChildren(['id', 'managementNumber', 'name', 'roadAddress', 'latitude', 'longitude']) && newData.child('id').val() === $buildingId && (!data.exists() || data.child('id').val() === newData.child('id').val()) && ((!data.exists() && newData.child('managementNumber').isString() && newData.child('managementNumber').val().matches(/^BR-WJ-[A-Z]+-[0-9]{2}-[0-9]{4,}$/)) || (data.exists() && newData.child('managementNumber').val() === data.child('managementNumber').val())) && newData.child('latitude').isNumber() && newData.child('latitude').val() >= -90 && newData.child('latitude').val() <= 90 && newData.child('longitude').isNumber() && newData.child('longitude').val() >= -180 && newData.child('longitude').val() <= 180 && (!data.child('managementContract').exists() || newData.child('managementContract').exists()) && (!data.exists() || auth.token.fieldRole === 'admin' || newData.child('managementContract').val() === data.child('managementContract').val()) && (!newData.child('managementContract').exists() || ((newData.child('managementContract/status').val() === 'none' || newData.child('managementContract/status').val() === 'pending' || newData.child('managementContract/status').val() === 'active' || newData.child('managementContract/status').val() === 'paused' || newData.child('managementContract/status').val() === 'ended') && (!newData.child('managementContract/startedOn').exists() || (newData.child('managementContract/startedOn').isString() && newData.child('managementContract/startedOn').val().matches(/^[0-9]{4}-[0-9]{2}-[0-9]{2}$/))) && (!newData.child('managementContract/endedOn').exists() || (newData.child('managementContract/endedOn').isString() && newData.child('managementContract/endedOn').val().matches(/^[0-9]{4}-[0-9]{2}-[0-9]{2}$/))) && newData.child('managementContract/updatedBy').val() === auth.uid && newData.child('managementContract/updatedAt').isString()))",
+          "managementContract": {
+            "$contractField": {
+              ".validate": "$contractField === 'status' || $contractField === 'startedOn' || $contractField === 'endedOn' || $contractField === 'updatedBy' || $contractField === 'updatedAt'"
+            }
+          }
+        }
+      },
+      "units": {
+        ".read": "auth != null && auth.token.fieldPlatform === true && root.child('fieldPlatform/users').child(auth.uid).child('enabled').val() === true && root.child('fieldPlatform/users').child(auth.uid).child('role').val() === auth.token.fieldRole",
+        "$unitId": {
+          ".write": "auth != null && auth.token.fieldPlatform === true && root.child('fieldPlatform/users').child(auth.uid).child('enabled').val() === true && root.child('fieldPlatform/users').child(auth.uid).child('role').val() === auth.token.fieldRole && (auth.token.fieldRole === 'admin' || auth.token.fieldRole === 'staff')",
+          ".validate": "newData.hasChildren(['id', 'buildingId', 'unitLabel']) && newData.child('id').val() === $unitId && (!data.exists() || data.child('id').val() === newData.child('id').val()) && (!data.exists() || newData.child('buildingId').val() === data.child('buildingId').val()) && (root.child('fieldPlatform/buildings').child(newData.child('buildingId').val()).exists() || (!data.exists() && newData.child('createdBy').val() === auth.uid))"
+        }
+      },
+      "listings": {
+        ".read": "auth != null && auth.token.fieldPlatform === true && root.child('fieldPlatform/users').child(auth.uid).child('enabled').val() === true && root.child('fieldPlatform/users').child(auth.uid).child('role').val() === auth.token.fieldRole",
+        ".indexOn": [
+          "buildingId",
+          "status"
+        ],
+        "$listingId": {
+          ".write": "auth != null && auth.token.fieldPlatform === true && root.child('fieldPlatform/users').child(auth.uid).child('enabled').val() === true && root.child('fieldPlatform/users').child(auth.uid).child('role').val() === auth.token.fieldRole && (auth.token.fieldRole === 'admin' || auth.token.fieldRole === 'staff' || auth.token.fieldRole === 'reviewer')",
+          ".validate": "newData.hasChildren(['id', 'buildingId', 'unitId', 'unitLabel', 'status', 'depositWon', 'monthlyRentWon', 'maintenanceFeeWon']) && newData.child('id').val() === $listingId && (!data.exists() || data.child('id').val() === newData.child('id').val()) && (!data.exists() || newData.child('buildingId').val() === data.child('buildingId').val()) && (newData.child('status').val() === 'draft' || newData.child('status').val() === 'capturing' || newData.child('status').val() === 'reviewPending' || newData.child('status').val() === 'ready' || newData.child('status').val() === 'advertising' || newData.child('status').val() === 'closed') && newData.child('depositWon').isNumber() && newData.child('depositWon').val() >= 0 && newData.child('depositWon').val() % 1 === 0 && newData.child('monthlyRentWon').isNumber() && newData.child('monthlyRentWon').val() >= 0 && newData.child('monthlyRentWon').val() % 1 === 0 && newData.child('maintenanceFeeWon').isNumber() && newData.child('maintenanceFeeWon').val() >= 0 && newData.child('maintenanceFeeWon').val() % 1 === 0"
+        }
+      },
+      "visits": {
+        ".read": "auth != null && auth.token.fieldPlatform === true && root.child('fieldPlatform/users').child(auth.uid).child('enabled').val() === true && root.child('fieldPlatform/users').child(auth.uid).child('role').val() === auth.token.fieldRole",
+        "$visitId": {
+          ".write": "auth != null && auth.token.fieldPlatform === true && root.child('fieldPlatform/users').child(auth.uid).child('enabled').val() === true && root.child('fieldPlatform/users').child(auth.uid).child('role').val() === auth.token.fieldRole && (auth.token.fieldRole === 'admin' || (auth.token.fieldRole === 'staff' && newData.child('assignedUserId').val() === auth.uid))",
+          ".validate": "newData.hasChildren(['id', 'buildingId', 'type', 'assignedUserId']) && newData.child('id').val() === $visitId && (!data.exists() || data.child('id').val() === newData.child('id').val()) && (!data.exists() || newData.child('buildingId').val() === data.child('buildingId').val())"
+        }
+      },
+      "captureSessions": {
+        ".read": "auth != null && auth.token.fieldPlatform === true && root.child('fieldPlatform/users').child(auth.uid).child('enabled').val() === true && root.child('fieldPlatform/users').child(auth.uid).child('role').val() === auth.token.fieldRole && (auth.token.fieldRole === 'admin' || auth.token.fieldRole === 'reviewer' || (auth.token.fieldRole === 'staff' && query.orderByChild === 'createdBy' && query.equalTo === auth.uid))",
+        ".write": "auth != null && auth.token.fieldPlatform === true && root.child('fieldPlatform/users').child(auth.uid).child('enabled').val() === true && root.child('fieldPlatform/users').child(auth.uid).child('role').val() === auth.token.fieldRole && (auth.token.fieldRole === 'admin' || auth.token.fieldRole === 'staff')",
+        ".indexOn": [
+          "buildingId",
+          "createdBy"
+        ],
+        "$captureSessionId": {
+          ".read": "auth != null && auth.token.fieldPlatform === true && root.child('fieldPlatform/users').child(auth.uid).child('enabled').val() === true && root.child('fieldPlatform/users').child(auth.uid).child('role').val() === auth.token.fieldRole && (auth.token.fieldRole === 'admin' || auth.token.fieldRole === 'reviewer' || root.child('fieldPlatform/buildingAssignments').child(data.child('buildingId').val()).child(auth.uid).val() === true || (data.child('createdBy').val() === auth.uid && data.child('status').val() === 'open'))",
+          ".validate": "newData.hasChildren(['id', 'requestId', 'buildingId', 'visitId', 'createdBy', 'status', 'createdAt', 'updatedAt']) && newData.child('id').val() === $captureSessionId && newData.child('createdBy').val() === auth.uid && (newData.child('status').val() === 'open' || newData.child('status').val() === 'complete') && (!data.exists() || (newData.child('id').val() === data.child('id').val() && newData.child('requestId').val() === data.child('requestId').val() && newData.child('buildingId').val() === data.child('buildingId').val() && newData.child('visitId').val() === data.child('visitId').val() && newData.child('createdBy').val() === data.child('createdBy').val()))"
+        }
+      },
+      "media": {
+        ".write": "auth != null && auth.token.fieldPlatform === true && root.child('fieldPlatform/users').child(auth.uid).child('enabled').val() === true && root.child('fieldPlatform/users').child(auth.uid).child('role').val() === auth.token.fieldRole && (auth.token.fieldRole === 'admin' || auth.token.fieldRole === 'reviewer' || auth.token.fieldRole === 'staff')",
+        ".indexOn": [
+          "buildingId",
+          "listingId"
+        ],
+        "$mediaId": {
+          ".read": "auth != null && auth.token.fieldPlatform === true && root.child('fieldPlatform/users').child(auth.uid).child('enabled').val() === true && root.child('fieldPlatform/users').child(auth.uid).child('role').val() === auth.token.fieldRole && (auth.token.fieldRole === 'admin' || auth.token.fieldRole === 'reviewer' || root.child('fieldPlatform/buildingAssignments').child(data.child('buildingId').val()).child(auth.uid).val() === true || (data.child('capturedBy').val() === auth.uid && root.child('fieldPlatform/captureSessions').child(data.child('captureSessionId').val()).child('createdBy').val() === auth.uid && root.child('fieldPlatform/captureSessions').child(data.child('captureSessionId').val()).child('status').val() === 'open'))",
+          ".validate": "newData.hasChildren(['id', 'requestId', 'buildingId', 'visitId', 'captureSessionId', 'capturedBy', 'uploadState', 'uploadProgress', 'driveSyncState', 'driveFileId']) && newData.child('id').val() === $mediaId && newData.child('driveFileId').isString() && newData.child('driveFileId').val().length > 0 && newData.child('uploadState').val() === 'finalized' && newData.child('uploadProgress').val() === 100 && newData.child('driveSyncState').val() === 'complete' && root.child('fieldPlatform/captureSessions').child(newData.child('captureSessionId').val()).child('id').val() === newData.child('captureSessionId').val() && root.child('fieldPlatform/captureSessions').child(newData.child('captureSessionId').val()).child('buildingId').val() === newData.child('buildingId').val() && root.child('fieldPlatform/captureSessions').child(newData.child('captureSessionId').val()).child('unitId').val() === newData.child('unitId').val() && root.child('fieldPlatform/captureSessions').child(newData.child('captureSessionId').val()).child('listingId').val() === newData.child('listingId').val() && root.child('fieldPlatform/captureSessions').child(newData.child('captureSessionId').val()).child('visitId').val() === newData.child('visitId').val() && root.child('fieldPlatform/captureSessions').child(newData.child('captureSessionId').val()).child('createdBy').val() === newData.child('capturedBy').val() && (auth.token.fieldRole === 'admin' || auth.token.fieldRole === 'reviewer' || newData.child('capturedBy').val() === auth.uid) && (!data.exists() || (newData.child('id').val() === data.child('id').val() && newData.child('requestId').val() === data.child('requestId').val() && newData.child('buildingId').val() === data.child('buildingId').val() && newData.child('visitId').val() === data.child('visitId').val() && newData.child('captureSessionId').val() === data.child('captureSessionId').val() && newData.child('capturedBy').val() === data.child('capturedBy').val() && newData.child('driveFileId').val() === data.child('driveFileId').val()))"
+        }
+      },
+      "secureAccess": {
+        "$accessId": {
+          ".read": "auth != null && auth.token.fieldPlatform === true && root.child('fieldPlatform/users').child(auth.uid).child('enabled').val() === true && root.child('fieldPlatform/users').child(auth.uid).child('role').val() === auth.token.fieldRole && (auth.token.fieldRole === 'admin' || root.child('fieldPlatform/secureAccessAssignments').child(data.child('buildingId').val()).child(auth.uid).val() === true)",
+          ".write": "auth != null && auth.token.fieldPlatform === true && root.child('fieldPlatform/users').child(auth.uid).child('enabled').val() === true && root.child('fieldPlatform/users').child(auth.uid).child('role').val() === auth.token.fieldRole && auth.token.fieldRole === 'admin'",
+          ".validate": "newData.hasChildren(['id', 'buildingId', 'updatedAt', 'updatedBy']) && newData.child('id').val() === $accessId && (!data.exists() || data.child('id').val() === newData.child('id').val())"
+        }
+      },
+      "adPackages": {
+        ".read": "auth != null && auth.token.fieldPlatform === true && root.child('fieldPlatform/users').child(auth.uid).child('enabled').val() === true && root.child('fieldPlatform/users').child(auth.uid).child('role').val() === auth.token.fieldRole",
+        ".indexOn": [
+          "listingId",
+          "generation/recoveryKey"
+        ],
+        "$packageId": {
+          ".write": "auth != null && auth.token.fieldPlatform === true && root.child('fieldPlatform/users').child(auth.uid).child('enabled').val() === true && root.child('fieldPlatform/users').child(auth.uid).child('role').val() === auth.token.fieldRole && (auth.token.fieldRole === 'admin' || auth.token.fieldRole === 'reviewer') && newData.child('reviewerId').val() === auth.uid",
+          ".validate": "newData.hasChildren(['id', 'listingId', 'status', 'version', 'driveFolderId', 'driveFileIds']) && newData.child('id').val() === $packageId && (!data.exists() || data.child('id').val() === newData.child('id').val()) && (newData.child('status').val() === 'complete' || newData.child('status').val() === data.child('status').val())"
+        }
+      },
+      "adPackageVersions": {
+        ".read": false,
+        ".write": false
+      },
+      "adPackageLatest": {
+        ".read": false,
+        ".write": false
+      },
+      "adPackageGenerationAlerts": {
+        ".read": "auth != null && auth.token.fieldPlatform === true && root.child('fieldPlatform/users').child(auth.uid).child('enabled').val() === true && root.child('fieldPlatform/users').child(auth.uid).child('role').val() === auth.token.fieldRole && auth.token.fieldRole === 'admin'",
+        ".write": false
+      },
+      "checklistTemplates": {
+        ".read": "auth != null && auth.token.fieldPlatform === true && root.child('fieldPlatform/users').child(auth.uid).child('enabled').val() === true && root.child('fieldPlatform/users').child(auth.uid).child('role').val() === auth.token.fieldRole",
+        ".write": "auth != null && auth.token.fieldPlatform === true && root.child('fieldPlatform/users').child(auth.uid).child('enabled').val() === true && root.child('fieldPlatform/users').child(auth.uid).child('role').val() === auth.token.fieldRole && auth.token.fieldRole === 'admin'"
+      },
+      "checklistSubmissions": {
+        ".read": "auth != null && auth.token.fieldPlatform === true && root.child('fieldPlatform/users').child(auth.uid).child('enabled').val() === true && root.child('fieldPlatform/users').child(auth.uid).child('role').val() === auth.token.fieldRole",
+        ".write": "auth != null && auth.token.fieldPlatform === true && root.child('fieldPlatform/users').child(auth.uid).child('enabled').val() === true && root.child('fieldPlatform/users').child(auth.uid).child('role').val() === auth.token.fieldRole && (auth.token.fieldRole === 'staff' || auth.token.fieldRole === 'admin')"
+      },
+      "auditLogs": {
+        ".read": "auth != null && auth.token.fieldPlatform === true && root.child('fieldPlatform/users').child(auth.uid).child('enabled').val() === true && root.child('fieldPlatform/users').child(auth.uid).child('role').val() === auth.token.fieldRole && auth.token.fieldRole === 'admin'",
+        ".write": false
+      },
+      "driveSyncJobs": {
+        ".read": "auth != null && auth.token.fieldPlatform === true && root.child('fieldPlatform/users').child(auth.uid).child('enabled').val() === true && root.child('fieldPlatform/users').child(auth.uid).child('role').val() === auth.token.fieldRole && auth.token.fieldRole === 'admin'",
+        ".indexOn": [
+          "recoveryKey"
+        ],
+        ".write": false
+      },
+      "driveSyncAlerts": {
+        ".read": "auth != null && auth.token.fieldPlatform === true && root.child('fieldPlatform/users').child(auth.uid).child('enabled').val() === true && root.child('fieldPlatform/users').child(auth.uid).child('role').val() === auth.token.fieldRole && auth.token.fieldRole === 'admin'",
+        ".write": false
+      },
+      "driveFolderLeases": {
+        ".read": false,
+        ".write": false
+      },
+      "driveFolderCaches": {
+        ".read": false,
+        ".write": false
+      },
+      "driveUploadSessions": {
+        ".read": false,
+        ".write": false
+      },
+      "mapProjections": {
+        ".read": "auth != null && auth.token.fieldPlatform === true && root.child('fieldPlatform/users').child(auth.uid).child('enabled').val() === true && root.child('fieldPlatform/users').child(auth.uid).child('role').val() === auth.token.fieldRole",
+        "$buildingId": {
+          ".write": "auth != null && auth.token.fieldPlatform === true && root.child('fieldPlatform/users').child(auth.uid).child('enabled').val() === true && root.child('fieldPlatform/users').child(auth.uid).child('role').val() === auth.token.fieldRole && (auth.token.fieldRole === 'admin' || auth.token.fieldRole === 'staff')",
+          ".validate": "newData.hasChildren(['buildingId', 'name', 'roadAddress', 'latitude', 'longitude', 'markerStatus', 'vacancyCount', 'approvedRentSummary', 'parkingSummary', 'captureStatus', 'updatedAt']) && newData.child('buildingId').val() === $buildingId && root.child('fieldPlatform/buildings').child($buildingId).child('managementContract/status').val() === 'active' && newData.child('name').val() === root.child('fieldPlatform/buildings').child($buildingId).child('name').val() && newData.child('roadAddress').val() === root.child('fieldPlatform/buildings').child($buildingId).child('roadAddress').val() && newData.child('latitude').val() === root.child('fieldPlatform/buildings').child($buildingId).child('latitude').val() && newData.child('longitude').val() === root.child('fieldPlatform/buildings').child($buildingId).child('longitude').val() && newData.child('name').isString() && newData.child('roadAddress').isString() && newData.child('latitude').isNumber() && newData.child('latitude').val() >= -90 && newData.child('latitude').val() <= 90 && newData.child('longitude').isNumber() && newData.child('longitude').val() >= -180 && newData.child('longitude').val() <= 180 && (newData.child('markerStatus').val() === 'managed' || newData.child('markerStatus').val() === 'vacant') && newData.child('vacancyCount').isNumber() && newData.child('vacancyCount').val() >= 0 && newData.child('vacancyCount').val() % 1 === 0 && (newData.child('captureStatus').val() === 'notStarted' || newData.child('captureStatus').val() === 'inProgress' || newData.child('captureStatus').val() === 'complete') && newData.child('updatedAt').isString()"
+        }
+      },
+      "registrationDrafts": {
+        "$uid": {
+          ".read": "auth != null && auth.uid === $uid && auth.token.fieldPlatform === true && root.child('fieldPlatform/users').child(auth.uid).child('enabled').val() === true && root.child('fieldPlatform/users').child(auth.uid).child('role').val() === auth.token.fieldRole",
+          "$draftId": {
+            ".write": "auth != null && auth.uid === $uid && auth.token.fieldPlatform === true && root.child('fieldPlatform/users').child(auth.uid).child('enabled').val() === true && root.child('fieldPlatform/users').child(auth.uid).child('role').val() === auth.token.fieldRole && (auth.token.fieldRole === 'admin' || auth.token.fieldRole === 'staff')",
+            ".validate": "newData.hasChildren(['ownerUid', 'draftId', 'updatedAt', 'value']) && newData.child('ownerUid').val() === $uid && newData.child('draftId').val() === $draftId && newData.child('updatedAt').isString() && newData.child('updatedAt').val().matches(/^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}[.][0-9]{3}Z$/) && newData.child('value/draftId').val() === $draftId && newData.child('value/draftVersion').val() === 4"
+          }
+        }
+      },
+      "registrationRequests": {
+        "$uid": {
+          ".read": "auth != null && auth.uid === $uid && auth.token.fieldPlatform === true",
+          "$requestId": {
+            ".write": "auth != null && auth.uid === $uid && auth.token.fieldPlatform === true && root.child('fieldPlatform/users').child(auth.uid).child('enabled').val() === true && newData.exists()",
+            ".validate": "newData.hasChildren(['result', 'completedAt']) && newData.child('completedAt').isString() && newData.child('result').hasChildren(['buildingId', 'managementNumber', 'unitIds', 'listingId', 'visitId']) && newData.child('result/buildingId').isString() && newData.child('result/managementNumber').isString() && newData.child('result/listingId').isString() && newData.child('result/visitId').isString() && newData.child('result/unitIds').exists()"
+          }
+        }
+      },
+      "managementContractRequests": {
+        ".read": false,
+        ".write": false
+      }
+    },
     "signage": {
-      ".read": true,
-      ".write": true
+      "consign": {
+        ".read": true,
+        ".write": "auth != null && root.child('crmCompany/access').child(auth.uid).child('enabled').val() === true && root.child('crmCompany/access').child(auth.uid).child('email').val() === auth.token.email && (root.child('crmCompany/access').child(auth.uid).child('role').val() === 'admin' || root.child('crmCompany/access').child(auth.uid).child('role').val() === 'member')"
+      },
+      "settings": {
+        ".read": true,
+        ".write": "auth != null && root.child('crmCompany/access').child(auth.uid).child('enabled').val() === true && root.child('crmCompany/access').child(auth.uid).child('email').val() === auth.token.email && (root.child('crmCompany/access').child(auth.uid).child('role').val() === 'admin' || root.child('crmCompany/access').child(auth.uid).child('role').val() === 'member')"
+      },
+      "orders": {
+        ".read": "auth != null && root.child('crmCompany/access').child(auth.uid).child('enabled').val() === true && root.child('crmCompany/access').child(auth.uid).child('email').val() === auth.token.email && (root.child('crmCompany/access').child(auth.uid).child('role').val() === 'admin' || root.child('crmCompany/access').child(auth.uid).child('role').val() === 'member' || root.child('crmCompany/access').child(auth.uid).child('role').val() === 'viewer')",
+        "$orderId": {
+          ".write": "(!data.exists() && newData.exists()) || (auth != null && root.child('crmCompany/access').child(auth.uid).child('enabled').val() === true && root.child('crmCompany/access').child(auth.uid).child('email').val() === auth.token.email && (root.child('crmCompany/access').child(auth.uid).child('role').val() === 'admin' || root.child('crmCompany/access').child(auth.uid).child('role').val() === 'member'))",
+          ".validate": "newData.hasChildren(['productId', 'productName', 'price', 'qty', 'amount', 'name', 'phone', 'receive', 'addr', 'status', 'createdAt']) && newData.child('productId').isString() && newData.child('productId').val().length > 0 && newData.child('productId').val().length <= 160 && newData.child('productName').isString() && newData.child('productName').val().length <= 200 && newData.child('price').isNumber() && newData.child('price').val() >= 0 && newData.child('qty').isNumber() && newData.child('qty').val() >= 1 && newData.child('qty').val() <= 100 && newData.child('amount').isNumber() && newData.child('amount').val() >= 0 && newData.child('name').isString() && newData.child('name').val().length > 0 && newData.child('name').val().length <= 80 && newData.child('phone').isString() && newData.child('phone').val().length >= 9 && newData.child('phone').val().length <= 30 && newData.child('receive').isString() && newData.child('receive').val().length <= 40 && newData.child('addr').isString() && newData.child('addr').val().length > 0 && newData.child('addr').val().length <= 300 && (!newData.child('memo').exists() || (newData.child('memo').isString() && newData.child('memo').val().length <= 1000)) && newData.child('status').isString() && newData.child('status').val().length > 0 && newData.child('status').val().length <= 40 && newData.child('createdAt').isNumber()",
+          "productId": { ".validate": true },
+          "productName": { ".validate": true },
+          "option": { ".validate": true },
+          "vendor": { ".validate": true },
+          "price": { ".validate": true },
+          "qty": { ".validate": true },
+          "amount": { ".validate": true },
+          "name": { ".validate": true },
+          "phone": { ".validate": true },
+          "receive": { ".validate": true },
+          "addr": { ".validate": true },
+          "memo": { ".validate": true },
+          "status": { ".validate": true },
+          "createdAt": { ".validate": true },
+          "$other": { ".validate": false }
+        }
+      },
+      "$other": {
+        ".read": false,
+        ".write": false
+      }
     }
   }
 }

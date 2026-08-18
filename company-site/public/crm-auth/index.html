@@ -1,0 +1,113 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="robots" content="noindex,nofollow">
+  <meta name="color-scheme" content="light">
+  <title>BRING CRM Google 로그인</title>
+  <style>
+    :root{font-family:"Pretendard","Noto Sans KR","Malgun Gothic",sans-serif;color:#17364d;background:#edf8fe}
+    *{box-sizing:border-box}body{min-height:100vh;margin:0;display:grid;place-items:center;padding:24px;background:radial-gradient(circle at 50% 0,#fff 0,#edf8fe 55%,#dff2fb 100%)}
+    main{width:min(440px,100%);padding:36px;border:1px solid #cfe5f1;border-radius:24px;background:#fff;box-shadow:0 24px 70px rgba(42,116,157,.16);text-align:center}
+    .logo{display:grid;place-items:center;height:70px;margin:0 auto 18px}.logo img{max-width:210px;max-height:70px;object-fit:contain}
+    .eyebrow{color:#3e9bd0;font-size:12px;font-weight:900;letter-spacing:.08em}h1{margin:7px 0 10px;font-size:25px;letter-spacing:-.04em}p{margin:0;color:#718b9b;font-size:14px;line-height:1.65}
+    button{display:flex;align-items:center;justify-content:center;gap:10px;width:100%;min-height:52px;margin-top:26px;border:1px solid #bedced;border-radius:14px;background:#fff;color:#285d7b;font-size:15px;font-weight:900;cursor:pointer;box-shadow:0 8px 20px rgba(60,139,184,.1)}button:hover{background:#f4fbff;border-color:#75bce3}button:disabled{cursor:wait;opacity:.65}.g{font-size:20px;color:#4285f4}
+    #message{min-height:22px;margin-top:16px;color:#608398;font-size:12px;font-weight:700}.error{color:#ce5865!important}.note{margin-top:20px;padding-top:18px;border-top:1px solid #e3eef4;color:#8aa0ae;font-size:11px;line-height:1.55}
+  </style>
+</head>
+<body>
+  <main>
+    <div class="logo"><img src="/bring-care-logo.png" alt="Bring Care"></div>
+    <div class="eyebrow">BRING ENGINEERING</div>
+    <h1>회사 CRM 로그인</h1>
+    <p>회사 서버에 허용된 Google 계정으로 로그인하세요.<br>승인된 팀원만 CRM 자료를 볼 수 있습니다.</p>
+    <button id="login" type="button"><span class="g">G</span>Google 계정으로 계속</button>
+    <div id="message" role="status"></div>
+    <div class="note">Google 비밀번호는 BRING CRM이나 회사 서버에 저장되지 않습니다.</div>
+  </main>
+
+  <script src="https://www.gstatic.com/firebasejs/10.12.5/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.12.5/firebase-auth-compat.js"></script>
+  <script>
+    (() => {
+      "use strict";
+      const params = new URLSearchParams(location.search);
+      const port = Number(params.get("port"));
+      const state = params.get("state") || "";
+      const button = document.getElementById("login");
+      const message = document.getElementById("message");
+      const validRequest = Number.isInteger(port) && port >= 1024 && port <= 65535 && /^[A-Za-z0-9_-]{32,128}$/.test(state);
+      if (!validRequest) {
+        button.disabled = true;
+        message.textContent = "BRING CRM 프로그램에서 로그인 버튼을 다시 눌러 주세요.";
+        message.className = "error";
+        return;
+      }
+
+      firebase.initializeApp({
+        apiKey: "AIzaSyBKOTIuQ8pOKSuaeKFQs_6UDdDnxdjCTZg",
+        authDomain: "bring-fm.firebaseapp.com",
+        databaseURL: "https://bring-fm-default-rtdb.asia-southeast1.firebasedatabase.app",
+        projectId: "bring-fm",
+        storageBucket: "bring-fm.firebasestorage.app",
+        appId: "1:864976295990:web:194f145b1b4dad58eb6097"
+      });
+
+      const postSession = fields => {
+        const form = document.createElement("form");
+        form.method = "post";
+        form.action = `http://127.0.0.1:${port}/callback`;
+        for (const [name, value] of [["state", state], ...fields]) {
+          const input = document.createElement("input");
+          input.type = "hidden";
+          input.name = name;
+          input.value = value;
+          form.appendChild(input);
+        }
+        document.body.appendChild(form);
+        form.submit();
+      };
+
+      window.bringEmailLogin = async (email, password) => {
+        const normalizedEmail = String(email || "").trim().toLowerCase();
+        if (!normalizedEmail || typeof password !== "string" || !password) throw new Error("이메일과 비밀번호를 입력해 주세요.");
+        email = normalizedEmail;
+        const result = await firebase.auth().signInWithEmailAndPassword(email, password);
+        const idToken = await result.user.getIdToken();
+        const refreshToken = result.user.refreshToken || "";
+        if (!idToken || !refreshToken) throw new Error("Firebase 로그인 세션을 만들지 못했습니다.");
+        postSession([["firebase_id_token", idToken], ["firebase_refresh_token", refreshToken]]);
+      };
+
+      button.addEventListener("click", async () => {
+        button.disabled = true;
+        message.className = "";
+        message.textContent = "Google 로그인 창을 여는 중입니다…";
+        try {
+          const provider = new firebase.auth.GoogleAuthProvider();
+          provider.setCustomParameters({ prompt: "select_account", login_hint: "dpvld858@gmail.com" });
+          const result = await firebase.auth().signInWithPopup(provider);
+          const credential = result.credential || firebase.auth.GoogleAuthProvider.credentialFromResult(result);
+          const tokenResponse = result._tokenResponse || {};
+          const googleIdToken = credential && credential.idToken || tokenResponse.oauthIdToken || "";
+          const googleAccessToken = credential && credential.accessToken || tokenResponse.oauthAccessToken || "";
+          const providerTokenType = googleIdToken ? "id_token" : "access_token";
+          const providerToken = googleIdToken || googleAccessToken;
+          if (!providerToken) throw new Error("Google 인증 정보를 받지 못했습니다.");
+          message.textContent = "로그인이 확인되었습니다. CRM으로 돌아갑니다…";
+          postSession([["provider_token_type", providerTokenType], ["provider_token", providerToken]]);
+        } catch (error) {
+          if (error && ["auth/popup-closed-by-user", "auth/cancelled-popup-request"].includes(error.code)) {
+            message.textContent = "로그인이 취소되었습니다.";
+          } else {
+            message.textContent = `로그인 오류: ${error && (error.message || error.code) || "다시 시도해 주세요."}`;
+          }
+          message.className = "error";
+          button.disabled = false;
+        }
+      });
+    })();
+  </script>
+</body>
+</html>

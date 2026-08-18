@@ -1,0 +1,701 @@
+/*
+ * BRING CRM readability layer
+ * Keep the compact desktop layout, while making every frequently-read label,
+ * value and action comfortably legible on a 1920×1080 display.
+ */
+
+html,
+body {
+  font-size: 14px;
+  line-height: 1.45;
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+
+button,
+input,
+select,
+textarea {
+  font-size: 13px;
+}
+
+/* Login */
+.login-card > span { font-size: 12px; }
+.login-card h1 { font-size: 28px; }
+.login-card p { font-size: 14px; }
+.login-form label > span { font-size: 12px; }
+.login-form input { font-size: 14px; }
+.temporary-password { font-size: 12px; }
+.temporary-password b { font-size: 14px; }
+.email-login-button { font-size: 15px; }
+.password-user span { font-size: 14px; }
+.password-user small,
+.password-rule { font-size: 11px; }
+.login-message { font-size: 12px; }
+.login-card > small { font-size: 11px; }
+
+/* Sidebar and top bar */
+.brand strong { font-size: 18px; }
+.brand span { font-size: 11px; }
+.nav-item b { font-size: 14px; }
+.nav-item em { font-size: 11px; }
+.sync-state b { font-size: 12px; }
+.sync-state span { font-size: 11px; }
+.workflow-launch,
+.help-launch { font-size: 12px; }
+.eyebrow { font-size: 11px; }
+.topbar h1 { font-size: 26px; }
+.global-search input { font-size: 13px; }
+.update-button { font-size: 10px; }
+.user-pill b { font-size: 11px; }
+.user-pill small { font-size: 9px; }
+.user-pill button { font-size: 10px; }
+.help-button { font-size: 11px; }
+.primary-button,
+.secondary-button,
+.danger-button { font-size: 13px; }
+
+/* Dashboard and shared panels */
+.brief-kicker { font-size: 11px; }
+.today-brief h2 { font-size: 21px; }
+.today-brief p { font-size: 13px; }
+.brief-value { font-size: 11px; }
+.brief-value b { font-size: 18px; }
+.section-head h2 { font-size: 19px; }
+.section-head p { font-size: 12px; }
+.kpi-label { font-size: 12px; }
+.kpi-value { font-size: 31px; }
+.kpi-foot { font-size: 11px; }
+.panel-head h3 { font-size: 15px; }
+.panel-head p,
+.panel-head > span { font-size: 11px; }
+.text-button { font-size: 11px; }
+.focus-row strong { font-size: 13px; }
+.focus-row span,
+.focus-row time { font-size: 11px; }
+.focus-row p { font-size: 12px; }
+.focus-row time b { font-size: 10px; }
+.simple-empty b { font-size: 13px; }
+.simple-empty span { font-size: 11px; }
+.pipeline-line span,
+.pipeline-line b { font-size: 12px; }
+.activity-item strong { font-size: 12px; }
+.activity-item p,
+.activity-item time { font-size: 11px; }
+.filter-chip { font-size: 11px; }
+
+/* Customer, consultation and sales management */
+.data-table th { font-size: 11px; }
+.data-table td { font-size: 12px; }
+.customer-cell strong { font-size: 13px; }
+.customer-cell span { font-size: 11px; }
+.activity-method,
+.stage-badge,
+.priority-badge,
+.status-badge { font-size: 10px; }
+.empty-state { font-size: 13px; }
+.empty-state p { font-size: 12px; }
+.sales-kanban-head strong { font-size: 12px; }
+.sales-kanban-head span { font-size: 11px; }
+.sales-kanban-card strong { font-size: 12px; }
+.sales-kanban-card .priority-badge { font-size: 10px; }
+.sales-kanban-card p { font-size: 11px; line-height: 1.5; }
+.sales-kanban-card footer,
+.sales-kanban-card footer b { font-size: 10px; }
+
+/* Tasks, workflow and settings */
+.task-title strong { font-size: 13px; }
+.task-title span { font-size: 11px; }
+.task-meta-label { color: #718b9b; font-size: 10px; }
+.task-meta strong,
+.task-meta time b,
+.task-customer-button { font-size: 12px; }
+.task-meta time small { font-size: 10px; }
+.workflow-card header strong { font-size: 13px; }
+.workflow-card header span { font-size: 11px; }
+.progress-ring { font-size: 11px; }
+.workflow-meta b { font-size: 10px; }
+.workflow-meta span { font-size: 12px; }
+.setting-card h3 { font-size: 15px; }
+.setting-card > p { font-size: 12px; }
+
+/* Forms, modal and customer drawer */
+.field > span { font-size: 11px; }
+.field input,
+.field select,
+.field textarea { font-size: 13px; }
+.field .hint { font-size: 10px; }
+.form-section h4 { font-size: 13px; }
+.essential-label b { font-size: 13px; }
+.essential-label span { font-size: 11px; }
+.optional-form summary b { font-size: 12px; }
+.optional-form summary span { font-size: 11px; }
+.modal-head h2,
+.drawer-head h2 { font-size: 19px; }
+.modal-head p,
+.drawer-head p { font-size: 11px; }
+.customer-summary h3 { font-size: 20px; }
+.customer-summary p { font-size: 12px; }
+.summary-value strong { font-size: 18px; }
+.summary-value span { font-size: 10px; }
+.detail-tab { font-size: 12px; }
+.detail-section-head h4 { font-size: 13px; }
+.detail-section .text-muted { font-size: 11px !important; }
+.kv b { font-size: 10px; }
+.kv span { font-size: 12px; }
+.timeline-dot { font-size: 9px; }
+.timeline-item strong { font-size: 12px; }
+.timeline-item p { font-size: 11px; }
+.timeline-item time { font-size: 10px; }
+.step-item { font-size: 11px; }
+.step-item i { font-size: 9px; }
+.detail-section .task-list span { font-size: 12px !important; }
+.detail-section .task-list time { font-size: 10px !important; }
+.toast { font-size: 12px; }
+.warning-box,
+.info-box { font-size: 12px; }
+
+/* Security and guides */
+.security-alert b { font-size: 12px; }
+.security-alert small,
+.security-alert > strong { font-size: 11px; }
+.starter-map > div:first-child > span { font-size: 10px; }
+.starter-map h3 { font-size: 16px; }
+.starter-map p,
+.starter-steps b,
+.starter-steps i { font-size: 11px; }
+.security-hero span { font-size: 10px; }
+.security-hero h2 { font-size: 20px; }
+.security-hero p { font-size: 12px; }
+.security-kpi > span { font-size: 11px; }
+.security-kpi > small { font-size: 10px; }
+.security-tab { font-size: 12px; }
+.security-tab em { font-size: 10px; }
+.security-panel-head h3 { font-size: 15px; }
+.security-panel-head p { font-size: 11px; }
+.security-table th,
+.permission-table th { font-size: 10px; }
+.security-table td,
+.permission-table td { font-size: 11px; }
+.security-table td b { font-size: 11px; }
+.security-table td strong,
+.permission-table strong { font-size: 12px; }
+.security-table td span { font-size: 10px; }
+.mini-button { font-size: 10px; }
+.plain-guide b { font-size: 11px; }
+.plain-guide span { font-size: 10px; }
+.security-status,
+.sensitivity,
+.audit-category { font-size: 10px !important; }
+.permission-check { font-size: 10px; }
+.security-rule-grid b { font-size: 11px; }
+.security-rule-grid span { font-size: 10px; }
+.incident-card header b { font-size: 12px; }
+.incident-card header time,
+.incident-severity { font-size: 10px; }
+.incident-card h4 { font-size: 13px; }
+.incident-card p { font-size: 10px; }
+.incident-resolution { font-size: 11px; }
+.no-secret-box b,
+.incident-alert-box b { font-size: 12px; }
+.no-secret-box span,
+.incident-alert-box span { font-size: 11px; }
+.permission-option b { font-size: 12px; }
+.permission-option small { font-size: 10px; }
+.welcome-guide-top > span { font-size: 11px; }
+.welcome-guide-top h2 { font-size: 22px; }
+.welcome-guide-top p { font-size: 12px; }
+.welcome-steps b { font-size: 13px; }
+.welcome-steps span { font-size: 11px; }
+.welcome-extra b,
+.welcome-extra span { font-size: 11px; }
+
+/* Partner quotation comparison */
+.partner-quote-hero > div > span { font-size: 11px; }
+.partner-quote-hero h2 { font-size: 22px; }
+.partner-quote-hero p { font-size: 13px; }
+.quote-kpi-grid .kpi-label { font-size: 13px; }
+.quote-kpi-grid .kpi-foot,
+.quote-toolbar > span { font-size: 11px; }
+.partner-quote-status,
+.industry-badge { font-size: 11px !important; }
+.quote-scenario-guide b { font-size: 12px; }
+.quote-scenario-guide span { font-size: 11px; }
+.quote-filter-bar > label span { font-size: 12px; }
+.quote-filter-bar select { font-size: 13px; }
+.quote-filter-bar .filter-chip,
+.quote-filter-bar > span { font-size: 11px; }
+.quote-card-contact button,
+.quote-card-edit { font-size: 11px; }
+.quote-card-total span { font-size: 11px; }
+.quote-card-total small { font-size: 10px; }
+.quote-card-costs span { font-size: 12px; }
+.quote-card-costs strong { font-size: 16px; }
+.quote-card-costs small { font-size: 10px; }
+.quote-card-note b,
+.quote-card-note p { font-size: 12px; }
+.industry-checklist header b { font-size: 12px; }
+.industry-checklist header span,
+.industry-checklist header em { font-size: 10px; }
+.industry-checklist label { font-size: 11px; }
+
+/* Contact vendor directory */
+.partner-vendor-hero > div:first-child > span { font-size: 11px; }
+.partner-vendor-hero h2 { font-size: 22px; }
+.partner-vendor-hero p { font-size: 13px; }
+.partner-vendor-toolbar > label span { font-size: 12px; }
+.partner-vendor-toolbar select { font-size: 13px; }
+.partner-vendor-toolbar > span { font-size: 11px; }
+.partner-vendor-card h3 { font-size: 18px; }
+.partner-vendor-card header p { font-size: 12px; }
+.partner-vendor-contact span,
+.partner-vendor-card > footer { font-size: 11px; }
+.partner-vendor-contact b { font-size: 13px; }
+.partner-vendor-card > footer button { font-size: 11px; }
+.partner-vendor-summary h3 { font-size: 15px; }
+.partner-vendor-summary p,
+.partner-vendor-summary.empty span { font-size: 11px; }
+.partner-vendor-summary > div:last-child > span,
+.partner-vendor-summary > div:last-child > small { font-size: 10px; }
+.partner-vendor-summary > div:last-child > b,
+.partner-vendor-summary.empty b,
+.case-permanent-delete { font-size: 12px; }
+
+/* Vendor link importer */
+.quote-url-import > div:first-child b { font-size: 13px; }
+.quote-url-import > div:first-child span { font-size: 11px; }
+.quote-url-import-row input { font-size: 13px; }
+.quote-url-import-row button { font-size: 12px; }
+.quote-url-import > p { font-size: 11px; }
+
+/* Relationship follow-up */
+.relationship-hero span { font-size: 11px; }
+.relationship-hero h2 { font-size: 22px; }
+.relationship-hero p { font-size: 13px; }
+.relationship-card > header .avatar { font-size: 15px; }
+.relationship-card h3 { font-size: 16px; }
+.relationship-card header p,
+.relationship-state { font-size: 11px; }
+.relationship-facts span { font-size: 10px; }
+.relationship-facts b { font-size: 13px; }
+.relationship-note { font-size: 11px; }
+.relationship-card > footer .primary-button,
+.relationship-card > footer .secondary-button,
+.relationship-open-hint { font-size: 11px; }
+.relationship-customer-guide b { font-size: 13px; }
+.relationship-customer-guide span { font-size: 11px; }
+.relationship-detail-summary h3 { font-size: 19px; }
+.relationship-detail-summary p,
+.relationship-plan-cycle,
+.relationship-detail-note,
+.relationship-add-section .detail-section-head > div span,
+.relationship-history-section .detail-section-head > div span { font-size: 11px; }
+.timeline-delete,
+.record-delete-button { font-size: 10px; }
+
+/* Cases and payment calendar */
+.operations-hero > div > span { font-size: 11px; }
+.operations-hero h2 { font-size: 22px; }
+.operations-hero p { font-size: 12px; }
+.operations-kpi span { font-size: 11px; }
+.operations-kpi b { font-size: 24px; }
+.operations-kpi small { font-size: 10px; }
+.case-card h3 { font-size: 15px; }
+.case-card header p { font-size: 11px; }
+.case-urgency { font-size: 10px; }
+.case-progress-head { font-size: 11px; }
+.case-current span { font-size: 10px; }
+.case-current b { font-size: 11px; }
+.case-card footer time { font-size: 10px; }
+.case-browser > header b { font-size: 15px; }
+.case-browser > header span,
+.case-browser > header small { font-size: 11px; }
+.case-list-title strong { font-size: 13px; }
+.case-list-card p { font-size: 11px; }
+.case-list-progress > b { font-size: 11px; }
+.case-list-card > small,
+.case-list-empty { font-size: 10px; }
+.case-detail-head > div:first-child > span { font-size: 11px; }
+.case-detail-head h2 { font-size: 22px; }
+.case-detail-head p { font-size: 12px; }
+.case-detail-progress strong { font-size: 26px; }
+.case-detail-progress span { font-size: 11px; }
+.case-block-head > div:first-child b { font-size: 15px; }
+.case-block-head > div:first-child span { font-size: 11px; }
+.case-current-label span { font-size: 10px; }
+.case-current-label b { font-size: 12px; }
+.case-step-main > i { font-size: 11px; }
+.case-step-main > div > b { font-size: 13px; }
+.case-step-main > div > span { font-size: 10px; }
+.case-step-main select,
+.case-note-button { font-size: 11px; }
+.case-step-note-form textarea { font-size: 12px; }
+.case-step-note-form > div > span { font-size: 10px; }
+.case-extra-block > header { font-size: 11px; }
+.case-extra-grid b { font-size: 10px; }
+.case-extra-grid span { font-size: 12px; }
+.case-extra-text { font-size: 12px; }
+.case-resource-links button,
+.case-vendor-list button,
+.case-quote-list button,
+.case-photo-list button { font-size: 11px; }
+.case-vendor-list article > b,
+.case-quote-list article b,
+.case-photo-list article b { font-size: 12px; }
+.case-vendor-list article > span,
+.case-quote-list article span,
+.case-photo-list article span { font-size: 10px; }
+.case-step-note-title b { font-size: 12px; }
+.case-step-note-title span,
+.case-extra-empty { font-size: 10px; }
+.case-detail-empty strong { font-size: 17px; }
+.case-detail-empty span { font-size: 12px; }
+.payment-month-switch b { font-size: 15px; }
+.payment-building-filter { font-size: 11px; }
+.payment-weekdays > div { font-size: 10px; }
+.payment-daynum { font-size: 10px; }
+.payment-event b { font-size: 9px; }
+.payment-event span,
+.payment-more { font-size: 8px; }
+.payment-empty-note { font-size: 12px; }
+.payment-status-summary span { font-size: 10px; }
+.payment-status-summary b { font-size: 12px; }
+.operations-loading { font-size: 12px; }
+
+@media (max-width: 1380px) {
+  .topbar h1 { font-size: 24px; }
+  .topbar { gap: 14px; padding-right: 20px; }
+  .global-search { width: min(310px, 28vw); }
+  .user-pill > span { max-width: 120px; }
+}
+
+/* 2026 readability refinement: calmer contrast and clearer primary information */
+:root {
+  --bg: #f5f9fc;
+  --text: #16364d;
+  --muted: #687f90;
+  --soft: #47657a;
+  --line: #d8e5ed;
+  --shadow: 0 12px 34px rgba(50, 93, 119, .09);
+}
+
+.workspace {
+  background: radial-gradient(circle at 88% 0, rgba(106, 197, 238, .09), transparent 30%), var(--bg);
+}
+
+.app-shell,
+.sidebar,
+.workspace { min-height: 0; }
+.sidebar,
+.workspace { height: 100%; overflow: hidden; }
+.nav-list { flex: 1; min-height: 0; }
+
+.panel,
+.kpi-card,
+.partner-quote-card,
+.operations-kpi,
+.case-workspace,
+.payment-building-panel {
+  box-shadow: 0 7px 22px rgba(50, 91, 116, .055);
+}
+
+.nav-item { min-height: 48px; }
+.nav-item b { font-size: 14px; }
+.nav-item > span { opacity: .86; }
+.section-head p,
+.operations-hero p,
+.relationship-hero p,
+.partner-quote-hero p { color: #617d90; line-height: 1.55; }
+
+.primary-button,
+.secondary-button,
+.danger-button,
+.danger-outline-button { min-height: 39px; }
+
+.field > span { color: #526f83; font-size: 12px; }
+.field input,
+.field select,
+.field textarea { min-height: 42px; color: #1d4259; background: #fff; }
+.field input::placeholder,
+.field textarea::placeholder { color: #94a7b3; }
+
+.data-table th { color: #5d7789; font-size: 11px; }
+.data-table td { color: #38566a; font-size: 12px; line-height: 1.5; }
+.data-table tbody tr:hover { background: #f3f9fc; }
+
+.case-browser > header small,
+.case-list-card p,
+.case-list-card > small { color: #657f90; font-size: 11px; }
+.case-step-main { min-height: 56px; }
+.case-step-main > div > b { color: #1d435a; font-size: 13px; }
+.case-step-main > div > span { color: #6f8796; font-size: 11px; }
+.case-step-main select,
+.case-note-button { min-height: 34px; font-size: 11px; }
+.case-extra-grid b { color: #647e8f; font-size: 10px; }
+.case-extra-grid span,
+.case-extra-text { color: #294c62; font-size: 12px; }
+.case-action-panel span { color: #58778a; font-size: 11px; }
+
+.payment-sync-strip { color: #5f7889; font-size: 11px; }
+.payment-toolbar { min-height: 46px; }
+.payment-month-switch b { color: #173f58; font-size: 16px; }
+.payment-weekdays > div { padding: 10px; color: #637e90; font-size: 11px; }
+.payment-day { min-height: 82px; padding: 7px; }
+.payment-daynum { color: #5e7b8e; font-size: 11px; }
+.payment-event { padding: 6px 7px; }
+.payment-event b { font-size: 11px; line-height: 1.35; }
+.payment-event span { margin-top: 2px; font-size: 10px; line-height: 1.35; }
+.payment-more { font-size: 10px; }
+.payment-building-card b { font-size: 12px; }
+.payment-building-card span { color: #677f8f; font-size: 10px; }
+.payment-building-card small { font-size: 10px; }
+
+.timeline-item strong { color: #294b61; font-size: 12px; }
+.timeline-item p { color: #657f90; font-size: 11px; }
+.timeline-item time { color: #7a919f; font-size: 10px; }
+.timeline-delete,
+.record-delete-button { min-height: 30px; padding: 6px 9px; font-size: 10px; }
+
+.task-title strong { color: #244960; font-size: 13px; }
+.task-title span { color: #667f90; font-size: 11px; }
+
+.case-trash-action,
+.case-browser-mode button,
+.case-trash-notice span,
+.case-readonly-section > header span,
+.case-readonly-grid span,
+.case-trash-steps span { font-size: 11px; }
+
+.confirmation-head h2 { font-size: 19px; }
+.confirmation-head p,
+.confirmation-message { font-size: 13px; }
+.confirmation-target strong { font-size: 14px; }
+.confirmation-warning b,
+.confirmation-warning span,
+.confirmation-actions button { font-size: 12px; }
+
+/* 2026 compact readability pass: keep the layout, clarify text hierarchy */
+:root {
+  --muted: #5e7688;
+  --soft: #3f6075;
+  --line: #d2e1e9;
+}
+
+body { font-size: 15px; line-height: 1.5; }
+button,
+input,
+select,
+textarea { font-size: 14px; }
+
+.brand span,
+.sync-state span,
+.help-launch { font-size: 12px; }
+.nav-item b { font-size: 15px; }
+.nav-item em { font-size: 11px; }
+.sync-state b { font-size: 13px; }
+
+.eyebrow { font-size: 12px; }
+.topbar h1 { font-size: 27px; }
+.global-search input { font-size: 14px; }
+.update-button { font-size: 11px; }
+.user-pill b { font-size: 12px; }
+.user-pill small { font-size: 10px; }
+.user-pill button,
+.help-button { font-size: 12px; }
+.primary-button,
+.secondary-button,
+.danger-button { min-height: 41px; font-size: 14px; }
+
+.brief-kicker { font-size: 12px; }
+.today-brief h2 { font-size: 22px; }
+.today-brief p { color: #5e788b; font-size: 13px; }
+.section-head h2 { font-size: 20px; }
+.section-head p { color: #5e788b; font-size: 13px; }
+.kpi-label { font-size: 13px; }
+.kpi-foot { color: #718898; font-size: 11px; }
+.panel-head h3 { font-size: 16px; }
+.panel-head p,
+.panel-head > span { color: #667f90; font-size: 12px; }
+.focus-row strong { font-size: 14px; }
+.focus-row span,
+.focus-row time { color: #6c8393; font-size: 11px; }
+.focus-row p { color: #476579; font-size: 12px; }
+.filter-chip { font-size: 12px; }
+
+.data-table th { padding-top: 13px; padding-bottom: 13px; font-size: 12px; }
+.data-table td { padding-top: 13px; padding-bottom: 13px; font-size: 13px; }
+.customer-cell strong { font-size: 14px; }
+.customer-cell span { color: #718897; font-size: 12px; }
+.stage-badge,
+.priority-badge,
+.status-badge,
+.activity-method { font-size: 11px; }
+.empty-state { font-size: 14px; }
+.empty-state p { font-size: 13px; }
+
+.sales-kanban-head strong { font-size: 13px; }
+.sales-kanban-head span { font-size: 11px; }
+.sales-kanban-card strong { font-size: 13px; }
+.sales-kanban-card p { color: #536f82; font-size: 12px; }
+.sales-kanban-card footer,
+.sales-kanban-card footer b { font-size: 11px; }
+
+.field > span { color: #47677c; font-size: 12px; }
+.field input,
+.field select,
+.field textarea { font-size: 14px; line-height: 1.55; }
+.field .hint { color: #718897; font-size: 11px; }
+.form-section h4,
+.essential-label b { font-size: 14px; }
+.essential-label span,
+.optional-form summary span { font-size: 12px; }
+.optional-form summary b { font-size: 13px; }
+.modal-head h2,
+.drawer-head h2 { font-size: 21px; }
+.modal-head p,
+.drawer-head p { font-size: 12px; }
+.info-box,
+.warning-box { font-size: 13px; }
+
+.customer-summary h3 { font-size: 22px; }
+.customer-summary p { color: #5f7889; font-size: 13px; }
+.summary-value strong { font-size: 20px; }
+.summary-value span { font-size: 11px; }
+.detail-section-head h4 { font-size: 14px; }
+.detail-section .text-muted { font-size: 12px !important; }
+.kv b { color: #627b8c; font-size: 11px; }
+.kv span { font-size: 13px; }
+.timeline-item strong { font-size: 13px; }
+.timeline-item p { font-size: 12px; }
+.timeline-item time { font-size: 11px; }
+.timeline-delete,
+.record-delete-button { font-size: 11px; }
+.building-record b,
+.customer-task-record > span { font-size: 13px; }
+.building-record span,
+.customer-task-record time,
+.record-danger-zone span { color: #657e8f; font-size: 11px; }
+.record-danger-zone b { font-size: 13px; }
+
+.contract-hero span,
+.relationship-hero span,
+.partner-quote-hero > div > span,
+.operations-hero > div > span { font-size: 12px; }
+.contract-hero p,
+.relationship-hero p,
+.partner-quote-hero p,
+.operations-hero p { color: #5b7588; font-size: 13px; }
+.contract-card > footer > span,
+.contract-number,
+.contract-facts span,
+.contract-facts small { font-size: 11px; }
+.relationship-facts span,
+.relationship-note,
+.relationship-open-hint { font-size: 12px; }
+
+.security-table th,
+.permission-table th { font-size: 11px; }
+.security-table td,
+.permission-table td { font-size: 12px; }
+.security-table td b,
+.security-table td span,
+.plain-guide span,
+.security-rule-grid span { font-size: 11px; }
+.security-table td strong,
+.permission-table strong,
+.plain-guide b,
+.security-rule-grid b { font-size: 12px; }
+.mini-button,
+.permission-check,
+.security-status,
+.sensitivity,
+.audit-category { font-size: 11px !important; }
+
+.operations-kpi span { font-size: 12px; }
+.operations-kpi small { color: #718999; font-size: 11px; }
+.case-list-card p,
+.case-list-card > small,
+.case-progress-head,
+.case-card footer time { font-size: 11px; }
+.case-current span,
+.case-current-label span { font-size: 11px; }
+.case-current b,
+.case-current-label b { font-size: 12px; }
+.case-step-main > div > b { font-size: 14px; }
+.case-step-main > div > span { color: #607b8d; font-size: 11px; }
+.case-step-main select,
+.case-note-button { font-size: 12px; }
+.case-extra-block > header,
+.case-resource-links button,
+.case-vendor-list button,
+.case-quote-list button,
+.case-photo-list button { font-size: 12px; }
+.case-extra-grid b,
+.case-step-note-form > div > span { font-size: 11px; }
+.case-extra-grid span,
+.case-extra-text,
+.case-step-note-form textarea { font-size: 13px; }
+
+.building-hub-hero span { font-size: 12px; }
+.building-hub-hero h2 { font-size: 22px; }
+.building-hub-hero p { color: #5f7889; font-size: 12px; }
+.building-hub-browser > header b { font-size: 14px; }
+.building-hub-browser > header span { font-size: 11px; }
+.building-hub-card strong { font-size: 14px; }
+.building-hub-card em,
+.building-hub-card small { font-size: 10px; }
+.building-hub-card p { color: #617b8c; font-size: 11px; }
+.building-hub-title span { font-size: 10px; }
+.building-hub-title h2 { font-size: 23px; }
+.building-hub-title p { color: #607a8c; font-size: 11px; }
+.building-hub-kpi span { font-size: 11px; }
+.building-hub-kpi b { font-size: 20px; }
+.building-hub-kpi small { color: #708797; font-size: 10px; }
+.building-detail-section > header b { font-size: 13px; }
+.building-detail-section > header span { font-size: 10px; }
+.building-detail-record b { font-size: 12px; }
+.building-detail-record span,
+.building-detail-record em { font-size: 10px; }
+.building-identity-strip b { font-size: 10px; }
+.building-identity-strip span { font-size: 12px; }
+.building-form-section > header h3 { font-size: 14px; }
+.building-form-section > header p { color: #688393; font-size: 11px; }
+.building-form-section > header > span { font-size: 10px; }
+.building-check-field > legend { font-size: 12px; }
+.building-check-field > p,
+.building-other-field > span { font-size: 10px; }
+.building-check-grid label,
+.building-other-field input { font-size: 11px; }
+.building-rental-facts span { font-size: 10px; }
+.building-rental-facts b { font-size: 14px; }
+.building-rental-facts small,
+.building-rental-lines b { font-size: 10px; }
+.building-rental-lines span { font-size: 11px; }
+
+@media (max-width: 1380px) {
+  .topbar h1 { font-size: 25px; }
+  .nav-item b { font-size: 14px; }
+}
+
+@media (max-width: 1250px) {
+  .topbar { gap: 10px; padding-inline: 18px; }
+  .topbar h1 { font-size: 22px; }
+  .top-actions { gap: 6px; }
+  .global-search { width: min(240px, 24vw); }
+  .user-pill > span { max-width: 86px; }
+  .payment-operations-hero { align-items: flex-start; flex-direction: column; }
+  .payment-operations-hero .payment-operation-actions { width: 100%; justify-content: flex-start; }
+  .payment-day { min-height: 68px; padding: 6px; }
+  .payment-event b { font-size: 10px; }
+  .payment-event span,
+  .payment-more { font-size: 9px; }
+}
+
+@media (max-height: 800px) {
+  .case-workspace,
+  .building-hub-layout { min-height: 430px; }
+  .payment-day { min-height: 68px; padding: 6px; }
+  .payment-event b { font-size: 10px; }
+  .payment-event span,
+  .payment-more { font-size: 9px; }
+}

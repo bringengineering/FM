@@ -1,0 +1,73 @@
+name: CRM CI
+
+on:
+  pull_request:
+    paths:
+      - "desktop-crm/**"
+      - "functions/**"
+      - "company-site/**"
+      - "database.rules.json"
+      - "firebase.json"
+      - "release/firebase-targets.json"
+      - ".github/workflows/crm-*.yml"
+  push:
+    branches:
+      - codex/bring-field-platform
+    paths:
+      - "desktop-crm/**"
+      - "functions/**"
+      - "company-site/**"
+      - "database.rules.json"
+      - "firebase.json"
+      - "release/firebase-targets.json"
+      - ".github/workflows/crm-*.yml"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: crm-ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  desktop:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: desktop-crm/package-lock.json
+      - run: npm ci
+        working-directory: desktop-crm
+      - run: npm test
+        working-directory: desktop-crm
+
+  backend-and-rules:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-java@b6effb05e454b25005698d916606bdc6ffcbf961 # v5.7.0
+        with:
+          distribution: temurin
+          java-version: "21"
+      - uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86 # v6.0.10
+        with:
+          version: 10
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 22
+          cache: pnpm
+          cache-dependency-path: |
+            functions/pnpm-lock.yaml
+            company-site/pnpm-lock.yaml
+      - run: pnpm --dir functions install --frozen-lockfile
+      - run: pnpm --dir company-site install --frozen-lockfile
+      - run: pnpm --dir functions test
+      - run: pnpm --dir functions build
+      - run: pnpm --dir company-site test:field:run
+      - run: pnpm --dir company-site typecheck:field
+      - run: pnpm --dir company-site build
+      - name: Test Firebase rules in local emulators
+        run: pnpm --dir company-site exec firebase --config ../firebase.json --project demo-bring-fm emulators:exec --only database,storage "pnpm test:rules"
