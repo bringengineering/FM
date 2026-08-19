@@ -62,10 +62,9 @@ def test_process_remote_once_has_one_getupdates_owner_sends_html_replies_and_sav
         def __init__(self): self.get_calls = []; self.sent = []
         def get_updates(self, offset=None, timeout=0):
             self.get_calls.append((offset, timeout))
-            assert offset == 5
+            assert offset == 4
             return [
-                {"update_id": 5, "message": {"chat": {"id": 9999, "type": "private"}, "text": "secret ignored"}},
-                {"update_id": 6, "message": {"chat": {"id": 1234, "type": "private"}, "text": "도움말"}},
+                {"update_id": 4, "message": {"chat": {"id": 1234, "type": "private"}, "text": "도움말"}},
             ]
 
         def send_message(self, chat_id, text, reply_markup):
@@ -86,11 +85,11 @@ def test_process_remote_once_has_one_getupdates_owner_sends_html_replies_and_sav
     from automation.bringcare_telegram.cli import process_remote_once
     output = process_remote_once(timeout=7)
 
-    assert client.get_calls == [(5, 7)]
-    assert offsets.saved == 6
+    assert client.get_calls == [(4, 7)]
+    assert offsets.saved == 5
     assert len(client.sent) == 1
     assert client.sent[0][0] == "1234" and client.sent[0][2] is None
-    assert output == {"status": "ok", "updates": 2, "replies": 1, "actions": 0, "approved": 0, "cancelled": 0}
+    assert output == {"status": "ok", "updates": 1, "replies": 1, "actions": 0, "approved": 0, "cancelled": 0}
 
 
 def test_process_remote_once_does_not_save_offset_when_reply_fails(monkeypatch, tmp_path):
@@ -114,6 +113,50 @@ def test_process_remote_once_does_not_save_offset_when_reply_fails(monkeypatch, 
     from automation.bringcare_telegram.cli import process_remote_once
     with pytest.raises(RuntimeError, match="send failed"):
         process_remote_once()
+
+
+def test_process_remote_once_checkpoints_each_success_and_retries_only_failed_update(monkeypatch, tmp_path):
+    class Config: chat_id = "1234"
+    next_offset = {"value": None}
+    requests = []
+    sent = []
+
+    class Client:
+        def get_updates(self, offset=None, timeout=0):
+            requests.append(offset)
+            updates = [
+                {"update_id": 10, "message": {"chat": {"id": 1234, "type": "private"}, "text": "도움말"}},
+                {"update_id": 11, "message": {"chat": {"id": 1234, "type": "private"}, "text": "어디까지 됐어"}},
+            ]
+            return [item for item in updates if offset is None or item["update_id"] >= offset]
+
+        def send_message(self, chat_id, text, reply_markup):
+            sent.append(text)
+            if len(sent) == 2:
+                raise RuntimeError("second reply failed")
+
+    class Offsets:
+        def load(self): return next_offset["value"]
+        def save(self, value): next_offset["value"] = value
+
+    client = Client()
+    monkeypatch.setattr("automation.bringcare_telegram.cli.load_public_config", lambda path: Config())
+    monkeypatch.setattr("automation.bringcare_telegram.cli.load_client", lambda: client)
+    monkeypatch.setattr("automation.bringcare_telegram.cli.UpdateOffsetStore", lambda path: Offsets())
+    monkeypatch.setattr("automation.bringcare_telegram.cli.APPROVAL_STORE", tmp_path / "approval.json")
+    monkeypatch.setattr("automation.bringcare_telegram.cli.REVISION_STORE", tmp_path / "revisions.json")
+    monkeypatch.setattr("automation.bringcare_telegram.cli.WORKSPACE_ROOT", tmp_path)
+
+    from automation.bringcare_telegram.cli import process_remote_once
+    with pytest.raises(RuntimeError, match="second reply failed"):
+        process_remote_once()
+    assert next_offset["value"] == 11
+
+    sent.clear()
+    output = process_remote_once()
+    assert requests == [None, 11]
+    assert next_offset["value"] == 12
+    assert output["updates"] == output["replies"] == 1
 
 
 @pytest.mark.parametrize(

@@ -29,6 +29,20 @@ class OutboundEvent:
     markup: dict | None
 
 
+class _NextOffsetAdapter:
+    """Present last-processed IDs to RemoteProcessor over a next-ID store."""
+
+    def __init__(self, store: UpdateOffsetStore):
+        self.store = store
+
+    def load(self) -> int | None:
+        next_id = self.store.load()
+        return None if next_id is None else next_id - 1
+
+    def save(self, last_update_id: int) -> int:
+        return self.store.save(last_update_id + 1)
+
+
 def send_event(event: OutboundEvent) -> bool:
     config = load_public_config(BASE / "local-config.json")
     state = NotificationState(BASE / "telegram-state.json")
@@ -52,9 +66,9 @@ def process_remote_once(timeout: int = 0) -> dict:
     config = load_public_config(BASE / "local-config.json")
     client = load_client()
     offsets = UpdateOffsetStore(UPDATE_OFFSET)
-    previous = offsets.load()
+    next_offset = offsets.load()
     updates = client.get_updates(
-        offset=None if previous is None else previous + 1,
+        offset=next_offset,
         timeout=timeout,
     )
     processor = RemoteProcessor(
@@ -63,16 +77,27 @@ def process_remote_once(timeout: int = 0) -> dict:
         revision_store=RevisionStore(REVISION_STORE),
         queries=BlogQueries(WORKSPACE_ROOT, approval_path=APPROVAL_STORE),
         reply=lambda chat_id, text: client.send_message(chat_id, text, None),
-        update_state=offsets,
+        update_state=_NextOffsetAdapter(offsets),
     )
-    result = processor.process(updates)
+    totals = {"replies": 0, "actions": 0, "approved": 0, "cancelled": 0}
+    ordered = sorted(
+        (
+            update for update in updates
+            if isinstance(update, dict)
+            and isinstance(update.get("update_id"), int)
+            and not isinstance(update.get("update_id"), bool)
+            and update["update_id"] >= 0
+        ),
+        key=lambda update: update["update_id"],
+    )
+    for update in ordered:
+        result = processor.process([update])
+        for key in totals:
+            totals[key] += getattr(result, key)
     return {
         "status": "ok",
         "updates": len(updates),
-        "replies": result.replies,
-        "actions": result.actions,
-        "approved": result.approved,
-        "cancelled": result.cancelled,
+        **totals,
     }
 
 
