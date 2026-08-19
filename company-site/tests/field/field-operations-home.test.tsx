@@ -8,6 +8,15 @@ import FieldOperationsHome, {
 import FieldDesktopLogoutObserver from "../../app/field/components/v2/FieldDesktopLogoutObserver";
 import FieldStatusState from "../../app/field/components/v2/FieldStatusState";
 
+const todayParts = new Intl.DateTimeFormat("en-CA", {
+  timeZone: "Asia/Seoul",
+  year: "numeric",
+  month: "2-digit",
+  day: "2-digit",
+}).formatToParts(new Date());
+const todayValues = Object.fromEntries(todayParts.map((part) => [part.type, part.value]));
+const TODAY_KST = `${todayValues.year}-${todayValues.month}-${todayValues.day}`;
+
 const ITEM = Object.freeze({
   id: "job_1",
   visitId: "visit_1",
@@ -17,7 +26,7 @@ const ITEM = Object.freeze({
   crmSalesProspectId: "prospect_1",
   crmSalesUnitId: "sales_unit_1",
   assignedOperatorId: "operator_kim",
-  dueDate: "2026-08-14",
+  dueDate: TODAY_KST,
   priority: "normal" as const,
   workflowStatus: "assigned" as const,
   uploadStatus: "none" as const,
