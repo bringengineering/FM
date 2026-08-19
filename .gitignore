@@ -5,3 +5,6 @@ automation/output/
 __pycache__/
 *.pyc
 .worktrees/
+automation/bringcare_telegram/local-config.json
+automation/bringcare_telegram/token.dpapi
+automation/bringcare_telegram/telegram-state.json
