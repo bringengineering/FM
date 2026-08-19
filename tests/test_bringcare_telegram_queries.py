@@ -233,6 +233,34 @@ def test_redaction_recognizes_only_explicit_secret_variable_names():
         assert BlogQueries._redact(assignment) == assignment
 
 
+def test_redaction_covers_cookie_headers_sessions_and_bearer_credentials():
+    secrets = (
+        "session_id abc123xyz",
+        "Session-ID: realistic-session-value",
+        "sessionid=realistic-session-value",
+        "NID_AUT=naver-cookie-value; NID_SES=naver-session-value",
+        "sid cookie-session-value",
+        "JSESSIONID=java-session-value",
+        "PHPSESSID php-session-value",
+        "Cookie: NID_AUT=naver-cookie-value; theme=light",
+        "Authorization: Bearer eyJhbGciOiJIUzI1NiJ9.payload.signature",
+        "Bearer standalone-secret-token",
+        "password abc123",
+    )
+    for secret in secrets:
+        assert BlogQueries._redact(f"재시도: {secret}") == "[민감정보 숨김]"
+
+
+def test_redaction_keeps_noncredential_security_prose_and_metrics():
+    safe_values = (
+        "비밀번호를 확인해 주세요",
+        "쿠키 설정을 확인해 주세요",
+        "token_count 120 password_attempts 3 cookie_retry 2",
+    )
+    for value in safe_values:
+        assert BlogQueries._redact(value) == value
+
+
 def test_malformed_and_missing_sources_return_na_messages_without_writes(tmp_path):
     queries = make_queries(tmp_path)
     write(tmp_path / "approval.json", "[]")

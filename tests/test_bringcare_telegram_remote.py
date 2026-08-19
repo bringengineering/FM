@@ -139,6 +139,43 @@ def test_revision_allows_non_secret_operational_assignments(tmp_path, text):
     assert len(revisions.list()) == 1
 
 
+@pytest.mark.parametrize("payload", [
+    "session_id abc123xyz",
+    "SESSIONID: realistic-session-value",
+    "session-token=long_session_token",
+    "auth_token long-auth-token",
+    "access-token: access-secret-value",
+    "refresh_token=refresh-secret-value",
+    "NID_AUT=naver-cookie-value; NID_SES=naver-session-value",
+    "SID realistic-cookie-value",
+    "JSESSIONID=java-session-value",
+    "PHPSESSID php-session-value",
+    "Cookie: NID_AUT=naver-cookie-value; NID_SES=naver-session-value",
+    "Authorization: Bearer eyJhbGciOiJIUzI1NiJ9.payload.signature",
+    "Bearer standalone-secret-token",
+    "NAVER_PASSWORD: abc123",
+    "password abc123",
+])
+def test_revision_rejects_adversarial_credentials_without_echo_or_store(tmp_path, payload):
+    remote, _, revisions, replies, _ = processor(tmp_path)
+    result = remote.process([update(27, f"제목: {payload}")], now=NOW)
+    assert revisions.list() == []
+    assert result.actions == 0
+    assert replies == [("1234", "민감정보가 포함된 수정 요청은 저장할 수 없습니다.")]
+    assert payload not in replies[0][1]
+
+
+@pytest.mark.parametrize("payload", [
+    "비밀번호를 확인해 주세요",
+    "token_count 120 password_attempts 3 cookie_retry 2",
+    "쿠키 정책을 확인해 주세요",
+])
+def test_revision_does_not_overblock_security_prose_or_metrics(tmp_path, payload):
+    remote, _, revisions, _, _ = processor(tmp_path)
+    remote.process([update(28, f"제목: {payload}")], now=NOW)
+    assert revisions.list()[0].content == payload
+
+
 def test_publish_request_reuses_target_as_ten_minute_pending_and_never_publishes(tmp_path):
     remote, approval, _, replies, _ = processor(tmp_path)
 
