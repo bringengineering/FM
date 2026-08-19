@@ -52,6 +52,15 @@ test("uses persistent atomic reservations with bounded retry and annotated tag f
   assert.doesNotMatch(scripts, /--force(?:\s|"|')/);
 });
 
+test("creates the version-only commit before staging untracked release assets", () => {
+  const reserve = jobBlock("reserve-build");
+  const commitIndex = reserve.indexOf("name: Create deterministic version-only release commit");
+  const isolateIndex = reserve.indexOf("name: Isolate exactly the three newly built release assets");
+  assert.ok(commitIndex >= 0, "missing deterministic release commit step");
+  assert.ok(isolateIndex >= 0, "missing release asset isolation step");
+  assert.ok(commitIndex < isolateIndex, "release-assets must not dirty the worktree before the scoped commit");
+});
+
 test("stages exactly three updater assets and publishes stable only after tested and deployed Rules", () => {
   assert.match(release, /release-assets\/BRING\.CRM\.Company\.Setup\.\$\{\{ steps\.reserve\.outputs\.version \}\}\.exe\n/);
   assert.match(release, /release-assets\/BRING\.CRM\.Company\.Setup\.\$\{\{ steps\.reserve\.outputs\.version \}\}\.exe\.blockmap\n/);

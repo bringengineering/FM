@@ -233,6 +233,10 @@ jobs:
       - name: Verify exact installer, blockmap, and update manifest
         if: steps.reserve.outputs.reuse_assets != 'true'
         run: node desktop-crm/scripts/release/verify-assets.js --version "${{ steps.reserve.outputs.version }}" --dist desktop-crm/dist
+      - name: Create deterministic version-only release commit
+        id: commit
+        if: steps.reserve.outputs.release_sha == ''
+        run: node desktop-crm/scripts/release/create-release-commit.js --version "${{ steps.reserve.outputs.version }}" --source-sha "${{ needs.plan.outputs.source_sha }}"
       - name: Isolate exactly the three newly built release assets
         if: steps.reserve.outputs.reuse_assets != 'true'
         shell: bash
@@ -241,10 +245,6 @@ jobs:
           cp "desktop-crm/dist/BRING.CRM.Company.Setup.${{ steps.reserve.outputs.version }}.exe" release-assets/
           cp "desktop-crm/dist/BRING.CRM.Company.Setup.${{ steps.reserve.outputs.version }}.exe.blockmap" release-assets/
           cp desktop-crm/dist/latest.yml release-assets/
-      - name: Create deterministic version-only release commit
-        id: commit
-        if: steps.reserve.outputs.release_sha == ''
-        run: node desktop-crm/scripts/release/create-release-commit.js --version "${{ steps.reserve.outputs.version }}" --source-sha "${{ needs.plan.outputs.source_sha }}"
       - name: Atomically create and verify annotated release tag
         if: steps.reserve.outputs.release_sha == ''
         shell: bash
