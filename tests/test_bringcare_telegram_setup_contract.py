@@ -12,3 +12,9 @@ def test_setup_uses_hidden_input_and_dpapi():
 def test_setup_prompts_are_windows_powershell_safe_ascii():
     text = Path("automation/bringcare_telegram/setup-telegram.ps1").read_text(encoding="utf-8")
     assert text.isascii()
+
+
+def test_setup_waits_for_start_instead_of_checking_only_once():
+    text = Path("automation/bringcare_telegram/setup-telegram.ps1").read_text(encoding="utf-8")
+    assert "for ($attempt = 1; $attempt -le 30; $attempt++)" in text
+    assert "Start-Sleep -Seconds 2" in text

@@ -11,9 +11,15 @@ try {
     $botApi = "https://api.telegram.org/bot$token"
     $identity = Invoke-RestMethod -Method Get -Uri "$botApi/getMe"
     if (-not $identity.ok) { throw "Check the Bot Token." }
-    $updates = Invoke-RestMethod -Method Get -Uri "$botApi/getUpdates"
-    $chatIds = @($updates.result | ForEach-Object { $_.message.chat } | Where-Object { $_.type -eq "private" } | Select-Object -ExpandProperty id -Unique)
-    if ($chatIds.Count -eq 0) { throw "Send /start to the bot, then run setup again." }
+    Write-Host "Open @bringcare_blog_alert_bot and send /start now. Waiting up to 60 seconds..."
+    $chatIds = @()
+    for ($attempt = 1; $attempt -le 30; $attempt++) {
+        $updates = Invoke-RestMethod -Method Get -Uri "$botApi/getUpdates"
+        $chatIds = @($updates.result | ForEach-Object { $_.message.chat } | Where-Object { $_ -and $_.type -eq "private" } | Select-Object -ExpandProperty id -Unique)
+        if ($chatIds.Count -gt 0) { break }
+        Start-Sleep -Seconds 2
+    }
+    if ($chatIds.Count -eq 0) { throw "No private message detected. Confirm the bot username and send /start again." }
     Write-Host "Detected private Chat IDs:"
     for ($i = 0; $i -lt $chatIds.Count; $i++) { Write-Host "[$($i + 1)] $($chatIds[$i])" }
     $choice = [int](Read-Host "Select a number")
