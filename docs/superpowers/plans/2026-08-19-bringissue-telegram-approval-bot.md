@@ -16,6 +16,7 @@
 - `automation/telegram_bot/models.py`: job and state value objects
 - `automation/telegram_bot/store.py`: SQLite schema and idempotent state transitions
 - `automation/telegram_bot/security.py`: administrator authorization
+- `automation/telegram_bot/intents.py`: bounded Korean natural-language intent parsing and confirmation sessions
 - `automation/telegram_bot/messages.py`: QC message and button construction
 - `automation/telegram_bot/youtube_bridge.py`: existing uploader and scheduler adapter
 - `automation/telegram_bot/app.py`: Telegram polling handlers and orchestration
@@ -208,6 +209,67 @@ git add automation/telegram_bot/messages.py tests/telegram_bot/test_messages.py
 git commit -m "feat: build Telegram approval messages"
 ```
 
+### Task 4A: Bounded Korean natural-language commands
+
+**Files:**
+- Create: `automation/telegram_bot/intents.py`
+- Create: `tests/telegram_bot/test_intents.py`
+
+- [ ] **Step 1: Write failing intent tests**
+
+```python
+from datetime import datetime
+from zoneinfo import ZoneInfo
+from automation.telegram_bot.intents import parse_command
+
+
+NOW = datetime(2026, 8, 19, 23, 30, tzinfo=ZoneInfo("Asia/Seoul"))
+
+
+def test_status_query_is_read_only():
+    command = parse_command("후버 영상 상태 알려줘", now=NOW)
+    assert command.intent == "status"
+    assert command.target == "hoover"
+    assert command.requires_confirmation is False
+
+
+def test_schedule_requires_confirmation():
+    command = parse_command("후버 내일 낮 12시에 예약해줘", now=NOW)
+    assert command.intent == "schedule"
+    assert command.publish_at.isoformat() == "2026-08-20T12:00:00+09:00"
+    assert command.requires_confirmation is True
+
+
+def test_new_production_is_not_supported_initially():
+    command = parse_command("새 영상 하나 만들어줘", now=NOW)
+    assert command.intent == "unsupported"
+```
+
+- [ ] **Step 2: Run and verify failure**
+
+Run: `py -3.11 -m pytest tests/telegram_bot/test_intents.py -v`
+
+Expected: FAIL because `intents.py` does not exist.
+
+- [ ] **Step 3: Implement deterministic Korean intent parsing**
+
+Define a frozen `ParsedCommand` with `intent`, `target`, `revision_text`, `publish_at`, and `requires_confirmation`. Recognize only status words, revision words, upload words, reservation words, confirmation words, and cancellation words. Resolve `오늘`, `내일`, `낮 12시`, `오후 7시` in `Asia/Seoul`. Return `ambiguous` instead of guessing when the target or time is missing.
+
+- [ ] **Step 4: Add pending confirmation storage**
+
+Store `chat_id`, `admin_user_id`, `job_id`, `action`, `payload_json`, `expires_at`, and `consumed_at`. Confirmation phrases execute only the newest unexpired record for the same administrator and chat. `취소` consumes it without an external action.
+
+- [ ] **Step 5: Run tests and commit**
+
+Run: `py -3.11 -m pytest tests/telegram_bot/test_intents.py tests/telegram_bot/test_store.py -v`
+
+Expected: all passed.
+
+```powershell
+git add automation/telegram_bot/intents.py automation/telegram_bot/store.py tests/telegram_bot/test_intents.py tests/telegram_bot/test_store.py
+git commit -m "feat: parse safe Korean Telegram commands"
+```
+
 ### Task 5: YouTube bridge and schedule permission
 
 **Files:**
@@ -246,11 +308,11 @@ git commit -m "feat: add safe YouTube scheduling bridge"
 
 - [ ] **Step 1: Write handler tests with fake updates**
 
-Test `/start`, unauthorized callback rejection, successful hold, successful approval transition, duplicate callback response, and revision text attachment.
+Test `/start`, unauthorized callback rejection, successful hold, successful approval transition, duplicate callback response, status query, revision request, schedule confirmation, cancellation, expired confirmation, and unsupported production request.
 
 - [ ] **Step 2: Implement polling application**
 
-Register command, callback, and revision text handlers. Every handler first checks the administrator ID. Long-running upload calls run outside the Telegram update handler and update job state to `executing` before work starts.
+Register command, callback, and natural-language text handlers. Every handler first checks the administrator ID. Route text through `intents.py`; execute status and revision storage immediately, create a pending confirmation for upload and schedule actions, and execute only after a valid confirmation reply. Long-running upload calls run outside the Telegram update handler and update job state to `executing` before work starts.
 
 - [ ] **Step 3: Run tests and commit**
 
@@ -321,6 +383,10 @@ Expected: video, QC summary, and four buttons arrive in one administrator chat.
 - [ ] **Step 5: Test `보류`, then restore and test `내일 12시 예약`**
 
 Expected: the first action changes only local state. The scheduling action uses the existing private YouTube video ID `i2QnJQ2ksik` and reports the final KST schedule.
+
+- [ ] **Step 5A: Repeat the Hoover workflow without buttons**
+
+Send `후버 영상 상태 알려줘`, `후버 결말을 더 짧게 수정해줘`, and `후버 내일 낮 12시에 예약해줘`. Verify that status and revision are handled immediately, scheduling waits for `ㅇㅇ 진행해`, and `취소` prevents execution.
 
 - [ ] **Step 6: Run the full suite**
 
