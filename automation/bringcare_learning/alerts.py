@@ -11,12 +11,18 @@ ACTIONS = {
 
 
 def build_alert(blocker, detected_at, stage, post_title):
-    action = ACTIONS[blocker]
+    action = get_alert_action(blocker)
     return (
         f"[{blocker}] {detected_at}에 `{post_title}` 작업이 `{stage}` 단계에서 "
         f"중단되었습니다. 원고와 자산은 보존했습니다. {action} 해결 후 "
         f"`{stage}` 단계부터 재개합니다."
     )
+
+
+def get_alert_action(blocker):
+    if blocker not in ACTIONS:
+        raise ValueError(f"unknown blocker: {blocker}")
+    return ACTIONS[blocker]
 
 
 def should_notify(last_notified_at, now_at, state_changed):
