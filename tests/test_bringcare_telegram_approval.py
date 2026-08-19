@@ -4,7 +4,7 @@ import threading
 
 import pytest
 
-from automation.bringcare_telegram.approval import ApprovalStore
+from automation.bringcare_telegram.approval import ApprovalStore, UpdateOffsetStore
 
 
 NOW = datetime(2026, 8, 19, 12, 0, tzinfo=timezone.utc)
@@ -22,6 +22,12 @@ class _ProcessPausingApprovalStore(ApprovalStore):
             if not self.release.wait(5):
                 raise TimeoutError("test refresh was not released")
         return super()._write(record)
+
+
+def _save_offset_after_release(path, value, ready, release):
+    ready.put(value)
+    release.wait(5)
+    UpdateOffsetStore(path).save(value)
 
 
 def _process_refresh(path, waiting, release):
@@ -185,6 +191,35 @@ def test_update_offset_is_atomic_and_monotonic(tmp_path):
     offsets.save(8)
     offsets.save(4)
     assert offsets.load() == 8
+
+
+def test_offset_store_concurrent_saves_never_regress(tmp_path):
+    from concurrent.futures import ThreadPoolExecutor
+    path = tmp_path / "offset.json"
+    values = [31, 4, 99, 12, 57, 2]
+    with ThreadPoolExecutor(max_workers=len(values)) as pool:
+        saved = list(pool.map(lambda value: UpdateOffsetStore(path).save(value), values))
+    assert UpdateOffsetStore(path).load() == max(values)
+    assert max(saved) == max(values)
+
+
+def test_offset_store_cross_process_saves_never_regress(tmp_path):
+    context = multiprocessing.get_context("spawn")
+    ready = context.Queue()
+    release = context.Event()
+    path = tmp_path / "offset.json"
+    processes = [
+        context.Process(target=_save_offset_after_release, args=(path, value, ready, release))
+        for value in (7, 101, 23)
+    ]
+    for process in processes:
+        process.start()
+    assert {ready.get(timeout=5) for _ in processes} == {7, 101, 23}
+    release.set()
+    for process in processes:
+        process.join(10)
+        assert process.exitcode == 0
+    assert UpdateOffsetStore(path).load() == 101
 
 
 def test_refresh_transaction_cannot_overwrite_concurrent_approval(tmp_path):

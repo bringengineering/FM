@@ -85,12 +85,19 @@ def test_latest_publications_sorts_timestamps_and_skips_unsafe_or_malformed_rows
     )
 
 
-def test_next_preparation_time_uses_last_prepared_plus_three_hours(tmp_path):
-    queries = make_queries(tmp_path)
-    write(tmp_path / "config.json", '{"last_prepared_at":"2026-08-20T08:30:00+09:00","token":"secret"}')
-    assert queries.next_preparation_time() == "다음 준비 시각: 2026-08-20 11:30"
+def test_next_preparation_time_uses_latest_real_backlog_heading_plus_three_hours(tmp_path):
+    queries = make_queries(
+        tmp_path,
+        clock=lambda: datetime(2026, 8, 20, 14, 0, tzinfo=SEOUL),
+    )
+    write(tmp_path / "backlog.md", "# 운영 백로그\n"
+          "## 2026-08-20 10:30 7회차 준비 완료\n- 상태: 완료\n"
+          "## 2026-08-19 18시 실행 기록\n- 상태: 완료\n"
+          "## 참고 2026-08-21 09:00\n- 날짜일 뿐 실행 기록 아님\n"
+          "## 2026-08-20 08시 6회차\n- 상태: 완료\n")
+    assert queries.next_preparation_time() == "다음 준비 시각: 2026-08-20 13:30 · 지연"
 
-    write(tmp_path / "config.json", '{broken')
+    write(tmp_path / "backlog.md", "## 준비 시각 미정\n## 2026-99-99 25시 실행\n")
     assert queries.next_preparation_time() == "다음 준비 시각: NA"
 
 

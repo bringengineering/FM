@@ -9,6 +9,8 @@ from typing import Callable
 from urllib.parse import urlparse
 from zoneinfo import ZoneInfo
 
+from .secrets import redact_secret
+
 
 SEOUL = ZoneInfo("Asia/Seoul")
 NO_RECORD = "확인된 기록이 없습니다"
@@ -98,7 +100,7 @@ class BlogQueries:
         self.backlog_path = Path(backlog_path or root / "blog/automation/backlog.md")
         self.ledger_path = Path(ledger_path or root / "blog/automation/performance-ledger.csv")
         self.alerts_path = Path(alerts_path or root / "blog/automation/alerts.md")
-        self.config_path = Path(config_path or root / "automation/bringcare_telegram/config.json")
+        self.config_path = Path(config_path) if config_path is not None else None
         self.clock = clock or _now
 
     @staticmethod
@@ -198,13 +200,25 @@ class BlogQueries:
         return "\n".join(lines)
 
     def next_preparation_time(self) -> str:
-        config = self._json(self.config_path)
-        value = next(
-            (config.get(key) for key in ("last_prepared_at", "last_preparation_at", "last_prepared") if config.get(key)),
-            None,
-        )
-        stamp = _parse_datetime(value)
-        return f"다음 준비 시각: {(stamp + timedelta(hours=3)):%Y-%m-%d %H:%M}" if stamp else "다음 준비 시각: NA"
+        stamps: list[datetime] = []
+        pattern = re.compile(r"(20\d{2}-\d{2}-\d{2})\s+(\d{1,2})(?::(\d{2}))?시?")
+        for heading in re.findall(r"(?m)^#{1,6}\s+(.+)$", self._text(self.backlog_path)):
+            if not any(context in heading for context in ("회차", "실행", "준비")):
+                continue
+            for match in pattern.finditer(heading):
+                stamp = _parse_datetime(
+                    f"{match.group(1)}T{int(match.group(2)):02d}:{int(match.group(3) or 0):02d}:00+09:00"
+                )
+                if stamp is not None:
+                    stamps.append(stamp)
+        if not stamps:
+            return "다음 준비 시각: NA"
+        next_time = max(stamps) + timedelta(hours=3)
+        now = self.clock()
+        if now.tzinfo is None:
+            now = now.replace(tzinfo=SEOUL)
+        overdue = " · 지연" if next_time < now.astimezone(SEOUL) else ""
+        return f"다음 준비 시각: {next_time:%Y-%m-%d %H:%M}{overdue}"
 
     def today_performance(self) -> str:
         now = self.clock()
@@ -260,21 +274,4 @@ class BlogQueries:
 
     @staticmethod
     def _redact(value: str) -> str:
-        text = _clean(value)
-        assignment = re.compile(r"(?i)\b([a-z][a-z0-9_-]*)\s*[:=]\s*[^\s,;]+")
-        terminal_secrets = {"token", "secret", "password", "passwd", "cookie", "credential"}
-
-        def has_sensitive_name() -> bool:
-            for match in assignment.finditer(text):
-                parts = [part for part in re.split(r"[_-]+", match.group(1).lower()) if part]
-                if not parts:
-                    continue
-                if parts[-1] in terminal_secrets or tuple(parts[-2:]) in {
-                    ("api", "key"),
-                    ("chat", "id"),
-                }:
-                    return True
-            return False
-
-        bot_token = re.compile(r"(?i)(?:/bot)?\d{5,}:[a-z0-9_-]{6,}")
-        return "[민감정보 숨김]" if has_sensitive_name() or bot_token.search(text) else text
+        return redact_secret(value)

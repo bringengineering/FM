@@ -11,6 +11,7 @@ from .approval import ApprovalStore, PendingApprovalExists, PendingApprovalMisma
 from .queries import BlogQueries
 from .revisions import RevisionStore
 from .router import route
+from .secrets import contains_secret
 
 
 class UpdateState(Protocol):
@@ -134,6 +135,8 @@ class RemoteProcessor:
                 target = self._target()
                 if target is None:
                     answer = "수정할 대상 글이 없습니다. 먼저 승인 대기 글을 준비해 주세요."
+                elif contains_secret(command.payload):
+                    answer = "민감정보가 포함된 수정 요청은 저장할 수 없습니다."
                 else:
                     kind = "title" if command.intent == "revise_title" else "body"
                     self.revision_store.add(update_id, target.post_id, kind, command.payload or "", now=now)

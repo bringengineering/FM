@@ -112,6 +112,33 @@ def test_revision_requires_target_then_stores_parsed_payload_and_update_id(tmp_p
     assert rejected.actions == 0
 
 
+@pytest.mark.parametrize("text", [
+    "제목: API_KEY=super-secret-value",
+    "본문을 password=hunter2 로 바꿔줘",
+    "제목: 123456789:ABCDEF_secret-token",
+    "본문을 https://api.telegram.org/bot123456789:ABCDEF_secret-token/sendMessage 로 바꿔줘",
+])
+def test_revision_rejects_sensitive_content_without_persisting_or_echoing(tmp_path, text):
+    remote, _, revisions, replies, _ = processor(tmp_path)
+    result = remote.process([update(17, text)], now=NOW)
+    assert revisions.list() == []
+    assert result.actions == 0
+    reply = replies[0][1]
+    assert reply == "민감정보가 포함된 수정 요청은 저장할 수 없습니다."
+    for secret in ("super-secret-value", "hunter2", "123456789:ABCDEF_secret-token"):
+        assert secret not in reply
+
+
+@pytest.mark.parametrize("text", [
+    "제목: token_count=120 결과",
+    "본문을 password_attempts=3 cookie_retry=2 로 바꿔줘",
+])
+def test_revision_allows_non_secret_operational_assignments(tmp_path, text):
+    remote, _, revisions, _, _ = processor(tmp_path)
+    remote.process([update(18, text)], now=NOW)
+    assert len(revisions.list()) == 1
+
+
 def test_publish_request_reuses_target_as_ten_minute_pending_and_never_publishes(tmp_path):
     remote, approval, _, replies, _ = processor(tmp_path)
 

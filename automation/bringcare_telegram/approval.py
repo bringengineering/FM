@@ -79,11 +79,21 @@ def _exclusive_file_lock(path: Path, timeout: float):
     if not thread_lock.acquire(timeout=max(0.0, deadline - time.monotonic())):
         raise ApprovalStoreLockTimeout(f"Timed out acquiring approval store lock: {path}")
     try:
-        with path.open("a+b") as handle:
-            handle.seek(0, os.SEEK_END)
-            if handle.tell() == 0:
-                handle.write(b"\0")
-                handle.flush()
+        try:
+            descriptor = os.open(path, os.O_CREAT | os.O_EXCL | os.O_WRONLY)
+        except FileExistsError:
+            descriptor = None
+        if descriptor is not None:
+            try:
+                os.write(descriptor, b"\0")
+            finally:
+                os.close(descriptor)
+        while not path.exists() or path.stat().st_size == 0:
+            if time.monotonic() >= deadline:
+                raise ApprovalStoreLockTimeout(f"Timed out initializing approval store lock: {path}")
+            time.sleep(min(0.01, max(0.0, deadline - time.monotonic())))
+
+        with path.open("r+b") as handle:
             acquired = False
             while not acquired:
                 try:
@@ -265,8 +275,10 @@ class ApprovalStore:
 
 
 class UpdateOffsetStore:
-    def __init__(self, path: str | Path):
+    def __init__(self, path: str | Path, *, lock_timeout: float = 5.0):
         self.path = Path(path)
+        self.lock_timeout = lock_timeout
+        self.lock_path = self.path.with_name(f"{self.path.name}.lock")
 
     def load(self) -> int | None:
         if not self.path.exists():
@@ -278,17 +290,18 @@ class UpdateOffsetStore:
             return None
 
     def save(self, offset: int) -> int:
-        current = self.load()
-        value = max(int(offset), current if current is not None else 0)
-        self.path.parent.mkdir(parents=True, exist_ok=True)
-        with NamedTemporaryFile(
-            mode="w", encoding="utf-8", dir=self.path.parent, prefix=".offset.", suffix=".tmp", delete=False
-        ) as handle:
-            json.dump({"offset": value}, handle)
-            handle.write("\n")
-            temp_path = Path(handle.name)
-        os.replace(temp_path, self.path)
-        return value
+        with _exclusive_file_lock(self.lock_path, self.lock_timeout):
+            current = self.load()
+            value = max(int(offset), current if current is not None else 0)
+            self.path.parent.mkdir(parents=True, exist_ok=True)
+            with NamedTemporaryFile(
+                mode="w", encoding="utf-8", dir=self.path.parent, prefix=".offset.", suffix=".tmp", delete=False
+            ) as handle:
+                json.dump({"offset": value}, handle)
+                handle.write("\n")
+                temp_path = Path(handle.name)
+            os.replace(temp_path, self.path)
+            return value
 
 
 def apply_updates(

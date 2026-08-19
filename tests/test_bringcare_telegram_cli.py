@@ -54,6 +54,19 @@ def test_remote_once_passes_timeout(monkeypatch, capsys):
     assert json.loads(capsys.readouterr().out)["status"] == "ok"
 
 
+def test_remote_command_lock_busy_never_calls_getupdates(monkeypatch, capsys):
+    from automation.bringcare_telegram.locking import PollerLockError
+    calls = []
+    class BusyLock:
+        def __enter__(self): raise PollerLockError("sensitive owner details")
+        def __exit__(self, *_): return False
+    monkeypatch.setattr("automation.bringcare_telegram.cli.SingleInstanceLock", BusyLock)
+    monkeypatch.setattr("automation.bringcare_telegram.cli.process_remote_once", lambda timeout=0: calls.append(timeout))
+    assert main(["remote-once", "--timeout", "12"]) == 2
+    assert calls == []
+    assert "sensitive owner details" not in capsys.readouterr().err
+
+
 def test_process_remote_once_has_one_getupdates_owner_sends_html_replies_and_saves_offset(monkeypatch, tmp_path):
     class Config:
         chat_id = "1234"

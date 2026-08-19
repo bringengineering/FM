@@ -10,6 +10,7 @@ from .config import load_public_config
 from .crypto_windows import decrypt_current_user_secret
 from .events import event_from_blocker
 from .messages import blocked_message, published_message, ready_message
+from .locking import PollerLockError, SingleInstanceLock
 from .queries import BlogQueries
 from .remote import RemoteProcessor
 from .revisions import RevisionStore
@@ -157,7 +158,9 @@ def main(argv=None):
         args = _parser().parse_args(argv)
         if args.command in {"sync-commands", "sync-approval", "remote-once"}:
             timeout = args.timeout if args.command == "remote-once" else 0
-            print(json.dumps(process_remote_once(timeout=timeout), ensure_ascii=False))
+            with SingleInstanceLock():
+                result = process_remote_once(timeout=timeout)
+            print(json.dumps(result, ensure_ascii=False))
             return 0
         store = ApprovalStore(APPROVAL_STORE)
         if args.command == "approval-status":
@@ -182,6 +185,8 @@ def main(argv=None):
         sent = send_event(event)
         print("알림을 보냈습니다." if sent else "동일 알림이 최근 전송되어 생략했습니다.")
         return 0 if sent else 2
+    except PollerLockError:
+        print("다른 텔레그램 수신 작업이 실행 중입니다.", file=sys.stderr); return 2
     except (FileNotFoundError, ValueError, KeyError) as exc:
         print(f"설정 오류: {type(exc).__name__}", file=sys.stderr); return 3
     except (TelegramAuthError, TelegramForbiddenError):
