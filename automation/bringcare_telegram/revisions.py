@@ -2,11 +2,19 @@ from __future__ import annotations
 
 import json
 import os
+import threading
+import time
+from contextlib import contextmanager
 from dataclasses import asdict, dataclass, replace
 from datetime import datetime, timezone
 from pathlib import Path
 from tempfile import NamedTemporaryFile
 from typing import Any
+
+if os.name == "nt":
+    import msvcrt
+else:
+    import fcntl
 
 
 SCHEMA_VERSION = 1
@@ -21,6 +29,8 @@ RECORD_KEYS = {
     "content",
     "status",
 }
+_THREAD_LOCKS: dict[str, threading.Lock] = {}
+_THREAD_LOCKS_GUARD = threading.Lock()
 
 
 class UnknownRevisionRequest(KeyError):
@@ -29,6 +39,10 @@ class UnknownRevisionRequest(KeyError):
 
 class MalformedRevisionStore(ValueError):
     """Raised when a write is attempted against malformed stored data."""
+
+
+class RevisionStoreLockTimeout(TimeoutError):
+    """Raised when another process holds the revision store lock too long."""
 
 
 @dataclass(frozen=True)
@@ -74,9 +88,59 @@ def _record(value: Any) -> RevisionRequest:
     return record
 
 
+@contextmanager
+def _exclusive_file_lock(path: Path, timeout: float):
+    path.parent.mkdir(parents=True, exist_ok=True)
+    deadline = time.monotonic() + timeout
+    lock_key = str(path.resolve())
+    with _THREAD_LOCKS_GUARD:
+        thread_lock = _THREAD_LOCKS.setdefault(lock_key, threading.Lock())
+    if not thread_lock.acquire(timeout=max(0.0, deadline - time.monotonic())):
+        raise RevisionStoreLockTimeout(f"Timed out acquiring revision store lock: {path}")
+    try:
+        with path.open("a+b") as handle:
+            handle.seek(0, os.SEEK_END)
+            if handle.tell() == 0:
+                handle.write(b"\0")
+                handle.flush()
+
+            acquired = False
+            while not acquired:
+                try:
+                    handle.seek(0)
+                    if os.name == "nt":
+                        msvcrt.locking(handle.fileno(), msvcrt.LK_NBLCK, 1)
+                    else:
+                        fcntl.flock(handle.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+                    acquired = True
+                except OSError as exc:
+                    if time.monotonic() >= deadline:
+                        raise RevisionStoreLockTimeout(
+                            f"Timed out acquiring revision store lock: {path}"
+                        ) from exc
+                    time.sleep(min(0.05, max(0.0, deadline - time.monotonic())))
+            try:
+                yield
+            finally:
+                handle.seek(0)
+                if os.name == "nt":
+                    msvcrt.locking(handle.fileno(), msvcrt.LK_UNLCK, 1)
+                else:
+                    fcntl.flock(handle.fileno(), fcntl.LOCK_UN)
+    finally:
+        thread_lock.release()
+
+
 class RevisionStore:
-    def __init__(self, path: str | Path):
+    def __init__(self, path: str | Path, *, lock_timeout: float = 5.0):
         self.path = Path(path)
+        if lock_timeout < 0:
+            raise ValueError("lock_timeout must be non-negative")
+        self.lock_timeout = lock_timeout
+        self.lock_path = self.path.with_name(f"{self.path.name}.lock")
+
+    def _locked(self):
+        return _exclusive_file_lock(self.lock_path, self.lock_timeout)
 
     def _read(self) -> list[RevisionRequest]:
         if not self.path.exists():
@@ -146,34 +210,36 @@ class RevisionStore:
         if not isinstance(content, str) or not content.strip():
             raise ValueError("content must be non-empty")
 
-        records = self._read()
-        for record in records:
-            if record.update_id == update_id:
-                return record
-        record = RevisionRequest(
-            request_id=_request_id(update_id),
-            update_id=update_id,
-            created_at=_timestamp(now or datetime.now(timezone.utc)),
-            post_id=post_id.strip(),
-            kind=kind,
-            content=content.strip(),
-            status="requested",
-        )
-        self._write([*records, record])
-        return record
+        with self._locked():
+            records = self._read()
+            for record in records:
+                if record.update_id == update_id:
+                    return record
+            record = RevisionRequest(
+                request_id=_request_id(update_id),
+                update_id=update_id,
+                created_at=_timestamp(now or datetime.now(timezone.utc)),
+                post_id=post_id.strip(),
+                kind=kind,
+                content=content.strip(),
+                status="requested",
+            )
+            self._write([*records, record])
+            return record
 
     def _transition(self, request_id: str, status: str) -> RevisionRequest:
-        records = self._read()
-        for index, current in enumerate(records):
-            if current.request_id != request_id:
-                continue
-            if current.status != "requested":
-                return current
-            updated = replace(current, status=status)
-            records[index] = updated
-            self._write(records)
-            return updated
-        raise UnknownRevisionRequest(request_id)
+        with self._locked():
+            records = self._read()
+            for index, current in enumerate(records):
+                if current.request_id != request_id:
+                    continue
+                if current.status != "requested":
+                    return current
+                updated = replace(current, status=status)
+                records[index] = updated
+                self._write(records)
+                return updated
+            raise UnknownRevisionRequest(request_id)
 
     def apply(self, request_id: str) -> RevisionRequest:
         return self._transition(request_id, "applied")

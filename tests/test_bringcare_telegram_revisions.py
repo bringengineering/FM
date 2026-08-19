@@ -1,6 +1,8 @@
 from dataclasses import FrozenInstanceError
 from datetime import datetime, timezone
 import json
+import threading
+import time
 
 import pytest
 
@@ -15,6 +17,37 @@ EXPECTED_KEYS = {
     "content",
     "status",
 }
+
+
+def _run_concurrently(*operations):
+    start = threading.Barrier(len(operations))
+    errors = []
+
+    def run(operation):
+        try:
+            start.wait(timeout=2)
+            operation()
+        except BaseException as exc:
+            errors.append(exc)
+
+    threads = [threading.Thread(target=run, args=(operation,)) for operation in operations]
+    for thread in threads:
+        thread.start()
+    for thread in threads:
+        thread.join(timeout=5)
+    assert not any(thread.is_alive() for thread in threads)
+    assert errors == []
+
+
+def _slow_reads(store):
+    original = store._read
+
+    def slow_read():
+        records = original()
+        time.sleep(0.15)
+        return records
+
+    store._read = slow_read
 
 
 def test_revision_request_is_immutable_and_persists_korean(tmp_path):
@@ -136,3 +169,72 @@ def test_write_uses_atomic_replace(tmp_path, monkeypatch):
     assert destination == path
     assert source.parent == path.parent
     assert source != path
+
+
+def test_concurrent_adds_preserve_both_requests(tmp_path):
+    from automation.bringcare_telegram.revisions import RevisionStore
+
+    path = tmp_path / "revisions.json"
+    first = RevisionStore(path)
+    second = RevisionStore(path)
+    _slow_reads(first)
+    _slow_reads(second)
+
+    _run_concurrently(
+        lambda: first.add(40, "post-1", "title", "제목", now=NOW),
+        lambda: second.add(41, "post-1", "body", "본문", now=NOW),
+    )
+
+    assert {record.update_id for record in RevisionStore(path).list()} == {40, 41}
+
+
+def test_concurrent_add_and_transition_preserve_both_changes(tmp_path):
+    from automation.bringcare_telegram.revisions import RevisionStore
+
+    path = tmp_path / "revisions.json"
+    seed = RevisionStore(path)
+    request = seed.add(50, "post-1", "title", "제목", now=NOW)
+    adding = RevisionStore(path)
+    applying = RevisionStore(path)
+    _slow_reads(adding)
+    _slow_reads(applying)
+
+    _run_concurrently(
+        lambda: adding.add(51, "post-1", "body", "본문", now=NOW),
+        lambda: applying.apply(request.request_id),
+    )
+
+    records = RevisionStore(path).list()
+    assert {record.update_id for record in records} == {50, 51}
+    assert next(record for record in records if record.update_id == 50).status == "applied"
+
+
+def test_lock_wait_is_bounded_and_release_allows_next_writer(tmp_path):
+    from automation.bringcare_telegram.revisions import (
+        RevisionStore,
+        RevisionStoreLockTimeout,
+    )
+
+    path = tmp_path / "revisions.json"
+    holder = RevisionStore(path)
+    waiting = RevisionStore(path, lock_timeout=0.05)
+    attempted = threading.Event()
+    errors = []
+
+    def attempt_add():
+        attempted.set()
+        try:
+            waiting.add(60, "post-1", "title", "제목", now=NOW)
+        except BaseException as exc:
+            errors.append(exc)
+
+    with holder._locked():
+        thread = threading.Thread(target=attempt_add)
+        thread.start()
+        assert attempted.wait(timeout=1)
+        thread.join(timeout=1)
+        assert not thread.is_alive()
+        assert len(errors) == 1
+        assert isinstance(errors[0], RevisionStoreLockTimeout)
+
+    assert waiting.add(60, "post-1", "title", "제목", now=NOW).update_id == 60
