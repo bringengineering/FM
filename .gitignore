@@ -1,0 +1,7 @@
+client_secrets.json
+automation/secrets/
+automation/state/
+automation/output/
+__pycache__/
+*.pyc
+.worktrees/
