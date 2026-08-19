@@ -10,3 +10,11 @@ automation/bringcare_telegram/token.dpapi
 automation/bringcare_telegram/telegram-state.json
 automation/bringcare_telegram/approval-state.json
 automation/bringcare_telegram/telegram-update-offset.json
+automation/state/bringcare-telegram-revisions.json
+automation/state/bringcare-telegram-revisions.json.lock
+automation/state/bringcare-telegram-poller.lock
+automation/state/bringcare-telegram-poller.pid
+automation/state/bringcare-telegram-poller.log
+automation/bringcare_telegram/*.log
+automation/bringcare_telegram/*.pid
+automation/bringcare_telegram/*.lock
