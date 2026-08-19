@@ -22,16 +22,29 @@ function deterministicCommitEnvironment(sourceSha, baseEnvironment = process.env
   });
 }
 
+function trackedReleaseChanges(gitRunner = git) {
+  const rows = [];
+  for (const args of [
+    ["diff", "--name-only", "--no-ext-diff", "--"],
+    ["diff", "--cached", "--name-only", "--no-ext-diff", "--"],
+  ]) {
+    rows.push(...String(gitRunner(args) || "").split(/\r?\n/));
+  }
+  return [...new Set(rows.map(value => value.trim().replace(/\\/g, "/")).filter(Boolean))].sort();
+}
+
 function main() {
   const args = parseArgs(process.argv.slice(2), ["version", "source-sha"]);
   const version = parseVersion(required(args, "version")).version;
   const sourceSha = assertSha(required(args, "source-sha"));
   const head = assertSha(git(["rev-parse", "HEAD"]));
   if (head !== sourceSha) throw releaseError("CRM_RELEASE_SOURCE_HEAD_MISMATCH", "Release commit must be created directly from the exact source SHA.");
-  const changed = git(["status", "--short"]).split(/\r?\n/).filter(Boolean).map(line => line.slice(3).replace(/\\/g, "/")).sort();
+  // Windows packaging intentionally creates ignored/untracked build outputs. The
+  // release commit stages an explicit allowlist, so only tracked diffs can enter it.
+  const changed = trackedReleaseChanges();
   const expected = ["desktop-crm/package-lock.json", "desktop-crm/package.json"];
   if (JSON.stringify(changed) !== JSON.stringify(expected)) {
-    throw releaseError("CRM_RELEASE_WORKTREE_SCOPE_INVALID", "Only desktop package version files may be changed before the release commit.");
+    throw releaseError("CRM_RELEASE_WORKTREE_SCOPE_INVALID", `Only desktop package version files may be changed before the release commit (observed: ${changed.join(", ") || "none"}).`);
   }
   git(["add", "--", ...expected]);
   const environment = deterministicCommitEnvironment(sourceSha);
@@ -51,4 +64,4 @@ if (require.main === module) {
   try { main(); } catch (error) { fail(error); }
 }
 
-module.exports = { deterministicCommitEnvironment };
+module.exports = { deterministicCommitEnvironment, trackedReleaseChanges };

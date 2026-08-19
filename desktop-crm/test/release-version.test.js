@@ -16,6 +16,7 @@ const {
   planNextVersion,
   resolveStablePublishedState,
 } = require("../scripts/release/release-lib");
+const { trackedReleaseChanges } = require("../scripts/release/create-release-commit");
 
 const SOURCE = "1".repeat(40);
 const OTHER = "2".repeat(40);
@@ -134,6 +135,34 @@ test("post-reservation ownership accepts only an annotated version-only child an
     releases,
     inspectCommit: inspected,
   }), error => error.code === "CRM_RELEASE_TAG_FORMAT_INVALID");
+});
+
+test("version commit scope ignores untracked build assets but keeps every tracked diff", t => {
+  const cwd = fs.mkdtempSync(path.join(os.tmpdir(), "crm-release-scope-"));
+  t.after(() => fs.rmSync(cwd, { recursive: true, force: true }));
+  fs.mkdirSync(path.join(cwd, "desktop-crm"));
+  fs.writeFileSync(path.join(cwd, "desktop-crm/package.json"), "source\n");
+  fs.writeFileSync(path.join(cwd, "desktop-crm/package-lock.json"), "source\n");
+  fs.writeFileSync(path.join(cwd, "README.md"), "source\n");
+  tempGit(cwd, ["init", "--quiet"]);
+  tempGit(cwd, ["config", "user.name", "fixture"]);
+  tempGit(cwd, ["config", "user.email", "fixture@example.invalid"]);
+  tempGit(cwd, ["add", "."]);
+  tempGit(cwd, ["commit", "--quiet", "--no-gpg-sign", "-m", "source"]);
+
+  fs.writeFileSync(path.join(cwd, "desktop-crm/package.json"), "release\n");
+  fs.writeFileSync(path.join(cwd, "desktop-crm/package-lock.json"), "release\n");
+  fs.mkdirSync(path.join(cwd, "release-assets"));
+  fs.writeFileSync(path.join(cwd, "release-assets/latest.yml"), "generated\n");
+  const changed = trackedReleaseChanges(args => tempGit(cwd, args));
+  assert.deepEqual(changed, ["desktop-crm/package-lock.json", "desktop-crm/package.json"]);
+
+  fs.writeFileSync(path.join(cwd, "README.md"), "unexpected\n");
+  assert.deepEqual(trackedReleaseChanges(args => tempGit(cwd, args)), [
+    "README.md",
+    "desktop-crm/package-lock.json",
+    "desktop-crm/package.json",
+  ]);
 });
 
 test("stable same-source resolution requires an exact version-only commit and exact three assets", () => {
