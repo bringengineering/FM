@@ -136,11 +136,8 @@ class RemoteProcessor:
                     answer = f"{target.title} 글은 현재 {target.status} 상태라 새 승인 요청을 만들지 않았습니다."
                 else:
                     try:
-                        pending = self.approval_store.create_pending(
+                        pending = self.approval_store.refresh_pending(
                             target.post_id,
-                            target.title,
-                            target.post_type,
-                            target.category,
                             now=now,
                             ttl_minutes=10,
                         )

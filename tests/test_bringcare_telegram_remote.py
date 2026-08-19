@@ -115,11 +115,14 @@ def test_revision_requires_target_then_stores_parsed_payload_and_update_id(tmp_p
 def test_publish_request_reuses_target_as_ten_minute_pending_and_never_publishes(tmp_path):
     remote, approval, _, replies, _ = processor(tmp_path)
 
-    result = remote.process([update(5, "올려줘")], now=NOW)
+    requested_at = NOW + timedelta(hours=2)
+
+    result = remote.process([update(5, "올려줘")], now=requested_at)
 
     record = approval.load()
     assert record.status == "pending"
-    assert record.expires_at == (NOW + timedelta(minutes=10)).isoformat()
+    assert record.created_at == requested_at.isoformat()
+    assert record.expires_at == (requested_at + timedelta(minutes=10)).isoformat()
     assert "원룸 관리" in replies[0][1]
     assert "정확히 승인" in replies[0][1]
     assert "10분" in replies[0][1]

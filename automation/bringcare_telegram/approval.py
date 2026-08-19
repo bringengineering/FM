@@ -98,15 +98,7 @@ class ApprovalStore:
         current = self.load()
         if current and current.status in ACTIVE_STATUSES:
             if current.post_id == post_id and current.status == "pending":
-                return self._write(
-                    ApprovalRecord(
-                        **{
-                            **asdict(current),
-                            "created_at": _iso(now),
-                            "expires_at": _iso(now + timedelta(minutes=ttl_minutes)),
-                        }
-                    )
-                )
+                return current
             if _datetime(current.expires_at) > now:
                 raise PendingApprovalExists(current.title)
         record = ApprovalRecord(
@@ -119,6 +111,34 @@ class ApprovalStore:
             expires_at=_iso(now + timedelta(minutes=ttl_minutes)),
         )
         return self._write(record)
+
+    def refresh_pending(
+        self,
+        post_id: str,
+        *,
+        now: datetime | None = None,
+        ttl_minutes: int = 10,
+    ) -> ApprovalRecord:
+        """Start a fresh approval window for the named current pending post."""
+        if not isinstance(post_id, str) or not post_id.strip():
+            raise ValueError("post_id must be a non-empty string")
+        if isinstance(ttl_minutes, bool) or not isinstance(ttl_minutes, int):
+            raise TypeError("ttl_minutes must be an integer")
+        if not 1 <= ttl_minutes <= 1440:
+            raise ValueError("ttl_minutes must be between 1 and 1440")
+        current = self.load()
+        if current is None or current.status != "pending" or current.post_id != post_id.strip():
+            raise RuntimeError("No matching pending approval")
+        timestamp = datetime.fromisoformat(_iso(now or _utc_now()))
+        return self._write(
+            ApprovalRecord(
+                **{
+                    **asdict(current),
+                    "created_at": _iso(timestamp),
+                    "expires_at": _iso(timestamp + timedelta(minutes=ttl_minutes)),
+                }
+            )
+        )
 
     def approve(self, *, update_id: int, now: datetime | None = None) -> ApprovalRecord:
         now = now or _utc_now()

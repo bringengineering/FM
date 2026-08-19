@@ -87,6 +87,20 @@ def test_existing_live_pending_cannot_be_overwritten(tmp_path):
         store.create_pending("post-2", "둘째 글", "검색정보", "생활 속 관리정보", now=NOW)
 
 
+def test_repeating_same_pending_post_keeps_original_approval_window(tmp_path):
+    from automation.bringcare_telegram.approval import ApprovalStore
+
+    store = ApprovalStore(tmp_path / "approval.json")
+    original = store.create_pending("post-1", "제목", "검색정보", "생활 속 관리정보", now=NOW)
+
+    repeated = store.create_pending(
+        "post-1", "제목", "검색정보", "생활 속 관리정보", now=NOW + timedelta(hours=23)
+    )
+
+    assert repeated.created_at == original.created_at
+    assert repeated.expires_at == original.expires_at
+
+
 def test_only_approved_record_can_be_claimed_for_publish(tmp_path):
     from automation.bringcare_telegram.approval import ApprovalStore
 
