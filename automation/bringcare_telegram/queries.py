@@ -218,7 +218,12 @@ class BlogQueries:
         for prefix, label in METRIC_NAMES.items():
             values: list[float] = []
             for row in rows:
-                candidates = [_number(value) for key, value in row.items() if key == prefix or key.startswith(prefix + "_")]
+                candidates = [
+                    _number(value)
+                    for key, value in row.items()
+                    if isinstance(key, str)
+                    and (key == prefix or key.startswith(prefix + "_"))
+                ]
                 candidates = [value for value in candidates if value is not None]
                 if candidates:
                     values.append(max(candidates))
@@ -240,7 +245,14 @@ class BlogQueries:
                 continue
             stamp_match = re.search(r"20\d{2}-\d{2}-\d{2}(?:[ T]\d{1,2}:\d{2})?", heading)
             stamp = _parse_datetime(stamp_match.group(0)) if stamp_match else None
-            entries.append((stamp or datetime.min.replace(tzinfo=SEOUL), index, heading, self._redact(action.group(1))))
+            entries.append(
+                (
+                    stamp or datetime.min.replace(tzinfo=SEOUL),
+                    index,
+                    self._redact(heading),
+                    self._redact(action.group(1)),
+                )
+            )
         if not entries:
             return f"최근 오류: {NO_RECORD}"
         _, _, heading, action = max(entries, key=lambda item: (item[0], item[1]))
@@ -250,8 +262,9 @@ class BlogQueries:
     def _redact(value: str) -> str:
         text = _clean(value)
         named_secret = re.compile(
-            r"(?i)(token|secret|password|passwd|api[_ -]?key|chat[_ -]?id)"
-            r"\s*[:=]\s*[^\s,;]+"
+            r"(?i)\b(?:[a-z][a-z0-9_-]*[_-])?"
+            r"(?:token|secret|password|passwd|cookie|api[_-]?key|chat[_-]?id|credential)"
+            r"(?:[_-][a-z0-9_-]+)?\s*[:=]\s*[^\s,;]+"
         )
         bot_token = re.compile(r"(?i)(?:/bot)?\d{5,}:[a-z0-9_-]{6,}")
         return "[민감정보 숨김]" if named_secret.search(text) or bot_token.search(text) else text

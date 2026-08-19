@@ -113,6 +113,16 @@ def test_today_performance_does_not_invent_zero(tmp_path):
     assert queries.today_performance() == "오늘 성과: 확인된 기록이 없습니다"
 
 
+def test_today_performance_ignores_extra_csv_cells_with_none_key(tmp_path):
+    queries = make_queries(tmp_path)
+    write(
+        tmp_path / "ledger.csv",
+        "title,published_at,views_72h\n"
+        "정상 지표,2026-08-20T10:00:00+09:00,41,초과값,또다른값\n",
+    )
+    assert queries.today_performance() == "오늘 성과: 발행 1건 · 조회 41"
+
+
 def test_latest_error_returns_latest_open_actionable_alert_and_redacts_secrets(tmp_path):
     queries = make_queries(tmp_path)
     write(
@@ -148,6 +158,40 @@ def test_latest_error_redacts_bare_bot_token_shape(tmp_path):
     answer = queries.latest_error()
     assert answer.endswith("조치: [민감정보 숨김]")
     assert "987654321:secret_VALUE" not in answer
+
+
+def test_latest_error_redacts_secrets_from_heading_and_action(tmp_path):
+    queries = make_queries(tmp_path)
+    secrets = (
+        "NAVER_PASSWORD=hunter2",
+        "session_cookie=abc123xyz",
+        "TELEGRAM_BOT_TOKEN=123456:ABCDEF",
+    )
+    write(
+        tmp_path / "alerts.md",
+        "## 열린 장애\n"
+        f"### 2026-08-20 10:00 로그인 실패 {secrets[0]}\n"
+        f"- 조치: {secrets[1]} 및 {secrets[2]} 확인\n",
+    )
+    answer = queries.latest_error()
+    assert answer == "최근 오류: [민감정보 숨김] · 조치: [민감정보 숨김]"
+    for secret in secrets:
+        assert secret not in answer
+    assert "hunter2" not in answer
+    assert "abc123xyz" not in answer
+    assert "123456:ABCDEF" not in answer
+
+
+def test_latest_error_does_not_over_redact_ordinary_cookie_word(tmp_path):
+    queries = make_queries(tmp_path)
+    write(
+        tmp_path / "alerts.md",
+        "## 열린 장애\n### 2026-08-20 10:00 브라우저 오류\n"
+        "- 조치: 쿠키 설정 확인 후 다시 로그인\n",
+    )
+    assert queries.latest_error() == (
+        "최근 오류: 2026-08-20 10:00 브라우저 오류 · 조치: 쿠키 설정 확인 후 다시 로그인"
+    )
 
 
 def test_malformed_and_missing_sources_return_na_messages_without_writes(tmp_path):
