@@ -146,6 +146,46 @@ def test_approval_without_pending_is_safe(tmp_path):
     assert len(replies) == 2
 
 
+@pytest.mark.parametrize("text", ["승인?", "승인!", "승인...", "취소!"])
+def test_mutation_confirmation_requires_raw_trimmed_exact_text(tmp_path, text):
+    remote, approval, _, replies, _ = processor(tmp_path)
+    before = approval.load()
+
+    result = remote.process([update(12, f"  {text}  ")], now=NOW)
+
+    assert approval.load() == before
+    assert result.actions == result.approved == result.cancelled == 0
+    assert "도움말" in replies[0][1]
+
+
+def test_publish_refresh_race_replies_safely_and_advances_offset(tmp_path):
+    from automation.bringcare_telegram.approval import PendingApprovalMismatch
+
+    class RacingApprovalStore(ApprovalStore):
+        def refresh_pending(self, post_id, *, now=None, ttl_minutes=10):
+            self.cancel(update_id=99, now=now)
+            return super().refresh_pending(post_id, now=now, ttl_minutes=ttl_minutes)
+
+    approval = RacingApprovalStore(tmp_path / "approval.json")
+    approval.create_pending("post-1", "원룸 관리", "검색정보", "생활 속 관리정보", now=NOW)
+    replies = []
+    offsets = UpdateOffsetStore(tmp_path / "offset.json")
+    remote = RemoteProcessor(
+        allowed_chat_id="1234",
+        approval_store=approval,
+        revision_store=RevisionStore(tmp_path / "revisions.json"),
+        queries=BlogQueries(tmp_path, approval_path=approval.path),
+        reply=lambda chat_id, text: replies.append((chat_id, text)),
+        update_state=offsets,
+    )
+
+    result = remote.process([update(15, "올려줘")], now=NOW)
+
+    assert "상태가 변경" in replies[0][1]
+    assert result.actions == 0
+    assert result.last_update_id == offsets.load() == 15
+
+
 @pytest.mark.parametrize("text", ["임의 명령", "제목 바꾸고 본문도 수정해줘"])
 def test_unknown_and_ambiguous_are_helpful_without_side_effects(tmp_path, text):
     remote, approval, revisions, replies, _ = processor(tmp_path)

@@ -7,7 +7,7 @@ from datetime import datetime
 from html import escape
 from typing import Any, Callable, Iterable, Protocol
 
-from .approval import ApprovalStore, PendingApprovalExists
+from .approval import ApprovalStore, PendingApprovalExists, PendingApprovalMismatch
 from .queries import BlogQueries
 from .revisions import RevisionStore
 from .router import route
@@ -110,6 +110,13 @@ class RemoteProcessor:
                 continue
 
             command = route(text)
+            raw_command = text.strip()
+            if command.intent in {"approve", "cancel"} and raw_command not in {
+                "승인",
+                "취소",
+                "보류",
+            }:
+                command = route("")
             answer: str
             if command.intent in _QUERY_METHODS:
                 answer = getattr(self.queries, _QUERY_METHODS[command.intent])()
@@ -148,6 +155,8 @@ class RemoteProcessor:
                         actions += 1
                     except PendingApprovalExists:
                         answer = "다른 글의 승인 요청이 진행 중입니다. 현재 대기 글을 먼저 확인해 주세요."
+                    except PendingApprovalMismatch:
+                        answer = "승인 대기 상태가 변경되어 요청을 만들지 않았습니다. 현재 상태를 다시 확인해 주세요."
             elif command.intent in {"approve", "cancel"}:
                 before = self.approval_store.load()
                 if before is None or before.status != "pending":

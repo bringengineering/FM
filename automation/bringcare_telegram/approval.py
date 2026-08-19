@@ -16,6 +16,10 @@ class PendingApprovalExists(RuntimeError):
     """Raised when another post already owns the approval slot."""
 
 
+class PendingApprovalMismatch(RuntimeError):
+    """Raised when the pending approval changed before an explicit refresh."""
+
+
 @dataclass(frozen=True)
 class ApprovalRecord:
     post_id: str
@@ -128,7 +132,7 @@ class ApprovalStore:
             raise ValueError("ttl_minutes must be between 1 and 1440")
         current = self.load()
         if current is None or current.status != "pending" or current.post_id != post_id.strip():
-            raise RuntimeError("No matching pending approval")
+            raise PendingApprovalMismatch("No matching pending approval")
         timestamp = datetime.fromisoformat(_iso(now or _utc_now()))
         return self._write(
             ApprovalRecord(
