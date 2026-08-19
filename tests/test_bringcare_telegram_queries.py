@@ -194,6 +194,38 @@ def test_latest_error_does_not_over_redact_ordinary_cookie_word(tmp_path):
     )
 
 
+def test_latest_error_keeps_non_secret_operational_assignments(tmp_path):
+    queries = make_queries(tmp_path)
+    action = "token_count=120, password_attempts=3, cookie_retry=2 확인"
+    write(
+        tmp_path / "alerts.md",
+        f"## 열린 장애\n### 2026-08-20 10:00 집계 지연\n- 조치: {action}\n",
+    )
+    assert queries.latest_error() == f"최근 오류: 2026-08-20 10:00 집계 지연 · 조치: {action}"
+
+
+def test_redaction_recognizes_only_explicit_secret_variable_names():
+    secret_assignments = (
+        "token=abc123",
+        "password=hunter2",
+        "passwd=hunter2",
+        "cookie=sessionvalue",
+        "secret=hiddenvalue",
+        "credential=hiddenvalue",
+        "TELEGRAM_BOT_TOKEN=123456:ABCDEF",
+        "NAVER_PASSWORD=hunter2",
+        "SESSION_COOKIE=abc123xyz",
+        "API_KEY=keyvalue",
+        "CHAT_ID=123456",
+    )
+    for assignment in secret_assignments:
+        assert BlogQueries._redact(f"{assignment} 확인") == "[민감정보 숨김]"
+
+    ordinary_assignments = ("token_count=120", "password_attempts=3", "cookie_retry=2")
+    for assignment in ordinary_assignments:
+        assert BlogQueries._redact(assignment) == assignment
+
+
 def test_malformed_and_missing_sources_return_na_messages_without_writes(tmp_path):
     queries = make_queries(tmp_path)
     write(tmp_path / "approval.json", "[]")

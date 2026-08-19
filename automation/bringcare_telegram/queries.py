@@ -261,10 +261,20 @@ class BlogQueries:
     @staticmethod
     def _redact(value: str) -> str:
         text = _clean(value)
-        named_secret = re.compile(
-            r"(?i)\b(?:[a-z][a-z0-9_-]*[_-])?"
-            r"(?:token|secret|password|passwd|cookie|api[_-]?key|chat[_-]?id|credential)"
-            r"(?:[_-][a-z0-9_-]+)?\s*[:=]\s*[^\s,;]+"
-        )
+        assignment = re.compile(r"(?i)\b([a-z][a-z0-9_-]*)\s*[:=]\s*[^\s,;]+")
+        terminal_secrets = {"token", "secret", "password", "passwd", "cookie", "credential"}
+
+        def has_sensitive_name() -> bool:
+            for match in assignment.finditer(text):
+                parts = [part for part in re.split(r"[_-]+", match.group(1).lower()) if part]
+                if not parts:
+                    continue
+                if parts[-1] in terminal_secrets or tuple(parts[-2:]) in {
+                    ("api", "key"),
+                    ("chat", "id"),
+                }:
+                    return True
+            return False
+
         bot_token = re.compile(r"(?i)(?:/bot)?\d{5,}:[a-z0-9_-]{6,}")
-        return "[민감정보 숨김]" if named_secret.search(text) or bot_token.search(text) else text
+        return "[민감정보 숨김]" if has_sensitive_name() or bot_token.search(text) else text
