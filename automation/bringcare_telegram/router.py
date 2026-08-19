@@ -46,10 +46,7 @@ _EXACT_INTENTS = {
     "help": {"안녕", "뭐 할 수 있어", "도움말"},
 }
 
-_TITLE_REVISION_WITH_PARTICLE = re.compile(
-    r"^제목(?:을|은)?\s+(.+?)(?:으로|로)\s+(?:바꿔줘|변경해줘|수정해줘)$"
-)
-_TITLE_REVISION_BARE = re.compile(r"^제목(?:을|은)?\s+(.+?)\s+(?:바꿔줘|변경해줘|수정해줘)$")
+_TITLE_REVISION = re.compile(r"^제목(?:을|은)?\s+(.+?)\s+(?:바꿔줘|변경해줘|수정해줘)$")
 _BODY_REVISION = re.compile(r"^본문(?:에서|을)?\s+(.+?)\s+(?:수정해줘|바꿔줘|변경해줘)$")
 
 
@@ -61,7 +58,7 @@ def _normalize(text: str) -> str:
 
 
 def _is_ambiguous_mutation(text: str) -> bool:
-    revision = r"(?:바꾸|변경|수정)"
+    revision = r"(?:바꾸|바꿔|변경|수정)"
     title_then_body = rf"제목.*?{revision}.*?본문(?:도|을)?.*?{revision}"
     body_then_title = rf"본문.*?{revision}.*?제목(?:도|을)?.*?{revision}"
     if re.search(title_then_body, text) or re.search(body_then_title, text):
@@ -70,6 +67,23 @@ def _is_ambiguous_mutation(text: str) -> bool:
     revision_clause = re.search(rf"(?:제목|본문).*?{revision}", text)
     publish_clause = re.search(r"(?:올려줘|발행해|진행해)$", text)
     return revision_clause is not None and publish_clause is not None
+
+
+def _title_payload(raw_payload: str) -> str:
+    """Remove an explicit Korean direction particle conservatively.
+
+    ``으로`` is always treated as a particle. A terminal ``로`` is treated as
+    a particle only when removing it leaves a multi-syllable final word. This
+    keeps bare nouns such as ``도로`` intact while parsing ``관리로`` and
+    ``도로로`` as particle forms.
+    """
+    if raw_payload.endswith("으로"):
+        return raw_payload[:-2].rstrip()
+
+    final_word = raw_payload.rsplit(" ", 1)[-1]
+    if final_word.endswith("로") and len(final_word[:-1]) >= 2:
+        return raw_payload[:-1].rstrip()
+    return raw_payload
 
 
 def route(text: str) -> Command:
@@ -83,11 +97,9 @@ def route(text: str) -> Command:
     if normalized in {"취소", "보류"}:
         return Command("cancel", None, normalized)
 
-    title_match = _TITLE_REVISION_WITH_PARTICLE.fullmatch(normalized)
-    if title_match is None:
-        title_match = _TITLE_REVISION_BARE.fullmatch(normalized)
+    title_match = _TITLE_REVISION.fullmatch(normalized)
     if title_match:
-        return Command("revise_title", title_match.group(1).strip(), normalized)
+        return Command("revise_title", _title_payload(title_match.group(1).strip()), normalized)
 
     body_match = _BODY_REVISION.fullmatch(normalized)
     if body_match:

@@ -64,6 +64,17 @@ def test_extracts_title_before_euro_particle_without_truncating_it():
     assert command.payload == "우리 집"
 
 
+@pytest.mark.parametrize(
+    ("text", "payload"),
+    [
+        ("제목을 안전한 도로 바꿔줘", "안전한 도로"),
+        ("제목을 안전한 도로로 바꿔줘", "안전한 도로"),
+    ],
+)
+def test_distinguishes_bare_title_ending_in_ro_from_ro_particle(text, payload):
+    assert route(text).payload == payload
+
+
 def test_extracts_meaningful_body_revision_payload():
     command = route("본문에서 회사 소개를 더 짧게 수정해줘!")
 
@@ -90,6 +101,10 @@ def test_rejects_multiple_mutation_actions_as_ambiguous():
 
     assert command.intent == "ambiguous"
     assert command.payload is None
+
+
+def test_rejects_reverse_multiple_mutation_actions_as_ambiguous():
+    assert route("본문 수정하고 제목도 바꿔줘").intent == "ambiguous"
 
 
 def test_arbitrary_text_is_unknown_without_semantic_guessing():
