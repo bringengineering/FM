@@ -6,8 +6,9 @@ const path = require("node:path");
 const test = require("node:test");
 
 const root = path.resolve(__dirname, "../..");
-const ci = fs.readFileSync(path.join(root, ".github/workflows/crm-ci.yml"), "utf8");
-const release = fs.readFileSync(path.join(root, ".github/workflows/crm-release.yml"), "utf8");
+const normalizeLineEndings = (value) => value.replace(/\r\n?/g, "\n");
+const ci = normalizeLineEndings(fs.readFileSync(path.join(root, ".github/workflows/crm-ci.yml"), "utf8"));
+const release = normalizeLineEndings(fs.readFileSync(path.join(root, ".github/workflows/crm-release.yml"), "utf8"));
 
 function jobBlock(name) {
   const match = release.match(new RegExp(`\\n  ${name}:\\n([\\s\\S]*?)(?=\\n  [a-z][a-z0-9-]*:\\n|$)`));
