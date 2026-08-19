@@ -1171,43 +1171,51 @@ describe("BuildingWizard", () => {
   });
 
   it("claims local autosave completion only after the storage write succeeds", async () => {
-    const originalSetItem = Storage.prototype.setItem;
     const statusAtWrite: string[] = [];
-    const setItem = vi.spyOn(Storage.prototype, "setItem").mockImplementation(function (
-      this: Storage,
-      key,
-      value,
-    ) {
-      statusAtWrite.push(
-        screen.queryByText("로컬 자동저장 완료") ? "complete" : "pending",
-      );
-      return originalSetItem.call(this, key, value);
-    });
+    const values = new Map<string, string>();
+    const storage = {
+      getItem: (key: string) => values.get(key) ?? null,
+      setItem: (key: string, value: string) => {
+        statusAtWrite.push(
+          screen.queryByText("로컬 자동저장 완료") ? "complete" : "pending",
+        );
+        values.set(key, value);
+      },
+      removeItem: (key: string) => { values.delete(key); },
+    };
 
-    try {
-      render(<BuildingWizard session={staffSession} draftId="autosave-write-order" />);
+    render(
+      <BuildingWizard
+        session={staffSession}
+        draftId="autosave-write-order"
+        storage={storage}
+      />,
+    );
 
-      expect(statusAtWrite.length).toBeGreaterThan(0);
-      expect(statusAtWrite).not.toContain("complete");
-      expect(await screen.findByText("로컬 자동저장 완료")).toBeInTheDocument();
-    } finally {
-      setItem.mockRestore();
-    }
+    expect(statusAtWrite.length).toBeGreaterThan(0);
+    expect(statusAtWrite).not.toContain("complete");
+    expect(await screen.findByText("로컬 자동저장 완료")).toBeInTheDocument();
   });
 
   it("reports local autosave failure without claiming completion", async () => {
-    const setItem = vi.spyOn(Storage.prototype, "setItem").mockImplementation(() => {
-      throw new DOMException("Storage quota exceeded", "QuotaExceededError");
-    });
+    const storage = {
+      getItem: () => null,
+      setItem: () => {
+        throw new DOMException("Storage quota exceeded", "QuotaExceededError");
+      },
+      removeItem: () => {},
+    };
 
-    try {
-      render(<BuildingWizard session={staffSession} draftId="autosave-write-failure" />);
+    render(
+      <BuildingWizard
+        session={staffSession}
+        draftId="autosave-write-failure"
+        storage={storage}
+      />,
+    );
 
-      expect(screen.queryByText("로컬 자동저장 완료")).not.toBeInTheDocument();
-      expect(await screen.findByText("로컬 자동저장 실패")).toBeInTheDocument();
-    } finally {
-      setItem.mockRestore();
-    }
+    expect(screen.queryByText("로컬 자동저장 완료")).not.toBeInTheDocument();
+    expect(await screen.findByText("로컬 자동저장 실패")).toBeInTheDocument();
   });
 
   it("keeps a migrated legacy draft in memory when the scoped write fails", async () => {
