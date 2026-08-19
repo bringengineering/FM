@@ -37,6 +37,7 @@ _QUERY_METHODS = {
     "error": "latest_error",
 }
 _ACTIVE_TARGET_STATUSES = {"pending", "approved", "publishing"}
+_PUBLISH_TARGET_STATUSES = {"pending", "expired", "cancelled"}
 _HELP = (
     "지원 예시: 어디까지 됐어 · 승인 기다리는 글 보여줘 · 최근에 뭐 올렸어 · "
     "제목: 새 제목 · 올려줘 · 승인 · 취소"
@@ -64,6 +65,10 @@ class RemoteProcessor:
     def _target(self):
         record = self.approval_store.load()
         return record if record is not None and record.status in _ACTIVE_TARGET_STATUSES else None
+
+    def _publish_target(self):
+        record = self.approval_store.load()
+        return record if record is not None and record.status in _PUBLISH_TARGET_STATUSES else None
 
     def _reply(self, chat_id: object, text: str) -> None:
         self.reply(str(chat_id), escape(text, quote=True))
@@ -136,11 +141,9 @@ class RemoteProcessor:
                     answer = f"{label}: {command.payload}\n수정 요청만 저장했으며 아직 발행되지 않았습니다."
                     actions += 1
             elif command.intent == "publish_request":
-                target = self._target()
+                target = self._publish_target()
                 if target is None:
                     answer = "발행할 대상 글이 없습니다. 먼저 승인 대기 글을 준비해 주세요."
-                elif target.status != "pending":
-                    answer = f"{target.title} 글은 현재 {target.status} 상태라 새 승인 요청을 만들지 않았습니다."
                 else:
                     try:
                         pending = self.approval_store.refresh_pending(

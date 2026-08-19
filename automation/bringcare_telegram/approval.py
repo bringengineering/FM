@@ -131,15 +131,23 @@ class ApprovalStore:
         if not 1 <= ttl_minutes <= 1440:
             raise ValueError("ttl_minutes must be between 1 and 1440")
         current = self.load()
-        if current is None or current.status != "pending" or current.post_id != post_id.strip():
+        if (
+            current is None
+            or current.status not in {"pending", "expired", "cancelled"}
+            or current.post_id != post_id.strip()
+        ):
             raise PendingApprovalMismatch("No matching pending approval")
         timestamp = datetime.fromisoformat(_iso(now or _utc_now()))
         return self._write(
             ApprovalRecord(
                 **{
                     **asdict(current),
+                    "status": "pending",
                     "created_at": _iso(timestamp),
                     "expires_at": _iso(timestamp + timedelta(minutes=ttl_minutes)),
+                    "telegram_update_id": None,
+                    "approved_at": None,
+                    "published_url": None,
                 }
             )
         )

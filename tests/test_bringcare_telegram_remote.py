@@ -129,6 +129,42 @@ def test_publish_request_reuses_target_as_ten_minute_pending_and_never_publishes
     assert result.actions == 1 and result.approved == 0
 
 
+@pytest.mark.parametrize("prior_status", ["expired", "cancelled"])
+def test_publish_request_rearms_expired_or_cancelled_known_post(tmp_path, prior_status):
+    remote, approval, _, replies, _ = processor(tmp_path)
+    if prior_status == "expired":
+        approval.approve(update_id=20, now=NOW + timedelta(days=2))
+    else:
+        approval.cancel(update_id=20, now=NOW)
+    requested_at = NOW + timedelta(days=3)
+
+    result = remote.process([update(21, "올려줘")], now=requested_at)
+
+    record = approval.load()
+    assert record.status == "pending"
+    assert record.created_at == requested_at.isoformat()
+    assert record.expires_at == (requested_at + timedelta(minutes=10)).isoformat()
+    assert record.telegram_update_id is None
+    assert record.approved_at is None
+    assert record.published_url is None
+    assert "정확히 승인" in replies[0][1]
+    assert "아직 발행하지 않았습니다" in replies[0][1]
+    assert result.actions == 1 and result.approved == 0
+
+
+def test_publish_request_does_not_rearm_published_post(tmp_path):
+    remote, approval, _, replies, _ = processor(tmp_path)
+    approval.approve(update_id=30, now=NOW)
+    approval.claim_for_publish(now=NOW)
+    approval.mark_published("https://example.com/post-1")
+
+    result = remote.process([update(31, "올려줘")], now=NOW)
+
+    assert approval.load().status == "published"
+    assert "대상 글이 없습니다" in replies[0][1]
+    assert result.actions == 0
+
+
 @pytest.mark.parametrize(("word", "status", "field"), [("승인", "approved", "approved"), ("취소", "cancelled", "cancelled")])
 def test_exact_approval_commands_act_on_current_pending(word, status, field, tmp_path):
     remote, approval, _, replies, _ = processor(tmp_path)
@@ -163,7 +199,7 @@ def test_publish_refresh_race_replies_safely_and_advances_offset(tmp_path):
 
     class RacingApprovalStore(ApprovalStore):
         def refresh_pending(self, post_id, *, now=None, ttl_minutes=10):
-            self.cancel(update_id=99, now=now)
+            self.approve(update_id=99, now=now)
             return super().refresh_pending(post_id, now=now, ttl_minutes=ttl_minutes)
 
     approval = RacingApprovalStore(tmp_path / "approval.json")
