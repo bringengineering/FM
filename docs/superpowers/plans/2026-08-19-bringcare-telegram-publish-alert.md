@@ -395,10 +395,10 @@ Run:
 python -m pytest tests/test_bringcare_telegram_*.py -v
 python -m pytest tests -k "bringcare" -v
 python -m compileall automation/bringcare_telegram
-rg -n "8681304694|AAFXeAKC|bot[0-9]+:" automation tests docs blog .gitignore
+rg -n "bot[0-9]+:|[0-9]{8,}:[A-Za-z0-9_-]{30,}" automation tests docs blog .gitignore
 ```
 
-Expected: all tests PASS, compile succeeds, secret scan returns no matches. The known compromised token is used only as a negative scan pattern in the command, never written to a file.
+Expected: all tests PASS, compile succeeds, and the generic Telegram token-pattern scan returns no matches.
 
 - [ ] **Step 4: Commit documentation and integration**
 
