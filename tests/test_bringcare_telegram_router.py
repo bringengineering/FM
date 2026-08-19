@@ -1,6 +1,6 @@
 import pytest
 
-from automation.bringcare_telegram.router import Command, route_command
+from automation.bringcare_telegram.router import Command, route
 
 
 @pytest.mark.parametrize(
@@ -32,29 +32,34 @@ from automation.bringcare_telegram.router import Command, route_command
     ],
 )
 def test_routes_representative_korean_commands(text, intent):
-    assert route_command(text).intent == intent
+    assert route(text).intent == intent
 
 
 def test_normalizes_unicode_whitespace_and_terminal_punctuation():
-    command = route_command("\u3000 지금\t글\n상태 알려줘？！…  ")
+    command = route("\u3000 지금\t글\n상태 알려줘？！…  ")
 
     assert command == Command("status", None, "지금 글 상태 알려줘")
 
 
 def test_approval_requires_the_exact_normalized_command():
-    assert route_command("  승인！ ").intent == "approve"
-    assert route_command("승인해줘").intent == "unknown"
-    assert route_command("이 글 승인").intent == "unknown"
+    assert route("  승인！ ").intent == "approve"
+    assert route("승인해줘").intent == "unknown"
+    assert route("이 글 승인").intent == "unknown"
+
+
+@pytest.mark.parametrize("text", ["취소해줘", "이 글 보류", "보류해줘"])
+def test_cancel_requires_an_exact_normalized_command(text):
+    assert route(text).intent == "unknown"
 
 
 def test_extracts_title_revision_payload():
-    command = route_command("제목을 가을철 원룸 관리로 바꿔줘.")
+    command = route("제목을 가을철 원룸 관리로 바꿔줘.")
 
     assert command == Command("revise_title", "가을철 원룸 관리", "제목을 가을철 원룸 관리로 바꿔줘")
 
 
 def test_extracts_meaningful_body_revision_payload():
-    command = route_command("본문에서 회사 소개를 더 짧게 수정해줘!")
+    command = route("본문에서 회사 소개를 더 짧게 수정해줘!")
 
     assert command == Command(
         "revise_body", "회사 소개를 더 짧게", "본문에서 회사 소개를 더 짧게 수정해줘"
@@ -62,18 +67,18 @@ def test_extracts_meaningful_body_revision_payload():
 
 
 def test_rejects_multiple_mutation_actions_as_ambiguous():
-    command = route_command("제목 바꾸고 본문도 수정해줘")
+    command = route("제목 바꾸고 본문도 수정해줘")
 
     assert command.intent == "ambiguous"
     assert command.payload is None
 
 
 def test_arbitrary_text_is_unknown_without_semantic_guessing():
-    assert route_command("가을철 원룸 관리가 궁금해").intent == "unknown"
+    assert route("가을철 원룸 관리가 궁금해").intent == "unknown"
 
 
 def test_command_is_immutable():
-    command = route_command("도움말")
+    command = route("도움말")
 
     with pytest.raises((AttributeError, TypeError)):
         command.intent = "approve"

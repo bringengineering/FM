@@ -66,7 +66,7 @@ def _is_ambiguous_mutation(text: str) -> bool:
     return actions > 1
 
 
-def route_command(text: str) -> Command:
+def route(text: str) -> Command:
     normalized = _normalize(text)
 
     if _is_ambiguous_mutation(normalized):
@@ -92,4 +92,7 @@ def route_command(text: str) -> Command:
     return Command("unknown", None, normalized)
 
 
-__all__ = ["Command", "route_command"]
+route_command = route
+
+
+__all__ = ["Command", "route", "route_command"]
