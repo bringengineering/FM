@@ -117,6 +117,25 @@ def test_fatal_auth_error_exits_nonzero_without_retry():
     assert sleeps == []
 
 
+@pytest.mark.parametrize(
+    "error",
+    [FileNotFoundError("missing config"), PermissionError("locked local state")],
+)
+def test_local_file_errors_are_fatal_without_retry_and_release_lock(error):
+    sleeps = []
+    held = Lock()
+
+    code = main(
+        runner=lambda **_: (_ for _ in ()).throw(error),
+        lock=held,
+        sleep=sleeps.append,
+    )
+
+    assert code != 0
+    assert sleeps == []
+    assert held.exited
+
+
 def test_status_logs_do_not_include_exception_or_raw_result(caplog):
     outcomes = [TelegramTemporaryError("TOKEN=secret raw user text"), KeyboardInterrupt()]
 

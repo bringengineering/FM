@@ -25,9 +25,6 @@ LOCK_PATH = STATE_DIR / "bringcare-telegram-poller.lock"
 TRANSIENT_ERRORS = (
     TelegramTemporaryError,
     TelegramRateLimitError,
-    ConnectionError,
-    TimeoutError,
-    OSError,
 )
 
 

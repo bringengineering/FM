@@ -24,6 +24,9 @@ def test_installer_is_current_user_logon_hidden_idempotent_and_quotes_paths():
     assert "$env:username" in lower
     assert "-logontype interactive" in lower
     assert "-windowstyle hidden" in lower
+    assert "-executiontimelimit ([timespan]::zero)" in lower
+    assert "-restartcount 3" in lower
+    assert "-restartinterval (new-timespan -minutes 5)" in lower
     assert "$psscriptroot" in lower
     assert "-literalpath" in lower
     assert "-uninstall" in lower
