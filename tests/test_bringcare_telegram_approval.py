@@ -1,9 +1,38 @@
 from datetime import datetime, timedelta, timezone
+import multiprocessing
+import threading
 
 import pytest
 
+from automation.bringcare_telegram.approval import ApprovalStore
+
 
 NOW = datetime(2026, 8, 19, 12, 0, tzinfo=timezone.utc)
+
+
+class _ProcessPausingApprovalStore(ApprovalStore):
+    def __init__(self, path, waiting, release):
+        super().__init__(path)
+        self.waiting = waiting
+        self.release = release
+
+    def _write(self, record):
+        if record.status == "pending" and record.created_at == (NOW + timedelta(hours=1)).isoformat():
+            self.waiting.set()
+            if not self.release.wait(5):
+                raise TimeoutError("test refresh was not released")
+        return super()._write(record)
+
+
+def _process_refresh(path, waiting, release):
+    _ProcessPausingApprovalStore(path, waiting, release).refresh_pending(
+        "post-1", now=NOW + timedelta(hours=1)
+    )
+
+
+def _process_approve(path, done):
+    ApprovalStore(path).approve(update_id=66, now=NOW + timedelta(hours=1))
+    done.set()
 
 
 def test_ten_minute_approval_succeeds_within_ttl_and_expires_after_it(tmp_path):
@@ -156,3 +185,92 @@ def test_update_offset_is_atomic_and_monotonic(tmp_path):
     offsets.save(8)
     offsets.save(4)
     assert offsets.load() == 8
+
+
+def test_refresh_transaction_cannot_overwrite_concurrent_approval(tmp_path):
+    from automation.bringcare_telegram.approval import ApprovalStore
+
+    refresh_waiting = threading.Event()
+    release_refresh = threading.Event()
+
+    class PausingStore(ApprovalStore):
+        def _write(self, record):
+            if record.status == "pending" and record.created_at == (NOW + timedelta(hours=1)).isoformat():
+                refresh_waiting.set()
+                assert release_refresh.wait(2)
+            return super()._write(record)
+
+    store = PausingStore(tmp_path / "approval.json")
+    store.create_pending("post-1", "제목", "검색정보", "생활 속 관리정보", now=NOW)
+    approve_done = threading.Event()
+
+    refresh_thread = threading.Thread(
+        target=lambda: store.refresh_pending("post-1", now=NOW + timedelta(hours=1))
+    )
+    approve_thread = threading.Thread(
+        target=lambda: (store.approve(update_id=44, now=NOW + timedelta(hours=1)), approve_done.set())
+    )
+    refresh_thread.start()
+    assert refresh_waiting.wait(2)
+    approve_thread.start()
+    try:
+        assert not approve_done.wait(0.2)
+    finally:
+        release_refresh.set()
+        refresh_thread.join(2)
+        approve_thread.join(2)
+
+    assert not refresh_thread.is_alive() and not approve_thread.is_alive()
+    assert store.load().status == "approved"
+    assert store.load().telegram_update_id == 44
+
+
+def test_simultaneous_approve_and_claim_leave_a_valid_serial_state(tmp_path):
+    from automation.bringcare_telegram.approval import ApprovalStore
+
+    store = ApprovalStore(tmp_path / "approval.json")
+    store.create_pending("post-1", "제목", "검색정보", "생활 속 관리정보", now=NOW)
+    start = threading.Barrier(3)
+
+    def approve():
+        start.wait()
+        store.approve(update_id=55, now=NOW)
+
+    def claim():
+        start.wait()
+        store.claim_for_publish(now=NOW)
+
+    threads = [threading.Thread(target=approve), threading.Thread(target=claim)]
+    for thread in threads:
+        thread.start()
+    start.wait()
+    for thread in threads:
+        thread.join(2)
+
+    record = store.load()
+    assert record.status in {"approved", "publishing"}
+    assert record.telegram_update_id == 55
+
+
+def test_cross_process_refresh_cannot_overwrite_concurrent_approval(tmp_path):
+    path = tmp_path / "approval.json"
+    ApprovalStore(path).create_pending("post-1", "제목", "검색정보", "생활 속 관리정보", now=NOW)
+    context = multiprocessing.get_context("spawn")
+    waiting, release, approve_done = context.Event(), context.Event(), context.Event()
+    refresh = context.Process(target=_process_refresh, args=(path, waiting, release))
+    approve = context.Process(target=_process_approve, args=(path, approve_done))
+
+    refresh.start()
+    assert waiting.wait(5)
+    approve.start()
+    try:
+        assert not approve_done.wait(0.3)
+    finally:
+        release.set()
+        refresh.join(5)
+        approve.join(5)
+
+    assert refresh.exitcode == approve.exitcode == 0
+    record = ApprovalStore(path).load()
+    assert record.status == "approved"
+    assert record.telegram_update_id == 66
