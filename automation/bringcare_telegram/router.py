@@ -85,14 +85,6 @@ def _title_payload(raw_payload: str) -> str:
 def route(text: str) -> Command:
     normalized = _normalize(text)
 
-    if _is_ambiguous_mutation(normalized):
-        return Command("ambiguous", None, normalized)
-
-    if normalized == "승인":
-        return Command("approve", None, normalized)
-    if normalized in {"취소", "보류"}:
-        return Command("cancel", None, normalized)
-
     quoted_title_match = _QUOTED_TITLE_REVISION.fullmatch(normalized)
     if quoted_title_match:
         return Command("revise_title", quoted_title_match.group(2).strip(), normalized)
@@ -100,6 +92,14 @@ def route(text: str) -> Command:
     colon_title_match = _COLON_TITLE_REVISION.fullmatch(normalized)
     if colon_title_match:
         return Command("revise_title", colon_title_match.group(1).strip(), normalized)
+
+    if _is_ambiguous_mutation(normalized):
+        return Command("ambiguous", None, normalized)
+
+    if normalized == "승인":
+        return Command("approve", None, normalized)
+    if normalized in {"취소", "보류"}:
+        return Command("cancel", None, normalized)
 
     title_match = _TITLE_REVISION.fullmatch(normalized)
     if title_match:

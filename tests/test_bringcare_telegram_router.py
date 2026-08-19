@@ -92,6 +92,18 @@ def test_quotes_or_colon_preserve_titles_ending_in_particles(text, payload):
     assert command.normalized_text == text
 
 
+@pytest.mark.parametrize(
+    ("text", "payload"),
+    [
+        ("제목을 '수정할 본문 가이드'로 바꿔줘", "수정할 본문 가이드"),
+        ('제목을 "수정할 본문 가이드"로 바꿔줘', "수정할 본문 가이드"),
+        ("제목: 본문 수정하고 진행해", "본문 수정하고 진행해"),
+    ],
+)
+def test_title_literals_do_not_participate_in_ambiguity_scanning(text, payload):
+    assert route(text) == Command("revise_title", payload, text)
+
+
 def test_extracts_meaningful_body_revision_payload():
     command = route("본문에서 회사 소개를 더 짧게 수정해줘!")
 
@@ -122,6 +134,10 @@ def test_rejects_multiple_mutation_actions_as_ambiguous():
 
 def test_rejects_reverse_multiple_mutation_actions_as_ambiguous():
     assert route("본문 수정하고 제목도 바꿔줘").intent == "ambiguous"
+
+
+def test_rejects_multiple_actions_outside_a_quoted_title():
+    assert route("제목을 '본문 가이드'로 바꾸고 본문도 수정해줘").intent == "ambiguous"
 
 
 def test_arbitrary_text_is_unknown_without_semantic_guessing():
