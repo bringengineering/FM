@@ -41,6 +41,8 @@
 powershell -ExecutionPolicy Bypass -File automation/bringcare_telegram/setup-telegram.ps1
 ```
 
+현재 설정 스크립트가 `ChatGPT approval HTTPS URL`을 물으면 `https://chatgpt.com/`을 입력합니다. 이 값은 기존 설정 형식과의 호환을 위한 legacy `approval_url` 필드입니다. 현재 스크립트와 설정 검증은 유효한 HTTPS URL을 계속 요구하지만, 무료 텔레그램 리모컨은 더 이상 이 링크를 열거나 의존하지 않습니다. 따라서 별도의 ChatGPT 대화 링크를 찾아 복사할 필요가 없습니다.
+
 4. 현재 Windows 사용자 로그인 때 폴러가 자동 시작되도록 설치합니다.
 
 ```powershell

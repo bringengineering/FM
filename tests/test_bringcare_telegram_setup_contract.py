@@ -81,6 +81,23 @@ def test_readme_has_windows_task_lifecycle_commands_using_actual_scripts():
         assert phrase in text
 
 
+def test_readme_documents_current_legacy_approval_url_setup_prompt():
+    setup = Path("automation/bringcare_telegram/setup-telegram.ps1").read_text(
+        encoding="utf-8"
+    )
+    readme = README.read_text(encoding="utf-8")
+
+    assert 'Read-Host "ChatGPT approval HTTPS URL"' in setup
+    for phrase in (
+        "ChatGPT approval HTTPS URL",
+        "https://chatgpt.com/",
+        "legacy `approval_url`",
+        "유효한 HTTPS URL",
+        "더 이상 이 링크를 열거나 의존하지 않습니다",
+    ):
+        assert phrase in readme
+
+
 def test_readme_covers_operations_security_and_troubleshooting():
     text = README.read_text(encoding="utf-8")
     for phrase in (
@@ -91,6 +108,23 @@ def test_readme_covers_operations_security_and_troubleshooting():
 
 
 def test_gitignore_excludes_runtime_state_without_hiding_source_or_tests():
+    ignore_lines = {
+        line.strip()
+        for line in Path(".gitignore").read_text(encoding="utf-8").splitlines()
+        if line.strip() and not line.lstrip().startswith("#")
+    }
+    exact_runtime_patterns = {
+        "automation/state/bringcare-telegram-revisions.json",
+        "automation/state/bringcare-telegram-revisions.json.lock",
+        "automation/state/bringcare-telegram-poller.lock",
+        "automation/state/bringcare-telegram-poller.pid",
+        "automation/state/bringcare-telegram-poller.log",
+        "automation/bringcare_telegram/*.log",
+        "automation/bringcare_telegram/*.pid",
+        "automation/bringcare_telegram/*.lock",
+    }
+    assert exact_runtime_patterns <= ignore_lines
+
     ignored = (
         "automation/bringcare_telegram/approval-state.json",
         "automation/bringcare_telegram/telegram-update-offset.json",
