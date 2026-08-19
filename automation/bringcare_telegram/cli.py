@@ -5,16 +5,21 @@ from pathlib import Path
 import sys
 
 from .client import TelegramAuthError, TelegramClient, TelegramForbiddenError, TelegramTemporaryError
-from .approval import ApprovalStore, UpdateOffsetStore, apply_updates
+from .approval import ApprovalStore, UpdateOffsetStore
 from .config import load_public_config
 from .crypto_windows import decrypt_current_user_secret
 from .events import event_from_blocker
 from .messages import blocked_message, published_message, ready_message
+from .queries import BlogQueries
+from .remote import RemoteProcessor
+from .revisions import RevisionStore
 from .state import NotificationState
 
 BASE = Path(__file__).resolve().parent
+WORKSPACE_ROOT = BASE.parents[1]
 APPROVAL_STORE = BASE / "approval-state.json"
 UPDATE_OFFSET = BASE / "telegram-update-offset.json"
+REVISION_STORE = WORKSPACE_ROOT / "automation" / "state" / "bringcare-telegram-revisions.json"
 
 
 @dataclass(frozen=True)
@@ -40,22 +45,50 @@ def register_pending(post_id: str, title: str, post_type: str, category: str):
 
 def load_client() -> TelegramClient:
     token = decrypt_current_user_secret(BASE / "token.dpapi")
-    return TelegramClient(token)
+    return TelegramClient(token, timeout=60.0)
 
 
-def sync_approval() -> dict:
+def process_remote_once(timeout: int = 0) -> dict:
     config = load_public_config(BASE / "local-config.json")
     client = load_client()
     offsets = UpdateOffsetStore(UPDATE_OFFSET)
-    updates = client.get_updates(offset=offsets.load())
-    result = apply_updates(updates, allowed_chat_id=config.chat_id, store=ApprovalStore(APPROVAL_STORE))
-    if result.last_update_id is not None:
-        offsets.save(result.last_update_id + 1)
-    if result.approved:
-        client.send_message(config.chat_id, "✅ <b>승인 확인</b>\n\n발행 절차를 시작합니다.", None)
-    elif result.cancelled:
-        client.send_message(config.chat_id, "⛔ <b>발행 취소</b>\n\n승인 대기 글을 취소했습니다.", None)
-    return {"approved": result.approved, "cancelled": result.cancelled}
+    previous = offsets.load()
+    updates = client.get_updates(
+        offset=None if previous is None else previous + 1,
+        timeout=timeout,
+    )
+    processor = RemoteProcessor(
+        allowed_chat_id=config.chat_id,
+        approval_store=ApprovalStore(APPROVAL_STORE),
+        revision_store=RevisionStore(REVISION_STORE),
+        queries=BlogQueries(WORKSPACE_ROOT, approval_path=APPROVAL_STORE),
+        reply=lambda chat_id, text: client.send_message(chat_id, text, None),
+        update_state=offsets,
+    )
+    result = processor.process(updates)
+    return {
+        "status": "ok",
+        "updates": len(updates),
+        "replies": result.replies,
+        "actions": result.actions,
+        "approved": result.approved,
+        "cancelled": result.cancelled,
+    }
+
+
+def sync_approval() -> dict:
+    """Compatibility entry point; RemoteProcessor is the sole update consumer."""
+    return process_remote_once(timeout=0)
+
+
+def _bounded_timeout(value: str) -> int:
+    try:
+        timeout = int(value)
+    except ValueError as exc:
+        raise argparse.ArgumentTypeError("timeout must be an integer") from exc
+    if not 0 <= timeout <= 50:
+        raise argparse.ArgumentTypeError("timeout must be between 0 and 50 seconds")
+    return timeout
 
 
 def _parser():
@@ -68,7 +101,10 @@ def _parser():
     for name in ("post-id", "title", "blocker", "stage"): blocked.add_argument(f"--{name}", required=True)
     published = commands.add_parser("published")
     for name in ("post-id", "title", "url"): published.add_argument(f"--{name}", required=True)
+    commands.add_parser("sync-commands")
     commands.add_parser("sync-approval")
+    remote_once = commands.add_parser("remote-once")
+    remote_once.add_argument("--timeout", type=_bounded_timeout, default=30)
     commands.add_parser("approval-status")
     claim = commands.add_parser("claim-approved")
     claim.add_argument("--post-id", required=False)
@@ -94,8 +130,9 @@ def _build(args):
 def main(argv=None):
     try:
         args = _parser().parse_args(argv)
-        if args.command == "sync-approval":
-            print(json.dumps(sync_approval(), ensure_ascii=False))
+        if args.command in {"sync-commands", "sync-approval", "remote-once"}:
+            timeout = args.timeout if args.command == "remote-once" else 0
+            print(json.dumps(process_remote_once(timeout=timeout), ensure_ascii=False))
             return 0
         store = ApprovalStore(APPROVAL_STORE)
         if args.command == "approval-status":
