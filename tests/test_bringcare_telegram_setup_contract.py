@@ -18,3 +18,10 @@ def test_setup_waits_for_start_instead_of_checking_only_once():
     text = Path("automation/bringcare_telegram/setup-telegram.ps1").read_text(encoding="utf-8")
     assert "for ($attempt = 1; $attempt -le 30; $attempt++)" in text
     assert "Start-Sleep -Seconds 2" in text
+
+
+def test_setup_displays_username_returned_by_get_me():
+    text = Path("automation/bringcare_telegram/setup-telegram.ps1").read_text(encoding="utf-8")
+    assert "$botUsername = $identity.result.username" in text
+    assert "@$botUsername" in text
+    assert "@bringcare_blog_alert_bot" not in text

@@ -11,7 +11,8 @@ try {
     $botApi = "https://api.telegram.org/bot$token"
     $identity = Invoke-RestMethod -Method Get -Uri "$botApi/getMe"
     if (-not $identity.ok) { throw "Check the Bot Token." }
-    Write-Host "Open @bringcare_blog_alert_bot and send /start now. Waiting up to 60 seconds..."
+    $botUsername = $identity.result.username
+    Write-Host "Open @$botUsername and send /start now. Waiting up to 60 seconds..."
     $chatIds = @()
     for ($attempt = 1; $attempt -le 30; $attempt++) {
         $updates = Invoke-RestMethod -Method Get -Uri "$botApi/getUpdates"
