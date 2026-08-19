@@ -46,7 +46,7 @@ test("missing or expired FIELD auth refreshes the shared partition once without 
   assert.match(recovery, /result\.code === "FIELD_SESSION_CHANGED"[\s\S]*?fieldViewReady/);
 });
 
-test("window close, menu quit, and update restart share a fail-closed pending upload exit gate", async () => {
+test("window close, menu quit, and update restart share a data-preserving upload exit gate", async () => {
   const main = await source("main.js");
   const menu = main.slice(main.indexOf("function buildMenu"), main.indexOf("async function createWindow"));
   const createWindow = main.slice(main.indexOf("async function createWindow"), main.indexOf("secureHandle(\"crm:auth-state\""));
@@ -54,7 +54,13 @@ test("window close, menu quit, and update restart share a fail-closed pending up
   const beforeQuit = main.slice(main.indexOf('app.on("before-quit"'));
 
   assert.match(main, /createFieldExitCoordinator/);
+  assert.match(main, /shouldInspect: \(\) => fieldWasOpenedThisRun/);
+  assert.match(main, /function ensureFieldView\(\) \{\s+fieldWasOpenedThisRun = true;/);
   assert.match(main, /createFieldEnvelope\("crm\.logoutCheck", \{ reason: "logout" \}\)/);
+  assert.match(main, /confirmUnknown: async reason => confirmApplicationExitWithoutFieldStatus\(reason\)/);
+  assert.match(main, /저장된 현장 자료는 이 PC에 그대로 보존됩니다/);
+  assert.match(main, /"그래도 종료"/);
+  assert.match(main, /"그래도 재시작"/);
   assert.match(main, /FIELD_EXIT_CHECK_FAILED/);
   assert.match(main, /아직 업로드하지 못한 현장 자료/);
   assert.match(menu, /requestApplicationExit\("menu"\)/);

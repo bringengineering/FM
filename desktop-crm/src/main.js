@@ -35,6 +35,7 @@ let fieldView = null;
 let fieldViewVisible = false;
 let fieldViewLoaded = false;
 let fieldViewReady = false;
+let fieldWasOpenedThisRun = false;
 let fieldMeasuredBounds = null;
 let fieldLastRoute = "/field?embedded=crm";
 let fieldPendingUploads = { count: 0, risk: "none" };
@@ -104,9 +105,11 @@ const fieldSessionRecoveryCoordinator = createFieldSharedSessionRecoveryCoordina
 });
 
 const applicationExitCoordinator = createFieldExitCoordinator({
+  shouldInspect: () => fieldWasOpenedThisRun,
   ensureReady: async () => ensureFieldReadyForLogout(),
   checkPending: async () => requestFieldPendingUploads(),
   confirmPending: async (pendingUploads, reason) => confirmApplicationExitWithPending(pendingUploads, reason),
+  confirmUnknown: async reason => confirmApplicationExitWithoutFieldStatus(reason),
   finishApplicationExit: async reason => finishApplicationExit(reason),
 });
 
@@ -282,6 +285,7 @@ function destroyFieldView() {
 }
 
 function ensureFieldView() {
+  fieldWasOpenedThisRun = true;
   if (fieldView && !fieldView.webContents.isDestroyed()) return fieldView;
   if (!mainWindow || mainWindow.isDestroyed()) throw new Error("CRM_WINDOW_UNAVAILABLE");
 
@@ -835,6 +839,26 @@ async function confirmApplicationExitWithPending(pendingUploads, reason) {
       ? "지금 재시작하면 업로드가 중단됩니다. 자료는 이 PC에 보존되지만, 다음 실행 후 업로드를 다시 확인해야 합니다."
       : "지금 종료하면 업로드가 중단됩니다. 자료는 이 PC에 보존되지만, 다음 실행 후 업로드를 다시 확인해야 합니다.",
     buttons: ["업로드를 마치고 돌아가기", updateRestart ? "그래도 재시작" : "그래도 종료"],
+    defaultId: 0,
+    cancelId: 0,
+    noLink: true,
+  };
+  const result = mainWindow && !mainWindow.isDestroyed()
+    ? await dialog.showMessageBox(mainWindow, options)
+    : await dialog.showMessageBox(options);
+  return result.response === 1;
+}
+
+async function confirmApplicationExitWithoutFieldStatus(reason) {
+  const updateRestart = reason === "update";
+  const options = {
+    type: "warning",
+    title: updateRestart ? "업데이트 전에 현장 자료 확인" : "종료 전에 현장 자료 확인",
+    message: "현장 업로드 상태를 확인하지 못했습니다.",
+    detail: updateRestart
+      ? "연결이 끊겨 업로드 대기 건수를 확인할 수 없습니다. 그래도 재시작하면 진행 중인 업로드는 중단되지만, 저장된 현장 자료는 이 PC에 그대로 보존됩니다. 다음 실행 후 업로드 상태를 다시 확인해 주세요."
+      : "연결이 끊겨 업로드 대기 건수를 확인할 수 없습니다. 그래도 종료하면 진행 중인 업로드는 중단되지만, 저장된 현장 자료는 이 PC에 그대로 보존됩니다. 다음 실행 후 업로드 상태를 다시 확인해 주세요.",
+    buttons: ["돌아가서 다시 연결", updateRestart ? "그래도 재시작" : "그래도 종료"],
     defaultId: 0,
     cancelId: 0,
     noLink: true,

@@ -704,15 +704,47 @@ async function coordinateFieldLogout(options = {}) {
 
 async function coordinateFieldExit(options = {}) {
   const reason = isBoundedString(options.reason, 32, false) ? options.reason : "window";
+  let shouldInspect = true;
+  try {
+    if (typeof options.shouldInspect === "function") {
+      shouldInspect = await options.shouldInspect(reason) !== false;
+    }
+  } catch (_error) {
+    shouldInspect = true;
+  }
+  if (!shouldInspect) {
+    try {
+      await options.finishApplicationExit(reason);
+      return { ok: true };
+    } catch (_error) {
+      return {
+        ok: false,
+        code: "FIELD_EXIT_FAILED",
+        error: "프로그램 종료를 완료하지 못했습니다. 다시 시도해 주세요.",
+      };
+    }
+  }
   const inspection = await inspectFieldPendingUploads(options);
   if (!inspection.ok) {
-    return {
-      ok: false,
-      code: "FIELD_EXIT_CHECK_FAILED",
-      error: "현장 업로드 상태를 확인하지 못했습니다. 연결을 확인한 뒤 다시 시도해 주세요.",
-    };
+    let confirmed = false;
+    try {
+      confirmed = await options.confirmUnknown(reason) === true;
+    } catch (_error) {
+      return {
+        ok: false,
+        code: "FIELD_EXIT_CHECK_FAILED",
+        error: "현장 업로드 상태를 확인하지 못했습니다. 연결을 확인한 뒤 다시 시도해 주세요.",
+      };
+    }
+    if (!confirmed) {
+      return {
+        ok: false,
+        code: "FIELD_EXIT_CANCELLED",
+        error: "현장 업로드 상태를 확인하지 못해 종료를 취소했습니다.",
+      };
+    }
   }
-  if (inspection.pendingUploads.count > 0) {
+  if (inspection.ok && inspection.pendingUploads.count > 0) {
     let confirmed = false;
     try {
       confirmed = await options.confirmPending(inspection.pendingUploads, reason) === true;

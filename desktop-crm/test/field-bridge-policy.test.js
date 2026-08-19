@@ -406,7 +406,7 @@ test("logout coordinator preserves upload data and fails closed until FIELD auth
   assert.deepEqual(order, ["ready", "pending", "field-signout-failed"]);
 });
 
-test("application exit checks pending uploads, fails closed on unknown state, and requires explicit confirmation", async () => {
+test("application exit checks pending uploads and requires explicit confirmation for pending or unknown state", async () => {
   const queue = [{ id: "upload_1", blob: "untouched" }];
   const snapshot = JSON.stringify(queue);
   const order = [];
@@ -442,10 +442,46 @@ test("application exit checks pending uploads, fails closed on unknown state, an
   const unknown = await coordinateFieldExit({
     ...base,
     checkPending: async () => { throw new Error("renderer unavailable"); },
-    confirmPending: async () => true,
+    confirmUnknown: async reason => { order.push(`confirm-unknown:${reason}`); return false; },
   });
-  assert.equal(unknown.code, "FIELD_EXIT_CHECK_FAILED");
+  assert.equal(unknown.code, "FIELD_EXIT_CANCELLED");
+  assert.deepEqual(order, ["ready", "confirm-unknown:window"]);
+  assert.equal(JSON.stringify(queue), snapshot);
+
+  order.length = 0;
+  const unknownConfirmed = await coordinateFieldExit({
+    ...base,
+    checkPending: async () => { throw new Error("renderer unavailable"); },
+    confirmUnknown: async reason => { order.push(`confirm-unknown:${reason}`); return true; },
+  });
+  assert.deepEqual(unknownConfirmed, { ok: true });
+  assert.deepEqual(order, ["ready", "confirm-unknown:window", "finish:window"]);
+  assert.equal(JSON.stringify(queue), snapshot);
+
+  order.length = 0;
+  const unknownDialogFailed = await coordinateFieldExit({
+    ...base,
+    checkPending: async () => { throw new Error("renderer unavailable"); },
+    confirmUnknown: async () => { throw new Error("dialog unavailable"); },
+  });
+  assert.equal(unknownDialogFailed.code, "FIELD_EXIT_CHECK_FAILED");
   assert.deepEqual(order, ["ready"]);
+  assert.equal(JSON.stringify(queue), snapshot);
+});
+
+test("application exit skips FIELD network checks when FIELD was not opened this run", async () => {
+  const order = [];
+  const result = await coordinateFieldExit({
+    reason: "window",
+    shouldInspect: async reason => { order.push(`inspect?:${reason}`); return false; },
+    ensureReady: async () => { order.push("ready"); throw new Error("must not run"); },
+    checkPending: async () => { order.push("pending"); throw new Error("must not run"); },
+    confirmPending: async () => { order.push("confirm-pending"); return true; },
+    confirmUnknown: async () => { order.push("confirm-unknown"); return true; },
+    finishApplicationExit: async reason => { order.push(`finish:${reason}`); },
+  });
+  assert.deepEqual(result, { ok: true });
+  assert.deepEqual(order, ["inspect?:window", "finish:window"]);
 });
 
 test("application exit coordinator collapses close re-entry and runs update install only once", async () => {
