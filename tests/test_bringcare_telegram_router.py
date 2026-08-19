@@ -140,6 +140,17 @@ def test_rejects_multiple_actions_outside_a_quoted_title():
     assert route("제목을 '본문 가이드'로 바꾸고 본문도 수정해줘").intent == "ambiguous"
 
 
+@pytest.mark.parametrize(
+    "text",
+    [
+        "제목을 '새 제목'로 바꿔줘 그리고 본문을 '새 본문'으로 수정해줘",
+        '제목을 "새 제목"로 바꿔줘 그리고 본문을 "새 본문"으로 수정해줘',
+    ],
+)
+def test_quoted_capture_cannot_span_a_second_mutation_action(text):
+    assert route(text).intent == "ambiguous"
+
+
 def test_arbitrary_text_is_unknown_without_semantic_guessing():
     assert route("가을철 원룸 관리가 궁금해").intent == "unknown"
 

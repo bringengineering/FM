@@ -48,7 +48,8 @@ _EXACT_INTENTS = {
 
 _TITLE_REVISION = re.compile(r"^제목(?:을|은)?\s+(.+?)\s+(?:바꿔줘|변경해줘|수정해줘)$")
 _QUOTED_TITLE_REVISION = re.compile(
-    r"^제목(?:을|은)?\s+([\"'])(.+)\1(?:으로|로)?\s+(?:바꿔줘|변경해줘|수정해줘)$"
+    r'''^제목(?:을|은)?\s+(?:"(?P<double>[^"]+)"|'(?P<single>[^']+)')'''
+    r"(?:으로|로)?\s+(?:바꿔줘|변경해줘|수정해줘)$"
 )
 _COLON_TITLE_REVISION = re.compile(r"^제목\s*:\s*(.+)$")
 _BODY_REVISION = re.compile(r"^본문(?:에서|을)?\s+(.+?)\s+(?:수정해줘|바꿔줘|변경해줘)$")
@@ -87,7 +88,8 @@ def route(text: str) -> Command:
 
     quoted_title_match = _QUOTED_TITLE_REVISION.fullmatch(normalized)
     if quoted_title_match:
-        return Command("revise_title", quoted_title_match.group(2).strip(), normalized)
+        payload = quoted_title_match.group("double") or quoted_title_match.group("single")
+        return Command("revise_title", payload.strip(), normalized)
 
     colon_title_match = _COLON_TITLE_REVISION.fullmatch(normalized)
     if colon_title_match:
