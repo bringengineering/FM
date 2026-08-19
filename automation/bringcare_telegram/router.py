@@ -47,6 +47,10 @@ _EXACT_INTENTS = {
 }
 
 _TITLE_REVISION = re.compile(r"^제목(?:을|은)?\s+(.+?)\s+(?:바꿔줘|변경해줘|수정해줘)$")
+_QUOTED_TITLE_REVISION = re.compile(
+    r"^제목(?:을|은)?\s+([\"'])(.+)\1(?:으로|로)?\s+(?:바꿔줘|변경해줘|수정해줘)$"
+)
+_COLON_TITLE_REVISION = re.compile(r"^제목\s*:\s*(.+)$")
 _BODY_REVISION = re.compile(r"^본문(?:에서|을)?\s+(.+?)\s+(?:수정해줘|바꿔줘|변경해줘)$")
 
 
@@ -70,18 +74,10 @@ def _is_ambiguous_mutation(text: str) -> bool:
 
 
 def _title_payload(raw_payload: str) -> str:
-    """Remove an explicit Korean direction particle conservatively.
-
-    ``으로`` is always treated as a particle. A terminal ``로`` is treated as
-    a particle only when removing it leaves a multi-syllable final word. This
-    keeps bare nouns such as ``도로`` intact while parsing ``관리로`` and
-    ``도로로`` as particle forms.
-    """
+    """Apply the explicit grammar for an unquoted title revision."""
     if raw_payload.endswith("으로"):
         return raw_payload[:-2].rstrip()
-
-    final_word = raw_payload.rsplit(" ", 1)[-1]
-    if final_word.endswith("로") and len(final_word[:-1]) >= 2:
+    if raw_payload.endswith("로"):
         return raw_payload[:-1].rstrip()
     return raw_payload
 
@@ -96,6 +92,14 @@ def route(text: str) -> Command:
         return Command("approve", None, normalized)
     if normalized in {"취소", "보류"}:
         return Command("cancel", None, normalized)
+
+    quoted_title_match = _QUOTED_TITLE_REVISION.fullmatch(normalized)
+    if quoted_title_match:
+        return Command("revise_title", quoted_title_match.group(2).strip(), normalized)
+
+    colon_title_match = _COLON_TITLE_REVISION.fullmatch(normalized)
+    if colon_title_match:
+        return Command("revise_title", colon_title_match.group(1).strip(), normalized)
 
     title_match = _TITLE_REVISION.fullmatch(normalized)
     if title_match:

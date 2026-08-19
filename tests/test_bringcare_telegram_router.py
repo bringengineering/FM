@@ -67,12 +67,29 @@ def test_extracts_title_before_euro_particle_without_truncating_it():
 @pytest.mark.parametrize(
     ("text", "payload"),
     [
-        ("제목을 안전한 도로 바꿔줘", "안전한 도로"),
+        ("제목을 안전한 도로 바꿔줘", "안전한 도"),
         ("제목을 안전한 도로로 바꿔줘", "안전한 도로"),
     ],
 )
-def test_distinguishes_bare_title_ending_in_ro_from_ro_particle(text, payload):
+def test_unquoted_title_always_treats_ro_as_a_particle(text, payload):
     assert route(text).payload == payload
+
+
+@pytest.mark.parametrize(
+    ("text", "payload"),
+    [
+        ('제목을 "마음속으로"로 바꿔줘', "마음속으로"),
+        ("제목을 '전국 고속도로'로 바꿔줘", "전국 고속도로"),
+        ("제목: 마음속으로", "마음속으로"),
+        ("제목: 전국 고속도로", "전국 고속도로"),
+    ],
+)
+def test_quotes_or_colon_preserve_titles_ending_in_particles(text, payload):
+    command = route(text)
+
+    assert command.intent == "revise_title"
+    assert command.payload == payload
+    assert command.normalized_text == text
 
 
 def test_extracts_meaningful_body_revision_payload():
