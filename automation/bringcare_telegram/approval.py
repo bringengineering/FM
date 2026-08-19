@@ -98,7 +98,15 @@ class ApprovalStore:
         current = self.load()
         if current and current.status in ACTIVE_STATUSES:
             if current.post_id == post_id and current.status == "pending":
-                return current
+                return self._write(
+                    ApprovalRecord(
+                        **{
+                            **asdict(current),
+                            "created_at": _iso(now),
+                            "expires_at": _iso(now + timedelta(minutes=ttl_minutes)),
+                        }
+                    )
+                )
             if _datetime(current.expires_at) > now:
                 raise PendingApprovalExists(current.title)
         record = ApprovalRecord(
