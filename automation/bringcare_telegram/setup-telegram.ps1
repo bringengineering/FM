@@ -1,4 +1,5 @@
 $ErrorActionPreference = "Stop"
+Add-Type -AssemblyName System.Security
 $basePath = Split-Path -Parent $MyInvocation.MyCommand.Path
 
 $secureToken = Read-Host "New Telegram Bot Token" -AsSecureString

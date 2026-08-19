@@ -25,3 +25,10 @@ def test_setup_displays_username_returned_by_get_me():
     assert "$botUsername = $identity.result.username" in text
     assert "@$botUsername" in text
     assert "@bringcare_blog_alert_bot" not in text
+
+
+def test_setup_loads_dpapi_assembly_before_using_protected_data():
+    text = Path("automation/bringcare_telegram/setup-telegram.ps1").read_text(encoding="utf-8")
+    load_at = text.index("Add-Type -AssemblyName System.Security")
+    protect_at = text.index("[Security.Cryptography.ProtectedData]::Protect")
+    assert load_at < protect_at
