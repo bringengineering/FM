@@ -8,3 +8,5 @@ __pycache__/
 automation/bringcare_telegram/local-config.json
 automation/bringcare_telegram/token.dpapi
 automation/bringcare_telegram/telegram-state.json
+automation/bringcare_telegram/approval-state.json
+automation/bringcare_telegram/telegram-update-offset.json

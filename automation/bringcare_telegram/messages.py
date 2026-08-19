@@ -13,10 +13,14 @@ def _https(url: str) -> str:
     return url
 
 
-def ready_message(title: str, post_type: str, category: str, approval_url: str):
-    text = f"✅ <b>발행 준비 완료</b>\n\n제목: {_clean(title)}\n유형: {_clean(post_type)}\n카테고리: {_clean(category)}\n\n버튼을 누른 뒤 ChatGPT에서 <b>발행</b>이라고 보내주세요."
-    markup = {"inline_keyboard": [[{"text": "ChatGPT에서 발행 승인", "url": _https(approval_url)}]]}
-    return text, markup
+def ready_message(title: str, post_type: str, category: str):
+    text = (
+        f"✅ <b>발행 준비 완료</b>\n\n"
+        f"제목: {_clean(title)}\n유형: {_clean(post_type)}\n카테고리: {_clean(category)}\n\n"
+        "이 채팅에 <b>승인</b>이라고 보내면 발행합니다.\n"
+        "중단하려면 <b>취소</b>라고 보내주세요."
+    )
+    return text, None
 
 
 def blocked_message(title: str, reason: str, action: str, resume_point: str):

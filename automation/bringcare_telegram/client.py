@@ -24,6 +24,13 @@ class TelegramClient:
             payload["reply_markup"] = reply_markup
         return self._request("sendMessage", payload)
 
+    def get_updates(self, offset: int | None = None, timeout: int = 0) -> list[dict]:
+        payload = {"timeout": max(0, int(timeout)), "allowed_updates": ["message"]}
+        if offset is not None:
+            payload["offset"] = int(offset)
+        result = self._request("getUpdates", payload)
+        return result if isinstance(result, list) else []
+
     def _request(self, method: str, payload: dict) -> dict:
         body = json.dumps(payload, ensure_ascii=False).encode("utf-8")
         request = Request(

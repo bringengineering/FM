@@ -1,11 +1,13 @@
 from automation.bringcare_telegram.messages import blocked_message, published_message, ready_message
 
 
-def test_ready_message_has_one_approval_button():
-    text, markup = ready_message("제목 <확인>", "검색정보", "생활정보", "https://chatgpt.com/c/example")
+def test_ready_message_requests_direct_telegram_command_without_link():
+    text, markup = ready_message("제목 <확인>", "검색정보", "생활정보")
     assert "발행 준비 완료" in text
     assert "&lt;확인&gt;" in text
-    assert markup["inline_keyboard"][0][0]["url"].startswith("https://")
+    assert "승인" in text and "취소" in text
+    assert "ChatGPT" not in text
+    assert markup is None
 
 
 def test_published_message_contains_title_and_url():

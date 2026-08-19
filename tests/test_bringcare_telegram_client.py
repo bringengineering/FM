@@ -17,6 +17,16 @@ def test_send_posts_json_to_telegram_https():
     assert b"hello" in request.data
 
 
+def test_get_updates_uses_offset_without_exposing_token():
+    client = TelegramClient("token-value")
+    with patch("automation.bringcare_telegram.client.urlopen") as opened:
+        opened.return_value.__enter__.return_value.read.return_value = b'{"ok":true,"result":[]}'
+        assert client.get_updates(offset=42) == []
+    request = opened.call_args.args[0]
+    assert request.full_url.endswith("/getUpdates")
+    assert b'"offset": 42' in request.data
+
+
 @pytest.mark.parametrize("status,error", [(401, TelegramAuthError), (429, TelegramRateLimitError)])
 def test_http_errors_are_classified(status, error):
     exc = HTTPError("redacted", status, "error", {}, io.BytesIO(b"{}"))
