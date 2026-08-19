@@ -229,6 +229,35 @@ test("Spark building configuration commits up to 200 rooms in one deterministic 
   assert.equal(SparkCanonical.reduceBuildingUnits(result.data, request, ACTOR, NOW).result.repeated, true);
 });
 
+test("Spark building configuration rejects a legacy parent before producing a Rules-invalid patch", () => {
+  const legacyBuilding = {
+    id: "building_1",
+    buildingNo: "BLD-001",
+    name: "기존 햇빛빌라",
+    address: "원주시 단계동",
+    createdAt: "2026-08-01T00:00:00.000Z",
+    updatedAt: "2026-08-01T00:00:00.000Z",
+    vacantUnitCount: 0,
+    vacantUnits: [],
+  };
+  const data = { buildings: { building_1: legacyBuilding }, buildingUnits: {} };
+  const request = {
+    buildVersion: "1.8.4",
+    operatorId: "operator_kim",
+    requestId: "550e8400-e29b-41d4-a716-446655440022",
+    buildingId: "building_1",
+    units: [
+      { label: "101호", floorLabel: "1층", floorOrder: 1, unitOrder: 1, status: "unknown" },
+    ],
+  };
+
+  assert.throws(
+    () => SparkCanonical.reduceBuildingUnits(data, request, ACTOR, NOW),
+    error => error && error.code === "crm_entity_upgrade_required",
+  );
+  assert.deepEqual(data, { buildings: { building_1: legacyBuilding }, buildingUnits: {} });
+});
+
 function safeStorageStub() {
   return {
     isEncryptionAvailable: () => true,

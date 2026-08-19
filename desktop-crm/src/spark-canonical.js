@@ -255,9 +255,26 @@ function legacyVacancyState(building, projection) {
   };
 }
 
+function assertCanonicalBuildingForVacancyMirror(building) {
+  const canonicalActorId = value => safeId(value) && !value.includes("@");
+  if (!Number.isSafeInteger(building.entityVersion) || building.entityVersion < 1
+    || !canonicalTimestamp(building.createdAt)
+    || !canonicalTimestamp(building.updatedAt)
+    || !safeId(building.createdByAuthUid)
+    || !canonicalActorId(building.createdByOperatorId)
+    || !safeId(building.updatedByAuthUid)
+    || !canonicalActorId(building.updatedByOperatorId)
+    || building.archivedAt !== ""
+    || typeof building.archivedByAuthUid !== "string"
+    || typeof building.archivedByOperatorId !== "string") {
+    fail("crm_entity_upgrade_required");
+  }
+}
+
 function mirrorBuildingVacancy(data, buildingId, replacements, actor, now, requireResolution) {
   const buildings = record(data.buildings) ? data.buildings : {};
   const building = activeEntity(buildings, buildingId);
+  assertCanonicalBuildingForVacancyMirror(building);
   const before = unitProjection(data, buildingId);
   const after = unitProjection(data, buildingId, replacements);
   if (after.active.length > 200) fail("crm_building_unit_batch_too_large");

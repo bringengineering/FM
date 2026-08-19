@@ -66,6 +66,7 @@ const CRM_ACCESS = {
 const CRM_DATA = {
   buildings: { building_1: {
     id: "building_1",
+    buildingNo: "BLD-001",
     name: "Canonical building",
     address: "원주시 우산동",
     entityVersion: 1,
@@ -2134,6 +2135,12 @@ describe.runIf(databaseEmulatorAvailable)("future CRM cutover rules rehearsal", 
       ...nextBuilding,
       clientTamper: true,
       entityVersion: 3,
+    }));
+    await assertFails(set(ref(member, "crmCompany/data/buildings/building_1"), {
+      ...nextBuilding,
+      buildingNo: "BLD-CHANGED",
+      entityVersion: 3,
+      updatedAt: "2026-08-09T00:00:02.000Z",
     }));
     await assertFails(update(ref(viewer, "crmCompany/data"), atomicPatch));
     await assertFails(set(ref(member, "crmCompany/data"), current));
