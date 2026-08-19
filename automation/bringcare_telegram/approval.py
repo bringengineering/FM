@@ -88,8 +88,13 @@ class ApprovalStore:
         category: str,
         *,
         now: datetime | None = None,
+        ttl_minutes: int = 1440,
     ) -> ApprovalRecord:
-        now = now or _utc_now()
+        if isinstance(ttl_minutes, bool) or not isinstance(ttl_minutes, int):
+            raise TypeError("ttl_minutes must be an integer")
+        if not 1 <= ttl_minutes <= 1440:
+            raise ValueError("ttl_minutes must be between 1 and 1440")
+        now = datetime.fromisoformat(_iso(now or _utc_now()))
         current = self.load()
         if current and current.status in ACTIVE_STATUSES:
             if current.post_id == post_id and current.status == "pending":
@@ -103,7 +108,7 @@ class ApprovalStore:
             category=category,
             status="pending",
             created_at=_iso(now),
-            expires_at=_iso(now + timedelta(hours=24)),
+            expires_at=_iso(now + timedelta(minutes=ttl_minutes)),
         )
         return self._write(record)
 

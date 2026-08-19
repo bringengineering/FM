@@ -6,6 +6,57 @@ import pytest
 NOW = datetime(2026, 8, 19, 12, 0, tzinfo=timezone.utc)
 
 
+def test_ten_minute_approval_succeeds_within_ttl_and_expires_after_it(tmp_path):
+    from automation.bringcare_telegram.approval import ApprovalStore
+
+    store = ApprovalStore(tmp_path / "approval.json")
+    created = store.create_pending(
+        "post-1", "제목", "검색정보", "생활 속 관리정보", now=NOW, ttl_minutes=10
+    )
+
+    assert created.expires_at == (NOW + timedelta(minutes=10)).isoformat()
+    assert store.approve(update_id=101, now=NOW + timedelta(minutes=9, seconds=59)).status == "approved"
+
+    expired_store = ApprovalStore(tmp_path / "expired-approval.json")
+    expired_store.create_pending(
+        "post-2", "제목", "검색정보", "생활 속 관리정보", now=NOW, ttl_minutes=10
+    )
+    assert expired_store.approve(
+        update_id=102, now=NOW + timedelta(minutes=10, seconds=1)
+    ).status == "expired"
+
+
+@pytest.mark.parametrize("ttl_minutes", [True, False, 1.5, "10", None, 0, -1, 1441])
+def test_create_pending_rejects_invalid_ttl_minutes(tmp_path, ttl_minutes):
+    from automation.bringcare_telegram.approval import ApprovalStore
+
+    store = ApprovalStore(tmp_path / "approval.json")
+
+    with pytest.raises((TypeError, ValueError)):
+        store.create_pending(
+            "post-1",
+            "제목",
+            "검색정보",
+            "생활 속 관리정보",
+            now=NOW,
+            ttl_minutes=ttl_minutes,
+        )
+
+
+def test_custom_ttl_normalizes_timezone_aware_expiry_to_utc(tmp_path):
+    from automation.bringcare_telegram.approval import ApprovalStore
+
+    store = ApprovalStore(tmp_path / "approval.json")
+    korea_now = datetime(2026, 8, 19, 21, 0, tzinfo=timezone(timedelta(hours=9)))
+
+    created = store.create_pending(
+        "post-1", "제목", "검색정보", "생활 속 관리정보", now=korea_now, ttl_minutes=10
+    )
+
+    assert created.created_at == NOW.isoformat()
+    assert created.expires_at == (NOW + timedelta(minutes=10)).isoformat()
+
+
 def test_pending_to_approved_is_single_use(tmp_path):
     from automation.bringcare_telegram.approval import ApprovalStore
 
