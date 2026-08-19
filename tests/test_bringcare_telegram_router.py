@@ -58,12 +58,31 @@ def test_extracts_title_revision_payload():
     assert command == Command("revise_title", "가을철 원룸 관리", "제목을 가을철 원룸 관리로 바꿔줘")
 
 
+def test_extracts_title_before_euro_particle_without_truncating_it():
+    command = route("제목을 우리 집으로 바꿔줘")
+
+    assert command.payload == "우리 집"
+
+
 def test_extracts_meaningful_body_revision_payload():
     command = route("본문에서 회사 소개를 더 짧게 수정해줘!")
 
     assert command == Command(
         "revise_body", "회사 소개를 더 짧게", "본문에서 회사 소개를 더 짧게 수정해줘"
     )
+
+
+@pytest.mark.parametrize(
+    ("text", "payload"),
+    [
+        ("본문에서 제목을 더 눈에 띄게 수정해줘", "제목을 더 눈에 띄게"),
+        ("본문에서 본문이라는 표현을 줄여서 수정해줘", "본문이라는 표현을 줄여서"),
+        ("본문에서 올려줘 표현을 정중하게 수정해줘", "올려줘 표현을 정중하게"),
+        ("본문에서 진행해라는 표현을 수정해줘", "진행해라는 표현을"),
+    ],
+)
+def test_reserved_words_inside_body_payload_are_not_extra_actions(text, payload):
+    assert route(text) == Command("revise_body", payload, text)
 
 
 def test_rejects_multiple_mutation_actions_as_ambiguous():
