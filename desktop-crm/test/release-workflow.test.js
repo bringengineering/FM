@@ -26,6 +26,10 @@ test("uses one non-cancelling production release queue and stable no-op before p
   assert.match(planner, /probeUpdateChannel/);
 });
 
+test("plan checkout leaves Git authentication to the release planner token", () => {
+  assert.match(jobBlock("plan"), /actions\/checkout@[a-f0-9]{40}[\s\S]*?persist-credentials:\s*false/);
+});
+
 test("fails WIF and exact project preflight before any remote version reservation", () => {
   const reserveIndex = release.indexOf("reserve-version.js");
   const authIndex = release.indexOf("google-github-actions/auth@7c6bc770dae815cd3e89ee6cdf493a5fab2cc093");
