@@ -131,9 +131,6 @@ class BlogQueries:
         status = _clean(record.get("status")).lower()
         title = _clean(record.get("title"))
         if not status:
-            pending = self._backlog_pending()
-            if pending:
-                return f"현재 상태: {pending[1]} · {pending[0]}"
             return f"현재 상태: {NO_RECORD}"
         label = STATUS_NAMES.get(status)
         if label is None:
@@ -252,5 +249,9 @@ class BlogQueries:
     @staticmethod
     def _redact(value: str) -> str:
         text = _clean(value)
-        sensitive = re.compile(r"(?i)(token|secret|password|passwd|api[_ -]?key|chat[_ -]?id)\s*[:=]\s*[^\s,;]+")
-        return "[민감정보 숨김]" if sensitive.search(text) else text
+        named_secret = re.compile(
+            r"(?i)(token|secret|password|passwd|api[_ -]?key|chat[_ -]?id)"
+            r"\s*[:=]\s*[^\s,;]+"
+        )
+        bot_token = re.compile(r"(?i)(?:/bot)?\d{5,}:[a-z0-9_-]{6,}")
+        return "[민감정보 숨김]" if named_secret.search(text) or bot_token.search(text) else text

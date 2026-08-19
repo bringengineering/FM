@@ -125,6 +125,31 @@ def test_latest_error_returns_latest_open_actionable_alert_and_redacts_secrets(t
     assert queries.latest_error() == "최근 오류: 2026-08-20 09:30 Telegram 실패 · 조치: [민감정보 숨김]"
 
 
+def test_latest_error_redacts_telegram_bot_tokens_embedded_in_urls(tmp_path):
+    queries = make_queries(tmp_path)
+    write(
+        tmp_path / "alerts.md",
+        "## 열린 장애\n"
+        "### 2026-08-20 10:00 Telegram API 실패\n"
+        "- 조치: https://api.telegram.org/bot123456:ABCDEF/sendMessage 재시도\n",
+    )
+    answer = queries.latest_error()
+    assert answer == "최근 오류: 2026-08-20 10:00 Telegram API 실패 · 조치: [민감정보 숨김]"
+    assert "123456:ABCDEF" not in answer
+
+
+def test_latest_error_redacts_bare_bot_token_shape(tmp_path):
+    queries = make_queries(tmp_path)
+    write(
+        tmp_path / "alerts.md",
+        "## 열린 장애\n### 2026-08-20 10:00 전송 실패\n"
+        "- 조치: 봇 987654321:secret_VALUE 토큰으로 확인\n",
+    )
+    answer = queries.latest_error()
+    assert answer.endswith("조치: [민감정보 숨김]")
+    assert "987654321:secret_VALUE" not in answer
+
+
 def test_malformed_and_missing_sources_return_na_messages_without_writes(tmp_path):
     queries = make_queries(tmp_path)
     write(tmp_path / "approval.json", "[]")
@@ -142,3 +167,13 @@ def test_unknown_approval_status_is_not_reported_as_an_operational_fact(tmp_path
     queries = make_queries(tmp_path)
     write(tmp_path / "approval.json", '{"status":"mystery","title":"추측 금지"}')
     assert queries.current_status() == "현재 상태: 확인된 기록이 없습니다"
+
+
+def test_current_status_does_not_promote_backlog_candidate_without_approval_state(tmp_path):
+    queries = make_queries(tmp_path)
+    write(
+        tmp_path / "backlog.md",
+        "## 2026-08-20 11시 회차\n- 상태: 발행 전 확인 대기\n- 제목: 다음 후보\n",
+    )
+    assert queries.current_status() == "현재 상태: 확인된 기록이 없습니다"
+    assert queries.pending_post() == "대기 글: 다음 후보 · 발행 전 확인 대기"
