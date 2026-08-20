@@ -39,16 +39,20 @@ test("uses an editable approved email-password login as the only CRM login", asy
   assert.doesNotMatch(remote, /password === "123456"/);
 });
 
-test("does not expose a second Google credential flow to embedded FIELD", async () => {
-  const [main, remote, fieldPreload] = await Promise.all([
+test("FIELD Google reauthentication stays CRM-owned and never exposes credentials to the FIELD renderer", async () => {
+  const [main, remote, preload, fieldPreload] = await Promise.all([
     source("main.js"),
     source("remote.js"),
+    source("preload.js"),
     source("field-preload.js"),
   ]);
 
-  assert.doesNotMatch(remote, /acquireFieldCredential/);
+  assert.match(remote, /async reauthenticateFieldWithGoogle\(options = \{\}\)/);
+  assert.match(main, /secureCanonicalHandle\("crm:field-reauthenticate-google"/);
+  assert.match(preload, /reauthenticateFieldPlatform:\s*\(\)\s*=>\s*ipcRenderer\.invoke\("crm:field-reauthenticate-google"\)/);
   assert.doesNotMatch(fieldPreload, /requestCredential/);
   assert.doesNotMatch(main, /crm:field-credential/);
+  assert.doesNotMatch(preload, /reauthenticateFieldPlatform:\s*credentials/);
 });
 
 test("CRM email login shares the persistent FIELD browser session", async () => {

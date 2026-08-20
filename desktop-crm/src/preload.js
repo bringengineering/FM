@@ -36,6 +36,7 @@ contextBridge.exposeInMainWorld("bringCRM", {
   fieldRequest: envelope => ipcRenderer.invoke("crm:field-request", envelope),
   cancelFieldRequest: requestId => ipcRenderer.invoke("crm:field-cancel", requestId),
   reconnectFieldPlatform: () => ipcRenderer.invoke("crm:field-reconnect"),
+  reauthenticateFieldPlatform: () => ipcRenderer.invoke("crm:field-reauthenticate-google"),
   openExternal: url => ipcRenderer.invoke("crm:open-external", url),
   lookupVendor: url => ipcRenderer.invoke("crm:vendor-lookup", url),
   lookupNaverBuilding: url => ipcRenderer.invoke("crm:building-link-lookup", url),

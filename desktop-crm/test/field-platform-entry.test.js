@@ -125,3 +125,38 @@ test("renderer reports FIELD ready only for an authenticated session", async () 
   assert.match(handler, /\["missing", "expired"\]\.includes\(envelope\.payload\.session\)/);
   assert.match(handler, /status:\s*"connecting"[\s\S]*?ready:\s*false/);
 });
+
+test("FIELD auth recovery uses the current CRM Google account without accepting credentials", async () => {
+  const app = await source("app.js");
+  const render = app.slice(app.indexOf("function renderFieldOperations"), app.indexOf("async function measureFieldWorkspace"));
+  const action = app.slice(
+    app.indexOf('action === "reauthenticate-field-google"'),
+    app.indexOf('action === "open-sales-standards"'),
+  );
+
+  assert.match(render, /fieldConnectionState\.status === "auth-required"/);
+  assert.match(render, /currentAuth\.user && currentAuth\.user\.email/);
+  assert.match(render, /Google 계정으로 다시 연결/);
+  assert.match(render, /data-action="reauthenticate-field-google"/);
+  assert.match(render, /fieldReauthInProgress \? " disabled"/);
+  assert.match(render, /disconnected \? `<button[^`]+data-action="reconnect-field">다시 연결<\/button>`/);
+
+  assert.match(action, /if \(fieldReauthInProgress \|\| fieldConnectionState\.status !== "auth-required" \|\| !currentAuth\.user\) return/);
+  assert.match(action, /api\.reauthenticateFieldPlatform\(\)/);
+  assert.doesNotMatch(action, /api\.reauthenticateFieldPlatform\([^)]*email/);
+  assert.doesNotMatch(action, /password|canWriteCRM/);
+  assert.doesNotMatch(action, /result\.error/);
+  assert.match(action, /generation !== authGeneration \|\| uid !== currentAuthUid\(\)/);
+  assert.match(action, /status: "auth-required"/);
+  assert.match(action, /status: "connecting"[\s\S]*?renderFieldOperations\(\)/);
+
+  const safeErrors = app.slice(
+    app.indexOf("function fieldReauthenticationMessage"),
+    app.indexOf("function buildingUnitEditor"),
+  );
+  assert.match(safeErrors, /FIELD_REAUTH_CANCELLED/);
+  assert.match(safeErrors, /FIELD_REAUTH_ACCOUNT_MISMATCH/);
+  assert.match(safeErrors, /FIELD_REAUTH_SESSION_CHANGED/);
+  assert.match(safeErrors, /FIELD_REAUTH_FAILED/);
+  assert.doesNotMatch(safeErrors, /result\.error/);
+});

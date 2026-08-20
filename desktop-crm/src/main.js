@@ -32,6 +32,9 @@ const {
   validateFieldMessage,
 } = require("./field-view-policy");
 const FIELD_PLATFORM_URL = "https://bring-fm.web.app/field";
+const FIELD_AUTH_CLEANUP_URL = "https://bring-fm.web.app/crm-auth";
+const FIELD_AUTH_PARTITION = "persist:bring-field";
+const FIELD_AUTH_QUARANTINE_MARKER = "BRING_FIELD_AUTH_QUARANTINE_V1\n";
 
 if (process.env.BRING_CRM_SCREENSHOT || process.env.BRING_CRM_SMOKE === "1") app.disableHardwareAcceleration();
 
@@ -53,13 +56,23 @@ const fieldReadyWaiters = new Set();
 let fieldAuthSignoutWaiter = null;
 let fieldLogoutInFlight = null;
 let fieldRecoveryInFlight = null;
+let fieldReauthInFlight = null;
+let fieldReauthAbortController = null;
+let fieldReauthenticationActive = false;
+let fieldBrowserAuthQuarantined = false;
+let fieldReauthenticationGeneration = 0;
+let fieldVerifiedReconnectGeneration = 0;
+let fieldViewReauthenticationGeneration = 0;
+let fieldAuthenticationRequired = false;
 let crmAuthWindow = null;
+let crmAuthenticationRequestCount = 0;
 let remoteClient = null;
 let updaterConfigured = false;
 let updatePromptOpen = false;
 let updateInstallScheduled = false;
 let updateRetryTimer = null;
 let applicationExitAllowed = false;
+let applicationExitRequestCount = 0;
 let applicationExitFailureDialogOpen = false;
 let applicationResourcesClosed = false;
 let updateState = { status: "disabled", currentVersion: app.getVersion(), availableVersion: "", percent: 0, retryAt: 0, message: "" };
@@ -152,6 +165,7 @@ async function openCrmGoogleAuth(url) {
   ) throw new Error("CRM_AUTH_URL_DENIED");
 
   closeCrmAuthWindow();
+  const reauthAbortController = fieldReauthAbortController;
   crmAuthWindow = new BrowserWindow({
     parent: mainWindow || undefined,
     autoHideMenuBar: true,
@@ -180,7 +194,13 @@ async function openCrmGoogleAuth(url) {
       },
     }) : ({ action: "deny" }),
   );
-  crmAuthWindow.on("closed", () => { crmAuthWindow = null; });
+  const authWindow = crmAuthWindow;
+  crmAuthWindow.on("closed", () => {
+    if (crmAuthWindow === authWindow) crmAuthWindow = null;
+    if (reauthAbortController && fieldReauthAbortController === reauthAbortController) {
+      reauthAbortController.abort();
+    }
+  });
   await crmAuthWindow.loadURL(target.toString());
 }
 
@@ -218,6 +238,82 @@ async function openCrmEmailAuth(url, credentials) {
     `window.bringEmailLogin(${emailJson}, ${passwordJson})`,
     true,
   );
+}
+
+async function signOutFieldBrowserAuthentication() {
+  const cleanupUrl = new URL(FIELD_AUTH_CLEANUP_URL);
+  cleanupUrl.searchParams.set("port", "65535");
+  const cleanupState = crypto.randomBytes(32).toString("base64url");
+  cleanupUrl.searchParams.set("state", cleanupState);
+  const trustedCleanupUrl = cleanupUrl.toString();
+  const cleanupWindow = new BrowserWindow({
+    show: false,
+    autoHideMenuBar: true,
+    webPreferences: {
+      contextIsolation: true,
+      nodeIntegration: false,
+      sandbox: true,
+      partition: FIELD_AUTH_PARTITION,
+    },
+  });
+  const isTrustedCleanupNavigation = rawUrl => {
+    try {
+      const target = new URL(String(rawUrl || ""));
+      const queryKeys = [...target.searchParams.keys()].sort();
+      return target.origin === "https://bring-fm.web.app"
+        && target.pathname === "/crm-auth"
+        && !target.hash
+        && queryKeys.join("|") === "port|state"
+        && target.searchParams.get("port") === "65535"
+        && target.searchParams.get("state") === cleanupState;
+    } catch (_error) {
+      return false;
+    }
+  };
+  const guardNavigation = (event, rawUrl) => {
+    if (!isTrustedCleanupNavigation(rawUrl)) event.preventDefault();
+  };
+  cleanupWindow.webContents.setWindowOpenHandler(() => ({ action: "deny" }));
+  cleanupWindow.webContents.on("will-navigate", guardNavigation);
+  cleanupWindow.webContents.on("will-redirect", guardNavigation);
+  cleanupWindow.webContents.on("will-download", event => event.preventDefault());
+  try {
+    await cleanupWindow.loadURL(trustedCleanupUrl);
+    if (cleanupWindow.webContents.getURL() !== trustedCleanupUrl) {
+      throw Object.assign(new Error("FIELD_REAUTH_CLEANUP_NAVIGATION_FAILED"), { code: "FIELD_REAUTH_CLEANUP_FAILED" });
+    }
+    const signedOut = await cleanupWindow.webContents.executeJavaScript(`(async () => {
+      if (!window.firebase || typeof window.firebase.auth !== "function") return false;
+      const auth = window.firebase.auth();
+      await new Promise((resolve, reject) => {
+        let unsubscribe = () => {};
+        const timer = window.setTimeout(() => {
+          unsubscribe();
+          reject(new Error("FIELD_AUTH_INITIALIZATION_TIMEOUT"));
+        }, 10000);
+        unsubscribe = auth.onAuthStateChanged(
+          () => {
+            window.clearTimeout(timer);
+            unsubscribe();
+            resolve();
+          },
+          () => {
+            window.clearTimeout(timer);
+            unsubscribe();
+            reject(new Error("FIELD_AUTH_INITIALIZATION_FAILED"));
+          },
+        );
+      });
+      await auth.signOut();
+      return auth.currentUser === null;
+    })()`, true);
+    if (signedOut !== true) {
+      throw Object.assign(new Error("FIELD_REAUTH_CLEANUP_FAILED"), { code: "FIELD_REAUTH_CLEANUP_FAILED" });
+    }
+    return true;
+  } finally {
+    if (!cleanupWindow.isDestroyed()) cleanupWindow.destroy();
+  }
 }
 
 function hideFieldView() {
@@ -268,6 +364,38 @@ function cancelFieldRequests(code = "FIELD_BRIDGE_CANCELLED") {
   fieldRequestCoordinator.cancelAll(code);
 }
 
+function fieldReauthenticationBlockCode({ includeAuthenticationRequired = false } = {}) {
+  if (fieldReauthenticationActive || fieldReauthInFlight) return "FIELD_REAUTH_IN_PROGRESS";
+  if (fieldBrowserAuthQuarantined) return "FIELD_AUTH_QUARANTINED";
+  if (includeAuthenticationRequired && fieldAuthenticationRequired) return "FIELD_AUTH_REQUIRED";
+  return "";
+}
+
+function fieldReauthenticationBlockedResult(code = fieldReauthenticationBlockCode()) {
+  const normalizedCode = code || "FIELD_REAUTH_IN_PROGRESS";
+  const error = normalizedCode === "FIELD_AUTH_QUARANTINED"
+    ? "FIELD 계정 확인이 필요합니다. Google 계정으로 다시 연결해 주세요."
+    : normalizedCode === "FIELD_AUTH_REQUIRED"
+      ? "Google 계정으로 다시 연결해 주세요."
+      : "FIELD 계정을 확인하는 동안에는 이 작업을 할 수 없습니다.";
+  return { ok: false, code: normalizedCode, error };
+}
+
+function verifiedFieldReconnectActive() {
+  return Boolean(
+    fieldReauthInFlight
+    && !fieldReauthenticationActive
+    && fieldVerifiedReconnectGeneration > 0
+    && fieldVerifiedReconnectGeneration === fieldReauthenticationGeneration
+  );
+}
+
+function assertFieldViewCreationAllowed() {
+  if (verifiedFieldReconnectActive()) return;
+  const code = fieldReauthenticationBlockCode({ includeAuthenticationRequired: true });
+  if (code) throw Object.assign(new Error(code), { code });
+}
+
 function syncFieldSession(state = authState()) {
   const nextUserId = String(state && state.user && state.user.uid || "");
   if (nextUserId !== fieldSessionUserId) {
@@ -280,6 +408,11 @@ function syncFieldSession(state = authState()) {
     fieldRequestCoordinator.setSession(fieldSessionKey);
     fieldViewReady = false;
     fieldPendingUploads = { count: 0, risk: "none" };
+    fieldAuthenticationRequired = Boolean(
+      fieldReauthenticationActive
+      || fieldBrowserAuthQuarantined
+      || fieldReauthInFlight
+    );
     invalidateFieldPendingUploadsReadiness("FIELD_SESSION_CHANGED");
     fieldLastRoute = "/field?embedded=crm";
     resolveFieldReadyWaiters(Object.assign(new Error("FIELD_SESSION_CHANGED"), { code: "FIELD_SESSION_CHANGED" }));
@@ -291,6 +424,7 @@ function destroyFieldView() {
   cancelFieldAuthSignout("FIELD_RENDERER_DESTROYED");
   fieldSessionRecoveryCoordinator.reset();
   fieldRecoveryInFlight = null;
+  fieldViewReauthenticationGeneration = 0;
   if (!fieldView) {
     invalidateFieldPendingUploadsReadiness("FIELD_RENDERER_DESTROYED");
     return;
@@ -314,6 +448,7 @@ function destroyFieldView() {
 
 function ensureFieldView() {
   fieldWasOpenedThisRun = true;
+  assertFieldViewCreationAllowed();
   if (fieldView && !fieldView.webContents.isDestroyed()) return fieldView;
   if (!mainWindow || mainWindow.isDestroyed()) throw new Error("CRM_WINDOW_UNAVAILABLE");
 
@@ -327,6 +462,9 @@ function ensureFieldView() {
     },
   });
   const contents = fieldView.webContents;
+  fieldViewReauthenticationGeneration = verifiedFieldReconnectActive()
+    ? fieldReauthenticationGeneration
+    : 0;
   invalidateFieldPendingUploadsReadiness("FIELD_RENDERER_CHANGED");
   contents.setWindowOpenHandler(({ url }) => isAllowedFieldAuthPopup(url) ? ({
     action: "allow",
@@ -499,7 +637,12 @@ async function recoverFieldSession() {
   if (!view || view.webContents.isDestroyed() || !userId || !remoteClient) {
     const error = Object.assign(new Error("FIELD_SESSION_REQUIRED"), { code: "FIELD_SESSION_REQUIRED" });
     resolveFieldReadyWaiters(error);
-    emitFieldState("disconnected", "현장 업무 자동 연결에 실패했습니다. CRM 연결을 확인한 뒤 다시 연결해 주세요.");
+    emitFieldState(
+      fieldAuthenticationRequired ? "auth-required" : "disconnected",
+      fieldAuthenticationRequired
+        ? "FIELD 로그인이 풀렸습니다. 현재 CRM과 같은 Google 계정으로 다시 연결해 주세요."
+        : "현장 업무 자동 연결에 실패했습니다. CRM 연결을 확인한 뒤 다시 연결해 주세요.",
+    );
     return { ok: false, code: error.code };
   }
   const contents = view.webContents;
@@ -521,7 +664,12 @@ async function recoverFieldSession() {
     if (!result.ok && !authenticatedWhileRecovering) {
       const error = Object.assign(new Error(result.code), { code: result.code });
       resolveFieldReadyWaiters(error);
-      emitFieldState("disconnected", "현장 업무 자동 연결에 실패했습니다. CRM 연결을 확인한 뒤 다시 연결해 주세요.");
+      emitFieldState(
+        fieldAuthenticationRequired ? "auth-required" : "disconnected",
+        fieldAuthenticationRequired
+          ? "FIELD 로그인이 풀렸습니다. 현재 CRM과 같은 Google 계정으로 다시 연결해 주세요."
+          : "현장 업무 자동 연결에 실패했습니다. CRM 연결을 확인한 뒤 다시 연결해 주세요.",
+      );
     }
     return authenticatedWhileRecovering ? { ok: true, alreadyAuthenticated: true } : result;
   }).finally(() => {
@@ -606,6 +754,10 @@ function trustedFieldIpc(event) {
   if (!fieldView || fieldView.webContents.isDestroyed()) return false;
   if (!(event.sender === fieldView.webContents)) return false;
   if (!event.senderFrame || event.senderFrame !== event.sender.mainFrame) return false;
+  if (fieldReauthenticationActive || fieldBrowserAuthQuarantined || fieldReauthInFlight) {
+    if (!verifiedFieldReconnectActive()) return false;
+    if (fieldViewReauthenticationGeneration !== fieldReauthenticationGeneration) return false;
+  }
   try {
     const frame = new URL(event.senderFrame.url);
     return frame.origin === FIELD_ORIGIN && isAllowedFieldNavigation(frame.toString());
@@ -635,6 +787,12 @@ async function openFieldExternal(rawUrl) {
 }
 
 async function showFieldView(input = {}, crmEvent) {
+  const blockedCode = fieldReauthenticationBlockCode({ includeAuthenticationRequired: true });
+  if (blockedCode) {
+    const blocked = fieldReauthenticationBlockedResult(blockedCode);
+    emitFieldState("auth-required", blocked.error);
+    return blocked;
+  }
   if (!authState().user) {
     return { ok: false, error: "CRM에 먼저 로그인해 주세요." };
   }
@@ -693,8 +851,10 @@ async function showFieldView(input = {}, crmEvent) {
     const timedOut = code === "FIELD_BRIDGE_TIMEOUT";
     const recoveryFailed = code.startsWith("FIELD_SHARED_SESSION_") || code.startsWith("FIELD_SESSION_RECOVERY_");
     if (!cancelled) emitFieldState(
-      timedOut ? "timeout" : "disconnected",
-      timedOut
+      fieldAuthenticationRequired ? "auth-required" : timedOut ? "timeout" : "disconnected",
+      fieldAuthenticationRequired
+        ? "FIELD 로그인이 풀렸습니다. 현재 CRM과 같은 Google 계정으로 다시 연결해 주세요."
+        : timedOut
         ? "현장 업무 응답이 늦어지고 있습니다. 다시 연결해 주세요."
         : recoveryFailed
           ? "현장 업무 자동 연결에 실패했습니다. CRM 연결을 확인한 뒤 다시 연결해 주세요."
@@ -713,6 +873,14 @@ async function showFieldView(input = {}, crmEvent) {
 }
 
 async function reconnectFieldView() {
+  if (!verifiedFieldReconnectActive()) {
+    const blockedCode = fieldReauthenticationBlockCode({ includeAuthenticationRequired: true });
+    if (blockedCode) {
+      const blocked = fieldReauthenticationBlockedResult(blockedCode);
+      emitFieldState("auth-required", blocked.error);
+      return blocked;
+    }
+  }
   if (!authState().user) return { ok: false, error: "CRM에 먼저 로그인해 주세요." };
   try {
     const view = ensureFieldView();
@@ -728,8 +896,17 @@ async function reconnectFieldView() {
     await waitForFieldReady();
     return { ok: true };
   } catch (error) {
-    emitFieldState("disconnected", "현장 업무에 다시 연결하지 못했습니다.");
-    return { ok: false, code: error && error.code || "FIELD_RECONNECT_FAILED", error: "다시 연결하지 못했습니다." };
+    emitFieldState(
+      fieldAuthenticationRequired ? "auth-required" : "disconnected",
+      fieldAuthenticationRequired
+        ? "FIELD 로그인이 풀렸습니다. 현재 CRM과 같은 Google 계정으로 다시 연결해 주세요."
+        : "현장 업무에 다시 연결하지 못했습니다.",
+    );
+    return {
+      ok: false,
+      code: fieldAuthenticationRequired ? "FIELD_AUTH_REQUIRED" : error && error.code || "FIELD_RECONNECT_FAILED",
+      error: fieldAuthenticationRequired ? "Google 계정으로 다시 연결해 주세요." : "다시 연결하지 못했습니다.",
+    };
   }
 }
 
@@ -773,12 +950,17 @@ ipcMain.on("crm:field-message", (event, envelopeInput) => {
   }
   if (envelope.type === "field.ready") {
     if (envelope.payload.session === "authenticated") {
+      fieldAuthenticationRequired = fieldBrowserAuthQuarantined;
       fieldViewReady = true;
       fieldSessionRecoveryCoordinator.reset();
       fieldLastRoute = normalizeFieldRoute(envelope.payload.route) || fieldLastRoute;
       resolveFieldReadyWaiters();
-      emitFieldState("ready", "현장 업무가 연결되었습니다.");
+      emitFieldState(
+        fieldBrowserAuthQuarantined ? "connecting" : "ready",
+        fieldBrowserAuthQuarantined ? "FIELD 계정을 확인하고 있습니다." : "현장 업무가 연결되었습니다.",
+      );
     } else if (["missing", "expired"].includes(envelope.payload.session)) {
+      fieldAuthenticationRequired = true;
       fieldViewReady = false;
       invalidateFieldPendingUploadsReadiness("FIELD_SESSION_RECOVERY_REQUIRED");
       void recoverFieldSession();
@@ -850,6 +1032,48 @@ function pendingFile() {
 
 function canonicalPendingFile() {
   return path.join(path.dirname(dataFile()), "bring-crm-canonical-pending.json");
+}
+
+function fieldAuthQuarantineFile() {
+  return path.join(app.getPath("userData"), "bring-field-auth-quarantine-v1");
+}
+
+async function loadFieldAuthQuarantineMarker() {
+  try {
+    await fs.stat(fieldAuthQuarantineFile());
+    fieldBrowserAuthQuarantined = true;
+    fieldAuthenticationRequired = true;
+    return true;
+  } catch (error) {
+    if (error && error.code === "ENOENT") return false;
+    fieldBrowserAuthQuarantined = true;
+    fieldAuthenticationRequired = true;
+    return true;
+  }
+}
+
+async function persistFieldAuthQuarantineMarker() {
+  fieldBrowserAuthQuarantined = true;
+  fieldAuthenticationRequired = true;
+  let handle = null;
+  try {
+    handle = await fs.open(fieldAuthQuarantineFile(), "wx", 0o600);
+    await handle.writeFile(FIELD_AUTH_QUARANTINE_MARKER, "utf8");
+    await handle.sync();
+  } catch (error) {
+    if (!error || error.code !== "EEXIST") throw error;
+  } finally {
+    if (handle) await handle.close();
+  }
+}
+
+async function clearFieldAuthQuarantineMarker() {
+  try {
+    await fs.unlink(fieldAuthQuarantineFile());
+  } catch (error) {
+    if (!error || error.code !== "ENOENT") throw error;
+  }
+  fieldBrowserAuthQuarantined = false;
 }
 
 let localStoreCoordinator = null;
@@ -991,6 +1215,21 @@ async function finishApplicationExit(reason) {
 }
 
 async function requestApplicationExit(reason) {
+  const blockedCode = fieldReauthenticationBlockCode();
+  if (blockedCode) {
+    const blocked = fieldReauthenticationBlockedResult(blockedCode);
+    emitFieldState("auth-required", blocked.error);
+    return blocked;
+  }
+  applicationExitRequestCount += 1;
+  try {
+    return await performApplicationExitRequest(reason);
+  } finally {
+    applicationExitRequestCount = Math.max(0, applicationExitRequestCount - 1);
+  }
+}
+
+async function performApplicationExitRequest(reason) {
   const result = await applicationExitCoordinator.request(reason);
   if (result.ok || result.code === "FIELD_EXIT_CANCELLED") return result;
   if (result.code === "FIELD_EXIT_CHECK_FAILED") {
@@ -1019,7 +1258,13 @@ async function requestApplicationExit(reason) {
 }
 
 async function promptToInstallUpdate() {
-  if (updatePromptOpen || updateState.status !== "ready" || !mainWindow || mainWindow.isDestroyed()) return;
+  if (
+    fieldReauthenticationBlockCode()
+    || updatePromptOpen
+    || updateState.status !== "ready"
+    || !mainWindow
+    || mainWindow.isDestroyed()
+  ) return;
   updatePromptOpen = true;
   try {
     const result = await dialog.showMessageBox(mainWindow, {
@@ -1699,6 +1944,7 @@ function commitLocalCanonicalCrmEntity(input) {
 
 async function initializeRemote() {
   if (localTestMode || authPreview || passwordPreview) return;
+  await loadFieldAuthQuarantineMarker();
   remoteClient = new FirebaseRemoteClient({
     Core,
     fs,
@@ -3932,23 +4178,169 @@ async function createWindow() {
 
 secureHandle("crm:auth-state", () => authState());
 secureHandle("crm:auth-login", async credentials => {
+  if (fieldReauthenticationActive || fieldReauthInFlight) {
+    return fieldReauthenticationBlockedResult("FIELD_REAUTH_IN_PROGRESS");
+  }
   if (!remoteClient) return { ok: false, error: "로그인 모듈을 사용할 수 없습니다." };
+  crmAuthenticationRequestCount += 1;
   try { return await remoteClient.login(credentials); }
   catch (error) { return { ok: false, error: error.message, code: error.code || "LOGIN_FAILED" }; }
-  finally { closeCrmAuthWindow(); }
+  finally {
+    crmAuthenticationRequestCount = Math.max(0, crmAuthenticationRequestCount - 1);
+    closeCrmAuthWindow();
+  }
 });
 secureHandle("crm:auth-google-login", async () => {
+  if (fieldReauthenticationActive || fieldReauthInFlight) {
+    return fieldReauthenticationBlockedResult("FIELD_REAUTH_IN_PROGRESS");
+  }
   if (!remoteClient) return { ok: false, error: "로그인 모듈을 사용할 수 없습니다." };
+  crmAuthenticationRequestCount += 1;
   try { return await remoteClient.loginWithGoogle(); }
   catch (error) { return { ok: false, error: error.message, code: error.code || "LOGIN_FAILED" }; }
-  finally { closeCrmAuthWindow(); }
+  finally {
+    crmAuthenticationRequestCount = Math.max(0, crmAuthenticationRequestCount - 1);
+    closeCrmAuthWindow();
+  }
+});
+secureCanonicalHandle("crm:field-reauthenticate-google", async () => {
+  if (fieldReauthInFlight) return fieldReauthInFlight;
+  if (
+    crmAuthenticationRequestCount > 0
+    || fieldLogoutInFlight
+    || applicationExitRequestCount > 0
+    || applicationExitAllowed
+    || updateInstallScheduled
+  ) {
+    return { ok: false, code: "FIELD_REAUTH_SESSION_CHANGED", error: "종료 또는 업데이트가 끝난 뒤 다시 시도해 주세요." };
+  }
+  const initialAuthState = authState();
+  const user = initialAuthState.user;
+  if (!remoteClient || !user || !user.uid || !user.email) {
+    return { ok: false, code: "FIELD_REAUTH_SESSION_CHANGED", error: "CRM 로그인 상태를 다시 확인해 주세요." };
+  }
+  syncFieldSession(initialAuthState);
+  const expectedRemoteClient = remoteClient;
+  const expectedRemoteSessionGuard = expectedRemoteClient.captureSessionGuard();
+  const expectedUid = String(user.uid);
+  const expectedEmail = String(user.email).trim().toLowerCase();
+  const expectedRole = String(user.role || "");
+  const expectedMustChangePassword = user.mustChangePassword === true;
+  const expectedSessionKey = fieldSessionKey;
+  const expectedSessionSequence = fieldSessionSequence;
+  const generation = ++fieldReauthenticationGeneration;
+  const controller = new AbortController();
+  fieldReauthAbortController = controller;
+  fieldReauthenticationActive = true;
+  fieldVerifiedReconnectGeneration = 0;
+  fieldBrowserAuthQuarantined = true;
+  fieldAuthenticationRequired = true;
+  destroyFieldView();
+  emitFieldState("connecting", "Google 계정 확인 창에서 현재 CRM 계정을 선택해 주세요.");
+
+  const task = (async () => {
+    const assertExpectedSession = () => {
+      const currentUser = authState().user;
+      if (
+        fieldReauthenticationGeneration !== generation
+        || remoteClient !== expectedRemoteClient
+        || !expectedRemoteClient.sessionGuardActive(expectedRemoteSessionGuard)
+        || !currentUser
+        || String(currentUser.uid) !== expectedUid
+        || String(currentUser.email || "").trim().toLowerCase() !== expectedEmail
+        || String(currentUser.role || "") !== expectedRole
+        || (currentUser.mustChangePassword === true) !== expectedMustChangePassword
+        || fieldSessionKey !== expectedSessionKey
+        || fieldSessionSequence !== expectedSessionSequence
+      ) {
+        throw Object.assign(new Error("FIELD_REAUTH_SESSION_CHANGED"), { code: "FIELD_REAUTH_SESSION_CHANGED" });
+      }
+    };
+    try {
+      await persistFieldAuthQuarantineMarker();
+      assertExpectedSession();
+      await remoteClient.reauthenticateFieldWithGoogle({ signal: controller.signal });
+      assertExpectedSession();
+      if (fieldReauthAbortController === controller) fieldReauthAbortController = null;
+      closeCrmAuthWindow();
+      assertExpectedSession();
+      fieldReauthenticationActive = false;
+      fieldVerifiedReconnectGeneration = generation;
+      assertExpectedSession();
+      const reconnected = await reconnectFieldView();
+      assertExpectedSession();
+      if (!reconnected || !reconnected.ok) {
+        throw Object.assign(new Error("FIELD_REAUTH_FAILED"), { code: "FIELD_REAUTH_FAILED" });
+      }
+      assertExpectedSession();
+      await clearFieldAuthQuarantineMarker();
+      assertExpectedSession();
+      fieldAuthenticationRequired = false;
+      emitFieldState("ready", "현장 업무가 연결되었습니다.");
+      return { ok: true };
+    } catch (error) {
+      fieldReauthenticationActive = true;
+      fieldVerifiedReconnectGeneration = 0;
+      fieldBrowserAuthQuarantined = true;
+      fieldAuthenticationRequired = true;
+      destroyFieldView();
+      if (fieldReauthAbortController === controller) fieldReauthAbortController = null;
+      closeCrmAuthWindow();
+      let cleanupSucceeded = false;
+      try {
+        await persistFieldAuthQuarantineMarker();
+        await signOutFieldBrowserAuthentication();
+        await clearFieldAuthQuarantineMarker();
+        cleanupSucceeded = true;
+      } catch (cleanupError) {
+        fieldBrowserAuthQuarantined = true;
+        console.warn("FIELD browser authentication cleanup failed", cleanupError && cleanupError.message || cleanupError);
+      }
+      const errorCode = error && error.code;
+      const code = [
+        "FIELD_REAUTH_CANCELLED",
+        "FIELD_REAUTH_ACCOUNT_MISMATCH",
+        "FIELD_REAUTH_SESSION_CHANGED",
+      ].includes(errorCode) ? errorCode : "FIELD_REAUTH_FAILED";
+      const message = code === "FIELD_REAUTH_CANCELLED"
+        ? "Google 계정 확인을 취소했습니다."
+        : code === "FIELD_REAUTH_ACCOUNT_MISMATCH"
+          ? "현재 CRM과 같은 Google 계정을 선택해 주세요."
+          : code === "FIELD_REAUTH_SESSION_CHANGED"
+            ? "CRM 로그인 상태를 다시 확인해 주세요."
+            : "Google 계정을 확인하지 못했습니다. 잠시 후 다시 시도해 주세요.";
+      if (!cleanupSucceeded) fieldBrowserAuthQuarantined = true;
+      emitFieldState("auth-required", message);
+      return { ok: false, code, error: message };
+    } finally {
+      if (fieldReauthAbortController === controller) fieldReauthAbortController = null;
+      if (fieldReauthenticationGeneration === generation) {
+        fieldReauthenticationActive = false;
+        fieldVerifiedReconnectGeneration = 0;
+      }
+      closeCrmAuthWindow();
+    }
+  })();
+  fieldReauthInFlight = task;
+  try {
+    return await task;
+  } finally {
+    if (fieldReauthInFlight === task) fieldReauthInFlight = null;
+  }
 });
 secureHandle("crm:auth-change-password", async password => {
+  if (fieldReauthenticationActive || fieldReauthInFlight) {
+    return fieldReauthenticationBlockedResult("FIELD_REAUTH_IN_PROGRESS");
+  }
   if (!remoteClient) return { ok: false, error: "로그인 모듈을 사용할 수 없습니다." };
+  crmAuthenticationRequestCount += 1;
   try { return await remoteClient.changePassword(password); }
   catch (error) { return { ok: false, error: error.message, code: error.code || "PASSWORD_CHANGE_FAILED" }; }
+  finally { crmAuthenticationRequestCount = Math.max(0, crmAuthenticationRequestCount - 1); }
 });
 secureCanonicalHandle("crm:auth-logout", async input => {
+  const blockedCode = fieldReauthenticationBlockCode();
+  if (blockedCode) return fieldReauthenticationBlockedResult(blockedCode);
   if (fieldLogoutInFlight) return fieldLogoutInFlight;
   fieldLogoutInFlight = coordinateFieldLogout({
     confirmed: Boolean(input && input.confirmed === true),
@@ -4048,6 +4440,8 @@ secureCanonicalHandle("crm:field-bounds", async rect => {
   return { ok: true, bounds: measured };
 });
 secureCanonicalHandle("crm:field-request", async (envelope, event) => {
+  const blockedCode = fieldReauthenticationBlockCode({ includeAuthenticationRequired: true });
+  if (blockedCode) return fieldReauthenticationBlockedResult(blockedCode);
   const validation = validateFieldMessage(envelope, {
     direction: "crmToField",
     sender: crmBridgeSenderContext(event),

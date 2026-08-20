@@ -46,6 +46,131 @@ test("missing or expired FIELD auth refreshes the shared partition once without 
   assert.match(recovery, /result\.code === "FIELD_SESSION_CHANGED"[\s\S]*?fieldViewReady/);
 });
 
+test("a missing shared FIELD login is restored only by a verified same-account Google reauthentication", async () => {
+  const main = await source("main.js");
+  const handler = main.slice(
+    main.indexOf('secureCanonicalHandle("crm:field-reauthenticate-google"'),
+    main.indexOf('secureHandle("crm:auth-change-password"'),
+  );
+  const fieldMessages = main.slice(main.indexOf('ipcMain.on("crm:field-message"'), main.indexOf("function demoOperations"));
+
+  assert.match(main, /let fieldReauthInFlight = null/);
+  assert.match(main, /let fieldReauthAbortController = null/);
+  assert.match(main, /let fieldReauthenticationActive = false/);
+  assert.match(main, /let fieldBrowserAuthQuarantined = false/);
+  assert.match(main, /let fieldReauthenticationGeneration = 0/);
+  assert.match(handler, /if \(fieldReauthInFlight\) return fieldReauthInFlight/);
+  assert.match(handler, /crmAuthenticationRequestCount > 0[\s\S]*?fieldLogoutInFlight[\s\S]*?applicationExitRequestCount > 0[\s\S]*?applicationExitAllowed[\s\S]*?updateInstallScheduled/);
+  assert.match(handler, /fieldReauthenticationActive = true[\s\S]*?fieldBrowserAuthQuarantined = true[\s\S]*?destroyFieldView\(\)/);
+  assert.match(handler, /await persistFieldAuthQuarantineMarker\(\)[\s\S]*?remoteClient\.reauthenticateFieldWithGoogle\(\{ signal: controller\.signal \}\)/);
+  assert.match(handler, /String\(currentUser\.uid\) !== expectedUid/);
+  assert.match(handler, /String\(currentUser\.email \|\| ""\)\.trim\(\)\.toLowerCase\(\) !== expectedEmail/);
+  assert.match(handler, /expectedRemoteClient\.sessionGuardActive\(expectedRemoteSessionGuard\)/);
+  assert.match(handler, /fieldSessionKey !== expectedSessionKey/);
+  assert.match(handler, /fieldSessionSequence !== expectedSessionSequence/);
+  assert.match(handler, /await reconnectFieldView\(\)/);
+  assert.doesNotMatch(handler, /password|credentials|idToken|refreshToken/);
+  assert.match(main, /reauthAbortController\.abort\(\)/);
+  assert.match(fieldMessages, /envelope\.payload\.session === "authenticated"[\s\S]*?fieldAuthenticationRequired = fieldBrowserAuthQuarantined/);
+  assert.match(fieldMessages, /\["missing", "expired"\]\.includes\(envelope\.payload\.session\)[\s\S]*?fieldAuthenticationRequired = true/);
+  assert.match(main, /emitFieldState\("auth-required"/);
+});
+
+test("FIELD reauthentication quarantines the shared partition durably and signs out every failed candidate", async () => {
+  const main = await source("main.js");
+  const marker = main.slice(
+    main.indexOf("function fieldAuthQuarantineFile"),
+    main.indexOf("let localStoreCoordinator"),
+  );
+  const cleanup = main.slice(
+    main.indexOf("async function signOutFieldBrowserAuthentication"),
+    main.indexOf("function hideFieldView"),
+  );
+  const initialize = main.slice(
+    main.indexOf("async function initializeRemote"),
+    main.indexOf("function trustedIpc"),
+  );
+  const handler = main.slice(
+    main.indexOf('secureCanonicalHandle("crm:field-reauthenticate-google"'),
+    main.indexOf('secureHandle("crm:auth-change-password"'),
+  );
+
+  assert.match(marker, /bring-field-auth-quarantine-v1/);
+  assert.match(marker, /app\.getPath\("userData"\)/);
+  assert.match(marker, /fs\.open\(fieldAuthQuarantineFile\(\), "wx", 0o600\)/);
+  assert.match(marker, /handle\.writeFile\(FIELD_AUTH_QUARANTINE_MARKER, "utf8"\)/);
+  assert.match(marker, /handle\.sync\(\)/);
+  assert.match(marker, /loadFieldAuthQuarantineMarker[\s\S]*?fieldBrowserAuthQuarantined = true[\s\S]*?fieldAuthenticationRequired = true/);
+  assert.match(initialize, /await loadFieldAuthQuarantineMarker\(\)[\s\S]*?new FirebaseRemoteClient/);
+  assert.match(main, /const FIELD_AUTH_QUARANTINE_MARKER = "BRING_FIELD_AUTH_QUARANTINE_V1\\n"/);
+  assert.doesNotMatch(marker, /uid|email|token|credential|password/i);
+
+  assert.match(cleanup, /show: false/);
+  assert.match(cleanup, /partition: FIELD_AUTH_PARTITION/);
+  assert.match(main, /const FIELD_AUTH_PARTITION = "persist:bring-field"/);
+  assert.match(main, /const FIELD_AUTH_CLEANUP_URL = "https:\/\/bring-fm\.web\.app\/crm-auth"/);
+  assert.doesNotMatch(main, /FIELD_AUTH_CLEANUP_URL = "https:\/\/bring-fm\.web\.app\/crm-auth\/"/);
+  assert.match(cleanup, /target\.pathname === "\/crm-auth"/);
+  assert.match(cleanup, /target\.searchParams\.get\("port"\) === "65535"/);
+  assert.match(cleanup, /target\.searchParams\.get\("state"\) === cleanupState/);
+  assert.match(cleanup, /cleanupWindow\.webContents\.getURL\(\) !== trustedCleanupUrl/);
+  assert.match(cleanup, /setWindowOpenHandler\(\(\) => \(\{ action: "deny" \}\)\)/);
+  assert.match(cleanup, /await auth\.signOut\(\)/);
+  assert.match(cleanup, /auth\.currentUser === null/);
+
+  const failure = handler.slice(handler.indexOf("} catch (error)"), handler.indexOf("} finally"));
+  assert.match(failure, /await persistFieldAuthQuarantineMarker\(\)[\s\S]*?await signOutFieldBrowserAuthentication\(\)[\s\S]*?await clearFieldAuthQuarantineMarker\(\)/);
+  assert.match(failure, /catch \(cleanupError\)[\s\S]*?fieldBrowserAuthQuarantined = true/);
+  assert.ok(failure.indexOf("await signOutFieldBrowserAuthentication()") < failure.indexOf("return { ok: false"));
+  assert.doesNotMatch(main, /clearStorageData|indexedDB\.deleteDatabase|deleteDatabase\(/);
+});
+
+test("reauthentication guards block public FIELD, logout, update, exit, and late renderer traffic fail closed", async () => {
+  const main = await source("main.js");
+  const ensure = main.slice(main.indexOf("function ensureFieldView"), main.indexOf("function waitForFieldReady"));
+  const trusted = main.slice(main.indexOf("function trustedFieldIpc"), main.indexOf("async function openFieldExternal"));
+  const show = main.slice(main.indexOf("async function showFieldView"), main.indexOf("async function reconnectFieldView"));
+  const reconnect = main.slice(main.indexOf("async function reconnectFieldView"), main.indexOf('ipcMain.on("crm:field-reconnect-request"'));
+  const exit = main.slice(main.indexOf("async function requestApplicationExit"), main.indexOf("async function promptToInstallUpdate"));
+  const updatePrompt = main.slice(main.indexOf("async function promptToInstallUpdate"), main.indexOf("function configureUpdater"));
+  const logout = main.slice(main.indexOf('secureCanonicalHandle("crm:auth-logout"'), main.indexOf('secureHandle("crm:load"'));
+  const request = main.slice(main.indexOf('secureCanonicalHandle("crm:field-request"'), main.indexOf('secureCanonicalHandle("crm:field-cancel"'));
+
+  assert.match(ensure, /assertFieldViewCreationAllowed\(\)/);
+  assert.match(trusted, /fieldReauthenticationActive \|\| fieldBrowserAuthQuarantined \|\| fieldReauthInFlight/);
+  assert.match(trusted, /fieldViewReauthenticationGeneration !== fieldReauthenticationGeneration/);
+  assert.match(show, /fieldReauthenticationBlockCode\(\{ includeAuthenticationRequired: true \}\)/);
+  assert.match(reconnect, /verifiedFieldReconnectActive\(\)[\s\S]*?fieldReauthenticationBlockCode\(\{ includeAuthenticationRequired: true \}\)/);
+  assert.match(request, /fieldReauthenticationBlockCode\(\{ includeAuthenticationRequired: true \}\)/);
+  assert.ok(exit.indexOf("fieldReauthenticationBlockCode()") < exit.indexOf("applicationExitCoordinator.request(reason)"));
+  assert.ok(exit.indexOf("return blocked") < exit.indexOf("dialog.showMessageBox"));
+  assert.match(updatePrompt, /fieldReauthenticationBlockCode\(\)/);
+  assert.ok(logout.indexOf("fieldReauthenticationBlockCode()") < logout.indexOf("coordinateFieldLogout"));
+
+  const fieldMessages = main.slice(main.indexOf('ipcMain.on("crm:field-message"'), main.indexOf("function demoOperations"));
+  assert.match(fieldMessages, /if \(!trustedFieldIpc\(event\)\) return/);
+});
+
+test("verified reconnect rechecks the exact CRM session generation before and after loading FIELD", async () => {
+  const main = await source("main.js");
+  const handler = main.slice(
+    main.indexOf('secureCanonicalHandle("crm:field-reauthenticate-google"'),
+    main.indexOf('secureHandle("crm:auth-change-password"'),
+  );
+  const reconnectAt = handler.indexOf("const reconnected = await reconnectFieldView()");
+  const assertionsBefore = handler.slice(0, reconnectAt).match(/assertExpectedSession\(\)/g) || [];
+  const assertionsAfter = handler.slice(reconnectAt).match(/assertExpectedSession\(\)/g) || [];
+
+  assert.match(handler, /captureSessionGuard\(\)/);
+  assert.match(handler, /sessionGuardActive\(expectedRemoteSessionGuard\)/);
+  assert.match(handler, /fieldReauthenticationGeneration !== generation/);
+  assert.match(handler, /fieldSessionSequence !== expectedSessionSequence/);
+  assert.ok(assertionsBefore.length >= 3);
+  assert.ok(assertionsAfter.length >= 2);
+  assert.match(handler, /fieldReauthenticationActive = false[\s\S]*?fieldVerifiedReconnectGeneration = generation[\s\S]*?reconnectFieldView\(\)/);
+  assert.match(handler, /await reconnectFieldView\(\)[\s\S]*?assertExpectedSession\(\)[\s\S]*?await clearFieldAuthQuarantineMarker\(\)/);
+});
+
 test("window close, menu quit, and update restart share a data-preserving upload exit gate", async () => {
   const main = await source("main.js");
   const menu = main.slice(main.indexOf("function buildMenu"), main.indexOf("async function createWindow"));
@@ -144,6 +269,8 @@ test("leaving or switching sessions cannot reveal a late FIELD view", async () =
   assert.match(session, /destroyFieldView\(\)/);
   assert.match(session, /fieldRequestCoordinator\.setSession\(fieldSessionKey\)/);
   assert.match(session, /fieldPendingUploads\s*=\s*\{\s*count:\s*0,\s*risk:\s*"none"\s*\}/);
+  assert.match(session, /fieldAuthenticationRequired = Boolean\(\s*fieldReauthenticationActive\s*\|\| fieldBrowserAuthQuarantined\s*\|\| fieldReauthInFlight\s*\)/);
+  assert.doesNotMatch(session, /fieldAuthenticationRequired\s*=\s*Boolean\(\s*fieldAuthenticationRequired\s*\|\|/);
 
   const show = main.slice(main.indexOf("async function showFieldView"), main.indexOf("async function reconnectFieldView"));
   assert.match(show, /visibilityEpoch = \+\+fieldVisibilityEpoch/);

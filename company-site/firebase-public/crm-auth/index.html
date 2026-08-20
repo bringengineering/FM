@@ -37,6 +37,7 @@
       const state = params.get("state") || "";
       const button = document.getElementById("login");
       const message = document.getElementById("message");
+      const popupCancellationCodes = new Set(["auth/popup-closed-by-user", "auth/cancelled-popup-request"]);
       const validRequest = Number.isInteger(port) && port >= 1024 && port <= 65535 && /^[A-Za-z0-9_-]{32,128}$/.test(state);
       if (!validRequest) {
         button.disabled = true;
@@ -86,7 +87,7 @@
         message.textContent = "Google 로그인 창을 여는 중입니다…";
         try {
           const provider = new firebase.auth.GoogleAuthProvider();
-          provider.setCustomParameters({ prompt: "select_account", login_hint: "dpvld858@gmail.com" });
+          provider.setCustomParameters({ prompt: "select_account" });
           const result = await firebase.auth().signInWithPopup(provider);
           const credential = result.credential || firebase.auth.GoogleAuthProvider.credentialFromResult(result);
           const tokenResponse = result._tokenResponse || {};
@@ -98,13 +99,14 @@
           message.textContent = "로그인이 확인되었습니다. CRM으로 돌아갑니다…";
           postSession([["provider_token_type", providerTokenType], ["provider_token", providerToken]]);
         } catch (error) {
-          if (error && ["auth/popup-closed-by-user", "auth/cancelled-popup-request"].includes(error.code)) {
-            message.textContent = "로그인이 취소되었습니다.";
-          } else {
-            message.textContent = `로그인 오류: ${error && (error.message || error.code) || "다시 시도해 주세요."}`;
-          }
+          const errorCode = popupCancellationCodes.has(String(error && error.code || ""))
+            ? "AUTH_POPUP_CANCELLED"
+            : "AUTH_POPUP_FAILED";
+          message.textContent = errorCode === "AUTH_POPUP_CANCELLED"
+            ? "로그인이 취소되었습니다."
+            : "Google 로그인에 실패했습니다. CRM에서 다시 시도해 주세요.";
           message.className = "error";
-          button.disabled = false;
+          postSession([["error", errorCode]]);
         }
       });
     })();

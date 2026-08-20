@@ -1012,19 +1012,38 @@ class FirebaseRemoteClient {
     return this.session;
   }
 
-  async receiveGoogleCredential() {
+  async receiveGoogleCredential(options = {}) {
     const state = crypto.randomBytes(32).toString("base64url");
+    const signal = options && options.signal;
+    if (signal && signal.aborted) throw createError("Google 로그인이 취소되었습니다.", "LOGIN_CANCELLED");
     return new Promise((resolve, reject) => {
       let settled = false;
       let timer = null;
+      let server = null;
+      const abort = () => finish(createError("Google 로그인이 취소되었습니다.", "LOGIN_CANCELLED"));
+      const closeServer = () => {
+        if (!server || typeof server.close !== "function") return;
+        try {
+          server.close(() => {});
+        } catch (_) {}
+      };
       const finish = (error, token) => {
         if (settled) return;
         settled = true;
         clearTimeout(timer);
-        server.close();
+        if (signal) signal.removeEventListener("abort", abort);
+        closeServer();
         if (error) reject(error); else resolve(token);
       };
-      const server = http.createServer((request, response) => {
+      if (signal) {
+        signal.addEventListener("abort", abort, { once: true });
+        if (signal.aborted) {
+          abort();
+          return;
+        }
+      }
+      if (settled) return;
+      server = http.createServer((request, response) => {
         const callback = new URL(request.url, "http://127.0.0.1");
         if (callback.pathname !== "/callback") {
           response.writeHead(404).end();
@@ -1062,8 +1081,17 @@ class FirebaseRemoteClient {
           }
         });
       });
+      if (settled) {
+        closeServer();
+        return;
+      }
       server.on("error", error => finish(createError("로그인 연결을 열지 못했습니다.", "LOGIN_FAILED", error)));
       server.listen(0, "127.0.0.1", async () => {
+        if (settled) return;
+        if (signal && signal.aborted) {
+          abort();
+          return;
+        }
         try {
           const port = server.address().port;
           const authUrl = new URL(this.firebase.authPageUrl);
@@ -1074,6 +1102,7 @@ class FirebaseRemoteClient {
           finish(createError("기본 브라우저에서 로그인 페이지를 열지 못했습니다.", "LOGIN_FAILED", error));
         }
       });
+      if (settled) return;
       timer = setTimeout(() => finish(createError("로그인 시간이 초과되었습니다. 다시 시도해 주세요.", "LOGIN_TIMEOUT")), 180000);
     });
   }
@@ -1440,6 +1469,114 @@ class FirebaseRemoteClient {
     if (!written) return null;
     if (!this.sessionGuardActive(guard)) return null;
     return this.refreshRendererSnapshot(merged, true, guard);
+  }
+
+  async reauthenticateFieldWithGoogle(options = {}) {
+    if (!this.session) throw createError("로그인이 필요합니다.", "FIELD_REAUTH_SESSION_CHANGED");
+    const context = this.captureSessionContext();
+    const expectedUid = normalizedUid(context.uid);
+    const expectedEmail = normalizedEmail(context.sessionRef && context.sessionRef.email);
+    const expectedRole = String(context.sessionRef && context.sessionRef.role || "");
+    const expectedMustChangePassword = context.sessionRef && context.sessionRef.mustChangePassword === true;
+    const signal = options && options.signal;
+    if (!expectedUid || !expectedEmail) throw createError("CRM 로그인 상태를 확인할 수 없습니다.", "FIELD_REAUTH_SESSION_CHANGED");
+
+    const contextActive = () => Boolean(
+      this.sessionContextActive(context)
+      && normalizedUid(context.sessionRef && context.sessionRef.uid) === expectedUid
+      && normalizedEmail(context.sessionRef && context.sessionRef.email) === expectedEmail
+      && String(context.sessionRef && context.sessionRef.role || "") === expectedRole
+      && (context.sessionRef && context.sessionRef.mustChangePassword === true) === expectedMustChangePassword
+    );
+    const assertCurrent = () => {
+      if (signal && signal.aborted) {
+        throw createError("Google 계정 확인을 취소했습니다.", "FIELD_REAUTH_CANCELLED");
+      }
+      if (!contextActive()) {
+        throw createError("CRM 로그인 상태가 변경되었습니다.", "FIELD_REAUTH_SESSION_CHANGED");
+      }
+    };
+
+    try {
+      assertCurrent();
+      const credential = await this.receiveGoogleCredential({ signal });
+      assertCurrent();
+      const tokenType = credential && credential.type === "access_token" ? "access_token" : "id_token";
+      const providerToken = credential && credential.token || "";
+      if (!providerToken) throw createError("Google 인증 정보를 받지 못했습니다.", "FIELD_REAUTH_FAILED");
+      const postBody = new URLSearchParams({ [tokenType]: providerToken, providerId: "google.com" }).toString();
+      assertCurrent();
+      const auth = await this.requestJson(`https://identitytoolkit.googleapis.com/v1/accounts:signInWithIdp?key=${this.firebase.apiKey}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ postBody, requestUri: "http://localhost", returnIdpCredential: true, returnSecureToken: true }),
+        signal
+      }, "FIELD_REAUTH_FAILED");
+      assertCurrent();
+      const idToken = String(auth && auth.idToken || "");
+      if (!idToken || idToken.length > 12000) throw createError("Google 인증 정보를 확인하지 못했습니다.", "FIELD_REAUTH_FAILED");
+      assertCurrent();
+      const lookup = await this.requestJson(`https://identitytoolkit.googleapis.com/v1/accounts:lookup?key=${this.firebase.apiKey}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ idToken }),
+        signal
+      }, "FIELD_REAUTH_FAILED");
+      assertCurrent();
+      const user = lookup && lookup.users && lookup.users[0] || {};
+      if (
+        auth.emailVerified !== true
+        || user.emailVerified !== true
+        || normalizedUid(auth.localId) !== expectedUid
+        || normalizedUid(user.localId) !== expectedUid
+        || normalizedEmail(auth.email) !== expectedEmail
+        || normalizedEmail(user.email) !== expectedEmail
+      ) {
+        throw createError("현재 CRM 계정과 같은 Google 계정을 선택해 주세요.", "FIELD_REAUTH_ACCOUNT_MISMATCH");
+      }
+
+      const rootedLocation = resolveDatabaseLocation(`crmAccess/${expectedUid}`, this.databaseRoot);
+      const accessUrl = `${this.firebase.databaseUrl}/${rootedLocation}.json?auth=${encodeURIComponent(idToken)}`;
+      assertCurrent();
+      const access = await this.requestJson(accessUrl, {
+        method: "GET",
+        headers: { "Content-Type": "application/json" },
+        signal
+      }, "FIELD_REAUTH_FAILED");
+      assertCurrent();
+      const accessRole = String(access && access.role || "");
+      if (
+        !access
+        || access.enabled !== true
+        || normalizedEmail(access.email) !== expectedEmail
+        || !["admin", "member", "viewer"].includes(accessRole)
+      ) {
+        throw createError("현재 CRM 계정의 접근 권한을 확인하지 못했습니다.", "FIELD_REAUTH_FAILED");
+      }
+      if (
+        accessRole !== expectedRole
+        || (access.mustChangePassword === true) !== expectedMustChangePassword
+      ) {
+        throw createError("CRM 로그인 상태가 변경되었습니다.", "FIELD_REAUTH_SESSION_CHANGED");
+      }
+      assertCurrent();
+      return { ok: true };
+    } catch (error) {
+      if (signal && signal.aborted) {
+        throw createError("Google 계정 확인을 취소했습니다.", "FIELD_REAUTH_CANCELLED");
+      }
+      if (!contextActive()) {
+        throw createError("CRM 로그인 상태가 변경되었습니다.", "FIELD_REAUTH_SESSION_CHANGED");
+      }
+      if (error && ["FIELD_REAUTH_CANCELLED", "FIELD_REAUTH_ACCOUNT_MISMATCH", "FIELD_REAUTH_SESSION_CHANGED"].includes(error.code)) throw error;
+      if (error && (error.code === "LOGIN_CANCELLED" || error.message === "AUTH_POPUP_CANCELLED")) {
+        throw createError("Google 계정 확인을 취소했습니다.", "FIELD_REAUTH_CANCELLED");
+      }
+      if (error && ["SESSION_CHANGED", "AUTH_REQUIRED"].includes(error.code)) {
+        throw createError("CRM 로그인 상태가 변경되었습니다.", "FIELD_REAUTH_SESSION_CHANGED");
+      }
+      throw createError("Google 계정을 확인하지 못했습니다.", "FIELD_REAUTH_FAILED", error);
+    }
   }
 
   enqueueCanonicalMutation(operation) {

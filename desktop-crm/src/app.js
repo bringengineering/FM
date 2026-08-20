@@ -96,6 +96,7 @@
   let fieldNavigationState = { route: "/field?embedded=crm", selectedJobId: "", filter: {}, scrollTop: 0, search: "" };
   let fieldResizeObserver = null;
   let fieldOpenGeneration = 0;
+  let fieldReauthInProgress = false;
   let fieldSearchTimer = null;
   let crmSearchValue = "";
   const sessionViewedCustomers = new Set();
@@ -1029,18 +1030,27 @@
   function renderFieldOperations() {
     const selected = activeFieldOperator();
     const disconnected = ["disconnected", "timeout", "error"].includes(fieldConnectionState.status);
+    const authRequired = fieldConnectionState.status === "auth-required";
+    const blocked = disconnected || authRequired;
+    const currentEmail = String(currentAuth.user && currentAuth.user.email || "").trim();
     const operatorMessage = fieldProfilesAvailable
       ? selected ? `현재 작업자: ${selected.name}` : "현장 업무를 등록하거나 변경하려면 현재 작업자를 선택해 주세요."
       : fieldProfilesError || "작업자 명단을 확인할 수 없습니다. 조회는 가능하지만 등록·변경은 잠시 막힙니다.";
+    const title = authRequired
+      ? "Google 계정을 다시 연결해 주세요"
+      : disconnected ? "현장 업무 연결을 확인해 주세요" : "현장 업무를 불러오고 있습니다";
+    const action = authRequired
+      ? `<button type="button" class="primary-button field-google-reauth-button" data-action="reauthenticate-field-google"${fieldReauthInProgress ? " disabled" : ""}>${fieldReauthInProgress ? "Google 계정 확인 중…" : "Google 계정으로 다시 연결"}</button>`
+      : disconnected ? `<button type="button" class="secondary-button" data-action="reconnect-field">다시 연결</button>` : "";
     main.innerHTML = `<section id="fieldWorkspaceState" class="field-workspace-state" data-state="${attr(fieldConnectionState.status)}">
       <div class="field-state-card" role="status" aria-live="polite">
         <span class="field-state-mark" aria-hidden="true"></span>
-        <div><b>${esc(disconnected ? "현장 업무 연결을 확인해 주세요" : "현장 업무를 불러오고 있습니다")}</b><p>${esc(fieldConnectionState.message || "잠시만 기다려 주세요.")}</p><small>${esc(operatorMessage)}</small></div>
-        ${disconnected ? `<button type="button" class="secondary-button" data-action="reconnect-field">다시 연결</button>` : ""}
+        <div><b>${esc(title)}</b><p>${esc(fieldConnectionState.message || "잠시만 기다려 주세요.")}</p>${authRequired ? `<span class="field-auth-account"><strong>현재 CRM 계정</strong><em>${esc(currentEmail || "로그인된 CRM 계정")}</em></span>` : ""}<small>${esc(operatorMessage)}</small></div>
+        ${action}
       </div>
     </section>`;
     void measureFieldWorkspace();
-    if (!disconnected) {
+    if (!blocked) {
       const generation = ++fieldOpenGeneration;
       requestAnimationFrame(() => { void openFieldOperations(generation); });
     }
@@ -2762,6 +2772,14 @@
         pageMeta();
       }
     }
+  }
+
+  function fieldReauthenticationMessage(code) {
+    if (code === "FIELD_REAUTH_CANCELLED") return "Google 계정 확인을 취소했습니다. 현장 업무를 사용하려면 다시 연결해 주세요.";
+    if (code === "FIELD_REAUTH_ACCOUNT_MISMATCH") return "현재 CRM 계정과 같은 Google 계정을 선택해 주세요.";
+    if (code === "FIELD_REAUTH_SESSION_CHANGED") return "CRM 로그인 상태가 변경되었습니다. 현재 계정을 확인한 뒤 다시 시도해 주세요.";
+    if (code === "FIELD_REAUTH_FAILED") return "Google 계정을 확인하지 못했습니다. 잠시 후 다시 시도해 주세요.";
+    return "Google 계정을 확인하지 못했습니다. 잠시 후 다시 시도해 주세요.";
   }
 
   function buildingUnitEditor(buildingId, unitId) {
@@ -4656,6 +4674,41 @@
         await openFieldOperations(generation);
       }
     }
+    else if (action === "reauthenticate-field-google") {
+      if (fieldReauthInProgress || fieldConnectionState.status !== "auth-required" || !currentAuth.user) return;
+      const generation = authGeneration;
+      const uid = currentAuthUid();
+      fieldReauthInProgress = true;
+      fieldConnectionState = Object.assign({}, fieldConnectionState, {
+        message: "Google 계정 확인 창에서 현재 CRM 계정을 선택해 주세요.",
+        ready: false,
+      });
+      renderFieldOperations();
+      let result;
+      try {
+        result = await api.reauthenticateFieldPlatform();
+      } catch (_error) {
+        result = { ok: false, code: "FIELD_REAUTH_FAILED" };
+      } finally {
+        fieldReauthInProgress = false;
+      }
+      if (generation !== authGeneration || uid !== currentAuthUid() || currentView !== "fieldOperations") return;
+      if (!result || !result.ok) {
+        fieldConnectionState = Object.assign({}, fieldConnectionState, {
+          status: "auth-required",
+          message: fieldReauthenticationMessage(result && result.code),
+          ready: false,
+        });
+        renderFieldOperations();
+        return;
+      }
+      fieldConnectionState = Object.assign({}, fieldConnectionState, {
+        status: "connecting",
+        message: "Google 계정 확인이 완료되었습니다. 현장 업무를 연결하고 있습니다.",
+        ready: false,
+      });
+      renderFieldOperations();
+    }
     else if (action === "open-sales-standards") openSalesStandards("");
     else if (action === "new-customer") customerEditor("");
     else if (action === "new-building") buildingEditor("");
@@ -5869,7 +5922,7 @@ document.addEventListener("keydown", event => {
   });
   api.onFieldState(state => {
     fieldConnectionState = Object.assign({}, fieldConnectionState, state || {});
-    if (currentView === "fieldOperations" && ["disconnected", "timeout", "error"].includes(fieldConnectionState.status)) {
+    if (currentView === "fieldOperations" && ["disconnected", "timeout", "error", "auth-required"].includes(fieldConnectionState.status)) {
       fieldOpenGeneration += 1;
       void api.hideFieldPlatform();
       renderFieldOperations();
