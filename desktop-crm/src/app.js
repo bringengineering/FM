@@ -74,6 +74,8 @@
   let appInitialized = false;
   let overlayRefreshPromise = null;
   let driveImportCandidates = [];
+  let driveImportRefreshPromise = null;
+  let driveImportRefreshSequence = 0;
   let authGeneration = 0;
   let buildingLookupSequence = 0;
   let loginInProgress = false;
@@ -499,6 +501,9 @@
     if (previousUid !== currentAuthUid()) {
       authGeneration += 1;
       overlayRefreshPromise = null;
+      driveImportCandidates = [];
+      driveImportRefreshPromise = null;
+      driveImportRefreshSequence += 1;
       fieldOpenGeneration += 1;
       fieldTeamProfiles = [];
       fieldProfilesAvailable = false;
@@ -512,13 +517,11 @@
     if (overlayRefreshPromise) return overlayRefreshPromise;
     const generation = authGeneration;
     const uid = currentAuthUid();
-    overlayRefreshPromise = Promise.all([
+    const refreshPromise = Promise.all([
       api.loadCanonicalBuildingUnits(),
       api.loadFieldSummaries(),
-      typeof api.loadDriveImportCandidates === "function" ? api.loadDriveImportCandidates() : Promise.resolve({})
-    ]).then(([buildingUnits, fieldSummaries, driveCandidates]) => {
+    ]).then(([buildingUnits, fieldSummaries]) => {
       if (generation !== authGeneration || uid !== currentAuthUid()) return null;
-      driveImportCandidates = DriveImportUI.sanitizeCandidates(driveCandidates);
       const overlays = Core.sanitizeRendererOverlays({ buildingUnits, fieldSummaries });
       const merge = value => value ? Core.sanitizeRendererStore(Object.assign({}, value, overlays)) : value;
       store = merge(store);
@@ -528,9 +531,41 @@
       if (renderAfter && appInitialized) render();
       return overlays;
     }).finally(() => {
-      if (generation === authGeneration && uid === currentAuthUid()) overlayRefreshPromise = null;
+      if (overlayRefreshPromise === refreshPromise) overlayRefreshPromise = null;
     });
+    overlayRefreshPromise = refreshPromise;
     return overlayRefreshPromise;
+  }
+
+  async function refreshDriveImportCandidates(options) {
+    const settings = Object.assign({ renderAfter: true, force: false }, options || {});
+    if (currentView !== "buildings" || typeof api.loadDriveImportCandidates !== "function") return null;
+    if (driveImportRefreshPromise && !settings.force) return driveImportRefreshPromise;
+    const generation = authGeneration;
+    const uid = currentAuthUid();
+    if (!uid) return null;
+    const sequence = ++driveImportRefreshSequence;
+    const refreshPromise = Promise.resolve()
+      .then(() => api.loadDriveImportCandidates())
+      .then(candidates => {
+        if (generation !== authGeneration || uid !== currentAuthUid() || sequence !== driveImportRefreshSequence || currentView !== "buildings") return null;
+        driveImportCandidates = DriveImportUI.sanitizeCandidates(candidates);
+        if (settings.renderAfter && appInitialized) {
+          renderBuildings();
+          pageMeta();
+        }
+        return driveImportCandidates;
+      })
+      .finally(() => {
+        if (driveImportRefreshPromise === refreshPromise) driveImportRefreshPromise = null;
+      });
+    driveImportRefreshPromise = refreshPromise;
+    return refreshPromise;
+  }
+
+  function requestDriveImportCandidatesRefresh() {
+    if (currentView !== "buildings") return;
+    void refreshDriveImportCandidates().catch(() => undefined);
   }
 
   function ensureSalesStore(target) {
@@ -1136,6 +1171,7 @@
     fieldOpenGeneration += 1;
     await api.hideFieldPlatform();
     render();
+    if (currentView === "buildings") requestDriveImportCandidatesRefresh();
   }
 
   function renderDashboard() {
@@ -3814,6 +3850,7 @@
       currentView = nextView;
       if (currentView === "cases") caseListMode = "active";
       render();
+      if (currentView === "buildings") requestDriveImportCandidatesRefresh();
       if (["cases", "payments", "buildings", "pipeline"].includes(currentView)) refreshOperations({ silent: true });
       return;
     }
@@ -4591,6 +4628,7 @@
       closeDrawer();
       currentView = "buildings";
       render();
+      requestDriveImportCandidatesRefresh();
       await refreshOperations({ silent: true });
       return;
     }
@@ -4961,6 +4999,7 @@
         synchronizedStore = cloneStore(store);
         overlayRefreshPromise = null;
         await refreshRendererOverlays(false);
+        await refreshDriveImportCandidates({ renderAfter: false, force: true }).catch(() => undefined);
         closeModal();
         render();
         showToast(form.id === "driveImportApprovalForm" ? "Drive 자료를 승인해 건물을 등록했습니다." : "Drive 자료를 반려했습니다.", "success");
@@ -5310,6 +5349,9 @@
       if ([...existingIds].some(id => !configuredExistingIds.has(id))) return showToast("기존 호실이 구성에서 누락되었습니다. 창을 닫고 최신 상태를 다시 확인해 주세요.", "error");
       if (typeof api.configureBuildingUnits !== "function") return showToast("층·호실 구성 기능을 불러오지 못했습니다. 앱을 다시 실행해 주세요.", "error");
       const submitButton = form.querySelector('button[type="submit"]');
+      const configureGeneration = authGeneration;
+      const configureUid = currentAuthUid();
+      const configureSessionActive = () => configureGeneration === authGeneration && configureUid === currentAuthUid();
       if (submitButton) submitButton.disabled = true;
       try {
         const result = await api.configureBuildingUnits({
@@ -5320,6 +5362,7 @@
             unit.entityId ? { entityId: unit.entityId, expectedVersion: unit.expectedVersion } : {}
           )),
         });
+        if (!configureSessionActive()) return;
         if (!result || result.ok === false || result.error) {
           if (isVacancyConfigurationConflict(result)) return await recoverVacancyConfigurationConflict(building.id);
           return showToast(result && result.error || "층·호실 구성을 저장하지 못했습니다.", "error");
@@ -5330,7 +5373,13 @@
           localBuilding.vacantUnitCount = configuredVacantLabels.length;
           localBuilding.vacantUnits = configuredVacantLabels;
         }
-        await refreshRendererOverlays(false);
+        let overlaysRefreshed = true;
+        try {
+          await refreshRendererOverlays(false);
+        } catch (_) {
+          overlaysRefreshed = false;
+        }
+        if (!configureSessionActive()) return;
         selectedBuildingId = building.id;
         selectedVacancyBuildingId = building.id;
         vacancyStatusFilter = "attention";
@@ -5338,12 +5387,14 @@
         currentView = "vacancies";
         render();
         const changed = Number(result.createdCount || 0) + Number(result.updatedCount || 0);
-        showToast(changed ? `층·호실 ${Number(result.totalUnits || configuredUnits.length).toLocaleString("ko-KR")}개 구성을 저장했습니다.` : "층·호실 구성이 최신 상태입니다.", "success");
+        const successMessage = changed ? `층·호실 ${Number(result.totalUnits || configuredUnits.length).toLocaleString("ko-KR")}개 구성을 저장했습니다.` : "층·호실 구성이 최신 상태입니다.";
+        showToast(overlaysRefreshed ? successMessage : `${successMessage} 최신 목록은 연결되는 대로 반영됩니다.`, overlaysRefreshed ? "success" : "warning");
       } catch (error) {
+        if (!configureSessionActive()) return;
         if (isVacancyConfigurationConflict(error)) return await recoverVacancyConfigurationConflict(building.id);
         showToast(error.message || "층·호실 구성을 저장하지 못했습니다.", "error");
       } finally {
-        if (submitButton && submitButton.isConnected) submitButton.disabled = false;
+        if (configureSessionActive() && submitButton && submitButton.isConnected) submitButton.disabled = false;
       }
     } else if (form.id === "buildingUnitForm") {
       if (deferCanonicalMutation("건물 호실")) return;
@@ -5469,7 +5520,7 @@
           reason: existing ? "CRM 건물 기본정보 수정" : "CRM 건물 등록",
         });
         selectedBuildingId = String(commitResult && commitResult.entityId || item.id);
-        closeModal(); currentView = "buildings"; render(); showToast(`${name} 건물을 저장했습니다.`, "success");
+        closeModal(); currentView = "buildings"; render(); requestDriveImportCandidatesRefresh(); showToast(`${name} 건물을 저장했습니다.`, "success");
       } catch (error) { showToast(error.message || "건물을 저장하지 못했습니다.", "error"); }
     } else if (form.id === "contractForm") {
       const formData = new FormData(form);
@@ -6035,6 +6086,7 @@ document.addEventListener("keydown", event => {
       document.getElementById("lastSaved").textContent = store.updatedAt ? `최신 반영 ${dateText(store.updatedAt)}` : "새 데이터";
       render();
       appInitialized = true;
+      if (currentView === "buildings") requestDriveImportCandidatesRefresh();
       if (!store.settings.onboardingComplete) setTimeout(showWelcomeGuide, 350);
     } catch (error) {
       main.innerHTML = empty("CRM을 시작하지 못했습니다", error.message || "데이터 파일을 확인하세요.");

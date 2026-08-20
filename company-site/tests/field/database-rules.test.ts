@@ -63,6 +63,14 @@ const CRM_ACCESS = {
   },
 } as const;
 
+const DRIVE_IMPORT_CANDIDATES = {
+  drive_file_1: {
+    id: "drive_file_1",
+    driveFileId: "drive_file_1",
+    status: "pending",
+  },
+} as const;
+
 const CRM_DATA = {
   buildings: { building_1: {
     id: "building_1",
@@ -424,6 +432,7 @@ async function seed() {
     await set(ref(context.database(), "crmCompany"), {
       access: CRM_ACCESS,
       data: CRM_DATA,
+      driveImportCandidates: DRIVE_IMPORT_CANDIDATES,
       teamProfiles: TEAM_PROFILES,
       fieldSummaries: {
         job_1: {
@@ -440,10 +449,69 @@ async function seedCutover() {
   await cutoverEnvironment.withSecurityRulesDisabled(async (context) => {
     await set(ref(context.database(), "crmCompany"), {
       access: CRM_ACCESS,
+      driveImportCandidates: DRIVE_IMPORT_CANDIDATES,
       teamProfiles: TEAM_PROFILES,
       data: CRM_DATA,
     });
   });
+}
+
+async function exerciseDriveImportCandidateRules(
+  testEnvironment: RulesTestEnvironment,
+) {
+  for (const [uid, email] of [
+    ["crm-admin", "admin@bring.test"],
+    ["crm-member", "member@bring.test"],
+    ["crm-viewer", "viewer@bring.test"],
+  ] as const) {
+    const database = testEnvironment.authenticatedContext(
+      uid,
+      crmClaims(email),
+    ).database();
+    const listSnapshot = await assertSucceeds(
+      get(ref(database, "crmCompany/driveImportCandidates")),
+    );
+    expect(listSnapshot.val()).toEqual(DRIVE_IMPORT_CANDIDATES);
+    await assertSucceeds(
+      get(ref(database, "crmCompany/driveImportCandidates/drive_file_1")),
+    );
+    await assertFails(set(
+      ref(database, `crmCompany/driveImportCandidates/client_${uid}`),
+      { id: `client_${uid}`, driveFileId: `client_${uid}`, status: "pending" },
+    ));
+    await assertFails(update(
+      ref(database, "crmCompany/driveImportCandidates/drive_file_1"),
+      { status: "approved" },
+    ));
+    await assertFails(remove(
+      ref(database, "crmCompany/driveImportCandidates/drive_file_1"),
+    ));
+  }
+
+  const rejectedReaders = [
+    testEnvironment.unauthenticatedContext().database(),
+    testEnvironment.authenticatedContext(
+      "crm-member",
+      crmClaims("wrong@bring.test"),
+    ).database(),
+    testEnvironment.authenticatedContext(
+      "crm-disabled",
+      crmClaims("disabled@bring.test"),
+    ).database(),
+    testEnvironment.authenticatedContext(
+      "crm-invalid-role",
+      crmClaims("invalid@bring.test"),
+    ).database(),
+  ];
+  for (const database of rejectedReaders) {
+    await assertFails(get(
+      ref(database, "crmCompany/driveImportCandidates/drive_file_1"),
+    ));
+    await assertFails(set(
+      ref(database, "crmCompany/driveImportCandidates/client_forbidden"),
+      { id: "client_forbidden" },
+    ));
+  }
 }
 
 async function exerciseCustomerBuildingLinkRules(testEnvironment: RulesTestEnvironment) {
@@ -1067,6 +1135,30 @@ describe("field media database rule source", () => {
     expect(summaries[".write"]).toBe(false);
   });
 
+  it("keeps Drive import candidates read-only behind exact CRM access in both rule sets", async () => {
+    const production = JSON.parse(
+      await readFile(resolve("../database.rules.json"), "utf8"),
+    ) as { rules: { crmCompany: Record<string, Record<string, unknown>> } };
+    const cutover = JSON.parse(
+      await readFile(
+        resolve("tests/field/fixtures/database-cutover.rules.json"),
+        "utf8",
+      ),
+    ) as { rules: { crmCompany: Record<string, Record<string, unknown>> } };
+    const productionRule = production.rules.crmCompany.driveImportCandidates;
+    const cutoverRule = cutover.rules.crmCompany.driveImportCandidates;
+    const readRule = String(productionRule[".read"]);
+
+    expect(productionRule).toEqual(cutoverRule);
+    expect(readRule).toContain("crmCompany/access");
+    expect(readRule).toContain("enabled");
+    expect(readRule).toContain("auth.token.email");
+    expect(readRule).toContain("'admin'");
+    expect(readRule).toContain("'member'");
+    expect(readRule).toContain("'viewer'");
+    expect(productionRule[".write"]).toBe(false);
+  });
+
   it("keeps CRM operator profiles readable only through exact enabled CRM access", async () => {
     const source = JSON.parse(
       await readFile(resolve("../database.rules.json"), "utf8"),
@@ -1384,6 +1476,10 @@ describe.runIf(databaseEmulatorAvailable)("fieldPlatform database rules", () => 
 
   it("keeps customer building links append-only while preserving ordinary and unlinked legacy customer writes", async () => {
     await exerciseCustomerBuildingLinkRules(environment);
+  });
+
+  it("allows exact CRM roles to read Drive import candidates and denies every client write", async () => {
+    await exerciseDriveImportCandidateRules(environment);
   });
 
   it("accepts an atomic canonical building create with its narrow customer backlink", async () => {
@@ -2256,6 +2352,10 @@ describe.runIf(databaseEmulatorAvailable)("future CRM cutover rules rehearsal", 
   it("keeps the fixture customer backlink contract identical in the emulator", async () => {
     await exerciseCustomerBuildingLinkRules(cutoverEnvironment);
     await exerciseAtomicBuildingCreateWithCustomerLink(cutoverEnvironment);
+  });
+
+  it("keeps the Drive import candidate boundary identical in the emulator", async () => {
+    await exerciseDriveImportCandidateRules(cutoverEnvironment);
   });
 
   it("atomically rejects malformed canonical records in a parent PATCH", async () => {
