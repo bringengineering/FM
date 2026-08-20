@@ -17,7 +17,8 @@ def ready_message(title: str, post_type: str, category: str):
     text = (
         f"✅ <b>발행 준비 완료</b>\n\n"
         f"제목: {_clean(title)}\n유형: {_clean(post_type)}\n카테고리: {_clean(category)}\n\n"
-        "이 채팅에 <b>승인</b>이라고 보내면 발행합니다.\n"
+        "이 채팅에 <b>승인</b>이라고 보내면 YouTube와 Instagram에 동시 발행합니다.\n"
+        "한 곳만 발행하려면 <b>유튜브만</b> 또는 <b>인스타만</b>이라고 보내주세요.\n"
         "중단하려면 <b>취소</b>라고 보내주세요."
     )
     return text, None

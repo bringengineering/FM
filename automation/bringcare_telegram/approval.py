@@ -46,6 +46,7 @@ class ApprovalRecord:
     telegram_update_id: int | None = None
     approved_at: str | None = None
     published_url: str | None = None
+    publish_target: str = "both"
 
 
 @dataclass(frozen=True)
@@ -230,7 +231,15 @@ class ApprovalStore:
                 )
             )
 
-    def approve(self, *, update_id: int, now: datetime | None = None) -> ApprovalRecord:
+    def approve(
+        self,
+        *,
+        update_id: int,
+        now: datetime | None = None,
+        publish_target: str = "both",
+    ) -> ApprovalRecord:
+        if publish_target not in {"both", "youtube", "instagram"}:
+            raise ValueError(f"Unsupported publish target: {publish_target}")
         now = now or _utc_now()
         with self._locked():
             current = self._load_unlocked()
@@ -242,7 +251,7 @@ class ApprovalStore:
                 return current
             if _datetime(current.expires_at) <= now:
                 return self._write(ApprovalRecord(**{**asdict(current), "status": "expired"}))
-            return self._write(ApprovalRecord(**{**asdict(current), "status": "approved", "telegram_update_id": update_id, "approved_at": _iso(now)}))
+            return self._write(ApprovalRecord(**{**asdict(current), "status": "approved", "telegram_update_id": update_id, "approved_at": _iso(now), "publish_target": publish_target}))
 
     def cancel(self, *, update_id: int, now: datetime | None = None) -> ApprovalRecord:
         now = now or _utc_now()
@@ -333,8 +342,9 @@ def apply_updates(
         before = store.load()
         if before is None or before.status != "pending":
             continue
-        if command == "승인":
-            after = store.approve(update_id=update_id, now=now)
+        targets = {"승인": "both", "유튜브만": "youtube", "인스타만": "instagram"}
+        if command in targets:
+            after = store.approve(update_id=update_id, now=now, publish_target=targets[command])
             if after.status == "approved":
                 approved += 1
         elif command == "취소":

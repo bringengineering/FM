@@ -100,6 +100,10 @@ def route(text: str) -> Command:
 
     if normalized == "승인":
         return Command("approve", None, normalized)
+    if normalized == "유튜브만":
+        return Command("approve_youtube", None, normalized)
+    if normalized == "인스타만":
+        return Command("approve_instagram", None, normalized)
     if normalized in {"취소", "보류"}:
         return Command("cancel", None, normalized)
 

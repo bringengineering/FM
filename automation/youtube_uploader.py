@@ -93,6 +93,22 @@ def upload_video(video_path: Path, manifest: UploadManifest, credentials) -> str
     return response["id"]
 
 
+def upload_approved_video(
+    video_path: Path,
+    manifest: UploadManifest,
+    *,
+    credentials,
+    approve_public: bool,
+) -> dict[str, str]:
+    """Upload one approved video and return a platform-neutral result."""
+    assert_upload_allowed(manifest, approve_public=approve_public)
+    video_id = upload_video(video_path, manifest, credentials)
+    return {
+        "id": video_id,
+        "url": f"https://www.youtube.com/shorts/{video_id}",
+    }
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description="Safely upload a Short to YouTube")
     parser.add_argument("video", type=Path)

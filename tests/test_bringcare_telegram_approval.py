@@ -309,3 +309,11 @@ def test_cross_process_refresh_cannot_overwrite_concurrent_approval(tmp_path):
     record = ApprovalStore(path).load()
     assert record.status == "approved"
     assert record.telegram_update_id == 66
+
+
+def test_approval_records_selected_publish_target(tmp_path):
+    store = ApprovalStore(tmp_path / "approval.json")
+    store.create_pending("video-1", "영상", "shorts", "기업 이야기", now=NOW)
+    approved = store.approve(update_id=77, now=NOW, publish_target="instagram")
+    assert approved.status == "approved"
+    assert approved.publish_target == "instagram"
