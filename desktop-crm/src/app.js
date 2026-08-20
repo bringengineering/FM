@@ -6054,8 +6054,8 @@ document.addEventListener("keydown", event => {
         return;
       }
       showApplication(currentAuth);
-      await loadApplication();
       updateSyncUI(currentAuth.required ? { status: "syncing", message: "공용 서버 연결 확인 중" } : { status: "connected", message: "테스트 데이터 사용 중" });
+      await loadApplication();
     } catch (error) {
       showLogin(error.message || "로그인 상태를 확인하지 못했습니다.", true);
     }
