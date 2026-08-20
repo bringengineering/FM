@@ -38,6 +38,7 @@ contextBridge.exposeInMainWorld("bringCRM", {
   reconnectFieldPlatform: () => ipcRenderer.invoke("crm:field-reconnect"),
   openExternal: url => ipcRenderer.invoke("crm:open-external", url),
   lookupVendor: url => ipcRenderer.invoke("crm:vendor-lookup", url),
+  lookupNaverBuilding: url => ipcRenderer.invoke("crm:building-link-lookup", url),
   onShortcut: callback => ipcRenderer.on("app:shortcut", (_event, action) => callback(action)),
   onAuthState: callback => {
     const listener = (_event, state) => callback(state);

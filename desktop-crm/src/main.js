@@ -8,6 +8,7 @@ const { fileURLToPath, pathToFileURL } = require("node:url");
 const Core = require("./core");
 const { FirebaseRemoteClient, createSerializedProtectedStoreCoordinator, decodeProtectedJson } = require("./remote");
 const VendorExtractor = require("./vendor-extractor");
+const NaverBuildingExtractor = require("./naver-building-extractor");
 const {
   FIELD_BRIDGE_TIMEOUT_MS,
   FIELD_ORIGIN,
@@ -2276,7 +2277,7 @@ async function createWindow() {
         const customer = window.__crmTest.getStore().customers[0];
         const buildingName = 'QA 통합건물 ' + String(Date.now()).slice(-6);
         form.elements.name.value = buildingName;
-        form.elements.address.value = '강원 원주시 테스트로 1';
+        form.elements.roadAddress.value = '강원 원주시 테스트로 1';
         form.elements.ownerCustomerId.value = customer.id;
         form.elements.status.value = '관리중';
         form.requestSubmit();
@@ -2308,7 +2309,7 @@ async function createWindow() {
           const form = document.getElementById('buildingForm');
           if (!form) return null;
           form.elements.name.value = sharedName;
-          form.elements.address.value = address;
+          form.elements.roadAddress.value = address;
           form.elements.status.value = '관리중';
           form.requestSubmit();
           await wait(120);
@@ -2365,7 +2366,7 @@ async function createWindow() {
         form = document.getElementById('buildingForm');
         if (!schedule || !form) return { pass: false, reason: 'external schedule or building form missing', schedule };
         form.elements.name.value = buildingName;
-        form.elements.address.value = '강원 원주시 외부연결로 33';
+        form.elements.roadAddress.value = '강원 원주시 외부연결로 33';
         form.elements.status.value = '관리중';
         form.requestSubmit();
         await wait(180);
@@ -2414,7 +2415,7 @@ async function createWindow() {
           const form = document.getElementById('buildingForm');
           if (!form) return null;
           form.elements.name.value = sharedName;
-          form.elements.address.value = address;
+          form.elements.roadAddress.value = address;
           form.elements.status.value = '관리중';
           form.requestSubmit();
           await wait(140);
@@ -2460,7 +2461,7 @@ async function createWindow() {
         document.querySelector('[data-action="new-building"]')?.click();
         let form = document.getElementById('buildingForm');
         form.elements.name.value = 'QA 추가 건물 ' + String(Date.now()).slice(-6);
-        form.elements.address.value = '강원 원주시 다건물로 2';
+        form.elements.roadAddress.value = '강원 원주시 다건물로 2';
         form.elements.ownerCustomerId.value = customer.id;
         form.elements.status.value = '관리중';
         form.requestSubmit();
@@ -2794,6 +2795,34 @@ async function createWindow() {
         await wait(80);
         const pass = document.body.classList.contains('crm-read-only') && hidden && drawerFormsLocked && restoredStep === beforeStep && JSON.stringify(window.__crmTest.getStore()) === beforeStore && JSON.stringify(window.__crmTest.getOperations()) === beforeOperations && !window.__crmTest.snapshot().confirmationOpen;
         return { pass, readOnly: document.body.classList.contains('crm-read-only'), hidden, drawerFormsLocked, beforeStep, restoredStep, storeUnchanged: JSON.stringify(window.__crmTest.getStore()) === beforeStore, operationsUnchanged: JSON.stringify(window.__crmTest.getOperations()) === beforeOperations, state: window.__crmTest.snapshot() };
+      })()`, true);
+    } else if (process.env.BRING_CRM_SCREENSHOT_ACTION === "lookup-building-link") {
+      actionResult = await mainWindow.webContents.executeJavaScript(`(async () => {
+        const operatorSelect = document.getElementById('fieldOperatorSelect');
+        if (operatorSelect) {
+          operatorSelect.value = 'kim-hyunjin';
+          operatorSelect.dispatchEvent(new Event('change', { bubbles: true }));
+        }
+        document.querySelector('[data-view="buildings"]')?.click();
+        await new Promise(resolve => setTimeout(resolve, 100));
+        const openButton = document.querySelector('[data-action="new-building"]');
+        openButton?.click();
+        await new Promise(resolve => setTimeout(resolve, 100));
+        const form = document.getElementById('buildingForm');
+        if (!form) return { pass: false, error: 'building form missing', openButtonFound: Boolean(openButton), openButtonDisabled: Boolean(openButton?.disabled), toast: document.getElementById('toast')?.textContent || '' };
+        form.elements.naverBuildingUrl.value = ${JSON.stringify(process.env.BRING_CRM_SCREENSHOT_NAVER_URL || "https://map.naver.com/p/entry/place/37741703")};
+        form.querySelector('[data-building-link-lookup]')?.click();
+        const deadline = Date.now() + 15000;
+        while (Date.now() < deadline && form.querySelector('[data-building-link-lookup]')?.disabled) {
+          await new Promise(resolve => setTimeout(resolve, 100));
+        }
+        const result = {
+          name: form.elements.name.value,
+          roadAddress: form.elements.roadAddress.value,
+          jibunAddress: form.elements.jibunAddress.value,
+          status: form.querySelector('[data-building-link-lookup-status]')?.textContent || ''
+        };
+        return { pass: Boolean(result.name && result.roadAddress && result.jibunAddress), result };
       })()`, true);
     } else if (process.env.BRING_CRM_SCREENSHOT_ACTION === "lookup-vendor-link") {
       actionResult = await mainWindow.webContents.executeJavaScript(`(async () => {
@@ -3722,7 +3751,7 @@ async function createWindow() {
     const uiState = await mainWindow.webContents.executeJavaScript("window.__crmTest && window.__crmTest.snapshot()", true);
     const image = await mainWindow.webContents.capturePage();
     await fs.writeFile(target, image.toPNG());
-    if (["building-rental-info", "consultation-building-hub", "customer-sales-status", "vacancy-layout-scale", "vacancy-viewer-invariant"].includes(process.env.BRING_CRM_SCREENSHOT_ACTION)) {
+    if (["building-rental-info", "consultation-building-hub", "customer-sales-status", "vacancy-layout-scale", "vacancy-viewer-invariant", "lookup-building-link"].includes(process.env.BRING_CRM_SCREENSHOT_ACTION)) {
       await fs.writeFile(`${target}.result.json`, JSON.stringify({ actionResult, uiState }, null, 2), "utf8");
     }
     console.log(target, JSON.stringify({ empty: image.isEmpty(), size: image.getSize(), actionResult, uiState }));
@@ -3886,6 +3915,14 @@ secureHandle("crm:vendor-lookup", async rawUrl => {
     return await VendorExtractor.fetchVendorInfo(rawUrl);
   } catch (error) {
     return { ok: false, error: error.message || "업체 정보를 불러오지 못했습니다." };
+  }
+});
+secureCanonicalHandle("crm:building-link-lookup", async rawUrl => {
+  try {
+    Core.assertMutationAllowed(authState().user);
+    return await NaverBuildingExtractor.fetchNaverBuildingInfo(rawUrl);
+  } catch (error) {
+    return { ok: false, error: error.message || "네이버 건물 정보를 불러오지 못했습니다." };
   }
 });
 secureHandle("crm:backup", async input => {

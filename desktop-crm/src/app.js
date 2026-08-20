@@ -73,6 +73,7 @@
   let overlayRefreshPromise = null;
   let driveImportCandidates = [];
   let authGeneration = 0;
+  let buildingLookupSequence = 0;
   let loginInProgress = false;
   let operations = { cases: [], payments: {}, caseSettings: {}, loadedAt: "" };
   let operationsLoading = false;
@@ -707,6 +708,8 @@
       type: String(values.type || ""),
       status: String(values.status || ""),
       address: String(values.address || "").trim(),
+      roadAddress: String(values.roadAddress || "").trim(),
+      jibunAddress: String(values.jibunAddress || "").trim(),
       unitCount: Number(values.unitCount) || 0,
       rentDeposit: Core.nonNegativeInteger(values.rentDeposit),
       monthlyRent: Core.nonNegativeInteger(values.monthlyRent),
@@ -1812,6 +1815,11 @@
   const buildingCustomers = building => store.customers.filter(customer => customer.id === building.ownerCustomerId || Core.customerBuildingIds(customer).includes(building.id));
   const buildingContracts = building => store.contracts.filter(contract => String(contract.buildingId || "") === String(building.id));
   const buildingNames = building => [building && building.name, ...(building && building.aliases || [])].map(Core.normalizeText).filter(Boolean);
+  const buildingAddressKeys = building => [...new Set([
+    building && building.address,
+    building && building.roadAddress,
+    building && building.jibunAddress,
+  ].map(Core.normalizeText).filter(Boolean))];
   const buildingChoiceLabel = building => [building && building.name || "건물명 미입력", building && (building.address || building.buildingNo)].filter(Boolean).join(" · ");
   const uniqueBuildingNameMatch = (name, address) => {
     const normalized = Core.normalizeText(name);
@@ -1819,7 +1827,7 @@
     const matches = store.buildings.filter(building => buildingNames(building).includes(normalized));
     const normalizedAddress = Core.normalizeText(address);
     if (normalizedAddress) {
-      const addressMatches = matches.filter(building => Core.normalizeText(building.address) === normalizedAddress);
+      const addressMatches = matches.filter(building => buildingAddressKeys(building).includes(normalizedAddress));
       if (addressMatches.length === 1) return addressMatches[0];
       return null;
     }
@@ -1971,7 +1979,7 @@
       .filter(building => !building.archivedAt)
       .filter(building => {
         const customers = buildingCustomers(building);
-        return !query || Core.normalizeText([building.name, building.address, building.type, building.status, building.buildingNo, building.manager, customers.map(item => `${item.name} ${item.phone}`).join(" ")].join(" ")).includes(query);
+        return !query || Core.normalizeText([building.name, building.address, building.roadAddress, building.jibunAddress, building.type, building.status, building.buildingNo, building.manager, customers.map(item => `${item.name} ${item.phone}`).join(" ")].join(" ")).includes(query);
       })
       .sort((left, right) => (left.status === "관리중" ? -1 : 0) - (right.status === "관리중" ? -1 : 0) || String(left.name || "").localeCompare(String(right.name || ""), "ko"));
     if (buildings.length && !buildings.some(item => item.id === selectedBuildingId)) selectedBuildingId = buildings[0].id;
@@ -2036,7 +2044,9 @@
     const vacancyLabel = `${vacancySummary.vacant.toLocaleString("ko-KR")}개`;
     const vacancySubline = [vacantUnits.join(", "), vacancySummary.move_out_scheduled ? `공실 예정 ${vacancySummary.move_out_scheduled}개` : ""].filter(Boolean).join(" · ") || "호실 미입력";
     const rentalSummary = `<section class="building-detail-section building-rental-detail wide"><header><b>임대·공실 정보</b><button type="button" class="mini-button" data-building-vacancies="${attr(building.id)}">공실 현황 보기</button></header><div class="building-detail-body"><div class="building-rental-facts"><div><span>보증금</span><b>${esc(buildingMoneySummary(building.rentDeposit))}</b></div><div><span>월세</span><b>${esc(buildingMoneySummary(building.monthlyRent))}</b></div><div><span>관리비</span><b>${esc(buildingMoneySummary(building.maintenanceFee))}</b></div><div><span>공실</span><b>${esc(vacancyLabel)}</b><small>${esc(vacancySubline)}</small></div></div><div class="building-rental-lines"><div><b>관리비 포함</b><span>${esc(buildingListSummary(building.maintenanceIncludes, building.maintenanceIncludeOther))}</span></div><div><b>구조</b><span>${esc(buildingListSummary(building.roomTypes, building.roomTypeOther))}</span></div><div><b>호실 옵션</b><span>${esc(buildingListSummary(building.roomOptions, building.roomOptionOther))}</span></div></div></div></section>`;
-    return `<header class="building-hub-detail-head"><div class="building-hub-title"><span>${esc(building.buildingNo || building.id)}</span><h2>${esc(building.name || "건물명 미입력")}</h2><p>${esc(building.address || "주소 미입력")}</p></div><div class="building-hub-head-actions"><button class="secondary-button" data-building-edit="${attr(building.id)}">건물 정보 수정</button><button class="secondary-button" data-building-vacancies="${attr(building.id)}">공실 현황</button><button class="secondary-button" data-building-payments="${attr(building.id)}">입금 캘린더</button><button class="primary-button" data-building-new-case="${attr(building.id)}">＋ 새 케이스</button></div></header>
+    const primaryAddress = building.roadAddress || building.address || building.jibunAddress || "주소 미입력";
+    const secondaryAddress = building.jibunAddress && Core.normalizeText(building.jibunAddress) !== Core.normalizeText(primaryAddress) ? ` · 지번 ${building.jibunAddress}` : "";
+    return `<header class="building-hub-detail-head"><div class="building-hub-title"><span>${esc(building.buildingNo || building.id)}</span><h2>${esc(building.name || "건물명 미입력")}</h2><p>${esc(primaryAddress)}${esc(secondaryAddress)}</p></div><div class="building-hub-head-actions"><button class="secondary-button" data-building-edit="${attr(building.id)}">건물 정보 수정</button><button class="secondary-button" data-building-vacancies="${attr(building.id)}">공실 현황</button><button class="secondary-button" data-building-payments="${attr(building.id)}">입금 캘린더</button><button class="primary-button" data-building-new-case="${attr(building.id)}">＋ 새 케이스</button></div></header>
       <div class="building-hub-detail-scroll"><div class="building-hub-kpis"><div class="building-hub-kpi"><span>연결 고객</span><b>${customers.length}명</b><small>${esc(owner ? `대표 ${owner.name}` : "건물주 연결 필요")}</small></div><div class="building-hub-kpi"><span>진행 계약</span><b>${activeContracts.length}건</b><small>${esc(activeContracts.length ? contractTypes(activeContracts[0]).join("·") : "활성 계약 없음")}</small></div><div class="building-hub-kpi"><span>진행 케이스</span><b>${openCases.length}건</b><small>${esc(openCases[0] ? Core.workflowProgress(openCases[0]).current : "진행 업무 없음")}</small></div><div class="building-hub-kpi ${overdueRows.length ? "alert" : ""}"><span>이번 달 입금</span><b>${rows.length}건</b><small>${esc(overdueRows.length ? `확인 필요 ${overdueRows.length}건` : amount ? `예정 ${krw(amount)}` : "납부 일정 없음")}</small></div></div>
       <div class="building-identity-strip"><div><b>건물 유형</b><span>${esc(building.type || "미입력")}</span></div><div><b>운영 상태</b><span>${buildingStatusBadge(building.status)}</span></div><div><b>호실 수</b><span>${vacancySummary.formal ? `${vacancySummary.total.toLocaleString("ko-KR")}개` : Number(building.unitCount) ? `${Number(building.unitCount).toLocaleString("ko-KR")}개` : "미입력"}</span></div><div><b>담당자</b><span>${esc(building.manager || "미입력")}</span></div></div>
       <div class="building-detail-grid">${rentalSummary}<section class="building-detail-section"><header><b>연결 고객</b><span>${customers.length}명</span></header><div class="building-detail-body">${customerRecords || `<div class="building-detail-empty">연결된 고객이 없습니다. 건물 정보 수정에서 건물주를 선택하세요.</div>`}</div></section><section class="building-detail-section"><header><b>건물 호실</b><button type="button" class="mini-button" data-building-unit-add="${attr(building.id)}">＋ 호실</button></header><div class="building-detail-body">${unitRecords || `<div class="building-detail-empty">등록된 호실이 없습니다.</div>`}${archivedUnitRecords}</div></section><section class="building-detail-section"><header><b>계약</b><span>${contracts.length}건</span></header><div class="building-detail-body">${contractRecords || `<div class="building-detail-empty">연결된 계약이 없습니다.</div>`}</div></section><section class="building-detail-section"><header><b>케이스</b><span>${cases.length}건</span></header><div class="building-detail-body">${caseRecords || `<div class="building-detail-empty">연결된 케이스가 없습니다.</div>`}</div></section><section class="building-detail-section"><header><b>${esc(paymentMonthLabel(paymentMonth))} 입금 일정</b><span>${rows.length}건</span></header><div class="building-detail-body">${paymentRecords || `<div class="building-detail-empty">이번 달 납부 일정이 없습니다.</div>`}</div></section>${building.memo ? `<section class="building-detail-section wide"><header><b>건물 메모</b><span>공용 정보</span></header><div class="building-detail-body"><div class="building-detail-record"><div><b>관리 참고사항</b><span>${esc(building.memo)}</span></div></div></div></section>` : ""}</div></div>`;
@@ -2063,7 +2073,7 @@
   function renderVacancyDetail(building, query) {
     const units = sortedVacancyUnits(activeBuildingUnitsForBuilding(building));
     const summary = vacancySummaryForBuilding(building);
-    const buildingMatchesQuery = !query || Core.normalizeText([building.name, building.address, building.buildingNo, building.manager].join(" ")).includes(query);
+    const buildingMatchesQuery = !query || Core.normalizeText([building.name, building.address, building.roadAddress, building.jibunAddress, building.buildingNo, building.manager].join(" ")).includes(query);
     const filteredUnits = units.filter(unit => (vacancyStatusFilter === "all" || vacancyUnitStatus(unit) === vacancyStatusFilter)
       && (buildingMatchesQuery || vacancyUnitSearchText(unit).includes(query)));
     const grouped = new Map();
@@ -2098,7 +2108,7 @@
     const buildings = (store.buildings || []).filter(building => building && !building.archivedAt)
       .filter(building => {
         if (!query) return true;
-        const buildingText = Core.normalizeText([building.name, building.address, building.buildingNo, building.manager].join(" "));
+        const buildingText = Core.normalizeText([building.name, building.address, building.roadAddress, building.jibunAddress, building.buildingNo, building.manager].join(" "));
         return buildingText.includes(query) || activeBuildingUnitsForBuilding(building).some(unit => vacancyUnitSearchText(unit).includes(query));
       })
       .sort((left, right) => (left.status === "관리중" ? -1 : 0) - (right.status === "관리중" ? -1 : 0) || String(left.name || "").localeCompare(String(right.name || ""), "ko"));
@@ -2588,16 +2598,25 @@
       ? `<div class="building-derived-vacancy wide"><div><span>현재 공실</span><b>${formalVacantUnits.length.toLocaleString("ko-KR")}개</b><small>${esc(formalVacantUnits.map(unit => unit.label || unit.unitLabel).filter(Boolean).join(", ") || "없음")}</small></div><div><span>공실 예정</span><b>${formalUpcomingUnits.length.toLocaleString("ko-KR")}개</b><small>${esc(formalUpcomingUnits.map(unit => unit.label || unit.unitLabel).filter(Boolean).join(", ") || "없음")}</small></div><button type="button" class="secondary-button" data-vacancy-manage="${attr(editing.id)}">공실 현황에서 수정</button>${legacyMigration.unresolvedCount ? `<p class="building-derived-vacancy-warning" data-vacancy-legacy-resolution>기존 공실 ${legacyMigration.unresolvedCount.toLocaleString("ko-KR")}실은 실제 호실로 옮길 때까지 원본 값으로 보존됩니다. 다른 건물 정보는 그대로 저장할 수 있습니다.</p>` : ""}</div>`
       : `${buildingNumberField("공실 수", "vacantUnitCount", building.vacantUnitCount, "개", "예: 2")}${field("공실 호실", "vacantUnits", buildingArray(building.vacantUnits).join(", "), "text", "예: 101호, 203호", "wide")}`;
     const customerOptions = ["", ...store.customers.map(customer => customer.id)];
+    const legacyAddress = editing && String(building.address || "").trim() && !String(building.roadAddress || "").trim() && !String(building.jibunAddress || "").trim()
+      ? String(building.address).trim()
+      : "";
+    const legacyAddressNotice = legacyAddress
+      ? `<div class="info-box wide">기존 주소 <b>${esc(legacyAddress)}</b>는 도로명·지번 구분 없이 그대로 보존됩니다. 네이버 링크로 불러오거나 주소 형식을 확인해 입력해 주세요.</div>`
+      : "";
     const ownerCustomerField = editing
       ? `<label class="field"><span>건물주·대표 고객</span><select disabled aria-disabled="true"><option>${esc(building.ownerCustomerId ? (customerById(building.ownerCustomerId)?.name || building.ownerCustomerId) : "아직 연결하지 않음")}</option></select><input type="hidden" name="ownerCustomerId" value="${attr(building.ownerCustomerId || "")}"><small>건물주 변경은 연결된 고객·건물 관계를 함께 옮기는 별도 이전 절차에서 처리합니다.</small></label>`
       : selectField("건물주·대표 고객", "ownerCustomerId", customerOptions, building.ownerCustomerId || "", id => id ? (customerById(id)?.name || id) : "아직 연결하지 않음");
     modalContent.innerHTML = `<div class="modal-head"><div><h2>${editing ? "건물 정보 수정" : "새 건물 등록"}</h2><p>건물 고유 ID를 기준으로 고객·계약·케이스·입금 자료가 연결됩니다.</p></div><button class="close-button" data-action="close-modal">×</button></div><form id="buildingForm" class="modal-body building-form" data-building-id="${attr(editing && editing.id || "")}"><div class="info-box">같은 건물을 다시 등록하지 말고 기존 건물을 수정해 주세요. 건물명이 바뀌어도 연결된 업무는 유지됩니다.</div>
+      <section class="quote-url-import building-link-import"><div><b>네이버 지도 링크로 자동 입력</b><span>장소 링크에서 건물명·도로명·지번 주소를 찾아옵니다.</span></div><div class="quote-url-import-row"><input name="naverBuildingUrl" type="url" inputmode="url" autocomplete="off" maxlength="4096" placeholder="https://naver.me/... 또는 https://map.naver.com/..."><button type="button" data-building-link-lookup>건물 정보 불러오기</button></div><p data-building-link-lookup-status aria-live="polite">불러온 내용을 확인한 뒤 아래 건물 등록 버튼을 눌러 저장하세요.</p></section>
       <section class="building-form-section"><header><div><h3>기본 정보</h3><p>건물과 담당 고객을 구분하는 공용 정보입니다.</p></div></header><div class="form-grid building-form-section-body">
         ${field("건물명 *", "name", building.name, "text", "예: 햇빛빌라")}
         ${ownerCustomerField}
         ${selectField("건물 유형", "type", ["다가구", "원룸", "상가", "아파트", "빌딩", "오피스텔", "기타"], building.type || "다가구")}
         ${selectField("운영 상태", "status", ["영업후보", "현장방문", "견적중", "계약예정", "관리중", "보류"], building.status || "영업후보")}
-        ${field("건물 주소", "address", building.address, "text", "원주시부터 입력", "wide")}
+        ${legacyAddressNotice}
+        ${field("도로명 주소", "roadAddress", building.roadAddress, "text", "예: 강원특별자치도 원주시 중앙로 1", "wide")}
+        ${field("지번 주소", "jibunAddress", building.jibunAddress, "text", "예: 강원특별자치도 원주시 중앙동 1-1", "wide")}
         ${field("전체 호실 수", "unitCount", building.unitCount || "", "number", "숫자만 입력")}
         ${field("담당자", "manager", building.manager || store.settings.owner || "김현진")}
       </div></section>
@@ -2615,7 +2634,7 @@
       <section class="building-form-section"><header><div><h3>관리 메모</h3><p>건물 운영 시 함께 확인할 내용을 적어 주세요.</p></div></header><div class="form-grid building-form-section-body">${areaField("건물 메모", "memo", building.memo, "wide")}</div></section>
       <div class="form-actions">${editing ? `<button type="button" class="danger-outline-button form-delete-left" data-building-delete="${attr(editing.id)}">건물 보관</button>` : ""}<button type="button" class="secondary-button" data-action="close-modal">취소</button><button type="submit" class="primary-button">${editing ? "수정 저장" : "건물 등록"}</button></div></form>`;
     openModal();
-    setTimeout(() => document.querySelector('#buildingForm [name="name"]')?.focus(), 30);
+    setTimeout(() => document.querySelector(`#buildingForm [name="${editing ? "name" : "naverBuildingUrl"}"]`)?.focus(), 30);
   }
 
   function buildingUnitEditor(buildingId, unitId) {
@@ -3940,6 +3959,75 @@
       if (requireSecurityPermission(false)) incidentEditor(incidentEdit.dataset.incidentEdit);
       return;
     }
+    const buildingLinkLookup = event.target.closest("[data-building-link-lookup]");
+    if (buildingLinkLookup) {
+      const form = buildingLinkLookup.closest("#buildingForm");
+      const status = form && form.querySelector("[data-building-link-lookup-status]");
+      const rawUrl = String(form && form.elements.naverBuildingUrl && form.elements.naverBuildingUrl.value || "").trim();
+      if (!rawUrl) return showToast("네이버 지도 링크를 먼저 입력해 주세요.", "error");
+      const sequence = ++buildingLookupSequence;
+      const generation = authGeneration;
+      const uid = currentAuthUid();
+      const snapshots = Object.fromEntries(["name", "roadAddress", "jibunAddress"].map(name => [name, String(form.elements[name] && form.elements[name].value || "")]));
+      const sameFormAndSession = () => sequence === buildingLookupSequence
+        && form.isConnected
+        && document.getElementById("buildingForm") === form
+        && generation === authGeneration
+        && uid === currentAuthUid();
+      buildingLinkLookup.disabled = true;
+      buildingLinkLookup.textContent = "정보 찾는 중…";
+      if (status) { status.className = "loading"; status.textContent = "네이버 장소 정보를 확인하고 있습니다."; }
+      try {
+        const result = await api.lookupNaverBuilding(rawUrl);
+        if (!sameFormAndSession()) return;
+        if (String(form.elements.naverBuildingUrl.value || "").trim() !== rawUrl) {
+          if (status) { status.className = ""; status.textContent = "입력한 링크가 바뀌어 이전 조회 결과는 적용하지 않았습니다."; }
+          return;
+        }
+        if (!result || !result.ok) throw new Error(result && (result.error || result.message) || "건물 정보를 찾지 못했습니다.");
+        const filled = [];
+        const changedWhileLoading = [];
+        const missing = [];
+        const applyLookupValue = (name, value, label) => {
+          const input = form.elements[name];
+          if (!input) return;
+          const next = String(value || "").trim();
+          if (String(input.value || "") !== snapshots[name]) {
+            changedWhileLoading.push(label);
+            return;
+          }
+          if (!next) {
+            missing.push(label);
+            return;
+          }
+          input.value = next;
+          filled.push(label);
+        };
+        form.elements.naverBuildingUrl.value = result.url || rawUrl;
+        applyLookupValue("name", result.name, "건물명");
+        applyLookupValue("roadAddress", result.roadAddress, "도로명 주소");
+        applyLookupValue("jibunAddress", result.jibunAddress, "지번 주소");
+        if (status) {
+          const messages = [filled.length ? `${filled.join("·")}를 자동 입력했습니다.` : "자동 입력할 정보를 찾지 못했습니다."];
+          if (changedWhileLoading.length) messages.push(`${changedWhileLoading.join("·")}는 조회 중 직접 수정되어 유지했습니다.`);
+          if (missing.length) messages.push(`${missing.join("·")}는 네이버에서 확인되지 않아 직접 입력해 주세요.`);
+          messages.push("내용을 확인한 뒤 건물을 등록하세요.");
+          status.className = filled.length ? "success" : "error";
+          status.textContent = messages.join(" ");
+        }
+        showToast(filled.length ? `${filled.join("·")} 자동 입력 완료` : "자동 입력할 정보를 찾지 못했습니다.", filled.length ? "success" : "error");
+      } catch (error) {
+        if (!sameFormAndSession()) return;
+        if (status) { status.className = "error"; status.textContent = error.message || "건물 정보를 불러오지 못했습니다."; }
+        showToast(error.message || "건물 정보를 불러오지 못했습니다.", "error");
+      } finally {
+        if (sequence === buildingLookupSequence && form.isConnected && document.getElementById("buildingForm") === form) {
+          buildingLinkLookup.disabled = false;
+          buildingLinkLookup.textContent = "건물 정보 불러오기";
+        }
+      }
+      return;
+    }
     const vendorLookup = event.target.closest("[data-vendor-lookup]");
     if (vendorLookup) {
       const form = vendorLookup.closest("#partnerVendorForm, #partnerQuoteForm");
@@ -5062,9 +5150,17 @@
       if (maintenanceIncludeOther && !maintenanceIncludes.includes("기타")) maintenanceIncludes.push("기타");
       if (roomTypeOther && !roomTypes.includes("기타")) roomTypes.push("기타");
       if (roomOptionOther && !roomOptions.includes("기타")) roomOptions.push("기타");
-      const address = String(raw.address || "").trim();
-      if (!name || !address) return showToast("건물명과 주소를 입력해 주세요.", "error");
-      const duplicate = store.buildings.find(building => building.id !== (existing && existing.id) && Core.normalizeText(building.name) === Core.normalizeText(name) && Core.normalizeText(building.address) === Core.normalizeText(address));
+      const roadAddress = String(raw.roadAddress || "").trim();
+      const jibunAddress = String(raw.jibunAddress || "").trim();
+      const legacyAddress = existing && !String(existing.roadAddress || "").trim() && !String(existing.jibunAddress || "").trim()
+        ? String(existing.address || "").trim()
+        : "";
+      const address = roadAddress || jibunAddress || legacyAddress;
+      if (!name || !address) return showToast("건물명과 도로명·지번 주소 중 하나 이상을 입력해 주세요.", "error");
+      const addressKeys = new Set([address, roadAddress, jibunAddress].map(Core.normalizeText).filter(Boolean));
+      const duplicate = store.buildings.find(building => building.id !== (existing && existing.id)
+        && Core.normalizeText(building.name) === Core.normalizeText(name)
+        && buildingAddressKeys(building).some(value => addressKeys.has(value)));
       if (duplicate) return showToast("같은 이름과 주소의 건물이 이미 등록되어 있습니다.", "error");
       if (existing && (!Number.isInteger(existing.entityVersion) || existing.entityVersion < 1)) return showToast("최신 건물 버전을 확인한 뒤 다시 시도해 주세요.", "error");
       const item = existing || Core.createBuilding({ id: crypto.randomUUID(), manager: store.settings.owner || "김현진" });
@@ -5077,14 +5173,14 @@
       const unaddressedExternalIds = new Set(matchingSchedules.filter(schedule => !Core.normalizeText(schedule.buildingAddress)).map(schedule => String(schedule.buildingId || "")).filter(Boolean));
       Object.values(operations.payments && operations.payments.schedules || {}).forEach(schedule => {
         const scheduleAddress = Core.normalizeText(schedule.buildingAddress);
-        const addressMatch = !!scheduleAddress && !!Core.normalizeText(address) && scheduleAddress === Core.normalizeText(address);
+        const addressMatch = !!scheduleAddress && addressKeys.has(scheduleAddress);
         const unambiguousNameOnly = !scheduleAddress && !sameNameBuildingExists && unaddressedExternalIds.size <= 1;
         const matched = existing ? scheduleBelongsToBuilding(schedule, existing) : Core.normalizeText(schedule.buildingName) === Core.normalizeText(name) && (addressMatch || unambiguousNameOnly);
         if (matched && schedule.buildingId) paymentIds.add(String(schedule.buildingId));
       });
       const patch = buildCanonicalBuildingPatch({
         name, ownerCustomerId: existing ? existing.ownerCustomerId : raw.ownerCustomerId, type: raw.type, status: raw.status,
-        address, unitCount: raw.unitCount,
+        address, roadAddress, jibunAddress, unitCount: raw.unitCount,
         rentDeposit: nonNegativeInteger(raw.rentDeposit), monthlyRent: nonNegativeInteger(raw.monthlyRent), maintenanceFee: nonNegativeInteger(raw.maintenanceFee),
         maintenanceIncludes, maintenanceIncludeOther, vacantUnitCount, vacantUnits, roomTypes, roomTypeOther, roomOptions, roomOptionOther,
         manager: String(raw.manager || "").trim() || store.settings.owner || "김현진", memo: raw.memo,
@@ -5445,6 +5541,12 @@ document.addEventListener("keydown", event => {
         else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first.focus(); }
       }
     }
+    return;
+  }
+  const buildingLinkInput = event.target.closest?.('#buildingForm [name="naverBuildingUrl"]');
+  if (buildingLinkInput && event.key === "Enter" && !event.isComposing && event.keyCode !== 229) {
+    event.preventDefault();
+    buildingLinkInput.closest("form")?.querySelector("[data-building-link-lookup]")?.click();
     return;
   }
   const pickerSearch = event.target.closest?.("[data-partner-vendor-search], [data-consultation-customer-search]");

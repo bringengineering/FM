@@ -70,6 +70,23 @@ test("building rental values normalize to integer won and unique string lists", 
   assert.equal(building.legacyLabel, "기존 필드는 유지");
 });
 
+test("building road-name and jibun addresses normalize and survive JSON round trips", () => {
+  const created = Core.createBuilding({
+    id: "bld_address_defaults",
+    name: "주소 건물",
+    address: "강원특별자치도 원주시 중앙로 1",
+    roadAddress: "  강원특별자치도 원주시 중앙로 1  ",
+    jibunAddress: "  강원특별자치도 원주시 중앙동 1-1  ",
+  });
+  const restored = Core.sanitizeStore(JSON.parse(JSON.stringify({ buildings: [created] }))).buildings[0];
+
+  assert.equal(restored.address, "강원특별자치도 원주시 중앙로 1");
+  assert.equal(restored.roadAddress, "강원특별자치도 원주시 중앙로 1");
+  assert.equal(restored.jibunAddress, "강원특별자치도 원주시 중앙동 1-1");
+  assert.equal(Core.createBuilding().roadAddress, "");
+  assert.equal(Core.createBuilding().jibunAddress, "");
+});
+
 test("vacancy count remains independent from the entered vacant-unit labels", () => {
   const moreCount = Core.normalizeBuilding({ vacantUnitCount: 4, vacantUnits: ["101호", "201호"] });
   const moreLabels = Core.normalizeBuilding({ vacantUnitCount: 1, vacantUnits: ["101호", "201호", "301호"] });

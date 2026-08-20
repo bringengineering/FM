@@ -10,7 +10,7 @@ const SYSTEM_FIELDS = new Set([
 ]);
 const FIELD_ALLOWLIST = Object.freeze({
   buildings: new Set([
-    "name", "address", "type", "status", "ownerCustomerId", "unitCount", "manager", "memo",
+    "name", "address", "roadAddress", "jibunAddress", "type", "status", "ownerCustomerId", "unitCount", "manager", "memo",
     "aliases", "externalRefs", "rentDeposit", "monthlyRent", "maintenanceFee", "maintenanceIncludes",
     "maintenanceIncludeOther", "roomTypes", "roomTypeOther", "roomOptions", "roomOptionOther",
     "vacantUnitCount", "vacantUnits",
@@ -135,6 +135,7 @@ function normalizePatch(entityType, operation, value) {
     if (!allowed.has(key)) fail("crm_patch_field_forbidden");
     if (entityType === "buildings") {
       if (["name", "address"].includes(key)) result[key] = text(raw, key, 1_000, true);
+      else if (["roadAddress", "jibunAddress"].includes(key)) result[key] = text(raw, key, 1_000);
       else if (["type", "status", "manager"].includes(key)) result[key] = text(raw, key, 256);
       else if (key === "memo") result[key] = text(raw, key);
       else if (key === "ownerCustomerId") {
@@ -353,6 +354,8 @@ function reduceEntity(currentData, rawInput, actor, now = new Date().toISOString
   if (input.operation === "restore") Object.assign(next, { archivedAt: "", archivedByAuthUid: "", archivedByOperatorId: "" });
   if (input.entityType === "buildingUnits" && next.status === "move_out_scheduled" && !next.moveOutAt && !next.availableFrom) fail("crm_move_out_date_required");
   if (input.entityType === "buildings") {
+    const preferredAddress = String(next.roadAddress || next.jibunAddress || "").trim();
+    if (preferredAddress && next.address !== preferredAddress) fail("crm_address_mismatch");
     if (existing && Object.hasOwn(input.patch, "ownerCustomerId") && input.patch.ownerCustomerId !== existing.ownerCustomerId) fail("crm_owner_change_requires_atomic_link");
     if (next.ownerCustomerId) activeEntity(data.customers, next.ownerCustomerId);
     const formal = unitProjection(data, input.entityId);

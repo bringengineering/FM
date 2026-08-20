@@ -1070,7 +1070,8 @@ test("building, building-unit, and sales-unit UI mutations require an operator a
   assert.match(buildingFormSlice, /buildCanonicalBuildingPatch\(/);
   assert.match(buildingFormSlice, /const commitResult = await commitCanonicalEntity\([\s\S]*?selectedBuildingId = String\(commitResult && commitResult\.entityId \|\| item\.id\)/);
   assert.doesNotMatch(buildingFormSlice, /externalRefs:\s*Object\.assign/);
-  assert.match(buildingFormSlice, /if \(!name \|\| !address\) return showToast\("건물명과 주소를 입력해 주세요\.", "error"\)/);
+  assert.match(buildingFormSlice, /const address = roadAddress \|\| jibunAddress/);
+  assert.match(buildingFormSlice, /건물명과 도로명·지번 주소 중 하나 이상을 입력해 주세요/);
 
   const extractFunction = name => {
     const start = appSource.indexOf(`function ${name}`);
@@ -1096,10 +1097,14 @@ test("building, building-unit, and sales-unit UI mutations require an operator a
     crmBuildingId: "building_1", label: "201호", floorLabel: "", floorOrder: 0, unitOrder: 0,
     status: "vacant", moveOutAt: "", availableFrom: "", memo: "확인",
   });
-  assert.deepEqual(plain(patchSandbox.builders.buildCanonicalBuildingPatch({
-    name: " 건물 ", address: " 주소 ", ownerCustomerId: "customer_1", type: "다가구", status: "관리중",
+  const buildingPatch = plain(patchSandbox.builders.buildCanonicalBuildingPatch({
+    name: " 건물 ", address: " 도로명 주소 ", roadAddress: " 도로명 주소 ", jibunAddress: " 지번 주소 ", ownerCustomerId: "customer_1", type: "다가구", status: "관리중",
     unitCount: 9, manager: " 담당 ", memo: " 메모 ", aliases: ["이전명"], paymentBuildingIds: ["payment_1"],
-  })).externalRefs, { paymentBuildingIds: ["payment_1"] });
+  }));
+  assert.deepEqual(buildingPatch.externalRefs, { paymentBuildingIds: ["payment_1"] });
+  assert.equal(buildingPatch.address, "도로명 주소");
+  assert.equal(buildingPatch.roadAddress, "도로명 주소");
+  assert.equal(buildingPatch.jibunAddress, "지번 주소");
   assert.equal(Object.hasOwn(patchSandbox.builders.buildCanonicalSalesUnitPatch({
     prospectId: "prospect_1", crmBuildingUnitId: "", label: "101호", status: "vacant",
   }), "crmBuildingUnitId"), false);

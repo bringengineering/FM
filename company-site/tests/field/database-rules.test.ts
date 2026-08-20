@@ -554,7 +554,9 @@ async function exerciseAtomicBuildingCreateWithCustomerLink(
     [`buildings/${buildingId}`]: {
       id: buildingId,
       name: "Atomic linked building",
-      address: "Wonju atomic address",
+      address: "강원특별자치도 원주시 중앙로 1",
+      roadAddress: "강원특별자치도 원주시 중앙로 1",
+      jibunAddress: "강원특별자치도 원주시 중앙동 1-1",
       ownerCustomerId: "customer_1",
       entityVersion: 1,
       createdAt,
@@ -893,6 +895,11 @@ describe("field media database rule source", () => {
       expect(JSON.stringify(dataRules[canonical])).toContain("entityVersion");
       expect(JSON.stringify(dataRules[canonical])).toContain("newData.exists()");
     }
+    const buildingFields = ((dataRules.buildings as Record<string, unknown>).$entityId as Record<string, unknown>);
+    expect(buildingFields).toHaveProperty("roadAddress");
+    expect(buildingFields).toHaveProperty("jibunAddress");
+    expect(String(buildingFields[".validate"])).toContain("address').val() === newData.child('roadAddress').val()");
+    expect(String(buildingFields[".validate"])).toContain("address').val() === newData.child('jibunAddress').val()");
     const fixtureCustomer = dataRules.customers as Record<string, Record<string, unknown>>;
     const fixtureCustomerRecord = fixtureCustomer.$customerId;
     const fixtureLink = (fixtureCustomerRecord.buildingIdLinks as Record<string, Record<string, unknown>>).$buildingId;
@@ -2144,6 +2151,54 @@ describe.runIf(databaseEmulatorAvailable)("future CRM cutover rules rehearsal", 
     }));
     await assertFails(update(ref(viewer, "crmCompany/data"), atomicPatch));
     await assertFails(set(ref(member, "crmCompany/data"), current));
+  });
+
+  it("keeps the compatibility address aligned with road-name then jibun addresses", async () => {
+    const member = cutoverEnvironment.authenticatedContext(
+      "crm-member",
+      crmClaims("member@bring.test"),
+    ).database();
+    const current = (await assertSucceeds(get(ref(
+      member,
+      "crmCompany/data/buildings/building_1",
+    )))).val();
+    const roadAddress = "강원특별자치도 원주시 중앙로 1";
+    const jibunAddress = "강원특별자치도 원주시 중앙동 1-1";
+    const roadAligned = {
+      ...current,
+      address: roadAddress,
+      roadAddress,
+      jibunAddress,
+      entityVersion: 2,
+      updatedAt: "2026-08-09T00:00:01.000Z",
+      updatedByAuthUid: "crm-member",
+      updatedByOperatorId: "operator_kim",
+    };
+    await assertSucceeds(set(
+      ref(member, "crmCompany/data/buildings/building_1"),
+      roadAligned,
+    ));
+
+    const jibunFallback = {
+      ...roadAligned,
+      address: jibunAddress,
+      roadAddress: "",
+      entityVersion: 3,
+      updatedAt: "2026-08-09T00:00:02.000Z",
+    };
+    await assertSucceeds(set(
+      ref(member, "crmCompany/data/buildings/building_1"),
+      jibunFallback,
+    ));
+    await assertFails(set(
+      ref(member, "crmCompany/data/buildings/building_1"),
+      {
+        ...jibunFallback,
+        address: "강원특별자치도 원주시 잘못된로 9",
+        entityVersion: 4,
+        updatedAt: "2026-08-09T00:00:03.000Z",
+      },
+    ));
   });
 
   it("denies cutover writes from viewers and disabled members", async () => {

@@ -174,6 +174,41 @@ test("Spark building updates preserve server-owned FIELD references", () => {
   });
 });
 
+test("Spark building mutations preserve both Naver address forms and bind the legacy address to the preferred value", () => {
+  const data = {
+    customers: { customer_1: { id: "customer_1", archivedAt: "" } },
+    buildings: {},
+  };
+  const request = buildingCreateRequest({
+    patch: {
+      name: "주소 건물",
+      address: "강원특별자치도 원주시 중앙로 1",
+      roadAddress: "강원특별자치도 원주시 중앙로 1",
+      jibunAddress: "강원특별자치도 원주시 중앙동 1-1",
+      ownerCustomerId: "customer_1",
+    },
+  });
+  const result = SparkCanonical.reduceEntity(data, request, ACTOR, NOW);
+
+  assert.equal(result.data.buildings.building_new.address, request.patch.address);
+  assert.equal(result.data.buildings.building_new.roadAddress, request.patch.roadAddress);
+  assert.equal(result.data.buildings.building_new.jibunAddress, request.patch.jibunAddress);
+  assert.throws(
+    () => SparkCanonical.reduceEntity(data, buildingCreateRequest({
+      requestId: "550e8400-e29b-41d4-a716-446655440021",
+      patch: { ...request.patch, address: "서로 다른 대표 주소" },
+    }), ACTOR, NOW),
+    error => error && error.code === "crm_address_mismatch",
+  );
+  assert.throws(
+    () => SparkCanonical.reduceEntity(data, buildingCreateRequest({
+      requestId: "550e8400-e29b-41d4-a716-446655440022",
+      patch: { ...request.patch, roadAddress: "가".repeat(1001) },
+    }), ACTOR, NOW),
+    error => error && error.code === "crm_roadAddress_invalid",
+  );
+});
+
 test("Spark sales-unit create enforces prospect and building-unit parent integrity", () => {
   const data = {
     buildings: { building_1: canonicalBuilding() },
