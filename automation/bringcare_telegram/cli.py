@@ -15,6 +15,14 @@ from .queries import BlogQueries
 from .remote import RemoteProcessor
 from .revisions import RevisionStore
 from .state import NotificationState
+from automation.dual_publisher import (
+    load_publish_manifest,
+    make_instagram_publisher,
+    make_youtube_publisher,
+    publish_manifest,
+)
+from automation.instagram_uploader import InstagramClient, InstagramConfig
+from automation.youtube_uploader import authorize
 
 BASE = Path(__file__).resolve().parent
 WORKSPACE_ROOT = BASE.parents[1]
@@ -107,6 +115,45 @@ def sync_approval() -> dict:
     return process_remote_once(timeout=0)
 
 
+def run_approved_publish(
+    *,
+    store: ApprovalStore,
+    manifest_path: Path,
+    state_dir: Path,
+    youtube,
+    instagram,
+) -> dict:
+    record = store.load()
+    if record is None or record.status not in {"approved", "publishing"}:
+        raise RuntimeError("No approved publishing job")
+    if record.status == "approved":
+        record = store.claim_for_publish()
+    if record is None:
+        raise RuntimeError("Approval expired before publishing")
+    manifest = load_publish_manifest(manifest_path)
+    manifest["target"] = record.publish_target
+    manifest["approval"] = {
+        "approved": True,
+        "approved_at": record.approved_at,
+        "approved_by": "telegram-owner",
+    }
+    result = publish_manifest(
+        manifest,
+        state_dir=state_dir,
+        youtube=youtube,
+        instagram=instagram,
+    )
+    active = [
+        platform
+        for platform in result["platforms"].values()
+        if platform["status"] != "skipped"
+    ]
+    if active and all(platform["status"] == "published" for platform in active):
+        public_url = next(platform["url"] for platform in active if platform.get("url"))
+        store.mark_published(public_url)
+    return result
+
+
 def _bounded_timeout(value: str) -> int:
     try:
         timeout = int(value)
@@ -136,6 +183,12 @@ def _parser():
     claim.add_argument("--post-id", required=False)
     mark = commands.add_parser("mark-published")
     mark.add_argument("--url", required=True)
+    publish = commands.add_parser("publish-approved")
+    publish.add_argument("--manifest", type=Path, required=True)
+    publish.add_argument("--state-dir", type=Path, default=WORKSPACE_ROOT / "automation" / "state" / "publish")
+    publish.add_argument("--client-secrets", type=Path, default=WORKSPACE_ROOT / "client_secrets.json")
+    publish.add_argument("--youtube-token", type=Path, default=WORKSPACE_ROOT / "automation" / "secrets" / "youtube_token.json")
+    publish.add_argument("--approve-public", action="store_true")
     return parser
 
 
@@ -178,6 +231,20 @@ def main(argv=None):
         if args.command == "mark-published":
             record = store.mark_published(args.url)
             print(json.dumps(asdict(record), ensure_ascii=False))
+            return 0
+        if args.command == "publish-approved":
+            credentials = authorize(args.client_secrets, args.youtube_token)
+            instagram_client = InstagramClient.from_config(InstagramConfig.from_env())
+            result = run_approved_publish(
+                store=store,
+                manifest_path=args.manifest,
+                state_dir=args.state_dir,
+                youtube=make_youtube_publisher(
+                    credentials, approve_public=args.approve_public
+                ),
+                instagram=make_instagram_publisher(instagram_client),
+            )
+            print(json.dumps(result, ensure_ascii=False))
             return 0
         event = _build(args)
         if args.command == "ready":

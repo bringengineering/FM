@@ -2,7 +2,8 @@ import json
 
 import pytest
 
-from automation.bringcare_telegram.cli import _parser, main
+from automation.bringcare_telegram.cli import _parser, main, run_approved_publish
+from automation.bringcare_telegram.approval import ApprovalStore
 from automation.bringcare_telegram.client import TelegramAuthError, TelegramTemporaryError
 
 
@@ -26,6 +27,41 @@ def test_remote_commands_parse_and_validate_bounded_timeout():
     for value in ("-1", "51", "not-a-number"):
         with pytest.raises(SystemExit):
             _parser().parse_args(["remote-once", "--timeout", value])
+
+
+def test_approved_worker_injects_target_and_marks_complete(tmp_path):
+    video = tmp_path / "video.mp4"
+    video.write_bytes(b"video")
+    manifest_path = tmp_path / "manifest.json"
+    manifest_path.write_text(
+        json.dumps(
+            {
+                "video": str(video),
+                "youtube": {"title": "title", "description": "description"},
+                "instagram": {
+                    "caption": "caption",
+                    "video_url": "https://media.example/video.mp4",
+                },
+                "qc": {"required_gates": ["audio"], "audio": True},
+            }
+        ),
+        encoding="utf-8",
+    )
+    store = ApprovalStore(tmp_path / "approval.json")
+    store.create_pending("video-1", "영상", "shorts", "기업", ttl_minutes=60)
+    store.approve(update_id=1, publish_target="instagram")
+
+    result = run_approved_publish(
+        store=store,
+        manifest_path=manifest_path,
+        state_dir=tmp_path / "state",
+        youtube=lambda job: pytest.fail("YouTube must be skipped"),
+        instagram=lambda job: {"id": "ig1", "url": "https://instagram.com/reel/ig1"},
+    )
+
+    assert result["platforms"]["youtube"]["status"] == "skipped"
+    assert store.load().status == "published"
+    assert store.load().published_url == "https://instagram.com/reel/ig1"
 
 
 @pytest.mark.parametrize("command", ["sync-commands", "sync-approval"])

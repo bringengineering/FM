@@ -8,7 +8,16 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Callable
 
-from automation.instagram_uploader import InstagramApiError
+from automation.instagram_uploader import (
+    InstagramApiError,
+    InstagramClient,
+    InstagramConfig,
+)
+from automation.youtube_uploader import (
+    UploadManifest,
+    authorize,
+    upload_approved_video,
+)
 
 
 ALLOWED_TARGETS = {"both", "youtube", "instagram", "hold"}
@@ -152,11 +161,51 @@ def load_publish_manifest(path: Path) -> dict:
     return json.loads(path.read_text(encoding="utf-8"))
 
 
+def youtube_manifest_from_job(job: dict) -> UploadManifest:
+    metadata = job["youtube"]
+    return UploadManifest(
+        title=metadata["title"],
+        description=metadata.get("description", ""),
+        tags=list(metadata.get("tags", [])),
+        category_id=str(metadata.get("category_id", "27")),
+        privacy_status=metadata.get("privacy_status", "public"),
+        contains_synthetic_media=True,
+    )
+
+
+def make_youtube_publisher(credentials, *, approve_public: bool):
+    def publisher(job: dict) -> dict:
+        return upload_approved_video(
+            Path(job["video"]),
+            youtube_manifest_from_job(job),
+            credentials=credentials,
+            approve_public=approve_public,
+        )
+
+    return publisher
+
+
+def make_instagram_publisher(client: InstagramClient):
+    def publisher(job: dict) -> dict:
+        metadata = job["instagram"]
+        creation_id = client.create_reel(
+            video_url=metadata["video_url"], caption=metadata["caption"]
+        )
+        client.wait_until_ready(creation_id)
+        result = client.publish(creation_id)
+        return {"id": result.media_id, "url": result.url}
+
+    return publisher
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description="Publish an approved video safely")
     parser.add_argument("manifest", type=Path)
     parser.add_argument("--target", choices=sorted(ALLOWED_TARGETS), default=None)
     parser.add_argument("--state-dir", type=Path, default=Path("automation/state/publish"))
+    parser.add_argument("--client-secrets", type=Path, default=Path("client_secrets.json"))
+    parser.add_argument("--youtube-token", type=Path, default=Path("automation/secrets/youtube_token.json"))
+    parser.add_argument("--approve-public", action="store_true")
     parser.add_argument("--dry-run", action="store_true")
     args = parser.parse_args()
     manifest = load_publish_manifest(args.manifest)
@@ -172,7 +221,17 @@ def main() -> None:
     if args.dry_run:
         print(json.dumps(summary, ensure_ascii=False, indent=2))
         return
-    raise SystemExit("Live publishers must be provided by the approval worker")
+    credentials = authorize(args.client_secrets, args.youtube_token)
+    instagram_client = InstagramClient.from_config(InstagramConfig.from_env())
+    result = publish_manifest(
+        manifest,
+        state_dir=args.state_dir,
+        youtube=make_youtube_publisher(
+            credentials, approve_public=args.approve_public
+        ),
+        instagram=make_instagram_publisher(instagram_client),
+    )
+    print(json.dumps(result, ensure_ascii=False, indent=2))
 
 
 if __name__ == "__main__":

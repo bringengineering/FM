@@ -20,6 +20,8 @@
 | 본문 수정 요청 | `본문에서 회사 소개를 더 짧게 수정해줘` |
 | 발행 요청 시작 | `올려줘`, `발행해`, `진행해` |
 | 최종 승인 | 정확히 `승인` |
+| YouTube만 승인 | 정확히 `유튜브만` |
+| Instagram만 승인 | 정확히 `인스타만` |
 | 승인 대기 취소 | 정확히 `취소` 또는 `보류` |
 | 도움말 | `안녕`, `뭐 할 수 있어?`, `도움말` |
 
@@ -76,6 +78,7 @@ python -m automation.bringcare_telegram.cli remote-once --timeout 0
 python -m automation.bringcare_telegram.cli approval-status
 python -m automation.bringcare_telegram.cli claim-approved --post-id POST-001
 python -m automation.bringcare_telegram.cli mark-published --url "https://blog.naver.com/bringcare/게시물번호"
+python -m automation.bringcare_telegram.cli publish-approved --manifest "output/VIDEO_ID/publish_manifest.json" --approve-public
 python -m automation.bringcare_telegram.cli blocked --post-id POST-001 --title "글 제목" --blocker LOGIN_EXPIRED --stage "발행 설정"
 python -m automation.bringcare_telegram.cli published --post-id POST-001 --title "글 제목" --url "https://blog.naver.com/bringcare/게시물번호"
 ```
@@ -88,6 +91,26 @@ python -m automation.bringcare_telegram.cli published --post-id POST-001 --title
 - **단일 인스턴스 오류:** 작업 관리자에서 중복 Python 폴러가 없는지 확인하고, 예약 작업을 한 번만 설치합니다. 정상 폴러가 실행 중이면 두 번째 `run-remote.ps1`은 잠금 때문에 종료되는 것이 정상입니다.
 - **예약 작업이 멈춤:** `Get-ScheduledTaskInfo`의 최근 결과를 확인하고 `Start-ScheduledTask`로 다시 시작합니다. 로그의 상태 코드만 확인하고 토큰을 붙여넣지 않습니다.
 - **네이버 로그인/CAPTCHA/편집기 변경:** Windows에서 네이버에 다시 로그인하거나 본인 확인을 완료합니다. 폴러는 네이버 화면을 직접 조작하지 않으며 Codex 발행 회차에서 재개합니다.
+
+## YouTube Shorts·Instagram Reels 동시 게시
+
+영상 승인 기본값은 `승인`이며 YouTube와 Instagram에 함께 게시합니다. `유튜브만` 또는 `인스타만`을 보내면 선택한 플랫폼만 실행합니다. 각 플랫폼 결과는 영상 SHA-256별 상태 파일에 따로 저장되므로 한쪽이 성공한 뒤 다른 쪽이 실패해도 성공 게시물을 다시 올리지 않습니다.
+
+Windows 사용자 환경변수에는 다음 값이 있어야 합니다. 값을 문서나 명령 출력에 직접 표시하지 않습니다.
+
+- `META_PAGE_ACCESS_TOKEN`
+- `META_PAGE_ID`
+- `INSTAGRAM_BUSINESS_ACCOUNT_ID`
+
+Instagram은 로컬 파일을 직접 받을 수 없으며 생성 시점에 접근 가능한 공개 HTTPS `video_url`이 필요합니다. 게시 매니페스트의 `instagram.video_url`에는 만료 가능한 임시 미디어 URL을 넣습니다. QC 통과와 Telegram 승인 시간이 없는 매니페스트는 업로더가 두 플랫폼 모두 차단합니다.
+
+공개 없이 구조만 검사할 때는 다음 명령을 사용합니다.
+
+```powershell
+python -m automation.dual_publisher "output/VIDEO_ID/publish_manifest.json" --target both --dry-run
+```
+
+Instagram 처리 지연·429·5xx는 `failed_retryable`로 남아 다음 실행에서 Instagram만 재시도됩니다. 권한 부족, 잘못된 미디어 URL, QC 실패는 자동 재시도하지 않으며 Telegram에 재인증 또는 파일 수정이 필요하다고 보고해야 합니다.
 
 ## 보안과 로컬 데이터
 

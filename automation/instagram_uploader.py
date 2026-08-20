@@ -24,6 +24,27 @@ class InstagramApiError(RuntimeError):
         self.code = code
 
 
+def _windows_user_environment() -> dict[str, str]:
+    if os.name != "nt":
+        return {}
+    try:
+        import winreg
+
+        values: dict[str, str] = {}
+        with winreg.OpenKey(winreg.HKEY_CURRENT_USER, "Environment") as key:
+            for name in (
+                "META_PAGE_ACCESS_TOKEN",
+                "INSTAGRAM_BUSINESS_ACCOUNT_ID",
+            ):
+                try:
+                    values[name] = str(winreg.QueryValueEx(key, name)[0])
+                except FileNotFoundError:
+                    continue
+        return values
+    except OSError:
+        return {}
+
+
 @dataclass(frozen=True)
 class InstagramConfig:
     access_token: str
@@ -31,7 +52,11 @@ class InstagramConfig:
 
     @classmethod
     def from_env(cls, env: Mapping[str, str] | None = None) -> "InstagramConfig":
-        source = os.environ if env is None else env
+        source = (
+            {**_windows_user_environment(), **os.environ}
+            if env is None
+            else dict(env)
+        )
         missing = [
             key
             for key in ("META_PAGE_ACCESS_TOKEN", "INSTAGRAM_BUSINESS_ACCOUNT_ID")
@@ -50,10 +75,7 @@ class InstagramConfig:
 @dataclass(frozen=True)
 class InstagramPublishResult:
     media_id: str
-
-    @property
-    def url(self) -> str:
-        return f"https://www.instagram.com/p/{self.media_id}/"
+    url: str
 
 
 class GraphTransport(Protocol):
@@ -174,7 +196,15 @@ class InstagramClient:
             raise InstagramApiError(
                 "Instagram did not return a media id", retryable=False
             )
-        return InstagramPublishResult(media_id=str(media_id))
+        details = self.transport.request(
+            "GET", f"/{media_id}", params={"fields": "permalink"}
+        )
+        permalink = details.get("permalink")
+        if not permalink:
+            raise InstagramApiError(
+                "Instagram did not return a permalink", retryable=True
+            )
+        return InstagramPublishResult(media_id=str(media_id), url=str(permalink))
 
 
 def publish_reel(*, video_url: str, caption: str) -> InstagramPublishResult:

@@ -38,6 +38,17 @@ class InstagramConfigTests(unittest.TestCase):
         self.assertEqual("1784", config.instagram_account_id)
         self.assertEqual("secret-token", config.access_token)
 
+    def test_config_can_read_windows_user_environment(self):
+        with patch(
+            "automation.instagram_uploader._windows_user_environment",
+            return_value={
+                "META_PAGE_ACCESS_TOKEN": "registry-token",
+                "INSTAGRAM_BUSINESS_ACCOUNT_ID": "1784",
+            },
+        ), patch("automation.instagram_uploader.os.environ", {}):
+            config = InstagramConfig.from_env()
+        self.assertEqual("registry-token", config.access_token)
+
 
 class InstagramClientTests(unittest.TestCase):
     def test_create_wait_and_publish_reel(self):
@@ -47,6 +58,7 @@ class InstagramClientTests(unittest.TestCase):
                 {"status_code": "IN_PROGRESS"},
                 {"status_code": "FINISHED"},
                 {"id": "media-1"},
+                {"permalink": "https://www.instagram.com/reel/shortcode/"},
             ]
         )
         client = InstagramClient("1784", transport, poll_seconds=0)
@@ -59,12 +71,14 @@ class InstagramClientTests(unittest.TestCase):
         result = client.publish(creation_id)
 
         self.assertEqual("media-1", result.media_id)
+        self.assertEqual("https://www.instagram.com/reel/shortcode/", result.url)
         self.assertEqual(
             [
                 ("POST", "/1784/media"),
                 ("GET", "/container-1"),
                 ("GET", "/container-1"),
                 ("POST", "/1784/media_publish"),
+                ("GET", "/media-1"),
             ],
             [(method, path) for method, path, _ in transport.calls],
         )

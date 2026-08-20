@@ -3,8 +3,13 @@ import unittest
 from pathlib import Path
 from tempfile import TemporaryDirectory
 
-from automation.dual_publisher import PublishBlocked, publish_manifest
-from automation.instagram_uploader import InstagramApiError
+from automation.dual_publisher import (
+    PublishBlocked,
+    make_instagram_publisher,
+    publish_manifest,
+    youtube_manifest_from_job,
+)
+from automation.instagram_uploader import InstagramApiError, InstagramPublishResult
 
 
 class FakePublisher:
@@ -46,6 +51,32 @@ def valid_manifest(root: Path) -> dict:
 
 
 class DualPublisherTests(unittest.TestCase):
+    def test_youtube_job_mapping_marks_synthetic_media(self):
+        with TemporaryDirectory() as folder:
+            job = valid_manifest(Path(folder))
+            mapped = youtube_manifest_from_job(job)
+            self.assertEqual("title", mapped.title)
+            self.assertEqual("public", mapped.privacy_status)
+            self.assertTrue(mapped.contains_synthetic_media)
+
+    def test_instagram_publisher_maps_client_result(self):
+        class Client:
+            def create_reel(self, **kwargs):
+                self.created = kwargs
+                return "container-1"
+
+            def wait_until_ready(self, creation_id):
+                self.waited = creation_id
+
+            def publish(self, creation_id):
+                return InstagramPublishResult("ig1", "https://instagram.com/reel/ig1")
+
+        with TemporaryDirectory() as folder:
+            client = Client()
+            result = make_instagram_publisher(client)(valid_manifest(Path(folder)))
+            self.assertEqual("ig1", result["id"])
+            self.assertEqual("container-1", client.waited)
+
     def test_publish_requires_explicit_approval(self):
         with TemporaryDirectory() as folder:
             manifest = valid_manifest(Path(folder))
