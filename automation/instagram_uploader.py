@@ -7,6 +7,7 @@ import urllib.error
 import urllib.parse
 import urllib.request
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Mapping, Protocol
 
 
@@ -85,9 +86,16 @@ class GraphTransport(Protocol):
 
 
 class UrllibGraphTransport:
-    def __init__(self, access_token: str, *, base_url: str = GRAPH_API_BASE):
+    def __init__(
+        self,
+        access_token: str,
+        *,
+        base_url: str = GRAPH_API_BASE,
+        opener=None,
+    ):
         self._access_token = access_token
         self._base_url = base_url.rstrip("/")
+        self._opener = opener or urllib.request.urlopen
 
     def request(
         self, method: str, path: str, *, params: Mapping[str, str] | None = None
@@ -104,7 +112,7 @@ class UrllibGraphTransport:
             headers={"Authorization": f"Bearer {self._access_token}"},
         )
         try:
-            with urllib.request.urlopen(request, timeout=30) as response:
+            with self._opener(request, timeout=30) as response:
                 return json.loads(response.read().decode("utf-8"))
         except urllib.error.HTTPError as exc:
             status = exc.code
@@ -125,6 +133,46 @@ class UrllibGraphTransport:
         except urllib.error.URLError:
             raise InstagramApiError(
                 "Graph API network request failed", retryable=True
+            ) from None
+
+    def upload_file(self, upload_uri: str, video_path: Path) -> dict:
+        parsed = urllib.parse.urlparse(upload_uri)
+        if parsed.scheme != "https":
+            raise InstagramApiError(
+                "Instagram upload URI must use HTTPS", retryable=False
+            )
+        size = video_path.stat().st_size
+        request = urllib.request.Request(
+            upload_uri,
+            data=video_path.read_bytes(),
+            method="POST",
+            headers={
+                "Authorization": f"OAuth {self._access_token}",
+                "offset": "0",
+                "file_size": str(size),
+            },
+        )
+        try:
+            with self._opener(request, timeout=120) as response:
+                return json.loads(response.read().decode("utf-8"))
+        except urllib.error.HTTPError as exc:
+            status = exc.code
+            try:
+                body = json.loads(exc.read().decode("utf-8"))
+                graph_error = body.get("error", {})
+                code = graph_error.get("code")
+                message = graph_error.get("message", "Instagram upload failed")
+            except (ValueError, UnicodeDecodeError):
+                code = None
+                message = "Instagram upload failed"
+            raise InstagramApiError(
+                f"Graph API error ({status}): {message}",
+                retryable=status == 429 or status >= 500,
+                code=code,
+            ) from None
+        except urllib.error.URLError:
+            raise InstagramApiError(
+                "Instagram upload network request failed", retryable=True
             ) from None
 
 

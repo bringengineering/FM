@@ -1,4 +1,6 @@
 import unittest
+from pathlib import Path
+from tempfile import TemporaryDirectory
 from unittest.mock import patch
 
 from automation.instagram_uploader import (
@@ -6,6 +8,7 @@ from automation.instagram_uploader import (
     InstagramClient,
     InstagramConfig,
     InstagramConfigurationError,
+    UrllibGraphTransport,
 )
 
 
@@ -20,6 +23,51 @@ class RecordingTransport:
         if isinstance(response, Exception):
             raise response
         return response
+
+
+class FakeHttpResponse:
+    def __init__(self, payload=b'{"success": true}'):
+        self.payload = payload
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *_):
+        return False
+
+    def read(self):
+        return self.payload
+
+
+class RecordingOpener:
+    def __init__(self):
+        self.requests = []
+
+    def __call__(self, request, timeout):
+        self.requests.append((request, timeout))
+        return FakeHttpResponse()
+
+
+class InstagramTransportTests(unittest.TestCase):
+    def test_upload_file_sends_binary_with_resumable_headers(self):
+        with TemporaryDirectory() as folder:
+            video = Path(folder) / "video.mp4"
+            video.write_bytes(b"mp4-bytes")
+            opener = RecordingOpener()
+            transport = UrllibGraphTransport("secret-token", opener=opener)
+
+            result = transport.upload_file(
+                "https://rupload.facebook.com/ig-api-upload/v26.0/container-1",
+                video,
+            )
+
+            self.assertEqual({"success": True}, result)
+            request, timeout = opener.requests[0]
+            self.assertEqual(b"mp4-bytes", request.data)
+            self.assertEqual("OAuth secret-token", request.get_header("Authorization"))
+            self.assertEqual("0", request.get_header("Offset"))
+            self.assertEqual("9", request.get_header("File_size"))
+            self.assertEqual(120, timeout)
 
 
 class InstagramConfigTests(unittest.TestCase):
