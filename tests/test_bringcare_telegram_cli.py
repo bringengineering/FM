@@ -7,6 +7,20 @@ from automation.bringcare_telegram.approval import ApprovalStore
 from automation.bringcare_telegram.client import TelegramAuthError, TelegramTemporaryError
 
 
+@pytest.fixture(autouse=True)
+def isolate_single_instance_lock(monkeypatch):
+    """Keep CLI tests independent from a live Telegram poller process."""
+
+    class TestLock:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_):
+            return False
+
+    monkeypatch.setattr("automation.bringcare_telegram.cli.SingleInstanceLock", TestLock)
+
+
 def test_ready_command_dispatches_once(monkeypatch, capsys):
     sent = []
     monkeypatch.setattr("automation.bringcare_telegram.cli.send_event", lambda event: sent.append(event) or True)
