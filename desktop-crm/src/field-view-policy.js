@@ -495,6 +495,11 @@ function validatePayload(type, payload) {
   }
   if (type === "crm.logoutCheck") return hasExactKeys(payload, ["reason"]) && payload.reason === "logout";
   if (type === "field.logoutDecision") {
+    if (payload.ok === false) {
+      return hasExactKeys(payload, ["ok", "error"])
+        && validBridgeError(payload.error)
+        && payload.error.code === "FIELD_PENDING_UPLOADS_UNKNOWN";
+    }
     return hasExactKeys(payload, ["pending", "count", "risk"])
       && typeof payload.pending === "boolean"
       && Number.isInteger(payload.count) && payload.count >= 0 && payload.count <= 100_000

@@ -70,6 +70,35 @@ test("window close, menu quit, and update restart share a data-preserving upload
   assert.doesNotMatch(main, /clearStorageData|indexedDB\.deleteDatabase|deleteDatabase\(/);
 });
 
+test("exit waits for current FIELD upload readiness but always rechecks instead of approving a cached count", async () => {
+  const main = await source("main.js");
+  const pendingCheck = main.slice(
+    main.indexOf("async function requestFieldPendingUploads"),
+    main.indexOf("async function recoverFieldSession"),
+  );
+  const fieldMessages = main.slice(
+    main.indexOf('ipcMain.on("crm:field-message"'),
+    main.indexOf("function demoOperations"),
+  );
+
+  assert.match(main, /createFieldPendingReadinessCoordinator/);
+  assert.match(main, /requestFreshPendingUploadDecision/);
+  assert.match(main, /currentFieldPendingUploadsContext[\s\S]*?fieldSessionKey[\s\S]*?webContents\.id[\s\S]*?fieldPendingUploadsGeneration/);
+  assert.match(pendingCheck, /waitUntilKnown: \(\) => fieldPendingUploadsReadiness\.wait\(expectedContext\)/);
+  assert.match(pendingCheck, /alreadyKnown: fieldPendingUploadsReadiness\.isKnown\(expectedContext\)/);
+  assert.match(pendingCheck, /requestFreshPendingUploadDecision\(\{/);
+  assert.match(pendingCheck, /createFieldEnvelope\("crm\.logoutCheck", \{ reason: "logout" \}\)/);
+  assert.match(pendingCheck, /expectedContext !== currentFieldPendingUploadsContext/);
+  assert.doesNotMatch(pendingCheck, /isKnown\(expectedContext\)[\s\S]{0,120}return fieldPendingUploads/);
+  assert.match(main, /checkPending: async fieldHandle => requestFieldPendingUploads\(fieldHandle\)/);
+  assert.match(fieldMessages, /envelope\.type === "field\.pendingUploads"[\s\S]*?fieldViewReady[\s\S]*?markKnown\(currentFieldPendingUploadsContext\(\)\)/);
+  assert.match(main, /FIELD_NAVIGATION_CHANGED/);
+  assert.match(main, /FIELD_SESSION_CHANGED/);
+  assert.match(main, /FIELD_RENDERER_GONE/);
+  assert.match(main, /FIELD_RENDERER_DESTROYED/);
+  assert.match(main, /cancelWaiters\("FIELD_VIEW_HIDDEN"\)/);
+});
+
 test("uses the renderer-measured content rectangle without guessed chrome offsets", () => {
   assert.deepEqual(fieldBounds({ x: 236, y: 88, width: 1282, height: 812 }), {
     x: 236,

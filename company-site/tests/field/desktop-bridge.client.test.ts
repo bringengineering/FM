@@ -331,16 +331,18 @@ describe("FIELD browser desktop bridge", () => {
     vi.useRealTimers();
   });
 
-  it("fails closed when pending upload state cannot be read", async () => {
-    const sent: unknown[] = [];
+  it("awaits a fresh pending upload count before deciding logout", async () => {
+    const sent: any[] = [];
     let receive: ((event: MessageEvent) => void) | undefined;
+    let resolveCount!: (value: { count: number; risk: "high" }) => void;
+    const pending = new Promise<{ count: number; risk: "high" }>((resolve) => { resolveCount = resolve; });
     const bridge = createDesktopFieldBridge({
       post: (value) => sent.push(value),
       subscribe: (listener) => { receive = listener; return () => undefined; },
       command: vi.fn(),
       currentOperatorId: () => null,
       navigate: vi.fn(),
-      pendingUploads: () => { throw new Error("indexeddb unavailable"); },
+      pendingUploads: () => pending,
     });
     bridge.start("session");
     receive?.(new MessageEvent("message", {
@@ -350,6 +352,38 @@ describe("FIELD browser desktop bridge", () => {
     }));
     await new Promise((resolve) => setTimeout(resolve, 0));
     expect(sent).toHaveLength(0);
+    resolveCount({ count: 3, risk: "high" });
+    await vi.waitFor(() => expect(sent).toHaveLength(1));
+    expect(sent[0]).toMatchObject({
+      type: "field.logoutDecision",
+      payload: { pending: true, count: 3, risk: "high" },
+    });
+    bridge.stop();
+  });
+
+  it("returns a typed failure when pending upload state cannot be read", async () => {
+    const sent: unknown[] = [];
+    let receive: ((event: MessageEvent) => void) | undefined;
+    const bridge = createDesktopFieldBridge({
+      post: (value) => sent.push(value),
+      subscribe: (listener) => { receive = listener; return () => undefined; },
+      command: vi.fn(),
+      currentOperatorId: () => null,
+      navigate: vi.fn(),
+      pendingUploads: async () => { throw new Error("indexeddb unavailable"); },
+    });
+    bridge.start("session");
+    receive?.(new MessageEvent("message", {
+      data: createFieldBridgeEnvelope("crm.logoutCheck", { reason: "logout" }, REQUEST_ID),
+      origin: "https://bring-fm.web.app",
+      source: window,
+    }));
+    await vi.waitFor(() => expect(sent).toHaveLength(1));
+    expect(sent[0]).toMatchObject({
+      type: "field.logoutDecision",
+      requestId: REQUEST_ID,
+      payload: { ok: false, error: { code: "FIELD_PENDING_UPLOADS_UNKNOWN" } },
+    });
     bridge.stop();
   });
 

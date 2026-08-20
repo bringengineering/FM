@@ -307,6 +307,11 @@ function validPayload(type: FieldBridgeType, payload: unknown): payload is Recor
   if (type === "field.openExternal") return exactKeys(payload, ["url"]) && validExternalUrl(payload.url);
   if (type === "crm.logoutCheck") return exactKeys(payload, ["reason"]) && payload.reason === "logout";
   if (type === "field.logoutDecision") {
+    if (payload.ok === false) {
+      return exactKeys(payload, ["ok", "error"])
+        && validBridgeError(payload.error)
+        && (payload.error as { code: string }).code === "FIELD_PENDING_UPLOADS_UNKNOWN";
+    }
     return exactKeys(payload, ["pending", "count", "risk"])
       && typeof payload.pending === "boolean"
       && Number.isSafeInteger(payload.count) && (payload.count as number) >= 0 && (payload.count as number) <= 100_000
@@ -373,7 +378,9 @@ export interface DesktopFieldBridgeDependencies {
   ): Promise<unknown>;
   currentOperatorId(): string | null;
   navigate(payload: Record<string, unknown>): boolean | Promise<boolean>;
-  pendingUploads(): { count: number; risk: "none" | "low" | "medium" | "high" };
+  pendingUploads():
+    | { count: number; risk: "none" | "low" | "medium" | "high" }
+    | Promise<{ count: number; risk: "none" | "low" | "medium" | "high" }>;
   setTimer?: typeof setTimeout;
   clearTimer?: typeof clearTimeout;
 }
@@ -447,7 +454,10 @@ export function createDesktopFieldBridge(dependencies: DesktopFieldBridgeDepende
         }
         response = createFieldBridgeEnvelope("field.commandResult", { ok: true, result }, envelope.requestId);
       } else {
-        const pending = dependencies.pendingUploads();
+        const pending = await dependencies.pendingUploads();
+        if (!Number.isSafeInteger(pending.count) || pending.count < 0 || pending.count > 100_000) {
+          throw new Error("field_pending_uploads_invalid");
+        }
         response = createFieldBridgeEnvelope("field.logoutDecision", {
           pending: pending.count > 0,
           count: pending.count,
@@ -456,27 +466,30 @@ export function createDesktopFieldBridge(dependencies: DesktopFieldBridgeDepende
       }
     } catch (error) {
       if (envelope.type === "crm.logoutCheck") {
-        active.delete(envelope.requestId);
-        return;
+        response = createFieldBridgeEnvelope("field.logoutDecision", {
+          ok: false,
+          error: { code: "FIELD_PENDING_UPLOADS_UNKNOWN" },
+        }, envelope.requestId);
+      } else {
+        const safeCodes = new Set([
+          "FIELD_OPERATOR_CHANGED",
+          "FIELD_NAVIGATION_UNAVAILABLE",
+          "FIELD_SESSION_UNAVAILABLE",
+          "FIELD_CREATE_UNAVAILABLE",
+          "FIELD_REVIEW_UNAVAILABLE",
+          "FIELD_VIEWER_READ_ONLY",
+        ]);
+        const candidate = typeof error === "object" && error !== null && "code" in error
+          && typeof error.code === "string"
+          ? error.code
+          : "";
+        const code = safeCodes.has(candidate) ? candidate : "FIELD_REQUEST_FAILED";
+        response = createFieldBridgeEnvelope(
+          envelope.type === "field.command" ? "field.commandResult" : "field.ack",
+          { ok: false, error: { code } },
+          envelope.requestId,
+        );
       }
-      const safeCodes = new Set([
-        "FIELD_OPERATOR_CHANGED",
-        "FIELD_NAVIGATION_UNAVAILABLE",
-        "FIELD_SESSION_UNAVAILABLE",
-        "FIELD_CREATE_UNAVAILABLE",
-        "FIELD_REVIEW_UNAVAILABLE",
-        "FIELD_VIEWER_READ_ONLY",
-      ]);
-      const candidate = typeof error === "object" && error !== null && "code" in error
-        && typeof error.code === "string"
-        ? error.code
-        : "";
-      const code = safeCodes.has(candidate) ? candidate : "FIELD_REQUEST_FAILED";
-      response = createFieldBridgeEnvelope(
-        envelope.type === "field.command" ? "field.commandResult" : "field.ack",
-        { ok: false, error: { code } },
-        envelope.requestId,
-      );
     } finally {
       (dependencies.clearTimer ?? clearTimeout)(timer);
     }

@@ -580,4 +580,16 @@ test("logout decision pending flag must exactly match the bounded upload count",
   assert.equal(decision(true, 2, "high", "0030"), true);
   assert.equal(decision(false, 2, "high", "0031"), false);
   assert.equal(decision(true, 0, "none", "0032"), false);
+
+  const unknown = validateFieldMessage(createFieldEnvelope(
+    "field.logoutDecision",
+    { ok: false, error: { code: "FIELD_PENDING_UPLOADS_UNKNOWN" } },
+    requestId("0033"),
+  ), context).ok;
+  assert.equal(unknown, true);
+  assert.equal(validateFieldMessage(createFieldEnvelope(
+    "field.logoutDecision",
+    { ok: false, error: { code: "FIELD_REQUEST_FAILED" } },
+    requestId("0034"),
+  ), context).ok, false);
 });

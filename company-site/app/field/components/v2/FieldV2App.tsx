@@ -51,6 +51,18 @@ function uploadRisk(count: number): "none" | "low" | "medium" | "high" {
   return "high";
 }
 
+export async function readFreshPendingUploadCount(
+  uid: string,
+  openQueue: typeof openOfflineQueue = openOfflineQueue,
+): Promise<number> {
+  const queue = await openQueue();
+  try {
+    return await queue.countPending(uid);
+  } finally {
+    queue.close();
+  }
+}
+
 const NAVIGATION_RUNTIME_WAIT_MS = 8_000;
 const NAVIGATION_RETRY_MS = 25;
 
@@ -70,10 +82,12 @@ export function FieldEmbeddedBridgeHost({
   authState,
   session,
   runtime,
+  readPendingUploadCount = readFreshPendingUploadCount,
 }: {
   authState: FieldV2AuthState;
   session: FieldV2Session | null;
   runtime: FieldEmbeddedRuntime | null;
+  readPendingUploadCount?: (uid: string) => Promise<number>;
 }) {
   const bridgeRef = useRef<ReturnType<typeof createDesktopFieldBridge> | null>(null);
   const runtimeRef = useRef(runtime);
@@ -82,6 +96,8 @@ export function FieldEmbeddedBridgeHost({
   authStateRef.current = authState;
   const sessionRef = useRef(session);
   sessionRef.current = session;
+  const pendingUploadCountReaderRef = useRef(readPendingUploadCount);
+  pendingUploadCountReaderRef.current = readPendingUploadCount;
   const hostActiveRef = useRef(true);
   const logoutInProgressRef = useRef(false);
   const [logoutInProgress, setLogoutInProgress] = useState(false);
@@ -121,15 +137,21 @@ export function FieldEmbeddedBridgeHost({
         }
         return false;
       },
-      () => {
+      async () => {
         const currentAuthState = authStateRef.current;
         if (currentAuthState === "missing") return { count: 0, risk: "none" };
-        if (currentAuthState !== "authenticated" || !sessionRef.current || !runtimeRef.current) {
+        const currentSession = sessionRef.current;
+        if (currentAuthState !== "authenticated" || !currentSession) {
           throw new Error("field_pending_uploads_unknown");
         }
-        const pending = runtimeRef.current?.pendingUploads;
-        if (!pending?.known) throw new Error("field_pending_uploads_unknown");
-        const count = pending.count;
+        const sessionUid = currentSession.uid;
+        const count = await pendingUploadCountReaderRef.current(sessionUid);
+        if (authStateRef.current !== "authenticated" || sessionRef.current?.uid !== sessionUid) {
+          throw new Error("field_pending_uploads_session_changed");
+        }
+        if (!Number.isSafeInteger(count) || count < 0 || count > 100_000) {
+          throw new Error("field_pending_uploads_invalid");
+        }
         return { count, risk: uploadRisk(count) };
       },
       () => runtimeRef.current?.operatorId || null,

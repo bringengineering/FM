@@ -297,6 +297,38 @@ describe("offline capture queue completion rules", () => {
     expect(await queue.countPending("u2")).toBe(0);
   });
 
+  it("counts pending state indexes without materializing queued Blobs", async () => {
+    const queue = await createQueue();
+    await enqueueQueuedPhoto(queue, {
+      mediaId: "large-media",
+      blob: jpegBlob("x".repeat(1_000_000)),
+    });
+    const getAll = vi.spyOn(IDBIndex.prototype, "getAll");
+
+    await expect(queue.countPending("u1")).resolves.toBe(1);
+    expect(getAll).not.toHaveBeenCalled();
+  });
+
+  it("overcounts a malformed pending index entry instead of approving an unsafe exit", async () => {
+    const queue = await createQueue();
+    await enqueueQueuedPhoto(queue, { mediaId: "owned" });
+    const database = await openDB(dbName, 1);
+    const owned = await queue.get("u1", "owned");
+    expect(owned).toBeDefined();
+    await database.put("mediaQueue", {
+      ...owned!,
+      key: "u1:malformed-key",
+      mediaId: "different-media-id",
+      requestId: "malformed-request",
+    });
+
+    expect((await queue.listPending("u1")).map((record) => record.mediaId))
+      .toEqual(["owned"]);
+    await expect(queue.countPending("u1")).resolves.toBe(2);
+    await expect(queue.countPending("u2")).resolves.toBe(0);
+    database.close();
+  });
+
   it("deletes metadata only after Firebase finalization and Drive completion", async () => {
     const queue = await createQueue();
     await enqueueQueuedPhoto(queue);

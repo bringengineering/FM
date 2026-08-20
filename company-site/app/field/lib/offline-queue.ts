@@ -22,6 +22,13 @@ export type {
 const DEFAULT_DATABASE_NAME = "bring-field-offline";
 const DATABASE_VERSION = 1;
 const FIVE_MEBIBYTES = 5 * 1_024 * 1_024;
+const PENDING_UPLOAD_STATES: readonly UploadState[] = [
+  "queued",
+  "uploading",
+  "objectStored",
+  "finalizing",
+  "failed",
+];
 
 export interface QueuedMediaRecord {
   key: string;
@@ -302,16 +309,9 @@ function createQueue(database: IDBPDatabase<FieldOfflineDatabase>): OfflineQueue
     },
 
     async listPending(uid) {
-      const pendingStates: UploadState[] = [
-        "queued",
-        "uploading",
-        "objectStored",
-        "finalizing",
-        "failed",
-      ];
       const transaction = database.transaction("mediaQueue", "readonly");
       const index = transaction.store.index("by-state");
-      const requests = pendingStates.map((state) => index.getAll([uid, state]));
+      const requests = PENDING_UPLOAD_STATES.map((state) => index.getAll([uid, state]));
       const records = (await Promise.all(requests)).flat();
       await transaction.done;
 
@@ -408,7 +408,15 @@ function createQueue(database: IDBPDatabase<FieldOfflineDatabase>): OfflineQueue
     },
 
     async countPending(uid) {
-      return (await this.listPending(uid)).length;
+      const transaction = database.transaction("mediaQueue", "readonly");
+      const index = transaction.store.index("by-state");
+      // Count index entries directly so queued media Blobs never enter memory here.
+      // A malformed ownership record is intentionally overcounted, which keeps the exit gate fail-safe.
+      const counts = await Promise.all(
+        PENDING_UPLOAD_STATES.map((state) => index.count([uid, state])),
+      );
+      await transaction.done;
+      return counts.reduce((total, count) => total + count, 0);
     },
 
     async deleteCompleted(uid, mediaId) {
