@@ -12,6 +12,7 @@ test("building editor exposes a Naver link importer and distinct road-name and j
   assert.match(editor, /name="naverBuildingUrl"/);
   assert.match(editor, /data-building-link-lookup/);
   assert.match(editor, /data-building-link-lookup-status/);
+  assert.match(editor, /장소 또는 주소 검색 링크/);
   assert.match(editor, /field\("도로명 주소", "roadAddress"/);
   assert.match(editor, /field\("지번 주소", "jibunAddress"/);
   assert.match(editor, /기존 주소 .*도로명·지번 구분 없이 그대로 보존됩니다/);
@@ -41,6 +42,8 @@ test("late Naver responses cannot overwrite a replaced form, changed session, li
   assert.match(lookup, /uid === currentAuthUid\(\)/);
   assert.match(lookup, /form\.elements\.naverBuildingUrl\.value/);
   assert.match(lookup, /String\(input\.value \|\| ""\) !== snapshots\[name\]/);
+  assert.match(lookup, /preservedMissing\.push\(label\)/);
+  assert.match(lookup, /기존 입력을 유지했습니다/);
   assert.doesNotMatch(lookup, /scheduleSave|commitCanonical|requestSubmit/);
 });
 

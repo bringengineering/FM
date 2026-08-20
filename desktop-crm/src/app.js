@@ -2608,7 +2608,7 @@
       ? `<label class="field"><span>건물주·대표 고객</span><select disabled aria-disabled="true"><option>${esc(building.ownerCustomerId ? (customerById(building.ownerCustomerId)?.name || building.ownerCustomerId) : "아직 연결하지 않음")}</option></select><input type="hidden" name="ownerCustomerId" value="${attr(building.ownerCustomerId || "")}"><small>건물주 변경은 연결된 고객·건물 관계를 함께 옮기는 별도 이전 절차에서 처리합니다.</small></label>`
       : selectField("건물주·대표 고객", "ownerCustomerId", customerOptions, building.ownerCustomerId || "", id => id ? (customerById(id)?.name || id) : "아직 연결하지 않음");
     modalContent.innerHTML = `<div class="modal-head"><div><h2>${editing ? "건물 정보 수정" : "새 건물 등록"}</h2><p>건물 고유 ID를 기준으로 고객·계약·케이스·입금 자료가 연결됩니다.</p></div><button class="close-button" data-action="close-modal">×</button></div><form id="buildingForm" class="modal-body building-form" data-building-id="${attr(editing && editing.id || "")}"><div class="info-box">같은 건물을 다시 등록하지 말고 기존 건물을 수정해 주세요. 건물명이 바뀌어도 연결된 업무는 유지됩니다.</div>
-      <section class="quote-url-import building-link-import"><div><b>네이버 지도 링크로 자동 입력</b><span>장소 링크에서 건물명·도로명·지번 주소를 찾아옵니다.</span></div><div class="quote-url-import-row"><input name="naverBuildingUrl" type="url" inputmode="url" autocomplete="off" maxlength="4096" placeholder="https://naver.me/... 또는 https://map.naver.com/..."><button type="button" data-building-link-lookup>건물 정보 불러오기</button></div><p data-building-link-lookup-status aria-live="polite">불러온 내용을 확인한 뒤 아래 건물 등록 버튼을 눌러 저장하세요.</p></section>
+      <section class="quote-url-import building-link-import"><div><b>네이버 지도 링크로 자동 입력</b><span>장소 또는 주소 검색 링크에서 건물명·도로명·지번 주소를 찾아옵니다.</span></div><div class="quote-url-import-row"><input name="naverBuildingUrl" type="url" inputmode="url" autocomplete="off" maxlength="4096" placeholder="https://naver.me/... 또는 https://map.naver.com/..."><button type="button" data-building-link-lookup>건물 정보 불러오기</button></div><p data-building-link-lookup-status aria-live="polite">불러온 내용을 확인한 뒤 아래 건물 등록 버튼을 눌러 저장하세요.</p></section>
       <section class="building-form-section"><header><div><h3>기본 정보</h3><p>건물과 담당 고객을 구분하는 공용 정보입니다.</p></div></header><div class="form-grid building-form-section-body">
         ${field("건물명 *", "name", building.name, "text", "예: 햇빛빌라")}
         ${ownerCustomerField}
@@ -3976,7 +3976,7 @@
         && uid === currentAuthUid();
       buildingLinkLookup.disabled = true;
       buildingLinkLookup.textContent = "정보 찾는 중…";
-      if (status) { status.className = "loading"; status.textContent = "네이버 장소 정보를 확인하고 있습니다."; }
+      if (status) { status.className = "loading"; status.textContent = "네이버 지도에서 주소·건물 정보를 확인하고 있습니다."; }
       try {
         const result = await api.lookupNaverBuilding(rawUrl);
         if (!sameFormAndSession()) return;
@@ -3987,6 +3987,7 @@
         if (!result || !result.ok) throw new Error(result && (result.error || result.message) || "건물 정보를 찾지 못했습니다.");
         const filled = [];
         const changedWhileLoading = [];
+        const preservedMissing = [];
         const missing = [];
         const applyLookupValue = (name, value, label) => {
           const input = form.elements[name];
@@ -3997,7 +3998,8 @@
             return;
           }
           if (!next) {
-            missing.push(label);
+            if (String(input.value || "").trim()) preservedMissing.push(label);
+            else missing.push(label);
             return;
           }
           input.value = next;
@@ -4010,6 +4012,7 @@
         if (status) {
           const messages = [filled.length ? `${filled.join("·")}를 자동 입력했습니다.` : "자동 입력할 정보를 찾지 못했습니다."];
           if (changedWhileLoading.length) messages.push(`${changedWhileLoading.join("·")}는 조회 중 직접 수정되어 유지했습니다.`);
+          if (preservedMissing.length) messages.push(`${preservedMissing.join("·")}는 네이버에서 확인되지 않아 기존 입력을 유지했습니다.`);
           if (missing.length) messages.push(`${missing.join("·")}는 네이버에서 확인되지 않아 직접 입력해 주세요.`);
           messages.push("내용을 확인한 뒤 건물을 등록하세요.");
           status.className = filled.length ? "success" : "error";

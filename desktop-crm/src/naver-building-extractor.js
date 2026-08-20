@@ -8,9 +8,11 @@ const MAX_URL_LENGTH = 2048;
 const MAX_HTML_BYTES = 2 * 1024 * 1024;
 const REQUEST_TIMEOUT_MS = 12000;
 const MAX_REDIRECTS = 5;
+const MAX_STREAMING_PUSH_BLOCKS = 32;
 const ALLOWED_HOSTS = new Set([
   "naver.me",
   "map.naver.com",
+  "m.map.naver.com",
   "m.place.naver.com",
   "pcmap.place.naver.com"
 ]);
@@ -119,6 +121,52 @@ function parseNaverPlaceId(value) {
   return "";
 }
 
+function looksLikeRoadAddress(value) {
+  const compact = cleanText(value, 500).normalize("NFKC").replace(/\s+/g, "");
+  return /(?:대로|로|길)\d+(?:-\d+)?$/.test(compact);
+}
+
+function looksLikeJibunAddress(value) {
+  const compact = cleanText(value, 500).normalize("NFKC").replace(/\s+/g, "");
+  return /(?:읍|면|동|리|가)(?:산)?\d+(?:-\d+)?$/.test(compact);
+}
+
+function looksLikeAddressSearchQuery(value) {
+  return looksLikeRoadAddress(value) || looksLikeJibunAddress(value);
+}
+
+function parseNaverSearchQuery(value) {
+  let url;
+  try { url = value instanceof URL ? normalizeNaverBuildingUrl(value.toString()) : normalizeNaverBuildingUrl(value); }
+  catch (_error) { return ""; }
+
+  const hostname = url.hostname.toLowerCase();
+  let encoded = "";
+  if (hostname === "map.naver.com") {
+    const match = url.pathname.match(/^\/p\/search\/([^/]+)\/?$/i);
+    encoded = match ? match[1] : "";
+    if (encoded) {
+      try { encoded = decodeURIComponent(encoded); }
+      catch (_error) { return ""; }
+    }
+  } else if (hostname === "m.map.naver.com" && /^\/search\/?$/i.test(url.pathname)) {
+    encoded = url.searchParams.get("query") || "";
+  }
+  const decodedQuery = decodeHtml(encoded);
+  if (/[\u0000-\u001f\u007f\u200b-\u200f\u202a-\u202e\u2060-\u206f\ufeff]/.test(decodedQuery)) return "";
+  if ([...decodedQuery].length > 240 || Buffer.byteLength(decodedQuery, "utf8") > 512) return "";
+  const query = cleanText(decodedQuery, 500);
+  return query && looksLikeAddressSearchQuery(query) ? query : "";
+}
+
+function canonicalNaverSearchUrl(value) {
+  const query = parseNaverSearchQuery(value);
+  if (!query) return null;
+  const url = new URL("https://m.map.naver.com/search");
+  url.searchParams.set("query", query);
+  return url.toString().length <= MAX_URL_LENGTH ? url : null;
+}
+
 function canonicalNaverPlaceUrl(value) {
   const url = value instanceof URL ? normalizeNaverBuildingUrl(value.toString()) : normalizeNaverBuildingUrl(value);
   const placeId = parseNaverPlaceId(url);
@@ -185,6 +233,28 @@ function jsonScriptValues(html) {
     catch (_error) {
       // A malformed optional hydration block should not hide other valid blocks.
     }
+  }
+  return values;
+}
+
+function pushedJsonValues(html, marker) {
+  const values = [];
+  const source = String(html || "");
+  let offset = 0;
+  let inspected = 0;
+  while (offset < source.length && inspected < MAX_STREAMING_PUSH_BLOCKS) {
+    const markerIndex = source.indexOf(marker, offset);
+    if (markerIndex < 0) break;
+    inspected += 1;
+    let opening = markerIndex + marker.length;
+    while (/\s/.test(source[opening] || "")) opening += 1;
+    if (source[opening] !== "(") {
+      offset = markerIndex + marker.length;
+      continue;
+    }
+    const parsed = parseJsonValueAt(source, opening + 1);
+    if (parsed) values.push(parsed);
+    offset = opening + 1;
   }
   return values;
 }
@@ -298,6 +368,148 @@ function extractNaverBuildingInfoFromHtml(html, sourceUrl) {
     jibunAddress,
     found,
     message: found ? "네이버 지도에서 건물 정보를 찾았습니다." : "네이버 지도에서 건물 정보를 찾지 못했습니다."
+  };
+}
+
+function normalizedLookupText(value) {
+  return cleanText(value, 500)
+    .normalize("NFKC")
+    .toLowerCase()
+    .replace(/[\u2010-\u2015\u2212]/g, "-")
+    .replace(/[\s()[\]{}'"`.,:;·ㆍ]/g, "");
+}
+
+function addressTerminal(value) {
+  const parts = cleanText(value, 500).split(/\s+/).filter(Boolean);
+  return normalizedLookupText(parts.slice(-2).join(" "));
+}
+
+function exactAddressQueryMatch(query, fullAddress) {
+  const normalizedQuery = normalizedLookupText(query);
+  const normalizedAddressValue = normalizedLookupText(fullAddress);
+  const terminal = addressTerminal(fullAddress);
+  if (!normalizedQuery || !normalizedAddressValue || !terminal) return false;
+  return normalizedQuery === normalizedAddressValue
+    || (looksLikeAddressSearchQuery(query) && normalizedAddressValue.endsWith(normalizedQuery));
+}
+
+function searchQueryFromEntry(entry) {
+  const key = entry && Array.isArray(entry.queryKey) ? entry.queryKey : [];
+  if (key.length < 3 || key[0] !== "v1" || key[1] !== "allSearchSuspense") return "";
+  const query = key[2] && typeof key[2] === "object" && key[2].query && key[2].query.query;
+  return typeof query === "string" || typeof query === "number" ? cleanText(query, 500) : "";
+}
+
+function qualifyOppositeAddress(fullAddress, oppositeAddress) {
+  const full = cleanText(fullAddress, 240);
+  const opposite = cleanText(oppositeAddress, 240);
+  if (!full || !opposite) return "";
+  const parts = full.split(/\s+/).filter(Boolean);
+  const trailingParts = looksLikeJibunAddress(full) && parts[parts.length - 2] === "산" ? 3 : 2;
+  const prefix = parts.length > trailingParts ? parts.slice(0, -trailingParts).join(" ") : "";
+  if (!prefix || normalizedLookupText(opposite).startsWith(normalizedLookupText(prefix))) return opposite;
+  return cleanText(`${prefix} ${opposite}`, 240);
+}
+
+function oppositeAddressFromRecord(record, expectedType) {
+  const fullAddress = primitiveText(record && record.fullAddress, 240);
+  const displayName = primitiveText(record && record.name, 500);
+  if (!fullAddress || !displayName) return "";
+  const match = displayName.match(/\(([^()]*)\)\s*$/);
+  if (!match || !match[1]) return "";
+  const beforeParenthesis = displayName.slice(0, match.index).trim();
+  if (normalizedLookupText(beforeParenthesis) !== normalizedLookupText(fullAddress)) return "";
+  const qualified = qualifyOppositeAddress(fullAddress, match[1]);
+  if (expectedType === "road" && !looksLikeRoadAddress(qualified)) return "";
+  if (expectedType === "jibun" && !looksLikeJibunAddress(qualified)) return "";
+  return qualified;
+}
+
+function searchFailure(sourceUrl, message) {
+  return {
+    ok: false,
+    url: String(sourceUrl || ""),
+    name: "",
+    roadAddress: "",
+    jibunAddress: "",
+    found: 0,
+    message
+  };
+}
+
+function extractNaverSearchInfoFromHtml(html, sourceUrl) {
+  const source = String(html || "");
+  const requestedQuery = parseNaverSearchQuery(sourceUrl);
+  const requestedKey = normalizedLookupText(requestedQuery);
+  if (!requestedKey) {
+    return searchFailure(sourceUrl, "건물 정보를 확인할 수 있는 네이버 지도 검색 링크를 입력해 주세요.");
+  }
+
+  const candidates = [];
+  for (const root of pushedJsonValues(source, "window.__RQ_STREAMING_STATE__.push")) {
+    for (const entry of Array.isArray(root && root.queries) ? root.queries : []) {
+      if (normalizedLookupText(searchQueryFromEntry(entry)) !== requestedKey) continue;
+      const state = entry && entry.state;
+      const data = state && state.status === "success" && state.data;
+      if (!data || data.searchType !== "address" || !data.address || typeof data.address !== "object") continue;
+      candidates.push(data.address);
+    }
+  }
+  const semanticCandidates = [];
+  const semanticKeys = new Set();
+  for (const candidate of candidates) {
+    const key = JSON.stringify({
+      fullAddress: primitiveText(candidate.fullAddress, 240),
+      name: primitiveText(candidate.name, 500),
+      isRoadAddress: candidate.isRoadAddress,
+      isJibunAddress: candidate.isJibunAddress,
+      duplicateAddressList: candidate.duplicateAddressList,
+      relatedRegionAddressList: candidate.relatedRegionAddressList
+    });
+    if (!semanticKeys.has(key)) {
+      semanticKeys.add(key);
+      semanticCandidates.push(candidate);
+    }
+  }
+  if (semanticCandidates.length !== 1) {
+    return searchFailure(sourceUrl, "네이버 지도 검색 결과에서 정확한 주소 하나를 확인하지 못했습니다.");
+  }
+
+  const record = semanticCandidates[0];
+  const duplicates = record.duplicateAddressList;
+  const related = record.relatedRegionAddressList;
+  const duplicatesSafe = Array.isArray(duplicates) && duplicates.length === 0;
+  const relatedSafe = related === null || (Array.isArray(related) && related.length === 0);
+  if (!duplicatesSafe || !relatedSafe) {
+    return searchFailure(sourceUrl, "같은 주소 검색 결과가 여러 지역에 있어 자동 선택하지 않았습니다. 지역을 포함해 검색하거나 장소 공유 링크를 사용해 주세요.");
+  }
+  const fullAddress = primitiveText(record.fullAddress, 240);
+  if (!exactAddressQueryMatch(requestedQuery, fullAddress)) {
+    return searchFailure(sourceUrl, "입력한 검색어와 정확히 일치하는 주소를 확인하지 못했습니다.");
+  }
+  const isRoadAddress = record.isRoadAddress === true && record.isJibunAddress !== true;
+  const isJibunAddress = record.isJibunAddress === true && record.isRoadAddress !== true;
+  if (!isRoadAddress && !isJibunAddress) {
+    return searchFailure(sourceUrl, "네이버 지도 검색 결과의 주소 형식을 확인하지 못했습니다.");
+  }
+  if ((isRoadAddress && !looksLikeRoadAddress(fullAddress))
+    || (isJibunAddress && !looksLikeJibunAddress(fullAddress))) {
+    return searchFailure(sourceUrl, "네이버 지도 검색 결과의 주소 형식을 확인하지 못했습니다.");
+  }
+  const oppositeAddress = oppositeAddressFromRecord(record, isRoadAddress ? "jibun" : "road");
+  const roadAddress = isRoadAddress ? fullAddress : oppositeAddress;
+  const jibunAddress = isJibunAddress ? fullAddress : oppositeAddress;
+  const found = [roadAddress, jibunAddress].filter(Boolean).length;
+  return {
+    ok: found > 0,
+    url: String(sourceUrl || ""),
+    name: "",
+    roadAddress,
+    jibunAddress,
+    found,
+    message: found
+      ? "네이버 지도에서 주소 정보를 찾았습니다. 건물명은 직접 확인해 주세요."
+      : "네이버 지도에서 주소 정보를 찾지 못했습니다."
   };
 }
 
@@ -506,7 +718,11 @@ function htmlContentType(response) {
 
 async function fetchNaverBuildingInfo(rawUrl, dependencies = {}) {
   let url = normalizeNaverBuildingUrl(rawUrl);
-  if (url.hostname !== "naver.me" && !parseNaverPlaceId(url)) {
+  const initialSearchQuery = parseNaverSearchQuery(url);
+  if (initialSearchQuery && parseNaverPlaceId(url)) {
+    throw new Error("검색과 장소가 함께 포함된 네이버 지도 링크는 자동 입력하지 않습니다.");
+  }
+  if (url.hostname !== "naver.me" && !parseNaverPlaceId(url) && !initialSearchQuery) {
     throw new Error("건물 정보를 확인할 수 있는 네이버 지도 링크를 입력해 주세요.");
   }
   const controller = new AbortController();
@@ -514,13 +730,31 @@ async function fetchNaverBuildingInfo(rawUrl, dependencies = {}) {
   const timeout = setTimeout(() => controller.abort(), timeoutMs);
   const request = dependencies.request || requestPublicNaverUrl;
   let redirectCount = 0;
+  let lockedSearchQuery = initialSearchQuery;
+  let lockedSearchKey = normalizedLookupText(initialSearchQuery);
   const canonicalizedPlaceIds = new Set();
   try {
     while (true) {
       const placeId = parseNaverPlaceId(url);
+      const currentSearchQuery = parseNaverSearchQuery(url);
+      const currentSearchKey = normalizedLookupText(currentSearchQuery);
+      if (placeId && currentSearchKey) {
+        throw new Error("검색과 장소가 함께 포함된 네이버 지도 링크는 자동 입력하지 않았습니다.");
+      }
+      if (lockedSearchKey && (!currentSearchKey || currentSearchKey !== lockedSearchKey)) {
+        throw new Error("네이버 지도 검색 주소가 이동 중 바뀌어 자동 입력하지 않았습니다.");
+      }
+      if (!lockedSearchKey && currentSearchKey) {
+        lockedSearchQuery = currentSearchQuery;
+        lockedSearchKey = currentSearchKey;
+      }
       if (url.hostname === "map.naver.com" && placeId && !canonicalizedPlaceIds.has(placeId)) {
         url = new URL(`https://pcmap.place.naver.com/place/${placeId}/home`);
         canonicalizedPlaceIds.add(placeId);
+      } else if (currentSearchQuery) {
+        const canonicalSearchUrl = canonicalNaverSearchUrl(`https://m.map.naver.com/search?query=${encodeURIComponent(lockedSearchQuery)}`);
+        if (!canonicalSearchUrl) throw new Error("건물 정보를 확인할 수 있는 네이버 지도 검색 링크를 입력해 주세요.");
+        url = new URL(canonicalSearchUrl);
       }
       const response = await withAbort(request(url, {
         signal: controller.signal,
@@ -533,7 +767,12 @@ async function fetchNaverBuildingInfo(rawUrl, dependencies = {}) {
         if (!location) throw new Error("네이버 지도 링크의 이동 주소를 확인할 수 없습니다.");
         if (redirectCount >= MAX_REDIRECTS) throw new Error("네이버 지도 링크의 이동 경로가 너무 많습니다.");
         const redirected = normalizeNaverBuildingUrl(new URL(location, url).toString());
-        if (redirected.hostname !== "naver.me" && !parseNaverPlaceId(redirected)) {
+        const redirectedSearchQuery = parseNaverSearchQuery(redirected);
+        const redirectedSearchKey = normalizedLookupText(redirectedSearchQuery);
+        if (lockedSearchKey && redirectedSearchKey !== lockedSearchKey) {
+          throw new Error("네이버 지도 검색 주소가 이동 중 바뀌어 자동 입력하지 않았습니다.");
+        }
+        if (redirected.hostname !== "naver.me" && !parseNaverPlaceId(redirected) && !redirectedSearchQuery) {
           throw new Error("건물 정보를 확인할 수 있는 네이버 지도 링크를 입력해 주세요.");
         }
         url = redirected;
@@ -552,7 +791,8 @@ async function fetchNaverBuildingInfo(rawUrl, dependencies = {}) {
         discardResponse(response);
         throw new Error("웹페이지 형식의 네이버 지도 링크를 입력해 주세요.");
       }
-      if (!parseNaverPlaceId(url)) {
+      const searchQuery = parseNaverSearchQuery(url);
+      if (!parseNaverPlaceId(url) && !searchQuery) {
         discardResponse(response);
         throw new Error("건물 정보를 확인할 수 있는 네이버 지도 링크를 입력해 주세요.");
       }
@@ -561,7 +801,9 @@ async function fetchNaverBuildingInfo(rawUrl, dependencies = {}) {
       let html;
       try { html = new TextDecoder(charset.replace(/["']/g, "")).decode(buffer); }
       catch (_error) { html = buffer.toString("utf8"); }
-      return extractNaverBuildingInfoFromHtml(html, url.toString());
+      return searchQuery
+        ? extractNaverSearchInfoFromHtml(html, url.toString())
+        : extractNaverBuildingInfoFromHtml(html, url.toString());
     }
   } catch (error) {
     if (error && (error.name === "AbortError" || error.code === "ABORT_ERR")) {
@@ -581,11 +823,14 @@ module.exports = {
   REQUEST_TIMEOUT_MS,
   assertPublicNaverUrl,
   canonicalNaverPlaceUrl,
+  canonicalNaverSearchUrl,
   extractNaverBuildingInfoFromHtml,
+  extractNaverSearchInfoFromHtml,
   fetchNaverBuildingInfo,
   isPrivateAddress,
   normalizeNaverBuildingUrl,
   parseNaverPlaceId,
+  parseNaverSearchQuery,
   pinnedLookup,
   requestPublicNaverUrl
 };

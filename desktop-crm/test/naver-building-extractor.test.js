@@ -28,6 +28,43 @@ function hydrationHtml(placeId = "12345") {
   return `<!doctype html><html><head><meta property="og:title" content="잘못된 제목 : 네이버 플레이스"></head><body><script>window.__APOLLO_STATE__ = ${JSON.stringify(state)};</script></body></html>`;
 }
 
+function addressSearchHtml({
+  query = "북원로2475번길93",
+  fullAddress = "강원특별자치도 원주시 북원로2475번길 93",
+  displayAddress = "강원특별자치도 원주시 북원로2475번길 93(우산동 216-1)",
+  isRoadAddress = true,
+  isJibunAddress = false,
+  duplicateAddressList = [],
+  relatedRegionAddressList = null,
+  searchType = "address",
+  queryKey = null
+} = {}) {
+  const payload = {
+    mutations: [],
+    queries: [{
+      state: {
+        status: "success",
+        data: {
+          totalCount: 0,
+          items: [],
+          searchType,
+          address: {
+            id: "01130111",
+            name: displayAddress,
+            fullAddress,
+            isRoadAddress,
+            isJibunAddress,
+            duplicateAddressList,
+            relatedRegionAddressList
+          }
+        }
+      },
+      queryKey: queryKey || ["v1", "allSearchSuspense", { query: { query, size: 75 } }]
+    }]
+  };
+  return `<!doctype html><html><body><script>window.__RQ_STREAMING_STATE__.push(${JSON.stringify(payload)});</script></body></html>`;
+}
+
 function fakeResponse({ status = 200, headers, body = hydrationHtml() } = {}) {
   const normalizedHeaders = Object.fromEntries(Object.entries(headers || { "content-type": "text/html; charset=utf-8" })
     .map(([key, value]) => [key.toLowerCase(), value]));
@@ -110,11 +147,116 @@ test("parses full map URLs and mobile or desktop category URLs", () => {
   for (const [url, id] of cases) assert.equal(Naver.parseNaverPlaceId(url), id, url);
 });
 
+test("parses only address-shaped place-id-free map search links and fixes the mobile SSR target", () => {
+  const source = "https://map.naver.com/p/search/%EB%B6%81%EC%9B%90%EB%A1%9C2475%EB%B2%88%EA%B8%B893?c=15.00,0,0,0,dh";
+  assert.equal(Naver.parseNaverSearchQuery(source), "북원로2475번길93");
+  assert.equal(
+    Naver.canonicalNaverSearchUrl(source).toString(),
+    "https://m.map.naver.com/search?query=%EB%B6%81%EC%9B%90%EB%A1%9C2475%EB%B2%88%EA%B8%B893"
+  );
+  assert.equal(Naver.parseNaverSearchQuery("https://map.naver.com/p/search/그린팩토리"), "");
+  assert.equal(Naver.parseNaverSearchQuery("https://map.naver.com/p/search/93"), "");
+  assert.equal(Naver.parseNaverSearchQuery("https://map.naver.com/p/search/test/place/12345"), "");
+  assert.equal(Naver.parseNaverSearchQuery("https://m.map.naver.com/search2/search.naver?query=북원로2475번길93"), "");
+  assert.equal(Naver.parseNaverSearchQuery("https://map.naver.com/p/search/북원로2475번길93%0A"), "");
+  assert.equal(Naver.parseNaverSearchQuery("https://map.naver.com/p/search/북원로2475번길93%E2%80%AE"), "");
+  assert.equal(Naver.parseNaverSearchQuery(`https://m.map.naver.com/search?query=${encodeURIComponent("가".repeat(180) + "로1")}`), "");
+});
+
+test("extracts an exact road-address search result without inventing a building name", () => {
+  const url = "https://m.map.naver.com/search?query=%EB%B6%81%EC%9B%90%EB%A1%9C2475%EB%B2%88%EA%B8%B893";
+  assert.deepEqual(Naver.extractNaverSearchInfoFromHtml(addressSearchHtml(), url), {
+    ok: true,
+    url,
+    name: "",
+    roadAddress: "강원특별자치도 원주시 북원로2475번길 93",
+    jibunAddress: "강원특별자치도 원주시 우산동 216-1",
+    found: 2,
+    message: "네이버 지도에서 주소 정보를 찾았습니다. 건물명은 직접 확인해 주세요."
+  });
+  assert.equal(
+    Naver.extractNaverSearchInfoFromHtml(`${addressSearchHtml()}${addressSearchHtml()}`, url).ok,
+    true,
+    "identical React streaming payloads are semantically deduplicated"
+  );
+});
+
+test("extracts an exact full jibun query and reconstructs its road address", () => {
+  const query = "강원특별자치도 원주시 우산동 216-1";
+  const url = `https://m.map.naver.com/search?query=${encodeURIComponent(query)}`;
+  const html = addressSearchHtml({
+    query,
+    fullAddress: query,
+    displayAddress: `${query}(북원로2475번길 93)`,
+    isRoadAddress: false,
+    isJibunAddress: true
+  });
+  const result = Naver.extractNaverSearchInfoFromHtml(html, url);
+  assert.equal(result.name, "");
+  assert.equal(result.roadAddress, "강원특별자치도 원주시 북원로2475번길 93");
+  assert.equal(result.jibunAddress, query);
+});
+
+test("rejects ambiguous, mismatched, malformed, or non-address search hydration", () => {
+  const url = "https://m.map.naver.com/search?query=%EB%B6%81%EC%9B%90%EB%A1%9C2475%EB%B2%88%EA%B8%B893";
+  const ambiguous = Naver.extractNaverSearchInfoFromHtml(addressSearchHtml({
+    duplicateAddressList: [{ name: "다른 지역의 같은 주소" }]
+  }), url);
+  assert.equal(ambiguous.ok, false);
+  assert.match(ambiguous.message, /여러 지역|자동 선택/);
+
+  const missingDuplicateContract = Naver.extractNaverSearchInfoFromHtml(addressSearchHtml({ duplicateAddressList: null }), url);
+  assert.equal(missingDuplicateContract.ok, false);
+
+  const mismatch = Naver.extractNaverSearchInfoFromHtml(addressSearchHtml({
+    fullAddress: "강원특별자치도 원주시 북원로2475번길 92",
+    displayAddress: "강원특별자치도 원주시 북원로2475번길 92(우산동 216-2)"
+  }), url);
+  assert.equal(mismatch.ok, false);
+  assert.match(mismatch.message, /정확히 일치/);
+
+  const wrongRegionPrefix = Naver.extractNaverSearchInfoFromHtml(addressSearchHtml({
+    query: "서울특별시 중구 북원로2475번길93"
+  }), "https://m.map.naver.com/search?query=" + encodeURIComponent("서울특별시 중구 북원로2475번길93"));
+  assert.equal(wrongRegionPrefix.ok, false);
+  assert.match(wrongRegionPrefix.message, /정확히 일치/);
+
+  const wrongKey = Naver.extractNaverSearchInfoFromHtml(addressSearchHtml({
+    queryKey: ["v2", "allSearchSuspense", { query: { query: "북원로2475번길93" } }]
+  }), url);
+  assert.equal(wrongKey.ok, false);
+
+  const place = Naver.extractNaverSearchInfoFromHtml(addressSearchHtml({ searchType: "place" }), url);
+  assert.equal(place.ok, false);
+
+  const wrongOppositeType = Naver.extractNaverSearchInfoFromHtml(addressSearchHtml({
+    displayAddress: "강원특별자치도 원주시 북원로2475번길 93(중앙로 1)"
+  }), url);
+  assert.equal(wrongOppositeType.ok, true);
+  assert.equal(wrongOppositeType.jibunAddress, "");
+
+  const multiple = Naver.extractNaverSearchInfoFromHtml(
+    `${addressSearchHtml()}${addressSearchHtml({
+      fullAddress: "강원특별자치도 원주시 북원로2475번길 92",
+      displayAddress: "강원특별자치도 원주시 북원로2475번길 92(우산동 216-2)"
+    })}`,
+    url
+  );
+  assert.equal(multiple.ok, false);
+
+  const malformed = Naver.extractNaverSearchInfoFromHtml(
+    '<script>window.__RQ_STREAMING_STATE__.push({"queries":[BROKEN]});</script>',
+    url
+  );
+  assert.equal(malformed.ok, false);
+});
+
 test("accepts only exact Naver HTTPS hosts without credentials or nondefault ports", () => {
   for (const url of [
     "naver.me/AbCdEf12",
     "https://naver.me/AbCdEf12",
     "https://map.naver.com/p/entry/place/1",
+    "https://m.map.naver.com/search?query=세종대로110",
     "https://m.place.naver.com/restaurant/1/home",
     "https://pcmap.place.naver.com/place/1/home"
   ]) assert.doesNotThrow(() => Naver.normalizeNaverBuildingUrl(url), url);
@@ -165,6 +307,69 @@ test("canonicalizes map pages but preserves direct Naver category and share page
     assert.equal(result.name, "햇빛빌라");
     assert.equal(result.url, expectedUrl);
   }
+});
+
+test("converts a place-id-free desktop address search to one fixed mobile SSR request", async () => {
+  const calls = [];
+  const result = await Naver.fetchNaverBuildingInfo(
+    "https://map.naver.com/p/search/%EB%B6%81%EC%9B%90%EB%A1%9C2475%EB%B2%88%EA%B8%B893?c=15,0,0,0,dh",
+    {
+      request: async (url, options) => {
+        calls.push({ url: url.toString(), headers: options.headers });
+        return fakeResponse({ body: addressSearchHtml() });
+      }
+    }
+  );
+  assert.deepEqual(calls.map(call => call.url), [
+    "https://m.map.naver.com/search?query=%EB%B6%81%EC%9B%90%EB%A1%9C2475%EB%B2%88%EA%B8%B893"
+  ]);
+  assert.equal(Object.keys(calls[0].headers).some(key => /cookie|authorization|proxy-authorization/i.test(key)), false);
+  assert.equal(result.name, "");
+  assert.equal(result.roadAddress, "강원특별자치도 원주시 북원로2475번길 93");
+  assert.equal(result.jibunAddress, "강원특별자치도 원주시 우산동 216-1");
+
+  calls.length = 0;
+  await Naver.fetchNaverBuildingInfo("https://m.map.naver.com/search?query=북원로2475번길93&untrusted=1", {
+    request: async url => {
+      calls.push({ url: url.toString(), headers: {} });
+      return fakeResponse({ body: addressSearchHtml() });
+    }
+  });
+  assert.deepEqual(calls.map(call => call.url), [
+    "https://m.map.naver.com/search?query=%EB%B6%81%EC%9B%90%EB%A1%9C2475%EB%B2%88%EA%B8%B893"
+  ]);
+});
+
+test("locks an address search across redirects and rejects a changed query or place", async () => {
+  const source = "https://map.naver.com/p/search/%EB%B6%81%EC%9B%90%EB%A1%9C2475%EB%B2%88%EA%B8%B893";
+  for (const location of [
+    "https://m.map.naver.com/search?query=%EC%84%B8%EC%A2%85%EB%8C%80%EB%A1%9C110",
+    "https://map.naver.com/p/entry/place/12345"
+  ]) {
+    let calls = 0;
+    await assert.rejects(
+      Naver.fetchNaverBuildingInfo(source, {
+        request: async () => {
+          calls += 1;
+          return fakeResponse({ status: 302, headers: { location, "content-type": "text/html" }, body: "" });
+        }
+      }),
+      /이동 중 바뀌어/
+    );
+    assert.equal(calls, 1);
+  }
+});
+
+test("rejects a mixed search URL with a place id before any network request", async () => {
+  let calls = 0;
+  await assert.rejects(
+    Naver.fetchNaverBuildingInfo(
+      "https://map.naver.com/p/search/%EB%B6%81%EC%9B%90%EB%A1%9C2475%EB%B2%88%EA%B8%B893?placeId=12345",
+      { request: async () => { calls += 1; return fakeResponse(); } }
+    ),
+    /검색과 장소/
+  );
+  assert.equal(calls, 0);
 });
 
 test("revalidates a naver.me redirect and then fetches the canonical place page", async () => {
