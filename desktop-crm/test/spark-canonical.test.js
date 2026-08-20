@@ -209,6 +209,94 @@ test("Spark building mutations preserve both Naver address forms and bind the le
   );
 });
 
+test("an existing ownerless building links one active customer atomically and cannot be reassigned", () => {
+  const data = {
+    customers: {
+      customer_1: {
+        id: "customer_1",
+        name: "첫 건물주",
+        phone: "010-1111-1111",
+        memo: "다른 PC가 보존해야 하는 메모",
+        buildingIds: ["legacy_building"],
+        buildingIdLinks: { building_other: true },
+        archivedAt: "",
+      },
+      customer_2: { id: "customer_2", name: "다른 고객", archivedAt: "" },
+      customer_archived: { id: "customer_archived", name: "보관 고객", archivedAt: "2026-08-17T00:00:00.000Z" },
+    },
+    buildings: { building_1: canonicalBuilding() },
+  };
+  const request = entityRequest({
+    requestId: "550e8400-e29b-41d4-a716-446655440023",
+    entityType: "buildings",
+    entityId: "building_1",
+    operation: "update",
+    expectedVersion: 1,
+    patch: { ownerCustomerId: "customer_1" },
+    reason: "기존 건물 대표 고객 최초 연결",
+  });
+  const result = SparkCanonical.reduceEntity(data, request, ACTOR, NOW);
+  const atomicPatch = SparkCanonical.atomicMutationPatch(data, result.data);
+
+  assert.equal(result.data.buildings.building_1.ownerCustomerId, "customer_1");
+  assert.equal(result.data.buildings.building_1.entityVersion, 2);
+  assert.equal(result.data.customers.customer_1.phone, "010-1111-1111");
+  assert.equal(result.data.customers.customer_1.memo, "다른 PC가 보존해야 하는 메모");
+  assert.deepEqual(result.data.customers.customer_1.buildingIds, ["legacy_building"]);
+  assert.deepEqual(result.data.customers.customer_1.buildingIdLinks, {
+    building_other: true,
+    building_1: true,
+  });
+  assert.ok(Object.hasOwn(atomicPatch, "buildings/building_1"));
+  assert.equal(atomicPatch["customers/customer_1/buildingIdLinks/building_1"], true);
+  assert.equal(Object.hasOwn(atomicPatch, "customers/customer_1"), false);
+  assert.equal(Object.hasOwn(atomicPatch, "customers/customer_1/phone"), false);
+  assert.deepEqual(Core.customerBuildingIds(result.data.customers.customer_1), [
+    "legacy_building",
+    "building_other",
+    "building_1",
+  ]);
+  assert.ok(Object.hasOwn(atomicPatch, "canonicalReceipts/550e8400-e29b-41d4-a716-446655440023"));
+  assert.equal(Object.keys(atomicPatch).filter(key => key.startsWith("canonicalAuditLogs/audit_")).length, 1);
+
+  const repeated = SparkCanonical.reduceEntity(result.data, request, ACTOR, "2026-08-18T00:00:01.000Z");
+  assert.equal(repeated.result.repeated, true);
+  assert.deepEqual(repeated.data, result.data);
+  assert.throws(
+    () => SparkCanonical.reduceEntity(result.data, entityRequest({
+      requestId: "550e8400-e29b-41d4-a716-446655440024",
+      entityType: "buildings",
+      entityId: "building_1",
+      operation: "update",
+      expectedVersion: 2,
+      patch: { ownerCustomerId: "customer_2" },
+    }), ACTOR, NOW),
+    error => error && error.code === "crm_owner_change_requires_atomic_link",
+  );
+  assert.throws(
+    () => SparkCanonical.reduceEntity(result.data, entityRequest({
+      requestId: "550e8400-e29b-41d4-a716-446655440025",
+      entityType: "buildings",
+      entityId: "building_1",
+      operation: "update",
+      expectedVersion: 2,
+      patch: { ownerCustomerId: "" },
+    }), ACTOR, NOW),
+    error => error && error.code === "crm_owner_change_requires_atomic_link",
+  );
+  assert.throws(
+    () => SparkCanonical.reduceEntity(data, entityRequest({
+      requestId: "550e8400-e29b-41d4-a716-446655440026",
+      entityType: "buildings",
+      entityId: "building_1",
+      operation: "update",
+      expectedVersion: 1,
+      patch: { ownerCustomerId: "customer_archived" },
+    }), ACTOR, NOW),
+    error => error && error.code === "crm_parent_archived",
+  );
+});
+
 test("Spark sales-unit create enforces prospect and building-unit parent integrity", () => {
   const data = {
     buildings: { building_1: canonicalBuilding() },

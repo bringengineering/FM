@@ -470,6 +470,23 @@ async function exerciseCustomerBuildingLinkRules(testEnvironment: RulesTestEnvir
   ).database();
   const customerPath = "crmCompany/data/customers/customer_1";
 
+  await testEnvironment.withSecurityRulesDisabled(async (context) => {
+    const database = context.database();
+    const linkedBuilding = (id: string, ownerCustomerId: string) => ({
+      ...CRM_DATA.buildings.building_1,
+      id,
+      buildingNo: `BLD-${id}`,
+      name: id,
+      ownerCustomerId,
+    });
+    await update(ref(database, "crmCompany/data"), {
+      "customers/customer_other_owner": { id: "customer_other_owner", name: "Other owner" },
+      "buildings/building_member": linkedBuilding("building_member", "customer_1"),
+      "buildings/building_admin": linkedBuilding("building_admin", "customer_1"),
+      "buildings/building_other_owner": linkedBuilding("building_other_owner", "customer_other_owner"),
+    });
+  });
+
   await assertSucceeds(update(ref(member, customerPath), { phone: "010-1234-5678" }));
   await assertSucceeds(update(ref(admin, customerPath), { memo: "admin field update" }));
 
@@ -487,6 +504,14 @@ async function exerciseCustomerBuildingLinkRules(testEnvironment: RulesTestEnvir
   await assertFails(set(
     ref(member, `${customerPath}/buildingIdLinks/building_false`),
     false,
+  ));
+  await assertFails(set(
+    ref(member, `${customerPath}/buildingIdLinks/building_missing`),
+    true,
+  ));
+  await assertFails(set(
+    ref(member, `${customerPath}/buildingIdLinks/building_other_owner`),
+    true,
   ));
   await assertFails(set(
     ref(member, `${customerPath}/buildingIdLinks/building_1`),
@@ -507,6 +532,14 @@ async function exerciseCustomerBuildingLinkRules(testEnvironment: RulesTestEnvir
   await assertFails(remove(
     ref(admin, `${customerPath}/buildingIdLinks/building_admin`),
   ));
+  await assertFails(set(ref(member, `${customerPath}/id`), "customer_changed"));
+  await assertFails(remove(ref(member, `${customerPath}/id`)));
+  await assertFails(set(
+    ref(member, `${customerPath}/archivedAt`),
+    "2026-08-09T00:00:08.000Z",
+  ));
+  expect((await get(ref(member, `${customerPath}/id`))).val()).toBe("customer_1");
+  expect((await get(ref(member, `${customerPath}/archivedAt`))).exists()).toBe(false);
 
   const linkedCustomer = (await assertSucceeds(get(ref(member, customerPath)))).val();
   await assertFails(set(ref(member, customerPath), {
@@ -515,6 +548,9 @@ async function exerciseCustomerBuildingLinkRules(testEnvironment: RulesTestEnvir
   }));
 
   const legacyPath = "crmCompany/data/customers/customer_legacy_unlinked";
+  await assertFails(set(ref(member, `${legacyPath}_missing_id`), {
+    name: "Customer id is required",
+  }));
   await assertSucceeds(set(ref(member, legacyPath), {
     id: "customer_legacy_unlinked",
     name: "Legacy compatible customer",
@@ -595,12 +631,181 @@ async function exerciseAtomicBuildingCreateWithCustomerLink(
     },
   };
 
+  const missingBacklink: Record<string, unknown> = { ...patch };
+  delete missingBacklink[`customers/customer_1/buildingIdLinks/${buildingId}`];
+  await assertFails(update(ref(member, "crmCompany/data"), missingBacklink));
+  expect((await get(ref(member, `crmCompany/data/buildings/${buildingId}`))).exists())
+    .toBe(false);
+  expect((await get(ref(member, `crmCompany/data/canonicalReceipts/${requestId}`))).exists())
+    .toBe(false);
+  expect((await get(ref(member, `crmCompany/data/canonicalAuditLogs/${auditId}`))).exists())
+    .toBe(false);
+
   await assertSucceeds(update(ref(member, "crmCompany/data"), patch));
   expect((await get(ref(
     member,
     `crmCompany/data/customers/customer_1/buildingIdLinks/${buildingId}`,
   ))).val()).toBe(true);
   await assertFails(update(ref(member, "crmCompany/data"), patch));
+}
+
+async function exerciseExistingBuildingOwnerLinkRules(
+  testEnvironment: RulesTestEnvironment,
+) {
+  const member = testEnvironment.authenticatedContext(
+    "crm-member",
+    crmClaims("member@bring.test"),
+  ).database();
+  const ownerlessBuilding = (id: string, ownerCustomerId?: string) => ({
+    id,
+    name: `Ownerless ${id}`,
+    address: "원주시 우산동",
+    entityVersion: 1,
+    createdAt: NOW,
+    createdByAuthUid: "crm-member",
+    createdByOperatorId: "operator_kim",
+    updatedAt: NOW,
+    updatedByAuthUid: "crm-member",
+    updatedByOperatorId: "operator_kim",
+    archivedAt: "",
+    archivedByAuthUid: "",
+    archivedByOperatorId: "",
+    vacantUnitCount: 0,
+    vacantUnits: [],
+    ...(ownerCustomerId === undefined ? {} : { ownerCustomerId }),
+  });
+  const missingOwner = ownerlessBuilding("building_owner_missing");
+  const emptyOwner = ownerlessBuilding("building_owner_empty", "");
+  const legacyOwned = ownerlessBuilding("building_owner_legacy", "customer_legacy_owner");
+  const prelinkedOwner = ownerlessBuilding("building_owner_prelinked");
+  const pathOwner = ownerlessBuilding("building_owner_path");
+  const archivedOwner = ownerlessBuilding("building_owner_archived");
+
+  await testEnvironment.withSecurityRulesDisabled(async (context) => {
+    const database = context.database();
+    await update(ref(database, "crmCompany/data"), {
+      "buildings/building_owner_missing": missingOwner,
+      "buildings/building_owner_empty": emptyOwner,
+      "buildings/building_owner_legacy": legacyOwned,
+      "buildings/building_owner_prelinked": prelinkedOwner,
+      "buildings/building_owner_path": pathOwner,
+      "buildings/building_owner_archived": archivedOwner,
+      "customers/customer_first_owner": { id: "customer_first_owner", name: "첫 건물주" },
+      "customers/customer_second_owner": { id: "customer_second_owner", name: "다른 건물주" },
+      "customers/customer_legacy_owner": { id: "customer_legacy_owner", name: "기존 건물주", buildingIds: ["building_owner_legacy"] },
+      "customers/customer_prelinked": { id: "customer_prelinked", name: "과거 선점 고객", buildingIdLinks: { building_owner_prelinked: true } },
+      "customers/customer_path_base": { id: "customer_path_base", name: "경로 주입 기준 고객" },
+      "customers/customer_archived_owner": { id: "customer_archived_owner", name: "보관 고객", archivedAt: "2026-08-08T00:00:00.000Z" },
+    });
+  });
+
+  await assertFails(update(ref(member, "crmCompany/data"), {
+    "buildings/building_owner_prelinked": {
+      ...prelinkedOwner,
+      ownerCustomerId: "customer_prelinked",
+      entityVersion: 2,
+      updatedAt: "2026-08-09T00:00:02.100Z",
+    },
+  }));
+  expect((await get(ref(member, "crmCompany/data/buildings/building_owner_prelinked/ownerCustomerId"))).exists())
+    .toBe(false);
+
+  await assertFails(update(ref(member, "crmCompany/data"), {
+    "buildings/building_owner_path": {
+      ...pathOwner,
+      ownerCustomerId: "customer_path_base/nested",
+      entityVersion: 2,
+      updatedAt: "2026-08-09T00:00:02.200Z",
+    },
+    "customers/customer_path_base/nested/id": "customer_path_base/nested",
+    "customers/customer_path_base/nested/buildingIdLinks/building_owner_path": true,
+  }));
+  expect((await get(ref(member, "crmCompany/data/buildings/building_owner_path/ownerCustomerId"))).exists())
+    .toBe(false);
+  expect((await get(ref(member, "crmCompany/data/customers/customer_path_base/nested"))).exists())
+    .toBe(false);
+
+  await assertFails(update(ref(member, "crmCompany/data"), {
+    "buildings/building_owner_archived": {
+      ...archivedOwner,
+      ownerCustomerId: "customer_archived_owner",
+      entityVersion: 2,
+      updatedAt: "2026-08-09T00:00:02.300Z",
+    },
+    "customers/customer_archived_owner/buildingIdLinks/building_owner_archived": true,
+  }));
+  expect((await get(ref(member, "crmCompany/data/buildings/building_owner_archived/ownerCustomerId"))).exists())
+    .toBe(false);
+
+  const linkedMissing = {
+    ...missingOwner,
+    ownerCustomerId: "customer_first_owner",
+    entityVersion: 2,
+    updatedAt: "2026-08-09T00:00:03.000Z",
+  };
+  await assertFails(set(
+    ref(member, "crmCompany/data/customers/customer_first_owner/buildingIdLinks/building_owner_missing"),
+    true,
+  ));
+  await assertFails(update(ref(member, "crmCompany/data"), {
+    "buildings/building_owner_missing": linkedMissing,
+  }));
+  expect((await get(ref(member, "crmCompany/data/buildings/building_owner_missing/ownerCustomerId"))).exists())
+    .toBe(false);
+
+  await assertSucceeds(update(ref(member, "crmCompany/data"), {
+    "buildings/building_owner_missing": linkedMissing,
+    "customers/customer_first_owner/buildingIdLinks/building_owner_missing": true,
+  }));
+  expect((await get(ref(member, "crmCompany/data/buildings/building_owner_missing/ownerCustomerId"))).val())
+    .toBe("customer_first_owner");
+  await assertFails(set(
+    ref(member, "crmCompany/data/customers/customer_second_owner/buildingIdLinks/building_owner_missing"),
+    true,
+  ));
+
+  const linkedEmpty = {
+    ...emptyOwner,
+    ownerCustomerId: "customer_second_owner",
+    entityVersion: 2,
+    updatedAt: "2026-08-09T00:00:04.000Z",
+  };
+  await assertSucceeds(update(ref(member, "crmCompany/data"), {
+    "buildings/building_owner_empty": linkedEmpty,
+    "customers/customer_second_owner/buildingIdLinks/building_owner_empty": true,
+  }));
+
+  await assertFails(update(ref(member, "crmCompany/data"), {
+    "buildings/building_owner_missing": {
+      ...linkedMissing,
+      ownerCustomerId: "customer_second_owner",
+      entityVersion: 3,
+      updatedAt: "2026-08-09T00:00:05.000Z",
+    },
+    "customers/customer_second_owner/buildingIdLinks/building_owner_missing": true,
+  }));
+  expect((await get(ref(member, "crmCompany/data/customers/customer_second_owner/buildingIdLinks/building_owner_missing"))).exists())
+    .toBe(false);
+  expect((await get(ref(member, "crmCompany/data/buildings/building_owner_missing/ownerCustomerId"))).val())
+    .toBe("customer_first_owner");
+
+  await assertFails(update(ref(member, "crmCompany/data"), {
+    "buildings/building_owner_missing": {
+      ...linkedMissing,
+      ownerCustomerId: "",
+      entityVersion: 3,
+      updatedAt: "2026-08-09T00:00:06.000Z",
+    },
+  }));
+
+  await assertSucceeds(update(ref(member, "crmCompany/data"), {
+    "buildings/building_owner_legacy": {
+      ...legacyOwned,
+      name: "Legacy owner remains compatible",
+      entityVersion: 2,
+      updatedAt: "2026-08-09T00:00:07.000Z",
+    },
+  }));
 }
 
 beforeAll(async () => {
@@ -725,6 +930,15 @@ describe("field media database rule source", () => {
       expect(String(entityRule[".validate"])).toContain("teamProfiles");
       expect(entityRule.$other).toEqual({ ".validate": false });
     }
+    const buildingValidation = String(
+      (data.buildings as Record<string, Record<string, unknown>>).$entityId[".validate"],
+    );
+    expect(buildingValidation).toContain("data.child('ownerCustomerId').val() === ''");
+    expect(buildingValidation).toContain("newData.child('ownerCustomerId').val() === data.child('ownerCustomerId').val()");
+    expect(buildingValidation).toContain("matches(/^[A-Za-z0-9_-]+$/)");
+    expect(buildingValidation).toContain("child('buildingIdLinks').child($entityId).val() === true");
+    expect(buildingValidation).toContain("!root.child('crmCompany/data/customers')");
+    expect(buildingValidation).toContain("child('archivedAt').val() === ''");
     for (const immutable of ["canonicalReceipts", "canonicalAuditLogs"]) {
       expect(JSON.stringify(data[immutable])).toContain("!data.exists()");
       expect(JSON.stringify(data[immutable])).toContain("newData.exists()");
@@ -737,11 +951,17 @@ describe("field media database rule source", () => {
     const buildingLink = (customer.buildingIdLinks as Record<string, Record<string, unknown>>).$buildingId;
     expect(customerRule[".write"]).toBeUndefined();
     expect(String(customer[".write"])).toContain("!data.child('buildingIdLinks').exists()");
+    expect(String(customer[".write"])).toContain("newData.child('id').val() === $customerId");
     expect(customerFieldWrite).toContain("$field !== 'buildingIdLinks'");
+    expect(customerFieldWrite).toContain("$field !== 'id'");
+    expect(customerFieldWrite).toContain("$field !== 'archivedAt'");
+    expect(customerFieldWrite).toContain("data.parent().child('buildingIdLinks').exists()");
     expect(customerFieldWrite).toContain("auth.token.email");
     expect(String(buildingLink[".write"])).toContain("!data.exists()");
     expect(String(buildingLink[".write"])).toContain("newData.val() === true");
     expect(String(buildingLink[".write"])).toContain("auth.token.email");
+    expect(String(buildingLink[".write"])).toContain("child('buildings').child($buildingId).child('ownerCustomerId').val() === $customerId");
+    expect(String(buildingLink[".write"])).toContain("child('archivedAt').val() === ''");
     expect(String(buildingLink[".validate"])).toContain("newData.isBoolean()");
     for (const writable of [
       "schemaVersion", "company", "updatedAt", "updatedBy",
@@ -900,16 +1120,28 @@ describe("field media database rule source", () => {
     expect(buildingFields).toHaveProperty("jibunAddress");
     expect(String(buildingFields[".validate"])).toContain("address').val() === newData.child('roadAddress').val()");
     expect(String(buildingFields[".validate"])).toContain("address').val() === newData.child('jibunAddress').val()");
+    expect(String(buildingFields[".validate"])).toContain("child('buildingIdLinks').child($entityId).val() === true");
+    expect(String(buildingFields[".validate"])).toContain("matches(/^[A-Za-z0-9_-]+$/)");
+    expect(String(buildingFields[".validate"])).toContain("!root.child('crmCompany/data/customers')");
     const fixtureCustomer = dataRules.customers as Record<string, Record<string, unknown>>;
     const fixtureCustomerRecord = fixtureCustomer.$customerId;
     const fixtureLink = (fixtureCustomerRecord.buildingIdLinks as Record<string, Record<string, unknown>>).$buildingId;
     expect(fixtureCustomer[".write"]).toBeUndefined();
     expect(String(fixtureCustomerRecord[".write"])).toContain("!newData.child('buildingIdLinks').exists()");
+    expect(String(fixtureCustomerRecord[".write"])).toContain("newData.child('id').val() === $customerId");
     expect(String(
       (fixtureCustomerRecord.$field as Record<string, unknown>)[".write"],
     )).toContain("$field !== 'buildingIdLinks'");
+    expect(String(
+      (fixtureCustomerRecord.$field as Record<string, unknown>)[".write"],
+    )).toContain("$field !== 'id'");
+    expect(String(
+      (fixtureCustomerRecord.$field as Record<string, unknown>)[".write"],
+    )).toContain("$field !== 'archivedAt'");
     expect(String(fixtureLink[".write"])).toContain("!data.exists()");
     expect(String(fixtureLink[".write"])).toContain("newData.val() === true");
+    expect(String(fixtureLink[".write"])).toContain("child('buildings').child($buildingId).child('ownerCustomerId').val() === $customerId");
+    expect(String(fixtureLink[".write"])).toContain("child('archivedAt').val() === ''");
     for (const legacy of [
       "activities",
       "contracts",
@@ -1156,6 +1388,10 @@ describe.runIf(databaseEmulatorAvailable)("fieldPlatform database rules", () => 
 
   it("accepts an atomic canonical building create with its narrow customer backlink", async () => {
     await exerciseAtomicBuildingCreateWithCustomerLink(environment);
+  });
+
+  it("allows only an atomic first owner link and keeps an assigned owner immutable", async () => {
+    await exerciseExistingBuildingOwnerLinkRules(environment);
   });
 
   it("protects operational roots and keeps public signage orders create-only", async () => {

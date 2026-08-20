@@ -101,17 +101,20 @@ test("CRM and FIELD keep separate search values when switching views", async () 
   assert.match(app, /currentView === "fieldOperations"[\s\S]*?nextView !== "fieldOperations"[\s\S]*?searchEl\.value\s*=\s*crmSearchValue/);
 });
 
-test("existing buildings keep their canonical owner fixed while new buildings can select one", async () => {
+test("ownerless buildings can link a customer once while assigned owners stay fixed", async () => {
   const app = await source("app.js");
   const editor = app.slice(app.indexOf("function buildingEditor"), app.indexOf("function buildingUnitEditor"));
   const save = app.slice(app.indexOf('form.id === "buildingForm"'), app.indexOf('form.id === "contractForm"'));
 
-  assert.match(editor, /editing[\s\S]*?disabled[\s\S]*?ownerCustomerId/);
+  assert.match(editor, /editing\s*&&\s*currentOwnerCustomerId[\s\S]*?disabled/);
   assert.match(editor, /type="hidden" name="ownerCustomerId"/);
-  assert.match(editor, /건물주 변경은[\s\S]*?별도 이전 절차/);
-  assert.match(editor, /selectField\("건물주·대표 고객", "ownerCustomerId"/);
-  assert.match(save, /ownerCustomerId:\s*existing\s*\?\s*existing\.ownerCustomerId\s*:\s*raw\.ownerCustomerId/);
-  assert.match(save, /existing\s*&&\s*!Object\.hasOwn\(existing,\s*"ownerCustomerId"\)[\s\S]*?delete patch\.ownerCustomerId/);
+  assert.match(editor, /select name="ownerCustomerId"[\s\S]*?연결할 고객을 선택하세요/);
+  assert.match(editor, /고객 관리에서 고객을 먼저 등록/);
+  assert.match(editor, /최초 연결 후 변경은 별도 이전 절차/);
+  assert.match(save, /requestedOwnerCustomerId\s*=\s*currentOwnerCustomerId\s*\|\|\s*String\(raw\.ownerCustomerId/);
+  assert.match(save, /title:\s*"이 고객을 건물주로 연결할까요\?"/);
+  assert.match(save, /ownerCustomerId:\s*requestedOwnerCustomerId/);
+  assert.match(save, /existing\s*&&\s*!Object\.hasOwn\(existing,\s*"ownerCustomerId"\)\s*&&\s*!requestedOwnerCustomerId[\s\S]*?delete patch\.ownerCustomerId/);
 });
 
 test("renderer reports FIELD ready only for an authenticated session", async () => {

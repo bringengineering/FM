@@ -2605,9 +2605,15 @@
     const legacyAddressNotice = legacyAddress
       ? `<div class="info-box wide">기존 주소 <b>${esc(legacyAddress)}</b>는 도로명·지번 구분 없이 그대로 보존됩니다. 네이버 링크로 불러오거나 주소 형식을 확인해 입력해 주세요.</div>`
       : "";
-    const ownerCustomerField = editing
-      ? `<label class="field"><span>건물주·대표 고객</span><select disabled aria-disabled="true"><option>${esc(building.ownerCustomerId ? (customerById(building.ownerCustomerId)?.name || building.ownerCustomerId) : "아직 연결하지 않음")}</option></select><input type="hidden" name="ownerCustomerId" value="${attr(building.ownerCustomerId || "")}"><small>건물주 변경은 연결된 고객·건물 관계를 함께 옮기는 별도 이전 절차에서 처리합니다.</small></label>`
-      : selectField("건물주·대표 고객", "ownerCustomerId", customerOptions, building.ownerCustomerId || "", id => id ? (customerById(id)?.name || id) : "아직 연결하지 않음");
+    const currentOwnerCustomerId = String(building.ownerCustomerId || "");
+    const ownerOptionLabel = id => {
+      if (!id) return "아직 연결하지 않음";
+      const customer = customerById(id);
+      return customer ? [customer.name || "이름 미입력", customer.company, customer.phone].filter(Boolean).join(" · ") : id;
+    };
+    const ownerCustomerField = editing && currentOwnerCustomerId
+      ? `<label class="field"><span>건물주·대표 고객</span><select disabled aria-disabled="true"><option>${esc(ownerOptionLabel(currentOwnerCustomerId))}</option></select><input type="hidden" name="ownerCustomerId" value="${attr(currentOwnerCustomerId)}"><small>이미 연결된 건물주를 바꾸거나 해제하려면 별도 이전 절차가 필요합니다.</small></label>`
+      : `<label class="field"><span>건물주·대표 고객</span><select name="ownerCustomerId">${customerOptions.map(id => `<option value="${attr(id)}" ${id === currentOwnerCustomerId ? "selected" : ""}>${esc(ownerOptionLabel(id))}</option>`).join("")}</select><small>${editing ? (store.customers.length ? "연결할 고객을 선택하세요. 최초 연결 후 변경은 별도 이전 절차가 필요합니다." : "고객 관리에서 고객을 먼저 등록한 뒤 이 화면에서 연결하세요.") : "고객 관리에 등록된 고객을 건물주·대표 고객으로 연결합니다."}</small></label>`;
     modalContent.innerHTML = `<div class="modal-head"><div><h2>${editing ? "건물 정보 수정" : "새 건물 등록"}</h2><p>건물 고유 ID를 기준으로 고객·계약·케이스·입금 자료가 연결됩니다.</p></div><button class="close-button" data-action="close-modal">×</button></div><form id="buildingForm" class="modal-body building-form" data-building-id="${attr(editing && editing.id || "")}"><div class="info-box">같은 건물을 다시 등록하지 말고 기존 건물을 수정해 주세요. 건물명이 바뀌어도 연결된 업무는 유지됩니다.</div>
       <section class="quote-url-import building-link-import"><div><b>네이버 지도 링크로 자동 입력</b><span>장소 또는 주소 검색 링크에서 건물명·도로명·지번 주소를 찾아옵니다.</span></div><div class="quote-url-import-row"><input name="naverBuildingUrl" type="url" inputmode="url" autocomplete="off" maxlength="4096" placeholder="https://naver.me/... 또는 https://map.naver.com/..."><button type="button" data-building-link-lookup>건물 정보 불러오기</button></div><p data-building-link-lookup-status aria-live="polite">불러온 내용을 확인한 뒤 아래 건물 등록 버튼을 눌러 저장하세요.</p></section>
       <section class="building-form-section"><header><div><h3>기본 정보</h3><p>건물과 담당 고객을 구분하는 공용 정보입니다.</p></div></header><div class="form-grid building-form-section-body">
@@ -5182,8 +5188,22 @@
         const matched = existing ? scheduleBelongsToBuilding(schedule, existing) : Core.normalizeText(schedule.buildingName) === Core.normalizeText(name) && (addressMatch || unambiguousNameOnly);
         if (matched && schedule.buildingId) paymentIds.add(String(schedule.buildingId));
       });
+      const currentOwnerCustomerId = String(existing && existing.ownerCustomerId || "");
+      const requestedOwnerCustomerId = currentOwnerCustomerId || String(raw.ownerCustomerId || "");
+      if (requestedOwnerCustomerId && !customerById(requestedOwnerCustomerId)) return showToast("연결할 고객 정보를 다시 확인해 주세요.", "error");
+      if (existing && !currentOwnerCustomerId && requestedOwnerCustomerId) {
+        const ownerCustomer = customerById(requestedOwnerCustomerId);
+        if (!await requestConfirmation({
+          title: "이 고객을 건물주로 연결할까요?",
+          description: "건물과 고객의 연결 관계를 함께 저장합니다.",
+          target: `${ownerCustomer?.name || requestedOwnerCustomerId} · ${name}`,
+          warning: "최초 연결 후 다른 고객으로 변경하거나 해제하려면 별도 이전 절차가 필요합니다.",
+          confirmLabel: "건물주 연결",
+          tone: "warning",
+        })) return;
+      }
       const patch = buildCanonicalBuildingPatch({
-        name, ownerCustomerId: existing ? existing.ownerCustomerId : raw.ownerCustomerId, type: raw.type, status: raw.status,
+        name, ownerCustomerId: requestedOwnerCustomerId, type: raw.type, status: raw.status,
         address, roadAddress, jibunAddress, unitCount: raw.unitCount,
         rentDeposit: nonNegativeInteger(raw.rentDeposit), monthlyRent: nonNegativeInteger(raw.monthlyRent), maintenanceFee: nonNegativeInteger(raw.maintenanceFee),
         maintenanceIncludes, maintenanceIncludeOther, vacantUnitCount, vacantUnits, roomTypes, roomTypeOther, roomOptions, roomOptionOther,
@@ -5194,7 +5214,7 @@
         delete patch.vacantUnitCount;
         delete patch.vacantUnits;
       }
-      if (existing && !Object.hasOwn(existing, "ownerCustomerId")) delete patch.ownerCustomerId;
+      if (existing && !Object.hasOwn(existing, "ownerCustomerId") && !requestedOwnerCustomerId) delete patch.ownerCustomerId;
       try {
         const commitResult = await commitCanonicalEntity({
           entityType: "buildings",

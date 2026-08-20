@@ -356,7 +356,10 @@ function reduceEntity(currentData, rawInput, actor, now = new Date().toISOString
   if (input.entityType === "buildings") {
     const preferredAddress = String(next.roadAddress || next.jibunAddress || "").trim();
     if (preferredAddress && next.address !== preferredAddress) fail("crm_address_mismatch");
-    if (existing && Object.hasOwn(input.patch, "ownerCustomerId") && input.patch.ownerCustomerId !== existing.ownerCustomerId) fail("crm_owner_change_requires_atomic_link");
+    const previousOwnerCustomerId = String(existing && existing.ownerCustomerId || "");
+    const requestedOwnerCustomerId = String(next.ownerCustomerId || "");
+    if (existing && requestedOwnerCustomerId !== previousOwnerCustomerId
+      && (previousOwnerCustomerId || !requestedOwnerCustomerId)) fail("crm_owner_change_requires_atomic_link");
     if (next.ownerCustomerId) activeEntity(data.customers, next.ownerCustomerId);
     const formal = unitProjection(data, input.entityId);
     if (existing && formal.active.length && (Object.hasOwn(input.patch, "vacantUnits") || Object.hasOwn(input.patch, "vacantUnitCount"))) {
@@ -384,7 +387,10 @@ function reduceEntity(currentData, rawInput, actor, now = new Date().toISOString
     }
     data[input.entityType][input.entityId] = next;
   }
-  if (input.entityType === "buildings" && input.operation === "create" && next.ownerCustomerId) {
+  const previousOwnerCustomerId = String(existing && existing.ownerCustomerId || "");
+  const shouldAddOwnerLink = input.entityType === "buildings" && next.ownerCustomerId
+    && (input.operation === "create" || input.operation === "update" && !previousOwnerCustomerId);
+  if (shouldAddOwnerLink) {
     const customer = data.customers[next.ownerCustomerId];
     // Keep the legacy buildingIds array readable, but do not rewrite it here.
     // A deterministic child-map link lets the multi-location PATCH add this
