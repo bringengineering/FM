@@ -84,6 +84,19 @@ class GraphTransport(Protocol):
         self, method: str, path: str, *, params: Mapping[str, str] | None = None
     ) -> dict: ...
 
+    def upload_file(self, upload_uri: str, video_path: Path) -> dict: ...
+
+
+def validate_local_video(path: Path) -> Path:
+    resolved = path.expanduser().resolve()
+    if not resolved.is_file() or resolved.suffix.lower() != ".mp4":
+        raise InstagramConfigurationError(
+            "Instagram local video must be an MP4 file"
+        )
+    if resolved.stat().st_size <= 0:
+        raise InstagramConfigurationError("Instagram local video is empty")
+    return resolved
+
 
 class UrllibGraphTransport:
     def __init__(
@@ -211,6 +224,34 @@ class InstagramClient:
                 "Instagram did not return a creation id", retryable=False
             )
         return str(creation_id)
+
+    def create_resumable_reel(self, *, caption: str) -> tuple[str, str]:
+        response = self.transport.request(
+            "POST",
+            f"/{self.instagram_account_id}/media",
+            params={
+                "media_type": "REELS",
+                "upload_type": "resumable",
+                "caption": caption,
+            },
+        )
+        creation_id = response.get("id")
+        upload_uri = response.get("uri")
+        if not creation_id or not upload_uri:
+            raise InstagramApiError(
+                "Instagram did not return resumable upload details",
+                retryable=False,
+            )
+        return str(creation_id), str(upload_uri)
+
+    def upload_local_video(self, upload_uri: str, video_path: Path) -> None:
+        response = self.transport.upload_file(
+            upload_uri, validate_local_video(video_path)
+        )
+        if response.get("success") is not True:
+            raise InstagramApiError(
+                "Instagram did not accept the video upload", retryable=True
+            )
 
     def container_status(self, creation_id: str) -> str:
         response = self.transport.request(
