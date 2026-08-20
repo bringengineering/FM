@@ -1,0 +1,2 @@
+"""Knowledge Shorts automation package."""
+
