@@ -286,7 +286,13 @@ function mirrorBuildingVacancy(data, buildingId, replacements, actor, now, requi
 }
 
 function writeVacancyMirror(data, plan, actor, now) {
-  if (!plan.afterLegacy.resolved) return;
+  // Once the stored vacancy mirror is fully represented by canonical units,
+  // those units become authoritative. In that state a legitimate decrease
+  // (for example vacant -> occupied or archiving the last vacant unit) must
+  // be allowed to replace the old non-zero mirror with the newly derived
+  // value. While a legacy migration is still incomplete, keep preserving the
+  // legacy mirror until the canonical units fully resolve it.
+  if (!plan.beforeLegacy.resolved && !plan.afterLegacy.resolved) return;
   data.buildings[plan.building.id] = {
     ...plan.building,
     vacantUnitCount: plan.after.vacantLabels.length,

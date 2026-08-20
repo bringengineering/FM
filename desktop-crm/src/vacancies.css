@@ -126,3 +126,73 @@
   .vacancy-floor-builder>header,.vacancy-config-floor>header{grid-template-columns:1fr}.vacancy-config-floor>header>div{grid-column:auto;flex-wrap:wrap}.vacancy-config-floor>header button{flex:1}
   .building-derived-vacancy{grid-template-columns:1fr}.building-derived-vacancy>button{width:100%}
 }
+
+/* Simplified vacancy workspace: one building, one scroll area, quick status updates. */
+.vacancy-building-picker{
+  display:grid;grid-template-columns:minmax(260px,.9fr) minmax(0,1.35fr) auto;align-items:end;gap:16px;
+  min-width:0;padding:16px 18px;border:1px solid #cae3ef;border-radius:16px;background:linear-gradient(115deg,#f8fcfe,#edf8fd);
+  box-shadow:0 8px 24px rgba(53,105,136,.06)
+}
+.vacancy-building-picker>label{display:grid;gap:7px;min-width:0}.vacancy-building-picker>label>span{color:#315f78;font-size:13px;font-weight:900}
+.vacancy-building-picker select{width:100%;min-width:0;height:48px;padding:0 40px 0 13px;border:1px solid #bcd9e7;border-radius:11px;background-color:#fff;color:#173f57;font-family:inherit;font-size:14px;font-weight:800;line-height:1.3}
+.vacancy-building-picker select:focus-visible,.vacancy-unit-tools input:focus-visible,.vacancy-quick-status:focus-visible,.vacancy-kpis button:focus-visible,.vacancy-status-tabs button:focus-visible{outline:3px solid rgba(52,156,210,.28);outline-offset:2px;border-color:#3b9fd1}
+.vacancy-building-selection-summary{display:grid;align-content:center;gap:5px;min-width:0;min-height:48px}
+.vacancy-building-selection-summary strong,.vacancy-building-selection-summary span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.vacancy-building-selection-summary strong{color:#153f58;font-size:15px}.vacancy-building-selection-summary span{color:#668495;font-size:12px}
+.vacancy-building-picker>button{min-height:46px;padding-inline:16px;white-space:nowrap}
+
+.vacancy-layout.vacancy-layout-single{display:block;grid-template-columns:none;height:calc(100vh - 224px);min-height:460px;margin-top:12px;overflow:hidden}
+.vacancy-layout-single .vacancy-detail{height:100%}.vacancy-layout-single .vacancy-detail-scroll{height:100%;padding:16px 18px 26px;overflow-x:hidden;overflow-y:auto}
+.vacancy-layout-single .vacancy-detail-empty{min-height:300px}
+
+.vacancy-kpis{gap:10px}.vacancy-kpis button{
+  position:relative;min-width:0;min-height:94px;overflow:hidden;padding:13px 15px;border:1px solid #d7e7ee;border-radius:13px;background:#fff;color:inherit;text-align:left;font:inherit;cursor:pointer;transition:border-color .15s,background .15s,box-shadow .15s,transform .15s
+}
+.vacancy-kpis button::before{content:"";position:absolute;inset:12px auto 12px 0;width:4px;border-radius:0 4px 4px 0;background:#7aa8bd}
+.vacancy-kpis button.attention::before{background:#d5782f}.vacancy-kpis button.occupied::before{background:#3b9f7f}.vacancy-kpis button.vacant::before{background:#d98235}.vacancy-kpis button.upcoming::before{background:#438fbe}
+.vacancy-kpis button:hover{border-color:#91c8e0;background:#f9fdff;transform:translateY(-1px)}.vacancy-kpis button.active{border-color:#4aa5d3;background:#eef9fe;box-shadow:0 0 0 3px rgba(61,157,207,.11)}
+.vacancy-kpis button span,.vacancy-kpis button b,.vacancy-kpis button small{display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.vacancy-kpis button span{color:#5e7d90;font-size:13px}.vacancy-kpis button b{margin-top:5px;color:#173f57;font-size:24px}.vacancy-kpis button small{margin-top:4px;color:#758f9f;font-size:12px}
+
+.vacancy-count-warning{font-size:13px;line-height:1.55}.vacancy-unit-tools{display:flex;align-items:end;gap:9px;margin-top:14px}
+.vacancy-unit-tools label{display:grid;flex:1;gap:6px;min-width:0}.vacancy-unit-tools label>span{color:#446c83;font-size:13px;font-weight:900}
+.vacancy-unit-tools input{width:100%;height:46px;padding:0 13px;border:1px solid #c9dfe9;border-radius:11px;background:#fff;color:#183f57;font:inherit;font-size:14px}
+.vacancy-unit-tools button{min-height:46px;white-space:nowrap}.vacancy-status-tabs{gap:8px;margin:11px 0 5px;padding-bottom:7px}
+.vacancy-status-tabs button{min-height:44px;padding:0 13px;border-radius:11px;font-size:13px}.vacancy-status-tabs button b{min-width:25px;height:25px;font-size:11px}
+.vacancy-result-summary{margin:2px 1px 10px;color:#668697;font-size:12px;font-weight:750}
+
+.vacancy-floor-list{gap:13px}.vacancy-floor-card{border-radius:14px}.vacancy-floor-card>header{min-height:50px;padding:12px 14px}
+.vacancy-floor-card h3{font-size:15px}.vacancy-floor-card header span{padding:4px 8px;font-size:11px}.vacancy-floor-card header p{font-size:12px}
+.vacancy-unit-grid{grid-template-columns:repeat(auto-fill,minmax(min(100%,225px),1fr));gap:10px;padding:11px}
+.vacancy-unit-card{min-height:126px;padding:12px 13px;border-radius:12px}.vacancy-unit-card.saving{opacity:.68;pointer-events:none}
+.vacancy-unit-card>header{align-items:center}.vacancy-unit-card strong{font-size:15px}.vacancy-unit-card p{margin-top:10px;color:#607e90;font-size:12px;line-height:1.5}
+.vacancy-unit-card>small{font-size:11px;line-height:1.45}.vacancy-unit-card>footer{padding-top:11px}.vacancy-unit-card>footer>span{font-size:11px}
+.vacancy-unit-card .mini-button{min-height:44px;padding:8px 11px;font-size:12px}.vacancy-quick-status{min-width:126px;height:44px;padding:0 32px 0 10px;border:1px solid #cbdde5;border-radius:10px;background:#f2f6f8;color:#536f7e;font-family:inherit;font-size:13px;font-weight:900;line-height:1.2;cursor:pointer}
+.vacancy-quick-status.occupied{border-color:#b9dfd2;background:#e8f7f2;color:#24775f}.vacancy-quick-status.vacant{border-color:#eccca9;background:#fff3e2;color:#a85f1c}.vacancy-quick-status.move_out_scheduled{border-color:#badbea;background:#e9f6fc;color:#2477a2}.vacancy-quick-status.maintenance{border-color:#d6c8e2;background:#f4edfa;color:#74518e}.vacancy-quick-status.unknown{background:#eef2f4;color:#5d727e}
+.vacancy-status{min-height:32px;padding:0 10px;border-radius:9px;font-size:12px}.vacancy-detail-empty b{font-size:17px}.vacancy-detail-empty span{font-size:13px}
+
+.modal-card:has(#vacancyScheduleForm){width:min(560px,94vw)}.vacancy-schedule-form{display:grid;gap:16px}.vacancy-schedule-unit{display:grid;gap:5px;padding:14px 15px;border:1px solid #cfe3ed;border-radius:12px;background:#f5fbfe}
+.vacancy-schedule-unit span{color:#668596;font-size:12px;font-weight:800}.vacancy-schedule-unit strong{color:#173f57;font-size:19px}.vacancy-schedule-unit small{color:#668596;font-size:12px}
+.vacancy-schedule-form .vacancy-date-guide{font-size:12px;line-height:1.55}
+
+.vacancy-floor-builder>header b{font-size:14px}.vacancy-floor-builder>header span,.vacancy-floor-builder>header>label span{font-size:12px}
+.vacancy-floor-builder>header input,.vacancy-floor-builder>header button,.vacancy-config-floor>header input,.vacancy-config-floor>header button{min-height:42px;font-size:13px}
+.vacancy-config-floor>header label span{font-size:12px}.vacancy-config-floor .vacancy-advanced-field{opacity:.75}
+.vacancy-config-labels input{height:38px;font-size:13px}.vacancy-config-labels select{height:38px;font-size:12px}.vacancy-config-labels em,.vacancy-config-labels>label>span{font-size:11px}
+.vacancy-config-preview b{font-size:13px}.vacancy-config-preview header span,.vacancy-config-preview header em,.vacancy-config-preview>div>span{font-size:11px}
+
+@media(max-width:980px){
+  .vacancy-building-picker{grid-template-columns:minmax(0,1fr) auto;align-items:end}.vacancy-building-selection-summary{grid-column:1/-1;grid-row:2}
+  .vacancy-layout.vacancy-layout-single{height:auto;min-height:0;overflow:visible}.vacancy-layout-single .vacancy-detail{height:auto}.vacancy-layout-single .vacancy-detail-scroll{height:auto;overflow:visible}
+  .vacancy-kpis{grid-template-columns:repeat(2,minmax(0,1fr))}
+}
+@media(max-width:700px){
+  .vacancy-building-picker{grid-template-columns:1fr;padding:14px}.vacancy-building-selection-summary{grid-column:auto;grid-row:auto}.vacancy-building-picker>button{width:100%}
+  .vacancy-layout-single .vacancy-detail-scroll{padding:13px}.vacancy-unit-tools{align-items:stretch;flex-direction:column}.vacancy-unit-tools button{width:100%}
+  .vacancy-unit-grid{grid-template-columns:1fr}.vacancy-floor-card>header{align-items:flex-start;flex-direction:column}.vacancy-floor-card header p{white-space:normal}
+  .vacancy-config-floor .vacancy-advanced-field{order:3}.vacancy-config-labels{grid-template-columns:1fr}
+}
+@media(max-width:420px){
+  .vacancy-kpis{gap:7px}.vacancy-kpis button{min-height:88px;padding:11px}.vacancy-kpis button b{font-size:21px}.vacancy-kpis button small{font-size:11px}
+  .vacancy-unit-card>header{align-items:stretch;flex-direction:column}.vacancy-quick-status{width:100%}.vacancy-status-tabs button{min-height:46px}
+}

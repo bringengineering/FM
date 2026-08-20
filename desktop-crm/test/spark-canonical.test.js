@@ -131,6 +131,130 @@ test("Spark canonical entity mutation is versioned, atomic, audited and idempote
   );
 });
 
+test("canonical vacancy mirror follows every transition away from the last vacant unit", () => {
+  const transitions = [
+    {
+      name: "occupied",
+      requestId: "550e8400-e29b-41d4-a716-446655440030",
+      patch: { status: "occupied" },
+    },
+    {
+      name: "move_out_scheduled",
+      requestId: "550e8400-e29b-41d4-a716-446655440031",
+      patch: { status: "move_out_scheduled", availableFrom: "2026-09-01" },
+    },
+    {
+      name: "maintenance",
+      requestId: "550e8400-e29b-41d4-a716-446655440032",
+      patch: { status: "maintenance" },
+    },
+  ];
+
+  for (const transition of transitions) {
+    const data = {
+      buildings: {
+        building_1: canonicalBuilding({ vacantUnitCount: 1, vacantUnits: ["101호"] }),
+      },
+      buildingUnits: { unit_101: canonicalUnit({ status: "vacant" }) },
+    };
+    const result = SparkCanonical.reduceEntity(data, entityRequest({
+      requestId: transition.requestId,
+      patch: transition.patch,
+      reason: `공실에서 ${transition.name}(으)로 변경`,
+    }), ACTOR, NOW);
+
+    assert.equal(result.data.buildingUnits.unit_101.status, transition.name);
+    assert.equal(result.data.buildings.building_1.vacantUnitCount, 0);
+    assert.deepEqual(result.data.buildings.building_1.vacantUnits, []);
+    assert.equal(result.data.buildings.building_1.entityVersion, 2);
+    const atomicPatch = SparkCanonical.atomicMutationPatch(data, result.data);
+    assert.ok(Object.hasOwn(atomicPatch, "buildingUnits/unit_101"));
+    assert.ok(Object.hasOwn(atomicPatch, "buildings/building_1"));
+  }
+});
+
+test("canonical vacancy mirror decreases without dropping the remaining vacant units", () => {
+  const data = {
+    buildings: {
+      building_1: canonicalBuilding({ vacantUnitCount: 2, vacantUnits: ["101호", "102호"] }),
+    },
+    buildingUnits: {
+      unit_101: canonicalUnit({ status: "vacant" }),
+      unit_102: canonicalUnit({
+        id: "unit_102", label: "102호", unitOrder: 2, status: "vacant",
+      }),
+    },
+  };
+  const result = SparkCanonical.reduceEntity(data, entityRequest({
+    requestId: "550e8400-e29b-41d4-a716-446655440033",
+    patch: { status: "occupied" },
+  }), ACTOR, NOW);
+
+  assert.equal(result.data.buildings.building_1.vacantUnitCount, 1);
+  assert.deepEqual(result.data.buildings.building_1.vacantUnits, ["102호"]);
+});
+
+test("archiving and restoring a canonical vacant unit keeps its mirror recoverable", () => {
+  const data = {
+    buildings: {
+      building_1: canonicalBuilding({ vacantUnitCount: 1, vacantUnits: ["101호"] }),
+    },
+    buildingUnits: { unit_101: canonicalUnit({ status: "vacant" }) },
+  };
+  const archived = SparkCanonical.reduceEntity(data, entityRequest({
+    requestId: "550e8400-e29b-41d4-a716-446655440034",
+    operation: "archive",
+    patch: {},
+    reason: "공실 호실 보관",
+  }), ACTOR, NOW);
+
+  assert.equal(archived.data.buildingUnits.unit_101.archivedAt, NOW);
+  assert.equal(archived.data.buildings.building_1.vacantUnitCount, 0);
+  assert.deepEqual(archived.data.buildings.building_1.vacantUnits, []);
+
+  const restoredAt = "2026-08-18T00:00:01.000Z";
+  const restored = SparkCanonical.reduceEntity(archived.data, entityRequest({
+    requestId: "550e8400-e29b-41d4-a716-446655440035",
+    operation: "restore",
+    expectedVersion: 2,
+    patch: {},
+    reason: "공실 호실 복원",
+  }), ACTOR, restoredAt);
+
+  assert.equal(restored.data.buildingUnits.unit_101.archivedAt, "");
+  assert.equal(restored.data.buildingUnits.unit_101.entityVersion, 3);
+  assert.equal(restored.data.buildings.building_1.vacantUnitCount, 1);
+  assert.deepEqual(restored.data.buildings.building_1.vacantUnits, ["101호"]);
+  assert.equal(restored.data.buildings.building_1.entityVersion, 3);
+});
+
+test("an unresolved legacy vacancy mirror remains protected from canonical shortfall", () => {
+  const legacyBuilding = canonicalBuilding({
+    vacantUnitCount: 2,
+    vacantUnits: ["101호", "102호"],
+  });
+  const data = {
+    buildings: { building_1: legacyBuilding },
+    buildingUnits: { unit_101: canonicalUnit({ status: "vacant" }) },
+  };
+
+  assert.throws(
+    () => SparkCanonical.reduceEntity(data, entityRequest({
+      requestId: "550e8400-e29b-41d4-a716-446655440036",
+      patch: { status: "occupied" },
+    }), ACTOR, NOW),
+    error => error && error.code === "crm_vacancy_migration_required",
+  );
+  assert.deepEqual(data.buildings.building_1, legacyBuilding);
+
+  const harmless = SparkCanonical.reduceEntity(data, entityRequest({
+    requestId: "550e8400-e29b-41d4-a716-446655440037",
+    patch: { memo: "이전 전 확인 메모" },
+  }), ACTOR, NOW);
+  assert.deepEqual(harmless.data.buildings.building_1, legacyBuilding);
+  assert.equal(harmless.data.buildingUnits.unit_101.memo, "이전 전 확인 메모");
+});
+
 test("Spark canonical reducer rejects stale versions and immutable parent changes", () => {
   const data = {
     buildings: {

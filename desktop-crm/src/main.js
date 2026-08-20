@@ -2173,6 +2173,7 @@ async function createWindow() {
         const initial = window.__crmTest.getStore();
         const building = initial.buildings.find(item => item && !item.archivedAt);
         if (!building) return { pass: false, reason: 'building missing' };
+        await window.bringCRM.save(initial);
         const operatorSelect = document.getElementById('fieldOperatorSelect');
         if (operatorSelect) {
           operatorSelect.value = 'kim-hyunjin';
@@ -2192,23 +2193,47 @@ async function createWindow() {
           requestId: '550e8400-e29b-41d4-a716-446655440100',
           units
         });
-        const statusUpdated = await window.bringCRM.commitCanonicalCrmEntity({
-          requestId: '550e8400-e29b-41d4-a716-446655440102',
-          operatorId: 'kim-hyunjin',
-          entityType: 'buildingUnits',
-          entityId: configured.entityIds[1],
-          operation: 'update',
-          expectedVersion: 1,
-          patch: { status: 'move_out_scheduled', availableFrom: '2026-09-01' },
-          reason: 'vacancy Electron QA status update'
-        });
         const loaded = await window.bringCRM.loadCanonicalBuildingUnits();
         window.__crmTest.applyRemoteForTest(Object.assign({}, initial, { buildingUnits: Object.values(loaded || {}) }));
         await wait(120);
         document.querySelector('[data-view="vacancies"]')?.click();
         await wait(160);
-        document.querySelector('[data-vacancy-building="' + building.id + '"]')?.click();
+        const firstBuildingSelect = document.querySelector('[data-vacancy-building-select]');
+        if (!firstBuildingSelect) return { pass: false, reason: 'building select missing' };
+        firstBuildingSelect.value = building.id;
+        firstBuildingSelect.dispatchEvent(new Event('change', { bubbles: true }));
         await wait(100);
+        const selectedBuilding = document.querySelector('[data-vacancy-building-select]')?.value || '';
+        const defaultFilters = [...document.querySelectorAll('[data-vacancy-filter]')];
+        const defaultAttention = defaultFilters[0]?.dataset.vacancyFilter === 'attention'
+          && defaultFilters[0]?.classList.contains('active');
+        const attentionCardsBefore = document.querySelectorAll('[data-vacancy-unit]').length;
+        const allFilterBefore = [...document.querySelectorAll('[data-vacancy-filter]')]
+          .find(item => item.dataset.vacancyFilter === 'all');
+        allFilterBefore?.click();
+        await wait(100);
+        const cardsBeforeQuickStatus = document.querySelectorAll('[data-vacancy-unit]').length;
+        const quickStatus = document.querySelector('[data-vacancy-status-select][data-unit-id="' + configured.entityIds[1] + '"]');
+        if (!quickStatus) return { pass: false, reason: 'quick status missing' };
+        quickStatus.value = 'move_out_scheduled';
+        quickStatus.dispatchEvent(new Event('change', { bubbles: true }));
+        await wait(100);
+        const scheduleForm = document.getElementById('vacancyScheduleForm');
+        if (!scheduleForm) return { pass: false, reason: 'schedule form missing' };
+        const scheduleRequiredBefore = !scheduleForm.checkValidity();
+        scheduleForm.elements.availableFrom.value = '2026-09-01';
+        scheduleForm.elements.availableFrom.dispatchEvent(new Event('change', { bubbles: true }));
+        scheduleForm.elements.memo.value = 'Electron QA 공실 예정';
+        const scheduleValidAtSubmit = scheduleForm.checkValidity();
+        scheduleForm.requestSubmit();
+        await wait(650);
+        const scheduleSubmitClosed = !document.getElementById('modal')?.classList.contains('open');
+        const loadedAfterQuickStatus = await window.bringCRM.loadCanonicalBuildingUnits();
+        const scheduledUnit = loadedAfterQuickStatus?.[configured.entityIds[1]];
+        const quickStatusSaved = scheduledUnit?.status === 'move_out_scheduled'
+          && scheduledUnit?.availableFrom === '2026-09-01'
+          && scheduledUnit?.memo === 'Electron QA 공실 예정'
+          && scheduledUnit?.entityVersion === 2;
         document.querySelector('[data-vacancy-configure="' + building.id + '"]')?.click();
         await wait(100);
         const firstWizard = document.getElementById('vacancyConfigurationForm');
@@ -2222,12 +2247,22 @@ async function createWindow() {
         const loadedAfterSubmit = await window.bringCRM.loadCanonicalBuildingUnits();
         document.querySelector('[data-view="vacancies"]')?.click();
         await wait(100);
-        document.querySelector('[data-vacancy-building="' + building.id + '"]')?.click();
+        const finalBuildingSelect = document.querySelector('[data-vacancy-building-select]');
+        if (finalBuildingSelect) {
+          finalBuildingSelect.value = building.id;
+          finalBuildingSelect.dispatchEvent(new Event('change', { bubbles: true }));
+        }
         await wait(80);
         const root = document.querySelector('[data-vacancy-view]');
         const filters = [...document.querySelectorAll('[data-vacancy-filter]')];
-        const cards = document.querySelectorAll('[data-vacancy-unit]');
-        const floors = document.querySelectorAll('[data-vacancy-floor]');
+        const attentionCards = document.querySelectorAll('[data-vacancy-unit]').length;
+        const attentionFirst = filters[0]?.dataset.vacancyFilter === 'attention' && filters[0]?.classList.contains('active');
+        const allFilter = filters.find(item => item.dataset.vacancyFilter === 'all');
+        allFilter?.click();
+        await wait(80);
+        const cards = document.querySelectorAll('[data-vacancy-unit]').length;
+        const floors = document.querySelectorAll('[data-vacancy-floor]').length;
+        const quickStatuses = document.querySelectorAll('[data-vacancy-status-select]').length;
         document.querySelector('[data-vacancy-configure="' + building.id + '"]')?.click();
         await wait(100);
         const wizard = document.getElementById('vacancyConfigurationForm');
@@ -2239,13 +2274,15 @@ async function createWindow() {
           && !!root && root.scrollWidth <= root.clientWidth + 1
           && (!wizard || wizard.scrollWidth <= wizard.clientWidth + 1);
         const pass = configured.totalUnits === 100 && configured.createdCount === 100
-          && statusUpdated.entityVersion === 2
+          && selectedBuilding === building.id && defaultAttention && attentionCardsBefore === 10
+          && cardsBeforeQuickStatus === 100 && scheduleRequiredBefore && scheduleValidAtSubmit
+          && scheduleSubmitClosed && quickStatusSaved
           && wizardSubmitClosed && Object.keys(loadedAfterSubmit || {}).length === 100
-          && Object.keys(loaded || {}).length === 100 && cards.length === 100 && floors.length === 10
-          && filters[0]?.dataset.vacancyFilter === 'all' && filters[0]?.classList.contains('active')
+          && Object.keys(loaded || {}).length === 100 && attentionCards === 11 && cards === 100 && floors === 10
+          && attentionFirst && quickStatuses === 100
           && !!wizard && !!preview && floorRows === 10 && labels === 100 && noHorizontalOverflow
           && window.__crmTest.snapshot().view === 'vacancies';
-        return { pass, configured, statusUpdated, operatorAtSubmit, formValidAtSubmit, submitToast, wizardSubmitClosed, loadedUnits: Object.keys(loaded || {}).length, loadedAfterSubmit: Object.keys(loadedAfterSubmit || {}).length, cards: cards.length, floors: floors.length, floorRows, labels, allFirst: filters[0]?.dataset.vacancyFilter, allActive: filters[0]?.classList.contains('active'), noHorizontalOverflow, viewport, state: window.__crmTest.snapshot() };
+        return { pass, configured, selectedBuilding, defaultAttention, attentionCardsBefore, cardsBeforeQuickStatus, scheduleRequiredBefore, scheduleValidAtSubmit, scheduleSubmitClosed, quickStatusSaved, scheduledUnit, operatorAtSubmit, formValidAtSubmit, submitToast, wizardSubmitClosed, loadedUnits: Object.keys(loaded || {}).length, loadedAfterSubmit: Object.keys(loadedAfterSubmit || {}).length, attentionCards, cards, floors, quickStatuses, floorRows, labels, firstFilter: filters[0]?.dataset.vacancyFilter, firstFilterActive: filters[0]?.classList.contains('active'), noHorizontalOverflow, viewport, state: window.__crmTest.snapshot() };
       })().catch(error => ({ pass: false, error: String(error && error.stack || error) }))`, true);
     } else if (process.env.BRING_CRM_SCREENSHOT_ACTION === "vacancy-viewer-invariant") {
       actionResult = await mainWindow.webContents.executeJavaScript(`(async () => {
@@ -2267,14 +2304,22 @@ async function createWindow() {
         }
         document.querySelector('[data-view="vacancies"]')?.click();
         await wait(120);
+        const buildingSelect = document.querySelector('[data-vacancy-building-select]');
+        if (buildingSelect && building) {
+          buildingSelect.value = building.id;
+          buildingSelect.dispatchEvent(new Event('change', { bubbles: true }));
+          await wait(60);
+        }
         const configureButtons = document.querySelectorAll('[data-vacancy-configure]').length;
         const editButtons = document.querySelectorAll('[data-vacancy-unit-edit]').length;
+        const quickStatusControls = document.querySelectorAll('[data-vacancy-status-select]').length;
         const filters = [...document.querySelectorAll('[data-vacancy-filter]')];
         const noHorizontalOverflow = document.documentElement.scrollWidth <= innerWidth + 1;
-        const pass = rejected && configureButtons === 0 && editButtons === 0
-          && filters[0]?.dataset.vacancyFilter === 'all' && noHorizontalOverflow
+        const pass = rejected && !!document.querySelector('[data-vacancy-building-select]')
+          && configureButtons === 0 && editButtons === 0 && quickStatusControls === 0
+          && filters[0]?.dataset.vacancyFilter === 'attention' && filters[0]?.classList.contains('active') && noHorizontalOverflow
           && window.__crmTest.snapshot().view === 'vacancies';
-        return { pass, rejected, rejectionCode, configureButtons, editButtons, allFirst: filters[0]?.dataset.vacancyFilter, noHorizontalOverflow, viewport: { width: innerWidth, height: innerHeight }, state: window.__crmTest.snapshot() };
+        return { pass, rejected, rejectionCode, buildingSelect: document.querySelector('[data-vacancy-building-select]')?.value || '', configureButtons, editButtons, quickStatusControls, firstFilter: filters[0]?.dataset.vacancyFilter, firstFilterActive: filters[0]?.classList.contains('active'), noHorizontalOverflow, viewport: { width: innerWidth, height: innerHeight }, state: window.__crmTest.snapshot() };
       })().catch(error => ({ pass: false, error: String(error && error.stack || error) }))`, true);
     } else if (process.env.BRING_CRM_SCREENSHOT_ACTION === "readability-layout") {
       actionResult = await mainWindow.webContents.executeJavaScript(`(async () => {
