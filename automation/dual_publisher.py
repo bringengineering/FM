@@ -55,8 +55,15 @@ def validate_publish_manifest(manifest: dict) -> Path:
         raise PublishBlocked("YouTube metadata is required")
     if target in {"both", "instagram"}:
         instagram = manifest.get("instagram", {})
-        if not instagram.get("video_url") or not instagram.get("caption"):
-            raise PublishBlocked("Instagram video_url and caption are required")
+        if not instagram.get("caption"):
+            raise PublishBlocked("Instagram caption is required")
+        if instagram.get("video_url") and instagram.get("video_path"):
+            raise PublishBlocked(
+                "Choose only one Instagram source: video_url or video_path"
+            )
+        local_source = Path(instagram.get("video_path") or video)
+        if not instagram.get("video_url") and not local_source.is_file():
+            raise PublishBlocked(f"Instagram video file does not exist: {local_source}")
     return video
 
 
@@ -188,9 +195,17 @@ def make_youtube_publisher(credentials, *, approve_public: bool):
 def make_instagram_publisher(client: InstagramClient):
     def publisher(job: dict) -> dict:
         metadata = job["instagram"]
-        creation_id = client.create_reel(
-            video_url=metadata["video_url"], caption=metadata["caption"]
-        )
+        if metadata.get("video_url"):
+            creation_id = client.create_reel(
+                video_url=metadata["video_url"], caption=metadata["caption"]
+            )
+        else:
+            creation_id, upload_uri = client.create_resumable_reel(
+                caption=metadata["caption"]
+            )
+            client.upload_local_video(
+                upload_uri, Path(metadata.get("video_path") or job["video"])
+            )
         client.wait_until_ready(creation_id)
         result = client.publish(creation_id)
         return {"id": result.media_id, "url": result.url}

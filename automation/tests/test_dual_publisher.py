@@ -7,6 +7,7 @@ from automation.dual_publisher import (
     PublishBlocked,
     make_instagram_publisher,
     publish_manifest,
+    validate_publish_manifest,
     youtube_manifest_from_job,
 )
 from automation.instagram_uploader import InstagramApiError, InstagramPublishResult
@@ -76,6 +77,44 @@ class DualPublisherTests(unittest.TestCase):
             result = make_instagram_publisher(client)(valid_manifest(Path(folder)))
             self.assertEqual("ig1", result["id"])
             self.assertEqual("container-1", client.waited)
+
+    def test_instagram_publisher_uploads_local_video(self):
+        class Client:
+            def create_resumable_reel(self, **kwargs):
+                self.created = kwargs
+                return "container-1", "https://upload.example/container-1"
+
+            def upload_local_video(self, upload_uri, video_path):
+                self.uploaded = (upload_uri, video_path)
+
+            def wait_until_ready(self, creation_id):
+                self.waited = creation_id
+
+            def publish(self, creation_id):
+                return InstagramPublishResult("ig1", "https://instagram.com/reel/ig1")
+
+        with TemporaryDirectory() as folder:
+            root = Path(folder)
+            job = valid_manifest(root)
+            del job["instagram"]["video_url"]
+            client = Client()
+            result = make_instagram_publisher(client)(job)
+            self.assertEqual("ig1", result["id"])
+            self.assertEqual(Path(job["video"]), client.uploaded[1])
+            self.assertEqual("container-1", client.waited)
+
+    def test_manifest_accepts_local_instagram_video(self):
+        with TemporaryDirectory() as folder:
+            manifest = valid_manifest(Path(folder))
+            del manifest["instagram"]["video_url"]
+            self.assertEqual(Path(manifest["video"]), validate_publish_manifest(manifest))
+
+    def test_manifest_rejects_ambiguous_instagram_source(self):
+        with TemporaryDirectory() as folder:
+            manifest = valid_manifest(Path(folder))
+            manifest["instagram"]["video_path"] = manifest["video"]
+            with self.assertRaises(PublishBlocked):
+                validate_publish_manifest(manifest)
 
     def test_publish_requires_explicit_approval(self):
         with TemporaryDirectory() as folder:
