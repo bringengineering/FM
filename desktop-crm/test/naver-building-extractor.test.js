@@ -181,6 +181,102 @@ test("extracts an exact road-address search result without inventing a building 
   );
 });
 
+test("accepts only closed leading-region aliases while keeping the exact address tail", () => {
+  const shortProvinceQuery = "강원 원주시 북원로2475번길 88-7";
+  const shortProvinceUrl = `https://m.map.naver.com/search?query=${encodeURIComponent(shortProvinceQuery)}`;
+  const shortProvinceHtml = addressSearchHtml({
+    query: shortProvinceQuery,
+    fullAddress: "강원특별자치도 원주시 북원로2475번길 88-7",
+    displayAddress: "강원특별자치도 원주시 북원로2475번길 88-7(우산동 248-1)"
+  });
+  const accepted = Naver.extractNaverSearchInfoFromHtml(shortProvinceHtml, shortProvinceUrl);
+  assert.equal(accepted.ok, true);
+  assert.equal(accepted.roadAddress, "강원특별자치도 원주시 북원로2475번길 88-7");
+  assert.equal(accepted.jibunAddress, "강원특별자치도 원주시 우산동 248-1");
+
+  const formerProvinceQuery = "강원도 원주시 북원로2475번길 88-7";
+  const formerProvinceUrl = `https://m.map.naver.com/search?query=${encodeURIComponent(formerProvinceQuery)}`;
+  const formerProvince = Naver.extractNaverSearchInfoFromHtml(addressSearchHtml({
+    query: formerProvinceQuery,
+    fullAddress: "강원특별자치도 원주시 북원로2475번길 88-7",
+    displayAddress: "강원특별자치도 원주시 북원로2475번길 88-7(우산동 248-1)"
+  }), formerProvinceUrl);
+  assert.equal(formerProvince.ok, true);
+
+  const wrongNumberHtml = addressSearchHtml({
+    query: shortProvinceQuery,
+    fullAddress: "강원특별자치도 원주시 북원로2475번길 88-8",
+    displayAddress: "강원특별자치도 원주시 북원로2475번길 88-8(우산동 248-2)"
+  });
+  const rejected = Naver.extractNaverSearchInfoFromHtml(wrongNumberHtml, shortProvinceUrl);
+  assert.equal(rejected.ok, false);
+  assert.match(rejected.message, /정확히 일치/);
+
+  const wrongProvinceHtml = addressSearchHtml({
+    query: shortProvinceQuery,
+    fullAddress: "경기도 원주시 북원로2475번길 88-7",
+    displayAddress: "경기도 원주시 북원로2475번길 88-7(우산동 248-1)"
+  });
+  assert.equal(Naver.extractNaverSearchInfoFromHtml(wrongProvinceHtml, shortProvinceUrl).ok, false);
+
+  const wrongCityHtml = addressSearchHtml({
+    query: shortProvinceQuery,
+    fullAddress: "강원특별자치도 춘천시 북원로2475번길 88-7",
+    displayAddress: "강원특별자치도 춘천시 북원로2475번길 88-7(우산동 248-1)"
+  });
+  assert.equal(Naver.extractNaverSearchInfoFromHtml(wrongCityHtml, shortProvinceUrl).ok, false);
+
+  const ambiguousHtml = addressSearchHtml({
+    query: shortProvinceQuery,
+    fullAddress: "강원특별자치도 원주시 북원로2475번길 88-7",
+    displayAddress: "강원특별자치도 원주시 북원로2475번길 88-7(우산동 248-1)",
+    duplicateAddressList: [{ name: "다른 지역" }]
+  });
+  assert.equal(Naver.extractNaverSearchInfoFromHtml(ambiguousHtml, shortProvinceUrl).ok, false);
+
+  const relatedHtml = addressSearchHtml({
+    query: shortProvinceQuery,
+    fullAddress: "강원특별자치도 원주시 북원로2475번길 88-7",
+    displayAddress: "강원특별자치도 원주시 북원로2475번길 88-7(우산동 248-1)",
+    relatedRegionAddressList: [{ name: "인접 지역" }]
+  });
+  assert.equal(Naver.extractNaverSearchInfoFromHtml(relatedHtml, shortProvinceUrl).ok, false);
+
+  const multipleAliasCandidates = Naver.extractNaverSearchInfoFromHtml(
+    `${shortProvinceHtml}${addressSearchHtml({
+      query: shortProvinceQuery,
+      fullAddress: "강원특별자치도 원주시 북원로2475번길 88-7",
+      displayAddress: "강원특별자치도 원주시 북원로2475번길 88-7(우산동 248-2)"
+    })}`,
+    shortProvinceUrl
+  );
+  assert.equal(multipleAliasCandidates.ok, false);
+});
+
+test("preserves raw partial-address matching when a city name resembles a region alias", () => {
+  const query = "광주시 경안동 1";
+  const url = `https://m.map.naver.com/search?query=${encodeURIComponent(query)}`;
+  const html = addressSearchHtml({
+    query,
+    fullAddress: "경기도 광주시 경안동 1",
+    displayAddress: "경기도 광주시 경안동 1(경안로 1)",
+    isRoadAddress: false,
+    isJibunAddress: true
+  });
+  const result = Naver.extractNaverSearchInfoFromHtml(html, url);
+  assert.equal(result.ok, true);
+  assert.equal(result.jibunAddress, "경기도 광주시 경안동 1");
+
+  const roadQuery = "강원로 1";
+  const roadUrl = `https://m.map.naver.com/search?query=${encodeURIComponent(roadQuery)}`;
+  const roadResult = Naver.extractNaverSearchInfoFromHtml(addressSearchHtml({
+    query: roadQuery,
+    fullAddress: "강원특별자치도 원주시 강원로 1",
+    displayAddress: "강원특별자치도 원주시 강원로 1(우산동 1-1)"
+  }), roadUrl);
+  assert.equal(roadResult.ok, true, "a road-name token must not be treated as a province alias");
+});
+
 test("extracts an exact full jibun query and reconstructs its road address", () => {
   const query = "강원특별자치도 원주시 우산동 216-1";
   const url = `https://m.map.naver.com/search?query=${encodeURIComponent(query)}`;
@@ -225,6 +321,15 @@ test("rejects ambiguous, mismatched, malformed, or non-address search hydration"
     queryKey: ["v2", "allSearchSuspense", { query: { query: "북원로2475번길93" } }]
   }), url);
   assert.equal(wrongKey.ok, false);
+
+  const shortProvinceQuery = "강원 원주시 북원로2475번길 88-7";
+  const officialProvinceQuery = "강원특별자치도 원주시 북원로2475번길 88-7";
+  const aliasChangedKey = Naver.extractNaverSearchInfoFromHtml(addressSearchHtml({
+    query: officialProvinceQuery,
+    fullAddress: officialProvinceQuery,
+    displayAddress: `${officialProvinceQuery}(우산동 248-1)`
+  }), `https://m.map.naver.com/search?query=${encodeURIComponent(shortProvinceQuery)}`);
+  assert.equal(aliasChangedKey.ok, false, "hydration query binding remains byte-normalized, not alias-normalized");
 
   const place = Naver.extractNaverSearchInfoFromHtml(addressSearchHtml({ searchType: "place" }), url);
   assert.equal(place.ok, false);
@@ -358,6 +463,26 @@ test("locks an address search across redirects and rejects a changed query or pl
     );
     assert.equal(calls, 1);
   }
+
+  const shortProvinceQuery = "강원 원주시 북원로2475번길 88-7";
+  let aliasRedirectCalls = 0;
+  await assert.rejects(
+    Naver.fetchNaverBuildingInfo(`https://map.naver.com/p/search/${encodeURIComponent(shortProvinceQuery)}`, {
+      request: async () => {
+        aliasRedirectCalls += 1;
+        return fakeResponse({
+          status: 302,
+          headers: {
+            location: `https://m.map.naver.com/search?query=${encodeURIComponent("강원특별자치도 원주시 북원로2475번길 88-7")}`,
+            "content-type": "text/html"
+          },
+          body: ""
+        });
+      }
+    }),
+    /이동 중 바뀌어/
+  );
+  assert.equal(aliasRedirectCalls, 1, "region aliases must not weaken redirect query locking");
 });
 
 test("rejects a mixed search URL with a place id before any network request", async () => {

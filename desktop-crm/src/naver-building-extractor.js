@@ -379,6 +379,45 @@ function normalizedLookupText(value) {
     .replace(/[\s()[\]{}'"`.,:;·ㆍ]/g, "");
 }
 
+const LEADING_REGION_ALIASES = Object.freeze({
+  "서울": "서울특별시",
+  "서울시": "서울특별시",
+  "부산": "부산광역시",
+  "부산시": "부산광역시",
+  "대구": "대구광역시",
+  "대구시": "대구광역시",
+  "인천": "인천광역시",
+  "인천시": "인천광역시",
+  "대전": "대전광역시",
+  "대전시": "대전광역시",
+  "울산": "울산광역시",
+  "울산시": "울산광역시",
+  "세종": "세종특별자치시",
+  "세종시": "세종특별자치시",
+  "경기": "경기도",
+  "강원": "강원특별자치도",
+  "강원도": "강원특별자치도",
+  "충북": "충청북도",
+  "충남": "충청남도",
+  "전북": "전북특별자치도",
+  "전라북도": "전북특별자치도",
+  "전남": "전라남도",
+  "경북": "경상북도",
+  "경남": "경상남도",
+  "제주": "제주특별자치도",
+  "제주도": "제주특별자치도"
+});
+
+function normalizedAddressComparisonText(value) {
+  const parts = cleanText(value, 500).normalize("NFKC").split(/\s+/).filter(Boolean);
+  if (!parts.length) return "";
+  const alias = Object.prototype.hasOwnProperty.call(LEADING_REGION_ALIASES, parts[0])
+    ? LEADING_REGION_ALIASES[parts[0]]
+    : "";
+  if (alias) parts[0] = alias;
+  return normalizedLookupText(parts.join(" "));
+}
+
 function addressTerminal(value) {
   const parts = cleanText(value, 500).split(/\s+/).filter(Boolean);
   return normalizedLookupText(parts.slice(-2).join(" "));
@@ -389,8 +428,11 @@ function exactAddressQueryMatch(query, fullAddress) {
   const normalizedAddressValue = normalizedLookupText(fullAddress);
   const terminal = addressTerminal(fullAddress);
   if (!normalizedQuery || !normalizedAddressValue || !terminal) return false;
-  return normalizedQuery === normalizedAddressValue
-    || (looksLikeAddressSearchQuery(query) && normalizedAddressValue.endsWith(normalizedQuery));
+  if (normalizedQuery === normalizedAddressValue
+    || (looksLikeAddressSearchQuery(query) && normalizedAddressValue.endsWith(normalizedQuery))) return true;
+  const aliasedQuery = normalizedAddressComparisonText(query);
+  const aliasedAddress = normalizedAddressComparisonText(fullAddress);
+  return Boolean(aliasedQuery && aliasedAddress && aliasedQuery === aliasedAddress);
 }
 
 function searchQueryFromEntry(entry) {
