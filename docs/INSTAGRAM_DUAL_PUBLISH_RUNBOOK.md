@@ -32,10 +32,14 @@
   },
   "instagram": {
     "caption": "릴스 본문과 해시태그",
-    "video_url": "https://temporary-media.example/random/final.mp4"
+    "video_path": "C:/absolute/path/final.mp4"
   }
 }
 ```
+
+`video_path`를 생략하면 최상위 `video` 파일을 그대로 사용한다. 공개 HTTPS
+파일을 이미 보유한 경우에만 `video_path` 대신 `video_url`을 사용한다. 두 값을
+동시에 넣으면 출처가 모호하므로 게시를 차단한다.
 
 ## 안전 점검
 
@@ -57,4 +61,6 @@
 
 ## 실제 공개 테스트
 
-테스트 공개도 외부 게시물이므로 별도 승인 후 한 편만 수행한다. 테스트 전에 영상 URL이 인터넷에서 HTTPS로 접근 가능한지 확인한다.
+테스트 공개도 외부 게시물이므로 별도 승인 후 한 편만 수행한다. 로컬 MP4는
+Meta의 재개 가능한 업로드 세션으로 직접 전송하므로 별도 호스팅 비용이나 공개
+영상 URL이 필요하지 않다.
