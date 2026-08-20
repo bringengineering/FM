@@ -1,11 +1,15 @@
 import unittest
+from pathlib import Path
+from tempfile import TemporaryDirectory
 from unittest.mock import patch
 
+import automation.instagram_uploader as instagram_uploader
 from automation.instagram_uploader import (
     InstagramApiError,
     InstagramClient,
     InstagramConfig,
     InstagramConfigurationError,
+    UrllibGraphTransport,
 )
 
 
@@ -13,6 +17,7 @@ class RecordingTransport:
     def __init__(self, responses):
         self.responses = iter(responses)
         self.calls = []
+        self.uploads = []
 
     def request(self, method, path, *, params=None):
         self.calls.append((method, path, params or {}))
@@ -20,6 +25,58 @@ class RecordingTransport:
         if isinstance(response, Exception):
             raise response
         return response
+
+    def upload_file(self, upload_uri, video_path):
+        self.uploads.append((upload_uri, video_path))
+        response = next(self.responses)
+        if isinstance(response, Exception):
+            raise response
+        return response
+
+
+class FakeHttpResponse:
+    def __init__(self, payload=b'{"success": true}'):
+        self.payload = payload
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *_):
+        return False
+
+    def read(self):
+        return self.payload
+
+
+class RecordingOpener:
+    def __init__(self):
+        self.requests = []
+
+    def __call__(self, request, timeout):
+        self.requests.append((request, timeout))
+        return FakeHttpResponse()
+
+
+class InstagramTransportTests(unittest.TestCase):
+    def test_upload_file_sends_binary_with_resumable_headers(self):
+        with TemporaryDirectory() as folder:
+            video = Path(folder) / "video.mp4"
+            video.write_bytes(b"mp4-bytes")
+            opener = RecordingOpener()
+            transport = UrllibGraphTransport("secret-token", opener=opener)
+
+            result = transport.upload_file(
+                "https://rupload.facebook.com/ig-api-upload/v26.0/container-1",
+                video,
+            )
+
+            self.assertEqual({"success": True}, result)
+            request, timeout = opener.requests[0]
+            self.assertEqual(b"mp4-bytes", request.data)
+            self.assertEqual("OAuth secret-token", request.get_header("Authorization"))
+            self.assertEqual("0", request.get_header("Offset"))
+            self.assertEqual("9", request.get_header("File_size"))
+            self.assertEqual(120, timeout)
 
 
 class InstagramConfigTests(unittest.TestCase):
@@ -51,6 +108,39 @@ class InstagramConfigTests(unittest.TestCase):
 
 
 class InstagramClientTests(unittest.TestCase):
+    def test_create_and_upload_local_reel(self):
+        with TemporaryDirectory() as folder:
+            video = Path(folder) / "video.mp4"
+            video.write_bytes(b"video")
+            transport = RecordingTransport(
+                [
+                    {
+                        "id": "container-1",
+                        "uri": "https://rupload.facebook.com/u/container-1",
+                    },
+                    {"success": True},
+                ]
+            )
+            client = InstagramClient("1784", transport, poll_seconds=0)
+
+            creation_id, upload_uri = client.create_resumable_reel(caption="caption")
+            client.upload_local_video(upload_uri, video)
+
+            self.assertEqual("container-1", creation_id)
+            self.assertEqual("resumable", transport.calls[0][2]["upload_type"])
+            self.assertEqual((upload_uri, video.resolve()), transport.uploads[0])
+
+    def test_local_video_requires_nonempty_mp4(self):
+        with TemporaryDirectory() as folder:
+            root = Path(folder)
+            invalid = [root / "missing.mp4", root / "empty.mp4", root / "video.mov"]
+            invalid[1].write_bytes(b"")
+            invalid[2].write_bytes(b"video")
+            for path in invalid:
+                with self.subTest(path=path):
+                    with self.assertRaises(InstagramConfigurationError):
+                        instagram_uploader.validate_local_video(path)
+
     def test_create_wait_and_publish_reel(self):
         transport = RecordingTransport(
             [

@@ -7,6 +7,7 @@ import urllib.error
 import urllib.parse
 import urllib.request
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Mapping, Protocol
 
 
@@ -83,11 +84,31 @@ class GraphTransport(Protocol):
         self, method: str, path: str, *, params: Mapping[str, str] | None = None
     ) -> dict: ...
 
+    def upload_file(self, upload_uri: str, video_path: Path) -> dict: ...
+
+
+def validate_local_video(path: Path) -> Path:
+    resolved = path.expanduser().resolve()
+    if not resolved.is_file() or resolved.suffix.lower() != ".mp4":
+        raise InstagramConfigurationError(
+            "Instagram local video must be an MP4 file"
+        )
+    if resolved.stat().st_size <= 0:
+        raise InstagramConfigurationError("Instagram local video is empty")
+    return resolved
+
 
 class UrllibGraphTransport:
-    def __init__(self, access_token: str, *, base_url: str = GRAPH_API_BASE):
+    def __init__(
+        self,
+        access_token: str,
+        *,
+        base_url: str = GRAPH_API_BASE,
+        opener=None,
+    ):
         self._access_token = access_token
         self._base_url = base_url.rstrip("/")
+        self._opener = opener or urllib.request.urlopen
 
     def request(
         self, method: str, path: str, *, params: Mapping[str, str] | None = None
@@ -104,7 +125,7 @@ class UrllibGraphTransport:
             headers={"Authorization": f"Bearer {self._access_token}"},
         )
         try:
-            with urllib.request.urlopen(request, timeout=30) as response:
+            with self._opener(request, timeout=30) as response:
                 return json.loads(response.read().decode("utf-8"))
         except urllib.error.HTTPError as exc:
             status = exc.code
@@ -125,6 +146,46 @@ class UrllibGraphTransport:
         except urllib.error.URLError:
             raise InstagramApiError(
                 "Graph API network request failed", retryable=True
+            ) from None
+
+    def upload_file(self, upload_uri: str, video_path: Path) -> dict:
+        parsed = urllib.parse.urlparse(upload_uri)
+        if parsed.scheme != "https":
+            raise InstagramApiError(
+                "Instagram upload URI must use HTTPS", retryable=False
+            )
+        size = video_path.stat().st_size
+        request = urllib.request.Request(
+            upload_uri,
+            data=video_path.read_bytes(),
+            method="POST",
+            headers={
+                "Authorization": f"OAuth {self._access_token}",
+                "offset": "0",
+                "file_size": str(size),
+            },
+        )
+        try:
+            with self._opener(request, timeout=120) as response:
+                return json.loads(response.read().decode("utf-8"))
+        except urllib.error.HTTPError as exc:
+            status = exc.code
+            try:
+                body = json.loads(exc.read().decode("utf-8"))
+                graph_error = body.get("error", {})
+                code = graph_error.get("code")
+                message = graph_error.get("message", "Instagram upload failed")
+            except (ValueError, UnicodeDecodeError):
+                code = None
+                message = "Instagram upload failed"
+            raise InstagramApiError(
+                f"Graph API error ({status}): {message}",
+                retryable=status == 429 or status >= 500,
+                code=code,
+            ) from None
+        except urllib.error.URLError:
+            raise InstagramApiError(
+                "Instagram upload network request failed", retryable=True
             ) from None
 
 
@@ -163,6 +224,34 @@ class InstagramClient:
                 "Instagram did not return a creation id", retryable=False
             )
         return str(creation_id)
+
+    def create_resumable_reel(self, *, caption: str) -> tuple[str, str]:
+        response = self.transport.request(
+            "POST",
+            f"/{self.instagram_account_id}/media",
+            params={
+                "media_type": "REELS",
+                "upload_type": "resumable",
+                "caption": caption,
+            },
+        )
+        creation_id = response.get("id")
+        upload_uri = response.get("uri")
+        if not creation_id or not upload_uri:
+            raise InstagramApiError(
+                "Instagram did not return resumable upload details",
+                retryable=False,
+            )
+        return str(creation_id), str(upload_uri)
+
+    def upload_local_video(self, upload_uri: str, video_path: Path) -> None:
+        response = self.transport.upload_file(
+            upload_uri, validate_local_video(video_path)
+        )
+        if response.get("success") is not True:
+            raise InstagramApiError(
+                "Instagram did not accept the video upload", retryable=True
+            )
 
     def container_status(self, creation_id: str) -> str:
         response = self.transport.request(
