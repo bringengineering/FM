@@ -16,7 +16,7 @@ function jobBlock(name) {
   return match[1];
 }
 
-test("uses one non-cancelling production release queue and stable no-op before preflight", () => {
+test("uses one non-cancelling production release queue and repairs a stable same-source channel before preflight", () => {
   assert.match(release, /group:\s*crm-production-release/);
   assert.match(release, /cancel-in-progress:\s*false/);
   assert.match(release, /stable_published/);
@@ -24,7 +24,8 @@ test("uses one non-cancelling production release queue and stable no-op before p
   assert.match(release, /if:\s*needs\.plan\.outputs\.stable_published != 'true'/);
   const planner = fs.readFileSync(path.join(root, "desktop-crm/scripts/release/plan-version.js"), "utf8");
   assert.match(planner, /verifyPublishedReleaseAssets/);
-  assert.match(planner, /probeUpdateChannel/);
+  assert.match(planner, /probePublishedRelease/);
+  assert.match(jobBlock("repair-update-channel"), /if: needs\.plan\.outputs\.stable_published == 'true'/);
 });
 
 test("plan checkout leaves Git authentication to the release planner token", () => {
@@ -72,6 +73,29 @@ test("stages exactly three updater assets and publishes stable only after tested
   assert.doesNotMatch(release, /deploy-rules:\s*\n\s*if: needs\.plan\.outputs\.rules_changed/);
   assert.ok(release.lastIndexOf("--mode publish") > release.indexOf("deploy-rules:"));
   assert.ok(release.lastIndexOf("probe-update-channel.js") > release.lastIndexOf("--mode publish"));
+});
+
+test("advances one dedicated bounded update pointer only after stable publication and a public release probe", () => {
+  const publish = jobBlock("publish-stable");
+  const publishIndex = publish.indexOf("--mode publish");
+  const publicProbeIndex = publish.indexOf("probe-published-release.js");
+  const advanceIndex = publish.indexOf("advance-update-channel.js");
+  const channelProbeIndex = publish.indexOf("probe-update-channel.js");
+  assert.ok(publishIndex >= 0 && publishIndex < publicProbeIndex);
+  assert.ok(publicProbeIndex < advanceIndex);
+  assert.ok(advanceIndex < channelProbeIndex);
+  assert.match(publish, /GITHUB_TOKEN:\s*\$\{\{ github\.token \}\}[\s\S]*advance-update-channel\.js/);
+
+  const repair = jobBlock("repair-update-channel");
+  assert.match(repair, /probe-published-release\.js[\s\S]*advance-update-channel\.js[\s\S]*probe-update-channel\.js/);
+  assert.match(repair, /permissions:\s*\n\s*contents: write/);
+
+  const channel = fs.readFileSync(path.join(root, "desktop-crm/scripts/release/publish-update-channel.js"), "utf8");
+  assert.match(channel, /crm-update-channel/);
+  assert.match(channel, /MAX_CHANNEL_BYTES\s*=\s*4 \* 1024/);
+  assert.match(channel, /force:\s*false/);
+  assert.doesNotMatch(channel, /force:\s*true|--force/);
+  assert.match(channel, /CRM_UPDATE_CHANNEL_REF_CONFLICT/);
 });
 
 test("automatic deployment is Spark-compatible Rules-only and never deploys Functions, legacy, Hosting, or a blanket target", () => {

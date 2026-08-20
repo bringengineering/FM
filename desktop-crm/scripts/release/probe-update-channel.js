@@ -1,7 +1,7 @@
 "use strict";
 
 const {
-  assertCrmUpdateManifest,
+  assertCrmPointerManifest,
   checkCrmUpdates,
 } = require("../../src/crm-update-policy");
 const { parseVersion, releaseError, writeGithubOutput } = require("./release-lib");
@@ -25,6 +25,9 @@ async function probeUpdateChannel({ version, attempts = 6, fetchImpl = globalThi
       if (!selected || selected.version !== expectedVersion || selected.tag !== `crm-v${expectedVersion}` || feedUrl !== expectedFeed) {
         throw releaseError("CRM_RELEASE_LIVE_CHANNEL_VERSION_MISMATCH", "The live updater channel did not select the newly published CRM version.");
       }
+      if (selected.source !== "channel-pointer" || !selected.pointer) {
+        throw releaseError("CRM_RELEASE_LIVE_POINTER_NOT_VISIBLE", "The dedicated CRM update-channel pointer is not publicly visible yet.");
+      }
       const response = await fetchImpl(`${expectedFeed}latest.yml`, {
         method: "GET",
         redirect: "follow",
@@ -37,7 +40,7 @@ async function probeUpdateChannel({ version, attempts = 6, fetchImpl = globalThi
       if (Buffer.byteLength(String(manifestText || ""), "utf8") > 128 * 1024) {
         throw releaseError("CRM_RELEASE_LIVE_CHANNEL_MANIFEST_INVALID", "The live generic update manifest is too large.");
       }
-      assertCrmUpdateManifest(manifestText, selected);
+      assertCrmPointerManifest(manifestText, selected.pointer);
       return { version: expectedVersion, tag: selected.tag, feed_url: feedUrl, attempt: String(attempt) };
     } catch (error) {
       finalError = error;

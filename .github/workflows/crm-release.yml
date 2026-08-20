@@ -399,5 +399,44 @@ jobs:
           --source-branch "$CRM_SOURCE_BRANCH"
           --release-sha "${{ needs.reserve-build.outputs.release_sha }}"
           --assets-dir release-assets
-      - name: Probe the live updater channel; failures require a forward-fix patch
+      - name: Probe the immutable public release before advancing the update channel
+        run: node desktop-crm/scripts/release/probe-published-release.js --version "${{ needs.reserve-build.outputs.version }}" --attempts 6
+      - name: Atomically advance the dedicated CRM update-channel pointer
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: >-
+          node desktop-crm/scripts/release/advance-update-channel.js
+          --version "${{ needs.reserve-build.outputs.version }}"
+          --source-sha "${{ needs.reserve-build.outputs.source_sha }}"
+          --release-sha "${{ needs.reserve-build.outputs.release_sha }}"
+      - name: Probe the live updater channel after the pointer is visible
         run: node desktop-crm/scripts/release/probe-update-channel.js --version "${{ needs.reserve-build.outputs.version }}" --attempts 6
+
+  repair-update-channel:
+    if: needs.plan.outputs.stable_published == 'true'
+    needs: plan
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: refs/tags/${{ needs.plan.outputs.tag }}
+          fetch-depth: 0
+          fetch-tags: true
+          persist-credentials: false
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 22
+      - name: Reprobe the immutable public release on a same-source retry
+        run: node desktop-crm/scripts/release/probe-published-release.js --version "${{ needs.plan.outputs.version }}" --attempts 6
+      - name: Repair or confirm the exact update-channel pointer atomically
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: >-
+          node desktop-crm/scripts/release/advance-update-channel.js
+          --version "${{ needs.plan.outputs.version }}"
+          --source-sha "${{ needs.plan.outputs.source_sha }}"
+          --release-sha "${{ needs.plan.outputs.release_sha }}"
+      - name: Probe the repaired live updater channel
+        run: node desktop-crm/scripts/release/probe-update-channel.js --version "${{ needs.plan.outputs.version }}" --attempts 6

@@ -1,9 +1,11 @@
 "use strict";
 
 const assert = require("node:assert/strict");
+const crypto = require("node:crypto");
 const test = require("node:test");
 
 const { probeUpdateChannel } = require("../scripts/release/probe-update-channel");
+const { CHANNEL_POINTER_URL } = require("../src/crm-update-policy");
 
 function response(body, { json = false } = {}) {
   const text = json ? JSON.stringify(body) : String(body);
@@ -48,8 +50,50 @@ function liveFixture(version = "1.8.1") {
   return { fetchImpl };
 }
 
-test("live channel probe selects the just-published CRM tag and validates its generic manifest", async () => {
-  const result = await probeUpdateChannel({ version: "1.8.1", attempts: 1, fetchImpl: liveFixture().fetchImpl, sleepImpl: async () => {} });
+function pointerFixture(version = "1.8.1") {
+  const tag = `crm-v${version}`;
+  const installer = `BRING.CRM.Company.Setup.${version}.exe`;
+  const checksum = Buffer.alloc(64, 9).toString("base64");
+  const manifest = [
+    `version: ${version}`,
+    "files:",
+    `  - url: ${installer}`,
+    `    sha512: ${checksum}`,
+    "    size: 321",
+    `path: ${installer}`,
+    `sha512: ${checksum}`,
+    "",
+  ].join("\n");
+  const pointer = {
+    schemaVersion: 1,
+    tag,
+    version,
+    publishedAt: "2026-08-20T01:29:12.000Z",
+    installer: { name: installer, size: 321, sha512: checksum },
+    manifest: {
+      name: "latest.yml",
+      size: Buffer.byteLength(manifest),
+      sha256: crypto.createHash("sha256").update(manifest).digest("hex"),
+    },
+  };
+  const manifestUrl = `https://github.com/bringengineering/FM/releases/download/${tag}/latest.yml`;
+  const fetchImpl = async url => {
+    if (url === CHANNEL_POINTER_URL) return response(pointer, { json: true });
+    if (url === manifestUrl) return response(manifest);
+    throw new Error(`unexpected URL ${url}`);
+  };
+  return { fetchImpl };
+}
+
+test("live channel probe rejects an API fallback until the dedicated pointer is publicly visible", async () => {
+  await assert.rejects(
+    () => probeUpdateChannel({ version: "1.8.1", attempts: 1, fetchImpl: liveFixture().fetchImpl, sleepImpl: async () => {} }),
+    error => error.code === "CRM_RELEASE_LIVE_CHANNEL_PROBE_FAILED" && /CRM_RELEASE_LIVE_POINTER_NOT_VISIBLE/.test(error.message)
+  );
+});
+
+test("live channel probe validates the dedicated pointer manifest after the pointer is published", async () => {
+  const result = await probeUpdateChannel({ version: "1.8.1", attempts: 1, fetchImpl: pointerFixture().fetchImpl, sleepImpl: async () => {} });
   assert.equal(result.version, "1.8.1");
   assert.equal(result.tag, "crm-v1.8.1");
   assert.equal(result.attempt, "1");

@@ -2,6 +2,7 @@
 
 const test = require("node:test");
 const assert = require("node:assert/strict");
+const crypto = require("node:crypto");
 const Policy = require("../src/crm-update-policy");
 
 const SHA512 = Buffer.alloc(64, 7).toString("base64");
@@ -63,10 +64,32 @@ function releaseFixture(tag, options = {}) {
   };
 }
 
-function headers(link = "") {
+function pointerFixture(version = "1.8.1", options = {}) {
+  const installerSize = options.installerSize || 95_000_000;
+  const manifestText = options.manifestText || manifest(version, installerSize, options.manifestOverrides);
+  const installer = `BRING.CRM.Company.Setup.${version}.exe`;
+  const pointer = {
+    schemaVersion: 1,
+    tag: `crm-v${version}`,
+    version,
+    publishedAt: "2026-08-20T01:29:12.000Z",
+    installer: { name: installer, size: installerSize, sha512: SHA512 },
+    manifest: {
+      name: "latest.yml",
+      size: Buffer.byteLength(manifestText, "utf8"),
+      sha256: crypto.createHash("sha256").update(manifestText, "utf8").digest("hex"),
+    },
+  };
+  return { pointer: Object.assign(pointer, options.pointerOverrides || {}), manifestText };
+}
+
+function headers(link = "", values = {}) {
+  const normalized = Object.fromEntries(Object.entries(values).map(([key, value]) => [key.toLowerCase(), String(value)]));
   return {
     get(name) {
-      return String(name).toLowerCase() === "link" ? link : null;
+      const key = String(name).toLowerCase();
+      if (key === "link") return link || null;
+      return normalized[key] || null;
     },
   };
 }
@@ -86,6 +109,15 @@ function textResponse(value) {
     status: 200,
     headers: headers(),
     text: async () => value,
+  };
+}
+
+function errorResponse(status, values = {}) {
+  return {
+    ok: false,
+    status,
+    headers: headers("", values),
+    text: async () => "untrusted",
   };
 }
 
@@ -150,6 +182,83 @@ test("strictly parses the single-file latest.yml structure", () => {
   );
 });
 
+test("strictly parses the bounded dedicated channel pointer", () => {
+  const fixture = pointerFixture();
+  assert.deepEqual(Policy.parseCrmChannelPointer(JSON.stringify(fixture.pointer)), fixture.pointer);
+
+  const invalid = [
+    { ...fixture.pointer, extra: true },
+    { ...fixture.pointer, schemaVersion: 2 },
+    { ...fixture.pointer, tag: "crm-v1.8.2" },
+    { ...fixture.pointer, version: "01.8.1", tag: "crm-v01.8.1" },
+    { ...fixture.pointer, publishedAt: "not-a-date" },
+    { ...fixture.pointer, installer: { ...fixture.pointer.installer, name: "other.exe" } },
+    { ...fixture.pointer, installer: { ...fixture.pointer.installer, sha512: "bad" } },
+    { ...fixture.pointer, manifest: { ...fixture.pointer.manifest, name: "other.yml" } },
+    { ...fixture.pointer, manifest: { ...fixture.pointer.manifest, sha256: "A".repeat(64) } },
+  ];
+  for (const value of invalid) {
+    assert.throws(
+      () => Policy.parseCrmChannelPointer(JSON.stringify(value)),
+      error => error.code === "CRM_UPDATE_POINTER_INVALID"
+    );
+  }
+  assert.throws(
+    () => Policy.parseCrmChannelPointer(`{"padding":"${"x".repeat(4096)}"}`),
+    error => error.code === "CRM_UPDATE_POINTER_INVALID"
+  );
+});
+
+test("uses the rate-limit-independent pointer and verifies its exact manifest before configuring the feed", async () => {
+  const fixture = pointerFixture("1.8.7");
+  const manifestUrl = "https://github.com/bringengineering/FM/releases/download/crm-v1.8.7/latest.yml";
+  const networkCalls = [];
+  const fetchImpl = async (url, options) => {
+    networkCalls.push({ url, accept: options.headers.Accept });
+    if (url === Policy.CHANNEL_POINTER_URL) return textResponse(JSON.stringify(fixture.pointer));
+    if (url === manifestUrl) return textResponse(fixture.manifestText);
+    throw new Error(`unexpected URL ${url}`);
+  };
+  const recorded = updaterRecorder();
+  const selected = await Policy.checkCrmUpdates({ updater: recorded.updater, fetchImpl });
+  assert.equal(selected.source, "channel-pointer");
+  assert.equal(selected.version, "1.8.7");
+  assert.deepEqual(networkCalls, [
+    { url: Policy.CHANNEL_POINTER_URL, accept: "application/json" },
+    { url: manifestUrl, accept: "application/octet-stream" },
+  ]);
+  assert.deepEqual(recorded.calls, [
+    ["feed", { provider: "generic", url: "https://github.com/bringengineering/FM/releases/download/crm-v1.8.7/" }],
+    ["check"],
+  ]);
+});
+
+test("fails closed without consulting the API when a published pointer or its manifest is invalid", async () => {
+  const valid = pointerFixture("1.8.7");
+  const cases = [
+    { pointerText: JSON.stringify({ ...valid.pointer, version: "1.8.8" }), manifestText: valid.manifestText },
+    { pointerText: JSON.stringify(valid.pointer), manifestText: `${valid.manifestText}tampered` },
+    { pointerText: JSON.stringify({ ...valid.pointer, installer: { ...valid.pointer.installer, size: 1 } }), manifestText: valid.manifestText },
+  ];
+  for (const fixture of cases) {
+    const calls = [];
+    const recorded = updaterRecorder();
+    const fetchImpl = async url => {
+      calls.push(url);
+      if (url === Policy.CHANNEL_POINTER_URL) return textResponse(fixture.pointerText);
+      if (url.endsWith("/latest.yml")) return textResponse(fixture.manifestText);
+      throw new Error(`API fallback must not run: ${url}`);
+    };
+    await assert.rejects(
+      Policy.checkCrmUpdates({ updater: recorded.updater, fetchImpl }),
+      error => error.code === "CRM_UPDATE_CHANNEL_UNAVAILABLE"
+        && ["CRM_UPDATE_POINTER_INVALID", "CRM_UPDATE_MANIFEST_MISMATCH"].includes(error.cause && error.cause.code)
+    );
+    assert.equal(calls.includes(Policy.RELEASES_API), false);
+    assert.deepEqual(recorded.calls, []);
+  }
+});
+
 test("reads every release page, validates the API-bound manifest, then configures the updater feed", async () => {
   const first = releaseFixture("crm-v1.7.8", { baseId: 100 });
   const latest = releaseFixture("crm-v1.8.1", { baseId: 200 });
@@ -157,6 +266,7 @@ test("reads every release page, validates the API-bound manifest, then configure
   const networkCalls = [];
   const fetchImpl = async (url, options) => {
     networkCalls.push({ url, accept: options.headers.Accept });
+    if (url === Policy.CHANNEL_POINTER_URL) return errorResponse(404);
     if (url === Policy.RELEASES_API) {
       return jsonResponse([first.release], `<${pageTwo}>; rel="next", <${pageTwo}>; rel="last"`);
     }
@@ -167,7 +277,9 @@ test("reads every release page, validates the API-bound manifest, then configure
   const recorded = updaterRecorder();
   const selected = await Policy.checkCrmUpdates({ updater: recorded.updater, fetchImpl });
   assert.equal(selected.version, "1.8.1");
+  assert.equal(selected.source, "release-api");
   assert.deepEqual(networkCalls, [
+    { url: Policy.CHANNEL_POINTER_URL, accept: "application/json" },
     { url: Policy.RELEASES_API, accept: "application/vnd.github+json" },
     { url: pageTwo, accept: "application/vnd.github+json" },
     { url: latest.release.assets[2].url, accept: "application/octet-stream" },
@@ -191,9 +303,12 @@ test("rejects a manifest that is not bound to the selected tag, installer name, 
   cases.push(sizeMismatch);
   for (const fixture of cases) {
     const recorded = updaterRecorder();
-    const fetchImpl = async url => url === Policy.RELEASES_API
-      ? jsonResponse([fixture.release])
-      : textResponse(fixture.manifestText);
+    const fetchImpl = async url => {
+      if (url === Policy.CHANNEL_POINTER_URL) return errorResponse(404);
+      return url === Policy.RELEASES_API
+        ? jsonResponse([fixture.release])
+        : textResponse(fixture.manifestText);
+    };
     await assert.rejects(
       Policy.checkCrmUpdates({ updater: recorded.updater, fetchImpl }),
       error => error.code === "CRM_UPDATE_CHANNEL_UNAVAILABLE" && error.safeToContinue === true
@@ -206,6 +321,7 @@ test("times out while reading a stalled body and reports only the stable safe wa
   const fixture = releaseFixture("crm-v1.8.1");
   const recorded = updaterRecorder();
   const fetchImpl = async url => {
+    if (url === Policy.CHANNEL_POINTER_URL) return errorResponse(404);
     if (url === Policy.RELEASES_API) return jsonResponse([fixture.release]);
     return { ok: true, status: 200, headers: headers(), text: () => new Promise(() => {}) };
   };
@@ -226,10 +342,12 @@ test("times out while reading a stalled body and reports only the stable safe wa
 test("fails closed on an off-origin pagination link", async () => {
   const fixture = releaseFixture("crm-v1.8.1");
   const recorded = updaterRecorder();
-  const fetchImpl = async () => jsonResponse(
-    [fixture.release],
-    '<https://evil.example/releases?per_page=100&page=2>; rel="next"'
-  );
+  const fetchImpl = async url => url === Policy.CHANNEL_POINTER_URL
+    ? errorResponse(404)
+    : jsonResponse(
+      [fixture.release],
+      '<https://evil.example/releases?per_page=100&page=2>; rel="next"'
+    );
   await assert.rejects(
     Policy.checkCrmUpdates({ updater: recorded.updater, fetchImpl }),
     error => error.code === "CRM_UPDATE_CHANNEL_UNAVAILABLE" && error.safeToContinue === true
@@ -247,6 +365,32 @@ test("fails with a stable safe warning when the release channel is unavailable",
     error => error.code === "CRM_UPDATE_CHANNEL_UNAVAILABLE"
       && error.message === Policy.SAFE_WARNING
       && !error.message.includes("untrusted details")
+  );
+  assert.deepEqual(recorded.calls, []);
+});
+
+test("preserves GitHub API rate-limit reset metadata for a neutral automatic retry", async () => {
+  const retryAt = 1_787_193_664_000;
+  const recorded = updaterRecorder();
+  await assert.rejects(
+    Policy.checkCrmUpdates({
+      updater: recorded.updater,
+      fetchImpl: async url => url === Policy.CHANNEL_POINTER_URL
+        ? errorResponse(404)
+        : errorResponse(403, {
+          "X-RateLimit-Remaining": "0",
+          "X-RateLimit-Reset": String(retryAt / 1000),
+        }),
+    }),
+    error => {
+      assert.equal(error.code, "CRM_UPDATE_CHANNEL_UNAVAILABLE");
+      assert.equal(error.safeToContinue, true);
+      assert.equal(error.rateLimited, true);
+      assert.equal(error.transient, true);
+      assert.equal(error.retryAt, retryAt);
+      assert.equal(error.cause.code, "CRM_UPDATE_RATE_LIMITED");
+      return true;
+    }
   );
   assert.deepEqual(recorded.calls, []);
 });

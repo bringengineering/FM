@@ -1,19 +1,65 @@
 "use strict";
 
+const crypto = require("node:crypto");
+
 const RELEASES_ENDPOINT = "https://api.github.com/repos/bringengineering/FM/releases";
 const RELEASES_API = `${RELEASES_ENDPOINT}?per_page=100&page=1`;
+const CHANNEL_POINTER_URL = "https://raw.githubusercontent.com/bringengineering/FM/crm-update-channel/latest.json";
 const CRM_TAG = /^crm-v(\d+)\.(\d+)\.(\d+)$/;
+const CRM_VERSION = /^(\d+)\.(\d+)\.(\d+)$/;
 const REQUEST_TIMEOUT_MS = 12_000;
 const MAX_RELEASE_PAGES = 20;
 const MAX_RELEASE_BODY_BYTES = 5 * 1024 * 1024;
+const MAX_POINTER_BYTES = 4 * 1024;
 const MAX_MANIFEST_BYTES = 128 * 1024;
+const MAX_INSTALLER_BYTES = 2 * 1024 * 1024 * 1024;
 const SAFE_WARNING = "CRM 업데이트 정보를 안전하게 확인하지 못했습니다. 현재 버전은 계속 사용할 수 있습니다.";
+const POINTER_TOP_LEVEL_KEYS = Object.freeze(["installer", "manifest", "publishedAt", "schemaVersion", "tag", "version"]);
+const POINTER_INSTALLER_KEYS = Object.freeze(["name", "sha512", "size"]);
+const POINTER_MANIFEST_KEYS = Object.freeze(["name", "sha256", "size"]);
 
 function versionParts(tag) {
   const match = CRM_TAG.exec(String(tag || ""));
   if (!match) return null;
   const parts = match.slice(1).map(Number);
   return parts.every(part => Number.isSafeInteger(part) && part >= 0) ? parts : null;
+}
+
+function normalizedVersion(value) {
+  const text = String(value || "");
+  const match = CRM_VERSION.exec(text);
+  if (!match) return "";
+  const parts = match.slice(1).map(Number);
+  if (!parts.every(part => Number.isSafeInteger(part) && part >= 0)) return "";
+  const normalized = parts.join(".");
+  return normalized === text ? normalized : "";
+}
+
+function plainObject(value) {
+  return Boolean(value) && typeof value === "object" && !Array.isArray(value)
+    && Object.getPrototypeOf(value) === Object.prototype;
+}
+
+function exactKeys(value, expected) {
+  if (!plainObject(value)) return false;
+  const actual = Object.keys(value).sort();
+  const wanted = [...expected].sort();
+  return actual.length === wanted.length && actual.every((key, index) => key === wanted[index]);
+}
+
+function boundedPositiveInteger(value, maximum) {
+  return Number.isSafeInteger(value) && value > 0 && value <= maximum;
+}
+
+function validPublishedAt(value) {
+  const text = String(value || "");
+  if (!/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,3})?Z$/.test(text)) return false;
+  const parsed = Date.parse(text);
+  return Number.isFinite(parsed) && parsed >= Date.UTC(2020, 0, 1);
+}
+
+function validSha256(value) {
+  return /^[0-9a-f]{64}$/.test(String(value || ""));
 }
 
 function compareVersions(left, right) {
@@ -34,6 +80,56 @@ function expectedCrmAssets(version) {
 
 function exactDownloadUrl(tag, name) {
   return `https://github.com/bringengineering/FM/releases/download/${encodeURIComponent(tag)}/${encodeURIComponent(name)}`;
+}
+
+function parseCrmChannelPointer(text) {
+  const source = String(text || "");
+  if (!source || Buffer.byteLength(source, "utf8") > MAX_POINTER_BYTES) {
+    throw policyError("CRM_UPDATE_POINTER_INVALID", "channel pointer body invalid");
+  }
+  let value;
+  try {
+    value = JSON.parse(source);
+  } catch (_error) {
+    throw policyError("CRM_UPDATE_POINTER_INVALID", "channel pointer JSON invalid");
+  }
+  if (!exactKeys(value, POINTER_TOP_LEVEL_KEYS)
+    || value.schemaVersion !== 1
+    || !exactKeys(value.installer, POINTER_INSTALLER_KEYS)
+    || !exactKeys(value.manifest, POINTER_MANIFEST_KEYS)) {
+    throw policyError("CRM_UPDATE_POINTER_INVALID", "channel pointer structure invalid");
+  }
+  const version = normalizedVersion(value.version);
+  const tag = String(value.tag || "");
+  const expected = expectedCrmAssets(version);
+  if (!version
+    || tag !== `crm-v${version}`
+    || !versionParts(tag)
+    || !validPublishedAt(value.publishedAt)
+    || String(value.installer.name || "") !== expected.installer
+    || !boundedPositiveInteger(value.installer.size, MAX_INSTALLER_BYTES)
+    || !validSha512(value.installer.sha512)
+    || String(value.manifest.name || "") !== expected.manifest
+    || !boundedPositiveInteger(value.manifest.size, MAX_MANIFEST_BYTES)
+    || !validSha256(value.manifest.sha256)) {
+    throw policyError("CRM_UPDATE_POINTER_INVALID", "channel pointer values invalid");
+  }
+  return Object.freeze({
+    schemaVersion: 1,
+    tag,
+    version,
+    publishedAt: String(value.publishedAt),
+    installer: Object.freeze({
+      name: expected.installer,
+      size: value.installer.size,
+      sha512: String(value.installer.sha512),
+    }),
+    manifest: Object.freeze({
+      name: expected.manifest,
+      size: value.manifest.size,
+      sha256: String(value.manifest.sha256),
+    }),
+  });
 }
 
 function validApiAssetUrl(asset) {
@@ -103,18 +199,61 @@ function policyError(code, message) {
   return error;
 }
 
+function pointerUnavailable(cause) {
+  const error = policyError("CRM_UPDATE_POINTER_UNAVAILABLE", "channel pointer unavailable");
+  if (cause) error.cause = cause;
+  return error;
+}
+
 function channelError(cause) {
   const error = new Error(SAFE_WARNING);
   error.code = "CRM_UPDATE_CHANNEL_UNAVAILABLE";
   error.safeToContinue = true;
   error.userMessage = SAFE_WARNING;
-  if (cause) error.cause = cause;
+  if (cause) {
+    error.cause = cause;
+    if (cause.code === "CRM_UPDATE_RATE_LIMITED") {
+      error.rateLimited = true;
+      error.transient = true;
+      if (Number.isSafeInteger(cause.retryAt) && cause.retryAt > 0) error.retryAt = cause.retryAt;
+    }
+  }
   return error;
 }
 
 function normalizedTimeout(value) {
   const timeout = Number(value);
   return Number.isFinite(timeout) && timeout > 0 ? Math.min(60_000, Math.ceil(timeout)) : REQUEST_TIMEOUT_MS;
+}
+
+async function readBoundedText(response, maxBytes) {
+  if (response && response.body && typeof response.body.getReader === "function") {
+    const reader = response.body.getReader();
+    const chunks = [];
+    let total = 0;
+    try {
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        const chunk = Buffer.from(value || []);
+        total += chunk.length;
+        if (total > maxBytes) throw policyError("CRM_UPDATE_BODY_INVALID", "update response body too large");
+        chunks.push(chunk);
+      }
+    } catch (error) {
+      try { await reader.cancel(); } catch (_cancelError) { /* best effort */ }
+      throw error;
+    }
+    return Buffer.concat(chunks, total).toString("utf8");
+  }
+  if (!response || typeof response.text !== "function") {
+    throw policyError("CRM_UPDATE_BODY_INVALID", "update text body unavailable");
+  }
+  const text = await response.text();
+  if (typeof text !== "string" || Buffer.byteLength(text, "utf8") > maxBytes) {
+    throw policyError("CRM_UPDATE_BODY_INVALID", "update text body invalid");
+  }
+  return text;
 }
 
 async function fetchBody(fetchImpl, url, { kind, headers, timeoutMs, maxBytes }) {
@@ -134,29 +273,33 @@ async function fetchBody(fetchImpl, url, { kind, headers, timeoutMs, maxBytes })
       headers,
     });
     if (!response || !response.ok) {
-      throw policyError("CRM_UPDATE_RESPONSE_INVALID", `update response ${response && response.status || "failed"}`);
-    }
-    if (kind === "text") {
-      if (typeof response.text !== "function") throw policyError("CRM_UPDATE_BODY_INVALID", "update text body unavailable");
-      const text = await response.text();
-      if (typeof text !== "string" || Buffer.byteLength(text, "utf8") > maxBytes) {
-        throw policyError("CRM_UPDATE_BODY_INVALID", "update text body invalid");
+      const status = Number(response && response.status) || 0;
+      const remaining = headerValue(response && response.headers, "X-RateLimit-Remaining");
+      const error = policyError(
+        status === 403 && remaining === "0" ? "CRM_UPDATE_RATE_LIMITED" : "CRM_UPDATE_RESPONSE_INVALID",
+        `update response ${status || "failed"}`
+      );
+      error.status = status;
+      if (error.code === "CRM_UPDATE_RATE_LIMITED") {
+        const resetSeconds = Number(headerValue(response && response.headers, "X-RateLimit-Reset"));
+        if (Number.isSafeInteger(resetSeconds) && resetSeconds > 0) error.retryAt = resetSeconds * 1000;
+        error.transient = true;
       }
+      throw error;
+    }
+    const declaredLength = Number(headerValue(response.headers, "Content-Length"));
+    if (Number.isFinite(declaredLength) && declaredLength > maxBytes) {
+      throw policyError("CRM_UPDATE_BODY_INVALID", "update response body too large");
+    }
+    const text = await readBoundedText(response, maxBytes);
+    if (kind === "text") {
       return { response, body: text };
     }
-    if (typeof response.text === "function") {
-      const text = await response.text();
-      if (typeof text !== "string" || Buffer.byteLength(text, "utf8") > maxBytes) {
-        throw policyError("CRM_UPDATE_BODY_INVALID", "update JSON body invalid");
-      }
-      try {
-        return { response, body: JSON.parse(text) };
-      } catch (_error) {
-        throw policyError("CRM_UPDATE_BODY_INVALID", "update JSON body malformed");
-      }
+    try {
+      return { response, body: JSON.parse(text) };
+    } catch (_error) {
+      throw policyError("CRM_UPDATE_BODY_INVALID", "update JSON body malformed");
     }
-    if (typeof response.json !== "function") throw policyError("CRM_UPDATE_BODY_INVALID", "update JSON body unavailable");
-    return { response, body: await response.json() };
   })();
   try {
     return await Promise.race([operation, timeout]);
@@ -308,22 +451,95 @@ function assertCrmUpdateManifest(text, selected) {
   return manifest;
 }
 
+function assertCrmPointerManifest(text, pointer) {
+  const source = String(text || "");
+  const bodySize = Buffer.byteLength(source, "utf8");
+  const digest = crypto.createHash("sha256").update(source, "utf8").digest("hex");
+  if (bodySize !== pointer.manifest.size || digest !== pointer.manifest.sha256) {
+    throw policyError("CRM_UPDATE_MANIFEST_MISMATCH", "pointer manifest bytes mismatch");
+  }
+  const manifest = parseCrmUpdateManifest(source);
+  if (manifest.version !== pointer.version
+    || manifest.path !== pointer.installer.name
+    || manifest.file.url !== pointer.installer.name
+    || manifest.sha512 !== pointer.installer.sha512
+    || manifest.file.sha512 !== pointer.installer.sha512
+    || manifest.file.size !== pointer.installer.size) {
+    throw policyError("CRM_UPDATE_MANIFEST_MISMATCH", "pointer manifest release mismatch");
+  }
+  return manifest;
+}
+
+async function resolveCrmChannelPointer({ fetchImpl, timeoutMs }) {
+  let pointerText;
+  try {
+    ({ body: pointerText } = await fetchBody(fetchImpl, CHANNEL_POINTER_URL, {
+      kind: "text",
+      headers: { Accept: "application/json", "User-Agent": "BRING-CRM-Updater" },
+      timeoutMs,
+      maxBytes: MAX_POINTER_BYTES,
+    }));
+  } catch (error) {
+    if (error && error.code === "CRM_UPDATE_BODY_INVALID") {
+      const invalid = policyError("CRM_UPDATE_POINTER_INVALID", "channel pointer body invalid");
+      invalid.cause = error;
+      throw invalid;
+    }
+    throw pointerUnavailable(error);
+  }
+  const pointer = parseCrmChannelPointer(pointerText);
+  const manifestUrl = exactDownloadUrl(pointer.tag, pointer.manifest.name);
+  let manifestText;
+  try {
+    ({ body: manifestText } = await fetchBody(fetchImpl, manifestUrl, {
+      kind: "text",
+      headers: { Accept: "application/octet-stream", "User-Agent": "BRING-CRM-Updater" },
+      timeoutMs,
+      maxBytes: MAX_MANIFEST_BYTES,
+    }));
+  } catch (cause) {
+    const error = policyError("CRM_UPDATE_MANIFEST_UNAVAILABLE", "pointer manifest unavailable");
+    error.cause = cause;
+    throw error;
+  }
+  assertCrmPointerManifest(manifestText, pointer);
+  return Object.freeze({
+    source: "channel-pointer",
+    tag: pointer.tag,
+    version: pointer.version,
+    publishedAt: pointer.publishedAt,
+    feedUrl: `https://github.com/bringengineering/FM/releases/download/${encodeURIComponent(pointer.tag)}/`,
+    pointer,
+  });
+}
+
+async function resolveCrmReleaseApi({ fetchImpl, timeoutMs }) {
+  const releases = await loadCrmReleases({ fetchImpl, timeoutMs });
+  const selected = selectLatestCrmRelease(releases);
+  if (!selected) throw policyError("CRM_UPDATE_RELEASE_NOT_FOUND", "CRM release not found");
+  const { body: manifestText } = await fetchBody(fetchImpl, selected.assets.manifest.url, {
+    kind: "text",
+    headers: { Accept: "application/octet-stream", "User-Agent": "BRING-CRM-Updater" },
+    timeoutMs,
+    maxBytes: MAX_MANIFEST_BYTES,
+  });
+  assertCrmUpdateManifest(manifestText, selected);
+  return Object.freeze(Object.assign({ source: "release-api" }, selected));
+}
+
 async function checkCrmUpdates({ updater, fetchImpl = globalThis.fetch, timeoutMs = REQUEST_TIMEOUT_MS } = {}) {
   try {
     if (typeof fetchImpl !== "function") throw policyError("CRM_UPDATE_FETCH_UNAVAILABLE", "fetch unavailable");
     if (!updater || typeof updater.setFeedURL !== "function" || typeof updater.checkForUpdates !== "function") {
       throw policyError("CRM_UPDATER_INVALID", "updater unavailable");
     }
-    const releases = await loadCrmReleases({ fetchImpl, timeoutMs });
-    const selected = selectLatestCrmRelease(releases);
-    if (!selected) throw policyError("CRM_UPDATE_RELEASE_NOT_FOUND", "CRM release not found");
-    const { body: manifestText } = await fetchBody(fetchImpl, selected.assets.manifest.url, {
-      kind: "text",
-      headers: { Accept: "application/octet-stream", "User-Agent": "BRING-CRM-Updater" },
-      timeoutMs,
-      maxBytes: MAX_MANIFEST_BYTES,
-    });
-    assertCrmUpdateManifest(manifestText, selected);
+    let selected;
+    try {
+      selected = await resolveCrmChannelPointer({ fetchImpl, timeoutMs });
+    } catch (error) {
+      if (!error || error.code !== "CRM_UPDATE_POINTER_UNAVAILABLE") throw error;
+      selected = await resolveCrmReleaseApi({ fetchImpl, timeoutMs });
+    }
     updater.setFeedURL({ provider: "generic", url: selected.feedUrl });
     await updater.checkForUpdates();
     return selected;
@@ -335,11 +551,15 @@ async function checkCrmUpdates({ updater, fetchImpl = globalThis.fetch, timeoutM
 
 module.exports = {
   RELEASES_API,
+  CHANNEL_POINTER_URL,
   SAFE_WARNING,
   expectedCrmAssets,
   selectLatestCrmRelease,
+  parseCrmChannelPointer,
   parseCrmUpdateManifest,
   assertCrmUpdateManifest,
+  assertCrmPointerManifest,
   loadCrmReleases,
+  resolveCrmChannelPointer,
   checkCrmUpdates,
 };

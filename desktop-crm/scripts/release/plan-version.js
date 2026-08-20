@@ -18,7 +18,7 @@ const {
 } = require("./release-lib");
 const { fail, parseArgs, printResult, required, resolveWithin } = require("./cli-utils");
 const { verifyPublishedReleaseAssets } = require("./publish-release");
-const { probeUpdateChannel } = require("./probe-update-channel");
+const { probePublishedRelease } = require("./probe-published-release");
 
 async function main() {
   const args = parseArgs(process.argv.slice(2), ["source-sha", "source-branch", "package", "owner", "repo", "remote"]);
@@ -56,7 +56,10 @@ async function main() {
       repo,
       tag: plan.tag,
     });
-    await probeUpdateChannel({ version: plan.version, attempts: 3 });
+    // A previous run may have published stable but failed before advancing the
+    // dedicated update-channel ref. Probe the immutable public release here;
+    // the workflow's repair job will idempotently advance and probe the pointer.
+    await probePublishedRelease({ version: plan.version, attempts: 3 });
   }
   const result = {
     version: plan.version,

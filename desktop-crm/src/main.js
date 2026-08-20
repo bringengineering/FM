@@ -53,10 +53,11 @@ let remoteClient = null;
 let updaterConfigured = false;
 let updatePromptOpen = false;
 let updateInstallScheduled = false;
+let updateRetryTimer = null;
 let applicationExitAllowed = false;
 let applicationExitFailureDialogOpen = false;
 let applicationResourcesClosed = false;
-let updateState = { status: "disabled", currentVersion: app.getVersion(), availableVersion: "", percent: 0, message: "" };
+let updateState = { status: "disabled", currentVersion: app.getVersion(), availableVersion: "", percent: 0, retryAt: 0, message: "" };
 const authPreview = process.env.BRING_CRM_AUTH_PREVIEW === "1";
 const passwordPreview = process.env.BRING_CRM_PASSWORD_PREVIEW === "1";
 const localTestMode = (Boolean(process.env.BRING_CRM_SCREENSHOT) || process.env.BRING_CRM_SMOKE === "1" || process.env.BRING_CRM_LOCAL_ONLY === "1") && !authPreview && !passwordPreview;
@@ -829,6 +830,33 @@ function setUpdateState(patch) {
   return updateState;
 }
 
+function clearUpdateRetryTimer() {
+  if (!updateRetryTimer) return;
+  clearTimeout(updateRetryTimer);
+  updateRetryTimer = null;
+}
+
+function rateLimitRetryAt(error, now = Date.now()) {
+  const cause = error && error.cause;
+  const rateLimited = Boolean(error && (error.rateLimited === true
+    || error.code === "CRM_UPDATE_RATE_LIMITED"
+    || cause && cause.code === "CRM_UPDATE_RATE_LIMITED"));
+  if (!rateLimited) return 0;
+  const reported = Number(error && error.retryAt || cause && cause.retryAt || 0);
+  const earliest = now + 15_000;
+  const latest = now + 60 * 60 * 1000;
+  return Math.max(earliest, Math.min(latest, Number.isFinite(reported) && reported > 0 ? reported + 2_000 : earliest));
+}
+
+function scheduleRateLimitRetry(retryAt) {
+  clearUpdateRetryTimer();
+  const delay = Math.max(1_000, retryAt - Date.now());
+  updateRetryTimer = setTimeout(() => {
+    updateRetryTimer = null;
+    void checkForUpdates(false);
+  }, delay);
+}
+
 async function confirmApplicationExitWithPending(pendingUploads, reason) {
   fieldPendingUploads = { count: pendingUploads.count, risk: pendingUploads.risk };
   const updateRestart = reason === "update";
@@ -951,31 +979,40 @@ function configureUpdater() {
   autoUpdater.autoDownload = true;
   autoUpdater.autoInstallOnAppQuit = true;
   autoUpdater.allowPrerelease = false;
-  autoUpdater.on("checking-for-update", () => setUpdateState({ status: "checking", percent: 0, message: "새 버전을 확인하고 있습니다." }));
-  autoUpdater.on("update-available", info => setUpdateState({ status: "downloading", availableVersion: info.version || "", percent: 0, message: "새 버전을 받고 있습니다." }));
-  autoUpdater.on("update-not-available", info => setUpdateState({ status: "current", availableVersion: info && info.version || "", percent: 0, message: "최신 버전입니다." }));
-  autoUpdater.on("download-progress", progress => setUpdateState({ status: "downloading", percent: Math.max(0, Math.min(100, Math.round(progress.percent || 0))), message: "새 버전을 받고 있습니다." }));
+  autoUpdater.on("checking-for-update", () => setUpdateState({ status: "checking", percent: 0, retryAt: 0, message: "새 버전을 확인하고 있습니다." }));
+  autoUpdater.on("update-available", info => setUpdateState({ status: "downloading", availableVersion: info.version || "", percent: 0, retryAt: 0, message: "새 버전을 받고 있습니다." }));
+  autoUpdater.on("update-not-available", info => setUpdateState({ status: "current", availableVersion: info && info.version || "", percent: 0, retryAt: 0, message: "최신 버전입니다." }));
+  autoUpdater.on("download-progress", progress => setUpdateState({ status: "downloading", percent: Math.max(0, Math.min(100, Math.round(progress.percent || 0))), retryAt: 0, message: "새 버전을 받고 있습니다." }));
   autoUpdater.on("update-downloaded", info => {
-    setUpdateState({ status: "ready", availableVersion: info.version || updateState.availableVersion, percent: 100, message: "재시작하면 업데이트가 적용됩니다." });
+    setUpdateState({ status: "ready", availableVersion: info.version || updateState.availableVersion, percent: 100, retryAt: 0, message: "재시작하면 업데이트가 적용됩니다." });
     promptToInstallUpdate();
   });
   autoUpdater.on("error", error => {
+    clearUpdateRetryTimer();
     console.warn("CRM update failed", error && error.message ? error.message : error);
-    setUpdateState({ status: "error", percent: 0, message: "업데이트 서버에 연결하지 못했습니다. CRM은 계속 사용할 수 있습니다." });
+    setUpdateState({ status: "error", percent: 0, retryAt: 0, message: "업데이트 파일을 확인하지 못했습니다. CRM은 계속 사용할 수 있습니다." });
   });
-  setUpdateState({ status: "idle", message: "업데이트 확인 준비" });
+  setUpdateState({ status: "idle", retryAt: 0, message: "업데이트 확인 준비" });
   setTimeout(() => checkForUpdates(false), 5000);
 }
 
 async function checkForUpdates(manual) {
   if (!app.isPackaged || localTestMode || authPreview || passwordPreview) return setUpdateState({ status: "disabled", message: "설치된 프로그램에서 사용할 수 있습니다." });
   if (updateState.status === "checking" || updateState.status === "downloading") return updateState;
+  if (updateState.status === "waiting" && Number(updateState.retryAt) > Date.now()) return updateState;
+  clearUpdateRetryTimer();
   try {
-    setUpdateState({ status: "checking", message: manual ? "사용자가 새 버전을 확인하고 있습니다." : "새 버전을 확인하고 있습니다." });
+    setUpdateState({ status: "checking", retryAt: 0, message: manual ? "사용자가 새 버전을 확인하고 있습니다." : "새 버전을 확인하고 있습니다." });
     await CrmUpdatePolicy.checkCrmUpdates({ updater: autoUpdater });
   } catch (error) {
     console.warn("CRM update check failed", error && error.message ? error.message : error);
-    setUpdateState({ status: "error", message: "업데이트 서버에 연결하지 못했습니다. CRM은 계속 사용할 수 있습니다." });
+    const retryAt = rateLimitRetryAt(error);
+    if (retryAt) {
+      scheduleRateLimitRetry(retryAt);
+      setUpdateState({ status: "waiting", percent: 0, retryAt, message: "업데이트 확인 한도가 잠시 갱신 중입니다. 잠시 후 자동으로 다시 확인합니다." });
+    } else {
+      setUpdateState({ status: "error", retryAt: 0, message: "업데이트 서버에 연결하지 못했습니다. CRM은 계속 사용할 수 있습니다." });
+    }
   }
   return updateState;
 }
