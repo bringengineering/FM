@@ -1,0 +1,16 @@
+{
+  "schemaVersion": 1,
+  "tag": "crm-v1.8.8",
+  "version": "1.8.8",
+  "publishedAt": "2026-08-20T02:12:29.000Z",
+  "installer": {
+    "name": "BRING.CRM.Company.Setup.1.8.8.exe",
+    "size": 95024387,
+    "sha512": "5So6GZjDXWQGs1eVGmp5sA8b41CJ7T30JUI8esd9dU5bBx1egKJpOUqnh41vjbxK4vTh1LtNYlFA5BAFI1srYg=="
+  },
+  "manifest": {
+    "name": "latest.yml",
+    "size": 362,
+    "sha256": "81a8fb580013ba6dd5d05ac9a0cf842281ca075b9ce5d133bad2a9fee3240c27"
+  }
+}
