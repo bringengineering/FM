@@ -76,6 +76,9 @@ class InstagramTransportTests(unittest.TestCase):
             self.assertEqual("OAuth secret-token", request.get_header("Authorization"))
             self.assertEqual("0", request.get_header("Offset"))
             self.assertEqual("9", request.get_header("File_size"))
+            self.assertEqual(
+                "application/octet-stream", request.get_header("Content-type")
+            )
             self.assertEqual(120, timeout)
 
 

@@ -163,6 +163,7 @@ class UrllibGraphTransport:
                 "Authorization": f"OAuth {self._access_token}",
                 "offset": "0",
                 "file_size": str(size),
+                "Content-Type": "application/octet-stream",
             },
         )
         try:
@@ -172,7 +173,7 @@ class UrllibGraphTransport:
             status = exc.code
             try:
                 body = json.loads(exc.read().decode("utf-8"))
-                graph_error = body.get("error", {})
+                graph_error = body.get("error") or body.get("debug_info", {})
                 code = graph_error.get("code")
                 message = graph_error.get("message", "Instagram upload failed")
             except (ValueError, UnicodeDecodeError):
