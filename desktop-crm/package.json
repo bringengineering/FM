@@ -1,6 +1,6 @@
 {
   "name": "bring-crm-desktop",
-  "version": "1.8.0",
+  "version": "1.8.13",
   "description": "BRING Engineering 고객·상담·영업 공용 데스크톱 CRM",
   "main": "src/main.js",
   "author": "BRING Engineering",
