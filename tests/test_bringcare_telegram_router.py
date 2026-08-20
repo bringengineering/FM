@@ -160,3 +160,8 @@ def test_command_is_immutable():
 
     with pytest.raises((AttributeError, TypeError)):
         command.intent = "approve"
+
+
+def test_platform_specific_approval_commands():
+    assert route("유튜브만").intent == "approve_youtube"
+    assert route("인스타만").intent == "approve_instagram"

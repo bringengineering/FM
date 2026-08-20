@@ -117,8 +117,10 @@ class RemoteProcessor:
 
             command = route(text)
             raw_command = text.strip()
-            if command.intent in {"approve", "cancel"} and raw_command not in {
+            if command.intent in {"approve", "approve_youtube", "approve_instagram", "cancel"} and raw_command not in {
                 "승인",
+                "유튜브만",
+                "인스타만",
                 "취소",
                 "보류",
             }:
@@ -163,14 +165,25 @@ class RemoteProcessor:
                         answer = "다른 글의 승인 요청이 진행 중입니다. 현재 대기 글을 먼저 확인해 주세요."
                     except PendingApprovalMismatch:
                         answer = "승인 대기 상태가 변경되어 요청을 만들지 않았습니다. 현재 상태를 다시 확인해 주세요."
-            elif command.intent in {"approve", "cancel"}:
+            elif command.intent in {"approve", "approve_youtube", "approve_instagram", "cancel"}:
                 before = self.approval_store.load()
                 if before is None or before.status != "pending":
                     answer = "현재 처리할 승인 대기 요청이 없습니다."
-                elif command.intent == "approve":
-                    after = self.approval_store.approve(update_id=update_id, now=now)
+                elif command.intent in {"approve", "approve_youtube", "approve_instagram"}:
+                    publish_target = {
+                        "approve": "both",
+                        "approve_youtube": "youtube",
+                        "approve_instagram": "instagram",
+                    }[command.intent]
+                    after = self.approval_store.approve(
+                        update_id=update_id, now=now, publish_target=publish_target
+                    )
                     if after.status == "approved":
-                        answer = "승인했습니다. 발행 작업이 이어서 처리됩니다."
+                        if publish_target == "both":
+                            answer = "승인했습니다. 발행 작업이 이어서 처리됩니다."
+                        else:
+                            label = {"youtube": "YouTube", "instagram": "Instagram"}[publish_target]
+                            answer = f"승인했습니다. {label} 발행 작업이 이어서 처리됩니다."
                         approved += 1
                         actions += 1
                     else:

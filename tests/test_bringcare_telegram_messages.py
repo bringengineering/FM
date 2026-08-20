@@ -6,6 +6,7 @@ def test_ready_message_requests_direct_telegram_command_without_link():
     assert "발행 준비 완료" in text
     assert "&lt;확인&gt;" in text
     assert "승인" in text and "취소" in text
+    assert "유튜브만" in text and "인스타만" in text
     assert "ChatGPT" not in text
     assert markup is None
 
