@@ -20,12 +20,17 @@ function functionSource(name) {
   assert.fail(`${name} should have a complete body`);
 }
 
-test("vacancy workspace uses one building selector and one structure-settings CTA", () => {
+test("vacancy workspace restores the building rail and keeps one structure-settings CTA", () => {
   const source = functionSource("renderVacancies");
-  assert.match(source, /data-vacancy-building-select/);
+  const detail = functionSource("renderVacancyDetail");
+  assert.match(source, /vacancy-building-browser/);
+  assert.match(source, /vacancy-building-card/);
+  assert.match(source, /data-vacancy-building=/);
+  assert.match(source, /aria-pressed=/);
   assert.match(source, /data-vacancy-unit-search|renderVacancyDetail/);
-  assert.doesNotMatch(source, /vacancy-building-browser|vacancy-building-card/);
-  assert.equal((source.match(/data-vacancy-configure/g) || []).length, 1);
+  assert.match(detail, /vacancy-detail-head/);
+  assert.doesNotMatch(source, /data-vacancy-building-select|vacancy-building-picker|vacancy-layout-single/);
+  assert.equal((`${source}${detail}`.match(/data-vacancy-configure/g) || []).length, 1);
   assert.match(appSource, /primaryActionButton\.hidden\s*=\s*true/);
 });
 
@@ -94,6 +99,17 @@ test("unit search is local to the selected building and exposes pressed filter s
   assert.match(appSource, /vacancyUnitQuery\s*=\s*event\.target\.value\.slice\(0,\s*256\)/);
 });
 
+test("floor headers describe the visible results for attention, all, and status filters", () => {
+  const detail = functionSource("renderVacancyDetail");
+  assert.match(detail, /<span>표시 \$\{floor\.units\.length\.toLocaleString\("ko-KR"\)\}개<\/span>/);
+  assert.match(detail, /vacancyStatusFilter === "attention"/);
+  assert.match(detail, /vacancyStatusFilter === "all"/);
+  assert.match(detail, /VACANCY_FILTER_LABELS\[vacancyStatusFilter\]/);
+  assert.match(detail, /\["maintenance",\s*"정비 중"\]/);
+  assert.match(detail, /\["unknown",\s*"확인 필요"\]/);
+  assert.doesNotMatch(detail, /확인 완료/);
+});
+
 test("configuration wording is simpler and blocks generation above 200 units", () => {
   assert.match(appSource, /<h2>층·호실 설정<\/h2>/);
   assert.match(appSource, />호실 자동 생성<\/button>/);
@@ -104,10 +120,12 @@ test("configuration wording is simpler and blocks generation above 200 units", (
 });
 
 test("vacancy styles provide readable controls and collapse to one responsive column", () => {
-  assert.match(vacancyCss, /\.vacancy-building-picker\s*\{/);
-  assert.match(vacancyCss, /\.vacancy-layout\.vacancy-layout-single\s*\{[^}]*display:block/s);
+  assert.match(vacancyCss, /\.vacancy-building-browser\s*\{/);
+  assert.match(vacancyCss, /\.vacancy-building-card:focus-visible/);
+  assert.doesNotMatch(vacancyCss, /\.vacancy-building-picker\s*\{|\.vacancy-layout\.vacancy-layout-single\s*\{/);
   assert.match(vacancyCss, /\.vacancy-quick-status\s*\{[^}]*height:44px/s);
   assert.match(vacancyCss, /\.vacancy-status-tabs button\s*\{[^}]*min-height:44px/s);
+  assert.match(vacancyCss, /@media\(max-width:980px\)[\s\S]*?\.vacancy-layout\s*\{display:block/);
   assert.match(vacancyCss, /@media\(max-width:980px\)[\s\S]*?\.vacancy-kpis\s*\{grid-template-columns:repeat\(2/);
   assert.match(vacancyCss, /@media\(max-width:700px\)[\s\S]*?\.vacancy-unit-grid\s*\{grid-template-columns:1fr/);
   assert.match(vacancyCss, /\.modal-card:has\(#vacancyScheduleForm\)/);

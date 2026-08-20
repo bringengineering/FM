@@ -127,23 +127,8 @@
   .building-derived-vacancy{grid-template-columns:1fr}.building-derived-vacancy>button{width:100%}
 }
 
-/* Simplified vacancy workspace: one building, one scroll area, quick status updates. */
-.vacancy-building-picker{
-  display:grid;grid-template-columns:minmax(260px,.9fr) minmax(0,1.35fr) auto;align-items:end;gap:16px;
-  min-width:0;padding:16px 18px;border:1px solid #cae3ef;border-radius:16px;background:linear-gradient(115deg,#f8fcfe,#edf8fd);
-  box-shadow:0 8px 24px rgba(53,105,136,.06)
-}
-.vacancy-building-picker>label{display:grid;gap:7px;min-width:0}.vacancy-building-picker>label>span{color:#315f78;font-size:13px;font-weight:900}
-.vacancy-building-picker select{width:100%;min-width:0;height:48px;padding:0 40px 0 13px;border:1px solid #bcd9e7;border-radius:11px;background-color:#fff;color:#173f57;font-family:inherit;font-size:14px;font-weight:800;line-height:1.3}
-.vacancy-building-picker select:focus-visible,.vacancy-unit-tools input:focus-visible,.vacancy-quick-status:focus-visible,.vacancy-kpis button:focus-visible,.vacancy-status-tabs button:focus-visible{outline:3px solid rgba(52,156,210,.28);outline-offset:2px;border-color:#3b9fd1}
-.vacancy-building-selection-summary{display:grid;align-content:center;gap:5px;min-width:0;min-height:48px}
-.vacancy-building-selection-summary strong,.vacancy-building-selection-summary span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.vacancy-building-selection-summary strong{color:#153f58;font-size:15px}.vacancy-building-selection-summary span{color:#668495;font-size:12px}
-.vacancy-building-picker>button{min-height:46px;padding-inline:16px;white-space:nowrap}
-
-.vacancy-layout.vacancy-layout-single{display:block;grid-template-columns:none;height:calc(100vh - 224px);min-height:460px;margin-top:12px;overflow:hidden}
-.vacancy-layout-single .vacancy-detail{height:100%}.vacancy-layout-single .vacancy-detail-scroll{height:100%;padding:16px 18px 26px;overflow-x:hidden;overflow-y:auto}
-.vacancy-layout-single .vacancy-detail-empty{min-height:300px}
+/* Readable vacancy results while retaining the familiar building list. */
+.vacancy-building-card:focus-visible,.vacancy-unit-tools input:focus-visible,.vacancy-quick-status:focus-visible,.vacancy-kpis button:focus-visible,.vacancy-status-tabs button:focus-visible{outline:3px solid rgba(52,156,210,.28);outline-offset:2px;border-color:#3b9fd1}
 
 .vacancy-kpis{gap:10px}.vacancy-kpis button{
   position:relative;min-width:0;min-height:94px;overflow:hidden;padding:13px 15px;border:1px solid #d7e7ee;border-radius:13px;background:#fff;color:inherit;text-align:left;font:inherit;cursor:pointer;transition:border-color .15s,background .15s,box-shadow .15s,transform .15s
@@ -182,13 +167,10 @@
 .vacancy-config-preview b{font-size:13px}.vacancy-config-preview header span,.vacancy-config-preview header em,.vacancy-config-preview>div>span{font-size:11px}
 
 @media(max-width:980px){
-  .vacancy-building-picker{grid-template-columns:minmax(0,1fr) auto;align-items:end}.vacancy-building-selection-summary{grid-column:1/-1;grid-row:2}
-  .vacancy-layout.vacancy-layout-single{height:auto;min-height:0;overflow:visible}.vacancy-layout-single .vacancy-detail{height:auto}.vacancy-layout-single .vacancy-detail-scroll{height:auto;overflow:visible}
   .vacancy-kpis{grid-template-columns:repeat(2,minmax(0,1fr))}
 }
 @media(max-width:700px){
-  .vacancy-building-picker{grid-template-columns:1fr;padding:14px}.vacancy-building-selection-summary{grid-column:auto;grid-row:auto}.vacancy-building-picker>button{width:100%}
-  .vacancy-layout-single .vacancy-detail-scroll{padding:13px}.vacancy-unit-tools{align-items:stretch;flex-direction:column}.vacancy-unit-tools button{width:100%}
+  .vacancy-unit-tools{align-items:stretch;flex-direction:column}.vacancy-unit-tools button{width:100%}
   .vacancy-unit-grid{grid-template-columns:1fr}.vacancy-floor-card>header{align-items:flex-start;flex-direction:column}.vacancy-floor-card header p{white-space:normal}
   .vacancy-config-floor .vacancy-advanced-field{order:3}.vacancy-config-labels{grid-template-columns:1fr}
 }
