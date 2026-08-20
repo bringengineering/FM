@@ -34,9 +34,9 @@ test("vacancy workspace restores the building rail and keeps one structure-setti
   assert.match(appSource, /primaryActionButton\.hidden\s*=\s*true/);
 });
 
-test("vacancy attention filter is distinct from persisted unit statuses and is the default", () => {
+test("vacancy all filter renders first while attention remains the default", () => {
   assert.match(appSource, /let vacancyStatusFilter\s*=\s*"attention"/);
-  assert.match(appSource, /VACANCY_FILTER_ORDER\s*=\s*Object\.freeze\(\["attention",\s*"all",\s*"vacant",\s*"move_out_scheduled",\s*"occupied",\s*"maintenance",\s*"unknown"\]\)/);
+  assert.match(appSource, /VACANCY_FILTER_ORDER\s*=\s*Object\.freeze\(\["all",\s*"attention",\s*"vacant",\s*"move_out_scheduled",\s*"occupied",\s*"maintenance",\s*"unknown"\]\)/);
   assert.match(appSource, /vacancyStatusFilter === "attention"\s*&&\s*\["vacant",\s*"move_out_scheduled"\]\.includes\(status\)/);
   assert.match(appSource, /filter === "attention"\s*\?\s*summary\.actionable/);
 });

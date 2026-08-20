@@ -130,7 +130,7 @@
   const VACANCY_STATUS_LABELS = Object.freeze({
     all: "전체", occupied: "입주 중", vacant: "공실", move_out_scheduled: "공실 예정", maintenance: "정비 중", unknown: "확인 필요"
   });
-  const VACANCY_FILTER_ORDER = Object.freeze(["attention", "all", "vacant", "move_out_scheduled", "occupied", "maintenance", "unknown"]);
+  const VACANCY_FILTER_ORDER = Object.freeze(["all", "attention", "vacant", "move_out_scheduled", "occupied", "maintenance", "unknown"]);
   const VACANCY_FILTER_LABELS = Object.freeze({ ...VACANCY_STATUS_LABELS, attention: "공실·예정" });
 
   const INDUSTRY_CHECKLISTS = Object.freeze({
