@@ -205,6 +205,7 @@
 }
 
 .work-calendar-day.is-other-month .work-calendar-day-number,
+.work-calendar-day.is-other-month .work-calendar-holiday-name,
 .work-calendar-day.is-other-month .work-calendar-event {
   opacity: .58;
 }
@@ -229,6 +230,24 @@
   border-color: transparent;
   background: transparent;
   color: #315d75;
+}
+
+.work-calendar-day.is-holiday .work-calendar-day-number,
+.work-calendar-day.is-holiday .work-calendar-holiday-name {
+  color: #c63f4d;
+}
+
+.work-calendar-holiday-name {
+  display: inline-block;
+  max-width: calc(100% - 52px);
+  overflow: hidden;
+  color: #c63f4d;
+  font-size: 10px;
+  font-weight: 800;
+  line-height: 1.25;
+  text-overflow: ellipsis;
+  vertical-align: middle;
+  white-space: nowrap;
 }
 
 .work-calendar-day-number small {

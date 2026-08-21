@@ -11,6 +11,11 @@ test("calendar screenshot smoke covers writer, viewer, navigation, shared record
   assert.ok(start >= 0 && end > start);
   const source = mainSource.slice(start, end);
   assert.match(source, /navOrder/);
+  assert.match(source, /holidayMarked/);
+  assert.match(source, /holidayAccessible/);
+  assert.match(source, /holidayRed/);
+  assert.match(source, /2026-08-15/);
+  assert.match(source, /2026-08-17/);
   assert.match(source, /initialDayCount\s*===\s*42/);
   assert.match(source, /monthMoved/);
   assert.match(source, /dateSelected/);

@@ -21,11 +21,28 @@ const store = {
 test("exports the calendar model and renderer through the UMD module", () => {
   assert.equal(typeof Calendar.buildModel, "function");
   assert.equal(typeof Calendar.render, "function");
+  assert.equal(typeof Calendar.koreanHolidayName, "function");
   assert.equal(Calendar.shiftMonth("2026-01", -1), "2025-12");
   assert.equal(Calendar.isDateKey("2028-02-29"), true);
   assert.equal(Calendar.isDateKey("2027-02-29"), false);
   assert.equal(Calendar.isTimeKey("23:59"), true);
   assert.equal(Calendar.isTimeKey("24:00"), false);
+});
+
+test("marks officially announced Korean public holidays without backdating new holidays", () => {
+  assert.equal(Calendar.koreanHolidayName("2025-07-17"), "");
+  assert.equal(Calendar.koreanHolidayName("2025-05-06"), "대체공휴일(부처님 오신 날)");
+  assert.equal(Calendar.koreanHolidayName("2026-03-01"), "3·1절");
+  assert.equal(Calendar.koreanHolidayName("2026-05-01"), "노동절");
+  assert.equal(Calendar.koreanHolidayName("2026-05-24"), "부처님 오신 날");
+  assert.match(Calendar.koreanHolidayName("2026-05-25"), /대체공휴일/);
+  assert.equal(Calendar.koreanHolidayName("2026-06-03"), "전국동시지방선거");
+  assert.equal(Calendar.koreanHolidayName("2026-07-17"), "제헌절");
+  assert.equal(Calendar.koreanHolidayName("2026-08-15"), "광복절");
+  assert.match(Calendar.koreanHolidayName("2026-08-17"), /대체공휴일/);
+  assert.match(Calendar.koreanHolidayName("2027-05-03"), /노동절/);
+  assert.equal(Calendar.koreanHolidayName("2026-08-18"), "");
+  assert.equal(Calendar.koreanHolidayName("2026-02-30"), "");
 });
 
 test("builds a Sunday-first 42-cell month grid", () => {
@@ -36,6 +53,9 @@ test("builds a Sunday-first 42-cell month grid", () => {
   assert.equal(model.days.find(day => day.isToday).date, "2026-08-21");
   assert.equal(model.days.find(day => day.isSelected).date, "2026-08-03");
   assert.equal(model.days.find(day => day.date === "2026-08-03").events.length, 2);
+  assert.equal(model.days.find(day => day.date === "2026-08-15").holidayName, "광복절");
+  assert.equal(model.days.find(day => day.date === "2026-08-15").isHoliday, true);
+  assert.match(model.days.find(day => day.date === "2026-08-17").holidayName, /대체공휴일/);
 });
 
 test("keeps leap-month boundaries accurate", () => {
@@ -59,6 +79,8 @@ test("filters by building and normalized free-text while hiding cancelled and in
   assert.ok(cancelled.events.some(event => event.id === "r4"));
   assert.ok(!cancelled.events.some(event => event.id === "bad"));
   assert.equal(Calendar.buildModel(store, { month: "2026-08", buildingId: "missing", today: "2026-08-21" }).buildingId, "all");
+  assert.equal(building.days.find(day => day.date === "2026-08-15").holidayName, "광복절");
+  assert.equal(titleSearch.days.find(day => day.date === "2026-08-17").isHoliday, true);
 });
 
 test("retains archived-building schedules and labels them clearly", () => {
@@ -101,6 +123,9 @@ test("writable rendering provides every calendar interaction contract and comple
   assert.match(html, /role="grid"/);
   assert.match(html, /aria-pressed="true"/);
   assert.match(html, /aria-current="date"/);
+  assert.match(html, /class="work-calendar-day is-current-month is-holiday"/);
+  assert.match(html, /work-calendar-holiday-name[^>]*>광복절</);
+  assert.match(html, /aria-label="2026년 8월 15일 \(토\), 광복절, 0건"/);
 });
 
 test("read-only rendering keeps navigation but removes all mutation actions", () => {
@@ -137,4 +162,8 @@ test("calendar stylesheet includes responsive and accessible control rules", () 
   assert.match(css, /@media \(max-width: 1320px\)\s*\{[\s\S]*?\.work-calendar-agenda\s*\{\s*position:\s*static;/);
   assert.match(css, /:focus-visible/);
   assert.match(css, /\.work-calendar-event\.is-completed/);
+  const saturdayRule = css.indexOf(".work-calendar-weekdays .is-saturday");
+  const holidayRule = css.indexOf(".work-calendar-day.is-holiday .work-calendar-day-number");
+  assert.ok(saturdayRule >= 0 && holidayRule > saturdayRule);
+  assert.match(css, /\.work-calendar-day\.is-holiday \.work-calendar-holiday-name\s*\{[\s\S]*?color:\s*#c63f4d;/);
 });

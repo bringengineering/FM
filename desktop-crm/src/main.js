@@ -4238,6 +4238,29 @@ async function createWindow() {
           const navOrder = navViews.indexOf('vacancies') >= 0
             && navViews.indexOf('buildingCalendar') === navViews.indexOf('vacancies') + 1
             && navViews.indexOf('workManagement') === navViews.indexOf('buildingCalendar') + 1;
+          const holidayHost = document.createElement('div');
+          holidayHost.style.cssText = 'position:fixed;left:-10000px;top:0;width:1200px;';
+          holidayHost.innerHTML = window.BringWorkCalendar.render(window.BringWorkCalendar.buildModel(
+            { buildings: [], serviceRecords: [] },
+            { month: '2026-08', selectedDate: '2026-08-18', today: '2026-08-21' }
+          ), { canWrite: false });
+          document.body.append(holidayHost);
+          const holidaySaturday = holidayHost.querySelector('[data-work-calendar-date="2026-08-15"]');
+          const holidaySubstitute = holidayHost.querySelector('[data-work-calendar-date="2026-08-17"]');
+          const ordinarySaturday = holidayHost.querySelector('[data-work-calendar-date="2026-08-22"]');
+          const ordinaryWeekday = holidayHost.querySelector('[data-work-calendar-date="2026-08-18"]');
+          const holidayMarked = holidaySaturday?.closest('.work-calendar-day')?.classList.contains('is-holiday')
+            && holidaySubstitute?.closest('.work-calendar-day')?.classList.contains('is-holiday')
+            && !ordinaryWeekday?.closest('.work-calendar-day')?.classList.contains('is-holiday');
+          const holidayAccessible = holidaySaturday?.getAttribute('aria-label')?.includes('광복절')
+            && holidaySubstitute?.getAttribute('aria-label')?.includes('대체공휴일')
+            && holidaySaturday?.closest('.work-calendar-day')?.querySelector('.work-calendar-holiday-name')?.textContent === '광복절';
+          const holidayColor = holidaySaturday ? getComputedStyle(holidaySaturday).color : '';
+          const holidayRed = !!holidayColor
+            && holidayColor === getComputedStyle(holidaySubstitute).color
+            && holidayColor !== getComputedStyle(ordinarySaturday).color
+            && holidayColor !== getComputedStyle(ordinaryWeekday).color;
+          holidayHost.remove();
           const initialDayCount = document.querySelectorAll('[data-work-calendar-date]').length;
           const initialMonth = document.querySelector('.work-calendar-month-controls h2')?.textContent.trim() || '';
           document.querySelector('[data-work-calendar-shift="1"]')?.click();
@@ -4374,7 +4397,7 @@ async function createWindow() {
             ? mutationButtonCount === 0 && visibleMutationButtonCount === 0 && viewerMutationSafe
             : formFirstField && formBuildingFocused && formRequired && savedOnce && calendarOnce && workManagementOnce;
           const responsiveLayout = innerWidth <= 1320 ? compactLayout : wideTwoColumnLayout;
-          const pass = navOrder && initialDayCount === 42 && monthMoved && dateSelected && fullCellDateSelected && buildingFiltered && entryScrollPrimed && scrollResetOnEntry && rolePass && noHorizontalOverflow
+          const pass = navOrder && holidayMarked && holidayAccessible && holidayRed && initialDayCount === 42 && monthMoved && dateSelected && fullCellDateSelected && buildingFiltered && entryScrollPrimed && scrollResetOnEntry && rolePass && noHorizontalOverflow
             && gridFitsWithoutHorizontalScroll && toolbarTopVisible && responsiveLayout
             && window.__crmTest.snapshot().view === 'buildingCalendar';
           return {
@@ -4382,6 +4405,10 @@ async function createWindow() {
             role: readOnly ? 'viewer' : 'admin',
             navOrder,
             navViews,
+            holidayMarked,
+            holidayAccessible,
+            holidayRed,
+            holidayColor,
             initialDayCount,
             initialMonth,
             shiftedMonth,
