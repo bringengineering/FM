@@ -184,11 +184,12 @@
 
 .work-calendar-day {
   min-width: 0;
-  min-height: 128px;
+  min-height: clamp(92px, calc((100vh - 300px) / 6), 116px);
   padding: 6px;
   border-right: 1px solid #e1ecf2;
   border-bottom: 1px solid #e1ecf2;
   background: #fff;
+  cursor: pointer;
 }
 
 .work-calendar-day:nth-child(7n) {
@@ -323,6 +324,9 @@
 }
 
 .work-calendar-agenda {
+  position: sticky;
+  top: 12px;
+  z-index: 2;
   overflow: hidden;
   border: 1px solid var(--calendar-line);
   border-radius: 16px;
@@ -356,7 +360,7 @@
 .work-calendar-agenda-list {
   display: grid;
   gap: 8px;
-  max-height: 600px;
+  max-height: min(600px, calc(100vh - 240px));
   padding: 10px;
   overflow-y: auto;
 }
@@ -431,9 +435,13 @@
   color: #385f75;
 }
 
-@media (max-width: 1100px) {
+@media (max-width: 1320px) {
   .work-calendar-layout {
     grid-template-columns: 1fr;
+  }
+
+  .work-calendar-agenda {
+    position: static;
   }
 
   .work-calendar-agenda-list {
@@ -473,7 +481,7 @@
   }
 
   .work-calendar-day {
-    min-height: 114px;
+    min-height: clamp(88px, calc((100vh - 270px) / 6), 104px);
   }
 
   .work-calendar-agenda-list {

@@ -42,6 +42,7 @@
 
   let store = Core.blankStore();
   let currentView = "dashboard";
+  let lastRenderedView = null;
   let selectedCustomerId = "";
   let selectedBuildingId = "";
   let selectedVacancyBuildingId = "";
@@ -1216,6 +1217,12 @@
     if (!fieldOperatorControl.hidden) renderFieldOperatorControl();
   }
 
+  function finishViewRender(renderedView) {
+    const viewChanged = lastRenderedView !== null && lastRenderedView !== renderedView;
+    lastRenderedView = renderedView;
+    if (viewChanged && main) main.scrollTop = 0;
+  }
+
   function render() {
     pageMeta();
     if (currentView === "dashboard") renderDashboard();
@@ -1236,6 +1243,7 @@
     else if (currentView === "tasks") renderTasks();
     else if (currentView === "security") renderSecurity();
     else renderSettings();
+    finishViewRender(currentView);
   }
 
   function renderFieldOperations() {
@@ -4405,7 +4413,11 @@
       pageMeta();
       return;
     }
-    const calendarDate = event.target.closest("[data-work-calendar-date]");
+    const directCalendarDate = event.target.closest("[data-work-calendar-date]");
+    const calendarDay = event.target.closest(".work-calendar-day");
+    const calendarDate = directCalendarDate || (calendarDay && !event.target.closest("button, a, input, select, textarea, [role='button']")
+      ? calendarDay.querySelector("[data-work-calendar-date]")
+      : null);
     if (calendarDate) {
       const date = String(calendarDate.dataset.workCalendarDate || "");
       if (/^\d{4}-\d{2}-\d{2}$/.test(date)) {

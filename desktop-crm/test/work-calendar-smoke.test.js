@@ -14,6 +14,7 @@ test("calendar screenshot smoke covers writer, viewer, navigation, shared record
   assert.match(source, /initialDayCount\s*===\s*42/);
   assert.match(source, /monthMoved/);
   assert.match(source, /dateSelected/);
+  assert.match(source, /fullCellDateSelected/);
   assert.match(source, /buildingFiltered/);
   assert.match(source, /formFirstField/);
   assert.match(source, /savedOnce/);
@@ -23,5 +24,11 @@ test("calendar screenshot smoke covers writer, viewer, navigation, shared record
   assert.match(source, /visibleMutationButtonCount\s*===\s*0/);
   assert.match(source, /storeUnchanged/);
   assert.match(source, /noHorizontalOverflow/);
+  assert.match(source, /gridFitsWithoutHorizontalScroll/);
+  assert.match(source, /toolbarTopVisible/);
+  assert.match(source, /entryScrollPrimed/);
+  assert.match(source, /scrollResetOnEntry/);
+  assert.match(source, /compactLayout/);
+  assert.match(source, /wideTwoColumnLayout/);
   assert.match(mainSource, /"work-calendar-smoke"\]\.includes\(process\.env\.BRING_CRM_SCREENSHOT_ACTION\)/);
 });

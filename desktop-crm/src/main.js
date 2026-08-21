@@ -4221,8 +4221,19 @@ async function createWindow() {
           window.__crmTest.applyRemoteForTest(seeded);
           await wait(260);
 
+          const entryMain = document.getElementById('main');
+          const entrySpacer = document.createElement('div');
+          entrySpacer.setAttribute('data-calendar-scroll-probe', '');
+          entrySpacer.style.height = '520px';
+          entrySpacer.style.pointerEvents = 'none';
+          entryMain?.append(entrySpacer);
+          if (entryMain) entryMain.scrollTop = 160;
+          await wait(20);
+          const entryScrollPrimed = (entryMain?.scrollTop || 0) >= 80;
           document.querySelector('[data-view="buildingCalendar"]')?.click();
           await wait(180);
+          const entryScrollTop = entryMain?.scrollTop || 0;
+          const scrollResetOnEntry = entryScrollPrimed && entryScrollTop <= 1;
           const navViews = [...document.querySelectorAll('#nav [data-view]')].map(item => item.dataset.view);
           const navOrder = navViews.indexOf('vacancies') >= 0
             && navViews.indexOf('buildingCalendar') === navViews.indexOf('vacancies') + 1
@@ -4240,6 +4251,16 @@ async function createWindow() {
           await wait(100);
           const dateSelected = document.querySelector('[data-work-calendar-date="' + today + '"]')?.getAttribute('aria-pressed') === 'true'
             && document.querySelector('.work-calendar-agenda h3')?.textContent.includes(String(Number(today.slice(-2))));
+          const fullCellControl = [...document.querySelectorAll('.work-calendar-day.is-current-month [data-work-calendar-date]')]
+            .find(control => control.dataset.workCalendarDate !== today);
+          const fullCellDate = fullCellControl?.dataset.workCalendarDate || '';
+          fullCellControl?.closest('.work-calendar-day')?.click();
+          await wait(100);
+          const fullCellDateSelected = !!fullCellDate
+            && document.querySelector('[data-work-calendar-date="' + fullCellDate + '"]')?.getAttribute('aria-pressed') === 'true'
+            && document.querySelector('.work-calendar-agenda h3')?.textContent.includes(String(Number(fullCellDate.slice(-2))));
+          document.querySelector('[data-work-calendar-date="' + today + '"]')?.click();
+          await wait(100);
 
           let buildingFilter = document.querySelector('[data-work-calendar-building]');
           buildingFilter.value = buildings[1].id;
@@ -4303,12 +4324,28 @@ async function createWindow() {
           const calendar = document.querySelector('.work-calendar');
           const toolbar = document.querySelector('.work-calendar-toolbar');
           const layout = document.querySelector('.work-calendar-layout');
+          const gridScroll = document.querySelector('.work-calendar-grid-scroll');
+          const grid = document.querySelector('.work-calendar-grid');
+          const agenda = document.querySelector('.work-calendar-agenda');
+          const toolbarRect = toolbar?.getBoundingClientRect();
+          const mainRect = main?.getBoundingClientRect();
+          const layoutColumns = layout ? getComputedStyle(layout).gridTemplateColumns.split(/\\s+/).filter(Boolean) : [];
+          const agendaPosition = agenda ? getComputedStyle(agenda).position : '';
+          const compactLayout = innerWidth <= 1320 && layoutColumns.length === 1 && agendaPosition === 'static';
+          const wideTwoColumnLayout = innerWidth > 1320 && layoutColumns.length === 2 && agendaPosition === 'sticky';
+          const gridFitsWithoutHorizontalScroll = !!gridScroll && !!grid
+            && gridScroll.scrollWidth <= gridScroll.clientWidth + 1
+            && grid.scrollWidth <= grid.clientWidth + 1;
+          const toolbarTopVisible = !!toolbarRect && !!mainRect
+            && toolbarRect.top >= mainRect.top - 1
+            && toolbarRect.bottom <= mainRect.bottom + 1;
           const noHorizontalOverflow = document.documentElement.scrollWidth <= innerWidth + 1
             && document.body.scrollWidth <= document.body.clientWidth + 1
             && !!main && main.scrollWidth <= main.clientWidth + 1
             && !!calendar && calendar.scrollWidth <= calendar.clientWidth + 1
             && !!toolbar && toolbar.scrollWidth <= toolbar.clientWidth + 1
-            && !!layout && layout.scrollWidth <= layout.clientWidth + 1;
+            && !!layout && layout.scrollWidth <= layout.clientWidth + 1
+            && gridFitsWithoutHorizontalScroll;
           const viewport = {
             width: innerWidth,
             height: innerHeight,
@@ -4322,11 +4359,23 @@ async function createWindow() {
             toolbarScrollWidth: toolbar?.scrollWidth || 0,
             layoutClientWidth: layout?.clientWidth || 0,
             layoutScrollWidth: layout?.scrollWidth || 0,
+            gridScrollClientWidth: gridScroll?.clientWidth || 0,
+            gridScrollScrollWidth: gridScroll?.scrollWidth || 0,
+            gridClientWidth: grid?.clientWidth || 0,
+            gridScrollWidth: grid?.scrollWidth || 0,
+            toolbarTop: toolbarRect?.top ?? null,
+            toolbarBottom: toolbarRect?.bottom ?? null,
+            mainTop: mainRect?.top ?? null,
+            mainBottom: mainRect?.bottom ?? null,
+            layoutColumns,
+            agendaPosition,
           };
           const rolePass = readOnly
             ? mutationButtonCount === 0 && visibleMutationButtonCount === 0 && viewerMutationSafe
             : formFirstField && formBuildingFocused && formRequired && savedOnce && calendarOnce && workManagementOnce;
-          const pass = navOrder && initialDayCount === 42 && monthMoved && dateSelected && buildingFiltered && rolePass && noHorizontalOverflow
+          const responsiveLayout = innerWidth <= 1320 ? compactLayout : wideTwoColumnLayout;
+          const pass = navOrder && initialDayCount === 42 && monthMoved && dateSelected && fullCellDateSelected && buildingFiltered && entryScrollPrimed && scrollResetOnEntry && rolePass && noHorizontalOverflow
+            && gridFitsWithoutHorizontalScroll && toolbarTopVisible && responsiveLayout
             && window.__crmTest.snapshot().view === 'buildingCalendar';
           return {
             pass,
@@ -4338,7 +4387,11 @@ async function createWindow() {
             shiftedMonth,
             monthMoved,
             dateSelected,
+            fullCellDateSelected,
             buildingFiltered,
+            entryScrollPrimed,
+            entryScrollTop,
+            scrollResetOnEntry,
             formFirstField,
             formBuildingFocused,
             formRequired,
@@ -4351,6 +4404,10 @@ async function createWindow() {
             storeUnchanged,
             viewerMutationSafe,
             noHorizontalOverflow,
+            gridFitsWithoutHorizontalScroll,
+            toolbarTopVisible,
+            compactLayout,
+            wideTwoColumnLayout,
             viewport,
             state: window.__crmTest.snapshot(),
           };

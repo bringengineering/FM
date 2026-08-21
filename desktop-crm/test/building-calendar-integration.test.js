@@ -45,6 +45,41 @@ test("calendar uses the shared building-work ledger and protects it during rende
   assert.match(appSource, /delete primaryActionButton\.dataset\.action/);
 });
 
+test("the full calendar day selects its date without stealing clicks from schedule controls", () => {
+  assert.match(appSource, /event\.target\.closest\("\.work-calendar-day"\)/);
+  assert.match(appSource, /event\.target\.closest\("button, a, input, select, textarea, \[role='button'\]"\)/);
+  assert.match(appSource, /calendarDay\.querySelector\("\[data-work-calendar-date\]"\)/);
+});
+
+test("main scroll resets only after changing to a different rendered view", () => {
+  const finishSource = functionSource("finishViewRender");
+  const createHarness = new Function("main", `
+    let lastRenderedView = null;
+    ${finishSource}
+    return { finishViewRender };
+  `);
+  const main = { scrollTop: 80 };
+  const harness = createHarness(main);
+
+  harness.finishViewRender("dashboard");
+  assert.equal(main.scrollTop, 80, "the initial render should preserve the main scroll position");
+
+  harness.finishViewRender("buildingCalendar");
+  assert.equal(main.scrollTop, 0, "changing from a previously rendered view should start at the top");
+
+  main.scrollTop = 80;
+  harness.finishViewRender("buildingCalendar");
+  assert.equal(main.scrollTop, 80, "rerendering the same view should preserve its scroll position");
+
+  const renderStart = appSource.indexOf("function render() {");
+  const renderEnd = appSource.indexOf("function renderFieldOperations()", renderStart);
+  const renderSource = appSource.slice(renderStart, renderEnd);
+  assert.ok(
+    renderSource.indexOf("finishViewRender(currentView)") > renderSource.indexOf("else renderSettings()"),
+    "the scroll decision should run only after the selected view has rendered",
+  );
+});
+
 test("schedule editor starts with a required building and excludes archived buildings for new records", () => {
   const editor = functionSource("buildingScheduleEditor");
   assert.match(editor, /activeBuildings\s*=\s*store\.buildings\.filter\(building\s*=>\s*building\s*&&\s*!building\.archivedAt\)/);

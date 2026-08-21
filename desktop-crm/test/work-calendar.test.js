@@ -127,10 +127,14 @@ test("escapes all record and building output", () => {
 
 test("calendar stylesheet includes responsive and accessible control rules", () => {
   const css = fs.readFileSync(path.join(__dirname, "../src/work-calendar.css"), "utf8");
-  assert.match(css, /@media \(max-width: 1100px\)/);
+  assert.match(css, /@media \(max-width: 1320px\)/);
   assert.match(css, /@media \(max-width: 700px\)/);
   assert.match(css, /@media \(max-width: 480px\)/);
   assert.match(css, /min-height:\s*44px/);
+  assert.match(css, /min-height:\s*clamp\(92px,\s*calc\(\(100vh - 300px\) \/ 6\),\s*116px\)/);
+  assert.match(css, /\.work-calendar-agenda\s*\{[^}]*position:\s*sticky;[^}]*top:\s*12px;/s);
+  assert.match(css, /max-height:\s*min\(600px,\s*calc\(100vh - 240px\)\)/);
+  assert.match(css, /@media \(max-width: 1320px\)\s*\{[\s\S]*?\.work-calendar-agenda\s*\{\s*position:\s*static;/);
   assert.match(css, /:focus-visible/);
   assert.match(css, /\.work-calendar-event\.is-completed/);
 });
