@@ -188,6 +188,69 @@
   const esc = value => String(value ?? "").replace(/[&<>"']/g, char => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[char]));
   const attr = esc;
   const initials = value => String(value || "고객").replace(/\s/g, "").slice(0, 1).toUpperCase();
+  const customerPhoneText = value => Core.formatPhone(value);
+
+  function customerPhoneSearchKey(value) {
+    const text = String(value || "").normalize("NFKC").trim();
+    if (!text || !/^[+\d\s().-]+$/.test(text)) return "";
+    const formatted = customerPhoneText(text);
+    const digits = Core.normalizePhone(formatted);
+    if (digits.startsWith("00")) return "";
+    if (digits.length < 3 || !digits.startsWith("0") && !/^1(?:5|6|8)/.test(digits)) return "";
+    if (text.startsWith("+") && formatted === text) return "";
+    return digits;
+  }
+
+  function customerPhoneCandidateKey(value) {
+    return Core.canonicalPhoneKey(value) || Core.normalizePhone(value);
+  }
+
+  function customerPhoneCaret(formatted, digitOffset) {
+    if (!digitOffset) return 0;
+    let seenDigits = 0;
+    for (let index = 0; index < formatted.length; index += 1) {
+      if (/\d/.test(formatted[index])) seenDigits += 1;
+      if (seenDigits === digitOffset) return index + 1;
+    }
+    return formatted.length;
+  }
+
+  function formatCustomerPhoneInput(input) {
+    const original = String(input && input.value || "");
+    const selectionStart = Number.isInteger(input && input.selectionStart) ? input.selectionStart : original.length;
+    const selectionEnd = Number.isInteger(input && input.selectionEnd) ? input.selectionEnd : selectionStart;
+    const digitsBeforeStart = Core.normalizePhone(original.slice(0, selectionStart).normalize("NFKC")).length;
+    const digitsBeforeEnd = Core.normalizePhone(original.slice(0, selectionEnd).normalize("NFKC")).length;
+    const formatted = customerPhoneText(original);
+    if (formatted === original) return;
+    input.value = formatted;
+    if (typeof input.setSelectionRange !== "function") return;
+    const formattedDigits = Core.normalizePhone(formatted).length;
+    input.setSelectionRange(
+      customerPhoneCaret(formatted, Math.min(digitsBeforeStart, formattedDigits)),
+      customerPhoneCaret(formatted, Math.min(digitsBeforeEnd, formattedDigits))
+    );
+  }
+
+  function deleteCustomerPhoneDigit(input, direction) {
+    const value = String(input && input.value || "");
+    const selectionStart = input && input.selectionStart;
+    const selectionEnd = input && input.selectionEnd;
+    if (!Number.isInteger(selectionStart) || selectionStart !== selectionEnd) return false;
+    const separatorIndex = direction === "backward" ? selectionStart - 1 : selectionStart;
+    if (value[separatorIndex] !== "-" || Core.formatPhone(Core.normalizePhone(value)) !== value || !/^\d{2,4}(?:-\d{1,4}){1,2}$/.test(value)) return false;
+    const digitOffset = Core.normalizePhone(value.slice(0, selectionStart)).length;
+    const removeIndex = direction === "backward" ? digitOffset - 1 : digitOffset;
+    const digits = Core.normalizePhone(value);
+    if (removeIndex < 0 || removeIndex >= digits.length) return false;
+    const nextDigits = `${digits.slice(0, removeIndex)}${digits.slice(removeIndex + 1)}`;
+    const formatted = customerPhoneText(nextDigits);
+    input.value = formatted;
+    const nextDigitOffset = direction === "backward" ? Math.max(0, digitOffset - 1) : digitOffset;
+    const caret = customerPhoneCaret(formatted, Math.min(nextDigitOffset, Core.normalizePhone(formatted).length));
+    input.setSelectionRange(caret, caret);
+    return true;
+  }
   const krw = value => `${Core.money(value).toLocaleString("ko-KR")}원`;
   const compactMoney = value => {
     const amount = Core.money(value);
@@ -1825,13 +1888,15 @@
 
   function filteredCustomers() {
     const query = Core.normalizeText(searchEl.value);
+    const phoneQuery = customerPhoneSearchKey(searchEl.value);
     return store.customers.filter(customer => {
       const progress = customerSalesProgress(customer);
       if (customerSalesStageFilter !== "all" && !progress.filterIds.includes(customerSalesStageFilter)) return false;
       if (!query) return true;
       const buildings = customerBuildings(customer).map(item => `${item.name} ${item.address}`).join(" ");
       const sales = [progress.label, ...progress.rows.map(row => `${row.stage && row.stage.label || ""} ${row.prospect && row.prospect.name || ""}`)].join(" ");
-      return Core.normalizeText([customer.name, customer.company, customer.phone, customer.email, customer.address, customer.currentIssue, buildings, sales, (customer.tags || []).join(" ")].join(" ")).includes(query);
+      return Core.normalizeText([customer.name, customer.company, customer.phone, customer.email, customer.address, customer.currentIssue, buildings, sales, (customer.tags || []).join(" ")].join(" ")).includes(query)
+        || (phoneQuery && customerPhoneCandidateKey(customer.phone).includes(phoneQuery));
     }).sort((a, b) => String(b.updatedAt || b.createdAt).localeCompare(String(a.updatedAt || a.createdAt)));
   }
 
@@ -1858,7 +1923,7 @@
     const building = buildings[0];
     const buildingLabel = building ? `${building.name || "건물명 미입력"}${buildings.length > 1 ? ` 외 ${buildings.length - 1}곳` : ""}` : "미연결";
     const progress = customerSalesProgress(customer);
-    return `<tr data-customer-open="${attr(customer.id)}"><td><div class="customer-cell"><i class="avatar">${esc(initials(customer.name))}</i><div><strong>${esc(customer.name || "이름 미입력")}</strong><span>${esc(customer.company || customer.type || customer.customerNo || "")}</span></div></div></td><td>${esc(customer.phone || "-")}</td><td>${esc(buildingLabel)}</td><td>${customerSalesStageBadge(progress)}</td><td>${esc(customer.nextAction || "-")}</td><td>${esc(dateText(customer.nextContactAt))}</td><td>${priorityClass(customer.priority)}</td></tr>`;
+    return `<tr data-customer-open="${attr(customer.id)}"><td><div class="customer-cell"><i class="avatar">${esc(initials(customer.name))}</i><div><strong>${esc(customer.name || "이름 미입력")}</strong><span>${esc(customer.company || customer.type || customer.customerNo || "")}</span></div></div></td><td>${esc(customerPhoneText(customer.phone) || "-")}</td><td>${esc(buildingLabel)}</td><td>${customerSalesStageBadge(progress)}</td><td>${esc(customer.nextAction || "-")}</td><td>${esc(dateText(customer.nextContactAt))}</td><td>${priorityClass(customer.priority)}</td></tr>`;
   }
 
   const buildingCustomers = building => store.customers.filter(customer => customer.id === building.ownerCustomerId || Core.customerBuildingIds(customer).includes(building.id));
@@ -2024,11 +2089,13 @@
 
   function renderBuildings() {
     const query = Core.normalizeText(searchEl.value);
+    const phoneQuery = customerPhoneSearchKey(searchEl.value);
     const buildings = [...store.buildings]
       .filter(building => !building.archivedAt)
       .filter(building => {
         const customers = buildingCustomers(building);
-        return !query || Core.normalizeText([building.name, building.address, building.roadAddress, building.jibunAddress, building.type, building.status, building.buildingNo, building.manager, customers.map(item => `${item.name} ${item.phone}`).join(" ")].join(" ")).includes(query);
+        return !query || Core.normalizeText([building.name, building.address, building.roadAddress, building.jibunAddress, building.type, building.status, building.buildingNo, building.manager, customers.map(item => `${item.name} ${item.phone}`).join(" ")].join(" ")).includes(query)
+          || (phoneQuery && customers.some(customer => customerPhoneCandidateKey(customer.phone).includes(phoneQuery)));
       })
       .sort((left, right) => (left.status === "관리중" ? -1 : 0) - (right.status === "관리중" ? -1 : 0) || String(left.name || "").localeCompare(String(right.name || ""), "ko"));
     if (buildings.length && !buildings.some(item => item.id === selectedBuildingId)) selectedBuildingId = buildings[0].id;
@@ -2087,7 +2154,7 @@
     const archivedUnits = allUnits.filter(item => item.archivedAt);
     const unitRecords = units.map(item => `<button type="button" class="building-detail-record clickable building-unit-record" data-building-unit-edit="${attr(item.id)}" data-building-id="${attr(building.id)}"><div><b>${esc(item.label || item.unitLabel || "호실명 미입력")}</b><span>${esc([inferredVacancyFloorLabel(item), VACANCY_STATUS_LABELS[vacancyUnitStatus(item)], item.memo].filter(Boolean).join(" · "))}</span></div><em>수정</em></button>`).join("");
     const archivedUnitRecords = archivedUnits.length ? `<details class="building-units-archived"><summary>보관된 호실 ${archivedUnits.length}개</summary>${archivedUnits.map(item => `<div class="building-detail-record"><div><b>${esc(item.label || item.unitLabel || "호실")}</b><span>${esc(dateText(item.archivedAt))}</span></div>${canWriteCRM() ? `<button type="button" class="mini-button return" data-building-unit-restore="${attr(item.id)}" data-building-id="${attr(building.id)}">복원</button>` : ""}</div>`).join("")}</details>` : "";
-    const customerRecords = customers.map(customer => `<div class="building-detail-record clickable" data-customer-open="${attr(customer.id)}"><div><b>${esc(customer.name || "이름 미입력")}${customer.id === building.ownerCustomerId ? " · 건물주" : ""}</b><span>${esc([customer.type, customer.phone, customer.company].filter(Boolean).join(" · ") || "연락처 미입력")}</span></div><em>고객 보기</em></div>`).join("");
+    const customerRecords = customers.map(customer => `<div class="building-detail-record clickable" data-customer-open="${attr(customer.id)}"><div><b>${esc(customer.name || "이름 미입력")}${customer.id === building.ownerCustomerId ? " · 건물주" : ""}</b><span>${esc([customer.type, customerPhoneText(customer.phone), customer.company].filter(Boolean).join(" · ") || "연락처 미입력")}</span></div><em>고객 보기</em></div>`).join("");
     const vacancySummary = vacancySummaryForBuilding(building);
     const vacantUnits = vacancySummary.formal ? units.filter(item => vacancyUnitStatus(item) === "vacant").map(item => item.label || item.unitLabel).filter(Boolean) : buildingArray(building.vacantUnits);
     const vacancyLabel = `${vacancySummary.vacant.toLocaleString("ko-KR")}개`;
@@ -2413,7 +2480,7 @@
         const state = relationshipState(customer);
         const lastActivity = customerActivities(customer.id)[0];
         const lastContact = customer.relationshipLastContactAt || customer.lastContactAt || (lastActivity && lastActivity.occurredAt) || "";
-        return `<article class="relationship-card" data-relationship-open="${attr(customer.id)}" tabindex="0"><header><i class="avatar">${esc(initials(customer.name))}</i><div><h3>${esc(customer.name)}</h3><p>${esc([customer.company, customer.phone].filter(Boolean).join(" · ") || "연락처 미입력")}</p></div><span class="relationship-state ${state.tone}">${esc(state.label)}</span></header><div class="relationship-facts"><div><span>마지막 연락</span><b>${esc(lastContact ? dateText(lastContact) : "기록 없음")}</b></div><div><span>다음 연락</span><b>${esc(customer.relationshipNextContactAt ? dateText(customer.relationshipNextContactAt) : "일정 미등록")}</b></div><div><span>다음 할 일</span><b>${esc(customer.relationshipNextAction || "후속 계획 미등록")}</b></div><div><span>연락 주기</span><b>${Number(customer.relationshipCycleDays) || 30}일마다</b></div></div>${customer.relationshipNote ? `<p class="relationship-note">${esc(customer.relationshipNote)}</p>` : ""}<footer><button class="primary-button" data-relationship-followup="${attr(customer.id)}">＋ 후속 연락 기록</button><button class="secondary-button" data-relationship-plan="${attr(customer.id)}">연락 계획 설정</button><span class="relationship-open-hint">상세·기록 보기 →</span></footer></article>`;
+        return `<article class="relationship-card" data-relationship-open="${attr(customer.id)}" tabindex="0"><header><i class="avatar">${esc(initials(customer.name))}</i><div><h3>${esc(customer.name)}</h3><p>${esc([customer.company, customerPhoneText(customer.phone)].filter(Boolean).join(" · ") || "연락처 미입력")}</p></div><span class="relationship-state ${state.tone}">${esc(state.label)}</span></header><div class="relationship-facts"><div><span>마지막 연락</span><b>${esc(lastContact ? dateText(lastContact) : "기록 없음")}</b></div><div><span>다음 연락</span><b>${esc(customer.relationshipNextContactAt ? dateText(customer.relationshipNextContactAt) : "일정 미등록")}</b></div><div><span>다음 할 일</span><b>${esc(customer.relationshipNextAction || "후속 계획 미등록")}</b></div><div><span>연락 주기</span><b>${Number(customer.relationshipCycleDays) || 30}일마다</b></div></div>${customer.relationshipNote ? `<p class="relationship-note">${esc(customer.relationshipNote)}</p>` : ""}<footer><button class="primary-button" data-relationship-followup="${attr(customer.id)}">＋ 후속 연락 기록</button><button class="secondary-button" data-relationship-plan="${attr(customer.id)}">연락 계획 설정</button><span class="relationship-open-hint">상세·기록 보기 →</span></footer></article>`;
       }).join("")}</section>` : empty("유료관리 전환 고객이 없습니다", "영업 관리에서 연결 건물을 ‘유료관리 전환’ 단계로 진행하면 이곳에 자동으로 나타납니다.", `<button class="primary-button" data-view="pipeline">영업 관리로 이동 →</button>`)}`;
   }
 
@@ -2634,7 +2701,7 @@
     const linkedBuildings = customerBuildings(customer);
     modalContent.innerHTML = `<div class="modal-head"><div><h2>${editing ? "고객 정보 수정" : "새 고객 등록"}</h2><p>먼저 필요한 내용만 입력하세요. 나머지는 나중에 추가해도 됩니다.</p></div><button class="close-button" data-action="close-modal">×</button></div><form id="customerForm" class="modal-body simple-customer-form" data-customer-id="${attr(editing && editing.id || "")}"><div class="essential-label"><b>기본 정보</b><span>이 화면만 입력해도 고객 등록이 완료됩니다.</span></div><div class="form-grid">
       ${field("고객명 *", "name", customer.name, "text", "예: 홍길동 또는 원주에셋")}
-      ${field("연락처", "phone", customer.phone, "tel", "010-0000-0000")}
+      <label class="field"><span>연락처</span><input name="phone" type="tel" inputmode="tel" autocomplete="tel" data-customer-phone value="${attr(customerPhoneText(customer.phone))}" placeholder="010-0000-0000"></label>
       ${selectField("고객 유형", "type", ["건물주", "임차인", "법인", "협력업체", "기타"], customer.type)}
       ${field("다음 연락일", "nextContactAt", datetimeValue(customer.nextContactAt), "datetime-local")}
       ${areaField("현재 어떤 요청이 있나요?", "currentIssue", customer.currentIssue, "wide")}
@@ -2686,7 +2753,7 @@
     const ownerOptionLabel = id => {
       if (!id) return "아직 연결하지 않음";
       const customer = customerById(id);
-      return customer ? [customer.name || "이름 미입력", customer.company, customer.phone].filter(Boolean).join(" · ") : id;
+      return customer ? [customer.name || "이름 미입력", customer.company, customerPhoneText(customer.phone)].filter(Boolean).join(" · ") : id;
     };
     const ownerCustomerField = editing && currentOwnerCustomerId
       ? `<label class="field"><span>건물주·대표 고객</span><select disabled aria-disabled="true"><option>${esc(ownerOptionLabel(currentOwnerCustomerId))}</option></select><input type="hidden" name="ownerCustomerId" value="${attr(currentOwnerCustomerId)}"><small>이미 연결된 건물주를 바꾸거나 해제하려면 별도 이전 절차가 필요합니다.</small></label>`
@@ -3058,7 +3125,7 @@
     if (!customer) return `<div class="entity-picker-empty"><b>고객을 선택해 주세요</b><span>선택 후 상담 내용을 입력할 수 있습니다.</span></div>`;
     const buildings = customerBuildings(customer);
     const buildingText = buildings.map(building => buildingChoiceLabel(building)).join(" · ");
-    return `<div class="partner-vendor-summary customer-picker-summary"><div><span>선택 고객</span><h3>${esc(customer.name || "이름 미입력")}</h3><p>${esc([customer.type || "기타", customer.company, customer.phone].filter(Boolean).join(" · ") || "연락처 미입력")}</p></div><div><span>연결 건물</span><b>${esc(buildings.length ? `${buildings.length}곳` : "미연결")}</b><small>${esc(buildingText || "연결 건물 없음")}</small></div></div>`;
+    return `<div class="partner-vendor-summary customer-picker-summary"><div><span>선택 고객</span><h3>${esc(customer.name || "이름 미입력")}</h3><p>${esc([customer.type || "기타", customer.company, customerPhoneText(customer.phone)].filter(Boolean).join(" · ") || "연락처 미입력")}</p></div><div><span>연결 건물</span><b>${esc(buildings.length ? `${buildings.length}곳` : "미연결")}</b><small>${esc(buildingText || "연결 건물 없음")}</small></div></div>`;
   }
 
   function renderConsultationCustomerPicker(form) {
@@ -3087,7 +3154,7 @@
         const buildingMeta = shownBuilding ? `${buildingChoiceLabel(shownBuilding)}${buildings.length > 1 ? ` · 외 ${buildings.length - 1}곳` : ""}` : "";
         const currentType = String(customer.type || "기타");
         const note = currentType === type ? currentType : `기존 연결 · 현재 유형 ${currentType}`;
-        const meta = [customer.company, customer.phone, buildingMeta].filter(Boolean).join(" · ");
+        const meta = [customer.company, customerPhoneText(customer.phone), buildingMeta].filter(Boolean).join(" · ");
         return `<button type="button" tabindex="-1" class="entity-picker-option ${selected ? "selected" : ""}" data-consultation-customer-option="${attr(customer.id)}" aria-pressed="${selected ? "true" : "false"}"><span class="entity-picker-option-main"><b>${esc(customer.name || "이름 미입력")}</b><small>${esc(note)}</small></span><span class="entity-picker-option-meta">${esc(meta || "추가 정보 미입력")}</span></button>`;
       }).join("") : `<div class="entity-picker-empty"><b>조건에 맞는 고객이 없습니다</b><span>검색어를 지우거나 고객 관리에서 새 고객을 등록해 주세요.</span></div>`;
     }
@@ -3586,7 +3653,7 @@
     const activities = customerActivities(customerId);
     const tasks = customerTasks(customerId).filter(task => task.status !== "취소");
     drawerContent.innerHTML = `<div class="drawer-head"><div><h2>고객 상세</h2><p>${esc(customer.customerNo || customer.id)}</p></div><button class="close-button" data-action="close-drawer">×</button></div><div class="drawer-body">
-      <section class="customer-summary"><i class="avatar">${esc(initials(customer.name))}</i><div><h3>${esc(customer.name)}</h3><p>${esc([customer.company, customer.type, customer.phone].filter(Boolean).join(" · "))}</p></div><div class="summary-value"><strong>${esc(krw(customer.expectedValue))}</strong><span>예상 계약금액</span></div></section>
+      <section class="customer-summary"><i class="avatar">${esc(initials(customer.name))}</i><div><h3>${esc(customer.name)}</h3><p>${esc([customer.company, customer.type, customerPhoneText(customer.phone)].filter(Boolean).join(" · "))}</p></div><div class="summary-value"><strong>${esc(krw(customer.expectedValue))}</strong><span>예상 계약금액</span></div></section>
       <div class="inline-actions" style="margin-bottom:14px"><button class="primary-button" data-action="edit-selected-customer">고객 정보 수정</button><button class="secondary-button" data-action="new-selected-task">＋ 영업 할 일</button></div>
       <section class="detail-section"><div class="detail-section-head"><h4>영업 관리 연동·후속조치</h4>${customerSalesStageBadge(salesProgress)}</div><div class="detail-section-body"><div class="kv-grid"><div class="kv"><b>현재 문제</b><span>${esc(customer.currentIssue || "미입력")}</span></div><div class="kv"><b>다음 행동</b><span>${esc(customer.nextAction || "미입력")}</span></div><div class="kv"><b>다음 연락</b><span>${esc(dateText(customer.nextContactAt))}</span></div><div class="kv"><b>담당자·우선순위</b><span>${esc(customer.owner || "-")} · ${esc(customer.priority || "보통")}</span></div></div><p class="customer-sales-link-note">진행상태는 연결 건물의 영업 관리 단계에서 자동으로 가져옵니다.</p></div></section>
       <section class="detail-section"><div class="detail-section-head"><h4>연결 건물</h4><span class="text-muted" style="font-size:9px">${buildings.length}곳</span></div><div class="detail-section-body">${buildings.length ? `<div class="building-record-list">${buildings.map(building => {
@@ -3616,7 +3683,7 @@
     const lastContact = customer.relationshipLastContactAt || customer.lastContactAt || (lastActivity && lastActivity.occurredAt) || "";
     const nextContactAt = customer.relationshipNextContactAt || addDaysIso(new Date(), Number(customer.relationshipCycleDays) || 30);
     drawerContent.innerHTML = `<div class="drawer-head"><div><h2>계약 고객 관리</h2><p>후속 연락 이력과 다음 계획</p></div><button class="close-button" data-action="close-drawer">×</button></div><div class="drawer-body relationship-drawer-body">
-      <section class="relationship-detail-summary"><i class="avatar">${esc(initials(customer.name))}</i><div><h3>${esc(customer.name)}</h3><p>${esc([customer.company, customer.phone].filter(Boolean).join(" · ") || "연락처 미입력")}</p></div><span class="relationship-state ${state.tone}">${esc(state.label)}</span></section>
+      <section class="relationship-detail-summary"><i class="avatar">${esc(initials(customer.name))}</i><div><h3>${esc(customer.name)}</h3><p>${esc([customer.company, customerPhoneText(customer.phone)].filter(Boolean).join(" · ") || "연락처 미입력")}</p></div><span class="relationship-state ${state.tone}">${esc(state.label)}</span></section>
       <div class="inline-actions relationship-detail-actions"><button class="secondary-button" data-relationship-plan="${attr(customer.id)}">연락 계획 수정</button><button class="text-button" data-action="show-selected-customer">전체 고객 정보 보기 →</button></div>
       <section class="detail-section"><div class="detail-section-head"><h4>현재 연락 계획</h4><span class="relationship-plan-cycle">${Number(customer.relationshipCycleDays) || 30}일마다</span></div><div class="detail-section-body"><div class="kv-grid"><div class="kv"><b>마지막 연락</b><span>${esc(lastContact ? dateText(lastContact) : "기록 없음")}</span></div><div class="kv"><b>다음 연락</b><span>${esc(nextContactAt ? dateText(nextContactAt) : "일정 미등록")}</span></div><div class="kv"><b>다음 할 일</b><span>${esc(customer.relationshipNextAction || "후속 계획 미등록")}</span></div><div class="kv"><b>관계 시작</b><span>${esc(customer.relationshipStartedAt ? dateText(customer.relationshipStartedAt) : "미등록")}</span></div></div>${customer.relationshipNote ? `<p class="relationship-detail-note">${esc(customer.relationshipNote)}</p>` : ""}</div></section>
       <section class="detail-section relationship-add-section"><div class="detail-section-head"><div><h4>후속 연락 추가</h4><span>통화·문자·방문 내용을 바로 기록하세요.</span></div></div><div class="detail-section-body"><form id="relationshipActivityForm" data-customer-id="${attr(customer.id)}"><div class="form-grid">${selectField("연락 방식", "type", ["전화", "문자", "카카오", "이메일", "미팅", "방문", "메모"], "전화")}${field("연락 일시", "occurredAt", datetimeValue(new Date().toISOString()), "datetime-local")}${areaField("연락 내용 *", "summary", "", "wide")}${field("고객 반응·결과", "result", "", "text", "예: 서비스에 만족, 추가 요청 없음")}${field("다음 할 일", "nextAction", customer.relationshipNextAction || "정기 안부 및 추가 요청 확인")}${field("다음 연락일", "nextContactAt", datetimeValue(nextContactAt), "datetime-local")}</div><div class="form-actions"><button class="primary-button">＋ 후속 연락 저장</button></div></form></div></section>
@@ -3635,7 +3702,7 @@
     const existing = customerById(id);
     const customer = existing || Core.createCustomer({ owner: store.settings.owner || "김현진" });
     Object.assign(customer, {
-      name: raw.name.trim(), company: raw.company.trim(), phone: raw.phone.trim(), email: raw.email.trim(), type: raw.type,
+      name: raw.name.trim(), company: raw.company.trim(), phone: customerPhoneText(raw.phone), email: raw.email.trim(), type: raw.type,
       owner: raw.owner, source: raw.source, priority: raw.priority, expectedValue: Core.money(raw.expectedValue),
       interestServices: raw.interestServices.split(",").map(item => item.trim()).filter(Boolean), tags: raw.tags.split(",").map(item => item.trim()).filter(Boolean),
       currentIssue: raw.currentIssue.trim(), lastContactAt: raw.lastContactAt ? new Date(raw.lastContactAt).toISOString() : "",
@@ -4864,7 +4931,7 @@
       const customer = customerById(event.target.value);
       if (form && customer) {
         if (form.elements.name) form.elements.name.value = customer.name || "";
-        if (form.elements.phone) form.elements.phone.value = customer.phone || "";
+        if (form.elements.phone) form.elements.phone.value = customerPhoneText(customer.phone);
         if (form.elements.email) form.elements.email.value = customer.email || "";
       }
       return;
@@ -5550,8 +5617,8 @@
       scheduleSave(); closeModal(); currentView = "contracts"; render(); showToast(`${customer && customer.name || "고객"} 계약을 저장했습니다.`, "success");
     } else if (form.id === "customerForm") {
       const wasExisting = !!form.dataset.customerId;
+      if (!String(form.elements.name && form.elements.name.value || "").trim()) return showToast("고객명을 입력해 주세요.", "error");
       const customer = customerFromForm(form);
-      if (!customer.name) return showToast("고객명을 입력해 주세요.", "error");
       logAudit({ category: wasExisting ? "변경" : "등록", targetType: "고객", targetId: customer.id, targetLabel: customer.name, action: wasExisting ? "고객 기본정보 수정" : "신규 고객 등록", reason: "고객 관리" });
       scheduleSave(); closeModal(); render(); renderCustomerDrawer(customer.id); showToast(`${customer.name} 고객을 저장했습니다.`, "success");
     } else if (form.id === "partnerVendorForm") {
@@ -5823,8 +5890,15 @@
     const selected = activeFieldOperator();
     showToast(selected ? `현재 작업자를 ${selected.name}(으)로 선택했습니다.` : "현재 작업자 선택을 해제했습니다.", selected ? "success" : "");
   });
+  document.addEventListener("beforeinput", event => {
+    if (!event.target.matches("#customerForm [data-customer-phone]") || event.isComposing) return;
+    const direction = event.inputType === "deleteContentBackward" ? "backward" : event.inputType === "deleteContentForward" ? "forward" : "";
+    if (direction && deleteCustomerPhoneDigit(event.target, direction)) event.preventDefault();
+  });
   document.addEventListener("input", event => {
-    if (event.target.matches("[data-vacancy-unit-search]")) {
+    if (event.target.matches("#customerForm [data-customer-phone]")) {
+      if (!event.isComposing) formatCustomerPhoneInput(event.target);
+    } else if (event.target.matches("[data-vacancy-unit-search]")) {
       vacancyUnitQuery = event.target.value.slice(0, 256);
       if (event.isComposing) return;
       const caret = event.target.selectionStart;

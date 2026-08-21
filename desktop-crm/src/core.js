@@ -47,6 +47,87 @@
     return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`;
   };
   const normalizePhone = value => String(value || "").replace(/\D/g, "");
+  function isCompleteKoreanPhoneDigits(value) {
+    const digits = String(value || "");
+    if (/^1(?:5|6|8)\d{6}$/.test(digits)) return true;
+    if (digits.startsWith("02")) return digits.length === 9 || digits.length === 10;
+    if (digits.startsWith("050") || digits.startsWith("0303")) return digits.length === 11 || digits.length === 12;
+    if (digits.startsWith("010") || digits.startsWith("070")) return digits.length === 11;
+    return /^0(?!0)\d{9,10}$/.test(digits);
+  }
+  function formatPhone(value) {
+    const preserved = String(value || "").trim();
+    const original = preserved.normalize("NFKC");
+    if (!original) return "";
+    if (!/^[+\d\s().-]+$/.test(original) || (original.match(/\+/g) || []).length > 1 || original.includes("+") && !original.startsWith("+")) return preserved;
+
+    const sourceDigits = original.replace(/\D/g, "");
+    let nationalText = original;
+    let domesticCountryCode = false;
+    if (original.startsWith("+")) {
+      const countryPrefix = original.match(/^\+82(?:\s*\(0\))?/);
+      if (!countryPrefix) return preserved;
+      domesticCountryCode = true;
+      nationalText = original.slice(countryPrefix[0].length).trim();
+    } else if (sourceDigits.startsWith("00")) {
+      const countryPrefix = original.match(/^0082(?:\s*\(0\))?/);
+      if (!countryPrefix) return preserved;
+      domesticCountryCode = true;
+      nationalText = original.slice(countryPrefix[0].length).trim();
+    }
+
+    const nationalGroups = nationalText.match(/\d+/g) || [];
+    if (!/^\d+$/.test(nationalText) && nationalGroups.length > 3) return preserved;
+    const nationalDigits = nationalText.replace(/\D/g, "");
+    if (domesticCountryCode && nationalDigits.length < 2) return preserved;
+    const digits = domesticCountryCode && !nationalDigits.startsWith("0") && !/^1(?:5|6|8)/.test(nationalDigits)
+      ? `0${nationalDigits}`
+      : nationalDigits;
+    const lastGroup = nationalGroups[nationalGroups.length - 1] || "";
+    if (nationalGroups.length > 1 && lastGroup.length <= 3 && isCompleteKoreanPhoneDigits(digits)) return preserved;
+
+    const isSeoul = digits.startsWith("02");
+    const isService = /^1(?:5|6|8)/.test(digits);
+    const isFourDigitPrefix = digits.startsWith("050") || digits.startsWith("0303");
+    if (!digits.startsWith("0") && !isService) return preserved;
+
+    const prefixLength = isSeoul ? 2 : isService || isFourDigitPrefix ? 4 : 3;
+    const maximumLength = isSeoul ? 10 : isService ? 8 : isFourDigitPrefix ? 12 : 11;
+    if (digits.length > maximumLength) return preserved;
+    if (digits.length <= prefixLength) return digits;
+
+    const prefix = digits.slice(0, prefixLength);
+    const remainder = digits.slice(prefixLength);
+    if (isService) return `${prefix}-${remainder}`;
+    if (digits.startsWith("010") || digits.startsWith("070")) {
+      return remainder.length <= 4 ? `${prefix}-${remainder}` : `${prefix}-${remainder.slice(0, 4)}-${remainder.slice(4)}`;
+    }
+    if (isFourDigitPrefix) {
+      if (remainder.length <= 4) return `${prefix}-${remainder}`;
+      const middleLength = digits.length === 11 ? 3 : 4;
+      return `${prefix}-${remainder.slice(0, middleLength)}-${remainder.slice(middleLength)}`;
+    }
+    if (remainder.length <= 3) return `${prefix}-${remainder}`;
+    const middleLength = digits.length === maximumLength ? 4 : 3;
+    return `${prefix}-${remainder.slice(0, middleLength)}-${remainder.slice(middleLength)}`;
+  }
+  function canonicalPhoneKey(value) {
+    const formatted = formatPhone(value);
+    const digits = normalizePhone(formatted);
+    if (digits.startsWith("00") || formatPhone(digits) !== formatted) return "";
+    if (!/^(?:1(?:5|6|8)\d{2}-\d{4}|02-\d{3,4}-\d{4}|(?:050\d|0303)-\d{3,4}-\d{4}|0\d{2}-\d{3,4}-\d{4})$/.test(formatted)) return "";
+    return digits;
+  }
+  function exactForeignPhoneKey(value) {
+    const text = String(value || "").normalize("NFKC").trim();
+    if (!text || !/^[+\d\s().-]+$/.test(text) || (text.match(/\+/g) || []).length > 1 || text.includes("+") && !text.startsWith("+")) return "";
+    const digits = normalizePhone(text);
+    const explicitForeign = text.startsWith("+") && !digits.startsWith("82")
+      || digits.startsWith("00") && !digits.startsWith("0082")
+      || !digits.startsWith("0") && (!/^1(?:5|6|8)/.test(digits) || digits.length > 8);
+    const maximumLength = digits.startsWith("00") ? 18 : 15;
+    return explicitForeign && digits.length >= 7 && digits.length <= maximumLength ? digits : "";
+  }
   const normalizeText = value => String(value || "").trim().toLowerCase().replace(/\s+/g, "");
   const money = value => Number(String(value || 0).replace(/[^0-9.-]/g, "")) || 0;
   const nonNegativeInteger = value => {
@@ -656,9 +737,14 @@
   function matchWorkflowCustomer(workflowCase, customers) {
     if (!workflowCase) return null;
     if (workflowCase.crmCustomerId) return (customers || []).find(item => item.id === workflowCase.crmCustomerId) || null;
-    const phone = normalizePhone(workflowCase.phone);
+    const phone = canonicalPhoneKey(workflowCase.phone);
+    const foreignPhone = phone ? "" : exactForeignPhoneKey(workflowCase.phone);
     if (phone) {
-      const byPhone = (customers || []).filter(item => normalizePhone(item.phone) === phone);
+      const byPhone = (customers || []).filter(item => canonicalPhoneKey(item.phone) === phone);
+      if (byPhone.length === 1) return byPhone[0];
+      if (byPhone.length > 1) return null;
+    } else if (foreignPhone) {
+      const byPhone = (customers || []).filter(item => exactForeignPhoneKey(item.phone) === foreignPhone);
       if (byPhone.length === 1) return byPhone[0];
       if (byPhone.length > 1) return null;
     }
@@ -732,7 +818,7 @@
     blankStore, blankSharedStore, sanitizeStore, sanitizeSharedStore, sanitizeRendererStore, sanitizeRendererOverlays, createCustomer, createBuilding, normalizeBuilding, normalizeBuildingUnit, createActivity, createContract, normalizeContractTypes, createPartnerVendor, createPartnerQuote, createTask, createSecurityAsset,
     createAccessRole, createAuditLog, createSecurityIncident, calculateDashboard, calculateSecurityStatus,
     workflowProgress, buildWorkflowCase, matchWorkflowCustomer, paymentNormalizeName, paymentMonthRows,
-    normalizePhone, normalizeText, normalizePipelineStage, normalizeStringList, normalizeCustomer, customerBuildingIds, nonNegativeInteger, money, dayKey, iso,
+    normalizePhone, formatPhone, canonicalPhoneKey, normalizeText, normalizePipelineStage, normalizeStringList, normalizeCustomer, customerBuildingIds, nonNegativeInteger, money, dayKey, iso,
     prohibitedSecretType, findProhibitedSecrets, assertNoProhibitedSecrets, canMutate, assertMutationAllowed,
     normalizePartnerVendor, partnerVendorFromQuote, legacyPartnerVendorId,
     normalizeServiceRecords, normalizeServiceContracts, serviceSchedulesForContract
