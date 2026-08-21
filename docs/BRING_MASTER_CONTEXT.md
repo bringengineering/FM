@@ -9,7 +9,7 @@
 작업을 두 갈래로 분리한다. 각 갈래는 별도 대화방에서 진행하고, 이 문서를 공용 뇌로 공유한다.
 
 - **A. 데이터·지도 갈래** — ValueScope (원주 건물 지도·영업 지도·엔진·상권분석). 레포 `bringengineering/valuescope`, 배포 `bringengineering.github.io/valuescope/`. 상세는 §7.
-- **B. 체계도·경영판단 갈래** — 브링케어 체계도(경영 자가진단 판단맵). 파일 `docs/브링케어_체계도.html` (이 레포, 비공개). 7축(CORE/OPS/SVC/MKT/FIN/GROW/VALUE) + 책 투자준비도 49주제 + KPI 스코어카드. v1.1에서 A(ValueScope)의 성과를 지표 출처로 연동함.
+- **B. 체계도·경영판단 갈래** — 브링케어 체계도(경영 자가진단 판단맵). 파일 `docs/브링케어_체계도.html` (이 레포, 비공개). 7축(CORE/OPS/SVC/MKT/FIN/GROW/VALUE) + 책 투자준비도 49주제 + KPI 스코어카드. v1.1에서 A(ValueScope)의 성과를 지표 출처로 연동함. **v1.2**: 교보 eBook 49장 실판독으로 책 49주제 매핑 완비(기존 35→49), 프랜차이즈편(1~15)을 '표준화·복제 플레이북'으로 재해석, ValueScope 연동으로 24(위치선정) 없음→부분 승격. 커버리지 have 7·part 33·none 2·na 7. 작업 브랜치 `claude/bring-cheimdo-B`(A방 브랜치 base).
 - 규칙: 지도·데이터·엔진 요청은 A방, 체계도·경영맵·투자준비 요청은 B방. 갈래를 넘는 요청이 오면 해당 방으로 안내한다.
 
 ## 1. 회사 현황
