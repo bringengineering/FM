@@ -5,7 +5,7 @@
 })(typeof globalThis !== "undefined" ? globalThis : this, function () {
   const esc = value => String(value == null ? "" : value).replace(/[&<>"']/g, char => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[char]);
   const won = value => `${Math.max(0, Math.round(Number(value) || 0)).toLocaleString("ko-KR")}원`;
-  const typeLabel = value => ({ grounds_cutting: "예초 작업", stair_cleaning: "계단 청소", cleaning: "청소", repair: "수리", inspection: "점검" })[value] || "기타 작업";
+  const typeLabel = value => ({ grounds_cutting: "예초 작업", stair_cleaning: "계단 청소", cleaning: "청소", repair: "수리", inspection: "점검", meeting: "방문·미팅" })[value] || "기타 작업";
   const statusLabel = value => ({ planned: "예정", in_progress: "진행 중", completed: "완료", cancelled: "취소" })[value] || "예정";
   const safeList = value => Array.isArray(value) ? value.filter(item => item && typeof item === "object") : [];
 

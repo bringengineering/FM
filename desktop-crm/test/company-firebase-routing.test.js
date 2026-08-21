@@ -154,7 +154,10 @@ test("local cache and legacy backup remain shared-store documents", async () => 
   const backupHandler = main.slice(main.indexOf('secureHandle("crm:backup"'), main.indexOf('secureHandle("crm:restore"'));
   assert.match(backupHandler, /const data = Core\.sanitizeSharedStore\(input\)/);
   const restoreHandler = main.slice(main.indexOf('secureHandle("crm:restore"'), main.indexOf("app.whenReady()"));
-  assert.match(restoreHandler, /const data = Core\.sanitizeSharedStore\(JSON\.parse\(decoded\)\)[\s\S]*?const saved = await writeStore\(data\)/);
+  assert.match(restoreHandler, /data = Core\.sanitizeSharedStore\(JSON\.parse\(decoded\)\)/);
+  assert.match(restoreHandler, /restoreLocalStore\(data\)[\s\S]*?remoteClient\.restoreStore\(data\)/);
+  assert.match(restoreHandler, /BUILDING_SCHEDULE_RESTORE_CONFLICT/);
+  assert.doesNotMatch(restoreHandler, /writeStore\(data\)/);
 });
 
 test("local Electron QA building-unit seam is atomic, idempotent, and preserves operational fields", async () => {
@@ -371,13 +374,17 @@ test("smoke waits for renderer initialization before taking its snapshot", async
   assert.match(smokeBlock, /snapshot\(\)/);
 });
 
-test("ordinary shared saves stay PATCH-only while canonical Spark writes use a version-gated atomic patch", async () => {
+test("ordinary shared saves stay PATCH-only while schedule records alone use If-Match CAS", async () => {
   const remote = await source("remote.js");
   assert.match(remote, /dbRequest\("crmShared\/data",\s*\{\s*method:\s*"PATCH"/);
   assert.match(remote, /dbReadWithEtag\("crmShared\/data"\)/);
   assert.match(remote, /dbAtomicPatch\("crmShared\/data",\s*SparkCanonical\.atomicMutationPatch/);
   assert.match(remote, /"X-Firebase-ETag":\s*"true"/);
-  assert.doesNotMatch(remote, /"If-Match"/);
+  assert.match(remote, /crmShared\/data\/serviceRecords\/\$\{input\.recordId\}/);
+  assert.match(remote, /"If-Match":\s*etag/);
+  const genericStart = remote.indexOf("async pushStoreLocked");
+  const genericEnd = remote.indexOf("async syncPending", genericStart);
+  assert.doesNotMatch(remote.slice(genericStart, genericEnd), /If-Match|method:\s*"PUT"/);
   assert.doesNotMatch(remote, /dbAtomicPatch\("crmShared"(?:,|\/)/);
   assert.doesNotMatch(remote, /dbAtomicPatch\(""\s*,/);
 });

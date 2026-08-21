@@ -28,6 +28,21 @@ const SHARED_COLLECTIONS = Object.freeze([
 const CANONICAL_SHARED_COLLECTIONS = Object.freeze(["buildings", "salesUnits"]);
 const PENDING_STORE_VERSION = 5;
 const CANONICAL_PENDING_VERSION = 1;
+const BUILDING_SCHEDULE_OPERATIONS = Object.freeze(new Set(["create", "update", "complete", "cancel"]));
+const BUILDING_SCHEDULE_STATUSES = Object.freeze(new Set(["planned", "in_progress", "completed"]));
+const BUILDING_SCHEDULE_TYPES = Object.freeze(new Set([
+  "inspection", "repair", "cleaning", "stair_cleaning", "grounds_cutting", "meeting", "other"
+]));
+const BUILDING_SCHEDULE_INPUT_FIELDS = Object.freeze(new Set([
+  "operation", "requestId", "recordId", "expectedUpdatedAt", "expectedCommitVersion", "values"
+]));
+const BUILDING_SCHEDULE_VALUE_FIELDS = Object.freeze(new Set([
+  "buildingId", "title", "scheduledDate", "startTime", "endTime", "status", "serviceType", "owner", "summary",
+  "completedAt", "amount", "vendorName", "evidenceUrl"
+]));
+const SAFE_DIRECT_ID = /^[A-Za-z0-9_-]{1,120}$/;
+const UUID_V4 = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+const FORBIDDEN_DIRECT_IDS = new Set(["__proto__", "prototype", "constructor"]);
 function canonicalEntityMutationForValidation(input) {
   if (!input || typeof input !== "object" || Array.isArray(input)) return input;
   const source = Object.assign(Object.create(null), input);
@@ -298,6 +313,311 @@ function createError(message, code, cause) {
   return error;
 }
 
+function safeDirectId(value) {
+  const id = String(value || "").trim();
+  return SAFE_DIRECT_ID.test(id) && !FORBIDDEN_DIRECT_IDS.has(id) ? id : "";
+}
+
+function validBuildingScheduleDate(value) {
+  const text = String(value || "");
+  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(text);
+  if (!match) return false;
+  const year = Number(match[1]);
+  const month = Number(match[2]);
+  const day = Number(match[3]);
+  const candidate = new Date(Date.UTC(year, month - 1, day));
+  return candidate.getUTCFullYear() === year
+    && candidate.getUTCMonth() === month - 1
+    && candidate.getUTCDate() === day;
+}
+
+function validBuildingScheduleTime(value) {
+  return /^(?:[01]\d|2[0-3]):[0-5]\d$/.test(String(value || ""));
+}
+
+function assertClosedObject(value, allowed, message) {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    throw createError(message, "BUILDING_SCHEDULE_INVALID");
+  }
+  if (Object.keys(value).some(key => !allowed.has(key))) {
+    throw createError(message, "BUILDING_SCHEDULE_INVALID");
+  }
+  return value;
+}
+
+function validateBuildingScheduleCommitInput(input) {
+  const source = assertClosedObject(input, BUILDING_SCHEDULE_INPUT_FIELDS, "일정 저장 요청을 확인해 주세요.");
+  const operation = String(source.operation || "");
+  const requestId = String(source.requestId || "");
+  const recordId = safeDirectId(source.recordId);
+  const expectedUpdatedAt = typeof source.expectedUpdatedAt === "string" ? source.expectedUpdatedAt : null;
+  const expectedCommitVersion = source.expectedCommitVersion;
+  if (!BUILDING_SCHEDULE_OPERATIONS.has(operation)
+    || !UUID_V4.test(requestId)
+    || !recordId
+    || expectedUpdatedAt === null
+    || expectedUpdatedAt.length > 80
+    || !Number.isSafeInteger(expectedCommitVersion)
+    || expectedCommitVersion < 0
+    || expectedCommitVersion >= Number.MAX_SAFE_INTEGER
+    || (operation === "create" && (expectedUpdatedAt !== "" || expectedCommitVersion !== 0))) {
+    throw createError("일정 저장 요청을 확인해 주세요.", "BUILDING_SCHEDULE_INVALID");
+  }
+
+  const hasValues = Object.prototype.hasOwnProperty.call(source, "values");
+  if (!["create", "update"].includes(operation)) {
+    if (hasValues) throw createError("일정 상태 변경 요청을 확인해 주세요.", "BUILDING_SCHEDULE_INVALID");
+    return Object.freeze({ operation, requestId, recordId, expectedUpdatedAt, expectedCommitVersion });
+  }
+  const valuesSource = assertClosedObject(source.values, BUILDING_SCHEDULE_VALUE_FIELDS, "일정 입력 내용을 확인해 주세요.");
+  if (Object.keys(valuesSource).length !== BUILDING_SCHEDULE_VALUE_FIELDS.size) {
+    throw createError("일정 입력 내용을 모두 확인해 주세요.", "BUILDING_SCHEDULE_INVALID");
+  }
+  const values = Object.freeze({
+    buildingId: safeDirectId(valuesSource.buildingId),
+    title: String(valuesSource.title || "").trim(),
+    scheduledDate: String(valuesSource.scheduledDate || "").trim(),
+    startTime: String(valuesSource.startTime || "").trim(),
+    endTime: String(valuesSource.endTime || "").trim(),
+    status: String(valuesSource.status || ""),
+    serviceType: String(valuesSource.serviceType || ""),
+    owner: String(valuesSource.owner || "").trim(),
+    summary: String(valuesSource.summary || "").trim(),
+    completedAt: String(valuesSource.completedAt || "").trim(),
+    amount: valuesSource.amount,
+    vendorName: String(valuesSource.vendorName || "").trim(),
+    evidenceUrl: String(valuesSource.evidenceUrl || "").trim(),
+  });
+  const amount = typeof values.amount === "number" ? values.amount : NaN;
+  let evidenceUrlValid = !values.evidenceUrl;
+  if (values.evidenceUrl && values.evidenceUrl.length <= 2048) {
+    try { evidenceUrlValid = new URL(values.evidenceUrl).protocol === "https:"; } catch (_) { evidenceUrlValid = false; }
+  }
+  if (!values.buildingId
+    || !values.title || values.title.length > 160
+    || (values.scheduledDate && !validBuildingScheduleDate(values.scheduledDate))
+    || (values.startTime && !validBuildingScheduleTime(values.startTime))
+    || (values.endTime && !validBuildingScheduleTime(values.endTime))
+    || (values.endTime && !values.startTime)
+    || (values.startTime && values.endTime && values.endTime <= values.startTime)
+    || !BUILDING_SCHEDULE_STATUSES.has(values.status)
+    || !BUILDING_SCHEDULE_TYPES.has(values.serviceType)
+    || values.owner.length > 120
+    || values.summary.length > 2000
+    || !Number.isSafeInteger(amount) || amount < 0 || amount > 1_000_000_000_000
+    || values.vendorName.length > 160
+    || !evidenceUrlValid
+    || (values.completedAt && !validBuildingScheduleDate(values.completedAt))
+    || (values.status === "completed" && !values.completedAt)
+    || (values.status !== "completed" && values.completedAt)) {
+    throw createError("건물·일정명·날짜·시간을 확인해 주세요.", "BUILDING_SCHEDULE_INVALID");
+  }
+  return Object.freeze({ operation, requestId, recordId, expectedUpdatedAt, expectedCommitVersion, values });
+}
+
+function stableBuildingScheduleText(value) {
+  if (Array.isArray(value)) return `[${value.map(stableBuildingScheduleText).join(",")}]`;
+  if (value && typeof value === "object") {
+    return `{${Object.keys(value).sort().map(key => `${JSON.stringify(key)}:${stableBuildingScheduleText(value[key])}`).join(",")}}`;
+  }
+  return JSON.stringify(value ?? null);
+}
+
+function buildingScheduleIntentHash(input, actorUid) {
+  return crypto.createHash("sha256").update(stableBuildingScheduleText({
+    actorUid: String(actorUid || ""),
+    operation: input.operation,
+    requestId: input.requestId,
+    recordId: input.recordId,
+    expectedUpdatedAt: input.expectedUpdatedAt,
+    expectedCommitVersion: input.expectedCommitVersion,
+    values: input.values || null,
+  })).digest("hex");
+}
+
+function buildingScheduleAuditId(requestId) {
+  return `audit_schedule_${String(requestId || "").replace(/-/g, "")}`;
+}
+
+function buildingIsArchived(building) {
+  return Boolean(building && (String(building.archivedAt || "") || building.isArchived === true || building.status === "archived"));
+}
+
+function localDayKey(value) {
+  const date = value instanceof Date ? value : new Date(value);
+  const pad = number => String(number).padStart(2, "0");
+  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`;
+}
+
+function plainJsonClone(value) {
+  return JSON.parse(JSON.stringify(value));
+}
+
+function planBuildingScheduleCommit(inputValue, contextValue) {
+  const input = validateBuildingScheduleCommitInput(inputValue);
+  const context = contextValue && typeof contextValue === "object" && !Array.isArray(contextValue) ? contextValue : {};
+  const existing = context.existing && typeof context.existing === "object" && !Array.isArray(context.existing)
+    ? context.existing
+    : null;
+  const actor = context.actor && typeof context.actor === "object" ? context.actor : {};
+  const actorUid = safeDirectId(actor.uid);
+  if (!actorUid || !["admin", "member"].includes(String(actor.role || ""))) {
+    throw createError("현재 계정은 일정을 변경할 수 없습니다.", "BUILDING_SCHEDULE_READ_ONLY");
+  }
+  let now = context.now instanceof Date ? new Date(context.now.getTime()) : new Date(context.now || Date.now());
+  if (Number.isNaN(now.getTime())) now = new Date();
+  let occurredAt = now.toISOString();
+  const intentHash = buildingScheduleIntentHash(input, actorUid);
+  const auditId = buildingScheduleAuditId(input.requestId);
+  let previousCommitVersion = 0;
+  if (existing && Object.prototype.hasOwnProperty.call(existing, "calendarCommitVersion")) {
+    previousCommitVersion = existing.calendarCommitVersion;
+    if (!Number.isSafeInteger(previousCommitVersion) || previousCommitVersion < 1 || previousCommitVersion >= Number.MAX_SAFE_INTEGER) {
+      throw createError("일정 저장 버전을 확인할 수 없습니다.", "BUILDING_SCHEDULE_CONFLICT");
+    }
+  }
+  const previousUpdatedAtMs = existing ? Date.parse(String(existing.updatedAt || "")) : NaN;
+  if (Number.isFinite(previousUpdatedAtMs) && Date.parse(occurredAt) <= previousUpdatedAtMs) {
+    if (previousUpdatedAtMs >= 8_640_000_000_000_000) {
+      throw createError("일정 저장 시간을 확인할 수 없습니다.", "BUILDING_SCHEDULE_CONFLICT");
+    }
+    occurredAt = new Date(previousUpdatedAtMs + 1).toISOString();
+  }
+
+  if (existing && String(existing.id || "") !== input.recordId) {
+    throw createError("일정 번호가 일치하지 않습니다.", "BUILDING_SCHEDULE_CONFLICT");
+  }
+  if (existing && String(existing.calendarCommitRequestId || "") === input.requestId) {
+    if (String(existing.calendarCommitHash || "") !== intentHash) {
+      throw createError("같은 저장 요청의 내용이 달라 안전하게 중단했습니다.", "BUILDING_SCHEDULE_CONFLICT");
+    }
+    return { record: plainJsonClone(existing), repeated: true, auditId: String(existing.calendarAuditId || auditId) };
+  }
+  if (input.operation === "create") {
+    if (existing) throw createError("같은 번호의 일정이 이미 있습니다.", "BUILDING_SCHEDULE_CONFLICT");
+  } else {
+    if (!existing) throw createError("변경할 일정을 찾지 못했습니다.", "BUILDING_SCHEDULE_NOT_FOUND");
+    if (String(existing.updatedAt || "") !== input.expectedUpdatedAt
+      || previousCommitVersion !== input.expectedCommitVersion) {
+      throw createError("다른 사용자가 먼저 일정을 변경했습니다.", "BUILDING_SCHEDULE_CONFLICT");
+    }
+  }
+
+  const targetBuildingId = input.values ? input.values.buildingId : safeDirectId(existing && existing.buildingId);
+  const building = context.building && typeof context.building === "object" && !Array.isArray(context.building)
+    ? context.building
+    : null;
+  const retainingExistingLink = Boolean(existing && String(existing.buildingId || "") === targetBuildingId);
+  if (!targetBuildingId
+    || (!retainingExistingLink && (!building || String(building.id || "") !== targetBuildingId))
+    || (building && String(building.id || "") !== targetBuildingId)) {
+    throw createError("선택한 건물을 찾지 못했습니다.", "BUILDING_SCHEDULE_BUILDING_UNAVAILABLE");
+  }
+  if (buildingIsArchived(building) && !retainingExistingLink) {
+    throw createError("보관된 건물에는 새 일정을 연결할 수 없습니다.", "BUILDING_SCHEDULE_BUILDING_UNAVAILABLE");
+  }
+
+  const record = Object.assign(Object.create(null), existing || {});
+  record.id = input.recordId;
+  if (input.values) {
+    if (existing && String(existing.status || "") === "cancelled") {
+      throw createError("취소된 일정은 수정할 수 없습니다.", "BUILDING_SCHEDULE_STATE_INVALID");
+    }
+    Object.assign(record, input.values);
+    if (input.values.status === "completed") {
+      record.completedAt = input.values.completedAt;
+    } else {
+      record.completedAt = "";
+    }
+    record.cancelledAt = "";
+  } else if (input.operation === "complete") {
+    if (String(existing.status || "") === "cancelled") {
+      throw createError("취소된 일정은 완료 처리할 수 없습니다.", "BUILDING_SCHEDULE_STATE_INVALID");
+    }
+    record.status = "completed";
+    record.completedAt = String(existing.completedAt || localDayKey(now));
+    record.cancelledAt = "";
+  } else if (input.operation === "cancel") {
+    if (["completed", "cancelled"].includes(String(existing.status || ""))) {
+      throw createError("완료되거나 이미 취소된 일정은 취소할 수 없습니다.", "BUILDING_SCHEDULE_STATE_INVALID");
+    }
+    record.status = "cancelled";
+    record.completedAt = "";
+    record.cancelledAt = occurredAt;
+  }
+  record.buildingId = targetBuildingId;
+  record.source = String(record.source || "crm_calendar");
+  record.createdAt = String(existing && existing.createdAt || occurredAt);
+  record.createdByAuthUid = String(existing && existing.createdByAuthUid || actorUid);
+  record.updatedAt = occurredAt;
+  record.updatedByAuthUid = actorUid;
+  record.updatedByEmail = String(actor.email || "").slice(0, 320);
+  record.calendarCommitRequestId = input.requestId;
+  record.calendarCommitHash = intentHash;
+  record.calendarAuditId = auditId;
+  // Firebase Rules require this exact monotonic successor. A stale legacy
+  // whole-record PATCH may carry an older valid request/hash/audit receipt,
+  // but it cannot turn version N into N + 1 and is therefore rejected.
+  record.calendarCommitVersion = previousCommitVersion + 1;
+  return { record: plainJsonClone(record), repeated: false, auditId };
+}
+
+function buildingScheduleAuditRecord(plan, inputValue, contextValue) {
+  const input = validateBuildingScheduleCommitInput(inputValue);
+  const context = contextValue && typeof contextValue === "object" ? contextValue : {};
+  const actor = context.actor && typeof context.actor === "object" ? context.actor : {};
+  const building = context.building && typeof context.building === "object" ? context.building : {};
+  const record = plan && plan.record || {};
+  const occurredAt = String(record.updatedAt || new Date().toISOString());
+  const action = ({ create: "일정 등록", update: "일정 수정", complete: "일정 완료 처리", cancel: "일정 취소" })[input.operation];
+  return {
+    id: String(plan.auditId || buildingScheduleAuditId(input.requestId)),
+    category: "작업관리",
+    targetType: "업무 일정",
+    targetId: input.recordId,
+    targetLabel: String(record.title || input.recordId).slice(0, 160),
+    action,
+    actor: String(actor.displayName || actor.email || actor.uid || "CRM 사용자").slice(0, 160),
+    actorUid: String(actor.uid || "").slice(0, 120),
+    actorEmail: String(actor.email || "").slice(0, 320),
+    reason: `${String(building.name || "건물 일정").slice(0, 160)} · ${String(record.scheduledDate || "날짜 확인")}`,
+    occurredAt,
+    createdAt: occurredAt,
+    calendarRequestId: input.requestId,
+  };
+}
+
+function assertNoGenericServiceRecordPatch(patch) {
+  const changed = Object.keys(patch && typeof patch === "object" ? patch : {})
+    .some(key => key === "serviceRecords" || key.startsWith("serviceRecords/"));
+  if (changed) {
+    throw createError("건물 작업 일정은 일정 화면의 전용 저장으로 처리해 주세요.", "BUILDING_SCHEDULE_COMMIT_REQUIRED");
+  }
+}
+
+function normalizedServiceRecordMap(Core, value) {
+  const records = Core.sanitizeSharedStore({ serviceRecords: listFromMap(value) }).serviceRecords;
+  return mapById(records);
+}
+
+function serviceRecordsSemanticallyEqual(Core, left, right) {
+  return stableBuildingScheduleText(normalizedServiceRecordMap(Core, left))
+    === stableBuildingScheduleText(normalizedServiceRecordMap(Core, right));
+}
+
+function preserveGenericServiceRecords(Core, currentRemote, desiredRemote, requireUnchanged = true) {
+  const current = currentRemote && typeof currentRemote === "object" ? currentRemote : {};
+  const desired = desiredRemote && typeof desiredRemote === "object" ? desiredRemote : {};
+  if (requireUnchanged && !serviceRecordsSemanticallyEqual(Core, current.serviceRecords, desired.serviceRecords)) {
+    throw createError("건물 작업 일정은 일정 화면의 전용 저장으로 처리해 주세요.", "BUILDING_SCHEDULE_COMMIT_REQUIRED");
+  }
+  // Preserve the exact server representation. Core normalization may add
+  // defaults to a legacy sparse row; that is not an employee edit and must not
+  // become a whole-record PATCH during an unrelated save.
+  desired.serviceRecords = mapById(listFromMap(current.serviceRecords));
+  return desired;
+}
+
 function friendlySparkCanonicalError(value) {
   const code = value && typeof value.code === "string" ? value.code : "CANONICAL_CRM_COMMIT_FAILED";
   const messages = {
@@ -550,6 +870,7 @@ class FirebaseRemoteClient {
     this.sessionFileSequence = 0;
     this.canonicalPendingMemory = null;
     this.canonicalMutationQueue = Promise.resolve();
+    this.sharedMutationQueue = Promise.resolve();
     this.streamGeneration = 0;
     this.sessionGeneration = 0;
     this.stopped = false;
@@ -614,6 +935,12 @@ class FirebaseRemoteClient {
       && String(this.session.uid || "") === guard.uid
       && this.sessionGeneration === guard.generation
     );
+  }
+
+  assertSessionGuardActive(guard) {
+    if (!this.sessionGuardActive(guard)) {
+      throw createError("로그인 세션이 변경되었습니다.", "SESSION_CHANGED");
+    }
   }
 
   captureSessionContext() {
@@ -1336,7 +1663,10 @@ class FirebaseRemoteClient {
       actorUid: session.uid,
       actorRole: session.role || "member",
       store,
-      presentCollections: SHARED_COLLECTIONS.slice(),
+      // serviceRecords use their own record-level ETag transaction. Never put
+      // them in the retryable generic journal where a stale whole record could
+      // later overwrite a newer calendar/work-management commit.
+      presentCollections: SHARED_COLLECTIONS.filter(collection => collection !== "serviceRecords"),
       baseRemote: sharedRemoteProjection(this.Core, baseRemote),
       createdAt: new Date().toISOString()
     });
@@ -1456,6 +1786,11 @@ class FirebaseRemoteClient {
   }
 
   async refreshAfterCanonicalCommit(guardValue) {
+    const guard = guardValue || this.captureSessionGuard();
+    return this.enqueueSharedMutation(() => this.refreshAfterCanonicalCommitLocked(guard));
+  }
+
+  async refreshAfterCanonicalCommitLocked(guardValue) {
     const guard = guardValue || this.captureSessionGuard();
     if (!this.sessionGuardActive(guard)) return null;
     const remote = await this.fetchRemotePayload();
@@ -1582,6 +1917,12 @@ class FirebaseRemoteClient {
   enqueueCanonicalMutation(operation) {
     const running = this.canonicalMutationQueue.then(operation, operation);
     this.canonicalMutationQueue = running.catch(() => {});
+    return running;
+  }
+
+  enqueueSharedMutation(operation) {
+    const running = this.sharedMutationQueue.then(operation, operation);
+    this.sharedMutationQueue = running.catch(() => {});
     return running;
   }
 
@@ -1742,27 +2083,36 @@ class FirebaseRemoteClient {
     return result;
   }
 
-  async dbReadWithEtag(location, retried) {
+  async dbReadWithEtag(location, retried, guardValue) {
+    const guard = guardValue || null;
+    if (guard) this.assertSessionGuardActive(guard);
     const token = await this.ensureIdToken(false);
+    if (guard) this.assertSessionGuardActive(guard);
     const rootedLocation = resolveDatabaseLocation(location, this.databaseRoot);
     const url = `${this.firebase.databaseUrl}/${rootedLocation}.json?auth=${encodeURIComponent(token)}`;
     let response;
     try {
+      if (guard) this.assertSessionGuardActive(guard);
       response = await this.fetch(url, {
         method: "GET",
         headers: { Accept: "application/json", "X-Firebase-ETag": "true" },
       });
+      if (guard) this.assertSessionGuardActive(guard);
     } catch (cause) {
+      if (guard && !this.sessionGuardActive(guard)) throw createError("로그인 세션이 변경되었습니다.", "SESSION_CHANGED", cause);
       throw createError("공용 서버에 연결할 수 없습니다.", "NETWORK", cause);
     }
     const raw = await response.text();
+    if (guard) this.assertSessionGuardActive(guard);
     let value = null;
     try { value = raw ? JSON.parse(raw) : null; } catch (_) { value = null; }
     if (!response.ok) {
       const detail = value && value.error || `HTTP ${response.status}`;
       if (!retried && /auth|credential|token|permission/i.test(String(detail))) {
+        if (guard) this.assertSessionGuardActive(guard);
         await this.ensureIdToken(true);
-        return this.dbReadWithEtag(location, true);
+        if (guard) this.assertSessionGuardActive(guard);
+        return this.dbReadWithEtag(location, true, guard);
       }
       throw createError(String(detail), "DATABASE_ERROR");
     }
@@ -1771,6 +2121,208 @@ class FirebaseRemoteClient {
       : "";
     if (!etag) throw createError("동시 편집 확인값을 받지 못했습니다.", "DATABASE_ETAG_MISSING");
     return { value, etag };
+  }
+
+  async dbConditionalPut(location, value, etagValue, retried, guardValue) {
+    const guard = guardValue || null;
+    if (guard) this.assertSessionGuardActive(guard);
+    const etag = String(etagValue || "");
+    if (!etag || etag.length > 256 || /[\r\n]/.test(etag)) {
+      throw createError("일정 동시 편집 확인값이 올바르지 않습니다.", "BUILDING_SCHEDULE_CONFLICT");
+    }
+    const token = await this.ensureIdToken(false);
+    if (guard) this.assertSessionGuardActive(guard);
+    const rootedLocation = resolveDatabaseLocation(location, this.databaseRoot);
+    const url = `${this.firebase.databaseUrl}/${rootedLocation}.json?auth=${encodeURIComponent(token)}`;
+    let response;
+    try {
+      if (guard) this.assertSessionGuardActive(guard);
+      response = await this.fetch(url, {
+        method: "PUT",
+        headers: {
+          Accept: "application/json",
+          "Content-Type": "application/json",
+          "If-Match": etag,
+        },
+        body: JSON.stringify(value),
+      });
+      if (guard) this.assertSessionGuardActive(guard);
+    } catch (cause) {
+      if (guard && !this.sessionGuardActive(guard)) throw createError("로그인 세션이 변경되었습니다.", "SESSION_CHANGED", cause);
+      throw createError("일정 저장 결과를 서버에서 확인하지 못했습니다.", "BUILDING_SCHEDULE_WRITE_UNCONFIRMED", cause);
+    }
+    const raw = await response.text();
+    if (guard) this.assertSessionGuardActive(guard);
+    let payload = null;
+    try { payload = raw ? JSON.parse(raw) : null; } catch (_) { payload = null; }
+    if (response.status === 412) {
+      throw createError("다른 사용자가 먼저 일정을 변경했습니다.", "BUILDING_SCHEDULE_CONFLICT");
+    }
+    if (!response.ok) {
+      const detail = payload && payload.error || `HTTP ${response.status}`;
+      if (!retried && (response.status === 401 || /auth|credential|token/i.test(String(detail)))) {
+        if (guard) this.assertSessionGuardActive(guard);
+        await this.ensureIdToken(true);
+        if (guard) this.assertSessionGuardActive(guard);
+        return this.dbConditionalPut(location, value, etag, true, guard);
+      }
+      if (response.status >= 500) {
+        throw createError("일정 저장 결과를 서버에서 확인하지 못했습니다.", "BUILDING_SCHEDULE_WRITE_UNCONFIRMED");
+      }
+      throw createError("일정을 저장하지 못했습니다.", "BUILDING_SCHEDULE_WRITE_FAILED");
+    }
+    if (payload !== null && stableBuildingScheduleText(payload) !== stableBuildingScheduleText(value)) {
+      throw createError("일정 저장 결과가 요청 내용과 일치하지 않습니다.", "BUILDING_SCHEDULE_WRITE_UNCONFIRMED");
+    }
+    return true;
+  }
+
+  async putBuildingScheduleWithRecovery(location, record, etag, guard) {
+    try {
+      await this.dbConditionalPut(location, record, etag, false, guard);
+      this.assertSessionGuardActive(guard);
+      return true;
+    } catch (error) {
+      if (!error || error.code !== "BUILDING_SCHEDULE_WRITE_UNCONFIRMED") throw error;
+      this.assertSessionGuardActive(guard);
+      let check;
+      try {
+        check = await this.dbReadWithEtag(location, false, guard);
+      } catch (checkError) {
+        if (!this.sessionGuardActive(guard)) throw createError("로그인 세션이 변경되었습니다.", "SESSION_CHANGED", checkError);
+        throw createError("일정 저장 결과를 확인할 수 없습니다. 최신 목록을 다시 불러와 주세요.", "BUILDING_SCHEDULE_WRITE_UNCONFIRMED", checkError);
+      }
+      this.assertSessionGuardActive(guard);
+      if (stableBuildingScheduleText(check.value) === stableBuildingScheduleText(record)) return true;
+      throw createError("일정 저장 결과를 확인할 수 없습니다. 최신 목록을 다시 불러와 주세요.", "BUILDING_SCHEDULE_WRITE_UNCONFIRMED", error);
+    }
+  }
+
+  async appendBuildingScheduleAudit(plan, input, actor, building, guard) {
+    const audit = buildingScheduleAuditRecord(plan, input, { actor, building });
+    this.Core.assertNoProhibitedSecrets(audit);
+    const location = `crmShared/data/auditLogs/${audit.id}`;
+    try {
+      this.assertSessionGuardActive(guard);
+      const snapshot = await this.dbReadWithEtag(location, false, guard);
+      this.assertSessionGuardActive(guard);
+      if (snapshot.value !== null) {
+        return stableBuildingScheduleText(snapshot.value) === stableBuildingScheduleText(audit) ? audit.id : "";
+      }
+      await this.putBuildingScheduleWithRecovery(location, audit, snapshot.etag, guard);
+      this.assertSessionGuardActive(guard);
+      return audit.id;
+    } catch (error) {
+      if (!this.sessionGuardActive(guard) || error && error.code === "SESSION_CHANGED") {
+        throw createError("로그인 세션이 변경되었습니다.", "SESSION_CHANGED", error);
+      }
+      return "";
+    }
+  }
+
+  adoptCommittedBuildingSchedule(record, guard) {
+    this.assertSessionGuardActive(guard);
+    if (!this.remotePayload || typeof this.remotePayload !== "object") return;
+    const records = this.remotePayload.serviceRecords && typeof this.remotePayload.serviceRecords === "object"
+      && !Array.isArray(this.remotePayload.serviceRecords)
+      ? this.remotePayload.serviceRecords
+      : {};
+    records[record.id] = plainJsonClone(record);
+    this.remotePayload.serviceRecords = records;
+  }
+
+  async cacheCommittedBuildingSchedule(record, guard) {
+    try {
+      this.assertSessionGuardActive(guard);
+      const local = await this.readSessionLocalStore(guard);
+      this.assertSessionGuardActive(guard);
+      if (!local) return false;
+      const records = Array.isArray(local.serviceRecords) ? local.serviceRecords.slice() : [];
+      const index = records.findIndex(item => item && String(item.id || "") === record.id);
+      if (index >= 0) records[index] = plainJsonClone(record);
+      else records.push(plainJsonClone(record));
+      local.serviceRecords = records;
+      const written = await this.writeSessionLocalStore(local, guard);
+      this.assertSessionGuardActive(guard);
+      return Boolean(written);
+    } catch (error) {
+      if (!this.sessionGuardActive(guard) || error && error.code === "SESSION_CHANGED") {
+        throw createError("로그인 세션이 변경되었습니다.", "SESSION_CHANGED", error);
+      }
+      // The server record is already committed. A cache failure must not turn a
+      // confirmed remote success into a retry that could confuse the operator;
+      // the shared stream will refill this disposable cache.
+      return false;
+    }
+  }
+
+  async commitBuildingSchedule(input) {
+    const guard = this.captureSessionGuard();
+    return this.enqueueSharedMutation(() => this.commitBuildingScheduleLocked(input, guard));
+  }
+
+  async commitBuildingScheduleLocked(inputValue, guardValue) {
+    const guard = guardValue || this.captureSessionGuard();
+    this.assertSessionGuardActive(guard);
+    const input = validateBuildingScheduleCommitInput(inputValue);
+    this.requireMutationPermission(input);
+    await this.verifyAccess();
+    this.assertSessionGuardActive(guard);
+    const session = this.requireMutationPermission(input);
+    const actor = {
+      uid: String(session.uid || ""),
+      role: String(session.role || ""),
+      email: String(session.email || ""),
+      displayName: String(session.displayName || ""),
+    };
+    const location = `crmShared/data/serviceRecords/${input.recordId}`;
+    this.assertSessionGuardActive(guard);
+    const snapshot = await this.dbReadWithEtag(location, false, guard);
+    this.assertSessionGuardActive(guard);
+
+    const intentHash = buildingScheduleIntentHash(input, actor.uid);
+    if (snapshot.value && String(snapshot.value.calendarCommitRequestId || "") === input.requestId) {
+      if (String(snapshot.value.calendarCommitHash || "") !== intentHash) {
+        throw createError("같은 저장 요청의 내용이 달라 안전하게 중단했습니다.", "BUILDING_SCHEDULE_CONFLICT");
+      }
+      this.Core.assertNoProhibitedSecrets(snapshot.value);
+      const repeatedPlan = {
+        record: plainJsonClone(snapshot.value),
+        repeated: true,
+        auditId: String(snapshot.value.calendarAuditId || buildingScheduleAuditId(input.requestId)),
+      };
+      this.adoptCommittedBuildingSchedule(repeatedPlan.record, guard);
+      await this.cacheCommittedBuildingSchedule(repeatedPlan.record, guard);
+      this.assertSessionGuardActive(guard);
+      const auditId = await this.appendBuildingScheduleAudit(repeatedPlan, input, actor, null, guard);
+      this.assertSessionGuardActive(guard);
+      return { record: repeatedPlan.record, repeated: true, auditId: auditId || repeatedPlan.auditId };
+    }
+
+    const candidateBuildingId = input.values
+      ? input.values.buildingId
+      : safeDirectId(snapshot.value && snapshot.value.buildingId);
+    if (!candidateBuildingId) {
+      throw createError("연결된 건물을 확인해 주세요.", "BUILDING_SCHEDULE_BUILDING_UNAVAILABLE");
+    }
+    this.assertSessionGuardActive(guard);
+    const buildingSnapshot = await this.dbReadWithEtag(`crmShared/data/buildings/${candidateBuildingId}`, false, guard);
+    this.assertSessionGuardActive(guard);
+    const plan = planBuildingScheduleCommit(input, {
+      existing: snapshot.value,
+      building: buildingSnapshot.value,
+      actor,
+      now: new Date(),
+    });
+    this.Core.assertNoProhibitedSecrets(plan.record);
+    await this.putBuildingScheduleWithRecovery(location, plan.record, snapshot.etag, guard);
+    this.assertSessionGuardActive(guard);
+    this.adoptCommittedBuildingSchedule(plan.record, guard);
+    await this.cacheCommittedBuildingSchedule(plan.record, guard);
+    this.assertSessionGuardActive(guard);
+    const auditId = await this.appendBuildingScheduleAudit(plan, input, actor, buildingSnapshot.value, guard);
+    this.assertSessionGuardActive(guard);
+    return { record: plan.record, repeated: plan.repeated, auditId: auditId || undefined };
   }
 
   async dbAtomicPatch(location, patch, retried) {
@@ -2205,18 +2757,26 @@ class FirebaseRemoteClient {
   }
 
   async pushStore(input, guardValue) {
-    this.requireMutationPermission(input);
+    const guard = guardValue || this.captureSessionGuard();
+    return this.enqueueSharedMutation(() => this.pushStoreLocked(input, guard));
+  }
+
+  async pushStoreLocked(input, guardValue, options = {}) {
     const guard = guardValue || this.captureSessionGuard();
     if (!this.sessionGuardActive(guard)) throw createError("로그인 세션이 변경되었습니다.", "SESSION_CHANGED");
+    this.requireMutationPermission(input);
     const data = this.Core.sanitizeSharedStore(input);
     data.updatedAt = new Date().toISOString();
     const next = toRemoteStore(data, this.session && this.session.email);
-    const current = this.remotePayload && typeof this.remotePayload === "object"
-      ? this.remotePayload
-      : await this.fetchRemotePayload() || {};
+    // A renderer save can have been prepared before a record-level calendar
+    // commit (including one made on another computer). Always read the current
+    // server representation and make it authoritative for serviceRecords.
+    const current = await this.fetchRemotePayload() || {};
     if (!this.sessionGuardActive(guard)) return null;
+    preserveGenericServiceRecords(this.Core, current, next, options.requireServiceRecordsMatch === true);
     const patch = diffRemoteStores(current, next);
     assertNoCanonicalSharedPatch(patch);
+    assertNoGenericServiceRecordPatch(patch);
     if (Object.keys(patch).length) {
       await this.dbRequest("crmShared/data", { method: "PATCH", body: patch, query: "print=silent" });
       if (!this.sessionGuardActive(guard)) return null;
@@ -2235,6 +2795,44 @@ class FirebaseRemoteClient {
 
   async syncPending(pendingValue, guardValue) {
     const guard = guardValue || this.captureSessionGuard();
+    return this.enqueueSharedMutation(() => this.syncPendingLocked(pendingValue, guard));
+  }
+
+  async restoreStore(input) {
+    const guard = this.captureSessionGuard();
+    return this.enqueueSharedMutation(() => this.restoreStoreLocked(input, guard));
+  }
+
+  async restoreStoreLocked(input, guardValue) {
+    const guard = guardValue || this.captureSessionGuard();
+    this.assertSessionGuardActive(guard);
+    const session = this.requireMutationPermission(input);
+    if (String(session.role || "") !== "admin") {
+      throw createError("관리자만 공용 데이터를 복원할 수 있습니다.", "RESTORE_FORBIDDEN");
+    }
+    await this.verifyAccess();
+    this.assertSessionGuardActive(guard);
+    const verified = this.requireMutationPermission(input);
+    if (String(verified.role || "") !== "admin") {
+      throw createError("관리자만 공용 데이터를 복원할 수 있습니다.", "RESTORE_FORBIDDEN");
+    }
+    let restored;
+    try {
+      restored = await this.pushStoreLocked(input, guard, { requireServiceRecordsMatch: true });
+    } catch (error) {
+      if (error && error.code === "BUILDING_SCHEDULE_COMMIT_REQUIRED") {
+        throw createError("현재 일정과 백업 일정이 달라 복원을 중단했습니다.", "BUILDING_SCHEDULE_RESTORE_CONFLICT", error);
+      }
+      throw error;
+    }
+    this.assertSessionGuardActive(guard);
+    if (!restored) throw createError("로그인 세션이 변경되었습니다.", "SESSION_CHANGED");
+    this.startStream();
+    return { ok: true, data: restored, pending: false };
+  }
+
+  async syncPendingLocked(pendingValue, guardValue) {
+    const guard = guardValue || this.captureSessionGuard();
     if (!this.sessionGuardActive(guard)) return null;
     const pending = pendingValue || await this.readPendingStore();
     if (!this.sessionGuardActive(guard) || !pending) return null;
@@ -2244,8 +2842,15 @@ class FirebaseRemoteClient {
     const currentRemote = await this.fetchRemotePayload() || {};
     if (!this.sessionGuardActive(guard)) return null;
     const desired = toRemoteStore(pending.store, this.session.email);
+    preserveGenericServiceRecords(
+      this.Core,
+      currentRemote,
+      desired,
+      Array.isArray(pending.presentCollections) && pending.presentCollections.includes("serviceRecords")
+    );
     const patch = pendingSyncPatch(this.Core, pending.baseRemote || {}, desired, currentRemote, pending.presentCollections);
     assertNoCanonicalSharedPatch(patch);
+    assertNoGenericServiceRecordPatch(patch);
     if (Object.keys(patch).length) {
       if (!this.sessionGuardActive(guard)) return null;
       await this.dbRequest("crmShared/data", { method: "PATCH", body: patch, query: "print=silent" });
@@ -2341,19 +2946,32 @@ class FirebaseRemoteClient {
   }
 
   async saveStore(input) {
-    this.requireMutationPermission(input);
     const guard = this.captureSessionGuard();
+    return this.enqueueSharedMutation(() => this.saveStoreLocked(input, guard));
+  }
+
+  async saveStoreLocked(input, guardValue) {
+    const guard = guardValue || this.captureSessionGuard();
+    this.assertSessionGuardActive(guard);
+    this.requireMutationPermission(input);
     const overlays = this.Core.sanitizeRendererOverlays(input);
     const local = this.Core.sanitizeSharedStore(input);
     local.updatedAt = new Date().toISOString();
     try {
-      const result = await this.pushStore(local, guard);
+      const result = await this.pushStoreLocked(local, guard);
       if (!result || !this.sessionGuardActive(guard)) throw createError("로그인 세션이 변경되었습니다.", "SESSION_CHANGED");
       this.startStream();
       return { ok: true, data: mergeRendererOverlays(this.Core, result, overlays.buildingUnits, overlays.fieldSummaries), pending: false };
     } catch (error) {
       if (!this.sessionGuardActive(guard)) throw createError("로그인 세션이 변경되었습니다.", "SESSION_CHANGED", error);
       if (!retryableSyncError(error)) throw error;
+      // The generic renderer payload may predate a successful calendar CAS.
+      // Keep the most recent protected-cache records even while unrelated
+      // collections wait for the network, so the UI cannot locally roll a
+      // confirmed schedule back.
+      const cached = await this.readSessionLocalStore(guard);
+      if (!cached || !this.sessionGuardActive(guard)) throw createError("로그인 세션이 변경되었습니다.", "SESSION_CHANGED");
+      local.serviceRecords = this.Core.sanitizeSharedStore(cached).serviceRecords;
       const written = await this.writeSessionLocalStore(local, guard);
       if (!written || !this.sessionGuardActive(guard)) throw createError("로그인 세션이 변경되었습니다.", "SESSION_CHANGED");
       await this.writePendingStore(local, this.remotePayload);
@@ -2388,6 +3006,11 @@ class FirebaseRemoteClient {
 
   async reloadRendererOverlays(guardValue) {
     const guard = guardValue || this.captureSessionGuard();
+    return this.enqueueSharedMutation(() => this.reloadRendererOverlaysLocked(guard));
+  }
+
+  async reloadRendererOverlaysLocked(guardValue) {
+    const guard = guardValue || this.captureSessionGuard();
     if (!this.sessionGuardActive(guard)) return null;
     const local = await this.readSessionLocalStore(guard);
     if (!this.sessionGuardActive(guard)) return null;
@@ -2396,11 +3019,16 @@ class FirebaseRemoteClient {
 
   async reloadFromRemote(guardValue) {
     const guard = guardValue || this.captureSessionGuard();
+    return this.enqueueSharedMutation(() => this.reloadFromRemoteLocked(guard));
+  }
+
+  async reloadFromRemoteLocked(guardValue) {
+    const guard = guardValue || this.captureSessionGuard();
     if (!this.sessionGuardActive(guard)) return null;
     const pending = await this.readPendingStore();
     if (!this.sessionGuardActive(guard)) return null;
     if (pending) {
-      const synced = await this.syncPending(pending, guard);
+      const synced = await this.syncPendingLocked(pending, guard);
       if (!this.sessionGuardActive(guard)) return null;
       if (synced) return;
     }
@@ -2549,6 +3177,11 @@ module.exports = {
   mergeRendererOverlays,
   diffRemoteStores,
   pendingSyncPatch,
+  validateBuildingScheduleCommitInput,
+  planBuildingScheduleCommit,
+  buildingScheduleAuditRecord,
+  assertNoGenericServiceRecordPatch,
+  serviceRecordsSemanticallyEqual,
   caseDeleteAuditId,
   FirebaseRemoteClient
 };

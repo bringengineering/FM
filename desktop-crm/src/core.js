@@ -301,7 +301,9 @@
     const seenDriveFiles = new Set();
     return (Array.isArray(input) ? input : []).filter(Boolean).map(item => Object.assign({}, item, {
       id: String(item.id || ""), buildingId: String(item.buildingId || ""), driveFileId: String(item.driveFileId || ""),
-      serviceType: String(item.serviceType || ""), status: String(item.status || ""), completedAt: String(item.completedAt || ""),
+      serviceType: String(item.serviceType || ""), title: String(item.title || ""), status: String(item.status || ""),
+      scheduledDate: String(item.scheduledDate || ""), startTime: String(item.startTime || ""), endTime: String(item.endTime || ""),
+      completedAt: String(item.completedAt || ""), owner: String(item.owner || ""), createdAt: String(item.createdAt || ""), updatedAt: String(item.updatedAt || ""),
       amount: money(item.amount), vendorName: String(item.vendorName || ""), vendorPhone: normalizePhone(item.vendorPhone),
       summary: String(item.summary || ""), evidenceUrl: String(item.evidenceUrl || "")
     })).filter(item => {

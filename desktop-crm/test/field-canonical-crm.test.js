@@ -264,6 +264,7 @@ test("legacy direct building and sales-unit changes are rejected at the shared-s
   ]) {
     const { client } = makeClient();
     client.remotePayload = { [collection]: { [before.id]: before } };
+    client.fetchRemotePayload = async () => structuredClone(client.remotePayload);
     const input = Core.sanitizeRendererStore({ [collection]: [after] });
 
     await assert.rejects(client.pushStore(input), error => error && error.code === "CANONICAL_COMMIT_REQUIRED");
@@ -279,6 +280,7 @@ test("an unrelated save succeeds when canonical buildings and sales units are un
   }), "member@bring.test");
   const { client } = makeClient();
   client.remotePayload = before;
+  client.fetchRemotePayload = async () => structuredClone(before);
   client.dbRequest = async (location, options) => {
     mutations.push({ location, method: options.method, body: options.body });
     return null;

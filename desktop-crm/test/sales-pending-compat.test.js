@@ -128,7 +128,8 @@ test("current pending writes declare every shared collection and preserve an int
   const patch = pendingSyncPatch(Core, pending.baseRemote, desired, baseRemote, pending.presentCollections);
 
   assert.equal(decoded.version, 5);
-  assert.deepEqual(decoded.presentCollections, SHARED_COLLECTIONS);
+  assert.deepEqual(decoded.presentCollections, SHARED_COLLECTIONS.filter(collection => collection !== "serviceRecords"));
+  assert.equal(decoded.presentCollections.includes("serviceRecords"), false);
   assert.equal(Object.hasOwn(decoded.baseRemote, "buildingUnits"), false);
   assert.equal(Object.hasOwn(decoded.baseRemote, "fieldSummaries"), false);
   assert.equal(patch["salesProspects/prospect_1"], null);

@@ -514,6 +514,333 @@ async function exerciseDriveImportCandidateRules(
   }
 }
 
+async function exerciseServiceRecordRules(
+  testEnvironment: RulesTestEnvironment,
+) {
+  const record = (
+    id: string,
+    buildingId: string,
+    values: Record<string, unknown> = {},
+  ) => ({
+    id,
+    buildingId,
+    title: "건물 업무 일정",
+    status: "planned",
+    scheduledDate: "2026-08-21",
+    createdAt: NOW,
+    updatedAt: NOW,
+    ...values,
+  });
+
+  const commitMeta = (
+    sequence: number,
+    updatedByAuthUid: string,
+    updatedAt = NOW,
+    calendarCommitVersion = 1,
+  ) => {
+    const hex = sequence.toString(16);
+    const requestSuffix = hex.padStart(12, "0").slice(-12);
+    return {
+      calendarCommitRequestId: `00000000-0000-4000-8000-${requestSuffix}`,
+      calendarCommitHash: hex.padStart(64, "0").slice(-64),
+      calendarAuditId: `audit_schedule_00000000000040008000${requestSuffix}`,
+      calendarCommitVersion,
+      updatedByAuthUid,
+      updatedAt,
+    };
+  };
+
+  await testEnvironment.withSecurityRulesDisabled(async (context) => {
+    const database = context.database();
+    await update(ref(database, "crmCompany/data"), {
+      "buildings/building_archived": {
+        ...CRM_DATA.buildings.building_1,
+        id: "building_archived",
+        buildingNo: "BLD-ARCHIVED",
+        name: "Archived building",
+        archivedAt: NOW,
+      },
+      "buildings/constructor": {
+        ...CRM_DATA.buildings.building_1,
+        id: "constructor",
+        buildingNo: "BLD-RESERVED",
+        name: "Reserved key building",
+      },
+      "serviceRecords/service_record_active": record(
+        "service_record_active",
+        "building_1",
+      ),
+      "serviceRecords/service_record_archived": record(
+        "service_record_archived",
+        "building_archived",
+      ),
+      "serviceRecords/service_record_missing": record(
+        "service_record_missing",
+        "building_missing",
+      ),
+      "serviceRecords/service_record_cancelled": record(
+        "service_record_cancelled",
+        "building_1",
+        { status: "cancelled" },
+      ),
+      "serviceRecords/service_record_invalid_version": record(
+        "service_record_invalid_version",
+        "building_1",
+        { calendarCommitVersion: "legacy-invalid" },
+      ),
+    });
+  });
+
+  const admin = testEnvironment.authenticatedContext(
+    "crm-admin",
+    crmClaims("admin@bring.test"),
+  ).database();
+  const member = testEnvironment.authenticatedContext(
+    "crm-member",
+    crmClaims("member@bring.test"),
+  ).database();
+  const viewer = testEnvironment.authenticatedContext(
+    "crm-viewer",
+    crmClaims("viewer@bring.test"),
+  ).database();
+  const rejectedWriters = [
+    testEnvironment.unauthenticatedContext().database(),
+    viewer,
+    testEnvironment.authenticatedContext(
+      "crm-member",
+      crmClaims("wrong@bring.test"),
+    ).database(),
+    testEnvironment.authenticatedContext(
+      "crm-disabled",
+      crmClaims("disabled@bring.test"),
+    ).database(),
+  ];
+
+  await assertSucceeds(set(
+    ref(admin, "crmCompany/data/serviceRecords/schedule_admin"),
+    record("schedule_admin", "building_1", commitMeta(1, "crm-admin")),
+  ));
+  await assertSucceeds(set(
+    ref(member, "crmCompany/data/serviceRecords/schedule_member"),
+    record("schedule_member", "building_1", commitMeta(2, "crm-member")),
+  ));
+  await assertFails(set(
+    ref(member, "crmCompany/data/serviceRecords/schedule_without_commit_meta"),
+    record("schedule_without_commit_meta", "building_1"),
+  ));
+  await assertFails(set(
+    ref(member, "crmCompany/data/serviceRecords/schedule_bad_request_id"),
+    record("schedule_bad_request_id", "building_1", {
+      ...commitMeta(10, "crm-member"),
+      calendarCommitRequestId: "not-a-uuid-v4",
+    }),
+  ));
+  await assertFails(set(
+    ref(member, "crmCompany/data/serviceRecords/schedule_bad_hash"),
+    record("schedule_bad_hash", "building_1", {
+      ...commitMeta(11, "crm-member"),
+      calendarCommitHash: "g".repeat(64),
+    }),
+  ));
+  await assertFails(set(
+    ref(member, "crmCompany/data/serviceRecords/schedule_bad_audit_id"),
+    record("schedule_bad_audit_id", "building_1", {
+      ...commitMeta(12, "crm-member"),
+      calendarAuditId: "audit/schedule/unsafe",
+    }),
+  ));
+  await assertFails(set(
+    ref(member, "crmCompany/data/serviceRecords/schedule_wrong_actor"),
+    record("schedule_wrong_actor", "building_1", commitMeta(13, "crm-admin")),
+  ));
+  await assertFails(set(
+    ref(member, "crmCompany/data/serviceRecords/schedule_bad_updated_at"),
+    record("schedule_bad_updated_at", "building_1", commitMeta(
+      14,
+      "crm-member",
+      "2026/08/21 09:00",
+    )),
+  ));
+  await assertFails(set(
+    ref(member, "crmCompany/data/serviceRecords/schedule_bad_initial_version"),
+    record("schedule_bad_initial_version", "building_1", commitMeta(
+      15,
+      "crm-member",
+      NOW,
+      2,
+    )),
+  ));
+  await assertFails(set(
+    ref(member, "crmCompany/data/serviceRecords/schedule_archived"),
+    record("schedule_archived", "building_archived", commitMeta(16, "crm-member")),
+  ));
+  await assertFails(set(
+    ref(member, "crmCompany/data/serviceRecords/schedule_missing"),
+    record("schedule_missing", "building_missing", commitMeta(17, "crm-member")),
+  ));
+
+  await assertFails(update(
+    ref(member, "crmCompany/data/serviceRecords/service_record_active"),
+    { title: "메타 없는 legacy 부분 수정", updatedAt: "2026-08-21T00:30:00.000Z" },
+  ));
+  await assertFails(set(
+    ref(member, "crmCompany/data/serviceRecords/service_record_active"),
+    record("service_record_active", "building_1", {
+      title: "메타 없는 legacy 전체 수정",
+      updatedAt: "2026-08-21T00:40:00.000Z",
+    }),
+  ));
+  await assertSucceeds(update(
+    ref(member, "crmCompany/data/serviceRecords/service_record_active"),
+    {
+      title: "활성 건물 일정 수정",
+      ...commitMeta(20, "crm-member", "2026-08-21T01:00:00.000Z"),
+    },
+  ));
+  await assertSucceeds(update(
+    ref(member, "crmCompany/data/serviceRecords/service_record_archived"),
+    {
+      title: "보관 건물의 기존 이력 수정",
+      ...commitMeta(21, "crm-member", "2026-08-21T02:00:00.000Z"),
+    },
+  ));
+  await assertSucceeds(update(
+    ref(member, "crmCompany/data/serviceRecords/service_record_missing"),
+    {
+      title: "삭제된 건물의 기존 이력 수정",
+      ...commitMeta(22, "crm-member", "2026-08-21T03:00:00.000Z"),
+    },
+  ));
+  await assertFails(update(
+    ref(member, "crmCompany/data/serviceRecords/service_record_cancelled"),
+    {
+      title: "취소 이력 수정 시도",
+      ...commitMeta(18, "crm-member", "2026-08-21T03:30:00.000Z"),
+    },
+  ));
+  await assertSucceeds(update(
+    ref(member, "crmCompany/data/serviceRecords/service_record_invalid_version"),
+    {
+      title: "잘못된 legacy 버전의 첫 CAS",
+      ...commitMeta(19, "crm-member", "2026-08-21T03:40:00.000Z"),
+    },
+  ));
+
+  const versionOneSnapshot = await assertSucceeds(get(
+    ref(member, "crmCompany/data/serviceRecords/service_record_active"),
+  ));
+  const versionOneRecord = versionOneSnapshot.val() as Record<string, unknown>;
+  await assertSucceeds(update(
+    ref(member, "crmCompany/data/serviceRecords/service_record_active"),
+    {
+      title: "활성 건물 일정 2차 수정",
+      ...commitMeta(23, "crm-member", "2026-08-21T04:00:00.000Z", 2),
+    },
+  ));
+  await assertFails(update(
+    ref(member, "crmCompany/data/serviceRecords/service_record_active"),
+    { title: "메타 없는 구버전 부분 수정" },
+  ));
+  await assertFails(update(
+    ref(member, "crmCompany/data/serviceRecords/service_record_active"),
+    {
+      title: "버전 증가를 생략한 marker-only 수정",
+      ...commitMeta(24, "crm-member", "2026-08-21T05:00:00.000Z", 2),
+    },
+  ));
+  await assertFails(update(
+    ref(member, "crmCompany/data/serviceRecords/service_record_active"),
+    {
+      title: "뒤처진 버전의 부분 수정",
+      ...commitMeta(25, "crm-member", "2026-08-21T06:00:00.000Z", 1),
+    },
+  ));
+  await assertFails(set(
+    ref(member, "crmCompany/data/serviceRecords/service_record_active"),
+    { ...versionOneRecord, title: "뒤처진 CAS 전체 덮어쓰기" },
+  ));
+  const activeSnapshot = await assertSucceeds(get(
+    ref(member, "crmCompany/data/serviceRecords/service_record_active"),
+  ));
+  const activeRecord = activeSnapshot.val() as Record<string, unknown>;
+  await assertFails(update(
+    ref(member, "crmCompany/data/serviceRecords/service_record_active"),
+    {
+      title: "request marker 재사용",
+      ...commitMeta(28, "crm-member", "2026-08-21T06:10:00.000Z", 3),
+      calendarCommitRequestId: activeRecord.calendarCommitRequestId,
+    },
+  ));
+  await assertFails(update(
+    ref(member, "crmCompany/data/serviceRecords/service_record_active"),
+    {
+      title: "hash marker 재사용",
+      ...commitMeta(29, "crm-member", "2026-08-21T06:20:00.000Z", 3),
+      calendarCommitHash: activeRecord.calendarCommitHash,
+    },
+  ));
+  await assertFails(update(
+    ref(member, "crmCompany/data/serviceRecords/service_record_active"),
+    {
+      title: "updatedAt marker 재사용",
+      ...commitMeta(30, "crm-member", String(activeRecord.updatedAt), 3),
+    },
+  ));
+  await assertFails(update(
+    ref(member, "crmCompany/data/serviceRecords/service_record_active"),
+    {
+      title: "audit marker 재사용",
+      ...commitMeta(31, "crm-member", "2026-08-21T06:30:00.000Z", 3),
+      calendarAuditId: activeRecord.calendarAuditId,
+    },
+  ));
+  await assertFails(set(
+    ref(member, "crmCompany/data/serviceRecords/service_record_active"),
+    {
+      ...activeRecord,
+      buildingId: "building_archived",
+      ...commitMeta(26, "crm-member", "2026-08-21T07:00:00.000Z", 3),
+    },
+  ));
+  await assertFails(set(
+    ref(member, "crmCompany/data/serviceRecords/service_record_active"),
+    {
+      ...activeRecord,
+      buildingId: "building_missing",
+      ...commitMeta(27, "crm-member", "2026-08-21T08:00:00.000Z", 3),
+    },
+  ));
+  await assertFails(remove(
+    ref(member, "crmCompany/data/serviceRecords/service_record_active"),
+  ));
+  await assertFails(set(
+    ref(member, "crmCompany/data/serviceRecords/id_mismatch"),
+    record("different_id", "building_1", commitMeta(33, "crm-member")),
+  ));
+  await assertFails(set(
+    ref(member, "crmCompany/data/serviceRecords/reserved_building"),
+    record("reserved_building", "constructor", commitMeta(34, "crm-member")),
+  ));
+  await assertFails(set(
+    ref(member, "crmCompany/data/serviceRecords/constructor"),
+    record("constructor", "building_1", commitMeta(35, "crm-member")),
+  ));
+
+  for (const database of rejectedWriters) {
+    await assertFails(set(
+      ref(database, "crmCompany/data/serviceRecords/rejected_schedule"),
+      record("rejected_schedule", "building_1", commitMeta(40, "crm-member")),
+    ));
+    await assertFails(update(
+      ref(database, "crmCompany/data/serviceRecords/service_record_active"),
+      { title: "허용되지 않은 변경" },
+    ));
+    await assertFails(remove(
+      ref(database, "crmCompany/data/serviceRecords/service_record_active"),
+    ));
+  }
+}
+
 async function exerciseCustomerBuildingLinkRules(testEnvironment: RulesTestEnvironment) {
   const unauthenticated = testEnvironment.unauthenticatedContext().database();
   const admin = testEnvironment.authenticatedContext(
@@ -1031,10 +1358,37 @@ describe("field media database rule source", () => {
     expect(String(buildingLink[".write"])).toContain("child('buildings').child($buildingId).child('ownerCustomerId').val() === $customerId");
     expect(String(buildingLink[".write"])).toContain("child('archivedAt').val() === ''");
     expect(String(buildingLink[".validate"])).toContain("newData.isBoolean()");
+    const serviceRecords = data.serviceRecords as Record<string, Record<string, unknown> | boolean>;
+    const serviceRecord = serviceRecords.$serviceRecordId as Record<string, unknown>;
+    const serviceRecordValidation = String(serviceRecord[".validate"]);
+    expect(serviceRecords[".write"]).toBe(false);
+    expect(String(serviceRecord[".write"])).toContain("newData.exists()");
+    expect(String(serviceRecord[".write"])).toContain("auth.token.email");
+    expect(String(serviceRecord[".write"])).toContain("'admin'");
+    expect(String(serviceRecord[".write"])).toContain("'member'");
+    expect(String(serviceRecord[".write"])).toContain("data.child('status').val() !== 'cancelled'");
+    expect(serviceRecordValidation).toContain("newData.child('id').val() === $serviceRecordId");
+    expect(serviceRecordValidation).toContain("matches(/^[A-Za-z0-9_-]+$/)");
+    expect(serviceRecordValidation).toContain("newData.child('calendarCommitRequestId').val().matches(/^[0-9A-Fa-f]{8}-");
+    expect(serviceRecordValidation).toContain("newData.child('calendarCommitHash').val().matches(/^[0-9A-Fa-f]{64}$/)");
+    expect(serviceRecordValidation).toContain("newData.child('calendarAuditId').val().matches(/^audit_schedule_[0-9A-Fa-f]{32}$/)");
+    expect(serviceRecordValidation).toContain("newData.child('updatedByAuthUid').val() === auth.uid");
+    expect(serviceRecordValidation).toContain("newData.child('updatedAt').val().matches(/^[0-9]{4}-");
+    expect(serviceRecordValidation).toContain("newData.child('calendarCommitVersion').val() === 1");
+    expect(serviceRecordValidation).toContain("!data.child('calendarCommitVersion').isNumber()");
+    expect(serviceRecordValidation).toContain("newData.child('calendarCommitVersion').val() === data.child('calendarCommitVersion').val() + 1");
+    expect(serviceRecordValidation).toContain("newData.child('calendarCommitVersion').val() <= 9007199254740991");
+    expect(serviceRecordValidation).toContain("newData.child('calendarCommitRequestId').val() !== data.child('calendarCommitRequestId').val()");
+    expect(serviceRecordValidation).toContain("newData.child('calendarCommitHash').val() !== data.child('calendarCommitHash').val()");
+    expect(serviceRecordValidation).toContain("newData.child('calendarAuditId').val() !== data.child('calendarAuditId').val()");
+    expect(serviceRecordValidation).toContain("newData.child('updatedAt').val() !== data.child('updatedAt').val()");
+    expect(serviceRecordValidation).toContain("data.child('buildingId').val() === newData.child('buildingId').val()");
+    expect(serviceRecordValidation).toContain("child('buildings').child(newData.child('buildingId').val())");
+    expect(serviceRecordValidation).toContain("child('archivedAt').val() === ''");
     for (const writable of [
       "schemaVersion", "company", "updatedAt", "updatedBy",
       "activities", "contracts", "partnerVendors", "partnerQuotes", "tasks",
-      "serviceRecords", "serviceContracts", "serviceSchedules", "securityAssets", "auditLogs",
+      "serviceContracts", "serviceSchedules", "securityAssets", "auditLogs",
       "securityIncidents", "salesProspects", "salesContacts", "salesActivities", "salesEvents",
       "salesOpportunities",
     ]) {
@@ -1234,13 +1588,29 @@ describe("field media database rule source", () => {
     expect(String(fixtureLink[".write"])).toContain("newData.val() === true");
     expect(String(fixtureLink[".write"])).toContain("child('buildings').child($buildingId).child('ownerCustomerId').val() === $customerId");
     expect(String(fixtureLink[".write"])).toContain("child('archivedAt').val() === ''");
+    const fixtureServiceRecords = dataRules.serviceRecords as Record<string, Record<string, unknown> | boolean>;
+    const fixtureServiceRecord = fixtureServiceRecords.$serviceRecordId as Record<string, unknown>;
+    const fixtureServiceRecordValidation = String(fixtureServiceRecord[".validate"]);
+    expect(fixtureServiceRecords[".write"]).toBe(false);
+    expect(String(fixtureServiceRecord[".write"])).toContain("newData.exists()");
+    expect(String(fixtureServiceRecord[".write"])).toContain("data.child('status').val() !== 'cancelled'");
+    expect(fixtureServiceRecordValidation).toContain("newData.child('id').val() === $serviceRecordId");
+    expect(fixtureServiceRecordValidation).toContain("newData.child('calendarCommitRequestId').val().matches(/^[0-9A-Fa-f]{8}-");
+    expect(fixtureServiceRecordValidation).toContain("newData.child('calendarCommitHash').val().matches(/^[0-9A-Fa-f]{64}$/)");
+    expect(fixtureServiceRecordValidation).toContain("newData.child('calendarAuditId').val().matches(/^audit_schedule_[0-9A-Fa-f]{32}$/)");
+    expect(fixtureServiceRecordValidation).toContain("newData.child('updatedByAuthUid').val() === auth.uid");
+    expect(fixtureServiceRecordValidation).toContain("!data.child('calendarCommitVersion').isNumber()");
+    expect(fixtureServiceRecordValidation).toContain("newData.child('calendarCommitVersion').val() === data.child('calendarCommitVersion').val() + 1");
+    expect(fixtureServiceRecordValidation).toContain("newData.child('calendarCommitRequestId').val() !== data.child('calendarCommitRequestId').val()");
+    expect(fixtureServiceRecordValidation).toContain("newData.child('calendarAuditId').val() !== data.child('calendarAuditId').val()");
+    expect(fixtureServiceRecordValidation).toContain("data.child('buildingId').val() === newData.child('buildingId').val()");
+    expect(fixtureServiceRecordValidation).toContain("child('archivedAt').val() === ''");
     for (const legacy of [
       "activities",
       "contracts",
       "partnerVendors",
       "partnerQuotes",
       "tasks",
-      "serviceRecords",
       "serviceContracts",
       "serviceSchedules",
       "securityAssets",
@@ -1447,7 +1817,20 @@ describe.runIf(databaseEmulatorAvailable)("fieldPlatform database rules", () => 
       "partnerVendors/vendor_cutover": { id: "vendor_cutover" },
       "partnerQuotes/quote_cutover": { id: "quote_cutover" },
       "tasks/task_cutover": { id: "task_cutover" },
-      "serviceRecords/service_record_cutover": { id: "service_record_cutover" },
+      "serviceRecords/service_record_cutover": {
+        id: "service_record_cutover",
+        buildingId: "building_1",
+        title: "Cutover service record",
+        status: "planned",
+        scheduledDate: "2026-08-21",
+        createdAt: NOW,
+        updatedAt: NOW,
+        updatedByAuthUid: "crm-member",
+        calendarCommitRequestId: "00000000-0000-4000-8000-000000000100",
+        calendarCommitHash: "1".padStart(64, "0"),
+        calendarAuditId: "audit_schedule_00000000000040008000000000000100",
+        calendarCommitVersion: 1,
+      },
       "serviceContracts/service_contract_cutover": { id: "service_contract_cutover" },
       "serviceSchedules/service_schedule_cutover": { id: "service_schedule_cutover" },
       "securityAssets/security_asset_cutover": { id: "security_asset_cutover" },
@@ -1480,6 +1863,10 @@ describe.runIf(databaseEmulatorAvailable)("fieldPlatform database rules", () => 
 
   it("allows exact CRM roles to read Drive import candidates and denies every client write", async () => {
     await exerciseDriveImportCandidateRules(environment);
+  });
+
+  it("allows building-bound service records without deleting history or targeting archived buildings", async () => {
+    await exerciseServiceRecordRules(environment);
   });
 
   it("accepts an atomic canonical building create with its narrow customer backlink", async () => {
@@ -2356,6 +2743,10 @@ describe.runIf(databaseEmulatorAvailable)("future CRM cutover rules rehearsal", 
 
   it("keeps the Drive import candidate boundary identical in the emulator", async () => {
     await exerciseDriveImportCandidateRules(cutoverEnvironment);
+  });
+
+  it("keeps the building-bound service record boundary identical in the emulator", async () => {
+    await exerciseServiceRecordRules(cutoverEnvironment);
   });
 
   it("atomically rejects malformed canonical records in a parent PATCH", async () => {
