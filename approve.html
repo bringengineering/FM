@@ -1,0 +1,611 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,viewport-fit=cover">
+  <meta name="theme-color" content="#173a70">
+  <title>BRING Care 견적 승인</title>
+  <style>
+    :root {
+      color-scheme: light;
+      --navy: #173a70;
+      --blue: #2f80ed;
+      --green: #159957;
+      --ink: #162033;
+      --muted: #667085;
+      --line: #d9e2ef;
+      --surface: #ffffff;
+      --page: #eef3f9;
+    }
+    * { box-sizing: border-box; }
+    html { min-width: 320px; background: var(--page); }
+    body {
+      min-width: 320px;
+      min-height: 100vh;
+      min-height: 100svh;
+      margin: 0;
+      color: var(--ink);
+      background: var(--page);
+      font-family: Arial, "Noto Sans KR", "Apple SD Gothic Neo", sans-serif;
+      font-size: 16px;
+      letter-spacing: 0;
+      -webkit-font-smoothing: antialiased;
+      text-size-adjust: 100%;
+      -webkit-text-size-adjust: 100%;
+    }
+    button { font: inherit; }
+    main {
+      width: 100%;
+      max-width: 540px;
+      margin: 0 auto;
+      padding:
+        max(20px, env(safe-area-inset-top))
+        14px
+        max(28px, env(safe-area-inset-bottom));
+    }
+    .brand {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      min-height: 34px;
+      margin: 0 4px 14px;
+      color: var(--navy);
+      font-size: 19px;
+      font-weight: 900;
+    }
+    .mark {
+      width: 13px;
+      height: 13px;
+      flex: 0 0 auto;
+      border-radius: 50%;
+      background: var(--blue);
+      box-shadow: 9px 0 0 #28b779;
+    }
+    .panel {
+      overflow: hidden;
+      background: var(--surface);
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      box-shadow: 0 10px 28px rgba(31, 57, 91, .09);
+    }
+    .content { padding: 22px 18px 20px; }
+    .eyebrow {
+      margin: 0 0 7px;
+      color: var(--blue);
+      font-size: 13px;
+      font-weight: 800;
+    }
+    h1 {
+      margin: 0;
+      font-size: 26px;
+      line-height: 1.28;
+      font-weight: 900;
+    }
+    .description {
+      margin: 8px 0 0;
+      color: var(--muted);
+      font-size: 15px;
+      line-height: 1.55;
+    }
+    .amount {
+      margin: 20px 0 16px;
+      padding: 17px 16px;
+      background: #eaf2ff;
+      border: 1px solid #c8daf7;
+      border-radius: 8px;
+    }
+    .amount span {
+      display: block;
+      margin-bottom: 5px;
+      color: #526780;
+      font-size: 13px;
+      font-weight: 700;
+    }
+    .amount strong {
+      display: block;
+      color: var(--navy);
+      font-size: clamp(31px, 10vw, 42px);
+      line-height: 1.15;
+      font-weight: 900;
+      word-break: keep-all;
+    }
+    .facts {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+      gap: 9px;
+      margin: 0 0 17px;
+    }
+    .fact {
+      min-width: 0;
+      padding: 12px;
+      background: #f8fafc;
+      border: 1px solid #e2e8f0;
+      border-radius: 7px;
+    }
+    .fact span {
+      display: block;
+      margin-bottom: 4px;
+      color: var(--muted);
+      font-size: 12px;
+      font-weight: 700;
+    }
+    .fact strong {
+      display: block;
+      font-size: 15px;
+      line-height: 1.4;
+      overflow-wrap: anywhere;
+    }
+    .work {
+      margin-top: 3px;
+      padding-top: 16px;
+      border-top: 1px solid #e4e9f1;
+    }
+    .work h2 {
+      margin: 0 0 10px;
+      font-size: 16px;
+      font-weight: 900;
+    }
+    .work ul {
+      display: grid;
+      gap: 8px;
+      margin: 0;
+      padding: 0;
+      list-style: none;
+    }
+    .work li {
+      position: relative;
+      padding-left: 16px;
+      font-size: 15px;
+      line-height: 1.45;
+      overflow-wrap: anywhere;
+    }
+    .work li::before {
+      position: absolute;
+      top: 8px;
+      left: 2px;
+      width: 5px;
+      height: 5px;
+      border-radius: 50%;
+      background: var(--blue);
+      content: "";
+    }
+    .actions {
+      display: grid;
+      gap: 9px;
+      padding: 0 18px 20px;
+    }
+    .button {
+      width: 100%;
+      min-height: 56px;
+      padding: 13px 16px;
+      border: 1px solid transparent;
+      border-radius: 8px;
+      cursor: pointer;
+      font-size: 16px;
+      font-weight: 900;
+    }
+    .button:disabled { cursor: wait; opacity: .58; }
+    .button.primary { color: #fff; background: var(--navy); }
+    .button.secondary {
+      color: #29405f;
+      background: #fff;
+      border-color: #c8d3e3;
+    }
+    .status {
+      margin: 0 18px 18px;
+      padding: 14px;
+      border: 1px solid #b9e4cc;
+      border-radius: 8px;
+      color: #0e6b3b;
+      background: #edf9f2;
+      font-size: 15px;
+      line-height: 1.5;
+      font-weight: 800;
+    }
+    .status.warning {
+      color: #8a5a00;
+      border-color: #f1d18a;
+      background: #fff8e7;
+    }
+    .status.error {
+      color: #a22929;
+      border-color: #f0b9b9;
+      background: #fff2f2;
+    }
+    .payment {
+      margin: 0 18px 20px;
+      padding: 16px;
+      border: 1px solid #b9e4cc;
+      border-radius: 8px;
+      background: #f7fcf9;
+    }
+    .payment h2 {
+      margin: 0 0 12px;
+      color: #0e6b3b;
+      font-size: 18px;
+    }
+    .payment-grid {
+      display: grid;
+      grid-template-columns: 1fr;
+      gap: 9px;
+    }
+    .payment-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 14px;
+      padding: 11px 12px;
+      background: #fff;
+      border: 1px solid #dfe8e3;
+      border-radius: 7px;
+    }
+    .payment-row span {
+      color: var(--muted);
+      font-size: 13px;
+      font-weight: 700;
+    }
+    .payment-row strong {
+      text-align: right;
+      font-size: 16px;
+      overflow-wrap: anywhere;
+    }
+    .copy {
+      width: 100%;
+      min-height: 48px;
+      margin-top: 10px;
+      color: var(--navy);
+      background: #fff;
+      border: 1px solid #b9c9de;
+      border-radius: 8px;
+      font-weight: 900;
+      cursor: pointer;
+    }
+    .loading {
+      padding: 46px 22px;
+      text-align: center;
+    }
+    .spinner {
+      width: 42px;
+      height: 42px;
+      margin: 0 auto 18px;
+      border: 4px solid #dce7f6;
+      border-top-color: var(--navy);
+      border-radius: 50%;
+      animation: spin .8s linear infinite;
+    }
+    .loading h1 { font-size: 22px; }
+    .loading p {
+      margin: 8px 0 0;
+      color: var(--muted);
+      font-size: 14px;
+      line-height: 1.5;
+    }
+    .hidden { display: none !important; }
+    @keyframes spin { to { transform: rotate(360deg); } }
+    @media (max-width: 390px) {
+      main { padding-left: 10px; padding-right: 10px; }
+      .content { padding: 20px 15px 18px; }
+      .actions { padding-left: 15px; padding-right: 15px; }
+      .status, .payment { margin-left: 15px; margin-right: 15px; }
+      h1 { font-size: 24px; }
+      .fact { padding: 10px; }
+    }
+  </style>
+</head>
+<body>
+  <main>
+    <div class="brand"><span class="mark" aria-hidden="true"></span>BRING Care</div>
+    <section class="panel" id="panel">
+      <div class="loading" id="loading">
+        <div class="spinner" aria-hidden="true"></div>
+        <h1>추천 견적을 불러오는 중입니다</h1>
+        <p>잠시만 기다려 주세요.</p>
+      </div>
+
+      <div class="hidden" id="approval">
+        <div class="content">
+          <p class="eyebrow">건물 유지보수 추천</p>
+          <h1>추천 견적 승인</h1>
+          <p class="description">추천 업체와 금액을 확인한 뒤 진행 방법을 선택해 주세요.</p>
+
+          <div class="amount">
+            <span>브링 최종금액</span>
+            <strong id="amount">-</strong>
+          </div>
+
+          <div class="facts">
+            <div class="fact"><span>추천 업체</span><strong id="vendor">-</strong></div>
+            <div class="fact"><span>접수번호</span><strong id="caseId">-</strong></div>
+          </div>
+
+          <div class="work">
+            <h2>작업 내용</h2>
+            <ul id="workItems"></ul>
+          </div>
+        </div>
+
+        <div class="status hidden" id="status" role="status"></div>
+
+        <div class="payment hidden" id="payment">
+          <h2>입금 안내</h2>
+          <div class="payment-grid">
+            <div class="payment-row"><span>계좌번호</span><strong id="accountNumber">123-456-789012</strong></div>
+            <div class="payment-row"><span>예금주</span><strong id="accountHolder">브링케어</strong></div>
+            <div class="payment-row"><span>입금금액</span><strong id="paymentAmount">-</strong></div>
+          </div>
+          <button class="copy" id="copyAccount" type="button">계좌번호 복사</button>
+        </div>
+
+        <div class="actions" id="actions">
+          <button class="button primary" type="button" data-decision="approve_payment">승인하고 입금 진행</button>
+          <button class="button secondary" type="button" data-decision="request_other_quote">다른 견적 요청</button>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <script>
+    (function () {
+      "use strict";
+
+      var DATABASE_URL = "https://bring-fm-hj-default-rtdb.asia-southeast1.firebasedatabase.app";
+      var WEB_APP_URL = "https://script.google.com/macros/s/AKfycbxGAdtEDoNifxkM-e_Jm7dBkCnjM4oPJqz8RxZXoMoSKod5M_m9Yj2b11-nI97zmfd6Jw/exec";
+      var ACCOUNT_NUMBER = "123-456-789012";
+      var ACCOUNT_HOLDER = "브링케어";
+      var params = new URLSearchParams(window.location.search);
+      var caseId = normalizeCaseId(params.get("c") || "");
+      var legacyCode = String(params.get("k") || "").trim();
+      var state = { ownerDecision: null, quote: null, amount: 0, running: false };
+
+      var loading = document.getElementById("loading");
+      var approval = document.getElementById("approval");
+      var amount = document.getElementById("amount");
+      var vendor = document.getElementById("vendor");
+      var caseIdEl = document.getElementById("caseId");
+      var workItems = document.getElementById("workItems");
+      var actions = document.getElementById("actions");
+      var status = document.getElementById("status");
+      var payment = document.getElementById("payment");
+      var paymentAmount = document.getElementById("paymentAmount");
+      var copyAccount = document.getElementById("copyAccount");
+
+      function normalizeCaseId(value) {
+        var text = String(value || "").trim().toUpperCase();
+        if (/^\d{4}-\d{4,}$/.test(text)) return "BR-" + text;
+        if (/^BR-\d{4}-\d{4,}$/.test(text)) return text;
+        return "";
+      }
+
+      function firebaseUrl(path) {
+        return DATABASE_URL + "/" + path.split("/").map(encodeURIComponent).join("/") + ".json";
+      }
+
+      function fetchJson(path) {
+        return fetch(firebaseUrl(path), { cache: "no-store" }).then(function (response) {
+          if (!response.ok) throw new Error("정보를 불러오지 못했습니다.");
+          return response.json();
+        });
+      }
+
+      function money(value) {
+        var number = Number(String(value == null ? "" : value).replace(/[^\d.-]/g, ""));
+        if (!Number.isFinite(number) || number < 1000) return 0;
+        return Math.round(number);
+      }
+
+      function moneyText(value) {
+        return money(value) ? money(value).toLocaleString("ko-KR") + "원" : "금액 확인 필요";
+      }
+
+      function quoteAmount(quote, decision) {
+        quote = quote || {};
+        decision = decision || {};
+        return money(
+          quote.confirmedBringTotalAmount ||
+          quote.bringQuoteTotalAmount ||
+          quote.bringTotalAmount ||
+          decision.bringTotalAmount ||
+          quote.confirmedTotalAmount ||
+          quote.totalAmount ||
+          quote.amount
+        );
+      }
+
+      function vendorName(quote, decision) {
+        quote = quote || {};
+        decision = decision || {};
+        return String(
+          quote.resolvedVendorInfo && quote.resolvedVendorInfo.name ||
+          quote.vendor && quote.vendor.name ||
+          quote.vendorName ||
+          quote.extractedVendorName ||
+          decision.vendorName ||
+          ""
+        ).trim() || "업체 확인 필요";
+      }
+
+      function itemName(item) {
+        if (typeof item === "string") return item.trim();
+        item = item || {};
+        return String(item.product || item.name || item.itemName || item.description || item.title || "").trim();
+      }
+
+      function quoteItems(quote) {
+        quote = quote || {};
+        var items = Array.isArray(quote.bringQuoteItems) && quote.bringQuoteItems.length
+          ? quote.bringQuoteItems
+          : (Array.isArray(quote.extractedItems) ? quote.extractedItems : []);
+        var names = items.map(itemName).filter(Boolean);
+        if (!names.length) names.push("견적서의 작업 내용을 확인해 주세요.");
+        if (names.length > 4) {
+          var extra = names.length - 4;
+          names = names.slice(0, 4);
+          names[3] += " 외 " + extra + "건";
+        }
+        return names;
+      }
+
+      function setStatus(text, kind) {
+        status.textContent = text;
+        status.className = "status" + (kind ? " " + kind : "");
+      }
+
+      function showError(message) {
+        loading.classList.add("hidden");
+        approval.classList.remove("hidden");
+        document.querySelector(".content").classList.add("hidden");
+        actions.classList.add("hidden");
+        payment.classList.add("hidden");
+        setStatus(message || "유효하지 않거나 만료된 승인 링크입니다.", "error");
+      }
+
+      function renderOwnerDecision() {
+        var decision = state.ownerDecision || {};
+        amount.textContent = moneyText(state.amount);
+        paymentAmount.textContent = moneyText(state.amount);
+        vendor.textContent = vendorName(state.quote, decision);
+        caseIdEl.textContent = caseId;
+        workItems.innerHTML = quoteItems(state.quote).map(function (name) {
+          var li = document.createElement("li");
+          li.textContent = name;
+          return li.outerHTML;
+        }).join("");
+
+        loading.classList.add("hidden");
+        approval.classList.remove("hidden");
+        document.querySelector(".content").classList.remove("hidden");
+
+        if (decision.status === "approved_payment") {
+          actions.classList.add("hidden");
+          payment.classList.remove("hidden");
+          setStatus("승인이 접수되었습니다. 아래 계좌로 입금을 진행해 주세요.");
+        } else if (decision.status === "request_other_quote") {
+          actions.classList.add("hidden");
+          payment.classList.add("hidden");
+          setStatus("다른 견적 요청이 접수되었습니다. 담당자가 다시 안내드리겠습니다.", "warning");
+        } else {
+          actions.classList.remove("hidden");
+          payment.classList.add("hidden");
+          status.classList.add("hidden");
+        }
+      }
+
+      function loadQuote(decision) {
+        var quoteId = String(decision && decision.quoteId || "").trim();
+        if (quoteId) return fetchJson("cases/" + caseId + "/quoteFiles/" + quoteId);
+        return fetchJson("cases/" + caseId + "/recommendation").then(function (recommendation) {
+          var fallbackQuoteId = String(recommendation && recommendation.quoteId || "").trim();
+          if (!fallbackQuoteId) return null;
+          state.ownerDecision.quoteId = fallbackQuoteId;
+          return fetchJson("cases/" + caseId + "/quoteFiles/" + fallbackQuoteId);
+        });
+      }
+
+      function loadApproval() {
+        if (!caseId && legacyCode) {
+          return fetchJson("ownerDecisionShortLinks/" + legacyCode).then(function (mapping) {
+            caseId = normalizeCaseId(mapping && mapping.caseId || "");
+            if (!caseId) throw new Error("유효하지 않은 승인 링크입니다.");
+            return loadApproval();
+          });
+        }
+        if (!caseId) return Promise.reject(new Error("승인 링크 정보가 올바르지 않습니다."));
+        return fetchJson("cases/" + caseId + "/ownerDecision")
+          .then(function (decision) {
+            if (!decision || !decision.token) throw new Error("유효하지 않거나 만료된 승인 링크입니다.");
+            state.ownerDecision = decision;
+            return loadQuote(decision);
+          })
+          .then(function (quote) {
+            state.quote = quote || {};
+            state.amount = quoteAmount(state.quote, state.ownerDecision);
+            renderOwnerDecision();
+          });
+      }
+
+      function setRunning(running) {
+        state.running = running;
+        Array.prototype.forEach.call(actions.querySelectorAll("button"), function (button) {
+          button.disabled = running;
+        });
+      }
+
+      function pollDecision(expectedStatus, tries) {
+        return fetchJson("cases/" + caseId + "/ownerDecision").then(function (decision) {
+          state.ownerDecision = decision || state.ownerDecision;
+          if (decision && decision.status === expectedStatus) return decision;
+          if (tries <= 0) throw new Error("응답 저장이 지연되고 있습니다. 잠시 후 화면을 새로고침해 주세요.");
+          return new Promise(function (resolve) {
+            window.setTimeout(resolve, 900);
+          }).then(function () {
+            return pollDecision(expectedStatus, tries - 1);
+          });
+        });
+      }
+
+      function submitDecision(decision) {
+        if (state.running) return;
+        var token = String(state.ownerDecision && state.ownerDecision.token || "");
+        if (!token) {
+          setStatus("승인 링크 정보가 없습니다.", "error");
+          return;
+        }
+        var expectedStatus = decision === "approve_payment" ? "approved_payment" : "request_other_quote";
+        setRunning(true);
+        setStatus("응답을 저장하는 중입니다.");
+        fetch(WEB_APP_URL, {
+          method: "POST",
+          mode: "no-cors",
+          keepalive: true,
+          headers: { "Content-Type": "text/plain;charset=utf-8" },
+          body: JSON.stringify({
+            action: "submitOwnerDecision",
+            caseId: caseId,
+            token: token,
+            decision: decision
+          })
+        })
+          .then(function () { return pollDecision(expectedStatus, 20); })
+          .then(function () {
+            setRunning(false);
+            renderOwnerDecision();
+          })
+          .catch(function (error) {
+            setRunning(false);
+            setStatus(error && error.message || "응답 저장에 실패했습니다.", "error");
+          });
+      }
+
+      actions.addEventListener("click", function (event) {
+        var button = event.target.closest("[data-decision]");
+        if (button) submitDecision(button.getAttribute("data-decision"));
+      });
+
+      copyAccount.addEventListener("click", function () {
+        var text = ACCOUNT_NUMBER.replace(/[^\d]/g, "");
+        var done = function () {
+          copyAccount.textContent = "복사되었습니다";
+          window.setTimeout(function () { copyAccount.textContent = "계좌번호 복사"; }, 1600);
+        };
+        if (navigator.clipboard && navigator.clipboard.writeText) {
+          navigator.clipboard.writeText(text).then(done).catch(function () {});
+        } else {
+          var input = document.createElement("textarea");
+          input.value = text;
+          document.body.appendChild(input);
+          input.select();
+          document.execCommand("copy");
+          input.remove();
+          done();
+        }
+      });
+
+      document.getElementById("accountNumber").textContent = ACCOUNT_NUMBER;
+      document.getElementById("accountHolder").textContent = ACCOUNT_HOLDER;
+      loadApproval().catch(function (error) {
+        showError(error && error.message);
+      });
+    }());
+  </script>
+</body>
+</html>
