@@ -1,0 +1,458 @@
+<title>대표자 필수 장착 리스트</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;500;700&family=Noto+Serif+KR:wght@600;700&family=Roboto+Mono:wght@500;600&display=swap">
+<style>
+:root{
+  --paper:#FBFAF7; --card:#FFFFFF; --panel:#F4F2ED; --line:#E6E2D8;
+  --ink:#1B2436; --body:#39414F; --mute:#6B7488;
+  --navy:#12213B; --navy2:#20324F;
+  --gold:#B07A2E; --gold2:#D9A441; --goldsoft:#F3E8CF;
+  --ok:#2E7D5B; --okbg:#E4F1EA; --wait:#8A93A6; --waitbg:#EEF0F4;
+  --shadow:0 1px 2px rgba(18,33,59,.06),0 8px 24px rgba(18,33,59,.06);
+  --radius:14px;
+}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){
+  --paper:#0E1626; --card:#16233C; --panel:#1B2A44; --line:#2A3A57;
+  --ink:#EEF1F6; --body:#C4CBD8; --mute:#8A96AC;
+  --navy:#0A121F; --navy2:#16233C;
+  --gold:#D9A441; --gold2:#E9C879; --goldsoft:#2C2A1E;
+  --ok:#5FCB98; --okbg:#12352A; --wait:#8A96AC; --waitbg:#1E2B42;
+  --shadow:0 1px 2px rgba(0,0,0,.3),0 10px 30px rgba(0,0,0,.35);
+}}
+:root[data-theme="dark"]{
+  --paper:#0E1626; --card:#16233C; --panel:#1B2A44; --line:#2A3A57;
+  --ink:#EEF1F6; --body:#C4CBD8; --mute:#8A96AC;
+  --navy:#0A121F; --navy2:#16233C;
+  --gold:#D9A441; --gold2:#E9C879; --goldsoft:#2C2A1E;
+  --ok:#5FCB98; --okbg:#12352A; --wait:#8A96AC; --waitbg:#1E2B42;
+  --shadow:0 1px 2px rgba(0,0,0,.3),0 10px 30px rgba(0,0,0,.35);
+}
+*{box-sizing:border-box}
+html{-webkit-text-size-adjust:100%}
+body{margin:0;background:var(--paper);color:var(--body);
+  font-family:"Noto Sans KR",system-ui,sans-serif;font-size:15px;line-height:1.65;
+  -webkit-font-smoothing:antialiased}
+.wrap{max-width:1020px;margin:0 auto;padding:0 20px 80px}
+h1,h2,h3{font-family:"Noto Serif KR","Noto Sans KR",serif;color:var(--ink);text-wrap:balance;margin:0}
+.mono{font-family:"Roboto Mono",monospace;font-variant-numeric:tabular-nums}
+
+header{background:
+   radial-gradient(1100px 360px at 80% -14%, rgba(217,164,65,.16), transparent 60%),
+   linear-gradient(180deg,var(--navy) 0%, var(--navy2) 100%);
+  color:#EAF0FA;padding:52px 0 42px;border-bottom:3px solid var(--gold)}
+.eyebrow{font-family:"Roboto Mono",monospace;font-size:12.5px;letter-spacing:.32em;
+  text-transform:uppercase;color:var(--gold2);margin:0 0 14px;font-weight:600}
+header h1{color:#fff;font-size:clamp(28px,4.4vw,42px);line-height:1.18}
+header p.lead{margin:14px 0 0;max-width:60ch;color:#C3CEE0;font-size:16px}
+
+/* pitch callout */
+.pitch{background:linear-gradient(180deg,var(--goldsoft),transparent);
+  border:1px solid var(--gold);border-left:5px solid var(--gold);
+  border-radius:12px;padding:20px 22px;margin:32px 0 8px}
+.pitch .k{font-family:"Roboto Mono",monospace;font-size:11px;letter-spacing:.16em;
+  text-transform:uppercase;color:var(--gold);font-weight:600}
+.pitch p{margin:8px 0 0;color:var(--ink);font-size:16.5px;line-height:1.55;font-weight:500}
+.pitch b{color:var(--gold)}
+
+/* section block */
+.block{margin-top:40px}
+.block > .h{display:flex;align-items:baseline;gap:12px;margin-bottom:4px}
+.block > .h .no{font-family:"Roboto Mono",monospace;font-weight:600;color:var(--gold);font-size:15px}
+.block > .h h2{font-size:22px}
+.block > p.sub{margin:0 0 18px;color:var(--mute);font-size:14px}
+
+/* number dashboard */
+.nums{display:grid;grid-template-columns:repeat(4,1fr);gap:13px}
+.numcard{background:var(--card);border:1px solid var(--line);border-radius:12px;
+  padding:15px 16px;box-shadow:var(--shadow)}
+.numcard label{display:block;font-family:"Roboto Mono",monospace;font-size:10.5px;
+  letter-spacing:.1em;text-transform:uppercase;color:var(--mute);margin-bottom:7px}
+.numcard input{width:100%;border:none;border-bottom:2px solid var(--line);background:transparent;
+  font-family:"Roboto Mono",monospace;font-size:22px;font-weight:600;color:var(--ink);
+  padding:2px 0;font-variant-numeric:tabular-nums}
+.numcard input:focus{outline:none;border-color:var(--gold)}
+.numcard .unit{font-size:12px;color:var(--mute);font-family:"Roboto Mono",monospace}
+.numcard.derived{background:var(--navy);border-color:var(--navy)}
+.numcard.derived label{color:var(--gold2)}
+.numcard.derived .val{font-family:"Roboto Mono",monospace;font-size:22px;font-weight:600;color:#fff}
+.numcard.derived .val small{font-size:12px;color:#9FB0CC;font-weight:500}
+.bepbar{height:7px;border-radius:6px;background:rgba(255,255,255,.15);overflow:hidden;margin-top:9px}
+.bepbar>i{display:block;height:100%;background:linear-gradient(90deg,var(--gold),var(--gold2))}
+
+/* checklist */
+.card{background:var(--card);border:1px solid var(--line);border-radius:var(--radius);
+  box-shadow:var(--shadow);overflow:hidden}
+.grp{border-top:1px solid var(--line)}
+.grp:first-child{border-top:none}
+.grp > .gh{padding:13px 20px 6px;font-family:"Noto Serif KR",serif;font-weight:700;
+  color:var(--ink);font-size:15.5px;background:var(--panel)}
+.chkitem{display:flex;gap:13px;align-items:flex-start;padding:12px 20px;border-top:1px solid var(--line)}
+.chkitem input{margin-top:2px;width:19px;height:19px;flex:none;accent-color:var(--gold);cursor:pointer}
+.chkitem .tx{min-width:0}
+.chkitem .tx b{color:var(--ink);font-weight:700}
+.chkitem.done .tx b{color:var(--mute);text-decoration:line-through;text-decoration-color:var(--line)}
+.chkitem .tx .d{font-size:13px;color:var(--mute);margin-top:2px}
+
+/* Q&A */
+.qa{background:var(--card);border:1px solid var(--line);border-radius:var(--radius);
+  box-shadow:var(--shadow);overflow:hidden}
+.q{border-top:1px solid var(--line);padding:15px 20px}
+.q:first-child{border-top:none}
+.q .qq{font-weight:700;color:var(--ink);display:flex;gap:10px}
+.q .qq .n{font-family:"Roboto Mono",monospace;color:var(--gold);flex:none}
+.q .aa{font-size:13.5px;color:var(--body);margin:6px 0 0 26px;padding-left:12px;border-left:2px solid var(--goldsoft)}
+.q .aa b{color:var(--ink)}
+
+/* routine */
+.rout{display:grid;grid-template-columns:repeat(3,1fr);gap:14px}
+.rcard{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:16px 18px;box-shadow:var(--shadow)}
+.rcard h3{font-size:15px;color:var(--gold);font-family:"Roboto Mono",monospace;letter-spacing:.04em;margin-bottom:9px}
+.rcard ul{margin:0;padding-left:17px}
+.rcard li{margin:5px 0;font-size:13.5px}
+
+/* glossary */
+.gloss{display:grid;grid-template-columns:1fr 1fr;gap:10px 22px}
+.gitem{border-bottom:1px solid var(--line);padding:9px 2px;display:flex;gap:10px;align-items:baseline}
+.gitem .term{font-weight:700;color:var(--ink);flex:none;min-width:96px}
+.gitem .def{font-size:13px;color:var(--mute)}
+
+/* frameworks */
+.fw{display:grid;grid-template-columns:1fr 1fr;gap:13px}
+.fwcard{background:var(--card);border:1px solid var(--line);border-radius:12px;
+  padding:14px 16px;box-shadow:var(--shadow)}
+.fwcard .ft{font-weight:700;color:var(--ink);font-size:14.5px;display:flex;gap:8px;align-items:baseline}
+.fwcard .ft .fn{font-family:"Roboto Mono",monospace;color:var(--gold);font-size:12px;flex:none}
+.fwcard .fd{font-size:12.5px;color:var(--mute);margin-top:5px;line-height:1.55}
+.fwcard .fb{font-size:13px;color:var(--body);margin-top:8px;padding-top:8px;border-top:1px dashed var(--line)}
+.fwcard .fb b{color:var(--gold)}
+/* 6PP step flow */
+.steps{display:grid;grid-template-columns:repeat(3,1fr);gap:13px}
+.step{background:var(--card);border:1px solid var(--line);border-radius:12px;
+  padding:15px 16px;box-shadow:var(--shadow);position:relative;overflow:hidden}
+.step::before{content:"";position:absolute;left:0;top:0;bottom:0;width:4px;background:var(--gold)}
+.step .sn{font-family:"Roboto Mono",monospace;font-size:11px;letter-spacing:.1em;color:var(--gold);font-weight:600}
+.step h3{font-size:15.5px;margin:3px 0 0}
+.step .sq{font-size:12px;color:var(--mute);font-style:italic;margin-top:3px}
+.step .sb{font-size:13px;color:var(--body);margin-top:9px;padding-top:8px;border-top:1px dashed var(--line)}
+.step .sb b{color:var(--ink)}
+/* BMC canvas */
+.bmc{display:grid;grid-template-columns:repeat(4,1fr);gap:10px}
+.bcell{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:12px 13px;box-shadow:var(--shadow)}
+.bcell.tall{grid-row:span 2}
+.bcell.vp{background:var(--navy);border-color:var(--navy)}
+.bcell.vp .bk,.bcell.vp .bv{color:#EAF0FA}
+.bcell.vp .bk{color:var(--gold2)}
+.bcell .bk{font-family:"Roboto Mono",monospace;font-size:10px;letter-spacing:.06em;
+  text-transform:uppercase;color:var(--gold);font-weight:600;margin-bottom:6px}
+.bcell .bv{font-size:12.5px;color:var(--body);line-height:1.5}
+.bcell.wide{grid-column:span 2}
+
+.controls{display:flex;gap:10px;flex-wrap:wrap;margin:22px 0 0}
+.btn{font-family:"Roboto Mono",monospace;font-size:12.5px;cursor:pointer;background:var(--card);
+  color:var(--body);border:1px solid var(--line);border-radius:9px;padding:8px 14px;transition:.15s}
+.btn:hover{border-color:var(--gold);color:var(--ink)}
+.btn:focus-visible{outline:2px solid var(--gold);outline-offset:2px}
+.note{font-size:12.5px;color:var(--mute);margin-top:30px;padding:15px 18px;background:var(--panel);
+  border-radius:12px;border:1px dashed var(--line);line-height:1.7}
+.note b{color:var(--ink)}
+footer{margin-top:42px;padding-top:22px;border-top:1px solid var(--line);
+  font-family:"Roboto Mono",monospace;font-size:12px;color:var(--mute);
+  display:flex;justify-content:space-between;flex-wrap:wrap;gap:10px}
+@media (max-width:760px){.nums{grid-template-columns:repeat(2,1fr)}.rout{grid-template-columns:1fr}.gloss{grid-template-columns:1fr}}
+@media (prefers-reduced-motion:reduce){*{transition:none!important}}
+</style>
+
+<header>
+  <div class="wrap">
+    <p class="eyebrow">Bring · Founder's Essentials</p>
+    <h1>대표자 필수 장착 리스트</h1>
+    <p class="lead">대표라면 <b style="color:#E9C879">머리·손·입</b>에 항상 지니고 있어야 할 것들.
+      외워야 할 숫자, 쥐고 있어야 할 서류, 답할 수 있어야 할 질문, 그리고 <b style="color:#E9C879">책에서 뽑은 전략 프레임워크 15·제안 공식·비즈니스 모델 캔버스</b>까지 브링에 적용해 한 장에 모았습니다.</p>
+  </div>
+</header>
+
+<div class="wrap">
+
+  <div class="pitch">
+    <span class="k">30초 안에 말할 수 있어야 함 · Elevator Pitch</span>
+    <p>“브링케어는 원주 소형 임대건물을 <b>권역 단위로 묶어 공동관리</b>하는 회사입니다.
+      혼자 관리하면 15만 원, 함께 관리하면 <b>8.9만 원</b>. 이미 <b>7동</b>을 관리하고 있고,
+      ValueScope로 원주 <b>다가구 5,129동</b> 데이터를 쥐고 있습니다. <b>35~40동</b>이면 손익분기입니다.”</p>
+  </div>
+
+  <!-- 1. 숫자판 -->
+  <div class="block">
+    <div class="h"><span class="no">01</span><h2>머리에 항상 있어야 할 숫자</h2></div>
+    <p class="sub">대표는 이 숫자를 안 보고도 말할 수 있어야 합니다. 값을 채우면 자동 저장돼요 — 매주 갱신하세요.</p>
+    <div class="nums">
+      <div class="numcard"><label>현금 잔고 (만원)</label><input id="cash" inputmode="numeric" placeholder="0"><span class="unit">지금 통장에</span></div>
+      <div class="numcard"><label>월 고정비 (만원)</label><input id="burn" inputmode="numeric" placeholder="0"><span class="unit">매달 나가는 돈</span></div>
+      <div class="numcard"><label>이번 달 매출 (만원)</label><input id="rev" inputmode="numeric" placeholder="0"><span class="unit">MRR</span></div>
+      <div class="numcard"><label>관리 동 수</label><input id="units" inputmode="numeric" placeholder="7"><span class="unit">현재 운영</span></div>
+      <div class="numcard derived"><label>런웨이</label><div class="val" id="runway">—<small> 개월</small></div><span class="unit" style="color:#9FB0CC">현금 ÷ 고정비</span></div>
+      <div class="numcard derived"><label>BEP까지 남은 동</label><div class="val" id="bepleft">—<small> 동</small></div>
+        <div class="bepbar"><i id="bepbar" style="width:0"></i></div></div>
+      <div class="numcard"><label>내 지분율 (%)</label><input id="equity" inputmode="numeric" placeholder="0"><span class="unit">Cap Table</span></div>
+      <div class="numcard"><label>동당 관리비 (원)</label><input id="price" inputmode="numeric" placeholder="89000"><span class="unit">공동관리 확정가</span></div>
+    </div>
+    <p class="sub" style="margin-top:12px">기준: BEP <b>37동</b>(35~40 중앙값) · 공동관리 확정가 89,000원/동 · 현재 7동. 값은 실제로 갱신해 쓰세요.</p>
+  </div>
+
+  <!-- 2. 서류/자산 -->
+  <div class="block">
+    <div class="h"><span class="no">02</span><h2>손에 쥐고 있어야 할 서류·자산</h2></div>
+    <p class="sub">투자자·기관·거래처가 “보여달라” 하면 즉시 꺼낼 수 있어야 하는 것들. 체크는 자동 저장됩니다.</p>
+    <div class="card" id="docs"></div>
+  </div>
+
+  <!-- 3. 투자자 킬러 질문 -->
+  <div class="block">
+    <div class="h"><span class="no">03</span><h2>언제든 답할 수 있어야 할 질문</h2></div>
+    <p class="sub">투자자·심사위원이 반드시 던지는 질문. 막히면 신뢰가 무너집니다 — 답의 뼈대를 미리.</p>
+    <div class="qa" id="qa"></div>
+  </div>
+
+  <!-- 4. 전략 프레임워크 -->
+  <div class="block">
+    <div class="h"><span class="no">04</span><h2>손에 쥐어야 할 전략 프레임워크</h2></div>
+    <p class="sub">『경영전략 비즈니스 프레임워크 15도구』에서 — 각 도구의 한 줄 뜻과 <b style="color:var(--gold)">브링 적용</b>을 붙였습니다.</p>
+    <div class="fw" id="fw"></div>
+  </div>
+
+  <!-- 5. 6PP 제안 공식 -->
+  <div class="block">
+    <div class="h"><span class="no">05</span><h2>설득·제안의 공식 (6단계, 6PP)</h2></div>
+    <p class="sub">『제안서의 정석』의 6PP — Why→What→How→If. 브링 <b style="color:var(--gold)">건물주 제안서</b>가 정확히 이 골격입니다.</p>
+    <div class="steps" id="steps"></div>
+  </div>
+
+  <!-- 6. BMC -->
+  <div class="block">
+    <div class="h"><span class="no">06</span><h2>비즈니스 모델 캔버스 (브링 실제본)</h2></div>
+    <p class="sub">BMC 9블록에 브링을 채웠습니다 — “우리 사업이 한 장에” 담긴 지도. 투자·전략 회의의 기본판.</p>
+    <div class="bmc" id="bmc"></div>
+  </div>
+
+  <!-- 7. 대표 루틴 -->
+  <div class="block">
+    <div class="h"><span class="no">07</span><h2>대표가 돌려야 할 루틴</h2></div>
+    <p class="sub">숫자와 서류는 ‘관리’해야 살아있습니다. 대표의 정기 리듬.</p>
+    <div class="rout">
+      <div class="rcard"><h3>주간 (WEEKLY)</h3><ul>
+        <li>현금 잔고·런웨이 확인</li>
+        <li>영업 파이프라인 갱신(문의→견적→계약)</li>
+        <li>신규/해지 동 수 점검</li>
+        <li>미수금·지출 결제 캘린더 확인</li></ul></div>
+      <div class="rcard"><h3>월간 (MONTHLY)</h3><ul>
+        <li>매출·비용·손익 마감(세무 연계)</li>
+        <li>동당 유닛 이코노믹스 재계산</li>
+        <li>KPI 스코어카드(체계도) 갱신</li>
+        <li>정책자금·공고 마감일 점검</li></ul></div>
+      <div class="rcard"><h3>분기 (QUARTERLY)</h3><ul>
+        <li>재무모델·런웨이 시나리오 갱신</li>
+        <li>데이터룸·IR 최신화</li>
+        <li>인력계획(FTE) 재검토</li>
+        <li>지분·계약·IP 변동 반영</li></ul></div>
+    </div>
+  </div>
+
+  <!-- 5. 용어 -->
+  <div class="block">
+    <div class="h"><span class="no">08</span><h2>대표가 알아야 할 필수 용어</h2></div>
+    <p class="sub">회의·심사에서 그냥 나오는 말들. 뜻을 알고 써야 대표로 보입니다.</p>
+    <div class="gloss" id="gloss"></div>
+  </div>
+
+  <div class="controls">
+    <button class="btn" id="reset">체크·숫자 초기화</button>
+  </div>
+
+  <div class="note">
+    <b>쓰는 법.</b> 01 숫자판은 매주 직접 갱신하는 <b>대표 계기판</b>입니다(브라우저에 자동 저장, 이 기기에서만).
+    04~06(프레임워크·6PP·BMC)은 <b>『경영전략 프레임워크 15도구』·『제안서의 정석』</b>에서 뽑아 브링에 적용한 것입니다.
+    나머지는 참고·체크용. 이 리스트는 <b>‘사업 기본기 구축 로드맵’</b>의 대표 개인용 짝입니다 — 로드맵이 ‘회사가 갖출 것’이라면, 이건 ‘대표가 장착할 것’입니다.
+  </div>
+
+  <footer>
+    <span>BRING ENGINEERING · Founder's Essentials v1.1</span>
+    <span>정리 2026-08 · 대표 서창환</span>
+  </footer>
+</div>
+
+<script>
+const DOCS=[
+ {g:"신분·법인 기본",items:[
+   ["사업자등록증 / (법인 전환 후) 법인등기부등본","거래·계약·지원사업 모든 서류의 기본. 최신본 상시 보관."],
+   ["법인 인감 + 인감증명서 / 사용인감계","계약·투자·대출의 서명 도구. 보관·사용대장 관리."],
+   ["법인 통장·법인카드","개인 자금과 분리된 회사 돈. 재무 신뢰의 출발."],
+   ["정관","회사의 헌법. 사업목적·주식·의결 규정."],
+ ]},
+ {g:"지분·투자",items:[
+   ["주주명부 · 지분테이블(Cap Table)","누가 몇 % 갖는지. 투자 심사 1순위 서류."],
+   ["주주간계약(SHA)","공동창업 리스크 방어 — 베스팅·경업금지·이전제한."],
+   ["재무제표 / 3~5개년 재무모델","실적과 계획을 숫자로. 밸류·심사의 근거."],
+   ["IR 덱 · 사업계획서","이미 초안 보유 — 최신 숫자로 유지."],
+ ]},
+ {g:"영업·운영",items:[
+   ["표준계약서 철(관리위탁·중개)","책임경계·SLA를 문서로. 분쟁 방어."],
+   ["요금표 · 서비스 규격","공동관리 89,000원/동 등 확정가(MASTER 기준)."],
+   ["운영매뉴얼 · 현장 체크리스트 3종","이미 보유 — 위임운영의 근거."],
+   ["실적 레퍼런스(7동·전후사진·완료보고)","‘말이 아니라 현장’ 증빙."],
+ ]},
+ {g:"권리·법무 방어선",items:[
+   ["상표·SW저작권·(특허) 출원 서류","브랜드·기술을 남이 못 가져가게."],
+   ["개인정보처리방침 · 이용약관","건물주·임차인 정보 취급 — 법적 필수."],
+   ["4대보험·근로계약 서류","정식 고용관계·지원사업 요건."],
+   ["데이터룸(문서 인덱스)","위 서류를 한 곳에. 투자 시 즉시 공유."],
+ ]},
+];
+const QA=[
+ ["뭐 하는 회사예요? (한 문장)","원주 소형 임대건물을 <b>권역 단위로 공동관리</b>하는 회사. ‘혼자 15만, 함께 8.9만’."],
+ ["돈은 어떻게 벌어요?","동당 <b>월 89,000원</b> 관리비 + 전문작업 <b>5% 마크업</b> + 청소·입퇴실. 동 수가 곧 매출."],
+ ["언제 흑자예요?","<b>35~40동</b>이 손익분기(BEP). 현재 7동 → BEP까지 남은 동이 목표."],
+ ["돈 얼마 필요하고 어디 써요?","초기 CAPEX <b>2,000~4,300만</b>(차량·장비·IT·법인·IP) + 운영 버퍼. 조달 목적은 동 수 확장."],
+ ["몇 명이 하는 거예요?","서창환(영업·현장)/현진(개발·자동화)/우중(하드웨어·IoT). 1인 관리용량 검증 후 단계 채용."],
+ ["왜 지금이에요?","관리 공백 시장 + <b>ValueScope 데이터(5,129동)</b>로 진입장벽. 좁은 시장(우산동) 독점 후 확장."],
+ ["왜 당신들이 이겨요?","현장 실적 + 자체 데이터·시스템(Building OS). 청소업체가 아니라 <b>데이터 기반 운영사</b>."],
+ ["시장 규모는요?","SAM 원주 다가구 5,129동·26,825세대(확정). 전국 TAM은 <b>[검증 후 제시]</b> — 함부로 부풀리지 않음."],
+ ["경쟁사는요?","소형 건물 통합 운영·데이터 플랫폼은 사실상 부재. 개별 청소·중개·관리로 분산돼 있음."],
+ ["다음 6개월 목표는요?","신규 계약 동 수·통합관리 전환, BEP 근접. 로드맵 P0(법인·지분·IP) 완료."],
+];
+const GLOSS=[
+ ["BM","수익모델 — 어떻게 버는지의 구조"],
+ ["BEP","손익분기점 — 흑자 전환 지점(브링 35~40동)"],
+ ["MRR","월 반복매출 — 매달 꾸준히 들어오는 돈"],
+ ["런웨이","현금으로 버티는 개월 수(현금÷고정비)"],
+ ["번레이트","매달 태우는 현금(고정비)"],
+ ["유닛 이코노믹스","1단위(동)당 벌고 쓰는 손익 구조"],
+ ["CAPEX","자본적 지출 — 차량·장비 등 자산 투자"],
+ ["OPEX","운영비 — 매달 나가는 비용"],
+ ["회수기간","넣은 돈이 돌아오는 기간(Payback)"],
+ ["Cap Table","지분테이블 — 누가 몇 % 갖는지"],
+ ["베스팅","지분을 근속에 따라 나눠 확정하는 장치"],
+ ["FTE","전임환산 인원 — 실제 몇 명분의 일"],
+ ["TAM·SAM·SOM","전체·유효·획득가능 시장 규모"],
+ ["CAC / LTV","고객 획득비용 / 고객 생애가치"],
+ ["Term Sheet","투자 조건 요약서(구속력 있는 초안)"],
+ ["실사(DD)","투자 전 서류·실적 검증 절차"],
+ ["데이터룸","실사용 서류를 모아둔 공간"],
+ ["희석","신규 투자로 기존 지분% 줄어드는 것"],
+ ["Runway 연장","비용절감·매출·조달로 생존기간 늘리기"],
+ ["엑시트","투자 회수(매각·IPO 등)"],
+];
+
+const FW=[
+ ["3C 분석","고객·경쟁사·자사 세 관점으로 균형 잡힌 전략을 세우는 도구.","고객=건물주 / 경쟁=개별 청소·중개 / 자사=데이터·시스템. 자사만의 위치를 잡는다."],
+ ["SWOT","강점·약점(내부)과 기회·위협(외부)을 조합해 전략 도출.","S 실적·데이터 · W 개인사업자·소자본 · O 관리공백·정책자금 · T 규제·대형사 진입."],
+ ["PEST","정치·경제·사회·기술의 거시환경을 읽는 도구.","정책자금·부동산규제 / 금리·공실 / 1인가구·고령 임대인 / AI·IoT."],
+ ["5 Forces","진입·대체·공급자·구매자·경쟁으로 시장 매력도 평가.","진입장벽=데이터 / 대체재=건물주 직접관리 / 구매자=건물주 교섭력을 본다."],
+ ["가치사슬","활동을 사슬로 이어 어디서 가치가 나는지 파악.","관리→퇴실→청소·수리→공실준비→임대→입주. 이 사이클이 브링의 가치사슬."],
+ ["7S","전략·조직·시스템+가치관·기술·인재·문화의 정합성 점검.","소자본 3인 팀의 전략과 조직·시스템·인재가 서로 맞물리는지 점검."],
+ ["VRIO","자원이 가치·희소·모방난이·조직화 되었는지로 우위 판정.","ValueScope 데이터(5,129동)가 4조건을 충족 → 지속 경쟁우위인지 판정."],
+ ["본원적 전략","원가우위·차별화·집중화 중 무엇으로 이길지.","좁은 시장(우산동) 집중화 + 데이터 기반 차별화."],
+ ["BCG 매트릭스","성장률×점유율로 사업 포트폴리오 배치.","관리·청소·중개·데이터 사업을 성장·점유 기준으로 자원 배분."],
+ ["GE 매트릭스","산업매력도×사업강점 3×3으로 투자처 결정.","권역별(동별 다가구 수) 매력도×강점으로 진입 우선순위."],
+ ["Ansoff","시장×제품(기존/신규)으로 성장 경로 설계.","우산동 침투 → 인접 권역 확장 → 숙박업 등 신사업."],
+ ["BSC","재무·고객·프로세스·학습 4관점 균형 성과관리.","체계도 KPI 스코어카드가 이 4관점 구조와 연결됨."],
+ ["블루오션","경쟁 없는 새 시장을 창출하는 전략.","청소업 레드오션 탈출 → ‘데이터 기반 지역 공동관리’ 신시장."],
+ ["핵심역량","모방 어려운 고유 강점으로 지속 우위 구축.","현장실적 + 자체데이터 + 운영시스템 = 브링의 핵심역량."],
+ ["BM 캔버스","비즈니스 모델을 9블록으로 시각화(아래 06 참조).","브링 실제본은 06번 섹션에서 확인."],
+];
+const STEPS=[
+ ["1 · Why","문제","“왜 내가 들어야 하나?”","건물주가 <b>공실·퇴실·수리·민원</b>을 혼자 감당하는 현실. 공실=손실."],
+ ["2 · Why so","원인","“그게 왜 생겨?”","<b>관리의 단절</b>(청소·수리·중개 따로) + 규모의 이점 없음."],
+ ["3 · What","해결","“그래서 뭐?”","<b>지역 공동관리 Zone</b> — “우산동을 하나의 단지처럼” 묶어 운영."],
+ ["4 · What else","비교우위","“다른 것도 많잖아?”","직접관리 대비 <b>시간·리스크·데이터·책임경계</b> 우위(3가지)."],
+ ["5 · How","진행·요금","“어떻게 하면 돼?”","서비스 사이클 + <b>공동관리 89,000원/동</b>(실작업비 별도)."],
+ ["6 · If","성과·+α","“꼭 해야 돼? 더 없어?”","공실↓·부담↓·자산가치 유지 + <b>실적 7동</b> 레퍼런스로 신뢰."],
+];
+const BMC=[
+ ["핵심 파트너","청소·수리 전문업체 · 공인중개사(786곳) · IoT/하드웨어(우중) · 건물주",""],
+ ["주요 활동","정기점검(월2회)·공실 워크플로·민원 케이스(①~⑰) 처리·중개·데이터 축적",""],
+ ["가치 제안","“혼자 15만, 함께 8.9만.” 권역 공동관리로 공실부터 관리까지 한 곳에서 끊김 없이 대행","vp"],
+ ["고객 관계","전담 관리 · 알림톡 리포트 · 전후 사진 · 정기점검·완료보고",""],
+ ["고객 세그먼트","원주 소형 임대건물(원룸·다가구) 건물주 — 공실·관리 부담을 가진 개인 임대인",""],
+ ["핵심 자원","ValueScope 데이터(5,129동) · 운영시스템(Building OS/FM) · 현장팀 · 실적 7동",""],
+ ["채널","네이버 플레이스·카카오채널·당근 비즈 · 현장 영업(중개사) · 건물주 제안서",""],
+ ["비용 구조","인건비 · 이동/차량 · 시스템·서버 · 마케팅 (고정비 → BEP 35~40동)","wide"],
+ ["수익 흐름","공동관리 89,000원/동 · 개별 15만 · 청소 · 전문작업 5% 마크업 · 중개보수","wide"],
+];
+
+const K="bring_founder_v1";
+const store={get(){try{return JSON.parse(localStorage.getItem(K))||{}}catch(e){return{}}},
+  set(v){try{localStorage.setItem(K,JSON.stringify(v))}catch(e){}}};
+let S=store.get();
+
+// number dashboard
+const NF=["cash","burn","rev","units","equity","price"];
+function num(id){const v=parseFloat((S[id]||"").toString().replace(/[^0-9.]/g,""));return isNaN(v)?null:v}
+function recalc(){
+  const cash=num("cash"),burn=num("burn"),units=num("units");
+  const rw=(cash!=null&&burn)?Math.floor(cash/burn):null;
+  document.getElementById("runway").innerHTML=(rw!=null?rw:"—")+'<small> 개월</small>';
+  const BEP=37, u=units!=null?units:0;
+  const left=Math.max(0,BEP-u);
+  document.getElementById("bepleft").innerHTML=(units!=null?left:"—")+'<small> 동</small>';
+  document.getElementById("bepbar").style.width=Math.min(100,u/BEP*100)+"%";
+}
+NF.forEach(id=>{const el=document.getElementById(id);if(!el)return;
+  if(S[id]!=null)el.value=S[id];
+  el.addEventListener("input",()=>{S[id]=el.value;store.set(S);recalc();});});
+recalc();
+
+// docs checklist
+const dbox=document.getElementById("docs");
+DOCS.forEach((grp,gi)=>{
+  const g=document.createElement("div");g.className="grp";
+  g.innerHTML=`<div class="gh">${grp.g}</div>`;
+  grp.items.forEach((it,ii)=>{
+    const id="d"+gi+"_"+ii, on=!!S[id];
+    const l=document.createElement("label");l.className="chkitem"+(on?" done":"");
+    l.innerHTML=`<input type="checkbox" ${on?"checked":""}>
+      <span class="tx"><b>${it[0]}</b><span class="d">${it[1]}</span></span>`;
+    l.querySelector("input").addEventListener("change",e=>{
+      S[id]=e.target.checked;store.set(S);l.classList.toggle("done",e.target.checked);});
+    g.appendChild(l);
+  });
+  dbox.appendChild(g);
+});
+
+// qa
+const qbox=document.getElementById("qa");
+QA.forEach((q,i)=>{const d=document.createElement("div");d.className="q";
+  d.innerHTML=`<div class="qq"><span class="n">Q${i+1}</span><span>${q[0]}</span></div>
+    <div class="aa">${q[1]}</div>`;qbox.appendChild(d);});
+
+// glossary
+const gb=document.getElementById("gloss");
+GLOSS.forEach(g=>{const d=document.createElement("div");d.className="gitem";
+  d.innerHTML=`<span class="term">${g[0]}</span><span class="def">${g[1]}</span>`;gb.appendChild(d);});
+
+// frameworks
+const fwb=document.getElementById("fw");
+FW.forEach((f,i)=>{const d=document.createElement("div");d.className="fwcard";
+  d.innerHTML=`<div class="ft"><span class="fn">${String(i+1).padStart(2,"0")}</span><span>${f[0]}</span></div>
+    <div class="fd">${f[1]}</div><div class="fb"><b>브링 적용 ▸</b> ${f[2]}</div>`;
+  fwb.appendChild(d);});
+
+// 6PP steps
+const sb=document.getElementById("steps");
+STEPS.forEach(s=>{const d=document.createElement("div");d.className="step";
+  d.innerHTML=`<div class="sn">${s[0]}</div><h3>${s[1]}</h3><div class="sq">${s[2]}</div>
+    <div class="sb">${s[3]}</div>`;sb.appendChild(d);});
+
+// BMC
+const bb=document.getElementById("bmc");
+BMC.forEach(c=>{const d=document.createElement("div");
+  let cls="bcell";if(c[2]==="vp")cls+=" vp wide";if(c[2]==="wide")cls+=" wide";
+  d.className=cls;d.innerHTML=`<div class="bk">${c[0]}</div><div class="bv">${c[1]}</div>`;
+  bb.appendChild(d);});
+
+document.getElementById("reset").onclick=()=>{if(confirm("숫자와 체크를 모두 초기화할까요?")){
+  S={};store.set(S);NF.forEach(id=>{const e=document.getElementById(id);if(e)e.value="";});
+  document.querySelectorAll("#docs input").forEach(c=>c.checked=false);
+  document.querySelectorAll("#docs .chkitem").forEach(c=>c.classList.remove("done"));
+  recalc();}};
+</script>

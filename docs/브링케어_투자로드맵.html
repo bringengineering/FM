@@ -1,0 +1,283 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>브링케어 투자유치 로드맵 v1.0</title>
+<style>
+  :root{
+    --bg:#0a0e1a; --panel:#121829; --panel2:#1a2138; --line:#2a3350;
+    --text:#e6ebf5; --dim:#8b96b0; --faint:#5c6580;
+    --warn:#f0a132; --good:#4ade80; --bad:#d98a8a; --part:#d9b45a;
+    --p0:#a78bfa; --p1:#2dd4bf; --p2:#fb923c; --p3:#4ade80;
+    --gapbg:#2a1a1a; --gapline:#6b3535;
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0}
+  body{background:var(--bg);color:var(--text);
+    font:14px/1.65 "Pretendard","Malgun Gothic",-apple-system,sans-serif;
+    -webkit-font-smoothing:antialiased;padding:0 0 80px}
+  .wrap{max-width:940px;margin:0 auto;padding:0 20px}
+  a{color:#8ab4f8}
+
+  /* header */
+  header{background:linear-gradient(180deg,#1b2540,#0d1324);border-bottom:1px solid var(--line);
+    padding:34px 0 26px;margin-bottom:8px}
+  header h1{margin:0 0 6px;font-size:26px;letter-spacing:-.3px}
+  header h1 small{color:var(--faint);font-size:14px;font-weight:400;margin-left:8px}
+  header .sub{color:var(--dim);font-size:13.5px}
+  header .meta{margin-top:12px;display:flex;flex-wrap:wrap;gap:8px}
+  .chip{font-size:12px;padding:4px 10px;border-radius:20px;background:var(--panel2);
+    border:1px solid var(--line);color:var(--dim);white-space:nowrap}
+  .chip b{color:var(--text)}
+
+  section{margin-top:30px}
+  h2{font-size:12px;letter-spacing:1px;text-transform:uppercase;color:var(--faint);
+    border-bottom:1px solid var(--line);padding-bottom:7px;margin:0 0 15px;font-weight:700}
+  h2 span{color:var(--dim);text-transform:none;letter-spacing:0;font-weight:400;font-size:12px;margin-left:6px}
+
+  .card{background:var(--panel);border:1px solid var(--line);border-radius:11px;padding:16px 18px;margin-bottom:12px}
+  .lead{background:linear-gradient(180deg,rgba(167,139,250,.08),rgba(0,0,0,.05));border-color:#3a3466}
+  .lead p{margin:0 0 10px}.lead p:last-child{margin:0}
+  .lead b{color:#c4b5fd}
+
+  /* stat row */
+  .stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px}
+  .stat{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:13px 15px}
+  .stat .n{font-size:22px;font-weight:700;font-variant-numeric:tabular-nums;letter-spacing:-.5px}
+  .stat .l{font-size:11.5px;color:var(--dim);margin-top:2px}
+  .stat.neg .n{color:var(--bad)} .stat.pos .n{color:var(--good)}
+
+  /* gap table */
+  table{width:100%;border-collapse:collapse;font-size:13px}
+  th{text-align:left;color:var(--faint);font-size:11px;font-weight:600;padding:0 8px 8px;border-bottom:1px solid var(--line)}
+  td{padding:9px 8px;border-bottom:1px solid rgba(42,51,80,.55);vertical-align:top}
+  tr:last-child td{border-bottom:0}
+  td.cond{color:var(--text)} td.goal{color:var(--dim);white-space:nowrap;font-variant-numeric:tabular-nums}
+  td.now{color:var(--faint)}
+  .badge{display:inline-block;font-size:10.5px;padding:2px 8px;border-radius:20px;white-space:nowrap;border:1px solid}
+  .b-none{color:var(--bad);border-color:var(--gapline);background:rgba(107,53,53,.16)}
+  .b-part{color:var(--part);border-color:#5c4820;background:rgba(92,72,32,.16)}
+  .b-have{color:var(--good);border-color:#2f5540;background:rgba(47,85,64,.16)}
+
+  /* phase timeline */
+  .phase{position:relative;padding:16px 18px 16px 22px;background:var(--panel);border:1px solid var(--line);
+    border-radius:11px;margin-bottom:14px;border-left-width:4px}
+  .phase.p0{border-left-color:var(--p0)} .phase.p1{border-left-color:var(--p1)}
+  .phase.p2{border-left-color:var(--p2)} .phase.p3{border-left-color:var(--p3)}
+  .phase .ph{display:flex;align-items:baseline;gap:10px;flex-wrap:wrap;margin-bottom:4px}
+  .phase .tag{font-size:12px;font-weight:700;padding:2px 9px;border-radius:6px;color:#0a0e1a}
+  .p0 .tag{background:var(--p0)} .p1 .tag{background:var(--p1)} .p2 .tag{background:var(--p2)} .p3 .tag{background:var(--p3)}
+  .phase h3{margin:0;font-size:16px}
+  .phase .when{margin-left:auto;font-size:12px;color:var(--faint)}
+  .phase .aim{color:var(--dim);font-size:13px;margin:2px 0 11px}
+  .phase .gate{background:var(--panel2);border:1px solid var(--line);border-radius:8px;padding:9px 12px;font-size:12.5px;margin-bottom:10px}
+  .phase .gate b{color:var(--warn)}
+  .cols{display:grid;grid-template-columns:1fr 1fr;gap:14px}
+  @media(max-width:640px){.cols{grid-template-columns:1fr}}
+  .cols h4{margin:0 0 6px;font-size:11px;text-transform:uppercase;letter-spacing:.4px;color:var(--faint)}
+  ul{margin:0;padding-left:17px} li{margin-bottom:4px;color:var(--dim)} li b{color:var(--text);font-weight:600}
+
+  /* checklist */
+  .chk{display:flex;gap:10px;padding:10px 0;border-bottom:1px solid rgba(42,51,80,.5)}
+  .chk:last-child{border-bottom:0}
+  .chk .box{flex:0 0 auto;width:16px;height:16px;border:1.5px solid var(--gapline);border-radius:4px;margin-top:2px}
+  .chk .tx{flex:1}.chk .tx b{color:var(--text)}
+  .chk .who{flex:0 0 auto;font-size:11px;color:var(--faint);align-self:center}
+  .chk .tx em{font-style:normal;color:var(--faint);font-size:12px;display:block;margin-top:1px}
+
+  .ask{display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:10px;margin-bottom:12px}
+  .ask .stat .n{color:#c4b5fd}
+  .risk{border-left:3px solid var(--gapline)}
+  .risk b{color:var(--bad)}
+  .foot{margin-top:34px;color:var(--faint);font-size:12px;border-top:1px solid var(--line);padding-top:14px}
+  .note{color:var(--faint);font-size:12px;margin-top:6px}
+</style>
+</head>
+<body>
+
+<header><div class="wrap">
+  <h1>브링케어 투자유치 로드맵 <small>v1.0</small></h1>
+  <div class="sub">브링엔지니어링 · 대표 서창환 · 원주 소형 임대건물 지역 공동관리 (Building OS)</div>
+  <div class="meta">
+    <span class="chip">기준일 <b>2026-08-21</b></span>
+    <span class="chip">현재 단계 <b>S0 · 6동</b></span>
+    <span class="chip">목표 라운드 <b>기업가치 9억 · 지분 10% · 1억</b></span>
+    <span class="chip">근거 <b>MASTER_CONTEXT · 체계도 v1.3</b></span>
+  </div>
+</div></header>
+
+<div class="wrap">
+
+<section>
+  <h2>한 장 요약</h2>
+  <div class="card lead">
+    <p><b>지금은 투자 라운드가 아니라 '증거'를 만드는 구간이다.</b> 6동의 실제 단위경제(1인 55동·업무시간 90분·실수령 8만원)는 아직 <b>가정</b>이고, 모델은 정교하지만 실적표가 비어 있다. 투자자는 "규모를 키우겠다"가 아니라 <b>"작게 검증했다"</b>를 산다.</p>
+    <p>경로는 명확하다 — <b>S0(검증)</b> → <b>S1(BEP 35~40동)</b> → <b>S2(투자·100동)</b> → <b>S3(춘천 확장)</b>. 각 단계는 감정이 아니라 <b>숫자 게이트</b>로 넘어간다. 이 문서는 그 게이트와 다음 90일에 할 일을 정리한 것이다.</p>
+    <p>투자의 실체는 두 가지다 — ① <b>원주에서 검증된 운영 기준</b>(매뉴얼 v1.0 + 대표 없이 운영 80%), ② <b>남이 못 가진 지역 데이터 해자</b>(ValueScope: 원주 24,933건·영업지도·밸류업 실증). 이 둘이 서면 지분 10%에 1억은 방어 가능한 협상이 된다.</p>
+  </div>
+</section>
+
+<section>
+  <h2>1. 현재 위치 <span>2026-08 스냅샷</span></h2>
+  <div class="stats">
+    <div class="stat"><div class="n">7동</div><div class="l">건물관리 계약</div></div>
+    <div class="stat"><div class="n">7곳</div><div class="l">공용부 정기청소</div></div>
+    <div class="stat"><div class="n">10건+</div><div class="l">입주청소</div></div>
+    <div class="stat"><div class="n">12건</div><div class="l">수리·유지보수</div></div>
+    <div class="stat neg"><div class="n">-250만</div><div class="l">월 현금흐름 (6동, 대표급여 0 기준)</div></div>
+    <div class="stat"><div class="n">v0.9</div><div class="l">운영매뉴얼 (v1.0 미승인)</div></div>
+  </div>
+  <p class="note">★ 실적은 실재하나 <b>단위경제가 미검증</b>. "실제 현장에서 만들고 있는 관리체계" — 말이 아니라 숫자로 증명하는 것이 이 로드맵의 목적.</p>
+</section>
+
+<section>
+  <h2>2. 투자 통과조건 7 <span>현재 vs 목표 — 지금 숫자로 답할 수 있는 건 거의 없다</span></h2>
+  <div class="card">
+    <table>
+      <thead><tr><th style="width:34%">통과조건</th><th style="width:24%">목표</th><th>현재</th><th style="width:64px"></th></tr></thead>
+      <tbody>
+        <tr><td class="cond">등록 건물 수 (원주)</td><td class="goal">80~100동</td><td class="now">7동</td><td><span class="badge b-part">진행</span></td></tr>
+        <tr><td class="cond">연매출</td><td class="goal">1.7~2억</td><td class="now">미달 (신규 월고정 목표 50만+)</td><td><span class="badge b-none">미달</span></td></tr>
+        <tr><td class="cond">영업이익률</td><td class="goal">15~18%</td><td class="now">적자 (-250만/월)</td><td><span class="badge b-none">미달</span></td></tr>
+        <tr><td class="cond">운영 실적 기간</td><td class="goal">6~12개월</td><td class="now">누적 시작 단계</td><td><span class="badge b-part">진행</span></td></tr>
+        <tr><td class="cond">대표 없이 운영</td><td class="goal">80~90%</td><td class="now">미측정</td><td><span class="badge b-none">미측정</span></td></tr>
+        <tr><td class="cond">춘천 사전계약</td><td class="goal">10~20동</td><td class="now">0</td><td><span class="badge b-none">미착수</span></td></tr>
+        <tr><td class="cond">해지율</td><td class="goal">2% 이하</td><td class="now">미측정</td><td><span class="badge b-none">미측정</span></td></tr>
+      </tbody>
+    </table>
+  </div>
+  <p class="note">7개 중 5개가 "실제 입력 필요/미측정". <b>이 표를 채우는 것이 곧 투자 준비다.</b></p>
+</section>
+
+<section>
+  <h2>3. 단계 로드맵 <span>S0 → S3 · 각 단계는 숫자 게이트로 넘어간다</span></h2>
+
+  <div class="phase p0">
+    <div class="ph"><span class="tag">S0 → S1</span><h3>증거 만들기</h3><span class="when">지금 ~ 약 3개월</span></div>
+    <div class="aim">단위경제를 가정에서 사실로. 100동 계획보다 6동 원가가 먼저다.</div>
+    <div class="gate"><b>졸업 게이트</b> — 6동 실측 <b>6/6</b> 완료 · 8주 타임로그 완료 · 매뉴얼 <b>v1.0 승인</b>(현장 30~100건) · 대표 없이 운영비율 <b>측정 시작</b></div>
+    <div class="cols">
+      <div><h4>핵심 과제</h4><ul>
+        <li><b>6동 실적표</b> 채우기 (계약서·통장 기준)</li>
+        <li><b>8주 타임로그</b> — 1인 55동·업무시간 90분 검증</li>
+        <li><b>월 실제 현금적자</b> 확정 (대표급여 반영 시나리오)</li>
+        <li>공실 시계·완료의 정의 준수율 측정 시작</li>
+      </ul></div>
+      <div><h4>검증 지표</h4><ul>
+        <li>실수령 단가 <b>8만원↑</b> 실측</li>
+        <li>공용부 결합률 <b>70%</b> 실측</li>
+        <li>월 점검 횟수 문서 일치 (89,000원 원가 근거)</li>
+        <li>현장 누적 <b>30~100건</b> 도달</li>
+      </ul></div>
+    </div>
+  </div>
+
+  <div class="phase p1">
+    <div class="ph"><span class="tag">S1</span><h3>신뢰받는 운영 · BEP 도달</h3><span class="when">약 3 ~ 9개월</span></div>
+    <div class="aim">검증된 기준으로 계약을 늘려 손익분기(35~40동)로.</div>
+    <div class="gate"><b>졸업 게이트</b> — 등록 <b>BEP 35~40동</b> 근접 · 신규 월고정매출 <b>50만+</b> · 해지율 관리 시작 · 통합관리 Zone 1~2개 가동</div>
+    <div class="cols">
+      <div><h4>핵심 과제</h4><ul>
+        <li>신규계약 <b>5동+</b> (성공 시 8~10동)</li>
+        <li>지역 공동관리 Zone 실제 가동 (우산동 밀집블록)</li>
+        <li>공실 해결 영업모델로 건물주 진입 (무료 진단→관리 전환)</li>
+        <li>SOP 26종 단독수행 가능 수 최대화 (대표 의존↓)</li>
+      </ul></div>
+      <div><h4>검증 지표</h4><ul>
+        <li>평균 공실일수 (퇴실통보~계약)</li>
+        <li>무료 현장확인 → 수주 전환율</li>
+        <li>해지율 추적 개시</li>
+        <li>대표 없이 운영비율 상승 곡선</li>
+      </ul></div>
+    </div>
+  </div>
+
+  <div class="phase p2">
+    <div class="ph"><span class="tag">S2</span><h3>데이터 기반 운영 · 투자 라운드</h3><span class="when">약 9 ~ 18개월</span></div>
+    <div class="aim">통과조건 7 충족 → IR. 규모의 함정(56~75동)을 계약 속도로 관리.</div>
+    <div class="gate"><b>투자 조건 충족</b> — 원주 <b>80~100동</b> · 연매출 <b>1.7~2억</b> · 영업이익률 <b>15~18%</b> · 대표없이 <b>80~90%</b> · 해지율 <b>2%↓</b> · 실적 <b>6~12개월</b></div>
+    <div class="cols">
+      <div><h4>핵심 과제</h4><ul>
+        <li><b>IR 자료</b> 작성 (재무모델·실적·데이터 해자)</li>
+        <li>초기멤버 역할·보상·<b>지분 합의</b> (투자 전 정리)</li>
+        <li>ValueScope 성과를 지표 출처로 정식 연동</li>
+        <li>밸류업 실증 1호 리포트 (개선 전/후 NOI·회수기간)</li>
+      </ul></div>
+      <div><h4>투자 Ask</h4><ul>
+        <li>기업가치 <b>9억</b> · 지분 <b>10%</b> · 조달 <b>1억</b></li>
+        <li>사용처: 인력(대표의존 해소)·시스템·춘천 사전진입</li>
+        <li>정부지원 4건 병행으로 자부담 완화</li>
+      </ul></div>
+    </div>
+  </div>
+
+  <div class="phase p3">
+    <div class="ph"><span class="tag">S3</span><h3>지역 확장 · 춘천</h3><span class="when">약 18개월 ~</span></div>
+    <div class="aim">원주에서 검증된 기준을 복제. 원가는 현지 재확인.</div>
+    <div class="gate"><b>진입 게이트</b> — 원주 BEP 통과 + 매뉴얼 v1.0 + 대표없이 80% (복제 트리거 3조건) · 춘천 사전계약 <b>10~20동</b></div>
+    <div class="cols">
+      <div><h4>단계</h4><ul>
+        <li>POC <b>5동</b> (외주·파트너) → 사전진입 10동</li>
+        <li>초기운영 20동 → 손익분기 35동 → 안정거점 50동</li>
+      </ul></div>
+      <div><h4>주의</h4><ul>
+        <li>춘천 손익분기 35동은 <b>현지원가 확인 필요</b> 상태</li>
+        <li>지역본부-파트너 <b>로열티 모델</b> 설계 (미완)</li>
+      </ul></div>
+    </div>
+  </div>
+</section>
+
+<section>
+  <h2>4. 다음 90일 실행 플랜 <span>투자 준비 = 이 표를 채우는 것</span></h2>
+  <div class="card">
+    <div class="chk"><div class="box"></div><div class="tx"><b>6동 실적표 6/6 채우기</b><em>계약서·통장 기준 실제 매출·원가 입력 → 재무대장 03_6개건물</em></div><div class="who">현진/대표</div></div>
+    <div class="chk"><div class="box"></div><div class="tx"><b>8주 타임로그 시작</b><em>PM-01 순회 중 업무시간 기록 → 1인 55동·90분 가정 검증</em></div><div class="who">대표/현장</div></div>
+    <div class="chk"><div class="box"></div><div class="tx"><b>월 실제 현금적자 확정</b><em>대표급여 0 / 반영 두 시나리오로 손익 명확화</em></div><div class="who">대표</div></div>
+    <div class="chk"><div class="box"></div><div class="tx"><b>현장 누적건수 집계 → 매뉴얼 v1.0 승인 트랙</b><em>CRM 티켓으로 30~100건 카운트</em></div><div class="who">현진</div></div>
+    <div class="chk"><div class="box"></div><div class="tx"><b>부동산업 업종코드 자격 확인</b><em>온판상담소 1899-0309 — 지원사업 자격 리스크 선확인</em></div><div class="who">대표</div></div>
+    <div class="chk"><div class="box"></div><div class="tx"><b>ValueScope 입지스코어 6동 시범 부착</b><em>상권분석·앵커·기획적합도를 상담카드에 연결</em></div><div class="who">A방/대표</div></div>
+    <div class="chk"><div class="box"></div><div class="tx"><b>밸류업 1호 후보 1페이지 시산</b><em>더휴식 대출한도 공식(감정가·공사비 80%)으로 회수기간</em></div><div class="who">대표</div></div>
+  </div>
+</section>
+
+<section>
+  <h2>5. 투자 조건 · 자금 사용계획</h2>
+  <div class="ask">
+    <div class="stat"><div class="n">9억</div><div class="l">제시 기업가치 (pre)</div></div>
+    <div class="stat"><div class="n">10%</div><div class="l">지분</div></div>
+    <div class="stat"><div class="n">1억</div><div class="l">조달 목표</div></div>
+  </div>
+  <div class="card"><div class="cols">
+    <div><h4>자금 사용처</h4><ul>
+      <li><b>인력</b> — 대표 의존 해소 (운영·현장 채용)로 '대표없이 80%' 달성</li>
+      <li><b>시스템</b> — CRM·데이터 자산화, ValueScope 연동 고도화</li>
+      <li><b>춘천 사전진입</b> — POC 5동·파트너 확보 비용</li>
+    </ul></div>
+    <div><h4>협상 방어 논리</h4><ul>
+      <li>검증된 <b>운영 기준</b>(매뉴얼 v1.0) = 복제 가능 자산</li>
+      <li>남이 못 가진 <b>지역 데이터 해자</b>(ValueScope)</li>
+      <li>총수익률(허수) 아닌 <b>실현수익률</b> 기준의 정직한 모델</li>
+    </ul></div>
+  </div></div>
+  <p class="note">※ 기업가치·지분·조달액은 현재 내부 목표치(체계도 KPI). IR 착수 전 재무모델로 재검증 대상.</p>
+</section>
+
+<section>
+  <h2>6. 리스크 &amp; 해소</h2>
+  <div class="card risk"><b>규모의 함정 (56~75동 적자구간)</b> — 규모를 키우면 나아진다는 착각. → 계약 속도를 BEP 직후 결합서비스(이익 44%) 중심으로 관리, 70동 구간을 빠르게 통과.</div>
+  <div class="card risk"><b>대표 의존</b> — 실무가 대표에게 몰림. '대표없이 80%'는 투자 통과조건. → 승인 한도·권한 문서화 + 인력 채용으로 위임 단위를 사람이 아닌 '승인 한도'로 전환.</div>
+  <div class="card risk"><b>부동산업 업종규제</b> — 지원사업 자격에 걸릴 수 있음. → 신청 전 온판상담소로 업종 자격 확인 (90일 플랜 포함).</div>
+  <div class="card risk"><b>할인가 고착</b> — 우산동 61,000원 할인이 정가가 되면 권역 확장 시 못 올림. → 권역별 시세표 분리, 정찰제 유지.</div>
+  <div class="card risk"><b>초기멤버 지분 미합의</b> — 투자 전 정리 안 하면 분쟁. → S2 진입 전 역할·보상·지분 서면 합의.</div>
+</section>
+
+<div class="foot">
+  브링케어 투자유치 로드맵 v1.0 · 근거: BRING_MASTER_CONTEXT.md · 브링케어_체계도.html v1.3 (FIN·CORE·GROW 축)<br>
+  갱신 규칙: 가격·실적·정책·투자조건이 바뀌면 MASTER_CONTEXT를 먼저 고치고 이 문서를 동기화한다.
+</div>
+
+</div>
+</body>
+</html>
