@@ -78,8 +78,6 @@ def make_profile():
 def category(source, title, subtitle, out_name, accent):
     size = 1080
     raw = Image.open(ROOT / source).convert("RGB")
-    if source == "source-field.png":
-        raw = raw.crop((0, int(raw.height * .16), raw.width, int(raw.height * .84)))
     bg = cover_crop(raw, (size, size))
     bg.save(ROOT / out_name)
 
