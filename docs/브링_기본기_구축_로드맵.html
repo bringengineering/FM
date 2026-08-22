@@ -1,0 +1,391 @@
+<title>브링 기본기 구축 로드맵</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;500;700&family=Noto+Serif+KR:wght@600;700&family=Roboto+Mono:wght@500;600&display=swap">
+<style>
+:root{
+  --paper:#FBFAF7; --card:#FFFFFF; --panel:#F4F2ED; --line:#E6E2D8;
+  --ink:#1B2436; --body:#39414F; --mute:#6B7488;
+  --navy:#12213B; --navy2:#20324F;
+  --gold:#B07A2E; --gold2:#D9A441; --goldsoft:#F3E8CF;
+  --ok:#2E7D5B; --okbg:#E4F1EA; --prog:#B07A2E; --progbg:#F6ECD6; --wait:#8A93A6; --waitbg:#EEF0F4;
+  --p0:#B23B3B; --p0bg:#F7E4E2; --p1:#B07A2E; --p2:#5C6884;
+  --shadow:0 1px 2px rgba(18,33,59,.06),0 8px 24px rgba(18,33,59,.06);
+  --radius:14px;
+}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){
+  --paper:#0E1626; --card:#16233C; --panel:#1B2A44; --line:#2A3A57;
+  --ink:#EEF1F6; --body:#C4CBD8; --mute:#8A96AC;
+  --navy:#0A121F; --navy2:#16233C;
+  --gold:#D9A441; --gold2:#E9C879; --goldsoft:#2C2A1E;
+  --ok:#5FCB98; --okbg:#12352A; --prog:#E0B24B; --progbg:#33290F; --wait:#8A96AC; --waitbg:#1E2B42;
+  --p0:#E88C84; --p0bg:#3A211F; --p1:#E0B24B; --p2:#8A96AC;
+  --shadow:0 1px 2px rgba(0,0,0,.3),0 10px 30px rgba(0,0,0,.35);
+}}
+:root[data-theme="dark"]{
+  --paper:#0E1626; --card:#16233C; --panel:#1B2A44; --line:#2A3A57;
+  --ink:#EEF1F6; --body:#C4CBD8; --mute:#8A96AC;
+  --navy:#0A121F; --navy2:#16233C;
+  --gold:#D9A441; --gold2:#E9C879; --goldsoft:#2C2A1E;
+  --ok:#5FCB98; --okbg:#12352A; --prog:#E0B24B; --progbg:#33290F; --wait:#8A96AC; --waitbg:#1E2B42;
+  --p0:#E88C84; --p0bg:#3A211F; --p1:#E0B24B; --p2:#8A96AC;
+  --shadow:0 1px 2px rgba(0,0,0,.3),0 10px 30px rgba(0,0,0,.35);
+}
+*{box-sizing:border-box}
+html{-webkit-text-size-adjust:100%}
+body{margin:0;background:var(--paper);color:var(--body);
+  font-family:"Noto Sans KR",system-ui,sans-serif;font-size:15px;line-height:1.65;
+  -webkit-font-smoothing:antialiased;text-rendering:optimizeLegibility}
+.wrap{max-width:1060px;margin:0 auto;padding:0 20px 80px}
+h1,h2,h3{font-family:"Noto Serif KR","Noto Sans KR",serif;color:var(--ink);text-wrap:balance;margin:0}
+.mono{font-family:"Roboto Mono",monospace;font-variant-numeric:tabular-nums}
+
+/* ---- hero ---- */
+header{background:
+   radial-gradient(1200px 380px at 78% -12%, rgba(217,164,65,.16), transparent 60%),
+   linear-gradient(180deg,var(--navy) 0%, var(--navy2) 100%);
+  color:#EAF0FA;padding:52px 0 40px;border-bottom:3px solid var(--gold)}
+header .wrap{padding-bottom:0}
+.eyebrow{font-family:"Roboto Mono",monospace;font-size:12.5px;letter-spacing:.32em;
+  text-transform:uppercase;color:var(--gold2);margin:0 0 14px;font-weight:600}
+header h1{color:#fff;font-size:clamp(28px,4.4vw,42px);line-height:1.18}
+header p.lead{margin:14px 0 0;max-width:60ch;color:#C3CEE0;font-size:16px}
+.meta{margin-top:22px;display:flex;gap:8px 22px;flex-wrap:wrap;
+  font-size:12.5px;color:#93A2BD;font-family:"Roboto Mono",monospace}
+.meta b{color:#D9A441;font-weight:600}
+
+/* ---- summary tiles ---- */
+.tiles{display:grid;grid-template-columns:repeat(4,1fr);gap:14px;margin-top:-30px;margin-bottom:30px}
+.tile{background:var(--card);border:1px solid var(--line);border-radius:var(--radius);
+  padding:18px 18px 16px;box-shadow:var(--shadow)}
+.tile .k{font-family:"Roboto Mono",monospace;font-size:11px;letter-spacing:.14em;
+  text-transform:uppercase;color:var(--mute)}
+.tile .v{font-family:"Noto Serif KR",serif;font-weight:700;color:var(--ink);
+  font-size:30px;line-height:1.1;margin-top:6px}
+.tile .v small{font-size:14px;color:var(--mute);font-weight:500;font-family:"Roboto Mono",monospace}
+.tile .sub{font-size:12px;color:var(--mute);margin-top:4px}
+.bar{height:8px;border-radius:6px;background:var(--panel);overflow:hidden;margin-top:12px}
+.bar > i{display:block;height:100%;background:linear-gradient(90deg,var(--gold),var(--gold2));
+  border-radius:6px;transition:width .5s cubic-bezier(.2,.8,.2,1)}
+
+/* ---- callout ---- */
+.callout{background:linear-gradient(180deg,var(--goldsoft),transparent);
+  border:1px solid var(--gold);border-left:5px solid var(--gold);
+  border-radius:12px;padding:18px 20px;margin:0 0 34px}
+.callout h3{font-size:16px;color:var(--ink);display:flex;align-items:center;gap:9px}
+.callout .dot{width:9px;height:9px;border-radius:50%;background:var(--p0)}
+.callout ul{margin:11px 0 0;padding-left:20px;color:var(--body)}
+.callout li{margin:5px 0}
+.callout li b{color:var(--ink)}
+
+/* ---- section ---- */
+.sec{background:var(--card);border:1px solid var(--line);border-radius:var(--radius);
+  margin-bottom:16px;overflow:hidden;box-shadow:var(--shadow)}
+.sec > summary{list-style:none;cursor:pointer;padding:18px 22px;display:flex;
+  align-items:center;gap:16px;user-select:none}
+.sec > summary::-webkit-details-marker{display:none}
+.sec .code{font-family:"Roboto Mono",monospace;font-weight:600;font-size:13px;
+  color:var(--gold);width:26px;flex:none}
+.sec .stitle{flex:1;min-width:0}
+.sec .stitle h2{font-size:17.5px;line-height:1.3}
+.sec .stitle p{margin:2px 0 0;font-size:13px;color:var(--mute)}
+.sec .scount{font-family:"Roboto Mono",monospace;font-size:12.5px;color:var(--mute);
+  background:var(--panel);border:1px solid var(--line);border-radius:20px;
+  padding:4px 11px;flex:none}
+.sec .chev{flex:none;color:var(--mute);transition:transform .25s;font-size:13px}
+.sec[open] .chev{transform:rotate(90deg)}
+.sbar{height:4px;background:var(--panel)}
+.sbar > i{display:block;height:100%;background:var(--gold);transition:width .4s}
+
+.items{padding:6px 14px 14px}
+.item{display:grid;grid-template-columns:26px 1fr auto;gap:2px 14px;
+  align-items:start;padding:14px 8px;border-top:1px solid var(--line)}
+.item:first-child{border-top:none}
+.chk{margin-top:2px;width:20px;height:20px;flex:none;cursor:pointer;accent-color:var(--gold);appearance:auto}
+.item .body{min-width:0}
+.item .t{font-weight:700;color:var(--ink);font-size:15px;line-height:1.4}
+.item.done .t{color:var(--mute);text-decoration:line-through;text-decoration-color:var(--line)}
+.item .why{font-size:13.5px;color:var(--body);margin-top:3px}
+.item .tags{display:flex;flex-wrap:wrap;gap:6px;margin-top:9px;align-items:center}
+.pill{font-family:"Roboto Mono",monospace;font-size:11px;font-weight:600;
+  padding:2.5px 8px;border-radius:6px;letter-spacing:.02em;white-space:nowrap}
+.pri0{background:var(--p0bg);color:var(--p0)}
+.pri1{background:var(--progbg);color:var(--p1)}
+.pri2{background:var(--waitbg);color:var(--p2)}
+.who{background:var(--panel);color:var(--body);border:1px solid var(--line)}
+.state{margin-left:2px}
+.st-done{background:var(--okbg);color:var(--ok)}
+.st-prog{background:var(--progbg);color:var(--prog)}
+.st-todo{background:var(--waitbg);color:var(--wait)}
+.cost{text-align:right;font-family:"Roboto Mono",monospace;font-size:13px;
+  color:var(--ink);font-weight:600;white-space:nowrap;padding-top:1px}
+.cost small{display:block;font-weight:500;color:var(--mute);font-size:10.5px;letter-spacing:.03em}
+
+/* ---- capex table ---- */
+.block{margin-top:40px}
+.block > h2{font-size:22px;margin-bottom:6px}
+.block > p.sub{margin:0 0 18px;color:var(--mute);font-size:14px}
+.tblwrap{overflow-x:auto;border:1px solid var(--line);border-radius:var(--radius);background:var(--card);box-shadow:var(--shadow)}
+table{border-collapse:collapse;width:100%;min-width:560px;font-size:14px}
+th,td{padding:12px 16px;text-align:left;border-bottom:1px solid var(--line);vertical-align:top}
+thead th{background:var(--navy);color:#EAF0FA;font-weight:600;font-size:12.5px;
+  letter-spacing:.04em;font-family:"Noto Sans KR",sans-serif;position:sticky;top:0}
+tbody tr:last-child td{border-bottom:none}
+tbody tr.total{background:var(--panel)}
+tbody tr.total td{font-weight:700;color:var(--ink)}
+td.num{text-align:right;font-family:"Roboto Mono",monospace;font-variant-numeric:tabular-nums;white-space:nowrap}
+.tag-est{font-family:"Roboto Mono",monospace;font-size:10.5px;color:var(--gold);
+  border:1px solid var(--gold);border-radius:5px;padding:0 5px;margin-left:6px;white-space:nowrap}
+
+/* ---- controls / note ---- */
+.controls{display:flex;flex-wrap:wrap;gap:10px;align-items:center;margin:26px 0 8px}
+.btn{font-family:"Roboto Mono",monospace;font-size:12.5px;cursor:pointer;
+  background:var(--card);color:var(--body);border:1px solid var(--line);
+  border-radius:9px;padding:8px 14px;transition:.15s}
+.btn:hover{border-color:var(--gold);color:var(--ink)}
+.btn:focus-visible{outline:2px solid var(--gold);outline-offset:2px}
+.note{font-size:12.5px;color:var(--mute);margin-top:26px;padding:16px 18px;
+  background:var(--panel);border-radius:12px;border:1px dashed var(--line);line-height:1.7}
+.note b{color:var(--ink)}
+footer{margin-top:44px;padding-top:22px;border-top:1px solid var(--line);
+  font-family:"Roboto Mono",monospace;font-size:12px;color:var(--mute);
+  display:flex;justify-content:space-between;flex-wrap:wrap;gap:10px}
+@media (max-width:720px){
+  .tiles{grid-template-columns:repeat(2,1fr);margin-top:-24px}
+  .item{grid-template-columns:22px 1fr;}
+  .cost{grid-column:2;text-align:left;margin-top:6px}
+}
+@media (prefers-reduced-motion:reduce){*{transition:none!important}}
+</style>
+
+<header>
+  <div class="wrap">
+    <p class="eyebrow">Bring · Foundation Roadmap</p>
+    <h1>사업 기본기 구축 로드맵</h1>
+    <p class="lead">투자·정책자금·위임운영이 가능한 회사가 되기 위해 <b style="color:#E9C879">지금 갖춰야 할 것들</b>을
+      법인·재무·CAPEX·지식재산·인증·데이터룸 9개 영역으로 정리했습니다. 항목을 체크하며 팀이 함께 채워나가는 작업판입니다.</p>
+    <div class="meta">
+      <span>기준일 <b>2026-08-22</b></span>
+      <span>실적 <b>7동 운영</b></span>
+      <span>BEP <b>35~40동</b></span>
+      <span>데이터 <b>ValueScope 24,933건</b></span>
+      <span>체크상태 <b>브라우저 자동저장</b></span>
+    </div>
+  </div>
+</header>
+
+<div class="wrap">
+  <section class="tiles">
+    <div class="tile"><div class="k">전체 준비도</div><div class="v" id="pctAll">0<small>%</small></div>
+      <div class="bar"><i id="barAll" style="width:0"></i></div>
+      <div class="sub" id="cntAll">0 / 0 완료</div></div>
+    <div class="tile"><div class="k">지금(P0) 진행률</div><div class="v" id="pctP0">0<small>%</small></div>
+      <div class="bar"><i id="barP0" style="width:0"></i></div>
+      <div class="sub" id="cntP0">최우선 항목</div></div>
+    <div class="tile"><div class="k">초기 투자·CAPEX</div><div class="v" style="font-size:24px">2,000<small>~4,300만</small></div>
+      <div class="sub">개략 · 아래 표 참조</div></div>
+    <div class="tile"><div class="k">연 운영·고정비</div><div class="v" style="font-size:24px">660<small>~1,200만</small></div>
+      <div class="sub">개략 · 세무·보험·인증유지 등</div></div>
+  </section>
+
+  <div class="callout">
+    <h3><span class="dot"></span>지금 당장 착수할 것 (P0 — 이게 막히면 투자·정책자금 문이 안 열립니다)</h3>
+    <ul>
+      <li><b>법인 전환</b> — 현재 개인사업자. 투자유치·지분·정책자금·조달의 전제조건.</li>
+      <li><b>지분테이블(Cap Table) + 주주간계약</b> — 서창환·현진·우중 지분과 스톡옵션 풀을 문서로 확정.</li>
+      <li><b>법인 통장·카드 분리 + 세무기장 계약</b> — 재무제표가 있어야 밸류·심사가 가능.</li>
+      <li><b>상표 출원(브링케어/BRING CARE)</b> — 선점당하면 브랜드 자체를 못 씁니다.</li>
+      <li><b>개인정보처리방침·이용약관</b> — 건물주·임차인 개인정보를 다루므로 법적 필수.</li>
+    </ul>
+  </div>
+
+  <div class="controls">
+    <button class="btn" id="expandAll">전체 펼치기</button>
+    <button class="btn" id="collapseAll">전체 접기</button>
+    <button class="btn" id="reset">체크 초기화</button>
+  </div>
+
+  <div id="sections"></div>
+
+  <div class="block">
+    <h2>CAPEX · 초기 투자 개략</h2>
+    <p class="sub">실제 자산·설비 투자 항목만 모았습니다. 금액은 <b>개략 계획치</b>이며 견적으로 대체해야 합니다 —
+      <span class="tag-est">확인 필요</span> 표시는 반드시 실제 견적·출처로 교체.</p>
+    <div class="tblwrap">
+      <table>
+        <thead><tr><th>항목</th><th>내용</th><th style="text-align:right">개략(만원)</th><th>담당</th></tr></thead>
+        <tbody id="capexBody"></tbody>
+      </table>
+    </div>
+  </div>
+
+  <div class="note">
+    <b>수치에 대한 원칙.</b> 이 로드맵의 금액은 사업 계획용 <b>개략 추정치</b>입니다(법인전환·상표·특허·세무·인증 비용은 시점·대행사·범위에 따라 크게 달라집니다).
+    투자자·기관 제출 문서에 옮길 때는 각 항목을 실제 견적서·공식 수수료표로 교체하세요. 확정 데이터(실적 7동, 원주 다가구 5,129동·26,825세대,
+    가격표, BEP 35~40동)만 근거로 사용하고, 나머지는 반드시 대조 후 사용합니다.
+  </div>
+
+  <footer>
+    <span>BRING ENGINEERING · Foundation Roadmap v1.0</span>
+    <span>정리 2026-08 · 대표 서창환</span>
+  </footer>
+</div>
+
+<script>
+const DATA=[
+ {code:"A",title:"법인·지배구조",sub:"투자·지분·정책자금의 그릇을 먼저 만든다",items:[
+   {t:"개인사업자 → 법인 전환",why:"투자유치·주식 발행·정책자금·조달의 전제조건. 지금 브링은 개인사업자(대표 서창환).",pri:0,who:"대표",cost:"150~300만",st:"todo"},
+   {t:"부업종 추가(건물관리·시설관리)",why:"‘기술회사가 현장 데이터를 위해 직접 운영’ 스토리 유지 + 지원사업 자격. MASTER에서 이미 결정된 방향.",pri:0,who:"대표",cost:"등록비만",st:"todo"},
+   {t:"지분테이블(Cap Table) 확정",why:"서창환·현진·우중 지분과 스톡옵션 풀. 투자 심사 1순위 서류. 나중에 바꾸면 분쟁.",pri:0,who:"대표",cost:"—",st:"todo"},
+   {t:"주주간계약(SHA)·정관 정비",why:"의사결정·지분 이전·경업금지·베스팅 규정. 공동창업 리스크를 초기에 봉인.",pri:1,who:"대표+법무",cost:"100~300만",st:"todo"},
+   {t:"스톡옵션(주식매수선택권) 규정",why:"핵심 인재(현진·우중·초기 채용) 유인. 법인 전환 직후 풀 설정이 가장 깔끔.",pri:2,who:"대표",cost:"—",st:"todo"},
+ ]},
+ {code:"B",title:"재무·회계 시스템",sub:"숫자가 없으면 밸류도 심사도 없다",items:[
+   {t:"법인 통장·법인카드 분리",why:"사업/개인 자금 분리. 회계 신뢰의 출발점.",pri:0,who:"대표",cost:"—",st:"todo"},
+   {t:"세무기장 계약(세무사)",why:"월 기장·부가세·법인세. 재무제표가 있어야 투자·대출·정책자금 심사 가능.",pri:0,who:"대표",cost:"월 10~20만",st:"todo"},
+   {t:"관리회계: 단위경제(동당 원가·마진)",why:"공동관리 89,000원/동의 원가·기여이익을 동 단위로. BEP 35~40동의 근거를 숫자로 증명.",pri:1,who:"대표+현진",cost:"내부",st:"prog"},
+   {t:"3~5개년 재무모델·현금흐름표",why:"IR·정책자금 필수. 런웨이·손익분기·조달 시나리오. 사업계획서 초안과 숫자 정합.",pri:1,who:"대표",cost:"내부",st:"prog"},
+   {t:"회계·전자세금계산서 시스템",why:"매출·지출·전문작업 5% 마크업을 자동 집계. 결제 캘린더와 연동.",pri:2,who:"현진",cost:"월 소액",st:"todo"},
+ ]},
+ {code:"C",title:"CAPEX · 설비·자산 투자",sub:"현장을 돌리고 데이터를 쌓는 실물·인프라",items:[
+   {t:"현장 이동수단(차량)",why:"공동관리 Zone 핵심은 ‘묶어서 이동’. 권역 내 이동·점검·자재 운반의 기반.",pri:1,who:"대표",cost:"500~2,000만",st:"prog"},
+   {t:"점검·청소·수리 장비 및 공구",why:"정기점검·입퇴실청소·공용부청소 직접 수행 도구. 촬영용 카메라 포함.",pri:1,who:"대표",cost:"150~400만",st:"prog"},
+   {t:"IoT 센서(도어락·누수·에너지 등) 파일럿",why:"건물 상태 실시간 데이터 → Building OS의 원천. 우중 담당 하드웨어.",pri:2,who:"우중",cost:"100~500만",st:"todo"},
+   {t:"IT 인프라(서버·DB·호스팅)",why:"ValueScope 지도·엔진, CRM/FM 시스템, AI 민원분류 모델 운영 기반.",pri:1,who:"현진",cost:"월 10~40만",st:"prog"},
+   {t:"자체 플랫폼 개발 자산화",why:"현진이 개발 중인 운영 플랫폼은 무형자산이자 투자 핵심. 개발 이력·산출물 정리.",pri:1,who:"현진",cost:"인건비",st:"prog"},
+   {t:"원주 거점 사무실·창고",why:"자재 보관·팀 거점. 규모 확대 시점에 맞춰 도입.",pri:2,who:"대표",cost:"월 30~80만",st:"todo"},
+ ]},
+ {code:"D",title:"지식재산(IP)",sub:"브랜드와 기술을 남이 못 가져가게",items:[
+   {t:"상표 출원(브링케어·BRING CARE)",why:"선점당하면 브랜드를 못 씁니다. 관련 서비스류까지. 가장 시급.",pri:0,who:"대표",cost:"1건 20~50만",st:"todo"},
+   {t:"SW 저작권 등록(ValueScope 엔진·플랫폼)",why:"자체 개발 소프트웨어를 자산·권리로 확정. 투자·정책자금 가점.",pri:1,who:"현진",cost:"건당 소액",st:"todo"},
+   {t:"특허 출원(AI 민원분류·공실 워크플로·Building OS)",why:"방법 특허 가능성 검토. R&D 과제·기술평가·투자에서 방어막.",pri:2,who:"현진+변리사",cost:"1건 200~500만",st:"todo"},
+   {t:"도메인·상호·계정 보호",why:"주요 도메인·SNS 핸들 선점(플레이스·카카오채널·인스타·당근).",pri:1,who:"대표",cost:"소액",st:"prog"},
+ ]},
+ {code:"E",title:"인사·조직",sub:"사람을 시스템으로 묶는다",items:[
+   {t:"근로계약서·4대보험",why:"팀을 정식 고용관계로. 정책자금·인증의 고용 요건 기반.",pri:1,who:"대표",cost:"보험료",st:"todo"},
+   {t:"R&R·조직도 문서화",why:"서창환(영업·현장)/현진(개발·자동화)/우중(하드웨어·IoT). 이미 정의됨 — 문서로 고정.",pri:1,who:"대표",cost:"내부",st:"prog"},
+   {t:"취업규칙·급여체계",why:"5인 이상 시 취업규칙 의무. 급여·성과·복리 기준.",pri:2,who:"대표",cost:"내부",st:"todo"},
+   {t:"채용 계획(운영·영업 인력)",why:"동 수 확대에 맞춘 1인 관리용량 검증 후 단계적 채용.",pri:2,who:"대표",cost:"인건비",st:"todo"},
+ ]},
+ {code:"F",title:"데이터·IT·보안·컴플라이언스",sub:"개인정보를 다루는 회사의 최소 방어선",items:[
+   {t:"개인정보처리방침 수립·게시",why:"건물주·임차인 개인정보 수집. 법적 필수. 홈페이지·앱에 게시.",pri:0,who:"현진",cost:"소액",st:"todo"},
+   {t:"서비스 이용약관·관리위탁 표준계약서",why:"건물주 관리위탁·중개 계약의 표준 문서. 책임경계·SLA 명문화.",pri:1,who:"대표",cost:"내부",st:"prog"},
+   {t:"데이터 백업·접근권한 정책",why:"ValueScope 24,933건·운영 데이터 유실·유출 방지. 권한 최소화.",pri:1,who:"현진",cost:"내부",st:"todo"},
+   {t:"데이터 자산 목록화",why:"보유 데이터(건물·세대·중개사 786곳·영업 CRM)를 자산으로 정리 — 투자 설명 자료.",pri:2,who:"현진",cost:"내부",st:"prog"},
+ ]},
+ {code:"G",title:"영업·운영 표준",sub:"대부분 이미 구축됨 — 유지·고도화",items:[
+   {t:"운영매뉴얼 v1.0",why:"민원 케이스 ①~⑰ 워크플로 기반 운영 표준. 이미 작성·커밋 완료.",pri:1,who:"완료",cost:"—",st:"done"},
+   {t:"현장 체크리스트 3종(초도조사·정기점검·통합관리)",why:"현장 표준화의 핵심. 확정·운영 중.",pri:1,who:"완료",cost:"—",st:"done"},
+   {t:"확정 요금표·SLA",why:"공동관리 89,000원/동, 전문작업 5% 등. 확정(MASTER §3).",pri:1,who:"완료",cost:"—",st:"done"},
+   {t:"건물주 제안서 표준(10p+Appendix)",why:"영업 표준 문서. 구조 확정, 템플릿 제작 완료.",pri:1,who:"완료",cost:"—",st:"done"},
+   {t:"관리위탁·중개 표준계약서 완성",why:"영업 표준의 마지막 조각. F축 표준계약서와 연결.",pri:1,who:"대표",cost:"내부",st:"prog"},
+ ]},
+ {code:"H",title:"인증·정책자금 자격",sub:"문을 열어주는 자격증들",items:[
+   {t:"기업부설연구소/연구개발전담부서",why:"R&D 과제·세액공제·인력 가점의 핵심. 소셜벤처 과제4와 직결.",pri:1,who:"현진",cost:"신청비 소액",st:"todo"},
+   {t:"벤처기업 인증",why:"투자·세제·정책자금 전반의 기본 자격. 법인 전환 후 진행.",pri:1,who:"대표",cost:"평가비",st:"todo"},
+   {t:"소셜벤처 판별",why:"소셜벤처 리그 과제4(AI 생산성) 트랙. 사회문제 해결형 스토리와 정합.",pri:1,who:"대표",cost:"—",st:"todo"},
+   {t:"이노비즈/메인비즈",why:"기술·경영 혁신형 인증. 정책자금 한도·금리 우대.",pri:2,who:"대표",cost:"평가비",st:"todo"},
+   {t:"업종코드 지원자격 사전확인",why:"부동산업 코드가 지원사업 자격에서 배제될 수 있음 — 신청 전 필수 확인(MASTER §11).",pri:0,who:"대표",cost:"—",st:"todo"},
+ ]},
+ {code:"I",title:"투자유치 준비",sub:"들어올 사람이 볼 것들 — 상당수 완료",items:[
+   {t:"IR 덱(20p)",why:"이미 제작·커밋 완료(브링케어_IR_2026.pptx).",pri:1,who:"완료",cost:"—",st:"done"},
+   {t:"사업계획서 초안 v0.1",why:"마스터 매뉴얼 기반 작성·커밋 완료. 붉은 [확인 필요] 태그만 실값 교체 남음.",pri:1,who:"진행",cost:"—",st:"prog"},
+   {t:"데이터룸(문서표준·템플릿)",why:"문서표준 핸드북+템플릿팩 구축 완료. 항목별 실문서 채우기 진행.",pri:1,who:"진행",cost:"—",st:"prog"},
+   {t:"재무모델·밸류에이션 근거",why:"B축 재무모델과 연결. TAM 등 최고위험 수치 검증 후 확정.",pri:0,who:"대표",cost:"내부",st:"todo"},
+   {t:"투자자 파이프라인·실적 레퍼런스",why:"7동/7곳/10건+/12건 실적을 레퍼런스로. 접촉 대상 리스트업.",pri:2,who:"대표",cost:"—",st:"prog"},
+ ]},
+];
+
+const CAPEX=[
+ ["현장 이동수단(차량)","권역 내 이동·점검·자재 운반","500~2,000","대표",true],
+ ["점검·청소·수리 장비·공구","직접 수행 도구 + 촬영 장비","150~400","대표",true],
+ ["IoT 센서 파일럿","도어락·누수·에너지 등 상태 데이터","100~500","우중",true],
+ ["IT 인프라 초기 구축","서버·DB·도메인·보안 셋업(초기)","100~300","현진",true],
+ ["플랫폼 개발(자산화)","자체 운영 플랫폼 — 주로 인건비","별도","현진",false],
+ ["법인 전환·법무 셋업","전환·정관·주주간계약","250~600","대표",true],
+ ["상표·SW저작권·(특허)","IP 초기 출원","250~500","대표",true],
+ ["초기 운영자금(예비)","3~6개월 고정비 버퍼","별도","대표",false],
+];
+
+const store=(()=>{try{const k="bring_foundation_v1";
+  return{get:()=>{try{return JSON.parse(localStorage.getItem(k))||{}}catch(e){return{}}},
+         set:v=>{try{localStorage.setItem(k,JSON.stringify(v))}catch(e){}}}}
+  catch(e){let m={};return{get:()=>m,set:v=>{m=v}}}})();
+
+const PRIN=["pri0","pri1","pri2"], PRIT=["P0 지금","P1 3개월","P2 6개월"];
+const STN={done:["st-done","완료"],prog:["st-prog","진행중"],todo:["st-todo","대기"]};
+let state=store.get();
+function key(s,i){return s.code+i}
+
+function render(){
+  const root=document.getElementById("sections");root.innerHTML="";
+  DATA.forEach(sec=>{
+    const d=document.createElement("details");d.className="sec";d.open=true;
+    const done=sec.items.filter((_,i)=>isDone(sec,i)).length, tot=sec.items.length;
+    d.innerHTML=`<summary>
+      <span class="code">${sec.code}</span>
+      <span class="stitle"><h2>${sec.title}</h2><p>${sec.sub}</p></span>
+      <span class="scount"><b class="mono">${done}/${tot}</b></span>
+      <span class="chev">▶</span></summary>
+      <div class="sbar"><i style="width:${tot?done/tot*100:0}%"></i></div>
+      <div class="items"></div>`;
+    const box=d.querySelector(".items");
+    sec.items.forEach((it,i)=>{
+      const dn=isDone(sec,i);
+      const el=document.createElement("label");
+      el.className="item"+(dn?" done":"");
+      const stc=(it.st&&STN[it.st])||STN.todo;
+      el.innerHTML=`<input type="checkbox" class="chk" ${dn?"checked":""}>
+        <div class="body">
+          <div class="t">${it.t}</div>
+          <div class="why">${it.why}</div>
+          <div class="tags">
+            <span class="pill ${PRIN[it.pri]}">${PRIT[it.pri]}</span>
+            <span class="pill who">${it.who}</span>
+            <span class="pill state ${stc[0]}">${stc[1]}</span>
+          </div>
+        </div>
+        <div class="cost">${it.cost}<small>개략</small></div>`;
+      el.querySelector(".chk").addEventListener("change",e=>{
+        state[key(sec,i)]=e.target.checked;store.set(state);render();updateSummary();});
+      box.appendChild(el);
+    });
+    root.appendChild(d);
+  });
+}
+function isDone(sec,i){const k=key(sec,i);
+  if(k in state) return state[k];
+  return sec.items[i].st==="done";}
+
+function updateSummary(){
+  let done=0,tot=0,p0d=0,p0t=0;
+  DATA.forEach(sec=>sec.items.forEach((it,i)=>{tot++;const d=isDone(sec,i);if(d)done++;
+    if(it.pri===0){p0t++;if(d)p0d++;}}));
+  const pa=Math.round(done/tot*100), pp=p0t?Math.round(p0d/p0t*100):0;
+  document.getElementById("pctAll").innerHTML=pa+'<small>%</small>';
+  document.getElementById("barAll").style.width=pa+"%";
+  document.getElementById("cntAll").textContent=done+" / "+tot+" 완료";
+  document.getElementById("pctP0").innerHTML=pp+'<small>%</small>';
+  document.getElementById("barP0").style.width=pp+"%";
+  document.getElementById("cntP0").textContent=p0d+" / "+p0t+" 최우선 완료";
+}
+function renderCapex(){
+  const b=document.getElementById("capexBody");b.innerHTML="";
+  CAPEX.forEach(r=>{
+    const tr=document.createElement("tr");
+    const est=r[4]?'':' <span class="tag-est">확인 필요</span>';
+    tr.innerHTML=`<td><b style="color:var(--ink)">${r[0]}</b></td><td>${r[1]}</td>
+      <td class="num">${r[2]}${est}</td><td>${r[3]}</td>`;
+    b.appendChild(tr);
+  });
+  const tr=document.createElement("tr");tr.className="total";
+  tr.innerHTML=`<td>합계(현금성 초기투자)</td><td>차량~IP 셋업, 개발·예비자금 별도</td>
+    <td class="num">약 2,000~4,300</td><td>—</td>`;
+  b.appendChild(tr);
+}
+document.getElementById("expandAll").onclick=()=>document.querySelectorAll(".sec").forEach(s=>s.open=true);
+document.getElementById("collapseAll").onclick=()=>document.querySelectorAll(".sec").forEach(s=>s.open=false);
+document.getElementById("reset").onclick=()=>{if(confirm("모든 체크 상태를 초기화할까요?")){state={};store.set(state);render();updateSummary();}};
+render();updateSummary();renderCapex();
+</script>
