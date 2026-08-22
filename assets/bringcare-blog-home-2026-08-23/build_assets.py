@@ -67,34 +67,20 @@ def make_cover(size, out_name):
 
 def make_profile():
     size = 1024
-    im = Image.new("RGB", (size, size), PALE)
-    d = ImageDraw.Draw(im)
-    d.ellipse((85, 85, 939, 939), fill=WHITE, outline=COBALT, width=14)
+    im = Image.new("RGB", (size, size), WHITE)
     logo = logo_crop()
-    ratio = 650 / logo.width
-    logo = logo.resize((650, round(logo.height * ratio)), Image.Resampling.LANCZOS)
-    im.paste(logo, ((size - logo.width) // 2, 345))
-    d.rounded_rectangle((280, 660, 744, 732), radius=36, fill=BLUE)
-    d.text((512, 696), "건물관리 전문", font=font(36, True), anchor="mm", fill=WHITE)
+    ratio = 720 / logo.width
+    logo = logo.resize((720, round(logo.height * ratio)), Image.Resampling.LANCZOS)
+    im.paste(logo, ((size - logo.width) // 2, (size - logo.height) // 2))
     im.save(ROOT / "bringcare-profile-1024.png")
 
 
 def category(source, title, subtitle, out_name, accent):
     size = 1080
-    bg = cover_crop(Image.open(ROOT / source).convert("RGB"), (size, size))
-    bg = bg.filter(ImageFilter.GaussianBlur(.3)).convert("RGBA")
-    shade = Image.new("RGBA", (size, size), (0, 0, 0, 0))
-    sd = ImageDraw.Draw(shade)
-    sd.rectangle((0, 0, size, 250), fill=(7, 26, 61, 220))
-    sd.rectangle((0, 790, size, size), fill=(255, 255, 255, 238))
-    sd.rectangle((0, 250, 18, 790), fill=accent)
-    bg = Image.alpha_composite(bg, shade).convert("RGB")
-    d = ImageDraw.Draw(bg)
-    d.text((70, 75), title, font=font(66, True), fill=WHITE)
-    d.text((72, 165), subtitle, font=font(31), fill="#D7E4FF")
-    d.rounded_rectangle((70, 845, 235, 905), radius=30, fill=accent)
-    d.text((152, 875), "BRING CARE", font=font(23, True), anchor="mm", fill=WHITE)
-    d.text((70, 940), "관리의 기준을 기록합니다", font=font(38, True), fill=NAVY)
+    raw = Image.open(ROOT / source).convert("RGB")
+    if source == "source-field.png":
+        raw = raw.crop((0, int(raw.height * .16), raw.width, int(raw.height * .84)))
+    bg = cover_crop(raw, (size, size))
     bg.save(ROOT / out_name)
 
 
