@@ -1,0 +1,301 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>브링 운영체계 & 문서표준 핸드북</title>
+<style>
+  :root{
+    --bg:#0b0d12; --panel:#14171f; --panel2:#1c2029; --line:#2b3040;
+    --text:#eceef4; --dim:#9aa2b4; --faint:#636b80;
+    --gold:#e6b450; --good:#5ec98a; --bad:#e07a7a; --mid:#d9b45a; --blue:#6fa8dc;
+    --L0:#e6b450; --L1:#a78bfa; --L2:#2dd4bf; --L3:#60a5fa; --L4:#f472b6;
+  }
+  *{box-sizing:border-box} html,body{margin:0}
+  body{background:var(--bg);color:var(--text);font:14px/1.65 "Pretendard","Malgun Gothic",-apple-system,sans-serif;-webkit-font-smoothing:antialiased;padding:0 0 90px}
+  .wrap{max-width:1000px;margin:0 auto;padding:0 20px}
+
+  header{background:linear-gradient(180deg,#211d12,#0d0f14);border-bottom:1px solid #3a3320;padding:36px 0 26px;margin-bottom:6px}
+  header .eyebrow{color:var(--gold);font-size:11.5px;letter-spacing:2px;text-transform:uppercase;margin-bottom:7px}
+  header h1{margin:0 0 8px;font-size:27px}
+  header h1 small{color:var(--faint);font-size:14px;font-weight:400;margin-left:8px}
+  header .sub{color:var(--dim);font-size:13.5px;max-width:76ch}
+  .meta{margin-top:13px;display:flex;flex-wrap:wrap;gap:8px}
+  .chip{font-size:12px;padding:4px 10px;border-radius:20px;background:var(--panel2);border:1px solid var(--line);color:var(--dim)}
+  .chip b{color:var(--gold)}
+
+  nav{position:sticky;top:0;z-index:10;background:rgba(11,13,18,.94);backdrop-filter:blur(8px);border-bottom:1px solid var(--line);padding:9px 0}
+  nav .wrap{display:flex;flex-wrap:wrap;gap:6px}
+  nav a{font-size:11.5px;padding:4px 9px;border-radius:6px;border:1px solid var(--line);color:var(--dim);white-space:nowrap}
+  nav a:hover{color:var(--text);border-color:#3d4970}
+  nav a b{color:var(--gold)}
+
+  section{margin-top:32px;scroll-margin-top:52px}
+  h2{font-size:12px;letter-spacing:1px;text-transform:uppercase;color:var(--gold);border-bottom:1px solid #3a3320;padding-bottom:7px;margin:0 0 6px;font-weight:700}
+  h2 span{color:var(--dim);text-transform:none;letter-spacing:0;font-weight:400;font-size:12px;margin-left:6px}
+  h3{font-size:15px;margin:20px 0 8px}
+  p.lead{color:var(--dim);max-width:78ch}
+  .card{background:var(--panel);border:1px solid var(--line);border-radius:11px;padding:15px 17px;margin-bottom:12px}
+  .thesis{background:linear-gradient(180deg,rgba(230,180,80,.07),rgba(0,0,0,.05));border-color:#4a3f20}
+  .thesis p{margin:0 0 9px}.thesis p:last-child{margin:0}.thesis b{color:var(--gold)}
+  ul{margin:6px 0 0;padding-left:18px} li{margin-bottom:5px;color:var(--dim)} li b{color:var(--text)}
+
+  /* layer stack */
+  .layer{border:1px solid var(--line);border-left-width:4px;border-radius:10px;padding:12px 15px;margin-bottom:9px;background:var(--panel)}
+  .layer .lh{display:flex;align-items:baseline;gap:9px;flex-wrap:wrap;margin-bottom:5px}
+  .layer .code{font-size:12px;font-weight:800;padding:1px 8px;border-radius:5px;color:#0b0d12}
+  .layer .nm{font-size:15px;font-weight:700;color:var(--text)}
+  .layer .role{color:var(--faint);font-size:12px;margin-left:auto}
+  .layer .items{display:flex;flex-wrap:wrap;gap:6px;margin-top:6px}
+  .doc{font-size:11.5px;padding:3px 9px;border-radius:6px;border:1px solid var(--line);background:var(--panel2);color:var(--dim);white-space:nowrap}
+  .doc .st{font-size:9px;margin-left:5px;padding:0 5px;border-radius:10px;font-weight:700}
+  .st-y{background:rgba(94,201,138,.18);color:var(--good)}
+  .st-w{background:rgba(217,180,90,.18);color:var(--mid)}
+  .st-n{background:rgba(224,122,122,.18);color:var(--bad)}
+  .st-p{background:rgba(111,168,220,.18);color:var(--blue)}
+  .L0{border-left-color:var(--L0)} .L0 .code{background:var(--L0)}
+  .L1{border-left-color:var(--L1)} .L1 .code{background:var(--L1)}
+  .L2{border-left-color:var(--L2)} .L2 .code{background:var(--L2)}
+  .L3{border-left-color:var(--L3)} .L3 .code{background:var(--L3)}
+  .L4{border-left-color:var(--L4)} .L4 .code{background:var(--L4)}
+
+  table{width:100%;border-collapse:collapse;font-size:12.5px}
+  th{text-align:left;color:var(--faint);font-size:10.5px;font-weight:600;padding:0 8px 7px;border-bottom:1px solid var(--line);text-transform:uppercase}
+  td{padding:8px;border-bottom:1px solid rgba(43,48,64,.55);vertical-align:top;color:var(--dim)} td b{color:var(--text)}
+  tr:last-child td{border-bottom:0}
+  td.ty{color:var(--gold);font-weight:700;white-space:nowrap}
+
+  .principle{display:grid;grid-template-columns:repeat(auto-fit,minmax(250px,1fr));gap:10px}
+  .pr{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:12px 14px;border-left:3px solid var(--gold)}
+  .pr .n{font-size:11px;color:var(--gold);font-weight:700}
+  .pr b{color:var(--text)} .pr p{margin:4px 0 0;font-size:12.5px;color:var(--dim)}
+
+  .flow{display:flex;flex-wrap:wrap;gap:6px;align-items:center;margin-top:6px}
+  .step{background:var(--panel2);border:1px solid var(--line);border-radius:8px;padding:7px 11px;font-size:12px;color:var(--text)}
+  .step b{color:var(--gold)}
+  .arrow{color:var(--gold);font-weight:700}
+
+  .warnbox{background:rgba(224,122,122,.08);border:1px solid #5c2f2f;border-radius:9px;padding:11px 13px;margin-top:10px;font-size:13px}.warnbox b{color:var(--bad)}
+  .okbox{background:rgba(94,201,138,.07);border:1px solid #2f5540;border-radius:9px;padding:11px 13px;margin-top:10px;font-size:13px}.okbox b{color:var(--good)}
+  .foot{margin-top:34px;color:var(--faint);font-size:12px;border-top:1px solid var(--line);padding-top:14px}
+  .tag{display:inline-block;font-size:10.5px;padding:1px 7px;border-radius:5px;background:var(--panel2);border:1px solid var(--line);color:var(--faint);margin-left:4px}
+</style>
+</head>
+<body>
+
+<header><div class="wrap">
+  <div class="eyebrow">Bring Operating System & Document Standards</div>
+  <h1>브링 운영체계 & 문서표준 핸드북 <small>v1.0 · 뼈대</small></h1>
+  <div class="sub">브링의 모든 문서·체계를 하나의 지도 위에 올리고(Part A), 6권의 실무서를 종합해 "브링은 문서를 이렇게 쓴다"는 단일 표준을 정한다(Part B). 이 핸드북이 앞으로 모든 보고서·제안서·IR·사업계획서의 <b>기준</b>이 된다.</div>
+  <div class="meta">
+    <span class="chip">기준일 <b>2026-08-22</b></span>
+    <span class="chip">근거 <b>6권 실무서 매뉴얼 + 체계도 v1.3 + MASTER_CONTEXT</b></span>
+    <span class="chip">목적 <b>운영 위임 · 투자유치 (균형)</b></span>
+  </div>
+</div></header>
+
+<nav><div class="wrap">
+  <a href="#why">왜 필요한가</a>
+  <a href="#map"><b>A. 운영체계 지도</b></a>
+  <a href="#gap">채울 빈칸</a>
+  <a href="#std"><b>B. 문서 표준</b></a>
+  <a href="#principle">공통 원칙</a>
+  <a href="#skeleton">표준 골격</a>
+  <a href="#bytype">유형별 표준</a>
+  <a href="#slide">슬라이드</a>
+  <a href="#framework">전략 프레임</a>
+  <a href="#ai">AI 활용</a>
+  <a href="#brand">브랜드·서식</a>
+</div></nav>
+
+<div class="wrap">
+
+<section id="why">
+  <h2>왜 이 핸드북이 필요한가</h2>
+  <div class="card thesis">
+    <p><b>브링의 미션은 "서비스를 파는 회사가 아니라 운영의 기준(Standard)을 만드는 회사"다.</b> 그 기준의 절반은 현장 SOP이고, 나머지 절반은 <b>문서</b>다 — 보고서·제안서·IR·사업계획서로 회사가 말하고 설득하고 검증받는다.</p>
+    <p>지금까지 브링은 자료가 여기저기 흩어져 있었다. 이 핸드북은 두 가지를 고정한다 — ① <b>모든 문서가 놓인 지도(Part A)</b>: 무엇이 있고, 무엇을 채워야 하는가. ② <b>모든 문서가 따르는 표준(Part B)</b>: 어떻게 쓰는가. 그래야 <b>대표 없이도 같은 품질의 문서</b>가 나오고(운영 위임), <b>어떤 투자사·심사위원이 봐도 일관된 회사</b>로 보인다(투자유치).</p>
+  </div>
+</section>
+
+<!-- ============ PART A ============ -->
+<section id="map">
+  <h2>A. 운영체계 지도 <span>5개 층 — 모든 문서는 이 지도 위에 있다</span></h2>
+  <p class="lead">아래로 갈수록 '판단'에서 '실행'으로 내려간다. 위층이 아래층의 기준이 된다. 상태: <span class="tag">있음</span>=완성 <span class="tag">진행</span>=작성중 <span class="tag">없음</span>=미착수 <span class="tag">개인</span>=학습용.</p>
+
+  <div class="layer L0">
+    <div class="lh"><span class="code">L0</span><span class="nm">공용 뇌 — 단일 진실 원천</span><span class="role">모든 수치·정책의 출처</span></div>
+    <div class="items">
+      <span class="doc">BRING_MASTER_CONTEXT.md<span class="st st-y">있음</span></span>
+    </div>
+    <ul><li><b>철칙:</b> 가격·실적·정책·투자조건이 바뀌면 <b>여기부터 고치고</b> 다른 문서를 맞춘다. 문서 간 숫자가 다르면 이 문서가 이긴다.</li></ul>
+  </div>
+
+  <div class="layer L1">
+    <div class="lh"><span class="code">L1</span><span class="nm">판단 — 경영 자가진단 & 전략</span><span class="role">"우리는 지금 어디에 있나"</span></div>
+    <div class="items">
+      <span class="doc">브링케어 체계도 v1.3 (7축)<span class="st st-y">있음</span></span>
+      <span class="doc">경영·투자 전략서<span class="st st-y">있음</span></span>
+      <span class="doc">투자 로드맵 (S0~S3)<span class="st st-y">있음</span></span>
+      <span class="doc">투자유치 실전가이드/백서<span class="st st-y">있음</span></span>
+      <span class="doc">투자준비 워크북<span class="st st-y">있음</span></span>
+    </div>
+  </div>
+
+  <div class="layer L2">
+    <div class="lh"><span class="code">L2</span><span class="nm">표준 — 작성 규칙</span><span class="role">"우리는 문서를 이렇게 쓴다"</span></div>
+    <div class="items">
+      <span class="doc">이 핸드북 (Part B)<span class="st st-y">있음</span></span>
+      <span class="doc">경영전략 프레임워크 15도구<span class="st st-p">개인</span></span>
+      <span class="doc">제안서의 정석<span class="st st-p">개인</span></span>
+      <span class="doc">일잘러 보고서 작성법<span class="st st-p">개인</span></span>
+      <span class="doc">슬라이드 레이아웃 아틀라스 120<span class="st st-p">개인</span></span>
+      <span class="doc">R&D 사업계획서 바이블<span class="st st-p">개인</span></span>
+      <span class="doc">AI 사업계획서·제안서 작성법<span class="st st-p">개인</span></span>
+    </div>
+    <ul><li>6권 책 매뉴얼은 <b>표준의 근거 자료</b>. 실제 규칙은 이 핸드북 Part B로 압축돼 있다.</li></ul>
+  </div>
+
+  <div class="layer L3">
+    <div class="lh"><span class="code">L3</span><span class="nm">실행 — 운영 시스템</span><span class="role">"매일 이렇게 돌린다"</span></div>
+    <div class="items">
+      <span class="doc">운영매뉴얼 v0.9→v1.0<span class="st st-w">진행</span></span>
+      <span class="doc">SOP 26종<span class="st st-y">있음</span></span>
+      <span class="doc">운영 9단계 사이클<span class="st st-y">있음</span></span>
+      <span class="doc">현장 체크리스트 3종<span class="st st-y">있음</span></span>
+      <span class="doc">BRING-CRM 1.7.0<span class="st st-y">있음</span></span>
+      <span class="doc">ValueScope (지도·엔진)<span class="st st-y">있음</span></span>
+    </div>
+  </div>
+
+  <div class="layer L4">
+    <div class="lh"><span class="code">L4</span><span class="nm">대외 산출물 — 회사가 말하는 문서</span><span class="role">L0~L3을 재료로 만든다</span></div>
+    <div class="items">
+      <span class="doc">건물주 제안서<span class="st st-w">진행</span></span>
+      <span class="doc">투자 IR 덱 (20p)<span class="st st-y">있음</span></span>
+      <span class="doc">정부지원 신청서 4건<span class="st st-w">진행</span></span>
+      <span class="doc">R&D 사업계획서 (에프디이노)<span class="st st-n">없음</span></span>
+      <span class="doc">밸류업 실증 리포트<span class="st st-w">진행</span></span>
+      <span class="doc">데이터룸 (부록 A1~A15)<span class="st st-n">없음</span></span>
+    </div>
+  </div>
+</section>
+
+<section id="gap">
+  <h2>다음에 채울 빈칸 <span>뼈대 다음 우선순위</span></h2>
+  <div class="card"><ul>
+    <li><b>운영매뉴얼 v1.0 승인</b> — 현장 30~100건 적용 (L3). 위임·복제의 전제.</li>
+    <li><b>표준 템플릿 팩</b> — 이 핸드북 Part B 기준으로 제안서/IR/보고서/사업계획서 빈 템플릿 5종 제작 (L4 재료).</li>
+    <li><b>데이터룸 A1~A15</b> — 실사·투자 대비 증거 창고 (워크북에서 채움).</li>
+    <li><b>에프디이노 R&D 사업계획서</b> — R&D 바이블·AI책 표준으로 초안 (L4).</li>
+  </ul></div>
+</section>
+
+<!-- ============ PART B ============ -->
+<section id="std">
+  <h2>B. 브링 문서 작성 표준 <span>6권 실무서를 하나의 규칙으로</span></h2>
+  <p class="lead">아래는 브링의 모든 문서가 따르는 규칙이다. 보고서든 제안서든 IR이든, 이 순서로 생각하고 이 형식으로 만든다.</p>
+</section>
+
+<section id="principle">
+  <h3>B-1. 5대 공통 원칙 <span>(일잘러 보고서 + 제안서의 정석)</span></h3>
+  <div class="principle">
+    <div class="pr"><div class="n">원칙 1</div><b>문서는 '말'이다</b><p>글이 아니라 커뮤니케이션 도구. 상대(건물주·투자자·심사위원)의 시간을 아끼는 게 목적. 모니터 너머 상대를 떠올리며 쓴다.</p></div>
+    <div class="pr"><div class="n">원칙 2</div><b>메시지 먼저, 자료는 근거</b><p>익숙한 목차(개요·배경·목적…)부터 채우지 마라. <b>전할 말을 먼저 정하고 → 뒷받침 자료를 나열 → 각자 제목</b>을 붙인다.</p></div>
+    <div class="pr"><div class="n">원칙 3</div><b>한 장 한 메시지</b><p>한 장에 3요소: ①핵심 메시지(한마디) ②설명·근거(왜/어떻게) ③시각 자료. 구색용 도형·전부 강조는 방해.</p></div>
+    <div class="pr"><div class="n">원칙 4</div><b>골격부터 (Flow&gt;Fact)</b><p>정보 나열이 아니라 흐름. 뼈대(6단계)를 먼저 세우고 살을 붙인다. 간지로 큰 덩어리를 나눈다.</p></div>
+    <div class="pr"><div class="n">원칙 5</div><b>과장 금지 · 근거 데이터</b><p>주장마다 backdata(CRM·6동 실적·ValueScope). 총수익률(허수) 아닌 <b>실현수익률</b>. 문서는 남아서 나중에 대조당한다.</p></div>
+  </div>
+</section>
+
+<section id="skeleton">
+  <h3>B-2. 표준 골격 = 제안서 6단계 <span>(제안서의 정석 6PP)</span></h3>
+  <div class="card">
+    <p style="margin-top:0;color:var(--dim)">설득형 문서(제안서·IR·신청서)는 이 6단계로 뼈대를 잡는다. "상대의 질문 → 나의 답변" 구조.</p>
+    <div class="flow">
+      <span class="step"><b>1 문제</b> Why<br><span style="color:var(--faint);font-size:11px">"이런 문제 있잖아"</span></span><span class="arrow">→</span>
+      <span class="step"><b>2 원인</b> Why so<br><span style="color:var(--faint);font-size:11px">"사실 이것 때문"</span></span><span class="arrow">→</span>
+      <span class="step"><b>3 해결</b> What<br><span style="color:var(--faint);font-size:11px">"그래서 이렇게"</span></span><span class="arrow">→</span>
+      <span class="step"><b>4 비교우위</b> What else<br><span style="color:var(--faint);font-size:11px">"이게 더 나아"</span></span><span class="arrow">→</span>
+      <span class="step"><b>5 진행</b> How<br><span style="color:var(--faint);font-size:11px">"이렇게 진행"</span></span><span class="arrow">→</span>
+      <span class="step"><b>6 성과</b> If<br><span style="color:var(--faint);font-size:11px">"이런 성과가"</span></span>
+    </div>
+    <p style="margin-bottom:0;color:var(--dim);font-size:12.5px">큰 덩어리는 <b style="color:var(--gold)">Why · What · How · If</b> 4묶음으로 간지 구분. 투자 제안엔 <b>Who(대표가 누구인가)</b>를 변주로 추가.</p>
+  </div>
+</section>
+
+<section id="bytype">
+  <h3>B-3. 문서 유형별 표준 <span>목적·독자·골격·필수요소</span></h3>
+  <div class="card" style="overflow-x:auto">
+    <table>
+      <thead><tr><th style="width:15%">유형</th><th style="width:14%">독자</th><th>골격 / 필수 요소</th><th style="width:16%">근거 매뉴얼</th></tr></thead>
+      <tbody>
+        <tr><td class="ty">내부 보고서</td><td>대표·팀</td><td><b>결론 먼저.</b> 한 장 3요소 · 매끄러운 순서(메시지→근거) · 목차로 분량 예고</td><td>일잘러 보고서</td></tr>
+        <tr><td class="ty">건물주 제안서</td><td>건물주</td><td><b>6단계:</b> 공실 문제 → 원인 → 공동관리 해결(15만↔8.9만) → 비교우위(직접관리 대비) → 진행 → 성과. 현장사진 Appendix</td><td>제안서의 정석</td></tr>
+        <tr><td class="ty">투자 IR</td><td>VC·AC·엔젤</td><td><b>15슬라이드</b>(문제·솔루션·시장·BM·트랙션·Moat·팀·재무·EXIT·Ask) · 부결 4영역 방어 · 모든 주장에 backdata · 투자제안/마일스톤 필수</td><td>VC 실무서 + IR 템플릿</td></tr>
+        <tr><td class="ty">정부 R&D 사업계획서</td><td>평가위원</td><td>문제정의 → 기술개요·핵심기술 → <b>TRL 로드맵</b> → 정량목표(SMART) → 비목별 예산(적산) → 일정(마일스톤) → 기대효과. 챕터 연쇄 일관성</td><td>R&D 바이블 + AI책</td></tr>
+        <tr><td class="ty">정부지원 신청서</td><td>심사위원</td><td><b>평가기준 역독:</b> 배점표를 목차·강조점 설계도로. 공모 키워드 반영. 부동산업 업종 자격 선확인</td><td>AI책</td></tr>
+      </tbody>
+    </table>
+  </div>
+</section>
+
+<section id="slide">
+  <h3>B-4. 슬라이드 레이아웃 표준 <span>(슬라이드 레이아웃 아틀라스 120)</span></h3>
+  <div class="card"><ul>
+    <li><b>기본 문법:</b> 16:9 · 안전 여백 · 그리드(컬럼·로우) · 정렬+근접성 · 화이트 스페이스 · 시선 흐름(위→아래·좌→우).</li>
+    <li><b>한 장 한 메시지</b> — 결론형 제목(상단) → 핵심 수치 크게 → 좌 요약/우 표·그래프.</li>
+    <li><b>강조색은 2~3곳만.</b> 본문 좌측 정렬(제목만 중앙). 표는 '비교'일 때만, 아니면 차트로. 슬라이드당 메인 차트 1개.</li>
+    <li><b>용도별 3존:</b> 보고(상황·문제→데이터→인사이트→권고→리스크→다음단계) / 제안(헤드라인·근거3·기대효과+CTA) / 교육(개념→흐름도형→요약).</li>
+    <li><b>안 되는 것(NG):</b> 정보 과부하 · 정렬 붕괴 · 색/폰트 과다 · 구색용 도형. 못 줄이면 장을 늘려라.</li>
+  </ul></div>
+</section>
+
+<section id="framework">
+  <h3>B-5. 전략 분석 표준 <span>(프레임워크 15 중 브링 상비 5종)</span></h3>
+  <div class="card" style="overflow-x:auto">
+    <table>
+      <thead><tr><th style="width:20%">프레임워크</th><th>언제 쓰나 (브링)</th></tr></thead>
+      <tbody>
+        <tr><td class="ty">3C</td><td>영업·시장 판단의 기본 — 고객(건물주)·경쟁(직접관리/청소업체)·자사. KSF 도출</td></tr>
+        <tr><td class="ty">SWOT</td><td>분기 자가진단 · 지원사업 신청서의 자사 분석</td></tr>
+        <tr><td class="ty">5 Forces</td><td>IR·사업계획서의 '시장·경쟁' 슬라이드 — 산업 매력도 논증</td></tr>
+        <tr><td class="ty">BM 캔버스</td><td>사업모델 설명(제안서·IR·R&D) — 9블록 한 장 요약</td></tr>
+        <tr><td class="ty">BCG / 성장매트릭스</td><td>서비스 5종·확장(춘천) 포트폴리오 판단</td></tr>
+      </tbody>
+    </table>
+    <p style="margin-bottom:0;color:var(--faint);font-size:12px">나머지 10종(PEST·가치사슬·7S·VRIO·본원적전략·GE·앤소프·BSC·블루오션·핵심역량)은 필요 시 매뉴얼 참조.</p>
+  </div>
+</section>
+
+<section id="ai">
+  <h3>B-6. AI 활용 규칙 <span>(AI 사업계획서·제안서 작성법)</span></h3>
+  <div class="card"><ul>
+    <li><b>환각 3단계 검증:</b> 수치·기관명·법령·논문·시장규모(TAM·CAGR)는 <b>AI에게 생성시키지 말고 직접 수집 후 전달.</b> 최고위험 항목.</li>
+    <li><b>프롬프트에 명시:</b> "수치를 임의로 생성하지 않습니다" + 미확인 값은 <b>[원본대조필수] / [수치 삽입 필요]</b> 태깅. 제출 전 '환각 추출 프롬프트'로 재점검.</li>
+    <li><b>평가기준 역독:</b> 공모요강·평가표를 AI에 넣어 <b>배점 기반 목차 + 키워드 TOP5</b>를 뽑아 설계도로 역이용.</li>
+    <li><b>모의 심사:</b> AI에 심사위원 역할을 주고 섹션 일관성·약점 점검. AI 초안 5약점(균일 문체·추상 미사여구·논리 약점·과잉 친절·환각 수치)을 문체→논리→중복→수치 순으로 교정.</li>
+  </ul></div>
+  <div class="warnbox"><b>브링 특별 주의:</b> 부동산업 업종코드가 지원사업 자격에 걸릴 수 있음 — 신청 전 온판상담소(1899-0309)로 확인. AI가 만든 실적·수치는 반드시 MASTER_CONTEXT와 대조.</div>
+</section>
+
+<section id="brand">
+  <h3>B-7. 브랜드 · 서식 표준</h3>
+  <div class="card"><ul>
+    <li><b>색:</b> 네이비 <b style="color:#8ab4f8">#12213B</b> (주) · 골드 <b style="color:var(--gold)">#D9A441</b> (강조) · 그레이 계열(본문). 강조색은 문서당 2~3곳.</li>
+    <li><b>폰트:</b> 맑은 고딕 / Noto Sans KR (Light·Medium·Bold로 위계). 제목 Bold·네이비, 강조 골드.</li>
+    <li><b>톤앤매너:</b> "말로 만든 서비스가 아니라 현장에서 만드는 관리체계" — 담백하고 근거 중심. 과장·미사여구 배제.</li>
+    <li><b>파일명:</b> <b>브링_[문서종류]_[대상]_[버전].확장자</b> (예: 브링_제안서_우산동_v1.docx).</li>
+    <li><b>버전관리:</b> 숫자·정책은 항상 MASTER_CONTEXT 우선. 문서 하단에 기준일·근거·버전 명기.</li>
+    <li><b>표지:</b> 5:5 세로형 또는 컬러 박스형(제안서의 정석 7표지 중). 사진 위 투명도 박스 + 포인트 컬러 추출.</li>
+  </ul></div>
+</section>
+
+<div class="foot">
+  브링 운영체계 & 문서표준 핸드북 v1.0 (뼈대) · 근거: 6권 실무서 매뉴얼 + 브링케어 체계도 v1.3 + BRING_MASTER_CONTEXT.md<br>
+  갱신 규칙: 표준이 바뀌면 이 핸드북을 고치고 버전을 올린다. 숫자·정책은 MASTER_CONTEXT가 단일 출처.
+</div>
+
+</div>
+</body>
+</html>
