@@ -239,6 +239,30 @@ test("active Firebase hosting sources and exported assets target bring-fm only",
   assert.match(fieldAsset, /projectId:[`"]bring-fm[`"]/);
 });
 
+test("Firebase export includes every Naver ad landing route", async () => {
+  for (const { pathname, price, title, description } of landingRoutes) {
+    const file = `../firebase-public${pathname}/index.html`;
+    const html = await readFile(new URL(file, import.meta.url), "utf8");
+    assert.ok(html.includes(price));
+    assert.match(html, /tel:01065663606/);
+    assert.match(html, /quick-estimate/);
+    assert.ok(html.includes(`<title>${title}</title>`));
+    assert.ok(
+      html.includes(
+        `rel="canonical" href="https://bring-fm.web.app${pathname}"`,
+      ),
+    );
+    assert.ok(html.includes(`property="og:title" content="${title}"`));
+    assert.ok(
+      html.includes(`property="og:description" content="${description}"`),
+    );
+    assert.ok(html.includes(`name="twitter:title" content="${title}"`));
+    assert.ok(
+      html.includes(`name="twitter:description" content="${description}"`),
+    );
+  }
+});
+
 test("the retired project reference remains confined to the GET-only migration adapter", async () => {
   const migrationAdapter = await readFile(
     new URL("../../desktop-crm/src/crm-staged-migration.js", import.meta.url),
