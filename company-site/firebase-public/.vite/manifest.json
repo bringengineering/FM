@@ -1,4 +1,8 @@
 {
+  "_firebase.client-BT88MgJI.js": {
+    "file": "assets/firebase.client-BT88MgJI.js",
+    "name": "firebase.client"
+  },
   "_framework-B8WyT5R3.js": {
     "file": "assets/framework-B8WyT5R3.js",
     "name": "framework",
@@ -6,8 +10,8 @@
       "_rolldown-runtime-S-ySWqyJ.js"
     ]
   },
-  "_query-DXglEInB.js": {
-    "file": "assets/query-DXglEInB.js",
+  "_query-BqyIlvsm.js": {
+    "file": "assets/query-BqyIlvsm.js",
     "name": "query"
   },
   "_readonly-url-search-params-BRv7ewS0.js": {
@@ -37,29 +41,31 @@
     ]
   },
   "app/field/components/v2/FieldV2App.tsx": {
-    "file": "assets/FieldV2App-B89G9MB0.js",
+    "file": "assets/FieldV2App-CcFd_Q1S.js",
     "name": "FieldV2App",
     "src": "app/field/components/v2/FieldV2App.tsx",
     "isDynamicEntry": true,
     "imports": [
       "_rolldown-runtime-S-ySWqyJ.js",
+      "_firebase.client-BT88MgJI.js",
       "_framework-B8WyT5R3.js"
     ]
   },
   "app/landing/QuickEstimateForm.tsx": {
-    "file": "assets/QuickEstimateForm-DJzP9N7P.js",
+    "file": "assets/QuickEstimateForm-vP3MRXXZ.js",
     "name": "QuickEstimateForm",
     "src": "app/landing/QuickEstimateForm.tsx",
     "isDynamicEntry": true,
     "imports": [
       "_rolldown-runtime-S-ySWqyJ.js",
+      "_firebase.client-BT88MgJI.js",
       "_framework-B8WyT5R3.js",
       "_readonly-url-search-params-BRv7ewS0.js",
       "_url-utils-BAkPrQqo.js"
     ]
   },
   "node_modules/.pnpm/vinext@0.0.50_@vitejs+plugi_9192fdac6e7854526409bdfa1df91a00/node_modules/vinext/dist/shims/image.js": {
-    "file": "assets/image-Dw_yO70D.js",
+    "file": "assets/image-DZoQpjrg.js",
     "name": "image",
     "src": "node_modules/.pnpm/vinext@0.0.50_@vitejs+plugi_9192fdac6e7854526409bdfa1df91a00/node_modules/vinext/dist/shims/image.js",
     "isDynamicEntry": true,
@@ -69,7 +75,7 @@
     ]
   },
   "node_modules/.pnpm/vinext@0.0.50_@vitejs+plugi_9192fdac6e7854526409bdfa1df91a00/node_modules/vinext/dist/shims/layout-segment-context.js": {
-    "file": "assets/layout-segment-context-CQZyaiRP.js",
+    "file": "assets/layout-segment-context-C0qR0iIF.js",
     "name": "layout-segment-context",
     "src": "node_modules/.pnpm/vinext@0.0.50_@vitejs+plugi_9192fdac6e7854526409bdfa1df91a00/node_modules/vinext/dist/shims/layout-segment-context.js",
     "isDynamicEntry": true,
@@ -80,7 +86,7 @@
     ]
   },
   "node_modules/.pnpm/vinext@0.0.50_@vitejs+plugi_9192fdac6e7854526409bdfa1df91a00/node_modules/vinext/dist/shims/link.js": {
-    "file": "assets/link-CAdZ8xEC.js",
+    "file": "assets/link-C63OVtiz.js",
     "name": "link",
     "src": "node_modules/.pnpm/vinext@0.0.50_@vitejs+plugi_9192fdac6e7854526409bdfa1df91a00/node_modules/vinext/dist/shims/link.js",
     "isDynamicEntry": true,
@@ -90,14 +96,14 @@
       "_framework-B8WyT5R3.js",
       "_readonly-url-search-params-BRv7ewS0.js",
       "_url-utils-BAkPrQqo.js",
-      "_query-DXglEInB.js"
+      "_query-BqyIlvsm.js"
     ],
     "dynamicImports": [
       "node_modules/.pnpm/vinext@0.0.50_@vitejs+plugi_9192fdac6e7854526409bdfa1df91a00/node_modules/vinext/dist/shims/router.js"
     ]
   },
   "node_modules/.pnpm/vinext@0.0.50_@vitejs+plugi_9192fdac6e7854526409bdfa1df91a00/node_modules/vinext/dist/shims/router.js": {
-    "file": "assets/router-hUx5Ly35.js",
+    "file": "assets/router-ID4CUCJc.js",
     "name": "router",
     "src": "node_modules/.pnpm/vinext@0.0.50_@vitejs+plugi_9192fdac6e7854526409bdfa1df91a00/node_modules/vinext/dist/shims/router.js",
     "isDynamicEntry": true,
@@ -106,14 +112,14 @@
       "virtual:vinext-app-browser-entry",
       "_framework-B8WyT5R3.js",
       "_url-utils-BAkPrQqo.js",
-      "_query-DXglEInB.js"
+      "_query-BqyIlvsm.js"
     ],
     "dynamicImports": [
       "_framework-B8WyT5R3.js"
     ]
   },
   "virtual:vinext-app-browser-entry": {
-    "file": "assets/index-CE372Q3X.js",
+    "file": "assets/index-NiiXn_79.js",
     "name": "index",
     "src": "virtual:vinext-app-browser-entry",
     "isEntry": true,

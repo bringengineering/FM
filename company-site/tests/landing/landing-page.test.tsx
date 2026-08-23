@@ -68,7 +68,7 @@ describe("LandingPage", () => {
     ).toHaveAttribute("href", "/care-records");
   });
 
-  it("shows truthful official channel guidance without invented social URLs", () => {
+  it("links the verified official Kakao consultation channel", () => {
     const { getByRole, getByText } = render(
       <LandingPage service={landingServices["stair-cleaning"]} />,
     );
@@ -77,7 +77,10 @@ describe("LandingPage", () => {
       "href",
       "https://blog.naver.com/bringcare",
     );
-    expect(getByText(/카카오톡에서.*BRING Care.*검색/)).toBeInTheDocument();
+    expect(getByRole("link", { name: /카카오톡 바로 상담/ })).toHaveAttribute(
+      "href",
+      "https://pf.kakao.com/_xnaRfX/chat",
+    );
     expect(getByText(/인스타그램 공식 계정 주소 확인 후 연결/)).toBeInTheDocument();
   });
 

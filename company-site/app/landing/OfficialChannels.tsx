@@ -1,4 +1,5 @@
 const PHONE_HREF = "tel:01065663606";
+const KAKAO_CHAT_HREF = "https://pf.kakao.com/_xnaRfX/chat";
 
 export default function OfficialChannels() {
   return (
@@ -24,7 +25,8 @@ export default function OfficialChannels() {
           <article className="landing-channel-card">
             <span>02 · KAKAO TALK</span>
             <h3>민원 접수·상담 신청</h3>
-            <p>카카오톡에서 BRING Care 검색 후 채널을 확인해 주세요.</p>
+            <p>BRING CARE 공식 카카오톡 채널에서 바로 상담을 시작하세요.</p>
+            <a href={KAKAO_CHAT_HREF} target="_blank" rel="noreferrer">카카오톡 바로 상담 <span aria-hidden="true">↗</span></a>
             <a href={PHONE_HREF}>채널 연결이 어려우면 전화 상담</a>
           </article>
           <article className="landing-channel-card landing-channel-card-pending">

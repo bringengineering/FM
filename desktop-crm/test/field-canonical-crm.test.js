@@ -180,6 +180,9 @@ test("loadStore reads renderer overlays separately and never bootstraps an empty
     if (location === "fieldSummaries") {
       return { job_1: { fieldJobId: "job_1", workflowStatus: "assigned" } };
     }
+    if (location === "marketingLeadInbox") {
+      return { lead_1: { requestId: "lead_1", name: "광고 문의", status: "new" } };
+    }
     throw new Error(`Unexpected request ${location}`);
   };
   client.startStream = () => undefined;
@@ -189,11 +192,13 @@ test("loadStore reads renderer overlays separately and never bootstraps an empty
   assert.deepEqual(requests, [
     { location: "crmShared/data", method: "GET" },
     { location: "crmShared/data/buildingUnits", method: "GET" },
-    { location: "fieldSummaries", method: "GET" }
+    { location: "fieldSummaries", method: "GET" },
+    { location: "marketingLeadInbox", method: "GET" }
   ]);
   assert.equal(result.customers[0].id, "customer_local");
   assert.equal(result.buildingUnits[0].label, "101호");
   assert.equal(result.fieldSummaries[0].fieldJobId, "job_1");
+  assert.equal(result.marketingLeads[0].requestId, "lead_1");
   assert.equal(requests.some(request => ["PUT", "PATCH", "POST", "DELETE"].includes(request.method)), false);
   assert.equal(Object.hasOwn(writes[0], "buildingUnits"), false);
   assert.equal(Object.hasOwn(writes[0], "fieldSummaries"), false);
@@ -321,6 +326,9 @@ test("a field-summary stream event refreshes renderer overlays without reloading
   let sharedReloads = 0;
   client.loadCanonicalBuildingUnits = async () => ({ unit_1: { id: "unit_1", label: "101호" } });
   client.loadFieldSummaries = async () => ({ job_1: { fieldJobId: "job_1", workflowStatus: "approved" } });
+  client.loadMarketingLeadInbox = async () => ({
+    lead_1: { requestId: "lead_1", name: "광고 문의", phone: "010-1234-5678", needs: "계단청소", submittedAt: 1, status: "new" }
+  });
   client.scheduleRemoteReload = () => { sharedReloads += 1; };
   client.scheduleOverlayReload = () => client.reloadRendererOverlays();
 
@@ -331,6 +339,8 @@ test("a field-summary stream event refreshes renderer overlays without reloading
   assert.equal(remoteStores.length, 1);
   assert.equal(remoteStores[0].customers[0].name, "Keep");
   assert.equal(remoteStores[0].fieldSummaries[0].workflowStatus, "approved");
+  assert.equal(remoteStores[0].marketingLeads[0].name, "광고 문의");
+  assert.equal(Object.hasOwn(toRemoteStore(remoteStores[0], "member@bring.test"), "marketingLeads"), false);
 });
 
 test("shared and field-summary streams start and stop together, and auth revocation aborts both", async () => {
@@ -341,21 +351,26 @@ test("shared and field-summary streams start and stop together, and auth revocat
   client.startStream();
   assert.deepEqual(starts, [
     { location: "crmShared/data", kind: "shared" },
-    { location: "fieldSummaries", kind: "fieldSummaries" }
+    { location: "fieldSummaries", kind: "fieldSummaries" },
+    { location: "marketingLeadInbox", kind: "marketingLeadInbox" }
   ]);
 
   let sharedAborts = 0;
   let summaryAborts = 0;
+  let leadAborts = 0;
   client.streamController = { abort: () => { sharedAborts += 1; } };
   client.summaryStreamController = { abort: () => { summaryAborts += 1; } };
+  client.marketingLeadStreamController = { abort: () => { leadAborts += 1; } };
   client.handleStreamEvent("fieldSummaries", "auth_revoked");
   assert.equal(client.session.expiresAt, 0);
   assert.equal(sharedAborts, 1);
   assert.equal(summaryAborts, 1);
+  assert.equal(leadAborts, 1);
 
   client.stopStream();
   assert.equal(client.streamController, null);
   assert.equal(client.summaryStreamController, null);
+  assert.equal(client.marketingLeadStreamController, null);
 });
 
 test("an old session canonical refresh is discarded after logout and a different login", async () => {
@@ -830,6 +845,7 @@ test("an old session summary overlay response is discarded while the new session
   client.session = session("user_a");
   client.loadCanonicalBuildingUnits = async () => ({ unit_a: { id: "unit_a", label: "A 호실" } });
   client.loadFieldSummaries = async () => oldSummaries.promise;
+  client.loadMarketingLeadInbox = async () => ({});
   const oldRefresh = client.reloadRendererOverlays();
 
   await client.logout(false);
@@ -841,6 +857,7 @@ test("an old session summary overlay response is discarded while the new session
 
   client.loadCanonicalBuildingUnits = async () => ({ unit_b: { id: "unit_b", label: "B 호실" } });
   client.loadFieldSummaries = async () => ({ job_b: { fieldJobId: "job_b", workflowStatus: "accepted" } });
+  client.loadMarketingLeadInbox = async () => ({});
   const current = await client.reloadRendererOverlays();
   assert.equal(current.buildingUnits[0].id, "unit_b");
   assert.equal(remoteStores.at(-1).fieldSummaries[0].fieldJobId, "job_b");

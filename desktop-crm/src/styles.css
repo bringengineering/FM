@@ -4,6 +4,22 @@
   --cyan:#55c3d1;--green:#48b995;--yellow:#e8b855;--orange:#ef9569;--red:#e96f7a;
   --shadow:0 16px 44px rgba(61,119,153,.12);--radius:16px;
 }
+
+.marketing-lead-panel { margin: 0 0 18px; }
+.marketing-lead-count { color: #1676b9; font-size: 14px; }
+.marketing-lead-list { display: grid; gap: 10px; }
+.marketing-lead-row { display: flex; align-items: center; justify-content: space-between; gap: 18px; padding: 14px 16px; border: 1px solid #e5edf4; border-radius: 12px; background: #fbfdff; }
+.marketing-lead-copy { min-width: 0; flex: 1; }
+.marketing-lead-copy > div { display: flex; align-items: center; gap: 9px; }
+.marketing-lead-copy strong { font-size: 14px; }
+.marketing-lead-copy time { margin-left: auto; color: #789; font-size: 11px; }
+.marketing-lead-copy p { margin: 5px 0 0; color: #526577; font-size: 12px; line-height: 1.45; }
+.lead-status { padding: 3px 7px; border-radius: 999px; background: #e7f3ff; color: #176fa8; font-size: 10px; font-weight: 700; }
+.lead-status.processing { background: #fff2d8; color: #976000; }
+.lead-status.converted { background: #e5f7ec; color: #267a48; }
+.lead-status.closed { background: #edf0f3; color: #687582; }
+.marketing-lead-call { flex: 0 0 auto; text-decoration: none; }
+@media (max-width: 760px) { .marketing-lead-row { align-items: stretch; flex-direction: column; } .marketing-lead-copy time { margin-left: 0; } }
 *{box-sizing:border-box}
 html,body{height:100%;margin:0;overflow:hidden;background:var(--bg);color:var(--text);font-family:"Pretendard","Noto Sans KR","Malgun Gothic",sans-serif}
 button,input,select,textarea{font:inherit}button{color:inherit}

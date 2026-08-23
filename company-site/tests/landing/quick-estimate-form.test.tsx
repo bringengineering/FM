@@ -4,11 +4,16 @@ import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import QuickEstimateForm from "../../app/landing/QuickEstimateForm";
 
-const { pushRoute } = vi.hoisted(() => ({ pushRoute: vi.fn() }));
+const { pushRoute, submitMarketingLead } = vi.hoisted(() => ({
+  pushRoute: vi.fn(),
+  submitMarketingLead: vi.fn(),
+}));
 
 vi.mock("next/navigation", () => ({
   useRouter: () => ({ push: pushRoute }),
 }));
+
+vi.mock("../../app/landing/marketingLeadClient", () => ({ submitMarketingLead }));
 
 function fillRequiredFields() {
   fireEvent.change(screen.getByLabelText("이름"), {
@@ -23,19 +28,18 @@ function fillRequiredFields() {
   fireEvent.change(screen.getByLabelText("건물 정보"), {
     target: { value: "4층 원룸 건물" },
   });
-}
-
-function successResponse() {
-  return Promise.resolve({
-    ok: true,
-    json: async () => ({ success: true }),
-  } as Response);
+  fireEvent.change(screen.getByLabelText("필요한 상담 내용"), {
+    target: { value: "계단과 복도 월 4회 청소가 필요합니다." },
+  });
+  fireEvent.change(screen.getByLabelText("문의 유형"), {
+    target: { value: "building_owner" },
+  });
 }
 
 describe("QuickEstimateForm", () => {
   beforeEach(() => {
-    vi.stubGlobal("fetch", vi.fn());
     pushRoute.mockReset();
+    submitMarketingLead.mockReset();
   });
 
   it("renders the minimum required fields and service context", () => {
@@ -49,6 +53,8 @@ describe("QuickEstimateForm", () => {
     expect(screen.getByLabelText("이름")).toBeRequired();
     expect(screen.getByLabelText("연락처")).toBeRequired();
     expect(screen.getByLabelText("건물 위치 또는 지역")).toBeRequired();
+    expect(screen.getByLabelText("필요한 상담 내용")).toBeRequired();
+    expect(screen.getByLabelText("문의 유형")).toBeRequired();
     expect(screen.getByLabelText(/상담을 위해 입력 정보를/)).toBeRequired();
     expect(screen.getByLabelText("건물 정보")).not.toBeRequired();
     expect(
@@ -67,15 +73,15 @@ describe("QuickEstimateForm", () => {
 
     fireEvent.click(screen.getByRole("button", { name: "간편 견적 신청" }));
 
-    expect(fetch).not.toHaveBeenCalled();
+    expect(submitMarketingLead).not.toHaveBeenCalled();
   });
 
-  it("sends service, page and Naver campaign context once while submitting", async () => {
-    let resolveRequest!: (response: Response) => void;
-    const request = new Promise<Response>((resolve) => {
+  it("stores the lead in CRM with service and Naver campaign context once", async () => {
+    let resolveRequest!: (value: { receiptId: string }) => void;
+    const request = new Promise<{ receiptId: string }>((resolve) => {
       resolveRequest = resolve;
     });
-    vi.mocked(fetch).mockReturnValue(request);
+    submitMarketingLead.mockReturnValue(request);
 
     render(
       <QuickEstimateForm
@@ -93,35 +99,30 @@ describe("QuickEstimateForm", () => {
 
     expect(await screen.findByRole("button", { name: "전송 중..." })).toBeDisabled();
     fireEvent.click(screen.getByRole("button", { name: "전송 중..." }));
-    expect(fetch).toHaveBeenCalledTimes(1);
+    expect(submitMarketingLead).toHaveBeenCalledTimes(1);
+    expect(submitMarketingLead).toHaveBeenCalledWith(expect.objectContaining({
+      name: "김건물",
+      phone: "010-1234-5678",
+      location: "원주시 단계동",
+      needs: "계단과 복도 월 4회 청소가 필요합니다.",
+      customerType: "building_owner",
+      service: "계단·공용부 청소",
+      sourcePath: "/stair-cleaning",
+      utmSource: "naver",
+      utmCampaign: "stair-launch",
+      utmTerm: "원주계단청소",
+      consent: true,
+    }));
 
-    const [endpoint, options] = vi.mocked(fetch).mock.calls[0];
-    expect(endpoint).toBe(
-      "https://formsubmit.co/ajax/bringengineering1008@gmail.com",
-    );
-    const delivery = options?.body as FormData;
-    expect(delivery.get("서비스")).toBe("계단·공용부 청소");
-    expect(delivery.get("유입 경로")).toBe("/stair-cleaning");
-    expect(delivery.get("현재 URL")).toContain(
-      "https://bring-fm.web.app/stair-cleaning",
-    );
-    expect(delivery.get("utm_source")).toBe("naver");
-    expect(delivery.get("utm_campaign")).toBe("stair-launch");
-    expect(delivery.get("utm_term")).toBe("원주계단청소");
-    expect(delivery.get("접수 시각")).toBeTruthy();
-
-    resolveRequest(await successResponse());
+    resolveRequest({ receiptId: "lead_1234567890abcdef" });
     await waitFor(() =>
-      expect(pushRoute).toHaveBeenCalledWith("/consult/complete"),
+      expect(pushRoute).toHaveBeenCalledWith("/consult/complete?receipt=lead_1234567890abcdef"),
     );
-    expect(fetch).toHaveBeenCalledTimes(1);
+    expect(submitMarketingLead).toHaveBeenCalledTimes(1);
   });
 
   it("shows a phone and copy fallback when delivery fails", async () => {
-    vi.mocked(fetch).mockResolvedValue({
-      ok: true,
-      json: async () => ({ success: false, message: "전송 실패" }),
-    } as Response);
+    submitMarketingLead.mockRejectedValue(new Error("CRM 접수 실패"));
     const writeText = vi.fn().mockResolvedValue(undefined);
     Object.defineProperty(navigator, "clipboard", {
       configurable: true,
@@ -138,7 +139,7 @@ describe("QuickEstimateForm", () => {
     fireEvent.click(screen.getByLabelText(/상담을 위해 입력 정보를/));
     fireEvent.click(screen.getByRole("button", { name: "간편 견적 신청" }));
 
-    expect(await screen.findByRole("status")).toHaveTextContent("전송 실패");
+    expect(await screen.findByRole("status")).toHaveTextContent("CRM 접수 실패");
     expect(screen.getByRole("link", { name: /전화 상담/ })).toHaveAttribute(
       "href",
       "tel:01065663606",
@@ -148,5 +149,6 @@ describe("QuickEstimateForm", () => {
     await waitFor(() => expect(writeText).toHaveBeenCalledTimes(1));
     expect(writeText.mock.calls[0][0]).toContain("건물관리");
     expect(writeText.mock.calls[0][0]).toContain("원주시 단계동");
+    expect(writeText.mock.calls[0][0]).toContain("계단과 복도 월 4회 청소");
   });
 });

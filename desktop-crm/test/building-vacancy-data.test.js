@@ -90,6 +90,45 @@ test("invalid additive unit values fail soft in renderer overlays without losing
   });
 });
 
+test("marketing leads are sanitized as renderer-only CRM inbox overlays", () => {
+  const overlays = Core.sanitizeRendererOverlays({
+    marketingLeads: {
+      lead_01JMARKETINGREQUEST000000001: {
+        requestId: "lead_01JMARKETINGREQUEST000000001",
+        name: " 김건물 ",
+        phone: "010-1234-5678",
+        needs: " 계단 정기청소 상담 ",
+        service: "계단·공용부 청소",
+        status: "new",
+        submittedAt: 1_777_000_000_000,
+        nested: { safe: true }
+      },
+      "../unsafe": { requestId: "../unsafe", name: "제외" }
+    }
+  });
+
+  assert.equal(overlays.marketingLeads.length, 1);
+  assert.deepEqual(overlays.marketingLeads[0], {
+    requestId: "lead_01JMARKETINGREQUEST000000001",
+    name: "김건물",
+    phone: "010-1234-5678",
+    location: "",
+    needs: "계단 정기청소 상담",
+    buildingInfo: "",
+    customerType: "individual",
+    service: "계단·공용부 청소",
+    sourcePath: "",
+    utmSource: "",
+    utmCampaign: "",
+    utmTerm: "",
+    consent: false,
+    submittedAt: 1_777_000_000_000,
+    status: "new",
+    nested: { safe: true }
+  });
+  assert.equal(Object.hasOwn(Core.sanitizeSharedStore(overlays), "marketingLeads"), false);
+});
+
 test("vacancy legacy migration counts named, status-conflict, and unnamed residual gaps without double counting", () => {
   const appSource = fs.readFileSync(path.join(__dirname, "../src/app.js"), "utf8");
   const start = appSource.indexOf("function vacancyLegacyMigrationState");

@@ -267,7 +267,7 @@
   }
 
   function blankStore() {
-    return Object.assign(blankSharedStore(), { buildingUnits: [], fieldSummaries: [] });
+    return Object.assign(blankSharedStore(), { buildingUnits: [], fieldSummaries: [], marketingLeads: [] });
   }
 
   function sanitizeSharedStore(input) {
@@ -357,11 +357,23 @@
     return unit;
   }
 
+  function normalizeMarketingLead(value) {
+    const lead = Object.assign({}, value || {});
+    ["requestId", "name", "phone", "location", "needs", "buildingInfo", "service", "sourcePath", "utmSource", "utmCampaign", "utmTerm"]
+      .forEach(field => { lead[field] = String(lead[field] || "").trim(); });
+    lead.customerType = ["individual", "building_owner", "manager"].includes(lead.customerType) ? lead.customerType : "individual";
+    lead.consent = lead.consent === true;
+    lead.submittedAt = Number.isFinite(Number(lead.submittedAt)) && Number(lead.submittedAt) >= 0 ? Number(lead.submittedAt) : 0;
+    lead.status = ["new", "processing", "converted", "closed"].includes(lead.status) ? lead.status : "new";
+    return lead;
+  }
+
   function sanitizeRendererOverlays(input) {
     const source = input && typeof input === "object" ? input : {};
     return {
       buildingUnits: sanitizeOverlayCollection(source.buildingUnits, "id").map(normalizeBuildingUnit),
-      fieldSummaries: sanitizeOverlayCollection(source.fieldSummaries, "fieldJobId")
+      fieldSummaries: sanitizeOverlayCollection(source.fieldSummaries, "fieldJobId"),
+      marketingLeads: sanitizeOverlayCollection(source.marketingLeads, "requestId").map(normalizeMarketingLead)
     };
   }
 

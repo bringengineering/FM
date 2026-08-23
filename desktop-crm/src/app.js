@@ -6,6 +6,7 @@
   const SalesUI = window.BringSalesUI;
   const SalesStandards = window.BringSalesStandards;
   const DriveImportUI = window.BringDriveImportUI;
+  const MarketingLeadsUI = window.BringMarketingLeadsUI;
   const WorkManagement = window.BringWorkManagement;
   const ServiceOperationsUI = window.BringServiceOperationsUI;
   const api = window.bringCRM;
@@ -391,7 +392,7 @@
     const source = value && typeof value === "object" ? value : {};
     const previous = fallback && typeof fallback === "object" ? fallback : {};
     const overlays = {};
-    ["buildingUnits", "fieldSummaries"].forEach(collection => {
+    ["buildingUnits", "fieldSummaries", "marketingLeads"].forEach(collection => {
       overlays[collection] = Object.prototype.hasOwnProperty.call(source, collection)
         ? source[collection]
         : previous[collection];
@@ -1147,6 +1148,7 @@
         <div class="brief-actions"><span class="brief-value">예상 매출 <b>${esc(compactMoney(stats.pipelineValue))}원</b></span><button class="secondary-button" data-view="tasks">할 일 보기</button><button class="primary-button" data-action="new-customer">＋ 고객 등록</button></div>
       </section>
       ${store.customers.length === 0 ? `<section class="starter-map"><div><span>처음 시작하기</span><h3>먼저 고객 한 명을 등록해 보세요</h3><p>고객과 건물을 연결하면 영업 관리의 건물 단계가 자동으로 표시됩니다.</p></div><div class="starter-steps"><b class="active">1 고객 등록</b><i>→</i><b>2 건물 연결</b><i>→</i><b>3 영업 단계 확인</b></div><button class="primary-button" data-action="new-customer">고객 등록하기 →</button></section>` : ""}
+      ${MarketingLeadsUI.renderInbox(store.marketingLeads)}
       <div class="kpi-grid">
         ${kpi("전체 고객", stats.totalCustomers, "등록된 고객 수", "#55aee8")}
         ${kpi("오늘 연락할 고객", stats.todayContacts, "오늘 연락 예정", "#5cc9d8", stats.todayContacts ? "good" : "")}

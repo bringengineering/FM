@@ -15,7 +15,7 @@
   color: var(--ink);
 }
 
-.landing-page :where(a, button, input, textarea, summary):focus-visible {
+.landing-page :where(a, button, input, select, textarea, summary):focus-visible {
   outline: 3px solid var(--blue);
   outline-offset: 3px;
   box-shadow: 0 0 0 2px var(--white);
@@ -803,6 +803,7 @@
 }
 
 .estimate-fields input,
+.estimate-fields select,
 .estimate-fields textarea {
   width: 100%;
   border: 1px solid #d4dde5;
@@ -816,6 +817,11 @@
 .estimate-fields input {
   min-height: 50px;
   padding: 0 14px;
+}
+
+.estimate-fields select {
+  min-height: 50px;
+  padding: 0 36px 0 14px;
 }
 
 .estimate-fields textarea {
