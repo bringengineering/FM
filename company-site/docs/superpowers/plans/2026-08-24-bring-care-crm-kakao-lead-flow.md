@@ -4,84 +4,87 @@
 
 **Goal:** Store every advertising-landing estimate request in the company CRM and take successful applicants directly to BRING CARE KakaoTalk consultation.
 
-**Architecture:** A same-origin Firebase Hosting rewrite sends JSON to a public HTTPS function. A focused, dependency-injected lead-ingest core validates and plans idempotent CRM mutations, while the HTTP adapter applies rate limiting and Admin SDK transactions. The landing form sends only to this endpoint and the completion page exposes the verified Kakao channel URL.
+**Architecture:** The free Spark-compatible path writes one App Check-backed, create-only record to a private Realtime Database CRM inbox. Strict Database Rules validate every public field and prevent reads, updates, deletes, or arbitrary CRM writes. The desktop CRM loads the inbox as a read-only overlay, while the completion page exposes the verified Kakao channel URL.
 
-**Tech Stack:** React 19, Vinext/Next-compatible routing, TypeScript, Firebase Functions v2, Firebase Realtime Database Admin SDK, Vitest, Testing Library.
+**Tech Stack:** React 19, Vinext/Next-compatible routing, TypeScript, Firebase App Check, Firebase Realtime Database, Electron CRM, Vitest, Testing Library, Firebase Rules Emulator.
 
 ---
 
-### Task 1: Public lead contract and CRM mutation planner
+### Task 1: Free public CRM inbox contract and security rules
 
 **Files:**
-- Create: `functions/src/marketing/submit-marketing-lead.ts`
-- Create: `functions/test/submit-marketing-lead.test.ts`
+- Modify: `database.rules.json`
+- Modify: `company-site/tests/field/database-rules.test.ts`
 
 - [ ] **Step 1: Write failing validation and mapping tests**
 
-Test the wished-for `normalizeMarketingLeadInput` and `buildMarketingLeadRecords` API with a valid 010 phone, required consent, allowed source paths, UTM capture, service mapping, and rejected invalid inputs. Assert that records use CRM-compatible `customers`, `activities`, `salesProspects`, `salesContacts`, `salesOpportunities`, and `salesEvents` fields.
+Add emulator tests proving an unauthenticated visitor can create one valid `crmCompany/marketingLeadInbox/{requestId}` record, cannot read it, cannot update/delete it, and cannot add unknown or malformed fields. Assert authorized CRM roles can read it and only admin/member can update its processing status.
 
 - [ ] **Step 2: Run the focused test and verify RED**
 
-Run: `pnpm vitest run test/submit-marketing-lead.test.ts`
+Run: `pnpm test:rules`
 
-Expected: FAIL because `src/marketing/submit-marketing-lead.ts` does not exist.
+Expected: FAIL because `crmCompany/marketingLeadInbox` has no public create rule.
 
 - [ ] **Step 3: Implement the minimum pure core**
 
-Create bounded string helpers, phone normalization, enum allowlists, service mapping, SHA-256 phone indexing, CRM record builders, and an injected `submitMarketingLeadCore(input, dependencies)` that reserves an idempotency receipt, resolves an existing customer by phone hash, and applies one multi-location update.
+Add a create-only public rule with exact child-field validation, 010 phone validation, allowed services and paths, consent enforcement, server-time bounds, and staff-only read/status-update permissions.
 
 - [ ] **Step 4: Run the focused test and verify GREEN**
 
-Run: `pnpm vitest run test/submit-marketing-lead.test.ts`
+Run: `pnpm test:rules`
 
 Expected: all focused tests PASS.
 
-### Task 2: Firebase HTTPS endpoint and hosting route
+### Task 2: CRM read-only marketing inbox overlay
 
 **Files:**
-- Modify: `functions/src/index.ts`
-- Modify: `firebase.json`
-- Test: `functions/test/submit-marketing-lead-http.test.ts`
+- Modify: `desktop-crm/src/core.js`
+- Modify: `desktop-crm/src/remote.js`
+- Modify: `desktop-crm/src/app.js`
+- Test: `desktop-crm/test/core.test.js`
+- Test: `desktop-crm/test/remote.test.js`
 
 - [ ] **Step 1: Write failing HTTP policy tests**
 
-Test POST-only behavior, JSON content type, allowed production/localhost origins, honeypot handling, IP-derived rate-limit identity, stable success JSON, and safe error JSON without personal data.
+Test that inbox records are sanitized as renderer-only overlays, loaded from `crmCompany/marketingLeadInbox`, never included in shared-store writes, and displayed on the dashboard without rendering unsafe HTML.
 
 - [ ] **Step 2: Run the focused HTTP test and verify RED**
 
-Run: `pnpm vitest run test/submit-marketing-lead-http.test.ts`
+Run: `node --test test/core.test.js test/remote.test.js`
 
-Expected: FAIL because the HTTP handler adapter does not exist.
+Expected: FAIL because the CRM does not yet load or render marketing leads.
 
 - [ ] **Step 3: Implement the endpoint and same-origin rewrite**
 
-Export `submitMarketingLead` with region `asia-northeast3`, `cors: false`, Admin Database dependencies, rate limiting under a non-CRM security path, and `Cache-Control: no-store`. Add a Hosting rewrite from `/api/marketing-leads` to that function.
+Add `marketingLeads` to renderer overlays, load the inbox alongside field summaries, preserve the non-authoritative overlay boundary, and add a visible `광고 신규 문의` dashboard panel.
 
 - [ ] **Step 4: Verify server tests and TypeScript build**
 
-Run: `pnpm test && pnpm build`
+Run: `pnpm test`
 
 Expected: 0 failures and TypeScript exit code 0.
 
-### Task 3: CRM-first landing form
+### Task 3: Free CRM-inbox landing submission
 
 **Files:**
+- Create: `company-site/app/landing/marketingLeadClient.ts`
 - Modify: `company-site/app/landing/QuickEstimateForm.tsx`
 - Modify: `company-site/tests/landing/quick-estimate-form.test.tsx`
 
 - [ ] **Step 1: Write failing form tests**
 
-Require a `상담 니즈` field, assert 010-format validation, assert JSON POST to `/api/marketing-leads`, verify service/source/UTM/request ID payload, and verify navigation to `/consult/complete?receipt=<safe-id>` only after server success.
+Require a `상담 니즈` field, assert 010-format validation, assert an App Check-backed create to the private CRM inbox, verify service/source/UTM/request ID payload, and verify navigation to `/consult/complete?receipt=<safe-id>` only after database success.
 
 - [ ] **Step 2: Run landing tests and verify RED**
 
 Run: `pnpm test:landing`
 
-Expected: FAIL because the current form posts FormData to FormSubmit and lacks the needs field.
+Expected: FAIL because the current form posts FormData to FormSubmit and lacks the needs field and CRM inbox client.
 
 - [ ] **Step 3: Implement the CRM-first submission**
 
-Replace the primary mail delivery with JSON submission, add needs and optional customer-type input, update consent copy, keep the phone/copy failure alternative, and never persist or route personal information.
+Replace primary mail delivery with Firebase `set` to the create-only inbox, require App Check, add needs and customer-type input, update consent copy, keep the phone/copy failure alternative, and never persist or route personal information.
 
 - [ ] **Step 4: Run landing tests and verify GREEN**
 
@@ -123,16 +126,16 @@ Expected: all landing tests PASS.
 
 - [ ] **Step 1: Run complete verification**
 
-Run in `functions`: `pnpm test && pnpm build`
+Run in `desktop-crm`: `pnpm test`
 
-Run in `company-site`: `pnpm test:landing && pnpm lint && pnpm build`
+Run in `company-site`: `pnpm test:landing && pnpm test:rules && pnpm lint && pnpm build`
 
 Expected: all commands exit 0.
 
 - [ ] **Step 2: Review privacy and requirement checklist**
 
-Confirm no phone/name in URLs or browser storage, the database is written only by Admin SDK, duplicate requests are idempotent, repeated phone numbers reuse customers, all three landings use the shared form, and the exact verified Kakao URL appears on completion.
+Confirm no phone/name in URLs or browser storage, anonymous users cannot read/update/delete inbox records or touch other CRM paths, duplicate request IDs are create-only, all three landings use the shared form, CRM staff can see the inbox, and the exact verified Kakao URL appears on completion.
 
 - [ ] **Step 3: Export and deploy the validated site and function**
 
-Run the repository's Firebase export/deploy workflow for Hosting and `submitMarketingLead`, then confirm the production routes and function-backed form endpoint respond without exposing personal data.
+Run the repository's Spark-compatible Database Rules and Firebase Hosting deployment workflow, then confirm the production form writes one private inbox record and opens the Kakao completion path without exposing personal data.

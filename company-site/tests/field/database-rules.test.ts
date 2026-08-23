@@ -133,6 +133,26 @@ const CRM_DATA = {
   tasks: { task_1: { id: "task_1", title: "Legacy task" } },
 };
 
+function marketingLead(requestId = "lead_01JMARKETINGREQUEST000000001") {
+  return {
+    requestId,
+    name: "김건물",
+    phone: "010-1234-5678",
+    location: "원주시 단계동",
+    needs: "4층 원룸 계단을 월 4회 청소하고 싶습니다.",
+    buildingInfo: "4층 16세대",
+    customerType: "building_owner",
+    service: "계단·공용부 청소",
+    sourcePath: "/stair-cleaning",
+    utmSource: "naver",
+    utmCampaign: "stair-launch",
+    utmTerm: "원주계단청소",
+    consent: true,
+    submittedAt: Date.now(),
+    status: "new",
+  };
+}
+
 const TEAM_PROFILES = {
   operator_lee: {
     displayName: "이지",
@@ -687,6 +707,25 @@ describe("field media database rule source", () => {
     });
   });
 
+  it("defines a private create-only public marketing lead inbox", async () => {
+    const source = JSON.parse(
+      await readFile(resolve("../database.rules.json"), "utf8"),
+    ) as { rules: { crmCompany?: Record<string, unknown> } };
+    const crm = source.rules.crmCompany as Record<string, Record<string, unknown>>;
+    const inbox = crm.marketingLeadInbox as Record<string, Record<string, unknown>>;
+    const item = inbox.$requestId;
+
+    expect(String(inbox[".read"])).toContain("crmCompany/access");
+    expect(inbox[".write"]).toBe(false);
+    expect(String(item[".write"])).toContain("!data.exists()");
+    expect(String(item[".write"])).toContain("auth == null");
+    expect(String(item[".validate"])).toContain("hasChildren");
+    expect(String(item.phone[".validate"])).toContain("010-");
+    expect(String(item.consent[".validate"])).toContain("true");
+    expect(String(item.submittedAt[".validate"])).toContain("now");
+    expect(item.$other[".validate"]).toBe(false);
+  });
+
   it("isolates company CRM access and validates Spark-safe canonical writes for enabled members", async () => {
     const source = JSON.parse(
       await readFile(resolve("../database.rules.json"), "utf8"),
@@ -974,6 +1013,51 @@ afterAll(async () => {
 });
 
 describe.runIf(databaseEmulatorAvailable)("fieldPlatform database rules", () => {
+  it("accepts one private public lead while preventing reads, tampering and malformed CRM writes", async () => {
+    const unauthenticated = environment.unauthenticatedContext().database();
+    const admin = environment.authenticatedContext(
+      "crm-admin",
+      crmClaims("admin@bring.test"),
+    ).database();
+    const member = environment.authenticatedContext(
+      "crm-member",
+      crmClaims("member@bring.test"),
+    ).database();
+    const viewer = environment.authenticatedContext(
+      "crm-viewer",
+      crmClaims("viewer@bring.test"),
+    ).database();
+    const requestId = "lead_01JMARKETINGREQUEST000000001";
+    const path = `crmCompany/marketingLeadInbox/${requestId}`;
+    const lead = marketingLead(requestId);
+
+    await assertSucceeds(set(ref(unauthenticated, path), lead));
+    await assertFails(get(ref(unauthenticated, path)));
+    await assertFails(update(ref(unauthenticated, path), { status: "closed" }));
+    await assertFails(remove(ref(unauthenticated, path)));
+    await assertFails(set(ref(unauthenticated, path), lead));
+
+    await assertSucceeds(get(ref(admin, path)));
+    await assertSucceeds(get(ref(member, path)));
+    await assertSucceeds(get(ref(viewer, path)));
+    await assertFails(update(ref(viewer, path), { status: "processing" }));
+    await assertSucceeds(update(ref(member, path), { status: "processing" }));
+
+    for (const [suffix, invalid] of [
+      ["phone", { ...marketingLead(), phone: "02-123-4567" }],
+      ["consent", { ...marketingLead(), consent: false }],
+      ["service", { ...marketingLead(), sourcePath: "/building-care" }],
+      ["extra", { ...marketingLead(), secret: "not allowed" }],
+      ["time", { ...marketingLead(), submittedAt: Date.now() - 600_000 }],
+    ] as const) {
+      const invalidId = `lead_01JMARKETINGINVALID${suffix}00001`;
+      await assertFails(set(
+        ref(unauthenticated, `crmCompany/marketingLeadInbox/${invalidId}`),
+        { ...invalid, requestId: invalidId },
+      ));
+    }
+  });
+
   it("denies every client direct reads and writes anywhere under FIELD v2", async () => {
     const clients = [
       environment.unauthenticatedContext().database(),
