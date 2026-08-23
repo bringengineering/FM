@@ -259,7 +259,9 @@ export default function LandingPage({ service }: LandingPageProps) {
             <p className="landing-eyebrow">30초 간편 견적</p>
             <h2>현장에 맞는 범위와 가격을 안내해 드립니다.</h2>
             <p>
-              위치와 건물 정보만 남겨주세요. 급한 상담은 전화가 가장 빠릅니다.
+              이름, 연락처, 건물 위치 또는 지역은 필수입니다. 층수, 세대수,
+              청소 범위 같은 건물 정보는 선택해 남겨주세요. 급한 상담은 전화가
+              가장 빠릅니다.
             </p>
             <a href={PHONE_HREF}>
               <span>전화 상담</span>

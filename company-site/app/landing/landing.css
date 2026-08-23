@@ -7,8 +7,18 @@
 }
 
 .landing-page :where(a, button, input, textarea, summary):focus-visible {
-  outline: 3px solid var(--lime);
-  outline-offset: 4px;
+  outline: 3px solid var(--blue);
+  outline-offset: 3px;
+  box-shadow: 0 0 0 2px var(--white);
+}
+
+.landing-records a:focus-visible,
+.landing-estimate-copy a:focus-visible,
+.landing-price-card a:focus-visible,
+.landing-footer a:focus-visible,
+.mobile-sticky-actions a:focus-visible {
+  outline-color: var(--lime);
+  box-shadow: 0 0 0 2px var(--navy);
 }
 
 .landing-section-inner,
@@ -184,7 +194,7 @@
 
 .landing-price-line span {
   color: var(--muted);
-  font-size: 11px;
+  font-size: 13px;
   line-height: 1.5;
 }
 
@@ -357,7 +367,7 @@
 
 .landing-record-grid {
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 280px), 1fr));
   gap: 18px;
   margin-top: 52px;
 }
@@ -367,6 +377,10 @@
   border: 1px solid rgba(255, 255, 255, 0.13);
   border-radius: 19px;
   background: rgba(255, 255, 255, 0.06);
+}
+
+.landing-record-card:only-child {
+  width: min(100%, 520px);
 }
 
 .landing-record-image {
@@ -515,7 +529,7 @@
   display: block;
   margin-top: 12px;
   color: rgba(255, 255, 255, 0.56);
-  font-size: 11px;
+  font-size: 13px;
   line-height: 1.5;
 }
 
@@ -880,6 +894,17 @@
 
   .landing-price-card > a {
     grid-column: 1 / -1;
+  }
+}
+
+@media (max-width: 940px) {
+  .landing-estimate-layout {
+    grid-template-columns: 1fr;
+    gap: 42px;
+  }
+
+  .landing-estimate-copy {
+    position: static;
   }
 }
 

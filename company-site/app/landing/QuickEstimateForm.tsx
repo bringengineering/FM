@@ -211,7 +211,7 @@ export default function QuickEstimateForm({
       </label>
 
       <h2>{service} 견적 신청</h2>
-      <p>필수 정보만 남겨주시면 확인 후 연락드리겠습니다.</p>
+      <p>이름·연락처·지역은 필수, 건물 정보는 선택입니다.</p>
 
       <div className="estimate-fields">
         <label>
