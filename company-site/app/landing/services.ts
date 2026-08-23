@@ -116,7 +116,7 @@ export const landingServices: Record<LandingSlug, LandingService> = {
       "공실부터 세입자 문의, 입퇴실과 현장 확인까지 처리 결과를 사진과 기록으로 연결합니다.",
     price: "지역 공동관리 월 8.9만원",
     priceNote: "건물 규모와 관리 범위에 따라 별도 협의될 수 있습니다.",
-    heroImage: "/landing/address-sign-after.png",
+    heroImage: "/landing/address-sign-after.jpg",
     heroAlt: "브링케어가 관리한 건물 입구 표식",
     facts: [
       { value: "공실", label: "상태 확인" },
@@ -135,7 +135,7 @@ export const landingServices: Record<LandingSlug, LandingService> = {
     ],
     records: [
       {
-        image: "/landing/address-sign-before.png",
+        image: "/landing/address-sign-before.jpg",
         alt: "건물 입구 표식 교체 전 현장 상태 사진",
         label: "현장 확인",
         title: "입구 표식 교체 전 상태",
@@ -143,7 +143,7 @@ export const landingServices: Record<LandingSlug, LandingService> = {
         sourceUrl: "https://blog.naver.com/bringcare/224383896443",
       },
       {
-        image: "/landing/address-sign-after.png",
+        image: "/landing/address-sign-after.jpg",
         alt: "건물 입구 표식 교체 후 현장 상태 사진",
         label: "작업 완료",
         title: "입구 표식 교체 후 상태",
@@ -151,15 +151,15 @@ export const landingServices: Record<LandingSlug, LandingService> = {
         sourceUrl: "https://blog.naver.com/bringcare/224383896443",
       },
       {
-        image: "/landing/unit-sign-repair.png",
-        alt: "호수 정보가 가려진 벨 커버 정비 현장 사진",
+        image: "/landing/unit-sign-repair.jpg",
+        alt: "교체한 호수판과 벨 커버가 설치된 출입문 사진",
         label: "현장 확인",
-        title: "호수판 벨 커버 정비",
-        copy: "호수 정보가 가려진 상태로 벨 커버 정비 결과를 확인했습니다.",
+        title: "호수판·벨 커버 교체",
+        copy: "출입문 호수판과 벨 커버를 교체한 뒤 설치 상태를 확인했습니다.",
         sourceUrl: "https://blog.naver.com/bringcare/224382176899",
       },
       {
-        image: "/landing/entrance-signage.png",
+        image: "/landing/entrance-signage.jpg",
         alt: "건물 출입구 안내물과 출입 동선을 확인한 사진",
         label: "현장 확인",
         title: "출입구 안내물 상태",
@@ -194,9 +194,9 @@ export const landingServices: Record<LandingSlug, LandingService> = {
     eyebrow: "원주 입주·이사청소",
     metaTitle: "원주 입주청소 10만원부터 | BRING CARE",
     metaDescription:
-      "원주 원룸 입주청소 10만원부터. 작업 범위를 먼저 안내하고 전후 사진으로 확인합니다.",
+      "원주 원룸 입주청소 10만원부터. 작업 범위를 먼저 안내하고 완료 사진으로 확인합니다.",
     title: "새 공간의 첫날,",
-    accent: "작업 전후 사진으로 확인하세요.",
+    accent: "작업 범위와 완료 사진으로 확인하세요.",
     lead:
       "현관, 주방, 욕실, 창틀과 바닥의 작업 범위를 먼저 안내하고 완료 후 사진으로 확인합니다.",
     price: "원룸 10만원부터",
@@ -205,7 +205,7 @@ export const landingServices: Record<LandingSlug, LandingService> = {
     heroAlt: "입주 전 상태를 확인하는 원룸 내부",
     facts: [
       { value: "범위 안내", label: "작업 전 확인" },
-      { value: "전후 사진", label: "완료 상태 확인" },
+      { value: "완료 사진", label: "작업 결과 확인" },
       { value: "원룸부터", label: "공간별 견적" },
       { value: "원주", label: "지역 상담" },
     ],
