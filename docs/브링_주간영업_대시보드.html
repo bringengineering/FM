@@ -1,0 +1,485 @@
+<title>주간 영업 대시보드</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;500;700&family=Noto+Serif+KR:wght@600;700&family=Roboto+Mono:wght@500;600&display=swap">
+<style>
+:root{
+  --paper:#FBFAF7; --card:#FFFFFF; --panel:#F4F2ED; --line:#E6E2D8;
+  --ink:#1B2436; --body:#39414F; --mute:#6B7488;
+  --navy:#12213B; --navy2:#20324F;
+  --gold:#B07A2E; --gold2:#D9A441; --goldsoft:#F3E8CF;
+  --ok:#2E7D5B; --okbg:#E4F1EA; --wait:#8A93A6; --waitbg:#EEF0F4;
+  --danger:#B23B3B; --dangerbg:#F7E4E2;
+  --shadow:0 1px 2px rgba(18,33,59,.06),0 8px 24px rgba(18,33,59,.06);
+}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){
+  --paper:#0E1626; --card:#16233C; --panel:#1B2A44; --line:#2A3A57;
+  --ink:#EEF1F6; --body:#C4CBD8; --mute:#8A96AC;
+  --navy:#0A121F; --navy2:#16233C;
+  --gold:#D9A441; --gold2:#E9C879; --goldsoft:#2C2A1E;
+  --ok:#5FCB98; --okbg:#12352A; --wait:#8A96AC; --waitbg:#1E2B42;
+  --danger:#E88C84; --dangerbg:#3A211F;
+  --shadow:0 1px 2px rgba(0,0,0,.3),0 10px 30px rgba(0,0,0,.35);
+}}
+:root[data-theme="dark"]{
+  --paper:#0E1626; --card:#16233C; --panel:#1B2A44; --line:#2A3A57;
+  --ink:#EEF1F6; --body:#C4CBD8; --mute:#8A96AC;
+  --navy:#0A121F; --navy2:#16233C;
+  --gold:#D9A441; --gold2:#E9C879; --goldsoft:#2C2A1E;
+  --ok:#5FCB98; --okbg:#12352A; --wait:#8A96AC; --waitbg:#1E2B42;
+  --danger:#E88C84; --dangerbg:#3A211F;
+  --shadow:0 1px 2px rgba(0,0,0,.3),0 10px 30px rgba(0,0,0,.35);
+}
+*{box-sizing:border-box}
+body{margin:0;background:var(--paper);color:var(--body);font-family:"Noto Sans KR",system-ui,sans-serif;font-size:15px;line-height:1.65;-webkit-font-smoothing:antialiased}
+.wrap{max-width:1120px;margin:0 auto;padding:0 20px 80px}
+h1,h2,h3{font-family:"Noto Serif KR","Noto Sans KR",serif;color:var(--ink);margin:0;text-wrap:balance}
+.mono{font-family:"Roboto Mono",monospace;font-variant-numeric:tabular-nums}
+
+header{background:radial-gradient(1200px 400px at 85% -12%,rgba(217,164,65,.2),transparent 60%),linear-gradient(180deg,var(--navy),var(--navy2));color:#EAF0FA;padding:52px 0 44px;border-bottom:3px solid var(--gold)}
+.eyebrow{font-family:"Roboto Mono",monospace;font-size:12.5px;letter-spacing:.32em;text-transform:uppercase;color:var(--gold2);font-weight:600;margin:0 0 12px}
+header h1{color:#fff;font-size:clamp(28px,4.4vw,42px);line-height:1.18}
+header p.lead{margin:14px 0 0;max-width:64ch;color:#C3CEE0;font-size:16px}
+.hero-stats{display:grid;grid-template-columns:repeat(4,1fr);gap:14px;margin-top:24px}
+.hstat{background:rgba(255,255,255,.08);border:1px solid rgba(255,255,255,.18);border-radius:12px;padding:14px 16px}
+.hstat .k{font-family:"Roboto Mono",monospace;font-size:10.5px;letter-spacing:.1em;color:#B7C4DD;text-transform:uppercase;font-weight:700}
+.hstat .v{font-family:"Noto Serif KR",serif;font-size:26px;font-weight:800;color:#fff;line-height:1.1;margin-top:4px;font-variant-numeric:tabular-nums}
+.hstat .s{font-size:12px;color:#B7C4DD;margin-top:4px}
+
+.week-selector{background:rgba(217,164,65,.14);border:1px solid rgba(217,164,65,.35);border-radius:12px;padding:12px 16px;margin-top:18px;display:flex;justify-content:space-between;align-items:center;gap:14px;flex-wrap:wrap}
+.week-selector label{font-family:"Roboto Mono",monospace;font-size:12px;color:#EBD9A6;font-weight:700;letter-spacing:.06em}
+.week-selector input{background:rgba(0,0,0,.2);border:1px solid rgba(255,255,255,.15);border-radius:8px;color:#fff;padding:6px 10px;font-family:"Roboto Mono",monospace;font-size:13px;font-weight:700}
+
+/* KPI grid */
+.block{margin-top:36px}
+.block > .h{display:flex;align-items:baseline;gap:12px;margin-bottom:12px}
+.block > .h .no{font-family:"Roboto Mono",monospace;font-weight:700;color:var(--gold);font-size:15px}
+.block > .h h2{font-size:22px}
+.block > .h .sub{color:var(--mute);font-size:14px;margin-left:auto}
+
+.kpis{display:grid;grid-template-columns:repeat(4,1fr);gap:14px}
+.kpi{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:16px;box-shadow:var(--shadow);position:relative}
+.kpi .name{font-size:13px;color:var(--mute);font-weight:700;margin-bottom:10px;line-height:1.4;min-height:36px}
+.kpi .row{display:flex;align-items:baseline;gap:6px;font-family:"Roboto Mono",monospace}
+.kpi .cur{font-size:24px;font-weight:800;color:var(--ink);font-variant-numeric:tabular-nums}
+.kpi .sep{color:var(--mute)}
+.kpi .goal{font-size:16px;color:var(--mute);font-weight:600}
+.kpi .unit{font-size:13px;color:var(--mute)}
+.kpi input{width:70px;font-family:"Roboto Mono",monospace;font-size:24px;font-weight:800;color:var(--ink);border:none;border-bottom:2px solid var(--line);background:transparent;padding:2px 0;text-align:right}
+.kpi input:focus{outline:none;border-color:var(--gold)}
+.kpi .bar{margin-top:12px;height:6px;background:var(--panel);border-radius:999px;overflow:hidden}
+.kpi .bar > i{display:block;height:100%;background:linear-gradient(90deg,var(--gold),var(--gold2));border-radius:999px;transition:width .35s}
+.kpi.hit .bar > i{background:linear-gradient(90deg,var(--ok),#5AC98E)}
+.kpi .pct{position:absolute;top:14px;right:16px;font-family:"Roboto Mono",monospace;font-size:11px;font-weight:800;color:var(--gold)}
+.kpi.hit .pct{color:var(--ok)}
+.kpi.key{border:2px solid var(--gold);background:linear-gradient(180deg,var(--goldsoft),var(--card))}
+
+/* funnel */
+.funnel{background:var(--card);border:1px solid var(--line);border-radius:14px;box-shadow:var(--shadow);padding:20px;margin-top:14px}
+.funnel h3{font-size:14px;color:var(--mute);font-family:"Roboto Mono",monospace;letter-spacing:.06em;margin-bottom:14px}
+.funnel .row{display:grid;grid-template-columns:120px 1fr auto;gap:14px;align-items:center;margin:8px 0;font-family:"Roboto Mono",monospace;font-size:13px}
+.funnel .row .lbl{color:var(--body);font-weight:700}
+.funnel .row .bar{height:22px;background:var(--panel);border-radius:6px;overflow:hidden;position:relative}
+.funnel .row .bar > i{display:block;height:100%;background:linear-gradient(90deg,var(--navy),#3A5A99);transition:width .35s;border-radius:6px}
+.funnel .row .num{font-weight:800;color:var(--ink);min-width:100px;text-align:right}
+.funnel .row .conv{font-size:11px;color:var(--gold);margin-left:8px;font-weight:800}
+
+/* days */
+.days{display:grid;grid-template-columns:repeat(3,1fr);gap:14px}
+.day{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:16px;box-shadow:var(--shadow)}
+.day .dh{display:flex;align-items:baseline;gap:10px;margin-bottom:8px}
+.day .dh h3{font-size:15px;color:var(--gold);font-family:"Roboto Mono",monospace;letter-spacing:.06em}
+.day .dh span{font-size:12px;color:var(--mute)}
+.day ul{margin:0;padding-left:18px}
+.day li{margin:6px 0;font-size:13.5px;line-height:1.5;color:var(--body)}
+.day li b{color:var(--ink)}
+
+/* pitch */
+.pitch{background:linear-gradient(180deg,var(--goldsoft),transparent);border:1px solid var(--gold);border-left:5px solid var(--gold);border-radius:12px;padding:18px 22px;margin-top:16px}
+.pitch .k{font-family:"Roboto Mono",monospace;font-size:11px;letter-spacing:.16em;text-transform:uppercase;color:var(--gold);font-weight:700}
+.pitch p{margin:8px 0 0;color:var(--ink);font-size:15.5px;line-height:1.6;font-weight:500}
+.pitch p + p{margin-top:8px}
+.pitch b{color:var(--gold)}
+
+/* roadmap */
+.roadmap{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:20px;box-shadow:var(--shadow)}
+.rgrid{display:grid;grid-template-columns:repeat(6,1fr);gap:10px}
+.rcell{background:var(--panel);border-radius:10px;padding:12px 8px;text-align:center;position:relative}
+.rcell.current{background:var(--navy);color:#fff;border:2px solid var(--gold)}
+.rcell.done{background:var(--okbg);color:var(--ok)}
+.rcell .d{font-family:"Roboto Mono",monospace;font-size:10.5px;letter-spacing:.05em;font-weight:700;color:var(--mute)}
+.rcell.current .d,.rcell.done .d{color:inherit;opacity:.9}
+.rcell .n{font-family:"Roboto Mono",monospace;font-size:22px;font-weight:800;color:var(--ink);margin-top:4px;font-variant-numeric:tabular-nums}
+.rcell.current .n{color:#fff}
+.rcell.done .n{color:var(--ok)}
+.rcell .u{font-size:11px;color:var(--mute);margin-top:2px}
+.rcell.current .u,.rcell.done .u{color:inherit;opacity:.9}
+
+/* records */
+.records{display:grid;grid-template-columns:1fr 1fr;gap:14px}
+.rec{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:18px;box-shadow:var(--shadow)}
+.rec h3{font-size:15px;color:var(--gold);font-family:"Roboto Mono",monospace;letter-spacing:.06em;margin-bottom:12px}
+.rec table{width:100%;border-collapse:collapse;font-size:13px}
+.rec th{text-align:left;padding:8px 6px;font-size:11px;color:var(--mute);letter-spacing:.04em;text-transform:uppercase;border-bottom:1px solid var(--line);font-weight:700}
+.rec td{padding:8px 6px;border-bottom:1px solid var(--line);color:var(--body)}
+.rec tr:last-child td{border-bottom:none}
+.rec td:first-child{font-weight:700;color:var(--ink);width:38%}
+
+/* controls */
+.controls{display:flex;gap:10px;flex-wrap:wrap;margin-top:20px}
+.btn{font-family:"Roboto Mono",monospace;font-size:12.5px;cursor:pointer;background:var(--card);color:var(--body);border:1px solid var(--line);border-radius:9px;padding:8px 14px;transition:.15s}
+.btn:hover{border-color:var(--gold);color:var(--ink)}
+.btn.primary{background:var(--navy);color:#fff;border-color:var(--navy)}
+.btn.primary:hover{background:var(--gold);border-color:var(--gold);color:#fff}
+
+.note{font-size:12.5px;color:var(--mute);margin-top:22px;padding:14px 18px;background:var(--panel);border-radius:12px;border:1px dashed var(--line);line-height:1.7}
+.note b{color:var(--ink)}
+
+.footer{margin-top:44px;padding-top:22px;border-top:1px solid var(--line);font-family:"Roboto Mono",monospace;font-size:12px;color:var(--mute);display:flex;justify-content:space-between;flex-wrap:wrap;gap:10px}
+
+@media (max-width:920px){
+  .kpis{grid-template-columns:repeat(2,1fr)}
+  .hero-stats{grid-template-columns:repeat(2,1fr)}
+  .days{grid-template-columns:1fr}
+  .rgrid{grid-template-columns:repeat(3,1fr)}
+  .records{grid-template-columns:1fr}
+}
+@media (prefers-reduced-motion:reduce){*{transition:none!important}}
+</style>
+
+<header>
+  <div class="wrap">
+    <p class="eyebrow">Bring · Weekly Sales Dashboard</p>
+    <h1>주간 영업 대시보드</h1>
+    <p class="lead">CEO 미션(12/25 매출 자립)의 실행 판. 매주 이 화면 하나로 주간 목표·요일별 업무·누적 진행을 관리합니다. 대표 정의 <b style="color:#E9C879">주 2~3동 페이스</b>가 곧 미션 달성 페이스.</p>
+    <div class="hero-stats">
+      <div class="hstat"><div class="k">CEO Mission</div><div class="v" id="dday">D − 125</div><div class="s">2026-12-25 매출 자립</div></div>
+      <div class="hstat"><div class="k">현재 관리 계약</div><div class="v">2 동</div><div class="s">청소·관계 5동 별도</div></div>
+      <div class="hstat"><div class="k">연말 목표</div><div class="v">52 동</div><div class="s">신규 +50동 필요</div></div>
+      <div class="hstat"><div class="k">필요 페이스</div><div class="v">주 2.8동</div><div class="s">남은 18주 기준</div></div>
+    </div>
+    <div class="week-selector">
+      <div>
+        <label>THIS WEEK</label>
+        <input type="text" id="weekLabel" value="Week 1 · 2026-08-22 ~ 08-28" style="width:280px">
+      </div>
+      <div style="display:flex;gap:10px;align-items:center">
+        <label>주차별 값 자동저장</label>
+        <span class="mono" style="color:#EBD9A6;font-weight:700" id="savedAt">—</span>
+      </div>
+    </div>
+  </div>
+</header>
+
+<div class="wrap">
+
+  <div class="pitch">
+    <span class="k">이번 주 핵심 원칙 (대표 정의)</span>
+    <p>“<b>많이 연락하기</b>보다 <b>주간 숫자를 매주 반복 관리</b>. 우산동을 넓게 흩어져 영업하지 않고, <b>현재 계약 건물 주변부터 한 구역씩 밀집</b>시킨다. 신규 계약도 <b>기존 동선에 붙어 있는 건물</b>인지 확인한다.”</p>
+    <p style="color:var(--body);font-size:13.5px;font-weight:500">30 발굴 → 20 연락 → 10 상담 → 5 방문 → 4 견적 → <b style="color:var(--gold)">2~3동 계약</b>. 이 흐름을 매주 반복하면 12월 25일 자립.</p>
+  </div>
+
+  <!-- 01 주간 KPI -->
+  <div class="block">
+    <div class="h"><span class="no">01</span><h2>이번 주 KPI · 실시간 진행률</h2><span class="sub">숫자만 입력하면 진행률 자동 · 목표 달성 시 초록</span></div>
+    <div class="kpis" id="kpis"></div>
+    <div class="funnel" id="funnel"></div>
+  </div>
+
+  <!-- 02 요일별 업무 -->
+  <div class="block">
+    <div class="h"><span class="no">02</span><h2>요일별 업무 (대표 정의)</h2><span class="sub">월~토 · 대표 시간 배분 영업 50% 기반</span></div>
+    <div class="days" id="days"></div>
+  </div>
+
+  <!-- 03 52동 로드맵 -->
+  <div class="block">
+    <div class="h"><span class="no">03</span><h2>52동 로드맵 · 4주 간격 마일스톤</h2><span class="sub">매 4주 +10동 페이스 = 주 2.5동</span></div>
+    <div class="roadmap">
+      <div class="rgrid">
+        <div class="rcell current"><div class="d">NOW · 8/22</div><div class="n">2</div><div class="u">동</div></div>
+        <div class="rcell"><div class="d">4주 · 9/19</div><div class="n">12</div><div class="u">+10</div></div>
+        <div class="rcell"><div class="d">8주 · 10/17</div><div class="n">22</div><div class="u">+10</div></div>
+        <div class="rcell"><div class="d">12주 · 11/14</div><div class="n">32</div><div class="u">+10</div></div>
+        <div class="rcell"><div class="d">16주 · 12/12</div><div class="n">42</div><div class="u">+10</div></div>
+        <div class="rcell"><div class="d">18주 · 12/25</div><div class="n">52</div><div class="u">+10</div></div>
+      </div>
+      <div class="note" style="margin-top:16px">
+        <b>이 페이스가 실현되면</b> — 12월 관리료만 52 × 89,000 = <b>4,628,000원/월</b>. 고정비 3,044,839원 대비 <b>+158만 여유</b>. 청소·수리 마크업은 순수 보너스. <b>미션 완료 + 시나리오 C(3인 정규직화) 진입 가능</b>.
+      </div>
+    </div>
+  </div>
+
+  <!-- 04 매출 연결 -->
+  <div class="block">
+    <div class="h"><span class="no">04</span><h2>영업 성과 → 매출 연결</h2><span class="sub">계약 1동 = 즉시 +89,000원/월 MRR</span></div>
+    <div class="records">
+      <div class="rec">
+        <h3>이번 주 계약 → 월 매출 증가</h3>
+        <table>
+          <tr><td>이번 주 신규 계약</td><td><input type="number" id="wDeal" value="0" style="width:80px;text-align:right;font-family:'Roboto Mono';font-size:14px;font-weight:800;border:1px solid var(--line);border-radius:6px;padding:4px 8px"> 동</td></tr>
+          <tr><td>즉시 MRR 증가</td><td class="mono" id="wRev">+0원 / 월</td></tr>
+          <tr><td>연말까지 누적 매출</td><td class="mono" id="wYear">+0원</td></tr>
+          <tr><td>미션 갭 감소</td><td class="mono" id="wGap">−0원 / 월</td></tr>
+        </table>
+      </div>
+      <div class="rec">
+        <h3>영업 KPI 전환율 참조</h3>
+        <table>
+          <tr><td>발굴 → 연락</td><td>66% (30명 → 20명)</td></tr>
+          <tr><td>연락 → 상담</td><td>50% (20 → 10)</td></tr>
+          <tr><td>상담 → 방문</td><td>50% (10 → 5)</td></tr>
+          <tr><td>방문 → 견적</td><td>80% (5 → 4)</td></tr>
+          <tr><td>견적 → 계약</td><td>50~75% (4 → 2~3)</td></tr>
+          <tr><td><b>전체(발굴→계약)</b></td><td><b class="mono" style="color:var(--gold)">6.7~10%</b></td></tr>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <!-- 05 이번 주 접촉 문구 -->
+  <div class="block">
+    <div class="h"><span class="no">05</span><h2>접촉·상담 표준 문구</h2><span class="sub">첫 문장이 승부</span></div>
+    <div class="records">
+      <div class="rec">
+        <h3>서비스 소개 (수요일 상담)</h3>
+        <p style="font-size:14px;line-height:1.65;color:var(--body);padding:12px 14px;background:var(--panel);border-radius:8px;font-style:italic">
+          "세입자 연락부터 입·퇴실 현장확인, 공실 상태, 청소·수리업체 연결과 결과 보고까지 <b style="color:var(--ink)">브링케어가 건물주의 현장 운영창구</b>가 되어드립니다."
+        </p>
+        <p style="font-size:12.5px;color:var(--mute);margin-top:10px">건물주 문제 확인 순서:</p>
+        <ul style="margin:6px 0 0;padding-left:18px;font-size:13px;color:var(--body)">
+          <li>세입자 연락을 직접 받고 있는가</li>
+          <li>입·퇴실 때 직접 현장에 나오는가</li>
+          <li>공실 확인·청소·수리를 누가 처리하는가</li>
+          <li>계단청소 만족도가 낮은가</li>
+          <li>원주 외 지역에 거주하는가</li>
+        </ul>
+      </div>
+      <div class="rec">
+        <h3>가격 제시 (목요일 견적)</h3>
+        <p style="font-size:14px;line-height:1.65;color:var(--body);padding:12px 14px;background:var(--panel);border-radius:8px;font-style:italic">
+          "건물관리 기본 <b style="color:var(--ink)">월 150,000원</b>. 우산동 지역운영 할인 적용 시 <b style="color:var(--ink)">월 89,000원</b>, 부가세 별도. 계단·공용부 청소, 원룸 입·퇴실 청소는 별도 상품."
+        </p>
+        <p style="font-size:12.5px;color:var(--mute);margin-top:10px">소개 요청 (금요일):</p>
+        <p style="font-size:13.5px;color:var(--body);padding:10px 14px;background:var(--panel);border-radius:8px;font-style:italic;margin-top:6px">
+          "같은 지역에 원룸 건물을 보유한 분이 계시면 <b style="color:var(--ink)">소개 부탁드립니다</b>. 같은 동선에서 관리하는 건물이 늘어나면 <b style="color:var(--ink)">현재 지역 할인도 안정적으로 유지</b>할 수 있습니다."
+        </p>
+      </div>
+    </div>
+  </div>
+
+  <!-- 06 매주 금요일 확인 숫자 -->
+  <div class="block">
+    <div class="h"><span class="no">06</span><h2>매주 금요일 확인 숫자</h2><span class="sub">주말 전 대표 셀프 리뷰</span></div>
+    <div class="rec">
+      <table>
+        <thead><tr><th>지표</th><th>이번 주 값</th><th>참조</th></tr></thead>
+        <tbody id="reviewTable"></tbody>
+      </table>
+    </div>
+  </div>
+
+  <div class="controls">
+    <button class="btn primary" id="saveBtn">저장 (수동)</button>
+    <button class="btn" id="resetBtn">이번 주 초기화</button>
+    <button class="btn" id="printBtn">인쇄</button>
+  </div>
+
+  <div class="note">
+    <b>사용법.</b> ① 왼쪽 위 주차 라벨 수정 → 이번 주 시작. ② KPI 실시간 값 입력하면 진행률·매출 자동 계산 · <b>브라우저 자동 저장</b>. ③ 금요일 하단 리뷰 표 채우고 저장. ④ 다음 주 월요일 주차 라벨만 바꾸면 새 주간 시작. 데이터는 이 기기에만 저장(대표 개인 소유).
+    <br><br>
+    <b>매출·미션 연결.</b> 계약 1동 = 즉시 +89,000원/월 · 미션 갭 2,376,839원 = 27동 계약과 동등. 매주 2.8동 페이스 유지 시 <b>11주(11/7경)에 A안 BEP 39동 돌파</b>, 18주(12/25)에 52동 목표 완주.
+  </div>
+
+  <div class="footer">
+    <span>BRING ENGINEERING · Weekly Sales v1.0 · 2026-08-22</span>
+    <span>축: CEO 미션 D−125 · 주 2.8동 페이스</span>
+  </div>
+</div>
+
+<script>
+const KPIS=[
+ {id:"discover",  name:"신규 건물주 후보 발굴", goal:30, unit:"명"},
+ {id:"contact",   name:"실제 연락 (전화·문자·카톡)", goal:20, unit:"명"},
+ {id:"consult",   name:"상담 성사", goal:10, unit:"명"},
+ {id:"visit",     name:"현장 방문·건물 진단", goal:5, unit:"곳"},
+ {id:"quote",     name:"견적서·제안서 발송", goal:4, unit:"곳"},
+ {id:"deal",      name:"신규 계약 (KEY)", goal:3, unit:"동", key:true},
+ {id:"followup",  name:"기존 제안 후속 연락", goal:10, unit:"건"},
+ {id:"referral",  name:"소개 요청", goal:3, unit:"명"},
+];
+const DAYS=[
+ {day:"월요일", note:"영업대상 선정", items:[
+   "지난주 계약·상담 결과 정리",
+   "이번 주 방문할 우산동 구역 결정",
+   "다가구·원룸 건물 30동 이상 목록화 (건물명·주소·세대수·청소상태·임대현황)",
+   "기존 건물주·이지부동산 소개 후보 확인",
+   "이번 주 계약목표 2~3동 지정",
+ ]},
+ {day:"화요일", note:"현장 조사 및 1차 접촉", items:[
+   "목표 구역 직접 순회 (공실광고·관리표지·건물주 연락처 확인)",
+   "출입구·계단·조명·쓰레기·공실 상태 사진 기록",
+   "연락 가능한 건물주에게 전화·문자 서비스 안내",
+   "가격보다 문제 먼저 확인 (5가지 질문 · 05번 참조)",
+   "상담 일정 확정",
+ ]},
+ {day:"수요일", note:"상담 및 무료 진단", items:[
+   "건물주 상담 진행 (세대수·공실·민원·청소계약 현황)",
+   "가장 불편한 업무 3가지 확인",
+   "필요시 현장 무료 진단",
+   "사진 근거로 개선사항 제시",
+   "관리·청소·공실관리 중 필요한 상품만 조합",
+ ]},
+ {day:"목요일", note:"견적 발송 및 계약 추진", items:[
+   "상담 후 24시간 안에 견적 발송",
+   "정상가 150,000원 + 지역할인 89,000원 함께 제시",
+   "계단·공용부 청소 60,000원~ · 입·퇴실 청소 80,000원~ 별도",
+   "포함 업무·별도 비용 명확 표기",
+   "계약 시작일·결제일·관리 범위 확정",
+ ]},
+ {day:"금요일", note:"후속 연락과 소개 영업", items:[
+   "견적 발송 후 답변 없는 건물주 재연락",
+   "거절 이유 기록 (가격·신뢰·기존업체·시기·불필요)",
+   "기존 고객에 만족도 확인",
+   "기존 건물주에 인근 건물주 소개 요청",
+   "다음 주 계약 가능성 높은 후보 일정 연결",
+ ]},
+ {day:"토요일", note:"영업자료 축적", items:[
+   "관리·청소 전후 사진 정리",
+   "민원·수리 사례 기록",
+   "월간보고서 사례 정리",
+   "블로그·당근·SNS 콘텐츠 1건 제작",
+   "계약된 건물 주변을 다음 영업구역으로 지정",
+ ]},
+];
+const REVIEW=[
+ ["신규 후보 수","","발굴 KPI"],
+ ["연락 성공률","","연락 ÷ 발굴"],
+ ["상담 전환율","","상담 ÷ 연락"],
+ ["현장방문 전환율","","방문 ÷ 상담"],
+ ["견적 발송률","","견적 ÷ 방문"],
+ ["계약 전환율","","계약 ÷ 견적"],
+ ["계약 1동 획득 비용","",""],
+ ["계약 1동당 예상 월이익","89,000원 (관리료)",""],
+ ["평균 이동시간","","권역 밀집도 지표"],
+ ["소개 유입 비율","","건강한 성장 신호"],
+ ["해지·보류 이유","","다음 주 개선 재료"],
+];
+
+const KEY="bring_weekly_v1";
+const getStore=()=>{try{return JSON.parse(localStorage.getItem(KEY))||{}}catch(e){return{}}};
+const setStore=(v)=>{try{localStorage.setItem(KEY,JSON.stringify(v))}catch(e){}};
+let state=getStore();
+
+function fmt(n){return (n||0).toLocaleString('ko-KR')}
+function pctv(cur,goal){return Math.min(200,goal?(cur/goal*100):0)}
+
+function renderKPIs(){
+  const box=document.getElementById("kpis");box.innerHTML="";
+  KPIS.forEach(k=>{
+    const cur=+state[k.id]||0;
+    const p=pctv(cur,k.goal);
+    const hit=cur>=k.goal;
+    const el=document.createElement("div");
+    el.className="kpi"+(hit?" hit":"")+(k.key?" key":"");
+    el.innerHTML=`<div class="pct">${p.toFixed(0)}%</div>
+      <div class="name">${k.name}</div>
+      <div class="row">
+        <input type="number" min="0" value="${cur}" data-id="${k.id}">
+        <span class="sep">/</span>
+        <span class="goal">${k.goal}</span>
+        <span class="unit">${k.unit}</span>
+      </div>
+      <div class="bar"><i style="width:${Math.min(100,p)}%"></i></div>`;
+    el.querySelector("input").addEventListener("input",e=>{
+      state[k.id]=+e.target.value||0;setStore(state);renderKPIs();renderFunnel();updateRev();updateSaved();
+    });
+    box.appendChild(el);
+  });
+}
+
+function renderFunnel(){
+  const box=document.getElementById("funnel");
+  const steps=["discover","contact","consult","visit","quote","deal"];
+  const labels=["발굴","연락","상담","방문","견적","계약"];
+  const goals=[30,20,10,5,4,3];
+  let html='<h3>영업 퍼널 (실측 vs 목표)</h3>';
+  steps.forEach((s,i)=>{
+    const cur=+state[s]||0, goal=goals[i];
+    const w=Math.min(100,cur/30*100);
+    const gw=Math.min(100,goal/30*100);
+    const conv=i>0 ? (goals[i-1]>0? Math.round(goal/goals[i-1]*100):0) : null;
+    html+=`<div class="row">
+      <span class="lbl">${labels[i]}</span>
+      <div class="bar" style="position:relative">
+        <i style="width:${w}%"></i>
+        <span style="position:absolute;top:0;left:${gw}%;width:2px;height:100%;background:var(--gold);opacity:.7"></span>
+      </div>
+      <span class="num">${cur} / ${goal}${conv?'<span class="conv">→ '+conv+'%</span>':''}</span>
+    </div>`;
+  });
+  box.innerHTML=html;
+}
+
+function renderDays(){
+  const box=document.getElementById("days");box.innerHTML="";
+  DAYS.forEach(d=>{
+    const el=document.createElement("div");el.className="day";
+    let li=d.items.map(i=>`<li>${i}</li>`).join("");
+    el.innerHTML=`<div class="dh"><h3>${d.day}</h3><span>${d.note}</span></div><ul>${li}</ul>`;
+    box.appendChild(el);
+  });
+}
+
+function renderReview(){
+  const box=document.getElementById("reviewTable");box.innerHTML="";
+  REVIEW.forEach((r,i)=>{
+    const id="rv"+i;
+    const val=state[id]||"";
+    const tr=document.createElement("tr");
+    tr.innerHTML=`<td>${r[0]}</td>
+      <td><input type="text" value="${val.replace(/"/g,'&quot;')}" data-id="${id}" style="width:100%;border:1px solid var(--line);border-radius:6px;padding:4px 8px;font-family:'Roboto Mono';font-size:13px"></td>
+      <td style="color:var(--mute);font-size:12px">${r[2]||""}</td>`;
+    box.appendChild(tr);
+    tr.querySelector("input").addEventListener("input",e=>{
+      state[e.target.dataset.id]=e.target.value;setStore(state);updateSaved();
+    });
+  });
+}
+
+function updateRev(){
+  const d=+state.deal||0;
+  const mrr=d*89000;
+  const rest=125/7 - 1;  // remaining weeks approx
+  const year=mrr*Math.max(0,Math.round(rest));
+  document.getElementById("wRev").textContent="+"+fmt(mrr)+"원 / 월";
+  document.getElementById("wYear").textContent="+"+fmt(year)+"원 (연말까지 누적)";
+  document.getElementById("wGap").textContent="−"+fmt(mrr)+"원 / 월 (미션 갭)";
+}
+
+function updateDDay(){
+  const deadline=new Date('2026-12-25T00:00:00');
+  const now=new Date();
+  const days=Math.ceil((deadline-now)/(1000*60*60*24));
+  document.getElementById("dday").textContent = days>0?('D − '+days) : (days===0?'D-DAY':'D + '+Math.abs(days));
+}
+function updateSaved(){
+  const now=new Date();
+  const hh=String(now.getHours()).padStart(2,'0');
+  const mm=String(now.getMinutes()).padStart(2,'0');
+  document.getElementById("savedAt").textContent = '저장 '+hh+':'+mm;
+}
+
+document.getElementById("weekLabel").addEventListener("input",e=>{state.weekLabel=e.target.value;setStore(state);updateSaved();});
+document.getElementById("wDeal").addEventListener("input",e=>{state.deal=+e.target.value||0;setStore(state);updateRev();renderKPIs();renderFunnel();updateSaved();});
+document.getElementById("saveBtn").onclick=()=>{setStore(state);updateSaved();};
+document.getElementById("resetBtn").onclick=()=>{if(confirm("이번 주 값을 모두 초기화할까요?")){state={};setStore(state);renderKPIs();renderFunnel();renderReview();updateRev();}};
+document.getElementById("printBtn").onclick=()=>window.print();
+
+window.addEventListener("DOMContentLoaded",()=>{
+  if(state.weekLabel) document.getElementById("weekLabel").value=state.weekLabel;
+  if(state.deal!=null) document.getElementById("wDeal").value=state.deal;
+  renderKPIs();renderFunnel();renderDays();renderReview();updateRev();updateDDay();
+});
+</script>
