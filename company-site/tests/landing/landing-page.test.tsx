@@ -56,5 +56,11 @@ describe("LandingPage", () => {
     expect(css).toMatch(/landing-records[\s\S]*?:focus-visible[\s\S]*?var\(--lime\)/);
     expect(css).toMatch(/landing-price-line span[\s\S]*?font-size:\s*13px/);
     expect(css).toMatch(/landing-record-grid[\s\S]*?repeat\(auto-fit/);
+    expect(css).toMatch(
+      /\.landing-brand \.brand-image\s*\{[\s\S]*?background-size:\s*contain/,
+    );
+    expect(css).toMatch(
+      /@media \(max-width: 940px\)[\s\S]*?\.landing-hero-actions\s*\{[\s\S]*?flex-direction:\s*column/,
+    );
   });
 });

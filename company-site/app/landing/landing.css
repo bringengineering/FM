@@ -61,6 +61,11 @@
   gap: 11px;
 }
 
+.landing-brand .brand-image {
+  background-position: center;
+  background-size: contain;
+}
+
 .landing-header-actions,
 .landing-hero-actions {
   display: flex;
@@ -905,6 +910,11 @@
 
   .landing-estimate-copy {
     position: static;
+  }
+
+  .landing-hero-actions {
+    align-items: stretch;
+    flex-direction: column;
   }
 }
 
