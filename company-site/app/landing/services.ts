@@ -1,16 +1,11 @@
+import { recordsFor, type FieldRecord } from "./fieldRecords";
+
 export type LandingSlug =
   | "stair-cleaning"
   | "building-care"
   | "move-in-cleaning";
 
-export type LandingRecord = {
-  image: string;
-  alt: string;
-  label: string;
-  title: string;
-  copy: string;
-  sourceUrl: string;
-};
+export type LandingRecord = FieldRecord;
 
 type LandingFact = {
   value: string;
@@ -73,16 +68,12 @@ export const landingServices: Record<LandingSlug, LandingService> = {
       { title: "우편함 주변", copy: "우편함과 공용 안내 공간을 함께 살핍니다." },
       { title: "공용창·문", copy: "손자국과 주변 오염을 확인해 정돈합니다." },
     ],
-    records: [
-      {
-        image: "/landing/common-area-issue.jpg",
-        alt: "공용창과 벽면 하단에 남은 흔적을 확인한 사진",
-        label: "발견",
-        title: "공용창 하단부 흔적 확인",
-        copy: "공용부 청소 과정에서 창과 벽면 하단에 남은 흔적을 확인했습니다.",
-        sourceUrl: "https://blog.naver.com/bringcare/224382174370",
-      },
-    ],
+    records: recordsFor([
+      "224382174945",
+      "224382174370",
+      "224382173190",
+      "224382175661",
+    ]),
     process: [
       { title: "건물 확인", copy: "주소, 층수, 공용부 상태를 확인합니다." },
       { title: "범위 협의", copy: "방문 횟수와 포함 범위를 정합니다." },
@@ -133,40 +124,14 @@ export const landingServices: Record<LandingSlug, LandingService> = {
         copy: "현장 확인부터 자재·작업자 연결과 완료 확인까지 돕습니다.",
       },
     ],
-    records: [
-      {
-        image: "/landing/address-sign-before.jpg",
-        alt: "건물 입구 표식 교체 전 현장 상태 사진",
-        label: "현장 확인",
-        title: "입구 표식 교체 전 상태",
-        copy: "건물 입구에 설치된 표식을 현장에서 확인했습니다.",
-        sourceUrl: "https://blog.naver.com/bringcare/224383896443",
-      },
-      {
-        image: "/landing/address-sign-after.jpg",
-        alt: "건물 입구 표식 교체 후 현장 상태 사진",
-        label: "작업 완료",
-        title: "입구 표식 교체 후 상태",
-        copy: "입구 표식 교체가 끝난 뒤 현장 상태를 촬영했습니다.",
-        sourceUrl: "https://blog.naver.com/bringcare/224383896443",
-      },
-      {
-        image: "/landing/unit-sign-repair.jpg",
-        alt: "교체한 호수판과 벨 커버가 설치된 출입문 사진",
-        label: "현장 확인",
-        title: "호수판·벨 커버 교체",
-        copy: "출입문 호수판과 벨 커버를 교체한 뒤 설치 상태를 확인했습니다.",
-        sourceUrl: "https://blog.naver.com/bringcare/224382176899",
-      },
-      {
-        image: "/landing/entrance-signage.jpg",
-        alt: "건물 출입구 안내물과 출입 동선을 확인한 사진",
-        label: "현장 확인",
-        title: "출입구 안내물 상태",
-        copy: "출입구 주변 안내물과 출입 동선을 현장에서 확인했습니다.",
-        sourceUrl: "https://blog.naver.com/bringcare/224382176266",
-      },
-    ],
+    records: recordsFor([
+      "224383896443",
+      "224382176899",
+      "224382176266",
+      "224382169457",
+      "224381122777",
+      "224373338080",
+    ]),
     process: [
       { title: "건물 등록", copy: "위치, 세대수, 현재 관리 상태를 확인합니다." },
       { title: "관리 범위 결정", copy: "필요한 항목과 보고 방식을 정합니다." },
@@ -215,16 +180,7 @@ export const landingServices: Record<LandingSlug, LandingService> = {
       { title: "욕실", copy: "세면대, 변기, 바닥과 벽면을 청소합니다." },
       { title: "창틀·바닥", copy: "창 주변 먼지와 실내 바닥을 마무리합니다." },
     ],
-    records: [
-      {
-        image: "/landing/move-in-condition.jpg",
-        alt: "입주 전 실내 상태를 확인한 빈 호실 사진",
-        label: "입주 전 확인",
-        title: "입주 전 실내 상태 확인",
-        copy: "입주 전 실내 바닥과 벽면, 비치 물품 상태를 확인했습니다.",
-        sourceUrl: "https://blog.naver.com/bringcare/224368259003",
-      },
-    ],
+    records: recordsFor(["224382172156", "224368259003"]),
     process: [
       { title: "사진 상담", copy: "공간과 오염 상태를 먼저 확인합니다." },
       { title: "범위·가격 안내", copy: "포함 항목과 추가 항목을 구분합니다." },

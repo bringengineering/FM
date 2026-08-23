@@ -31,6 +31,29 @@ describe("LandingPage", () => {
     expect(within(priceSection as HTMLElement).getByText("별도 협의 항목")).toBeInTheDocument();
   });
 
+  it("connects service evidence to the complete archive", () => {
+    const { getByRole } = render(
+      <LandingPage service={landingServices["building-care"]} />,
+    );
+
+    expect(
+      getByRole("link", { name: /현장기록 12건 전체 보기/ }),
+    ).toHaveAttribute("href", "/care-records");
+  });
+
+  it("shows truthful official channel guidance without invented social URLs", () => {
+    const { getByRole, getByText } = render(
+      <LandingPage service={landingServices["stair-cleaning"]} />,
+    );
+
+    expect(getByRole("link", { name: "BRING CARE 네이버 블로그" })).toHaveAttribute(
+      "href",
+      "https://blog.naver.com/bringcare",
+    );
+    expect(getByText(/카카오톡에서.*BRING Care.*검색/)).toBeInTheDocument();
+    expect(getByText(/인스타그램 공식 계정 주소 확인 후 연결/)).toBeInTheDocument();
+  });
+
   it("describes required and optional estimate information accurately", () => {
     const { container } = render(
       <LandingPage service={landingServices["stair-cleaning"]} />,
@@ -62,5 +85,9 @@ describe("LandingPage", () => {
     expect(css).toMatch(
       /@media \(max-width: 940px\)[\s\S]*?\.landing-hero-actions\s*\{[\s\S]*?flex-direction:\s*column/,
     );
+    expect(css).toMatch(
+      /\.care-records-logo\s*\{[\s\S]*?background-color:\s*var\(--white\)/,
+    );
+    expect(css).not.toMatch(/\.care-records-logo\s*\{[^}]*filter:/);
   });
 });

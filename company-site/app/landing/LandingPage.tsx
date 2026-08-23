@@ -1,5 +1,6 @@
 import Image from "next/image";
 import Link from "next/link";
+import OfficialChannels from "./OfficialChannels";
 import QuickEstimateForm from "./QuickEstimateForm";
 import type { LandingService } from "./services";
 import "./landing.css";
@@ -146,6 +147,14 @@ export default function LandingPage({ service }: LandingPageProps) {
               </article>
             ))}
           </div>
+          <div className="landing-records-more">
+            <span className="landing-records-mark" aria-hidden="true" />
+            <div>
+              <strong>공용부 개선부터 공실 점검까지</strong>
+              <p>BRING CARE가 공개한 12개 현장기록을 관리 유형별로 확인하세요.</p>
+            </div>
+            <Link href="/care-records">현장기록 12건 전체 보기 <span aria-hidden="true">→</span></Link>
+          </div>
         </div>
       </section>
 
@@ -251,6 +260,8 @@ export default function LandingPage({ service }: LandingPageProps) {
         </div>
       </section>
 
+      <OfficialChannels />
+
       <section
         className="landing-estimate"
         id="quick-estimate"
@@ -277,7 +288,7 @@ export default function LandingPage({ service }: LandingPageProps) {
       <footer className="landing-footer">
         <div className="landing-section-inner">
           <div>
-            <span className="landing-footer-brand">BRING CARE</span>
+            <span className="landing-footer-logo" aria-hidden="true" />
             <p>원룸·다가구 건물의 청소부터 관리까지</p>
           </div>
           <div>

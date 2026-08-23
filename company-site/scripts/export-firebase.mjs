@@ -40,6 +40,10 @@ const routes = [
     pathname: "/move-in-cleaning",
     outputFile: "move-in-cleaning/index.html",
   },
+  {
+    pathname: "/care-records",
+    outputFile: "care-records/index.html",
+  },
 ];
 
 for (const route of routes) {
