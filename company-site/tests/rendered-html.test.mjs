@@ -246,6 +246,8 @@ test("Firebase export includes every Naver ad landing route", async () => {
     assert.ok(html.includes(price));
     assert.match(html, /tel:01065663606/);
     assert.match(html, /quick-estimate/);
+    assert.doesNotMatch(html, /\/_vinext\/image/);
+    assert.match(html, /src="\/landing\/[^\"]+\.jpg"/);
     assert.ok(html.includes(`<title>${title}</title>`));
     assert.ok(
       html.includes(

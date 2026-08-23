@@ -70,6 +70,7 @@ export default function LandingPage({ service }: LandingPageProps) {
             width={773}
             height={1031}
             priority
+            unoptimized
             sizes="(max-width: 760px) 100vw, 48vw"
           />
           <figcaption>
@@ -129,6 +130,7 @@ export default function LandingPage({ service }: LandingPageProps) {
                     alt={record.alt}
                     width={773}
                     height={1031}
+                    unoptimized
                     sizes="(max-width: 760px) 88vw, (max-width: 1080px) 44vw, 30vw"
                   />
                   <span>{record.label}</span>
