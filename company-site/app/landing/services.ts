@@ -201,7 +201,7 @@ export const landingServices: Record<LandingSlug, LandingService> = {
       "현관, 주방, 욕실, 창틀과 바닥의 작업 범위를 먼저 안내하고 완료 후 사진으로 확인합니다.",
     price: "원룸 10만원부터",
     priceNote: "평형, 오염도, 옵션과 추가 작업에 따라 달라질 수 있습니다.",
-    heroImage: "/landing/move-in-condition.png",
+    heroImage: "/landing/move-in-condition.jpg",
     heroAlt: "입주 전 상태를 확인하는 원룸 내부",
     facts: [
       { value: "범위 안내", label: "작업 전 확인" },
@@ -217,11 +217,11 @@ export const landingServices: Record<LandingSlug, LandingService> = {
     ],
     records: [
       {
-        image: "/landing/move-in-condition.png",
-        alt: "입주 전 비어 있는 호실 상태를 확인한 현장 이미지",
+        image: "/landing/move-in-condition.jpg",
+        alt: "입주 전 실내 상태를 확인한 빈 호실 사진",
         label: "입주 전 확인",
-        title: "공실 상태 사전 확인",
-        copy: "입주 전 비어 있는 호실의 실내 상태를 확인했습니다.",
+        title: "입주 전 실내 상태 확인",
+        copy: "입주 전 실내 바닥과 벽면, 비치 물품 상태를 확인했습니다.",
         sourceUrl: "https://blog.naver.com/bringcare/224368259003",
       },
     ],

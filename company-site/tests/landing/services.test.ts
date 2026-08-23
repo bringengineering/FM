@@ -1,3 +1,5 @@
+import { resolve } from "node:path";
+import sharp from "sharp";
 import { describe, expect, it } from "vitest";
 import { landingServices } from "../../app/landing/services";
 
@@ -30,5 +32,19 @@ describe("landing service content", () => {
 
     expect(landingServices["building-care"].records.length).toBeGreaterThanOrEqual(3);
     expect(Object.values(landingServices).flatMap((service) => service.records).length).toBeGreaterThanOrEqual(5);
+  });
+
+  it("uses full-size assets for landing heroes and field records", async () => {
+    const images = new Set(
+      Object.values(landingServices).flatMap((service) => [
+        service.heroImage,
+        ...service.records.map((record) => record.image),
+      ]),
+    );
+
+    for (const image of images) {
+      const metadata = await sharp(resolve(process.cwd(), "public", image.slice(1))).metadata();
+      expect(Math.max(metadata.width ?? 0, metadata.height ?? 0)).toBeGreaterThanOrEqual(640);
+    }
   });
 });
