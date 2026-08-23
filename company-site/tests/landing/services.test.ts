@@ -15,7 +15,8 @@ describe("landing service content", () => {
   });
 
   it("keeps service claims grounded and useful for prospective customers", () => {
-    for (const service of Object.values(landingServices)) {
+    for (const [key, service] of Object.entries(landingServices)) {
+      expect(service.slug).toBe(key);
       expect(service.title).not.toMatch(/1위|100%|최우수/);
       expect(service.facts).toHaveLength(4);
       expect(service.scope.length).toBeGreaterThanOrEqual(4);
@@ -26,5 +27,8 @@ describe("landing service content", () => {
         expect(record.alt.length).toBeGreaterThan(8);
       }
     }
+
+    expect(landingServices["building-care"].records.length).toBeGreaterThanOrEqual(3);
+    expect(Object.values(landingServices).flatMap((service) => service.records).length).toBeGreaterThanOrEqual(5);
   });
 });

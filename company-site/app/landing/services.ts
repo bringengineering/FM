@@ -73,7 +73,16 @@ export const landingServices: Record<LandingSlug, LandingService> = {
       { title: "우편함 주변", copy: "우편함과 공용 안내 공간을 함께 살핍니다." },
       { title: "공용창·문", copy: "손자국과 주변 오염을 확인해 정돈합니다." },
     ],
-    records: [],
+    records: [
+      {
+        image: "/landing/common-area-issue.jpg",
+        alt: "공용창과 벽면 하단에 남은 흔적을 확인한 사진",
+        label: "발견",
+        title: "공용창 하단부 흔적 확인",
+        copy: "공용부 청소 과정에서 창과 벽면 하단에 남은 흔적을 확인했습니다.",
+        sourceUrl: "https://blog.naver.com/bringcare/224382174370",
+      },
+    ],
     process: [
       { title: "건물 확인", copy: "주소, 층수, 공용부 상태를 확인합니다." },
       { title: "범위 협의", copy: "방문 횟수와 포함 범위를 정합니다." },
@@ -107,7 +116,7 @@ export const landingServices: Record<LandingSlug, LandingService> = {
       "공실부터 세입자 문의, 입퇴실과 현장 확인까지 처리 결과를 사진과 기록으로 연결합니다.",
     price: "지역 공동관리 월 8.9만원",
     priceNote: "건물 규모와 관리 범위에 따라 별도 협의될 수 있습니다.",
-    heroImage: "/landing/address-sign-after.jpg",
+    heroImage: "/landing/address-sign-after.png",
     heroAlt: "브링케어가 관리한 건물 입구 표식",
     facts: [
       { value: "공실", label: "상태 확인" },
@@ -124,7 +133,40 @@ export const landingServices: Record<LandingSlug, LandingService> = {
         copy: "현장 확인부터 자재·작업자 연결과 완료 확인까지 돕습니다.",
       },
     ],
-    records: [],
+    records: [
+      {
+        image: "/landing/address-sign-before.png",
+        alt: "건물 입구 표식 교체 전 현장 상태 사진",
+        label: "현장 확인",
+        title: "입구 표식 교체 전 상태",
+        copy: "건물 입구에 설치된 표식을 현장에서 확인했습니다.",
+        sourceUrl: "https://blog.naver.com/bringcare/224383896443",
+      },
+      {
+        image: "/landing/address-sign-after.png",
+        alt: "건물 입구 표식 교체 후 현장 상태 사진",
+        label: "작업 완료",
+        title: "입구 표식 교체 후 상태",
+        copy: "입구 표식 교체가 끝난 뒤 현장 상태를 촬영했습니다.",
+        sourceUrl: "https://blog.naver.com/bringcare/224383896443",
+      },
+      {
+        image: "/landing/unit-sign-repair.png",
+        alt: "호수 정보가 가려진 벨 커버 정비 현장 사진",
+        label: "현장 확인",
+        title: "호수판 벨 커버 정비",
+        copy: "호수 정보가 가려진 상태로 벨 커버 정비 결과를 확인했습니다.",
+        sourceUrl: "https://blog.naver.com/bringcare/224382176899",
+      },
+      {
+        image: "/landing/entrance-signage.png",
+        alt: "건물 출입구 안내물과 출입 동선을 확인한 사진",
+        label: "현장 확인",
+        title: "출입구 안내물 상태",
+        copy: "출입구 주변 안내물과 출입 동선을 현장에서 확인했습니다.",
+        sourceUrl: "https://blog.naver.com/bringcare/224382176266",
+      },
+    ],
     process: [
       { title: "건물 등록", copy: "위치, 세대수, 현재 관리 상태를 확인합니다." },
       { title: "관리 범위 결정", copy: "필요한 항목과 보고 방식을 정합니다." },
@@ -159,7 +201,7 @@ export const landingServices: Record<LandingSlug, LandingService> = {
       "현관, 주방, 욕실, 창틀과 바닥의 작업 범위를 먼저 안내하고 완료 후 사진으로 확인합니다.",
     price: "원룸 10만원부터",
     priceNote: "평형, 오염도, 옵션과 추가 작업에 따라 달라질 수 있습니다.",
-    heroImage: "/landing/move-in-condition.jpg",
+    heroImage: "/landing/move-in-condition.png",
     heroAlt: "입주 전 상태를 확인하는 원룸 내부",
     facts: [
       { value: "범위 안내", label: "작업 전 확인" },
@@ -173,7 +215,16 @@ export const landingServices: Record<LandingSlug, LandingService> = {
       { title: "욕실", copy: "세면대, 변기, 바닥과 벽면을 청소합니다." },
       { title: "창틀·바닥", copy: "창 주변 먼지와 실내 바닥을 마무리합니다." },
     ],
-    records: [],
+    records: [
+      {
+        image: "/landing/move-in-condition.png",
+        alt: "입주 전 비어 있는 호실 상태를 확인한 현장 이미지",
+        label: "입주 전 확인",
+        title: "공실 상태 사전 확인",
+        copy: "입주 전 비어 있는 호실의 실내 상태를 확인했습니다.",
+        sourceUrl: "https://blog.naver.com/bringcare/224368259003",
+      },
+    ],
     process: [
       { title: "사진 상담", copy: "공간과 오염 상태를 먼저 확인합니다." },
       { title: "범위·가격 안내", copy: "포함 항목과 추가 항목을 구분합니다." },
