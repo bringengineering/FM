@@ -78,7 +78,8 @@ export default function QuickEstimateForm({
 
   async function submitThroughBridge(delivery: FormData) {
     const iframe = bridgeRef.current;
-    if (!bridgeReady || !iframe?.contentWindow) {
+    const bridgeWindow = iframe?.contentWindow;
+    if (!bridgeReady || !bridgeWindow) {
       throw new Error(
         "메일 전송 연결을 준비 중입니다. 잠시 후 다시 시도하거나 전화로 문의해 주세요.",
       );
@@ -102,7 +103,7 @@ export default function QuickEstimateForm({
       function receiveResult(event: MessageEvent) {
         if (
           event.origin !== BRIDGE_ORIGIN ||
-          event.source !== iframe.contentWindow ||
+          event.source !== bridgeWindow ||
           event.data?.type !== "bring-consult-result" ||
           event.data?.requestId !== requestId
         ) {
@@ -115,7 +116,7 @@ export default function QuickEstimateForm({
       }
 
       window.addEventListener("message", receiveResult);
-      iframe.contentWindow.postMessage(
+      bridgeWindow.postMessage(
         { type: "bring-consult-submit", requestId, fields },
         BRIDGE_ORIGIN,
       );
