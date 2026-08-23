@@ -87,16 +87,62 @@ test("server-renders the consultation completion page", async () => {
   assert.match(html, /010-6566-3606/);
 });
 
-test("server-renders the stair-cleaning landing page presentation", async () => {
-  const response = await render("/stair-cleaning");
-  const html = await response.text();
+const landingRoutes = [
+  {
+    pathname: "/stair-cleaning",
+    heading: "깨끗하게만 하지 않습니다",
+    price: "월 4회 6만원부터",
+    title: "원주 계단·공용부 청소 | BRING CARE",
+    description:
+      "원주 원룸·다가구 계단과 복도 정기청소. 월 4회 6만원부터, 작업사진과 건물 이상사항을 함께 보고합니다.",
+  },
+  {
+    pathname: "/building-care",
+    heading: "멀리 있어도",
+    price: "지역 공동관리 월 8.9만원",
+    title: "원주 원룸·다가구 건물관리 | BRING CARE",
+    description:
+      "공실, 세입자 문의, 입퇴실과 건물 상태를 연결하는 원주 지역 공동관리. 월 8.9만원.",
+  },
+  {
+    pathname: "/move-in-cleaning",
+    heading: "새 공간의 첫날",
+    price: "원룸 10만원부터",
+    title: "원주 입주청소 10만원부터 | BRING CARE",
+    description:
+      "원주 원룸 입주청소 10만원부터. 작업 범위를 먼저 안내하고 완료 사진으로 확인합니다.",
+  },
+];
 
-  assert.match(html, /깨끗하게만 하지 않습니다/);
-  assert.match(html, /월 4회 6만원부터/);
-  assert.match(html, /청소하면서 건물까지 봅니다/);
-  assert.match(html, /30초 간편 견적/);
-  assert.match(html, /tel:01065663606/);
-});
+for (const { pathname, heading, price, title, description } of landingRoutes) {
+  test(`server-renders ${pathname} with complete service metadata`, async () => {
+    const response = await render(pathname);
+    assert.equal(response.status, 200);
+
+    const html = await response.text();
+    assert.ok(html.includes(heading));
+    assert.ok(html.includes(price));
+    assert.match(html, /tel:01065663606/);
+    assert.match(html, /quick-estimate/);
+    assert.match(html, /청소하면서 건물까지 봅니다/);
+    assert.doesNotMatch(html, /1위|100% 만족|최우수|작업 전후 사진/);
+
+    assert.ok(html.includes(`<title>${title}</title>`));
+    assert.ok(html.includes(`name="description" content="${description}"`));
+    assert.ok(
+      html.includes(`rel="canonical" href="http://localhost${pathname}"`),
+    );
+    assert.ok(html.includes(`property="og:title" content="${title}"`));
+    assert.ok(
+      html.includes(`property="og:description" content="${description}"`),
+    );
+    assert.ok(html.includes('name="twitter:card" content="summary"'));
+    assert.ok(html.includes(`name="twitter:title" content="${title}"`));
+    assert.ok(
+      html.includes(`name="twitter:description" content="${description}"`),
+    );
+  });
+}
 
 test("mail bridge accepts only the two published Bring Care origins", async () => {
   const bridge = await readFile(
