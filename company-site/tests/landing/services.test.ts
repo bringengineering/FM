@@ -17,11 +17,12 @@ describe("landing service content", () => {
   it("keeps service claims grounded and useful for prospective customers", () => {
     for (const service of Object.values(landingServices)) {
       expect(service.title).not.toMatch(/1위|100%|최우수/);
+      expect(service.facts).toHaveLength(4);
       expect(service.scope.length).toBeGreaterThanOrEqual(4);
       expect(service.faq.length).toBeGreaterThanOrEqual(3);
 
       for (const record of service.records) {
-        expect(record.source).toMatch(/^https:\/\/blog\.naver\.com\/bringcare\//);
+        expect(record.sourceUrl).toMatch(/^https:\/\/blog\.naver\.com\/bringcare\//);
         expect(record.alt.length).toBeGreaterThan(8);
       }
     }
