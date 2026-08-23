@@ -259,6 +259,14 @@
   letter-spacing: 0.12em;
 }
 
+.landing-hero-media figcaption a {
+  width: fit-content;
+  color: rgba(255, 255, 255, 0.78);
+  font-size: 11px;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
 .landing-facts {
   background: var(--navy);
   color: var(--white);
@@ -299,6 +307,53 @@
   margin: 10px 0 0;
   color: rgba(255, 255, 255, 0.64);
   font-size: 12px;
+}
+
+.landing-cleaning-results {
+  padding-block: clamp(76px, 8vw, 116px);
+  background:
+    linear-gradient(135deg, rgba(23, 97, 168, 0.08), transparent 56%),
+    var(--soft-blue);
+}
+
+.landing-cleaning-result-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 14px;
+  margin: 48px 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.landing-cleaning-result-grid li {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 18px;
+  min-height: 190px;
+  padding: 28px;
+  border: 1px solid rgba(23, 97, 168, 0.16);
+  border-radius: 20px;
+  background: rgba(255, 255, 255, 0.92);
+  box-shadow: 0 18px 54px rgba(14, 61, 112, 0.08);
+}
+
+.landing-cleaning-result-grid li > span {
+  color: var(--blue);
+  font: 850 11px ui-monospace, SFMono-Regular, Menlo, monospace;
+}
+
+.landing-cleaning-result-grid h3 {
+  margin: 0;
+  color: var(--navy);
+  font-size: 20px;
+  letter-spacing: -0.04em;
+}
+
+.landing-cleaning-result-grid p {
+  margin: 14px 0 0;
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1.75;
 }
 
 .landing-scope,
@@ -1295,6 +1350,7 @@
   }
 
   .landing-fact-grid,
+  .landing-cleaning-result-grid,
   .landing-scope-grid,
   .landing-process-list {
     grid-template-columns: repeat(2, 1fr);
@@ -1306,6 +1362,10 @@
 
   .landing-fact-grid article:nth-child(4) {
     border-top: 1px solid rgba(255, 255, 255, 0.13);
+  }
+
+  .landing-cleaning-result-grid {
+    grid-template-columns: 1fr;
   }
 
   .landing-price-card {
@@ -1420,6 +1480,16 @@
 
   .landing-fact-grid article:nth-child(odd) {
     border-left: 0;
+  }
+
+  .landing-cleaning-result-grid {
+    gap: 10px;
+    margin-top: 36px;
+  }
+
+  .landing-cleaning-result-grid li {
+    min-height: 0;
+    padding: 22px;
   }
 
   .landing-scope-grid {

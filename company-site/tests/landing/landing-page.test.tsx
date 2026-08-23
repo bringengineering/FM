@@ -11,6 +11,33 @@ vi.mock("next/navigation", () => ({
 }));
 
 describe("LandingPage", () => {
+  it("puts the cleaning offer and concrete cleaning result before building care", () => {
+    const { container, getByRole, getByText } = render(
+      <LandingPage service={landingServices["stair-cleaning"]} />,
+    );
+    const scopeSection = container.querySelector(".landing-scope");
+
+    expect(
+      getByRole("heading", { name: /원주 계단·공용부 정기청소/ }),
+    ).toBeInTheDocument();
+    expect(scopeSection).toBeInTheDocument();
+    expect(within(scopeSection as HTMLElement).getByText("계단·난간")).toBeInTheDocument();
+    expect(within(scopeSection as HTMLElement).getByText("복도 바닥")).toBeInTheDocument();
+    expect(within(scopeSection as HTMLElement).getByText("공동현관")).toBeInTheDocument();
+    expect(within(scopeSection as HTMLElement).getByText("공용창·창틀")).toBeInTheDocument();
+    expect(
+      getByRole("heading", { name: "청소 후 이렇게 달라집니다." }),
+    ).toBeInTheDocument();
+    expect(getByText("먼지·오염 제거")).toBeInTheDocument();
+    expect(getByText("손이 닿는 곳 정리")).toBeInTheDocument();
+    expect(getByText("완료 사진 전달")).toBeInTheDocument();
+    expect(getByText("청소 작업 예시 이미지")).toBeInTheDocument();
+    expect(getByRole("link", { name: "사진 출처: Pexels" })).toHaveAttribute(
+      "href",
+      "https://www.pexels.com/photo/man-wearing-an-orange-coveralls-6197123/",
+    );
+  });
+
   it("owns the estimate anchor at the section level without duplicate ids", () => {
     const { container } = render(
       <LandingPage service={landingServices["stair-cleaning"]} />,

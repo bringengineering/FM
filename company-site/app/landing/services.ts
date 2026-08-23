@@ -35,6 +35,11 @@ export type LandingService = {
   heroImage: string;
   heroAlt: string;
   facts: LandingFact[];
+  cleaningResults: LandingItem[];
+  imageCredit?: {
+    label: string;
+    href: string;
+  };
   scope: LandingItem[];
   records: LandingRecord[];
   process: LandingItem[];
@@ -48,25 +53,43 @@ export const landingServices: Record<LandingSlug, LandingService> = {
     metaTitle: "원주 계단·공용부 청소 | BRING CARE",
     metaDescription:
       "원주 원룸·다가구 계단과 복도 정기청소. 월 4회 6만원부터, 작업사진과 건물 이상사항을 함께 보고합니다.",
-    title: "깨끗하게만 하지 않습니다.",
-    accent: "건물 상태까지 확인합니다.",
+    title: "원주 계단·공용부 ",
+    accent: "정기청소",
     lead:
-      "계단·복도 정기청소부터 조명·누수 흔적·적치물 확인까지. 작업 후 사진으로 확인하세요.",
+      "계단, 복도, 공동현관과 공용창까지 정기적으로 청소합니다. 작업이 끝나면 완료 사진과 현장에서 확인한 사항을 함께 보내드립니다.",
     price: "월 4회 6만원부터",
     priceNote: "층수, 오염도, 작업 범위에 따라 달라질 수 있습니다.",
-    heroImage: "/landing/common-area-issue.jpg",
-    heroAlt: "브링케어가 관리 중인 원주 건물 공용부",
+    heroImage: "/landing/cleaning/stair-cleaning-example.jpg",
+    heroAlt: "전문 장비를 든 작업자의 실내 청소 작업 예시",
     facts: [
       { value: "월 4회", label: "정기 방문" },
       { value: "사진 제공", label: "작업 완료 확인" },
       { value: "이상 보고", label: "조명·누수·적치물" },
       { value: "원주", label: "지역 현장 대응" },
     ],
+    cleaningResults: [
+      {
+        title: "먼지·오염 제거",
+        copy: "계단과 복도 바닥에 쌓인 먼지와 생활 오염을 정기적으로 정리합니다.",
+      },
+      {
+        title: "손이 닿는 곳 정리",
+        copy: "난간, 공동현관과 공용창 주변처럼 자주 접촉하는 곳을 함께 살핍니다.",
+      },
+      {
+        title: "완료 사진 전달",
+        copy: "건물주가 멀리 있어도 작업 후 상태를 사진으로 확인할 수 있습니다.",
+      },
+    ],
+    imageCredit: {
+      label: "사진 출처: Pexels",
+      href: "https://www.pexels.com/photo/man-wearing-an-orange-coveralls-6197123/",
+    },
     scope: [
-      { title: "계단·난간", copy: "층별 계단과 손이 자주 닿는 난간을 정리합니다." },
-      { title: "복도·현관", copy: "공용 복도와 출입구의 먼지와 오염을 관리합니다." },
-      { title: "우편함 주변", copy: "우편함과 공용 안내 공간을 함께 살핍니다." },
-      { title: "공용창·문", copy: "손자국과 주변 오염을 확인해 정돈합니다." },
+      { title: "계단·난간", copy: "층별 계단의 먼지와 오염을 제거하고 난간 주변을 정리합니다." },
+      { title: "복도 바닥", copy: "공용 복도 바닥의 먼지와 생활 오염을 정기적으로 청소합니다." },
+      { title: "공동현관", copy: "출입구 바닥과 문 주변, 우편함 앞 공간을 정돈합니다." },
+      { title: "공용창·창틀", copy: "공용창과 창틀에 쌓인 먼지와 손자국을 확인해 청소합니다." },
     ],
     records: recordsFor([
       "224382174945",
@@ -114,6 +137,11 @@ export const landingServices: Record<LandingSlug, LandingService> = {
       { value: "입퇴실", label: "현장 지원" },
       { value: "민원", label: "접수·연결" },
       { value: "사진", label: "처리 결과 보고" },
+    ],
+    cleaningResults: [
+      { title: "공용부 청결 확인", copy: "방문 시 계단, 복도와 출입구의 청결 상태를 확인합니다." },
+      { title: "관리 요소 확인", copy: "공실, 적치물과 수리가 필요한 부분을 현장에서 함께 살핍니다." },
+      { title: "처리 결과 공유", copy: "확인한 내용과 필요한 조치를 사진과 기록으로 전달합니다." },
     ],
     scope: [
       { title: "공실 확인", copy: "비어 있는 호실의 상태와 필요한 조치를 확인합니다." },
@@ -173,6 +201,11 @@ export const landingServices: Record<LandingSlug, LandingService> = {
       { value: "완료 사진", label: "작업 결과 확인" },
       { value: "원룸부터", label: "공간별 견적" },
       { value: "원주", label: "지역 상담" },
+    ],
+    cleaningResults: [
+      { title: "생활 먼지 제거", copy: "바닥, 수납장과 창틀에 남은 먼지를 공간별로 정리합니다." },
+      { title: "주방·욕실 청소", copy: "기름때와 물때가 남기 쉬운 주방과 욕실을 집중적으로 청소합니다." },
+      { title: "완료 상태 확인", copy: "작업이 끝난 공간을 확인하고 필요한 경우 완료 사진을 전달합니다." },
     ],
     scope: [
       { title: "현관", copy: "바닥, 문과 신발장 주변을 정리합니다." },

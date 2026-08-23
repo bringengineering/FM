@@ -75,8 +75,19 @@ export default function LandingPage({ service }: LandingPageProps) {
             sizes="(max-width: 760px) 100vw, 48vw"
           />
           <figcaption>
-            <span>BRING CARE 현장기록</span>
-            청소와 관리 사이, 놓치기 쉬운 상태까지 확인합니다.
+            {service.imageCredit ? (
+              <>
+                <span>청소 작업 예시 이미지</span>
+                <a href={service.imageCredit.href} target="_blank" rel="noreferrer">
+                  {service.imageCredit.label}
+                </a>
+              </>
+            ) : (
+              <>
+                <span>BRING CARE 현장기록</span>
+                청소와 관리 사이, 놓치기 쉬운 상태까지 확인합니다.
+              </>
+            )}
           </figcaption>
         </figure>
       </section>
@@ -96,11 +107,44 @@ export default function LandingPage({ service }: LandingPageProps) {
         </div>
       </section>
 
+      <section className="landing-cleaning-results" aria-labelledby="cleaning-results-title">
+        <div className="landing-section-inner">
+          <div className="landing-section-heading">
+            <p>{service.slug === "building-care" ? "방문 결과" : "청소 결과"}</p>
+            <h2 id="cleaning-results-title">
+              {service.slug === "building-care"
+                ? "방문 후 이렇게 확인됩니다."
+                : "청소 후 이렇게 달라집니다."}
+            </h2>
+            <span>
+              {service.slug === "building-care"
+                ? "현장에서 확인한 내용과 처리 결과를 기록으로 공유합니다."
+                : "눈에 보이는 청결부터 작업 확인까지 한 번에 챙깁니다."}
+            </span>
+          </div>
+          <ol className="landing-cleaning-result-grid">
+            {service.cleaningResults.map((item, index) => (
+              <li key={item.title}>
+                <span>{String(index + 1).padStart(2, "0")}</span>
+                <div>
+                  <h3>{item.title}</h3>
+                  <p>{item.copy}</p>
+                </div>
+              </li>
+            ))}
+          </ol>
+        </div>
+      </section>
+
       <section className="landing-scope" aria-labelledby="scope-title">
         <div className="landing-section-inner">
           <div className="landing-section-heading">
-            <p>서비스 범위</p>
-            <h2 id="scope-title">어디까지 관리하는지 먼저 알려드립니다.</h2>
+            <p>{service.slug === "building-care" ? "서비스 범위" : "청소 범위"}</p>
+            <h2 id="scope-title">
+              {service.slug === "building-care"
+                ? "어디까지 관리하는지 먼저 알려드립니다."
+                : "어디까지 청소하는지 먼저 알려드립니다."}
+            </h2>
             <span>현장 조건에 따라 포함 범위는 상담 후 확정됩니다.</span>
           </div>
           <div className="landing-scope-grid">
@@ -161,7 +205,7 @@ export default function LandingPage({ service }: LandingPageProps) {
       <section className="landing-difference" aria-labelledby="difference-title">
         <div className="landing-section-inner landing-difference-grid">
           <div>
-            <p className="landing-eyebrow">BRING CARE의 차이</p>
+            <p className="landing-eyebrow">청소에 더해지는 BRING CARE의 차이</p>
             <h2 id="difference-title">청소하면서 건물까지 봅니다.</h2>
             <p>
               눈앞의 오염만 정리하고 끝내지 않습니다. 현장에서 발견한 조명,
