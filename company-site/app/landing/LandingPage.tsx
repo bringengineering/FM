@@ -190,13 +190,23 @@ export default function LandingPage({ service }: LandingPageProps) {
             <h2 id="price-title">{service.price}</h2>
             <span>{service.priceNote}</span>
           </div>
-          <div className="landing-price-includes">
-            <strong>상담할 때 함께 확인합니다</strong>
-            <ul>
-              <li>현장 위치와 규모</li>
-              <li>현재 오염도와 상태</li>
-              <li>희망 작업 범위와 일정</li>
-            </ul>
+          <div className="landing-price-details">
+            <div>
+              <strong>기본 서비스 범위</strong>
+              <ul>
+                {service.scope.map((item) => (
+                  <li key={item.title}>{item.title}</li>
+                ))}
+              </ul>
+            </div>
+            <div>
+              <strong>별도 협의 항목</strong>
+              <ul>
+                <li>기본 범위를 벗어난 추가 작업</li>
+                <li>자재·폐기물 처리와 전문 보수</li>
+                <li>현장 조건에 따른 추가 인력·장비</li>
+              </ul>
+            </div>
           </div>
           <a className="landing-button landing-button-primary" href="#quick-estimate">
             내 건물 견적 확인
@@ -239,7 +249,11 @@ export default function LandingPage({ service }: LandingPageProps) {
         </div>
       </section>
 
-      <section className="landing-estimate" aria-label={`${serviceName} 간편 견적`}>
+      <section
+        className="landing-estimate"
+        id="quick-estimate"
+        aria-label={`${serviceName} 간편 견적`}
+      >
         <div className="landing-section-inner landing-estimate-layout">
           <div className="landing-estimate-copy">
             <p className="landing-eyebrow">30초 간편 견적</p>

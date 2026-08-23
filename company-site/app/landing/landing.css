@@ -519,17 +519,20 @@
   line-height: 1.5;
 }
 
-.landing-price-includes {
+.landing-price-details {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 24px;
   border-left: 1px solid rgba(255, 255, 255, 0.16);
   padding-left: clamp(24px, 4vw, 50px);
 }
 
-.landing-price-includes strong {
+.landing-price-details strong {
   color: var(--lime);
   font-size: 12px;
 }
 
-.landing-price-includes ul {
+.landing-price-details ul {
   display: grid;
   gap: 8px;
   margin: 15px 0 0;
@@ -990,7 +993,7 @@
     width: calc(100% - (var(--landing-gutter) * 2));
   }
 
-  .landing-price-includes {
+  .landing-price-details {
     border-top: 1px solid rgba(255, 255, 255, 0.16);
     border-left: 0;
     padding-top: 24px;
@@ -1068,6 +1071,10 @@
 
   .estimate-fields label:last-child {
     grid-column: auto;
+  }
+
+  .landing-price-details {
+    grid-template-columns: 1fr;
   }
 }
 
