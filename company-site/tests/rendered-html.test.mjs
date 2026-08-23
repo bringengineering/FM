@@ -87,6 +87,17 @@ test("server-renders the consultation completion page", async () => {
   assert.match(html, /010-6566-3606/);
 });
 
+test("server-renders the stair-cleaning landing page presentation", async () => {
+  const response = await render("/stair-cleaning");
+  const html = await response.text();
+
+  assert.match(html, /깨끗하게만 하지 않습니다/);
+  assert.match(html, /월 4회 6만원부터/);
+  assert.match(html, /청소하면서 건물까지 봅니다/);
+  assert.match(html, /30초 간편 견적/);
+  assert.match(html, /tel:01065663606/);
+});
+
 test("mail bridge accepts only the two published Bring Care origins", async () => {
   const bridge = await readFile(
     new URL("../public/consult-mail-bridge.html", import.meta.url),
