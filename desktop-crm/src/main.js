@@ -1112,8 +1112,11 @@ async function readLocalStore(commitGuard) {
 }
 
 async function writeLocalStore(input, commitGuard) {
-  Core.assertNoProhibitedSecrets(input);
   const data = Core.sanitizeSharedStore(input);
+  // Renderer-only overlays are never persisted by this writer. Validate the
+  // exact shared document so read-only FIELD metadata cannot block an
+  // otherwise valid CRM save.
+  Core.assertNoProhibitedSecrets(data);
   data.updatedAt = new Date().toISOString();
   return getLocalStoreCoordinator().write(data, commitGuard);
 }
@@ -1618,7 +1621,10 @@ async function pickWorkflowFiles(input) {
 }
 
 async function writeStore(input) {
-  assertMainMutationAllowed(input);
+  // The persistence implementations below sanitize and validate the exact
+  // shared document. Checking the renderer snapshot here would also inspect
+  // non-persisted overlays and can produce unrelated false positives.
+  assertMainMutationAllowed();
   if (localTestMode) {
     const data = await enqueueLocalBuildingScheduleCommit(async () => {
       const current = await readLocalStore();

@@ -6026,8 +6026,8 @@
         (normalizedName && Core.normalizeText(partnerVendorName(item)) === normalizedName && partnerIndustry(item) === raw.industry)
       ));
       if (duplicate && duplicate.active !== false) return showToast("이미 등록된 연락 업체입니다. 기존 업체 정보를 수정해 주세요.", "error");
-      const item = editing || duplicate || newPartnerVendor();
-      Object.assign(item, {
+      const existingItem = editing || duplicate || null;
+      const item = Object.assign({}, existingItem || newPartnerVendor(), {
         vendor: String(raw.vendor || "").trim(), name: String(raw.vendor || "").trim(), industry: raw.industry,
         phone: String(raw.phone || "").trim(), phoneLabel: String(raw.phoneLabel || "").trim(),
         alternatePhone: String(raw.alternatePhone || "").trim(), alternatePhoneLabel: String(raw.alternatePhoneLabel || "").trim(),
@@ -6037,7 +6037,18 @@
       delete item.customerId;
       delete item.buildingId;
       store.partnerVendors ||= [];
-      if (!editing && !duplicate) store.partnerVendors.push(item);
+      const prospectiveVendors = store.partnerVendors.map(vendor => existingItem && vendor === existingItem ? item : vendor);
+      if (!existingItem) prospectiveVendors.push(item);
+      try {
+        // Validate the exact post-submit shared document before changing the
+        // renderer store. A rejected value must never leave a ghost vendor in
+        // the list or a success message on screen.
+        Core.assertNoProhibitedSecrets(Core.sanitizeSharedStore(Object.assign({}, store, { partnerVendors: prospectiveVendors })));
+      } catch (error) {
+        return showToast(error && error.message || "저장할 수 없는 민감정보가 포함되어 있습니다.", "error");
+      }
+      if (existingItem) Object.assign(existingItem, item);
+      else store.partnerVendors.push(item);
       logAudit({ category: editing || duplicate ? "변경" : "등록", targetType: "연락 업체", targetId: item.id, targetLabel: partnerVendorName(item), action: duplicate ? "제외 업체 재등록" : editing ? "업체 기본정보 수정" : "연락 업체 등록", reason: "연락 업체 관리" });
       scheduleSave(); closeModal(); currentView = "partnerVendors"; render(); showToast(`${partnerVendorName(item)} 업체 정보를 저장했습니다.`, "success");
     } else if (form.id === "partnerQuoteForm") {

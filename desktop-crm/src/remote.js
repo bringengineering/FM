@@ -2764,8 +2764,9 @@ class FirebaseRemoteClient {
   async pushStoreLocked(input, guardValue, options = {}) {
     const guard = guardValue || this.captureSessionGuard();
     if (!this.sessionGuardActive(guard)) throw createError("로그인 세션이 변경되었습니다.", "SESSION_CHANGED");
-    this.requireMutationPermission(input);
+    this.requireMutationPermission();
     const data = this.Core.sanitizeSharedStore(input);
+    this.Core.assertNoProhibitedSecrets(data);
     data.updatedAt = new Date().toISOString();
     const next = toRemoteStore(data, this.session && this.session.email);
     // A renderer save can have been prepared before a record-level calendar
@@ -2953,9 +2954,10 @@ class FirebaseRemoteClient {
   async saveStoreLocked(input, guardValue) {
     const guard = guardValue || this.captureSessionGuard();
     this.assertSessionGuardActive(guard);
-    this.requireMutationPermission(input);
+    this.requireMutationPermission();
     const overlays = this.Core.sanitizeRendererOverlays(input);
     const local = this.Core.sanitizeSharedStore(input);
+    this.Core.assertNoProhibitedSecrets(local);
     local.updatedAt = new Date().toISOString();
     try {
       const result = await this.pushStoreLocked(local, guard);

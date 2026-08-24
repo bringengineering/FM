@@ -161,7 +161,10 @@
     }
     return [...new Set(source.map(item => String(item ?? "").trim()).filter(Boolean))];
   }
-  const RESIDENT_REGISTRATION_NUMBER = /(?<!\d)\d{6}\s*-?\s*[1-8]\d{6}(?!\d)/;
+  const RESIDENT_REGISTRATION_NUMBER_CANDIDATE = /(?<!\d)(\d{6})([\t ]*[-/][\t ]*|[\t ]+)?([1-8])((?:[\t ]*\d){6})(?![\t ]*\d)/g;
+  const RESIDENT_REGISTRATION_CONTEXT = /(?:주민\s*(?:등록\s*)?번호|외국인\s*등록\s*번호|\brrn\b|resident\s*registration\s*(?:number|no\.?))/i;
+  const HTTP_URL = /\bhttps?:\/\/[^\s<>"'`]+/gi;
+  const SECRET_INVISIBLE = /[\u200b-\u200d\u2060\ufeff]/g;
   const SECRET_VALUE = /(?:비밀번호|비번|패스워드|암호|password|passcode|\bpw\b|\bpin\b|도어락(?:\s*번호)?|공동\s*현관(?:\s*번호)?|출입\s*번호|현관\s*번호|문\s*열림\s*번호)\s*(?:은|는|이|가|번호|코드|:|=|-|is)?\s*([0-9a-z!@#$%^&*._-](?:\s?[0-9a-z!@#$%^&*._-]){3,})/i;
   const SECRET_FIELD = /^(?:비밀번호|비번|패스워드|암호|도어락번호|공동현관번호|출입번호|현관번호|password|passcode|pw|pin|doorlockcode|accesscode)$/i;
   const SECRET_CONTEXT = /(?:비밀번호|비번|패스워드|암호|password|passcode|\bpw\b|\bpin\b|도어락|공동\s*현관|출입\s*번호|현관\s*번호)/i;
@@ -219,9 +222,47 @@
     return `pvd_legacy_${quoteId || "unknown"}`;
   }
 
+  function isValidResidentBirthDate(dateDigits, classifier) {
+    // The final six digits are randomized for newer RRNs, so a legacy checksum cannot be required here.
+    const century = "1256".includes(classifier) ? 1900 : "3478".includes(classifier) ? 2000 : 0;
+    if (!century || !/^\d{6}$/.test(dateDigits)) return false;
+    const year = century + Number(dateDigits.slice(0, 2));
+    const month = Number(dateDigits.slice(2, 4));
+    const day = Number(dateDigits.slice(4, 6));
+    if (month < 1 || month > 12 || day < 1 || day > 31) return false;
+    const date = new Date(Date.UTC(year, month - 1, day));
+    return date.getUTCFullYear() === year && date.getUTCMonth() === month - 1 && date.getUTCDate() === day;
+  }
+
+  function containsResidentRegistrationNumber(value) {
+    const text = String(value || "").normalize("NFKC").replace(SECRET_INVISIBLE, "");
+    const hasExplicitContext = RESIDENT_REGISTRATION_CONTEXT.test(text);
+    const urlIdRanges = [...text.matchAll(HTTP_URL)].flatMap(match => {
+      const schemeEnd = match[0].indexOf("://") + 3;
+      const pathOrQueryOffset = match[0].slice(schemeEnd).search(/[/?]/);
+      if (pathOrQueryOffset < 0) return [];
+      const rangeStart = match.index + schemeEnd + pathOrQueryOffset;
+      const fragmentOffset = match[0].indexOf("#", schemeEnd + pathOrQueryOffset);
+      const rangeEnd = fragmentOffset < 0 ? match.index + match[0].length : match.index + fragmentOffset;
+      return [[rangeStart, rangeEnd]];
+    });
+    for (const match of text.matchAll(RESIDENT_REGISTRATION_NUMBER_CANDIDATE)) {
+      const separator = `${match[2] || ""}${/[\t ]/.test(match[4]) ? " " : ""}`;
+      const classifier = match[3];
+      if (hasExplicitContext) return true;
+      if (!isValidResidentBirthDate(match[1], classifier)) continue;
+      const start = match.index;
+      const end = start + match[0].length;
+      // Vendor/map providers commonly use date-shaped opaque IDs; exempt only a bare ID in a URL path/query.
+      const isBareHttpUrlId = !separator && urlIdRanges.some(([urlStart, urlEnd]) => start >= urlStart && end <= urlEnd);
+      if (!isBareHttpUrlId) return true;
+    }
+    return false;
+  }
+
   function prohibitedSecretType(value) {
-    const text = String(value || "").normalize("NFKC");
-    if (RESIDENT_REGISTRATION_NUMBER.test(text)) return "resident-registration-number";
+    const text = String(value || "").normalize("NFKC").replace(SECRET_INVISIBLE, "");
+    if (containsResidentRegistrationNumber(text)) return "resident-registration-number";
     if (SECRET_VALUE.test(text)) return "credential";
     return "";
   }
