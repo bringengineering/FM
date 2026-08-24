@@ -191,15 +191,30 @@ test("workflow customer matching canonicalizes country codes and rejects ambiguo
   assert.equal(Core.matchWorkflowCustomer({ phone: "001-81-90-1234-5678-9" }, [carrier]), null);
 });
 
-test("customer management alone wires live formatting, safe submit formatting, and legacy display", () => {
+test("customer and contact-vendor forms share scoped live formatting and safe persistence", () => {
   const editor = functionSource("customerEditor");
+  const vendorEditor = functionSource("partnerVendorEditor");
   const fromForm = functionSource("customerFromForm");
+  const partnerPhoneStart = appSource.indexOf("const partnerPhoneText");
+  const partnerPhoneTextSource = appSource.slice(partnerPhoneStart, appSource.indexOf("const partnerVendorForQuote", partnerPhoneStart));
   assert.match(editor, /name="phone" type="tel" inputmode="tel" autocomplete="tel" data-customer-phone/);
   assert.match(editor, /customerPhoneText\(customer\.phone\)/);
   assert.match(fromForm, /phone:\s*customerPhoneText\(raw\.phone\)/);
-  assert.match(appSource, /event\.target\.matches\("#customerForm \[data-customer-phone\]"\)/);
-  assert.match(appSource, /event\.target\.matches\("#customerForm \[data-customer-phone\]"\).*deleteContentBackward/s);
+  assert.match(appSource, /const formattedPhoneInputSelector = "#customerForm \[data-customer-phone\], #partnerVendorForm \[data-partner-vendor-phone\]"/);
+  assert.match(appSource, /event\.target\.matches\(formattedPhoneInputSelector\)/);
+  assert.match(appSource, /event\.target\.matches\(formattedPhoneInputSelector\).*deleteContentBackward/s);
+  assert.match(appSource, /addEventListener\("compositionend"[\s\S]*?event\.target\.matches\(formattedPhoneInputSelector\)[\s\S]*?formatCustomerPhoneInput\(event\.target\)/);
+  assert.equal((vendorEditor.match(/data-partner-vendor-phone/g) || []).length, 2);
+  assert.match(vendorEditor, /name="phone" type="tel" inputmode="tel" autocomplete="tel" data-partner-vendor-phone value="\$\{attr\(customerPhoneText\(item\.phone\)\)\}"/);
+  assert.match(vendorEditor, /name="alternatePhone" type="tel" inputmode="tel" autocomplete="tel" data-partner-vendor-phone value="\$\{attr\(customerPhoneText\(item\.alternatePhone\)\)\}"/);
   assert.match(appSource, /customerPhoneText\(customer\.phone\) \|\| "-"/);
+  assert.match(partnerPhoneTextSource, /customerPhoneText\(item\.phone\)/);
+  assert.match(partnerPhoneTextSource, /customerPhoneText\(item\.alternatePhone\)/);
+  for (const name of ["renderPartnerVendors", "renderPartnerQuotes"]) {
+    const renderer = functionSource(name);
+    assert.match(renderer, /customerPhoneSearchKey\(searchEl\.value\)/);
+    assert.match(renderer, /customerPhoneCandidateKey\(value\)\.includes\(phoneQuery\)/);
+  }
   assert.match(functionSource("filteredCustomers"), /customerPhoneCandidateKey\(customer\.phone\)\.includes\(phoneQuery\)/);
   assert.match(functionSource("renderBuildings"), /customerPhoneCandidateKey\(customer\.phone\)\.includes\(phoneQuery\)/);
   ["renderCustomerDrawer", "renderRelationshipDrawer", "customerPickerSummaryMarkup"].forEach(name => {
@@ -209,5 +224,13 @@ test("customer management alone wires live formatting, safe submit formatting, a
   const customerSubmitEnd = appSource.indexOf('} else if (form.id === "partnerVendorForm")', customerSubmitStart);
   const customerSubmit = appSource.slice(customerSubmitStart, customerSubmitEnd);
   assert.ok(customerSubmit.indexOf("form.elements.name") < customerSubmit.indexOf("customerFromForm(form)"), "name validation must happen before customer mutation");
+  const vendorSubmitEnd = appSource.indexOf('} else if (form.id === "partnerQuoteForm")', customerSubmitEnd);
+  const vendorSubmit = appSource.slice(customerSubmitEnd, vendorSubmitEnd);
+  assert.match(vendorSubmit, /phone:\s*customerPhoneText\(raw\.phone\)/);
+  assert.match(vendorSubmit, /alternatePhone:\s*customerPhoneText\(raw\.alternatePhone\)/);
+  assert.match(vendorSubmit, /\[raw\.phone, raw\.alternatePhone\]\.map\(Core\.normalizePhone\)/);
+  assert.match(vendorSubmit, /normalizedPhones\.includes\(Core\.normalizePhone\(value\)\)/);
+  assert.match(appSource, /form\.id === "partnerVendorForm"[\s\S]*?formatCustomerPhoneInput\(form\.elements\.phone\);[\s\S]*?formatCustomerPhoneInput\(form\.elements\.alternatePhone\);/);
+  assert.match(functionSource("partnerVendorPickerSearchText"), /customerPhoneText\(vendor && vendor\.phone\)/);
   assert.doesNotMatch(appSource, /input\[type=["']tel["']\].*formatCustomerPhoneInput/);
 });

@@ -197,6 +197,7 @@
   const attr = esc;
   const initials = value => String(value || "고객").replace(/\s/g, "").slice(0, 1).toUpperCase();
   const customerPhoneText = value => Core.formatPhone(value);
+  const formattedPhoneInputSelector = "#customerForm [data-customer-phone], #partnerVendorForm [data-partner-vendor-phone]";
 
   function customerPhoneSearchKey(value) {
     const text = String(value || "").normalize("NFKC").trim();
@@ -290,8 +291,8 @@
   };
   const partnerIndustry = item => item && (item.industry || (String(item.category || "").includes("누수") ? "누수" : "기타")) || "기타";
   const partnerPhoneText = item => [
-    item && item.phone && `${item.phoneLabel ? `${item.phoneLabel} ` : ""}${item.phone}`,
-    item && item.alternatePhone && `${item.alternatePhoneLabel ? `${item.alternatePhoneLabel} ` : ""}${item.alternatePhone}`
+    item && item.phone && `${item.phoneLabel ? `${item.phoneLabel} ` : ""}${customerPhoneText(item.phone)}`,
+    item && item.alternatePhone && `${item.alternatePhoneLabel ? `${item.alternatePhoneLabel} ` : ""}${customerPhoneText(item.alternatePhone)}`
   ].filter(Boolean).join(" · ") || "연락처 미입력";
   const partnerVendorForQuote = quote => {
     if (!quote) return null;
@@ -2685,9 +2686,12 @@
 
   function renderPartnerVendors() {
     const query = Core.normalizeText(searchEl.value);
+    const phoneQuery = customerPhoneSearchKey(searchEl.value);
     const vendors = partnerVendorRows()
       .filter(item => partnerVendorIndustryFilter === "전체 업종" || partnerIndustry(item) === partnerVendorIndustryFilter)
-      .filter(item => !query || Core.normalizeText([partnerVendorName(item), item.phone, item.alternatePhone, item.region, partnerIndustry(item), item.service, item.category, item.memo].join(" ")).includes(query))
+      .filter(item => !query
+        || Core.normalizeText([partnerVendorName(item), item.phone, item.alternatePhone, item.region, partnerIndustry(item), item.service, item.category, item.memo].join(" ")).includes(query)
+        || phoneQuery && [item.phone, item.alternatePhone].some(value => customerPhoneCandidateKey(value).includes(phoneQuery)))
       .sort((a, b) => partnerVendorName(a).localeCompare(partnerVendorName(b), "ko"));
     const linkedQuotes = store.partnerQuotes.filter(item => partnerVendorForQuote(item)).length;
     const withPhone = partnerVendorRows().filter(item => item.phone || item.alternatePhone).length;
@@ -2704,10 +2708,13 @@
 
   function renderPartnerQuotes() {
     const query = Core.normalizeText(searchEl.value);
+    const phoneQuery = customerPhoneSearchKey(searchEl.value);
     const quotes = [...store.partnerQuotes]
       .filter(item => partnerQuoteIndustryFilter === "전체 업종" || partnerIndustry(partnerQuoteVendorView(item)) === partnerQuoteIndustryFilter)
       .filter(item => partnerQuoteStatusFilter === "전체" || item.status === partnerQuoteStatusFilter)
-      .filter(item => { const vendor = partnerQuoteVendorView(item); return !query || Core.normalizeText([item.scenario, vendor.vendor, vendor.phone, vendor.alternatePhone, vendor.region, partnerIndustry(vendor), vendor.service, item.includedWork, item.consultationContent, item.memo].join(" ")).includes(query); })
+      .filter(item => { const vendor = partnerQuoteVendorView(item); return !query
+        || Core.normalizeText([item.scenario, vendor.vendor, vendor.phone, vendor.alternatePhone, vendor.region, partnerIndustry(vendor), vendor.service, item.includedWork, item.consultationContent, item.memo].join(" ")).includes(query)
+        || phoneQuery && [vendor.phone, vendor.alternatePhone].some(value => customerPhoneCandidateKey(value).includes(phoneQuery)); })
       .sort((a, b) => String(b.consultedAt || b.receivedAt || b.contactedAt || b.createdAt).localeCompare(String(a.consultedAt || a.receivedAt || a.contactedAt || a.createdAt)));
     const scoped = store.partnerQuotes.filter(item => partnerQuoteIndustryFilter === "전체 업종" || partnerIndustry(partnerQuoteVendorView(item)) === partnerQuoteIndustryFilter);
     const candidates = scoped.filter(item => item.status === "협력 후보").length;
@@ -3163,8 +3170,8 @@
     modalContent.innerHTML = `<div class="modal-head"><div><h2>${editing ? "연락 업체 수정" : "연락 업체 등록"}</h2><p>업체 링크에서 공개된 기본정보를 불러온 뒤 내용을 확인해 저장하세요.</p></div><button class="close-button" data-action="close-modal">×</button></div><form id="partnerVendorForm" class="modal-body partner-vendor-form" data-partner-vendor-id="${attr(editing && editing.id || "")}"><section class="quote-url-import"><div><b>업체 링크로 자동 입력</b><span>업체 홈페이지·지도·소개 페이지 주소를 붙여 넣으세요.</span></div><div class="quote-url-import-row"><input name="quoteUrl" type="url" value="${attr(item.quoteUrl || "")}" placeholder="https://..."><button type="button" data-vendor-lookup>업체 정보 불러오기</button></div><p data-vendor-lookup-status aria-live="polite">업체명·연락처·업종·작업 내용을 찾아 입력합니다.</p></section><input type="hidden" name="phoneLabel" value="${attr(item.phoneLabel || "")}"><input type="hidden" name="alternatePhoneLabel" value="${attr(item.alternatePhoneLabel || "")}"><div class="essential-label"><b>업체 기본정보</b><span>자동 입력된 내용이 맞는지 확인하고 부족한 정보는 직접 입력하세요.</span></div><div class="form-grid">
       ${field("업체명 *", "vendor", partnerVendorName(item), "text", "예: 달인누수탐지")}
       ${selectField("업종 *", "industry", Core.PARTNER_INDUSTRIES, partnerIndustry(item))}
-      ${field("업체 연락처", "phone", item.phone, "tel", "010-0000-0000")}
-      ${field("추가 연락처", "alternatePhone", item.alternatePhone, "tel", "두 번째 번호가 있을 때")}
+      <label class="field"><span>업체 연락처</span><input name="phone" type="tel" inputmode="tel" autocomplete="tel" data-partner-vendor-phone value="${attr(customerPhoneText(item.phone))}" placeholder="010-0000-0000"></label>
+      <label class="field"><span>추가 연락처</span><input name="alternatePhone" type="tel" inputmode="tel" autocomplete="tel" data-partner-vendor-phone value="${attr(customerPhoneText(item.alternatePhone))}" placeholder="두 번째 번호가 있을 때"></label>
       ${field("작업 내용", "service", item.service || item.category || "", "text", "예: 누수 탐지·배관 보수", "wide")}
       ${field("지역", "region", item.region || "원주", "text", "예: 원주")}
       ${areaField("업체 메모", "memo", item.memo, "wide")}
@@ -3193,6 +3200,7 @@
   function partnerVendorPickerSearchText(vendor) {
     return Core.normalizeText([
       partnerVendorName(vendor), vendor && vendor.phone, vendor && vendor.alternatePhone,
+      customerPhoneText(vendor && vendor.phone), customerPhoneText(vendor && vendor.alternatePhone),
       Core.normalizePhone(vendor && vendor.phone), Core.normalizePhone(vendor && vendor.alternatePhone),
       vendor && vendor.region, vendor && (vendor.service || vendor.category), partnerIndustry(vendor)
     ].filter(Boolean).join(" "));
@@ -4614,6 +4622,10 @@
         applyLookupValue("vendor", result.vendor, "업체명");
         applyLookupValue("phone", result.phone, "연락처");
         applyLookupValue("alternatePhone", result.alternatePhone, "추가 연락처");
+        if (form.id === "partnerVendorForm") {
+          formatCustomerPhoneInput(form.elements.phone);
+          formatCustomerPhoneInput(form.elements.alternatePhone);
+        }
         applyLookupValue("service", result.service, "작업 내용");
         if (form.elements.phoneLabel && result.phoneLabel) form.elements.phoneLabel.value = result.phoneLabel;
         if (form.elements.alternatePhoneLabel && result.alternatePhoneLabel) form.elements.alternatePhoneLabel.value = result.alternatePhoneLabel;
@@ -6018,19 +6030,19 @@
       if (!String(raw.vendor || "").trim()) return showToast("업체명을 입력해 주세요.", "error");
       const editing = partnerVendorById(form.dataset.partnerVendorId);
       const normalizedUrl = String(raw.quoteUrl || "").trim().replace(/\/$/, "").toLowerCase();
-      const normalizedPhone = Core.normalizePhone(raw.phone || raw.alternatePhone);
+      const normalizedPhones = [...new Set([raw.phone, raw.alternatePhone].map(Core.normalizePhone).filter(Boolean))];
       const normalizedName = Core.normalizeText(raw.vendor);
       const duplicate = allPartnerVendorRows().find(item => String(item.id) !== String(editing && editing.id || "") && (
         (normalizedUrl && String(item.quoteUrl || "").trim().replace(/\/$/, "").toLowerCase() === normalizedUrl) ||
-        (normalizedPhone && [item.phone, item.alternatePhone].some(value => Core.normalizePhone(value) === normalizedPhone)) ||
+        (normalizedPhones.length && [item.phone, item.alternatePhone].some(value => normalizedPhones.includes(Core.normalizePhone(value)))) ||
         (normalizedName && Core.normalizeText(partnerVendorName(item)) === normalizedName && partnerIndustry(item) === raw.industry)
       ));
       if (duplicate && duplicate.active !== false) return showToast("이미 등록된 연락 업체입니다. 기존 업체 정보를 수정해 주세요.", "error");
       const existingItem = editing || duplicate || null;
       const item = Object.assign({}, existingItem || newPartnerVendor(), {
         vendor: String(raw.vendor || "").trim(), name: String(raw.vendor || "").trim(), industry: raw.industry,
-        phone: String(raw.phone || "").trim(), phoneLabel: String(raw.phoneLabel || "").trim(),
-        alternatePhone: String(raw.alternatePhone || "").trim(), alternatePhoneLabel: String(raw.alternatePhoneLabel || "").trim(),
+        phone: customerPhoneText(raw.phone), phoneLabel: String(raw.phoneLabel || "").trim(),
+        alternatePhone: customerPhoneText(raw.alternatePhone), alternatePhoneLabel: String(raw.alternatePhoneLabel || "").trim(),
         quoteUrl: String(raw.quoteUrl || "").trim(), service: String(raw.service || "").trim(), category: String(raw.service || "").trim(),
         region: String(raw.region || "").trim() || "원주", memo: String(raw.memo || "").trim(), active: true, updatedAt: new Date().toISOString()
       });
@@ -6299,12 +6311,12 @@
     showToast(selected ? `현재 작업자를 ${selected.name}(으)로 선택했습니다.` : "현재 작업자 선택을 해제했습니다.", selected ? "success" : "");
   });
   document.addEventListener("beforeinput", event => {
-    if (!event.target.matches("#customerForm [data-customer-phone]") || event.isComposing) return;
+    if (!event.target.matches(formattedPhoneInputSelector) || event.isComposing) return;
     const direction = event.inputType === "deleteContentBackward" ? "backward" : event.inputType === "deleteContentForward" ? "forward" : "";
     if (direction && deleteCustomerPhoneDigit(event.target, direction)) event.preventDefault();
   });
   document.addEventListener("input", event => {
-    if (event.target.matches("#customerForm [data-customer-phone]")) {
+    if (event.target.matches(formattedPhoneInputSelector)) {
       if (!event.isComposing) formatCustomerPhoneInput(event.target);
     } else if (event.target.matches("[data-vacancy-unit-search]")) {
       vacancyUnitQuery = event.target.value.slice(0, 256);
@@ -6329,6 +6341,9 @@
     } else if (event.target.matches("[data-sales-standards-search]")) {
       openSalesStandards(event.target.value);
     }
+  });
+  document.addEventListener("compositionend", event => {
+    if (event.target.matches(formattedPhoneInputSelector)) formatCustomerPhoneInput(event.target);
   });
   confirmationLayer.addEventListener("click", event => {
     const choice = event.target.closest("[data-confirm-choice]")?.dataset.confirmChoice;
