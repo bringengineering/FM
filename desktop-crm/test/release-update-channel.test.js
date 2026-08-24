@@ -10,6 +10,7 @@ const {
   MAX_CHANNEL_BYTES,
   assertNewestStableRelease,
   buildUpdateChannel,
+  compareVersions,
   parseUpdateChannel,
   publishUpdateChannel,
 } = require("../scripts/release/publish-update-channel");
@@ -39,6 +40,12 @@ function fixture(version, publishedAt = "2026-08-20T01:29:12Z") {
   ]);
   return { release, bodies, pointer: buildUpdateChannel({ version, release, bodies }) };
 }
+
+test("compares major, minor, and patch components as integers", () => {
+  assert.ok(compareVersions("1.9.0", "1.8.99") > 0);
+  assert.ok(compareVersions("2.0.0", "1.99.99") > 0);
+  assert.ok(compareVersions("1.8.22", "1.8.21") > 0);
+});
 
 function jsonResponse(status, value) {
   return {

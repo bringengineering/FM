@@ -53,6 +53,17 @@ test("uses persistent atomic reservations with bounded retry and annotated tag f
   assert.doesNotMatch(scripts, /--force(?:\s|"|')/);
 });
 
+test("plans one semantic release type and carries it unchanged into atomic reservation", () => {
+  assert.doesNotMatch(jobBlock("plan"), /inputs\.release_type|--release-type/);
+  assert.match(jobBlock("reserve-build"), /CRM_RELEASE_TYPE:\s*\$\{\{ needs\.plan\.outputs\.release_type \}\}/);
+  assert.match(jobBlock("reserve-build"), /--release-type "\$CRM_RELEASE_TYPE"/);
+  const planner = fs.readFileSync(path.join(root, "desktop-crm/scripts/release/plan-version.js"), "utf8");
+  const reservation = fs.readFileSync(path.join(root, "desktop-crm/scripts/release/reserve-version.js"), "utf8");
+  assert.match(planner, /sourceCommitMessages/);
+  assert.match(planner, /selectReleaseType/);
+  assert.match(reservation, /planNextVersion\(\{[^}]*releaseType/);
+});
+
 test("creates the version-only commit before staging untracked release assets", () => {
   const reserve = jobBlock("reserve-build");
   const commitIndex = reserve.indexOf("name: Create deterministic version-only release commit");

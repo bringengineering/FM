@@ -149,6 +149,15 @@ test("selects the newest stable CRM release and ignores another product, drafts,
   assert.equal(selected.feedUrl, "https://github.com/bringengineering/FM/releases/download/crm-v1.8.0/");
 });
 
+test("selects semantic major and minor upgrades instead of treating versions as decimals", () => {
+  const selected = Policy.selectLatestCrmRelease([
+    releaseFixture("crm-v1.8.99", { baseId: 500 }).release,
+    releaseFixture("crm-v1.9.0", { baseId: 600 }).release,
+    releaseFixture("crm-v2.0.0", { baseId: 700 }).release,
+  ]);
+  assert.equal(selected.version, "2.0.0");
+});
+
 test("accepts only the exact three uploaded release assets with GitHub-bound names and URLs", () => {
   const fixture = releaseFixture("crm-v1.8.1");
   const incomplete = { ...fixture.release, assets: fixture.release.assets.slice(0, 2) };

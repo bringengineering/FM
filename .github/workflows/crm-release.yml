@@ -17,7 +17,8 @@ on:
       - ".github/workflows/crm-release.yml"
 
 # One global queue is shared by every PC and rerun. Persistent remote claims choose
-# the next patch. package.json is bumped only in the generated release commit.
+# the next unclaimed semantic version. package.json is bumped only in the generated
+# release commit.
 concurrency:
   group: crm-production-release
   cancel-in-progress: false
@@ -40,6 +41,7 @@ jobs:
       stable_published: ${{ steps.plan.outputs.stable_published }}
       release_sha: ${{ steps.plan.outputs.release_sha }}
       package_version: ${{ steps.plan.outputs.package_version }}
+      release_type: ${{ steps.plan.outputs.release_type }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -198,10 +200,12 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ github.token }}
           SOURCE_PACKAGE_VERSION: ${{ needs.plan.outputs.package_version }}
+          CRM_RELEASE_TYPE: ${{ needs.plan.outputs.release_type }}
         run: >-
           node desktop-crm/scripts/release/reserve-version.js
           --version "${{ needs.plan.outputs.version }}"
           --package-version "$SOURCE_PACKAGE_VERSION"
+          --release-type "$CRM_RELEASE_TYPE"
           --source-sha "${{ needs.plan.outputs.source_sha }}"
           --source-branch "$CRM_SOURCE_BRANCH"
           --max-attempts 10

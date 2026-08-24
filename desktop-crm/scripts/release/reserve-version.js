@@ -12,6 +12,7 @@ const {
   listGithubReleases,
   listRemoteBranch,
   listRemoteRefs,
+  parseReleaseType,
   parseVersion,
   planNextVersion,
   releaseError,
@@ -19,6 +20,7 @@ const {
 } = require("./release-lib");
 const { selectReleaseForTag, verifyPublishedReleaseAssets } = require("./publish-release");
 const { fail, parseArgs, printResult, required } = require("./cli-utils");
+const { markVerifiedStableClaims, verifiedStableReleases } = require("./release-type");
 
 const BURNED_REMOTE_RELEASE_CODES = new Set([
   "CRM_RELEASE_MANIFEST_INVALID",
@@ -41,12 +43,13 @@ function shouldBurnClaimedVersion(error) {
 }
 
 async function main() {
-  const args = parseArgs(process.argv.slice(2), ["version", "source-sha", "source-branch", "package-version", "owner", "repo", "remote", "max-attempts"]);
+  const args = parseArgs(process.argv.slice(2), ["version", "source-sha", "source-branch", "package-version", "owner", "repo", "remote", "max-attempts", "release-type"]);
   const cwd = process.cwd();
   const requestedVersion = parseVersion(required(args, "version")).version;
   const sourceSha = assertSha(required(args, "source-sha", process.env.GITHUB_SHA));
   const sourceBranch = assertSourceBranch(required(args, "source-branch", process.env.GITHUB_REF_NAME));
   const packageVersion = parseVersion(required(args, "package-version")).version;
+  const releaseType = parseReleaseType(required(args, "release-type"));
   const owner = required(args, "owner", process.env.GITHUB_REPOSITORY_OWNER || "bringengineering");
   const repositoryName = String(process.env.GITHUB_REPOSITORY || "").split("/")[1] || "FM";
   const repo = required(args, "repo", repositoryName);
@@ -61,8 +64,10 @@ async function main() {
     assertCanonicalBranchHead({ sourceBranch, sourceSha, branchRefs: listRemoteBranch({ sourceBranch, cwd, remote }) });
     const remoteRefs = listRemoteRefs({ cwd, remote });
     const releases = await listGithubReleases({ owner, repo, token: process.env.GITHUB_TOKEN });
-    const claims = collectVersionClaims({ ...remoteRefs, releases });
-    const plan = planNextVersion({ packageVersion, sourceSha, claims, blockedVersions: [...blockedVersions] });
+    const rawClaims = collectVersionClaims({ ...remoteRefs, releases });
+    const verifiedReleases = verifiedStableReleases({ sourceSha, releases, tagRefs: remoteRefs.tagRefs, reservationRefs: remoteRefs.reservationRefs, cwd });
+    const claims = markVerifiedStableClaims(rawClaims, verifiedReleases);
+    const plan = planNextVersion({ packageVersion, sourceSha, claims, blockedVersions: [...blockedVersions], releaseType });
     const freshness = assertReservationFresh({ plan, claims });
     let won = !freshness.create;
     if (freshness.create) {
@@ -109,6 +114,7 @@ async function main() {
       const result = {
         version: plan.version,
         requested_version: requestedVersion,
+        release_type: releaseType,
         tag: plan.tag,
         reservation_ref: plan.reservationRef,
         source_sha: sourceSha,

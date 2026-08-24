@@ -13,6 +13,7 @@ const {
   assertPostReservationOwnership,
   collectVersionClaims,
   inspectDeterministicReleaseCommit,
+  parseReleaseType,
   planNextVersion,
   resolveStablePublishedState,
 } = require("../scripts/release/release-lib");
@@ -32,7 +33,7 @@ function reservation(version, sha = SOURCE) {
 }
 
 function releaseClaim(version, kind = "release") {
-  return { kind, version, parts: version.split(".").map(Number), releaseId: version, target: RELEASE };
+  return { kind, version, parts: version.split(".").map(Number), releaseId: version, target: RELEASE, verifiedStable: kind === "release" };
 }
 
 test("collects annotated tags, drafts, stable releases, and reservations as version claims", () => {
@@ -56,14 +57,60 @@ test("collects annotated tags, drafts, stable releases, and reservations as vers
   ], "refs/tags/crm-v1.8.4"), { objectSha: TAG_OBJECT, commitSha: RELEASE });
 });
 
-test("plans after every remote claim and resumes only the highest same-source reservation", () => {
+test("validates the shared release types", () => {
+  assert.equal(parseReleaseType("patch"), "patch");
+  assert.equal(parseReleaseType(" MINOR "), "minor");
+  assert.equal(parseReleaseType("major"), "major");
+  assert.throws(() => parseReleaseType("prerelease"), error => error.code === "CRM_RELEASE_TYPE_INVALID");
+});
+
+test("plans patch, minor, and major versions from the latest stable release", () => {
   assert.equal(planNextVersion({ packageVersion: "1.8.0", sourceSha: SOURCE, claims: [] }).version, "1.8.1");
+  const claims = [releaseClaim("1.8.21")];
+  assert.equal(planNextVersion({ packageVersion: "1.8.0", sourceSha: SOURCE, claims, releaseType: "patch" }).version, "1.8.22");
+  assert.equal(planNextVersion({ packageVersion: "1.8.0", sourceSha: SOURCE, claims, releaseType: "minor" }).version, "1.9.0");
+  assert.equal(planNextVersion({ packageVersion: "1.8.0", sourceSha: SOURCE, claims, releaseType: "major" }).version, "2.0.0");
+});
+
+test("falls back to the package version when no stable release exists", () => {
+  assert.equal(planNextVersion({ packageVersion: "1.8.0", sourceSha: SOURCE, claims: [], releaseType: "minor" }).version, "1.9.0");
+  assert.equal(planNextVersion({ packageVersion: "1.8.0", sourceSha: SOURCE, claims: [], releaseType: "major" }).version, "2.0.0");
+});
+
+test("advances by one patch when the requested candidate is already occupied", () => {
+  const plan = planNextVersion({
+    packageVersion: "1.8.0",
+    sourceSha: SOURCE,
+    claims: [releaseClaim("1.8.21"), reservation("1.9.0", OTHER)],
+    releaseType: "minor",
+  });
+  assert.equal(plan.version, "1.9.1");
+  assert.equal(plan.resume, false);
+});
+
+test("continues beyond major 2 even while the package baseline remains 1.8.0", () => {
+  const claims = [releaseClaim("2.0.0")];
+  assert.equal(planNextVersion({ packageVersion: "1.8.0", sourceSha: SOURCE, claims }).version, "2.0.1");
+  assert.equal(planNextVersion({ packageVersion: "1.8.0", sourceSha: SOURCE, claims, releaseType: "minor" }).version, "2.1.0");
+  assert.equal(planNextVersion({ packageVersion: "1.8.0", sourceSha: SOURCE, claims, releaseType: "major" }).version, "3.0.0");
+});
+
+test("burns a prerelease claim without treating it as the stable semantic baseline", () => {
+  const claims = [
+    releaseClaim("1.8.21"),
+    { ...releaseClaim("1.9.0"), prerelease: true },
+  ];
+  assert.equal(planNextVersion({ packageVersion: "1.8.0", sourceSha: SOURCE, claims, releaseType: "minor" }).version, "1.9.1");
+});
+
+test("resumes the global-highest same-source reservation before applying a fresh release type", () => {
   const resumed = planNextVersion({
     packageVersion: "1.8.0",
     sourceSha: SOURCE,
-    claims: [reservation("1.8.1"), releaseClaim("1.8.2"), reservation("1.8.3")],
+    claims: [releaseClaim("1.8.21"), reservation("1.9.0")],
+    releaseType: "major",
   });
-  assert.equal(resumed.version, "1.8.3");
+  assert.equal(resumed.version, "1.9.0");
   assert.equal(resumed.resume, true);
 });
 

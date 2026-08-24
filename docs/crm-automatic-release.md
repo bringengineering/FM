@@ -73,15 +73,24 @@ Custom role은 Rules 릴리스 생성·조회·갱신과 대상 Realtime Databas
 
 워크플로는 `crm-production-release` concurrency 그룹에서 실행하며 진행 중인 배포를 취소하지 않습니다. 버전은 로컬 `package.json`만 보지 않고 원격 stable/draft 릴리스, `crm-v*` 태그와 `crm-release-reservations/v*` 예약 ref를 함께 확인합니다.
 
+버전은 Semantic Versioning의 `major.minor.patch` 규칙으로 계산합니다. 마지막 stable 릴리스 이후의 Conventional Commit 중 가장 큰 변경을 적용합니다.
+
+- `fix`, `perf`, `refactor`, `chore`와 알 수 없는 형식: patch (`1.8.21` → `1.8.22`)
+- `feat`: minor (`1.8.21` → `1.9.0`)
+- `type!:` 또는 본문의 `BREAKING CHANGE:`: major (`1.8.21` → `2.0.0`)
+- 현재 소스 커밋의 `CRM-Release: patch|minor|major` footer는 자동 판정을 명시적으로 고정합니다.
+
+버전 종류는 소스 SHA의 커밋 기록에만 묶이며 실행 시점의 외부 설정으로 바꿀 수 없습니다. 같은 소스 SHA의 예약이 아직 원격 최고 버전이면 그대로 재개하고, 더 높은 버전이 이미 점유됐다면 그 예약은 재사용하지 않으므로 배포 중단이나 재시도가 버전 의미를 바꾸지 않습니다.
+
 1. 트리거된 소스 SHA와 최신 원격 브랜치가 같은지 확인합니다.
 2. 기존 stable 릴리스가 이미 현재 소스를 게시했다면 no-op으로 종료합니다.
-3. 다음 patch 버전을 계산하고 non-force 예약 ref로 원자적으로 선점합니다. 다른 PC가 먼저 예약했다면 원격 상태를 다시 읽고 다음 patch로 재시도합니다.
+3. 변경 종류에 맞는 다음 semantic 버전을 계산하고 non-force 예약 ref로 원자적으로 선점합니다. 다른 PC가 먼저 예약했다면 원격 상태를 다시 읽고 이미 사용된 최고 버전의 patch를 올려 재시도합니다.
 4. 데스크톱 테스트·패키징과 Realtime Database/Storage Emulator 기반 Rules 테스트를 통과합니다.
 5. 설치 EXE, EXE blockmap, `latest.yml`의 정확히 세 자산만 draft에 올리고 파일명·크기·URL·해시를 검증합니다.
 6. 실제 게시 내용이 있는 모든 릴리스에서 검증된 Rules를 Rules 전용 계정으로 `--project bring-fm --only database` 배포합니다. 이 단계는 매번 멱등적으로 실행되어 이전 중단으로 생긴 운영 Rules drift도 수렴시킵니다.
 7. Rules 성공 후에만 draft를 stable로 게시하고 공개 updater 채널이 동일한 세 자산을 제공하는지 확인합니다.
 
-완성된 draft가 정확히 세 자산을 갖고 canonical URL·크기·`latest.yml`·EXE SHA512 검증을 모두 통과하면 재실행은 원격 바이트를 그대로 복구해 사용하며 같은 버전을 다시 빌드하지 않습니다. 자산이 일부뿐이거나 손상되었거나 404이면 해당 버전은 영구적으로 burn합니다. 그 draft나 버전을 삭제·재사용하지 않고 다음 patch를 원자적으로 예약합니다.
+완성된 draft가 정확히 세 자산을 갖고 canonical URL·크기·`latest.yml`·EXE SHA512 검증을 모두 통과하면 재실행은 원격 바이트를 그대로 복구해 사용하며 같은 버전을 다시 빌드하지 않습니다. 자산이 일부뿐이거나 손상되었거나 404이면 해당 버전은 영구적으로 burn합니다. 그 draft나 버전을 삭제·재사용하지 않고 현재 최고 버전의 patch를 올려 새 번호를 원자적으로 예약합니다.
 
 운영 브랜치가 실행 중 다른 commit으로 이동하거나 tag/draft/stable의 소스 SHA가 달라지면 게시를 멈춥니다. 이미 예약하거나 burn한 버전을 강제로 이동하거나 재사용하지 않습니다.
 

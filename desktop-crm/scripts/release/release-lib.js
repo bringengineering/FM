@@ -6,6 +6,8 @@ const CRM_VERSION_PATTERN = /^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)$/;
 const CRM_TAG_PATTERN = /^crm-v(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)$/;
 const CRM_RESERVATION_PATTERN = /^refs\/heads\/crm-release-reservations\/v(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)$/;
 const FULL_SHA_PATTERN = /^[a-f0-9]{40}$/;
+const CRM_RELEASE_TYPES = Object.freeze(["patch", "minor", "major"]);
+const CRM_RELEASE_TYPE_INDEX = Object.freeze({ major: 0, minor: 1, patch: 2 });
 
 function releaseError(code, message) {
   const error = new Error(message);
@@ -19,6 +21,14 @@ function parseVersion(value, code = "CRM_RELEASE_VERSION_INVALID") {
   const parts = match.slice(1).map(Number);
   if (parts.some(part => !Number.isSafeInteger(part))) throw releaseError(code, "CRM release version is outside the safe integer range.");
   return { version: parts.join("."), parts };
+}
+
+function parseReleaseType(value, code = "CRM_RELEASE_TYPE_INVALID") {
+  const releaseType = String(value || "").trim().toLowerCase();
+  if (!CRM_RELEASE_TYPES.includes(releaseType)) {
+    throw releaseError(code, `Invalid CRM release type: ${String(value || "")}`);
+  }
+  return releaseType;
 }
 
 function parseTag(tag) {
@@ -103,6 +113,7 @@ function collectVersionClaims({ tagRefs = [], reservationRefs = [], releases = [
       parts: parsed.parts,
       releaseId: String(release.id || ""),
       target: String(release.target_commitish || ""),
+      prerelease: release.prerelease === true,
     });
   }
   return uniqueClaims(claims);
@@ -127,24 +138,36 @@ function claimsByVersion(claims) {
   return grouped;
 }
 
-function planNextVersion({ packageVersion, sourceSha, claims, blockedVersions = [] }) {
+function incrementVersion(parts, releaseType) {
+  const next = [...parts];
+  const index = CRM_RELEASE_TYPE_INDEX[releaseType];
+  if (!Number.isSafeInteger(index) || next[index] >= Number.MAX_SAFE_INTEGER) {
+    throw releaseError("CRM_RELEASE_VERSION_EXHAUSTED", `CRM ${releaseType} version is exhausted.`);
+  }
+  next[index] += 1;
+  for (let resetIndex = index + 1; resetIndex < next.length; resetIndex += 1) next[resetIndex] = 0;
+  return next;
+}
+
+function highestVersionParts(partsList) {
+  return partsList.length ? [...partsList].sort((left, right) => compareParts(right, left))[0] : null;
+}
+
+function planNextVersion({ packageVersion, sourceSha, claims, blockedVersions = [], releaseType = "patch" }) {
   const current = parseVersion(packageVersion);
   const normalizedSourceSha = assertSha(sourceSha);
-  const sourceMajor = current.parts[0];
+  const normalizedReleaseType = parseReleaseType(releaseType);
   const normalizedClaims = Array.isArray(claims) ? claims : [];
-  const blocked = new Set(Array.isArray(blockedVersions) ? blockedVersions.map(value => parseVersion(value).version) : []);
-  const foreignMajor = normalizedClaims.find(claim => claim.parts[0] > sourceMajor);
-  if (foreignMajor) {
-    throw releaseError("CRM_RELEASE_MAJOR_CONFLICT", `Remote CRM version ${foreignMajor.version} exceeds package major ${sourceMajor}.`);
-  }
+  const parsedBlockedVersions = Array.isArray(blockedVersions) ? blockedVersions.map(value => parseVersion(value)) : [];
+  const blocked = new Set(parsedBlockedVersions.map(parsed => parsed.version));
+  const globalHighWater = highestVersionParts(normalizedClaims.map(claim => claim.parts).concat(parsedBlockedVersions.map(parsed => parsed.parts)));
 
   const grouped = claimsByVersion(normalizedClaims);
   const resumable = [...grouped.entries()].filter(([version, entries]) => {
     const reservations = entries.filter(entry => entry.kind === "reservation");
     return !blocked.has(version) && reservations.some(entry => entry.sha === normalizedSourceSha);
   }).sort((left, right) => compareParts(parseVersion(right[0]).parts, parseVersion(left[0]).parts));
-  const highestClaimParts = normalizedClaims.map(claim => claim.parts).concat([current.parts]).sort((left, right) => compareParts(right, left))[0];
-  if (resumable.length && compareParts(parseVersion(resumable[0][0]).parts, highestClaimParts) === 0) {
+  if (resumable.length && globalHighWater && compareParts(parseVersion(resumable[0][0]).parts, globalHighWater) === 0) {
     const [version, entries] = resumable[0];
     const parsed = parseVersion(version);
     return {
@@ -158,10 +181,11 @@ function planNextVersion({ packageVersion, sourceSha, claims, blockedVersions = 
     };
   }
 
-  const sameMajor = normalizedClaims.filter(claim => claim.parts[0] === sourceMajor);
-  const highest = sameMajor.map(claim => claim.parts).concat([current.parts]).sort((left, right) => compareParts(right, left))[0];
-  if (highest[2] >= Number.MAX_SAFE_INTEGER) throw releaseError("CRM_RELEASE_VERSION_EXHAUSTED", "CRM patch version is exhausted.");
-  const parts = [highest[0], highest[1], highest[2] + 1];
+  const latestStable = highestVersionParts(normalizedClaims.filter(claim => claim.kind === "release" && claim.prerelease !== true && claim.verifiedStable === true).map(claim => claim.parts));
+  const requestedCandidate = incrementVersion(latestStable || current.parts, normalizedReleaseType);
+  const parts = !globalHighWater || compareParts(requestedCandidate, globalHighWater) > 0
+    ? requestedCandidate
+    : incrementVersion(globalHighWater, "patch");
   const version = parts.join(".");
   return {
     version,
@@ -381,8 +405,10 @@ module.exports = {
   CRM_VERSION_PATTERN,
   CRM_TAG_PATTERN,
   CRM_RESERVATION_PATTERN,
+  CRM_RELEASE_TYPES,
   releaseError,
   parseVersion,
+  parseReleaseType,
   parseTag,
   parseReservationRef,
   compareParts,
