@@ -341,24 +341,75 @@ test("an unrelated save rebases stale canonical collections onto the server sour
   assert.equal(result.salesUnits[0].label, "101호");
 });
 
-test("legacy pending files cannot replay direct canonical building or sales-unit changes", async () => {
+test("legacy pending files discard direct canonical changes while preserving server records", async () => {
   for (const [collection, before, after] of [
     ["buildings", { id: "building_1", name: "이전" }, { id: "building_1", name: "변경" }],
     ["salesUnits", { id: "sales_unit_1", prospectId: "prospect_1", label: "101호" }, { id: "sales_unit_1", prospectId: "prospect_1", label: "102호" }]
   ]) {
+    const patches = [];
     const { client } = makeClient();
     client.fetchRemotePayload = async () => ({ [collection]: { [before.id]: before } });
-    client.dbRequest = async () => { throw new Error("must reject before write"); };
-    client.clearPendingStore = async () => { throw new Error("must preserve blocked pending work"); };
+    client.dbRequest = async (location, options) => {
+      if (options && options.method === "PATCH") patches.push({ location, body: options.body });
+      return null;
+    };
+    client.clearPendingStore = async () => undefined;
+    client.startStream = () => undefined;
 
-    await assert.rejects(client.syncPending({
+    const result = await client.syncPending({
       actorUid: "member_1",
       actorRole: "member",
       store: Core.sanitizeSharedStore({ [collection]: [after] }),
       presentCollections: [collection],
       baseRemote: { [collection]: { [before.id]: before } }
-    }), error => error && error.code === "CANONICAL_COMMIT_REQUIRED");
+    });
+
+    assert.equal(patches.length, 1);
+    assert.equal(Object.keys(patches[0].body).some(key => key === collection || key.startsWith(`${collection}/`)), false);
+    assert.deepEqual(result[collection][0], Core.sanitizeSharedStore({ [collection]: [before] })[collection][0]);
   }
+});
+
+test("pending replay rebases stale canonical collections and preserves the new activity", async () => {
+  const mutations = [];
+  const current = toRemoteStore(Core.sanitizeSharedStore({
+    buildings: [{ id: "building_1", name: "Server", entityVersion: 4 }],
+    salesUnits: [{ id: "sales_unit_1", prospectId: "prospect_1", label: "101호", entityVersion: 6 }]
+  }), "member@bring.test");
+  const { client } = makeClient();
+  client.fetchRemotePayload = async () => structuredClone(current);
+  client.dbRequest = async (location, options) => {
+    if (options && options.method === "PATCH") mutations.push({ location, method: options.method, body: options.body });
+    return null;
+  };
+  client.clearPendingStore = async () => undefined;
+  client.startStream = () => undefined;
+
+  const synced = await client.syncPending({
+    actorUid: "member_1",
+    actorRole: "member",
+    store: Core.sanitizeSharedStore({
+      activities: [Core.createActivity({
+        id: "activity_new",
+        customerId: "customer_1",
+        type: "전화",
+        summary: "상담 저장"
+      })],
+      buildings: [{ id: "building_1", name: "Stale local", entityVersion: 3 }],
+      salesUnits: [{ id: "sales_unit_1", prospectId: "prospect_1", label: "Stale local", entityVersion: 5 }]
+    }),
+    presentCollections: ["activities", "buildings", "salesUnits"],
+    baseRemote: toRemoteStore(Core.sanitizeSharedStore({
+      buildings: [{ id: "building_1", name: "Older base", entityVersion: 2 }],
+      salesUnits: [{ id: "sales_unit_1", prospectId: "prospect_1", label: "Older base", entityVersion: 4 }]
+    }), "member@bring.test")
+  });
+
+  assert.equal(mutations.length, 1);
+  assert.equal(mutations[0].body["activities/activity_new"].id, "activity_new");
+  assert.equal(Object.keys(mutations[0].body).some(key => /^(buildings|salesUnits)(\/|$)/.test(key)), false);
+  assert.equal(synced.buildings[0].name, "Server");
+  assert.equal(synced.salesUnits[0].label, "101호");
 });
 
 test("a field-summary stream event refreshes renderer overlays without reloading or writing shared CRM", async () => {

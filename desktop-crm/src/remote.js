@@ -2855,13 +2855,17 @@ class FirebaseRemoteClient {
     const currentRemote = await this.fetchRemotePayload() || {};
     if (!this.sessionGuardActive(guard)) return null;
     const desired = toRemoteStore(pending.store, this.session.email);
+    preserveCanonicalSharedCollections(currentRemote, desired);
     preserveGenericServiceRecords(
       this.Core,
       currentRemote,
       desired,
       Array.isArray(pending.presentCollections) && pending.presentCollections.includes("serviceRecords")
     );
-    const patch = pendingSyncPatch(this.Core, pending.baseRemote || {}, desired, currentRemote, pending.presentCollections);
+    const replayCollections = Array.isArray(pending.presentCollections)
+      ? pending.presentCollections.filter(name => !CANONICAL_SHARED_COLLECTIONS.includes(name))
+      : pending.presentCollections;
+    const patch = pendingSyncPatch(this.Core, pending.baseRemote || {}, desired, currentRemote, replayCollections);
     assertNoCanonicalSharedPatch(patch);
     assertNoGenericServiceRecordPatch(patch);
     if (Object.keys(patch).length) {
