@@ -297,6 +297,43 @@ test("an unrelated save succeeds when canonical buildings and sales units are un
   assert.equal(Object.keys(mutations[0].body).some(key => /^(buildings|salesUnits)(\/|$)/.test(key)), false);
 });
 
+test("an unrelated save rebases stale canonical collections onto the server source of truth", async () => {
+  const mutations = [];
+  const before = toRemoteStore(Core.sanitizeSharedStore({
+    customers: [{ id: "customer_1", name: "Before" }],
+    buildings: [{ id: "building_1", name: "Server", entityVersion: 4 }],
+    salesUnits: [{ id: "sales_unit_1", prospectId: "prospect_1", label: "101호", entityVersion: 6 }]
+  }), "member@bring.test");
+  const { client } = makeClient();
+  client.remotePayload = before;
+  client.fetchRemotePayload = async () => structuredClone(before);
+  client.dbRequest = async (location, options) => {
+    mutations.push({ location, method: options.method, body: options.body });
+    return null;
+  };
+  const input = mergeRemoteStore(Core, before, Core.blankSharedStore(), client.session);
+  input.customers[0].name = "After";
+  input.activities.push(Core.createActivity({
+    id: "activity_new",
+    customerId: "customer_1",
+    type: "전화",
+    summary: "상담 저장"
+  }));
+  input.buildings[0].name = "Stale local";
+  input.buildings[0].entityVersion = 3;
+  input.salesUnits[0].label = "Stale local";
+  input.salesUnits[0].entityVersion = 5;
+
+  const result = await client.pushStore(input);
+
+  assert.equal(mutations.length, 1);
+  assert.equal(mutations[0].body["customers/customer_1/name"], "After");
+  assert.equal(mutations[0].body["activities/activity_new"].id, "activity_new");
+  assert.equal(Object.keys(mutations[0].body).some(key => /^(buildings|salesUnits)(\/|$)/.test(key)), false);
+  assert.equal(result.buildings[0].name, "Server");
+  assert.equal(result.salesUnits[0].label, "101호");
+});
+
 test("legacy pending files cannot replay direct canonical building or sales-unit changes", async () => {
   for (const [collection, before, after] of [
     ["buildings", { id: "building_1", name: "이전" }, { id: "building_1", name: "변경" }],
