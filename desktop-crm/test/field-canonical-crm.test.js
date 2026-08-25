@@ -257,17 +257,23 @@ test("pushStore fetches an unknown baseline before PATCH so omitted future data 
   assert.equal(Object.keys(mutations[0].body).some(key => key.startsWith("futureCollection")), false);
 });
 
-test("legacy direct building and sales-unit changes are rejected at the shared-store boundary", async () => {
+test("legacy direct building and sales-unit changes are discarded at the shared-store boundary", async () => {
   for (const [collection, before, after] of [
     ["buildings", { id: "building_1", name: "이전" }, { id: "building_1", name: "변경" }],
     ["salesUnits", { id: "sales_unit_1", prospectId: "prospect_1", label: "101호" }, { id: "sales_unit_1", prospectId: "prospect_1", label: "102호" }]
   ]) {
+    const mutations = [];
     const { client } = makeClient();
     client.remotePayload = { [collection]: { [before.id]: before } };
     client.fetchRemotePayload = async () => structuredClone(client.remotePayload);
+    client.dbRequest = async (location, options) => { mutations.push({ location, body: options.body }); };
     const input = Core.sanitizeRendererStore({ [collection]: [after] });
 
-    await assert.rejects(client.pushStore(input), error => error && error.code === "CANONICAL_COMMIT_REQUIRED");
+    const result = await client.pushStore(input);
+
+    assert.equal(mutations.length, 1);
+    assert.equal(Object.keys(mutations[0].body).some(key => key === collection || key.startsWith(`${collection}/`)), false);
+    assert.deepEqual(result[collection][0], Core.sanitizeSharedStore({ [collection]: [before] })[collection][0]);
   }
 });
 
@@ -304,9 +310,10 @@ test("an unrelated save rebases stale canonical collections onto the server sour
     buildings: [{ id: "building_1", name: "Server", entityVersion: 4 }],
     salesUnits: [{ id: "sales_unit_1", prospectId: "prospect_1", label: "101호", entityVersion: 6 }]
   }), "member@bring.test");
+  const server = structuredClone(before);
   const { client } = makeClient();
   client.remotePayload = before;
-  client.fetchRemotePayload = async () => structuredClone(before);
+  client.fetchRemotePayload = async () => structuredClone(server);
   client.dbRequest = async (location, options) => {
     mutations.push({ location, method: options.method, body: options.body });
     return null;

@@ -288,6 +288,17 @@ function assertNoCanonicalSharedPatch(patch) {
   throw createError("건물·공실 호실 변경은 현재 작업자를 선택한 뒤 정식 저장으로 처리해 주세요.", "CANONICAL_COMMIT_REQUIRED");
 }
 
+function preserveCanonicalSharedCollections(current, desired) {
+  for (const collection of CANONICAL_SHARED_COLLECTIONS) {
+    if (Object.prototype.hasOwnProperty.call(current || {}, collection)) {
+      desired[collection] = structuredClone(current[collection]);
+    } else {
+      delete desired[collection];
+    }
+  }
+  return desired;
+}
+
 function caseDeleteAuditId(caseKey) {
   return `case_delete_${String(caseKey || "")}`;
 }
@@ -2774,6 +2785,7 @@ class FirebaseRemoteClient {
     // server representation and make it authoritative for serviceRecords.
     const current = await this.fetchRemotePayload() || {};
     if (!this.sessionGuardActive(guard)) return null;
+    preserveCanonicalSharedCollections(current, next);
     preserveGenericServiceRecords(this.Core, current, next, options.requireServiceRecordsMatch === true);
     const patch = diffRemoteStores(current, next);
     assertNoCanonicalSharedPatch(patch);
