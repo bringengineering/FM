@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import Link from "next/link";
 import { PHONE_HREF, PHONE_LABEL } from "../landing/contact";
 import ConsultForm from "./ConsultForm";
 
@@ -12,7 +13,7 @@ export default function ConsultPage() {
   return (
     <main className="consult-page">
       <header className="consult-header">
-        <a
+        <Link
           className="brand"
           href="/"
           aria-label="Bring Care · bringengineering 홈으로 이동"
@@ -21,16 +22,16 @@ export default function ConsultPage() {
           <span className="brand-engineering" aria-hidden="true">
             <strong>bring</strong>engineering
           </span>
-        </a>
+        </Link>
         <nav aria-label="상담 페이지 메뉴">
-          <a href="/#services">서비스</a>
-          <a href="/#digital">디지털 FM</a>
-          <a href="/#company">회사 정보</a>
+          <Link href="/#services">서비스</Link>
+          <Link href="/#digital">디지털 FM</Link>
+          <Link href="/#company">회사 정보</Link>
         </nav>
-        <a className="consult-home" href="/">
+        <Link className="consult-home" href="/">
           홈페이지
           <span aria-hidden="true">↗</span>
-        </a>
+        </Link>
       </header>
 
       <section className="consult-hero">

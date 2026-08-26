@@ -5,16 +5,18 @@ import { describe, expect, it } from "vitest";
 import { landingServices } from "../../app/landing/services";
 
 describe("landing service content", () => {
-  it("defines the three approved services in navigation order", () => {
+  it("defines the four approved services in navigation order", () => {
     expect(Object.keys(landingServices)).toEqual([
       "stair-cleaning",
       "building-care",
       "move-in-cleaning",
+      "turnover-care",
     ]);
 
     expect(landingServices["stair-cleaning"].price).toContain("6만원");
-    expect(landingServices["building-care"].price).toContain("8.9만원");
+    expect(landingServices["building-care"].price).toContain("8만 9천원");
     expect(landingServices["move-in-cleaning"].price).toContain("10만원");
+    expect(landingServices["turnover-care"].price).toContain("10만원");
   });
 
   it("keeps service claims grounded and useful for prospective customers", () => {
