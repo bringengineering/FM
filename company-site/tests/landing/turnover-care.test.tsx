@@ -1,5 +1,5 @@
 import "@testing-library/jest-dom/vitest";
-import { render, screen } from "@testing-library/react";
+import { render, screen, within } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 import LandingPage from "../../app/landing/LandingPage";
 import { landingServices } from "../../app/landing/services";
@@ -14,18 +14,24 @@ describe("24H turnover care landing", () => {
     const { container } = render(
       <LandingPage service={landingServices["turnover-care"]} />,
     );
+    const intro = screen.getByRole("region", {
+      name: "BRING CARE 24H 입·퇴실 관리",
+    });
 
     expect(
       screen.getByRole("heading", {
         name: "퇴실 다음 날, 바로 보여줄 수 있는 방으로.",
       }),
     ).toBeInTheDocument();
-    expect(screen.getByText("BRING CARE 24H 입·퇴실 관리")).toBeInTheDocument();
-    expect(screen.getByText("D-14 사전 접수")).toBeInTheDocument();
-    expect(screen.getByText("퇴실 상태 확인")).toBeInTheDocument();
-    expect(screen.getByText("직영 청소·조치")).toBeInTheDocument();
-    expect(screen.getByText("완료 사진 전달")).toBeInTheDocument();
-    expect(container.querySelector(".turnover-intro")).toBeInTheDocument();
+    expect(
+      within(intro).getByText("BRING CARE 24H 입·퇴실 관리"),
+    ).toBeInTheDocument();
+    expect(within(intro).getByText("D-14 사전 접수")).toBeInTheDocument();
+    expect(within(intro).getByText("퇴실 상태 확인")).toBeInTheDocument();
+    expect(within(intro).getByText("직영 청소·조치")).toBeInTheDocument();
+    expect(within(intro).getByText("완료 사진 전달")).toBeInTheDocument();
+    expect(intro).toHaveClass("turnover-intro");
+    expect(container.querySelector(".turnover-intro")).toBe(intro);
   });
 
   it("offers the dedicated turnover consultation routes", () => {
@@ -47,13 +53,19 @@ describe("24H turnover care landing", () => {
 
   it("qualifies the 24H operating standard without vacancy guarantees", () => {
     render(<LandingPage service={landingServices["turnover-care"]} />);
+    const conditions = screen.getByRole("region", {
+      name: "빠르다는 말보다, 준비된 과정을 보여드립니다.",
+    });
 
     expect(
-      screen.getByRole("heading", {
+      within(conditions).getByRole("heading", {
         name: "빠르다는 말보다, 준비된 과정을 보여드립니다.",
       }),
     ).toBeInTheDocument();
-    expect(screen.getByText(/퇴실 확인 시점부터 24시간 안에/)).toBeInTheDocument();
+    expect(conditions).toHaveAttribute("id", "turnover-conditions");
+    expect(conditions).toHaveTextContent(
+      /퇴실 14일 전까지 접수되고 출입·작업 범위·비용 승인이 완료된 호실 중\s*중대한 추가 수리가 없는 경우, 퇴실 확인 시점부터 24시간 안에/,
+    );
     expect(
       screen.getByRole("link", { name: "24H 적용 조건 자세히 보기" }),
     ).toHaveAttribute("href", "#turnover-conditions");

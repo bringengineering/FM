@@ -11,16 +11,21 @@ vi.mock("next/navigation", () => ({
 }));
 
 describe("LandingPage", () => {
-  it("limits the turnover-specific intro to the turnover route", () => {
-    const { container } = render(
-      <LandingPage service={landingServices["stair-cleaning"]} />,
-    );
+  it.each([
+    ["stair-cleaning", /원주 계단·공용부 정기청소/],
+    ["building-care", /멀리 있어도,.*우리 건물의 오늘을 확인할 수 있습니다\./],
+    ["move-in-cleaning", /새 공간의 첫날,.*작업 범위와 완료 사진으로 확인하세요\./],
+  ] as const)(
+    "limits the turnover-specific intro to the turnover route for %s",
+    (slug, heading) => {
+      const { container } = render(
+        <LandingPage service={landingServices[slug]} />,
+      );
 
-    expect(container.querySelector(".turnover-intro")).not.toBeInTheDocument();
-    expect(
-      screen.getByRole("heading", { name: /원주 계단·공용부 정기청소/ }),
-    ).toBeInTheDocument();
-  });
+      expect(container.querySelector(".turnover-intro")).not.toBeInTheDocument();
+      expect(screen.getByRole("heading", { name: heading })).toBeInTheDocument();
+    },
+  );
 
   it("publishes the confirmed phone, VAT note, and turnover-care path", () => {
     const { rerender } = render(
