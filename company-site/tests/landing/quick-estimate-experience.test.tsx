@@ -1,6 +1,8 @@
 // @vitest-environment-options {"url":"https://bring-fm.web.app/turnover-care?utm_source=naver&utm_campaign=turnover&utm_term=%EC%9B%90%EC%A3%BC%EC%9E%85%ED%87%B4%EC%8B%A4%EA%B4%80%EB%A6%AC"}
 import "@testing-library/jest-dom/vitest";
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { readFileSync } from "node:fs";
+import { resolve } from "node:path";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import {
   QuickEstimateExperience,
@@ -168,5 +170,25 @@ describe("QuickEstimateExperience", () => {
     fireEvent.click(screen.getByRole("button", { name: "신청 내용 복사" }));
     await waitFor(() => expect(writeText).toHaveBeenCalledTimes(1));
     expect(screen.getByRole("button", { name: "다시 제출" })).toBeEnabled();
+  });
+
+  it("uses a centered desktop dialog and a mobile bottom sheet", () => {
+    const css = readFileSync(
+      resolve(process.cwd(), "app/landing/landing.css"),
+      "utf8",
+    );
+
+    expect(css).toMatch(
+      /\.quick-estimate-backdrop\s*\{[\s\S]*?position:\s*fixed[\s\S]*?place-items:\s*center/,
+    );
+    expect(css).toMatch(
+      /\.quick-estimate-dialog\s*\{[\s\S]*?max-height:\s*calc\(100dvh - 48px\)[\s\S]*?overflow-y:\s*auto/,
+    );
+    expect(css).toMatch(
+      /@media \(max-width: 760px\)[\s\S]*?\.quick-estimate-backdrop\s*\{[\s\S]*?align-items:\s*end/,
+    );
+    expect(css).toMatch(
+      /@media \(max-width: 760px\)[\s\S]*?\.quick-estimate-floating\s*\{[\s\S]*?display:\s*none/,
+    );
   });
 });

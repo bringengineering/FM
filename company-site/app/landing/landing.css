@@ -29,6 +29,233 @@
   box-shadow: 0 0 0 2px var(--white);
 }
 
+.quick-estimate-floating {
+  position: fixed;
+  right: 24px;
+  bottom: 24px;
+  z-index: 45;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 122px;
+  min-height: 52px;
+  padding: 0 22px;
+  border: 1px solid rgba(255, 255, 255, 0.24);
+  border-radius: 14px;
+  background: #1456f0;
+  box-shadow: 0 14px 36px rgba(20, 86, 240, 0.3);
+  color: #ffffff;
+  font-family: Pretendard, "Pretendard Variable", -apple-system,
+    BlinkMacSystemFont, "Segoe UI", sans-serif;
+  font-size: 15px;
+  font-weight: 800;
+  letter-spacing: -0.02em;
+  transition: transform 160ms ease, box-shadow 160ms ease;
+}
+
+.quick-estimate-floating:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 18px 42px rgba(20, 86, 240, 0.36);
+}
+
+.quick-estimate-floating:focus-visible,
+.quick-estimate-dialog :where(a, button, input, textarea):focus-visible {
+  outline: 3px solid #1456f0;
+  outline-offset: 3px;
+}
+
+.quick-estimate-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 1000;
+  display: grid;
+  place-items: center;
+  padding: 24px;
+  background: rgba(7, 28, 51, 0.58);
+  backdrop-filter: blur(7px);
+  animation: quick-estimate-fade 160ms ease-out;
+}
+
+.quick-estimate-dialog {
+  position: relative;
+  width: min(100%, 520px);
+  max-height: calc(100dvh - 48px);
+  overflow-y: auto;
+  border: 1px solid #e6eaf0;
+  border-radius: 24px;
+  background: #ffffff;
+  box-shadow: 0 28px 90px rgba(7, 28, 51, 0.3);
+  color: #222222;
+  font-family: Pretendard, "Pretendard Variable", -apple-system,
+    BlinkMacSystemFont, "Segoe UI", sans-serif;
+  animation: quick-estimate-enter 180ms ease-out;
+}
+
+.quick-estimate-close {
+  position: absolute;
+  top: 18px;
+  right: 18px;
+  z-index: 2;
+  display: inline-grid;
+  width: 40px;
+  height: 40px;
+  place-items: center;
+  border: 1px solid #e6eaf0;
+  border-radius: 50%;
+  background: #ffffff;
+  color: #17437d;
+  cursor: pointer;
+  font: inherit;
+  font-size: 25px;
+  line-height: 1;
+}
+
+.compact-estimate-form {
+  display: grid;
+  gap: 18px;
+  padding: 36px;
+}
+
+.compact-estimate-eyebrow {
+  margin: 0;
+  color: #1456f0;
+  font-size: 11px;
+  font-weight: 900;
+  letter-spacing: 0.12em;
+}
+
+.compact-estimate-form h2 {
+  max-width: calc(100% - 54px);
+  margin: -8px 0 0;
+  color: #17437d;
+  font-size: clamp(27px, 4vw, 34px);
+  font-weight: 900;
+  letter-spacing: -0.055em;
+  line-height: 1.18;
+}
+
+.compact-estimate-lead {
+  margin: -8px 0 2px;
+  color: #526475;
+  font-size: 14px;
+  line-height: 1.65;
+}
+
+.compact-estimate-form > label:not(.compact-estimate-consent) {
+  display: grid;
+  gap: 8px;
+  color: #222222;
+  font-size: 13px;
+  font-weight: 800;
+}
+
+.compact-estimate-form input[type="tel"],
+.compact-estimate-form textarea {
+  width: 100%;
+  border: 1px solid #d7dde6;
+  border-radius: 12px;
+  background: #ffffff;
+  color: #222222;
+  font: inherit;
+  font-size: 16px;
+}
+
+.compact-estimate-form input[type="tel"] {
+  min-height: 52px;
+  padding: 0 15px;
+}
+
+.compact-estimate-form textarea {
+  min-height: 112px;
+  padding: 14px 15px;
+  resize: vertical;
+  line-height: 1.55;
+}
+
+.compact-estimate-form input[type="tel"]:focus,
+.compact-estimate-form textarea:focus {
+  border-color: #1456f0;
+}
+
+.compact-estimate-consent {
+  display: grid;
+  grid-template-columns: 18px 1fr;
+  gap: 9px;
+  align-items: start;
+  color: #586879;
+  font-size: 12px;
+  line-height: 1.55;
+}
+
+.compact-estimate-consent input {
+  width: 17px;
+  height: 17px;
+  margin: 1px 0 0;
+  accent-color: #1456f0;
+}
+
+.compact-estimate-form > button[type="submit"] {
+  min-height: 54px;
+  border: 0;
+  border-radius: 12px;
+  background: #1456f0;
+  color: #ffffff;
+  cursor: pointer;
+  font: inherit;
+  font-size: 15px;
+  font-weight: 850;
+}
+
+.compact-estimate-form > button[type="submit"]:disabled {
+  cursor: wait;
+  opacity: 0.65;
+}
+
+.compact-estimate-fallback {
+  display: grid;
+  gap: 12px;
+  padding: 15px;
+  border: 1px solid #d9e3f4;
+  border-radius: 12px;
+  background: #f4f7fc;
+}
+
+.compact-estimate-fallback p {
+  margin: 0;
+  color: #34485d;
+  font-size: 13px;
+  line-height: 1.55;
+}
+
+.compact-estimate-fallback > div {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.compact-estimate-fallback :where(a, button) {
+  min-height: 38px;
+  padding: 0 12px;
+  border: 1px solid #c8d3e3;
+  border-radius: 9px;
+  background: #ffffff;
+  color: #17437d;
+  cursor: pointer;
+  font: inherit;
+  font-size: 12px;
+  font-weight: 800;
+}
+
+@keyframes quick-estimate-fade {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@keyframes quick-estimate-enter {
+  from { opacity: 0; transform: translateY(10px) scale(0.985); }
+  to { opacity: 1; transform: translateY(0) scale(1); }
+}
+
 .landing-records a:focus-visible,
 .landing-estimate-copy a:focus-visible,
 .landing-price-card a:focus-visible,
@@ -2269,6 +2496,33 @@
 }
 
 @media (max-width: 760px) {
+  .quick-estimate-floating {
+    display: none;
+  }
+
+  .quick-estimate-backdrop {
+    align-items: end;
+    padding: 24px 0 0;
+  }
+
+  .quick-estimate-dialog {
+    width: 100%;
+    max-height: calc(100dvh - 24px);
+    border-right: 0;
+    border-bottom: 0;
+    border-left: 0;
+    border-radius: 24px 24px 0 0;
+  }
+
+  .compact-estimate-form {
+    gap: 16px;
+    padding: 30px 20px max(24px, env(safe-area-inset-bottom));
+  }
+
+  .compact-estimate-form h2 {
+    font-size: 28px;
+  }
+
   .landing-turnover-care {
     --landing-gutter: 14px;
   }
