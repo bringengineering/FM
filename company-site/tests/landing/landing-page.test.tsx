@@ -11,6 +11,17 @@ vi.mock("next/navigation", () => ({
 }));
 
 describe("LandingPage", () => {
+  it("limits the turnover-specific intro to the turnover route", () => {
+    const { container } = render(
+      <LandingPage service={landingServices["stair-cleaning"]} />,
+    );
+
+    expect(container.querySelector(".turnover-intro")).not.toBeInTheDocument();
+    expect(
+      screen.getByRole("heading", { name: /원주 계단·공용부 정기청소/ }),
+    ).toBeInTheDocument();
+  });
+
   it("publishes the confirmed phone, VAT note, and turnover-care path", () => {
     const { rerender } = render(
       <LandingPage service={landingServices["stair-cleaning"]} />,
