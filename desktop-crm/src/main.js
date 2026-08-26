@@ -4018,6 +4018,17 @@ async function createWindow() {
         const selectionValid = trashCount === 0 ? !selected : !!selected && finalKeys.includes(selected);
         return { pass: retainedAfterCancel && removedOnlyTarget && selectionValid, targetKey, before, afterCancel, finalKeys, retainedAfterCancel, removedOnlyTarget, selectionValid, trashCount, selected, state: window.__crmTest.snapshot() };
       })()`, true);
+    } else if (process.env.BRING_CRM_SCREENSHOT_ACTION === "one-off-payment-calendar") {
+      actionResult = await mainWindow.webContents.executeJavaScript(`(async () => {
+        document.querySelector('[data-view="payments"]')?.click();
+        await new Promise(resolve => setTimeout(resolve, 160));
+        document.querySelector('[data-payment-mode="oneOff"]')?.click();
+        await new Promise(resolve => setTimeout(resolve, 120));
+        const rows = document.querySelectorAll('.one-off-table tbody tr').length;
+        const events = document.querySelectorAll('[data-contract-edit].payment-event').length;
+        const text = document.getElementById('main')?.textContent || '';
+        return { pass: rows >= 2 && events >= 2 && text.includes('185,000원') && text.includes('13,000원'), rows, events, state: window.__crmTest.snapshot() };
+      })()`, true);
     } else if (process.env.BRING_CRM_SCREENSHOT_ACTION === "payment-building-calendar") {
       actionResult = await mainWindow.webContents.executeJavaScript(`(async () => {
         document.querySelector('[data-view="payments"]')?.click();
