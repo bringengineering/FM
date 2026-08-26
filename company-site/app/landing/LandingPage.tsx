@@ -38,88 +38,102 @@ export default function LandingPage({ service }: LandingPageProps) {
         <TurnoverIntro service={service} />
       ) : (
         <>
-      <header className="landing-header">
-        <Link className="landing-brand" href="/" aria-label="BRING CARE 홈으로 이동">
-          <span className="brand-image" aria-hidden="true" />
-          <span className="brand-engineering">
-            BRING <strong>ENGINEERING</strong>
-          </span>
-        </Link>
-        <nav className="landing-header-actions" aria-label="상담 바로가기">
-          <a className="landing-header-phone" href={PHONE_HREF}>
-            <span>전화 상담</span>
-            <strong>{PHONE_LABEL}</strong>
-          </a>
-          <a className="landing-button landing-button-dark" href="#quick-estimate">
-            간편 견적
-          </a>
-        </nav>
-      </header>
+          <header className="landing-header">
+            <Link
+              className="landing-brand"
+              href="/"
+              aria-label="BRING CARE 홈으로 이동"
+            >
+              <span className="brand-image" aria-hidden="true" />
+              <span className="brand-engineering">
+                BRING <strong>ENGINEERING</strong>
+              </span>
+            </Link>
+            <nav className="landing-header-actions" aria-label="상담 바로가기">
+              <a className="landing-header-phone" href={PHONE_HREF}>
+                <span>전화 상담</span>
+                <strong>{PHONE_LABEL}</strong>
+              </a>
+              <a className="landing-button landing-button-dark" href="#quick-estimate">
+                간편 견적
+              </a>
+            </nav>
+          </header>
 
-      <section className="landing-hero" aria-labelledby="landing-title">
-        <div className="landing-hero-copy">
-          <p className="landing-eyebrow">{service.eyebrow}</p>
-          <h1 id="landing-title">
-            {service.title}
-            <em>{service.accent}</em>
-          </h1>
-          <p className="landing-lead">{service.lead}</p>
-          <div className="landing-price-line">
-            <strong>{service.price}</strong>
-            <span>{service.priceNote}</span>
-          </div>
-          <div className="landing-hero-actions">
-            <a className="landing-button landing-button-primary" href={PHONE_HREF}>
-              전화로 바로 상담
-              <span>{PHONE_LABEL}</span>
-            </a>
-            <a className="landing-button landing-button-outline" href="#quick-estimate">
-              30초 간편 견적
-            </a>
-          </div>
-        </div>
-        <figure className="landing-hero-media">
-          <Image
-            src={service.heroImage}
-            alt={service.heroAlt}
-            width={773}
-            height={1031}
-            priority
-            unoptimized
-            sizes="(max-width: 760px) 100vw, 48vw"
-          />
-          <figcaption>
-            {service.imageCredit ? (
-              <>
-                <span>청소 작업 예시 이미지</span>
-                <a href={service.imageCredit.href} target="_blank" rel="noreferrer">
-                  {service.imageCredit.label}
+          <section className="landing-hero" aria-labelledby="landing-title">
+            <div className="landing-hero-copy">
+              <p className="landing-eyebrow">{service.eyebrow}</p>
+              <h1 id="landing-title">
+                {service.title}
+                <em>{service.accent}</em>
+              </h1>
+              <p className="landing-lead">{service.lead}</p>
+              <div className="landing-price-line">
+                <strong>{service.price}</strong>
+                <span>{service.priceNote}</span>
+              </div>
+              <div className="landing-hero-actions">
+                <a
+                  className="landing-button landing-button-primary"
+                  href={PHONE_HREF}
+                >
+                  전화로 바로 상담
+                  <span>{PHONE_LABEL}</span>
                 </a>
-              </>
-            ) : (
-              <>
-                <span>BRING CARE 현장기록</span>
-                청소와 관리 사이, 놓치기 쉬운 상태까지 확인합니다.
-              </>
-            )}
-          </figcaption>
-        </figure>
-      </section>
+                <a
+                  className="landing-button landing-button-outline"
+                  href="#quick-estimate"
+                >
+                  30초 간편 견적
+                </a>
+              </div>
+            </div>
+            <figure className="landing-hero-media">
+              <Image
+                src={service.heroImage}
+                alt={service.heroAlt}
+                width={773}
+                height={1031}
+                priority
+                unoptimized
+                sizes="(max-width: 760px) 100vw, 48vw"
+              />
+              <figcaption>
+                {service.imageCredit ? (
+                  <>
+                    <span>청소 작업 예시 이미지</span>
+                    <a
+                      href={service.imageCredit.href}
+                      target="_blank"
+                      rel="noreferrer"
+                    >
+                      {service.imageCredit.label}
+                    </a>
+                  </>
+                ) : (
+                  <>
+                    <span>BRING CARE 현장기록</span>
+                    청소와 관리 사이, 놓치기 쉬운 상태까지 확인합니다.
+                  </>
+                )}
+              </figcaption>
+            </figure>
+          </section>
 
-      <section className="landing-facts" aria-labelledby="facts-title">
-        <h2 className="landing-sr-only" id="facts-title">
-          서비스 핵심 정보
-        </h2>
-        <div className="landing-section-inner landing-fact-grid">
-          {service.facts.map((fact, index) => (
-            <article key={`${fact.value}-${fact.label}`}>
-              <span>{String(index + 1).padStart(2, "0")}</span>
-              <strong>{fact.value}</strong>
-              <p>{fact.label}</p>
-            </article>
-          ))}
-        </div>
-      </section>
+          <section className="landing-facts" aria-labelledby="facts-title">
+            <h2 className="landing-sr-only" id="facts-title">
+              서비스 핵심 정보
+            </h2>
+            <div className="landing-section-inner landing-fact-grid">
+              {service.facts.map((fact, index) => (
+                <article key={`${fact.value}-${fact.label}`}>
+                  <span>{String(index + 1).padStart(2, "0")}</span>
+                  <strong>{fact.value}</strong>
+                  <p>{fact.label}</p>
+                </article>
+              ))}
+            </div>
+          </section>
         </>
       )}
 
@@ -127,7 +141,7 @@ export default function LandingPage({ service }: LandingPageProps) {
 
       <section
         className="landing-cleaning-results"
-        id="cleaning-results"
+        id={isTurnoverCare ? "cleaning-results" : undefined}
         aria-labelledby="cleaning-results-title"
       >
         <div className="landing-section-inner">
@@ -183,7 +197,7 @@ export default function LandingPage({ service }: LandingPageProps) {
 
       <section
         className="landing-records"
-        id="field-records"
+        id={isTurnoverCare ? "field-records" : undefined}
         aria-labelledby="records-title"
       >
         <div className="landing-section-inner">

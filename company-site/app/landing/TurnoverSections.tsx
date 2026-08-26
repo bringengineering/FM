@@ -18,7 +18,11 @@ const delays = [
 export default function TurnoverSections() {
   return (
     <div className="turnover-sections">
-      <section className="turnover-standard" aria-labelledby="turnover-standard-title">
+      <section
+        className="turnover-standard"
+        id="turnover-standard"
+        aria-labelledby="turnover-standard-title"
+      >
         <div className="landing-section-inner turnover-standard-grid">
           <div>
             <p className="landing-eyebrow">24H 운영 기준</p>

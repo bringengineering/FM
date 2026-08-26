@@ -56,6 +56,18 @@ describe("24H turnover care landing", () => {
     );
   });
 
+  it("connects the turnover navigation to one operating standard region", () => {
+    const { container } = render(
+      <LandingPage service={landingServices["turnover-care"]} />,
+    );
+
+    expect(
+      screen.getByRole("link", { name: "24H 입·퇴실 관리" }),
+    ).toHaveAttribute("href", "#turnover-standard");
+    expect(container.querySelector("#turnover-standard")).toBeInTheDocument();
+    expect(container.querySelectorAll("#turnover-standard")).toHaveLength(1);
+  });
+
   it("qualifies the 24H operating standard without vacancy guarantees", () => {
     render(<LandingPage service={landingServices["turnover-care"]} />);
     const standard = screen.getByRole("region", {

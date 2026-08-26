@@ -57,8 +57,8 @@ export default function TurnoverIntro({ service }: TurnoverIntroProps) {
         <Image
           src={service.heroImage}
           alt={service.heroAlt}
-          width={1600}
-          height={1000}
+          width={900}
+          height={720}
           priority
           unoptimized
           sizes="(max-width: 760px) 100vw, 1240px"
