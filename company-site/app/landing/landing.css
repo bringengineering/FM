@@ -1858,7 +1858,7 @@
 .landing-turnover-care .turnover-intro-header {
   display: flex;
   width: min(calc(100% - 48px), 1240px);
-  height: 64px;
+  min-height: 64px;
   margin-inline: auto;
   align-items: center;
   justify-content: space-between;
@@ -1937,7 +1937,7 @@
 
 .landing-turnover-care .turnover-intro-copy h1 {
   margin: 22px 0 0;
-  font-size: clamp(52px, 6vw, 76px);
+  font-size: clamp(52px, 5.4vw, 76px);
   font-weight: 800;
   letter-spacing: -0.06em;
   line-height: 1.08;
@@ -1946,7 +1946,7 @@
 
 .landing-turnover-care .turnover-intro-copy > span {
   max-width: 610px;
-  margin-top: 24px;
+  margin-top: 26px;
   color: rgba(255, 255, 255, 0.82);
   font-size: 18px;
   line-height: 1.7;
@@ -1985,7 +1985,7 @@
 .landing-turnover-care .turnover-intro-meta {
   display: flex;
   margin-top: auto;
-  padding-top: 22px;
+  padding-top: 44px;
   align-items: center;
   justify-content: space-between;
   gap: 20px;
@@ -2016,18 +2016,18 @@
   grid-template-columns: repeat(4, minmax(0, 1fr));
   margin: 0;
   padding: 0;
+  border-block: 1px solid var(--line);
   list-style: none;
 }
 
 .landing-turnover-care .turnover-intro-process li {
   min-height: 190px;
-  padding: 30px 26px;
-  border-block: 1px solid var(--line);
+  padding: 28px 26px;
   border-right: 1px solid var(--line);
 }
 
-.landing-turnover-care .turnover-intro-process li:first-child {
-  border-left: 1px solid var(--line);
+.landing-turnover-care .turnover-intro-process li:last-child {
+  border-right: 0;
 }
 
 .landing-turnover-care .turnover-intro-process li > span {
@@ -2037,7 +2037,7 @@
 }
 
 .landing-turnover-care .turnover-intro-process h3 {
-  margin: 40px 0 10px;
+  margin: 34px 0 9px;
   color: var(--ink);
   font-size: 21px;
   letter-spacing: -0.035em;
@@ -2282,7 +2282,8 @@
   }
 
   .landing-turnover-care .turnover-intro-hero > img {
-    object-position: center top;
+    height: 48%;
+    object-position: center;
   }
 
   .landing-turnover-care .turnover-intro-overlay {
@@ -2308,7 +2309,7 @@
   .landing-turnover-care .turnover-intro-copy h1 {
     margin-top: 14px;
     font-size: 39px;
-    line-height: 1.1;
+    line-height: 1.12;
   }
 
   .landing-turnover-care .turnover-intro-copy > span {
@@ -2353,7 +2354,6 @@
     min-height: 170px;
     padding: 24px 18px;
     border: 0;
-    border-top: 1px solid var(--line);
     border-right: 1px solid var(--line);
   }
 
@@ -2361,8 +2361,8 @@
     border-right: 0;
   }
 
-  .landing-turnover-care .turnover-intro-process li:nth-last-child(-n + 2) {
-    border-bottom: 1px solid var(--line);
+  .landing-turnover-care .turnover-intro-process li:nth-child(n + 3) {
+    border-top: 1px solid var(--line);
   }
 
   .landing-turnover-care .turnover-intro-process h3 {
