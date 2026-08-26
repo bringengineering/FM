@@ -5,6 +5,7 @@ import OfficialChannels from "./OfficialChannels";
 import PricingGrid from "./PricingGrid";
 import QuickEstimateForm from "./QuickEstimateForm";
 import type { LandingService } from "./services";
+import TurnoverIntro from "./TurnoverIntro";
 import TurnoverSections from "./TurnoverSections";
 import "./landing.css";
 
@@ -29,9 +30,14 @@ type LandingPageProps = {
 export default function LandingPage({ service }: LandingPageProps) {
   const serviceName = serviceNames[service.slug];
   const sourcePath = `/${service.slug}`;
+  const isTurnoverCare = service.slug === "turnover-care";
 
   return (
     <main className={`landing-page landing-${service.slug}`}>
+      {isTurnoverCare ? (
+        <TurnoverIntro service={service} />
+      ) : (
+        <>
       <header className="landing-header">
         <Link className="landing-brand" href="/" aria-label="BRING CARE 홈으로 이동">
           <span className="brand-image" aria-hidden="true" />
@@ -114,10 +120,16 @@ export default function LandingPage({ service }: LandingPageProps) {
           ))}
         </div>
       </section>
+        </>
+      )}
 
-      {service.slug === "turnover-care" ? <TurnoverSections /> : null}
+      {isTurnoverCare ? <TurnoverSections /> : null}
 
-      <section className="landing-cleaning-results" aria-labelledby="cleaning-results-title">
+      <section
+        className="landing-cleaning-results"
+        id="cleaning-results"
+        aria-labelledby="cleaning-results-title"
+      >
         <div className="landing-section-inner">
           <div className="landing-section-heading">
             <p>{service.slug === "building-care" ? "방문 결과" : "청소 결과"}</p>
@@ -169,7 +181,11 @@ export default function LandingPage({ service }: LandingPageProps) {
         </div>
       </section>
 
-      <section className="landing-records" aria-labelledby="records-title">
+      <section
+        className="landing-records"
+        id="field-records"
+        aria-labelledby="records-title"
+      >
         <div className="landing-section-inner">
           <div className="landing-section-heading landing-section-heading-light">
             <p>실제 현장기록</p>
@@ -248,7 +264,7 @@ export default function LandingPage({ service }: LandingPageProps) {
         </div>
       </section>
 
-      {service.slug !== "turnover-care" ? (
+      {!isTurnoverCare ? (
         <aside className="landing-turnover-link">
           <div className="landing-section-inner">
             <p>퇴실 일정이 잡혀 있다면</p>
@@ -337,10 +353,19 @@ export default function LandingPage({ service }: LandingPageProps) {
         </div>
       </footer>
 
-      <nav className="mobile-sticky-actions" aria-label="빠른 상담">
-        <a href={PHONE_HREF}>전화 상담</a>
-        <a href="#quick-estimate">간편 견적</a>
-      </nav>
+      {isTurnoverCare ? (
+        <nav
+          className="mobile-sticky-actions turnover-mobile-sticky"
+          aria-label="빠른 상담"
+        >
+          <a href="#quick-estimate">퇴실 일정 30초 견적</a>
+        </nav>
+      ) : (
+        <nav className="mobile-sticky-actions" aria-label="빠른 상담">
+          <a href={PHONE_HREF}>전화 상담</a>
+          <a href="#quick-estimate">간편 견적</a>
+        </nav>
+      )}
     </main>
   );
 }

@@ -248,8 +248,8 @@ export const landingServices: Record<LandingSlug, LandingService> = {
       "퇴실 확인부터 직영 청소, 필요한 보수 연결, 완료 사진과 다음 임대 준비까지 하나의 흐름으로 관리합니다.",
     price: "관리 건물 입·퇴실청소 10만원부터",
     priceNote: "부가세 별도 · 적용 조건 충족 시 24H 운영 기준",
-    heroImage: "/landing/move-in-condition.jpg",
-    heroAlt: "입·퇴실 준비를 위해 상태를 확인하는 원룸 내부",
+    heroImage: "/landing/records/tenancy-check.jpg",
+    heroAlt: "브링케어가 퇴실 상태를 확인한 실제 원룸 내부",
     facts: [
       { value: "D-14", label: "퇴실 전 사전 접수" },
       { value: "24H", label: "조건 충족 시 운영 기준" },
