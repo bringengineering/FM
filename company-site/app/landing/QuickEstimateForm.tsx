@@ -2,9 +2,9 @@
 
 import { FormEvent, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
+import { PHONE_DIGITS, PHONE_LABEL } from "./contact";
 import { submitMarketingLead } from "./marketingLeadClient";
 
-const PHONE_NUMBER = "01065663606";
 type QuickEstimateFormProps = { service: string; sourcePath: string };
 type SubmitStatus = "idle" | "sending" | "error" | "copied";
 
@@ -72,6 +72,6 @@ export default function QuickEstimateForm({ service, sourcePath }: QuickEstimate
     </div>
     <label className="estimate-consent"><input name="consent" type="checkbox" required />상담을 위해 입력 정보를 BRING CARE CRM에 저장하고 연락받는 데 동의합니다.</label>
     <button type="submit" disabled={status === "sending"}>{status === "sending" ? "전송 중..." : "간편 견적 신청"}</button>
-    {(status === "error" || status === "copied") && <div className="estimate-fallback"><p role="status" aria-live="polite">{status === "copied" ? "신청 내용이 복사되었습니다. 문자나 메신저에 붙여넣어 보내주세요." : errorMessage}</p><div><a href={`tel:${PHONE_NUMBER}`}>전화 상담 010-6566-3606</a><button type="button" onClick={copyApplication}>신청 내용 복사</button></div></div>}
+    {(status === "error" || status === "copied") && <div className="estimate-fallback"><p role="status" aria-live="polite">{status === "copied" ? "신청 내용이 복사되었습니다. 문자나 메신저에 붙여넣어 보내주세요." : errorMessage}</p><div><a href={`tel:${PHONE_DIGITS}`}>전화 상담 {PHONE_LABEL}</a><button type="button" onClick={copyApplication}>신청 내용 복사</button></div></div>}
   </form>;
 }

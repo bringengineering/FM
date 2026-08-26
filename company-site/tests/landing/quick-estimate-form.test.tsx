@@ -121,6 +121,31 @@ describe("QuickEstimateForm", () => {
     expect(submitMarketingLead).toHaveBeenCalledTimes(1);
   });
 
+  it("submits the turnover-care service and source as an exact CRM pair", async () => {
+    submitMarketingLead.mockResolvedValue({
+      receiptId: "lead_1234567890turnover",
+    });
+
+    render(
+      <QuickEstimateForm
+        service="24H 입·퇴실 관리"
+        sourcePath="/turnover-care"
+      />,
+    );
+    fillRequiredFields();
+    fireEvent.click(screen.getByLabelText(/상담을 위해 입력 정보를/));
+    fireEvent.click(screen.getByRole("button", { name: "간편 견적 신청" }));
+
+    await waitFor(() =>
+      expect(submitMarketingLead).toHaveBeenCalledWith(
+        expect.objectContaining({
+          service: "24H 입·퇴실 관리",
+          sourcePath: "/turnover-care",
+        }),
+      ),
+    );
+  });
+
   it("shows a phone and copy fallback when delivery fails", async () => {
     submitMarketingLead.mockRejectedValue(new Error("CRM 접수 실패"));
     const writeText = vi.fn().mockResolvedValue(undefined);
@@ -142,7 +167,7 @@ describe("QuickEstimateForm", () => {
     expect(await screen.findByRole("status")).toHaveTextContent("CRM 접수 실패");
     expect(screen.getByRole("link", { name: /전화 상담/ })).toHaveAttribute(
       "href",
-      "tel:01065663606",
+      "tel:01065663603",
     );
 
     fireEvent.click(screen.getByRole("button", { name: "신청 내용 복사" }));

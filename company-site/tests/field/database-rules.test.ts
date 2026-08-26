@@ -1013,6 +1013,32 @@ afterAll(async () => {
 });
 
 describe.runIf(databaseEmulatorAvailable)("fieldPlatform database rules", () => {
+  it("accepts a create-only turnover-care lead with the exact service/source pair", async () => {
+    const unauthenticated = environment.unauthenticatedContext().database();
+    const requestId = "lead_01JTURNOVERREQUEST0000000001";
+    const path = `crmCompany/marketingLeadInbox/${requestId}`;
+    const lead = {
+      ...marketingLead(requestId),
+      service: "24H 입·퇴실 관리",
+      sourcePath: "/turnover-care",
+    };
+
+    await assertSucceeds(set(ref(unauthenticated, path), lead));
+    await assertFails(get(ref(unauthenticated, path)));
+    await assertFails(update(ref(unauthenticated, path), { status: "closed" }));
+    await assertFails(remove(ref(unauthenticated, path)));
+
+    const invalidId = "lead_01JTURNOVERINVALID000000001";
+    await assertFails(set(
+      ref(unauthenticated, `crmCompany/marketingLeadInbox/${invalidId}`),
+      {
+        ...marketingLead(invalidId),
+        service: "24H 입·퇴실 관리",
+        sourcePath: "/building-care",
+      },
+    ));
+  });
+
   it("accepts one private public lead while preventing reads, tampering and malformed CRM writes", async () => {
     const unauthenticated = environment.unauthenticatedContext().database();
     const admin = environment.authenticatedContext(

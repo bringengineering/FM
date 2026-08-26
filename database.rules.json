@@ -452,7 +452,7 @@
         ".write": false,
         "$requestId": {
           ".write": "(auth == null && !data.exists() && newData.exists()) || (auth != null && data.exists() && newData.exists() && root.child('crmCompany/access').child(auth.uid).child('enabled').val() === true && root.child('crmCompany/access').child(auth.uid).child('email').val() === auth.token.email && (root.child('crmCompany/access').child(auth.uid).child('role').val() === 'admin' || root.child('crmCompany/access').child(auth.uid).child('role').val() === 'member'))",
-          ".validate": "newData.hasChildren(['requestId','name','phone','location','needs','buildingInfo','customerType','service','sourcePath','utmSource','utmCampaign','utmTerm','consent','submittedAt','status']) && newData.child('requestId').val() === $requestId && $requestId.matches(/^lead_[A-Za-z0-9_-]{16,100}$/) && ((newData.child('service').val() === '계단·공용부 청소' && newData.child('sourcePath').val() === '/stair-cleaning') || (newData.child('service').val() === '건물관리' && newData.child('sourcePath').val() === '/building-care') || (newData.child('service').val() === '입주·이사청소' && newData.child('sourcePath').val() === '/move-in-cleaning'))",
+          ".validate": "newData.hasChildren(['requestId','name','phone','location','needs','buildingInfo','customerType','service','sourcePath','utmSource','utmCampaign','utmTerm','consent','submittedAt','status']) && newData.child('requestId').val() === $requestId && $requestId.matches(/^lead_[A-Za-z0-9_-]{16,100}$/) && ((newData.child('service').val() === '계단·공용부 청소' && newData.child('sourcePath').val() === '/stair-cleaning') || (newData.child('service').val() === '건물관리' && newData.child('sourcePath').val() === '/building-care') || (newData.child('service').val() === '입주·이사청소' && newData.child('sourcePath').val() === '/move-in-cleaning') || (newData.child('service').val() === '24H 입·퇴실 관리' && newData.child('sourcePath').val() === '/turnover-care'))",
           "requestId": {
             ".validate": "newData.isString() && newData.val() === $requestId"
           },
@@ -475,10 +475,10 @@
             ".validate": "newData.isString() && (newData.val() === 'individual' || newData.val() === 'building_owner' || newData.val() === 'manager')"
           },
           "service": {
-            ".validate": "newData.isString() && (newData.val() === '계단·공용부 청소' || newData.val() === '건물관리' || newData.val() === '입주·이사청소')"
+            ".validate": "newData.isString() && (newData.val() === '계단·공용부 청소' || newData.val() === '건물관리' || newData.val() === '입주·이사청소' || newData.val() === '24H 입·퇴실 관리')"
           },
           "sourcePath": {
-            ".validate": "newData.isString() && (newData.val() === '/stair-cleaning' || newData.val() === '/building-care' || newData.val() === '/move-in-cleaning')"
+            ".validate": "newData.isString() && (newData.val() === '/stair-cleaning' || newData.val() === '/building-care' || newData.val() === '/move-in-cleaning' || newData.val() === '/turnover-care')"
           },
           "utmSource": {
             ".validate": "newData.isString() && newData.val().length <= 100"
