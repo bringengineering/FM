@@ -94,6 +94,7 @@
   let workflowActionKey = "";
   let paymentMonth = Core.dayKey().slice(0, 7);
   let paymentBuildingFilter = "all";
+  let paymentMode = "recurring";
   let selectedCaseKey = "";
   let openCaseStepKey = "";
   let caseListMode = "active";
@@ -1512,6 +1513,7 @@
       ? (caseListMode === "trash" ? renderWorkflowCaseTrashDetail(selected) : renderWorkflowCaseDetail(selected))
       : `<div class="case-detail-empty"><strong>${query ? "검색 결과가 없습니다" : caseListMode === "trash" ? "휴지통이 비어 있습니다" : "등록된 케이스가 없습니다"}</strong><span>${query ? "다른 검색어를 입력해 주세요." : caseListMode === "trash" ? "휴지통으로 이동한 케이스가 여기에 표시됩니다." : "새 케이스를 등록해 업무를 시작하세요."}</span>${caseListMode === "trash" ? `<button class="secondary-button" data-case-list-mode="active">케이스 목록으로 돌아가기</button>` : `<button class="primary-button" data-action="new-workflow-case">＋ 새 케이스</button>`}</div>`;
     main.innerHTML = `<section class="operations-hero case-hero"><div><span>BRING CRM에서 직접 처리합니다</span><h2>접수부터 사후관리까지 17단계 케이스</h2><p>업무흐름빌더와 같은 공용 데이터를 사용하며, 이동하지 않고 이 화면에서 수정·처리합니다.</p></div><div class="operations-actions"><button class="secondary-button" data-action="refresh-operations">↻ 새로고침</button><button class="primary-button" data-action="new-workflow-case">＋ 새 케이스</button></div></section>
+      <nav class="payment-mode-tabs" aria-label="입금 관리 구분"><button type="button" class="active" data-payment-mode="recurring">정기 납부</button><button type="button" data-payment-mode="oneOff">단건 계약</button></nav>
       ${operationsError ? `<div class="info-box" style="margin-top:12px;color:#c6535f">${esc(operationsError)}</div>` : ""}
       <section class="case-workspace"><aside class="case-browser"><header><div><b>${caseListMode === "trash" ? "휴지통" : "케이스 목록"}</b><span>${cases.length}건</span></div><small>${caseListMode === "trash" ? "복원할 케이스를 선택하세요." : "선택하면 오른쪽에서 바로 처리됩니다."}</small></header><div class="case-browser-mode"><button type="button" class="${caseListMode === "trash" ? "" : "active"}" data-case-list-mode="${caseListMode === "trash" ? "active" : "trash"}">${caseListMode === "trash" ? `← 케이스 목록 (${activeCases().length})` : `휴지통 (${trashCases().length})`}</button></div><div class="case-browser-list">${cases.length ? cases.map(item => {
         const progress = Core.workflowProgress(item);
@@ -1811,7 +1813,21 @@
     return content || `<div class="case-extra-empty">이 단계에 연결된 상세 자료가 아직 없습니다. 아래 단계 메모에 처리 내용을 기록하세요.</div>`;
   }
 
+  function renderOneOffPayments() {
+    const rows = Core.oneOffContractRows(store.contracts, paymentMonth, paymentBuildingFilter);
+    const totals = Core.oneOffContractTotals(rows.map(row => row.contract));
+    const buildings = paymentBuildings();
+    const days = paymentCalendarDays(paymentMonth);
+    main.innerHTML = `<section class="operations-hero payment-operations-hero"><div><span>단건 작업의 매출과 비용을 함께 봅니다</span><h2>단건 계약 입금 캘린더</h2><p>예초·청소·도배·폐기물 처리의 입금 예정일과 실제 수익을 관리하세요.</p></div><div class="operations-actions"><button class="primary-button" data-action="new-one-off-contract">＋ 단건 계약</button></div></section>
+      <nav class="payment-mode-tabs" aria-label="입금 관리 구분"><button type="button" data-payment-mode="recurring">정기 납부</button><button type="button" class="active" data-payment-mode="oneOff">단건 계약</button></nav>
+      <div class="operations-kpis"><div class="operations-kpi"><span>단건 계약</span><b>${totals.count}건</b><small>${esc(paymentMonthLabel(paymentMonth))}</small></div><div class="operations-kpi"><span>받을 금액</span><b>${esc(krw(totals.revenue))}</b><small>고객 청구액</small></div><div class="operations-kpi"><span>업체 지급액</span><b>${esc(krw(totals.cost))}</b><small>작업 원가</small></div><div class="operations-kpi" style="--wash:#edf9f5"><span>예상 수익</span><b>${esc(krw(totals.profit))}</b><small>받을 금액 - 지급액</small></div></div>
+      <div class="payment-toolbar"><div class="payment-month-switch"><button data-payment-month="-1" aria-label="이전 달">‹</button><b>${esc(paymentMonthLabel(paymentMonth))}</b><button data-payment-month="1" aria-label="다음 달">›</button></div><label class="payment-building-filter"><span>건물</span><select data-payment-building-filter><option value="all">전체 건물</option>${buildings.map(item => `<option value="${attr(item.id)}" ${paymentBuildingFilter === item.id ? "selected" : ""}>${esc(item.name)}</option>`).join("")}</select></label></div>
+      <section class="payment-calendar"><div class="payment-weekdays">${["일", "월", "화", "수", "목", "금", "토"].map(day => `<div>${day}</div>`).join("")}</div><div class="payment-days">${days.map(date => { const dayRows = rows.filter(row => row.dueDate === date); return `<div class="payment-day ${date.slice(0, 7) === paymentMonth ? "" : "out"}"><div class="payment-daynum">${Number(date.slice(-2))}</div>${dayRows.map(row => `<button class="payment-event ${attr(row.status)}" data-contract-edit="${attr(row.contract.id)}"><b>${esc(row.contract.name)}</b><span>${esc(krw(row.contract.amount))} · 수익 ${esc(krw(row.contract.grossProfit))}</span></button>`).join("")}</div>`; }).join("")}</div></section>
+      ${rows.length ? `<div class="data-table-wrap one-off-table"><table class="data-table"><thead><tr><th>작업일</th><th>고객·건물</th><th>작업</th><th>받을 금액</th><th>업체 지급</th><th>예상 수익</th><th>입금·지급 상태</th></tr></thead><tbody>${rows.map(row => { const contract = row.contract; const customer = customerById(contract.customerId); const building = buildingById(contract.buildingId); return `<tr data-contract-edit="${attr(contract.id)}"><td>${esc(contract.workDate)}</td><td>${esc(customer?.name || "고객 미연결")}<br><small>${esc(building?.name || "건물 미연결")}</small></td><td><strong>${esc(contract.name)}</strong></td><td>${esc(krw(contract.amount))}</td><td>${esc(krw(contract.vendorCost))}</td><td><strong>${esc(krw(contract.grossProfit))}</strong></td><td>${esc(contract.collectionStatus)} · ${esc(contract.vendorPaymentStatus)}</td></tr>`; }).join("")}</tbody></table></div>` : empty("이번 달 단건 계약이 없습니다", "단건 계약을 등록하면 입금 예정일에 자동으로 표시됩니다.", `<button class="primary-button" data-action="new-one-off-contract">＋ 단건 계약 등록</button>`)}`;
+  }
+
   function renderPayments() {
+    if (paymentMode === "oneOff") return renderOneOffPayments();
     const buildings = paymentBuildings();
     if (paymentBuildingFilter !== "all" && !buildings.some(item => item.id === paymentBuildingFilter)) paymentBuildingFilter = "all";
     const selectedBuilding = buildings.find(item => item.id === paymentBuildingFilter) || null;
@@ -2901,6 +2917,7 @@
       ${selectField("고객 유형", "type", ["건물주", "임차인", "법인", "협력업체", "기타"], customer.type)}
       ${field("다음 연락일", "nextContactAt", datetimeValue(customer.nextContactAt), "datetime-local")}
       ${areaField("현재 어떤 요청이 있나요?", "currentIssue", customer.currentIssue, "wide")}
+      ${areaField("개인 메모·고객 특징", "notes", customer.notes, "wide")}
       ${field("다음 할 일", "nextAction", customer.nextAction, "text", "예: 누수업체 비교견적 전달", "wide")}
     </div><details class="optional-form"><summary><b>고객 추가 정보</b><span>회사·이메일·금액 등을 입력하려면 펼치세요</span></summary><div class="form-grid optional-form-body">
       ${field("회사·상호", "company", customer.company)}${field("이메일", "email", customer.email, "email")}
@@ -2908,7 +2925,6 @@
       ${selectField("중요도", "priority", ["높음", "보통", "낮음"], customer.priority)}${field("예상 계약금액", "expectedValue", customer.expectedValue || "", "number", "원 단위")}
       ${field("관심 서비스", "interestServices", (customer.interestServices || []).join(", "), "text", "예: 건물관리, 누수 대응")}${field("태그", "tags", (customer.tags || []).join(", "), "text", "예: 원주, 다가구, 소개")}
       ${field("마지막 연락일", "lastContactAt", datetimeValue(customer.lastContactAt), "datetime-local")}
-      ${areaField("고객 메모", "notes", customer.notes, "wide")}
       <div class="info-box wide">진행상태는 고객 정보에서 직접 입력하지 않습니다. 연결된 건물의 영업 관리 단계가 고객 목록과 상세 화면에 자동으로 표시됩니다.</div>
     </div></details><div class="info-box">${linkedBuildings.length ? `연결된 건물 ${linkedBuildings.length}곳은 이 고객 화면에서 그대로 유지됩니다.` : "고객을 먼저 등록할 수 있습니다."} 건물 등록·수정은 건물 관리에서 현재 작업자를 선택한 뒤 진행해 주세요.</div><div class="form-actions"><button type="button" class="secondary-button" data-action="close-modal">취소</button><button type="submit" class="primary-button">${editing ? "수정 저장" : "고객 등록"}</button></div></form>`;
     openModal();
@@ -3143,14 +3159,15 @@
     return buildings[0]?.id || "";
   }
 
-  function contractEditor(contractId) {
+  function contractEditor(contractId, oneOff = false) {
     const editing = store.contracts.find(item => item.id === contractId);
-    const item = editing ? JSON.parse(JSON.stringify(editing)) : Core.createContract({ owner: store.settings.owner || "김현진" });
+    const item = editing ? JSON.parse(JSON.stringify(editing)) : Core.createContract({ owner: store.settings.owner || "김현진", billingCycle: oneOff ? "건별" : "월 정기", startDate: oneOff ? todayKey() : Core.dayKey(), workDate: oneOff ? todayKey() : "", paymentDueDate: oneOff ? todayKey() : "" });
     const types = contractTypes(item);
     const customerOptions = ["", ...store.customers.map(customer => customer.id)];
     modalContent.innerHTML = `<div class="modal-head"><div><h2>${editing ? "계약 상세·수정" : "새 계약 등록"}</h2><p>필요한 계약 유형을 모두 체크하고 고객을 선택하세요.</p></div><button class="close-button" data-action="close-modal">×</button></div><form id="contractForm" class="modal-body contract-form" data-contract-id="${attr(editing && editing.id || "")}">
       <div class="contract-form-guide"><div><b>${esc(item.contractNo || "새 계약")}</b><span>계약 조건·기간·금액을 실제 계약 내용과 동일하게 입력하세요.</span></div><span>공용 서버에 저장</span></div>
       <div class="form-grid">${contractTypeChecklist(types)}${selectField("계약 상태", "status", Core.CONTRACT_STATUSES, item.status)}${field("계약명 *", "name", item.name, "text", "예: 혁신타워 종합관리", "wide")}${selectField("연결 고객 *", "customerId", customerOptions, item.customerId, id => id ? (customerById(id)?.name || id) : "고객 선택")}${contractBuildingField(item.customerId, item.buildingId)}${field("계약 시작일 *", "startDate", item.startDate, "date")}${field("계약 종료일 (선택)", "endDate", item.endDate, "date")}${field("계약 금액", "amount", item.amount || "", "number", "원 단위")}${selectField("납부 방식", "billingCycle", ["월 정기", "건별", "연간", "기타"], item.billingCycle)}${field("담당자", "owner", item.owner || store.settings.owner || "김현진")}${areaField("공통 업무 범위", "scope", item.scope, "wide")}</div>
+      <section class="contract-type-fields one-off-contract-fields"><header><b>단건 계약 정산</b><span>납부 방식을 건별로 선택하면 입금 캘린더에 표시됩니다.</span></header><div class="form-grid">${field("작업일", "workDate", item.workDate || item.startDate, "date")}${field("입금 예정일", "paymentDueDate", item.paymentDueDate || item.workDate || item.startDate, "date")}${field("업체 지급액·작업비", "vendorCost", item.vendorCost || "", "number", "원 단위")}${selectField("고객 입금 상태", "collectionStatus", ["입금 예정", "입금 완료"], item.collectionStatus || "입금 예정")}${selectField("업체 지급 상태", "vendorPaymentStatus", ["지급 예정", "지급 완료"], item.vendorPaymentStatus || "지급 예정")}<label class="field"><span>예상 수익</span><input value="${attr(krw(Core.money(item.amount) - Core.money(item.vendorCost)))}" readonly></label></div></section>
       <section class="contract-type-fields" data-contract-fields="${attr(types.join("|"))}"><header><b>유형별 계약 내용</b><span>체크한 모든 계약 유형의 입력 항목이 표시됩니다.</span></header><div class="contract-specific-fields ${types.includes("청소") ? "is-selected" : ""}" data-contract-specific="청소">${field("청소 주기·작업 시점", "serviceFrequency", item.serviceFrequency, "text", "예: 주 2회 또는 공실 발생 시", "wide")}</div><div class="contract-specific-fields ${types.includes("건물관리") ? "is-selected" : ""}" data-contract-specific="건물관리">${field("관리 호실 수", "unitCount", item.unitCount || "", "number", "숫자 입력")}</div><div class="contract-specific-fields ${types.includes("부동산관리") ? "is-selected" : ""}" data-contract-specific="부동산관리">${field("관리 대상", "managementTarget", item.managementTarget, "text", "예: 상가·사무실 임대관리")}${field("수수료 방식", "feeMethod", item.feeMethod, "text", "예: 월 고정 또는 임대료 비율")}</div></section>
       <div class="form-grid contract-note-grid">${areaField("계약 메모", "memo", item.memo, "wide")}</div><div class="form-actions">${editing ? `<button type="button" class="danger-outline-button form-delete-left" data-contract-delete="${attr(editing.id)}">계약 삭제</button>` : ""}<button type="button" class="secondary-button" data-action="close-modal">취소</button><button type="submit" class="primary-button">${editing ? "계약 수정 저장" : "계약 등록"}</button></div></form>`;
     openModal();
@@ -4781,6 +4798,8 @@
       }
       return;
     }
+    const paymentModeButton = event.target.closest("[data-payment-mode]");
+    if (paymentModeButton) { paymentMode = paymentModeButton.dataset.paymentMode === "oneOff" ? "oneOff" : "recurring"; renderPayments(); pageMeta(); return; }
     const paymentEvent = event.target.closest("[data-payment-event]");
     if (paymentEvent) { paymentStatusEditor(paymentEvent.dataset.paymentEvent); return; }
     const paymentMonthButton = event.target.closest("[data-payment-month]");
@@ -5138,6 +5157,7 @@
       vacancyConfigurationEditor(buildingId);
     }
     else if (action === "new-contract") contractEditor("");
+    else if (action === "new-one-off-contract") contractEditor("", true);
     else if (action === "new-workflow-case") workflowCaseEditor();
     else if (action === "new-payment-schedule") paymentScheduleEditor("");
     else if (action === "refresh-operations") await refreshOperations();
@@ -6006,13 +6026,17 @@
       if (!keepsExistingLink && !customerBuildings(linkedCustomer).some(building => building.id === raw.buildingId)) return showToast("선택한 고객에게 연결된 건물을 선택해 주세요.", "error");
       if (!raw.startDate) return showToast("계약 시작일을 입력해 주세요.", "error");
       if (raw.endDate && raw.endDate < raw.startDate) return showToast("계약 종료일은 시작일보다 빠를 수 없습니다.", "error");
+      if (raw.billingCycle === "건별" && (!raw.workDate || !raw.paymentDueDate)) return showToast("단건 계약의 작업일과 입금 예정일을 입력해 주세요.", "error");
       const item = existing || Core.createContract({ owner: store.settings.owner || "김현진" });
       Object.assign(item, {
         types, type: types[0], name: raw.name.trim(), customerId: raw.customerId, buildingId: raw.buildingId,
         startDate: raw.startDate, endDate: raw.endDate || "", amount: Core.money(raw.amount), billingCycle: raw.billingCycle,
         status: raw.status, owner: raw.owner.trim() || store.settings.owner || "김현진", scope: raw.scope.trim(),
         serviceFrequency: raw.serviceFrequency.trim(), unitCount: Number(raw.unitCount) || 0,
-        managementTarget: raw.managementTarget.trim(), feeMethod: raw.feeMethod.trim(), memo: raw.memo.trim(), updatedAt: new Date().toISOString()
+        managementTarget: raw.managementTarget.trim(), feeMethod: raw.feeMethod.trim(), memo: raw.memo.trim(),
+        workDate: raw.workDate || "", paymentDueDate: raw.paymentDueDate || "", vendorCost: Core.money(raw.vendorCost),
+        grossProfit: Core.money(raw.amount) - Core.money(raw.vendorCost), collectionStatus: raw.collectionStatus || "입금 예정",
+        vendorPaymentStatus: raw.vendorPaymentStatus || "지급 예정", updatedAt: new Date().toISOString()
       });
       if (!existing) store.contracts.push(item);
       const customer = customerById(item.customerId);

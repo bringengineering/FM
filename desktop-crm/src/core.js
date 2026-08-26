@@ -631,7 +631,30 @@
     const contract = Object.assign({}, value || {});
     contract.types = normalizeContractTypes(contract);
     contract.type = contract.types[0];
+    if (contract.billingCycle === "건별") {
+      contract.vendorCost = nonNegativeInteger(contract.vendorCost);
+      contract.amount = nonNegativeInteger(contract.amount);
+      contract.grossProfit = contract.amount - contract.vendorCost;
+      contract.workDate = /^\d{4}-\d{2}-\d{2}$/.test(String(contract.workDate || "")) ? String(contract.workDate) : String(contract.startDate || "").slice(0, 10);
+      contract.paymentDueDate = /^\d{4}-\d{2}-\d{2}$/.test(String(contract.paymentDueDate || "")) ? String(contract.paymentDueDate) : contract.workDate;
+      contract.collectionStatus = ["입금 예정", "입금 완료"].includes(contract.collectionStatus) ? contract.collectionStatus : "입금 예정";
+      contract.vendorPaymentStatus = ["지급 예정", "지급 완료"].includes(contract.vendorPaymentStatus) ? contract.vendorPaymentStatus : "지급 예정";
+    }
     return contract;
+  }
+
+  function oneOffContractRows(contracts, monthKey, buildingId) {
+    const month = String(monthKey || dayKey()).slice(0, 7);
+    return (Array.isArray(contracts) ? contracts : []).map(normalizeContract).filter(contract =>
+      contract.billingCycle === "건별" && contract.paymentDueDate.slice(0, 7) === month
+      && (!buildingId || buildingId === "all" || contract.buildingId === buildingId)
+    ).map(contract => ({ contract, dueDate: contract.paymentDueDate, status: contract.collectionStatus === "입금 완료" ? "paid" : (dayKey() > contract.paymentDueDate ? "overdue" : "scheduled") }))
+      .sort((left, right) => left.dueDate.localeCompare(right.dueDate) || String(left.contract.name || "").localeCompare(String(right.contract.name || ""), "ko"));
+  }
+
+  function oneOffContractTotals(contracts) {
+    const rows = (Array.isArray(contracts) ? contracts : []).map(normalizeContract).filter(contract => contract.billingCycle === "건별");
+    return rows.reduce((total, contract) => ({ revenue: total.revenue + contract.amount, cost: total.cost + contract.vendorCost, profit: total.profit + contract.grossProfit, count: total.count + 1 }), { revenue: 0, cost: 0, profit: 0, count: 0 });
   }
 
   function createContract(values) {
@@ -858,7 +881,7 @@
 
   return {
     PIPELINE_STAGES, PARTNER_QUOTE_STATUSES, PARTNER_INDUSTRIES, BUILDING_MAINTENANCE_INCLUDES, BUILDING_ROOM_TYPES, BUILDING_ROOM_OPTIONS, BUILDING_UNIT_STATUSES, CONTRACT_TYPES, CONTRACT_STATUSES, WORKFLOW_STEPS, SECURITY_ASSET_TYPES, SECURITY_ASSET_STATUSES, AUDIT_CATEGORIES,
-    blankStore, blankSharedStore, sanitizeStore, sanitizeSharedStore, sanitizeRendererStore, sanitizeRendererOverlays, createCustomer, createBuilding, normalizeBuilding, normalizeBuildingUnit, createActivity, createContract, normalizeContractTypes, createPartnerVendor, createPartnerQuote, createTask, createSecurityAsset,
+    blankStore, blankSharedStore, sanitizeStore, sanitizeSharedStore, sanitizeRendererStore, sanitizeRendererOverlays, createCustomer, createBuilding, normalizeBuilding, normalizeBuildingUnit, createActivity, createContract, normalizeContract, normalizeContractTypes, oneOffContractRows, oneOffContractTotals, createPartnerVendor, createPartnerQuote, createTask, createSecurityAsset,
     createAccessRole, createAuditLog, createSecurityIncident, calculateDashboard, calculateSecurityStatus,
     workflowProgress, buildWorkflowCase, matchWorkflowCustomer, paymentNormalizeName, paymentMonthRows,
     normalizePhone, formatPhone, canonicalPhoneKey, normalizeText, normalizePipelineStage, normalizeStringList, normalizeCustomer, customerBuildingIds, nonNegativeInteger, money, dayKey, iso,
