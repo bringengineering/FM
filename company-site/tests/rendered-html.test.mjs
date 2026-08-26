@@ -152,6 +152,9 @@ for (const {
     turnoverMarkers?.forEach((marker) => assert.ok(html.includes(marker)));
     assert.match(html, /tel:01065663603/);
     assert.match(html, /quick-estimate/);
+    assert.match(html, /quick-estimate-floating/);
+    assert.match(html, /href="#quick-estimate"/);
+    assert.match(html, /빠른 견적/);
     assert.match(html, /청소하면서 건물까지 봅니다/);
     assert.match(html, /부가세 별도/);
     assert.doesNotMatch(html, /1위|100% 만족|최우수|작업 전후 사진/);
