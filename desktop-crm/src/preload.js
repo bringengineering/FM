@@ -38,6 +38,9 @@ contextBridge.exposeInMainWorld("bringCRM", {
   cancelFieldRequest: requestId => ipcRenderer.invoke("crm:field-cancel", requestId),
   reconnectFieldPlatform: () => ipcRenderer.invoke("crm:field-reconnect"),
   reauthenticateFieldPlatform: () => ipcRenderer.invoke("crm:field-reauthenticate-google"),
+  showValueScope: input => ipcRenderer.invoke("crm:show-valuescope", input),
+  hideValueScope: () => ipcRenderer.invoke("crm:hide-valuescope"),
+  setValueScopeBounds: rect => ipcRenderer.invoke("crm:valuescope-bounds", rect),
   openExternal: url => ipcRenderer.invoke("crm:open-external", url),
   lookupVendor: url => ipcRenderer.invoke("crm:vendor-lookup", url),
   lookupNaverBuilding: url => ipcRenderer.invoke("crm:building-link-lookup", url),
@@ -71,5 +74,15 @@ contextBridge.exposeInMainWorld("bringCRM", {
     const listener = (_event, state) => callback(state);
     ipcRenderer.on("crm:field-state", listener);
     return () => ipcRenderer.removeListener("crm:field-state", listener);
+  },
+  onValueScopeEvent: callback => {
+    const listener = (_event, envelope) => callback(envelope);
+    ipcRenderer.on("crm:valuescope-event", listener);
+    return () => ipcRenderer.removeListener("crm:valuescope-event", listener);
+  },
+  onValueScopeState: callback => {
+    const listener = (_event, state) => callback(state);
+    ipcRenderer.on("crm:valuescope-state", listener);
+    return () => ipcRenderer.removeListener("crm:valuescope-state", listener);
   }
 });

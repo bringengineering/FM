@@ -39,6 +39,12 @@ const {
   sanitizeFieldTeamProfiles,
   validateFieldMessage,
 } = require("./field-view-policy");
+const {
+  allowedExternalUrl: allowedValueScopeExternalUrl,
+  allowedPage,
+  mapUrlForTab,
+  validMapEnvelope,
+} = require("./valuescope-view-policy");
 const FIELD_PLATFORM_URL = "https://bring-fm.web.app/field";
 const FIELD_AUTH_CLEANUP_URL = "https://bring-fm.web.app/crm-auth";
 const FIELD_AUTH_PARTITION = "persist:bring-field";
@@ -47,6 +53,10 @@ const FIELD_AUTH_QUARANTINE_MARKER = "BRING_FIELD_AUTH_QUARANTINE_V1\n";
 if (process.env.BRING_CRM_SCREENSHOT || process.env.BRING_CRM_SMOKE === "1") app.disableHardwareAcceleration();
 
 let mainWindow = null;
+let valuescopeView = null;
+let valuescopeViewVisible = false;
+let valuescopeMeasuredBounds = null;
+let valuescopeActiveTab = "wonju";
 let fieldView = null;
 let fieldViewVisible = false;
 let fieldViewLoaded = false;
@@ -427,6 +437,103 @@ function syncFieldSession(state = authState()) {
     resolveFieldReadyWaiters(Object.assign(new Error("FIELD_SESSION_CHANGED"), { code: "FIELD_SESSION_CHANGED" }));
   }
   return fieldSessionKey;
+}
+
+function emitValueScopeState(status, message, extra = {}) {
+  if (!mainWindow || mainWindow.isDestroyed()) return;
+  mainWindow.webContents.send("crm:valuescope-state", { status, message, ...extra });
+}
+
+function applyValueScopeBounds() {
+  if (!valuescopeView || !valuescopeMeasuredBounds || !valuescopeViewVisible) return false;
+  valuescopeView.setBounds(valuescopeMeasuredBounds);
+  return true;
+}
+
+function destroyValueScopeView() {
+  if (!valuescopeView) return;
+  const view = valuescopeView;
+  valuescopeView = null;
+  valuescopeViewVisible = false;
+  try {
+    if (mainWindow && !mainWindow.isDestroyed()) mainWindow.contentView.removeChildView(view);
+  } catch (_error) {}
+  try {
+    if (!view.webContents.isDestroyed()) view.webContents.close();
+  } catch (_error) {}
+}
+
+function trustedValueScopeIpc(event) {
+  if (!valuescopeView || valuescopeView.webContents.isDestroyed()) return false;
+  if (!(event.sender === valuescopeView.webContents)) return false;
+  if (!event.senderFrame || event.senderFrame !== event.sender.mainFrame) return false;
+  return allowedPage(event.senderFrame.url);
+}
+
+function ensureValueScopeView() {
+  if (valuescopeView && !valuescopeView.webContents.isDestroyed()) return valuescopeView;
+  if (!mainWindow || mainWindow.isDestroyed()) throw new Error("CRM_WINDOW_UNAVAILABLE");
+  valuescopeView = new WebContentsView({
+    webPreferences: {
+      preload: path.join(__dirname, "valuescope-preload.js"),
+      partition: "persist:bring-valuescope",
+      contextIsolation: true,
+      nodeIntegration: false,
+      sandbox: true,
+    },
+  });
+  const contents = valuescopeView.webContents;
+  contents.setWindowOpenHandler(({ url }) => {
+    if (allowedValueScopeExternalUrl(url)) void shell.openExternal(url);
+    return { action: "deny" };
+  });
+  contents.on("will-navigate", (event, url) => {
+    if (!allowedPage(url)) event.preventDefault();
+  });
+  contents.on("will-redirect", (event, url) => {
+    if (!allowedPage(url)) event.preventDefault();
+  });
+  contents.on("did-start-loading", () => emitValueScopeState("loading", "ValueScope 지도를 불러오고 있습니다."));
+  contents.on("did-finish-load", () => emitValueScopeState("ready", "ValueScope 지도가 연결되었습니다.", { tab: valuescopeActiveTab }));
+  contents.on("did-fail-load", (_event, _code, _description, url, isMainFrame) => {
+    if (isMainFrame && allowedPage(url)) emitValueScopeState("error", "ValueScope 지도를 불러오지 못했습니다.");
+  });
+  contents.on("render-process-gone", () => emitValueScopeState("error", "ValueScope 지도 연결이 중단되었습니다."));
+  contents.on("destroyed", () => {
+    if (!valuescopeView || valuescopeView.webContents !== contents) return;
+    valuescopeView = null;
+    valuescopeViewVisible = false;
+  });
+  contents.session.on("will-download", event => event.preventDefault());
+  contents.session.setPermissionRequestHandler((_contents, _permission, callback) => callback(false));
+  contents.session.setPermissionCheckHandler(() => false);
+  mainWindow.contentView.addChildView(valuescopeView);
+  valuescopeView.setVisible(false);
+  return valuescopeView;
+}
+
+async function showValueScope(input = {}) {
+  if (!authState().user) return { ok: false, code: "AUTH_REQUIRED", error: "CRM에 먼저 로그인해 주세요." };
+  const tab = String(input.tab || "wonju");
+  const url = mapUrlForTab(tab);
+  if (!url) return { ok: false, code: "VALUESCOPE_TAB_INVALID", error: "지원하지 않는 지도입니다." };
+  if (!valuescopeMeasuredBounds || valuescopeMeasuredBounds.width < 1 || valuescopeMeasuredBounds.height < 1) {
+    return { ok: false, code: "VALUESCOPE_BOUNDS_REQUIRED", error: "지도 화면 크기를 확인하고 있습니다." };
+  }
+  try {
+    const view = ensureValueScopeView();
+    valuescopeActiveTab = tab;
+    if (view.webContents.getURL() !== url) await view.webContents.loadURL(url);
+    valuescopeViewVisible = true;
+    applyValueScopeBounds();
+    view.setVisible(true);
+    return { ok: true, tab, url };
+  } catch (_error) {
+    if (valuescopeView) valuescopeView.setVisible(false);
+    valuescopeViewVisible = false;
+    emitValueScopeState("error", "ValueScope 지도를 불러오지 못했습니다.");
+    return { ok: false, code: "VALUESCOPE_LOAD_FAILED", error: "ValueScope 지도를 불러오지 못했습니다." };
+  }
 }
 
 function destroyFieldView() {
@@ -985,6 +1092,12 @@ ipcMain.on("crm:field-message", (event, envelopeInput) => {
     void openFieldExternal(envelope.payload.url);
   }
   sendToRenderer("crm:field-event", envelope);
+});
+ipcMain.on("valuescope:map-event", (event, envelope) => {
+  if (!trustedValueScopeIpc(event)) return;
+  const validated = validMapEnvelope(envelope);
+  if (!validated || !mainWindow || mainWindow.isDestroyed()) return;
+  mainWindow.webContents.send("crm:valuescope-event", validated);
 });
 
 function demoOperations() {
@@ -2160,6 +2273,7 @@ async function createWindow() {
     void requestApplicationExit("window");
   });
   mainWindow.on("closed", () => {
+    destroyValueScopeView();
     destroyFieldView();
     mainWindow = null;
   });
@@ -4815,6 +4929,19 @@ secureCanonicalHandle("crm:field-bounds", async rect => {
   fieldMeasuredBounds = measured;
   applyFieldBounds();
   return { ok: true, bounds: measured };
+});
+secureCanonicalHandle("crm:valuescope-bounds", async rect => {
+  const measured = fieldBounds(rect);
+  if (measured.width < 1 || measured.height < 1) return { ok: false, code: "VALUESCOPE_BOUNDS_INVALID" };
+  valuescopeMeasuredBounds = measured;
+  applyValueScopeBounds();
+  return { ok: true, bounds: measured };
+});
+secureCanonicalHandle("crm:show-valuescope", async input => showValueScope(input));
+secureCanonicalHandle("crm:hide-valuescope", async () => {
+  if (valuescopeView) valuescopeView.setVisible(false);
+  valuescopeViewVisible = false;
+  return { ok: true };
 });
 secureCanonicalHandle("crm:field-request", async (envelope, event) => {
   const blockedCode = fieldReauthenticationBlockCode({ includeAuthenticationRequired: true });

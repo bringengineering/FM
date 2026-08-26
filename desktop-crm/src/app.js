@@ -109,6 +109,11 @@
   let fieldReauthInProgress = false;
   let fieldSearchTimer = null;
   let crmSearchValue = "";
+  let valueScopeTab = "wonju";
+  let valueScopeSelection = null;
+  let valueScopeState = { status: "idle", message: "지도를 준비하고 있습니다." };
+  let valueScopeResizeObserver = null;
+  let valueScopeOpenGeneration = 0;
   const sessionViewedCustomers = new Set();
 
   const viewMeta = {
@@ -121,6 +126,7 @@
     buildingCalendar: ["건물별 일정을 날짜로 확인", "업무일정 캘린더"],
     workManagement: ["예정부터 완료·비용·증빙까지", "작업관리"],
     fieldOperations: ["BRING FIELD", "현장 업무"],
+    valueScope: ["BRING VALUESCOPE", "지도·밸류스코프"],
     consultations: ["전화·방문·미팅 내용", "상담 기록"],
     pipeline: ["건물 발굴부터 유료관리 전환까지", "영업 관리"],
     contracts: ["유형별 계약 조건과 기간", "계약 관리"],
@@ -1188,11 +1194,15 @@
     document.getElementById("navTaskCount").textContent = store.tasks.filter(item => item.status !== "완료" && item.status !== "취소").length;
     document.body.classList.toggle("crm-read-only", !canWriteCRM());
     const fieldView = currentView === "fieldOperations";
+    const valueScopeView = currentView === "valueScope";
     const calendarView = currentView === "buildingCalendar";
-    searchEl.placeholder = fieldView ? "현장 업무 검색" : calendarView ? "건물명·일정 검색" : currentView === "vacancies" ? "건물명·주소 검색" : "고객·건물·연락처 검색";
+    searchEl.placeholder = valueScopeView ? "지도에서 주소·건물·중개사를 검색하세요" : fieldView ? "현장 업무 검색" : calendarView ? "건물명·일정 검색" : currentView === "vacancies" ? "건물명·주소 검색" : "고객·건물·연락처 검색";
     searchEl.value = fieldView ? fieldNavigationState.search : calendarView ? workCalendarQuery : crmSearchValue;
-    primaryActionButton.hidden = fieldView && !canWriteCRM();
-    if (fieldView) {
+    primaryActionButton.hidden = valueScopeView || fieldView && !canWriteCRM();
+    if (valueScopeView) {
+      delete primaryActionButton.dataset.action;
+      primaryActionButton.textContent = "";
+    } else if (fieldView) {
       primaryActionButton.dataset.action = "new-field-job";
       primaryActionButton.textContent = "＋ 현장 업무 (준비 중)";
     } else if (currentView === "workManagement") {
@@ -1238,6 +1248,7 @@
     else if (currentView === "buildingCalendar") renderBuildingCalendar();
     else if (currentView === "workManagement") renderWorkManagement();
     else if (currentView === "fieldOperations") renderFieldOperations();
+    else if (currentView === "valueScope") renderValueScope();
     else if (currentView === "consultations") renderConsultations();
     else if (currentView === "pipeline") renderPipeline();
     else if (currentView === "contracts") renderContracts();
@@ -1328,6 +1339,58 @@
       return null;
     }
     return response;
+  }
+
+  const VALUE_SCOPE_URLS = Object.freeze({
+    wonju: "https://bringengineering.github.io/valuescope/wonju.html",
+    sales: "https://bringengineering.github.io/valuescope/sales.html",
+    valueup: "https://bringengineering.github.io/valuescope/valueup.html",
+    system: "https://bringengineering.github.io/valuescope/system.html",
+  });
+  const VALUE_SCOPE_TABS = Object.freeze([
+    ["wonju", "원주 건물"], ["sales", "영업 지도"], ["valueup", "건물 밸류업"], ["system", "사업체계"],
+  ]);
+
+  function renderValueScope() {
+    const selection = valueScopeSelection;
+    const failed = valueScopeState.status === "error";
+    main.innerHTML = `<section class="valuescope-workspace"><div class="valuescope-toolbar" role="tablist" aria-label="ValueScope 지도 선택">${VALUE_SCOPE_TABS.map(([tab, label]) => `<button type="button" role="tab" aria-selected="${valueScopeTab === tab}" class="valuescope-tab${valueScopeTab === tab ? " active" : ""}" data-valuescope-tab="${tab}">${label}</button>`).join("")}</div><div class="valuescope-layout"><div class="valuescope-map-card"><div id="valueScopeMapSlot" class="valuescope-map-slot" aria-label="ValueScope 지도 화면"></div><div class="valuescope-loading${failed ? " error" : ""}" ${valueScopeState.status === "ready" ? "hidden" : ""} role="status"><b>${failed ? "ValueScope 지도를 불러오지 못했습니다" : "지도를 불러오고 있습니다"}</b><p>${failed ? "CRM의 다른 업무와 저장 기능은 계속 사용할 수 있습니다." : esc(valueScopeState.message || "잠시만 기다려 주세요.")}</p></div></div><aside class="valuescope-action-card"><span class="valuescope-kicker">선택한 대상</span>${selection ? `<h3>${esc(selection.name)}</h3><p>${esc(selection.address || selection.category || "주소 정보 없음")}</p><div class="valuescope-summary">${esc(selection.summary || "지도에서 확인한 공개 정보입니다.")}</div>` : `<h3>지도에서 대상을 선택하세요</h3><p>건물이나 공인중개사를 누르면 CRM 연결 작업을 이어갈 수 있습니다.</p>`}<div class="valuescope-actions"><button type="button" class="secondary-button" data-action="valuescope-open-original">원본 지도 새 창에서 열기</button>${canWriteCRM() ? `<button type="button" class="primary-button" data-action="valuescope-register-prospect"${selection ? "" : " disabled"}>CRM 영업 대상 등록</button><button type="button" class="secondary-button" data-action="valuescope-create-field-job"${selection ? "" : " disabled"}>현장 업무 만들기</button>` : `<div class="info-box">조회 전용 계정은 지도와 연결된 CRM 기록만 볼 수 있습니다.</div>`}</div></aside></div></section>`;
+    void measureValueScopeWorkspace();
+    const generation = ++valueScopeOpenGeneration;
+    requestAnimationFrame(() => { void openValueScope(generation); });
+  }
+
+  async function measureValueScopeWorkspace() {
+    const slot = document.getElementById("valueScopeMapSlot");
+    if (!slot) return { ok: false, code: "VALUESCOPE_SLOT_MISSING" };
+    const rect = slot.getBoundingClientRect();
+    let result = { ok: false, code: "VALUESCOPE_BOUNDS_INVALID" };
+    if (rect.width > 0 && rect.height > 0) {
+      try { result = await api.setValueScopeBounds({ x: rect.x, y: rect.y, width: rect.width, height: rect.height }); }
+      catch (_error) {}
+    }
+    if (!valueScopeResizeObserver && typeof ResizeObserver === "function") {
+      valueScopeResizeObserver = new ResizeObserver(() => { if (currentView === "valueScope") void measureValueScopeWorkspace(); });
+      valueScopeResizeObserver.observe(main);
+    }
+    return result;
+  }
+
+  async function openValueScope(generation) {
+    await measureValueScopeWorkspace();
+    let result;
+    try { result = await api.showValueScope({ tab: valueScopeTab }); }
+    catch (_error) { result = { ok: false, error: "ValueScope 지도를 불러오지 못했습니다." }; }
+    if (generation !== valueScopeOpenGeneration || currentView !== "valueScope") return;
+    if (!result || !result.ok) {
+      valueScopeState = { status: "error", message: result && result.error || "ValueScope 지도를 불러오지 못했습니다." };
+      const loading = main.querySelector(".valuescope-loading");
+      if (loading) {
+        loading.hidden = false;
+        loading.classList.add("error");
+        loading.innerHTML = "<b>ValueScope 지도를 불러오지 못했습니다</b><p>CRM의 다른 업무와 저장 기능은 계속 사용할 수 있습니다.</p>";
+      }
+    }
   }
 
   async function sendFieldNavigation() {
@@ -4130,11 +4193,26 @@
         await api.hideFieldPlatform();
         searchEl.value = crmSearchValue;
       }
+      if (currentView === "valueScope" && nextView !== "valueScope") {
+        valueScopeOpenGeneration += 1;
+        await api.hideValueScope();
+      }
+      if (nextView === "valueScope" && currentView !== "valueScope") await api.hideFieldPlatform();
       currentView = nextView;
       if (currentView === "cases") caseListMode = "active";
       render();
       if (currentView === "buildings") requestDriveImportCandidatesRefresh();
       if (["cases", "payments", "buildings", "pipeline"].includes(currentView)) refreshOperations({ silent: true });
+      return;
+    }
+    const valueScopeTabControl = event.target.closest("[data-valuescope-tab]");
+    if (valueScopeTabControl) {
+      const tab = valueScopeTabControl.dataset.valuescopeTab;
+      if (!VALUE_SCOPE_URLS[tab] || tab === valueScopeTab) return;
+      valueScopeTab = tab;
+      valueScopeSelection = null;
+      valueScopeState = { status: "loading", message: "선택한 지도를 불러오고 있습니다." };
+      renderValueScope();
       return;
     }
     const salesStage = event.target.closest("[data-sales-stage-filter]");
@@ -5100,6 +5178,9 @@
       salesProspectEditor("");
     }
     else if (action === "new-field-job") showToast("현장 업무 등록 화면은 연결 정보를 준비하고 있습니다. 현재 현장 업무 조회는 그대로 사용할 수 있습니다.");
+    else if (action === "valuescope-open-original") await api.openExternal(VALUE_SCOPE_URLS[valueScopeTab]);
+    else if (action === "valuescope-register-prospect") showToast("선택한 대상을 CRM 영업 관리에 연결하고 있습니다.");
+    else if (action === "valuescope-create-field-job") showToast("선택한 대상의 현장 업무 등록을 준비하고 있습니다.");
     else if (action === "new-work-record") workRecordEditor("");
     else if (action === "new-building-schedule") buildingScheduleEditor("", actionControl.dataset.scheduleDate || workCalendarDate);
     else if (action === "reconnect-field") {
@@ -6502,6 +6583,20 @@ document.addEventListener("keydown", event => {
       renderFieldOperations();
     }
   });
+  api.onValueScopeEvent(envelope => {
+    if (!envelope || currentView !== "valueScope") return;
+    if (envelope.type === "ready" && envelope.page === valueScopeTab) {
+      valueScopeState = { status: "ready", message: "ValueScope 지도가 연결되었습니다." };
+      main.querySelector(".valuescope-loading")?.setAttribute("hidden", "");
+    } else if (envelope.type === "selection" && envelope.record && envelope.record.sourcePage === valueScopeTab) {
+      valueScopeSelection = envelope.record;
+      renderValueScope();
+    }
+  });
+  api.onValueScopeState(state => {
+    valueScopeState = Object.assign({}, valueScopeState, state || {});
+    if (currentView === "valueScope" && valueScopeState.status === "error") renderValueScope();
+  });
   api.onUpdateState(state => {
     const previous = currentUpdate.status;
     updateUpdaterUI(state);
@@ -6604,7 +6699,7 @@ document.addEventListener("keydown", event => {
       if (query.get("demo") === "1" && !store.customers.length) store = demoStore();
       synchronizedStore = cloneStore(store);
       store.partnerVendors = Array.isArray(store.partnerVendors) ? store.partnerVendors : [];
-      if (["dashboard", "cases", "payments", "customers", "buildings", "vacancies", "buildingCalendar", "workManagement", "fieldOperations", "consultations", "pipeline", "contracts", "relationships", "partnerVendors", "partnerQuotes", "tasks", "security", "settings"].includes(query.get("view"))) currentView = query.get("view");
+      if (["dashboard", "cases", "payments", "customers", "buildings", "vacancies", "buildingCalendar", "workManagement", "fieldOperations", "valueScope", "consultations", "pipeline", "contracts", "relationships", "partnerVendors", "partnerQuotes", "tasks", "security", "settings"].includes(query.get("view"))) currentView = query.get("view");
       await refreshOperations({ silent: true, render: false });
       document.getElementById("lastSaved").textContent = store.updatedAt ? `최신 반영 ${dateText(store.updatedAt)}` : "새 데이터";
       render();
