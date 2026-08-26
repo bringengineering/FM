@@ -128,6 +128,18 @@ describe("24H turnover care landing", () => {
       css,
       ".landing-turnover-care .turnover-intro-actions a",
     );
+    const introCopy = rule(
+      css,
+      ".landing-turnover-care .turnover-intro-copy",
+    );
+    const secondaryAction = rule(
+      css,
+      ".landing-turnover-care .turnover-secondary-action",
+    );
+    const introMeta = rule(
+      css,
+      ".landing-turnover-care .turnover-intro-meta",
+    );
     const processRule = rule(
       css,
       ".landing-turnover-care .turnover-intro-process ol",
@@ -155,13 +167,30 @@ describe("24H turnover care landing", () => {
     });
     expect(header).toMatch(/min-height:\s*64px/i);
     expect(navCta).toMatch(/border-radius:\s*12px/i);
+    expect(navCta).toMatch(/min-height:\s*52px/i);
+    expect(navCta).toMatch(/padding-inline:\s*22px/i);
     expect(hero).toMatch(/border-radius:\s*40px/i);
     expect(overlay).toMatch(/background:\s*linear-gradient\(\s*90deg,/i);
+    expect(introCopy).toMatch(/justify-content:\s*center/i);
     expect(heroActions).toMatch(/min-height:\s*52px/i);
     expect(heroActions).toMatch(/border-radius:\s*12px/i);
+    expect(heroActions).toMatch(/padding-inline:\s*22px/i);
+    expect(secondaryAction).toMatch(
+      /border-color:\s*rgba\(255,\s*255,\s*255,\s*0\.44\)/i,
+    );
+    expect(introMeta).toMatch(/gap:\s*24px/i);
+    expect(introMeta).toMatch(
+      /border-top:\s*1px\s+solid\s+rgba\(255,\s*255,\s*255,\s*0\.26\)/i,
+    );
     expect(processRule).toMatch(/grid-template-columns:\s*repeat\(4,\s*minmax\(0,\s*1fr\)\)/i);
     expect(processRule).toMatch(/border-block:\s*1px\s+solid\s+var\(--line\)/i);
     expect(processItem).toMatch(/border-right:\s*1px\s+solid\s+var\(--line\)/i);
+    expect(
+      rule(css, ".landing-turnover-care .turnover-intro-process h3"),
+    ).toMatch(/letter-spacing:\s*-0\.04em/i);
+    expect(
+      rule(css, ".landing-turnover-care .turnover-intro-process li p"),
+    ).toMatch(/line-height:\s*1\.6/i);
     expect(
       rule(css, ".landing-turnover-care .turnover-intro-process li:last-child"),
     ).toMatch(/border-right:\s*0/i);
@@ -171,6 +200,12 @@ describe("24H turnover care landing", () => {
     expect(rule(mobileCss, ".landing-turnover-care")).toMatch(
       /--landing-gutter:\s*14px/i,
     );
+    const mobileNavCta = rule(
+      mobileCss,
+      ".landing-turnover-care .turnover-intro-nav .turnover-nav-cta",
+    );
+    expect(mobileNavCta).toMatch(/min-height:\s*42px/i);
+    expect(mobileNavCta).toMatch(/padding-inline:\s*16px/i);
     expect(
       rule(mobileCss, ".landing-turnover-care .turnover-intro-hero"),
     ).toMatch(/border-radius:\s*28px/i);
@@ -187,8 +222,17 @@ describe("24H turnover care landing", () => {
       rule(mobileCss, ".landing-turnover-care .turnover-intro-copy h1"),
     ).toMatch(/font-size:\s*39px/i);
     expect(
+      rule(mobileCss, ".landing-turnover-care .turnover-intro-meta"),
+    ).toMatch(/padding-top:\s*22px/i);
+    expect(
+      rule(mobileCss, ".landing-turnover-care .turnover-intro-process"),
+    ).toMatch(/padding:\s*38px\s+0\s+66px/i);
+    expect(
       rule(mobileCss, ".landing-turnover-care .turnover-intro-process ol"),
     ).toMatch(/grid-template-columns:\s*repeat\(2,\s*minmax\(0,\s*1fr\)\)/i);
+    expect(
+      rule(mobileCss, ".landing-turnover-care .turnover-intro-process li"),
+    ).toMatch(/padding:\s*22px\s+16px/i);
     expect(
       rule(mobileCss, ".landing-turnover-care .turnover-mobile-sticky"),
     ).toMatch(/grid-template-columns:\s*1fr/i);
