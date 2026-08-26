@@ -2323,6 +2323,21 @@ async function createWindow() {
           && description.includes('비밀번호');
         return { pass, email: input.value, readOnly: input.readOnly, disabled: input.disabled, passwordDisabled: password.disabled, description };
       })()`, true);
+    } else if (process.env.BRING_CRM_SCREENSHOT_ACTION === "field-job-form") {
+      actionResult = await mainWindow.webContents.executeJavaScript(`(async () => {
+        const wait = ms => new Promise(resolve => setTimeout(resolve, ms));
+        document.querySelector('[data-view="fieldOperations"]')?.click();
+        await wait(120);
+        document.querySelector('[data-action="new-field-job"]')?.click();
+        await wait(80);
+        const form = document.getElementById('fieldJobForm');
+        return {
+          pass: Boolean(form && document.getElementById('modal')?.classList.contains('open')),
+          sourceCount: form?.elements.source?.options?.length || 0,
+          assigneeCount: form?.elements.assignedOperatorId?.options?.length || 0,
+          view: window.__crmTest?.snapshot().view,
+        };
+      })()`, true);
     } else if (process.env.BRING_CRM_SCREENSHOT_ACTION === "new-customer") {
       actionResult = await mainWindow.webContents.executeJavaScript('document.querySelector("[data-action=\\"new-customer\\"]")?.click(); window.__crmTest?.snapshot()', true);
     } else if (process.env.BRING_CRM_SCREENSHOT_ACTION === "edit-first-customer") {

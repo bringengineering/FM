@@ -85,6 +85,7 @@ test("operator selection is profile-backed and canonical writes use the selected
 
 test("new FIELD work opens a complete CRM composer and sends a validated create request", async () => {
   const app = await source("app.js");
+  const main = await source("main.js");
 
   assert.match(app, /＋ 현장 업무/);
   assert.match(app, /id="fieldJobForm"/);
@@ -92,6 +93,7 @@ test("new FIELD work opens a complete CRM composer and sends a validated create 
   assert.match(app, /action === "new-field-job"[\s\S]*?fieldJobEditor\(\)/);
   assert.doesNotMatch(app, /sendFieldCommand\("createJob"/);
   assert.doesNotMatch(app, /sendFieldCommand\("switchOperator"/);
+  assert.match(main, /BRING_CRM_SCREENSHOT_ACTION === "field-job-form"/);
 });
 
 test("CRM and FIELD keep separate search values when switching views", async () => {
