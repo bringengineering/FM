@@ -1853,6 +1853,7 @@
   --line: #e5e8eb;
   --max: 1240px;
   --landing-gutter: 24px;
+  --brand-gradient: linear-gradient(145deg, #1768ff 0%, #083f91 100%);
 }
 
 .landing-turnover-care .turnover-intro-header {

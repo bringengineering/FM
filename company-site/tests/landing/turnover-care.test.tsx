@@ -218,6 +218,9 @@ describe("24H turnover care landing", () => {
     ].forEach(([name, value]) => {
       expect(tokens).toMatch(new RegExp(`--${name}:\\s*${value}`, "i"));
     });
+    expect(tokens).toMatch(
+      /--brand-gradient:\s*linear-gradient\(145deg,\s*#1768ff\s+0%,\s*#083f91\s+100%\)/i,
+    );
     expect(header).toMatch(/min-height:\s*64px/i);
     [header, hero, processContainer].forEach((layoutRule) => {
       expect(layoutRule).toMatch(/width:\s*min\(/i);
