@@ -114,6 +114,38 @@
     return text(value).normalize("NFKC").toLowerCase().replace(/강원도/g, "강원").replace(/[\p{P}\p{S}\s]+/gu, "");
   }
 
+  const VALUE_SCOPE_PAGES = new Set(["wonju", "sales", "valueup"]);
+  const VALUE_SCOPE_EXTERNAL_ID = /^[A-Za-z0-9가-힣][A-Za-z0-9가-힣._:-]{0,127}$/;
+
+  function normalizeSourceRef(value) {
+    if (!value || typeof value !== "object" || Array.isArray(value) || Object.getPrototypeOf(value) !== Object.prototype) return null;
+    const keys = Object.keys(value);
+    if (keys.length !== 3 || !keys.every(key => ["provider", "page", "externalId"].includes(key))) return null;
+    const provider = text(value.provider);
+    const page = text(value.page);
+    const externalId = text(value.externalId);
+    if (provider !== "valuescope" || !VALUE_SCOPE_PAGES.has(page) || !VALUE_SCOPE_EXTERNAL_ID.test(externalId)) return null;
+    return { provider, page, externalId };
+  }
+
+  function findProspectBySourceRef(records, sourceRef) {
+    const expected = normalizeSourceRef(sourceRef);
+    if (!expected) return null;
+    return (Array.isArray(records) ? records : []).find(item => {
+      if (!item || item.archivedAt) return false;
+      const current = normalizeSourceRef(item.sourceRef);
+      return current && current.provider === expected.provider && current.page === expected.page && current.externalId === expected.externalId;
+    }) || null;
+  }
+
+  function suggestUniqueBuildingForMapRecord(record, buildings) {
+    const key = normalizeAddress(record && record.address);
+    if (!key) return { building: null, ambiguous: false };
+    const matches = (Array.isArray(buildings) ? buildings : []).filter(item => item && !item.archivedAt && normalizeAddress(item.address) === key);
+    if (matches.length === 1) return { building: matches[0], ambiguous: false };
+    return { building: null, ambiguous: matches.length > 1 };
+  }
+
   function normalizeBuildingName(value) {
     return text(value).normalize("NFKC").toLowerCase().replace(/[\p{P}\p{S}\s]+/gu, "");
   }
@@ -181,6 +213,7 @@
     record.nextAction = text(record.nextAction);
     record.nextActionAt = optionalIso(record.nextActionAt);
     record.crmBuildingId = text(record.crmBuildingId);
+    record.sourceRef = normalizeSourceRef(record.sourceRef);
     return record;
   }
 
@@ -827,6 +860,9 @@
     calculateKpis,
     canTransitionOpportunityStage,
     normalizeAddress,
+    normalizeSourceRef,
+    findProspectBySourceRef,
+    suggestUniqueBuildingForMapRecord,
     normalizeBuildingName,
     matchProspectToCrmBuilding,
     createProspect: createSalesProspect,

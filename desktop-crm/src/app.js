@@ -1393,6 +1393,79 @@
     }
   }
 
+  async function registerValueScopeProspect() {
+    if (!canWriteCRM()) {
+      showToast("조회 전용 계정은 영업 대상을 등록할 수 없습니다.", "error");
+      return null;
+    }
+    if (!valueScopeSelection || valueScopeSelection.sourcePage === "system") {
+      showToast("지도에서 등록할 대상을 먼저 선택해 주세요.", "error");
+      return null;
+    }
+    const valueScopeSourceRef = Sales.normalizeSourceRef({
+      provider: "valuescope",
+      page: valueScopeSelection.sourcePage,
+      externalId: valueScopeSelection.externalId,
+    });
+    if (!valueScopeSourceRef) {
+      showToast("선택한 지도 대상의 출처를 확인할 수 없습니다.", "error");
+      return null;
+    }
+    const existing = Sales.findProspectBySourceRef(store.salesProspects, valueScopeSourceRef);
+    if (existing) {
+      selectedSalesProspectId = existing.id;
+      valueScopeOpenGeneration += 1;
+      await api.hideValueScope();
+      currentView = "pipeline";
+      render();
+      renderSalesProspectDrawer(existing.id);
+      showToast("이미 등록된 영업 대상을 열었습니다.", "success");
+      return existing;
+    }
+    const suggestion = Sales.suggestUniqueBuildingForMapRecord(valueScopeSelection, store.buildings);
+    const actor = salesActor();
+    const prospect = Sales.createSalesProspect({
+      name: valueScopeSelection.name,
+      address: valueScopeSelection.address,
+      region: "원주",
+      buildingType: valueScopeSelection.sourcePage === "sales" ? "broker_office" : "one_room_multi_family",
+      source: "other",
+      sourceRef: valueScopeSourceRef,
+      owner: salesActorName(),
+      priority: "normal",
+      nextAction: "첫 연락",
+      crmBuildingId: "",
+    }, actor);
+    Sales.assertProspect(prospect);
+    store.salesProspects.push(prospect);
+    const createdEvent = Sales.createSalesEvent({
+      prospectId: prospect.id,
+      type: "prospect_created",
+      occurredAt: prospect.createdAt,
+      evidenceType: "public_map",
+      evidenceUrl: VALUE_SCOPE_URLS[valueScopeSelection.sourcePage],
+      evidenceNote: `ValueScope 지도에서 선택 · ${valueScopeSelection.summary || valueScopeSelection.category || "공개 지도 정보"}`,
+      owner: salesActorName(),
+    }, salesRelationContext(actor));
+    store.salesEvents.push(createdEvent);
+    prospect.stage = salesStageFromEvents(prospect.id);
+    logAudit({ category: "등록", targetType: "영업 대상 건물", targetId: prospect.id, targetLabel: prospect.name || prospect.address, action: "ValueScope 지도 대상 등록", reason: "공개 지도 후보를 CRM 영업 원장에 연결" });
+    scheduleSave();
+    selectedSalesProspectId = prospect.id;
+    valueScopeOpenGeneration += 1;
+    await api.hideValueScope();
+    currentView = "pipeline";
+    render();
+    renderSalesProspectDrawer(prospect.id);
+    const hint = suggestion.ambiguous
+      ? " 같은 주소의 CRM 건물이 여러 곳이라 자동 연결하지 않았습니다."
+      : suggestion.building
+        ? ` 기존 CRM 건물 ‘${suggestion.building.name || suggestion.building.address}’이 후보입니다. 확인 후 연결해 주세요.`
+        : "";
+    showToast(`영업 대상을 등록했습니다.${hint}`, "success");
+    return prospect;
+  }
+
   async function sendFieldNavigation() {
     return api.fieldRequest({
       protocolVersion: 2,
@@ -5179,7 +5252,7 @@
     }
     else if (action === "new-field-job") showToast("현장 업무 등록 화면은 연결 정보를 준비하고 있습니다. 현재 현장 업무 조회는 그대로 사용할 수 있습니다.");
     else if (action === "valuescope-open-original") await api.openExternal(VALUE_SCOPE_URLS[valueScopeTab]);
-    else if (action === "valuescope-register-prospect") showToast("선택한 대상을 CRM 영업 관리에 연결하고 있습니다.");
+    else if (action === "valuescope-register-prospect") await registerValueScopeProspect();
     else if (action === "valuescope-create-field-job") showToast("선택한 대상의 현장 업무 등록을 준비하고 있습니다.");
     else if (action === "new-work-record") workRecordEditor("");
     else if (action === "new-building-schedule") buildingScheduleEditor("", actionControl.dataset.scheduleDate || workCalendarDate);
