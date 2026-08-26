@@ -83,12 +83,13 @@ test("operator selection is profile-backed and canonical writes use the selected
   assert.doesNotMatch(main, /role:\s*String\(profile/);
 });
 
-test("new FIELD work stays explicit about preparation and never sends an incomplete create mutation", async () => {
+test("new FIELD work opens a complete CRM composer and sends a validated create request", async () => {
   const app = await source("app.js");
 
-  assert.match(app, /＋ 현장 업무 \(준비 중\)/);
-  assert.match(app, /action === "new-field-job"[\s\S]*?현장 업무 등록 화면은 연결 정보를 준비하고 있습니다/);
-  assert.doesNotMatch(app, /sendFieldCommand\("openCreateJob"/);
+  assert.match(app, /＋ 현장 업무/);
+  assert.match(app, /id="fieldJobForm"/);
+  assert.match(app, /sendFieldCommand\("openCreateJob", payload\)/);
+  assert.match(app, /action === "new-field-job"[\s\S]*?fieldJobEditor\(\)/);
   assert.doesNotMatch(app, /sendFieldCommand\("createJob"/);
   assert.doesNotMatch(app, /sendFieldCommand\("switchOperator"/);
 });

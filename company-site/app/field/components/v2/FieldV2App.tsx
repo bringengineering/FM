@@ -267,7 +267,13 @@ function FieldV2Workspace({
           if (session.role === "viewer") {
             throw Object.assign(new Error("field_viewer_read_only"), { code: "FIELD_VIEWER_READ_ONLY" });
           }
-          throw Object.assign(new Error("field_create_unavailable"), { code: "FIELD_CREATE_UNAVAILABLE" });
+          if (!api || appCheckStatus !== "ready") {
+            throw Object.assign(new Error("field_session_unavailable"), { code: "FIELD_SESSION_UNAVAILABLE" });
+          }
+          return api.runCommand("createJob", args, {
+            requestId: context.requestId,
+            signal: context.signal,
+          });
         }
         if (command === "reviewJob") {
           throw Object.assign(new Error("field_review_unavailable"), { code: "FIELD_REVIEW_UNAVAILABLE" });

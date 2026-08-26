@@ -71,6 +71,10 @@ const FIELD_ROUTE_FILTER = new Set([
   "queued", "uploading", "partial_failure", "failed", "synced",
 ]);
 const FIELD_PRIORITIES = new Set(["low", "normal", "high", "urgent"]);
+const FIELD_JOB_TYPES = new Set([
+  "vacancy_capture", "move_out_check", "cleaning_before_after",
+  "maintenance_inspection", "complaint_check", "repair_before_after",
+]);
 const FIELD_TRANSITIONS = new Set([
   "requested", "assigned", "accepted", "in_progress", "evidence_ready", "review_pending",
   "changes_requested", "approved", "completed", "cancelled",
@@ -92,8 +96,34 @@ function boundedReason(value: unknown): boolean {
     && new TextEncoder().encode(value).byteLength <= 2_000;
 }
 
+function validFieldIdList(value: unknown): boolean {
+  return Array.isArray(value)
+    && value.length > 0
+    && value.length <= 200
+    && value.every(isSafeFieldId)
+    && new Set(value).size === value.length;
+}
+
+function validCreateJobArgs(args: Record<string, unknown>): boolean {
+  if (!exactKeys(args, ["jobType", "dueDate", "priority", "assignedOperatorId"], [
+    "crmBuildingId", "crmSalesProspectId", "crmBuildingUnitIds", "crmSalesUnitIds",
+    "crmWorkflowCaseId", "crmTaskId",
+  ])) return false;
+  const hasBuilding = Object.hasOwn(args, "crmBuildingId");
+  const hasProspect = Object.hasOwn(args, "crmSalesProspectId");
+  if (hasBuilding === hasProspect) return false;
+  if (!FIELD_JOB_TYPES.has(String(args.jobType)) || !calendarDate(args.dueDate) || !FIELD_PRIORITIES.has(String(args.priority))) return false;
+  if (args.assignedOperatorId !== null && !isSafeFieldId(args.assignedOperatorId)) return false;
+  if (hasBuilding && !isSafeFieldId(args.crmBuildingId)) return false;
+  if (hasProspect && !isSafeFieldId(args.crmSalesProspectId)) return false;
+  if (args.crmBuildingUnitIds !== undefined && (!hasBuilding || !validFieldIdList(args.crmBuildingUnitIds))) return false;
+  if (args.crmSalesUnitIds !== undefined && (!hasProspect || !validFieldIdList(args.crmSalesUnitIds))) return false;
+  if (args.crmWorkflowCaseId !== undefined && !isSafeFieldId(args.crmWorkflowCaseId)) return false;
+  return args.crmTaskId === undefined || isSafeFieldId(args.crmTaskId);
+}
+
 function validCommandArgs(command: FieldBridgeCommand, args: Record<string, unknown>): boolean {
-  if (command === "openCreateJob") return exactKeys(args, []);
+  if (command === "openCreateJob") return validCreateJobArgs(args);
   if (command === "claimJob") return exactKeys(args, ["jobId"]) && isSafeFieldId(args.jobId);
   if (command === "assignJob") {
     return exactKeys(args, ["jobId", "assignedOperatorId", "reason"])

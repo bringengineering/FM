@@ -297,9 +297,35 @@ function validCommandReason(value, required = false) {
   return isBoundedString(value, 2_000, false) && value.trim().length > 0;
 }
 
+function validFieldIdList(value) {
+  return Array.isArray(value)
+    && value.length > 0
+    && value.length <= 200
+    && value.every(isSafeId)
+    && new Set(value).size === value.length;
+}
+
+function validCreateFieldJobArgs(args) {
+  if (!hasExactKeys(args, ["jobType", "dueDate", "priority", "assignedOperatorId"], [
+    "crmBuildingId", "crmSalesProspectId", "crmBuildingUnitIds", "crmSalesUnitIds",
+    "crmWorkflowCaseId", "crmTaskId",
+  ])) return false;
+  const hasBuilding = Object.hasOwn(args, "crmBuildingId");
+  const hasProspect = Object.hasOwn(args, "crmSalesProspectId");
+  if (hasBuilding === hasProspect) return false;
+  if (!FIELD_JOB_TYPES.has(args.jobType) || !isFieldDate(args.dueDate) || !FIELD_PRIORITY.has(args.priority)) return false;
+  if (args.assignedOperatorId !== null && !isSafeId(args.assignedOperatorId)) return false;
+  if (hasBuilding && !isSafeId(args.crmBuildingId)) return false;
+  if (hasProspect && !isSafeId(args.crmSalesProspectId)) return false;
+  if (args.crmBuildingUnitIds !== undefined && (!hasBuilding || !validFieldIdList(args.crmBuildingUnitIds))) return false;
+  if (args.crmSalesUnitIds !== undefined && (!hasProspect || !validFieldIdList(args.crmSalesUnitIds))) return false;
+  if (args.crmWorkflowCaseId !== undefined && !isSafeId(args.crmWorkflowCaseId)) return false;
+  return args.crmTaskId === undefined || isSafeId(args.crmTaskId);
+}
+
 function validFieldCommandArgs(command, args) {
   if (!isPlainRecord(args)) return false;
-  if (command === "openCreateJob") return hasExactKeys(args, []);
+  if (command === "openCreateJob") return validCreateFieldJobArgs(args);
   if (command === "claimJob") {
     return hasExactKeys(args, ["jobId"])
       && isSafeId(args.jobId);

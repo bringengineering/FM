@@ -135,7 +135,7 @@ test("bridge rejects prototype keys, secret-shaped fields, oversized UTF-8, and 
   assert.equal(validateFieldMessage(external, { direction: "fieldToCrm", sender: fieldSender() }).ok, false);
 });
 
-test("create opens only the local composer and mutation commands use exact argument schemas", () => {
+test("create accepts only the complete CRM composer payload and mutation commands use exact argument schemas", () => {
   const context = { direction: "crmToField", sender: crmSender() };
   const command = (name, args, suffix) => validateFieldMessage(createFieldEnvelope("field.command", {
     command: name,
@@ -143,8 +143,30 @@ test("create opens only the local composer and mutation commands use exact argum
     args,
   }, requestId(suffix)), context).ok;
 
-  assert.equal(command("openCreateJob", {}, "0015"), true);
-  assert.equal(command("openCreateJob", { route: "/field?embedded=crm" }, "0016"), false);
+  assert.equal(command("openCreateJob", {
+    jobType: "maintenance_inspection",
+    crmBuildingId: "building_1",
+    dueDate: "2026-08-27",
+    priority: "normal",
+    assignedOperatorId: "operator_kim",
+  }, "0015"), true);
+  assert.equal(command("openCreateJob", {}, "0016"), false);
+  assert.equal(command("openCreateJob", {
+    jobType: "maintenance_inspection",
+    crmBuildingId: "building_1",
+    crmSalesProspectId: "prospect_1",
+    dueDate: "2026-08-27",
+    priority: "normal",
+    assignedOperatorId: null,
+  }, "0017"), false);
+  assert.equal(command("openCreateJob", {
+    jobType: "maintenance_inspection",
+    crmSalesProspectId: "prospect_1",
+    crmSalesUnitIds: ["sales_unit_1"],
+    dueDate: "2026-08-27",
+    priority: "high",
+    assignedOperatorId: null,
+  }, "0018"), true);
   assert.equal(command("createJob", { route: "/field?embedded=crm" }, "0017"), false);
   assert.equal(command("switchOperator", { nextOperatorId: "operator_hwang" }, "0018"), false);
   assert.equal(command("claimJob", { jobId: "job_1" }, "0019"), true);

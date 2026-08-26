@@ -8,6 +8,13 @@ import {
 } from "../../app/field/lib/v2/desktop-bridge.client";
 
 const REQUEST_ID = "123e4567-e89b-42d3-a456-426614174000";
+const CREATE_ARGS = Object.freeze({
+  jobType: "maintenance_inspection",
+  crmBuildingId: "building_1",
+  dueDate: "2026-08-27",
+  priority: "normal",
+  assignedOperatorId: "operator_kim",
+});
 
 describe("FIELD browser desktop bridge", () => {
   it("rejects the wrong origin, source, direction, secret keys, hashes, and oversized payloads", () => {
@@ -49,11 +56,11 @@ describe("FIELD browser desktop bridge", () => {
     ]) expect(normalizeFieldRoute(route), route).toBeNull();
   });
 
-  it("opens the create composer locally and rejects incomplete direct create commands", () => {
+  it("accepts a complete CRM create payload and rejects incomplete direct create commands", () => {
     expect(validateDesktopFieldEnvelope(createFieldBridgeEnvelope("field.command", {
       command: "openCreateJob",
       operatorId: "operator_kim",
-      args: {},
+      args: CREATE_ARGS,
     }, REQUEST_ID), "crmToField").ok).toBe(true);
     expect(validateDesktopFieldEnvelope(createFieldBridgeEnvelope("field.command", {
       command: "createJob",
@@ -89,7 +96,7 @@ describe("FIELD browser desktop bridge", () => {
 
   it("validates exact least-privilege arguments for every bridge command", () => {
     const valid: Array<[string, Record<string, unknown>]> = [
-      ["openCreateJob", {}],
+      ["openCreateJob", CREATE_ARGS],
       ["claimJob", { jobId: "job_1" }],
       ["assignJob", { jobId: "job_1", assignedOperatorId: "operator_hwang", reason: "관리자 재배정" }],
       ["changeVisit", { visitId: "visit_1", reason: "방문일 변경", dueDate: "2026-08-15", priority: "high" }],
@@ -159,7 +166,7 @@ describe("FIELD browser desktop bridge", () => {
     const envelope = createFieldBridgeEnvelope("field.command", {
       command: "openCreateJob",
       operatorId: "operator_kim",
-      args: {},
+      args: CREATE_ARGS,
     }, REQUEST_ID);
     receive?.(new MessageEvent("message", {
       data: envelope,
@@ -169,7 +176,7 @@ describe("FIELD browser desktop bridge", () => {
     await vi.waitFor(() => expect(command).toHaveBeenCalledOnce());
     expect(command).toHaveBeenCalledWith(
       "openCreateJob",
-      {},
+      CREATE_ARGS,
       expect.objectContaining({
         operatorId: "operator_kim",
         requestId: REQUEST_ID,
@@ -470,7 +477,7 @@ describe("FIELD browser desktop bridge", () => {
     bridge.start("session");
     receive?.(new MessageEvent("message", {
       data: createFieldBridgeEnvelope("field.command", {
-        command: "openCreateJob", operatorId: "operator_kim", args: {},
+        command: "openCreateJob", operatorId: "operator_kim", args: CREATE_ARGS,
       }, REQUEST_ID),
       origin: "https://bring-fm.web.app",
       source: window,

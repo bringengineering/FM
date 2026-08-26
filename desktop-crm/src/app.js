@@ -1204,7 +1204,7 @@
       primaryActionButton.textContent = "";
     } else if (fieldView) {
       primaryActionButton.dataset.action = "new-field-job";
-      primaryActionButton.textContent = "＋ 현장 업무 (준비 중)";
+      primaryActionButton.textContent = "＋ 현장 업무";
     } else if (currentView === "workManagement") {
       primaryActionButton.hidden = !canWriteCRM();
       primaryActionButton.dataset.action = "new-work-record";
@@ -1339,6 +1339,24 @@
       return null;
     }
     return response;
+  }
+
+  function fieldJobEditor(prefill = {}) {
+    if (!canWriteCRM()) return showToast("조회 전용 계정은 현장 업무를 등록할 수 없습니다.", "error");
+    const activeBuildings = (store.buildings || []).filter(item => item && !item.archivedAt);
+    const activeProspects = (store.salesProspects || []).filter(item => item && !item.archivedAt);
+    const sources = [
+      ...activeBuildings.map(item => ({ id: `building:${item.id}`, label: `[관리 건물] ${item.name || item.address || item.id}` })),
+      ...activeProspects.map(item => ({ id: `prospect:${item.id}`, label: `[영업 대상] ${item.name || item.address || item.id}` })),
+    ];
+    if (!sources.length) return showToast("먼저 관리 건물이나 영업 대상을 등록해 주세요.", "error");
+    const preferredSource = prefill.crmBuildingId ? `building:${prefill.crmBuildingId}`
+      : prefill.crmSalesProspectId ? `prospect:${prefill.crmSalesProspectId}` : sources[0].id;
+    const selectedSource = sources.some(item => item.id === preferredSource) ? preferredSource : sources[0].id;
+    const profiles = fieldTeamProfiles.filter(item => item && item.active !== false);
+    const selectedAssignee = prefill.assignedOperatorId === null ? "" : String(prefill.assignedOperatorId || selectedFieldOperatorId || "");
+    modalContent.innerHTML = `<div class="modal-head"><div><h2>현장 업무 등록</h2><p>CRM의 건물 또는 영업 대상과 연결해 현장 작업을 배정합니다.</p></div><button class="close-button" data-action="close-modal">×</button></div><form id="fieldJobForm" class="modal-body"><div class="info-box">등록한 업무는 회사 서버에 저장되고 BRING FIELD의 담당자 작업 목록에 바로 표시됩니다.</div><div class="form-grid" style="margin-top:14px">${selectField("연결 대상 *", "source", sources.map(item => item.id), selectedSource, id => sources.find(item => item.id === id)?.label || id)}${selectField("작업 종류 *", "jobType", ["vacancy_capture", "move_out_check", "cleaning_before_after", "maintenance_inspection", "complaint_check", "repair_before_after"], prefill.jobType || "maintenance_inspection", value => ({ vacancy_capture: "공실 촬영", move_out_check: "퇴실 점검", cleaning_before_after: "청소 전·후", maintenance_inspection: "시설 점검", complaint_check: "민원 확인", repair_before_after: "수리 전·후" })[value] || value)}${field("작업 예정일 *", "dueDate", prefill.dueDate || todayKey(), "date")}${selectField("우선순위", "priority", ["normal", "high", "urgent", "low"], prefill.priority || "normal", value => ({ normal: "보통", high: "높음", urgent: "긴급", low: "낮음" })[value])}${selectField("담당자", "assignedOperatorId", ["", ...profiles.map(item => item.operatorId)], selectedAssignee, id => id ? (profiles.find(item => item.operatorId === id)?.displayName || id) : "미배정")}</div><div class="form-actions"><button type="button" class="secondary-button" data-action="close-modal">취소</button><button class="primary-button" type="submit">현장 업무 등록</button></div></form>`;
+    openModal();
   }
 
   const VALUE_SCOPE_URLS = Object.freeze({
@@ -5250,10 +5268,13 @@
       if (!canWriteCRM()) return showToast("조회 전용 계정은 영업 대상 건물을 등록할 수 없습니다.", "error");
       salesProspectEditor("");
     }
-    else if (action === "new-field-job") showToast("현장 업무 등록 화면은 연결 정보를 준비하고 있습니다. 현재 현장 업무 조회는 그대로 사용할 수 있습니다.");
+    else if (action === "new-field-job") fieldJobEditor();
     else if (action === "valuescope-open-original") await api.openExternal(VALUE_SCOPE_URLS[valueScopeTab]);
     else if (action === "valuescope-register-prospect") await registerValueScopeProspect();
-    else if (action === "valuescope-create-field-job") showToast("선택한 대상의 현장 업무 등록을 준비하고 있습니다.");
+    else if (action === "valuescope-create-field-job") {
+      const prospect = await registerValueScopeProspect();
+      if (prospect) fieldJobEditor({ crmSalesProspectId: prospect.id });
+    }
     else if (action === "new-work-record") workRecordEditor("");
     else if (action === "new-building-schedule") buildingScheduleEditor("", actionControl.dataset.scheduleDate || workCalendarDate);
     else if (action === "reconnect-field") {
@@ -5526,6 +5547,36 @@
     event.preventDefault();
     const form = event.target;
     if (!canWriteCRM() && !["emailLoginForm", "passwordChangeForm"].includes(form.id)) return showToast("조회 전용 계정은 내용을 변경할 수 없습니다.", "error");
+    if (form.id === "fieldJobForm") {
+      if (form.dataset.submitting === "true") return;
+      const raw = Object.fromEntries(new FormData(form).entries());
+      const [sourceType, sourceId] = String(raw.source || "").split(":", 2);
+      if (!sourceId || !["building", "prospect"].includes(sourceType)) return showToast("현장 업무 연결 대상을 선택해 주세요.", "error");
+      const payload = {
+        jobType: String(raw.jobType || ""),
+        dueDate: String(raw.dueDate || ""),
+        priority: String(raw.priority || "normal"),
+        assignedOperatorId: raw.assignedOperatorId ? String(raw.assignedOperatorId) : null,
+        ...(sourceType === "building" ? { crmBuildingId: sourceId } : { crmSalesProspectId: sourceId }),
+      };
+      form.dataset.submitting = "true";
+      const submit = form.querySelector('button[type="submit"]');
+      if (submit) submit.disabled = true;
+      try {
+        const response = await sendFieldCommand("openCreateJob", payload);
+        if (!response) return;
+        closeModal();
+        showToast("현장 업무를 등록했습니다.", "success");
+        if (currentView === "fieldOperations") {
+          const generation = ++fieldOpenGeneration;
+          await openFieldOperations(generation);
+        }
+      } finally {
+        form.dataset.submitting = "false";
+        if (submit) submit.disabled = false;
+      }
+      return;
+    }
     if (form.id === "buildingScheduleForm") {
       if (!canWriteCRM()) return showToast("조회 전용 계정은 일정을 저장할 수 없습니다.", "error");
       if (form.dataset.submitting === "true") return;
