@@ -68,6 +68,16 @@ describe("24H turnover care landing", () => {
     ).toHaveAttribute("href", "#turnover-standard");
     expect(container.querySelector("#turnover-standard")).toBeInTheDocument();
     expect(container.querySelectorAll("#turnover-standard")).toHaveLength(1);
+
+    const navigation = screen.getByRole("navigation", {
+      name: "24H 입·퇴실 관리 페이지 이동",
+    });
+    const navigationLinks = within(navigation).getAllByRole("link");
+    expect(
+      navigationLinks.filter((link) =>
+        link.classList.contains("turnover-nav-cta"),
+      ),
+    ).toEqual([screen.getByRole("link", { name: "30초 견적" })]);
   });
 
   it("qualifies the 24H operating standard without vacancy guarantees", () => {
@@ -106,50 +116,93 @@ describe("24H turnover care landing", () => {
       path.resolve(process.cwd(), "app/landing/landing.css"),
       "utf8",
     );
-    const rule = (source: string, selector: string) => {
-      const escaped = selector.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-      const match = source.match(new RegExp(`${escaped}\\s*\\{([^}]*)\\}`, "i"));
+    const collectedRules: Array<{
+      context: string;
+      selector: string;
+      declarations: string;
+    }> = [];
+    const collectRules = (source: string, context = "base") => {
+      let cursor = 0;
 
-      expect(match, `missing CSS rule: ${selector}`).not.toBeNull();
-      return match?.[1] ?? "";
+      while (cursor < source.length) {
+        const open = source.indexOf("{", cursor);
+        if (open < 0) break;
+        const prelude = source.slice(cursor, open).trim();
+        let depth = 1;
+        let close = open + 1;
+
+        while (close < source.length && depth > 0) {
+          if (source[close] === "{") depth += 1;
+          if (source[close] === "}") depth -= 1;
+          close += 1;
+        }
+
+        const body = source.slice(open + 1, close - 1);
+        if (prelude.startsWith("@media")) {
+          collectRules(body, prelude.replace(/\s+/g, " "));
+        } else if (prelude && !prelude.startsWith("@")) {
+          prelude.split(",").forEach((selector) => {
+            collectedRules.push({
+              context,
+              selector: selector.trim(),
+              declarations: body,
+            });
+          });
+        }
+        cursor = close;
+      }
     };
-    const mobileStart = css.lastIndexOf("@media (max-width: 760px)");
-    const mobileEnd = css.indexOf("@media (max-width: 680px)", mobileStart);
-    const mobileCss = css.slice(mobileStart, mobileEnd);
-    const tokens = rule(css, ".landing-turnover-care");
-    const header = rule(css, ".landing-turnover-care .turnover-intro-header");
+    collectRules(css.replace(/\/\*[\s\S]*?\*\//g, ""));
+    const rule = (selector: string, context = "base") => {
+      const matches = collectedRules.filter(
+        (item) => item.selector === selector && item.context === context,
+      );
+
+      expect(
+        matches,
+        `expected one CSS rule for ${selector} in ${context}`,
+      ).toHaveLength(1);
+      return matches[0]?.declarations ?? "";
+    };
+    const expectNoRule = (selector: string, context: string) => {
+      expect(
+        collectedRules.filter(
+          (item) => item.selector === selector && item.context === context,
+        ),
+        `unexpected CSS rule for ${selector} in ${context}`,
+      ).toHaveLength(0);
+    };
+    const tablet = "@media (max-width: 860px)";
+    const mobile = "@media (max-width: 760px)";
+    const tokens = rule(".landing-turnover-care");
+    const header = rule(".landing-turnover-care .turnover-intro-header");
     const navCta = rule(
-      css,
       ".landing-turnover-care .turnover-intro-nav .turnover-nav-cta",
     );
-    const hero = rule(css, ".landing-turnover-care .turnover-intro-hero");
-    const overlay = rule(css, ".landing-turnover-care .turnover-intro-overlay");
+    const hero = rule(".landing-turnover-care .turnover-intro-hero");
+    const overlay = rule(".landing-turnover-care .turnover-intro-overlay");
     const heroActions = rule(
-      css,
       ".landing-turnover-care .turnover-intro-actions a",
     );
     const introCopy = rule(
-      css,
       ".landing-turnover-care .turnover-intro-copy",
     );
     const secondaryAction = rule(
-      css,
       ".landing-turnover-care .turnover-secondary-action",
     );
     const introMeta = rule(
-      css,
       ".landing-turnover-care .turnover-intro-meta",
     );
     const processRule = rule(
-      css,
       ".landing-turnover-care .turnover-intro-process ol",
     );
+    const processContainer = rule(
+      ".landing-turnover-care .turnover-intro-process",
+    );
     const processItem = rule(
-      css,
       ".landing-turnover-care .turnover-intro-process li",
     );
     const standardStatement = rule(
-      css,
       ".landing-turnover-care .turnover-standard-statement",
     );
 
@@ -166,6 +219,13 @@ describe("24H turnover care landing", () => {
       expect(tokens).toMatch(new RegExp(`--${name}:\\s*${value}`, "i"));
     });
     expect(header).toMatch(/min-height:\s*64px/i);
+    [header, hero, processContainer].forEach((layoutRule) => {
+      expect(layoutRule).toMatch(/width:\s*min\(/i);
+      expect(layoutRule).toMatch(
+        /calc\(100%\s*-\s*\(2\s*\*\s*var\(--landing-gutter\)\)\)/i,
+      );
+      expect(layoutRule).toMatch(/var\(--max\)/i);
+    });
     expect(navCta).toMatch(/border-radius:\s*12px/i);
     expect(navCta).toMatch(/min-height:\s*52px/i);
     expect(navCta).toMatch(/padding-inline:\s*22px/i);
@@ -186,59 +246,75 @@ describe("24H turnover care landing", () => {
     expect(processRule).toMatch(/border-block:\s*1px\s+solid\s+var\(--line\)/i);
     expect(processItem).toMatch(/border-right:\s*1px\s+solid\s+var\(--line\)/i);
     expect(
-      rule(css, ".landing-turnover-care .turnover-intro-process h3"),
+      rule(".landing-turnover-care .turnover-intro-process h3"),
     ).toMatch(/letter-spacing:\s*-0\.04em/i);
     expect(
-      rule(css, ".landing-turnover-care .turnover-intro-process li p"),
+      rule(".landing-turnover-care .turnover-intro-process li p"),
     ).toMatch(/line-height:\s*1\.6/i);
     expect(
-      rule(css, ".landing-turnover-care .turnover-intro-process li:last-child"),
+      rule(".landing-turnover-care .turnover-intro-process li:last-child"),
     ).toMatch(/border-right:\s*0/i);
     expect(standardStatement).not.toMatch(/background:\s*rgba\([^)]*255/i);
     expect(standardStatement).not.toMatch(/border-radius:/i);
 
-    expect(rule(mobileCss, ".landing-turnover-care")).toMatch(
+    expect(rule(".landing-turnover-care", mobile)).toMatch(
       /--landing-gutter:\s*14px/i,
     );
     const mobileNavCta = rule(
-      mobileCss,
       ".landing-turnover-care .turnover-intro-nav .turnover-nav-cta",
+      mobile,
     );
     expect(mobileNavCta).toMatch(/min-height:\s*42px/i);
     expect(mobileNavCta).toMatch(/padding-inline:\s*16px/i);
     expect(
-      rule(mobileCss, ".landing-turnover-care .turnover-intro-hero"),
+      rule(".landing-turnover-care .turnover-intro-hero", mobile),
     ).toMatch(/border-radius:\s*28px/i);
     const mobileHeroImage = rule(
-      mobileCss,
       ".landing-turnover-care .turnover-intro-hero > img",
+      mobile,
     );
     expect(mobileHeroImage).toMatch(/height:\s*48%/i);
     expect(mobileHeroImage).toMatch(/object-position:\s*center\s*;/i);
     expect(
-      rule(mobileCss, ".landing-turnover-care .turnover-intro-overlay"),
+      rule(".landing-turnover-care .turnover-intro-overlay", mobile),
     ).toMatch(/background:\s*linear-gradient\(\s*180deg,/i);
     expect(
-      rule(mobileCss, ".landing-turnover-care .turnover-intro-copy h1"),
+      rule(".landing-turnover-care .turnover-intro-copy h1", mobile),
     ).toMatch(/font-size:\s*39px/i);
     expect(
-      rule(mobileCss, ".landing-turnover-care .turnover-intro-meta"),
+      rule(".landing-turnover-care .turnover-intro-meta", mobile),
     ).toMatch(/padding-top:\s*22px/i);
     expect(
-      rule(mobileCss, ".landing-turnover-care .turnover-intro-process"),
+      rule(".landing-turnover-care .turnover-intro-process", mobile),
     ).toMatch(/padding:\s*38px\s+0\s+66px/i);
     expect(
-      rule(mobileCss, ".landing-turnover-care .turnover-intro-process ol"),
+      rule(".landing-turnover-care .turnover-intro-process ol", mobile),
     ).toMatch(/grid-template-columns:\s*repeat\(2,\s*minmax\(0,\s*1fr\)\)/i);
     expect(
-      rule(mobileCss, ".landing-turnover-care .turnover-intro-process li"),
+      rule(".landing-turnover-care .turnover-intro-process li", mobile),
     ).toMatch(/padding:\s*22px\s+16px/i);
     expect(
-      rule(mobileCss, ".landing-turnover-care .turnover-mobile-sticky"),
+      rule(".landing-turnover-care .turnover-mobile-sticky", mobile),
     ).toMatch(/grid-template-columns:\s*1fr/i);
     expect(
-      rule(mobileCss, ".landing-turnover-care .turnover-mobile-sticky a"),
+      rule(".landing-turnover-care .turnover-mobile-sticky a", mobile),
     ).toMatch(/border-radius:\s*12px/i);
+    expectNoRule(
+      ".landing-turnover-care .turnover-intro-header",
+      mobile,
+    );
+    expect(
+      rule(
+        ".landing-turnover-care .turnover-intro-header .brand-engineering",
+        tablet,
+      ),
+    ).toMatch(/display:\s*none/i);
+    expect(
+      rule(
+        ".landing-turnover-care .turnover-intro-nav > a:not(.turnover-nav-cta)",
+        tablet,
+      ),
+    ).toMatch(/display:\s*none/i);
     expect(css).toMatch(/\.landing-page\s+:where\([^}]*\):focus-visible\s*{/i);
     expect(css).toMatch(/@media\s*\(prefers-reduced-motion:\s*reduce\)\s*{/i);
   });
