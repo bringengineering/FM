@@ -1,5 +1,5 @@
 import "@testing-library/jest-dom/vitest";
-import { render, screen, within } from "@testing-library/react";
+import { fireEvent, render, screen, within } from "@testing-library/react";
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { describe, expect, it, vi } from "vitest";
@@ -85,6 +85,23 @@ describe("LandingPage", () => {
     );
 
     expect(container.querySelector("section#quick-estimate")).toBeInTheDocument();
+    expect(container.querySelectorAll("#quick-estimate")).toHaveLength(1);
+  });
+
+  it.each([
+    "stair-cleaning",
+    "building-care",
+    "move-in-cleaning",
+    "turnover-care",
+  ] as const)("opens one quick estimate dialog from the %s landing CTA", (slug) => {
+    const { container } = render(<LandingPage service={landingServices[slug]} />);
+    const trigger = Array.from(
+      container.querySelectorAll<HTMLAnchorElement>('a[href="#quick-estimate"]'),
+    )[0];
+
+    expect(trigger).toBeInTheDocument();
+    fireEvent.click(trigger);
+    expect(screen.getAllByRole("dialog")).toHaveLength(1);
     expect(container.querySelectorAll("#quick-estimate")).toHaveLength(1);
   });
 

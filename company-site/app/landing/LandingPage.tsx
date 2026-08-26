@@ -4,6 +4,11 @@ import { PHONE_HREF, PHONE_LABEL } from "./contact";
 import OfficialChannels from "./OfficialChannels";
 import PricingGrid from "./PricingGrid";
 import QuickEstimateForm from "./QuickEstimateForm";
+import {
+  QuickEstimateExperience,
+  QuickEstimateTrigger,
+} from "./QuickEstimateExperience";
+import { compactEstimateConfig } from "./quickEstimateConfig";
 import type { LandingService } from "./services";
 import TurnoverIntro from "./TurnoverIntro";
 import TurnoverSections from "./TurnoverSections";
@@ -31,9 +36,16 @@ export default function LandingPage({ service }: LandingPageProps) {
   const serviceName = serviceNames[service.slug];
   const sourcePath = `/${service.slug}`;
   const isTurnoverCare = service.slug === "turnover-care";
+  const quickEstimate = compactEstimateConfig[service.slug];
 
   return (
-    <main className={`landing-page landing-${service.slug}`}>
+    <QuickEstimateExperience
+      service={serviceName}
+      sourcePath={sourcePath}
+      defaultCustomerType={quickEstimate.defaultCustomerType}
+      needsPlaceholder={quickEstimate.needsPlaceholder}
+    >
+      <main className={`landing-page landing-${service.slug}`}>
       {isTurnoverCare ? (
         <TurnoverIntro service={service} />
       ) : (
@@ -54,9 +66,9 @@ export default function LandingPage({ service }: LandingPageProps) {
                 <span>전화 상담</span>
                 <strong>{PHONE_LABEL}</strong>
               </a>
-              <a className="landing-button landing-button-dark" href="#quick-estimate">
+              <QuickEstimateTrigger className="landing-button landing-button-dark">
                 간편 견적
-              </a>
+              </QuickEstimateTrigger>
             </nav>
           </header>
 
@@ -80,12 +92,9 @@ export default function LandingPage({ service }: LandingPageProps) {
                   전화로 바로 상담
                   <span>{PHONE_LABEL}</span>
                 </a>
-                <a
-                  className="landing-button landing-button-outline"
-                  href="#quick-estimate"
-                >
+                <QuickEstimateTrigger className="landing-button landing-button-outline">
                   30초 간편 견적
-                </a>
+                </QuickEstimateTrigger>
               </div>
             </div>
             <figure className="landing-hero-media">
@@ -372,14 +381,15 @@ export default function LandingPage({ service }: LandingPageProps) {
           className="mobile-sticky-actions turnover-mobile-sticky"
           aria-label="빠른 상담"
         >
-          <a href="#quick-estimate">퇴실 일정 30초 견적</a>
+          <QuickEstimateTrigger>퇴실 일정 30초 견적</QuickEstimateTrigger>
         </nav>
       ) : (
         <nav className="mobile-sticky-actions" aria-label="빠른 상담">
           <a href={PHONE_HREF}>전화 상담</a>
-          <a href="#quick-estimate">간편 견적</a>
+          <QuickEstimateTrigger>간편 견적</QuickEstimateTrigger>
         </nav>
       )}
-    </main>
+      </main>
+    </QuickEstimateExperience>
   );
 }

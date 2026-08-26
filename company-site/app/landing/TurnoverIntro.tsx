@@ -1,6 +1,7 @@
 import Image from "next/image";
 import Link from "next/link";
 import { KAKAO_CHAT_HREF, PHONE_HREF, PHONE_LABEL } from "./contact";
+import { QuickEstimateTrigger } from "./QuickEstimateExperience";
 import type { LandingService } from "./services";
 
 type TurnoverIntroProps = {
@@ -47,9 +48,9 @@ export default function TurnoverIntro({ service }: TurnoverIntroProps) {
           <a href="#turnover-standard">24H 입·퇴실 관리</a>
           <a href="#cleaning-results">청소 서비스</a>
           <a href="#field-records">현장 기록</a>
-          <a className="turnover-nav-cta" href="#quick-estimate">
+          <QuickEstimateTrigger className="turnover-nav-cta">
             30초 견적
-          </a>
+          </QuickEstimateTrigger>
         </nav>
       </header>
 
@@ -72,9 +73,9 @@ export default function TurnoverIntro({ service }: TurnoverIntroProps) {
             준비하는 과정을 하나로 연결합니다.
           </span>
           <div className="turnover-intro-actions">
-            <a className="turnover-primary-action" href="#quick-estimate">
+            <QuickEstimateTrigger className="turnover-primary-action">
               퇴실 일정 상담하기
-            </a>
+            </QuickEstimateTrigger>
             <a
               className="turnover-secondary-action"
               href={KAKAO_CHAT_HREF}
