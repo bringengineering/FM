@@ -47,7 +47,7 @@ export default function TurnoverIntro({ service }: TurnoverIntroProps) {
           <a href="#turnover-standard">24H 입·퇴실 관리</a>
           <a href="#cleaning-results">청소 서비스</a>
           <a href="#field-records">현장 기록</a>
-          <a className="turnover-intro-nav-highlight" href="#quick-estimate">
+          <a className="turnover-nav-cta" href="#quick-estimate">
             30초 견적
           </a>
         </nav>
@@ -57,31 +57,41 @@ export default function TurnoverIntro({ service }: TurnoverIntroProps) {
         <Image
           src={service.heroImage}
           alt={service.heroAlt}
-          fill
+          width={1600}
+          height={1000}
           priority
           unoptimized
-          sizes="100vw"
+          sizes="(max-width: 760px) 100vw, 1240px"
         />
         <div className="turnover-intro-overlay" aria-hidden="true" />
         <div className="turnover-intro-copy">
           <p>BRING CARE 24H 입·퇴실 관리</p>
           <h1 id="landing-title">퇴실 다음 날, 바로 보여줄 수 있는 방으로.</h1>
-          <p>
+          <span>
             퇴실 확인부터 직영 청소, 필요한 조치와 완료 사진까지. 다음 임대를
             준비하는 과정을 하나로 연결합니다.
-          </p>
+          </span>
           <div className="turnover-intro-actions">
-            <a href="#quick-estimate">퇴실 일정 상담하기</a>
-            <a href={KAKAO_CHAT_HREF} target="_blank" rel="noreferrer">
+            <a className="turnover-primary-action" href="#quick-estimate">
+              퇴실 일정 상담하기
+            </a>
+            <a
+              className="turnover-secondary-action"
+              href={KAKAO_CHAT_HREF}
+              target="_blank"
+              rel="noreferrer"
+            >
               카카오톡 상담
             </a>
           </div>
-          <p className="turnover-intro-condition">
-            퇴실 14일 전 접수 · 출입 및 작업 승인 · 중대한 추가 수리 없음
-          </p>
-          <a className="turnover-intro-phone" href={PHONE_HREF}>
-            {PHONE_LABEL}
-          </a>
+          <div className="turnover-intro-meta">
+            <small>
+              퇴실 14일 전 접수 · 출입 및 작업 승인 · 중대한 추가 수리 없음
+            </small>
+            <a className="turnover-intro-phone" href={PHONE_HREF}>
+              {PHONE_LABEL}
+            </a>
+          </div>
         </div>
       </section>
 
