@@ -3,6 +3,7 @@
 import { FormEvent, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { PHONE_DIGITS, PHONE_LABEL } from "./contact";
+import { campaignContext, marketingLeadCopy } from "./marketingLeadForm";
 import { submitMarketingLead } from "./marketingLeadClient";
 
 type QuickEstimateFormProps = { service: string; sourcePath: string };
@@ -16,13 +17,11 @@ export default function QuickEstimateForm({ service, sourcePath }: QuickEstimate
 
   function formValues(form: HTMLFormElement) {
     const data = new FormData(form);
-    const url = new URL(window.location.href);
     return {
       name: String(data.get("name") || "").trim(), phone: String(data.get("phone") || "").trim(),
       location: String(data.get("location") || "").trim(), needs: String(data.get("needs") || "").trim(),
       buildingInfo: String(data.get("buildingInfo") || "").trim(), customerType: String(data.get("customerType") || "individual"),
-      service, sourcePath, utmSource: url.searchParams.get("utm_source") || "",
-      utmCampaign: url.searchParams.get("utm_campaign") || "", utmTerm: url.searchParams.get("utm_term") || "",
+      service, sourcePath, ...campaignContext(window.location.href),
       consent: data.get("consent") === "on",
     };
   }
@@ -43,9 +42,7 @@ export default function QuickEstimateForm({ service, sourcePath }: QuickEstimate
 
   function buildCopyMessage() {
     if (!formRef.current) return "";
-    const values = formValues(formRef.current);
-    const typeLabel = values.customerType === "building_owner" ? "건물주" : values.customerType === "manager" ? "관리 담당자" : "개인 고객";
-    return [`[BRING CARE ${service} 견적 신청]`, `이름: ${values.name}`, `연락처: ${values.phone}`, `문의 유형: ${typeLabel}`, `건물 위치 또는 지역: ${values.location}`, `필요한 상담 내용: ${values.needs}`, `건물 정보: ${values.buildingInfo || "입력 안 함"}`, `유입 경로: ${sourcePath}`].join("\n");
+    return marketingLeadCopy(formValues(formRef.current));
   }
 
   async function copyApplication() {
