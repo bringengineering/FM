@@ -1843,46 +1843,268 @@
   color: var(--tertiary);
 }
 
-.turnover-standard,
+/* Turnover care uses a dedicated, route-scoped intro system. */
+.landing-turnover-care {
+  --blue: #1768ff;
+  --deep-blue: #083f91;
+  --navy: #092c5c;
+  --ink: #191f28;
+  --muted: #6b7684;
+  --line: #e5e8eb;
+  --max: 1240px;
+  --landing-gutter: 24px;
+}
+
+.landing-turnover-care .turnover-intro-header {
+  display: flex;
+  width: min(calc(100% - 48px), 1240px);
+  height: 64px;
+  margin-inline: auto;
+  align-items: center;
+  justify-content: space-between;
+  border-bottom: 1px solid var(--line);
+}
+
+.landing-turnover-care .turnover-intro-nav {
+  display: flex;
+  align-items: center;
+  gap: 30px;
+}
+
+.landing-turnover-care .turnover-intro-nav a {
+  color: var(--ink);
+  font-size: 14px;
+  font-weight: 700;
+}
+
+.landing-turnover-care .turnover-intro-nav .turnover-nav-cta {
+  display: inline-flex;
+  min-height: 42px;
+  padding-inline: 18px;
+  align-items: center;
+  justify-content: center;
+  border-radius: 12px;
+  background: var(--blue);
+  color: var(--white);
+}
+
+.landing-turnover-care .turnover-intro-hero {
+  position: relative;
+  width: min(calc(100% - 48px), 1240px);
+  min-height: 680px;
+  margin: 24px auto 0;
+  overflow: hidden;
+  border-radius: 40px;
+  background: var(--navy);
+}
+
+.landing-turnover-care .turnover-intro-hero > img {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.landing-turnover-care .turnover-intro-overlay {
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(
+    90deg,
+    rgba(9, 44, 92, 0.96) 0%,
+    rgba(9, 44, 92, 0.76) 48%,
+    rgba(9, 44, 92, 0.16) 82%
+  );
+}
+
+.landing-turnover-care .turnover-intro-copy {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  width: min(100%, 720px);
+  min-height: 680px;
+  flex-direction: column;
+  padding: 72px 64px 46px;
+  color: var(--white);
+}
+
+.landing-turnover-care .turnover-intro-copy > p {
+  margin: 0;
+  font-size: 14px;
+  font-weight: 800;
+  letter-spacing: 0.05em;
+}
+
+.landing-turnover-care .turnover-intro-copy h1 {
+  margin: 22px 0 0;
+  font-size: clamp(52px, 6vw, 76px);
+  font-weight: 800;
+  letter-spacing: -0.06em;
+  line-height: 1.08;
+  word-break: keep-all;
+}
+
+.landing-turnover-care .turnover-intro-copy > span {
+  max-width: 610px;
+  margin-top: 24px;
+  color: rgba(255, 255, 255, 0.82);
+  font-size: 18px;
+  line-height: 1.7;
+  word-break: keep-all;
+}
+
+.landing-turnover-care .turnover-intro-actions {
+  display: flex;
+  gap: 10px;
+  margin-top: 34px;
+}
+
+.landing-turnover-care .turnover-intro-actions a {
+  display: inline-flex;
+  min-height: 52px;
+  padding-inline: 24px;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid transparent;
+  border-radius: 12px;
+  font-size: 14px;
+  font-weight: 800;
+}
+
+.landing-turnover-care .turnover-primary-action {
+  background: var(--blue);
+  color: var(--white);
+}
+
+.landing-turnover-care .turnover-secondary-action {
+  border-color: rgba(255, 255, 255, 0.48);
+  background: rgba(255, 255, 255, 0.1);
+  color: var(--white);
+}
+
+.landing-turnover-care .turnover-intro-meta {
+  display: flex;
+  margin-top: auto;
+  padding-top: 22px;
+  align-items: center;
+  justify-content: space-between;
+  gap: 20px;
+  border-top: 1px solid rgba(255, 255, 255, 0.28);
+}
+
+.landing-turnover-care .turnover-intro-meta small {
+  color: rgba(255, 255, 255, 0.7);
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.landing-turnover-care .turnover-intro-phone {
+  flex: 0 0 auto;
+  color: var(--white);
+  font-size: 14px;
+  font-weight: 800;
+}
+
+.landing-turnover-care .turnover-intro-process {
+  width: min(calc(100% - 48px), 1240px);
+  margin-inline: auto;
+  padding: 56px 0 86px;
+}
+
+.landing-turnover-care .turnover-intro-process ol {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.landing-turnover-care .turnover-intro-process li {
+  min-height: 190px;
+  padding: 30px 26px;
+  border-block: 1px solid var(--line);
+  border-right: 1px solid var(--line);
+}
+
+.landing-turnover-care .turnover-intro-process li:first-child {
+  border-left: 1px solid var(--line);
+}
+
+.landing-turnover-care .turnover-intro-process li > span {
+  color: var(--blue);
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.landing-turnover-care .turnover-intro-process h3 {
+  margin: 40px 0 10px;
+  color: var(--ink);
+  font-size: 21px;
+  letter-spacing: -0.035em;
+}
+
+.landing-turnover-care .turnover-intro-process li p {
+  margin: 0;
+  color: var(--muted);
+  font-size: 14px;
+  line-height: 1.65;
+}
+
+.landing-turnover-care .turnover-standard,
 .turnover-comparison,
 .turnover-timeline,
 .turnover-boundaries {
   padding-block: clamp(72px, 8vw, 118px);
 }
 
-.turnover-standard {
-  background: var(--brand-gradient);
-  color: var(--white);
+.landing-turnover-care .turnover-standard {
+  border-block: 1px solid var(--line);
+  background: var(--white);
+  color: var(--ink);
 }
 
-.turnover-standard-grid {
+.landing-turnover-care .turnover-standard-grid {
   display: grid;
   grid-template-columns: minmax(0, 0.85fr) minmax(0, 1.15fr);
   align-items: center;
   gap: clamp(32px, 6vw, 88px);
 }
 
-.turnover-standard .landing-eyebrow {
-  color: #c9d8ff;
+.landing-turnover-care .turnover-standard .landing-eyebrow {
+  color: var(--blue);
 }
 
-.turnover-standard h2 {
+.landing-turnover-care .turnover-standard h2 {
   margin: 12px 0 0;
+  color: var(--navy);
   font-size: clamp(32px, 4vw, 58px);
   line-height: 1.12;
   letter-spacing: -0.055em;
   word-break: keep-all;
 }
 
-.turnover-standard-statement {
+.landing-turnover-care .turnover-standard-statement {
   margin: 0;
-  padding: 28px;
-  border: 1px solid rgba(255, 255, 255, 0.2);
-  border-radius: var(--radius-card);
-  background: rgba(255, 255, 255, 0.1);
+  padding: 12px 0 12px clamp(24px, 4vw, 58px);
+  border-left: 1px solid var(--line);
   font-size: clamp(16px, 1.7vw, 21px);
   line-height: 1.75;
   word-break: keep-all;
+}
+
+.landing-turnover-care .turnover-standard-statement p {
+  margin: 0;
+  color: var(--muted);
+}
+
+.landing-turnover-care .turnover-standard-statement a {
+  display: inline-flex;
+  margin-top: 20px;
+  color: var(--deep-blue);
+  font-size: 14px;
+  font-weight: 800;
+  text-decoration: underline;
+  text-underline-offset: 5px;
 }
 
 .turnover-comparison,
@@ -2021,6 +2243,154 @@
 
   .turnover-timeline ol {
     grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 760px) {
+  .landing-turnover-care {
+    --landing-gutter: 14px;
+  }
+
+  .landing-turnover-care .turnover-intro-header {
+    width: calc(100% - 28px);
+  }
+
+  .landing-turnover-care .turnover-intro-header .brand-image {
+    width: 132px;
+    height: 24px;
+  }
+
+  .landing-turnover-care .turnover-intro-header .brand-engineering,
+  .landing-turnover-care .turnover-intro-nav > a:not(.turnover-nav-cta) {
+    display: none;
+  }
+
+  .landing-turnover-care .turnover-intro-nav {
+    gap: 0;
+  }
+
+  .landing-turnover-care .turnover-intro-nav .turnover-nav-cta {
+    min-height: 42px;
+    padding-inline: 16px;
+  }
+
+  .landing-turnover-care .turnover-intro-hero {
+    width: calc(100% - 28px);
+    min-height: 670px;
+    margin-top: 14px;
+    border-radius: 28px;
+  }
+
+  .landing-turnover-care .turnover-intro-hero > img {
+    object-position: center top;
+  }
+
+  .landing-turnover-care .turnover-intro-overlay {
+    background: linear-gradient(
+      180deg,
+      rgba(9, 44, 92, 0.08) 0%,
+      rgba(9, 44, 92, 0.9) 43%,
+      #092c5c 68%
+    );
+  }
+
+  .landing-turnover-care .turnover-intro-copy {
+    width: 100%;
+    min-height: 670px;
+    padding: 260px 22px 24px;
+    justify-content: flex-end;
+  }
+
+  .landing-turnover-care .turnover-intro-copy > p {
+    font-size: 12px;
+  }
+
+  .landing-turnover-care .turnover-intro-copy h1 {
+    margin-top: 14px;
+    font-size: 39px;
+    line-height: 1.1;
+  }
+
+  .landing-turnover-care .turnover-intro-copy > span {
+    margin-top: 16px;
+    font-size: 15px;
+    line-height: 1.6;
+  }
+
+  .landing-turnover-care .turnover-intro-copy > span br {
+    display: none;
+  }
+
+  .landing-turnover-care .turnover-intro-actions {
+    flex-direction: column;
+    margin-top: 24px;
+  }
+
+  .landing-turnover-care .turnover-intro-actions a {
+    width: 100%;
+    min-height: 50px;
+  }
+
+  .landing-turnover-care .turnover-intro-meta {
+    margin-top: 24px;
+    padding-top: 18px;
+    align-items: flex-start;
+    flex-direction: column;
+    gap: 8px;
+  }
+
+  .landing-turnover-care .turnover-intro-process {
+    width: calc(100% - 28px);
+    padding: 42px 0 64px;
+  }
+
+  .landing-turnover-care .turnover-intro-process ol {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .landing-turnover-care .turnover-intro-process li,
+  .landing-turnover-care .turnover-intro-process li:first-child {
+    min-height: 170px;
+    padding: 24px 18px;
+    border: 0;
+    border-top: 1px solid var(--line);
+    border-right: 1px solid var(--line);
+  }
+
+  .landing-turnover-care .turnover-intro-process li:nth-child(even) {
+    border-right: 0;
+  }
+
+  .landing-turnover-care .turnover-intro-process li:nth-last-child(-n + 2) {
+    border-bottom: 1px solid var(--line);
+  }
+
+  .landing-turnover-care .turnover-intro-process h3 {
+    margin-top: 28px;
+    font-size: 18px;
+  }
+
+  .landing-turnover-care .turnover-intro-process li p {
+    font-size: 13px;
+  }
+
+  .landing-turnover-care .turnover-standard-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .landing-turnover-care .turnover-standard-statement {
+    padding: 28px 0 0;
+    border-top: 1px solid var(--line);
+    border-left: 0;
+  }
+
+  .landing-turnover-care .turnover-mobile-sticky {
+    grid-template-columns: 1fr;
+  }
+
+  .landing-turnover-care .turnover-mobile-sticky a {
+    width: 100%;
+    border-radius: 12px;
   }
 }
 

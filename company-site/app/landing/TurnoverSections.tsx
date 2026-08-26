@@ -26,13 +26,18 @@ export default function TurnoverSections() {
         <div className="landing-section-inner turnover-standard-grid">
           <div>
             <p className="landing-eyebrow">24H 운영 기준</p>
-            <h2 id="turnover-standard-title">빠른 청소보다 중요한 것은 미리 준비하는 흐름입니다.</h2>
+            <h2 id="turnover-standard-title">
+              빠르다는 말보다, 준비된 과정을 보여드립니다.
+            </h2>
           </div>
-          <p className="turnover-standard-statement">
-            퇴실 14일 전까지 접수되고 출입·작업 범위·비용 승인이 완료된 호실 중
-            중대한 추가 수리가 없는 경우, 퇴실 확인 시점부터 24시간 안에
-            청소·경미한 정리·사진 기록·인계 준비를 마치는 것을 운영 기준으로 합니다.
-          </p>
+          <div className="turnover-standard-statement">
+            <p>
+              퇴실 14일 전까지 접수되고 출입·작업 범위·비용 승인이 완료된 호실 중
+              중대한 추가 수리가 없는 경우, 퇴실 확인 시점부터 24시간 안에
+              청소·경미한 정리·사진 기록·인계 준비를 마치는 것을 운영 기준으로 합니다.
+            </p>
+            <a href="#turnover-conditions">24H 적용 조건 자세히 보기</a>
+          </div>
         </div>
       </section>
 
@@ -75,7 +80,11 @@ export default function TurnoverSections() {
         </div>
       </section>
 
-      <section className="turnover-boundaries" aria-labelledby="turnover-boundaries-title">
+      <section
+        className="turnover-boundaries"
+        id="turnover-conditions"
+        aria-labelledby="turnover-boundaries-title"
+      >
         <div className="landing-section-inner">
           <div className="landing-section-heading">
             <p>적용 조건과 역할</p>

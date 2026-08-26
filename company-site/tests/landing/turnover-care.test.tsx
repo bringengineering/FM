@@ -1,4 +1,6 @@
 import "@testing-library/jest-dom/vitest";
+import fs from "node:fs";
+import path from "node:path";
 import { render, screen, within } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 import LandingPage from "../../app/landing/LandingPage";
@@ -97,6 +99,19 @@ describe("24H turnover care landing", () => {
         name: /직접 하는 일과 승인이 필요한 일을 구분합니다\./,
       }),
     ).toHaveAttribute("id", "turnover-conditions");
+  });
+
+  it("keeps the turnover intro visual system scoped and responsive", () => {
+    const css = fs.readFileSync(
+      path.resolve(process.cwd(), "app/landing/landing.css"),
+      "utf8",
+    );
+
+    expect(css).toMatch(/\.landing-turnover-care\s*{[^}]*--blue:\s*#1768ff/i);
+    expect(css).toMatch(/\.landing-turnover-care\s+\.turnover-intro-hero\s*{[^}]*border-radius:\s*40px/i);
+    expect(css).toMatch(/\.landing-turnover-care\s+\.turnover-intro-process\s+ol\s*{[^}]*grid-template-columns:\s*repeat\(4,\s*minmax\(0,\s*1fr\)\)/i);
+    expect(css).toMatch(/@media\s*\(max-width:\s*760px\)[\s\S]*?\.landing-turnover-care\s+\.turnover-intro-hero\s*{[^}]*border-radius:\s*28px/i);
+    expect(css).toMatch(/@media\s*\(max-width:\s*760px\)[\s\S]*?\.landing-turnover-care\s+\.turnover-intro-process\s+ol\s*{[^}]*grid-template-columns:\s*repeat\(2,\s*minmax\(0,\s*1fr\)\)/i);
   });
 
   it("publishes route-specific metadata", () => {
