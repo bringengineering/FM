@@ -114,22 +114,27 @@ const landingRoutes = [
   },
   {
     pathname: "/turnover-care",
-    heading: "퇴실 후에 움직이지 않습니다",
+    heading: "퇴실 다음 날",
     price: "관리 건물 입·퇴실청소 10만원부터",
+    priceFragments: ["관리 건물 입·퇴실청소", "10만원부터"],
     title: "원주 24H 입·퇴실 관리 | BRING CARE",
     description:
       "퇴실 14일 전부터 준비하는 원주 입·퇴실 관리. 퇴실 확인, 직영 청소, 필요한 보수 연결과 완료 사진을 한 흐름으로 관리합니다.",
   },
 ];
 
-for (const { pathname, heading, price, title, description } of landingRoutes) {
+for (const { pathname, heading, price, priceFragments, title, description } of landingRoutes) {
   test(`server-renders ${pathname} with complete service metadata`, async () => {
     const response = await render(pathname);
     assert.equal(response.status, 200);
 
     const html = await response.text();
     assert.ok(html.includes(heading));
-    assert.ok(html.includes(price));
+    if (priceFragments) {
+      priceFragments.forEach((fragment) => assert.ok(html.includes(fragment)));
+    } else {
+      assert.ok(html.includes(price));
+    }
     assert.match(html, /tel:01065663603/);
     assert.match(html, /quick-estimate/);
     assert.match(html, /청소하면서 건물까지 봅니다/);
@@ -259,10 +264,14 @@ test("active Firebase hosting sources and exported assets target bring-fm only",
 });
 
 test("Firebase export includes every Naver ad landing route", async () => {
-  for (const { pathname, price, title, description } of landingRoutes) {
+  for (const { pathname, price, priceFragments, title, description } of landingRoutes) {
     const file = `../firebase-public${pathname}/index.html`;
     const html = await readFile(new URL(file, import.meta.url), "utf8");
-    assert.ok(html.includes(price));
+    if (priceFragments) {
+      priceFragments.forEach((fragment) => assert.ok(html.includes(fragment)));
+    } else {
+      assert.ok(html.includes(price));
+    }
     assert.match(html, /tel:01065663603/);
     assert.match(html, /quick-estimate/);
     assert.doesNotMatch(html, /\/_vinext\/image/);
