@@ -12,5 +12,9 @@ describe("ConsultCompletePage", () => {
       "href",
       "https://pf.kakao.com/_xnaRfX/chat",
     );
+    expect(screen.getByRole("link", { name: "010-6566-3603" })).toHaveAttribute(
+      "href",
+      "tel:01065663603",
+    );
   });
 });

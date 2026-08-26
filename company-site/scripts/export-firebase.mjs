@@ -41,6 +41,10 @@ const routes = [
     outputFile: "move-in-cleaning/index.html",
   },
   {
+    pathname: "/turnover-care",
+    outputFile: "turnover-care/index.html",
+  },
+  {
     pathname: "/care-records",
     outputFile: "care-records/index.html",
   },

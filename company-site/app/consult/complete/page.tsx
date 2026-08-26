@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import { PHONE_HREF, PHONE_LABEL } from "../../landing/contact";
 
 export const metadata: Metadata = {
   title: "상담 신청 접수 완료 | Bring Care",
@@ -82,7 +83,7 @@ export default function ConsultCompletePage() {
 
           <p className="complete-contact">
             빠른 상담이 필요하시면{" "}
-            <a href="tel:01065663606">010-6566-3606</a>으로 연락해 주세요.
+            <a href={PHONE_HREF}>{PHONE_LABEL}</a>으로 연락해 주세요.
           </p>
         </div>
 
@@ -100,7 +101,7 @@ export default function ConsultCompletePage() {
         </div>
         <div>
           <p>브링엔지니어링 · 대표 서창환 · 사업자등록번호 748-28-01935</p>
-          <p>010-6566-3606 · bringengineering1008@gmail.com</p>
+          <p>{PHONE_LABEL} · bringengineering1008@gmail.com</p>
         </div>
       </footer>
     </main>

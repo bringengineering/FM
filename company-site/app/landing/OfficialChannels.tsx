@@ -1,5 +1,4 @@
-const PHONE_HREF = "tel:01065663606";
-const KAKAO_CHAT_HREF = "https://pf.kakao.com/_xnaRfX/chat";
+import { KAKAO_CHAT_HREF, PHONE_HREF } from "./contact";
 
 export default function OfficialChannels() {
   return (

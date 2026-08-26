@@ -438,7 +438,7 @@ export default function Home() {
             <span className="footer-brand">Bring Care</span>
             <p>관리의 모든 흐름을 연결합니다.</p>
             <p className="footer-contact">
-              010-6566-3606 · bringengineering1008@gmail.com
+              010-6566-3603 · bringengineering1008@gmail.com
             </p>
           </div>
           <a href="#top" aria-label="페이지 맨 위로 이동">

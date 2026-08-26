@@ -70,7 +70,7 @@ test("server-renders the consultation page with direct contacts", async () => {
 
   const html = await response.text();
   assert.match(html, /상담 신청 \| Bring Care/);
-  assert.match(html, /010-6566-3606/);
+  assert.match(html, /010-6566-3603/);
   assert.match(html, /bringengineering1008@gmail\.com/);
   assert.match(html, /상담 신청 전송/);
   assert.match(html, /전송 대행 서비스/);
@@ -81,17 +81,17 @@ test("server-renders the consultation completion page", async () => {
   assert.equal(response.status, 200);
 
   const html = await response.text();
-  assert.match(html, /상담 신청 발송 완료 \| Bring Care/);
-  assert.match(html, /발송 완료되었습니다/);
-  assert.match(html, /담당 이메일로 전달되었습니다/);
-  assert.match(html, /010-6566-3606/);
+  assert.match(html, /상담 신청 접수 완료 \| Bring Care/);
+  assert.match(html, /접수 완료되었습니다/);
+  assert.match(html, /브링케어 CRM에 안전하게 접수되었습니다/);
+  assert.match(html, /010-6566-3603/);
 });
 
 const landingRoutes = [
   {
     pathname: "/stair-cleaning",
-    heading: "깨끗하게만 하지 않습니다",
-    price: "월 4회 6만원부터",
+    heading: "원주 계단·공용부",
+    price: "주 1회 3층 6만원부터",
     title: "원주 계단·공용부 청소 | BRING CARE",
     description:
       "원주 원룸·다가구 계단과 복도 정기청소. 월 4회 6만원부터, 작업사진과 건물 이상사항을 함께 보고합니다.",
@@ -99,7 +99,7 @@ const landingRoutes = [
   {
     pathname: "/building-care",
     heading: "멀리 있어도",
-    price: "지역 공동관리 월 8.9만원",
+    price: "월 8만 9천원부터",
     title: "원주 원룸·다가구 건물관리 | BRING CARE",
     description:
       "공실, 세입자 문의, 입퇴실과 건물 상태를 연결하는 원주 지역 공동관리. 월 8.9만원.",
@@ -107,10 +107,18 @@ const landingRoutes = [
   {
     pathname: "/move-in-cleaning",
     heading: "새 공간의 첫날",
-    price: "원룸 10만원부터",
+    price: "관리 건물 10만원 · 일반 단건 12만원부터",
     title: "원주 입주청소 10만원부터 | BRING CARE",
     description:
       "원주 원룸 입주청소 10만원부터. 작업 범위를 먼저 안내하고 완료 사진으로 확인합니다.",
+  },
+  {
+    pathname: "/turnover-care",
+    heading: "퇴실 후에 움직이지 않습니다",
+    price: "관리 건물 입·퇴실청소 10만원부터",
+    title: "원주 24H 입·퇴실 관리 | BRING CARE",
+    description:
+      "퇴실 14일 전부터 준비하는 원주 입·퇴실 관리. 퇴실 확인, 직영 청소, 필요한 보수 연결과 완료 사진을 한 흐름으로 관리합니다.",
   },
 ];
 
@@ -122,10 +130,12 @@ for (const { pathname, heading, price, title, description } of landingRoutes) {
     const html = await response.text();
     assert.ok(html.includes(heading));
     assert.ok(html.includes(price));
-    assert.match(html, /tel:01065663606/);
+    assert.match(html, /tel:01065663603/);
     assert.match(html, /quick-estimate/);
     assert.match(html, /청소하면서 건물까지 봅니다/);
+    assert.match(html, /부가세 별도/);
     assert.doesNotMatch(html, /1위|100% 만족|최우수|작업 전후 사진/);
+    assert.doesNotMatch(html, /무조건 공실 0일|24시간 안에 새 임차인/);
 
     assert.ok(html.includes(`<title>${title}</title>`));
     assert.ok(html.includes(`name="description" content="${description}"`));
@@ -228,15 +238,24 @@ test("active Firebase hosting sources and exported assets target bring-fm only",
     /https:\/\/bring-fm-default-rtdb\.asia-southeast1\.firebasedatabase\.app/,
   );
 
-  const fieldAssetPath = JSON.parse(assetManifest)[
+  const parsedManifest = JSON.parse(assetManifest);
+  const fieldAssetPath = parsedManifest[
     "app/field/components/v2/FieldV2App.tsx"
   ].file;
   const fieldAsset = await readFile(
     new URL(`../firebase-public/${fieldAssetPath}`, import.meta.url),
     "utf8",
   );
-  assert.match(fieldAsset, /authDomain:[`"]bring-fm\.firebaseapp\.com[`"]/);
-  assert.match(fieldAsset, /projectId:[`"]bring-fm[`"]/);
+  const firebaseAssetPath = Object.values(parsedManifest).find(
+    (entry) => entry.name === "firebase.client",
+  ).file;
+  const firebaseAsset = await readFile(
+    new URL(`../firebase-public/${firebaseAssetPath}`, import.meta.url),
+    "utf8",
+  );
+  assert.match(fieldAsset, /firebase\.client/);
+  assert.match(firebaseAsset, /authDomain:[`"]bring-fm\.firebaseapp\.com[`"]/);
+  assert.match(firebaseAsset, /projectId:[`"]bring-fm[`"]/);
 });
 
 test("Firebase export includes every Naver ad landing route", async () => {
@@ -244,7 +263,7 @@ test("Firebase export includes every Naver ad landing route", async () => {
     const file = `../firebase-public${pathname}/index.html`;
     const html = await readFile(new URL(file, import.meta.url), "utf8");
     assert.ok(html.includes(price));
-    assert.match(html, /tel:01065663606/);
+    assert.match(html, /tel:01065663603/);
     assert.match(html, /quick-estimate/);
     assert.doesNotMatch(html, /\/_vinext\/image/);
     assert.match(html, /src="\/landing\/[^\"]+\.jpg"/);

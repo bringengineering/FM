@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import { PHONE_HREF, PHONE_LABEL } from "../landing/contact";
 import ConsultForm from "./ConsultForm";
 
 export const metadata: Metadata = {
@@ -65,9 +66,9 @@ export default function ConsultPage() {
             바로 문의하세요.
           </h2>
           <div className="direct-links">
-            <a href="tel:01065663606">
+            <a href={PHONE_HREF}>
               <span>전화 상담</span>
-              <strong>010-6566-3606</strong>
+              <strong>{PHONE_LABEL}</strong>
               <i aria-hidden="true">↗</i>
             </a>
             <a href="mailto:bringengineering1008@gmail.com">
@@ -102,7 +103,7 @@ export default function ConsultPage() {
         </div>
         <div>
           <p>브링엔지니어링 · 대표 서창환 · 사업자등록번호 748-28-01935</p>
-          <p>010-6566-3606 · bringengineering1008@gmail.com</p>
+          <p>{PHONE_LABEL} · bringengineering1008@gmail.com</p>
         </div>
       </footer>
     </main>
