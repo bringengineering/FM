@@ -1,18 +1,23 @@
 import Image from "next/image";
 import Link from "next/link";
+import { PHONE_HREF, PHONE_LABEL } from "./contact";
 import OfficialChannels from "./OfficialChannels";
+import PricingGrid from "./PricingGrid";
 import QuickEstimateForm from "./QuickEstimateForm";
 import type { LandingService } from "./services";
 import "./landing.css";
-
-const PHONE_HREF = "tel:01065663606";
-const PHONE_LABEL = "010-6566-3606";
 
 const serviceNames: Record<LandingService["slug"], string> = {
   "stair-cleaning": "계단·공용부 청소",
   "building-care": "원룸·다가구 건물관리",
   "move-in-cleaning": "입주·이사청소",
 };
+
+const activePriceBySlug = {
+  "stair-cleaning": "stair-cleaning",
+  "building-care": "building-care",
+  "move-in-cleaning": "single-turnover",
+} as const;
 
 type LandingPageProps = {
   service: LandingService;
@@ -238,36 +243,17 @@ export default function LandingPage({ service }: LandingPageProps) {
         </div>
       </section>
 
-      <section className="landing-price" aria-labelledby="price-title">
-        <div className="landing-section-inner landing-price-card">
-          <div>
-            <p>시작 가격</p>
-            <h2 id="price-title">{service.price}</h2>
-            <span>{service.priceNote}</span>
-          </div>
-          <div className="landing-price-details">
-            <div>
-              <strong>기본 서비스 범위</strong>
-              <ul>
-                {service.scope.map((item) => (
-                  <li key={item.title}>{item.title}</li>
-                ))}
-              </ul>
-            </div>
-            <div>
-              <strong>별도 협의 항목</strong>
-              <ul>
-                <li>기본 범위를 벗어난 추가 작업</li>
-                <li>자재·폐기물 처리와 전문 보수</li>
-                <li>현장 조건에 따른 추가 인력·장비</li>
-              </ul>
-            </div>
-          </div>
-          <a className="landing-button landing-button-primary" href="#quick-estimate">
-            내 건물 견적 확인
-          </a>
+      <aside className="landing-turnover-link">
+        <div className="landing-section-inner">
+          <p>퇴실 일정이 잡혀 있다면</p>
+          <h2>퇴실 후가 아니라 14일 전부터 준비하세요.</h2>
+          <Link href="/turnover-care">
+            입·퇴실까지 함께 관리하기 <span aria-hidden="true">→</span>
+          </Link>
         </div>
-      </section>
+      </aside>
+
+      <PricingGrid activePrice={activePriceBySlug[service.slug]} />
 
       <section className="landing-process" aria-labelledby="process-title">
         <div className="landing-section-inner">

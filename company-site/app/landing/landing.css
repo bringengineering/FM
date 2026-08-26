@@ -1689,6 +1689,49 @@
   background: var(--surface);
 }
 
+.landing-turnover-link {
+  padding: 28px 0;
+  background: var(--white);
+}
+
+.landing-turnover-link .landing-section-inner {
+  display: grid;
+  grid-template-columns: minmax(0, 0.7fr) minmax(0, 1.4fr) auto;
+  align-items: center;
+  gap: 24px;
+  padding-block: 30px;
+  border-block: 1px solid var(--line);
+}
+
+.landing-turnover-link p,
+.landing-turnover-link h2 {
+  margin: 0;
+}
+
+.landing-turnover-link p {
+  color: var(--blue);
+  font-size: 13px;
+  font-weight: 800;
+}
+
+.landing-turnover-link h2 {
+  font-size: clamp(22px, 2.4vw, 34px);
+  letter-spacing: -0.04em;
+}
+
+.landing-turnover-link a {
+  display: inline-flex;
+  min-height: 48px;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  padding: 0 20px;
+  border-radius: 10px;
+  background: var(--blue);
+  color: var(--white);
+  font-weight: 800;
+}
+
 .landing-pricing-grid {
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));
@@ -1807,6 +1850,10 @@
 }
 
 @media (max-width: 680px) {
+  .landing-turnover-link .landing-section-inner {
+    grid-template-columns: 1fr;
+  }
+
   .landing-pricing-grid {
     grid-template-columns: 1fr;
   }

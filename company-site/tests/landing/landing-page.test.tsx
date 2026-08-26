@@ -1,5 +1,5 @@
 import "@testing-library/jest-dom/vitest";
-import { render, within } from "@testing-library/react";
+import { render, screen, within } from "@testing-library/react";
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { describe, expect, it, vi } from "vitest";
@@ -11,6 +11,31 @@ vi.mock("next/navigation", () => ({
 }));
 
 describe("LandingPage", () => {
+  it("publishes the confirmed phone, VAT note, and turnover-care path", () => {
+    const { rerender } = render(
+      <LandingPage service={landingServices["stair-cleaning"]} />,
+    );
+
+    expect(screen.getAllByRole("link", { name: /010-6566-3603/ })[0]).toHaveAttribute(
+      "href",
+      "tel:01065663603",
+    );
+    expect(screen.getByText("모든 금액은 부가세 별도입니다.")).toBeInTheDocument();
+    expect(
+      screen.getByText("3층 6만원 · 4층 7만원 · 5층 8만원"),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole("link", { name: /입·퇴실까지 함께 관리하기/ }),
+    ).toHaveAttribute("href", "/turnover-care");
+
+    rerender(<LandingPage service={landingServices["building-care"]} />);
+    expect(screen.getByText("8만 9천원부터")).toBeInTheDocument();
+
+    rerender(<LandingPage service={landingServices["move-in-cleaning"]} />);
+    expect(screen.getByText("관리 건물 입·퇴실청소")).toBeInTheDocument();
+    expect(screen.getByText("일반 단건 입·퇴실청소")).toBeInTheDocument();
+  });
+
   it("puts the cleaning offer and concrete cleaning result before building care", () => {
     const { container, getByRole, getByText } = render(
       <LandingPage service={landingServices["stair-cleaning"]} />,
@@ -47,15 +72,17 @@ describe("LandingPage", () => {
     expect(container.querySelectorAll("#quick-estimate")).toHaveLength(1);
   });
 
-  it("separates the base service scope from separately priced work", () => {
+  it("separates included scope from separately priced work", () => {
     const { container } = render(
       <LandingPage service={landingServices["stair-cleaning"]} />,
     );
-    const priceSection = container.querySelector(".landing-price");
+    const priceSection = container.querySelector(".landing-pricing");
 
     expect(priceSection).toBeInTheDocument();
-    expect(within(priceSection as HTMLElement).getByText("기본 서비스 범위")).toBeInTheDocument();
-    expect(within(priceSection as HTMLElement).getByText("별도 협의 항목")).toBeInTheDocument();
+    expect(within(priceSection as HTMLElement).getByText("계단·공용부 정기청소")).toBeInTheDocument();
+    expect(
+      within(priceSection as HTMLElement).getByText(/현장 작업비.*전문업체 시공비는 별도/),
+    ).toBeInTheDocument();
   });
 
   it("connects service evidence to the complete archive", () => {

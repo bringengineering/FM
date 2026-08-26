@@ -57,8 +57,8 @@ export const landingServices: Record<LandingSlug, LandingService> = {
     accent: "정기청소",
     lead:
       "계단, 복도, 공동현관과 공용창까지 정기적으로 청소합니다. 작업이 끝나면 완료 사진과 현장에서 확인한 사항을 함께 보내드립니다.",
-    price: "월 4회 6만원부터",
-    priceNote: "층수, 오염도, 작업 범위에 따라 달라질 수 있습니다.",
+    price: "주 1회 3층 6만원부터",
+    priceNote: "부가세 별도 · 4층 7만원, 5층 8만원 · 범위에 따라 변동",
     heroImage: "/landing/cleaning/stair-cleaning-example.jpg",
     heroAlt: "전문 장비를 든 작업자의 실내 청소 작업 예시",
     facts: [
@@ -128,8 +128,8 @@ export const landingServices: Record<LandingSlug, LandingService> = {
     accent: "우리 건물의 오늘을 확인할 수 있습니다.",
     lead:
       "공실부터 세입자 문의, 입퇴실과 현장 확인까지 처리 결과를 사진과 기록으로 연결합니다.",
-    price: "지역 공동관리 월 8.9만원",
-    priceNote: "건물 규모와 관리 범위에 따라 별도 협의될 수 있습니다.",
+    price: "월 8만 9천원부터",
+    priceNote: "부가세 별도 · 건물 규모와 관리 범위에 따라 변동",
     heroImage: "/landing/address-sign-after.jpg",
     heroAlt: "브링케어가 관리한 건물 입구 표식",
     facts: [
@@ -192,8 +192,8 @@ export const landingServices: Record<LandingSlug, LandingService> = {
     accent: "작업 범위와 완료 사진으로 확인하세요.",
     lead:
       "현관, 주방, 욕실, 창틀과 바닥의 작업 범위를 먼저 안내하고 완료 후 사진으로 확인합니다.",
-    price: "원룸 10만원부터",
-    priceNote: "평형, 오염도, 옵션과 추가 작업에 따라 달라질 수 있습니다.",
+    price: "관리 건물 10만원 · 일반 단건 12만원부터",
+    priceNote: "부가세 별도 · 평형, 오염도, 옵션과 추가 작업에 따라 변동",
     heroImage: "/landing/move-in-condition.jpg",
     heroAlt: "입주 전 상태를 확인하는 원룸 내부",
     facts: [
