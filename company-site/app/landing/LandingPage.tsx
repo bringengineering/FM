@@ -5,18 +5,21 @@ import OfficialChannels from "./OfficialChannels";
 import PricingGrid from "./PricingGrid";
 import QuickEstimateForm from "./QuickEstimateForm";
 import type { LandingService } from "./services";
+import TurnoverSections from "./TurnoverSections";
 import "./landing.css";
 
 const serviceNames: Record<LandingService["slug"], string> = {
   "stair-cleaning": "계단·공용부 청소",
   "building-care": "원룸·다가구 건물관리",
   "move-in-cleaning": "입주·이사청소",
+  "turnover-care": "24H 입·퇴실 관리",
 };
 
 const activePriceBySlug = {
   "stair-cleaning": "stair-cleaning",
   "building-care": "building-care",
   "move-in-cleaning": "single-turnover",
+  "turnover-care": "managed-turnover",
 } as const;
 
 type LandingPageProps = {
@@ -111,6 +114,8 @@ export default function LandingPage({ service }: LandingPageProps) {
           ))}
         </div>
       </section>
+
+      {service.slug === "turnover-care" ? <TurnoverSections /> : null}
 
       <section className="landing-cleaning-results" aria-labelledby="cleaning-results-title">
         <div className="landing-section-inner">
@@ -243,15 +248,17 @@ export default function LandingPage({ service }: LandingPageProps) {
         </div>
       </section>
 
-      <aside className="landing-turnover-link">
-        <div className="landing-section-inner">
-          <p>퇴실 일정이 잡혀 있다면</p>
-          <h2>퇴실 후가 아니라 14일 전부터 준비하세요.</h2>
-          <Link href="/turnover-care">
-            입·퇴실까지 함께 관리하기 <span aria-hidden="true">→</span>
-          </Link>
-        </div>
-      </aside>
+      {service.slug !== "turnover-care" ? (
+        <aside className="landing-turnover-link">
+          <div className="landing-section-inner">
+            <p>퇴실 일정이 잡혀 있다면</p>
+            <h2>퇴실 후가 아니라 14일 전부터 준비하세요.</h2>
+            <Link href="/turnover-care">
+              입·퇴실까지 함께 관리하기 <span aria-hidden="true">→</span>
+            </Link>
+          </div>
+        </aside>
+      ) : null}
 
       <PricingGrid activePrice={activePriceBySlug[service.slug]} />
 

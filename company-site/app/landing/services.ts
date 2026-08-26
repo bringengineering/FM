@@ -3,7 +3,8 @@ import { recordsFor, type FieldRecord } from "./fieldRecords";
 export type LandingSlug =
   | "stair-cleaning"
   | "building-care"
-  | "move-in-cleaning";
+  | "move-in-cleaning"
+  | "turnover-care";
 
 export type LandingRecord = FieldRecord;
 
@@ -233,6 +234,52 @@ export const landingServices: Record<LandingSlug, LandingService> = {
         question: "청소 후 확인은 어떻게 하나요?",
         answer: "현장 확인 또는 작업 후 사진으로 완료 상태를 확인할 수 있습니다.",
       },
+    ],
+  },
+  "turnover-care": {
+    slug: "turnover-care",
+    eyebrow: "브링케어 24H 입·퇴실 관리 패키지",
+    metaTitle: "원주 24H 입·퇴실 관리 | BRING CARE",
+    metaDescription:
+      "퇴실 14일 전부터 준비하는 원주 입·퇴실 관리. 퇴실 확인, 직영 청소, 필요한 보수 연결과 완료 사진을 한 흐름으로 관리합니다.",
+    title: "퇴실 후에 움직이지 않습니다.",
+    accent: "14일 전부터 준비합니다.",
+    lead:
+      "퇴실 확인부터 직영 청소, 필요한 보수 연결, 완료 사진과 다음 임대 준비까지 하나의 흐름으로 관리합니다.",
+    price: "관리 건물 입·퇴실청소 10만원부터",
+    priceNote: "부가세 별도 · 적용 조건 충족 시 24H 운영 기준",
+    heroImage: "/landing/move-in-condition.jpg",
+    heroAlt: "입·퇴실 준비를 위해 상태를 확인하는 원룸 내부",
+    facts: [
+      { value: "D-14", label: "퇴실 전 사전 접수" },
+      { value: "24H", label: "조건 충족 시 운영 기준" },
+      { value: "직영 청소", label: "승인된 기본 범위" },
+      { value: "사진 기록", label: "완료·인계 준비" },
+    ],
+    cleaningResults: [
+      { title: "퇴실 상태 기록", copy: "잔존물, 오염과 파손 여부를 확인해 사진으로 남깁니다." },
+      { title: "청소·경미한 정리", copy: "승인된 범위의 기본 청소와 정리를 바로 이어서 진행합니다." },
+      { title: "다음 임대 준비", copy: "완료 사진과 현장 정보를 정리해 다음 안내에 활용할 수 있게 합니다." },
+    ],
+    scope: [
+      { title: "퇴실 확인", copy: "출입 후 호실 상태와 필요한 작업을 확인합니다." },
+      { title: "직영 청소", copy: "주방, 욕실, 창틀과 바닥의 승인된 기본 범위를 청소합니다." },
+      { title: "보수 연결", copy: "전문작업이 필요하면 범위와 비용을 안내하고 승인 후 연결합니다." },
+      { title: "완료 보고", copy: "작업 결과와 다음 확인 사항을 사진으로 전달합니다." },
+    ],
+    records: recordsFor(["224382172156", "224368259003", "224383896443", "224382176899"]),
+    process: [
+      { title: "D-14 접수", copy: "퇴실 일정과 출입 정보를 등록합니다." },
+      { title: "사전 확인", copy: "작업 범위와 승인 항목을 정합니다." },
+      { title: "퇴실 확인", copy: "오염, 잔존물과 수리 필요 여부를 기록합니다." },
+      { title: "청소·정리", copy: "승인된 범위를 직영으로 진행합니다." },
+      { title: "사진 기록", copy: "완료 상태와 추가 사항을 전달합니다." },
+      { title: "D+1 인계 준비", copy: "다음 임대 안내를 위한 정보를 정리합니다." },
+    ],
+    faq: [
+      { question: "24H가 임대차 계약까지 보장하나요?", answer: "아닙니다. 24H는 조건을 충족한 호실의 청소·정리·사진 기록·인계 준비를 마치는 운영 기준이며 임대차 계약을 보장하지 않습니다." },
+      { question: "모든 수리가 24시간 안에 끝나나요?", answer: "아닙니다. 도배, 장판, 설비 등 전문작업이나 중대한 수리는 별도 일정과 승인이 필요합니다." },
+      { question: "언제까지 신청해야 하나요?", answer: "퇴실 14일 전까지 접수해야 출입, 범위와 비용을 사전에 맞출 수 있습니다." },
     ],
   },
 };
