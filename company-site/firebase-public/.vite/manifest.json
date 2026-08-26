@@ -10,8 +10,19 @@
       "_rolldown-runtime-S-ySWqyJ.js"
     ]
   },
-  "_query-BqyIlvsm.js": {
-    "file": "assets/query-BqyIlvsm.js",
+  "_marketingLeadClient-DnkaeBo7.js": {
+    "file": "assets/marketingLeadClient-DnkaeBo7.js",
+    "name": "marketingLeadClient",
+    "imports": [
+      "_rolldown-runtime-S-ySWqyJ.js",
+      "_firebase.client-BT88MgJI.js",
+      "_framework-B8WyT5R3.js",
+      "_readonly-url-search-params-BRv7ewS0.js",
+      "_url-utils-BAkPrQqo.js"
+    ]
+  },
+  "_query-Ddm8W4QT.js": {
+    "file": "assets/query-Ddm8W4QT.js",
     "name": "query"
   },
   "_readonly-url-search-params-BRv7ewS0.js": {
@@ -51,21 +62,30 @@
       "_framework-B8WyT5R3.js"
     ]
   },
+  "app/landing/QuickEstimateExperience.tsx": {
+    "file": "assets/QuickEstimateExperience-CuPlq4hm.js",
+    "name": "QuickEstimateExperience",
+    "src": "app/landing/QuickEstimateExperience.tsx",
+    "isDynamicEntry": true,
+    "imports": [
+      "_rolldown-runtime-S-ySWqyJ.js",
+      "_marketingLeadClient-DnkaeBo7.js",
+      "_framework-B8WyT5R3.js"
+    ]
+  },
   "app/landing/QuickEstimateForm.tsx": {
-    "file": "assets/QuickEstimateForm-0Sh2RAgL.js",
+    "file": "assets/QuickEstimateForm-Da0iaLbZ.js",
     "name": "QuickEstimateForm",
     "src": "app/landing/QuickEstimateForm.tsx",
     "isDynamicEntry": true,
     "imports": [
       "_rolldown-runtime-S-ySWqyJ.js",
-      "_firebase.client-BT88MgJI.js",
-      "_framework-B8WyT5R3.js",
-      "_readonly-url-search-params-BRv7ewS0.js",
-      "_url-utils-BAkPrQqo.js"
+      "_marketingLeadClient-DnkaeBo7.js",
+      "_framework-B8WyT5R3.js"
     ]
   },
   "node_modules/.pnpm/vinext@0.0.50_@vitejs+plugi_9192fdac6e7854526409bdfa1df91a00/node_modules/vinext/dist/shims/image.js": {
-    "file": "assets/image-DZoQpjrg.js",
+    "file": "assets/image-ClYfyjt9.js",
     "name": "image",
     "src": "node_modules/.pnpm/vinext@0.0.50_@vitejs+plugi_9192fdac6e7854526409bdfa1df91a00/node_modules/vinext/dist/shims/image.js",
     "isDynamicEntry": true,
@@ -75,7 +95,7 @@
     ]
   },
   "node_modules/.pnpm/vinext@0.0.50_@vitejs+plugi_9192fdac6e7854526409bdfa1df91a00/node_modules/vinext/dist/shims/layout-segment-context.js": {
-    "file": "assets/layout-segment-context-CWnUfkbn.js",
+    "file": "assets/layout-segment-context-Dz7ioVqR.js",
     "name": "layout-segment-context",
     "src": "node_modules/.pnpm/vinext@0.0.50_@vitejs+plugi_9192fdac6e7854526409bdfa1df91a00/node_modules/vinext/dist/shims/layout-segment-context.js",
     "isDynamicEntry": true,
@@ -86,7 +106,7 @@
     ]
   },
   "node_modules/.pnpm/vinext@0.0.50_@vitejs+plugi_9192fdac6e7854526409bdfa1df91a00/node_modules/vinext/dist/shims/link.js": {
-    "file": "assets/link-CqP4DQ6p.js",
+    "file": "assets/link-6t0fiS0r.js",
     "name": "link",
     "src": "node_modules/.pnpm/vinext@0.0.50_@vitejs+plugi_9192fdac6e7854526409bdfa1df91a00/node_modules/vinext/dist/shims/link.js",
     "isDynamicEntry": true,
@@ -96,14 +116,14 @@
       "_framework-B8WyT5R3.js",
       "_readonly-url-search-params-BRv7ewS0.js",
       "_url-utils-BAkPrQqo.js",
-      "_query-BqyIlvsm.js"
+      "_query-Ddm8W4QT.js"
     ],
     "dynamicImports": [
       "node_modules/.pnpm/vinext@0.0.50_@vitejs+plugi_9192fdac6e7854526409bdfa1df91a00/node_modules/vinext/dist/shims/router.js"
     ]
   },
   "node_modules/.pnpm/vinext@0.0.50_@vitejs+plugi_9192fdac6e7854526409bdfa1df91a00/node_modules/vinext/dist/shims/router.js": {
-    "file": "assets/router-4oVb-0zx.js",
+    "file": "assets/router-CTgxM-JM.js",
     "name": "router",
     "src": "node_modules/.pnpm/vinext@0.0.50_@vitejs+plugi_9192fdac6e7854526409bdfa1df91a00/node_modules/vinext/dist/shims/router.js",
     "isDynamicEntry": true,
@@ -112,14 +132,14 @@
       "virtual:vinext-app-browser-entry",
       "_framework-B8WyT5R3.js",
       "_url-utils-BAkPrQqo.js",
-      "_query-BqyIlvsm.js"
+      "_query-Ddm8W4QT.js"
     ],
     "dynamicImports": [
       "_framework-B8WyT5R3.js"
     ]
   },
   "virtual:vinext-app-browser-entry": {
-    "file": "assets/index-CCZ_QtLi.js",
+    "file": "assets/index-BOHVHymK.js",
     "name": "index",
     "src": "virtual:vinext-app-browser-entry",
     "isEntry": true,
@@ -132,6 +152,7 @@
     "dynamicImports": [
       "virtual:vinext-app-browser-entry",
       "app/consult/ConsultForm.tsx",
+      "app/landing/QuickEstimateExperience.tsx",
       "node_modules/.pnpm/vinext@0.0.50_@vitejs+plugi_9192fdac6e7854526409bdfa1df91a00/node_modules/vinext/dist/shims/image.js",
       "app/field/components/v2/FieldV2App.tsx",
       "node_modules/.pnpm/vinext@0.0.50_@vitejs+plugi_9192fdac6e7854526409bdfa1df91a00/node_modules/vinext/dist/shims/link.js",
