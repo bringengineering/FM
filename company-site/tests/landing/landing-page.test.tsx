@@ -4,6 +4,7 @@ import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { describe, expect, it, vi } from "vitest";
 import LandingPage from "../../app/landing/LandingPage";
+import StairCleaningLanding from "../../app/landing/StairCleaningLanding";
 import { landingServices } from "../../app/landing/services";
 
 vi.mock("next/navigation", () => ({
@@ -11,6 +12,31 @@ vi.mock("next/navigation", () => ({
 }));
 
 describe("LandingPage", () => {
+  it("renders the approved Toss-style stair cleaning sales page with the live estimate form", () => {
+    const { container } = render(<StairCleaningLanding />);
+
+    expect(
+      screen.getByRole("heading", {
+        name: /계단청소를 넘어,.*건물의 첫인상을.*관리합니다\./,
+      }),
+    ).toBeInTheDocument();
+    expect(screen.getAllByText("월 4회 정기방문")).toHaveLength(2);
+    expect(screen.getByText("월간 관리보고")).toBeInTheDocument();
+    expect(screen.getByText("시설 상태 확인")).toBeInTheDocument();
+    expect(screen.getByText("원주 직영팀")).toBeInTheDocument();
+    expect(
+      screen.getByRole("heading", { name: "깨끗하게만 하지 않습니다." }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole("heading", { name: /한 달의 관리 내용을.*보고서로 확인하세요\./ }),
+    ).toBeInTheDocument();
+    expect(screen.getByText("3층 건물")).toBeInTheDocument();
+    expect(screen.getByText("월 60,000원")).toBeInTheDocument();
+    expect(container.querySelector("#quick-estimate-form")).toBeInTheDocument();
+    expect(
+      screen.getByRole("link", { name: /무료 견적 신청.*30초 만에 입력하기/ }),
+    ).toHaveAttribute("href", "#estimate");
+  });
   it.each([
     ["stair-cleaning", /원주 계단·공용부 정기청소/],
     ["building-care", /멀리 있어도,.*우리 건물의 오늘을 확인할 수 있습니다\./],
