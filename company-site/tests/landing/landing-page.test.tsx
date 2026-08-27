@@ -264,4 +264,21 @@ describe("LandingPage", () => {
     );
     expect(css).not.toMatch(/\.care-records-logo\s*\{[^}]*filter:/);
   });
+
+  it("gives mobile cleaning headings and gallery cards more breathing room", () => {
+    const css = readFileSync(
+      resolve(process.cwd(), "app/landing/stair-cleaning.css"),
+      "utf8",
+    );
+
+    expect(css).toMatch(
+      /@media \(max-width: 820px\)[\s\S]*?\.stair-section h2[\s\S]*?line-height:\s*1\.22/,
+    );
+    expect(css).toMatch(
+      /@media \(max-width: 820px\)[\s\S]*?\.stair-gallery figure[\s\S]*?aspect-ratio:\s*1\s*\/\s*1[\s\S]*?height:\s*auto/,
+    );
+    expect(css).toMatch(
+      /@media \(max-width: 820px\)[\s\S]*?\.stair-gallery\s*\{[\s\S]*?gap:\s*24px/,
+    );
+  });
 });

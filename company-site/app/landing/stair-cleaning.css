@@ -141,12 +141,13 @@
   .stair-fact-grid article { min-height: 165px; padding: 20px; border-radius: 20px; }
   .stair-fact-grid strong { font-size: 17px; }
   .stair-section { padding: 82px 20px; }
-  .stair-section h2, .stair-report-copy h2, .stair-estimate h2 { font-size: 40px; letter-spacing: -2.2px; }
-  .stair-section-head { margin-bottom: 36px; }
+  .stair-section h2, .stair-report-copy h2, .stair-estimate h2 { margin-bottom: 26px; font-size: 40px; line-height: 1.22; letter-spacing: -2.2px; }
+  .stair-section-head { margin-bottom: 48px; }
   .stair-section-head > span { font-size: 16px; }
   .stair-scope-grid, .stair-gallery, .stair-report-grid, .stair-reference-grid { grid-template-columns: 1fr; }
   .stair-scope-grid article { padding: 26px; border-radius: 24px; }
-  .stair-gallery figure, .stair-gallery figure:first-child { height: 340px; grid-row: auto; }
+  .stair-gallery { gap: 24px; }
+  .stair-gallery figure, .stair-gallery figure:first-child { aspect-ratio: 1 / 1; height: auto; grid-row: auto; border-radius: 30px; }
   .stair-reference-copy p { min-height: auto; }
   .stair-report-grid { gap: 38px; }
   .stair-report-card { padding: 24px 20px; border-radius: 24px; }
