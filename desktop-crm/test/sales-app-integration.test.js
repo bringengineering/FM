@@ -198,7 +198,7 @@ test("opportunities link only to an active workflow case and revalidate on submi
   const app = await appSource();
   const editor = app.match(/function salesOpportunityEditor\(prospectId, opportunityId\) \{([\s\S]*?)\n  \}/)?.[1] || "";
   assert.match(editor, /const workflowCases = activeCases\(\)/);
-  assert.match(editor, /selectField\("연결 민원·공사 케이스", "workflowCaseId"/);
+  assert.match(editor, /selectField\("연결 민원·공사 기록", "workflowCaseId"/);
   assert.match(editor, /workflowCaseKey\(workflowCase\)/);
 
   const submit = app.match(/else if \(form\.id === "salesOpportunityForm"\) \{([\s\S]*?)\} else if \(form\.id === "workflowCaseCreateForm"\)/)?.[1] || "";

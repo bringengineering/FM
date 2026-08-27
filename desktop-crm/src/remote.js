@@ -863,6 +863,7 @@ class FirebaseRemoteClient {
     this.writeLocalStore = options.writeLocalStore;
     this.clearLocalStore = options.clearLocalStore || (async () => {});
     this.onRemoteStore = options.onRemoteStore || (() => {});
+    this.onCustomerPhotos = options.onCustomerPhotos || (() => {});
     this.onAuthState = options.onAuthState || (() => {});
     this.onSyncState = options.onSyncState || (() => {});
     this.session = null;
@@ -872,8 +873,11 @@ class FirebaseRemoteClient {
     this.streamTask = null;
     this.summaryStreamController = null;
     this.summaryStreamTask = null;
+    this.customerPhotoStreamController = null;
+    this.customerPhotoStreamTask = null;
     this.reloadTimer = null;
     this.overlayReloadTimer = null;
+    this.customerPhotoReloadTimer = null;
     this.retryTimer = null;
     this.canonicalRefreshRetryTimer = null;
     this.tokenRefreshTask = null;
@@ -1737,6 +1741,54 @@ class FirebaseRemoteClient {
     return value && typeof value === "object" && !Array.isArray(value) ? value : {};
   }
 
+  async loadCustomerPhotos(guardValue) {
+    const guard = guardValue || this.captureSessionGuard();
+    if (!this.sessionGuardActive(guard)) throw createError("로그인이 필요합니다.", "AUTH_REQUIRED");
+    const value = await this.dbRequest("customerPhotos", { method: "GET" });
+    if (!this.sessionGuardActive(guard)) return null;
+    if (!value || typeof value !== "object" || Array.isArray(value)) return {};
+    const photos = {};
+    for (const [customerId, record] of Object.entries(value)) {
+      if (!SAFE_DIRECT_ID.test(customerId) || FORBIDDEN_DIRECT_IDS.has(customerId) || !record || typeof record !== "object" || Array.isArray(record)) continue;
+      const dataUrl = this.Core.normalizeCustomerPhotoDataUrl(record.dataUrl);
+      if (!dataUrl || !dataUrl.startsWith("data:image/jpeg;base64,")) continue;
+      photos[customerId] = {
+        dataUrl,
+        size: Number(record.size) || 0,
+        updatedAt: String(record.updatedAt || ""),
+        updatedBy: String(record.updatedBy || "")
+      };
+    }
+    return photos;
+  }
+
+  async saveCustomerPhoto(input) {
+    const session = this.requireMutationPermission(input);
+    const source = input && typeof input === "object" && !Array.isArray(input) ? input : {};
+    if (Object.keys(source).some(key => !["customerId", "dataUrl"].includes(key))) throw createError("고객 사진 요청을 확인해 주세요.", "INVALID_CUSTOMER_PHOTO");
+    const customerId = String(source.customerId || "").trim();
+    if (!SAFE_DIRECT_ID.test(customerId) || FORBIDDEN_DIRECT_IDS.has(customerId)) throw createError("고객 정보를 확인해 주세요.", "INVALID_CUSTOMER_PHOTO");
+    const rawDataUrl = String(source.dataUrl || "").trim();
+    if (!rawDataUrl) {
+      await this.dbRequest(`customerPhotos/${customerId}`, { method: "DELETE", query: "print=silent" });
+      return { ok: true, customerId, removed: true };
+    }
+    const linkedCustomer = await this.dbRequest(`crmShared/data/customers/${customerId}`, { method: "GET" });
+    if (!linkedCustomer || typeof linkedCustomer !== "object" || Array.isArray(linkedCustomer) || String(linkedCustomer.id || "") !== customerId || String(linkedCustomer.archivedAt || "")) {
+      throw createError("사용 중인 고객만 사진을 저장할 수 있습니다.", "CUSTOMER_NOT_FOUND");
+    }
+    const dataUrl = this.Core.normalizeCustomerPhotoDataUrl(rawDataUrl);
+    if (!dataUrl || !dataUrl.startsWith("data:image/jpeg;base64,")) throw createError("고객 사진 형식을 확인해 주세요.", "INVALID_CUSTOMER_PHOTO");
+    const photo = {
+      dataUrl,
+      size: Buffer.byteLength(dataUrl, "utf8"),
+      updatedAt: new Date().toISOString(),
+      updatedBy: String(session.uid || "")
+    };
+    await this.dbRequest(`customerPhotos/${customerId}`, { method: "PUT", body: photo, query: "print=silent" });
+    return { ok: true, customerId, photo };
+  }
+
   async decideDriveImport(input) {
     if (!this.session || this.session.role !== "admin") throw createError("관리자만 Drive 자료를 승인하거나 반려할 수 있습니다.", "PERMISSION_DENIED");
     const source = input && typeof input === "object" && !Array.isArray(input) ? input : {};
@@ -2527,24 +2579,24 @@ class FirebaseRemoteClient {
     const isNew = source.create === true;
     const generatedKey = `k${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`;
     const caseKey = String(source.caseKey || (isNew ? generatedKey : "")).trim();
-    if (!caseKey || caseKey.length > 120 || /[.#$\[\]\/]/.test(caseKey)) throw createError("케이스 번호를 확인해 주세요.", "INVALID_CASE");
+    if (!caseKey || caseKey.length > 120 || /[.#$\[\]\/]/.test(caseKey)) throw createError("민원 번호를 확인해 주세요.", "INVALID_CASE");
 
     const trashAction = String(source.trashAction || "");
     if (trashAction === "delete") {
       if (isNew || source.fields || source.stepKey || source.vendorSelection) throw createError("영구 삭제 요청을 확인해 주세요.", "INVALID_CASE");
       const existing = await this.rootDbRequest(`cases/${caseKey}`, { method: "GET" });
-      if (!existing || existing.deleted !== true) throw createError("휴지통에 있는 케이스만 영구 삭제할 수 있습니다.", "INVALID_CASE");
+      if (!existing || existing.deleted !== true) throw createError("휴지통에 있는 민원만 영구 삭제할 수 있습니다.", "INVALID_CASE");
       const audit = this.Core.createAuditLog({
         id: caseDeleteAuditId(caseKey),
         category: "삭제",
-        targetType: "케이스",
+        targetType: "민원",
         targetId: caseKey,
         targetLabel: String(existing.ticketNo || existing.id || caseKey).slice(0, 120),
-        action: "케이스 영구 삭제",
+        action: "민원 영구 삭제",
         actor: this.session.displayName || this.session.email || "CRM 사용자",
         actorUid: this.session.uid || "",
         actorEmail: this.session.email || "",
-        reason: "휴지통 케이스 영구 삭제"
+        reason: "휴지통 민원 영구 삭제"
       });
       const auditPath = this.databaseRoot
         ? `${this.databaseRoot}/${resolveDatabasePatchLocation(`crmShared/data/auditLogs/${audit.id}`, this.databaseRoot)}`
@@ -2559,7 +2611,7 @@ class FirebaseRemoteClient {
     const fieldLimits = {
       name: 80, phone: 40, email: 160, building: 120, room: 80, address: 240,
       crmCustomerId: 120, crmBuildingId: 120,
-      grade: 40, urgency: 40, issueType: 80, summary: 1200, memo: 1200
+      caseParty: 20, grade: 40, urgency: 40, issueType: 80, summary: 1200, memo: 1200
     };
     const patch = {};
     const fields = source.fields && typeof source.fields === "object" ? source.fields : {};
@@ -2567,6 +2619,8 @@ class FirebaseRemoteClient {
       if (!Object.prototype.hasOwnProperty.call(fieldLimits, field)) return;
       patch[field] = String(value || "").trim().slice(0, fieldLimits[field]);
     });
+    if (source.create === true && !["건물주", "브링"].includes(patch.caseParty)) throw createError("민원 작성 구분을 선택해 주세요.", "INVALID_CASE_PARTY");
+    if (Object.prototype.hasOwnProperty.call(patch, "caseParty") && !["건물주", "브링"].includes(patch.caseParty)) throw createError("민원 작성 구분을 확인해 주세요.", "INVALID_CASE_PARTY");
     for (const field of ["crmCustomerId", "crmBuildingId"]) {
       if (patch[field] && !/^[A-Za-z0-9_-]{1,120}$/.test(patch[field])) throw createError("CRM 연결 정보를 확인해 주세요.", "INVALID_CASE_LINK");
       if (Object.prototype.hasOwnProperty.call(patch, field) && !patch[field]) patch[field] = null;
@@ -2581,7 +2635,7 @@ class FirebaseRemoteClient {
     }
 
     if (trashAction) {
-      if (!['trash', 'restore'].includes(trashAction)) throw createError("케이스 휴지통 작업을 확인해 주세요.", "INVALID_CASE");
+      if (!['trash', 'restore'].includes(trashAction)) throw createError("민원 휴지통 작업을 확인해 주세요.", "INVALID_CASE");
       if (trashAction === "trash") {
         const deletedAt = new Date().toISOString();
         patch.deleted = true;
@@ -2645,7 +2699,7 @@ class FirebaseRemoteClient {
     patch.updatedAt = now;
     patch.crmUpdatedAt = now;
     patch.crmUpdatedBy = this.session.email || "CRM 사용자";
-    if (!Object.keys(patch).length) throw createError("저장할 케이스 내용이 없습니다.", "INVALID_CASE");
+    if (!Object.keys(patch).length) throw createError("저장할 민원 내용이 없습니다.", "INVALID_CASE");
 
     await this.rootDbRequest(`cases/${caseKey}`, { method: "PATCH", body: patch, query: "print=silent" });
     return { ok: true, caseKey, updatedAt: now, patch };
@@ -3022,6 +3076,26 @@ class FirebaseRemoteClient {
     }), 180);
   }
 
+  scheduleCustomerPhotoReload() {
+    const guard = this.captureSessionGuard();
+    if (!this.sessionGuardActive(guard)) return;
+    clearTimeout(this.customerPhotoReloadTimer);
+    this.customerPhotoReloadTimer = setTimeout(() => this.reloadCustomerPhotos(guard).catch(() => {
+      if (this.sessionGuardActive(guard)) {
+        this.emitSync("offline", "고객 사진을 다시 불러오는 중입니다.", { pending: false });
+      }
+    }), 180);
+  }
+
+  async reloadCustomerPhotos(guardValue) {
+    const guard = guardValue || this.captureSessionGuard();
+    if (!this.sessionGuardActive(guard)) return null;
+    const photos = await this.loadCustomerPhotos(guard);
+    if (!photos || !this.sessionGuardActive(guard)) return null;
+    this.onCustomerPhotos(photos);
+    return photos;
+  }
+
   async reloadRendererOverlays(guardValue) {
     const guard = guardValue || this.captureSessionGuard();
     return this.enqueueSharedMutation(() => this.reloadRendererOverlaysLocked(guard));
@@ -3083,6 +3157,13 @@ class FirebaseRemoteClient {
       });
       this.summaryStreamTask = trackedSummary;
     }
+    if (!this.customerPhotoStreamTask) {
+      let trackedPhotos;
+      trackedPhotos = this.streamLoop("customerPhotos", "customerPhotos", generation).finally(() => {
+        if (this.customerPhotoStreamTask === trackedPhotos) this.customerPhotoStreamTask = null;
+      });
+      this.customerPhotoStreamTask = trackedPhotos;
+    }
   }
 
   stopStream() {
@@ -3091,31 +3172,40 @@ class FirebaseRemoteClient {
     this.streamGeneration += 1;
     if (this.streamController) this.streamController.abort();
     if (this.summaryStreamController) this.summaryStreamController.abort();
+    if (this.customerPhotoStreamController) this.customerPhotoStreamController.abort();
     this.streamController = null;
     this.summaryStreamController = null;
+    this.customerPhotoStreamController = null;
     this.streamTask = null;
     this.summaryStreamTask = null;
+    this.customerPhotoStreamTask = null;
     clearTimeout(this.reloadTimer);
     clearTimeout(this.overlayReloadTimer);
+    clearTimeout(this.customerPhotoReloadTimer);
     clearTimeout(this.retryTimer);
     clearTimeout(this.canonicalRefreshRetryTimer);
   }
 
   handleStreamEvent(kind, eventName) {
     if (eventName === "put" || eventName === "patch") {
-      return kind === "fieldSummaries" ? this.scheduleOverlayReload() : this.scheduleRemoteReload();
+      if (kind === "fieldSummaries") return this.scheduleOverlayReload();
+      if (kind === "customerPhotos") return this.scheduleCustomerPhotoReload();
+      return this.scheduleRemoteReload();
     }
     if (eventName === "auth_revoked" || eventName === "cancel") {
       if (this.session) this.session.expiresAt = 0;
       this.sessionGeneration += 1;
       if (this.streamController) this.streamController.abort();
       if (this.summaryStreamController) this.summaryStreamController.abort();
+      if (this.customerPhotoStreamController) this.customerPhotoStreamController.abort();
     }
     return undefined;
   }
 
   async streamLoop(location, kind, generation) {
-    const controllerKey = kind === "fieldSummaries" ? "summaryStreamController" : "streamController";
+    const controllerKey = kind === "fieldSummaries"
+      ? "summaryStreamController"
+      : kind === "customerPhotos" ? "customerPhotoStreamController" : "streamController";
     const sessionGuard = this.captureSessionGuard();
     while (
       !this.stopped

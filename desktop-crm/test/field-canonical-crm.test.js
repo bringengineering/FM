@@ -430,7 +430,7 @@ test("a field-summary stream event refreshes renderer overlays without reloading
   assert.equal(remoteStores[0].fieldSummaries[0].workflowStatus, "approved");
 });
 
-test("shared and field-summary streams start and stop together, and auth revocation aborts both", async () => {
+test("shared, field-summary, and customer-photo streams start and stop together", async () => {
   const { client } = makeClient();
   const starts = [];
   client.streamLoop = async (location, kind) => { starts.push({ location, kind }); };
@@ -438,21 +438,26 @@ test("shared and field-summary streams start and stop together, and auth revocat
   client.startStream();
   assert.deepEqual(starts, [
     { location: "crmShared/data", kind: "shared" },
-    { location: "fieldSummaries", kind: "fieldSummaries" }
+    { location: "fieldSummaries", kind: "fieldSummaries" },
+    { location: "customerPhotos", kind: "customerPhotos" }
   ]);
 
   let sharedAborts = 0;
   let summaryAborts = 0;
+  let customerPhotoAborts = 0;
   client.streamController = { abort: () => { sharedAborts += 1; } };
   client.summaryStreamController = { abort: () => { summaryAborts += 1; } };
+  client.customerPhotoStreamController = { abort: () => { customerPhotoAborts += 1; } };
   client.handleStreamEvent("fieldSummaries", "auth_revoked");
   assert.equal(client.session.expiresAt, 0);
   assert.equal(sharedAborts, 1);
   assert.equal(summaryAborts, 1);
+  assert.equal(customerPhotoAborts, 1);
 
   client.stopStream();
   assert.equal(client.streamController, null);
   assert.equal(client.summaryStreamController, null);
+  assert.equal(client.customerPhotoStreamController, null);
 });
 
 test("an old session canonical refresh is discarded after logout and a different login", async () => {

@@ -61,6 +61,7 @@
   let salesStageFilter = "all";
   let salesBoardMode = "focus";
   let contractTypeFilter = "전체";
+  let contractPaymentModeFilter = "recurring";
   let contractStatusFilter = "전체";
   let partnerVendorIndustryFilter = "전체 업종";
   let partnerQuoteIndustryFilter = "전체 업종";
@@ -89,6 +90,8 @@
   let buildingLookupSequence = 0;
   let loginInProgress = false;
   let operations = { cases: [], payments: {}, caseSettings: {}, loadedAt: "" };
+  let customerPhotos = {};
+  let customerPhotoRefreshPromise = null;
   let operationsLoading = false;
   let operationsError = "";
   let workflowVendors = [];
@@ -100,6 +103,7 @@
   let selectedCaseKey = "";
   let openCaseStepKey = "";
   let caseListMode = "active";
+  let casePartyFilter = "전체";
   let fieldTeamProfiles = [];
   let fieldProfilesAvailable = false;
   let fieldProfilesError = "";
@@ -120,7 +124,7 @@
 
   const viewMeta = {
     dashboard: ["오늘의 업무", "한눈에 보기"],
-    cases: ["접수부터 사후관리까지", "케이스"],
+    cases: ["접수부터 사후관리까지", "민원 관리"],
     payments: ["건물별 납부 예정과 입금 확인", "입금 캘린더"],
     customers: ["고객과 연결 건물을 한곳에서", "고객·건물 관리"],
     buildings: ["고객과 연결 건물을 한곳에서", "고객·건물 관리"],
@@ -205,6 +209,11 @@
   const esc = value => String(value ?? "").replace(/[&<>"']/g, char => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[char]));
   const attr = esc;
   const initials = value => String(value || "고객").replace(/\s/g, "").slice(0, 1).toUpperCase();
+  const customerAvatar = customer => {
+    const storedPhoto = customer && customer.id && customerPhotos[customer.id] && customerPhotos[customer.id].dataUrl;
+    const photo = Core.normalizeCustomerPhotoDataUrl(customer && customer.photoDataUrl || storedPhoto);
+    return `<i class="avatar" aria-hidden="true">${photo ? `<img src="${attr(photo)}" alt="">` : esc(initials(customer && customer.name))}</i>`;
+  };
   const customerPhoneText = value => Core.formatPhone(value);
   const formattedPhoneInputSelector = "#customerForm [data-customer-phone], #partnerVendorForm [data-partner-vendor-phone]";
 
@@ -585,6 +594,8 @@
       driveImportCandidates = [];
       driveImportRefreshPromise = null;
       driveImportRefreshSequence += 1;
+      customerPhotos = {};
+      customerPhotoRefreshPromise = null;
       fieldOpenGeneration += 1;
       fieldTeamProfiles = [];
       fieldProfilesAvailable = false;
@@ -592,6 +603,43 @@
       fieldNavigationState = restoreFieldNavigationState();
     }
     return currentAuth;
+  }
+
+  function normalizeCustomerPhotoMap(value) {
+    const photos = Object.create(null);
+    if (!value || typeof value !== "object" || Array.isArray(value)) return photos;
+    Object.entries(value).forEach(([customerId, record]) => {
+      if (!/^[A-Za-z0-9_-]{1,120}$/.test(customerId) || ["__proto__", "prototype", "constructor"].includes(customerId) || !record || typeof record !== "object" || Array.isArray(record)) return;
+      const dataUrl = Core.normalizeCustomerPhotoDataUrl(record.dataUrl);
+      if (!dataUrl || !dataUrl.startsWith("data:image/jpeg;base64,")) return;
+      photos[customerId] = { dataUrl, size: Number(record.size) || dataUrl.length, updatedAt: String(record.updatedAt || ""), updatedBy: String(record.updatedBy || "") };
+    });
+    return photos;
+  }
+
+  function applyCustomerPhotos(value, renderAfter = true) {
+    customerPhotos = normalizeCustomerPhotoMap(value);
+    if (!renderAfter || !appInitialized) return customerPhotos;
+    render();
+    if (selectedCustomerId && customerById(selectedCustomerId)) {
+      if (selectedCustomerDrawerMode === "relationship") renderRelationshipDrawer(selectedCustomerId);
+      else renderCustomerDrawer(selectedCustomerId);
+    }
+    return customerPhotos;
+  }
+
+  async function refreshCustomerPhotos(renderAfter = true) {
+    if (customerPhotoRefreshPromise) return customerPhotoRefreshPromise;
+    const generation = authGeneration;
+    const uid = currentAuthUid();
+    const refreshPromise = Promise.resolve(api.loadCustomerPhotos()).then(value => {
+      if (generation !== authGeneration || uid !== currentAuthUid()) return null;
+      return applyCustomerPhotos(value, renderAfter);
+    }).finally(() => {
+      if (customerPhotoRefreshPromise === refreshPromise) customerPhotoRefreshPromise = null;
+    });
+    customerPhotoRefreshPromise = refreshPromise;
+    return refreshPromise;
   }
 
   async function refreshRendererOverlays(renderAfter = true) {
@@ -1028,7 +1076,7 @@
   }
 
   function showWelcomeGuide() {
-    modalContent.innerHTML = `<div class="welcome-guide"><div class="welcome-guide-top"><div class="welcome-logo"><img src="./assets/bring-logo.png" alt="BRING 로고"></div><span>처음 오셨나요?</span><h2>BRING CRM은 이 순서로 사용하세요</h2><p>건물을 기준으로 고객·계약·케이스·입금을 이어서 관리합니다.</p></div><div class="welcome-steps"><article><i>1</i><div><b>고객과 건물을 등록합니다</b><span>고객·건물 관리에서 고객을 고르고 연결 건물을 함께 등록하세요.</span></div></article><article><i>2</i><div><b>건물에서 케이스를 시작합니다</b><span>건물 상세의 새 케이스를 누르면 건물 정보가 자동 연결됩니다.</span></div></article><article><i>3</i><div><b>계약과 입금을 확인합니다</b><span>같은 건물의 계약·진행 업무·납부 일정을 한 화면에서 확인하세요.</span></div></article></div><div class="welcome-extra"><b>연락 업체·업체 상담</b><span>업체 링크로 기본정보를 먼저 등록하고, 저장된 업체를 선택해 안내 가격과 상담 내용을 기록하세요.</span></div><div class="welcome-actions"><button class="secondary-button" data-action="finish-guide">안내 닫기</button><button class="primary-button" data-action="guide-new-customer">고객 등록부터 시작 →</button></div></div>`;
+    modalContent.innerHTML = `<div class="welcome-guide"><div class="welcome-guide-top"><div class="welcome-logo"><img src="./assets/bring-logo.png" alt="BRING 로고"></div><span>처음 오셨나요?</span><h2>BRING CRM은 이 순서로 사용하세요</h2><p>건물을 기준으로 고객·계약·민원·입금을 이어서 관리합니다.</p></div><div class="welcome-steps"><article><i>1</i><div><b>고객과 건물을 등록합니다</b><span>고객·건물 관리에서 고객을 고르고 연결 건물을 함께 등록하세요.</span></div></article><article><i>2</i><div><b>건물에서 민원을 시작합니다</b><span>건물 상세의 새 민원을 누르면 건물 정보가 자동 연결됩니다.</span></div></article><article><i>3</i><div><b>계약과 입금을 확인합니다</b><span>같은 건물의 계약·진행 업무·납부 일정을 한 화면에서 확인하세요.</span></div></article></div><div class="welcome-extra"><b>연락 업체·업체 상담</b><span>업체 링크로 기본정보를 먼저 등록하고, 저장된 업체를 선택해 안내 가격과 상담 내용을 기록하세요.</span></div><div class="welcome-actions"><button class="secondary-button" data-action="finish-guide">안내 닫기</button><button class="primary-button" data-action="guide-new-customer">고객 등록부터 시작 →</button></div></div>`;
     openModal();
   }
 
@@ -1664,29 +1712,34 @@
     if (settings.render !== false && (currentView === "cases" || currentView === "payments" || currentView === "buildings")) render();
   }
 
+  const casePartyLabel = item => ["건물주", "브링"].includes(String(item && item.caseParty || "")) ? String(item.caseParty) : "미분류";
+
   function renderCases() {
     const query = Core.normalizeText(searchEl.value);
     const sourceCases = caseListMode === "trash" ? trashCases() : activeCases();
-    const cases = sourceCases.filter(item => !query || Core.normalizeText([item.ticketNo, item.receiptNo, item.name, item.building, item.room, item.issueType, item.grade, item.summary].join(" ")).includes(query));
+    const cases = sourceCases
+      .filter(item => casePartyFilter === "전체" || casePartyLabel(item) === casePartyFilter)
+      .filter(item => !query || Core.normalizeText([item.ticketNo, item.receiptNo, item.name, item.building, item.room, item.issueType, item.grade, item.summary, item.caseParty].join(" ")).includes(query));
+    const partyCounts = Object.fromEntries(["전체", "건물주", "브링", "미분류"].map(party => [party, party === "전체" ? sourceCases.length : sourceCases.filter(item => casePartyLabel(item) === party).length]));
     if (operationsLoading && !operations.loadedAt) {
-      main.innerHTML = `<div class="operations-loading">공용 케이스를 불러오고 있습니다…</div>`;
+      main.innerHTML = `<div class="operations-loading">공용 민원을 불러오고 있습니다…</div>`;
       return;
     }
     if (cases.length && !cases.some(item => workflowCaseKey(item) === selectedCaseKey)) selectedCaseKey = workflowCaseKey(cases[0]);
     const selected = cases.find(item => workflowCaseKey(item) === selectedCaseKey) || null;
     const detail = selected
       ? (caseListMode === "trash" ? renderWorkflowCaseTrashDetail(selected) : renderWorkflowCaseDetail(selected))
-      : `<div class="case-detail-empty"><strong>${query ? "검색 결과가 없습니다" : caseListMode === "trash" ? "휴지통이 비어 있습니다" : "등록된 케이스가 없습니다"}</strong><span>${query ? "다른 검색어를 입력해 주세요." : caseListMode === "trash" ? "휴지통으로 이동한 케이스가 여기에 표시됩니다." : "새 케이스를 등록해 업무를 시작하세요."}</span>${caseListMode === "trash" ? `<button class="secondary-button" data-case-list-mode="active">케이스 목록으로 돌아가기</button>` : `<button class="primary-button" data-action="new-workflow-case">＋ 새 케이스</button>`}</div>`;
-    main.innerHTML = `<section class="operations-hero case-hero"><div><span>BRING CRM에서 직접 처리합니다</span><h2>접수부터 사후관리까지 17단계 케이스</h2><p>업무흐름빌더와 같은 공용 데이터를 사용하며, 이동하지 않고 이 화면에서 수정·처리합니다.</p></div><div class="operations-actions"><button class="secondary-button" data-action="refresh-operations">↻ 새로고침</button><button class="primary-button" data-action="new-workflow-case">＋ 새 케이스</button></div></section>
+      : `<div class="case-detail-empty"><strong>${query ? "검색 결과가 없습니다" : caseListMode === "trash" ? "휴지통이 비어 있습니다" : "등록된 민원이 없습니다"}</strong><span>${query ? "다른 검색어를 입력해 주세요." : caseListMode === "trash" ? "휴지통으로 이동한 민원이 여기에 표시됩니다." : "새 민원을 등록해 업무를 시작하세요."}</span>${caseListMode === "trash" ? `<button class="secondary-button" data-case-list-mode="active">민원 목록으로 돌아가기</button>` : `<button class="primary-button" data-action="new-workflow-case">＋ 새 민원</button>`}</div>`;
+    main.innerHTML = `<section class="operations-hero case-hero"><div><span>건물주 요청과 BRING 처리를 구분합니다</span><h2>접수부터 사후관리까지 17단계 민원 관리</h2><p>작성 구분을 선택해 건물주 요청과 BRING 등록 민원을 나누고, 처리 과정은 모든 사용자와 공유합니다.</p></div><div class="operations-actions"><button class="secondary-button" data-action="refresh-operations">↻ 새로고침</button><button class="primary-button" data-action="new-workflow-case">＋ 새 민원</button></div></section>
       ${operationsError ? `<div class="info-box" style="margin-top:12px;color:#c6535f">${esc(operationsError)}</div>` : ""}
-      <section class="case-workspace"><aside class="case-browser"><header><div><b>${caseListMode === "trash" ? "휴지통" : "케이스 목록"}</b><span>${cases.length}건</span></div><small>${caseListMode === "trash" ? "복원할 케이스를 선택하세요." : "선택하면 오른쪽에서 바로 처리됩니다."}</small></header><div class="case-browser-mode"><button type="button" class="${caseListMode === "trash" ? "" : "active"}" data-case-list-mode="${caseListMode === "trash" ? "active" : "trash"}">${caseListMode === "trash" ? `← 케이스 목록 (${activeCases().length})` : `휴지통 (${trashCases().length})`}</button></div><div class="case-browser-list">${cases.length ? cases.map(item => {
+      <section class="case-workspace"><aside class="case-browser"><header><div><b>${caseListMode === "trash" ? "휴지통" : "민원 목록"}</b><span>${cases.length}건</span></div><small>${caseListMode === "trash" ? "복원할 민원을 선택하세요." : "작성 구분을 선택한 뒤 민원을 처리하세요."}</small></header><nav class="case-party-filters" aria-label="민원 작성 구분">${["전체", "건물주", "브링", "미분류"].map(party => `<button type="button" class="${casePartyFilter === party ? "active" : ""}" data-case-party-filter="${attr(party)}">${esc(party)} <span>${partyCounts[party]}</span></button>`).join("")}</nav><div class="case-browser-mode"><button type="button" class="${caseListMode === "trash" ? "" : "active"}" data-case-list-mode="${caseListMode === "trash" ? "active" : "trash"}">${caseListMode === "trash" ? `← 민원 목록 (${activeCases().length})` : `휴지통 (${trashCases().length})`}</button></div><div class="case-browser-list">${cases.length ? cases.map(item => {
         const progress = Core.workflowProgress(item);
         const urgency = String(item.urgency || "보통");
         const urgencyClass = urgency.includes("긴급") ? "urgent" : urgency.includes("확인") ? "review" : "";
         const caseKey = workflowCaseKey(item);
         const listNote = caseListMode === "trash" ? `이동 ${dateText(item.deletedAt)}${item.deletedBy ? ` · ${item.deletedBy}` : ""}` : progress.current;
-        return `<article class="case-card case-list-card ${caseKey === selectedCaseKey ? "selected" : ""} ${caseListMode === "trash" ? "trash" : ""}" data-case-select="${attr(caseKey)}"><div class="case-list-title"><strong>${esc(item.ticketNo || item.receiptNo || item.id || "케이스")}</strong><span class="case-urgency ${caseListMode === "trash" ? "trash" : urgencyClass}">${caseListMode === "trash" ? "휴지통" : esc(urgency)}</span></div><p>${esc([item.name, item.building, item.room].filter(Boolean).join(" · ") || "고객·건물 정보 미입력")}</p><div class="case-list-progress"><i><span style="width:${progress.percent}%"></span></i><b>${progress.done}/${progress.total}</b></div><small>${esc(listNote)}</small></article>`;
-      }).join("") : `<div class="case-list-empty">표시할 케이스가 없습니다.</div>`}</div></aside><section class="case-detail-panel">${detail}</section></section>`;
+        return `<article class="case-card case-list-card ${caseKey === selectedCaseKey ? "selected" : ""} ${caseListMode === "trash" ? "trash" : ""}" data-case-select="${attr(caseKey)}"><div class="case-list-title"><strong>${esc(item.ticketNo || item.receiptNo || item.id || "민원")}</strong><span class="case-list-badges"><em class="case-party ${casePartyLabel(item) === "미분류" ? "unclassified" : ""}">${esc(casePartyLabel(item))}</em><span class="case-urgency ${caseListMode === "trash" ? "trash" : urgencyClass}">${caseListMode === "trash" ? "휴지통" : esc(urgency)}</span></span></div><p>${esc([item.name, item.building, item.room].filter(Boolean).join(" · ") || "고객·건물 정보 미입력")}</p><div class="case-list-progress"><i><span style="width:${progress.percent}%"></span></i><b>${progress.done}/${progress.total}</b></div><small>${esc(listNote)}</small></article>`;
+      }).join("") : `<div class="case-list-empty">표시할 민원이 없습니다.</div>`}</div></aside><section class="case-detail-panel">${detail}</section></section>`;
   }
 
   function renderWorkflowCaseDetail(item) {
@@ -1696,13 +1749,18 @@
     const notes = item.note || {};
     const option = (value, current, label) => `<option value="${attr(value)}" ${String(value) === String(current) ? "selected" : ""}>${esc(label || value)}</option>`;
     const input = (label, name, value, placeholder) => `<label class="field"><span>${esc(label)}</span><input name="${attr(name)}" value="${attr(value || "")}" placeholder="${attr(placeholder || "")}"></label>`;
-    const select = (label, name, values, value) => `<label class="field"><span>${esc(label)}</span><select name="${attr(name)}">${values.map(entry => option(entry, value)).join("")}</select></label>`;
+    const select = (label, name, values, value) => `<label class="field"><span>${esc(label)}</span><select name="${attr(name)}">${values.map(entry => option(entry, value, entry || "작성 구분 선택")).join("")}</select></label>`;
+    const currentParty = ["건물주", "브링"].includes(String(item.caseParty || "")) ? String(item.caseParty) : "";
+    const partyOptions = currentParty
+      ? ["건물주", "브링"].map(value => option(value, currentParty, value)).join("")
+      : `${option("", "", "미분류 (기존 기록)")}${option("건물주", "", "건물주")}${option("브링", "", "브링")}`;
+    const partyField = `<label class="field"><span>작성 구분</span><select name="caseParty">${partyOptions}</select></label>`;
     const linkedBuilding = buildingById(item.crmBuildingId || item.buildingId) || uniqueBuildingNameMatch(item.building);
     const linkedCustomer = customerById(item.crmCustomerId) || Core.matchWorkflowCustomer(item, store.customers);
     const buildingLinkField = `<label class="field"><span>등록 건물 연결</span><select name="crmBuildingId" data-case-building-select><option value="">직접 입력·미연결</option>${store.buildings.map(building => `<option value="${attr(building.id)}" ${linkedBuilding && linkedBuilding.id === building.id ? "selected" : ""}>${esc(buildingChoiceLabel(building))}</option>`).join("")}</select></label>`;
     const customerLinkField = `<label class="field"><span>요청자·연락 고객 연결</span><select name="crmCustomerId" data-case-customer-select><option value="">직접 입력·미연결</option>${store.customers.map(customer => `<option value="${attr(customer.id)}" ${linkedCustomer && linkedCustomer.id === customer.id ? "selected" : ""}>${esc(customer.name || customer.id)}${customer.type ? ` · ${esc(customer.type)}` : ""}</option>`).join("")}</select></label>`;
-    return `<header class="case-detail-head"><div><span>${esc(item.issueType || item.grade || "업무 유형 미입력")}</span><h2>${esc(item.ticketNo || item.receiptNo || item.id || "케이스")}</h2><p>${esc([item.name, item.building, item.room].filter(Boolean).join(" · ") || "기본 정보를 입력해 주세요.")}</p></div><div class="case-detail-head-actions"><button type="button" class="case-trash-action" data-case-trash="${attr(caseKey)}">휴지통으로 이동</button><div class="case-detail-progress"><strong>${progress.percent}%</strong><span>${progress.done}/${progress.total}단계 완료</span></div></div></header>
-      <div class="case-detail-scroll"><form id="workflowCaseBasicForm" data-case-key="${attr(caseKey)}"><div class="case-block-head"><div><b>기본 정보</b><span>수정 후 저장을 누르면 공용 케이스에 즉시 반영됩니다.</span></div><button class="secondary-button">기본 정보 저장</button></div><div class="case-basic-grid">${customerLinkField}${input("고객명", "name", item.name, "예: 홍길동")}${input("연락처", "phone", item.phone, "010-0000-0000")}${input("이메일", "email", item.email, "name@example.com")}${buildingLinkField}${input("건물", "building", item.building, "건물명")}${input("호실", "room", item.room, "예: 302호")}${input("주소", "address", item.address, "건물 주소")}${input("업무 유형", "issueType", item.issueType, "예: 누수")}${select("긴급도", "urgency", ["보통", "확인 필요", "긴급"], item.urgency || "보통")}${select("관리 등급", "grade", ["라이트", "스탠다드", "프리미엄"], item.grade || "스탠다드")}<label class="field case-summary-field"><span>접수 내용</span><textarea name="summary" placeholder="민원·요청 내용을 입력하세요.">${esc(item.summary || "")}</textarea></label></div></form>
+    return `<header class="case-detail-head"><div><span>${esc(casePartyLabel(item))} 작성 · ${esc(item.issueType || item.grade || "업무 유형 미입력")}</span><h2>${esc(item.ticketNo || item.receiptNo || item.id || "민원")}</h2><p>${esc([item.name, item.building, item.room].filter(Boolean).join(" · ") || "기본 정보를 입력해 주세요.")}</p></div><div class="case-detail-head-actions"><button type="button" class="case-trash-action" data-case-trash="${attr(caseKey)}">휴지통으로 이동</button><div class="case-detail-progress"><strong>${progress.percent}%</strong><span>${progress.done}/${progress.total}단계 완료</span></div></div></header>
+      <div class="case-detail-scroll"><form id="workflowCaseBasicForm" data-case-key="${attr(caseKey)}"><div class="case-block-head"><div><b>기본 정보</b><span>수정 후 저장을 누르면 공용 민원에 즉시 반영됩니다.</span></div><button class="secondary-button">기본 정보 저장</button></div><div class="case-basic-grid">${partyField}${customerLinkField}${input("고객명", "name", item.name, "예: 홍길동")}${input("연락처", "phone", item.phone, "010-0000-0000")}${input("이메일", "email", item.email, "name@example.com")}${buildingLinkField}${input("건물", "building", item.building, "건물명")}${input("호실", "room", item.room, "예: 302호")}${input("주소", "address", item.address, "건물 주소")}${input("업무 유형", "issueType", item.issueType, "예: 누수")}${select("긴급도", "urgency", ["보통", "확인 필요", "긴급"], item.urgency || "보통")}${select("관리 등급", "grade", ["라이트", "스탠다드", "프리미엄"], item.grade || "스탠다드")}<label class="field case-summary-field"><span>민원 내용</span><textarea name="summary" placeholder="민원·요청 내용을 입력하세요.">${esc(item.summary || "")}</textarea></label></div></form>
       <section class="case-steps-section"><div class="case-block-head"><div><b>17단계 업무 진행</b><span>상태를 바꾸거나 단계 메모를 남기면 이 화면에서 바로 저장됩니다.</span></div><div class="case-current-label"><span>현재</span><b>${esc(progress.current)}</b></div></div><div class="case-progress-track case-detail-track"><i style="width:${progress.percent}%"></i></div><div class="workflow-case-steps">${Core.WORKFLOW_STEPS.map((label, index) => {
         const stepKey = `c${index + 1}`;
         const status = statuses[stepKey] || "wait";
@@ -1721,11 +1779,11 @@
     const values = [
       ["고객명", item.name], ["연락처", item.phone], ["이메일", item.email],
       ["건물", item.building], ["호실", item.room], ["주소", item.address],
-      ["업무 유형", item.issueType], ["긴급도", item.urgency], ["접수 내용", item.summary]
+      ["작성 구분", casePartyLabel(item)], ["업무 유형", item.issueType], ["긴급도", item.urgency], ["민원 내용", item.summary]
     ];
-    return `<header class="case-detail-head case-trash-head"><div><span>휴지통 케이스</span><h2>${esc(item.ticketNo || item.receiptNo || item.id || "케이스")}</h2><p>${esc([item.name, item.building, item.room].filter(Boolean).join(" · ") || "기본 정보 미입력")}</p></div><div class="case-detail-head-actions"><div class="case-trash-head-buttons"><button type="button" class="secondary-button" data-case-restore="${attr(caseKey)}">케이스 복원</button><button type="button" class="case-permanent-delete" data-case-delete="${attr(caseKey)}">영구 삭제</button></div><div class="case-detail-progress"><strong>${progress.percent}%</strong><span>${progress.done}/${progress.total}단계 완료</span></div></div></header>
-      <div class="case-detail-scroll case-trash-detail"><section class="case-trash-notice"><div><b>휴지통으로 이동된 케이스입니다.</b><span>${esc(dateText(item.deletedAt))} · ${esc(item.deletedBy || "사용자 미확인")}</span></div><button type="button" class="primary-button" data-case-restore="${attr(caseKey)}">복원하기</button></section>
-      <section class="case-readonly-section"><header><div><b>케이스 정보</b><span>휴지통에서는 내용을 수정할 수 없습니다.</span></div></header><div class="case-readonly-grid">${values.map(([label, value]) => `<div><b>${esc(label)}</b><span>${esc(value || "-")}</span></div>`).join("")}</div></section>
+    return `<header class="case-detail-head case-trash-head"><div><span>휴지통 민원</span><h2>${esc(item.ticketNo || item.receiptNo || item.id || "민원")}</h2><p>${esc([item.name, item.building, item.room].filter(Boolean).join(" · ") || "기본 정보 미입력")}</p></div><div class="case-detail-head-actions"><div class="case-trash-head-buttons"><button type="button" class="secondary-button" data-case-restore="${attr(caseKey)}">민원 복원</button><button type="button" class="case-permanent-delete" data-case-delete="${attr(caseKey)}">영구 삭제</button></div><div class="case-detail-progress"><strong>${progress.percent}%</strong><span>${progress.done}/${progress.total}단계 완료</span></div></div></header>
+      <div class="case-detail-scroll case-trash-detail"><section class="case-trash-notice"><div><b>휴지통으로 이동된 민원입니다.</b><span>${esc(dateText(item.deletedAt))} · ${esc(item.deletedBy || "사용자 미확인")}</span></div><button type="button" class="primary-button" data-case-restore="${attr(caseKey)}">복원하기</button></section>
+      <section class="case-readonly-section"><header><div><b>민원 정보</b><span>휴지통에서는 내용을 수정할 수 없습니다.</span></div></header><div class="case-readonly-grid">${values.map(([label, value]) => `<div><b>${esc(label)}</b><span>${esc(value || "-")}</span></div>`).join("")}</div></section>
       <section class="case-readonly-section"><header><div><b>17단계 진행 기록</b><span>복원하면 기존 상태와 메모가 그대로 유지됩니다.</span></div></header><div class="case-trash-steps">${Core.WORKFLOW_STEPS.map((label, index) => {
         const stepKey = `c${index + 1}`;
         const status = statuses[stepKey] || "wait";
@@ -1878,7 +1936,7 @@
     }
     if (stepKey === "c6") {
       const businessFiles = caseObjectValues(item.businessRegistrationFiles);
-      return `<section class="case-action-panel case-action-panel-stack"><div><b>견적 자료 등록</b><span>파일은 1개당 5MB 이하이며 Drive와 공용 케이스에 저장됩니다.</span></div><div class="case-action-buttons"><button type="button" class="primary-button" data-case-upload="quote" data-case-key="${attr(workflowCaseKey(item))}">＋ 견적서 업로드</button><button type="button" class="secondary-button" data-case-upload="business-registration" data-case-key="${attr(workflowCaseKey(item))}">＋ 사업자등록증 업로드</button></div>${businessFiles.length ? `<small>사업자등록증 ${businessFiles.length}건 등록됨</small>` : ""}</section>`;
+      return `<section class="case-action-panel case-action-panel-stack"><div><b>견적 자료 등록</b><span>파일은 1개당 5MB 이하이며 Drive와 공용 민원에 저장됩니다.</span></div><div class="case-action-buttons"><button type="button" class="primary-button" data-case-upload="quote" data-case-key="${attr(workflowCaseKey(item))}">＋ 견적서 업로드</button><button type="button" class="secondary-button" data-case-upload="business-registration" data-case-key="${attr(workflowCaseKey(item))}">＋ 사업자등록증 업로드</button></div>${businessFiles.length ? `<small>사업자등록증 ${businessFiles.length}건 등록됨</small>` : ""}</section>`;
     }
     if (stepKey === "c8") {
       const hasQuote = Boolean(caseFirst(recommended.id, recommended.storedId));
@@ -2139,7 +2197,7 @@
       }
       await refreshOperations({ silent: true, render: false });
       renderCases();
-      showToast(`${picked.files.length}개 파일을 공용 케이스에 업로드했습니다.`, "success");
+      showToast(`${picked.files.length}개 파일을 공용 민원에 업로드했습니다.`, "success");
     } catch (error) {
       showToast(error.message || "파일을 업로드하지 못했습니다.", "error");
     } finally {
@@ -2234,8 +2292,8 @@
     const customerOptions = customers.length
       ? customers.map(item => `<option value="${attr(item.id)}" ${item.id === selectedCustomerHubId ? "selected" : ""}>${esc([item.name || "이름 미입력", item.company || customerPhoneText(item.phone), managementStatusForCustomer(item)].filter(Boolean).join(" · "))}</option>`).join("")
       : `<option value="" selected disabled>조건에 맞는 고객이 없습니다</option>`;
-    main.innerHTML = `<section class="building-hub-hero customer-hub-hero"><div><span>고객을 선택하면 연결 건물과 업무가 함께 열립니다</span><h2>고객·건물 정보를 한 화면에서 관리합니다</h2><p>관리 상태, 계약, 케이스와 상담 이력을 한곳에서 확인합니다.</p></div><div class="building-hub-head-actions"><button class="secondary-button" data-customer-buildings-open>건물 목록 보기</button><button class="primary-button" data-action="new-customer">＋ 고객 등록</button></div></section>
-      <section class="customer-hub-workspace"><header class="customer-hub-selector-bar"><div class="customer-selector-heading"><b>고객 선택</b><span>${customers.length}명</span></div><label class="customer-select-control"><span>고객</span><select data-customer-hub-select aria-label="고객 선택" ${customers.length ? "" : "disabled"}>${customerOptions}</select></label><label class="management-filter"><span>관리 상태</span><select data-customer-management-filter aria-label="고객 관리 상태 필터">${managementFilterOptions(customerManagementFilter)}</select></label></header><section class="building-hub-detail">${customer ? renderCustomerHubDetail(customer) : `<div class="case-detail-empty"><strong>${Core.normalizeText(searchEl.value) ? "고객을 찾지 못했습니다" : "첫 고객을 등록해 주세요"}</strong><span>고객을 등록하면 연결 건물과 업무 현황이 이곳에 모입니다.</span><button class="primary-button" data-action="new-customer">＋ 고객 등록</button></div>`}</section></section>`;
+    main.innerHTML = `<section class="building-hub-hero customer-hub-hero"><div><span>고객을 선택하면 연결 건물과 업무가 함께 열립니다</span><h2>고객·건물 정보를 한 화면에서 관리합니다</h2><p>관리 상태, 계약, 민원과 상담 이력을 한곳에서 확인합니다.</p></div><div class="building-hub-head-actions"><button class="secondary-button" data-customer-buildings-open>건물 목록 보기</button><button class="primary-button" data-action="new-customer">＋ 고객 등록</button></div></section>
+      <section class="customer-hub-workspace"><header class="customer-hub-selector-bar"><div class="customer-selector-heading">${customer ? customerAvatar(customer) : ""}<b>고객 선택</b><span>${customers.length}명</span></div><label class="customer-select-control"><span>고객</span><select data-customer-hub-select aria-label="고객 선택" ${customers.length ? "" : "disabled"}>${customerOptions}</select></label><label class="management-filter"><span>관리 상태</span><select data-customer-management-filter aria-label="고객 관리 상태 필터">${managementFilterOptions(customerManagementFilter)}</select></label></header><section class="building-hub-detail">${customer ? renderCustomerHubDetail(customer) : `<div class="case-detail-empty"><strong>${Core.normalizeText(searchEl.value) ? "고객을 찾지 못했습니다" : "첫 고객을 등록해 주세요"}</strong><span>고객을 등록하면 연결 건물과 업무 현황이 이곳에 모입니다.</span><button class="primary-button" data-action="new-customer">＋ 고객 등록</button></div>`}</section></section>`;
   }
 
   function renderCustomerHubDetail(customer) {
@@ -2247,14 +2305,14 @@
     const activities = customerActivities(customer.id);
     const tasks = customerTasks(customer.id).filter(task => task.status !== "완료" && task.status !== "취소");
     const openCases = cases.filter(item => Core.workflowProgress(item).done < Core.WORKFLOW_STEPS.length);
-    const buildingRecords = buildings.map(building => `<div class="building-detail-record customer-linked-building"><div><b>${esc(building.name || "건물명 미입력")}</b><span>${esc([building.address, building.type].filter(Boolean).join(" · ") || "건물 정보 미입력")}</span></div><div class="row-actions">${managementStatusBadge(managementStatusForBuilding(building))}<button type="button" class="mini-button" data-building-jump="${attr(building.id)}">건물 보기</button><button type="button" class="mini-button" data-building-new-case="${attr(building.id)}">새 케이스</button></div></div>`).join("");
+    const buildingRecords = buildings.map(building => `<div class="building-detail-record customer-linked-building"><div><b>${esc(building.name || "건물명 미입력")}</b><span>${esc([building.address, building.type].filter(Boolean).join(" · ") || "건물 정보 미입력")}</span></div><div class="row-actions">${managementStatusBadge(managementStatusForBuilding(building))}<button type="button" class="mini-button" data-building-jump="${attr(building.id)}">건물 보기</button><button type="button" class="mini-button" data-building-new-case="${attr(building.id)}">새 민원</button></div></div>`).join("");
     const contractRecords = contracts.slice(0, 5).map(contract => `<div class="building-detail-record clickable" data-contract-edit="${attr(contract.id)}"><div><b>${esc(contract.name || `${contractTypes(contract).join("·")} 계약`)}</b><span>${esc(`${contract.status || "상태 미입력"} · ${contractDateText(contract.startDate)} ~ ${contractEndDateText(contract.endDate)}`)}</span></div><em>${esc(Core.money(contract.amount) ? krw(contract.amount) : contract.billingCycle || "금액 미입력")}</em></div>`).join("");
-    const caseRecords = cases.slice(0, 6).map(item => { const progress = Core.workflowProgress(item); return `<div class="building-detail-record clickable" data-building-case-open="${attr(workflowCaseKey(item))}"><div><b>${esc(item.ticketNo || item.receiptNo || item.id || "케이스")}</b><span>${esc([item.building, item.room, item.issueType, progress.current].filter(Boolean).join(" · ") || "업무 내용 미입력")}</span></div><em>${progress.percent}%</em></div>`; }).join("");
+    const caseRecords = cases.slice(0, 6).map(item => { const progress = Core.workflowProgress(item); return `<div class="building-detail-record clickable" data-building-case-open="${attr(workflowCaseKey(item))}"><div><b>${esc(item.ticketNo || item.receiptNo || item.id || "민원")}</b><span>${esc([item.building, item.room, item.issueType, progress.current].filter(Boolean).join(" · ") || "업무 내용 미입력")}</span></div><em>${progress.percent}%</em></div>`; }).join("");
     const activityRecords = activities.slice(0, 5).map(activity => `<div class="building-detail-record"><div><b>${esc(`${activity.type} · ${activity.summary || "기록 내용 없음"}`)}</b><span>${esc([activity.result, activity.nextAction, dateText(activity.occurredAt)].filter(Boolean).join(" · "))}</span></div></div>`).join("");
-    return `<header class="building-hub-detail-head"><div class="building-hub-title"><span>${esc(customer.customerNo || customer.id)}</span><h2>${esc(customer.name || "이름 미입력")}</h2><p>${esc([customer.company, customer.type, customerPhoneText(customer.phone), customer.email].filter(Boolean).join(" · ") || "연락처 미입력")}</p></div><div class="building-hub-head-actions"><button class="secondary-button" data-customer-open="${attr(customer.id)}">전체 상세</button><button class="secondary-button" data-customer-hub-edit="${attr(customer.id)}">고객 정보 수정</button><button class="primary-button" data-action="new-selected-task" data-customer-id="${attr(customer.id)}">＋ 할 일</button></div></header>
-      <div class="building-hub-detail-scroll"><div class="building-hub-kpis"><div class="building-hub-kpi"><span>관리 상태</span><b class="customer-management-kpi">${esc(managementStatusForCustomer(customer))}</b><small>${buildings.length ? `연결 건물 ${buildings.length}곳` : "건물 연결 필요"}</small></div><div class="building-hub-kpi"><span>진행 계약</span><b>${contracts.filter(item => item.status !== "종료").length}건</b><small>${contracts[0] ? esc(contractTypes(contracts[0]).join("·")) : "활성 계약 없음"}</small></div><div class="building-hub-kpi"><span>진행 케이스</span><b>${openCases.length}건</b><small>${openCases[0] ? esc(Core.workflowProgress(openCases[0]).current) : "진행 업무 없음"}</small></div><div class="building-hub-kpi ${tasks.length ? "alert" : ""}"><span>남은 할 일</span><b>${tasks.length}건</b><small>${esc(tasks[0]?.title || "등록된 할 일 없음")}</small></div></div>
+    return `<header class="building-hub-detail-head"><div class="building-hub-title customer-hub-title">${customerAvatar(customer)}<div><span>${esc(customer.customerNo || customer.id)}</span><h2>${esc(customer.name || "이름 미입력")}</h2><p>${esc([customer.company, customer.type, customerPhoneText(customer.phone), customer.email].filter(Boolean).join(" · ") || "연락처 미입력")}</p></div></div><div class="building-hub-head-actions"><button class="secondary-button" data-customer-open="${attr(customer.id)}">전체 상세</button><button class="secondary-button" data-customer-hub-edit="${attr(customer.id)}">고객 정보 수정</button><button class="primary-button" data-action="new-selected-task" data-customer-id="${attr(customer.id)}">＋ 할 일</button></div></header>
+      <div class="building-hub-detail-scroll"><div class="building-hub-kpis"><div class="building-hub-kpi"><span>관리 상태</span><b class="customer-management-kpi">${esc(managementStatusForCustomer(customer))}</b><small>${buildings.length ? `연결 건물 ${buildings.length}곳` : "건물 연결 필요"}</small></div><div class="building-hub-kpi"><span>진행 계약</span><b>${contracts.filter(item => item.status !== "종료").length}건</b><small>${contracts[0] ? esc(contractTypes(contracts[0]).join("·")) : "활성 계약 없음"}</small></div><div class="building-hub-kpi"><span>진행 민원</span><b>${openCases.length}건</b><small>${openCases[0] ? esc(Core.workflowProgress(openCases[0]).current) : "진행 업무 없음"}</small></div><div class="building-hub-kpi ${tasks.length ? "alert" : ""}"><span>남은 할 일</span><b>${tasks.length}건</b><small>${esc(tasks[0]?.title || "등록된 할 일 없음")}</small></div></div>
       <div class="building-identity-strip"><div><b>연락처</b><span>${esc(customerPhoneText(customer.phone) || "-")}</span></div><div><b>다음 연락</b><span>${esc(dateText(customer.nextContactAt))}</span></div><div><b>담당자</b><span>${esc(customer.owner || "미입력")}</span></div><div><b>중요도</b><span>${priorityClass(customer.priority)}</span></div></div>
-      <div class="building-detail-grid"><section class="building-detail-section wide"><header><b>연결 건물</b><span>${buildings.length}곳</span></header><div class="building-detail-body">${buildingRecords || `<div class="building-detail-empty">연결된 건물이 없습니다. 건물을 등록한 뒤 대표 고객으로 연결하세요.</div>`}</div></section><section class="building-detail-section"><header><b>고객 요청·후속조치</b><span>${tasks.length}건</span></header><div class="building-detail-body"><div class="building-detail-record"><div><b>${esc(customer.currentIssue || "현재 요청 미입력")}</b><span>${esc([customer.nextAction || "다음 행동 미입력", dateText(customer.nextContactAt)].join(" · "))}</span></div></div></div></section><section class="building-detail-section"><header><b>계약</b><span>${contracts.length}건</span></header><div class="building-detail-body">${contractRecords || `<div class="building-detail-empty">연결된 계약이 없습니다.</div>`}</div></section><section class="building-detail-section"><header><b>케이스</b><span>${cases.length}건</span></header><div class="building-detail-body">${caseRecords || `<div class="building-detail-empty">연결된 케이스가 없습니다.</div>`}</div></section><section class="building-detail-section"><header><b>최근 상담</b><span>${activities.length}건</span></header><div class="building-detail-body">${activityRecords || `<div class="building-detail-empty">등록된 상담 기록이 없습니다.</div>`}</div></section></div></div>`;
+      <div class="building-detail-grid"><section class="building-detail-section wide"><header><b>연결 건물</b><span>${buildings.length}곳</span></header><div class="building-detail-body">${buildingRecords || `<div class="building-detail-empty">연결된 건물이 없습니다. 건물을 등록한 뒤 대표 고객으로 연결하세요.</div>`}</div></section><section class="building-detail-section"><header><b>고객 요청·후속조치</b><span>${tasks.length}건</span></header><div class="building-detail-body"><div class="building-detail-record"><div><b>${esc(customer.currentIssue || "현재 요청 미입력")}</b><span>${esc([customer.nextAction || "다음 행동 미입력", dateText(customer.nextContactAt)].join(" · "))}</span></div></div></div></section><section class="building-detail-section"><header><b>계약</b><span>${contracts.length}건</span></header><div class="building-detail-body">${contractRecords || `<div class="building-detail-empty">연결된 계약이 없습니다.</div>`}</div></section><section class="building-detail-section"><header><b>민원</b><span>${cases.length}건</span></header><div class="building-detail-body">${caseRecords || `<div class="building-detail-empty">연결된 민원이 없습니다.</div>`}</div></section><section class="building-detail-section"><header><b>최근 상담</b><span>${activities.length}건</span></header><div class="building-detail-body">${activityRecords || `<div class="building-detail-empty">등록된 상담 기록이 없습니다.</div>`}</div></section></div></div>`;
   }
 
   const buildingCustomers = building => store.customers.filter(customer => customer.id === building.ownerCustomerId || Core.customerBuildingIds(customer).includes(building.id));
@@ -2432,12 +2490,12 @@
       .sort((left, right) => (MANAGEMENT_ORDER[managementStatusForBuilding(left)] ?? 9) - (MANAGEMENT_ORDER[managementStatusForBuilding(right)] ?? 9) || String(left.name || "").localeCompare(String(right.name || ""), "ko"));
     if (buildings.length && !buildings.some(item => item.id === selectedBuildingId)) selectedBuildingId = buildings[0].id;
     const building = buildings.find(item => item.id === selectedBuildingId) || null;
-    main.innerHTML = `${DriveImportUI.renderReviewPanel(driveImportCandidates, currentAuth.user || {})}<section class="building-hub-hero"><div><span>건물 기준으로 연결된 업무를 확인합니다</span><h2>고객·계약·케이스·입금을 한곳에서 봅니다</h2><p>이름이 같아도 섞이지 않도록 건물 고유 ID를 기준으로 연결합니다.</p></div><div class="building-hub-head-actions"><button class="secondary-button" data-customer-list-open>고객 목록 보기</button><button class="primary-button" data-action="new-building">＋ 건물 등록</button></div></section>
+    main.innerHTML = `${DriveImportUI.renderReviewPanel(driveImportCandidates, currentAuth.user || {})}<section class="building-hub-hero"><div><span>건물 기준으로 연결된 업무를 확인합니다</span><h2>고객·계약·민원·입금을 한곳에서 봅니다</h2><p>이름이 같아도 섞이지 않도록 건물 고유 ID를 기준으로 연결합니다.</p></div><div class="building-hub-head-actions"><button class="secondary-button" data-customer-list-open>고객 목록 보기</button><button class="primary-button" data-action="new-building">＋ 건물 등록</button></div></section>
       <section class="building-hub-layout"><aside class="building-hub-browser"><header class="hub-browser-filter-head"><div><b>건물 목록</b><span>${buildings.length}곳</span></div><label class="management-filter"><span>관리 상태</span><select data-building-management-filter aria-label="건물 관리 상태 필터">${managementFilterOptions(buildingManagementFilter)}</select></label></header><div class="building-hub-list">${buildings.length ? buildings.map(item => {
         const customers = buildingCustomers(item);
         const cases = buildingCases(item);
-        return `<button type="button" class="building-hub-card ${item.id === selectedBuildingId ? "selected" : ""}" data-building-open="${attr(item.id)}"><div><strong>${esc(item.name || "건물명 미입력")}</strong><em>${esc(managementStatusForBuilding(item))}</em></div><p>${esc(item.address || "주소 미입력")}</p><small>${esc(customers[0]?.name || "고객 미연결")} · 진행 케이스 ${cases.length}건</small></button>`;
-      }).join("") : `<div class="building-hub-empty">${query ? "검색 조건에 맞는 건물이 없습니다." : "등록된 건물이 없습니다."}<br>건물을 먼저 등록해 업무를 연결하세요.</div>`}</div></aside><section class="building-hub-detail">${building ? renderBuildingDetail(building) : `<div class="case-detail-empty"><strong>${query ? "건물을 찾지 못했습니다" : "첫 건물을 등록해 주세요"}</strong><span>건물을 등록하면 고객·계약·케이스·입금 현황이 이곳에 모입니다.</span><button class="primary-button" data-action="new-building">＋ 건물 등록</button></div>`}</section></section>${renderArchivedBuildings()}`;
+        return `<button type="button" class="building-hub-card ${item.id === selectedBuildingId ? "selected" : ""}" data-building-open="${attr(item.id)}"><div><strong>${esc(item.name || "건물명 미입력")}</strong><em>${esc(managementStatusForBuilding(item))}</em></div><p>${esc(item.address || "주소 미입력")}</p><small>${esc(customers[0]?.name || "고객 미연결")} · 진행 민원 ${cases.length}건</small></button>`;
+      }).join("") : `<div class="building-hub-empty">${query ? "검색 조건에 맞는 건물이 없습니다." : "등록된 건물이 없습니다."}<br>건물을 먼저 등록해 업무를 연결하세요.</div>`}</div></aside><section class="building-hub-detail">${building ? renderBuildingDetail(building) : `<div class="case-detail-empty"><strong>${query ? "건물을 찾지 못했습니다" : "첫 건물을 등록해 주세요"}</strong><span>건물을 등록하면 고객·계약·민원·입금 현황이 이곳에 모입니다.</span><button class="primary-button" data-action="new-building">＋ 건물 등록</button></div>`}</section></section>${renderArchivedBuildings()}`;
   }
 
   function renderArchivedBuildings() {
@@ -2478,7 +2536,7 @@
     const contractRecords = contracts.slice(0, 5).map(contract => `<div class="building-detail-record clickable" data-contract-edit="${attr(contract.id)}"><div><b>${esc(contract.name || `${contractTypes(contract).join("·")} 계약`)}</b><span>${esc(`${contract.status || "상태 미입력"} · ${contractDateText(contract.startDate)} ~ ${contractEndDateText(contract.endDate)}`)}</span></div><em>${esc(Core.money(contract.amount) ? krw(contract.amount) : contract.billingCycle || "금액 미입력")}</em></div>`).join("");
     const caseRecords = cases.slice(0, 6).map(item => {
       const progress = Core.workflowProgress(item);
-      return `<div class="building-detail-record clickable" data-building-case-open="${attr(workflowCaseKey(item))}"><div><b>${esc(item.ticketNo || item.receiptNo || item.id || "케이스")}</b><span>${esc([item.room, item.issueType, progress.current].filter(Boolean).join(" · ") || "업무 내용 미입력")}</span></div><em class="${String(item.urgency || "").includes("긴급") ? "warning" : ""}">${progress.percent}%</em></div>`;
+      return `<div class="building-detail-record clickable" data-building-case-open="${attr(workflowCaseKey(item))}"><div><b>${esc(item.ticketNo || item.receiptNo || item.id || "민원")}</b><span>${esc([item.room, item.issueType, progress.current].filter(Boolean).join(" · ") || "업무 내용 미입력")}</span></div><em class="${String(item.urgency || "").includes("긴급") ? "warning" : ""}">${progress.percent}%</em></div>`;
     }).join("");
     const paymentRecords = rows.slice(0, 6).map(row => `<div class="building-detail-record clickable" data-building-payment-open="${attr(row.schedule.id)}" data-building-payment-id="${attr(building.id)}"><div><b>${esc([row.schedule.unit, row.schedule.tenantName].filter(Boolean).join(" · ") || "납부 일정")}</b><span>${esc(`${row.dueDate} · ${paymentStatusLabel(row.status)}`)}</span></div><em class="${row.status === "overdue" || row.status === "manual_unpaid" || row.status === "review" ? "warning" : ""}">${esc(krw(row.schedule.amount))}</em></div>`).join("");
     const allUnits = buildingUnitsForBuilding(building);
@@ -2494,10 +2552,10 @@
     const rentalSummary = `<section class="building-detail-section building-rental-detail wide"><header><b>임대·공실 정보</b><button type="button" class="mini-button" data-building-vacancies="${attr(building.id)}">공실 현황 보기</button></header><div class="building-detail-body"><div class="building-rental-facts"><div><span>보증금</span><b>${esc(buildingMoneySummary(building.rentDeposit))}</b></div><div><span>월세</span><b>${esc(buildingMoneySummary(building.monthlyRent))}</b></div><div><span>관리비</span><b>${esc(buildingMoneySummary(building.maintenanceFee))}</b></div><div><span>공실</span><b>${esc(vacancyLabel)}</b><small>${esc(vacancySubline)}</small></div></div><div class="building-rental-lines"><div><b>관리비 포함</b><span>${esc(buildingListSummary(building.maintenanceIncludes, building.maintenanceIncludeOther))}</span></div><div><b>구조</b><span>${esc(buildingListSummary(building.roomTypes, building.roomTypeOther))}</span></div><div><b>호실 옵션</b><span>${esc(buildingListSummary(building.roomOptions, building.roomOptionOther))}</span></div></div></div></section>`;
     const primaryAddress = building.roadAddress || building.address || building.jibunAddress || "주소 미입력";
     const secondaryAddress = building.jibunAddress && Core.normalizeText(building.jibunAddress) !== Core.normalizeText(primaryAddress) ? ` · 지번 ${building.jibunAddress}` : "";
-    return `<header class="building-hub-detail-head"><div class="building-hub-title"><span>${esc(building.buildingNo || building.id)}</span><h2>${esc(building.name || "건물명 미입력")}</h2><p>${esc(primaryAddress)}${esc(secondaryAddress)}</p></div><div class="building-hub-head-actions"><button class="secondary-button" data-building-edit="${attr(building.id)}">건물 정보 수정</button><button class="secondary-button" data-building-vacancies="${attr(building.id)}">공실 현황</button><button class="secondary-button" data-building-payments="${attr(building.id)}">입금 캘린더</button><button class="primary-button" data-building-new-case="${attr(building.id)}">＋ 새 케이스</button></div></header>
-      <div class="building-hub-detail-scroll"><div class="building-hub-kpis"><div class="building-hub-kpi"><span>연결 고객</span><b>${customers.length}명</b><small>${esc(owner ? `대표 ${owner.name}` : "건물주 연결 필요")}</small></div><div class="building-hub-kpi"><span>진행 계약</span><b>${activeContracts.length}건</b><small>${esc(activeContracts.length ? contractTypes(activeContracts[0]).join("·") : "활성 계약 없음")}</small></div><div class="building-hub-kpi"><span>진행 케이스</span><b>${openCases.length}건</b><small>${esc(openCases[0] ? Core.workflowProgress(openCases[0]).current : "진행 업무 없음")}</small></div><div class="building-hub-kpi ${overdueRows.length ? "alert" : ""}"><span>이번 달 입금</span><b>${rows.length}건</b><small>${esc(overdueRows.length ? `확인 필요 ${overdueRows.length}건` : amount ? `예정 ${krw(amount)}` : "납부 일정 없음")}</small></div></div>
+    return `<header class="building-hub-detail-head"><div class="building-hub-title"><span>${esc(building.buildingNo || building.id)}</span><h2>${esc(building.name || "건물명 미입력")}</h2><p>${esc(primaryAddress)}${esc(secondaryAddress)}</p></div><div class="building-hub-head-actions"><button class="secondary-button" data-building-edit="${attr(building.id)}">건물 정보 수정</button><button class="secondary-button" data-building-vacancies="${attr(building.id)}">공실 현황</button><button class="secondary-button" data-building-payments="${attr(building.id)}">입금 캘린더</button><button class="primary-button" data-building-new-case="${attr(building.id)}">＋ 새 민원</button></div></header>
+      <div class="building-hub-detail-scroll"><div class="building-hub-kpis"><div class="building-hub-kpi"><span>연결 고객</span><b>${customers.length}명</b><small>${esc(owner ? `대표 ${owner.name}` : "건물주 연결 필요")}</small></div><div class="building-hub-kpi"><span>진행 계약</span><b>${activeContracts.length}건</b><small>${esc(activeContracts.length ? contractTypes(activeContracts[0]).join("·") : "활성 계약 없음")}</small></div><div class="building-hub-kpi"><span>진행 민원</span><b>${openCases.length}건</b><small>${esc(openCases[0] ? Core.workflowProgress(openCases[0]).current : "진행 업무 없음")}</small></div><div class="building-hub-kpi ${overdueRows.length ? "alert" : ""}"><span>이번 달 입금</span><b>${rows.length}건</b><small>${esc(overdueRows.length ? `확인 필요 ${overdueRows.length}건` : amount ? `예정 ${krw(amount)}` : "납부 일정 없음")}</small></div></div>
       <div class="building-identity-strip"><div><b>건물 유형</b><span>${esc(building.type || "미입력")}</span></div><div><b>운영 상태</b><span>${buildingStatusBadge(building.status)}</span></div><div><b>호실 수</b><span>${vacancySummary.formal ? `${vacancySummary.total.toLocaleString("ko-KR")}개` : Number(building.unitCount) ? `${Number(building.unitCount).toLocaleString("ko-KR")}개` : "미입력"}</span></div><div><b>담당자</b><span>${esc(building.manager || "미입력")}</span></div></div>
-      <div class="building-detail-grid">${rentalSummary}<section class="building-detail-section"><header><b>연결 고객</b><span>${customers.length}명</span></header><div class="building-detail-body">${customerRecords || `<div class="building-detail-empty">연결된 고객이 없습니다. 건물 정보 수정에서 건물주를 선택하세요.</div>`}</div></section><section class="building-detail-section"><header><b>건물 호실</b><button type="button" class="mini-button" data-building-unit-add="${attr(building.id)}">＋ 호실</button></header><div class="building-detail-body">${unitRecords || `<div class="building-detail-empty">등록된 호실이 없습니다.</div>`}${archivedUnitRecords}</div></section><section class="building-detail-section"><header><b>계약</b><span>${contracts.length}건</span></header><div class="building-detail-body">${contractRecords || `<div class="building-detail-empty">연결된 계약이 없습니다.</div>`}</div></section><section class="building-detail-section"><header><b>케이스</b><span>${cases.length}건</span></header><div class="building-detail-body">${caseRecords || `<div class="building-detail-empty">연결된 케이스가 없습니다.</div>`}</div></section><section class="building-detail-section"><header><b>${esc(paymentMonthLabel(paymentMonth))} 입금 일정</b><span>${rows.length}건</span></header><div class="building-detail-body">${paymentRecords || `<div class="building-detail-empty">이번 달 납부 일정이 없습니다.</div>`}</div></section>${building.memo ? `<section class="building-detail-section wide"><header><b>건물 메모</b><span>공용 정보</span></header><div class="building-detail-body"><div class="building-detail-record"><div><b>관리 참고사항</b><span>${esc(building.memo)}</span></div></div></div></section>` : ""}</div></div>`;
+      <div class="building-detail-grid">${rentalSummary}<section class="building-detail-section"><header><b>연결 고객</b><span>${customers.length}명</span></header><div class="building-detail-body">${customerRecords || `<div class="building-detail-empty">연결된 고객이 없습니다. 건물 정보 수정에서 건물주를 선택하세요.</div>`}</div></section><section class="building-detail-section"><header><b>건물 호실</b><button type="button" class="mini-button" data-building-unit-add="${attr(building.id)}">＋ 호실</button></header><div class="building-detail-body">${unitRecords || `<div class="building-detail-empty">등록된 호실이 없습니다.</div>`}${archivedUnitRecords}</div></section><section class="building-detail-section"><header><b>계약</b><span>${contracts.length}건</span></header><div class="building-detail-body">${contractRecords || `<div class="building-detail-empty">연결된 계약이 없습니다.</div>`}</div></section><section class="building-detail-section"><header><b>민원</b><span>${cases.length}건</span></header><div class="building-detail-body">${caseRecords || `<div class="building-detail-empty">연결된 민원이 없습니다.</div>`}</div></section><section class="building-detail-section"><header><b>${esc(paymentMonthLabel(paymentMonth))} 입금 일정</b><span>${rows.length}건</span></header><div class="building-detail-body">${paymentRecords || `<div class="building-detail-empty">이번 달 납부 일정이 없습니다.</div>`}</div></section>${building.memo ? `<section class="building-detail-section wide"><header><b>건물 메모</b><span>공용 정보</span></header><div class="building-detail-body"><div class="building-detail-record"><div><b>관리 참고사항</b><span>${esc(building.memo)}</span></div></div></div></section>` : ""}</div></div>`;
     main.querySelector(".building-detail-grid")?.insertAdjacentHTML("afterbegin", ServiceOperationsUI.renderBuildingServices(building, store));
   }
 
@@ -2831,7 +2889,9 @@
 
   function renderContracts() {
     const query = Core.normalizeText(searchEl.value);
+    const contractPaymentMode = item => item.billingCycle === "건별" ? "single" : "recurring";
     const contracts = [...store.contracts]
+      .filter(item => contractPaymentMode(item) === contractPaymentModeFilter)
       .filter(item => contractTypeFilter === "전체" || contractTypes(item).includes(contractTypeFilter))
       .filter(item => contractStatusFilter === "전체" || item.status === contractStatusFilter)
       .filter(item => {
@@ -2844,7 +2904,10 @@
     const preparing = store.contracts.filter(item => item.status === "계약 준비").length;
     const ending = store.contracts.filter(item => item.status === "종료 예정").length;
     const monthly = store.contracts.filter(item => item.status !== "종료" && item.billingCycle === "월 정기").reduce((sum, item) => sum + Core.money(item.amount), 0);
+    const recurringCount = store.contracts.filter(item => contractPaymentMode(item) === "recurring").length;
+    const singleCount = store.contracts.filter(item => contractPaymentMode(item) === "single").length;
     main.innerHTML = `<section class="contract-hero"><div><span>계약 조건과 기간을 한곳에서 관리합니다</span><h2>청소·건물관리·부동산관리 계약</h2><p>계약 유형을 선택하고 고객·건물·기간·금액·업무 범위를 기록하세요.</p></div><button class="primary-button" data-action="new-contract">＋ 새 계약</button></section>
+      <nav class="contract-payment-mode-tabs" aria-label="계약 납부 구분"><button type="button" class="${contractPaymentModeFilter === "recurring" ? "active" : ""}" data-contract-payment-mode-filter="recurring" aria-pressed="${contractPaymentModeFilter === "recurring"}">정기 납부 <span>${recurringCount}</span></button><button type="button" class="${contractPaymentModeFilter === "single" ? "active" : ""}" data-contract-payment-mode-filter="single" aria-pressed="${contractPaymentModeFilter === "single"}">단건 계약 <span>${singleCount}</span></button></nav>
       <div class="contract-kpi-grid">${kpi("진행 중", active, "현재 운영 계약", "#4fb99b")}${kpi("계약 준비", preparing, "확정 전 계약", "#55aee8")}${kpi("종료 예정", ending, "종료·갱신 확인", "#efb84f")}${kpi("월 정기 금액", compactMoney(monthly), "진행 계약 기준", "#55c3d1")}</div>
       <div class="contract-toolbar"><div class="contract-type-filters">${["전체", ...Core.CONTRACT_TYPES].map(type => `<button type="button" class="filter-chip ${contractTypeFilter === type ? "active" : ""}" data-contract-type-filter="${attr(type)}">${esc(type)}</button>`).join("")}</div><label><span>계약 상태</span><select data-contract-status-filter>${["전체", ...Core.CONTRACT_STATUSES].map(status => `<option ${contractStatusFilter === status ? "selected" : ""}>${esc(status)}</option>`).join("")}</select></label></div>
       ${contracts.length ? `<section class="contract-list">${contracts.map(contract => {
@@ -2880,7 +2943,7 @@
         const state = relationshipState(customer);
         const lastActivity = customerActivities(customer.id)[0];
         const lastContact = customer.relationshipLastContactAt || customer.lastContactAt || (lastActivity && lastActivity.occurredAt) || "";
-        return `<article class="relationship-card" data-relationship-open="${attr(customer.id)}" tabindex="0"><header><i class="avatar">${esc(initials(customer.name))}</i><div><h3>${esc(customer.name)}</h3><p>${esc([customer.company, customerPhoneText(customer.phone)].filter(Boolean).join(" · ") || "연락처 미입력")}</p></div><span class="relationship-state ${state.tone}">${esc(state.label)}</span></header><div class="relationship-facts"><div><span>마지막 연락</span><b>${esc(lastContact ? dateText(lastContact) : "기록 없음")}</b></div><div><span>다음 연락</span><b>${esc(customer.relationshipNextContactAt ? dateText(customer.relationshipNextContactAt) : "일정 미등록")}</b></div><div><span>다음 할 일</span><b>${esc(customer.relationshipNextAction || "후속 계획 미등록")}</b></div><div><span>연락 주기</span><b>${Number(customer.relationshipCycleDays) || 30}일마다</b></div></div>${customer.relationshipNote ? `<p class="relationship-note">${esc(customer.relationshipNote)}</p>` : ""}<footer><button class="primary-button" data-relationship-followup="${attr(customer.id)}">＋ 후속 연락 기록</button><button class="secondary-button" data-relationship-plan="${attr(customer.id)}">연락 계획 설정</button><span class="relationship-open-hint">상세·기록 보기 →</span></footer></article>`;
+        return `<article class="relationship-card" data-relationship-open="${attr(customer.id)}" tabindex="0"><header>${customerAvatar(customer)}<div><h3>${esc(customer.name)}</h3><p>${esc([customer.company, customerPhoneText(customer.phone)].filter(Boolean).join(" · ") || "연락처 미입력")}</p></div><span class="relationship-state ${state.tone}">${esc(state.label)}</span></header><div class="relationship-facts"><div><span>마지막 연락</span><b>${esc(lastContact ? dateText(lastContact) : "기록 없음")}</b></div><div><span>다음 연락</span><b>${esc(customer.relationshipNextContactAt ? dateText(customer.relationshipNextContactAt) : "일정 미등록")}</b></div><div><span>다음 할 일</span><b>${esc(customer.relationshipNextAction || "후속 계획 미등록")}</b></div><div><span>연락 주기</span><b>${Number(customer.relationshipCycleDays) || 30}일마다</b></div></div>${customer.relationshipNote ? `<p class="relationship-note">${esc(customer.relationshipNote)}</p>` : ""}<footer><button class="primary-button" data-relationship-followup="${attr(customer.id)}">＋ 후속 연락 기록</button><button class="secondary-button" data-relationship-plan="${attr(customer.id)}">연락 계획 설정</button><span class="relationship-open-hint">상세·기록 보기 →</span></footer></article>`;
       }).join("")}</section>` : empty("유료관리 전환 고객이 없습니다", "영업 관리에서 연결 건물을 ‘유료관리 전환’ 단계로 진행하면 이곳에 자동으로 나타납니다.", `<button class="primary-button" data-view="pipeline">영업 관리로 이동 →</button>`)}`;
   }
 
@@ -3097,7 +3160,7 @@
     const canRestore = (!currentAuth.required && !currentAuth.enforceRoles) || user.role === "admin";
     main.innerHTML = `<div class="settings-grid">
       <section class="setting-card"><h3>로그인과 작업공간</h3><p>로그인한 회사 이메일의 이름이 담당자로 자동 기록됩니다.</p><form id="settingsForm"><div class="form-grid"><label class="field"><span>현재 사용자</span><input value="${attr(user.email || store.settings.owner || "로컬 사용자")}" disabled></label><label class="field"><span>회사·작업공간</span><input name="workspace" value="${attr(store.company.workspace || "원주 고객 영업관리")}"></label></div><div class="form-actions"><button class="primary-button" type="submit">설정 저장</button></div></form></section>
-      <div class="panel-stack"><section class="setting-card"><h3>공용 데이터와 백업</h3><p>고객·상담·영업·업체 상담 정보는 회사 Firebase 서버에서 실시간 공유되고, 이 PC에는 복구용 캐시가 보관됩니다.</p><div class="info-box mono">${esc(dataPath || "로컬 캐시 위치 확인 중")}</div>${canRestore ? `<div class="inline-actions" style="margin-top:12px"><button class="secondary-button" data-action="backup">암호화 백업 저장</button><button class="secondary-button" data-action="restore">공용 데이터 복원</button></div>` : `<div class="info-box" style="margin-top:12px">백업 파일 저장과 복원은 개인정보 다운로드 권한이 있는 관리자만 사용할 수 있습니다.</div>`}</section><section class="setting-card"><h3>CRM과 업무흐름 연결 범위</h3><p>영업 관리와 실제 케이스 업무는 목적에 맞게 구분하되 같은 공용 자료로 연결합니다.</p><div class="info-box">고객정보·상담·영업·후속 연락과 케이스의 기본정보·17단계 진행·단계 메모를 모두 BRING CRM에서 관리합니다. 업무흐름빌더와 케이스 자료는 서로 동일하게 반영됩니다.</div></section></div>
+      <div class="panel-stack"><section class="setting-card"><h3>공용 데이터와 백업</h3><p>고객·상담·민원·업체 상담 정보는 회사 Firebase 서버에서 실시간 공유되고, 이 PC에는 복구용 캐시가 보관됩니다.</p><div class="info-box mono">${esc(dataPath || "로컬 캐시 위치 확인 중")}</div>${canRestore ? `<div class="inline-actions" style="margin-top:12px"><button class="secondary-button" data-action="backup">암호화 백업 저장</button><button class="secondary-button" data-action="restore">공용 데이터 복원</button></div>` : `<div class="info-box" style="margin-top:12px">백업 파일 저장과 복원은 개인정보 다운로드 권한이 있는 관리자만 사용할 수 있습니다.</div>`}</section><section class="setting-card"><h3>CRM과 업무흐름 연결 범위</h3><p>민원 기본정보와 실제 처리 단계는 같은 공용 자료로 연결합니다.</p><div class="info-box">고객정보·상담·후속 연락과 민원의 기본정보·17단계 진행·단계 메모를 모두 BRING CRM에서 관리합니다. 업무흐름빌더와 민원 자료는 서로 동일하게 반영됩니다.</div></section></div>
     </div>`;
   }
 
@@ -3105,7 +3168,11 @@
     const editing = customerById(customerId);
     const customer = editing ? JSON.parse(JSON.stringify(editing)) : Core.createCustomer({ owner: store.settings.owner || "김현진" });
     const linkedBuildings = customerBuildings(customer);
-    modalContent.innerHTML = `<div class="modal-head"><div><h2>${editing ? "고객 정보 수정" : "새 고객 등록"}</h2><p>먼저 필요한 내용만 입력하세요. 나머지는 나중에 추가해도 됩니다.</p></div><button class="close-button" data-action="close-modal">×</button></div><form id="customerForm" class="modal-body simple-customer-form" data-customer-id="${attr(editing && editing.id || "")}"><div class="essential-label"><b>기본 정보</b><span>이 화면만 입력해도 고객 등록이 완료됩니다.</span></div><div class="form-grid">
+    const photoDataUrl = Core.normalizeCustomerPhotoDataUrl(editing && customerPhotos[editing.id] && customerPhotos[editing.id].dataUrl);
+    const photoEditor = editing
+      ? `<section class="customer-photo-editor" data-customer-photo-editor><div class="customer-photo-preview" data-customer-photo-preview>${customerAvatar(Object.assign({}, customer, { photoDataUrl }))}</div><div><b>고객 사진</b><span>작은 썸네일로 변환해 고객 데이터·백업과 분리된 전용 보관함에 저장합니다.</span><div class="inline-actions"><button type="button" class="secondary-button" data-customer-photo-pick>사진 선택</button><button type="button" class="secondary-button" data-customer-photo-remove ${photoDataUrl ? "" : "hidden"}>사진 삭제</button></div></div><input type="hidden" name="photoDataUrl" value="${attr(photoDataUrl)}"></section>`
+      : `<section class="customer-photo-editor customer-photo-editor-disabled"><div class="customer-photo-preview">${customerAvatar(customer)}</div><div><b>고객 사진</b><span>고객을 먼저 등록한 뒤 고객 정보 수정에서 사진을 추가할 수 있습니다.</span></div></section>`;
+    modalContent.innerHTML = `<div class="modal-head"><div><h2>${editing ? "고객 정보 수정" : "새 고객 등록"}</h2><p>먼저 필요한 내용만 입력하세요. 나머지는 나중에 추가해도 됩니다.</p></div><button class="close-button" data-action="close-modal">×</button></div><form id="customerForm" class="modal-body simple-customer-form" data-customer-id="${attr(editing && editing.id || "")}" data-photo-changed="false"><div class="essential-label"><b>기본 정보</b><span>이 화면만 입력해도 고객 등록이 완료됩니다.</span></div>${photoEditor}<div class="form-grid">
       ${field("고객명 *", "name", customer.name, "text", "예: 홍길동 또는 원주에셋")}
       <label class="field"><span>연락처</span><input name="phone" type="tel" inputmode="tel" autocomplete="tel" data-customer-phone value="${attr(customerPhoneText(customer.phone))}" placeholder="010-0000-0000"></label>
       ${selectField("고객 유형", "type", ["건물주", "임차인", "법인", "협력업체", "기타"], customer.type)}
@@ -3164,7 +3231,7 @@
     const ownerCustomerField = editing && currentOwnerCustomerId
       ? `<label class="field"><span>건물주·대표 고객</span><select disabled aria-disabled="true"><option>${esc(ownerOptionLabel(currentOwnerCustomerId))}</option></select><input type="hidden" name="ownerCustomerId" value="${attr(currentOwnerCustomerId)}"><small>이미 연결된 건물주를 바꾸거나 해제하려면 별도 이전 절차가 필요합니다.</small></label>`
       : `<label class="field"><span>건물주·대표 고객</span><select name="ownerCustomerId">${customerOptions.map(id => `<option value="${attr(id)}" ${id === currentOwnerCustomerId ? "selected" : ""}>${esc(ownerOptionLabel(id))}</option>`).join("")}</select><small>${editing ? (store.customers.length ? "연결할 고객을 선택하세요. 최초 연결 후 변경은 별도 이전 절차가 필요합니다." : "고객 관리에서 고객을 먼저 등록한 뒤 이 화면에서 연결하세요.") : "고객 관리에 등록된 고객을 건물주·대표 고객으로 연결합니다."}</small></label>`;
-    modalContent.innerHTML = `<div class="modal-head"><div><h2>${editing ? "건물 정보 수정" : "새 건물 등록"}</h2><p>건물 고유 ID를 기준으로 고객·계약·케이스·입금 자료가 연결됩니다.</p></div><button class="close-button" data-action="close-modal">×</button></div><form id="buildingForm" class="modal-body building-form" data-building-id="${attr(editing && editing.id || "")}"><div class="info-box">같은 건물을 다시 등록하지 말고 기존 건물을 수정해 주세요. 건물명이 바뀌어도 연결된 업무는 유지됩니다.</div>
+    modalContent.innerHTML = `<div class="modal-head"><div><h2>${editing ? "건물 정보 수정" : "새 건물 등록"}</h2><p>건물 고유 ID를 기준으로 고객·계약·민원·입금 자료가 연결됩니다.</p></div><button class="close-button" data-action="close-modal">×</button></div><form id="buildingForm" class="modal-body building-form" data-building-id="${attr(editing && editing.id || "")}"><div class="info-box">같은 건물을 다시 등록하지 말고 기존 건물을 수정해 주세요. 건물명이 바뀌어도 연결된 업무는 유지됩니다.</div>
       <section class="quote-url-import building-link-import"><div><b>네이버 지도 링크로 자동 입력</b><span>장소 또는 주소 검색 링크에서 건물명·도로명·지번 주소를 찾아옵니다.</span></div><div class="quote-url-import-row"><input name="naverBuildingUrl" type="url" inputmode="url" autocomplete="off" maxlength="4096" placeholder="https://naver.me/... 또는 https://map.naver.com/..."><button type="button" data-building-link-lookup>건물 정보 불러오기</button></div><p data-building-link-lookup-status aria-live="polite">불러온 내용을 확인한 뒤 아래 건물 등록 버튼을 눌러 저장하세요.</p></section>
       <section class="building-form-section"><header><div><h3>기본 정보</h3><p>건물과 담당 고객을 구분하는 공용 정보입니다.</p></div></header><div class="form-grid building-form-section-body">
         ${field("건물명 *", "name", building.name, "text", "예: 햇빛빌라")}
@@ -3353,18 +3420,31 @@
     return buildings[0]?.id || "";
   }
 
+  function refreshContractPaymentFields(form) {
+    if (!form) return false;
+    const oneOff = form.elements.billingCycle?.value === "건별";
+    const section = form.querySelector("[data-one-off-contract-fields]");
+    if (section) section.hidden = !oneOff;
+    for (const fieldName of ["workDate", "paymentDueDate"]) {
+      if (form.elements[fieldName]) form.elements[fieldName].required = oneOff;
+    }
+    return oneOff;
+  }
+
   function contractEditor(contractId, oneOff = false) {
     const editing = store.contracts.find(item => item.id === contractId);
-    const item = editing ? JSON.parse(JSON.stringify(editing)) : Core.createContract({ owner: store.settings.owner || "김현진", billingCycle: oneOff ? "건별" : "월 정기", startDate: oneOff ? todayKey() : Core.dayKey(), workDate: oneOff ? todayKey() : "", paymentDueDate: oneOff ? todayKey() : "" });
+    const isOneOff = editing ? editing.billingCycle === "건별" : oneOff || contractPaymentModeFilter === "single";
+    const item = editing ? JSON.parse(JSON.stringify(editing)) : Core.createContract({ owner: store.settings.owner || "김현진", billingCycle: isOneOff ? "건별" : "월 정기", startDate: isOneOff ? todayKey() : Core.dayKey(), workDate: isOneOff ? todayKey() : "", paymentDueDate: isOneOff ? todayKey() : "" });
     const types = contractTypes(item);
     const customerOptions = ["", ...store.customers.map(customer => customer.id)];
     modalContent.innerHTML = `<div class="modal-head"><div><h2>${editing ? "계약 상세·수정" : "새 계약 등록"}</h2><p>필요한 계약 유형을 모두 체크하고 고객을 선택하세요.</p></div><button class="close-button" data-action="close-modal">×</button></div><form id="contractForm" class="modal-body contract-form" data-contract-id="${attr(editing && editing.id || "")}">
       <div class="contract-form-guide"><div><b>${esc(item.contractNo || "새 계약")}</b><span>계약 조건·기간·금액을 실제 계약 내용과 동일하게 입력하세요.</span></div><span>공용 서버에 저장</span></div>
-      <div class="form-grid">${contractTypeChecklist(types)}${selectField("계약 상태", "status", Core.CONTRACT_STATUSES, item.status)}${field("계약명 *", "name", item.name, "text", "예: 혁신타워 종합관리", "wide")}${selectField("연결 고객 *", "customerId", customerOptions, item.customerId, id => id ? (customerById(id)?.name || id) : "고객 선택")}${contractBuildingField(item.customerId, item.buildingId)}${field("계약 시작일 *", "startDate", item.startDate, "date")}${field("계약 종료일 (선택)", "endDate", item.endDate, "date")}${field("계약 금액", "amount", item.amount || "", "number", "원 단위")}${selectField("납부 방식", "billingCycle", ["월 정기", "건별", "연간", "기타"], item.billingCycle)}${field("담당자", "owner", item.owner || store.settings.owner || "김현진")}${areaField("공통 업무 범위", "scope", item.scope, "wide")}</div>
-      <section class="contract-type-fields one-off-contract-fields"><header><b>단건 계약 정산</b><span>납부 방식을 건별로 선택하면 입금 캘린더에 표시됩니다.</span></header><div class="form-grid">${field("작업일", "workDate", item.workDate || item.startDate, "date")}${field("입금 예정일", "paymentDueDate", item.paymentDueDate || item.workDate || item.startDate, "date")}${field("업체 지급액·작업비", "vendorCost", item.vendorCost || "", "number", "원 단위")}${selectField("고객 입금 상태", "collectionStatus", ["입금 예정", "입금 완료"], item.collectionStatus || "입금 예정")}${selectField("업체 지급 상태", "vendorPaymentStatus", ["지급 예정", "지급 완료"], item.vendorPaymentStatus || "지급 예정")}<label class="field"><span>예상 수익</span><input value="${attr(krw(Core.money(item.amount) - Core.money(item.vendorCost)))}" readonly></label></div></section>
+      <div class="form-grid">${contractTypeChecklist(types)}${selectField("계약 상태", "status", Core.CONTRACT_STATUSES, item.status)}${field("계약명 *", "name", item.name, "text", "예: 혁신타워 종합관리", "wide")}${selectField("연결 고객 *", "customerId", customerOptions, item.customerId, id => id ? (customerById(id)?.name || id) : "고객 선택")}${contractBuildingField(item.customerId, item.buildingId)}${field("계약 시작일 *", "startDate", item.startDate, "date")}${field("계약 종료일 (선택)", "endDate", item.endDate, "date")}${field("계약 금액", "amount", item.amount || "", "number", "원 단위")}${selectField("납부 방식", "billingCycle", ["월 정기", "건별", "연간", "기타"], item.billingCycle, value => value === "건별" ? "단건 계약" : value)}${field("담당자", "owner", item.owner || store.settings.owner || "김현진")}${areaField("공통 업무 범위", "scope", item.scope, "wide")}</div>
+      <section class="contract-type-fields one-off-contract-fields" data-one-off-contract-fields ${isOneOff ? "" : "hidden"}><header><b>단건 계약 정산</b><span>납부 방식을 건별로 선택하면 입금 캘린더에 표시됩니다.</span></header><div class="form-grid">${field("작업일", "workDate", item.workDate || item.startDate, "date")}${field("입금 예정일", "paymentDueDate", item.paymentDueDate || item.workDate || item.startDate, "date")}${field("업체 지급액·작업비", "vendorCost", item.vendorCost || "", "number", "원 단위")}${selectField("고객 입금 상태", "collectionStatus", ["입금 예정", "입금 완료"], item.collectionStatus || "입금 예정")}${selectField("업체 지급 상태", "vendorPaymentStatus", ["지급 예정", "지급 완료"], item.vendorPaymentStatus || "지급 예정")}<label class="field"><span>예상 수익</span><input value="${attr(krw(Core.money(item.amount) - Core.money(item.vendorCost)))}" readonly></label></div></section>
       <section class="contract-type-fields" data-contract-fields="${attr(types.join("|"))}"><header><b>유형별 계약 내용</b><span>체크한 모든 계약 유형의 입력 항목이 표시됩니다.</span></header><div class="contract-specific-fields ${types.includes("청소") ? "is-selected" : ""}" data-contract-specific="청소">${field("청소 주기·작업 시점", "serviceFrequency", item.serviceFrequency, "text", "예: 주 2회 또는 공실 발생 시", "wide")}</div><div class="contract-specific-fields ${types.includes("건물관리") ? "is-selected" : ""}" data-contract-specific="건물관리">${field("관리 호실 수", "unitCount", item.unitCount || "", "number", "숫자 입력")}</div><div class="contract-specific-fields ${types.includes("부동산관리") ? "is-selected" : ""}" data-contract-specific="부동산관리">${field("관리 대상", "managementTarget", item.managementTarget, "text", "예: 상가·사무실 임대관리")}${field("수수료 방식", "feeMethod", item.feeMethod, "text", "예: 월 고정 또는 임대료 비율")}</div></section>
       <div class="form-grid contract-note-grid">${areaField("계약 메모", "memo", item.memo, "wide")}</div><div class="form-actions">${editing ? `<button type="button" class="danger-outline-button form-delete-left" data-contract-delete="${attr(editing.id)}">계약 삭제</button>` : ""}<button type="button" class="secondary-button" data-action="close-modal">취소</button><button type="submit" class="primary-button">${editing ? "계약 수정 저장" : "계약 등록"}</button></div></form>`;
     openModal();
+    refreshContractPaymentFields(document.getElementById("contractForm"));
     setTimeout(() => document.querySelector('#contractForm [name="name"]')?.focus(), 30);
   }
 
@@ -3661,7 +3741,7 @@
 
   function workflowCaseEditor(buildingId) {
     const building = buildingById(buildingId) || null;
-    modalContent.innerHTML = `<div class="modal-head"><div><h2>새 케이스 등록</h2><p>필수 정보만 입력하고 1단계부터 바로 시작합니다.</p></div><button class="close-button" data-action="close-modal">×</button></div><form id="workflowCaseCreateForm" class="modal-body"><div class="info-box">등록 건물을 선택하면 건물 ID가 함께 저장되어 건물명이 바뀌어도 업무 연결이 유지됩니다. 요청자는 실제 연락할 고객을 직접 선택해 주세요.</div><div class="form-grid" style="margin-top:14px">${selectField("등록 건물", "crmBuildingId", ["", ...store.buildings.map(item => item.id)], building && building.id || "", id => id ? buildingChoiceLabel(buildingById(id)) : "직접 입력·미등록 건물")}${selectField("요청자·연락 고객", "crmCustomerId", ["", ...store.customers.map(item => item.id)], "", id => id ? `${customerById(id)?.name || id}${customerById(id)?.type ? ` · ${customerById(id).type}` : ""}` : "직접 입력·미연결")}${field("고객명 *", "name", "", "text", "예: 홍길동")}${field("연락처", "phone", "", "text", "010-0000-0000")}${field("건물 *", "building", building && building.name || "", "text", "건물명")}${field("호실", "room", "", "text", "예: 302호")}${field("주소", "address", building && building.address || "", "text", "건물 주소", "wide")}${field("업무 유형", "issueType", "", "text", "예: 누수·전기·청소")}${selectField("긴급도", "urgency", ["보통", "확인 필요", "긴급"], "보통")}${areaField("접수 내용", "summary", "", "wide")}</div><div class="form-actions"><button type="button" class="secondary-button" data-action="close-modal">취소</button><button class="primary-button">케이스 등록</button></div></form>`;
+    modalContent.innerHTML = `<div class="modal-head"><div><h2>새 민원 등록</h2><p>작성 구분과 필수 정보만 입력하고 1단계부터 바로 시작합니다.</p></div><button class="close-button" data-action="close-modal">×</button></div><form id="workflowCaseCreateForm" class="modal-body"><div class="info-box">건물주가 전달한 민원인지 BRING이 직접 등록한 민원인지 먼저 구분합니다. 기존 미분류 자료는 수정 전까지 그대로 보존됩니다.</div><div class="form-grid" style="margin-top:14px">${selectField("작성 구분 *", "caseParty", ["", "건물주", "브링"], "", value => value || "작성 주체 선택")}${selectField("등록 건물", "crmBuildingId", ["", ...store.buildings.map(item => item.id)], building && building.id || "", id => id ? buildingChoiceLabel(buildingById(id)) : "직접 입력·미등록 건물")}${selectField("요청자·연락 고객", "crmCustomerId", ["", ...store.customers.map(item => item.id)], "", id => id ? `${customerById(id)?.name || id}${customerById(id)?.type ? ` · ${customerById(id).type}` : ""}` : "직접 입력·미연결")}${field("고객명 *", "name", "", "text", "예: 홍길동")}${field("연락처", "phone", "", "text", "010-0000-0000")}${field("건물 *", "building", building && building.name || "", "text", "건물명")}${field("호실", "room", "", "text", "예: 302호")}${field("주소", "address", building && building.address || "", "text", "건물 주소", "wide")}${field("업무 유형", "issueType", "", "text", "예: 누수·전기·청소")}${selectField("긴급도", "urgency", ["보통", "확인 필요", "긴급"], "보통")}${areaField("민원 내용", "summary", "", "wide")}</div><div class="form-actions"><button type="button" class="secondary-button" data-action="close-modal">취소</button><button class="primary-button">민원 등록</button></div></form>`;
     openModal();
   }
 
@@ -3905,7 +3985,7 @@
     const workflowCases = activeCases();
     modalContent.innerHTML = `<div class="modal-head"><div><h2>${item.id ? "추가서비스 수정" : "추가서비스 기회"}</h2><p>견적과 매출을 구분합니다. 매출은 작업 증거와 1원 이상의 금액이 있을 때만 기록됩니다.</p></div><button class="close-button" data-action="close-modal">×</button></div><form id="salesOpportunityForm" class="modal-body" data-sales-prospect-id="${attr(prospect.id)}" data-sales-opportunity-id="${attr(item.id || "")}"><div class="form-grid">
       ${selectField("서비스 유형", "serviceType", Sales.SALES_SERVICE_TYPES, item.serviceType || "common_cleaning", salesOptionLabeler(SALES_SERVICE_LABELS))}${selectField("진행 상태", "stage", Sales.OPPORTUNITY_STAGES, item.stage || "discovered", salesOptionLabeler(SALES_OPPORTUNITY_LABELS))}${selectField("관련 호실", "unitId", ["", ...units.map(unit => unit.id)], item.unitId || "", id => id ? salesUnitById(id)?.label || id : "건물 전체")}${field("담당자", "owner", item.owner || salesActorName())}
-      ${areaField("요구사항 *", "requirements", item.requirements || "", "wide")}${field("처리 기한", "dueAt", item.dueAt ? Core.dayKey(item.dueAt) : "", "date")}${field("견적 금액", "quoteAmount", item.quoteAmount || 0, "number")}${field("매출 금액", "revenueAmount", item.revenueAmount || 0, "number")}${field("완료·매출 증거 링크", "evidenceUrl", item.evidenceUrl || "", "url", "https://")}${areaField("완료·매출 증거 메모", "evidenceNote", item.evidenceNote || "", "wide")}${selectField("연결 민원·공사 케이스", "workflowCaseId", ["", ...workflowCases.map(workflowCase => workflowCaseKey(workflowCase))], item.workflowCaseId || "", caseId => { const workflowCase = workflowCases.find(value => workflowCaseKey(value) === caseId); return caseId ? `${workflowCase?.ticketNo || workflowCase?.receiptNo || caseId} · ${workflowCase?.building || workflowCase?.name || "케이스"}` : "연결하지 않음"; })}
+      ${areaField("요구사항 *", "requirements", item.requirements || "", "wide")}${field("처리 기한", "dueAt", item.dueAt ? Core.dayKey(item.dueAt) : "", "date")}${field("견적 금액", "quoteAmount", item.quoteAmount || 0, "number")}${field("매출 금액", "revenueAmount", item.revenueAmount || 0, "number")}${field("완료·매출 증거 링크", "evidenceUrl", item.evidenceUrl || "", "url", "https://")}${areaField("완료·매출 증거 메모", "evidenceNote", item.evidenceNote || "", "wide")}${selectField("연결 민원·공사 기록", "workflowCaseId", ["", ...workflowCases.map(workflowCase => workflowCaseKey(workflowCase))], item.workflowCaseId || "", caseId => { const workflowCase = workflowCases.find(value => workflowCaseKey(value) === caseId); return caseId ? `${workflowCase?.ticketNo || workflowCase?.receiptNo || caseId} · ${workflowCase?.building || workflowCase?.name || "민원"}` : "연결하지 않음"; })}
     </div><div class="form-actions"><button type="button" class="secondary-button" data-action="close-modal">취소</button><button class="primary-button">${item.id ? "서비스 기회 저장" : "서비스 기회 추가"}</button></div></form>`;
     openModal();
   }
@@ -4060,7 +4140,7 @@
     const activities = customerActivities(customerId);
     const tasks = customerTasks(customerId).filter(task => task.status !== "취소");
     drawerContent.innerHTML = `<div class="drawer-head"><div><h2>고객 상세</h2><p>${esc(customer.customerNo || customer.id)}</p></div><button class="close-button" data-action="close-drawer">×</button></div><div class="drawer-body">
-      <section class="customer-summary"><i class="avatar">${esc(initials(customer.name))}</i><div><h3>${esc(customer.name)}</h3><p>${esc([customer.company, customer.type, customerPhoneText(customer.phone)].filter(Boolean).join(" · "))}</p></div><div class="summary-value"><strong>${esc(krw(customer.expectedValue))}</strong><span>예상 계약금액</span></div></section>
+      <section class="customer-summary">${customerAvatar(customer)}<div><h3>${esc(customer.name)}</h3><p>${esc([customer.company, customer.type, customerPhoneText(customer.phone)].filter(Boolean).join(" · "))}</p></div><div class="summary-value"><strong>${esc(krw(customer.expectedValue))}</strong><span>예상 계약금액</span></div></section>
       <div class="inline-actions" style="margin-bottom:14px"><button class="primary-button" data-action="edit-selected-customer">고객 정보 수정</button><button class="secondary-button" data-action="new-selected-task">＋ 할 일</button></div>
       <section class="detail-section"><div class="detail-section-head"><h4>고객 요청·후속조치</h4>${managementStatusBadge(managementStatusForCustomer(customer))}</div><div class="detail-section-body"><div class="kv-grid"><div class="kv"><b>현재 문제</b><span>${esc(customer.currentIssue || "미입력")}</span></div><div class="kv"><b>다음 행동</b><span>${esc(customer.nextAction || "미입력")}</span></div><div class="kv"><b>다음 연락</b><span>${esc(dateText(customer.nextContactAt))}</span></div><div class="kv"><b>담당자·우선순위</b><span>${esc(customer.owner || "-")} · ${esc(customer.priority || "보통")}</span></div></div></div></section>
       <section class="detail-section"><div class="detail-section-head"><h4>연결 건물</h4><span class="text-muted" style="font-size:9px">${buildings.length}곳</span></div><div class="detail-section-body">${buildings.length ? `<div class="building-record-list">${buildings.map(building => {
@@ -4086,7 +4166,7 @@
     const lastContact = customer.relationshipLastContactAt || customer.lastContactAt || (lastActivity && lastActivity.occurredAt) || "";
     const nextContactAt = customer.relationshipNextContactAt || addDaysIso(new Date(), Number(customer.relationshipCycleDays) || 30);
     drawerContent.innerHTML = `<div class="drawer-head"><div><h2>계약 고객 관리</h2><p>후속 연락 이력과 다음 계획</p></div><button class="close-button" data-action="close-drawer">×</button></div><div class="drawer-body relationship-drawer-body">
-      <section class="relationship-detail-summary"><i class="avatar">${esc(initials(customer.name))}</i><div><h3>${esc(customer.name)}</h3><p>${esc([customer.company, customerPhoneText(customer.phone)].filter(Boolean).join(" · ") || "연락처 미입력")}</p></div><span class="relationship-state ${state.tone}">${esc(state.label)}</span></section>
+      <section class="relationship-detail-summary">${customerAvatar(customer)}<div><h3>${esc(customer.name)}</h3><p>${esc([customer.company, customerPhoneText(customer.phone)].filter(Boolean).join(" · ") || "연락처 미입력")}</p></div><span class="relationship-state ${state.tone}">${esc(state.label)}</span></section>
       <div class="inline-actions relationship-detail-actions"><button class="secondary-button" data-relationship-plan="${attr(customer.id)}">연락 계획 수정</button><button class="text-button" data-action="show-selected-customer">전체 고객 정보 보기 →</button></div>
       <section class="detail-section"><div class="detail-section-head"><h4>현재 연락 계획</h4><span class="relationship-plan-cycle">${Number(customer.relationshipCycleDays) || 30}일마다</span></div><div class="detail-section-body"><div class="kv-grid"><div class="kv"><b>마지막 연락</b><span>${esc(lastContact ? dateText(lastContact) : "기록 없음")}</span></div><div class="kv"><b>다음 연락</b><span>${esc(nextContactAt ? dateText(nextContactAt) : "일정 미등록")}</span></div><div class="kv"><b>다음 할 일</b><span>${esc(customer.relationshipNextAction || "후속 계획 미등록")}</span></div><div class="kv"><b>관계 시작</b><span>${esc(customer.relationshipStartedAt ? dateText(customer.relationshipStartedAt) : "미등록")}</span></div></div>${customer.relationshipNote ? `<p class="relationship-detail-note">${esc(customer.relationshipNote)}</p>` : ""}</div></section>
       <section class="detail-section relationship-add-section"><div class="detail-section-head"><div><h4>후속 연락 추가</h4><span>통화·문자·방문 내용을 바로 기록하세요.</span></div></div><div class="detail-section-body"><form id="relationshipActivityForm" data-customer-id="${attr(customer.id)}"><div class="form-grid">${selectField("연락 방식", "type", ["전화", "문자", "카카오", "이메일", "미팅", "방문", "메모"], "전화")}${field("연락 일시", "occurredAt", datetimeValue(new Date().toISOString()), "datetime-local")}${areaField("연락 내용 *", "summary", "", "wide")}${field("고객 반응·결과", "result", "", "text", "예: 서비스에 만족, 추가 요청 없음")}${field("다음 할 일", "nextAction", customer.relationshipNextAction || "정기 안부 및 추가 요청 확인")}${field("다음 연락일", "nextContactAt", datetimeValue(nextContactAt), "datetime-local")}</div><div class="form-actions"><button class="primary-button">＋ 후속 연락 저장</button></div></form></div></section>
@@ -4242,12 +4322,20 @@
     const contracts = store.contracts.filter(item => item.customerId === customer.id);
     const linkedCases = (operations.cases || []).filter(item => item && (String(item.crmCustomerId || "") === String(customer.id) || (!item.crmCustomerId && Core.matchWorkflowCustomer(item, store.customers)?.id === customer.id)));
     if (buildings.length || activities.length || tasks.length || contracts.length || linkedCases.length) {
-      await showCRMNotice({ title: "이 고객은 삭제할 수 없습니다", description: "연결된 업무 기록을 먼저 정리해 주세요.", target: customer.name || "고객", message: `건물 ${buildings.length}곳 · 케이스 ${linkedCases.length}건 · 상담 ${activities.length}건 · 할 일 ${tasks.length}건 · 계약 ${contracts.length}건`, warning: "연결 기록을 삭제하거나 다른 고객으로 옮긴 뒤 다시 시도해 주세요.", tone: "warning" });
+      await showCRMNotice({ title: "이 고객은 삭제할 수 없습니다", description: "연결된 업무 기록을 먼저 정리해 주세요.", target: customer.name || "고객", message: `건물 ${buildings.length}곳 · 민원 ${linkedCases.length}건 · 상담 ${activities.length}건 · 할 일 ${tasks.length}건 · 계약 ${contracts.length}건`, warning: "연결 기록을 삭제하거나 다른 고객으로 옮긴 뒤 다시 시도해 주세요.", tone: "warning" });
       return;
     }
     if (!await requestConfirmation({ title: "이 고객 정보를 삭제할까요?", description: "삭제할 고객이 맞는지 확인해 주세요.", target: customer.name || "고객", warning: "삭제하면 모든 사용자의 CRM에서도 없어집니다.", confirmLabel: "고객 삭제", tone: "danger" })) return;
     customer = customerById(customerId);
     if (!customer) return showToast("이미 삭제되었거나 변경된 고객입니다.", "error");
+    try {
+      const photoResult = await api.saveCustomerPhoto({ customerId: customer.id, dataUrl: "" });
+      if (!photoResult || photoResult.ok !== true) return showToast(photoResult && photoResult.error || "고객 사진을 먼저 삭제하지 못했습니다.", "error");
+      delete customerPhotos[customer.id];
+    } catch (error) {
+      showToast(error.message || "고객 사진을 먼저 삭제하지 못했습니다. 서버 연결을 확인해 주세요.", "error");
+      return;
+    }
     store.customers = store.customers.filter(item => item.id !== customer.id);
     logAudit({ category: "삭제", targetType: "고객", targetId: customer.id, targetLabel: customer.name, action: "고객 정보 삭제", reason: "사용자 확인 후 삭제" });
     scheduleSave();
@@ -4276,6 +4364,42 @@
   }
 
   document.addEventListener("click", async event => {
+    const customerPhotoPick = event.target.closest("[data-customer-photo-pick]");
+    if (customerPhotoPick) {
+      const form = customerPhotoPick.closest("#customerForm");
+      if (!form || !form.elements.photoDataUrl) return;
+      customerPhotoPick.disabled = true;
+      try {
+        const result = await api.pickCustomerPhoto();
+        if (!result || result.canceled) return;
+        if (result.ok !== true) return showToast(result.error || "고객 사진을 불러오지 못했습니다.", "error");
+        const photoDataUrl = Core.normalizeCustomerPhotoDataUrl(result.dataUrl);
+        if (!photoDataUrl) return showToast("고객 사진 형식을 확인하지 못했습니다.", "error");
+        form.elements.photoDataUrl.value = photoDataUrl;
+        form.dataset.photoChanged = "true";
+        const preview = form.querySelector("[data-customer-photo-preview]");
+        if (preview) preview.innerHTML = customerAvatar({ name: form.elements.name && form.elements.name.value, photoDataUrl });
+        const remove = form.querySelector("[data-customer-photo-remove]");
+        if (remove) remove.hidden = false;
+        showToast("고객 사진을 선택했습니다. 저장 버튼을 눌러 반영해 주세요.", "success");
+      } catch (error) {
+        showToast(error.message || "고객 사진을 불러오지 못했습니다.", "error");
+      } finally {
+        customerPhotoPick.disabled = false;
+      }
+      return;
+    }
+    const customerPhotoRemove = event.target.closest("[data-customer-photo-remove]");
+    if (customerPhotoRemove) {
+      const form = customerPhotoRemove.closest("#customerForm");
+      if (!form || !form.elements.photoDataUrl) return;
+      form.elements.photoDataUrl.value = "";
+      form.dataset.photoChanged = "true";
+      const preview = form.querySelector("[data-customer-photo-preview]");
+      if (preview) preview.innerHTML = customerAvatar({ name: form.elements.name && form.elements.name.value });
+      customerPhotoRemove.hidden = true;
+      return;
+    }
     const workEvidence = event.target.closest("[data-work-evidence]");
     if (workEvidence) {
       try {
@@ -4542,7 +4666,7 @@
       return;
     }
     const workflowAction = event.target.closest("[data-workflow-action]");
-    if (workflowAction) { if (!canWriteCRM()) return showToast("조회 전용 계정은 케이스 업무를 실행할 수 없습니다.", "error"); await executeCaseWorkflowAction(workflowAction); return; }
+    if (workflowAction) { if (!canWriteCRM()) return showToast("조회 전용 계정은 민원 업무를 실행할 수 없습니다.", "error"); await executeCaseWorkflowAction(workflowAction); return; }
     const caseUpload = event.target.closest("[data-case-upload]");
     if (caseUpload) { if (!canWriteCRM()) return showToast("조회 전용 계정은 파일을 올릴 수 없습니다.", "error"); await uploadCaseFiles(caseUpload); return; }
     const quoteConfirm = event.target.closest("[data-case-quote-confirm]");
@@ -4895,7 +5019,7 @@
     const caseResourceLink = event.target.closest("[data-case-resource-link]");
     if (caseResourceLink) {
       const result = await api.openExternal(caseResourceLink.dataset.caseResourceLink);
-      if (!result.ok) showToast(result.error || "케이스 자료를 열지 못했습니다.", "error");
+      if (!result.ok) showToast(result.error || "민원 자료를 열지 못했습니다.", "error");
       return;
     }
     const partnerQuoteEdit = event.target.closest("[data-partner-quote-edit]");
@@ -4921,71 +5045,78 @@
       renderCases();
       return;
     }
+    const caseParty = event.target.closest("[data-case-party-filter]");
+    if (caseParty) {
+      casePartyFilter = ["건물주", "브링", "미분류"].includes(caseParty.dataset.casePartyFilter) ? caseParty.dataset.casePartyFilter : "전체";
+      selectedCaseKey = "";
+      renderCases();
+      return;
+    }
     const caseTrashButton = event.target.closest("[data-case-trash]");
     if (caseTrashButton) {
-      if (!canWriteCRM()) return showToast("조회 전용 계정은 케이스를 휴지통으로 이동할 수 없습니다.", "error");
+      if (!canWriteCRM()) return showToast("조회 전용 계정은 민원을 휴지통으로 이동할 수 없습니다.", "error");
       const item = workflowCaseByAnyKey(caseTrashButton.dataset.caseTrash);
-      if (!item) return showToast("휴지통으로 이동할 케이스를 찾지 못했습니다.", "error");
-      const label = item.ticketNo || item.receiptNo || item.id || "케이스";
-      if (!await requestConfirmation({ title: "이 케이스를 휴지통으로 이동할까요?", description: "휴지통에서 언제든 다시 복원할 수 있습니다.", target: `${label}\n${[item.name, item.building, item.room].filter(Boolean).join(" · ")}`, warning: "17단계 상태와 메모는 그대로 보관됩니다.", confirmLabel: "휴지통으로 이동", tone: "danger" })) return;
+      if (!item) return showToast("휴지통으로 이동할 민원을 찾지 못했습니다.", "error");
+      const label = item.ticketNo || item.receiptNo || item.id || "민원";
+      if (!await requestConfirmation({ title: "이 민원을 휴지통으로 이동할까요?", description: "휴지통에서 언제든 다시 복원할 수 있습니다.", target: `${label}\n${[item.name, item.building, item.room].filter(Boolean).join(" · ")}`, warning: "17단계 상태와 메모는 그대로 보관됩니다.", confirmLabel: "휴지통으로 이동", tone: "danger" })) return;
       caseTrashButton.disabled = true;
       const result = await api.saveWorkflowCase({ caseKey: workflowCaseKey(item), trashAction: "trash" });
-      if (!result.ok) { caseTrashButton.disabled = false; return showToast(result.error || "케이스를 휴지통으로 이동하지 못했습니다.", "error"); }
+      if (!result.ok) { caseTrashButton.disabled = false; return showToast(result.error || "민원을 휴지통으로 이동하지 못했습니다.", "error"); }
       await refreshOperations({ silent: true, render: false });
       selectedCaseKey = workflowCaseKey(activeCases()[0]);
       openCaseStepKey = "";
       renderCases();
       pageMeta();
-      showToast(`${label} 케이스를 휴지통으로 이동했습니다.`, "success");
+      showToast(`${label} 민원을 휴지통으로 이동했습니다.`, "success");
       return;
     }
     const caseRestoreButton = event.target.closest("[data-case-restore]");
     if (caseRestoreButton) {
-      if (!canWriteCRM()) return showToast("조회 전용 계정은 케이스를 복원할 수 없습니다.", "error");
+      if (!canWriteCRM()) return showToast("조회 전용 계정은 민원을 복원할 수 없습니다.", "error");
       const item = workflowCaseByAnyKey(caseRestoreButton.dataset.caseRestore);
-      if (!item) return showToast("복원할 케이스를 찾지 못했습니다.", "error");
-      const label = item.ticketNo || item.receiptNo || item.id || "케이스";
-      if (!await requestConfirmation({ title: "이 케이스를 복원할까요?", description: "복원하면 다시 진행 중인 케이스 목록에 표시됩니다.", target: label, confirmLabel: "케이스 복원", tone: "success" })) return;
+      if (!item) return showToast("복원할 민원을 찾지 못했습니다.", "error");
+      const label = item.ticketNo || item.receiptNo || item.id || "민원";
+      if (!await requestConfirmation({ title: "이 민원을 복원할까요?", description: "복원하면 다시 진행 중인 민원 목록에 표시됩니다.", target: label, confirmLabel: "민원 복원", tone: "success" })) return;
       caseRestoreButton.disabled = true;
       const result = await api.saveWorkflowCase({ caseKey: workflowCaseKey(item), trashAction: "restore" });
-      if (!result.ok) { caseRestoreButton.disabled = false; return showToast(result.error || "케이스를 복원하지 못했습니다.", "error"); }
+      if (!result.ok) { caseRestoreButton.disabled = false; return showToast(result.error || "민원을 복원하지 못했습니다.", "error"); }
       await refreshOperations({ silent: true, render: false });
       caseListMode = "active";
       selectedCaseKey = workflowCaseKey(item);
       openCaseStepKey = "";
       renderCases();
       pageMeta();
-      showToast(`${label} 케이스를 복원했습니다.`, "success");
+      showToast(`${label} 민원을 복원했습니다.`, "success");
       return;
     }
     const caseDeleteButton = event.target.closest("[data-case-delete]");
     if (caseDeleteButton) {
-      if (!canWriteCRM()) return showToast("조회 전용 계정은 케이스를 영구 삭제할 수 없습니다.", "error");
+      if (!canWriteCRM()) return showToast("조회 전용 계정은 민원을 영구 삭제할 수 없습니다.", "error");
       let item = workflowCaseByAnyKey(caseDeleteButton.dataset.caseDelete);
-      if (!item || item.deleted !== true) return showToast("휴지통에서 삭제할 케이스를 찾지 못했습니다.", "error");
-      const label = item.ticketNo || item.receiptNo || item.id || "케이스";
+      if (!item || item.deleted !== true) return showToast("휴지통에서 삭제할 민원을 찾지 못했습니다.", "error");
+      const label = item.ticketNo || item.receiptNo || item.id || "민원";
       if (!await requestConfirmation({
-        title: "이 케이스를 영구 삭제할까요?",
+        title: "이 민원을 영구 삭제할까요?",
         description: "영구 삭제 후에는 휴지통에서도 복원할 수 없습니다.",
         target: `${label}\n${[item.name, item.building, item.room].filter(Boolean).join(" · ")}`,
-        message: "케이스 기본정보, 17단계 상태·메모, 선택 업체, 견적·사진·승인·정산 등 케이스 안의 모든 기록이 함께 삭제됩니다.",
+        message: "민원 기본정보, 17단계 상태·메모, 선택 업체, 견적·사진·승인·정산 등 민원 안의 모든 기록이 함께 삭제됩니다.",
         warning: "이 작업은 되돌릴 수 없습니다. 연결된 외부 파일 자체는 별도 저장소에 남을 수 있습니다.",
         confirmLabel: "영구 삭제",
         tone: "danger"
       })) return;
       await refreshOperations({ silent: true, render: false });
       item = workflowCaseByAnyKey(caseDeleteButton.dataset.caseDelete);
-      if (!item || item.deleted !== true) { renderCases(); return showToast("다른 사용자가 케이스를 복원하거나 삭제했습니다. 목록을 새로고침했습니다.", "error"); }
+      if (!item || item.deleted !== true) { renderCases(); return showToast("다른 사용자가 민원을 복원하거나 삭제했습니다. 목록을 새로고침했습니다.", "error"); }
       caseDeleteButton.disabled = true;
       const result = await api.saveWorkflowCase({ caseKey: workflowCaseKey(item), trashAction: "delete" });
-      if (!result.ok) { caseDeleteButton.disabled = false; return showToast(result.error || "케이스를 영구 삭제하지 못했습니다.", "error"); }
+      if (!result.ok) { caseDeleteButton.disabled = false; return showToast(result.error || "민원을 영구 삭제하지 못했습니다.", "error"); }
       await refreshOperations({ silent: true, render: false });
       caseListMode = "trash";
       selectedCaseKey = workflowCaseKey(trashCases()[0]);
       openCaseStepKey = "";
       renderCases();
       pageMeta();
-      showToast(`${label} 케이스를 영구 삭제했습니다.`, "success");
+      showToast(`${label} 민원을 영구 삭제했습니다.`, "success");
       return;
     }
     const caseSelect = event.target.closest("[data-case-select]");
@@ -5288,6 +5419,12 @@
         logAudit({ category: "변경", targetType: "영업 할 일", targetId: task.id, targetLabel: task.title, action: `상태를 ${task.status}(으)로 변경`, reason: "영업 할 일 관리" });
         scheduleSave(); render(); if (selectedCustomerId) renderCustomerDrawer(selectedCustomerId);
       }
+      return;
+    }
+    const contractPaymentMode = event.target.closest("[data-contract-payment-mode-filter]");
+    if (contractPaymentMode) {
+      contractPaymentModeFilter = contractPaymentMode.dataset.contractPaymentModeFilter === "single" ? "single" : "recurring";
+      renderContracts();
       return;
     }
     const contractType = event.target.closest("[data-contract-type-filter]");
@@ -5595,6 +5732,7 @@
     }
     if (event.target.matches('#contractForm input[name="types"]')) refreshContractTypeFields(event.target.form);
     if (event.target.matches('#contractForm [name="customerId"]')) refreshContractBuildings(event.target.form);
+    if (event.target.matches('#contractForm [name="billingCycle"]')) refreshContractPaymentFields(event.target.form);
     if (event.target.matches('#partnerQuoteForm [name="industry"]')) {
       const form = event.target.form;
       const selectedVendor = partnerVendorById(form && form.elements.vendorId && form.elements.vendorId.value);
@@ -5953,7 +6091,7 @@
       try {
         const existing = salesOpportunityById(form.dataset.salesOpportunityId);
         const workflowCaseId = String(raw.workflowCaseId || "").trim();
-        if (workflowCaseId && !workflowCaseByKey(workflowCaseId)) return showToast("활성 민원·공사 케이스만 연결할 수 있습니다.", "error");
+        if (workflowCaseId && !workflowCaseByKey(workflowCaseId)) return showToast("활성 민원·공사 기록만 연결할 수 있습니다.", "error");
         if (!existing && raw.stage !== "discovered") return showToast("새 추가서비스는 ‘기회 발견’에서 시작해 주세요.", "error");
         if (existing && raw.stage !== existing.stage && !Sales.canTransitionOpportunityStage(existing.stage, raw.stage)) return showToast("추가서비스 상태는 한 단계씩 진행해 주세요.", "error");
         const opportunityValues = Object.assign({}, existing || {}, {
@@ -5974,23 +6112,31 @@
       } catch (error) { showToast(error.message || "추가서비스 기회를 저장하지 못했습니다.", "error"); }
     } else if (form.id === "workflowCaseCreateForm") {
       const raw = Object.fromEntries(new FormData(form).entries());
+      if (!["건물주", "브링"].includes(raw.caseParty)) return showToast("민원 작성 구분을 선택해 주세요.", "error");
       if (!String(raw.name || "").trim()) return showToast("고객명을 입력해 주세요.", "error");
       if (!String(raw.building || "").trim()) return showToast("건물명을 입력해 주세요.", "error");
       const result = await api.saveWorkflowCase({ create: true, fields: raw });
-      if (!result.ok) return showToast(result.error || "케이스를 등록하지 못했습니다.", "error");
+      if (!result.ok) return showToast(result.error || "민원을 등록하지 못했습니다.", "error");
       selectedCaseKey = result.caseKey;
+      casePartyFilter = raw.caseParty;
       closeModal();
       await refreshOperations({ silent: true, render: false });
       currentView = "cases";
       render();
-      showToast("새 케이스를 등록하고 1단계를 시작했습니다.", "success");
+      showToast("새 민원을 등록하고 1단계를 시작했습니다.", "success");
     } else if (form.id === "workflowCaseBasicForm") {
       const raw = Object.fromEntries(new FormData(form).entries());
+      const existingCase = workflowCaseByKey(form.dataset.caseKey);
+      const existingParty = ["건물주", "브링"].includes(String(existingCase && existingCase.caseParty || ""));
+      if (!["건물주", "브링"].includes(raw.caseParty)) {
+        if (!existingParty && !raw.caseParty) delete raw.caseParty;
+        else return showToast("민원 작성 구분을 확인해 주세요.", "error");
+      }
       const result = await api.saveWorkflowCase({ caseKey: form.dataset.caseKey, fields: raw });
       if (!result.ok) return showToast(result.error || "기본 정보를 저장하지 못했습니다.", "error");
       await refreshOperations({ silent: true, render: false });
       renderCases();
-      showToast("케이스 기본 정보를 저장했습니다.", "success");
+      showToast("민원 기본 정보를 저장했습니다.", "success");
     } else if (form.classList.contains("case-step-note-form")) {
       const raw = Object.fromEntries(new FormData(form).entries());
       const result = await api.saveWorkflowCase({ caseKey: form.dataset.caseKey, stepKey: form.dataset.stepKey, stepNote: raw.stepNote });
@@ -6309,17 +6455,22 @@
       if (raw.endDate && raw.endDate < raw.startDate) return showToast("계약 종료일은 시작일보다 빠를 수 없습니다.", "error");
       if (raw.billingCycle === "건별" && (!raw.workDate || !raw.paymentDueDate)) return showToast("단건 계약의 작업일과 입금 예정일을 입력해 주세요.", "error");
       const item = existing || Core.createContract({ owner: store.settings.owner || "김현진" });
+      const oneOffContract = raw.billingCycle === "건별";
       Object.assign(item, {
         types, type: types[0], name: raw.name.trim(), customerId: raw.customerId, buildingId: raw.buildingId,
         startDate: raw.startDate, endDate: raw.endDate || "", amount: Core.money(raw.amount), billingCycle: raw.billingCycle,
         status: raw.status, owner: raw.owner.trim() || store.settings.owner || "김현진", scope: raw.scope.trim(),
         serviceFrequency: raw.serviceFrequency.trim(), unitCount: Number(raw.unitCount) || 0,
-        managementTarget: raw.managementTarget.trim(), feeMethod: raw.feeMethod.trim(), memo: raw.memo.trim(),
-        workDate: raw.workDate || "", paymentDueDate: raw.paymentDueDate || "", vendorCost: Core.money(raw.vendorCost),
-        grossProfit: Core.money(raw.amount) - Core.money(raw.vendorCost), collectionStatus: raw.collectionStatus || "입금 예정",
-        vendorPaymentStatus: raw.vendorPaymentStatus || "지급 예정", updatedAt: new Date().toISOString()
+        managementTarget: raw.managementTarget.trim(), feeMethod: raw.feeMethod.trim(), memo: raw.memo.trim(), updatedAt: new Date().toISOString()
       });
+      if (oneOffContract) Object.assign(item, {
+        workDate: raw.workDate, paymentDueDate: raw.paymentDueDate, vendorCost: Core.money(raw.vendorCost),
+        grossProfit: Core.money(raw.amount) - Core.money(raw.vendorCost), collectionStatus: raw.collectionStatus || "입금 예정",
+        vendorPaymentStatus: raw.vendorPaymentStatus || "지급 예정"
+      });
+      else for (const fieldName of ["workDate", "paymentDueDate", "vendorCost", "grossProfit", "collectionStatus", "vendorPaymentStatus"]) delete item[fieldName];
       if (!existing) store.contracts.push(item);
+      contractPaymentModeFilter = item.billingCycle === "건별" ? "single" : "recurring";
       const customer = customerById(item.customerId);
       const building = buildingById(item.buildingId);
       logAudit({ category: existing ? "변경" : "등록", targetType: "계약", targetId: item.id, targetLabel: item.name, action: `${types.join("·")} · ${item.status} · ${building && building.name || "건물"}`, reason: "계약 관리" });
@@ -6327,9 +6478,22 @@
     } else if (form.id === "customerForm") {
       const wasExisting = !!form.dataset.customerId;
       if (!String(form.elements.name && form.elements.name.value || "").trim()) return showToast("고객명을 입력해 주세요.", "error");
+      const photoChanged = wasExisting && form.dataset.photoChanged === "true";
+      const photoDataUrl = Core.normalizeCustomerPhotoDataUrl(form.elements.photoDataUrl && form.elements.photoDataUrl.value);
       const customer = customerFromForm(form);
       logAudit({ category: wasExisting ? "변경" : "등록", targetType: "고객", targetId: customer.id, targetLabel: customer.name, action: wasExisting ? "고객 기본정보 수정" : "신규 고객 등록", reason: "고객 관리" });
-      scheduleSave(); closeModal(); render(); renderCustomerDrawer(customer.id); showToast(`${customer.name} 고객을 저장했습니다.`, "success");
+      scheduleSave();
+      if (photoChanged) {
+        try {
+          const photoResult = await api.saveCustomerPhoto({ customerId: customer.id, dataUrl: photoDataUrl });
+          if (!photoResult || photoResult.ok !== true) return showToast(photoResult && photoResult.error || "고객 사진을 저장하지 못했습니다.", "error");
+          if (photoDataUrl) customerPhotos[customer.id] = photoResult.photo || { dataUrl: photoDataUrl };
+          else delete customerPhotos[customer.id];
+        } catch (error) {
+          return showToast(error.message || "고객 사진을 저장하지 못했습니다.", "error");
+        }
+      }
+      closeModal(); render(); renderCustomerDrawer(customer.id); showToast(`${customer.name} 고객을 저장했습니다.`, "success");
     } else if (form.id === "partnerVendorForm") {
       const raw = Object.fromEntries(new FormData(form).entries());
       if (!String(raw.vendor || "").trim()) return showToast("업체명을 입력해 주세요.", "error");
@@ -6741,9 +6905,11 @@ document.addEventListener("keydown", event => {
     updateSyncUI(state);
     if (state && state.status === "connected" && appInitialized) {
       void refreshRendererOverlays().catch(() => undefined);
+      void refreshCustomerPhotos().catch(() => undefined);
     }
   });
   api.onRemoteData(applyRemoteStore);
+  api.onCustomerPhotos(photos => applyCustomerPhotos(photos));
   api.onFieldEvent(envelope => {
     if (!envelope || typeof envelope !== "object" || !envelope.payload) return;
     if (envelope.type === "field.ready") {
@@ -6890,6 +7056,8 @@ document.addEventListener("keydown", event => {
     try {
       store = Core.sanitizeStore(initialData || await api.load());
       ensureSalesStore(store);
+      let customerPhotoLoadFailed = false;
+      await refreshCustomerPhotos(false).catch(() => { customerPhotoLoadFailed = true; customerPhotos = {}; });
       await refreshRendererOverlays(false).catch(() => undefined);
       await loadFieldTeamProfiles();
       dataPath = await api.dataPath();
@@ -6902,6 +7070,7 @@ document.addEventListener("keydown", event => {
       document.getElementById("lastSaved").textContent = store.updatedAt ? `최신 반영 ${dateText(store.updatedAt)}` : "새 데이터";
       render();
       appInitialized = true;
+      if (customerPhotoLoadFailed) showToast("고객 사진을 불러오지 못했습니다. 서버가 다시 연결되면 자동으로 재시도합니다.", "error");
       if (currentView === "buildings") requestDriveImportCandidatesRefresh();
       if (!store.settings.onboardingComplete) setTimeout(showWelcomeGuide, 350);
     } catch (error) {

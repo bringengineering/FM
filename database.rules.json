@@ -398,10 +398,13 @@
         },
         "customers": {
           "$customerId": {
-            ".write": "auth != null && root.child('crmCompany/access').child(auth.uid).child('enabled').val() === true && root.child('crmCompany/access').child(auth.uid).child('email').val() === auth.token.email && (root.child('crmCompany/access').child(auth.uid).child('role').val() === 'admin' || root.child('crmCompany/access').child(auth.uid).child('role').val() === 'member') && !data.child('buildingIdLinks').exists() && !newData.child('buildingIdLinks').exists() && (!newData.exists() || (newData.child('id').isString() && newData.child('id').val() === $customerId))",
+            ".write": "auth != null && root.child('crmCompany/access').child(auth.uid).child('enabled').val() === true && root.child('crmCompany/access').child(auth.uid).child('email').val() === auth.token.email && (root.child('crmCompany/access').child(auth.uid).child('role').val() === 'admin' || root.child('crmCompany/access').child(auth.uid).child('role').val() === 'member') && !data.child('buildingIdLinks').exists() && !newData.child('buildingIdLinks').exists() && (!newData.exists() || (newData.child('id').isString() && newData.child('id').val() === $customerId)) && (newData.exists() || !newData.parent().parent().parent().child('customerPhotos').child($customerId).exists()) && ((!newData.child('archivedAt').exists() || newData.child('archivedAt').val() === '') || !newData.parent().parent().parent().child('customerPhotos').child($customerId).exists())",
             "$field": {
-              ".write": "auth != null && $field !== 'buildingIdLinks' && ($field !== 'id' || (newData.exists() && newData.isString() && newData.val() === $customerId)) && ($field !== 'archivedAt' || !data.parent().child('buildingIdLinks').exists()) && root.child('crmCompany/access').child(auth.uid).child('enabled').val() === true && root.child('crmCompany/access').child(auth.uid).child('email').val() === auth.token.email && (root.child('crmCompany/access').child(auth.uid).child('role').val() === 'admin' || root.child('crmCompany/access').child(auth.uid).child('role').val() === 'member')"
+            ".write": "auth != null && $field !== 'buildingIdLinks' && $field !== 'photoDataUrl' && $field !== 'avatarUrl' && $field !== 'localPath' && ($field !== 'id' || (newData.exists() && newData.isString() && newData.val() === $customerId)) && ($field !== 'archivedAt' || (!data.parent().child('buildingIdLinks').exists() && (!newData.exists() || newData.val() === '' || !newData.parent().parent().parent().parent().child('customerPhotos').child($customerId).exists()))) && root.child('crmCompany/access').child(auth.uid).child('enabled').val() === true && root.child('crmCompany/access').child(auth.uid).child('email').val() === auth.token.email && (root.child('crmCompany/access').child(auth.uid).child('role').val() === 'admin' || root.child('crmCompany/access').child(auth.uid).child('role').val() === 'member')"
             },
+            "photoDataUrl": { ".validate": false },
+            "avatarUrl": { ".validate": false },
+            "localPath": { ".validate": false },
             "buildingIdLinks": {
               ".write": false,
               "$buildingId": {
@@ -464,13 +467,29 @@
           ".write": "auth != null && root.child('crmCompany/access').child(auth.uid).child('enabled').val() === true && root.child('crmCompany/access').child(auth.uid).child('email').val() === auth.token.email && (root.child('crmCompany/access').child(auth.uid).child('role').val() === 'admin' || root.child('crmCompany/access').child(auth.uid).child('role').val() === 'member')"
         }
       },
+      "customerPhotos": {
+        ".read": "auth != null && root.child('crmCompany/access').child(auth.uid).child('enabled').val() === true && root.child('crmCompany/access').child(auth.uid).child('email').val() === auth.token.email && (root.child('crmCompany/access').child(auth.uid).child('role').val() === 'admin' || root.child('crmCompany/access').child(auth.uid).child('role').val() === 'member' || root.child('crmCompany/access').child(auth.uid).child('role').val() === 'viewer')",
+        ".write": false,
+        "$customerId": {
+          ".write": "auth != null && $customerId.matches(/^[A-Za-z0-9_-]{1,120}$/) && $customerId !== '__proto__' && $customerId !== 'prototype' && $customerId !== 'constructor' && root.child('crmCompany/access').child(auth.uid).child('enabled').val() === true && root.child('crmCompany/access').child(auth.uid).child('email').val() === auth.token.email && (root.child('crmCompany/access').child(auth.uid).child('role').val() === 'admin' || root.child('crmCompany/access').child(auth.uid).child('role').val() === 'member') && (!newData.exists() || (newData.parent().parent().child('data').child('customers').child($customerId).child('id').val() === $customerId && (!newData.parent().parent().child('data').child('customers').child($customerId).child('archivedAt').exists() || newData.parent().parent().child('data').child('customers').child($customerId).child('archivedAt').val() === '')))",
+          ".validate": "!newData.exists() || (newData.child('dataUrl').isString() && newData.child('dataUrl').val().length > 23 && newData.child('dataUrl').val().length <= 20000 && newData.child('dataUrl').val().matches(/^data:image[/]jpeg;base64,[/]9j[/][A-Za-z0-9+/]+={0,2}$/) && newData.child('size').isNumber() && newData.child('size').val() === newData.child('dataUrl').val().length && newData.child('size').val() <= 20000 && newData.child('size').val() % 1 === 0 && newData.child('updatedAt').isString() && newData.child('updatedAt').val().matches(/^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}[.][0-9]{3}Z$/) && newData.child('updatedBy').isString() && newData.child('updatedBy').val() === auth.uid)",
+          "dataUrl": { ".validate": true },
+          "size": { ".validate": true },
+          "updatedAt": { ".validate": true },
+          "updatedBy": { ".validate": true },
+          "$other": { ".validate": false }
+        }
+      },
       "fieldSummaries": {
         ".read": "auth != null && root.child('crmCompany/access').child(auth.uid).child('enabled').val() === true && root.child('crmCompany/access').child(auth.uid).child('email').val() === auth.token.email && (root.child('crmCompany/access').child(auth.uid).child('role').val() === 'admin' || root.child('crmCompany/access').child(auth.uid).child('role').val() === 'member' || root.child('crmCompany/access').child(auth.uid).child('role').val() === 'viewer')",
         ".write": false
       },
       "cases": {
         ".read": "auth != null && root.child('crmCompany/access').child(auth.uid).child('enabled').val() === true && root.child('crmCompany/access').child(auth.uid).child('email').val() === auth.token.email && (root.child('crmCompany/access').child(auth.uid).child('role').val() === 'admin' || root.child('crmCompany/access').child(auth.uid).child('role').val() === 'member' || root.child('crmCompany/access').child(auth.uid).child('role').val() === 'viewer')",
-        ".write": "auth != null && root.child('crmCompany/access').child(auth.uid).child('enabled').val() === true && root.child('crmCompany/access').child(auth.uid).child('email').val() === auth.token.email && (root.child('crmCompany/access').child(auth.uid).child('role').val() === 'admin' || root.child('crmCompany/access').child(auth.uid).child('role').val() === 'member')"
+        ".write": "auth != null && root.child('crmCompany/access').child(auth.uid).child('enabled').val() === true && root.child('crmCompany/access').child(auth.uid).child('email').val() === auth.token.email && (root.child('crmCompany/access').child(auth.uid).child('role').val() === 'admin' || root.child('crmCompany/access').child(auth.uid).child('role').val() === 'member')",
+        "$caseId": {
+          ".validate": "!newData.exists() || newData.child('caseParty').val() === '건물주' || newData.child('caseParty').val() === '브링' || (data.exists() && (!data.child('caseParty').exists() || data.child('caseParty').val() === '') && (!newData.child('caseParty').exists() || newData.child('caseParty').val() === ''))"
+        }
       },
       "paymentCalendars": {
         ".read": "auth != null && root.child('crmCompany/access').child(auth.uid).child('enabled').val() === true && root.child('crmCompany/access').child(auth.uid).child('email').val() === auth.token.email && (root.child('crmCompany/access').child(auth.uid).child('role').val() === 'admin' || root.child('crmCompany/access').child(auth.uid).child('role').val() === 'member' || root.child('crmCompany/access').child(auth.uid).child('role').val() === 'viewer')",
@@ -491,7 +510,10 @@
     },
     "cases": {
       ".read": "auth != null && root.child('crmCompany/access').child(auth.uid).child('enabled').val() === true && root.child('crmCompany/access').child(auth.uid).child('email').val() === auth.token.email && (root.child('crmCompany/access').child(auth.uid).child('role').val() === 'admin' || root.child('crmCompany/access').child(auth.uid).child('role').val() === 'member' || root.child('crmCompany/access').child(auth.uid).child('role').val() === 'viewer')",
-      ".write": "auth != null && root.child('crmCompany/access').child(auth.uid).child('enabled').val() === true && root.child('crmCompany/access').child(auth.uid).child('email').val() === auth.token.email && (root.child('crmCompany/access').child(auth.uid).child('role').val() === 'admin' || root.child('crmCompany/access').child(auth.uid).child('role').val() === 'member')"
+      ".write": "auth != null && root.child('crmCompany/access').child(auth.uid).child('enabled').val() === true && root.child('crmCompany/access').child(auth.uid).child('email').val() === auth.token.email && (root.child('crmCompany/access').child(auth.uid).child('role').val() === 'admin' || root.child('crmCompany/access').child(auth.uid).child('role').val() === 'member')",
+      "$caseId": {
+        ".validate": "!newData.exists() || newData.child('caseParty').val() === '건물주' || newData.child('caseParty').val() === '브링' || (data.exists() && (!data.child('caseParty').exists() || data.child('caseParty').val() === '') && (!newData.child('caseParty').exists() || newData.child('caseParty').val() === ''))"
+      }
     },
     "paymentCalendars": {
       "$uid": {

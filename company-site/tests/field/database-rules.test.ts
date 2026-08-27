@@ -970,6 +970,125 @@ async function exerciseCustomerBuildingLinkRules(testEnvironment: RulesTestEnvir
     .toBe(false);
 }
 
+async function exerciseCustomerPhotoRules(testEnvironment: RulesTestEnvironment) {
+  const unauthenticated = testEnvironment.unauthenticatedContext().database();
+  const admin = testEnvironment.authenticatedContext(
+    "crm-admin",
+    crmClaims("admin@bring.test"),
+  ).database();
+  const member = testEnvironment.authenticatedContext(
+    "crm-member",
+    crmClaims("member@bring.test"),
+  ).database();
+  const viewer = testEnvironment.authenticatedContext(
+    "crm-viewer",
+    crmClaims("viewer@bring.test"),
+  ).database();
+  const disabled = testEnvironment.authenticatedContext(
+    "crm-disabled",
+    crmClaims("disabled@bring.test"),
+  ).database();
+  const wrongEmail = testEnvironment.authenticatedContext(
+    "crm-member",
+    crmClaims("wrong@bring.test"),
+  ).database();
+  const dataUrl = "data:image/jpeg;base64,/9j/2Q==";
+  const photo = (uid: string) => ({
+    dataUrl,
+    size: dataUrl.length,
+    updatedAt: NOW,
+    updatedBy: uid,
+  });
+
+  for (const database of [admin, member, viewer]) {
+    await assertSucceeds(get(ref(database, "crmCompany/customerPhotos")));
+  }
+  for (const database of [unauthenticated, disabled, wrongEmail]) {
+    await assertFails(get(ref(database, "crmCompany/customerPhotos")));
+  }
+
+  await assertFails(set(
+    ref(viewer, "crmCompany/customerPhotos/customer_1"),
+    photo("crm-viewer"),
+  ));
+  await assertFails(set(
+    ref(member, "crmCompany/customerPhotos/customer_missing"),
+    photo("crm-member"),
+  ));
+  await assertFails(set(
+    ref(member, "crmCompany/customerPhotos/constructor"),
+    photo("crm-member"),
+  ));
+  await assertFails(set(
+    ref(member, "crmCompany/customerPhotos/customer_1"),
+    { ...photo("crm-member"), size: dataUrl.length - 1 },
+  ));
+  await assertFails(set(
+    ref(member, "crmCompany/customerPhotos/customer_1"),
+    { ...photo("crm-member"), extra: true },
+  ));
+  const fakeDataUrl = "data:image/jpeg;base64,QUJD";
+  await assertFails(set(
+    ref(member, "crmCompany/customerPhotos/customer_1"),
+    { ...photo("crm-member"), dataUrl: fakeDataUrl, size: fakeDataUrl.length },
+  ));
+  const oversizedDataUrl = `data:image/jpeg;base64,/9j/${"A".repeat(20000)}`;
+  await assertFails(set(
+    ref(member, "crmCompany/customerPhotos/customer_1"),
+    { ...photo("crm-member"), dataUrl: oversizedDataUrl, size: oversizedDataUrl.length },
+  ));
+
+  await assertSucceeds(set(
+    ref(member, "crmCompany/data/customers/customer_photo_target"),
+    { id: "customer_photo_target", name: "Photo target" },
+  ));
+
+  for (const customerId of ["customer_atomic_delete", "customer_atomic_archive"]) {
+    await assertSucceeds(set(
+      ref(member, `crmCompany/data/customers/${customerId}`),
+      { id: customerId, name: "Atomic lifecycle target" },
+    ));
+  }
+  await assertFails(update(ref(member, "crmCompany"), {
+    "data/customers/customer_atomic_delete": null,
+    "customerPhotos/customer_atomic_delete": photo("crm-member"),
+  }));
+  await assertFails(update(ref(member, "crmCompany"), {
+    "data/customers/customer_atomic_archive/archivedAt": NOW,
+    "customerPhotos/customer_atomic_archive": photo("crm-member"),
+  }));
+  expect((await get(ref(member, "crmCompany/data/customers/customer_atomic_delete"))).exists()).toBe(true);
+  expect((await get(ref(member, "crmCompany/data/customers/customer_atomic_archive/archivedAt"))).exists()).toBe(false);
+  expect((await get(ref(member, "crmCompany/customerPhotos/customer_atomic_delete"))).exists()).toBe(false);
+  expect((await get(ref(member, "crmCompany/customerPhotos/customer_atomic_archive"))).exists()).toBe(false);
+
+  await assertSucceeds(set(
+    ref(member, "crmCompany/customerPhotos/customer_photo_target"),
+    photo("crm-member"),
+  ));
+  expect((await assertSucceeds(get(
+    ref(viewer, "crmCompany/customerPhotos/customer_photo_target"),
+  ))).val()).toEqual(photo("crm-member"));
+  await assertFails(remove(
+    ref(member, "crmCompany/data/customers/customer_photo_target"),
+  ));
+  await assertFails(set(
+    ref(member, "crmCompany/data/customers/customer_photo_target/archivedAt"),
+    NOW,
+  ));
+  await assertSucceeds(remove(
+    ref(member, "crmCompany/customerPhotos/customer_photo_target"),
+  ));
+  await assertSucceeds(set(
+    ref(member, "crmCompany/data/customers/customer_photo_target/archivedAt"),
+    NOW,
+  ));
+  await assertFails(set(
+    ref(admin, "crmCompany/customerPhotos/customer_photo_target"),
+    photo("crm-admin"),
+  ));
+}
+
 async function exerciseAtomicBuildingCreateWithCustomerLink(
   testEnvironment: RulesTestEnvironment,
 ) {
@@ -1288,6 +1407,31 @@ describe("field media database rule source", () => {
       ".read": false,
       ".write": false,
     });
+  });
+
+  it("binds customer photos and complaint parties to post-write invariants", async () => {
+    const source = JSON.parse(
+      await readFile(resolve("../database.rules.json"), "utf8"),
+    ) as { rules: Record<string, Record<string, unknown>> };
+    const crm = source.rules.crmCompany as Record<string, Record<string, unknown>>;
+    const data = crm.data as Record<string, Record<string, unknown>>;
+    const customers = data.customers as Record<string, Record<string, unknown>>;
+    const customer = customers.$customerId;
+    const customerField = customer.$field as Record<string, unknown>;
+    const photos = crm.customerPhotos as Record<string, Record<string, unknown>>;
+    const photo = photos.$customerId;
+
+    expect(String(customer[".write"])).toContain("newData.parent().parent().parent().child('customerPhotos')");
+    expect(String(customerField[".write"])).toContain("newData.parent().parent().parent().parent().child('customerPhotos')");
+    expect(String(photo[".write"])).toContain("newData.parent().parent().child('data').child('customers')");
+    expect(String(photo[".validate"])).toContain("[/]9j[/]");
+
+    for (const cases of [crm.cases, source.rules.cases]) {
+      const validation = String((cases.$caseId as Record<string, unknown>)[".validate"]);
+      expect(validation).toContain("newData.child('caseParty').val() === '건물주'");
+      expect(validation).toContain("newData.child('caseParty').val() === '브링'");
+      expect(validation).toContain("data.exists()");
+    }
   });
 
   it("isolates company CRM access and validates Spark-safe canonical writes for enabled members", async () => {
@@ -1861,6 +2005,10 @@ describe.runIf(databaseEmulatorAvailable)("fieldPlatform database rules", () => 
     await exerciseCustomerBuildingLinkRules(environment);
   });
 
+  it("stores only bounded thumbnails for existing active customers and prevents photo orphans", async () => {
+    await exerciseCustomerPhotoRules(environment);
+  });
+
   it("allows exact CRM roles to read Drive import candidates and denies every client write", async () => {
     await exerciseDriveImportCandidateRules(environment);
   });
@@ -1921,7 +2069,13 @@ describe.runIf(databaseEmulatorAvailable)("fieldPlatform database rules", () => 
     await assertFails(set(ref(unauthenticated, "cases/case_2"), { id: "case_2" }));
     await assertFails(set(ref(viewer, "cases/case_2"), { id: "case_2" }));
     await assertFails(set(ref(wrongEmail, "cases/case_2"), { id: "case_2" }));
-    await assertSucceeds(set(ref(member, "cases/case_2"), { id: "case_2" }));
+    await assertFails(set(ref(member, "cases/case_2"), { id: "case_2" }));
+    await assertFails(set(ref(member, "cases/case_2"), { id: "case_2", caseParty: "외부" }));
+    await assertSucceeds(set(ref(member, "cases/case_2"), { id: "case_2", caseParty: "건물주" }));
+    await assertFails(update(ref(member, "cases/case_2"), { caseParty: "" }));
+    await assertSucceeds(update(ref(member, "cases/case_1"), { summary: "legacy unclassified edit" }));
+    await assertFails(set(ref(member, "crmCompany/cases/company_case_1"), { id: "company_case_1" }));
+    await assertSucceeds(set(ref(member, "crmCompany/cases/company_case_1"), { id: "company_case_1", caseParty: "브링" }));
 
     await assertSucceeds(get(ref(unauthenticated, "signage/consign")));
     await assertSucceeds(get(ref(unauthenticated, "signage/settings")));

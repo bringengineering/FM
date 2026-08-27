@@ -194,6 +194,9 @@
 
   function normalizeCustomer(value) {
     const customer = Object.assign({}, value || {});
+    delete customer.photoDataUrl;
+    delete customer.avatarUrl;
+    delete customer.localPath;
     customer.stage = normalizePipelineStage(customer.stage);
     customer.buildingIds = normalizeStringList(customer.buildingIds);
     const rawLinks = customer.buildingIdLinks && typeof customer.buildingIdLinks === "object" && !Array.isArray(customer.buildingIdLinks)
@@ -204,6 +207,30 @@
         && !["__proto__", "prototype", "constructor"].includes(buildingId)
         && firebaseSafeKey(buildingId) === buildingId));
     return customer;
+  }
+
+  function normalizeCustomerPhotoDataUrl(value) {
+    const photo = String(value || "").trim();
+    if (!photo) return "";
+    if (photo.length > 20000) return "";
+    const match = photo.match(/^data:image\/jpeg;base64,([A-Za-z0-9+/]+={0,2})$/);
+    if (!match) return "";
+    try {
+      let bytes;
+      let canonical;
+      if (typeof Buffer !== "undefined") {
+        bytes = Buffer.from(match[1], "base64");
+        canonical = bytes.toString("base64");
+      } else if (typeof atob === "function" && typeof btoa === "function") {
+        const decoded = atob(match[1]);
+        bytes = Uint8Array.from(decoded, character => character.charCodeAt(0));
+        canonical = btoa(decoded);
+      } else return "";
+      if (canonical !== match[1] || bytes.length < 4) return "";
+      return bytes[0] === 0xff && bytes[1] === 0xd8 && bytes[2] === 0xff && bytes[bytes.length - 2] === 0xff && bytes[bytes.length - 1] === 0xd9 ? photo : "";
+    } catch (_) {
+      return "";
+    }
   }
 
   function customerBuildingIds(value) {
@@ -639,7 +666,7 @@
       contract.paymentDueDate = /^\d{4}-\d{2}-\d{2}$/.test(String(contract.paymentDueDate || "")) ? String(contract.paymentDueDate) : contract.workDate;
       contract.collectionStatus = ["입금 예정", "입금 완료"].includes(contract.collectionStatus) ? contract.collectionStatus : "입금 예정";
       contract.vendorPaymentStatus = ["지급 예정", "지급 완료"].includes(contract.vendorPaymentStatus) ? contract.vendorPaymentStatus : "지급 예정";
-    }
+    } else for (const field of ["vendorCost", "grossProfit", "workDate", "paymentDueDate", "collectionStatus", "vendorPaymentStatus"]) delete contract[field];
     return contract;
   }
 
@@ -884,7 +911,7 @@
     blankStore, blankSharedStore, sanitizeStore, sanitizeSharedStore, sanitizeRendererStore, sanitizeRendererOverlays, createCustomer, createBuilding, normalizeBuilding, normalizeBuildingUnit, createActivity, createContract, normalizeContract, normalizeContractTypes, oneOffContractRows, oneOffContractTotals, createPartnerVendor, createPartnerQuote, createTask, createSecurityAsset,
     createAccessRole, createAuditLog, createSecurityIncident, calculateDashboard, calculateSecurityStatus,
     workflowProgress, buildWorkflowCase, matchWorkflowCustomer, paymentNormalizeName, paymentMonthRows,
-    normalizePhone, formatPhone, canonicalPhoneKey, normalizeText, normalizePipelineStage, normalizeStringList, normalizeCustomer, customerBuildingIds, nonNegativeInteger, money, dayKey, iso,
+    normalizePhone, formatPhone, canonicalPhoneKey, normalizeText, normalizePipelineStage, normalizeStringList, normalizeCustomer, normalizeCustomerPhotoDataUrl, customerBuildingIds, nonNegativeInteger, money, dayKey, iso,
     prohibitedSecretType, findProhibitedSecrets, assertNoProhibitedSecrets, canMutate, assertMutationAllowed,
     normalizePartnerVendor, partnerVendorFromQuote, legacyPartnerVendorId,
     normalizeServiceRecords, normalizeServiceContracts, serviceSchedulesForContract

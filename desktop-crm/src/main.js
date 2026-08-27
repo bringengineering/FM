@@ -1,4 +1,4 @@
-const { app, BrowserWindow, WebContentsView, ipcMain, dialog, Menu, safeStorage, shell } = require("electron");
+const { app, BrowserWindow, WebContentsView, ipcMain, dialog, Menu, nativeImage, safeStorage, shell } = require("electron");
 const { autoUpdater } = require("electron-updater");
 const CrmUpdatePolicy = require("./crm-update-policy");
 const {
@@ -104,6 +104,7 @@ if (localTestMode && !process.env.BRING_CRM_DATA_DIR) {
 }
 let localOperationsData = null;
 let localCanonicalBuildingUnits = Object.create(null);
+let localCustomerPhotos = Object.create(null);
 let localCanonicalBuildingVacancyState = Object.create(null);
 const localCanonicalBuildingUnitReceipts = new Map();
 const localCanonicalCrmReceipts = new Map();
@@ -1528,9 +1529,9 @@ async function saveWorkflowCase(input) {
       item = { id: caseKey, firebaseKey: caseKey, ticketNo: source.ticketNo || `BR-${now.slice(0, 10).replace(/-/g, "")}-${now.slice(11, 19).replace(/:/g, "")}`, createdAt: now, receivedAt: now, grade: "스탠다드", status: { c1: "doing" }, note: {} };
       localOperationsData.cases.unshift(item);
     }
-    if (!item) return { ok: false, error: "케이스를 찾지 못했습니다." };
+    if (!item) return { ok: false, error: "민원을 찾지 못했습니다." };
     if (source.trashAction === "delete") {
-      if (item.deleted !== true) return { ok: false, error: "휴지통에 있는 케이스만 영구 삭제할 수 있습니다." };
+      if (item.deleted !== true) return { ok: false, error: "휴지통에 있는 민원만 영구 삭제할 수 있습니다." };
       const index = localOperationsData.cases.indexOf(item);
       if (index >= 0) localOperationsData.cases.splice(index, 1);
       return { ok: true, caseKey, deleted: true };
@@ -1573,7 +1574,7 @@ async function saveWorkflowCase(input) {
   }
   if (!remoteClient || !remoteClient.authState().user) return { ok: false, error: "로그인이 필요합니다." };
   try { return await remoteClient.saveWorkflowCase(input); }
-  catch (error) { return { ok: false, error: error.message || "케이스를 저장하지 못했습니다." }; }
+  catch (error) { return { ok: false, error: error.message || "민원을 저장하지 못했습니다." }; }
 }
 
 async function savePaymentOverride(input) {
@@ -1731,6 +1732,75 @@ async function pickWorkflowFiles(input) {
     files.push({ fileName: path.basename(filePath), mimeType: mime(extension), size: stat.size, fileBody: body.toString("base64") });
   }
   return { ok: true, files };
+}
+
+async function pickCustomerPhoto() {
+  const result = await dialog.showOpenDialog(mainWindow, {
+    title: "고객 사진 선택",
+    properties: ["openFile"],
+    filters: [{ name: "사진", extensions: ["jpg", "jpeg", "png", "webp"] }]
+  });
+  if (result.canceled || !result.filePaths.length) return { ok: false, canceled: true };
+  const filePath = result.filePaths[0];
+  const stat = await fs.stat(filePath);
+  if (stat.size > 5 * 1024 * 1024) return { ok: false, error: "고객 사진은 5MB 이하만 선택할 수 있습니다." };
+  const source = nativeImage.createFromPath(filePath);
+  if (source.isEmpty()) return { ok: false, error: "선택한 사진을 읽지 못했습니다." };
+  const dataUrl = customerPhotoDataUrlFromImage(source);
+  if (!dataUrl) return { ok: false, error: "사진을 고객용 크기로 줄이지 못했습니다." };
+  const encoded = Buffer.from(dataUrl.slice("data:image/jpeg;base64,".length), "base64");
+  return { ok: true, dataUrl, size: encoded.length };
+}
+
+function customerPhotoDataUrlFromImage(source) {
+  if (!source || source.isEmpty()) return "";
+  const sourceSize = source.getSize();
+  const edge = Math.min(sourceSize.width, sourceSize.height);
+  if (!edge || sourceSize.width > 10000 || sourceSize.height > 10000 || sourceSize.width * sourceSize.height > 40000000) return "";
+  const square = source.crop({
+    x: Math.max(0, Math.floor((sourceSize.width - edge) / 2)),
+    y: Math.max(0, Math.floor((sourceSize.height - edge) / 2)),
+    width: edge,
+    height: edge
+  }).resize({ width: 96, height: 96, quality: "best" });
+  const qualities = [74, 64, 54, 44];
+  let encoded = null;
+  for (const quality of qualities) {
+    encoded = square.toJPEG(quality);
+    if (encoded.length <= 12000) break;
+  }
+  return encoded && encoded.length <= 12000 ? `data:image/jpeg;base64,${encoded.toString("base64")}` : "";
+}
+
+function sanitizeCustomerPhotoDataUrl(value) {
+  try {
+    const dataUrl = Core.normalizeCustomerPhotoDataUrl(value);
+    if (!dataUrl || !dataUrl.startsWith("data:image/jpeg;base64,")) return "";
+    const base64 = dataUrl.slice("data:image/jpeg;base64,".length);
+    const encoded = Buffer.from(base64, "base64");
+    if (!encoded.length || encoded.length > 12000 || encoded[0] !== 0xff || encoded[1] !== 0xd8 || encoded[2] !== 0xff || encoded.toString("base64") !== base64) return "";
+    const source = nativeImage.createFromBuffer(encoded);
+    return customerPhotoDataUrlFromImage(source);
+  } catch (_) {
+    return "";
+  }
+}
+
+function sanitizeCustomerPhotoMap(value) {
+  const safe = Object.create(null);
+  if (!value || typeof value !== "object" || Array.isArray(value)) return safe;
+  for (const [customerId, record] of Object.entries(value)) {
+    if (!/^[A-Za-z0-9_-]{1,120}$/.test(customerId) || ["__proto__", "prototype", "constructor"].includes(customerId) || !record || typeof record !== "object" || Array.isArray(record)) continue;
+    const dataUrl = sanitizeCustomerPhotoDataUrl(record.dataUrl);
+    if (!dataUrl) continue;
+    safe[customerId] = {
+      dataUrl,
+      size: dataUrl.length,
+      updatedAt: String(record.updatedAt || ""),
+      updatedBy: String(record.updatedBy || "")
+    };
+  }
+  return safe;
 }
 
 async function writeStore(input) {
@@ -2175,6 +2245,7 @@ async function initializeRemote() {
     writeLocalStore,
     clearLocalStore,
     onRemoteStore: data => sendToRenderer("crm:remote-data", data),
+    onCustomerPhotos: photos => sendToRenderer("crm:customer-photos", sanitizeCustomerPhotoMap(photos)),
     onAuthState: state => {
       syncFieldSession(state);
       sendToRenderer("crm:auth-state", state);
@@ -2342,11 +2413,10 @@ async function createWindow() {
       actionResult = await mainWindow.webContents.executeJavaScript('document.querySelector("[data-action=\\"new-customer\\"]")?.click(); window.__crmTest?.snapshot()', true);
     } else if (process.env.BRING_CRM_SCREENSHOT_ACTION === "edit-first-customer") {
       actionResult = await mainWindow.webContents.executeJavaScript(`(() => {
-        const opener = document.querySelector("[data-customer-open]");
-        opener?.click();
-        const button = document.querySelector('[data-action="edit-selected-customer"]');
+        document.querySelector('[data-view="customers"]')?.click();
+        const button = document.querySelector('[data-customer-hub-edit]');
         button?.click();
-        return { openerFound: !!opener, buttonFound: !!button, state: window.__crmTest?.snapshot() };
+        return { openerFound: !!button, buttonFound: !!button, state: window.__crmTest?.snapshot() };
       })()`, true);
     } else if (process.env.BRING_CRM_SCREENSHOT_ACTION === "customer-centered-detail") {
       actionResult = await mainWindow.webContents.executeJavaScript(`(async () => {
@@ -2613,7 +2683,7 @@ async function createWindow() {
         const linkedBuildingId = form?.elements.crmBuildingId.value || '';
         const linkedCustomerId = form?.elements.crmCustomerId.value || '';
         const buildingName = form?.elements.building.value || '';
-        const pass = state.view === 'buildings' && !!buildingId && !!title && kpis === 4 && sections.includes('연결 고객') && sections.includes('계약') && sections.includes('케이스') && linkedBuildingId === buildingId && linkedCustomerId === '' && buildingName === title;
+        const pass = state.view === 'buildings' && !!buildingId && !!title && kpis === 4 && sections.includes('연결 고객') && sections.includes('계약') && sections.includes('민원') && linkedBuildingId === buildingId && linkedCustomerId === '' && buildingName === title;
         form?.querySelector('[data-action="close-modal"]')?.click();
         return { pass, buildingId, title, kpis, sections, linkedBuildingId, linkedCustomerId, buildingName, state: window.__crmTest.snapshot() };
       })()`, true);
@@ -2918,34 +2988,31 @@ async function createWindow() {
       })().catch(error => ({ pass: false, error: String(error && error.stack || error) }))`, true);
     } else if (process.env.BRING_CRM_SCREENSHOT_ACTION === "building-link-flow") {
       actionResult = await mainWindow.webContents.executeJavaScript(`(async () => {
+        const wait = ms => new Promise(resolve => setTimeout(resolve, ms));
         document.querySelector('[data-view="buildings"]')?.click();
-        document.querySelector('[data-action="new-building"]')?.click();
-        let form = document.getElementById('buildingForm');
-        if (!form) return { pass: false, reason: 'building form missing' };
-        const customer = window.__crmTest.getStore().customers[0];
-        const buildingName = 'QA 통합건물 ' + String(Date.now()).slice(-6);
-        form.elements.name.value = buildingName;
-        form.elements.roadAddress.value = '강원 원주시 테스트로 1';
-        form.elements.ownerCustomerId.value = customer.id;
-        form.elements.status.value = '관리중';
-        form.requestSubmit();
-        await new Promise(resolve => setTimeout(resolve, 350));
-        const savedStore = window.__crmTest.getStore();
-        const building = savedStore.buildings.find(item => item.name === buildingName);
-        const linkedOwner = savedStore.customers.find(item => item.id === customer.id);
+        await wait(150);
+        const store = window.__crmTest.getStore();
+        const building = store.buildings.find(item => item && !item.archivedAt);
+        const customer = store.customers.find(item => item.id === building?.ownerCustomerId) || store.customers[0];
+        if (!building || !customer) return { pass: false, reason: 'seed building or customer missing' };
+        document.querySelector('[data-building-open="' + building.id + '"]')?.click();
+        await wait(80);
         document.querySelector('[data-building-new-case="' + building?.id + '"]')?.click();
-        form = document.getElementById('workflowCaseCreateForm');
+        await wait(80);
+        const form = document.getElementById('workflowCaseCreateForm');
         if (!building || !form) return { pass: false, reason: 'linked case form missing', building };
         const startsUnlinked = form.elements.crmCustomerId.value === '';
+        form.elements.caseParty.value = '건물주';
         form.elements.crmCustomerId.value = customer.id;
         form.elements.crmCustomerId.dispatchEvent(new Event('change', { bubbles: true }));
         form.elements.issueType.value = '시설 점검';
-        form.elements.summary.value = '건물 ID 연결 자동 점검';
+        const summary = '건물 ID 연결 자동 점검 ' + String(Date.now()).slice(-6);
+        form.elements.summary.value = summary;
         form.requestSubmit();
-        await new Promise(resolve => setTimeout(resolve, 550));
-        const created = window.__crmTest.getOperations().cases.find(item => item.summary === '건물 ID 연결 자동 점검');
-        const pass = startsUnlinked && linkedOwner?.buildingIds.includes(building.id) && created?.crmBuildingId === building.id && created?.crmCustomerId === customer.id && created?.building === buildingName && created?.name === customer.name && window.__crmTest.snapshot().view === 'cases';
-        return { pass, startsUnlinked, building, ownerLinked: linkedOwner?.buildingIds.includes(building.id), created, state: window.__crmTest.snapshot() };
+        await wait(550);
+        const created = window.__crmTest.getOperations().cases.find(item => item.summary === summary);
+        const pass = startsUnlinked && created?.caseParty === '건물주' && created?.crmBuildingId === building.id && created?.crmCustomerId === customer.id && created?.building === building.name && created?.name === customer.name && window.__crmTest.snapshot().view === 'cases';
+        return { pass, startsUnlinked, building, created, state: window.__crmTest.snapshot() };
       })()`, true);
     } else if (process.env.BRING_CRM_SCREENSHOT_ACTION === "building-payment-isolation") {
       actionResult = await mainWindow.webContents.executeJavaScript(`(async () => {
@@ -3915,7 +3982,7 @@ async function createWindow() {
       actionResult = await mainWindow.webContents.executeJavaScript(`(async () => {
         document.querySelector('[data-view="tasks"]')?.click();
         await new Promise(resolve => setTimeout(resolve, 120));
-        const expectedMenu = ['dashboard','customers','buildings','consultations','pipeline','tasks','contracts','relationships','cases','payments','partnerVendors','partnerQuotes','security','settings'];
+        const expectedMenu = ['dashboard','customers','buildings','consultations','tasks','contracts','relationships','cases','payments','partnerVendors','partnerQuotes','security','settings'];
         const menu = [...document.querySelectorAll('#nav .nav-item')].map(item => item.dataset.view);
         const taskFilters = [...document.querySelectorAll('[data-task-filter]')].map(item => item.textContent.trim());
         const rows = [...document.querySelectorAll('.task-row')];
@@ -4859,6 +4926,33 @@ secureCanonicalHandle("crm:field-summaries-load", async () => {
   if (!remoteClient || !remoteClient.authState().user) throw new Error("로그인이 필요합니다.");
   return remoteClient.loadFieldSummaries();
 });
+secureCanonicalHandle("crm:customer-photos-load", async () => {
+  if (localTestMode) return sanitizeCustomerPhotoMap(localCustomerPhotos);
+  if (!remoteClient || !remoteClient.authState().user) throw new Error("로그인이 필요합니다.");
+  return sanitizeCustomerPhotoMap(await remoteClient.loadCustomerPhotos());
+});
+secureCanonicalHandle("crm:customer-photo-save", async input => {
+  assertMainMutationAllowed(input);
+  const customerId = String(input && input.customerId || "").trim();
+  const rawDataUrl = String(input && input.dataUrl || "").trim();
+  const dataUrl = rawDataUrl ? sanitizeCustomerPhotoDataUrl(rawDataUrl) : "";
+  if (!/^[A-Za-z0-9_-]{1,120}$/.test(customerId) || ["__proto__", "prototype", "constructor"].includes(customerId)) return { ok: false, error: "고객 정보를 확인해 주세요." };
+  if (rawDataUrl && !dataUrl) return { ok: false, error: "고객 사진 형식을 확인해 주세요." };
+  const safeInput = { customerId, dataUrl };
+  if (localTestMode) {
+    if (!rawDataUrl) {
+      delete localCustomerPhotos[customerId];
+      return { ok: true, customerId, removed: true };
+    }
+    const local = await readLocalStore();
+    if (!(local.customers || []).some(customer => customer && customer.id === customerId)) return { ok: false, error: "등록된 고객만 사진을 저장할 수 있습니다." };
+    const photo = { dataUrl, size: Buffer.byteLength(dataUrl, "utf8"), updatedAt: new Date().toISOString(), updatedBy: "test-user" };
+    localCustomerPhotos[customerId] = photo;
+    return { ok: true, customerId, photo };
+  }
+  if (!remoteClient || !remoteClient.authState().user) throw new Error("로그인이 필요합니다.");
+  return remoteClient.saveCustomerPhoto(safeInput);
+});
 secureCanonicalHandle("crm:drive-import-candidates-load", async () => {
   if (localTestMode) return {};
   if (!remoteClient || !remoteClient.authState().user) throw new Error("로그인이 필요합니다.");
@@ -4931,6 +5025,7 @@ secureHandle("crm:payment-bank-binding", input => savePaymentBankBinding(input))
 secureHandle("crm:workflow-vendors", input => loadWorkflowVendors(input));
 secureHandle("crm:workflow-action", input => runWorkflowAction(input));
 secureHandle("crm:workflow-files", input => pickWorkflowFiles(input));
+secureCanonicalHandle("crm:customer-photo-pick", () => pickCustomerPhoto());
 secureHandle("crm:data-path", () => dataFile());
 secureHandle("crm:update-state", () => updateState);
 secureHandle("crm:update-check", () => checkForUpdates(true));

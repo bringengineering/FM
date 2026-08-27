@@ -29,6 +29,7 @@ test("customer workspace replaces the card rail with dropdown selectors", () => 
   assert.match(customerView, /customer-hub-workspace/);
   assert.match(customerView, /data-customer-hub-select/);
   assert.match(customerView, /data-customer-management-filter/);
+  assert.match(customerView, /customerAvatar\(customer\)/);
   assert.match(customerView, /renderCustomerHubDetail/);
   assert.doesNotMatch(customerView, /building-hub-browser|building-hub-list|customer-hub-card|data-customer-hub-open/);
   assert.doesNotMatch(customerView, /customerSalesStageBadge|data-customer-sales-stage-filter|건물 영업 단계/);
@@ -40,8 +41,9 @@ test("customer detail combines linked buildings, contracts, cases and consultati
   assert.match(detail, /연결 건물/);
   assert.match(detail, /고객 요청·후속조치/);
   assert.match(detail, /<b>계약<\/b>/);
-  assert.match(detail, /<b>케이스<\/b>/);
+  assert.match(detail, /<b>민원<\/b>/);
   assert.match(detail, /<b>최근 상담<\/b>/);
+  assert.match(detail, /customerAvatar\(customer\)/);
   assert.match(detail, /data-building-jump/);
   assert.doesNotMatch(detail, /customerSalesStageBadge|영업 미등록|영업 보기/);
 });

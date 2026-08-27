@@ -1,5 +1,5 @@
 /**
- * BRING Care 민원접수 자동 분석 -> FM GitHub.io 케이스 등록
+ * BRING Care 민원접수 자동 분석 -> FM GitHub.io 민원 등록
  *
  * 설치 위치: Google Sheets 응답 시트의 확장 프로그램 > Apps Script
  * 최초 1회 실행: setupComplaintAutomation()
@@ -137,7 +137,7 @@ function authorizeDriveAccess() {
   if (quoteFolderId) {
     const quoteFolder = DriveApp.getFolderById(quoteFolderId);
     Logger.log("견적서 저장 폴더 확인 완료: " + quoteFolder.getName() + " / https://drive.google.com/drive/folders/" + quoteFolderId);
-    Logger.log("사업자등록증은 견적서 저장 폴더의 케이스 폴더 안에 바로 저장됩니다: {접수번호}_{건물명}/사업자등록증/BR-..._{업체명}_사업자등록증.pdf");
+    Logger.log("사업자등록증은 견적서 저장 폴더의 민원 폴더 안에 바로 저장됩니다: {접수번호}_{건물명}/사업자등록증/BR-..._{업체명}_사업자등록증.pdf");
   }
 
   if (templateId) {
@@ -420,7 +420,7 @@ function handleKakaoChatbotSkill_(payload, event) {
   let session = kakaoChatbotReadSession_(userHash);
   if (!session) {
     return kakaoChatbotTextResponse_(
-      "안녕하세요. 브링케어입니다.\n카카오톡에서 민원을 접수하고 기존 계약 건물의 케이스로 연결할 수 있습니다.",
+      "안녕하세요. 브링케어입니다.\n카카오톡에서 민원을 접수하고 기존 계약 건물의 민원 기록으로 연결할 수 있습니다.",
       kakaoChatbotHomeQuickReplies_()
     );
   }
@@ -505,7 +505,7 @@ function handleKakaoChatbotSkill_(payload, event) {
           "호실: " + formatRoomForCase_(result.room),
           "문제 유형: " + result.issueType,
           "",
-          "브링케어 케이스와 연결 중이며 보통 1분 이내 처리됩니다."
+          "브링케어 민원과 연결 중이며 보통 1분 이내 처리됩니다."
         ].join("\n"),
         kakaoChatbotHomeQuickReplies_()
       );
@@ -958,7 +958,7 @@ function kakaoChatbotCaseStatusResponse_(userHash) {
     const casePayload = readCaseFromFirebase_(caseId);
     if (!casePayload) {
       return kakaoChatbotTextResponse_(
-        "최근 접수번호는 " + caseId + "이지만 케이스 정보를 확인하지 못했습니다.",
+        "최근 접수번호는 " + caseId + "이지만 민원 정보를 확인하지 못했습니다.",
         kakaoChatbotHomeQuickReplies_()
       );
     }
@@ -1059,7 +1059,7 @@ function writeKakaoPendingCaseLink_(ticketNo, pendingCase, userHash, now) {
     base + "/.json",
     "patch",
     updates,
-    "카카오 접수 대기 케이스와 사용자 연결 저장 실패"
+    "카카오 접수 대기 민원과 사용자 연결 저장 실패"
   );
 }
 
@@ -1194,7 +1194,7 @@ function processPendingKakaoComplaintIntakes() {
           headerMap,
           "카카오 처리 메모",
           Utilities.formatDate(new Date(), "Asia/Seoul", "yyyy-MM-dd HH:mm:ss") +
-            " 케이스 연결 완료" +
+            " 민원 연결 완료" +
             (savedPhotos.count ? " / 현장 사진 " + savedPhotos.count + "장 저장" : "")
         );
       } catch (err) {
@@ -1295,7 +1295,7 @@ function validateOwnerDecisionLink_(decisionUrl, caseId, token) {
     urlCaseId !== String(caseId || "") ||
     urlToken !== String(token || "")
   ) {
-    return { ok: false, statusCode: 0, message: "승인 링크의 케이스 또는 보안 토큰이 일치하지 않습니다." };
+    return { ok: false, statusCode: 0, message: "승인 링크의 민원 또는 보안 토큰이 일치하지 않습니다." };
   }
   try {
     const latestCase = readCaseFromFirebase_(caseId);
@@ -1377,7 +1377,7 @@ function handleEnsureOwnerDecisionLink_(payload) {
   const caseId = String(payload && payload.caseId || "").trim();
   if (!caseId) return { ok: false, message: "caseId가 없습니다." };
   const casePayload = readCaseFromFirebase_(caseId);
-  if (!casePayload) return { ok: false, message: "Firebase 케이스를 찾지 못했습니다: " + caseId };
+  if (!casePayload) return { ok: false, message: "Firebase 민원을 찾지 못했습니다: " + caseId };
   const selected = selectOwnerRecommendationQuote_(casePayload, payload && payload.quoteId);
   if (!selected.quote) return { ok: false, message: "승인 링크에 연결할 추천 견적이 없습니다." };
 
@@ -1540,7 +1540,7 @@ function submitOwnerDecisionLocked_(caseId, token, decision) {
     return { ok: false, message: "지원하지 않는 응답입니다." };
   }
   const casePayload = readCaseFromFirebase_(caseId);
-  if (!casePayload) return { ok: false, message: "케이스를 찾지 못했습니다." };
+  if (!casePayload) return { ok: false, message: "민원을 찾지 못했습니다." };
   const current = Object.assign({}, casePayload.ownerDecision || {});
   if (!current.token || current.token !== token) return { ok: false, message: "유효하지 않거나 만료된 승인 링크입니다." };
   if (current.status && current.status !== "pending") {
@@ -1613,7 +1613,7 @@ function confirmCasePaymentLocked_(caseId, adminEmail, adminUid) {
   caseId = String(caseId || "").trim();
   if (!caseId) return { ok: false, message: "caseId가 없습니다." };
   const casePayload = readCaseFromFirebase_(caseId);
-  if (!casePayload) return { ok: false, message: "케이스를 찾지 못했습니다." };
+  if (!casePayload) return { ok: false, message: "민원을 찾지 못했습니다." };
   const status = Object.assign({}, casePayload.status || {});
   const ownerDecision = Object.assign({}, casePayload.ownerDecision || {});
   if (status.c10 === "done" && String(casePayload.paymentStatus || "") === "confirmed") {
@@ -1790,7 +1790,7 @@ function handleComplaintReceiptSms_(payload) {
   if (!caseId) return { ok: false, message: "caseId가 없습니다." };
 
   const casePayload = readCaseFromFirebase_(caseId);
-  if (!casePayload) return { ok: false, message: "Firebase 케이스를 찾지 못했습니다: " + caseId };
+  if (!casePayload) return { ok: false, message: "Firebase 민원을 찾지 못했습니다: " + caseId };
 
   const existingStatus = String(casePayload.sms && casePayload.sms.status || "");
   if (!payload.force && isSmsSentStatus_(existingStatus)) {
@@ -1895,7 +1895,7 @@ function handleVendorEstimateMms_(payload) {
   if (!caseId) return { ok: false, message: "caseId가 없습니다." };
 
   const casePayload = readCaseFromFirebase_(caseId);
-  if (!casePayload) return { ok: false, message: "Firebase 케이스를 찾지 못했습니다: " + caseId };
+  if (!casePayload) return { ok: false, message: "Firebase 민원을 찾지 못했습니다: " + caseId };
 
   const requestKey = "vendor-mms:" + caseId + ":" + selectedVendors.map(vendor => [
     vendor.id || "",
@@ -2013,7 +2013,7 @@ function handleOwnerRecommendationPreview_(payload) {
   if (!caseId) return { ok: false, message: "caseId가 없습니다." };
 
   const casePayload = readCaseFromFirebase_(caseId);
-  if (!casePayload) return { ok: false, message: "Firebase 케이스를 찾지 못했습니다: " + caseId };
+  if (!casePayload) return { ok: false, message: "Firebase 민원을 찾지 못했습니다: " + caseId };
 
   const selected = selectOwnerRecommendationQuote_(casePayload, payload.quoteId);
   if (!selected.quote) {
@@ -2111,7 +2111,7 @@ function handleOwnerRecommendationMmsConfirmation_(payload) {
   if (!caseId) return { ok: false, message: "caseId가 없습니다." };
 
   const casePayload = readCaseFromFirebase_(caseId);
-  if (!casePayload) return { ok: false, message: "Firebase 케이스를 찾지 못했습니다: " + caseId };
+  if (!casePayload) return { ok: false, message: "Firebase 민원을 찾지 못했습니다: " + caseId };
 
   const existing = casePayload.ownerRecommendationMms || {};
   if (ownerMmsResultComplete_(casePayload, existing)) {
@@ -2148,7 +2148,7 @@ function handleOwnerRecommendationMmsLocked_(payload) {
   if (!caseId) return { ok: false, message: "caseId가 없습니다." };
 
   const casePayload = readCaseFromFirebase_(caseId);
-  if (!casePayload) return { ok: false, message: "Firebase 케이스를 찾지 못했습니다: " + caseId };
+  if (!casePayload) return { ok: false, message: "Firebase 민원을 찾지 못했습니다: " + caseId };
 
   const selected = selectOwnerRecommendationQuote_(casePayload, payload.quoteId);
   if (!selected.quote) {
@@ -2602,8 +2602,8 @@ function recordUploadBatchProgress_(caseId, payload) {
 function advanceCaseWorkflow_(caseId, context) {
   context = context || {};
   const casePayload = readCaseFromFirebase_(caseId);
-  if (!casePayload) return { ok: false, message: "Firebase 케이스를 찾지 못했습니다: " + caseId };
-  if (casePayload.deleted === true) return { ok: false, skipped: true, message: "삭제된 케이스는 자동 진행하지 않습니다: " + caseId };
+  if (!casePayload) return { ok: false, message: "Firebase 민원을 찾지 못했습니다: " + caseId };
+  if (casePayload.deleted === true) return { ok: false, skipped: true, message: "삭제된 민원은 자동 진행하지 않습니다: " + caseId };
 
   const now = new Date().toISOString();
   const before = Object.assign({}, casePayload.status || {});
@@ -2616,7 +2616,7 @@ function advanceCaseWorkflow_(caseId, context) {
   const ownerMmsComplete = ownerMmsWorkflowComplete_(casePayload);
 
   // 과거 MMS 성공 기록만 있고 현재 승인 링크가 검증되지 않았거나 서로 다른
-  // 링크인 경우에는 ⑨를 열지 않는다. 잘못 진행된 기존 케이스도 여기서 복구한다.
+  // 링크인 경우에는 ⑨를 열지 않는다. 잘못 진행된 기존 민원도 여기서 복구한다.
   if (
     status.c8 === "done" &&
     status.c9 !== "done" &&
@@ -3595,7 +3595,7 @@ function handleQuoteFileUpload_(payload) {
   if (!caseId) return { ok: false, message: "caseId가 없습니다." };
 
   const casePayload = readCaseFromFirebase_(caseId);
-  if (!casePayload) return { ok: false, message: "Firebase 케이스를 찾지 못했습니다: " + caseId };
+  if (!casePayload) return { ok: false, message: "Firebase 민원을 찾지 못했습니다: " + caseId };
 
   const validation = validateQuoteUpload_(filePayload);
   if (!validation.ok) {
@@ -3694,7 +3694,7 @@ function handleBusinessRegistrationUpload_(payload) {
   if (!caseId) return { ok: false, message: "caseId가 없습니다." };
 
   const casePayload = readCaseFromFirebase_(caseId);
-  if (!casePayload) return { ok: false, message: "Firebase 케이스를 찾지 못했습니다: " + caseId };
+  if (!casePayload) return { ok: false, message: "Firebase 민원을 찾지 못했습니다: " + caseId };
 
   const validation = validateBusinessRegistrationUpload_(filePayload);
   if (!validation.ok) {
@@ -3795,7 +3795,7 @@ function handleWorkPhotoUpload_(payload) {
   if (phase !== "before" && phase !== "after") return { ok: false, message: "작업 사진 구분이 올바르지 않습니다." };
 
   const casePayload = readCaseFromFirebase_(caseId);
-  if (!casePayload) return { ok: false, message: "Firebase 케이스를 찾지 못했습니다: " + caseId };
+  if (!casePayload) return { ok: false, message: "Firebase 민원을 찾지 못했습니다: " + caseId };
 
   const validation = validateWorkPhotoUpload_(filePayload);
   if (!validation.ok) return updateWorkPhotoUploadFailure_(caseId, casePayload, validation.message);
@@ -3890,7 +3890,7 @@ function handleConfirmQuoteAmount_(payload) {
   if (!totalAmount || totalAmount < 1000) return { ok: false, caseId: caseId, quoteId: quoteId, message: "확정할 합계금액을 1,000원 이상으로 입력해주세요." };
 
   const casePayload = readCaseFromFirebase_(caseId);
-  if (!casePayload) return { ok: false, message: "Firebase 케이스를 찾지 못했습니다: " + caseId };
+  if (!casePayload) return { ok: false, message: "Firebase 민원을 찾지 못했습니다: " + caseId };
 
   casePayload.quoteFiles = casePayload.quoteFiles && typeof casePayload.quoteFiles === "object" && !Array.isArray(casePayload.quoteFiles)
     ? casePayload.quoteFiles
@@ -4022,7 +4022,7 @@ function handleApplyBusinessRegistrationToQuote_(payload) {
 
   const timestamp = new Date().toISOString();
   const casePayload = readCaseFromFirebase_(caseId);
-  if (!casePayload) return { ok: false, message: "Firebase 케이스를 찾지 못했습니다: " + caseId };
+  if (!casePayload) return { ok: false, message: "Firebase 민원을 찾지 못했습니다: " + caseId };
 
   casePayload.quoteFiles = casePayload.quoteFiles && typeof casePayload.quoteFiles === "object" && !Array.isArray(casePayload.quoteFiles)
     ? casePayload.quoteFiles
@@ -7003,7 +7003,7 @@ function processResponseRow_(sheet, row) {
   const ticketNo = readField_(record, ["접수번호"]) || makeTicketNo_(row, record);
   const deletedCase = readCaseFromFirebase_(ticketNo);
   if (deletedCase && deletedCase.deleted === true) {
-    Logger.log("삭제된 케이스 재처리 생략: " + ticketNo);
+    Logger.log("삭제된 민원 재처리 생략: " + ticketNo);
     return;
   }
   const analysis = analyzeComplaint_(record);
@@ -10874,6 +10874,7 @@ function buildCasePayload_(ticketNo, record, analysis, contractMatch, row, sheet
   return {
     id: ticketNo,
     ticketNo: ticketNo,
+    caseParty: "건물주",
     source: source,
     createdAt: new Date().toISOString(),
     receivedAt: receivedAt,
@@ -11050,7 +11051,7 @@ function mergeCasePayloadForFirebase_(existing, payload) {
 function writeCaseToFirebase_(caseId, payload) {
   const existing = readCaseFromFirebase_(caseId);
   if (existing && existing.deleted === true) {
-    Logger.log("삭제된 케이스 저장 생략: " + caseId);
+    Logger.log("삭제된 민원 저장 생략: " + caseId);
     return;
   }
   const merged = mergeCasePayloadForFirebase_(existing, payload || {});

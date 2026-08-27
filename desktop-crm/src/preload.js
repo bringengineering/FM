@@ -10,6 +10,8 @@ contextBridge.exposeInMainWorld("bringCRM", {
   save: data => ipcRenderer.invoke("crm:save", data),
   loadCanonicalBuildingUnits: () => ipcRenderer.invoke("crm:canonical-building-units-load"),
   loadFieldSummaries: () => ipcRenderer.invoke("crm:field-summaries-load"),
+  loadCustomerPhotos: () => ipcRenderer.invoke("crm:customer-photos-load"),
+  saveCustomerPhoto: input => ipcRenderer.invoke("crm:customer-photo-save", input),
   loadDriveImportCandidates: () => ipcRenderer.invoke("crm:drive-import-candidates-load"),
   decideDriveImport: input => ipcRenderer.invoke("crm:drive-import-decision", input),
   commitCanonicalCrmEntity: input => ipcRenderer.invoke("crm:canonical-entity-commit", input),
@@ -24,6 +26,7 @@ contextBridge.exposeInMainWorld("bringCRM", {
   loadWorkflowVendors: input => ipcRenderer.invoke("crm:workflow-vendors", input),
   runWorkflowAction: input => ipcRenderer.invoke("crm:workflow-action", input),
   pickWorkflowFiles: input => ipcRenderer.invoke("crm:workflow-files", input),
+  pickCustomerPhoto: () => ipcRenderer.invoke("crm:customer-photo-pick"),
   backup: data => ipcRenderer.invoke("crm:backup", data),
   restore: () => ipcRenderer.invoke("crm:restore"),
   dataPath: () => ipcRenderer.invoke("crm:data-path"),
@@ -59,6 +62,11 @@ contextBridge.exposeInMainWorld("bringCRM", {
     const listener = (_event, data) => callback(data);
     ipcRenderer.on("crm:remote-data", listener);
     return () => ipcRenderer.removeListener("crm:remote-data", listener);
+  },
+  onCustomerPhotos: callback => {
+    const listener = (_event, photos) => callback(photos);
+    ipcRenderer.on("crm:customer-photos", listener);
+    return () => ipcRenderer.removeListener("crm:customer-photos", listener);
   },
   onUpdateState: callback => {
     const listener = (_event, state) => callback(state);

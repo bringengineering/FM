@@ -14,6 +14,36 @@
 .contract-hero h2 { margin: 6px 0 0; color: #173b53; font-size: 21px; letter-spacing: -.03em; }
 .contract-hero p { margin: 7px 0 0; color: #657f90; font-size: 12px; }
 
+.contract-payment-mode-tabs {
+  display: inline-flex;
+  gap: 5px;
+  margin: 0 0 14px;
+  padding: 5px;
+  border: 1px solid #cfe2ec;
+  border-radius: 13px;
+  background: #f6fafc;
+}
+
+.contract-payment-mode-tabs button {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 38px;
+  padding: 0 15px;
+  border: 1px solid transparent;
+  border-radius: 9px;
+  background: transparent;
+  color: #57768a;
+  font: inherit;
+  font-size: 11px;
+  font-weight: 900;
+  cursor: pointer;
+}
+
+.contract-payment-mode-tabs button span { display: grid; place-items: center; min-width: 23px; height: 23px; padding: 0 6px; border-radius: 8px; background: #e8f3f8; color: #598197; font-size: 9px; }
+.contract-payment-mode-tabs button.active { border-color: #63b8e2; background: #2d9fd7; color: #fff; box-shadow: 0 6px 14px rgba(45, 159, 215, .18); }
+.contract-payment-mode-tabs button.active span { background: rgba(255,255,255,.22); color: #fff; }
+
 .contract-kpi-grid {
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));

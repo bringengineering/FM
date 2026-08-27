@@ -100,11 +100,11 @@ test("prospect and evidence forms have visible labels and explicit save actions"
   assert.match(eventForm, /단계 완료 기록/);
 });
 
-test("desktop entry reuses the one existing pipeline menu and loads sales modules before app", async () => {
+test("desktop entry hides the pipeline menu while retaining sales modules inside the app", async () => {
   const html = await readFile(path.join(__dirname, "..", "src", "index.html"), "utf8");
   const app = await readFile(path.join(__dirname, "..", "src", "app.js"), "utf8");
 
-  assert.equal((html.match(/data-view="pipeline"/g) || []).length, 1);
+  assert.equal((html.match(/data-view="pipeline"/g) || []).length, 0);
   assert.ok(html.indexOf("./sales-core.js") < html.indexOf("./sales-ui.js"));
   assert.ok(html.indexOf("./sales-standards.js") < html.indexOf("./sales-ui.js"));
   assert.ok(html.indexOf("./sales-ui.js") < html.indexOf("./app.js"));
