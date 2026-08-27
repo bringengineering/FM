@@ -11,10 +11,14 @@ const facts = [
 ] as const;
 
 const scopes = [
-  ["01", "계단·난간", "계단의 먼지와 생활 오염을 제거하고 손이 자주 닿는 난간 주변을 정리합니다.", "/landing/cleaning/bringcare-stair-mop-up.png", "브링케어 유니폼 작업자의 계단 밀대 청소 연출 이미지"],
-  ["02", "계단 모서리", "밀대로 놓치기 쉬운 계단 끝과 벽면 모서리를 브러시로 세부 청소합니다.", "/landing/cleaning/bringcare-stair-corner-brush.png", "브링케어 유니폼 작업자의 계단 모서리 브러시 청소 연출 이미지"],
-  ["03", "공동현관·안전설비", "건물의 첫인상이 되는 현관과 공용 안전설비 주변을 함께 정돈합니다.", "/landing/cleaning/bringcare-fire-extinguisher-area.png", "브링케어 유니폼 작업자의 공용부 소화기 주변 청소 연출 이미지"],
-  ["04", "공용창·창틀", "손자국과 먼지가 눈에 잘 보이는 공용창과 창틀을 정기적으로 관리합니다.", "/landing/cleaning/bringcare-common-window.png", "브링케어 유니폼 작업자의 공용창 청소 연출 이미지"],
+  ["01", "계단 바닥", "한 층씩 이동하며 계단의 먼지와 생활 오염을 정리합니다.", "/landing/campaign/suit-stair-floor.png", "검은 정장을 입은 브링케어 관리자가 계단 바닥을 청소하는 브랜드 캠페인 이미지"],
+  ["02", "계단 손잡이·난간", "손이 자주 닿는 손잡이와 난간의 먼지와 손자국을 닦습니다.", "/landing/campaign/suit-handrail.png", "검은 정장을 입은 브링케어 관리자가 계단 난간을 닦는 브랜드 캠페인 이미지"],
+  ["03", "계단 모서리·틈새", "밀대가 놓치기 쉬운 계단 끝과 벽면 모서리를 세부 청소합니다.", "/landing/campaign/suit-stair-corner.png", "검은 정장을 입은 브링케어 관리자가 계단 모서리를 청소하는 브랜드 캠페인 이미지"],
+  ["04", "천장·거미줄", "천장 모서리와 조명 주변에 쌓인 거미줄과 먼지를 제거합니다.", "/landing/campaign/suit-cobweb.png", "검은 정장을 입은 브링케어 관리자가 공용부 거미줄을 제거하는 브랜드 캠페인 이미지"],
+  ["05", "공용부 입구 창문", "현관 유리와 공용창의 손자국, 창틀 먼지를 정기적으로 관리합니다.", "/landing/campaign/suit-entry-window.png", "검은 정장을 입은 브링케어 관리자가 공용부 입구 창문을 닦는 브랜드 캠페인 이미지"],
+  ["06", "우편함 주변", "우편함 외부의 먼지를 닦고 주변에 쌓인 불필요한 적치물을 정리합니다.", "/landing/campaign/suit-mailbox.png", "검은 정장을 입은 브링케어 관리자가 공동 우편함 주변을 정리하는 브랜드 캠페인 이미지"],
+  ["07", "낙엽·생활 쓰레기", "건물 입구와 외부 통행로의 낙엽과 생활 쓰레기를 수거합니다.", "/landing/campaign/suit-leaves-trash.png", "검은 정장을 입은 브링케어 관리자가 건물 외부 낙엽과 쓰레기를 정리하는 브랜드 캠페인 이미지"],
+  ["08", "주차장 바닥", "주차장 바닥과 벽면 가장자리의 생활 쓰레기와 먼지를 정리합니다.", "/landing/campaign/suit-parking-trash.png", "검은 정장을 입은 브링케어 관리자가 주차장 바닥 쓰레기를 정리하는 브랜드 캠페인 이미지"],
 ] as const;
 
 const references = [
@@ -56,7 +60,7 @@ const references = [
   },
 ] as const;
 
-const includedWork = ["계단·난간 청소", "복도·승강기 홀", "공동현관 정리", "공용창·창틀", "월간 관리보고"] as const;
+const includedWork = ["계단 바닥·모서리", "계단 손잡이·난간", "복도·승강기 홀", "천장 거미줄 제거", "공동현관·입구 창문", "우편함 주변 정리", "외부 낙엽·생활 쓰레기", "주차장 바닥 쓰레기", "월간 관리보고"] as const;
 const optionalWork = ["바닥 왁스·코팅", "외벽·고압세척", "대량 폐기물 처리", "특수오염 제거", "전문 수리·시공"] as const;
 const process = [
   ["01 상담 접수", "건물 위치와 층수, 원하는 방문 횟수를 확인합니다."],
@@ -87,10 +91,11 @@ export default function StairCleaningLanding() {
 
       <section className="stair-hero" aria-labelledby="stair-title">
         <div className="stair-hero-card">
-          <Image src="/landing/cleaning/bringcare-stair-mop-up.png" alt="브링케어 유니폼 작업자의 계단 밀대 청소 연출 이미지" fill priority unoptimized sizes="(max-width: 820px) 100vw, 1240px" />
+          <Image src="/landing/campaign/suit-stair-floor.png" alt="검은 정장을 입은 브링케어 관리자가 계단 바닥을 청소하는 브랜드 캠페인 이미지" fill priority unoptimized sizes="(max-width: 820px) 100vw, 1240px" />
           <div className="stair-hero-copy">
             <p className="stair-eyebrow">원주 직영팀 · 계단/공용부 정기청소</p>
             <h1 id="stair-title">계단청소를 넘어,<br />건물의 첫인상을<br />관리합니다.</h1>
+            <p className="stair-campaign-line">청소까지 관리의 일부니까.</p>
             <p>공용부 정기청소부터 시설 상태 확인과 월간 관리보고까지, 한 팀이 꾸준히 관리합니다.</p>
             <div className="stair-hero-actions">
               <a className="stair-btn stair-btn-primary" href="#estimate">30초 간편 견적</a>
@@ -110,8 +115,8 @@ export default function StairCleaningLanding() {
       <section className="stair-section stair-soft" id="service" aria-labelledby="stair-scope-title">
         <div className="stair-inner">
           <div className="stair-section-head"><p>SERVICE SCOPE</p><h2 id="stair-scope-title">깨끗하게만 하지 않습니다.</h2><span>정기 청소와 함께 건물주가 멀리 있어도 놓치기 쉬운 공용부 상태를 확인합니다.</span></div>
-          <div className="stair-scope-grid">
-            {scopes.map(([number, title, copy, image, alt]) => <article key={title}><span>{number}</span><h3>{title}</h3><p>{copy}</p><div className="stair-scope-image"><Image src={image} alt={alt} fill unoptimized sizes="(max-width: 820px) 100vw, 50vw" /></div></article>)}
+          <div className="stair-scope-grid stair-campaign-grid">
+            {scopes.map(([number, title, copy, image, alt]) => <article className="stair-campaign-card" key={title}><span>{number}</span><h3>{title}</h3><p>{copy}</p><div className="stair-scope-image"><Image src={image} alt={alt} fill unoptimized sizes="(max-width: 820px) 100vw, 50vw" /><small>BRING CARE · 브랜드 캠페인 이미지</small></div></article>)}
           </div>
         </div>
       </section>
@@ -179,7 +184,7 @@ export default function StairCleaningLanding() {
       </div></section>
 
       <section className="stair-section stair-soft stair-price-section" id="price" aria-labelledby="stair-price-title">
-        <div className="stair-inner"><div className="stair-section-head"><p>PRICE</p><h2 id="stair-price-title">건물 규모에 맞춰<br />투명하게 안내합니다.</h2><span>기본 가격을 먼저 확인하고, 현장 여건에 따라 정확한 견적을 안내받으세요.</span></div><div className="stair-pricing"><header><div><span>월 4회 정기청소</span><small>기본 관리 기준</small></div><strong>6만원부터</strong></header><dl><div><dt>3층 건물</dt><dd>월 60,000원</dd></div><div><dt>4층 건물</dt><dd>월 70,000원</dd></div><div><dt>5층 건물</dt><dd>월 80,000원</dd></div></dl><p>※ 부가세 별도 · 오염도와 관리 범위에 따라 변동될 수 있습니다.</p><a className="stair-btn stair-btn-primary" href="#estimate">우리 건물 견적 확인</a></div></div>
+        <div className="stair-inner"><div className="stair-section-head"><p>PRICE</p><h2 id="stair-price-title">건물 규모에 맞춰<br />투명하게 안내합니다.</h2><span>기본 정기청소 범위는 정찰제로 운영하고 예외 작업만 시작 전에 안내합니다.</span></div><div className="stair-pricing"><header><div><span>월 4회 정기청소</span><small>기본 관리 정찰제</small></div><strong>6만원부터</strong></header><dl><div><dt>3층 건물</dt><dd>월 60,000원</dd></div><div><dt>4층 건물</dt><dd>월 70,000원</dd></div><div><dt>5층 건물</dt><dd>월 80,000원</dd></div></dl><p>※ 부가세 별도 · 기본 정기청소 범위는 정찰제로 운영합니다. 특수오염·대량 폐기물 등 예외 작업만 착수 전 별도로 협의합니다.</p><a className="stair-btn stair-btn-primary" href="#estimate">우리 건물 견적 확인</a></div></div>
       </section>
 
       <section className="stair-section stair-faq" aria-labelledby="stair-faq-title"><div className="stair-inner">

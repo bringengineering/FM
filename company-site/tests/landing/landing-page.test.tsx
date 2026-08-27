@@ -54,9 +54,9 @@ describe("LandingPage", () => {
     expect(screen.getByText("월 60,000원")).toBeInTheDocument();
     expect(container.querySelector("#quick-estimate-form")).toBeInTheDocument();
     expect(screen.queryByText("브링케어 서비스 연출 이미지")).not.toBeInTheDocument();
-    expect(screen.getAllByAltText(/브링케어 유니폼 작업자의 계단 밀대 청소/)[0]).toHaveAttribute(
+    expect(screen.getAllByAltText(/검은 정장을 입은 브링케어 관리자가 계단 바닥을 청소/)[0]).toHaveAttribute(
       "src",
-      "/landing/cleaning/bringcare-stair-mop-up.png",
+      "/landing/campaign/suit-stair-floor.png",
     );
     expect(screen.queryByAltText(/욕실 배수구 청소/)).not.toBeInTheDocument();
     expect(
@@ -113,13 +113,36 @@ describe("LandingPage", () => {
     expect(container.querySelectorAll(".stair-reference-detail")).toHaveLength(4);
   });
 
+  it("presents eight campaign service scenes and a fixed recurring-cleaning price", () => {
+    const { container } = render(<StairCleaningLanding />);
+
+    expect(screen.getByText("청소까지 관리의 일부니까.")).toBeInTheDocument();
+    expect(container.querySelectorAll(".stair-campaign-card")).toHaveLength(8);
+    [
+      "계단 바닥",
+      "계단 손잡이·난간",
+      "계단 모서리·틈새",
+      "천장·거미줄",
+      "공용부 입구 창문",
+      "우편함 주변",
+      "낙엽·생활 쓰레기",
+      "주차장 바닥",
+    ].forEach((label) => expect(screen.getAllByText(label).length).toBeGreaterThan(0));
+    expect(
+      screen.getByText(/기본 정기청소 범위는 정찰제로 운영합니다/),
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByText(/오염도와 관리 범위에 따라 변동/),
+    ).not.toBeInTheDocument();
+  });
+
   it("answers scope, process, and contract questions before the stair-cleaning estimate", () => {
     render(<StairCleaningLanding />);
 
     expect(
       screen.getByRole("heading", { name: /기본 청소와 별도 작업을.*미리 구분했습니다/ }),
     ).toBeInTheDocument();
-    expect(screen.getByText("계단·난간 청소")).toBeInTheDocument();
+    expect(screen.getAllByText("계단 손잡이·난간").length).toBeGreaterThan(0);
     expect(screen.getByText("바닥 왁스·코팅")).toBeInTheDocument();
     expect(
       screen.getByRole("heading", { name: /상담부터 월간보고까지.*한 흐름으로 진행합니다/ }),
