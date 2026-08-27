@@ -19,9 +19,7 @@ describe("LandingPage", () => {
     expect(
       screen.getByRole("heading", { name: /새 공간의 첫날/ }),
     ).toBeInTheDocument();
-    expect(
-      screen.getAllByText("브링케어 서비스 연출 이미지").length,
-    ).toBeGreaterThan(1);
+    expect(screen.queryByText("브링케어 서비스 연출 이미지")).not.toBeInTheDocument();
     expect(screen.getAllByText("일반 단건 입·퇴실청소")).toHaveLength(2);
     expect(screen.getByText("관리 건물 입·퇴실청소")).toBeInTheDocument();
     expect(container.querySelector("#quick-estimate-form")).toBeInTheDocument();
@@ -55,9 +53,7 @@ describe("LandingPage", () => {
     expect(screen.getByText("3층 건물")).toBeInTheDocument();
     expect(screen.getByText("월 60,000원")).toBeInTheDocument();
     expect(container.querySelector("#quick-estimate-form")).toBeInTheDocument();
-    expect(
-      screen.getAllByText("브링케어 서비스 연출 이미지").length,
-    ).toBeGreaterThanOrEqual(2);
+    expect(screen.queryByText("브링케어 서비스 연출 이미지")).not.toBeInTheDocument();
     expect(screen.getAllByAltText(/브링케어 유니폼 작업자의 계단 밀대 청소/)[0]).toHaveAttribute(
       "src",
       "/landing/cleaning/bringcare-stair-mop-up.png",

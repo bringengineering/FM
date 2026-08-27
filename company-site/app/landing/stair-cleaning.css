@@ -21,11 +21,10 @@
 .stair-hero { max-width: 1240px; margin: auto; padding: 0 18px; }
 .stair-hero-card { position: relative; height: min(720px, calc(100dvh - 105px)); min-height: 590px; overflow: hidden; border-radius: 40px; background: #ccd5df; }
 .stair-hero-card > img { object-fit: cover; object-position: center; }
-.stair-image-disclosure { position: absolute; z-index: 3; top: 24px; right: 28px; padding: 8px 11px; border-radius: 999px; background: rgba(7,31,59,.62); color: #fff; font-size: 11px; font-weight: 750; backdrop-filter: blur(8px); }
 .stair-hero-card::after { content: ""; position: absolute; inset: 0; background: linear-gradient(180deg, rgba(5,25,47,.05) 22%, rgba(5,25,47,.78) 100%); }
 .stair-hero-copy { position: absolute; z-index: 2; left: 64px; right: 310px; bottom: 58px; color: #fff; }
 .stair-eyebrow, .stair-toss .stair-tag { margin: 0 0 18px; color: #d9efff; font-size: 15px; font-weight: 850; }
-.stair-hero h1 { max-width: 800px; margin: 0 0 20px; font-size: 66px; line-height: 1.08; letter-spacing: -3.8px; }
+.stair-hero h1 { max-width: 840px; margin: 0 0 20px; font-size: 72px; font-weight: 850; line-height: 1.06; letter-spacing: -4.2px; }
 .stair-hero-copy > p:last-of-type { max-width: 680px; margin: 0; color: #edf5fb; font-size: 18px; line-height: 1.7; }
 .stair-hero-actions { display: flex; gap: 12px; margin-top: 26px; }
 .stair-btn { min-height: 54px; padding: 0 23px; display: inline-flex; align-items: center; justify-content: center; border-radius: 14px; font-size: 16px; font-weight: 850; }
@@ -47,16 +46,15 @@
 .stair-soft { background: var(--stair-bg); }
 .stair-section-head { max-width: 760px; margin-bottom: 58px; }
 .stair-section-head > p, .stair-estimate-head > p, .stair-toss .stair-tag { margin: 0 0 16px; color: var(--stair-blue); font-size: 14px; font-weight: 900; letter-spacing: .02em; }
-.stair-section h2, .stair-estimate h2 { margin: 0 0 20px; font-size: 50px; line-height: 1.14; letter-spacing: -2.8px; }
+.stair-section h2, .stair-estimate h2 { margin: 0 0 20px; font-size: 56px; font-weight: 850; line-height: 1.12; letter-spacing: -3.1px; }
 .stair-section-head > span, .stair-estimate-head > span { color: var(--stair-sub); font-size: 18px; line-height: 1.75; }
 .stair-scope-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
 .stair-scope-grid article { min-height: 225px; padding: 34px; border-radius: 28px; background: #fff; box-shadow: 0 16px 38px rgba(16,48,86,.06); }
 .stair-scope-grid article > span { color: var(--stair-blue); font-size: 13px; font-weight: 900; }
-.stair-scope-grid h3 { margin: 35px 0 12px; font-size: 25px; }
+.stair-scope-grid h3 { margin: 35px 0 12px; font-size: 27px; font-weight: 800; }
 .stair-scope-grid p { margin: 0; color: var(--stair-sub); font-size: 15px; line-height: 1.75; }
 .stair-scope-image { position: relative; aspect-ratio: 4 / 3; margin-top: 24px; overflow: hidden; border-radius: 20px; background: #eef2f6; }
 .stair-scope-image img { object-fit: contain; }
-.stair-scope-image small { position: absolute; z-index: 2; right: 12px; bottom: 12px; padding: 6px 9px; border-radius: 999px; background: rgba(7,31,59,.68); color: #fff; font-size: 10px; }
 .stair-gallery { display: grid; grid-template-columns: 1.15fr .85fr; gap: 18px; }
 .stair-gallery figure { position: relative; height: 360px; margin: 0; overflow: hidden; border-radius: 32px; background: #d7dee7; }
 .stair-gallery figure:first-child { grid-row: span 2; height: 738px; }
@@ -65,7 +63,6 @@
 .stair-gallery figure::after { content: ""; position: absolute; inset: 48% 0 0; background: linear-gradient(transparent, rgba(6,29,57,.72)); }
 .stair-gallery figcaption { position: absolute; z-index: 2; left: 28px; bottom: 27px; color: #fff; }
 .stair-gallery figcaption strong, .stair-gallery figcaption span { display: block; }
-.stair-gallery figcaption small { display: block; margin-top: 8px; color: #cbd9e7; font-size: 10px; }
 .stair-gallery figcaption strong { margin-bottom: 6px; font-size: 23px; }
 .stair-gallery figcaption span { color: #e3edf7; font-size: 14px; }
 .stair-references { background: var(--stair-deep); color: #fff; }
@@ -81,7 +78,7 @@
 .stair-reference-copy p { min-height: 52px; margin: 0; color: #bdcde0; font-size: 14px; line-height: 1.75; }
 .stair-reference-copy a { margin-top: 22px; display: inline-flex; align-items: center; gap: 7px; color: #8ebaff; font-size: 14px; font-weight: 850; }
 .stair-report-grid { display: grid; grid-template-columns: .92fr 1.08fr; gap: 68px; align-items: center; }
-.stair-report-copy h2 { margin: 0 0 23px; font-size: 50px; line-height: 1.15; letter-spacing: -2.8px; }
+.stair-report-copy h2 { margin: 0 0 23px; font-size: 56px; font-weight: 850; line-height: 1.12; letter-spacing: -3.1px; }
 .stair-report-copy > span { color: var(--stair-sub); font-size: 17px; line-height: 1.8; }
 .stair-report-copy ul { margin: 30px 0 0; padding: 0; display: grid; gap: 18px; list-style: none; }
 .stair-report-copy li { display: flex; gap: 14px; }
@@ -134,7 +131,7 @@
   .stair-hero-card > img { object-position: 54% center; }
   .stair-hero-card::after { background: linear-gradient(180deg, rgba(5,25,47,.08), rgba(5,25,47,.88) 70%, rgba(5,25,47,.96)); }
   .stair-hero-copy { left: 24px; right: 24px; bottom: 128px; }
-  .stair-hero h1 { font-size: 43px; letter-spacing: -2.3px; }
+  .stair-hero h1 { font-size: 47px; line-height: 1.08; letter-spacing: -2.7px; }
   .stair-hero-copy > p:last-of-type { font-size: 16px; }
   .stair-hero-actions { display: none; }
   .stair-price-pill { left: 20px; right: 20px; bottom: 22px; padding: 15px 18px; border-radius: 17px; }
@@ -144,7 +141,7 @@
   .stair-fact-grid article { min-height: 165px; padding: 20px; border-radius: 20px; }
   .stair-fact-grid strong { font-size: 17px; }
   .stair-section { padding: 82px 20px; }
-  .stair-section h2, .stair-report-copy h2, .stair-estimate h2 { font-size: 37px; letter-spacing: -2px; }
+  .stair-section h2, .stair-report-copy h2, .stair-estimate h2 { font-size: 40px; letter-spacing: -2.2px; }
   .stair-section-head { margin-bottom: 36px; }
   .stair-section-head > span { font-size: 16px; }
   .stair-scope-grid, .stair-gallery, .stair-report-grid, .stair-reference-grid { grid-template-columns: 1fr; }

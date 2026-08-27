@@ -37,7 +37,6 @@ export default function MoveInCleaningLanding() {
       <section className="stair-hero" aria-labelledby="movein-title">
         <div className="stair-hero-card">
           <Image src="/landing/cleaning/bringcare-window-cleaning.png" alt="브링케어 유니폼 작업자의 창문 청소 연출 이미지" fill priority unoptimized sizes="(max-width: 820px) 100vw, 1240px" />
-          <span className="stair-image-disclosure">브링케어 서비스 연출 이미지</span>
           <div className="stair-hero-copy">
             <p className="stair-eyebrow">원주 직영팀 · 입주/이사청소</p>
             <h1 id="movein-title">새 공간의 첫날,<br />보이는 곳부터<br />숨은 곳까지.</h1>
@@ -57,12 +56,12 @@ export default function MoveInCleaningLanding() {
 
       <section className="stair-section stair-soft" id="service" aria-labelledby="movein-scope-title"><div className="stair-inner">
         <div className="stair-section-head"><p>SERVICE SCOPE</p><h2 id="movein-scope-title">입주 전에 필요한 곳을<br />구역별로 청소합니다.</h2><span>눈에 잘 보이는 공간은 물론 오염이 남기 쉬운 안쪽과 틈까지 작업 범위에 맞춰 관리합니다.</span></div>
-        <div className="stair-scope-grid">{scopes.map(([number, title, copy, image, alt]) => <article key={title}><span>{number}</span><h3>{title}</h3><p>{copy}</p><div className="stair-scope-image"><Image src={image} alt={alt} fill unoptimized sizes="(max-width: 820px) 100vw, 50vw" /><small>브링케어 서비스 연출 이미지</small></div></article>)}</div>
+        <div className="stair-scope-grid">{scopes.map(([number, title, copy, image, alt]) => <article key={title}><span>{number}</span><h3>{title}</h3><p>{copy}</p><div className="stair-scope-image"><Image src={image} alt={alt} fill unoptimized sizes="(max-width: 820px) 100vw, 50vw" /></div></article>)}</div>
       </div></section>
 
       <section className="stair-section" id="detail" aria-labelledby="movein-detail-title"><div className="stair-inner">
         <div className="stair-section-head"><p>CLEANING DETAIL</p><h2 id="movein-detail-title">손이 잘 닿지 않는 곳도<br />놓치지 않습니다.</h2><span>입주 후 불편이 생기기 쉬운 세부 구역까지 확인합니다.</span></div>
-        <div className="stair-gallery">{details.map(([title, copy, image, alt]) => <figure key={title}><Image src={image} alt={alt} fill unoptimized sizes="(max-width: 820px) 100vw, 42vw" /><figcaption><strong>{title}</strong><span>{copy}</span><small>브링케어 서비스 연출 이미지</small></figcaption></figure>)}</div>
+        <div className="stair-gallery">{details.map(([title, copy, image, alt]) => <figure key={title}><Image src={image} alt={alt} fill unoptimized sizes="(max-width: 820px) 100vw, 42vw" /><figcaption><strong>{title}</strong><span>{copy}</span></figcaption></figure>)}</div>
       </div></section>
 
       <section className="stair-section stair-soft" aria-labelledby="movein-check-title"><div className="stair-inner stair-report-grid">
