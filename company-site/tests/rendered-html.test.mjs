@@ -57,7 +57,7 @@ test("server-renders the Bring Care company website", async () => {
   assert.match(html, /관리의 모든 흐름을/);
   assert.match(html, /건물을 관리하며/);
   assert.match(html, /청소까지 직접 수행합니다/);
-  assert.match(html, /bringcare-suited-team-building-v2\.png/);
+  assert.match(html, /bringcare-suited-team-building-v3\.png/);
   assert.match(html, /브링케어 브랜드 캠페인 이미지/);
   assert.match(html, /브링엔지니어링/);
   assert.match(html, /748-28-01935/);
