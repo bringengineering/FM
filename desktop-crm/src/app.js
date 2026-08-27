@@ -2231,13 +2231,11 @@
     const customers = filteredCustomers();
     if (customers.length && !customers.some(customer => customer.id === selectedCustomerHubId)) selectedCustomerHubId = customers[0].id;
     const customer = customers.find(item => item.id === selectedCustomerHubId) || null;
-    const cards = customers.map(item => {
-      const buildings = customerBuildings(item).filter(building => !building.archivedAt);
-      const buildingLabel = buildings.length ? `${buildings[0].name || "건물명 미입력"}${buildings.length > 1 ? ` 외 ${buildings.length - 1}곳` : ""}` : "연결 건물 없음";
-      return `<button type="button" class="building-hub-card customer-hub-card ${item.id === selectedCustomerHubId ? "selected" : ""}" data-customer-hub-open="${attr(item.id)}" aria-pressed="${item.id === selectedCustomerHubId}"><div><strong>${esc(item.name || "이름 미입력")}</strong>${managementStatusBadge(managementStatusForCustomer(item))}</div><p>${esc([item.company, customerPhoneText(item.phone)].filter(Boolean).join(" · ") || "연락처 미입력")}</p><small>${esc(buildingLabel)} · 진행 케이스 ${buildings.reduce((total, building) => total + buildingCases(building).length, 0)}건</small></button>`;
-    }).join("");
+    const customerOptions = customers.length
+      ? customers.map(item => `<option value="${attr(item.id)}" ${item.id === selectedCustomerHubId ? "selected" : ""}>${esc([item.name || "이름 미입력", item.company || customerPhoneText(item.phone), managementStatusForCustomer(item)].filter(Boolean).join(" · "))}</option>`).join("")
+      : `<option value="" selected disabled>조건에 맞는 고객이 없습니다</option>`;
     main.innerHTML = `<section class="building-hub-hero customer-hub-hero"><div><span>고객을 선택하면 연결 건물과 업무가 함께 열립니다</span><h2>고객·건물 정보를 한 화면에서 관리합니다</h2><p>관리 상태, 계약, 케이스와 상담 이력을 한곳에서 확인합니다.</p></div><div class="building-hub-head-actions"><button class="secondary-button" data-customer-buildings-open>건물 목록 보기</button><button class="primary-button" data-action="new-customer">＋ 고객 등록</button></div></section>
-      <section class="building-hub-layout customer-hub-layout"><aside class="building-hub-browser"><header class="hub-browser-filter-head"><div><b>고객 목록</b><span>${customers.length}명</span></div><label class="management-filter"><span>관리 상태</span><select data-customer-management-filter aria-label="고객 관리 상태 필터">${managementFilterOptions(customerManagementFilter)}</select></label></header><div class="building-hub-list">${cards || `<div class="building-hub-empty">${Core.normalizeText(searchEl.value) ? "검색 조건에 맞는 고객이 없습니다." : "조건에 맞는 고객이 없습니다."}<br>고객을 등록하거나 관리 상태를 바꿔 보세요.</div>`}</div></aside><section class="building-hub-detail">${customer ? renderCustomerHubDetail(customer) : `<div class="case-detail-empty"><strong>${Core.normalizeText(searchEl.value) ? "고객을 찾지 못했습니다" : "첫 고객을 등록해 주세요"}</strong><span>고객을 등록하면 연결 건물과 업무 현황이 이곳에 모입니다.</span><button class="primary-button" data-action="new-customer">＋ 고객 등록</button></div>`}</section></section>`;
+      <section class="customer-hub-workspace"><header class="customer-hub-selector-bar"><div class="customer-selector-heading"><b>고객 선택</b><span>${customers.length}명</span></div><label class="customer-select-control"><span>고객</span><select data-customer-hub-select aria-label="고객 선택" ${customers.length ? "" : "disabled"}>${customerOptions}</select></label><label class="management-filter"><span>관리 상태</span><select data-customer-management-filter aria-label="고객 관리 상태 필터">${managementFilterOptions(customerManagementFilter)}</select></label></header><section class="building-hub-detail">${customer ? renderCustomerHubDetail(customer) : `<div class="case-detail-empty"><strong>${Core.normalizeText(searchEl.value) ? "고객을 찾지 못했습니다" : "첫 고객을 등록해 주세요"}</strong><span>고객을 등록하면 연결 건물과 업무 현황이 이곳에 모입니다.</span><button class="primary-button" data-action="new-customer">＋ 고객 등록</button></div>`}</section></section>`;
   }
 
   function renderCustomerHubDetail(customer) {
@@ -5278,13 +5276,6 @@
     if (relationshipOpen) { renderRelationshipDrawer(relationshipOpen.dataset.relationshipOpen); return; }
     const customerHubEdit = event.target.closest("[data-customer-hub-edit]");
     if (customerHubEdit) { customerEditor(customerHubEdit.dataset.customerHubEdit); return; }
-    const customerHubOpen = event.target.closest("[data-customer-hub-open]");
-    if (customerHubOpen) {
-      selectedCustomerHubId = customerHubOpen.dataset.customerHubOpen;
-      renderCustomers();
-      pageMeta();
-      return;
-    }
     const customerOpen = event.target.closest("[data-customer-open]");
     if (customerOpen) { renderCustomerDrawer(customerOpen.dataset.customerOpen); return; }
     const taskToggle = event.target.closest("[data-task-toggle]");
@@ -5499,6 +5490,12 @@
       return;
     }
     if (event.target.matches('#salesEventForm [name="type"]')) refreshSalesEventChannelField(event.target.form);
+    const customerHubSelect = event.target.closest("[data-customer-hub-select]");
+    if (customerHubSelect) {
+      selectedCustomerHubId = customerById(customerHubSelect.value) ? customerHubSelect.value : "";
+      renderCustomers();
+      return;
+    }
     const customerManagementSelect = event.target.closest("[data-customer-management-filter]");
     if (customerManagementSelect) {
       customerManagementFilter = MANAGEMENT_FILTERS.includes(customerManagementSelect.value) ? customerManagementSelect.value : "전체";

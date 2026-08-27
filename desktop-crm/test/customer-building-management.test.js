@@ -24,12 +24,13 @@ test("customer management navigation is a folder with vacancy as a child", () =>
   assert.match(appSource, /button\.dataset\.view === "customers" && currentView === "buildings"/);
 });
 
-test("customer workspace uses the two-pane selector and management filters", () => {
+test("customer workspace replaces the card rail with dropdown selectors", () => {
   const customerView = sourceBetween("function renderCustomers()", "function renderCustomerHubDetail");
-  assert.match(customerView, /building-hub-layout customer-hub-layout/);
-  assert.match(customerView, /data-customer-hub-open/);
+  assert.match(customerView, /customer-hub-workspace/);
+  assert.match(customerView, /data-customer-hub-select/);
   assert.match(customerView, /data-customer-management-filter/);
   assert.match(customerView, /renderCustomerHubDetail/);
+  assert.doesNotMatch(customerView, /building-hub-browser|building-hub-list|customer-hub-card|data-customer-hub-open/);
   assert.doesNotMatch(customerView, /customerSalesStageBadge|data-customer-sales-stage-filter|건물 영업 단계/);
   assert.match(appSource, /Object\.freeze\(\["전체", "건물 미연결", "연결 확인 필요", "관리 예정", "관리 중", "관리 종료"\]\)/);
 });
@@ -51,7 +52,8 @@ test("building workspace uses the same management status vocabulary", () => {
   assert.match(buildingView, /managementStatusForBuilding/);
   assert.match(appSource, /selectField\("관리 상태", "status", \["관리 예정", "관리 중", "관리 종료"\]/);
   assert.match(buildingCss, /\.management-filter\s*\{/);
-  assert.match(buildingCss, /\.customer-hub-card/);
+  assert.match(buildingCss, /\.customer-hub-workspace/);
+  assert.match(buildingCss, /\.customer-select-control/);
 });
 
 test("vacancy workspace remains available under customer management", () => {
