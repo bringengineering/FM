@@ -100,14 +100,14 @@ export default function Home() {
             FACILITY MANAGEMENT · WONJU
           </p>
           <h1>
-            건물의 오늘을 돌보고,
+            건물을 관리하며,
             <br />
-            <em>내일의 기준</em>을 만듭니다.
+            <em>청소까지 직접 수행합니다.</em>
           </h1>
           <p className="hero-lede">
-            시설·임대·민원·공사 데이터를 하나로 연결해
+            관리자가 현장에 있습니다. 청소부터 시설 확인과 기록까지,
             <br className="desktop-break" />
-            현장이 더 빠르고 정확하게 움직이는 FM 운영을 설계합니다.
+            건물의 일상을 한 팀이 책임집니다.
           </p>
           <div className="hero-actions">
             <a className="button button-primary" href="#services">
@@ -137,15 +137,15 @@ export default function Home() {
 
         <div className="hero-media">
           <img
-            src="/hero-fm.png"
-            alt="태블릿으로 건물 설비를 점검하는 시설관리 담당자"
+            src="/brand-campaign/bringcare-team-building-v1.png"
+            alt="브링케어 건물관리팀을 표현한 건물 앞 브랜드 캠페인 이미지"
           />
           <div className="hero-media-shade" aria-hidden="true" />
           <div className="media-label">
             <span className="live-dot" />
             <div>
-              <small>CONNECTED OPERATION</small>
-              <strong>현장과 기록이 이어지는 FM</strong>
+              <small>브링케어 브랜드 캠페인 이미지</small>
+              <strong>관리자가 현장에 있습니다.</strong>
             </div>
           </div>
           <div className="media-index">
