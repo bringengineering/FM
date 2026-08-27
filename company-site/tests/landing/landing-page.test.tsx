@@ -71,11 +71,11 @@ describe("LandingPage", () => {
     expect(references).toBeInTheDocument();
     expect(
       within(references as HTMLElement).getByRole("heading", {
-        name: /청소만 한 것이 아니라,.*건물을 관리해왔습니다\./,
+        name: /말보다 현장으로.*보여드립니다\./,
       }),
     ).toBeInTheDocument();
     expect(
-      within(references as HTMLElement).getAllByText("BRING CARE 실제 관리 현장"),
+      within(references as HTMLElement).getAllByText("BRING CARE 실제 관리 기록"),
     ).toHaveLength(4);
     expect(
       within(references as HTMLElement).getByText("공용부 환경 정비"),
@@ -94,6 +94,23 @@ describe("LandingPage", () => {
         name: /실제 현장기록 보기/,
       }),
     ).toHaveLength(4);
+  });
+
+  it("explains the problem, action, and result for every verified field reference", () => {
+    const { container } = render(<StairCleaningLanding />);
+    const references = container.querySelector(".stair-references");
+
+    expect(screen.getByText("서비스 작업 범위")).toBeInTheDocument();
+    expect(
+      screen.getByRole("heading", { name: /말보다 현장으로.*보여드립니다/ }),
+    ).toBeInTheDocument();
+    expect(
+      within(references as HTMLElement).getAllByText("BRING CARE 실제 관리 기록"),
+    ).toHaveLength(4);
+    expect(within(references as HTMLElement).getAllByText("확인한 문제")).toHaveLength(4);
+    expect(within(references as HTMLElement).getAllByText("진행한 조치")).toHaveLength(4);
+    expect(within(references as HTMLElement).getAllByText("관리 결과")).toHaveLength(4);
+    expect(container.querySelectorAll(".stair-reference-detail")).toHaveLength(4);
   });
 
   it("answers scope, process, and contract questions before the stair-cleaning estimate", () => {

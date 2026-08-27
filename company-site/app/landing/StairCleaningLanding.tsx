@@ -20,28 +20,36 @@ const scopes = [
 const references = [
   {
     title: "공용부 환경 정비",
-    copy: "건물 앞 생활 쓰레기와 적치 상태를 확인하고 공용 공간의 통행 환경을 정리했습니다.",
+    problem: "건물 앞 생활 쓰레기와 적치물로 공용 공간의 통행 환경이 흐트러져 있었습니다.",
+    action: "적치 상태를 확인한 뒤 생활 쓰레기를 수거하고 공용 동선을 정리했습니다.",
+    result: "정비 완료 상태를 사진으로 기록해 건물주가 현장 상황을 확인할 수 있게 했습니다.",
     image: "/landing/records/waste-cleanup.jpg",
     alt: "브링케어가 정리한 건물 공용부 적치물 현장",
     href: "https://blog.naver.com/bringcare/224382174945",
   },
   {
     title: "청소 중 발견한 벽면 하자",
-    copy: "공용부 작업 과정에서 벽면 손상과 습기 흔적을 발견해 건물주가 확인할 수 있도록 기록했습니다.",
+    problem: "공용부 작업 중 벽면 손상과 습기 흔적이 확인됐습니다.",
+    action: "손상 위치와 주변 상태를 사진으로 남기고 확인 내용을 정리했습니다.",
+    result: "건물주가 현장에 오지 않아도 후속 점검이 필요한 위치를 확인할 수 있게 했습니다.",
     image: "/landing/records/defect-check.jpg",
     alt: "브링케어 공용부 청소 중 확인한 벽면 하자",
     href: "https://blog.naver.com/bringcare/224382174370",
   },
   {
     title: "전기 화재예방 조치",
-    copy: "공용부 전기 사용 환경을 확인하고 화재 위험을 줄이기 위한 예방 조치를 진행했습니다.",
+    problem: "공용부 전기 사용 환경에서 화재 예방을 위해 확인이 필요한 부분이 있었습니다.",
+    action: "사용 상태를 확인하고 위험을 줄이기 위한 예방 조치를 진행했습니다.",
+    result: "조치한 위치와 완료 상태를 기록해 이후 관리 때 다시 확인할 수 있게 했습니다.",
     image: "/landing/records/fire-safety-pad.jpg",
     alt: "브링케어 건물 공용부 전기 화재예방 조치 현장",
     href: "https://blog.naver.com/bringcare/224382173190",
   },
   {
     title: "건물 입구 안내환경 개선",
-    copy: "반복되는 종이 공지를 줄이고 건물 이용자가 안내를 쉽게 확인할 수 있도록 입구 환경을 개선했습니다.",
+    problem: "건물 입구의 반복적인 종이 공지로 안내 확인과 외관 관리가 불편했습니다.",
+    action: "건물 이용자가 안내를 쉽게 확인할 수 있도록 입구 안내 환경을 정리했습니다.",
+    result: "반복 공지를 줄이고 건물 입구에서 필요한 정보를 확인하기 쉬운 상태로 개선했습니다.",
     image: "/landing/records/digital-signage.jpg",
     alt: "브링케어가 개선한 건물 입구 디지털 안내환경",
     href: "https://blog.naver.com/bringcare/224382175661",
@@ -110,7 +118,7 @@ export default function StairCleaningLanding() {
 
       <section className="stair-section" id="field" aria-labelledby="stair-field-title">
         <div className="stair-inner">
-          <div className="stair-section-head"><p>CLEANING DETAIL</p><h2 id="stair-field-title">계단 한 칸부터<br />공용창까지 관리합니다.</h2><span>건물 공용부에서 반복적으로 오염되는 구역을 작업 범위에 맞춰 관리합니다.</span></div>
+          <div className="stair-section-head"><p>CLEANING DETAIL</p><strong className="stair-section-kicker">서비스 작업 범위</strong><h2 id="stair-field-title">계단 한 칸부터<br />공용창까지 관리합니다.</h2><span>건물 공용부에서 반복적으로 오염되는 구역을 작업 범위에 맞춰 관리합니다.</span></div>
           <div className="stair-gallery">
             <figure><Image src="/landing/cleaning/bringcare-stair-mop-down.png" alt="브링케어 유니폼 작업자의 계단 하행 밀대 청소 연출 이미지" fill unoptimized sizes="(max-width: 820px) 100vw, 58vw" /><figcaption><strong>계단 바닥</strong><span>한 층씩 이동하며 계단의 먼지와 생활 오염을 정리합니다.</span></figcaption></figure>
             <figure><Image src="/landing/cleaning/bringcare-stair-corner-brush.png" alt="브링케어 유니폼 작업자의 계단 모서리 브러시 청소 연출 이미지" fill unoptimized sizes="(max-width: 820px) 100vw, 42vw" /><figcaption><strong>모서리·틈새</strong><span>밀대가 닿기 어려운 계단 끝과 벽면 틈을 세부 청소합니다.</span></figcaption></figure>
@@ -133,7 +141,7 @@ export default function StairCleaningLanding() {
         <div className="stair-inner">
           <div className="stair-section-head">
             <p>BRING CARE MANAGEMENT RECORD</p>
-            <h2 id="stair-reference-title">청소만 한 것이 아니라,<br />건물을 관리해왔습니다.</h2>
+            <h2 id="stair-reference-title">말보다 현장으로<br />보여드립니다.</h2>
             <span>연출 이미지가 아닌 BRING CARE의 실제 관리 현장입니다. 각 기록은 네이버 블로그 원문에서 확인할 수 있습니다.</span>
           </div>
           <div className="stair-reference-grid">
@@ -141,11 +149,15 @@ export default function StairCleaningLanding() {
               <article key={reference.href}>
                 <div className="stair-reference-image">
                   <Image src={reference.image} alt={reference.alt} fill unoptimized sizes="(max-width: 820px) 100vw, 50vw" />
-                  <span>BRING CARE 실제 관리 현장</span>
+                  <span>BRING CARE 실제 관리 기록</span>
                 </div>
                 <div className="stair-reference-copy">
                   <h3>{reference.title}</h3>
-                  <p>{reference.copy}</p>
+                  <dl className="stair-reference-detail">
+                    <div><dt>확인한 문제</dt><dd>{reference.problem}</dd></div>
+                    <div><dt>진행한 조치</dt><dd>{reference.action}</dd></div>
+                    <div><dt>관리 결과</dt><dd>{reference.result}</dd></div>
+                  </dl>
                   <a href={reference.href} target="_blank" rel="noreferrer">실제 현장기록 보기 <span aria-hidden="true">↗</span></a>
                 </div>
               </article>
