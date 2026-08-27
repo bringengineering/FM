@@ -11,16 +11,16 @@ const facts = [
 ] as const;
 
 const scopes = [
-  ["01", "창문·창틀", "유리의 손자국과 창틀·레일에 쌓인 먼지와 오염을 정리합니다.", "/landing/cleaning/bringcare-window-cleaning.png", "브링케어 유니폼 작업자의 창문 청소 연출 이미지"],
-  ["02", "욕실·배수구", "욕실의 물때와 배수구 주변처럼 오염이 남기 쉬운 구역을 관리합니다.", "/landing/cleaning/bringcare-bathroom-drain-cleaning.png", "브링케어 유니폼 작업자의 욕실 배수구 청소 연출 이미지"],
-  ["03", "주방·후드", "주방 상판과 후드 주변에 남은 먼지와 기름 오염을 꼼꼼히 확인합니다.", "/landing/cleaning/bringcare-kitchen-hood-cleaning.png", "브링케어 유니폼 작업자의 주방 후드 청소 연출 이미지"],
-  ["04", "수납장 안쪽", "붙박이장과 신발장 등 수납공간을 열어 내부 먼지까지 정리합니다.", "/landing/cleaning/bringcare-built-in-cabinet-cleaning.png", "브링케어 유니폼 작업자의 붙박이장 청소 연출 이미지"],
+  ["01", "창문·창틀", "유리의 손자국과 창틀·레일에 쌓인 먼지와 오염을 정리합니다.", "/landing/movein-campaign/suit-window.png", "검은 정장을 입은 브링케어 관리자의 창문 청소 캠페인 이미지"],
+  ["02", "욕실·배수구", "욕실의 물때와 배수구 주변처럼 오염이 남기 쉬운 구역을 관리합니다.", "/landing/movein-campaign/suit-bathroom-drain.png", "검은 정장을 입은 브링케어 관리자의 욕실 배수구 청소 캠페인 이미지"],
+  ["03", "주방·후드", "주방 상판과 후드 주변에 남은 먼지와 기름 오염을 꼼꼼히 확인합니다.", "/landing/movein-campaign/suit-kitchen-hood.png", "검은 정장을 입은 브링케어 관리자의 주방 후드 청소 캠페인 이미지"],
+  ["04", "수납장 안쪽", "붙박이장과 신발장 등 수납공간을 열어 내부 먼지까지 정리합니다.", "/landing/movein-campaign/suit-cabinet.png", "검은 정장을 입은 브링케어 관리자의 붙박이장 청소 캠페인 이미지"],
 ] as const;
 
 const details = [
-  ["바닥·모서리", "벽면과 맞닿는 바닥 가장자리까지 정리합니다.", "/landing/cleaning/bringcare-floor-edge-cleaning.png", "브링케어 유니폼 작업자의 바닥 모서리 청소 연출 이미지"],
-  ["창틀·레일", "먼지가 쌓이는 레일과 좁은 틈을 브러시로 관리합니다.", "/landing/cleaning/bringcare-balcony-track-cleaning.png", "브링케어 유니폼 작업자의 창틀 레일 청소 연출 이미지"],
-  ["천장·환기구", "손이 잘 닿지 않는 높은 곳도 범위에 맞춰 확인합니다.", "/landing/cleaning/bringcare-ceiling-vent-cleaning.png", "브링케어 유니폼 작업자의 천장 환기구 청소 연출 이미지"],
+  ["바닥·모서리", "벽면과 맞닿는 바닥 가장자리까지 정리합니다.", "/landing/movein-campaign/suit-floor-edge.png", "검은 정장을 입은 브링케어 관리자의 바닥 모서리 청소 캠페인 이미지"],
+  ["창틀·레일", "먼지가 쌓이는 레일과 좁은 틈을 브러시로 관리합니다.", "/landing/movein-campaign/suit-window-track.png", "검은 정장을 입은 브링케어 관리자의 창틀 레일 청소 캠페인 이미지"],
+  ["천장·환기구", "손이 잘 닿지 않는 높은 곳도 범위에 맞춰 확인합니다.", "/landing/movein-campaign/suit-ceiling-vent.png", "검은 정장을 입은 브링케어 관리자의 천장 환기구 청소 캠페인 이미지"],
 ] as const;
 
 export default function MoveInCleaningLanding() {
@@ -36,7 +36,7 @@ export default function MoveInCleaningLanding() {
 
       <section className="stair-hero" aria-labelledby="movein-title">
         <div className="stair-hero-card">
-          <Image src="/landing/cleaning/bringcare-window-cleaning.png" alt="브링케어 유니폼 작업자의 창문 청소 연출 이미지" fill priority unoptimized sizes="(max-width: 820px) 100vw, 1240px" />
+          <Image src="/landing/movein-campaign/suit-window.png" alt="검은 정장을 입은 브링케어 관리자의 창문 청소 캠페인 이미지" fill priority unoptimized sizes="(max-width: 820px) 100vw, 1240px" />
           <div className="stair-hero-copy">
             <p className="stair-eyebrow">원주 직영팀 · 입주/이사청소</p>
             <h1 id="movein-title">새 공간의 첫날,<br />보이는 곳부터<br />숨은 곳까지.</h1>

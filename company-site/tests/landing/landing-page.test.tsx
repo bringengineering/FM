@@ -24,10 +24,10 @@ describe("LandingPage", () => {
     expect(screen.getByText("관리 건물 입·퇴실청소")).toBeInTheDocument();
     expect(container.querySelector("#quick-estimate-form")).toBeInTheDocument();
     expect(
-      screen.getAllByAltText(/브링케어 유니폼 작업자의 욕실 배수구 청소/)[0],
+      screen.getAllByAltText(/검은 정장을 입은 브링케어 관리자의 욕실 배수구 청소/)[0],
     ).toHaveAttribute(
       "src",
-      "/landing/cleaning/bringcare-bathroom-drain-cleaning.png",
+      "/landing/movein-campaign/suit-bathroom-drain.png",
     );
     expect(screen.queryByAltText(/계단 밀대 청소/)).not.toBeInTheDocument();
   });
