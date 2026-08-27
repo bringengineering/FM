@@ -34,6 +34,12 @@ describe("LandingPage", () => {
     expect(screen.getByText("월 60,000원")).toBeInTheDocument();
     expect(container.querySelector("#quick-estimate-form")).toBeInTheDocument();
     expect(
+      screen.getAllByText("브링케어 서비스 연출 이미지").length,
+    ).toBeGreaterThanOrEqual(2);
+    expect(
+      screen.getAllByAltText("브링케어 유니폼 작업자의 창문 청소 연출 이미지")[0],
+    ).toHaveAttribute("src", "/landing/cleaning/bringcare-window-cleaning.png");
+    expect(
       screen.getByRole("link", { name: /무료 견적 신청.*30초 만에 입력하기/ }),
     ).toHaveAttribute("href", "#estimate");
   });
