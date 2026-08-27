@@ -137,8 +137,8 @@ export default function Home() {
 
         <div className="hero-media">
           <img
-            src="/brand-campaign/bringcare-team-building-v1.png"
-            alt="브링케어 건물관리팀을 표현한 건물 앞 브랜드 캠페인 이미지"
+            src="/brand-campaign/bringcare-suited-team-building-v2.png"
+            alt="정장을 입은 브링케어 건물관리팀을 표현한 건물 앞 브랜드 캠페인 단체사진"
           />
           <div className="hero-media-shade" aria-hidden="true" />
           <div className="media-label">
