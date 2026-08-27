@@ -17,6 +17,15 @@
     "trailingSlash": false,
     "headers": [
       {
+        "source": "/@(stair-cleaning|building-care|move-in-cleaning|turnover-care)",
+        "headers": [
+          {
+            "key": "Cache-Control",
+            "value": "no-cache, no-store, must-revalidate"
+          }
+        ]
+      },
+      {
         "source": "/field-sw.js",
         "headers": [
           {
