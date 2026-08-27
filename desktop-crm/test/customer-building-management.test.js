@@ -37,15 +37,18 @@ test("customer workspace replaces the card rail with dropdown selectors", () => 
   assert.match(appSource, /Object\.freeze\(\["전체", "건물 미연결", "연결 확인 필요", "관리 예정", "관리 중", "관리 종료"\]\)/);
 });
 
-test("customer detail combines linked buildings, contracts, cases and consultations", () => {
+test("customer detail omits the linked-building card and keeps the remaining work sections", () => {
   const detail = sourceBetween("function renderCustomerHubDetail", "const buildingCustomers");
-  assert.match(detail, /연결 건물/);
-  assert.match(detail, /고객 요청·후속조치/);
+  assert.doesNotMatch(detail, /const buildingRecords =|<b>연결 건물<\/b>|customer-linked-building|data-building-jump|data-building-new-case/);
+  assert.doesNotMatch(buildingCss, /\.customer-linked-building/);
+  assert.match(detail, /<b>고객 요청·후속조치<\/b>/);
   assert.match(detail, /<b>계약<\/b>/);
   assert.match(detail, /<b>민원<\/b>/);
   assert.match(detail, /<b>최근 상담<\/b>/);
   assert.match(detail, /customerAvatar\(customer\)/);
-  assert.match(detail, /data-building-jump/);
+  assert.match(detail, /building-identity-strip/);
+  assert.match(detail, /data-customer-open|data-customer-hub-edit|new-selected-task/);
+  assert.match(detail, /data-contract-edit|data-building-case-open/);
   assert.doesNotMatch(detail, /customerSalesStageBadge|영업 미등록|영업 보기/);
 });
 
