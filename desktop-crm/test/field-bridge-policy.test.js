@@ -491,6 +491,70 @@ test("application exit checks pending uploads and requires explicit confirmation
   assert.equal(JSON.stringify(queue), snapshot);
 });
 
+test("application exit reconnects once and only proceeds after a fresh pending-upload check", async () => {
+  const order = [];
+  let pendingChecks = 0;
+  const recovered = await coordinateFieldExit({
+    reason: "update",
+    ensureReady: async () => {
+      order.push("ready");
+      return { id: "field-view" };
+    },
+    checkPending: async handle => {
+      assert.equal(handle.id, "field-view");
+      pendingChecks += 1;
+      order.push(`pending:${pendingChecks}`);
+      if (pendingChecks === 1) throw new Error("renderer unavailable");
+      return { count: 0, risk: "none" };
+    },
+    recoverPendingInspection: async reason => {
+      order.push(`reconnect:${reason}`);
+      return true;
+    },
+    confirmUnknown: async () => {
+      throw new Error("must not show unknown dialog after a successful fresh check");
+    },
+    finishApplicationExit: async reason => { order.push(`finish:${reason}`); },
+  });
+
+  assert.deepEqual(recovered, { ok: true });
+  assert.deepEqual(order, ["ready", "pending:1", "reconnect:update", "ready", "pending:2", "finish:update"]);
+
+  order.length = 0;
+  pendingChecks = 0;
+  const stillUnknown = await coordinateFieldExit({
+    reason: "update",
+    ensureReady: async () => {
+      order.push("ready");
+      return { id: "field-view" };
+    },
+    checkPending: async () => {
+      pendingChecks += 1;
+      order.push(`pending:${pendingChecks}`);
+      throw new Error("renderer unavailable");
+    },
+    recoverPendingInspection: async reason => {
+      order.push(`reconnect:${reason}`);
+      return true;
+    },
+    confirmUnknown: async reason => {
+      order.push(`confirm-unknown:${reason}`);
+      return false;
+    },
+    finishApplicationExit: async () => { throw new Error("must not exit without an authoritative count"); },
+  });
+
+  assert.equal(stillUnknown.code, "FIELD_EXIT_CANCELLED");
+  assert.deepEqual(order, [
+    "ready",
+    "pending:1",
+    "reconnect:update",
+    "ready",
+    "pending:2",
+    "confirm-unknown:update",
+  ]);
+});
+
 test("application exit skips FIELD network checks when FIELD was not opened this run", async () => {
   const order = [];
   const result = await coordinateFieldExit({

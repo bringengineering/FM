@@ -177,12 +177,18 @@ test("window close, menu quit, and update restart share a data-preserving upload
   const createWindow = main.slice(main.indexOf("async function createWindow"), main.indexOf("secureHandle(\"crm:auth-state\""));
   const install = main.slice(main.indexOf('secureHandle("crm:update-install"'), main.indexOf('secureCanonicalHandle("crm:field-bounds"'));
   const beforeQuit = main.slice(main.indexOf('app.on("before-quit"'));
+  const unknownConfirmation = main.slice(
+    main.indexOf("async function confirmApplicationExitWithoutFieldStatus"),
+    main.indexOf("async function finishApplicationExit"),
+  );
 
   assert.match(main, /createFieldExitCoordinator/);
   assert.match(main, /shouldInspect: \(\) => fieldWasOpenedThisRun/);
   assert.match(main, /function ensureFieldView\(\) \{\s+fieldWasOpenedThisRun = true;/);
   assert.match(main, /createFieldEnvelope\("crm\.logoutCheck", \{ reason: "logout" \}\)/);
+  assert.match(main, /recoverPendingInspection: async \(\) => \{[\s\S]*?await reconnectFieldView\(\)[\s\S]*?result && result\.ok/);
   assert.match(main, /confirmUnknown: async reason => confirmApplicationExitWithoutFieldStatus\(reason\)/);
+  assert.match(unknownConfirmation, /result\.response === 0[\s\S]*?await reconnectFieldView\(\)[\s\S]*?return false/);
   assert.match(main, /저장된 현장 자료는 이 PC에 그대로 보존됩니다/);
   assert.match(main, /"그래도 종료"/);
   assert.match(main, /"그래도 재시작"/);

@@ -149,6 +149,10 @@ const applicationExitCoordinator = createFieldExitCoordinator({
   shouldInspect: () => fieldWasOpenedThisRun,
   ensureReady: async () => ensureFieldReadyForLogout(),
   checkPending: async fieldHandle => requestFieldPendingUploads(fieldHandle),
+  recoverPendingInspection: async () => {
+    const result = await reconnectFieldView();
+    return Boolean(result && result.ok);
+  },
   confirmPending: async (pendingUploads, reason) => confirmApplicationExitWithPending(pendingUploads, reason),
   confirmUnknown: async reason => confirmApplicationExitWithoutFieldStatus(reason),
   finishApplicationExit: async reason => finishApplicationExit(reason),
@@ -1314,6 +1318,10 @@ async function confirmApplicationExitWithoutFieldStatus(reason) {
   const result = mainWindow && !mainWindow.isDestroyed()
     ? await dialog.showMessageBox(mainWindow, options)
     : await dialog.showMessageBox(options);
+  if (result.response === 0) {
+    await reconnectFieldView();
+    return false;
+  }
   return result.response === 1;
 }
 

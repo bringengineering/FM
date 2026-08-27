@@ -755,7 +755,16 @@ async function coordinateFieldExit(options = {}) {
       };
     }
   }
-  const inspection = await inspectFieldPendingUploads(options);
+  let inspection = await inspectFieldPendingUploads(options);
+  if (!inspection.ok && typeof options.recoverPendingInspection === "function") {
+    let recovered = false;
+    try {
+      recovered = await options.recoverPendingInspection(reason) === true;
+    } catch (_error) {
+      recovered = false;
+    }
+    if (recovered) inspection = await inspectFieldPendingUploads(options);
+  }
   if (!inspection.ok) {
     let confirmed = false;
     try {
