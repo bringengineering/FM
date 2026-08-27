@@ -43,6 +43,38 @@ describe("LandingPage", () => {
       screen.getByRole("link", { name: /무료 견적 신청.*30초 만에 입력하기/ }),
     ).toHaveAttribute("href", "#estimate");
   });
+
+  it("separates staged cleaning visuals from four verified Bring Care field references", () => {
+    const { container } = render(<StairCleaningLanding />);
+    const references = container.querySelector(".stair-references");
+
+    expect(references).toBeInTheDocument();
+    expect(
+      within(references as HTMLElement).getByRole("heading", {
+        name: /청소만 한 것이 아니라,.*건물을 관리해왔습니다\./,
+      }),
+    ).toBeInTheDocument();
+    expect(
+      within(references as HTMLElement).getAllByText("BRING CARE 실제 관리 현장"),
+    ).toHaveLength(4);
+    expect(
+      within(references as HTMLElement).getByText("공용부 환경 정비"),
+    ).toBeInTheDocument();
+    expect(
+      within(references as HTMLElement).getByText("청소 중 발견한 벽면 하자"),
+    ).toBeInTheDocument();
+    expect(
+      within(references as HTMLElement).getByText("전기 화재예방 조치"),
+    ).toBeInTheDocument();
+    expect(
+      within(references as HTMLElement).getByText("건물 입구 안내환경 개선"),
+    ).toBeInTheDocument();
+    expect(
+      within(references as HTMLElement).getAllByRole("link", {
+        name: /실제 현장기록 보기/,
+      }),
+    ).toHaveLength(4);
+  });
   it.each([
     ["stair-cleaning", /원주 계단·공용부 정기청소/],
     ["building-care", /멀리 있어도,.*우리 건물의 오늘을 확인할 수 있습니다\./],
