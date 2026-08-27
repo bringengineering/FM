@@ -116,7 +116,7 @@ export default function StairCleaningLanding() {
         <div className="stair-inner">
           <div className="stair-section-head"><p>SERVICE SCOPE</p><h2 id="stair-scope-title">깨끗하게만 하지 않습니다.</h2><span>정기 청소와 함께 건물주가 멀리 있어도 놓치기 쉬운 공용부 상태를 확인합니다.</span></div>
           <div className="stair-scope-grid stair-campaign-grid">
-            {scopes.map(([number, title, copy, image, alt]) => <article className="stair-campaign-card" key={title}><span>{number}</span><h3>{title}</h3><p>{copy}</p><div className="stair-scope-image"><Image src={image} alt={alt} fill unoptimized sizes="(max-width: 820px) 100vw, 50vw" /><small>BRING CARE · 브랜드 캠페인 이미지</small></div></article>)}
+            {scopes.map(([number, title, copy, image, alt]) => <article className="stair-campaign-card stair-depth-card" key={title}><span>{number}</span><h3>{title}</h3><p>{copy}</p><div className="stair-scope-image"><Image src={image} alt={alt} fill unoptimized sizes="(max-width: 820px) 100vw, 50vw" /><small>BRING CARE · 브랜드 캠페인 이미지</small></div></article>)}
           </div>
         </div>
       </section>

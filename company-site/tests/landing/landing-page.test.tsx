@@ -136,6 +136,16 @@ describe("LandingPage", () => {
     ).not.toBeInTheDocument();
   });
 
+  it("uses a dense two-column campaign grid and shared depth surfaces", () => {
+    const { container } = render(<StairCleaningLanding />);
+
+    expect(container.querySelector(".stair-campaign-grid")).toBeInTheDocument();
+    expect(container.querySelectorAll(".stair-campaign-card")).toHaveLength(8);
+    expect(
+      container.querySelectorAll(".stair-depth-card").length,
+    ).toBeGreaterThanOrEqual(8);
+  });
+
   it("answers scope, process, and contract questions before the stair-cleaning estimate", () => {
     render(<StairCleaningLanding />);
 
