@@ -1,5 +1,5 @@
 import type { Metadata } from "next";
-import LandingPage from "../landing/LandingPage";
+import MoveInCleaningLanding from "../landing/MoveInCleaningLanding";
 import { landingServices } from "../landing/services";
 
 const service = landingServices["move-in-cleaning"];
@@ -22,5 +22,5 @@ export const metadata: Metadata = {
 };
 
 export default function MoveInCleaningPage() {
-  return <LandingPage service={service} />;
+  return <MoveInCleaningLanding />;
 }

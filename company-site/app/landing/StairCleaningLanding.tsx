@@ -11,10 +11,10 @@ const facts = [
 ] as const;
 
 const scopes = [
-  ["01", "공용창·유리", "손자국과 먼지가 눈에 잘 보이는 공용창과 유리를 정기적으로 관리합니다.", "/landing/cleaning/bringcare-window-cleaning.png", "브링케어 유니폼 작업자의 창문 청소 연출 이미지"],
-  ["02", "바닥·모서리", "복도와 계단 바닥은 물론 벽면과 맞닿는 모서리의 오염까지 정리합니다.", "/landing/cleaning/bringcare-floor-edge-cleaning.png", "브링케어 유니폼 작업자의 바닥 모서리 청소 연출 이미지"],
-  ["03", "창틀·레일", "먼지와 오염이 쌓이기 쉬운 창틀과 레일을 장비와 브러시로 관리합니다.", "/landing/cleaning/bringcare-balcony-track-cleaning.png", "브링케어 유니폼 작업자의 창틀 레일 청소 연출 이미지"],
-  ["04", "출입구·수납공간", "공동현관 주변과 공용 수납공간을 열어 안쪽까지 꼼꼼하게 정리합니다.", "/landing/cleaning/bringcare-entry-shoe-cabinet-cleaning.png", "브링케어 유니폼 작업자의 출입구 수납공간 청소 연출 이미지"],
+  ["01", "계단·난간", "계단의 먼지와 생활 오염을 제거하고 손이 자주 닿는 난간 주변을 정리합니다.", "/landing/cleaning/bringcare-stair-mop-up.png", "브링케어 유니폼 작업자의 계단 밀대 청소 연출 이미지"],
+  ["02", "계단 모서리", "밀대로 놓치기 쉬운 계단 끝과 벽면 모서리를 브러시로 세부 청소합니다.", "/landing/cleaning/bringcare-stair-corner-brush.png", "브링케어 유니폼 작업자의 계단 모서리 브러시 청소 연출 이미지"],
+  ["03", "공동현관·안전설비", "건물의 첫인상이 되는 현관과 공용 안전설비 주변을 함께 정돈합니다.", "/landing/cleaning/bringcare-fire-extinguisher-area.png", "브링케어 유니폼 작업자의 공용부 소화기 주변 청소 연출 이미지"],
+  ["04", "공용창·창틀", "손자국과 먼지가 눈에 잘 보이는 공용창과 창틀을 정기적으로 관리합니다.", "/landing/cleaning/bringcare-common-window.png", "브링케어 유니폼 작업자의 공용창 청소 연출 이미지"],
 ] as const;
 
 const references = [
@@ -63,7 +63,7 @@ export default function StairCleaningLanding() {
 
       <section className="stair-hero" aria-labelledby="stair-title">
         <div className="stair-hero-card">
-          <Image src="/landing/cleaning/bringcare-window-cleaning.png" alt="브링케어 유니폼 작업자의 창문 청소 연출 이미지" fill priority unoptimized sizes="(max-width: 820px) 100vw, 1240px" />
+          <Image src="/landing/cleaning/bringcare-stair-mop-up.png" alt="브링케어 유니폼 작업자의 계단 밀대 청소 연출 이미지" fill priority unoptimized sizes="(max-width: 820px) 100vw, 1240px" />
           <span className="stair-image-disclosure">브링케어 서비스 연출 이미지</span>
           <div className="stair-hero-copy">
             <p className="stair-eyebrow">원주 직영팀 · 계단/공용부 정기청소</p>
@@ -95,11 +95,11 @@ export default function StairCleaningLanding() {
 
       <section className="stair-section" id="field" aria-labelledby="stair-field-title">
         <div className="stair-inner">
-          <div className="stair-section-head"><p>CLEANING DETAIL</p><h2 id="stair-field-title">보이는 곳만 닦지 않습니다.</h2><span>브링케어가 확인하는 세부 청소 범위를 작업 연출 이미지로 보여드립니다.</span></div>
+          <div className="stair-section-head"><p>CLEANING DETAIL</p><h2 id="stair-field-title">계단 한 칸부터<br />공용창까지 관리합니다.</h2><span>건물 공용부에서 반복적으로 오염되는 구역을 작업 범위에 맞춰 관리합니다.</span></div>
           <div className="stair-gallery">
-            <figure><Image src="/landing/cleaning/bringcare-kitchen-hood-cleaning.png" alt="브링케어 유니폼 작업자의 후드 청소 연출 이미지" fill unoptimized sizes="(max-width: 820px) 100vw, 58vw" /><figcaption><strong>상부·환기 설비</strong><span>손이 잘 닿지 않는 높은 곳의 오염까지 확인합니다.</span><small>브링케어 서비스 연출 이미지</small></figcaption></figure>
-            <figure><Image src="/landing/cleaning/bringcare-bathroom-drain-cleaning.png" alt="브링케어 유니폼 작업자의 배수구 청소 연출 이미지" fill unoptimized sizes="(max-width: 820px) 100vw, 42vw" /><figcaption><strong>배수구·습식 공간</strong><span>오염이 쉽게 남는 틈과 배수 주변을 정리합니다.</span><small>브링케어 서비스 연출 이미지</small></figcaption></figure>
-            <figure><Image src="/landing/cleaning/bringcare-ceiling-vent-cleaning.png" alt="브링케어 유니폼 작업자의 환기구 청소 연출 이미지" fill unoptimized sizes="(max-width: 820px) 100vw, 42vw" /><figcaption><strong>천장·환기구</strong><span>시선보다 높은 구역도 작업 범위에 맞춰 관리합니다.</span><small>브링케어 서비스 연출 이미지</small></figcaption></figure>
+            <figure><Image src="/landing/cleaning/bringcare-stair-mop-down.png" alt="브링케어 유니폼 작업자의 계단 하행 밀대 청소 연출 이미지" fill unoptimized sizes="(max-width: 820px) 100vw, 58vw" /><figcaption><strong>계단 바닥</strong><span>한 층씩 이동하며 계단의 먼지와 생활 오염을 정리합니다.</span><small>브링케어 서비스 연출 이미지</small></figcaption></figure>
+            <figure><Image src="/landing/cleaning/bringcare-stair-corner-brush.png" alt="브링케어 유니폼 작업자의 계단 모서리 브러시 청소 연출 이미지" fill unoptimized sizes="(max-width: 820px) 100vw, 42vw" /><figcaption><strong>모서리·틈새</strong><span>밀대가 닿기 어려운 계단 끝과 벽면 틈을 세부 청소합니다.</span><small>브링케어 서비스 연출 이미지</small></figcaption></figure>
+            <figure><Image src="/landing/cleaning/bringcare-common-window.png" alt="브링케어 유니폼 작업자의 공용창 청소 연출 이미지" fill unoptimized sizes="(max-width: 820px) 100vw, 42vw" /><figcaption><strong>공용창·창틀</strong><span>건물 안으로 빛이 들어오는 공용창의 손자국과 먼지를 관리합니다.</span><small>브링케어 서비스 연출 이미지</small></figcaption></figure>
           </div>
         </div>
       </section>

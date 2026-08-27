@@ -4,6 +4,7 @@ import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { describe, expect, it, vi } from "vitest";
 import LandingPage from "../../app/landing/LandingPage";
+import MoveInCleaningLanding from "../../app/landing/MoveInCleaningLanding";
 import StairCleaningLanding from "../../app/landing/StairCleaningLanding";
 import { landingServices } from "../../app/landing/services";
 
@@ -12,6 +13,27 @@ vi.mock("next/navigation", () => ({
 }));
 
 describe("LandingPage", () => {
+  it("renders a dedicated move-in cleaning page with only move-in cleaning scenes", () => {
+    const { container } = render(<MoveInCleaningLanding />);
+
+    expect(
+      screen.getByRole("heading", { name: /새 공간의 첫날/ }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getAllByText("브링케어 서비스 연출 이미지").length,
+    ).toBeGreaterThan(1);
+    expect(screen.getAllByText("일반 단건 입·퇴실청소")).toHaveLength(2);
+    expect(screen.getByText("관리 건물 입·퇴실청소")).toBeInTheDocument();
+    expect(container.querySelector("#quick-estimate-form")).toBeInTheDocument();
+    expect(
+      screen.getAllByAltText(/브링케어 유니폼 작업자의 욕실 배수구 청소/)[0],
+    ).toHaveAttribute(
+      "src",
+      "/landing/cleaning/bringcare-bathroom-drain-cleaning.png",
+    );
+    expect(screen.queryByAltText(/계단 밀대 청소/)).not.toBeInTheDocument();
+  });
+
   it("renders the approved Toss-style stair cleaning sales page with the live estimate form", () => {
     const { container } = render(<StairCleaningLanding />);
 
@@ -36,9 +58,11 @@ describe("LandingPage", () => {
     expect(
       screen.getAllByText("브링케어 서비스 연출 이미지").length,
     ).toBeGreaterThanOrEqual(2);
-    expect(
-      screen.getAllByAltText("브링케어 유니폼 작업자의 창문 청소 연출 이미지")[0],
-    ).toHaveAttribute("src", "/landing/cleaning/bringcare-window-cleaning.png");
+    expect(screen.getAllByAltText(/브링케어 유니폼 작업자의 계단 밀대 청소/)[0]).toHaveAttribute(
+      "src",
+      "/landing/cleaning/bringcare-stair-mop-up.png",
+    );
+    expect(screen.queryByAltText(/욕실 배수구 청소/)).not.toBeInTheDocument();
     expect(
       screen.getByRole("link", { name: /무료 견적 신청.*30초 만에 입력하기/ }),
     ).toHaveAttribute("href", "#estimate");
