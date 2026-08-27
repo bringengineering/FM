@@ -17,9 +17,10 @@ function sourceBetween(startText, endText) {
 
 test("customer management navigation is a folder with vacancy as a child", () => {
   assert.match(indexSource, /data-nav-folder="customer-management"/);
-  assert.match(indexSource, /data-nav-folder-toggle[^>]*aria-expanded="true"/);
-  assert.match(indexSource, /data-view="customers"[^>]*>[\s\S]*?고객·건물 관리/);
-  assert.match(indexSource, /data-view="vacancies"[^>]*>[\s\S]*?공실 현황/);
+  assert.match(indexSource, /data-nav-folder-toggle[^>]*aria-expanded="true"[^>]*>[\s\S]*?<b>고객 관리<\/b><i aria-hidden="true">/);
+  assert.match(indexSource, /data-view="customers"[^>]*>[\s\S]*?<b>고객·건물 관리<\/b><em id="navCustomerCount">0<\/em><\/button>/);
+  assert.equal((indexSource.match(/id="navCustomerCount"/g) || []).length, 1);
+  assert.match(indexSource, /data-view="vacancies"[^>]*>[\s\S]*?<b>공실 현황<\/b><em id="navVacancyCount">0<\/em><\/button>/);
   assert.doesNotMatch(indexSource, /data-view="buildings"/);
   assert.match(appSource, /button\.dataset\.view === "customers" && currentView === "buildings"/);
 });
