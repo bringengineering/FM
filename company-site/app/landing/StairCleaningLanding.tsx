@@ -48,6 +48,22 @@ const references = [
   },
 ] as const;
 
+const includedWork = ["계단·난간 청소", "복도·승강기 홀", "공동현관 정리", "공용창·창틀", "월간 관리보고"] as const;
+const optionalWork = ["바닥 왁스·코팅", "외벽·고압세척", "대량 폐기물 처리", "특수오염 제거", "전문 수리·시공"] as const;
+const process = [
+  ["01 상담 접수", "건물 위치와 층수, 원하는 방문 횟수를 확인합니다."],
+  ["02 현장 확인", "공용부 범위와 오염도, 별도 작업 여부를 확인합니다."],
+  ["03 정기 청소", "협의한 일정에 원주 직영팀이 방문해 공용부를 관리합니다."],
+  ["04 월간 관리보고", "방문 이력과 시설 확인 사항을 한 달 단위로 정리합니다."],
+] as const;
+const faqs = [
+  ["건물주가 현장에 있어야 하나요?", "아닙니다. 출입 방법과 작업 범위가 정해지면 비대면으로 진행하고 월간 관리보고로 확인할 수 있습니다."],
+  ["주 2회·3회 방문도 가능한가요?", "가능합니다. 건물 규모와 유동 인구, 원하는 관리 수준을 확인한 뒤 방문 횟수를 협의합니다."],
+  ["청소도구와 소모품은 누가 준비하나요?", "기본 작업에 필요한 청소 장비와 도구는 브링케어 직영팀이 준비합니다. 건물 전용 비품이 필요한 경우 별도로 안내합니다."],
+  ["세금계산서 발행이 가능한가요?", "가능합니다. 안내된 금액은 부가세 별도이며 사업자 정보 확인 후 세금계산서를 발행합니다."],
+  ["오염이 심하면 가격이 달라지나요?", "기본 범위를 넘는 특수오염, 대량 적치물, 왁스·고압세척 등은 현장 확인 후 별도 견적으로 안내합니다."],
+] as const;
+
 export default function StairCleaningLanding() {
   return (
     <main className="stair-toss">
@@ -103,6 +119,16 @@ export default function StairCleaningLanding() {
         </div>
       </section>
 
+      <section className="stair-section stair-soft stair-boundary" aria-labelledby="stair-boundary-title">
+        <div className="stair-inner">
+          <div className="stair-section-head"><p>SCOPE GUIDE</p><h2 id="stair-boundary-title">기본 청소와 별도 작업을<br />미리 구분했습니다.</h2><span>처음 상담할 때 포함 범위를 먼저 확인해 예상하지 못한 추가 비용을 줄입니다.</span></div>
+          <div className="stair-boundary-grid">
+            <article><header><span>기본 포함</span><strong>정기청소 범위</strong></header><ul>{includedWork.map((item) => <li key={item}><b>✓</b>{item}</li>)}</ul></article>
+            <article className="stair-boundary-optional"><header><span>별도 협의</span><strong>추가 작업 범위</strong></header><ul>{optionalWork.map((item) => <li key={item}><b>＋</b>{item}</li>)}</ul><p>현장 작업비와 전문업체 시공비는 범위 확인 후 별도로 안내합니다.</p></article>
+          </div>
+        </div>
+      </section>
+
       <section className="stair-section stair-references" aria-labelledby="stair-reference-title">
         <div className="stair-inner">
           <div className="stair-section-head">
@@ -135,9 +161,19 @@ export default function StairCleaningLanding() {
         </div>
       </section>
 
+      <section className="stair-section stair-process" aria-labelledby="stair-process-title"><div className="stair-inner">
+        <div className="stair-section-head"><p>PROCESS</p><h2 id="stair-process-title">상담부터 월간보고까지<br />한 흐름으로 진행합니다.</h2><span>건물주가 매번 현장에 오지 않아도 관리 과정을 확인할 수 있게 구성했습니다.</span></div>
+        <ol className="stair-process-grid">{process.map(([title, copy]) => <li key={title}><strong>{title}</strong><p>{copy}</p></li>)}</ol>
+      </div></section>
+
       <section className="stair-section stair-soft stair-price-section" id="price" aria-labelledby="stair-price-title">
         <div className="stair-inner"><div className="stair-section-head"><p>PRICE</p><h2 id="stair-price-title">건물 규모에 맞춰<br />투명하게 안내합니다.</h2><span>기본 가격을 먼저 확인하고, 현장 여건에 따라 정확한 견적을 안내받으세요.</span></div><div className="stair-pricing"><header><div><span>월 4회 정기청소</span><small>기본 관리 기준</small></div><strong>6만원부터</strong></header><dl><div><dt>3층 건물</dt><dd>월 60,000원</dd></div><div><dt>4층 건물</dt><dd>월 70,000원</dd></div><div><dt>5층 건물</dt><dd>월 80,000원</dd></div></dl><p>※ 부가세 별도 · 오염도와 관리 범위에 따라 변동될 수 있습니다.</p><a className="stair-btn stair-btn-primary" href="#estimate">우리 건물 견적 확인</a></div></div>
       </section>
+
+      <section className="stair-section stair-faq" aria-labelledby="stair-faq-title"><div className="stair-inner">
+        <div className="stair-section-head"><p>FAQ</p><h2 id="stair-faq-title">자주 묻는 질문</h2><span>견적을 신청하기 전에 궁금한 내용을 먼저 확인하세요.</span></div>
+        <div className="stair-faq-list">{faqs.map(([question, answer], index) => <details key={question} open={index === 0}><summary>{question}<span aria-hidden="true">＋</span></summary><p>{answer}</p></details>)}</div>
+      </div></section>
 
       <section className="stair-estimate" id="estimate" aria-labelledby="stair-estimate-title"><div className="stair-estimate-wrap"><div className="stair-estimate-head"><p>QUICK ESTIMATE</p><h2 id="stair-estimate-title">건물 정보만 알려주세요.<br />빠르게 확인해드릴게요.</h2><span>필수 항목만 남겨주시면 원주 직영팀이 확인 후 연락드립니다.</span></div><QuickEstimateForm service="계단·공용부 청소" sourcePath="/stair-cleaning" /><div className="stair-kakao"><span>더 빠른 상담이 필요하신가요?</span><a href="https://pf.kakao.com/_xnaRfX/chat" target="_blank" rel="noreferrer">카카오톡으로 상담</a></div></div></section>
 

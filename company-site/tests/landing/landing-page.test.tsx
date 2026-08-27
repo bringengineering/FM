@@ -41,7 +41,7 @@ describe("LandingPage", () => {
       }),
     ).toBeInTheDocument();
     expect(screen.getAllByText("월 4회 정기방문")).toHaveLength(2);
-    expect(screen.getByText("월간 관리보고")).toBeInTheDocument();
+    expect(screen.getAllByText("월간 관리보고")).toHaveLength(2);
     expect(screen.getByText("시설 상태 확인")).toBeInTheDocument();
     expect(screen.getByText("원주 직영팀")).toBeInTheDocument();
     expect(
@@ -94,6 +94,26 @@ describe("LandingPage", () => {
         name: /실제 현장기록 보기/,
       }),
     ).toHaveLength(4);
+  });
+
+  it("answers scope, process, and contract questions before the stair-cleaning estimate", () => {
+    render(<StairCleaningLanding />);
+
+    expect(
+      screen.getByRole("heading", { name: /기본 청소와 별도 작업을.*미리 구분했습니다/ }),
+    ).toBeInTheDocument();
+    expect(screen.getByText("계단·난간 청소")).toBeInTheDocument();
+    expect(screen.getByText("바닥 왁스·코팅")).toBeInTheDocument();
+    expect(
+      screen.getByRole("heading", { name: /상담부터 월간보고까지.*한 흐름으로 진행합니다/ }),
+    ).toBeInTheDocument();
+    expect(screen.getByText("01 상담 접수")).toBeInTheDocument();
+    expect(screen.getByText("04 월간 관리보고")).toBeInTheDocument();
+    expect(
+      screen.getByRole("heading", { name: "자주 묻는 질문" }),
+    ).toBeInTheDocument();
+    expect(screen.getByText("건물주가 현장에 있어야 하나요?")).toBeInTheDocument();
+    expect(screen.getByText("세금계산서 발행이 가능한가요?")).toBeInTheDocument();
   });
   it.each([
     ["stair-cleaning", /원주 계단·공용부 정기청소/],

@@ -77,6 +77,27 @@
 .stair-reference-copy h3 { margin: 0 0 12px; font-size: 24px; }
 .stair-reference-copy p { min-height: 52px; margin: 0; color: #bdcde0; font-size: 14px; line-height: 1.75; }
 .stair-reference-copy a { margin-top: 22px; display: inline-flex; align-items: center; gap: 7px; color: #8ebaff; font-size: 14px; font-weight: 850; }
+.stair-boundary-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 18px; }
+.stair-boundary-grid article { padding: 34px; border-radius: 30px; background: #fff; box-shadow: 0 18px 42px rgba(16,48,86,.07); }
+.stair-boundary-grid header span, .stair-boundary-grid header strong { display: block; }
+.stair-boundary-grid header span { margin-bottom: 8px; color: var(--stair-blue); font-size: 13px; font-weight: 900; }
+.stair-boundary-grid header strong { font-size: 27px; }
+.stair-boundary-grid ul { margin: 28px 0 0; padding: 0; display: grid; gap: 15px; list-style: none; }
+.stair-boundary-grid li { display: flex; align-items: center; gap: 12px; color: #40536a; font-size: 16px; font-weight: 750; }
+.stair-boundary-grid li b { width: 28px; height: 28px; display: grid; place-items: center; border-radius: 50%; background: #e4edff; color: var(--stair-blue); }
+.stair-boundary-optional li b { background: #eef1f5; color: #73849a; }
+.stair-boundary-optional > p { margin: 24px 0 0; padding-top: 20px; border-top: 1px solid var(--stair-line); color: var(--stair-sub); font-size: 13px; line-height: 1.65; }
+.stair-process-grid { margin: 0; padding: 0; display: grid; grid-template-columns: repeat(4, 1fr); gap: 14px; list-style: none; }
+.stair-process-grid li { min-height: 205px; padding: 30px 26px; border: 1px solid var(--stair-line); border-radius: 26px; background: #fff; }
+.stair-process-grid strong { display: block; color: var(--stair-blue); font-size: 18px; }
+.stair-process-grid p { margin: 38px 0 0; color: var(--stair-sub); font-size: 14px; line-height: 1.7; }
+.stair-faq-list { border-top: 1px solid var(--stair-line); }
+.stair-faq-list details { border-bottom: 1px solid var(--stair-line); }
+.stair-faq-list summary { padding: 26px 4px; display: flex; align-items: center; justify-content: space-between; gap: 20px; color: var(--stair-text); font-size: 20px; font-weight: 800; cursor: pointer; list-style: none; }
+.stair-faq-list summary::-webkit-details-marker { display: none; }
+.stair-faq-list summary span { color: var(--stair-blue); font-size: 28px; font-weight: 500; transition: transform .2s ease; }
+.stair-faq-list details[open] summary span { transform: rotate(45deg); }
+.stair-faq-list details > p { max-width: 760px; margin: -4px 0 0; padding: 0 4px 28px; color: var(--stair-sub); font-size: 16px; line-height: 1.75; }
 .stair-report-grid { display: grid; grid-template-columns: .92fr 1.08fr; gap: 68px; align-items: center; }
 .stair-report-copy h2 { margin: 0 0 23px; font-size: 56px; font-weight: 850; line-height: 1.12; letter-spacing: -3.1px; }
 .stair-report-copy > span { color: var(--stair-sub); font-size: 17px; line-height: 1.8; }
@@ -144,11 +165,17 @@
   .stair-section h2, .stair-report-copy h2, .stair-estimate h2 { margin-bottom: 26px; font-size: 40px; line-height: 1.22; letter-spacing: -2.2px; }
   .stair-section-head { margin-bottom: 48px; }
   .stair-section-head > span { font-size: 16px; }
-  .stair-scope-grid, .stair-gallery, .stair-report-grid, .stair-reference-grid { grid-template-columns: 1fr; }
+  .stair-scope-grid, .stair-gallery, .stair-report-grid, .stair-reference-grid, .stair-boundary-grid, .stair-process-grid { grid-template-columns: 1fr; }
   .stair-scope-grid article { padding: 26px; border-radius: 24px; }
   .stair-gallery { gap: 24px; }
   .stair-gallery figure, .stair-gallery figure:first-child { aspect-ratio: 1 / 1; height: auto; grid-row: auto; border-radius: 30px; }
   .stair-reference-copy p { min-height: auto; }
+  .stair-boundary-grid article { padding: 27px 23px; border-radius: 25px; }
+  .stair-process-grid { gap: 16px; }
+  .stair-process-grid li { min-height: auto; padding: 27px 24px; }
+  .stair-process-grid p { margin-top: 18px; }
+  .stair-faq-list summary { padding: 23px 2px; font-size: 18px; line-height: 1.5; }
+  .stair-faq-list details > p { font-size: 15px; }
   .stair-report-grid { gap: 38px; }
   .stair-report-card { padding: 24px 20px; border-radius: 24px; }
   .stair-pricing { padding: 26px 20px; border-radius: 26px; }
