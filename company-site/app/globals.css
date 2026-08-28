@@ -328,17 +328,6 @@ a {
   background: #dce5ed;
 }
 
-.hero-media::before {
-  position: absolute;
-  inset: -24px;
-  background:
-    linear-gradient(rgba(5, 27, 49, 0.12), rgba(5, 27, 49, 0.12)),
-    url("/brand-campaign/bringcare-suited-team-building-v3.png") center / cover;
-  content: "";
-  filter: blur(18px);
-  transform: scale(1.08);
-}
-
 .hero-media img {
   position: relative;
   z-index: 1;
