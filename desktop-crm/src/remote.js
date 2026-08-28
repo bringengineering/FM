@@ -866,6 +866,7 @@ class FirebaseRemoteClient {
     this.onCustomerPhotos = options.onCustomerPhotos || (() => {});
     this.onAuthState = options.onAuthState || (() => {});
     this.onSyncState = options.onSyncState || (() => {});
+    this.fieldSummariesEnabled = options.fieldSummariesEnabled !== false;
     this.session = null;
     this.remotePayload = null;
     this.lastError = "";
@@ -1729,6 +1730,7 @@ class FirebaseRemoteClient {
   }
 
   async loadFieldSummaries(guardValue) {
+    if (!this.fieldSummariesEnabled) return {};
     const guard = guardValue || this.captureSessionGuard();
     if (!this.sessionGuardActive(guard)) return null;
     const value = await this.dbRequest("fieldSummaries", { method: "GET" });
@@ -1826,7 +1828,7 @@ class FirebaseRemoteClient {
     const guard = guardValue || this.captureSessionGuard();
     const [buildingUnits, fieldSummaries] = await Promise.all([
       this.loadCanonicalBuildingUnits(guard),
-      this.loadFieldSummaries(guard)
+      this.fieldSummariesEnabled ? this.loadFieldSummaries(guard) : Promise.resolve({})
     ]);
     if (!this.sessionGuardActive(guard)) return null;
     return this.Core.sanitizeRendererOverlays({ buildingUnits, fieldSummaries });
@@ -3066,6 +3068,7 @@ class FirebaseRemoteClient {
   }
 
   scheduleOverlayReload() {
+    if (!this.fieldSummariesEnabled) return;
     const guard = this.captureSessionGuard();
     if (!this.sessionGuardActive(guard)) return;
     clearTimeout(this.overlayReloadTimer);
@@ -3150,7 +3153,7 @@ class FirebaseRemoteClient {
       });
       this.streamTask = trackedShared;
     }
-    if (!this.summaryStreamTask) {
+    if (this.fieldSummariesEnabled && !this.summaryStreamTask) {
       let trackedSummary;
       trackedSummary = this.streamLoop("fieldSummaries", "fieldSummaries", generation).finally(() => {
         if (this.summaryStreamTask === trackedSummary) this.summaryStreamTask = null;
@@ -3187,6 +3190,7 @@ class FirebaseRemoteClient {
   }
 
   handleStreamEvent(kind, eventName) {
+    if (kind === "fieldSummaries" && !this.fieldSummariesEnabled) return undefined;
     if (eventName === "put" || eventName === "patch") {
       if (kind === "fieldSummaries") return this.scheduleOverlayReload();
       if (kind === "customerPhotos") return this.scheduleCustomerPhotoReload();
@@ -3203,6 +3207,7 @@ class FirebaseRemoteClient {
   }
 
   async streamLoop(location, kind, generation) {
+    if (kind === "fieldSummaries" && !this.fieldSummariesEnabled) return;
     const controllerKey = kind === "fieldSummaries"
       ? "summaryStreamController"
       : kind === "customerPhotos" ? "customerPhotoStreamController" : "streamController";

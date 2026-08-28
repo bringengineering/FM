@@ -1,5 +1,11 @@
 const { contextBridge, ipcRenderer } = require("electron");
 
+const fieldOperationsDisabled = () => Promise.resolve({
+  ok: false,
+  code: "FIELD_OPERATIONS_DISABLED",
+  error: "현장 업무 기능은 제거되었습니다.",
+});
+
 contextBridge.exposeInMainWorld("bringCRM", {
   authState: () => ipcRenderer.invoke("crm:auth-state"),
   login: credentials => ipcRenderer.invoke("crm:auth-login", credentials),
@@ -9,7 +15,7 @@ contextBridge.exposeInMainWorld("bringCRM", {
   load: () => ipcRenderer.invoke("crm:load"),
   save: data => ipcRenderer.invoke("crm:save", data),
   loadCanonicalBuildingUnits: () => ipcRenderer.invoke("crm:canonical-building-units-load"),
-  loadFieldSummaries: () => ipcRenderer.invoke("crm:field-summaries-load"),
+  loadFieldSummaries: () => Promise.resolve({}),
   loadCustomerPhotos: () => ipcRenderer.invoke("crm:customer-photos-load"),
   saveCustomerPhoto: input => ipcRenderer.invoke("crm:customer-photo-save", input),
   loadDriveImportCandidates: () => ipcRenderer.invoke("crm:drive-import-candidates-load"),
@@ -34,13 +40,13 @@ contextBridge.exposeInMainWorld("bringCRM", {
   checkForUpdates: () => ipcRenderer.invoke("crm:update-check"),
   installUpdate: () => ipcRenderer.invoke("crm:update-install"),
   loadFieldTeamProfiles: () => ipcRenderer.invoke("crm:field-team-profiles"),
-  showFieldPlatform: input => ipcRenderer.invoke("crm:show-field-platform", input),
-  hideFieldPlatform: () => ipcRenderer.invoke("crm:hide-field-platform"),
-  setFieldBounds: rect => ipcRenderer.invoke("crm:field-bounds", rect),
-  fieldRequest: envelope => ipcRenderer.invoke("crm:field-request", envelope),
-  cancelFieldRequest: requestId => ipcRenderer.invoke("crm:field-cancel", requestId),
-  reconnectFieldPlatform: () => ipcRenderer.invoke("crm:field-reconnect"),
-  reauthenticateFieldPlatform: () => ipcRenderer.invoke("crm:field-reauthenticate-google"),
+  showFieldPlatform: fieldOperationsDisabled,
+  hideFieldPlatform: fieldOperationsDisabled,
+  setFieldBounds: fieldOperationsDisabled,
+  fieldRequest: fieldOperationsDisabled,
+  cancelFieldRequest: fieldOperationsDisabled,
+  reconnectFieldPlatform: fieldOperationsDisabled,
+  reauthenticateFieldPlatform: fieldOperationsDisabled,
   showValueScope: input => ipcRenderer.invoke("crm:show-valuescope", input),
   hideValueScope: () => ipcRenderer.invoke("crm:hide-valuescope"),
   setValueScopeBounds: rect => ipcRenderer.invoke("crm:valuescope-bounds", rect),
@@ -73,16 +79,8 @@ contextBridge.exposeInMainWorld("bringCRM", {
     ipcRenderer.on("crm:update-state", listener);
     return () => ipcRenderer.removeListener("crm:update-state", listener);
   },
-  onFieldEvent: callback => {
-    const listener = (_event, envelope) => callback(envelope);
-    ipcRenderer.on("crm:field-event", listener);
-    return () => ipcRenderer.removeListener("crm:field-event", listener);
-  },
-  onFieldState: callback => {
-    const listener = (_event, state) => callback(state);
-    ipcRenderer.on("crm:field-state", listener);
-    return () => ipcRenderer.removeListener("crm:field-state", listener);
-  },
+  onFieldEvent: () => () => {},
+  onFieldState: () => () => {},
   onValueScopeEvent: callback => {
     const listener = (_event, envelope) => callback(envelope);
     ipcRenderer.on("crm:valuescope-event", listener);

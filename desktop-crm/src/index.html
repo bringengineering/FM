@@ -22,7 +22,7 @@
       <div class="login-logo"><img src="./assets/bring-logo.png" alt="BRING 로고"></div>
       <span>BRING ENGINEERING</span>
       <h1 id="loginTitle">공용 CRM 로그인</h1>
-      <p id="loginDescription">허용된 회사 이메일과 비밀번호로 로그인하면<br>CRM과 BRING FIELD를 함께 사용할 수 있습니다.</p>
+      <p id="loginDescription">허용된 회사 이메일과 비밀번호로 로그인하면<br>BRING CRM을 사용할 수 있습니다.</p>
       <button id="googleLoginButton" class="email-login-button google-login-button" type="button" hidden>Google 로그인</button>
       <form id="emailLoginForm" class="login-form">
         <label><span>이메일</span><input id="loginEmail" name="email" type="email" autocomplete="username" placeholder="회사에서 허용한 이메일" required></label>
@@ -58,7 +58,6 @@
         </div>
         <button class="nav-item" data-view="buildingCalendar"><span>▣</span><b>업무일정 캘린더</b></button>
         <button class="nav-item" data-view="workManagement"><span>✓</span><b>작업관리</b></button>
-        <button class="nav-item" data-view="fieldOperations"><span aria-hidden="true">▣</span><span class="nav-copy"><b>현장 업무</b><small data-field-subtitle>BRING FIELD</small></span></button>
         <button class="nav-item" data-view="valueScope"><span aria-hidden="true">⌖</span><span class="nav-copy"><b>지도·밸류스코프</b><small>BRING VALUESCOPE</small></span></button>
         <button class="nav-item" data-view="consultations"><span>☎</span><b>상담 기록</b><em id="navConsultationCount">0</em></button>
         <button class="nav-item" data-view="tasks"><span>✓</span><b>영업 할 일</b><em id="navTaskCount">0</em></button>
@@ -92,7 +91,7 @@
           <button id="primaryActionButton" class="primary-button" data-action="new-customer">＋ 새 고객</button>
         </div>
       </header>
-      <main id="main" class="main-content" aria-live="polite"><section id="fieldWorkspaceState" class="field-workspace-state" hidden><div role="status" aria-live="polite">현장 업무를 준비하고 있습니다.</div></section></main>
+      <main id="main" class="main-content" aria-live="polite"></main>
     </section>
   </div>
 

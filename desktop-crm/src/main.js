@@ -49,6 +49,13 @@ const FIELD_PLATFORM_URL = "https://bring-fm.web.app/field";
 const FIELD_AUTH_CLEANUP_URL = "https://bring-fm.web.app/crm-auth";
 const FIELD_AUTH_PARTITION = "persist:bring-field";
 const FIELD_AUTH_QUARANTINE_MARKER = "BRING_FIELD_AUTH_QUARANTINE_V1\n";
+// FIELD is retired from the CRM. Legacy helpers stay dormant so existing browser
+// storage and remote records remain untouched during the removal release.
+const FIELD_OPERATIONS_ENABLED = false;
+
+function fieldOperationsDisabledResult() {
+  return { ok: false, code: "FIELD_OPERATIONS_DISABLED", error: "현장 업무 기능은 제거되었습니다." };
+}
 
 if (process.env.BRING_CRM_SCREENSHOT || process.env.BRING_CRM_SMOKE === "1") app.disableHardwareAcceleration();
 
@@ -113,6 +120,9 @@ let localBuildingScheduleCommitQueue = Promise.resolve();
 const fieldRequestCoordinator = createFieldRequestCoordinator({
   timeoutMs: FIELD_BRIDGE_TIMEOUT_MS,
   send: envelope => {
+    if (!FIELD_OPERATIONS_ENABLED) {
+      throw Object.assign(new Error("FIELD_OPERATIONS_DISABLED"), { code: "FIELD_OPERATIONS_DISABLED" });
+    }
     if (!fieldView || fieldView.webContents.isDestroyed()) throw new Error("FIELD_VIEW_UNAVAILABLE");
     fieldView.webContents.send("crm:field-message", envelope);
   },
@@ -146,7 +156,7 @@ const fieldSessionRecoveryCoordinator = createFieldSharedSessionRecoveryCoordina
 });
 
 const applicationExitCoordinator = createFieldExitCoordinator({
-  shouldInspect: () => fieldWasOpenedThisRun,
+  shouldInspect: () => FIELD_OPERATIONS_ENABLED && fieldWasOpenedThisRun,
   ensureReady: async () => ensureFieldReadyForLogout(),
   checkPending: async fieldHandle => requestFieldPendingUploads(fieldHandle),
   recoverPendingInspection: async () => {
@@ -351,6 +361,7 @@ function hideFieldView() {
 }
 
 function emitFieldState(status, message = "") {
+  if (!FIELD_OPERATIONS_ENABLED) return;
   sendToRenderer("crm:field-state", {
     status,
     message,
@@ -421,6 +432,7 @@ function assertFieldViewCreationAllowed() {
 }
 
 function syncFieldSession(state = authState()) {
+  if (!FIELD_OPERATIONS_ENABLED) return "";
   const nextUserId = String(state && state.user && state.user.uid || "");
   if (nextUserId !== fieldSessionUserId) {
     if (fieldView) destroyFieldView();
@@ -568,6 +580,9 @@ function destroyFieldView() {
 }
 
 function ensureFieldView() {
+  if (!FIELD_OPERATIONS_ENABLED) {
+    throw Object.assign(new Error("FIELD_OPERATIONS_DISABLED"), { code: "FIELD_OPERATIONS_DISABLED" });
+  }
   fieldWasOpenedThisRun = true;
   assertFieldViewCreationAllowed();
   if (fieldView && !fieldView.webContents.isDestroyed()) return fieldView;
@@ -872,6 +887,7 @@ function fieldBridgeSenderContext(event) {
 }
 
 function trustedFieldIpc(event) {
+  if (!FIELD_OPERATIONS_ENABLED) return false;
   if (!fieldView || fieldView.webContents.isDestroyed()) return false;
   if (!(event.sender === fieldView.webContents)) return false;
   if (!event.senderFrame || event.senderFrame !== event.sender.mainFrame) return false;
@@ -908,6 +924,7 @@ async function openFieldExternal(rawUrl) {
 }
 
 async function showFieldView(input = {}, crmEvent) {
+  if (!FIELD_OPERATIONS_ENABLED) return fieldOperationsDisabledResult();
   const blockedCode = fieldReauthenticationBlockCode({ includeAuthenticationRequired: true });
   if (blockedCode) {
     const blocked = fieldReauthenticationBlockedResult(blockedCode);
@@ -994,6 +1011,7 @@ async function showFieldView(input = {}, crmEvent) {
 }
 
 async function reconnectFieldView() {
+  if (!FIELD_OPERATIONS_ENABLED) return fieldOperationsDisabledResult();
   if (!verifiedFieldReconnectActive()) {
     const blockedCode = fieldReauthenticationBlockCode({ includeAuthenticationRequired: true });
     if (blockedCode) {
@@ -1032,6 +1050,7 @@ async function reconnectFieldView() {
 }
 
 ipcMain.on("crm:field-reconnect-request", event => {
+  if (!FIELD_OPERATIONS_ENABLED) return;
   if (!trustedFieldIpc(event)) return;
   void reconnectFieldView();
 });
@@ -1050,14 +1069,17 @@ function settleFieldAuthSignout(event, input, succeeded) {
 }
 
 ipcMain.on("crm:field-auth-signout-complete", (event, input) => {
+  if (!FIELD_OPERATIONS_ENABLED) return;
   settleFieldAuthSignout(event, input, true);
 });
 
 ipcMain.on("crm:field-auth-signout-failed", (event, input) => {
+  if (!FIELD_OPERATIONS_ENABLED) return;
   settleFieldAuthSignout(event, input, false);
 });
 
 ipcMain.on("crm:field-message", (event, envelopeInput) => {
+  if (!FIELD_OPERATIONS_ENABLED) return;
   if (!trustedFieldIpc(event)) return;
   const result = validateFieldMessage(envelopeInput, {
     direction: "fieldToCrm",
@@ -1166,6 +1188,7 @@ function fieldAuthQuarantineFile() {
 }
 
 async function loadFieldAuthQuarantineMarker() {
+  if (!FIELD_OPERATIONS_ENABLED) return false;
   try {
     await fs.stat(fieldAuthQuarantineFile());
     fieldBrowserAuthQuarantined = true;
@@ -1180,6 +1203,7 @@ async function loadFieldAuthQuarantineMarker() {
 }
 
 async function persistFieldAuthQuarantineMarker() {
+  if (!FIELD_OPERATIONS_ENABLED) return;
   fieldBrowserAuthQuarantined = true;
   fieldAuthenticationRequired = true;
   let handle = null;
@@ -1195,6 +1219,7 @@ async function persistFieldAuthQuarantineMarker() {
 }
 
 async function clearFieldAuthQuarantineMarker() {
+  if (!FIELD_OPERATIONS_ENABLED) return;
   try {
     await fs.unlink(fieldAuthQuarantineFile());
   } catch (error) {
@@ -1349,7 +1374,7 @@ async function finishApplicationExit(reason) {
 }
 
 async function requestApplicationExit(reason) {
-  const blockedCode = fieldReauthenticationBlockCode();
+  const blockedCode = FIELD_OPERATIONS_ENABLED ? fieldReauthenticationBlockCode() : "";
   if (blockedCode) {
     const blocked = fieldReauthenticationBlockedResult(blockedCode);
     emitFieldState("auth-required", blocked.error);
@@ -1365,6 +1390,7 @@ async function requestApplicationExit(reason) {
 
 async function performApplicationExitRequest(reason) {
   const result = await applicationExitCoordinator.request(reason);
+  if (!FIELD_OPERATIONS_ENABLED) return result;
   if (result.ok || result.code === "FIELD_EXIT_CANCELLED") return result;
   if (result.code === "FIELD_EXIT_CHECK_FAILED") {
     emitFieldState("disconnected", "현장 업무 자동 연결에 실패했습니다. CRM 연결을 확인한 뒤 다시 연결해 주세요.");
@@ -1393,7 +1419,7 @@ async function performApplicationExitRequest(reason) {
 
 async function promptToInstallUpdate() {
   if (
-    fieldReauthenticationBlockCode()
+    (FIELD_OPERATIONS_ENABLED && fieldReauthenticationBlockCode())
     || updatePromptOpen
     || updateState.status !== "ready"
     || !mainWindow
@@ -2238,7 +2264,7 @@ function commitLocalCanonicalCrmEntity(input) {
 
 async function initializeRemote() {
   if (localTestMode || authPreview || passwordPreview) return;
-  await loadFieldAuthQuarantineMarker();
+  if (FIELD_OPERATIONS_ENABLED) await loadFieldAuthQuarantineMarker();
   remoteClient = new FirebaseRemoteClient({
     Core,
     fs,
@@ -2246,6 +2272,7 @@ async function initializeRemote() {
     shell,
     openGoogleAuth: openCrmGoogleAuth,
     openEmailAuth: openCrmEmailAuth,
+    fieldSummariesEnabled: FIELD_OPERATIONS_ENABLED,
     sessionFile: authSessionFile(),
     pendingFile: pendingFile(),
     canonicalPendingFile: canonicalPendingFile(),
@@ -2255,7 +2282,7 @@ async function initializeRemote() {
     onRemoteStore: data => sendToRenderer("crm:remote-data", data),
     onCustomerPhotos: photos => sendToRenderer("crm:customer-photos", sanitizeCustomerPhotoMap(photos)),
     onAuthState: state => {
-      syncFieldSession(state);
+      if (FIELD_OPERATIONS_ENABLED) syncFieldSession(state);
       sendToRenderer("crm:auth-state", state);
     },
     onSyncState: state => sendToRenderer("crm:sync-state", state)
@@ -2401,21 +2428,6 @@ async function createWindow() {
           && description.includes('허용된 회사 이메일')
           && description.includes('비밀번호');
         return { pass, email: input.value, readOnly: input.readOnly, disabled: input.disabled, passwordDisabled: password.disabled, description };
-      })()`, true);
-    } else if (process.env.BRING_CRM_SCREENSHOT_ACTION === "field-job-form") {
-      actionResult = await mainWindow.webContents.executeJavaScript(`(async () => {
-        const wait = ms => new Promise(resolve => setTimeout(resolve, ms));
-        document.querySelector('[data-view="fieldOperations"]')?.click();
-        await wait(120);
-        document.querySelector('[data-action="new-field-job"]')?.click();
-        await wait(80);
-        const form = document.getElementById('fieldJobForm');
-        return {
-          pass: Boolean(form && document.getElementById('modal')?.classList.contains('open')),
-          sourceCount: form?.elements.source?.options?.length || 0,
-          assigneeCount: form?.elements.assignedOperatorId?.options?.length || 0,
-          view: window.__crmTest?.snapshot().view,
-        };
       })()`, true);
     } else if (process.env.BRING_CRM_SCREENSHOT_ACTION === "new-customer") {
       actionResult = await mainWindow.webContents.executeJavaScript('document.querySelector("[data-action=\\"new-customer\\"]")?.click(); window.__crmTest?.snapshot()', true);
@@ -4737,7 +4749,7 @@ async function createWindow() {
 
 secureHandle("crm:auth-state", () => authState());
 secureHandle("crm:auth-login", async credentials => {
-  if (fieldReauthenticationActive || fieldReauthInFlight) {
+  if (FIELD_OPERATIONS_ENABLED && (fieldReauthenticationActive || fieldReauthInFlight)) {
     return fieldReauthenticationBlockedResult("FIELD_REAUTH_IN_PROGRESS");
   }
   if (!remoteClient) return { ok: false, error: "로그인 모듈을 사용할 수 없습니다." };
@@ -4750,7 +4762,7 @@ secureHandle("crm:auth-login", async credentials => {
   }
 });
 secureHandle("crm:auth-google-login", async () => {
-  if (fieldReauthenticationActive || fieldReauthInFlight) {
+  if (FIELD_OPERATIONS_ENABLED && (fieldReauthenticationActive || fieldReauthInFlight)) {
     return fieldReauthenticationBlockedResult("FIELD_REAUTH_IN_PROGRESS");
   }
   if (!remoteClient) return { ok: false, error: "로그인 모듈을 사용할 수 없습니다." };
@@ -4763,6 +4775,7 @@ secureHandle("crm:auth-google-login", async () => {
   }
 });
 secureCanonicalHandle("crm:field-reauthenticate-google", async () => {
+  if (!FIELD_OPERATIONS_ENABLED) return fieldOperationsDisabledResult();
   if (fieldReauthInFlight) return fieldReauthInFlight;
   if (
     crmAuthenticationRequestCount > 0
@@ -4888,7 +4901,7 @@ secureCanonicalHandle("crm:field-reauthenticate-google", async () => {
   }
 });
 secureHandle("crm:auth-change-password", async password => {
-  if (fieldReauthenticationActive || fieldReauthInFlight) {
+  if (FIELD_OPERATIONS_ENABLED && (fieldReauthenticationActive || fieldReauthInFlight)) {
     return fieldReauthenticationBlockedResult("FIELD_REAUTH_IN_PROGRESS");
   }
   if (!remoteClient) return { ok: false, error: "로그인 모듈을 사용할 수 없습니다." };
@@ -4898,6 +4911,19 @@ secureHandle("crm:auth-change-password", async password => {
   finally { crmAuthenticationRequestCount = Math.max(0, crmAuthenticationRequestCount - 1); }
 });
 secureCanonicalHandle("crm:auth-logout", async input => {
+  if (!FIELD_OPERATIONS_ENABLED) {
+    if (fieldLogoutInFlight) return fieldLogoutInFlight;
+    fieldLogoutInFlight = (async () => {
+      closeCrmAuthWindow();
+      if (remoteClient) await remoteClient.logout();
+      return { ok: true };
+    })();
+    try {
+      return await fieldLogoutInFlight;
+    } finally {
+      fieldLogoutInFlight = null;
+    }
+  }
   const blockedCode = fieldReauthenticationBlockCode();
   if (blockedCode) return fieldReauthenticationBlockedResult(blockedCode);
   if (fieldLogoutInFlight) return fieldLogoutInFlight;
@@ -4930,9 +4956,7 @@ secureCanonicalHandle("crm:canonical-building-units-load", async () => {
   return remoteClient.loadCanonicalBuildingUnits();
 });
 secureCanonicalHandle("crm:field-summaries-load", async () => {
-  if (localTestMode) return {};
-  if (!remoteClient || !remoteClient.authState().user) throw new Error("로그인이 필요합니다.");
-  return remoteClient.loadFieldSummaries();
+  return {};
 });
 secureCanonicalHandle("crm:customer-photos-load", async () => {
   if (localTestMode) return sanitizeCustomerPhotoMap(localCustomerPhotos);
@@ -5042,6 +5066,7 @@ secureHandle("crm:update-install", async () => {
   return requestApplicationExit("update");
 });
 secureCanonicalHandle("crm:field-bounds", async rect => {
+  if (!FIELD_OPERATIONS_ENABLED) return fieldOperationsDisabledResult();
   const measured = fieldBounds(rect);
   if (measured.width < 1 || measured.height < 1) return { ok: false, code: "FIELD_BOUNDS_INVALID" };
   fieldMeasuredBounds = measured;
@@ -5062,6 +5087,7 @@ secureCanonicalHandle("crm:hide-valuescope", async () => {
   return { ok: true };
 });
 secureCanonicalHandle("crm:field-request", async (envelope, event) => {
+  if (!FIELD_OPERATIONS_ENABLED) return fieldOperationsDisabledResult();
   const blockedCode = fieldReauthenticationBlockCode({ includeAuthenticationRequired: true });
   if (blockedCode) return fieldReauthenticationBlockedResult(blockedCode);
   const validation = validateFieldMessage(envelope, {
@@ -5076,16 +5102,25 @@ secureCanonicalHandle("crm:field-request", async (envelope, event) => {
     return { ok: false, code: error && error.code || "FIELD_REQUEST_FAILED" };
   }
 });
-secureCanonicalHandle("crm:field-cancel", async requestId => ({ ok: fieldRequestCoordinator.cancel(String(requestId || "")) }));
+secureCanonicalHandle("crm:field-cancel", async requestId => (
+  FIELD_OPERATIONS_ENABLED
+    ? { ok: fieldRequestCoordinator.cancel(String(requestId || "")) }
+    : fieldOperationsDisabledResult()
+));
 secureCanonicalHandle("crm:show-field-platform", async (input, event) => {
+  if (!FIELD_OPERATIONS_ENABLED) return fieldOperationsDisabledResult();
   try {
     return await showFieldView(input, event);
   } catch (_error) {
     return { ok: false, error: "BRING FIELD를 열지 못했습니다." };
   }
 });
-secureCanonicalHandle("crm:hide-field-platform", async () => hideFieldView());
-secureCanonicalHandle("crm:field-reconnect", async () => reconnectFieldView());
+secureCanonicalHandle("crm:hide-field-platform", async () => (
+  FIELD_OPERATIONS_ENABLED ? hideFieldView() : fieldOperationsDisabledResult()
+));
+secureCanonicalHandle("crm:field-reconnect", async () => (
+  FIELD_OPERATIONS_ENABLED ? reconnectFieldView() : fieldOperationsDisabledResult()
+));
 secureHandle("crm:open-external", async rawUrl => {
   try {
     const url = new URL(String(rawUrl || ""));

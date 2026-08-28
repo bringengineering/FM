@@ -171,29 +171,17 @@ test("verified reconnect rechecks the exact CRM session generation before and af
   assert.match(handler, /await reconnectFieldView\(\)[\s\S]*?assertExpectedSession\(\)[\s\S]*?await clearFieldAuthQuarantineMarker\(\)/);
 });
 
-test("window close, menu quit, and update restart share a data-preserving upload exit gate", async () => {
+test("window close, menu quit, and update restart bypass the retired FIELD upload gate", async () => {
   const main = await source("main.js");
   const menu = main.slice(main.indexOf("function buildMenu"), main.indexOf("async function createWindow"));
   const createWindow = main.slice(main.indexOf("async function createWindow"), main.indexOf("secureHandle(\"crm:auth-state\""));
   const install = main.slice(main.indexOf('secureHandle("crm:update-install"'), main.indexOf('secureCanonicalHandle("crm:field-bounds"'));
   const beforeQuit = main.slice(main.indexOf('app.on("before-quit"'));
-  const unknownConfirmation = main.slice(
-    main.indexOf("async function confirmApplicationExitWithoutFieldStatus"),
-    main.indexOf("async function finishApplicationExit"),
-  );
-
+  assert.match(main, /const FIELD_OPERATIONS_ENABLED = false/);
   assert.match(main, /createFieldExitCoordinator/);
-  assert.match(main, /shouldInspect: \(\) => fieldWasOpenedThisRun/);
-  assert.match(main, /function ensureFieldView\(\) \{\s+fieldWasOpenedThisRun = true;/);
-  assert.match(main, /createFieldEnvelope\("crm\.logoutCheck", \{ reason: "logout" \}\)/);
-  assert.match(main, /recoverPendingInspection: async \(\) => \{[\s\S]*?await reconnectFieldView\(\)[\s\S]*?result && result\.ok/);
-  assert.match(main, /confirmUnknown: async reason => confirmApplicationExitWithoutFieldStatus\(reason\)/);
-  assert.match(unknownConfirmation, /result\.response === 0[\s\S]*?await reconnectFieldView\(\)[\s\S]*?return false/);
-  assert.match(main, /저장된 현장 자료는 이 PC에 그대로 보존됩니다/);
-  assert.match(main, /"그래도 종료"/);
-  assert.match(main, /"그래도 재시작"/);
-  assert.match(main, /FIELD_EXIT_CHECK_FAILED/);
-  assert.match(main, /아직 업로드하지 못한 현장 자료/);
+  assert.match(main, /shouldInspect: \(\) => FIELD_OPERATIONS_ENABLED && fieldWasOpenedThisRun/);
+  const exitRequest = main.slice(main.indexOf("async function performApplicationExitRequest"), main.indexOf("async function promptToInstallUpdate"));
+  assert.match(exitRequest, /await applicationExitCoordinator\.request\(reason\)[\s\S]*?if \(!FIELD_OPERATIONS_ENABLED\) return result/);
   assert.match(menu, /requestApplicationExit\("menu"\)/);
   assert.match(createWindow, /mainWindow\.on\("close", event =>[\s\S]*?event\.preventDefault\(\)[\s\S]*?requestApplicationExit\("window"\)/);
   assert.match(install, /requestApplicationExit\("update"\)/);

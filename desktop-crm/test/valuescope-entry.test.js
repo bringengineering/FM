@@ -25,14 +25,14 @@ test("workspace keeps map failures local and writer actions role-aware", () => {
   assert.match(app, /canWriteCRM\(\).*CRM 영업 대상 등록/s);
   assert.match(app, /data-action="valuescope-open-original"/);
   assert.match(app, /data-action="valuescope-register-prospect"/);
-  assert.match(app, /data-action="valuescope-create-field-job"/);
+  assert.doesNotMatch(app, /data-action="valuescope-create-field-job"/);
 });
 
-test("ValueScope search and view transitions do not disturb FIELD state", () => {
+test("ValueScope search and view transitions remain self-contained", () => {
   const app = src("app.js");
   assert.match(app, /currentView === "valueScope"/);
   assert.match(app, /measureValueScopeWorkspace/);
   assert.match(app, /hideValueScope/);
-  assert.match(app, /hideFieldPlatform/);
+  assert.doesNotMatch(app, /hideFieldPlatform/);
   assert.match(app, /"valueScope"/);
 });

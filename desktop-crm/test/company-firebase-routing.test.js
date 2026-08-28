@@ -46,17 +46,23 @@ test("company namespace maps legacy client names without changing legacy export 
   assert.equal(resolveDatabaseLocation("crmAccess/uid-1", ""), "crmAccess/uid-1");
 });
 
-test("desktop exposes only the four narrow canonical overlay IPC routes", async () => {
+test("desktop exposes canonical CRM overlay IPC without a FIELD summary network bridge", async () => {
   const [main, preload] = await Promise.all([source("main.js"), source("preload.js")]);
   for (const channel of [
     "crm:canonical-building-units-load",
     "crm:canonical-building-units-configure",
-    "crm:field-summaries-load",
     "crm:canonical-entity-commit"
   ]) {
     assert.match(main, new RegExp(`secureCanonicalHandle\\(\\"${channel}\\"`));
     assert.match(preload, new RegExp(`ipcRenderer\\.invoke\\(\\"${channel}\\"`));
   }
+  assert.doesNotMatch(preload, /ipcRenderer\.invoke\("crm:field-summaries-load"/);
+  const retiredSummaryHandler = main.slice(
+    main.indexOf('secureCanonicalHandle("crm:field-summaries-load"'),
+    main.indexOf('secureCanonicalHandle("crm:customer-photos-load"'),
+  );
+  assert.match(retiredSummaryHandler, /return \{\};/);
+  assert.doesNotMatch(retiredSummaryHandler, /remoteClient|dbRequest/);
   assert.match(main, /remoteClient\.commitCanonicalCrmEntity\(payload\)/);
   assert.match(main, /const payload = Object\.assign\(Object\.create\(null\), input, \{ buildVersion: app\.getVersion\(\) \}\)/);
   assert.match(main, /remoteClient\.configureBuildingUnits\(payload\)/);
@@ -131,7 +137,7 @@ test("canonical IPC trusts only the exact main CRM frame and index file", async 
   assert.equal(trustedCanonicalIpc({ sender: otherContents, senderFrame: otherFrame }, otherWindow, entryPath), false);
 });
 
-test("local smoke mode loads empty read-only overlays without requiring a remote login", async () => {
+test("local smoke mode loads canonical units while retired FIELD summaries stay empty", async () => {
   const main = await source("main.js");
 
   assert.match(
@@ -140,7 +146,11 @@ test("local smoke mode loads empty read-only overlays without requiring a remote
   );
   assert.match(
     main,
-    /secureCanonicalHandle\("crm:field-summaries-load"[\s\S]*?if \(localTestMode\) return \{\};[\s\S]*?remoteClient\.loadFieldSummaries\(\)/
+    /secureCanonicalHandle\("crm:field-summaries-load", async \(\) => \{\s*return \{\};\s*\}\);/
+  );
+  assert.doesNotMatch(
+    main.slice(main.indexOf('secureCanonicalHandle("crm:field-summaries-load"'), main.indexOf('secureCanonicalHandle("crm:customer-photos-load"')),
+    /remoteClient\.loadFieldSummaries\(\)/,
   );
 });
 

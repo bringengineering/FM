@@ -6,11 +6,14 @@ const vm = require("node:vm");
 
 const source = file => readFile(path.join(__dirname, "..", "src", file), "utf8");
 
-test("preloads expose narrow envelopes without tokens or arbitrary shell access", async () => {
+test("CRM preload keeps retired FIELD bridges local and fail-closed", async () => {
   const [preload, fieldPreload] = await Promise.all([source("preload.js"), source("field-preload.js")]);
 
-  assert.match(preload, /fieldRequest:\s*envelope\s*=>\s*ipcRenderer\.invoke\("crm:field-request",\s*envelope\)/);
-  assert.match(preload, /onFieldEvent:/);
+  assert.match(preload, /const fieldOperationsDisabled = \(\) => Promise\.resolve\(\{/);
+  assert.match(preload, /code:\s*"FIELD_OPERATIONS_DISABLED"/);
+  assert.match(preload, /fieldRequest:\s*fieldOperationsDisabled/);
+  assert.match(preload, /onFieldEvent:\s*\(\) => \(\) => \{\}/);
+  assert.doesNotMatch(preload, /ipcRenderer\.invoke\("crm:field-(?:request|cancel|reconnect|reauthenticate-google|summaries-load|bounds)"/);
   assert.match(fieldPreload, /event\.source !== window/);
   assert.match(fieldPreload, /event\.origin !== FIELD_ORIGIN/);
   assert.match(fieldPreload, /ipcRenderer\.send\("crm:field-message",\s*event\.data\)/);
@@ -117,20 +120,18 @@ test("main verifies both renderers exactly and mediates logout, external links, 
   assert.match(main, /cancelFieldRequests/);
 });
 
-test("logout preserves upload storage and waits for FIELD auth signout before CRM logout", async () => {
+test("logout bypasses retired FIELD checks without clearing preserved upload storage", async () => {
   const [app, main, policy] = await Promise.all([source("app.js"), source("main.js"), source("field-view-policy.js")]);
 
-  assert.match(app, /api\.logout\(\{\s*confirmed:/);
-  assert.match(app, /미완료 업로드/);
-  assert.match(main, /pendingUploads/);
+  assert.match(app, /const result = await api\.logout\(\)/);
+  assert.doesNotMatch(app, /FIELD_LOGOUT_PENDING|미완료 업로드/);
   assert.match(policy, /FIELD_LOGOUT_PENDING/);
   assert.match(main, /remoteClient\.logout\(\)/);
 
   const logout = main.slice(main.indexOf('secureCanonicalHandle("crm:auth-logout"'), main.indexOf('secureHandle("crm:load"'));
-  assert.match(logout, /ensureFieldReadyForLogout\(\)/);
-  assert.match(logout, /signOutFieldAuthentication\(/);
-  assert.ok(logout.indexOf("crm.logoutCheck") < logout.indexOf("signOutFieldAuthentication"));
-  assert.ok(logout.indexOf("signOutFieldAuthentication") < logout.indexOf("remoteClient.logout"));
+  const retiredBranch = logout.slice(logout.indexOf("if (!FIELD_OPERATIONS_ENABLED)"), logout.indexOf("const blockedCode"));
+  assert.match(retiredBranch, /remoteClient\.logout\(\)/);
+  assert.doesNotMatch(retiredBranch, /ensureFieldReadyForLogout|signOutFieldAuthentication|crm\.logoutCheck|pendingUploads/);
   assert.doesNotMatch(logout, /clearStorageData|clearCache|indexedDB\.deleteDatabase|caches\.delete/);
   assert.doesNotMatch(main, /clearStorageData\(\{\s*origin:\s*FIELD_ORIGIN/);
   assert.match(main, /FIELD_SESSION_CLEAR_FAILED/);

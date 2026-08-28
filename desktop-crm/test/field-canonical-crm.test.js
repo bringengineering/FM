@@ -1048,14 +1048,15 @@ test("pending synchronization returns and publishes freshly loaded renderer over
   assert.equal(remoteStores.at(-1).buildingUnits[0].id, "unit_1");
 });
 
-test("renderer refreshes overlays on load and reconnect without mixing them into save payloads", async () => {
+test("renderer refreshes canonical units without reading retired FIELD summaries or mixing overlays into saves", async () => {
   const { readFile } = require("node:fs/promises");
   const path = require("node:path");
   const appSource = await readFile(path.join(__dirname, "..", "src", "app.js"), "utf8");
 
   assert.match(appSource, /async function refreshRendererOverlays/);
   assert.match(appSource, /api\.loadCanonicalBuildingUnits\(\)/);
-  assert.match(appSource, /api\.loadFieldSummaries\(\)/);
+  assert.doesNotMatch(appSource, /api\.loadFieldSummaries\(\)/);
+  assert.match(appSource, /fieldSummaries:\s*store\.fieldSummaries/);
   assert.match(appSource, /await refreshRendererOverlays\(false\)/);
   assert.match(appSource, /state\.status === "connected".*refreshRendererOverlays/s);
   assert.match(appSource, /function preserveRendererOverlays/);

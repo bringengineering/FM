@@ -39,7 +39,7 @@ test("uses an editable approved email-password login as the only CRM login", asy
   assert.doesNotMatch(remote, /password === "123456"/);
 });
 
-test("FIELD Google reauthentication stays CRM-owned and never exposes credentials to the FIELD renderer", async () => {
+test("retired FIELD Google reauthentication is fail-closed and never exposes credentials", async () => {
   const [main, remote, preload, fieldPreload] = await Promise.all([
     source("main.js"),
     source("remote.js"),
@@ -49,7 +49,10 @@ test("FIELD Google reauthentication stays CRM-owned and never exposes credential
 
   assert.match(remote, /async reauthenticateFieldWithGoogle\(options = \{\}\)/);
   assert.match(main, /secureCanonicalHandle\("crm:field-reauthenticate-google"/);
-  assert.match(preload, /reauthenticateFieldPlatform:\s*\(\)\s*=>\s*ipcRenderer\.invoke\("crm:field-reauthenticate-google"\)/);
+  assert.match(main, /const FIELD_OPERATIONS_ENABLED = false/);
+  assert.match(main, /secureCanonicalHandle\("crm:field-reauthenticate-google", async \(\) => \{\s*if \(!FIELD_OPERATIONS_ENABLED\) return fieldOperationsDisabledResult\(\)/);
+  assert.match(preload, /reauthenticateFieldPlatform:\s*fieldOperationsDisabled/);
+  assert.doesNotMatch(preload, /ipcRenderer\.invoke\("crm:field-reauthenticate-google"\)/);
   assert.doesNotMatch(fieldPreload, /requestCredential/);
   assert.doesNotMatch(main, /crm:field-credential/);
   assert.doesNotMatch(preload, /reauthenticateFieldPlatform:\s*credentials/);

@@ -108,12 +108,6 @@
   let fieldProfilesAvailable = false;
   let fieldProfilesError = "";
   let selectedFieldOperatorId = "";
-  let fieldConnectionState = { status: "idle", message: "현장 업무를 준비하고 있습니다.", ready: false, pendingUploads: { count: 0, risk: "none" } };
-  let fieldNavigationState = { route: "/field?embedded=crm", selectedJobId: "", filter: {}, scrollTop: 0, search: "" };
-  let fieldResizeObserver = null;
-  let fieldOpenGeneration = 0;
-  let fieldReauthInProgress = false;
-  let fieldSearchTimer = null;
   let crmSearchValue = "";
   let valueScopeTab = "wonju";
   let valueScopeSelection = null;
@@ -131,7 +125,6 @@
     vacancies: ["층별 호실과 입퇴실 예정", "공실 현황"],
     buildingCalendar: ["건물별 일정을 날짜로 확인", "업무일정 캘린더"],
     workManagement: ["예정부터 완료·비용·증빙까지", "작업관리"],
-    fieldOperations: ["BRING FIELD", "현장 업무"],
     valueScope: ["BRING VALUESCOPE", "지도·밸류스코프"],
     consultations: ["전화·방문·미팅 내용", "상담 기록"],
     pipeline: ["건물 발굴부터 유료관리 전환까지", "영업 관리"],
@@ -506,33 +499,6 @@
     return `bring-crm:field-operator:${currentAuthUid() || "signed-out"}`;
   }
 
-  function fieldRouteStorageKey() {
-    return `bring-crm:field-route:${currentAuthUid() || "signed-out"}`;
-  }
-
-  function saveFieldNavigationState() {
-    try {
-      sessionStorage.setItem(fieldRouteStorageKey(), JSON.stringify(fieldNavigationState));
-    } catch (_error) {}
-  }
-
-  function restoreFieldNavigationState() {
-    const fallback = { route: "/field?embedded=crm", selectedJobId: "", filter: {}, scrollTop: 0, search: "" };
-    try {
-      const parsed = JSON.parse(sessionStorage.getItem(fieldRouteStorageKey()) || "null");
-      if (!parsed || typeof parsed !== "object" || typeof parsed.route !== "string" || !parsed.route.startsWith("/field")) return fallback;
-      return {
-        route: parsed.route.slice(0, 1024),
-        selectedJobId: /^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$/.test(String(parsed.selectedJobId || "")) ? String(parsed.selectedJobId || "") : "",
-        filter: parsed.filter && typeof parsed.filter === "object" && !Array.isArray(parsed.filter) ? parsed.filter : {},
-        scrollTop: Number.isInteger(parsed.scrollTop) && parsed.scrollTop >= 0 ? Math.min(parsed.scrollTop, 10000000) : 0,
-        search: String(parsed.search || "").slice(0, 256),
-      };
-    } catch (_error) {
-      return fallback;
-    }
-  }
-
   function activeFieldOperator() {
     return fieldTeamProfiles.find(profile => profile.active === true && profile.id === selectedFieldOperatorId) || null;
   }
@@ -596,11 +562,9 @@
       driveImportRefreshSequence += 1;
       customerPhotos = {};
       customerPhotoRefreshPromise = null;
-      fieldOpenGeneration += 1;
       fieldTeamProfiles = [];
       fieldProfilesAvailable = false;
       selectedFieldOperatorId = "";
-      fieldNavigationState = restoreFieldNavigationState();
     }
     return currentAuth;
   }
@@ -646,12 +610,9 @@
     if (overlayRefreshPromise) return overlayRefreshPromise;
     const generation = authGeneration;
     const uid = currentAuthUid();
-    const refreshPromise = Promise.all([
-      api.loadCanonicalBuildingUnits(),
-      api.loadFieldSummaries(),
-    ]).then(([buildingUnits, fieldSummaries]) => {
+    const refreshPromise = Promise.resolve(api.loadCanonicalBuildingUnits()).then(buildingUnits => {
       if (generation !== authGeneration || uid !== currentAuthUid()) return null;
-      const overlays = Core.sanitizeRendererOverlays({ buildingUnits, fieldSummaries });
+      const overlays = Core.sanitizeRendererOverlays({ buildingUnits, fieldSummaries: store.fieldSummaries });
       const merge = value => value ? Core.sanitizeRendererStore(Object.assign({}, value, overlays)) : value;
       store = merge(store);
       synchronizedStore = merge(synchronizedStore);
@@ -743,7 +704,7 @@
     loginForm.hidden = false;
     passwordChangeForm.hidden = true;
     loginTitle.textContent = "공용 CRM 로그인";
-    loginDescription.innerHTML = "허용된 회사 이메일과 비밀번호로 로그인하면<br>CRM과 BRING FIELD를 함께 사용할 수 있습니다.";
+    loginDescription.innerHTML = "허용된 회사 이메일과 비밀번호로 로그인하면<br>BRING CRM을 사용할 수 있습니다.";
     loginMessage.textContent = message || currentAuth.error || "허용된 회사 이메일과 비밀번호를 입력해 주세요.";
     loginMessage.className = `login-message${isError ? " error" : ""}`;
     loginEmail.readOnly = false;
@@ -1246,18 +1207,14 @@
     document.getElementById("navPartnerQuoteCount").textContent = store.partnerQuotes.filter(item => item.status !== "제외").length;
     document.getElementById("navTaskCount").textContent = store.tasks.filter(item => item.status !== "완료" && item.status !== "취소").length;
     document.body.classList.toggle("crm-read-only", !canWriteCRM());
-    const fieldView = currentView === "fieldOperations";
     const valueScopeView = currentView === "valueScope";
     const calendarView = currentView === "buildingCalendar";
-    searchEl.placeholder = valueScopeView ? "지도에서 주소·건물·중개사를 검색하세요" : fieldView ? "현장 업무 검색" : calendarView ? "건물명·일정 검색" : currentView === "vacancies" ? "건물명·주소 검색" : "고객·건물·연락처 검색";
-    searchEl.value = fieldView ? fieldNavigationState.search : calendarView ? workCalendarQuery : crmSearchValue;
-    primaryActionButton.hidden = valueScopeView || fieldView && !canWriteCRM();
+    searchEl.placeholder = valueScopeView ? "지도에서 주소·건물·중개사를 검색하세요" : calendarView ? "건물명·일정 검색" : currentView === "vacancies" ? "건물명·주소 검색" : "고객·건물·연락처 검색";
+    searchEl.value = calendarView ? workCalendarQuery : crmSearchValue;
+    primaryActionButton.hidden = valueScopeView;
     if (valueScopeView) {
       delete primaryActionButton.dataset.action;
       primaryActionButton.textContent = "";
-    } else if (fieldView) {
-      primaryActionButton.dataset.action = "new-field-job";
-      primaryActionButton.textContent = "＋ 현장 업무";
     } else if (currentView === "workManagement") {
       primaryActionButton.hidden = !canWriteCRM();
       primaryActionButton.dataset.action = "new-work-record";
@@ -1284,7 +1241,7 @@
       primaryActionButton.dataset.action = "new-customer";
       primaryActionButton.textContent = "＋ 새 고객";
     }
-    fieldOperatorControl.hidden = !["fieldOperations", "buildings", "vacancies", "pipeline"].includes(currentView);
+    fieldOperatorControl.hidden = !["buildings", "vacancies", "pipeline"].includes(currentView);
     if (!fieldOperatorControl.hidden) renderFieldOperatorControl();
   }
 
@@ -1295,6 +1252,7 @@
   }
 
   function render() {
+    if (!Object.hasOwn(viewMeta, currentView)) currentView = "dashboard";
     pageMeta();
     if (currentView === "dashboard") renderDashboard();
     else if (currentView === "cases") renderCases();
@@ -1304,7 +1262,6 @@
     else if (currentView === "vacancies") renderVacancies();
     else if (currentView === "buildingCalendar") renderBuildingCalendar();
     else if (currentView === "workManagement") renderWorkManagement();
-    else if (currentView === "fieldOperations") renderFieldOperations();
     else if (currentView === "valueScope") renderValueScope();
     else if (currentView === "consultations") renderConsultations();
     else if (currentView === "pipeline") renderPipeline();
@@ -1316,104 +1273,6 @@
     else if (currentView === "security") renderSecurity();
     else renderSettings();
     finishViewRender(currentView);
-  }
-
-  function renderFieldOperations() {
-    const selected = activeFieldOperator();
-    const disconnected = ["disconnected", "timeout", "error"].includes(fieldConnectionState.status);
-    const authRequired = fieldConnectionState.status === "auth-required";
-    const blocked = disconnected || authRequired;
-    const currentEmail = String(currentAuth.user && currentAuth.user.email || "").trim();
-    const operatorMessage = fieldProfilesAvailable
-      ? selected ? `현재 작업자: ${selected.name}` : "현장 업무를 등록하거나 변경하려면 현재 작업자를 선택해 주세요."
-      : fieldProfilesError || "작업자 명단을 확인할 수 없습니다. 조회는 가능하지만 등록·변경은 잠시 막힙니다.";
-    const title = authRequired
-      ? "Google 계정을 다시 연결해 주세요"
-      : disconnected ? "현장 업무 연결을 확인해 주세요" : "현장 업무를 불러오고 있습니다";
-    const action = authRequired
-      ? `<button type="button" class="primary-button field-google-reauth-button" data-action="reauthenticate-field-google"${fieldReauthInProgress ? " disabled" : ""}>${fieldReauthInProgress ? "Google 계정 확인 중…" : "Google 계정으로 다시 연결"}</button>`
-      : disconnected ? `<button type="button" class="secondary-button" data-action="reconnect-field">다시 연결</button>` : "";
-    main.innerHTML = `<section id="fieldWorkspaceState" class="field-workspace-state" data-state="${attr(fieldConnectionState.status)}">
-      <div class="field-state-card" role="status" aria-live="polite">
-        <span class="field-state-mark" aria-hidden="true"></span>
-        <div><b>${esc(title)}</b><p>${esc(fieldConnectionState.message || "잠시만 기다려 주세요.")}</p>${authRequired ? `<span class="field-auth-account"><strong>현재 CRM 계정</strong><em>${esc(currentEmail || "로그인된 CRM 계정")}</em></span>` : ""}<small>${esc(operatorMessage)}</small></div>
-        ${action}
-      </div>
-    </section>`;
-    void measureFieldWorkspace();
-    if (!blocked) {
-      const generation = ++fieldOpenGeneration;
-      requestAnimationFrame(() => { void openFieldOperations(generation); });
-    }
-  }
-
-  async function measureFieldWorkspace() {
-    const rect = main.getBoundingClientRect();
-    let result = { ok: false, code: "FIELD_BOUNDS_INVALID" };
-    if (rect.width > 0 && rect.height > 0) {
-      try {
-        result = await api.setFieldBounds({ x: rect.x, y: rect.y, width: rect.width, height: rect.height });
-      } catch (_error) {}
-    }
-    if (!fieldResizeObserver && typeof ResizeObserver === "function") {
-      fieldResizeObserver = new ResizeObserver(() => {
-        if (currentView === "fieldOperations") void measureFieldWorkspace();
-      });
-      fieldResizeObserver.observe(main);
-    }
-    return result;
-  }
-
-  async function openFieldOperations(generation) {
-    fieldConnectionState = Object.assign({}, fieldConnectionState, { status: "connecting", message: "현장 업무에 연결하고 있습니다.", ready: false });
-    await measureFieldWorkspace();
-    const result = await api.showFieldPlatform(Object.assign({}, fieldNavigationState, { operatorId: selectedFieldOperatorId }));
-    if (generation !== fieldOpenGeneration || currentView !== "fieldOperations") return;
-    if (!result.ok) {
-      fieldConnectionState = Object.assign({}, fieldConnectionState, { status: result.code === "FIELD_BRIDGE_TIMEOUT" ? "timeout" : "disconnected", message: result.error || "현장 업무에 연결하지 못했습니다.", ready: false });
-      renderFieldOperations();
-    }
-  }
-
-  async function sendFieldCommand(command, args = {}) {
-    if (!canWriteCRM()) {
-      showToast("조회 전용 계정은 현장 업무를 변경할 수 없습니다.", "error");
-      return null;
-    }
-    if (!activeFieldOperator()) {
-      showToast(fieldProfilesAvailable ? "현재 작업자를 먼저 선택해 주세요." : (fieldProfilesError || "작업자 명단을 확인할 수 없습니다."), "error");
-      fieldOperatorSelect?.focus();
-      return null;
-    }
-    const response = await api.fieldRequest({
-      protocolVersion: 2,
-      type: "field.command",
-      requestId: crypto.randomUUID(),
-      payload: { command, operatorId: selectedFieldOperatorId, args },
-    });
-    if (!response || response.ok === false || response.payload && response.payload.ok === false) {
-      showToast("현장 업무 요청을 처리하지 못했습니다. 연결 상태를 확인해 주세요.", "error");
-      return null;
-    }
-    return response;
-  }
-
-  function fieldJobEditor(prefill = {}) {
-    if (!canWriteCRM()) return showToast("조회 전용 계정은 현장 업무를 등록할 수 없습니다.", "error");
-    const activeBuildings = (store.buildings || []).filter(item => item && !item.archivedAt);
-    const activeProspects = (store.salesProspects || []).filter(item => item && !item.archivedAt);
-    const sources = [
-      ...activeBuildings.map(item => ({ id: `building:${item.id}`, label: `[관리 건물] ${item.name || item.address || item.id}` })),
-      ...activeProspects.map(item => ({ id: `prospect:${item.id}`, label: `[영업 대상] ${item.name || item.address || item.id}` })),
-    ];
-    if (!sources.length) return showToast("먼저 관리 건물이나 영업 대상을 등록해 주세요.", "error");
-    const preferredSource = prefill.crmBuildingId ? `building:${prefill.crmBuildingId}`
-      : prefill.crmSalesProspectId ? `prospect:${prefill.crmSalesProspectId}` : sources[0].id;
-    const selectedSource = sources.some(item => item.id === preferredSource) ? preferredSource : sources[0].id;
-    const profiles = fieldTeamProfiles.filter(item => item && item.active !== false);
-    const selectedAssignee = prefill.assignedOperatorId === null ? "" : String(prefill.assignedOperatorId || selectedFieldOperatorId || "");
-    modalContent.innerHTML = `<div class="modal-head"><div><h2>현장 업무 등록</h2><p>CRM의 건물 또는 영업 대상과 연결해 현장 작업을 배정합니다.</p></div><button class="close-button" data-action="close-modal">×</button></div><form id="fieldJobForm" class="modal-body"><div class="info-box">등록한 업무는 회사 서버에 저장되고 BRING FIELD의 담당자 작업 목록에 바로 표시됩니다.</div><div class="form-grid" style="margin-top:14px">${selectField("연결 대상 *", "source", sources.map(item => item.id), selectedSource, id => sources.find(item => item.id === id)?.label || id)}${selectField("작업 종류 *", "jobType", ["vacancy_capture", "move_out_check", "cleaning_before_after", "maintenance_inspection", "complaint_check", "repair_before_after"], prefill.jobType || "maintenance_inspection", value => ({ vacancy_capture: "공실 촬영", move_out_check: "퇴실 점검", cleaning_before_after: "청소 전·후", maintenance_inspection: "시설 점검", complaint_check: "민원 확인", repair_before_after: "수리 전·후" })[value] || value)}${field("작업 예정일 *", "dueDate", prefill.dueDate || todayKey(), "date")}${selectField("우선순위", "priority", ["normal", "high", "urgent", "low"], prefill.priority || "normal", value => ({ normal: "보통", high: "높음", urgent: "긴급", low: "낮음" })[value])}${selectField("담당자", "assignedOperatorId", ["", ...profiles.map(item => item.operatorId)], selectedAssignee, id => id ? (profiles.find(item => item.operatorId === id)?.displayName || id) : "미배정")}</div><div class="form-actions"><button type="button" class="secondary-button" data-action="close-modal">취소</button><button class="primary-button" type="submit">현장 업무 등록</button></div></form>`;
-    openModal();
   }
 
   const VALUE_SCOPE_URLS = Object.freeze({
@@ -1429,7 +1288,7 @@
   function renderValueScope() {
     const selection = valueScopeSelection;
     const failed = valueScopeState.status === "error";
-    main.innerHTML = `<section class="valuescope-workspace"><div class="valuescope-toolbar" role="tablist" aria-label="ValueScope 지도 선택">${VALUE_SCOPE_TABS.map(([tab, label]) => `<button type="button" role="tab" aria-selected="${valueScopeTab === tab}" class="valuescope-tab${valueScopeTab === tab ? " active" : ""}" data-valuescope-tab="${tab}">${label}</button>`).join("")}</div><div class="valuescope-layout"><div class="valuescope-map-card"><div id="valueScopeMapSlot" class="valuescope-map-slot" aria-label="ValueScope 지도 화면"></div><div class="valuescope-loading${failed ? " error" : ""}" ${valueScopeState.status === "ready" ? "hidden" : ""} role="status"><b>${failed ? "ValueScope 지도를 불러오지 못했습니다" : "지도를 불러오고 있습니다"}</b><p>${failed ? "CRM의 다른 업무와 저장 기능은 계속 사용할 수 있습니다." : esc(valueScopeState.message || "잠시만 기다려 주세요.")}</p></div></div><aside class="valuescope-action-card"><span class="valuescope-kicker">선택한 대상</span>${selection ? `<h3>${esc(selection.name)}</h3><p>${esc(selection.address || selection.category || "주소 정보 없음")}</p><div class="valuescope-summary">${esc(selection.summary || "지도에서 확인한 공개 정보입니다.")}</div>` : `<h3>지도에서 대상을 선택하세요</h3><p>건물이나 공인중개사를 누르면 CRM 연결 작업을 이어갈 수 있습니다.</p>`}<div class="valuescope-actions"><button type="button" class="secondary-button" data-action="valuescope-open-original">원본 지도 새 창에서 열기</button>${canWriteCRM() ? `<button type="button" class="primary-button" data-action="valuescope-register-prospect"${selection ? "" : " disabled"}>CRM 영업 대상 등록</button><button type="button" class="secondary-button" data-action="valuescope-create-field-job"${selection ? "" : " disabled"}>현장 업무 만들기</button>` : `<div class="info-box">조회 전용 계정은 지도와 연결된 CRM 기록만 볼 수 있습니다.</div>`}</div></aside></div></section>`;
+    main.innerHTML = `<section class="valuescope-workspace"><div class="valuescope-toolbar" role="tablist" aria-label="ValueScope 지도 선택">${VALUE_SCOPE_TABS.map(([tab, label]) => `<button type="button" role="tab" aria-selected="${valueScopeTab === tab}" class="valuescope-tab${valueScopeTab === tab ? " active" : ""}" data-valuescope-tab="${tab}">${label}</button>`).join("")}</div><div class="valuescope-layout"><div class="valuescope-map-card"><div id="valueScopeMapSlot" class="valuescope-map-slot" aria-label="ValueScope 지도 화면"></div><div class="valuescope-loading${failed ? " error" : ""}" ${valueScopeState.status === "ready" ? "hidden" : ""} role="status"><b>${failed ? "ValueScope 지도를 불러오지 못했습니다" : "지도를 불러오고 있습니다"}</b><p>${failed ? "CRM의 다른 업무와 저장 기능은 계속 사용할 수 있습니다." : esc(valueScopeState.message || "잠시만 기다려 주세요.")}</p></div></div><aside class="valuescope-action-card"><span class="valuescope-kicker">선택한 대상</span>${selection ? `<h3>${esc(selection.name)}</h3><p>${esc(selection.address || selection.category || "주소 정보 없음")}</p><div class="valuescope-summary">${esc(selection.summary || "지도에서 확인한 공개 정보입니다.")}</div>` : `<h3>지도에서 대상을 선택하세요</h3><p>건물이나 공인중개사를 누르면 CRM 연결 작업을 이어갈 수 있습니다.</p>`}<div class="valuescope-actions"><button type="button" class="secondary-button" data-action="valuescope-open-original">원본 지도 새 창에서 열기</button>${canWriteCRM() ? `<button type="button" class="primary-button" data-action="valuescope-register-prospect"${selection ? "" : " disabled"}>CRM 영업 대상 등록</button>` : `<div class="info-box">조회 전용 계정은 지도와 연결된 CRM 기록만 볼 수 있습니다.</div>`}</div></aside></div></section>`;
     void measureValueScopeWorkspace();
     const generation = ++valueScopeOpenGeneration;
     requestAnimationFrame(() => { void openValueScope(generation); });
@@ -1539,38 +1398,6 @@
         : "";
     showToast(`영업 대상을 등록했습니다.${hint}`, "success");
     return prospect;
-  }
-
-  async function sendFieldNavigation() {
-    return api.fieldRequest({
-      protocolVersion: 2,
-      type: "field.navigate",
-      requestId: crypto.randomUUID(),
-      payload: Object.assign({}, fieldNavigationState, { operatorId: selectedFieldOperatorId }),
-    });
-  }
-
-  async function navigateFromField(entityType, entityId) {
-    saveFieldNavigationState();
-    if (["buildings", "buildingUnits"].includes(entityType)) {
-      if (entityType === "buildingUnits") {
-        const unit = Object.values(store.buildingUnits || {}).find(item => item && String(item.id) === entityId);
-        selectedBuildingId = String(unit && (unit.crmBuildingId || unit.buildingId) || "");
-      } else selectedBuildingId = entityId;
-      currentView = "buildings";
-    } else if (["salesProspects", "salesUnits"].includes(entityType)) {
-      if (entityType === "salesUnits") selectedSalesProspectId = String(salesUnitById(entityId)?.prospectId || "");
-      else selectedSalesProspectId = entityId;
-      currentView = "pipeline";
-    } else if (entityType === "workflowCases") {
-      selectedCaseKey = entityId;
-      currentView = "cases";
-    } else if (entityType === "tasks") currentView = "tasks";
-    else return;
-    fieldOpenGeneration += 1;
-    await api.hideFieldPlatform();
-    render();
-    if (currentView === "buildings") requestDriveImportCandidatesRefresh();
   }
 
   function renderDashboard() {
@@ -3357,14 +3184,6 @@
     }
   }
 
-  function fieldReauthenticationMessage(code) {
-    if (code === "FIELD_REAUTH_CANCELLED") return "Google 계정 확인을 취소했습니다. 현장 업무를 사용하려면 다시 연결해 주세요.";
-    if (code === "FIELD_REAUTH_ACCOUNT_MISMATCH") return "현재 CRM 계정과 같은 Google 계정을 선택해 주세요.";
-    if (code === "FIELD_REAUTH_SESSION_CHANGED") return "CRM 로그인 상태가 변경되었습니다. 현재 계정을 확인한 뒤 다시 시도해 주세요.";
-    if (code === "FIELD_REAUTH_FAILED") return "Google 계정을 확인하지 못했습니다. 잠시 후 다시 시도해 주세요.";
-    return "Google 계정을 확인하지 못했습니다. 잠시 후 다시 시도해 주세요.";
-  }
-
   function buildingUnitEditor(buildingId, unitId) {
     if (deferCanonicalMutation("건물 호실")) return;
     const building = buildingById(buildingId);
@@ -4449,23 +4268,16 @@
     const nav = event.target.closest("[data-view]");
     if (nav) {
       const nextView = nav.dataset.view;
+      if (!Object.hasOwn(viewMeta, nextView)) return;
       const folder = nav.closest("[data-nav-folder]");
       if (folder) {
         folder.classList.add("open");
         folder.querySelector("[data-nav-folder-toggle]")?.setAttribute("aria-expanded", "true");
       }
-      if (currentView !== "fieldOperations" && nextView === "fieldOperations") crmSearchValue = searchEl.value;
-      if (currentView === "fieldOperations" && nextView !== "fieldOperations") {
-        fieldOpenGeneration += 1;
-        saveFieldNavigationState();
-        await api.hideFieldPlatform();
-        searchEl.value = crmSearchValue;
-      }
       if (currentView === "valueScope" && nextView !== "valueScope") {
         valueScopeOpenGeneration += 1;
         await api.hideValueScope();
       }
-      if (nextView === "valueScope" && currentView !== "valueScope") await api.hideFieldPlatform();
       currentView = nextView;
       if (currentView === "cases") caseListMode = "active";
       render();
@@ -5436,21 +5248,8 @@
     const action = actionControl?.dataset.action;
     if (!action) return;
     if (action === "logout") {
-      let result = await api.logout({ confirmed: false });
-      if (result && result.code === "FIELD_LOGOUT_PENDING") {
-        const count = Number(result.pendingUploads && result.pendingUploads.count || 0);
-        const confirmed = await requestConfirmation({
-          title: "미완료 업로드가 있습니다",
-          description: "로그아웃하면 현장 사진이나 서류 전송이 끝나지 않을 수 있습니다.",
-          target: `미완료 업로드 ${count}건`,
-          warning: "가능하면 업로드를 마친 뒤 로그아웃해 주세요.",
-          confirmLabel: "그래도 로그아웃",
-          tone: "warning",
-        });
-        if (!confirmed) return;
-        result = await api.logout({ confirmed: true });
-      }
-      if (!result || !result.ok) return showToast(result && result.error || "로그아웃 전에 현장 업무 저장 상태를 확인해 주세요.", "error");
+      const result = await api.logout();
+      if (!result || !result.ok) return showToast(result && result.error || "로그아웃하지 못했습니다. 잠시 후 다시 시도해 주세요.", "error");
       location.reload();
     }
     else if (action === "check-update") {
@@ -5466,62 +5265,10 @@
       if (!canWriteCRM()) return showToast("조회 전용 계정은 영업 대상 건물을 등록할 수 없습니다.", "error");
       salesProspectEditor("");
     }
-    else if (action === "new-field-job") fieldJobEditor();
     else if (action === "valuescope-open-original") await api.openExternal(VALUE_SCOPE_URLS[valueScopeTab]);
     else if (action === "valuescope-register-prospect") await registerValueScopeProspect();
-    else if (action === "valuescope-create-field-job") {
-      const prospect = await registerValueScopeProspect();
-      if (prospect) fieldJobEditor({ crmSalesProspectId: prospect.id });
-    }
     else if (action === "new-work-record") workRecordEditor("");
     else if (action === "new-building-schedule") buildingScheduleEditor("", actionControl.dataset.scheduleDate || workCalendarDate);
-    else if (action === "reconnect-field") {
-      fieldConnectionState = Object.assign({}, fieldConnectionState, { status: "connecting", message: "현장 업무에 다시 연결하고 있습니다.", ready: false });
-      const result = await api.reconnectFieldPlatform();
-      if (!result.ok) {
-        fieldConnectionState = Object.assign({}, fieldConnectionState, { status: "disconnected", message: result.error || "다시 연결하지 못했습니다.", ready: false });
-        renderFieldOperations();
-      } else {
-        fieldConnectionState = Object.assign({}, fieldConnectionState, { status: "connecting", message: "이전 현장 업무 화면을 복원하고 있습니다.", ready: true });
-        const generation = ++fieldOpenGeneration;
-        await openFieldOperations(generation);
-      }
-    }
-    else if (action === "reauthenticate-field-google") {
-      if (fieldReauthInProgress || fieldConnectionState.status !== "auth-required" || !currentAuth.user) return;
-      const generation = authGeneration;
-      const uid = currentAuthUid();
-      fieldReauthInProgress = true;
-      fieldConnectionState = Object.assign({}, fieldConnectionState, {
-        message: "Google 계정 확인 창에서 현재 CRM 계정을 선택해 주세요.",
-        ready: false,
-      });
-      renderFieldOperations();
-      let result;
-      try {
-        result = await api.reauthenticateFieldPlatform();
-      } catch (_error) {
-        result = { ok: false, code: "FIELD_REAUTH_FAILED" };
-      } finally {
-        fieldReauthInProgress = false;
-      }
-      if (generation !== authGeneration || uid !== currentAuthUid() || currentView !== "fieldOperations") return;
-      if (!result || !result.ok) {
-        fieldConnectionState = Object.assign({}, fieldConnectionState, {
-          status: "auth-required",
-          message: fieldReauthenticationMessage(result && result.code),
-          ready: false,
-        });
-        renderFieldOperations();
-        return;
-      }
-      fieldConnectionState = Object.assign({}, fieldConnectionState, {
-        status: "connecting",
-        message: "Google 계정 확인이 완료되었습니다. 현장 업무를 연결하고 있습니다.",
-        ready: false,
-      });
-      renderFieldOperations();
-    }
     else if (action === "open-sales-standards") openSalesStandards("");
     else if (action === "new-customer") customerEditor("");
     else if (action === "new-building") buildingEditor("", actionControl.dataset.customerId || "");
@@ -5765,36 +5512,6 @@
     event.preventDefault();
     const form = event.target;
     if (!canWriteCRM() && !["emailLoginForm", "passwordChangeForm"].includes(form.id)) return showToast("조회 전용 계정은 내용을 변경할 수 없습니다.", "error");
-    if (form.id === "fieldJobForm") {
-      if (form.dataset.submitting === "true") return;
-      const raw = Object.fromEntries(new FormData(form).entries());
-      const [sourceType, sourceId] = String(raw.source || "").split(":", 2);
-      if (!sourceId || !["building", "prospect"].includes(sourceType)) return showToast("현장 업무 연결 대상을 선택해 주세요.", "error");
-      const payload = {
-        jobType: String(raw.jobType || ""),
-        dueDate: String(raw.dueDate || ""),
-        priority: String(raw.priority || "normal"),
-        assignedOperatorId: raw.assignedOperatorId ? String(raw.assignedOperatorId) : null,
-        ...(sourceType === "building" ? { crmBuildingId: sourceId } : { crmSalesProspectId: sourceId }),
-      };
-      form.dataset.submitting = "true";
-      const submit = form.querySelector('button[type="submit"]');
-      if (submit) submit.disabled = true;
-      try {
-        const response = await sendFieldCommand("openCreateJob", payload);
-        if (!response) return;
-        closeModal();
-        showToast("현장 업무를 등록했습니다.", "success");
-        if (currentView === "fieldOperations") {
-          const generation = ++fieldOpenGeneration;
-          await openFieldOperations(generation);
-        }
-      } finally {
-        form.dataset.submitting = "false";
-        if (submit) submit.disabled = false;
-      }
-      return;
-    }
     if (form.id === "buildingScheduleForm") {
       if (!canWriteCRM()) return showToast("조회 전용 계정은 일정을 저장할 수 없습니다.", "error");
       if (form.dataset.submitting === "true") return;
@@ -6739,15 +6456,6 @@
   });
 
   searchEl.addEventListener("input", () => {
-    if (currentView === "fieldOperations") {
-      fieldNavigationState.search = searchEl.value.slice(0, 256);
-      saveFieldNavigationState();
-      clearTimeout(fieldSearchTimer);
-      fieldSearchTimer = setTimeout(() => {
-        void sendFieldNavigation();
-      }, 180);
-      return;
-    }
     if (currentView === "buildingCalendar") {
       workCalendarQuery = searchEl.value.slice(0, 160);
       renderBuildingCalendar();
@@ -6763,7 +6471,7 @@
     if (currentView === "partnerQuotes") renderPartnerQuotes();
     if (currentView === "pipeline") renderPipeline();
   });
-  searchEl.addEventListener("keydown", event => { if (event.key === "Enter") { if (["fieldOperations", "buildingCalendar"].includes(currentView)) return; if (!["cases", "buildings", "vacancies", "contracts", "partnerVendors", "partnerQuotes", "pipeline"].includes(currentView)) currentView = "customers"; render(); } });
+  searchEl.addEventListener("keydown", event => { if (event.key === "Enter") { if (currentView === "buildingCalendar") return; if (!["cases", "buildings", "vacancies", "contracts", "partnerVendors", "partnerQuotes", "pipeline"].includes(currentView)) currentView = "customers"; render(); } });
   fieldOperatorSelect.addEventListener("change", async () => {
     const previousOperatorId = selectedFieldOperatorId;
     const nextOperatorId = String(fieldOperatorSelect.value || "");
@@ -6777,11 +6485,6 @@
       else localStorage.removeItem(fieldOperatorStorageKey());
     } catch (_error) {}
     renderFieldOperatorControl();
-    if (nextOperatorId && previousOperatorId !== nextOperatorId && fieldConnectionState.ready) {
-      await sendFieldNavigation();
-    } else if (!nextOperatorId && previousOperatorId && fieldConnectionState.ready) {
-      await sendFieldNavigation();
-    }
     const selected = activeFieldOperator();
     showToast(selected ? `현재 작업자를 ${selected.name}(으)로 선택했습니다.` : "현재 작업자 선택을 해제했습니다.", selected ? "success" : "");
   });
@@ -6916,43 +6619,6 @@ document.addEventListener("keydown", event => {
   });
   api.onRemoteData(applyRemoteStore);
   api.onCustomerPhotos(photos => applyCustomerPhotos(photos));
-  api.onFieldEvent(envelope => {
-    if (!envelope || typeof envelope !== "object" || !envelope.payload) return;
-    if (envelope.type === "field.ready") {
-      if (envelope.payload.session === "authenticated") {
-        fieldConnectionState = Object.assign({}, fieldConnectionState, { status: "ready", message: "현장 업무가 연결되었습니다.", ready: true });
-        saveFieldNavigationState();
-      } else if (["missing", "expired"].includes(envelope.payload.session)) {
-        fieldConnectionState = Object.assign({}, fieldConnectionState, {
-          status: "connecting",
-          message: "CRM 로그인으로 현장 업무를 자동 연결하고 있습니다.",
-          ready: false,
-        });
-      }
-    } else if (envelope.type === "field.routeChanged") {
-      fieldNavigationState = Object.assign({}, fieldNavigationState, {
-        route: envelope.payload.route,
-        selectedJobId: String(envelope.payload.selectedJobId || ""),
-        filter: envelope.payload.filter && typeof envelope.payload.filter === "object" ? envelope.payload.filter : {},
-        scrollTop: Number.isInteger(envelope.payload.scrollTop) ? envelope.payload.scrollTop : 0,
-        search: String(envelope.payload.search || "").slice(0, 256),
-      });
-      saveFieldNavigationState();
-      if (currentView === "fieldOperations" && searchEl.value !== fieldNavigationState.search) searchEl.value = fieldNavigationState.search;
-    } else if (envelope.type === "field.pendingUploads") {
-      fieldConnectionState.pendingUploads = { count: envelope.payload.count, risk: envelope.payload.risk };
-    } else if (envelope.type === "field.openCrmEntity") {
-      void navigateFromField(envelope.payload.entityType, envelope.payload.entityId);
-    }
-  });
-  api.onFieldState(state => {
-    fieldConnectionState = Object.assign({}, fieldConnectionState, state || {});
-    if (currentView === "fieldOperations" && ["disconnected", "timeout", "error", "auth-required"].includes(fieldConnectionState.status)) {
-      fieldOpenGeneration += 1;
-      void api.hideFieldPlatform();
-      renderFieldOperations();
-    }
-  });
   api.onValueScopeEvent(envelope => {
     if (!envelope || currentView !== "valueScope") return;
     if (envelope.type === "ready" && envelope.page === valueScopeTab) {
@@ -7071,7 +6737,7 @@ document.addEventListener("keydown", event => {
       if (query.get("demo") === "1" && !store.customers.length) store = demoStore();
       synchronizedStore = cloneStore(store);
       store.partnerVendors = Array.isArray(store.partnerVendors) ? store.partnerVendors : [];
-      if (["dashboard", "cases", "payments", "customers", "buildings", "vacancies", "buildingCalendar", "workManagement", "fieldOperations", "valueScope", "consultations", "pipeline", "contracts", "relationships", "partnerVendors", "partnerQuotes", "tasks", "security", "settings"].includes(query.get("view"))) currentView = query.get("view");
+      if (["dashboard", "cases", "payments", "customers", "buildings", "vacancies", "buildingCalendar", "workManagement", "valueScope", "consultations", "pipeline", "contracts", "relationships", "partnerVendors", "partnerQuotes", "tasks", "security", "settings"].includes(query.get("view"))) currentView = query.get("view");
       await refreshOperations({ silent: true, render: false });
       document.getElementById("lastSaved").textContent = store.updatedAt ? `최신 반영 ${dateText(store.updatedAt)}` : "새 데이터";
       render();

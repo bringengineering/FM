@@ -20,10 +20,11 @@ function functionSource(name) {
   assert.fail(`${name} should have a complete body`);
 }
 
-test("canonical renderer overlays never depend on optional Drive candidates", () => {
+test("canonical renderer overlays skip retired FIELD summaries and optional Drive candidates", () => {
   const canonicalRefresh = functionSource("refreshRendererOverlays");
   assert.match(canonicalRefresh, /api\.loadCanonicalBuildingUnits\(\)/);
-  assert.match(canonicalRefresh, /api\.loadFieldSummaries\(\)/);
+  assert.doesNotMatch(canonicalRefresh, /api\.loadFieldSummaries\(\)/);
+  assert.match(canonicalRefresh, /fieldSummaries:\s*store\.fieldSummaries/);
   assert.doesNotMatch(canonicalRefresh, /loadDriveImportCandidates|driveImportCandidates|DriveImportUI/);
 });
 
@@ -63,7 +64,7 @@ test("Buildings entry points request Drive candidates without blocking navigatio
   const navigationStart = appSource.indexOf('const nav = event.target.closest("[data-view]")');
   const navigationEnd = appSource.indexOf("const salesStage", navigationStart);
   assert.match(appSource.slice(navigationStart, navigationEnd), /currentView === "buildings"[^\n]*requestDriveImportCandidatesRefresh\(\)/);
-  assert.match(functionSource("navigateFromField"), /currentView === "buildings"[^\n]*requestDriveImportCandidatesRefresh\(\)/);
+  assert.doesNotMatch(appSource, /function navigateFromField/);
   assert.match(functionSource("loadApplication"), /currentView === "buildings"[^\n]*requestDriveImportCandidatesRefresh\(\)/);
 });
 
