@@ -34,12 +34,14 @@ test("customer workspace replaces the card rail with dropdown selectors", () => 
   assert.match(customerView, /renderCustomerHubDetail/);
   assert.doesNotMatch(customerView, /building-hub-browser|building-hub-list|customer-hub-card|data-customer-hub-open/);
   assert.doesNotMatch(customerView, /customerSalesStageBadge|data-customer-sales-stage-filter|건물 영업 단계/);
-  assert.match(appSource, /Object\.freeze\(\["전체", "건물 미연결", "연결 확인 필요", "관리 예정", "관리 중", "관리 종료"\]\)/);
+  assert.doesNotMatch(customerView, /data-customer-buildings-open|건물 목록 보기|건물 미연결/);
+  assert.match(appSource, /Object\.freeze\(\["전체", "연결 확인 필요", "관리 예정", "관리 중", "관리 종료"\]\)/);
 });
 
-test("customer detail omits the linked-building card and keeps the remaining work sections", () => {
+test("customer detail embeds the selected building management screen below customer work", () => {
   const detail = sourceBetween("function renderCustomerHubDetail", "const buildingCustomers");
   assert.doesNotMatch(detail, /const buildingRecords =|<b>연결 건물<\/b>|customer-linked-building|data-building-jump|data-building-new-case/);
+  assert.doesNotMatch(detail, /customer-management-kpi|건물 미연결|건물 연결 필요/);
   assert.doesNotMatch(buildingCss, /\.customer-linked-building/);
   assert.match(detail, /<b>고객 요청·후속조치<\/b>/);
   assert.match(detail, /<b>계약<\/b>/);
@@ -49,7 +51,22 @@ test("customer detail omits the linked-building card and keeps the remaining wor
   assert.match(detail, /building-identity-strip/);
   assert.match(detail, /data-customer-open|data-customer-hub-edit|new-selected-task/);
   assert.match(detail, /data-contract-edit|data-building-case-open/);
+  assert.match(detail, /customer-embedded-building-management/);
+  assert.match(detail, /data-customer-building-select/);
+  assert.match(detail, /renderBuildingDetail\(managedBuilding\)/);
+  assert.match(detail, /data-action="new-building" data-customer-id/);
+  assert.match(detail, /customer-hub-kpis/);
+  assert.match(buildingCss, /\.customer-embedded-building-management/);
+  assert.match(buildingCss, /\.customer-building-selector-bar/);
   assert.doesNotMatch(detail, /customerSalesStageBadge|영업 미등록|영업 보기/);
+});
+
+test("embedded building controls keep the selected customer relationship", () => {
+  assert.match(appSource, /const customerBuildingSelect = event\.target\.closest\("\[data-customer-building-select\]"\)/);
+  assert.match(appSource, /customerBuildings\(customer\)\.some\(building => !building\.archivedAt && building\.id === customerBuildingSelect\.value\)/);
+  assert.match(appSource, /function buildingEditor\(buildingId, ownerCustomerId = ""\)/);
+  assert.match(appSource, /Core\.createBuilding\(\{ manager: store\.settings\.owner \|\| "김현진", ownerCustomerId: selectedOwnerCustomerId \}\)/);
+  assert.match(appSource, /action === "new-building"\) buildingEditor\("", actionControl\.dataset\.customerId \|\| ""\)/);
 });
 
 test("building workspace uses the same management status vocabulary", () => {
