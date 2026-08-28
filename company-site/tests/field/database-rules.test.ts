@@ -30,6 +30,18 @@ function crmClaims(email: string) {
   return { email, email_verified: true };
 }
 
+function crmPasswordClaims(
+  email: string,
+  emailVerified = true,
+  signInProvider = "password",
+) {
+  return {
+    email,
+    email_verified: emailVerified,
+    firebase: { sign_in_provider: signInProvider },
+  };
+}
+
 const CRM_ACCESS = {
   "crm-admin": {
     enabled: true,
@@ -42,6 +54,7 @@ const CRM_ACCESS = {
     email: "member@bring.test",
     role: "member",
     operatorId: "operator_kim",
+    mustChangePassword: true,
   },
   "crm-viewer": {
     enabled: true,
@@ -1679,6 +1692,36 @@ describe("field media database rule source", () => {
     }
   });
 
+  it("allows only a verified password user to clear their own first-password gate", async () => {
+    const production = JSON.parse(
+      await readFile(resolve("../database.rules.json"), "utf8"),
+    ) as { rules: { crmCompany: { access: Record<string, unknown> } } };
+    const cutover = JSON.parse(
+      await readFile(
+        resolve("tests/field/fixtures/database-cutover.rules.json"),
+        "utf8",
+      ),
+    ) as { rules: { crmCompany: { access: Record<string, unknown> } } };
+    const access = production.rules.crmCompany.access as {
+      $uid: {
+        ".write": boolean;
+        mustChangePassword: { ".write": string; ".validate": string };
+      };
+    };
+    const gate = access.$uid.mustChangePassword;
+
+    expect(access).toEqual(cutover.rules.crmCompany.access);
+    expect(access.$uid[".write"]).toBe(false);
+    expect(gate[".write"]).toContain("auth.uid === $uid");
+    expect(gate[".write"]).toContain("email_verified === true");
+    expect(gate[".write"]).toContain("sign_in_provider === 'password'");
+    expect(gate[".write"]).toContain("child('enabled').val() === true");
+    expect(gate[".write"]).toContain("child('email').val() === auth.token.email");
+    expect(gate[".write"]).toContain("data.val() === true");
+    expect(gate[".write"]).toContain("newData.val() === false");
+    expect(gate[".validate"]).toBe("newData.isBoolean()");
+  });
+
   it("keeps the emulator cutover fixture identical to the production CRM data boundary", async () => {
     const fixturePath = resolve(
       "tests/field/fixtures/database-cutover.rules.json",
@@ -1820,6 +1863,50 @@ afterAll(async () => {
 });
 
 describe.runIf(databaseEmulatorAvailable)("fieldPlatform database rules", () => {
+  it("lets only the verified password user clear their own first-password gate", async () => {
+    const gatePath = "crmCompany/access/crm-member/mustChangePassword";
+    const authorized = environment.authenticatedContext(
+      "crm-member",
+      crmPasswordClaims("member@bring.test"),
+    ).database();
+    const rejected = [
+      environment.unauthenticatedContext().database(),
+      environment.authenticatedContext(
+        "crm-admin",
+        crmPasswordClaims("admin@bring.test"),
+      ).database(),
+      environment.authenticatedContext(
+        "crm-member",
+        crmPasswordClaims("wrong@bring.test"),
+      ).database(),
+      environment.authenticatedContext(
+        "crm-member",
+        crmPasswordClaims("member@bring.test", false),
+      ).database(),
+      environment.authenticatedContext(
+        "crm-member",
+        crmPasswordClaims("member@bring.test", true, "google.com"),
+      ).database(),
+      environment.authenticatedContext(
+        "crm-member",
+        crmClaims("member@bring.test"),
+      ).database(),
+    ];
+
+    for (const database of rejected) {
+      await assertFails(set(ref(database, gatePath), false));
+    }
+    await assertFails(set(ref(authorized, gatePath), true));
+    await assertFails(update(ref(authorized, "crmCompany/access/crm-member"), {
+      mustChangePassword: false,
+      role: "admin",
+    }));
+    await assertSucceeds(set(ref(authorized, gatePath), false));
+    expect((await assertSucceeds(get(ref(authorized, gatePath)))).val()).toBe(false);
+    await assertFails(set(ref(authorized, gatePath), true));
+    await assertFails(remove(ref(authorized, gatePath)));
+  });
+
   it("denies every client direct reads and writes anywhere under FIELD v2", async () => {
     const clients = [
       environment.unauthenticatedContext().database(),

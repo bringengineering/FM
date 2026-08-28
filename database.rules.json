@@ -16,7 +16,11 @@
       "access": {
         "$uid": {
           ".read": "auth != null && auth.uid === $uid",
-          ".write": false
+          ".write": false,
+          "mustChangePassword": {
+            ".write": "auth != null && auth.uid === $uid && auth.token.email_verified === true && auth.token.firebase.sign_in_provider === 'password' && root.child('crmCompany/access').child($uid).child('enabled').val() === true && root.child('crmCompany/access').child($uid).child('email').val() === auth.token.email && data.val() === true && newData.val() === false",
+            ".validate": "newData.isBoolean()"
+          }
         }
       },
       "teamProfiles": {
