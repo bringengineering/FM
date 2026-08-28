@@ -223,7 +223,8 @@ test("customer and contact-vendor forms share scoped live formatting and safe pe
   const customerSubmitStart = appSource.indexOf('} else if (form.id === "customerForm")');
   const customerSubmitEnd = appSource.indexOf('} else if (form.id === "partnerVendorForm")', customerSubmitStart);
   const customerSubmit = appSource.slice(customerSubmitStart, customerSubmitEnd);
-  assert.ok(customerSubmit.indexOf("form.elements.name") < customerSubmit.indexOf("customerFromForm(form)"), "name validation must happen before customer mutation");
+  assert.doesNotMatch(customerSubmit, /form\.elements\.name[\s\S]*?고객명을 입력해 주세요/);
+  assert.ok(customerSubmit.indexOf("form.elements.buildingId") < customerSubmit.indexOf("customerFromForm(form)"), "building validation must happen before customer mutation");
   const vendorSubmitEnd = appSource.indexOf('} else if (form.id === "partnerQuoteForm")', customerSubmitEnd);
   const vendorSubmit = appSource.slice(customerSubmitEnd, vendorSubmitEnd);
   assert.match(vendorSubmit, /phone:\s*customerPhoneText\(raw\.phone\)/);

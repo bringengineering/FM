@@ -69,6 +69,21 @@ test("embedded building controls keep the selected customer relationship", () =>
   assert.match(appSource, /action === "new-building"\) buildingEditor\("", actionControl\.dataset\.customerId \|\| ""\)/);
 });
 
+test("customer editor requires a real building while customer name remains optional", () => {
+  const editor = sourceBetween("function customerEditor", "function buildingNumberField");
+  const fromForm = sourceBetween("function customerFromForm", "async function deleteActivityRecord");
+  const submit = sourceBetween('form.id === "customerForm"', 'form.id === "partnerVendorForm"');
+  assert.match(editor, /<span>건물명 \*<\/span><select name="buildingId" required>/);
+  assert.match(editor, /field\("고객명", "name"/);
+  assert.doesNotMatch(editor, /고객명 \*/);
+  assert.match(fromForm, /buildingIdLinks\[String\(raw\.buildingId\)\] = true/);
+  assert.match(submit, /buildingById\(String\(form\.elements\.buildingId/);
+  assert.match(submit, /건물명을 선택해 주세요/);
+  assert.doesNotMatch(submit, /고객명을 입력해 주세요/);
+  assert.match(appSource, /const customerDisplayName = customer =>[\s\S]*?customerBuildings\(customer\)\.find\(building => !building\.archivedAt\)\?\.name/);
+  assert.match(appSource, /<h2>\$\{esc\(customerDisplayName\(customer\)\)\}<\/h2>/);
+});
+
 test("building workspace uses the same management status vocabulary", () => {
   const buildingView = sourceBetween("function renderBuildings()", "function renderArchivedBuildings");
   assert.match(buildingView, /data-building-management-filter/);
