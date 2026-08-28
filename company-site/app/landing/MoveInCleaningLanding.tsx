@@ -1,6 +1,7 @@
 import Image from "next/image";
 import { PHONE_HREF, PHONE_LABEL } from "./contact";
 import QuickEstimateForm from "./QuickEstimateForm";
+import LandingBrandIntro from "./LandingBrandIntro";
 import "./stair-cleaning.css";
 
 const facts = [
@@ -26,6 +27,7 @@ const details = [
 export default function MoveInCleaningLanding() {
   return (
     <main className="stair-toss movein-toss">
+      <LandingBrandIntro serviceHref="#service" estimateHref="#estimate" />
       <header className="stair-nav">
         <a className="stair-logo" href="/" aria-label="BRING CARE 홈">BRING <span>CARE</span></a>
         <nav aria-label="주요 메뉴">

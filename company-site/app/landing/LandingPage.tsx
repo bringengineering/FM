@@ -10,6 +10,7 @@ import {
 } from "./QuickEstimateExperience";
 import { compactEstimateConfig } from "./quickEstimateConfig";
 import type { LandingService } from "./services";
+import LandingBrandIntro from "./LandingBrandIntro";
 import TurnoverIntro from "./TurnoverIntro";
 import TurnoverSections from "./TurnoverSections";
 import "./landing.css";
@@ -46,6 +47,12 @@ export default function LandingPage({ service }: LandingPageProps) {
       needsPlaceholder={quickEstimate.needsPlaceholder}
     >
       <main className={`landing-page landing-${service.slug}`}>
+      <LandingBrandIntro
+        serviceHref="#scope-title"
+        estimateAction={(
+          <QuickEstimateTrigger>무료 견적 신청</QuickEstimateTrigger>
+        )}
+      />
       {isTurnoverCare ? (
         <TurnoverIntro service={service} />
       ) : (

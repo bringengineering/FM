@@ -13,6 +13,30 @@ vi.mock("next/navigation", () => ({
 }));
 
 describe("LandingPage", () => {
+  it.each([
+    ["24H 입·퇴실 관리", <LandingPage service={landingServices["turnover-care"]} />],
+    ["계단·공용부 청소", <StairCleaningLanding />],
+    ["건물관리", <LandingPage service={landingServices["building-care"]} />],
+    ["입주·이사청소", <MoveInCleaningLanding />],
+  ])("adds one shared company introduction above the unchanged %s landing", (_, page) => {
+    const { container } = render(page);
+    const intro = container.querySelector(".landing-brand-intro");
+
+    expect(intro).toBeInTheDocument();
+    expect(
+      within(intro as HTMLElement).getByRole("heading", {
+        name: "우리는 건물을 관리하며, 청소까지 책임지는 회사입니다.",
+      }),
+    ).toBeInTheDocument();
+    expect(container.querySelectorAll(".landing-brand-intro")).toHaveLength(1);
+    expect(within(intro as HTMLElement).getByAltText(/BRING CARE 건물관리 운영팀/)).toHaveAttribute(
+      "src",
+      "/brand-campaign/bringcare-suited-team-building-v3.png",
+    );
+    expect(within(intro as HTMLElement).getByRole("link", { name: "서비스 알아보기" })).toBeInTheDocument();
+    expect(within(intro as HTMLElement).getByText("무료 견적 신청")).toBeInTheDocument();
+  });
+
   it("renders a dedicated move-in cleaning page with only move-in cleaning scenes", () => {
     const { container } = render(<MoveInCleaningLanding />);
 
