@@ -1,4 +1,4 @@
-const { app, BrowserWindow, WebContentsView, ipcMain, dialog, Menu, nativeImage, safeStorage, shell } = require("electron");
+const { app, BrowserWindow, WebContentsView, ipcMain, dialog, Menu, nativeImage, net, safeStorage, shell } = require("electron");
 const { autoUpdater } = require("electron-updater");
 const CrmUpdatePolicy = require("./crm-update-policy");
 const {
@@ -96,6 +96,7 @@ let updaterConfigured = false;
 let updatePromptOpen = false;
 let updateInstallScheduled = false;
 let updateRetryTimer = null;
+let updateRetryAttempt = 0;
 let applicationExitAllowed = false;
 let applicationExitRequestCount = 0;
 let applicationExitFailureDialogOpen = false;
@@ -1284,25 +1285,80 @@ function clearUpdateRetryTimer() {
   updateRetryTimer = null;
 }
 
+function nestedUpdateErrorCodes(error) {
+  const codes = [];
+  const visited = new Set();
+  let current = error;
+  while (current && typeof current === "object" && !visited.has(current) && codes.length < 8) {
+    visited.add(current);
+    if (current.code) codes.push(String(current.code));
+    current = current.cause;
+  }
+  return codes;
+}
+
 function rateLimitRetryAt(error, now = Date.now()) {
-  const cause = error && error.cause;
   const rateLimited = Boolean(error && (error.rateLimited === true
-    || error.code === "CRM_UPDATE_RATE_LIMITED"
-    || cause && cause.code === "CRM_UPDATE_RATE_LIMITED"));
+    || nestedUpdateErrorCodes(error).includes("CRM_UPDATE_RATE_LIMITED")));
   if (!rateLimited) return 0;
-  const reported = Number(error && error.retryAt || cause && cause.retryAt || 0);
+  let reported = 0;
+  const visited = new Set();
+  let current = error;
+  while (current && typeof current === "object" && !visited.has(current)) {
+    visited.add(current);
+    if (Number(current.retryAt) > reported) reported = Number(current.retryAt);
+    current = current.cause;
+  }
   const earliest = now + 15_000;
   const latest = now + 60 * 60 * 1000;
   return Math.max(earliest, Math.min(latest, Number.isFinite(reported) && reported > 0 ? reported + 2_000 : earliest));
 }
 
-function scheduleRateLimitRetry(retryAt) {
+function transientUpdateRetryAt(error, now = Date.now()) {
+  const rateLimited = rateLimitRetryAt(error, now);
+  if (rateLimited) return rateLimited;
+  const codes = nestedUpdateErrorCodes(error);
+  if (codes.some(code => [
+    "CRM_UPDATE_POINTER_INVALID",
+    "CRM_UPDATE_MANIFEST_INVALID",
+    "CRM_UPDATE_MANIFEST_MISMATCH",
+  ].includes(code))) return 0;
+  const delays = [15_000, 60_000, 5 * 60_000];
+  const delay = delays[Math.min(updateRetryAttempt, delays.length - 1)];
+  updateRetryAttempt += 1;
+  return now + delay;
+}
+
+function scheduleUpdateRetry(retryAt) {
   clearUpdateRetryTimer();
   const delay = Math.max(1_000, retryAt - Date.now());
   updateRetryTimer = setTimeout(() => {
     updateRetryTimer = null;
     void checkForUpdates(false);
   }, delay);
+}
+
+function recoverUpdateError(error) {
+  if (updateState.status === "waiting" && updateRetryTimer) return updateState;
+  const retryAt = transientUpdateRetryAt(error);
+  if (retryAt) {
+    scheduleUpdateRetry(retryAt);
+    const rateLimited = Boolean(rateLimitRetryAt(error));
+    return setUpdateState({
+      status: "waiting",
+      percent: 0,
+      retryAt,
+      message: rateLimited
+        ? "업데이트 확인 한도가 잠시 갱신 중입니다. 잠시 후 자동으로 다시 확인합니다."
+        : "네트워크 연결을 다시 확인하고 있습니다. 잠시 후 자동으로 업데이트를 재시도합니다.",
+    });
+  }
+  return setUpdateState({
+    status: "error",
+    percent: 0,
+    retryAt: 0,
+    message: "업데이트 파일의 안전성 검증을 완료하지 못했습니다. 새 설치 파일로 다시 설치해 주세요.",
+  });
 }
 
 async function confirmApplicationExitWithPending(pendingUploads, reason) {
@@ -1454,17 +1510,26 @@ function configureUpdater() {
   autoUpdater.autoInstallOnAppQuit = true;
   autoUpdater.allowPrerelease = false;
   autoUpdater.on("checking-for-update", () => setUpdateState({ status: "checking", percent: 0, retryAt: 0, message: "새 버전을 확인하고 있습니다." }));
-  autoUpdater.on("update-available", info => setUpdateState({ status: "downloading", availableVersion: info.version || "", percent: 0, retryAt: 0, message: "새 버전을 받고 있습니다." }));
-  autoUpdater.on("update-not-available", info => setUpdateState({ status: "current", availableVersion: info && info.version || "", percent: 0, retryAt: 0, message: "최신 버전입니다." }));
+  autoUpdater.on("update-available", info => {
+    updateRetryAttempt = 0;
+    clearUpdateRetryTimer();
+    setUpdateState({ status: "downloading", availableVersion: info.version || "", percent: 0, retryAt: 0, message: "새 버전을 받고 있습니다." });
+  });
+  autoUpdater.on("update-not-available", info => {
+    updateRetryAttempt = 0;
+    clearUpdateRetryTimer();
+    setUpdateState({ status: "current", availableVersion: info && info.version || "", percent: 0, retryAt: 0, message: "최신 버전입니다." });
+  });
   autoUpdater.on("download-progress", progress => setUpdateState({ status: "downloading", percent: Math.max(0, Math.min(100, Math.round(progress.percent || 0))), retryAt: 0, message: "새 버전을 받고 있습니다." }));
   autoUpdater.on("update-downloaded", info => {
+    updateRetryAttempt = 0;
+    clearUpdateRetryTimer();
     setUpdateState({ status: "ready", availableVersion: info.version || updateState.availableVersion, percent: 100, retryAt: 0, message: "재시작하면 업데이트가 적용됩니다." });
     promptToInstallUpdate();
   });
   autoUpdater.on("error", error => {
-    clearUpdateRetryTimer();
     console.warn("CRM update failed", error && error.message ? error.message : error);
-    setUpdateState({ status: "error", percent: 0, retryAt: 0, message: "업데이트 파일을 확인하지 못했습니다. CRM은 계속 사용할 수 있습니다." });
+    recoverUpdateError(error);
   });
   setUpdateState({ status: "idle", retryAt: 0, message: "업데이트 확인 준비" });
   setTimeout(() => checkForUpdates(false), 5000);
@@ -1473,20 +1538,18 @@ function configureUpdater() {
 async function checkForUpdates(manual) {
   if (!app.isPackaged || localTestMode || authPreview || passwordPreview) return setUpdateState({ status: "disabled", message: "설치된 프로그램에서 사용할 수 있습니다." });
   if (updateState.status === "checking" || updateState.status === "downloading") return updateState;
-  if (updateState.status === "waiting" && Number(updateState.retryAt) > Date.now()) return updateState;
+  if (!manual && updateState.status === "waiting" && Number(updateState.retryAt) > Date.now()) return updateState;
   clearUpdateRetryTimer();
+  if (manual) updateRetryAttempt = 0;
   try {
     setUpdateState({ status: "checking", retryAt: 0, message: manual ? "사용자가 새 버전을 확인하고 있습니다." : "새 버전을 확인하고 있습니다." });
-    await CrmUpdatePolicy.checkCrmUpdates({ updater: autoUpdater });
+    await CrmUpdatePolicy.checkCrmUpdates({
+      updater: autoUpdater,
+      fetchImpl: (url, options) => net.fetch(url, options),
+    });
   } catch (error) {
     console.warn("CRM update check failed", error && error.message ? error.message : error);
-    const retryAt = rateLimitRetryAt(error);
-    if (retryAt) {
-      scheduleRateLimitRetry(retryAt);
-      setUpdateState({ status: "waiting", percent: 0, retryAt, message: "업데이트 확인 한도가 잠시 갱신 중입니다. 잠시 후 자동으로 다시 확인합니다." });
-    } else {
-      setUpdateState({ status: "error", retryAt: 0, message: "업데이트 서버에 연결하지 못했습니다. CRM은 계속 사용할 수 있습니다." });
-    }
+    recoverUpdateError(error);
   }
   return updateState;
 }
