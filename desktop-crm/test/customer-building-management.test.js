@@ -38,35 +38,81 @@ test("customer workspace replaces the card rail with dropdown selectors", () => 
   assert.match(appSource, /Object\.freeze\(\["전체", "연결 확인 필요", "관리 예정", "관리 중", "관리 종료"\]\)/);
 });
 
-test("customer detail embeds the selected building management screen below customer work", () => {
+test("customer detail keeps essentials visible and removes the duplicated building screen", () => {
   const detail = sourceBetween("function renderCustomerHubDetail", "const buildingCustomers");
-  assert.doesNotMatch(detail, /const buildingRecords =|<b>연결 건물<\/b>|customer-linked-building|data-building-jump|data-building-new-case/);
+  const rendered = detail.slice(detail.indexOf("return `<header"));
+  assert.doesNotMatch(detail, /const buildingRecords =|<b>연결 건물<\/b>|customer-linked-building|data-building-jump/);
   assert.doesNotMatch(detail, /customer-management-kpi|건물 미연결|건물 연결 필요/);
   assert.doesNotMatch(buildingCss, /\.customer-linked-building/);
   assert.match(detail, /<b>고객 요청·후속조치<\/b>/);
-  assert.match(detail, /<b>계약<\/b>/);
-  assert.match(detail, /<b>민원<\/b>/);
+  assert.match(detail, /<b>진행 계약<\/b>/);
+  assert.match(detail, /<b>진행 민원<\/b>/);
   assert.match(detail, /<b>최근 상담<\/b>/);
   assert.match(detail, /customerAvatar\(customer\)/);
-  assert.match(detail, /building-identity-strip/);
+  assert.match(detail, /customer-essential-summary/);
   assert.match(detail, /data-customer-open|data-customer-hub-edit|new-selected-task/);
   assert.match(detail, /data-contract-edit|data-building-case-open/);
-  assert.match(detail, /customer-embedded-building-management/);
   assert.match(detail, /data-customer-building-select/);
-  assert.match(detail, /renderBuildingDetail\(managedBuilding\)/);
   assert.match(detail, /data-action="new-building" data-customer-id/);
   assert.match(detail, /customer-hub-kpis/);
-  assert.match(buildingCss, /\.customer-embedded-building-management/);
-  assert.match(buildingCss, /\.customer-building-selector-bar/);
+  assert.match(detail, /<details class="customer-secondary-details"><summary>/);
+  assert.match(detail, /추가 정보 보기/);
+  assert.doesNotMatch(detail, /customer-embedded-building-management|customer-building-selector-bar|renderBuildingDetail\(managedBuilding\)|<h3>건물 관리<\/h3>/);
+  assert.doesNotMatch(buildingCss, /\.customer-embedded-building-management|\.customer-building-selector-bar/);
+  assert.ok(rendered.indexOf("customer-essential-summary") < rendered.indexOf("customer-hub-kpis"));
+  assert.ok(rendered.indexOf("customer-hub-kpis") < rendered.indexOf("customer-priority-grid"));
+  assert.ok(rendered.indexOf("customer-priority-grid") < rendered.indexOf("${secondaryDetails}"));
   assert.doesNotMatch(detail, /customerSalesStageBadge|영업 미등록|영업 보기/);
 });
 
-test("embedded building controls keep the selected customer relationship", () => {
+test("customer header moves selected building actions after the task action", () => {
+  const detail = sourceBetween("function renderCustomerHubDetail", "const buildingCustomers");
+  const rendered = detail.slice(detail.indexOf("return `<header"));
+  const customerActionTokens = [
+    "data-customer-open",
+    "data-customer-hub-edit",
+    'data-action="new-selected-task"',
+    "${buildingActions}",
+  ];
+  customerActionTokens.reduce((previousIndex, token) => {
+    const index = rendered.indexOf(token);
+    assert.ok(index > previousIndex, `${token} should follow the previous customer action`);
+    return index;
+  }, -1);
+  const buildingActionTokens = [
+    "data-building-edit",
+    "data-building-vacancies",
+    "data-building-payments",
+    "data-building-new-case",
+  ];
+  buildingActionTokens.reduce((previousIndex, token) => {
+    const index = detail.indexOf(token);
+    assert.ok(index > previousIndex, `${token} should follow the previous building action`);
+    return index;
+  }, -1);
+  assert.match(detail, /const buildingActions = managedBuilding \?/);
+  assert.match(detail, /data-building-edit="\$\{attr\(managedBuilding\.id\)\}"/);
+  assert.match(detail, /customer-hub-head-actions" role="group" aria-label="고객과 건물 빠른 작업"/);
+  assert.match(buildingCss, /\.customer-hub-head-actions\{[^}]*flex-wrap/);
+  assert.match(buildingCss, /@media\(max-width:700px\)[\s\S]*?\.customer-hub-head-actions\{display:grid;grid-template-columns:repeat\(2/);
+});
+
+test("compact building controls keep the selected customer relationship", () => {
   assert.match(appSource, /const customerBuildingSelect = event\.target\.closest\("\[data-customer-building-select\]"\)/);
   assert.match(appSource, /customerBuildings\(customer\)\.some\(building => !building\.archivedAt && building\.id === customerBuildingSelect\.value\)/);
   assert.match(appSource, /function buildingEditor\(buildingId, ownerCustomerId = ""\)/);
   assert.match(appSource, /Core\.createBuilding\(\{ manager: store\.settings\.owner \|\| "김현진", ownerCustomerId: selectedOwnerCustomerId \}\)/);
   assert.match(appSource, /action === "new-building"\) buildingEditor\("", actionControl\.dataset\.customerId \|\| ""\)/);
+  assert.match(buildingCss, /\.customer-building-context\{/);
+  assert.match(buildingCss, /\.customer-secondary-details>summary:focus-visible/);
+});
+
+test("building edits opened from customer detail return to the customer workspace", () => {
+  const editor = sourceBetween("function buildingEditor", "function updateVacancyScheduleGuide");
+  const save = sourceBetween('form.id === "buildingForm"', 'form.id === "contractForm"');
+  assert.match(editor, /data-return-view="\$\{attr\(currentView === "customers" \? "customers" : "buildings"\)\}"/);
+  assert.match(save, /const returnView = form\.dataset\.returnView === "customers" \? "customers" : "buildings"/);
+  assert.match(save, /currentView = returnView/);
 });
 
 test("customer editor requires a real building while customer name remains optional", () => {

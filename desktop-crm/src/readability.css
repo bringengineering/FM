@@ -653,6 +653,9 @@ textarea { font-size: 14px; }
 .building-hub-kpi small { color: #708797; font-size: 10px; }
 .building-detail-section > header b { font-size: 13px; }
 .building-detail-section > header span { font-size: 10px; }
+.customer-secondary-details > summary b { font-size: 13px; }
+.customer-secondary-details > summary small { font-size: 10px; }
+.customer-secondary-details > summary em { font-size: 11px; }
 .building-detail-record b { font-size: 12px; }
 .building-detail-record span,
 .building-detail-record em { font-size: 10px; }
