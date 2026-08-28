@@ -66,11 +66,11 @@ test("server-renders the Bring Care company website", async () => {
   assert.doesNotMatch(html, /365일|24시간 출동/);
 });
 
-test("homepage team photo uses the original image without a blurred backdrop", async () => {
+test("homepage team photo keeps the original hero design without extra effects", async () => {
   const css = await readFile(new URL("../app/globals.css", import.meta.url), "utf8");
 
   assert.doesNotMatch(css, /\.hero-media::before/);
-  assert.match(css, /\.hero-media img\s*\{[^}]*object-fit:\s*contain/s);
+  assert.match(css, /\.hero-media img\s*\{[^}]*object-fit:\s*cover/s);
 });
 
 test("server-renders the consultation page with direct contacts", async () => {
