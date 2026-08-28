@@ -95,6 +95,14 @@ test("login copy consistently describes allowed email and password login", () =>
   assert.equal(showLogin.includes(copy.google), false);
 });
 
+test("login shows the initial password and directs users to change it", () => {
+  const temporaryPassword = html.match(/<div\b[^>]*\bclass=["']temporary-password["'][^>]*>([\s\S]*?)<\/div>/i);
+  assert.ok(temporaryPassword, "temporary password guidance must be visible on the login form");
+  const visibleCopy = temporaryPassword[1].replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim();
+  assert.match(visibleCopy, /최초 비밀번호\s+1234/);
+  assert.match(visibleCopy, /로그인 후 새 비밀번호로 변경/);
+});
+
 test("email form submits the account typed by the user", () => {
   const submitHandler = functionBody(appSource, 'loginForm.addEventListener("submit"');
   assert.match(
