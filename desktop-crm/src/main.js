@@ -10,6 +10,7 @@ const crypto = require("node:crypto");
 const path = require("node:path");
 const { fileURLToPath, pathToFileURL } = require("node:url");
 const Core = require("./core");
+const OperationsIntelligence = require("./operations-intelligence-core");
 const {
   FirebaseRemoteClient,
   createSerializedProtectedStoreCoordinator,
@@ -60,6 +61,7 @@ function fieldOperationsDisabledResult() {
 if (process.env.BRING_CRM_SCREENSHOT || process.env.BRING_CRM_SMOKE === "1") app.disableHardwareAcceleration();
 
 let mainWindow = null;
+let operationsIntelligenceWindow = null;
 let valuescopeView = null;
 let valuescopeViewVisible = false;
 let valuescopeMeasuredBounds = null;
@@ -111,6 +113,7 @@ if (localTestMode && !process.env.BRING_CRM_DATA_DIR) {
   app.setPath("userData", path.join(app.getPath("temp"), "bring-crm-desktop-tests", String(process.pid)));
 }
 let localOperationsData = null;
+let localIntelligenceOperations = Object.create(null);
 let localCanonicalBuildingUnits = Object.create(null);
 let localCustomerPhotos = Object.create(null);
 let localCanonicalBuildingVacancyState = Object.create(null);
@@ -2415,6 +2418,70 @@ function buildMenu() {
   ]);
 }
 
+async function createOperationsIntelligenceWindow() {
+  if (!authState().user) return { ok: false, error: "CRM에 먼저 로그인해 주세요." };
+  if (operationsIntelligenceWindow && !operationsIntelligenceWindow.isDestroyed()) {
+    operationsIntelligenceWindow.show();
+    operationsIntelligenceWindow.focus();
+    return { ok: true, reused: true };
+  }
+  operationsIntelligenceWindow = new BrowserWindow({
+    width: 1380, height: 900, minWidth: 960, minHeight: 680,
+    show: false, backgroundColor: "#f3f7f8", title: "BRING 운영 인텔리전스",
+    icon: path.join(__dirname, "assets", "bring-logo.png"),
+    webPreferences: { preload: path.join(__dirname, "operations-intelligence-preload.js"), contextIsolation: true, nodeIntegration: false, sandbox: true },
+  });
+  operationsIntelligenceWindow.webContents.on("will-navigate", event => event.preventDefault());
+  operationsIntelligenceWindow.webContents.setWindowOpenHandler(() => ({ action: "deny" }));
+  operationsIntelligenceWindow.on("closed", () => { operationsIntelligenceWindow = null; });
+  await operationsIntelligenceWindow.loadFile(path.join(__dirname, "operations-intelligence.html"));
+  operationsIntelligenceWindow.show();
+  return { ok: true, reused: false };
+}
+
+async function operationsIntelligenceBootstrap() {
+  const user = authState().user;
+  if (!user) throw new Error("CRM에 먼저 로그인해 주세요.");
+  const shared = await readStore();
+  let operationMap = localIntelligenceOperations;
+  let profiles = [];
+  if (!localTestMode) {
+    if (!remoteClient) throw new Error("직원 권한 확인 서버를 사용할 수 없습니다.");
+    operationMap = await remoteClient.dbRequest("operationsIntelligence/operations", { method: "GET" }) || {};
+    const profileMap = await remoteClient.dbRequest("teamProfiles", { method: "GET" }) || {};
+    profiles = Object.values(profileMap).filter(Boolean);
+  }
+  return {
+    user, operations: Object.values(operationMap || {}).filter(Boolean).map(OperationsIntelligence.normalize),
+    buildings: (shared.buildings || []).map(item => ({ id: item.id, name: item.name, address: item.address, archivedAt: item.archivedAt || "" })),
+    customers: (shared.customers || []).map(item => ({ id: item.id, name: item.name, archivedAt: item.archivedAt || "" })),
+    profiles,
+  };
+}
+
+async function saveIntelligenceOperation(input) {
+  const user = assertMainMutationAllowed(input);
+  const source = input && typeof input === "object" ? input : {};
+  const existingId = String(source.id || "");
+  let existing = null;
+  if (existingId) {
+    existing = localTestMode ? localIntelligenceOperations[existingId] : await remoteClient.dbRequest(`operationsIntelligence/operations/${existingId}`, { method: "GET" });
+    if (!existing) return { ok: false, error: "운영 기록을 찾지 못했습니다." };
+  }
+  const now = new Date().toISOString();
+  let operation;
+  if (!existing) operation = OperationsIntelligence.createOperation(source, { now, userId: user.uid });
+  else {
+    const current = OperationsIntelligence.assertValid(existing);
+    const requestedStatus = OperationsIntelligence.STATUSES.includes(source.status) ? source.status : current.status;
+    operation = requestedStatus !== current.status ? OperationsIntelligence.transition(current, requestedStatus, { now, userId: user.uid }) : Object.assign({}, current, { version: current.version + 1, updatedAt: now, updatedBy: user.uid });
+    operation = OperationsIntelligence.assertValid(OperationsIntelligence.normalize(Object.assign({}, operation, source, { id: current.id, createdAt: current.createdAt, createdBy: current.createdBy, status: requestedStatus, statusHistory: operation.statusHistory, version: operation.version, updatedAt: now, updatedBy: user.uid })));
+  }
+  if (localTestMode) localIntelligenceOperations[operation.id] = operation;
+  else await remoteClient.dbRequest(`operationsIntelligence/operations/${operation.id}`, { method: "PUT", body: operation, query: "print=silent" });
+  return { ok: true, operation };
+}
+
 async function createWindow() {
   const screenshotWidth = Number(process.env.BRING_CRM_SCREENSHOT_WIDTH) || 1540;
   const screenshotHeight = Number(process.env.BRING_CRM_SCREENSHOT_HEIGHT) || 940;
@@ -2449,6 +2516,19 @@ async function createWindow() {
   await mainWindow.loadFile(path.join(__dirname, "index.html"), {
     query: process.env.BRING_CRM_SCREENSHOT ? { demo: process.env.BRING_CRM_SCREENSHOT_GUIDE === "1" ? "0" : "1", view: process.env.BRING_CRM_SCREENSHOT_VIEW || "dashboard" } : {}
   });
+
+  if (process.env.BRING_CRM_OPERATIONS_SCREENSHOT) {
+    await createOperationsIntelligenceWindow();
+    await new Promise(resolve => setTimeout(resolve, 500));
+    const target = path.resolve(process.cwd(), process.env.BRING_CRM_OPERATIONS_SCREENSHOT);
+    await fs.mkdir(path.dirname(target), { recursive: true });
+    const image = await operationsIntelligenceWindow.webContents.capturePage();
+    await fs.writeFile(target, image.toPNG());
+    console.log(JSON.stringify({ operationsIntelligenceScreenshot: target }));
+    applicationExitAllowed = true;
+    app.quit();
+    return;
+  }
 
   if (process.env.BRING_CRM_SMOKE === "1") {
     for (let attempt = 0; attempt < 50; attempt += 1) {
@@ -5013,6 +5093,15 @@ secureCanonicalHandle("crm:auth-logout", async input => {
 });
 secureHandle("crm:load", readStore);
 secureHandle("crm:save", data => writeStore(data));
+secureCanonicalHandle("crm:open-operations-intelligence", () => createOperationsIntelligenceWindow());
+ipcMain.handle("operations-intelligence:bootstrap", event => {
+  if (!trustedCanonicalIpc(event, operationsIntelligenceWindow, path.join(__dirname, "operations-intelligence.html"))) throw new Error("허용되지 않은 요청입니다.");
+  return operationsIntelligenceBootstrap();
+});
+ipcMain.handle("operations-intelligence:save", (event, input) => {
+  if (!trustedCanonicalIpc(event, operationsIntelligenceWindow, path.join(__dirname, "operations-intelligence.html"))) throw new Error("허용되지 않은 요청입니다.");
+  return saveIntelligenceOperation(input);
+});
 secureCanonicalHandle("crm:canonical-building-units-load", async () => {
   if (localTestMode) return JSON.parse(JSON.stringify(localCanonicalBuildingUnits));
   if (!remoteClient || !remoteClient.authState().user) throw new Error("로그인이 필요합니다.");

@@ -13,6 +13,7 @@ contextBridge.exposeInMainWorld("bringCRM", {
   changePassword: password => ipcRenderer.invoke("crm:auth-change-password", password),
   logout: input => ipcRenderer.invoke("crm:auth-logout", input),
   load: () => ipcRenderer.invoke("crm:load"),
+  openOperationsIntelligence: () => ipcRenderer.invoke("crm:open-operations-intelligence"),
   save: data => ipcRenderer.invoke("crm:save", data),
   loadCanonicalBuildingUnits: () => ipcRenderer.invoke("crm:canonical-building-units-load"),
   loadFieldSummaries: () => Promise.resolve({}),

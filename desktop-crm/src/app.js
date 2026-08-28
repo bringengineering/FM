@@ -5269,7 +5269,11 @@
     const actionControl = event.target.closest("[data-action]");
     const action = actionControl?.dataset.action;
     if (!action) return;
-    if (action === "logout") {
+    if (action === "open-operations-intelligence") {
+      const result = await api.openOperationsIntelligence();
+      if (!result || !result.ok) showToast(result && result.error || "운영 인텔리전스 창을 열지 못했습니다.", "error");
+    }
+    else if (action === "logout") {
       const result = await api.logout();
       if (!result || !result.ok) return showToast(result && result.error || "로그아웃하지 못했습니다. 잠시 후 다시 시도해 주세요.", "error");
       location.reload();
