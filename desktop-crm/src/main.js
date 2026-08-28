@@ -2462,6 +2462,9 @@ async function operationsIntelligenceBootstrap() {
 async function saveIntelligenceOperation(input) {
   const user = assertMainMutationAllowed(input);
   const source = input && typeof input === "object" ? input : {};
+  const shared = await readStore();
+  if (source.buildingId && !(shared.buildings || []).some(item => item && item.id === source.buildingId && !item.archivedAt)) return { ok: false, error: "연결할 건물을 최신 목록에서 다시 선택해 주세요." };
+  if (source.customerId && !(shared.customers || []).some(item => item && item.id === source.customerId && !item.archivedAt)) return { ok: false, error: "연결할 고객을 최신 목록에서 다시 선택해 주세요." };
   const existingId = String(source.id || "");
   let existing = null;
   if (existingId) {
