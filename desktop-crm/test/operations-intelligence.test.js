@@ -103,3 +103,27 @@ test("improvement candidates require five samples and two factual signals withou
   assert.deepEqual(candidates, Ops.improvementCandidates(Ops.bottlenecks(operations, { period:"all", now:"2026-08-29T00:00:00.000Z" })));
   assert.equal(Ops.improvementCandidates(Ops.bottlenecks(operations.slice(0,4), { period:"all" })).length, 0);
 });
+
+test("operation updates require optimistic versioning and protect system-owned counters", () => {
+  const main = src("main.js");
+  const renderer = src("operations-intelligence.js");
+  assert.match(src("operations-intelligence.html"), /name="expectedVersion"/);
+  assert.match(renderer, /elements\.expectedVersion\.value/);
+  assert.match(main, /expectedVersion/);
+  assert.match(main, /dbReadWithEtag\(`operationsIntelligence\/operations\/\$\{existingId\}`/);
+  assert.match(main, /"If-Match": snapshot\.etag/);
+  assert.match(main, /assignmentChangeCount: current\.assignmentChangeCount \+ Number/);
+  assert.match(main, /scheduleChangeCount: current\.scheduleChangeCount \+ Number/);
+  assert.doesNotMatch(main, /Object\.assign\([^\n]+source[^\n]+assignmentChangeCount/);
+});
+
+test("operations window exposes three analysis tabs and one shared period filter", () => {
+  const html = src("operations-intelligence.html");
+  const renderer = src("operations-intelligence.js");
+  for (const tab of ["overview", "bottlenecks", "candidates"]) assert.match(html, new RegExp(`data-tab="${tab}"`));
+  assert.match(html, /id="analysisPeriod"/);
+  assert.match(renderer, /Core\.bottlenecks/);
+  assert.match(renderer, /Core\.improvementCandidates/);
+  assert.match(renderer, /표본 부족/);
+  assert.match(renderer, /계속 관찰/);
+});

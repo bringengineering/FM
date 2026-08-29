@@ -2467,9 +2467,16 @@ async function saveIntelligenceOperation(input) {
   if (source.customerId && !(shared.customers || []).some(item => item && item.id === source.customerId && !item.archivedAt)) return { ok: false, error: "연결할 고객을 최신 목록에서 다시 선택해 주세요." };
   const existingId = String(source.id || "");
   let existing = null;
+  let snapshot = null;
   if (existingId) {
-    existing = localTestMode ? localIntelligenceOperations[existingId] : await remoteClient.dbRequest(`operationsIntelligence/operations/${existingId}`, { method: "GET" });
+    if (localTestMode) existing = localIntelligenceOperations[existingId];
+    else {
+      snapshot = await remoteClient.dbReadWithEtag(`operationsIntelligence/operations/${existingId}`);
+      existing = snapshot.value;
+    }
     if (!existing) return { ok: false, error: "운영 기록을 찾지 못했습니다." };
+    const expectedVersion = Number(source.expectedVersion);
+    if (!Number.isInteger(expectedVersion) || expectedVersion !== Number(existing.version)) return { ok: false, code: "VERSION_CONFLICT", error: "다른 컴퓨터에서 먼저 변경했습니다. 최신 기록을 다시 열어 주세요." };
   }
   const now = new Date().toISOString();
   let operation;
@@ -2478,10 +2485,18 @@ async function saveIntelligenceOperation(input) {
     const current = OperationsIntelligence.assertValid(existing);
     const requestedStatus = OperationsIntelligence.STATUSES.includes(source.status) ? source.status : current.status;
     operation = requestedStatus !== current.status ? OperationsIntelligence.transition(current, requestedStatus, { now, userId: user.uid }) : Object.assign({}, current, { version: current.version + 1, updatedAt: now, updatedBy: user.uid });
-    operation = OperationsIntelligence.assertValid(OperationsIntelligence.normalize(Object.assign({}, operation, source, { id: current.id, createdAt: current.createdAt, createdBy: current.createdBy, status: requestedStatus, statusHistory: operation.statusHistory, version: operation.version, updatedAt: now, updatedBy: user.uid })));
+    const rendererFields = Object.assign({}, source);
+    for (const field of ["assignmentChangeCount", "scheduleChangeCount", "reopenCount", "commentCount", "version", "createdAt", "createdBy", "updatedAt", "updatedBy", "statusHistory"]) delete rendererFields[field];
+    operation = OperationsIntelligence.assertValid(OperationsIntelligence.normalize(Object.assign({}, operation, rendererFields, {
+      id: current.id, createdAt: current.createdAt, createdBy: current.createdBy, status: requestedStatus,
+      statusHistory: operation.statusHistory, version: operation.version, updatedAt: now, updatedBy: user.uid,
+      assignmentChangeCount: current.assignmentChangeCount + Number(String(current.assigneeId) !== String(source.assigneeId || "")),
+      scheduleChangeCount: current.scheduleChangeCount + Number(String(current.scheduledFor) !== String(source.scheduledFor || "")),
+      reopenCount: current.reopenCount, commentCount: current.commentCount,
+    })));
   }
   if (localTestMode) localIntelligenceOperations[operation.id] = operation;
-  else await remoteClient.dbRequest(`operationsIntelligence/operations/${operation.id}`, { method: "PUT", body: operation, query: "print=silent" });
+  else await remoteClient.dbRequest(`operationsIntelligence/operations/${operation.id}`, { method: "PUT", body: operation, headers: existingId ? { "If-Match": snapshot.etag } : {}, query: "print=silent" });
   return { ok: true, operation };
 }
 
