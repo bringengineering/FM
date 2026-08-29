@@ -31,17 +31,36 @@ test("quick completion captures human work and produces dashboard metrics", () =
   assert.deepEqual(metrics.interventionCounts, { coordinate: 1, move: 1, execute: 1 });
 });
 
-test("existing CRM exposes only a launcher while the operations UI stays in dedicated files", () => {
+test("existing CRM exposes operations analysis as a first-class internal view", () => {
+  const html = src("index.html");
+  const app = src("app.js");
+  const preload = src("preload.js");
+  const work = html.indexOf('data-view="workManagement"');
+  const analysis = html.indexOf('data-view="operationsIntelligence"');
+  assert.equal((html.match(/data-view="operationsIntelligence"/g) || []).length, 1);
+  assert.ok(analysis > work);
+  assert.doesNotMatch(html, /data-action="open-operations-intelligence"|별도 창/);
+  assert.match(app, /currentView === "operationsIntelligence"/);
+  assert.doesNotMatch(preload, /openOperationsIntelligence/);
+});
+
+test("integrated operations view loads and saves through the trusted CRM bridge", () => {
   const html = src("index.html");
   const app = src("app.js");
   const preload = src("preload.js");
   const main = src("main.js");
-  assert.match(html, /data-action="open-operations-intelligence"/);
-  assert.doesNotMatch(html, /data-view="operationsIntelligence"/);
-  assert.doesNotMatch(app, /currentView === "operationsIntelligence"/);
-  assert.match(preload, /openOperationsIntelligence/);
-  assert.match(main, /operations-intelligence\.html/);
-  assert.match(main, /operations-intelligence-preload\.js/);
+  assert.match(html, /operations-intelligence-core\.js/);
+  assert.match(html, /operations-intelligence-ui\.js/);
+  assert.match(preload, /loadOperationsIntelligence/);
+  assert.match(preload, /saveOperation/);
+  assert.match(main, /crm:operations-intelligence-load/);
+  assert.match(main, /crm:operation-save/);
+  assert.match(app, /function renderOperationsIntelligence/);
+  assert.match(app, /\["dashboard", "cases", "payments", "customers", "buildings", "vacancies", "buildingCalendar", "workManagement", "operationsIntelligence"/);
+  assert.match(app, /data-operations-tab/);
+  assert.match(app, /data-operations-period/);
+  assert.match(app, /operationForm/);
+  assert.match(app, /await api\.saveOperation/);
 });
 
 test("database rules isolate operations and preserve viewer read-only access", () => {
@@ -106,9 +125,9 @@ test("improvement candidates require five samples and two factual signals withou
 
 test("operation updates require optimistic versioning and protect system-owned counters", () => {
   const main = src("main.js");
-  const renderer = src("operations-intelligence.js");
-  assert.match(src("operations-intelligence.html"), /name="expectedVersion"/);
-  assert.match(renderer, /elements\.expectedVersion\.value/);
+  const renderer = src("operations-intelligence-ui.js");
+  assert.match(renderer, /name=\"expectedVersion\"/);
+  assert.match(renderer, /Object\.fromEntries/);
   assert.match(main, /expectedVersion/);
   assert.match(main, /dbReadWithEtag\(`operationsIntelligence\/operations\/\$\{existingId\}`/);
   assert.match(main, /"If-Match": snapshot\.etag/);
@@ -117,20 +136,19 @@ test("operation updates require optimistic versioning and protect system-owned c
   assert.doesNotMatch(main, /Object\.assign\([^\n]+source[^\n]+assignmentChangeCount/);
 });
 
-test("operations window exposes three analysis tabs and one shared period filter", () => {
-  const html = src("operations-intelligence.html");
-  const renderer = src("operations-intelligence.js");
-  for (const tab of ["overview", "bottlenecks", "candidates"]) assert.match(html, new RegExp(`data-tab="${tab}"`));
-  assert.match(html, /id="analysisPeriod"/);
+test("integrated operations page exposes three analysis tabs and one shared period filter", () => {
+  const renderer = src("operations-intelligence-ui.js");
+  for (const tab of ["overview", "bottlenecks", "candidates"]) assert.match(renderer, new RegExp(`\\["${tab}"`));
+  assert.match(renderer, /data-operations-period/);
   assert.match(renderer, /Core\.bottlenecks/);
   assert.match(renderer, /Core\.improvementCandidates/);
   assert.match(renderer, /표본 부족/);
   assert.match(renderer, /계속 관찰/);
 });
 
-test("operations screenshot QA can open each isolated tab with synthetic local data", () => {
+test("separate operations BrowserWindow and its private IPC are retired", () => {
   const main = src("main.js");
-  assert.match(main, /BRING_CRM_OPERATIONS_SCREENSHOT_TAB/);
-  assert.match(main, /data-tab=/);
-  assert.match(main, /screenshotIntelligenceOperations/);
+  assert.doesNotMatch(main, /createOperationsIntelligenceWindow|operationsIntelligenceWindow/);
+  assert.doesNotMatch(main, /operations-intelligence:bootstrap|operations-intelligence:save/);
+  assert.doesNotMatch(main, /operations-intelligence\.html|operations-intelligence-preload\.js/);
 });

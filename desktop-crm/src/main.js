@@ -61,7 +61,6 @@ function fieldOperationsDisabledResult() {
 if (process.env.BRING_CRM_SCREENSHOT || process.env.BRING_CRM_SMOKE === "1") app.disableHardwareAcceleration();
 
 let mainWindow = null;
-let operationsIntelligenceWindow = null;
 let valuescopeView = null;
 let valuescopeViewVisible = false;
 let valuescopeMeasuredBounds = null;
@@ -2429,27 +2428,6 @@ function buildMenu() {
   ]);
 }
 
-async function createOperationsIntelligenceWindow() {
-  if (!authState().user) return { ok: false, error: "CRM에 먼저 로그인해 주세요." };
-  if (operationsIntelligenceWindow && !operationsIntelligenceWindow.isDestroyed()) {
-    operationsIntelligenceWindow.show();
-    operationsIntelligenceWindow.focus();
-    return { ok: true, reused: true };
-  }
-  operationsIntelligenceWindow = new BrowserWindow({
-    width: 1380, height: 900, minWidth: 960, minHeight: 680,
-    show: false, backgroundColor: "#f3f7f8", title: "BRING 운영 인텔리전스",
-    icon: path.join(__dirname, "assets", "bring-logo.png"),
-    webPreferences: { preload: path.join(__dirname, "operations-intelligence-preload.js"), contextIsolation: true, nodeIntegration: false, sandbox: true },
-  });
-  operationsIntelligenceWindow.webContents.on("will-navigate", event => event.preventDefault());
-  operationsIntelligenceWindow.webContents.setWindowOpenHandler(() => ({ action: "deny" }));
-  operationsIntelligenceWindow.on("closed", () => { operationsIntelligenceWindow = null; });
-  await operationsIntelligenceWindow.loadFile(path.join(__dirname, "operations-intelligence.html"));
-  operationsIntelligenceWindow.show();
-  return { ok: true, reused: false };
-}
-
 async function operationsIntelligenceBootstrap() {
   const user = authState().user;
   if (!user) throw new Error("CRM에 먼저 로그인해 주세요.");
@@ -2545,24 +2523,6 @@ async function createWindow() {
   await mainWindow.loadFile(path.join(__dirname, "index.html"), {
     query: process.env.BRING_CRM_SCREENSHOT ? { demo: process.env.BRING_CRM_SCREENSHOT_GUIDE === "1" ? "0" : "1", view: process.env.BRING_CRM_SCREENSHOT_VIEW || "dashboard" } : {}
   });
-
-  if (process.env.BRING_CRM_OPERATIONS_SCREENSHOT) {
-    localIntelligenceOperations = screenshotIntelligenceOperations();
-    await createOperationsIntelligenceWindow();
-    await new Promise(resolve => setTimeout(resolve, 500));
-    const screenshotTab = ["overview", "bottlenecks", "candidates"].includes(process.env.BRING_CRM_OPERATIONS_SCREENSHOT_TAB)
-      ? process.env.BRING_CRM_OPERATIONS_SCREENSHOT_TAB : "overview";
-    await operationsIntelligenceWindow.webContents.executeJavaScript(`document.querySelector('[data-tab="${screenshotTab}"]')?.click()`, true);
-    await new Promise(resolve => setTimeout(resolve, 100));
-    const target = path.resolve(process.cwd(), process.env.BRING_CRM_OPERATIONS_SCREENSHOT);
-    await fs.mkdir(path.dirname(target), { recursive: true });
-    const image = await operationsIntelligenceWindow.webContents.capturePage();
-    await fs.writeFile(target, image.toPNG());
-    console.log(JSON.stringify({ operationsIntelligenceScreenshot: target }));
-    applicationExitAllowed = true;
-    app.quit();
-    return;
-  }
 
   if (process.env.BRING_CRM_SMOKE === "1") {
     for (let attempt = 0; attempt < 50; attempt += 1) {
@@ -5127,15 +5087,8 @@ secureCanonicalHandle("crm:auth-logout", async input => {
 });
 secureHandle("crm:load", readStore);
 secureHandle("crm:save", data => writeStore(data));
-secureCanonicalHandle("crm:open-operations-intelligence", () => createOperationsIntelligenceWindow());
-ipcMain.handle("operations-intelligence:bootstrap", event => {
-  if (!trustedCanonicalIpc(event, operationsIntelligenceWindow, path.join(__dirname, "operations-intelligence.html"))) throw new Error("허용되지 않은 요청입니다.");
-  return operationsIntelligenceBootstrap();
-});
-ipcMain.handle("operations-intelligence:save", (event, input) => {
-  if (!trustedCanonicalIpc(event, operationsIntelligenceWindow, path.join(__dirname, "operations-intelligence.html"))) throw new Error("허용되지 않은 요청입니다.");
-  return saveIntelligenceOperation(input);
-});
+secureCanonicalHandle("crm:operations-intelligence-load", () => operationsIntelligenceBootstrap());
+secureCanonicalHandle("crm:operation-save", input => saveIntelligenceOperation(input));
 secureCanonicalHandle("crm:canonical-building-units-load", async () => {
   if (localTestMode) return JSON.parse(JSON.stringify(localCanonicalBuildingUnits));
   if (!remoteClient || !remoteClient.authState().user) throw new Error("로그인이 필요합니다.");

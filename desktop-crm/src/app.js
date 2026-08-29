@@ -9,6 +9,7 @@
   const WorkManagement = window.BringWorkManagement;
   const WorkCalendar = window.BringWorkCalendar;
   const ServiceOperationsUI = window.BringServiceOperationsUI;
+  const OperationsIntelligenceUI = window.OperationsIntelligenceUI;
   const api = window.bringCRM;
   const main = document.getElementById("main");
   const modal = document.getElementById("modal");
@@ -94,6 +95,7 @@
   let customerPhotoRefreshPromise = null;
   let operationsLoading = false;
   let operationsError = "";
+  let operationsIntelligenceState = { items: [], buildings: [], customers: [], profiles: [], user: null, loading: false, loaded: false, error: "", tab: "overview", period: "90d" };
   let workflowVendors = [];
   let workflowVendorError = "";
   let workflowActionKey = "";
@@ -125,6 +127,7 @@
     vacancies: ["층별 호실과 입퇴실 예정", "공실 현황"],
     buildingCalendar: ["건물별 일정을 날짜로 확인", "업무일정 캘린더"],
     workManagement: ["예정부터 완료·비용·증빙까지", "작업관리"],
+    operationsIntelligence: ["반복 업무와 병목을 한곳에서", "운영 분석"],
     valueScope: ["BRING VALUESCOPE", "지도·밸류스코프"],
     consultations: ["전화·방문·미팅 내용", "상담 기록"],
     pipeline: ["건물 발굴부터 유료관리 전환까지", "영업 관리"],
@@ -1223,6 +1226,10 @@
       primaryActionButton.hidden = !canWriteCRM();
       primaryActionButton.dataset.action = "new-work-record";
       primaryActionButton.textContent = "＋ 새 작업";
+    } else if (currentView === "operationsIntelligence") {
+      primaryActionButton.hidden = true;
+      delete primaryActionButton.dataset.action;
+      primaryActionButton.textContent = "";
     } else if (calendarView) {
       primaryActionButton.hidden = !canWriteCRM();
       if (canWriteCRM()) {
@@ -1266,6 +1273,7 @@
     else if (currentView === "vacancies") renderVacancies();
     else if (currentView === "buildingCalendar") renderBuildingCalendar();
     else if (currentView === "workManagement") renderWorkManagement();
+    else if (currentView === "operationsIntelligence") renderOperationsIntelligence();
     else if (currentView === "valueScope") renderValueScope();
     else if (currentView === "consultations") renderConsultations();
     else if (currentView === "pipeline") renderPipeline();
@@ -2611,6 +2619,58 @@
       const field = main.querySelector(`[data-work-filter="${key}"]`);
       if (field) field.value = value;
     });
+  }
+
+  function renderOperationsIntelligence() {
+    main.innerHTML = OperationsIntelligenceUI.renderPage({
+      operations: operationsIntelligenceState.items,
+      buildings: operationsIntelligenceState.buildings,
+      profiles: operationsIntelligenceState.profiles,
+      tab: operationsIntelligenceState.tab,
+      period: operationsIntelligenceState.period,
+      writable: canWriteCRM(),
+      loading: operationsIntelligenceState.loading && !operationsIntelligenceState.loaded,
+      error: operationsIntelligenceState.error,
+    });
+    if (!operationsIntelligenceState.loaded && !operationsIntelligenceState.loading) void loadOperationsIntelligence();
+  }
+
+  async function loadOperationsIntelligence() {
+    if (operationsIntelligenceState.loading) return;
+    operationsIntelligenceState.loading = true;
+    operationsIntelligenceState.error = "";
+    if (currentView === "operationsIntelligence") renderOperationsIntelligence();
+    try {
+      const data = await api.loadOperationsIntelligence();
+      operationsIntelligenceState = Object.assign(operationsIntelligenceState, {
+        items: Array.isArray(data.operations) ? data.operations : [],
+        buildings: Array.isArray(data.buildings) ? data.buildings : [],
+        customers: Array.isArray(data.customers) ? data.customers : [],
+        profiles: Array.isArray(data.profiles) ? data.profiles : [],
+        user: data.user || currentAuth.user,
+        loaded: true,
+        error: data.error || "",
+      });
+    } catch (error) {
+      operationsIntelligenceState.error = error && error.message || "운영 분석 자료를 불러오지 못했습니다.";
+    } finally {
+      operationsIntelligenceState.loading = false;
+      if (currentView === "operationsIntelligence") renderOperationsIntelligence();
+    }
+  }
+
+  function openOperationEditor(operationId) {
+    if (!canWriteCRM()) return showToast("조회 전용 계정은 운영 기록을 수정할 수 없습니다.", "error");
+    const operation = operationsIntelligenceState.items.find(item => String(item.id) === String(operationId)) || {};
+    modalContent.innerHTML = OperationsIntelligenceUI.renderForm({
+      operation,
+      buildings: operationsIntelligenceState.buildings,
+      customers: operationsIntelligenceState.customers,
+      profiles: operationsIntelligenceState.profiles,
+      writable: true,
+    });
+    openModal();
+    setTimeout(() => modalContent.querySelector('[name="title"]')?.focus(), 30);
   }
 
   function renderBuildingCalendar() {
@@ -4287,6 +4347,17 @@
       navFolderToggle.setAttribute("aria-expanded", String(open));
       return;
     }
+    const operationsTab = event.target.closest("[data-operations-tab]");
+    if (operationsTab) {
+      operationsIntelligenceState.tab = operationsTab.dataset.operationsTab;
+      renderOperationsIntelligence();
+      return;
+    }
+    const operationOpen = event.target.closest("[data-operation-open]");
+    if (operationOpen) {
+      openOperationEditor(operationOpen.dataset.operationOpen);
+      return;
+    }
     const nav = event.target.closest("[data-view]");
     if (nav) {
       const nextView = nav.dataset.view;
@@ -5269,9 +5340,12 @@
     const actionControl = event.target.closest("[data-action]");
     const action = actionControl?.dataset.action;
     if (!action) return;
-    if (action === "open-operations-intelligence") {
-      const result = await api.openOperationsIntelligence();
-      if (!result || !result.ok) showToast(result && result.error || "운영 인텔리전스 창을 열지 못했습니다.", "error");
+    if (action === "new-operation") {
+      openOperationEditor("");
+    }
+    else if (action === "reload-operations-intelligence") {
+      operationsIntelligenceState.loaded = false;
+      await loadOperationsIntelligence();
     }
     else if (action === "logout") {
       const result = await api.logout();
@@ -5354,6 +5428,11 @@
   });
 
   document.addEventListener("change", async event => {
+    if (event.target.matches("[data-operations-period]")) {
+      operationsIntelligenceState.period = event.target.value;
+      renderOperationsIntelligence();
+      return;
+    }
     if (event.target.matches("[data-work-calendar-building]")) {
       workCalendarBuildingId = event.target.value || "all";
       renderBuildingCalendar();
@@ -5538,6 +5617,24 @@
     event.preventDefault();
     const form = event.target;
     if (!canWriteCRM() && !["emailLoginForm", "passwordChangeForm"].includes(form.id)) return showToast("조회 전용 계정은 내용을 변경할 수 없습니다.", "error");
+    if (form.id === "operationForm") {
+      const id = String(form.elements.id && form.elements.id.value || "");
+      const existing = operationsIntelligenceState.items.find(item => String(item.id) === id) || {};
+      const payload = OperationsIntelligenceUI.formPayload(form, existing, operationsIntelligenceState.user || currentAuth.user || {});
+      try {
+        const result = await api.saveOperation(payload);
+        if (!result || !result.ok) return showToast(result && result.error || "운영 기록을 저장하지 못했습니다.", "error");
+        const index = operationsIntelligenceState.items.findIndex(item => String(item.id) === String(result.operation.id));
+        if (index < 0) operationsIntelligenceState.items.push(result.operation);
+        else operationsIntelligenceState.items[index] = result.operation;
+        closeModal();
+        renderOperationsIntelligence();
+        showToast("운영 기록을 서버에 저장했습니다.", "success");
+      } catch (error) {
+        showToast(error && error.message || "서버 저장 중 오류가 발생했습니다.", "error");
+      }
+      return;
+    }
     if (form.id === "buildingScheduleForm") {
       if (!canWriteCRM()) return showToast("조회 전용 계정은 일정을 저장할 수 없습니다.", "error");
       if (form.dataset.submitting === "true") return;
@@ -6768,7 +6865,7 @@ document.addEventListener("keydown", event => {
       if (query.get("demo") === "1" && !store.customers.length) store = demoStore();
       synchronizedStore = cloneStore(store);
       store.partnerVendors = Array.isArray(store.partnerVendors) ? store.partnerVendors : [];
-      if (["dashboard", "cases", "payments", "customers", "buildings", "vacancies", "buildingCalendar", "workManagement", "valueScope", "consultations", "pipeline", "contracts", "relationships", "partnerVendors", "partnerQuotes", "tasks", "security", "settings"].includes(query.get("view"))) currentView = query.get("view");
+      if (["dashboard", "cases", "payments", "customers", "buildings", "vacancies", "buildingCalendar", "workManagement", "operationsIntelligence", "valueScope", "consultations", "pipeline", "contracts", "relationships", "partnerVendors", "partnerQuotes", "tasks", "security", "settings"].includes(query.get("view"))) currentView = query.get("view");
       await refreshOperations({ silent: true, render: false });
       document.getElementById("lastSaved").textContent = store.updatedAt ? `최신 반영 ${dateText(store.updatedAt)}` : "새 데이터";
       render();
