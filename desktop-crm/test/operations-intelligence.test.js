@@ -127,3 +127,10 @@ test("operations window exposes three analysis tabs and one shared period filter
   assert.match(renderer, /표본 부족/);
   assert.match(renderer, /계속 관찰/);
 });
+
+test("operations screenshot QA can open each isolated tab with synthetic local data", () => {
+  const main = src("main.js");
+  assert.match(main, /BRING_CRM_OPERATIONS_SCREENSHOT_TAB/);
+  assert.match(main, /data-tab=/);
+  assert.match(main, /screenshotIntelligenceOperations/);
+});

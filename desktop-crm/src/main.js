@@ -114,6 +114,17 @@ if (localTestMode && !process.env.BRING_CRM_DATA_DIR) {
 }
 let localOperationsData = null;
 let localIntelligenceOperations = Object.create(null);
+function screenshotIntelligenceOperations() {
+  const rows = Array.from({ length: 7 }, (_, index) => OperationsIntelligence.normalize({
+    id: `qa_operation_${index + 1}`, title: `누수 현장 점검 ${index + 1}`, category: "시설", subcategory: "누수",
+    status: index < 5 ? "completed" : "in_progress", urgency: index === 0 ? "critical" : "normal",
+    createdAt: `2026-08-${String(20 + index).padStart(2, "0")}T01:00:00.000Z`, updatedAt: `2026-08-${String(20 + index).padStart(2, "0")}T03:00:00.000Z`, completedAt: index < 5 ? `2026-08-${String(20 + index).padStart(2, "0")}T03:00:00.000Z` : "",
+    directMinutes: 70 + index * 8, siteVisit: true, reworkRequired: index < 2, exceptionOccurred: index < 3,
+    firstTimeRight: index >= 3, repeatability: index < 5 ? "high" : "medium", managerIntervened: index < 2,
+    managerMinutes: index < 2 ? 20 : 0, interventionTypes: ["coordinate", "move", "execute"], version: 1,
+  }));
+  return Object.fromEntries(rows.map(item => [item.id, item]));
+}
 let localCanonicalBuildingUnits = Object.create(null);
 let localCustomerPhotos = Object.create(null);
 let localCanonicalBuildingVacancyState = Object.create(null);
@@ -2536,8 +2547,13 @@ async function createWindow() {
   });
 
   if (process.env.BRING_CRM_OPERATIONS_SCREENSHOT) {
+    localIntelligenceOperations = screenshotIntelligenceOperations();
     await createOperationsIntelligenceWindow();
     await new Promise(resolve => setTimeout(resolve, 500));
+    const screenshotTab = ["overview", "bottlenecks", "candidates"].includes(process.env.BRING_CRM_OPERATIONS_SCREENSHOT_TAB)
+      ? process.env.BRING_CRM_OPERATIONS_SCREENSHOT_TAB : "overview";
+    await operationsIntelligenceWindow.webContents.executeJavaScript(`document.querySelector('[data-tab="${screenshotTab}"]')?.click()`, true);
+    await new Promise(resolve => setTimeout(resolve, 100));
     const target = path.resolve(process.cwd(), process.env.BRING_CRM_OPERATIONS_SCREENSHOT);
     await fs.mkdir(path.dirname(target), { recursive: true });
     const image = await operationsIntelligenceWindow.webContents.capturePage();
