@@ -29,9 +29,12 @@ describe("LandingPage", () => {
       }),
     ).toBeInTheDocument();
     expect(container.querySelectorAll(".landing-brand-intro")).toHaveLength(1);
-    expect(within(intro as HTMLElement).getByAltText(/BRING CARE 건물관리 운영팀/)).toHaveAttribute(
+    const introImage = intro?.querySelector("img");
+    expect(introImage).toHaveAttribute(
       "src",
-      "/brand-campaign/bringcare-suited-team-building-v3.png",
+      intro?.classList.contains("landing-brand-intro-building-care")
+        ? "/brand-campaign/bringcare-team-stair-v1.png"
+        : "/brand-campaign/bringcare-suited-team-building-v3.png",
     );
     expect(within(intro as HTMLElement).getByRole("link", { name: "서비스 알아보기" })).toBeInTheDocument();
     expect(within(intro as HTMLElement).getByText("무료 견적 신청")).toBeInTheDocument();
@@ -304,6 +307,21 @@ describe("LandingPage", () => {
     expect(
       getByRole("link", { name: /현장기록 12건 전체 보기/ }),
     ).toHaveAttribute("href", "/care-records");
+  });
+
+  it("uses the building-care visual system without leaking it to other landings", () => {
+    const { container, rerender } = render(
+      <LandingPage service={landingServices["building-care"]} />,
+    );
+
+    expect(container.querySelector(".landing-brand-intro-building-care")).toBeInTheDocument();
+    expect(container.querySelectorAll(".landing-fact-grid img")).toHaveLength(4);
+    expect(container.querySelectorAll(".landing-cleaning-result-grid img")).toHaveLength(3);
+    expect(container.querySelectorAll(".landing-scope-grid img")).toHaveLength(4);
+
+    rerender(<LandingPage service={landingServices["move-in-cleaning"]} />);
+    expect(container.querySelector(".landing-brand-intro-building-care")).not.toBeInTheDocument();
+    expect(container.querySelectorAll(".landing-fact-grid img")).toHaveLength(0);
   });
 
   it("links the verified official Kakao consultation channel", () => {

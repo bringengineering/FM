@@ -49,6 +49,7 @@ export default function LandingPage({ service }: LandingPageProps) {
       <main className={`landing-page landing-${service.slug}`}>
       <LandingBrandIntro
         serviceHref="#scope-title"
+        variant={service.slug === "building-care" ? "building-care" : "default"}
         estimateAction={(
           <QuickEstimateTrigger>무료 견적 신청</QuickEstimateTrigger>
         )}
@@ -143,9 +144,9 @@ export default function LandingPage({ service }: LandingPageProps) {
             <div className="landing-section-inner landing-fact-grid">
               {service.facts.map((fact, index) => (
                 <article key={`${fact.value}-${fact.label}`}>
+                  {fact.image ? <Image src={fact.image} alt={fact.imageAlt ?? ""} fill unoptimized sizes="(max-width: 760px) 100vw, 25vw" /> : null}
                   <span>{String(index + 1).padStart(2, "0")}</span>
-                  <strong>{fact.value}</strong>
-                  <p>{fact.label}</p>
+                  <div><strong>{fact.value}</strong><p>{fact.label}</p></div>
                 </article>
               ))}
             </div>
@@ -177,6 +178,7 @@ export default function LandingPage({ service }: LandingPageProps) {
           <ol className="landing-cleaning-result-grid">
             {service.cleaningResults.map((item, index) => (
               <li key={item.title}>
+                {item.image ? <Image src={item.image} alt={item.imageAlt ?? ""} width={720} height={480} unoptimized sizes="(max-width: 760px) 100vw, 33vw" /> : null}
                 <span>{String(index + 1).padStart(2, "0")}</span>
                 <div>
                   <h3>{item.title}</h3>
@@ -202,6 +204,7 @@ export default function LandingPage({ service }: LandingPageProps) {
           <div className="landing-scope-grid">
             {service.scope.map((item, index) => (
               <article key={item.title}>
+                {item.image ? <Image src={item.image} alt={item.imageAlt ?? ""} width={720} height={480} unoptimized sizes="(max-width: 760px) 100vw, 25vw" /> : null}
                 <span>{String(index + 1).padStart(2, "0")}</span>
                 <h3>{item.title}</h3>
                 <p>{item.copy}</p>

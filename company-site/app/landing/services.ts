@@ -11,11 +11,15 @@ export type LandingRecord = FieldRecord;
 type LandingFact = {
   value: string;
   label: string;
+  image?: string;
+  imageAlt?: string;
 };
 
 type LandingItem = {
   title: string;
   copy: string;
+  image?: string;
+  imageAlt?: string;
 };
 
 type LandingFaq = {
@@ -134,23 +138,25 @@ export const landingServices: Record<LandingSlug, LandingService> = {
     heroImage: "/landing/address-sign-after.jpg",
     heroAlt: "브링케어가 관리한 건물 입구 표식",
     facts: [
-      { value: "공실", label: "상태 확인" },
-      { value: "입퇴실", label: "현장 지원" },
-      { value: "민원", label: "접수·연결" },
-      { value: "사진", label: "처리 결과 보고" },
+      { value: "공실", label: "상태 확인", image: "/landing/records/vacancy-check.jpg", imageAlt: "BRING CARE가 확인한 실제 공실 내부" },
+      { value: "입퇴실", label: "현장 지원", image: "/landing/records/tenancy-check.jpg", imageAlt: "실제 입퇴실 현장 확인 기록" },
+      { value: "민원", label: "접수·연결", image: "/landing/records/entrance-notices.jpg", imageAlt: "공동현관 안내문과 현장 확인 기록" },
+      { value: "사진", label: "처리 결과 보고", image: "/landing/records/address-sign-work.jpg", imageAlt: "건물 표식 작업 완료 현장 기록" },
     ],
     cleaningResults: [
-      { title: "공용부 청결 확인", copy: "방문 시 계단, 복도와 출입구의 청결 상태를 확인합니다." },
-      { title: "관리 요소 확인", copy: "공실, 적치물과 수리가 필요한 부분을 현장에서 함께 살핍니다." },
-      { title: "처리 결과 공유", copy: "확인한 내용과 필요한 조치를 사진과 기록으로 전달합니다." },
+      { title: "공용부 청결 확인", copy: "방문 시 계단, 복도와 출입구의 청결 상태를 확인합니다.", image: "/landing/records/waste-cleanup.jpg", imageAlt: "실제 공용부 정리 현장" },
+      { title: "관리 요소 확인", copy: "공실, 적치물과 수리가 필요한 부분을 현장에서 함께 살핍니다.", image: "/landing/records/defect-check.jpg", imageAlt: "실제 건물 하자 확인 현장" },
+      { title: "처리 결과 공유", copy: "확인한 내용과 필요한 조치를 사진과 기록으로 전달합니다.", image: "/landing/records/address-sign-work.jpg", imageAlt: "실제 현장 조치 완료 기록" },
     ],
     scope: [
-      { title: "공실 확인", copy: "비어 있는 호실의 상태와 필요한 조치를 확인합니다." },
-      { title: "공용부 점검", copy: "조명, 표식, 적치물과 공용 공간을 살핍니다." },
-      { title: "민원 연결", copy: "세입자 문의를 받고 필요한 담당과 연결합니다." },
+      { title: "공실 확인", copy: "비어 있는 호실의 상태와 필요한 조치를 확인합니다.", image: "/landing/movein-campaign/suit-cabinet.png", imageAlt: "정장을 입은 BRING CARE 관리자의 공실 점검 캠페인 이미지" },
+      { title: "공용부 점검", copy: "조명, 표식, 적치물과 공용 공간을 살핍니다.", image: "/landing/campaign/suit-cobweb.png", imageAlt: "정장을 입은 BRING CARE 관리자의 공용부 점검 캠페인 이미지" },
+      { title: "민원 연결", copy: "세입자 문의를 받고 필요한 담당과 연결합니다.", image: "/landing/campaign/suit-mailbox.png", imageAlt: "정장을 입은 BRING CARE 관리자의 현장 민원 확인 캠페인 이미지" },
       {
         title: "소규모 보수",
         copy: "현장 확인부터 자재·작업자 연결과 완료 확인까지 돕습니다.",
+        image: "/landing/campaign/suit-entry-window.png",
+        imageAlt: "정장을 입은 BRING CARE 관리자의 소규모 보수 확인 캠페인 이미지",
       },
     ],
     records: recordsFor([

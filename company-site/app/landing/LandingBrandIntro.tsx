@@ -6,15 +6,17 @@ type LandingBrandIntroProps = {
   serviceHref: string;
   estimateHref?: string;
   estimateAction?: ReactNode;
+  variant?: "default" | "building-care";
 };
 
 export default function LandingBrandIntro({
   serviceHref,
   estimateHref = "#quick-estimate",
   estimateAction,
+  variant = "default",
 }: LandingBrandIntroProps) {
   return (
-    <section className="landing-brand-intro" aria-labelledby="landing-brand-intro-title">
+    <section className={`landing-brand-intro landing-brand-intro-${variant}`} aria-labelledby="landing-brand-intro-title">
       <div className="landing-brand-intro-copy">
         <p>BRING CARE · BUILDING MANAGEMENT</p>
         <h2 id="landing-brand-intro-title">
@@ -30,10 +32,10 @@ export default function LandingBrandIntro({
           {estimateAction ?? <a href={estimateHref}>무료 견적 신청</a>}
         </div>
       </div>
-      <div className="landing-brand-intro-photo">
+      <div className="landing-brand-intro-photo" aria-hidden={variant === "building-care"}>
         <Image
-          src="/brand-campaign/bringcare-suited-team-building-v3.png"
-          alt="건물 앞에 선 BRING CARE 건물관리 운영팀"
+          src={variant === "building-care" ? "/brand-campaign/bringcare-team-stair-v1.png" : "/brand-campaign/bringcare-suited-team-building-v3.png"}
+          alt={variant === "building-care" ? "" : "건물 앞에 선 BRING CARE 건물관리 운영팀"}
           width={1376}
           height={768}
           priority
