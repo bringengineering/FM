@@ -33,7 +33,7 @@ function crmClaims(email: string) {
 function crmPasswordClaims(
   email: string,
   emailVerified = true,
-  signInProvider = "password",
+  signInProvider: "password" | "google.com" = "password",
 ) {
   return {
     email,
