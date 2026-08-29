@@ -51,3 +51,55 @@ test("database rules isolate operations and preserve viewer read-only access", (
   assert.match(rules, /role'\)\.val\(\) === 'viewer'/);
   assert.match(rules, /role'\)\.val\(\) === 'member'/);
 });
+
+test("operation normalization captures repeatability, manager time, counters, and safe evidence", () => {
+  const Ops = require("../src/operations-intelligence-core");
+  const operation = Ops.normalize({
+    id: "op_1", title: "계단 청소", repeatability: "high", managerIntervened: true,
+    managerMinutes: 25, assignmentChangeCount: 2, scheduleChangeCount: 3, reopenCount: 1, commentCount: 4,
+    attachments: [
+      { id: "proof_1", type: "receipt", name: "영수증", ref: "https://drive.google.com/file/d/abc", uploadedAt: "2026-08-29T01:00:00.000Z", uploadedBy: "u1", buildingId: "building_1", unitId: "" },
+      { id: "proof_2", type: "other", name: "unsafe", ref: "javascript:alert(1)" },
+    ],
+  });
+  assert.equal(operation.repeatability, "high");
+  assert.equal(operation.managerMinutes, 25);
+  assert.equal(operation.assignmentChangeCount, 2);
+  assert.equal(operation.attachments.length, 1);
+  assert.equal(operation.attachments[0].type, "receipt");
+});
+
+test("bottlenecks group by work type and exclude samples below three from ranking", () => {
+  const Ops = require("../src/operations-intelligence-core");
+  const rows = [
+    { id:"a1",title:"A1",category:"시설",subcategory:"누수",createdAt:"2026-08-01T00:00:00.000Z",directMinutes:100,siteVisit:true,reworkRequired:true,exceptionOccurred:true,firstTimeRight:false,repeatability:"high",managerIntervened:true,managerMinutes:20 },
+    { id:"a2",title:"A2",category:"시설",subcategory:"누수",createdAt:"2026-08-02T00:00:00.000Z",directMinutes:80,siteVisit:true,revisitRequired:true,firstTimeRight:false,repeatability:"high" },
+    { id:"a3",title:"A3",category:"시설",subcategory:"누수",createdAt:"2026-08-03T00:00:00.000Z",directMinutes:60,siteVisit:false,firstTimeRight:true,repeatability:"medium" },
+    { id:"b1",title:"B1",category:"청소",subcategory:"계단",createdAt:"2026-08-04T00:00:00.000Z",directMinutes:30,firstTimeRight:true },
+    { id:"b2",title:"B2",category:"청소",subcategory:"계단",createdAt:"2026-08-05T00:00:00.000Z",directMinutes:20,firstTimeRight:true },
+  ];
+  const result = Ops.bottlenecks(rows, { period:"all", now:"2026-08-29T00:00:00.000Z" });
+  assert.equal(result.groups[0].key, "시설 / 누수");
+  assert.equal(result.groups[0].sampleSize, 3);
+  assert.equal(result.groups[0].rankEligible, true);
+  assert.equal(result.groups.find(group => group.key === "청소 / 계단").rankEligible, false);
+  assert.equal(result.groups[0].siteVisitRate, 66.7);
+  assert.equal(result.groups[0].firstTimeRightRate, 33.3);
+});
+
+test("improvement candidates require five samples and two factual signals without technology guesses", () => {
+  const Ops = require("../src/operations-intelligence-core");
+  const operations = Array.from({ length: 5 }, (_, index) => ({
+    id:`op_${index}`, title:`누수 ${index}`, category:"시설", subcategory:"누수", createdAt:`2026-08-0${index+1}T00:00:00.000Z`,
+    directMinutes:90, siteVisit:true, reworkRequired:index<2, exceptionOccurred:index<2,
+    firstTimeRight:index>=2, repeatability:index<3?"high":"medium", managerIntervened:index===0,
+  }));
+  const analysis = Ops.bottlenecks(operations.slice().reverse(), { period:"all", now:"2026-08-29T00:00:00.000Z" });
+  const candidates = Ops.improvementCandidates(analysis);
+  assert.equal(candidates.length, 1);
+  assert.equal(candidates[0].key, "시설 / 누수");
+  assert.ok(candidates[0].signals.length >= 2);
+  assert.doesNotMatch(JSON.stringify(candidates), /AI|Computer Vision|Scheduling|Robotics/i);
+  assert.deepEqual(candidates, Ops.improvementCandidates(Ops.bottlenecks(operations, { period:"all", now:"2026-08-29T00:00:00.000Z" })));
+  assert.equal(Ops.improvementCandidates(Ops.bottlenecks(operations.slice(0,4), { period:"all" })).length, 0);
+});
