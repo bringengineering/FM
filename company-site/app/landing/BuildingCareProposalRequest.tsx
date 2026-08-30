@@ -74,7 +74,7 @@ export default function BuildingCareProposalRequest() {
 
   return (
     <section className="bc-proposal" id="building-care-proposal">
-      <div className="bc-proposal-inner">
+      <div className="bc-proposal-inner bc-proposal-cover-first">
         <div className="bc-proposal-preview" aria-label="BRING CARE 건물관리 제안서 미리보기">
           <div className="bc-proposal-cover">
             <Image

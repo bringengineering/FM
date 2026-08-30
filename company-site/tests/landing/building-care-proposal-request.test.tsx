@@ -28,7 +28,31 @@ describe("BuildingCareProposalRequest", () => {
   });
 
   it("renders the required proposal request fields", () => {
-    render(<BuildingCareProposalRequest />);
+    const { container } = render(<BuildingCareProposalRequest />);
+
+    const layout = container.querySelector(".bc-proposal-cover-first");
+    const preview = container.querySelector(".bc-proposal-preview");
+    const content = container.querySelector(".bc-proposal-content");
+
+    expect(layout).toBeInTheDocument();
+    expect(preview).toBeInTheDocument();
+    expect(content).toBeInTheDocument();
+    if (!layout || !preview || !content) {
+      throw new Error("제안서 표지 우선 레이아웃을 찾을 수 없습니다.");
+    }
+    expect(preview.parentElement).toBe(layout);
+    expect(
+      preview.compareDocumentPosition(content) &
+        Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
+    expect(container.querySelector(".bc-proposal-cover img")).toHaveAttribute(
+      "width",
+      "2400",
+    );
+    expect(container.querySelector(".bc-proposal-cover img")).toHaveAttribute(
+      "height",
+      "1350",
+    );
 
     expect(screen.getByLabelText("이름")).toBeRequired();
     expect(screen.getByLabelText("연락처")).toBeRequired();
