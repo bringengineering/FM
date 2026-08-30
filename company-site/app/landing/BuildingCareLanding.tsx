@@ -8,9 +8,9 @@ import { buildingCareCases, buildingCareFaq, turnoverSteps } from "./buildingCar
 import BuildingCarePartnership from "./BuildingCarePartnership";
 import BuildingCarePricingGrid from "./BuildingCarePricingGrid";
 import BuildingCareTestimonials from "./BuildingCareTestimonials";
+import BuildingCareCredentials from "./BuildingCareCredentials";
 import {
   BrandTeamManifesto,
-  CertificationStrip,
   CertificationTrustBar,
   ManagementComparison,
   ManagementCycle,
@@ -46,6 +46,7 @@ export default function BuildingCareLanding() {
     <main className="building-care-sales">
       <BrandTeamManifesto />
       <CertificationTrustBar />
+      <BuildingCareCredentials />
 
       <section id="owner-problem" className="bc-section"><div className="bc-shell"><header className="bc-heading"><p className="bc-kicker">CUSTOMER PROBLEM</p><h2>건물 하나 관리하는데,<br />왜 이렇게 연락할 곳이 많을까요?</h2><p>작은 문제 하나가 생겨도 업체를 찾고, 일정을 맞추고, 결과를 다시 확인해야 합니다.</p></header><div className="bc-problem-grid">{[
         { n: "01", type: "vacancy" as const, title: "공실·퇴실", copy: "현장 확인 → 청소업체 → 수리업체 → 중개사" },
@@ -87,8 +88,6 @@ export default function BuildingCareLanding() {
       <section id="operating-standard" className="bc-section bc-visual-section"><div className="bc-shell"><OperatingStandardComparison /></div></section>
 
       <section id="trust-operations" className="bc-section"><div className="bc-shell"><header className="bc-heading"><p className="bc-kicker">TRUST & OPERATIONS</p><h2>현장을 확인하고,<br />기록이 남는 방식으로 운영합니다.</h2></header><div className="bc-trust-grid">{[["원주 직영 운영","지역 현장을 직접 확인합니다."],["사전 승인 원칙","추가 비용이 필요한 작업은 먼저 안내합니다."],["현장 기록","확인 위치와 처리 결과를 사진으로 남깁니다."],["파트너 협업","전문 작업은 범위와 완료 상태를 함께 확인합니다."]].map(([a,b])=><article className="bc-card" key={a}><h3>{a}</h3><p>{b}</p></article>)}</div></div></section>
-
-      <section id="company-certifications" className="bc-section"><div className="bc-shell"><CertificationStrip /></div></section>
 
       <section id="building-care-faq" className="bc-section"><div className="bc-shell"><header className="bc-heading"><p className="bc-kicker">FAQ</p><h2>건물주가 많이 묻는 질문</h2></header><div className="bc-faq">{buildingCareFaq.map(([q,a])=><details key={q}><summary>{q}</summary><p>{a}</p></details>)}</div></div></section>
 

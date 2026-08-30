@@ -6,13 +6,14 @@ import {
   managementScopeRows,
   serviceVisuals,
 } from "./buildingCareVisualData";
+import { officialCompanyCredentials } from "./buildingCareTrustData";
 
 export function BrandTeamManifesto() {
   return <div className="bc-team-manifesto bc-team-manifesto-overlay" role="region" aria-labelledby="bc-team-title"><div className="bc-shell"><div className="bc-team-stage"><Image src="/brand-campaign/bringcare-team-stair-v1.png" alt="계단에서 건물을 함께 살피는 BRING CARE 브랜드 팀 장면" fill priority unoptimized sizes="100vw" /><div className="bc-team-shade"/><div className="bc-team-copy"><p className="bc-kicker">BRING CARE MANAGEMENT TEAM</p><h1 id="bc-team-title">BRING CARE는 건물을 관리하며,<br />청소까지 책임지는 회사입니다.</h1><p>건물을 대하는 태도부터 다릅니다.</p></div></div><p className="bc-team-caption">BRING CARE 브랜드 캠페인 이미지</p></div></div>;
 }
 
 export function CertificationTrustBar() {
-  return <div className="bc-shell"><a className="bc-cert-trust-bar" href="#company-certifications"><span>공식 기업 인증</span><div>{activeCertifications.map(cert => <strong className="bc-trust-badge" key={cert.id}>{cert.title}</strong>)}</div><b>확인서 보기 →</b></a></div>;
+  return <div className="bc-shell"><a className="bc-cert-trust-bar" href="#company-credentials"><span>공식 기업 인증</span><div>{officialCompanyCredentials.map(cert => <strong className="bc-trust-badge" key={cert.id}>{cert.title}</strong>)}</div><b>인증·수상 보기 →</b></a></div>;
 }
 
 export function CertificationStrip() {

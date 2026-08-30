@@ -30,6 +30,7 @@ describe("BuildingCarePage sales landing", () => {
       (section) => section.id,
     );
     expect(sectionIds).toEqual([
+      "company-credentials",
       "owner-problem",
       "one-contact",
       "real-estate-partnership",
@@ -44,7 +45,6 @@ describe("BuildingCarePage sales landing", () => {
       "turnover-time",
       "operating-standard",
       "trust-operations",
-      "company-certifications",
       "building-care-faq",
       "building-care-consultation",
     ]);
@@ -70,7 +70,8 @@ describe("BuildingCarePage sales landing", () => {
   it("explains the service with certifications, comparisons, and visual steps", () => {
     const { container } = render(<BuildingCarePage />);
 
-    expect(container.querySelectorAll(".bc-cert-card")).toHaveLength(3);
+    expect(container.querySelectorAll(".bc-credential-card")).toHaveLength(10);
+    expect(container.querySelector("#company-certifications")).not.toBeInTheDocument();
     expect(container.querySelectorAll(".bc-service-visual")).toHaveLength(6);
     expect(container.querySelector(".bc-management-comparison")).toBeInTheDocument();
     expect(container.querySelector(".bc-scope-table")).toBeInTheDocument();
@@ -91,10 +92,10 @@ describe("BuildingCarePage sales landing", () => {
     expect(
       screen.getByText("BRING CARE 브랜드 캠페인 이미지"),
     ).toBeInTheDocument();
-    expect(container.querySelectorAll(".bc-trust-badge")).toHaveLength(3);
+    expect(container.querySelectorAll(".bc-trust-badge")).toHaveLength(4);
     expect(container.querySelector(".bc-cert-trust-bar")).toHaveAttribute(
       "href",
-      "#company-certifications",
+      "#company-credentials",
     );
   });
 
@@ -172,6 +173,7 @@ describe("BuildingCarePage sales landing", () => {
     const order = [
       ".bc-team-manifesto",
       ".bc-cert-trust-bar",
+      "#company-credentials",
       "#owner-problem",
       ".bc-cycle-grid",
       "#real-cases",
@@ -179,7 +181,6 @@ describe("BuildingCarePage sales landing", () => {
       ".bc-mid-cta",
       ".bc-management-comparison",
       "#building-care-price",
-      "#company-certifications",
       "#building-care-consultation",
     ].map((selector) => main.querySelector(selector));
 
