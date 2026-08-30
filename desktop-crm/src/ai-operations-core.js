@@ -15,6 +15,17 @@
     "call", "reply", "visit", "meeting", "replied", "callback_requested",
     "meeting_set", "통화", "회신", "방문", "미팅"
   ]);
+  const CATEGORY_RULES = Object.freeze([
+    ["water", /누수|수도|배관|물샘|침수/],
+    ["electric", /전기|정전|차단기|콘센트|감전/],
+    ["heating_cooling", /보일러|난방|냉방|에어컨|가스/],
+    ["cleaning", /청소|오염|곰팡이/],
+    ["waste", /폐기물|쓰레기|버려/],
+    ["grounds", /예초|잡초|마당|외부/],
+    ["damage", /파손|고장|깨짐|문이 안|출입 불가/],
+    ["leasing", /임대차|공실|퇴실|입주|계약/]
+  ]);
+  const IMMEDIATE_RISK = /화재|불이 났|연기|가스 냄새|가스 누출|감전|침수|출입 불가/;
 
   function salesBand(score) {
     const normalized = Math.max(0, Math.min(100, Number(score) || 0));
@@ -85,5 +96,63 @@
     });
   }
 
-  return Object.freeze({ BAND_DAYS, salesBand, recommendFollowUp, scoreSalesFocus });
+  function classifyIssue(value) {
+    const content = String(value || "").trim();
+    const matched = CATEGORY_RULES.find(([, pattern]) => pattern.test(content));
+    const safetyWarning = IMMEDIATE_RISK.test(content);
+    return {
+      category: matched ? matched[0] : "other",
+      urgency: safetyWarning ? "immediate" : "normal",
+      safetyWarning
+    };
+  }
+
+  function buildWorkDraftPayload(input = {}) {
+    const title = String(input.title || "").trim().slice(0, 120);
+    const detail = String(input.detail || "").trim().slice(0, 2000);
+    const classification = classifyIssue(`${title} ${detail}`);
+    return Object.freeze({
+      title,
+      detail,
+      buildingLabel: String(input.buildingLabel || "").trim().slice(0, 120),
+      requestedAt: dateOnly(input.requestedAt),
+      category: classification.category,
+      urgency: classification.urgency,
+      safetyWarning: classification.safetyWarning
+    });
+  }
+
+  function stableValue(value) {
+    if (Array.isArray(value)) return value.map(stableValue);
+    if (!value || typeof value !== "object") return value;
+    return Object.fromEntries(Object.keys(value).sort().map(key => [key, stableValue(value[key])]));
+  }
+
+  function sourceRevision(value) {
+    const content = JSON.stringify(stableValue(value));
+    let hash = 2166136261;
+    for (let index = 0; index < content.length; index += 1) {
+      hash ^= content.charCodeAt(index);
+      hash = Math.imul(hash, 16777619);
+    }
+    return `rev_${(hash >>> 0).toString(16).padStart(8, "0")}`;
+  }
+
+  function assertCurrentProposal(proposal, currentSource) {
+    if (!proposal || proposal.sourceRevision !== sourceRevision(currentSource)) {
+      throw new Error("stale AI proposal: source data changed");
+    }
+    return true;
+  }
+
+  return Object.freeze({
+    BAND_DAYS,
+    salesBand,
+    recommendFollowUp,
+    scoreSalesFocus,
+    classifyIssue,
+    buildWorkDraftPayload,
+    sourceRevision,
+    assertCurrentProposal
+  });
 });
