@@ -3677,7 +3677,7 @@
     const cycle = Number(customer && customer.relationshipCycleDays) || 30;
     const nextContactAt = relationshipMode ? (customer && customer.relationshipNextContactAt || addDaysIso(new Date(), cycle)) : "";
     const nextAction = relationshipMode ? (customer && customer.relationshipNextAction || "서비스 만족도 및 추가 요청 확인") : "";
-    modalContent.innerHTML = `<div class="modal-head"><div><h2>${relationshipMode ? "후속 연락 기록" : "상담 기록 추가"}</h2><p>${relationshipMode ? "계약 고객과 나눈 내용과 다음 연락 약속을 함께 남기세요." : "고객과 나눈 핵심 내용과 다음 할 일을 간단히 남기세요."}</p></div><button class="close-button" data-action="close-modal">×</button></div><form id="consultationForm" class="modal-body" data-return-view="${attr(returnView || "consultations")}"><div class="form-grid">${selectField("고객 *", "customerId", ["", ...store.customers.map(item => item.id)], customerId || "", id => id ? (customerById(id)?.name || id) : "고객을 선택하세요")}${selectField("연락 방식", "type", ["전화", "문자", "카카오", "이메일", "미팅", "방문", "메모"], "전화")}${field("연락 일시", "occurredAt", datetimeValue(new Date().toISOString()), "datetime-local")}${field("담당자", "owner", store.settings.owner || "김현진")}${areaField("연락 내용 *", "summary", "", "wide")}${field("고객 반응·결과", "result", "", "text", relationshipMode ? "예: 서비스에 만족, 추가 요청 없음" : "예: 견적 요청 접수")}${field("다음 할 일", "nextAction", nextAction, "text", relationshipMode ? "예: 정기 안부 및 추가 요청 확인" : "예: 비교견적 전달")}${field("다음 연락일", "nextContactAt", datetimeValue(nextContactAt), "datetime-local")}</div><div class="form-actions"><button type="button" class="secondary-button" data-action="close-modal">취소</button><button class="primary-button">${relationshipMode ? "후속 연락 저장" : "상담 기록 저장"}</button></div></form>`;
+    modalContent.innerHTML = `<div class="modal-head"><div><h2>${relationshipMode ? "후속 연락 기록" : "상담 기록 추가"}</h2><p>${relationshipMode ? "계약 고객과 나눈 내용과 다음 연락 약속을 함께 남기세요." : "고객과 나눈 핵심 내용과 다음 할 일을 간단히 남기세요."}</p></div><button class="close-button" data-action="close-modal">×</button></div><form id="consultationForm" class="modal-body" data-return-view="${attr(returnView || "consultations")}" data-ai-loading="false"><div class="form-grid">${selectField("고객 *", "customerId", ["", ...store.customers.map(item => item.id)], customerId || "", id => id ? (customerById(id)?.name || id) : "고객을 선택하세요")}${selectField("연락 방식", "type", ["전화", "문자", "카카오", "이메일", "미팅", "방문", "메모"], "전화")}${field("연락 일시", "occurredAt", datetimeValue(new Date().toISOString()), "datetime-local")}${field("담당자", "owner", store.settings.owner || "김현진")}${areaField("연락 내용 *", "summary", "", "wide")}${field("고객 반응·결과", "result", "", "text", relationshipMode ? "예: 서비스에 만족, 추가 요청 없음" : "예: 견적 요청 접수")}${field("다음 할 일", "nextAction", nextAction, "text", relationshipMode ? "예: 정기 안부 및 추가 요청 확인" : "예: 비교견적 전달")}${field("다음 연락일", "nextContactAt", datetimeValue(nextContactAt), "datetime-local")}</div><section class="consultation-ai-tools"><div><b>AI 상담 정리</b><span>입력한 원문은 그대로 두고 요약·현재 요청·결과·다음 행동을 제안합니다.</span></div><button type="button" class="secondary-button" data-consultation-ai-organize disabled>✦ AI로 정리</button></section><div data-consultation-ai-draft></div><div class="form-actions"><button type="button" class="secondary-button" data-action="close-modal">취소</button><button class="primary-button">${relationshipMode ? "후속 연락 저장" : "상담 기록 저장"}</button></div></form>`;
     openModal();
     const form = document.getElementById("consultationForm");
     setupConsultationCustomerPicker(form, customer);
@@ -3686,6 +3686,51 @@
       const search = form && form.querySelector("[data-consultation-customer-search]");
       (type && type.value ? search : type)?.focus();
     }, 30);
+  }
+
+  async function requestConsultationAiDraft(form) {
+    if (!form || form.dataset.aiLoading === "true") return;
+    const originalSummary = form.elements.summary.value;
+    if (!originalSummary.trim()) return;
+    form.dataset.aiLoading = "true";
+    const button = form.querySelector("[data-consultation-ai-organize]");
+    if (button) { button.disabled = true; button.textContent = "AI가 정리 중…"; }
+    const customer = customerById(form.elements.customerId?.value);
+    try {
+      const response = await api.assist({
+        task: "consultation_structure",
+        content: originalSummary,
+        context: { customerType: customer?.type || form.elements.customerType?.value || "", workType: "상담", owner: form.elements.owner?.value || "" }
+      });
+      form.dataset.aiDraft = JSON.stringify(response.result);
+      renderConsultationAiDraft(form, response.result, "");
+    } catch (error) {
+      delete form.dataset.aiDraft;
+      renderConsultationAiDraft(form, null, error.message || "AI를 일시적으로 사용할 수 없습니다.");
+    } finally {
+      form.dataset.aiLoading = "false";
+      if (button) { button.disabled = !form.elements.summary.value.trim(); button.textContent = "✦ AI로 정리"; }
+    }
+  }
+
+  function renderConsultationAiDraft(form, draft, error) {
+    const slot = form && form.querySelector("[data-consultation-ai-draft]");
+    if (!slot) return;
+    if (error) { slot.innerHTML = `<div class="consultation-ai-error" role="alert">${esc(error)}</div>`; return; }
+    if (!draft) { slot.innerHTML = ""; return; }
+    slot.innerHTML = `<section class="consultation-ai-draft"><header><div><b>AI가 정리한 초안</b><span>내용을 확인한 뒤 적용하세요. 아직 저장되지 않았습니다.</span></div></header><dl><div><dt>상담 요약</dt><dd>${esc(draft.summary)}</dd></div><div><dt>현재 요청</dt><dd>${esc(draft.currentRequest)}</dd></div><div><dt>상담 결과</dt><dd>${esc(draft.outcome)}</dd></div><div><dt>다음 행동</dt><dd>${esc(draft.nextAction)}</dd></div></dl><footer><button type="button" class="text-button" data-consultation-ai-discard>제안 버리기</button><button type="button" class="primary-button" data-consultation-ai-apply>제안 적용</button></footer></section>`;
+  }
+
+  function applyConsultationAiDraft(form) {
+    let draft;
+    try { draft = JSON.parse(form.dataset.aiDraft || ""); } catch { return; }
+    if (!draft) return;
+    form.elements.summary.value = draft.summary;
+    form.elements.result.value = draft.outcome;
+    form.elements.nextAction.value = draft.nextAction;
+    delete form.dataset.aiDraft;
+    renderConsultationAiDraft(form, null, "");
+    showToast("AI 제안을 입력칸에 적용했습니다. 저장 전에 확인해 주세요.", "success");
   }
 
   function relationshipEditor(customerId) {
@@ -4324,6 +4369,17 @@
   }
 
   document.addEventListener("click", async event => {
+    const consultationAiOrganize = event.target.closest("[data-consultation-ai-organize]");
+    if (consultationAiOrganize) { await requestConsultationAiDraft(consultationAiOrganize.closest("#consultationForm")); return; }
+    const consultationAiApply = event.target.closest("[data-consultation-ai-apply]");
+    if (consultationAiApply) { applyConsultationAiDraft(consultationAiApply.closest("#consultationForm")); return; }
+    const consultationAiDiscard = event.target.closest("[data-consultation-ai-discard]");
+    if (consultationAiDiscard) {
+      const form = consultationAiDiscard.closest("#consultationForm");
+      delete form.dataset.aiDraft;
+      renderConsultationAiDraft(form, null, "");
+      return;
+    }
     const aiSubmit = event.target.closest("[data-ai-assist-submit]");
     if (aiSubmit) { await requestAiAssistantDraft(); return; }
     const aiClear = event.target.closest("[data-ai-result-clear]");
@@ -6723,6 +6779,15 @@
       aiAssistantState.content = event.target.value.slice(0, 12_000);
       const submit = document.querySelector("[data-ai-assist-submit]");
       if (submit) submit.disabled = aiAssistantState.loading || !aiAssistantState.content.trim();
+      return;
+    } else if (event.target.matches("#consultationForm [name=\"summary\"]")) {
+      const form = event.target.closest("#consultationForm");
+      const button = form?.querySelector("[data-consultation-ai-organize]");
+      if (button) button.disabled = form.dataset.aiLoading === "true" || !event.target.value.trim();
+      if (form?.dataset.aiDraft) {
+        delete form.dataset.aiDraft;
+        renderConsultationAiDraft(form, null, "");
+      }
       return;
     } else if (event.target.matches(formattedPhoneInputSelector)) {
       if (!event.isComposing) formatCustomerPhoneInput(event.target);

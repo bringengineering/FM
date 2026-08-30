@@ -35,3 +35,27 @@ test("AI assistant provides copy and clear actions and explains the privacy boun
   assert.match(app, /개인정보.*마스킹/);
   assert.match(app, /AI가.*자동.*저장하지/);
 });
+
+test("consultation AI creates a reviewable draft without changing or saving the form", () => {
+  const app = read("app.js");
+  assert.match(app, /data-consultation-ai-organize[^>]*disabled/);
+  assert.match(app, /task: "consultation_structure"/);
+  assert.match(app, /content: originalSummary/);
+  assert.match(app, /data-consultation-ai-draft/);
+  assert.match(app, /data-consultation-ai-apply/);
+  assert.match(app, /data-consultation-ai-discard/);
+  assert.match(app, /form\.elements\.summary\.value = draft\.summary/);
+  assert.match(app, /form\.elements\.result\.value = draft\.outcome/);
+  assert.match(app, /form\.elements\.nextAction\.value = draft\.nextAction/);
+  assert.match(app, /현재 요청.*currentRequest/);
+  const requestBlock = app.slice(app.indexOf("async function requestConsultationAiDraft"), app.indexOf("function renderConsultationAiDraft"));
+  assert.doesNotMatch(requestBlock, /form\.elements\.summary\.value\s*=|scheduleSave|requestSubmit/);
+});
+
+test("consultation AI keeps the entered original on errors and clears drafts with the modal", () => {
+  const app = read("app.js");
+  assert.match(app, /const originalSummary = form\.elements\.summary\.value/);
+  assert.match(app, /form\.dataset\.aiLoading = "false"/);
+  assert.match(app, /delete form\.dataset\.aiDraft/);
+  assert.match(app, /AI를 일시적으로 사용할 수 없습니다/);
+});
