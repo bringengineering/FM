@@ -40,6 +40,7 @@
     const status = STATUSES.includes(src.status) ? src.status : "created";
     return {
       id: safeId(src.id), title: text(src.title, 160), description: text(src.description, 3000),
+      sourceWorkRecordId: safeId(src.sourceWorkRecordId), sourceVendorName: text(src.sourceVendorName, 160), sourceAmount: count(src.sourceAmount),
       buildingId: safeId(src.buildingId), customerId: safeId(src.customerId),
       category: text(src.category, 80), subcategory: text(src.subcategory, 80), trigger: text(src.trigger, 80),
       urgency: ["low", "normal", "high", "critical"].includes(src.urgency) ? src.urgency : "normal",
