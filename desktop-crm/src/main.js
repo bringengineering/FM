@@ -23,6 +23,7 @@ const {
 } = require("./remote");
 const VendorExtractor = require("./vendor-extractor");
 const NaverBuildingExtractor = require("./naver-building-extractor");
+const { assistWithGateway } = require("./ai-client");
 const {
   FIELD_BRIDGE_TIMEOUT_MS,
   FIELD_ORIGIN,
@@ -108,6 +109,7 @@ const authPreview = process.env.BRING_CRM_AUTH_PREVIEW === "1";
 const passwordPreview = process.env.BRING_CRM_PASSWORD_PREVIEW === "1";
 const localTestMode = (Boolean(process.env.BRING_CRM_SCREENSHOT) || process.env.BRING_CRM_SMOKE === "1" || process.env.BRING_CRM_LOCAL_ONLY === "1") && !authPreview && !passwordPreview;
 const localTestRole = ["admin", "member", "viewer"].includes(process.env.BRING_CRM_SCREENSHOT_ROLE) ? process.env.BRING_CRM_SCREENSHOT_ROLE : "admin";
+const CRM_AI_GATEWAY_URL = process.env.BRING_CRM_AI_GATEWAY_URL || "https://bring-crm-ai-gateway.bringengineering1008.workers.dev/v1/assist";
 if (localTestMode && !process.env.BRING_CRM_DATA_DIR) {
   // Automated screenshots must never reuse or overwrite an employee's cache.
   app.setPath("userData", path.join(app.getPath("temp"), "bring-crm-desktop-tests", String(process.pid)));
@@ -4929,6 +4931,18 @@ async function createWindow() {
 }
 
 secureHandle("crm:auth-state", () => authState());
+secureCanonicalHandle("crm:ai-assist", async input => {
+  if (!remoteClient || !remoteClient.authState().user) {
+    throw Object.assign(new Error("다시 로그인해 주세요."), { code: "AUTH_REQUIRED" });
+  }
+  const idToken = await remoteClient.ensureIdToken(false);
+  return assistWithGateway({
+    endpoint: CRM_AI_GATEWAY_URL,
+    idToken,
+    input,
+    fetchImpl: (url, options) => net.fetch(url, options)
+  });
+});
 secureHandle("crm:auth-login", async credentials => {
   if (FIELD_OPERATIONS_ENABLED && (fieldReauthenticationActive || fieldReauthInFlight)) {
     return fieldReauthenticationBlockedResult("FIELD_REAUTH_IN_PROGRESS");

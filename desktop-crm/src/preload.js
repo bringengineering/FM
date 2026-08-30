@@ -13,6 +13,7 @@ contextBridge.exposeInMainWorld("bringCRM", {
   changePassword: password => ipcRenderer.invoke("crm:auth-change-password", password),
   logout: input => ipcRenderer.invoke("crm:auth-logout", input),
   load: () => ipcRenderer.invoke("crm:load"),
+  assist: input => ipcRenderer.invoke("crm:ai-assist", input),
   loadOperationsIntelligence: () => ipcRenderer.invoke("crm:operations-intelligence-load"),
   saveOperation: input => ipcRenderer.invoke("crm:operation-save", input),
   retryWorkOperationsSync: recordId => ipcRenderer.invoke("crm:work-operations-sync-retry", { recordId }),
