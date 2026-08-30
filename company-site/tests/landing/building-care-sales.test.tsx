@@ -12,10 +12,12 @@ describe("BuildingCarePage sales landing", () => {
     const { container } = render(<BuildingCarePage />);
 
     expect(
-      screen.getByRole("heading", { name: /건물은 임대하고,.*관리는 맡기세요/ }),
+      screen.getByRole("heading", { name: /BRING CARE는 건물을 관리하며/ }),
     ).toBeInTheDocument();
     expect(screen.getAllByText("월 89,000원부터").length).toBeGreaterThan(0);
-    expect(screen.getByRole("heading", { name: /관리창구를.*하나로/ })).toBeInTheDocument();
+    expect(
+      screen.getByRole("heading", { name: /건물주의 가치를 높이는.*BRING CARE/ }),
+    ).toBeInTheDocument();
     expect(screen.getByRole("heading", { name: /퇴실하는 순간부터/ })).toBeInTheDocument();
     expect(screen.getByRole("heading", { name: /공실의.*시간.*관리/ })).toBeInTheDocument();
     expect(
@@ -28,7 +30,6 @@ describe("BuildingCarePage sales landing", () => {
       (section) => section.id,
     );
     expect(sectionIds).toEqual([
-      "building-care-hero",
       "owner-problem",
       "one-contact",
       "service-menu",
@@ -51,7 +52,7 @@ describe("BuildingCarePage sales landing", () => {
   it("renders visual proof and preserves the verified contact paths", () => {
     const { container } = render(<BuildingCarePage />);
 
-    expect(container.querySelector(".bc-hero-visual")).toBeInTheDocument();
+    expect(container.querySelector(".bc-team-stage")).toBeInTheDocument();
     expect(container.querySelector(".bc-contact-network")).toBeInTheDocument();
     expect(container.querySelector(".bc-turnover-track")).toBeInTheDocument();
     expect(container.querySelector(".bc-parallel-track")).toBeInTheDocument();
@@ -100,11 +101,7 @@ describe("BuildingCarePage sales landing", () => {
     const { container } = render(<BuildingCarePage />);
     const main = container.querySelector("main")!;
     const team = main.querySelector(".bc-team-manifesto")!;
-    const hero = main.querySelector(".bc-hero")!;
-
-    expect(
-      team.compareDocumentPosition(hero) & Node.DOCUMENT_POSITION_FOLLOWING,
-    ).toBeTruthy();
+    expect(main.firstElementChild).toBe(team);
     expect(container.querySelectorAll(".bc-problem-icon")).toHaveLength(3);
     expect(
       Array.from(container.querySelectorAll(".bc-cycle-step img")).map((image) =>
@@ -119,12 +116,25 @@ describe("BuildingCarePage sales landing", () => {
     expect(main).not.toHaveTextContent(/우리는|우리 건물/);
   });
 
+  it("uses the transparent team hero and an infographic-style contact hub", () => {
+    const { container } = render(<BuildingCarePage />);
+
+    expect(container.querySelector("#building-care-hero")).not.toBeInTheDocument();
+    expect(container.querySelector(".bc-team-manifesto")).toHaveClass(
+      "bc-team-manifesto-overlay",
+    );
+    expect(container.querySelectorAll(".bc-contact-service")).toHaveLength(5);
+    expect(container.querySelectorAll(".bc-contact-value")).toHaveLength(4);
+    expect(
+      screen.getByRole("heading", { name: /건물주의 가치를 높이는/ }),
+    ).toBeInTheDocument();
+  });
+
   it("orders the sales story from promise to proof and conversion", () => {
     const { container } = render(<BuildingCarePage />);
     const main = container.querySelector("main")!;
     const order = [
       ".bc-team-manifesto",
-      ".bc-hero",
       ".bc-cert-trust-bar",
       "#owner-problem",
       ".bc-cycle-grid",

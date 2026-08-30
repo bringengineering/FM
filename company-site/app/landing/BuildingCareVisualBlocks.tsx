@@ -8,7 +8,7 @@ import {
 } from "./buildingCareVisualData";
 
 export function BrandTeamManifesto() {
-  return <div className="bc-team-manifesto" role="region" aria-labelledby="bc-team-title"><div className="bc-shell bc-team-manifesto-grid"><div className="bc-team-copy"><p className="bc-kicker">BRING CARE MANAGEMENT TEAM</p><h2 id="bc-team-title">BRING CARE는 건물을 관리하며,<br />청소까지 책임지는 회사입니다.</h2><p>건물을 대하는 태도부터 다릅니다.</p></div><figure><div><Image src="/brand-campaign/bringcare-team-stair-v1.png" alt="계단에서 건물을 함께 살피는 BRING CARE 브랜드 팀 장면" fill priority unoptimized sizes="(max-width: 760px) 100vw, 48vw" /></div><figcaption>BRING CARE 브랜드 캠페인 이미지</figcaption></figure></div></div>;
+  return <div className="bc-team-manifesto bc-team-manifesto-overlay" role="region" aria-labelledby="bc-team-title"><div className="bc-shell"><div className="bc-team-stage"><Image src="/brand-campaign/bringcare-team-stair-v1.png" alt="계단에서 건물을 함께 살피는 BRING CARE 브랜드 팀 장면" fill priority unoptimized sizes="100vw" /><div className="bc-team-shade"/><div className="bc-team-copy"><p className="bc-kicker">BRING CARE MANAGEMENT TEAM</p><h1 id="bc-team-title">BRING CARE는 건물을 관리하며,<br />청소까지 책임지는 회사입니다.</h1><p>건물을 대하는 태도부터 다릅니다.</p></div></div><p className="bc-team-caption">BRING CARE 브랜드 캠페인 이미지</p></div></div>;
 }
 
 export function CertificationTrustBar() {

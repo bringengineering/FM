@@ -17,8 +17,6 @@ import {
 } from "./BuildingCareVisualBlocks";
 import "./building-care-sales.css";
 
-const Arrow = () => <span aria-hidden="true">→</span>;
-
 const ProblemIcon = ({ type }: { type: "vacancy" | "facility" | "result" }) => {
   const paths = {
     vacancy: <><path d="M5 4.5h10v15H5z"/><path d="M15 8h4v11.5H9"/><path d="M9 12h.01"/><path d="m16.5 5.5 2-2 2 2"/></>,
@@ -28,15 +26,22 @@ const ProblemIcon = ({ type }: { type: "vacancy" | "facility" | "result" }) => {
   return <svg className="bc-problem-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">{paths[type]}</svg>;
 };
 
+const ContactIcon = ({ type }: { type: "owner" | "clean" | "facility" | "vacancy" | "complaint" | "repair" }) => {
+  const paths = {
+    owner: <><circle cx="9" cy="7" r="3"/><path d="M4 20v-3a5 5 0 0 1 10 0v3M15 9h5v11h-5zM17.5 12h.01M17.5 15h.01"/></>,
+    clean: <><path d="m7 18 7-7 4 4-7 7H7zM14 11l2-7 4 4-6 3zM5 6v3M3.5 7.5h3"/></>,
+    facility: <><path d="M5 21V4h12v17M9 8h1M13 8h1M9 12h1M13 12h1M9 16h1M13 16h1"/><path d="m17 11 2 2 3-3"/></>,
+    vacancy: <><path d="M4 20V8l8-4 8 4v12M8 20v-6h8v6M7 10h.01M17 10h.01"/></>,
+    complaint: <><path d="M4 5h16v11H9l-5 4zM8 10h.01M12 10h.01M16 10h.01"/></>,
+    repair: <><path d="m14 6 4-4 4 4-4 4M16 8 8 16M8 14l-5 5 2 2 5-5M5 5l4 4"/></>,
+  } as const;
+  return <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">{paths[type]}</svg>;
+};
+
 export default function BuildingCareLanding() {
   return <QuickEstimateExperience service="원룸·다가구 건물관리" sourcePath="/building-care" defaultCustomerType="building_owner" needsPlaceholder="건물 주소와 현재 가장 불편한 점을 적어주세요.">
     <main className="building-care-sales">
       <BrandTeamManifesto />
-      <section id="building-care-hero" className="bc-hero"><div className="bc-shell bc-hero-grid">
-        <div className="bc-hero-copy"><p className="bc-kicker">BRING CARE · BUILDING MANAGEMENT</p><h1>건물은 임대하고,<br />관리는 맡기세요.</h1><p className="bc-lead">공실부터 임차인·시설점검·민원·수리까지 건물주 대신 확인하고 처리합니다.</p><div className="bc-price"><strong>월 89,000원부터</strong><span>부가세 별도 · 기본 6개월</span></div><div className="bc-actions"><QuickEstimateTrigger className="bc-button bc-primary">무료 관리진단 신청</QuickEstimateTrigger><a className="bc-button" href={PHONE_HREF}>{PHONE_LABEL}</a></div></div>
-        <div className="bc-hero-visual"><Image src="/landing/records/vacancy-check.jpg" alt="BRING CARE 실제 공실 관리 현장" fill priority unoptimized sizes="(max-width: 760px) 100vw, 50vw"/><div className="bc-report-float"><small>이번 달 관리 현황</small><strong>정기 확인 4회 완료</strong><span>현장 사진 · 확인 사항 · 후속 제안</span></div></div>
-      </div></section>
-
       <CertificationTrustBar />
 
       <section id="owner-problem" className="bc-section"><div className="bc-shell"><header className="bc-heading"><p className="bc-kicker">CUSTOMER PROBLEM</p><h2>건물 하나 관리하는데,<br />왜 이렇게 연락할 곳이 많을까요?</h2><p>작은 문제 하나가 생겨도 업체를 찾고, 일정을 맞추고, 결과를 다시 확인해야 합니다.</p></header><div className="bc-problem-grid">{[
@@ -45,7 +50,15 @@ export default function BuildingCareLanding() {
         { n: "03", type: "result" as const, title: "결과 확인", copy: "일정 조율 → 비용 승인 → 완료 확인 → 기록" },
       ].map((item)=><article className="bc-card bc-problem-card" key={item.title}><div className="bc-problem-top"><ProblemIcon type={item.type}/><span>{item.n}</span></div><h3>{item.title}</h3><p>{item.copy}</p></article>)}</div></div></section>
 
-      <section id="one-contact" className="bc-section"><div className="bc-shell bc-split"><header className="bc-heading"><p className="bc-kicker">ONE CONTACT</p><h2>건물 관리창구를<br />하나로 줄입니다.</h2><p>건물주는 BRING CARE 한 곳에 요청하고, 현장 확인과 필요한 연결은 저희가 정리합니다.</p></header><div className="bc-contact-network"><div className="bc-owner">건물주</div><Arrow/><div className="bc-core">BRING<br/>CARE</div><div className="bc-spokes"><span>청소</span><span>시설</span><span>공실</span><span>민원</span><span>수리</span></div></div></div></section>
+      <section id="one-contact" className="bc-section"><div className="bc-shell"><header className="bc-heading bc-one-contact-heading"><p className="bc-kicker">ONE CONTACT</p><h2>건물주의 가치를 높이는<br /><strong>BRING CARE 통합 관리 서비스</strong></h2><p>건물주는 한 곳에 요청하고, 현장 확인부터 필요한 업체 연결과 결과 기록까지 BRING CARE가 정리합니다.</p></header><div className="bc-contact-network bc-contact-infographic"><article className="bc-contact-owner"><ContactIcon type="owner"/><h3>건물주</h3><p>믿고 맡기는<br/>든든한 파트너</p></article><div className="bc-contact-core"><span>BRING</span><strong>CARE</strong><small>건물의 가치를 지키는<br/>통합 관리 솔루션</small></div><div className="bc-contact-services">{[
+        { type: "clean" as const, title: "청소", copy: "정기·입주·퇴실 청소" },
+        { type: "facility" as const, title: "시설", copy: "설비 점검 및 유지관리" },
+        { type: "vacancy" as const, title: "공실", copy: "임대차·공실 관리" },
+        { type: "complaint" as const, title: "민원", copy: "입주민 민원 대응" },
+        { type: "repair" as const, title: "수리", copy: "긴급·일반 수리 조율" },
+      ].map(item=><article className="bc-contact-service" key={item.title}><ContactIcon type={item.type}/><div><h3>{item.title}</h3><p>{item.copy}</p></div></article>)}</div><div className="bc-contact-values">{[
+        ["전문성","체계적인 관리 기준"],["효율성","시간과 비용 절약"],["신뢰성","투명한 확인과 기록"],["현장성","원주 직영팀 현장 대응"],
+      ].map(([title,copy], index)=><article className="bc-contact-value" key={title}><span>{["◇","◷","↗","○"][index]}</span><div><strong>{title}</strong><small>{copy}</small></div></article>)}</div></div></div></section>
 
       <section id="service-menu" className="bc-section bc-visual-section"><div className="bc-shell"><ServiceVisualMenu /></div></section>
       <section id="management-cycle" className="bc-section bc-visual-section"><div className="bc-shell"><ManagementCycle /></div></section>
