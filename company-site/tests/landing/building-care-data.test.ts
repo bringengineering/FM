@@ -24,4 +24,17 @@ describe("building care sales data", () => {
       "입퇴실 패키지 문의하기",
     ]);
   });
+
+  it("keeps each management case evidence-based", () => {
+    expect(buildingCareCases.length).toBeGreaterThanOrEqual(3);
+
+    for (const item of buildingCareCases) {
+      expect(item.problem).toBeTruthy();
+      expect(item.action).toBeTruthy();
+      expect(item.result).toBeTruthy();
+      expect(`${item.problem} ${item.action} ${item.result}`).not.toMatch(
+        /매출|계약률|공실 0일|100%/,
+      );
+    }
+  });
 });
