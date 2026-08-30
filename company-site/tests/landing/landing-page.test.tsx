@@ -14,11 +14,11 @@ vi.mock("next/navigation", () => ({
 
 describe("LandingPage", () => {
   it.each([
-    ["24H 입·퇴실 관리", <LandingPage service={landingServices["turnover-care"]} />],
-    ["계단·공용부 청소", <StairCleaningLanding />],
-    ["건물관리", <LandingPage service={landingServices["building-care"]} />],
-    ["입주·이사청소", <MoveInCleaningLanding />],
-  ])("adds one shared company introduction above the unchanged %s landing", (_, page) => {
+    ["24H 입·퇴실 관리", <LandingPage service={landingServices["turnover-care"]} />, "/brand-campaign/bringcare-suited-team-building-v3.png"],
+    ["계단·공용부 청소", <StairCleaningLanding />, "/brand-campaign/bringcare-team-stair-v1.png"],
+    ["건물관리", <LandingPage service={landingServices["building-care"]} />, "/brand-campaign/bringcare-team-stair-v1.png"],
+    ["입주·이사청소", <MoveInCleaningLanding />, "/brand-campaign/bringcare-suited-team-building-v3.png"],
+  ])("adds one shared company introduction above the unchanged %s landing", (_, page, expectedImage) => {
     const { container } = render(page);
     const intro = container.querySelector(".landing-brand-intro");
 
@@ -30,12 +30,7 @@ describe("LandingPage", () => {
     ).toBeInTheDocument();
     expect(container.querySelectorAll(".landing-brand-intro")).toHaveLength(1);
     const introImage = intro?.querySelector("img");
-    expect(introImage).toHaveAttribute(
-      "src",
-      intro?.classList.contains("landing-brand-intro-building-care")
-        ? "/brand-campaign/bringcare-team-stair-v1.png"
-        : "/brand-campaign/bringcare-suited-team-building-v3.png",
-    );
+    expect(introImage).toHaveAttribute("src", expectedImage);
     expect(within(intro as HTMLElement).getByRole("link", { name: "서비스 알아보기" })).toBeInTheDocument();
     expect(within(intro as HTMLElement).getByText("무료 견적 신청")).toBeInTheDocument();
   });
@@ -71,9 +66,12 @@ describe("LandingPage", () => {
     expect(screen.getAllByText("월간 관리보고")).toHaveLength(2);
     expect(screen.getByText("시설 상태 확인")).toBeInTheDocument();
     expect(screen.getByText("원주 직영팀")).toBeInTheDocument();
-    expect(
-      screen.getByRole("heading", { name: "깨끗하게만 하지 않습니다." }),
-    ).toBeInTheDocument();
+    expect(screen.getAllByRole("heading", {
+      name: /계단 한 칸부터.*공용창까지 관리합니다\./,
+    })).toHaveLength(1);
+    expect(screen.getByRole("heading", {
+      name: "실제 작업은 이렇게 진행합니다.",
+    })).toBeInTheDocument();
     expect(
       screen.getByRole("heading", { name: /한 달의 관리 내용을.*보고서로 확인하세요\./ }),
     ).toBeInTheDocument();

@@ -98,6 +98,10 @@
   object-position: center center;
 }
 
+.landing-brand-intro-stair-team.landing-brand-intro-default .landing-brand-intro-photo img {
+  object-position: center 46%;
+}
+
 .landing-brand-intro-building-care {
   position: relative;
   display: block;
@@ -143,6 +147,10 @@
 
   .landing-brand-intro-photo {
     aspect-ratio: 16 / 9;
+  }
+
+  .landing-brand-intro-stair-team.landing-brand-intro-default .landing-brand-intro-photo {
+    aspect-ratio: 4 / 5;
   }
 
   .landing-brand-intro-building-care .landing-brand-intro-copy {

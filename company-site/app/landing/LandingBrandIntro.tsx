@@ -7,6 +7,7 @@ type LandingBrandIntroProps = {
   estimateHref?: string;
   estimateAction?: ReactNode;
   variant?: "default" | "building-care";
+  photo?: "building-team" | "stair-team";
 };
 
 export default function LandingBrandIntro({
@@ -14,9 +15,15 @@ export default function LandingBrandIntro({
   estimateHref = "#quick-estimate",
   estimateAction,
   variant = "default",
+  photo = "building-team",
 }: LandingBrandIntroProps) {
+  const usesStairTeam = variant === "building-care" || photo === "stair-team";
+
   return (
-    <section className={`landing-brand-intro landing-brand-intro-${variant}`} aria-labelledby="landing-brand-intro-title">
+    <section
+      className={`landing-brand-intro landing-brand-intro-${variant}${usesStairTeam ? " landing-brand-intro-stair-team" : ""}`}
+      aria-labelledby="landing-brand-intro-title"
+    >
       <div className="landing-brand-intro-copy">
         <p>BRING CARE · BUILDING MANAGEMENT</p>
         <h2 id="landing-brand-intro-title">
@@ -34,8 +41,8 @@ export default function LandingBrandIntro({
       </div>
       <div className="landing-brand-intro-photo" aria-hidden={variant === "building-care"}>
         <Image
-          src={variant === "building-care" ? "/brand-campaign/bringcare-team-stair-v1.png" : "/brand-campaign/bringcare-suited-team-building-v3.png"}
-          alt={variant === "building-care" ? "" : "건물 앞에 선 BRING CARE 건물관리 운영팀"}
+          src={usesStairTeam ? "/brand-campaign/bringcare-team-stair-v1.png" : "/brand-campaign/bringcare-suited-team-building-v3.png"}
+          alt={variant === "building-care" ? "" : usesStairTeam ? "계단에 선 BRING CARE 건물관리 운영팀" : "건물 앞에 선 BRING CARE 건물관리 운영팀"}
           width={1376}
           height={768}
           priority

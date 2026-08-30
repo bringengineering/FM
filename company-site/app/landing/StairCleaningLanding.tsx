@@ -82,7 +82,7 @@ const faqs = [
 export default function StairCleaningLanding() {
   return (
     <main className="stair-toss">
-      <LandingBrandIntro serviceHref="#service" estimateHref="#estimate" />
+      <LandingBrandIntro serviceHref="#service" estimateHref="#estimate" photo="stair-team" />
       <header className="stair-nav">
         <a className="stair-logo" href="/" aria-label="BRING CARE 홈">
           BRING <span>CARE</span>
@@ -128,7 +128,7 @@ export default function StairCleaningLanding() {
 
       <section className="stair-section stair-soft" id="service" aria-labelledby="stair-scope-title">
         <div className="stair-inner">
-          <div className="stair-section-head"><p>SERVICE SCOPE</p><h2 id="stair-scope-title">깨끗하게만 하지 않습니다.</h2><span>정기 청소와 함께 건물주가 멀리 있어도 놓치기 쉬운 공용부 상태를 확인합니다.</span></div>
+          <div className="stair-section-head"><p>CLEANING DETAIL</p><strong className="stair-section-kicker">서비스 작업 범위</strong><h2 id="stair-scope-title">계단 한 칸부터<br />공용창까지 관리합니다.</h2><span>건물 공용부에서 반복적으로 오염되는 구역을 작업 범위에 맞춰 관리합니다.</span></div>
           <div className="stair-scope-grid stair-campaign-grid">
             {scopes.map(([number, title, copy, image, alt]) => <article className="stair-campaign-card stair-depth-card" key={title}><span>{number}</span><h3>{title}</h3><p>{copy}</p><div className="stair-scope-image"><Image src={image} alt={alt} fill unoptimized sizes="(max-width: 820px) 100vw, 50vw" /><small>BRING CARE · 브랜드 캠페인 이미지</small></div></article>)}
           </div>
@@ -137,7 +137,7 @@ export default function StairCleaningLanding() {
 
       <section className="stair-section" id="field" aria-labelledby="stair-field-title">
         <div className="stair-inner">
-          <div className="stair-section-head"><p>CLEANING DETAIL</p><strong className="stair-section-kicker">서비스 작업 범위</strong><h2 id="stair-field-title">계단 한 칸부터<br />공용창까지 관리합니다.</h2><span>건물 공용부에서 반복적으로 오염되는 구역을 작업 범위에 맞춰 관리합니다.</span></div>
+          <div className="stair-section-head"><p>FIELD CLEANING</p><h2 id="stair-field-title">실제 작업은 이렇게 진행합니다.</h2><span>계단 바닥부터 모서리와 공용창까지 구역별 작업 모습을 확인하세요.</span></div>
           <div className="stair-gallery">
             <figure><Image src="/landing/cleaning/bringcare-stair-mop-down.png" alt="브링케어 유니폼 작업자의 계단 하행 밀대 청소 연출 이미지" fill unoptimized sizes="(max-width: 820px) 100vw, 58vw" /><figcaption><strong>계단 바닥</strong><span>한 층씩 이동하며 계단의 먼지와 생활 오염을 정리합니다.</span></figcaption></figure>
             <figure><Image src="/landing/cleaning/bringcare-stair-corner-brush.png" alt="브링케어 유니폼 작업자의 계단 모서리 브러시 청소 연출 이미지" fill unoptimized sizes="(max-width: 820px) 100vw, 42vw" /><figcaption><strong>모서리·틈새</strong><span>밀대가 닿기 어려운 계단 끝과 벽면 틈을 세부 청소합니다.</span></figcaption></figure>
