@@ -96,12 +96,35 @@ describe("BuildingCarePage sales landing", () => {
     );
   });
 
+  it("opens with the team identity and uses relevant visual language", () => {
+    const { container } = render(<BuildingCarePage />);
+    const main = container.querySelector("main")!;
+    const team = main.querySelector(".bc-team-manifesto")!;
+    const hero = main.querySelector(".bc-hero")!;
+
+    expect(
+      team.compareDocumentPosition(hero) & Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
+    expect(container.querySelectorAll(".bc-problem-icon")).toHaveLength(3);
+    expect(
+      Array.from(container.querySelectorAll(".bc-cycle-step img")).map((image) =>
+        image.getAttribute("src"),
+      ),
+    ).toEqual([
+      expect.stringContaining("/landing/building-care-flow/check.webp"),
+      expect.stringContaining("/landing/building-care-flow/coordinate.webp"),
+      expect.stringContaining("/landing/building-care-flow/resolve.webp"),
+      expect.stringContaining("/landing/building-care-flow/report.webp"),
+    ]);
+    expect(main).not.toHaveTextContent(/우리는|우리 건물/);
+  });
+
   it("orders the sales story from promise to proof and conversion", () => {
     const { container } = render(<BuildingCarePage />);
     const main = container.querySelector("main")!;
     const order = [
-      ".bc-hero",
       ".bc-team-manifesto",
+      ".bc-hero",
       ".bc-cert-trust-bar",
       "#owner-problem",
       ".bc-cycle-grid",

@@ -21,10 +21,10 @@
 ### Task 2: Generate and install management flow imagery
 
 **Files:**
-- Create: `company-site/public/landing/building-care-flow/check.png`
-- Create: `company-site/public/landing/building-care-flow/coordinate.png`
-- Create: `company-site/public/landing/building-care-flow/resolve.png`
-- Create: `company-site/public/landing/building-care-flow/report.png`
+- Create: `company-site/public/landing/building-care-flow/check.webp`
+- Create: `company-site/public/landing/building-care-flow/coordinate.webp`
+- Create: `company-site/public/landing/building-care-flow/resolve.webp`
+- Create: `company-site/public/landing/building-care-flow/report.webp`
 - Modify: `company-site/app/landing/buildingCareVisualData.ts`
 
 - [ ] Generate four natural Korean building-management campaign photographs with consistent wardrobe, lighting, and documentary framing.

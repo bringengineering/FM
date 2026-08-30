@@ -19,18 +19,31 @@ import "./building-care-sales.css";
 
 const Arrow = () => <span aria-hidden="true">→</span>;
 
+const ProblemIcon = ({ type }: { type: "vacancy" | "facility" | "result" }) => {
+  const paths = {
+    vacancy: <><path d="M5 4.5h10v15H5z"/><path d="M15 8h4v11.5H9"/><path d="M9 12h.01"/><path d="m16.5 5.5 2-2 2 2"/></>,
+    facility: <><path d="m14.5 6.5 3-3 3 3-3 3"/><path d="m16.5 7.5-7 7"/><path d="M8 13.5 4.5 17 7 19.5 10.5 16"/><path d="M4 5.5h7v5H7l-3 2z"/></>,
+    result: <><path d="M6 3.5h12v17H6z"/><path d="M9 8h6M9 12h6"/><path d="m9 16 1.5 1.5L15 14"/></>,
+  } as const;
+  return <svg className="bc-problem-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">{paths[type]}</svg>;
+};
+
 export default function BuildingCareLanding() {
   return <QuickEstimateExperience service="원룸·다가구 건물관리" sourcePath="/building-care" defaultCustomerType="building_owner" needsPlaceholder="건물 주소와 현재 가장 불편한 점을 적어주세요.">
     <main className="building-care-sales">
+      <BrandTeamManifesto />
       <section id="building-care-hero" className="bc-hero"><div className="bc-shell bc-hero-grid">
         <div className="bc-hero-copy"><p className="bc-kicker">BRING CARE · BUILDING MANAGEMENT</p><h1>건물은 임대하고,<br />관리는 맡기세요.</h1><p className="bc-lead">공실부터 임차인·시설점검·민원·수리까지 건물주 대신 확인하고 처리합니다.</p><div className="bc-price"><strong>월 89,000원부터</strong><span>부가세 별도 · 기본 6개월</span></div><div className="bc-actions"><QuickEstimateTrigger className="bc-button bc-primary">무료 관리진단 신청</QuickEstimateTrigger><a className="bc-button" href={PHONE_HREF}>{PHONE_LABEL}</a></div></div>
         <div className="bc-hero-visual"><Image src="/landing/records/vacancy-check.jpg" alt="BRING CARE 실제 공실 관리 현장" fill priority unoptimized sizes="(max-width: 760px) 100vw, 50vw"/><div className="bc-report-float"><small>이번 달 관리 현황</small><strong>정기 확인 4회 완료</strong><span>현장 사진 · 확인 사항 · 후속 제안</span></div></div>
       </div></section>
 
-      <BrandTeamManifesto />
       <CertificationTrustBar />
 
-      <section id="owner-problem" className="bc-section"><div className="bc-shell"><header className="bc-heading"><p className="bc-kicker">CUSTOMER PROBLEM</p><h2>건물 하나 관리하는데,<br />왜 이렇게 연락할 곳이 많을까요?</h2><p>작은 문제 하나가 생겨도 업체를 찾고, 일정을 맞추고, 결과를 다시 확인해야 합니다.</p></header><div className="bc-problem-grid">{[["01","공실·퇴실","현장 확인 → 청소업체 → 수리업체 → 중개사"],["02","시설·민원","임차인 연락 → 상황 파악 → 현장 확인 → 전문업체"],["03","결과 확인","일정 조율 → 비용 승인 → 완료 확인 → 기록"]].map(([n,t,c])=><article className="bc-card" key={t}><span>{n}</span><h3>{t}</h3><p>{c}</p></article>)}</div></div></section>
+      <section id="owner-problem" className="bc-section"><div className="bc-shell"><header className="bc-heading"><p className="bc-kicker">CUSTOMER PROBLEM</p><h2>건물 하나 관리하는데,<br />왜 이렇게 연락할 곳이 많을까요?</h2><p>작은 문제 하나가 생겨도 업체를 찾고, 일정을 맞추고, 결과를 다시 확인해야 합니다.</p></header><div className="bc-problem-grid">{[
+        { n: "01", type: "vacancy" as const, title: "공실·퇴실", copy: "현장 확인 → 청소업체 → 수리업체 → 중개사" },
+        { n: "02", type: "facility" as const, title: "시설·민원", copy: "임차인 연락 → 상황 파악 → 현장 확인 → 전문업체" },
+        { n: "03", type: "result" as const, title: "결과 확인", copy: "일정 조율 → 비용 승인 → 완료 확인 → 기록" },
+      ].map((item)=><article className="bc-card bc-problem-card" key={item.title}><div className="bc-problem-top"><ProblemIcon type={item.type}/><span>{item.n}</span></div><h3>{item.title}</h3><p>{item.copy}</p></article>)}</div></div></section>
 
       <section id="one-contact" className="bc-section"><div className="bc-shell bc-split"><header className="bc-heading"><p className="bc-kicker">ONE CONTACT</p><h2>건물 관리창구를<br />하나로 줄입니다.</h2><p>건물주는 BRING CARE 한 곳에 요청하고, 현장 확인과 필요한 연결은 저희가 정리합니다.</p></header><div className="bc-contact-network"><div className="bc-owner">건물주</div><Arrow/><div className="bc-core">BRING<br/>CARE</div><div className="bc-spokes"><span>청소</span><span>시설</span><span>공실</span><span>민원</span><span>수리</span></div></div></div></section>
 
@@ -41,7 +54,7 @@ export default function BuildingCareLanding() {
 
       <section id="management-report" className="bc-section"><div className="bc-shell bc-split"><header className="bc-heading"><p className="bc-kicker">MONTHLY REPORT</p><h2>건물에 가지 않아도<br />관리 상태를 확인하세요.</h2><p>사진만 보내고 끝내지 않습니다. 방문 이력과 확인 사항, 필요한 후속 조치를 한 달 단위로 정리합니다.</p><ul className="bc-checks"><li>정기 방문 이력</li><li>공용부·공실 확인 사항</li><li>후속 조치 제안</li></ul></header><div className="bc-report-ui"><span>관리보고 화면 예시</span><div className="bc-report-head"><strong>8월 월간 관리보고</strong><b>관리 완료</b></div>{[["정기방문","4회 완료"],["공용부 확인","계단·현관·우편함"],["확인 사항","후속 확인 1건"],["현장 사진","12장 첨부"]].map(([a,b])=><p key={a}><span>{a}</span><strong>{b}</strong></p>)}</div></div></section>
 
-      <div className="bc-shell"><section className="bc-mid-cta"><p>우리 건물은 어떻게 관리할지<br />먼저 받아보세요.</p><div className="bc-actions"><QuickEstimateTrigger className="bc-button bc-primary">무료 관리진단 신청</QuickEstimateTrigger><a className="bc-button" href={PHONE_HREF}>{PHONE_LABEL}</a></div></section></div>
+      <div className="bc-shell"><section className="bc-mid-cta"><p>이 건물은 어떻게 관리할지<br />먼저 받아보세요.</p><div className="bc-actions"><QuickEstimateTrigger className="bc-button bc-primary">무료 관리진단 신청</QuickEstimateTrigger><a className="bc-button" href={PHONE_HREF}>{PHONE_LABEL}</a></div></section></div>
 
       <section id="management-comparison" className="bc-section bc-visual-section"><div className="bc-shell"><ManagementComparison /></div></section>
       <section id="management-scope" className="bc-section bc-visual-section"><div className="bc-shell"><ManagementScopeTable /></div></section>

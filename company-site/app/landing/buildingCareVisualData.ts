@@ -33,8 +33,8 @@ export const managementScopeRows = [
 ] as const;
 
 export const managementCycle = [
-  { title: "확인", copy: "공실과 공용부의 현재 상태를 현장에서 봅니다.", image: "/landing/records/vacancy-check.jpg" },
-  { title: "조율", copy: "필요한 작업의 범위·금액·일정을 먼저 정리합니다.", image: "/landing/records/tenancy-check.jpg" },
-  { title: "처리", copy: "승인된 청소·수리·정비를 담당자와 연결합니다.", image: "/landing/records/grounds-work.jpg" },
-  { title: "보고", copy: "완료 사진과 다음 확인 사항을 기록해 전달합니다.", image: "/landing/records/defect-check.jpg" },
+  { title: "확인", copy: "공실과 공용부의 현재 상태를 현장에서 봅니다.", image: "/landing/building-care-flow/check.webp" },
+  { title: "조율", copy: "필요한 작업의 범위·금액·일정을 먼저 정리합니다.", image: "/landing/building-care-flow/coordinate.webp" },
+  { title: "처리", copy: "승인된 청소·수리·정비를 담당자와 연결합니다.", image: "/landing/building-care-flow/resolve.webp" },
+  { title: "기록", copy: "완료 사진과 다음 확인 사항을 기록해 전달합니다.", image: "/landing/building-care-flow/report.webp" },
 ] as const;

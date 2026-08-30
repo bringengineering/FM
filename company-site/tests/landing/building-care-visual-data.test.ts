@@ -25,7 +25,7 @@ describe("building care visual conversion data", () => {
       "확인",
       "조율",
       "처리",
-      "보고",
+      "기록",
     ]);
   });
 });

@@ -8,7 +8,7 @@ import {
 } from "./buildingCareVisualData";
 
 export function BrandTeamManifesto() {
-  return <div className="bc-team-manifesto" role="region" aria-labelledby="bc-team-title"><div className="bc-shell bc-team-manifesto-grid"><div className="bc-team-copy"><p className="bc-kicker">BRING CARE MANAGEMENT TEAM</p><h2 id="bc-team-title">우리는 건물을 관리하며,<br />청소까지 책임지는 회사입니다.</h2><p>건물을 대하는 태도부터 다릅니다.</p></div><figure><div><Image src="/brand-campaign/bringcare-team-stair-v1.png" alt="계단에서 건물을 함께 살피는 BRING CARE 브랜드 팀 장면" fill unoptimized sizes="(max-width: 760px) 100vw, 48vw" /></div><figcaption>BRING CARE 브랜드 캠페인 이미지</figcaption></figure></div></div>;
+  return <div className="bc-team-manifesto" role="region" aria-labelledby="bc-team-title"><div className="bc-shell bc-team-manifesto-grid"><div className="bc-team-copy"><p className="bc-kicker">BRING CARE MANAGEMENT TEAM</p><h2 id="bc-team-title">BRING CARE는 건물을 관리하며,<br />청소까지 책임지는 회사입니다.</h2><p>건물을 대하는 태도부터 다릅니다.</p></div><figure><div><Image src="/brand-campaign/bringcare-team-stair-v1.png" alt="계단에서 건물을 함께 살피는 BRING CARE 브랜드 팀 장면" fill priority unoptimized sizes="(max-width: 760px) 100vw, 48vw" /></div><figcaption>BRING CARE 브랜드 캠페인 이미지</figcaption></figure></div></div>;
 }
 
 export function CertificationTrustBar() {
@@ -28,7 +28,7 @@ export function ManagementComparison() {
 }
 
 export function ManagementCycle() {
-  return <div className="bc-visual-block"><VisualHeading eyebrow="MANAGEMENT FLOW" title="확인부터 보고까지, 한 흐름으로." copy="현장을 보고 끝내지 않고 처리 과정과 결과까지 기록합니다." /><div className="bc-cycle-grid">{managementCycle.map((item, index) => <article className="bc-cycle-step" key={item.title}><div><Image src={item.image} alt={`BRING CARE 실제 ${item.title} 관리기록`} fill unoptimized sizes="(max-width: 760px) 100vw, 25vw" /></div><span>{String(index + 1).padStart(2, "0")}</span><h3>{item.title}</h3><p>{item.copy}</p></article>)}</div></div>;
+  return <div className="bc-visual-block"><VisualHeading eyebrow="MANAGEMENT FLOW" title="확인부터 기록까지, 한 흐름으로." copy="현장을 보고 끝내지 않고 처리 과정과 결과까지 기록합니다." /><div className="bc-cycle-grid">{managementCycle.map((item, index) => <article className="bc-cycle-step" key={item.title}><div><Image src={item.image} alt={`BRING CARE 관리 흐름 브랜드 캠페인 - ${item.title}`} fill unoptimized sizes="(max-width: 760px) 100vw, 25vw" /></div><span>{String(index + 1).padStart(2, "0")}</span><h3>{item.title}</h3><p>{item.copy}</p></article>)}</div><p className="bc-campaign-note">관리 흐름의 이해를 돕기 위한 BRING CARE 브랜드 캠페인 이미지입니다.</p></div>;
 }
 
 export function ManagementScopeTable() {
