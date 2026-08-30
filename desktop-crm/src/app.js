@@ -116,6 +116,7 @@
   let valueScopeState = { status: "idle", message: "지도를 준비하고 있습니다." };
   let valueScopeResizeObserver = null;
   let valueScopeOpenGeneration = 0;
+  let aiAssistantState = { task: "assistant_summary", content: "", customerType: "", workType: "", result: null, warnings: [], loading: false, error: "" };
   const sessionViewedCustomers = new Set();
 
   const viewMeta = {
@@ -130,6 +131,7 @@
     operationsIntelligence: ["반복 업무와 병목을 한곳에서", "운영 분석"],
     valueScope: ["BRING VALUESCOPE", "지도·밸류스코프"],
     consultations: ["전화·방문·미팅 내용", "상담 기록"],
+    aiAssistant: ["업무 초안을 안전하게 작성", "AI 비서"],
     pipeline: ["건물 발굴부터 유료관리 전환까지", "영업 관리"],
     contracts: ["유형별 계약 조건과 기간", "계약 관리"],
     relationships: ["계약 후에도 이어지는 관계", "계약 고객 관리"],
@@ -1217,11 +1219,12 @@
     document.getElementById("navTaskCount").textContent = store.tasks.filter(item => item.status !== "완료" && item.status !== "취소").length;
     document.body.classList.toggle("crm-read-only", !canWriteCRM());
     const valueScopeView = currentView === "valueScope";
+    const aiAssistantView = currentView === "aiAssistant";
     const calendarView = currentView === "buildingCalendar";
     searchEl.placeholder = valueScopeView ? "지도에서 주소·건물·중개사를 검색하세요" : calendarView ? "건물명·일정 검색" : currentView === "vacancies" ? "건물명·주소 검색" : "고객·건물·연락처 검색";
     searchEl.value = calendarView ? workCalendarQuery : crmSearchValue;
-    primaryActionButton.hidden = valueScopeView;
-    if (valueScopeView) {
+    primaryActionButton.hidden = valueScopeView || aiAssistantView;
+    if (valueScopeView || aiAssistantView) {
       delete primaryActionButton.dataset.action;
       primaryActionButton.textContent = "";
     } else if (currentView === "workManagement") {
@@ -1278,6 +1281,7 @@
     else if (currentView === "operationsIntelligence") renderOperationsIntelligence();
     else if (currentView === "valueScope") renderValueScope();
     else if (currentView === "consultations") renderConsultations();
+    else if (currentView === "aiAssistant") renderAiAssistant();
     else if (currentView === "pipeline") renderPipeline();
     else if (currentView === "contracts") renderContracts();
     else if (currentView === "relationships") renderRelationships();
@@ -2633,6 +2637,39 @@
       if (field) field.value = value;
     });
     if (!operationsIntelligenceState.loaded && !operationsIntelligenceState.loading && !operationsIntelligenceState.error) void loadOperationsIntelligence();
+  }
+
+  const AI_ASSISTANT_TASKS = Object.freeze([
+    ["assistant_summary", "상담·업무 요약"],
+    ["next_action", "다음 행동 추천"],
+    ["sales_message", "영업 문자 초안"],
+    ["work_report", "작업·수익 보고서"]
+  ]);
+
+  function renderAiAssistant() {
+    const result = aiAssistantState.result;
+    const resultText = result && result.text ? esc(aiAssistantState.result.text) : "";
+    main.innerHTML = `<section class="ai-assistant-hero"><div><span>BRING CRM AI</span><h2>업무 내용을 넣으면 검토 가능한 초안을 만듭니다</h2><p>개인정보 형태는 회사 중계 서버에서 마스킹합니다. AI가 CRM에 자동으로 저장하지 않으며, 직원이 확인한 뒤 필요한 내용만 사용합니다.</p></div></section>
+      <section class="ai-assistant-grid"><form class="ai-assistant-card" data-ai-assist-form><div class="ai-form-row"><label><span>도움받을 업무</span><select data-ai-task>${AI_ASSISTANT_TASKS.map(([value, label]) => `<option value="${value}"${aiAssistantState.task === value ? " selected" : ""}>${label}</option>`).join("")}</select></label><label><span>고객 유형</span><select data-ai-customer-type><option value="">선택 안 함</option>${["건물주", "임차인", "공인중개사", "협력업체", "법인", "기타"].map(value => `<option${aiAssistantState.customerType === value ? " selected" : ""}>${value}</option>`).join("")}</select></label><label><span>업무 유형</span><select data-ai-work-type><option value="">선택 안 함</option>${["영업", "상담", "건물관리", "청소", "예초", "시설보수", "보고"].map(value => `<option${aiAssistantState.workType === value ? " selected" : ""}>${value}</option>`).join("")}</select></label></div><label class="ai-content-field"><span>정리할 내용</span><textarea data-ai-content maxlength="12000" placeholder="예: 8월 15일 예초 작업을 진행했고 고객에게 15만원을 받았으며 업체에 14만원을 지급함">${esc(aiAssistantState.content)}</textarea><small>전화번호·이메일·계좌번호·상세주소는 입력하지 않는 것을 권장합니다.</small></label><div class="ai-form-actions"><span>${aiAssistantState.content.length.toLocaleString()} / 12,000자</span><button type="button" class="primary-button" data-ai-assist-submit${aiAssistantState.loading || !aiAssistantState.content.trim() ? " disabled" : ""}>${aiAssistantState.loading ? "AI가 정리 중…" : "AI 초안 만들기"}</button></div>${aiAssistantState.error ? `<div class="ai-error" role="alert">${esc(aiAssistantState.error)}</div>` : ""}</form>
+      <article class="ai-result-card"><header><div><span>AI 초안</span><h3>${esc(AI_ASSISTANT_TASKS.find(([value]) => value === aiAssistantState.task)?.[1] || "결과")}</h3></div>${result ? `<div><button type="button" class="secondary-button" data-ai-result-copy>복사</button><button type="button" class="text-button" data-ai-result-clear>지우기</button></div>` : ""}</header>${result ? `<div class="ai-result-text">${resultText.replace(/\n/g, "<br>")}</div>${aiAssistantState.warnings.length ? `<ul class="ai-warning-list">${aiAssistantState.warnings.map(item => `<li>${esc(item)}</li>`).join("")}</ul>` : ""}` : `<div class="ai-result-empty"><b>아직 만든 초안이 없습니다</b><p>왼쪽에서 내용을 입력하고 AI 초안 만들기를 눌러 주세요.</p></div>`}<footer>결과는 사실 확정값이 아닌 업무 초안입니다. 저장·발송 전 반드시 확인하세요.</footer></article></section>`;
+  }
+
+  async function requestAiAssistantDraft() {
+    if (aiAssistantState.loading || !aiAssistantState.content.trim()) return;
+    aiAssistantState.loading = true;
+    aiAssistantState.error = "";
+    renderAiAssistant();
+    const context = { customerType: aiAssistantState.customerType, workType: aiAssistantState.workType, owner: currentAuth.user?.displayName || store.settings.owner || "" };
+    try {
+      const response = await api.assist({ task: aiAssistantState.task, content: aiAssistantState.content, context });
+      aiAssistantState.result = response.result;
+      aiAssistantState.warnings = response.warnings || [];
+    } catch (error) {
+      aiAssistantState.error = error.message || "AI를 일시적으로 사용할 수 없습니다.";
+    } finally {
+      aiAssistantState.loading = false;
+      if (currentView === "aiAssistant") renderAiAssistant();
+    }
   }
 
   function renderOperationsIntelligence() {
@@ -4287,6 +4324,16 @@
   }
 
   document.addEventListener("click", async event => {
+    const aiSubmit = event.target.closest("[data-ai-assist-submit]");
+    if (aiSubmit) { await requestAiAssistantDraft(); return; }
+    const aiClear = event.target.closest("[data-ai-result-clear]");
+    if (aiClear) { aiAssistantState.result = null; aiAssistantState.warnings = []; aiAssistantState.error = ""; renderAiAssistant(); return; }
+    const aiCopy = event.target.closest("[data-ai-result-copy]");
+    if (aiCopy && aiAssistantState.result?.text) {
+      try { await navigator.clipboard.writeText(aiAssistantState.result.text); showToast("AI 초안을 복사했습니다.", "success"); }
+      catch { showToast("초안을 복사하지 못했습니다.", "error"); }
+      return;
+    }
     const customerPhotoPick = event.target.closest("[data-customer-photo-pick]");
     if (customerPhotoPick) {
       const form = customerPhotoPick.closest("#customerForm");
@@ -5463,6 +5510,21 @@
   });
 
   document.addEventListener("change", async event => {
+    if (event.target.matches("[data-ai-task]")) {
+      aiAssistantState.task = event.target.value;
+      aiAssistantState.result = null;
+      aiAssistantState.error = "";
+      renderAiAssistant();
+      return;
+    }
+    if (event.target.matches("[data-ai-customer-type]")) {
+      aiAssistantState.customerType = event.target.value;
+      return;
+    }
+    if (event.target.matches("[data-ai-work-type]")) {
+      aiAssistantState.workType = event.target.value;
+      return;
+    }
     if (event.target.matches("[data-operations-period]")) {
       operationsIntelligenceState.period = event.target.value;
       renderOperationsIntelligence();
@@ -6657,7 +6719,12 @@
     if (direction && deleteCustomerPhoneDigit(event.target, direction)) event.preventDefault();
   });
   document.addEventListener("input", event => {
-    if (event.target.matches(formattedPhoneInputSelector)) {
+    if (event.target.matches("[data-ai-content]")) {
+      aiAssistantState.content = event.target.value.slice(0, 12_000);
+      const submit = document.querySelector("[data-ai-assist-submit]");
+      if (submit) submit.disabled = aiAssistantState.loading || !aiAssistantState.content.trim();
+      return;
+    } else if (event.target.matches(formattedPhoneInputSelector)) {
       if (!event.isComposing) formatCustomerPhoneInput(event.target);
     } else if (event.target.matches("[data-vacancy-unit-search]")) {
       vacancyUnitQuery = event.target.value.slice(0, 256);
@@ -6900,7 +6967,7 @@ document.addEventListener("keydown", event => {
       if (query.get("demo") === "1" && !store.customers.length) store = demoStore();
       synchronizedStore = cloneStore(store);
       store.partnerVendors = Array.isArray(store.partnerVendors) ? store.partnerVendors : [];
-      if (["dashboard", "cases", "payments", "customers", "buildings", "vacancies", "buildingCalendar", "workManagement", "operationsIntelligence", "valueScope", "consultations", "pipeline", "contracts", "relationships", "partnerVendors", "partnerQuotes", "tasks", "security", "settings"].includes(query.get("view"))) currentView = query.get("view");
+      if (["dashboard", "cases", "payments", "customers", "buildings", "vacancies", "buildingCalendar", "workManagement", "operationsIntelligence", "valueScope", "consultations", "aiAssistant", "pipeline", "contracts", "relationships", "partnerVendors", "partnerQuotes", "tasks", "security", "settings"].includes(query.get("view"))) currentView = query.get("view");
       await refreshOperations({ silent: true, render: false });
       document.getElementById("lastSaved").textContent = store.updatedAt ? `최신 반영 ${dateText(store.updatedAt)}` : "새 데이터";
       render();
