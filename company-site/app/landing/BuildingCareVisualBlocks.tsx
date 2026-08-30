@@ -7,6 +7,14 @@ import {
   serviceVisuals,
 } from "./buildingCareVisualData";
 
+export function BrandTeamManifesto() {
+  return <div className="bc-team-manifesto" role="region" aria-labelledby="bc-team-title"><div className="bc-shell bc-team-manifesto-grid"><div className="bc-team-copy"><p className="bc-kicker">BRING CARE MANAGEMENT TEAM</p><h2 id="bc-team-title">우리는 건물을 관리하며,<br />청소까지 책임지는 회사입니다.</h2><p>건물을 대하는 태도부터 다릅니다.</p></div><figure><div><Image src="/brand-campaign/bringcare-team-stair-v1.png" alt="계단에서 건물을 함께 살피는 BRING CARE 브랜드 팀 장면" fill unoptimized sizes="(max-width: 760px) 100vw, 48vw" /></div><figcaption>BRING CARE 브랜드 캠페인 이미지</figcaption></figure></div></div>;
+}
+
+export function CertificationTrustBar() {
+  return <div className="bc-shell"><a className="bc-cert-trust-bar" href="#company-certifications"><span>공식 기업 인증</span><div>{activeCertifications.map(cert => <strong className="bc-trust-badge" key={cert.id}>{cert.title}</strong>)}</div><b>확인서 보기 →</b></a></div>;
+}
+
 export function CertificationStrip() {
   return <div className="bc-certifications"><div className="bc-cert-heading"><div><p className="bc-kicker">CERTIFICATION &amp; AWARDS</p><h2>공식 인증으로,<br />운영 기반을 증명합니다.</h2></div><p>연구개발 조직부터 벤처·창업기업 확인까지,<br />BRING CARE는 기업 운영 기반을 공식 문서로 확인받았습니다.</p></div><div className="bc-cert-grid">{activeCertifications.map(cert => <details className="bc-cert-card" key={cert.id}><summary><div className="bc-cert-thumb"><Image src={cert.image} alt={`${cert.title} 개인정보 보호 처리 썸네일`} fill unoptimized sizes="220px" /></div><div><small>{cert.issuer}</small><strong>{cert.title}</strong>{cert.validUntil && <span>{cert.validUntil}까지</span>}</div><b>확인서 보기 ＋</b></summary><div className="bc-cert-expanded"><Image src={cert.image} alt={`${cert.title} 공개용 확인서`} width={640} height={820} unoptimized /><p>개인정보 보호를 위해 공개용 이미지의 식별정보를 흐림 처리했습니다.</p></div></details>)}</div><p className="bc-cert-note">현재 공개 중인 자료는 공식 인증 3건입니다. 인증은 기업의 운영 기반을 나타내며 개별 건물관리 서비스의 품질 보증을 의미하지 않습니다.</p></div>;
 }

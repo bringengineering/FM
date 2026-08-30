@@ -74,4 +74,22 @@ describe("BuildingCarePage sales landing", () => {
     expect(screen.getByText(/별도 비용이 필요한 작업은/)).toBeInTheDocument();
     expect(screen.queryByText(/4\.9점|최우수|100% 보상/)).not.toBeInTheDocument();
   });
+
+  it("opens with the stair team manifesto and a compact trust bar", () => {
+    const { container } = render(<BuildingCarePage />);
+    const teamImage = container.querySelector(".bc-team-manifesto img");
+
+    expect(teamImage).toHaveAttribute(
+      "src",
+      expect.stringContaining("bringcare-team-stair-v1.png"),
+    );
+    expect(
+      screen.getByText("BRING CARE 브랜드 캠페인 이미지"),
+    ).toBeInTheDocument();
+    expect(container.querySelectorAll(".bc-trust-badge")).toHaveLength(3);
+    expect(container.querySelector(".bc-cert-trust-bar")).toHaveAttribute(
+      "href",
+      "#company-certifications",
+    );
+  });
 });

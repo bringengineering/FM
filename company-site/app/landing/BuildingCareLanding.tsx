@@ -5,7 +5,7 @@ import { KAKAO_CHAT_HREF, PHONE_HREF, PHONE_LABEL } from "./contact";
 import QuickEstimateForm from "./QuickEstimateForm";
 import { QuickEstimateExperience, QuickEstimateTrigger } from "./QuickEstimateExperience";
 import { buildingCareCases, buildingCareFaq, buildingCarePillars, entryServices, managementSteps, turnoverSteps } from "./buildingCareData";
-import { CertificationStrip, ManagementComparison, ManagementCycle, ManagementScopeTable, OperatingStandardComparison, ServiceVisualMenu } from "./BuildingCareVisualBlocks";
+import { BrandTeamManifesto, CertificationStrip, CertificationTrustBar, ManagementComparison, ManagementCycle, ManagementScopeTable, OperatingStandardComparison, ServiceVisualMenu } from "./BuildingCareVisualBlocks";
 import "./building-care-sales.css";
 
 const Arrow = () => <span aria-hidden="true">→</span>;
@@ -17,6 +17,9 @@ export default function BuildingCareLanding() {
         <div className="bc-hero-copy"><p className="bc-kicker">BRING CARE · BUILDING MANAGEMENT</p><h1>건물은 임대하고,<br />관리는 맡기세요.</h1><p className="bc-lead">공실부터 임차인·시설점검·민원·수리까지 건물주 대신 확인하고 처리합니다.</p><div className="bc-price"><strong>월 89,000원부터</strong><span>부가세 별도 · 기본 6개월</span></div><div className="bc-actions"><QuickEstimateTrigger className="bc-button bc-primary">무료 관리진단 신청</QuickEstimateTrigger><a className="bc-button" href={PHONE_HREF}>{PHONE_LABEL}</a></div></div>
         <div className="bc-hero-visual"><Image src="/landing/records/vacancy-check.jpg" alt="BRING CARE 실제 공실 관리 현장" fill priority unoptimized sizes="(max-width: 760px) 100vw, 50vw"/><div className="bc-report-float"><small>이번 달 관리 현황</small><strong>정기 확인 4회 완료</strong><span>현장 사진 · 확인 사항 · 후속 제안</span></div></div>
       </div></section>
+
+      <BrandTeamManifesto />
+      <CertificationTrustBar />
 
       <div className="bc-visual-hub"><div className="bc-shell">
         <CertificationStrip />
