@@ -31,15 +31,18 @@ describe("BuildingCarePage sales landing", () => {
       "building-care-hero",
       "owner-problem",
       "one-contact",
-      "care-system",
-      "management-process",
-      "turnover-package",
-      "turnover-time",
-      "building-care-price",
-      "entry-services",
+      "service-menu",
+      "management-cycle",
       "real-cases",
       "management-report",
+      "management-comparison",
+      "management-scope",
+      "building-care-price",
+      "turnover-package",
+      "turnover-time",
+      "operating-standard",
       "trust-operations",
+      "company-certifications",
       "building-care-faq",
       "building-care-consultation",
     ]);
@@ -90,6 +93,36 @@ describe("BuildingCarePage sales landing", () => {
     expect(container.querySelector(".bc-cert-trust-bar")).toHaveAttribute(
       "href",
       "#company-certifications",
+    );
+  });
+
+  it("orders the sales story from promise to proof and conversion", () => {
+    const { container } = render(<BuildingCarePage />);
+    const main = container.querySelector("main")!;
+    const order = [
+      ".bc-hero",
+      ".bc-team-manifesto",
+      ".bc-cert-trust-bar",
+      "#owner-problem",
+      ".bc-cycle-grid",
+      "#real-cases",
+      "#management-report",
+      ".bc-mid-cta",
+      ".bc-management-comparison",
+      "#building-care-price",
+      "#company-certifications",
+      "#building-care-consultation",
+    ].map((selector) => main.querySelector(selector));
+
+    order.forEach((node) => expect(node).toBeInTheDocument());
+    for (let index = 1; index < order.length; index += 1) {
+      expect(
+        order[index - 1]!.compareDocumentPosition(order[index]!) &
+          Node.DOCUMENT_POSITION_FOLLOWING,
+      ).toBeTruthy();
+    }
+    expect(container.querySelector(".bc-mid-cta a[href='#quick-estimate']")).toHaveTextContent(
+      "무료 관리진단 신청",
     );
   });
 });
