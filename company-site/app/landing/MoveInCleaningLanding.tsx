@@ -24,6 +24,23 @@ const details = [
   ["천장·환기구", "손이 잘 닿지 않는 높은 곳도 범위에 맞춰 확인합니다.", "/landing/movein-campaign/suit-ceiling-vent.png", "검은 정장을 입은 브링케어 관리자의 천장 환기구 청소 캠페인 이미지"],
 ] as const;
 
+const moveInHubItems = [
+  ["▣", "창문·창틀", "빛이 들어오는 구역"],
+  ["◉", "욕실·배수구", "물때가 남기 쉬운 구역"],
+  ["⌂", "주방·후드", "기름 오염 확인 구역"],
+  ["▤", "수납장 안쪽", "문을 열어 확인하는 구역"],
+  ["⌞", "바닥·모서리", "먼지가 모이는 가장자리"],
+  ["↔", "창틀·레일", "좁은 틈 집중 구역"],
+  ["✦", "천장·환기구", "손이 닿기 어려운 구역"],
+] as const;
+
+const moveInProcess = [
+  ["01", "상담 접수", "공간 위치와 유형, 희망 일정을 확인합니다."],
+  ["02", "범위 확인", "면적과 주요 오염, 필요한 추가 작업을 먼저 정리합니다."],
+  ["03", "구역별 청소", "창문·욕실·주방·수납장과 세부 구역을 순서대로 작업합니다."],
+  ["04", "완료 확인", "요청한 범위와 주요 구역의 마무리 상태를 다시 확인합니다."],
+] as const;
+
 export default function MoveInCleaningLanding() {
   return (
     <main className="stair-toss movein-toss">
@@ -37,7 +54,7 @@ export default function MoveInCleaningLanding() {
       </header>
 
       <section className="stair-hero" aria-labelledby="movein-title">
-        <div className="stair-hero-card">
+        <div className="stair-hero-card stair-ad-hero movein-ad-hero">
           <Image src="/landing/movein-campaign/suit-window.png" alt="검은 정장을 입은 브링케어 관리자의 창문 청소 캠페인 이미지" fill priority unoptimized sizes="(max-width: 820px) 100vw, 1240px" />
           <div className="stair-hero-copy">
             <p className="stair-eyebrow">원주 직영팀 · 입주/이사청소</p>
@@ -56,6 +73,11 @@ export default function MoveInCleaningLanding() {
         {facts.map(([number, title, copy]) => <article key={title}><span>{number}</span><strong>{title}</strong><p>{copy}</p></article>)}
       </div></section>
 
+      <section className="stair-section movein-scope-summary" aria-labelledby="movein-summary-title"><div className="stair-inner">
+        <div className="stair-section-head stair-summary-head"><p>MOVE-IN CLEANING MAP</p><h2 id="movein-summary-title">입주 전 확인할 청소 구역을<br />한눈에 정리했습니다.</h2><span>눈에 보이는 바닥뿐 아니라 입주 후 불편이 생기기 쉬운 안쪽과 틈까지 구역별로 확인합니다.</span></div>
+        <div className="movein-scope-hub"><div className="movein-hub-core"><small>BEFORE MOVE-IN</small><strong>7개 핵심<br />청소 구역</strong><span>구역별 작업·완료 확인</span></div><div className="movein-hub-items">{moveInHubItems.map(([symbol,title,copy]) => <article className="movein-hub-item" key={title}><b aria-hidden="true">{symbol}</b><div><strong>{title}</strong><small>{copy}</small></div></article>)}</div></div>
+      </div></section>
+
       <section className="stair-section stair-soft" id="service" aria-labelledby="movein-scope-title"><div className="stair-inner">
         <div className="stair-section-head"><p>SERVICE SCOPE</p><h2 id="movein-scope-title">입주 전에 필요한 곳을<br />구역별로 청소합니다.</h2><span>눈에 잘 보이는 공간은 물론 오염이 남기 쉬운 안쪽과 틈까지 작업 범위에 맞춰 관리합니다.</span></div>
         <div className="stair-scope-grid">{scopes.map(([number, title, copy, image, alt]) => <article key={title}><span>{number}</span><h3>{title}</h3><p>{copy}</p><div className="stair-scope-image"><Image src={image} alt={alt} fill unoptimized sizes="(max-width: 820px) 100vw, 50vw" /></div></article>)}</div>
@@ -70,6 +92,13 @@ export default function MoveInCleaningLanding() {
         <div className="stair-report-copy"><p className="stair-tag">FINAL CHECK</p><h2 id="movein-check-title">청소가 끝난 뒤<br />주요 구역을 확인합니다.</h2><span>작업만 하고 끝내지 않고 요청 범위와 주요 구역의 완료 상태를 다시 살핍니다.</span><ul><li><b>✓</b><div><strong>요청 범위 확인</strong><small>상담 시 정한 작업 구역 확인</small></div></li><li><b>✓</b><div><strong>구역별 마무리 점검</strong><small>창문·욕실·주방·수납장 등 확인</small></div></li><li><b>✓</b><div><strong>추가 확인사항 안내</strong><small>현장에서 발견된 사항을 고객에게 안내</small></div></li></ul></div>
         <div className="stair-report-card"><header><strong>입주청소 완료 확인 예시</strong><span>작업 완료</span></header><dl><div><dt>창문·창틀</dt><dd>완료</dd></div><div><dt>욕실·배수구</dt><dd>완료</dd></div><div><dt>주방·수납장</dt><dd>완료</dd></div><div><dt>바닥·모서리</dt><dd>완료</dd></div></dl></div>
       </div></section>
+
+      <section className="stair-section movein-process" aria-labelledby="movein-process-title"><div className="stair-inner">
+        <div className="stair-section-head"><p>PROCESS</p><h2 id="movein-process-title">상담부터 완료 확인까지<br />네 단계로 진행합니다.</h2><span>무엇을 언제 확인하는지 알 수 있도록 상담과 현장 작업 과정을 단순하게 정리했습니다.</span></div>
+        <ol className="movein-process-grid">{moveInProcess.map(([number,title,copy]) => <li key={number}><span>{number}</span><strong>{title}</strong><p>{copy}</p></li>)}</ol>
+      </div></section>
+
+      <div className="stair-inner"><section className="stair-mid-cta movein-mid-cta" aria-label="입주 이사청소 견적 안내"><div><span>사진이 없어도 괜찮습니다.</span><strong>공간 위치와 유형만 알려주시면<br />필요한 청소 범위부터 확인합니다.</strong></div><a className="stair-btn stair-btn-primary" href="#estimate">무료 범위 확인</a></section></div>
 
       <section className="stair-section stair-soft stair-price-section" id="price" aria-labelledby="movein-price-title"><div className="stair-inner">
         <div className="stair-section-head"><p>PRICE</p><h2 id="movein-price-title">청소 유형에 맞춰<br />먼저 가격을 안내합니다.</h2><span>면적, 오염도, 잔존 물품과 추가 작업 여부에 따라 최종 견적이 달라질 수 있습니다.</span></div>

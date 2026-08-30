@@ -163,6 +163,29 @@ describe("LandingPage", () => {
     ).not.toBeInTheDocument();
   });
 
+  it("summarizes the building-cleaning offer before the detailed campaign cards", () => {
+    const { container } = render(<StairCleaningLanding />);
+
+    expect(container.querySelector(".stair-hero-card")).toHaveClass("stair-ad-hero");
+    expect(container.querySelectorAll(".stair-service-hub .stair-hub-item")).toHaveLength(8);
+    expect(
+      screen.getByRole("heading", { name: /건물 공용부 청소 범위를.*한눈에 확인하세요/ }),
+    ).toBeInTheDocument();
+    expect(container.querySelector(".stair-mid-cta")).toBeInTheDocument();
+  });
+
+  it("turns the move-in page into a visual scope-and-process sales flow", () => {
+    const { container } = render(<MoveInCleaningLanding />);
+
+    expect(container.querySelector(".movein-ad-hero")).toBeInTheDocument();
+    expect(container.querySelectorAll(".movein-scope-hub .movein-hub-item")).toHaveLength(7);
+    expect(container.querySelectorAll(".movein-process-grid li")).toHaveLength(4);
+    expect(
+      screen.getByRole("heading", { name: /상담부터 완료 확인까지.*네 단계로 진행합니다/ }),
+    ).toBeInTheDocument();
+    expect(container.querySelector(".movein-mid-cta")).toBeInTheDocument();
+  });
+
   it("uses a dense two-column campaign grid and shared depth surfaces", () => {
     const { container } = render(<StairCleaningLanding />);
 

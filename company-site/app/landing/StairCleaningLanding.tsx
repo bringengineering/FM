@@ -22,6 +22,8 @@ const scopes = [
   ["08", "주차장 바닥", "주차장 바닥과 벽면 가장자리의 생활 쓰레기와 먼지를 정리합니다.", "/landing/campaign/suit-parking-trash.png", "검은 정장을 입은 브링케어 관리자가 주차장 바닥 쓰레기를 정리하는 브랜드 캠페인 이미지"],
 ] as const;
 
+const scopeSymbols = ["⌁", "↔", "⌞", "✦", "▣", "▤", "◇", "P"] as const;
+
 const references = [
   {
     title: "공용부 환경 정비",
@@ -92,7 +94,7 @@ export default function StairCleaningLanding() {
       </header>
 
       <section className="stair-hero" aria-labelledby="stair-title">
-        <div className="stair-hero-card">
+        <div className="stair-hero-card stair-ad-hero">
           <Image src="/landing/campaign/suit-stair-floor.png" alt="검은 정장을 입은 브링케어 관리자가 계단 바닥을 청소하는 브랜드 캠페인 이미지" fill priority unoptimized sizes="(max-width: 820px) 100vw, 1240px" />
           <div className="stair-hero-copy">
             <p className="stair-eyebrow">원주 직영팀 · 계단/공용부 정기청소</p>
@@ -111,6 +113,16 @@ export default function StairCleaningLanding() {
       <section className="stair-facts" aria-label="서비스 핵심 정보">
         <div className="stair-inner stair-fact-grid">
           {facts.map(([number, title, copy]) => <article key={title}><span>{number}</span><strong>{title}</strong><p>{copy}</p></article>)}
+        </div>
+      </section>
+
+      <section className="stair-section stair-service-summary" aria-labelledby="stair-summary-title">
+        <div className="stair-inner">
+          <div className="stair-section-head stair-summary-head"><p>ALL-IN-ONE CLEANING</p><h2 id="stair-summary-title">건물 공용부 청소 범위를<br />한눈에 확인하세요.</h2><span>계단만 닦고 끝내지 않습니다. 입구에서 주차장까지 반복적으로 오염되는 공용 공간을 한 흐름으로 관리합니다.</span></div>
+          <div className="stair-service-hub">
+            <div className="stair-hub-core"><small>BUILDING CLEANING</small><strong>BRING<br />CARE</strong><span>월 4회 정기관리</span></div>
+            <div className="stair-hub-items">{scopes.map(([, title], index) => <article className="stair-hub-item" key={title}><b aria-hidden="true">{scopeSymbols[index]}</b><div><strong>{title}</strong><small>{index < 4 ? "실내 공용부" : "출입·외부 공간"}</small></div></article>)}</div>
+          </div>
         </div>
       </section>
 
@@ -172,6 +184,8 @@ export default function StairCleaningLanding() {
           </div>
         </div>
       </section>
+
+      <div className="stair-inner"><section className="stair-mid-cta" aria-label="계단 공용부 청소 견적 안내"><div><span>우리 건물은 어디까지 청소할까요?</span><strong>주소와 층수만 알려주시면<br />포함 범위부터 정리해드립니다.</strong></div><a className="stair-btn stair-btn-primary" href="#estimate">무료 범위 확인</a></section></div>
 
       <section className="stair-section stair-soft" aria-labelledby="stair-report-title">
         <div className="stair-inner stair-report-grid">
