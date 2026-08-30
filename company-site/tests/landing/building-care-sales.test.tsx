@@ -37,6 +37,7 @@ describe("BuildingCarePage sales landing", () => {
       "service-menu",
       "management-cycle",
       "real-cases",
+      "management-experience",
       "management-report",
       "management-comparison",
       "management-scope",

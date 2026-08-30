@@ -63,7 +63,7 @@
     ]
   },
   "app/landing/BuildingCareLanding.tsx": {
-    "file": "assets/BuildingCareLanding-BL7cxiCO.js",
+    "file": "assets/BuildingCareLanding-B5Y_7OdH.js",
     "name": "BuildingCareLanding",
     "src": "app/landing/BuildingCareLanding.tsx",
     "isDynamicEntry": true,
@@ -76,7 +76,7 @@
       "_framework-B8WyT5R3.js"
     ],
     "css": [
-      "assets/BuildingCareLanding-CZazH-BR.css"
+      "assets/BuildingCareLanding-Ct3Zthbo.css"
     ]
   },
   "app/landing/QuickEstimateExperience.tsx": {
@@ -112,7 +112,7 @@
     ]
   },
   "node_modules/.pnpm/vinext@0.0.50_@vitejs+plugi_9192fdac6e7854526409bdfa1df91a00/node_modules/vinext/dist/shims/layout-segment-context.js": {
-    "file": "assets/layout-segment-context-l_v70uQL.js",
+    "file": "assets/layout-segment-context-CAjiWfps.js",
     "name": "layout-segment-context",
     "src": "node_modules/.pnpm/vinext@0.0.50_@vitejs+plugi_9192fdac6e7854526409bdfa1df91a00/node_modules/vinext/dist/shims/layout-segment-context.js",
     "isDynamicEntry": true,
@@ -123,7 +123,7 @@
     ]
   },
   "node_modules/.pnpm/vinext@0.0.50_@vitejs+plugi_9192fdac6e7854526409bdfa1df91a00/node_modules/vinext/dist/shims/link.js": {
-    "file": "assets/link-D84Mom73.js",
+    "file": "assets/link-DTR_F_WV.js",
     "name": "link",
     "src": "node_modules/.pnpm/vinext@0.0.50_@vitejs+plugi_9192fdac6e7854526409bdfa1df91a00/node_modules/vinext/dist/shims/link.js",
     "isDynamicEntry": true,
@@ -140,7 +140,7 @@
     ]
   },
   "node_modules/.pnpm/vinext@0.0.50_@vitejs+plugi_9192fdac6e7854526409bdfa1df91a00/node_modules/vinext/dist/shims/router.js": {
-    "file": "assets/router-CN9LgSgc.js",
+    "file": "assets/router-BS8Lrvrr.js",
     "name": "router",
     "src": "node_modules/.pnpm/vinext@0.0.50_@vitejs+plugi_9192fdac6e7854526409bdfa1df91a00/node_modules/vinext/dist/shims/router.js",
     "isDynamicEntry": true,
@@ -156,7 +156,7 @@
     ]
   },
   "virtual:vinext-app-browser-entry": {
-    "file": "assets/index-D7szz4bT.js",
+    "file": "assets/index-DZlpfGiZ.js",
     "name": "index",
     "src": "virtual:vinext-app-browser-entry",
     "isEntry": true,
