@@ -35,7 +35,7 @@ export const buildingCareCases = [
 
 export const entryServices = [
   { title: "계단·공용부 정기청소", copy: "월 4회 정기방문과 월간 관리보고", href: "/stair-cleaning", cta: "청소 견적받기" },
-  { title: "24H 입·퇴실 관리", copy: "퇴실 접수부터 다음 입실 준비까지", href: "/turnover-care", cta: "입퇴실 패키지 문의하기" },
+  { title: "24H 입·퇴실 관리", copy: "퇴실 접수부터 다음 입실 준비까지", href: "#turnover-package", cta: "입퇴실 패키지 문의하기" },
 ] as const;
 
 export const buildingCareFaq = [

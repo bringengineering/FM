@@ -42,6 +42,9 @@ describe("building care sales data", () => {
       "청소 견적받기",
       "입퇴실 패키지 문의하기",
     ]);
+    expect(
+      entryServices.find((item) => item.title.includes("입·퇴실"))?.href,
+    ).toBe("#turnover-package");
   });
 
   it("keeps each management case evidence-based", () => {

@@ -76,7 +76,7 @@ git commit -m "feat: redirect turnover care to building management"
 - [ ] **Step 1: Add a failing assertion that the building-care package link is internal**
 
 ```ts
-expect(buildingCarePackages.find((item) => item.title.includes("입·퇴실"))?.href)
+expect(entryServices.find((item) => item.title.includes("입·퇴실"))?.href)
   .toBe("#turnover-package");
 ```
 
@@ -89,7 +89,7 @@ Expected: FAIL showing `/turnover-care` instead of `#turnover-package`.
 - [ ] **Step 3: Change only the package link**
 
 ```ts
-{ title: "24H 입·퇴실 관리", copy: "퇴실 접수부터 다음 입실 준비까지", href: "#turnover-package", cta: "입퇴실 통합관리 보기" }
+{ title: "24H 입·퇴실 관리", copy: "퇴실 접수부터 다음 입실 준비까지", href: "#turnover-package", cta: "입퇴실 패키지 문의하기" }
 ```
 
 - [ ] **Step 4: Run landing tests and build**
