@@ -17,3 +17,8 @@ test("Cloudflare production deployment disables temporary preview URLs", () => {
   const config = fs.readFileSync(path.join(__dirname, "..", "wrangler.toml"), "utf8");
   assert.match(config, /^preview_urls\s*=\s*false$/m);
 });
+
+test("production gateway is enabled only through the reviewed deployment config", () => {
+  const config = fs.readFileSync(path.join(__dirname, "..", "wrangler.toml"), "utf8");
+  assert.match(config, /^AI_ENABLED\s*=\s*"true"$/m);
+});

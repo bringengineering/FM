@@ -5,7 +5,7 @@ workers_dev = true
 preview_urls = false
 
 [vars]
-AI_ENABLED = "false"
+AI_ENABLED = "true"
 GROQ_MODEL = "qwen/qwen3.8-27b"
 AI_COMPANY_DAILY_LIMIT = "1000"
 CRM_ALLOWED_EMAILS = "dpvld858@gmail.com,ameejin92@gmail.com"
