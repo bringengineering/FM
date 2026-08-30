@@ -5,6 +5,7 @@ import { KAKAO_CHAT_HREF, PHONE_HREF, PHONE_LABEL } from "./contact";
 import QuickEstimateForm from "./QuickEstimateForm";
 import { QuickEstimateExperience, QuickEstimateTrigger } from "./QuickEstimateExperience";
 import { buildingCareCases, buildingCareFaq, turnoverSteps } from "./buildingCareData";
+import BuildingCarePartnership from "./BuildingCarePartnership";
 import {
   BrandTeamManifesto,
   CertificationStrip,
@@ -59,6 +60,8 @@ export default function BuildingCareLanding() {
       ].map(item=><article className="bc-contact-service" key={item.title}><ContactIcon type={item.type}/><div><h3>{item.title}</h3><p>{item.copy}</p></div></article>)}</div><div className="bc-contact-values">{[
         ["전문성","체계적인 관리 기준"],["효율성","시간과 비용 절약"],["신뢰성","투명한 확인과 기록"],["현장성","원주 직영팀 현장 대응"],
       ].map(([title,copy], index)=><article className="bc-contact-value" key={title}><span>{["◇","◷","↗","○"][index]}</span><div><strong>{title}</strong><small>{copy}</small></div></article>)}</div></div></div></section>
+
+      <BuildingCarePartnership />
 
       <section id="service-menu" className="bc-section bc-visual-section"><div className="bc-shell"><ServiceVisualMenu /></div></section>
       <section id="management-cycle" className="bc-section bc-visual-section"><div className="bc-shell"><ManagementCycle /></div></section>
