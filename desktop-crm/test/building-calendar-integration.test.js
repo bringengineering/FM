@@ -104,7 +104,7 @@ test("schedule save validates local date and time before one dedicated CAS commi
   assert.match(branch, /requestId:\s*String\(form\.dataset\.requestId/);
   assert.match(branch, /expectedUpdatedAt:\s*creating\s*\?\s*""\s*:\s*String\(form\.dataset\.openedUpdatedAt/);
   assert.match(branch, /expectedCommitVersion:\s*creating\s*\?\s*0\s*:\s*Number\(form\.dataset\.openedCommitVersion\)/);
-  assert.equal((appSource.match(/expectedCommitVersion:/g) || []).length, 5);
+  assert.equal((appSource.match(/expectedCommitVersion:/g) || []).length, 6);
   assert.equal((appSource.match(/data-opened-commit-version=/g) || []).length, 2);
   assert.doesNotMatch(branch, /store\.serviceRecords\.(?:push|splice)/);
   assert.doesNotMatch(branch, /scheduleSave\(/);
