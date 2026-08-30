@@ -72,6 +72,8 @@ async function assistWithGateway(options) {
   const input = validateAssistInput(options?.input);
   const fetchImpl = options?.fetchImpl || globalThis.fetch;
   const timeoutMs = Number(options?.timeoutMs || 18_000);
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), timeoutMs);
   let response;
   try {
     response = await fetchImpl(url.href, {
@@ -79,10 +81,12 @@ async function assistWithGateway(options) {
       headers: { authorization: `Bearer ${idToken}`, "content-type": "application/json" },
       body: JSON.stringify(input),
       cache: "no-store",
-      signal: AbortSignal.timeout(timeoutMs)
+      signal: controller.signal
     });
   } catch {
     throw codedError("AI_TEMPORARY_FAILURE");
+  } finally {
+    clearTimeout(timeout);
   }
   let value;
   try { value = await response.json(); }
