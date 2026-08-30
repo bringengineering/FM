@@ -1,7 +1,8 @@
 name = "bring-crm-ai-gateway"
 main = "src/index.js"
-compatibility_date = "2026-08-31"
+compatibility_date = "2026-08-30"
 workers_dev = true
+preview_urls = false
 
 [vars]
 AI_ENABLED = "false"
@@ -17,3 +18,7 @@ namespace_id = "10081"
 [ratelimits.simple]
 limit = 20
 period = 60
+
+[[kv_namespaces]]
+binding = "AI_USAGE"
+id = "d62c9d8a0f9a487495da8a3f915ac083"
