@@ -1,0 +1,19 @@
+name = "bring-crm-ai-gateway"
+main = "src/index.js"
+compatibility_date = "2026-08-31"
+workers_dev = true
+
+[vars]
+AI_ENABLED = "false"
+GROQ_MODEL = "qwen/qwen3.8-27b"
+AI_COMPANY_DAILY_LIMIT = "1000"
+CRM_ALLOWED_EMAILS = "dpvld858@gmail.com,ameejin92@gmail.com"
+ALLOWED_ORIGINS = "app://bring-crm"
+
+[[ratelimits]]
+name = "AI_RATE_LIMITER"
+namespace_id = "10081"
+
+[ratelimits.simple]
+limit = 20
+period = 60
