@@ -7,6 +7,7 @@ import { QuickEstimateExperience, QuickEstimateTrigger } from "./QuickEstimateEx
 import { buildingCareCases, buildingCareFaq, turnoverSteps } from "./buildingCareData";
 import BuildingCarePartnership from "./BuildingCarePartnership";
 import BuildingCarePricingGrid from "./BuildingCarePricingGrid";
+import BuildingCareTestimonials from "./BuildingCareTestimonials";
 import {
   BrandTeamManifesto,
   CertificationStrip,
@@ -68,6 +69,7 @@ export default function BuildingCareLanding() {
       <section id="management-cycle" className="bc-section bc-visual-section"><div className="bc-shell"><ManagementCycle /></div></section>
 
       <section id="real-cases" className="bc-section"><div className="bc-shell"><header className="bc-heading"><p className="bc-kicker">REAL MANAGEMENT RECORD</p><h2>말보다 현장으로 보여드립니다.</h2><p>연출 사진이 아닌 BRING CARE가 실제로 확인하고 기록한 관리 현장입니다.</p></header><div className="bc-case-grid">{buildingCareCases.map(x=><article className="bc-case-card" key={x.title}><div><Image src={x.image} alt={`BRING CARE 실제 현장기록 - ${x.title}`} fill unoptimized sizes="(max-width: 760px) 100vw, 33vw"/></div><h3>{x.title}</h3><p>{x.copy}</p><dl className="bc-case-evidence"><div><dt>확인한 문제</dt><dd>{x.problem}</dd></div><div><dt>진행한 조치</dt><dd>{x.action}</dd></div><div><dt>남긴 결과</dt><dd>{x.result}</dd></div></dl></article>)}</div></div></section>
+      <BuildingCareTestimonials />
 
       <section id="management-report" className="bc-section"><div className="bc-shell bc-split"><header className="bc-heading"><p className="bc-kicker">MONTHLY REPORT</p><h2>건물에 가지 않아도<br />관리 상태를 확인하세요.</h2><p>사진만 보내고 끝내지 않습니다. 방문 이력과 확인 사항, 필요한 후속 조치를 한 달 단위로 정리합니다.</p><ul className="bc-checks"><li>정기 방문 이력</li><li>공용부·공실 확인 사항</li><li>후속 조치 제안</li></ul></header><div className="bc-report-ui"><span>관리보고 화면 예시</span><div className="bc-report-head"><strong>8월 월간 관리보고</strong><b>관리 완료</b></div>{[["정기방문","주 2회 방문"],["공용부 확인","계단·현관·우편함"],["확인 사항","후속 확인 1건"],["현장 사진","12장 첨부"]].map(([a,b])=><p key={a}><span>{a}</span><strong>{b}</strong></p>)}</div></div></section>
 
