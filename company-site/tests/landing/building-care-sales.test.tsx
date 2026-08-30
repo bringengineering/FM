@@ -30,10 +30,8 @@ describe("BuildingCarePage sales landing", () => {
       (section) => section.id,
     );
     expect(sectionIds).toEqual([
-      "company-credentials",
       "owner-problem",
       "one-contact",
-      "real-estate-partnership",
       "service-menu",
       "management-cycle",
       "real-cases",
@@ -43,10 +41,12 @@ describe("BuildingCarePage sales landing", () => {
       "management-scope",
       "building-care-price",
       "turnover-package",
+      "real-estate-partnership",
       "turnover-time",
       "operating-standard",
       "trust-operations",
       "building-care-faq",
+      "company-credentials",
       "building-care-consultation",
     ]);
   });
@@ -136,13 +136,15 @@ describe("BuildingCarePage sales landing", () => {
   it("connects vacancy preparation to Easy Real Estate brokerage with explicit roles", () => {
     const { container } = render(<BuildingCarePage />);
     const oneContact = container.querySelector("#one-contact");
+    const turnoverPackage = container.querySelector("#turnover-package");
     const partnership = container.querySelector("#real-estate-partnership");
 
     expect(partnership).toBeInTheDocument();
-    expect(oneContact?.nextElementSibling).toBe(partnership);
+    expect(oneContact).toHaveTextContent("이지부동산중개법인 임대차 중개 연계");
+    expect(turnoverPackage?.nextElementSibling).toBe(partnership);
     expect(
       within(partnership as HTMLElement).getByRole("heading", {
-        name: "공실 확인에서 임대차 중개까지, 한 흐름으로 연결합니다.",
+        name: "공실 관리부터 임대차 중개 연계까지",
       }),
     ).toBeInTheDocument();
     expect(
@@ -173,8 +175,6 @@ describe("BuildingCarePage sales landing", () => {
     const main = container.querySelector("main")!;
     const order = [
       ".bc-team-manifesto",
-      ".bc-cert-trust-bar",
-      "#company-credentials",
       "#owner-problem",
       ".bc-cycle-grid",
       "#real-cases",
@@ -182,6 +182,11 @@ describe("BuildingCarePage sales landing", () => {
       ".bc-mid-cta",
       ".bc-management-comparison",
       "#building-care-price",
+      "#turnover-package",
+      "#real-estate-partnership",
+      "#building-care-faq",
+      ".bc-cert-trust-bar",
+      "#company-credentials",
       "#building-care-consultation",
     ].map((selector) => main.querySelector(selector));
 

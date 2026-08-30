@@ -80,9 +80,11 @@ export default function BuildingCarePartnership() {
       <div className="bc-shell">
         <header className="bc-heading bc-partnership-heading">
           <p className="bc-kicker">VACANCY TO LEASING</p>
-          <h2 id="bc-partnership-title">
-            공실 확인에서 임대차 중개까지,{" "}
-            <br />한 흐름으로 연결합니다.
+          <h2
+            id="bc-partnership-title"
+            aria-label="공실 관리부터 임대차 중개 연계까지"
+          >
+            공실 관리부터<br />임대차 중개 연계까지
           </h2>
           <p>
             BRING CARE가 공실 상태와 임대 준비를 관리하고, 임대차 상담과
