@@ -41,6 +41,15 @@ test("assigns the documented bands at every boundary", () => {
   assert.equal(OpsAI.salesBand(0), "nurture");
 });
 
+test("awards progressive stage points instead of treating early contact as zero", () => {
+  const now = new Date("2026-08-31T09:00:00+09:00");
+  assert.equal(OpsAI.scoreSalesFocus({ stage: "contact_ready" }, now).components.stage, 5);
+  assert.equal(OpsAI.scoreSalesFocus({ stage: "first_contact" }, now).components.stage, 10);
+  assert.equal(OpsAI.scoreSalesFocus({ stage: "replied" }, now).components.stage, 15);
+  assert.equal(OpsAI.scoreSalesFocus({ stage: "qualified_interest" }, now).components.stage, 20);
+  assert.equal(OpsAI.scoreSalesFocus({ stage: "meeting_confirmed" }, now).components.stage, 25);
+});
+
 test("forces a gas complaint to immediate review", () => {
   assert.deepEqual(OpsAI.classifyIssue("보일러실에서 가스 냄새가 납니다"), {
     category: "heating_cooling",

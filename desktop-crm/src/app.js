@@ -10,6 +10,9 @@
   const WorkCalendar = window.BringWorkCalendar;
   const ServiceOperationsUI = window.BringServiceOperationsUI;
   const OperationsIntelligenceUI = window.OperationsIntelligenceUI;
+  const AiOperationsCore = window.BringAiOperationsCore;
+  const ManagementReportCore = window.BringManagementReportCore;
+  const AiOperationsUI = window.BringAiOperationsUI;
   const api = window.bringCRM;
   const main = document.getElementById("main");
   const modal = document.getElementById("modal");
@@ -117,6 +120,9 @@
   let valueScopeResizeObserver = null;
   let valueScopeOpenGeneration = 0;
   let aiAssistantState = { task: "assistant_summary", content: "", customerType: "", workType: "", result: null, warnings: [], loading: false, error: "" };
+  let salesAutomationState = { drafts: new Map(), loadingId: "", rows: [] };
+  let workAutomationState = { drafts: new Map(), loadingId: "" };
+  let managementReportState = { month: Core.dayKey().slice(0, 7), result: null, loading: false, error: "" };
   const sessionViewedCustomers = new Set();
 
   const viewMeta = {
@@ -2618,6 +2624,81 @@
     showToast("다른 컴퓨터의 호실 변경을 반영했습니다. 층·호실 구성을 다시 열어 확인해 주세요.", "error");
   }
 
+  function salesFocusSource(prospect) {
+    return { priority: prospect.priority || "normal", nextAction: prospect.nextAction || "", nextActionAt: prospect.nextActionAt || "", updatedAt: prospect.updatedAt || "" };
+  }
+
+  function salesFocusRows() {
+    const now = new Date();
+    return (store.salesProspects || []).filter(item => item && !item.archivedAt && item.stage !== "paused_closed").map(prospect => {
+      const activities = (store.salesActivities || []).filter(item => item && item.prospectId === prospect.id && !item.archivedAt).sort((left, right) => String(right.occurredAt || "").localeCompare(String(left.occurredAt || "")));
+      const units = (store.salesUnits || []).filter(item => item && item.prospectId === prospect.id && !item.archivedAt);
+      const opportunities = (store.salesOpportunities || []).filter(item => item && item.prospectId === prospect.id && !item.archivedAt);
+      const latest = activities[0] || {};
+      const scored = AiOperationsCore.scoreSalesFocus({ stage: prospect.stage, nextActionAt: prospect.nextActionAt || latest.nextActionAt, lastResponseType: latest.result || latest.type, hasVacancy: units.some(item => ["vacant", "upcoming"].includes(item.status)), currentIssue: prospect.currentIssue || prospect.notes || "", expectedValue: opportunities.reduce((sum, item) => sum + Number(item.quoteAmount || item.revenueAmount || 0), 0), lastActivityAt: latest.occurredAt || prospect.lastActivityAt || prospect.updatedAt }, now);
+      const labels = { stage: "협의 단계", overdue: "후속조치 기한", response: "고객 반응", vacancyOrIssue: "공실·구체 요청", expectedValue: "예상 금액", dormant: "장기 미접촉" };
+      return { id: prospect.id, name: prospect.name || prospect.address, score: scored.score, band: scored.band, recommendedAt: scored.recommendedAt, reasons: Object.entries(scored.components).filter(([, value]) => value > 0).map(([key, value]) => `${labels[key]} +${value}`), sourceRevision: AiOperationsCore.sourceRevision(salesFocusSource(prospect)), draft: salesAutomationState.drafts.get(prospect.id)?.text || "" };
+    }).sort((left, right) => right.score - left.score || String(left.name).localeCompare(String(right.name), "ko"));
+  }
+
+  function workAutomationRows() {
+    return (store.serviceRecords || []).filter(item => item && item.status !== "cancelled").slice().sort((a, b) => String(b.updatedAt || b.scheduledDate || "").localeCompare(String(a.updatedAt || a.scheduledDate || ""))).slice(0, 12).map(record => Object.assign({ id: record.id, title: record.title || WorkManagement.typeLabel(record.serviceType), draft: workAutomationState.drafts.get(record.id)?.text || "" }, AiOperationsCore.classifyIssue(`${record.title || ""} ${record.summary || ""}`)));
+  }
+
+  const currentManagementReport = () => ManagementReportCore.buildMonthlyReport(store, managementReportState.month);
+
+  async function requestSalesAutomationDraft(prospectId) {
+    const prospect = (store.salesProspects || []).find(item => item && item.id === prospectId && !item.archivedAt);
+    const row = salesFocusRows().find(item => item.id === prospectId);
+    if (!prospect || !row) return showToast("영업 대상을 찾지 못했습니다.", "error");
+    salesAutomationState.loadingId = prospectId;
+    renderPipeline();
+    try {
+      const response = await api.assist({ task: "sales_followup_message", content: JSON.stringify({ name: prospect.name || "건물주", score: row.score, band: row.band, reasons: row.reasons, recommendedAt: row.recommendedAt, nextAction: prospect.nextAction || "후속 연락" }), context: { customerType: "건물주", workType: "영업", owner: salesActorName(), priority: row.band } });
+      salesAutomationState.drafts.set(prospectId, { text: response.result.text, requestId: response.requestId });
+    } catch (error) { showToast(error.message || "AI 문자 초안을 만들지 못했습니다.", "error"); }
+    finally { salesAutomationState.loadingId = ""; if (currentView === "pipeline") renderPipeline(); }
+  }
+
+  function applySalesRecommendation(prospectId) {
+    const prospect = (store.salesProspects || []).find(item => item && item.id === prospectId && !item.archivedAt);
+    const row = salesAutomationState.rows.find(item => item.id === prospectId);
+    if (!prospect || !row) throw new Error("영업 대상을 찾지 못했습니다.");
+    AiOperationsCore.assertCurrentProposal({ sourceRevision: row.sourceRevision }, salesFocusSource(prospect));
+    const previous = salesFocusSource(prospect);
+    prospect.priority = row.band;
+    prospect.nextAction = prospect.nextAction || "후속 연락";
+    prospect.nextActionAt = `${row.recommendedAt}T09:00:00+09:00`;
+    prospect.updatedAt = new Date().toISOString();
+    prospect.updatedBy = salesActor().email;
+    logAudit({ category: "변경", targetType: "영업", targetId: prospect.id, targetLabel: prospect.name || prospect.address, action: `AI 영업 추천 적용 (${previous.priority} → ${row.band}, ${row.recommendedAt})`, reason: "사용자가 계산 근거를 확인하고 적용" });
+  }
+
+  async function requestWorkAutomationDraft(recordId, task) {
+    const record = (store.serviceRecords || []).find(item => item && item.id === recordId && item.status !== "cancelled");
+    if (!record) return showToast("작업 기록을 찾지 못했습니다.", "error");
+    const building = buildingById(record.buildingId);
+    const payload = AiOperationsCore.buildWorkDraftPayload({ ...record, detail: record.summary, buildingLabel: building && building.name, requestedAt: record.scheduledDate || record.createdAt });
+    workAutomationState.loadingId = recordId;
+    try {
+      const response = await api.assist({ task, content: JSON.stringify(payload), context: { workType: WorkManagement.typeLabel(record.serviceType), owner: record.owner || "", category: payload.category, urgency: payload.urgency } });
+      workAutomationState.drafts.set(recordId, { task, text: response.result.text, requestId: response.requestId, sourceRevision: AiOperationsCore.sourceRevision({ summary: record.summary || "", updatedAt: record.updatedAt || "" }) });
+    } catch (error) { showToast(error.message || "AI 작업 문서를 만들지 못했습니다.", "error"); }
+    finally { workAutomationState.loadingId = ""; if (currentView === "workManagement") renderWorkManagement(); }
+  }
+
+  async function requestManagementNarrative() {
+    managementReportState.loading = true;
+    managementReportState.error = "";
+    renderOperationsIntelligence();
+    try {
+      const snapshot = ManagementReportCore.buildReportAiSnapshot(currentManagementReport());
+      const response = await api.assist({ task: "monthly_management_report", content: JSON.stringify(snapshot), context: { workType: "경영보고", owner: salesActorName(), month: snapshot.month } });
+      managementReportState.result = response.result;
+    } catch (error) { managementReportState.error = error.message || "AI 경영보고를 만들지 못했습니다."; }
+    finally { managementReportState.loading = false; if (currentView === "operationsIntelligence") renderOperationsIntelligence(); }
+  }
+
   function renderWorkManagement() {
     const linked = new Set(operationsIntelligenceState.items.map(item => String(item && item.sourceWorkRecordId || "")).filter(Boolean));
     const workStore = Object.assign({}, store, {
@@ -2631,7 +2712,7 @@
       }),
     });
     const model = WorkManagement.buildModel(workStore, { month: Core.dayKey().slice(0, 7), today: Core.dayKey() });
-    main.innerHTML = WorkManagement.renderDashboard(model, { canWrite: canWriteCRM(), filters: workFilters });
+    main.innerHTML = AiOperationsUI.renderWorkAutomation({ records: workAutomationRows(), writable: canWriteCRM() }) + WorkManagement.renderDashboard(model, { canWrite: canWriteCRM(), filters: workFilters });
     Object.entries(workFilters).forEach(([key, value]) => {
       const field = main.querySelector(`[data-work-filter="${key}"]`);
       if (field) field.value = value;
@@ -2673,7 +2754,7 @@
   }
 
   function renderOperationsIntelligence() {
-    main.innerHTML = OperationsIntelligenceUI.renderPage({
+    main.innerHTML = AiOperationsUI.renderManagementReport({ report: currentManagementReport(), result: managementReportState.result, loading: managementReportState.loading, error: managementReportState.error, writable: canWriteCRM() }) + OperationsIntelligenceUI.renderPage({
       operations: operationsIntelligenceState.items,
       buildings: operationsIntelligenceState.buildings,
       profiles: operationsIntelligenceState.profiles,
@@ -2809,7 +2890,8 @@
     ensureSalesStore();
     const now = new Date().toISOString();
     const kpis = Sales.calculateKpis(store, { now });
-    main.innerHTML = SalesUI.renderPipeline({
+    salesAutomationState.rows = salesFocusRows();
+    main.innerHTML = AiOperationsUI.renderSalesFocus({ rows: salesAutomationState.rows, writable: canWriteCRM() }) + SalesUI.renderPipeline({
       store,
       stages: Sales.SALES_STAGES,
       kpis,
@@ -4369,6 +4451,77 @@
   }
 
   document.addEventListener("click", async event => {
+    const salesMessageDraft = event.target.closest("[data-ai-sales-message]");
+    if (salesMessageDraft) { await requestSalesAutomationDraft(salesMessageDraft.dataset.aiSalesMessage); return; }
+    const salesDraftCopy = event.target.closest("[data-ai-draft-copy]");
+    if (salesDraftCopy) {
+      const draft = salesAutomationState.drafts.get(salesDraftCopy.dataset.aiDraftCopy);
+      try { await navigator.clipboard.writeText(draft?.text || ""); showToast("후속 문자 초안을 복사했습니다.", "success"); }
+      catch { showToast("문자 초안을 복사하지 못했습니다.", "error"); }
+      return;
+    }
+    const salesApply = event.target.closest("[data-ai-sales-apply]");
+    if (salesApply) {
+      if (!canWriteCRM()) return showToast("조회 전용 계정은 추천을 적용할 수 없습니다.", "error");
+      try { applySalesRecommendation(salesApply.dataset.aiSalesApply); scheduleSave(); renderPipeline(); showToast("영업 우선순위와 재연락일을 적용했습니다.", "success"); }
+      catch { showToast("다른 변경이 확인되어 추천을 적용하지 않았습니다. 목록을 다시 확인해 주세요.", "error"); }
+      return;
+    }
+    const salesBatch = event.target.closest("[data-ai-sales-batch]");
+    if (salesBatch) {
+      if (!canWriteCRM()) return showToast("조회 전용 계정은 자동정리를 적용할 수 없습니다.", "error");
+      const snapshot = salesAutomationState.rows.slice();
+      if (!snapshot.length) return showToast("정리할 영업 대상이 없습니다.", "error");
+      const confirmed = await requestConfirmation({ title: "오늘 영업 추천을 적용할까요?", description: "화면에 표시된 우선순위와 재연락일을 활성 영업 대상에 반영합니다.", target: `${snapshot.length}건`, warning: "문자는 발송하지 않으며 초안만 별도로 만듭니다.", confirmLabel: "추천 적용" });
+      if (!confirmed) return;
+      let applied = 0;
+      snapshot.forEach(row => { try { applySalesRecommendation(row.id); applied += 1; } catch {} });
+      if (applied) scheduleSave();
+      renderPipeline();
+      showToast(`${applied}건의 영업 추천을 적용했습니다.`, "success");
+      return;
+    }
+    const workDraftButton = event.target.closest("[data-ai-work-task]");
+    if (workDraftButton) { await requestWorkAutomationDraft(workDraftButton.dataset.aiWorkId, workDraftButton.dataset.aiWorkTask); return; }
+    const workDraftCopy = event.target.closest("[data-ai-work-copy]");
+    if (workDraftCopy) {
+      const draft = workAutomationState.drafts.get(workDraftCopy.dataset.aiWorkCopy);
+      try { await navigator.clipboard.writeText(draft?.text || ""); showToast("작업 문서 초안을 복사했습니다.", "success"); }
+      catch { showToast("작업 문서를 복사하지 못했습니다.", "error"); }
+      return;
+    }
+    const workDraftApply = event.target.closest("[data-ai-work-apply]");
+    if (workDraftApply) {
+      if (!canWriteCRM()) return showToast("조회 전용 계정은 작업 문서를 적용할 수 없습니다.", "error");
+      const record = (store.serviceRecords || []).find(item => item && item.id === workDraftApply.dataset.aiWorkApply);
+      const draft = workAutomationState.drafts.get(workDraftApply.dataset.aiWorkApply);
+      if (!record || !draft) return showToast("적용할 작업 문서를 찾지 못했습니다.", "error");
+      try {
+        AiOperationsCore.assertCurrentProposal({ sourceRevision: draft.sourceRevision }, { summary: record.summary || "", updatedAt: record.updatedAt || "" });
+        const labels = { complaint_triage: "민원 정리", vendor_request: "업체 요청문", work_order: "작업지시서", completion_report: "완료보고서" };
+        const summary = `${record.summary ? `${record.summary}\n\n` : ""}[AI ${labels[draft.task] || "작업 문서"} 초안]\n${draft.text}`.slice(0, 2000);
+        const result = await commitBuildingScheduleRecord({
+          operation: "update",
+          requestId: crypto.randomUUID(),
+          recordId: record.id,
+          expectedUpdatedAt: String(record.updatedAt || ""),
+          expectedCommitVersion: Number(record.calendarCommitVersion) || 0,
+          values: buildingScheduleCommitValues(Object.assign({}, record, { summary }))
+        }, workDraftApply);
+        if (!result || result.ok !== true) throw new Error(serviceRecordErrorText(result));
+        workAutomationState.drafts.delete(record.id);
+        renderWorkManagement(); showToast("검토한 초안을 작업 기록에 적용했습니다.", "success");
+      } catch (error) { showToast(error.message || "작업 내용이 변경되어 초안을 적용하지 않았습니다. 다시 생성해 주세요.", "error"); }
+      return;
+    }
+    const managementGenerate = event.target.closest("[data-ai-management-generate]");
+    if (managementGenerate) { await requestManagementNarrative(); return; }
+    const managementCopy = event.target.closest("[data-ai-management-copy]");
+    if (managementCopy && managementReportState.result?.text) {
+      try { await navigator.clipboard.writeText(managementReportState.result.text); showToast("월간 경영보고를 복사했습니다.", "success"); }
+      catch { showToast("경영보고를 복사하지 못했습니다.", "error"); }
+      return;
+    }
     const consultationAiOrganize = event.target.closest("[data-consultation-ai-organize]");
     if (consultationAiOrganize) { await requestConsultationAiDraft(consultationAiOrganize.closest("#consultationForm")); return; }
     const consultationAiApply = event.target.closest("[data-consultation-ai-apply]");
@@ -5566,6 +5719,13 @@
   });
 
   document.addEventListener("change", async event => {
+    if (event.target.matches("[data-ai-management-month]")) {
+      managementReportState.month = /^\d{4}-\d{2}$/.test(event.target.value) ? event.target.value : Core.dayKey().slice(0, 7);
+      managementReportState.result = null;
+      managementReportState.error = "";
+      renderOperationsIntelligence();
+      return;
+    }
     if (event.target.matches("[data-ai-task]")) {
       aiAssistantState.task = event.target.value;
       aiAssistantState.result = null;

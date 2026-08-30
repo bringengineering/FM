@@ -6,11 +6,25 @@
   "use strict";
 
   const BAND_DAYS = Object.freeze({ urgent: 1, high: 3, normal: 7, nurture: 14 });
-  const ADVANCED_STAGES = new Set([
-    "qualified_interest", "meeting_confirmed", "diagnosis_done", "listing_received",
-    "ad_published", "tenant_inquiry_visit", "lease_signed", "paid_management",
-    "quote_requested", "quote_approved", "work_completed", "revenue_recorded", "견적", "협의"
-  ]);
+  const STAGE_POINTS = Object.freeze({
+    contact_ready: 5,
+    first_contact: 10,
+    replied: 15,
+    qualified_interest: 20,
+    meeting_confirmed: 25,
+    diagnosis_done: 25,
+    listing_received: 25,
+    ad_published: 25,
+    tenant_inquiry_visit: 25,
+    lease_signed: 25,
+    paid_management: 25,
+    quote_requested: 25,
+    quote_approved: 25,
+    work_completed: 25,
+    revenue_recorded: 25,
+    "견적": 25,
+    "협의": 25
+  });
   const RESPONSE_TYPES = new Set([
     "call", "reply", "visit", "meeting", "replied", "callback_requested",
     "meeting_set", "통화", "회신", "방문", "미팅"
@@ -75,7 +89,7 @@
 
   function scoreSalesFocus(input = {}, now = new Date()) {
     const components = {
-      stage: ADVANCED_STAGES.has(String(input.stage || "")) ? 25 : 0,
+      stage: STAGE_POINTS[String(input.stage || "")] || 0,
       overdue: 0,
       response: RESPONSE_TYPES.has(String(input.lastResponseType || input.result || "")) ? 20 : 0,
       vacancyOrIssue: input.hasVacancy === true || String(input.currentIssue || "").trim() ? 15 : 0,
