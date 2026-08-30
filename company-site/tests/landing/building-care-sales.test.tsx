@@ -47,6 +47,7 @@ describe("BuildingCarePage sales landing", () => {
       "trust-operations",
       "building-care-faq",
       "company-credentials",
+      "building-care-proposal",
       "building-care-consultation",
     ]);
   });
@@ -216,6 +217,7 @@ describe("BuildingCarePage sales landing", () => {
       "#building-care-faq",
       ".bc-cert-trust-bar",
       "#company-credentials",
+      "#building-care-proposal",
       "#building-care-consultation",
     ].map((selector) => main.querySelector(selector));
 
@@ -229,5 +231,25 @@ describe("BuildingCarePage sales landing", () => {
     expect(container.querySelector(".bc-mid-cta a[href='#quick-estimate']")).toHaveTextContent(
       "무료 관리진단 신청",
     );
+  });
+
+  it("places the proposal request between credentials and final consultation", () => {
+    const { container } = render(<BuildingCarePage />);
+    const credentials = container.querySelector("#company-credentials")!;
+    const proposal = container.querySelector("#building-care-proposal")!;
+    const consultation = container.querySelector("#building-care-consultation")!;
+
+    expect(proposal).toBeInTheDocument();
+    expect(
+      within(proposal as HTMLElement).getByRole("heading", {
+        name: "건물관리 제안서를 받아보세요",
+      }),
+    ).toBeInTheDocument();
+    expect(
+      credentials.compareDocumentPosition(proposal) & Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
+    expect(
+      proposal.compareDocumentPosition(consultation) & Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
   });
 });
