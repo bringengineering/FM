@@ -52,3 +52,9 @@ test("finds an existing operation by the durable work source id", () => {
   assert.equal(found.id, "op_1");
   assert.equal(Sync.findBySourceWorkRecordId([], "service_1"), null);
 });
+
+test("derives one safe deterministic operation id for every retry", () => {
+  assert.equal(Sync.operationIdForWork("service_1"), "op_work_service_1");
+  assert.equal(Sync.operationIdForWork("service/unsafe 1"), "op_work_serviceunsafe1");
+  assert.equal(Sync.operationIdForWork(""), "");
+});

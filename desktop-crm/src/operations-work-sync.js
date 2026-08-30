@@ -53,5 +53,10 @@
     return (Array.isArray(operations) ? operations : []).find(item => item && String(item.sourceWorkRecordId || "") === target) || null;
   }
 
-  return Object.freeze({ SOURCE_FIELDS, operationSourceFromWork, mergeWorkSource, findBySourceWorkRecordId });
+  function operationIdForWork(recordId) {
+    const safe = String(recordId || "").replace(/[^A-Za-z0-9_-]/g, "").slice(0, 111);
+    return safe ? `op_work_${safe}` : "";
+  }
+
+  return Object.freeze({ SOURCE_FIELDS, operationSourceFromWork, mergeWorkSource, findBySourceWorkRecordId, operationIdForWork });
 });

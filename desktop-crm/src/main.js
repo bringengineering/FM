@@ -11,6 +11,7 @@ const path = require("node:path");
 const { fileURLToPath, pathToFileURL } = require("node:url");
 const Core = require("./core");
 const OperationsIntelligence = require("./operations-intelligence-core");
+const OperationsWorkSync = require("./operations-work-sync");
 const {
   FirebaseRemoteClient,
   createSerializedProtectedStoreCoordinator,
@@ -2487,6 +2488,49 @@ async function saveIntelligenceOperation(input) {
   if (localTestMode) localIntelligenceOperations[operation.id] = operation;
   else await remoteClient.dbRequest(`operationsIntelligence/operations/${operation.id}`, { method: "PUT", body: operation, headers: existingId ? { "If-Match": snapshot.etag } : {}, query: "print=silent" });
   return { ok: true, operation };
+}
+
+async function syncCompletedWorkRecord(record) {
+  const user = assertMainMutationAllowed({});
+  const source = OperationsWorkSync.operationSourceFromWork(record);
+  if (!source) return { status: "not-required", sourceWorkRecordId: String(record && record.id || "") };
+  const operationId = OperationsWorkSync.operationIdForWork(source.sourceWorkRecordId);
+  const now = new Date().toISOString();
+  let current = null;
+  let snapshot = null;
+  if (localTestMode) current = localIntelligenceOperations[operationId] || null;
+  else {
+    if (!remoteClient || !remoteClient.authState().user) throw Object.assign(new Error("로그인이 필요합니다."), { code: "AUTH_REQUIRED" });
+    snapshot = await remoteClient.dbReadWithEtag(`operationsIntelligence/operations/${operationId}`);
+    current = snapshot.value;
+  }
+  let operation;
+  if (!current) {
+    const created = OperationsIntelligence.createOperation(Object.assign({}, source, { id: operationId }), { now, userId: user.uid });
+    operation = OperationsIntelligence.complete(created, source, { now, userId: user.uid });
+  } else {
+    const normalized = OperationsIntelligence.assertValid(current);
+    operation = OperationsIntelligence.assertValid(OperationsIntelligence.normalize(Object.assign(
+      {}, OperationsWorkSync.mergeWorkSource(normalized, source),
+      { id: normalized.id, status: "completed", version: normalized.version + 1, updatedAt: now, updatedBy: user.uid }
+    )));
+  }
+  if (localTestMode) localIntelligenceOperations[operationId] = operation;
+  else await remoteClient.dbRequest(`operationsIntelligence/operations/${operationId}`, {
+    method: "PUT", body: operation, headers: { "If-Match": snapshot.etag }, query: "print=silent",
+  });
+  return { status: "synced", operationId, sourceWorkRecordId: source.sourceWorkRecordId };
+}
+
+async function trySyncCompletedWorkRecord(record) {
+  try { return await syncCompletedWorkRecord(record); }
+  catch (error) {
+    return {
+      status: "required",
+      sourceWorkRecordId: String(record && record.id || ""),
+      error: String(error && error.message || "운영 분석 연동에 실패했습니다.").slice(0, 240),
+    };
+  }
 }
 
 async function createWindow() {
@@ -5152,15 +5196,28 @@ secureCanonicalHandle("crm:building-schedule-commit", async input => {
     if (!result || !result.record) {
       return buildingScheduleErrorEnvelope(Object.assign(new Error("SESSION_CHANGED"), { code: "SESSION_CHANGED" }));
     }
+    const operationsSync = result.record.status === "completed"
+      ? await trySyncCompletedWorkRecord(result.record)
+      : { status: "not-required", sourceWorkRecordId: String(result.record.id || "") };
     return {
       ok: true,
       record: result.record,
       repeated: result.repeated === true,
+      operationsSync,
       ...(result.auditId ? { auditId: String(result.auditId).slice(0, 120) } : {}),
     };
   } catch (error) {
     return buildingScheduleErrorEnvelope(error);
   }
+});
+secureCanonicalHandle("crm:work-operations-sync-retry", async input => {
+  const recordId = String(input && input.recordId || "");
+  if (!/^[A-Za-z0-9_-]{1,120}$/.test(recordId)) return { status: "required", sourceWorkRecordId: recordId, error: "작업 ID를 확인해 주세요." };
+  assertMainMutationAllowed({});
+  const shared = await readStore();
+  const record = (shared.serviceRecords || []).find(item => item && String(item.id || "") === recordId);
+  if (!record || record.status !== "completed") return { status: "required", sourceWorkRecordId: recordId, error: "완료된 작업을 찾지 못했습니다." };
+  return trySyncCompletedWorkRecord(record);
 });
 secureCanonicalHandle("crm:canonical-building-units-configure", async input => {
   assertMainMutationAllowed(buildingUnitsMutationForValidation(input));
