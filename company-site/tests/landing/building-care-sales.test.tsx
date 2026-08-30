@@ -32,6 +32,7 @@ describe("BuildingCarePage sales landing", () => {
     expect(sectionIds).toEqual([
       "owner-problem",
       "one-contact",
+      "real-estate-partnership",
       "service-menu",
       "management-cycle",
       "real-cases",
