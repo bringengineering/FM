@@ -1,5 +1,5 @@
 import "@testing-library/jest-dom/vitest";
-import { render, screen } from "@testing-library/react";
+import { render, screen, within } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 import BuildingCarePage from "../../app/building-care/page";
 
@@ -128,6 +128,41 @@ describe("BuildingCarePage sales landing", () => {
     expect(
       screen.getByRole("heading", { name: /건물주의 가치를 높이는/ }),
     ).toBeInTheDocument();
+  });
+
+  it("connects vacancy preparation to Easy Real Estate brokerage with explicit roles", () => {
+    const { container } = render(<BuildingCarePage />);
+    const oneContact = container.querySelector("#one-contact");
+    const partnership = container.querySelector("#real-estate-partnership");
+
+    expect(partnership).toBeInTheDocument();
+    expect(oneContact?.nextElementSibling).toBe(partnership);
+    expect(
+      within(partnership as HTMLElement).getByRole("heading", {
+        name: "공실 확인에서 임대차 중개까지, 한 흐름으로 연결합니다.",
+      }),
+    ).toBeInTheDocument();
+    expect(
+      within(partnership as HTMLElement).getByText(
+        "BRING CARE × 이지부동산중개법인",
+      ),
+    ).toBeInTheDocument();
+    expect(
+      within(partnership as HTMLElement).getByText(
+        "건물관리는 BRING CARE가, 임대차 중개는 이지부동산중개법인이 담당합니다.",
+      ),
+    ).toBeInTheDocument();
+    expect(
+      within(partnership as HTMLElement).getAllByRole("listitem"),
+    ).toHaveLength(4);
+    expect(
+      within(partnership as HTMLElement).getByRole("link", {
+        name: "공실·임대관리 상담",
+      }),
+    ).toHaveAttribute("href", "#building-care-consultation");
+    expect(partnership).not.toHaveTextContent(
+      /공실 해소 보장|임대 보장|계약 보장/,
+    );
   });
 
   it("orders the sales story from promise to proof and conversion", () => {
