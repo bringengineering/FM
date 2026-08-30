@@ -5,7 +5,7 @@ const path = require("node:path");
 
 const { assistWithGateway, validateAssistInput } = require("../src/ai-client");
 
-test("AI client accepts only the five closed tasks and allow-listed context", () => {
+test("AI client accepts only the closed CRM automation tasks and allow-listed context", () => {
   assert.deepEqual(validateAssistInput({
     task: "next_action",
     content: " 고객이 견적을 검토 중 ",
@@ -15,7 +15,11 @@ test("AI client accepts only the five closed tasks and allow-listed context", ()
     content: "고객이 견적을 검토 중",
     context: { customerType: "건물주", workType: "누수", owner: "서창환" }
   });
-  for (const task of ["assistant_summary", "next_action", "sales_message", "work_report", "consultation_structure"]) {
+  for (const task of [
+    "assistant_summary", "next_action", "sales_message", "work_report", "consultation_structure",
+    "sales_focus_explanation", "sales_followup_message", "complaint_triage", "vendor_request",
+    "work_order", "completion_report", "monthly_management_report"
+  ]) {
     assert.equal(validateAssistInput({ task, content: "내용" }).task, task);
   }
   assert.throws(() => validateAssistInput({ task: "unknown", content: "내용" }), error => error?.code === "UNSUPPORTED_TASK");

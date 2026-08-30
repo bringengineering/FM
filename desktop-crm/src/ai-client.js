@@ -1,6 +1,10 @@
-const SUPPORTED_TASKS = new Set(["assistant_summary", "next_action", "sales_message", "work_report", "consultation_structure"]);
+const SUPPORTED_TASKS = new Set([
+  "assistant_summary", "next_action", "sales_message", "work_report", "consultation_structure",
+  "sales_focus_explanation", "sales_followup_message", "complaint_triage", "vendor_request",
+  "work_order", "completion_report", "monthly_management_report"
+]);
 const INPUT_KEYS = new Set(["task", "content", "context"]);
-const CONTEXT_KEYS = new Set(["customerType", "workType", "owner"]);
+const CONTEXT_KEYS = new Set(["customerType", "workType", "owner", "priority", "category", "urgency", "month"]);
 
 const ERROR_MESSAGES = Object.freeze({
   AUTH_REQUIRED: "로그인 정보가 만료되었습니다. 다시 로그인해 주세요.",

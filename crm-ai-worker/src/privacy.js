@@ -1,5 +1,5 @@
 const MAX_CONTENT_CHARS = 12_000;
-const CONTEXT_KEYS = ["customerType", "workType", "owner"];
+const CONTEXT_KEYS = ["customerType", "workType", "owner", "priority", "category", "urgency", "month"];
 
 function codedError(code) {
   return Object.assign(new Error(code), { code });
