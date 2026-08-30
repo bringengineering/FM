@@ -44,3 +44,23 @@ test("desktop entry exposes one first-class work management view", () => {
   assert.match(app, /WorkManagement\.renderDashboard/);
   assert.match(app, /currentView === "workManagement"/);
 });
+
+test("completed work renders operations sync state and retry only when required", () => {
+  const requiredStore = {
+    buildings: store.buildings,
+    serviceRecords: [{ ...store.serviceRecords[0], operationsSyncStatus: "required" }],
+    serviceContracts: [],
+  };
+  const required = Work.renderDashboard(Work.buildModel(requiredStore), { canWrite: true });
+  assert.match(required, /운영 분석 연동 필요/);
+  assert.match(required, /data-work-sync-retry="mow"/);
+
+  const syncedStore = {
+    buildings: store.buildings,
+    serviceRecords: [{ ...store.serviceRecords[0], operationsSyncStatus: "synced" }],
+    serviceContracts: [],
+  };
+  const synced = Work.renderDashboard(Work.buildModel(syncedStore), { canWrite: true });
+  assert.match(synced, /운영 분석 연동 완료/);
+  assert.doesNotMatch(synced, /data-work-sync-retry/);
+});

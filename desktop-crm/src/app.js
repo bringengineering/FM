@@ -1016,7 +1016,9 @@
       }
       if (commitGeneration !== authGeneration || commitUid !== currentAuthUid()) return { ok: false, code: "SESSION_CHANGED", stale: true };
       if (result && result.ok === true && result.record) {
-        alignCommittedServiceRecord(result.record);
+        const committed = structuredClone(result.record);
+        if (result.operationsSync && result.operationsSync.status) committed.operationsSyncStatus = result.operationsSync.status;
+        alignCommittedServiceRecord(committed);
         return result;
       }
       if (["BUILDING_SCHEDULE_CONFLICT", "BUILDING_SCHEDULE_NOT_FOUND", "BUILDING_SCHEDULE_BUILDING_UNAVAILABLE"].includes(String(result && result.code || ""))) {
@@ -2613,12 +2615,24 @@
   }
 
   function renderWorkManagement() {
-    const model = WorkManagement.buildModel(store, { month: Core.dayKey().slice(0, 7), today: Core.dayKey() });
+    const linked = new Set(operationsIntelligenceState.items.map(item => String(item && item.sourceWorkRecordId || "")).filter(Boolean));
+    const workStore = Object.assign({}, store, {
+      serviceRecords: store.serviceRecords.map(item => {
+        if (!item || item.status !== "completed") return item;
+        let operationsSyncStatus = item.operationsSyncStatus;
+        if (!operationsSyncStatus) operationsSyncStatus = operationsIntelligenceState.loaded
+          ? (linked.has(String(item.id || "")) ? "synced" : "required")
+          : operationsIntelligenceState.error ? "error" : "checking";
+        return Object.assign({}, item, { operationsSyncStatus });
+      }),
+    });
+    const model = WorkManagement.buildModel(workStore, { month: Core.dayKey().slice(0, 7), today: Core.dayKey() });
     main.innerHTML = WorkManagement.renderDashboard(model, { canWrite: canWriteCRM(), filters: workFilters });
     Object.entries(workFilters).forEach(([key, value]) => {
       const field = main.querySelector(`[data-work-filter="${key}"]`);
       if (field) field.value = value;
     });
+    if (!operationsIntelligenceState.loaded && !operationsIntelligenceState.loading && !operationsIntelligenceState.error) void loadOperationsIntelligence();
   }
 
   function renderOperationsIntelligence() {
@@ -2656,6 +2670,7 @@
     } finally {
       operationsIntelligenceState.loading = false;
       if (currentView === "operationsIntelligence") renderOperationsIntelligence();
+      else if (currentView === "workManagement") renderWorkManagement();
     }
   }
 
@@ -4320,6 +4335,26 @@
     }
     const workEdit = event.target.closest("[data-work-edit]");
     if (workEdit) { workRecordEditor(workEdit.dataset.workEdit); return; }
+    const workSyncRetry = event.target.closest("[data-work-sync-retry]");
+    if (workSyncRetry) {
+      if (!canWriteCRM()) return showToast("조회 전용 계정은 운영 분석을 연동할 수 없습니다.", "error");
+      workSyncRetry.disabled = true;
+      try {
+        const result = await api.retryWorkOperationsSync(workSyncRetry.dataset.workSyncRetry);
+        const record = store.serviceRecords.find(item => item.id === workSyncRetry.dataset.workSyncRetry);
+        if (record) record.operationsSyncStatus = result && result.status || "required";
+        if (result && result.status === "synced") {
+          operationsIntelligenceState.loaded = false;
+          operationsIntelligenceState.error = "";
+          showToast("운영 분석 연동을 완료했습니다.", "success");
+        } else showToast(result && result.error || "운영 분석 연동에 실패했습니다.", "error");
+        renderWorkManagement();
+      } catch (error) {
+        showToast(error && error.message || "운영 분석 연동에 실패했습니다.", "error");
+        workSyncRetry.disabled = false;
+      }
+      return;
+    }
     const partnerVendorOption = event.target.closest("[data-partner-vendor-option]");
     if (partnerVendorOption) {
       const form = partnerVendorOption.closest("#partnerQuoteForm");

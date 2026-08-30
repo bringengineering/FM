@@ -88,6 +88,12 @@ test("operation normalization captures repeatability, manager time, counters, an
   assert.equal(operation.attachments[0].type, "receipt");
 });
 
+test("operation normalization preserves real-world source work amounts above one million won", () => {
+  const Ops = require("../src/operations-intelligence-core");
+  const operation = Ops.normalize({ id: "op_work_1", title: "대형 보수", sourceWorkRecordId: "service_1", sourceAmount: 15000000 });
+  assert.equal(operation.sourceAmount, 15000000);
+});
+
 test("bottlenecks group by work type and exclude samples below three from ranking", () => {
   const Ops = require("../src/operations-intelligence-core");
   const rows = [
@@ -151,4 +157,14 @@ test("separate operations BrowserWindow and its private IPC are retired", () => 
   assert.doesNotMatch(main, /createOperationsIntelligenceWindow|operationsIntelligenceWindow/);
   assert.doesNotMatch(main, /operations-intelligence:bootstrap|operations-intelligence:save/);
   assert.doesNotMatch(main, /operations-intelligence\.html|operations-intelligence-preload\.js/);
+});
+
+test("work-origin operations identify their source in the editor", () => {
+  const UI = require("../src/operations-intelligence-ui");
+  const html = UI.renderForm({
+    operation: { id: "op_work_service_1", version: 1, status: "completed", sourceWorkRecordId: "service_1", title: "예초" },
+    buildings: [], customers: [], profiles: [], writable: true,
+  });
+  assert.match(html, /작업관리에서 자동 생성됨/);
+  assert.match(html, /service_1/);
 });
