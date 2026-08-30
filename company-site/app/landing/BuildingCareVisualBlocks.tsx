@@ -4,8 +4,8 @@ import {
   directVsBringRows,
   managementCycle,
   managementScopeRows,
-  serviceVisuals,
 } from "./buildingCareVisualData";
+import { managementServices, turnoverProcess } from "./buildingCareData";
 import { officialCompanyCredentials } from "./buildingCareTrustData";
 
 export function BrandTeamManifesto() {
@@ -21,7 +21,12 @@ export function CertificationStrip() {
 }
 
 export function ServiceVisualMenu() {
-  return <div className="bc-visual-block"><VisualHeading eyebrow="MANAGEMENT MENU" title="건물관리, 필요한 일을 한눈에." copy="공실부터 입·퇴실, 공용부와 시설까지 한 곳에서 연결합니다." /><div className="bc-service-visual-grid">{serviceVisuals.map((item, index) => <article className="bc-service-visual" key={item.title}><span>{item.icon}</span><small>{String(index + 1).padStart(2, "0")}</small><h3>{item.title}</h3><p>{item.copy}</p></article>)}</div></div>;
+  return <div className="bc-visual-block"><VisualHeading eyebrow="MANAGEMENT SERVICES" title="건물 운영에 필요한 일을 한 곳에서 관리합니다." copy="시설관리부터 임차인 응대, 유지관리, 입·퇴실, 공실, 관리기록까지 하나의 흐름으로 연결합니다." /><div className="bc-service-visual-grid">{managementServices.map((item, index) => <article className="bc-service-visual" key={item.title}><span aria-hidden="true">{item.icon}</span><small>{String(index + 1).padStart(2, "0")}</small><h3>{item.title}</h3><p>{item.copy}</p></article>)}</div></div>;
+}
+
+export function TurnoverProcessVisual() {
+  const effects = ["공실 준비 선제화", "업무 누락 최소화", "임차인 응대 일원화", "퇴실부터 다음 입주까지 관리이력 연결"] as const;
+  return <div className="bc-turnover-panel"><header><p className="bc-kicker">INTEGRATED TURNOVER</p><h2>퇴실은 관리의 끝이 아니라,<br />다음 임대차 관리의 시작입니다.</h2><p>퇴실 예정 파악부터 다음 입주 전 확인까지, 흩어지기 쉬운 일을 하나의 관리 흐름으로 연결합니다.</p></header><ol className="bc-turnover-timeline">{turnoverProcess.map((item, index) => <li className="bc-turnover-step" key={item.title}><span>{String(index + 1).padStart(2, "0")}</span><h3>{item.title}</h3><p>{item.copy}</p></li>)}</ol><div className="bc-turnover-effects">{effects.map((effect) => <strong className="bc-turnover-effect" key={effect}>✓ {effect}</strong>)}</div><a className="bc-turnover-cta" href="#building-care-consultation">입·퇴실 통합관리 상담</a></div>;
 }
 
 export function ManagementComparison() {

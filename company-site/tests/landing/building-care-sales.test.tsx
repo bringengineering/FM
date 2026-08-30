@@ -18,7 +18,7 @@ describe("BuildingCarePage sales landing", () => {
     expect(
       screen.getByRole("heading", { name: /건물주의 가치를 높이는.*BRING CARE/ }),
     ).toBeInTheDocument();
-    expect(screen.getByRole("heading", { name: /퇴실하는 순간부터/ })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: /퇴실은 관리의 끝이 아니라/ })).toBeInTheDocument();
     expect(screen.getByRole("heading", { name: /공실의.*시간.*관리/ })).toBeInTheDocument();
     expect(
       screen.getByRole("heading", { name: "말보다 현장으로 보여드립니다." }),
@@ -31,19 +31,19 @@ describe("BuildingCarePage sales landing", () => {
     );
     expect(sectionIds).toEqual([
       "owner-problem",
-      "one-contact",
       "service-menu",
+      "turnover-package",
+      "turnover-time",
+      "real-estate-partnership",
+      "one-contact",
       "management-cycle",
+      "operating-standard",
+      "management-report",
       "real-cases",
       "management-experience",
-      "management-report",
       "management-comparison",
       "management-scope",
       "building-care-price",
-      "turnover-package",
-      "real-estate-partnership",
-      "turnover-time",
-      "operating-standard",
       "trust-operations",
       "building-care-faq",
       "company-credentials",
@@ -56,7 +56,9 @@ describe("BuildingCarePage sales landing", () => {
 
     expect(container.querySelector(".bc-team-stage")).toBeInTheDocument();
     expect(container.querySelector(".bc-contact-network")).toBeInTheDocument();
-    expect(container.querySelector(".bc-turnover-track")).toBeInTheDocument();
+    expect(container.querySelector(".bc-turnover-panel")).toBeInTheDocument();
+    expect(container.querySelectorAll(".bc-turnover-step")).toHaveLength(6);
+    expect(container.querySelectorAll(".bc-turnover-effect")).toHaveLength(4);
     expect(container.querySelector(".bc-parallel-track")).toBeInTheDocument();
     expect(container.querySelector(".bc-report-ui")).toBeInTheDocument();
     expect(container.querySelectorAll(".bc-case-card img").length).toBeGreaterThanOrEqual(4);
@@ -74,6 +76,21 @@ describe("BuildingCarePage sales landing", () => {
     expect(container.querySelectorAll(".bc-credential-card")).toHaveLength(10);
     expect(container.querySelector("#company-certifications")).not.toBeInTheDocument();
     expect(container.querySelectorAll(".bc-service-visual")).toHaveLength(6);
+    for (const title of [
+      "시설관리",
+      "임차인 응대",
+      "유지관리",
+      "입·퇴실 관리",
+      "공실 관리",
+      "관리기록",
+    ]) {
+      expect(screen.getByRole("heading", { name: title })).toBeInTheDocument();
+    }
+    expect(
+      screen.getByRole("heading", {
+        name: /퇴실은 관리의 끝이 아니라.*다음 임대차 관리의 시작입니다\./,
+      }),
+    ).toBeInTheDocument();
     expect(container.querySelector(".bc-management-comparison")).toBeInTheDocument();
     expect(container.querySelector(".bc-scope-table")).toBeInTheDocument();
     expect(container.querySelectorAll(".bc-cycle-step")).toHaveLength(4);
@@ -137,11 +154,19 @@ describe("BuildingCarePage sales landing", () => {
     const { container } = render(<BuildingCarePage />);
     const oneContact = container.querySelector("#one-contact");
     const turnoverPackage = container.querySelector("#turnover-package");
+    const turnoverTime = container.querySelector("#turnover-time");
     const partnership = container.querySelector("#real-estate-partnership");
 
     expect(partnership).toBeInTheDocument();
     expect(oneContact).toHaveTextContent("이지부동산중개법인 임대차 중개 연계");
-    expect(turnoverPackage?.nextElementSibling).toBe(partnership);
+    expect(
+      turnoverPackage!.compareDocumentPosition(turnoverTime!) &
+        Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
+    expect(
+      turnoverTime!.compareDocumentPosition(partnership!) &
+        Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
     expect(
       within(partnership as HTMLElement).getByRole("heading", {
         name: "공실 관리부터 임대차 중개 연계까지",
@@ -176,14 +201,18 @@ describe("BuildingCarePage sales landing", () => {
     const order = [
       ".bc-team-manifesto",
       "#owner-problem",
-      ".bc-cycle-grid",
-      "#real-cases",
-      "#management-report",
+      "#service-menu",
+      "#turnover-package",
+      "#turnover-time",
       ".bc-mid-cta",
+      "#real-estate-partnership",
+      "#one-contact",
+      ".bc-cycle-grid",
+      "#operating-standard",
+      "#management-report",
+      "#real-cases",
       ".bc-management-comparison",
       "#building-care-price",
-      "#turnover-package",
-      "#real-estate-partnership",
       "#building-care-faq",
       ".bc-cert-trust-bar",
       "#company-credentials",

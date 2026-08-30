@@ -4,7 +4,7 @@ import Image from "next/image";
 import { KAKAO_CHAT_HREF, PHONE_HREF, PHONE_LABEL } from "./contact";
 import QuickEstimateForm from "./QuickEstimateForm";
 import { QuickEstimateExperience, QuickEstimateTrigger } from "./QuickEstimateExperience";
-import { buildingCareCases, buildingCareFaq, turnoverSteps } from "./buildingCareData";
+import { buildingCareCases, buildingCareFaq } from "./buildingCareData";
 import BuildingCarePartnership from "./BuildingCarePartnership";
 import BuildingCarePricingGrid from "./BuildingCarePricingGrid";
 import BuildingCareTestimonials from "./BuildingCareTestimonials";
@@ -18,6 +18,7 @@ import {
   ManagementScopeTable,
   OperatingStandardComparison,
   ServiceVisualMenu,
+  TurnoverProcessVisual,
 } from "./BuildingCareVisualBlocks";
 import "./building-care-sales.css";
 
@@ -53,6 +54,16 @@ export default function BuildingCareLanding() {
         { n: "03", type: "result" as const, title: "결과 확인", copy: "일정 조율 → 비용 승인 → 완료 확인 → 기록" },
       ].map((item)=><article className="bc-card bc-problem-card" key={item.title}><div className="bc-problem-top"><ProblemIcon type={item.type}/><span>{item.n}</span></div><h3>{item.title}</h3><p>{item.copy}</p></article>)}</div></div></section>
 
+      <section id="service-menu" className="bc-section bc-visual-section"><div className="bc-shell"><ServiceVisualMenu /></div></section>
+
+      <section id="turnover-package" className="bc-section"><div className="bc-shell"><TurnoverProcessVisual /></div></section>
+
+      <section id="turnover-time" className="bc-section"><div className="bc-shell"><header className="bc-heading"><p className="bc-kicker">VACANCY TURNAROUND TIME</p><h2>공실만 관리하지 않습니다.<br />공실의 ‘시간’을 관리합니다.</h2><p>업무를 하나씩 기다리지 않고, 승인 가능한 준비를 병렬로 연결해 다음 임대차 준비 시간을 줄입니다.</p></header><div className="bc-parallel-track"><article><h3>일반적인 순차 진행</h3>{["퇴실","현장확인 대기","청소 일정 대기","수리 일정 대기","촬영·중개사 전달","입실"].map(x=><span key={x}>{x}</span>)}</article><article><h3>BRING CARE의 병렬 준비</h3>{["퇴실 접수 → 현장 확인","청소·수리·폐기물 동시 준비","촬영·공실정보 정리","협력 중개사 공유","입실 준비 → 다음 입실"].map(x=><span key={x}>{x}</span>)}</article></div></div></section>
+
+      <div className="bc-shell"><section className="bc-mid-cta"><p>퇴실 예정일과 건물 주소를 알려주시면<br />필요한 준비 순서를 먼저 정리해드립니다.</p><div className="bc-actions"><QuickEstimateTrigger className="bc-button bc-primary">무료 관리진단 신청</QuickEstimateTrigger><a className="bc-button" href={PHONE_HREF}>{PHONE_LABEL}</a></div></section></div>
+
+      <BuildingCarePartnership />
+
       <section id="one-contact" className="bc-section"><div className="bc-shell"><header className="bc-heading bc-one-contact-heading"><p className="bc-kicker">ONE CONTACT</p><h2>건물주의 가치를 높이는<br /><strong>BRING CARE 통합 관리 서비스</strong></h2><p>건물주는 한 곳에 요청하고, 현장 확인부터 필요한 업체 연결과 결과 기록까지 BRING CARE가 정리합니다.</p></header><div className="bc-contact-network bc-contact-infographic"><article className="bc-contact-owner"><ContactIcon type="owner"/><h3>건물주</h3><p>믿고 맡기는<br/>든든한 파트너</p></article><div className="bc-contact-core"><span>BRING</span><strong>CARE</strong><small>건물의 가치를 지키는<br/>통합 관리 솔루션</small></div><div className="bc-contact-services">{[
         { type: "clean" as const, title: "청소", copy: "정기·입주·퇴실 청소" },
         { type: "facility" as const, title: "시설", copy: "설비 점검 및 유지관리" },
@@ -63,29 +74,20 @@ export default function BuildingCareLanding() {
         ["전문성","체계적인 관리 기준"],["효율성","시간과 비용 절약"],["신뢰성","투명한 확인과 기록"],["현장성","원주 직영팀 현장 대응"],
       ].map(([title,copy], index)=><article className="bc-contact-value" key={title}><span>{["◇","◷","↗","○"][index]}</span><div><strong>{title}</strong><small>{copy}</small></div></article>)}</div></div></div></section>
 
-      <section id="service-menu" className="bc-section bc-visual-section"><div className="bc-shell"><ServiceVisualMenu /></div></section>
       <section id="management-cycle" className="bc-section bc-visual-section"><div className="bc-shell"><ManagementCycle /></div></section>
+
+      <section id="operating-standard" className="bc-section bc-visual-section"><div className="bc-shell"><OperatingStandardComparison /></div></section>
+
+      <section id="management-report" className="bc-section"><div className="bc-shell bc-split"><header className="bc-heading"><p className="bc-kicker">MONTHLY REPORT</p><h2>건물에 가지 않아도<br />관리 상태를 확인하세요.</h2><p>사진만 보내고 끝내지 않습니다. 방문 이력과 확인 사항, 필요한 후속 조치를 한 달 단위로 정리합니다.</p><ul className="bc-checks"><li>주 2회 정기관리 이력</li><li>공용부·공실 확인 사항</li><li>후속 조치 제안</li></ul></header><div className="bc-report-ui"><span>관리보고 화면 예시</span><div className="bc-report-head"><strong>월간 관리보고</strong><b>관리 완료</b></div>{[["정기관리","주 2회 방문"],["공용부 확인","계단·현관·우편함"],["확인 사항","후속 확인 1건"],["현장 사진","12장 첨부"]].map(([a,b])=><p key={a}><span>{a}</span><strong>{b}</strong></p>)}</div></div></section>
 
       <section id="real-cases" className="bc-section"><div className="bc-shell"><header className="bc-heading"><p className="bc-kicker">REAL MANAGEMENT RECORD</p><h2>말보다 현장으로 보여드립니다.</h2><p>연출 사진이 아닌 BRING CARE가 실제로 확인하고 기록한 관리 현장입니다.</p></header><div className="bc-case-grid">{buildingCareCases.map(x=><article className="bc-case-card" key={x.title}><div><Image src={x.image} alt={`BRING CARE 실제 현장기록 - ${x.title}`} fill unoptimized sizes="(max-width: 760px) 100vw, 33vw"/></div><h3>{x.title}</h3><p>{x.copy}</p><dl className="bc-case-evidence"><div><dt>확인한 문제</dt><dd>{x.problem}</dd></div><div><dt>진행한 조치</dt><dd>{x.action}</dd></div><div><dt>남긴 결과</dt><dd>{x.result}</dd></div></dl></article>)}</div></div></section>
       <BuildingCareExperienceCards />
       <BuildingCareTestimonials />
 
-      <section id="management-report" className="bc-section"><div className="bc-shell bc-split"><header className="bc-heading"><p className="bc-kicker">MONTHLY REPORT</p><h2>건물에 가지 않아도<br />관리 상태를 확인하세요.</h2><p>사진만 보내고 끝내지 않습니다. 방문 이력과 확인 사항, 필요한 후속 조치를 한 달 단위로 정리합니다.</p><ul className="bc-checks"><li>정기 방문 이력</li><li>공용부·공실 확인 사항</li><li>후속 조치 제안</li></ul></header><div className="bc-report-ui"><span>관리보고 화면 예시</span><div className="bc-report-head"><strong>8월 월간 관리보고</strong><b>관리 완료</b></div>{[["정기방문","주 2회 방문"],["공용부 확인","계단·현관·우편함"],["확인 사항","후속 확인 1건"],["현장 사진","12장 첨부"]].map(([a,b])=><p key={a}><span>{a}</span><strong>{b}</strong></p>)}</div></div></section>
-
-      <div className="bc-shell"><section className="bc-mid-cta"><p>이 건물은 어떻게 관리할지<br />먼저 받아보세요.</p><div className="bc-actions"><QuickEstimateTrigger className="bc-button bc-primary">무료 관리진단 신청</QuickEstimateTrigger><a className="bc-button" href={PHONE_HREF}>{PHONE_LABEL}</a></div></section></div>
-
       <section id="management-comparison" className="bc-section bc-visual-section"><div className="bc-shell"><ManagementComparison /></div></section>
       <section id="management-scope" className="bc-section bc-visual-section"><div className="bc-shell"><ManagementScopeTable /></div></section>
 
-      <section id="building-care-price" className="bc-section"><div className="bc-shell"><header className="bc-heading"><p className="bc-kicker">CLEAR PRICING</p><h2>관리와 청소를 나눠<br />필요한 만큼 선택하세요.</h2><p>기본 관리와 정기청소의 방문 횟수와 비용을 분명하게 구분했습니다.</p></header><BuildingCarePricingGrid /></div></section>
-
-      <section id="turnover-package" className="bc-section"><div className="bc-shell"><header className="bc-heading"><p className="bc-kicker">24H TURNOVER CARE</p><h2>퇴실하는 순간부터<br />다음 입실을 준비합니다.</h2><p>공실을 발견한 뒤 움직이지 않고, 퇴실 접수부터 청소·수리·촬영·중개 공유를 한 흐름으로 준비합니다.</p></header><div className="bc-turnover-track">{turnoverSteps.map((x,i)=><div key={x}><span>{i+1}</span><strong>{x}</strong></div>)}</div></div></section>
-
-      <BuildingCarePartnership />
-
-      <section id="turnover-time" className="bc-section"><div className="bc-shell"><header className="bc-heading"><p className="bc-kicker">VACANCY TURNAROUND TIME</p><h2>공실만 관리하지 않습니다.<br />공실의 ‘시간’을 관리합니다.</h2></header><div className="bc-parallel-track"><article><h3>일반적인 순차 진행</h3>{["퇴실","현장확인 대기","청소 일정 대기","수리 일정 대기","촬영·중개사 전달","입실"].map(x=><span key={x}>{x}</span>)}</article><article><h3>BRING의 병렬 준비</h3>{["퇴실 접수 → 현장 확인","청소·수리·폐기물 동시 준비","촬영·공실정보 정리","협력 중개사 공유","입실 준비 → 다음 입실"].map(x=><span key={x}>{x}</span>)}</article></div></div></section>
-
-      <section id="operating-standard" className="bc-section bc-visual-section"><div className="bc-shell"><OperatingStandardComparison /></div></section>
+      <section id="building-care-price" className="bc-section"><div className="bc-shell"><header className="bc-heading"><p className="bc-kicker">CLEAR PRICING</p><h2>관리와 청소를 나눠<br />필요한 만큼 선택하세요.</h2><p><strong>기본관리 월 69,000원부터</strong>는 주 2회 정기관리와 월 1회 보고를 기준으로 합니다. 공용부 청소는 월 4회 별도 상품입니다.</p></header><BuildingCarePricingGrid /></div></section>
 
       <section id="trust-operations" className="bc-section"><div className="bc-shell"><header className="bc-heading"><p className="bc-kicker">TRUST & OPERATIONS</p><h2>현장을 확인하고,<br />기록이 남는 방식으로 운영합니다.</h2></header><div className="bc-trust-grid">{[["원주 직영 운영","지역 현장을 직접 확인합니다."],["사전 승인 원칙","추가 비용이 필요한 작업은 먼저 안내합니다."],["현장 기록","확인 위치와 처리 결과를 사진으로 남깁니다."],["파트너 협업","전문 작업은 범위와 완료 상태를 함께 확인합니다."]].map(([a,b])=><article className="bc-card" key={a}><h3>{a}</h3><p>{b}</p></article>)}</div></div></section>
 
