@@ -63,11 +63,12 @@
     ]
   },
   "app/landing/BuildingCareLanding.tsx": {
-    "file": "assets/BuildingCareLanding-CHfbnVXt.js",
+    "file": "assets/BuildingCareLanding-BL7cxiCO.js",
     "name": "BuildingCareLanding",
     "src": "app/landing/BuildingCareLanding.tsx",
     "isDynamicEntry": true,
     "imports": [
+      "_rolldown-runtime-S-ySWqyJ.js",
       "app/landing/QuickEstimateExperience.tsx",
       "app/landing/QuickEstimateForm.tsx",
       "_marketingLeadClient-CxbMvLph.js",
@@ -75,7 +76,7 @@
       "_framework-B8WyT5R3.js"
     ],
     "css": [
-      "assets/BuildingCareLanding-Cg56Phe4.css"
+      "assets/BuildingCareLanding-CZazH-BR.css"
     ]
   },
   "app/landing/QuickEstimateExperience.tsx": {
@@ -111,7 +112,7 @@
     ]
   },
   "node_modules/.pnpm/vinext@0.0.50_@vitejs+plugi_9192fdac6e7854526409bdfa1df91a00/node_modules/vinext/dist/shims/layout-segment-context.js": {
-    "file": "assets/layout-segment-context-RI3CMjii.js",
+    "file": "assets/layout-segment-context-l_v70uQL.js",
     "name": "layout-segment-context",
     "src": "node_modules/.pnpm/vinext@0.0.50_@vitejs+plugi_9192fdac6e7854526409bdfa1df91a00/node_modules/vinext/dist/shims/layout-segment-context.js",
     "isDynamicEntry": true,
@@ -122,7 +123,7 @@
     ]
   },
   "node_modules/.pnpm/vinext@0.0.50_@vitejs+plugi_9192fdac6e7854526409bdfa1df91a00/node_modules/vinext/dist/shims/link.js": {
-    "file": "assets/link-BNGuKfQr.js",
+    "file": "assets/link-D84Mom73.js",
     "name": "link",
     "src": "node_modules/.pnpm/vinext@0.0.50_@vitejs+plugi_9192fdac6e7854526409bdfa1df91a00/node_modules/vinext/dist/shims/link.js",
     "isDynamicEntry": true,
@@ -139,7 +140,7 @@
     ]
   },
   "node_modules/.pnpm/vinext@0.0.50_@vitejs+plugi_9192fdac6e7854526409bdfa1df91a00/node_modules/vinext/dist/shims/router.js": {
-    "file": "assets/router-B8SwD7XW.js",
+    "file": "assets/router-CN9LgSgc.js",
     "name": "router",
     "src": "node_modules/.pnpm/vinext@0.0.50_@vitejs+plugi_9192fdac6e7854526409bdfa1df91a00/node_modules/vinext/dist/shims/router.js",
     "isDynamicEntry": true,
@@ -155,7 +156,7 @@
     ]
   },
   "virtual:vinext-app-browser-entry": {
-    "file": "assets/index-D0NBQrcN.js",
+    "file": "assets/index-D7szz4bT.js",
     "name": "index",
     "src": "virtual:vinext-app-browser-entry",
     "isEntry": true,
