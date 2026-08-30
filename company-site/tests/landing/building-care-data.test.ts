@@ -4,7 +4,9 @@ import {
   buildingCareFaq,
   buildingCarePillars,
   entryServices,
+  managementServices,
   managementSteps,
+  turnoverProcess,
   turnoverSteps,
 } from "../../app/landing/buildingCareData";
 
@@ -16,6 +18,23 @@ describe("building care sales data", () => {
       "maintenance",
     ]);
     expect(turnoverSteps).toHaveLength(9);
+    expect(managementServices.map((item) => item.title)).toEqual([
+      "시설관리",
+      "임차인 응대",
+      "유지관리",
+      "입·퇴실 관리",
+      "공실 관리",
+      "관리기록",
+    ]);
+    expect(turnoverProcess).toHaveLength(6);
+    expect(turnoverProcess.map((item) => item.title)).toEqual([
+      "퇴실 예정 파악",
+      "퇴실 현장 점검",
+      "청소·보수 통합 준비",
+      "공실 전환·임대 준비",
+      "문의·방문 일정 연계",
+      "다음 입주 관리",
+    ]);
     expect(managementSteps).toHaveLength(7);
     expect(buildingCareCases.every((item) => item.image.startsWith("/landing/records/"))).toBe(true);
     expect(buildingCareFaq).toHaveLength(8);
