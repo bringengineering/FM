@@ -5,6 +5,7 @@ import { KAKAO_CHAT_HREF, PHONE_HREF, PHONE_LABEL } from "./contact";
 import QuickEstimateForm from "./QuickEstimateForm";
 import { QuickEstimateExperience, QuickEstimateTrigger } from "./QuickEstimateExperience";
 import { buildingCareCases, buildingCareFaq, buildingCarePillars, entryServices, managementSteps, turnoverSteps } from "./buildingCareData";
+import { CertificationStrip, ManagementComparison, ManagementCycle, ManagementScopeTable, OperatingStandardComparison, ServiceVisualMenu } from "./BuildingCareVisualBlocks";
 import "./building-care-sales.css";
 
 const Arrow = () => <span aria-hidden="true">→</span>;
@@ -16,6 +17,15 @@ export default function BuildingCareLanding() {
         <div className="bc-hero-copy"><p className="bc-kicker">BRING CARE · BUILDING MANAGEMENT</p><h1>건물은 임대하고,<br />관리는 맡기세요.</h1><p className="bc-lead">공실부터 임차인·시설점검·민원·수리까지 건물주 대신 확인하고 처리합니다.</p><div className="bc-price"><strong>월 89,000원부터</strong><span>부가세 별도 · 기본 6개월</span></div><div className="bc-actions"><QuickEstimateTrigger className="bc-button bc-primary">무료 관리진단 신청</QuickEstimateTrigger><a className="bc-button" href={PHONE_HREF}>{PHONE_LABEL}</a></div></div>
         <div className="bc-hero-visual"><Image src="/landing/records/vacancy-check.jpg" alt="BRING CARE 실제 공실 관리 현장" fill priority unoptimized sizes="(max-width: 760px) 100vw, 50vw"/><div className="bc-report-float"><small>이번 달 관리 현황</small><strong>정기 확인 4회 완료</strong><span>현장 사진 · 확인 사항 · 후속 제안</span></div></div>
       </div></section>
+
+      <div className="bc-visual-hub"><div className="bc-shell">
+        <CertificationStrip />
+        <ServiceVisualMenu />
+        <ManagementComparison />
+        <ManagementCycle />
+        <ManagementScopeTable />
+        <OperatingStandardComparison />
+      </div></div>
 
       <section id="owner-problem" className="bc-section"><div className="bc-shell"><header className="bc-heading"><p className="bc-kicker">CUSTOMER PROBLEM</p><h2>건물 하나 관리하는데,<br />왜 이렇게 연락할 곳이 많을까요?</h2><p>작은 문제 하나가 생겨도 업체를 찾고, 일정을 맞추고, 결과를 다시 확인해야 합니다.</p></header><div className="bc-problem-grid">{[["01","공실·퇴실","현장 확인 → 청소업체 → 수리업체 → 중개사"],["02","시설·민원","임차인 연락 → 상황 파악 → 현장 확인 → 전문업체"],["03","결과 확인","일정 조율 → 비용 승인 → 완료 확인 → 기록"]].map(([n,t,c])=><article className="bc-card" key={t}><span>{n}</span><h3>{t}</h3><p>{c}</p></article>)}</div></div></section>
 

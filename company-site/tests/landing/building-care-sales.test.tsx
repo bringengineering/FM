@@ -61,4 +61,17 @@ describe("BuildingCarePage sales landing", () => {
       "https://pf.kakao.com/_xnaRfX/chat",
     );
   });
+
+  it("explains the service with certifications, comparisons, and visual steps", () => {
+    const { container } = render(<BuildingCarePage />);
+
+    expect(container.querySelectorAll(".bc-cert-card")).toHaveLength(3);
+    expect(container.querySelectorAll(".bc-service-visual")).toHaveLength(6);
+    expect(container.querySelector(".bc-management-comparison")).toBeInTheDocument();
+    expect(container.querySelector(".bc-scope-table")).toBeInTheDocument();
+    expect(container.querySelectorAll(".bc-cycle-step")).toHaveLength(4);
+    expect(container.querySelector(".bc-standard-stack")).toBeInTheDocument();
+    expect(screen.getByText(/별도 비용이 필요한 작업은/)).toBeInTheDocument();
+    expect(screen.queryByText(/4\.9점|최우수|100% 보상/)).not.toBeInTheDocument();
+  });
 });
