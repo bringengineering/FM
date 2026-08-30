@@ -27,7 +27,7 @@ export default function LandingBrandIntro({
       <div className="landing-brand-intro-copy">
         <p>BRING CARE · BUILDING MANAGEMENT</p>
         <h2 id="landing-brand-intro-title">
-          우리는 건물을 관리하며, {" "}
+          저희는 건물을 관리하며, {" "}
           <span>청소까지 책임지는 회사입니다.</span>
         </h2>
         <span>

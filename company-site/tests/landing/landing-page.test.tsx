@@ -25,9 +25,10 @@ describe("LandingPage", () => {
     expect(intro).toBeInTheDocument();
     expect(
       within(intro as HTMLElement).getByRole("heading", {
-        name: "우리는 건물을 관리하며, 청소까지 책임지는 회사입니다.",
+        name: "저희는 건물을 관리하며, 청소까지 책임지는 회사입니다.",
       }),
     ).toBeInTheDocument();
+    expect(within(intro as HTMLElement).queryByText(/우리는/)).not.toBeInTheDocument();
     expect(container.querySelectorAll(".landing-brand-intro")).toHaveLength(1);
     const introImage = intro?.querySelector("img");
     expect(introImage).toHaveAttribute("src", expectedImage);
