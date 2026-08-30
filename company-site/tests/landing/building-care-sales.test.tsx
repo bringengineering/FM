@@ -14,7 +14,7 @@ describe("BuildingCarePage sales landing", () => {
     expect(
       screen.getByRole("heading", { name: /BRING CARE는 건물을 관리하며/ }),
     ).toBeInTheDocument();
-    expect(screen.getAllByText("월 89,000원부터").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("월 69,000원부터").length).toBeGreaterThan(0);
     expect(
       screen.getByRole("heading", { name: /건물주의 가치를 높이는.*BRING CARE/ }),
     ).toBeInTheDocument();

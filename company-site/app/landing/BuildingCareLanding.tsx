@@ -6,6 +6,7 @@ import QuickEstimateForm from "./QuickEstimateForm";
 import { QuickEstimateExperience, QuickEstimateTrigger } from "./QuickEstimateExperience";
 import { buildingCareCases, buildingCareFaq, turnoverSteps } from "./buildingCareData";
 import BuildingCarePartnership from "./BuildingCarePartnership";
+import BuildingCarePricingGrid from "./BuildingCarePricingGrid";
 import {
   BrandTeamManifesto,
   CertificationStrip,
@@ -68,14 +69,14 @@ export default function BuildingCareLanding() {
 
       <section id="real-cases" className="bc-section"><div className="bc-shell"><header className="bc-heading"><p className="bc-kicker">REAL MANAGEMENT RECORD</p><h2>말보다 현장으로 보여드립니다.</h2><p>연출 사진이 아닌 BRING CARE가 실제로 확인하고 기록한 관리 현장입니다.</p></header><div className="bc-case-grid">{buildingCareCases.map(x=><article className="bc-case-card" key={x.title}><div><Image src={x.image} alt={`BRING CARE 실제 현장기록 - ${x.title}`} fill unoptimized sizes="(max-width: 760px) 100vw, 33vw"/></div><h3>{x.title}</h3><p>{x.copy}</p><dl className="bc-case-evidence"><div><dt>확인한 문제</dt><dd>{x.problem}</dd></div><div><dt>진행한 조치</dt><dd>{x.action}</dd></div><div><dt>남긴 결과</dt><dd>{x.result}</dd></div></dl></article>)}</div></div></section>
 
-      <section id="management-report" className="bc-section"><div className="bc-shell bc-split"><header className="bc-heading"><p className="bc-kicker">MONTHLY REPORT</p><h2>건물에 가지 않아도<br />관리 상태를 확인하세요.</h2><p>사진만 보내고 끝내지 않습니다. 방문 이력과 확인 사항, 필요한 후속 조치를 한 달 단위로 정리합니다.</p><ul className="bc-checks"><li>정기 방문 이력</li><li>공용부·공실 확인 사항</li><li>후속 조치 제안</li></ul></header><div className="bc-report-ui"><span>관리보고 화면 예시</span><div className="bc-report-head"><strong>8월 월간 관리보고</strong><b>관리 완료</b></div>{[["정기방문","4회 완료"],["공용부 확인","계단·현관·우편함"],["확인 사항","후속 확인 1건"],["현장 사진","12장 첨부"]].map(([a,b])=><p key={a}><span>{a}</span><strong>{b}</strong></p>)}</div></div></section>
+      <section id="management-report" className="bc-section"><div className="bc-shell bc-split"><header className="bc-heading"><p className="bc-kicker">MONTHLY REPORT</p><h2>건물에 가지 않아도<br />관리 상태를 확인하세요.</h2><p>사진만 보내고 끝내지 않습니다. 방문 이력과 확인 사항, 필요한 후속 조치를 한 달 단위로 정리합니다.</p><ul className="bc-checks"><li>정기 방문 이력</li><li>공용부·공실 확인 사항</li><li>후속 조치 제안</li></ul></header><div className="bc-report-ui"><span>관리보고 화면 예시</span><div className="bc-report-head"><strong>8월 월간 관리보고</strong><b>관리 완료</b></div>{[["정기방문","주 2회 방문"],["공용부 확인","계단·현관·우편함"],["확인 사항","후속 확인 1건"],["현장 사진","12장 첨부"]].map(([a,b])=><p key={a}><span>{a}</span><strong>{b}</strong></p>)}</div></div></section>
 
       <div className="bc-shell"><section className="bc-mid-cta"><p>이 건물은 어떻게 관리할지<br />먼저 받아보세요.</p><div className="bc-actions"><QuickEstimateTrigger className="bc-button bc-primary">무료 관리진단 신청</QuickEstimateTrigger><a className="bc-button" href={PHONE_HREF}>{PHONE_LABEL}</a></div></section></div>
 
       <section id="management-comparison" className="bc-section bc-visual-section"><div className="bc-shell"><ManagementComparison /></div></section>
       <section id="management-scope" className="bc-section bc-visual-section"><div className="bc-shell"><ManagementScopeTable /></div></section>
 
-      <section id="building-care-price" className="bc-section"><div className="bc-shell"><header className="bc-heading"><p className="bc-kicker">SIMPLE PRICE</p><h2>기본 관리비는<br />명확하게 시작합니다.</h2></header><div className="bc-price-card"><div><span>원룸·다가구 공동관리</span><strong>월 89,000원부터</strong><small>부가세 별도 · 기본 6개월</small></div><ul><li>정기 현장 확인</li><li>공실·공용부 상태 기록</li><li>민원·업체 연결</li><li>월간 관리보고</li></ul><p>청소·수리·자재·전문 시공비는 관리비와 구분해 사전 안내 후 진행합니다.</p></div></div></section>
+      <section id="building-care-price" className="bc-section"><div className="bc-shell"><header className="bc-heading"><p className="bc-kicker">CLEAR PRICING</p><h2>관리와 청소를 나눠<br />필요한 만큼 선택하세요.</h2><p>기본 관리와 정기청소의 방문 횟수와 비용을 분명하게 구분했습니다.</p></header><BuildingCarePricingGrid /></div></section>
 
       <section id="turnover-package" className="bc-section"><div className="bc-shell"><header className="bc-heading"><p className="bc-kicker">24H TURNOVER CARE</p><h2>퇴실하는 순간부터<br />다음 입실을 준비합니다.</h2><p>공실을 발견한 뒤 움직이지 않고, 퇴실 접수부터 청소·수리·촬영·중개 공유를 한 흐름으로 준비합니다.</p></header><div className="bc-turnover-track">{turnoverSteps.map((x,i)=><div key={x}><span>{i+1}</span><strong>{x}</strong></div>)}</div></div></section>
 
