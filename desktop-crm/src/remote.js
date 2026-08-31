@@ -1241,6 +1241,13 @@ class FirebaseRemoteClient {
     return this.dbRequestForRoot(location, options, "", retried);
   }
 
+  async dbRequestWithCapturedAuth(location, options, databaseRoot, snapshot) {
+    const suffix = options && options.query ? `&${options.query}` : '';
+    const rootedLocation = resolveDatabaseLocation(location, databaseRoot);
+    const url = `${this.firebase.databaseUrl}/${rootedLocation}.json?auth=${encodeURIComponent(snapshot.idToken)}${suffix}`;
+    return this.requestJson(url, { method: options && options.method || 'GET', headers: Object.assign({ 'Content-Type': 'application/json' }, options && options.headers || {}), body: options && Object.prototype.hasOwnProperty.call(options, 'body') ? JSON.stringify(options.body) : undefined }, 'DATABASE_ERROR');
+  }
+
   async verifyAccess(contextValue, idTokenOverride) {
     const context = contextValue || this.captureSessionContext();
     const sessionRef = context.sessionRef;
@@ -2941,13 +2948,18 @@ class FirebaseRemoteClient {
     if (!['customer', 'case'].includes(kind) || !/^[A-Za-z0-9_-]{1,120}$/.test(id) || ['__proto__', 'prototype', 'constructor'].includes(id)) throw createError('invalid attribution target', 'MARKETING_ATTRIBUTION_INVALID');
     const marketing = this.Core.normalizeMarketingAttribution(source.marketing);
     const guard = this.captureSessionGuard();
-    const path = kind === 'customer' ? `crmShared/data/customers/${id}` : `cases/${id}`;
-    const read = kind === 'customer' ? this.dbRequest.bind(this) : this.rootDbRequest.bind(this);
-    const current = await read(path, { method: 'GET' });
-    if (!current || typeof current !== 'object') throw createError('attribution target not found', 'MARKETING_ATTRIBUTION_NOT_FOUND');
     if (!this.sessionGuardActive(guard)) throw createError('session changed', 'SESSION_CHANGED');
-    const body = { marketing, marketingUpdatedAt: new Date().toISOString(), marketingUpdatedBy: String(session.operatorId || session.email || session.uid || '').slice(0, 200) };
-    await read(path, { method: 'PATCH', body, query: 'print=silent' });
+    const snapshot = Object.freeze({ uid: String(session.uid || ''), generation: guard.generation, idToken: String(session.idToken || ''), actor: String(session.operatorId || session.email || session.uid || '').slice(0, 200) });
+    if (!snapshot.uid || !snapshot.idToken) throw createError('authentication required', 'AUTH_REQUIRED');
+    const path = kind === 'customer' ? `crmShared/data/customers/${id}` : `cases/${id}`;
+    const root = kind === 'customer' ? this.databaseRoot : '';
+    if (!this.sessionGuardActive(guard)) throw createError('session changed', 'SESSION_CHANGED');
+    const current = await this.dbRequestWithCapturedAuth(path, { method: 'GET' }, root, snapshot);
+    if (!this.sessionGuardActive(guard)) throw createError('session changed', 'SESSION_CHANGED');
+    if (!current || typeof current !== 'object') throw createError('attribution target not found', 'MARKETING_ATTRIBUTION_NOT_FOUND');
+    const body = { marketing, marketingUpdatedAt: new Date().toISOString(), marketingUpdatedBy: snapshot.actor };
+    if (!this.sessionGuardActive(guard)) throw createError('session changed', 'SESSION_CHANGED');
+    await this.dbRequestWithCapturedAuth(path, { method: 'PATCH', body, query: 'print=silent' }, root, snapshot);
     if (!this.sessionGuardActive(guard)) throw createError('session changed', 'SESSION_CHANGED');
     return { ok: true, kind, id, marketing };
   }
