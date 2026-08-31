@@ -1286,15 +1286,17 @@ class FirebaseRemoteClient {
       throw createError("계정 권한이 올바르게 설정되지 않았습니다. 관리자에게 문의해 주세요.", "ACCESS_DENIED");
     }
     const operatorId = String(access.operatorId || access.profileId || "");
-    if (!/^[A-Za-z0-9_-]{1,120}$/.test(operatorId) || ["__proto__", "prototype", "constructor"].includes(operatorId)) throw createError("작업자 권한 정보를 확인할 수 없습니다.", "ACCESS_DENIED");
-    let profile;
-    if (idTokenOverride) {
-      const profileLocation = resolveDatabaseLocation(`teamProfiles/${operatorId}`, this.databaseRoot);
-      const profileUrl = `${this.firebase.databaseUrl}/${profileLocation}.json?auth=${encodeURIComponent(idTokenOverride)}`;
-      profile = await this.requestJson(profileUrl, { method: "GET", headers: { "Content-Type": "application/json" } }, "DATABASE_ERROR");
-    } else profile = await this.dbRequest(`teamProfiles/${operatorId}`, { method: "GET" }, true);
-    if (!this.sessionContextActive(currentContext)) throw createError("로그인 세션이 변경되었습니다.", "SESSION_CHANGED");
-    if (!profile || profile.active !== true) throw createError("활성 작업자 프로필을 확인할 수 없습니다.", "ACCESS_DENIED");
+    if (operatorId) {
+      if (!/^[A-Za-z0-9_-]{1,120}$/.test(operatorId) || ["__proto__", "prototype", "constructor"].includes(operatorId)) throw createError("작업자 권한 정보를 확인할 수 없습니다.", "ACCESS_DENIED");
+      let profile;
+      if (idTokenOverride) {
+        const profileLocation = resolveDatabaseLocation(`teamProfiles/${operatorId}`, this.databaseRoot);
+        const profileUrl = `${this.firebase.databaseUrl}/${profileLocation}.json?auth=${encodeURIComponent(idTokenOverride)}`;
+        profile = await this.requestJson(profileUrl, { method: "GET", headers: { "Content-Type": "application/json" } }, "DATABASE_ERROR");
+      } else profile = await this.dbRequest(`teamProfiles/${operatorId}`, { method: "GET" }, true);
+      if (!this.sessionContextActive(currentContext)) throw createError("로그인 세션이 변경되었습니다.", "SESSION_CHANGED");
+      if (!profile || profile.active !== true) throw createError("활성 작업자 프로필을 확인할 수 없습니다.", "ACCESS_DENIED");
+    }
     sessionRef.role = role;
     sessionRef.marketingRole = ["marketing", "sales", "viewer"].includes(String(access.marketingRole || "")) ? String(access.marketingRole) : "viewer";
     sessionRef.officeAdmin = access.officeAdmin === true;
@@ -2968,6 +2970,10 @@ class FirebaseRemoteClient {
   async updateMarketingAttribution(input) {
     const session = this.requireMutationPermission(input, 'marketing-attribution');
     if (!MarketingCore.canEditAttribution(session)) throw createError('forbidden', 'MARKETING_ATTRIBUTION_FORBIDDEN');
+    const operatorId = String(session.operatorId || '');
+    if (!/^[A-Za-z0-9_-]{1,120}$/.test(operatorId) || ['__proto__', 'prototype', 'constructor'].includes(operatorId)) {
+      throw createError('작업자 프로필 연결 후 마케팅 정보를 저장해 주세요.', 'MARKETING_ATTRIBUTION_FORBIDDEN');
+    }
     const source = input && typeof input === 'object' && !Array.isArray(input) ? input : {};
     const kind = source.kind;
     const id = String(source.id || '').trim();
@@ -2977,7 +2983,7 @@ class FirebaseRemoteClient {
     if (!this.sessionGuardActive(guard)) throw createError('session changed', 'SESSION_CHANGED');
     const freshIdToken = await this.ensureIdToken(false);
     if (!this.sessionGuardActive(guard)) throw createError('session changed', 'SESSION_CHANGED');
-    const snapshot = Object.freeze({ uid: String(session.uid || ''), generation: guard.generation, idToken: String(freshIdToken || ''), actor: String(session.uid || '').slice(0, 128), operatorId: String(session.operatorId || '').slice(0, 120) });
+    const snapshot = Object.freeze({ uid: String(session.uid || ''), generation: guard.generation, idToken: String(freshIdToken || ''), actor: String(session.uid || '').slice(0, 128), operatorId });
     if (!snapshot.uid || !snapshot.idToken) throw createError('authentication required', 'AUTH_REQUIRED');
     const path = kind === 'customer' ? `crmShared/data/customers/${id}/marketing` : `cases/${id}/marketing`;
     const root = kind === 'customer' ? this.databaseRoot : '';

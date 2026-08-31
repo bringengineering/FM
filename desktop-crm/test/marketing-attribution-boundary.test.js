@@ -8,7 +8,7 @@ test('narrow remote customer attribution update preserves authoritative core fie
   const writes = [], current = { id: 'c1', name: 'Keep', phone: '010', notes: 'private', marketing: {} };
   const fake = {
     Core,
-    session: { uid: 'u', idToken: 'token-a', accessRole: 'member', marketingRole: 'marketing' }, sessionGeneration: 1,
+    session: { uid: 'u', operatorId: 'operator_u', idToken: 'token-a', accessRole: 'member', marketingRole: 'marketing' }, sessionGeneration: 1,
     requireMutationPermission() { return this.session; }, ensureIdToken: async () => 'token-a',
     captureSessionGuard() { return { uid: 'u' }; }, sessionGuardActive() { return true; },
     dbRequestWithCapturedAuth: async (path, request, root, snapshot) => request.method === 'GET' ? { value: current.marketing, etag: 'etag-1' } : (writes.push({ path, request, root, token: snapshot.idToken }), null)
@@ -26,7 +26,7 @@ test('narrow remote customer attribution update preserves authoritative core fie
 
 test('session switch before PUT prevents write and never uses the new token', async () => {
   const writes = [];
-  const fake = { Core, session: { uid: 'a', idToken: 'token-a', accessRole: 'member', marketingRole: 'marketing' }, sessionGeneration: 1,
+  const fake = { Core, session: { uid: 'a', operatorId: 'operator_a', idToken: 'token-a', accessRole: 'member', marketingRole: 'marketing' }, sessionGeneration: 1,
     requireMutationPermission() { return this.session; }, ensureIdToken: async () => 'token-a', captureSessionGuard() { return { sessionRef: this.session, uid: this.session.uid, generation: this.sessionGeneration }; },
     sessionGuardActive(g) { return this.session === g.sessionRef && this.session.uid === g.uid && this.sessionGeneration === g.generation; },
     dbRequestWithCapturedAuth: async (_path, request) => { if (request.method === 'GET') { fake.session = { uid: 'b', idToken: 'token-b' }; fake.sessionGeneration++; return { value: null, etag: 'etag-1' }; } writes.push(request); }
@@ -37,7 +37,7 @@ test('session switch before PUT prevents write and never uses the new token', as
 
 test('switch during PUT uses A token and actor then rejects result', async () => {
   const seen = [];
-  const fake = { Core, session: { uid: 'a', idToken: 'token-a', accessRole: 'member', marketingRole: 'marketing' }, sessionGeneration: 1,
+  const fake = { Core, session: { uid: 'a', operatorId: 'operator_a', idToken: 'token-a', accessRole: 'member', marketingRole: 'marketing' }, sessionGeneration: 1,
     requireMutationPermission() { return this.session; }, ensureIdToken: async () => 'token-a', captureSessionGuard() { return { sessionRef: this.session, uid: this.session.uid, generation: this.sessionGeneration }; },
     sessionGuardActive(g) { return this.session === g.sessionRef && this.sessionGeneration === g.generation; },
     dbRequestWithCapturedAuth: async (_path, request, _root, snapshot) => { if (request.method === 'GET') return { value: null, etag: 'etag-1' }; seen.push({ token: snapshot.idToken, actor: request.body._updatedByAuthUid }); fake.session = { uid: 'b', idToken: 'token-b' }; fake.sessionGeneration++; }
@@ -57,9 +57,23 @@ test('remote mutation boundary denies marketing-only whole saves but permits nar
   assert.equal(FirebaseRemoteClient.prototype.requireMutationPermission.call(fake, {}, 'marketing-attribution'), fake.session);
 });
 
+test('legacy login without an operator remains read-only at the marketing write boundary', async () => {
+  let remoteRequests = 0;
+  const fake = { Core, session: { uid: 'm', accessRole: 'member', role: 'member', marketingRole: 'marketing' },
+    requireMutationPermission() { return this.session; },
+    ensureIdToken: async () => { remoteRequests += 1; return 'token'; },
+    dbRequestWithCapturedAuth: async () => { remoteRequests += 1; }
+  };
+  await assert.rejects(
+    () => FirebaseRemoteClient.prototype.updateMarketingAttribution.call(fake, { kind: 'customer', id: 'c1', marketing: {} }),
+    error => error && error.code === 'MARKETING_ATTRIBUTION_FORBIDDEN'
+  );
+  assert.equal(remoteRequests, 0);
+});
+
 test('expired A refreshes once before requests and both use fresh A token', async () => {
   let refreshes = 0; const tokens = [];
-  const fake = { Core, session: { uid: 'a', idToken: 'expired-a', accessRole: 'member', marketingRole: 'marketing' }, sessionGeneration: 1,
+  const fake = { Core, session: { uid: 'a', operatorId: 'operator_a', idToken: 'expired-a', accessRole: 'member', marketingRole: 'marketing' }, sessionGeneration: 1,
     requireMutationPermission() { return this.session; }, ensureIdToken: async () => { refreshes++; fake.session.idToken = 'fresh-a'; return 'fresh-a'; },
     captureSessionGuard() { return { sessionRef: this.session, uid: 'a', generation: 1 }; }, sessionGuardActive(g) { return this.session === g.sessionRef && this.sessionGeneration === g.generation; },
     dbRequestWithCapturedAuth: async (_p, request, _r, snapshot) => { tokens.push(snapshot.idToken); return request.method === 'GET' ? { value: null, etag: 'etag-1' } : null; }
@@ -70,7 +84,7 @@ test('expired A refreshes once before requests and both use fresh A token', asyn
 
 test('switch during refresh performs no database request', async () => {
   let requests = 0;
-  const fake = { Core, session: { uid: 'a', idToken: 'expired-a', accessRole: 'member', marketingRole: 'marketing' }, sessionGeneration: 1,
+  const fake = { Core, session: { uid: 'a', operatorId: 'operator_a', idToken: 'expired-a', accessRole: 'member', marketingRole: 'marketing' }, sessionGeneration: 1,
     requireMutationPermission() { return this.session; }, ensureIdToken: async () => { fake.session = { uid: 'b', idToken: 'token-b' }; fake.sessionGeneration++; return 'token-b'; },
     captureSessionGuard() { return { sessionRef: this.session, uid: this.session.uid, generation: this.sessionGeneration }; }, sessionGuardActive(g) { return this.session === g.sessionRef && this.sessionGeneration === g.generation; },
     dbRequestWithCapturedAuth: async () => { requests++; }
@@ -81,7 +95,7 @@ test('switch during refresh performs no database request', async () => {
 
 test('refresh failure is bounded and performs no database request', async () => {
   let requests = 0;
-  const fake = { Core, session: { uid: 'a', idToken: 'expired-secret', accessRole: 'member', marketingRole: 'marketing' }, sessionGeneration: 1,
+  const fake = { Core, session: { uid: 'a', operatorId: 'operator_a', idToken: 'expired-secret', accessRole: 'member', marketingRole: 'marketing' }, sessionGeneration: 1,
     requireMutationPermission() { return this.session; }, ensureIdToken: async () => { const error = new Error('auth refresh failed'); error.code = 'AUTH_EXPIRED'; throw error; },
     captureSessionGuard() { return { sessionRef: this.session, uid: 'a', generation: 1 }; }, sessionGuardActive() { return true; }, dbRequestWithCapturedAuth: async () => { requests++; }
   };
@@ -91,7 +105,7 @@ test('refresh failure is bounded and performs no database request', async () => 
 
 test('attribution uses exact marketing-child ETag PUT CAS and normalizes 412 with current comparison', async () => {
   const calls = []; let reads = 0;
-  const fake = { Core, session: { uid: 'a', idToken: 'token-a', accessRole: 'member', marketingRole: 'marketing' }, sessionGeneration: 1,
+  const fake = { Core, session: { uid: 'a', operatorId: 'operator_a', idToken: 'token-a', accessRole: 'member', marketingRole: 'marketing' }, sessionGeneration: 1,
     requireMutationPermission() { return this.session; }, ensureIdToken: async () => 'token-a',
     captureSessionGuard() { return { sessionRef: this.session, uid: 'a', generation: 1 }; }, sessionGuardActive() { return true; },
     dbRequestWithCapturedAuth: async (_path, request, _root, snapshot) => {
@@ -130,7 +144,7 @@ test('attribution transport targets only the exact marketing child and never par
 
 test('missing child ETag fails closed before PUT', async () => {
   let writes = 0;
-  const fake = { Core, session: { uid: 'a', idToken: 'token-a', accessRole: 'member', marketingRole: 'marketing' }, sessionGeneration: 1,
+  const fake = { Core, session: { uid: 'a', operatorId: 'operator_a', idToken: 'token-a', accessRole: 'member', marketingRole: 'marketing' }, sessionGeneration: 1,
     requireMutationPermission() { return this.session; }, ensureIdToken: async () => 'token-a', captureSessionGuard() { return { uid: 'a', generation: 1 }; }, sessionGuardActive() { return true; },
     dbRequestWithCapturedAuth: async (_path, request) => { if (request.method === 'GET') return { value: null, etag: '' }; writes++; }
   };
@@ -154,15 +168,29 @@ test('fresh verifyAccess composes the active operator used by attribution PUT', 
   assert.equal(calls[1].request.body._updatedByAuthUid, 'sales-a');
 });
 
-test('verifyAccess rejects missing or inactive operator before attribution PUT', async () => {
-  for (const access of [{ enabled: true, email: 'm@test', role: 'member', marketingRole: 'marketing' }, { enabled: true, email: 'm@test', role: 'member', marketingRole: 'marketing', operatorId: 'operator_inactive' }]) {
-    let writes = 0;
+test('verifyAccess keeps legacy allowed accounts usable without inventing an operator identity', async () => {
+  const requests = [];
+  const fake = { firebase: { databaseUrl: 'https://db.test' }, databaseRoot: 'crmCompany', sessionGeneration: 1, session: { uid: 'm', email: 'm@test' },
+    captureSessionContext() { return { sessionRef: this.session, uid: 'm', generation: 1 }; }, sessionContextActive() { return true; },
+    requestJson: async url => { requests.push(url); return { enabled: true, email: 'm@test', role: 'member', marketingRole: 'marketing' }; }
+  };
+  const access = await FirebaseRemoteClient.prototype.verifyAccess.call(fake, fake.captureSessionContext(), 'fresh');
+  assert.equal(access.enabled, true);
+  assert.equal(fake.session.operatorId, '');
+  assert.equal(requests.length, 1);
+  assert.equal(requests[0].includes('teamProfiles'), false);
+});
+
+test('verifyAccess still rejects invalid or inactive configured operators', async () => {
+  for (const access of [
+    { enabled: true, email: 'm@test', role: 'member', marketingRole: 'marketing', operatorId: '../invalid' },
+    { enabled: true, email: 'm@test', role: 'member', marketingRole: 'marketing', operatorId: 'operator_inactive' }
+  ]) {
     const fake = { firebase: { databaseUrl: 'https://db.test' }, databaseRoot: 'crmCompany', sessionGeneration: 1, session: { uid: 'm', email: 'm@test' },
       captureSessionContext() { return { sessionRef: this.session, uid: 'm', generation: 1 }; }, sessionContextActive() { return true; },
-      requestJson: async url => url.includes('teamProfiles') ? { active: false } : access, dbRequestWithCapturedAuth: async () => { writes++; }
+      requestJson: async url => url.includes('teamProfiles') ? { active: false } : access
     };
     await assert.rejects(() => FirebaseRemoteClient.prototype.verifyAccess.call(fake, fake.captureSessionContext(), 'fresh'), error => error && error.code === 'ACCESS_DENIED');
-    assert.equal(writes, 0);
   }
 });
 
