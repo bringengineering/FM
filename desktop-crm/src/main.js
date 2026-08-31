@@ -5386,6 +5386,7 @@ secureCanonicalHandle("crm:building-schedule-commit", async input => {
   }
 });
 secureCanonicalHandle("crm:marketing-read", async () => {
+  MarketingPersistence.assertMarketingReader(authState().user);
   if (localTestMode) return localMarketingPersistence.read();
   if (!remoteClient || !remoteClient.authState().user) throw new Error("로그인이 필요합니다.");
   return remoteClient.readMarketingRecords();

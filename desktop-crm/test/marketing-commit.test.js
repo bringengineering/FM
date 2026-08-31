@@ -30,6 +30,25 @@ test('enforces established access role plus explicit marketing capability', () =
   assert.throws(() => Persistence.assertMarketingWriter({ ...actor, active: false }), /MARKETING_FORBIDDEN/);
 });
 
+test('trusted raw marketing reader allows only admin or marketing-capable member', () => {
+  for (const actor of [{ accessRole: 'admin', marketingRole: 'viewer' }, { accessRole: 'member', marketingRole: 'marketing' }]) assert.doesNotThrow(() => Persistence.assertMarketingReader(actor));
+  for (const actor of [{ accessRole: 'viewer', marketingRole: 'viewer' }, { accessRole: 'member', marketingRole: 'sales' }, { accessRole: 'member', marketingRole: 'viewer' }, { role: 'admin' }]) assert.throws(() => Persistence.assertMarketingReader(actor), error => error.code === 'MARKETING_READ_FORBIDDEN');
+});
+
+test('remote raw read verifies fresh server access and denies before daily fetch', async () => {
+  for (const access of [{ role: 'admin', marketingRole: 'viewer', allowed: true }, { role: 'member', marketingRole: 'marketing', allowed: true }, { role: 'viewer', marketingRole: 'viewer' }, { role: 'member', marketingRole: 'sales' }, { role: 'member' }]) {
+    const calls = [];
+    const client = new FirebaseRemoteClient({ Core: {}, fs: {}, safeStorage: {}, shell: {}, sessionFile: '', pendingFile: '' });
+    client.session = { uid: 'uid_read', email: 'read@example.com' }; client.sessionGeneration = 1;
+    client.verifyAccess = async () => { calls.push('verify'); return access; };
+    client.dbRequest = async location => { calls.push(location); return {}; };
+    if (access.allowed) await client.readMarketingRecords();
+    else await assert.rejects(() => client.readMarketingRecords(), error => error.code === 'MARKETING_READ_FORBIDDEN');
+    assert.equal(calls[0], 'verify');
+    assert.equal(calls.includes('marketing/daily'), access.allowed === true);
+  }
+});
+
 test('CRM startup rejects obsolete top-level marketing and sales roles while legacy member remains valid', async () => {
   for (const role of ['marketing', 'sales']) {
     const client = new FirebaseRemoteClient({ Core: {}, fs: {}, safeStorage: {}, shell: {}, sessionFile: '', pendingFile: '' });

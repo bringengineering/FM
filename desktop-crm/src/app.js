@@ -1366,6 +1366,7 @@
   }
 
   function renderMarketingWorkspace() {
+    marketingController.refreshFacts(store, operations.cases || []);
     document.getElementById("pageEyebrow").textContent = "BRING MARKETING";
     const meta = MarketingUI.NAV_ITEMS.find(item => item.id === currentMarketingView);
     document.getElementById("pageTitle").textContent = meta ? meta.label : "마케팅 대시보드";
@@ -1374,7 +1375,7 @@
       const customer = customers.get(String(fact.customerId || "")) || {};
       return Object.assign({}, fact, { customerName: customer.name || customer.company || "", buildingName: customer.buildingName || "", lastContactAt: customer.lastContactAt || "", nextContactAt: customer.nextContactAt || "" });
     });
-    main.innerHTML = MarketingUI.renderWorkspace({ view: currentMarketingView, filters: marketingController.filters, snapshot: marketingController.state.snapshot, facts, localError: marketingController.state.localError, unavailable: marketingController.state.unavailable });
+    main.innerHTML = MarketingUI.renderWorkspace({ view: currentMarketingView, filters: marketingController.filters, filterOptions: marketingController.state.filterOptions, snapshot: marketingController.state.snapshot, facts, localError: marketingController.state.localError, unavailable: marketingController.state.unavailable });
     finishViewRender(currentMarketingView);
     if (!marketingLoaded) {
       marketingLoaded = true;
@@ -1383,6 +1384,7 @@
   }
 
   async function prepareWorkspaceTransition() {
+    marketingController.invalidate();
     if (currentView === "valueScope") {
       valueScopeOpenGeneration += 1;
       await api.hideValueScope();

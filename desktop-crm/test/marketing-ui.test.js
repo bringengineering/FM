@@ -19,6 +19,13 @@ test("exports the six marketing routes and exact shared filter controls", () => 
   for (const filter of ["channel", "service", "region", "owner", "customerType", "campaign", "keyword", "customerStatus", "dataStatus"]) assert.match(rendered, new RegExp(`data-marketing-filter="${filter}"`));
 });
 
+test("filter controls contain closed and authorized data-derived options", () => {
+  const options = UI.buildFilterOptions([{ channel: "naver_blog", service: "consulting", dataStatus: "verified", region: '<서울>', owner: "김", campaign: "봄", keyword: "토목", customerStatus: "신규" }]);
+  const rendered = UI.renderWorkspace({ view: "marketingOverview", snapshot: emptySnapshot, filters: UI.defaultFilters(), filterOptions: options });
+  for (const value of ["naver_blog", "consulting", "verified", "김", "봄", "토목", "신규"]) assert.match(rendered, new RegExp(`value="${value}"`));
+  assert.match(rendered, /&lt;서울&gt;/);
+});
+
 test("overview escapes output, renders exact KPIs, and formats unavailable values honestly", () => {
   const rendered = UI.renderWorkspace({ view: "marketingOverview", snapshot: emptySnapshot, filters: UI.defaultFilters() });
   for (const label of ["총 마케팅 비용", "노출", "클릭", "문의", "유효 리드", "견적", "계약", "계약금액", "예상 마케팅 이익", "입금액", "CTR", "CPC", "문의 전환율", "유효 리드율", "CPL", "견적 전환율", "계약 전환율", "CPA", "ROAS", "ROI", "AOV"]) assert.match(rendered, new RegExp(label));
@@ -42,6 +49,37 @@ test("funnel uses the exact ordered stages without proportional inline bars", ()
   const labels = ["노출", "클릭", "문의", "유효 리드", "상담", "견적", "계약", "입금"];
   labels.reduce((at, label) => { const next = rendered.indexOf(`>${label}<`, at); assert.ok(next > at); return next; }, -1);
   assert.doesNotMatch(rendered, /style="[^"]*width/);
+});
+
+test("overview includes ordered compact funnel and stable evidence targets", () => {
+  const rendered = UI.renderWorkspace({ view: "marketingOverview", snapshot: emptySnapshot, filters: UI.defaultFilters() });
+  ["impressions", "clicks", "inquiries", "validLeads", "consultations", "quotes", "contracts", "payments"].reduce((at, stage) => { const next = rendered.indexOf(`data-overview-stage="${stage}"`); assert.ok(next > at); return next; }, -1);
+  assert.match(rendered, /data-marketing-alert-target="data-quality"/);
+});
+
+test("active marketing nav exposes current page semantics", () => {
+  assert.match(UI.renderWorkspace({ view: "marketingChannels", snapshot: emptySnapshot, filters: UI.defaultFilters() }), /data-marketing-nav="marketingChannels"[^>]+aria-current="page"/);
+});
+
+test("load generations ignore stale success and stale error after invalidation", async () => {
+  const deferred = [];
+  const controller = UI.createController({ core: Core, bridge: { projectFacts: store => store.facts || [] }, readRaw: () => new Promise((resolve, reject) => deferred.push({ resolve, reject })) });
+  const first = controller.load({ uid: "a", accessRole: "admin" }, { facts: [{ caseId: "old", date: "2026-08-30", inquiries: 1 }] });
+  const second = controller.load({ uid: "a", accessRole: "admin" }, { facts: [{ caseId: "new", date: "2026-08-30", inquiries: 1 }] });
+  deferred[1].resolve({ daily: [] }); await second;
+  deferred[0].resolve({ daily: [] }); await first;
+  assert.deepEqual(controller.state.snapshot.filteredFacts.map(item => item.caseId), ["new"]);
+  const stale = controller.load({ uid: "a", accessRole: "admin" }, {}); controller.invalidate(); deferred[2].reject(new Error("stale")); await stale;
+  assert.doesNotMatch(controller.state.localError, /stale/);
+});
+
+test("refreshFacts reprojects current store without another raw fetch", async () => {
+  let reads = 0;
+  const controller = UI.createController({ core: Core, bridge: { projectFacts: store => store.facts || [] }, readRaw: async () => { reads += 1; return { daily: [] }; } });
+  await controller.load({ uid: "a", accessRole: "admin" }, { facts: [{ caseId: "one", date: "2026-08-30", inquiries: 1 }] });
+  controller.refreshFacts({ facts: [{ caseId: "two", date: "2026-08-30", inquiries: 1 }] });
+  assert.equal(reads, 1);
+  assert.deepEqual(controller.state.snapshot.filteredFacts.map(item => item.caseId), ["two"]);
 });
 
 test("customer facts expose stable IDs and never phone or private note", () => {

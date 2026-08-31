@@ -2432,7 +2432,8 @@ class FirebaseRemoteClient {
 
   async readMarketingRecords() {
     const guard = this.captureSessionGuard();
-    await this.verifyAccess();
+    const access = await this.verifyAccess();
+    MarketingPersistence.assertMarketingReader({ accessRole: String(access && access.role || ""), marketingRole: String(access && access.marketingRole || "") });
     this.assertSessionGuardActive(guard);
     const value = await this.dbRequest("marketing/daily", { method: "GET" }) || {};
     this.assertSessionGuardActive(guard);

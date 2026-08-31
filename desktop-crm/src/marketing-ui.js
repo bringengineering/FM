@@ -23,13 +23,21 @@
   function formatWon(value) { return present(value) && Number.isFinite(Number(value)) ? `${formatNumber(value)}원` : "-"; }
   function formatPercent(value) { return present(value) && Number.isFinite(Number(value)) ? `${Number(value).toLocaleString("ko-KR", { maximumFractionDigits: 1 })}%` : "-"; }
   function defaultFilters() { return { period: "thisMonth", channel: "all", service: "all", region: "all", owner: "all", customerType: "all", campaign: "all", keyword: "", customerStatus: "all", dataStatus: "all" }; }
+  function unique(rows, name) { return [...new Set((rows || []).map(row => String(row && row[name] || "").trim()).filter(Boolean).map(value => value.slice(0, 200)))].sort((a, b) => a.localeCompare(b, "ko")); }
+  function buildFilterOptions(rows) {
+    const source = Array.isArray(rows) ? rows : [];
+    return Object.freeze({ channel: MarketingCore.CHANNELS.slice(), service: MarketingCore.SERVICES.slice(), dataStatus: MarketingCore.DATA_STATUSES.slice(), region: unique(source, "region"), owner: unique(source, "owner"), customerType: unique(source, "customerType"), campaign: unique(source, "campaign"), keyword: unique(source, "keyword"), customerStatus: unique(source, "customerStatus") });
+  }
 
   function renderNav(view) {
-    return `<nav class="marketing-nav" aria-label="마케팅 메뉴">${NAV_ITEMS.map(item => `<button type="button" data-marketing-nav="${item.id}" class="${item.id === view ? "active" : ""}">${esc(item.label)}</button>`).join("")}</nav>`;
+    return `<nav class="marketing-nav" aria-label="마케팅 메뉴">${NAV_ITEMS.map(item => `<button type="button" data-marketing-nav="${item.id}" class="${item.id === view ? "active" : ""}"${item.id === view ? ` aria-current="page"` : ""}>${esc(item.label)}</button>`).join("")}</nav>`;
   }
-  function renderFilters(filters) {
+  function renderFilters(filters, filterOptions) {
     const period = typeof filters.period === "object" ? filters.period.type : filters.period;
-    return `<section class="marketing-filters" aria-label="마케팅 공통 필터"><label><span>기간</span><select data-marketing-period>${PERIODS.map(([value, label]) => `<option value="${value}"${value === period ? " selected" : ""}>${label}</option>`).join("")}</select></label>${period === "custom" ? `<label><span>시작일</span><input type="date" data-marketing-date="start" value="${attr(filters.period.start || "")}"></label><label><span>종료일</span><input type="date" data-marketing-date="end" value="${attr(filters.period.end || "")}"></label>` : ""}${FILTERS.map(([name, label]) => `<label><span>${label}</span>${name === "keyword" ? `<input data-marketing-filter="${name}" value="${attr(filters[name] || "")}">` : `<select data-marketing-filter="${name}"><option value="all">전체</option>${present(filters[name]) && filters[name] !== "all" ? `<option selected value="${attr(filters[name])}">${esc(filters[name])}</option>` : ""}</select>`}</label>`).join("")}</section>`;
+    const options = filterOptions || buildFilterOptions([]);
+    const values = name => { const list = (options[name] || []).slice(); if (present(filters[name]) && filters[name] !== "all" && !list.includes(filters[name])) list.push("needs_review"); return [...new Set(list)]; };
+    const selectedValue = name => values(name).includes(filters[name]) ? filters[name] : present(filters[name]) && filters[name] !== "all" ? "needs_review" : "all";
+    return `<section class="marketing-filters" aria-label="마케팅 공통 필터"><label><span>기간</span><select data-marketing-period>${PERIODS.map(([value, label]) => `<option value="${value}"${value === period ? " selected" : ""}>${label}</option>`).join("")}</select></label>${period === "custom" ? `<label><span>시작일</span><input type="date" data-marketing-date="start" value="${attr(filters.period.start || "")}"></label><label><span>종료일</span><input type="date" data-marketing-date="end" value="${attr(filters.period.end || "")}"></label>` : ""}${FILTERS.map(([name, label]) => `<label><span>${label}</span>${name === "keyword" ? `<input data-marketing-filter="${name}" list="marketing-keywords" value="${attr(filters[name] || "")}"><datalist id="marketing-keywords">${values(name).map(value => `<option value="${attr(value)}"></option>`).join("")}</datalist>` : `<select data-marketing-filter="${name}"><option value="all"${selectedValue(name) === "all" ? " selected" : ""}>전체</option>${values(name).map(value => `<option value="${attr(value)}"${value === selectedValue(name) ? " selected" : ""}>${esc(value)}</option>`).join("")}</select>`}</label>`).join("")}</section>`;
   }
   function delta(snapshot, key, money) {
     const value = snapshot && snapshot.comparison && snapshot.comparison.deltas ? snapshot.comparison.deltas[key] : null;
@@ -39,7 +47,9 @@
     const totals = snapshot.totals || {}, metrics = snapshot.metrics || {};
     const cards = [["총 마케팅 비용", "spend", true], ["노출", "impressions"], ["클릭", "clicks"], ["문의", "inquiries"], ["유효 리드", "validLeads"], ["견적", "quotes"], ["계약", "contracts"], ["계약금액", "contractAmount", true], ["예상 마케팅 이익", "expectedMarketingProfit", true, true], ["입금액", "paidAmount", true]];
     const kpis = [["CTR", "ctr", true], ["CPC", "cpc", false, true], ["문의 전환율", "inquiryCvr", true], ["유효 리드율", "validLeadRate", true], ["CPL", "cpl", false, true], ["견적 전환율", "quoteConversion", true], ["계약 전환율", "contractConversion", true], ["CPA", "cpa", false, true], ["ROAS", "roas", true], ["ROI", "roi", true], ["AOV", "aov", false, true]];
-    return `<section><div class="marketing-kpi-grid">${cards.map(([label, key, money, metric]) => { const value = metric ? metrics[key] : totals[key]; return `<article><span>${label}</span><strong>${money ? formatWon(value) : formatNumber(value)}</strong>${delta(snapshot, metric ? "profit" : key, money)}</article>`; }).join("")}</div><section class="marketing-metric-row">${kpis.map(([label, key, percent, money]) => `<article><span>${label}</span><b>${percent ? formatPercent(metrics[key]) : money ? formatWon(metrics[key]) : formatNumber(metrics[key])}</b></article>`).join("")}</section><section class="marketing-attention"><h2>오늘 확인할 항목</h2><div data-attention-target="data-quality">제외 데이터 ${formatNumber(Object.values(snapshot.exclusions || {}).reduce((a, b) => a + Number(b || 0), 0))}건 · 데이터 품질을 확인하세요.</div></section></section>`;
+    const summary = (snapshot.funnel || []).map(item => `<article data-overview-stage="${item.stage}"><span>${esc(STAGES[item.stage])}</span><b>${formatNumber(item.count)}</b></article>`).join("");
+    const excluded = Object.values(snapshot.exclusions || {}).reduce((a, b) => a + Number(b || 0), 0);
+    return `<section><div class="marketing-kpi-grid">${cards.map(([label, key, money, metric]) => { const value = metric ? metrics[key] : totals[key]; return `<article><span>${label}</span><strong>${money ? formatWon(value) : formatNumber(value)}</strong>${delta(snapshot, metric ? "profit" : key, money)}</article>`; }).join("")}</div><section class="marketing-metric-row">${kpis.map(([label, key, percent, money]) => `<article><span>${label}</span><b>${percent ? formatPercent(metrics[key]) : money ? formatWon(metrics[key]) : formatNumber(metrics[key])}</b></article>`).join("")}</section><section class="marketing-overview-funnel" aria-label="마케팅 퍼널 요약">${summary}</section><section class="marketing-attention"><h2>오늘 확인할 항목</h2>${excluded ? `<div data-marketing-alert-target="data-quality">제외 데이터 ${formatNumber(excluded)}건 · 데이터 품질을 확인하세요.</div>` : `<div data-marketing-alert-target="data-quality">현재 확인된 제외 데이터가 없습니다.</div>`}</section></section>`;
   }
   function renderChannels(snapshot) {
     const headers = ["채널", "비용", "노출", "클릭", "유효 리드", "견적", "계약", "매출", "이익", "CPL", "CPA", "ROAS", "상태"];
@@ -58,7 +68,7 @@
   function renderWorkspace(options) {
     const view = NAV_ITEMS.some(item => item.id === options.view) ? options.view : "marketingOverview";
     const localError = options.localError || options.error || "";
-    const top = `${renderNav(view)}${renderFilters(options.filters || defaultFilters())}${localError ? `<div class="marketing-local-error" role="alert">${esc(localError)}</div>` : ""}`;
+    const top = `${renderNav(view)}${renderFilters(options.filters || defaultFilters(), options.filterOptions)}${localError ? `<div class="marketing-local-error" role="alert">${esc(localError)}</div>` : ""}`;
     if (options.unavailable) return `${top}<section class="marketing-state">권한에 맞는 집계 데이터가 아직 준비되지 않았습니다</section>`;
     if (!options.snapshot) return `${top}<section class="marketing-state">마케팅 데이터를 불러오는 중입니다.</section>`;
     if (view === "marketingOverview") return `${top}${renderOverview(options.snapshot)}`;
@@ -69,30 +79,36 @@
 
   function createController(options) {
     const core = options.core || MarketingCore, bridge = options.bridge || MarketingCrmBridge;
-    const filters = defaultFilters(); let data = { daily: [], facts: [] };
-    const state = { snapshot: null, facts: [], error: "", localError: "", unavailable: false };
-    const recompute = () => { state.snapshot = core.buildSnapshot(data, filters, options.now ? options.now() : new Date()); return state.snapshot; };
+    const filters = defaultFilters(); let data = { daily: [], facts: [] }, generation = 0, rawLoaded = false;
+    const state = { snapshot: null, facts: [], filterOptions: buildFilterOptions([]), error: "", localError: "", unavailable: false };
+    const recompute = () => { state.filterOptions = buildFilterOptions(data.daily.concat(data.facts)); state.snapshot = core.buildSnapshot(data, filters, options.now ? options.now() : new Date()); return state.snapshot; };
     async function load(user, store, caseRows) {
+      const requestedGeneration = ++generation;
       state.error = ""; state.localError = ""; state.unavailable = false; state.snapshot = null;
       const rawAllowed = user && (user.accessRole === "admin" || (user.accessRole === "member" && user.marketingRole === "marketing"));
       try {
         if (!rawAllowed) {
-          if (typeof options.readAggregate !== "function") { state.unavailable = true; return state; }
+          if (typeof options.readAggregate !== "function") { if (requestedGeneration === generation) state.unavailable = true; return state; }
           const aggregate = await options.readAggregate();
+          if (requestedGeneration !== generation) return state;
           if (!aggregate || !aggregate.snapshot) { state.unavailable = true; return state; }
           state.snapshot = Object.freeze(aggregate.snapshot); state.facts = []; return state;
         }
         const response = await options.readRaw();
+        if (requestedGeneration !== generation) return state;
         const raw = response && (response.records || response.daily || response.items || response);
         const daily = Array.isArray(raw) ? raw : Object.values(raw || {});
         state.facts = bridge.projectFacts(store || {}, { cases: caseRows || [] });
         data = { daily, facts: state.facts };
+        rawLoaded = true;
         recompute(); return state;
-      } catch (error) { state.error = String(error && error.message || "마케팅 데이터를 불러오지 못했습니다."); state.localError = state.error; return state; }
+      } catch (error) { if (requestedGeneration !== generation) return state; state.error = String(error && error.message || "마케팅 데이터를 불러오지 못했습니다."); state.localError = state.error; return state; }
     }
+    function invalidate() { generation += 1; }
+    function refreshFacts(store, caseRows) { if (!rawLoaded) return state.snapshot; state.facts = bridge.projectFacts(store || {}, { cases: caseRows || [] }); data = { daily: data.daily, facts: state.facts }; return recompute(); }
     function setFilter(name, value) { if (!FILTERS.some(item => item[0] === name)) { state.localError = "알 수 없는 필터입니다."; return { ok: false, error: state.localError }; } filters[name] = value; state.localError = ""; recompute(); return { ok: true, snapshot: state.snapshot }; }
     function setPeriod(period) { try { core.resolvePeriod(period, options.now ? options.now() : new Date()); filters.period = period; state.localError = ""; recompute(); return { ok: true, snapshot: state.snapshot }; } catch (error) { state.localError = String(error.message || error); return { ok: false, error: state.localError }; } }
-    return Object.freeze({ filters, state, load, setFilter, setPeriod });
+    return Object.freeze({ filters, state, load, invalidate, refreshFacts, setFilter, setPeriod });
   }
-  return Object.freeze({ NAV_ITEMS, defaultFilters, createController, renderWorkspace, renderCustomerFacts, formatNumber, formatWon, formatPercent, escapeHtml: esc });
+  return Object.freeze({ NAV_ITEMS, defaultFilters, buildFilterOptions, createController, renderWorkspace, renderCustomerFacts, formatNumber, formatWon, formatPercent, escapeHtml: esc });
 });

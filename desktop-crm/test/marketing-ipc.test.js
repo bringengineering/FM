@@ -18,7 +18,8 @@ test('main routes marketing through the exact trusted canonical frame and closed
   for (const channel of ['crm:marketing-read', 'crm:marketing-commit', 'crm:marketing-archive']) assert.match(main, new RegExp(`secureCanonicalHandle\\("${channel}"`));
   assert.match(main, /MarketingPersistence\.validateCommitInput/);
   assert.match(main, /remoteClient\.readMarketingRecords\(\)/);
+  assert.match(main, /MarketingPersistence\.assertMarketingReader\(authState\(\)\.user\)/);
+  assert.ok(main.indexOf('MarketingPersistence.assertMarketingReader(authState().user)') < main.indexOf('localMarketingPersistence.read()'));
   assert.match(main, /remoteClient\.commitMarketingRecord/);
   assert.doesNotMatch(main.slice(main.indexOf('crm:marketing-read'), main.indexOf('crm:operations-load')), /writeStore|saveStore|crmShared/);
 });
-

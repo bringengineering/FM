@@ -59,6 +59,10 @@ function assertMarketingWriter(actor) {
   if (!plain(actor) || actor.active !== true || !safeId(actor.authUid) || !safeId(actor.operatorId) || !(['admin'].includes(actor.accessRole) || actor.accessRole === 'member' && actor.marketingRole === 'marketing')) fail('MARKETING_FORBIDDEN');
   return actor;
 }
+function assertMarketingReader(actor) {
+  if (!plain(actor) || !(actor.accessRole === 'admin' || actor.accessRole === 'member' && actor.marketingRole === 'marketing')) fail('MARKETING_READ_FORBIDDEN');
+  return actor;
+}
 function requestHash(input) { return hash({ id: input.id, requestId: input.requestId, expectedVersion: input.expectedVersion, action: input.action, ...(input.values ? { values: input.values } : {}) }); }
 function receiptId(requestId) { return `request_${String(requestId).replace(/-/g, '_')}`; }
 function auditId(requestId) { return `audit_${String(requestId).replace(/-/g, '_')}`; }
@@ -127,4 +131,4 @@ function createLocalPersistence(options) {
   return Object.freeze({ commit, read: () => readEnvelope(state.daily) });
 }
 
-module.exports = Object.freeze({ VALUE_FIELDS, SERVER_TIMESTAMP, validateCommitInput, assertMarketingWriter, requestHash, receiptId, auditId, planCommit, readEnvelope, createLocalPersistence });
+module.exports = Object.freeze({ VALUE_FIELDS, SERVER_TIMESTAMP, validateCommitInput, assertMarketingWriter, assertMarketingReader, requestHash, receiptId, auditId, planCommit, readEnvelope, createLocalPersistence });
