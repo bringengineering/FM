@@ -100,7 +100,7 @@
       state.saving = true; state.error = '';
       try { const result = await options.save(payload); state.review = null; await refresh(); return { status: 'saved', result }; }
       catch (error) {
-        if (String(error && (error.code || error.message)) === 'MARKETING_CONFLICT') { await refresh(); const current = state.active.find(item => item.id === payload.id) || null; if (!current || current.archivedAtMs) { state.review = { type: 'conflict_unavailable', existing: null, proposed: values, message: '현재 기록이 보관되었거나 존재하지 않아 덮어쓸 수 없습니다' }; return { status: 'conflict_unavailable', proposed: values }; } state.review = { type: 'conflict', existing: current, proposed: values, openedVersion: current.version }; return { status: 'conflict_review', existing: current, proposed: values }; }
+        if (['MARKETING_CONFLICT', 'MARKETING_VERSION_CONFLICT', 'CANONICAL_VERSION_CONFLICT'].includes(String(error && (error.code || error.message)))) { await refresh(); const current = state.active.find(item => item.id === payload.id) || null; if (!current || current.archivedAtMs) { state.review = { type: 'conflict_unavailable', existing: null, proposed: values, message: '현재 기록이 보관되었거나 존재하지 않아 덮어쓸 수 없습니다' }; return { status: 'conflict_unavailable', proposed: values }; } state.review = { type: 'conflict', existing: current, proposed: values, openedVersion: current.version }; return { status: 'conflict_review', existing: current, proposed: values }; }
         state.error = String(error && error.message || error); return { status: 'error', error: state.error };
       } finally { state.saving = false; }
     }
@@ -142,7 +142,12 @@
   }
   async function submitRoleLimitedEntityUpdate(options) {
     const payload = buildRoleLimitedEntityUpdate(options.kind, options.existing, options.submitted, options.user);
-    return options.save(payload);
+    const conflictResult = value => { const currentMarketing = MarketingCore.normalizeMarketingAttribution(value && value.currentMarketing); return { ok: false, conflict: true, draftMarketing: payload.marketing, currentMarketing, error: `서버의 최신 유입 정보와 비교해 재검토해 주세요. 현재 서버 값: ${JSON.stringify(currentMarketing)}` }; };
+    try { const result = await options.save(payload); return result && result.code === 'MARKETING_ATTRIBUTION_CONFLICT' ? conflictResult(result) : result; }
+    catch (error) {
+      if (String(error && error.code) !== 'MARKETING_ATTRIBUTION_CONFLICT') throw error;
+      return conflictResult(error);
+    }
   }
   function renderWorkspace(options) {
     const view = NAV_ITEMS.some(item => item.id === options.view) ? options.view : "marketingOverview";

@@ -49,6 +49,12 @@ test('narrow remote attribution denies viewer and unstable ids', async () => {
   await assert.rejects(() => FirebaseRemoteClient.prototype.updateMarketingAttribution.call(fake, { kind: 'case', id: '../x', marketing: {} }), /forbidden|invalid/i);
 });
 
+test('remote mutation boundary denies marketing-only whole saves but permits narrow attribution capability', () => {
+  const fake = { Core, session: { uid: 'm', accessRole: 'member', role: 'member', marketingRole: 'marketing' } };
+  assert.throws(() => FirebaseRemoteClient.prototype.requireMutationPermission.call(fake, { name: 'forged' }), error => error && error.code === 'MARKETING_ONLY_FORBIDDEN');
+  assert.equal(FirebaseRemoteClient.prototype.requireMutationPermission.call(fake, {}, 'marketing-attribution'), fake.session);
+});
+
 test('expired A refreshes once before requests and both use fresh A token', async () => {
   let refreshes = 0; const tokens = [];
   const fake = { Core, session: { uid: 'a', idToken: 'expired-a', accessRole: 'member', marketingRole: 'marketing' }, sessionGeneration: 1,
@@ -79,4 +85,27 @@ test('refresh failure is bounded and performs no database request', async () => 
   };
   await assert.rejects(() => FirebaseRemoteClient.prototype.updateMarketingAttribution.call(fake, { kind: 'customer', id: 'c', marketing: {} }), error => error.code === 'AUTH_EXPIRED' && !error.message.includes('expired-secret'));
   assert.equal(requests, 0);
+});
+
+test('attribution uses entity ETag CAS and normalizes 412 with current comparison', async () => {
+  const calls = []; let reads = 0;
+  const fake = { Core, session: { uid: 'a', idToken: 'token-a', accessRole: 'member', marketingRole: 'marketing' }, sessionGeneration: 1,
+    requireMutationPermission() { return this.session; }, ensureIdToken: async () => 'token-a',
+    captureSessionGuard() { return { sessionRef: this.session, uid: 'a', generation: 1 }; }, sessionGuardActive() { return true; },
+    dbRequestWithCapturedAuth: async (_path, request, _root, snapshot) => {
+      calls.push({ request, token: snapshot.idToken });
+      if (request.method === 'GET') return { value: reads++ ? { id: 'c', marketing: { keyword: 'server' } } : { id: 'c', marketing: { keyword: 'old' } }, etag: reads === 1 ? 'etag-old' : 'etag-current' };
+      const error = new Error('precondition failed'); error.status = 412; throw error;
+    }
+  };
+  await assert.rejects(() => FirebaseRemoteClient.prototype.updateMarketingAttribution.call(fake, { kind: 'customer', id: 'c', marketing: { keyword: 'draft' } }), error => {
+    assert.equal(error.code, 'MARKETING_ATTRIBUTION_CONFLICT');
+    assert.deepEqual(error.currentMarketing, { keyword: 'server' });
+    assert.equal(error.currentEtag, 'etag-current');
+    assert.equal(JSON.stringify(error).includes('token-a'), false);
+    return true;
+  });
+  assert.equal(calls[1].request.headers['If-Match'], 'etag-old');
+  assert.equal(calls[1].request.body.marketing.keyword, 'draft');
+  assert.deepEqual(calls.map(call => call.token), ['token-a', 'token-a', 'token-a']);
 });

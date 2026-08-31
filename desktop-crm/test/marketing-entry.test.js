@@ -118,6 +118,17 @@ test('archived or missing current conflict cannot be overwritten', async () => {
   assert.equal(commits, 1);
 });
 
+test('production and canonical marketing conflict codes require the same re-review', async () => {
+  for (const code of ['MARKETING_VERSION_CONFLICT', 'CANONICAL_VERSION_CONFLICT']) {
+    const existing = { id: 'm1', version: 3, date: '2026-08-30', channel: 'naver_place_ads', campaignName: 'A', keyword: 'K' };
+    const controller = UI.createEntryController({ read: async () => ({ daily: [existing], archived: [] }), save: async () => { const error = new Error(code); error.code = code; throw error; }, archive: async () => ({}), uuid: () => '00000000-0000-4000-8000-000000000001' });
+    await controller.refresh();
+    const result = await controller.submit({ ...existing, spend: 2 }, existing);
+    assert.equal(result.status, 'conflict_review');
+    assert.equal(controller.state.review.openedVersion, 3);
+  }
+});
+
 test('archive and overwrite failures stay local with saving cleared and later success clears error', async () => {
   const row = { id: 'r', version: 2, ...Core.normalizeManualRecord(base) };
   let failArchive = true, failSave = true;
@@ -151,6 +162,19 @@ test('role-limited submit harness executes save with normalized allow-listed pay
   const result = await UI.submitRoleLimitedEntityUpdate({ kind: 'case', existing, submitted: { name: 'FORGED', marketing: { firstSource: 'naver_blog', validLead: true, invalidReason: 'spam' } }, user: { accessRole: 'member', marketingRole: 'marketing' }, save: async payload => { calls.push(payload); return { ok: true }; } });
   assert.deepEqual(calls, [{ id: 'case-1', marketing: { firstSource: 'naver_blog', validLead: true } }]);
   assert.equal(result.ok, true);
+});
+
+test('attribution CAS conflict preserves draft and returns a mandatory server comparison', async () => {
+  const draft = { keyword: 'draft' };
+  const result = await UI.submitRoleLimitedEntityUpdate({ kind: 'customer', existing: { id: 'c1' }, submitted: { marketing: draft }, user: { accessRole: 'member', marketingRole: 'marketing' }, save: async () => { const error = new Error('conflict'); error.code = 'MARKETING_ATTRIBUTION_CONFLICT'; error.currentMarketing = { keyword: 'server' }; throw error; } });
+  assert.equal(result.ok, false);
+  assert.equal(result.conflict, true);
+  assert.deepEqual(result.draftMarketing, draft);
+  assert.deepEqual(result.currentMarketing, { keyword: 'server' });
+  assert.match(result.error, /재검토/);
+  const resolved = await UI.submitRoleLimitedEntityUpdate({ kind: 'case', existing: { id: 'case1' }, submitted: { marketing: draft }, user: { accessRole: 'member', marketingRole: 'marketing' }, save: async () => ({ ok: false, code: 'MARKETING_ATTRIBUTION_CONFLICT', currentMarketing: { keyword: 'newer' } }) });
+  assert.equal(resolved.conflict, true);
+  assert.deepEqual(resolved.currentMarketing, { keyword: 'newer' });
 });
 
 test('production submission policy blocks forged generic forms for marketing-only role', () => {

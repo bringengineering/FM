@@ -3115,6 +3115,23 @@ function marketingAtomic(id: string, actorUid: string, record = marketingRecord(
 }
 
 describe.runIf(databaseEmulatorAvailable)("marketing database rules", () => {
+  it("limits marketing-only CRM writes to exact attribution children and marketing daily", async () => {
+    await environment.withSecurityRulesDisabled(async context => {
+      await set(ref(context.database(), "cases/case_marketing"), { id: "case_marketing", caseParty: "브링", title: "keep" });
+    });
+    const database = environment.authenticatedContext("crm-marketing", crmClaims("marketing@bring.test")).database();
+    await assertFails(update(ref(database, "crmCompany/data"), { updatedAt: NOW, "tasks/forged": { id: "forged" } }));
+    await assertFails(update(ref(database, "crmCompany/data/buildings/building_1"), { memo: "forged" }));
+    await assertFails(set(ref(database, "paymentCalendars/crm-marketing/forged"), { amount: 1 }));
+    await assertFails(update(ref(database, "cases/case_marketing"), { title: "forged" }));
+    const customerAttribution = { marketing: { firstSource: "naver_blog", validLead: true }, marketingUpdatedAt: NOW, marketingUpdatedBy: "crm-marketing" };
+    await assertSucceeds(update(ref(database, "crmCompany/data/customers/customer_1"), customerAttribution));
+    await assertFails(update(ref(database, "crmCompany/data/customers/customer_1"), { ...customerAttribution, name: "forged" }));
+    const caseAttribution = { marketing: { firstSource: "referral", validLead: false, invalidReason: "spam" }, marketingUpdatedAt: NOW, marketingUpdatedBy: "crm-marketing" };
+    await assertSucceeds(update(ref(database, "cases/case_marketing"), caseAttribution));
+    await assertFails(update(ref(database, "cases/case_marketing"), { ...caseAttribution, title: "forged" }));
+  });
+
   it("allows active admin and marketing atomic writes and viewer reads while denying other writers and identities", async () => {
     const admin = environment.authenticatedContext("crm-admin", crmClaims("admin@bring.test")).database();
     await assertSucceeds(update(ref(admin, "crmCompany/marketing"), marketingAtomic("admin_daily", "crm-admin")));

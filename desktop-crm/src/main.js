@@ -15,6 +15,7 @@ const { createAttendanceWorkbook, safeFileSegment } = require("./attendance-xlsx
 const OperationsIntelligence = require("./operations-intelligence-core");
 const OperationsWorkSync = require("./operations-work-sync");
 const MarketingPersistence = require("./marketing-persistence");
+const MutationPolicy = require("./mutation-policy");
 const {
   FirebaseRemoteClient,
   createSerializedProtectedStoreCoordinator,
@@ -2104,7 +2105,11 @@ async function updateMarketingAttribution(input) {
     return { ok: true, kind, id, marketing };
   }
   if (!remoteClient || !remoteClient.authState().user) return { ok: false, error: "로그인이 필요합니다." };
-  return remoteClient.updateMarketingAttribution(payload);
+  try { return await remoteClient.updateMarketingAttribution(payload); }
+  catch (error) {
+    if (String(error && error.code) !== "MARKETING_ATTRIBUTION_CONFLICT") throw error;
+    return { ok: false, code: "MARKETING_ATTRIBUTION_CONFLICT", error: "서버에서 유입 정보가 변경되었습니다. 다시 비교해 주세요.", currentMarketing: Core.normalizeMarketingAttribution(error.currentMarketing), currentEtag: String(error.currentEtag || "").slice(0, 256) };
+  }
 }
 
 function enqueueLocalBuildingScheduleCommit(operation) {
@@ -2569,17 +2574,21 @@ function trustedCanonicalIpc(event, windowRef, entryPath) {
 }
 
 function secureHandle(channel, handler) {
+  MutationPolicy.assertRegistered(channel);
   ipcMain.handle(channel, (event, ...args) => {
     if (!trustedIpc(event)) throw new Error("허용되지 않은 요청입니다.");
+    MutationPolicy.assertChannelAllowed(channel, authState().user);
     return handler(...args);
   });
 }
 
 function secureCanonicalHandle(channel, handler) {
+  MutationPolicy.assertRegistered(channel);
   ipcMain.handle(channel, (event, ...args) => {
     if (!trustedCanonicalIpc(event, mainWindow, path.join(__dirname, "index.html"))) {
       throw new Error("허용되지 않은 요청입니다.");
     }
+    MutationPolicy.assertChannelAllowed(channel, authState().user);
     return handler(...args, event);
   });
 }

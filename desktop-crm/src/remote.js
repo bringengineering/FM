@@ -928,8 +928,11 @@ class FirebaseRemoteClient {
     return this.Core.canMutate(this.session);
   }
 
-  requireMutationPermission(value) {
+  requireMutationPermission(value, capability) {
     this.Core.assertMutationAllowed(this.session);
+    if (this.session && (this.session.accessRole || this.session.role) === 'member' && this.session.marketingRole === 'marketing' && capability !== 'marketing-attribution') {
+      throw createError('marketing-only session cannot perform this mutation', 'MARKETING_ONLY_FORBIDDEN');
+    }
     if (value !== undefined) this.Core.assertNoProhibitedSecrets(value);
     return this.session;
   }
@@ -1245,6 +1248,17 @@ class FirebaseRemoteClient {
     const suffix = options && options.query ? `&${options.query}` : '';
     const rootedLocation = resolveDatabaseLocation(location, databaseRoot);
     const url = `${this.firebase.databaseUrl}/${rootedLocation}.json?auth=${encodeURIComponent(snapshot.idToken)}${suffix}`;
+    if (options && options.includeEtag) {
+      let response;
+      try {
+        response = await this.fetch(url, { method: options.method || 'GET', headers: Object.assign({ 'Content-Type': 'application/json' }, options.headers || {}), body: Object.prototype.hasOwnProperty.call(options, 'body') ? JSON.stringify(options.body) : undefined });
+      } catch (cause) { throw createError('database request failed', 'DATABASE_ERROR', cause); }
+      const raw = await response.text();
+      let value = null;
+      try { value = raw ? JSON.parse(raw) : null; } catch (_) { value = null; }
+      if (!response.ok) { const error = createError('database request rejected', 'DATABASE_ERROR'); error.status = Number(response.status) || 0; throw error; }
+      return { value, etag: String(response.headers && (response.headers.get('etag') || response.headers.get('ETag')) || '') };
+    }
     return this.requestJson(url, { method: options && options.method || 'GET', headers: Object.assign({ 'Content-Type': 'application/json' }, options && options.headers || {}), body: options && Object.prototype.hasOwnProperty.call(options, 'body') ? JSON.stringify(options.body) : undefined }, 'DATABASE_ERROR');
   }
 
@@ -2940,7 +2954,7 @@ class FirebaseRemoteClient {
   }
 
   async updateMarketingAttribution(input) {
-    const session = this.requireMutationPermission(input);
+    const session = this.requireMutationPermission(input, 'marketing-attribution');
     if (!(session && (session.accessRole === 'admin' || session.accessRole === 'member') && (session.accessRole === 'admin' || ['marketing', 'sales', '', undefined].includes(session.marketingRole)))) throw createError('forbidden', 'MARKETING_ATTRIBUTION_FORBIDDEN');
     const source = input && typeof input === 'object' && !Array.isArray(input) ? input : {};
     const kind = source.kind;
@@ -2951,17 +2965,30 @@ class FirebaseRemoteClient {
     if (!this.sessionGuardActive(guard)) throw createError('session changed', 'SESSION_CHANGED');
     const freshIdToken = await this.ensureIdToken(false);
     if (!this.sessionGuardActive(guard)) throw createError('session changed', 'SESSION_CHANGED');
-    const snapshot = Object.freeze({ uid: String(session.uid || ''), generation: guard.generation, idToken: String(freshIdToken || ''), actor: String(session.operatorId || session.email || session.uid || '').slice(0, 200) });
+    const snapshot = Object.freeze({ uid: String(session.uid || ''), generation: guard.generation, idToken: String(freshIdToken || ''), actor: String(session.uid || '').slice(0, 128) });
     if (!snapshot.uid || !snapshot.idToken) throw createError('authentication required', 'AUTH_REQUIRED');
     const path = kind === 'customer' ? `crmShared/data/customers/${id}` : `cases/${id}`;
     const root = kind === 'customer' ? this.databaseRoot : '';
     if (!this.sessionGuardActive(guard)) throw createError('session changed', 'SESSION_CHANGED');
-    const current = await this.dbRequestWithCapturedAuth(path, { method: 'GET' }, root, snapshot);
+    const firstRead = await this.dbRequestWithCapturedAuth(path, { method: 'GET', includeEtag: true, headers: { 'X-Firebase-ETag': 'true' } }, root, snapshot);
     if (!this.sessionGuardActive(guard)) throw createError('session changed', 'SESSION_CHANGED');
+    const current = firstRead && Object.prototype.hasOwnProperty.call(firstRead, 'value') ? firstRead.value : firstRead;
+    const expectedEtag = String(firstRead && firstRead.etag || '*');
     if (!current || typeof current !== 'object') throw createError('attribution target not found', 'MARKETING_ATTRIBUTION_NOT_FOUND');
     const body = { marketing, marketingUpdatedAt: new Date().toISOString(), marketingUpdatedBy: snapshot.actor };
     if (!this.sessionGuardActive(guard)) throw createError('session changed', 'SESSION_CHANGED');
-    await this.dbRequestWithCapturedAuth(path, { method: 'PATCH', body, query: 'print=silent' }, root, snapshot);
+    try {
+      await this.dbRequestWithCapturedAuth(path, { method: 'PATCH', body, query: 'print=silent', includeEtag: true, headers: { 'If-Match': expectedEtag } }, root, snapshot);
+    } catch (error) {
+      if (Number(error && error.status) !== 412) throw error;
+      if (!this.sessionGuardActive(guard)) throw createError('session changed', 'SESSION_CHANGED');
+      const latest = await this.dbRequestWithCapturedAuth(path, { method: 'GET', includeEtag: true, headers: { 'X-Firebase-ETag': 'true' } }, root, snapshot);
+      if (!this.sessionGuardActive(guard)) throw createError('session changed', 'SESSION_CHANGED');
+      const conflict = createError('marketing attribution changed; review required', 'MARKETING_ATTRIBUTION_CONFLICT');
+      conflict.currentMarketing = this.Core.normalizeMarketingAttribution(latest && latest.value && latest.value.marketing);
+      conflict.currentEtag = String(latest && latest.etag || '').slice(0, 256);
+      throw conflict;
+    }
     if (!this.sessionGuardActive(guard)) throw createError('session changed', 'SESSION_CHANGED');
     return { ok: true, kind, id, marketing };
   }
