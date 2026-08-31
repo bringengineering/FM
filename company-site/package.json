@@ -17,7 +17,7 @@
     "test": "pnpm run build && node --test tests/rendered-html.test.mjs",
     "test:field": "vitest",
     "test:field:run": "vitest run tests/field",
-    "test:rules": "vitest run tests/field/database-rules.test.ts tests/field/storage-rules.test.ts",
+    "test:rules": "vitest run tests/field/database-rules.test.ts tests/field/storage-rules.test.ts tests/field/marketing-attribution-rules.test.ts",
     "typecheck:field": "tsc -p tsconfig.field.json",
     "lint": "eslint . --ignore-pattern dist --ignore-pattern .next"
   },

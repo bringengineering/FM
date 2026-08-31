@@ -32,7 +32,7 @@ async function rest(database: any, path: string, options: { method?: string; eta
   return { status: response.status, etag: response.headers.get("etag") || "", value: text ? JSON.parse(text) : null };
 }
 
-describe("marketing attribution exact-child rules", () => {
+describe.skipIf(!HOST)("marketing attribution exact-child rules", () => {
   beforeAll(async () => { environment = await initializeTestEnvironment({ projectId: PROJECT_ID, database: { rules: await readFile(resolve(process.cwd(), "../database.rules.json"), "utf8"), host: HOST.split(":")[0], port: Number(HOST.split(":")[1]) } }); });
   beforeEach(async () => { await environment.clearDatabase(); await environment.withSecurityRulesDisabled(async context => set(ref(context.database()), { crmCompany: { access, teamProfiles: { operator: { active: true } }, data: { customers: { customer1: { id: "customer1", name: "keep" }, customer2: { id: "customer2", name: "sales keep" } } } }, cases: { case1: { id: "case1", caseParty: "브링", title: "keep" } } })); });
   afterAll(async () => { if (environment) await environment.cleanup(); });
