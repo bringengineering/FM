@@ -165,3 +165,10 @@ test('verifyAccess rejects missing or inactive operator before attribution PUT',
     assert.equal(writes, 0);
   }
 });
+
+test('remote attribution rejects member sessions without an explicit sales or marketing role', async () => {
+  for (const marketingRole of ['', undefined, 'viewer']) {
+    const fake = { Core, session: { uid: 'm', accessRole: 'member', marketingRole }, requireMutationPermission() { return this.session; } };
+    await assert.rejects(() => FirebaseRemoteClient.prototype.updateMarketingAttribution.call(fake, { kind: 'customer', id: 'c1', marketing: {} }), error => error && error.code === 'MARKETING_ATTRIBUTION_FORBIDDEN');
+  }
+});

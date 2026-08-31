@@ -3,6 +3,7 @@ const http = require("node:http");
 const path = require("node:path");
 const SparkCanonical = require("./spark-canonical");
 const OfficeCore = require("./office-core");
+const MarketingCore = require("./marketing-core");
 const MarketingPersistence = require("./marketing-persistence");
 
 const FIREBASE = Object.freeze({
@@ -2966,7 +2967,7 @@ class FirebaseRemoteClient {
 
   async updateMarketingAttribution(input) {
     const session = this.requireMutationPermission(input, 'marketing-attribution');
-    if (!(session && (session.accessRole === 'admin' || session.accessRole === 'member') && (session.accessRole === 'admin' || ['marketing', 'sales', '', undefined].includes(session.marketingRole)))) throw createError('forbidden', 'MARKETING_ATTRIBUTION_FORBIDDEN');
+    if (!MarketingCore.canEditAttribution(session)) throw createError('forbidden', 'MARKETING_ATTRIBUTION_FORBIDDEN');
     const source = input && typeof input === 'object' && !Array.isArray(input) ? input : {};
     const kind = source.kind;
     const id = String(source.id || '').trim();

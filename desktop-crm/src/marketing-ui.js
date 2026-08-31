@@ -106,7 +106,7 @@
   }
   function renderChannels(snapshot) {
     const headers = ["채널", "비용", "노출", "클릭", "유효 리드", "견적", "계약", "매출", "이익", "CPL", "CPA", "ROAS", "상태"];
-    const rows = Object.entries(snapshot.channels || {}).map(([channel, row]) => `<tr><th>${esc(CHANNELS[channel] || channel)}</th><td>${formatWon(row.spend)}</td><td>${formatNumber(row.impressions)}</td><td>${formatNumber(row.clicks)}</td><td>${formatNumber(row.validLeads)}</td><td>${formatNumber(row.quotes)}</td><td>${formatNumber(row.contracts)}</td><td>${formatWon(row.contractAmount)}</td><td>${formatWon(row.profit)}</td><td>${formatWon(row.metrics.cpl)}</td><td>${formatWon(row.metrics.cpa)}</td><td>${formatPercent(row.metrics.roas)}</td><td><b>${row.rating === "data_insufficient" || channel === "needs_review" ? "검토 필요" : esc(row.ratingLabel)}</b>${(row.rationale || []).slice(0, 3).map(reason => `<small>${esc(reason)}</small>`).join("")}</td></tr>`).join("");
+    const rows = Object.entries(snapshot.channels || {}).map(([channel, row]) => `<tr><th scope="row">${esc(CHANNELS[channel] || channel)}</th><td>${formatWon(row.spend)}</td><td>${formatNumber(row.impressions)}</td><td>${formatNumber(row.clicks)}</td><td>${formatNumber(row.validLeads)}</td><td>${formatNumber(row.quotes)}</td><td>${formatNumber(row.contracts)}</td><td>${formatWon(row.contractAmount)}</td><td>${formatWon(row.profit)}</td><td>${formatWon(row.metrics.cpl)}</td><td>${formatWon(row.metrics.cpa)}</td><td>${formatPercent(row.metrics.roas)}</td><td><b>${row.rating === "data_insufficient" || channel === "needs_review" ? "검토 필요" : esc(row.ratingLabel)}</b>${(row.rationale || []).slice(0, 3).map(reason => `<small>${esc(reason)}</small>`).join("")}</td></tr>`).join("");
     return `<section class="marketing-table-wrap" tabindex="0" aria-label="채널별 마케팅 성과 표"><table><caption>채널별 마케팅 성과</caption><thead><tr>${headers.map(label => `<th scope="col">${label}</th>`).join("")}</tr></thead><tbody>${rows || `<tr><td colspan="13">표시할 채널 데이터가 없습니다.</td></tr>`}</tbody></table></section>`;
   }
   function stageFromFact(fact) { for (const key of Object.keys(STAGES).reverse()) if (Number(fact[key]) > 0) return STAGES[key]; return "문의"; }
@@ -126,7 +126,10 @@
     const archived = Array.isArray(options.archived) ? options.archived : [];
     const row = (item, readOnly) => { const actor = item.enteredByLabel || item.createdByLabel || '-'; const enteredAt = item.createdAt || item.enteredAt || '-'; const updatedAt = item.updatedAt || '-'; return `<article class="marketing-entry-row" data-marketing-entry-id="${attr(item.id || '')}" tabindex="-1"><strong>${safeEsc(item.date || "-")} · ${safeEsc(CHANNELS[item.channel] || item.channel || "-")}</strong><span>${safeEsc(item.campaignName || item.campaignId || item.keyword || item.contentTitle || "-")}</span><small>${formatWon(item.spend)} · v${formatNumber(item.version)}</small><small>입력 ${safeEsc(actor)} · ${safeEsc(enteredAt)} · 수정 ${safeEsc(updatedAt)}</small>${readOnly ? `<small>보관: ${safeEsc(item.archivedAt || item.archivedAtMs || "-")}</small>` : options.canWrite && !options.loading && !options.saving ? `<div><button type="button" data-marketing-edit="${attr(item.id)}">수정</button><button type="button" data-marketing-copy="${attr(item.id)}">이전 항목 복사</button><button type="button" data-marketing-archive="${attr(item.id)}">보관</button></div>` : ""}</article>`; };
     const fields = ['date', 'channel', 'accountName', 'campaignId', 'campaignName', 'adGroup', 'keyword', 'contentId', 'contentTitle', 'service', 'region', 'spend', 'impressions', 'clicks', 'phoneClicks', 'chatClicks', 'directionsClicks', 'saves', 'platformLeads', 'dailyBudget', 'budgetValidatedAt', 'note'];
-    const review = options.review ? `<div class="marketing-review-layer" data-marketing-review-layer><section class="marketing-duplicate-review" role="dialog" aria-modal="true" aria-labelledby="marketingReviewTitle" data-marketing-review-dialog><h3 id="marketingReviewTitle">${options.review.type === 'conflict' || options.review.type === 'conflict_unavailable' ? '서버 변경 충돌 재검토' : '중복 기록 검토'}</h3><p>${safeEsc(options.review.message || `기존 v${formatNumber(options.review.openedVersion)} 기록과 제안 값을 비교한 뒤 덮어쓰세요.`)}</p>${options.review.existing && !options.review.existing.archivedAtMs ? `<button type="button" data-marketing-overwrite>기존 기록 업데이트</button>` : ''}<button type="button" data-marketing-review-cancel autofocus>취소</button></section></div>` : '';
+    const comparisonFields = [['date','날짜'],['channel','채널'],['campaignName','캠페인'],['adGroup','광고그룹'],['keyword','키워드'],['contentTitle','콘텐츠'],['service','서비스'],['region','지역'],['spend','비용'],['impressions','노출'],['clicks','클릭'],['phoneClicks','전화 클릭'],['chatClicks','채팅 클릭'],['directionsClicks','길찾기'],['saves','저장'],['platformLeads','플랫폼 문의'],['dailyBudget','일예산']];
+    const compareValue = (name, value) => ['spend','dailyBudget'].includes(name) ? formatWon(value) : safeEsc(value == null || value === '' ? '-' : value);
+    const comparison = options.review ? `<div class="marketing-review-comparison"><h4>기존 값 / 제안 값</h4><dl>${comparisonFields.map(([name,label]) => `<div><dt>${label}</dt><dd><span>기존 값 ${compareValue(name, options.review.existing && options.review.existing[name])}</span><span>제안 값 ${compareValue(name, options.review.proposed && options.review.proposed[name])}</span></dd></div>`).join('')}</dl></div>` : '';
+    const review = options.review ? `<div class="marketing-review-layer" data-marketing-review-layer><section class="marketing-duplicate-review" role="dialog" aria-modal="true" aria-labelledby="marketingReviewTitle" data-marketing-review-dialog><h3 id="marketingReviewTitle">${options.review.type === 'conflict' || options.review.type === 'conflict_unavailable' ? '서버 변경 충돌 재검토' : '중복 기록 검토'}</h3><p>${safeEsc(options.review.message || `기존 v${formatNumber(options.review.openedVersion)} 기록과 제안 값을 비교한 뒤 덮어쓰세요.`)}</p>${comparison}${options.review.existing && !options.review.existing.archivedAtMs ? `<button type="button" data-marketing-overwrite>기존 기록 업데이트</button>` : ''}<button type="button" data-marketing-review-cancel autofocus>취소</button></section></div>` : '';
     const content = options.loading ? '<div class="marketing-state" role="status" aria-live="polite">광고 기록을 불러오는 중입니다.</div>' : options.error ? `<div role="alert">${safeEsc(options.error)} <button type="button" data-marketing-retry>다시 시도</button></div>` : `<div>${active.map(item => row(item, false)).join('') || '<p>활성 기록이 없습니다.</p>'}</div><details><summary>보관된 기록</summary>${archived.map(item => row(item, true)).join('') || '<p>보관된 기록이 없습니다.</p>'}</details>`;
     const valueFor = name => {
       if (name === 'budgetValidatedAt' && !options.draft[name] && Number.isSafeInteger(options.draft.budgetValidatedAtMs)) {
@@ -140,12 +143,15 @@
 
   function createEntryController(options) {
     const uuid = options.uuid || (() => globalThis.crypto.randomUUID());
+    let generation = 0;
     const state = { active: [], archived: [], lastUpdatedAt: '', loading: false, loaded: false, saving: false, error: '', review: null };
+    function invalidate() { generation += 1; Object.assign(state, { active: [], archived: [], lastUpdatedAt: '', loading: false, loaded: false, saving: false, error: '', review: null }); }
     async function refresh() {
+      const requestedGeneration = generation;
       state.loading = true; state.error = '';
-      try { const value = await options.read(); state.active = value.daily || value.active || []; state.archived = value.archived || []; state.lastUpdatedAt = value.lastUpdatedAt || ''; state.loaded = true; return state; }
-      catch (error) { state.error = String(error && error.message || '광고 기록을 불러오지 못했습니다.'); state.loaded = false; return state; }
-      finally { state.loading = false; }
+      try { const value = await options.read(); if (requestedGeneration !== generation) return state; state.active = value.daily || value.active || []; state.archived = value.archived || []; state.lastUpdatedAt = value.lastUpdatedAt || ''; state.loaded = true; return state; }
+      catch (error) { if (requestedGeneration === generation) { state.error = String(error && error.message || '광고 기록을 불러오지 못했습니다.'); state.loaded = false; } return state; }
+      finally { if (requestedGeneration === generation) state.loading = false; }
     }
     function copy(row, date) {
       const draft = {};
@@ -155,14 +161,16 @@
       return draft;
     }
     async function commit(record, values) {
+      const requestedGeneration = generation;
       const editing = record && record.id;
       const payload = { id: editing ? record.id : `manual_${uuid().replace(/-/g, '_')}`, expectedVersion: editing ? record.version : 0, requestId: uuid(), action: editing ? 'update' : 'create', values };
       state.saving = true; state.error = '';
-      try { const result = await options.save(payload); state.review = null; await refresh(); return { status: 'saved', result }; }
+      try { const result = await options.save(payload); if (requestedGeneration !== generation) return { status: 'stale' }; state.review = null; await refresh(); return requestedGeneration === generation ? { status: 'saved', result } : { status: 'stale' }; }
       catch (error) {
+        if (requestedGeneration !== generation) return { status: 'stale' };
         if (['MARKETING_CONFLICT', 'MARKETING_VERSION_CONFLICT', 'CANONICAL_VERSION_CONFLICT'].includes(String(error && (error.code || error.message)))) { await refresh(); const current = state.active.find(item => item.id === payload.id) || null; if (!current || current.archivedAtMs) { state.review = { type: 'conflict_unavailable', existing: null, proposed: values, message: '현재 기록이 보관되었거나 존재하지 않아 덮어쓸 수 없습니다' }; return { status: 'conflict_unavailable', proposed: values }; } state.review = { type: 'conflict', existing: current, proposed: values, openedVersion: current.version }; return { status: 'conflict_review', existing: current, proposed: values }; }
         state.error = String(error && error.message || error); return { status: 'error', error: state.error };
-      } finally { state.saving = false; }
+      } finally { if (requestedGeneration === generation) state.saving = false; }
     }
     async function submit(input, opened) {
       const values = MarketingCore.normalizeManualRecord(input);
@@ -171,12 +179,13 @@
     }
     function confirmOverwrite() { const review = state.review; if (!review || !review.existing || review.existing.archivedAtMs || !Number.isSafeInteger(review.openedVersion) || review.existing.version !== review.openedVersion) return Promise.reject(new Error('current record cannot be overwritten')); return commit({ id: review.existing.id, version: review.openedVersion }, review.proposed); }
     async function archive(row) {
+      const requestedGeneration = generation;
       state.saving = true; state.error = '';
-      try { const result = await options.archive({ id: row.id, expectedVersion: row.version, requestId: uuid(), action: 'archive' }); await refresh(); return { status: 'archived', result }; }
-      catch (error) { state.error = String(error && error.message || error); return { status: 'error', error: state.error }; }
-      finally { state.saving = false; }
+      try { const result = await options.archive({ id: row.id, expectedVersion: row.version, requestId: uuid(), action: 'archive' }); if (requestedGeneration !== generation) return { status: 'stale' }; await refresh(); return requestedGeneration === generation ? { status: 'archived', result } : { status: 'stale' }; }
+      catch (error) { if (requestedGeneration !== generation) return { status: 'stale' }; state.error = String(error && error.message || error); return { status: 'error', error: state.error }; }
+      finally { if (requestedGeneration === generation) state.saving = false; }
     }
-    return Object.freeze({ state, refresh, submit, confirmOverwrite, copy, archive });
+    return Object.freeze({ state, refresh, submit, confirmOverwrite, copy, archive, invalidate });
   }
   function crmEditPermissions(user) {
     const role = MarketingCore.normalizeMarketingRole(user);

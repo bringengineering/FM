@@ -105,6 +105,8 @@ test('weekly table has semantic headers and a horizontally scrollable wrapper', 
   assert.match(html, /class="marketing-table-wrap"[^>]+tabindex="0"/);
   assert.match(html, /<caption>채널별 주간 성과<\/caption>/);
   assert.match(html, /<thead><tr><th scope="col">채널<\/th>/);
+  const channelSnapshot = Core.buildSnapshot({ daily: [{ date: '2026-08-30', channel: 'naver_blog', spend: 1 }], facts: [] }, { period: 'thisMonth' }, new Date('2026-08-31T00:00:00Z'));
+  assert.match(UI.renderWorkspace({ view: 'marketingChannels', snapshot: channelSnapshot, filters: UI.defaultFilters() }), /<tbody><tr><th scope="row">네이버 블로그<\/th>/);
 });
 
 test('runtime tab navigation and dialog focus trap move focus on live controls', () => {
@@ -119,6 +121,23 @@ test('runtime tab navigation and dialog focus trap move focus on live controls',
   assert.equal(first.focused, 1); assert.equal(prevented, 1);
   assert.equal(UI.trapMarketingDialogFocus(dialog, { key: 'Tab', shiftKey: true, preventDefault() { prevented += 1; } }, first), true);
   assert.equal(last.focused, 1);
+});
+
+test('entry controller invalidation clears raw state and ignores late user A reads', async () => {
+  let resolveRead;
+  const controller = UI.createEntryController({ read: () => new Promise(resolve => { resolveRead = resolve; }), save: async () => ({}), archive: async () => ({}) });
+  controller.state.active = [{ id: 'A-secret' }]; controller.state.archived = [{ id: 'A-archive' }]; controller.state.review = { type: 'duplicate' };
+  const late = controller.refresh();
+  controller.invalidate();
+  assert.deepEqual(controller.state.active, []); assert.deepEqual(controller.state.archived, []); assert.equal(controller.state.review, null);
+  resolveRead({ daily: [{ id: 'late-A' }], archived: [{ id: 'late-archive' }] }); await late;
+  assert.deepEqual(controller.state.active, []); assert.equal(controller.state.loaded, false);
+});
+
+test('duplicate comparison displays only allow-listed sanitized business fields', () => {
+  const html = UI.renderMarketingInput({ canWrite: true, review: { type: 'duplicate', existing: { date: '2026-08-30', channel: 'naver_blog', spend: 10, createdByOperatorId: 'operator-secret', phone: '010-1234-5678', receipt: 'receipt-secret' }, proposed: { date: '2026-08-30', channel: 'naver_blog', spend: 20, privateNote: 'door-secret' }, openedVersion: 1 }, active: [] });
+  assert.match(html, /기존 값|제안 값|2026-08-30|10원|20원/);
+  assert.doesNotMatch(html, /operator-secret|010-1234-5678|receipt-secret|door-secret|createdByOperatorId|privateNote/);
 });
 
 test('marketing status is announced locally and unavailable never claims zero', () => {

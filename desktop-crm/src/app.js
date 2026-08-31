@@ -603,6 +603,11 @@
     const nextMarketingIdentity = marketingIdentityKey(currentAuth);
     if (previousMarketingIdentity !== nextMarketingIdentity) {
       marketingController.invalidate("identity-change", currentAuth.user || null);
+      marketingEntryController.invalidate();
+      marketingEntryDraft = null;
+      pendingMarketingEvidenceTarget = "";
+      pendingMarketingTabFocus = "";
+      marketingReviewReturnFocus = "";
       if (currentAuth.user) marketingController.prepareLoad(currentAuth.user);
       marketingLoaded = false;
     }
@@ -1420,12 +1425,19 @@
     }
     if (currentMarketingView === "marketingInput" && pendingMarketingEvidenceTarget) { const record=main.querySelector(`[data-marketing-entry-id="${CSS.escape(pendingMarketingEvidenceTarget)}"]`); if(record) { record.focus(); record.scrollIntoView({block:"center"}); pendingMarketingEvidenceTarget = ""; } }
     finishViewRender(currentMarketingView);
-    if (currentMarketingView === "marketingInput" && !marketingEntryController.state.loading && !marketingEntryController.state.loaded) marketingEntryController.refresh().then(() => { if (currentWorkspace === "marketing" && currentMarketingView === "marketingInput") renderMarketingWorkspace(); });
+    if (currentMarketingView === "marketingInput" && canWriteMarketing && !marketingEntryController.state.loading && !marketingEntryController.state.loaded) marketingEntryController.refresh().then(() => { if (currentWorkspace === "marketing" && currentMarketingView === "marketingInput") renderMarketingWorkspace(); });
   }
 
   async function prepareWorkspaceTransition(workspace) {
     if (workspace === "marketing") marketingController.prepareLoad(currentAuth.user || {});
-    else marketingController.invalidate("workspace-transition");
+    else {
+      marketingController.invalidate("workspace-transition");
+      marketingEntryController.invalidate();
+      marketingEntryDraft = null;
+      pendingMarketingEvidenceTarget = "";
+      pendingMarketingTabFocus = "";
+      marketingReviewReturnFocus = "";
+    }
     if (currentView === "valueScope") {
       valueScopeOpenGeneration += 1;
       await api.hideValueScope();
@@ -5885,6 +5897,12 @@
     else if (action === "logout") {
       const result = await api.logout();
       if (!result || !result.ok) return showToast(result && result.error || "로그아웃하지 못했습니다. 잠시 후 다시 시도해 주세요.", "error");
+      marketingController.invalidate("logout");
+      marketingEntryController.invalidate();
+      marketingEntryDraft = null;
+      pendingMarketingEvidenceTarget = "";
+      pendingMarketingTabFocus = "";
+      marketingReviewReturnFocus = "";
       location.reload();
     }
     else if (action === "check-update") {
