@@ -3166,14 +3166,19 @@ describe.runIf(databaseEmulatorAvailable)("marketing database rules", () => {
     await assertFails(update(ref(marketing, "crmCompany/marketing"), highAfter));
   });
 
-  it("keeps aggregates closed, sanitized, versioned and marketing-writer owned", async () => {
-    const marketing = environment.authenticatedContext("crm-marketing", crmClaims("marketing@bring.test")).database();
-    const viewer = environment.authenticatedContext("crm-viewer", crmClaims("viewer@bring.test")).database();
+  it("keeps pre-provisioned sanitized aggregates client read-only because this release has no trusted derivation service", async () => {
     const aggregate = { id: "2026-09", date: "2026-09-01", spend: 1000, impressions: 20, clicks: 3, platformLeads: 1, version: 1, updatedAtMs: SERVER_TIME };
-    await assertSucceeds(set(ref(marketing, "crmCompany/marketing/aggregates/2026-09"), aggregate));
-    await assertFails(set(ref(viewer, "crmCompany/marketing/aggregates/viewer-forge"), { ...aggregate, id: "viewer-forge" }));
-    await assertFails(set(ref(marketing, "crmCompany/marketing/aggregates/extra"), { ...aggregate, id: "extra", actorAuthUid: "secret" }));
-    await assertFails(set(ref(marketing, "crmCompany/marketing/aggregates/forged-time"), { ...aggregate, id: "forged-time", updatedAtMs: 1 }));
+    for (const [uid, email] of [["crm-admin", "admin@bring.test"], ["crm-marketing", "marketing@bring.test"], ["crm-sales", "sales@bring.test"], ["crm-viewer", "viewer@bring.test"], ["crm-marketing-disabled", "marketing-disabled@bring.test"]] as const) {
+      const database = environment.authenticatedContext(uid, crmClaims(email)).database();
+      await assertFails(set(ref(database, "crmCompany/marketing/aggregates/client-create"), { ...aggregate, id: "client-create" }));
+      await assertFails(update(ref(database, "crmCompany/marketing/aggregates/2026-08"), { spend: 2 }));
+      await assertFails(remove(ref(database, "crmCompany/marketing/aggregates/2026-08")));
+    }
+    for (const [uid, email] of [["crm-admin", "admin@bring.test"], ["crm-marketing", "marketing@bring.test"], ["crm-sales", "sales@bring.test"], ["crm-viewer", "viewer@bring.test"]] as const) {
+      await assertSucceeds(get(ref(environment.authenticatedContext(uid, crmClaims(email)).database(), "crmCompany/marketing/aggregates/2026-08")));
+    }
+    await assertFails(get(ref(environment.authenticatedContext("crm-marketing-disabled", crmClaims("marketing-disabled@bring.test")).database(), "crmCompany/marketing/aggregates/2026-08")));
+    await assertFails(get(ref(environment.unauthenticatedContext().database(), "crmCompany/marketing/aggregates/2026-08")));
   });
 
   it("requires exact monotonic update and immutable identity and creation actor", async () => {

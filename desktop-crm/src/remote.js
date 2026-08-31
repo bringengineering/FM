@@ -1257,7 +1257,7 @@ class FirebaseRemoteClient {
       throw createError("회사에서 허용한 이메일이 아닙니다.", "ACCESS_DENIED");
     }
     const role = String(access.role || "");
-    if (!["admin", "member", "marketing", "sales", "viewer"].includes(role)) {
+    if (!["admin", "member", "viewer"].includes(role)) {
       throw createError("계정 권한이 올바르게 설정되지 않았습니다. 관리자에게 문의해 주세요.", "ACCESS_DENIED");
     }
     sessionRef.role = role;

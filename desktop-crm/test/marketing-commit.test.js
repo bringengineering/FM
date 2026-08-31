@@ -30,6 +30,19 @@ test('enforces established access role plus explicit marketing capability', () =
   assert.throws(() => Persistence.assertMarketingWriter({ ...actor, active: false }), /MARKETING_FORBIDDEN/);
 });
 
+test('CRM startup rejects obsolete top-level marketing and sales roles while legacy member remains valid', async () => {
+  for (const role of ['marketing', 'sales']) {
+    const client = new FirebaseRemoteClient({ Core: {}, fs: {}, safeStorage: {}, shell: {}, sessionFile: '', pendingFile: '' });
+    client.session = { uid: `uid_${role}`, email: `${role}@example.com` };
+    client.dbRequest = async () => ({ enabled: true, email: `${role}@example.com`, role });
+    await assert.rejects(() => client.verifyAccess(), error => error.code === 'ACCESS_DENIED');
+  }
+  const legacy = new FirebaseRemoteClient({ Core: {}, fs: {}, safeStorage: {}, shell: {}, sessionFile: '', pendingFile: '' });
+  legacy.session = { uid: 'uid_member', email: 'member@example.com' };
+  legacy.dbRequest = async () => ({ enabled: true, email: 'member@example.com', role: 'member' });
+  assert.equal((await legacy.verifyAccess()).role, 'member');
+});
+
 test('plans create update archive with immutable identity and monotonic versions', () => {
   const created = Persistence.planCommit({ id: 'daily_1', requestId: REQUEST, expectedVersion: 0, action: 'create', values }, null, actor, '2026-08-31T01:00:00.000Z');
   assert.equal(created.record.version, 1);

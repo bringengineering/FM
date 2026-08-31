@@ -10,6 +10,7 @@ test('marketing rules are company scoped, authenticated, role bounded and soft-d
   assert.equal(marketing['.read'], undefined);
   assert.ok(marketing.daily['.read'].includes("marketingRole').val() === 'marketing'"));
   assert.ok(marketing.aggregates['.read'].includes("role').val() === 'viewer'"));
+  assert.equal(marketing.aggregates.$aggregateId['.write'], false);
   assert.deepEqual(marketing.aggregates.$aggregateId.$other, { '.validate': false });
   assert.ok(marketing.daily.$recordId['.write'].includes("marketingRole').val() === 'marketing'"));
   assert.ok(marketing.daily.$recordId['.write'].includes("role').val() === 'admin'"));
