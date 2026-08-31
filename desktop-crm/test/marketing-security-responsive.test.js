@@ -134,6 +134,23 @@ test('entry controller invalidation clears raw state and ignores late user A rea
   assert.deepEqual(controller.state.active, []); assert.equal(controller.state.loaded, false);
 });
 
+test('invalidation during conflict refresh cannot create a stale review for the next user', async () => {
+  let resolveRead;
+  const controller = UI.createEntryController({
+    read: () => new Promise(resolve => { resolveRead = resolve; }),
+    save: async () => { const error = new Error('conflict'); error.code = 'MARKETING_VERSION_CONFLICT'; throw error; },
+    archive: async () => ({}),
+  });
+  const pending = controller.submit({ date: '2026-08-30', channel: 'naver_blog', spend: 20 }, { id: 'A-row', version: 1 });
+  while (!resolveRead) await Promise.resolve();
+  controller.invalidate();
+  resolveRead({ daily: [{ id: 'A-row', version: 2, spend: 10 }], archived: [] });
+  const result = await pending;
+  assert.equal(result.status, 'stale');
+  assert.equal(controller.state.review, null);
+  assert.deepEqual(controller.state.active, []);
+});
+
 test('duplicate comparison displays only allow-listed sanitized business fields', () => {
   const html = UI.renderMarketingInput({ canWrite: true, review: { type: 'duplicate', existing: { date: '2026-08-30', channel: 'naver_blog', spend: 10, createdByOperatorId: 'operator-secret', phone: '010-1234-5678', receipt: 'receipt-secret' }, proposed: { date: '2026-08-30', channel: 'naver_blog', spend: 20, privateNote: 'door-secret' }, openedVersion: 1 }, active: [] });
   assert.match(html, /기존 값|제안 값|2026-08-30|10원|20원/);
