@@ -96,6 +96,7 @@
           <h1 id="pageTitle">한눈에 보기</h1>
         </div>
         <div class="top-actions">
+          <button type="button" class="workspace-switch" data-workspace-switch hidden>작업 폴더 전환</button>
           <label id="fieldOperatorControl" class="field-operator-control" hidden><span>현재 작업자</span><select id="fieldOperatorSelect" aria-label="현재 작업자 선택"><option value="">작업자를 선택해 주세요</option></select></label>
           <label class="global-search"><span>⌕</span><input id="globalSearch" type="search" placeholder="고객·건물·연락처 검색"></label>
           <button id="updateButton" class="update-button" data-action="check-update" hidden>업데이트 확인</button>
@@ -128,6 +129,7 @@
   <script src="./ai-operations-ui.js"></script>
   <script src="./office-core.js"></script>
   <script src="./office.js"></script>
+  <script src="./workspace-shell.js"></script>
   <script src="./app.js"></script>
 </body>
 </html>

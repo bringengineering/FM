@@ -13,6 +13,7 @@
   const AiOperationsCore = window.BringAiOperationsCore;
   const ManagementReportCore = window.BringManagementReportCore;
   const AiOperationsUI = window.BringAiOperationsUI;
+  const WorkspaceShell = window.BringWorkspaceShell;
   const api = window.bringCRM;
   const main = document.getElementById("main");
   const modal = document.getElementById("modal");
@@ -43,9 +44,16 @@
   const primaryActionButton = document.getElementById("primaryActionButton");
   const fieldOperatorControl = document.getElementById("fieldOperatorControl");
   const fieldOperatorSelect = document.getElementById("fieldOperatorSelect");
+  const workspaceSwitch = document.querySelector("[data-workspace-switch]");
 
   let store = Core.blankStore();
   let currentView = "dashboard";
+  const workspaceStorageKey = "bring.crm.workspace";
+  let currentWorkspace = null;
+  try {
+    const savedWorkspace = localStorage.getItem(workspaceStorageKey);
+    if (["operations", "marketing"].includes(savedWorkspace)) currentWorkspace = WorkspaceShell.normalizeWorkspace(savedWorkspace);
+  } catch (_error) {}
   let lastRenderedView = null;
   let selectedCustomerId = "";
   let selectedCustomerHubId = "";
@@ -1288,6 +1296,21 @@
   }
 
   function render() {
+    document.body.classList.toggle("workspace-landing-active", currentWorkspace === null);
+    document.body.classList.toggle("marketing-workspace-active", currentWorkspace === "marketing");
+    workspaceSwitch.hidden = currentWorkspace === null;
+    if (currentWorkspace === null) {
+      main.innerHTML = WorkspaceShell.renderLanding();
+      finishViewRender("workspace-landing");
+      return;
+    }
+    if (currentWorkspace === "marketing") {
+      document.getElementById("pageEyebrow").textContent = "BRING MARKETING";
+      document.getElementById("pageTitle").textContent = "마케팅";
+      main.innerHTML = `<section class="marketing-workspace-placeholder"><span>MARKETING WORKSPACE</span><h2>마케팅 폴더</h2><p>마케팅 업무 화면을 준비하고 있습니다.</p></section>`;
+      finishViewRender("marketing");
+      return;
+    }
     if (!Object.hasOwn(viewMeta, currentView)) currentView = "dashboard";
     pageMeta();
     if (currentView === "dashboard") renderDashboard();
@@ -4466,6 +4489,20 @@
   }
 
   document.addEventListener("click", async event => {
+    const workspaceEnter = event.target.closest("[data-workspace-enter]");
+    if (workspaceEnter) {
+      currentWorkspace = WorkspaceShell.normalizeWorkspace(workspaceEnter.dataset.workspaceEnter);
+      try { localStorage.setItem(workspaceStorageKey, currentWorkspace); } catch (_error) {}
+      currentView = "dashboard";
+      render();
+      return;
+    }
+    const workspaceSwitchControl = event.target.closest("[data-workspace-switch]");
+    if (workspaceSwitchControl) {
+      currentWorkspace = null;
+      render();
+      return;
+    }
     const salesMessageDraft = event.target.closest("[data-ai-sales-message]");
     if (salesMessageDraft) { await requestSalesAutomationDraft(salesMessageDraft.dataset.aiSalesMessage); return; }
     const salesDraftCopy = event.target.closest("[data-ai-draft-copy]");
