@@ -6,6 +6,7 @@ const { execFileSync } = require('node:child_process');
 const Core = require('../src/marketing-core');
 const UI = require('../src/marketing-ui');
 const Persistence = require('../src/marketing-persistence');
+const Bridge = require('../src/marketing-crm-bridge');
 
 const now = new Date('2026-08-31T03:00:00Z'); // 2026-08-31 12:00 KST
 const baseSnapshot = Object.freeze({
@@ -37,17 +38,42 @@ test('buildAlerts observes exact KST time boundaries, dedupes, sorts and exclude
 
 test('advertising alerts require evidence-backed denominators and deterministic CPC samples', () => {
   const daily = [
-    { id:'d1', date:'2026-08-30', channel:'naver_blog', keyword:'zero', spend:50, clicks:2, validLeads:0 },
+    { id:'d1', date:'2026-08-30', channel:'naver_blog', keyword:'zero', spend:50, clicks:2, validLeads:0, dailyBudget:100, budgetValidatedAtMs:now.getTime()-3600000 },
     { id:'d2', date:'2026-08-31', channel:'naver_blog', keyword:'zero', spend:50, clicks:8, validLeads:0 }
   ];
   const zeroSnapshot = { ...baseSnapshot, totals:{ ...baseSnapshot.totals, clicks:10, validLeads:0 } };
-  const alerts = Core.buildAlerts({ snapshot: zeroSnapshot, daily, budgets:{ daily:125 }, previousSnapshot:{ totals:{spend:40,clicks:20} } }, now);
-  assert.ok(alerts.some(a => a.code === 'budget_80_percent'));
+  const alerts = Core.buildAlerts({ snapshot: zeroSnapshot, daily, budgets:{ daily:1 }, previousSnapshot:{ totals:{spend:40,clicks:20} } }, now);
+  assert.equal(alerts.some(a => a.code === 'budget_80_percent'),false);
   assert.ok(alerts.some(a => a.code === 'spend_zero_valid_leads'));
   assert.ok(alerts.some(a => a.code === 'persistent_zero_leads'));
   assert.ok(alerts.some(a => a.code === 'cpc_sharp_increase'));
   assert.equal(Core.buildAlerts({ snapshot:zeroSnapshot, daily, previousSnapshot:{ totals:{spend:40,clicks:2} } }, now).some(a => a.code === 'budget_80_percent'), false);
   assert.equal(Core.buildAlerts({ snapshot:zeroSnapshot, daily:daily.slice(0,1), previousSnapshot:{ totals:{spend:40,clicks:2} } }, now).some(a => a.code === 'persistent_zero_leads'), false);
+});
+
+test('daily budget compares only the validated record day, never weekly or monthly totals', () => {
+  const daily=[{id:'budget-day',date:'2026-08-30',channel:'naver_blog',spend:80,dailyBudget:100,budgetValidatedAtMs:now.getTime()-3600000},{id:'other-day',date:'2026-08-31',channel:'naver_blog',spend:900}];
+  const alerts=Core.buildAlerts({snapshot:{...baseSnapshot,filteredDaily:daily,totals:{...baseSnapshot.totals,spend:980}},daily,budgets:{daily:100}},now);
+  const budget=alerts.find(a=>a.code==='budget_80_percent');
+  assert.equal(budget.targetType,'ad'); assert.equal(budget.targetId,'budget-day');
+  assert.deepEqual(budget.evidence,{date:'2026-08-30',spend:80,budget:100,usagePercent:80});
+});
+
+test('real CRM bridge vocabulary drives quote review and lost-reason alerts with matching targets', () => {
+  const cases=[
+    {id:'case-quote',crmCustomerId:'customer-q',createdAt:'2026-08-20T00:00:00Z',quoteFiles:{q1:{id:'q1',uploadedAt:'2026-08-29T02:00:00Z',amount:10}}},
+    {id:'case-lost',crmCustomerId:'customer-l',createdAt:'2026-08-20T00:00:00Z'}
+  ];
+  const store={customers:[{id:'customer-q'},{id:'customer-l',stage:'보류·거절'}],contracts:[{id:'contract-review',customerId:'customer-q',workflowCaseId:'case-quote',status:'계약 준비',updatedAt:'2026-08-27T02:00:00Z'}]};
+  const facts=Bridge.projectFacts(store,{cases}), alerts=Core.buildAlerts({snapshot:{totals:{},filteredFacts:facts,filteredDaily:[]},facts},now);
+  assert.ok(alerts.some(a=>a.code==='quote_no_response_24h'&&a.targetType==='case'&&a.targetId==='case-quote'));
+  assert.ok(alerts.some(a=>a.code==='contract_review_3d'&&a.targetType==='contract'&&a.targetId==='contract-review'));
+  assert.ok(alerts.some(a=>a.code==='missing_lost_reason'&&a.targetType==='case'&&a.targetId==='case-lost'));
+});
+
+test('customer-only alert targets never enter the case route', () => {
+  const alerts=Core.buildAlerts({snapshot:{totals:{},filteredFacts:[{customerId:'customer-only',validLeads:1,owner:'',occurredAt:'2026-08-31'}],filteredDaily:[]}},now);
+  const owner=alerts.find(a=>a.code==='lead_missing_owner'); assert.equal(owner.targetType,'customer'); assert.equal(owner.targetId,'customer-only');
 });
 
 test('buildWeeklyReport reuses snapshot values, is immutable, honest, and deterministic', () => {
@@ -79,6 +105,15 @@ test('alerts and weekly routes render evidence, exact copy text, print controls,
   assert.equal(UI.weeklyReportText(report).includes('총마케팅비: 100원'), true);
   const overview = UI.renderWorkspace({ view:'marketingOverview', snapshot:baseSnapshot, filters:UI.defaultFilters(), alerts });
   assert.match(overview, new RegExp(alerts[0].title));
+});
+
+test('weekly copy includes every displayed section from the exact report and clipboard failures stay local', () => {
+  const report=Core.buildWeeklyReport(baseSnapshot,Core.buildAlerts({snapshot:baseSnapshot,facts:baseSnapshot.filteredFacts},now),now);
+  const text=UI.weeklyReportText(report), screen=UI.renderWorkspace({view:'marketingWeekly',snapshot:baseSnapshot,filters:UI.defaultFilters(),report});
+  for (const heading of ['채널 성과','잘된 채널 / 키워드·콘텐츠','문의 서비스','비용만 발생','실패 이유','다음 주 예산 의견','대표 결정','원천 갱신']) assert.ok(text.includes(heading),heading);
+  for (const value of [report.sourceUpdatedState,...report.channels.map(item=>item.channel),...report.decisionItems.map(item=>item.title)]) assert.ok(text.includes(String(value))||screen.includes(String(value)));
+  const app=fs.readFileSync(path.join(__dirname,'../src/app.js'),'utf8');
+  assert.match(app,/data-marketing-report-copy[\s\S]{0,500}try \{[\s\S]{0,300}weeklyReportText\(marketingController\.state\.report\)[\s\S]{0,400}catch[\s\S]{0,220}주간 보고를 복사하지 못했습니다/);
 });
 
 test('unavailable aggregate renders no fabricated alert/report and app provides local copy print navigation only', () => {
@@ -123,7 +158,7 @@ test('staleness is emitted per channel and quote response evidence suppresses no
 });
 
 test('controller derives exact displayed report from wired raw metadata and app copies stored report', async () => {
-  const controller=UI.createController({core:Core,bridge:{projectFacts:()=>[],sourceRevision:()=>''},now:()=>now,readRaw:async()=>({daily:[{date:'2026-08-31',channel:'naver_blog',spend:80,clicks:10}],budgets:{daily:100},sourceUpdatedAtMsByChannel:{naver_blog:now.getTime()-73*3600000}})});
+  const controller=UI.createController({core:Core,bridge:{projectFacts:()=>[],sourceRevision:()=>''},now:()=>now,readRaw:async()=>({daily:[{id:'budget-day',date:'2026-08-31',channel:'naver_blog',spend:80,clicks:10,dailyBudget:100,budgetValidatedAtMs:now.getTime()-3600000}],budgets:{daily:100},sourceUpdatedAtMsByChannel:{naver_blog:now.getTime()-73*3600000}})});
   await controller.load({accessRole:'admin'},{});
   const derived=controller.derive([]);
   assert.equal(derived.report,controller.state.report);

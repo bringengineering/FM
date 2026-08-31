@@ -4618,8 +4618,8 @@
   document.addEventListener("click", async event => {
     if (currentWorkspace === "marketing" && event.target.closest("[data-marketing-report-copy]")) {
       if (!marketingController.state.report) return showToast("복사할 주간 보고가 없습니다.", "error");
-      await navigator.clipboard.writeText(MarketingUI.weeklyReportText(marketingController.state.report));
-      showToast("주간 보고를 복사했습니다.", "success");
+      try { await navigator.clipboard.writeText(MarketingUI.weeklyReportText(marketingController.state.report)); showToast("주간 보고를 복사했습니다.", "success"); }
+      catch (_error) { showToast("주간 보고를 복사하지 못했습니다. 클립보드 권한을 확인해 주세요.", "error"); }
       return;
     }
     if (currentWorkspace === "marketing" && event.target.closest("[data-marketing-report-print]")) { window.print(); return; }

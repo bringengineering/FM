@@ -65,7 +65,16 @@
   }
   function weeklyReportText(report) {
     const m=report&&report.metrics||{}, period=report&&report.period||{};
-    return [`주간 마케팅 보고 ${period.start||'-'} ~ ${period.end||'-'}`,`총마케팅비: ${formatWon(m.spend)}`,`문의: ${formatNumber(m.inquiries)}`,`유효문의: ${formatNumber(m.validLeads)}`,`견적: ${formatNumber(m.quotes)}`,`계약: ${formatNumber(m.contracts)}`,`계약금액: ${formatWon(m.contractAmount)}`,`예상이익: ${formatWon(m.expectedProfit)}`,'다음 주 예산 의견:',...((report&&report.nextWeekSuggestions)||['데이터 부족']).map(item=>`- ${item}`)].join('\n');
+    const rows=(items,format,empty='데이터 부족')=>Array.isArray(items)&&items.length?items.map(item=>`- ${format(item)}`):[`- ${empty}`];
+    return [`주간 마케팅 보고 ${period.start||'-'} ~ ${period.end||'-'}`,`총마케팅비: ${formatWon(m.spend)}`,`문의: ${formatNumber(m.inquiries)}`,`유효문의: ${formatNumber(m.validLeads)}`,`견적: ${formatNumber(m.quotes)}`,`계약: ${formatNumber(m.contracts)}`,`계약금액: ${formatWon(m.contractAmount)}`,`예상이익: ${formatWon(m.expectedProfit)}`,
+      '채널 성과:',...rows(report&&report.channels,item=>`${item.channel} | 비용 ${formatWon(item.spend)} | 유효문의 ${formatNumber(item.validLeads)} | 계약 ${formatNumber(item.contracts)} | 계약금액 ${formatWon(item.contractAmount)}`),
+      '잘된 채널 / 키워드·콘텐츠:',...rows(report&&report.goodChannels,item=>item.channel),`- 키워드·콘텐츠: ${Array.isArray(report&&report.goodKeywords)?report.goodKeywords.join(', '):report&&report.goodKeywords||'데이터 부족'}`,
+      '문의 서비스:',`- ${report&&report.topService&&report.topService!=='-'?`${report.topService.service} ${formatNumber(report.topService.inquiries)}건`:'-'}`,
+      '비용만 발생:',...rows(report&&report.costOnlyItems,item=>`${item.channel} | 비용 ${formatWon(item.spend)}`),
+      '실패 이유:',...rows(report&&report.lostReasons,item=>`${item.reason} ${formatNumber(item.count)}건`),
+      '다음 주 예산 의견:',...rows(report&&report.nextWeekSuggestions,item=>item),
+      '대표 결정:',...rows(report&&report.decisionItems,item=>`${item.title} · ${item.reason}`,'결정 요청 없음'),
+      '원천 갱신:',`- ${report&&report.sourceUpdatedState||'-'}`].join('\n');
   }
   function renderWeekly(report) {
     if (!report) return '<section class="marketing-state">주간 보고를 생성할 집계 데이터가 없습니다.</section>';

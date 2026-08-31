@@ -116,6 +116,7 @@
     const caseId = sourceType === 'case' ? caseKey(workflowCase) : '';
     const contracts = sourceType === 'case' || sourceType === 'customer_fallback' ? explicitCaseContracts(store, workflowCase, customerId, allowCustomerLink, sourceType === 'case') : [];
     const activeContracts = contracts.filter(activeContract);
+    const reviewContracts = contracts.filter(contract => ['계약 준비', 'needs_review', 'review', 'pending'].includes(text(contract.status || contract.contractStatus)));
     const cancelledContracts = contracts.filter(cancelledContract);
     const invalidContracts = contracts.filter(invalidContract);
     const nonActiveFinalContracts = cancelledContracts.concat(invalidContracts);
@@ -123,6 +124,7 @@
     const quoteRows = workflowCase && workflowCase.quoteFiles && typeof workflowCase.quoteFiles === 'object' ? Object.entries(workflowCase.quoteFiles).map(([storedId, quote]) => Object.assign({ storedId }, quote || {})) : [];
     const hasConsultation = done(workflowCase, 3) || activities.some(activity => activity.context === 'consultation');
     const hasQuote = done(workflowCase, 6) || quoteRows.length > 0 || safeMoney(workflowCase && workflowCase.quoteAmount, 'quoteAmount') > 0;
+    const quoteSentAt = text(workflowCase && (workflowCase.quoteSentAt || workflowCase.quotedAt) || quoteRows.map(quote => quote.sentAt || quote.uploadedAt || quote.createdAt || quote.updatedAt).filter(Boolean).sort()[0]);
     const caseOnlyContractEvidence = contracts.length === 0 && done(workflowCase, 9);
     const hasContract = activeContracts.length > 0 || caseOnlyContractEvidence;
     const hasPayment = done(workflowCase, 15) || workflowCase && workflowCase.paymentStatus === 'confirmed' || hasSettlementEvidence(workflowCase) || activeContracts.concat(nonActiveFinalContracts).some(contract => contract.collectionStatus === '입금 완료' || safeMoney(contract.paidAmount, 'paidAmount') > 0);
@@ -142,13 +144,15 @@
       service: ISSUE_TYPE_SERVICES[text(workflowCase && workflowCase.issueType)] || (MarketingCore.SERVICES.includes(workflowCase && workflowCase.service || marketing.service) ? (workflowCase && workflowCase.service || marketing.service) : 'needs_review'),
       region: text(workflowCase && workflowCase.region || customer && customer.region), owner: text(workflowCase && workflowCase.owner || customer && customer.owner),
       customerType: text(customer && (customer.customerType || customer.type)), campaign: text(marketing.campaignName || marketing.campaignId), keyword: text(marketing.keyword),
-      customerStatus: text(customer && customer.stage), dataStatus: channel === 'needs_review' || lastSource === 'needs_review' || marketing.validLead == null ? 'needs_review' : 'verified',
+      customerStatus: ['보류·거절','보류','거절','실패','lost','rejected','closed'].includes(text(customer && customer.stage).toLowerCase()) ? 'lost' : text(customer && customer.stage), dataStatus: channel === 'needs_review' || lastSource === 'needs_review' || marketing.validLead == null ? 'needs_review' : 'verified',
       inquiries: 1, validLeads: validLead, consultations: hasConsultation ? 1 : 0, quotes: hasQuote ? 1 : 0, contracts: hasContract ? 1 : 0,
       payments: hasPayment ? 1 : 0, quoteAmount: authoritativeQuoteAmount(workflowCase, quoteRows),
       contractAmount: hasContract ? addMoney(activeContracts, ['amount', 'contractAmount'], 'contractAmount') : 0,
       paidAmount: MarketingCore.checkedIntegerAdd(actualPaidAmount(activeContracts), actualPaidAmount(nonActiveFinalContracts), 'paidAmount') || (workflowCase && workflowCase.paymentStatus === 'confirmed' ? safeMoney(workflowCase.paymentConfirmedAmount || workflowCase.paymentExpectedAmount, 'paidAmount') : 0),
-      expectedCost: MarketingCore.checkedIntegerAdd(hasContract ? addMoney(activeContracts, ['vendorCost', 'expectedCost'], 'expectedCost') : 0, actualIncurredCost(nonActiveFinalContracts), 'expectedCost'), lostReason: text(workflowCase && workflowCase.lostReason || customer && customer.lostReason),
-      contractStatus: activeContracts.length || caseOnlyContractEvidence ? 'active' : cancelledContracts.length ? 'cancelled' : invalidContracts.length ? 'invalid' : '', workStage: [11, 12, 13, 14].some(step => done(workflowCase, step)), aftercare: done(workflowCase, 17)
+      expectedCost: MarketingCore.checkedIntegerAdd(hasContract ? addMoney(activeContracts, ['vendorCost', 'expectedCost'], 'expectedCost') : 0, actualIncurredCost(nonActiveFinalContracts), 'expectedCost'), lostReason: text(workflowCase && (workflowCase.lostReason || workflowCase.failureReason || workflowCase.rejectReason || workflowCase.holdReason) || customer && (customer.lostReason || customer.failureReason || customer.rejectReason || customer.holdReason)),
+      quoteSentAt, contractId: reviewContracts.length ? id(reviewContracts.slice().sort((a,b)=>id(a.id).localeCompare(id(b.id)))[0].id) : '',
+      contractReviewAt: text(reviewContracts.map(contract=>contract.reviewAt || contract.updatedAt || contract.createdAt).filter(Boolean).sort()[0]),
+      contractStatus: reviewContracts.length ? 'needs_review' : activeContracts.length || caseOnlyContractEvidence ? 'active' : cancelledContracts.length ? 'cancelled' : invalidContracts.length ? 'invalid' : '', workStage: [11, 12, 13, 14].some(step => done(workflowCase, step)), aftercare: done(workflowCase, 17)
     };
     if (explicitNew) fact.newContracts = hasContract ? 1 : 0;
     else if (explicitRepeat) fact.newContracts = 0;
