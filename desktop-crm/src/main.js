@@ -10,6 +10,8 @@ const crypto = require("node:crypto");
 const path = require("node:path");
 const { fileURLToPath, pathToFileURL } = require("node:url");
 const Core = require("./core");
+const OfficeCore = require("./office-core");
+const { createAttendanceWorkbook, safeFileSegment } = require("./attendance-xlsx");
 const OperationsIntelligence = require("./operations-intelligence-core");
 const OperationsWorkSync = require("./operations-work-sync");
 const {
@@ -115,6 +117,7 @@ if (localTestMode && !process.env.BRING_CRM_DATA_DIR) {
   app.setPath("userData", path.join(app.getPath("temp"), "bring-crm-desktop-tests", String(process.pid)));
 }
 let localOperationsData = null;
+let localOfficeData = null;
 let localIntelligenceOperations = Object.create(null);
 function screenshotIntelligenceOperations() {
   const rows = Array.from({ length: 7 }, (_, index) => OperationsIntelligence.normalize({
@@ -1175,6 +1178,37 @@ function demoOperations() {
   return { cases, payments: { schedules, transactions: { tx_demo_01: { id: "tx_demo_01", buildingId: "b_demo_01", date: paidDate, payerName: "김하늘", amount: 500000, direction: "deposit", active: true } }, overrides: {}, audit: {}, rentSms: {}, bankBindings: {}, bankSync: { accounts: [{ accountRef: "pb_demo_account_01", bankCode: "004", accountName: "BRING 운영계좌", accountLast4: "8919" }] } }, caseSettings: { vendorQuoteReplyEmail: "bringengineering1008@gmail.com", paymentScheduleSheet: { name: "세입자 월세 관리대장", url: "https://docs.google.com/spreadsheets/d/demo/edit" } }, loadedAt: now.toISOString() };
 }
 
+function demoOffice() {
+  const actor = authState().user;
+  const users = [
+    { uid: actor.uid, email: actor.email, displayName: "테스트 관리자", department: "경영지원", title: "관리자", role: actor.role, enabled: true },
+    { uid: "office-member-1", email: "member1@bring.local", displayName: "테스트 직원 1", department: "건물관리", title: "매니저", role: "member", enabled: true },
+    { uid: "office-member-2", email: "member2@bring.local", displayName: "테스트 직원 2", department: "고객경험", title: "매니저", role: "member", enabled: true },
+    { uid: "office-member-3", email: "member3@bring.local", displayName: "테스트 직원 3", department: "시설운영", title: "담당자", role: "viewer", enabled: true },
+  ];
+  const attendance = [];
+  const now = new Date();
+  const at = (workDate, hour, minute) => `${workDate}T${String(hour).padStart(2, "0")}:${String(minute).padStart(2, "0")}:00+09:00`;
+  for (let offset = 0; offset > -24; offset -= 1) {
+    const date = new Date(now.getTime() + offset * 86400000);
+    const workDate = OfficeCore.workDate(date);
+    const weekday = new Date(`${workDate}T12:00:00+09:00`).getDay();
+    if (weekday === 0 || weekday === 6) continue;
+    users.forEach((user, index) => {
+      const checkInAt = at(workDate, index === 2 ? 9 : 8, 48 + ((Math.abs(offset) + index * 3) % 12));
+      const missingCheckout = offset === -4 && index === 1;
+      const checkOutAt = offset === 0 || missingCheckout ? "" : at(workDate, 17 + (index % 2), 52 + ((Math.abs(offset) + index) % 7));
+      attendance.push({ id: `${user.uid}_${workDate}`, userId: user.uid, workDate, checkInAt, checkOutAt, createdAt: checkInAt, updatedAt: checkOutAt || checkInAt });
+    });
+  }
+  const today = OfficeCore.workDate();
+  const messages = [
+    { id: "msg_demo_01", senderId: actor.uid, receiverId: "office-member-1", message: "오늘 현장 일정 확인 부탁드립니다.", readAt: at(today, 9, 10), createdAt: at(today, 9, 6) },
+    { id: "msg_demo_02", senderId: "office-member-1", receiverId: actor.uid, message: "네, 확인 후 CRM에 정리하겠습니다.", readAt: "", createdAt: at(today, 9, 12) },
+  ];
+  return { users, attendance, messages, loadedAt: new Date().toISOString() };
+}
+
 function demoVendors() {
   return [
     { id: "vendor_demo_01", category: "누수·배관", type: "누수탐지·수도설비", name: "우리종합설비", address: "강원 원주시 단계동", phone: "010-4858-7625", map: "https://naver.me/F5swtyvo", source: "Google Sheets" },
@@ -1571,7 +1605,7 @@ async function checkForUpdates(manual) {
 }
 
 function authState() {
-  if (localTestMode) return { required: false, enforceRoles: true, user: { uid: `local-${localTestRole}`, email: `${localTestRole}@bring.local`, displayName: "테스트 사용자", role: localTestRole, mustChangePassword: false }, error: "" };
+  if (localTestMode) return { required: false, enforceRoles: true, user: { uid: `local-${localTestRole}`, email: `${localTestRole}@bring.local`, displayName: "테스트 사용자", role: localTestRole, officeAdmin: localTestRole === "admin", mustChangePassword: false }, error: "" };
   if (authPreview) return { required: true, user: null, error: "" };
   if (passwordPreview) return { required: true, user: { uid: "preview-user", email: "ameejin92@gmail.com", displayName: "김현진", role: "member", mustChangePassword: true }, error: "" };
   return remoteClient ? remoteClient.authState() : { required: true, user: null, error: "로그인 모듈을 준비하지 못했습니다." };
@@ -1628,6 +1662,107 @@ async function readOperations() {
   }
   if (!remoteClient || !remoteClient.authState().user) throw new Error("로그인이 필요합니다.");
   return remoteClient.loadOperations();
+}
+
+function assertOfficeSession() {
+  const user = authState().user;
+  if (!user || !user.uid || !["admin", "member", "viewer"].includes(user.role) || user.mustChangePassword === true) {
+    throw new Error("BIRNG OFFICE를 사용하려면 허용된 CRM 계정으로 로그인해 주세요.");
+  }
+  return user;
+}
+
+async function readOffice() {
+  assertOfficeSession();
+  if (localTestMode) {
+    localOfficeData = localOfficeData || demoOffice();
+    return JSON.parse(JSON.stringify(localOfficeData));
+  }
+  if (!remoteClient) throw new Error("BIRNG OFFICE 서버 연결을 준비하지 못했습니다.");
+  return remoteClient.loadOffice();
+}
+
+async function saveOfficeAttendance(input) {
+  const user = assertOfficeSession();
+  const source = input && typeof input === "object" && !Array.isArray(input) ? input : {};
+  const action = String(source.action || "");
+  const workDate = String(source.workDate || "");
+  if (!["check-in", "check-out"].includes(action) || !/^\d{4}-\d{2}-\d{2}$/.test(workDate) || workDate !== OfficeCore.workDate()) {
+    throw new Error("오늘 날짜의 올바른 근태 요청만 저장할 수 있습니다.");
+  }
+  if (!localTestMode) {
+    if (!remoteClient) throw new Error("BIRNG OFFICE 서버 연결을 준비하지 못했습니다.");
+    return { ok: true, data: await remoteClient.saveOfficeAttendance({ action, workDate }) };
+  }
+  localOfficeData = localOfficeData || demoOffice();
+  const existing = localOfficeData.attendance.find(row => row.userId === user.uid && row.workDate === workDate);
+  const now = new Date().toISOString();
+  if (action === "check-in") {
+    if (existing && existing.checkInAt) throw new Error("오늘 출근 시간이 이미 저장되어 있습니다.");
+    localOfficeData.attendance.push({ id: `${user.uid}_${workDate}`, userId: user.uid, workDate, checkInAt: now, checkOutAt: "", createdAt: now, updatedAt: now });
+  } else {
+    if (!existing || !existing.checkInAt) throw new Error("오늘 출근 기록이 있어야 퇴근할 수 있습니다.");
+    if (existing.checkOutAt) throw new Error("오늘 퇴근 시간이 이미 저장되어 있습니다.");
+    existing.checkOutAt = now;
+    existing.updatedAt = now;
+  }
+  localOfficeData.loadedAt = now;
+  return { ok: true, data: await readOffice() };
+}
+
+async function sendOfficeMessage(input) {
+  const user = assertOfficeSession();
+  const receiverId = String(input && input.receiverId || "").trim();
+  const message = String(input && input.message || "").trim();
+  if (!/^[A-Za-z0-9._-]{1,128}$/.test(receiverId) || receiverId === user.uid) throw new Error("메시지를 받을 사용자를 선택해 주세요.");
+  if (!message || message.length > 4000) throw new Error("메시지는 1자 이상 4,000자 이하로 입력해 주세요.");
+  if (!localTestMode) {
+    if (!remoteClient) throw new Error("BIRNG OFFICE 서버 연결을 준비하지 못했습니다.");
+    return { ok: true, data: await remoteClient.sendOfficeMessage({ receiverId, message }) };
+  }
+  localOfficeData = localOfficeData || demoOffice();
+  if (!localOfficeData.users.some(item => item.uid === receiverId && item.enabled !== false)) throw new Error("허용된 CRM 사용자를 선택해 주세요.");
+  const createdAt = new Date().toISOString();
+  localOfficeData.messages.push({ id: `msg_${crypto.randomUUID().replace(/-/g, "")}`, senderId: user.uid, receiverId, message, readAt: "", createdAt });
+  localOfficeData.loadedAt = createdAt;
+  return { ok: true, data: await readOffice() };
+}
+
+async function markOfficeMessagesRead(input) {
+  const user = assertOfficeSession();
+  const peerId = String(input && input.peerId || "").trim();
+  if (!/^[A-Za-z0-9._-]{1,128}$/.test(peerId) || peerId === user.uid) throw new Error("대화 상대를 확인해 주세요.");
+  if (!localTestMode) {
+    if (!remoteClient) throw new Error("BIRNG OFFICE 서버 연결을 준비하지 못했습니다.");
+    return { ok: true, data: await remoteClient.markOfficeMessagesRead({ peerId }) };
+  }
+  localOfficeData = localOfficeData || demoOffice();
+  const readAt = new Date().toISOString();
+  localOfficeData.messages.forEach(message => {
+    if (message.senderId === peerId && message.receiverId === user.uid && !message.readAt) message.readAt = readAt;
+  });
+  localOfficeData.loadedAt = readAt;
+  return { ok: true, data: await readOffice() };
+}
+
+async function exportOfficeAttendance(input) {
+  const actor = assertOfficeSession();
+  if (actor.officeAdmin !== true) throw new Error("전체 근태관리 엑셀은 지정된 관리자만 다운로드할 수 있습니다.");
+  const userId = String(input && input.userId || "").trim();
+  const month = String(input && input.month || "").trim();
+  if (!/^[A-Za-z0-9._-]{1,128}$/.test(userId) || !/^\d{4}-(0[1-9]|1[0-2])$/.test(month)) throw new Error("근태 엑셀 요청이 올바르지 않습니다.");
+  const payload = OfficeCore.normalizeOfficePayload(await readOffice(), actor);
+  const selectedUser = payload.users.find(user => user.uid === userId);
+  if (!selectedUser) throw new Error("선택한 직원을 찾지 못했습니다.");
+  const workbook = createAttendanceWorkbook({ user: selectedUser, month, rows: payload.attendance, now: new Date() });
+  const result = await dialog.showSaveDialog(mainWindow, {
+    title: "월별 근태 현황 엑셀 저장",
+    defaultPath: `${month}_${safeFileSegment(OfficeCore.displayName(selectedUser))}_근태현황.xlsx`,
+    filters: [{ name: "Excel 통합 문서", extensions: ["xlsx"] }],
+  });
+  if (result.canceled || !result.filePath) return { ok: false, canceled: true };
+  await fs.writeFile(result.filePath, workbook);
+  return { ok: true, path: result.filePath };
 }
 
 async function saveWorkflowCase(input) {
@@ -5145,6 +5280,11 @@ secureCanonicalHandle("crm:auth-logout", async input => {
 });
 secureHandle("crm:load", readStore);
 secureHandle("crm:save", data => writeStore(data));
+secureCanonicalHandle("crm:office-load", readOffice);
+secureCanonicalHandle("crm:office-attendance-save", input => saveOfficeAttendance(input));
+secureCanonicalHandle("crm:office-message-send", input => sendOfficeMessage(input));
+secureCanonicalHandle("crm:office-messages-read", input => markOfficeMessagesRead(input));
+secureCanonicalHandle("crm:office-attendance-export", input => exportOfficeAttendance(input));
 secureCanonicalHandle("crm:operations-intelligence-load", () => operationsIntelligenceBootstrap());
 secureCanonicalHandle("crm:operation-save", input => saveIntelligenceOperation(input));
 secureCanonicalHandle("crm:canonical-building-units-load", async () => {

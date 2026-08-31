@@ -47,6 +47,13 @@ const CRM_ACCESS = {
     enabled: true,
     email: "admin@bring.test",
     role: "admin",
+    officeAdmin: true,
+    operatorId: "operator_kim",
+  },
+  "crm-standard-admin": {
+    enabled: true,
+    email: "standard-admin@bring.test",
+    role: "admin",
     operatorId: "operator_kim",
   },
   "crm-member": {
@@ -1905,6 +1912,105 @@ describe.runIf(databaseEmulatorAvailable)("fieldPlatform database rules", () => 
     expect((await assertSucceeds(get(ref(authorized, gatePath)))).val()).toBe(false);
     await assertFails(set(ref(authorized, gatePath), true));
     await assertFails(remove(ref(authorized, gatePath)));
+  });
+
+  it("keeps BIRNG OFFICE attendance and messages private while granting only explicit office administrators team access", async () => {
+    const admin = environment.authenticatedContext(
+      "crm-admin",
+      crmClaims("admin@bring.test"),
+    ).database();
+    const standardAdmin = environment.authenticatedContext(
+      "crm-standard-admin",
+      crmClaims("standard-admin@bring.test"),
+    ).database();
+    const viewer = environment.authenticatedContext(
+      "crm-viewer",
+      crmClaims("viewer@bring.test"),
+    ).database();
+    const passwordPending = environment.authenticatedContext(
+      "crm-member",
+      crmClaims("member@bring.test"),
+    ).database();
+    const disabled = environment.authenticatedContext(
+      "crm-disabled",
+      crmClaims("disabled@bring.test"),
+    ).database();
+    const anonymous = environment.unauthenticatedContext().database();
+
+    await assertSucceeds(get(ref(viewer, "crmCompany/access")));
+    await assertSucceeds(get(ref(admin, "crmCompany/access")));
+    await assertFails(get(ref(passwordPending, "crmCompany/access")));
+    await assertFails(get(ref(disabled, "crmCompany/access")));
+    await assertFails(get(ref(anonymous, "crmCompany/access")));
+
+    const workDate = "2026-08-31";
+    const attendancePath = `crmCompany/officeAttendance/crm-viewer/${workDate}`;
+    const attendance = {
+      id: `crm-viewer_${workDate}`,
+      userId: "crm-viewer",
+      workDate,
+      checkInAt: "2026-08-31T00:03:00.000Z",
+      checkOutAt: "",
+      createdAt: "2026-08-31T00:03:00.000Z",
+      updatedAt: "2026-08-31T00:03:00.000Z",
+    };
+    await assertSucceeds(set(ref(viewer, attendancePath), attendance));
+    await assertSucceeds(get(ref(viewer, attendancePath)));
+    await assertSucceeds(get(ref(admin, "crmCompany/officeAttendance")));
+    await assertFails(get(ref(standardAdmin, "crmCompany/officeAttendance")));
+    await assertFails(get(ref(viewer, "crmCompany/officeAttendance")));
+    await assertFails(get(ref(viewer, `crmCompany/officeAttendance/crm-admin/${workDate}`)));
+    await assertFails(set(
+      ref(viewer, `crmCompany/officeAttendance/crm-admin/${workDate}`),
+      { ...attendance, id: `crm-admin_${workDate}`, userId: "crm-admin" },
+    ));
+    await assertFails(set(ref(viewer, attendancePath), {
+      ...attendance,
+      checkInAt: "2026-08-31T00:04:00.000Z",
+    }));
+    await assertFails(update(ref(viewer, attendancePath), { extra: true }));
+    await assertSucceeds(update(ref(viewer, attendancePath), {
+      checkOutAt: "2026-08-31T09:05:00.000Z",
+      updatedAt: "2026-08-31T09:05:00.000Z",
+    }));
+    await assertFails(update(ref(viewer, attendancePath), {
+      checkOutAt: "2026-08-31T09:06:00.000Z",
+      updatedAt: "2026-08-31T09:06:00.000Z",
+    }));
+    await assertFails(remove(ref(viewer, attendancePath)));
+
+    const messageId = "msg_test0001";
+    const message = {
+      id: messageId,
+      senderId: "crm-viewer",
+      receiverId: "crm-admin",
+      message: "근태 확인 부탁드립니다.",
+      readAt: "",
+      createdAt: "2026-08-31T09:10:00.000Z",
+    };
+    await assertSucceeds(update(ref(viewer, "crmCompany/officeMailbox"), {
+      [`crm-viewer/crm-admin/${messageId}`]: message,
+      [`crm-admin/crm-viewer/${messageId}`]: message,
+    }));
+    await assertSucceeds(get(ref(viewer, "crmCompany/officeMailbox/crm-viewer")));
+    await assertSucceeds(get(ref(admin, "crmCompany/officeMailbox/crm-admin")));
+    await assertFails(get(ref(viewer, "crmCompany/officeMailbox/crm-admin")));
+    await assertFails(get(ref(standardAdmin, "crmCompany/officeMailbox/crm-viewer")));
+    await assertFails(update(ref(viewer, "crmCompany/officeMailbox"), {
+      [`crm-viewer/crm-admin/${messageId}/readAt`]: "2026-08-31T09:11:00.000Z",
+      [`crm-admin/crm-viewer/${messageId}/readAt`]: "2026-08-31T09:11:00.000Z",
+    }));
+    await assertSucceeds(update(ref(admin, "crmCompany/officeMailbox"), {
+      [`crm-viewer/crm-admin/${messageId}/readAt`]: "2026-08-31T09:12:00.000Z",
+      [`crm-admin/crm-viewer/${messageId}/readAt`]: "2026-08-31T09:12:00.000Z",
+    }));
+    expect((await get(ref(admin, `crmCompany/officeMailbox/crm-admin/crm-viewer/${messageId}/readAt`))).val())
+      .toBe("2026-08-31T09:12:00.000Z");
+    await assertFails(set(
+      ref(passwordPending, "crmCompany/officeAttendance/crm-member/2026-08-31"),
+      { ...attendance, id: "crm-member_2026-08-31", userId: "crm-member" },
+    ));
+    await assertFails(get(ref(anonymous, attendancePath)));
   });
 
   it("denies every client direct reads and writes anywhere under FIELD v2", async () => {

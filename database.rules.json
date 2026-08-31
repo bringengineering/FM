@@ -14,12 +14,42 @@
       ".read": false,
       ".write": false,
       "access": {
+        ".read": "auth != null && root.child('crmCompany/access').child(auth.uid).child('enabled').val() === true && root.child('crmCompany/access').child(auth.uid).child('email').val() === auth.token.email && root.child('crmCompany/access').child(auth.uid).child('mustChangePassword').val() !== true && (root.child('crmCompany/access').child(auth.uid).child('role').val() === 'admin' || root.child('crmCompany/access').child(auth.uid).child('role').val() === 'member' || root.child('crmCompany/access').child(auth.uid).child('role').val() === 'viewer')",
         "$uid": {
           ".read": "auth != null && auth.uid === $uid",
           ".write": false,
           "mustChangePassword": {
             ".write": "auth != null && auth.uid === $uid && auth.token.email_verified === true && auth.token.firebase.sign_in_provider === 'password' && root.child('crmCompany/access').child($uid).child('enabled').val() === true && root.child('crmCompany/access').child($uid).child('email').val() === auth.token.email && data.val() === true && newData.val() === false",
             ".validate": "newData.isBoolean()"
+          }
+        }
+      },
+      "officeAttendance": {
+        ".read": "auth != null && root.child('crmCompany/access').child(auth.uid).child('enabled').val() === true && root.child('crmCompany/access').child(auth.uid).child('email').val() === auth.token.email && root.child('crmCompany/access').child(auth.uid).child('mustChangePassword').val() !== true && root.child('crmCompany/access').child(auth.uid).child('officeAdmin').val() === true",
+        ".write": false,
+        "$uid": {
+          ".read": "auth != null && auth.uid === $uid && root.child('crmCompany/access').child(auth.uid).child('enabled').val() === true && root.child('crmCompany/access').child(auth.uid).child('email').val() === auth.token.email && root.child('crmCompany/access').child(auth.uid).child('mustChangePassword').val() !== true && (root.child('crmCompany/access').child(auth.uid).child('role').val() === 'admin' || root.child('crmCompany/access').child(auth.uid).child('role').val() === 'member' || root.child('crmCompany/access').child(auth.uid).child('role').val() === 'viewer')",
+          ".write": false,
+          "$workDate": {
+            ".write": "auth != null && auth.uid === $uid && $workDate.matches(/^[0-9]{4}-[0-9]{2}-[0-9]{2}$/) && root.child('crmCompany/access').child(auth.uid).child('enabled').val() === true && root.child('crmCompany/access').child(auth.uid).child('email').val() === auth.token.email && root.child('crmCompany/access').child(auth.uid).child('mustChangePassword').val() !== true && (root.child('crmCompany/access').child(auth.uid).child('role').val() === 'admin' || root.child('crmCompany/access').child(auth.uid).child('role').val() === 'member' || root.child('crmCompany/access').child(auth.uid).child('role').val() === 'viewer') && newData.exists() && ((!data.exists() && newData.child('checkOutAt').val() === '') || (data.exists() && data.child('checkOutAt').val() === '' && newData.child('id').val() === data.child('id').val() && newData.child('userId').val() === data.child('userId').val() && newData.child('workDate').val() === data.child('workDate').val() && newData.child('checkInAt').val() === data.child('checkInAt').val() && newData.child('createdAt').val() === data.child('createdAt').val() && newData.child('checkOutAt').isString() && newData.child('checkOutAt').val().matches(/^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}[.][0-9]{3}Z$/) && newData.child('updatedAt').val() !== data.child('updatedAt').val()))",
+            ".validate": "newData.hasChildren(['id', 'userId', 'workDate', 'checkInAt', 'checkOutAt', 'createdAt', 'updatedAt']) && newData.child('id').val() === $uid + '_' + $workDate && newData.child('userId').val() === $uid && newData.child('workDate').val() === $workDate && newData.child('checkInAt').isString() && newData.child('checkInAt').val().matches(/^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}[.][0-9]{3}Z$/) && newData.child('checkOutAt').isString() && (newData.child('checkOutAt').val() === '' || newData.child('checkOutAt').val().matches(/^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}[.][0-9]{3}Z$/)) && newData.child('createdAt').isString() && newData.child('createdAt').val().matches(/^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}[.][0-9]{3}Z$/) && newData.child('updatedAt').isString() && newData.child('updatedAt').val().matches(/^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}[.][0-9]{3}Z$/)",
+            "$other": { ".validate": false }
+          }
+        }
+      },
+      "officeMailbox": {
+        ".read": false,
+        ".write": false,
+        "$ownerUid": {
+          ".read": "auth != null && auth.uid === $ownerUid && root.child('crmCompany/access').child(auth.uid).child('enabled').val() === true && root.child('crmCompany/access').child(auth.uid).child('email').val() === auth.token.email && root.child('crmCompany/access').child(auth.uid).child('mustChangePassword').val() !== true && (root.child('crmCompany/access').child(auth.uid).child('role').val() === 'admin' || root.child('crmCompany/access').child(auth.uid).child('role').val() === 'member' || root.child('crmCompany/access').child(auth.uid).child('role').val() === 'viewer')",
+          ".write": false,
+          "$peerUid": {
+            ".write": false,
+            "$messageId": {
+              ".write": "auth != null && $messageId.matches(/^msg_[A-Za-z0-9_]{8,80}$/) && root.child('crmCompany/access').child(auth.uid).child('enabled').val() === true && root.child('crmCompany/access').child(auth.uid).child('email').val() === auth.token.email && root.child('crmCompany/access').child(auth.uid).child('mustChangePassword').val() !== true && newData.exists() && ((!data.exists() && newData.child('senderId').val() === auth.uid && newData.child('receiverId').val() !== auth.uid && (($ownerUid === auth.uid && $peerUid === newData.child('receiverId').val()) || ($ownerUid === newData.child('receiverId').val() && $peerUid === auth.uid)) && root.child('crmCompany/access').child(newData.child('receiverId').val()).child('enabled').val() === true && root.child('crmCompany/access').child(newData.child('receiverId').val()).child('mustChangePassword').val() !== true) || (data.exists() && auth.uid === data.child('receiverId').val() && (($ownerUid === auth.uid && $peerUid === data.child('senderId').val()) || ($ownerUid === data.child('senderId').val() && $peerUid === auth.uid)) && newData.child('id').val() === data.child('id').val() && newData.child('senderId').val() === data.child('senderId').val() && newData.child('receiverId').val() === data.child('receiverId').val() && newData.child('message').val() === data.child('message').val() && newData.child('createdAt').val() === data.child('createdAt').val() && data.child('readAt').val() === '' && newData.child('readAt').isString() && newData.child('readAt').val().matches(/^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}[.][0-9]{3}Z$/)))",
+              ".validate": "newData.hasChildren(['id', 'senderId', 'receiverId', 'message', 'readAt', 'createdAt']) && newData.child('id').val() === $messageId && newData.child('senderId').isString() && newData.child('senderId').val().matches(/^[A-Za-z0-9._-]{1,128}$/) && newData.child('receiverId').isString() && newData.child('receiverId').val().matches(/^[A-Za-z0-9._-]{1,128}$/) && newData.child('senderId').val() !== newData.child('receiverId').val() && newData.child('message').isString() && newData.child('message').val().length > 0 && newData.child('message').val().length <= 4000 && newData.child('readAt').isString() && (newData.child('readAt').val() === '' || newData.child('readAt').val().matches(/^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}[.][0-9]{3}Z$/)) && newData.child('createdAt').isString() && newData.child('createdAt').val().matches(/^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}[.][0-9]{3}Z$/)",
+              "$other": { ".validate": false }
+            }
           }
         }
       },

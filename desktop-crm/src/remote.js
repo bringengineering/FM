@@ -2,6 +2,7 @@ const crypto = require("node:crypto");
 const http = require("node:http");
 const path = require("node:path");
 const SparkCanonical = require("./spark-canonical");
+const OfficeCore = require("./office-core");
 
 const FIREBASE = Object.freeze({
   apiKey: "AIzaSyBKOTIuQ8pOKSuaeKFQs_6UDdDnxdjCTZg",
@@ -904,6 +905,7 @@ class FirebaseRemoteClient {
         displayName: this.session.displayName || "",
         photoUrl: this.session.photoUrl || "",
         role: ["admin", "member", "viewer"].includes(this.session.role) ? this.session.role : "viewer",
+        officeAdmin: this.session.officeAdmin === true,
         mustChangePassword: this.session.mustChangePassword === true
       } : null,
       error: this.lastError || ""
@@ -1053,6 +1055,7 @@ class FirebaseRemoteClient {
       displayName: sessionRef.displayName || "",
       photoUrl: sessionRef.photoUrl || "",
       role: sessionRef.role || "member",
+      officeAdmin: sessionRef.officeAdmin === true,
       mustChangePassword: sessionRef.mustChangePassword === true,
       fieldAuthIntegrated: sessionRef.fieldAuthIntegrated === true
     });
@@ -1150,6 +1153,7 @@ class FirebaseRemoteClient {
       displayName: user.displayName || hints && hints.displayName || "",
       photoUrl: user.photoUrl || hints && hints.photoUrl || "",
       role: hints && hints.role || "viewer",
+      officeAdmin: hints && hints.officeAdmin === true,
       mustChangePassword: hints && hints.mustChangePassword === true,
       fieldAuthIntegrated: hints && hints.fieldAuthIntegrated === true
     };
@@ -1255,6 +1259,7 @@ class FirebaseRemoteClient {
       throw createError("계정 권한이 올바르게 설정되지 않았습니다. 관리자에게 문의해 주세요.", "ACCESS_DENIED");
     }
     sessionRef.role = role;
+    sessionRef.officeAdmin = access.officeAdmin === true;
     sessionRef.mustChangePassword = access.mustChangePassword === true;
     return access;
   }
@@ -1720,6 +1725,99 @@ class FirebaseRemoteClient {
 
   async fetchRemotePayload() {
     return this.dbRequest("crmShared/data", { method: "GET" });
+  }
+
+  requireOfficeSession() {
+    if (!this.session || !this.session.uid || !["admin", "member", "viewer"].includes(this.session.role)) {
+      throw createError("BIRNG OFFICE를 사용하려면 CRM 로그인이 필요합니다.", "AUTH_REQUIRED");
+    }
+    if (this.session.mustChangePassword === true) throw createError("비밀번호 변경 후 BIRNG OFFICE를 사용할 수 있습니다.", "ACCESS_DENIED");
+    return this.session;
+  }
+
+  async loadOffice() {
+    const session = this.requireOfficeSession();
+    const guard = this.captureSessionGuard();
+    const attendanceLocation = session.officeAdmin === true ? "officeAttendance" : `officeAttendance/${session.uid}`;
+    const [users, attendance, mailbox] = await Promise.all([
+      this.dbRequest("crmAccess", { method: "GET" }),
+      this.dbRequest(attendanceLocation, { method: "GET" }),
+      this.dbRequest(`officeMailbox/${session.uid}`, { method: "GET" }),
+    ]);
+    this.assertSessionGuardActive(guard);
+    return {
+      users: users && typeof users === "object" ? users : {},
+      attendance: OfficeCore.flattenAttendance(attendance),
+      messages: OfficeCore.flattenMailbox(mailbox),
+      loadedAt: new Date().toISOString(),
+    };
+  }
+
+  async saveOfficeAttendance(input) {
+    const session = this.requireOfficeSession();
+    const guard = this.captureSessionGuard();
+    const source = input && typeof input === "object" && !Array.isArray(input) ? input : {};
+    const action = String(source.action || "");
+    const workDate = String(source.workDate || "");
+    if (!["check-in", "check-out"].includes(action) || !/^\d{4}-\d{2}-\d{2}$/.test(workDate) || workDate !== OfficeCore.workDate()) {
+      throw createError("오늘 날짜의 올바른 근태 요청만 저장할 수 있습니다.", "VALIDATION_ERROR");
+    }
+    const location = `officeAttendance/${session.uid}/${workDate}`;
+    const existing = await this.dbRequest(location, { method: "GET" });
+    this.assertSessionGuardActive(guard);
+    const now = new Date().toISOString();
+    if (action === "check-in") {
+      if (existing && existing.checkInAt) throw createError("오늘 출근 시간이 이미 저장되어 있습니다.", "ATTENDANCE_DUPLICATE");
+      const record = { id: `${session.uid}_${workDate}`, userId: session.uid, workDate, checkInAt: now, checkOutAt: "", createdAt: now, updatedAt: now };
+      await this.dbRequest(location, { method: "PUT", body: record, query: "print=silent" });
+    } else {
+      if (!existing || !existing.checkInAt) throw createError("오늘 출근 기록이 있어야 퇴근할 수 있습니다.", "ATTENDANCE_CHECK_IN_REQUIRED");
+      if (existing.checkOutAt) throw createError("오늘 퇴근 시간이 이미 저장되어 있습니다.", "ATTENDANCE_DUPLICATE");
+      await this.dbRequest(location, { method: "PATCH", body: { checkOutAt: now, updatedAt: now }, query: "print=silent" });
+    }
+    this.assertSessionGuardActive(guard);
+    return this.loadOffice();
+  }
+
+  async sendOfficeMessage(input) {
+    const session = this.requireOfficeSession();
+    const guard = this.captureSessionGuard();
+    const receiverId = String(input && input.receiverId || "").trim();
+    const messageText = String(input && input.message || "").trim();
+    if (!/^[A-Za-z0-9._-]{1,128}$/.test(receiverId) || receiverId === session.uid) throw createError("메시지를 받을 사용자를 선택해 주세요.", "VALIDATION_ERROR");
+    if (!messageText || messageText.length > 4000) throw createError("메시지는 1자 이상 4,000자 이하로 입력해 주세요.", "VALIDATION_ERROR");
+    const receiver = await this.dbRequest(`crmAccess/${receiverId}`, { method: "GET" });
+    this.assertSessionGuardActive(guard);
+    if (!receiver || receiver.enabled !== true || receiver.mustChangePassword === true) throw createError("현재 메시지를 받을 수 없는 사용자입니다.", "ACCESS_DENIED");
+    const id = `msg_${Date.now().toString(36)}_${crypto.randomBytes(7).toString("hex")}`;
+    const createdAt = new Date().toISOString();
+    const message = { id, senderId: session.uid, receiverId, message: messageText, readAt: "", createdAt };
+    await this.dbRequest("officeMailbox", {
+      method: "PATCH",
+      body: { [`${session.uid}/${receiverId}/${id}`]: message, [`${receiverId}/${session.uid}/${id}`]: message },
+      query: "print=silent",
+    });
+    this.assertSessionGuardActive(guard);
+    return this.loadOffice();
+  }
+
+  async markOfficeMessagesRead(input) {
+    const session = this.requireOfficeSession();
+    const guard = this.captureSessionGuard();
+    const peerId = String(input && input.peerId || "").trim();
+    if (!/^[A-Za-z0-9._-]{1,128}$/.test(peerId) || peerId === session.uid) throw createError("대화 상대가 올바르지 않습니다.", "VALIDATION_ERROR");
+    const conversation = await this.dbRequest(`officeMailbox/${session.uid}/${peerId}`, { method: "GET" });
+    this.assertSessionGuardActive(guard);
+    const readAt = new Date().toISOString();
+    const patch = {};
+    Object.entries(conversation || {}).forEach(([id, message]) => {
+      if (!message || message.senderId !== peerId || message.receiverId !== session.uid || message.readAt) return;
+      patch[`${session.uid}/${peerId}/${id}/readAt`] = readAt;
+      patch[`${peerId}/${session.uid}/${id}/readAt`] = readAt;
+    });
+    if (Object.keys(patch).length) await this.dbRequest("officeMailbox", { method: "PATCH", body: patch, query: "print=silent" });
+    this.assertSessionGuardActive(guard);
+    return this.loadOffice();
   }
 
   async loadCanonicalBuildingUnits(guardValue) {
