@@ -82,7 +82,16 @@
     if (hasBudget) {
       result.dailyBudget = normalizeNumber(input.dailyBudget, 'dailyBudget');
       if (result.dailyBudget <= 0) throw new RangeError('dailyBudget must be positive');
-      const validatedAtMs = input.budgetValidatedAtMs != null && input.budgetValidatedAtMs !== '' ? Number(input.budgetValidatedAtMs) : Date.parse(input.budgetValidatedAt);
+      let validatedAtMs;
+      if (input.budgetValidatedAtMs != null && input.budgetValidatedAtMs !== '') validatedAtMs = Number(input.budgetValidatedAtMs);
+      else {
+        const match = /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})$/.exec(String(input.budgetValidatedAt || ''));
+        if (!match) throw new TypeError('budgetValidatedAt must be a valid KST timestamp');
+        const [,year,month,day,hour,minute] = match.map(Number), local = new Date(0);
+        local.setUTCFullYear(year, month - 1, day); local.setUTCHours(hour, minute, 0, 0);
+        if (local.getUTCFullYear()!==year || local.getUTCMonth()!==month-1 || local.getUTCDate()!==day || local.getUTCHours()!==hour || local.getUTCMinutes()!==minute) throw new TypeError('budgetValidatedAt must be a valid KST timestamp');
+        validatedAtMs = local.getTime() - 9 * HOUR;
+      }
       if (!Number.isSafeInteger(validatedAtMs) || validatedAtMs <= 0) throw new TypeError('budgetValidatedAt must be a valid timestamp');
       result.budgetValidatedAtMs = validatedAtMs;
     }
@@ -343,7 +352,7 @@
     daily.filter(row=>Number(row.spend)>0 && Number(row.validLeads||0)===0).forEach(row=>{ const key = bounded(row.keyword||row.contentId||row.contentTitle); if(key) { const group=zeroGroups.get(key)||[]; group.push(row); zeroGroups.set(key,group); } });
     zeroGroups.forEach((rows,key)=>{ rows.sort((a,b)=>String(a.date||'').localeCompare(String(b.date||''))||String(a.id||'').localeCompare(String(b.id||''))); if(rows.length>=2 && new Set(rows.map(r=>r.date)).size>=2) { const recordId=rows.map(r=>bounded(r.id,160)).filter(Boolean).sort()[0]||'aggregate-ad-performance'; add('persistent_zero_leads','warning','키워드·콘텐츠 비용 지속·유효 리드 0','서로 다른 2일 이상 비용이 발생했지만 유효 리드가 없습니다.','ad',recordId,rows[0].date,rows[rows.length-1].date,true,{ records:rows.length, days:new Set(rows.map(r=>r.date)).size }); } });
     const selectedChannel=snapshot.appliedFilters&&snapshot.appliedFilters.channel;
-    const visibleChannels = new Set(selectedChannel&&selectedChannel!=='all'?[selectedChannel]:Array.isArray(snapshot.filteredDaily) ? daily.map(row=>row&&row.channel).filter(Boolean) : Object.keys(input.sourceUpdatedAtMsByChannel||{}));
+    const visibleChannels = new Set(selectedChannel&&selectedChannel!=='all'?[selectedChannel]:Object.keys(input.sourceUpdatedAtMsByChannel||{}));
     Object.entries(input.sourceUpdatedAtMsByChannel||{}).filter(([channel])=>visibleChannels.has(channel)).sort(([a],[b])=>a.localeCompare(b)).forEach(([channel,value])=>{ const at=Number(value), channelAge=nowMs-at; if(!Number.isFinite(at)) return; if(channelAge>=72*HOUR) add('channel_stale_72h','urgent','채널 데이터 72시간 초과','서버 갱신 시각 이후 72시간이 지났습니다.','source',channel,new Date(at).toISOString(),new Date(at+72*HOUR).toISOString(),false,{ channel, sourceUpdatedAtMs:at, ageHours:Math.floor(channelAge/HOUR) }); else if(channelAge>=24*HOUR&&input.designStateUsed) add('channel_stale_warning','warning','채널 데이터 갱신 지연','디자인 상태를 사용하는 채널 데이터가 24시간 이상 갱신되지 않았습니다.','source',channel,new Date(at).toISOString(),new Date(at+72*HOUR).toISOString(),false,{ channel, sourceUpdatedAtMs:at, ageHours:Math.floor(channelAge/HOUR) }); });
     const updated = Number(input.sourceUpdatedAtMs), age = nowMs-updated;
     if (!Array.isArray(snapshot.filteredDaily) && Number.isFinite(updated) && age>=72*HOUR) add('channel_stale_72h','urgent','채널 데이터 72시간 초과','서버 갱신 시각 이후 72시간이 지났습니다.','source','marketing-daily',new Date(updated).toISOString(),new Date(updated+72*HOUR).toISOString(),false,{ sourceUpdatedAtMs:updated, ageHours:Math.floor(age/HOUR) });

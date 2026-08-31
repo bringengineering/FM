@@ -2,6 +2,7 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
+const { execFileSync } = require('node:child_process');
 const Core = require('../src/marketing-core');
 const UI = require('../src/marketing-ui');
 const Persistence = require('../src/marketing-persistence');
@@ -198,8 +199,10 @@ test('manual validated budget pair roundtrips UI normalize persistence controlle
   const input=UI.renderMarketingInput({canWrite:true,draft:{date:'2026-08-31',channel:'naver_blog'}});
   assert.match(input,/name="dailyBudget"/); assert.match(input,/name="budgetValidatedAt"/); assert.match(input,/검증된 일예산/); assert.match(input,/근거 확인 후 입력/);
   const normalized=Core.normalizeManualRecord({date:'2026-08-31',channel:'naver_blog',spend:80,dailyBudget:100,budgetValidatedAt:'2026-08-31T11:00'});
-  assert.equal(normalized.dailyBudget,100); assert.equal(normalized.budgetValidatedAtMs,Date.parse('2026-08-31T11:00'));
+  assert.equal(normalized.dailyBudget,100); assert.equal(normalized.budgetValidatedAtMs,Date.parse('2026-08-31T11:00:00+09:00'));
   assert.throws(()=>Core.normalizeManualRecord({date:'2026-08-31',channel:'naver_blog',dailyBudget:100}),/budget/i);
+  assert.throws(()=>Core.normalizeManualRecord({date:'2026-08-31',channel:'naver_blog',dailyBudget:100,budgetValidatedAt:'2026-02-30T11:00'}),/timestamp/i);
+  assert.throws(()=>Core.normalizeManualRecord({date:'2026-08-31',channel:'naver_blog',dailyBudget:100,budgetValidatedAt:'2026-08-31T11:00Z'}),/timestamp/i);
   const state={daily:{},audits:{},receipts:{}}, persistence=Persistence.createLocalPersistence({state,clock:()=>now.getTime(),getSession:()=>({uid:'u',email:'u@x',role:'admin',marketingRole:''}),resolveActor:()=>({authUid:'u',operatorId:'op',email:'u@x',accessRole:'admin',marketingRole:'',active:true})});
   await persistence.commit({id:'budget_record',requestId:'123e4567-e89b-42d3-a456-426614174000',expectedVersion:0,action:'create',values:normalized});
   const envelope=persistence.read(), controller=UI.createController({core:Core,bridge:{projectFacts:()=>[],sourceRevision:()=>''},now:()=>now,readRaw:async()=>envelope});
@@ -207,11 +210,26 @@ test('manual validated budget pair roundtrips UI normalize persistence controlle
   assert.ok(controller.state.alerts.some(a=>a.code==='budget_80_percent'));
 });
 
+test('datetime-local budget validation has the same KST epoch under different OS timezones', () => {
+  const modulePath=path.join(__dirname,'../src/marketing-core.js');
+  const script=`const core=require(${JSON.stringify(modulePath)}); process.stdout.write(String(core.normalizeManualRecord({date:'2026-08-31',channel:'naver_blog',dailyBudget:100,budgetValidatedAt:'2026-08-31T11:00'}).budgetValidatedAtMs))`;
+  const run=timezone=>execFileSync(process.execPath,['-e',script],{env:{...process.env,TZ:timezone},encoding:'utf8'});
+  assert.equal(run('UTC'),String(Date.parse('2026-08-31T11:00:00+09:00')));
+  assert.equal(run('America/New_York'),run('Asia/Seoul'));
+});
+
 test('Today stale alert uses selected channel history outside period and excludes unrelated channels', async () => {
   const controller=UI.createController({core:Core,bridge:{projectFacts:()=>[],sourceRevision:()=>''},now:()=>now,readRaw:async()=>({daily:[{id:'old',date:'2026-08-20',channel:'naver_blog',updatedAtMs:now.getTime()-73*3600000},{id:'other',date:'2026-08-20',channel:'soomgo',updatedAtMs:now.getTime()-80*3600000}]})});
   await controller.load({accessRole:'admin'},{}); controller.setFilter('channel','naver_blog'); controller.setPeriod('today');
   assert.ok(controller.state.alerts.some(a=>a.code==='channel_stale_72h'&&a.targetId==='naver_blog'));
   assert.equal(controller.state.alerts.some(a=>a.targetId==='soomgo'),false);
+});
+
+test('Today all-channel stale checks include stable channel history outside the selected period', async () => {
+  const controller=UI.createController({core:Core,bridge:{projectFacts:()=>[],sourceRevision:()=>''},now:()=>now,readRaw:async()=>({daily:[{id:'old',date:'2026-08-20',channel:'naver_blog',updatedAtMs:now.getTime()-73*3600000},{id:'fresh',date:'2026-08-31',channel:'soomgo',updatedAtMs:now.getTime()-2*3600000}]})});
+  await controller.load({accessRole:'admin'},{}); controller.setPeriod('today');
+  assert.ok(controller.state.alerts.some(a=>a.code==='channel_stale_72h'&&a.targetId==='naver_blog'));
+  assert.equal(controller.state.alerts.some(a=>a.code==='channel_stale_72h'&&a.targetId==='soomgo'),false);
 });
 
 test('pending evidence target survives async entry refresh and focuses after rerender', () => {
