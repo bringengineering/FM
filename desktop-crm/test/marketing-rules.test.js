@@ -17,6 +17,8 @@ test('marketing rules are company scoped, authenticated, role bounded and soft-d
   assert.deepEqual(marketing.daily.$recordId.$other, { '.validate': false });
   assert.deepEqual(marketing.audits.$auditId.$other, { '.validate': false });
   assert.deepEqual(marketing.receipts.$receiptId.$other, { '.validate': false });
+  assert.deepEqual(marketing.receipts.$receiptId.resultRecord.$other, { '.validate': false });
+  assert.ok(marketing.receipts.$receiptId.resultRecord.spend['.validate'].includes("child('spend').val()"));
   assert.ok(marketing.audits.$auditId['.write'].includes('!data.exists()'));
   assert.ok(marketing.receipts.$receiptId['.write'].includes('!data.exists()'));
   assert.equal(marketing.audits.$auditId['.write'].includes('newData.exists()'), true);

@@ -3104,8 +3104,8 @@ function marketingAudit(id: string, actorUid: string, action = "create") {
   return { id: MARKETING_AUDIT, actorAuthUid: actorUid, operatorId: "operator_kim", actorIdentifier: `${actorUid}@bring.test`, action, recordId: id, occurredAtMs: SERVER_TIME, beforeVersion: action === "create" ? 0 : 1, afterVersion: action === "create" ? 1 : 2, requestId: MARKETING_REQUEST, requestHash: MARKETING_HASH, beforeSpend: action === "create" ? 0 : 1000, afterSpend: 1000 };
 }
 
-function marketingReceipt(id: string, actorUid: string, action = "create") {
-  return { id: MARKETING_RECEIPT, actorAuthUid: actorUid, operatorId: "operator_kim", action, recordId: id, occurredAtMs: SERVER_TIME, beforeVersion: action === "create" ? 0 : 1, afterVersion: action === "create" ? 1 : 2, requestId: MARKETING_REQUEST, requestHash: MARKETING_HASH };
+function marketingReceipt(id: string, actorUid: string, action = "create", resultRecord = marketingRecord(id, actorUid)) {
+  return { id: MARKETING_RECEIPT, actorAuthUid: actorUid, operatorId: "operator_kim", action, recordId: id, occurredAtMs: SERVER_TIME, beforeVersion: action === "create" ? 0 : 1, afterVersion: action === "create" ? 1 : 2, requestId: MARKETING_REQUEST, requestHash: MARKETING_HASH, resultRecord };
 }
 
 function marketingAtomic(id: string, actorUid: string, record = marketingRecord(id, actorUid), action = "create") {
@@ -3135,6 +3135,16 @@ describe.runIf(databaseEmulatorAvailable)("marketing database rules", () => {
     await assertFails(set(ref(marketing, `crmCompany/marketing/audits/${MARKETING_AUDIT}`), marketingAudit("standalone", "crm-marketing")));
     await assertFails(set(ref(marketing, `crmCompany/marketing/receipts/${MARKETING_RECEIPT}`), marketingReceipt("standalone", "crm-marketing")));
     await assertFails(update(ref(marketing, "crmCompany/marketing"), { ...marketingAtomic("daily_mismatch", "crm-marketing"), [`receipts/${MARKETING_RECEIPT}`]: { ...marketingReceipt("other", "crm-marketing") } }));
+    const forgedSnapshot = marketingRecord("daily_forged_snapshot", "crm-marketing");
+    await assertFails(update(ref(marketing, "crmCompany/marketing"), {
+      ...marketingAtomic("daily_forged_snapshot", "crm-marketing"),
+      [`receipts/${MARKETING_RECEIPT}`]: marketingReceipt(
+        "daily_forged_snapshot",
+        "crm-marketing",
+        "create",
+        { ...forgedSnapshot, spend: forgedSnapshot.spend + 1 },
+      ),
+    }));
   });
 
   it("requires exact monotonic update and immutable identity and creation actor", async () => {
@@ -3144,7 +3154,7 @@ describe.runIf(databaseEmulatorAvailable)("marketing database rules", () => {
     const request2 = "223e4567-e89b-42d3-a456-426614174000", audit2 = "audit_223e4567_e89b_42d3_a456_426614174000", receipt2 = "request_223e4567_e89b_42d3_a456_426614174000", hash2 = "b".repeat(64);
     const next = { ...existing, spend: 1200, version: 2, updatedAtMs: SERVER_TIME, lastAction: "update", lastAuditId: audit2, lastReceiptId: receipt2, lastRequestId: request2, lastRequestHash: hash2 };
     const audit = { ...marketingAudit("daily_update", "crm-marketing", "update"), id: audit2, afterSpend: 1200, requestId: request2, requestHash: hash2 };
-    const receipt = { ...marketingReceipt("daily_update", "crm-marketing", "update"), id: receipt2, requestId: request2, requestHash: hash2 };
+    const receipt = { ...marketingReceipt("daily_update", "crm-marketing", "update", next), id: receipt2, requestId: request2, requestHash: hash2 };
     await assertSucceeds(update(ref(marketing, "crmCompany/marketing"), { "daily/daily_update": next, [`audits/${audit2}`]: audit, [`receipts/${receipt2}`]: receipt }));
     await assertFails(update(ref(marketing, "crmCompany/marketing"), { "daily/daily_update": { ...next, spend: 1300, updatedAtMs: SERVER_TIME } }));
     await assertFails(update(ref(marketing, "crmCompany/marketing"), { "daily/daily_update": { ...next, version: 3, createdByAuthUid: "forged", updatedAtMs: SERVER_TIME } }));
@@ -3157,7 +3167,7 @@ describe.runIf(databaseEmulatorAvailable)("marketing database rules", () => {
     const request2 = "223e4567-e89b-42d3-a456-426614174000", audit2 = "audit_223e4567_e89b_42d3_a456_426614174000", receipt2 = "request_223e4567_e89b_42d3_a456_426614174000", hash2 = "b".repeat(64);
     const archived = { ...existing, version: 2, updatedAtMs: SERVER_TIME, archivedAtMs: SERVER_TIME, archivedByAuthUid: "crm-marketing", archivedByOperatorId: "operator_kim", lastAction: "archive", lastAuditId: audit2, lastReceiptId: receipt2, lastRequestId: request2, lastRequestHash: hash2 };
     const audit = { ...marketingAudit("daily_archive", "crm-marketing", "archive"), id: audit2, requestId: request2, requestHash: hash2 };
-    const receipt = { ...marketingReceipt("daily_archive", "crm-marketing", "archive"), id: receipt2, requestId: request2, requestHash: hash2 };
+    const receipt = { ...marketingReceipt("daily_archive", "crm-marketing", "archive", archived), id: receipt2, requestId: request2, requestHash: hash2 };
     await assertSucceeds(update(ref(marketing, "crmCompany/marketing"), { "daily/daily_archive": archived, [`audits/${audit2}`]: audit, [`receipts/${receipt2}`]: receipt }));
     await assertFails(remove(ref(marketing, "crmCompany/marketing/daily/daily_archive")));
     await assertFails(update(ref(marketing, "crmCompany/marketing/daily/daily_archive"), { note: "post archive" }));

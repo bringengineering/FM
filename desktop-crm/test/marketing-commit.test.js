@@ -172,3 +172,22 @@ test('local persistence stores record audit receipt atomically and rolls back a 
   assert.deepEqual(Object.keys(switchedState.audits), []);
   assert.deepEqual(Object.keys(switchedState.receipts), []);
 });
+
+test('durable receipt returns the original A result after later B mutation without another write', async () => {
+  const session = { uid: 'uid_1', email: actor.email, role: 'marketing' };
+  const state = { daily: Object.create(null), audits: Object.create(null), receipts: Object.create(null) };
+  let now = 1000;
+  const local = Persistence.createLocalPersistence({ state, getSession: () => session, resolveActor: () => actor, clock: () => now++ });
+  const inputA = { id: 'durable_1', requestId: REQUEST, expectedVersion: 0, action: 'create', values };
+  const resultA = await local.commit(inputA);
+  await local.commit({ id: 'durable_1', requestId: '223e4567-e89b-42d3-a456-426614174000', expectedVersion: 1, action: 'update', values: { ...values, spend: 2000 } });
+  const counts = { audits: Object.keys(state.audits).length, receipts: Object.keys(state.receipts).length };
+  const retryA = await local.commit(inputA);
+  assert.equal(retryA.repeated, true);
+  assert.equal(retryA.record.version, resultA.record.version);
+  assert.equal(retryA.record.spend, 1000);
+  assert.equal(state.daily.durable_1.version, 2);
+  assert.equal(state.daily.durable_1.spend, 2000);
+  assert.deepEqual({ audits: Object.keys(state.audits).length, receipts: Object.keys(state.receipts).length }, counts);
+  await assert.rejects(() => local.commit({ ...inputA, values: { ...values, spend: 9 } }), error => error.code === 'MARKETING_REQUEST_ID_CONFLICT');
+});

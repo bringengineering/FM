@@ -68,8 +68,9 @@ function planCommit(inputValue, existing, actorValue, now, existingReceipt) {
   const actor = assertMarketingWriter(actorValue);
   const requestHashValue = requestHash(input);
   if (existingReceipt) {
-    if (existingReceipt.requestId !== input.requestId || existingReceipt.requestHash !== requestHashValue || existingReceipt.recordId !== input.id || !existing || existing.version !== existingReceipt.afterVersion) fail('MARKETING_REQUEST_ID_CONFLICT');
-    return { record: structuredClone(existing), receipt: structuredClone(existingReceipt), repeated: true, requestHash: requestHashValue, auditId: existing.lastAuditId };
+    const result = existingReceipt.resultRecord;
+    if (existingReceipt.requestId !== input.requestId || existingReceipt.requestHash !== requestHashValue || existingReceipt.recordId !== input.id || !plain(result) || result.id !== input.id || result.version !== existingReceipt.afterVersion || result.lastRequestId !== input.requestId || result.lastRequestHash !== requestHashValue) fail('MARKETING_REQUEST_ID_CONFLICT');
+    return { record: structuredClone(result), receipt: structuredClone(existingReceipt), repeated: true, requestHash: requestHashValue, auditId: result.lastAuditId };
   }
   if (input.action === 'create' ? existing != null : !existing || existing.version !== input.expectedVersion || existing.archivedAtMs) fail('MARKETING_CONFLICT');
   const aid = auditId(input.requestId);
@@ -78,7 +79,7 @@ function planCommit(inputValue, existing, actorValue, now, existingReceipt) {
   const record = { ...(existing || {}), ...(input.values || {}), id: input.id, ...immutable, version: input.expectedVersion + 1, updatedAtMs: SERVER_TIMESTAMP, updatedByAuthUid: actor.authUid, updatedByOperatorId: actor.operatorId, lastAction: input.action, lastAuditId: aid, lastReceiptId: rid, lastRequestId: input.requestId, lastRequestHash: requestHashValue };
   if (input.action === 'archive') Object.assign(record, { archivedAtMs: SERVER_TIMESTAMP, archivedByAuthUid: actor.authUid, archivedByOperatorId: actor.operatorId });
   const audit = { id: aid, actorAuthUid: actor.authUid, operatorId: actor.operatorId, actorIdentifier: text(actor.email || actor.operatorId, 200), action: input.action, recordId: input.id, occurredAtMs: SERVER_TIMESTAMP, beforeVersion: input.expectedVersion, afterVersion: record.version, requestId: input.requestId, requestHash: requestHashValue, beforeSpend: Number(existing && existing.spend || 0), afterSpend: Number(record.spend || 0) };
-  const receipt = { id: rid, actorAuthUid: actor.authUid, operatorId: actor.operatorId, action: input.action, recordId: input.id, occurredAtMs: SERVER_TIMESTAMP, beforeVersion: input.expectedVersion, afterVersion: record.version, requestId: input.requestId, requestHash: requestHashValue };
+  const receipt = { id: rid, actorAuthUid: actor.authUid, operatorId: actor.operatorId, action: input.action, recordId: input.id, occurredAtMs: SERVER_TIMESTAMP, beforeVersion: input.expectedVersion, afterVersion: record.version, requestId: input.requestId, requestHash: requestHashValue, resultRecord: structuredClone(record) };
   return { record, audit, receipt, repeated: false, requestHash: requestHashValue, auditId: aid };
 }
 function readEnvelope(daily) {
