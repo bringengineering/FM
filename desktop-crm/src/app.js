@@ -51,8 +51,7 @@
   const workspaceStorageKey = "bring.crm.workspace";
   let currentWorkspace = null;
   try {
-    const savedWorkspace = localStorage.getItem(workspaceStorageKey);
-    if (["operations", "marketing"].includes(savedWorkspace)) currentWorkspace = WorkspaceShell.normalizeWorkspace(savedWorkspace);
+    currentWorkspace = WorkspaceShell.loadWorkspace(localStorage);
   } catch (_error) {}
   let lastRenderedView = null;
   let selectedCustomerId = "";
@@ -4491,8 +4490,8 @@
   document.addEventListener("click", async event => {
     const workspaceEnter = event.target.closest("[data-workspace-enter]");
     if (workspaceEnter) {
-      currentWorkspace = WorkspaceShell.normalizeWorkspace(workspaceEnter.dataset.workspaceEnter);
-      try { localStorage.setItem(workspaceStorageKey, currentWorkspace); } catch (_error) {}
+      try { currentWorkspace = WorkspaceShell.selectWorkspace(workspaceEnter.dataset.workspaceEnter, localStorage); }
+      catch (_error) { currentWorkspace = WorkspaceShell.normalizeWorkspace(workspaceEnter.dataset.workspaceEnter); }
       currentView = "dashboard";
       render();
       return;

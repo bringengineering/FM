@@ -5,11 +5,29 @@
 })(typeof globalThis !== "undefined" ? globalThis : this, function () {
   "use strict";
 
+  const storageKey = "bring.crm.workspace";
   const workspaceNames = Object.freeze(["operations", "marketing"]);
   const normalizeWorkspace = value => workspaceNames.includes(value) ? value : "operations";
   const escapeHtml = value => String(value).replace(/[&<>"']/g, character => ({
     "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;"
   })[character]);
+
+  function loadWorkspace(storage) {
+    const savedWorkspace = storage.getItem(storageKey);
+    return savedWorkspace === null ? null : normalizeWorkspace(savedWorkspace);
+  }
+
+  function selectWorkspace(value, storage) {
+    const workspace = normalizeWorkspace(value);
+    storage.setItem(storageKey, workspace);
+    return workspace;
+  }
+
+  function workspaceMode(workspace) {
+    if (workspace === null) return { screen: "landing", operationsNav: false };
+    if (normalizeWorkspace(workspace) === "marketing") return { screen: "marketing", operationsNav: false };
+    return { screen: "operations", operationsNav: true };
+  }
 
   function renderLanding() {
     const folders = [
@@ -22,5 +40,5 @@
     </section>`;
   }
 
-  return Object.freeze({ normalizeWorkspace, renderLanding });
+  return Object.freeze({ normalizeWorkspace, loadWorkspace, selectWorkspace, workspaceMode, renderLanding });
 });
