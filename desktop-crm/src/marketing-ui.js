@@ -67,6 +67,54 @@
   function renderFunnel(snapshot, facts) {
     return `<section class="marketing-funnel">${(snapshot.funnel || []).map(item => `<article data-funnel-stage="${item.stage}"><h3>${esc(STAGES[item.stage])}</h3><strong>${formatNumber(item.count)}</strong><span>이전 단계 전환 ${formatPercent(item.conversion)}</span><span>이탈 ${formatNumber(item.dropoff)}</span><small>이전 기간 대비 ${present(item.delta) ? `${item.delta > 0 ? "+" : ""}${formatNumber(item.delta)}` : "-"}</small></article>`).join("")}</section>${renderCustomerFacts(facts)}`;
   }
+  function renderMarketingInput(options) {
+    options = options || {};
+    const active = Array.isArray(options.active) ? options.active : [];
+    const archived = Array.isArray(options.archived) ? options.archived : [];
+    const row = (item, readOnly) => `<article class="marketing-entry-row"><strong>${esc(item.date || "-")} · ${esc(CHANNELS[item.channel] || item.channel || "-")}</strong><span>${esc(item.campaignName || item.campaignId || item.keyword || item.contentTitle || "-")}</span><small>${formatWon(item.spend)} · v${formatNumber(item.version)}</small>${readOnly ? `<small>보관: ${esc(item.archivedAt || item.archivedAtMs || "-")} · ${esc(item.archivedByOperatorId || item.archivedByAuthUid || "-")}</small>` : options.canWrite ? `<div><button type="button" data-marketing-edit="${attr(item.id)}">수정</button><button type="button" data-marketing-copy="${attr(item.id)}">이전 항목 복사</button><button type="button" data-marketing-archive="${attr(item.id)}">보관</button></div>` : ""}</article>`;
+    const fields = ['date', 'channel', 'accountName', 'campaignId', 'campaignName', 'adGroup', 'keyword', 'contentId', 'contentTitle', 'service', 'region', 'spend', 'impressions', 'clicks', 'phoneClicks', 'chatClicks', 'directionsClicks', 'saves', 'platformLeads', 'note'];
+    const review = options.review ? `<section class="marketing-duplicate-review" role="dialog" aria-modal="true"><h3>${options.review.type === 'conflict' ? '서버 변경 충돌 재검토' : '중복 기록 검토'}</h3><p>기존 v${formatNumber(options.review.openedVersion)} 기록과 제안 값을 비교한 뒤 덮어쓰세요.</p><pre>${esc(JSON.stringify({ existing: options.review.existing, proposed: options.review.proposed }, null, 2))}</pre><button type="button" data-marketing-overwrite>기존 기록 업데이트</button><button type="button" data-marketing-review-cancel>취소</button></section>` : '';
+    return `<section class="marketing-input"><header><div><h2>광고 데이터 입력</h2><p>마지막 갱신 ${esc(options.lastUpdatedAt || "-")}</p></div>${options.canWrite ? `<button type="button" data-marketing-add>추가</button>` : ""}</header>${review}${options.error ? `<div role="alert">${esc(options.error)}</div>` : ''}${options.canWrite && options.draft ? `<form data-marketing-entry-form>${fields.map(name => `<label><span>${esc(name)}</span><input name="${attr(name)}"${name === 'date' || name === 'channel' ? ' required' : ''}${['spend','impressions','clicks','phoneClicks','chatClicks','directionsClicks','saves','platformLeads'].includes(name) ? ' type="number" min="0" step="1"' : ''} value="${attr(options.draft[name] || '')}"></label>`).join('')}<button type="submit"${options.saving ? ' disabled' : ''}>${options.saving ? '저장 중…' : '저장'}</button></form>` : ""}<div>${active.map(item => row(item, false)).join('') || '<p>활성 기록이 없습니다.</p>'}</div><details><summary>보관된 기록</summary>${archived.map(item => row(item, true)).join('') || '<p>보관된 기록이 없습니다.</p>'}</details></section>`;
+  }
+
+  function createEntryController(options) {
+    const uuid = options.uuid || (() => globalThis.crypto.randomUUID());
+    const state = { active: [], archived: [], lastUpdatedAt: '', loading: false, loaded: false, saving: false, error: '', review: null };
+    async function refresh() {
+      state.loading = true;
+      try { const value = await options.read(); state.active = value.daily || value.active || []; state.archived = value.archived || []; state.lastUpdatedAt = value.lastUpdatedAt || ''; state.loaded = true; return state; }
+      finally { state.loading = false; }
+    }
+    function copy(row, date) {
+      const draft = {};
+      for (const name of ['channel','accountName','campaignId','campaignName','adGroup','keyword','contentId','contentTitle','service','region','spend','impressions','clicks','phoneClicks','chatClicks','directionsClicks','saves','platformLeads','note']) if (row[name] != null) draft[name] = row[name];
+      draft.date = date;
+      draft.sourceType = 'manual';
+      return draft;
+    }
+    async function commit(record, values) {
+      const editing = record && record.id;
+      const payload = { id: editing ? record.id : `manual_${uuid().replace(/-/g, '_')}`, expectedVersion: editing ? record.version : 0, requestId: uuid(), action: editing ? 'update' : 'create', values };
+      state.saving = true; state.error = '';
+      try { const result = await options.save(payload); state.review = null; await refresh(); return { status: 'saved', result }; }
+      catch (error) {
+        if (String(error && (error.code || error.message)) === 'MARKETING_CONFLICT') { await refresh(); const current = state.active.find(item => item.id === payload.id) || null; state.review = { type: 'conflict', existing: current, proposed: values, openedVersion: current && current.version }; return { status: 'conflict_review', existing: current, proposed: values }; }
+        state.error = String(error && error.message || error); throw error;
+      } finally { state.saving = false; }
+    }
+    async function submit(input, opened) {
+      const values = MarketingCore.normalizeManualRecord(input);
+      if (!opened || !opened.id) { const duplicate = MarketingCore.findActiveDuplicate(state.active, values); if (duplicate) { state.review = { type: 'duplicate', existing: duplicate, proposed: values, openedVersion: duplicate.version }; return { status: 'duplicate_review', existing: duplicate, proposed: values }; } }
+      return commit(opened || null, values);
+    }
+    function confirmOverwrite() { if (!state.review) throw new Error('duplicate review is required'); return commit({ id: state.review.existing.id, version: state.review.openedVersion }, state.review.proposed); }
+    async function archive(row) {
+      state.saving = true;
+      try { const result = await options.archive({ id: row.id, expectedVersion: row.version, requestId: uuid(), action: 'archive' }); await refresh(); return result; }
+      finally { state.saving = false; }
+    }
+    return Object.freeze({ state, refresh, submit, confirmOverwrite, copy, archive });
+  }
   function renderWorkspace(options) {
     const view = NAV_ITEMS.some(item => item.id === options.view) ? options.view : "marketingOverview";
     const localError = options.localError || options.error || "";
@@ -76,6 +124,7 @@
     if (view === "marketingOverview") return `${top}${renderOverview(options.snapshot)}`;
     if (view === "marketingChannels") return `${top}${renderChannels(options.snapshot)}`;
     if (view === "marketingFunnel") return `${top}${renderFunnel(options.snapshot, options.facts)}`;
+    if (view === "marketingInput") return `${top}${renderMarketingInput(options.entry || {})}`;
     return `${top}<section class="marketing-state"><h2>${esc(NAV_ITEMS.find(item => item.id === view).label)}</h2><p>다음 작업에서 제공됩니다.</p></section>`;
   }
 
@@ -119,5 +168,5 @@
     function setPeriod(period) { try { core.resolvePeriod(period, options.now ? options.now() : new Date()); filters.period = period; state.localError = ""; if (rawLoaded) recompute(); return { ok: true, snapshot: state.snapshot }; } catch (error) { state.localError = String(error.message || error); return { ok: false, error: state.localError }; } }
     return Object.freeze({ filters, state, load, invalidate, prepareLoad, syncFactsIfRevisionChanged, refreshFacts, setFilter, setPeriod });
   }
-  return Object.freeze({ NAV_ITEMS, defaultFilters, buildFilterOptions, createController, renderWorkspace, renderCustomerFacts, formatNumber, formatWon, formatPercent, escapeHtml: esc });
+  return Object.freeze({ NAV_ITEMS, defaultFilters, buildFilterOptions, createController, createEntryController, renderWorkspace, renderMarketingInput, renderCustomerFacts, formatNumber, formatWon, formatPercent, escapeHtml: esc });
 });

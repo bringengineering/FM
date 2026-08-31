@@ -8,6 +8,10 @@
   const CHANNELS = Object.freeze(['naver_place_ads', 'naver_place_organic', 'naver_blog', 'soomgo', 'daangn', 'broker', 'referral', 'direct_sales', 'other', 'needs_review']);
   const SERVICES = Object.freeze(['civil_engineering', 'architecture', 'surveying', 'design', 'inspection', 'consulting', 'other', 'needs_review']);
   const DATA_STATUSES = Object.freeze(['verified', 'estimated', 'pending', 'needs_review']);
+  const INQUIRY_METHODS = Object.freeze(['phone', 'talktalk', 'chat', 'sms', 'email', 'google_form', 'visit', 'referral', 'other', 'needs_review']);
+  const INVALID_REASONS = Object.freeze(['outside_area', 'unsupported_service', 'vendor_sales', 'duplicate', 'unreachable', 'wrong_number', 'spam', 'budget', 'schedule', 'other']);
+  const MANUAL_NUMBER_FIELDS = Object.freeze(['spend', 'impressions', 'clicks', 'phoneClicks', 'chatClicks', 'directionsClicks', 'saves', 'platformLeads']);
+  const MANUAL_TEXT_FIELDS = Object.freeze(['accountName', 'campaignId', 'campaignName', 'adGroup', 'keyword', 'contentId', 'contentTitle', 'region', 'note']);
   const EXPAND_ROAS_PERCENT = 300;
   const MIN_EXPAND_CONTRACTS = 1;
   const COUNT_FIELDS = ['spend', 'impressions', 'clicks', 'inquiries', 'validLeads', 'consultations', 'quotes', 'contracts', 'newContracts', 'payments', 'contractAmount', 'paidAmount', 'expectedCost'];
@@ -62,6 +66,42 @@
       if (name === 'service') result[name] = SERVICES.includes(input[name]) ? input[name] : 'needs_review';
       else if (name === 'dataStatus') result[name] = DATA_STATUSES.includes(input[name]) ? input[name] : 'needs_review';
       else result[name] = bounded(input[name]);
+    }
+    return result;
+  }
+
+  function normalizeManualRecord(input) {
+    if (!input || Object.getPrototypeOf(input) !== Object.prototype) throw new TypeError('manual row must be a plain record');
+    if (!validDate(input.date)) throw new TypeError('date must be a valid YYYY-MM-DD KST date');
+    if (!CHANNELS.includes(input.channel)) throw new TypeError('channel is required');
+    const result = { date: input.date, channel: input.channel, sourceType: 'manual' };
+    for (const name of MANUAL_NUMBER_FIELDS) result[name] = normalizeNumber(input[name], name);
+    for (const name of MANUAL_TEXT_FIELDS) result[name] = bounded(input[name], name === 'note' ? 1000 : 200);
+    result.service = input.service ? (SERVICES.includes(input.service) ? input.service : 'needs_review') : '';
+    return result;
+  }
+
+  function identityText(value) { return bounded(value, 200).replace(/\s+/g, ' ').toLocaleLowerCase('en-US'); }
+  function duplicateKey(value) {
+    const campaign = identityText(value && (value.campaignId || value.campaignName));
+    const subject = identityText(value && (value.keyword || value.contentId || value.contentTitle));
+    return [value && value.date || '', value && value.channel || '', campaign || 'needs_review', subject || 'needs_review'].join('|');
+  }
+  function findActiveDuplicate(rows, proposed) {
+    const key = duplicateKey(proposed);
+    return (Array.isArray(rows) ? rows : []).find(row => row && !row.archivedAtMs && duplicateKey(row) === key) || null;
+  }
+
+  function normalizeMarketingAttribution(value) {
+    const source = value && typeof value === 'object' && !Array.isArray(value) ? value : {};
+    const result = {};
+    for (const name of ['firstSource', 'lastSource']) if (source[name] != null && String(source[name]).trim()) result[name] = CHANNELS.includes(source[name]) ? source[name] : 'needs_review';
+    if (source.inquiryMethod != null && String(source.inquiryMethod).trim()) result.inquiryMethod = INQUIRY_METHODS.includes(source.inquiryMethod) ? source.inquiryMethod : 'needs_review';
+    if (Object.prototype.hasOwnProperty.call(source, 'validLead')) result.validLead = typeof source.validLead === 'boolean' ? source.validLead : null;
+    for (const name of ['subChannel', 'campaignId', 'campaignName', 'keyword', 'contentId', 'contentTitle', 'firstTouchAt', 'inquiryAt', 'attributionNote']) if (source[name] != null && String(source[name]).trim()) result[name] = bounded(source[name], name === 'attributionNote' ? 1000 : 200);
+    if (result.validLead === false) {
+      if (!INVALID_REASONS.includes(source.invalidReason)) throw new TypeError('invalidReason is required when validLead is false');
+      result.invalidReason = source.invalidReason;
     }
     return result;
   }
@@ -231,5 +271,5 @@
     return freeze(snapshot);
   }
 
-  return Object.freeze({ CHANNELS, SERVICES, DATA_STATUSES, EXPAND_ROAS_PERCENT, MIN_EXPAND_CONTRACTS, NORMALIZE_DAILY_SCOPE, checkedIntegerAdd, checkedIntegerSubtract, normalizeDaily, safeDivide, safeRate, calculateMetrics, resolvePeriod, buildSnapshot });
+  return Object.freeze({ CHANNELS, SERVICES, DATA_STATUSES, INQUIRY_METHODS, INVALID_REASONS, EXPAND_ROAS_PERCENT, MIN_EXPAND_CONTRACTS, NORMALIZE_DAILY_SCOPE, checkedIntegerAdd, checkedIntegerSubtract, normalizeDaily, normalizeManualRecord, duplicateKey, findActiveDuplicate, normalizeMarketingAttribution, safeDivide, safeRate, calculateMetrics, resolvePeriod, buildSnapshot });
 }));

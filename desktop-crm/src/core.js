@@ -35,7 +35,8 @@
   const SECURITY_ASSET_STATUSES = ["보관중", "대여중", "반납완료", "분실", "폐기", "무효"];
   const AUDIT_CATEGORIES = ["조회", "등록", "변경", "공유", "반출", "삭제", "백업", "파기", "권한변경", "키대여", "키반납", "사고"];
   const MARKETING_CHANNELS = ["naver_place_ads", "naver_place_organic", "naver_blog", "soomgo", "daangn", "broker", "referral", "direct_sales", "other", "needs_review"];
-  const MARKETING_INQUIRY_METHODS = ["phone", "message", "email", "visit", "web_form", "other", "needs_review"];
+  const MARKETING_INQUIRY_METHODS = ["phone", "talktalk", "chat", "sms", "email", "google_form", "visit", "referral", "other", "needs_review"];
+  const MARKETING_INVALID_REASONS = ["outside_area", "unsupported_service", "vendor_sales", "duplicate", "unreachable", "wrong_number", "spam", "budget", "schedule", "other"];
   const MARKETING_STRING_FIELDS = ["subChannel", "campaignId", "campaignName", "keyword", "contentId", "contentTitle", "invalidReason", "firstTouchAt", "inquiryAt", "attributionNote"];
 
   const pad = value => String(value).padStart(2, "0");
@@ -225,6 +226,10 @@
       if (source[field] == null) continue;
       result[field] = String(source[field]).trim().slice(0, field === "attributionNote" ? 1000 : 200);
     }
+    if (result.validLead === true) delete result.invalidReason;
+    if (result.validLead === false) {
+      if (!MARKETING_INVALID_REASONS.includes(result.invalidReason)) throw new TypeError("invalidReason is required when validLead is false");
+    } else delete result.invalidReason;
     return result;
   }
 

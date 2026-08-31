@@ -54,6 +54,7 @@
   let currentWorkspace = null;
   let currentMarketingView = "marketingOverview";
   let marketingLoaded = false;
+  let marketingEntryDraft = null;
   let lastRenderedView = null;
   let selectedCustomerId = "";
   let selectedCustomerHubId = "";
@@ -166,6 +167,11 @@
     core: MarketingCore,
     bridge: MarketingCrmBridge,
     readRaw: () => api.readMarketingRecords()
+  });
+  const marketingEntryController = MarketingUI.createEntryController({
+    read: () => api.readMarketingRecords(),
+    save: payload => api.commitMarketingRecord(payload),
+    archive: payload => api.archiveMarketingRecord(payload)
   });
 
   const BUILDING_MAINTENANCE_ITEMS = Core.BUILDING_MAINTENANCE_INCLUDES;
@@ -1383,12 +1389,16 @@
       const customer = customers.get(String(fact.customerId || "")) || {};
       return Object.assign({}, fact, { customerName: customer.name || customer.company || "", buildingName: customer.buildingName || "", lastContactAt: customer.lastContactAt || "", nextContactAt: customer.nextContactAt || "" });
     });
-    main.innerHTML = MarketingUI.renderWorkspace({ view: currentMarketingView, filters: marketingController.filters, filterOptions: marketingController.state.filterOptions, snapshot: marketingController.state.snapshot, facts, localError: marketingController.state.localError, unavailable: marketingController.state.unavailable });
+    const user = currentAuth.user || {};
+    const canWriteMarketing = user.accessRole === "admin" || user.accessRole === "member" && user.marketingRole === "marketing";
+    const entry = Object.assign({ canWrite: canWriteMarketing, draft: marketingEntryDraft }, marketingEntryController.state);
+    main.innerHTML = MarketingUI.renderWorkspace({ view: currentMarketingView, filters: marketingController.filters, filterOptions: marketingController.state.filterOptions, snapshot: marketingController.state.snapshot, facts, localError: marketingController.state.localError, unavailable: marketingController.state.unavailable, entry });
     finishViewRender(currentMarketingView);
     if (!marketingLoaded) {
       marketingLoaded = true;
       marketingController.load(currentAuth.user || {}, store, operations.cases || []).then(() => { if (currentWorkspace === "marketing") renderMarketingWorkspace(); });
     }
+    if (currentMarketingView === "marketingInput" && !marketingEntryController.state.loading && !marketingEntryController.state.loaded) marketingEntryController.refresh().then(() => { if (currentWorkspace === "marketing" && currentMarketingView === "marketingInput") renderMarketingWorkspace(); });
   }
 
   async function prepareWorkspaceTransition(workspace) {
@@ -3328,6 +3338,7 @@
   function customerEditor(customerId) {
     const editing = customerById(customerId);
     const customer = editing ? JSON.parse(JSON.stringify(editing)) : Core.createCustomer({ owner: store.settings.owner || "김현진" });
+    const customerMarketing = Core.normalizeMarketingAttribution(customer.marketing);
     const linkedBuildings = customerBuildings(customer);
     const activeBuildings = (store.buildings || []).filter(building => building && !building.archivedAt).sort((left, right) => String(left.name || "").localeCompare(String(right.name || ""), "ko"));
     const selectedCustomerBuilding = linkedBuildings.find(building => !building.archivedAt) || null;
@@ -3351,6 +3362,13 @@
       ${selectField("중요도", "priority", ["높음", "보통", "낮음"], customer.priority)}${field("예상 계약금액", "expectedValue", customer.expectedValue || "", "number", "원 단위")}
       ${field("관심 서비스", "interestServices", (customer.interestServices || []).join(", "), "text", "예: 건물관리, 누수 대응")}${field("태그", "tags", (customer.tags || []).join(", "), "text", "예: 원주, 다가구, 소개")}
       ${field("마지막 연락일", "lastContactAt", datetimeValue(customer.lastContactAt), "datetime-local")}
+      <fieldset class="wide"><legend>마케팅 유입 정보</legend><div class="form-grid">
+        <label><span>최초 유입</span><input name="firstSource" value="${attr(customerMarketing.firstSource || "")}"></label><label><span>최근 유입</span><input name="lastSource" value="${attr(customerMarketing.lastSource || "")}"></label>
+        <label><span>세부 채널</span><input name="subChannel" value="${attr(customerMarketing.subChannel || "")}"></label><label><span>캠페인 ID</span><input name="campaignId" value="${attr(customerMarketing.campaignId || "")}"></label><label><span>캠페인명</span><input name="campaignName" value="${attr(customerMarketing.campaignName || "")}"></label>
+        <label><span>키워드</span><input name="keyword" value="${attr(customerMarketing.keyword || "")}"></label><label><span>콘텐츠 ID</span><input name="contentId" value="${attr(customerMarketing.contentId || "")}"></label><label><span>콘텐츠명</span><input name="contentTitle" value="${attr(customerMarketing.contentTitle || "")}"></label>
+        <label><span>문의 방식</span><input name="inquiryMethod" value="${attr(customerMarketing.inquiryMethod || "")}"></label><label><span>유효 리드</span><select name="validLead"><option value="">확인 필요</option><option value="true"${customerMarketing.validLead === true ? " selected" : ""}>유효</option><option value="false"${customerMarketing.validLead === false ? " selected" : ""}>무효</option></select></label><label><span>무효 사유</span><input name="invalidReason" value="${attr(customerMarketing.invalidReason || "")}"></label>
+        <label><span>최초 접점</span><input name="firstTouchAt" type="datetime-local" value="${attr(datetimeValue(customerMarketing.firstTouchAt))}"></label><label><span>문의 일시</span><input name="inquiryAt" type="datetime-local" value="${attr(datetimeValue(customerMarketing.inquiryAt))}"></label><label class="wide"><span>마케팅 메모</span><textarea name="attributionNote" maxlength="1000">${esc(customerMarketing.attributionNote || "")}</textarea></label>
+      </div></fieldset>
       <div class="info-box wide">진행상태는 고객 정보에서 직접 입력하지 않습니다. 연결된 건물의 영업 관리 단계가 고객 목록과 상세 화면에 자동으로 표시됩니다.</div>
     </div></details><div class="info-box">${linkedBuildings.length ? `기존 연결 건물 ${linkedBuildings.length}곳은 유지되며, 다른 건물을 선택하면 연결 건물로 추가됩니다.` : "선택한 건물이 이 고객 화면에 연결됩니다."} 건물 자체 정보는 고객 화면 아래의 건물 관리에서 수정할 수 있습니다.</div><div class="form-actions"><button type="button" class="secondary-button" data-action="close-modal">취소</button><button type="submit" class="primary-button">${editing ? "수정 저장" : "고객 등록"}</button></div></form>`;
     openModal();
@@ -4397,6 +4415,7 @@
       nextContactAt: raw.nextContactAt ? new Date(raw.nextContactAt).toISOString() : "", nextAction: raw.nextAction.trim(),
       notes: raw.notes.trim(), buildingIdLinks, updatedAt: new Date().toISOString()
     });
+    customer.marketing = Core.normalizeMarketingAttribution({ firstSource: raw.firstSource, lastSource: raw.lastSource, subChannel: raw.subChannel, campaignId: raw.campaignId, campaignName: raw.campaignName, keyword: raw.keyword, contentId: raw.contentId, contentTitle: raw.contentTitle, inquiryMethod: raw.inquiryMethod, validLead: raw.validLead === "true" ? true : raw.validLead === "false" ? false : null, invalidReason: raw.invalidReason, firstTouchAt: raw.firstTouchAt ? new Date(raw.firstTouchAt).toISOString() : "", inquiryAt: raw.inquiryAt ? new Date(raw.inquiryAt).toISOString() : "", attributionNote: raw.attributionNote });
     if (!existing) store.customers.push(customer);
     return customer;
   }
@@ -4581,6 +4600,15 @@
       renderMarketingWorkspace();
       return;
     }
+    if (currentWorkspace === "marketing" && event.target.closest("[data-marketing-add]")) { marketingEntryDraft = { date: Core.dayKey(), channel: "naver_place_ads" }; renderMarketingWorkspace(); return; }
+    const marketingEdit = currentWorkspace === "marketing" && event.target.closest("[data-marketing-edit]");
+    if (marketingEdit) { marketingEntryDraft = Object.assign({}, marketingEntryController.state.active.find(item => item.id === marketingEdit.dataset.marketingEdit)); renderMarketingWorkspace(); return; }
+    const marketingCopy = currentWorkspace === "marketing" && event.target.closest("[data-marketing-copy]");
+    if (marketingCopy) { const row = marketingEntryController.state.active.find(item => item.id === marketingCopy.dataset.marketingCopy); marketingEntryDraft = marketingEntryController.copy(row || {}, Core.dayKey()); renderMarketingWorkspace(); return; }
+    const marketingArchive = currentWorkspace === "marketing" && event.target.closest("[data-marketing-archive]");
+    if (marketingArchive) { const row = marketingEntryController.state.active.find(item => item.id === marketingArchive.dataset.marketingArchive); if (row) await marketingEntryController.archive(row); renderMarketingWorkspace(); return; }
+    if (currentWorkspace === "marketing" && event.target.closest("[data-marketing-overwrite]")) { await marketingEntryController.confirmOverwrite(); marketingEntryDraft = null; await marketingController.load(currentAuth.user || {}, store, operations.cases || []); renderMarketingWorkspace(); return; }
+    if (currentWorkspace === "marketing" && event.target.closest("[data-marketing-review-cancel]")) { marketingEntryController.state.review = null; renderMarketingWorkspace(); return; }
     const marketingFact = event.target.closest("[data-marketing-case-id], [data-marketing-customer-id]");
     if (marketingFact && currentWorkspace === "marketing") {
       const caseId = marketingFact.dataset.marketingCaseId;
@@ -6097,6 +6125,17 @@
   document.addEventListener("submit", async event => {
     event.preventDefault();
     const form = event.target;
+    if (form.matches("[data-marketing-entry-form]")) {
+      const raw = Object.fromEntries(new FormData(form).entries());
+      for (const name of ["spend", "impressions", "clicks", "phoneClicks", "chatClicks", "directionsClicks", "saves", "platformLeads"]) raw[name] = raw[name] === "" ? 0 : Number(raw[name]);
+      try {
+        const opened = marketingEntryDraft && marketingEntryDraft.id ? { id: marketingEntryDraft.id, version: marketingEntryDraft.version } : null;
+        const result = await marketingEntryController.submit(raw, opened);
+        if (result.status === "saved") { marketingEntryDraft = null; await marketingController.load(currentAuth.user || {}, store, operations.cases || []); }
+      } catch (error) { marketingEntryController.state.error = error.message || "광고 데이터를 저장하지 못했습니다."; }
+      renderMarketingWorkspace();
+      return;
+    }
     if (!canWriteCRM() && !["emailLoginForm", "passwordChangeForm"].includes(form.id)) return showToast("조회 전용 계정은 내용을 변경할 수 없습니다.", "error");
     if (form.id === "operationForm") {
       const id = String(form.elements.id && form.elements.id.value || "");
@@ -6442,7 +6481,7 @@
       if (!["건물주", "브링"].includes(raw.caseParty)) return showToast("민원 작성 구분을 선택해 주세요.", "error");
       if (!String(raw.name || "").trim()) return showToast("고객명을 입력해 주세요.", "error");
       if (!String(raw.building || "").trim()) return showToast("건물명을 입력해 주세요.", "error");
-      const result = await api.saveWorkflowCase({ create: true, fields: raw });
+      const result = await api.saveWorkflowCase({ create: true, fields: MarketingCrmBridge.normalizeCaseMarketing({ ...raw, marketing: {} }) });
       if (!result.ok) return showToast(result.error || "민원을 등록하지 못했습니다.", "error");
       selectedCaseKey = result.caseKey;
       casePartyFilter = raw.caseParty;
@@ -6459,7 +6498,8 @@
         if (!existingParty && !raw.caseParty) delete raw.caseParty;
         else return showToast("민원 작성 구분을 확인해 주세요.", "error");
       }
-      const result = await api.saveWorkflowCase({ caseKey: form.dataset.caseKey, fields: raw });
+      const normalizedCaseFields = MarketingCrmBridge.normalizeCaseMarketing({ ...raw, marketing: existingCase && existingCase.marketing });
+      const result = await api.saveWorkflowCase({ caseKey: form.dataset.caseKey, fields: normalizedCaseFields });
       if (!result.ok) return showToast(result.error || "기본 정보를 저장하지 못했습니다.", "error");
       await refreshOperations({ silent: true, render: false });
       renderCases();

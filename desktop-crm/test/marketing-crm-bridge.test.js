@@ -20,7 +20,8 @@ test('legacy customers remain compatible and marketing fields round-trip safely'
   assert.deepEqual(normalized.customers[0].marketing, {});
   assert.deepEqual(normalized.customers[0].unknownSafe, { retained: true });
   const withMarketing = Core.sanitizeStore({ customers: [{ id: 'c1', marketing }] }).customers[0].marketing;
-  assert.deepEqual(withMarketing, marketing);
+  const { invalidReason: _clearedInvalidReason, ...expectedMarketing } = marketing;
+  assert.deepEqual(withMarketing, expectedMarketing);
   assert.equal(Core.sanitizeStore({ customers: [{ id: 'c2', marketing: { firstSource: 'invented', inquiryMethod: 'telepathy', validLead: 'yes', campaignName: 'x'.repeat(500) } }] }).customers[0].marketing.firstSource, 'needs_review');
   assert.equal(Core.sanitizeStore({ customers: [{ id: 'c2', marketing: { firstSource: 'invented', inquiryMethod: 'telepathy', validLead: 'yes' } }] }).customers[0].marketing.validLead, null);
 });
