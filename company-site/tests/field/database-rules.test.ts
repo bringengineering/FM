@@ -3108,11 +3108,11 @@ function marketingAudit(id: string, actorUid: string, action = "create") {
   return { id: MARKETING_AUDIT, actorAuthUid: actorUid, operatorId: "operator_kim", actorIdentifier: `${actorUid}@bring.test`, action, recordId: id, occurredAtMs: SERVER_TIME, beforeVersion: action === "create" ? 0 : 1, afterVersion: action === "create" ? 1 : 2, requestId: MARKETING_REQUEST, requestHash: MARKETING_HASH, beforeSpend: action === "create" ? 0 : 1000, afterSpend: 1000 };
 }
 
-function marketingReceipt(id: string, actorUid: string, action = "create", resultRecord = marketingRecord(id, actorUid)) {
+function marketingReceipt(id: string, actorUid: string, action = "create", resultRecord: Record<string, unknown> = marketingRecord(id, actorUid)) {
   return { id: MARKETING_RECEIPT, actorAuthUid: actorUid, operatorId: "operator_kim", action, recordId: id, occurredAtMs: SERVER_TIME, beforeVersion: action === "create" ? 0 : 1, afterVersion: action === "create" ? 1 : 2, requestId: MARKETING_REQUEST, requestHash: MARKETING_HASH, resultRecord };
 }
 
-function marketingAtomic(id: string, actorUid: string, record = marketingRecord(id, actorUid), action = "create") {
+function marketingAtomic(id: string, actorUid: string, record: Record<string, unknown> = marketingRecord(id, actorUid), action = "create") {
   return { [`daily/${id}`]: record, [`audits/${MARKETING_AUDIT}`]: marketingAudit(id, actorUid, action), [`receipts/${MARKETING_RECEIPT}`]: marketingReceipt(id, actorUid, action) };
 }
 
