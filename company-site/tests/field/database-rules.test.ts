@@ -69,6 +69,9 @@ const CRM_ACCESS = {
     role: "viewer",
     operatorId: "operator_kim",
   },
+  "crm-marketing": { enabled: true, email: "marketing@bring.test", role: "marketing", operatorId: "operator_kim" },
+  "crm-sales": { enabled: true, email: "sales@bring.test", role: "sales", operatorId: "operator_kim" },
+  "crm-marketing-disabled": { enabled: false, email: "marketing-disabled@bring.test", role: "marketing", operatorId: "operator_kim" },
   "crm-disabled": {
     enabled: false,
     email: "disabled@bring.test",
@@ -3079,6 +3082,94 @@ describe.runIf(databaseEmulatorAvailable)("fieldPlatform database rules", () => 
       depositWon: -1,
       monthlyRentWon: 1.5,
     }));
+  });
+});
+
+const MARKETING_REQUEST = "123e4567-e89b-42d3-a456-426614174000";
+const MARKETING_AUDIT = "audit_123e4567_e89b_42d3_a456_426614174000";
+const MARKETING_RECEIPT = "request_123e4567_e89b_42d3_a456_426614174000";
+const MARKETING_HASH = "a".repeat(64);
+const SERVER_TIME = { ".sv": "timestamp" } as const;
+
+function marketingRecord(id: string, actorUid: string, version = 1) {
+  return {
+    id, date: "2026-08-31", channel: "naver_blog", accountName: "bring", campaignId: "campaign_1", campaignName: "검색", adGroup: "group", keyword: "청소", contentId: "content_1", contentTitle: "글", service: "consulting", region: "원주",
+    spend: 1000, impressions: 20, clicks: 3, phoneClicks: 1, chatClicks: 0, directionsClicks: 0, saves: 0, platformLeads: 1, note: "정상", sourceType: "manual",
+    version, createdAtMs: SERVER_TIME, createdByAuthUid: actorUid, createdByOperatorId: "operator_kim", updatedAtMs: SERVER_TIME, updatedByAuthUid: actorUid, updatedByOperatorId: "operator_kim",
+    lastAction: "create", lastAuditId: MARKETING_AUDIT, lastReceiptId: MARKETING_RECEIPT, lastRequestId: MARKETING_REQUEST, lastRequestHash: MARKETING_HASH,
+  };
+}
+
+function marketingAudit(id: string, actorUid: string, action = "create") {
+  return { id: MARKETING_AUDIT, actorAuthUid: actorUid, operatorId: "operator_kim", actorIdentifier: `${actorUid}@bring.test`, action, recordId: id, occurredAtMs: SERVER_TIME, beforeVersion: action === "create" ? 0 : 1, afterVersion: action === "create" ? 1 : 2, requestId: MARKETING_REQUEST, requestHash: MARKETING_HASH, beforeSpend: action === "create" ? 0 : 1000, afterSpend: 1000 };
+}
+
+function marketingReceipt(id: string, actorUid: string, action = "create") {
+  return { id: MARKETING_RECEIPT, actorAuthUid: actorUid, operatorId: "operator_kim", action, recordId: id, occurredAtMs: SERVER_TIME, beforeVersion: action === "create" ? 0 : 1, afterVersion: action === "create" ? 1 : 2, requestId: MARKETING_REQUEST, requestHash: MARKETING_HASH };
+}
+
+function marketingAtomic(id: string, actorUid: string, record = marketingRecord(id, actorUid), action = "create") {
+  return { [`daily/${id}`]: record, [`audits/${MARKETING_AUDIT}`]: marketingAudit(id, actorUid, action), [`receipts/${MARKETING_RECEIPT}`]: marketingReceipt(id, actorUid, action) };
+}
+
+describe.runIf(databaseEmulatorAvailable)("marketing database rules", () => {
+  it("allows active admin and marketing atomic writes and viewer reads while denying other writers and identities", async () => {
+    const admin = environment.authenticatedContext("crm-admin", crmClaims("admin@bring.test")).database();
+    await assertSucceeds(update(ref(admin, "crmCompany/marketing"), marketingAtomic("admin_daily", "crm-admin")));
+    await assertSucceeds(get(ref(environment.authenticatedContext("crm-marketing", crmClaims("marketing@bring.test")).database(), "crmCompany/marketing/daily")));
+    for (const [uid, email] of [["crm-sales", "sales@bring.test"], ["crm-viewer", "viewer@bring.test"], ["crm-marketing-disabled", "marketing-disabled@bring.test"]] as const) {
+      const database = environment.authenticatedContext(uid, crmClaims(email)).database();
+      await assertFails(update(ref(database, "crmCompany/marketing"), marketingAtomic(`${uid}_daily`, uid)));
+    }
+    await assertSucceeds(get(ref(environment.authenticatedContext("crm-viewer", crmClaims("viewer@bring.test")).database(), "crmCompany/marketing/daily")));
+    await assertFails(get(ref(environment.unauthenticatedContext().database(), "crmCompany/marketing/daily")));
+    await assertFails(get(ref(environment.authenticatedContext("crm-marketing", crmClaims("wrong@bring.test")).database(), "crmCompany/marketing/daily")));
+  });
+
+  it("enforces exact schema, server time, create version and atomic linkage", async () => {
+    const marketing = environment.authenticatedContext("crm-marketing", crmClaims("marketing@bring.test")).database();
+    await assertSucceeds(update(ref(marketing, "crmCompany/marketing"), marketingAtomic("daily_valid", "crm-marketing")));
+    await assertFails(update(ref(marketing, "crmCompany/marketing"), marketingAtomic("daily_extra", "crm-marketing", { ...marketingRecord("daily_extra", "crm-marketing"), privateMemo: "secret" })));
+    await assertFails(update(ref(marketing, "crmCompany/marketing"), marketingAtomic("daily_bad_version", "crm-marketing", marketingRecord("daily_bad_version", "crm-marketing", 2))));
+    await assertFails(update(ref(marketing, "crmCompany/marketing"), marketingAtomic("daily_forged_time", "crm-marketing", { ...marketingRecord("daily_forged_time", "crm-marketing"), createdAtMs: 1, updatedAtMs: 1 })));
+    await assertFails(set(ref(marketing, `crmCompany/marketing/audits/${MARKETING_AUDIT}`), marketingAudit("standalone", "crm-marketing")));
+    await assertFails(set(ref(marketing, `crmCompany/marketing/receipts/${MARKETING_RECEIPT}`), marketingReceipt("standalone", "crm-marketing")));
+    await assertFails(update(ref(marketing, "crmCompany/marketing"), { ...marketingAtomic("daily_mismatch", "crm-marketing"), [`receipts/${MARKETING_RECEIPT}`]: { ...marketingReceipt("other", "crm-marketing") } }));
+  });
+
+  it("requires exact monotonic update and immutable identity and creation actor", async () => {
+    const marketing = environment.authenticatedContext("crm-marketing", crmClaims("marketing@bring.test")).database();
+    await assertSucceeds(update(ref(marketing, "crmCompany/marketing"), marketingAtomic("daily_update", "crm-marketing")));
+    const existing = (await get(ref(marketing, "crmCompany/marketing/daily/daily_update"))).val();
+    const request2 = "223e4567-e89b-42d3-a456-426614174000", audit2 = "audit_223e4567_e89b_42d3_a456_426614174000", receipt2 = "request_223e4567_e89b_42d3_a456_426614174000", hash2 = "b".repeat(64);
+    const next = { ...existing, spend: 1200, version: 2, updatedAtMs: SERVER_TIME, lastAction: "update", lastAuditId: audit2, lastReceiptId: receipt2, lastRequestId: request2, lastRequestHash: hash2 };
+    const audit = { ...marketingAudit("daily_update", "crm-marketing", "update"), id: audit2, afterSpend: 1200, requestId: request2, requestHash: hash2 };
+    const receipt = { ...marketingReceipt("daily_update", "crm-marketing", "update"), id: receipt2, requestId: request2, requestHash: hash2 };
+    await assertSucceeds(update(ref(marketing, "crmCompany/marketing"), { "daily/daily_update": next, [`audits/${audit2}`]: audit, [`receipts/${receipt2}`]: receipt }));
+    await assertFails(update(ref(marketing, "crmCompany/marketing"), { "daily/daily_update": { ...next, spend: 1300, updatedAtMs: SERVER_TIME } }));
+    await assertFails(update(ref(marketing, "crmCompany/marketing"), { "daily/daily_update": { ...next, version: 3, createdByAuthUid: "forged", updatedAtMs: SERVER_TIME } }));
+  });
+
+  it("allows one archive transition then makes the record immutable and denies hard delete", async () => {
+    const marketing = environment.authenticatedContext("crm-marketing", crmClaims("marketing@bring.test")).database();
+    await assertSucceeds(update(ref(marketing, "crmCompany/marketing"), marketingAtomic("daily_archive", "crm-marketing")));
+    const existing = (await get(ref(marketing, "crmCompany/marketing/daily/daily_archive"))).val();
+    const request2 = "223e4567-e89b-42d3-a456-426614174000", audit2 = "audit_223e4567_e89b_42d3_a456_426614174000", receipt2 = "request_223e4567_e89b_42d3_a456_426614174000", hash2 = "b".repeat(64);
+    const archived = { ...existing, version: 2, updatedAtMs: SERVER_TIME, archivedAtMs: SERVER_TIME, archivedByAuthUid: "crm-marketing", archivedByOperatorId: "operator_kim", lastAction: "archive", lastAuditId: audit2, lastReceiptId: receipt2, lastRequestId: request2, lastRequestHash: hash2 };
+    const audit = { ...marketingAudit("daily_archive", "crm-marketing", "archive"), id: audit2, requestId: request2, requestHash: hash2 };
+    const receipt = { ...marketingReceipt("daily_archive", "crm-marketing", "archive"), id: receipt2, requestId: request2, requestHash: hash2 };
+    await assertSucceeds(update(ref(marketing, "crmCompany/marketing"), { "daily/daily_archive": archived, [`audits/${audit2}`]: audit, [`receipts/${receipt2}`]: receipt }));
+    await assertFails(remove(ref(marketing, "crmCompany/marketing/daily/daily_archive")));
+    await assertFails(update(ref(marketing, "crmCompany/marketing/daily/daily_archive"), { note: "post archive" }));
+  });
+
+  it("keeps audit and receipt immutable after their atomic creation", async () => {
+    const marketing = environment.authenticatedContext("crm-marketing", crmClaims("marketing@bring.test")).database();
+    await assertSucceeds(update(ref(marketing, "crmCompany/marketing"), marketingAtomic("daily_immutable", "crm-marketing")));
+    for (const path of [`audits/${MARKETING_AUDIT}`, `receipts/${MARKETING_RECEIPT}`]) {
+      await assertFails(update(ref(marketing, `crmCompany/marketing/${path}`), { requestHash: "c".repeat(64) }));
+      await assertFails(remove(ref(marketing, `crmCompany/marketing/${path}`)));
+    }
   });
 });
 

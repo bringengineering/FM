@@ -2447,20 +2447,19 @@ class FirebaseRemoteClient {
     });
   }
 
-  async conditionalMarketingPatch(patch, etag, guard) {
+  async atomicMarketingPatch(patch, guard) {
     this.assertSessionGuardActive(guard);
     const token = await this.ensureIdToken(false);
     this.assertSessionGuardActive(guard);
     const url = `${this.firebase.databaseUrl}/${resolveDatabaseLocation("marketing", this.databaseRoot)}.json?auth=${encodeURIComponent(token)}&print=silent`;
     let response;
     try {
-      response = await this.fetch(url, { method: "PATCH", headers: { Accept: "application/json", "Content-Type": "application/json", "If-Match": etag }, body: JSON.stringify(patch) });
+      response = await this.fetch(url, { method: "PATCH", headers: { Accept: "application/json", "Content-Type": "application/json" }, body: JSON.stringify(patch) });
     } catch (cause) {
       if (!this.sessionGuardActive(guard)) throw createError("로그인 세션이 변경되었습니다.", "SESSION_CHANGED", cause);
       throw createError("마케팅 저장 결과를 확인하지 못했습니다.", "MARKETING_WRITE_UNCONFIRMED", cause);
     }
     this.assertSessionGuardActive(guard);
-    if (response.status === 412) throw createError("다른 사용자가 먼저 변경했습니다.", "MARKETING_CONFLICT");
     if (!response.ok) throw createError("마케팅 저장이 거부되었습니다.", "MARKETING_WRITE_REJECTED");
   }
 
@@ -2475,30 +2474,45 @@ class FirebaseRemoteClient {
     this.assertSessionGuardActive(guard);
     const input = MarketingPersistence.validateCommitInput(inputValue);
     const actor = await this.resolveMarketingActor(guard);
-    const snapshot = await this.dbReadWithEtag("marketing", false, guard);
+    const recordSnapshot = await this.dbReadWithEtag(`marketing/daily/${input.id}`, false, guard);
     this.assertSessionGuardActive(guard);
-    const root = snapshot.value && typeof snapshot.value === "object" ? snapshot.value : {};
     const receiptId = MarketingPersistence.receiptId(input.requestId);
-    const existingReceipt = root.receipts && root.receipts[receiptId] || null;
-    const plan = MarketingPersistence.planCommit(input, root.daily && root.daily[input.id] || null, actor, new Date().toISOString(), existingReceipt);
-    if (plan.repeated) return { record: plan.record, repeated: true, auditId: plan.auditId };
+    const receiptSnapshot = await this.dbReadWithEtag(`marketing/receipts/${receiptId}`, false, guard);
+    this.assertSessionGuardActive(guard);
+    const plan = MarketingPersistence.planCommit(input, recordSnapshot.value, actor, null, receiptSnapshot.value);
+    if (plan.repeated) {
+      const envelope = MarketingPersistence.readEnvelope({ [input.id]: plan.record });
+      return { record: envelope.daily[0] || envelope.archived[0], repeated: true, auditId: plan.auditId };
+    }
     const patch = { [`daily/${input.id}`]: plan.record, [`audits/${plan.audit.id}`]: plan.audit, [`receipts/${plan.receipt.id}`]: plan.receipt };
     try {
-      await this.conditionalMarketingPatch(patch, snapshot.etag, guard);
+      await this.atomicMarketingPatch(patch, guard);
     } catch (error) {
       if (!this.sessionGuardActive(guard)) throw createError("로그인 세션이 변경되었습니다.", "SESSION_CHANGED", error);
-      if (!["MARKETING_WRITE_UNCONFIRMED", "MARKETING_CONFLICT"].includes(error.code)) throw error;
-      const check = await this.dbReadWithEtag("marketing", false, guard);
-      const receipt = check.value && check.value.receipts && check.value.receipts[receiptId];
-      if (receipt) {
-        const recovered = MarketingPersistence.planCommit(input, check.value && check.value.daily && check.value.daily[input.id] || null, actor, new Date().toISOString(), receipt);
-        if (recovered.repeated) return { record: recovered.record, repeated: true, auditId: recovered.auditId };
+      if (!["MARKETING_WRITE_UNCONFIRMED", "MARKETING_WRITE_REJECTED"].includes(error.code)) throw error;
+      const [recordCheck, receiptCheck] = await Promise.all([
+        this.dbReadWithEtag(`marketing/daily/${input.id}`, false, guard),
+        this.dbReadWithEtag(`marketing/receipts/${receiptId}`, false, guard),
+      ]);
+      if (receiptCheck.value) {
+        const recovered = MarketingPersistence.planCommit(input, recordCheck.value, actor, null, receiptCheck.value);
+        if (recovered.repeated) {
+          const envelope = MarketingPersistence.readEnvelope({ [input.id]: recovered.record });
+          return { record: envelope.daily[0] || envelope.archived[0], repeated: true, auditId: recovered.auditId };
+        }
       }
-      if (error.code === "MARKETING_CONFLICT") throw createError("MARKETING_CONFLICT", "MARKETING_CONFLICT", error);
-      throw error;
+      throw createError("MARKETING_CONFLICT", "MARKETING_CONFLICT", error);
     }
     this.assertSessionGuardActive(guard);
-    return { record: plan.record, repeated: false, auditId: plan.auditId };
+    const [recordCheck, receiptCheck] = await Promise.all([
+      this.dbReadWithEtag(`marketing/daily/${input.id}`, false, guard),
+      this.dbReadWithEtag(`marketing/receipts/${receiptId}`, false, guard),
+    ]);
+    this.assertSessionGuardActive(guard);
+    const committed = MarketingPersistence.planCommit(input, recordCheck.value, actor, null, receiptCheck.value);
+    if (!committed.repeated) throw createError("마케팅 저장 결과를 확인하지 못했습니다.", "MARKETING_WRITE_UNCONFIRMED");
+    const envelope = MarketingPersistence.readEnvelope({ [input.id]: committed.record });
+    return { record: envelope.daily[0] || envelope.archived[0], repeated: false, auditId: committed.auditId };
   }
 
   async commitBuildingScheduleLocked(inputValue, guardValue) {

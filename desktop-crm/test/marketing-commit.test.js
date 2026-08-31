@@ -29,12 +29,15 @@ test('plans create update archive with immutable identity and monotonic versions
   const created = Persistence.planCommit({ id: 'daily_1', requestId: REQUEST, expectedVersion: 0, action: 'create', values }, null, actor, '2026-08-31T01:00:00.000Z');
   assert.equal(created.record.version, 1);
   assert.equal(created.record.createdByAuthUid, actor.authUid);
+  assert.deepEqual(created.record.createdAtMs, { '.sv': 'timestamp' });
+  assert.equal(created.record.lastAuditId, Persistence.auditId(REQUEST));
+  assert.equal(created.record.lastReceiptId, Persistence.receiptId(REQUEST));
   const updated = Persistence.planCommit({ id: 'daily_1', requestId: '223e4567-e89b-42d3-a456-426614174000', expectedVersion: 1, action: 'update', values: { ...values, spend: 1200 } }, created.record, actor, '2026-08-31T02:00:00.000Z');
   assert.equal(updated.record.version, 2);
-  assert.equal(updated.record.createdAt, created.record.createdAt);
+  assert.deepEqual(updated.record.createdAtMs, created.record.createdAtMs);
   const archived = Persistence.planCommit({ id: 'daily_1', requestId: '323e4567-e89b-42d3-a456-426614174000', expectedVersion: 2, action: 'archive' }, updated.record, actor, '2026-08-31T03:00:00.000Z');
   assert.equal(archived.record.version, 3);
-  assert.equal(archived.record.archivedAt, '2026-08-31T03:00:00.000Z');
+  assert.deepEqual(archived.record.archivedAtMs, { '.sv': 'timestamp' });
   assert.throws(() => Persistence.planCommit({ id: 'daily_1', requestId: '423e4567-e89b-42d3-a456-426614174000', expectedVersion: 1, action: 'update', values }, updated.record, actor, '2026-08-31T04:00:00.000Z'), /MARKETING_CONFLICT/);
 });
 
@@ -47,19 +50,72 @@ test('deterministic receipt makes exact retry idempotent and changed payload con
   assert.throws(() => Persistence.planCommit({ ...input, values: { ...values, spend: 2 } }, first.record, actor, '2026-08-31T02:00:00.000Z', first.receipt), /MARKETING_REQUEST_ID_CONFLICT/);
 });
 
-test('remote commit uses only marketing child paths, ETag CAS and re-reads a 412 conflict', async () => {
+test('remote commit reads the exact record ETag and submits one root atomic patch without If-Match', async () => {
   const calls = [];
   const client = new FirebaseRemoteClient({ Core: { assertMutationAllowed() {}, assertNoProhibitedSecrets() {} }, fs: {}, safeStorage: {}, shell: {}, sessionFile: '', pendingFile: '' });
   client.session = { uid: 'uid_1', email: 'marketing@example.com', role: 'marketing' };
   client.sessionGeneration = 1;
   client.verifyAccess = async () => ({ role: 'marketing', operatorId: 'operator_1', enabled: true });
   client.dbRequest = async location => location === 'teamProfiles/operator_1' ? { active: true } : null;
-  client.dbReadWithEtag = async location => { calls.push(['get', location]); return { value: { daily: {}, receipts: {} }, etag: 'etag-1' }; };
-  client.conditionalMarketingPatch = async (patch, etag) => { calls.push(['patch', patch, etag]); const error = new Error('conflict'); error.code = 'MARKETING_CONFLICT'; throw error; };
+  client.dbReadWithEtag = async location => { calls.push(['get', location]); return location.includes('receipts/') ? { value: null, etag: 'receipt-etag' } : { value: null, etag: 'record-etag' }; };
+  client.atomicMarketingPatch = async patch => { calls.push(['patch', patch]); const error = new Error('rejected'); error.code = 'MARKETING_WRITE_REJECTED'; throw error; };
   await assert.rejects(() => client.commitMarketingRecord({ id: 'daily_1', requestId: REQUEST, expectedVersion: 0, action: 'create', values }), /MARKETING_CONFLICT/);
-  assert.deepEqual(calls.map(call => call[0]), ['get', 'patch', 'get']);
-  assert.equal(calls[0][1], 'marketing');
-  assert.equal(calls[1][2], 'etag-1');
-  assert.deepEqual(Object.keys(calls[1][1]).sort(), [`audits/${Persistence.auditId(REQUEST)}`, 'daily/daily_1', `receipts/${Persistence.receiptId(REQUEST)}`].sort());
+  assert.equal(calls[0][1], 'marketing/daily/daily_1');
+  assert.equal(calls.find(call => call[0] === 'patch').length, 2);
+  const patchCall = calls.find(call => call[0] === 'patch');
+  assert.deepEqual(Object.keys(patchCall[1]).sort(), [`audits/${Persistence.auditId(REQUEST)}`, 'daily/daily_1', `receipts/${Persistence.receiptId(REQUEST)}`].sort());
   assert.equal(JSON.stringify(calls).includes('crmShared'), false);
+});
+
+test('read maps server milliseconds to bounded ISO display fields', () => {
+  const result = Persistence.readEnvelope({ daily_1: { id: 'daily_1', version: 1, createdAtMs: 1788141600000, updatedAtMs: 1788141600000 } });
+  assert.equal(result.daily[0].createdAt, new Date(1788141600000).toISOString());
+  assert.equal(result.daily[0].updatedAt, new Date(1788141600000).toISOString());
+});
+
+test('atomic transport PATCHes the marketing root without a root If-Match header', async () => {
+  const calls = [];
+  const client = new FirebaseRemoteClient({ Core: {}, fs: {}, safeStorage: {}, shell: {}, sessionFile: '', pendingFile: '', fetchImpl: async (url, options) => { calls.push({ url, options }); return { ok: true, status: 200, text: async () => '' }; } });
+  client.session = { uid: 'uid_1', idToken: 'token', expiresAt: Date.now() + 60000 };
+  client.sessionGeneration = 1;
+  client.ensureIdToken = async () => 'token';
+  await client.atomicMarketingPatch({ 'daily/a': { id: 'a' } }, client.captureSessionGuard());
+  assert.match(calls[0].url, /crmCompany\/marketing\.json\?auth=token&print=silent$/);
+  assert.equal(calls[0].options.method, 'PATCH');
+  assert.equal(calls[0].options.headers['If-Match'], undefined);
+});
+
+test('queued marketing commit rejects a switched session before any read or write', async () => {
+  let release;
+  const client = new FirebaseRemoteClient({ Core: {}, fs: {}, safeStorage: {}, shell: {}, sessionFile: '', pendingFile: '' });
+  client.session = { uid: 'uid_1', email: 'marketing@example.com', role: 'marketing' };
+  client.sessionGeneration = 1;
+  client.marketingMutationQueue = new Promise(resolve => { release = resolve; });
+  let touched = false;
+  client.dbReadWithEtag = async () => { touched = true; return { value: null, etag: 'x' }; };
+  const pending = client.commitMarketingRecord({ id: 'daily_1', requestId: REQUEST, expectedVersion: 0, action: 'create', values });
+  client.session = { uid: 'uid_2', email: 'other@example.com', role: 'marketing' };
+  client.sessionGeneration += 1;
+  release();
+  await assert.rejects(pending, error => error.code === 'SESSION_CHANGED');
+  assert.equal(touched, false);
+});
+
+test('local persistence stores record audit receipt atomically and rolls back a session switch', async () => {
+  let session = { uid: 'uid_1', email: 'marketing@example.com', role: 'marketing' };
+  const state = { daily: Object.create(null), audits: Object.create(null), receipts: Object.create(null) };
+  const local = Persistence.createLocalPersistence({ state, getSession: () => session, resolveActor: current => ({ authUid: current.uid, operatorId: 'operator_1', email: current.email, role: current.role, active: true }), clock: () => 1000 });
+  const result = await local.commit({ id: 'daily_1', requestId: REQUEST, expectedVersion: 0, action: 'create', values });
+  assert.equal(result.record.createdAtMs, 1000);
+  assert.equal(Object.keys(state.daily).length, 1);
+  assert.equal(Object.keys(state.audits).length, 1);
+  assert.equal(Object.keys(state.receipts).length, 1);
+
+  const switchedState = { daily: Object.create(null), audits: Object.create(null), receipts: Object.create(null) };
+  session = { uid: 'uid_1', email: 'marketing@example.com', role: 'marketing' };
+  const switched = Persistence.createLocalPersistence({ state: switchedState, getSession: () => session, resolveActor: current => ({ authUid: current.uid, operatorId: 'operator_1', email: current.email, role: current.role, active: true }), clock: () => { session = { uid: 'uid_2', email: 'other@example.com', role: 'marketing' }; return 1001; } });
+  await assert.rejects(() => switched.commit({ id: 'daily_2', requestId: '223e4567-e89b-42d3-a456-426614174000', expectedVersion: 0, action: 'create', values }), error => error.code === 'SESSION_CHANGED');
+  assert.deepEqual(Object.keys(switchedState.daily), []);
+  assert.deepEqual(Object.keys(switchedState.audits), []);
+  assert.deepEqual(Object.keys(switchedState.receipts), []);
 });

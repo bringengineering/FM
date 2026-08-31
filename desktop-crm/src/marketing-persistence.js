@@ -62,33 +62,68 @@ function assertMarketingWriter(actor) {
 function requestHash(input) { return hash({ id: input.id, requestId: input.requestId, expectedVersion: input.expectedVersion, action: input.action, ...(input.values ? { values: input.values } : {}) }); }
 function receiptId(requestId) { return `request_${String(requestId).replace(/-/g, '_')}`; }
 function auditId(requestId) { return `audit_${String(requestId).replace(/-/g, '_')}`; }
-function snapshot(record) {
-  if (!record) return null;
-  return Object.fromEntries(['date', 'channel', 'campaignId', 'campaignName', 'service', 'region', ...NUMBER_FIELDS].map(key => [key, record[key] == null ? '' : record[key]]));
-}
+const SERVER_TIMESTAMP = Object.freeze({ '.sv': 'timestamp' });
 function planCommit(inputValue, existing, actorValue, now, existingReceipt) {
   const input = validateCommitInput(inputValue);
   const actor = assertMarketingWriter(actorValue);
   const requestHashValue = requestHash(input);
   if (existingReceipt) {
-    if (existingReceipt.requestId !== input.requestId || existingReceipt.requestHash !== requestHashValue || existingReceipt.recordId !== input.id || !existingReceipt.record) fail('MARKETING_REQUEST_ID_CONFLICT');
-    return { record: structuredClone(existingReceipt.record), receipt: structuredClone(existingReceipt), repeated: true, requestHash: requestHashValue, auditId: existingReceipt.auditId };
+    if (existingReceipt.requestId !== input.requestId || existingReceipt.requestHash !== requestHashValue || existingReceipt.recordId !== input.id || !existing || existing.version !== existingReceipt.afterVersion) fail('MARKETING_REQUEST_ID_CONFLICT');
+    return { record: structuredClone(existing), receipt: structuredClone(existingReceipt), repeated: true, requestHash: requestHashValue, auditId: existing.lastAuditId };
   }
-  if (input.action === 'create' ? existing != null : !existing || existing.version !== input.expectedVersion || existing.archivedAt) fail('MARKETING_CONFLICT');
-  const timestamp = new Date(now).toISOString();
-  const immutable = existing ? { createdAt: existing.createdAt, createdByAuthUid: existing.createdByAuthUid, createdByOperatorId: existing.createdByOperatorId } : { createdAt: timestamp, createdByAuthUid: actor.authUid, createdByOperatorId: actor.operatorId };
-  const record = { ...(existing || {}), ...(input.values || {}), id: input.id, ...immutable, version: input.expectedVersion + 1, updatedAt: timestamp, updatedByAuthUid: actor.authUid, updatedByOperatorId: actor.operatorId };
-  if (input.action === 'archive') Object.assign(record, { archivedAt: timestamp, archivedByAuthUid: actor.authUid, archivedByOperatorId: actor.operatorId });
+  if (input.action === 'create' ? existing != null : !existing || existing.version !== input.expectedVersion || existing.archivedAtMs) fail('MARKETING_CONFLICT');
   const aid = auditId(input.requestId);
-  const audit = { id: aid, actorAuthUid: actor.authUid, operatorId: actor.operatorId, actorIdentifier: text(actor.email || actor.operatorId, 200), action: input.action, recordId: input.id, occurredAt: timestamp, before: snapshot(existing), after: snapshot(record), requestId: input.requestId, requestHash: requestHashValue };
-  const receipt = { id: receiptId(input.requestId), requestId: input.requestId, requestHash: requestHashValue, recordId: input.id, auditId: aid, actorAuthUid: actor.authUid, operatorId: actor.operatorId, occurredAt: timestamp, record: structuredClone(record) };
+  const rid = receiptId(input.requestId);
+  const immutable = existing ? { createdAtMs: existing.createdAtMs, createdByAuthUid: existing.createdByAuthUid, createdByOperatorId: existing.createdByOperatorId } : { createdAtMs: SERVER_TIMESTAMP, createdByAuthUid: actor.authUid, createdByOperatorId: actor.operatorId };
+  const record = { ...(existing || {}), ...(input.values || {}), id: input.id, ...immutable, version: input.expectedVersion + 1, updatedAtMs: SERVER_TIMESTAMP, updatedByAuthUid: actor.authUid, updatedByOperatorId: actor.operatorId, lastAction: input.action, lastAuditId: aid, lastReceiptId: rid, lastRequestId: input.requestId, lastRequestHash: requestHashValue };
+  if (input.action === 'archive') Object.assign(record, { archivedAtMs: SERVER_TIMESTAMP, archivedByAuthUid: actor.authUid, archivedByOperatorId: actor.operatorId });
+  const audit = { id: aid, actorAuthUid: actor.authUid, operatorId: actor.operatorId, actorIdentifier: text(actor.email || actor.operatorId, 200), action: input.action, recordId: input.id, occurredAtMs: SERVER_TIMESTAMP, beforeVersion: input.expectedVersion, afterVersion: record.version, requestId: input.requestId, requestHash: requestHashValue, beforeSpend: Number(existing && existing.spend || 0), afterSpend: Number(record.spend || 0) };
+  const receipt = { id: rid, actorAuthUid: actor.authUid, operatorId: actor.operatorId, action: input.action, recordId: input.id, occurredAtMs: SERVER_TIMESTAMP, beforeVersion: input.expectedVersion, afterVersion: record.version, requestId: input.requestId, requestHash: requestHashValue };
   return { record, audit, receipt, repeated: false, requestHash: requestHashValue, auditId: aid };
 }
 function readEnvelope(daily) {
   const active = [], archived = [];
-  for (const record of Object.values(plain(daily) ? daily : {})) (record && record.archivedAt ? archived : active).push(record);
+  for (const source of Object.values(plain(daily) ? daily : {})) {
+    const record = structuredClone(source);
+    for (const [ms, iso] of [['createdAtMs', 'createdAt'], ['updatedAtMs', 'updatedAt'], ['archivedAtMs', 'archivedAt']]) if (Number.isSafeInteger(record[ms]) && record[ms] >= 0) record[iso] = new Date(record[ms]).toISOString();
+    (record && record.archivedAtMs ? archived : active).push(record);
+  }
   const times = active.concat(archived).map(item => String(item.updatedAt || '')).filter(Boolean).sort();
   return { daily: active, archived, lastUpdatedAt: times.at(-1) || '' };
 }
 
-module.exports = Object.freeze({ VALUE_FIELDS, validateCommitInput, assertMarketingWriter, requestHash, receiptId, auditId, planCommit, readEnvelope });
+function createLocalPersistence(options) {
+  const state = options.state;
+  let queue = Promise.resolve(), lastTime = 0;
+  const sessionKey = session => session && `${String(session.uid || '')}|${String(session.email || '')}|${String(session.role || '')}`;
+  const resolveTime = (value, timestamp) => JSON.parse(JSON.stringify(value), (_key, item) => item && item['.sv'] === 'timestamp' ? timestamp : item);
+  async function commit(inputValue) {
+    const queuedKey = sessionKey(options.getSession());
+    const running = queue.then(async () => {
+      const session = options.getSession();
+      if (!queuedKey || sessionKey(session) !== queuedKey) fail('SESSION_CHANGED');
+      const input = validateCommitInput(inputValue);
+      const actor = assertMarketingWriter(options.resolveActor(session));
+      const rid = receiptId(input.requestId);
+      const plan = planCommit(input, state.daily[input.id] || null, actor, null, state.receipts[rid] || null);
+      if (plan.repeated) return { record: (readEnvelope({ [input.id]: plan.record }).daily[0] || readEnvelope({ [input.id]: plan.record }).archived[0]), repeated: true, auditId: plan.auditId };
+      const timestamp = Math.max(Number(options.clock()), lastTime + 1);
+      if (!Number.isSafeInteger(timestamp) || timestamp < 0 || sessionKey(options.getSession()) !== queuedKey) fail('SESSION_CHANGED');
+      const record = resolveTime(plan.record, timestamp), audit = resolveTime(plan.audit, timestamp), receipt = resolveTime(plan.receipt, timestamp);
+      const previous = { record: state.daily[input.id], audit: state.audits[audit.id], receipt: state.receipts[rid] };
+      state.daily[input.id] = record; state.audits[audit.id] = audit; state.receipts[rid] = receipt;
+      if (sessionKey(options.getSession()) !== queuedKey) {
+        for (const [bucket, key, value] of [['daily', input.id, previous.record], ['audits', audit.id, previous.audit], ['receipts', rid, previous.receipt]]) value === undefined ? delete state[bucket][key] : state[bucket][key] = value;
+        fail('SESSION_CHANGED');
+      }
+      lastTime = timestamp;
+      const envelope = readEnvelope({ [input.id]: record });
+      return { record: envelope.daily[0] || envelope.archived[0], repeated: false, auditId: audit.id };
+    });
+    queue = running.catch(() => {});
+    return running;
+  }
+  return Object.freeze({ commit, read: () => readEnvelope(state.daily) });
+}
+
+module.exports = Object.freeze({ VALUE_FIELDS, SERVER_TIMESTAMP, validateCommitInput, assertMarketingWriter, requestHash, receiptId, auditId, planCommit, readEnvelope, createLocalPersistence });

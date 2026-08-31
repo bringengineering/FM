@@ -137,9 +137,23 @@ let localCanonicalBuildingVacancyState = Object.create(null);
 const localCanonicalBuildingUnitReceipts = new Map();
 const localCanonicalCrmReceipts = new Map();
 let localBuildingScheduleCommitQueue = Promise.resolve();
-let localMarketingCommitQueue = Promise.resolve();
 const localMarketingDaily = Object.create(null);
 const localMarketingReceipts = Object.create(null);
+const localMarketingAudits = Object.create(null);
+const localMarketingPersistence = MarketingPersistence.createLocalPersistence({
+  state: { daily: localMarketingDaily, audits: localMarketingAudits, receipts: localMarketingReceipts },
+  getSession: () => authState().user,
+  resolveActor: user => {
+    const profiles = {
+      "local-admin": { operatorId: "operator_local_admin", active: true, role: "admin" },
+      "local-marketing": { operatorId: "operator_local_marketing", active: true, role: "marketing" },
+    };
+    const profile = profiles[String(user && user.uid || "")];
+    const verifiedMarketingRole = profile && profile.role || "";
+    return { authUid: String(user && user.uid || ""), operatorId: String(profile && profile.operatorId || ""), email: String(user && user.email || ""), role: verifiedMarketingRole, active: profile && profile.active === true };
+  },
+  clock: () => Date.now(),
+});
 
 const fieldRequestCoordinator = createFieldRequestCoordinator({
   timeoutMs: FIELD_BRIDGE_TIMEOUT_MS,
@@ -2114,20 +2128,7 @@ async function commitLocalBuildingSchedule(inputValue) {
 }
 
 async function commitLocalMarketingRecord(inputValue) {
-  const running = localMarketingCommitQueue.then(async () => {
-    const input = MarketingPersistence.validateCommitInput(inputValue);
-    const user = authState().user || {};
-    const actor = { authUid: String(user.uid || ""), operatorId: String(user.uid || ""), email: String(user.email || ""), role: String(user.role || ""), active: true };
-    const receiptId = MarketingPersistence.receiptId(input.requestId);
-    const plan = MarketingPersistence.planCommit(input, localMarketingDaily[input.id] || null, actor, new Date().toISOString(), localMarketingReceipts[receiptId] || null);
-    if (!plan.repeated) {
-      localMarketingDaily[input.id] = plan.record;
-      localMarketingReceipts[receiptId] = plan.receipt;
-    }
-    return { record: plan.record, repeated: plan.repeated, auditId: plan.auditId };
-  });
-  localMarketingCommitQueue = running.catch(() => {});
-  return running;
+  return localMarketingPersistence.commit(inputValue);
 }
 
 async function restoreLocalStore(input) {
@@ -5386,7 +5387,7 @@ secureCanonicalHandle("crm:building-schedule-commit", async input => {
   }
 });
 secureCanonicalHandle("crm:marketing-read", async () => {
-  if (localTestMode) return MarketingPersistence.readEnvelope(localMarketingDaily);
+  if (localTestMode) return localMarketingPersistence.read();
   if (!remoteClient || !remoteClient.authState().user) throw new Error("로그인이 필요합니다.");
   return remoteClient.readMarketingRecords();
 });
