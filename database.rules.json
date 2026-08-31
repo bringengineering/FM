@@ -800,6 +800,12 @@
             "platformLeads": {
               ".validate": "newData.isNumber() && newData.val() >= 0 && newData.val() <= 9007199254740991 && newData.val() % 1 === 0"
             },
+            "dailyBudget": {
+              ".validate": "newData.isNumber() && newData.val() > 0 && newData.val() <= 9007199254740991 && newData.val() % 1 === 0 && newData.parent().child('budgetValidatedAtMs').isNumber() && newData.parent().child('budgetValidatedAtMs').val() > 0"
+            },
+            "budgetValidatedAtMs": {
+              ".validate": "newData.isNumber() && newData.val() > 0 && newData.val() <= 9007199254740991 && newData.val() % 1 === 0 && newData.parent().child('dailyBudget').isNumber() && newData.parent().child('dailyBudget').val() > 0"
+            },
             "sourceType": {
               ".validate": "newData.val() === 'manual' || newData.val() === 'crm'"
             },
@@ -998,6 +1004,12 @@
               },
               "platformLeads": {
                 ".validate": "newData.val() === newData.parent().parent().parent().parent().child('daily').child(newData.parent().parent().child('recordId').val()).child('platformLeads').val()"
+              },
+              "dailyBudget": {
+                ".validate": "newData.val() === newData.parent().parent().parent().parent().child('daily').child(newData.parent().parent().child('recordId').val()).child('dailyBudget').val()"
+              },
+              "budgetValidatedAtMs": {
+                ".validate": "newData.val() === newData.parent().parent().parent().parent().child('daily').child(newData.parent().parent().child('recordId').val()).child('budgetValidatedAtMs').val()"
               },
               "note": {
                 ".validate": "newData.val() === newData.parent().parent().parent().parent().child('daily').child(newData.parent().parent().child('recordId').val()).child('note').val()"

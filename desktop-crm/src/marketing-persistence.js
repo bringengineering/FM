@@ -7,8 +7,8 @@ const SAFE_ID = /^[A-Za-z0-9_-]{1,120}$/;
 const UUID_V4 = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const FORBIDDEN_IDS = new Set(['__proto__', 'prototype', 'constructor']);
 const ROOT_FIELDS = new Set(['id', 'requestId', 'expectedVersion', 'action', 'values']);
-const VALUE_FIELDS = Object.freeze(['date', 'channel', 'accountName', 'campaignId', 'campaignName', 'adGroup', 'keyword', 'contentId', 'contentTitle', 'service', 'region', 'spend', 'impressions', 'clicks', 'phoneClicks', 'chatClicks', 'directionsClicks', 'saves', 'platformLeads', 'note', 'sourceType']);
-const NUMBER_FIELDS = new Set(['spend', 'impressions', 'clicks', 'phoneClicks', 'chatClicks', 'directionsClicks', 'saves', 'platformLeads']);
+const VALUE_FIELDS = Object.freeze(['date', 'channel', 'accountName', 'campaignId', 'campaignName', 'adGroup', 'keyword', 'contentId', 'contentTitle', 'service', 'region', 'spend', 'impressions', 'clicks', 'phoneClicks', 'chatClicks', 'directionsClicks', 'saves', 'platformLeads', 'dailyBudget', 'budgetValidatedAtMs', 'note', 'sourceType']);
+const NUMBER_FIELDS = new Set(['spend', 'impressions', 'clicks', 'phoneClicks', 'chatClicks', 'directionsClicks', 'saves', 'platformLeads', 'dailyBudget', 'budgetValidatedAtMs']);
 
 function fail(code) { const error = new Error(code); error.code = code; throw error; }
 function plain(value) { return value && typeof value === 'object' && !Array.isArray(value) && Object.getPrototypeOf(value) === Object.prototype; }
@@ -38,10 +38,13 @@ function normalizeValues(value) {
   const result = { date: base.date, channel: base.channel };
   for (const name of VALUE_FIELDS) {
     if (name === 'date' || name === 'channel') continue;
+    if (['dailyBudget', 'budgetValidatedAtMs'].includes(name) && value[name] == null) continue;
     if (NUMBER_FIELDS.has(name)) result[name] = integer(value[name] == null ? 0 : value[name]);
     else if (name === 'sourceType') result[name] = value[name];
     else result[name] = text(value[name], name === 'note' ? 1000 : 200);
   }
+  const hasBudget = Object.hasOwn(result, 'dailyBudget'), hasValidation = Object.hasOwn(result, 'budgetValidatedAtMs');
+  if (hasBudget !== hasValidation || hasBudget && result.dailyBudget <= 0) fail('MARKETING_INPUT_INVALID');
   return result;
 }
 function validateCommitInput(value, expectedAction) {
@@ -94,7 +97,8 @@ function readEnvelope(daily) {
     (record && record.archivedAtMs ? archived : active).push(record);
   }
   const times = active.concat(archived).map(item => String(item.updatedAt || '')).filter(Boolean).sort();
-  return { daily: active, archived, lastUpdatedAt: times.at(-1) || '' };
+  const validatedBudgets = active.filter(item => Number.isSafeInteger(item.dailyBudget) && item.dailyBudget > 0 && Number.isSafeInteger(item.budgetValidatedAtMs) && item.budgetValidatedAtMs >= 0).sort((a,b)=>b.budgetValidatedAtMs-a.budgetValidatedAtMs||String(a.id||'').localeCompare(String(b.id||'')));
+  return { daily: active, archived, lastUpdatedAt: times.at(-1) || '', budgets: validatedBudgets.length ? { daily: validatedBudgets[0].dailyBudget } : {} };
 }
 
 function createLocalPersistence(options) {

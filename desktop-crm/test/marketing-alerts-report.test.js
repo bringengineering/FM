@@ -4,6 +4,7 @@ const fs = require('node:fs');
 const path = require('node:path');
 const Core = require('../src/marketing-core');
 const UI = require('../src/marketing-ui');
+const Persistence = require('../src/marketing-persistence');
 
 const now = new Date('2026-08-31T03:00:00Z'); // 2026-08-31 12:00 KST
 const baseSnapshot = Object.freeze({
@@ -22,7 +23,7 @@ test('buildAlerts observes exact KST time boundaries, dedupes, sorts and exclude
     { caseId: 'case-contract', customerId: 'c4', contractStatus: 'needs_review', contractReviewAt: '2026-08-28T03:00:00Z', contracts: 1, contractAmount: 0, expectedCost: 0 },
     { caseId: 'case-lead', customerId: 'c2', validLeads: 1, owner: '' }
   ];
-  const alerts = Core.buildAlerts({ snapshot: baseSnapshot, facts, daily: [], sourceUpdatedAtMs: now.getTime() - 72 * 3600000 }, now);
+  const alerts = Core.buildAlerts({ snapshot: {...baseSnapshot,filteredFacts:facts}, facts, daily: [], sourceUpdatedAtMs: now.getTime() - 72 * 3600000 }, now);
   assert.ok(Object.isFrozen(alerts) && alerts.every(Object.isFrozen));
   for (const alert of alerts) assert.deepEqual(Object.keys(alert), ['id','code','severity','title','reason','targetType','targetId','occurredAt','dueAt','requiresAdminDecision','evidence']);
   assert.equal(alerts.filter(a => a.code === 'lead_missing_owner' && a.targetId === 'case-lead').length, 1);
@@ -62,7 +63,8 @@ test('buildWeeklyReport reuses snapshot values, is immutable, honest, and determ
 });
 
 test('alerts and weekly routes render evidence, exact copy text, print controls, and overview reuses alerts', () => {
-  const alerts = Core.buildAlerts({ snapshot:baseSnapshot, facts:[{caseId:'c1',validLeads:1,owner:''}] }, now);
+  const alertFacts=[{caseId:'c1',validLeads:1,owner:''}];
+  const alerts = Core.buildAlerts({ snapshot:{...baseSnapshot,filteredFacts:alertFacts}, facts:alertFacts }, now);
   const report = Core.buildWeeklyReport(baseSnapshot, alerts, now);
   const alertHtml = UI.renderWorkspace({ view:'marketingAlerts', snapshot:baseSnapshot, filters:UI.defaultFilters(), alerts });
   assert.match(alertHtml, /긴급|주의|안내/);
@@ -131,4 +133,54 @@ test('controller derives exact displayed report from wired raw metadata and app 
   assert.match(app,/weeklyReportText\(marketingController\.state\.report\)/);
   assert.doesNotMatch(app,/data-marketing-report-copy[\s\S]{0,700}buildWeeklyReport/);
   for(const type of ['case','contract','customer','ad','channel','budget','source']) assert.match(app,new RegExp(`targetType === "${type}"`));
+});
+
+test('alerts cannot escape snapshot period and shared filters', () => {
+  const snapshot=Core.buildSnapshot({daily:[{id:'in',date:'2026-08-31',channel:'naver_blog',spend:1,updatedAtMs:now.getTime()}],facts:[{caseId:'in',date:'2026-08-31',channel:'naver_blog',service:'design',owner:'Kim',validLeads:1}]},{period:{type:'custom',start:'2026-08-31',end:'2026-08-31'},channel:'naver_blog',service:'design',owner:'Kim'},now);
+  const alerts=Core.buildAlerts({snapshot,facts:[...snapshot.filteredFacts,{caseId:'out',date:'2026-07-01',channel:'soomgo',validLeads:1}],daily:[...snapshot.filteredDaily,{id:'out-ad',date:'2026-07-01',channel:'soomgo',keyword:'secret',spend:99}],sourceUpdatedAtMsByChannel:{soomgo:0,naver_blog:now.getTime()}},now);
+  assert.doesNotMatch(JSON.stringify(alerts),/out|soomgo|secret/);
+});
+
+test('validated stored budget metadata flows through persistence envelope into real controller read path', async () => {
+  const envelope=Persistence.readEnvelope({r1:{id:'r1',date:'2026-08-31',channel:'naver_blog',spend:80,dailyBudget:100,budgetValidatedAtMs:now.getTime(),updatedAtMs:now.getTime()}});
+  assert.deepEqual(envelope.budgets,{daily:100});
+  const controller=UI.createController({core:Core,bridge:{projectFacts:()=>[],sourceRevision:()=>''},now:()=>now,readRaw:async()=>envelope});
+  await controller.load({accessRole:'admin'},{});
+  assert.ok(controller.state.alerts.some(a=>a.code==='budget_80_percent'));
+  const rules=fs.readFileSync(path.join(__dirname,'../../database.rules.json'),'utf8');
+  assert.match(rules,/"dailyBudget"\s*:\s*\{\s*"\.validate"\s*:\s*"newData\.isNumber\(\) && newData\.val\(\) > 0/);
+  assert.match(rules,/"budgetValidatedAtMs"\s*:\s*\{\s*"\.validate"\s*:\s*"newData\.isNumber\(\) && newData\.val\(\) > 0/);
+});
+
+test('ad targets use stable record IDs or non-sensitive aggregate fallback', () => {
+  const snapshot={totals:{spend:2,validLeads:0},filteredFacts:[],filteredDaily:[{date:'2026-08-30',channel:'naver_blog',keyword:'private keyword',spend:1},{date:'2026-08-31',channel:'naver_blog',keyword:'private keyword',spend:1}]};
+  const alert=Core.buildAlerts({snapshot},now).find(a=>a.code==='persistent_zero_leads');
+  assert.equal(alert.targetId,'aggregate-ad-performance');
+  assert.doesNotMatch(alert.targetId,/private keyword/);
+  const stable={...snapshot,filteredDaily:snapshot.filteredDaily.map((row,index)=>({...row,id:`record-${index}`}))};
+  assert.equal(Core.buildAlerts({snapshot:stable},now).find(a=>a.code==='persistent_zero_leads').targetId,'record-0');
+});
+
+test('CPC rise rejects zero previous CPC and reports only with positive sampled baseline', () => {
+  const snapshot={totals:{spend:100,clicks:10},comparison:{totals:{spend:0,clicks:10}},filteredFacts:[],filteredDaily:[]};
+  assert.equal(Core.buildAlerts({snapshot},now).some(a=>a.code==='cpc_sharp_increase'),false);
+  assert.equal(Core.buildAlerts({snapshot:{...snapshot,comparison:{totals:{spend:10,clicks:10}}}},now).some(a=>a.code==='cpc_sharp_increase'),true);
+});
+
+test('weekly report clones inputs without freezing or mutating them', () => {
+  const snapshot=structuredClone(baseSnapshot), alerts=[{id:'z',requiresAdminDecision:true,title:'z',reason:'z'}];
+  const before=structuredClone(snapshot), report=Core.buildWeeklyReport(snapshot,alerts,now);
+  assert.equal(Object.isFrozen(snapshot),false);
+  assert.equal(Object.isFrozen(snapshot.totals),false);
+  assert.deepEqual(snapshot,before);
+  assert.notEqual(report.totals,snapshot.totals);
+});
+
+test('navigation identifies exact ad records and applies exact channel/source filter', () => {
+  const app=fs.readFileSync(path.join(__dirname,'../src/app.js'),'utf8');
+  const ui=fs.readFileSync(path.join(__dirname,'../src/marketing-ui.js'),'utf8');
+  assert.match(ui,/data-marketing-entry-id/);
+  assert.match(app,/querySelector\(`\[data-marketing-entry-id=/);
+  assert.match(app,/targetType === "channel"[\s\S]{0,220}setFilter\("channel", targetId\)/);
+  assert.match(app,/targetType === "source"[\s\S]{0,220}setFilter\("channel", targetId\)/);
 });

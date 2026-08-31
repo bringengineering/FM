@@ -4627,10 +4627,10 @@
       if (targetType === "case") { await workspaceCoordinator.select("operations"); currentView = "cases"; selectedCaseKey = targetId; render(); }
       else if (targetType === "contract") { await workspaceCoordinator.select("operations"); currentView = "contracts"; render(); const contract=store.contracts.find(item=>String(item.id)===targetId); if(contract) openContractForm(contract); }
       else if (targetType === "customer") { await workspaceCoordinator.select("operations"); currentView = "customers"; selectedCustomerId = targetId; render(); }
-      else if (targetType === "ad") { currentMarketingView = "marketingInput"; renderMarketingWorkspace(); }
-      else if (targetType === "channel") { currentMarketingView = "marketingChannels"; renderMarketingWorkspace(); }
+      else if (targetType === "ad") { currentMarketingView = "marketingInput"; renderMarketingWorkspace(); const record=document.querySelector(`[data-marketing-entry-id="${CSS.escape(targetId)}"]`); if(record) { record.focus(); record.scrollIntoView({block:"center"}); } }
+      else if (targetType === "channel") { marketingController.setFilter("channel", targetId); currentMarketingView = "marketingChannels"; renderMarketingWorkspace(); }
       else if (targetType === "budget") { currentMarketingView = "marketingWeekly"; renderMarketingWorkspace(); }
-      else if (targetType === "source") { currentMarketingView = "marketingInput"; renderMarketingWorkspace(); }
+      else if (targetType === "source") { marketingController.setFilter("channel", targetId); currentMarketingView = "marketingInput"; renderMarketingWorkspace(); }
       return;
     }
     const marketingNav = event.target.closest("[data-marketing-nav]");
