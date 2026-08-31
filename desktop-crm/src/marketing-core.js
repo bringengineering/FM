@@ -271,5 +271,77 @@
     return freeze(snapshot);
   }
 
-  return Object.freeze({ CHANNELS, SERVICES, DATA_STATUSES, INQUIRY_METHODS, INVALID_REASONS, EXPAND_ROAS_PERCENT, MIN_EXPAND_CONTRACTS, NORMALIZE_DAILY_SCOPE, checkedIntegerAdd, checkedIntegerSubtract, normalizeDaily, normalizeManualRecord, duplicateKey, findActiveDuplicate, normalizeMarketingAttribution, safeDivide, safeRate, calculateMetrics, resolvePeriod, buildSnapshot });
+  const ALERT_CPC_INCREASE_RATIO = 1.5;
+  const ALERT_CPC_MIN_CLICKS = 2;
+  const ALERT_EVIDENCE_LIMIT = 8;
+  const HOUR = 3600000;
+  const ALERT_SEVERITY_ORDER = Object.freeze({ urgent: 0, warning: 1, info: 2 });
+  function instant(value) { const ms = typeof value === 'number' ? value : value instanceof Date ? value.getTime() : Date.parse(value || ''); return Number.isFinite(ms) ? ms : null; }
+  function kstDateKey(value) { const ms = instant(value); return ms == null ? '' : new Date(ms + 9 * HOUR).toISOString().slice(0, 10); }
+  function stableTarget(row, fallback) { return bounded(row && (row.caseId || row.contractId || row.customerId || row.id || row.channel || row.keyword || row.contentId) || fallback, 160); }
+  function safeEvidence(value) {
+    const deny = /phone|private|note|receipt|token|secret|password|credential/i;
+    const source = value && typeof value === 'object' ? value : {};
+    const result = {};
+    Object.keys(source).filter(key => !deny.test(key)).sort().slice(0, ALERT_EVIDENCE_LIMIT).forEach(key => {
+      const item = source[key];
+      if (typeof item === 'number' && Number.isFinite(item)) result[key] = item;
+      else if (typeof item === 'boolean') result[key] = item;
+      else if (typeof item === 'string') result[key] = bounded(item, 160);
+    });
+    return result;
+  }
+  function buildAlerts(input, nowKst) {
+    input = input && typeof input === 'object' ? input : {};
+    const snapshot = input.snapshot || {}, facts = Array.isArray(input.facts) ? input.facts : (snapshot.filteredFacts || []), daily = Array.isArray(input.daily) ? input.daily : [];
+    const nowMs = instant(nowKst) == null ? Date.now() : instant(nowKst), today = kstDateKey(nowMs), candidates = [];
+    const add = (code, severity, title, reason, targetType, targetId, occurredAt, dueAt, requiresAdminDecision, evidence) => {
+      targetId = bounded(targetId || 'aggregate', 160); targetType = bounded(targetType || 'data', 40);
+      candidates.push({ id: `${code}:${targetType}:${targetId}`, code, severity, title: bounded(title, 120), reason: bounded(reason, 300), targetType, targetId, occurredAt: bounded(occurredAt, 40), dueAt: bounded(dueAt, 40), requiresAdminDecision: Boolean(requiresAdminDecision), evidence: safeEvidence(evidence) });
+    };
+    for (const fact of facts) {
+      const id = stableTarget(fact, 'fact'), inquiryMs = instant(fact.inquiryAt || fact.occurredAt), nextMs = instant(fact.nextContactAt), quoteMs = instant(fact.quoteSentAt || fact.quotedAt), reviewMs = instant(fact.contractReviewAt || fact.updatedAt);
+      const hasResponse = Boolean(fact.lastContactAt || fact.respondedAt || Number(fact.consultations) > 0);
+      if (inquiryMs != null && nowMs - inquiryMs >= .5 * HOUR && !hasResponse) add('inquiry_unanswered','urgent','30분 이상 미응답 문의','문의 후 연락·응답·상담 근거가 없습니다.','case',id,fact.inquiryAt || fact.occurredAt,new Date(inquiryMs + .5 * HOUR).toISOString(),false,{ inquiryAt:fact.inquiryAt || fact.occurredAt, consultations:Number(fact.consultations||0) });
+      if (Number(fact.validLeads) > 0 && !bounded(fact.owner)) add('lead_missing_owner','warning','유효 리드 담당자 없음','유효 리드에 담당자가 지정되지 않았습니다.','case',id,fact.inquiryAt || fact.occurredAt,'',false,{ validLeads:Number(fact.validLeads) });
+      if (Number(fact.validLeads) > 0 && !bounded(fact.nextContactAt)) add('missing_next_contact','warning','다음 연락일 없음','유효 리드의 다음 연락일이 없습니다.','case',id,fact.inquiryAt || fact.occurredAt,'',false,{ validLeads:Number(fact.validLeads), owner:fact.owner||'' });
+      if (nextMs != null && kstDateKey(nextMs) === today) add('followup_today','info','오늘 후속 연락','다음 연락일이 오늘입니다.','case',id,fact.inquiryAt || '',fact.nextContactAt,false,{ nextContactAt:fact.nextContactAt });
+      if (nextMs != null && kstDateKey(nextMs) < today) add('followup_overdue','urgent','후속 연락 기한 경과','다음 연락일이 지났습니다.','case',id,fact.inquiryAt || '',fact.nextContactAt,false,{ nextContactAt:fact.nextContactAt });
+      if ((Number(fact.quotes)>0 || fact.analyticalStage === 'quote') && quoteMs != null && nowMs - quoteMs >= 24*HOUR && !fact.respondedAt && !fact.nextStageAt) add('quote_no_response_24h','warning','견적 후 24시간 무응답','견적 발송 후 응답 또는 다음 단계 근거가 없습니다.','case',id,fact.quoteSentAt || fact.quotedAt,new Date(quoteMs+24*HOUR).toISOString(),false,{ quotes:Number(fact.quotes||0), quoteSentAt:fact.quoteSentAt||fact.quotedAt });
+      if (['needs_review','review'].includes(String(fact.contractStatus||'')) && reviewMs != null && nowMs-reviewMs >= 3*DAY) add('contract_review_3d','urgent','계약 검토 3일 경과','계약 검토 상태가 3일 이상 유지됐습니다.','contract',id,fact.contractReviewAt||fact.updatedAt,new Date(reviewMs+3*DAY).toISOString(),true,{ contractStatus:fact.contractStatus, contractReviewAt:fact.contractReviewAt||fact.updatedAt });
+      if (Number(fact.contracts)>0 && Number(fact.contractAmount||0)===0) add('missing_contract_amount','warning','계약금액 누락','계약 근거가 있으나 계약금액이 없습니다.','contract',id,fact.occurredAt||'','',false,{ contracts:Number(fact.contracts) });
+      if (Number(fact.contracts)>0 && Number(fact.expectedCost||0)===0) add('missing_expected_cost','warning','예상원가 누락','계약 근거가 있으나 예상원가가 없습니다.','contract',id,fact.occurredAt||'','',false,{ contracts:Number(fact.contracts) });
+      if ((fact.customerStatus === 'lost' || fact.contractStatus === 'lost') && !bounded(fact.lostReason)) add('missing_lost_reason','warning','실패 이유 누락','실패 상태에 사유가 없습니다.','case',id,fact.occurredAt||'','',false,{ customerStatus:fact.customerStatus||'', contractStatus:fact.contractStatus||'' });
+      if (Number(fact.contracts)>0 && ['needs_review',''].includes(String(fact.firstSource||''))) add('contract_attribution_review','warning','계약 최초 유입 확인 필요','계약의 최초 유입 근거가 없거나 검토 상태입니다.','contract',id,fact.occurredAt||'','',true,{ contracts:Number(fact.contracts), firstSource:fact.firstSource||'' });
+      if (['naver_place_ads'].includes(fact.channel) && Number(fact.inquiries||0)>0 && !bounded(fact.keyword)) add('missing_paid_keyword','info','유료검색 키워드 누락','유료검색 문의에 키워드가 없습니다.','case',id,fact.occurredAt||'','',false,{ channel:fact.channel });
+      if (fact.duplicateIdentityKey && fact.duplicateCount > 1) add('duplicate_customer_risk','warning','고객 중복 가능성','정규화된 안정 식별자가 같은 기록이 있습니다.','customer',stableTarget(fact,fact.duplicateIdentityKey),fact.occurredAt||'','',true,{ duplicateIdentityKey:fact.duplicateIdentityKey, duplicateCount:fact.duplicateCount });
+    }
+    const totals = snapshot.totals || {}, budget = Number(input.budgets && (input.budgets.target || input.budgets.daily));
+    if (Number.isFinite(budget) && budget > 0 && Number(totals.spend||0)/budget >= .8) add('budget_80_percent','warning','예산 80% 이상 사용','검증된 목표 예산 대비 지출이 80% 이상입니다.','budget','selected-period','','',true,{ spend:Number(totals.spend||0), budget });
+    if (Number(totals.spend)>0 && Number(totals.validLeads||0)===0) add('spend_zero_valid_leads','urgent','비용 발생·유효 리드 0','선택 기간에 비용은 발생했지만 유효 리드가 없습니다.','channel','selected-period','','',true,{ spend:Number(totals.spend), validLeads:0 });
+    const prior = input.previousSnapshot && input.previousSnapshot.totals || {}, currentCpc = safeDivide(totals.spend, totals.clicks), priorCpc = safeDivide(prior.spend, prior.clicks);
+    if (Number(totals.clicks)>=ALERT_CPC_MIN_CLICKS && Number(prior.clicks)>=ALERT_CPC_MIN_CLICKS && currentCpc >= priorCpc*ALERT_CPC_INCREASE_RATIO) add('cpc_sharp_increase','warning','CPC 급증','클릭 각 2건 이상에서 CPC가 이전 기간 대비 50% 이상 상승했습니다.','channel','selected-period','','',true,{ currentCpc, previousCpc:priorCpc, thresholdRatio:ALERT_CPC_INCREASE_RATIO });
+    const zeroGroups = new Map();
+    daily.filter(row=>Number(row.spend)>0 && Number(row.validLeads||0)===0).forEach(row=>{ const key = bounded(row.keyword||row.contentId||row.contentTitle); if(key) { const group=zeroGroups.get(key)||[]; group.push(row); zeroGroups.set(key,group); } });
+    zeroGroups.forEach((rows,key)=>{ if(rows.length>=2 && new Set(rows.map(r=>r.date)).size>=2) add('persistent_zero_leads','warning','키워드·콘텐츠 비용 지속·유효 리드 0','서로 다른 2일 이상 비용이 발생했지만 유효 리드가 없습니다.','ad',key,rows[0].date,rows[rows.length-1].date,true,{ records:rows.length, days:new Set(rows.map(r=>r.date)).size, subject:key }); });
+    const updated = Number(input.sourceUpdatedAtMs), age = nowMs-updated;
+    if (Number.isFinite(updated) && age>=72*HOUR) add('channel_stale_72h','urgent','채널 데이터 72시간 초과','서버 갱신 시각 이후 72시간이 지났습니다.','source','marketing-daily',new Date(updated).toISOString(),new Date(updated+72*HOUR).toISOString(),false,{ sourceUpdatedAtMs:updated, ageHours:Math.floor(age/HOUR) });
+    else if (Number.isFinite(updated) && age>=24*HOUR && input.designStateUsed) add('channel_stale_warning','warning','채널 데이터 갱신 지연','디자인 상태를 사용하는 채널 데이터가 24시간 이상 갱신되지 않았습니다.','source','marketing-daily',new Date(updated).toISOString(),new Date(updated+72*HOUR).toISOString(),false,{ sourceUpdatedAtMs:updated, ageHours:Math.floor(age/HOUR) });
+    const unique = [...new Map(candidates.map(a=>[`${a.code}|${a.targetType}|${a.targetId}`,a])).values()];
+    unique.sort((a,b)=>ALERT_SEVERITY_ORDER[a.severity]-ALERT_SEVERITY_ORDER[b.severity] || (a.dueAt||a.occurredAt||'').localeCompare(b.dueAt||b.occurredAt||'') || a.id.localeCompare(b.id));
+    return freeze(unique);
+  }
+
+  function buildWeeklyReport(snapshot, alerts, nowKst) {
+    snapshot = snapshot || {}; const totals=snapshot.totals||{}, facts=snapshot.filteredFacts||[], channels=Object.entries(snapshot.channels||{}).map(([channel,row])=>({ channel, spend:row.spend, validLeads:row.validLeads, contracts:row.contracts, contractAmount:row.contractAmount, profit:row.profit, rating:row.rating, ratingLabel:row.ratingLabel }));
+    const rank = channels.slice().sort((a,b)=>Number(b.profit||0)-Number(a.profit||0)||a.channel.localeCompare(b.channel));
+    const services = new Map(), lost = new Map(); facts.forEach(f=>{ if(f.service && f.service!=='needs_review') services.set(f.service,(services.get(f.service)||0)+Number(f.inquiries||0)); if(f.lostReason) lost.set(f.lostReason,(lost.get(f.lostReason)||0)+1); });
+    const topService=[...services].sort((a,b)=>b[1]-a[1]||a[0].localeCompare(b[0]))[0];
+    const goodKeywords=[...new Set(facts.filter(f=>f.keyword && Number(f.validLeads)>0).map(f=>f.keyword))].sort();
+    const decisionItems=(alerts||[]).filter(a=>a.requiresAdminDecision).slice(0,10);
+    const suggestions=decisionItems.slice(0,3).map(a=>a.reason); if(!suggestions.length) suggestions.push('현재 근거로 예산 변경 의견을 제시할 수 없습니다.');
+    return freeze({ generatedAt:new Date(instant(nowKst)==null?Date.now():instant(nowKst)).toISOString(), period:{ start:snapshot.period&&snapshot.period.start||'-', end:snapshot.period&&snapshot.period.end||'-' }, totals, metrics:{ spend:totals.spend, inquiries:totals.inquiries, validLeads:totals.validLeads, quotes:totals.quotes, contracts:totals.contracts, contractAmount:totals.contractAmount, expectedProfit:snapshot.metrics&&snapshot.metrics.expectedMarketingProfit }, channels, goodChannels:rank.filter(c=>['expand_review','maintain'].includes(c.rating)), goodKeywords:goodKeywords.length?goodKeywords:'데이터 부족', costOnlyItems:channels.filter(c=>Number(c.spend)>0&&Number(c.validLeads||0)===0), topService:topService?{service:topService[0],inquiries:topService[1]}:'-', lostReasons:[...lost].sort((a,b)=>b[1]-a[1]||a[0].localeCompare(b[0])).map(([reason,count])=>({reason,count})), decisionItems, nextWeekSuggestions:suggestions.slice(0,3), sourceUpdatedState:snapshot.sourceUpdatedState||'-' });
+  }
+
+  return Object.freeze({ CHANNELS, SERVICES, DATA_STATUSES, INQUIRY_METHODS, INVALID_REASONS, EXPAND_ROAS_PERCENT, MIN_EXPAND_CONTRACTS, NORMALIZE_DAILY_SCOPE, ALERT_CPC_INCREASE_RATIO, ALERT_CPC_MIN_CLICKS, checkedIntegerAdd, checkedIntegerSubtract, normalizeDaily, normalizeManualRecord, duplicateKey, findActiveDuplicate, normalizeMarketingAttribution, safeDivide, safeRate, calculateMetrics, resolvePeriod, buildSnapshot, buildAlerts, buildWeeklyReport });
 }));

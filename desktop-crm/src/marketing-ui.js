@@ -45,13 +45,33 @@
     const value = snapshot && snapshot.comparison && snapshot.comparison.deltas ? snapshot.comparison.deltas[key] : null;
     return `<small>이전 기간 대비 ${present(value) ? `${Number(value) > 0 ? "+" : ""}${money ? formatWon(value) : formatNumber(value)}` : "-"}</small>`;
   }
-  function renderOverview(snapshot) {
+  function renderAlertCards(alerts, limit) {
+    const rows = (Array.isArray(alerts) ? alerts : []).slice(0, limit == null ? alerts.length : limit);
+    return rows.map(alert => `<article class="marketing-alert ${attr(alert.severity)}" data-marketing-alert-target="${attr(alert.targetId)}" data-marketing-alert-type="${attr(alert.targetType)}"><header><b>${esc(alert.title)}</b><span>${alert.severity === "urgent" ? "긴급" : alert.severity === "warning" ? "주의" : "안내"}</span></header><p>${esc(alert.reason)}</p><small>근거: ${esc(Object.entries(alert.evidence || {}).map(([key,value]) => `${key}=${value}`).join(" · ") || "-")}</small>${alert.dueAt ? `<small>기한 ${esc(alert.dueAt)}</small>` : ""}</article>`).join("");
+  }
+  function renderOverview(snapshot, alerts) {
     const totals = snapshot.totals || {}, metrics = snapshot.metrics || {};
     const cards = [["총 마케팅 비용", "spend", true], ["노출", "impressions"], ["클릭", "clicks"], ["문의", "inquiries"], ["유효 리드", "validLeads"], ["견적", "quotes"], ["계약", "contracts"], ["계약금액", "contractAmount", true], ["예상 마케팅 이익", "expectedMarketingProfit", true, true], ["입금액", "paidAmount", true]];
     const kpis = [["CTR", "ctr", true], ["CPC", "cpc", false, true], ["문의 전환율", "inquiryCvr", true], ["유효 리드율", "validLeadRate", true], ["CPL", "cpl", false, true], ["견적 전환율", "quoteConversion", true], ["계약 전환율", "contractConversion", true], ["CPA", "cpa", false, true], ["ROAS", "roas", true], ["ROI", "roi", true], ["AOV", "aov", false, true]];
     const summary = (snapshot.funnel || []).map(item => `<article data-overview-stage="${item.stage}"><span>${esc(STAGES[item.stage])}</span><b>${formatNumber(item.count)}</b></article>`).join("");
     const excluded = Object.values(snapshot.exclusions || {}).reduce((a, b) => a + Number(b || 0), 0);
-    return `<section><div class="marketing-kpi-grid">${cards.map(([label, key, money, metric]) => { const value = metric ? metrics[key] : totals[key]; return `<article><span>${label}</span><strong>${money ? formatWon(value) : formatNumber(value)}</strong>${delta(snapshot, metric ? "profit" : key, money)}</article>`; }).join("")}</div><section class="marketing-metric-row">${kpis.map(([label, key, percent, money]) => `<article><span>${label}</span><b>${percent ? formatPercent(metrics[key]) : money ? formatWon(metrics[key]) : formatNumber(metrics[key])}</b></article>`).join("")}</section><section class="marketing-overview-funnel" aria-label="마케팅 퍼널 요약">${summary}</section><section class="marketing-attention"><h2>오늘 확인할 항목</h2>${excluded ? `<div data-marketing-alert-target="data-quality">제외 데이터 ${formatNumber(excluded)}건 · 데이터 품질을 확인하세요.</div>` : `<div data-marketing-alert-target="data-quality">현재 확인된 제외 데이터가 없습니다.</div>`}</section></section>`;
+    return `<section><div class="marketing-kpi-grid">${cards.map(([label, key, money, metric]) => { const value = metric ? metrics[key] : totals[key]; return `<article><span>${label}</span><strong>${money ? formatWon(value) : formatNumber(value)}</strong>${delta(snapshot, metric ? "profit" : key, money)}</article>`; }).join("")}</div><section class="marketing-metric-row">${kpis.map(([label, key, percent, money]) => `<article><span>${label}</span><b>${percent ? formatPercent(metrics[key]) : money ? formatWon(metrics[key]) : formatNumber(metrics[key])}</b></article>`).join("")}</section><section class="marketing-overview-funnel" aria-label="마케팅 퍼널 요약">${summary}</section><section class="marketing-attention"><h2>오늘 확인할 항목</h2>${renderAlertCards(alerts, 5) || (excluded ? `<div data-marketing-alert-target="data-quality">제외 데이터 ${formatNumber(excluded)}건 · 데이터 품질을 확인하세요.</div>` : `<div data-marketing-alert-target="data-quality">현재 확인할 알림이 없습니다.</div>`)}</section></section>`;
+  }
+
+  function renderAlerts(alerts) {
+    const source = Array.isArray(alerts) ? alerts : [];
+    const group = severity => source.filter(alert => alert.severity === severity);
+    return `<section class="marketing-alerts"><header><h2>근거 연결 알림</h2><p>긴급 ${group('urgent').length} · 주의 ${group('warning').length} · 안내 ${group('info').length}</p></header>${[['urgent','긴급'],['warning','주의'],['info','안내']].map(([severity,label])=>`<section data-alert-group="${severity}"><h3>${label} ${group(severity).length}</h3>${renderAlertCards(group(severity)) || '<p>해당 알림이 없습니다.</p>'}</section>`).join('')}</section>`;
+  }
+  function weeklyReportText(report) {
+    const m=report&&report.metrics||{}, period=report&&report.period||{};
+    return [`주간 마케팅 보고 ${period.start||'-'} ~ ${period.end||'-'}`,`총마케팅비: ${formatWon(m.spend)}`,`문의: ${formatNumber(m.inquiries)}`,`유효문의: ${formatNumber(m.validLeads)}`,`견적: ${formatNumber(m.quotes)}`,`계약: ${formatNumber(m.contracts)}`,`계약금액: ${formatWon(m.contractAmount)}`,`예상이익: ${formatWon(m.expectedProfit)}`,'다음 주 예산 의견:',...((report&&report.nextWeekSuggestions)||['데이터 부족']).map(item=>`- ${item}`)].join('\n');
+  }
+  function renderWeekly(report) {
+    if (!report) return '<section class="marketing-state">주간 보고를 생성할 집계 데이터가 없습니다.</section>';
+    const m=report.metrics||{}, channelRows=(report.channels||[]).map(row=>`<tr><td>${esc(CHANNELS[row.channel]||row.channel)}</td><td>${formatWon(row.spend)}</td><td>${formatNumber(row.validLeads)}</td><td>${formatNumber(row.contracts)}</td><td>${formatWon(row.contractAmount)}</td></tr>`).join('');
+    const list=(items,fn,empty='데이터 부족')=>items&&items.length?`<ul>${items.map(item=>`<li>${fn(item)}</li>`).join('')}</ul>`:`<p>${empty}</p>`;
+    return `<section class="marketing-weekly-report"><header><div><h2>주간 마케팅 보고</h2><p>${esc(report.period.start)} ~ ${esc(report.period.end)} · 생성 ${esc(report.generatedAt)} · 원천 갱신 ${esc(report.sourceUpdatedState)}</p></div><div class="marketing-report-actions"><button type="button" data-marketing-report-copy>보고서 복사</button><button type="button" data-marketing-report-print>인쇄 / PDF</button></div></header><section class="marketing-report-metrics">${[['총마케팅비',m.spend,true],['문의',m.inquiries],['유효문의',m.validLeads],['견적',m.quotes],['계약',m.contracts],['계약금액',m.contractAmount,true],['예상이익',m.expectedProfit,true]].map(([label,value,money])=>`<article><span>${label}</span><b>${money?formatWon(value):formatNumber(value)}</b></article>`).join('')}</section><h3>채널 성과</h3><table><tbody>${channelRows||'<tr><td>데이터 부족</td></tr>'}</tbody></table><h3>잘된 채널 / 키워드·콘텐츠</h3>${list(report.goodChannels,item=>esc(CHANNELS[item.channel]||item.channel))}<p>${esc(Array.isArray(report.goodKeywords)?report.goodKeywords.join(', '):report.goodKeywords)}</p><h3>문의 서비스</h3><p>${esc(report.topService==='-'?'-':`${report.topService.service} ${report.topService.inquiries}건`)}</p><h3>비용만 발생</h3>${list(report.costOnlyItems,item=>esc(CHANNELS[item.channel]||item.channel))}<h3>실패 이유</h3>${list(report.lostReasons,item=>`${esc(item.reason)} ${formatNumber(item.count)}건`)}<h3>다음 주 예산 의견</h3>${list(report.nextWeekSuggestions,esc)}<h3>대표 결정</h3>${list(report.decisionItems,item=>`${esc(item.title)} · ${esc(item.reason)}`,'결정 요청 없음')}</section>`;
   }
   function renderChannels(snapshot) {
     const headers = ["채널", "비용", "노출", "클릭", "유효 리드", "견적", "계약", "매출", "이익", "CPL", "CPA", "ROAS", "상태"];
@@ -155,21 +175,23 @@
     const top = `${renderNav(view)}${renderFilters(options.filters || defaultFilters(), options.filterOptions)}${localError ? `<div class="marketing-local-error" role="alert">${esc(localError)}</div>` : ""}`;
     if (options.unavailable) return `${top}<section class="marketing-state">권한에 맞는 집계 데이터가 아직 준비되지 않았습니다</section>`;
     if (!options.snapshot) return `${top}<section class="marketing-state">마케팅 데이터를 불러오는 중입니다.</section>`;
-    if (view === "marketingOverview") return `${top}${renderOverview(options.snapshot)}`;
+    if (view === "marketingOverview") return `${top}${renderOverview(options.snapshot, options.alerts)}`;
     if (view === "marketingChannels") return `${top}${renderChannels(options.snapshot)}`;
     if (view === "marketingFunnel") return `${top}${renderFunnel(options.snapshot, options.facts)}`;
     if (view === "marketingInput") return `${top}${renderMarketingInput(options.entry || {})}`;
+    if (view === "marketingAlerts") return `${top}${renderAlerts(options.alerts || [])}`;
+    if (view === "marketingWeekly") return `${top}${renderWeekly(options.report)}`;
     return `${top}<section class="marketing-state"><h2>${esc(NAV_ITEMS.find(item => item.id === view).label)}</h2><p>다음 작업에서 제공됩니다.</p></section>`;
   }
 
   function createController(options) {
     const core = options.core || MarketingCore, bridge = options.bridge || MarketingCrmBridge;
     const filters = defaultFilters(); let data = { daily: [], facts: [] }, generation = 0, rawLoaded = false, projectionRevision = "", identity = "";
-    const state = { identityKey: "", snapshot: null, facts: [], filterOptions: buildFilterOptions([]), loading: false, error: "", localError: "", unavailable: false };
-    const recompute = () => { state.filterOptions = buildFilterOptions(data.daily.concat(data.facts)); state.snapshot = core.buildSnapshot(data, filters, options.now ? options.now() : new Date()); return state.snapshot; };
+    const state = { identityKey: "", snapshot: null, facts: [], alerts: [], report: null, filterOptions: buildFilterOptions([]), loading: false, error: "", localError: "", unavailable: false };
+    const recompute = () => { const at=options.now ? options.now() : new Date(); state.filterOptions = buildFilterOptions(data.daily.concat(data.facts)); state.snapshot = core.buildSnapshot(data, filters, at); state.alerts=core.buildAlerts?core.buildAlerts({snapshot:state.snapshot,facts:state.snapshot.filteredFacts,daily:data.daily},at):[]; state.report=core.buildWeeklyReport?core.buildWeeklyReport(state.snapshot,state.alerts,at):null; return state.snapshot; };
     const safeIdentity = user => [user && user.uid, user && user.accessRole, user && user.marketingRole].map(value => String(value || "").slice(0, 160)).join("|");
     const revision = (store, caseRows) => typeof bridge.sourceRevision === "function" ? bridge.sourceRevision(store || {}, { cases: caseRows || [] }) : JSON.stringify([store, caseRows]);
-    function clear(nextIdentity, loading) { rawLoaded = false; data = { daily: [], facts: [] }; projectionRevision = ""; identity = nextIdentity || ""; state.identityKey = identity; state.snapshot = null; state.facts = []; state.filterOptions = buildFilterOptions([]); state.loading = Boolean(loading); state.error = ""; state.localError = ""; state.unavailable = false; }
+    function clear(nextIdentity, loading) { rawLoaded = false; data = { daily: [], facts: [] }; projectionRevision = ""; identity = nextIdentity || ""; state.identityKey = identity; state.snapshot = null; state.facts = []; state.alerts=[]; state.report=null; state.filterOptions = buildFilterOptions([]); state.loading = Boolean(loading); state.error = ""; state.localError = ""; state.unavailable = false; }
     function invalidate(_reason, user) { generation += 1; clear(user ? safeIdentity(user) : "", false); }
     function prepareLoad(user) { generation += 1; clear(safeIdentity(user), true); }
     async function load(user, store, caseRows) {
@@ -202,5 +224,5 @@
     function setPeriod(period) { try { core.resolvePeriod(period, options.now ? options.now() : new Date()); filters.period = period; state.localError = ""; if (rawLoaded) recompute(); return { ok: true, snapshot: state.snapshot }; } catch (error) { state.localError = String(error.message || error); return { ok: false, error: state.localError }; } }
     return Object.freeze({ filters, state, load, invalidate, prepareLoad, syncFactsIfRevisionChanged, refreshFacts, setFilter, setPeriod });
   }
-  return Object.freeze({ NAV_ITEMS, defaultFilters, buildFilterOptions, createController, createEntryController, crmEditPermissions, roleSubmissionPolicy, buildRoleLimitedEntityUpdate, submitRoleLimitedEntityUpdate, renderWorkspace, renderMarketingInput, renderCustomerFacts, formatNumber, formatWon, formatPercent, escapeHtml: esc });
+  return Object.freeze({ NAV_ITEMS, defaultFilters, buildFilterOptions, createController, createEntryController, crmEditPermissions, roleSubmissionPolicy, buildRoleLimitedEntityUpdate, submitRoleLimitedEntityUpdate, renderWorkspace, renderMarketingInput, renderCustomerFacts, renderAlerts, renderWeekly, weeklyReportText, formatNumber, formatWon, formatPercent, escapeHtml: esc });
 });
