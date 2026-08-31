@@ -1693,6 +1693,28 @@
 
   const casePartyLabel = item => ["건물주", "브링"].includes(String(item && item.caseParty || "")) ? String(item.caseParty) : "미분류";
 
+  function marketingAttributionFields(value) {
+    const m = Core.normalizeMarketingAttribution(value);
+    const options = (values, selected, empty) => `${empty ? `<option value="">${esc(empty)}</option>` : ""}${values.map(item => `<option value="${attr(item)}"${item === selected ? " selected" : ""}>${esc(item)}</option>`).join("")}`;
+    const invalid = m.validLead === false;
+    return `<fieldset class="wide marketing-attribution-fields"><legend>마케팅 유입 정보</legend><div class="form-grid">
+      <label><span>최초 유입</span><select name="firstSource">${options(MarketingCore.CHANNELS, m.firstSource, "선택 안 함")}</select></label><label><span>최근 유입</span><select name="lastSource">${options(MarketingCore.CHANNELS, m.lastSource, "선택 안 함")}</select></label>
+      <label><span>세부 채널</span><input name="subChannel" maxlength="200" value="${attr(m.subChannel || "")}"></label><label><span>캠페인 ID</span><input name="campaignId" maxlength="200" value="${attr(m.campaignId || "")}"></label><label><span>캠페인명</span><input name="campaignName" maxlength="200" value="${attr(m.campaignName || "")}"></label>
+      <label><span>키워드</span><input name="keyword" maxlength="200" value="${attr(m.keyword || "")}"></label><label><span>콘텐츠 ID</span><input name="contentId" maxlength="200" value="${attr(m.contentId || "")}"></label><label><span>콘텐츠명</span><input name="contentTitle" maxlength="200" value="${attr(m.contentTitle || "")}"></label>
+      <label><span>문의 방식</span><select name="inquiryMethod">${options(MarketingCore.INQUIRY_METHODS, m.inquiryMethod, "선택 안 함")}</select></label><label><span>유효 리드</span><select name="validLead" data-marketing-valid-lead><option value="">확인 필요</option><option value="true"${m.validLead === true ? " selected" : ""}>유효</option><option value="false"${invalid ? " selected" : ""}>무효</option></select></label><label><span>무효 사유</span><select name="invalidReason" data-marketing-invalid-reason${invalid ? " required" : " disabled"}>${options(MarketingCore.INVALID_REASONS, m.invalidReason, "선택")}</select></label>
+      <label><span>최초 접점</span><input name="firstTouchAt" type="datetime-local" value="${attr(datetimeValue(m.firstTouchAt))}"></label><label><span>문의 일시</span><input name="inquiryAt" type="datetime-local" value="${attr(datetimeValue(m.inquiryAt))}"></label><label class="wide"><span>마케팅 메모</span><textarea name="attributionNote" maxlength="1000">${esc(m.attributionNote || "")}</textarea></label>
+    </div></fieldset>`;
+  }
+
+  function parseMarketingAttribution(raw) {
+    return Core.normalizeMarketingAttribution({ firstSource: raw.firstSource, lastSource: raw.lastSource, subChannel: raw.subChannel, campaignId: raw.campaignId, campaignName: raw.campaignName, keyword: raw.keyword, contentId: raw.contentId, contentTitle: raw.contentTitle, inquiryMethod: raw.inquiryMethod, validLead: raw.validLead === "true" ? true : raw.validLead === "false" ? false : null, invalidReason: raw.invalidReason, firstTouchAt: raw.firstTouchAt ? new Date(raw.firstTouchAt).toISOString() : "", inquiryAt: raw.inquiryAt ? new Date(raw.inquiryAt).toISOString() : "", attributionNote: raw.attributionNote });
+  }
+  function caseFieldsWithMarketing(raw) {
+    const fields = Object.assign({}, raw, { marketing: parseMarketingAttribution(raw) });
+    for (const name of ["firstSource", "lastSource", "subChannel", "campaignId", "campaignName", "keyword", "contentId", "contentTitle", "inquiryMethod", "validLead", "invalidReason", "firstTouchAt", "inquiryAt", "attributionNote"]) delete fields[name];
+    return MarketingCrmBridge.normalizeCaseMarketing(fields);
+  }
+
   function renderCases() {
     const query = Core.normalizeText(searchEl.value);
     const sourceCases = caseListMode === "trash" ? trashCases() : activeCases();
@@ -1739,7 +1761,7 @@
     const buildingLinkField = `<label class="field"><span>등록 건물 연결</span><select name="crmBuildingId" data-case-building-select><option value="">직접 입력·미연결</option>${store.buildings.map(building => `<option value="${attr(building.id)}" ${linkedBuilding && linkedBuilding.id === building.id ? "selected" : ""}>${esc(buildingChoiceLabel(building))}</option>`).join("")}</select></label>`;
     const customerLinkField = `<label class="field"><span>요청자·연락 고객 연결</span><select name="crmCustomerId" data-case-customer-select><option value="">직접 입력·미연결</option>${store.customers.map(customer => `<option value="${attr(customer.id)}" ${linkedCustomer && linkedCustomer.id === customer.id ? "selected" : ""}>${esc(customer.name || customer.id)}${customer.type ? ` · ${esc(customer.type)}` : ""}</option>`).join("")}</select></label>`;
     return `<header class="case-detail-head"><div><span>${esc(casePartyLabel(item))} 작성 · ${esc(item.issueType || item.grade || "업무 유형 미입력")}</span><h2>${esc(item.ticketNo || item.receiptNo || item.id || "민원")}</h2><p>${esc([item.name, item.building, item.room].filter(Boolean).join(" · ") || "기본 정보를 입력해 주세요.")}</p></div><div class="case-detail-head-actions"><button type="button" class="case-trash-action" data-case-trash="${attr(caseKey)}">휴지통으로 이동</button><div class="case-detail-progress"><strong>${progress.percent}%</strong><span>${progress.done}/${progress.total}단계 완료</span></div></div></header>
-      <div class="case-detail-scroll"><form id="workflowCaseBasicForm" data-case-key="${attr(caseKey)}"><div class="case-block-head"><div><b>기본 정보</b><span>수정 후 저장을 누르면 공용 민원에 즉시 반영됩니다.</span></div><button class="secondary-button">기본 정보 저장</button></div><div class="case-basic-grid">${partyField}${customerLinkField}${input("고객명", "name", item.name, "예: 홍길동")}${input("연락처", "phone", item.phone, "010-0000-0000")}${input("이메일", "email", item.email, "name@example.com")}${buildingLinkField}${input("건물", "building", item.building, "건물명")}${input("호실", "room", item.room, "예: 302호")}${input("주소", "address", item.address, "건물 주소")}${input("업무 유형", "issueType", item.issueType, "예: 누수")}${select("긴급도", "urgency", ["보통", "확인 필요", "긴급"], item.urgency || "보통")}${select("관리 등급", "grade", ["라이트", "스탠다드", "프리미엄"], item.grade || "스탠다드")}<label class="field case-summary-field"><span>민원 내용</span><textarea name="summary" placeholder="민원·요청 내용을 입력하세요.">${esc(item.summary || "")}</textarea></label></div></form>
+      <div class="case-detail-scroll"><form id="workflowCaseBasicForm" data-case-key="${attr(caseKey)}"><div class="case-block-head"><div><b>기본 정보</b><span>수정 후 저장을 누르면 공용 민원에 즉시 반영됩니다.</span></div><button class="secondary-button">기본 정보 저장</button></div><div class="case-basic-grid">${partyField}${customerLinkField}${input("고객명", "name", item.name, "예: 홍길동")}${input("연락처", "phone", item.phone, "010-0000-0000")}${input("이메일", "email", item.email, "name@example.com")}${buildingLinkField}${input("건물", "building", item.building, "건물명")}${input("호실", "room", item.room, "예: 302호")}${input("주소", "address", item.address, "건물 주소")}${input("업무 유형", "issueType", item.issueType, "예: 누수")}${select("긴급도", "urgency", ["보통", "확인 필요", "긴급"], item.urgency || "보통")}${select("관리 등급", "grade", ["라이트", "스탠다드", "프리미엄"], item.grade || "스탠다드")}<label class="field case-summary-field"><span>민원 내용</span><textarea name="summary" placeholder="민원·요청 내용을 입력하세요.">${esc(item.summary || "")}</textarea></label>${marketingAttributionFields(item.marketing)}</div></form>
       <section class="case-steps-section"><div class="case-block-head"><div><b>17단계 업무 진행</b><span>상태를 바꾸거나 단계 메모를 남기면 이 화면에서 바로 저장됩니다.</span></div><div class="case-current-label"><span>현재</span><b>${esc(progress.current)}</b></div></div><div class="case-progress-track case-detail-track"><i style="width:${progress.percent}%"></i></div><div class="workflow-case-steps">${Core.WORKFLOW_STEPS.map((label, index) => {
         const stepKey = `c${index + 1}`;
         const status = statuses[stepKey] || "wait";
@@ -3362,13 +3384,7 @@
       ${selectField("중요도", "priority", ["높음", "보통", "낮음"], customer.priority)}${field("예상 계약금액", "expectedValue", customer.expectedValue || "", "number", "원 단위")}
       ${field("관심 서비스", "interestServices", (customer.interestServices || []).join(", "), "text", "예: 건물관리, 누수 대응")}${field("태그", "tags", (customer.tags || []).join(", "), "text", "예: 원주, 다가구, 소개")}
       ${field("마지막 연락일", "lastContactAt", datetimeValue(customer.lastContactAt), "datetime-local")}
-      <fieldset class="wide"><legend>마케팅 유입 정보</legend><div class="form-grid">
-        <label><span>최초 유입</span><input name="firstSource" value="${attr(customerMarketing.firstSource || "")}"></label><label><span>최근 유입</span><input name="lastSource" value="${attr(customerMarketing.lastSource || "")}"></label>
-        <label><span>세부 채널</span><input name="subChannel" value="${attr(customerMarketing.subChannel || "")}"></label><label><span>캠페인 ID</span><input name="campaignId" value="${attr(customerMarketing.campaignId || "")}"></label><label><span>캠페인명</span><input name="campaignName" value="${attr(customerMarketing.campaignName || "")}"></label>
-        <label><span>키워드</span><input name="keyword" value="${attr(customerMarketing.keyword || "")}"></label><label><span>콘텐츠 ID</span><input name="contentId" value="${attr(customerMarketing.contentId || "")}"></label><label><span>콘텐츠명</span><input name="contentTitle" value="${attr(customerMarketing.contentTitle || "")}"></label>
-        <label><span>문의 방식</span><input name="inquiryMethod" value="${attr(customerMarketing.inquiryMethod || "")}"></label><label><span>유효 리드</span><select name="validLead"><option value="">확인 필요</option><option value="true"${customerMarketing.validLead === true ? " selected" : ""}>유효</option><option value="false"${customerMarketing.validLead === false ? " selected" : ""}>무효</option></select></label><label><span>무효 사유</span><input name="invalidReason" value="${attr(customerMarketing.invalidReason || "")}"></label>
-        <label><span>최초 접점</span><input name="firstTouchAt" type="datetime-local" value="${attr(datetimeValue(customerMarketing.firstTouchAt))}"></label><label><span>문의 일시</span><input name="inquiryAt" type="datetime-local" value="${attr(datetimeValue(customerMarketing.inquiryAt))}"></label><label class="wide"><span>마케팅 메모</span><textarea name="attributionNote" maxlength="1000">${esc(customerMarketing.attributionNote || "")}</textarea></label>
-      </div></fieldset>
+      ${marketingAttributionFields(customerMarketing)}
       <div class="info-box wide">진행상태는 고객 정보에서 직접 입력하지 않습니다. 연결된 건물의 영업 관리 단계가 고객 목록과 상세 화면에 자동으로 표시됩니다.</div>
     </div></details><div class="info-box">${linkedBuildings.length ? `기존 연결 건물 ${linkedBuildings.length}곳은 유지되며, 다른 건물을 선택하면 연결 건물로 추가됩니다.` : "선택한 건물이 이 고객 화면에 연결됩니다."} 건물 자체 정보는 고객 화면 아래의 건물 관리에서 수정할 수 있습니다.</div><div class="form-actions"><button type="button" class="secondary-button" data-action="close-modal">취소</button><button type="submit" class="primary-button">${editing ? "수정 저장" : "고객 등록"}</button></div></form>`;
     openModal();
@@ -3962,7 +3978,7 @@
 
   function workflowCaseEditor(buildingId) {
     const building = buildingById(buildingId) || null;
-    modalContent.innerHTML = `<div class="modal-head"><div><h2>새 민원 등록</h2><p>작성 구분과 필수 정보만 입력하고 1단계부터 바로 시작합니다.</p></div><button class="close-button" data-action="close-modal">×</button></div><form id="workflowCaseCreateForm" class="modal-body"><div class="info-box">건물주가 전달한 민원인지 BRING이 직접 등록한 민원인지 먼저 구분합니다. 기존 미분류 자료는 수정 전까지 그대로 보존됩니다.</div><div class="form-grid" style="margin-top:14px">${selectField("작성 구분 *", "caseParty", ["", "건물주", "브링"], "", value => value || "작성 주체 선택")}${selectField("등록 건물", "crmBuildingId", ["", ...store.buildings.map(item => item.id)], building && building.id || "", id => id ? buildingChoiceLabel(buildingById(id)) : "직접 입력·미등록 건물")}${selectField("요청자·연락 고객", "crmCustomerId", ["", ...store.customers.map(item => item.id)], "", id => id ? `${customerById(id)?.name || id}${customerById(id)?.type ? ` · ${customerById(id).type}` : ""}` : "직접 입력·미연결")}${field("고객명 *", "name", "", "text", "예: 홍길동")}${field("연락처", "phone", "", "text", "010-0000-0000")}${field("건물 *", "building", building && building.name || "", "text", "건물명")}${field("호실", "room", "", "text", "예: 302호")}${field("주소", "address", building && building.address || "", "text", "건물 주소", "wide")}${field("업무 유형", "issueType", "", "text", "예: 누수·전기·청소")}${selectField("긴급도", "urgency", ["보통", "확인 필요", "긴급"], "보통")}${areaField("민원 내용", "summary", "", "wide")}</div><div class="form-actions"><button type="button" class="secondary-button" data-action="close-modal">취소</button><button class="primary-button">민원 등록</button></div></form>`;
+    modalContent.innerHTML = `<div class="modal-head"><div><h2>새 민원 등록</h2><p>작성 구분과 필수 정보만 입력하고 1단계부터 바로 시작합니다.</p></div><button class="close-button" data-action="close-modal">×</button></div><form id="workflowCaseCreateForm" class="modal-body"><div class="info-box">건물주가 전달한 민원인지 BRING이 직접 등록한 민원인지 먼저 구분합니다. 기존 미분류 자료는 수정 전까지 그대로 보존됩니다.</div><div class="form-grid" style="margin-top:14px">${selectField("작성 구분 *", "caseParty", ["", "건물주", "브링"], "", value => value || "작성 주체 선택")}${selectField("등록 건물", "crmBuildingId", ["", ...store.buildings.map(item => item.id)], building && building.id || "", id => id ? buildingChoiceLabel(buildingById(id)) : "직접 입력·미등록 건물")}${selectField("요청자·연락 고객", "crmCustomerId", ["", ...store.customers.map(item => item.id)], "", id => id ? `${customerById(id)?.name || id}${customerById(id)?.type ? ` · ${customerById(id).type}` : ""}` : "직접 입력·미연결")}${field("고객명 *", "name", "", "text", "예: 홍길동")}${field("연락처", "phone", "", "text", "010-0000-0000")}${field("건물 *", "building", building && building.name || "", "text", "건물명")}${field("호실", "room", "", "text", "예: 302호")}${field("주소", "address", building && building.address || "", "text", "건물 주소", "wide")}${field("업무 유형", "issueType", "", "text", "예: 누수·전기·청소")}${selectField("긴급도", "urgency", ["보통", "확인 필요", "긴급"], "보통")}${areaField("민원 내용", "summary", "", "wide")}${marketingAttributionFields({})}</div><div class="form-actions"><button type="button" class="secondary-button" data-action="close-modal">취소</button><button class="primary-button">민원 등록</button></div></form>`;
     openModal();
   }
 
@@ -4415,7 +4431,7 @@
       nextContactAt: raw.nextContactAt ? new Date(raw.nextContactAt).toISOString() : "", nextAction: raw.nextAction.trim(),
       notes: raw.notes.trim(), buildingIdLinks, updatedAt: new Date().toISOString()
     });
-    customer.marketing = Core.normalizeMarketingAttribution({ firstSource: raw.firstSource, lastSource: raw.lastSource, subChannel: raw.subChannel, campaignId: raw.campaignId, campaignName: raw.campaignName, keyword: raw.keyword, contentId: raw.contentId, contentTitle: raw.contentTitle, inquiryMethod: raw.inquiryMethod, validLead: raw.validLead === "true" ? true : raw.validLead === "false" ? false : null, invalidReason: raw.invalidReason, firstTouchAt: raw.firstTouchAt ? new Date(raw.firstTouchAt).toISOString() : "", inquiryAt: raw.inquiryAt ? new Date(raw.inquiryAt).toISOString() : "", attributionNote: raw.attributionNote });
+    customer.marketing = parseMarketingAttribution(raw);
     if (!existing) store.customers.push(customer);
     return customer;
   }
@@ -4609,6 +4625,7 @@
     if (marketingArchive) { const row = marketingEntryController.state.active.find(item => item.id === marketingArchive.dataset.marketingArchive); if (row) await marketingEntryController.archive(row); renderMarketingWorkspace(); return; }
     if (currentWorkspace === "marketing" && event.target.closest("[data-marketing-overwrite]")) { await marketingEntryController.confirmOverwrite(); marketingEntryDraft = null; await marketingController.load(currentAuth.user || {}, store, operations.cases || []); renderMarketingWorkspace(); return; }
     if (currentWorkspace === "marketing" && event.target.closest("[data-marketing-review-cancel]")) { marketingEntryController.state.review = null; renderMarketingWorkspace(); return; }
+    if (currentWorkspace === "marketing" && event.target.closest("[data-marketing-retry]")) { await marketingEntryController.refresh(); renderMarketingWorkspace(); return; }
     const marketingFact = event.target.closest("[data-marketing-case-id], [data-marketing-customer-id]");
     if (marketingFact && currentWorkspace === "marketing") {
       const caseId = marketingFact.dataset.marketingCaseId;
@@ -5897,6 +5914,11 @@
   });
 
   document.addEventListener("change", async event => {
+    if (event.target.matches("[data-marketing-valid-lead]")) {
+      const reason = event.target.form && event.target.form.querySelector("[data-marketing-invalid-reason]");
+      if (reason) { const invalid = event.target.value === "false"; reason.disabled = !invalid; reason.required = invalid; if (!invalid) reason.value = ""; }
+      return;
+    }
     if (currentWorkspace === "marketing" && event.target.matches("[data-marketing-filter]")) {
       marketingController.setFilter(event.target.dataset.marketingFilter, event.target.value);
       renderMarketingWorkspace();
@@ -6481,7 +6503,7 @@
       if (!["건물주", "브링"].includes(raw.caseParty)) return showToast("민원 작성 구분을 선택해 주세요.", "error");
       if (!String(raw.name || "").trim()) return showToast("고객명을 입력해 주세요.", "error");
       if (!String(raw.building || "").trim()) return showToast("건물명을 입력해 주세요.", "error");
-      const result = await api.saveWorkflowCase({ create: true, fields: MarketingCrmBridge.normalizeCaseMarketing({ ...raw, marketing: {} }) });
+      const result = await api.saveWorkflowCase({ create: true, fields: caseFieldsWithMarketing(raw) });
       if (!result.ok) return showToast(result.error || "민원을 등록하지 못했습니다.", "error");
       selectedCaseKey = result.caseKey;
       casePartyFilter = raw.caseParty;
@@ -6498,7 +6520,7 @@
         if (!existingParty && !raw.caseParty) delete raw.caseParty;
         else return showToast("민원 작성 구분을 확인해 주세요.", "error");
       }
-      const normalizedCaseFields = MarketingCrmBridge.normalizeCaseMarketing({ ...raw, marketing: existingCase && existingCase.marketing });
+      const normalizedCaseFields = caseFieldsWithMarketing(raw);
       const result = await api.saveWorkflowCase({ caseKey: form.dataset.caseKey, fields: normalizedCaseFields });
       if (!result.ok) return showToast(result.error || "기본 정보를 저장하지 못했습니다.", "error");
       await refreshOperations({ silent: true, render: false });

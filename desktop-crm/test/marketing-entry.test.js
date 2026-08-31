@@ -88,6 +88,36 @@ test('input route hides write controls from non writers and renders archived aud
   assert.doesNotMatch(html, /hard-delete|data-marketing-delete/);
 });
 
+test('input rows escape safe actor labels and show explicit loading error and empty states', () => {
+  const loading = UI.renderMarketingInput({ canWrite: true, loading: true, active: [], archived: [] });
+  assert.match(loading, /불러오는 중/); assert.doesNotMatch(loading, /data-marketing-add/);
+  const failed = UI.renderMarketingInput({ error: '<failed>', active: [], archived: [] });
+  assert.match(failed, /&lt;failed&gt;/); assert.match(failed, /다시 시도/); assert.doesNotMatch(failed, /활성 기록이 없습니다/);
+  const row = UI.renderMarketingInput({ active: [{ id: 'a', date: '2026-08-31', channel: 'naver_blog', createdByOperatorId: '<actor>', createdAt: '2026-08-31T01:00:00Z' }], archived: [] });
+  assert.match(row, /&lt;actor&gt;/); assert.doesNotMatch(row, /createdByAuthUid/);
+});
+
+test('refresh failures remain entry-local and a successful retry clears the error', async () => {
+  let fail = true;
+  const controller = UI.createEntryController({ read: async () => { if (fail) throw new Error('offline'); return { daily: [], archived: [] }; }, save: async () => ({}), archive: async () => ({}) });
+  const first = await controller.refresh();
+  assert.equal(first.error, 'offline'); assert.equal(first.loading, false);
+  fail = false; await controller.refresh();
+  assert.equal(controller.state.error, ''); assert.equal(controller.state.loaded, true);
+});
+
+test('archived or missing current conflict cannot be overwritten', async () => {
+  let commits = 0;
+  const existing = { id: 'gone', version: 2, ...Core.normalizeManualRecord(base) };
+  const controller = UI.createEntryController({ read: async () => ({ daily: [], archived: [{ ...existing, archivedAtMs: 3 }] }), save: async () => { commits++; const error = new Error('MARKETING_CONFLICT'); error.code = 'MARKETING_CONFLICT'; throw error; }, archive: async () => ({}) , uuid: () => '00000000-0000-4000-8000-000000000001' });
+  controller.state.active = [existing];
+  const result = await controller.submit(base, existing);
+  assert.equal(result.status, 'conflict_unavailable');
+  assert.match(controller.state.review.message, /보관되었거나 존재하지 않아/);
+  await assert.rejects(() => controller.confirmOverwrite(), /cannot be overwritten/);
+  assert.equal(commits, 1);
+});
+
 test('app wires the actual marketing commit/archive endpoints and route events', () => {
   const app = fs.readFileSync(path.join(__dirname, '../src/app.js'), 'utf8');
   assert.match(app, /MarketingUI\.createEntryController/);
@@ -97,4 +127,7 @@ test('app wires the actual marketing commit/archive endpoints and route events',
   assert.match(app, /confirmOverwrite/);
   for (const field of ['firstSource', 'lastSource', 'subChannel', 'campaignId', 'campaignName', 'keyword', 'contentId', 'contentTitle', 'inquiryMethod', 'validLead', 'invalidReason', 'firstTouchAt', 'inquiryAt', 'attributionNote']) assert.match(app, new RegExp(`name=["']${field}["']`));
   assert.match(app, /Core\.normalizeMarketingAttribution/);
+  assert.match(app, /function marketingAttributionFields/);
+  assert.match(app, /workflowCaseBasicForm[\s\S]*marketingAttributionFields\(item\.marketing/);
+  assert.match(app, /parseMarketingAttribution\(raw\)/);
 });
