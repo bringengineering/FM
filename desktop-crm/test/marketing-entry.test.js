@@ -118,6 +118,41 @@ test('archived or missing current conflict cannot be overwritten', async () => {
   assert.equal(commits, 1);
 });
 
+test('archive and overwrite failures stay local with saving cleared and later success clears error', async () => {
+  const row = { id: 'r', version: 2, ...Core.normalizeManualRecord(base) };
+  let failArchive = true, failSave = true;
+  const controller = UI.createEntryController({ read: async () => ({ daily: [row], archived: [] }), archive: async () => { if (failArchive) throw new Error('archive offline'); return {}; }, save: async () => { if (failSave) throw new Error('save offline'); return {}; }, uuid: () => '00000000-0000-4000-8000-000000000001' });
+  await controller.refresh();
+  const archived = await controller.archive(row);
+  assert.equal(archived.status, 'error'); assert.equal(controller.state.error, 'archive offline'); assert.equal(controller.state.saving, false);
+  failArchive = false; await controller.archive(row); assert.equal(controller.state.error, '');
+  controller.state.review = { type: 'duplicate', existing: row, openedVersion: 2, proposed: Core.normalizeManualRecord(base) };
+  const overwritten = await controller.confirmOverwrite();
+  assert.equal(overwritten.status, 'error'); assert.equal(controller.state.error, 'save offline'); assert.equal(controller.state.saving, false);
+  failSave = false; await controller.confirmOverwrite(); assert.equal(controller.state.error, '');
+});
+
+test('role-aware customer and case submissions allow-list marketing-only payloads', () => {
+  const marketingUser = { accessRole: 'member', marketingRole: 'marketing' };
+  const salesUser = { accessRole: 'member', marketingRole: 'sales' };
+  const viewer = { accessRole: 'viewer' };
+  const existing = { id: 'c', name: 'Original', phone: '010', notes: 'private', marketing: { firstSource: 'referral' } };
+  const forged = { name: 'FORGED', phone: '999', notes: 'LEAK', marketing: { firstSource: 'naver_blog', validLead: true, invalidReason: 'spam' } };
+  assert.deepEqual(UI.crmEditPermissions(marketingUser), { core: false, attribution: true });
+  assert.deepEqual(UI.buildRoleLimitedEntityUpdate('customer', existing, forged, marketingUser), { id: 'c', marketing: { firstSource: 'naver_blog', validLead: true } });
+  assert.equal(UI.buildRoleLimitedEntityUpdate('customer', existing, forged, salesUser).name, 'FORGED');
+  assert.throws(() => UI.buildRoleLimitedEntityUpdate('case', existing, forged, viewer), /forbidden/);
+  assert.throws(() => UI.buildRoleLimitedEntityUpdate('case', existing, { marketing: { validLead: false } }, marketingUser), /invalidReason/);
+});
+
+test('role-limited submit harness executes save with normalized allow-listed payload', async () => {
+  const calls = [];
+  const existing = { id: 'case-1', name: 'Keep', phone: '010', marketing: {} };
+  const result = await UI.submitRoleLimitedEntityUpdate({ kind: 'case', existing, submitted: { name: 'FORGED', marketing: { firstSource: 'naver_blog', validLead: true, invalidReason: 'spam' } }, user: { accessRole: 'member', marketingRole: 'marketing' }, save: async payload => { calls.push(payload); return { ok: true }; } });
+  assert.deepEqual(calls, [{ id: 'case-1', marketing: { firstSource: 'naver_blog', validLead: true } }]);
+  assert.equal(result.ok, true);
+});
+
 test('app wires the actual marketing commit/archive endpoints and route events', () => {
   const app = fs.readFileSync(path.join(__dirname, '../src/app.js'), 'utf8');
   assert.match(app, /MarketingUI\.createEntryController/);

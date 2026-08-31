@@ -1705,6 +1705,7 @@
       <label><span>최초 접점</span><input name="firstTouchAt" type="datetime-local" value="${attr(datetimeValue(m.firstTouchAt))}"></label><label><span>문의 일시</span><input name="inquiryAt" type="datetime-local" value="${attr(datetimeValue(m.inquiryAt))}"></label><label class="wide"><span>마케팅 메모</span><textarea name="attributionNote" maxlength="1000">${esc(m.attributionNote || "")}</textarea></label>
     </div></fieldset>`;
   }
+  const crmEditPermissions = () => MarketingUI.crmEditPermissions(currentAuth.user || {});
 
   function parseMarketingAttribution(raw) {
     return Core.normalizeMarketingAttribution({ firstSource: raw.firstSource, lastSource: raw.lastSource, subChannel: raw.subChannel, campaignId: raw.campaignId, campaignName: raw.campaignName, keyword: raw.keyword, contentId: raw.contentId, contentTitle: raw.contentTitle, inquiryMethod: raw.inquiryMethod, validLead: raw.validLead === "true" ? true : raw.validLead === "false" ? false : null, invalidReason: raw.invalidReason, firstTouchAt: raw.firstTouchAt ? new Date(raw.firstTouchAt).toISOString() : "", inquiryAt: raw.inquiryAt ? new Date(raw.inquiryAt).toISOString() : "", attributionNote: raw.attributionNote });
@@ -1760,6 +1761,7 @@
     const linkedCustomer = customerById(item.crmCustomerId) || Core.matchWorkflowCustomer(item, store.customers);
     const buildingLinkField = `<label class="field"><span>등록 건물 연결</span><select name="crmBuildingId" data-case-building-select><option value="">직접 입력·미연결</option>${store.buildings.map(building => `<option value="${attr(building.id)}" ${linkedBuilding && linkedBuilding.id === building.id ? "selected" : ""}>${esc(buildingChoiceLabel(building))}</option>`).join("")}</select></label>`;
     const customerLinkField = `<label class="field"><span>요청자·연락 고객 연결</span><select name="crmCustomerId" data-case-customer-select><option value="">직접 입력·미연결</option>${store.customers.map(customer => `<option value="${attr(customer.id)}" ${linkedCustomer && linkedCustomer.id === customer.id ? "selected" : ""}>${esc(customer.name || customer.id)}${customer.type ? ` · ${esc(customer.type)}` : ""}</option>`).join("")}</select></label>`;
+    if (!crmEditPermissions().core && crmEditPermissions().attribution) return `<header class="case-detail-head"><div><h2>${esc(item.ticketNo || item.id || "민원")}</h2><p>마케팅 유입 정보만 수정할 수 있습니다.</p></div></header><form id="caseMarketingForm" data-case-key="${attr(caseKey)}">${marketingAttributionFields(item.marketing)}<button class="primary-button">마케팅 정보 저장</button></form>`;
     return `<header class="case-detail-head"><div><span>${esc(casePartyLabel(item))} 작성 · ${esc(item.issueType || item.grade || "업무 유형 미입력")}</span><h2>${esc(item.ticketNo || item.receiptNo || item.id || "민원")}</h2><p>${esc([item.name, item.building, item.room].filter(Boolean).join(" · ") || "기본 정보를 입력해 주세요.")}</p></div><div class="case-detail-head-actions"><button type="button" class="case-trash-action" data-case-trash="${attr(caseKey)}">휴지통으로 이동</button><div class="case-detail-progress"><strong>${progress.percent}%</strong><span>${progress.done}/${progress.total}단계 완료</span></div></div></header>
       <div class="case-detail-scroll"><form id="workflowCaseBasicForm" data-case-key="${attr(caseKey)}"><div class="case-block-head"><div><b>기본 정보</b><span>수정 후 저장을 누르면 공용 민원에 즉시 반영됩니다.</span></div><button class="secondary-button">기본 정보 저장</button></div><div class="case-basic-grid">${partyField}${customerLinkField}${input("고객명", "name", item.name, "예: 홍길동")}${input("연락처", "phone", item.phone, "010-0000-0000")}${input("이메일", "email", item.email, "name@example.com")}${buildingLinkField}${input("건물", "building", item.building, "건물명")}${input("호실", "room", item.room, "예: 302호")}${input("주소", "address", item.address, "건물 주소")}${input("업무 유형", "issueType", item.issueType, "예: 누수")}${select("긴급도", "urgency", ["보통", "확인 필요", "긴급"], item.urgency || "보통")}${select("관리 등급", "grade", ["라이트", "스탠다드", "프리미엄"], item.grade || "스탠다드")}<label class="field case-summary-field"><span>민원 내용</span><textarea name="summary" placeholder="민원·요청 내용을 입력하세요.">${esc(item.summary || "")}</textarea></label>${marketingAttributionFields(item.marketing)}</div></form>
       <section class="case-steps-section"><div class="case-block-head"><div><b>17단계 업무 진행</b><span>상태를 바꾸거나 단계 메모를 남기면 이 화면에서 바로 저장됩니다.</span></div><div class="case-current-label"><span>현재</span><b>${esc(progress.current)}</b></div></div><div class="case-progress-track case-detail-track"><i style="width:${progress.percent}%"></i></div><div class="workflow-case-steps">${Core.WORKFLOW_STEPS.map((label, index) => {
@@ -3359,8 +3361,13 @@
 
   function customerEditor(customerId) {
     const editing = customerById(customerId);
+    if (!editing && !crmEditPermissions().core) return showToast("마케팅 담당자는 기존 고객의 유입 정보만 수정할 수 있습니다.", "error");
     const customer = editing ? JSON.parse(JSON.stringify(editing)) : Core.createCustomer({ owner: store.settings.owner || "김현진" });
     const customerMarketing = Core.normalizeMarketingAttribution(customer.marketing);
+    if (editing && !crmEditPermissions().core && crmEditPermissions().attribution) {
+      modalContent.innerHTML = `<div class="modal-head"><div><h2>고객 마케팅 정보 수정</h2><p>고객 기본·연락·개인 메모는 변경할 수 없습니다.</p></div><button class="close-button" data-action="close-modal">×</button></div><form id="customerMarketingForm" class="modal-body" data-customer-id="${attr(editing.id)}">${marketingAttributionFields(customerMarketing)}<div class="form-actions"><button class="primary-button">마케팅 정보 저장</button></div></form>`;
+      openModal(); return;
+    }
     const linkedBuildings = customerBuildings(customer);
     const activeBuildings = (store.buildings || []).filter(building => building && !building.archivedAt).sort((left, right) => String(left.name || "").localeCompare(String(right.name || ""), "ko"));
     const selectedCustomerBuilding = linkedBuildings.find(building => !building.archivedAt) || null;
@@ -3977,6 +3984,7 @@
   }
 
   function workflowCaseEditor(buildingId) {
+    if (!crmEditPermissions().core) return showToast("마케팅 담당자는 기존 민원의 유입 정보만 수정할 수 있습니다.", "error");
     const building = buildingById(buildingId) || null;
     modalContent.innerHTML = `<div class="modal-head"><div><h2>새 민원 등록</h2><p>작성 구분과 필수 정보만 입력하고 1단계부터 바로 시작합니다.</p></div><button class="close-button" data-action="close-modal">×</button></div><form id="workflowCaseCreateForm" class="modal-body"><div class="info-box">건물주가 전달한 민원인지 BRING이 직접 등록한 민원인지 먼저 구분합니다. 기존 미분류 자료는 수정 전까지 그대로 보존됩니다.</div><div class="form-grid" style="margin-top:14px">${selectField("작성 구분 *", "caseParty", ["", "건물주", "브링"], "", value => value || "작성 주체 선택")}${selectField("등록 건물", "crmBuildingId", ["", ...store.buildings.map(item => item.id)], building && building.id || "", id => id ? buildingChoiceLabel(buildingById(id)) : "직접 입력·미등록 건물")}${selectField("요청자·연락 고객", "crmCustomerId", ["", ...store.customers.map(item => item.id)], "", id => id ? `${customerById(id)?.name || id}${customerById(id)?.type ? ` · ${customerById(id).type}` : ""}` : "직접 입력·미연결")}${field("고객명 *", "name", "", "text", "예: 홍길동")}${field("연락처", "phone", "", "text", "010-0000-0000")}${field("건물 *", "building", building && building.name || "", "text", "건물명")}${field("호실", "room", "", "text", "예: 302호")}${field("주소", "address", building && building.address || "", "text", "건물 주소", "wide")}${field("업무 유형", "issueType", "", "text", "예: 누수·전기·청소")}${selectField("긴급도", "urgency", ["보통", "확인 필요", "긴급"], "보통")}${areaField("민원 내용", "summary", "", "wide")}${marketingAttributionFields({})}</div><div class="form-actions"><button type="button" class="secondary-button" data-action="close-modal">취소</button><button class="primary-button">민원 등록</button></div></form>`;
     openModal();
@@ -4623,7 +4631,7 @@
     if (marketingCopy) { const row = marketingEntryController.state.active.find(item => item.id === marketingCopy.dataset.marketingCopy); marketingEntryDraft = marketingEntryController.copy(row || {}, Core.dayKey()); renderMarketingWorkspace(); return; }
     const marketingArchive = currentWorkspace === "marketing" && event.target.closest("[data-marketing-archive]");
     if (marketingArchive) { const row = marketingEntryController.state.active.find(item => item.id === marketingArchive.dataset.marketingArchive); if (row) await marketingEntryController.archive(row); renderMarketingWorkspace(); return; }
-    if (currentWorkspace === "marketing" && event.target.closest("[data-marketing-overwrite]")) { await marketingEntryController.confirmOverwrite(); marketingEntryDraft = null; await marketingController.load(currentAuth.user || {}, store, operations.cases || []); renderMarketingWorkspace(); return; }
+    if (currentWorkspace === "marketing" && event.target.closest("[data-marketing-overwrite]")) { const result = await marketingEntryController.confirmOverwrite(); if (result.status === "saved") { marketingEntryDraft = null; await marketingController.load(currentAuth.user || {}, store, operations.cases || []); } renderMarketingWorkspace(); return; }
     if (currentWorkspace === "marketing" && event.target.closest("[data-marketing-review-cancel]")) { marketingEntryController.state.review = null; renderMarketingWorkspace(); return; }
     if (currentWorkspace === "marketing" && event.target.closest("[data-marketing-retry]")) { await marketingEntryController.refresh(); renderMarketingWorkspace(); return; }
     const marketingFact = event.target.closest("[data-marketing-case-id], [data-marketing-customer-id]");
@@ -6156,6 +6164,26 @@
         if (result.status === "saved") { marketingEntryDraft = null; await marketingController.load(currentAuth.user || {}, store, operations.cases || []); }
       } catch (error) { marketingEntryController.state.error = error.message || "광고 데이터를 저장하지 못했습니다."; }
       renderMarketingWorkspace();
+      return;
+    }
+    if (form.id === "customerMarketingForm") {
+      const customer = customerById(form.dataset.customerId);
+      if (!customer || !crmEditPermissions().attribution) return showToast("마케팅 정보를 수정할 권한이 없습니다.", "error");
+      try {
+        const raw = Object.fromEntries(new FormData(form).entries());
+        await MarketingUI.submitRoleLimitedEntityUpdate({ kind: "customer", existing: customer, submitted: { marketing: parseMarketingAttribution(raw) }, user: currentAuth.user || {}, save: async update => { customer.marketing = update.marketing; customer.updatedAt = new Date().toISOString(); scheduleSave(); return { ok: true }; } }); closeModal(); render();
+      } catch (error) { showToast(error.message || "마케팅 정보를 저장하지 못했습니다.", "error"); }
+      return;
+    }
+    if (form.id === "caseMarketingForm") {
+      const item = workflowCaseByKey(form.dataset.caseKey);
+      if (!item || !crmEditPermissions().attribution) return showToast("마케팅 정보를 수정할 권한이 없습니다.", "error");
+      try {
+        const raw = Object.fromEntries(new FormData(form).entries());
+        const result = await MarketingUI.submitRoleLimitedEntityUpdate({ kind: "case", existing: { id: workflowCaseKey(item) }, submitted: { marketing: parseMarketingAttribution(raw) }, user: currentAuth.user || {}, save: update => api.saveWorkflowCase({ caseKey: form.dataset.caseKey, fields: { marketing: update.marketing } }) });
+        if (!result.ok) return showToast(result.error || "마케팅 정보를 저장하지 못했습니다.", "error");
+        await refreshOperations({ silent: true, render: false }); renderCases();
+      } catch (error) { showToast(error.message || "마케팅 정보를 저장하지 못했습니다.", "error"); }
       return;
     }
     if (!canWriteCRM() && !["emailLoginForm", "passwordChangeForm"].includes(form.id)) return showToast("조회 전용 계정은 내용을 변경할 수 없습니다.", "error");

@@ -101,7 +101,7 @@
       try { const result = await options.save(payload); state.review = null; await refresh(); return { status: 'saved', result }; }
       catch (error) {
         if (String(error && (error.code || error.message)) === 'MARKETING_CONFLICT') { await refresh(); const current = state.active.find(item => item.id === payload.id) || null; if (!current || current.archivedAtMs) { state.review = { type: 'conflict_unavailable', existing: null, proposed: values, message: '현재 기록이 보관되었거나 존재하지 않아 덮어쓸 수 없습니다' }; return { status: 'conflict_unavailable', proposed: values }; } state.review = { type: 'conflict', existing: current, proposed: values, openedVersion: current.version }; return { status: 'conflict_review', existing: current, proposed: values }; }
-        state.error = String(error && error.message || error); throw error;
+        state.error = String(error && error.message || error); return { status: 'error', error: state.error };
       } finally { state.saving = false; }
     }
     async function submit(input, opened) {
@@ -111,11 +111,30 @@
     }
     function confirmOverwrite() { const review = state.review; if (!review || !review.existing || review.existing.archivedAtMs || !Number.isSafeInteger(review.openedVersion) || review.existing.version !== review.openedVersion) return Promise.reject(new Error('current record cannot be overwritten')); return commit({ id: review.existing.id, version: review.openedVersion }, review.proposed); }
     async function archive(row) {
-      state.saving = true;
-      try { const result = await options.archive({ id: row.id, expectedVersion: row.version, requestId: uuid(), action: 'archive' }); await refresh(); return result; }
+      state.saving = true; state.error = '';
+      try { const result = await options.archive({ id: row.id, expectedVersion: row.version, requestId: uuid(), action: 'archive' }); await refresh(); return { status: 'archived', result }; }
+      catch (error) { state.error = String(error && error.message || error); return { status: 'error', error: state.error }; }
       finally { state.saving = false; }
     }
     return Object.freeze({ state, refresh, submit, confirmOverwrite, copy, archive });
+  }
+  function crmEditPermissions(user) {
+    if (user && user.accessRole === 'admin') return { core: true, attribution: true };
+    if (user && user.accessRole === 'member' && user.marketingRole === 'marketing') return { core: false, attribution: true };
+    if (user && user.accessRole === 'member') return { core: true, attribution: true };
+    return { core: false, attribution: false };
+  }
+  function buildRoleLimitedEntityUpdate(kind, existing, submitted, user) {
+    if (!['customer', 'case'].includes(kind)) throw new TypeError('unknown entity kind');
+    const permissions = crmEditPermissions(user);
+    if (!permissions.attribution) throw new Error('forbidden');
+    const marketing = MarketingCore.normalizeMarketingAttribution(submitted && submitted.marketing);
+    if (!permissions.core) return { id: existing && existing.id, marketing };
+    return Object.assign({}, submitted || {}, { marketing });
+  }
+  async function submitRoleLimitedEntityUpdate(options) {
+    const payload = buildRoleLimitedEntityUpdate(options.kind, options.existing, options.submitted, options.user);
+    return options.save(payload);
   }
   function renderWorkspace(options) {
     const view = NAV_ITEMS.some(item => item.id === options.view) ? options.view : "marketingOverview";
@@ -170,5 +189,5 @@
     function setPeriod(period) { try { core.resolvePeriod(period, options.now ? options.now() : new Date()); filters.period = period; state.localError = ""; if (rawLoaded) recompute(); return { ok: true, snapshot: state.snapshot }; } catch (error) { state.localError = String(error.message || error); return { ok: false, error: state.localError }; } }
     return Object.freeze({ filters, state, load, invalidate, prepareLoad, syncFactsIfRevisionChanged, refreshFacts, setFilter, setPeriod });
   }
-  return Object.freeze({ NAV_ITEMS, defaultFilters, buildFilterOptions, createController, createEntryController, renderWorkspace, renderMarketingInput, renderCustomerFacts, formatNumber, formatWon, formatPercent, escapeHtml: esc });
+  return Object.freeze({ NAV_ITEMS, defaultFilters, buildFilterOptions, createController, createEntryController, crmEditPermissions, buildRoleLimitedEntityUpdate, submitRoleLimitedEntityUpdate, renderWorkspace, renderMarketingInput, renderCustomerFacts, formatNumber, formatWon, formatPercent, escapeHtml: esc });
 });
