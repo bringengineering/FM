@@ -588,7 +588,15 @@
 
   function setCurrentAuth(value) {
     const previousUid = currentAuthUid();
-    currentAuth = value || currentAuth;
+    const marketingIdentityKey = auth => { const user = auth && auth.user || {}; return [user.uid, user.accessRole, user.marketingRole].map(item => String(item || "").slice(0, 160)).join("|"); };
+    const previousMarketingIdentity = marketingIdentityKey(currentAuth);
+    currentAuth = value || { required: true, user: null, error: "" };
+    const nextMarketingIdentity = marketingIdentityKey(currentAuth);
+    if (previousMarketingIdentity !== nextMarketingIdentity) {
+      marketingController.invalidate("identity-change", currentAuth.user || null);
+      if (currentAuth.user) marketingController.prepareLoad(currentAuth.user);
+      marketingLoaded = false;
+    }
     if (previousUid !== currentAuthUid()) {
       window.BringOffice?.reset();
       authGeneration += 1;

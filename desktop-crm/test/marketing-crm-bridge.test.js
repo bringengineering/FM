@@ -236,3 +236,16 @@ test('HTML loads UMD bridge after marketing core and before app', () => {
   const appIndex = html.indexOf('./app.js');
   assert.ok(marketingIndex >= 0 && marketingIndex < bridgeIndex && bridgeIndex < appIndex);
 });
+
+test('source revision covers every projection driver but excludes phone and private notes', () => {
+  const base = { customers: [{ id: 'c1', region: '원주', phone: '010', privateNote: 'secret', marketing: { firstSource: 'naver_blog', campaignName: '봄', keyword: '토목', validLead: true } }], contracts: [{ id: 'ct1', customerId: 'c1', amount: 100, vendorCost: 10, paidAmount: 20, status: '진행 중' }] };
+  const cases = [{ id: 'case1', crmCustomerId: 'c1', owner: '김', lostReason: '', quoteAmount: 50, quoteFiles: { q1: { selected: true, amount: 50 } } }];
+  const original = Bridge.sourceRevision(base, { cases });
+  for (const mutate of [
+    value => { value.customers[0].region = '서울'; }, value => { value.customers[0].marketing.campaignName = '여름'; },
+    value => { value.customers[0].marketing.keyword = '측량'; }, value => { value.cases[0].lostReason = '가격'; },
+    value => { value.cases[0].quoteFiles.q1.amount = 60; }, value => { value.contracts[0].vendorCost = 11; }
+  ]) { const value = structuredClone({ ...base, cases }); mutate(value); assert.notEqual(Bridge.sourceRevision(value, { cases: value.cases }), original); }
+  const privateOnly = structuredClone(base); privateOnly.customers[0].phone = '999'; privateOnly.customers[0].privateNote = 'changed';
+  assert.equal(Bridge.sourceRevision(privateOnly, { cases }), original);
+});

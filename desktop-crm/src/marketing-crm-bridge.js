@@ -179,5 +179,22 @@
     return freeze(facts);
   }
 
-  return Object.freeze({ caseKey, normalizeCaseMarketing, projectFacts });
+  const REVISION_COLLECTIONS = Object.freeze(['customers', 'contracts', 'activities']);
+  const REVISION_PRIVATE_KEY = /phone|private|secret|token|password|credential|photo|(^|_)note$/i;
+  function revisionValue(value, depth) {
+    if (depth > 6 || value == null) return value == null ? null : '';
+    if (typeof value === 'string') return value.slice(0, 500);
+    if (typeof value === 'number' || typeof value === 'boolean') return value;
+    if (Array.isArray(value)) return value.slice(0, 500).map(item => revisionValue(item, depth + 1));
+    if (typeof value !== 'object') return '';
+    return Object.fromEntries(Object.keys(value).filter(key => !REVISION_PRIVATE_KEY.test(key)).sort().slice(0, 500).map(key => [key, revisionValue(value[key], depth + 1)]));
+  }
+  function sourceRevision(inputStore, options) {
+    const store = inputStore && typeof inputStore === 'object' ? inputStore : {};
+    const source = Object.fromEntries(REVISION_COLLECTIONS.map(name => [name, list(store[name])]));
+    source.cases = list(options && options.cases);
+    return JSON.stringify(revisionValue(source, 0));
+  }
+
+  return Object.freeze({ caseKey, normalizeCaseMarketing, projectFacts, sourceRevision });
 }));

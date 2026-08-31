@@ -118,6 +118,22 @@ test("navigation revision checks do not rebuild while one filter or changed revi
   assert.equal(builds, 3);
 });
 
+test("pending filters remain loading and build once with latest selection after data arrives", async () => {
+  let resolveRead, builds = 0;
+  const countingCore = { ...Core, buildSnapshot(...args) { builds += 1; return Core.buildSnapshot(...args); } };
+  const controller = UI.createController({ core: countingCore, bridge: { projectFacts: () => [] }, readRaw: () => new Promise(resolve => { resolveRead = resolve; }) });
+  const pending = controller.load({ uid: "A", accessRole: "admin" }, {});
+  controller.setFilter("channel", "naver_blog");
+  controller.setPeriod("last7");
+  assert.equal(controller.state.snapshot, null);
+  assert.equal(controller.state.loading, true);
+  assert.equal(builds, 0);
+  assert.doesNotMatch(UI.renderWorkspace({ view: "marketingOverview", snapshot: null, filters: controller.filters }), /총 마케팅 비용/);
+  resolveRead({ daily: [{ date: "2026-08-30", channel: "naver_blog", spend: 10 }] }); await pending;
+  assert.equal(builds, 1);
+  assert.equal(controller.state.snapshot.appliedFilters.channel, "naver_blog");
+});
+
 test("refreshFacts reprojects current store without another raw fetch", async () => {
   let reads = 0;
   const controller = UI.createController({ core: Core, bridge: { projectFacts: store => store.facts || [] }, readRaw: async () => { reads += 1; return { daily: [] }; } });
@@ -221,4 +237,5 @@ test("loads UMD after core and bridge before app and app integrates marketing wi
   assert.doesNotMatch(app, /renderMarketingWorkspace\(\)[\s\S]{0,160}refreshFacts/);
   assert.match(app, /prepareWorkspaceTransition\(workspace\)[\s\S]*?prepareLoad\(currentAuth\.user/);
   assert.match(app, /main\.innerHTML = MarketingUI\.renderWorkspace[\s\S]{0,700}marketingController\.load/);
+  assert.match(app, /function setCurrentAuth[\s\S]*?marketingIdentityKey[\s\S]*?marketingController\.invalidate\("identity-change"/);
 });
