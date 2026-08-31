@@ -150,7 +150,7 @@
     workManagement: ["예정부터 완료·비용·증빙까지", "작업관리"],
     operationsIntelligence: ["반복 업무와 병목을 한곳에서", "운영 분석"],
     valueScope: ["BRING VALUESCOPE", "지도·밸류스코프"],
-    consultations: ["전화·방문·미팅 내용", "상담 기록"],
+    consultations: ["전화·방문·미팅 내용", "고객 상담"],
     aiAssistant: ["업무 초안을 안전하게 작성", "AI 비서"],
     pipeline: ["건물 발굴부터 유료관리 전환까지", "영업 관리"],
     contracts: ["유형별 계약 조건과 기간", "계약 관리"],
@@ -1267,6 +1267,13 @@
       button.classList.toggle("active", active);
     });
     document.querySelector('[data-nav-folder="customer-management"]')?.classList.toggle("active", ["customers", "buildings", "vacancies", "partnerVendors"].includes(currentView));
+    const consultationView = ["consultations", "partnerQuotes"].includes(currentView);
+    const consultationFolder = document.querySelector('[data-nav-folder="consultation"]');
+    consultationFolder?.classList.toggle("active", consultationView);
+    if (consultationView) {
+      consultationFolder?.classList.add("open");
+      consultationFolder?.querySelector("[data-nav-folder-toggle]")?.setAttribute("aria-expanded", "true");
+    }
     const officeView = ["officeHome", "officeAttendance", "officeMessenger", "officeAdmin"].includes(currentView);
     const officeFolder = document.querySelector('[data-nav-folder="office"]');
     officeFolder?.classList.toggle("active", officeView);
