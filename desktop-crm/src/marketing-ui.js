@@ -57,9 +57,9 @@
   }
   function renderWorkspace(options) {
     const view = NAV_ITEMS.some(item => item.id === options.view) ? options.view : "marketingOverview";
-    const top = `${renderNav(view)}${renderFilters(options.filters || defaultFilters())}`;
+    const localError = options.localError || options.error || "";
+    const top = `${renderNav(view)}${renderFilters(options.filters || defaultFilters())}${localError ? `<div class="marketing-local-error" role="alert">${esc(localError)}</div>` : ""}`;
     if (options.unavailable) return `${top}<section class="marketing-state">권한에 맞는 집계 데이터가 아직 준비되지 않았습니다</section>`;
-    if (options.error) return `${top}<section class="marketing-state error">${esc(options.error)}</section>`;
     if (!options.snapshot) return `${top}<section class="marketing-state">마케팅 데이터를 불러오는 중입니다.</section>`;
     if (view === "marketingOverview") return `${top}${renderOverview(options.snapshot)}`;
     if (view === "marketingChannels") return `${top}${renderChannels(options.snapshot)}`;
@@ -70,11 +70,11 @@
   function createController(options) {
     const core = options.core || MarketingCore, bridge = options.bridge || MarketingCrmBridge;
     const filters = defaultFilters(); let data = { daily: [], facts: [] };
-    const state = { snapshot: null, facts: [], error: "", unavailable: false };
+    const state = { snapshot: null, facts: [], error: "", localError: "", unavailable: false };
     const recompute = () => { state.snapshot = core.buildSnapshot(data, filters, options.now ? options.now() : new Date()); return state.snapshot; };
     async function load(user, store, caseRows) {
-      state.error = ""; state.unavailable = false; state.snapshot = null;
-      const rawAllowed = user && (user.role === "admin" || user.accessRole === "admin" || ((user.role === "member" || user.accessRole === "member") && user.marketingRole === "marketing"));
+      state.error = ""; state.localError = ""; state.unavailable = false; state.snapshot = null;
+      const rawAllowed = user && (user.accessRole === "admin" || (user.accessRole === "member" && user.marketingRole === "marketing"));
       try {
         if (!rawAllowed) {
           if (typeof options.readAggregate !== "function") { state.unavailable = true; return state; }
@@ -88,10 +88,10 @@
         state.facts = bridge.projectFacts(store || {}, { cases: caseRows || [] });
         data = { daily, facts: state.facts };
         recompute(); return state;
-      } catch (error) { state.error = String(error && error.message || "마케팅 데이터를 불러오지 못했습니다."); return state; }
+      } catch (error) { state.error = String(error && error.message || "마케팅 데이터를 불러오지 못했습니다."); state.localError = state.error; return state; }
     }
-    function setFilter(name, value) { if (!FILTERS.some(item => item[0] === name)) return { ok: false, error: "알 수 없는 필터입니다." }; filters[name] = value; recompute(); return { ok: true, snapshot: state.snapshot }; }
-    function setPeriod(period) { try { core.resolvePeriod(period, options.now ? options.now() : new Date()); filters.period = period; recompute(); return { ok: true, snapshot: state.snapshot }; } catch (error) { return { ok: false, error: String(error.message || error) }; } }
+    function setFilter(name, value) { if (!FILTERS.some(item => item[0] === name)) { state.localError = "알 수 없는 필터입니다."; return { ok: false, error: state.localError }; } filters[name] = value; state.localError = ""; recompute(); return { ok: true, snapshot: state.snapshot }; }
+    function setPeriod(period) { try { core.resolvePeriod(period, options.now ? options.now() : new Date()); filters.period = period; state.localError = ""; recompute(); return { ok: true, snapshot: state.snapshot }; } catch (error) { state.localError = String(error.message || error); return { ok: false, error: state.localError }; } }
     return Object.freeze({ filters, state, load, setFilter, setPeriod });
   }
   return Object.freeze({ NAV_ITEMS, defaultFilters, createController, renderWorkspace, renderCustomerFacts, formatNumber, formatWon, formatPercent, escapeHtml: esc });

@@ -6,6 +6,7 @@ const test = require("node:test");
 const root = path.join(__dirname, "../src");
 const UI = require(path.join(root, "marketing-ui.js"));
 const Core = require(path.join(root, "marketing-core.js"));
+const { FirebaseRemoteClient } = require(path.join(root, "remote.js"));
 const html = fs.readFileSync(path.join(root, "index.html"), "utf8");
 const app = fs.readFileSync(path.join(root, "app.js"), "utf8");
 
@@ -53,8 +54,8 @@ test("customer facts expose stable IDs and never phone or private note", () => {
 
 test("controller shares one filter object, recomputes one immutable snapshot, validates custom dates", async () => {
   let builds = 0;
-  const controller = UI.createController({ core: { buildSnapshot(data, filters) { builds += 1; return Object.freeze({ data, appliedFilters: { ...filters } }); } }, bridge: { projectFacts: () => [] }, readRaw: async () => ({ records: [] }) });
-  await controller.load({ role: "admin" }, {});
+  const controller = UI.createController({ core: { resolvePeriod: Core.resolvePeriod, buildSnapshot(data, filters) { builds += 1; return Object.freeze({ data, appliedFilters: { ...filters } }); } }, bridge: { projectFacts: () => [] }, readRaw: async () => ({ records: [] }) });
+  await controller.load({ accessRole: "admin", marketingRole: "viewer" }, {});
   const filters = controller.filters;
   assert.equal(builds, 1);
   assert.equal(controller.setFilter("channel", "naver_blog").ok, true);
@@ -62,23 +63,63 @@ test("controller shares one filter object, recomputes one immutable snapshot, va
   assert.equal(builds, 2);
   assert.equal(controller.setPeriod({ type: "custom", start: "2026-09-02", end: "2026-09-01" }).ok, false);
   assert.equal(builds, 2);
+  assert.match(controller.state.localError, /custom start cannot exceed end/);
+  assert.match(UI.renderWorkspace({ view: "marketingOverview", snapshot: controller.state.snapshot, filters: controller.filters, localError: controller.state.localError }), /marketing-local-error/);
+  assert.equal(controller.setPeriod("today").ok, true);
+  assert.equal(controller.state.localError, "");
 });
 
 test("raw reads are role guarded and unavailable aggregate never becomes fake zero data", async () => {
   let rawReads = 0;
   const controller = UI.createController({ core: Core, bridge: { projectFacts: () => [] }, readRaw: async () => { rawReads += 1; return { records: [] }; } });
-  await controller.load({ role: "viewer" }, {});
+  await controller.load({ accessRole: "viewer", marketingRole: "viewer" }, {});
   assert.equal(rawReads, 0);
   assert.equal(controller.state.unavailable, true);
   assert.match(UI.renderWorkspace({ view: "marketingOverview", unavailable: true, filters: controller.filters }), /권한에 맞는 집계 데이터가 아직 준비되지 않았습니다/);
-  await controller.load({ role: "member", marketingRole: "marketing" }, {});
+  await controller.load({ accessRole: "member", marketingRole: "marketing" }, {});
   assert.equal(rawReads, 1);
+});
+
+test("verified remote current-user projection drives the raw read gate without tokens or obsolete roles", async () => {
+  let rawReads = 0;
+  const controller = UI.createController({ core: Core, bridge: { projectFacts: () => [] }, readRaw: async () => { rawReads += 1; return { daily: [] }; } });
+  async function projected(access) {
+    const client = new FirebaseRemoteClient({ Core: {}, fs: {}, safeStorage: {}, shell: {}, sessionFile: "", pendingFile: "" });
+    client.session = { uid: `uid_${access.marketingRole}`, email: `${access.marketingRole}@example.com`, idToken: "private-token", refreshToken: "private-refresh" };
+    client.dbRequest = async () => ({ enabled: true, email: client.session.email, role: access.role, marketingRole: access.marketingRole });
+    await client.verifyAccess();
+    return client.authState().user;
+  }
+  const marketer = await projected({ role: "member", marketingRole: "marketing" });
+  assert.deepEqual({ accessRole: marketer.accessRole, marketingRole: marketer.marketingRole }, { accessRole: "member", marketingRole: "marketing" });
+  assert.equal("idToken" in marketer || "refreshToken" in marketer, false);
+  assert.equal(["marketing", "sales"].includes(marketer.role), false);
+  await controller.load(marketer, {});
+  for (const marketingRole of ["sales", "viewer"]) await controller.load(await projected({ role: marketingRole === "viewer" ? "viewer" : "member", marketingRole }), {});
+  assert.equal(rawReads, 1);
+});
+
+test("snapshot filtered facts and visible stable IDs agree across period channel service and owner", () => {
+  const facts = [
+    { caseId: "include", customerId: "c1", date: "2026-08-30", channel: "naver_blog", service: "consulting", owner: "김", inquiries: 1 },
+    { caseId: "wrong-channel", customerId: "c2", date: "2026-08-30", channel: "referral", service: "consulting", owner: "김", inquiries: 1 },
+    { caseId: "wrong-service", customerId: "c3", date: "2026-08-30", channel: "naver_blog", service: "surveying", owner: "김", inquiries: 1 },
+    { caseId: "wrong-owner", customerId: "c4", date: "2026-08-30", channel: "naver_blog", service: "consulting", owner: "이", inquiries: 1 },
+    { caseId: "wrong-period", customerId: "c5", date: "2026-07-01", channel: "naver_blog", service: "consulting", owner: "김", inquiries: 1 },
+  ];
+  const snapshot = Core.buildSnapshot({ daily: [], facts }, { period: "thisMonth", channel: "naver_blog", service: "consulting", owner: "김" }, new Date("2026-08-31T00:00:00Z"));
+  assert.equal(snapshot.totals.inquiries, 1);
+  assert.deepEqual(snapshot.filteredFacts.map(fact => fact.caseId), ["include"]);
+  const rendered = UI.renderWorkspace({ view: "marketingFunnel", snapshot, filters: snapshot.appliedFilters, facts: snapshot.filteredFacts });
+  assert.match(rendered, /data-marketing-case-id="include"/);
+  for (const id of ["wrong-channel", "wrong-service", "wrong-owner", "wrong-period"]) assert.doesNotMatch(rendered, new RegExp(id));
 });
 
 test("marketing failures remain represented as local view state", async () => {
   const controller = UI.createController({ core: Core, bridge: { projectFacts: () => [] }, readRaw: async () => { throw new Error("marketing only"); } });
-  await controller.load({ role: "admin" }, {});
+  await controller.load({ accessRole: "admin", marketingRole: "viewer" }, {});
   assert.match(controller.state.error, /marketing only/);
+  assert.match(controller.state.localError, /marketing only/);
   assert.equal(controller.state.snapshot, null);
 });
 
@@ -92,4 +133,6 @@ test("loads UMD after core and bridge before app and app integrates marketing wi
   assert.match(app, /광고 데이터 입력/);
   assert.match(app, /searchEl\.closest\("\.global-search"\)\.hidden = !operationsWorkspace/);
   assert.match(app, /primaryActionButton\.dataset\.action = "new-customer"/);
+  assert.doesNotMatch(app, /data-marketing-date[\s\S]{0,500}showToast/);
+  assert.match(app, /snapshot\.filteredFacts/);
 });

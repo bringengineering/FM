@@ -1622,9 +1622,9 @@ async function checkForUpdates(manual) {
 }
 
 function authState() {
-  if (localTestMode) return { required: false, enforceRoles: true, user: { uid: `local-${localTestRole}`, email: `${localTestRole}@bring.local`, displayName: "테스트 사용자", role: localTestRole, officeAdmin: localTestRole === "admin", mustChangePassword: false }, error: "" };
+  if (localTestMode) return { required: false, enforceRoles: true, user: { uid: `local-${localTestRole}`, email: `${localTestRole}@bring.local`, displayName: "테스트 사용자", role: localTestRole, accessRole: localTestRole, marketingRole: localTestRole === "admin" ? "viewer" : "marketing", officeAdmin: localTestRole === "admin", mustChangePassword: false }, error: "" };
   if (authPreview) return { required: true, user: null, error: "" };
-  if (passwordPreview) return { required: true, user: { uid: "preview-user", email: "ameejin92@gmail.com", displayName: "김현진", role: "member", mustChangePassword: true }, error: "" };
+  if (passwordPreview) return { required: true, user: { uid: "preview-user", email: "ameejin92@gmail.com", displayName: "김현진", role: "member", accessRole: "member", marketingRole: "viewer", mustChangePassword: true }, error: "" };
   return remoteClient ? remoteClient.authState() : { required: true, user: null, error: "로그인 모듈을 준비하지 못했습니다." };
 }
 

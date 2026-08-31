@@ -906,7 +906,9 @@ class FirebaseRemoteClient {
         email: this.session.email,
         displayName: this.session.displayName || "",
         photoUrl: this.session.photoUrl || "",
-        role: ["admin", "member", "marketing", "sales", "viewer"].includes(this.session.role) ? this.session.role : "viewer",
+        role: ["admin", "member", "viewer"].includes(this.session.role) ? this.session.role : "viewer",
+        accessRole: ["admin", "member", "viewer"].includes(this.session.role) ? this.session.role : "viewer",
+        marketingRole: ["marketing", "sales", "viewer"].includes(this.session.marketingRole) ? this.session.marketingRole : "viewer",
         officeAdmin: this.session.officeAdmin === true,
         mustChangePassword: this.session.mustChangePassword === true
       } : null,
@@ -1057,6 +1059,7 @@ class FirebaseRemoteClient {
       displayName: sessionRef.displayName || "",
       photoUrl: sessionRef.photoUrl || "",
       role: sessionRef.role || "member",
+      marketingRole: ["marketing", "sales", "viewer"].includes(sessionRef.marketingRole) ? sessionRef.marketingRole : "viewer",
       officeAdmin: sessionRef.officeAdmin === true,
       mustChangePassword: sessionRef.mustChangePassword === true,
       fieldAuthIntegrated: sessionRef.fieldAuthIntegrated === true
@@ -1261,6 +1264,7 @@ class FirebaseRemoteClient {
       throw createError("계정 권한이 올바르게 설정되지 않았습니다. 관리자에게 문의해 주세요.", "ACCESS_DENIED");
     }
     sessionRef.role = role;
+    sessionRef.marketingRole = ["marketing", "sales", "viewer"].includes(String(access.marketingRole || "")) ? String(access.marketingRole) : "viewer";
     sessionRef.officeAdmin = access.officeAdmin === true;
     sessionRef.mustChangePassword = access.mustChangePassword === true;
     return access;

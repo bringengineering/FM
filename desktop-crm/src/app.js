@@ -1370,11 +1370,11 @@
     const meta = MarketingUI.NAV_ITEMS.find(item => item.id === currentMarketingView);
     document.getElementById("pageTitle").textContent = meta ? meta.label : "마케팅 대시보드";
     const customers = new Map((store.customers || []).map(customer => [String(customer.id || ""), customer]));
-    const facts = (marketingController.state.facts || []).map(fact => {
+    const facts = (marketingController.state.snapshot && marketingController.state.snapshot.filteredFacts || []).map(fact => {
       const customer = customers.get(String(fact.customerId || "")) || {};
       return Object.assign({}, fact, { customerName: customer.name || customer.company || "", buildingName: customer.buildingName || "", lastContactAt: customer.lastContactAt || "", nextContactAt: customer.nextContactAt || "" });
     });
-    main.innerHTML = MarketingUI.renderWorkspace({ view: currentMarketingView, filters: marketingController.filters, snapshot: marketingController.state.snapshot, facts, error: marketingController.state.error, unavailable: marketingController.state.unavailable });
+    main.innerHTML = MarketingUI.renderWorkspace({ view: currentMarketingView, filters: marketingController.filters, snapshot: marketingController.state.snapshot, facts, localError: marketingController.state.localError, unavailable: marketingController.state.unavailable });
     finishViewRender(currentMarketingView);
     if (!marketingLoaded) {
       marketingLoaded = true;
@@ -5867,14 +5867,12 @@
       const value = event.target.value;
       const period = value === "custom" ? { type: "custom", start: Core.dayKey(), end: Core.dayKey() } : value;
       const result = marketingController.setPeriod(period);
-      if (!result.ok) showToast(result.error, "error");
       renderMarketingWorkspace();
       return;
     }
     if (currentWorkspace === "marketing" && event.target.matches("[data-marketing-date]")) {
       const period = Object.assign({}, marketingController.filters.period, { [event.target.dataset.marketingDate]: event.target.value });
       const result = marketingController.setPeriod(period);
-      if (!result.ok) showToast("시작일과 종료일을 올바르게 입력해 주세요.", "error");
       renderMarketingWorkspace();
       return;
     }

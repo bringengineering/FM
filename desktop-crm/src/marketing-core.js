@@ -224,6 +224,7 @@
     }
     const snapshot = {
       totals: current.totals, metrics: calculateMetrics(current.totals), funnel, channels,
+      filteredFacts: current.facts.slice(),
       appliedFilters: JSON.parse(JSON.stringify(filters)), period, exclusions: current.exclusions,
       comparison: { totals: previous.totals, metrics: calculateMetrics(previous.totals), deltas: Object.fromEntries(COUNT_FIELDS.concat('profit').map(key => [key, checkedIntegerSubtract(current.totals[key], previous.totals[key], `${key} 증감`)])) }
     };
