@@ -2949,7 +2949,9 @@ class FirebaseRemoteClient {
     const marketing = this.Core.normalizeMarketingAttribution(source.marketing);
     const guard = this.captureSessionGuard();
     if (!this.sessionGuardActive(guard)) throw createError('session changed', 'SESSION_CHANGED');
-    const snapshot = Object.freeze({ uid: String(session.uid || ''), generation: guard.generation, idToken: String(session.idToken || ''), actor: String(session.operatorId || session.email || session.uid || '').slice(0, 200) });
+    const freshIdToken = await this.ensureIdToken(false);
+    if (!this.sessionGuardActive(guard)) throw createError('session changed', 'SESSION_CHANGED');
+    const snapshot = Object.freeze({ uid: String(session.uid || ''), generation: guard.generation, idToken: String(freshIdToken || ''), actor: String(session.operatorId || session.email || session.uid || '').slice(0, 200) });
     if (!snapshot.uid || !snapshot.idToken) throw createError('authentication required', 'AUTH_REQUIRED');
     const path = kind === 'customer' ? `crmShared/data/customers/${id}` : `cases/${id}`;
     const root = kind === 'customer' ? this.databaseRoot : '';

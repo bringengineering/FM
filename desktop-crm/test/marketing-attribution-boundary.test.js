@@ -9,7 +9,7 @@ test('narrow remote customer attribution update preserves authoritative core fie
   const fake = {
     Core,
     session: { uid: 'u', idToken: 'token-a', accessRole: 'member', marketingRole: 'marketing' }, sessionGeneration: 1,
-    requireMutationPermission() { return this.session; },
+    requireMutationPermission() { return this.session; }, ensureIdToken: async () => 'token-a',
     captureSessionGuard() { return { uid: 'u' }; }, sessionGuardActive() { return true; },
     dbRequestWithCapturedAuth: async (path, request, root, snapshot) => request.method === 'GET' ? current : (writes.push({ path, request, root, token: snapshot.idToken }), null)
   };
@@ -25,7 +25,7 @@ test('narrow remote customer attribution update preserves authoritative core fie
 test('session switch before PATCH prevents write and never uses the new token', async () => {
   const writes = [];
   const fake = { Core, session: { uid: 'a', idToken: 'token-a', accessRole: 'member', marketingRole: 'marketing' }, sessionGeneration: 1,
-    requireMutationPermission() { return this.session; }, captureSessionGuard() { return { sessionRef: this.session, uid: this.session.uid, generation: this.sessionGeneration }; },
+    requireMutationPermission() { return this.session; }, ensureIdToken: async () => 'token-a', captureSessionGuard() { return { sessionRef: this.session, uid: this.session.uid, generation: this.sessionGeneration }; },
     sessionGuardActive(g) { return this.session === g.sessionRef && this.session.uid === g.uid && this.sessionGeneration === g.generation; },
     dbRequestWithCapturedAuth: async (_path, request) => { if (request.method === 'GET') { fake.session = { uid: 'b', idToken: 'token-b' }; fake.sessionGeneration++; return { id: 'c' }; } writes.push(request); }
   };
@@ -36,7 +36,7 @@ test('session switch before PATCH prevents write and never uses the new token', 
 test('switch during PATCH uses A token and actor then rejects result', async () => {
   const seen = [];
   const fake = { Core, session: { uid: 'a', idToken: 'token-a', accessRole: 'member', marketingRole: 'marketing' }, sessionGeneration: 1,
-    requireMutationPermission() { return this.session; }, captureSessionGuard() { return { sessionRef: this.session, uid: this.session.uid, generation: this.sessionGeneration }; },
+    requireMutationPermission() { return this.session; }, ensureIdToken: async () => 'token-a', captureSessionGuard() { return { sessionRef: this.session, uid: this.session.uid, generation: this.sessionGeneration }; },
     sessionGuardActive(g) { return this.session === g.sessionRef && this.sessionGeneration === g.generation; },
     dbRequestWithCapturedAuth: async (_path, request, _root, snapshot) => { if (request.method === 'GET') return { id: 'c' }; seen.push({ token: snapshot.idToken, actor: request.body.marketingUpdatedBy }); fake.session = { uid: 'b', idToken: 'token-b' }; fake.sessionGeneration++; }
   };
@@ -47,4 +47,36 @@ test('switch during PATCH uses A token and actor then rejects result', async () 
 test('narrow remote attribution denies viewer and unstable ids', async () => {
   const fake = { Core, session: { uid: 'v', accessRole: 'viewer' }, requireMutationPermission() { return this.session; } };
   await assert.rejects(() => FirebaseRemoteClient.prototype.updateMarketingAttribution.call(fake, { kind: 'case', id: '../x', marketing: {} }), /forbidden|invalid/i);
+});
+
+test('expired A refreshes once before requests and both use fresh A token', async () => {
+  let refreshes = 0; const tokens = [];
+  const fake = { Core, session: { uid: 'a', idToken: 'expired-a', accessRole: 'member', marketingRole: 'marketing' }, sessionGeneration: 1,
+    requireMutationPermission() { return this.session; }, ensureIdToken: async () => { refreshes++; fake.session.idToken = 'fresh-a'; return 'fresh-a'; },
+    captureSessionGuard() { return { sessionRef: this.session, uid: 'a', generation: 1 }; }, sessionGuardActive(g) { return this.session === g.sessionRef && this.sessionGeneration === g.generation; },
+    dbRequestWithCapturedAuth: async (_p, request, _r, snapshot) => { tokens.push(snapshot.idToken); return request.method === 'GET' ? { id: 'c' } : null; }
+  };
+  await FirebaseRemoteClient.prototype.updateMarketingAttribution.call(fake, { kind: 'customer', id: 'c', marketing: {} });
+  assert.equal(refreshes, 1); assert.deepEqual(tokens, ['fresh-a', 'fresh-a']);
+});
+
+test('switch during refresh performs no database request', async () => {
+  let requests = 0;
+  const fake = { Core, session: { uid: 'a', idToken: 'expired-a', accessRole: 'member', marketingRole: 'marketing' }, sessionGeneration: 1,
+    requireMutationPermission() { return this.session; }, ensureIdToken: async () => { fake.session = { uid: 'b', idToken: 'token-b' }; fake.sessionGeneration++; return 'token-b'; },
+    captureSessionGuard() { return { sessionRef: this.session, uid: this.session.uid, generation: this.sessionGeneration }; }, sessionGuardActive(g) { return this.session === g.sessionRef && this.sessionGeneration === g.generation; },
+    dbRequestWithCapturedAuth: async () => { requests++; }
+  };
+  await assert.rejects(() => FirebaseRemoteClient.prototype.updateMarketingAttribution.call(fake, { kind: 'customer', id: 'c', marketing: {} }), /session changed/i);
+  assert.equal(requests, 0);
+});
+
+test('refresh failure is bounded and performs no database request', async () => {
+  let requests = 0;
+  const fake = { Core, session: { uid: 'a', idToken: 'expired-secret', accessRole: 'member', marketingRole: 'marketing' }, sessionGeneration: 1,
+    requireMutationPermission() { return this.session; }, ensureIdToken: async () => { const error = new Error('auth refresh failed'); error.code = 'AUTH_EXPIRED'; throw error; },
+    captureSessionGuard() { return { sessionRef: this.session, uid: 'a', generation: 1 }; }, sessionGuardActive() { return true; }, dbRequestWithCapturedAuth: async () => { requests++; }
+  };
+  await assert.rejects(() => FirebaseRemoteClient.prototype.updateMarketingAttribution.call(fake, { kind: 'customer', id: 'c', marketing: {} }), error => error.code === 'AUTH_EXPIRED' && !error.message.includes('expired-secret'));
+  assert.equal(requests, 0);
 });
