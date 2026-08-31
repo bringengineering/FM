@@ -1392,8 +1392,8 @@
     const user = currentAuth.user || {};
     const canWriteMarketing = user.accessRole === "admin" || user.accessRole === "member" && user.marketingRole === "marketing";
     const entry = Object.assign({ canWrite: canWriteMarketing, draft: marketingEntryDraft }, marketingEntryController.state);
-    const alerts = marketingController.state.snapshot ? MarketingCore.buildAlerts({ snapshot: marketingController.state.snapshot, facts }, new Date()) : [];
-    const report = marketingController.state.snapshot ? MarketingCore.buildWeeklyReport(marketingController.state.snapshot, alerts, new Date()) : null;
+    const derived = marketingController.state.snapshot ? marketingController.derive(facts) : { alerts: [], report: null };
+    const alerts = derived.alerts, report = derived.report;
     main.innerHTML = MarketingUI.renderWorkspace({ view: currentMarketingView, filters: marketingController.filters, filterOptions: marketingController.state.filterOptions, snapshot: marketingController.state.snapshot, facts, alerts, report, localError: marketingController.state.localError, unavailable: marketingController.state.unavailable, entry });
     finishViewRender(currentMarketingView);
     if (!marketingLoaded) {
@@ -4615,10 +4615,8 @@
 
   document.addEventListener("click", async event => {
     if (currentWorkspace === "marketing" && event.target.closest("[data-marketing-report-copy]")) {
-      const snapshot = marketingController.state.snapshot;
-      if (!snapshot) return showToast("복사할 주간 보고가 없습니다.", "error");
-      const alerts = MarketingCore.buildAlerts({ snapshot, facts: snapshot.filteredFacts }, new Date());
-      await navigator.clipboard.writeText(MarketingUI.weeklyReportText(MarketingCore.buildWeeklyReport(snapshot, alerts, new Date())));
+      if (!marketingController.state.report) return showToast("복사할 주간 보고가 없습니다.", "error");
+      await navigator.clipboard.writeText(MarketingUI.weeklyReportText(marketingController.state.report));
       showToast("주간 보고를 복사했습니다.", "success");
       return;
     }
@@ -4626,9 +4624,13 @@
     const marketingAlert = currentWorkspace === "marketing" && event.target.closest("[data-marketing-alert-target][data-marketing-alert-type]");
     if (marketingAlert) {
       const targetId = marketingAlert.dataset.marketingAlertTarget, targetType = marketingAlert.dataset.marketingAlertType;
-      if (targetType === "case" || targetType === "contract") { await workspaceCoordinator.select("operations"); currentView = "cases"; selectedCaseKey = targetId; render(); }
+      if (targetType === "case") { await workspaceCoordinator.select("operations"); currentView = "cases"; selectedCaseKey = targetId; render(); }
+      else if (targetType === "contract") { await workspaceCoordinator.select("operations"); currentView = "contracts"; render(); const contract=store.contracts.find(item=>String(item.id)===targetId); if(contract) openContractForm(contract); }
       else if (targetType === "customer") { await workspaceCoordinator.select("operations"); currentView = "customers"; selectedCustomerId = targetId; render(); }
-      else if (targetType === "ad" || targetType === "channel") { currentMarketingView = "marketingInput"; renderMarketingWorkspace(); }
+      else if (targetType === "ad") { currentMarketingView = "marketingInput"; renderMarketingWorkspace(); }
+      else if (targetType === "channel") { currentMarketingView = "marketingChannels"; renderMarketingWorkspace(); }
+      else if (targetType === "budget") { currentMarketingView = "marketingWeekly"; renderMarketingWorkspace(); }
+      else if (targetType === "source") { currentMarketingView = "marketingInput"; renderMarketingWorkspace(); }
       return;
     }
     const marketingNav = event.target.closest("[data-marketing-nav]");

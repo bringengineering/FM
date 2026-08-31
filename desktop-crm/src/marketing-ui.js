@@ -186,12 +186,13 @@
 
   function createController(options) {
     const core = options.core || MarketingCore, bridge = options.bridge || MarketingCrmBridge;
-    const filters = defaultFilters(); let data = { daily: [], facts: [] }, generation = 0, rawLoaded = false, projectionRevision = "", identity = "";
+    const filters = defaultFilters(); let data = { daily: [], facts: [] }, alertContext = {}, generation = 0, rawLoaded = false, projectionRevision = "", identity = "";
     const state = { identityKey: "", snapshot: null, facts: [], alerts: [], report: null, filterOptions: buildFilterOptions([]), loading: false, error: "", localError: "", unavailable: false };
-    const recompute = () => { const at=options.now ? options.now() : new Date(); state.filterOptions = buildFilterOptions(data.daily.concat(data.facts)); state.snapshot = core.buildSnapshot(data, filters, at); state.alerts=core.buildAlerts?core.buildAlerts({snapshot:state.snapshot,facts:state.snapshot.filteredFacts,daily:data.daily},at):[]; state.report=core.buildWeeklyReport?core.buildWeeklyReport(state.snapshot,state.alerts,at):null; return state.snapshot; };
+    function derive(facts) { const at=options.now ? options.now() : new Date(); const visibleFacts=Array.isArray(facts)?facts:(state.snapshot&&state.snapshot.filteredFacts||[]); state.alerts=core.buildAlerts?core.buildAlerts(Object.assign({snapshot:state.snapshot,facts:visibleFacts,daily:data.daily,previousSnapshot:{totals:state.snapshot&&state.snapshot.comparison&&state.snapshot.comparison.totals||{}}},alertContext),at):[]; state.report=core.buildWeeklyReport?core.buildWeeklyReport(state.snapshot,state.alerts,at):null; return Object.freeze({alerts:state.alerts,report:state.report}); }
+    const recompute = () => { const at=options.now ? options.now() : new Date(); state.filterOptions = buildFilterOptions(data.daily.concat(data.facts)); state.snapshot = core.buildSnapshot(data, filters, at); derive(state.snapshot.filteredFacts); return state.snapshot; };
     const safeIdentity = user => [user && user.uid, user && user.accessRole, user && user.marketingRole].map(value => String(value || "").slice(0, 160)).join("|");
     const revision = (store, caseRows) => typeof bridge.sourceRevision === "function" ? bridge.sourceRevision(store || {}, { cases: caseRows || [] }) : JSON.stringify([store, caseRows]);
-    function clear(nextIdentity, loading) { rawLoaded = false; data = { daily: [], facts: [] }; projectionRevision = ""; identity = nextIdentity || ""; state.identityKey = identity; state.snapshot = null; state.facts = []; state.alerts=[]; state.report=null; state.filterOptions = buildFilterOptions([]); state.loading = Boolean(loading); state.error = ""; state.localError = ""; state.unavailable = false; }
+    function clear(nextIdentity, loading) { rawLoaded = false; data = { daily: [], facts: [] }; alertContext={}; projectionRevision = ""; identity = nextIdentity || ""; state.identityKey = identity; state.snapshot = null; state.facts = []; state.alerts=[]; state.report=null; state.filterOptions = buildFilterOptions([]); state.loading = Boolean(loading); state.error = ""; state.localError = ""; state.unavailable = false; }
     function invalidate(_reason, user) { generation += 1; clear(user ? safeIdentity(user) : "", false); }
     function prepareLoad(user) { generation += 1; clear(safeIdentity(user), true); }
     async function load(user, store, caseRows) {
@@ -211,6 +212,9 @@
         if (requestedGeneration !== generation) return state;
         const raw = response && (response.records || response.daily || response.items || response);
         const daily = Array.isArray(raw) ? raw : Object.values(raw || {});
+        const derivedUpdated = {};
+        daily.forEach(row => { const at=Number(row&&row.updatedAtMs); if(row&&row.channel&&Number.isFinite(at)) derivedUpdated[row.channel]=Math.max(derivedUpdated[row.channel]||0,at); });
+        alertContext = { budgets: response && response.budgets || {}, sourceUpdatedAtMsByChannel: Object.assign(derivedUpdated,response && response.sourceUpdatedAtMsByChannel || {}), sourceUpdatedAtMs: response && response.sourceUpdatedAtMs, designStateUsed: Boolean(response && response.designStateUsed || daily.some(row=>row&&['estimated','pending','needs_review'].includes(row.dataStatus))) };
         state.facts = bridge.projectFacts(store || {}, { cases: caseRows || [] });
         data = { daily, facts: state.facts };
         rawLoaded = true;
@@ -222,7 +226,7 @@
     function refreshFacts(store, caseRows) { syncFactsIfRevisionChanged(store, caseRows); return state.snapshot; }
     function setFilter(name, value) { if (!FILTERS.some(item => item[0] === name)) { state.localError = "알 수 없는 필터입니다."; return { ok: false, error: state.localError }; } filters[name] = value; state.localError = ""; if (rawLoaded) recompute(); return { ok: true, snapshot: state.snapshot }; }
     function setPeriod(period) { try { core.resolvePeriod(period, options.now ? options.now() : new Date()); filters.period = period; state.localError = ""; if (rawLoaded) recompute(); return { ok: true, snapshot: state.snapshot }; } catch (error) { state.localError = String(error.message || error); return { ok: false, error: state.localError }; } }
-    return Object.freeze({ filters, state, load, invalidate, prepareLoad, syncFactsIfRevisionChanged, refreshFacts, setFilter, setPeriod });
+    return Object.freeze({ filters, state, load, invalidate, prepareLoad, syncFactsIfRevisionChanged, refreshFacts, setFilter, setPeriod, derive });
   }
   return Object.freeze({ NAV_ITEMS, defaultFilters, buildFilterOptions, createController, createEntryController, crmEditPermissions, roleSubmissionPolicy, buildRoleLimitedEntityUpdate, submitRoleLimitedEntityUpdate, renderWorkspace, renderMarketingInput, renderCustomerFacts, renderAlerts, renderWeekly, weeklyReportText, formatNumber, formatWon, formatPercent, escapeHtml: esc });
 });

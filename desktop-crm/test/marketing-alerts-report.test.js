@@ -89,3 +89,46 @@ test('unavailable aggregate renders no fabricated alert/report and app provides 
   assert.match(app, /data-marketing-alert-target/);
   assert.doesNotMatch(app, /marketing-report[^\n]{0,100}(email|sms|fetch\()/i);
 });
+
+test('evidence recursively redacts sensitive keys and sensitive string patterns', () => {
+  const alerts = Core.buildAlerts({ snapshot:{totals:{}}, facts:[{caseId:'safe',validLeads:1,owner:'담당자 이름',duplicateIdentityKey:'person@example.com',duplicateCount:2, nested:{phone:'010-1234-5678'}}] }, now);
+  const text=JSON.stringify(alerts);
+  assert.doesNotMatch(text,/010[- ]?1234|person@example\.com|담당자 이름/);
+});
+
+test('contracted or completed work without payment evidence creates a stable payment alert', () => {
+  const alerts=Core.buildAlerts({snapshot:{totals:{}},facts:[{caseId:'case-pay',contractIds:['contract-9'],contracts:1,payments:0,workStage:true}]},now);
+  const alert=alerts.find(item=>item.code==='payment_missing');
+  assert.equal(alert.targetType,'contract');
+  assert.equal(alert.targetId,'contract-9');
+});
+
+test('alerts and weekly report are equal under fact daily channel and alert permutations', () => {
+  const facts=[{caseId:'b',validLeads:1,owner:''},{caseId:'a',validLeads:1,owner:''}];
+  const daily=[{id:'2',date:'2026-08-31',channel:'naver_blog',keyword:'x',spend:1},{id:'1',date:'2026-08-30',channel:'naver_blog',keyword:'x',spend:1}];
+  const snapshot={...baseSnapshot,filteredFacts:facts,channels:{soomgo:{spend:5,validLeads:0,contracts:0,profit:-5,rating:'stop_review'},naver_blog:baseSnapshot.channels.naver_blog}};
+  const a=Core.buildAlerts({snapshot,facts,daily},now), b=Core.buildAlerts({snapshot:{...snapshot,filteredFacts:[...facts].reverse()},facts:[...facts].reverse(),daily:[...daily].reverse()},now);
+  assert.deepEqual(a,b);
+  assert.deepEqual(Core.buildWeeklyReport(snapshot,a,now),Core.buildWeeklyReport({...snapshot,channels:{naver_blog:baseSnapshot.channels.naver_blog,soomgo:snapshot.channels.soomgo},filteredFacts:[...facts].reverse()},[...a].reverse(),now));
+});
+
+test('staleness is emitted per channel and quote response evidence suppresses no-response', () => {
+  const alerts=Core.buildAlerts({snapshot:{totals:{}},facts:[{caseId:'q',quotes:1,quoteSentAt:'2026-08-30T03:00:00Z',lastContactAt:'2026-08-30T04:00:00Z'}],sourceUpdatedAtMsByChannel:{naver_blog:now.getTime()-72*3600000,soomgo:now.getTime()-24*3600000},designStateUsed:true},now);
+  assert.equal(alerts.some(a=>a.code==='quote_no_response_24h'),false);
+  assert.ok(alerts.some(a=>a.code==='channel_stale_72h'&&a.targetId==='naver_blog'));
+  assert.ok(alerts.some(a=>a.code==='channel_stale_warning'&&a.targetId==='soomgo'));
+});
+
+test('controller derives exact displayed report from wired raw metadata and app copies stored report', async () => {
+  const controller=UI.createController({core:Core,bridge:{projectFacts:()=>[],sourceRevision:()=>''},now:()=>now,readRaw:async()=>({daily:[{date:'2026-08-31',channel:'naver_blog',spend:80,clicks:10}],budgets:{daily:100},sourceUpdatedAtMsByChannel:{naver_blog:now.getTime()-73*3600000}})});
+  await controller.load({accessRole:'admin'},{});
+  const derived=controller.derive([]);
+  assert.equal(derived.report,controller.state.report);
+  assert.ok(derived.alerts.some(a=>a.code==='budget_80_percent'));
+  assert.ok(derived.alerts.some(a=>a.code==='channel_stale_72h'));
+  const app=fs.readFileSync(path.join(__dirname,'../src/app.js'),'utf8');
+  assert.match(app,/marketingController\.derive\(facts\)/);
+  assert.match(app,/weeklyReportText\(marketingController\.state\.report\)/);
+  assert.doesNotMatch(app,/data-marketing-report-copy[\s\S]{0,700}buildWeeklyReport/);
+  for(const type of ['case','contract','customer','ad','channel','budget','source']) assert.match(app,new RegExp(`targetType === "${type}"`));
+});
