@@ -185,6 +185,39 @@ describe("LandingPage", () => {
     expect(container.querySelector(".movein-mid-cta")).toBeInTheDocument();
   });
 
+  it.each([
+    [
+      "계단·공용부 청소",
+      <StairCleaningLanding key="related-stair-cleaning" />,
+      "related-services-stair-cleaning",
+      [
+        ["건물관리·입퇴실 통합관리 살펴보기", "/building-care"],
+        ["입주·이사청소 살펴보기", "/move-in-cleaning"],
+      ],
+    ],
+    [
+      "입주·이사청소",
+      <MoveInCleaningLanding key="related-move-in-cleaning" />,
+      "related-services-move-in-cleaning",
+      [
+        ["건물관리·입퇴실 통합관리 살펴보기", "/building-care"],
+        ["계단·공용부 정기청소 살펴보기", "/stair-cleaning"],
+      ],
+    ],
+  ])("shows the other two services at the end of the %s page", (_, page, sectionId, links) => {
+    const { container } = render(page);
+    const related = container.querySelector(`#${sectionId}`);
+
+    expect(related).toBeInTheDocument();
+    expect(within(related as HTMLElement).getAllByRole("link")).toHaveLength(2);
+    for (const [name, href] of links) {
+      expect(
+        within(related as HTMLElement).getByRole("link", { name }),
+      ).toHaveAttribute("href", href);
+    }
+    expect(related?.nextElementSibling).toHaveClass("stair-sticky");
+  });
+
   it("uses a dense two-column campaign grid and shared depth surfaces", () => {
     const { container } = render(<StairCleaningLanding />);
 

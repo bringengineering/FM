@@ -2,6 +2,7 @@ import Image from "next/image";
 import { PHONE_HREF, PHONE_LABEL } from "./contact";
 import QuickEstimateForm from "./QuickEstimateForm";
 import LandingBrandIntro from "./LandingBrandIntro";
+import RelatedServices from "./RelatedServices";
 import "./stair-cleaning.css";
 
 const facts = [
@@ -209,6 +210,8 @@ export default function StairCleaningLanding() {
       </div></section>
 
       <section className="stair-estimate" id="estimate" aria-labelledby="stair-estimate-title"><div className="stair-estimate-wrap"><div className="stair-estimate-head"><p>QUICK ESTIMATE</p><h2 id="stair-estimate-title">건물 정보만 알려주세요.<br />빠르게 확인해드릴게요.</h2><span>필수 항목만 남겨주시면 원주 직영팀이 확인 후 연락드립니다.</span></div><QuickEstimateForm service="계단·공용부 청소" sourcePath="/stair-cleaning" /><div className="stair-kakao"><span>더 빠른 상담이 필요하신가요?</span><a href="https://pf.kakao.com/_xnaRfX/chat" target="_blank" rel="noreferrer">카카오톡으로 상담</a></div></div></section>
+
+      <RelatedServices current="stair-cleaning" />
 
       <a className="stair-sticky" href="#estimate"><span>무료 견적 신청</span><small>30초 만에 입력하기</small></a>
     </main>

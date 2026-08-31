@@ -11,6 +11,7 @@ import BuildingCareTestimonials from "./BuildingCareTestimonials";
 import BuildingCareExperienceCards from "./BuildingCareExperienceCards";
 import BuildingCareCredentials from "./BuildingCareCredentials";
 import BuildingCareProposalRequest from "./BuildingCareProposalRequest";
+import RelatedServices from "./RelatedServices";
 import {
   BrandTeamManifesto,
   CertificationTrustBar,
@@ -99,6 +100,7 @@ export default function BuildingCareLanding() {
       <BuildingCareProposalRequest />
 
       <section id="building-care-consultation" className="bc-section"><div className="bc-shell bc-consult"><div><p className="bc-kicker">FREE MANAGEMENT CHECK</p><h2>건물 주소와 불편한 점만<br />알려주세요.</h2><p>현재 관리 방식과 필요한 범위를 확인해 BRING CARE가 먼저 정리해드리겠습니다.</p><a className="bc-kakao" href={KAKAO_CHAT_HREF} target="_blank" rel="noreferrer">카카오톡으로 바로 상담</a></div><QuickEstimateForm service="원룸·다가구 건물관리" sourcePath="/building-care"/></div></section>
+      <RelatedServices current="building-care" />
     </main>
   </QuickEstimateExperience>;
 }

@@ -49,6 +49,7 @@ describe("BuildingCarePage sales landing", () => {
       "company-credentials",
       "building-care-proposal",
       "building-care-consultation",
+      "related-services-building-care",
     ]);
   });
 
@@ -251,5 +252,28 @@ describe("BuildingCarePage sales landing", () => {
     expect(
       proposal.compareDocumentPosition(consultation) & Node.DOCUMENT_POSITION_FOLLOWING,
     ).toBeTruthy();
+  });
+
+  it("ends with links to the two cleaning services", () => {
+    const { container } = render(<BuildingCarePage />);
+    const main = container.querySelector("main")!;
+    const consultation = container.querySelector("#building-care-consultation")!;
+    const related = container.querySelector("#related-services-building-care")!;
+
+    expect(related).toBeInTheDocument();
+    expect(
+      consultation.compareDocumentPosition(related) & Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
+    expect(main.lastElementChild).toBe(related);
+    expect(
+      within(related as HTMLElement).getByRole("link", {
+        name: "계단·공용부 정기청소 살펴보기",
+      }),
+    ).toHaveAttribute("href", "/stair-cleaning");
+    expect(
+      within(related as HTMLElement).getByRole("link", {
+        name: "입주·이사청소 살펴보기",
+      }),
+    ).toHaveAttribute("href", "/move-in-cleaning");
   });
 });
