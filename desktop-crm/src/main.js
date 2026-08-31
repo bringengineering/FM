@@ -11,6 +11,7 @@ const path = require("node:path");
 const { fileURLToPath, pathToFileURL } = require("node:url");
 const Core = require("./core");
 const OfficeCore = require("./office-core");
+const OfficeAttachment = require("./office-attachment");
 const { createAttendanceWorkbook, safeFileSegment } = require("./attendance-xlsx");
 const OperationsIntelligence = require("./operations-intelligence-core");
 const OperationsWorkSync = require("./operations-work-sync");
@@ -120,6 +121,15 @@ if (localTestMode && !process.env.BRING_CRM_DATA_DIR) {
 }
 let localOperationsData = null;
 let localOfficeData = null;
+let localOfficeMessageFiles = Object.create(null);
+const pendingOfficeAttachments = new Map();
+const OFFICE_ATTACHMENT_TTL_MS = 10 * 60 * 1000;
+const MAX_PENDING_OFFICE_ATTACHMENTS = 8;
+const OFFICE_ATTACHMENT_CACHE_DIRECTORY = "bring-crm-office-attachments";
+const OFFICE_ATTACHMENT_CACHE_SESSION = `session-${process.pid}-${crypto.randomBytes(8).toString("hex")}`;
+const OFFICE_ATTACHMENT_CACHE_STALE_MS = 24 * 60 * 60 * 1000;
+let officeAttachmentCacheQueue = Promise.resolve();
+let officeAttachmentCacheGeneration = 0;
 let localIntelligenceOperations = Object.create(null);
 function screenshotIntelligenceOperations() {
   const rows = Array.from({ length: 7 }, (_, index) => OperationsIntelligence.normalize({
@@ -1475,6 +1485,9 @@ async function confirmApplicationExitWithoutFieldStatus(reason) {
 }
 
 async function finishApplicationExit(reason) {
+  pendingOfficeAttachments.clear();
+  localOfficeMessageFiles = Object.create(null);
+  await cleanupOfficeAttachmentCache();
   applicationExitAllowed = true;
   if (reason === "update") {
     if (updateInstallScheduled) return;
@@ -1686,7 +1699,7 @@ async function readOperations() {
 function assertOfficeSession() {
   const user = authState().user;
   if (!user || !user.uid || !["admin", "member", "viewer"].includes(user.role) || user.mustChangePassword === true) {
-    throw new Error("BIRNG OFFICE를 사용하려면 허용된 CRM 계정으로 로그인해 주세요.");
+    throw new Error("BRING OFFICE를 사용하려면 허용된 CRM 계정으로 로그인해 주세요.");
   }
   return user;
 }
@@ -1697,8 +1710,358 @@ async function readOffice() {
     localOfficeData = localOfficeData || demoOffice();
     return JSON.parse(JSON.stringify(localOfficeData));
   }
-  if (!remoteClient) throw new Error("BIRNG OFFICE 서버 연결을 준비하지 못했습니다.");
+  if (!remoteClient) throw new Error("BRING OFFICE 서버 연결을 준비하지 못했습니다.");
   return remoteClient.loadOffice();
+}
+
+function prunePendingOfficeAttachments(now = Date.now()) {
+  for (const [token, pending] of pendingOfficeAttachments) {
+    if (!pending || pending.expiresAt <= now) pendingOfficeAttachments.delete(token);
+  }
+  while (pendingOfficeAttachments.size >= MAX_PENDING_OFFICE_ATTACHMENTS) {
+    const oldest = [...pendingOfficeAttachments.entries()]
+      .sort((left, right) => left[1].expiresAt - right[1].expiresAt)[0];
+    if (!oldest) break;
+    pendingOfficeAttachments.delete(oldest[0]);
+  }
+}
+
+function officeAttachmentStatsMatch(left, right) {
+  if (!left || !right || !left.isFile() || !right.isFile()) return false;
+  return ["dev", "ino", "mode", "nlink", "size", "mtimeMs", "ctimeMs", "birthtimeMs"]
+    .every(field => left[field] === right[field]);
+}
+
+async function readSelectedOfficeAttachment(filePath) {
+  const selectedPath = String(filePath || "");
+  if (!selectedPath || !path.isAbsolute(selectedPath) || path.resolve(selectedPath) !== selectedPath) {
+    throw new Error("첨부할 파일 경로가 올바르지 않습니다.");
+  }
+  const before = await fs.lstat(selectedPath);
+  if (before.isSymbolicLink() || !before.isFile() || before.size < 1 || before.size > OfficeAttachment.MAX_FILE_BYTES) {
+    throw new Error("일반 파일만 첨부할 수 있으며 최대 크기는 5MB입니다.");
+  }
+  const handle = await fs.open(selectedPath, "r");
+  try {
+    const opened = await handle.stat();
+    if (!officeAttachmentStatsMatch(before, opened) || opened.size < 1 || opened.size > OfficeAttachment.MAX_FILE_BYTES) {
+      throw new Error("파일이 선택 중 변경되었습니다. 다시 선택해 주세요.");
+    }
+    const bytes = Buffer.alloc(opened.size);
+    let offset = 0;
+    while (offset < bytes.length) {
+      const read = await handle.read(bytes, offset, bytes.length - offset, offset);
+      if (!read.bytesRead) break;
+      offset += read.bytesRead;
+    }
+    const extra = Buffer.alloc(1);
+    const trailing = await handle.read(extra, 0, 1, offset);
+    const afterHandle = await handle.stat();
+    const afterPath = await fs.lstat(selectedPath);
+    if (
+      offset !== bytes.length
+      || trailing.bytesRead !== 0
+      || afterPath.isSymbolicLink()
+      || !officeAttachmentStatsMatch(opened, afterHandle)
+      || !officeAttachmentStatsMatch(afterHandle, afterPath)
+    ) {
+      throw new Error("파일이 선택 중 변경되었습니다. 다시 선택해 주세요.");
+    }
+    return bytes;
+  } finally {
+    await handle.close();
+  }
+}
+
+function officeAttachmentCachePaths() {
+  const tempRoot = path.resolve(app.getPath("temp"));
+  const cacheParent = path.resolve(tempRoot, OFFICE_ATTACHMENT_CACHE_DIRECTORY);
+  const cacheRoot = path.resolve(cacheParent, OFFICE_ATTACHMENT_CACHE_SESSION);
+  if (path.dirname(cacheParent) !== tempRoot || path.dirname(cacheRoot) !== cacheParent) {
+    throw new Error("첨부파일 임시 저장소를 안전하게 준비하지 못했습니다.");
+  }
+  return { tempRoot, cacheParent, cacheRoot };
+}
+
+function officeAttachmentDirectChild(cacheParent, childName) {
+  if (!/^session-(\d{1,10})-([0-9a-f]{16})$/.test(childName)) return "";
+  const target = path.resolve(cacheParent, childName);
+  const relative = path.relative(cacheParent, target);
+  if (!relative || path.isAbsolute(relative) || relative === ".." || relative.startsWith(`..${path.sep}`) || path.dirname(target) !== cacheParent) return "";
+  return target;
+}
+
+function officeAttachmentDirectoryIdentityMatches(left, right) {
+  if (!left || !right || left.isSymbolicLink() || right.isSymbolicLink() || !left.isDirectory() || !right.isDirectory()) return false;
+  return ["dev", "ino", "mode", "birthtimeMs"].every(field => left[field] === right[field]);
+}
+
+function officeAttachmentCacheProcessIsActive(pidText) {
+  const pid = Number(pidText);
+  if (!Number.isSafeInteger(pid) || pid < 1 || pid > 0x7fffffff || pid === process.pid) return true;
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch (error) {
+    return !error || error.code !== "ESRCH";
+  }
+}
+
+function officeAttachmentCleanupErrorCode(error) {
+  const code = String(error && error.code || "UNKNOWN");
+  return /^[A-Z0-9_]{1,40}$/.test(code) ? code : "UNKNOWN";
+}
+
+async function cleanupStaleOfficeAttachmentCaches(now = Date.now()) {
+  let cacheParent;
+  try {
+    ({ cacheParent } = officeAttachmentCachePaths());
+  } catch (error) {
+    console.warn("Stale office attachment cache cleanup failed", officeAttachmentCleanupErrorCode(error));
+    return false;
+  }
+  let parentBefore;
+  try {
+    parentBefore = await fs.lstat(cacheParent);
+  } catch (error) {
+    if (error && error.code === "ENOENT") return true;
+    console.warn("Stale office attachment cache cleanup failed", officeAttachmentCleanupErrorCode(error));
+    return false;
+  }
+  // Never traverse a replaced cache parent. A symlink or junction is left
+  // untouched and attachment creation will separately fail closed.
+  if (parentBefore.isSymbolicLink() || !parentBefore.isDirectory()) return false;
+
+  let entries;
+  try {
+    entries = await fs.opendir(cacheParent);
+  } catch (error) {
+    console.warn("Stale office attachment cache cleanup failed", officeAttachmentCleanupErrorCode(error));
+    return false;
+  }
+  try {
+    const parentOpened = await fs.lstat(cacheParent);
+    if (!officeAttachmentDirectoryIdentityMatches(parentBefore, parentOpened)) {
+      await entries.close();
+      return false;
+    }
+    for await (const entry of entries) {
+      const childName = String(entry && entry.name || "");
+      if (childName === OFFICE_ATTACHMENT_CACHE_SESSION) continue;
+      const match = /^session-(\d{1,10})-([0-9a-f]{16})$/.exec(childName);
+      const target = officeAttachmentDirectChild(cacheParent, childName);
+      if (!match || !target || officeAttachmentCacheProcessIsActive(match[1])) continue;
+
+      try {
+        const parentCurrent = await fs.lstat(cacheParent);
+        if (!officeAttachmentDirectoryIdentityMatches(parentBefore, parentCurrent)) return false;
+        const first = await fs.lstat(target);
+        // lstat identifies Windows junctions as symbolic links. Do not follow
+        // or recursively delete any link-shaped entry.
+        if (first.isSymbolicLink() || !first.isDirectory()) continue;
+        const touchedAt = Math.max(Number(first.mtimeMs), Number(first.ctimeMs), Number(first.birthtimeMs));
+        if (!Number.isFinite(touchedAt) || now - touchedAt <= OFFICE_ATTACHMENT_CACHE_STALE_MS) continue;
+
+        const parentAfter = await fs.lstat(cacheParent);
+        if (!officeAttachmentDirectoryIdentityMatches(parentBefore, parentAfter)) return false;
+        const second = await fs.lstat(target);
+        const parentFinal = await fs.lstat(cacheParent);
+        if (!officeAttachmentDirectoryIdentityMatches(parentBefore, parentFinal)
+          || !officeAttachmentDirectoryIdentityMatches(first, second)) continue;
+        await fs.rm(target, { recursive: true, force: false, maxRetries: 2, retryDelay: 50 });
+      } catch (error) {
+        if (!error || error.code !== "ENOENT") {
+          console.warn("Stale office attachment cache entry cleanup failed", officeAttachmentCleanupErrorCode(error));
+        }
+      }
+    }
+  } catch (error) {
+    console.warn("Stale office attachment cache cleanup failed", officeAttachmentCleanupErrorCode(error));
+    return false;
+  }
+  return true;
+}
+
+async function ensureOfficeAttachmentCacheRoot() {
+  const { cacheParent, cacheRoot } = officeAttachmentCachePaths();
+  await fs.mkdir(cacheParent, { recursive: true, mode: 0o700 });
+  const parentBefore = await fs.lstat(cacheParent);
+  if (parentBefore.isSymbolicLink() || !parentBefore.isDirectory()) {
+    throw new Error("첨부파일 임시 저장소를 안전하게 준비하지 못했습니다.");
+  }
+  try {
+    await fs.mkdir(cacheRoot, { mode: 0o700 });
+  } catch (error) {
+    if (!error || error.code !== "EEXIST") throw error;
+  }
+  const [parentAfter, rootStats] = await Promise.all([fs.lstat(cacheParent), fs.lstat(cacheRoot)]);
+  if (!officeAttachmentDirectoryIdentityMatches(parentBefore, parentAfter)
+    || rootStats.isSymbolicLink()
+    || !rootStats.isDirectory()) {
+    throw new Error("첨부파일 임시 저장소를 안전하게 준비하지 못했습니다.");
+  }
+  return cacheRoot;
+}
+
+function runOfficeAttachmentCacheOperation(operation) {
+  const task = officeAttachmentCacheQueue.then(operation, operation);
+  officeAttachmentCacheQueue = task.catch(() => {});
+  return task;
+}
+
+async function cleanupOfficeAttachmentCache() {
+  officeAttachmentCacheGeneration += 1;
+  return runOfficeAttachmentCacheOperation(async () => {
+    try {
+      const { cacheParent, cacheRoot } = officeAttachmentCachePaths();
+      let parentBefore;
+      let rootBefore;
+      try {
+        [parentBefore, rootBefore] = await Promise.all([fs.lstat(cacheParent), fs.lstat(cacheRoot)]);
+      } catch (error) {
+        if (error && error.code === "ENOENT") return true;
+        throw error;
+      }
+      if (parentBefore.isSymbolicLink() || !parentBefore.isDirectory()) return false;
+      if (rootBefore.isSymbolicLink()) {
+        await fs.unlink(cacheRoot);
+        return true;
+      }
+      if (!rootBefore.isDirectory()) return false;
+      const parentAfter = await fs.lstat(cacheParent);
+      const rootAfter = await fs.lstat(cacheRoot);
+      if (!officeAttachmentDirectoryIdentityMatches(parentBefore, parentAfter)
+        || !officeAttachmentDirectoryIdentityMatches(rootBefore, rootAfter)) return false;
+      await fs.rm(cacheRoot, { recursive: true, force: false, maxRetries: 2, retryDelay: 50 });
+      return true;
+    } catch (error) {
+      console.warn("Office attachment cache cleanup failed", officeAttachmentCleanupErrorCode(error));
+      return false;
+    }
+  });
+}
+
+async function writeOfficeAttachmentMotw(outputPath) {
+  if (process.platform !== "win32") return;
+  await fs.writeFile(`${outputPath}:Zone.Identifier`, "[ZoneTransfer]\r\nZoneId=3\r\n", {
+    encoding: "ascii",
+    flag: "wx",
+    mode: 0o600,
+  });
+}
+
+async function pickOfficeAttachment(input) {
+  const user = assertOfficeSession();
+  const receiverId = String(input && input.receiverId || "").trim();
+  if (!/^[A-Za-z0-9._-]{1,128}$/.test(receiverId) || receiverId === user.uid) throw new Error("파일을 받을 사용자를 선택해 주세요.");
+  const result = await dialog.showOpenDialog(mainWindow, {
+    title: "메신저 파일 첨부",
+    properties: ["openFile"],
+    filters: [{ name: "업무 문서 및 이미지", extensions: [...OfficeAttachment.ALLOWED_EXTENSIONS] }],
+  });
+  if (result.canceled || !result.filePaths || result.filePaths.length !== 1) return { ok: false, canceled: true };
+  const selectedPath = result.filePaths[0];
+  const bytes = await readSelectedOfficeAttachment(selectedPath);
+  const payload = OfficeAttachment.prepareAttachment({ fileName: path.basename(selectedPath), bytes });
+  prunePendingOfficeAttachments();
+  const token = crypto.randomUUID();
+  pendingOfficeAttachments.set(token, {
+    ownerUid: user.uid,
+    receiverId,
+    expiresAt: Date.now() + OFFICE_ATTACHMENT_TTL_MS,
+    payload,
+  });
+  return {
+    ok: true,
+    attachment: Object.assign({ token }, OfficeAttachment.attachmentMetadata(payload)),
+  };
+}
+
+function pendingOfficeAttachment(user, receiverId, token) {
+  if (!token) return null;
+  prunePendingOfficeAttachments();
+  if (!/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(token)) {
+    throw new Error("첨부파일 선택 정보가 올바르지 않습니다.");
+  }
+  const pending = pendingOfficeAttachments.get(token);
+  if (!pending || pending.ownerUid !== user.uid || pending.receiverId !== receiverId || pending.expiresAt <= Date.now()) {
+    pendingOfficeAttachments.delete(token);
+    throw new Error("첨부파일 선택 시간이 만료되었습니다. 다시 선택해 주세요.");
+  }
+  return pending;
+}
+
+async function openOfficeAttachment(input) {
+  const actor = assertOfficeSession();
+  const messageId = String(input && input.messageId || "").trim();
+  if (!/^msg_[A-Za-z0-9_]{8,80}$/.test(messageId)) throw new Error("첨부파일 요청이 올바르지 않습니다.");
+  const record = localTestMode
+    ? localOfficeMessageFiles[messageId]
+    : remoteClient && await remoteClient.loadOfficeMessageFile({ messageId });
+  const current = assertOfficeSession();
+  if (current.uid !== actor.uid || !record || record.id !== messageId || (record.senderId !== actor.uid && record.receiverId !== actor.uid)) {
+    throw new Error("첨부파일을 열 권한이 없습니다.");
+  }
+  const payload = OfficeAttachment.revalidateAttachmentPayload({
+    fileName: record.fileName,
+    extension: record.extension,
+    mimeType: record.mimeType,
+    size: record.size,
+    sha256: record.sha256,
+    fileBody: record.bodyBase64,
+  });
+  const warningOptions = {
+    type: "warning",
+    title: "메신저 첨부파일 열기",
+    message: `“${payload.fileName}” 파일을 외부 프로그램으로 엽니다.`,
+    detail: "첨부파일은 신뢰할 수 없는 내용일 수 있습니다. 발신자와 파일명을 확인한 경우에만 열어 주세요.",
+    buttons: ["취소", "검증된 파일 열기"],
+    defaultId: 0,
+    cancelId: 0,
+    noLink: true,
+  };
+  const warning = mainWindow && !mainWindow.isDestroyed()
+    ? await dialog.showMessageBox(mainWindow, warningOptions)
+    : await dialog.showMessageBox(warningOptions);
+  if (!warning || warning.response !== 1) return { ok: false, canceled: true };
+
+  const approvedActor = assertOfficeSession();
+  if (approvedActor.uid !== actor.uid) throw new Error("로그인 사용자가 변경되어 첨부파일을 열지 않았습니다.");
+  const cacheGeneration = officeAttachmentCacheGeneration;
+  return runOfficeAttachmentCacheOperation(async () => {
+    const activeActor = assertOfficeSession();
+    if (activeActor.uid !== actor.uid || cacheGeneration !== officeAttachmentCacheGeneration) {
+      throw new Error("로그인 상태가 변경되어 첨부파일을 열지 않았습니다.");
+    }
+    const cacheRoot = await ensureOfficeAttachmentCacheRoot();
+    const outputDirectory = await fs.mkdtemp(path.join(cacheRoot, "file-"));
+    const outputPath = path.resolve(outputDirectory, payload.fileName);
+    if (path.dirname(outputPath) !== outputDirectory) {
+      await fs.rm(outputDirectory, { recursive: true, force: true });
+      throw new Error("첨부파일 이름이 올바르지 않습니다.");
+    }
+    try {
+      await fs.writeFile(outputPath, payload.bytes, { flag: "wx", mode: 0o600 });
+      // Windows must receive Mark-of-the-Web before any associated application
+      // is launched. Failure is intentionally fatal rather than silently
+      // opening an unmarked document.
+      try {
+        await writeOfficeAttachmentMotw(outputPath);
+      } catch (_motwError) {
+        throw new Error("Windows 보안 표시를 적용하지 못해 첨부파일을 열지 않았습니다.");
+      }
+      const latestActor = assertOfficeSession();
+      if (latestActor.uid !== actor.uid || cacheGeneration !== officeAttachmentCacheGeneration) {
+        throw new Error("로그인 상태가 변경되어 첨부파일을 열지 않았습니다.");
+      }
+      const openError = await shell.openPath(outputPath);
+      if (openError) throw new Error("이 파일을 열 연결 프로그램을 찾지 못했습니다.");
+      return { ok: true };
+    } catch (error) {
+      try { await fs.rm(outputDirectory, { recursive: true, force: true }); } catch (_cleanupError) {}
+      throw error;
+    }
+  });
 }
 
 async function saveOfficeAttendance(input) {
@@ -1710,7 +2073,7 @@ async function saveOfficeAttendance(input) {
     throw new Error("오늘 날짜의 올바른 근태 요청만 저장할 수 있습니다.");
   }
   if (!localTestMode) {
-    if (!remoteClient) throw new Error("BIRNG OFFICE 서버 연결을 준비하지 못했습니다.");
+    if (!remoteClient) throw new Error("BRING OFFICE 서버 연결을 준비하지 못했습니다.");
     return { ok: true, data: await remoteClient.saveOfficeAttendance({ action, workDate }) };
   }
   localOfficeData = localOfficeData || demoOffice();
@@ -1729,20 +2092,71 @@ async function saveOfficeAttendance(input) {
   return { ok: true, data: await readOffice() };
 }
 
+async function saveOfficeDisplayName(input) {
+  const actor = assertOfficeSession();
+  if (actor.officeAdmin !== true) throw new Error("메신저 실제 이름은 지정된 관리자만 수정할 수 있습니다.");
+  const source = input && typeof input === "object" && !Array.isArray(input) ? input : {};
+  if (Object.keys(source).some(key => !["userId", "displayName"].includes(key))) {
+    throw new Error("실제 이름 저장 요청이 올바르지 않습니다.");
+  }
+  const rawUserId = typeof source.userId === "string" ? source.userId : "";
+  const userId = OfficeCore.normalizeOfficeUserId(rawUserId);
+  const displayName = OfficeCore.normalizeOfficeDisplayName(source.displayName);
+  if (!userId || userId !== rawUserId || userId === actor.uid || !displayName) {
+    throw new Error("수정할 구성원과 실제 이름을 확인해 주세요.");
+  }
+  if (!localTestMode) {
+    if (!remoteClient) throw new Error("BRING OFFICE 서버 연결을 준비하지 못했습니다.");
+    return { ok: true, data: await remoteClient.saveOfficeDisplayName({ userId, displayName }) };
+  }
+  localOfficeData = localOfficeData || demoOffice();
+  const target = localOfficeData.users.find(item => item.uid === userId
+    && item.enabled === true
+    && item.mustChangePassword !== true
+    && ["admin", "member", "viewer"].includes(String(item.role || "")));
+  if (!target) throw new Error("이름을 수정할 활성 구성원을 찾지 못했습니다.");
+  target.displayName = displayName;
+  localOfficeData.loadedAt = new Date().toISOString();
+  return { ok: true, data: await readOffice() };
+}
+
 async function sendOfficeMessage(input) {
   const user = assertOfficeSession();
   const receiverId = String(input && input.receiverId || "").trim();
   const message = String(input && input.message || "").trim();
+  const attachmentToken = String(input && input.attachmentToken || "").trim();
   if (!/^[A-Za-z0-9._-]{1,128}$/.test(receiverId) || receiverId === user.uid) throw new Error("메시지를 받을 사용자를 선택해 주세요.");
-  if (!message || message.length > 4000) throw new Error("메시지는 1자 이상 4,000자 이하로 입력해 주세요.");
+  const pending = pendingOfficeAttachment(user, receiverId, attachmentToken);
+  if ((!message && !pending) || message.length > 4000) throw new Error("메시지 또는 첨부파일을 확인해 주세요.");
   if (!localTestMode) {
-    if (!remoteClient) throw new Error("BIRNG OFFICE 서버 연결을 준비하지 못했습니다.");
-    return { ok: true, data: await remoteClient.sendOfficeMessage({ receiverId, message }) };
+    if (!remoteClient) throw new Error("BRING OFFICE 서버 연결을 준비하지 못했습니다.");
+    const data = await remoteClient.sendOfficeMessage({ receiverId, message, attachment: pending && pending.payload || null });
+    if (pending) pendingOfficeAttachments.delete(attachmentToken);
+    return { ok: true, data };
   }
   localOfficeData = localOfficeData || demoOffice();
-  if (!localOfficeData.users.some(item => item.uid === receiverId && item.enabled !== false)) throw new Error("허용된 CRM 사용자를 선택해 주세요.");
+  if (!localOfficeData.users.some(item => item.uid === receiverId
+    && item.enabled === true
+    && item.mustChangePassword !== true
+    && ["admin", "member", "viewer"].includes(String(item.role || "")))) {
+    throw new Error("허용된 CRM 사용자를 선택해 주세요.");
+  }
   const createdAt = new Date().toISOString();
-  localOfficeData.messages.push({ id: `msg_${crypto.randomUUID().replace(/-/g, "")}`, senderId: user.uid, receiverId, message, readAt: "", createdAt });
+  const id = `msg_${crypto.randomUUID().replace(/-/g, "")}`;
+  const attachment = pending ? Object.assign({ fileId: id }, OfficeAttachment.attachmentMetadata(pending.payload)) : null;
+  const row = { id, senderId: user.uid, receiverId, message: message || `[파일] ${attachment.fileName}`, readAt: "", createdAt };
+  if (attachment) {
+    row.attachment = attachment;
+    localOfficeMessageFiles[id] = Object.assign({
+      id,
+      senderId: user.uid,
+      receiverId,
+      bodyBase64: pending.payload.fileBody,
+      createdAt,
+    }, OfficeAttachment.attachmentMetadata(pending.payload));
+  }
+  localOfficeData.messages.push(row);
+  if (pending) pendingOfficeAttachments.delete(attachmentToken);
   localOfficeData.loadedAt = createdAt;
   return { ok: true, data: await readOffice() };
 }
@@ -1752,7 +2166,7 @@ async function markOfficeMessagesRead(input) {
   const peerId = String(input && input.peerId || "").trim();
   if (!/^[A-Za-z0-9._-]{1,128}$/.test(peerId) || peerId === user.uid) throw new Error("대화 상대를 확인해 주세요.");
   if (!localTestMode) {
-    if (!remoteClient) throw new Error("BIRNG OFFICE 서버 연결을 준비하지 못했습니다.");
+    if (!remoteClient) throw new Error("BRING OFFICE 서버 연결을 준비하지 못했습니다.");
     return { ok: true, data: await remoteClient.markOfficeMessagesRead({ peerId }) };
   }
   localOfficeData = localOfficeData || demoOffice();
@@ -2777,7 +3191,58 @@ async function createWindow() {
       }
     }
     let actionResult = null;
-    if (process.env.BRING_CRM_SCREENSHOT_ACTION === "login-email-editable") {
+    if (process.env.BRING_CRM_SCREENSHOT_ACTION === "office-messenger-smoke") {
+      actionResult = await mainWindow.webContents.executeJavaScript(`(async () => {
+        const wait = ms => new Promise(resolve => setTimeout(resolve, ms));
+        document.querySelector('[data-workspace-enter="operations"]')?.click();
+        await wait(180);
+        document.querySelector('[data-view="officeMessenger"]')?.click();
+        let textarea = null;
+        for (let attempt = 0; attempt < 40; attempt += 1) {
+          textarea = document.querySelector('[data-office-message-form] textarea');
+          if (textarea) break;
+          await wait(50);
+        }
+        if (!textarea) return { pass: false, reason: 'messenger composer missing', state: window.__crmTest?.snapshot() };
+        const names = [...document.querySelectorAll('.messenger-user b')].map(node => node.textContent.trim()).filter(Boolean);
+        const before = document.querySelectorAll('.message-row').length;
+        textarea.value = '엔터 전송 화면 점검';
+        textarea.dispatchEvent(new Event('input', { bubbles: true }));
+        textarea.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true }));
+        await wait(240);
+        textarea = document.querySelector('[data-office-message-form] textarea');
+        const afterEnter = document.querySelectorAll('.message-row').length;
+        textarea.value = 'Shift+Enter 줄바꿈 점검';
+        textarea.dispatchEvent(new Event('input', { bubbles: true }));
+        textarea.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', shiftKey: true, bubbles: true, cancelable: true }));
+        await wait(80);
+        const afterShiftEnter = document.querySelectorAll('.message-row').length;
+        const attachmentButton = document.querySelector('[data-office-attachment-pick]');
+        const nameEditButton = document.querySelector('[data-office-display-name-edit]');
+        nameEditButton?.click();
+        await wait(40);
+        const nameInput = document.querySelector('[data-office-display-name-form] input');
+        if (nameInput) {
+          nameInput.value = '황우중';
+          nameInput.dispatchEvent(new Event('input', { bubbles: true }));
+          nameInput.form?.requestSubmit();
+          await wait(180);
+        }
+        const updatedNames = [...document.querySelectorAll('.messenger-user b')].map(node => node.textContent.trim()).filter(Boolean);
+        textarea = document.querySelector('[data-office-message-form] textarea');
+        const state = window.__crmTest?.snapshot();
+        const pass = names.length >= 1
+          && names.every(name => !/^[a-z][a-z0-9._-]*[0-9]+$/i.test(name))
+          && afterEnter === before + 1
+          && afterShiftEnter === afterEnter
+          && textarea.value === 'Shift+Enter 줄바꿈 점검'
+          && attachmentButton?.textContent.includes('파일')
+          && Boolean(nameEditButton && nameInput)
+          && updatedNames.includes('황우중')
+          && state?.view === 'officeMessenger';
+        return { pass, names, updatedNames, before, afterEnter, afterShiftEnter, draft: textarea.value, attachmentButton: attachmentButton?.textContent.trim() || '', nameEditor: Boolean(nameInput), state };
+      })()`, true);
+    } else if (process.env.BRING_CRM_SCREENSHOT_ACTION === "login-email-editable") {
       actionResult = await mainWindow.webContents.executeJavaScript(`(() => {
         const input = document.getElementById('loginEmail');
         const password = document.getElementById('loginPassword');
@@ -5293,7 +5758,13 @@ secureCanonicalHandle("crm:auth-logout", async input => {
     if (fieldLogoutInFlight) return fieldLogoutInFlight;
     fieldLogoutInFlight = (async () => {
       closeCrmAuthWindow();
-      if (remoteClient) await remoteClient.logout();
+      pendingOfficeAttachments.clear();
+      localOfficeMessageFiles = Object.create(null);
+      try {
+        if (remoteClient) await remoteClient.logout();
+      } finally {
+        await cleanupOfficeAttachmentCache();
+      }
       return { ok: true };
     })();
     try {
@@ -5315,8 +5786,14 @@ secureCanonicalHandle("crm:auth-logout", async input => {
       if (fieldView) fieldView.setVisible(false);
       fieldViewVisible = false;
       closeCrmAuthWindow();
+      pendingOfficeAttachments.clear();
+      localOfficeMessageFiles = Object.create(null);
       destroyFieldView();
-      if (remoteClient) await remoteClient.logout();
+      try {
+        if (remoteClient) await remoteClient.logout();
+      } finally {
+        await cleanupOfficeAttachmentCache();
+      }
       syncFieldSession(authState());
     },
   });
@@ -5330,6 +5807,9 @@ secureHandle("crm:load", readStore);
 secureHandle("crm:save", data => writeStore(data));
 secureCanonicalHandle("crm:office-load", readOffice);
 secureCanonicalHandle("crm:office-attendance-save", input => saveOfficeAttendance(input));
+secureCanonicalHandle("crm:office-display-name-save", input => saveOfficeDisplayName(input));
+secureCanonicalHandle("crm:office-attachment-pick", input => pickOfficeAttachment(input));
+secureCanonicalHandle("crm:office-attachment-open", input => openOfficeAttachment(input));
 secureCanonicalHandle("crm:office-message-send", input => sendOfficeMessage(input));
 secureCanonicalHandle("crm:office-messages-read", input => markOfficeMessagesRead(input));
 secureCanonicalHandle("crm:office-attendance-export", input => exportOfficeAttendance(input));
@@ -5624,6 +6104,7 @@ secureHandle("crm:restore", async () => {
   }
 });
 app.whenReady().then(async () => {
+  await cleanupStaleOfficeAttachmentCaches();
   await initializeRemote();
   Menu.setApplicationMenu(buildMenu());
   await createWindow();

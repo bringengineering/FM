@@ -10,6 +10,11 @@
     error: "",
     selectedUserId: "",
     userQuery: "",
+    editingDisplayNameUserId: "",
+    displayNameDraft: "",
+    messageDraft: "",
+    pendingAttachment: null,
+    openingAttachmentId: "",
     attendanceWeekOffset: 0,
     selectedAttendanceDate: Core.workDate(),
     selectedAdminUserId: "",
@@ -43,6 +48,14 @@
     if (Number.isNaN(date.getTime())) return "";
     return new Intl.DateTimeFormat("ko-KR", { timeZone: Core.KOREA_TIME_ZONE, month: "numeric", day: "numeric", hour: "2-digit", minute: "2-digit", hour12: false }).format(date);
   };
+  const formatFileSize = value => {
+    const size = Number(value) || 0;
+    if (size >= 1024 * 1024) return `${(size / (1024 * 1024)).toFixed(size >= 10 * 1024 * 1024 ? 0 : 1)} MB`;
+    return `${Math.max(1, Math.ceil(size / 1024))} KB`;
+  };
+  const messagePreview = message => message && message.attachment
+    ? `📎 ${message.attachment.fileName}`
+    : String(message && message.message || "");
   const dateFromKey = value => new Date(`${value}T12:00:00+09:00`);
   const dateKey = value => Core.workDate(value);
   const addDays = (value, amount) => {
@@ -114,12 +127,12 @@
     state.error = "";
     try {
       const payload = await state.context.api.loadOffice();
-      if (payload && payload.ok === false) throw new Error(payload.error || "BIRNG OFFICE 자료를 불러오지 못했습니다.");
+      if (payload && payload.ok === false) throw new Error(payload.error || "BRING OFFICE 자료를 불러오지 못했습니다.");
       state.data = Core.normalizeOfficePayload(payload && payload.data || payload, currentUser());
       state.loaded = true;
       chooseDefaultUser();
     } catch (error) {
-      state.error = error.message || "BIRNG OFFICE 자료를 불러오지 못했습니다.";
+      state.error = error.message || "BRING OFFICE 자료를 불러오지 못했습니다.";
     } finally {
       state.loading = false;
       if (state.context && officeIsActive()) renderCurrent();
@@ -129,6 +142,7 @@
   function chooseDefaultUser() {
     const peers = state.data.users.filter(user => user.uid !== currentUserId());
     if (state.selectedUserId && peers.some(user => user.uid === state.selectedUserId)) return;
+    const previousUserId = state.selectedUserId;
     const latest = Core.latestByUser(state.data.messages, currentUserId());
     const unread = Core.unreadByUser(state.data.messages, currentUserId());
     peers.sort((a, b) => {
@@ -137,10 +151,16 @@
       return String(latest.get(b.uid)?.createdAt || "").localeCompare(String(latest.get(a.uid)?.createdAt || ""));
     });
     state.selectedUserId = peers[0] && peers[0].uid || "";
+    if (previousUserId && previousUserId !== state.selectedUserId) {
+      state.editingDisplayNameUserId = "";
+      state.displayNameDraft = "";
+      state.messageDraft = "";
+      state.pendingAttachment = null;
+    }
   }
 
   function loadingPanel() {
-    return `<section class="office-loading"><span class="office-loader"></span><b>BIRNG OFFICE를 준비하고 있습니다</b><p>기존 CRM 사용자와 업무 자료를 불러오는 중입니다.</p></section>`;
+    return `<section class="office-loading"><span class="office-loader"></span><b>BRING OFFICE를 준비하고 있습니다</b><p>기존 CRM 사용자와 업무 자료를 불러오는 중입니다.</p></section>`;
   }
 
   function errorPanel() {
@@ -148,7 +168,7 @@
   }
 
   function officeHero(title, description, actions) {
-    return `<section class="office-hero"><div><span>BIRNG OFFICE</span><h2>${esc(title)}</h2><p>${esc(description)}</p></div>${actions ? `<div class="office-hero-actions">${actions}</div>` : ""}</section>`;
+    return `<section class="office-hero"><div><span>BRING OFFICE</span><h2>${esc(title)}</h2><p>${esc(description)}</p></div>${actions ? `<div class="office-hero-actions">${actions}</div>` : ""}</section>`;
   }
 
   function statusPill(record) {
@@ -166,7 +186,7 @@
   function homeView() {
     const today = todayRecord();
     const unread = [...Core.unreadByUser(state.data.messages, currentUserId()).values()].reduce((sum, count) => sum + count, 0);
-    return `${officeHero("BIRNG OFFICE", "브링의 업무를 한 곳에서", `<div class="office-live-time"><span data-office-date></span><b data-office-clock></b></div>`)}
+    return `${officeHero("BRING OFFICE", "브링의 업무를 한 곳에서", `<div class="office-live-time"><span data-office-date></span><b data-office-clock></b></div>`)}
       <section class="office-dashboard-grid">
         <button class="office-summary-card attendance" data-office-go="officeAttendance"><span class="office-card-icon">◷</span><div><small>근태관리</small><h3>${Core.attendanceStatus(today)}</h3><p>출근시간 <b>${esc(formatTime(today && today.checkInAt))}</b></p></div>${statusPill(today)}</button>
         <button class="office-summary-card messenger" data-office-go="officeMessenger"><span class="office-card-icon">✉</span><div><small>메신저</small><h3>읽지 않은 메시지</h3><p><b>${unread}</b>개</p></div><span class="office-card-arrow">→</span></button>
@@ -225,16 +245,21 @@
     const unread = Core.unreadByUser(state.data.messages, currentUserId());
     const selected = userById(state.selectedUserId);
     const conversation = selected ? state.data.messages.filter(message => message.senderId === currentUserId() && message.receiverId === selected.uid || message.receiverId === currentUserId() && message.senderId === selected.uid) : [];
+    const displayNameEditor = selected && isAdmin() && state.editingDisplayNameUserId === selected.uid
+      ? `<form class="messenger-name-editor" data-office-display-name-form><label for="officeDisplayName">선택한 구성원의 실제 이름</label><input id="officeDisplayName" name="displayName" type="text" maxlength="80" autocomplete="off" value="${esc(state.displayNameDraft)}" required><span>메신저 사용자 목록과 대화방에 표시됩니다.</span><div><button type="button" data-office-display-name-cancel>취소</button><button type="submit" ${state.busy ? "disabled" : ""}>이름 저장</button></div></form>`
+      : "";
     return `<section class="office-messenger">
-      <aside class="messenger-people"><header><span>BIRNG OFFICE</span><h2>메신저</h2><label><i>⌕</i><input type="search" data-office-user-search value="${esc(state.userQuery)}" placeholder="이름, 소속 검색"></label></header><div class="messenger-user-list">${users.length ? users.map(user => {
+      <aside class="messenger-people"><header><span>BRING OFFICE</span><h2>메신저</h2><label><i>⌕</i><input type="search" data-office-user-search value="${esc(state.userQuery)}" placeholder="이름, 소속 검색"></label></header><div class="messenger-user-list">${users.length ? users.map(user => {
         const message = latest.get(user.uid);
         const count = unread.get(user.uid) || 0;
-        return `<button class="messenger-user ${user.uid === state.selectedUserId ? "selected" : ""}" data-office-user="${esc(user.uid)}">${avatar(user)}<span><b>${esc(Core.displayName(user))}</b><small>${esc(message ? message.message : userMeta(user))}</small></span><time>${esc(message ? formatMessageTime(message.createdAt).split(" ").slice(-1)[0] : "")}</time>${count ? `<em>${count}</em>` : ""}</button>`;
+        return `<button class="messenger-user ${user.uid === state.selectedUserId ? "selected" : ""}" data-office-user="${esc(user.uid)}">${avatar(user)}<span><b>${esc(Core.displayName(user))}</b><small>${esc(message ? messagePreview(message) : userMeta(user))}</small></span><time>${esc(message ? formatMessageTime(message.createdAt).split(" ").slice(-1)[0] : "")}</time>${count ? `<em>${count}</em>` : ""}</button>`;
       }).join("") : `<div class="messenger-no-users">검색 결과가 없습니다.</div>`}</div></aside>
-      <section class="messenger-chat">${selected ? `<header>${avatar(selected, "large")}<div><h3>${esc(Core.displayName(selected))}</h3><p>${esc(userMeta(selected))}</p></div><span class="messenger-online"><i></i>CRM 사용자</span></header><div class="message-list" data-office-message-list>${conversation.length ? conversation.map(message => {
+      <section class="messenger-chat">${selected ? `<header>${avatar(selected, "large")}<div><h3>${esc(Core.displayName(selected))}</h3><p>${esc(userMeta(selected))}</p></div><div class="messenger-chat-actions"><span class="messenger-online"><i></i>CRM 사용자</span>${isAdmin() ? `<button type="button" class="messenger-name-edit-button" data-office-display-name-edit ${state.busy ? "disabled" : ""}>이름 수정</button>` : ""}</div></header>${displayNameEditor}<div class="message-list" data-office-message-list>${conversation.length ? conversation.map(message => {
         const mine = message.senderId === currentUserId();
-        return `<div class="message-row ${mine ? "mine" : "theirs"}">${!mine ? avatar(selected, "small") : ""}<div><p>${esc(message.message)}</p><span>${esc(formatMessageTime(message.createdAt))}${mine ? ` · ${message.readAt ? "읽음" : "안읽음"}` : ""}</span></div></div>`;
-      }).join("") : `<div class="message-empty"><span>✦</span><b>${esc(Core.displayName(selected))}님과 대화를 시작해 보세요</b><p>이번 버전에서는 텍스트 메시지만 보낼 수 있습니다.</p></div>`}</div><form class="message-composer" data-office-message-form><textarea name="message" maxlength="4000" rows="1" placeholder="메시지를 입력하세요" required></textarea><button type="submit" ${state.busy ? "disabled" : ""}>전송</button></form>` : `<div class="message-empty full"><span>✉</span><b>대화할 사용자를 선택하세요</b><p>왼쪽 CRM 사용자 목록에서 동료를 선택할 수 있습니다.</p></div>`}</section>
+        const attachment = message.attachment;
+        const attachmentOnlyText = attachment && message.message === `[파일] ${attachment.fileName}`;
+        return `<div class="message-row ${mine ? "mine" : "theirs"}">${!mine ? avatar(selected, "small") : ""}<div>${attachmentOnlyText ? "" : `<p>${esc(message.message)}</p>`}${attachment ? `<button type="button" class="message-attachment" data-office-attachment-open="${esc(attachment.fileId)}" ${state.openingAttachmentId === attachment.fileId ? "disabled" : ""}><b>📎 ${esc(attachment.fileName)}</b><small>${esc(attachment.extension.toUpperCase())} · ${esc(formatFileSize(attachment.size))}</small><em>${state.openingAttachmentId === attachment.fileId ? "여는 중" : "열기"}</em></button>` : ""}<span>${esc(formatMessageTime(message.createdAt))}${mine ? ` · ${message.readAt ? "읽음" : "안읽음"}` : ""}</span></div></div>`;
+      }).join("") : `<div class="message-empty"><span>✦</span><b>${esc(Core.displayName(selected))}님과 대화를 시작해 보세요</b><p>메시지와 업무 문서를 안전하게 주고받을 수 있습니다.</p></div>`}</div><form class="message-composer" data-office-message-form><div class="message-composer-content">${state.pendingAttachment ? `<div class="pending-attachment"><span>📎</span><b>${esc(state.pendingAttachment.fileName)}</b><small>${esc(formatFileSize(state.pendingAttachment.size))}</small><button type="button" data-office-attachment-remove aria-label="첨부 제거">×</button></div>` : ""}<div class="message-input-row"><button type="button" class="message-attach-button" data-office-attachment-pick ${state.busy ? "disabled" : ""} aria-label="파일 첨부" title="PDF·XLSX·CSV·DOCX·HWP·HWPX·PPTX·TXT·이미지, 최대 5MB">＋ 파일</button><textarea name="message" maxlength="4000" rows="1" placeholder="메시지를 입력하세요 (Shift+Enter 줄바꿈)">${esc(state.messageDraft)}</textarea></div></div><button class="message-send-button" type="submit" ${state.busy ? "disabled" : ""}>전송</button></form>` : `<div class="message-empty full"><span>✉</span><b>대화할 사용자를 선택하세요</b><p>왼쪽 CRM 사용자 목록에서 동료를 선택할 수 있습니다.</p></div>`}</section>
     </section>`;
   }
 
@@ -336,6 +361,12 @@
   }
 
   async function selectUser(uid) {
+    if (state.selectedUserId !== uid) {
+      state.editingDisplayNameUserId = "";
+      state.displayNameDraft = "";
+      state.messageDraft = "";
+      state.pendingAttachment = null;
+    }
     state.selectedUserId = uid;
     renderCurrent();
     const unread = state.data.messages.some(message => message.senderId === uid && message.receiverId === currentUserId() && !message.readAt);
@@ -351,13 +382,19 @@
 
   async function sendMessage(text) {
     const message = String(text || "").trim();
-    if (!message || !state.selectedUserId || state.busy) return;
+    if ((!message && !state.pendingAttachment) || !state.selectedUserId || state.busy) return;
     state.busy = true;
     renderCurrent();
     try {
-      const result = await state.context.api.sendOfficeMessage({ receiverId: state.selectedUserId, message });
+      const result = await state.context.api.sendOfficeMessage({
+        receiverId: state.selectedUserId,
+        message,
+        attachmentToken: state.pendingAttachment && state.pendingAttachment.token || ""
+      });
       if (!result || result.ok === false) throw new Error(result && result.error || "메시지를 보내지 못했습니다.");
       state.data = Core.normalizeOfficePayload(result.data || await state.context.api.loadOffice(), currentUser());
+      state.messageDraft = "";
+      state.pendingAttachment = null;
       notify("메시지를 보냈습니다.", "success");
     } catch (error) {
       notify(error.message || "메시지를 보내지 못했습니다.", "error");
@@ -365,6 +402,81 @@
       state.busy = false;
       renderCurrent();
       document.querySelector("[data-office-message-form] textarea")?.focus();
+    }
+  }
+
+  async function pickMessageAttachment() {
+    if (!state.selectedUserId || state.busy) return;
+    try {
+      const result = await state.context.api.pickOfficeAttachment({ receiverId: state.selectedUserId });
+      if (result && result.canceled) return;
+      if (!result || result.ok === false || !result.attachment) throw new Error(result && result.error || "파일을 첨부하지 못했습니다.");
+      state.pendingAttachment = result.attachment;
+      renderCurrent();
+      document.querySelector("[data-office-message-form] textarea")?.focus();
+    } catch (error) {
+      notify(error.message || "파일을 첨부하지 못했습니다.", "error");
+    }
+  }
+
+  async function openMessageAttachment(messageId) {
+    if (!messageId || state.openingAttachmentId) return;
+    state.openingAttachmentId = messageId;
+    renderCurrent();
+    try {
+      const result = await state.context.api.openOfficeAttachment({ messageId });
+      if (result && result.canceled) return;
+      if (!result || result.ok === false) throw new Error(result && result.error || "첨부파일을 열지 못했습니다.");
+    } catch (error) {
+      notify(error.message || "첨부파일을 열지 못했습니다.", "error");
+    } finally {
+      state.openingAttachmentId = "";
+      renderCurrent();
+    }
+  }
+
+  function beginDisplayNameEdit() {
+    const selected = userById(state.selectedUserId);
+    if (!isAdmin() || !selected || state.busy) return;
+    state.editingDisplayNameUserId = selected.uid;
+    state.displayNameDraft = Core.displayName(selected);
+    renderCurrent();
+    const input = document.querySelector("[data-office-display-name-form] input");
+    input?.focus();
+    input?.select();
+  }
+
+  function cancelDisplayNameEdit() {
+    state.editingDisplayNameUserId = "";
+    state.displayNameDraft = "";
+    renderCurrent();
+  }
+
+  async function saveDisplayName(value) {
+    const targetUid = Core.normalizeOfficeUserId(state.editingDisplayNameUserId);
+    const displayName = Core.normalizeOfficeDisplayName(value);
+    if (!isAdmin() || !targetUid || targetUid !== state.selectedUserId || state.busy) return;
+    if (!displayName) {
+      notify("실제 이름은 제어문자 없이 80자 이내로 입력해 주세요.", "error");
+      return;
+    }
+    state.busy = true;
+    renderCurrent();
+    try {
+      const result = await state.context.api.saveOfficeDisplayName({ userId: targetUid, displayName });
+      if (!result || result.ok === false) throw new Error(result && result.error || "실제 이름을 저장하지 못했습니다.");
+      state.data = Core.normalizeOfficePayload(result.data || await state.context.api.loadOffice(), currentUser());
+      if (state.editingDisplayNameUserId === targetUid) {
+        state.editingDisplayNameUserId = "";
+        state.displayNameDraft = "";
+      }
+      notify("메신저에 표시할 실제 이름을 저장했습니다.", "success");
+    } catch (error) {
+      notify(error.message || "실제 이름을 저장하지 못했습니다.", "error");
+    } finally {
+      state.busy = false;
+      renderCurrent();
+      document.querySelector("[data-office-display-name-form] input")?.focus();
     }
   }
 
@@ -433,11 +545,30 @@
     if (event.target.closest("[data-office-attendance-export]")) { exportAdminAttendance(); return; }
     const attendance = event.target.closest("[data-office-attendance]");
     if (attendance) { attendanceAction(attendance.dataset.officeAttendance); return; }
+    if (event.target.closest("[data-office-display-name-edit]")) { beginDisplayNameEdit(); return; }
+    if (event.target.closest("[data-office-display-name-cancel]")) { cancelDisplayNameEdit(); return; }
+    if (event.target.closest("[data-office-attachment-pick]")) { pickMessageAttachment(); return; }
+    if (event.target.closest("[data-office-attachment-remove]")) {
+      state.pendingAttachment = null;
+      renderCurrent();
+      document.querySelector("[data-office-message-form] textarea")?.focus();
+      return;
+    }
+    const attachment = event.target.closest("[data-office-attachment-open]");
+    if (attachment) { openMessageAttachment(attachment.dataset.officeAttachmentOpen); return; }
     const user = event.target.closest("[data-office-user]");
     if (user) { selectUser(user.dataset.officeUser); }
   });
 
   document.addEventListener("input", event => {
+    if (event.target.matches("[data-office-display-name-form] input")) {
+      state.displayNameDraft = event.target.value;
+      return;
+    }
+    if (event.target.matches("[data-office-message-form] textarea")) {
+      state.messageDraft = event.target.value;
+      return;
+    }
     if (!event.target.matches("[data-office-user-search]")) return;
     state.userQuery = event.target.value;
     const position = event.target.selectionStart;
@@ -448,12 +579,28 @@
   });
 
   document.addEventListener("keydown", event => {
+    if (event.target.matches("[data-office-display-name-form] input") && event.key === "Escape") {
+      event.preventDefault();
+      cancelDisplayNameEdit();
+      return;
+    }
+    if (event.target.matches("[data-office-message-form] textarea") && Core.shouldSendMessageKey(event)) {
+      event.preventDefault();
+      event.target.form?.requestSubmit();
+      return;
+    }
     if (!event.target.matches("[data-office-admin-user]") || !["Enter", " "].includes(event.key)) return;
     event.preventDefault();
     event.target.click();
   });
 
   document.addEventListener("submit", event => {
+    const nameForm = event.target.closest("[data-office-display-name-form]");
+    if (nameForm) {
+      event.preventDefault();
+      saveDisplayName(new FormData(nameForm).get("displayName"));
+      return;
+    }
     const form = event.target.closest("[data-office-message-form]");
     if (!form) return;
     event.preventDefault();
@@ -473,6 +620,11 @@
       state.loaded = false;
       state.error = "";
       state.selectedUserId = "";
+      state.editingDisplayNameUserId = "";
+      state.displayNameDraft = "";
+      state.messageDraft = "";
+      state.pendingAttachment = null;
+      state.openingAttachmentId = "";
       state.selectedAdminUserId = "";
       state.adminTab = "list";
     },

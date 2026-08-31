@@ -361,8 +361,34 @@ jobs:
           service_account: ${{ vars.GCP_RULES_DEPLOY_SERVICE_ACCOUNT_BRING_FM }}
       - name: Fail closed if the canonical source moved before Rules deployment
         run: node desktop-crm/scripts/release/verify-source-head.js --source-sha "${{ needs.reserve-build.outputs.source_sha }}" --source-branch "$CRM_SOURCE_BRANCH"
+      - name: Back up the current production Database Rules before deployment
+        run: >-
+          node company-site/node_modules/firebase-tools/lib/bin/firebase.js
+          --config firebase.json
+          --project "${{ steps.target.outputs.project_id }}"
+          database:get /.settings/rules
+          --pretty
+          --output database.rules.before-deploy.json
+      - name: Record the immutable production Rules backup checksum
+        shell: bash
+        run: sha256sum database.rules.before-deploy.json > database.rules.before-deploy.json.sha256
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: crm-rules-backup-${{ steps.target.outputs.project_id }}-${{ github.run_id }}-${{ github.run_attempt }}
+          if-no-files-found: error
+          retention-days: 30
+          path: |
+            database.rules.before-deploy.json
+            database.rules.before-deploy.json.sha256
+      - name: Recheck the canonical source after the backup and before deployment
+        run: node desktop-crm/scripts/release/verify-source-head.js --source-sha "${{ needs.reserve-build.outputs.source_sha }}" --source-branch "$CRM_SOURCE_BRANCH"
       - name: Deploy only Realtime Database Rules to bring-fm
         run: node company-site/node_modules/firebase-tools/lib/bin/firebase.js --config firebase.json --project "${{ steps.target.outputs.project_id }}" deploy --only database --non-interactive
+      - name: Verify the live Database Rules exactly match the tested source
+        shell: bash
+        run: |
+          node company-site/node_modules/firebase-tools/lib/bin/firebase.js --config firebase.json --project "${{ steps.target.outputs.project_id }}" database:get /.settings/rules --pretty --output database.rules.after-deploy.json
+          node -e "const fs=require('fs');const assert=require('assert/strict');const expected=JSON.parse(fs.readFileSync('database.rules.json','utf8'));const live=JSON.parse(fs.readFileSync('database.rules.after-deploy.json','utf8'));assert.deepStrictEqual(live,expected,'live Database Rules verification failed')"
       - name: Fail closed if the canonical source moved during Rules deployment
         run: node desktop-crm/scripts/release/verify-source-head.js --source-sha "${{ needs.reserve-build.outputs.source_sha }}" --source-branch "$CRM_SOURCE_BRANCH"
 

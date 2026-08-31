@@ -158,7 +158,7 @@
     partnerVendors: ["협력 업체 정보를 한곳에서", "협력 업체"],
     partnerQuotes: ["가격과 상담 내용을 한곳에서", "업체 상담"],
     tasks: ["놓치지 말아야 할 후속조치", "영업 할 일"],
-    officeHome: ["브링의 업무를 한 곳에서", "BIRNG OFFICE"],
+    officeHome: ["브링의 업무를 한 곳에서", "BRING OFFICE"],
     officeAttendance: ["나의 주간 근무 현황", "근태관리"],
     officeMessenger: ["CRM 구성원과 빠른 대화", "메신저"],
     officeAdmin: ["관리자 전용 직원 근무 현황", "전체 근태관리"],

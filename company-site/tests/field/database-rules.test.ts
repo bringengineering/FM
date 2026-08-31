@@ -81,6 +81,21 @@ const CRM_ACCESS = {
     role: "member",
     operatorId: "operator_kim",
   },
+  "crm-office-disabled": {
+    enabled: false,
+    email: "office-disabled@bring.test",
+    role: "admin",
+    officeAdmin: true,
+    operatorId: "operator_kim",
+  },
+  "crm-office-pending": {
+    enabled: true,
+    email: "office-pending@bring.test",
+    role: "admin",
+    officeAdmin: true,
+    mustChangePassword: true,
+    operatorId: "operator_kim",
+  },
   "crm-invalid-role": {
     enabled: true,
     email: "invalid@bring.test",
@@ -1723,8 +1738,13 @@ describe("field media database rule source", () => {
       };
     };
     const gate = access.$uid.mustChangePassword;
+    const productionUidWithoutDisplayName = {
+      ...(access.$uid as unknown as Record<string, unknown>),
+    };
+    delete productionUidWithoutDisplayName.displayName;
 
-    expect(access).toEqual(cutover.rules.crmCompany.access);
+    expect({ ...access, $uid: productionUidWithoutDisplayName })
+      .toEqual(cutover.rules.crmCompany.access);
     expect(access.$uid[".write"]).toBe(false);
     expect(gate[".write"]).toContain("auth.uid === $uid");
     expect(gate[".write"]).toContain("email_verified === true");
@@ -1921,6 +1941,62 @@ describe.runIf(databaseEmulatorAvailable)("fieldPlatform database rules", () => 
     await assertFails(remove(ref(authorized, gatePath)));
   });
 
+  it("lets only a clean office administrator set a canonical peer display name", async () => {
+    const displayNamePath = "crmCompany/access/crm-viewer/displayName";
+    const officeAdmin = environment.authenticatedContext(
+      "crm-admin",
+      crmClaims("admin@bring.test"),
+    ).database();
+    const deniedWriters = [
+      environment.unauthenticatedContext().database(),
+      environment.authenticatedContext(
+        "crm-standard-admin",
+        crmClaims("standard-admin@bring.test"),
+      ).database(),
+      environment.authenticatedContext(
+        "crm-admin",
+        crmClaims("wrong@bring.test"),
+      ).database(),
+      environment.authenticatedContext(
+        "crm-office-disabled",
+        crmClaims("office-disabled@bring.test"),
+      ).database(),
+      environment.authenticatedContext(
+        "crm-office-pending",
+        crmClaims("office-pending@bring.test"),
+      ).database(),
+    ];
+
+    for (const database of deniedWriters) {
+      await assertFails(set(ref(database, displayNamePath), "허용되지 않은 이름"));
+    }
+
+    await assertSucceeds(set(ref(officeAdmin, displayNamePath), "황우중"));
+    await assertSucceeds(set(ref(officeAdmin, displayNamePath), "황우중 매니저"));
+    expect((await assertSucceeds(get(ref(officeAdmin, displayNamePath)))).val()).toBe("황우중 매니저");
+
+    await assertFails(set(ref(officeAdmin, displayNamePath), ""));
+    await assertFails(set(ref(officeAdmin, displayNamePath), " 앞 공백"));
+    await assertFails(set(ref(officeAdmin, displayNamePath), "뒤 공백 "));
+    await assertFails(set(ref(officeAdmin, displayNamePath), "줄바꿈\n이름"));
+    await assertFails(set(ref(officeAdmin, displayNamePath), "줄\u2028구분 이름"));
+    await assertFails(set(ref(officeAdmin, displayNamePath), "문단\u2029구분 이름"));
+    await assertFails(set(ref(officeAdmin, displayNamePath), "정상처럼\u202E보이는 이름"));
+    await assertFails(set(ref(officeAdmin, displayNamePath), "숨김\u200D문자"));
+    await assertFails(set(ref(officeAdmin, displayNamePath), "가".repeat(81)));
+    await assertFails(remove(ref(officeAdmin, displayNamePath)));
+    await assertFails(set(ref(officeAdmin, "crmCompany/access/crm-admin/displayName"), "본인 변경"));
+    await assertFails(set(ref(officeAdmin, "crmCompany/access/missing-user/displayName"), "없는 사용자"));
+    await assertFails(set(ref(officeAdmin, "crmCompany/access/crm-disabled/displayName"), "비활성 사용자"));
+    await assertFails(set(ref(officeAdmin, "crmCompany/access/crm-invalid-role/displayName"), "비Office 사용자"));
+    await assertFails(update(ref(officeAdmin, "crmCompany/access/crm-viewer"), {
+      displayName: "권한 변조",
+      role: "admin",
+    }));
+    expect((await assertSucceeds(get(ref(officeAdmin, "crmCompany/access/crm-viewer/role")))).val()).toBe("viewer");
+    expect((await assertSucceeds(get(ref(officeAdmin, displayNamePath)))).val()).toBe("황우중 매니저");
+  });
+
   it("keeps BIRNG OFFICE attendance and messages private while granting only explicit office administrators team access", async () => {
     const admin = environment.authenticatedContext(
       "crm-admin",
@@ -1941,6 +2017,18 @@ describe.runIf(databaseEmulatorAvailable)("fieldPlatform database rules", () => 
     const disabled = environment.authenticatedContext(
       "crm-disabled",
       crmClaims("disabled@bring.test"),
+    ).database();
+    const wrongEmail = environment.authenticatedContext(
+      "crm-viewer",
+      crmClaims("wrong@bring.test"),
+    ).database();
+    const thirdParty = environment.authenticatedContext(
+      "crm-legacy-member",
+      crmClaims("legacy@bring.test"),
+    ).database();
+    const invalidRole = environment.authenticatedContext(
+      "crm-invalid-role",
+      crmClaims("invalid@bring.test"),
     ).database();
     const anonymous = environment.unauthenticatedContext().database();
 
@@ -1995,6 +2083,41 @@ describe.runIf(databaseEmulatorAvailable)("fieldPlatform database rules", () => 
       readAt: "",
       createdAt: "2026-08-31T09:10:00.000Z",
     };
+
+    const invalidSenderId = "msg_invalidrole01";
+    const invalidSenderMessage = {
+      ...message,
+      id: invalidSenderId,
+      senderId: "crm-invalid-role",
+      receiverId: "crm-admin",
+    };
+    await assertFails(update(ref(invalidRole, "crmCompany/officeMailbox"), {
+      [`crm-invalid-role/crm-admin/${invalidSenderId}`]: invalidSenderMessage,
+      [`crm-admin/crm-invalid-role/${invalidSenderId}`]: invalidSenderMessage,
+    }));
+
+    const invalidReceiverId = "msg_invalidrecv01";
+    const invalidReceiverMessage = {
+      ...message,
+      id: invalidReceiverId,
+      receiverId: "crm-invalid-role",
+    };
+    await assertFails(update(ref(viewer, "crmCompany/officeMailbox"), {
+      [`crm-viewer/crm-invalid-role/${invalidReceiverId}`]: invalidReceiverMessage,
+      [`crm-invalid-role/crm-viewer/${invalidReceiverId}`]: invalidReceiverMessage,
+    }));
+
+    const preReadId = "msg_preread0001";
+    const preReadMessage = {
+      ...message,
+      id: preReadId,
+      readAt: "2026-08-31T09:09:00.000Z",
+    };
+    await assertFails(update(ref(viewer, "crmCompany/officeMailbox"), {
+      [`crm-viewer/crm-admin/${preReadId}`]: preReadMessage,
+      [`crm-admin/crm-viewer/${preReadId}`]: preReadMessage,
+    }));
+
     await assertSucceeds(update(ref(viewer, "crmCompany/officeMailbox"), {
       [`crm-viewer/crm-admin/${messageId}`]: message,
       [`crm-admin/crm-viewer/${messageId}`]: message,
@@ -2013,12 +2136,247 @@ describe.runIf(databaseEmulatorAvailable)("fieldPlatform database rules", () => 
     }));
     expect((await get(ref(admin, `crmCompany/officeMailbox/crm-admin/crm-viewer/${messageId}/readAt`))).val())
       .toBe("2026-08-31T09:12:00.000Z");
+
+    type OfficeFileOverrides = {
+      attachment?: Record<string, unknown>;
+      file?: Record<string, unknown>;
+      mailbox?: Record<string, unknown>;
+      senderMirror?: Record<string, unknown>;
+      receiverMirror?: Record<string, unknown>;
+      senderId?: string;
+      receiverId?: string;
+      omitReceiverMirror?: boolean;
+      omitSenderMirror?: boolean;
+    };
+    const attachmentBytes = Buffer.from("hello", "utf8");
+    const attachmentHash = "a".repeat(64);
+    const buildOfficeFileCreate = (id: string, overrides: OfficeFileOverrides = {}) => {
+      const senderId = overrides.senderId || "crm-viewer";
+      const receiverId = overrides.receiverId || "crm-admin";
+      const attachment = {
+        fileId: id,
+        fileName: "업무자료.txt",
+        extension: "txt",
+        mimeType: "text/plain",
+        size: attachmentBytes.length,
+        sha256: attachmentHash,
+        ...overrides.attachment,
+      };
+      const file = {
+        id,
+        senderId,
+        receiverId,
+        fileName: "업무자료.txt",
+        extension: "txt",
+        mimeType: "text/plain",
+        size: attachmentBytes.length,
+        sha256: attachmentHash,
+        bodyBase64: attachmentBytes.toString("base64"),
+        createdAt: "2026-08-31T09:20:00.000Z",
+        ...overrides.file,
+      };
+      const mailboxMessage = {
+        id,
+        senderId,
+        receiverId,
+        message: "[파일] 업무자료.txt",
+        attachment,
+        readAt: "",
+        createdAt: "2026-08-31T09:20:00.000Z",
+        ...overrides.mailbox,
+      };
+      const senderMirror = { ...mailboxMessage, ...overrides.senderMirror };
+      const receiverMirror = { ...mailboxMessage, ...overrides.receiverMirror };
+      const patch: Record<string, unknown> = {
+        [`officeMessageFiles/${id}`]: file,
+      };
+      if (!overrides.omitSenderMirror) {
+        patch[`officeMailbox/${senderId}/${receiverId}/${id}`] = senderMirror;
+      }
+      if (!overrides.omitReceiverMirror) {
+        patch[`officeMailbox/${receiverId}/${senderId}/${id}`] = receiverMirror;
+      }
+      return { attachment, file, mailboxMessage, senderMirror, receiverMirror, patch };
+    };
+
+    const fileId = "msg_file0001";
+    const validFileCreate = buildOfficeFileCreate(fileId);
+    await assertSucceeds(update(ref(viewer, "crmCompany"), validFileCreate.patch));
+
+    const filePath = `crmCompany/officeMessageFiles/${fileId}`;
+    await assertSucceeds(get(ref(viewer, filePath)));
+    await assertSucceeds(get(ref(admin, filePath)));
+    await assertFails(get(ref(viewer, "crmCompany/officeMessageFiles")));
+    await assertFails(get(ref(admin, "crmCompany/officeMessageFiles")));
+    await assertFails(get(ref(anonymous, filePath)));
+    await assertFails(get(ref(wrongEmail, filePath)));
+    await assertFails(get(ref(disabled, filePath)));
+    await assertFails(get(ref(passwordPending, filePath)));
+    await assertFails(get(ref(thirdParty, filePath)));
+
+    const fileOnly = buildOfficeFileCreate("msg_fileonly01");
+    await assertFails(
+      set(ref(viewer, "crmCompany/officeMessageFiles/msg_fileonly01"), fileOnly.file),
+    );
+
+    const oneMirror = buildOfficeFileCreate("msg_onemirror01", {
+      omitReceiverMirror: true,
+    });
+    await assertFails(update(ref(viewer, "crmCompany"), oneMirror.patch));
+
+    const invalidRoleReceiver = buildOfficeFileCreate("msg_invalidfile01", {
+      receiverId: "crm-invalid-role",
+    });
+    await assertFails(update(ref(viewer, "crmCompany"), invalidRoleReceiver.patch));
+
+    const invalidRoleSender = buildOfficeFileCreate("msg_invalidsend01", {
+      senderId: "crm-invalid-role",
+    });
+    await assertFails(update(ref(invalidRole, "crmCompany"), invalidRoleSender.patch));
+
+    const divergentMessage = buildOfficeFileCreate("msg_diffmessage01", {
+      receiverMirror: { message: "수신자에게만 다른 내용" },
+    });
+    await assertFails(update(ref(viewer, "crmCompany"), divergentMessage.patch));
+
+    const divergentMirrorCreatedAt = buildOfficeFileCreate("msg_difftime0001", {
+      receiverMirror: { createdAt: "2026-08-31T09:20:01.000Z" },
+    });
+    await assertFails(update(ref(viewer, "crmCompany"), divergentMirrorCreatedAt.patch));
+
+    const divergentFileCreatedAt = buildOfficeFileCreate("msg_filetime0001", {
+      file: { createdAt: "2026-08-31T09:20:01.000Z" },
+    });
+    await assertFails(update(ref(viewer, "crmCompany"), divergentFileCreatedAt.patch));
+
+    const attachmentPreRead = buildOfficeFileCreate("msg_filepreread1", {
+      mailbox: { readAt: "2026-08-31T09:20:01.000Z" },
+    });
+    await assertFails(update(ref(viewer, "crmCompany"), attachmentPreRead.patch));
+
+    const metadataMismatch = buildOfficeFileCreate("msg_mismatch01", {
+      file: { sha256: "b".repeat(64) },
+    });
+    await assertFails(update(ref(viewer, "crmCompany"), metadataMismatch.patch));
+
+    const receiverCreate = buildOfficeFileCreate("msg_receiver01");
+    await assertFails(update(ref(admin, "crmCompany"), receiverCreate.patch));
+
+    const oversizedBytes = Buffer.alloc(5 * 1024 * 1024 + 1, 0x61);
+    const oversized = buildOfficeFileCreate("msg_oversized01", {
+      attachment: { size: oversizedBytes.length },
+      file: {
+        size: oversizedBytes.length,
+        bodyBase64: oversizedBytes.toString("base64"),
+      },
+    });
+    await assertFails(update(ref(viewer, "crmCompany"), oversized.patch));
+
+    const invalidBase64 = buildOfficeFileCreate("msg_base64bad01", {
+      attachment: { size: 3 },
+      file: { size: 3, bodyBase64: "%%%%" },
+    });
+    await assertFails(update(ref(viewer, "crmCompany"), invalidBase64.patch));
+
+    const invalidName = buildOfficeFileCreate("msg_namebad01", {
+      attachment: { fileName: "../업무자료.txt" },
+      file: { fileName: "../업무자료.txt" },
+    });
+    await assertFails(update(ref(viewer, "crmCompany"), invalidName.patch));
+
+    const backslashName = buildOfficeFileCreate("msg_backslash01", {
+      attachment: { fileName: "업무\\자료.txt" },
+      file: { fileName: "업무\\자료.txt" },
+    });
+    await assertFails(update(ref(viewer, "crmCompany"), backslashName.patch));
+
+    const controlCharacterName = buildOfficeFileCreate("msg_control01", {
+      attachment: { fileName: "업무\u0001자료.txt" },
+      file: { fileName: "업무\u0001자료.txt" },
+    });
+    await assertFails(update(ref(viewer, "crmCompany"), controlCharacterName.patch));
+
+    const unsafeNames = [
+      ["msg_reservedcon1", "CON.txt"],
+      ["msg_reservedprn1", "prn.TXT"],
+      ["msg_reservedaux1", "AUX.txt"],
+      ["msg_reservednul1", "nul.txt"],
+      ["msg_reservedcom1", "COM1.txt"],
+      ["msg_reservedlpt1", "lPt9.TxT"],
+      ["msg_leadspace01", " 업무자료.txt"],
+      ["msg_tailspace01", "업무자료.txt "],
+      ["msg_taildot0001", "업무자료.txt."],
+      ["msg_bidiname001", "업무\u202E자료.txt"],
+      ["msg_formatname1", "업무\u200D자료.txt"],
+      ["msg_lineformat1", "업무\u2028자료.txt"],
+      ["msg_paraformat1", "업무\u2029자료.txt"],
+      ["msg_extmismatch", "업무자료.pdf"],
+    ] as const;
+    for (const [id, fileName] of unsafeNames) {
+      const unsafeName = buildOfficeFileCreate(id, {
+        attachment: { fileName },
+        file: { fileName },
+      });
+      await assertFails(update(ref(viewer, "crmCompany"), unsafeName.patch));
+    }
+
+    const uppercaseExtension = buildOfficeFileCreate("msg_uppercase01", {
+      attachment: { fileName: "업무자료.TXT" },
+      file: { fileName: "업무자료.TXT" },
+    });
+    await assertSucceeds(update(ref(viewer, "crmCompany"), uppercaseExtension.patch));
+
+    const invalidMime = buildOfficeFileCreate("msg_mimebad01", {
+      attachment: { mimeType: "application/octet-stream" },
+      file: { mimeType: "application/octet-stream" },
+    });
+    await assertFails(update(ref(viewer, "crmCompany"), invalidMime.patch));
+
+    await assertFails(update(ref(viewer, filePath), { fileName: "변경.txt" }));
+    await assertFails(remove(ref(viewer, filePath)));
+
+    await assertFails(
+      update(ref(viewer, "crmCompany/officeMailbox"), {
+        [`crm-viewer/crm-admin/${fileId}/readAt`]: "2026-08-31T09:25:00.000Z",
+        [`crm-admin/crm-viewer/${fileId}/readAt`]: "2026-08-31T09:25:00.000Z",
+      }),
+    );
+    await assertFails(
+      update(ref(admin, "crmCompany/officeMailbox"), {
+        [`crm-viewer/crm-admin/${fileId}/attachment/fileName`]: "변조.txt",
+        [`crm-viewer/crm-admin/${fileId}/readAt`]: "2026-08-31T09:25:00.000Z",
+        [`crm-admin/crm-viewer/${fileId}/attachment/fileName`]: "변조.txt",
+        [`crm-admin/crm-viewer/${fileId}/readAt`]: "2026-08-31T09:25:00.000Z",
+      }),
+    );
+    await assertFails(
+      update(ref(admin, "crmCompany/officeMailbox"), {
+        [`crm-admin/crm-viewer/${fileId}/readAt`]: "2026-08-31T09:24:00.000Z",
+      }),
+    );
+    await assertFails(
+      update(ref(admin, "crmCompany/officeMailbox"), {
+        [`crm-viewer/crm-admin/${fileId}/readAt`]: "2026-08-31T09:24:00.000Z",
+        [`crm-admin/crm-viewer/${fileId}/readAt`]: "2026-08-31T09:24:01.000Z",
+      }),
+    );
+    await assertSucceeds(
+      update(ref(admin, "crmCompany/officeMailbox"), {
+        [`crm-viewer/crm-admin/${fileId}/readAt`]: "2026-08-31T09:25:00.000Z",
+        [`crm-admin/crm-viewer/${fileId}/readAt`]: "2026-08-31T09:25:00.000Z",
+      }),
+    );
+    const storedAttachment = await get(
+      ref(admin, `crmCompany/officeMailbox/crm-admin/crm-viewer/${fileId}/attachment`),
+    );
+    expect(storedAttachment.val()).toEqual(validFileCreate.attachment);
+
     await assertFails(set(
       ref(passwordPending, "crmCompany/officeAttendance/crm-member/2026-08-31"),
       { ...attendance, id: "crm-member_2026-08-31", userId: "crm-member" },
     ));
     await assertFails(get(ref(anonymous, attendancePath)));
-  });
+  }, 60_000);
 
   it("denies every client direct reads and writes anywhere under FIELD v2", async () => {
     const clients = [

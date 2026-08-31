@@ -3,8 +3,81 @@ const http = require("node:http");
 const path = require("node:path");
 const SparkCanonical = require("./spark-canonical");
 const OfficeCore = require("./office-core");
+const OfficeAttachment = require("./office-attachment");
 const MarketingCore = require("./marketing-core");
 const MarketingPersistence = require("./marketing-persistence");
+
+// Firebase wraps the canonical base64 body in a small JSON object. Bound the
+// decoded HTTP stream before concatenating it so a rules/configuration mistake
+// cannot turn an attachment read into an unbounded main-process allocation.
+const OFFICE_ATTACHMENT_RESPONSE_MAX_BYTES = Math.ceil(OfficeAttachment.MAX_FILE_BYTES / 3) * 4 + 16 * 1024;
+
+function responseHeader(response, name) {
+  if (!response || !response.headers || typeof response.headers.get !== "function") return "";
+  return String(response.headers.get(name) || "").trim();
+}
+
+async function cancelResponseBody(response) {
+  try {
+    if (response && response.body && typeof response.body.cancel === "function") await response.body.cancel();
+  } catch (_error) {}
+}
+
+async function readBoundedJsonResponse(response, maxBytes, errorCode = "DATABASE_ERROR") {
+  if (!Number.isSafeInteger(maxBytes) || maxBytes < 1) throw createError("응답 크기 제한이 올바르지 않습니다.", errorCode);
+  if (!response || typeof response.ok !== "boolean") throw createError("서버 응답을 확인할 수 없습니다.", errorCode);
+  if (!response.ok) {
+    await cancelResponseBody(response);
+    const error = createError(`database request rejected (${Number(response.status) || 0})`, errorCode);
+    error.status = Number(response.status) || 0;
+    throw error;
+  }
+  const contentType = responseHeader(response, "content-type").toLowerCase();
+  if (contentType && !contentType.startsWith("application/json")) {
+    await cancelResponseBody(response);
+    throw createError("첨부파일 서버 응답 형식이 올바르지 않습니다.", "DATABASE_RESPONSE_INVALID");
+  }
+  const declaredLength = responseHeader(response, "content-length");
+  if (declaredLength && (!/^\d+$/.test(declaredLength) || Number(declaredLength) > maxBytes)) {
+    await cancelResponseBody(response);
+    throw createError("첨부파일 서버 응답이 허용 크기를 초과했습니다.", "DATABASE_RESPONSE_TOO_LARGE");
+  }
+  if (!response.body || typeof response.body.getReader !== "function") {
+    throw createError("첨부파일 서버 응답을 안전하게 읽을 수 없습니다.", "DATABASE_RESPONSE_INVALID");
+  }
+
+  const reader = response.body.getReader();
+  const chunks = [];
+  let total = 0;
+  try {
+    for (;;) {
+      const result = await reader.read();
+      if (!result || result.done) break;
+      if (!(result.value instanceof Uint8Array)) {
+        throw createError("첨부파일 서버 응답 형식이 올바르지 않습니다.", "DATABASE_RESPONSE_INVALID");
+      }
+      total += result.value.byteLength;
+      if (total > maxBytes) {
+        try { await reader.cancel(); } catch (_error) {}
+        throw createError("첨부파일 서버 응답이 허용 크기를 초과했습니다.", "DATABASE_RESPONSE_TOO_LARGE");
+      }
+      chunks.push(Buffer.from(result.value));
+    }
+  } finally {
+    try { reader.releaseLock(); } catch (_error) {}
+  }
+  let text;
+  try {
+    text = new TextDecoder("utf-8", { fatal: true }).decode(Buffer.concat(chunks, total));
+  } catch (cause) {
+    throw createError("첨부파일 서버 응답 인코딩이 올바르지 않습니다.", "DATABASE_RESPONSE_INVALID", cause);
+  }
+  try {
+    return text ? JSON.parse(text.charCodeAt(0) === 0xfeff ? text.slice(1) : text) : null;
+  } catch (cause) {
+    throw createError("첨부파일 서버 응답 형식이 올바르지 않습니다.", "DATABASE_RESPONSE_INVALID", cause);
+  }
+}
 
 const FIREBASE = Object.freeze({
   apiKey: "AIzaSyBKOTIuQ8pOKSuaeKFQs_6UDdDnxdjCTZg",
@@ -1241,6 +1314,34 @@ class FirebaseRemoteClient {
     return this.dbRequestForRoot(location, options, this.databaseRoot, retried);
   }
 
+  async boundedDbGetForRoot(location, maxBytes, databaseRoot, retried) {
+    const token = await this.ensureIdToken(false);
+    const rootedLocation = resolveDatabaseLocation(location, databaseRoot);
+    const url = `${this.firebase.databaseUrl}/${rootedLocation}.json?auth=${encodeURIComponent(token)}`;
+    let response;
+    try {
+      response = await this.fetch(url, {
+        method: "GET",
+        headers: { Accept: "application/json" },
+      });
+    } catch (cause) {
+      throw createError("서버에 연결할 수 없습니다.", "NETWORK", cause);
+    }
+    try {
+      return await readBoundedJsonResponse(response, maxBytes, "DATABASE_ERROR");
+    } catch (error) {
+      if (!retried && error.code === "DATABASE_ERROR" && [400, 401, 403].includes(Number(error.status))) {
+        await this.ensureIdToken(true);
+        return this.boundedDbGetForRoot(location, maxBytes, databaseRoot, true);
+      }
+      throw error;
+    }
+  }
+
+  async boundedDbGet(location, maxBytes, retried) {
+    return this.boundedDbGetForRoot(location, maxBytes, this.databaseRoot, retried);
+  }
+
   async rootDbRequest(location, options, retried) {
     return this.dbRequestForRoot(location, options, "", retried);
   }
@@ -1770,9 +1871,9 @@ class FirebaseRemoteClient {
 
   requireOfficeSession() {
     if (!this.session || !this.session.uid || !["admin", "member", "viewer"].includes(this.session.role)) {
-      throw createError("BIRNG OFFICE를 사용하려면 CRM 로그인이 필요합니다.", "AUTH_REQUIRED");
+      throw createError("BRING OFFICE를 사용하려면 CRM 로그인이 필요합니다.", "AUTH_REQUIRED");
     }
-    if (this.session.mustChangePassword === true) throw createError("비밀번호 변경 후 BIRNG OFFICE를 사용할 수 있습니다.", "ACCESS_DENIED");
+    if (this.session.mustChangePassword === true) throw createError("비밀번호 변경 후 BRING OFFICE를 사용할 수 있습니다.", "ACCESS_DENIED");
     return this.session;
   }
 
@@ -1780,14 +1881,15 @@ class FirebaseRemoteClient {
     const session = this.requireOfficeSession();
     const guard = this.captureSessionGuard();
     const attendanceLocation = session.officeAdmin === true ? "officeAttendance" : `officeAttendance/${session.uid}`;
-    const [users, attendance, mailbox] = await Promise.all([
+    const [users, teamProfiles, attendance, mailbox] = await Promise.all([
       this.dbRequest("crmAccess", { method: "GET" }),
+      this.dbRequest("teamProfiles", { method: "GET" }),
       this.dbRequest(attendanceLocation, { method: "GET" }),
       this.dbRequest(`officeMailbox/${session.uid}`, { method: "GET" }),
     ]);
     this.assertSessionGuardActive(guard);
     return {
-      users: users && typeof users === "object" ? users : {},
+      users: OfficeCore.mergeOfficeUsers(users, teamProfiles),
       attendance: OfficeCore.flattenAttendance(attendance),
       messages: OfficeCore.flattenMailbox(mailbox),
       loadedAt: new Date().toISOString(),
@@ -1820,26 +1922,111 @@ class FirebaseRemoteClient {
     return this.loadOffice();
   }
 
+  async saveOfficeDisplayName(input) {
+    const session = this.requireOfficeSession();
+    if (session.officeAdmin !== true) {
+      throw createError("메신저 실제 이름은 지정된 관리자만 수정할 수 있습니다.", "ACCESS_DENIED");
+    }
+    const source = input && typeof input === "object" && !Array.isArray(input) ? input : {};
+    if (Object.keys(source).some(key => !["userId", "displayName"].includes(key))) {
+      throw createError("실제 이름 저장 요청이 올바르지 않습니다.", "VALIDATION_ERROR");
+    }
+    const rawUserId = typeof source.userId === "string" ? source.userId : "";
+    const userId = OfficeCore.normalizeOfficeUserId(rawUserId);
+    const displayName = OfficeCore.normalizeOfficeDisplayName(source.displayName);
+    if (!userId || userId !== rawUserId || userId === session.uid || !displayName) {
+      throw createError("수정할 구성원과 실제 이름을 확인해 주세요.", "VALIDATION_ERROR");
+    }
+    const guard = this.captureSessionGuard();
+    const target = await this.dbRequest(`crmAccess/${userId}`, { method: "GET" });
+    this.assertSessionGuardActive(guard);
+    if (!target
+      || target.enabled !== true
+      || target.mustChangePassword === true
+      || !["admin", "member", "viewer"].includes(String(target.role || ""))) {
+      throw createError("이름을 수정할 활성 구성원을 찾지 못했습니다.", "ACCESS_DENIED");
+    }
+    await this.dbRequest(`crmAccess/${userId}/displayName`, {
+      method: "PUT",
+      body: displayName,
+      query: "print=silent",
+    });
+    this.assertSessionGuardActive(guard);
+    return this.loadOffice();
+  }
+
   async sendOfficeMessage(input) {
     const session = this.requireOfficeSession();
     const guard = this.captureSessionGuard();
     const receiverId = String(input && input.receiverId || "").trim();
     const messageText = String(input && input.message || "").trim();
+    const attachmentPayload = input && input.attachment
+      ? OfficeAttachment.revalidateAttachmentPayload(input.attachment)
+      : null;
     if (!/^[A-Za-z0-9._-]{1,128}$/.test(receiverId) || receiverId === session.uid) throw createError("메시지를 받을 사용자를 선택해 주세요.", "VALIDATION_ERROR");
-    if (!messageText || messageText.length > 4000) throw createError("메시지는 1자 이상 4,000자 이하로 입력해 주세요.", "VALIDATION_ERROR");
+    if ((!messageText && !attachmentPayload) || messageText.length > 4000) throw createError("메시지 또는 첨부파일을 확인해 주세요.", "VALIDATION_ERROR");
     const receiver = await this.dbRequest(`crmAccess/${receiverId}`, { method: "GET" });
     this.assertSessionGuardActive(guard);
-    if (!receiver || receiver.enabled !== true || receiver.mustChangePassword === true) throw createError("현재 메시지를 받을 수 없는 사용자입니다.", "ACCESS_DENIED");
+    if (!receiver
+      || receiver.enabled !== true
+      || receiver.mustChangePassword === true
+      || !["admin", "member", "viewer"].includes(String(receiver.role || ""))) {
+      throw createError("현재 메시지를 받을 수 없는 사용자입니다.", "ACCESS_DENIED");
+    }
     const id = `msg_${Date.now().toString(36)}_${crypto.randomBytes(7).toString("hex")}`;
     const createdAt = new Date().toISOString();
-    const message = { id, senderId: session.uid, receiverId, message: messageText, readAt: "", createdAt };
-    await this.dbRequest("officeMailbox", {
+    const attachmentDetails = attachmentPayload ? {
+      fileName: attachmentPayload.fileName,
+      extension: attachmentPayload.extension,
+      mimeType: attachmentPayload.mimeType,
+      size: attachmentPayload.size,
+      sha256: attachmentPayload.sha256,
+    } : null;
+    const attachment = attachmentPayload
+      ? Object.assign({ fileId: id }, attachmentDetails)
+      : null;
+    const message = {
+      id,
+      senderId: session.uid,
+      receiverId,
+      message: messageText || `[파일] ${attachment.fileName}`,
+      readAt: "",
+      createdAt,
+    };
+    if (attachment) message.attachment = attachment;
+    const patch = {
+      [`officeMailbox/${session.uid}/${receiverId}/${id}`]: message,
+      [`officeMailbox/${receiverId}/${session.uid}/${id}`]: message,
+    };
+    if (attachmentPayload) {
+      patch[`officeMessageFiles/${id}`] = Object.assign({
+        id,
+        senderId: session.uid,
+        receiverId,
+        bodyBase64: attachmentPayload.fileBody,
+        createdAt,
+      }, attachmentDetails);
+    }
+    await this.dbRequest("", {
       method: "PATCH",
-      body: { [`${session.uid}/${receiverId}/${id}`]: message, [`${receiverId}/${session.uid}/${id}`]: message },
+      body: patch,
       query: "print=silent",
     });
     this.assertSessionGuardActive(guard);
     return this.loadOffice();
+  }
+
+  async loadOfficeMessageFile(input) {
+    const session = this.requireOfficeSession();
+    const guard = this.captureSessionGuard();
+    const messageId = String(input && input.messageId || "").trim();
+    if (!/^msg_[A-Za-z0-9_]{8,80}$/.test(messageId)) throw createError("첨부파일 요청이 올바르지 않습니다.", "VALIDATION_ERROR");
+    const record = await this.boundedDbGet(`officeMessageFiles/${messageId}`, OFFICE_ATTACHMENT_RESPONSE_MAX_BYTES);
+    this.assertSessionGuardActive(guard);
+    if (!record || record.id !== messageId || (record.senderId !== session.uid && record.receiverId !== session.uid)) {
+      throw createError("첨부파일을 열 권한이 없습니다.", "ACCESS_DENIED");
+    }
+    return record;
   }
 
   async markOfficeMessagesRead(input) {
@@ -3579,6 +3766,8 @@ module.exports = {
   VENDOR_CSV_URL,
   WORKFLOW_ACTIONS,
   SHARED_COLLECTIONS,
+  OFFICE_ATTACHMENT_RESPONSE_MAX_BYTES,
+  readBoundedJsonResponse,
   PROTECTED_JSON_FORMAT,
   encodeProtectedJson,
   decodeProtectedJson,
