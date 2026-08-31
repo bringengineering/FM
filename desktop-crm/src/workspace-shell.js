@@ -12,21 +12,37 @@
     "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;"
   })[character]);
 
-  function loadWorkspace(storage) {
-    const savedWorkspace = storage.getItem(storageKey);
-    return savedWorkspace === null ? null : normalizeWorkspace(savedWorkspace);
-  }
-
-  function selectWorkspace(value, storage) {
-    const workspace = normalizeWorkspace(value);
-    storage.setItem(storageKey, workspace);
-    return workspace;
-  }
-
-  function workspaceMode(workspace) {
-    if (workspace === null) return { screen: "landing", operationsNav: false };
-    if (normalizeWorkspace(workspace) === "marketing") return { screen: "marketing", operationsNav: false };
-    return { screen: "operations", operationsNav: true };
+  function createWorkspaceCoordinator(options) {
+    const storage = options.storage;
+    let currentWorkspace = null;
+    const apply = () => {
+      if (typeof options.onWorkspaceChange === "function") options.onWorkspaceChange(currentWorkspace);
+      const operations = currentWorkspace === "operations";
+      options.setOperationsNav(operations);
+      if (currentWorkspace === null) options.renderLanding();
+      else if (currentWorkspace === "marketing") options.renderMarketing();
+      else options.renderOperations();
+      return currentWorkspace;
+    };
+    return Object.freeze({
+      start() {
+        try {
+          const savedWorkspace = storage.getItem(storageKey);
+          currentWorkspace = savedWorkspace === null ? null : normalizeWorkspace(savedWorkspace);
+        } catch (_error) { currentWorkspace = null; }
+        return apply();
+      },
+      render: apply,
+      select(value) {
+        currentWorkspace = normalizeWorkspace(value);
+        try { storage.setItem(storageKey, currentWorkspace); } catch (_error) {}
+        return apply();
+      },
+      showLanding() {
+        currentWorkspace = null;
+        return apply();
+      },
+    });
   }
 
   function renderLanding() {
@@ -40,5 +56,5 @@
     </section>`;
   }
 
-  return Object.freeze({ normalizeWorkspace, loadWorkspace, selectWorkspace, workspaceMode, renderLanding });
+  return Object.freeze({ normalizeWorkspace, createWorkspaceCoordinator, renderLanding });
 });

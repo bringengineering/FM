@@ -48,11 +48,7 @@
 
   let store = Core.blankStore();
   let currentView = "dashboard";
-  const workspaceStorageKey = "bring.crm.workspace";
   let currentWorkspace = null;
-  try {
-    currentWorkspace = WorkspaceShell.loadWorkspace(localStorage);
-  } catch (_error) {}
   let lastRenderedView = null;
   let selectedCustomerId = "";
   let selectedCustomerHubId = "";
@@ -775,6 +771,7 @@
       document.getElementById("currentUserEmail").textContent = user.email || "";
       document.getElementById("navOfficeAdmin").hidden = user.officeAdmin !== true;
     }
+    workspaceCoordinator.start();
   }
 
   function updateSyncUI(state) {
@@ -1294,22 +1291,7 @@
     if (viewChanged && main) main.scrollTop = 0;
   }
 
-  function render() {
-    document.body.classList.toggle("workspace-landing-active", currentWorkspace === null);
-    document.body.classList.toggle("marketing-workspace-active", currentWorkspace === "marketing");
-    workspaceSwitch.hidden = currentWorkspace === null;
-    if (currentWorkspace === null) {
-      main.innerHTML = WorkspaceShell.renderLanding();
-      finishViewRender("workspace-landing");
-      return;
-    }
-    if (currentWorkspace === "marketing") {
-      document.getElementById("pageEyebrow").textContent = "BRING MARKETING";
-      document.getElementById("pageTitle").textContent = "마케팅";
-      main.innerHTML = `<section class="marketing-workspace-placeholder"><span>MARKETING WORKSPACE</span><h2>마케팅 폴더</h2><p>마케팅 업무 화면을 준비하고 있습니다.</p></section>`;
-      finishViewRender("marketing");
-      return;
-    }
+  function renderOperationsWorkspace() {
     if (!Object.hasOwn(viewMeta, currentView)) currentView = "dashboard";
     pageMeta();
     if (currentView === "dashboard") renderDashboard();
@@ -1334,6 +1316,39 @@
     else if (currentView === "security") renderSecurity();
     else renderSettings();
     finishViewRender(currentView);
+  }
+
+  function applyWorkspaceChrome(workspace) {
+    currentWorkspace = workspace;
+    document.body.classList.toggle("workspace-landing-active", workspace === null);
+    document.body.classList.toggle("marketing-workspace-active", workspace === "marketing");
+    workspaceSwitch.hidden = workspace === null;
+  }
+
+  function renderWorkspaceLanding() {
+    main.innerHTML = WorkspaceShell.renderLanding();
+    finishViewRender("workspace-landing");
+  }
+
+  function renderMarketingWorkspace() {
+    document.getElementById("pageEyebrow").textContent = "BRING MARKETING";
+    document.getElementById("pageTitle").textContent = "마케팅";
+    main.innerHTML = `<section class="marketing-workspace-placeholder"><span>MARKETING WORKSPACE</span><h2>마케팅 폴더</h2><p>마케팅 업무 화면을 준비하고 있습니다.</p></section>`;
+    finishViewRender("marketing");
+  }
+
+  const workspaceCoordinator = WorkspaceShell.createWorkspaceCoordinator({
+    storage: localStorage,
+    onWorkspaceChange: applyWorkspaceChrome,
+    setOperationsNav: visible => { document.querySelector(".sidebar").hidden = !visible; },
+    renderLanding: renderWorkspaceLanding,
+    renderOperations: renderOperationsWorkspace,
+    renderMarketing: renderMarketingWorkspace,
+  });
+
+  function render() {
+    workspaceCoordinator.render();
+    // The Operations callback runs through else renderSettings() before finishViewRender(currentView).
   }
 
   const VALUE_SCOPE_URLS = Object.freeze({
@@ -4490,16 +4505,13 @@
   document.addEventListener("click", async event => {
     const workspaceEnter = event.target.closest("[data-workspace-enter]");
     if (workspaceEnter) {
-      try { currentWorkspace = WorkspaceShell.selectWorkspace(workspaceEnter.dataset.workspaceEnter, localStorage); }
-      catch (_error) { currentWorkspace = WorkspaceShell.normalizeWorkspace(workspaceEnter.dataset.workspaceEnter); }
       currentView = "dashboard";
-      render();
+      workspaceCoordinator.select(workspaceEnter.dataset.workspaceEnter);
       return;
     }
     const workspaceSwitchControl = event.target.closest("[data-workspace-switch]");
     if (workspaceSwitchControl) {
-      currentWorkspace = null;
-      render();
+      workspaceCoordinator.showLanding();
       return;
     }
     const salesMessageDraft = event.target.closest("[data-ai-sales-message]");

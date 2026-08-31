@@ -19,6 +19,19 @@ function fakeStorage(initial = {}) {
   };
 }
 
+function coordinatorHarness(initial = {}) {
+  const storage = fakeStorage(initial);
+  const calls = [];
+  const coordinator = WorkspaceShell.createWorkspaceCoordinator({
+    storage,
+    renderLanding: () => calls.push("landing"),
+    renderOperations: () => calls.push("operations"),
+    renderMarketing: () => calls.push("marketing"),
+    setOperationsNav: visible => calls.push(`nav:${visible}`),
+  });
+  return { storage, calls, coordinator };
+}
+
 test("normalizes the closed workspace vocabulary with operations as the safe default", () => {
   assert.equal(WorkspaceShell.normalizeWorkspace("marketing"), "marketing");
   assert.equal(WorkspaceShell.normalizeWorkspace("operations"), "operations");
@@ -36,37 +49,43 @@ test("renders the two-folder workspace landing", () => {
 });
 
 test("empty storage requires the first-use landing", () => {
-  const storage = fakeStorage();
-  const workspace = WorkspaceShell.loadWorkspace(storage);
-  assert.equal(workspace, null);
-  assert.deepEqual(WorkspaceShell.workspaceMode(workspace), { screen: "landing", operationsNav: false });
+  const { storage, calls, coordinator } = coordinatorHarness();
+  assert.equal(coordinator.start(), null);
+  assert.deepEqual(calls, ["nav:false", "landing"]);
   assert.deepEqual(storage.writes, []);
 });
 
 test("selecting marketing persists only the exact non-sensitive preference", () => {
-  const storage = fakeStorage();
-  const workspace = WorkspaceShell.selectWorkspace("marketing", storage);
-  assert.equal(workspace, "marketing");
+  const { storage, calls, coordinator } = coordinatorHarness();
+  const authCalls = [];
+  assert.equal(coordinator.select("marketing"), "marketing");
   assert.deepEqual(storage.writes, [["bring.crm.workspace", "marketing"]]);
-  assert.deepEqual(WorkspaceShell.workspaceMode(workspace), { screen: "marketing", operationsNav: false });
+  assert.deepEqual(calls, ["nav:false", "marketing"]);
+  assert.deepEqual(authCalls, []);
 });
 
 test("switches both directions without touching authentication and restores operations navigation", () => {
-  const storage = fakeStorage();
-  const auth = Object.freeze({ user: Object.freeze({ uid: "unchanged-session" }) });
-  let workspace = WorkspaceShell.selectWorkspace("marketing", storage);
-  assert.deepEqual(auth, { user: { uid: "unchanged-session" } });
-  workspace = WorkspaceShell.selectWorkspace("operations", storage);
-  assert.deepEqual(WorkspaceShell.workspaceMode(workspace), { screen: "operations", operationsNav: true });
-  assert.deepEqual(auth, { user: { uid: "unchanged-session" } });
-  workspace = WorkspaceShell.selectWorkspace("marketing", storage);
-  assert.deepEqual(WorkspaceShell.workspaceMode(workspace), { screen: "marketing", operationsNav: false });
-  assert.deepEqual(auth, { user: { uid: "unchanged-session" } });
+  const { calls, coordinator } = coordinatorHarness({ "bring.crm.workspace": "operations" });
+  const authCalls = [];
+  coordinator.start();
+  assert.deepEqual(calls, ["nav:true", "operations"]);
+  calls.length = 0;
+  coordinator.select("marketing");
+  assert.deepEqual(calls, ["nav:false", "marketing"]);
+  coordinator.showLanding();
+  calls.length = 0;
+  coordinator.select("operations");
+  assert.deepEqual(calls, ["nav:true", "operations"]);
+  calls.length = 0;
+  coordinator.select("marketing");
+  assert.deepEqual(calls, ["nav:false", "marketing"]);
+  assert.deepEqual(authCalls, []);
 });
 
 test("invalid stored workspace fails safely to operations while missing storage remains first use", () => {
-  assert.equal(WorkspaceShell.loadWorkspace(fakeStorage({ "bring.crm.workspace": "unknown" })), "operations");
-  assert.equal(WorkspaceShell.loadWorkspace(fakeStorage()), null);
+  const invalid = coordinatorHarness({ "bring.crm.workspace": "unknown" });
+  assert.equal(invalid.coordinator.start(), "operations");
+  assert.deepEqual(invalid.calls, ["nav:true", "operations"]);
 });
 
 test("loads the workspace shell before the application", () => {
@@ -74,9 +93,12 @@ test("loads the workspace shell before the application", () => {
 });
 
 test("application remembers only the workspace preference and supports switching", () => {
-  assert.match(appSource, /bring\.crm\.workspace/);
   assert.match(appSource, /let currentWorkspace/);
-  assert.match(appSource, /currentWorkspace === "marketing"/);
+  assert.match(appSource, /workspace === "marketing"/);
+  assert.match(appSource, /WorkspaceShell\.createWorkspaceCoordinator/);
+  assert.match(appSource, /workspaceCoordinator\.start\(\)/);
+  assert.match(appSource, /workspaceCoordinator\.select\(/);
+  assert.match(appSource, /workspaceCoordinator\.showLanding\(\)/);
   assert.match(html, /data-workspace-switch/);
 });
 
@@ -84,7 +106,7 @@ test("landing and persistent switch expose structural DOM contracts", () => {
   const landing = WorkspaceShell.renderLanding();
   assert.equal((landing.match(/class="workspace-folder-card"/g) || []).length, 2);
   assert.match(html, /<button[^>]+data-workspace-switch[^>]+hidden[^>]*>/);
-  assert.match(appSource, /workspaceSwitch\.hidden\s*=\s*currentWorkspace === null/);
+  assert.match(appSource, /workspaceSwitch\.hidden\s*=\s*workspace === null/);
 });
 
 test("narrow workspace landing collapses its two cards to one column", () => {
