@@ -14,6 +14,9 @@
   const ManagementReportCore = window.BringManagementReportCore;
   const AiOperationsUI = window.BringAiOperationsUI;
   const WorkspaceShell = window.BringWorkspaceShell;
+  const MarketingCore = window.MarketingCore;
+  const MarketingCrmBridge = window.MarketingCrmBridge;
+  const MarketingUI = window.MarketingUI;
   const api = window.bringCRM;
   const main = document.getElementById("main");
   const modal = document.getElementById("modal");
@@ -49,6 +52,8 @@
   let store = Core.blankStore();
   let currentView = "dashboard";
   let currentWorkspace = null;
+  let currentMarketingView = "marketingOverview";
+  let marketingLoaded = false;
   let lastRenderedView = null;
   let selectedCustomerId = "";
   let selectedCustomerHubId = "";
@@ -156,6 +161,12 @@
     security: ["운영매뉴얼 DATA-01", "정보·열쇠 관리"],
     settings: ["프로그램 관리", "설정"]
   };
+
+  const marketingController = MarketingUI.createController({
+    core: MarketingCore,
+    bridge: MarketingCrmBridge,
+    readRaw: () => api.readMarketingRecords()
+  });
 
   const BUILDING_MAINTENANCE_ITEMS = Core.BUILDING_MAINTENANCE_INCLUDES;
   const BUILDING_ROOM_LAYOUTS = Core.BUILDING_ROOM_TYPES;
@@ -1337,6 +1348,14 @@
     workspaceSwitch.hidden = workspace === null;
     searchEl.closest(".global-search").hidden = !operationsWorkspace;
     primaryActionButton.hidden = !operationsWorkspace;
+    if (workspace === "marketing") {
+      primaryActionButton.hidden = false;
+      primaryActionButton.dataset.action = "marketing-input";
+      primaryActionButton.textContent = "광고 데이터 입력";
+    } else if (operationsWorkspace) {
+      primaryActionButton.dataset.action = "new-customer";
+      primaryActionButton.textContent = "＋ 새 고객";
+    }
     fieldOperatorControl.hidden = !operationsWorkspace;
     if (workspace === "operations") scheduleWelcomeGuide();
   }
@@ -1348,9 +1367,19 @@
 
   function renderMarketingWorkspace() {
     document.getElementById("pageEyebrow").textContent = "BRING MARKETING";
-    document.getElementById("pageTitle").textContent = "마케팅";
-    main.innerHTML = `<section class="marketing-workspace-placeholder"><span>MARKETING WORKSPACE</span><h2>마케팅 폴더</h2><p>마케팅 업무 화면을 준비하고 있습니다.</p></section>`;
-    finishViewRender("marketing");
+    const meta = MarketingUI.NAV_ITEMS.find(item => item.id === currentMarketingView);
+    document.getElementById("pageTitle").textContent = meta ? meta.label : "마케팅 대시보드";
+    const customers = new Map((store.customers || []).map(customer => [String(customer.id || ""), customer]));
+    const facts = (marketingController.state.facts || []).map(fact => {
+      const customer = customers.get(String(fact.customerId || "")) || {};
+      return Object.assign({}, fact, { customerName: customer.name || customer.company || "", buildingName: customer.buildingName || "", lastContactAt: customer.lastContactAt || "", nextContactAt: customer.nextContactAt || "" });
+    });
+    main.innerHTML = MarketingUI.renderWorkspace({ view: currentMarketingView, filters: marketingController.filters, snapshot: marketingController.state.snapshot, facts, error: marketingController.state.error, unavailable: marketingController.state.unavailable });
+    finishViewRender(currentMarketingView);
+    if (!marketingLoaded) {
+      marketingLoaded = true;
+      marketingController.load(currentAuth.user || {}, store, operations.cases || []).then(() => { if (currentWorkspace === "marketing") renderMarketingWorkspace(); });
+    }
   }
 
   async function prepareWorkspaceTransition() {
@@ -1359,6 +1388,7 @@
       await api.hideValueScope();
     }
     currentView = "dashboard";
+    marketingLoaded = false;
   }
 
   const workspaceCoordinator = WorkspaceShell.createWorkspaceCoordinator({
@@ -4528,6 +4558,28 @@
   }
 
   document.addEventListener("click", async event => {
+    const marketingNav = event.target.closest("[data-marketing-nav]");
+    if (marketingNav && currentWorkspace === "marketing") {
+      currentMarketingView = marketingNav.dataset.marketingNav;
+      renderMarketingWorkspace();
+      return;
+    }
+    const marketingInput = event.target.closest('[data-action="marketing-input"]');
+    if (marketingInput && currentWorkspace === "marketing") {
+      currentMarketingView = "marketingInput";
+      renderMarketingWorkspace();
+      return;
+    }
+    const marketingFact = event.target.closest("[data-marketing-case-id], [data-marketing-customer-id]");
+    if (marketingFact && currentWorkspace === "marketing") {
+      const caseId = marketingFact.dataset.marketingCaseId;
+      const customerId = marketingFact.dataset.marketingCustomerId;
+      await workspaceCoordinator.select("operations");
+      if (caseId) { currentView = "cases"; selectedCaseKey = caseId; }
+      else if (customerId) { currentView = "customers"; selectedCustomerId = customerId; }
+      render();
+      return;
+    }
     const workspaceEnter = event.target.closest("[data-workspace-enter]");
     if (workspaceEnter) {
       await workspaceCoordinator.select(workspaceEnter.dataset.workspaceEnter);
@@ -5806,6 +5858,26 @@
   });
 
   document.addEventListener("change", async event => {
+    if (currentWorkspace === "marketing" && event.target.matches("[data-marketing-filter]")) {
+      marketingController.setFilter(event.target.dataset.marketingFilter, event.target.value);
+      renderMarketingWorkspace();
+      return;
+    }
+    if (currentWorkspace === "marketing" && event.target.matches("[data-marketing-period]")) {
+      const value = event.target.value;
+      const period = value === "custom" ? { type: "custom", start: Core.dayKey(), end: Core.dayKey() } : value;
+      const result = marketingController.setPeriod(period);
+      if (!result.ok) showToast(result.error, "error");
+      renderMarketingWorkspace();
+      return;
+    }
+    if (currentWorkspace === "marketing" && event.target.matches("[data-marketing-date]")) {
+      const period = Object.assign({}, marketingController.filters.period, { [event.target.dataset.marketingDate]: event.target.value });
+      const result = marketingController.setPeriod(period);
+      if (!result.ok) showToast("시작일과 종료일을 올바르게 입력해 주세요.", "error");
+      renderMarketingWorkspace();
+      return;
+    }
     if (event.target.matches("[data-ai-management-month]")) {
       managementReportState.month = /^\d{4}-\d{2}$/.test(event.target.value) ? event.target.value : Core.dayKey().slice(0, 7);
       managementReportState.result = null;
