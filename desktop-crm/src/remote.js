@@ -2460,7 +2460,49 @@ class FirebaseRemoteClient {
       throw createError("마케팅 저장 결과를 확인하지 못했습니다.", "MARKETING_WRITE_UNCONFIRMED", cause);
     }
     this.assertSessionGuardActive(guard);
-    if (!response.ok) throw createError("마케팅 저장이 거부되었습니다.", "MARKETING_WRITE_REJECTED");
+    if (!response.ok) {
+      const error = createError("마케팅 저장이 거부되었습니다.", "MARKETING_WRITE_REJECTED");
+      error.status = Number(response.status) || 0;
+      throw error;
+    }
+  }
+
+  async diagnoseMarketingWriteFailure(input, actor, beforeRecordSnapshot, receiptId, error, guard) {
+    // Firebase ETags are URL-scoped: a daily/{id} ETag cannot safely guard the
+    // marketing-root multi-location PATCH. Rules enforce version CAS atomically;
+    // child ETags identify whether this exact record changed during diagnosis.
+    if ([401, 403].includes(Number(error && error.status))) throw error;
+    const [recordCheck, receiptCheck] = await Promise.all([
+      this.dbReadWithEtag(`marketing/daily/${input.id}`, false, guard),
+      this.dbReadWithEtag(`marketing/receipts/${receiptId}`, false, guard),
+    ]);
+    this.assertSessionGuardActive(guard);
+    if (receiptCheck.value) {
+      try {
+        const recovered = MarketingPersistence.planCommit(input, recordCheck.value, actor, null, receiptCheck.value);
+        if (recovered.repeated) {
+          const envelope = MarketingPersistence.readEnvelope({ [input.id]: recovered.record });
+          return { record: envelope.daily[0] || envelope.archived[0], repeated: true, auditId: recovered.auditId };
+        }
+      } catch (receiptError) {
+        if (receiptError && receiptError.code === "MARKETING_REQUEST_ID_CONFLICT") throw receiptError;
+        throw error;
+      }
+    }
+    const current = recordCheck.value;
+    const versionChanged = input.action === "create"
+      ? current != null
+      : !current || Number(current.version) !== input.expectedVersion || Boolean(current.archivedAtMs);
+    const snapshotChanged = String(recordCheck.etag || "") !== String(beforeRecordSnapshot.etag || "");
+    if (versionChanged || snapshotChanged && JSON.stringify(current) !== JSON.stringify(beforeRecordSnapshot.value)) {
+      const conflict = createError("마케팅 레코드 버전이 변경되었습니다.", "MARKETING_VERSION_CONFLICT", error);
+      const envelope = current ? MarketingPersistence.readEnvelope({ [input.id]: current }) : { daily: [], archived: [] };
+      conflict.currentRecord = envelope.daily[0] || envelope.archived[0] || null;
+      conflict.beforeEtag = String(beforeRecordSnapshot.etag || "").slice(0, 256);
+      conflict.currentEtag = String(recordCheck.etag || "").slice(0, 256);
+      throw conflict;
+    }
+    throw error;
   }
 
   async commitMarketingRecord(inputValue) {
@@ -2490,18 +2532,7 @@ class FirebaseRemoteClient {
     } catch (error) {
       if (!this.sessionGuardActive(guard)) throw createError("로그인 세션이 변경되었습니다.", "SESSION_CHANGED", error);
       if (!["MARKETING_WRITE_UNCONFIRMED", "MARKETING_WRITE_REJECTED"].includes(error.code)) throw error;
-      const [recordCheck, receiptCheck] = await Promise.all([
-        this.dbReadWithEtag(`marketing/daily/${input.id}`, false, guard),
-        this.dbReadWithEtag(`marketing/receipts/${receiptId}`, false, guard),
-      ]);
-      if (receiptCheck.value) {
-        const recovered = MarketingPersistence.planCommit(input, recordCheck.value, actor, null, receiptCheck.value);
-        if (recovered.repeated) {
-          const envelope = MarketingPersistence.readEnvelope({ [input.id]: recovered.record });
-          return { record: envelope.daily[0] || envelope.archived[0], repeated: true, auditId: recovered.auditId };
-        }
-      }
-      throw createError("MARKETING_CONFLICT", "MARKETING_CONFLICT", error);
+      return this.diagnoseMarketingWriteFailure(input, actor, recordSnapshot, receiptId, error, guard);
     }
     this.assertSessionGuardActive(guard);
     const [recordCheck, receiptCheck] = await Promise.all([

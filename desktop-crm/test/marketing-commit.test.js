@@ -59,12 +59,65 @@ test('remote commit reads the exact record ETag and submits one root atomic patc
   client.dbRequest = async location => location === 'teamProfiles/operator_1' ? { active: true } : null;
   client.dbReadWithEtag = async location => { calls.push(['get', location]); return location.includes('receipts/') ? { value: null, etag: 'receipt-etag' } : { value: null, etag: 'record-etag' }; };
   client.atomicMarketingPatch = async patch => { calls.push(['patch', patch]); const error = new Error('rejected'); error.code = 'MARKETING_WRITE_REJECTED'; throw error; };
-  await assert.rejects(() => client.commitMarketingRecord({ id: 'daily_1', requestId: REQUEST, expectedVersion: 0, action: 'create', values }), /MARKETING_CONFLICT/);
+  await assert.rejects(() => client.commitMarketingRecord({ id: 'daily_1', requestId: REQUEST, expectedVersion: 0, action: 'create', values }), error => error.code === 'MARKETING_WRITE_REJECTED');
   assert.equal(calls[0][1], 'marketing/daily/daily_1');
   assert.equal(calls.find(call => call[0] === 'patch').length, 2);
   const patchCall = calls.find(call => call[0] === 'patch');
   assert.deepEqual(Object.keys(patchCall[1]).sort(), [`audits/${Persistence.auditId(REQUEST)}`, 'daily/daily_1', `receipts/${Persistence.receiptId(REQUEST)}`].sort());
   assert.equal(JSON.stringify(calls).includes('crmShared'), false);
+});
+
+test('Rules rejection and legacy 412 both re-read the exact child and normalize a stale writer', async () => {
+  for (const status of [400, 412]) {
+    const calls = [];
+    const client = new FirebaseRemoteClient({ Core: {}, fs: {}, safeStorage: {}, shell: {}, sessionFile: '', pendingFile: '' });
+    client.session = { uid: 'uid_1', email: actor.email, role: 'marketing' }; client.sessionGeneration = 1;
+    client.verifyAccess = async () => ({ role: 'marketing', operatorId: actor.operatorId });
+    client.dbRequest = async () => ({ active: true });
+    const first = Persistence.planCommit({ id: 'stale_1', requestId: REQUEST, expectedVersion: 0, action: 'create', values }, null, actor, null).record;
+    const current = { ...first, version: 2, spend: 2000, createdAtMs: 100, updatedAtMs: 200 };
+    let dailyReads = 0;
+    client.dbReadWithEtag = async location => {
+      calls.push(location);
+      if (location.includes('/daily/')) return { value: dailyReads++ ? current : { ...first, createdAtMs: 100, updatedAtMs: 100 }, etag: dailyReads === 1 ? 'before' : 'after' };
+      return { value: null, etag: 'receipt' };
+    };
+    client.atomicMarketingPatch = async () => { const error = new Error('rejected'); error.code = 'MARKETING_WRITE_REJECTED'; error.status = status; throw error; };
+    await assert.rejects(() => client.commitMarketingRecord({ id: 'stale_1', requestId: '223e4567-e89b-42d3-a456-426614174000', expectedVersion: 1, action: 'update', values }), error => error.code === 'MARKETING_VERSION_CONFLICT' && error.currentRecord.version === 2);
+    assert.equal(calls.filter(location => location === 'marketing/daily/stale_1').length, 2);
+  }
+});
+
+test('lost response recovers only from the exact receipt hash and committed record', async () => {
+  const client = new FirebaseRemoteClient({ Core: {}, fs: {}, safeStorage: {}, shell: {}, sessionFile: '', pendingFile: '' });
+  client.session = { uid: 'uid_1', email: actor.email, role: 'marketing' }; client.sessionGeneration = 1;
+  client.verifyAccess = async () => ({ role: 'marketing', operatorId: actor.operatorId }); client.dbRequest = async () => ({ active: true });
+  const input = { id: 'lost_1', requestId: REQUEST, expectedVersion: 0, action: 'create', values };
+  const committed = Persistence.planCommit(input, null, actor, null);
+  const stored = { ...committed.record, createdAtMs: 100, updatedAtMs: 100 };
+  let after = false;
+  client.dbReadWithEtag = async location => ({ value: after ? (location.includes('/receipts/') ? { ...committed.receipt, occurredAtMs: 100 } : stored) : null, etag: after ? 'after' : 'before' });
+  client.atomicMarketingPatch = async () => { after = true; const error = new Error('lost'); error.code = 'MARKETING_WRITE_UNCONFIRMED'; throw error; };
+  const result = await client.commitMarketingRecord(input);
+  assert.equal(result.repeated, true);
+  assert.equal(result.record.version, 1);
+});
+
+test('different record ids from the same initial marketing state both commit without a shared root lock', async () => {
+  const server = Object.create(null), patches = [];
+  const client = new FirebaseRemoteClient({ Core: {}, fs: {}, safeStorage: {}, shell: {}, sessionFile: '', pendingFile: '' });
+  client.session = { uid: 'uid_1', email: actor.email, role: 'marketing' }; client.sessionGeneration = 1;
+  client.verifyAccess = async () => ({ role: 'marketing', operatorId: actor.operatorId }); client.dbRequest = async () => ({ active: true });
+  client.dbReadWithEtag = async location => ({ value: server[location] || null, etag: `etag-${location}` });
+  client.atomicMarketingPatch = async patch => {
+    patches.push(patch);
+    for (const [path, value] of Object.entries(patch)) server[`marketing/${path}`] = JSON.parse(JSON.stringify(value), (_key, item) => item && item['.sv'] === 'timestamp' ? 100 : item);
+  };
+  const one = await client.commitMarketingRecord({ id: 'record_a', requestId: REQUEST, expectedVersion: 0, action: 'create', values });
+  const two = await client.commitMarketingRecord({ id: 'record_b', requestId: '223e4567-e89b-42d3-a456-426614174000', expectedVersion: 0, action: 'create', values });
+  assert.equal(one.record.id, 'record_a'); assert.equal(two.record.id, 'record_b');
+  assert.equal(patches.length, 2);
+  assert.equal(patches.every(patch => Object.keys(patch).filter(path => path.startsWith('daily/')).length === 1), true);
 });
 
 test('read maps server milliseconds to bounded ISO display fields', () => {
