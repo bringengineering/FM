@@ -2108,7 +2108,7 @@ async function updateMarketingAttribution(input) {
   try { return await remoteClient.updateMarketingAttribution(payload); }
   catch (error) {
     if (String(error && error.code) !== "MARKETING_ATTRIBUTION_CONFLICT") throw error;
-    return { ok: false, code: "MARKETING_ATTRIBUTION_CONFLICT", error: "서버에서 유입 정보가 변경되었습니다. 다시 비교해 주세요.", currentMarketing: Core.normalizeMarketingAttribution(error.currentMarketing), currentEtag: String(error.currentEtag || "").slice(0, 256) };
+    return { ok: false, code: "MARKETING_ATTRIBUTION_CONFLICT", error: "서버에서 유입 정보가 변경되었습니다. 다시 비교해 주세요.", currentMarketing: Core.normalizeMarketingAttribution(error.currentMarketing), currentVersion: Number.isSafeInteger(error.currentVersion) ? error.currentVersion : 0 };
   }
 }
 

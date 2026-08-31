@@ -198,7 +198,7 @@
 
   function normalizeCustomer(value) {
     const customer = Object.assign({}, value || {});
-    customer.marketing = normalizeMarketingAttribution(customer.marketing);
+    customer.marketing = normalizeMarketingAttributionRecord(customer.marketing);
     delete customer.photoDataUrl;
     delete customer.avatarUrl;
     delete customer.localPath;
@@ -230,6 +230,16 @@
     if (result.validLead === false) {
       if (!MARKETING_INVALID_REASONS.includes(result.invalidReason)) throw new TypeError("invalidReason is required when validLead is false");
     } else delete result.invalidReason;
+    return result;
+  }
+
+  function normalizeMarketingAttributionRecord(value) {
+    const source = value && typeof value === "object" && !Array.isArray(value) ? value : {};
+    const result = normalizeMarketingAttribution(source);
+    if (Number.isSafeInteger(source._version) && source._version >= 1) result._version = source._version;
+    if (Number.isSafeInteger(source._updatedAtMs) && source._updatedAtMs >= 0) result._updatedAtMs = source._updatedAtMs;
+    if (typeof source._updatedByAuthUid === "string" && source._updatedByAuthUid.length <= 128) result._updatedByAuthUid = source._updatedByAuthUid;
+    if (typeof source._updatedByOperatorId === "string" && source._updatedByOperatorId.length <= 120) result._updatedByOperatorId = source._updatedByOperatorId;
     return result;
   }
 
@@ -935,7 +945,7 @@
     blankStore, blankSharedStore, sanitizeStore, sanitizeSharedStore, sanitizeRendererStore, sanitizeRendererOverlays, createCustomer, createBuilding, normalizeBuilding, normalizeBuildingUnit, createActivity, createContract, normalizeContract, normalizeContractTypes, oneOffContractRows, oneOffContractTotals, createPartnerVendor, createPartnerQuote, createTask, createSecurityAsset,
     createAccessRole, createAuditLog, createSecurityIncident, calculateDashboard, calculateSecurityStatus,
     workflowProgress, buildWorkflowCase, matchWorkflowCustomer, paymentNormalizeName, paymentMonthRows,
-    normalizePhone, formatPhone, canonicalPhoneKey, normalizeText, normalizePipelineStage, normalizeStringList, normalizeCustomer, normalizeMarketingAttribution, normalizeCustomerPhotoDataUrl, customerBuildingIds, nonNegativeInteger, money, dayKey, iso,
+    normalizePhone, formatPhone, canonicalPhoneKey, normalizeText, normalizePipelineStage, normalizeStringList, normalizeCustomer, normalizeMarketingAttribution, normalizeMarketingAttributionRecord, normalizeCustomerPhotoDataUrl, customerBuildingIds, nonNegativeInteger, money, dayKey, iso,
     prohibitedSecretType, findProhibitedSecrets, assertNoProhibitedSecrets, canMutate, assertMutationAllowed,
     normalizePartnerVendor, partnerVendorFromQuote, legacyPartnerVendorId,
     normalizeServiceRecords, normalizeServiceContracts, serviceSchedulesForContract

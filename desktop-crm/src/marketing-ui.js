@@ -142,7 +142,7 @@
   }
   async function submitRoleLimitedEntityUpdate(options) {
     const payload = buildRoleLimitedEntityUpdate(options.kind, options.existing, options.submitted, options.user);
-    const conflictResult = value => { const currentMarketing = MarketingCore.normalizeMarketingAttribution(value && value.currentMarketing); return { ok: false, conflict: true, draftMarketing: payload.marketing, currentMarketing, error: `서버의 최신 유입 정보와 비교해 재검토해 주세요. 현재 서버 값: ${JSON.stringify(currentMarketing)}` }; };
+    const conflictResult = value => { const currentMarketing = MarketingCore.normalizeMarketingAttribution(value && value.currentMarketing); return { ok: false, conflict: true, draftMarketing: payload.marketing, currentMarketing, currentVersion: Number.isSafeInteger(value && value.currentVersion) ? value.currentVersion : 0, error: `서버의 최신 유입 정보와 비교해 재검토해 주세요. 현재 서버 값: ${JSON.stringify(currentMarketing)}` }; };
     try { const result = await options.save(payload); return result && result.code === 'MARKETING_ATTRIBUTION_CONFLICT' ? conflictResult(result) : result; }
     catch (error) {
       if (String(error && error.code) !== 'MARKETING_ATTRIBUTION_CONFLICT') throw error;

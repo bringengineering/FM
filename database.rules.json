@@ -33,14 +33,30 @@
           "$workDate": {
             ".write": "auth != null && auth.uid === $uid && $workDate.matches(/^[0-9]{4}-[0-9]{2}-[0-9]{2}$/) && root.child('crmCompany/access').child(auth.uid).child('enabled').val() === true && root.child('crmCompany/access').child(auth.uid).child('email').val() === auth.token.email && root.child('crmCompany/access').child(auth.uid).child('mustChangePassword').val() !== true && (root.child('crmCompany/access').child(auth.uid).child('role').val() === 'admin' || root.child('crmCompany/access').child(auth.uid).child('role').val() === 'member' || root.child('crmCompany/access').child(auth.uid).child('role').val() === 'viewer') && newData.exists() && ((!data.exists() && newData.child('checkOutAt').val() === '') || (data.exists() && data.child('checkOutAt').val() === '' && newData.child('id').val() === data.child('id').val() && newData.child('userId').val() === data.child('userId').val() && newData.child('workDate').val() === data.child('workDate').val() && newData.child('checkInAt').val() === data.child('checkInAt').val() && newData.child('createdAt').val() === data.child('createdAt').val() && newData.child('checkOutAt').isString() && newData.child('checkOutAt').val().matches(/^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}[.][0-9]{3}Z$/) && newData.child('updatedAt').val() !== data.child('updatedAt').val()))",
             ".validate": "newData.hasChildren(['id', 'userId', 'workDate', 'checkInAt', 'checkOutAt', 'createdAt', 'updatedAt']) && newData.child('id').val() === $uid + '_' + $workDate && newData.child('userId').val() === $uid && newData.child('workDate').val() === $workDate && newData.child('checkInAt').isString() && newData.child('checkInAt').val().matches(/^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}[.][0-9]{3}Z$/) && newData.child('checkOutAt').isString() && (newData.child('checkOutAt').val() === '' || newData.child('checkOutAt').val().matches(/^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}[.][0-9]{3}Z$/)) && newData.child('createdAt').isString() && newData.child('createdAt').val().matches(/^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}[.][0-9]{3}Z$/) && newData.child('updatedAt').isString() && newData.child('updatedAt').val().matches(/^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}[.][0-9]{3}Z$/)",
-            "id": { ".validate": true },
-            "userId": { ".validate": true },
-            "workDate": { ".validate": true },
-            "checkInAt": { ".validate": true },
-            "checkOutAt": { ".validate": true },
-            "createdAt": { ".validate": true },
-            "updatedAt": { ".validate": true },
-            "$other": { ".validate": false }
+            "id": {
+              ".validate": true
+            },
+            "userId": {
+              ".validate": true
+            },
+            "workDate": {
+              ".validate": true
+            },
+            "checkInAt": {
+              ".validate": true
+            },
+            "checkOutAt": {
+              ".validate": true
+            },
+            "createdAt": {
+              ".validate": true
+            },
+            "updatedAt": {
+              ".validate": true
+            },
+            "$other": {
+              ".validate": false
+            }
           }
         }
       },
@@ -55,13 +71,27 @@
             "$messageId": {
               ".write": "auth != null && $messageId.matches(/^msg_[A-Za-z0-9_]{8,80}$/) && root.child('crmCompany/access').child(auth.uid).child('enabled').val() === true && root.child('crmCompany/access').child(auth.uid).child('email').val() === auth.token.email && root.child('crmCompany/access').child(auth.uid).child('mustChangePassword').val() !== true && newData.exists() && ((!data.exists() && newData.child('senderId').val() === auth.uid && newData.child('receiverId').val() !== auth.uid && (($ownerUid === auth.uid && $peerUid === newData.child('receiverId').val()) || ($ownerUid === newData.child('receiverId').val() && $peerUid === auth.uid)) && root.child('crmCompany/access').child(newData.child('receiverId').val()).child('enabled').val() === true && root.child('crmCompany/access').child(newData.child('receiverId').val()).child('mustChangePassword').val() !== true) || (data.exists() && auth.uid === data.child('receiverId').val() && (($ownerUid === auth.uid && $peerUid === data.child('senderId').val()) || ($ownerUid === data.child('senderId').val() && $peerUid === auth.uid)) && newData.child('id').val() === data.child('id').val() && newData.child('senderId').val() === data.child('senderId').val() && newData.child('receiverId').val() === data.child('receiverId').val() && newData.child('message').val() === data.child('message').val() && newData.child('createdAt').val() === data.child('createdAt').val() && data.child('readAt').val() === '' && newData.child('readAt').isString() && newData.child('readAt').val().matches(/^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}[.][0-9]{3}Z$/)))",
               ".validate": "newData.hasChildren(['id', 'senderId', 'receiverId', 'message', 'readAt', 'createdAt']) && newData.child('id').val() === $messageId && newData.child('senderId').isString() && newData.child('senderId').val().matches(/^[A-Za-z0-9._-]{1,128}$/) && newData.child('receiverId').isString() && newData.child('receiverId').val().matches(/^[A-Za-z0-9._-]{1,128}$/) && newData.child('senderId').val() !== newData.child('receiverId').val() && newData.child('message').isString() && newData.child('message').val().length > 0 && newData.child('message').val().length <= 4000 && newData.child('readAt').isString() && (newData.child('readAt').val() === '' || newData.child('readAt').val().matches(/^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}[.][0-9]{3}Z$/)) && newData.child('createdAt').isString() && newData.child('createdAt').val().matches(/^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}[.][0-9]{3}Z$/)",
-              "id": { ".validate": true },
-              "senderId": { ".validate": true },
-              "receiverId": { ".validate": true },
-              "message": { ".validate": true },
-              "readAt": { ".validate": true },
-              "createdAt": { ".validate": true },
-              "$other": { ".validate": false }
+              "id": {
+                ".validate": true
+              },
+              "senderId": {
+                ".validate": true
+              },
+              "receiverId": {
+                ".validate": true
+              },
+              "message": {
+                ".validate": true
+              },
+              "readAt": {
+                ".validate": true
+              },
+              "createdAt": {
+                ".validate": true
+              },
+              "$other": {
+                ".validate": false
+              }
             }
           }
         }
@@ -461,26 +491,80 @@
         },
         "customers": {
           "$customerId": {
-            ".write": "auth != null && root.child('crmCompany/access').child(auth.uid).child('enabled').val() === true && root.child('crmCompany/access').child(auth.uid).child('email').val() === auth.token.email && (root.child('crmCompany/access').child(auth.uid).child('role').val() === 'admin' || (root.child('crmCompany/access').child(auth.uid).child('role').val() === 'member' && root.child('crmCompany/access').child(auth.uid).child('marketingRole').val() !== 'marketing')) && !data.child('buildingIdLinks').exists() && !newData.child('buildingIdLinks').exists() && (!newData.exists() || (newData.child('id').isString() && newData.child('id').val() === $customerId)) && (newData.exists() || !newData.parent().parent().parent().child('customerPhotos').child($customerId).exists()) && ((!newData.child('archivedAt').exists() || newData.child('archivedAt').val() === '') || !newData.parent().parent().parent().child('customerPhotos').child($customerId).exists())",
+            ".write": "auth != null && root.child('crmCompany/access').child(auth.uid).child('enabled').val() === true && root.child('crmCompany/access').child(auth.uid).child('email').val() === auth.token.email && (root.child('crmCompany/access').child(auth.uid).child('role').val() === 'admin' || (root.child('crmCompany/access').child(auth.uid).child('role').val() === 'member' && root.child('crmCompany/access').child(auth.uid).child('marketingRole').val() !== 'marketing')) && !data.child('buildingIdLinks').exists() && !newData.child('buildingIdLinks').exists() && (!newData.exists() || (newData.child('id').isString() && newData.child('id').val() === $customerId)) && (newData.exists() || !newData.parent().parent().parent().child('customerPhotos').child($customerId).exists()) && ((!newData.child('archivedAt').exists() || newData.child('archivedAt').val() === '') || !newData.parent().parent().parent().child('customerPhotos').child($customerId).exists()) && (root.child('crmCompany/access').child(auth.uid).child('role').val() === 'admin' || newData.child('marketing').val() === data.child('marketing').val())",
             "marketing": {
-              ".write": "auth != null && root.child('crmCompany/access').child(auth.uid).child('enabled').val() === true && root.child('crmCompany/access').child(auth.uid).child('email').val() === auth.token.email && root.child('crmCompany/access').child(auth.uid).child('role').val() === 'member' && root.child('crmCompany/access').child(auth.uid).child('marketingRole').val() === 'marketing' && data.parent().child('id').val() === $customerId",
-              ".validate": "newData.exists() && (!newData.child('validLead').exists() || !newData.child('validLead').isBoolean() || newData.child('validLead').val() !== false || newData.child('invalidReason').exists()) && (!newData.child('validLead').exists() || !newData.child('validLead').isBoolean() || newData.child('validLead').val() !== true || !newData.child('invalidReason').exists())",
-              "firstSource": { ".validate": "newData.isString() && (newData.val() === 'naver_place_ads' || newData.val() === 'naver_place_organic' || newData.val() === 'naver_blog' || newData.val() === 'soomgo' || newData.val() === 'daangn' || newData.val() === 'broker' || newData.val() === 'referral' || newData.val() === 'direct_sales' || newData.val() === 'other' || newData.val() === 'needs_review')" },
-              "lastSource": { ".validate": "newData.isString() && (newData.val() === 'naver_place_ads' || newData.val() === 'naver_place_organic' || newData.val() === 'naver_blog' || newData.val() === 'soomgo' || newData.val() === 'daangn' || newData.val() === 'broker' || newData.val() === 'referral' || newData.val() === 'direct_sales' || newData.val() === 'other' || newData.val() === 'needs_review')" },
-              "inquiryMethod": { ".validate": "newData.isString() && (newData.val() === 'phone' || newData.val() === 'talktalk' || newData.val() === 'chat' || newData.val() === 'sms' || newData.val() === 'email' || newData.val() === 'google_form' || newData.val() === 'visit' || newData.val() === 'referral' || newData.val() === 'other')" },
-              "invalidReason": { ".validate": "newData.isString() && (newData.val() === 'outside_area' || newData.val() === 'unsupported_service' || newData.val() === 'vendor_sales' || newData.val() === 'duplicate' || newData.val() === 'unreachable' || newData.val() === 'wrong_number' || newData.val() === 'spam' || newData.val() === 'budget' || newData.val() === 'schedule' || newData.val() === 'other')" },
-              "validLead": { ".validate": "newData.isBoolean()" },
-              "subChannel": { ".validate": "newData.isString() && newData.val().length <= 200" }, "campaignId": { ".validate": "newData.isString() && newData.val().length <= 200" }, "campaignName": { ".validate": "newData.isString() && newData.val().length <= 200" }, "keyword": { ".validate": "newData.isString() && newData.val().length <= 200" }, "contentId": { ".validate": "newData.isString() && newData.val().length <= 200" }, "contentTitle": { ".validate": "newData.isString() && newData.val().length <= 200" }, "firstTouchAt": { ".validate": "newData.isString() && newData.val().length <= 40" }, "inquiryAt": { ".validate": "newData.isString() && newData.val().length <= 40" }, "attributionNote": { ".validate": "newData.isString() && newData.val().length <= 1000" },
-              "$other": { ".validate": false }
+              ".write": "auth != null && root.child('crmCompany/access').child(auth.uid).child('enabled').val() === true && root.child('crmCompany/access').child(auth.uid).child('email').val() === auth.token.email && root.child('crmCompany/access').child(auth.uid).child('mustChangePassword').val() !== true && (root.child('crmCompany/access').child(auth.uid).child('role').val() === 'admin' || (root.child('crmCompany/access').child(auth.uid).child('role').val() === 'member' && root.child('crmCompany/access').child(auth.uid).child('marketingRole').val() === 'marketing')) && data.parent().exists()",
+              ".validate": "newData.exists() && (!newData.child('validLead').exists() || !newData.child('validLead').isBoolean() || newData.child('validLead').val() !== false || newData.child('invalidReason').exists()) && (!newData.child('validLead').exists() || !newData.child('validLead').isBoolean() || newData.child('validLead').val() !== true || !newData.child('invalidReason').exists()) && newData.hasChildren(['_version','_updatedAtMs','_updatedByAuthUid','_updatedByOperatorId']) && newData.child('_version').isNumber() && newData.child('_version').val() >= 1 && newData.child('_version').val() % 1 === 0 && newData.child('_updatedAtMs').val() === now && newData.child('_updatedByAuthUid').val() === auth.uid && newData.child('_updatedByOperatorId').val() === root.child('crmCompany/access').child(auth.uid).child('operatorId').val() && root.child('crmCompany/teamProfiles').child(newData.child('_updatedByOperatorId').val()).child('active').val() === true && ((!data.exists() && newData.child('_version').val() === 1) || (data.exists() && newData.child('_version').val() === data.child('_version').val() + 1))",
+              "firstSource": {
+                ".validate": "newData.isString() && (newData.val() === 'naver_place_ads' || newData.val() === 'naver_place_organic' || newData.val() === 'naver_blog' || newData.val() === 'soomgo' || newData.val() === 'daangn' || newData.val() === 'broker' || newData.val() === 'referral' || newData.val() === 'direct_sales' || newData.val() === 'other' || newData.val() === 'needs_review')"
+              },
+              "lastSource": {
+                ".validate": "newData.isString() && (newData.val() === 'naver_place_ads' || newData.val() === 'naver_place_organic' || newData.val() === 'naver_blog' || newData.val() === 'soomgo' || newData.val() === 'daangn' || newData.val() === 'broker' || newData.val() === 'referral' || newData.val() === 'direct_sales' || newData.val() === 'other' || newData.val() === 'needs_review')"
+              },
+              "inquiryMethod": {
+                ".validate": "newData.isString() && (newData.val() === 'phone' || newData.val() === 'talktalk' || newData.val() === 'chat' || newData.val() === 'sms' || newData.val() === 'email' || newData.val() === 'google_form' || newData.val() === 'visit' || newData.val() === 'referral' || newData.val() === 'other')"
+              },
+              "invalidReason": {
+                ".validate": "newData.isString() && (newData.val() === 'outside_area' || newData.val() === 'unsupported_service' || newData.val() === 'vendor_sales' || newData.val() === 'duplicate' || newData.val() === 'unreachable' || newData.val() === 'wrong_number' || newData.val() === 'spam' || newData.val() === 'budget' || newData.val() === 'schedule' || newData.val() === 'other')"
+              },
+              "validLead": {
+                ".validate": "newData.isBoolean()"
+              },
+              "subChannel": {
+                ".validate": "newData.isString() && newData.val().length <= 200"
+              },
+              "campaignId": {
+                ".validate": "newData.isString() && newData.val().length <= 200"
+              },
+              "campaignName": {
+                ".validate": "newData.isString() && newData.val().length <= 200"
+              },
+              "keyword": {
+                ".validate": "newData.isString() && newData.val().length <= 200"
+              },
+              "contentId": {
+                ".validate": "newData.isString() && newData.val().length <= 200"
+              },
+              "contentTitle": {
+                ".validate": "newData.isString() && newData.val().length <= 200"
+              },
+              "firstTouchAt": {
+                ".validate": "newData.isString() && newData.val().length <= 40"
+              },
+              "inquiryAt": {
+                ".validate": "newData.isString() && newData.val().length <= 40"
+              },
+              "attributionNote": {
+                ".validate": "newData.isString() && newData.val().length <= 1000"
+              },
+              "$other": {
+                ".validate": false
+              },
+              "_version": {
+                ".validate": true
+              },
+              "_updatedAtMs": {
+                ".validate": true
+              },
+              "_updatedByAuthUid": {
+                ".validate": true
+              },
+              "_updatedByOperatorId": {
+                ".validate": true
+              }
             },
-            "marketingUpdatedAt": { ".write": "auth != null && root.child('crmCompany/access').child(auth.uid).child('enabled').val() === true && root.child('crmCompany/access').child(auth.uid).child('role').val() === 'member' && root.child('crmCompany/access').child(auth.uid).child('marketingRole').val() === 'marketing' && newData.isString() && newData.val().matches(/^[0-9]{4}-[0-9]{2}-[0-9]{2}T/)" },
-            "marketingUpdatedBy": { ".write": "auth != null && root.child('crmCompany/access').child(auth.uid).child('enabled').val() === true && root.child('crmCompany/access').child(auth.uid).child('role').val() === 'member' && root.child('crmCompany/access').child(auth.uid).child('marketingRole').val() === 'marketing' && newData.val() === auth.uid" },
             "$field": {
-            ".write": "auth != null && $field !== 'buildingIdLinks' && $field !== 'photoDataUrl' && $field !== 'avatarUrl' && $field !== 'localPath' && ($field !== 'id' || (newData.exists() && newData.isString() && newData.val() === $customerId)) && ($field !== 'archivedAt' || (!data.parent().child('buildingIdLinks').exists() && (!newData.exists() || newData.val() === '' || !newData.parent().parent().parent().parent().child('customerPhotos').child($customerId).exists()))) && root.child('crmCompany/access').child(auth.uid).child('enabled').val() === true && root.child('crmCompany/access').child(auth.uid).child('email').val() === auth.token.email && (root.child('crmCompany/access').child(auth.uid).child('role').val() === 'admin' || (root.child('crmCompany/access').child(auth.uid).child('role').val() === 'member' && root.child('crmCompany/access').child(auth.uid).child('marketingRole').val() !== 'marketing'))"
+              ".write": "auth != null && $field !== 'marketing' && $field !== 'marketingUpdatedAt' && $field !== 'marketingUpdatedBy' && $field !== 'buildingIdLinks' && $field !== 'photoDataUrl' && $field !== 'avatarUrl' && $field !== 'localPath' && ($field !== 'id' || (newData.exists() && newData.isString() && newData.val() === $customerId)) && ($field !== 'archivedAt' || (!data.parent().child('buildingIdLinks').exists() && (!newData.exists() || newData.val() === '' || !newData.parent().parent().parent().parent().child('customerPhotos').child($customerId).exists()))) && root.child('crmCompany/access').child(auth.uid).child('enabled').val() === true && root.child('crmCompany/access').child(auth.uid).child('email').val() === auth.token.email && (root.child('crmCompany/access').child(auth.uid).child('role').val() === 'admin' || (root.child('crmCompany/access').child(auth.uid).child('role').val() === 'member' && root.child('crmCompany/access').child(auth.uid).child('marketingRole').val() !== 'marketing'))"
             },
-            "photoDataUrl": { ".validate": false },
-            "avatarUrl": { ".validate": false },
-            "localPath": { ".validate": false },
+            "photoDataUrl": {
+              ".validate": false
+            },
+            "avatarUrl": {
+              ".validate": false
+            },
+            "localPath": {
+              ".validate": false
+            },
             "buildingIdLinks": {
               ".write": false,
               "$buildingId": {
@@ -549,11 +633,21 @@
         "$customerId": {
           ".write": "auth != null && $customerId.matches(/^[A-Za-z0-9_-]{1,120}$/) && $customerId !== '__proto__' && $customerId !== 'prototype' && $customerId !== 'constructor' && root.child('crmCompany/access').child(auth.uid).child('enabled').val() === true && root.child('crmCompany/access').child(auth.uid).child('email').val() === auth.token.email && (root.child('crmCompany/access').child(auth.uid).child('role').val() === 'admin' || (root.child('crmCompany/access').child(auth.uid).child('role').val() === 'member' && root.child('crmCompany/access').child(auth.uid).child('marketingRole').val() !== 'marketing')) && (!newData.exists() || (newData.parent().parent().child('data').child('customers').child($customerId).child('id').val() === $customerId && (!newData.parent().parent().child('data').child('customers').child($customerId).child('archivedAt').exists() || newData.parent().parent().child('data').child('customers').child($customerId).child('archivedAt').val() === '')))",
           ".validate": "!newData.exists() || (newData.child('dataUrl').isString() && newData.child('dataUrl').val().length > 23 && newData.child('dataUrl').val().length <= 20000 && newData.child('dataUrl').val().matches(/^data:image[/]jpeg;base64,[/]9j[/][A-Za-z0-9+/]+={0,2}$/) && newData.child('size').isNumber() && newData.child('size').val() === newData.child('dataUrl').val().length && newData.child('size').val() <= 20000 && newData.child('size').val() % 1 === 0 && newData.child('updatedAt').isString() && newData.child('updatedAt').val().matches(/^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}[.][0-9]{3}Z$/) && newData.child('updatedBy').isString() && newData.child('updatedBy').val() === auth.uid)",
-          "dataUrl": { ".validate": true },
-          "size": { ".validate": true },
-          "updatedAt": { ".validate": true },
-          "updatedBy": { ".validate": true },
-          "$other": { ".validate": false }
+          "dataUrl": {
+            ".validate": true
+          },
+          "size": {
+            ".validate": true
+          },
+          "updatedAt": {
+            ".validate": true
+          },
+          "updatedBy": {
+            ".validate": true
+          },
+          "$other": {
+            ".validate": false
+          }
         }
       },
       "fieldSummaries": {
@@ -562,16 +656,71 @@
       },
       "cases": {
         ".read": "auth != null && root.child('crmCompany/access').child(auth.uid).child('enabled').val() === true && root.child('crmCompany/access').child(auth.uid).child('email').val() === auth.token.email && (root.child('crmCompany/access').child(auth.uid).child('role').val() === 'admin' || root.child('crmCompany/access').child(auth.uid).child('role').val() === 'member' || root.child('crmCompany/access').child(auth.uid).child('role').val() === 'viewer')",
-        ".write": "auth != null && root.child('crmCompany/access').child(auth.uid).child('enabled').val() === true && root.child('crmCompany/access').child(auth.uid).child('email').val() === auth.token.email && (root.child('crmCompany/access').child(auth.uid).child('role').val() === 'admin' || (root.child('crmCompany/access').child(auth.uid).child('role').val() === 'member' && root.child('crmCompany/access').child(auth.uid).child('marketingRole').val() !== 'marketing'))",
+        ".write": "auth != null && root.child('crmCompany/access').child(auth.uid).child('enabled').val() === true && root.child('crmCompany/access').child(auth.uid).child('email').val() === auth.token.email && (root.child('crmCompany/access').child(auth.uid).child('role').val() === 'admin' || (root.child('crmCompany/access').child(auth.uid).child('role').val() === 'member' && root.child('crmCompany/access').child(auth.uid).child('marketingRole').val() !== 'marketing')) && (root.child('crmCompany/access').child(auth.uid).child('role').val() === 'admin' || newData.child('marketing').val() === data.child('marketing').val())",
         "$caseId": {
           "marketing": {
-            ".write": "auth != null && root.child('crmCompany/access').child(auth.uid).child('enabled').val() === true && root.child('crmCompany/access').child(auth.uid).child('email').val() === auth.token.email && root.child('crmCompany/access').child(auth.uid).child('role').val() === 'member' && root.child('crmCompany/access').child(auth.uid).child('marketingRole').val() === 'marketing' && data.parent().exists()",
-            ".validate": "newData.exists() && (!newData.child('firstSource').exists() || newData.child('firstSource').val() === 'naver_place_ads' || newData.child('firstSource').val() === 'naver_place_organic' || newData.child('firstSource').val() === 'naver_blog' || newData.child('firstSource').val() === 'soomgo' || newData.child('firstSource').val() === 'daangn' || newData.child('firstSource').val() === 'broker' || newData.child('firstSource').val() === 'referral' || newData.child('firstSource').val() === 'direct_sales' || newData.child('firstSource').val() === 'other' || newData.child('firstSource').val() === 'needs_review') && (!newData.child('lastSource').exists() || newData.child('lastSource').val() === 'naver_place_ads' || newData.child('lastSource').val() === 'naver_place_organic' || newData.child('lastSource').val() === 'naver_blog' || newData.child('lastSource').val() === 'soomgo' || newData.child('lastSource').val() === 'daangn' || newData.child('lastSource').val() === 'broker' || newData.child('lastSource').val() === 'referral' || newData.child('lastSource').val() === 'direct_sales' || newData.child('lastSource').val() === 'other' || newData.child('lastSource').val() === 'needs_review') && (!newData.child('validLead').exists() || newData.child('validLead').isBoolean()) && (newData.child('validLead').val() !== false || newData.child('invalidReason').exists()) && (newData.child('validLead').val() !== true || !newData.child('invalidReason').exists()) && (!newData.child('attributionNote').exists() || (newData.child('attributionNote').isString() && newData.child('attributionNote').val().length <= 1000))",
-            "firstSource": { ".validate": true }, "lastSource": { ".validate": true }, "subChannel": { ".validate": "newData.isString() && newData.val().length <= 200" }, "campaignId": { ".validate": "newData.isString() && newData.val().length <= 200" }, "campaignName": { ".validate": "newData.isString() && newData.val().length <= 200" }, "keyword": { ".validate": "newData.isString() && newData.val().length <= 200" }, "contentId": { ".validate": "newData.isString() && newData.val().length <= 200" }, "contentTitle": { ".validate": "newData.isString() && newData.val().length <= 200" }, "inquiryMethod": { ".validate": "newData.isString() && (newData.val() === 'phone' || newData.val() === 'talktalk' || newData.val() === 'chat' || newData.val() === 'sms' || newData.val() === 'email' || newData.val() === 'google_form' || newData.val() === 'visit' || newData.val() === 'referral' || newData.val() === 'other')" }, "validLead": { ".validate": true }, "invalidReason": { ".validate": "newData.isString() && (newData.val() === 'outside_area' || newData.val() === 'unsupported_service' || newData.val() === 'vendor_sales' || newData.val() === 'duplicate' || newData.val() === 'unreachable' || newData.val() === 'wrong_number' || newData.val() === 'spam' || newData.val() === 'budget' || newData.val() === 'schedule' || newData.val() === 'other')" }, "firstTouchAt": { ".validate": "newData.isString() && newData.val().length <= 40" }, "inquiryAt": { ".validate": "newData.isString() && newData.val().length <= 40" }, "attributionNote": { ".validate": true }, "$other": { ".validate": false }
+            ".write": "auth != null && root.child('crmCompany/access').child(auth.uid).child('enabled').val() === true && root.child('crmCompany/access').child(auth.uid).child('email').val() === auth.token.email && root.child('crmCompany/access').child(auth.uid).child('mustChangePassword').val() !== true && (root.child('crmCompany/access').child(auth.uid).child('role').val() === 'admin' || (root.child('crmCompany/access').child(auth.uid).child('role').val() === 'member' && root.child('crmCompany/access').child(auth.uid).child('marketingRole').val() === 'marketing')) && data.parent().exists()",
+            ".validate": "newData.exists() && (!newData.child('firstSource').exists() || newData.child('firstSource').val() === 'naver_place_ads' || newData.child('firstSource').val() === 'naver_place_organic' || newData.child('firstSource').val() === 'naver_blog' || newData.child('firstSource').val() === 'soomgo' || newData.child('firstSource').val() === 'daangn' || newData.child('firstSource').val() === 'broker' || newData.child('firstSource').val() === 'referral' || newData.child('firstSource').val() === 'direct_sales' || newData.child('firstSource').val() === 'other' || newData.child('firstSource').val() === 'needs_review') && (!newData.child('lastSource').exists() || newData.child('lastSource').val() === 'naver_place_ads' || newData.child('lastSource').val() === 'naver_place_organic' || newData.child('lastSource').val() === 'naver_blog' || newData.child('lastSource').val() === 'soomgo' || newData.child('lastSource').val() === 'daangn' || newData.child('lastSource').val() === 'broker' || newData.child('lastSource').val() === 'referral' || newData.child('lastSource').val() === 'direct_sales' || newData.child('lastSource').val() === 'other' || newData.child('lastSource').val() === 'needs_review') && (!newData.child('validLead').exists() || newData.child('validLead').isBoolean()) && (newData.child('validLead').val() !== false || newData.child('invalidReason').exists()) && (newData.child('validLead').val() !== true || !newData.child('invalidReason').exists()) && (!newData.child('attributionNote').exists() || (newData.child('attributionNote').isString() && newData.child('attributionNote').val().length <= 1000)) && newData.hasChildren(['_version','_updatedAtMs','_updatedByAuthUid','_updatedByOperatorId']) && newData.child('_version').isNumber() && newData.child('_version').val() >= 1 && newData.child('_version').val() % 1 === 0 && newData.child('_updatedAtMs').val() === now && newData.child('_updatedByAuthUid').val() === auth.uid && newData.child('_updatedByOperatorId').val() === root.child('crmCompany/access').child(auth.uid).child('operatorId').val() && root.child('crmCompany/teamProfiles').child(newData.child('_updatedByOperatorId').val()).child('active').val() === true && ((!data.exists() && newData.child('_version').val() === 1) || (data.exists() && newData.child('_version').val() === data.child('_version').val() + 1))",
+            "firstSource": {
+              ".validate": true
+            },
+            "lastSource": {
+              ".validate": true
+            },
+            "subChannel": {
+              ".validate": "newData.isString() && newData.val().length <= 200"
+            },
+            "campaignId": {
+              ".validate": "newData.isString() && newData.val().length <= 200"
+            },
+            "campaignName": {
+              ".validate": "newData.isString() && newData.val().length <= 200"
+            },
+            "keyword": {
+              ".validate": "newData.isString() && newData.val().length <= 200"
+            },
+            "contentId": {
+              ".validate": "newData.isString() && newData.val().length <= 200"
+            },
+            "contentTitle": {
+              ".validate": "newData.isString() && newData.val().length <= 200"
+            },
+            "inquiryMethod": {
+              ".validate": "newData.isString() && (newData.val() === 'phone' || newData.val() === 'talktalk' || newData.val() === 'chat' || newData.val() === 'sms' || newData.val() === 'email' || newData.val() === 'google_form' || newData.val() === 'visit' || newData.val() === 'referral' || newData.val() === 'other')"
+            },
+            "validLead": {
+              ".validate": true
+            },
+            "invalidReason": {
+              ".validate": "newData.isString() && (newData.val() === 'outside_area' || newData.val() === 'unsupported_service' || newData.val() === 'vendor_sales' || newData.val() === 'duplicate' || newData.val() === 'unreachable' || newData.val() === 'wrong_number' || newData.val() === 'spam' || newData.val() === 'budget' || newData.val() === 'schedule' || newData.val() === 'other')"
+            },
+            "firstTouchAt": {
+              ".validate": "newData.isString() && newData.val().length <= 40"
+            },
+            "inquiryAt": {
+              ".validate": "newData.isString() && newData.val().length <= 40"
+            },
+            "attributionNote": {
+              ".validate": true
+            },
+            "$other": {
+              ".validate": false
+            },
+            "_version": {
+              ".validate": true
+            },
+            "_updatedAtMs": {
+              ".validate": true
+            },
+            "_updatedByAuthUid": {
+              ".validate": true
+            },
+            "_updatedByOperatorId": {
+              ".validate": true
+            }
           },
-          "marketingUpdatedAt": { ".write": "auth != null && root.child('crmCompany/access').child(auth.uid).child('role').val() === 'member' && root.child('crmCompany/access').child(auth.uid).child('marketingRole').val() === 'marketing' && newData.isString() && newData.val().matches(/^[0-9]{4}-[0-9]{2}-[0-9]{2}T/)" },
-          "marketingUpdatedBy": { ".write": "auth != null && root.child('crmCompany/access').child(auth.uid).child('role').val() === 'member' && root.child('crmCompany/access').child(auth.uid).child('marketingRole').val() === 'marketing' && newData.val() === auth.uid" },
-          ".validate": "!newData.exists() || newData.child('caseParty').val() === '건물주' || newData.child('caseParty').val() === '브링' || (data.exists() && (!data.child('caseParty').exists() || data.child('caseParty').val() === '') && (!newData.child('caseParty').exists() || newData.child('caseParty').val() === ''))"
+          ".validate": "!newData.exists() || newData.child('caseParty').val() === '건물주' || newData.child('caseParty').val() === '브링' || (data.exists() && (!data.child('caseParty').exists() || data.child('caseParty').val() === '') && (!newData.child('caseParty').exists() || newData.child('caseParty').val() === ''))",
+          ".write": "auth != null && root.child('crmCompany/access').child(auth.uid).child('enabled').val() === true && root.child('crmCompany/access').child(auth.uid).child('email').val() === auth.token.email && (root.child('crmCompany/access').child(auth.uid).child('role').val() === 'admin' || (root.child('crmCompany/access').child(auth.uid).child('role').val() === 'member' && root.child('crmCompany/access').child(auth.uid).child('marketingRole').val() !== 'marketing')) && (root.child('crmCompany/access').child(auth.uid).child('role').val() === 'admin' || newData.child('marketing').val() === data.child('marketing').val())"
         }
       },
       "paymentCalendars": {
@@ -588,14 +737,120 @@
           "$recordId": {
             ".write": "auth != null && newData.exists() && root.child('crmCompany/access').child(auth.uid).child('enabled').val() === true && root.child('crmCompany/access').child(auth.uid).child('email').val() === auth.token.email && root.child('crmCompany/access').child(auth.uid).child('mustChangePassword').val() !== true && (root.child('crmCompany/access').child(auth.uid).child('role').val() === 'admin' || (root.child('crmCompany/access').child(auth.uid).child('role').val() === 'member' && root.child('crmCompany/access').child(auth.uid).child('marketingRole').val() === 'marketing'))",
             ".validate": "newData.exists() && $recordId.matches(/^[A-Za-z0-9_-]{1,120}$/) && $recordId !== '__proto__' && $recordId !== 'prototype' && $recordId !== 'constructor' && newData.hasChildren(['id','date','channel','accountName','campaignId','campaignName','adGroup','keyword','contentId','contentTitle','service','region','spend','impressions','clicks','phoneClicks','chatClicks','directionsClicks','saves','platformLeads','note','sourceType','version','createdAtMs','createdByAuthUid','createdByOperatorId','updatedAtMs','updatedByAuthUid','updatedByOperatorId','lastAction','lastAuditId','lastReceiptId','lastRequestId','lastRequestHash']) && newData.child('id').val() === $recordId && newData.child('updatedAtMs').val() === now && newData.child('updatedByAuthUid').val() === auth.uid && newData.child('updatedByOperatorId').val() === root.child('crmCompany/access').child(auth.uid).child('operatorId').val() && root.child('crmCompany/teamProfiles').child(newData.child('updatedByOperatorId').val()).child('active').val() === true && ((!data.exists() && newData.child('version').val() === 1 && newData.child('lastAction').val() === 'create' && newData.child('createdAtMs').val() === now && newData.child('createdByAuthUid').val() === auth.uid && newData.child('createdByOperatorId').val() === newData.child('updatedByOperatorId').val() && !newData.child('archivedAtMs').exists() && !newData.child('archivedByAuthUid').exists() && !newData.child('archivedByOperatorId').exists()) || (data.exists() && !data.child('archivedAtMs').exists() && newData.child('version').val() === data.child('version').val() + 1 && newData.child('id').val() === data.child('id').val() && newData.child('createdAtMs').val() === data.child('createdAtMs').val() && newData.child('createdByAuthUid').val() === data.child('createdByAuthUid').val() && newData.child('createdByOperatorId').val() === data.child('createdByOperatorId').val() && ((newData.child('lastAction').val() === 'update' && !newData.child('archivedAtMs').exists() && !newData.child('archivedByAuthUid').exists() && !newData.child('archivedByOperatorId').exists()) || (newData.child('lastAction').val() === 'archive' && newData.child('archivedAtMs').val() === now && newData.child('archivedByAuthUid').val() === auth.uid && newData.child('archivedByOperatorId').val() === newData.child('updatedByOperatorId').val())))) && newData.parent().parent().child('audits').child(newData.child('lastAuditId').val()).child('recordId').val() === $recordId && newData.parent().parent().child('audits').child(newData.child('lastAuditId').val()).child('requestId').val() === newData.child('lastRequestId').val() && newData.parent().parent().child('audits').child(newData.child('lastAuditId').val()).child('requestHash').val() === newData.child('lastRequestHash').val() && newData.parent().parent().child('audits').child(newData.child('lastAuditId').val()).child('action').val() === newData.child('lastAction').val() && newData.parent().parent().child('audits').child(newData.child('lastAuditId').val()).child('beforeVersion').val() + 1 === newData.child('version').val() && newData.parent().parent().child('receipts').child(newData.child('lastReceiptId').val()).child('recordId').val() === $recordId && newData.parent().parent().child('receipts').child(newData.child('lastReceiptId').val()).child('requestId').val() === newData.child('lastRequestId').val() && newData.parent().parent().child('receipts').child(newData.child('lastReceiptId').val()).child('requestHash').val() === newData.child('lastRequestHash').val() && newData.parent().parent().child('receipts').child(newData.child('lastReceiptId').val()).child('action').val() === newData.child('lastAction').val() && newData.parent().parent().child('receipts').child(newData.child('lastReceiptId').val()).child('afterVersion').val() === newData.child('version').val()",
-            "id": { ".validate": "newData.isString()" }, "date": { ".validate": "newData.isString() && newData.val().matches(/^[0-9]{4}-[0-9]{2}-[0-9]{2}$/)" }, "channel": { ".validate": "newData.isString() && newData.val().length > 0 && newData.val().length <= 200" },
-            "accountName": { ".validate": "newData.isString() && newData.val().length <= 200" }, "campaignId": { ".validate": "newData.isString() && newData.val().length <= 200" }, "campaignName": { ".validate": "newData.isString() && newData.val().length <= 200" }, "adGroup": { ".validate": "newData.isString() && newData.val().length <= 200" }, "keyword": { ".validate": "newData.isString() && newData.val().length <= 200" }, "contentId": { ".validate": "newData.isString() && newData.val().length <= 200" }, "contentTitle": { ".validate": "newData.isString() && newData.val().length <= 200" }, "service": { ".validate": "newData.isString() && newData.val().length <= 200" }, "region": { ".validate": "newData.isString() && newData.val().length <= 200" }, "note": { ".validate": "newData.isString() && newData.val().length <= 1000" },
-            "spend": { ".validate": "newData.isNumber() && newData.val() >= 0 && newData.val() <= 9007199254740991 && newData.val() % 1 === 0" }, "impressions": { ".validate": "newData.isNumber() && newData.val() >= 0 && newData.val() <= 9007199254740991 && newData.val() % 1 === 0" }, "clicks": { ".validate": "newData.isNumber() && newData.val() >= 0 && newData.val() <= 9007199254740991 && newData.val() % 1 === 0" },
-            "phoneClicks": { ".validate": "newData.isNumber() && newData.val() >= 0 && newData.val() <= 9007199254740991 && newData.val() % 1 === 0" }, "chatClicks": { ".validate": "newData.isNumber() && newData.val() >= 0 && newData.val() <= 9007199254740991 && newData.val() % 1 === 0" }, "directionsClicks": { ".validate": "newData.isNumber() && newData.val() >= 0 && newData.val() <= 9007199254740991 && newData.val() % 1 === 0" }, "saves": { ".validate": "newData.isNumber() && newData.val() >= 0 && newData.val() <= 9007199254740991 && newData.val() % 1 === 0" }, "platformLeads": { ".validate": "newData.isNumber() && newData.val() >= 0 && newData.val() <= 9007199254740991 && newData.val() % 1 === 0" },
-            "sourceType": { ".validate": "newData.val() === 'manual' || newData.val() === 'crm'" }, "version": { ".validate": "newData.isNumber() && newData.val() >= 1 && newData.val() <= 9007199254740991 && newData.val() % 1 === 0" },
-            "createdAtMs": { ".validate": "newData.isNumber() && newData.val() > 0" }, "createdByAuthUid": { ".validate": "newData.isString()" }, "createdByOperatorId": { ".validate": "newData.isString()" }, "updatedAtMs": { ".validate": "newData.isNumber() && newData.val() > 0" }, "updatedByAuthUid": { ".validate": "newData.isString()" }, "updatedByOperatorId": { ".validate": "newData.isString()" },
-            "archivedAtMs": { ".validate": "newData.isNumber() && newData.val() > 0" }, "archivedByAuthUid": { ".validate": "newData.isString()" }, "archivedByOperatorId": { ".validate": "newData.isString()" }, "lastAction": { ".validate": "newData.val() === 'create' || newData.val() === 'update' || newData.val() === 'archive'" }, "lastAuditId": { ".validate": "newData.isString() && newData.val().matches(/^audit_[A-Za-z0-9_]{36}$/)" }, "lastReceiptId": { ".validate": "newData.isString() && newData.val().matches(/^request_[A-Za-z0-9_]{36}$/)" }, "lastRequestId": { ".validate": "newData.isString() && newData.val().matches(/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/)" }, "lastRequestHash": { ".validate": "newData.isString() && newData.val().matches(/^[0-9a-f]{64}$/)" },
-            "$other": { ".validate": false }
+            "id": {
+              ".validate": "newData.isString()"
+            },
+            "date": {
+              ".validate": "newData.isString() && newData.val().matches(/^[0-9]{4}-[0-9]{2}-[0-9]{2}$/)"
+            },
+            "channel": {
+              ".validate": "newData.isString() && newData.val().length > 0 && newData.val().length <= 200"
+            },
+            "accountName": {
+              ".validate": "newData.isString() && newData.val().length <= 200"
+            },
+            "campaignId": {
+              ".validate": "newData.isString() && newData.val().length <= 200"
+            },
+            "campaignName": {
+              ".validate": "newData.isString() && newData.val().length <= 200"
+            },
+            "adGroup": {
+              ".validate": "newData.isString() && newData.val().length <= 200"
+            },
+            "keyword": {
+              ".validate": "newData.isString() && newData.val().length <= 200"
+            },
+            "contentId": {
+              ".validate": "newData.isString() && newData.val().length <= 200"
+            },
+            "contentTitle": {
+              ".validate": "newData.isString() && newData.val().length <= 200"
+            },
+            "service": {
+              ".validate": "newData.isString() && newData.val().length <= 200"
+            },
+            "region": {
+              ".validate": "newData.isString() && newData.val().length <= 200"
+            },
+            "note": {
+              ".validate": "newData.isString() && newData.val().length <= 1000"
+            },
+            "spend": {
+              ".validate": "newData.isNumber() && newData.val() >= 0 && newData.val() <= 9007199254740991 && newData.val() % 1 === 0"
+            },
+            "impressions": {
+              ".validate": "newData.isNumber() && newData.val() >= 0 && newData.val() <= 9007199254740991 && newData.val() % 1 === 0"
+            },
+            "clicks": {
+              ".validate": "newData.isNumber() && newData.val() >= 0 && newData.val() <= 9007199254740991 && newData.val() % 1 === 0"
+            },
+            "phoneClicks": {
+              ".validate": "newData.isNumber() && newData.val() >= 0 && newData.val() <= 9007199254740991 && newData.val() % 1 === 0"
+            },
+            "chatClicks": {
+              ".validate": "newData.isNumber() && newData.val() >= 0 && newData.val() <= 9007199254740991 && newData.val() % 1 === 0"
+            },
+            "directionsClicks": {
+              ".validate": "newData.isNumber() && newData.val() >= 0 && newData.val() <= 9007199254740991 && newData.val() % 1 === 0"
+            },
+            "saves": {
+              ".validate": "newData.isNumber() && newData.val() >= 0 && newData.val() <= 9007199254740991 && newData.val() % 1 === 0"
+            },
+            "platformLeads": {
+              ".validate": "newData.isNumber() && newData.val() >= 0 && newData.val() <= 9007199254740991 && newData.val() % 1 === 0"
+            },
+            "sourceType": {
+              ".validate": "newData.val() === 'manual' || newData.val() === 'crm'"
+            },
+            "version": {
+              ".validate": "newData.isNumber() && newData.val() >= 1 && newData.val() <= 9007199254740991 && newData.val() % 1 === 0"
+            },
+            "createdAtMs": {
+              ".validate": "newData.isNumber() && newData.val() > 0"
+            },
+            "createdByAuthUid": {
+              ".validate": "newData.isString()"
+            },
+            "createdByOperatorId": {
+              ".validate": "newData.isString()"
+            },
+            "updatedAtMs": {
+              ".validate": "newData.isNumber() && newData.val() > 0"
+            },
+            "updatedByAuthUid": {
+              ".validate": "newData.isString()"
+            },
+            "updatedByOperatorId": {
+              ".validate": "newData.isString()"
+            },
+            "archivedAtMs": {
+              ".validate": "newData.isNumber() && newData.val() > 0"
+            },
+            "archivedByAuthUid": {
+              ".validate": "newData.isString()"
+            },
+            "archivedByOperatorId": {
+              ".validate": "newData.isString()"
+            },
+            "lastAction": {
+              ".validate": "newData.val() === 'create' || newData.val() === 'update' || newData.val() === 'archive'"
+            },
+            "lastAuditId": {
+              ".validate": "newData.isString() && newData.val().matches(/^audit_[A-Za-z0-9_]{36}$/)"
+            },
+            "lastReceiptId": {
+              ".validate": "newData.isString() && newData.val().matches(/^request_[A-Za-z0-9_]{36}$/)"
+            },
+            "lastRequestId": {
+              ".validate": "newData.isString() && newData.val().matches(/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/)"
+            },
+            "lastRequestHash": {
+              ".validate": "newData.isString() && newData.val().matches(/^[0-9a-f]{64}$/)"
+            },
+            "$other": {
+              ".validate": false
+            }
           }
         },
         "audits": {
@@ -603,7 +858,48 @@
           "$auditId": {
             ".write": "auth != null && newData.exists() && !data.exists() && root.child('crmCompany/access').child(auth.uid).child('enabled').val() === true && root.child('crmCompany/access').child(auth.uid).child('email').val() === auth.token.email && root.child('crmCompany/access').child(auth.uid).child('mustChangePassword').val() !== true && (root.child('crmCompany/access').child(auth.uid).child('role').val() === 'admin' || (root.child('crmCompany/access').child(auth.uid).child('role').val() === 'member' && root.child('crmCompany/access').child(auth.uid).child('marketingRole').val() === 'marketing'))",
             ".validate": "newData.hasChildren(['id','actorAuthUid','operatorId','actorIdentifier','action','recordId','occurredAtMs','beforeVersion','afterVersion','requestId','requestHash','beforeSpend','afterSpend']) && newData.child('id').val() === $auditId && newData.child('actorAuthUid').val() === auth.uid && newData.child('operatorId').val() === root.child('crmCompany/access').child(auth.uid).child('operatorId').val() && root.child('crmCompany/teamProfiles').child(newData.child('operatorId').val()).child('active').val() === true && newData.child('occurredAtMs').val() === now && newData.parent().parent().child('daily').child(newData.child('recordId').val()).child('lastAuditId').val() === $auditId && newData.parent().parent().child('daily').child(newData.child('recordId').val()).child('lastRequestId').val() === newData.child('requestId').val() && newData.parent().parent().child('daily').child(newData.child('recordId').val()).child('lastRequestHash').val() === newData.child('requestHash').val() && newData.parent().parent().child('daily').child(newData.child('recordId').val()).child('lastAction').val() === newData.child('action').val() && newData.parent().parent().child('daily').child(newData.child('recordId').val()).child('version').val() === newData.child('afterVersion').val() && newData.child('beforeSpend').val() === (newData.child('beforeVersion').val() === 0 ? 0 : data.parent().parent().child('daily').child(newData.child('recordId').val()).child('spend').val()) && newData.child('afterSpend').val() === newData.parent().parent().child('daily').child(newData.child('recordId').val()).child('spend').val()",
-            "id": { ".validate": "newData.isString() && newData.val().matches(/^audit_[A-Za-z0-9_]{36}$/)" }, "actorAuthUid": { ".validate": "newData.isString()" }, "operatorId": { ".validate": "newData.isString()" }, "actorIdentifier": { ".validate": "newData.isString() && newData.val().length <= 200" }, "action": { ".validate": "newData.val() === 'create' || newData.val() === 'update' || newData.val() === 'archive'" }, "recordId": { ".validate": "newData.isString() && newData.val().matches(/^[A-Za-z0-9_-]{1,120}$/)" }, "occurredAtMs": { ".validate": "newData.isNumber() && newData.val() > 0" }, "beforeVersion": { ".validate": "newData.isNumber() && newData.val() >= 0 && newData.val() % 1 === 0" }, "afterVersion": { ".validate": "newData.isNumber() && newData.val() === newData.parent().child('beforeVersion').val() + 1" }, "requestId": { ".validate": "newData.isString() && newData.val().matches(/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/)" }, "requestHash": { ".validate": "newData.isString() && newData.val().matches(/^[0-9a-f]{64}$/)" }, "beforeSpend": { ".validate": "newData.isNumber() && newData.val() >= 0 && newData.val() <= 9007199254740991" }, "afterSpend": { ".validate": "newData.isNumber() && newData.val() >= 0 && newData.val() <= 9007199254740991" }, "$other": { ".validate": false }
+            "id": {
+              ".validate": "newData.isString() && newData.val().matches(/^audit_[A-Za-z0-9_]{36}$/)"
+            },
+            "actorAuthUid": {
+              ".validate": "newData.isString()"
+            },
+            "operatorId": {
+              ".validate": "newData.isString()"
+            },
+            "actorIdentifier": {
+              ".validate": "newData.isString() && newData.val().length <= 200"
+            },
+            "action": {
+              ".validate": "newData.val() === 'create' || newData.val() === 'update' || newData.val() === 'archive'"
+            },
+            "recordId": {
+              ".validate": "newData.isString() && newData.val().matches(/^[A-Za-z0-9_-]{1,120}$/)"
+            },
+            "occurredAtMs": {
+              ".validate": "newData.isNumber() && newData.val() > 0"
+            },
+            "beforeVersion": {
+              ".validate": "newData.isNumber() && newData.val() >= 0 && newData.val() % 1 === 0"
+            },
+            "afterVersion": {
+              ".validate": "newData.isNumber() && newData.val() === newData.parent().child('beforeVersion').val() + 1"
+            },
+            "requestId": {
+              ".validate": "newData.isString() && newData.val().matches(/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/)"
+            },
+            "requestHash": {
+              ".validate": "newData.isString() && newData.val().matches(/^[0-9a-f]{64}$/)"
+            },
+            "beforeSpend": {
+              ".validate": "newData.isNumber() && newData.val() >= 0 && newData.val() <= 9007199254740991"
+            },
+            "afterSpend": {
+              ".validate": "newData.isNumber() && newData.val() >= 0 && newData.val() <= 9007199254740991"
+            },
+            "$other": {
+              ".validate": false
+            }
           }
         },
         "receipts": {
@@ -611,16 +907,156 @@
           "$receiptId": {
             ".write": "auth != null && newData.exists() && !data.exists() && root.child('crmCompany/access').child(auth.uid).child('enabled').val() === true && root.child('crmCompany/access').child(auth.uid).child('email').val() === auth.token.email && root.child('crmCompany/access').child(auth.uid).child('mustChangePassword').val() !== true && (root.child('crmCompany/access').child(auth.uid).child('role').val() === 'admin' || (root.child('crmCompany/access').child(auth.uid).child('role').val() === 'member' && root.child('crmCompany/access').child(auth.uid).child('marketingRole').val() === 'marketing'))",
             ".validate": "newData.hasChildren(['id','actorAuthUid','operatorId','action','recordId','occurredAtMs','beforeVersion','afterVersion','requestId','requestHash','resultRecord']) && newData.child('id').val() === $receiptId && newData.child('actorAuthUid').val() === auth.uid && newData.child('operatorId').val() === root.child('crmCompany/access').child(auth.uid).child('operatorId').val() && root.child('crmCompany/teamProfiles').child(newData.child('operatorId').val()).child('active').val() === true && newData.child('occurredAtMs').val() === now && newData.parent().parent().child('daily').child(newData.child('recordId').val()).child('lastReceiptId').val() === $receiptId && newData.parent().parent().child('daily').child(newData.child('recordId').val()).child('lastRequestId').val() === newData.child('requestId').val() && newData.parent().parent().child('daily').child(newData.child('recordId').val()).child('lastRequestHash').val() === newData.child('requestHash').val() && newData.parent().parent().child('daily').child(newData.child('recordId').val()).child('version').val() === newData.child('afterVersion').val()",
-            "id": { ".validate": "newData.isString() && newData.val().matches(/^request_[A-Za-z0-9_]{36}$/)" }, "actorAuthUid": { ".validate": "newData.isString()" }, "operatorId": { ".validate": "newData.isString()" }, "action": { ".validate": "newData.val() === 'create' || newData.val() === 'update' || newData.val() === 'archive'" }, "recordId": { ".validate": "newData.isString() && newData.val().matches(/^[A-Za-z0-9_-]{1,120}$/)" }, "occurredAtMs": { ".validate": "newData.isNumber() && newData.val() > 0" }, "beforeVersion": { ".validate": "newData.isNumber() && newData.val() >= 0 && newData.val() % 1 === 0" }, "afterVersion": { ".validate": "newData.isNumber() && newData.val() === newData.parent().child('beforeVersion').val() + 1" }, "requestId": { ".validate": "newData.isString() && newData.val().matches(/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/)" }, "requestHash": { ".validate": "newData.isString() && newData.val().matches(/^[0-9a-f]{64}$/)" },
+            "id": {
+              ".validate": "newData.isString() && newData.val().matches(/^request_[A-Za-z0-9_]{36}$/)"
+            },
+            "actorAuthUid": {
+              ".validate": "newData.isString()"
+            },
+            "operatorId": {
+              ".validate": "newData.isString()"
+            },
+            "action": {
+              ".validate": "newData.val() === 'create' || newData.val() === 'update' || newData.val() === 'archive'"
+            },
+            "recordId": {
+              ".validate": "newData.isString() && newData.val().matches(/^[A-Za-z0-9_-]{1,120}$/)"
+            },
+            "occurredAtMs": {
+              ".validate": "newData.isNumber() && newData.val() > 0"
+            },
+            "beforeVersion": {
+              ".validate": "newData.isNumber() && newData.val() >= 0 && newData.val() % 1 === 0"
+            },
+            "afterVersion": {
+              ".validate": "newData.isNumber() && newData.val() === newData.parent().child('beforeVersion').val() + 1"
+            },
+            "requestId": {
+              ".validate": "newData.isString() && newData.val().matches(/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/)"
+            },
+            "requestHash": {
+              ".validate": "newData.isString() && newData.val().matches(/^[0-9a-f]{64}$/)"
+            },
             "resultRecord": {
               ".validate": "newData.hasChildren(['id','date','channel','accountName','campaignId','campaignName','adGroup','keyword','contentId','contentTitle','service','region','spend','impressions','clicks','phoneClicks','chatClicks','directionsClicks','saves','platformLeads','note','sourceType','version','createdAtMs','createdByAuthUid','createdByOperatorId','updatedAtMs','updatedByAuthUid','updatedByOperatorId','lastAction','lastAuditId','lastReceiptId','lastRequestId','lastRequestHash'])",
-              "id": { ".validate": "newData.val() === newData.parent().parent().parent().parent().child('daily').child(newData.parent().parent().child('recordId').val()).child('id').val()" },
-              "date": { ".validate": "newData.val() === newData.parent().parent().parent().parent().child('daily').child(newData.parent().parent().child('recordId').val()).child('date').val()" }, "channel": { ".validate": "newData.val() === newData.parent().parent().parent().parent().child('daily').child(newData.parent().parent().child('recordId').val()).child('channel').val()" }, "accountName": { ".validate": "newData.val() === newData.parent().parent().parent().parent().child('daily').child(newData.parent().parent().child('recordId').val()).child('accountName').val()" }, "campaignId": { ".validate": "newData.val() === newData.parent().parent().parent().parent().child('daily').child(newData.parent().parent().child('recordId').val()).child('campaignId').val()" }, "campaignName": { ".validate": "newData.val() === newData.parent().parent().parent().parent().child('daily').child(newData.parent().parent().child('recordId').val()).child('campaignName').val()" }, "adGroup": { ".validate": "newData.val() === newData.parent().parent().parent().parent().child('daily').child(newData.parent().parent().child('recordId').val()).child('adGroup').val()" }, "keyword": { ".validate": "newData.val() === newData.parent().parent().parent().parent().child('daily').child(newData.parent().parent().child('recordId').val()).child('keyword').val()" }, "contentId": { ".validate": "newData.val() === newData.parent().parent().parent().parent().child('daily').child(newData.parent().parent().child('recordId').val()).child('contentId').val()" }, "contentTitle": { ".validate": "newData.val() === newData.parent().parent().parent().parent().child('daily').child(newData.parent().parent().child('recordId').val()).child('contentTitle').val()" }, "service": { ".validate": "newData.val() === newData.parent().parent().parent().parent().child('daily').child(newData.parent().parent().child('recordId').val()).child('service').val()" }, "region": { ".validate": "newData.val() === newData.parent().parent().parent().parent().child('daily').child(newData.parent().parent().child('recordId').val()).child('region').val()" },
-              "spend": { ".validate": "newData.val() === newData.parent().parent().parent().parent().child('daily').child(newData.parent().parent().child('recordId').val()).child('spend').val()" }, "impressions": { ".validate": "newData.val() === newData.parent().parent().parent().parent().child('daily').child(newData.parent().parent().child('recordId').val()).child('impressions').val()" }, "clicks": { ".validate": "newData.val() === newData.parent().parent().parent().parent().child('daily').child(newData.parent().parent().child('recordId').val()).child('clicks').val()" }, "phoneClicks": { ".validate": "newData.val() === newData.parent().parent().parent().parent().child('daily').child(newData.parent().parent().child('recordId').val()).child('phoneClicks').val()" }, "chatClicks": { ".validate": "newData.val() === newData.parent().parent().parent().parent().child('daily').child(newData.parent().parent().child('recordId').val()).child('chatClicks').val()" }, "directionsClicks": { ".validate": "newData.val() === newData.parent().parent().parent().parent().child('daily').child(newData.parent().parent().child('recordId').val()).child('directionsClicks').val()" }, "saves": { ".validate": "newData.val() === newData.parent().parent().parent().parent().child('daily').child(newData.parent().parent().child('recordId').val()).child('saves').val()" }, "platformLeads": { ".validate": "newData.val() === newData.parent().parent().parent().parent().child('daily').child(newData.parent().parent().child('recordId').val()).child('platformLeads').val()" }, "note": { ".validate": "newData.val() === newData.parent().parent().parent().parent().child('daily').child(newData.parent().parent().child('recordId').val()).child('note').val()" }, "sourceType": { ".validate": "newData.val() === newData.parent().parent().parent().parent().child('daily').child(newData.parent().parent().child('recordId').val()).child('sourceType').val()" },
-              "version": { ".validate": "newData.val() === newData.parent().parent().parent().parent().child('daily').child(newData.parent().parent().child('recordId').val()).child('version').val()" }, "createdAtMs": { ".validate": "newData.val() === newData.parent().parent().parent().parent().child('daily').child(newData.parent().parent().child('recordId').val()).child('createdAtMs').val()" }, "createdByAuthUid": { ".validate": "newData.val() === newData.parent().parent().parent().parent().child('daily').child(newData.parent().parent().child('recordId').val()).child('createdByAuthUid').val()" }, "createdByOperatorId": { ".validate": "newData.val() === newData.parent().parent().parent().parent().child('daily').child(newData.parent().parent().child('recordId').val()).child('createdByOperatorId').val()" }, "updatedAtMs": { ".validate": "newData.val() === newData.parent().parent().parent().parent().child('daily').child(newData.parent().parent().child('recordId').val()).child('updatedAtMs').val()" }, "updatedByAuthUid": { ".validate": "newData.val() === newData.parent().parent().parent().parent().child('daily').child(newData.parent().parent().child('recordId').val()).child('updatedByAuthUid').val()" }, "updatedByOperatorId": { ".validate": "newData.val() === newData.parent().parent().parent().parent().child('daily').child(newData.parent().parent().child('recordId').val()).child('updatedByOperatorId').val()" }, "lastAction": { ".validate": "newData.val() === newData.parent().parent().parent().parent().child('daily').child(newData.parent().parent().child('recordId').val()).child('lastAction').val()" }, "lastAuditId": { ".validate": "newData.val() === newData.parent().parent().parent().parent().child('daily').child(newData.parent().parent().child('recordId').val()).child('lastAuditId').val()" }, "lastReceiptId": { ".validate": "newData.val() === newData.parent().parent().parent().parent().child('daily').child(newData.parent().parent().child('recordId').val()).child('lastReceiptId').val()" }, "lastRequestId": { ".validate": "newData.val() === newData.parent().parent().parent().parent().child('daily').child(newData.parent().parent().child('recordId').val()).child('lastRequestId').val()" }, "lastRequestHash": { ".validate": "newData.val() === newData.parent().parent().parent().parent().child('daily').child(newData.parent().parent().child('recordId').val()).child('lastRequestHash').val()" },
-              "archivedAtMs": { ".validate": "newData.val() === newData.parent().parent().parent().parent().child('daily').child(newData.parent().parent().child('recordId').val()).child('archivedAtMs').val()" }, "archivedByAuthUid": { ".validate": "newData.val() === newData.parent().parent().parent().parent().child('daily').child(newData.parent().parent().child('recordId').val()).child('archivedByAuthUid').val()" }, "archivedByOperatorId": { ".validate": "newData.val() === newData.parent().parent().parent().parent().child('daily').child(newData.parent().parent().child('recordId').val()).child('archivedByOperatorId').val()" }, "$other": { ".validate": false }
+              "id": {
+                ".validate": "newData.val() === newData.parent().parent().parent().parent().child('daily').child(newData.parent().parent().child('recordId').val()).child('id').val()"
+              },
+              "date": {
+                ".validate": "newData.val() === newData.parent().parent().parent().parent().child('daily').child(newData.parent().parent().child('recordId').val()).child('date').val()"
+              },
+              "channel": {
+                ".validate": "newData.val() === newData.parent().parent().parent().parent().child('daily').child(newData.parent().parent().child('recordId').val()).child('channel').val()"
+              },
+              "accountName": {
+                ".validate": "newData.val() === newData.parent().parent().parent().parent().child('daily').child(newData.parent().parent().child('recordId').val()).child('accountName').val()"
+              },
+              "campaignId": {
+                ".validate": "newData.val() === newData.parent().parent().parent().parent().child('daily').child(newData.parent().parent().child('recordId').val()).child('campaignId').val()"
+              },
+              "campaignName": {
+                ".validate": "newData.val() === newData.parent().parent().parent().parent().child('daily').child(newData.parent().parent().child('recordId').val()).child('campaignName').val()"
+              },
+              "adGroup": {
+                ".validate": "newData.val() === newData.parent().parent().parent().parent().child('daily').child(newData.parent().parent().child('recordId').val()).child('adGroup').val()"
+              },
+              "keyword": {
+                ".validate": "newData.val() === newData.parent().parent().parent().parent().child('daily').child(newData.parent().parent().child('recordId').val()).child('keyword').val()"
+              },
+              "contentId": {
+                ".validate": "newData.val() === newData.parent().parent().parent().parent().child('daily').child(newData.parent().parent().child('recordId').val()).child('contentId').val()"
+              },
+              "contentTitle": {
+                ".validate": "newData.val() === newData.parent().parent().parent().parent().child('daily').child(newData.parent().parent().child('recordId').val()).child('contentTitle').val()"
+              },
+              "service": {
+                ".validate": "newData.val() === newData.parent().parent().parent().parent().child('daily').child(newData.parent().parent().child('recordId').val()).child('service').val()"
+              },
+              "region": {
+                ".validate": "newData.val() === newData.parent().parent().parent().parent().child('daily').child(newData.parent().parent().child('recordId').val()).child('region').val()"
+              },
+              "spend": {
+                ".validate": "newData.val() === newData.parent().parent().parent().parent().child('daily').child(newData.parent().parent().child('recordId').val()).child('spend').val()"
+              },
+              "impressions": {
+                ".validate": "newData.val() === newData.parent().parent().parent().parent().child('daily').child(newData.parent().parent().child('recordId').val()).child('impressions').val()"
+              },
+              "clicks": {
+                ".validate": "newData.val() === newData.parent().parent().parent().parent().child('daily').child(newData.parent().parent().child('recordId').val()).child('clicks').val()"
+              },
+              "phoneClicks": {
+                ".validate": "newData.val() === newData.parent().parent().parent().parent().child('daily').child(newData.parent().parent().child('recordId').val()).child('phoneClicks').val()"
+              },
+              "chatClicks": {
+                ".validate": "newData.val() === newData.parent().parent().parent().parent().child('daily').child(newData.parent().parent().child('recordId').val()).child('chatClicks').val()"
+              },
+              "directionsClicks": {
+                ".validate": "newData.val() === newData.parent().parent().parent().parent().child('daily').child(newData.parent().parent().child('recordId').val()).child('directionsClicks').val()"
+              },
+              "saves": {
+                ".validate": "newData.val() === newData.parent().parent().parent().parent().child('daily').child(newData.parent().parent().child('recordId').val()).child('saves').val()"
+              },
+              "platformLeads": {
+                ".validate": "newData.val() === newData.parent().parent().parent().parent().child('daily').child(newData.parent().parent().child('recordId').val()).child('platformLeads').val()"
+              },
+              "note": {
+                ".validate": "newData.val() === newData.parent().parent().parent().parent().child('daily').child(newData.parent().parent().child('recordId').val()).child('note').val()"
+              },
+              "sourceType": {
+                ".validate": "newData.val() === newData.parent().parent().parent().parent().child('daily').child(newData.parent().parent().child('recordId').val()).child('sourceType').val()"
+              },
+              "version": {
+                ".validate": "newData.val() === newData.parent().parent().parent().parent().child('daily').child(newData.parent().parent().child('recordId').val()).child('version').val()"
+              },
+              "createdAtMs": {
+                ".validate": "newData.val() === newData.parent().parent().parent().parent().child('daily').child(newData.parent().parent().child('recordId').val()).child('createdAtMs').val()"
+              },
+              "createdByAuthUid": {
+                ".validate": "newData.val() === newData.parent().parent().parent().parent().child('daily').child(newData.parent().parent().child('recordId').val()).child('createdByAuthUid').val()"
+              },
+              "createdByOperatorId": {
+                ".validate": "newData.val() === newData.parent().parent().parent().parent().child('daily').child(newData.parent().parent().child('recordId').val()).child('createdByOperatorId').val()"
+              },
+              "updatedAtMs": {
+                ".validate": "newData.val() === newData.parent().parent().parent().parent().child('daily').child(newData.parent().parent().child('recordId').val()).child('updatedAtMs').val()"
+              },
+              "updatedByAuthUid": {
+                ".validate": "newData.val() === newData.parent().parent().parent().parent().child('daily').child(newData.parent().parent().child('recordId').val()).child('updatedByAuthUid').val()"
+              },
+              "updatedByOperatorId": {
+                ".validate": "newData.val() === newData.parent().parent().parent().parent().child('daily').child(newData.parent().parent().child('recordId').val()).child('updatedByOperatorId').val()"
+              },
+              "lastAction": {
+                ".validate": "newData.val() === newData.parent().parent().parent().parent().child('daily').child(newData.parent().parent().child('recordId').val()).child('lastAction').val()"
+              },
+              "lastAuditId": {
+                ".validate": "newData.val() === newData.parent().parent().parent().parent().child('daily').child(newData.parent().parent().child('recordId').val()).child('lastAuditId').val()"
+              },
+              "lastReceiptId": {
+                ".validate": "newData.val() === newData.parent().parent().parent().parent().child('daily').child(newData.parent().parent().child('recordId').val()).child('lastReceiptId').val()"
+              },
+              "lastRequestId": {
+                ".validate": "newData.val() === newData.parent().parent().parent().parent().child('daily').child(newData.parent().parent().child('recordId').val()).child('lastRequestId').val()"
+              },
+              "lastRequestHash": {
+                ".validate": "newData.val() === newData.parent().parent().parent().parent().child('daily').child(newData.parent().parent().child('recordId').val()).child('lastRequestHash').val()"
+              },
+              "archivedAtMs": {
+                ".validate": "newData.val() === newData.parent().parent().parent().parent().child('daily').child(newData.parent().parent().child('recordId').val()).child('archivedAtMs').val()"
+              },
+              "archivedByAuthUid": {
+                ".validate": "newData.val() === newData.parent().parent().parent().parent().child('daily').child(newData.parent().parent().child('recordId').val()).child('archivedByAuthUid').val()"
+              },
+              "archivedByOperatorId": {
+                ".validate": "newData.val() === newData.parent().parent().parent().parent().child('daily').child(newData.parent().parent().child('recordId').val()).child('archivedByOperatorId').val()"
+              },
+              "$other": {
+                ".validate": false
+              }
             },
-            "$other": { ".validate": false }
+            "$other": {
+              ".validate": false
+            }
           }
         },
         "aggregates": {
@@ -628,10 +1064,38 @@
           "$aggregateId": {
             ".write": false,
             ".validate": "newData.hasChildren(['id','date','spend','impressions','clicks','platformLeads','version','updatedAtMs']) && newData.child('id').val() === $aggregateId && newData.child('updatedAtMs').val() === now && ((!data.exists() && newData.child('version').val() === 1) || (data.exists() && newData.child('version').val() === data.child('version').val() + 1))",
-            "id": { ".validate": "newData.isString() && newData.val().matches(/^[A-Za-z0-9_-]{1,120}$/)" }, "date": { ".validate": "newData.isString() && newData.val().matches(/^[0-9]{4}-[0-9]{2}-[0-9]{2}$/)" }, "spend": { ".validate": "newData.isNumber() && newData.val() >= 0 && newData.val() <= 9007199254740991 && newData.val() % 1 === 0" }, "impressions": { ".validate": "newData.isNumber() && newData.val() >= 0 && newData.val() <= 9007199254740991 && newData.val() % 1 === 0" }, "clicks": { ".validate": "newData.isNumber() && newData.val() >= 0 && newData.val() <= 9007199254740991 && newData.val() % 1 === 0" }, "platformLeads": { ".validate": "newData.isNumber() && newData.val() >= 0 && newData.val() <= 9007199254740991 && newData.val() % 1 === 0" }, "version": { ".validate": "newData.isNumber() && newData.val() >= 1 && newData.val() % 1 === 0" }, "updatedAtMs": { ".validate": "newData.isNumber() && newData.val() > 0" }, "$other": { ".validate": false }
+            "id": {
+              ".validate": "newData.isString() && newData.val().matches(/^[A-Za-z0-9_-]{1,120}$/)"
+            },
+            "date": {
+              ".validate": "newData.isString() && newData.val().matches(/^[0-9]{4}-[0-9]{2}-[0-9]{2}$/)"
+            },
+            "spend": {
+              ".validate": "newData.isNumber() && newData.val() >= 0 && newData.val() <= 9007199254740991 && newData.val() % 1 === 0"
+            },
+            "impressions": {
+              ".validate": "newData.isNumber() && newData.val() >= 0 && newData.val() <= 9007199254740991 && newData.val() % 1 === 0"
+            },
+            "clicks": {
+              ".validate": "newData.isNumber() && newData.val() >= 0 && newData.val() <= 9007199254740991 && newData.val() % 1 === 0"
+            },
+            "platformLeads": {
+              ".validate": "newData.isNumber() && newData.val() >= 0 && newData.val() <= 9007199254740991 && newData.val() % 1 === 0"
+            },
+            "version": {
+              ".validate": "newData.isNumber() && newData.val() >= 1 && newData.val() % 1 === 0"
+            },
+            "updatedAtMs": {
+              ".validate": "newData.isNumber() && newData.val() > 0"
+            },
+            "$other": {
+              ".validate": false
+            }
           }
         },
-        "$other": { ".validate": false }
+        "$other": {
+          ".validate": false
+        }
       },
       "migration": {
         ".read": false,
@@ -644,16 +1108,71 @@
     },
     "cases": {
       ".read": "auth != null && root.child('crmCompany/access').child(auth.uid).child('enabled').val() === true && root.child('crmCompany/access').child(auth.uid).child('email').val() === auth.token.email && (root.child('crmCompany/access').child(auth.uid).child('role').val() === 'admin' || root.child('crmCompany/access').child(auth.uid).child('role').val() === 'member' || root.child('crmCompany/access').child(auth.uid).child('role').val() === 'viewer')",
-      ".write": "auth != null && root.child('crmCompany/access').child(auth.uid).child('enabled').val() === true && root.child('crmCompany/access').child(auth.uid).child('email').val() === auth.token.email && (root.child('crmCompany/access').child(auth.uid).child('role').val() === 'admin' || (root.child('crmCompany/access').child(auth.uid).child('role').val() === 'member' && root.child('crmCompany/access').child(auth.uid).child('marketingRole').val() !== 'marketing'))",
+      ".write": "auth != null && root.child('crmCompany/access').child(auth.uid).child('enabled').val() === true && root.child('crmCompany/access').child(auth.uid).child('email').val() === auth.token.email && (root.child('crmCompany/access').child(auth.uid).child('role').val() === 'admin' || (root.child('crmCompany/access').child(auth.uid).child('role').val() === 'member' && root.child('crmCompany/access').child(auth.uid).child('marketingRole').val() !== 'marketing')) && (root.child('crmCompany/access').child(auth.uid).child('role').val() === 'admin' || newData.child('marketing').val() === data.child('marketing').val())",
       "$caseId": {
         "marketing": {
-          ".write": "auth != null && root.child('crmCompany/access').child(auth.uid).child('enabled').val() === true && root.child('crmCompany/access').child(auth.uid).child('email').val() === auth.token.email && root.child('crmCompany/access').child(auth.uid).child('role').val() === 'member' && root.child('crmCompany/access').child(auth.uid).child('marketingRole').val() === 'marketing' && data.parent().exists()",
-          ".validate": "newData.exists() && (!newData.child('firstSource').exists() || newData.child('firstSource').val() === 'naver_place_ads' || newData.child('firstSource').val() === 'naver_place_organic' || newData.child('firstSource').val() === 'naver_blog' || newData.child('firstSource').val() === 'soomgo' || newData.child('firstSource').val() === 'daangn' || newData.child('firstSource').val() === 'broker' || newData.child('firstSource').val() === 'referral' || newData.child('firstSource').val() === 'direct_sales' || newData.child('firstSource').val() === 'other' || newData.child('firstSource').val() === 'needs_review') && (!newData.child('validLead').exists() || newData.child('validLead').isBoolean()) && (newData.child('validLead').val() !== false || newData.child('invalidReason').exists()) && (newData.child('validLead').val() !== true || !newData.child('invalidReason').exists()) && (!newData.child('attributionNote').exists() || (newData.child('attributionNote').isString() && newData.child('attributionNote').val().length <= 1000))",
-          "firstSource": { ".validate": true }, "lastSource": { ".validate": "newData.isString() && (newData.val() === 'naver_place_ads' || newData.val() === 'naver_place_organic' || newData.val() === 'naver_blog' || newData.val() === 'soomgo' || newData.val() === 'daangn' || newData.val() === 'broker' || newData.val() === 'referral' || newData.val() === 'direct_sales' || newData.val() === 'other' || newData.val() === 'needs_review')" }, "subChannel": { ".validate": "newData.isString() && newData.val().length <= 200" }, "campaignId": { ".validate": "newData.isString() && newData.val().length <= 200" }, "campaignName": { ".validate": "newData.isString() && newData.val().length <= 200" }, "keyword": { ".validate": "newData.isString() && newData.val().length <= 200" }, "contentId": { ".validate": "newData.isString() && newData.val().length <= 200" }, "contentTitle": { ".validate": "newData.isString() && newData.val().length <= 200" }, "inquiryMethod": { ".validate": "newData.isString() && (newData.val() === 'phone' || newData.val() === 'talktalk' || newData.val() === 'chat' || newData.val() === 'sms' || newData.val() === 'email' || newData.val() === 'google_form' || newData.val() === 'visit' || newData.val() === 'referral' || newData.val() === 'other')" }, "validLead": { ".validate": true }, "invalidReason": { ".validate": "newData.isString() && (newData.val() === 'outside_area' || newData.val() === 'unsupported_service' || newData.val() === 'vendor_sales' || newData.val() === 'duplicate' || newData.val() === 'unreachable' || newData.val() === 'wrong_number' || newData.val() === 'spam' || newData.val() === 'budget' || newData.val() === 'schedule' || newData.val() === 'other')" }, "firstTouchAt": { ".validate": "newData.isString() && newData.val().length <= 40" }, "inquiryAt": { ".validate": "newData.isString() && newData.val().length <= 40" }, "attributionNote": { ".validate": true }, "$other": { ".validate": false }
+          ".write": "auth != null && root.child('crmCompany/access').child(auth.uid).child('enabled').val() === true && root.child('crmCompany/access').child(auth.uid).child('email').val() === auth.token.email && root.child('crmCompany/access').child(auth.uid).child('mustChangePassword').val() !== true && (root.child('crmCompany/access').child(auth.uid).child('role').val() === 'admin' || (root.child('crmCompany/access').child(auth.uid).child('role').val() === 'member' && root.child('crmCompany/access').child(auth.uid).child('marketingRole').val() === 'marketing')) && data.parent().exists()",
+          ".validate": "newData.exists() && (!newData.child('firstSource').exists() || newData.child('firstSource').val() === 'naver_place_ads' || newData.child('firstSource').val() === 'naver_place_organic' || newData.child('firstSource').val() === 'naver_blog' || newData.child('firstSource').val() === 'soomgo' || newData.child('firstSource').val() === 'daangn' || newData.child('firstSource').val() === 'broker' || newData.child('firstSource').val() === 'referral' || newData.child('firstSource').val() === 'direct_sales' || newData.child('firstSource').val() === 'other' || newData.child('firstSource').val() === 'needs_review') && (!newData.child('validLead').exists() || newData.child('validLead').isBoolean()) && (newData.child('validLead').val() !== false || newData.child('invalidReason').exists()) && (newData.child('validLead').val() !== true || !newData.child('invalidReason').exists()) && (!newData.child('attributionNote').exists() || (newData.child('attributionNote').isString() && newData.child('attributionNote').val().length <= 1000)) && newData.hasChildren(['_version','_updatedAtMs','_updatedByAuthUid','_updatedByOperatorId']) && newData.child('_version').isNumber() && newData.child('_version').val() >= 1 && newData.child('_version').val() % 1 === 0 && newData.child('_updatedAtMs').val() === now && newData.child('_updatedByAuthUid').val() === auth.uid && newData.child('_updatedByOperatorId').val() === root.child('crmCompany/access').child(auth.uid).child('operatorId').val() && root.child('crmCompany/teamProfiles').child(newData.child('_updatedByOperatorId').val()).child('active').val() === true && ((!data.exists() && newData.child('_version').val() === 1) || (data.exists() && newData.child('_version').val() === data.child('_version').val() + 1))",
+          "firstSource": {
+            ".validate": true
+          },
+          "lastSource": {
+            ".validate": "newData.isString() && (newData.val() === 'naver_place_ads' || newData.val() === 'naver_place_organic' || newData.val() === 'naver_blog' || newData.val() === 'soomgo' || newData.val() === 'daangn' || newData.val() === 'broker' || newData.val() === 'referral' || newData.val() === 'direct_sales' || newData.val() === 'other' || newData.val() === 'needs_review')"
+          },
+          "subChannel": {
+            ".validate": "newData.isString() && newData.val().length <= 200"
+          },
+          "campaignId": {
+            ".validate": "newData.isString() && newData.val().length <= 200"
+          },
+          "campaignName": {
+            ".validate": "newData.isString() && newData.val().length <= 200"
+          },
+          "keyword": {
+            ".validate": "newData.isString() && newData.val().length <= 200"
+          },
+          "contentId": {
+            ".validate": "newData.isString() && newData.val().length <= 200"
+          },
+          "contentTitle": {
+            ".validate": "newData.isString() && newData.val().length <= 200"
+          },
+          "inquiryMethod": {
+            ".validate": "newData.isString() && (newData.val() === 'phone' || newData.val() === 'talktalk' || newData.val() === 'chat' || newData.val() === 'sms' || newData.val() === 'email' || newData.val() === 'google_form' || newData.val() === 'visit' || newData.val() === 'referral' || newData.val() === 'other')"
+          },
+          "validLead": {
+            ".validate": true
+          },
+          "invalidReason": {
+            ".validate": "newData.isString() && (newData.val() === 'outside_area' || newData.val() === 'unsupported_service' || newData.val() === 'vendor_sales' || newData.val() === 'duplicate' || newData.val() === 'unreachable' || newData.val() === 'wrong_number' || newData.val() === 'spam' || newData.val() === 'budget' || newData.val() === 'schedule' || newData.val() === 'other')"
+          },
+          "firstTouchAt": {
+            ".validate": "newData.isString() && newData.val().length <= 40"
+          },
+          "inquiryAt": {
+            ".validate": "newData.isString() && newData.val().length <= 40"
+          },
+          "attributionNote": {
+            ".validate": true
+          },
+          "$other": {
+            ".validate": false
+          },
+          "_version": {
+            ".validate": true
+          },
+          "_updatedAtMs": {
+            ".validate": true
+          },
+          "_updatedByAuthUid": {
+            ".validate": true
+          },
+          "_updatedByOperatorId": {
+            ".validate": true
+          }
         },
-        "marketingUpdatedAt": { ".write": "auth != null && root.child('crmCompany/access').child(auth.uid).child('role').val() === 'member' && root.child('crmCompany/access').child(auth.uid).child('marketingRole').val() === 'marketing' && newData.isString() && newData.val().matches(/^[0-9]{4}-[0-9]{2}-[0-9]{2}T/)" },
-        "marketingUpdatedBy": { ".write": "auth != null && root.child('crmCompany/access').child(auth.uid).child('role').val() === 'member' && root.child('crmCompany/access').child(auth.uid).child('marketingRole').val() === 'marketing' && newData.val() === auth.uid" },
-        ".validate": "!newData.exists() || newData.child('caseParty').val() === '건물주' || newData.child('caseParty').val() === '브링' || (data.exists() && (!data.child('caseParty').exists() || data.child('caseParty').val() === '') && (!newData.child('caseParty').exists() || newData.child('caseParty').val() === ''))"
+        ".validate": "!newData.exists() || newData.child('caseParty').val() === '건물주' || newData.child('caseParty').val() === '브링' || (data.exists() && (!data.child('caseParty').exists() || data.child('caseParty').val() === '') && (!newData.child('caseParty').exists() || newData.child('caseParty').val() === ''))",
+        ".write": "auth != null && root.child('crmCompany/access').child(auth.uid).child('enabled').val() === true && root.child('crmCompany/access').child(auth.uid).child('email').val() === auth.token.email && (root.child('crmCompany/access').child(auth.uid).child('role').val() === 'admin' || (root.child('crmCompany/access').child(auth.uid).child('role').val() === 'member' && root.child('crmCompany/access').child(auth.uid).child('marketingRole').val() !== 'marketing')) && (root.child('crmCompany/access').child(auth.uid).child('role').val() === 'admin' || newData.child('marketing').val() === data.child('marketing').val())"
       }
     },
     "paymentCalendars": {
@@ -913,21 +1432,51 @@
         "$orderId": {
           ".write": "(!data.exists() && newData.exists()) || (auth != null && root.child('crmCompany/access').child(auth.uid).child('enabled').val() === true && root.child('crmCompany/access').child(auth.uid).child('email').val() === auth.token.email && (root.child('crmCompany/access').child(auth.uid).child('role').val() === 'admin' || (root.child('crmCompany/access').child(auth.uid).child('role').val() === 'member' && root.child('crmCompany/access').child(auth.uid).child('marketingRole').val() !== 'marketing')))",
           ".validate": "newData.hasChildren(['productId', 'productName', 'price', 'qty', 'amount', 'name', 'phone', 'receive', 'addr', 'status', 'createdAt']) && newData.child('productId').isString() && newData.child('productId').val().length > 0 && newData.child('productId').val().length <= 160 && newData.child('productName').isString() && newData.child('productName').val().length <= 200 && newData.child('price').isNumber() && newData.child('price').val() >= 0 && newData.child('qty').isNumber() && newData.child('qty').val() >= 1 && newData.child('qty').val() <= 100 && newData.child('amount').isNumber() && newData.child('amount').val() >= 0 && newData.child('name').isString() && newData.child('name').val().length > 0 && newData.child('name').val().length <= 80 && newData.child('phone').isString() && newData.child('phone').val().length >= 9 && newData.child('phone').val().length <= 30 && newData.child('receive').isString() && newData.child('receive').val().length <= 40 && newData.child('addr').isString() && newData.child('addr').val().length > 0 && newData.child('addr').val().length <= 300 && (!newData.child('memo').exists() || (newData.child('memo').isString() && newData.child('memo').val().length <= 1000)) && newData.child('status').isString() && newData.child('status').val().length > 0 && newData.child('status').val().length <= 40 && newData.child('createdAt').isNumber()",
-          "productId": { ".validate": true },
-          "productName": { ".validate": true },
-          "option": { ".validate": true },
-          "vendor": { ".validate": true },
-          "price": { ".validate": true },
-          "qty": { ".validate": true },
-          "amount": { ".validate": true },
-          "name": { ".validate": true },
-          "phone": { ".validate": true },
-          "receive": { ".validate": true },
-          "addr": { ".validate": true },
-          "memo": { ".validate": true },
-          "status": { ".validate": true },
-          "createdAt": { ".validate": true },
-          "$other": { ".validate": false }
+          "productId": {
+            ".validate": true
+          },
+          "productName": {
+            ".validate": true
+          },
+          "option": {
+            ".validate": true
+          },
+          "vendor": {
+            ".validate": true
+          },
+          "price": {
+            ".validate": true
+          },
+          "qty": {
+            ".validate": true
+          },
+          "amount": {
+            ".validate": true
+          },
+          "name": {
+            ".validate": true
+          },
+          "phone": {
+            ".validate": true
+          },
+          "receive": {
+            ".validate": true
+          },
+          "addr": {
+            ".validate": true
+          },
+          "memo": {
+            ".validate": true
+          },
+          "status": {
+            ".validate": true
+          },
+          "createdAt": {
+            ".validate": true
+          },
+          "$other": {
+            ".validate": false
+          }
         }
       },
       "$other": {

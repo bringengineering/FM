@@ -5,6 +5,7 @@ const assert = require('node:assert/strict');
 const Core = require('../src/marketing-core');
 const UI = require('../src/marketing-ui');
 const CrmCore = require('../src/core');
+const MarketingCrmBridge = require('../src/marketing-crm-bridge');
 const fs = require('node:fs');
 const path = require('node:path');
 
@@ -42,6 +43,14 @@ test('customer attribution roundtrips legacy-safe without private or AI fields',
   const customer = CrmCore.normalizeCustomer({ id: 'c', notes: 'private', marketing: { inquiryMethod: 'talktalk', validLead: false, invalidReason: 'spam', attributionNote: 'marketing', privateNote: 'leak', aiPrompt: 'leak' } });
   assert.deepEqual(customer.marketing, { inquiryMethod: 'talktalk', validLead: false, invalidReason: 'spam', attributionNote: 'marketing' });
   assert.throws(() => CrmCore.normalizeCustomer({ marketing: { validLead: false } }), /invalidReason/);
+});
+
+test('persistence retains bounded attribution CAS metadata while public normalization strips it', () => {
+  const stored = CrmCore.normalizeCustomer({ id: 'c', marketing: { keyword: 'k', _version: 2, _updatedAtMs: 123, _updatedByAuthUid: 'uid', _updatedByOperatorId: 'operator' } });
+  assert.equal(stored.marketing._version, 2);
+  assert.equal(stored.marketing._updatedAtMs, 123);
+  assert.deepEqual(CrmCore.normalizeMarketingAttribution(stored.marketing), { keyword: 'k' });
+  assert.deepEqual(MarketingCrmBridge.normalizeCaseMarketing({ id: 'case', marketing: stored.marketing }).marketing, { keyword: 'k' });
 });
 
 test('entry controller reviews duplicates, preserves opened version, and refreshes only after commit', async () => {

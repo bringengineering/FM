@@ -71,8 +71,10 @@ const CRM_ACCESS = {
   },
   "crm-legacy-member": { enabled: true, email: "legacy@bring.test", role: "member", operatorId: "operator_kim" },
   "crm-marketing": { enabled: true, email: "marketing@bring.test", role: "member", marketingRole: "marketing", operatorId: "operator_kim" },
+  "crm-marketing-two": { enabled: true, email: "marketing-two@bring.test", role: "member", marketingRole: "marketing", operatorId: "operator_kim" },
   "crm-sales": { enabled: true, email: "sales@bring.test", role: "member", marketingRole: "sales", operatorId: "operator_kim" },
   "crm-marketing-disabled": { enabled: false, email: "marketing-disabled@bring.test", role: "member", marketingRole: "marketing", operatorId: "operator_kim" },
+  "crm-marketing-password-change": { enabled: true, email: "marketing-password@bring.test", role: "member", marketingRole: "marketing", operatorId: "operator_kim", mustChangePassword: true },
   "crm-disabled": {
     enabled: false,
     email: "disabled@bring.test",
@@ -3114,7 +3116,43 @@ function marketingAtomic(id: string, actorUid: string, record = marketingRecord(
   return { [`daily/${id}`]: record, [`audits/${MARKETING_AUDIT}`]: marketingAudit(id, actorUid, action), [`receipts/${MARKETING_RECEIPT}`]: marketingReceipt(id, actorUid, action) };
 }
 
+function attributionRecord(actorUid: string, version = 1, keyword = "draft") {
+  return { keyword, _version: version, _updatedAtMs: { ".sv": "timestamp" }, _updatedByAuthUid: actorUid, _updatedByOperatorId: "operator_kim" };
+}
+
+async function attributionRest(database: any, path: string, options: { method?: string; etag?: string; body?: unknown } = {}) {
+  const repo = database._repo || database._repoInternal || database._delegate?._repoInternal;
+  const token = await (repo.authTokenProvider_ || repo.authTokenProvider).getToken(false);
+  const url = `http://${process.env.FIREBASE_DATABASE_EMULATOR_HOST}/${path}.json?ns=${PROJECT_ID}`;
+  const headers: Record<string, string> = { Authorization: `Bearer ${token.accessToken}` };
+  if (!options.method) headers["X-Firebase-ETag"] = "true";
+  if (options.etag) headers["If-Match"] = options.etag;
+  if (options.body !== undefined) headers["Content-Type"] = "application/json";
+  const response = await fetch(url, { method: options.method || "GET", headers, body: options.body === undefined ? undefined : JSON.stringify(options.body) });
+  const text = await response.text();
+  return { status: response.status, etag: response.headers.get("etag") || "", value: text ? JSON.parse(text) : null };
+}
+
 describe.runIf(databaseEmulatorAvailable)("marketing database rules", () => {
+  it("performs exact child stale-ETag CAS with review before retry", async () => {
+    await environment.withSecurityRulesDisabled(async context => set(ref(context.database(), "cases/case_cas"), { id: "case_cas", caseParty: "브링", title: "keep" }));
+    const firstClient = environment.authenticatedContext("crm-marketing", crmClaims("marketing@bring.test")).database();
+    const secondClient = environment.authenticatedContext("crm-marketing-two", crmClaims("marketing-two@bring.test")).database();
+    const firstRead = await attributionRest(firstClient, "cases/case_cas/marketing");
+    const secondRead = await attributionRest(secondClient, "cases/case_cas/marketing");
+    expect(firstRead.status).toBe(200); expect(secondRead.etag).toBe(firstRead.etag);
+    const firstWrite = await attributionRest(firstClient, "cases/case_cas/marketing", { method: "PUT", etag: firstRead.etag, body: attributionRecord("crm-marketing", 1, "first") });
+    expect(firstWrite.status).toBe(200);
+    const staleWrite = await attributionRest(secondClient, "cases/case_cas/marketing", { method: "PUT", etag: secondRead.etag, body: attributionRecord("crm-marketing-two", 1, "stale") });
+    expect(staleWrite.status).toBe(412);
+    const reviewed = await attributionRest(secondClient, "cases/case_cas/marketing");
+    expect(reviewed.value.keyword).toBe("first"); expect(reviewed.value._version).toBe(1);
+    const retry = await attributionRest(secondClient, "cases/case_cas/marketing", { method: "PUT", etag: reviewed.etag, body: attributionRecord("crm-marketing-two", 2, "reviewed") });
+    expect(retry.status).toBe(200);
+    const current = await attributionRest(firstClient, "cases/case_cas/marketing");
+    expect(current.value.keyword).toBe("reviewed"); expect(current.value._version).toBe(2);
+  });
+
   it("limits marketing-only CRM writes to exact attribution children and marketing daily", async () => {
     await environment.withSecurityRulesDisabled(async context => {
       await set(ref(context.database(), "cases/case_marketing"), { id: "case_marketing", caseParty: "브링", title: "keep" });
@@ -3124,12 +3162,16 @@ describe.runIf(databaseEmulatorAvailable)("marketing database rules", () => {
     await assertFails(update(ref(database, "crmCompany/data/buildings/building_1"), { memo: "forged" }));
     await assertFails(set(ref(database, "paymentCalendars/crm-marketing/forged"), { amount: 1 }));
     await assertFails(update(ref(database, "cases/case_marketing"), { title: "forged" }));
-    const customerAttribution = { marketing: { firstSource: "naver_blog", validLead: true }, marketingUpdatedAt: NOW, marketingUpdatedBy: "crm-marketing" };
-    await assertSucceeds(update(ref(database, "crmCompany/data/customers/customer_1"), customerAttribution));
-    await assertFails(update(ref(database, "crmCompany/data/customers/customer_1"), { ...customerAttribution, name: "forged" }));
-    const caseAttribution = { marketing: { firstSource: "referral", validLead: false, invalidReason: "spam" }, marketingUpdatedAt: NOW, marketingUpdatedBy: "crm-marketing" };
-    await assertSucceeds(update(ref(database, "cases/case_marketing"), caseAttribution));
-    await assertFails(update(ref(database, "cases/case_marketing"), { ...caseAttribution, title: "forged" }));
+    await assertSucceeds(set(ref(database, "crmCompany/data/customers/customer_1/marketing"), { ...attributionRecord("crm-marketing"), firstSource: "naver_blog", validLead: true }));
+    await assertFails(update(ref(database, "crmCompany/data/customers/customer_1"), { name: "forged", marketingUpdatedAt: NOW }));
+    await assertSucceeds(set(ref(database, "cases/case_marketing/marketing"), { ...attributionRecord("crm-marketing"), firstSource: "referral", validLead: false, invalidReason: "spam" }));
+    await assertFails(update(ref(database, "cases/case_marketing"), { title: "forged", marketingUpdatedBy: "crm-marketing" }));
+    const admin = environment.authenticatedContext("crm-admin", crmClaims("admin@bring.test")).database();
+    await assertSucceeds(set(ref(admin, "cases/case_marketing/marketing"), { ...attributionRecord("crm-admin", 2), keyword: "admin" }));
+    for (const [uid, email] of [["crm-marketing-disabled", "marketing-disabled@bring.test"], ["crm-marketing-password-change", "marketing-password@bring.test"], ["crm-viewer", "viewer@bring.test"], ["crm-sales", "sales@bring.test"]] as const) {
+      await assertFails(set(ref(environment.authenticatedContext(uid, crmClaims(email)).database(), "crmCompany/data/customers/customer_1/marketing"), attributionRecord(uid)));
+    }
+    await assertFails(set(ref(environment.authenticatedContext("crm-marketing", crmClaims("wrong@bring.test")).database(), "crmCompany/data/customers/customer_1/marketing"), attributionRecord("crm-marketing")));
   });
 
   it("allows active admin and marketing atomic writes and viewer reads while denying other writers and identities", async () => {

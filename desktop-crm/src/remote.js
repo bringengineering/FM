@@ -2965,27 +2965,29 @@ class FirebaseRemoteClient {
     if (!this.sessionGuardActive(guard)) throw createError('session changed', 'SESSION_CHANGED');
     const freshIdToken = await this.ensureIdToken(false);
     if (!this.sessionGuardActive(guard)) throw createError('session changed', 'SESSION_CHANGED');
-    const snapshot = Object.freeze({ uid: String(session.uid || ''), generation: guard.generation, idToken: String(freshIdToken || ''), actor: String(session.uid || '').slice(0, 128) });
+    const snapshot = Object.freeze({ uid: String(session.uid || ''), generation: guard.generation, idToken: String(freshIdToken || ''), actor: String(session.uid || '').slice(0, 128), operatorId: String(session.operatorId || '').slice(0, 120) });
     if (!snapshot.uid || !snapshot.idToken) throw createError('authentication required', 'AUTH_REQUIRED');
-    const path = kind === 'customer' ? `crmShared/data/customers/${id}` : `cases/${id}`;
+    const path = kind === 'customer' ? `crmShared/data/customers/${id}/marketing` : `cases/${id}/marketing`;
     const root = kind === 'customer' ? this.databaseRoot : '';
     if (!this.sessionGuardActive(guard)) throw createError('session changed', 'SESSION_CHANGED');
     const firstRead = await this.dbRequestWithCapturedAuth(path, { method: 'GET', includeEtag: true, headers: { 'X-Firebase-ETag': 'true' } }, root, snapshot);
     if (!this.sessionGuardActive(guard)) throw createError('session changed', 'SESSION_CHANGED');
     const current = firstRead && Object.prototype.hasOwnProperty.call(firstRead, 'value') ? firstRead.value : firstRead;
-    const expectedEtag = String(firstRead && firstRead.etag || '*');
-    if (!current || typeof current !== 'object') throw createError('attribution target not found', 'MARKETING_ATTRIBUTION_NOT_FOUND');
-    const body = { marketing, marketingUpdatedAt: new Date().toISOString(), marketingUpdatedBy: snapshot.actor };
+    const expectedEtag = String(firstRead && firstRead.etag || '');
+    if (!expectedEtag) throw createError('marketing attribution ETag missing', 'MARKETING_ATTRIBUTION_ETAG_MISSING');
+    const currentVersion = current && Number.isSafeInteger(current._version) && current._version >= 1 ? current._version : 0;
+    const body = Object.assign({}, marketing, { _version: currentVersion + 1, _updatedAtMs: { '.sv': 'timestamp' }, _updatedByAuthUid: snapshot.actor, _updatedByOperatorId: snapshot.operatorId });
     if (!this.sessionGuardActive(guard)) throw createError('session changed', 'SESSION_CHANGED');
     try {
-      await this.dbRequestWithCapturedAuth(path, { method: 'PATCH', body, query: 'print=silent', includeEtag: true, headers: { 'If-Match': expectedEtag } }, root, snapshot);
+      await this.dbRequestWithCapturedAuth(path, { method: 'PUT', body, query: 'print=silent', includeEtag: true, headers: { 'If-Match': expectedEtag } }, root, snapshot);
     } catch (error) {
       if (Number(error && error.status) !== 412) throw error;
       if (!this.sessionGuardActive(guard)) throw createError('session changed', 'SESSION_CHANGED');
       const latest = await this.dbRequestWithCapturedAuth(path, { method: 'GET', includeEtag: true, headers: { 'X-Firebase-ETag': 'true' } }, root, snapshot);
       if (!this.sessionGuardActive(guard)) throw createError('session changed', 'SESSION_CHANGED');
       const conflict = createError('marketing attribution changed; review required', 'MARKETING_ATTRIBUTION_CONFLICT');
-      conflict.currentMarketing = this.Core.normalizeMarketingAttribution(latest && latest.value && latest.value.marketing);
+      conflict.currentMarketing = this.Core.normalizeMarketingAttribution(latest && latest.value);
+      conflict.currentVersion = latest && latest.value && Number.isSafeInteger(latest.value._version) ? latest.value._version : 0;
       conflict.currentEtag = String(latest && latest.etag || '').slice(0, 256);
       throw conflict;
     }
