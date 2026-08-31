@@ -8,6 +8,8 @@
   const CHANNELS = Object.freeze(['naver_place_ads', 'naver_place_organic', 'naver_blog', 'soomgo', 'daangn', 'broker', 'referral', 'direct_sales', 'other', 'needs_review']);
   const SERVICES = Object.freeze(['civil_engineering', 'architecture', 'surveying', 'design', 'inspection', 'consulting', 'other', 'needs_review']);
   const DATA_STATUSES = Object.freeze(['verified', 'estimated', 'pending', 'needs_review']);
+  const EXPAND_ROAS_PERCENT = 300;
+  const MIN_EXPAND_CONTRACTS = 1;
   const COUNT_FIELDS = ['spend', 'impressions', 'clicks', 'inquiries', 'validLeads', 'consultations', 'quotes', 'contracts', 'newContracts', 'payments', 'contractAmount', 'paidAmount', 'expectedCost'];
   const OPTIONAL_FIELDS = ['campaign', 'content', 'service', 'region', 'owner', 'customerType', 'keyword', 'customerStatus', 'dataStatus'];
   const FILTER_FIELDS = ['channel', 'service', 'region', 'owner', 'customerType', 'campaign', 'keyword', 'customerStatus', 'dataStatus'];
@@ -120,8 +122,14 @@
 
   function sums(daily, facts) {
     const total = Object.fromEntries(COUNT_FIELDS.map(key => [key, 0]));
-    for (const row of daily) for (const key of COUNT_FIELDS) total[key] += normalizeNumber(row[key], key);
-    for (const row of facts) for (const key of COUNT_FIELDS) total[key] += normalizeNumber(row[key], key);
+    for (const row of daily.concat(facts)) {
+      for (const key of COUNT_FIELDS) {
+        if (key === 'newContracts') continue;
+        total[key] += normalizeNumber(row[key], key);
+      }
+      const effectiveNewContracts = Object.prototype.hasOwnProperty.call(row, 'newContracts') ? row.newContracts : row.contracts;
+      total.newContracts += normalizeNumber(effectiveNewContracts, 'newContracts');
+    }
     total.profit = total.contractAmount - total.expectedCost - total.spend;
     return total;
   }
@@ -139,13 +147,13 @@
     const activeFacts = factCandidates.filter(row => !isArchived(row));
     const facts = activeFacts.map(row => {
       if (!['cancelled', 'invalid'].includes(contractStatus(row))) return row;
-      return Object.assign({}, row, { contracts: 0, newContracts: 0, contractAmount: 0, paidAmount: 0, expectedCost: 0, payments: 0 });
+      return Object.assign({}, row, { contracts: 0, newContracts: 0, contractAmount: 0 });
     });
     const exclusions = {
       archivedDaily: dailyCandidates.length - daily.length,
       archivedFacts: factCandidates.length - activeFacts.length,
-      cancelledContracts: activeFacts.filter(row => contractStatus(row) === 'cancelled').length,
-      invalidContracts: activeFacts.filter(row => contractStatus(row) === 'invalid').length
+      cancelledFactRecords: activeFacts.filter(row => contractStatus(row) === 'cancelled').length,
+      invalidFactRecords: activeFacts.filter(row => contractStatus(row) === 'invalid').length
     };
     return { daily, facts, totals: sums(daily, facts), exclusions };
   }
@@ -159,10 +167,12 @@
   });
   function rateChannel(total) {
     const metrics = total.metrics;
+    const evidenceFields = ['impressions', 'clicks', 'inquiries', 'validLeads', 'consultations', 'quotes', 'contracts', 'payments', 'spend', 'contractAmount', 'paidAmount', 'expectedCost'];
+    const hasRelevantEvidence = evidenceFields.some(key => total[key] > 0);
     let rating, rationale;
-    if (total.spend === 0 && total.clicks === 0 && total.validLeads === 0 && total.contracts === 0) {
+    if (!hasRelevantEvidence) {
       rating = 'data_insufficient'; rationale = ['판단할 유의미한 활동 데이터가 없습니다.'];
-    } else if (total.contracts >= 1 && metrics.roas >= 300 && metrics.expectedMarketingProfit > 0) {
+    } else if (total.contracts >= MIN_EXPAND_CONTRACTS && metrics.roas >= EXPAND_ROAS_PERCENT && metrics.expectedMarketingProfit > 0) {
       rating = 'expand_review'; rationale = [`계약 ${total.contracts}건과 ROAS ${metrics.roas}%를 달성했습니다.`, `예상 마케팅 이익이 ${metrics.expectedMarketingProfit}원입니다.`];
     } else if (total.contracts >= 1 && metrics.expectedMarketingProfit >= 0) {
       rating = 'maintain'; rationale = [`계약 ${total.contracts}건과 비음수 이익을 유지하고 있습니다.`];
@@ -202,5 +212,5 @@
     return freeze(snapshot);
   }
 
-  return Object.freeze({ CHANNELS, SERVICES, DATA_STATUSES, normalizeDaily, safeDivide, safeRate, calculateMetrics, resolvePeriod, buildSnapshot });
+  return Object.freeze({ CHANNELS, SERVICES, DATA_STATUSES, EXPAND_ROAS_PERCENT, MIN_EXPAND_CONTRACTS, normalizeDaily, safeDivide, safeRate, calculateMetrics, resolvePeriod, buildSnapshot });
 }));

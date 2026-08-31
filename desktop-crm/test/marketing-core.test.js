@@ -142,7 +142,7 @@ test('archivedAt and legacy archive markers exclude daily and CRM facts from eve
   assert.equal(s.totals.contracts, 1);
   assert.equal(s.funnel.find(x => x.stage === 'contracts').count, 1);
   assert.equal(s.channels.naver_blog.contractAmount, 100);
-  assert.deepEqual(s.exclusions, { archivedDaily: 2, archivedFacts: 2, cancelledContracts: 0, invalidContracts: 0 });
+  assert.deepEqual(s.exclusions, { archivedDaily: 2, archivedFacts: 2, cancelledFactRecords: 0, invalidFactRecords: 0 });
   assert.equal(Object.isFrozen(s.exclusions), true);
 });
 
@@ -156,10 +156,10 @@ test('shared filters normalize unknown attribution vocabularies before filtering
   assert.equal(s.channels.needs_review.contracts, 1);
 });
 
-test('cancelled and invalid composite facts preserve pre-contract funnel while zeroing contract economics', () => {
+test('cancelled and invalid composite facts preserve funnel and incurred cash/cost while zeroing contract count and value', () => {
   const facts = [
-    { date: '2026-08-31', channel: 'other', inquiries: 3, validLeads: 2, consultations: 2, quotes: 1, contracts: 1, newContracts: 1, contractAmount: 100, paidAmount: 80, expectedCost: 40, contractStatus: 'cancelled' },
-    { date: '2026-08-31', channel: 'other', inquiries: 4, validLeads: 3, consultations: 2, quotes: 2, contracts: 1, contractAmount: 200, paidAmount: 100, expectedCost: 60, contractStatus: 'invalid' },
+    { date: '2026-08-31', channel: 'other', inquiries: 3, validLeads: 2, consultations: 2, quotes: 1, contracts: 1, newContracts: 1, payments: 1, contractAmount: 100, paidAmount: 80, expectedCost: 40, contractStatus: 'cancelled' },
+    { date: '2026-08-31', channel: 'other', inquiries: 4, validLeads: 3, consultations: 2, quotes: 2, contracts: 1, payments: 1, contractAmount: 200, paidAmount: 100, expectedCost: 60, contractStatus: 'invalid' },
     { date: '2026-08-31', channel: 'other', kind: 'payment', paidAmount: 999, contractStatus: 'cancelled' }
   ];
   const s = buildSnapshot({ daily: [], facts }, { period: { type: 'custom', start: '2026-08-31', end: '2026-08-31' } });
@@ -168,9 +168,11 @@ test('cancelled and invalid composite facts preserve pre-contract funnel while z
   assert.equal(s.totals.quotes, 3);
   assert.equal(s.totals.contracts, 0);
   assert.equal(s.totals.contractAmount, 0);
-  assert.equal(s.totals.paidAmount, 0);
-  assert.equal(s.totals.expectedCost, 0);
-  assert.deepEqual(s.exclusions, { archivedDaily: 0, archivedFacts: 0, cancelledContracts: 2, invalidContracts: 1 });
+  assert.equal(s.totals.payments, 2);
+  assert.equal(s.totals.paidAmount, 1179);
+  assert.equal(s.totals.expectedCost, 100);
+  assert.equal(s.metrics.expectedMarketingProfit, -100);
+  assert.deepEqual(s.exclusions, { archivedDaily: 0, archivedFacts: 0, cancelledFactRecords: 2, invalidFactRecords: 1 });
 });
 
 test('channel rating covers every deterministic branch and exact ROAS boundary', () => {
@@ -180,7 +182,9 @@ test('channel rating covers every deterministic branch and exact ROAS boundary',
     { date, channel: 'naver_blog', spend: 100, validLeads: 1 },
     { date, channel: 'soomgo', spend: 100, validLeads: 1 },
     { date, channel: 'daangn', spend: 100 },
-    { date, channel: 'broker', expectedCost: 10 }
+    { date, channel: 'broker', expectedCost: 10 },
+    { date, channel: 'direct_sales', impressions: 10 },
+    { date, channel: 'naver_place_organic', inquiries: 1 }
   ];
   const facts = [
     { date, channel: 'naver_blog', contracts: 1, contractAmount: 300, expectedCost: 100 },
@@ -194,10 +198,32 @@ test('channel rating covers every deterministic branch and exact ROAS boundary',
   assert.equal(s.channels.soomgo.rating, 'maintain');
   assert.equal(s.channels.daangn.rating, 'stop_review');
   assert.equal(s.channels.referral.rating, 'improve');
-  assert.equal(s.channels.broker.rating, 'data_insufficient');
+  assert.equal(s.channels.broker.rating, 'improve');
+  assert.equal(s.channels.direct_sales.rating, 'improve');
+  assert.equal(s.channels.naver_place_organic.rating, 'improve');
   for (const row of Object.values(s.channels)) {
     assert.match(row.ratingLabel, /데이터 부족|확대 검토|유지|개선 필요|중단 검토/);
     assert.ok(row.rationale.length >= 1 && row.rationale.length <= 3);
     assert.ok(row.rationale.every(reason => typeof reason === 'string' && /[가-힣]/.test(reason)));
   }
+});
+
+test('snapshot and channel CPA use effective new contracts with explicit zero preserved', () => {
+  const period = { type: 'custom', start: '2026-08-31', end: '2026-08-31' };
+  const legacy = buildSnapshot({
+    daily: [{ date: '2026-08-31', channel: 'naver_blog', spend: 100 }],
+    facts: [{ date: '2026-08-31', channel: 'naver_blog', contracts: 2 }]
+  }, { period });
+  assert.equal(legacy.totals.newContracts, 2);
+  assert.equal(legacy.metrics.cpa, 50);
+  assert.equal(legacy.channels.naver_blog.newContracts, 2);
+  assert.equal(legacy.channels.naver_blog.metrics.cpa, 50);
+
+  const repeatOnly = buildSnapshot({
+    daily: [{ date: '2026-08-31', channel: 'naver_blog', spend: 100 }],
+    facts: [{ date: '2026-08-31', channel: 'naver_blog', contracts: 2, newContracts: 0 }]
+  }, { period });
+  assert.equal(repeatOnly.totals.newContracts, 0);
+  assert.equal(repeatOnly.metrics.cpa, null);
+  assert.equal(repeatOnly.channels.naver_blog.metrics.cpa, null);
 });
