@@ -184,3 +184,40 @@ test('navigation identifies exact ad records and applies exact channel/source fi
   assert.match(app,/targetType === "channel"[\s\S]{0,220}setFilter\("channel", targetId\)/);
   assert.match(app,/targetType === "source"[\s\S]{0,220}setFilter\("channel", targetId\)/);
 });
+
+test('duplicate alert without stable entity IDs uses a constant target and leaks no identity into DOM', () => {
+  const fact={id:'person@example.com',duplicateIdentityKey:'010-1234-5678 person@example.com',duplicateCount:2,name:'Secret Person'};
+  const alerts=Core.buildAlerts({snapshot:{totals:{},filteredFacts:[fact],filteredDaily:[]},facts:[fact]},now);
+  const duplicate=alerts.find(a=>a.code==='duplicate_customer_risk');
+  assert.equal(duplicate.targetId,'aggregate-duplicate-customers');
+  const html=UI.renderWorkspace({view:'marketingAlerts',snapshot:{totals:{}},filters:UI.defaultFilters(),alerts});
+  assert.doesNotMatch(JSON.stringify(duplicate)+html,/010-1234|person@example|Secret Person/);
+});
+
+test('manual validated budget pair roundtrips UI normalize persistence controller and alert', async () => {
+  const input=UI.renderMarketingInput({canWrite:true,draft:{date:'2026-08-31',channel:'naver_blog'}});
+  assert.match(input,/name="dailyBudget"/); assert.match(input,/name="budgetValidatedAt"/); assert.match(input,/검증된 일예산/); assert.match(input,/근거 확인 후 입력/);
+  const normalized=Core.normalizeManualRecord({date:'2026-08-31',channel:'naver_blog',spend:80,dailyBudget:100,budgetValidatedAt:'2026-08-31T11:00'});
+  assert.equal(normalized.dailyBudget,100); assert.equal(normalized.budgetValidatedAtMs,Date.parse('2026-08-31T11:00'));
+  assert.throws(()=>Core.normalizeManualRecord({date:'2026-08-31',channel:'naver_blog',dailyBudget:100}),/budget/i);
+  const state={daily:{},audits:{},receipts:{}}, persistence=Persistence.createLocalPersistence({state,clock:()=>now.getTime(),getSession:()=>({uid:'u',email:'u@x',role:'admin',marketingRole:''}),resolveActor:()=>({authUid:'u',operatorId:'op',email:'u@x',accessRole:'admin',marketingRole:'',active:true})});
+  await persistence.commit({id:'budget_record',requestId:'123e4567-e89b-42d3-a456-426614174000',expectedVersion:0,action:'create',values:normalized});
+  const envelope=persistence.read(), controller=UI.createController({core:Core,bridge:{projectFacts:()=>[],sourceRevision:()=>''},now:()=>now,readRaw:async()=>envelope});
+  await controller.load({accessRole:'admin'},{});
+  assert.ok(controller.state.alerts.some(a=>a.code==='budget_80_percent'));
+});
+
+test('Today stale alert uses selected channel history outside period and excludes unrelated channels', async () => {
+  const controller=UI.createController({core:Core,bridge:{projectFacts:()=>[],sourceRevision:()=>''},now:()=>now,readRaw:async()=>({daily:[{id:'old',date:'2026-08-20',channel:'naver_blog',updatedAtMs:now.getTime()-73*3600000},{id:'other',date:'2026-08-20',channel:'soomgo',updatedAtMs:now.getTime()-80*3600000}]})});
+  await controller.load({accessRole:'admin'},{}); controller.setFilter('channel','naver_blog'); controller.setPeriod('today');
+  assert.ok(controller.state.alerts.some(a=>a.code==='channel_stale_72h'&&a.targetId==='naver_blog'));
+  assert.equal(controller.state.alerts.some(a=>a.targetId==='soomgo'),false);
+});
+
+test('pending evidence target survives async entry refresh and focuses after rerender', () => {
+  const app=fs.readFileSync(path.join(__dirname,'../src/app.js'),'utf8');
+  assert.match(app,/let pendingMarketingEvidenceTarget = ""/);
+  assert.match(app,/pendingMarketingEvidenceTarget = targetId/);
+  assert.match(app,/marketingEntryController\.refresh\(\)\.then\(\(\) => \{ if \(currentWorkspace === "marketing" && currentMarketingView === "marketingInput"\) renderMarketingWorkspace\(\)/);
+  assert.match(app,/pendingMarketingEvidenceTarget[\s\S]{0,500}data-marketing-entry-id[\s\S]{0,300}pendingMarketingEvidenceTarget = ""/);
+});

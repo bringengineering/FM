@@ -77,6 +77,15 @@
     const result = { date: input.date, channel: input.channel, sourceType: 'manual' };
     for (const name of MANUAL_NUMBER_FIELDS) result[name] = normalizeNumber(input[name], name);
     for (const name of MANUAL_TEXT_FIELDS) result[name] = bounded(input[name], name === 'note' ? 1000 : 200);
+    const hasBudget = input.dailyBudget != null && input.dailyBudget !== '', hasValidatedAt = input.budgetValidatedAt != null && input.budgetValidatedAt !== '' || input.budgetValidatedAtMs != null && input.budgetValidatedAtMs !== '';
+    if (hasBudget !== hasValidatedAt) throw new TypeError('budget and validation timestamp are required together');
+    if (hasBudget) {
+      result.dailyBudget = normalizeNumber(input.dailyBudget, 'dailyBudget');
+      if (result.dailyBudget <= 0) throw new RangeError('dailyBudget must be positive');
+      const validatedAtMs = input.budgetValidatedAtMs != null && input.budgetValidatedAtMs !== '' ? Number(input.budgetValidatedAtMs) : Date.parse(input.budgetValidatedAt);
+      if (!Number.isSafeInteger(validatedAtMs) || validatedAtMs <= 0) throw new TypeError('budgetValidatedAt must be a valid timestamp');
+      result.budgetValidatedAtMs = validatedAtMs;
+    }
     result.service = input.service ? (SERVICES.includes(input.service) ? input.service : 'needs_review') : '';
     return result;
   }
@@ -323,7 +332,7 @@
       if ((fact.customerStatus === 'lost' || fact.contractStatus === 'lost') && !bounded(fact.lostReason)) add('missing_lost_reason','warning','실패 이유 누락','실패 상태에 사유가 없습니다.','case',id,fact.occurredAt||'','',false,{ customerStatus:fact.customerStatus||'', contractStatus:fact.contractStatus||'' });
       if (Number(fact.contracts)>0 && ['needs_review',''].includes(String(fact.firstSource||''))) add('contract_attribution_review','warning','계약 최초 유입 확인 필요','계약의 최초 유입 근거가 없거나 검토 상태입니다.',contractType,contractTarget,fact.occurredAt||'','',true,{ contracts:Number(fact.contracts), firstSource:fact.firstSource||'' });
       if (['naver_place_ads'].includes(fact.channel) && Number(fact.inquiries||0)>0 && !bounded(fact.keyword)) add('missing_paid_keyword','info','유료검색 키워드 누락','유료검색 문의에 키워드가 없습니다.','case',id,fact.occurredAt||'','',false,{ channel:fact.channel });
-      if (fact.duplicateIdentityKey && fact.duplicateCount > 1) add('duplicate_customer_risk','warning','고객 중복 가능성','정규화된 안정 식별자가 같은 기록이 있습니다.','customer',stableTarget(fact,fact.duplicateIdentityKey),fact.occurredAt||'','',true,{ duplicateIdentityKey:fact.duplicateIdentityKey, duplicateCount:fact.duplicateCount });
+      if (fact.duplicateIdentityKey && fact.duplicateCount > 1) { const safeId=value=>/^[A-Za-z0-9_-]{1,160}$/.test(String(value||''))?String(value):''; const customerId=safeId(fact.customerId),caseId=safeId(fact.caseId),entityId=customerId||caseId||'aggregate-duplicate-customers'; add('duplicate_customer_risk','warning','고객 중복 가능성','정규화된 안정 식별자가 같은 기록이 있습니다.',customerId?'customer':caseId?'case':'data',entityId,fact.occurredAt||'','',true,{ duplicateCount:fact.duplicateCount }); }
     }
     const totals = snapshot.totals || {}, budget = Number(input.budgets && (input.budgets.target || input.budgets.daily));
     if (Number.isFinite(budget) && budget > 0 && Number(totals.spend||0)/budget >= .8) add('budget_80_percent','warning','예산 80% 이상 사용','검증된 목표 예산 대비 지출이 80% 이상입니다.','budget','selected-period','','',true,{ spend:Number(totals.spend||0), budget });
@@ -333,7 +342,8 @@
     const zeroGroups = new Map();
     daily.filter(row=>Number(row.spend)>0 && Number(row.validLeads||0)===0).forEach(row=>{ const key = bounded(row.keyword||row.contentId||row.contentTitle); if(key) { const group=zeroGroups.get(key)||[]; group.push(row); zeroGroups.set(key,group); } });
     zeroGroups.forEach((rows,key)=>{ rows.sort((a,b)=>String(a.date||'').localeCompare(String(b.date||''))||String(a.id||'').localeCompare(String(b.id||''))); if(rows.length>=2 && new Set(rows.map(r=>r.date)).size>=2) { const recordId=rows.map(r=>bounded(r.id,160)).filter(Boolean).sort()[0]||'aggregate-ad-performance'; add('persistent_zero_leads','warning','키워드·콘텐츠 비용 지속·유효 리드 0','서로 다른 2일 이상 비용이 발생했지만 유효 리드가 없습니다.','ad',recordId,rows[0].date,rows[rows.length-1].date,true,{ records:rows.length, days:new Set(rows.map(r=>r.date)).size }); } });
-    const visibleChannels = new Set(Array.isArray(snapshot.filteredDaily) ? daily.map(row=>row&&row.channel).filter(Boolean) : Object.keys(input.sourceUpdatedAtMsByChannel||{}));
+    const selectedChannel=snapshot.appliedFilters&&snapshot.appliedFilters.channel;
+    const visibleChannels = new Set(selectedChannel&&selectedChannel!=='all'?[selectedChannel]:Array.isArray(snapshot.filteredDaily) ? daily.map(row=>row&&row.channel).filter(Boolean) : Object.keys(input.sourceUpdatedAtMsByChannel||{}));
     Object.entries(input.sourceUpdatedAtMsByChannel||{}).filter(([channel])=>visibleChannels.has(channel)).sort(([a],[b])=>a.localeCompare(b)).forEach(([channel,value])=>{ const at=Number(value), channelAge=nowMs-at; if(!Number.isFinite(at)) return; if(channelAge>=72*HOUR) add('channel_stale_72h','urgent','채널 데이터 72시간 초과','서버 갱신 시각 이후 72시간이 지났습니다.','source',channel,new Date(at).toISOString(),new Date(at+72*HOUR).toISOString(),false,{ channel, sourceUpdatedAtMs:at, ageHours:Math.floor(channelAge/HOUR) }); else if(channelAge>=24*HOUR&&input.designStateUsed) add('channel_stale_warning','warning','채널 데이터 갱신 지연','디자인 상태를 사용하는 채널 데이터가 24시간 이상 갱신되지 않았습니다.','source',channel,new Date(at).toISOString(),new Date(at+72*HOUR).toISOString(),false,{ channel, sourceUpdatedAtMs:at, ageHours:Math.floor(channelAge/HOUR) }); });
     const updated = Number(input.sourceUpdatedAtMs), age = nowMs-updated;
     if (!Array.isArray(snapshot.filteredDaily) && Number.isFinite(updated) && age>=72*HOUR) add('channel_stale_72h','urgent','채널 데이터 72시간 초과','서버 갱신 시각 이후 72시간이 지났습니다.','source','marketing-daily',new Date(updated).toISOString(),new Date(updated+72*HOUR).toISOString(),false,{ sourceUpdatedAtMs:updated, ageHours:Math.floor(age/HOUR) });

@@ -55,6 +55,7 @@
   let currentMarketingView = "marketingOverview";
   let marketingLoaded = false;
   let marketingEntryDraft = null;
+  let pendingMarketingEvidenceTarget = "";
   let lastRenderedView = null;
   let selectedCustomerId = "";
   let selectedCustomerHubId = "";
@@ -1395,11 +1396,12 @@
     const derived = marketingController.state.snapshot ? marketingController.derive(facts) : { alerts: [], report: null };
     const alerts = derived.alerts, report = derived.report;
     main.innerHTML = MarketingUI.renderWorkspace({ view: currentMarketingView, filters: marketingController.filters, filterOptions: marketingController.state.filterOptions, snapshot: marketingController.state.snapshot, facts, alerts, report, localError: marketingController.state.localError, unavailable: marketingController.state.unavailable, entry });
-    finishViewRender(currentMarketingView);
     if (!marketingLoaded) {
       marketingLoaded = true;
       marketingController.load(currentAuth.user || {}, store, operations.cases || []).then(() => { if (currentWorkspace === "marketing") renderMarketingWorkspace(); });
     }
+    if (currentMarketingView === "marketingInput" && pendingMarketingEvidenceTarget) { const record=main.querySelector(`[data-marketing-entry-id="${CSS.escape(pendingMarketingEvidenceTarget)}"]`); if(record) { record.focus(); record.scrollIntoView({block:"center"}); pendingMarketingEvidenceTarget = ""; } }
+    finishViewRender(currentMarketingView);
     if (currentMarketingView === "marketingInput" && !marketingEntryController.state.loading && !marketingEntryController.state.loaded) marketingEntryController.refresh().then(() => { if (currentWorkspace === "marketing" && currentMarketingView === "marketingInput") renderMarketingWorkspace(); });
   }
 
@@ -4627,7 +4629,7 @@
       if (targetType === "case") { await workspaceCoordinator.select("operations"); currentView = "cases"; selectedCaseKey = targetId; render(); }
       else if (targetType === "contract") { await workspaceCoordinator.select("operations"); currentView = "contracts"; render(); const contract=store.contracts.find(item=>String(item.id)===targetId); if(contract) openContractForm(contract); }
       else if (targetType === "customer") { await workspaceCoordinator.select("operations"); currentView = "customers"; selectedCustomerId = targetId; render(); }
-      else if (targetType === "ad") { currentMarketingView = "marketingInput"; renderMarketingWorkspace(); const record=document.querySelector(`[data-marketing-entry-id="${CSS.escape(targetId)}"]`); if(record) { record.focus(); record.scrollIntoView({block:"center"}); } }
+      else if (targetType === "ad") { pendingMarketingEvidenceTarget = targetId; currentMarketingView = "marketingInput"; renderMarketingWorkspace(); }
       else if (targetType === "channel") { marketingController.setFilter("channel", targetId); currentMarketingView = "marketingChannels"; renderMarketingWorkspace(); }
       else if (targetType === "budget") { currentMarketingView = "marketingWeekly"; renderMarketingWorkspace(); }
       else if (targetType === "source") { marketingController.setFilter("channel", targetId); currentMarketingView = "marketingInput"; renderMarketingWorkspace(); }
@@ -6182,6 +6184,7 @@
     if (form.matches("[data-marketing-entry-form]")) {
       const raw = Object.fromEntries(new FormData(form).entries());
       for (const name of ["spend", "impressions", "clicks", "phoneClicks", "chatClicks", "directionsClicks", "saves", "platformLeads"]) raw[name] = raw[name] === "" ? 0 : Number(raw[name]);
+      raw.dailyBudget = raw.dailyBudget === "" ? "" : Number(raw.dailyBudget);
       try {
         const opened = marketingEntryDraft && marketingEntryDraft.id ? { id: marketingEntryDraft.id, version: marketingEntryDraft.version } : null;
         const result = await marketingEntryController.submit(raw, opened);

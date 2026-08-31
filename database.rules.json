@@ -804,7 +804,7 @@
               ".validate": "newData.isNumber() && newData.val() > 0 && newData.val() <= 9007199254740991 && newData.val() % 1 === 0 && newData.parent().child('budgetValidatedAtMs').isNumber() && newData.parent().child('budgetValidatedAtMs').val() > 0"
             },
             "budgetValidatedAtMs": {
-              ".validate": "newData.isNumber() && newData.val() > 0 && newData.val() <= 9007199254740991 && newData.val() % 1 === 0 && newData.parent().child('dailyBudget').isNumber() && newData.parent().child('dailyBudget').val() > 0"
+              ".validate": "newData.isNumber() && newData.val() > 0 && newData.val() <= now && newData.val() <= 9007199254740991 && newData.val() % 1 === 0 && newData.parent().child('dailyBudget').isNumber() && newData.parent().child('dailyBudget').val() > 0"
             },
             "sourceType": {
               ".validate": "newData.val() === 'manual' || newData.val() === 'crm'"

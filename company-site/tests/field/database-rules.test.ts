@@ -3134,6 +3134,39 @@ async function attributionRest(database: any, path: string, options: { method?: 
 }
 
 describe.runIf(databaseEmulatorAvailable)("marketing database rules", () => {
+  it("accepts only paired, validated budget evidence and mirrors it in the immutable receipt", async () => {
+    const marketing = environment.authenticatedContext("crm-marketing", crmClaims("marketing@bring.test")).database();
+    const viewer = environment.authenticatedContext("crm-viewer", crmClaims("viewer@bring.test")).database();
+    const atomicBudget = (id: string, actorUid: string, budget: number, validatedAtMs: number) => {
+      const record = { ...marketingRecord(id, actorUid), dailyBudget: budget, budgetValidatedAtMs: validatedAtMs };
+      return {
+        ...marketingAtomic(id, actorUid, record),
+        [`receipts/${MARKETING_RECEIPT}`]: marketingReceipt(id, actorUid, "create", record),
+      };
+    };
+
+    const missingPair = marketingRecord("budget_missing_pair", "crm-marketing") as ReturnType<typeof marketingRecord> & { dailyBudget?: number };
+    missingPair.dailyBudget = 1250;
+    await assertFails(update(ref(marketing, "crmCompany/marketing"), {
+      ...marketingAtomic("budget_missing_pair", "crm-marketing", missingPair),
+      [`receipts/${MARKETING_RECEIPT}`]: marketingReceipt("budget_missing_pair", "crm-marketing", "create", missingPair),
+    }));
+    await assertFails(update(ref(marketing, "crmCompany/marketing"), atomicBudget("budget_zero", "crm-marketing", 0, Date.now() - 1000)));
+    await assertFails(update(ref(marketing, "crmCompany/marketing"), atomicBudget("budget_future", "crm-marketing", 1250, Date.now() + 86_400_000)));
+    await assertFails(update(ref(viewer, "crmCompany/marketing"), atomicBudget("budget_viewer", "crm-viewer", 1250, Date.now() - 1000)));
+
+    const tampered = atomicBudget("budget_tampered", "crm-marketing", 1250, Date.now() - 1000);
+    const receiptKey = `receipts/${MARKETING_RECEIPT}`;
+    tampered[receiptKey] = { ...tampered[receiptKey], resultRecord: { ...tampered[receiptKey].resultRecord, dailyBudget: 1251 } };
+    await assertFails(update(ref(marketing, "crmCompany/marketing"), tampered));
+
+    await assertSucceeds(update(ref(marketing, "crmCompany/marketing"), atomicBudget("budget_valid", "crm-marketing", 1250, Date.now() - 1000)));
+    const daily = (await get(ref(marketing, "crmCompany/marketing/daily/budget_valid"))).val();
+    const receipt = (await get(ref(marketing, `crmCompany/marketing/receipts/${MARKETING_RECEIPT}`))).val();
+    expect(receipt.resultRecord.dailyBudget).toBe(daily.dailyBudget);
+    expect(receipt.resultRecord.budgetValidatedAtMs).toBe(daily.budgetValidatedAtMs);
+  });
+
   it("performs exact child stale-ETag CAS with review before retry", async () => {
     await environment.withSecurityRulesDisabled(async context => set(ref(context.database(), "cases/case_cas"), { id: "case_cas", caseParty: "브링", title: "keep" }));
     const firstClient = environment.authenticatedContext("crm-marketing", crmClaims("marketing@bring.test")).database();
