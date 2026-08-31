@@ -28,17 +28,24 @@
       start() {
         try {
           const savedWorkspace = storage.getItem(storageKey);
-          currentWorkspace = savedWorkspace === null ? null : normalizeWorkspace(savedWorkspace);
+          if (savedWorkspace === null) currentWorkspace = null;
+          else if (workspaceNames.includes(savedWorkspace)) currentWorkspace = savedWorkspace;
+          else {
+            storage.removeItem(storageKey);
+            currentWorkspace = null;
+          }
         } catch (_error) { currentWorkspace = null; }
         return apply();
       },
       render: apply,
-      select(value) {
+      async select(value) {
         currentWorkspace = normalizeWorkspace(value);
+        if (typeof options.beforeTransition === "function") await options.beforeTransition(currentWorkspace);
         try { storage.setItem(storageKey, currentWorkspace); } catch (_error) {}
         return apply();
       },
-      showLanding() {
+      async showLanding() {
+        if (typeof options.beforeTransition === "function") await options.beforeTransition(null);
         currentWorkspace = null;
         return apply();
       },

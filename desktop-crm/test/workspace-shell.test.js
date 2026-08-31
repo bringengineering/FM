@@ -16,6 +16,7 @@ function fakeStorage(initial = {}) {
     writes,
     getItem(key) { return values.has(key) ? values.get(key) : null; },
     setItem(key, value) { writes.push([key, value]); values.set(key, value); },
+    removeItem(key) { writes.push(["remove", key]); values.delete(key); },
   };
 }
 
@@ -28,6 +29,7 @@ function coordinatorHarness(initial = {}) {
     renderOperations: () => calls.push("operations"),
     renderMarketing: () => calls.push("marketing"),
     setOperationsNav: visible => calls.push(`nav:${visible}`),
+    beforeTransition: workspace => calls.push(`before:${workspace}`),
   });
   return { storage, calls, coordinator };
 }
@@ -55,37 +57,35 @@ test("empty storage requires the first-use landing", () => {
   assert.deepEqual(storage.writes, []);
 });
 
-test("selecting marketing persists only the exact non-sensitive preference", () => {
+test("selecting marketing persists only the exact non-sensitive preference", async () => {
   const { storage, calls, coordinator } = coordinatorHarness();
-  const authCalls = [];
-  assert.equal(coordinator.select("marketing"), "marketing");
+  assert.equal(await coordinator.select("marketing"), "marketing");
   assert.deepEqual(storage.writes, [["bring.crm.workspace", "marketing"]]);
-  assert.deepEqual(calls, ["nav:false", "marketing"]);
-  assert.deepEqual(authCalls, []);
+  assert.deepEqual(calls, ["before:marketing", "nav:false", "marketing"]);
 });
 
-test("switches both directions without touching authentication and restores operations navigation", () => {
+test("switches both directions through production callbacks without authentication APIs", async () => {
   const { calls, coordinator } = coordinatorHarness({ "bring.crm.workspace": "operations" });
-  const authCalls = [];
   coordinator.start();
   assert.deepEqual(calls, ["nav:true", "operations"]);
   calls.length = 0;
-  coordinator.select("marketing");
-  assert.deepEqual(calls, ["nav:false", "marketing"]);
-  coordinator.showLanding();
+  await coordinator.select("marketing");
+  assert.deepEqual(calls, ["before:marketing", "nav:false", "marketing"]);
+  await coordinator.showLanding();
   calls.length = 0;
-  coordinator.select("operations");
-  assert.deepEqual(calls, ["nav:true", "operations"]);
+  await coordinator.select("operations");
+  assert.deepEqual(calls, ["before:operations", "nav:true", "operations"]);
   calls.length = 0;
-  coordinator.select("marketing");
-  assert.deepEqual(calls, ["nav:false", "marketing"]);
-  assert.deepEqual(authCalls, []);
+  await coordinator.select("marketing");
+  assert.deepEqual(calls, ["before:marketing", "nav:false", "marketing"]);
+  assert.equal(Object.keys(coordinator).some(key => /auth|login|logout|session/i.test(key)), false);
 });
 
 test("invalid stored workspace fails safely to operations while missing storage remains first use", () => {
   const invalid = coordinatorHarness({ "bring.crm.workspace": "unknown" });
-  assert.equal(invalid.coordinator.start(), "operations");
-  assert.deepEqual(invalid.calls, ["nav:true", "operations"]);
+  assert.equal(invalid.coordinator.start(), null);
+  assert.deepEqual(invalid.storage.writes, [["remove", "bring.crm.workspace"]]);
+  assert.deepEqual(invalid.calls, ["nav:false", "landing"]);
 });
 
 test("loads the workspace shell before the application", () => {
@@ -99,7 +99,24 @@ test("application remembers only the workspace preference and supports switching
   assert.match(appSource, /workspaceCoordinator\.start\(\)/);
   assert.match(appSource, /workspaceCoordinator\.select\(/);
   assert.match(appSource, /workspaceCoordinator\.showLanding\(\)/);
+  assert.match(appSource, /async function prepareWorkspaceTransition/);
+  assert.match(appSource, /valueScopeOpenGeneration \+= 1[\s\S]*?await api\.hideValueScope\(\)[\s\S]*?currentView = "dashboard"/);
   assert.match(html, /data-workspace-switch/);
+});
+
+test("marketing hides Operations chrome and operations rendering restores it", () => {
+  assert.match(appSource, /const operationsWorkspace = workspace === "operations"/);
+  assert.match(appSource, /searchEl\.closest\("\.global-search"\)\.hidden = !operationsWorkspace/);
+  assert.match(appSource, /primaryActionButton\.hidden = !operationsWorkspace/);
+  assert.match(appSource, /fieldOperatorControl\.hidden = !operationsWorkspace/);
+  assert.match(appSource, /renderOperations: renderOperationsWorkspace/);
+});
+
+test("welcome guide is gated to operations and deferred until operations entry", () => {
+  assert.match(appSource, /function showWelcomeGuide\(\)[\s\S]*?if \(currentWorkspace !== "operations"\) return/);
+  assert.match(appSource, /function scheduleWelcomeGuide\(\)[\s\S]*?currentWorkspace !== "operations"/);
+  assert.match(appSource, /welcomeGuideShown/);
+  assert.match(appSource, /if \(workspace === "operations"\) scheduleWelcomeGuide\(\)/);
 });
 
 test("landing and persistent switch expose structural DOM contracts", () => {

@@ -96,6 +96,8 @@
   let authGeneration = 0;
   let buildingLookupSequence = 0;
   let loginInProgress = false;
+  let welcomeGuideScheduled = false;
+  let welcomeGuideShown = false;
   let operations = { cases: [], payments: {}, caseSettings: {}, loadedAt: "" };
   let customerPhotos = {};
   let customerPhotoRefreshPromise = null;
@@ -1064,8 +1066,17 @@
   }
 
   function showWelcomeGuide() {
+    welcomeGuideScheduled = false;
+    if (currentWorkspace !== "operations") return;
+    welcomeGuideShown = true;
     modalContent.innerHTML = `<div class="welcome-guide"><div class="welcome-guide-top"><div class="welcome-logo"><img src="./assets/bring-logo.png" alt="BRING 로고"></div><span>처음 오셨나요?</span><h2>BRING CRM은 이 순서로 사용하세요</h2><p>건물을 기준으로 고객·계약·민원·입금을 이어서 관리합니다.</p></div><div class="welcome-steps"><article><i>1</i><div><b>고객과 건물을 등록합니다</b><span>고객·건물 관리에서 고객을 고르고 연결 건물을 함께 등록하세요.</span></div></article><article><i>2</i><div><b>건물에서 민원을 시작합니다</b><span>건물 상세의 새 민원을 누르면 건물 정보가 자동 연결됩니다.</span></div></article><article><i>3</i><div><b>계약과 입금을 확인합니다</b><span>같은 건물의 계약·진행 업무·납부 일정을 한 화면에서 확인하세요.</span></div></article></div><div class="welcome-extra"><b>협력 업체·업체 상담</b><span>업체 링크로 기본정보를 먼저 등록하고, 저장된 업체를 선택해 안내 가격과 상담 내용을 기록하세요.</span></div><div class="welcome-actions"><button class="secondary-button" data-action="finish-guide">안내 닫기</button><button class="primary-button" data-action="guide-new-customer">고객 등록부터 시작 →</button></div></div>`;
     openModal();
+  }
+
+  function scheduleWelcomeGuide() {
+    if (!appInitialized || store.settings.onboardingComplete || currentWorkspace !== "operations" || welcomeGuideScheduled || welcomeGuideShown) return;
+    welcomeGuideScheduled = true;
+    setTimeout(showWelcomeGuide, 350);
   }
 
   function finishWelcomeGuide(startCustomer) {
@@ -1320,9 +1331,14 @@
 
   function applyWorkspaceChrome(workspace) {
     currentWorkspace = workspace;
+    const operationsWorkspace = workspace === "operations";
     document.body.classList.toggle("workspace-landing-active", workspace === null);
     document.body.classList.toggle("marketing-workspace-active", workspace === "marketing");
     workspaceSwitch.hidden = workspace === null;
+    searchEl.closest(".global-search").hidden = !operationsWorkspace;
+    primaryActionButton.hidden = !operationsWorkspace;
+    fieldOperatorControl.hidden = !operationsWorkspace;
+    if (workspace === "operations") scheduleWelcomeGuide();
   }
 
   function renderWorkspaceLanding() {
@@ -1337,6 +1353,14 @@
     finishViewRender("marketing");
   }
 
+  async function prepareWorkspaceTransition() {
+    if (currentView === "valueScope") {
+      valueScopeOpenGeneration += 1;
+      await api.hideValueScope();
+    }
+    currentView = "dashboard";
+  }
+
   const workspaceCoordinator = WorkspaceShell.createWorkspaceCoordinator({
     storage: localStorage,
     onWorkspaceChange: applyWorkspaceChrome,
@@ -1344,6 +1368,7 @@
     renderLanding: renderWorkspaceLanding,
     renderOperations: renderOperationsWorkspace,
     renderMarketing: renderMarketingWorkspace,
+    beforeTransition: prepareWorkspaceTransition,
   });
 
   function render() {
@@ -4505,13 +4530,12 @@
   document.addEventListener("click", async event => {
     const workspaceEnter = event.target.closest("[data-workspace-enter]");
     if (workspaceEnter) {
-      currentView = "dashboard";
-      workspaceCoordinator.select(workspaceEnter.dataset.workspaceEnter);
+      await workspaceCoordinator.select(workspaceEnter.dataset.workspaceEnter);
       return;
     }
     const workspaceSwitchControl = event.target.closest("[data-workspace-switch]");
     if (workspaceSwitchControl) {
-      workspaceCoordinator.showLanding();
+      await workspaceCoordinator.showLanding();
       return;
     }
     const salesMessageDraft = event.target.closest("[data-ai-sales-message]");
@@ -7262,7 +7286,7 @@ document.addEventListener("keydown", event => {
       appInitialized = true;
       if (customerPhotoLoadFailed) showToast("고객 사진을 불러오지 못했습니다. 서버가 다시 연결되면 자동으로 재시도합니다.", "error");
       if (currentView === "buildings") requestDriveImportCandidatesRefresh();
-      if (!store.settings.onboardingComplete) setTimeout(showWelcomeGuide, 350);
+      scheduleWelcomeGuide();
     } catch (error) {
       main.innerHTML = empty("CRM을 시작하지 못했습니다", error.message || "데이터 파일을 확인하세요.");
       showToast(error.message, "error");
