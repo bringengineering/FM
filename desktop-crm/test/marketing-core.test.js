@@ -21,7 +21,7 @@ test('normalizeDaily normalizes vocabularies, integers, and bounded optional str
 
 test('normalizeDaily safely closes channel/status vocabulary and rejects invalid required or numeric values', () => {
   assert.equal(normalizeDaily({ date: '2026-01-01', channel: 'hacker-key', service: 'x', dataStatus: 'x' }).channel, 'needs_review');
-  assert.equal(normalizeDaily({ date: '2026-01-01', channel: 'direct_sales', service: 'x' }).service, 'other');
+  assert.equal(normalizeDaily({ date: '2026-01-01', channel: 'direct_sales', service: 'x' }).service, 'needs_review');
   for (const row of [
     { date: 'bad', channel: 'other' }, { date: '2026-02-30', channel: 'other' },
     { date: '2026-01-01' }, { date: '2026-01-01', channel: 'other', spend: -1 },
@@ -44,10 +44,12 @@ test('safe division and exact marketing formulas handle values and every zero de
 test('resolvePeriod uses KST calendar boundaries, Monday weeks, month edges, and equal previous periods', () => {
   const now = new Date('2026-08-31T15:30:00Z'); // 2026-09-01 KST
   assert.deepEqual(resolvePeriod('today', now), { start: '2026-09-01', end: '2026-09-01', previousStart: '2026-08-31', previousEnd: '2026-08-31' });
+  assert.deepEqual(resolvePeriod('yesterday', now), { start: '2026-08-31', end: '2026-08-31', previousStart: '2026-08-30', previousEnd: '2026-08-30' });
   assert.deepEqual(resolvePeriod('last7', now), { start: '2026-08-26', end: '2026-09-01', previousStart: '2026-08-19', previousEnd: '2026-08-25' });
   assert.deepEqual(resolvePeriod('thisWeek', now), { start: '2026-08-31', end: '2026-09-06', previousStart: '2026-08-24', previousEnd: '2026-08-30' });
   assert.deepEqual(resolvePeriod('lastWeek', now), { start: '2026-08-24', end: '2026-08-30', previousStart: '2026-08-17', previousEnd: '2026-08-23' });
   assert.deepEqual(resolvePeriod('thisMonth', now), { start: '2026-09-01', end: '2026-09-30', previousStart: '2026-08-02', previousEnd: '2026-08-31' });
+  assert.deepEqual(resolvePeriod('lastMonth', now), { start: '2026-08-01', end: '2026-08-31', previousStart: '2026-07-01', previousEnd: '2026-07-31' });
   assert.deepEqual(resolvePeriod({ type: 'custom', start: '2026-02-27', end: '2026-03-02' }, now), { start: '2026-02-27', end: '2026-03-02', previousStart: '2026-02-23', previousEnd: '2026-02-26' });
   assert.throws(() => resolvePeriod({ type: 'custom', start: '2026-03-02', end: '2026-02-27' }, now), /custom/i);
 });
@@ -106,4 +108,32 @@ test('UMD attaches to a browser-like global', () => {
   assert.ok(core.CHANNELS.includes('needs_review'));
   assert.ok(core.SERVICES.includes('other'));
   assert.ok(core.DATA_STATUSES.includes('needs_review'));
+});
+
+test('archivedAt and legacy archive markers exclude daily and CRM facts from every aggregation', () => {
+  const daily = [
+    { date: '2026-08-31', channel: 'naver_blog', spend: 10 },
+    { date: '2026-08-31', channel: 'naver_blog', spend: 100, archivedAt: '2026-09-01T00:00:00Z' },
+    { date: '2026-08-31', channel: 'naver_blog', spend: 1000, archived: true }
+  ];
+  const facts = [
+    { date: '2026-08-31', channel: 'naver_blog', contracts: 1, contractAmount: 100 },
+    { date: '2026-08-31', channel: 'naver_blog', contracts: 2, contractAmount: 200, archivedAt: '2026-09-01T00:00:00Z' },
+    { date: '2026-08-31', channel: 'naver_blog', contracts: 4, contractAmount: 400, status: 'archived' }
+  ];
+  const s = buildSnapshot({ daily, facts }, { period: { type: 'custom', start: '2026-08-31', end: '2026-08-31' } });
+  assert.equal(s.totals.spend, 10);
+  assert.equal(s.totals.contracts, 1);
+  assert.equal(s.funnel.find(x => x.stage === 'contracts').count, 1);
+  assert.equal(s.channels.naver_blog.contractAmount, 100);
+});
+
+test('shared filters normalize unknown attribution vocabularies before filtering daily and facts', () => {
+  const daily = [{ date: '2026-08-31', channel: 'mystery', service: 'mystery', dataStatus: 'mystery', spend: 10 }];
+  const facts = [{ date: '2026-08-31', channel: 'mystery', service: 'mystery', dataStatus: 'mystery', contracts: 1 }];
+  const period = { type: 'custom', start: '2026-08-31', end: '2026-08-31' };
+  const s = buildSnapshot({ daily, facts }, { period, channel: 'needs_review', service: 'needs_review', dataStatus: 'needs_review' });
+  assert.equal(s.totals.spend, 10);
+  assert.equal(s.totals.contracts, 1);
+  assert.equal(s.channels.needs_review.contracts, 1);
 });

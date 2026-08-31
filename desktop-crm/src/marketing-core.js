@@ -39,7 +39,7 @@
     for (const name of COUNT_FIELDS) result[name] = normalizeNumber(input[name], name);
     for (const name of OPTIONAL_FIELDS) {
       if (input[name] == null || input[name] === '') continue;
-      if (name === 'service') result[name] = SERVICES.includes(input[name]) ? input[name] : 'other';
+      if (name === 'service') result[name] = SERVICES.includes(input[name]) ? input[name] : 'needs_review';
       else if (name === 'dataStatus') result[name] = DATA_STATUSES.includes(input[name]) ? input[name] : 'needs_review';
       else result[name] = bounded(input[name]);
     }
@@ -102,8 +102,15 @@
     if (Array.isArray(expected)) return expected.includes(actual);
     return keyword ? bounded(actual).toLowerCase().includes(bounded(expected).toLowerCase()) : actual === expected;
   }
+  function normalizeAttribution(row) {
+    return Object.assign({}, row, {
+      channel: CHANNELS.includes(row.channel) ? row.channel : 'needs_review',
+      service: SERVICES.includes(row.service) ? row.service : 'needs_review',
+      dataStatus: DATA_STATUSES.includes(row.dataStatus) ? row.dataStatus : 'needs_review'
+    });
+  }
   function filterRows(rows, filters, start, end) {
-    return (Array.isArray(rows) ? rows : []).filter(row => {
+    return (Array.isArray(rows) ? rows : []).map(normalizeAttribution).filter(row => {
       const date = row.date || row.factDate || row.contractDate;
       if (!validDate(date) || date < start || date > end) return false;
       return FILTER_FIELDS.every(name => matchValue(row[name], filters[name], name === 'keyword'));
@@ -117,9 +124,14 @@
     total.profit = total.contractAmount - total.expectedCost - total.spend;
     return total;
   }
-  function validFacts(facts) { return facts.filter(row => !['cancelled', 'canceled', 'invalid'].includes(String(row.contractStatus || row.status || '').toLowerCase())); }
+  function isArchived(row) {
+    return Boolean(row.archived || bounded(row.archivedAt) || String(row.status || '').toLowerCase() === 'archived');
+  }
+  function validFacts(facts) {
+    return facts.filter(row => !isArchived(row) && !['cancelled', 'canceled', 'invalid'].includes(String(row.contractStatus || row.status || '').toLowerCase()));
+  }
   function selected(data, filters, period) {
-    const daily = filterRows(data.daily, filters, period.start, period.end).filter(row => !row.archived && row.status !== 'archived');
+    const daily = filterRows(data.daily, filters, period.start, period.end).filter(row => !isArchived(row));
     const facts = validFacts(filterRows(data.facts, filters, period.start, period.end));
     return { daily, facts, totals: sums(daily, facts) };
   }
@@ -155,5 +167,4 @@
 
   return Object.freeze({ CHANNELS, SERVICES, DATA_STATUSES, normalizeDaily, safeDivide, safeRate, calculateMetrics, resolvePeriod, buildSnapshot });
 }));
-
 
