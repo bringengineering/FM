@@ -1,12 +1,14 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
+const fs = require('node:fs');
+const vm = require('node:vm');
 
 const core = require('../src/marketing-core');
 
 const { normalizeDaily, safeDivide, safeRate, calculateMetrics, resolvePeriod, buildSnapshot } = core;
 
 test('normalizeDaily normalizes vocabularies, integers, and bounded optional strings without mutation', () => {
-  const input = { date: '2026-08-31', channel: 'naver_blog', service: 'consulting', dataStatus: 'verified', spend: 12.8, clicks: '3', campaign: ' x '.repeat(200) };
+  const input = { date: '2026-08-31', channel: 'naver_blog', service: 'consulting', dataStatus: 'verified', spend: 13, clicks: '3', campaign: ' x '.repeat(200) };
   const before = structuredClone(input);
   const row = normalizeDaily(input);
   assert.deepEqual(input, before);
@@ -25,8 +27,11 @@ test('normalizeDaily safely closes channel/status vocabulary and rejects invalid
   for (const row of [
     { date: 'bad', channel: 'other' }, { date: '2026-02-30', channel: 'other' },
     { date: '2026-01-01' }, { date: '2026-01-01', channel: 'other', spend: -1 },
-    { date: '2026-01-01', channel: 'other', clicks: Infinity }
-  ]) assert.throws(() => normalizeDaily(row), /date|channel|nonnegative|finite/i);
+    { date: '2026-01-01', channel: 'other', clicks: Infinity },
+    { date: '2026-01-01', channel: 'other', clicks: 1.5 },
+    { date: '2026-01-01', channel: 'other', clicks: String(Number.MAX_SAFE_INTEGER + 1) }
+  ]) assert.throws(() => normalizeDaily(row), /date|channel|nonnegative|finite|integer/i);
+  assert.equal(normalizeDaily({ date: '2026-01-01', channel: 'other', clicks: Number.MAX_SAFE_INTEGER }).clicks, Number.MAX_SAFE_INTEGER);
 });
 
 test('safe division and exact marketing formulas handle values and every zero denominator', () => {
@@ -46,9 +51,9 @@ test('resolvePeriod uses KST calendar boundaries, Monday weeks, month edges, and
   assert.deepEqual(resolvePeriod('today', now), { start: '2026-09-01', end: '2026-09-01', previousStart: '2026-08-31', previousEnd: '2026-08-31' });
   assert.deepEqual(resolvePeriod('yesterday', now), { start: '2026-08-31', end: '2026-08-31', previousStart: '2026-08-30', previousEnd: '2026-08-30' });
   assert.deepEqual(resolvePeriod('last7', now), { start: '2026-08-26', end: '2026-09-01', previousStart: '2026-08-19', previousEnd: '2026-08-25' });
-  assert.deepEqual(resolvePeriod('thisWeek', now), { start: '2026-08-31', end: '2026-09-06', previousStart: '2026-08-24', previousEnd: '2026-08-30' });
+  assert.deepEqual(resolvePeriod('thisWeek', now), { start: '2026-08-31', end: '2026-09-01', previousStart: '2026-08-29', previousEnd: '2026-08-30' });
   assert.deepEqual(resolvePeriod('lastWeek', now), { start: '2026-08-24', end: '2026-08-30', previousStart: '2026-08-17', previousEnd: '2026-08-23' });
-  assert.deepEqual(resolvePeriod('thisMonth', now), { start: '2026-09-01', end: '2026-09-30', previousStart: '2026-08-02', previousEnd: '2026-08-31' });
+  assert.deepEqual(resolvePeriod('thisMonth', now), { start: '2026-09-01', end: '2026-09-01', previousStart: '2026-08-31', previousEnd: '2026-08-31' });
   assert.deepEqual(resolvePeriod('lastMonth', now), { start: '2026-08-01', end: '2026-08-31', previousStart: '2026-07-01', previousEnd: '2026-07-31' });
   assert.deepEqual(resolvePeriod({ type: 'custom', start: '2026-02-27', end: '2026-03-02' }, now), { start: '2026-02-27', end: '2026-03-02', previousStart: '2026-02-23', previousEnd: '2026-02-26' });
   assert.throws(() => resolvePeriod({ type: 'custom', start: '2026-03-02', end: '2026-02-27' }, now), /custom/i);
@@ -104,10 +109,21 @@ test('buildSnapshot creates funnel conversions, dropoffs and previous-period del
   assert.equal(s.totals.spend, 100);
 });
 
-test('UMD attaches to a browser-like global', () => {
+test('UMD attaches its complete API in a browser context without CommonJS module', () => {
+  const context = {};
+  vm.runInNewContext(fs.readFileSync(require.resolve('../src/marketing-core'), 'utf8'), context);
+  assert.equal(typeof context.MarketingCore.buildSnapshot, 'function');
+  assert.equal(typeof context.MarketingCore.normalizeDaily, 'function');
   assert.ok(core.CHANNELS.includes('needs_review'));
   assert.ok(core.SERVICES.includes('other'));
   assert.ok(core.DATA_STATUSES.includes('needs_review'));
+});
+
+test('normalizeDaily requires safe integer money and count inputs', () => {
+  assert.equal(normalizeDaily({ date: '2026-01-01', channel: 'other', spend: Number.MAX_SAFE_INTEGER }).spend, Number.MAX_SAFE_INTEGER);
+  for (const value of [0.1, '2.5', Number.MAX_SAFE_INTEGER + 1, '9007199254740992', NaN, Infinity]) {
+    assert.throws(() => normalizeDaily({ date: '2026-01-01', channel: 'other', spend: value }), /integer|finite/i);
+  }
 });
 
 test('archivedAt and legacy archive markers exclude daily and CRM facts from every aggregation', () => {
@@ -126,6 +142,8 @@ test('archivedAt and legacy archive markers exclude daily and CRM facts from eve
   assert.equal(s.totals.contracts, 1);
   assert.equal(s.funnel.find(x => x.stage === 'contracts').count, 1);
   assert.equal(s.channels.naver_blog.contractAmount, 100);
+  assert.deepEqual(s.exclusions, { archivedDaily: 2, archivedFacts: 2, cancelledContracts: 0, invalidContracts: 0 });
+  assert.equal(Object.isFrozen(s.exclusions), true);
 });
 
 test('shared filters normalize unknown attribution vocabularies before filtering daily and facts', () => {
@@ -136,4 +154,50 @@ test('shared filters normalize unknown attribution vocabularies before filtering
   assert.equal(s.totals.spend, 10);
   assert.equal(s.totals.contracts, 1);
   assert.equal(s.channels.needs_review.contracts, 1);
+});
+
+test('cancelled and invalid composite facts preserve pre-contract funnel while zeroing contract economics', () => {
+  const facts = [
+    { date: '2026-08-31', channel: 'other', inquiries: 3, validLeads: 2, consultations: 2, quotes: 1, contracts: 1, newContracts: 1, contractAmount: 100, paidAmount: 80, expectedCost: 40, contractStatus: 'cancelled' },
+    { date: '2026-08-31', channel: 'other', inquiries: 4, validLeads: 3, consultations: 2, quotes: 2, contracts: 1, contractAmount: 200, paidAmount: 100, expectedCost: 60, contractStatus: 'invalid' },
+    { date: '2026-08-31', channel: 'other', kind: 'payment', paidAmount: 999, contractStatus: 'cancelled' }
+  ];
+  const s = buildSnapshot({ daily: [], facts }, { period: { type: 'custom', start: '2026-08-31', end: '2026-08-31' } });
+  assert.equal(s.totals.inquiries, 7);
+  assert.equal(s.totals.validLeads, 5);
+  assert.equal(s.totals.quotes, 3);
+  assert.equal(s.totals.contracts, 0);
+  assert.equal(s.totals.contractAmount, 0);
+  assert.equal(s.totals.paidAmount, 0);
+  assert.equal(s.totals.expectedCost, 0);
+  assert.deepEqual(s.exclusions, { archivedDaily: 0, archivedFacts: 0, cancelledContracts: 2, invalidContracts: 1 });
+});
+
+test('channel rating covers every deterministic branch and exact ROAS boundary', () => {
+  const date = '2026-08-31';
+  const daily = [
+    { date, channel: 'other' },
+    { date, channel: 'naver_blog', spend: 100, validLeads: 1 },
+    { date, channel: 'soomgo', spend: 100, validLeads: 1 },
+    { date, channel: 'daangn', spend: 100 },
+    { date, channel: 'broker', expectedCost: 10 }
+  ];
+  const facts = [
+    { date, channel: 'naver_blog', contracts: 1, contractAmount: 300, expectedCost: 100 },
+    { date, channel: 'soomgo', contracts: 1, contractAmount: 200, expectedCost: 100 },
+    { date, channel: 'referral', contracts: 1, contractAmount: 50, expectedCost: 60 }
+  ];
+  const s = buildSnapshot({ daily, facts }, { period: { type: 'custom', start: date, end: date } });
+  assert.equal(s.channels.other.rating, 'data_insufficient');
+  assert.equal(s.channels.naver_blog.rating, 'expand_review');
+  assert.equal(s.channels.naver_blog.metrics.roas, 300);
+  assert.equal(s.channels.soomgo.rating, 'maintain');
+  assert.equal(s.channels.daangn.rating, 'stop_review');
+  assert.equal(s.channels.referral.rating, 'improve');
+  assert.equal(s.channels.broker.rating, 'data_insufficient');
+  for (const row of Object.values(s.channels)) {
+    assert.match(row.ratingLabel, /데이터 부족|확대 검토|유지|개선 필요|중단 검토/);
+    assert.ok(row.rationale.length >= 1 && row.rationale.length <= 3);
+    assert.ok(row.rationale.every(reason => typeof reason === 'string' && /[가-힣]/.test(reason)));
+  }
 });

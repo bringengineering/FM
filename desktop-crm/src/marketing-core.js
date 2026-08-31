@@ -8,7 +8,7 @@
   const CHANNELS = Object.freeze(['naver_place_ads', 'naver_place_organic', 'naver_blog', 'soomgo', 'daangn', 'broker', 'referral', 'direct_sales', 'other', 'needs_review']);
   const SERVICES = Object.freeze(['civil_engineering', 'architecture', 'surveying', 'design', 'inspection', 'consulting', 'other', 'needs_review']);
   const DATA_STATUSES = Object.freeze(['verified', 'estimated', 'pending', 'needs_review']);
-  const COUNT_FIELDS = ['spend', 'impressions', 'clicks', 'inquiries', 'validLeads', 'consultations', 'quotes', 'contracts', 'payments', 'contractAmount', 'paidAmount', 'expectedCost'];
+  const COUNT_FIELDS = ['spend', 'impressions', 'clicks', 'inquiries', 'validLeads', 'consultations', 'quotes', 'contracts', 'newContracts', 'payments', 'contractAmount', 'paidAmount', 'expectedCost'];
   const OPTIONAL_FIELDS = ['campaign', 'content', 'service', 'region', 'owner', 'customerType', 'keyword', 'customerStatus', 'dataStatus'];
   const FILTER_FIELDS = ['channel', 'service', 'region', 'owner', 'customerType', 'campaign', 'keyword', 'customerStatus', 'dataStatus'];
 
@@ -28,7 +28,8 @@
     const number = Number(value);
     if (!Number.isFinite(number)) throw new TypeError(`${name} must be finite`);
     if (number < 0) throw new RangeError(`${name} must be nonnegative`);
-    return Math.round(number);
+    if (!Number.isSafeInteger(number)) throw new TypeError(`${name} must be a safe integer`);
+    return number;
   }
 
   function normalizeDaily(input) {
@@ -62,7 +63,7 @@
     return {
       ctr: safeRate(v.clicks, v.impressions), cpc: safeDivide(spend, v.clicks), inquiryCvr: safeRate(v.inquiries, v.clicks),
       validLeadRate: safeRate(v.validLeads, v.inquiries), cpl: safeDivide(spend, v.validLeads), quoteConversion: safeRate(v.quotes, v.validLeads),
-      contractConversion: safeRate(v.contracts, v.quotes), cpa: safeDivide(spend, v.contracts), aov: safeDivide(contractAmount, v.contracts),
+      contractConversion: safeRate(v.contracts, v.quotes), cpa: safeDivide(spend, v.newContracts == null ? v.contracts : v.newContracts), aov: safeDivide(contractAmount, v.contracts),
       roas: safeRate(contractAmount, spend), expectedMarketingProfit: profit, roi: safeRate(profit, spend)
     };
   }
@@ -87,9 +88,9 @@
     } else if (type === 'today') start = end = today;
     else if (type === 'yesterday') start = end = shift(today, -1);
     else if (type === 'last7') { start = shift(today, -6); end = today; }
-    else if (type === 'thisWeek') { start = shift(today, -((today.getUTCDay() + 6) % 7)); end = shift(start, 6); }
+    else if (type === 'thisWeek') { start = shift(today, -((today.getUTCDay() + 6) % 7)); end = today; }
     else if (type === 'lastWeek') { end = shift(today, -((today.getUTCDay() + 6) % 7) - 1); start = shift(end, -6); }
-    else if (type === 'thisMonth') { start = new Date(Date.UTC(today.getUTCFullYear(), today.getUTCMonth(), 1)); end = monthEnd(start); }
+    else if (type === 'thisMonth') { start = new Date(Date.UTC(today.getUTCFullYear(), today.getUTCMonth(), 1)); end = today; }
     else if (type === 'lastMonth') { start = new Date(Date.UTC(today.getUTCFullYear(), today.getUTCMonth() - 1, 1)); end = monthEnd(start); }
     else throw new TypeError(`unknown period: ${type}`);
     const length = Math.round((end - start) / DAY) + 1;
@@ -127,17 +128,53 @@
   function isArchived(row) {
     return Boolean(row.archived || bounded(row.archivedAt) || String(row.status || '').toLowerCase() === 'archived');
   }
-  function validFacts(facts) {
-    return facts.filter(row => !isArchived(row) && !['cancelled', 'canceled', 'invalid'].includes(String(row.contractStatus || row.status || '').toLowerCase()));
+  function contractStatus(row) {
+    const status = String(row.contractStatus || '').toLowerCase();
+    return status === 'canceled' ? 'cancelled' : status;
   }
   function selected(data, filters, period) {
-    const daily = filterRows(data.daily, filters, period.start, period.end).filter(row => !isArchived(row));
-    const facts = validFacts(filterRows(data.facts, filters, period.start, period.end));
-    return { daily, facts, totals: sums(daily, facts) };
+    const dailyCandidates = filterRows(data.daily, filters, period.start, period.end);
+    const factCandidates = filterRows(data.facts, filters, period.start, period.end);
+    const daily = dailyCandidates.filter(row => !isArchived(row));
+    const activeFacts = factCandidates.filter(row => !isArchived(row));
+    const facts = activeFacts.map(row => {
+      if (!['cancelled', 'invalid'].includes(contractStatus(row))) return row;
+      return Object.assign({}, row, { contracts: 0, newContracts: 0, contractAmount: 0, paidAmount: 0, expectedCost: 0, payments: 0 });
+    });
+    const exclusions = {
+      archivedDaily: dailyCandidates.length - daily.length,
+      archivedFacts: factCandidates.length - activeFacts.length,
+      cancelledContracts: activeFacts.filter(row => contractStatus(row) === 'cancelled').length,
+      invalidContracts: activeFacts.filter(row => contractStatus(row) === 'invalid').length
+    };
+    return { daily, facts, totals: sums(daily, facts), exclusions };
   }
   function freeze(value) {
     if (value && typeof value === 'object' && !Object.isFrozen(value)) { Object.freeze(value); for (const item of Object.values(value)) freeze(item); }
     return value;
+  }
+
+  const RATING_LABELS = Object.freeze({
+    data_insufficient: '데이터 부족', expand_review: '확대 검토', maintain: '유지', improve: '개선 필요', stop_review: '중단 검토'
+  });
+  function rateChannel(total) {
+    const metrics = total.metrics;
+    let rating, rationale;
+    if (total.spend === 0 && total.clicks === 0 && total.validLeads === 0 && total.contracts === 0) {
+      rating = 'data_insufficient'; rationale = ['판단할 유의미한 활동 데이터가 없습니다.'];
+    } else if (total.contracts >= 1 && metrics.roas >= 300 && metrics.expectedMarketingProfit > 0) {
+      rating = 'expand_review'; rationale = [`계약 ${total.contracts}건과 ROAS ${metrics.roas}%를 달성했습니다.`, `예상 마케팅 이익이 ${metrics.expectedMarketingProfit}원입니다.`];
+    } else if (total.contracts >= 1 && metrics.expectedMarketingProfit >= 0) {
+      rating = 'maintain'; rationale = [`계약 ${total.contracts}건과 비음수 이익을 유지하고 있습니다.`];
+    } else if ((total.spend > 0 && total.validLeads > 0 && total.contracts === 0) || (total.contracts >= 1 && metrics.expectedMarketingProfit < 0)) {
+      rating = 'improve';
+      rationale = total.contracts >= 1 ? ['계약이 있으나 예상 마케팅 이익이 음수입니다.'] : ['유효 리드가 있으나 계약 전환이 없습니다.'];
+    } else if (total.spend > 0 && total.validLeads === 0) {
+      rating = 'stop_review'; rationale = ['광고비가 발생했지만 유효 리드가 없습니다.'];
+    } else {
+      rating = 'improve'; rationale = ['활동 데이터가 있으나 성과 판단 기준을 충족하지 못했습니다.'];
+    }
+    return { rating, ratingLabel: RATING_LABELS[rating], rationale };
   }
 
   function buildSnapshot(data, filters, now) {
@@ -155,11 +192,11 @@
       const daily = current.daily.filter(row => (CHANNELS.includes(row.channel) ? row.channel : 'needs_review') === channel);
       const facts = current.facts.filter(row => (CHANNELS.includes(row.channel) ? row.channel : 'needs_review') === channel);
       if (!daily.length && !facts.length) continue;
-      const total = sums(daily, facts); total.metrics = calculateMetrics(total); channels[channel] = total;
+      const total = sums(daily, facts); total.metrics = calculateMetrics(total); Object.assign(total, rateChannel(total)); channels[channel] = total;
     }
     const snapshot = {
       totals: current.totals, metrics: calculateMetrics(current.totals), funnel, channels,
-      appliedFilters: JSON.parse(JSON.stringify(filters)), period,
+      appliedFilters: JSON.parse(JSON.stringify(filters)), period, exclusions: current.exclusions,
       comparison: { totals: previous.totals, metrics: calculateMetrics(previous.totals), deltas: Object.fromEntries(COUNT_FIELDS.concat('profit').map(key => [key, current.totals[key] - previous.totals[key]])) }
     };
     return freeze(snapshot);
@@ -167,4 +204,3 @@
 
   return Object.freeze({ CHANNELS, SERVICES, DATA_STATUSES, normalizeDaily, safeDivide, safeRate, calculateMetrics, resolvePeriod, buildSnapshot });
 }));
-
