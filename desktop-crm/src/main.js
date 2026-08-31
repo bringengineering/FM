@@ -145,12 +145,11 @@ const localMarketingPersistence = MarketingPersistence.createLocalPersistence({
   getSession: () => authState().user,
   resolveActor: user => {
     const profiles = {
-      "local-admin": { operatorId: "operator_local_admin", active: true, role: "admin" },
-      "local-marketing": { operatorId: "operator_local_marketing", active: true, role: "marketing" },
+      "local-admin": { operatorId: "operator_local_admin", active: true, role: "admin", marketingRole: "marketing" },
+      "local-marketing": { operatorId: "operator_local_marketing", active: true, role: "member", marketingRole: "marketing" },
     };
     const profile = profiles[String(user && user.uid || "")];
-    const verifiedMarketingRole = profile && profile.role || "";
-    return { authUid: String(user && user.uid || ""), operatorId: String(profile && profile.operatorId || ""), email: String(user && user.email || ""), role: verifiedMarketingRole, active: profile && profile.active === true };
+    return { authUid: String(user && user.uid || ""), operatorId: String(profile && profile.operatorId || ""), email: String(user && user.email || ""), accessRole: String(profile && profile.role || ""), marketingRole: String(profile && profile.marketingRole || ""), active: profile && profile.active === true };
   },
   clock: () => Date.now(),
 });

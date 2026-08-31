@@ -69,9 +69,10 @@ const CRM_ACCESS = {
     role: "viewer",
     operatorId: "operator_kim",
   },
-  "crm-marketing": { enabled: true, email: "marketing@bring.test", role: "marketing", operatorId: "operator_kim" },
-  "crm-sales": { enabled: true, email: "sales@bring.test", role: "sales", operatorId: "operator_kim" },
-  "crm-marketing-disabled": { enabled: false, email: "marketing-disabled@bring.test", role: "marketing", operatorId: "operator_kim" },
+  "crm-legacy-member": { enabled: true, email: "legacy@bring.test", role: "member", operatorId: "operator_kim" },
+  "crm-marketing": { enabled: true, email: "marketing@bring.test", role: "member", marketingRole: "marketing", operatorId: "operator_kim" },
+  "crm-sales": { enabled: true, email: "sales@bring.test", role: "member", marketingRole: "sales", operatorId: "operator_kim" },
+  "crm-marketing-disabled": { enabled: false, email: "marketing-disabled@bring.test", role: "member", marketingRole: "marketing", operatorId: "operator_kim" },
   "crm-disabled": {
     enabled: false,
     email: "disabled@bring.test",
@@ -464,6 +465,7 @@ async function seed() {
           updatedAt: NOW,
         },
       },
+      marketing: { aggregates: { "2026-08": { id: "2026-08", date: "2026-08-31", spend: 1000, impressions: 20, clicks: 3, platformLeads: 1, version: 1, updatedAtMs: 1788141600000 } } },
     });
   });
 }
@@ -3121,7 +3123,14 @@ describe.runIf(databaseEmulatorAvailable)("marketing database rules", () => {
       const database = environment.authenticatedContext(uid, crmClaims(email)).database();
       await assertFails(update(ref(database, "crmCompany/marketing"), marketingAtomic(`${uid}_daily`, uid)));
     }
-    await assertSucceeds(get(ref(environment.authenticatedContext("crm-viewer", crmClaims("viewer@bring.test")).database(), "crmCompany/marketing/daily")));
+    for (const [uid, email] of [["crm-sales", "sales@bring.test"], ["crm-viewer", "viewer@bring.test"], ["crm-legacy-member", "legacy@bring.test"]] as const) {
+      const database = environment.authenticatedContext(uid, crmClaims(email)).database();
+      await assertFails(get(ref(database, "crmCompany/marketing/daily")));
+      await assertFails(get(ref(database, "crmCompany/marketing/audits")));
+      await assertFails(get(ref(database, "crmCompany/marketing/receipts")));
+      await assertSucceeds(get(ref(database, "crmCompany/marketing/aggregates")));
+      await assertSucceeds(get(ref(database, "crmCompany/data")));
+    }
     await assertFails(get(ref(environment.unauthenticatedContext().database(), "crmCompany/marketing/daily")));
     await assertFails(get(ref(environment.authenticatedContext("crm-marketing", crmClaims("wrong@bring.test")).database(), "crmCompany/marketing/daily")));
   });
@@ -3145,6 +3154,26 @@ describe.runIf(databaseEmulatorAvailable)("marketing database rules", () => {
         { ...forgedSnapshot, spend: forgedSnapshot.spend + 1 },
       ),
     }));
+  });
+
+  it("binds audit spend values to the previous and proposed daily record", async () => {
+    const marketing = environment.authenticatedContext("crm-marketing", crmClaims("marketing@bring.test")).database();
+    const lowBefore = marketingAtomic("audit_before_tamper", "crm-marketing");
+    lowBefore[`audits/${MARKETING_AUDIT}`] = { ...marketingAudit("audit_before_tamper", "crm-marketing"), beforeSpend: 1 };
+    await assertFails(update(ref(marketing, "crmCompany/marketing"), lowBefore));
+    const highAfter = marketingAtomic("audit_after_tamper", "crm-marketing");
+    highAfter[`audits/${MARKETING_AUDIT}`] = { ...marketingAudit("audit_after_tamper", "crm-marketing"), afterSpend: 999 };
+    await assertFails(update(ref(marketing, "crmCompany/marketing"), highAfter));
+  });
+
+  it("keeps aggregates closed, sanitized, versioned and marketing-writer owned", async () => {
+    const marketing = environment.authenticatedContext("crm-marketing", crmClaims("marketing@bring.test")).database();
+    const viewer = environment.authenticatedContext("crm-viewer", crmClaims("viewer@bring.test")).database();
+    const aggregate = { id: "2026-09", date: "2026-09-01", spend: 1000, impressions: 20, clicks: 3, platformLeads: 1, version: 1, updatedAtMs: SERVER_TIME };
+    await assertSucceeds(set(ref(marketing, "crmCompany/marketing/aggregates/2026-09"), aggregate));
+    await assertFails(set(ref(viewer, "crmCompany/marketing/aggregates/viewer-forge"), { ...aggregate, id: "viewer-forge" }));
+    await assertFails(set(ref(marketing, "crmCompany/marketing/aggregates/extra"), { ...aggregate, id: "extra", actorAuthUid: "secret" }));
+    await assertFails(set(ref(marketing, "crmCompany/marketing/aggregates/forged-time"), { ...aggregate, id: "forged-time", updatedAtMs: 1 }));
   });
 
   it("requires exact monotonic update and immutable identity and creation actor", async () => {

@@ -2443,7 +2443,7 @@ class FirebaseRemoteClient {
     this.assertSessionGuardActive(guard);
     return MarketingPersistence.assertMarketingWriter({
       authUid: String(this.session.uid || ""), operatorId, email: String(this.session.email || ""),
-      role: String(access.marketingRole || access.role || ""), active: Boolean(profile && profile.active === true),
+      accessRole: String(access.role || ""), marketingRole: String(access.marketingRole || ""), active: Boolean(profile && profile.active === true),
     });
   }
 

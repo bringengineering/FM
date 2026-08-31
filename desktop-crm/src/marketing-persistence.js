@@ -56,7 +56,7 @@ function validateCommitInput(value, expectedAction) {
   return { id: value.id, requestId: value.requestId.toLowerCase(), expectedVersion: value.expectedVersion, action: value.action, values: normalizeValues(value.values) };
 }
 function assertMarketingWriter(actor) {
-  if (!plain(actor) || actor.active !== true || !safeId(actor.authUid) || !safeId(actor.operatorId) || !['admin', 'marketing'].includes(actor.role)) fail('MARKETING_FORBIDDEN');
+  if (!plain(actor) || actor.active !== true || !safeId(actor.authUid) || !safeId(actor.operatorId) || !(['admin'].includes(actor.accessRole) || actor.accessRole === 'member' && actor.marketingRole === 'marketing')) fail('MARKETING_FORBIDDEN');
   return actor;
 }
 function requestHash(input) { return hash({ id: input.id, requestId: input.requestId, expectedVersion: input.expectedVersion, action: input.action, ...(input.values ? { values: input.values } : {}) }); }
@@ -96,7 +96,7 @@ function readEnvelope(daily) {
 function createLocalPersistence(options) {
   const state = options.state;
   let queue = Promise.resolve(), lastTime = 0;
-  const sessionKey = session => session && `${String(session.uid || '')}|${String(session.email || '')}|${String(session.role || '')}`;
+  const sessionKey = session => session && `${String(session.uid || '')}|${String(session.email || '')}|${String(session.role || '')}|${String(session.marketingRole || '')}`;
   const resolveTime = (value, timestamp) => JSON.parse(JSON.stringify(value), (_key, item) => item && item['.sv'] === 'timestamp' ? timestamp : item);
   async function commit(inputValue) {
     const queuedKey = sessionKey(options.getSession());

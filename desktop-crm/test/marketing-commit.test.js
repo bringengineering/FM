@@ -5,7 +5,7 @@ const Persistence = require('../src/marketing-persistence');
 const { FirebaseRemoteClient } = require('../src/remote');
 
 const REQUEST = '123e4567-e89b-42d3-a456-426614174000';
-const actor = { authUid: 'uid_1', operatorId: 'operator_1', email: 'marketing@example.com', role: 'marketing', active: true };
+const actor = { authUid: 'uid_1', operatorId: 'operator_1', email: 'marketing@example.com', accessRole: 'member', marketingRole: 'marketing', active: true };
 const values = { date: '2026-08-31', channel: 'naver_blog', accountName: 'bring', campaignId: 'c1', campaignName: '검색', adGroup: 'a', keyword: '청소', contentId: 'p1', contentTitle: '글', service: 'consulting', region: '원주', spend: 1000, impressions: 20, clicks: 3, phoneClicks: 1, chatClicks: 0, directionsClicks: 0, saves: 0, platformLeads: 1, note: '정상', sourceType: 'manual' };
 
 test('validates a closed daily record schema and rejects unsafe ids, extras and claims', () => {
@@ -18,10 +18,15 @@ test('validates a closed daily record schema and rejects unsafe ids, extras and 
   ]) assert.throws(() => Persistence.validateCommitInput(input), /MARKETING_INPUT_INVALID/);
 });
 
-test('enforces verified role matrix and fails closed on unknown roles', () => {
-  assert.doesNotThrow(() => Persistence.assertMarketingWriter(actor));
-  assert.doesNotThrow(() => Persistence.assertMarketingWriter({ ...actor, role: 'admin' }));
-  for (const role of ['sales', 'viewer', 'member', '', 'ADMIN']) assert.throws(() => Persistence.assertMarketingWriter({ ...actor, role }), /MARKETING_FORBIDDEN/);
+test('enforces established access role plus explicit marketing capability', () => {
+  assert.doesNotThrow(() => Persistence.assertMarketingWriter({ ...actor, accessRole: 'member', marketingRole: 'marketing' }));
+  assert.doesNotThrow(() => Persistence.assertMarketingWriter({ ...actor, accessRole: 'admin', marketingRole: '' }));
+  for (const candidate of [
+    { accessRole: 'member', marketingRole: 'sales' },
+    { accessRole: 'member', marketingRole: '' },
+    { accessRole: 'viewer', marketingRole: 'marketing' },
+    { accessRole: 'marketing', marketingRole: 'marketing' },
+  ]) assert.throws(() => Persistence.assertMarketingWriter({ ...actor, ...candidate }), /MARKETING_FORBIDDEN/);
   assert.throws(() => Persistence.assertMarketingWriter({ ...actor, active: false }), /MARKETING_FORBIDDEN/);
 });
 
@@ -55,7 +60,7 @@ test('remote commit reads the exact record ETag and submits one root atomic patc
   const client = new FirebaseRemoteClient({ Core: { assertMutationAllowed() {}, assertNoProhibitedSecrets() {} }, fs: {}, safeStorage: {}, shell: {}, sessionFile: '', pendingFile: '' });
   client.session = { uid: 'uid_1', email: 'marketing@example.com', role: 'marketing' };
   client.sessionGeneration = 1;
-  client.verifyAccess = async () => ({ role: 'marketing', operatorId: 'operator_1', enabled: true });
+  client.verifyAccess = async () => ({ role: 'member', marketingRole: 'marketing', operatorId: 'operator_1', enabled: true });
   client.dbRequest = async location => location === 'teamProfiles/operator_1' ? { active: true } : null;
   client.dbReadWithEtag = async location => { calls.push(['get', location]); return location.includes('receipts/') ? { value: null, etag: 'receipt-etag' } : { value: null, etag: 'record-etag' }; };
   client.atomicMarketingPatch = async patch => { calls.push(['patch', patch]); const error = new Error('rejected'); error.code = 'MARKETING_WRITE_REJECTED'; throw error; };
@@ -72,7 +77,7 @@ test('Rules rejection and legacy 412 both re-read the exact child and normalize 
     const calls = [];
     const client = new FirebaseRemoteClient({ Core: {}, fs: {}, safeStorage: {}, shell: {}, sessionFile: '', pendingFile: '' });
     client.session = { uid: 'uid_1', email: actor.email, role: 'marketing' }; client.sessionGeneration = 1;
-    client.verifyAccess = async () => ({ role: 'marketing', operatorId: actor.operatorId });
+    client.verifyAccess = async () => ({ role: 'member', marketingRole: 'marketing', operatorId: actor.operatorId });
     client.dbRequest = async () => ({ active: true });
     const first = Persistence.planCommit({ id: 'stale_1', requestId: REQUEST, expectedVersion: 0, action: 'create', values }, null, actor, null).record;
     const current = { ...first, version: 2, spend: 2000, createdAtMs: 100, updatedAtMs: 200 };
@@ -91,7 +96,7 @@ test('Rules rejection and legacy 412 both re-read the exact child and normalize 
 test('lost response recovers only from the exact receipt hash and committed record', async () => {
   const client = new FirebaseRemoteClient({ Core: {}, fs: {}, safeStorage: {}, shell: {}, sessionFile: '', pendingFile: '' });
   client.session = { uid: 'uid_1', email: actor.email, role: 'marketing' }; client.sessionGeneration = 1;
-  client.verifyAccess = async () => ({ role: 'marketing', operatorId: actor.operatorId }); client.dbRequest = async () => ({ active: true });
+  client.verifyAccess = async () => ({ role: 'member', marketingRole: 'marketing', operatorId: actor.operatorId }); client.dbRequest = async () => ({ active: true });
   const input = { id: 'lost_1', requestId: REQUEST, expectedVersion: 0, action: 'create', values };
   const committed = Persistence.planCommit(input, null, actor, null);
   const stored = { ...committed.record, createdAtMs: 100, updatedAtMs: 100 };
@@ -107,7 +112,7 @@ test('different record ids from the same initial marketing state both commit wit
   const server = Object.create(null), patches = [];
   const client = new FirebaseRemoteClient({ Core: {}, fs: {}, safeStorage: {}, shell: {}, sessionFile: '', pendingFile: '' });
   client.session = { uid: 'uid_1', email: actor.email, role: 'marketing' }; client.sessionGeneration = 1;
-  client.verifyAccess = async () => ({ role: 'marketing', operatorId: actor.operatorId }); client.dbRequest = async () => ({ active: true });
+  client.verifyAccess = async () => ({ role: 'member', marketingRole: 'marketing', operatorId: actor.operatorId }); client.dbRequest = async () => ({ active: true });
   client.dbReadWithEtag = async location => ({ value: server[location] || null, etag: `etag-${location}` });
   client.atomicMarketingPatch = async patch => {
     patches.push(patch);
@@ -155,9 +160,9 @@ test('queued marketing commit rejects a switched session before any read or writ
 });
 
 test('local persistence stores record audit receipt atomically and rolls back a session switch', async () => {
-  let session = { uid: 'uid_1', email: 'marketing@example.com', role: 'marketing' };
+  let session = { uid: 'uid_1', email: 'marketing@example.com', role: 'member', marketingRole: 'marketing' };
   const state = { daily: Object.create(null), audits: Object.create(null), receipts: Object.create(null) };
-  const local = Persistence.createLocalPersistence({ state, getSession: () => session, resolveActor: current => ({ authUid: current.uid, operatorId: 'operator_1', email: current.email, role: current.role, active: true }), clock: () => 1000 });
+  const local = Persistence.createLocalPersistence({ state, getSession: () => session, resolveActor: current => ({ authUid: current.uid, operatorId: 'operator_1', email: current.email, accessRole: current.role, marketingRole: current.marketingRole, active: true }), clock: () => 1000 });
   const result = await local.commit({ id: 'daily_1', requestId: REQUEST, expectedVersion: 0, action: 'create', values });
   assert.equal(result.record.createdAtMs, 1000);
   assert.equal(Object.keys(state.daily).length, 1);
@@ -165,8 +170,8 @@ test('local persistence stores record audit receipt atomically and rolls back a 
   assert.equal(Object.keys(state.receipts).length, 1);
 
   const switchedState = { daily: Object.create(null), audits: Object.create(null), receipts: Object.create(null) };
-  session = { uid: 'uid_1', email: 'marketing@example.com', role: 'marketing' };
-  const switched = Persistence.createLocalPersistence({ state: switchedState, getSession: () => session, resolveActor: current => ({ authUid: current.uid, operatorId: 'operator_1', email: current.email, role: current.role, active: true }), clock: () => { session = { uid: 'uid_2', email: 'other@example.com', role: 'marketing' }; return 1001; } });
+  session = { uid: 'uid_1', email: 'marketing@example.com', role: 'member', marketingRole: 'marketing' };
+  const switched = Persistence.createLocalPersistence({ state: switchedState, getSession: () => session, resolveActor: current => ({ authUid: current.uid, operatorId: 'operator_1', email: current.email, accessRole: current.role, marketingRole: current.marketingRole, active: true }), clock: () => { session = { uid: 'uid_2', email: 'other@example.com', role: 'member', marketingRole: 'marketing' }; return 1001; } });
   await assert.rejects(() => switched.commit({ id: 'daily_2', requestId: '223e4567-e89b-42d3-a456-426614174000', expectedVersion: 0, action: 'create', values }), error => error.code === 'SESSION_CHANGED');
   assert.deepEqual(Object.keys(switchedState.daily), []);
   assert.deepEqual(Object.keys(switchedState.audits), []);
@@ -174,7 +179,7 @@ test('local persistence stores record audit receipt atomically and rolls back a 
 });
 
 test('durable receipt returns the original A result after later B mutation without another write', async () => {
-  const session = { uid: 'uid_1', email: actor.email, role: 'marketing' };
+  const session = { uid: 'uid_1', email: actor.email, role: 'member', marketingRole: 'marketing' };
   const state = { daily: Object.create(null), audits: Object.create(null), receipts: Object.create(null) };
   let now = 1000;
   const local = Persistence.createLocalPersistence({ state, getSession: () => session, resolveActor: () => actor, clock: () => now++ });
