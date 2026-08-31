@@ -6,6 +6,7 @@ const path = require('node:path');
 const Core = require('../src/core.js');
 const MarketingCore = require('../src/marketing-core.js');
 const Bridge = require('../src/marketing-crm-bridge.js');
+const { FirebaseRemoteClient } = require('../src/remote.js');
 
 const marketing = {
   firstSource: 'naver_blog', lastSource: 'referral', subChannel: 'post', campaignId: 'cmp-1',
@@ -68,6 +69,66 @@ test('unknown attribution needs review and never joins by name or phone', () => 
   assert.equal(facts[0].dataStatus, 'needs_review');
 });
 
+test('firebaseKey is the canonical case key for emitted IDs and explicit relationships', () => {
+  const fact = Bridge.projectFacts({ customers: [{ id: 'c' }], activities: [{ id: 'a', customerId: 'c', workflowCaseId: 'firebase-key', context: 'consultation' }], contracts: [{ id: 'ct', customerId: 'c', caseId: 'firebase-key', status: '진행 중', amount: 88 }] }, { cases: [{ firebaseKey: 'firebase-key', id: 'embedded-id', crmCustomerId: 'c', createdAt: '2026-08-01T00:00:00Z' }] })[0];
+  assert.equal(fact.caseId, 'firebase-key');
+  assert.equal(fact.consultations, 1);
+  assert.equal(fact.contractAmount, 88);
+  assert.deepEqual(fact.contractIds, ['ct']);
+});
+
+test('real-shaped quote and confirmed payment evidence keep quote and actual paid money separate', () => {
+  const quoteFact = Bridge.projectFacts({ customers: [{ id: 'c' }] }, { cases: [{ id: 'q', crmCustomerId: 'c', createdAt: '2026-08-01T00:00:00Z', status: { c6: 'done' }, quoteFiles: {
+    bring: { bringQuoteTotalAmount: 120 }, confirmed: { confirmedTotalAmount: 80 }, legacy: { totalAmount: 50 }
+  } }] })[0];
+  assert.equal(quoteFact.quoteAmount, 250);
+  assert.equal(quoteFact.paidAmount, 0);
+  const pending = Bridge.projectFacts({ customers: [{ id: 'c' }] }, { cases: [{ id: 'p', crmCustomerId: 'c', createdAt: '2026-08-01T00:00:00Z', status: { c15: 'done' }, paymentExpectedAmount: 999 }] })[0];
+  assert.equal(pending.payments, 1);
+  assert.equal(pending.paidAmount, 0);
+  const confirmed = Bridge.projectFacts({ customers: [{ id: 'c' }] }, { cases: [{ id: 'paid', crmCustomerId: 'c', createdAt: '2026-08-01T00:00:00Z', paymentStatus: 'confirmed', paymentExpectedAmount: 999, paymentConfirmedAt: '2026-08-02T00:00:00Z' }] })[0];
+  assert.equal(confirmed.payments, 1);
+  assert.equal(confirmed.paidAmount, 999);
+  const settled = Bridge.projectFacts({ customers: [{ id: 'c' }] }, { cases: [{ id: 'settled', crmCustomerId: 'c', createdAt: '2026-08-01T00:00:00Z', settlement: { status: 'confirmed', amount: 321, settledAt: '2026-08-03' } }] })[0];
+  assert.equal(settled.payments, 1);
+  assert.equal(settled.paidAmount, 0);
+});
+
+test('pre-active contracts have zero economics while active contracts contribute', () => {
+  const facts = Bridge.projectFacts({ customers: [{ id: 'pre' }, { id: 'active' }], contracts: [
+    { id: 'prep', customerId: 'pre', status: '계약 준비', amount: 100, vendorCost: 20 },
+    { id: 'run', customerId: 'active', status: '진행 중', amount: 200, vendorCost: 30 }
+  ] }, { cases: [
+    { id: 'pre-case', crmCustomerId: 'pre', createdAt: '2026-08-01T00:00:00Z' },
+    { id: 'active-case', crmCustomerId: 'active', createdAt: '2026-08-01T00:00:00Z' }
+  ] });
+  const pre = facts.find(x => x.customerId === 'pre'), active = facts.find(x => x.customerId === 'active');
+  assert.deepEqual({ contracts: pre.contracts, contractAmount: pre.contractAmount, expectedCost: pre.expectedCost }, { contracts: 0, contractAmount: 0, expectedCost: 0 });
+  assert.deepEqual({ contracts: active.contracts, contractAmount: active.contractAmount, expectedCost: active.expectedCost }, { contracts: 1, contractAmount: 200, expectedCost: 30 });
+});
+
+test('projected facts retain every normalized attribution evidence field', () => {
+  const fact = Bridge.projectFacts({ customers: [{ id: 'c', marketing }] }, { cases: [{ id: 'k', crmCustomerId: 'c', createdAt: '2026-08-01T00:00:00Z' }] })[0];
+  for (const field of ['firstSource', 'lastSource', 'subChannel', 'campaignId', 'campaignName', 'contentId', 'contentTitle', 'inquiryMethod', 'firstTouchAt', 'invalidReason', 'attributionNote']) assert.equal(fact[field], marketing[field]);
+});
+
+test('live remote case load and save normalize optional marketing without migration', async () => {
+  const calls = [];
+  const client = new FirebaseRemoteClient({ Core, databaseRoot: 'crmCompany', firebaseConfig: { apiKey: 'x', databaseUrl: 'https://example.invalid' }, fs: {}, safeStorage: {}, shell: {}, sessionFile: 'x', pendingFile: 'y', readLocalStore: async () => Core.blankStore(), writeLocalStore: async () => {}, fetchImpl: async (url, options = {}) => {
+    calls.push({ url, method: options.method || 'GET', body: options.body ? JSON.parse(options.body) : undefined });
+    const body = url.includes('/cases.json') && (!options.method || options.method === 'GET') ? JSON.stringify({ legacy: { id: 'different' }, attributed: { marketing: { ...marketing, firstSource: 'invented', extra: 'drop' } } }) : '';
+    return { ok: true, status: 200, text: async () => body };
+  } });
+  client.session = { idToken: 't', refreshToken: 'r', expiresAt: Date.now() + 60000, uid: 'u', email: 'a@b.c', role: 'admin' };
+  const loaded = await client.loadOperations();
+  assert.deepEqual(loaded.cases.find(x => x.firebaseKey === 'legacy').marketing, {});
+  assert.equal(loaded.cases.find(x => x.firebaseKey === 'attributed').marketing.firstSource, 'needs_review');
+  assert.equal(Object.hasOwn(loaded.cases.find(x => x.firebaseKey === 'attributed').marketing, 'extra'), false);
+  const saved = await client.saveWorkflowCase({ caseKey: 'legacy', fields: { marketing: { ...marketing, campaignName: 'z'.repeat(500) } } });
+  assert.equal(saved.patch.marketing.campaignName.length, 200);
+  assert.equal(saved.patch.marketing.validLead, true);
+});
+
 test('17-stage boundaries map once without altering source stages', () => {
   const status = Object.fromEntries(Array.from({ length: 17 }, (_, i) => [`c${i + 1}`, 'done']));
   const source = { id: 'case-17', crmCustomerId: 'c1', receivedAt: '2026-08-01T00:00:00Z', status, quoteFiles: { q1: { amount: 10 }, q2: { amount: 20 } }, paymentStatus: 'confirmed', paymentExpectedAmount: 30, settlement: { amount: 12 } };
@@ -106,7 +167,7 @@ test('cancelled contracts preserve earlier facts and actual money with exclusion
 test('projection is deeply immutable and rejects unsafe money', () => {
   const facts = Bridge.projectFacts({ customers: [{ id: 'c' }] }, { cases: [{ id: 'k', crmCustomerId: 'c', createdAt: '2026-08-01T00:00:00Z' }] });
   assert.ok(Object.isFrozen(facts)); assert.ok(Object.isFrozen(facts[0]));
-  assert.throws(() => Bridge.projectFacts({ customers: [{ id: 'c' }], contracts: [{ id: 'ct', customerId: 'c', workflowCaseId: 'k', amount: Number.MAX_SAFE_INTEGER + 1 }] }, { cases: [{ id: 'k', crmCustomerId: 'c', createdAt: '2026-08-01T00:00:00Z' }] }), /safe integer/);
+  assert.throws(() => Bridge.projectFacts({ customers: [{ id: 'c' }], contracts: [{ id: 'ct', customerId: 'c', workflowCaseId: 'k', status: '진행 중', amount: Number.MAX_SAFE_INTEGER + 1 }] }, { cases: [{ id: 'k', crmCustomerId: 'c', createdAt: '2026-08-01T00:00:00Z' }] }), /safe integer/);
 });
 
 test('HTML loads UMD bridge after marketing core and before app', () => {

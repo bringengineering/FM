@@ -13,6 +13,7 @@
   const text = (value, limit) => String(value == null ? '' : value).trim().slice(0, limit || 200);
   const values = value => value && typeof value === 'object' ? Object.values(value).filter(Boolean) : [];
   const has = (record, field) => Object.prototype.hasOwnProperty.call(record || {}, field);
+  const caseKey = record => id(record && (record.firebaseKey || record.id));
 
   function safeMoney(value, field) {
     if (value == null || value === '') return 0;
@@ -32,12 +33,18 @@
     return Core.normalizeMarketingAttribution ? Core.normalizeMarketingAttribution(value) : Object.assign({}, value || {});
   }
 
+  function normalizeCaseMarketing(value) {
+    const record = value && typeof value === 'object' && !Array.isArray(value) ? Object.assign({}, value) : {};
+    record.marketing = normalizeMarketing(record.marketing);
+    return record;
+  }
+
   function dateOf(record, marketing) {
     return text(marketing.inquiryAt || record.receivedAt || record.createdAt || record.updatedAt).slice(0, 10);
   }
 
   function explicitCaseContracts(store, workflowCase, customerId, allowCustomerLink) {
-    const caseId = id(workflowCase.id || workflowCase.firebaseKey);
+    const caseId = caseKey(workflowCase);
     return list(store.contracts).filter(contract => {
       const linkedCase = id(contract.workflowCaseId || contract.caseId);
       if (linkedCase) return linkedCase === caseId;
@@ -46,7 +53,7 @@
   }
 
   function caseActivities(store, workflowCase, customerId, allowCustomerLink) {
-    const caseId = id(workflowCase.id || workflowCase.firebaseKey);
+    const caseId = caseKey(workflowCase);
     return list(store.activities).filter(activity => {
       const linkedCase = id(activity.workflowCaseId || activity.caseId);
       return linkedCase ? linkedCase === caseId : Boolean(allowCustomerLink && customerId && id(activity.customerId) === customerId);
@@ -60,17 +67,31 @@
     return states.length ? 'active' : '';
   }
 
+  function activeContract(contract) {
+    return ['진행 중', '종료 예정', '종료', 'active', 'confirmed', 'cancelled', 'canceled', 'invalid', '취소', '무효'].includes(contract.status || contract.contractStatus);
+  }
+
+  function quoteMoney(quote) {
+    const field = ['bringQuoteTotalAmount', 'confirmedTotalAmount', 'totalAmount', 'total', 'amount'].find(name => has(quote, name));
+    return field ? safeMoney(quote[field], field) : 0;
+  }
+
+  function hasSettlementEvidence(workflowCase) {
+    const settlement = workflowCase && (workflowCase.settlement || workflowCase.settlementEvidence) || {};
+    return Boolean(text(settlement.status) || settlement.settledAt || settlement.date || values(workflowCase && workflowCase.evidenceFiles || settlement.files).length);
+  }
+
   function makeFact(store, workflowCase, customer, sourceType, allowCustomerLink) {
     const marketing = normalizeMarketing((workflowCase && workflowCase.marketing) || (customer && customer.marketing));
     const customerId = id(workflowCase && workflowCase.crmCustomerId || customer && customer.id);
-    const caseId = sourceType === 'case' ? id(workflowCase.firebaseKey || workflowCase.id) : '';
+    const caseId = sourceType === 'case' ? caseKey(workflowCase) : '';
     const contracts = sourceType === 'case' ? explicitCaseContracts(store, workflowCase, customerId, allowCustomerLink) : [];
     const activities = sourceType === 'case' ? caseActivities(store, workflowCase, customerId, allowCustomerLink) : [];
     const quoteRows = values(workflowCase && workflowCase.quoteFiles);
     const hasConsultation = done(workflowCase, 3) || activities.some(activity => activity.context === 'consultation');
     const hasQuote = done(workflowCase, 6) || quoteRows.length > 0 || safeMoney(workflowCase && workflowCase.quoteAmount, 'quoteAmount') > 0;
-    const hasContract = done(workflowCase, 9) || contracts.some(contract => ['진행 중', '종료 예정', '종료', 'active', 'cancelled', 'canceled', 'invalid', '취소', '무효'].includes(contract.status || contract.contractStatus));
-    const hasPayment = done(workflowCase, 15) || workflowCase && workflowCase.paymentStatus === 'confirmed' || contracts.some(contract => contract.collectionStatus === '입금 완료' || safeMoney(contract.paidAmount, 'paidAmount') > 0);
+    const hasContract = done(workflowCase, 9) || contracts.some(activeContract);
+    const hasPayment = done(workflowCase, 15) || workflowCase && workflowCase.paymentStatus === 'confirmed' || hasSettlementEvidence(workflowCase) || contracts.some(contract => contract.collectionStatus === '입금 완료' || safeMoney(contract.paidAmount, 'paidAmount') > 0);
     const validLead = marketing.validLead === true ? 1 : 0;
     const explicitNew = contracts.some(contract => ['new', '신규'].includes(contract.contractKind || contract.customerStatus || contract.newRepeatStatus));
     const explicitRepeat = contracts.some(contract => ['repeat', '재계약', '반복'].includes(contract.contractKind || contract.customerStatus || contract.newRepeatStatus));
@@ -80,15 +101,19 @@
       sourceType, customerId, caseId, salesId: id(workflowCase && (workflowCase.salesId || workflowCase.salesOpportunityId)),
       contractIds: contracts.map(contract => id(contract.id)).filter(Boolean), occurredAt: dateOf(workflowCase || customer || {}, marketing),
       inquiryAt: text(marketing.inquiryAt || workflowCase && (workflowCase.receivedAt || workflowCase.createdAt) || customer && customer.createdAt),
-      date: dateOf(workflowCase || customer || {}, marketing), channel, lastSource,
+      date: dateOf(workflowCase || customer || {}, marketing), channel, firstSource: channel, lastSource,
+      subChannel: text(marketing.subChannel), campaignId: text(marketing.campaignId), campaignName: text(marketing.campaignName),
+      contentId: text(marketing.contentId), contentTitle: text(marketing.contentTitle), inquiryMethod: text(marketing.inquiryMethod),
+      firstTouchAt: text(marketing.firstTouchAt), invalidReason: text(marketing.invalidReason), attributionNote: text(marketing.attributionNote, 1000),
       service: MarketingCore.SERVICES.includes(workflowCase && workflowCase.service || marketing.service) ? (workflowCase && workflowCase.service || marketing.service) : 'needs_review',
       region: text(workflowCase && workflowCase.region || customer && customer.region), owner: text(workflowCase && workflowCase.owner || customer && customer.owner),
       customerType: text(customer && (customer.customerType || customer.type)), campaign: text(marketing.campaignName || marketing.campaignId), keyword: text(marketing.keyword),
       customerStatus: text(customer && customer.stage), dataStatus: channel === 'needs_review' || lastSource === 'needs_review' || marketing.validLead == null ? 'needs_review' : 'verified',
       inquiries: 1, validLeads: validLead, consultations: hasConsultation ? 1 : 0, quotes: hasQuote ? 1 : 0, contracts: hasContract ? 1 : 0,
-      payments: hasPayment ? 1 : 0, quoteAmount: addMoney(quoteRows, ['amount', 'confirmedAmount', 'totalAmount'], 'quoteAmount') || safeMoney(workflowCase && workflowCase.quoteAmount, 'quoteAmount'),
-      contractAmount: addMoney(contracts, ['amount', 'contractAmount'], 'contractAmount'), paidAmount: addMoney(contracts, ['paidAmount'], 'paidAmount') || safeMoney(workflowCase && workflowCase.paymentConfirmedAmount, 'paidAmount'),
-      expectedCost: addMoney(contracts, ['vendorCost', 'expectedCost'], 'expectedCost'), lostReason: text(workflowCase && workflowCase.lostReason || customer && customer.lostReason),
+      payments: hasPayment ? 1 : 0, quoteAmount: quoteRows.reduce((sum, quote) => MarketingCore.checkedIntegerAdd(sum, quoteMoney(quote), 'quoteAmount'), 0) || safeMoney(workflowCase && workflowCase.quoteAmount, 'quoteAmount'),
+      contractAmount: hasContract ? addMoney(contracts, ['amount', 'contractAmount'], 'contractAmount') : 0,
+      paidAmount: addMoney(contracts, ['paidAmount'], 'paidAmount') || (workflowCase && workflowCase.paymentStatus === 'confirmed' ? safeMoney(workflowCase.paymentConfirmedAmount || workflowCase.paymentExpectedAmount, 'paidAmount') : 0),
+      expectedCost: hasContract ? addMoney(contracts, ['vendorCost', 'expectedCost'], 'expectedCost') : 0, lostReason: text(workflowCase && workflowCase.lostReason || customer && customer.lostReason),
       contractStatus: contractState(contracts), workStage: [11, 12, 13, 14].some(step => done(workflowCase, step)), aftercare: done(workflowCase, 17)
     };
     if (explicitNew) fact.newContracts = hasContract ? 1 : 0;
@@ -120,5 +145,5 @@
     return freeze(facts);
   }
 
-  return Object.freeze({ projectFacts });
+  return Object.freeze({ caseKey, normalizeCaseMarketing, projectFacts });
 }));
