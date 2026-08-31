@@ -2932,6 +2932,26 @@ class FirebaseRemoteClient {
     return { ok: true, caseKey, updatedAt: now, patch };
   }
 
+  async updateMarketingAttribution(input) {
+    const session = this.requireMutationPermission(input);
+    if (!(session && (session.accessRole === 'admin' || session.accessRole === 'member') && (session.accessRole === 'admin' || ['marketing', 'sales', '', undefined].includes(session.marketingRole)))) throw createError('forbidden', 'MARKETING_ATTRIBUTION_FORBIDDEN');
+    const source = input && typeof input === 'object' && !Array.isArray(input) ? input : {};
+    const kind = source.kind;
+    const id = String(source.id || '').trim();
+    if (!['customer', 'case'].includes(kind) || !/^[A-Za-z0-9_-]{1,120}$/.test(id) || ['__proto__', 'prototype', 'constructor'].includes(id)) throw createError('invalid attribution target', 'MARKETING_ATTRIBUTION_INVALID');
+    const marketing = this.Core.normalizeMarketingAttribution(source.marketing);
+    const guard = this.captureSessionGuard();
+    const path = kind === 'customer' ? `crmShared/data/customers/${id}` : `cases/${id}`;
+    const read = kind === 'customer' ? this.dbRequest.bind(this) : this.rootDbRequest.bind(this);
+    const current = await read(path, { method: 'GET' });
+    if (!current || typeof current !== 'object') throw createError('attribution target not found', 'MARKETING_ATTRIBUTION_NOT_FOUND');
+    if (!this.sessionGuardActive(guard)) throw createError('session changed', 'SESSION_CHANGED');
+    const body = { marketing, marketingUpdatedAt: new Date().toISOString(), marketingUpdatedBy: String(session.operatorId || session.email || session.uid || '').slice(0, 200) };
+    await read(path, { method: 'PATCH', body, query: 'print=silent' });
+    if (!this.sessionGuardActive(guard)) throw createError('session changed', 'SESSION_CHANGED');
+    return { ok: true, kind, id, marketing };
+  }
+
   async savePaymentOverride(input) {
     this.requireMutationPermission(input);
     const month = String(input && input.month || "");

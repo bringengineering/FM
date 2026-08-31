@@ -153,6 +153,16 @@ test('role-limited submit harness executes save with normalized allow-listed pay
   assert.equal(result.ok, true);
 });
 
+test('production submission policy blocks forged generic forms for marketing-only role', () => {
+  const marketing = { accessRole: 'member', marketingRole: 'marketing' };
+  assert.equal(UI.roleSubmissionPolicy(marketing, 'customerForm').allowed, false);
+  assert.equal(UI.roleSubmissionPolicy(marketing, 'workflowCaseBasicForm').allowed, false);
+  assert.equal(UI.roleSubmissionPolicy(marketing, 'workflowCaseCreateForm').allowed, false);
+  assert.equal(UI.roleSubmissionPolicy(marketing, 'customerMarketingForm').allowed, true);
+  assert.equal(UI.roleSubmissionPolicy(marketing, 'caseMarketingForm').allowed, true);
+  assert.equal(UI.roleSubmissionPolicy({ accessRole: 'viewer' }, 'customerMarketingForm').allowed, false);
+});
+
 test('app wires the actual marketing commit/archive endpoints and route events', () => {
   const app = fs.readFileSync(path.join(__dirname, '../src/app.js'), 'utf8');
   assert.match(app, /MarketingUI\.createEntryController/);

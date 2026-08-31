@@ -124,6 +124,14 @@
     if (user && user.accessRole === 'member') return { core: true, attribution: true };
     return { core: false, attribution: false };
   }
+  function roleSubmissionPolicy(user, formId) {
+    const permissions = crmEditPermissions(user);
+    const dedicated = ['customerMarketingForm', 'caseMarketingForm'].includes(formId);
+    const advertising = formId === 'marketingEntryForm';
+    if (!permissions.attribution) return { allowed: false, reason: 'forbidden' };
+    if (!permissions.core && !dedicated && !advertising) return { allowed: false, reason: 'marketing-only' };
+    return { allowed: true, scope: permissions.core ? 'full' : 'marketing' };
+  }
   function buildRoleLimitedEntityUpdate(kind, existing, submitted, user) {
     if (!['customer', 'case'].includes(kind)) throw new TypeError('unknown entity kind');
     const permissions = crmEditPermissions(user);
@@ -189,5 +197,5 @@
     function setPeriod(period) { try { core.resolvePeriod(period, options.now ? options.now() : new Date()); filters.period = period; state.localError = ""; if (rawLoaded) recompute(); return { ok: true, snapshot: state.snapshot }; } catch (error) { state.localError = String(error.message || error); return { ok: false, error: state.localError }; } }
     return Object.freeze({ filters, state, load, invalidate, prepareLoad, syncFactsIfRevisionChanged, refreshFacts, setFilter, setPeriod });
   }
-  return Object.freeze({ NAV_ITEMS, defaultFilters, buildFilterOptions, createController, createEntryController, crmEditPermissions, buildRoleLimitedEntityUpdate, submitRoleLimitedEntityUpdate, renderWorkspace, renderMarketingInput, renderCustomerFacts, formatNumber, formatWon, formatPercent, escapeHtml: esc });
+  return Object.freeze({ NAV_ITEMS, defaultFilters, buildFilterOptions, createController, createEntryController, crmEditPermissions, roleSubmissionPolicy, buildRoleLimitedEntityUpdate, submitRoleLimitedEntityUpdate, renderWorkspace, renderMarketingInput, renderCustomerFacts, formatNumber, formatWon, formatPercent, escapeHtml: esc });
 });

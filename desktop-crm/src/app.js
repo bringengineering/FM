@@ -6155,6 +6155,9 @@
   document.addEventListener("submit", async event => {
     event.preventDefault();
     const form = event.target;
+    const submissionFormId = form.matches("[data-marketing-entry-form]") ? "marketingEntryForm" : form.id;
+    const verifiedPolicy = MarketingUI.roleSubmissionPolicy(currentAuth.user || {}, submissionFormId);
+    if ((currentAuth.user && currentAuth.user.accessRole === "member" && currentAuth.user.marketingRole === "marketing") && !verifiedPolicy.allowed) return showToast("마케팅 담당자는 전용 마케팅 정보 양식만 저장할 수 있습니다.", "error");
     if (form.matches("[data-marketing-entry-form]")) {
       const raw = Object.fromEntries(new FormData(form).entries());
       for (const name of ["spend", "impressions", "clicks", "phoneClicks", "chatClicks", "directionsClicks", "saves", "platformLeads"]) raw[name] = raw[name] === "" ? 0 : Number(raw[name]);
@@ -6171,7 +6174,7 @@
       if (!customer || !crmEditPermissions().attribution) return showToast("마케팅 정보를 수정할 권한이 없습니다.", "error");
       try {
         const raw = Object.fromEntries(new FormData(form).entries());
-        await MarketingUI.submitRoleLimitedEntityUpdate({ kind: "customer", existing: customer, submitted: { marketing: parseMarketingAttribution(raw) }, user: currentAuth.user || {}, save: async update => { customer.marketing = update.marketing; customer.updatedAt = new Date().toISOString(); scheduleSave(); return { ok: true }; } }); closeModal(); render();
+        const result = await MarketingUI.submitRoleLimitedEntityUpdate({ kind: "customer", existing: customer, submitted: { marketing: parseMarketingAttribution(raw) }, user: currentAuth.user || {}, save: update => api.updateMarketingAttribution({ kind: "customer", id: customer.id, marketing: update.marketing }) }); if (!result.ok) return showToast(result.error || "마케팅 정보를 저장하지 못했습니다.", "error"); customer.marketing = result.marketing; closeModal(); render();
       } catch (error) { showToast(error.message || "마케팅 정보를 저장하지 못했습니다.", "error"); }
       return;
     }
@@ -6180,7 +6183,7 @@
       if (!item || !crmEditPermissions().attribution) return showToast("마케팅 정보를 수정할 권한이 없습니다.", "error");
       try {
         const raw = Object.fromEntries(new FormData(form).entries());
-        const result = await MarketingUI.submitRoleLimitedEntityUpdate({ kind: "case", existing: { id: workflowCaseKey(item) }, submitted: { marketing: parseMarketingAttribution(raw) }, user: currentAuth.user || {}, save: update => api.saveWorkflowCase({ caseKey: form.dataset.caseKey, fields: { marketing: update.marketing } }) });
+        const result = await MarketingUI.submitRoleLimitedEntityUpdate({ kind: "case", existing: { id: workflowCaseKey(item) }, submitted: { marketing: parseMarketingAttribution(raw) }, user: currentAuth.user || {}, save: update => api.updateMarketingAttribution({ kind: "case", id: form.dataset.caseKey, marketing: update.marketing }) });
         if (!result.ok) return showToast(result.error || "마케팅 정보를 저장하지 못했습니다.", "error");
         await refreshOperations({ silent: true, render: false }); renderCases();
       } catch (error) { showToast(error.message || "마케팅 정보를 저장하지 못했습니다.", "error"); }

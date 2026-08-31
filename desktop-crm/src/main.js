@@ -1633,6 +1633,7 @@ function assertMainMutationAllowed(input) {
   if (input !== undefined) Core.assertNoProhibitedSecrets(input);
   return user;
 }
+function isMarketingOnlySession(user = authState().user) { return Boolean(user && user.accessRole === "member" && user.marketingRole === "marketing"); }
 
 function workflowMutationForValidation(input) {
   const source = input && typeof input === "object" ? Object.assign({}, input) : input;
@@ -1784,6 +1785,7 @@ async function exportOfficeAttendance(input) {
 
 async function saveWorkflowCase(input) {
   assertMainMutationAllowed(input);
+  if (isMarketingOnlySession()) return { ok: false, error: "마케팅 담당자는 전용 마케팅 정보 저장만 사용할 수 있습니다.", code: "MARKETING_ONLY_FORBIDDEN" };
   if (localTestMode) {
     localOperationsData = localOperationsData || demoOperations();
     const source = input && typeof input === "object" ? input : {};
@@ -2073,6 +2075,7 @@ async function writeStore(input) {
   // shared document. Checking the renderer snapshot here would also inspect
   // non-persisted overlays and can produce unrelated false positives.
   assertMainMutationAllowed();
+  if (isMarketingOnlySession()) throw Object.assign(new Error("마케팅 담당자는 전체 CRM 저장을 사용할 수 없습니다."), { code: "MARKETING_ONLY_FORBIDDEN" });
   if (localTestMode) {
     const data = await enqueueLocalBuildingScheduleCommit(async () => {
       const current = await readLocalStore();
@@ -2087,6 +2090,21 @@ async function writeStore(input) {
   if (!remoteClient || !remoteClient.authState().user) throw new Error("로그인이 필요합니다.");
   const result = await remoteClient.saveStore(input);
   return Object.assign({ path: dataFile() }, result);
+}
+
+async function updateMarketingAttribution(input) {
+  const actor = assertMainMutationAllowed(); Core.assertNoProhibitedSecrets(input);
+  if (!(actor.accessRole === "admin" || actor.accessRole === "member")) return { ok: false, error: "권한이 없습니다.", code: "MARKETING_ATTRIBUTION_FORBIDDEN" };
+  const kind = String(input && input.kind || ""), id = String(input && input.id || "").trim();
+  if (!["customer", "case"].includes(kind) || !/^[A-Za-z0-9_-]{1,120}$/.test(id)) return { ok: false, error: "대상을 확인해 주세요.", code: "MARKETING_ATTRIBUTION_INVALID" };
+  const marketing = Core.normalizeMarketingAttribution(input && input.marketing), payload = { kind, id, marketing };
+  if (localTestMode) {
+    if (kind === "customer") { const data = await readLocalStore(); const item = (data.customers || []).find(row => row && row.id === id); if (!item) return { ok: false, error: "고객을 찾지 못했습니다." }; item.marketing = marketing; await writeLocalStore(data); }
+    else { localOperationsData = localOperationsData || demoOperations(); const item = localOperationsData.cases.find(row => (row.firebaseKey || row.id) === id); if (!item) return { ok: false, error: "민원을 찾지 못했습니다." }; item.marketing = marketing; }
+    return { ok: true, kind, id, marketing };
+  }
+  if (!remoteClient || !remoteClient.authState().user) return { ok: false, error: "로그인이 필요합니다." };
+  return remoteClient.updateMarketingAttribution(payload);
 }
 
 function enqueueLocalBuildingScheduleCommit(operation) {
@@ -5403,6 +5421,7 @@ secureCanonicalHandle("crm:marketing-archive", async input => {
   if (!remoteClient || !remoteClient.authState().user) throw new Error("로그인이 필요합니다.");
   return remoteClient.commitMarketingRecord(payload);
 });
+secureCanonicalHandle("crm:marketing-attribution-update", input => updateMarketingAttribution(input));
 secureCanonicalHandle("crm:work-operations-sync-retry", async input => {
   const recordId = String(input && input.recordId || "");
   if (!/^[A-Za-z0-9_-]{1,120}$/.test(recordId)) return { status: "required", sourceWorkRecordId: recordId, error: "작업 ID를 확인해 주세요." };

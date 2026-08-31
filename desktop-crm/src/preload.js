@@ -34,6 +34,7 @@ contextBridge.exposeInMainWorld("bringCRM", {
   readMarketingRecords: () => ipcRenderer.invoke("crm:marketing-read"),
   commitMarketingRecord: input => ipcRenderer.invoke("crm:marketing-commit", input),
   archiveMarketingRecord: input => ipcRenderer.invoke("crm:marketing-archive", input),
+  updateMarketingAttribution: input => ipcRenderer.invoke("crm:marketing-attribution-update", input),
   configureBuildingUnits: input => ipcRenderer.invoke("crm:canonical-building-units-configure", input),
   loadOperations: () => ipcRenderer.invoke("crm:operations-load"),
   saveWorkflowCase: input => ipcRenderer.invoke("crm:case-save", input),
