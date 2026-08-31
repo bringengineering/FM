@@ -82,19 +82,21 @@
   }
 
   function makeFact(store, workflowCase, customer, sourceType, allowCustomerLink) {
-    const marketing = normalizeMarketing((workflowCase && workflowCase.marketing) || (customer && customer.marketing));
+    const caseMarketing = workflowCase && workflowCase.marketing;
+    const marketing = normalizeMarketing(caseMarketing && Object.keys(caseMarketing).length ? caseMarketing : customer && customer.marketing);
     const customerId = id(workflowCase && workflowCase.crmCustomerId || customer && customer.id);
     const caseId = sourceType === 'case' ? caseKey(workflowCase) : '';
     const contracts = sourceType === 'case' ? explicitCaseContracts(store, workflowCase, customerId, allowCustomerLink) : [];
+    const activeContracts = contracts.filter(activeContract);
     const activities = sourceType === 'case' ? caseActivities(store, workflowCase, customerId, allowCustomerLink) : [];
     const quoteRows = values(workflowCase && workflowCase.quoteFiles);
     const hasConsultation = done(workflowCase, 3) || activities.some(activity => activity.context === 'consultation');
     const hasQuote = done(workflowCase, 6) || quoteRows.length > 0 || safeMoney(workflowCase && workflowCase.quoteAmount, 'quoteAmount') > 0;
-    const hasContract = done(workflowCase, 9) || contracts.some(activeContract);
-    const hasPayment = done(workflowCase, 15) || workflowCase && workflowCase.paymentStatus === 'confirmed' || hasSettlementEvidence(workflowCase) || contracts.some(contract => contract.collectionStatus === '입금 완료' || safeMoney(contract.paidAmount, 'paidAmount') > 0);
+    const hasContract = done(workflowCase, 9) || activeContracts.length > 0;
+    const hasPayment = done(workflowCase, 15) || workflowCase && workflowCase.paymentStatus === 'confirmed' || hasSettlementEvidence(workflowCase) || activeContracts.some(contract => contract.collectionStatus === '입금 완료' || safeMoney(contract.paidAmount, 'paidAmount') > 0);
     const validLead = marketing.validLead === true ? 1 : 0;
-    const explicitNew = contracts.some(contract => ['new', '신규'].includes(contract.contractKind || contract.customerStatus || contract.newRepeatStatus));
-    const explicitRepeat = contracts.some(contract => ['repeat', '재계약', '반복'].includes(contract.contractKind || contract.customerStatus || contract.newRepeatStatus));
+    const explicitNew = activeContracts.some(contract => ['new', '신규'].includes(contract.contractKind || contract.customerStatus || contract.newRepeatStatus));
+    const explicitRepeat = activeContracts.some(contract => ['repeat', '재계약', '반복'].includes(contract.contractKind || contract.customerStatus || contract.newRepeatStatus));
     const channel = MarketingCore.CHANNELS.includes(marketing.firstSource) ? marketing.firstSource : 'needs_review';
     const lastSource = MarketingCore.CHANNELS.includes(marketing.lastSource) ? marketing.lastSource : 'needs_review';
     const fact = {
@@ -111,10 +113,10 @@
       customerStatus: text(customer && customer.stage), dataStatus: channel === 'needs_review' || lastSource === 'needs_review' || marketing.validLead == null ? 'needs_review' : 'verified',
       inquiries: 1, validLeads: validLead, consultations: hasConsultation ? 1 : 0, quotes: hasQuote ? 1 : 0, contracts: hasContract ? 1 : 0,
       payments: hasPayment ? 1 : 0, quoteAmount: quoteRows.reduce((sum, quote) => MarketingCore.checkedIntegerAdd(sum, quoteMoney(quote), 'quoteAmount'), 0) || safeMoney(workflowCase && workflowCase.quoteAmount, 'quoteAmount'),
-      contractAmount: hasContract ? addMoney(contracts, ['amount', 'contractAmount'], 'contractAmount') : 0,
-      paidAmount: addMoney(contracts, ['paidAmount'], 'paidAmount') || (workflowCase && workflowCase.paymentStatus === 'confirmed' ? safeMoney(workflowCase.paymentConfirmedAmount || workflowCase.paymentExpectedAmount, 'paidAmount') : 0),
-      expectedCost: hasContract ? addMoney(contracts, ['vendorCost', 'expectedCost'], 'expectedCost') : 0, lostReason: text(workflowCase && workflowCase.lostReason || customer && customer.lostReason),
-      contractStatus: contractState(contracts), workStage: [11, 12, 13, 14].some(step => done(workflowCase, step)), aftercare: done(workflowCase, 17)
+      contractAmount: hasContract ? addMoney(activeContracts, ['amount', 'contractAmount'], 'contractAmount') : 0,
+      paidAmount: addMoney(activeContracts, ['paidAmount'], 'paidAmount') || (workflowCase && workflowCase.paymentStatus === 'confirmed' ? safeMoney(workflowCase.paymentConfirmedAmount || workflowCase.paymentExpectedAmount, 'paidAmount') : 0),
+      expectedCost: hasContract ? addMoney(activeContracts, ['vendorCost', 'expectedCost'], 'expectedCost') : 0, lostReason: text(workflowCase && workflowCase.lostReason || customer && customer.lostReason),
+      contractStatus: contractState(activeContracts), workStage: [11, 12, 13, 14].some(step => done(workflowCase, step)), aftercare: done(workflowCase, 17)
     };
     if (explicitNew) fact.newContracts = hasContract ? 1 : 0;
     else if (explicitRepeat) fact.newContracts = 0;
@@ -128,7 +130,7 @@
 
   function projectFacts(inputStore, options) {
     const store = inputStore && typeof inputStore === 'object' ? inputStore : {};
-    const cases = list(options && options.cases).filter(record => !record.deleted && !record.archived);
+    const cases = list(options && options.cases).map(normalizeCaseMarketing).filter(record => !record.deleted && !record.archived);
     const customers = list(store.customers);
     const byId = new Map(customers.map(customer => [id(customer.id), customer]).filter(entry => entry[0]));
     const customerIdsWithCase = new Set(cases.map(record => id(record.crmCustomerId)).filter(Boolean));

@@ -6,7 +6,6 @@ const path = require('node:path');
 const Core = require('../src/core.js');
 const MarketingCore = require('../src/marketing-core.js');
 const Bridge = require('../src/marketing-crm-bridge.js');
-const { FirebaseRemoteClient } = require('../src/remote.js');
 
 const marketing = {
   firstSource: 'naver_blog', lastSource: 'referral', subChannel: 'post', campaignId: 'cmp-1',
@@ -107,26 +106,28 @@ test('pre-active contracts have zero economics while active contracts contribute
   assert.deepEqual({ contracts: active.contracts, contractAmount: active.contractAmount, expectedCost: active.expectedCost }, { contracts: 1, contractAmount: 200, expectedCost: 30 });
 });
 
+test('mixed preparing and active contracts include only active economics', () => {
+  const fact = Bridge.projectFacts({ customers: [{ id: 'c' }], contracts: [
+    { id: 'prep', customerId: 'c', status: '계약 준비', amount: 100, vendorCost: 10 },
+    { id: 'run', customerId: 'c', status: '진행 중', amount: 200, vendorCost: 20 }
+  ] }, { cases: [{ id: 'case', crmCustomerId: 'c', createdAt: '2026-08-01T00:00:00Z' }] })[0];
+  assert.equal(fact.contracts, 1);
+  assert.equal(fact.contractAmount, 200);
+  assert.equal(fact.expectedCost, 20);
+  assert.deepEqual(fact.contractIds, ['prep', 'run']);
+});
+
 test('projected facts retain every normalized attribution evidence field', () => {
   const fact = Bridge.projectFacts({ customers: [{ id: 'c', marketing }] }, { cases: [{ id: 'k', crmCustomerId: 'c', createdAt: '2026-08-01T00:00:00Z' }] })[0];
   for (const field of ['firstSource', 'lastSource', 'subChannel', 'campaignId', 'campaignName', 'contentId', 'contentTitle', 'inquiryMethod', 'firstTouchAt', 'invalidReason', 'attributionNote']) assert.equal(fact[field], marketing[field]);
 });
 
-test('live remote case load and save normalize optional marketing without migration', async () => {
-  const calls = [];
-  const client = new FirebaseRemoteClient({ Core, databaseRoot: 'crmCompany', firebaseConfig: { apiKey: 'x', databaseUrl: 'https://example.invalid' }, fs: {}, safeStorage: {}, shell: {}, sessionFile: 'x', pendingFile: 'y', readLocalStore: async () => Core.blankStore(), writeLocalStore: async () => {}, fetchImpl: async (url, options = {}) => {
-    calls.push({ url, method: options.method || 'GET', body: options.body ? JSON.parse(options.body) : undefined });
-    const body = url.includes('/cases.json') && (!options.method || options.method === 'GET') ? JSON.stringify({ legacy: { id: 'different' }, attributed: { marketing: { ...marketing, firstSource: 'invented', extra: 'drop' } } }) : '';
-    return { ok: true, status: 200, text: async () => body };
-  } });
-  client.session = { idToken: 't', refreshToken: 'r', expiresAt: Date.now() + 60000, uid: 'u', email: 'a@b.c', role: 'admin' };
-  const loaded = await client.loadOperations();
-  assert.deepEqual(loaded.cases.find(x => x.firebaseKey === 'legacy').marketing, {});
-  assert.equal(loaded.cases.find(x => x.firebaseKey === 'attributed').marketing.firstSource, 'needs_review');
-  assert.equal(Object.hasOwn(loaded.cases.find(x => x.firebaseKey === 'attributed').marketing, 'extra'), false);
-  const saved = await client.saveWorkflowCase({ caseKey: 'legacy', fields: { marketing: { ...marketing, campaignName: 'z'.repeat(500) } } });
-  assert.equal(saved.patch.marketing.campaignName.length, 200);
-  assert.equal(saved.patch.marketing.validLead, true);
+test('pure case marketing normalization is bounded and legacy-safe', () => {
+  assert.deepEqual(Bridge.normalizeCaseMarketing({ id: 'legacy' }).marketing, {});
+  const normalized = Bridge.normalizeCaseMarketing({ id: 'case', marketing: { ...marketing, firstSource: 'invented', campaignName: 'z'.repeat(500), extra: 'drop' } });
+  assert.equal(normalized.marketing.firstSource, 'needs_review');
+  assert.equal(normalized.marketing.campaignName.length, 200);
+  assert.equal(Object.hasOwn(normalized.marketing, 'extra'), false);
 });
 
 test('17-stage boundaries map once without altering source stages', () => {

@@ -3,7 +3,6 @@ const http = require("node:http");
 const path = require("node:path");
 const SparkCanonical = require("./spark-canonical");
 const OfficeCore = require("./office-core");
-const MarketingCrmBridge = require("./marketing-crm-bridge");
 
 const FIREBASE = Object.freeze({
   apiKey: "AIzaSyBKOTIuQ8pOKSuaeKFQs_6UDdDnxdjCTZg",
@@ -2595,7 +2594,7 @@ class FirebaseRemoteClient {
       this.rootDbRequest("caseSettings", { method: "GET" }).catch(() => ({}))
     ]);
     this.caseSettings = caseSettings && typeof caseSettings === "object" ? caseSettings : {};
-    const cases = Object.entries(casePayload || {}).map(([key, value]) => MarketingCrmBridge.normalizeCaseMarketing(Object.assign({ id: key }, value || {}, { firebaseKey: key })));
+    const cases = Object.entries(casePayload || {}).map(([key, value]) => Object.assign({ id: key }, value || {}, { firebaseKey: key }));
     return {
       cases,
       payments: paymentPayload && typeof paymentPayload === "object" ? paymentPayload : {},
@@ -2720,7 +2719,6 @@ class FirebaseRemoteClient {
       if (!Object.prototype.hasOwnProperty.call(fieldLimits, field)) return;
       patch[field] = String(value || "").trim().slice(0, fieldLimits[field]);
     });
-    if (Object.prototype.hasOwnProperty.call(fields, "marketing")) patch.marketing = MarketingCrmBridge.normalizeCaseMarketing({ marketing: fields.marketing }).marketing;
     if (source.create === true && !["건물주", "브링"].includes(patch.caseParty)) throw createError("민원 작성 구분을 선택해 주세요.", "INVALID_CASE_PARTY");
     if (Object.prototype.hasOwnProperty.call(patch, "caseParty") && !["건물주", "브링"].includes(patch.caseParty)) throw createError("민원 작성 구분을 확인해 주세요.", "INVALID_CASE_PARTY");
     for (const field of ["crmCustomerId", "crmBuildingId"]) {
