@@ -141,7 +141,7 @@
     pipeline: ["건물 발굴부터 유료관리 전환까지", "영업 관리"],
     contracts: ["유형별 계약 조건과 기간", "계약 관리"],
     relationships: ["계약 후에도 이어지는 관계", "계약 고객 관리"],
-    partnerVendors: ["연락할 업체 정보를 한곳에서", "연락 업체"],
+    partnerVendors: ["협력 업체 정보를 한곳에서", "협력 업체"],
     partnerQuotes: ["가격과 상담 내용을 한곳에서", "업체 상담"],
     tasks: ["놓치지 말아야 할 후속조치", "영업 할 일"],
     security: ["운영매뉴얼 DATA-01", "정보·열쇠 관리"],
@@ -1054,7 +1054,7 @@
   }
 
   function showWelcomeGuide() {
-    modalContent.innerHTML = `<div class="welcome-guide"><div class="welcome-guide-top"><div class="welcome-logo"><img src="./assets/bring-logo.png" alt="BRING 로고"></div><span>처음 오셨나요?</span><h2>BRING CRM은 이 순서로 사용하세요</h2><p>건물을 기준으로 고객·계약·민원·입금을 이어서 관리합니다.</p></div><div class="welcome-steps"><article><i>1</i><div><b>고객과 건물을 등록합니다</b><span>고객·건물 관리에서 고객을 고르고 연결 건물을 함께 등록하세요.</span></div></article><article><i>2</i><div><b>건물에서 민원을 시작합니다</b><span>건물 상세의 새 민원을 누르면 건물 정보가 자동 연결됩니다.</span></div></article><article><i>3</i><div><b>계약과 입금을 확인합니다</b><span>같은 건물의 계약·진행 업무·납부 일정을 한 화면에서 확인하세요.</span></div></article></div><div class="welcome-extra"><b>연락 업체·업체 상담</b><span>업체 링크로 기본정보를 먼저 등록하고, 저장된 업체를 선택해 안내 가격과 상담 내용을 기록하세요.</span></div><div class="welcome-actions"><button class="secondary-button" data-action="finish-guide">안내 닫기</button><button class="primary-button" data-action="guide-new-customer">고객 등록부터 시작 →</button></div></div>`;
+    modalContent.innerHTML = `<div class="welcome-guide"><div class="welcome-guide-top"><div class="welcome-logo"><img src="./assets/bring-logo.png" alt="BRING 로고"></div><span>처음 오셨나요?</span><h2>BRING CRM은 이 순서로 사용하세요</h2><p>건물을 기준으로 고객·계약·민원·입금을 이어서 관리합니다.</p></div><div class="welcome-steps"><article><i>1</i><div><b>고객과 건물을 등록합니다</b><span>고객·건물 관리에서 고객을 고르고 연결 건물을 함께 등록하세요.</span></div></article><article><i>2</i><div><b>건물에서 민원을 시작합니다</b><span>건물 상세의 새 민원을 누르면 건물 정보가 자동 연결됩니다.</span></div></article><article><i>3</i><div><b>계약과 입금을 확인합니다</b><span>같은 건물의 계약·진행 업무·납부 일정을 한 화면에서 확인하세요.</span></div></article></div><div class="welcome-extra"><b>협력 업체·업체 상담</b><span>업체 링크로 기본정보를 먼저 등록하고, 저장된 업체를 선택해 안내 가격과 상담 내용을 기록하세요.</span></div><div class="welcome-actions"><button class="secondary-button" data-action="finish-guide">안내 닫기</button><button class="primary-button" data-action="guide-new-customer">고객 등록부터 시작 →</button></div></div>`;
     openModal();
   }
 
@@ -1212,7 +1212,7 @@
       const active = button.dataset.view === currentView || button.dataset.view === "customers" && currentView === "buildings";
       button.classList.toggle("active", active);
     });
-    document.querySelector('[data-nav-folder="customer-management"]')?.classList.toggle("active", ["customers", "buildings", "vacancies"].includes(currentView));
+    document.querySelector('[data-nav-folder="customer-management"]')?.classList.toggle("active", ["customers", "buildings", "vacancies", "partnerVendors"].includes(currentView));
     document.getElementById("navCaseCount").textContent = activeCases().length;
     document.getElementById("navPaymentCount").textContent = paymentRows("all").filter(item => item.status === "overdue" || item.status === "manual_unpaid" || item.status === "review").length;
     document.getElementById("navCustomerCount").textContent = store.customers.length;
@@ -2996,7 +2996,7 @@
   }
 
   function partnerVendorSummaryMarkup(vendor, emptyText) {
-    if (!vendor) return `<div class="partner-vendor-summary empty"><b>연락 업체를 선택해 주세요.</b><span>${esc(emptyText || "저장된 업체를 선택하면 연락처와 업체 링크가 표시됩니다.")}</span></div>`;
+    if (!vendor) return `<div class="partner-vendor-summary empty"><b>협력 업체를 선택해 주세요.</b><span>${esc(emptyText || "저장된 업체를 선택하면 연락처와 업체 링크가 표시됩니다.")}</span></div>`;
     return `<div class="partner-vendor-summary"><div><span class="industry-badge">${esc(partnerIndustry(vendor))}</span><h3>${esc(partnerVendorName(vendor) || "업체명 미입력")}</h3><p>${esc(vendor.service || vendor.category || "작업 내용 미입력")}</p></div><div><span>연락처</span><b>${esc(partnerPhoneText(vendor))}</b><small>${esc([vendor.region, vendor.quoteUrl ? "업체 링크 등록됨" : "업체 링크 미등록"].filter(Boolean).join(" · "))}</small></div></div>`;
   }
 
@@ -3012,14 +3012,14 @@
     const linkedQuotes = store.partnerQuotes.filter(item => partnerVendorForQuote(item)).length;
     const withPhone = partnerVendorRows().filter(item => item.phone || item.alternatePhone).length;
     const withLink = partnerVendorRows().filter(item => item.quoteUrl).length;
-    main.innerHTML = `<section class="partner-vendor-hero"><div><span>연락처와 업체 페이지를 먼저 등록합니다</span><h2>상담할 업체 정보를 관리합니다</h2><p>업체 링크를 붙여 넣으면 공개된 업체명·연락처·업종·작업 내용을 자동으로 채웁니다.</p></div><div class="partner-hero-actions"><button class="secondary-button" data-view="partnerQuotes">업체 상담 보기 →</button><button class="primary-button" data-action="new-partner-vendor">＋ 연락 업체 등록</button></div></section>
+    main.innerHTML = `<section class="partner-vendor-hero"><div><span>연락처와 업체 페이지를 먼저 등록합니다</span><h2>상담할 업체 정보를 관리합니다</h2><p>업체 링크를 붙여 넣으면 공개된 업체명·연락처·업종·작업 내용을 자동으로 채웁니다.</p></div><div class="partner-hero-actions"><button class="secondary-button" data-view="partnerQuotes">업체 상담 보기 →</button><button class="primary-button" data-action="new-partner-vendor">＋ 협력 업체 등록</button></div></section>
       <div class="quote-kpi-grid partner-vendor-kpis">${kpi("등록 업체", partnerVendorRows().length, "상담할 업체 기본정보", "#55aee8")}${kpi("연락처 확인", withPhone, "전화번호가 있는 업체", "#48b995", withPhone ? "good" : "")}${kpi("업체 링크", withLink, "홈페이지·지도 링크", "#55c3d1")}${kpi("연결 상담", linkedQuotes, "업체를 선택한 상담 기록", "#e8b855")}</div>
       <div class="partner-vendor-toolbar"><label><span>업종 선택</span><select data-partner-vendor-industry-filter>${["전체 업종", ...Core.PARTNER_INDUSTRIES].map(industry => `<option ${industry === partnerVendorIndustryFilter ? "selected" : ""}>${esc(industry)}</option>`).join("")}</select></label><span>업체 카드를 누르면 기본정보를 수정할 수 있습니다.</span></div>
       ${vendors.length ? `<div class="partner-vendor-list">${vendors.map(vendor => {
         const quotes = partnerQuotesForVendor(vendor);
         const recent = [...quotes].sort((a, b) => String(b.consultedAt || b.receivedAt || b.contactedAt || b.createdAt).localeCompare(String(a.consultedAt || a.receivedAt || a.contactedAt || a.createdAt)))[0];
         return `<article class="partner-vendor-card" data-partner-vendor-edit="${attr(vendor.id)}"><header><div><span class="industry-badge">${esc(partnerIndustry(vendor))}</span><h3>${esc(partnerVendorName(vendor) || "업체명 미입력")}</h3><p>${esc(vendor.service || vendor.category || "작업 내용 미입력")}</p></div><button type="button" class="quote-card-edit" data-partner-vendor-edit="${attr(vendor.id)}">업체 수정</button></header><div class="partner-vendor-contact"><div><span>연락처</span><b>${esc(partnerPhoneText(vendor))}</b></div><div><span>지역</span><b>${esc(vendor.region || "미입력")}</b></div></div><footer><span>상담 ${quotes.length}건${recent ? ` · 최근 ${esc(shortDate(recent.consultedAt || recent.receivedAt || recent.contactedAt))}` : ""}</span>${vendor.quoteUrl ? `<button type="button" data-partner-vendor-link="${attr(vendor.quoteUrl)}">업체 페이지 열기 ↗</button>` : `<small>업체 링크 미등록</small>`}</footer></article>`;
-      }).join("")}</div>` : empty("등록된 연락 업체가 없습니다", "업체 링크를 붙여 넣어 업체 기본정보를 먼저 저장하세요.", `<button class="primary-button" data-action="new-partner-vendor">＋ 첫 연락 업체 등록</button>`)}`;
+      }).join("")}</div>` : empty("등록된 협력 업체가 없습니다", "업체 링크를 붙여 넣어 업체 기본정보를 먼저 저장하세요.", `<button class="primary-button" data-action="new-partner-vendor">＋ 첫 협력 업체 등록</button>`)}`;
   }
 
   function renderPartnerQuotes() {
@@ -3039,7 +3039,7 @@
     main.innerHTML = `
       <section class="partner-quote-hero">
         <div><span>고객과 연결되지 않는 협력업체 상담 기록</span><h2>업체별 가격과 상담 내용을 관리합니다</h2><p>같은 가상 작업 조건으로 문의하고 안내 가격·상담 내용·확인 항목을 기록하세요.</p></div>
-        <div class="partner-hero-actions"><button class="secondary-button" data-view="partnerVendors">연락 업체 관리</button><button class="primary-button" data-action="new-partner-quote">＋ 업체 상담 기록</button></div>
+        <div class="partner-hero-actions"><button class="secondary-button" data-view="partnerVendors">협력 업체 관리</button><button class="primary-button" data-action="new-partner-quote">＋ 업체 상담 기록</button></div>
       </section>
       <div class="quote-kpi-grid">
         ${kpi("상담 업체", scoped.filter(item => item.status !== "제외").length, partnerQuoteIndustryFilter, "#55aee8")}
@@ -3498,7 +3498,7 @@
   function partnerVendorEditor(vendorId) {
     const editing = partnerVendorById(vendorId);
     const item = editing ? JSON.parse(JSON.stringify(editing)) : newPartnerVendor({ industry: "누수", region: "원주" });
-    modalContent.innerHTML = `<div class="modal-head"><div><h2>${editing ? "연락 업체 수정" : "연락 업체 등록"}</h2><p>업체 링크에서 공개된 기본정보를 불러온 뒤 내용을 확인해 저장하세요.</p></div><button class="close-button" data-action="close-modal">×</button></div><form id="partnerVendorForm" class="modal-body partner-vendor-form" data-partner-vendor-id="${attr(editing && editing.id || "")}"><section class="quote-url-import"><div><b>업체 링크로 자동 입력</b><span>업체 홈페이지·지도·소개 페이지 주소를 붙여 넣으세요.</span></div><div class="quote-url-import-row"><input name="quoteUrl" type="url" value="${attr(item.quoteUrl || "")}" placeholder="https://..."><button type="button" data-vendor-lookup>업체 정보 불러오기</button></div><p data-vendor-lookup-status aria-live="polite">업체명·연락처·업종·작업 내용을 찾아 입력합니다.</p></section><input type="hidden" name="phoneLabel" value="${attr(item.phoneLabel || "")}"><input type="hidden" name="alternatePhoneLabel" value="${attr(item.alternatePhoneLabel || "")}"><div class="essential-label"><b>업체 기본정보</b><span>자동 입력된 내용이 맞는지 확인하고 부족한 정보는 직접 입력하세요.</span></div><div class="form-grid">
+    modalContent.innerHTML = `<div class="modal-head"><div><h2>${editing ? "협력 업체 수정" : "협력 업체 등록"}</h2><p>업체 링크에서 공개된 기본정보를 불러온 뒤 내용을 확인해 저장하세요.</p></div><button class="close-button" data-action="close-modal">×</button></div><form id="partnerVendorForm" class="modal-body partner-vendor-form" data-partner-vendor-id="${attr(editing && editing.id || "")}"><section class="quote-url-import"><div><b>업체 링크로 자동 입력</b><span>업체 홈페이지·지도·소개 페이지 주소를 붙여 넣으세요.</span></div><div class="quote-url-import-row"><input name="quoteUrl" type="url" value="${attr(item.quoteUrl || "")}" placeholder="https://..."><button type="button" data-vendor-lookup>업체 정보 불러오기</button></div><p data-vendor-lookup-status aria-live="polite">업체명·연락처·업종·작업 내용을 찾아 입력합니다.</p></section><input type="hidden" name="phoneLabel" value="${attr(item.phoneLabel || "")}"><input type="hidden" name="alternatePhoneLabel" value="${attr(item.alternatePhoneLabel || "")}"><div class="essential-label"><b>업체 기본정보</b><span>자동 입력된 내용이 맞는지 확인하고 부족한 정보는 직접 입력하세요.</span></div><div class="form-grid">
       ${field("업체명 *", "vendor", partnerVendorName(item), "text", "예: 달인누수탐지")}
       ${selectField("업종 *", "industry", Core.PARTNER_INDUSTRIES, partnerIndustry(item))}
       <label class="field"><span>업체 연락처</span><input name="phone" type="tel" inputmode="tel" autocomplete="tel" data-partner-vendor-phone value="${attr(customerPhoneText(item.phone))}" placeholder="010-0000-0000"></label>
@@ -3506,7 +3506,7 @@
       ${field("작업 내용", "service", item.service || item.category || "", "text", "예: 누수 탐지·배관 보수", "wide")}
       ${field("지역", "region", item.region || "원주", "text", "예: 원주")}
       ${areaField("업체 메모", "memo", item.memo, "wide")}
-    </div><div class="form-actions">${editing ? `<button type="button" class="danger-outline-button form-delete-left" data-partner-vendor-delete="${attr(editing.id)}">업체 제외</button>` : ""}<button type="button" class="secondary-button" data-action="close-modal">취소</button><button type="submit" class="primary-button">${editing ? "업체 정보 수정 저장" : "연락 업체 저장"}</button></div></form>`;
+    </div><div class="form-actions">${editing ? `<button type="button" class="danger-outline-button form-delete-left" data-partner-vendor-delete="${attr(editing.id)}">업체 제외</button>` : ""}<button type="button" class="secondary-button" data-action="close-modal">취소</button><button type="submit" class="primary-button">${editing ? "업체 정보 수정 저장" : "협력 업체 저장"}</button></div></form>`;
     openModal();
     setTimeout(() => document.querySelector('#partnerVendorForm [name="quoteUrl"]')?.focus(), 30);
   }
@@ -3515,7 +3515,7 @@
     if (!form) return null;
     const vendor = partnerVendorById(form.elements.vendorId && form.elements.vendorId.value);
     const summary = form.querySelector("[data-partner-vendor-summary]");
-    if (summary) summary.innerHTML = partnerVendorSummaryMarkup(vendor, form.dataset.legacyVendor ? `기존 기록 업체: ${form.dataset.legacyVendor}` : "연락 업체에서 업체를 먼저 등록할 수 있습니다.");
+    if (summary) summary.innerHTML = partnerVendorSummaryMarkup(vendor, form.dataset.legacyVendor ? `기존 기록 업체: ${form.dataset.legacyVendor}` : "협력 업체에서 업체를 먼저 등록할 수 있습니다.");
     if (!vendor) return null;
     const values = { vendor: partnerVendorName(vendor), phone: vendor.phone, phoneLabel: vendor.phoneLabel, alternatePhone: vendor.alternatePhone, alternatePhoneLabel: vendor.alternatePhoneLabel, quoteUrl: vendor.quoteUrl, service: vendor.service || vendor.category, region: vendor.region };
     Object.entries(values).forEach(([name, value]) => { if (form.elements[name]) form.elements[name].value = value || ""; });
@@ -3565,7 +3565,7 @@
     if (!results) return;
     if (!industry) {
       if (count) count.textContent = "업종을 먼저 선택해 주세요";
-      results.innerHTML = `<div class="entity-picker-empty"><b>1단계에서 업종을 선택하세요</b><span>선택한 업종의 연락 업체만 표시됩니다.</span></div>`;
+      results.innerHTML = `<div class="entity-picker-empty"><b>1단계에서 업종을 선택하세요</b><span>선택한 업종의 협력 업체만 표시됩니다.</span></div>`;
       return;
     }
     const rows = partnerVendorPickerRows(form);
@@ -3577,7 +3577,7 @@
       const meta = [partnerPhoneText(vendor), vendor.region, vendor.service || vendor.category].filter(Boolean).join(" · ");
       const note = currentIndustry === industry ? currentIndustry : `기존 연결 · 현재 업종 ${currentIndustry}`;
       return `<button type="button" tabindex="-1" class="entity-picker-option ${selected ? "selected" : ""}" data-partner-vendor-option="${attr(vendor.id)}" aria-pressed="${selected ? "true" : "false"}"><span class="entity-picker-option-main"><b>${esc(partnerVendorName(vendor) || "업체명 미입력")}</b><small>${esc(note)}</small></span><span class="entity-picker-option-meta">${esc(meta || "추가 정보 미입력")}</span></button>`;
-    }).join("") : `<div class="entity-picker-empty"><b>조건에 맞는 연락 업체가 없습니다</b><span>검색어를 지우거나 연락 업체에서 새 업체를 등록해 주세요.</span></div>`;
+    }).join("") : `<div class="entity-picker-empty"><b>조건에 맞는 협력 업체가 없습니다</b><span>검색어를 지우거나 협력 업체에서 새 업체를 등록해 주세요.</span></div>`;
   }
 
   function setupPartnerVendorPicker(form, initialIndustry, initialChecklist) {
@@ -3614,7 +3614,7 @@
     const summary = host.querySelector("[data-partner-vendor-summary]");
     const picker = document.createElement("div");
     picker.className = "entity-picker";
-    picker.innerHTML = `<div class="entity-picker-steps"><section class="entity-picker-step"><div class="entity-picker-step-label"><b>1. 업종 선택</b><span>먼저 상담할 업종을 고르세요.</span></div><div data-partner-industry-field></div></section><section class="entity-picker-step"><div class="entity-picker-step-label"><b>2. 연락 업체 선택</b><span>업체명·연락처·지역·작업내용으로 검색할 수 있습니다.</span></div><label class="field"><span>업체 검색</span><input class="entity-picker-search" type="search" data-partner-vendor-search placeholder="업체명·연락처·지역 검색" autocomplete="off"></label><div class="entity-picker-count" data-partner-vendor-count aria-live="polite"></div><div class="entity-picker-results" data-partner-vendor-options role="group" aria-label="연락 업체 검색 결과"></div></section></div><input type="hidden" name="vendorId" value="${attr(selectedId)}">`;
+    picker.innerHTML = `<div class="entity-picker-steps"><section class="entity-picker-step"><div class="entity-picker-step-label"><b>1. 업종 선택</b><span>먼저 상담할 업종을 고르세요.</span></div><div data-partner-industry-field></div></section><section class="entity-picker-step"><div class="entity-picker-step-label"><b>2. 협력 업체 선택</b><span>업체명·연락처·지역·작업내용으로 검색할 수 있습니다.</span></div><label class="field"><span>업체 검색</span><input class="entity-picker-search" type="search" data-partner-vendor-search placeholder="업체명·연락처·지역 검색" autocomplete="off"></label><div class="entity-picker-count" data-partner-vendor-count aria-live="polite"></div><div class="entity-picker-results" data-partner-vendor-options role="group" aria-label="협력 업체 검색 결과"></div></section></div><input type="hidden" name="vendorId" value="${attr(selectedId)}">`;
     picker.querySelector("[data-partner-industry-field]").appendChild(industryField);
     if (vendorGrid) vendorGrid.remove();
     host.insertBefore(picker, summary || host.firstChild);
@@ -3718,7 +3718,7 @@
     if (!item.travelMin && item.calloutFee) item.travelMin = item.calloutFee;
     if (!item.travelMax && item.calloutFee) item.travelMax = item.calloutFee;
     const vendorIds = ["", ...partnerVendorRows().sort((a, b) => partnerVendorName(a).localeCompare(partnerVendorName(b), "ko")).map(vendor => vendor.id)];
-    modalContent.innerHTML = `<div class="modal-head"><div><h2>${editing ? "업체 상담 수정" : "업체 상담 기록"}</h2><p>저장된 연락 업체를 선택하고 상담 내용과 안내 가격을 기록하세요.</p></div><button class="close-button" data-action="close-modal">×</button></div><form id="partnerQuoteForm" class="modal-body partner-quote-form" data-partner-quote-id="${attr(editing && editing.id || "")}" data-legacy-vendor="${attr(!linkedVendor && item.vendor || "")}"><div class="quote-scenario-guide"><b>가상 조건만 사용하세요</b><span>실제 고객명·주소는 넣지 말고 모든 업체에 동일한 작업 조건을 제시합니다.</span></div><div class="partner-quote-vendor-picker"><div class="form-grid">${selectField("연락 업체 *", "vendorId", vendorIds, item.vendorId, id => id ? `${partnerVendorName(partnerVendorById(id))} · ${partnerIndustry(partnerVendorById(id))}` : "연락 업체를 선택하세요")}</div><div data-partner-vendor-summary>${partnerVendorSummaryMarkup(linkedVendor, !linkedVendor && item.vendor ? `기존 기록 업체: ${item.vendor} · 저장하려면 연락 업체를 선택하세요.` : "연락 업체에서 업체를 먼저 등록할 수 있습니다.")}</div>${!partnerVendorRows().length ? `<button type="button" class="secondary-button partner-vendor-create-link" data-action="new-partner-vendor">＋ 연락 업체 먼저 등록</button>` : ""}</div><input type="hidden" name="vendor" value="${attr(linkedVendor ? partnerVendorName(linkedVendor) : item.vendor || "")}"><input type="hidden" name="phone" value="${attr(linkedVendor && linkedVendor.phone || item.phone || "")}"><input type="hidden" name="phoneLabel" value="${attr(linkedVendor && linkedVendor.phoneLabel || item.phoneLabel || "")}"><input type="hidden" name="alternatePhone" value="${attr(linkedVendor && linkedVendor.alternatePhone || item.alternatePhone || "")}"><input type="hidden" name="alternatePhoneLabel" value="${attr(linkedVendor && linkedVendor.alternatePhoneLabel || item.alternatePhoneLabel || "")}"><input type="hidden" name="quoteUrl" value="${attr(linkedVendor && linkedVendor.quoteUrl || item.quoteUrl || "")}"><input type="hidden" name="service" value="${attr(linkedVendor && (linkedVendor.service || linkedVendor.category) || item.service || item.category || "")}"><input type="hidden" name="region" value="${attr(linkedVendor && linkedVendor.region || item.region || "원주")}"><div class="essential-label"><b>상담 중 바로 입력</b><span>진행 상태·안내 가격·상담 내용을 먼저 기록하세요.</span></div><div class="form-grid">
+    modalContent.innerHTML = `<div class="modal-head"><div><h2>${editing ? "업체 상담 수정" : "업체 상담 기록"}</h2><p>저장된 협력 업체를 선택하고 상담 내용과 안내 가격을 기록하세요.</p></div><button class="close-button" data-action="close-modal">×</button></div><form id="partnerQuoteForm" class="modal-body partner-quote-form" data-partner-quote-id="${attr(editing && editing.id || "")}" data-legacy-vendor="${attr(!linkedVendor && item.vendor || "")}"><div class="quote-scenario-guide"><b>가상 조건만 사용하세요</b><span>실제 고객명·주소는 넣지 말고 모든 업체에 동일한 작업 조건을 제시합니다.</span></div><div class="partner-quote-vendor-picker"><div class="form-grid">${selectField("협력 업체 *", "vendorId", vendorIds, item.vendorId, id => id ? `${partnerVendorName(partnerVendorById(id))} · ${partnerIndustry(partnerVendorById(id))}` : "협력 업체를 선택하세요")}</div><div data-partner-vendor-summary>${partnerVendorSummaryMarkup(linkedVendor, !linkedVendor && item.vendor ? `기존 기록 업체: ${item.vendor} · 저장하려면 협력 업체를 선택하세요.` : "협력 업체에서 업체를 먼저 등록할 수 있습니다.")}</div>${!partnerVendorRows().length ? `<button type="button" class="secondary-button partner-vendor-create-link" data-action="new-partner-vendor">＋ 협력 업체 먼저 등록</button>` : ""}</div><input type="hidden" name="vendor" value="${attr(linkedVendor ? partnerVendorName(linkedVendor) : item.vendor || "")}"><input type="hidden" name="phone" value="${attr(linkedVendor && linkedVendor.phone || item.phone || "")}"><input type="hidden" name="phoneLabel" value="${attr(linkedVendor && linkedVendor.phoneLabel || item.phoneLabel || "")}"><input type="hidden" name="alternatePhone" value="${attr(linkedVendor && linkedVendor.alternatePhone || item.alternatePhone || "")}"><input type="hidden" name="alternatePhoneLabel" value="${attr(linkedVendor && linkedVendor.alternatePhoneLabel || item.alternatePhoneLabel || "")}"><input type="hidden" name="quoteUrl" value="${attr(linkedVendor && linkedVendor.quoteUrl || item.quoteUrl || "")}"><input type="hidden" name="service" value="${attr(linkedVendor && (linkedVendor.service || linkedVendor.category) || item.service || item.category || "")}"><input type="hidden" name="region" value="${attr(linkedVendor && linkedVendor.region || item.region || "원주")}"><div class="essential-label"><b>상담 중 바로 입력</b><span>진행 상태·안내 가격·상담 내용을 먼저 기록하세요.</span></div><div class="form-grid">
       ${selectField("업종 *", "industry", Core.PARTNER_INDUSTRIES, item.industry)}
       ${selectField("진행 상태", "status", Core.PARTNER_QUOTE_STATUSES, item.status)}
       ${field("문의한 작업 조건 *", "scenario", item.scenario, "text", "예: 원주 원룸 천장 누수 탐지·시공", "wide")}
@@ -4374,12 +4374,12 @@
   }
 
   async function excludePartnerVendorRecord(vendorId) {
-    if (!canWriteCRM()) return showToast("조회 전용 계정은 연락 업체를 제외할 수 없습니다.", "error");
+    if (!canWriteCRM()) return showToast("조회 전용 계정은 협력 업체를 제외할 수 없습니다.", "error");
     const vendor = partnerVendorById(vendorId);
-    if (!vendor) return showToast("제외할 연락 업체를 찾지 못했습니다.", "error");
+    if (!vendor) return showToast("제외할 협력 업체를 찾지 못했습니다.", "error");
     const linked = partnerQuotesForVendor(vendor).length;
     if (!await requestConfirmation({
-      title: "이 업체를 연락 업체 목록에서 제외할까요?",
+      title: "이 업체를 협력 업체 목록에서 제외할까요?",
       description: "업체 기본정보는 서버에 보관되고 새 상담의 업체 선택 목록에서만 숨겨집니다.",
       target: `${partnerVendorName(vendor) || "업체명 미입력"}\n${partnerPhoneText(vendor)}`,
       message: linked ? `기존 상담 ${linked}건은 당시 저장된 업체 정보로 계속 표시됩니다.` : "필요하면 업체 정보를 다시 등록할 수 있습니다.",
@@ -4391,12 +4391,12 @@
     if (!latest || latest.active === false) return showToast("이미 제외되었거나 변경된 업체입니다.", "error");
     latest.active = false;
     latest.updatedAt = new Date().toISOString();
-    logAudit({ category: "변경", targetType: "연락 업체", targetId: latest.id, targetLabel: partnerVendorName(latest), action: "연락 업체 목록에서 제외", reason: "사용자 확인 후 업체 제외" });
+    logAudit({ category: "변경", targetType: "협력 업체", targetId: latest.id, targetLabel: partnerVendorName(latest), action: "협력 업체 목록에서 제외", reason: "사용자 확인 후 업체 제외" });
     scheduleSave();
     closeModal();
     currentView = "partnerVendors";
     render();
-    showToast(`${partnerVendorName(latest) || "업체"}를 연락 업체 목록에서 제외했습니다.`, "success");
+    showToast(`${partnerVendorName(latest) || "업체"}를 협력 업체 목록에서 제외했습니다.`, "success");
   }
 
   async function deleteCustomerRecord(customerId) {
@@ -5233,7 +5233,7 @@
     }
     const partnerVendorEdit = event.target.closest("[data-partner-vendor-edit]");
     if (partnerVendorEdit) {
-      if (!canWriteCRM()) return showToast("조회 전용 계정은 연락 업체를 수정할 수 없습니다.", "error");
+      if (!canWriteCRM()) return showToast("조회 전용 계정은 협력 업체를 수정할 수 없습니다.", "error");
       partnerVendorEditor(partnerVendorEdit.dataset.partnerVendorEdit);
       return;
     }
@@ -5692,7 +5692,7 @@
     }
     else if (action === "new-consultation") consultationEditor(selectedCustomerId, currentView);
     else if (action === "new-partner-vendor") {
-      if (!canWriteCRM()) return showToast("조회 전용 계정은 연락 업체를 등록할 수 없습니다.", "error");
+      if (!canWriteCRM()) return showToast("조회 전용 계정은 협력 업체를 등록할 수 없습니다.", "error");
       partnerVendorEditor("");
     }
     else if (action === "new-partner-quote") {
@@ -6670,7 +6670,7 @@
         (normalizedPhones.length && [item.phone, item.alternatePhone].some(value => normalizedPhones.includes(Core.normalizePhone(value)))) ||
         (normalizedName && Core.normalizeText(partnerVendorName(item)) === normalizedName && partnerIndustry(item) === raw.industry)
       ));
-      if (duplicate && duplicate.active !== false) return showToast("이미 등록된 연락 업체입니다. 기존 업체 정보를 수정해 주세요.", "error");
+      if (duplicate && duplicate.active !== false) return showToast("이미 등록된 협력 업체입니다. 기존 업체 정보를 수정해 주세요.", "error");
       const existingItem = editing || duplicate || null;
       const item = Object.assign({}, existingItem || newPartnerVendor(), {
         vendor: String(raw.vendor || "").trim(), name: String(raw.vendor || "").trim(), industry: raw.industry,
@@ -6694,13 +6694,13 @@
       }
       if (existingItem) Object.assign(existingItem, item);
       else store.partnerVendors.push(item);
-      logAudit({ category: editing || duplicate ? "변경" : "등록", targetType: "연락 업체", targetId: item.id, targetLabel: partnerVendorName(item), action: duplicate ? "제외 업체 재등록" : editing ? "업체 기본정보 수정" : "연락 업체 등록", reason: "연락 업체 관리" });
+      logAudit({ category: editing || duplicate ? "변경" : "등록", targetType: "협력 업체", targetId: item.id, targetLabel: partnerVendorName(item), action: duplicate ? "제외 업체 재등록" : editing ? "업체 기본정보 수정" : "협력 업체 등록", reason: "협력 업체 관리" });
       scheduleSave(); closeModal(); currentView = "partnerVendors"; render(); showToast(`${partnerVendorName(item)} 업체 정보를 저장했습니다.`, "success");
     } else if (form.id === "partnerQuoteForm") {
       const raw = Object.fromEntries(new FormData(form).entries());
       if (!String(raw.industry || "").trim()) return showToast("업종을 먼저 선택해 주세요.", "error");
       const selectedVendor = partnerVendorById(raw.vendorId);
-      if (!selectedVendor) return showToast("저장된 연락 업체를 선택해 주세요.", "error");
+      if (!selectedVendor) return showToast("저장된 협력 업체를 선택해 주세요.", "error");
       if (!String(raw.scenario || "").trim()) return showToast("문의한 작업 조건을 입력해 주세요.", "error");
       const existing = store.partnerQuotes.find(item => item.id === form.dataset.partnerQuoteId);
       const item = existing || Core.createPartnerQuote({ owner: store.settings.owner || "김현진" });
