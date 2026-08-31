@@ -7271,6 +7271,23 @@
   modal.addEventListener("click", event => { if (event.target === modal) closeModal(); });
   drawer.addEventListener("click", event => { if (event.target === drawer) closeDrawer(); });
 document.addEventListener("keydown", event => {
+  const marketingReviewCancel = currentWorkspace === "marketing" && main.querySelector("[data-marketing-review-cancel]");
+  if (marketingReviewCancel && event.key === "Escape") {
+    event.preventDefault();
+    marketingEntryController.state.review = null;
+    renderMarketingWorkspace();
+    return;
+  }
+  const marketingTab = currentWorkspace === "marketing" && event.target.closest?.("[data-marketing-nav]");
+  if (marketingTab && ["ArrowRight", "ArrowLeft", "Home", "End"].includes(event.key)) {
+    event.preventDefault();
+    const tabs = [...main.querySelectorAll("[data-marketing-nav]")];
+    const index = tabs.indexOf(marketingTab);
+    const nextIndex = event.key === "Home" ? 0 : event.key === "End" ? tabs.length - 1 : event.key === "ArrowRight" ? (index + 1) % tabs.length : (index - 1 + tabs.length) % tabs.length;
+    tabs[nextIndex]?.focus();
+    tabs[nextIndex]?.click();
+    return;
+  }
   if (confirmationLayer.classList.contains("open")) {
     if (event.key === "Escape") { event.preventDefault(); event.stopPropagation(); finishConfirmation(false); }
     else if (event.key === "Enter" && !event.target.closest?.("[data-confirm-choice]")) { event.preventDefault(); event.stopPropagation(); finishConfirmation(true); }

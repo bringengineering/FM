@@ -2,7 +2,7 @@
 .marketing-nav { display: flex; gap: 8px; overflow: auto; margin-bottom: 16px; }
 .marketing-nav button { padding: 10px 14px; border: 1px solid #dbe3ea; border-radius: 10px; background: #fff; white-space: nowrap; }
 .marketing-nav button.active { background: #17324d; color: #fff; }
-.marketing-nav button:focus-visible, .marketing-filters input:focus-visible, .marketing-filters select:focus-visible, .marketing-customer-row:focus-visible { outline: 3px solid #55aee8; outline-offset: 2px; }
+.marketing-nav button:focus-visible, .marketing-filters input:focus-visible, .marketing-filters select:focus-visible, .marketing-customer-row:focus-visible, .marketing-alert:focus-visible, .marketing-input button:focus-visible, .marketing-report-actions button:focus-visible, .marketing-table-wrap:focus-visible { outline: 3px solid #55aee8; outline-offset: 2px; }
 .marketing-filters { display: grid; grid-template-columns: repeat(5, minmax(130px, 1fr)); gap: 10px; margin-bottom: 20px; padding: 16px; border: 1px solid #dbe3ea; border-radius: 14px; background: #fff; }
 .marketing-filters label { display: grid; gap: 5px; color: #607080; font-size: 12px; }
 .marketing-filters input, .marketing-filters select { min-width: 0; padding: 9px; border: 1px solid #ccd7df; border-radius: 8px; background: #fff; }
@@ -19,14 +19,15 @@
 .marketing-attention, .marketing-state, .marketing-customer-list { margin-top: 16px; padding: 20px; border: 1px solid #dbe3ea; border-radius: 14px; background: #fff; }
 .marketing-alerts, .marketing-weekly-report { display:grid; gap:16px; margin-top:16px; padding:20px; border:1px solid #dbe3ea; border-radius:14px; background:#fff; }
 .marketing-alerts section { display:grid; gap:8px; }
-.marketing-alert { display:grid; gap:6px; padding:14px; border-left:4px solid #73909d; border-radius:10px; background:#f6f9fa; }
+.marketing-alert { display:grid; width:100%; gap:6px; padding:14px; border:0; border-left:4px solid #73909d; border-radius:10px; background:#f6f9fa; color:inherit; text-align:left; cursor:pointer; }
 .marketing-alert.urgent { border-color:#c94747; } .marketing-alert.warning { border-color:#d88625; }
-.marketing-alert header, .marketing-weekly-report>header, .marketing-report-actions { display:flex; align-items:center; justify-content:space-between; gap:10px; }
+.marketing-alert-head, .marketing-weekly-report>header, .marketing-report-actions { display:flex; align-items:center; justify-content:space-between; gap:10px; }
 .marketing-report-metrics { display:grid; grid-template-columns:repeat(7,minmax(100px,1fr)); gap:8px; }
 .marketing-report-metrics article { padding:12px; background:#eef5f8; border-radius:10px; } .marketing-report-metrics b { display:block; margin-top:4px; }
 @media print { body * { visibility:hidden; } .marketing-weekly-report, .marketing-weekly-report * { visibility:visible; } .marketing-weekly-report { position:absolute; inset:0; border:0; } .marketing-report-actions, .marketing-nav, .marketing-filters { display:none!important; } }
-.marketing-table-wrap { overflow: auto; border: 1px solid #dbe3ea; border-radius: 14px; background: #fff; }
+.marketing-table-wrap { overflow-x: auto; border: 1px solid #dbe3ea; border-radius: 14px; background: #fff; }
 .marketing-table-wrap table { width: 100%; border-collapse: collapse; white-space: nowrap; }
+.marketing-table-wrap caption { padding:12px; color:#425d6d; font-weight:700; text-align:left; }
 .marketing-table-wrap th, .marketing-table-wrap td { padding: 12px; border-bottom: 1px solid #e8edf1; text-align: right; }
 .marketing-table-wrap th:first-child { text-align: left; }
 .marketing-table-wrap td small { display: block; max-width: 240px; white-space: normal; }
@@ -39,6 +40,17 @@
   .marketing-filters, .marketing-kpi-grid, .marketing-metric-row, .marketing-funnel { grid-template-columns: repeat(2, 1fr); }
   .marketing-overview-funnel { grid-template-columns: repeat(4, 1fr); }
 }
-@media (max-width: 600px) {
-  .marketing-filters, .marketing-kpi-grid, .marketing-metric-row, .marketing-funnel, .marketing-overview-funnel { grid-template-columns: 1fr; }
+@media (max-width: 760px) {
+  .marketing-overview-layout { display: contents; }
+  .marketing-kpi-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .marketing-filters, .marketing-metric-row, .marketing-funnel, .marketing-overview-funnel, .marketing-report-metrics { grid-template-columns: 1fr; }
+  .marketing-nav { margin-inline:-8px; padding:3px 8px 8px; }
+  .marketing-filters, .marketing-alerts, .marketing-weekly-report, .marketing-attention, .marketing-state, .marketing-customer-list { padding:14px; }
+  .marketing-input form { grid-template-columns:1fr; }
+  .marketing-input header, .marketing-weekly-report>header, .marketing-report-actions { align-items:stretch; flex-direction:column; }
+  .marketing-input button, .marketing-report-actions button { min-height:44px; }
+  .marketing-duplicate-review { max-width:100%; max-height:calc(100vh - 24px); overflow:auto; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .marketing-workspace-active *, .marketing-workspace-active *::before, .marketing-workspace-active *::after { scroll-behavior:auto!important; transition-duration:.01ms!important; animation-duration:.01ms!important; animation-iteration-count:1!important; }
 }

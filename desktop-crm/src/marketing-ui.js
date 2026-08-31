@@ -18,6 +18,13 @@
   const CHANNELS = Object.freeze({ naver_place_ads: "네이버 플레이스 광고", naver_place_organic: "네이버 플레이스 자연유입", naver_blog: "네이버 블로그", soomgo: "숨고", daangn: "당근", broker: "중개사", referral: "소개", direct_sales: "직접 영업", other: "기타", needs_review: "확인 필요" });
   const esc = value => String(value == null ? "" : value).replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]);
   const attr = esc;
+  function sanitizeVisibleText(value) {
+    return String(value == null ? "" : value)
+      .replace(/\b01[016789][ -]?\d{3,4}[ -]?\d{4}\b/g, "[연락처 비공개]")
+      .replace(/\b[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}\b/gi, "[이메일 비공개]")
+      .replace(/\b(?:idToken|refreshToken|accessToken|privateNote|receipt|audit)\s*[:=]\s*[^\s,;]+(?:\s+[^,;]+)?/gi, "[민감정보 비공개]");
+  }
+  const safeEsc = value => esc(sanitizeVisibleText(value));
   const present = value => value !== null && value !== undefined && value !== "";
   function formatNumber(value) { return present(value) && Number.isFinite(Number(value)) ? new Intl.NumberFormat("ko-KR").format(Number(value)) : "-"; }
   function formatWon(value) { return present(value) && Number.isFinite(Number(value)) ? `${formatNumber(value)}원` : "-"; }
@@ -32,7 +39,7 @@
   }
 
   function renderNav(view) {
-    return `<nav class="marketing-nav" aria-label="마케팅 메뉴">${NAV_ITEMS.map(item => `<button type="button" data-marketing-nav="${item.id}" class="${item.id === view ? "active" : ""}"${item.id === view ? ` aria-current="page"` : ""}>${esc(item.label)}</button>`).join("")}</nav>`;
+    return `<nav class="marketing-nav" role="tablist" aria-label="마케팅 메뉴">${NAV_ITEMS.map(item => { const selected = item.id === view; return `<button type="button" role="tab" aria-selected="${selected}" tabindex="${selected ? "0" : "-1"}" data-marketing-nav="${item.id}" class="${selected ? "active" : ""}"${selected ? ` aria-current="page"` : ""}>${esc(item.label)}</button>`; }).join("")}</nav>`;
   }
   function renderFilters(filters, filterOptions) {
     const period = typeof filters.period === "object" ? filters.period.type : filters.period;
@@ -47,7 +54,7 @@
   }
   function renderAlertCards(alerts, limit) {
     const rows = (Array.isArray(alerts) ? alerts : []).slice(0, limit == null ? alerts.length : limit);
-    return rows.map(alert => `<article class="marketing-alert ${attr(alert.severity)}" data-marketing-alert-target="${attr(alert.targetId)}" data-marketing-alert-type="${attr(alert.targetType)}"><header><b>${esc(alert.title)}</b><span>${alert.severity === "urgent" ? "긴급" : alert.severity === "warning" ? "주의" : "안내"}</span></header><p>${esc(alert.reason)}</p><small>근거: ${esc(Object.entries(alert.evidence || {}).map(([key,value]) => `${key}=${value}`).join(" · ") || "-")}</small>${alert.dueAt ? `<small>기한 ${esc(alert.dueAt)}</small>` : ""}</article>`).join("");
+    return rows.map(alert => { const severity = alert.severity === "urgent" ? "긴급" : alert.severity === "warning" ? "주의" : "안내"; return `<button type="button" class="marketing-alert ${attr(alert.severity)}" aria-label="${attr(`${severity} 알림: ${sanitizeVisibleText(alert.title)}`)}" data-marketing-alert-target="${attr(alert.targetId)}" data-marketing-alert-type="${attr(alert.targetType)}"><span class="marketing-alert-head"><b>${safeEsc(alert.title)}</b><span>${severity}</span></span><span>${safeEsc(alert.reason)}</span><small>근거: ${safeEsc(Object.entries(alert.evidence || {}).map(([key,value]) => `${key}=${value}`).join(" · ") || "-")}</small>${alert.dueAt ? `<small>기한 ${safeEsc(alert.dueAt)}</small>` : ""}</button>`; }).join("");
   }
   function renderOverview(snapshot, alerts) {
     const totals = snapshot.totals || {}, metrics = snapshot.metrics || {};
@@ -55,7 +62,7 @@
     const kpis = [["CTR", "ctr", true], ["CPC", "cpc", false, true], ["문의 전환율", "inquiryCvr", true], ["유효 리드율", "validLeadRate", true], ["CPL", "cpl", false, true], ["견적 전환율", "quoteConversion", true], ["계약 전환율", "contractConversion", true], ["CPA", "cpa", false, true], ["ROAS", "roas", true], ["ROI", "roi", true], ["AOV", "aov", false, true]];
     const summary = (snapshot.funnel || []).map(item => `<article data-overview-stage="${item.stage}"><span>${esc(STAGES[item.stage])}</span><b>${formatNumber(item.count)}</b></article>`).join("");
     const excluded = Object.values(snapshot.exclusions || {}).reduce((a, b) => a + Number(b || 0), 0);
-    return `<section><div class="marketing-kpi-grid">${cards.map(([label, key, money, metric]) => { const value = metric ? metrics[key] : totals[key]; return `<article><span>${label}</span><strong>${money ? formatWon(value) : formatNumber(value)}</strong>${delta(snapshot, metric ? "profit" : key, money)}</article>`; }).join("")}</div><section class="marketing-metric-row">${kpis.map(([label, key, percent, money]) => `<article><span>${label}</span><b>${percent ? formatPercent(metrics[key]) : money ? formatWon(metrics[key]) : formatNumber(metrics[key])}</b></article>`).join("")}</section><section class="marketing-overview-funnel" aria-label="마케팅 퍼널 요약">${summary}</section><section class="marketing-attention"><h2>오늘 확인할 항목</h2>${renderAlertCards(alerts, 5) || (excluded ? `<div data-marketing-alert-target="data-quality">제외 데이터 ${formatNumber(excluded)}건 · 데이터 품질을 확인하세요.</div>` : `<div data-marketing-alert-target="data-quality">현재 확인할 알림이 없습니다.</div>`)}</section></section>`;
+    return `<section class="marketing-overview-layout"><div class="marketing-kpi-grid">${cards.map(([label, key, money, metric]) => { const value = metric ? metrics[key] : totals[key]; return `<article><span>${label}</span><strong>${money ? formatWon(value) : formatNumber(value)}</strong>${delta(snapshot, metric ? "profit" : key, money)}</article>`; }).join("")}</div><section class="marketing-metric-row">${kpis.map(([label, key, percent, money]) => `<article><span>${label}</span><b>${percent ? formatPercent(metrics[key]) : money ? formatWon(metrics[key]) : formatNumber(metrics[key])}</b></article>`).join("")}</section><section class="marketing-overview-funnel" aria-label="마케팅 퍼널 요약">${summary}</section><section class="marketing-attention"><h2>오늘 확인할 항목</h2>${renderAlertCards(alerts, 5) || (excluded ? `<div data-marketing-alert-target="data-quality">제외 데이터 ${formatNumber(excluded)}건 · 데이터 품질을 확인하세요.</div>` : `<div data-marketing-alert-target="data-quality">현재 확인할 알림이 없습니다.</div>`)}</section></section>`;
   }
 
   function renderAlerts(alerts) {
@@ -66,7 +73,7 @@
   function weeklyReportText(report) {
     const m=report&&report.metrics||{}, period=report&&report.period||{};
     const rows=(items,format,empty='데이터 부족')=>Array.isArray(items)&&items.length?items.map(item=>`- ${format(item)}`):[`- ${empty}`];
-    return [`주간 마케팅 보고 ${period.start||'-'} ~ ${period.end||'-'}`,`총마케팅비: ${formatWon(m.spend)}`,`문의: ${formatNumber(m.inquiries)}`,`유효문의: ${formatNumber(m.validLeads)}`,`견적: ${formatNumber(m.quotes)}`,`계약: ${formatNumber(m.contracts)}`,`계약금액: ${formatWon(m.contractAmount)}`,`예상이익: ${formatWon(m.expectedProfit)}`,
+    return sanitizeVisibleText([`주간 마케팅 보고 ${period.start||'-'} ~ ${period.end||'-'}`,`총마케팅비: ${formatWon(m.spend)}`,`문의: ${formatNumber(m.inquiries)}`,`유효문의: ${formatNumber(m.validLeads)}`,`견적: ${formatNumber(m.quotes)}`,`계약: ${formatNumber(m.contracts)}`,`계약금액: ${formatWon(m.contractAmount)}`,`예상이익: ${formatWon(m.expectedProfit)}`,
       '채널 성과:',...rows(report&&report.channels,item=>`${item.channel} | 비용 ${formatWon(item.spend)} | 유효문의 ${formatNumber(item.validLeads)} | 계약 ${formatNumber(item.contracts)} | 계약금액 ${formatWon(item.contractAmount)}`),
       '잘된 채널 / 키워드·콘텐츠:',...rows(report&&report.goodChannels,item=>item.channel),`- 키워드·콘텐츠: ${Array.isArray(report&&report.goodKeywords)?report.goodKeywords.join(', '):report&&report.goodKeywords||'데이터 부족'}`,
       '문의 서비스:',`- ${report&&report.topService&&report.topService!=='-'?`${report.topService.service} ${formatNumber(report.topService.inquiries)}건`:'-'}`,
@@ -74,7 +81,7 @@
       '실패 이유:',...rows(report&&report.lostReasons,item=>`${item.reason} ${formatNumber(item.count)}건`),
       '다음 주 예산 의견:',...rows(report&&report.nextWeekSuggestions,item=>item),
       '대표 결정:',...rows(report&&report.decisionItems,item=>`${item.title} · ${item.reason}`,'결정 요청 없음'),
-      '원천 갱신:',`- ${report&&report.sourceUpdatedState||'-'}`].join('\n');
+      '원천 갱신:',`- ${report&&report.sourceUpdatedState||'-'}`].join('\n'));
   }
   function renderWeekly(report) {
     if (!report) return '<section class="marketing-state">주간 보고를 생성할 집계 데이터가 없습니다.</section>';
@@ -85,7 +92,7 @@
   function renderChannels(snapshot) {
     const headers = ["채널", "비용", "노출", "클릭", "유효 리드", "견적", "계약", "매출", "이익", "CPL", "CPA", "ROAS", "상태"];
     const rows = Object.entries(snapshot.channels || {}).map(([channel, row]) => `<tr><th>${esc(CHANNELS[channel] || channel)}</th><td>${formatWon(row.spend)}</td><td>${formatNumber(row.impressions)}</td><td>${formatNumber(row.clicks)}</td><td>${formatNumber(row.validLeads)}</td><td>${formatNumber(row.quotes)}</td><td>${formatNumber(row.contracts)}</td><td>${formatWon(row.contractAmount)}</td><td>${formatWon(row.profit)}</td><td>${formatWon(row.metrics.cpl)}</td><td>${formatWon(row.metrics.cpa)}</td><td>${formatPercent(row.metrics.roas)}</td><td><b>${row.rating === "data_insufficient" || channel === "needs_review" ? "검토 필요" : esc(row.ratingLabel)}</b>${(row.rationale || []).slice(0, 3).map(reason => `<small>${esc(reason)}</small>`).join("")}</td></tr>`).join("");
-    return `<section class="marketing-table-wrap"><table><thead><tr>${headers.map(label => `<th>${label}</th>`).join("")}</tr></thead><tbody>${rows || `<tr><td colspan="13">표시할 채널 데이터가 없습니다.</td></tr>`}</tbody></table></section>`;
+    return `<section class="marketing-table-wrap" tabindex="0" aria-label="채널별 마케팅 성과 표"><table><caption>채널별 마케팅 성과</caption><thead><tr>${headers.map(label => `<th scope="col">${label}</th>`).join("")}</tr></thead><tbody>${rows || `<tr><td colspan="13">표시할 채널 데이터가 없습니다.</td></tr>`}</tbody></table></section>`;
   }
   function stageFromFact(fact) { for (const key of Object.keys(STAGES).reverse()) if (Number(fact[key]) > 0) return STAGES[key]; return "문의"; }
   function renderCustomerFacts(facts) {
@@ -100,10 +107,10 @@
     options = options || {};
     const active = Array.isArray(options.active) ? options.active : [];
     const archived = Array.isArray(options.archived) ? options.archived : [];
-    const row = (item, readOnly) => { const actor = item.createdByOperatorId || item.enteredByLabel || item.createdByLabel || '-'; const enteredAt = item.createdAt || item.enteredAt || '-'; const updatedAt = item.updatedAt || '-'; return `<article class="marketing-entry-row" data-marketing-entry-id="${attr(item.id || '')}" tabindex="-1"><strong>${esc(item.date || "-")} · ${esc(CHANNELS[item.channel] || item.channel || "-")}</strong><span>${esc(item.campaignName || item.campaignId || item.keyword || item.contentTitle || "-")}</span><small>${formatWon(item.spend)} · v${formatNumber(item.version)}</small><small>입력 ${esc(actor)} · ${esc(enteredAt)} · 수정 ${esc(updatedAt)}</small>${readOnly ? `<small>보관: ${esc(item.archivedAt || item.archivedAtMs || "-")} · ${esc(item.archivedByOperatorId || "-")}</small>` : options.canWrite && !options.loading && !options.saving ? `<div><button type="button" data-marketing-edit="${attr(item.id)}">수정</button><button type="button" data-marketing-copy="${attr(item.id)}">이전 항목 복사</button><button type="button" data-marketing-archive="${attr(item.id)}">보관</button></div>` : ""}</article>`; };
+    const row = (item, readOnly) => { const actor = item.enteredByLabel || item.createdByLabel || '-'; const enteredAt = item.createdAt || item.enteredAt || '-'; const updatedAt = item.updatedAt || '-'; return `<article class="marketing-entry-row" data-marketing-entry-id="${attr(item.id || '')}" tabindex="-1"><strong>${safeEsc(item.date || "-")} · ${safeEsc(CHANNELS[item.channel] || item.channel || "-")}</strong><span>${safeEsc(item.campaignName || item.campaignId || item.keyword || item.contentTitle || "-")}</span><small>${formatWon(item.spend)} · v${formatNumber(item.version)}</small><small>입력 ${safeEsc(actor)} · ${safeEsc(enteredAt)} · 수정 ${safeEsc(updatedAt)}</small>${readOnly ? `<small>보관: ${safeEsc(item.archivedAt || item.archivedAtMs || "-")}</small>` : options.canWrite && !options.loading && !options.saving ? `<div><button type="button" data-marketing-edit="${attr(item.id)}">수정</button><button type="button" data-marketing-copy="${attr(item.id)}">이전 항목 복사</button><button type="button" data-marketing-archive="${attr(item.id)}">보관</button></div>` : ""}</article>`; };
     const fields = ['date', 'channel', 'accountName', 'campaignId', 'campaignName', 'adGroup', 'keyword', 'contentId', 'contentTitle', 'service', 'region', 'spend', 'impressions', 'clicks', 'phoneClicks', 'chatClicks', 'directionsClicks', 'saves', 'platformLeads', 'dailyBudget', 'budgetValidatedAt', 'note'];
-    const review = options.review ? `<section class="marketing-duplicate-review" role="dialog" aria-modal="true"><h3>${options.review.type === 'conflict' || options.review.type === 'conflict_unavailable' ? '서버 변경 충돌 재검토' : '중복 기록 검토'}</h3><p>${esc(options.review.message || `기존 v${formatNumber(options.review.openedVersion)} 기록과 제안 값을 비교한 뒤 덮어쓰세요.`)}</p><pre>${esc(JSON.stringify({ existing: options.review.existing, proposed: options.review.proposed }, null, 2))}</pre>${options.review.existing && !options.review.existing.archivedAtMs ? `<button type="button" data-marketing-overwrite>기존 기록 업데이트</button>` : ''}<button type="button" data-marketing-review-cancel>취소</button></section>` : '';
-    const content = options.loading ? '<div class="marketing-state">광고 기록을 불러오는 중입니다.</div>' : options.error ? `<div role="alert">${esc(options.error)} <button type="button" data-marketing-retry>다시 시도</button></div>` : `<div>${active.map(item => row(item, false)).join('') || '<p>활성 기록이 없습니다.</p>'}</div><details><summary>보관된 기록</summary>${archived.map(item => row(item, true)).join('') || '<p>보관된 기록이 없습니다.</p>'}</details>`;
+    const review = options.review ? `<section class="marketing-duplicate-review" role="dialog" aria-modal="true" aria-labelledby="marketingReviewTitle"><h3 id="marketingReviewTitle">${options.review.type === 'conflict' || options.review.type === 'conflict_unavailable' ? '서버 변경 충돌 재검토' : '중복 기록 검토'}</h3><p>${safeEsc(options.review.message || `기존 v${formatNumber(options.review.openedVersion)} 기록과 제안 값을 비교한 뒤 덮어쓰세요.`)}</p>${options.review.existing && !options.review.existing.archivedAtMs ? `<button type="button" data-marketing-overwrite>기존 기록 업데이트</button>` : ''}<button type="button" data-marketing-review-cancel autofocus>취소</button></section>` : '';
+    const content = options.loading ? '<div class="marketing-state" role="status" aria-live="polite">광고 기록을 불러오는 중입니다.</div>' : options.error ? `<div role="alert">${safeEsc(options.error)} <button type="button" data-marketing-retry>다시 시도</button></div>` : `<div>${active.map(item => row(item, false)).join('') || '<p>활성 기록이 없습니다.</p>'}</div><details><summary>보관된 기록</summary>${archived.map(item => row(item, true)).join('') || '<p>보관된 기록이 없습니다.</p>'}</details>`;
     const valueFor = name => {
       if (name === 'budgetValidatedAt' && !options.draft[name] && Number.isSafeInteger(options.draft.budgetValidatedAtMs)) {
         const date = new Date(options.draft.budgetValidatedAtMs);
@@ -164,6 +171,7 @@
     const permissions = crmEditPermissions(user);
     const dedicated = ['customerMarketingForm', 'caseMarketingForm'].includes(formId);
     const advertising = formId === 'marketingEntryForm';
+    if (advertising && !(user && (user.accessRole === 'admin' || user.accessRole === 'member' && user.marketingRole === 'marketing'))) return { allowed: false, reason: 'raw-marketing-forbidden' };
     if (!permissions.attribution) return { allowed: false, reason: 'forbidden' };
     if (!permissions.core && !dedicated && !advertising) return { allowed: false, reason: 'marketing-only' };
     return { allowed: true, scope: permissions.core ? 'full' : 'marketing' };
@@ -188,9 +196,9 @@
   function renderWorkspace(options) {
     const view = NAV_ITEMS.some(item => item.id === options.view) ? options.view : "marketingOverview";
     const localError = options.localError || options.error || "";
-    const top = `${renderNav(view)}${renderFilters(options.filters || defaultFilters(), options.filterOptions)}${localError ? `<div class="marketing-local-error" role="alert">${esc(localError)}</div>` : ""}`;
-    if (options.unavailable) return `${top}<section class="marketing-state">권한에 맞는 집계 데이터가 아직 준비되지 않았습니다</section>`;
-    if (!options.snapshot) return `${top}<section class="marketing-state">마케팅 데이터를 불러오는 중입니다.</section>`;
+    const top = `${renderNav(view)}${renderFilters(options.filters || defaultFilters(), options.filterOptions)}${localError ? `<div class="marketing-local-error" role="alert">${safeEsc(localError)}</div>` : ""}`;
+    if (options.unavailable) return `${top}<section class="marketing-state" role="status" aria-live="polite">권한에 맞는 집계 데이터가 아직 준비되지 않았습니다</section>`;
+    if (!options.snapshot) return `${top}<section class="marketing-state" role="status" aria-live="polite">마케팅 데이터를 불러오는 중입니다.</section>`;
     if (view === "marketingOverview") return `${top}${renderOverview(options.snapshot, options.alerts)}`;
     if (view === "marketingChannels") return `${top}${renderChannels(options.snapshot)}`;
     if (view === "marketingFunnel") return `${top}${renderFunnel(options.snapshot, options.facts)}`;
@@ -244,5 +252,5 @@
     function setPeriod(period) { try { core.resolvePeriod(period, options.now ? options.now() : new Date()); filters.period = period; state.localError = ""; if (rawLoaded) recompute(); return { ok: true, snapshot: state.snapshot }; } catch (error) { state.localError = String(error.message || error); return { ok: false, error: state.localError }; } }
     return Object.freeze({ filters, state, load, invalidate, prepareLoad, syncFactsIfRevisionChanged, refreshFacts, setFilter, setPeriod, derive });
   }
-  return Object.freeze({ NAV_ITEMS, defaultFilters, buildFilterOptions, createController, createEntryController, crmEditPermissions, roleSubmissionPolicy, buildRoleLimitedEntityUpdate, submitRoleLimitedEntityUpdate, renderWorkspace, renderMarketingInput, renderCustomerFacts, renderAlerts, renderWeekly, weeklyReportText, formatNumber, formatWon, formatPercent, escapeHtml: esc });
+  return Object.freeze({ NAV_ITEMS, defaultFilters, buildFilterOptions, createController, createEntryController, crmEditPermissions, roleSubmissionPolicy, buildRoleLimitedEntityUpdate, submitRoleLimitedEntityUpdate, renderWorkspace, renderMarketingInput, renderCustomerFacts, renderAlerts, renderWeekly, weeklyReportText, formatNumber, formatWon, formatPercent, escapeHtml: esc, sanitizeVisibleText });
 });

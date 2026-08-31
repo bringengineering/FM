@@ -89,21 +89,20 @@ test('copy creates id/version/request-free draft with a new date and archive is 
   assert.deepEqual(calls[0], { id: 'r1', expectedVersion: 3, requestId: '00000000-0000-4000-8000-000000000001', action: 'archive' });
 });
 
-test('input route hides write controls from non writers and renders archived audit read-only', () => {
+test('input route hides write controls from non writers and renders archived records without actor ids', () => {
   const html = UI.renderMarketingInput({ canWrite: false, active: [{ id: 'a', date: '2026-08-31', channel: 'naver_blog' }], archived: [{ id: 'z', date: '2026-08-30', channel: 'soomgo', archivedByOperatorId: '<x>' }], lastUpdatedAt: '2026-08-31T01:00:00Z' });
   assert.doesNotMatch(html, /data-marketing-add/);
   assert.match(html, /보관된 기록/);
-  assert.match(html, /&lt;x&gt;/);
-  assert.doesNotMatch(html, /hard-delete|data-marketing-delete/);
+  assert.doesNotMatch(html, /&lt;x&gt;|hard-delete|data-marketing-delete/);
 });
 
-test('input rows escape safe actor labels and show explicit loading error and empty states', () => {
+test('input rows show safe actor labels without operator ids and show explicit loading error and empty states', () => {
   const loading = UI.renderMarketingInput({ canWrite: true, loading: true, active: [], archived: [] });
   assert.match(loading, /불러오는 중/); assert.doesNotMatch(loading, /data-marketing-add/);
   const failed = UI.renderMarketingInput({ error: '<failed>', active: [], archived: [] });
   assert.match(failed, /&lt;failed&gt;/); assert.match(failed, /다시 시도/); assert.doesNotMatch(failed, /활성 기록이 없습니다/);
-  const row = UI.renderMarketingInput({ active: [{ id: 'a', date: '2026-08-31', channel: 'naver_blog', createdByOperatorId: '<actor>', createdAt: '2026-08-31T01:00:00Z' }], archived: [] });
-  assert.match(row, /&lt;actor&gt;/); assert.doesNotMatch(row, /createdByAuthUid/);
+  const row = UI.renderMarketingInput({ active: [{ id: 'a', date: '2026-08-31', channel: 'naver_blog', createdByOperatorId: 'operator_secret', enteredByLabel: '<담당자>', createdAt: '2026-08-31T01:00:00Z' }], archived: [] });
+  assert.match(row, /&lt;담당자&gt;/); assert.doesNotMatch(row, /operator_secret|createdByAuthUid/);
 });
 
 test('refresh failures remain entry-local and a successful retry clears the error', async () => {
