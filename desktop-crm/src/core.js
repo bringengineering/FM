@@ -34,6 +34,9 @@
   const SECURITY_ASSET_TYPES = ["열쇠", "출입카드", "비밀번호 관리항목", "계약서", "신분확인 문서", "기타"];
   const SECURITY_ASSET_STATUSES = ["보관중", "대여중", "반납완료", "분실", "폐기", "무효"];
   const AUDIT_CATEGORIES = ["조회", "등록", "변경", "공유", "반출", "삭제", "백업", "파기", "권한변경", "키대여", "키반납", "사고"];
+  const MARKETING_CHANNELS = ["naver_place_ads", "naver_place_organic", "naver_blog", "soomgo", "daangn", "broker", "referral", "direct_sales", "other", "needs_review"];
+  const MARKETING_INQUIRY_METHODS = ["phone", "message", "email", "visit", "web_form", "other", "needs_review"];
+  const MARKETING_STRING_FIELDS = ["subChannel", "campaignId", "campaignName", "keyword", "contentId", "contentTitle", "invalidReason", "firstTouchAt", "inquiryAt", "attributionNote"];
 
   const pad = value => String(value).padStart(2, "0");
   const random = prefix => `${prefix}_${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`;
@@ -194,6 +197,7 @@
 
   function normalizeCustomer(value) {
     const customer = Object.assign({}, value || {});
+    customer.marketing = normalizeMarketingAttribution(customer.marketing);
     delete customer.photoDataUrl;
     delete customer.avatarUrl;
     delete customer.localPath;
@@ -207,6 +211,21 @@
         && !["__proto__", "prototype", "constructor"].includes(buildingId)
         && firebaseSafeKey(buildingId) === buildingId));
     return customer;
+  }
+
+  function normalizeMarketingAttribution(value) {
+    const source = value && typeof value === "object" && !Array.isArray(value) ? value : {};
+    const result = {};
+    for (const field of ["firstSource", "lastSource"]) {
+      if (source[field] != null && String(source[field]).trim()) result[field] = MARKETING_CHANNELS.includes(source[field]) ? source[field] : "needs_review";
+    }
+    if (source.inquiryMethod != null && String(source.inquiryMethod).trim()) result.inquiryMethod = MARKETING_INQUIRY_METHODS.includes(source.inquiryMethod) ? source.inquiryMethod : "needs_review";
+    if (Object.prototype.hasOwnProperty.call(source, "validLead")) result.validLead = typeof source.validLead === "boolean" ? source.validLead : null;
+    for (const field of MARKETING_STRING_FIELDS) {
+      if (source[field] == null) continue;
+      result[field] = String(source[field]).trim().slice(0, field === "attributionNote" ? 1000 : 200);
+    }
+    return result;
   }
 
   function normalizeCustomerPhotoDataUrl(value) {
@@ -911,7 +930,7 @@
     blankStore, blankSharedStore, sanitizeStore, sanitizeSharedStore, sanitizeRendererStore, sanitizeRendererOverlays, createCustomer, createBuilding, normalizeBuilding, normalizeBuildingUnit, createActivity, createContract, normalizeContract, normalizeContractTypes, oneOffContractRows, oneOffContractTotals, createPartnerVendor, createPartnerQuote, createTask, createSecurityAsset,
     createAccessRole, createAuditLog, createSecurityIncident, calculateDashboard, calculateSecurityStatus,
     workflowProgress, buildWorkflowCase, matchWorkflowCustomer, paymentNormalizeName, paymentMonthRows,
-    normalizePhone, formatPhone, canonicalPhoneKey, normalizeText, normalizePipelineStage, normalizeStringList, normalizeCustomer, normalizeCustomerPhotoDataUrl, customerBuildingIds, nonNegativeInteger, money, dayKey, iso,
+    normalizePhone, formatPhone, canonicalPhoneKey, normalizeText, normalizePipelineStage, normalizeStringList, normalizeCustomer, normalizeMarketingAttribution, normalizeCustomerPhotoDataUrl, customerBuildingIds, nonNegativeInteger, money, dayKey, iso,
     prohibitedSecretType, findProhibitedSecrets, assertNoProhibitedSecrets, canMutate, assertMutationAllowed,
     normalizePartnerVendor, partnerVendorFromQuote, legacyPartnerVendorId,
     normalizeServiceRecords, normalizeServiceContracts, serviceSchedulesForContract
