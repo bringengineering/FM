@@ -117,6 +117,28 @@ test('mixed preparing and active contracts include only active economics', () =>
   assert.deepEqual(fact.contractIds, ['prep', 'run']);
 });
 
+test('active contract wins over cancelled and invalid siblings without losing actual cash or incurred cost', () => {
+  for (const sibling of [
+    { id: 'cancel', status: '취소', amount: 900, paidAmount: 40, vendorCost: 15, vendorPaymentStatus: '지급 완료' },
+    { id: 'invalid', status: '무효', amount: 800, paidAmount: 30, vendorCost: 12, vendorPaymentStatus: '지급 완료' }
+  ]) {
+    const fact = Bridge.projectFacts({ customers: [{ id: 'c' }], contracts: [
+      { id: 'active', customerId: 'c', status: '진행 중', amount: 200, vendorCost: 20 },
+      { ...sibling, customerId: 'c' }
+    ] }, { cases: [{ id: 'case', crmCustomerId: 'c', createdAt: '2026-08-01T00:00:00Z', status: { c1: 'done', c3: 'done' } }] })[0];
+    assert.equal(fact.contractStatus, 'active');
+    assert.equal(fact.contracts, 1);
+    assert.equal(fact.contractAmount, 200);
+    assert.equal(fact.paidAmount, sibling.paidAmount);
+    assert.equal(fact.expectedCost, 20 + sibling.vendorCost);
+    const snapshot = MarketingCore.buildSnapshot({ facts: [fact] }, { period: { type: 'custom', start: fact.date, end: fact.date } }, new Date('2026-08-01T12:00:00Z'));
+    assert.equal(snapshot.totals.inquiries, 1);
+    assert.equal(snapshot.totals.consultations, 1);
+    assert.equal(snapshot.totals.contracts, 1);
+    assert.equal(snapshot.totals.contractAmount, 200);
+  }
+});
+
 test('projected facts retain every normalized attribution evidence field', () => {
   const fact = Bridge.projectFacts({ customers: [{ id: 'c', marketing }] }, { cases: [{ id: 'k', crmCustomerId: 'c', createdAt: '2026-08-01T00:00:00Z' }] })[0];
   for (const field of ['firstSource', 'lastSource', 'subChannel', 'campaignId', 'campaignName', 'contentId', 'contentTitle', 'inquiryMethod', 'firstTouchAt', 'invalidReason', 'attributionNote']) assert.equal(fact[field], marketing[field]);
@@ -158,9 +180,9 @@ test('specific analysis boundaries and explicit evidence are supported', () => {
 });
 
 test('cancelled contracts preserve earlier facts and actual money with exclusion status', () => {
-  const fact = Bridge.projectFacts({ customers: [{ id: 'c', marketing }], contracts: [{ id: 'ct', customerId: 'c', status: '취소', amount: 100, paidAmount: 40, vendorCost: 15 }] }, { cases: [{ id: 'k', crmCustomerId: 'c', receivedAt: '2026-08-01T00:00:00Z', status: { c1: 'done', c3: 'done', c9: 'done' } }] })[0];
-  assert.equal(fact.inquiries, 1); assert.equal(fact.consultations, 1); assert.equal(fact.contracts, 1);
-  assert.equal(fact.contractStatus, 'cancelled'); assert.equal(fact.contractAmount, 100); assert.equal(fact.paidAmount, 40); assert.equal(fact.expectedCost, 15);
+  const fact = Bridge.projectFacts({ customers: [{ id: 'c', marketing }], contracts: [{ id: 'ct', customerId: 'c', status: '취소', amount: 100, paidAmount: 40, vendorCost: 15, vendorPaymentStatus: '지급 완료' }] }, { cases: [{ id: 'k', crmCustomerId: 'c', receivedAt: '2026-08-01T00:00:00Z', status: { c1: 'done', c3: 'done', c9: 'done' } }] })[0];
+  assert.equal(fact.inquiries, 1); assert.equal(fact.consultations, 1); assert.equal(fact.contracts, 0);
+  assert.equal(fact.contractStatus, 'cancelled'); assert.equal(fact.contractAmount, 0); assert.equal(fact.paidAmount, 40); assert.equal(fact.expectedCost, 15);
   const snapshot = MarketingCore.buildSnapshot({ facts: [fact] }, { period: { type: 'custom', start: fact.date, end: fact.date } }, new Date('2026-08-01T12:00:00Z'));
   assert.equal(snapshot.totals.contracts, 0); assert.equal(snapshot.totals.paidAmount, 40); assert.equal(snapshot.totals.expectedCost, 15);
 });

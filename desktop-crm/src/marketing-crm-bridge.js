@@ -60,15 +60,14 @@
     });
   }
 
-  function contractState(contracts) {
-    const states = contracts.map(contract => text(contract.contractStatus || contract.status).toLowerCase());
-    if (states.some(state => ['invalid', '무효'].includes(state))) return 'invalid';
-    if (states.some(state => ['cancelled', 'canceled', '취소'].includes(state))) return 'cancelled';
-    return states.length ? 'active' : '';
+  function activeContract(contract) {
+    return ['진행 중', '종료 예정', '종료', 'active', 'confirmed'].includes(contract.status || contract.contractStatus);
   }
 
-  function activeContract(contract) {
-    return ['진행 중', '종료 예정', '종료', 'active', 'confirmed', 'cancelled', 'canceled', 'invalid', '취소', '무효'].includes(contract.status || contract.contractStatus);
+  function cancelledContract(contract) { return ['cancelled', 'canceled', '취소'].includes(text(contract.contractStatus || contract.status).toLowerCase()); }
+  function invalidContract(contract) { return ['invalid', '무효'].includes(text(contract.contractStatus || contract.status).toLowerCase()); }
+  function actualIncurredCost(contracts) {
+    return contracts.reduce((total, contract) => MarketingCore.checkedIntegerAdd(total, contract.vendorPaymentStatus === '지급 완료' ? safeMoney(contract.vendorCost, 'vendorCost') : 0, 'actualIncurredCost'), 0);
   }
 
   function quoteMoney(quote) {
@@ -88,12 +87,16 @@
     const caseId = sourceType === 'case' ? caseKey(workflowCase) : '';
     const contracts = sourceType === 'case' ? explicitCaseContracts(store, workflowCase, customerId, allowCustomerLink) : [];
     const activeContracts = contracts.filter(activeContract);
+    const cancelledContracts = contracts.filter(cancelledContract);
+    const invalidContracts = contracts.filter(invalidContract);
+    const nonActiveFinalContracts = cancelledContracts.concat(invalidContracts);
     const activities = sourceType === 'case' ? caseActivities(store, workflowCase, customerId, allowCustomerLink) : [];
     const quoteRows = values(workflowCase && workflowCase.quoteFiles);
     const hasConsultation = done(workflowCase, 3) || activities.some(activity => activity.context === 'consultation');
     const hasQuote = done(workflowCase, 6) || quoteRows.length > 0 || safeMoney(workflowCase && workflowCase.quoteAmount, 'quoteAmount') > 0;
-    const hasContract = done(workflowCase, 9) || activeContracts.length > 0;
-    const hasPayment = done(workflowCase, 15) || workflowCase && workflowCase.paymentStatus === 'confirmed' || hasSettlementEvidence(workflowCase) || activeContracts.some(contract => contract.collectionStatus === '입금 완료' || safeMoney(contract.paidAmount, 'paidAmount') > 0);
+    const caseOnlyContractEvidence = contracts.length === 0 && done(workflowCase, 9);
+    const hasContract = activeContracts.length > 0 || caseOnlyContractEvidence;
+    const hasPayment = done(workflowCase, 15) || workflowCase && workflowCase.paymentStatus === 'confirmed' || hasSettlementEvidence(workflowCase) || activeContracts.concat(nonActiveFinalContracts).some(contract => contract.collectionStatus === '입금 완료' || safeMoney(contract.paidAmount, 'paidAmount') > 0);
     const validLead = marketing.validLead === true ? 1 : 0;
     const explicitNew = activeContracts.some(contract => ['new', '신규'].includes(contract.contractKind || contract.customerStatus || contract.newRepeatStatus));
     const explicitRepeat = activeContracts.some(contract => ['repeat', '재계약', '반복'].includes(contract.contractKind || contract.customerStatus || contract.newRepeatStatus));
@@ -114,9 +117,9 @@
       inquiries: 1, validLeads: validLead, consultations: hasConsultation ? 1 : 0, quotes: hasQuote ? 1 : 0, contracts: hasContract ? 1 : 0,
       payments: hasPayment ? 1 : 0, quoteAmount: quoteRows.reduce((sum, quote) => MarketingCore.checkedIntegerAdd(sum, quoteMoney(quote), 'quoteAmount'), 0) || safeMoney(workflowCase && workflowCase.quoteAmount, 'quoteAmount'),
       contractAmount: hasContract ? addMoney(activeContracts, ['amount', 'contractAmount'], 'contractAmount') : 0,
-      paidAmount: addMoney(activeContracts, ['paidAmount'], 'paidAmount') || (workflowCase && workflowCase.paymentStatus === 'confirmed' ? safeMoney(workflowCase.paymentConfirmedAmount || workflowCase.paymentExpectedAmount, 'paidAmount') : 0),
-      expectedCost: hasContract ? addMoney(activeContracts, ['vendorCost', 'expectedCost'], 'expectedCost') : 0, lostReason: text(workflowCase && workflowCase.lostReason || customer && customer.lostReason),
-      contractStatus: contractState(activeContracts), workStage: [11, 12, 13, 14].some(step => done(workflowCase, step)), aftercare: done(workflowCase, 17)
+      paidAmount: MarketingCore.checkedIntegerAdd(addMoney(activeContracts, ['paidAmount'], 'paidAmount'), addMoney(nonActiveFinalContracts, ['paidAmount'], 'paidAmount'), 'paidAmount') || (workflowCase && workflowCase.paymentStatus === 'confirmed' ? safeMoney(workflowCase.paymentConfirmedAmount || workflowCase.paymentExpectedAmount, 'paidAmount') : 0),
+      expectedCost: MarketingCore.checkedIntegerAdd(hasContract ? addMoney(activeContracts, ['vendorCost', 'expectedCost'], 'expectedCost') : 0, actualIncurredCost(nonActiveFinalContracts), 'expectedCost'), lostReason: text(workflowCase && workflowCase.lostReason || customer && customer.lostReason),
+      contractStatus: activeContracts.length || caseOnlyContractEvidence ? 'active' : cancelledContracts.length ? 'cancelled' : invalidContracts.length ? 'invalid' : '', workStage: [11, 12, 13, 14].some(step => done(workflowCase, step)), aftercare: done(workflowCase, 17)
     };
     if (explicitNew) fact.newContracts = hasContract ? 1 : 0;
     else if (explicitRepeat) fact.newContracts = 0;
