@@ -14,6 +14,7 @@ const OfficeCore = require("./office-core");
 const { createAttendanceWorkbook, safeFileSegment } = require("./attendance-xlsx");
 const OperationsIntelligence = require("./operations-intelligence-core");
 const OperationsWorkSync = require("./operations-work-sync");
+const MarketingPersistence = require("./marketing-persistence");
 const {
   FirebaseRemoteClient,
   createSerializedProtectedStoreCoordinator,
@@ -110,7 +111,7 @@ let updateState = { status: "disabled", currentVersion: app.getVersion(), availa
 const authPreview = process.env.BRING_CRM_AUTH_PREVIEW === "1";
 const passwordPreview = process.env.BRING_CRM_PASSWORD_PREVIEW === "1";
 const localTestMode = (Boolean(process.env.BRING_CRM_SCREENSHOT) || process.env.BRING_CRM_SMOKE === "1" || process.env.BRING_CRM_LOCAL_ONLY === "1") && !authPreview && !passwordPreview;
-const localTestRole = ["admin", "member", "viewer"].includes(process.env.BRING_CRM_SCREENSHOT_ROLE) ? process.env.BRING_CRM_SCREENSHOT_ROLE : "admin";
+const localTestRole = ["admin", "member", "marketing", "sales", "viewer"].includes(process.env.BRING_CRM_SCREENSHOT_ROLE) ? process.env.BRING_CRM_SCREENSHOT_ROLE : "admin";
 const CRM_AI_GATEWAY_URL = process.env.BRING_CRM_AI_GATEWAY_URL || "https://bring-crm-ai-gateway.bringengineering-crm.workers.dev/v1/assist";
 if (localTestMode && !process.env.BRING_CRM_DATA_DIR) {
   // Automated screenshots must never reuse or overwrite an employee's cache.
@@ -136,6 +137,9 @@ let localCanonicalBuildingVacancyState = Object.create(null);
 const localCanonicalBuildingUnitReceipts = new Map();
 const localCanonicalCrmReceipts = new Map();
 let localBuildingScheduleCommitQueue = Promise.resolve();
+let localMarketingCommitQueue = Promise.resolve();
+const localMarketingDaily = Object.create(null);
+const localMarketingReceipts = Object.create(null);
 
 const fieldRequestCoordinator = createFieldRequestCoordinator({
   timeoutMs: FIELD_BRIDGE_TIMEOUT_MS,
@@ -2107,6 +2111,23 @@ async function commitLocalBuildingSchedule(inputValue) {
     if (!plan.repeated || auditAdded) await writeLocalStore(data);
     return { record: plan.record, repeated: plan.repeated, auditId: audit.id };
   });
+}
+
+async function commitLocalMarketingRecord(inputValue) {
+  const running = localMarketingCommitQueue.then(async () => {
+    const input = MarketingPersistence.validateCommitInput(inputValue);
+    const user = authState().user || {};
+    const actor = { authUid: String(user.uid || ""), operatorId: String(user.uid || ""), email: String(user.email || ""), role: String(user.role || ""), active: true };
+    const receiptId = MarketingPersistence.receiptId(input.requestId);
+    const plan = MarketingPersistence.planCommit(input, localMarketingDaily[input.id] || null, actor, new Date().toISOString(), localMarketingReceipts[receiptId] || null);
+    if (!plan.repeated) {
+      localMarketingDaily[input.id] = plan.record;
+      localMarketingReceipts[receiptId] = plan.receipt;
+    }
+    return { record: plan.record, repeated: plan.repeated, auditId: plan.auditId };
+  });
+  localMarketingCommitQueue = running.catch(() => {});
+  return running;
 }
 
 async function restoreLocalStore(input) {
@@ -5363,6 +5384,23 @@ secureCanonicalHandle("crm:building-schedule-commit", async input => {
   } catch (error) {
     return buildingScheduleErrorEnvelope(error);
   }
+});
+secureCanonicalHandle("crm:marketing-read", async () => {
+  if (localTestMode) return MarketingPersistence.readEnvelope(localMarketingDaily);
+  if (!remoteClient || !remoteClient.authState().user) throw new Error("로그인이 필요합니다.");
+  return remoteClient.readMarketingRecords();
+});
+secureCanonicalHandle("crm:marketing-commit", async input => {
+  const payload = MarketingPersistence.validateCommitInput(input);
+  if (localTestMode) return commitLocalMarketingRecord(payload);
+  if (!remoteClient || !remoteClient.authState().user) throw new Error("로그인이 필요합니다.");
+  return remoteClient.commitMarketingRecord(payload);
+});
+secureCanonicalHandle("crm:marketing-archive", async input => {
+  const payload = MarketingPersistence.validateCommitInput(input, "archive");
+  if (localTestMode) return commitLocalMarketingRecord(payload);
+  if (!remoteClient || !remoteClient.authState().user) throw new Error("로그인이 필요합니다.");
+  return remoteClient.commitMarketingRecord(payload);
 });
 secureCanonicalHandle("crm:work-operations-sync-retry", async input => {
   const recordId = String(input && input.recordId || "");

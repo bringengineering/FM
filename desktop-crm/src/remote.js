@@ -3,6 +3,7 @@ const http = require("node:http");
 const path = require("node:path");
 const SparkCanonical = require("./spark-canonical");
 const OfficeCore = require("./office-core");
+const MarketingPersistence = require("./marketing-persistence");
 
 const FIREBASE = Object.freeze({
   apiKey: "AIzaSyBKOTIuQ8pOKSuaeKFQs_6UDdDnxdjCTZg",
@@ -888,6 +889,7 @@ class FirebaseRemoteClient {
     this.canonicalPendingMemory = null;
     this.canonicalMutationQueue = Promise.resolve();
     this.sharedMutationQueue = Promise.resolve();
+    this.marketingMutationQueue = Promise.resolve();
     this.streamGeneration = 0;
     this.sessionGeneration = 0;
     this.stopped = false;
@@ -904,7 +906,7 @@ class FirebaseRemoteClient {
         email: this.session.email,
         displayName: this.session.displayName || "",
         photoUrl: this.session.photoUrl || "",
-        role: ["admin", "member", "viewer"].includes(this.session.role) ? this.session.role : "viewer",
+        role: ["admin", "member", "marketing", "sales", "viewer"].includes(this.session.role) ? this.session.role : "viewer",
         officeAdmin: this.session.officeAdmin === true,
         mustChangePassword: this.session.mustChangePassword === true
       } : null,
@@ -1255,7 +1257,7 @@ class FirebaseRemoteClient {
       throw createError("회사에서 허용한 이메일이 아닙니다.", "ACCESS_DENIED");
     }
     const role = String(access.role || "");
-    if (!["admin", "member", "viewer"].includes(role)) {
+    if (!["admin", "member", "marketing", "sales", "viewer"].includes(role)) {
       throw createError("계정 권한이 올바르게 설정되지 않았습니다. 관리자에게 문의해 주세요.", "ACCESS_DENIED");
     }
     sessionRef.role = role;
@@ -2422,6 +2424,81 @@ class FirebaseRemoteClient {
   async commitBuildingSchedule(input) {
     const guard = this.captureSessionGuard();
     return this.enqueueSharedMutation(() => this.commitBuildingScheduleLocked(input, guard));
+  }
+
+  async readMarketingRecords() {
+    const guard = this.captureSessionGuard();
+    await this.verifyAccess();
+    this.assertSessionGuardActive(guard);
+    const value = await this.dbRequest("marketing/daily", { method: "GET" }) || {};
+    this.assertSessionGuardActive(guard);
+    return MarketingPersistence.readEnvelope(value);
+  }
+
+  async resolveMarketingActor(guard) {
+    const access = await this.verifyAccess();
+    this.assertSessionGuardActive(guard);
+    const operatorId = String(access.operatorId || access.profileId || "");
+    const profile = operatorId ? await this.dbRequest(`teamProfiles/${operatorId}`, { method: "GET" }) : null;
+    this.assertSessionGuardActive(guard);
+    return MarketingPersistence.assertMarketingWriter({
+      authUid: String(this.session.uid || ""), operatorId, email: String(this.session.email || ""),
+      role: String(access.marketingRole || access.role || ""), active: Boolean(profile && profile.active === true),
+    });
+  }
+
+  async conditionalMarketingPatch(patch, etag, guard) {
+    this.assertSessionGuardActive(guard);
+    const token = await this.ensureIdToken(false);
+    this.assertSessionGuardActive(guard);
+    const url = `${this.firebase.databaseUrl}/${resolveDatabaseLocation("marketing", this.databaseRoot)}.json?auth=${encodeURIComponent(token)}&print=silent`;
+    let response;
+    try {
+      response = await this.fetch(url, { method: "PATCH", headers: { Accept: "application/json", "Content-Type": "application/json", "If-Match": etag }, body: JSON.stringify(patch) });
+    } catch (cause) {
+      if (!this.sessionGuardActive(guard)) throw createError("로그인 세션이 변경되었습니다.", "SESSION_CHANGED", cause);
+      throw createError("마케팅 저장 결과를 확인하지 못했습니다.", "MARKETING_WRITE_UNCONFIRMED", cause);
+    }
+    this.assertSessionGuardActive(guard);
+    if (response.status === 412) throw createError("다른 사용자가 먼저 변경했습니다.", "MARKETING_CONFLICT");
+    if (!response.ok) throw createError("마케팅 저장이 거부되었습니다.", "MARKETING_WRITE_REJECTED");
+  }
+
+  async commitMarketingRecord(inputValue) {
+    const guard = this.captureSessionGuard();
+    const running = this.marketingMutationQueue.then(() => this.commitMarketingRecordLocked(inputValue, guard));
+    this.marketingMutationQueue = running.catch(() => {});
+    return running;
+  }
+
+  async commitMarketingRecordLocked(inputValue, guard) {
+    this.assertSessionGuardActive(guard);
+    const input = MarketingPersistence.validateCommitInput(inputValue);
+    const actor = await this.resolveMarketingActor(guard);
+    const snapshot = await this.dbReadWithEtag("marketing", false, guard);
+    this.assertSessionGuardActive(guard);
+    const root = snapshot.value && typeof snapshot.value === "object" ? snapshot.value : {};
+    const receiptId = MarketingPersistence.receiptId(input.requestId);
+    const existingReceipt = root.receipts && root.receipts[receiptId] || null;
+    const plan = MarketingPersistence.planCommit(input, root.daily && root.daily[input.id] || null, actor, new Date().toISOString(), existingReceipt);
+    if (plan.repeated) return { record: plan.record, repeated: true, auditId: plan.auditId };
+    const patch = { [`daily/${input.id}`]: plan.record, [`audits/${plan.audit.id}`]: plan.audit, [`receipts/${plan.receipt.id}`]: plan.receipt };
+    try {
+      await this.conditionalMarketingPatch(patch, snapshot.etag, guard);
+    } catch (error) {
+      if (!this.sessionGuardActive(guard)) throw createError("로그인 세션이 변경되었습니다.", "SESSION_CHANGED", error);
+      if (!["MARKETING_WRITE_UNCONFIRMED", "MARKETING_CONFLICT"].includes(error.code)) throw error;
+      const check = await this.dbReadWithEtag("marketing", false, guard);
+      const receipt = check.value && check.value.receipts && check.value.receipts[receiptId];
+      if (receipt) {
+        const recovered = MarketingPersistence.planCommit(input, check.value && check.value.daily && check.value.daily[input.id] || null, actor, new Date().toISOString(), receipt);
+        if (recovered.repeated) return { record: recovered.record, repeated: true, auditId: recovered.auditId };
+      }
+      if (error.code === "MARKETING_CONFLICT") throw createError("MARKETING_CONFLICT", "MARKETING_CONFLICT", error);
+      throw error;
+    }
+    this.assertSessionGuardActive(guard);
+    return { record: plan.record, repeated: false, auditId: plan.auditId };
   }
 
   async commitBuildingScheduleLocked(inputValue, guardValue) {
