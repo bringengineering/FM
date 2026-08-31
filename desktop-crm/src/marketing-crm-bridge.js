@@ -109,6 +109,19 @@
     return Boolean(text(settlement.status) || settlement.settledAt || settlement.date || values(workflowCase && workflowCase.evidenceFiles || settlement.files).length);
   }
 
+  function recordTime(record, fields) {
+    for (const field of fields) if (text(record && record[field])) return text(record[field]);
+    return '';
+  }
+  function newestRecord(records, fields) {
+    return records.slice().sort((left,right) => {
+      const leftTime=recordTime(left,fields), rightTime=recordTime(right,fields);
+      const leftMs=Date.parse(leftTime), rightMs=Date.parse(rightTime);
+      const timeOrder=(Number.isFinite(rightMs)?rightMs:-Infinity)-(Number.isFinite(leftMs)?leftMs:-Infinity);
+      return timeOrder || id(left.storedId||left.id).localeCompare(id(right.storedId||right.id));
+    })[0] || null;
+  }
+
   function makeFact(store, workflowCase, customer, sourceType, allowCustomerLink) {
     const caseMarketing = workflowCase && workflowCase.marketing;
     const marketing = normalizeMarketing(caseMarketing && Object.keys(caseMarketing).length ? caseMarketing : customer && customer.marketing);
@@ -117,6 +130,7 @@
     const contracts = sourceType === 'case' || sourceType === 'customer_fallback' ? explicitCaseContracts(store, workflowCase, customerId, allowCustomerLink, sourceType === 'case') : [];
     const activeContracts = contracts.filter(activeContract);
     const reviewContracts = contracts.filter(contract => ['계약 준비', 'needs_review', 'review', 'pending'].includes(text(contract.status || contract.contractStatus)));
+    const currentReviewContract = newestRecord(reviewContracts, ['reviewAt','updatedAt','createdAt']);
     const cancelledContracts = contracts.filter(cancelledContract);
     const invalidContracts = contracts.filter(invalidContract);
     const nonActiveFinalContracts = cancelledContracts.concat(invalidContracts);
@@ -124,7 +138,13 @@
     const quoteRows = workflowCase && workflowCase.quoteFiles && typeof workflowCase.quoteFiles === 'object' ? Object.entries(workflowCase.quoteFiles).map(([storedId, quote]) => Object.assign({ storedId }, quote || {})) : [];
     const hasConsultation = done(workflowCase, 3) || activities.some(activity => activity.context === 'consultation');
     const hasQuote = done(workflowCase, 6) || quoteRows.length > 0 || safeMoney(workflowCase && workflowCase.quoteAmount, 'quoteAmount') > 0;
-    const quoteSentAt = text(workflowCase && (workflowCase.quoteSentAt || workflowCase.quotedAt) || quoteRows.map(quote => quote.sentAt || quote.uploadedAt || quote.createdAt || quote.updatedAt).filter(Boolean).sort()[0]);
+    const selectedQuoteId = id(workflowCase && (workflowCase.selectedQuoteId || workflowCase.recommendedQuoteId || workflowCase.confirmedQuoteId || workflowCase.recommendation && workflowCase.recommendation.quoteId));
+    const currentQuoteCandidates = selectedQuoteId ? quoteRows.filter(quote=>id(quote.storedId||quote.id)===selectedQuoteId) : quoteRows.filter(quote=>quote.selected===true||quote.recommended===true||quote.confirmed===true);
+    const currentQuote = newestRecord(currentQuoteCandidates.length?currentQuoteCandidates:quoteRows, ['sentAt','uploadedAt','createdAt','updatedAt']);
+    const quoteSentAt = currentQuote ? recordTime(currentQuote,['sentAt','uploadedAt','createdAt','updatedAt']) : text(workflowCase && (workflowCase.quoteSentAt || workflowCase.quotedAt));
+    const consultationAt = recordTime(newestRecord(activities.filter(activity=>activity.context==='consultation'),['occurredAt','consultedAt','contactedAt','createdAt','updatedAt']),['occurredAt','consultedAt','contactedAt','createdAt','updatedAt']);
+    const directContactAt = [workflowCase&&workflowCase.lastContactAt,workflowCase&&workflowCase.contactedAt,workflowCase&&workflowCase.consultedAt,consultationAt].filter(Boolean).sort((a,b)=>(Date.parse(b)||0)-(Date.parse(a)||0))[0] || '';
+    const respondedAt = [workflowCase&&workflowCase.respondedAt,workflowCase&&workflowCase.responseAt].filter(Boolean).sort((a,b)=>(Date.parse(b)||0)-(Date.parse(a)||0))[0] || '';
     const caseOnlyContractEvidence = contracts.length === 0 && done(workflowCase, 9);
     const hasContract = activeContracts.length > 0 || caseOnlyContractEvidence;
     const hasPayment = done(workflowCase, 15) || workflowCase && workflowCase.paymentStatus === 'confirmed' || hasSettlementEvidence(workflowCase) || activeContracts.concat(nonActiveFinalContracts).some(contract => contract.collectionStatus === '입금 완료' || safeMoney(contract.paidAmount, 'paidAmount') > 0);
@@ -150,8 +170,8 @@
       contractAmount: hasContract ? addMoney(activeContracts, ['amount', 'contractAmount'], 'contractAmount') : 0,
       paidAmount: MarketingCore.checkedIntegerAdd(actualPaidAmount(activeContracts), actualPaidAmount(nonActiveFinalContracts), 'paidAmount') || (workflowCase && workflowCase.paymentStatus === 'confirmed' ? safeMoney(workflowCase.paymentConfirmedAmount || workflowCase.paymentExpectedAmount, 'paidAmount') : 0),
       expectedCost: MarketingCore.checkedIntegerAdd(hasContract ? addMoney(activeContracts, ['vendorCost', 'expectedCost'], 'expectedCost') : 0, actualIncurredCost(nonActiveFinalContracts), 'expectedCost'), lostReason: text(workflowCase && (workflowCase.lostReason || workflowCase.failureReason || workflowCase.rejectReason || workflowCase.holdReason) || customer && (customer.lostReason || customer.failureReason || customer.rejectReason || customer.holdReason)),
-      quoteSentAt, contractId: reviewContracts.length ? id(reviewContracts.slice().sort((a,b)=>id(a.id).localeCompare(id(b.id)))[0].id) : '',
-      contractReviewAt: text(reviewContracts.map(contract=>contract.reviewAt || contract.updatedAt || contract.createdAt).filter(Boolean).sort()[0]),
+      quoteId: currentQuote ? id(currentQuote.id || currentQuote.storedId) : '', quoteSentAt, lastContactAt:text(directContactAt), respondedAt:text(respondedAt), contractId: currentReviewContract ? id(currentReviewContract.id) : '',
+      contractReviewAt: currentReviewContract ? recordTime(currentReviewContract,['reviewAt','updatedAt','createdAt']) : '',
       contractStatus: reviewContracts.length ? 'needs_review' : activeContracts.length || caseOnlyContractEvidence ? 'active' : cancelledContracts.length ? 'cancelled' : invalidContracts.length ? 'invalid' : '', workStage: [11, 12, 13, 14].some(step => done(workflowCase, step)), aftercare: done(workflowCase, 17)
     };
     if (explicitNew) fact.newContracts = hasContract ? 1 : 0;

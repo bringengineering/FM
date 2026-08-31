@@ -71,6 +71,25 @@ test('real CRM bridge vocabulary drives quote review and lost-reason alerts with
   assert.ok(alerts.some(a=>a.code==='missing_lost_reason'&&a.targetType==='case'&&a.targetId==='case-lost'));
 });
 
+test('latest quote revision binds one ID and time while only post-quote consultation suppresses no-response', () => {
+  const workflowCase={id:'case-revisions',crmCustomerId:'customer-r',createdAt:'2026-08-20T00:00:00Z',quoteFiles:{old:{id:'quote-old',uploadedAt:'2026-08-27T01:00:00Z',amount:5},current:{id:'quote-current',uploadedAt:'2026-08-29T01:00:00Z',amount:10}}};
+  const project=occurredAt=>Bridge.projectFacts({customers:[{id:'customer-r'}],activities:[{id:'consult',customerId:'customer-r',workflowCaseId:'case-revisions',context:'consultation',occurredAt}]},{cases:[workflowCase]})[0];
+  const before=project('2026-08-28T01:00:00Z');
+  assert.equal(before.quoteId,'quote-current'); assert.equal(before.quoteSentAt,'2026-08-29T01:00:00Z'); assert.equal(before.lastContactAt,'2026-08-28T01:00:00Z');
+  assert.ok(Core.buildAlerts({snapshot:{totals:{},filteredFacts:[before],filteredDaily:[]}},now).some(a=>a.code==='quote_no_response_24h'));
+  const after=project('2026-08-30T01:00:00Z');
+  assert.equal(Core.buildAlerts({snapshot:{totals:{},filteredFacts:[after],filteredDaily:[]}},now).some(a=>a.code==='quote_no_response_24h'),false);
+});
+
+test('current contract review binds ID status and timestamp from the same deterministic record', () => {
+  const fact=Bridge.projectFacts({customers:[{id:'customer-c'}],contracts:[
+    {id:'a-old',customerId:'customer-c',workflowCaseId:'case-contracts',status:'계약 준비',updatedAt:'2026-08-20T01:00:00Z'},
+    {id:'z-current',customerId:'customer-c',workflowCaseId:'case-contracts',status:'계약 준비',updatedAt:'2026-08-27T01:00:00Z'}
+  ]},{cases:[{id:'case-contracts',crmCustomerId:'customer-c',createdAt:'2026-08-20T00:00:00Z'}]})[0];
+  assert.equal(fact.contractId,'z-current'); assert.equal(fact.contractReviewAt,'2026-08-27T01:00:00Z'); assert.equal(fact.contractStatus,'needs_review');
+  assert.ok(Core.buildAlerts({snapshot:{totals:{},filteredFacts:[fact],filteredDaily:[]}},now).some(a=>a.code==='contract_review_3d'&&a.targetId==='z-current'));
+});
+
 test('customer-only alert targets never enter the case route', () => {
   const alerts=Core.buildAlerts({snapshot:{totals:{},filteredFacts:[{customerId:'customer-only',validLeads:1,owner:'',occurredAt:'2026-08-31'}],filteredDaily:[]}},now);
   const owner=alerts.find(a=>a.code==='lead_missing_owner'); assert.equal(owner.targetType,'customer'); assert.equal(owner.targetId,'customer-only');
