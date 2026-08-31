@@ -238,6 +238,6 @@ test("loads UMD after core and bridge before app and app integrates marketing wi
   assert.match(app, /snapshot\.filteredFacts/);
   assert.doesNotMatch(app, /renderMarketingWorkspace\(\)[\s\S]{0,160}refreshFacts/);
   assert.match(app, /prepareWorkspaceTransition\(workspace\)[\s\S]*?prepareLoad\(currentAuth\.user/);
-  assert.match(app, /main\.innerHTML = MarketingUI\.renderWorkspace[\s\S]{0,700}marketingController\.load/);
+  assert.match(app, /main\.innerHTML = MarketingUI\.renderWorkspace[\s\S]{0,2400}marketingController\.load/);
   assert.match(app, /function setCurrentAuth[\s\S]*?marketingIdentityKey[\s\S]*?marketingController\.invalidate\("identity-change"/);
 });

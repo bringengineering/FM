@@ -18,6 +18,9 @@
 .marketing-overview-funnel b { display: block; margin-top: 4px; }
 .marketing-attention, .marketing-state, .marketing-customer-list { margin-top: 16px; padding: 20px; border: 1px solid #dbe3ea; border-radius: 14px; background: #fff; }
 .marketing-alerts, .marketing-weekly-report { display:grid; gap:16px; margin-top:16px; padding:20px; border:1px solid #dbe3ea; border-radius:14px; background:#fff; }
+.marketing-review-layer { position:fixed; inset:0; z-index:80; display:grid; place-items:center; padding:20px; background:rgba(19,43,58,.42); }
+.marketing-duplicate-review { width:min(620px,100%); max-height:calc(100vh - 40px); overflow:auto; padding:20px; border-radius:16px; background:#fff; box-shadow:0 24px 70px rgba(20,50,68,.25); }
+.marketing-duplicate-review button { margin:10px 8px 0 0; }
 .marketing-alerts section { display:grid; gap:8px; }
 .marketing-alert { display:grid; width:100%; gap:6px; padding:14px; border:0; border-left:4px solid #73909d; border-radius:10px; background:#f6f9fa; color:inherit; text-align:left; cursor:pointer; }
 .marketing-alert.urgent { border-color:#c94747; } .marketing-alert.warning { border-color:#d88625; }

@@ -376,5 +376,15 @@
     return freeze({ generatedAt:new Date(instant(nowKst)==null?Date.now():instant(nowKst)).toISOString(), period:{ start:snapshot.period&&snapshot.period.start||'-', end:snapshot.period&&snapshot.period.end||'-' }, totals, metrics:{ spend:totals.spend, inquiries:totals.inquiries, validLeads:totals.validLeads, quotes:totals.quotes, contracts:totals.contracts, contractAmount:totals.contractAmount, expectedProfit:snapshot.metrics&&snapshot.metrics.expectedMarketingProfit }, channels, goodChannels:rank.filter(c=>['expand_review','maintain'].includes(c.rating)), goodKeywords:goodKeywords.length?goodKeywords:'데이터 부족', costOnlyItems:channels.filter(c=>Number(c.spend)>0&&Number(c.validLeads||0)===0), topService:topService?{service:topService[0],inquiries:topService[1]}:'-', lostReasons:[...lost].sort((a,b)=>b[1]-a[1]||a[0].localeCompare(b[0])).map(([reason,count])=>({reason,count})), decisionItems, nextWeekSuggestions:suggestions.slice(0,3), sourceUpdatedState:snapshot.sourceUpdatedState||(stale.length?stale.map(a=>`${a.targetId}:${a.occurredAt}`).join(', '):'-') });
   }
 
-  return Object.freeze({ CHANNELS, SERVICES, DATA_STATUSES, INQUIRY_METHODS, INVALID_REASONS, EXPAND_ROAS_PERCENT, MIN_EXPAND_CONTRACTS, NORMALIZE_DAILY_SCOPE, ALERT_CPC_INCREASE_RATIO, ALERT_CPC_MIN_CLICKS, checkedIntegerAdd, checkedIntegerSubtract, normalizeDaily, normalizeManualRecord, duplicateKey, findActiveDuplicate, normalizeMarketingAttribution, safeDivide, safeRate, calculateMetrics, resolvePeriod, buildSnapshot, buildAlerts, buildWeeklyReport });
+  function normalizeMarketingRole(user) {
+    const accessRole = String(user && (user.accessRole || user.role) || "");
+    const marketingRole = String(user && user.marketingRole || "");
+    if (accessRole === "admin") return "admin";
+    if (accessRole !== "member") return "viewer";
+    return marketingRole === "marketing" ? "marketing" : marketingRole === "sales" ? "sales" : "viewer";
+  }
+  function canEditAttribution(user) { return ["admin", "marketing", "sales"].includes(normalizeMarketingRole(user)); }
+  function canEditAdSpend(user) { return ["admin", "marketing"].includes(normalizeMarketingRole(user)); }
+
+  return Object.freeze({ CHANNELS, SERVICES, DATA_STATUSES, INQUIRY_METHODS, INVALID_REASONS, EXPAND_ROAS_PERCENT, MIN_EXPAND_CONTRACTS, NORMALIZE_DAILY_SCOPE, ALERT_CPC_INCREASE_RATIO, ALERT_CPC_MIN_CLICKS, checkedIntegerAdd, checkedIntegerSubtract, normalizeDaily, normalizeManualRecord, duplicateKey, findActiveDuplicate, normalizeMarketingAttribution, normalizeMarketingRole, canEditAttribution, canEditAdSpend, safeDivide, safeRate, calculateMetrics, resolvePeriod, buildSnapshot, buildAlerts, buildWeeklyReport });
 }));

@@ -26,3 +26,14 @@ test('marketing-only member can mutate only daily marketing and narrow attributi
   assert.doesNotThrow(() => Policy.assertChannelAllowed('crm:load', user));
   assert.doesNotThrow(() => Policy.assertChannelAllowed('crm:auth-logout', user));
 });
+
+test('backend mutation policy shares the closed attribution and ad-spend role contract', () => {
+  const admin = { accessRole: 'admin', marketingRole: 'viewer' };
+  const marketing = { accessRole: 'member', marketingRole: 'marketing' };
+  const sales = { accessRole: 'member', marketingRole: 'sales' };
+  const viewer = { accessRole: 'viewer', marketingRole: 'viewer' };
+  for (const user of [admin, marketing]) assert.doesNotThrow(() => Policy.assertChannelAllowed('crm:marketing-commit', user));
+  for (const user of [sales, viewer]) assert.throws(() => Policy.assertChannelAllowed('crm:marketing-commit', user), /forbidden/i);
+  for (const user of [admin, marketing, sales]) assert.doesNotThrow(() => Policy.assertChannelAllowed('crm:marketing-attribution-update', user));
+  assert.throws(() => Policy.assertChannelAllowed('crm:marketing-attribution-update', viewer), /forbidden/i);
+});

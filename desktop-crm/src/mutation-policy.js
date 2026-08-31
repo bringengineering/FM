@@ -1,4 +1,5 @@
 'use strict';
+const MarketingCore = require('./marketing-core');
 
 const READ_OR_CONTROL = [
   'crm:auth-state','crm:ai-assist','crm:auth-login','crm:auth-google-login','crm:field-reauthenticate-google','crm:auth-change-password','crm:auth-logout',
@@ -26,6 +27,12 @@ function assertRegistered(channel) {
 }
 function assertChannelAllowed(channel, user) {
   assertRegistered(channel);
+  if (['crm:marketing-commit','crm:marketing-archive'].includes(channel) && !MarketingCore.canEditAdSpend(user)) {
+    const error = new Error('marketing ad spend forbidden'); error.code = 'MARKETING_AD_SPEND_FORBIDDEN'; throw error;
+  }
+  if (channel === 'crm:marketing-attribution-update' && !MarketingCore.canEditAttribution(user)) {
+    const error = new Error('marketing attribution forbidden'); error.code = 'MARKETING_ATTRIBUTION_FORBIDDEN'; throw error;
+  }
   if (classification(channel) === 'mutation' && user && (user.accessRole || user.role) === 'member' && user.marketingRole === 'marketing' && !MARKETING_MUTATIONS.has(channel)) {
     const error = new Error('marketing-only session cannot perform this mutation'); error.code = 'MARKETING_ONLY_FORBIDDEN'; throw error;
   }

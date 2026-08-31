@@ -20,6 +20,23 @@ test('advertising writes follow the exact admin marketing sales viewer matrix', 
   assert.deepEqual(UI.roleSubmissionPolicy({ accessRole: 'viewer', marketingRole: 'viewer' }, 'marketingEntryForm'), { allowed: false, reason: 'raw-marketing-forbidden' });
 });
 
+test('shared core role policy closes every fundamental and marketing role combination', () => {
+  const cases = [
+    [{ accessRole: 'admin', marketingRole: 'viewer' }, 'admin', true, true],
+    [{ accessRole: 'member', marketingRole: 'marketing' }, 'marketing', true, true],
+    [{ accessRole: 'member', marketingRole: 'sales' }, 'sales', true, false],
+    [{ accessRole: 'member', marketingRole: 'viewer' }, 'viewer', false, false],
+    [{ accessRole: 'viewer', marketingRole: 'marketing' }, 'viewer', false, false],
+    [{ accessRole: 'unknown', marketingRole: 'marketing' }, 'viewer', false, false],
+  ];
+  for (const [user, role, attribution, spend] of cases) {
+    assert.equal(Core.normalizeMarketingRole(user), role);
+    assert.equal(Core.canEditAttribution(user), attribution);
+    assert.equal(Core.canEditAdSpend(user), spend);
+  }
+  assert.equal(UI.crmEditPermissions({ accessRole: 'member', marketingRole: 'sales' }).attribution, true);
+});
+
 test('marketing visible text masks contacts credentials and private fields', () => {
   const unsafe = '010-1234-5678 owner@example.com idToken=abc refreshToken=def privateNote=문앞 비밀번호 1234';
   const safe = UI.sanitizeVisibleText(unsafe);
@@ -37,10 +54,33 @@ test('marketing entries never expose operator ids audit receipt or contact field
   assert.doesNotMatch(rendered, /operator_secret|operator_archive|010-9999-8888|secret@example\.com|private|receipt-secret|audit-secret/);
 });
 
+test('viewer facts partially mask phone-shaped visible values and sanitize all fields', () => {
+  const rendered = UI.renderCustomerFacts([{ caseId: 'c1', customerName: '010-1234-5678', owner: 'owner@example.com', keyword: 'privateNote=door-code' }], { user: { accessRole: 'viewer', marketingRole: 'viewer' } });
+  assert.match(rendered, /010-\*\*\*\*-5678/);
+  assert.doesNotMatch(rendered, /010-1234-5678|owner@example\.com|door-code/);
+});
+
+test('sensitive owner keyword and campaign values never enter filter DOM attributes', () => {
+  const options = UI.buildFilterOptions([{ owner: 'owner@example.com', keyword: '010-1234-5678', campaign: 'privateNote=secret' }]);
+  const rendered = UI.renderWorkspace({ view: 'marketingOverview', snapshot: emptySnapshot, filters: UI.defaultFilters(), filterOptions: options });
+  assert.doesNotMatch(rendered, /owner@example\.com|010-1234-5678|privateNote|secret/);
+});
+
+test('identity changes reset every filter and remove stale values before rendering', async () => {
+  const controller = UI.createController({ core: Core, bridge: { projectFacts: store => store.facts || [] }, readRaw: async () => ({ daily: [{ date: '2026-08-30', channel: 'naver_blog', owner: '이전담당', campaign: '이전캠페인', keyword: '이전키워드' }] }) });
+  await controller.load({ uid: 'A', accessRole: 'admin' }, {});
+  controller.setFilter('owner', '이전담당'); controller.setFilter('campaign', '이전캠페인'); controller.setFilter('keyword', '이전키워드');
+  controller.invalidate('identity-change', { uid: 'B', accessRole: 'admin' });
+  assert.deepEqual(controller.filters, UI.defaultFilters());
+  const html = UI.renderWorkspace({ view: 'marketingOverview', snapshot: null, filters: controller.filters, filterOptions: controller.state.filterOptions });
+  assert.doesNotMatch(html, /이전담당|이전캠페인|이전키워드/);
+});
+
 test('marketing navigation alerts tables and duplicate dialog have accessible semantics', () => {
   const workspace = UI.renderWorkspace({ view: 'marketingChannels', snapshot: emptySnapshot, filters: UI.defaultFilters() });
   assert.match(workspace, /role="tablist"/);
-  assert.match(workspace, /role="tab"[^>]+aria-selected="true"[^>]+tabindex="0"/);
+  assert.match(workspace, /role="tab"[^>]+aria-selected="true"[^>]+tabindex="0"[^>]+aria-controls="marketingPanel-marketingChannels"/);
+  assert.match(workspace, /role="tabpanel"[^>]+id="marketingPanel-marketingChannels"[^>]+aria-labelledby="marketingTab-marketingChannels"/);
   assert.match(workspace, /<caption>채널별 마케팅 성과<\/caption>/);
   assert.match(workspace, /<th scope="col">채널<\/th>/);
 
@@ -54,6 +94,31 @@ test('marketing navigation alerts tables and duplicate dialog have accessible se
   assert.match(dialog, /data-marketing-review-cancel[^>]+autofocus/);
   assert.match(app, /marketingReviewCancel[\s\S]*?event\.key === "Escape"/);
   assert.match(app, /marketingTab[\s\S]*?\["ArrowRight", "ArrowLeft", "Home", "End"\]/);
+  assert.match(app, /pendingMarketingTabFocus[\s\S]*?querySelector[\s\S]*?\.focus\(\)/);
+  assert.match(app, /marketingReviewDialog[\s\S]*?event\.key === "Tab"/);
+  assert.match(app, /marketingReviewReturnFocus[\s\S]*?\.focus\(\)/);
+});
+
+test('weekly table has semantic headers and a horizontally scrollable wrapper', () => {
+  const report = Core.buildWeeklyReport(emptySnapshot, [], new Date('2026-08-31T00:00:00Z'));
+  const html = UI.renderWeekly(report);
+  assert.match(html, /class="marketing-table-wrap"[^>]+tabindex="0"/);
+  assert.match(html, /<caption>채널별 주간 성과<\/caption>/);
+  assert.match(html, /<thead><tr><th scope="col">채널<\/th>/);
+});
+
+test('runtime tab navigation and dialog focus trap move focus on live controls', () => {
+  assert.equal(UI.nextMarketingTab('marketingOverview', 'ArrowRight'), 'marketingChannels');
+  assert.equal(UI.nextMarketingTab('marketingOverview', 'ArrowLeft'), 'marketingWeekly');
+  assert.equal(UI.nextMarketingTab('marketingFunnel', 'Home'), 'marketingOverview');
+  const first = { focused: 0, focus() { this.focused += 1; } };
+  const last = { focused: 0, focus() { this.focused += 1; } };
+  const dialog = { querySelectorAll() { return [first, last]; } };
+  let prevented = 0;
+  assert.equal(UI.trapMarketingDialogFocus(dialog, { key: 'Tab', shiftKey: false, preventDefault() { prevented += 1; } }, last), true);
+  assert.equal(first.focused, 1); assert.equal(prevented, 1);
+  assert.equal(UI.trapMarketingDialogFocus(dialog, { key: 'Tab', shiftKey: true, preventDefault() { prevented += 1; } }, first), true);
+  assert.equal(last.focused, 1);
 });
 
 test('marketing status is announced locally and unavailable never claims zero', () => {

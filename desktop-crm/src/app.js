@@ -56,6 +56,8 @@
   let marketingLoaded = false;
   let marketingEntryDraft = null;
   let pendingMarketingEvidenceTarget = "";
+  let pendingMarketingTabFocus = "";
+  let marketingReviewReturnFocus = "";
   let lastRenderedView = null;
   let selectedCustomerId = "";
   let selectedCustomerHubId = "";
@@ -1391,11 +1393,27 @@
       return Object.assign({}, fact, { customerName: customer.name || customer.company || "", buildingName: customer.buildingName || "", lastContactAt: customer.lastContactAt || "", nextContactAt: customer.nextContactAt || "" });
     });
     const user = currentAuth.user || {};
-    const canWriteMarketing = user.accessRole === "admin" || user.accessRole === "member" && user.marketingRole === "marketing";
+    const canWriteMarketing = MarketingCore.canEditAdSpend(user);
     const entry = Object.assign({ canWrite: canWriteMarketing, draft: marketingEntryDraft }, marketingEntryController.state);
     const derived = marketingController.state.snapshot ? marketingController.derive(facts) : { alerts: [], report: null };
     const alerts = derived.alerts, report = derived.report;
-    main.innerHTML = MarketingUI.renderWorkspace({ view: currentMarketingView, filters: marketingController.filters, filterOptions: marketingController.state.filterOptions, snapshot: marketingController.state.snapshot, facts, alerts, report, localError: marketingController.state.localError, unavailable: marketingController.state.unavailable, entry });
+    main.innerHTML = MarketingUI.renderWorkspace({ view: currentMarketingView, user, filters: marketingController.filters, filterOptions: marketingController.state.filterOptions, snapshot: marketingController.state.snapshot, facts, alerts, report, localError: marketingController.state.localError, unavailable: marketingController.state.unavailable, entry });
+    const marketingReviewDialog = main.querySelector("[data-marketing-review-dialog]");
+    if (marketingReviewDialog) {
+      [...main.children].filter(child => !child.matches("[role=tabpanel]")).forEach(child => { child.inert = true; });
+      const panel = main.querySelector("[role=tabpanel]");
+      if (panel) [...panel.querySelectorAll(":scope > *, .marketing-input > *")].filter(child => !child.matches(".marketing-review-layer") && !child.closest(".marketing-review-layer") && !child.querySelector?.("[data-marketing-review-dialog]")).forEach(child => { child.inert = true; });
+      setTimeout(() => marketingReviewDialog.querySelector("[autofocus], button")?.focus(), 0);
+    }
+    if (pendingMarketingTabFocus) {
+      const liveTab = main.querySelector(`[data-marketing-nav="${CSS.escape(pendingMarketingTabFocus)}"]`);
+      pendingMarketingTabFocus = "";
+      setTimeout(() => liveTab?.focus(), 0);
+    } else if (marketingReviewReturnFocus && !marketingReviewDialog) {
+      const returnControl = main.querySelector(marketingReviewReturnFocus);
+      marketingReviewReturnFocus = "";
+      setTimeout(() => returnControl?.focus(), 0);
+    }
     if (!marketingLoaded) {
       marketingLoaded = true;
       marketingController.load(currentAuth.user || {}, store, operations.cases || []).then(() => { if (currentWorkspace === "marketing") renderMarketingWorkspace(); });
@@ -4654,8 +4672,8 @@
     if (marketingCopy) { const row = marketingEntryController.state.active.find(item => item.id === marketingCopy.dataset.marketingCopy); marketingEntryDraft = marketingEntryController.copy(row || {}, Core.dayKey()); renderMarketingWorkspace(); return; }
     const marketingArchive = currentWorkspace === "marketing" && event.target.closest("[data-marketing-archive]");
     if (marketingArchive) { const row = marketingEntryController.state.active.find(item => item.id === marketingArchive.dataset.marketingArchive); if (row) await marketingEntryController.archive(row); renderMarketingWorkspace(); return; }
-    if (currentWorkspace === "marketing" && event.target.closest("[data-marketing-overwrite]")) { const result = await marketingEntryController.confirmOverwrite(); if (result.status === "saved") { marketingEntryDraft = null; await marketingController.load(currentAuth.user || {}, store, operations.cases || []); } renderMarketingWorkspace(); return; }
-    if (currentWorkspace === "marketing" && event.target.closest("[data-marketing-review-cancel]")) { marketingEntryController.state.review = null; renderMarketingWorkspace(); return; }
+    if (currentWorkspace === "marketing" && event.target.closest("[data-marketing-overwrite]")) { marketingReviewReturnFocus = '[data-marketing-add]'; const result = await marketingEntryController.confirmOverwrite(); if (result.status === "saved") { marketingEntryDraft = null; await marketingController.load(currentAuth.user || {}, store, operations.cases || []); } renderMarketingWorkspace(); return; }
+    if (currentWorkspace === "marketing" && event.target.closest("[data-marketing-review-cancel]")) { marketingReviewReturnFocus = '[data-marketing-entry-form] button[type="submit"]'; marketingEntryController.state.review = null; renderMarketingWorkspace(); return; }
     if (currentWorkspace === "marketing" && event.target.closest("[data-marketing-retry]")) { await marketingEntryController.refresh(); renderMarketingWorkspace(); return; }
     const marketingFact = event.target.closest("[data-marketing-case-id], [data-marketing-customer-id]");
     if (marketingFact && currentWorkspace === "marketing") {
@@ -7272,8 +7290,14 @@
   drawer.addEventListener("click", event => { if (event.target === drawer) closeDrawer(); });
 document.addEventListener("keydown", event => {
   const marketingReviewCancel = currentWorkspace === "marketing" && main.querySelector("[data-marketing-review-cancel]");
+  const marketingReviewDialog = currentWorkspace === "marketing" && main.querySelector("[data-marketing-review-dialog]");
+  if (marketingReviewDialog && event.key === "Tab") {
+    MarketingUI.trapMarketingDialogFocus(marketingReviewDialog, event, document.activeElement);
+    return;
+  }
   if (marketingReviewCancel && event.key === "Escape") {
     event.preventDefault();
+    marketingReviewReturnFocus = '[data-marketing-entry-form] button[type="submit"]';
     marketingEntryController.state.review = null;
     renderMarketingWorkspace();
     return;
@@ -7281,11 +7305,8 @@ document.addEventListener("keydown", event => {
   const marketingTab = currentWorkspace === "marketing" && event.target.closest?.("[data-marketing-nav]");
   if (marketingTab && ["ArrowRight", "ArrowLeft", "Home", "End"].includes(event.key)) {
     event.preventDefault();
-    const tabs = [...main.querySelectorAll("[data-marketing-nav]")];
-    const index = tabs.indexOf(marketingTab);
-    const nextIndex = event.key === "Home" ? 0 : event.key === "End" ? tabs.length - 1 : event.key === "ArrowRight" ? (index + 1) % tabs.length : (index - 1 + tabs.length) % tabs.length;
-    tabs[nextIndex]?.focus();
-    tabs[nextIndex]?.click();
+    pendingMarketingTabFocus = MarketingUI.nextMarketingTab(marketingTab.dataset.marketingNav, event.key);
+    main.querySelector(`[data-marketing-nav="${CSS.escape(pendingMarketingTabFocus)}"]`)?.click();
     return;
   }
   if (confirmationLayer.classList.contains("open")) {
