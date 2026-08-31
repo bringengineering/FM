@@ -3156,6 +3156,7 @@ describe.runIf(databaseEmulatorAvailable)("marketing database rules", () => {
   it("limits marketing-only CRM writes to exact attribution children and marketing daily", async () => {
     await environment.withSecurityRulesDisabled(async context => {
       await set(ref(context.database(), "cases/case_marketing"), { id: "case_marketing", caseParty: "브링", title: "keep" });
+      await set(ref(context.database(), "crmCompany/data/customers/customer_sales"), { id: "customer_sales", name: "keep" });
     });
     const database = environment.authenticatedContext("crm-marketing", crmClaims("marketing@bring.test")).database();
     await assertFails(update(ref(database, "crmCompany/data"), { updatedAt: NOW, "tasks/forged": { id: "forged" } }));
@@ -3168,7 +3169,9 @@ describe.runIf(databaseEmulatorAvailable)("marketing database rules", () => {
     await assertFails(update(ref(database, "cases/case_marketing"), { title: "forged", marketingUpdatedBy: "crm-marketing" }));
     const admin = environment.authenticatedContext("crm-admin", crmClaims("admin@bring.test")).database();
     await assertSucceeds(set(ref(admin, "cases/case_marketing/marketing"), { ...attributionRecord("crm-admin", 2), keyword: "admin" }));
-    for (const [uid, email] of [["crm-marketing-disabled", "marketing-disabled@bring.test"], ["crm-marketing-password-change", "marketing-password@bring.test"], ["crm-viewer", "viewer@bring.test"], ["crm-sales", "sales@bring.test"]] as const) {
+    const sales = environment.authenticatedContext("crm-sales", crmClaims("sales@bring.test")).database();
+    await assertSucceeds(set(ref(sales, "crmCompany/data/customers/customer_sales/marketing"), attributionRecord("crm-sales")));
+    for (const [uid, email] of [["crm-marketing-disabled", "marketing-disabled@bring.test"], ["crm-marketing-password-change", "marketing-password@bring.test"], ["crm-viewer", "viewer@bring.test"]] as const) {
       await assertFails(set(ref(environment.authenticatedContext(uid, crmClaims(email)).database(), "crmCompany/data/customers/customer_1/marketing"), attributionRecord(uid)));
     }
     await assertFails(set(ref(environment.authenticatedContext("crm-marketing", crmClaims("wrong@bring.test")).database(), "crmCompany/data/customers/customer_1/marketing"), attributionRecord("crm-marketing")));

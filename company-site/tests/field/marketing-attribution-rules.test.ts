@@ -34,8 +34,8 @@ async function rest(database: any, path: string, options: { method?: string; eta
 
 describe("marketing attribution exact-child rules", () => {
   beforeAll(async () => { environment = await initializeTestEnvironment({ projectId: PROJECT_ID, database: { rules: await readFile(resolve(process.cwd(), "../database.rules.json"), "utf8"), host: HOST.split(":")[0], port: Number(HOST.split(":")[1]) } }); });
-  beforeEach(async () => { await environment.clearDatabase(); await environment.withSecurityRulesDisabled(async context => set(ref(context.database()), { crmCompany: { access, teamProfiles: { operator: { active: true } }, data: { customers: { customer1: { id: "customer1", name: "keep" } } } }, cases: { case1: { id: "case1", caseParty: "브링", title: "keep" } } })); });
-  afterAll(async () => environment.cleanup());
+  beforeEach(async () => { await environment.clearDatabase(); await environment.withSecurityRulesDisabled(async context => set(ref(context.database()), { crmCompany: { access, teamProfiles: { operator: { active: true } }, data: { customers: { customer1: { id: "customer1", name: "keep" }, customer2: { id: "customer2", name: "sales keep" } } } }, cases: { case1: { id: "case1", caseParty: "브링", title: "keep" } } })); });
+  afterAll(async () => { if (environment) await environment.cleanup(); });
 
   it("returns 412 for stale exact-child ETag and succeeds only after reviewed retry", async () => {
     const a = environment.authenticatedContext("marketingA", claims("a@test")).database();
@@ -49,13 +49,26 @@ describe("marketing attribution exact-child rules", () => {
     expect((await rest(a, "cases/case1/marketing")).value.keyword).toBe("reviewed");
   });
 
-  it("allows admin and active marketing exact child only while denying other identities and siblings", async () => {
+  it("allows admin, sales, and active marketing exact child only while denying other identities and siblings", async () => {
     const marketing = environment.authenticatedContext("marketingA", claims("a@test")).database();
     await assertSucceeds(set(ref(marketing, "crmCompany/data/customers/customer1/marketing"), record("marketingA", 1, "valid")));
     await assertFails(update(ref(marketing, "crmCompany/data/customers/customer1"), { name: "forged", marketingUpdatedBy: "marketingA" }));
     const admin = environment.authenticatedContext("admin", claims("admin@test")).database();
     await assertSucceeds(set(ref(admin, "cases/case1/marketing"), record("admin", 1, "admin")));
-    for (const [uid, email] of [["disabled", "disabled@test"], ["password", "password@test"], ["viewer", "viewer@test"], ["sales", "sales@test"]]) await assertFails(set(ref(environment.authenticatedContext(uid, claims(email)).database(), "crmCompany/data/customers/customer1/marketing"), record(uid, 1, "denied")));
+    const sales = environment.authenticatedContext("sales", claims("sales@test")).database();
+    await assertSucceeds(set(ref(sales, "crmCompany/data/customers/customer2/marketing"), record("sales", 1, "sales")));
+    await assertFails(set(ref(sales, "crmCompany/marketing/daily/forged"), { id: "forged" }));
+    for (const [uid, email] of [["disabled", "disabled@test"], ["password", "password@test"], ["viewer", "viewer@test"]]) await assertFails(set(ref(environment.authenticatedContext(uid, claims(email)).database(), "crmCompany/data/customers/customer1/marketing"), record(uid, 1, "denied")));
     await assertFails(set(ref(environment.authenticatedContext("marketingA", claims("wrong@test")).database(), "crmCompany/data/customers/customer1/marketing"), record("marketingA", 2, "wrong")));
+  });
+
+  it("upgrades one legacy attribution without metadata to version one then requires exact increments", async () => {
+    await environment.withSecurityRulesDisabled(async context => set(ref(context.database(), "cases/case1/marketing"), { keyword: "legacy" }));
+    const marketing = environment.authenticatedContext("marketingA", claims("a@test")).database();
+    const legacy = await rest(marketing, "cases/case1/marketing");
+    expect((await rest(marketing, "cases/case1/marketing", { method: "PUT", etag: legacy.etag, body: record("marketingA", 1, "upgraded") })).status).toBe(200);
+    const versionOne = await rest(marketing, "cases/case1/marketing");
+    await assertFails(set(ref(marketing, "cases/case1/marketing"), record("marketingA", 1, "invalid-repeat")));
+    expect((await rest(marketing, "cases/case1/marketing", { method: "PUT", etag: versionOne.etag, body: record("marketingA", 2, "version-two") })).status).toBe(200);
   });
 });

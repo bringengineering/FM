@@ -1284,10 +1284,21 @@ class FirebaseRemoteClient {
     if (!["admin", "member", "viewer"].includes(role)) {
       throw createError("계정 권한이 올바르게 설정되지 않았습니다. 관리자에게 문의해 주세요.", "ACCESS_DENIED");
     }
+    const operatorId = String(access.operatorId || access.profileId || "");
+    if (!/^[A-Za-z0-9_-]{1,120}$/.test(operatorId) || ["__proto__", "prototype", "constructor"].includes(operatorId)) throw createError("작업자 권한 정보를 확인할 수 없습니다.", "ACCESS_DENIED");
+    let profile;
+    if (idTokenOverride) {
+      const profileLocation = resolveDatabaseLocation(`teamProfiles/${operatorId}`, this.databaseRoot);
+      const profileUrl = `${this.firebase.databaseUrl}/${profileLocation}.json?auth=${encodeURIComponent(idTokenOverride)}`;
+      profile = await this.requestJson(profileUrl, { method: "GET", headers: { "Content-Type": "application/json" } }, "DATABASE_ERROR");
+    } else profile = await this.dbRequest(`teamProfiles/${operatorId}`, { method: "GET" }, true);
+    if (!this.sessionContextActive(currentContext)) throw createError("로그인 세션이 변경되었습니다.", "SESSION_CHANGED");
+    if (!profile || profile.active !== true) throw createError("활성 작업자 프로필을 확인할 수 없습니다.", "ACCESS_DENIED");
     sessionRef.role = role;
     sessionRef.marketingRole = ["marketing", "sales", "viewer"].includes(String(access.marketingRole || "")) ? String(access.marketingRole) : "viewer";
     sessionRef.officeAdmin = access.officeAdmin === true;
     sessionRef.mustChangePassword = access.mustChangePassword === true;
+    sessionRef.operatorId = operatorId;
     return access;
   }
 

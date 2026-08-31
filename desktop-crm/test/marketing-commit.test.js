@@ -58,7 +58,9 @@ test('CRM startup rejects obsolete top-level marketing and sales roles while leg
   }
   const legacy = new FirebaseRemoteClient({ Core: {}, fs: {}, safeStorage: {}, shell: {}, sessionFile: '', pendingFile: '' });
   legacy.session = { uid: 'uid_member', email: 'member@example.com' };
-  legacy.dbRequest = async () => ({ enabled: true, email: 'member@example.com', role: 'member' });
+  legacy.dbRequest = async location => location === 'teamProfiles/operator_member'
+    ? { active: true }
+    : { enabled: true, email: 'member@example.com', role: 'member', operatorId: 'operator_member' };
   assert.equal((await legacy.verifyAccess()).role, 'member');
 });
 

@@ -137,3 +137,31 @@ test('missing child ETag fails closed before PUT', async () => {
   await assert.rejects(() => FirebaseRemoteClient.prototype.updateMarketingAttribution.call(fake, { kind: 'customer', id: 'c', marketing: {} }), error => error && error.code === 'MARKETING_ATTRIBUTION_ETAG_MISSING');
   assert.equal(writes, 0);
 });
+
+test('fresh verifyAccess composes the active operator used by attribution PUT', async () => {
+  const calls = [];
+  const fake = { Core, firebase: { databaseUrl: 'https://db.test' }, databaseRoot: 'crmCompany', sessionGeneration: 1,
+    session: { uid: 'sales-a', email: 'sales@test', idToken: 'fresh', accessRole: 'member', role: 'member', marketingRole: 'sales' },
+    captureSessionContext() { return { sessionRef: this.session, uid: this.session.uid, generation: this.sessionGeneration }; }, sessionContextActive(context) { return this.session === context.sessionRef && this.sessionGeneration === context.generation; },
+    requestJson: async url => url.includes('teamProfiles/operator_sales') ? { active: true } : { enabled: true, email: 'sales@test', role: 'member', marketingRole: 'sales', operatorId: 'operator_sales' },
+    requireMutationPermission() { return this.session; }, ensureIdToken: async () => 'fresh', captureSessionGuard() { return { sessionRef: this.session, uid: this.session.uid, generation: this.sessionGeneration }; }, sessionGuardActive() { return true; },
+    dbRequestWithCapturedAuth: async (path, request) => { calls.push({ path, request }); return request.method === 'GET' ? { value: null, etag: 'etag-1' } : null; }
+  };
+  await FirebaseRemoteClient.prototype.verifyAccess.call(fake, fake.captureSessionContext(), 'fresh');
+  await FirebaseRemoteClient.prototype.updateMarketingAttribution.call(fake, { kind: 'customer', id: 'c1', marketing: { keyword: 'sales' } });
+  assert.equal(fake.session.operatorId, 'operator_sales');
+  assert.equal(calls[1].request.body._updatedByOperatorId, 'operator_sales');
+  assert.equal(calls[1].request.body._updatedByAuthUid, 'sales-a');
+});
+
+test('verifyAccess rejects missing or inactive operator before attribution PUT', async () => {
+  for (const access of [{ enabled: true, email: 'm@test', role: 'member', marketingRole: 'marketing' }, { enabled: true, email: 'm@test', role: 'member', marketingRole: 'marketing', operatorId: 'operator_inactive' }]) {
+    let writes = 0;
+    const fake = { firebase: { databaseUrl: 'https://db.test' }, databaseRoot: 'crmCompany', sessionGeneration: 1, session: { uid: 'm', email: 'm@test' },
+      captureSessionContext() { return { sessionRef: this.session, uid: 'm', generation: 1 }; }, sessionContextActive() { return true; },
+      requestJson: async url => url.includes('teamProfiles') ? { active: false } : access, dbRequestWithCapturedAuth: async () => { writes++; }
+    };
+    await assert.rejects(() => FirebaseRemoteClient.prototype.verifyAccess.call(fake, fake.captureSessionContext(), 'fresh'), error => error && error.code === 'ACCESS_DENIED');
+    assert.equal(writes, 0);
+  }
+});

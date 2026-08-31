@@ -185,7 +185,9 @@ test("verified remote current-user projection drives the raw read gate without t
   async function projected(access) {
     const client = new FirebaseRemoteClient({ Core: {}, fs: {}, safeStorage: {}, shell: {}, sessionFile: "", pendingFile: "" });
     client.session = { uid: `uid_${access.marketingRole}`, email: `${access.marketingRole}@example.com`, idToken: "private-token", refreshToken: "private-refresh" };
-    client.dbRequest = async () => ({ enabled: true, email: client.session.email, role: access.role, marketingRole: access.marketingRole });
+    client.dbRequest = async location => location === `teamProfiles/operator_${access.marketingRole}`
+      ? { active: true }
+      : { enabled: true, email: client.session.email, role: access.role, marketingRole: access.marketingRole, operatorId: `operator_${access.marketingRole}` };
     await client.verifyAccess();
     return client.authState().user;
   }
