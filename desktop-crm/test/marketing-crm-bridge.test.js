@@ -80,7 +80,7 @@ test('real-shaped quote and confirmed payment evidence keep quote and actual pai
   const quoteFact = Bridge.projectFacts({ customers: [{ id: 'c' }] }, { cases: [{ id: 'q', crmCustomerId: 'c', createdAt: '2026-08-01T00:00:00Z', status: { c6: 'done' }, quoteFiles: {
     bring: { bringQuoteTotalAmount: 120 }, confirmed: { confirmedTotalAmount: 80 }, legacy: { totalAmount: 50 }
   } }] })[0];
-  assert.equal(quoteFact.quoteAmount, 250);
+  assert.equal(quoteFact.quoteAmount, 0);
   assert.equal(quoteFact.paidAmount, 0);
   const pending = Bridge.projectFacts({ customers: [{ id: 'c' }] }, { cases: [{ id: 'p', crmCustomerId: 'c', createdAt: '2026-08-01T00:00:00Z', status: { c15: 'done' }, paymentExpectedAmount: 999 }] })[0];
   assert.equal(pending.payments, 1);
@@ -91,6 +91,15 @@ test('real-shaped quote and confirmed payment evidence keep quote and actual pai
   const settled = Bridge.projectFacts({ customers: [{ id: 'c' }] }, { cases: [{ id: 'settled', crmCustomerId: 'c', createdAt: '2026-08-01T00:00:00Z', settlement: { status: 'confirmed', amount: 321, settledAt: '2026-08-03' } }] })[0];
   assert.equal(settled.payments, 1);
   assert.equal(settled.paidAmount, 0);
+});
+
+test('competing quote alternatives require one authoritative choice', () => {
+  const project = extra => Bridge.projectFacts({ customers: [{ id: 'c' }] }, { cases: [{ id: 'q', crmCustomerId: 'c', createdAt: '2026-08-01T00:00:00Z', quoteFiles: { a: { id: 'a', confirmedTotalAmount: 300 }, b: { id: 'b', bringQuoteTotalAmount: 200 } }, ...extra }] })[0];
+  assert.equal(project({}).quoteAmount, 0);
+  assert.equal(project({ recommendation: { quoteId: 'b' } }).quoteAmount, 200);
+  assert.equal(project({ confirmedTotalAmount: 500 }).quoteAmount, 500);
+  assert.equal(project({ bringQuoteTotalAmount: 450 }).quoteAmount, 450);
+  assert.equal(project({ quoteAmount: 400 }).quoteAmount, 400);
 });
 
 test('pre-active contracts have zero economics while active contracts contribute', () => {
@@ -152,9 +161,36 @@ test('pure case marketing normalization is bounded and legacy-safe', () => {
   assert.equal(Object.hasOwn(normalized.marketing, 'extra'), false);
 });
 
+test('constructor-shaped case and customer-only fallback project current service and payment fields', () => {
+  const caseCustomer = Core.createCustomer({ id: 'case-customer', interestServices: ['시설 점검'], createdAt: '2026-08-01T00:00:00Z' });
+  const workflowCase = Core.buildWorkflowCase(caseCustomer, null, '2026-08-01T00:00:00Z');
+  workflowCase.id = 'case-current';
+  const fallbackCustomer = Core.createCustomer({ id: 'fallback-customer', createdAt: '2026-08-02T00:00:00Z' });
+  const paidContract = Core.createContract({ id: 'paid-current', customerId: fallbackCustomer.id, status: '진행 중', billingCycle: '건별', amount: 700, vendorCost: 200, collectionStatus: '입금 완료', vendorPaymentStatus: '지급 완료', workDate: '2026-08-02', paymentDueDate: '2026-08-02' });
+  const facts = Bridge.projectFacts({ customers: [caseCustomer, fallbackCustomer], activities: [{ id: 'legacy-consultation', customerId: fallbackCustomer.id, context: 'consultation' }], contracts: [paidContract] }, { cases: [workflowCase] });
+  const caseFact = facts.find(x => x.caseId === 'case-current');
+  const fallback = facts.find(x => x.sourceType === 'customer_fallback');
+  assert.equal(caseFact.service, 'inspection');
+  assert.equal(fallback.inquiries, 1);
+  assert.equal(fallback.consultations, 1);
+  assert.equal(fallback.contracts, 1);
+  assert.equal(fallback.payments, 1);
+  assert.equal(fallback.contractAmount, 700);
+  assert.equal(fallback.paidAmount, 700);
+  assert.equal(fallback.expectedCost, 200);
+  assert.deepEqual(fallback.contractIds, ['paid-current']);
+});
+
+test('workflow issue types use an exact closed service map', () => {
+  const fact = issueType => Bridge.projectFacts({ customers: [{ id: 'c' }] }, { cases: [{ id: 'k', crmCustomerId: 'c', issueType, createdAt: '2026-08-01T00:00:00Z' }] })[0];
+  assert.equal(fact('누수').service, 'inspection');
+  assert.equal(fact('청소').service, 'other');
+  assert.equal(fact('누수 긴급 상담').service, 'needs_review');
+});
+
 test('17-stage boundaries map once without altering source stages', () => {
   const status = Object.fromEntries(Array.from({ length: 17 }, (_, i) => [`c${i + 1}`, 'done']));
-  const source = { id: 'case-17', crmCustomerId: 'c1', receivedAt: '2026-08-01T00:00:00Z', status, quoteFiles: { q1: { amount: 10 }, q2: { amount: 20 } }, paymentStatus: 'confirmed', paymentExpectedAmount: 30, settlement: { amount: 12 } };
+  const source = { id: 'case-17', crmCustomerId: 'c1', receivedAt: '2026-08-01T00:00:00Z', status, quoteFiles: { q1: { amount: 10 }, q2: { amount: 20 } }, recommendation: { quoteId: 'q2' }, paymentStatus: 'confirmed', paymentExpectedAmount: 30, settlement: { amount: 12 } };
   const before = structuredClone(source);
   const fact = Bridge.projectFacts({ customers: [{ id: 'c1', marketing: { validLead: true } }], activities: [{ id: 'a', customerId: 'c1', workflowCaseId: 'case-17', context: 'consultation' }], contracts: [{ id: 'ct1', customerId: 'c1', workflowCaseId: 'case-17', status: '진행 중', amount: 30, contractKind: 'new' }, { id: 'ct2', customerId: 'c1', workflowCaseId: 'case-17', status: '진행 중', amount: 40 }] }, { cases: [source] })[0];
   assert.deepEqual(source, before);
@@ -162,7 +198,7 @@ test('17-stage boundaries map once without altering source stages', () => {
   assert.equal(fact.newContracts, 1);
   assert.equal(fact.workStage, true);
   assert.equal(fact.aftercare, true);
-  assert.equal(fact.quoteAmount, 30);
+  assert.equal(fact.quoteAmount, 20);
   assert.equal(fact.contractAmount, 70);
 });
 
