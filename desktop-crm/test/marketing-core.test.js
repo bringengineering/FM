@@ -227,3 +227,33 @@ test('snapshot and channel CPA use effective new contracts with explicit zero pr
   assert.equal(repeatOnly.metrics.cpa, null);
   assert.equal(repeatOnly.channels.naver_blog.metrics.cpa, null);
 });
+
+test('checked aggregate arithmetic rejects unsafe totals and profit while allowing large safe sums', () => {
+  const date = '2026-08-31';
+  const period = { type: 'custom', start: date, end: date };
+  assert.throws(() => buildSnapshot({ daily: [
+    { date, channel: 'naver_blog', spend: Number.MAX_SAFE_INTEGER },
+    { date, channel: 'naver_blog', spend: Number.MAX_SAFE_INTEGER }
+  ], facts: [] }, { period }), /합계|범위|안전/i);
+
+  assert.throws(() => core.calculateMetrics({
+    contractAmount: 0, expectedCost: Number.MAX_SAFE_INTEGER, spend: Number.MAX_SAFE_INTEGER
+  }), /합계|범위|안전/i);
+
+  const half = Math.floor(Number.MAX_SAFE_INTEGER / 2);
+  const safe = buildSnapshot({ daily: [
+    { date, channel: 'naver_blog', spend: half },
+    { date, channel: 'naver_blog', spend: half }
+  ], facts: [] }, { period });
+  assert.equal(safe.totals.spend, half * 2);
+  assert.equal(safe.channels.naver_blog.spend, half * 2);
+});
+
+test('normalizeDaily advertising schema does not materialize CRM contract fields', () => {
+  const row = normalizeDaily({ date: '2026-08-31', channel: 'other', spend: 1, contracts: 2, newContracts: 1, contractAmount: 100 });
+  assert.equal(row.spend, 1);
+  assert.equal(Object.hasOwn(row, 'contracts'), false);
+  assert.equal(Object.hasOwn(row, 'newContracts'), false);
+  assert.equal(Object.hasOwn(row, 'contractAmount'), false);
+  assert.equal(core.NORMALIZE_DAILY_SCOPE, 'advertising_daily_only');
+});

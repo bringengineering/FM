@@ -11,6 +11,8 @@
   const EXPAND_ROAS_PERCENT = 300;
   const MIN_EXPAND_CONTRACTS = 1;
   const COUNT_FIELDS = ['spend', 'impressions', 'clicks', 'inquiries', 'validLeads', 'consultations', 'quotes', 'contracts', 'newContracts', 'payments', 'contractAmount', 'paidAmount', 'expectedCost'];
+  const DAILY_COUNT_FIELDS = ['spend', 'impressions', 'clicks', 'inquiries', 'validLeads'];
+  const NORMALIZE_DAILY_SCOPE = 'advertising_daily_only';
   const OPTIONAL_FIELDS = ['campaign', 'content', 'service', 'region', 'owner', 'customerType', 'keyword', 'customerStatus', 'dataStatus'];
   const FILTER_FIELDS = ['channel', 'service', 'region', 'owner', 'customerType', 'campaign', 'keyword', 'customerStatus', 'dataStatus'];
 
@@ -34,12 +36,27 @@
     return number;
   }
 
+  function checkedIntegerAdd(left, right, label) {
+    if (!Number.isSafeInteger(left) || !Number.isSafeInteger(right)) throw new RangeError(`${label || '합계'} 입력이 안전한 정수 범위를 벗어났습니다.`);
+    const result = left + right;
+    if (!Number.isSafeInteger(result)) throw new RangeError(`${label || '합계'}가 안전한 정수 범위를 벗어났습니다.`);
+    return result;
+  }
+
+  function checkedIntegerSubtract(left, right, label) {
+    if (!Number.isSafeInteger(left) || !Number.isSafeInteger(right)) throw new RangeError(`${label || '합계'} 입력이 안전한 정수 범위를 벗어났습니다.`);
+    const result = left - right;
+    if (!Number.isSafeInteger(result)) throw new RangeError(`${label || '합계'}가 안전한 정수 범위를 벗어났습니다.`);
+    return result;
+  }
+
   function normalizeDaily(input) {
     if (!input || Object.getPrototypeOf(input) !== Object.prototype) throw new TypeError('daily row must be a plain record');
     if (!validDate(input.date)) throw new TypeError('date must be YYYY-MM-DD');
     if (!bounded(input.channel)) throw new TypeError('channel is required');
     const result = { date: input.date, channel: CHANNELS.includes(input.channel) ? input.channel : 'needs_review' };
-    for (const name of COUNT_FIELDS) result[name] = normalizeNumber(input[name], name);
+    // This normalizer is intentionally scoped to advertising daily rows, not CRM contract facts.
+    for (const name of DAILY_COUNT_FIELDS) result[name] = normalizeNumber(input[name], name);
     for (const name of OPTIONAL_FIELDS) {
       if (input[name] == null || input[name] === '') continue;
       if (name === 'service') result[name] = SERVICES.includes(input[name]) ? input[name] : 'needs_review';
@@ -61,7 +78,7 @@
   function calculateMetrics(values) {
     const v = Object.assign({}, values);
     const spend = Number(v.spend || 0), contractAmount = Number(v.contractAmount || 0), expectedCost = Number(v.expectedCost || 0);
-    const profit = contractAmount - expectedCost - spend;
+    const profit = checkedIntegerSubtract(checkedIntegerSubtract(contractAmount, expectedCost, '예상 마케팅 이익'), spend, '예상 마케팅 이익');
     return {
       ctr: safeRate(v.clicks, v.impressions), cpc: safeDivide(spend, v.clicks), inquiryCvr: safeRate(v.inquiries, v.clicks),
       validLeadRate: safeRate(v.validLeads, v.inquiries), cpl: safeDivide(spend, v.validLeads), quoteConversion: safeRate(v.quotes, v.validLeads),
@@ -125,12 +142,12 @@
     for (const row of daily.concat(facts)) {
       for (const key of COUNT_FIELDS) {
         if (key === 'newContracts') continue;
-        total[key] += normalizeNumber(row[key], key);
+        total[key] = checkedIntegerAdd(total[key], normalizeNumber(row[key], key), `${key} 합계`);
       }
       const effectiveNewContracts = Object.prototype.hasOwnProperty.call(row, 'newContracts') ? row.newContracts : row.contracts;
-      total.newContracts += normalizeNumber(effectiveNewContracts, 'newContracts');
+      total.newContracts = checkedIntegerAdd(total.newContracts, normalizeNumber(effectiveNewContracts, 'newContracts'), 'newContracts 합계');
     }
-    total.profit = total.contractAmount - total.expectedCost - total.spend;
+    total.profit = checkedIntegerSubtract(checkedIntegerSubtract(total.contractAmount, total.expectedCost, '예상 마케팅 이익'), total.spend, '예상 마케팅 이익');
     return total;
   }
   function isArchived(row) {
@@ -195,7 +212,8 @@
     const stages = ['impressions', 'clicks', 'inquiries', 'validLeads', 'consultations', 'quotes', 'contracts', 'payments'];
     const funnel = stages.map((stage, index) => ({
       stage, count: current.totals[stage], conversion: index ? safeRate(current.totals[stage], current.totals[stages[index - 1]]) : null,
-      dropoff: index ? current.totals[stages[index - 1]] - current.totals[stage] : null, delta: current.totals[stage] - previous.totals[stage]
+      dropoff: index ? checkedIntegerSubtract(current.totals[stages[index - 1]], current.totals[stage], `${stage} 이탈`) : null,
+      delta: checkedIntegerSubtract(current.totals[stage], previous.totals[stage], `${stage} 증감`)
     }));
     const channels = {};
     for (const channel of CHANNELS) {
@@ -207,10 +225,10 @@
     const snapshot = {
       totals: current.totals, metrics: calculateMetrics(current.totals), funnel, channels,
       appliedFilters: JSON.parse(JSON.stringify(filters)), period, exclusions: current.exclusions,
-      comparison: { totals: previous.totals, metrics: calculateMetrics(previous.totals), deltas: Object.fromEntries(COUNT_FIELDS.concat('profit').map(key => [key, current.totals[key] - previous.totals[key]])) }
+      comparison: { totals: previous.totals, metrics: calculateMetrics(previous.totals), deltas: Object.fromEntries(COUNT_FIELDS.concat('profit').map(key => [key, checkedIntegerSubtract(current.totals[key], previous.totals[key], `${key} 증감`)])) }
     };
     return freeze(snapshot);
   }
 
-  return Object.freeze({ CHANNELS, SERVICES, DATA_STATUSES, EXPAND_ROAS_PERCENT, MIN_EXPAND_CONTRACTS, normalizeDaily, safeDivide, safeRate, calculateMetrics, resolvePeriod, buildSnapshot });
+  return Object.freeze({ CHANNELS, SERVICES, DATA_STATUSES, EXPAND_ROAS_PERCENT, MIN_EXPAND_CONTRACTS, NORMALIZE_DAILY_SCOPE, checkedIntegerAdd, checkedIntegerSubtract, normalizeDaily, safeDivide, safeRate, calculateMetrics, resolvePeriod, buildSnapshot });
 }));
