@@ -1366,7 +1366,7 @@
   }
 
   function renderMarketingWorkspace() {
-    marketingController.refreshFacts(store, operations.cases || []);
+    marketingController.syncFactsIfRevisionChanged(store, operations.cases || []);
     document.getElementById("pageEyebrow").textContent = "BRING MARKETING";
     const meta = MarketingUI.NAV_ITEMS.find(item => item.id === currentMarketingView);
     document.getElementById("pageTitle").textContent = meta ? meta.label : "마케팅 대시보드";
@@ -1383,8 +1383,9 @@
     }
   }
 
-  async function prepareWorkspaceTransition() {
-    marketingController.invalidate();
+  async function prepareWorkspaceTransition(workspace) {
+    if (workspace === "marketing") marketingController.prepareLoad(currentAuth.user || {});
+    else marketingController.invalidate("workspace-transition");
     if (currentView === "valueScope") {
       valueScopeOpenGeneration += 1;
       await api.hideValueScope();

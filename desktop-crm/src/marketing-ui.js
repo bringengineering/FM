@@ -26,7 +26,9 @@
   function unique(rows, name) { return [...new Set((rows || []).map(row => String(row && row[name] || "").trim()).filter(Boolean).map(value => value.slice(0, 200)))].sort((a, b) => a.localeCompare(b, "ko")); }
   function buildFilterOptions(rows) {
     const source = Array.isArray(rows) ? rows : [];
-    return Object.freeze({ channel: MarketingCore.CHANNELS.slice(), service: MarketingCore.SERVICES.slice(), dataStatus: MarketingCore.DATA_STATUSES.slice(), region: unique(source, "region"), owner: unique(source, "owner"), customerType: unique(source, "customerType"), campaign: unique(source, "campaign"), keyword: unique(source, "keyword"), customerStatus: unique(source, "customerStatus") });
+    const result = { channel: MarketingCore.CHANNELS.slice(), service: MarketingCore.SERVICES.slice(), dataStatus: MarketingCore.DATA_STATUSES.slice(), region: unique(source, "region"), owner: unique(source, "owner"), customerType: unique(source, "customerType"), campaign: unique(source, "campaign"), keyword: unique(source, "keyword"), customerStatus: unique(source, "customerStatus") };
+    Object.values(result).forEach(Object.freeze);
+    return Object.freeze(result);
   }
 
   function renderNav(view) {
@@ -35,9 +37,9 @@
   function renderFilters(filters, filterOptions) {
     const period = typeof filters.period === "object" ? filters.period.type : filters.period;
     const options = filterOptions || buildFilterOptions([]);
-    const values = name => { const list = (options[name] || []).slice(); if (present(filters[name]) && filters[name] !== "all" && !list.includes(filters[name])) list.push("needs_review"); return [...new Set(list)]; };
-    const selectedValue = name => values(name).includes(filters[name]) ? filters[name] : present(filters[name]) && filters[name] !== "all" ? "needs_review" : "all";
-    return `<section class="marketing-filters" aria-label="마케팅 공통 필터"><label><span>기간</span><select data-marketing-period>${PERIODS.map(([value, label]) => `<option value="${value}"${value === period ? " selected" : ""}>${label}</option>`).join("")}</select></label>${period === "custom" ? `<label><span>시작일</span><input type="date" data-marketing-date="start" value="${attr(filters.period.start || "")}"></label><label><span>종료일</span><input type="date" data-marketing-date="end" value="${attr(filters.period.end || "")}"></label>` : ""}${FILTERS.map(([name, label]) => `<label><span>${label}</span>${name === "keyword" ? `<input data-marketing-filter="${name}" list="marketing-keywords" value="${attr(filters[name] || "")}"><datalist id="marketing-keywords">${values(name).map(value => `<option value="${attr(value)}"></option>`).join("")}</datalist>` : `<select data-marketing-filter="${name}"><option value="all"${selectedValue(name) === "all" ? " selected" : ""}>전체</option>${values(name).map(value => `<option value="${attr(value)}"${value === selectedValue(name) ? " selected" : ""}>${esc(value)}</option>`).join("")}</select>`}</label>`).join("")}</section>`;
+    const values = name => { const list = (options[name] || []).slice(); const selected = String(filters[name] || "").slice(0, 200); if (selected && selected !== "all" && !list.includes(selected)) list.push(selected); return [...new Set(list)]; };
+    const outside = (name, value) => value === filters[name] && !(options[name] || []).includes(value);
+    return `<section class="marketing-filters" aria-label="마케팅 공통 필터"><label><span>기간</span><select data-marketing-period>${PERIODS.map(([value, label]) => `<option value="${value}"${value === period ? " selected" : ""}>${label}</option>`).join("")}</select></label>${period === "custom" ? `<label><span>시작일</span><input type="date" data-marketing-date="start" value="${attr(filters.period.start || "")}"></label><label><span>종료일</span><input type="date" data-marketing-date="end" value="${attr(filters.period.end || "")}"></label>` : ""}${FILTERS.map(([name, label]) => `<label><span>${label}</span>${name === "keyword" ? `<input data-marketing-filter="${name}" list="marketing-keywords" value="${attr(filters[name] || "")}"><datalist id="marketing-keywords">${values(name).map(value => `<option value="${attr(value)}"></option>`).join("")}</datalist>` : `<select data-marketing-filter="${name}"><option value="all"${filters[name] === "all" ? " selected" : ""}>전체</option>${values(name).map(value => `<option value="${attr(value)}"${value === filters[name] ? " selected" : ""}>${esc(value)}${outside(name, value) ? " (현재 선택)" : ""}</option>`).join("")}</select>`}</label>`).join("")}</section>`;
   }
   function delta(snapshot, key, money) {
     const value = snapshot && snapshot.comparison && snapshot.comparison.deltas ? snapshot.comparison.deltas[key] : null;
@@ -79,20 +81,26 @@
 
   function createController(options) {
     const core = options.core || MarketingCore, bridge = options.bridge || MarketingCrmBridge;
-    const filters = defaultFilters(); let data = { daily: [], facts: [] }, generation = 0, rawLoaded = false;
-    const state = { snapshot: null, facts: [], filterOptions: buildFilterOptions([]), error: "", localError: "", unavailable: false };
+    const filters = defaultFilters(); let data = { daily: [], facts: [] }, generation = 0, rawLoaded = false, projectionRevision = "", identity = "";
+    const state = { identityKey: "", snapshot: null, facts: [], filterOptions: buildFilterOptions([]), loading: false, error: "", localError: "", unavailable: false };
     const recompute = () => { state.filterOptions = buildFilterOptions(data.daily.concat(data.facts)); state.snapshot = core.buildSnapshot(data, filters, options.now ? options.now() : new Date()); return state.snapshot; };
+    const safeIdentity = user => [user && user.uid, user && user.accessRole, user && user.marketingRole].map(value => String(value || "").slice(0, 160)).join("|");
+    const revision = (store, caseRows) => JSON.stringify([...(store && store.facts || []), ...(store && store.customers || []), ...(store && store.contracts || []), ...(store && store.activities || []), ...(caseRows || [])].map(item => { const marketing = item && item.marketing || {}; return [item && (item.caseId || item.firebaseKey || item.id), item && (item.updatedAt || item.version), marketing.firstSource, marketing.lastSource, marketing.validLead, item && (item.date || item.createdAt), item && (item.service || item.issueType), item && item.owner, item && item.stage, item && (item.amount || item.contractAmount), item && item.collectionStatus].map(value => String(value == null ? "" : value).slice(0, 160)); }).sort());
+    function clear(nextIdentity, loading) { rawLoaded = false; data = { daily: [], facts: [] }; projectionRevision = ""; identity = nextIdentity || ""; state.identityKey = identity; state.snapshot = null; state.facts = []; state.filterOptions = buildFilterOptions([]); state.loading = Boolean(loading); state.error = ""; state.localError = ""; state.unavailable = false; }
+    function invalidate(_reason, user) { generation += 1; clear(user ? safeIdentity(user) : "", false); }
+    function prepareLoad(user) { generation += 1; clear(safeIdentity(user), true); }
     async function load(user, store, caseRows) {
+      const nextIdentity = safeIdentity(user);
       const requestedGeneration = ++generation;
-      state.error = ""; state.localError = ""; state.unavailable = false; state.snapshot = null;
+      if (identity !== nextIdentity || !state.loading) clear(nextIdentity, true);
       const rawAllowed = user && (user.accessRole === "admin" || (user.accessRole === "member" && user.marketingRole === "marketing"));
       try {
         if (!rawAllowed) {
-          if (typeof options.readAggregate !== "function") { if (requestedGeneration === generation) state.unavailable = true; return state; }
+          if (typeof options.readAggregate !== "function") { if (requestedGeneration === generation) { state.unavailable = true; state.loading = false; } return state; }
           const aggregate = await options.readAggregate();
           if (requestedGeneration !== generation) return state;
-          if (!aggregate || !aggregate.snapshot) { state.unavailable = true; return state; }
-          state.snapshot = Object.freeze(aggregate.snapshot); state.facts = []; return state;
+          if (!aggregate || !aggregate.snapshot) { state.unavailable = true; state.loading = false; return state; }
+          state.snapshot = Object.freeze(aggregate.snapshot); state.facts = []; state.loading = false; return state;
         }
         const response = await options.readRaw();
         if (requestedGeneration !== generation) return state;
@@ -101,14 +109,15 @@
         state.facts = bridge.projectFacts(store || {}, { cases: caseRows || [] });
         data = { daily, facts: state.facts };
         rawLoaded = true;
-        recompute(); return state;
-      } catch (error) { if (requestedGeneration !== generation) return state; state.error = String(error && error.message || "마케팅 데이터를 불러오지 못했습니다."); state.localError = state.error; return state; }
+        projectionRevision = revision(store, caseRows);
+        recompute(); state.loading = false; return state;
+      } catch (error) { if (requestedGeneration !== generation) return state; state.error = String(error && error.message || "마케팅 데이터를 불러오지 못했습니다."); state.localError = state.error; state.loading = false; return state; }
     }
-    function invalidate() { generation += 1; }
-    function refreshFacts(store, caseRows) { if (!rawLoaded) return state.snapshot; state.facts = bridge.projectFacts(store || {}, { cases: caseRows || [] }); data = { daily: data.daily, facts: state.facts }; return recompute(); }
+    function syncFactsIfRevisionChanged(store, caseRows) { if (!rawLoaded) return false; const next = revision(store, caseRows); if (next === projectionRevision) return false; projectionRevision = next; state.facts = bridge.projectFacts(store || {}, { cases: caseRows || [] }); data = { daily: data.daily, facts: state.facts }; recompute(); return true; }
+    function refreshFacts(store, caseRows) { syncFactsIfRevisionChanged(store, caseRows); return state.snapshot; }
     function setFilter(name, value) { if (!FILTERS.some(item => item[0] === name)) { state.localError = "알 수 없는 필터입니다."; return { ok: false, error: state.localError }; } filters[name] = value; state.localError = ""; recompute(); return { ok: true, snapshot: state.snapshot }; }
     function setPeriod(period) { try { core.resolvePeriod(period, options.now ? options.now() : new Date()); filters.period = period; state.localError = ""; recompute(); return { ok: true, snapshot: state.snapshot }; } catch (error) { state.localError = String(error.message || error); return { ok: false, error: state.localError }; } }
-    return Object.freeze({ filters, state, load, invalidate, refreshFacts, setFilter, setPeriod });
+    return Object.freeze({ filters, state, load, invalidate, prepareLoad, syncFactsIfRevisionChanged, refreshFacts, setFilter, setPeriod });
   }
   return Object.freeze({ NAV_ITEMS, defaultFilters, buildFilterOptions, createController, renderWorkspace, renderCustomerFacts, formatNumber, formatWon, formatPercent, escapeHtml: esc });
 });

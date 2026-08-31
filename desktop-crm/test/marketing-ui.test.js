@@ -26,6 +26,19 @@ test("filter controls contain closed and authorized data-derived options", () =>
   assert.match(rendered, /&lt;서울&gt;/);
 });
 
+test("dynamic selected option is preserved exactly when its source disappears", () => {
+  const filters = { ...UI.defaultFilters(), region: '<원주>' };
+  const rendered = UI.renderWorkspace({ view: "marketingOverview", snapshot: emptySnapshot, filters, filterOptions: UI.buildFilterOptions([]) });
+  assert.match(rendered, /option value="&lt;원주&gt;" selected>&lt;원주&gt; \(현재 선택\)<\/option>/);
+  assert.doesNotMatch(rendered, /needs_review" selected/);
+});
+
+test("filter option wrapper and every option array are deeply immutable", () => {
+  const options = UI.buildFilterOptions([{ region: "원주" }]);
+  assert.equal(Object.isFrozen(options), true);
+  for (const values of Object.values(options)) assert.equal(Object.isFrozen(values), true);
+});
+
 test("overview escapes output, renders exact KPIs, and formats unavailable values honestly", () => {
   const rendered = UI.renderWorkspace({ view: "marketingOverview", snapshot: emptySnapshot, filters: UI.defaultFilters() });
   for (const label of ["총 마케팅 비용", "노출", "클릭", "문의", "유효 리드", "견적", "계약", "계약금액", "예상 마케팅 이익", "입금액", "CTR", "CPC", "문의 전환율", "유효 리드율", "CPL", "견적 전환율", "계약 전환율", "CPA", "ROAS", "ROI", "AOV"]) assert.match(rendered, new RegExp(label));
@@ -71,6 +84,38 @@ test("load generations ignore stale success and stale error after invalidation",
   assert.deepEqual(controller.state.snapshot.filteredFacts.map(item => item.caseId), ["new"]);
   const stale = controller.load({ uid: "a", accessRole: "admin" }, {}); controller.invalidate(); deferred[2].reject(new Error("stale")); await stale;
   assert.doesNotMatch(controller.state.localError, /stale/);
+});
+
+test("identity invalidation immediately removes every raw-derived value", async () => {
+  const controller = UI.createController({ core: Core, bridge: { projectFacts: store => store.facts || [] }, readRaw: async () => ({ daily: [{ date: "2026-08-30", channel: "naver_blog", region: "A지역", spend: 1 }] }) });
+  await controller.load({ uid: "A", accessRole: "admin" }, { facts: [{ caseId: "A-case", date: "2026-08-30", inquiries: 1 }] });
+  controller.invalidate("identity-change", { uid: "B", accessRole: "admin" });
+  assert.equal(controller.state.snapshot, null);
+  assert.equal(controller.state.identityKey, "B|admin|");
+  assert.deepEqual(controller.state.facts, []);
+  assert.equal(controller.state.loading, false);
+  assert.equal(controller.state.filterOptions.region.includes("A지역"), false);
+  assert.equal(JSON.stringify(controller.state).includes("A-case"), false);
+  controller.prepareLoad({ uid: "B", accessRole: "admin" });
+  const pending = UI.renderWorkspace({ view: "marketingOverview", snapshot: controller.state.snapshot, filters: controller.filters, filterOptions: controller.state.filterOptions, facts: controller.state.facts });
+  assert.match(pending, /마케팅 데이터를 불러오는 중입니다/);
+  assert.doesNotMatch(pending, /A-case|A지역/);
+});
+
+test("navigation revision checks do not rebuild while one filter or changed revision rebuilds once", async () => {
+  let builds = 0;
+  const countingCore = { ...Core, buildSnapshot(...args) { builds += 1; return Core.buildSnapshot(...args); } };
+  const controller = UI.createController({ core: countingCore, bridge: { projectFacts: store => store.facts || [] }, readRaw: async () => ({ daily: [] }) });
+  const store = { facts: [{ caseId: "one", date: "2026-08-30", inquiries: 1, version: 1 }] };
+  await controller.load({ uid: "A", accessRole: "admin" }, store);
+  assert.equal(builds, 1);
+  controller.syncFactsIfRevisionChanged(store); controller.syncFactsIfRevisionChanged(store);
+  assert.equal(builds, 1);
+  controller.setFilter("channel", "naver_blog");
+  assert.equal(builds, 2);
+  const changed = { facts: [{ caseId: "one", date: "2026-08-30", inquiries: 1, version: 2 }] };
+  controller.syncFactsIfRevisionChanged(changed);
+  assert.equal(builds, 3);
 });
 
 test("refreshFacts reprojects current store without another raw fetch", async () => {
@@ -173,4 +218,7 @@ test("loads UMD after core and bridge before app and app integrates marketing wi
   assert.match(app, /primaryActionButton\.dataset\.action = "new-customer"/);
   assert.doesNotMatch(app, /data-marketing-date[\s\S]{0,500}showToast/);
   assert.match(app, /snapshot\.filteredFacts/);
+  assert.doesNotMatch(app, /renderMarketingWorkspace\(\)[\s\S]{0,160}refreshFacts/);
+  assert.match(app, /prepareWorkspaceTransition\(workspace\)[\s\S]*?prepareLoad\(currentAuth\.user/);
+  assert.match(app, /main\.innerHTML = MarketingUI\.renderWorkspace[\s\S]{0,700}marketingController\.load/);
 });
