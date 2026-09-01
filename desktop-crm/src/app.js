@@ -3746,9 +3746,9 @@
     const photoEditor = editing
       ? `<section class="customer-photo-editor" data-customer-photo-editor><div class="customer-photo-preview" data-customer-photo-preview>${customerAvatar(Object.assign({}, customer, { photoDataUrl }))}</div><div><b>고객 사진</b><span>작은 썸네일로 변환해 고객 데이터·백업과 분리된 전용 보관함에 저장합니다.</span><div class="inline-actions"><button type="button" class="secondary-button" data-customer-photo-pick>사진 선택</button><button type="button" class="secondary-button" data-customer-photo-remove ${photoDataUrl ? "" : "hidden"}>사진 삭제</button></div></div><input type="hidden" name="photoDataUrl" value="${attr(photoDataUrl)}"></section>`
       : `<section class="customer-photo-editor customer-photo-editor-disabled"><div class="customer-photo-preview">${customerAvatar(customer)}</div><div><b>고객 사진</b><span>고객을 먼저 등록한 뒤 고객 정보 수정에서 사진을 추가할 수 있습니다.</span></div></section>`;
-    modalContent.innerHTML = `<div class="modal-head"><div><h2>${editing ? "고객 정보 수정" : "새 고객 등록"}</h2><p>건물명은 필수이며 고객명과 나머지 정보는 나중에 추가해도 됩니다.</p></div><button class="close-button" data-action="close-modal">×</button></div><form id="customerForm" class="modal-body simple-customer-form" data-customer-id="${attr(editing && editing.id || "")}" data-photo-changed="false"><div class="essential-label"><b>기본 정보</b><span>건물명만 선택해도 등록할 수 있습니다.</span></div>${photoEditor}<div class="form-grid">
-      <label class="field"><span>건물명 *</span><select name="buildingId" required><option value="">건물 선택</option>${customerBuildingOptions}</select><small>${activeBuildings.length ? "등록된 건물을 선택하면 고객 화면에 함께 연결됩니다." : "먼저 고객·건물 관리 화면에서 건물을 등록해 주세요."}</small></label>
-      ${field("고객명", "name", customer.name, "text", "선택 입력 · 예: 홍길동 또는 원주에셋")}
+    modalContent.innerHTML = `<div class="modal-head"><div><h2>${editing ? "고객 정보 수정" : "새 고객 등록"}</h2><p>고객명만 입력해도 고객과 건물 관리에 함께 등록됩니다.</p></div><button class="close-button" data-action="close-modal">×</button></div><form id="customerForm" class="modal-body simple-customer-form" data-customer-id="${attr(editing && editing.id || "")}" data-photo-changed="false"><div class="essential-label"><b>기본 정보</b><span>고객명을 입력하고 바로 등록할 수 있습니다.</span></div>${photoEditor}<div class="form-grid">
+      <label class="field"><span>기존 건물 연결 (선택)</span><select name="buildingId"><option value="">새 건물 자동 생성</option>${customerBuildingOptions}</select><small>${editing ? "선택하지 않으면 현재 연결 건물을 그대로 유지합니다." : "선택하지 않으면 고객명으로 새 건물을 자동 생성합니다."}</small></label>
+      <label class="field"><span>고객명 *</span><input name="name" required value="${attr(customer.name)}" placeholder="예: 홍길동 또는 원주에셋"></label>
       <label class="field"><span>연락처</span><input name="phone" type="tel" inputmode="tel" autocomplete="tel" data-customer-phone value="${attr(customerPhoneText(customer.phone))}" placeholder="010-0000-0000"></label>
       ${selectField("고객 유형", "type", ["건물주", "임차인", "법인", "협력업체", "기타"], customer.type)}
       ${field("다음 연락일", "nextContactAt", datetimeValue(customer.nextContactAt), "datetime-local")}
@@ -3765,7 +3765,7 @@
       <div class="info-box wide">진행상태는 고객 정보에서 직접 입력하지 않습니다. 연결된 건물의 영업 관리 단계가 고객 목록과 상세 화면에 자동으로 표시됩니다.</div>
     </div></details><div class="info-box">${linkedBuildings.length ? `기존 연결 건물 ${linkedBuildings.length}곳은 유지되며, 다른 건물을 선택하면 연결 건물로 추가됩니다.` : "선택한 건물이 이 고객 화면에 연결됩니다."} 건물 자체 정보는 고객 화면 아래의 건물 관리에서 수정할 수 있습니다.</div><div class="form-actions"><button type="button" class="secondary-button" data-action="close-modal">취소</button><button type="submit" class="primary-button">${editing ? "수정 저장" : "고객 등록"}</button></div></form>`;
     openModal();
-    setTimeout(() => document.querySelector(`#customerForm [name="${selectedCustomerBuilding ? "name" : "buildingId"}"]`)?.focus(), 30);
+    setTimeout(() => document.querySelector(`#customerForm [name="name"]`)?.focus(), 30);
   }
 
   function buildingNumberField(label, name, value, suffix, placeholder) {
@@ -7469,13 +7469,42 @@
       scheduleSave(); closeModal(); currentView = returnToContractCalendar ? "buildingCalendar" : "contracts"; render(); showToast(`${customer && customer.name || "고객"} 계약을 저장했습니다.`, "success");
     } else if (form.id === "customerForm") {
       const wasExisting = !!form.dataset.customerId;
-      const selectedBuilding = buildingById(String(form.elements.buildingId && form.elements.buildingId.value || ""));
-      if (!selectedBuilding || selectedBuilding.archivedAt) return showToast("건물명을 선택해 주세요.", "error");
+      const customerName = String(form.elements.name && form.elements.name.value || "").trim();
+      if (!customerName) return showToast("고객명을 입력해 주세요.", "error");
+      const requestedBuildingId = String(form.elements.buildingId && form.elements.buildingId.value || "");
+      let selectedBuilding = requestedBuildingId ? buildingById(requestedBuildingId) : null;
+      if (requestedBuildingId && (!selectedBuilding || selectedBuilding.archivedAt)) return showToast("연결할 건물을 다시 선택해 주세요.", "error");
       const photoChanged = wasExisting && form.dataset.photoChanged === "true";
       const photoDataUrl = Core.normalizeCustomerPhotoDataUrl(form.elements.photoDataUrl && form.elements.photoDataUrl.value);
       const customer = customerFromForm(form);
+      if (!wasExisting && !selectedBuilding) {
+        scheduleSave();
+        await saveStore();
+        if (!synchronizedStore.customers.some(item => item.id === customer.id)) return showToast("고객을 먼저 서버에 저장하지 못했습니다. 연결 상태를 확인해 주세요.", "error");
+        const buildingId = crypto.randomUUID();
+        try {
+          await commitCanonicalEntity({
+            entityType: "buildings",
+            entityId: buildingId,
+            operation: "create",
+            expectedVersion: 0,
+            patch: buildCanonicalBuildingPatch({
+              name: customer.name,
+              type: "기타",
+              status: "영업후보",
+              ownerCustomerId: customer.id,
+              manager: customer.owner || store.settings.owner || "김현진",
+            }),
+            reason: "신규 고객 등록 시 고객명으로 건물 자동 생성",
+          });
+          selectedBuilding = buildingById(buildingId);
+          if (!selectedBuilding) return showToast("고객은 저장했지만 자동 생성 건물을 불러오지 못했습니다.", "warning");
+        } catch (error) {
+          return showToast(error.message || "고객은 저장했지만 건물을 자동 생성하지 못했습니다.", "error");
+        }
+      }
       const customerLabel = customer.name || selectedBuilding.name || "고객명 미입력";
-      logAudit({ category: wasExisting ? "변경" : "등록", targetType: "고객", targetId: customer.id, targetLabel: customerLabel, action: wasExisting ? "고객 기본정보 수정" : "신규 고객 등록", reason: `고객 관리 · ${selectedBuilding.name || "건물"}` });
+      logAudit({ category: wasExisting ? "변경" : "등록", targetType: "고객", targetId: customer.id, targetLabel: customerLabel, action: wasExisting ? "고객 기본정보 수정" : "신규 고객 등록", reason: `고객 관리 · ${selectedBuilding && selectedBuilding.name || "건물 미연결"}` });
       scheduleSave();
       if (photoChanged) {
         try {
@@ -7488,7 +7517,7 @@
         }
       }
       selectedCustomerHubId = customer.id;
-      selectedBuildingId = selectedBuilding.id;
+      if (selectedBuilding) selectedBuildingId = selectedBuilding.id;
       closeModal(); render(); renderCustomerDrawer(customer.id); showToast(`${customerLabel} 정보를 저장했습니다.`, "success");
     } else if (form.id === "partnerVendorForm") {
       const raw = Object.fromEntries(new FormData(form).entries());

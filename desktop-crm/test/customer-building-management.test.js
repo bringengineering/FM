@@ -125,17 +125,23 @@ test("building edits opened from customer detail return to the customer workspac
   assert.match(save, /currentView = returnView/);
 });
 
-test("customer editor requires a real building while customer name remains optional", () => {
+test("new customer registration accepts a name and creates a linked building when none is selected", () => {
   const editor = sourceBetween("function customerEditor", "function buildingNumberField");
   const fromForm = sourceBetween("function customerFromForm", "async function deleteActivityRecord");
   const submit = sourceBetween('form.id === "customerForm"', 'form.id === "partnerVendorForm"');
-  assert.match(editor, /<span>건물명 \*<\/span><select name="buildingId" required>/);
-  assert.match(editor, /field\("고객명", "name"/);
-  assert.doesNotMatch(editor, /고객명 \*/);
+  assert.match(editor, /<span>기존 건물 연결 \(선택\)<\/span><select name="buildingId">/);
+  assert.doesNotMatch(editor, /select name="buildingId" required/);
+  assert.match(editor, /<span>고객명 \*<\/span><input name="name" required/);
+  assert.match(editor, /선택하지 않으면 고객명으로 새 건물을 자동 생성합니다/);
   assert.match(fromForm, /buildingIdLinks\[String\(raw\.buildingId\)\] = true/);
-  assert.match(submit, /buildingById\(String\(form\.elements\.buildingId/);
-  assert.match(submit, /건물명을 선택해 주세요/);
-  assert.doesNotMatch(submit, /고객명을 입력해 주세요/);
+  assert.match(submit, /const requestedBuildingId = String\(form\.elements\.buildingId/);
+  assert.match(submit, /requestedBuildingId \? buildingById\(requestedBuildingId\) : null/);
+  assert.match(submit, /고객명을 입력해 주세요/);
+  assert.match(submit, /await saveStore\(\)/);
+  assert.match(submit, /synchronizedStore\.customers\.some\(item => item\.id === customer\.id\)/);
+  assert.match(submit, /await commitCanonicalEntity\(\{[\s\S]*?entityType: "buildings",[\s\S]*?operation: "create"/);
+  assert.match(submit, /buildCanonicalBuildingPatch\(\{[\s\S]*?name: customer\.name,[\s\S]*?type: "기타",[\s\S]*?status: "영업후보",[\s\S]*?ownerCustomerId: customer\.id/);
+  assert.match(submit, /if \(!wasExisting && !selectedBuilding\)/);
   assert.match(appSource, /const customerDisplayName = customer =>[\s\S]*?customerBuildings\(customer\)\.find\(building => !building\.archivedAt\)\?\.name/);
   assert.match(appSource, /<h2>\$\{esc\(customerDisplayName\(customer\)\)\}<\/h2>/);
 });
