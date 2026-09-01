@@ -63,10 +63,12 @@ test("disabled field summaries never load, stream, or schedule reload handling",
 
   const starts = [];
   client.streamLoop = async (location, kind) => { starts.push({ location, kind }); };
+  client.startOfficePolling = generation => { starts.push({ kind: "officePolling", generation }); };
   client.startStream();
   assert.deepEqual(starts, [
     { location: "crmShared/data", kind: "shared" },
-    { location: "customerPhotos", kind: "customerPhotos" }
+    { location: "customerPhotos", kind: "customerPhotos" },
+    { kind: "officePolling", generation: client.streamGeneration }
   ]);
 
   let summaryReloads = 0;

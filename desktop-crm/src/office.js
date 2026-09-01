@@ -22,9 +22,14 @@
     adminMonth: Core.workDate().slice(0, 7),
     adminTab: "list",
     busy: false,
+    active: false,
+    generation: 0,
+    dataRevision: 0,
     clockTimer: null,
     syncTimer: null
   };
+  let officeFileDragDepth = 0;
+  const officeReadReceiptPeerIds = new Set();
 
   const esc = value => String(value == null ? "" : value).replace(/[&<>"']/g, character => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[character]));
   const currentUser = () => state.context && state.context.currentAuth && state.context.currentAuth.user || {};
@@ -111,8 +116,102 @@
   }
 
   function officeIsActive() {
+    const contextActive = state.context && typeof state.context.isActive === "function" && state.context.isActive();
     const activeView = document.querySelector("#nav .nav-item.active")?.dataset.view || "";
-    return activeView.startsWith("office") && activeView === state.context?.view;
+    return state.active && contextActive && activeView.startsWith("office") && activeView === state.context?.view;
+  }
+
+  function stopTimers() {
+    clearInterval(state.clockTimer);
+    clearInterval(state.syncTimer);
+    state.clockTimer = null;
+    state.syncTimer = null;
+  }
+
+  function captureContextGuard() {
+    return { generation: state.generation, dataRevision: state.dataRevision, uid: currentUserId(), context: state.context };
+  }
+
+  function contextGuardActive(guard) {
+    return Boolean(guard && guard.generation === state.generation && guard.uid === currentUserId() && guard.context === state.context);
+  }
+
+  function applyOfficeData(payload, user, expectedRevision) {
+    if (expectedRevision !== undefined && expectedRevision !== state.dataRevision) return false;
+    state.data = Core.normalizeOfficePayload(payload && payload.data || payload, user || currentUser());
+    state.dataRevision += 1;
+    return true;
+  }
+
+  function unreadByActiveUser(userId = currentUserId()) {
+    const activePeers = new Set(state.data.users
+      .filter(user => user.uid && user.uid !== String(userId || ""))
+      .map(user => user.uid));
+    return new Map([...Core.unreadByUser(state.data.messages, String(userId || ""))]
+      .filter(([peerId]) => activePeers.has(peerId)));
+  }
+
+  function unreadCountFor(userId = currentUserId()) {
+    return [...unreadByActiveUser(userId).values()].reduce((sum, count) => sum + count, 0);
+  }
+
+  function updateUnreadBadge(userId = currentUserId()) {
+    const unreadBadge = document.getElementById("navOfficeUnread");
+    if (unreadBadge) unreadBadge.textContent = String(unreadCountFor(userId));
+  }
+
+  function mergeConfirmedReadReceipts(payload, peerId, userId, messageIds) {
+    const normalized = Core.normalizeOfficePayload(payload && payload.data || payload, currentUser());
+    const messages = Core.mergeConfirmedOfficeReadReceipts(
+      state.data.messages,
+      normalized.messages,
+      peerId,
+      userId,
+      messageIds,
+    );
+    if (messages === state.data.messages) return false;
+    state.data = Object.assign({}, state.data, { messages });
+    state.dataRevision += 1;
+    return true;
+  }
+
+  function syncMessengerPresence() {
+    const peerId = Core.normalizeOfficeUserId(state.selectedUserId);
+    const active = Boolean(
+      officeIsActive()
+      && state.context?.view === "officeMessenger"
+      && peerId
+      && peerId !== currentUserId()
+      && userById(peerId)
+    );
+    if (typeof state.context?.setMessengerPresence !== "function") return true;
+    return state.context.setMessengerPresence(active, active ? peerId : "");
+  }
+
+  function selectedConversationCanBeAcknowledged(userId = currentUserId()) {
+    const selectedUserId = state.selectedUserId;
+    const hasUnread = Boolean(selectedUserId) && state.data.messages.some(message => (
+      message.senderId === selectedUserId
+      && message.receiverId === String(userId || "")
+      && !message.readAt
+    ));
+    let documentFocused = false;
+    try {
+      documentFocused = typeof document.hasFocus === "function" && document.hasFocus();
+    } catch (_) {}
+    return Core.shouldAcknowledgeConversation({
+      officeActive: officeIsActive(),
+      view: state.context?.view,
+      documentHidden: document.hidden,
+      documentFocused,
+      selectedUserId,
+      hasUnread
+    });
+  }
+
+  function acknowledgeVisibleConversation() {
+    if (!selectedConversationCanBeAcknowledged() || officeReadReceiptPeerIds.has(state.selectedUserId)) return;
+    void selectUser(state.selectedUserId);
   }
 
   function startSync() {
@@ -124,19 +223,26 @@
 
   async function load(force) {
     if (state.loading || state.loaded && !force) return;
+    const guard = captureContextGuard();
     state.loading = true;
     state.error = "";
     try {
       const payload = await state.context.api.loadOffice();
+      if (!contextGuardActive(guard) || guard.dataRevision !== state.dataRevision) return;
       if (payload && payload.ok === false) throw new Error(payload.error || "BRING OFFICE 자료를 불러오지 못했습니다.");
-      state.data = Core.normalizeOfficePayload(payload && payload.data || payload, currentUser());
+      applyOfficeData(payload, currentUser(), guard.dataRevision);
       state.loaded = true;
       chooseDefaultUser();
     } catch (error) {
-      state.error = error.message || "BRING OFFICE 자료를 불러오지 못했습니다.";
+      if (contextGuardActive(guard)) state.error = error.message || "BRING OFFICE 자료를 불러오지 못했습니다.";
     } finally {
-      state.loading = false;
-      if (state.context && officeIsActive()) renderCurrent();
+      if (contextGuardActive(guard)) {
+        state.loading = false;
+        if (officeIsActive()) {
+          renderCurrent();
+          acknowledgeVisibleConversation();
+        }
+      }
     }
   }
 
@@ -145,7 +251,7 @@
     if (state.selectedUserId && peers.some(user => user.uid === state.selectedUserId)) return;
     const previousUserId = state.selectedUserId;
     const latest = Core.latestByUser(state.data.messages, currentUserId());
-    const unread = Core.unreadByUser(state.data.messages, currentUserId());
+    const unread = unreadByActiveUser();
     peers.sort((a, b) => {
       const unreadGap = (unread.get(b.uid) || 0) - (unread.get(a.uid) || 0);
       if (unreadGap) return unreadGap;
@@ -187,7 +293,7 @@
 
   function homeView() {
     const today = todayRecord();
-    const unread = [...Core.unreadByUser(state.data.messages, currentUserId()).values()].reduce((sum, count) => sum + count, 0);
+    const unread = unreadCountFor();
     return `${officeHero("BRING OFFICE", "브링의 업무를 한 곳에서", `<div class="office-live-time"><span data-office-date></span><b data-office-clock></b></div>`)}
       <section class="office-dashboard-grid">
         <button class="office-summary-card attendance" data-office-go="officeAttendance"><span class="office-card-icon">◷</span><div><small>근태관리</small><h3>${Core.attendanceStatus(today)}</h3><p>출근시간 <b>${esc(formatTime(today && today.checkInAt))}</b></p></div>${statusPill(today)}</button>
@@ -231,7 +337,7 @@
 
   function messengerUsers() {
     const latest = Core.latestByUser(state.data.messages, currentUserId());
-    const unread = Core.unreadByUser(state.data.messages, currentUserId());
+    const unread = unreadByActiveUser();
     const query = state.userQuery.trim().toLowerCase();
     return state.data.users.filter(user => user.uid !== currentUserId()).filter(user => !query || [user.displayName, user.email, user.department, user.title].join(" ").toLowerCase().includes(query)).sort((a, b) => {
       const unreadGap = (unread.get(b.uid) || 0) - (unread.get(a.uid) || 0);
@@ -254,7 +360,7 @@
   function messengerView() {
     const users = messengerUsers();
     const latest = Core.latestByUser(state.data.messages, currentUserId());
-    const unread = Core.unreadByUser(state.data.messages, currentUserId());
+    const unread = unreadByActiveUser();
     const selected = userById(state.selectedUserId);
     const conversation = selected ? state.data.messages.filter(message => message.senderId === currentUserId() && message.receiverId === selected.uid || message.receiverId === currentUserId() && message.senderId === selected.uid) : [];
     const nameEditor = displayNameEditor(selected, "messenger");
@@ -264,12 +370,12 @@
         const count = unread.get(user.uid) || 0;
         return `<button class="messenger-user ${user.uid === state.selectedUserId ? "selected" : ""}" data-office-user="${esc(user.uid)}">${avatar(user)}<span><b>${esc(Core.displayName(user))}</b><small>${esc(message ? messagePreview(message) : userMeta(user))}</small></span><time>${esc(message ? formatMessageTime(message.createdAt).split(" ").slice(-1)[0] : "")}</time>${count ? `<em>${count}</em>` : ""}</button>`;
       }).join("") : `<div class="messenger-no-users">검색 결과가 없습니다.</div>`}</div></aside>
-      <section class="messenger-chat">${selected ? `<header>${avatar(selected, "large")}<div><h3>${esc(Core.displayName(selected))}</h3><p>${esc(userMeta(selected))}</p></div><div class="messenger-chat-actions"><span class="messenger-online"><i></i>CRM 사용자</span>${isAdmin() ? `<button type="button" class="messenger-name-edit-button" data-office-display-name-edit="${esc(selected.uid)}" data-office-display-name-surface="messenger" ${state.busy ? "disabled" : ""}>이름 수정</button>` : ""}</div></header>${nameEditor}<div class="message-list" data-office-message-list>${conversation.length ? conversation.map(message => {
+      <section class="messenger-chat" data-office-attachment-drop-zone>${selected ? `<header>${avatar(selected, "large")}<div><h3>${esc(Core.displayName(selected))}</h3><p>${esc(userMeta(selected))}</p></div><div class="messenger-chat-actions"><span class="messenger-online"><i></i>CRM 사용자</span>${isAdmin() ? `<button type="button" class="messenger-name-edit-button" data-office-display-name-edit="${esc(selected.uid)}" data-office-display-name-surface="messenger" ${state.busy ? "disabled" : ""}>이름 수정</button>` : ""}</div></header>${nameEditor}<div class="message-list" data-office-message-list>${conversation.length ? conversation.map(message => {
         const mine = message.senderId === currentUserId();
         const attachment = message.attachment;
         const attachmentOnlyText = attachment && message.message === `[파일] ${attachment.fileName}`;
         return `<div class="message-row ${mine ? "mine" : "theirs"}">${!mine ? avatar(selected, "small") : ""}<div>${attachmentOnlyText ? "" : `<p>${esc(message.message)}</p>`}${attachment ? `<button type="button" class="message-attachment" data-office-attachment-open="${esc(attachment.fileId)}" ${state.openingAttachmentId === attachment.fileId ? "disabled" : ""}><b>📎 ${esc(attachment.fileName)}</b><small>${esc(attachment.extension.toUpperCase())} · ${esc(formatFileSize(attachment.size))}</small><em>${state.openingAttachmentId === attachment.fileId ? "여는 중" : "열기"}</em></button>` : ""}<span>${esc(formatMessageTime(message.createdAt))}${mine ? ` · ${message.readAt ? "읽음" : "안읽음"}` : ""}</span></div></div>`;
-      }).join("") : `<div class="message-empty"><span>✦</span><b>${esc(Core.displayName(selected))}님과 대화를 시작해 보세요</b><p>메시지와 업무 문서를 안전하게 주고받을 수 있습니다.</p></div>`}</div><form class="message-composer" data-office-message-form><div class="message-composer-content">${state.pendingAttachment ? `<div class="pending-attachment"><span>📎</span><b>${esc(state.pendingAttachment.fileName)}</b><small>${esc(formatFileSize(state.pendingAttachment.size))}</small><button type="button" data-office-attachment-remove aria-label="첨부 제거">×</button></div>` : ""}<div class="message-input-row"><button type="button" class="message-attach-button" data-office-attachment-pick ${state.busy ? "disabled" : ""} aria-label="파일 첨부" title="PDF·XLSX·CSV·DOCX·HWP·HWPX·PPTX·TXT·이미지, 최대 5MB">＋ 파일</button><textarea name="message" maxlength="4000" rows="1" placeholder="메시지를 입력하세요 (Shift+Enter 줄바꿈)">${esc(state.messageDraft)}</textarea></div></div><button class="message-send-button" type="submit" ${state.busy ? "disabled" : ""}>전송</button></form>` : `<div class="message-empty full"><span>✉</span><b>대화할 사용자를 선택하세요</b><p>왼쪽 CRM 사용자 목록에서 동료를 선택할 수 있습니다.</p></div>`}</section>
+      }).join("") : `<div class="message-empty"><span>✦</span><b>${esc(Core.displayName(selected))}님과 대화를 시작해 보세요</b><p>메시지와 업무 문서를 안전하게 주고받을 수 있습니다.</p></div>`}</div><form class="message-composer" data-office-message-form><div class="message-composer-content">${state.pendingAttachment ? `<div class="pending-attachment"><span>📎</span><b>${esc(state.pendingAttachment.fileName)}</b><small>${esc(formatFileSize(state.pendingAttachment.size))}</small><button type="button" data-office-attachment-remove aria-label="첨부 제거">×</button></div>` : ""}<div class="message-input-row"><button type="button" class="message-attach-button" data-office-attachment-pick ${state.busy ? "disabled" : ""} aria-label="파일 첨부" title="PDF·XLSX·CSV·DOCX·HWP·HWPX·PPTX·TXT·이미지, 최대 5MB">＋ 파일</button><textarea name="message" maxlength="4000" rows="1" placeholder="메시지를 입력하세요 (Shift+Enter 줄바꿈)">${esc(state.messageDraft)}</textarea></div><small class="message-drop-hint">파일을 대화창에 끌어놓아 첨부할 수 있습니다 · 최대 5MB</small></div><button class="message-send-button" type="submit" ${state.busy ? "disabled" : ""}>전송</button></form>` : `<div class="message-empty full"><span>✉</span><b>대화할 사용자를 선택하세요</b><p>왼쪽 CRM 사용자 목록에서 동료를 선택할 수 있습니다.</p></div>`}</section>
     </section>`;
   }
 
@@ -337,9 +443,9 @@
 
   function renderCurrent() {
     if (!state.context || !state.context.container) return;
-    const unreadCount = [...Core.unreadByUser(state.data.messages, currentUserId()).values()].reduce((sum, count) => sum + count, 0);
-    const unreadBadge = document.getElementById("navOfficeUnread");
-    if (unreadBadge) unreadBadge.textContent = String(unreadCount);
+    syncMessengerPresence();
+    if (!officeIsActive()) return;
+    updateUnreadBadge();
     if (state.loading && !state.loaded) state.context.container.innerHTML = loadingPanel();
     else if (state.error && !state.loaded) state.context.container.innerHTML = errorPanel();
     else {
@@ -357,12 +463,13 @@
 
   async function attendanceAction(action) {
     if (state.busy) return;
+    const dataRevision = state.dataRevision;
     state.busy = true;
     renderCurrent();
     try {
       const result = await state.context.api.saveOfficeAttendance({ action, workDate: Core.workDate() });
       if (!result || result.ok === false) throw new Error(result && result.error || "근태 시간을 저장하지 못했습니다.");
-      state.data = Core.normalizeOfficePayload(result.data || await state.context.api.loadOffice(), currentUser());
+      applyOfficeData(result.data || await state.context.api.loadOffice(), currentUser(), dataRevision);
       notify(action === "check-in" ? "출근 시간이 저장되었습니다." : "퇴근 시간이 저장되었습니다.", "success");
     } catch (error) {
       notify(error.message || "근태 시간을 저장하지 못했습니다.", "error");
@@ -382,20 +489,32 @@
     }
     state.selectedUserId = uid;
     renderCurrent();
-    const unread = state.data.messages.some(message => message.senderId === uid && message.receiverId === currentUserId() && !message.readAt);
-    if (!unread) return;
+    const messageIds = Core.unreadOfficeMessageIds(state.data.messages, uid, currentUserId());
+    if (!messageIds.length || !selectedConversationCanBeAcknowledged() || officeReadReceiptPeerIds.has(uid)) return;
+    if (await syncMessengerPresence() === false || !selectedConversationCanBeAcknowledged()) return;
+    officeReadReceiptPeerIds.add(uid);
+    const dataRevision = state.dataRevision;
+    const userId = currentUserId();
     try {
-      const result = await state.context.api.markOfficeMessagesRead({ peerId: uid });
+      const result = await state.context.api.markOfficeMessagesRead({ peerId: uid, messageIds });
       if (result && result.ok !== false) {
-        state.data = Core.normalizeOfficePayload(result.data || await state.context.api.loadOffice(), currentUser());
+        const payload = result.data || await state.context.api.loadOffice();
+        if (!applyOfficeData(payload, currentUser(), dataRevision)) {
+          mergeConfirmedReadReceipts(payload, uid, userId, messageIds);
+        }
+        updateUnreadBadge(userId);
         renderCurrent();
       }
-    } catch (_) {}
+    } catch (_) {
+    } finally {
+      officeReadReceiptPeerIds.delete(uid);
+    }
   }
 
   async function sendMessage(text) {
     const message = String(text || "").trim();
     if ((!message && !state.pendingAttachment) || !state.selectedUserId || state.busy) return;
+    const dataRevision = state.dataRevision;
     state.busy = true;
     renderCurrent();
     try {
@@ -405,7 +524,7 @@
         attachmentToken: state.pendingAttachment && state.pendingAttachment.token || ""
       });
       if (!result || result.ok === false) throw new Error(result && result.error || "메시지를 보내지 못했습니다.");
-      state.data = Core.normalizeOfficePayload(result.data || await state.context.api.loadOffice(), currentUser());
+      applyOfficeData(result.data || await state.context.api.loadOffice(), currentUser(), dataRevision);
       state.messageDraft = "";
       state.pendingAttachment = null;
       notify("메시지를 보냈습니다.", "success");
@@ -420,15 +539,68 @@
 
   async function pickMessageAttachment() {
     if (!state.selectedUserId || state.busy) return;
+    const receiverId = state.selectedUserId;
+    state.busy = true;
+    renderCurrent();
     try {
-      const result = await state.context.api.pickOfficeAttachment({ receiverId: state.selectedUserId });
+      const result = await state.context.api.pickOfficeAttachment({ receiverId });
       if (result && result.canceled) return;
       if (!result || result.ok === false || !result.attachment) throw new Error(result && result.error || "파일을 첨부하지 못했습니다.");
+      if (state.selectedUserId !== receiverId || !officeIsActive() || state.context?.view !== "officeMessenger") {
+        notify("대화 상대가 바뀌어 선택한 파일을 첨부하지 않았습니다.", "error");
+        return;
+      }
       state.pendingAttachment = result.attachment;
-      renderCurrent();
-      document.querySelector("[data-office-message-form] textarea")?.focus();
+      notify("파일을 첨부했습니다. 전송 버튼을 눌러 보내세요.", "success");
     } catch (error) {
       notify(error.message || "파일을 첨부하지 못했습니다.", "error");
+    } finally {
+      state.busy = false;
+      if (officeIsActive()) {
+        renderCurrent();
+        document.querySelector("[data-office-message-form] textarea")?.focus();
+      }
+    }
+  }
+
+  function fileDragEvent(event) {
+    return Array.from(event && event.dataTransfer && event.dataTransfer.types || []).includes("Files");
+  }
+
+  function clearOfficeFileDrag() {
+    officeFileDragDepth = 0;
+    document.querySelector("[data-office-attachment-drop-zone]")?.classList.remove("is-file-dragover");
+  }
+
+  async function dropMessageAttachment(file) {
+    if (!file || !state.selectedUserId || state.busy) return;
+    const receiverId = state.selectedUserId;
+    let request;
+    try {
+      request = state.context.api.dropOfficeAttachment(file, { receiverId });
+    } catch (error) {
+      notify(error.message || "드래그한 파일을 첨부하지 못했습니다.", "error");
+      return;
+    }
+    state.busy = true;
+    renderCurrent();
+    try {
+      const result = await request;
+      if (!result || result.ok === false || !result.attachment) throw new Error(result && result.error || "드래그한 파일을 첨부하지 못했습니다.");
+      if (state.selectedUserId !== receiverId || !officeIsActive() || state.context?.view !== "officeMessenger") {
+        notify("대화 상대가 바뀌어 드래그한 파일을 첨부하지 않았습니다.", "error");
+        return;
+      }
+      state.pendingAttachment = result.attachment;
+      notify("파일을 첨부했습니다. 전송 버튼을 눌러 보내세요.", "success");
+    } catch (error) {
+      notify(error.message || "드래그한 파일을 첨부하지 못했습니다.", "error");
+    } finally {
+      state.busy = false;
+      if (officeIsActive()) {
+        renderCurrent();
+        document.querySelector("[data-office-message-form] textarea")?.focus();
+      }
     }
   }
 
@@ -478,12 +650,13 @@
       notify("직원 이름은 제어문자 없이 80자 이내로 입력해 주세요.", "error");
       return;
     }
+    const dataRevision = state.dataRevision;
     state.busy = true;
     renderCurrent();
     try {
       const result = await state.context.api.saveOfficeDisplayName({ userId: targetUid, displayName });
       if (!result || result.ok === false) throw new Error(result && result.error || "직원 이름을 저장하지 못했습니다.");
-      state.data = Core.normalizeOfficePayload(result.data || await state.context.api.loadOffice(), currentUser());
+      applyOfficeData(result.data || await state.context.api.loadOffice(), currentUser(), dataRevision);
       if (state.editingDisplayNameUserId === targetUid) {
         state.editingDisplayNameUserId = "";
         state.displayNameEditSurface = "";
@@ -515,6 +688,53 @@
       renderCurrent();
     }
   }
+
+  document.addEventListener("dragenter", event => {
+    if (!fileDragEvent(event) || !officeIsActive() || state.context?.view !== "officeMessenger") return;
+    event.preventDefault();
+    const zone = event.target && event.target.closest && event.target.closest("[data-office-attachment-drop-zone]");
+    if (!zone || !state.selectedUserId || state.busy) return;
+    officeFileDragDepth += 1;
+    zone.classList.add("is-file-dragover");
+  });
+
+  document.addEventListener("dragover", event => {
+    if (!fileDragEvent(event) || !officeIsActive() || state.context?.view !== "officeMessenger") return;
+    event.preventDefault();
+    const zone = event.target && event.target.closest && event.target.closest("[data-office-attachment-drop-zone]");
+    const eligible = Boolean(zone && state.selectedUserId && !state.busy);
+    if (event.dataTransfer) event.dataTransfer.dropEffect = eligible ? "copy" : "none";
+    if (eligible) zone.classList.add("is-file-dragover");
+  });
+
+  document.addEventListener("dragleave", event => {
+    if (!fileDragEvent(event) || !officeIsActive() || state.context?.view !== "officeMessenger") return;
+    const zone = event.target && event.target.closest && event.target.closest("[data-office-attachment-drop-zone]");
+    if (!zone) return;
+    officeFileDragDepth = Math.max(0, officeFileDragDepth - 1);
+    if (!officeFileDragDepth || !zone.contains(event.relatedTarget)) clearOfficeFileDrag();
+  });
+
+  document.addEventListener("drop", event => {
+    if (!fileDragEvent(event) || !officeIsActive() || state.context?.view !== "officeMessenger") return;
+    event.preventDefault();
+    const zone = event.target && event.target.closest && event.target.closest("[data-office-attachment-drop-zone]");
+    const files = Array.from(event.dataTransfer && event.dataTransfer.files || []);
+    clearOfficeFileDrag();
+    if (!zone || !state.selectedUserId || state.busy) return;
+    if (files.length !== 1) {
+      notify("파일은 한 번에 1개만 첨부할 수 있습니다.", "error");
+      return;
+    }
+    void dropMessageAttachment(files[0]);
+  });
+
+  document.addEventListener("dragend", clearOfficeFileDrag);
+  window.addEventListener("blur", clearOfficeFileDrag);
+  document.addEventListener("visibilitychange", () => {
+    if (!document.hidden) acknowledgeVisibleConversation();
+  });
+  window.addEventListener("focus", acknowledgeVisibleConversation);
 
   document.addEventListener("click", event => {
     const go = event.target.closest("[data-office-go]");
@@ -635,13 +855,63 @@
     render(context) {
       const previousView = state.context && state.context.view;
       state.context = context;
+      state.active = true;
       startClock();
       startSync();
       renderCurrent();
       load(Boolean(state.loaded && previousView && previousView !== context.view));
     },
+    deactivate() {
+      if (!state.active && !state.clockTimer && !state.syncTimer) {
+        syncMessengerPresence();
+        return;
+      }
+      state.active = false;
+      syncMessengerPresence();
+      state.generation += 1;
+      state.loading = false;
+      clearOfficeFileDrag();
+      stopTimers();
+    },
+    applyData(payload, currentAuth) {
+      const user = currentAuth && currentAuth.user || currentUser();
+      if (!user || !user.uid) return;
+      applyOfficeData(payload, user);
+      state.loaded = true;
+      state.loading = false;
+      state.error = "";
+      chooseDefaultUser();
+      const unreadBadge = document.getElementById("navOfficeUnread");
+      if (unreadBadge) updateUnreadBadge(String(user.uid));
+      if (state.context && officeIsActive()) {
+        renderCurrent();
+        if (selectedConversationCanBeAcknowledged(String(user.uid))) void selectUser(state.selectedUserId);
+      }
+    },
+    async openConversation(peerId) {
+      const safePeerId = typeof peerId === "string" && /^[A-Za-z0-9._-]{1,128}$/.test(peerId) ? peerId : "";
+      if (safePeerId && safePeerId !== currentUserId()) {
+        if (state.selectedUserId !== safePeerId) {
+          state.messageDraft = "";
+          state.pendingAttachment = null;
+        }
+        state.selectedUserId = safePeerId;
+      }
+      renderCurrent();
+      await load(true);
+      if (state.selectedUserId) await selectUser(state.selectedUserId);
+    },
     reset() {
+      state.active = false;
+      syncMessengerPresence();
+      state.generation += 1;
+      stopTimers();
+      clearOfficeFileDrag();
+      state.context = null;
+      state.data = { users: [], attendance: [], messages: [], loadedAt: "" };
+      state.dataRevision += 1;
       state.loaded = false;
+      state.loading = false;
       state.error = "";
       state.selectedUserId = "";
       state.editingDisplayNameUserId = "";
@@ -649,9 +919,13 @@
       state.displayNameDraft = "";
       state.messageDraft = "";
       state.pendingAttachment = null;
+      officeReadReceiptPeerIds.clear();
       state.openingAttachmentId = "";
       state.selectedAdminUserId = "";
       state.adminTab = "list";
+      state.busy = false;
+      const unreadBadge = document.getElementById("navOfficeUnread");
+      if (unreadBadge) unreadBadge.textContent = "0";
     },
     snapshot() {
       return { loaded: state.loaded, loading: state.loading, error: state.error, selectedUserId: state.selectedUserId, users: state.data.users.length, attendance: state.data.attendance.length, messages: state.data.messages.length };

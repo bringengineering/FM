@@ -52,6 +52,8 @@
   let store = Core.blankStore();
   let currentView = "dashboard";
   let currentWorkspace = null;
+  let officeMessengerPresence = "";
+  let officeMessengerPresenceTask = Promise.resolve(true);
   let currentMarketingView = "marketingOverview";
   let marketingLoaded = false;
   let marketingEntryDraft = null;
@@ -760,6 +762,8 @@
   }
 
   function showLogin(message, isError) {
+    syncOfficeMessengerPresence(false);
+    window.BringOffice?.deactivate?.();
     appShell.classList.add("app-locked");
     appShell.setAttribute("aria-hidden", "true");
     loginGate.hidden = false;
@@ -781,6 +785,8 @@
 
   function showPasswordChange(auth, message, isError) {
     setCurrentAuth(auth);
+    syncOfficeMessengerPresence(false);
+    window.BringOffice?.deactivate?.();
     appShell.classList.add("app-locked");
     appShell.setAttribute("aria-hidden", "true");
     loginGate.hidden = false;
@@ -1349,6 +1355,8 @@
 
   function renderOperationsWorkspace() {
     if (!Object.hasOwn(viewMeta, currentView)) currentView = "dashboard";
+    if (!["officeHome", "officeAttendance", "officeMessenger", "officeAdmin"].includes(currentView)) window.BringOffice?.deactivate?.();
+    if (currentView !== "officeMessenger") syncOfficeMessengerPresence(false);
     if (currentView !== "valueScope" && valueScopeViewRequested) void deactivateValueScope();
     pageMeta();
     if (currentView === "dashboard") renderDashboard();
@@ -1369,7 +1377,18 @@
     else if (currentView === "partnerVendors") renderPartnerVendors();
     else if (currentView === "partnerQuotes") renderPartnerQuotes();
     else if (currentView === "tasks") renderTasks();
-    else if (["officeHome", "officeAttendance", "officeMessenger", "officeAdmin"].includes(currentView)) window.BringOffice.render({ view: currentView, container: main, api, currentAuth, showToast });
+    else if (["officeHome", "officeAttendance", "officeMessenger", "officeAdmin"].includes(currentView)) {
+      const officeView = currentView;
+      window.BringOffice.render({
+        view: officeView,
+        container: main,
+        api,
+        currentAuth,
+        showToast,
+        isActive: () => currentWorkspace === "operations" && currentView === officeView,
+        setMessengerPresence: syncOfficeMessengerPresence,
+      });
+    }
     else if (currentView === "security") renderSecurity();
     else renderSettings();
     finishViewRender(currentView);
@@ -1377,6 +1396,10 @@
 
   function applyWorkspaceChrome(workspace) {
     currentWorkspace = workspace;
+    if (workspace !== "operations") {
+      syncOfficeMessengerPresence(false);
+      window.BringOffice?.deactivate?.();
+    }
     const operationsWorkspace = workspace === "operations";
     document.body.classList.toggle("workspace-landing-active", workspace === null);
     document.body.classList.toggle("marketing-workspace-active", workspace === "marketing");
@@ -1469,6 +1492,25 @@
   function render() {
     workspaceCoordinator.render();
     // The Operations callback runs through else renderSettings() before finishViewRender(currentView).
+  }
+
+  function syncOfficeMessengerPresence(active, value) {
+    const peerId = active === true && typeof value === "string" && /^[A-Za-z0-9._-]{1,128}$/.test(value) ? value : "";
+    const next = active === true && peerId ? `active:${peerId}` : "inactive";
+    if (officeMessengerPresence === next) return officeMessengerPresenceTask;
+    officeMessengerPresence = next;
+    if (typeof api.setOfficeMessengerPresence !== "function") {
+      officeMessengerPresenceTask = Promise.resolve(false);
+      return officeMessengerPresenceTask;
+    }
+    const payload = peerId ? { active: true, peerId } : { active: false };
+    officeMessengerPresenceTask = api.setOfficeMessengerPresence(payload)
+      .then(result => result && result.ok !== false)
+      .catch(() => {
+        if (officeMessengerPresence === next) officeMessengerPresence = null;
+        return false;
+      });
+    return officeMessengerPresenceTask;
   }
 
   const VALUE_SCOPE_URLS = Object.freeze({
@@ -7733,8 +7775,26 @@ document.addEventListener("keydown", event => {
   if (event.key === "Escape") { closeModal(); closeDrawer(); }
 });
 
-  api.onShortcut(action => {
+  async function openOfficeMessengerShortcut(action) {
+    const peerId = action && typeof action.peerId === "string" && /^[A-Za-z0-9._-]{1,128}$/.test(action.peerId) ? action.peerId : "";
+    if (!peerId) return false;
+    await workspaceCoordinator.select("operations");
+    currentView = "officeMessenger";
+    render();
+    await window.BringOffice.openConversation(peerId);
+    return true;
+  }
+
+  api.onShortcut(async action => {
     if (currentAuth.required && !currentAuth.user) return;
+    if (action && typeof action === "object" && action.type === "open-office-messenger") {
+      try {
+        if (!await openOfficeMessengerShortcut(action)) throw new Error("INVALID_OFFICE_PEER");
+      } catch (_) {
+        showToast("메신저 화면을 열지 못했습니다. 왼쪽 메뉴에서 메신저를 선택해 주세요.", "error");
+      }
+      return;
+    }
     if (action === "new-customer") customerEditor("");
     if (action === "search") { searchEl.focus(); searchEl.select(); }
   });
@@ -7755,6 +7815,7 @@ document.addEventListener("keydown", event => {
   });
   api.onRemoteData(applyRemoteStore);
   api.onCustomerPhotos(photos => applyCustomerPhotos(photos));
+  api.onOfficeData(data => window.BringOffice.applyData(data, currentAuth));
   api.onValueScopeEvent(envelope => {
     if (!envelope || currentView !== "valueScope") return;
     if (envelope.type === "ready" && envelope.page === valueScopeTab) {

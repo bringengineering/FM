@@ -9,6 +9,7 @@ const root = path.resolve(__dirname, "../..");
 const normalizeLineEndings = (value) => value.replace(/\r\n?/g, "\n");
 const ci = normalizeLineEndings(fs.readFileSync(path.join(root, ".github/workflows/crm-ci.yml"), "utf8"));
 const release = normalizeLineEndings(fs.readFileSync(path.join(root, ".github/workflows/crm-release.yml"), "utf8"));
+const releaseExecutable = release.replace(/^\s*#.*$/gm, "");
 
 function jobBlock(name) {
   const match = release.match(new RegExp(`\\n  ${name}:\\n([\\s\\S]*?)(?=\\n  [a-z][a-z0-9-]*:\\n|$)`));
@@ -20,7 +21,7 @@ test("uses one non-cancelling production release queue and repairs a stable same
   assert.match(release, /group:\s*crm-production-release/);
   assert.match(release, /cancel-in-progress:\s*false/);
   assert.match(release, /stable_published/);
-  assert.ok(release.indexOf("plan-version.js") < release.indexOf("preflight-rules:"));
+  assert.ok(release.indexOf("plan-version.js") < release.indexOf("preflight-desktop:"));
   assert.match(release, /if:\s*needs\.plan\.outputs\.stable_published != 'true'/);
   const planner = fs.readFileSync(path.join(root, "desktop-crm/scripts/release/plan-version.js"), "utf8");
   assert.match(planner, /verifyPublishedReleaseAssets/);
@@ -32,13 +33,17 @@ test("plan checkout leaves Git authentication to the release planner token", () 
   assert.match(jobBlock("plan"), /actions\/checkout@[a-f0-9]{40}[\s\S]*?persist-credentials:\s*false/);
 });
 
-test("fails WIF and exact project preflight before any remote version reservation", () => {
-  const reserveIndex = release.indexOf("reserve-version.js");
-  const authIndex = release.indexOf("google-github-actions/auth@7c6bc770dae815cd3e89ee6cdf493a5fab2cc093");
-  assert.ok(release.indexOf("GCP_WORKLOAD_IDENTITY_PROVIDER_BRING_FM") < reserveIndex);
-  assert.ok(authIndex >= 0 && authIndex < reserveIndex);
-  assert.ok(release.indexOf("read-firebase-targets.js") < reserveIndex);
-  assert.match(release, /test \"\$GCP_PROJECT_ID\" = \"bring-fm\"/);
+test("release triggers only for desktop sources and reserves only after desktop preflight", () => {
+  const trigger = release.slice(release.indexOf("on:"), release.indexOf("# One global queue"));
+  assert.match(trigger, /paths:\s*\n\s*- "desktop-crm\/\*\*"\s*\n\s*- "\.github\/workflows\/crm-release\.yml"/);
+  for (const forbiddenPath of [
+    "company-site/",
+    "database.rules.json",
+    "firebase.json",
+    "release/firebase-targets.json",
+  ]) assert.equal(trigger.includes(forbiddenPath), false);
+  assert.match(jobBlock("reserve-build"), /needs: \[plan, preflight-desktop\]/);
+  assert.ok(release.indexOf("working-directory: desktop-crm") < release.indexOf("reserve-version.js"));
 });
 
 test("uses persistent atomic reservations with bounded retry and annotated tag finalization", () => {
@@ -73,16 +78,14 @@ test("creates the version-only commit before staging untracked release assets", 
   assert.ok(commitIndex < isolateIndex, "release-assets must not dirty the worktree before the scoped commit");
 });
 
-test("stages exactly three updater assets and publishes stable only after tested and deployed Rules", () => {
+test("stages exactly three updater assets and publishes stable after desktop preflight and immutable staging", () => {
   assert.match(release, /release-assets\/BRING\.CRM\.Company\.Setup\.\$\{\{ steps\.reserve\.outputs\.version \}\}\.exe\n/);
   assert.match(release, /release-assets\/BRING\.CRM\.Company\.Setup\.\$\{\{ steps\.reserve\.outputs\.version \}\}\.exe\.blockmap\n/);
   assert.match(release, /release-assets\/latest\.yml/);
-  assert.match(release, /deploy-rules:[\s\S]*needs: \[plan, preflight-rules, reserve-build, stage-release\]/);
-  assert.match(release, /publish-stable:[\s\S]*needs: \[plan, reserve-build, stage-release, deploy-rules\]/);
-  assert.match(jobBlock("deploy-rules"), /name: Revalidate the primary project before Rules deployment\s*\n\s*id: target/);
-  assert.match(release, /--project "\$\{\{ steps\.target\.outputs\.project_id \}\}" deploy --only database --non-interactive/);
-  assert.doesNotMatch(release, /deploy-rules:\s*\n\s*if: needs\.plan\.outputs\.rules_changed/);
-  assert.ok(release.lastIndexOf("--mode publish") > release.indexOf("deploy-rules:"));
+  assert.match(jobBlock("reserve-build"), /needs: \[plan, preflight-desktop\]/);
+  assert.match(jobBlock("stage-release"), /needs: \[plan, reserve-build\]/);
+  assert.match(jobBlock("publish-stable"), /needs\.stage-release\.result == 'success'[\s\S]*needs: \[plan, reserve-build, stage-release\]/);
+  assert.ok(release.indexOf("--mode stage") < release.lastIndexOf("--mode publish"));
   assert.ok(release.lastIndexOf("probe-update-channel.js") > release.lastIndexOf("--mode publish"));
 });
 
@@ -109,15 +112,13 @@ test("advances one dedicated bounded update pointer only after stable publicatio
   assert.match(channel, /CRM_UPDATE_CHANNEL_REF_CONFLICT/);
 });
 
-test("automatic deployment is Spark-compatible Rules-only and never deploys Functions, legacy, Hosting, or a blanket target", () => {
-  assert.match(release, /crmAutomaticRelease|read-firebase-targets\.js/);
-  assert.match(release, /emulators:exec --only database,storage/);
-  assert.match(release, /deploy --only database --non-interactive/);
-  assert.doesNotMatch(release, /steps\.target\.outputs\.function_selectors|deploy-functions|GCP_FUNCTIONS|cloudfunctions|functions\//i);
-  assert.doesNotMatch(release, /bring-fm-hj/);
-  assert.doesNotMatch(release, /--only hosting/);
-  assert.doesNotMatch(release, /firebase deploy(?![\s\S]{0,160}--only)/);
-  assert.doesNotMatch(release, /git push --tags|--clobber|--force(?:\s|"|')/);
+test("automatic desktop release never authenticates to or mutates live Firebase", () => {
+  assert.doesNotMatch(releaseExecutable, /preflight-rules:|preflight-wif:|deploy-rules:/);
+  assert.doesNotMatch(releaseExecutable, /google-github-actions\/auth|workload_identity_provider|id-token:\s*write/i);
+  assert.doesNotMatch(releaseExecutable, /GCP_|bring-crm-production|read-firebase-targets\.js/i);
+  assert.doesNotMatch(releaseExecutable, /firebase(?:-tools)?|database:get|database\.rules|firebase\.json|crm-rules/i);
+  assert.doesNotMatch(releaseExecutable, /deploy --only|--only database|--only hosting|cloudfunctions|functions\//i);
+  assert.doesNotMatch(releaseExecutable, /git push --tags|--clobber|--force(?:\s|"|')/);
 });
 
 test("CI remains read-only and validates desktop, backend, frontend, and emulator Rules", () => {
@@ -137,20 +138,12 @@ test("pins every third-party Action to an immutable commit and scopes production
     "actions/setup-node@820762786026740c76f36085b0efc47a31fe5020",
     "actions/setup-java@b6effb05e454b25005698d916606bdc6ffcbf961",
     "pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86",
-    "google-github-actions/auth@7c6bc770dae815cd3e89ee6cdf493a5fab2cc093",
     "actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a",
     "actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c",
   ]) assert.ok(`${ci}\n${release}`.includes(expected));
-  assert.doesNotMatch(jobBlock("preflight-rules"), /id-token:\s*write|google-github-actions\/auth/);
-  assert.match(jobBlock("preflight-wif"), /permissions:\s*\n\s*contents: read\s*\n\s*id-token: write/);
+  assert.doesNotMatch(release, /google-github-actions\/auth|id-token:\s*write/);
   assert.match(release, /reserve-build:[\s\S]*?permissions:\s*\n\s*contents: write/);
   assert.match(release, /publish-stable:[\s\S]*?permissions:\s*\n\s*actions: read\s*\n\s*contents: write/);
-  for (const name of ["deploy-rules"]) {
-    const block = jobBlock(name);
-    assert.match(block, /permissions:\s*\n\s*actions: read\s*\n\s*contents: read\s*\n\s*id-token: write/);
-    assert.match(block, /sha256sum --check crm-rules-deploy\.tgz\.sha256/);
-    assert.doesNotMatch(block, /pnpm .*install|pnpm .*build|npm ci|npm test/);
-  }
 });
 
 test("resumed drafts reuse all verified bytes and incomplete drafts burn forward without rebuilding the same version", () => {
@@ -166,9 +159,12 @@ test("resumed drafts reuse all verified bytes and incomplete drafts burn forward
   assert.match(reservation, /reuse_assets/);
 });
 
-test("rechecks the exact canonical source around tag, draft, Rules, and stable publication", () => {
+test("rechecks the exact canonical source around tag, draft, and stable publication", () => {
   const publisher = fs.readFileSync(path.join(root, "desktop-crm/scripts/release/publish-release.js"), "utf8");
+  const finalizer = fs.readFileSync(path.join(root, "desktop-crm/scripts/release/finalize-release-ref.js"), "utf8");
   assert.match(publisher, /assertCanonicalBranchHead/);
-  assert.ok((release.match(/verify-source-head\.js/g) || []).length >= 2);
-  assert.ok(release.indexOf("verify-source-head.js") < release.indexOf("Deploy only Realtime Database Rules"));
+  assert.match(finalizer, /assertCanonicalBranchHead/);
+  assert.doesNotMatch(release, /verify-source-head\.js/);
+  assert.ok(release.indexOf("finalize-release-ref.js") < release.indexOf("--mode stage"));
+  assert.ok(release.indexOf("--mode stage") < release.lastIndexOf("--mode publish"));
 });

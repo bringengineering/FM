@@ -1,4 +1,4 @@
-const { contextBridge, ipcRenderer } = require("electron");
+const { contextBridge, ipcRenderer, webUtils } = require("electron");
 
 const fieldOperationsDisabled = () => Promise.resolve({
   ok: false,
@@ -17,10 +17,20 @@ contextBridge.exposeInMainWorld("bringCRM", {
   saveOfficeAttendance: input => ipcRenderer.invoke("crm:office-attendance-save", input),
   saveOfficeDisplayName: input => ipcRenderer.invoke("crm:office-display-name-save", input),
   pickOfficeAttachment: input => ipcRenderer.invoke("crm:office-attachment-pick", input),
+  dropOfficeAttachment: (file, input) => {
+    let filePath = "";
+    try { filePath = webUtils.getPathForFile(file); } catch (_) {}
+    if (!filePath) return Promise.reject(new Error("드래그한 로컬 파일을 확인할 수 없습니다."));
+    return ipcRenderer.invoke("crm:office-attachment-drop", {
+      receiverId: String(input && input.receiverId || ""),
+      filePath,
+    });
+  },
   openOfficeAttachment: input => ipcRenderer.invoke("crm:office-attachment-open", input),
   sendOfficeMessage: input => ipcRenderer.invoke("crm:office-message-send", input),
   markOfficeMessagesRead: input => ipcRenderer.invoke("crm:office-messages-read", input),
   exportOfficeAttendance: input => ipcRenderer.invoke("crm:office-attendance-export", input),
+  setOfficeMessengerPresence: input => ipcRenderer.invoke("crm:office-messenger-presence", input),
   assist: input => ipcRenderer.invoke("crm:ai-assist", input),
   exportQuote: input => ipcRenderer.invoke("crm:quote-export", input),
   loadQuoteSupplier: () => ipcRenderer.invoke("crm:quote-supplier-load"),
@@ -92,6 +102,11 @@ contextBridge.exposeInMainWorld("bringCRM", {
     const listener = (_event, photos) => callback(photos);
     ipcRenderer.on("crm:customer-photos", listener);
     return () => ipcRenderer.removeListener("crm:customer-photos", listener);
+  },
+  onOfficeData: callback => {
+    const listener = (_event, data) => callback(data);
+    ipcRenderer.on("crm:office-data", listener);
+    return () => ipcRenderer.removeListener("crm:office-data", listener);
   },
   onUpdateState: callback => {
     const listener = (_event, state) => callback(state);

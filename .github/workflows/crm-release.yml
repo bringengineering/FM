@@ -1,5 +1,9 @@
 name: CRM Automatic Release
 
+# This workflow publishes only the signed desktop updater artifacts. Production
+# Firebase Rules belong to a separately reviewed deployment with complete target
+# rules, explicit authorization, backup, and rollback verification.
+
 on:
   workflow_dispatch:
   push:
@@ -7,13 +11,6 @@ on:
       - codex/bring-field-platform
     paths:
       - "desktop-crm/**"
-      - "company-site/package.json"
-      - "company-site/pnpm-lock.yaml"
-      - "company-site/tests/field/database-rules.test.ts"
-      - "company-site/tests/field/fixtures/database-cutover.rules.json"
-      - "database.rules.json"
-      - "firebase.json"
-      - "release/firebase-targets.json"
       - ".github/workflows/crm-release.yml"
 
 # One global queue is shared by every PC and rerun. Persistent remote claims choose
@@ -79,99 +76,9 @@ jobs:
       - run: npm test
         working-directory: desktop-crm
 
-  preflight-rules:
-    if: needs.plan.outputs.stable_published != 'true'
-    needs: plan
-    runs-on: ubuntu-latest
-    outputs:
-      rules_artifact_name: ${{ steps.rules-meta.outputs.rules_artifact_name }}
-    env:
-      GCP_PROJECT_ID: ${{ vars.GCP_PROJECT_ID }}
-      WIF_PROVIDER: ${{ vars.GCP_WORKLOAD_IDENTITY_PROVIDER_BRING_FM }}
-      RULES_SERVICE_ACCOUNT: ${{ vars.GCP_RULES_DEPLOY_SERVICE_ACCOUNT_BRING_FM }}
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          ref: ${{ needs.plan.outputs.source_sha }}
-      - uses: actions/setup-java@b6effb05e454b25005698d916606bdc6ffcbf961 # v5.7.0
-        with:
-          distribution: temurin
-          java-version: "21"
-      - uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86 # v6.0.10
-        with:
-          version: 10
-      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
-        with:
-          node-version: 22
-          cache: pnpm
-          cache-dependency-path: company-site/pnpm-lock.yaml
-      - name: Fail before reservation when production WIF is incomplete
-        shell: bash
-        run: |
-          test "$GCP_PROJECT_ID" = "bring-fm"
-          test -n "$WIF_PROVIDER"
-          test -n "$RULES_SERVICE_ACCOUNT"
-      - name: Validate the Spark-only automatic Database Rules target
-        id: target
-        run: node desktop-crm/scripts/release/read-firebase-targets.js --expected-project "$GCP_PROJECT_ID"
-      - run: pnpm --dir company-site install --frozen-lockfile
-      - name: Test Firebase rules in local emulators
-        run: pnpm --dir company-site exec firebase --config ../firebase.json --project demo-bring-fm emulators:exec --only database,storage "pnpm test:rules"
-      - name: Package the already-tested Rules bundle without credentials
-        shell: bash
-        run: |
-          tar -czf crm-rules-deploy.tgz company-site/node_modules company-site/package.json firebase.json database.rules.json release/firebase-targets.json
-          sha256sum crm-rules-deploy.tgz > crm-rules-deploy.tgz.sha256
-      - name: Name the immutable Rules artifact
-        id: rules-meta
-        shell: bash
-        run: echo "rules_artifact_name=crm-rules-${{ needs.plan.outputs.source_sha }}-${{ github.run_id }}-${{ github.run_attempt }}" >> "$GITHUB_OUTPUT"
-      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
-        with:
-          name: ${{ steps.rules-meta.outputs.rules_artifact_name }}
-          if-no-files-found: error
-          retention-days: 7
-          path: |
-            crm-rules-deploy.tgz
-            crm-rules-deploy.tgz.sha256
-
-  preflight-wif:
-    if: needs.plan.outputs.stable_published != 'true'
-    needs: [plan, preflight-desktop, preflight-rules]
-    runs-on: ubuntu-latest
-    environment: bring-crm-production
-    permissions:
-      contents: read
-      id-token: write
-    env:
-      GCP_PROJECT_ID: ${{ vars.GCP_PROJECT_ID }}
-      WIF_PROVIDER: ${{ vars.GCP_WORKLOAD_IDENTITY_PROVIDER_BRING_FM }}
-      RULES_SERVICE_ACCOUNT: ${{ vars.GCP_RULES_DEPLOY_SERVICE_ACCOUNT_BRING_FM }}
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          ref: ${{ needs.plan.outputs.source_sha }}
-          persist-credentials: false
-      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
-        with:
-          node-version: 22
-      - name: Revalidate production configuration before requesting OIDC tokens
-        shell: bash
-        run: |
-          test "$GCP_PROJECT_ID" = "bring-fm"
-          test -n "$WIF_PROVIDER"
-          test -n "$RULES_SERVICE_ACCOUNT"
-      - name: Revalidate the Spark-only automatic Database Rules target
-        run: node desktop-crm/scripts/release/read-firebase-targets.js --expected-project "$GCP_PROJECT_ID"
-      - name: Verify Rules workload identity before any version is reserved
-        uses: google-github-actions/auth@7c6bc770dae815cd3e89ee6cdf493a5fab2cc093 # v3
-        with:
-          workload_identity_provider: ${{ env.WIF_PROVIDER }}
-          service_account: ${{ env.RULES_SERVICE_ACCOUNT }}
-
   reserve-build:
     if: needs.plan.outputs.stable_published != 'true'
-    needs: [plan, preflight-wif]
+    needs: [plan, preflight-desktop]
     runs-on: windows-latest
     permissions:
       contents: write
@@ -320,85 +227,12 @@ jobs:
           --release-sha "${{ needs.reserve-build.outputs.release_sha }}"
           --assets-dir release-assets
 
-  deploy-rules:
-    # Reapply the exact tested Rules idempotently on every release. Comparing only
-    # to the last public source can miss live drift after an aborted publish.
-    if: needs.stage-release.outputs.already_published != 'true'
-    needs: [plan, preflight-rules, reserve-build, stage-release]
-    runs-on: ubuntu-latest
-    environment: bring-crm-production
-    permissions:
-      actions: read
-      contents: read
-      id-token: write
-    env:
-      GCP_PROJECT_ID: ${{ vars.GCP_PROJECT_ID }}
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          ref: ${{ needs.reserve-build.outputs.release_sha }}
-          persist-credentials: false
-      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
-        with:
-          node-version: 22
-      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
-        with:
-          name: ${{ needs.preflight-rules.outputs.rules_artifact_name }}
-          path: rules-bundle
-      - name: Restore only the credential-free tested Rules bundle
-        shell: bash
-        run: |
-          cd rules-bundle
-          sha256sum --check crm-rules-deploy.tgz.sha256
-          tar -xzf crm-rules-deploy.tgz -C "$GITHUB_WORKSPACE"
-      - name: Revalidate the primary project before Rules deployment
-        id: target
-        run: node desktop-crm/scripts/release/read-firebase-targets.js --expected-project "$GCP_PROJECT_ID"
-      - name: Authenticate immediately before the Rules deployment
-        uses: google-github-actions/auth@7c6bc770dae815cd3e89ee6cdf493a5fab2cc093 # v3
-        with:
-          workload_identity_provider: ${{ vars.GCP_WORKLOAD_IDENTITY_PROVIDER_BRING_FM }}
-          service_account: ${{ vars.GCP_RULES_DEPLOY_SERVICE_ACCOUNT_BRING_FM }}
-      - name: Fail closed if the canonical source moved before Rules deployment
-        run: node desktop-crm/scripts/release/verify-source-head.js --source-sha "${{ needs.reserve-build.outputs.source_sha }}" --source-branch "$CRM_SOURCE_BRANCH"
-      - name: Back up the current production Database Rules before deployment
-        run: >-
-          node company-site/node_modules/firebase-tools/lib/bin/firebase.js
-          --config firebase.json
-          --project "${{ steps.target.outputs.project_id }}"
-          database:get /.settings/rules
-          --pretty
-          --output database.rules.before-deploy.json
-      - name: Record the immutable production Rules backup checksum
-        shell: bash
-        run: sha256sum database.rules.before-deploy.json > database.rules.before-deploy.json.sha256
-      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
-        with:
-          name: crm-rules-backup-${{ steps.target.outputs.project_id }}-${{ github.run_id }}-${{ github.run_attempt }}
-          if-no-files-found: error
-          retention-days: 30
-          path: |
-            database.rules.before-deploy.json
-            database.rules.before-deploy.json.sha256
-      - name: Recheck the canonical source after the backup and before deployment
-        run: node desktop-crm/scripts/release/verify-source-head.js --source-sha "${{ needs.reserve-build.outputs.source_sha }}" --source-branch "$CRM_SOURCE_BRANCH"
-      - name: Deploy only Realtime Database Rules to bring-fm
-        run: node company-site/node_modules/firebase-tools/lib/bin/firebase.js --config firebase.json --project "${{ steps.target.outputs.project_id }}" deploy --only database --non-interactive
-      - name: Verify the live Database Rules exactly match the tested source
-        shell: bash
-        run: |
-          node company-site/node_modules/firebase-tools/lib/bin/firebase.js --config firebase.json --project "${{ steps.target.outputs.project_id }}" database:get /.settings/rules --pretty --output database.rules.after-deploy.json
-          node -e "const fs=require('fs');const assert=require('assert/strict');const expected=JSON.parse(fs.readFileSync('database.rules.json','utf8'));const live=JSON.parse(fs.readFileSync('database.rules.after-deploy.json','utf8'));assert.deepStrictEqual(live,expected,'live Database Rules verification failed')"
-      - name: Fail closed if the canonical source moved during Rules deployment
-        run: node desktop-crm/scripts/release/verify-source-head.js --source-sha "${{ needs.reserve-build.outputs.source_sha }}" --source-branch "$CRM_SOURCE_BRANCH"
-
   publish-stable:
     if: >-
       always() &&
       needs.stage-release.result == 'success' &&
-      needs.stage-release.outputs.already_published != 'true' &&
-      needs.deploy-rules.result == 'success'
-    needs: [plan, reserve-build, stage-release, deploy-rules]
+      needs.stage-release.outputs.already_published != 'true'
+    needs: [plan, reserve-build, stage-release]
     runs-on: ubuntu-latest
     permissions:
       actions: read

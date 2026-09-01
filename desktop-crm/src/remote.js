@@ -11,6 +11,47 @@ const MarketingPersistence = require("./marketing-persistence");
 // decoded HTTP stream before concatenating it so a rules/configuration mistake
 // cannot turn an attachment read into an unbounded main-process allocation.
 const OFFICE_ATTACHMENT_RESPONSE_MAX_BYTES = Math.ceil(OfficeAttachment.MAX_FILE_BYTES / 3) * 4 + 16 * 1024;
+const MAX_OFFICE_CONVERSATION_MESSAGES = 200;
+const OFFICE_POLL_INTERVAL_MS = 10000;
+const MAX_OFFICE_STREAM_BUFFER_CHARS = 1024 * 1024;
+const MAX_SHARED_STREAM_BUFFER_CHARS = 16 * 1024 * 1024;
+
+function createBoundedSseScanner(maxBufferedChars, onEvent) {
+  if (!Number.isSafeInteger(maxBufferedChars) || maxBufferedChars < 1024) throw new TypeError("invalid SSE buffer limit");
+  const dispatchEvent = typeof onEvent === "function" ? onEvent : () => {};
+  let buffer = "";
+  let eventName = "";
+  return Object.freeze({
+    push(text) {
+      const chunk = String(text || "");
+      if (chunk.length > maxBufferedChars) throw createError("실시간 응답이 허용 크기를 초과했습니다.", "STREAM_FRAME_TOO_LARGE");
+      buffer += chunk;
+      let newline;
+      while ((newline = buffer.indexOf("\n")) >= 0) {
+        const line = buffer.slice(0, newline).replace(/\r$/, "");
+        buffer = buffer.slice(newline + 1);
+        if (line.length > maxBufferedChars) throw createError("실시간 응답이 허용 크기를 초과했습니다.", "STREAM_FRAME_TOO_LARGE");
+        if (!line) {
+          dispatchEvent(eventName);
+          eventName = "";
+        } else if (line.startsWith("event:")) {
+          eventName = line.slice(6).trim().slice(0, 64);
+        }
+      }
+      if (buffer.length > maxBufferedChars) throw createError("실시간 응답이 허용 크기를 초과했습니다.", "STREAM_FRAME_TOO_LARGE");
+    },
+    bufferedLength: () => buffer.length,
+  });
+}
+
+async function mapWithConcurrency(values, concurrency, mapper) {
+  const rows = Array.isArray(values) ? values : [];
+  const results = [];
+  for (let offset = 0; offset < rows.length; offset += concurrency) {
+    results.push(...await Promise.all(rows.slice(offset, offset + concurrency).map(mapper)));
+  }
+  return results;
+}
 
 function responseHeader(response, name) {
   if (!response || !response.headers || typeof response.headers.get !== "function") return "";
@@ -940,6 +981,7 @@ class FirebaseRemoteClient {
     this.clearLocalStore = options.clearLocalStore || (async () => {});
     this.onRemoteStore = options.onRemoteStore || (() => {});
     this.onCustomerPhotos = options.onCustomerPhotos || (() => {});
+    this.onOfficeData = options.onOfficeData || (() => {});
     this.onAuthState = options.onAuthState || (() => {});
     this.onSyncState = options.onSyncState || (() => {});
     this.fieldSummariesEnabled = options.fieldSummariesEnabled !== false;
@@ -952,12 +994,16 @@ class FirebaseRemoteClient {
     this.summaryStreamTask = null;
     this.customerPhotoStreamController = null;
     this.customerPhotoStreamTask = null;
+    this.officePollTimer = null;
+    this.officePollTask = null;
+    this.officeLoadSequence = 0;
     this.reloadTimer = null;
     this.overlayReloadTimer = null;
     this.customerPhotoReloadTimer = null;
     this.retryTimer = null;
     this.canonicalRefreshRetryTimer = null;
     this.tokenRefreshTask = null;
+    this.streamAuthRecoveryTask = null;
     this.sessionFileQueue = Promise.resolve();
     this.sessionFileSequence = 0;
     this.canonicalPendingMemory = null;
@@ -1877,23 +1923,44 @@ class FirebaseRemoteClient {
     return this.session;
   }
 
-  async loadOffice() {
+  async loadOfficeSnapshot() {
+    const requestSequence = ++this.officeLoadSequence;
     const session = this.requireOfficeSession();
     const guard = this.captureSessionGuard();
     const attendanceLocation = session.officeAdmin === true ? "officeAttendance" : `officeAttendance/${session.uid}`;
-    const [users, teamProfiles, attendance, mailbox] = await Promise.all([
+    const [users, teamProfiles, attendance] = await Promise.all([
       this.dbRequest("crmAccess", { method: "GET" }),
       this.dbRequest("teamProfiles", { method: "GET" }),
       this.dbRequest(attendanceLocation, { method: "GET" }),
-      this.dbRequest(`officeMailbox/${session.uid}`, { method: "GET" }),
     ]);
     this.assertSessionGuardActive(guard);
+    const mergedUsers = OfficeCore.mergeOfficeUsers(users, teamProfiles);
+    const peerIds = Object.keys(mergedUsers)
+      .filter(userId => userId !== session.uid && OfficeCore.normalizeOfficeUserId(userId) === userId)
+      .sort();
+    const conversations = await mapWithConcurrency(peerIds, 8, async peerId => ({
+      peerId,
+      messages: await this.dbRequest(`officeMailbox/${session.uid}/${peerId}`, {
+        method: "GET",
+        query: `orderBy=%22%24key%22&limitToLast=${MAX_OFFICE_CONVERSATION_MESSAGES}`,
+      }),
+    }));
+    this.assertSessionGuardActive(guard);
+    const mailbox = Object.create(null);
+    conversations.forEach(({ peerId, messages }) => { mailbox[peerId] = messages; });
     return {
-      users: OfficeCore.mergeOfficeUsers(users, teamProfiles),
-      attendance: OfficeCore.flattenAttendance(attendance),
-      messages: OfficeCore.flattenMailbox(mailbox),
-      loadedAt: new Date().toISOString(),
+      requestSequence,
+      data: {
+        users: mergedUsers,
+        attendance: OfficeCore.flattenAttendance(attendance),
+        messages: OfficeCore.flattenMailbox(mailbox),
+        loadedAt: new Date().toISOString(),
+      },
     };
+  }
+
+  async loadOffice() {
+    return (await this.loadOfficeSnapshot()).data;
   }
 
   async saveOfficeAttendance(input) {
@@ -2032,14 +2099,24 @@ class FirebaseRemoteClient {
   async markOfficeMessagesRead(input) {
     const session = this.requireOfficeSession();
     const guard = this.captureSessionGuard();
-    const peerId = String(input && input.peerId || "").trim();
-    if (!/^[A-Za-z0-9._-]{1,128}$/.test(peerId) || peerId === session.uid) throw createError("대화 상대가 올바르지 않습니다.", "VALIDATION_ERROR");
-    const conversation = await this.dbRequest(`officeMailbox/${session.uid}/${peerId}`, { method: "GET" });
+    const source = input && typeof input === "object" && !Array.isArray(input) ? input : {};
+    if (Object.keys(source).some(key => !["peerId", "messageIds"].includes(key))) throw createError("읽음 처리 요청이 올바르지 않습니다.", "VALIDATION_ERROR");
+    const peerId = String(source.peerId || "").trim();
+    const rawMessageIds = source.messageIds;
+    const messageIds = OfficeCore.normalizeOfficeMessageIds(rawMessageIds);
+    if (!/^[A-Za-z0-9._-]{1,128}$/.test(peerId) || peerId === session.uid
+      || !Array.isArray(rawMessageIds) || messageIds.length !== rawMessageIds.length) {
+      throw createError("읽음 처리할 대화를 확인해 주세요.", "VALIDATION_ERROR");
+    }
+    const records = await mapWithConcurrency(messageIds, 8, async id => ({
+      id,
+      message: await this.dbRequest(`officeMailbox/${session.uid}/${peerId}/${id}`, { method: "GET" }),
+    }));
     this.assertSessionGuardActive(guard);
     const readAt = new Date().toISOString();
     const patch = {};
-    Object.entries(conversation || {}).forEach(([id, message]) => {
-      if (!message || message.senderId !== peerId || message.receiverId !== session.uid || message.readAt) return;
+    records.forEach(({ id, message }) => {
+      if (!message || message.id !== id || message.senderId !== peerId || message.receiverId !== session.uid || message.readAt) return;
       patch[`${session.uid}/${peerId}/${id}/readAt`] = readAt;
       patch[`${peerId}/${session.uid}/${id}/readAt`] = readAt;
     });
@@ -3583,6 +3660,34 @@ class FirebaseRemoteClient {
     }), 180);
   }
 
+  async reloadOffice(guardValue) {
+    const guard = guardValue || this.captureSessionGuard();
+    if (!this.sessionGuardActive(guard)) return null;
+    const snapshot = await this.loadOfficeSnapshot();
+    const office = snapshot && snapshot.data;
+    if (!office || !this.sessionGuardActive(guard) || snapshot.requestSequence !== this.officeLoadSequence) return null;
+    this.onOfficeData(office);
+    return office;
+  }
+
+  startOfficePolling(generation) {
+    if (!this.session || this.officePollTimer || this.officePollTask) return;
+    const guard = this.captureSessionGuard();
+    const poll = () => {
+      this.officePollTimer = null;
+      if (this.stopped || generation !== this.streamGeneration || !this.sessionGuardActive(guard)) return;
+      let tracked;
+      tracked = this.reloadOffice(guard).catch(() => null).finally(() => {
+        if (this.officePollTask === tracked) this.officePollTask = null;
+        if (!this.stopped && generation === this.streamGeneration && this.sessionGuardActive(guard) && !this.officePollTimer) {
+          this.officePollTimer = setTimeout(poll, OFFICE_POLL_INTERVAL_MS);
+        }
+      });
+      this.officePollTask = tracked;
+    };
+    this.officePollTimer = setTimeout(poll, 0);
+  }
+
   async reloadCustomerPhotos(guardValue) {
     const guard = guardValue || this.captureSessionGuard();
     if (!this.sessionGuardActive(guard)) return null;
@@ -3660,6 +3765,7 @@ class FirebaseRemoteClient {
       });
       this.customerPhotoStreamTask = trackedPhotos;
     }
+    this.startOfficePolling(generation);
   }
 
   stopStream() {
@@ -3675,11 +3781,27 @@ class FirebaseRemoteClient {
     this.streamTask = null;
     this.summaryStreamTask = null;
     this.customerPhotoStreamTask = null;
+    this.officeLoadSequence += 1;
+    this.officePollTask = null;
     clearTimeout(this.reloadTimer);
     clearTimeout(this.overlayReloadTimer);
     clearTimeout(this.customerPhotoReloadTimer);
+    clearTimeout(this.officePollTimer);
+    this.officePollTimer = null;
     clearTimeout(this.retryTimer);
     clearTimeout(this.canonicalRefreshRetryTimer);
+  }
+
+  abortActiveStreamConnections() {
+    if (this.streamController) this.streamController.abort();
+    if (this.summaryStreamController) this.summaryStreamController.abort();
+    if (this.customerPhotoStreamController) this.customerPhotoStreamController.abort();
+  }
+
+  recoverStreamAuthorization() {
+    if (this.session) this.session.expiresAt = 0;
+    this.abortActiveStreamConnections();
+    return this.revalidateStreamAccess();
   }
 
   handleStreamEvent(kind, eventName) {
@@ -3690,13 +3812,43 @@ class FirebaseRemoteClient {
       return this.scheduleRemoteReload();
     }
     if (eventName === "auth_revoked" || eventName === "cancel") {
-      if (this.session) this.session.expiresAt = 0;
-      this.sessionGeneration += 1;
-      if (this.streamController) this.streamController.abort();
-      if (this.summaryStreamController) this.summaryStreamController.abort();
-      if (this.customerPhotoStreamController) this.customerPhotoStreamController.abort();
+      void this.recoverStreamAuthorization();
     }
     return undefined;
+  }
+
+  revalidateStreamAccess() {
+    if (this.streamAuthRecoveryTask) return this.streamAuthRecoveryTask;
+    const context = this.captureSessionContext();
+    const task = (async () => {
+      try {
+        const token = await this.ensureIdToken(true);
+        if (!this.sessionContextActive(context)) return false;
+        await this.verifyAccess(context, token);
+        if (!this.sessionContextActive(context)) return false;
+        await this.persistSession(context, context.sessionRef);
+        if (!this.sessionContextActive(context)) return false;
+        this.lastError = "";
+        this.emitAuth();
+        return true;
+      } catch (error) {
+        if (!this.sessionContextActive(context)) return false;
+        if (retryableSyncError(error)) {
+          this.emitSync("offline", "서버 권한을 다시 확인하는 중입니다.", { pending: false });
+          return false;
+        }
+        await this.logout(false);
+        this.lastError = "로그인 권한이 변경되었습니다. 다시 로그인해 주세요.";
+        this.emitAuth();
+        this.emitSync("error", this.lastError, { pending: false });
+        return false;
+      }
+    })();
+    const wrapped = task.finally(() => {
+      if (this.streamAuthRecoveryTask === wrapped) this.streamAuthRecoveryTask = null;
+    });
+    this.streamAuthRecoveryTask = wrapped;
+    return wrapped;
   }
 
   async streamLoop(location, kind, generation) {
@@ -3705,6 +3857,7 @@ class FirebaseRemoteClient {
       ? "summaryStreamController"
       : kind === "customerPhotos" ? "customerPhotoStreamController" : "streamController";
     const sessionGuard = this.captureSessionGuard();
+    let reconnectDelayMs = 2500;
     while (
       !this.stopped
       && this.session
@@ -3719,39 +3872,43 @@ class FirebaseRemoteClient {
         const rootedLocation = resolveDatabaseLocation(location, this.databaseRoot);
         const url = `${this.firebase.databaseUrl}/${rootedLocation}.json?auth=${encodeURIComponent(token)}`;
         const response = await this.fetch(url, { headers: { Accept: "text/event-stream" }, signal: controller.signal });
+        if ([401, 403].includes(Number(response.status))) {
+          await cancelResponseBody(response);
+          if (!this.sessionGuardActive(sessionGuard)) break;
+          const recovered = await this.recoverStreamAuthorization();
+          if (!this.sessionGuardActive(sessionGuard)) break;
+          if (recovered) {
+            reconnectDelayMs = 2500;
+            continue;
+          }
+          throw createError(`실시간 연결 권한 확인 실패 (${response.status})`, "STREAM_AUTH_REVALIDATION");
+        }
         if (!response.ok || !response.body) throw createError(`실시간 연결 실패 (${response.status})`, "STREAM_ERROR");
         if (kind === "shared") this.emitSync("connected", "공용 서버 실시간 연결됨", { pending: false });
         const reader = response.body.getReader();
-        const decoder = new TextDecoder();
-        let buffer = "";
-        let eventName = "";
-        let dataLines = [];
-        const dispatch = () => {
-          if (this.sessionGuardActive(sessionGuard)) this.handleStreamEvent(kind, eventName);
-          eventName = "";
-          dataLines = [];
-        };
+        const decoder = new TextDecoder("utf-8", { fatal: true });
+        const scanner = createBoundedSseScanner(
+          kind === "officeInbox" ? MAX_OFFICE_STREAM_BUFFER_CHARS : MAX_SHARED_STREAM_BUFFER_CHARS,
+          eventName => {
+            if (this.sessionGuardActive(sessionGuard)) this.handleStreamEvent(kind, eventName);
+          },
+        );
         while (!this.stopped) {
           const chunk = await reader.read();
           if (chunk.done) break;
-          buffer += decoder.decode(chunk.value, { stream: true });
-          let newline;
-          while ((newline = buffer.indexOf("\n")) >= 0) {
-            const line = buffer.slice(0, newline).replace(/\r$/, "");
-            buffer = buffer.slice(newline + 1);
-            if (!line) dispatch();
-            else if (line.startsWith("event:")) eventName = line.slice(6).trim();
-            else if (line.startsWith("data:")) dataLines.push(line.slice(5).trim());
-          }
+          reconnectDelayMs = 2500;
+          scanner.push(decoder.decode(chunk.value, { stream: true }));
         }
       } catch (error) {
         if (!this.stopped && error.name !== "AbortError" && kind === "shared") {
           this.emitSync("offline", "실시간 연결을 다시 시도하는 중");
         }
+        if (error.name !== "AbortError") reconnectDelayMs = Math.min(60000, Math.max(2500, reconnectDelayMs * 2));
       } finally {
+        try { controller.abort(); } catch (_) {}
         if (this[controllerKey] === controller) this[controllerKey] = null;
       }
-      if (!this.stopped && this.sessionGuardActive(sessionGuard) && generation === this.streamGeneration) await delay(2500);
+      if (!this.stopped && this.sessionGuardActive(sessionGuard) && generation === this.streamGeneration) await delay(reconnectDelayMs);
     }
   }
 
@@ -3767,6 +3924,11 @@ module.exports = {
   WORKFLOW_ACTIONS,
   SHARED_COLLECTIONS,
   OFFICE_ATTACHMENT_RESPONSE_MAX_BYTES,
+  MAX_OFFICE_CONVERSATION_MESSAGES,
+  OFFICE_POLL_INTERVAL_MS,
+  MAX_OFFICE_STREAM_BUFFER_CHARS,
+  MAX_SHARED_STREAM_BUFFER_CHARS,
+  createBoundedSseScanner,
   readBoundedJsonResponse,
   PROTECTED_JSON_FORMAT,
   encodeProtectedJson,

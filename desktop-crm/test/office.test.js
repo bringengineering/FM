@@ -63,6 +63,65 @@ test("plain Enter sends while Shift+Enter and Korean IME confirmation stay in th
   assert.equal(Office.shouldSendMessageKey({ key: "a" }), false);
 });
 
+test("a conversation is acknowledged only while its Messenger view is actually visible and focused", () => {
+  const visibleMessenger = {
+    officeActive: true,
+    view: "officeMessenger",
+    documentHidden: false,
+    documentFocused: true,
+    selectedUserId: "uid-peer",
+    hasUnread: true,
+  };
+  assert.equal(Office.shouldAcknowledgeConversation(visibleMessenger), true);
+  assert.equal(Office.shouldAcknowledgeConversation({ ...visibleMessenger, documentHidden: true }), false);
+  assert.equal(Office.shouldAcknowledgeConversation({ ...visibleMessenger, documentFocused: false }), false);
+  assert.equal(Office.shouldAcknowledgeConversation({ ...visibleMessenger, view: "officeHome" }), false);
+  assert.equal(Office.shouldAcknowledgeConversation({ ...visibleMessenger, officeActive: false }), false);
+  assert.equal(Office.shouldAcknowledgeConversation({ ...visibleMessenger, selectedUserId: "" }), false);
+  assert.equal(Office.shouldAcknowledgeConversation({ ...visibleMessenger, hasUnread: false }), false);
+});
+
+test("read receipts contain only a bounded exact snapshot of rendered unread message ids", () => {
+  const rows = Array.from({ length: Office.MAX_OFFICE_READ_RECEIPT_IDS + 5 }, (_, index) => ({
+    id: `msg_rendered_${String(index).padStart(4, "0")}`,
+    senderId: "uid-peer",
+    receiverId: "uid-current",
+    readAt: "",
+  }));
+  rows.push({ id: "msg_outgoing_0001", senderId: "uid-current", receiverId: "uid-peer", readAt: "" });
+  rows.push({ id: "msg_read_00000001", senderId: "uid-peer", receiverId: "uid-current", readAt: "2026-09-01T01:00:00.000Z" });
+  rows.push({ id: "unsafe-id", senderId: "uid-peer", receiverId: "uid-current", readAt: "" });
+  const ids = Office.unreadOfficeMessageIds(rows, "uid-peer", "uid-current");
+  assert.equal(ids.length, Office.MAX_OFFICE_READ_RECEIPT_IDS);
+  assert.equal(ids[0], "msg_rendered_0005");
+  assert.equal(ids.at(-1), "msg_rendered_0104");
+  assert.deepEqual(Office.normalizeOfficeMessageIds(ids), ids);
+  assert.deepEqual(Office.normalizeOfficeMessageIds([...ids, ids[0]]), []);
+  assert.deepEqual(Office.normalizeOfficeMessageIds([" unsafe-id "]), []);
+});
+
+test("confirmed read responses merge exact IDs without overwriting a newer conversation snapshot", () => {
+  const current = [
+    { id: "msg_peer_a_0001", senderId: "peer-a", receiverId: "uid-current", readAt: "", message: "A" },
+    { id: "msg_peer_b_0001", senderId: "peer-b", receiverId: "uid-current", readAt: "", message: "B" },
+  ];
+  const afterA = Office.mergeConfirmedOfficeReadReceipts(current, [
+    { ...current[0], readAt: "2026-09-01T01:00:00.000Z" },
+  ], "peer-a", "uid-current", ["msg_peer_a_0001"]);
+  const afterB = Office.mergeConfirmedOfficeReadReceipts(afterA, [
+    { ...current[1], readAt: "2026-09-01T01:00:01.000Z" },
+  ], "peer-b", "uid-current", ["msg_peer_b_0001"]);
+  assert.equal(afterB[0].readAt, "2026-09-01T01:00:00.000Z");
+  assert.equal(afterB[1].readAt, "2026-09-01T01:00:01.000Z");
+  assert.equal(current[0].readAt, "");
+  assert.strictEqual(
+    Office.mergeConfirmedOfficeReadReceipts(afterB, [
+      { ...current[0], id: "msg_unrequested1", readAt: "2026-09-01T01:00:02.000Z" },
+    ], "peer-a", "uid-current", ["msg_peer_a_0001"]),
+    afterB,
+  );
+});
+
 test("office users prefer direct names and otherwise use their active linked worker profile", () => {
   const access = {
     "uid-direct": { email: "hwj1896@example.com", displayName: " 황우중 ", role: "member", enabled: true, operatorId: "operator_shared", officeProfileId: "operator_kim" },
@@ -135,17 +194,26 @@ test("office UI is wired to the production CRM navigation, auth context, and can
   assert.match(html, /id="navOfficeAdmin"/);
   assert.match(app, /user\.officeAdmin !== true/);
   assert.match(app, /window\.BringOffice\.render/);
+  assert.match(app, /setMessengerPresence: syncOfficeMessengerPresence/);
+  assert.match(app, /\{ active: true, peerId \}/);
   assert.match(preload, /crm:office-load/);
   assert.match(preload, /crm:office-attendance-save/);
   assert.match(preload, /crm:office-display-name-save/);
   assert.match(preload, /crm:office-attendance-export/);
   assert.match(preload, /crm:office-message-send/);
   assert.match(preload, /crm:office-attachment-pick/);
+  assert.match(preload, /webUtils\.getPathForFile\(file\)/);
+  assert.match(preload, /crm:office-attachment-drop/);
   assert.match(preload, /crm:office-attachment-open/);
+  assert.match(preload, /crm:office-messenger-presence/);
+  assert.match(preload, /crm:office-data/);
   assert.match(main, /secureCanonicalHandle\("crm:office-messages-read"/);
   assert.match(main, /secureCanonicalHandle\("crm:office-display-name-save"/);
   assert.match(main, /secureCanonicalHandle\("crm:office-attachment-pick"/);
+  assert.match(main, /secureCanonicalHandle\("crm:office-attachment-drop"/);
   assert.match(main, /secureCanonicalHandle\("crm:office-attachment-open"/);
+  assert.match(main, /new Notification\(/);
+  assert.match(main, /officeMessengerPeerId !== peerId/);
   assert.match(main, /BRING_CRM_SCREENSHOT_ACTION === "office-messenger-smoke"/);
   assert.match(main, /actor\.officeAdmin !== true/);
   assert.doesNotMatch(main, /userId === actor\.uid/);
@@ -156,6 +224,9 @@ test("office UI is wired to the production CRM navigation, auth context, and can
   assert.match(remote, /sessionRef\.officeAdmin = access\.officeAdmin === true/);
   assert.match(remote, /session\.officeAdmin === true \? "officeAttendance" : `officeAttendance\/\$\{session\.uid\}`/);
   assert.match(remote, /officeMailbox/);
+  assert.match(remote, /startOfficePolling\(generation\)/);
+  assert.match(remote, /OFFICE_POLL_INTERVAL_MS/);
+  assert.doesNotMatch(remote, /officeInboxLatest/);
   assert.match(remote, /officeMessageFiles/);
   assert.doesNotMatch(remote, /userId === session\.uid/);
   assert.match(ui, /브링의 업무를 한 곳에서/);
@@ -170,6 +241,17 @@ test("office UI is wired to the production CRM navigation, auth context, and can
   assert.match(ui, /전체 근태관리와 모든 사용자의 메신저에 같은 이름/);
   assert.match(ui, /saveOfficeDisplayName/);
   assert.match(ui, /data-office-attachment-pick/);
+  assert.match(ui, /data-office-attachment-drop-zone/);
+  assert.match(ui, /dropOfficeAttachment\(file, \{ receiverId \}\)/);
+  assert.match(ui, /document\.addEventListener\("drop"/);
+  assert.match(ui, /state\.context\?\.view !== "officeMessenger"/);
+  assert.match(ui, /document\.addEventListener\("visibilitychange"/);
+  assert.match(ui, /window\.addEventListener\("focus", acknowledgeVisibleConversation\)/);
+  assert.match(ui, /Core\.shouldAcknowledgeConversation/);
+  assert.match(ui, /await syncMessengerPresence\(\)/);
+  assert.match(ui, /officeReadReceiptPeerIds = new Set\(\)/);
+  assert.match(ui, /Core\.mergeConfirmedOfficeReadReceipts/);
+  assert.match(ui, /unreadBadge\.textContent = "0"/);
   assert.match(ui, /data-office-attachment-open/);
 });
 

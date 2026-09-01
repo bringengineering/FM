@@ -7,6 +7,7 @@ const os = require('node:os');
 const path = require('node:path');
 const vm = require('node:vm');
 const Policy = require('../src/mutation-policy');
+const { createOfficeAttachmentStageGate } = require('../src/office-attachment-stage-gate');
 const {
   FirebaseRemoteClient,
   OFFICE_ATTACHMENT_RESPONSE_MAX_BYTES,
@@ -15,20 +16,188 @@ const {
 
 const source = name => fs.readFile(path.join(__dirname, '..', 'src', name), 'utf8');
 
+test('attachment staging reserves bounded slots before asynchronous validation begins', async () => {
+  let pendingCount = 0;
+  const gate = createOfficeAttachmentStageGate({ maxInFlight: 2, maxTotal: 8, getPendingCount: () => pendingCount });
+  const releases = [];
+  const hold = () => gate.run(() => new Promise(resolve => releases.push(resolve)));
+  const first = hold();
+  const second = hold();
+  assert.equal(gate.snapshot().inFlight, 2);
+  await assert.rejects(hold(), /다른 첨부파일을 확인 중/);
+  releases.shift()('first');
+  assert.equal(await first, 'first');
+  pendingCount = 7;
+  await assert.rejects(hold(), /다른 첨부파일을 확인 중/);
+  releases.shift()('second');
+  assert.equal(await second, 'second');
+  assert.equal(gate.snapshot().inFlight, 0);
+});
+
+test('expired pending attachments are pruned before the stage gate applies total capacity', async () => {
+  const main = await source('main.js');
+  const stateStart = main.indexOf('const pendingOfficeAttachments = new Map();');
+  const stateEnd = main.indexOf('const activeOfficeNotifications', stateStart);
+  const pruneStart = main.indexOf('function prunePendingOfficeAttachments');
+  const pruneEnd = main.indexOf('function officeAttachmentStatsMatch', pruneStart);
+  assert.ok(stateStart >= 0 && stateEnd > stateStart);
+  assert.ok(pruneStart >= 0 && pruneEnd > pruneStart);
+
+  const context = vm.createContext({ createOfficeAttachmentStageGate });
+  vm.runInContext(`
+    'use strict';
+    const MAX_PENDING_OFFICE_ATTACHMENTS = 8;
+    ${main.slice(stateStart, stateEnd)}
+    ${main.slice(pruneStart, pruneEnd)}
+    globalThis.seedExpired = count => {
+      for (let index = 0; index < count; index += 1) {
+        pendingOfficeAttachments.set('expired-' + index, { expiresAt: Date.now() - 1 });
+      }
+    };
+    globalThis.pendingCount = () => pendingOfficeAttachments.size;
+    globalThis.runStage = task => officeAttachmentStageGate.run(task);
+  `, context);
+
+  context.seedExpired(8);
+  assert.equal(context.pendingCount(), 8);
+  let stageStarted = false;
+  assert.equal(await context.runStage(async () => {
+    stageStarted = true;
+    return 'accepted';
+  }), 'accepted');
+  assert.equal(stageStarted, true);
+  assert.equal(context.pendingCount(), 0);
+});
+
+test('slow attachment staging is rejected after logout and same-UID relogin advances the session epoch', async () => {
+  const main = await source('main.js');
+  const sessionStart = main.indexOf('function updateOfficeAttachmentSession');
+  const sessionEnd = main.indexOf('function prunePendingOfficeAttachments', sessionStart);
+  const pruneStart = sessionEnd;
+  const pruneEnd = main.indexOf('function officeAttachmentStatsMatch', pruneStart);
+  const stageStart = main.indexOf('async function stageOfficeAttachment');
+  const stageEnd = main.indexOf('function pendingOfficeAttachment', stageStart);
+  assert.ok(sessionStart >= 0 && sessionEnd > sessionStart);
+  assert.ok(pruneStart >= 0 && pruneEnd > pruneStart);
+  assert.ok(stageStart >= 0 && stageEnd > stageStart);
+
+  const loginStart = main.indexOf('secureHandle("crm:auth-login"');
+  const loginEnd = main.indexOf('secureHandle("crm:auth-google-login"', loginStart);
+  const logoutStart = main.indexOf('secureCanonicalHandle("crm:auth-logout"');
+  const logoutEnd = main.indexOf('secureHandle("crm:load"', logoutStart);
+  assert.match(main.slice(loginStart, loginEnd), /updateOfficeAttachmentSession\("", true\)/);
+  assert.match(main.slice(logoutStart, logoutEnd), /updateOfficeAttachmentSession\("", true\)/);
+
+  let releaseRead;
+  let signalReadStarted;
+  const readStarted = new Promise(resolve => { signalReadStarted = resolve; });
+  const currentUser = Object.freeze({ uid: 'same-user', role: 'member' });
+  const pendingOfficeAttachments = new Map();
+  const context = vm.createContext({
+    createOfficeAttachmentStageGate,
+    crypto: { randomUUID: () => '12345678-1234-4123-8123-123456789abc' },
+    path,
+    pendingOfficeAttachments,
+    readSelectedOfficeAttachment: () => {
+      signalReadStarted();
+      return new Promise(resolve => { releaseRead = resolve; });
+    },
+    assertOfficeSession: () => currentUser,
+    OfficeAttachment: {
+      prepareAttachment: ({ fileName, bytes }) => ({ fileName, bytes }),
+      attachmentMetadata: payload => ({ fileName: payload.fileName }),
+    },
+  });
+  vm.runInContext(`
+    'use strict';
+    const OFFICE_ATTACHMENT_TTL_MS = 10 * 60 * 1000;
+    const MAX_PENDING_OFFICE_ATTACHMENTS = 8;
+    let officeAttachmentAuthUid = '';
+    let officeAttachmentSessionEpoch = 0;
+    const officeAttachmentStageGate = createOfficeAttachmentStageGate({
+      maxInFlight: 2,
+      maxTotal: MAX_PENDING_OFFICE_ATTACHMENTS,
+      getPendingCount: () => pendingOfficeAttachments.size,
+      beforeCheck: () => prunePendingOfficeAttachments(Date.now(), 1),
+    });
+    ${main.slice(sessionStart, sessionEnd)}
+    ${main.slice(pruneStart, pruneEnd)}
+    ${main.slice(stageStart, stageEnd)}
+    globalThis.transitionSession = updateOfficeAttachmentSession;
+    globalThis.dropAttachment = dropOfficeAttachment;
+    globalThis.currentEpoch = () => officeAttachmentSessionEpoch;
+  `, context);
+
+  context.transitionSession(currentUser.uid);
+  const originalEpoch = context.currentEpoch();
+  const staging = context.dropAttachment({ receiverId: 'peer-user', filePath: 'C:\\slow-report.xlsx' });
+  await readStarted;
+
+  context.transitionSession('', true);
+  context.transitionSession('', true);
+  context.transitionSession(currentUser.uid);
+  assert.ok(context.currentEpoch() > originalEpoch);
+  releaseRead(new Uint8Array([1, 2, 3]));
+
+  await assert.rejects(staging, /로그인 사용자가 변경되어 파일을 첨부하지 않았습니다/);
+  assert.equal(pendingOfficeAttachments.size, 0);
+});
+
 function headers(values = {}) {
   const normalized = Object.fromEntries(Object.entries(values).map(([key, value]) => [key.toLowerCase(), String(value)]));
   return { get: name => normalized[String(name).toLowerCase()] || null };
 }
 
-test('attachment picker has exactly the send mutation permission while open stays control-only', () => {
+test('attachment picker and drag staging have exactly the send mutation permission while open stays control-only', () => {
   assert.equal(Policy.classification('crm:office-attachment-pick'), 'mutation');
   assert.equal(Policy.classification('crm:office-attachment-pick'), Policy.classification('crm:office-message-send'));
+  assert.equal(Policy.classification('crm:office-attachment-drop'), 'mutation');
+  assert.equal(Policy.classification('crm:office-attachment-drop'), Policy.classification('crm:office-message-send'));
   assert.equal(Policy.classification('crm:office-attachment-open'), 'control');
   const marketingOnly = { accessRole: 'member', role: 'member', marketingRole: 'marketing' };
   assert.throws(
     () => Policy.assertChannelAllowed('crm:office-attachment-pick', marketingOnly),
     error => error && error.code === 'MARKETING_ONLY_FORBIDDEN',
   );
+  assert.throws(
+    () => Policy.assertChannelAllowed('crm:office-attachment-drop', marketingOnly),
+    error => error && error.code === 'MARKETING_ONLY_FORBIDDEN',
+  );
+});
+
+test('preload derives a dropped disk path with webUtils and never trusts a renderer path', async () => {
+  const preload = await source('preload.js');
+  const exposed = {};
+  const invokes = [];
+  const diskFile = Object.freeze({ kind: 'disk-backed-file' });
+  const context = vm.createContext({
+    console,
+    Error,
+    Promise,
+    require: name => {
+      assert.equal(name, 'electron');
+      return {
+        contextBridge: { exposeInMainWorld: (_name, value) => Object.assign(exposed, value) },
+        ipcRenderer: {
+          invoke: (...args) => { invokes.push(args); return Promise.resolve({ ok: true }); },
+          on: () => {},
+          removeListener: () => {},
+        },
+        webUtils: { getPathForFile: file => file === diskFile ? 'C:\\safe\\report.xlsx' : '' },
+      };
+    },
+  });
+  vm.runInContext(preload, context);
+  await exposed.dropOfficeAttachment(diskFile, { receiverId: 'member-a', filePath: 'C:\\private\\secrets.txt' });
+  assert.deepEqual(JSON.parse(JSON.stringify(invokes)), [[
+    'crm:office-attachment-drop',
+    { receiverId: 'member-a', filePath: 'C:\\safe\\report.xlsx' },
+  ]]);
+  await assert.rejects(
+    exposed.dropOfficeAttachment({ kind: 'synthetic-file' }, { receiverId: 'member-a', filePath: 'C:\\private\\secrets.txt' }),
+    /로컬 파일을 확인할 수 없습니다/,
+  );
+  assert.equal(invokes.length, 1);
 });
 
 test('bounded JSON reader accepts an exact canonical JSON response', async () => {
@@ -146,6 +315,13 @@ test('main attachment lifecycle is TOCTOU-aware, warns by default, applies MOTW,
   assert.match(main, /fs\.rm\(outputDirectory, \{ recursive: true, force: true \}\)/);
   assert.match(main, /await cleanupOfficeAttachmentCache\(\)/);
   assert.match(main, /BRING_CRM_SCREENSHOT_ACTION === "office-messenger-smoke"/);
+  assert.match(main, /secureCanonicalHandle\("crm:office-attachment-drop"/);
+  assert.match(main, /async function dropOfficeAttachment\(input\)/);
+  assert.match(main, /Object\.keys\(source\)\.some\(key => !\["receiverId", "filePath"\]\.includes\(key\)\)/);
+  assert.match(main, /return officeAttachmentStageGate\.run\(\(\) => stageOfficeAttachment\(user, receiverId, selectedPath, attachmentSessionEpoch\)\)/);
+  const stageSource = main.slice(main.indexOf('async function stageOfficeAttachment'), main.indexOf('function pendingOfficeAttachment'));
+  assert.match(stageSource, /readSelectedOfficeAttachment\(selectedPath\)/);
+  assert.match(stageSource, /OfficeAttachment\.prepareAttachment/);
 });
 
 test('startup cleanup removes only stale inactive direct session directories without following links', async () => {

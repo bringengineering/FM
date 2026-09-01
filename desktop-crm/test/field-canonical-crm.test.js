@@ -430,16 +430,18 @@ test("a field-summary stream event refreshes renderer overlays without reloading
   assert.equal(remoteStores[0].fieldSummaries[0].workflowStatus, "approved");
 });
 
-test("shared, field-summary, and customer-photo streams start and stop together", async () => {
+test("shared, field-summary, and customer-photo streams run beside signed-in office polling", async () => {
   const { client } = makeClient();
   const starts = [];
   client.streamLoop = async (location, kind) => { starts.push({ location, kind }); };
+  client.startOfficePolling = generation => { starts.push({ kind: "officePolling", generation }); };
 
   client.startStream();
   assert.deepEqual(starts, [
     { location: "crmShared/data", kind: "shared" },
     { location: "fieldSummaries", kind: "fieldSummaries" },
-    { location: "customerPhotos", kind: "customerPhotos" }
+    { location: "customerPhotos", kind: "customerPhotos" },
+    { kind: "officePolling", generation: client.streamGeneration }
   ]);
 
   let sharedAborts = 0;
@@ -448,16 +450,20 @@ test("shared, field-summary, and customer-photo streams start and stop together"
   client.streamController = { abort: () => { sharedAborts += 1; } };
   client.summaryStreamController = { abort: () => { summaryAborts += 1; } };
   client.customerPhotoStreamController = { abort: () => { customerPhotoAborts += 1; } };
+  let accessRevalidations = 0;
+  client.revalidateStreamAccess = async () => { accessRevalidations += 1; return true; };
   client.handleStreamEvent("fieldSummaries", "auth_revoked");
   assert.equal(client.session.expiresAt, 0);
   assert.equal(sharedAborts, 1);
   assert.equal(summaryAborts, 1);
   assert.equal(customerPhotoAborts, 1);
+  assert.equal(accessRevalidations, 1);
 
   client.stopStream();
   assert.equal(client.streamController, null);
   assert.equal(client.summaryStreamController, null);
   assert.equal(client.customerPhotoStreamController, null);
+  assert.equal(client.officePollTimer, null);
 });
 
 test("an old session canonical refresh is discarded after logout and a different login", async () => {

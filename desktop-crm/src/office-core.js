@@ -25,6 +25,8 @@
     webp: "image/webp"
   });
   const OFFICE_ATTACHMENT_EXTENSIONS = new Set(Object.keys(OFFICE_ATTACHMENT_MIME_BY_EXTENSION));
+  const SAFE_OFFICE_MESSAGE_ID = /^msg_[A-Za-z0-9_]{8,80}$/;
+  const MAX_OFFICE_READ_RECEIPT_IDS = 100;
   const WINDOWS_RESERVED_NAME = /^(?:CON|PRN|AUX|NUL|COM[1-9¹²³]|LPT[1-9¹²³])(?:\.|$)/i;
   const safeText = (value, fallback) => String(value == null ? "" : value).trim() || fallback || "";
 
@@ -203,6 +205,55 @@
     };
   }
 
+  function normalizeOfficeMessageIds(value) {
+    if (!Array.isArray(value) || value.length < 1 || value.length > MAX_OFFICE_READ_RECEIPT_IDS) return [];
+    const result = [];
+    const seen = new Set();
+    for (const item of value) {
+      if (typeof item !== "string" || !SAFE_OFFICE_MESSAGE_ID.test(item) || seen.has(item)) return [];
+      seen.add(item);
+      result.push(item);
+    }
+    return result;
+  }
+
+  function unreadOfficeMessageIds(messages, peerId, currentUserId) {
+    const peer = normalizeOfficeUserId(peerId);
+    const current = normalizeOfficeUserId(currentUserId);
+    if (!peer || !current || peer === current) return [];
+    return (Array.isArray(messages) ? messages : [])
+      .filter(message => message && message.senderId === peer && message.receiverId === current && !message.readAt && SAFE_OFFICE_MESSAGE_ID.test(message.id))
+      .map(message => message.id)
+      .slice(-MAX_OFFICE_READ_RECEIPT_IDS);
+  }
+
+  function mergeConfirmedOfficeReadReceipts(messages, confirmedMessages, peerId, currentUserId, messageIds) {
+    const currentRows = Array.isArray(messages) ? messages : [];
+    const peer = normalizeOfficeUserId(peerId);
+    const current = normalizeOfficeUserId(currentUserId);
+    const ids = normalizeOfficeMessageIds(messageIds);
+    if (!peer || peer !== peerId || !current || current !== currentUserId || peer === current
+      || ids.length !== (Array.isArray(messageIds) ? messageIds.length : -1)) return currentRows;
+    const expectedIds = new Set(ids);
+    const confirmed = new Map();
+    (Array.isArray(confirmedMessages) ? confirmedMessages : []).forEach(message => {
+      const readAt = typeof message?.readAt === "string" ? message.readAt : "";
+      if (expectedIds.has(message?.id)
+        && message.senderId === peer
+        && message.receiverId === current
+        && Number.isFinite(Date.parse(readAt))) confirmed.set(message.id, readAt);
+    });
+    if (!confirmed.size) return currentRows;
+    let changed = false;
+    const nextRows = currentRows.map(message => {
+      const readAt = confirmed.get(message?.id);
+      if (!readAt || message.senderId !== peer || message.receiverId !== current || message.readAt) return message;
+      changed = true;
+      return Object.assign({}, message, { readAt });
+    });
+    return changed ? nextRows : currentRows;
+  }
+
   function normalizeAttachment(value) {
     const source = value && typeof value === "object" && !Array.isArray(value) ? value : {};
     const fileId = safeText(source.fileId);
@@ -301,6 +352,17 @@
     return result;
   }
 
+  function shouldAcknowledgeConversation(input) {
+    const value = input && typeof input === "object" ? input : {};
+    return value.officeActive === true
+      && value.view === "officeMessenger"
+      && value.documentHidden !== true
+      && value.documentFocused === true
+      && typeof value.selectedUserId === "string"
+      && value.selectedUserId.length > 0
+      && value.hasUnread === true;
+  }
+
   return {
     KOREA_TIME_ZONE,
     workDate,
@@ -317,11 +379,16 @@
     monthlyAttendanceSummary,
     normalizeAttachment,
     normalizeMessage,
+    normalizeOfficeMessageIds,
+    unreadOfficeMessageIds,
+    mergeConfirmedOfficeReadReceipts,
     flattenAttendance,
     flattenMailbox,
     normalizeOfficePayload,
     latestByUser,
     unreadByUser,
-    shouldSendMessageKey
+    shouldAcknowledgeConversation,
+    shouldSendMessageKey,
+    MAX_OFFICE_READ_RECEIPT_IDS
   };
 });
