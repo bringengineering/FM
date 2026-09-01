@@ -103,5 +103,6 @@ test("vendor form validates the prospective shared store before any renderer mut
   assert.ok(validation < branch.indexOf("Object.assign(existingItem, item)"));
   assert.ok(validation < branch.indexOf("store.partnerVendors.push(item)"));
   assert.ok(validation < branch.indexOf("logAudit("));
-  assert.ok(validation < branch.indexOf("scheduleSave()"));
+  assert.ok(validation < branch.indexOf("await commitSharedFormMutation"));
+  assert.doesNotMatch(branch, /scheduleSave\(\)/);
 });

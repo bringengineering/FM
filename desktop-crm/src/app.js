@@ -6722,6 +6722,7 @@
     const verifiedPolicy = MarketingUI.roleSubmissionPolicy(currentAuth.user || {}, submissionFormId);
     if ((currentAuth.user && currentAuth.user.accessRole === "member" && currentAuth.user.marketingRole === "marketing") && !verifiedPolicy.allowed) return showToast("마케팅 담당자는 전용 마케팅 정보 양식만 저장할 수 있습니다.", "error");
     if (form.id === "messageConsentForm") {
+      const beforeStore = cloneStore(store);
       if (!canWriteCRM()) return showToast("수신 동의를 변경할 권한이 없습니다.", "error");
       const customer = customerById(form.dataset.customerId);
       if (!customer) return showToast("고객 정보를 찾지 못했습니다.", "error");
@@ -6748,11 +6749,11 @@
       customer.messageConsents = next;
       customer.updatedAt = now;
       logAudit({ category: "동의", targetType: "고객", targetId: customer.id, targetLabel: customer.name, action: "메시지 수신 동의 상태 변경", reason: "증빙 확인 후 CRM 기록" });
-      scheduleSave();
-      closeModal();
-      render();
-      if (selectedCustomerId === customer.id) renderCustomerDrawer(customer.id);
-      showToast("채널별 수신 동의 상태를 저장했습니다.", "success");
+      await commitSharedFormMutation({ form, beforeStore, onSaved: () => {
+        closeModal(); render();
+        if (selectedCustomerId === customer.id) renderCustomerDrawer(customer.id);
+        showToast("채널별 수신 동의 상태를 서버에 저장했습니다.", "success");
+      } });
       return;
     }
     if (form.id === "customerMessageForm") {
@@ -6949,6 +6950,7 @@
         showToast(form.id === "driveImportApprovalForm" ? "Drive 자료를 승인해 건물을 등록했습니다." : "Drive 자료를 반려했습니다.", "success");
       } catch (error) { showToast(error.message || "Drive 검토 결과를 저장하지 못했습니다.", "error"); }
     } else if (form.id === "salesProspectForm") {
+      const beforeStore = cloneStore(store);
       const raw = Object.fromEntries(new FormData(form).entries());
       if (!assertSalesInputSafe(raw)) return;
       try {
@@ -6976,9 +6978,10 @@
           candidate.stage = salesStageFromEvents(candidate.id);
         }
         logAudit({ category: existing ? "변경" : "등록", targetType: "영업 대상 건물", targetId: candidate.id, targetLabel: candidate.name || candidate.address, action: existing ? "영업 대상 기본정보 수정" : "영업 대상 등록 및 후보 증거 생성", reason: "건물 중심 영업 관리" });
-        scheduleSave(); closeModal(); currentView = "pipeline"; render(); renderSalesProspectDrawer(candidate.id); showToast(existing ? "영업 대상 건물을 수정했습니다." : "영업 대상 건물과 후보 증거를 등록했습니다.", "success");
+        await commitSharedFormMutation({ form, beforeStore, onSaved: () => { closeModal(); currentView = "pipeline"; render(); renderSalesProspectDrawer(candidate.id); showToast(existing ? "영업 대상 건물을 수정했습니다." : "영업 대상 건물과 후보 증거를 등록했습니다.", "success"); } });
       } catch (error) { showToast(error.message || "영업 대상 건물을 저장하지 못했습니다.", "error"); }
     } else if (form.id === "salesContactForm") {
+      const beforeStore = cloneStore(store);
       const raw = Object.fromEntries(new FormData(form).entries());
       if (!assertSalesInputSafe(raw)) return;
       try {
@@ -6994,7 +6997,7 @@
         else store.salesContacts.push(item);
         const optOutChanged = existing && !!(existing.doNotContact || existing.optOut) !== !!item.doNotContact;
         logAudit({ category: existing ? "변경" : "등록", targetType: "영업 연락처", targetId: item.id, targetLabel: item.name || item.phone, action: optOutChanged ? `수신거부 ${item.doNotContact ? "설정" : "해제"}` : existing ? "연락처 정보 수정" : "연락처 등록", reason: item.doNotContactReason || "영업 연락처 관리" });
-        scheduleSave(); closeModal(); render(); renderSalesProspectDrawer(item.prospectId); showToast("연락처를 저장했습니다.", "success");
+        await commitSharedFormMutation({ form, beforeStore, onSaved: () => { closeModal(); render(); renderSalesProspectDrawer(item.prospectId); showToast("연락처를 서버에 저장했습니다.", "success"); } });
       } catch (error) { showToast(error.message || "연락처를 저장하지 못했습니다.", "error"); }
     } else if (form.id === "salesUnitForm") {
       if (deferCanonicalMutation("영업 호실")) return;
@@ -7021,6 +7024,7 @@
         closeModal(); render(); renderSalesProspectDrawer(item.prospectId); showToast("호실을 저장했습니다.", "success");
       } catch (error) { showToast(error.message || "호실을 저장하지 못했습니다.", "error"); }
     } else if (form.id === "salesActivityForm") {
+      const beforeStore = cloneStore(store);
       const raw = Object.fromEntries(new FormData(form).entries());
       if (!String(raw.summary || "").trim()) return showToast("영업 활동 내용을 입력해 주세요.", "error");
       if (!assertSalesInputSafe(raw)) return;
@@ -7052,9 +7056,10 @@
           contact.doNotContact = true; contact.optOut = true; contact.doNotContactAt = item.occurredAt; contact.doNotContactReason ||= "영업 활동에서 연락 중단 요청 확인";
         }
         logAudit({ category: "등록", targetType: "영업 활동", targetId: item.id, targetLabel: prospect?.name || item.prospectId, action: `${salesLabel(SALES_CHANNEL_LABELS, item.type)} · ${salesLabel(SALES_RESULT_LABELS, item.result)} 활동 기록`, reason: item.summary });
-        scheduleSave(); closeModal(); render(); renderSalesProspectDrawer(item.prospectId); showToast("영업 활동을 저장했습니다.", "success");
+        await commitSharedFormMutation({ form, beforeStore, onSaved: () => { closeModal(); render(); renderSalesProspectDrawer(item.prospectId); showToast("영업 활동을 서버에 저장했습니다.", "success"); } });
       } catch (error) { showToast(error.message || "영업 활동을 저장하지 못했습니다.", "error"); }
     } else if (form.id === "salesEventForm") {
+      const beforeStore = cloneStore(store);
       const formData = new FormData(form);
       const raw = Object.fromEntries(formData.entries());
       if (!assertSalesInputSafe(raw)) return;
@@ -7083,9 +7088,10 @@
           prospect.updatedBy = salesActor().email;
           logAudit({ category: "단계변경", targetType: "영업 대상 건물", targetId: prospect.id, targetLabel: prospect.name || prospect.address, action: `${previousStage} → ${prospect.stage} · ${item.type}`, reason: item.evidenceNote || item.evidenceUrl });
         }
-        scheduleSave(); closeModal(); render(); renderSalesProspectDrawer(prospectId); showToast("완료 증거를 저장하고 영업 단계를 반영했습니다.", "success");
+        await commitSharedFormMutation({ form, beforeStore, onSaved: () => { closeModal(); render(); renderSalesProspectDrawer(prospectId); showToast("완료 증거를 서버에 저장하고 영업 단계를 반영했습니다.", "success"); } });
       } catch (error) { showToast(error.message || "완료 증거를 저장하지 못했습니다.", "error"); }
     } else if (form.id === "salesEventArchiveForm") {
+      const beforeStore = cloneStore(store);
       const raw = Object.fromEntries(new FormData(form).entries());
       const correctionReason = String(raw.correctionReason || "").trim();
       if (!correctionReason) return showToast("완료 증거를 정정하는 사유를 입력해 주세요.", "error");
@@ -7099,9 +7105,10 @@
         store.salesEvents[store.salesEvents.findIndex(record => record && record.id === item.id)] = archived;
         const stageResult = recalculateSalesProspectStage(prospectId);
         logAudit({ category: "보관", targetType: "영업 완료 증거", targetId: item.id, targetLabel: item.type || item.id, action: `완료 증거 정정·보관 · ${stageResult?.previousStage || ""} → ${stageResult?.prospect?.stage || ""}`, reason: correctionReason });
-        scheduleSave(); closeModal(); render(); renderSalesProspectDrawer(prospectId); showToast("완료 증거를 보관하고 단계를 다시 계산했습니다.", "success");
+        await commitSharedFormMutation({ form, beforeStore, onSaved: () => { closeModal(); render(); renderSalesProspectDrawer(prospectId); showToast("완료 증거를 서버에 보관하고 단계를 다시 계산했습니다.", "success"); } });
       } catch (error) { showToast(error.message || "완료 증거를 보관하지 못했습니다.", "error"); }
     } else if (form.id === "salesResumeForm") {
+      const beforeStore = cloneStore(store);
       const raw = Object.fromEntries(new FormData(form).entries());
       const resumeReason = String(raw.resumeReason || "").trim();
       if (!resumeReason) return showToast("영업 재개 사유를 입력해 주세요.", "error");
@@ -7116,9 +7123,10 @@
         store.salesEvents.push(item);
         const stageResult = recalculateSalesProspectStage(prospect.id);
         logAudit({ category: "단계변경", targetType: "영업 대상 건물", targetId: prospect.id, targetLabel: prospect.name || prospect.address, action: `영업 재개 · ${stageResult?.previousStage || "paused_closed"} → ${stageResult?.prospect?.stage || raw.resumeStage}`, reason: resumeReason });
-        scheduleSave(); closeModal(); render(); renderSalesProspectDrawer(prospect.id); showToast("영업 재개를 기록하고 단계를 반영했습니다.", "success");
+        await commitSharedFormMutation({ form, beforeStore, onSaved: () => { closeModal(); render(); renderSalesProspectDrawer(prospect.id); showToast("영업 재개를 서버에 기록하고 단계를 반영했습니다.", "success"); } });
       } catch (error) { showToast(error.message || "영업을 재개하지 못했습니다.", "error"); }
     } else if (form.id === "salesOpportunityForm") {
+      const beforeStore = cloneStore(store);
       const raw = Object.fromEntries(new FormData(form).entries());
       if (!String(raw.requirements || "").trim()) return showToast("추가서비스 요구사항을 입력해 주세요.", "error");
       if (!assertSalesInputSafe(raw)) return;
@@ -7142,7 +7150,7 @@
         if (existing) store.salesOpportunities[store.salesOpportunities.findIndex(record => record.id === existing.id)] = item;
         else store.salesOpportunities.push(item);
         logAudit({ category: existing ? "변경" : "등록", targetType: "추가서비스 기회", targetId: item.id, targetLabel: salesLabel(SALES_SERVICE_LABELS, item.serviceType), action: `${salesLabel(SALES_OPPORTUNITY_LABELS, item.stage)}${item.stage === "revenue_recorded" ? ` · ${krw(item.revenueAmount)}` : ""}`, reason: item.requirements });
-        scheduleSave(); closeModal(); render(); renderSalesProspectDrawer(item.prospectId); showToast("추가서비스 기회를 저장했습니다.", "success");
+        await commitSharedFormMutation({ form, beforeStore, onSaved: () => { closeModal(); render(); renderSalesProspectDrawer(item.prospectId); showToast("추가서비스 기회를 서버에 저장했습니다.", "success"); } });
       } catch (error) { showToast(error.message || "추가서비스 기회를 저장하지 못했습니다.", "error"); }
     } else if (form.id === "workflowCaseCreateForm") {
       const raw = Object.fromEntries(new FormData(form).entries());
@@ -7477,6 +7485,7 @@
         closeModal(); currentView = returnView; render(); requestDriveImportCandidatesRefresh(); showToast(`${name} 건물을 저장했습니다.`, "success");
       } catch (error) { showToast(error.message || "건물을 저장하지 못했습니다.", "error"); }
     } else if (form.id === "contractForm") {
+      const beforeStore = cloneStore(store);
       if (!canWriteCRM()) return showToast("조회 전용 계정은 계약을 저장할 수 없습니다.", "error");
       const formData = new FormData(form);
       const raw = Object.fromEntries(formData.entries());
@@ -7518,7 +7527,7 @@
       const customer = customerById(item.customerId);
       const building = buildingById(item.buildingId);
       logAudit({ category: existing ? "변경" : "등록", targetType: "계약", targetId: item.id, targetLabel: item.name, action: `${types.join("·")} · ${item.status} · ${building && building.name || "건물"}`, reason: "계약 관리" });
-      scheduleSave(); closeModal(); currentView = returnToContractCalendar ? "buildingCalendar" : "contracts"; render(); showToast(`${customer && customer.name || "고객"} 계약을 저장했습니다.`, "success");
+      await commitSharedFormMutation({ form, beforeStore, onSaved: () => { closeModal(); currentView = returnToContractCalendar ? "buildingCalendar" : "contracts"; render(); showToast(`${customer && customer.name || "고객"} 계약을 서버에 저장했습니다.`, "success"); } });
     } else if (form.id === "customerForm") {
       const beforeStore = cloneStore(store);
       const wasExisting = !!form.dataset.customerId;
@@ -7549,6 +7558,7 @@
         }
       }
     } else if (form.id === "partnerVendorForm") {
+      const beforeStore = cloneStore(store);
       const raw = Object.fromEntries(new FormData(form).entries());
       if (!String(raw.vendor || "").trim()) return showToast("업체명을 입력해 주세요.", "error");
       const editing = partnerVendorById(form.dataset.partnerVendorId);
@@ -7585,8 +7595,9 @@
       if (existingItem) Object.assign(existingItem, item);
       else store.partnerVendors.push(item);
       logAudit({ category: editing || duplicate ? "변경" : "등록", targetType: "협력 업체", targetId: item.id, targetLabel: partnerVendorName(item), action: duplicate ? "제외 업체 재등록" : editing ? "업체 기본정보 수정" : "협력 업체 등록", reason: "협력 업체 관리" });
-      scheduleSave(); closeModal(); currentView = "partnerVendors"; render(); showToast(`${partnerVendorName(item)} 업체 정보를 저장했습니다.`, "success");
+      await commitSharedFormMutation({ form, beforeStore, onSaved: () => { closeModal(); currentView = "partnerVendors"; render(); showToast(`${partnerVendorName(item)} 업체 정보를 서버에 저장했습니다.`, "success"); } });
     } else if (form.id === "partnerQuoteForm") {
+      const beforeStore = cloneStore(store);
       const raw = Object.fromEntries(new FormData(form).entries());
       if (!String(raw.industry || "").trim()) return showToast("업종을 먼저 선택해 주세요.", "error");
       const selectedVendor = partnerVendorById(raw.vendorId);
@@ -7625,16 +7636,18 @@
       delete item.buildingId;
       if (!existing) store.partnerQuotes.push(item);
       logAudit({ category: existing ? "변경" : "등록", targetType: "협력업체 상담", targetId: item.id, targetLabel: item.vendor, action: `${item.industry} · ${item.scenario} · ${item.status} · ${moneyRange(item.totalMin, item.totalMax, "가격 미확인")}`, reason: "업체 상담 관리" });
-      scheduleSave(); closeModal(); currentView = "partnerQuotes"; render(); showToast(`${item.vendor} 상담 기록을 저장했습니다.`, "success");
+      await commitSharedFormMutation({ form, beforeStore, onSaved: () => { closeModal(); currentView = "partnerQuotes"; render(); showToast(`${item.vendor} 상담 기록을 서버에 저장했습니다.`, "success"); } });
     } else if (form.id === "taskForm") {
+      const beforeStore = cloneStore(store);
       const raw = Object.fromEntries(new FormData(form).entries());
       if (!raw.title.trim()) return showToast("할 일을 입력해 주세요.", "error");
       const returnCustomerId = String(form.dataset.returnCustomer || "");
       const task = Core.createTask(raw);
       store.tasks.push(task);
       logAudit({ category: "등록", targetType: "영업 할 일", targetId: task.id, targetLabel: task.title, action: "영업 할 일 등록", reason: "후속 업무 관리" });
-      scheduleSave(); closeModal(); render(); if (returnCustomerId && customerById(returnCustomerId)) renderCustomerDrawer(returnCustomerId); showToast("할 일을 추가했습니다.", "success");
+      await commitSharedFormMutation({ form, beforeStore, onSaved: () => { closeModal(); render(); if (returnCustomerId && customerById(returnCustomerId)) renderCustomerDrawer(returnCustomerId); showToast("할 일을 서버에 추가했습니다.", "success"); } });
     } else if (form.id === "relationshipActivityForm") {
+      const beforeStore = cloneStore(store);
       const raw = Object.fromEntries(new FormData(form).entries());
       const customer = customerById(form.dataset.customerId);
       if (!customer) return showToast("고객 정보를 찾지 못했습니다.", "error");
@@ -7652,8 +7665,9 @@
       customer.relationshipNextContactAt = activity.nextContactAt || addDaysIso(activity.occurredAt, customer.relationshipCycleDays);
       customer.updatedAt = new Date().toISOString();
       logAudit({ category: "변경", targetType: "계약 고객", targetId: customer.id, targetLabel: customer.name, action: `${activity.type} 후속 연락 기록 추가`, reason: "계약 후 관계 관리" });
-      scheduleSave(); render(); renderRelationshipDrawer(customer.id); showToast("후속 연락을 저장했습니다.", "success");
+      await commitSharedFormMutation({ form, beforeStore, onSaved: () => { render(); renderRelationshipDrawer(customer.id); showToast("후속 연락을 서버에 저장했습니다.", "success"); } });
     } else if (form.id === "activityForm") {
+      const beforeStore = cloneStore(store);
       const raw = Object.fromEntries(new FormData(form).entries());
       if (!raw.summary.trim()) return showToast("상담 내용을 입력해 주세요.", "error");
       const customer = customerById(form.dataset.customerId);
@@ -7672,8 +7686,9 @@
         customer.updatedAt = new Date().toISOString();
       }
       logAudit({ category: "변경", targetType: "고객", targetId: form.dataset.customerId, targetLabel: customer && customer.name || "고객", action: `${activity.type} 상담 기록 추가`, reason: "상담 이력 관리" });
-      scheduleSave(); render(); renderCustomerDrawer(form.dataset.customerId); showToast("상담 기록을 추가했습니다.", "success");
+      await commitSharedFormMutation({ form, beforeStore, onSaved: () => { render(); renderCustomerDrawer(form.dataset.customerId); showToast("상담 기록을 서버에 추가했습니다.", "success"); } });
     } else if (form.id === "consultationForm") {
+      const beforeStore = cloneStore(store);
       const raw = Object.fromEntries(new FormData(form).entries());
       const returnView = form.dataset.returnView || "consultations";
       if (!String(raw.customerType || "").trim()) return showToast("고객 유형을 먼저 선택해 주세요.", "error");
@@ -7697,8 +7712,9 @@
         customer.updatedAt = new Date().toISOString();
       }
       logAudit({ category: "변경", targetType: "고객", targetId: raw.customerId, targetLabel: customer && customer.name || "고객", action: `${activity.type} 상담 기록 추가`, reason: "상담 이력 관리" });
-      scheduleSave(); closeModal(); currentView = returnView; render(); if (returnView === "relationships") renderRelationshipDrawer(raw.customerId); showToast(returnView === "relationships" ? "후속 연락을 기록했습니다." : "상담 기록을 저장했습니다.", "success");
+      await commitSharedFormMutation({ form, beforeStore, onSaved: () => { closeModal(); currentView = returnView; render(); if (returnView === "relationships") renderRelationshipDrawer(raw.customerId); showToast(returnView === "relationships" ? "후속 연락을 서버에 기록했습니다." : "상담 기록을 서버에 저장했습니다.", "success"); } });
     } else if (form.id === "relationshipPlanForm") {
+      const beforeStore = cloneStore(store);
       const raw = Object.fromEntries(new FormData(form).entries());
       const customer = customerById(form.dataset.customerId);
       if (!customer) return showToast("고객 정보를 찾지 못했습니다.", "error");
@@ -7710,8 +7726,9 @@
       customer.relationshipStartedAt = customer.relationshipStartedAt || new Date().toISOString();
       customer.updatedAt = new Date().toISOString();
       logAudit({ category: "변경", targetType: "고객", targetId: customer.id, targetLabel: customer.name, action: `계약 고객 연락 계획 설정 · ${customer.relationshipCycleDays}일 주기`, reason: "계약 후 관계 관리" });
-      scheduleSave(); closeModal(); currentView = "relationships"; render(); renderRelationshipDrawer(customer.id); showToast("다음 연락 계획을 저장했습니다.", "success");
+      await commitSharedFormMutation({ form, beforeStore, onSaved: () => { closeModal(); currentView = "relationships"; render(); renderRelationshipDrawer(customer.id); showToast("다음 연락 계획을 서버에 저장했습니다.", "success"); } });
     } else if (form.id === "securityReturnForm") {
+      const beforeStore = cloneStore(store);
       if (!requireSecurityPermission(false)) return;
       const raw = Object.fromEntries(new FormData(form).entries());
       const item = store.securityAssets.find(entry => entry.id === form.dataset.assetId);
@@ -7724,8 +7741,9 @@
       item.returnEvidence = { returnedBy: raw.returnedBy.trim(), receivedBy: raw.receivedBy.trim(), returnedAt: item.returnedAt, condition: raw.returnCondition, storageLocation: item.storageLocation, note: raw.returnNote.trim() };
       item.updatedAt = new Date().toISOString();
       logAudit({ category: "키반납", targetType: item.type, targetId: item.id, targetLabel: item.label, action: `반납 완료 · 반환 ${item.returnEvidence.returnedBy} · 인수 ${item.returnEvidence.receivedBy} · 상태 ${item.returnEvidence.condition}`, reason: item.returnEvidence.note || "열쇠·문서 반납 관리" });
-      scheduleSave(); closeModal(); renderSecurity(); showToast(`${item.label} 반납 확인 기록을 저장했습니다.`, "success");
+      await commitSharedFormMutation({ form, beforeStore, onSaved: () => { closeModal(); renderSecurity(); showToast(`${item.label} 반납 확인 기록을 서버에 저장했습니다.`, "success"); } });
     } else if (form.id === "securityDispositionForm") {
+      const beforeStore = cloneStore(store);
       if (!requireSecurityPermission(false)) return;
       const raw = Object.fromEntries(new FormData(form).entries());
       const item = store.securityAssets.find(entry => entry.id === form.dataset.assetId);
@@ -7736,8 +7754,9 @@
       item.disposition = { type: raw.dispositionType, disposedAt: new Date(raw.disposedAt).toISOString(), method: raw.method.trim(), approvedBy: raw.approvedBy.trim(), reason: raw.reason.trim(), evidence: raw.evidence.trim() };
       item.updatedAt = new Date().toISOString();
       logAudit({ category: isDisposal ? "파기" : "변경", targetType: item.type, targetId: item.id, targetLabel: item.label, action: `${raw.dispositionType} · ${item.disposition.method} · 승인 ${item.disposition.approvedBy}`, reason: item.disposition.reason });
-      scheduleSave(); closeModal(); renderSecurity(); showToast(`${item.label}을(를) 삭제하지 않고 ${item.status} 처리했습니다.`, "success");
+      await commitSharedFormMutation({ form, beforeStore, onSaved: () => { closeModal(); renderSecurity(); showToast(`${item.label}을(를) 삭제하지 않고 서버에서 ${item.status} 처리했습니다.`, "success"); } });
     } else if (form.id === "securityAssetForm") {
+      const beforeStore = cloneStore(store);
       if (!requireSecurityPermission(false)) return;
       const raw = Object.fromEntries(new FormData(form).entries());
       const sensitiveText = Object.values(raw).join(" ");
@@ -7751,8 +7770,9 @@
       if (!existing) store.securityAssets.push(item);
       const category = item.status === "대여중" && previousStatus !== "대여중" ? "키대여" : item.status === "반납완료" && previousStatus !== "반납완료" ? "키반납" : existing ? "변경" : "등록";
       logAudit({ category, targetType: item.type, targetId: item.id, targetLabel: item.label, action: existing ? `관리정보 수정 · 상태 ${item.status}` : "새 관리 대상 등록", reason: "개인정보·키 통제" });
-      scheduleSave(); closeModal(); renderSecurity(); showToast(`${item.label}을(를) 저장했습니다.`, "success");
+      await commitSharedFormMutation({ form, beforeStore, onSaved: () => { closeModal(); renderSecurity(); showToast(`${item.label}을(를) 서버에 저장했습니다.`, "success"); } });
     } else if (form.id === "accessRoleForm") {
+      const beforeStore = cloneStore(store);
       if (!requireSecurityPermission(true)) return;
       const raw = Object.fromEntries(new FormData(form).entries());
       if (!raw.name.trim()) return showToast("역할명을 입력해 주세요.", "error");
@@ -7761,14 +7781,16 @@
       Object.assign(role, { name: raw.name.trim(), scope: raw.scope.trim(), status: raw.status, canView: !!raw.canView, canEdit: !!raw.canEdit, canDownload: !!raw.canDownload, canManageSecurity: !!raw.canManageSecurity, updatedAt: new Date().toISOString() });
       if (!existing) store.accessRoles.push(role);
       logAudit({ category: "권한변경", targetType: "권한", targetId: role.id, targetLabel: role.name, action: `${existing ? "역할 수정" : "역할 추가"} · ${role.status}`, reason: "역할별 최소 권한 관리" });
-      scheduleSave(); closeModal(); renderSecurity(); showToast(`${role.name} 권한을 저장했습니다.`, "success");
+      await commitSharedFormMutation({ form, beforeStore, onSaved: () => { closeModal(); renderSecurity(); showToast(`${role.name} 권한을 서버에 저장했습니다.`, "success"); } });
     } else if (form.id === "auditForm") {
+      const beforeStore = cloneStore(store);
       if (!requireSecurityPermission(false)) return;
       const raw = Object.fromEntries(new FormData(form).entries());
       if (!raw.targetLabel.trim() || !raw.action.trim()) return showToast("대상명과 처리 내용을 입력해 주세요.", "error");
       logAudit({ category: raw.category, targetType: raw.targetType, targetLabel: raw.targetLabel.trim(), action: raw.action.trim(), reason: raw.reason.trim() || "업무 수행" });
-      scheduleSave(); closeModal(); securityTab = "audit"; renderSecurity(); showToast("처리 이력을 저장했습니다.", "success");
+      await commitSharedFormMutation({ form, beforeStore, onSaved: () => { closeModal(); securityTab = "audit"; renderSecurity(); showToast("처리 이력을 서버에 저장했습니다.", "success"); } });
     } else if (form.id === "incidentForm") {
+      const beforeStore = cloneStore(store);
       if (!requireSecurityPermission(false)) return;
       const raw = Object.fromEntries(new FormData(form).entries());
       if (!raw.summary.trim()) return showToast("사고 내용을 입력해 주세요.", "error");
@@ -7778,11 +7800,12 @@
       Object.assign(item, { type: raw.type, severity: raw.severity, occurredAt: raw.occurredAt ? new Date(raw.occurredAt).toISOString() : new Date().toISOString(), reportedBy: (existing && existing.reportedBy) || raw.reportedBy.trim(), escalatedTo: raw.escalatedTo.trim(), status: raw.status, summary: raw.summary.trim(), resolution: raw.resolution.trim(), updatedAt: new Date().toISOString() });
       if (!existing) store.securityIncidents.push(item);
       logAudit({ category: "사고", targetType: "보안사고", targetId: item.id, targetLabel: item.type, action: `${existing ? "처리 내용 변경" : "사고 보고"} · ${item.status}`, actor: item.reportedBy, reason: item.summary });
-      scheduleSave(); closeModal(); securityTab = "incidents"; renderSecurity(); showToast(existing ? "사고 처리 내용을 저장했습니다." : "사고를 책임자 보고 목록에 등록했습니다.", existing ? "success" : "error");
+      await commitSharedFormMutation({ form, beforeStore, onSaved: () => { closeModal(); securityTab = "incidents"; renderSecurity(); showToast(existing ? "사고 처리 내용을 서버에 저장했습니다." : "사고를 책임자 보고 목록에 서버 등록했습니다.", existing ? "success" : "error"); } });
     } else if (form.id === "settingsForm") {
+      const beforeStore = cloneStore(store);
       const raw = Object.fromEntries(new FormData(form).entries());
       store.company.workspace = raw.workspace.trim();
-      scheduleSave(); renderSettings(); showToast("설정을 저장했습니다.", "success");
+      await commitSharedFormMutation({ form, beforeStore, onSaved: () => { renderSettings(); showToast("설정을 서버에 저장했습니다.", "success"); } });
     }
   });
 
