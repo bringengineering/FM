@@ -137,7 +137,7 @@
   let valueScopeResizeObserver = null;
   let valueScopeOpenGeneration = 0;
   let valueScopeViewRequested = false;
-  let aiAssistantState = { task: "assistant_summary", content: "", customerType: "", workType: "", result: null, warnings: [], loading: false, error: "" };
+  let aiAssistantState = { tab: "report", task: "assistant_summary", content: "", customerType: "", workType: "", result: null, warnings: [], loading: false, error: "", quoteContent: "", quote: null, quoteWarnings: [], quoteLoading: false, quoteError: "", supplier: { businessName: "", representative: "", registrationNumber: "" }, supplierLoaded: false, supplierLoading: false, supplierSaving: false, supplierDirty: false, supplierError: "" };
   let salesAutomationState = { drafts: new Map(), loadingId: "", rows: [] };
   let workAutomationState = { drafts: new Map(), loadingId: "", expanded: false };
   let managementReportState = { month: Core.dayKey().slice(0, 7), result: null, loading: false, error: "" };
@@ -2954,11 +2954,85 @@
   ]);
 
   function renderAiAssistant() {
+    const quoteTab = aiAssistantState.tab === "quote";
+    main.innerHTML = `<nav class="ai-assistant-tabs" aria-label="AI 비서 작업"><button type="button" class="${quoteTab ? "" : "active"}" data-ai-assistant-tab="report" aria-selected="${quoteTab ? "false" : "true"}"><span>▤</span><b>보고서 작성</b><small>업무 요약·문자·보고</small></button><button type="button" class="${quoteTab ? "active" : ""}" data-ai-assistant-tab="quote" aria-selected="${quoteTab ? "true" : "false"}"><span>₩</span><b>견적서 작성</b><small>AI 작성·이미지·엑셀</small></button></nav>${quoteTab ? renderAiQuoteAssistant() : renderAiReportAssistant()}`;
+    if (quoteTab && !aiAssistantState.supplierLoaded && !aiAssistantState.supplierLoading) void loadAiQuoteSupplier();
+  }
+
+  function renderAiReportAssistant() {
     const result = aiAssistantState.result;
     const resultText = result && result.text ? esc(aiAssistantState.result.text) : "";
-    main.innerHTML = `<section class="ai-assistant-hero"><div><span>BRING CRM AI</span><h2>업무 내용을 넣으면 검토 가능한 초안을 만듭니다</h2><p>개인정보 형태는 회사 중계 서버에서 마스킹합니다. AI가 CRM에 자동으로 저장하지 않으며, 직원이 확인한 뒤 필요한 내용만 사용합니다.</p></div></section>
+    return `<section class="ai-assistant-hero"><div><span>BRING CRM AI · REPORT</span><h2>업무 내용을 넣으면 검토 가능한 초안을 만듭니다</h2><p>개인정보 형태는 회사 중계 서버에서 마스킹합니다. AI가 CRM에 자동으로 저장하지 않으며, 직원이 확인한 뒤 필요한 내용만 사용합니다.</p></div></section>
       <section class="ai-assistant-grid"><form class="ai-assistant-card" data-ai-assist-form><div class="ai-form-row"><label><span>도움받을 업무</span><select data-ai-task>${AI_ASSISTANT_TASKS.map(([value, label]) => `<option value="${value}"${aiAssistantState.task === value ? " selected" : ""}>${label}</option>`).join("")}</select></label><label><span>고객 유형</span><select data-ai-customer-type><option value="">선택 안 함</option>${["건물주", "임차인", "공인중개사", "협력업체", "법인", "기타"].map(value => `<option${aiAssistantState.customerType === value ? " selected" : ""}>${value}</option>`).join("")}</select></label><label><span>업무 유형</span><select data-ai-work-type><option value="">선택 안 함</option>${["영업", "상담", "건물관리", "청소", "예초", "시설보수", "보고"].map(value => `<option${aiAssistantState.workType === value ? " selected" : ""}>${value}</option>`).join("")}</select></label></div><label class="ai-content-field"><span>정리할 내용</span><textarea data-ai-content maxlength="12000" placeholder="예: 8월 15일 예초 작업을 진행했고 고객에게 15만원을 받았으며 업체에 14만원을 지급함">${esc(aiAssistantState.content)}</textarea><small>전화번호·이메일·계좌번호·상세주소는 입력하지 않는 것을 권장합니다.</small></label><div class="ai-form-actions"><span>${aiAssistantState.content.length.toLocaleString()} / 12,000자</span><button type="button" class="primary-button" data-ai-assist-submit${aiAssistantState.loading || !aiAssistantState.content.trim() ? " disabled" : ""}>${aiAssistantState.loading ? "AI가 정리 중…" : "AI 초안 만들기"}</button></div>${aiAssistantState.error ? `<div class="ai-error" role="alert">${esc(aiAssistantState.error)}</div>` : ""}</form>
       <article class="ai-result-card"><header><div><span>AI 초안</span><h3>${esc(AI_ASSISTANT_TASKS.find(([value]) => value === aiAssistantState.task)?.[1] || "결과")}</h3></div>${result ? `<div><button type="button" class="secondary-button" data-ai-result-copy>복사</button><button type="button" class="text-button" data-ai-result-clear>지우기</button></div>` : ""}</header>${result ? `<div class="ai-result-text">${resultText.replace(/\n/g, "<br>")}</div>${aiAssistantState.warnings.length ? `<ul class="ai-warning-list">${aiAssistantState.warnings.map(item => `<li>${esc(item)}</li>`).join("")}</ul>` : ""}` : `<div class="ai-result-empty"><b>아직 만든 초안이 없습니다</b><p>왼쪽에서 내용을 입력하고 AI 초안 만들기를 눌러 주세요.</p></div>`}<footer>결과는 사실 확정값이 아닌 업무 초안입니다. 저장·발송 전 반드시 확인하세요.</footer></article></section>`;
+  }
+
+  function quoteEditorRows(quote) {
+    return quote.items.map((item, index) => `<div class="ai-quote-editor-row"><span>${String(index + 1).padStart(2, "0")}</span><label><small>품목</small><input data-ai-quote-item="name" data-ai-quote-index="${index}" value="${attr(item.name)}"></label><label class="wide"><small>세부 내용</small><input data-ai-quote-item="detail" data-ai-quote-index="${index}" value="${attr(item.detail)}"></label><label><small>금액</small><input data-ai-quote-item="unitPrice" data-ai-quote-index="${index}" type="number" min="1" max="1000000000" step="1000" value="${item.unitPrice}"></label></div>`).join("");
+  }
+
+  function quoteSupplierFields() {
+    const supplier = aiAssistantState.supplier;
+    return `<section class="ai-quote-supplier-editor"><header><div><b>공급자 정보</b><small>견적서마다 동일하게 사용 · AI 전송 안 함</small></div><button type="button" data-ai-quote-supplier-save${aiAssistantState.supplierLoading || aiAssistantState.supplierSaving ? " disabled" : ""}>${aiAssistantState.supplierSaving ? "저장 중…" : "암호화 저장"}</button></header><div><label><span>상호</span><input data-ai-quote-supplier="businessName" maxlength="80" autocomplete="organization" value="${attr(supplier.businessName)}" placeholder="상호를 입력하세요"></label><label><span>대표자</span><input data-ai-quote-supplier="representative" maxlength="40" autocomplete="off" value="${attr(supplier.representative)}" placeholder="대표자명을 입력하세요"></label><label class="wide"><span>사업자등록번호</span><input data-ai-quote-supplier="registrationNumber" maxlength="12" inputmode="numeric" autocomplete="off" value="${attr(supplier.registrationNumber)}" placeholder="000-00-00000"></label></div>${aiAssistantState.supplierError ? `<p class="ai-quote-supplier-error" role="alert">${esc(aiAssistantState.supplierError)}</p>` : `<p>Windows 보안 저장소로 암호화되며 견적서 이미지와 엑셀에만 표시됩니다.</p>`}</section>`;
+  }
+
+  function applySupplierToQuote() {
+    if (!aiAssistantState.quote) return;
+    aiAssistantState.quote = QuoteCore.normalizeDraft(Object.assign({}, aiAssistantState.quote, {
+      company: Object.assign({}, aiAssistantState.quote.company, aiAssistantState.supplier)
+    }));
+  }
+
+  async function loadAiQuoteSupplier() {
+    if (aiAssistantState.supplierLoaded || aiAssistantState.supplierLoading) return;
+    aiAssistantState.supplierLoading = true;
+    aiAssistantState.supplierError = "";
+    try {
+      const result = await api.loadQuoteSupplier();
+      if (!aiAssistantState.supplierDirty) aiAssistantState.supplier = QuoteCore.normalizeSupplier(result && result.supplier);
+      aiAssistantState.supplierLoaded = true;
+      applySupplierToQuote();
+    } catch (error) {
+      aiAssistantState.supplierError = error.message || "공급자 정보를 불러오지 못했습니다.";
+    } finally {
+      aiAssistantState.supplierLoading = false;
+      if (currentView === "aiAssistant" && aiAssistantState.tab === "quote") renderAiAssistant();
+    }
+  }
+
+  async function saveAiQuoteSupplier() {
+    if (aiAssistantState.supplierSaving) return;
+    let supplier;
+    try { supplier = QuoteCore.normalizeSupplier(aiAssistantState.supplier, { requireComplete: true }); }
+    catch (error) { aiAssistantState.supplierError = error.message; renderAiAssistant(); return; }
+    aiAssistantState.supplierSaving = true;
+    aiAssistantState.supplierError = "";
+    renderAiAssistant();
+    try {
+      const result = await api.saveQuoteSupplier(supplier);
+      aiAssistantState.supplier = QuoteCore.normalizeSupplier(result && result.supplier, { requireComplete: true });
+      aiAssistantState.supplierLoaded = true;
+      aiAssistantState.supplierDirty = false;
+      applySupplierToQuote();
+      showToast("공급자 정보를 이 PC에 암호화 저장했습니다.", "success");
+    } catch (error) {
+      aiAssistantState.supplierError = error.message || "공급자 정보를 저장하지 못했습니다.";
+    } finally {
+      aiAssistantState.supplierSaving = false;
+      if (currentView === "aiAssistant" && aiAssistantState.tab === "quote") renderAiAssistant();
+    }
+  }
+
+  function quotePreviewHtml(quote) {
+    if (!quote) return `<div class="ai-quote-empty"><div>₩</div><b>아직 작성된 견적서가 없습니다</b><p>예시처럼 현장명·작업·금액만 입력해도<br>AI가 세부 품목과 설명을 채웁니다.</p><code>햇빛빌라 입주청소 12만원</code></div>`;
+    const supplier = quote.company || {};
+    return `<article class="bring-quote" data-ai-quote-document><header><div class="bring-quote-brand"><span>BRING</span><small>ENGINEERING</small></div><div><b>견 적 서</b><small>QUOTATION</small></div></header><section class="bring-quote-meta"><div><small>수신</small><strong>${esc(quote.recipient)} 귀중</strong><p>${esc(quote.projectName)}</p><dl class="bring-quote-issued"><div><dt>발행일</dt><dd>${esc(quote.quoteDate)}</dd></div><div><dt>유효기간</dt><dd>${esc(quote.validUntil)}</dd></div></dl></div><section class="bring-quote-supplier"><b>공급자</b><dl><div><dt>등록번호</dt><dd>${esc(supplier.registrationNumber || "미입력")}</dd></div><div><dt>상호</dt><dd>${esc(supplier.businessName || "미입력")}</dd></div><div><dt>대표자</dt><dd>${esc(supplier.representative || "미입력")}</dd></div></dl></section></section><section class="bring-quote-total"><div><small>아래와 같이 견적합니다</small><b>${QuoteCore.money(quote.totalAmount)}</b></div><span>VAT 포함</span></section><p class="bring-quote-summary">${esc(quote.summary)}</p><div class="bring-quote-table-wrap"><table><thead><tr><th>No.</th><th>품목</th><th>상세 내용</th><th>수량</th><th>금액</th></tr></thead><tbody>${quote.items.map((item, index) => `<tr><td>${index + 1}</td><td><b>${esc(item.name)}</b></td><td>${esc(item.detail)}</td><td>${item.quantity}${esc(item.unit)}</td><td>${QuoteCore.money(QuoteCore.itemTotal(item))}</td></tr>`).join("")}</tbody></table></div><section class="bring-quote-amounts"><div><span>공급가액</span><b>${QuoteCore.money(quote.supplyAmount)}</b></div><div><span>부가세</span><b>${QuoteCore.money(quote.vatAmount)}</b></div><div class="total"><span>합계금액</span><b>${QuoteCore.money(quote.totalAmount)}</b></div></section><section class="bring-quote-notes"><b>안내 사항</b>${quote.notes.map(note => `<p>• ${esc(note)}</p>`).join("")}</section><footer><div><b>${esc(supplier.businessName || quote.company.name)}</b><span>${esc(quote.company.brand)}</span></div><strong>BRING CARE</strong></footer></article>`;
+  }
+
+  function renderAiQuoteAssistant() {
+    const quote = aiAssistantState.quote;
+    const canExport = Boolean(quote && QuoteCore.supplierComplete(quote.company));
+    return `<section class="ai-assistant-hero ai-quote-hero"><div><span>BRING CRM AI · QUOTE</span><h2>한 줄로 요청하면 BRING 견적서가 완성됩니다</h2><p>현장명·작업명·최종 금액을 입력하세요. 입력 금액은 그대로 고정하고 AI는 품목과 상세 작업 범위만 구성합니다.</p></div><div class="ai-quote-hero-mark">₩</div></section><section class="ai-quote-layout"><form class="ai-assistant-card ai-quote-compose" data-ai-quote-form>${quoteSupplierFields()}<div class="ai-quote-step"><span>01</span><div><b>간단히 입력</b><small>현장명 + 작업 + 금액</small></div></div><label class="ai-content-field"><span>어떤 견적서가 필요한가요?</span><textarea data-ai-quote-content maxlength="2000" placeholder="예: 햇빛빌라 입주청소 12만원">${esc(aiAssistantState.quoteContent)}</textarea></label><div class="ai-quote-examples"><span>빠른 예시</span>${["햇빛빌라 입주청소 12만원", "늘봄상가 공용부청소 35만원", "푸른빌딩 예초작업 48만원"].map(value => `<button type="button" data-ai-quote-example="${attr(value)}">${esc(value)}</button>`).join("")}</div><button type="button" class="primary-button ai-quote-generate" data-ai-quote-generate${aiAssistantState.quoteLoading || !aiAssistantState.quoteContent.trim() ? " disabled" : ""}>${aiAssistantState.quoteLoading ? "AI가 견적서를 작성 중…" : "✦ AI 견적서 만들기"}</button>${aiAssistantState.quoteError ? `<div class="ai-error" role="alert">${esc(aiAssistantState.quoteError)}</div>` : ""}${aiAssistantState.quoteWarnings.length ? `<ul class="ai-warning-list">${aiAssistantState.quoteWarnings.map(item => `<li>${esc(item)}</li>`).join("")}</ul>` : ""}${quote ? `<div class="ai-quote-step ai-quote-step-second"><span>02</span><div><b>세부 품목 확인</b><small>이미지·엑셀 저장 전 수정할 수 있습니다</small></div></div><div class="ai-quote-editor">${quoteEditorRows(quote)}</div>` : ""}</form><section class="ai-quote-preview-card"><header><div><span>BRING 표준 양식</span><b>견적서 미리보기</b></div><div><button type="button" data-ai-quote-export="png"${canExport ? "" : " disabled"}>▧ 이미지</button><button type="button" class="primary" data-ai-quote-export="xlsx"${canExport ? "" : " disabled"}>▦ 엑셀 파일</button></div></header><div class="ai-quote-paper">${quotePreviewHtml(quote)}</div><footer>${canExport ? "AI가 작성한 초안입니다. 품목·금액·작업 범위를 확인한 뒤 발행하세요." : "상호·대표자·사업자등록번호를 모두 저장하면 이미지와 엑셀을 내보낼 수 있습니다."}</footer></section></section>`;
   }
 
   async function requestAiAssistantDraft() {
@@ -2977,6 +3051,122 @@
       aiAssistantState.loading = false;
       if (currentView === "aiAssistant") renderAiAssistant();
     }
+  }
+
+  async function requestAiQuoteDraft() {
+    if (aiAssistantState.quoteLoading || !aiAssistantState.quoteContent.trim()) return;
+    aiAssistantState.quoteLoading = true;
+    aiAssistantState.quoteError = "";
+    aiAssistantState.quoteWarnings = [];
+    renderAiAssistant();
+    let aiResult = null;
+    try {
+      const response = await api.assist({ task: "quote_draft", content: aiAssistantState.quoteContent, context: { workType: "견적서", owner: currentAuth.user?.displayName || store.settings.owner || "" } });
+      aiResult = response.result;
+      aiAssistantState.quoteWarnings = response.warnings || [];
+    } catch (_error) {
+      aiAssistantState.quoteWarnings = ["AI 연결을 확인하지 못해 입력 금액을 기준으로 BRING 기본 품목을 구성했습니다. 발행 전에 세부 범위를 확인해 주세요."];
+    }
+    try {
+      aiAssistantState.quote = QuoteCore.createDraftFromPrompt(aiAssistantState.quoteContent, aiResult, { now: new Date(), supplier: aiAssistantState.supplier });
+    } catch (error) {
+      aiAssistantState.quote = null;
+      aiAssistantState.quoteError = error.message || "견적서를 만들지 못했습니다.";
+    } finally {
+      aiAssistantState.quoteLoading = false;
+      if (currentView === "aiAssistant") renderAiAssistant();
+    }
+  }
+
+  function wrapCanvasText(context, value, x, y, maxWidth, lineHeight, maxLines) {
+    const words = String(value || "").split(/\s+/);
+    const lines = [];
+    let line = "";
+    words.forEach(word => {
+      const next = line ? `${line} ${word}` : word;
+      if (context.measureText(next).width > maxWidth && line) { lines.push(line); line = word; }
+      else line = next;
+    });
+    if (line) lines.push(line);
+    lines.slice(0, maxLines).forEach((entry, index) => context.fillText(entry, x, y + index * lineHeight));
+  }
+
+  function quoteImageDataUrl(quoteInput) {
+    const quote = QuoteCore.normalizeDraft(quoteInput);
+    const canvas = document.createElement("canvas");
+    canvas.width = 1240; canvas.height = 1754;
+    const context = canvas.getContext("2d");
+    context.fillStyle = "#f3f7f9"; context.fillRect(0, 0, canvas.width, canvas.height);
+    context.fillStyle = "#ffffff"; context.fillRect(54, 48, 1132, 1658);
+    context.fillStyle = "#173f56"; context.fillRect(54, 48, 1132, 210);
+    context.fillStyle = "#56c7ef"; context.fillRect(54, 48, 18, 210);
+    context.fillStyle = "#ffffff"; context.font = "900 54px 'Malgun Gothic', sans-serif"; context.fillText("BRING", 104, 130);
+    context.font = "700 19px 'Malgun Gothic', sans-serif"; context.fillStyle = "#bfeafb"; context.fillText("ENGINEERING", 107, 165);
+    context.textAlign = "right"; context.fillStyle = "#ffffff"; context.font = "900 48px 'Malgun Gothic', sans-serif"; context.fillText("견 적 서", 1124, 137);
+    context.font = "700 16px 'Malgun Gothic', sans-serif"; context.fillStyle = "#bfeafb"; context.fillText("QUOTATION", 1124, 172); context.textAlign = "left";
+    context.fillStyle = "#173f56"; context.font = "800 26px 'Malgun Gothic', sans-serif"; context.fillText(`${quote.recipient} 귀중`, 104, 322);
+    context.font = "700 19px 'Malgun Gothic', sans-serif"; context.fillStyle = "#58788a"; context.fillText(quote.projectName, 104, 360);
+    context.font = "600 13px 'Malgun Gothic', sans-serif"; context.fillStyle = "#6c8796";
+    context.fillText(`발행일 ${quote.quoteDate}  ·  유효기간 ${quote.validUntil}`, 104, 393);
+    const supplierRows = [["등록번호", quote.company.registrationNumber], ["상호", quote.company.businessName], ["대표자", quote.company.representative]];
+    const supplierX = 744; const supplierY = 282; const supplierWidth = 392; const supplierRowHeight = 36;
+    context.strokeStyle = "#b8cdd7"; context.lineWidth = 1; context.strokeRect(supplierX, supplierY, supplierWidth, supplierRowHeight * 3);
+    context.fillStyle = "#edf5f8"; context.fillRect(supplierX, supplierY, 86, supplierRowHeight * 3);
+    supplierRows.forEach((row, index) => {
+      const rowY = supplierY + supplierRowHeight * index;
+      if (index) { context.beginPath(); context.moveTo(supplierX, rowY); context.lineTo(supplierX + supplierWidth, rowY); context.stroke(); }
+      context.beginPath(); context.moveTo(supplierX + 86, rowY); context.lineTo(supplierX + 86, rowY + supplierRowHeight); context.stroke();
+      context.fillStyle = "#587888"; context.font = "700 13px 'Malgun Gothic', sans-serif"; context.fillText(row[0], supplierX + 12, rowY + 23);
+      context.fillStyle = "#173f56"; context.font = "700 14px 'Malgun Gothic', sans-serif"; context.fillText(row[1] || "미입력", supplierX + 101, rowY + 23);
+    });
+    context.fillStyle = "#e9f7fc"; context.fillRect(104, 414, 1032, 124);
+    context.fillStyle = "#267fa8"; context.font = "700 17px 'Malgun Gothic', sans-serif"; context.fillText("아래와 같이 견적합니다 · VAT 포함", 134, 458);
+    context.fillStyle = "#173f56"; context.font = "900 43px 'Malgun Gothic', sans-serif"; context.fillText(QuoteCore.money(quote.totalAmount), 134, 507);
+    context.fillStyle = "#527387"; context.font = "600 17px 'Malgun Gothic', sans-serif"; wrapCanvasText(context, quote.summary, 104, 586, 1032, 26, 2);
+    const columns = [104, 174, 378, 774, 872, 1136];
+    let y = 658;
+    context.fillStyle = "#173f56"; context.fillRect(104, y, 1032, 54);
+    context.fillStyle = "#ffffff"; context.font = "800 16px 'Malgun Gothic', sans-serif";
+    ["No.", "품목", "상세 내용", "수량", "금액"].forEach((label, index) => context.fillText(label, columns[index] + 14, y + 35));
+    y += 54;
+    quote.items.forEach((item, index) => {
+      const rowHeight = 96;
+      context.fillStyle = index % 2 ? "#f7fafb" : "#ffffff"; context.fillRect(104, y, 1032, rowHeight);
+      context.strokeStyle = "#d8e5eb"; context.beginPath(); context.moveTo(104, y + rowHeight); context.lineTo(1136, y + rowHeight); context.stroke();
+      context.fillStyle = "#567789"; context.font = "600 17px 'Malgun Gothic', sans-serif"; context.fillText(String(index + 1).padStart(2, "0"), 120, y + 40);
+      context.fillStyle = "#173f56"; context.font = "800 17px 'Malgun Gothic', sans-serif"; wrapCanvasText(context, item.name, 188, y + 35, 172, 24, 2);
+      context.fillStyle = "#557485"; context.font = "600 15px 'Malgun Gothic', sans-serif"; wrapCanvasText(context, item.detail, 392, y + 31, 360, 22, 3);
+      context.fillStyle = "#173f56"; context.font = "700 16px 'Malgun Gothic', sans-serif"; context.fillText(`${item.quantity}${item.unit}`, 790, y + 40);
+      context.textAlign = "right"; context.fillText(QuoteCore.money(QuoteCore.itemTotal(item)), 1114, y + 40); context.textAlign = "left";
+      y += rowHeight;
+    });
+    y += 36;
+    [["공급가액", quote.supplyAmount], ["부가세", quote.vatAmount], ["합계금액", quote.totalAmount]].forEach(([label, amount], index) => {
+      context.fillStyle = index === 2 ? "#173f56" : "#698594"; context.font = `${index === 2 ? "900 23px" : "700 17px"} 'Malgun Gothic', sans-serif`; context.fillText(label, 760, y + index * 42);
+      context.textAlign = "right"; context.fillText(QuoteCore.money(amount), 1136, y + index * 42); context.textAlign = "left";
+    });
+    const notesY = Math.max(y + 154, 1320);
+    context.fillStyle = "#f4f8fa"; context.fillRect(104, notesY, 1032, 170);
+    context.fillStyle = "#173f56"; context.font = "800 18px 'Malgun Gothic', sans-serif"; context.fillText("안내 사항", 132, notesY + 38);
+    context.fillStyle = "#5b7888"; context.font = "600 15px 'Malgun Gothic', sans-serif"; quote.notes.slice(0, 3).forEach((note, index) => wrapCanvasText(context, `• ${note}`, 132, notesY + 72 + index * 34, 960, 22, 1));
+    context.fillStyle = "#173f56"; context.font = "900 23px 'Malgun Gothic', sans-serif"; context.fillText(quote.company.businessName || quote.company.name, 104, 1640);
+    context.textAlign = "right"; context.font = "900 26px 'Malgun Gothic', sans-serif"; context.fillText("BRING CARE", 1136, 1640); context.textAlign = "left";
+    return canvas.toDataURL("image/png");
+  }
+
+  async function exportAiQuote(format) {
+    if (!aiAssistantState.quote) return;
+    if (!QuoteCore.supplierComplete(aiAssistantState.quote.company)) {
+      aiAssistantState.supplierError = "상호·대표자·사업자등록번호를 모두 저장해 주세요.";
+      renderAiAssistant();
+      return;
+    }
+    try {
+      const input = { format, quote: aiAssistantState.quote };
+      if (format === "png") input.imageDataUrl = quoteImageDataUrl(aiAssistantState.quote);
+      const result = await api.exportQuote(input);
+      if (result && result.ok) showToast(format === "png" ? "견적서 이미지를 저장했습니다." : "견적서 엑셀 파일을 저장했습니다.", "success");
+    } catch (error) { showToast(error.message || "견적서를 저장하지 못했습니다.", "error"); }
   }
 
   function renderOperationsIntelligence() {
@@ -4850,6 +5040,26 @@
       catch { showToast("초안을 복사하지 못했습니다.", "error"); }
       return;
     }
+    const aiAssistantTab = event.target.closest("[data-ai-assistant-tab]");
+    if (aiAssistantTab) {
+      aiAssistantState.tab = aiAssistantTab.dataset.aiAssistantTab === "quote" ? "quote" : "report";
+      renderAiAssistant();
+      return;
+    }
+    const aiQuoteExample = event.target.closest("[data-ai-quote-example]");
+    if (aiQuoteExample) {
+      aiAssistantState.quoteContent = aiQuoteExample.dataset.aiQuoteExample || "";
+      aiAssistantState.quoteError = "";
+      renderAiAssistant();
+      document.querySelector("[data-ai-quote-content]")?.focus();
+      return;
+    }
+    const aiQuoteGenerate = event.target.closest("[data-ai-quote-generate]");
+    if (aiQuoteGenerate) { await requestAiQuoteDraft(); return; }
+    const aiQuoteSupplierSave = event.target.closest("[data-ai-quote-supplier-save]");
+    if (aiQuoteSupplierSave) { await saveAiQuoteSupplier(); return; }
+    const aiQuoteExport = event.target.closest("[data-ai-quote-export]");
+    if (aiQuoteExport && !aiQuoteExport.disabled) { await exportAiQuote(aiQuoteExport.dataset.aiQuoteExport); return; }
     const customerPhotoPick = event.target.closest("[data-customer-photo-pick]");
     if (customerPhotoPick) {
       const form = customerPhotoPick.closest("#customerForm");
@@ -6089,6 +6299,26 @@
     }
     if (event.target.matches("[data-ai-work-type]")) {
       aiAssistantState.workType = event.target.value;
+      return;
+    }
+    if (event.target.matches("[data-ai-quote-supplier]")) {
+      const key = event.target.dataset.aiQuoteSupplier;
+      if (!["businessName", "representative", "registrationNumber"].includes(key)) return;
+      aiAssistantState.supplier[key] = event.target.value.trim();
+      aiAssistantState.supplierDirty = true;
+      aiAssistantState.supplierError = "";
+      try { applySupplierToQuote(); } catch (_error) {}
+      return;
+    }
+    if (event.target.matches("[data-ai-quote-item]")) {
+      const quote = aiAssistantState.quote;
+      const index = Number(event.target.dataset.aiQuoteIndex);
+      const key = event.target.dataset.aiQuoteItem;
+      if (!quote || !Number.isInteger(index) || !quote.items[index] || !["name", "detail", "unitPrice"].includes(key)) return;
+      const next = JSON.parse(JSON.stringify(quote));
+      next.items[index][key] = key === "unitPrice" ? Math.round(Number(event.target.value) || 0) : event.target.value;
+      try { aiAssistantState.quote = QuoteCore.normalizeDraft(next); aiAssistantState.quoteError = ""; renderAiAssistant(); }
+      catch (error) { aiAssistantState.quoteError = error.message || "품목을 확인해 주세요."; showToast(aiAssistantState.quoteError, "error"); }
       return;
     }
     if (event.target.matches("[data-operations-period]")) {
@@ -7340,6 +7570,25 @@
       aiAssistantState.content = event.target.value.slice(0, 12_000);
       const submit = document.querySelector("[data-ai-assist-submit]");
       if (submit) submit.disabled = aiAssistantState.loading || !aiAssistantState.content.trim();
+      return;
+    } else if (event.target.matches("[data-ai-quote-content]")) {
+      aiAssistantState.quoteContent = event.target.value.slice(0, 2_000);
+      aiAssistantState.quoteError = "";
+      const submit = document.querySelector("[data-ai-quote-generate]");
+      if (submit) submit.disabled = aiAssistantState.quoteLoading || !aiAssistantState.quoteContent.trim();
+      return;
+    } else if (event.target.matches("[data-ai-quote-supplier]")) {
+      const key = event.target.dataset.aiQuoteSupplier;
+      if (!["businessName", "representative", "registrationNumber"].includes(key)) return;
+      let value = event.target.value.slice(0, key === "representative" ? 40 : 80);
+      if (key === "registrationNumber") {
+        const digits = value.replace(/\D/g, "").slice(0, 10);
+        value = [digits.slice(0, 3), digits.slice(3, 5), digits.slice(5)].filter(Boolean).join("-");
+        event.target.value = value;
+      }
+      aiAssistantState.supplier[key] = value;
+      aiAssistantState.supplierDirty = true;
+      aiAssistantState.supplierError = "";
       return;
     } else if (event.target.matches("#consultationForm [name=\"summary\"]")) {
       const form = event.target.closest("#consultationForm");

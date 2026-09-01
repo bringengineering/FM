@@ -18,7 +18,7 @@ test("AI client accepts only the closed CRM automation tasks and allow-listed co
   for (const task of [
     "assistant_summary", "next_action", "sales_message", "work_report", "consultation_structure",
     "sales_focus_explanation", "sales_followup_message", "complaint_triage", "vendor_request",
-    "work_order", "completion_report", "monthly_management_report"
+    "work_order", "completion_report", "monthly_management_report", "quote_draft"
   ]) {
     assert.equal(validateAssistInput({ task, content: "내용" }).task, task);
   }
@@ -26,6 +26,22 @@ test("AI client accepts only the closed CRM automation tasks and allow-listed co
   assert.throws(() => validateAssistInput({ task: "next_action", content: "" }), error => error?.code === "INVALID_INPUT");
   assert.throws(() => validateAssistInput({ task: "next_action", content: "가".repeat(12001) }), error => error?.code === "INPUT_TOO_LARGE");
   assert.throws(() => validateAssistInput({ task: "next_action", content: "내용", groqKey: "gsk_forbidden" }), error => error?.code === "INVALID_INPUT");
+});
+
+test("AI client preserves only bounded structured quote fields", async () => {
+  const result = await assistWithGateway({
+    endpoint: "https://gateway.example/v1/assist",
+    idToken: "firebase-token",
+    input: { task: "quote_draft", content: "햇빛빌라 입주청소 12만원", context: { workType: "견적서", privateMemo: "제외" } },
+    fetchImpl: async () => new Response(JSON.stringify({ ok: true, requestId: "quote-1", result: {
+      recipient: "햇빛빌라", projectName: "햇빛빌라 입주청소", service: "입주청소", summary: "입주 전 청소",
+      totalAmount: 120000, items: [{ name: "입주청소", detail: "실내 전체", quantity: 1, unit: "식", unitPrice: 120000, note: "" }],
+      notes: ["현장 확인 후 범위 확정"], ignored: "제거"
+    }, warnings: [] }), { status: 200 })
+  });
+  assert.equal(result.result.totalAmount, 120000);
+  assert.deepEqual(result.result.items, [{ name: "입주청소", detail: "실내 전체", quantity: 1, unit: "식", unitPrice: 120000 }]);
+  assert.equal(result.result.ignored, undefined);
 });
 
 test("AI client sends only a Firebase bearer token and normalizes success", async () => {
@@ -77,5 +93,6 @@ test("Electron keeps the Firebase token in main and exposes only a narrow assist
   assert.match(source, /remoteClient\.ensureIdToken\(false\)/);
   assert.match(source, /fetchImpl: \(url, options\) => net\.fetch\(url, options\)/);
   assert.match(preload, /assist: input => ipcRenderer\.invoke\("crm:ai-assist", input\)/);
+  assert.match(preload, /exportQuote: input => ipcRenderer\.invoke\("crm:quote-export", input\)/);
   assert.doesNotMatch(preload, /idToken|GROQ_API_KEY|gsk_/);
 });

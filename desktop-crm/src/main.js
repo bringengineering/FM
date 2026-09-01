@@ -13,6 +13,8 @@ const Core = require("./core");
 const OfficeCore = require("./office-core");
 const OfficeAttachment = require("./office-attachment");
 const { createAttendanceWorkbook, safeFileSegment } = require("./attendance-xlsx");
+const QuoteCore = require("./quote-core");
+const { createQuoteWorkbook, quoteFileName } = require("./quote-xlsx");
 const OperationsIntelligence = require("./operations-intelligence-core");
 const OperationsWorkSync = require("./operations-work-sync");
 const MarketingPersistence = require("./marketing-persistence");
@@ -21,6 +23,7 @@ const {
   FirebaseRemoteClient,
   createSerializedProtectedStoreCoordinator,
   decodeProtectedJson,
+  encodeProtectedJson,
   validateBuildingScheduleCommitInput,
   planBuildingScheduleCommit,
   buildingScheduleAuditRecord,
@@ -1279,6 +1282,43 @@ function authSessionFile() {
   return path.join(path.dirname(dataFile()), "bring-crm-auth.json");
 }
 
+function quoteSupplierFile() {
+  return path.join(path.dirname(dataFile()), "bring-crm-quote-supplier.json");
+}
+
+function normalizeQuoteSupplier(value, options = {}) {
+  return QuoteCore.normalizeSupplier(value, options);
+}
+
+async function loadQuoteSupplier() {
+  if (!authState().user) throw Object.assign(new Error("다시 로그인해 주세요."), { code: "AUTH_REQUIRED" });
+  try {
+    const raw = await fs.readFile(quoteSupplierFile(), "utf8");
+    const decoded = decodeProtectedJson(safeStorage, raw);
+    if (!decoded.encrypted) throw Object.assign(new Error("암호화되지 않은 공급자 정보는 열지 않았습니다."), { code: "PROTECTED_DATA_REQUIRED" });
+    return { ok: true, supplier: normalizeQuoteSupplier(decoded.value) };
+  } catch (error) {
+    if (error && error.code === "ENOENT") return { ok: true, supplier: normalizeQuoteSupplier({}) };
+    throw error;
+  }
+}
+
+async function saveQuoteSupplier(input) {
+  if (!authState().user) throw Object.assign(new Error("다시 로그인해 주세요."), { code: "AUTH_REQUIRED" });
+  const supplier = normalizeQuoteSupplier(input, { requireComplete: true });
+  const target = quoteSupplierFile();
+  const temp = `${target}.tmp.${process.pid}.${crypto.randomBytes(6).toString("hex")}`;
+  await fs.mkdir(path.dirname(target), { recursive: true });
+  try {
+    await fs.writeFile(temp, encodeProtectedJson(safeStorage, supplier), { encoding: "utf8", flag: "wx", mode: 0o600 });
+    await fs.rename(temp, target);
+  } catch (error) {
+    try { await fs.unlink(temp); } catch (cleanupError) { if (cleanupError && cleanupError.code !== "ENOENT") console.warn("quote supplier temp cleanup failed"); }
+    throw error;
+  }
+  return { ok: true, supplier };
+}
+
 function pendingFile() {
   return path.join(path.dirname(dataFile()), "bring-crm-pending.json");
 }
@@ -2221,6 +2261,33 @@ async function exportOfficeAttendance(input) {
   if (result.canceled || !result.filePath) return { ok: false, canceled: true };
   await fs.writeFile(result.filePath, workbook);
   return { ok: true, path: result.filePath };
+}
+
+async function exportAiQuote(input) {
+  if (!authState().user) throw Object.assign(new Error("다시 로그인해 주세요."), { code: "AUTH_REQUIRED" });
+  if (!input || typeof input !== "object" || Array.isArray(input)) throw new Error("견적서 저장 요청이 올바르지 않습니다.");
+  const format = String(input.format || "");
+  if (!new Set(["png", "xlsx"]).has(format)) throw new Error("견적서 파일 형식을 확인해 주세요.");
+  const quote = QuoteCore.normalizeDraft(input.quote);
+  let bytes;
+  if (format === "xlsx") {
+    bytes = createQuoteWorkbook(quote, new Date());
+  } else {
+    const dataUrl = String(input.imageDataUrl || "");
+    if (!/^data:image\/png;base64,[A-Za-z0-9+/=]+$/.test(dataUrl) || dataUrl.length > 24_000_000) throw new Error("견적서 이미지 데이터를 확인해 주세요.");
+    const image = nativeImage.createFromDataURL(dataUrl);
+    const size = image.getSize();
+    if (image.isEmpty() || size.width < 600 || size.height < 800 || size.width > 3000 || size.height > 5000) throw new Error("견적서 이미지 크기를 확인해 주세요.");
+    bytes = image.toPNG();
+  }
+  const result = await dialog.showSaveDialog(mainWindow, {
+    title: format === "xlsx" ? "견적서 엑셀 파일 저장" : "견적서 이미지 저장",
+    defaultPath: quoteFileName(quote, format),
+    filters: [{ name: format === "xlsx" ? "Excel 통합 문서" : "PNG 이미지", extensions: [format] }]
+  });
+  if (result.canceled || !result.filePath) return { ok: false, canceled: true };
+  await fs.writeFile(result.filePath, bytes, { mode: 0o600 });
+  return { ok: true };
 }
 
 async function saveWorkflowCase(input) {
@@ -3220,7 +3287,34 @@ async function createWindow() {
       }
     }
     let actionResult = null;
-    if (process.env.BRING_CRM_SCREENSHOT_ACTION === "office-messenger-smoke") {
+    if (process.env.BRING_CRM_SCREENSHOT_ACTION === "ai-quote-preview") {
+      actionResult = await mainWindow.webContents.executeJavaScript(`(async () => {
+        const wait = ms => new Promise(resolve => setTimeout(resolve, ms));
+        document.querySelector('[data-workspace-enter="operations"]')?.click();
+        await wait(120);
+        document.querySelector('[data-view="aiAssistant"]')?.click();
+        await wait(80);
+        document.querySelector('[data-ai-assistant-tab="quote"]')?.click();
+        await wait(80);
+        for (const [key, value] of [['businessName', '브링엔지니어링'], ['representative', '대표자'], ['registrationNumber', '000-00-00000']]) {
+          const supplierInput = document.querySelector('[data-ai-quote-supplier="' + key + '"]');
+          if (!supplierInput) return { pass: false, reason: 'supplier input missing', key, state: window.__crmTest?.snapshot() };
+          supplierInput.value = value;
+          supplierInput.dispatchEvent(new Event('input', { bubbles: true }));
+          supplierInput.dispatchEvent(new Event('change', { bubbles: true }));
+          await wait(30);
+        }
+        const input = document.querySelector('[data-ai-quote-content]');
+        if (!input) return { pass: false, reason: 'quote input missing', state: window.__crmTest?.snapshot() };
+        input.value = '햇빛빌라 입주청소 12만원';
+        input.dispatchEvent(new Event('input', { bubbles: true }));
+        document.querySelector('[data-ai-quote-generate]')?.click();
+        for (let attempt = 0; attempt < 40 && !document.querySelector('[data-ai-quote-document]'); attempt += 1) await wait(50);
+        const documentNode = document.querySelector('[data-ai-quote-document]');
+        const text = documentNode?.textContent || '';
+        return { pass: Boolean(documentNode) && text.includes('햇빛빌라') && text.includes('120,000원') && Boolean(document.querySelector('[data-ai-quote-export="xlsx"]')), state: window.__crmTest?.snapshot() };
+      })()`, true);
+    } else if (process.env.BRING_CRM_SCREENSHOT_ACTION === "office-messenger-smoke") {
       actionResult = await mainWindow.webContents.executeJavaScript(`(async () => {
         const wait = ms => new Promise(resolve => setTimeout(resolve, ms));
         const waitFor = async (read, attempts = 60) => {
@@ -5731,7 +5825,7 @@ async function createWindow() {
     const uiState = await mainWindow.webContents.executeJavaScript("window.__crmTest && window.__crmTest.snapshot()", true);
     const image = await mainWindow.webContents.capturePage();
     await fs.writeFile(target, image.toPNG());
-    if (["building-rental-info", "consultation-building-hub", "customer-sales-status", "vacancy-layout-scale", "vacancy-viewer-invariant", "lookup-building-link", "one-off-payment-calendar", "payment-building-calendar", "work-calendar-smoke"].includes(process.env.BRING_CRM_SCREENSHOT_ACTION)) {
+    if (["ai-quote-preview", "building-rental-info", "consultation-building-hub", "customer-sales-status", "vacancy-layout-scale", "vacancy-viewer-invariant", "lookup-building-link", "one-off-payment-calendar", "payment-building-calendar", "work-calendar-smoke"].includes(process.env.BRING_CRM_SCREENSHOT_ACTION)) {
       await fs.writeFile(`${target}.result.json`, JSON.stringify({ actionResult, uiState }, null, 2), "utf8");
     }
     console.log(target, JSON.stringify({ empty: image.isEmpty(), size: image.getSize(), actionResult, uiState }));
@@ -5753,6 +5847,9 @@ secureCanonicalHandle("crm:ai-assist", async input => {
     fetchImpl: (url, options) => net.fetch(url, options)
   });
 });
+secureCanonicalHandle("crm:quote-export", input => exportAiQuote(input));
+secureCanonicalHandle("crm:quote-supplier-load", () => loadQuoteSupplier());
+secureCanonicalHandle("crm:quote-supplier-save", input => saveQuoteSupplier(input));
 secureHandle("crm:auth-login", async credentials => {
   if (FIELD_OPERATIONS_ENABLED && (fieldReauthenticationActive || fieldReauthInFlight)) {
     return fieldReauthenticationBlockedResult("FIELD_REAUTH_IN_PROGRESS");

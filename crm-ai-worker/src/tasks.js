@@ -47,6 +47,10 @@ const TASKS = Object.freeze({
   monthly_management_report: {
     instruction: "CRM 계산 결과를 계산하거나 수정하지 마세요. 핵심 수치, 전월 비교, 작업 유형 손익, 미수·미지급 위험, 영업 전환, 다음 달 실행 제안 순서로 작성하고 모든 판단에 제공된 지표명과 값을 함께 표시하세요. 전월 자료가 없으면 비교 불가라고 명시하세요.",
     shape: "{\"text\":\"근거 지표를 포함한 월간 경영보고\"}"
+  },
+  quote_draft: {
+    instruction: "입력에서 수신처·현장명·서비스와 명시된 총액을 추출해 BRING 견적서 초안을 만드세요. 총액은 절대 변경하거나 새로 추측하지 말고, 세부 품목 금액의 합이 입력 총액과 정확히 같아야 합니다. 입력에 없는 면적·주소·일정·연락처·보증 조건은 만들지 마세요. 품목은 1~5개로 나누고 각 상세 내용은 실제 작업 범위를 짧게 설명하세요.",
+    shape: "{\"recipient\":\"수신처 또는 현장명\",\"projectName\":\"견적명\",\"service\":\"서비스명\",\"summary\":\"견적 요약\",\"totalAmount\":120000,\"items\":[{\"name\":\"품목명\",\"detail\":\"세부 작업 범위\",\"quantity\":1,\"unit\":\"식\",\"unitPrice\":120000,\"note\":\"\"}],\"notes\":[\"확인 문구\"]}"
   }
 });
 
@@ -64,6 +68,34 @@ function boundedString(value) {
   const text = String(value ?? "").trim();
   if (!text || text.length > 8_000) throw codedError("AI_INVALID_RESPONSE");
   return text;
+}
+
+function normalizeQuoteResult(value) {
+  const totalAmount = Math.round(Number(value.totalAmount) || 0);
+  if (totalAmount <= 0 || totalAmount > 1_000_000_000 || !Array.isArray(value.items) || !value.items.length || value.items.length > 8) throw codedError("AI_INVALID_RESPONSE");
+  const items = value.items.map(item => {
+    if (!item || typeof item !== "object" || Array.isArray(item)) throw codedError("AI_INVALID_RESPONSE");
+    const normalized = {
+      name: boundedString(item.name).slice(0, 80),
+      detail: boundedString(item.detail).slice(0, 240),
+      quantity: Math.max(1, Math.min(999, Math.round(Number(item.quantity) || 1))),
+      unit: boundedString(item.unit || "식").slice(0, 12),
+      unitPrice: Math.round(Number(item.unitPrice) || 0),
+      note: String(item.note || "").trim().slice(0, 100)
+    };
+    if (normalized.unitPrice <= 0 || normalized.unitPrice > 1_000_000_000) throw codedError("AI_INVALID_RESPONSE");
+    return normalized;
+  });
+  if (items.reduce((sum, item) => sum + item.quantity * item.unitPrice, 0) !== totalAmount) throw codedError("AI_INVALID_RESPONSE");
+  return {
+    recipient: boundedString(value.recipient).slice(0, 80),
+    projectName: boundedString(value.projectName).slice(0, 120),
+    service: boundedString(value.service).slice(0, 60),
+    summary: boundedString(value.summary).slice(0, 240),
+    totalAmount,
+    items,
+    notes: Array.isArray(value.notes) ? value.notes.filter(item => typeof item === "string" && item.trim()).slice(0, 4).map(item => item.trim().slice(0, 180)) : []
+  };
 }
 
 export function supportedTaskIds() {
@@ -88,6 +120,7 @@ export function buildTaskMessages(task, content, context = {}) {
 export function normalizeTaskResult(task, value) {
   requireTask(task);
   if (!value || typeof value !== "object" || Array.isArray(value)) throw codedError("AI_INVALID_RESPONSE");
+  if (task === "quote_draft") return normalizeQuoteResult(value);
   if (task !== "consultation_structure") return { text: boundedString(value.text) };
   return {
     summary: boundedString(value.summary),

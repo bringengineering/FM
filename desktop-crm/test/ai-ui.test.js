@@ -24,8 +24,8 @@ test("AI assistant keeps prompts and escaped drafts outside the persisted CRM st
   assert.match(app, /esc\(aiAssistantState\.result\.text\)/);
   assert.match(app, /aiAssistantState\.loading = true/);
   assert.match(app, /data-ai-assist-submit[^>]*disabled/);
-  const assistantBlock = app.slice(app.indexOf("function renderAiAssistant"), app.indexOf("function renderOperationsIntelligence"));
-  assert.doesNotMatch(assistantBlock, /scheduleSave|api\.save|store\.[A-Za-z]+\s*=/);
+  const reportBlock = app.slice(app.indexOf("function renderAiReportAssistant"), app.indexOf("function quoteEditorRows"));
+  assert.doesNotMatch(reportBlock, /scheduleSave|api\.save|store\.[A-Za-z]+\s*=/);
 });
 
 test("AI assistant provides copy and clear actions and explains the privacy boundary", () => {
@@ -34,6 +34,33 @@ test("AI assistant provides copy and clear actions and explains the privacy boun
   assert.match(app, /data-ai-result-clear/);
   assert.match(app, /개인정보.*마스킹/);
   assert.match(app, /AI가.*자동.*저장하지/);
+});
+
+test("AI assistant separates report and quote creation and exposes reviewed file exports", () => {
+  const html = read("index.html");
+  const app = read("app.js");
+  const preload = read("preload.js");
+  const main = read("main.js");
+  assert.match(html, /quote-core\.js/);
+  assert.match(app, /data-ai-assistant-tab="report"[\s\S]*보고서 작성/);
+  assert.match(app, /data-ai-assistant-tab="quote"[\s\S]*견적서 작성/);
+  assert.match(app, /task: "quote_draft"/);
+  assert.match(app, /data-ai-quote-export="png"/);
+  assert.match(app, /data-ai-quote-export="xlsx"/);
+  assert.match(app, /data-ai-quote-supplier="businessName"/);
+  assert.match(app, /data-ai-quote-supplier="representative"/);
+  assert.match(app, /data-ai-quote-supplier="registrationNumber"/);
+  assert.match(app, /AI 전송 안 함/);
+  assert.match(app, /QuoteCore\.createDraftFromPrompt/);
+  assert.match(preload, /crm:quote-export/);
+  assert.match(preload, /crm:quote-supplier-load/);
+  assert.match(preload, /crm:quote-supplier-save/);
+  assert.match(main, /secureCanonicalHandle\("crm:quote-export"/);
+  assert.match(main, /secureCanonicalHandle\("crm:quote-supplier-load"/);
+  assert.match(main, /secureCanonicalHandle\("crm:quote-supplier-save"/);
+  assert.match(main, /encodeProtectedJson\(safeStorage, supplier\)/);
+  assert.match(main, /data:image\\\/png;base64/);
+  assert.match(main, /showSaveDialog/);
 });
 
 test("consultation AI creates a reviewable draft without changing or saving the form", () => {

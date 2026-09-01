@@ -1,7 +1,7 @@
 const SUPPORTED_TASKS = new Set([
   "assistant_summary", "next_action", "sales_message", "work_report", "consultation_structure",
   "sales_focus_explanation", "sales_followup_message", "complaint_triage", "vendor_request",
-  "work_order", "completion_report", "monthly_management_report"
+  "work_order", "completion_report", "monthly_management_report", "quote_draft"
 ]);
 const INPUT_KEYS = new Set(["task", "content", "context"]);
 const CONTEXT_KEYS = new Set(["customerType", "workType", "owner", "priority", "category", "urgency", "month"]);
@@ -51,6 +51,27 @@ function normalizedSuccess(value) {
   const result = {};
   for (const key of ["text", "summary", "currentRequest", "outcome", "nextAction"]) {
     if (typeof value.result[key] === "string" && value.result[key].trim()) result[key] = value.result[key].trim();
+  }
+  if (Array.isArray(value.result.items)) {
+    const items = value.result.items.slice(0, 8).map(item => {
+      if (!item || typeof item !== "object" || Array.isArray(item)) throw codedError("AI_INVALID_RESPONSE");
+      const normalized = {};
+      for (const key of ["name", "detail", "unit", "note"]) {
+        if (typeof item[key] === "string" && item[key].trim()) normalized[key] = item[key].trim().slice(0, key === "detail" ? 240 : 100);
+      }
+      normalized.quantity = Math.max(1, Math.min(999, Math.round(Number(item.quantity) || 1)));
+      normalized.unitPrice = Math.round(Number(item.unitPrice) || 0);
+      if (!normalized.name || normalized.unitPrice <= 0 || normalized.unitPrice > 1_000_000_000) throw codedError("AI_INVALID_RESPONSE");
+      return normalized;
+    });
+    if (!items.length) throw codedError("AI_INVALID_RESPONSE");
+    for (const key of ["recipient", "projectName", "service", "summary"]) {
+      if (typeof value.result[key] === "string" && value.result[key].trim()) result[key] = value.result[key].trim().slice(0, key === "summary" ? 240 : 120);
+    }
+    result.totalAmount = Math.round(Number(value.result.totalAmount) || 0);
+    if (result.totalAmount <= 0 || result.totalAmount > 1_000_000_000) throw codedError("AI_INVALID_RESPONSE");
+    result.items = items;
+    result.notes = Array.isArray(value.result.notes) ? value.result.notes.filter(item => typeof item === "string" && item.trim()).slice(0, 4).map(item => item.trim().slice(0, 180)) : [];
   }
   if (!Object.keys(result).length) throw codedError("AI_INVALID_RESPONSE");
   return {
