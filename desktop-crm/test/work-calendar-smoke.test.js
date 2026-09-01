@@ -21,6 +21,10 @@ test("calendar screenshot smoke covers writer, viewer, navigation, shared record
   assert.match(source, /dateSelected/);
   assert.match(source, /fullCellDateSelected/);
   assert.match(source, /buildingFiltered/);
+  assert.match(source, /aiWorkCollapsedByDefault/);
+  assert.match(source, /aiWorkOpened/);
+  assert.match(source, /aiWorkOpenAfterRender/);
+  assert.match(source, /aiWorkClosedAgain/);
   assert.match(source, /formFirstField/);
   assert.match(source, /savedOnce/);
   assert.match(source, /calendarOnce/);

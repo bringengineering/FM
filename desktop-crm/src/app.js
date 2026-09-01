@@ -138,7 +138,7 @@
   let valueScopeOpenGeneration = 0;
   let aiAssistantState = { task: "assistant_summary", content: "", customerType: "", workType: "", result: null, warnings: [], loading: false, error: "" };
   let salesAutomationState = { drafts: new Map(), loadingId: "", rows: [] };
-  let workAutomationState = { drafts: new Map(), loadingId: "" };
+  let workAutomationState = { drafts: new Map(), loadingId: "", expanded: false };
   let managementReportState = { month: Core.dayKey().slice(0, 7), result: null, loading: false, error: "" };
   const sessionViewedCustomers = new Set();
 
@@ -2896,6 +2896,7 @@
     if (!record) return showToast("작업 기록을 찾지 못했습니다.", "error");
     const building = buildingById(record.buildingId);
     const payload = AiOperationsCore.buildWorkDraftPayload({ ...record, detail: record.summary, buildingLabel: building && building.name, requestedAt: record.scheduledDate || record.createdAt });
+    workAutomationState.expanded = true;
     workAutomationState.loadingId = recordId;
     try {
       const response = await api.assist({ task, content: JSON.stringify(payload), context: { workType: WorkManagement.typeLabel(record.serviceType), owner: record.owner || "", category: payload.category, urgency: payload.urgency } });
@@ -2929,7 +2930,9 @@
       }),
     });
     const model = WorkManagement.buildModel(workStore, { month: Core.dayKey().slice(0, 7), today: Core.dayKey() });
-    main.innerHTML = AiOperationsUI.renderWorkAutomation({ records: workAutomationRows(), writable: canWriteCRM() }) + WorkManagement.renderDashboard(model, { canWrite: canWriteCRM(), filters: workFilters });
+    main.innerHTML = AiOperationsUI.renderWorkAutomation({ records: workAutomationRows(), writable: canWriteCRM(), expanded: workAutomationState.expanded }) + WorkManagement.renderDashboard(model, { canWrite: canWriteCRM(), filters: workFilters });
+    const workAutomationPanel = main.querySelector("[data-ai-work-panel]");
+    workAutomationPanel?.addEventListener("toggle", () => { workAutomationState.expanded = workAutomationPanel.open; });
     Object.entries(workFilters).forEach(([key, value]) => {
       const field = main.querySelector(`[data-work-filter="${key}"]`);
       if (field) field.value = value;

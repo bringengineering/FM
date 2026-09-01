@@ -26,10 +26,30 @@ test("work automation renders safety warning and review-only document actions", 
     writable: true
   });
 
+  assert.match(html, /<details class="ai-work-tools-disclosure" data-ai-work-panel>/);
+  assert.match(html, /<summary class="ai-work-summary">/);
+  assert.match(html, /AI 문서 도구/);
   assert.match(html, /AI 민원·작업 문서/);
   assert.match(html, /즉시 확인/);
   for (const action of ["vendor_request", "work_order", "completion_report"]) assert.match(html, new RegExp(`data-ai-work-task="${action}"`));
   assert.doesNotMatch(html, /자동 발송|sendSms|sendMessage/);
+});
+
+test("work automation is closed by default and preserves an explicit expanded state", () => {
+  const input = {
+    records: [{ id: "svc_1", title: "공용부 청소", category: "cleaning", urgency: "normal", draft: "검토용 초안" }],
+    writable: false
+  };
+  const collapsed = UI.renderWorkAutomation(input);
+  const expanded = UI.renderWorkAutomation({ ...input, expanded: true });
+
+  assert.match(collapsed, /<details class="ai-work-tools-disclosure" data-ai-work-panel>/);
+  assert.doesNotMatch(collapsed, /data-ai-work-panel open/);
+  assert.match(expanded, /<details class="ai-work-tools-disclosure" data-ai-work-panel open>/);
+  assert.doesNotMatch(collapsed, /data-ai-work-apply=/);
+  assert.match(collapsed, /data-ai-work-copy="svc_1"/);
+  assert.match(read("styles.css"), /\.ai-work-tools-disclosure:not\(\[open\]\)>\.ai-work-tools-body\{display:none\}/);
+  assert.match(read("styles.css"), /\.ai-work-summary:focus-visible/);
 });
 
 test("management report renders exact metrics and copy-only AI narrative", () => {
@@ -61,6 +81,8 @@ test("CRM loads automation cores before app and connects all three workflows", (
   assert.ok(html.indexOf("ai-operations-ui.js") < html.indexOf("app.js"));
   assert.match(app, /renderSalesFocus/);
   assert.match(app, /renderWorkAutomation/);
+  assert.match(app, /expanded:\s*workAutomationState\.expanded/);
+  assert.match(app, /workAutomationPanel\?\.addEventListener\("toggle"/);
   assert.match(app, /renderManagementReport/);
   assert.match(app, /assertCurrentProposal/);
   assert.doesNotMatch(app, /sendSms|sendMessage|자동\s*발송/);

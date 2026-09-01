@@ -5457,6 +5457,33 @@ async function createWindow() {
             && filteredText.includes(seedPrefix + ' 공용부 청소')
             && !filteredText.includes(seedPrefix + ' 소방 점검');
 
+          document.querySelector('[data-view="workManagement"]')?.click();
+          await wait(120);
+          let aiWorkPanel = document.querySelector('[data-ai-work-panel]');
+          let aiWorkBodyHeight = aiWorkPanel?.querySelector('.ai-work-tools-body')?.getBoundingClientRect().height || 0;
+          const aiWorkCollapsedByDefault = !!aiWorkPanel && !aiWorkPanel.open
+            && aiWorkBodyHeight <= 1;
+          aiWorkPanel?.querySelector('summary')?.click();
+          await wait(60);
+          aiWorkPanel = document.querySelector('[data-ai-work-panel]');
+          aiWorkBodyHeight = aiWorkPanel?.querySelector('.ai-work-tools-body')?.getBoundingClientRect().height || 0;
+          const aiWorkOpened = !!aiWorkPanel?.open
+            && aiWorkBodyHeight > 1;
+          const workFilterProbe = document.querySelector('[data-work-filter="status"]');
+          workFilterProbe?.dispatchEvent(new Event('change', { bubbles: true }));
+          await wait(80);
+          aiWorkPanel = document.querySelector('[data-ai-work-panel]');
+          const aiWorkOpenAfterRender = !!aiWorkPanel?.open;
+          aiWorkPanel?.querySelector('summary')?.click();
+          await wait(60);
+          aiWorkPanel = document.querySelector('[data-ai-work-panel]');
+          aiWorkBodyHeight = aiWorkPanel?.querySelector('.ai-work-tools-body')?.getBoundingClientRect().height || 0;
+          const aiWorkClosedAgain = !!aiWorkPanel && !aiWorkPanel.open
+            && aiWorkBodyHeight <= 1;
+          document.querySelector('[data-view="buildingCalendar"]')?.click();
+          await wait(120);
+          buildingFilter = document.querySelector('[data-work-calendar-building]');
+
           const beforeRoleStore = JSON.stringify(window.__crmTest.getStore());
           let formFirstField = true;
           let formBuildingFocused = true;
@@ -5559,7 +5586,7 @@ async function createWindow() {
             ? mutationButtonCount === 0 && visibleMutationButtonCount === 0 && viewerMutationSafe
             : formFirstField && formBuildingFocused && formRequired && savedOnce && calendarOnce && workManagementOnce;
           const responsiveLayout = innerWidth <= 1320 ? compactLayout : wideTwoColumnLayout;
-          const pass = navOrder && unifiedDefault && holidayMarked && holidayAccessible && holidayRed && initialDayCount === 42 && monthMoved && dateSelected && fullCellDateSelected && buildingFiltered && entryScrollPrimed && scrollResetOnEntry && rolePass && noHorizontalOverflow
+          const pass = navOrder && unifiedDefault && holidayMarked && holidayAccessible && holidayRed && initialDayCount === 42 && monthMoved && dateSelected && fullCellDateSelected && buildingFiltered && aiWorkCollapsedByDefault && aiWorkOpened && aiWorkOpenAfterRender && aiWorkClosedAgain && entryScrollPrimed && scrollResetOnEntry && rolePass && noHorizontalOverflow
             && gridFitsWithoutHorizontalScroll && toolbarTopVisible && responsiveLayout
             && window.__crmTest.snapshot().view === 'buildingCalendar'
             && window.__crmTest.snapshot().unifiedCalendarTab === 'work';
@@ -5582,6 +5609,10 @@ async function createWindow() {
             dateSelected,
             fullCellDateSelected,
             buildingFiltered,
+            aiWorkCollapsedByDefault,
+            aiWorkOpened,
+            aiWorkOpenAfterRender,
+            aiWorkClosedAgain,
             entryScrollPrimed,
             entryScrollTop,
             scrollResetOnEntry,
