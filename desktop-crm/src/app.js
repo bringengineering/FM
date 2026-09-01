@@ -17,6 +17,8 @@
   const MarketingCore = window.MarketingCore;
   const MarketingCrmBridge = window.MarketingCrmBridge;
   const MarketingUI = window.MarketingUI;
+  const MessagePolicy = window.BringMessagePolicy;
+  const MessageUI = window.BringMessageUI;
   const api = window.bringCRM;
   const main = document.getElementById("main");
   const modal = document.getElementById("modal");
@@ -63,6 +65,9 @@
   let lastRenderedView = null;
   let selectedCustomerId = "";
   let selectedCustomerHubId = "";
+  let selectedMessageCustomerId = "";
+  let selectedMessageTemplateId = "cleaning_schedule";
+  let selectedMessageChannel = "kakao";
   let selectedBuildingId = "";
   let selectedVacancyBuildingId = "";
   let vacancyStatusFilter = "attention";
@@ -150,6 +155,7 @@
     cases: ["접수부터 사후관리까지", "민원 관리"],
     payments: ["건물주 정기 납부 예정과 입금 확인", "건물주 입금 캘린더"],
     customers: ["고객과 연결 건물을 한곳에서", "고객·건물 관리"],
+    customerMessages: ["정보성 안내와 동의된 영업 메시지", "고객 메시지"],
     buildings: ["고객과 연결 건물을 한곳에서", "고객·건물 관리"],
     vacancies: ["층별 호실과 입퇴실 예정", "공실 현황"],
     buildingCalendar: ["업무일정과 단건 계약을 날짜로 확인", "통합 캘린더"],
@@ -1276,7 +1282,7 @@
       const active = button.dataset.view === currentView || button.dataset.view === "customers" && currentView === "buildings";
       button.classList.toggle("active", active);
     });
-    document.querySelector('[data-nav-folder="customer-management"]')?.classList.toggle("active", ["customers", "buildings", "vacancies", "partnerVendors"].includes(currentView));
+    document.querySelector('[data-nav-folder="customer-management"]')?.classList.toggle("active", ["customers", "buildings", "vacancies", "partnerVendors", "customerMessages"].includes(currentView));
     const consultationView = ["consultations", "partnerQuotes"].includes(currentView);
     const consultationFolder = document.querySelector('[data-nav-folder="consultation"]');
     consultationFolder?.classList.toggle("active", consultationView);
@@ -1309,8 +1315,8 @@
     searchEl.closest(".global-search").hidden = officeView;
     searchEl.placeholder = valueScopeView ? "지도에서 주소·건물·중개사를 검색하세요" : contractCalendarView ? "계약명·고객·건물 검색" : calendarView ? "건물명·일정 검색" : currentView === "vacancies" ? "건물명·주소 검색" : "고객·건물·연락처 검색";
     searchEl.value = contractCalendarView ? contractCalendarQuery : calendarView ? workCalendarQuery : crmSearchValue;
-    primaryActionButton.hidden = valueScopeView || aiAssistantView || officeView;
-    if (valueScopeView || aiAssistantView || officeView) {
+    primaryActionButton.hidden = valueScopeView || aiAssistantView || officeView || currentView === "customerMessages";
+    if (valueScopeView || aiAssistantView || officeView || currentView === "customerMessages") {
       delete primaryActionButton.dataset.action;
       primaryActionButton.textContent = "";
     } else if (currentView === "workManagement") {
@@ -1363,6 +1369,7 @@
     else if (currentView === "cases") renderCases();
     else if (currentView === "payments") renderPayments();
     else if (currentView === "customers") renderCustomers();
+    else if (currentView === "customerMessages") renderCustomerMessages();
     else if (currentView === "buildings") renderBuildings();
     else if (currentView === "vacancies") renderVacancies();
     else if (currentView === "buildingCalendar") renderBuildingCalendar();
@@ -2410,6 +2417,36 @@
       : `<option value="" selected disabled>조건에 맞는 고객이 없습니다</option>`;
     main.innerHTML = `<section class="building-hub-hero customer-hub-hero"><div><span>고객을 선택하면 연결 건물과 업무가 함께 열립니다</span><h2>고객·건물 정보를 한 화면에서 관리합니다</h2><p>관리 상태, 계약, 민원과 상담 이력을 한곳에서 확인합니다.</p></div><div class="building-hub-head-actions"><button class="primary-button" data-action="new-customer">＋ 고객 등록</button></div></section>
       <section class="customer-hub-workspace"><header class="customer-hub-selector-bar"><div class="customer-selector-heading">${customer ? customerAvatar(customer) : ""}<b>고객 선택</b><span>${customers.length}명</span></div><label class="customer-select-control"><span>고객</span><select data-customer-hub-select aria-label="고객 선택" ${customers.length ? "" : "disabled"}>${customerOptions}</select></label><label class="management-filter"><span>관리 상태</span><select data-customer-management-filter aria-label="고객 관리 상태 필터">${managementFilterOptions(customerManagementFilter)}</select></label></header><section class="building-hub-detail">${customer ? renderCustomerHubDetail(customer) : `<div class="case-detail-empty"><strong>${Core.normalizeText(searchEl.value) ? "고객을 찾지 못했습니다" : "첫 고객을 등록해 주세요"}</strong><span>고객을 등록하면 연결 건물과 업무 현황이 이곳에 모입니다.</span><button class="primary-button" data-action="new-customer">＋ 고객 등록</button></div>`}</section></section>`;
+  }
+
+  function customerMessageDeliveries() {
+    const value = operations && operations.messageDeliveries;
+    const rows = Array.isArray(value) ? value : Object.values(value || {});
+    return rows.slice().sort((left, right) => String(right.requestedAt || "").localeCompare(String(left.requestedAt || "")));
+  }
+
+  function renderCustomerMessages() {
+    if (!store.customers.some(item => item.id === selectedMessageCustomerId)) selectedMessageCustomerId = store.customers[0]?.id || "";
+    main.innerHTML = MessageUI.renderWorkspace({
+      customers: store.customers,
+      selectedCustomerId: selectedMessageCustomerId,
+      templateId: selectedMessageTemplateId,
+      channel: selectedMessageChannel,
+      deliveries: customerMessageDeliveries(),
+      writable: canWriteCRM()
+    });
+  }
+
+  function openMessageConsentEditor(customerId) {
+    const customer = customerById(customerId);
+    if (!customer || !canWriteCRM()) return showToast("수신 동의를 변경할 권한이 없습니다.", "error");
+    const consents = customer.messageConsents || {};
+    const controls = channel => {
+      const consent = MessagePolicy.effectiveConsent(customer, channel);
+      return `<fieldset class="consent-editor-channel"><legend>${channel === "kakao" ? "카카오" : "SMS"}</legend><div class="form-grid">${selectField("상태", `${channel}Status`, ["not_collected", "granted", "withdrawn"], consent.status, value => ({ not_collected: "미수집", granted: "동의됨", withdrawn: "철회됨" })[value])}${field("동의일", `${channel}ConsentedAt`, consent.consentedAt ? String(consent.consentedAt).slice(0, 10) : "", "date")}${selectField("수집 경로", `${channel}Source`, ["", "contract", "form", "qr", "phone", "manual"], consent.source || "", value => ({ "": "선택", contract: "계약서", form: "동의서", qr: "QR", phone: "전화", manual: "직접 등록" })[value])}${field("동의 문구 버전", `${channel}ConsentTextVersion`, consent.consentTextVersion || "", "text", "예: marketing-v1")}${field("증빙 참조 *", `${channel}EvidenceRef`, consent.evidenceRef || "", "text", "계약·동의서·녹취 ID", "wide")}${field("증빙 링크", `${channel}EvidenceUrl`, consent.evidenceUrl || "", "url", "Drive 링크", "wide")}</div></fieldset>`;
+    };
+    modalContent.innerHTML = `<div class="modal-head"><div><h2>광고성 정보 수신 동의 관리</h2><p>${esc(customerDisplayName(customer))} 고객의 채널별 동의 증빙을 기록합니다.</p></div><button class="close-button" data-action="close-modal">×</button></div><form id="messageConsentForm" class="modal-body" data-customer-id="${attr(customer.id)}"><div class="info-box">과거 거래나 카카오 채널 친구 여부만으로 동의를 등록하지 마세요. 실제 동의 증빙이 있어야 합니다.</div>${controls("kakao")}${controls("sms")}<div class="form-actions"><button type="button" class="secondary-button" data-action="close-modal">취소</button><button class="primary-button">동의 상태 저장</button></div></form>`;
+    openModal();
   }
 
   function renderCustomerHubDetail(customer) {
@@ -4714,7 +4751,8 @@
     const tasks = customerTasks(customerId).filter(task => task.status !== "취소");
     drawerContent.innerHTML = `<div class="drawer-head"><div><h2>고객 상세</h2><p>${esc(customer.customerNo || customer.id)}</p></div><button class="close-button" data-action="close-drawer">×</button></div><div class="drawer-body">
       <section class="customer-summary">${customerAvatar(customer)}<div><h3>${esc(customerDisplayName(customer))}</h3><p>${esc([customer.company, customer.type, customerPhoneText(customer.phone)].filter(Boolean).join(" · "))}</p></div><div class="summary-value"><strong>${esc(krw(customer.expectedValue))}</strong><span>예상 계약금액</span></div></section>
-      <div class="inline-actions" style="margin-bottom:14px"><button class="primary-button" data-action="edit-selected-customer">고객 정보 수정</button><button class="secondary-button" data-action="new-selected-task">＋ 할 일</button></div>
+      <div class="inline-actions" style="margin-bottom:14px"><button class="primary-button" data-action="edit-selected-customer">고객 정보 수정</button><button class="secondary-button" data-message-customer-open="${attr(customer.id)}">메시지 보내기</button><button class="secondary-button" data-action="new-selected-task">＋ 할 일</button></div>
+      ${MessageUI.renderConsentCard(customer, canWriteCRM())}
       <section class="detail-section"><div class="detail-section-head"><h4>고객 요청·후속조치</h4>${managementStatusBadge(managementStatusForCustomer(customer))}</div><div class="detail-section-body"><div class="kv-grid"><div class="kv"><b>현재 문제</b><span>${esc(customer.currentIssue || "미입력")}</span></div><div class="kv"><b>다음 행동</b><span>${esc(customer.nextAction || "미입력")}</span></div><div class="kv"><b>다음 연락</b><span>${esc(dateText(customer.nextContactAt))}</span></div><div class="kv"><b>담당자·우선순위</b><span>${esc(customer.owner || "-")} · ${esc(customer.priority || "보통")}</span></div></div></div></section>
       <section class="detail-section"><div class="detail-section-head"><h4>연결 건물</h4><span class="text-muted" style="font-size:9px">${buildings.length}곳</span></div><div class="detail-section-body">${buildings.length ? `<div class="building-record-list">${buildings.map(building => {
         return `<div class="building-record customer-building-sales-record"><div><b>${esc(building.name || "건물명 미입력")}</b><span>${esc([building.type, building.address].filter(Boolean).join(" · ") || "정보 미입력")}</span></div><div class="customer-building-sales-actions">${managementStatusBadge(managementStatusForBuilding(building))}<div class="row-actions"><button type="button" class="mini-button" data-building-jump="${attr(building.id)}">건물 보기</button><button type="button" class="record-delete-button" data-building-delete="${attr(building.id)}">삭제</button></div></div></div>`;
@@ -4942,6 +4980,16 @@
   }
 
   document.addEventListener("click", async event => {
+    const messageCustomerOpen = event.target.closest("[data-message-customer-open]");
+    if (messageCustomerOpen) {
+      selectedMessageCustomerId = messageCustomerOpen.dataset.messageCustomerOpen;
+      closeDrawer();
+      currentView = "customerMessages";
+      render();
+      return;
+    }
+    const consentEdit = event.target.closest("[data-message-consent-edit]");
+    if (consentEdit) { openMessageConsentEditor(consentEdit.dataset.messageConsentEdit); return; }
     if (currentWorkspace === "marketing" && event.target.closest("[data-marketing-report-copy]")) {
       if (!marketingController.state.report) return showToast("복사할 주간 보고가 없습니다.", "error");
       try { await navigator.clipboard.writeText(MarketingUI.weeklyReportText(marketingController.state.report)); showToast("주간 보고를 복사했습니다.", "success"); }
@@ -6567,12 +6615,72 @@
     }
   });
 
+  document.addEventListener("change", event => {
+    if (!event.target.closest("#customerMessageForm")) return;
+    const form = event.target.form;
+    selectedMessageCustomerId = form.elements.customerId.value;
+    selectedMessageTemplateId = form.elements.templateId.value;
+    selectedMessageChannel = form.elements.channel.value;
+    renderCustomerMessages();
+  });
+
   document.addEventListener("submit", async event => {
     event.preventDefault();
     const form = event.target;
     const submissionFormId = form.matches("[data-marketing-entry-form]") ? "marketingEntryForm" : form.id;
     const verifiedPolicy = MarketingUI.roleSubmissionPolicy(currentAuth.user || {}, submissionFormId);
     if ((currentAuth.user && currentAuth.user.accessRole === "member" && currentAuth.user.marketingRole === "marketing") && !verifiedPolicy.allowed) return showToast("마케팅 담당자는 전용 마케팅 정보 양식만 저장할 수 있습니다.", "error");
+    if (form.id === "messageConsentForm") {
+      if (!canWriteCRM()) return showToast("수신 동의를 변경할 권한이 없습니다.", "error");
+      const customer = customerById(form.dataset.customerId);
+      if (!customer) return showToast("고객 정보를 찾지 못했습니다.", "error");
+      const raw = Object.fromEntries(new FormData(form).entries());
+      const now = new Date().toISOString();
+      const next = {};
+      for (const channel of ["kakao", "sms"]) {
+        const status = raw[`${channel}Status`];
+        const previous = customer.messageConsents && customer.messageConsents[channel] || {};
+        if (status === "granted" && (!String(raw[`${channel}EvidenceRef`] || "").trim() || !String(raw[`${channel}ConsentTextVersion`] || "").trim() || !raw[`${channel}ConsentedAt`])) return showToast(`${channel === "kakao" ? "카카오" : "SMS"} 동의일·문구 버전·증빙을 모두 입력해 주세요.`, "error");
+        next[channel] = {
+          status,
+          consentedAt: status === "granted" ? new Date(`${raw[`${channel}ConsentedAt`]}T00:00:00`).toISOString() : previous.consentedAt || "",
+          withdrawnAt: status === "withdrawn" ? now : "",
+          source: raw[`${channel}Source`] || "",
+          consentTextVersion: String(raw[`${channel}ConsentTextVersion`] || "").trim(),
+          evidenceRef: String(raw[`${channel}EvidenceRef`] || "").trim(),
+          evidenceUrl: String(raw[`${channel}EvidenceUrl`] || "").trim(),
+          recordedBy: currentAuth.user && (currentAuth.user.email || currentAuth.user.name) || store.settings.owner || "직원",
+          recordedAt: previous.recordedAt || now,
+          updatedAt: now
+        };
+      }
+      customer.messageConsents = next;
+      customer.updatedAt = now;
+      logAudit({ category: "동의", targetType: "고객", targetId: customer.id, targetLabel: customer.name, action: "메시지 수신 동의 상태 변경", reason: "증빙 확인 후 CRM 기록" });
+      scheduleSave();
+      closeModal();
+      render();
+      if (selectedCustomerId === customer.id) renderCustomerDrawer(customer.id);
+      showToast("채널별 수신 동의 상태를 저장했습니다.", "success");
+      return;
+    }
+    if (form.id === "customerMessageForm") {
+      if (!canWriteCRM()) return showToast("메시지를 발송할 권한이 없습니다.", "error");
+      const raw = Object.fromEntries(new FormData(form).entries());
+      const customer = customerById(raw.customerId);
+      const decision = MessagePolicy.evaluateMessageRequest({ customer, templateId: raw.templateId, channel: raw.channel, sourceType: raw.sourceType, sourceId: raw.sourceId });
+      if (!decision.allowed) return showToast(decision.message, "error");
+      const preview = `${decision.template.label}\n${String(raw.note || "").trim() || "승인 템플릿 기본 문구"}`;
+      if (!await requestConfirmation({ title: "고객 메시지를 발송할까요?", description: `${decision.template.purpose === "marketing" ? "광고성" : "정보성"} 메시지입니다.`, target: `${customerDisplayName(customer)} · ${customerPhoneText(customer.phone)}`, message: preview, warning: "외부 메시지 공급자에 실제 발송 요청이 전달됩니다.", confirmLabel: "메시지 발송" })) return;
+      try {
+        const result = await api.runWorkflowAction({ action: "sendCustomerMessage", requestId: crypto.randomUUID(), customerId: customer.id, templateId: raw.templateId, channel: raw.channel, sourceType: raw.sourceType, sourceId: raw.sourceId, variables: { note: String(raw.note || "").trim() } });
+        if (!result || !result.ok) throw new Error(result && (result.error || result.message) || "메시지 발송을 요청하지 못했습니다.");
+        await refreshOperations({ silent: true, render: false });
+        renderCustomerMessages();
+        showToast("고객 메시지 발송을 요청했습니다.", "success");
+      } catch (error) { showToast(error.message || "고객 메시지 발송에 실패했습니다.", "error"); }
+      return;
+    }
     if (form.matches("[data-marketing-entry-form]")) {
       const raw = Object.fromEntries(new FormData(form).entries());
       for (const name of ["spend", "impressions", "clicks", "phoneClicks", "chatClicks", "directionsClicks", "saves", "platformLeads"]) raw[name] = raw[name] === "" ? 0 : Number(raw[name]);
@@ -7947,7 +8055,7 @@ document.addEventListener("keydown", event => {
       if (query.get("demo") === "1" && !store.customers.length) store = demoStore();
       synchronizedStore = cloneStore(store);
       store.partnerVendors = Array.isArray(store.partnerVendors) ? store.partnerVendors : [];
-      if (["dashboard", "cases", "payments", "customers", "buildings", "vacancies", "buildingCalendar", "workManagement", "operationsIntelligence", "valueScope", "consultations", "aiAssistant", "pipeline", "contracts", "relationships", "partnerVendors", "partnerQuotes", "tasks", "officeHome", "officeAttendance", "officeMessenger", "officeAdmin", "security", "settings"].includes(query.get("view"))) currentView = query.get("view");
+      if (["dashboard", "cases", "payments", "customers", "customerMessages", "buildings", "vacancies", "buildingCalendar", "workManagement", "operationsIntelligence", "valueScope", "consultations", "aiAssistant", "pipeline", "contracts", "relationships", "partnerVendors", "partnerQuotes", "tasks", "officeHome", "officeAttendance", "officeMessenger", "officeAdmin", "security", "settings"].includes(query.get("view"))) currentView = query.get("view");
       await refreshOperations({ silent: true, render: false });
       document.getElementById("lastSaved").textContent = store.updatedAt ? `최신 반영 ${dateText(store.updatedAt)}` : "새 데이터";
       render();
