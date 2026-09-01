@@ -613,6 +613,18 @@
                 ".validate": true
               }
             },
+            "messageConsents": {
+              ".validate": "newData.exists()",
+              "kakao": {
+                ".validate": "newData.hasChildren(['status','consentedAt','withdrawnAt','source','consentTextVersion','evidenceRef','evidenceUrl','recordedBy','recordedAt','updatedAt']) && (newData.child('status').val() === 'not_collected' || newData.child('status').val() === 'granted' || newData.child('status').val() === 'withdrawn') && newData.child('consentedAt').isString() && newData.child('withdrawnAt').isString() && newData.child('source').isString() && newData.child('consentTextVersion').isString() && newData.child('evidenceRef').isString() && newData.child('evidenceUrl').isString() && newData.child('recordedBy').isString() && newData.child('recordedAt').isString() && newData.child('updatedAt').isString() && (newData.child('status').val() !== 'granted' || (newData.child('consentedAt').val().length > 0 && newData.child('consentTextVersion').val().length > 0 && newData.child('evidenceRef').val().length > 0)) && (newData.child('status').val() !== 'withdrawn' || newData.child('withdrawnAt').val().length > 0)",
+                "$other": { ".validate": false }
+              },
+              "sms": {
+                ".validate": "newData.hasChildren(['status','consentedAt','withdrawnAt','source','consentTextVersion','evidenceRef','evidenceUrl','recordedBy','recordedAt','updatedAt']) && (newData.child('status').val() === 'not_collected' || newData.child('status').val() === 'granted' || newData.child('status').val() === 'withdrawn') && newData.child('consentedAt').isString() && newData.child('withdrawnAt').isString() && newData.child('source').isString() && newData.child('consentTextVersion').isString() && newData.child('evidenceRef').isString() && newData.child('evidenceUrl').isString() && newData.child('recordedBy').isString() && newData.child('recordedAt').isString() && newData.child('updatedAt').isString() && (newData.child('status').val() !== 'granted' || (newData.child('consentedAt').val().length > 0 && newData.child('consentTextVersion').val().length > 0 && newData.child('evidenceRef').val().length > 0)) && (newData.child('status').val() !== 'withdrawn' || newData.child('withdrawnAt').val().length > 0)",
+                "$other": { ".validate": false }
+              },
+              "$other": { ".validate": false }
+            },
             "$field": {
               ".write": "auth != null && $field !== 'marketing' && $field !== 'marketingUpdatedAt' && $field !== 'marketingUpdatedBy' && $field !== 'buildingIdLinks' && $field !== 'photoDataUrl' && $field !== 'avatarUrl' && $field !== 'localPath' && ($field !== 'id' || (newData.exists() && newData.isString() && newData.val() === $customerId)) && ($field !== 'archivedAt' || (!data.parent().child('buildingIdLinks').exists() && (!newData.exists() || newData.val() === '' || !newData.parent().parent().parent().parent().child('customerPhotos').child($customerId).exists()))) && root.child('crmCompany/access').child(auth.uid).child('enabled').val() === true && root.child('crmCompany/access').child(auth.uid).child('email').val() === auth.token.email && (root.child('crmCompany/access').child(auth.uid).child('role').val() === 'admin' || (root.child('crmCompany/access').child(auth.uid).child('role').val() === 'member' && root.child('crmCompany/access').child(auth.uid).child('marketingRole').val() !== 'marketing'))"
             },
@@ -686,6 +698,10 @@
         "salesOpportunities": {
           ".write": "auth != null && root.child('crmCompany/access').child(auth.uid).child('enabled').val() === true && root.child('crmCompany/access').child(auth.uid).child('email').val() === auth.token.email && (root.child('crmCompany/access').child(auth.uid).child('role').val() === 'admin' || (root.child('crmCompany/access').child(auth.uid).child('role').val() === 'member' && root.child('crmCompany/access').child(auth.uid).child('marketingRole').val() !== 'marketing'))"
         }
+      },
+      "messageDeliveries": {
+        ".read": "auth != null && root.child('crmCompany/access').child(auth.uid).child('enabled').val() === true && root.child('crmCompany/access').child(auth.uid).child('email').val() === auth.token.email && root.child('crmCompany/access').child(auth.uid).child('mustChangePassword').val() !== true && (root.child('crmCompany/access').child(auth.uid).child('role').val() === 'admin' || root.child('crmCompany/access').child(auth.uid).child('role').val() === 'member' || root.child('crmCompany/access').child(auth.uid).child('role').val() === 'viewer')",
+        ".write": false
       },
       "customerPhotos": {
         ".read": "auth != null && root.child('crmCompany/access').child(auth.uid).child('enabled').val() === true && root.child('crmCompany/access').child(auth.uid).child('email').val() === auth.token.email && (root.child('crmCompany/access').child(auth.uid).child('role').val() === 'admin' || root.child('crmCompany/access').child(auth.uid).child('role').val() === 'member' || root.child('crmCompany/access').child(auth.uid).child('role').val() === 'viewer')",

@@ -68,6 +68,9 @@
   let selectedMessageCustomerId = "";
   let selectedMessageTemplateId = "cleaning_schedule";
   let selectedMessageChannel = "kakao";
+  let selectedMessageSourceType = "";
+  let selectedMessageSourceId = "";
+  let selectedMessageNote = "";
   let selectedBuildingId = "";
   let selectedVacancyBuildingId = "";
   let vacancyStatusFilter = "attention";
@@ -1282,7 +1285,7 @@
       const active = button.dataset.view === currentView || button.dataset.view === "customers" && currentView === "buildings";
       button.classList.toggle("active", active);
     });
-    document.querySelector('[data-nav-folder="customer-management"]')?.classList.toggle("active", ["customers", "buildings", "vacancies", "partnerVendors", "customerMessages"].includes(currentView));
+    document.querySelector('[data-nav-folder="customer-management"]')?.classList.toggle("active", ["customers", "buildings", "vacancies", "partnerVendors"].includes(currentView) || currentView === "customerMessages");
     const consultationView = ["consultations", "partnerQuotes"].includes(currentView);
     const consultationFolder = document.querySelector('[data-nav-folder="consultation"]');
     consultationFolder?.classList.toggle("active", consultationView);
@@ -2432,6 +2435,9 @@
       selectedCustomerId: selectedMessageCustomerId,
       templateId: selectedMessageTemplateId,
       channel: selectedMessageChannel,
+      sourceType: selectedMessageSourceType,
+      sourceId: selectedMessageSourceId,
+      note: selectedMessageNote,
       deliveries: customerMessageDeliveries(),
       writable: canWriteCRM()
     });
@@ -6621,6 +6627,9 @@
     selectedMessageCustomerId = form.elements.customerId.value;
     selectedMessageTemplateId = form.elements.templateId.value;
     selectedMessageChannel = form.elements.channel.value;
+    selectedMessageSourceType = form.elements.sourceType.value;
+    selectedMessageSourceId = form.elements.sourceId.value;
+    selectedMessageNote = form.elements.note.value;
     renderCustomerMessages();
   });
 
@@ -8055,7 +8064,7 @@ document.addEventListener("keydown", event => {
       if (query.get("demo") === "1" && !store.customers.length) store = demoStore();
       synchronizedStore = cloneStore(store);
       store.partnerVendors = Array.isArray(store.partnerVendors) ? store.partnerVendors : [];
-      if (["dashboard", "cases", "payments", "customers", "customerMessages", "buildings", "vacancies", "buildingCalendar", "workManagement", "operationsIntelligence", "valueScope", "consultations", "aiAssistant", "pipeline", "contracts", "relationships", "partnerVendors", "partnerQuotes", "tasks", "officeHome", "officeAttendance", "officeMessenger", "officeAdmin", "security", "settings"].includes(query.get("view"))) currentView = query.get("view");
+      if (["dashboard", "cases", "payments", "customers", "buildings", "vacancies", "buildingCalendar", "workManagement", "operationsIntelligence", "valueScope", "consultations", "aiAssistant", "pipeline", "contracts", "relationships", "partnerVendors", "partnerQuotes", "tasks", "officeHome", "officeAttendance", "officeMessenger", "officeAdmin", "security", "settings"].includes(query.get("view")) || query.get("view") === "customerMessages") currentView = query.get("view");
       await refreshOperations({ silent: true, render: false });
       document.getElementById("lastSaved").textContent = store.updatedAt ? `최신 반영 ${dateText(store.updatedAt)}` : "새 데이터";
       render();

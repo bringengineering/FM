@@ -24,6 +24,14 @@ test("customer consent card exposes both channel states and editor action", () =
   assert.match(html, /수신 동의 관리/);
 });
 
+test("information composer preserves a selected source and enables confirmation", () => {
+  const html = MessageUI.renderWorkspace({ customers: [{ id: "c1", name: "고객", phone: "010-1234-5678" }], selectedCustomerId: "c1", templateId: "cleaning_schedule", channel: "kakao", sourceType: "work", sourceId: "work_1", writable: true });
+  assert.match(html, /option value="work" selected/);
+  assert.match(html, /value="work_1"/);
+  assert.match(html, /발송 가능/);
+  assert.doesNotMatch(html, /type="submit" class="primary-button" disabled/);
+});
+
 test("app shell includes policy module and customer message navigation", () => {
   const index = fs.readFileSync(path.join(__dirname, "../src/index.html"), "utf8");
   const app = fs.readFileSync(path.join(__dirname, "../src/app.js"), "utf8");

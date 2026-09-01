@@ -8,7 +8,7 @@ const main = fs.readFileSync(path.join(__dirname, "../src/main.js"), "utf8");
 
 test("remote allows closed customer message actions and loads delivery history", () => {
   assert.match(remote, /"sendCustomerMessage", "getCustomerMessageDeliveryStatus"/);
-  assert.match(remote, /crmShared\/messageDeliveries/);
+  assert.match(remote, /dbRequest\("messageDeliveries"/);
   assert.match(remote, /MESSAGE_REQUEST_ID_REQUIRED/);
 });
 

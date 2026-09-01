@@ -207,6 +207,12 @@ function doPost(e) {
     if (payload.action === "getPaymentReminderDeliveryStatus") {
       return jsonResponse_(handlePaymentReminderDeliveryStatus_(payload));
     }
+    if (payload.action === "sendCustomerMessage") {
+      return jsonResponse_(handleCustomerMessageSend_(payload));
+    }
+    if (payload.action === "getCustomerMessageDeliveryStatus") {
+      return jsonResponse_(handleCustomerMessageDeliveryStatus_(payload));
+    }
     if (payload.action === "sendComplaintReceiptSms") {
       return jsonResponse_(handleComplaintReceiptSms_(payload));
     }
@@ -8120,6 +8126,160 @@ function paymentReminderDueDate_(month, dueDay) {
   const lastDay = new Date(Date.UTC(year, monthNumber, 0)).getUTCDate();
   const day = Math.min(Math.max(1, Number(dueDay) || 1), lastDay);
   return match[1] + "-" + match[2] + "-" + String(day).padStart(2, "0");
+}
+
+function customerMessageTemplateCatalog_() {
+  return {
+    cleaning_schedule: { purpose: "information", requiresSource: true, property: "KAKAO_CUSTOMER_TEMPLATE_CLEANING_SCHEDULE", bodyProperty: "KAKAO_CUSTOMER_BODY_CLEANING_SCHEDULE" },
+    move_in_cleaning_confirmation: { purpose: "information", requiresSource: true, property: "KAKAO_CUSTOMER_TEMPLATE_MOVE_IN_CLEANING", bodyProperty: "KAKAO_CUSTOMER_BODY_MOVE_IN_CLEANING" },
+    requested_followup: { purpose: "information", requiresSource: true, property: "KAKAO_CUSTOMER_TEMPLATE_REQUESTED_FOLLOWUP", bodyProperty: "KAKAO_CUSTOMER_BODY_REQUESTED_FOLLOWUP" },
+    work_completed: { purpose: "information", requiresSource: true, property: "KAKAO_CUSTOMER_TEMPLATE_WORK_COMPLETED", bodyProperty: "KAKAO_CUSTOMER_BODY_WORK_COMPLETED" },
+    payment_reminder: { purpose: "information", requiresSource: true, property: "KAKAO_CUSTOMER_TEMPLATE_PAYMENT", bodyProperty: "KAKAO_CUSTOMER_BODY_PAYMENT" },
+    cleaning_reengagement: { purpose: "marketing", property: "KAKAO_CUSTOMER_TEMPLATE_CLEANING_REENGAGEMENT", bodyProperty: "KAKAO_CUSTOMER_BODY_CLEANING_REENGAGEMENT" },
+    building_management_offer: { purpose: "marketing", property: "KAKAO_CUSTOMER_TEMPLATE_BUILDING_MANAGEMENT", bodyProperty: "KAKAO_CUSTOMER_BODY_BUILDING_MANAGEMENT" },
+    promotion: { purpose: "marketing", property: "KAKAO_CUSTOMER_TEMPLATE_PROMOTION", bodyProperty: "KAKAO_CUSTOMER_BODY_PROMOTION" }
+  };
+}
+
+function customerMessagePolicy_(customer, request) {
+  customer = customer || {};
+  request = request || {};
+  const template = customerMessageTemplateCatalog_()[String(request.templateId || "")];
+  if (!template) return { allowed: false, code: "TEMPLATE_NOT_ALLOWED" };
+  if (String(request.channel || "") !== "kakao" && String(request.channel || "") !== "sms") return { allowed: false, code: "CHANNEL_NOT_ALLOWED", template: template };
+  if (!String(customer.id || "").trim()) return { allowed: false, code: "CUSTOMER_REQUIRED", template: template };
+  if (!String(customer.phone || "").trim()) return { allowed: false, code: "PHONE_REQUIRED", template: template };
+  if (template.requiresSource && (!String(request.sourceType || "").trim() || !String(request.sourceId || "").trim())) return { allowed: false, code: "SOURCE_REQUIRED", template: template };
+  if (template.purpose === "marketing") {
+    const consent = customer.messageConsents && customer.messageConsents[String(request.channel || "")] || {};
+    if (String(consent.withdrawnAt || "").trim() || consent.status === "withdrawn") return { allowed: false, code: "MARKETING_CONSENT_WITHDRAWN", template: template };
+    if (consent.status !== "granted" || !String(consent.consentedAt || "").trim()) return { allowed: false, code: "MARKETING_CONSENT_REQUIRED", template: template };
+    if (!String(consent.evidenceRef || "").trim() || !String(consent.consentTextVersion || "").trim()) return { allowed: false, code: "CONSENT_EVIDENCE_REQUIRED", template: template };
+  }
+  return { allowed: true, code: "ALLOWED", template: template };
+}
+
+function firebaseCompanyAuthorizedUrl_(childPath, idToken) {
+  const base = COMPLAINT_CONFIG.FIREBASE_DATABASE_URL.replace(/\/$/, "");
+  const child = String(childPath || "").split("/").filter(Boolean).map(part => encodeURIComponent(part)).join("/");
+  const token = String(idToken || "").trim();
+  if (!token) throw new Error("로그인 인증정보가 없습니다. 다시 로그인해 주세요.");
+  return base + "/crmCompany" + (child ? "/" + child : "") + ".json?auth=" + encodeURIComponent(token);
+}
+
+function firebaseCompanyServerUrl_(childPath) {
+  const base = COMPLAINT_CONFIG.FIREBASE_DATABASE_URL.replace(/\/$/, "");
+  const child = String(childPath || "").split("/").filter(Boolean).map(part => encodeURIComponent(part)).join("/");
+  return base + "/crmCompany" + (child ? "/" + child : "") + ".json";
+}
+
+function customerMessageSourceCollection_(sourceType) {
+  return ({ activity: "activities", work: "serviceRecords", contract: "contracts" })[String(sourceType || "")] || "";
+}
+
+function customerMessageSourceMatches_(customer, sourceRecord) {
+  if (!customer || !sourceRecord) return false;
+  if (String(sourceRecord.customerId || sourceRecord.crmCustomerId || "") === String(customer.id || "")) return true;
+  const buildingId = String(sourceRecord.buildingId || sourceRecord.crmBuildingId || "");
+  return Boolean(buildingId && customer.buildingIdLinks && customer.buildingIdLinks[buildingId] === true);
+}
+
+function customerMessageRequestHash_(payload) {
+  const value = JSON.stringify({
+    customerId: String(payload.customerId || ""), templateId: String(payload.templateId || ""), channel: String(payload.channel || ""),
+    sourceType: String(payload.sourceType || ""), sourceId: String(payload.sourceId || ""), variables: payload.variables || {}
+  });
+  const digest = Utilities.computeDigest(Utilities.DigestAlgorithm.SHA_256, value, Utilities.Charset.UTF_8);
+  return Utilities.base64EncodeWebSafe(digest).replace(/=+$/, "");
+}
+
+function customerMessageContent_(template, customer, variables) {
+  const props = PropertiesService.getScriptProperties();
+  const body = String(props.getProperty(template.bodyProperty) || "").trim();
+  if (!body) throw new Error("승인된 고객 메시지 본문 설정이 없습니다.");
+  const values = Object.assign({}, variables || {}, { customerName: customer.name || customer.company || "고객" });
+  return body.replace(/#\{([A-Za-z0-9_]+)\}/g, function (_all, key) {
+    return safeAlimTalkVariable_(values[key] || "", 160);
+  });
+}
+
+function customerMessageActor_(payload) {
+  const uid = String(payload.uid || "").trim();
+  if (!/^[A-Za-z0-9:_-]{6,160}$/.test(uid)) throw new Error("로그인 사용자 ID가 올바르지 않습니다.");
+  const access = firebaseReadJson_(firebaseCompanyAuthorizedUrl_("access/" + uid, payload.idToken), "사용자 권한 조회 실패") || {};
+  const role = String(access.role || "");
+  if (access.enabled !== true || ["admin", "member"].indexOf(role) === -1 || String(access.email || "") !== String(payload.adminEmail || "")) throw new Error("고객 메시지를 발송할 권한이 없습니다.");
+  return { uid: uid, role: role, email: String(access.email || "") };
+}
+
+function handleCustomerMessageSend_(payload) {
+  payload = payload || {};
+  const actor = customerMessageActor_(payload);
+  const requestId = String(payload.requestId || "").trim();
+  const customerId = String(payload.customerId || "").trim();
+  if (!/^[0-9a-f-]{36}$/i.test(requestId)) throw new Error("메시지 요청 ID가 올바르지 않습니다.");
+  if (!/^[A-Za-z0-9_-]{1,120}$/.test(customerId)) throw new Error("고객 ID가 올바르지 않습니다.");
+  const recordAuthUrl = firebaseCompanyAuthorizedUrl_("messageDeliveries/" + requestId, payload.idToken);
+  const existing = firebaseReadJson_(recordAuthUrl, "기존 메시지 요청 조회 실패") || null;
+  const requestHash = customerMessageRequestHash_(payload);
+  if (existing) {
+    if (existing.requestHash !== requestHash) throw new Error("같은 요청 ID의 내용이 달라 발송을 중단했습니다.");
+    return Object.assign({}, existing, { repeated: true });
+  }
+  const customer = firebaseReadJson_(firebaseCompanyAuthorizedUrl_("data/customers/" + customerId, payload.idToken), "고객 조회 실패") || null;
+  if (!customer) throw new Error("발송할 고객을 찾지 못했습니다.");
+  if (!customer.id) customer.id = customerId;
+  const policy = customerMessagePolicy_(customer, payload);
+  if (!policy.allowed) throw new Error("고객 메시지 정책 차단: " + policy.code);
+  if (policy.template.requiresSource) {
+    const collection = customerMessageSourceCollection_(payload.sourceType);
+    if (!collection || !/^[A-Za-z0-9_-]{1,160}$/.test(String(payload.sourceId || ""))) throw new Error("연결 업무 정보가 올바르지 않습니다.");
+    const sourceRecord = firebaseReadJson_(firebaseCompanyAuthorizedUrl_("data/" + collection + "/" + payload.sourceId, payload.idToken), "연결 업무 조회 실패") || null;
+    if (!customerMessageSourceMatches_(customer, sourceRecord)) throw new Error("선택한 업무가 고객과 연결되어 있지 않습니다.");
+  }
+  const props = PropertiesService.getScriptProperties();
+  const templateCode = String(props.getProperty(policy.template.property) || "").trim();
+  if (!templateCode) throw new Error("승인된 고객 메시지 템플릿 코드가 없습니다.");
+  const phone = normalizePhoneForSms_(customer.phone || "");
+  if (!isSendableSmsPhone_(phone)) throw new Error("고객 연락처를 확인해 주세요.");
+  const content = customerMessageContent_(policy.template, customer, payload.variables || {});
+  const result = String(payload.channel || "") === "sms"
+    ? sendSensSms_(phone, content, "고객 메시지")
+    : sendKakaoAlimTalkOrSms_(phone, content, "고객 메시지", { templateCode: templateCode, allowSmsFallback: false });
+  const now = new Date().toISOString();
+  const record = {
+    requestId: requestId, requestHash: requestHash, customerId: customerId,
+    channel: String(payload.channel || ""), purpose: policy.template.purpose, category: String(payload.templateId || ""),
+    sourceType: String(payload.sourceType || ""), sourceId: String(payload.sourceId || ""),
+    templateCode: templateCode, provider: String(result.provider || ""), providerMessageId: String(result.messageId || ""),
+    status: result.ok === true ? "accepted" : "failed", errorCode: result.ok === true ? "" : "PROVIDER_REJECTED",
+    phoneMasked: maskPhone_(phone), requestedBy: actor.email, requestedByUid: actor.uid, requestedAt: now,
+    sentAt: result.ok === true ? now : "", updatedAt: now, build: AUTOMATION_BUILD
+  };
+  const recordUrl = firebaseCompanyServerUrl_("messageDeliveries/" + requestId);
+  firebaseWriteRequest_(recordUrl, "put", record, "고객 메시지 발송 기록 저장 실패");
+  if (!result.ok) throw new Error(result.message || "고객 메시지 발송에 실패했습니다.");
+  return record;
+}
+
+function handleCustomerMessageDeliveryStatus_(payload) {
+  payload = payload || {};
+  customerMessageActor_(payload);
+  const requestId = String(payload.requestId || "").trim();
+  if (!/^[0-9a-f-]{36}$/i.test(requestId)) throw new Error("메시지 요청 ID가 올바르지 않습니다.");
+  const record = firebaseReadJson_(firebaseCompanyAuthorizedUrl_("messageDeliveries/" + requestId, payload.idToken), "메시지 발송 기록 조회 실패") || null;
+  if (!record || record.provider !== "kakao_alimtalk" || !record.providerMessageId) throw new Error("조회할 알림톡 메시지 기록이 없습니다.");
+  const config = getKakaoAlimTalkConfig_();
+  if (!config.enabled) throw new Error("카카오 알림톡 설정이 완료되지 않았습니다.");
+  const response = sensGetJson_("/alimtalk/v2/services/" + encodeURIComponent(config.serviceId) + "/messages/" + encodeURIComponent(record.providerMessageId), config);
+  if (!response.ok) throw new Error("카카오 알림톡 전달 결과 조회 실패: " + response.message);
+  const raw = response.json && typeof response.json === "object" ? response.json : {};
+  const statusName = String(raw.messageStatusName || "processing").toLowerCase();
+  const statusCode = String(raw.messageStatusCode || "");
+  const status = statusName === "success" && statusCode === "0000" ? "delivered" : statusName === "fail" ? "failed" : "accepted";
+  const updated = Object.assign({}, record, { status: status, errorCode: status === "failed" ? statusCode || "DELIVERY_FAILED" : "", deliveredAt: status === "delivered" ? String(raw.completeTime || new Date().toISOString()) : "", checkedAt: new Date().toISOString(), updatedAt: new Date().toISOString() });
+  firebaseWriteRequest_(firebaseCompanyServerUrl_("messageDeliveries/" + requestId), "put", updated, "고객 메시지 전달 결과 저장 실패");
+  return updated;
 }
 
 function paymentReminderSmsContent_(schedule, dueDate, reminderType) {

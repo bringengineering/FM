@@ -3102,7 +3102,7 @@ class FirebaseRemoteClient {
       this.rootDbRequest("cases", { method: "GET" }),
       this.dbRequest("paymentCalendars/shared", { method: "GET" }),
       this.rootDbRequest("caseSettings", { method: "GET" }).catch(() => ({})),
-      this.dbRequest("crmShared/messageDeliveries", { method: "GET" }).catch(() => ({}))
+      this.dbRequest("messageDeliveries", { method: "GET" }).catch(() => ({}))
     ]);
     this.caseSettings = caseSettings && typeof caseSettings === "object" ? caseSettings : {};
     const cases = Object.entries(casePayload || {}).map(([key, value]) => Object.assign({ id: key }, value || {}, { firebaseKey: key }));
