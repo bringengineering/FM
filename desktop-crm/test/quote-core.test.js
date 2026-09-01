@@ -40,3 +40,24 @@ test("supplier fields stay separate and require a formatted registration number"
   assert.throws(() => QuoteCore.normalizeSupplier({ ...supplier, registrationNumber: "0000000000" }), /000-00-00000/);
   assert.equal(QuoteCore.supplierComplete({ businessName: "테스트", representative: "", registrationNumber: "000-00-00000" }), false);
 });
+
+test("quote detail items can be added and removed while totals are recalculated", () => {
+  const original = QuoteCore.createDraftFromPrompt("햇빛빌라 입주청소 12만원", null, { now: "2026-09-01" });
+  const added = QuoteCore.addDraftItem(original);
+  assert.equal(added.items.length, original.items.length + 1);
+  assert.equal(added.items.at(-1).name, "추가 품목");
+  assert.equal(added.totalAmount, original.totalAmount + 1000);
+
+  const removed = QuoteCore.removeDraftItem(added, added.items.length - 1);
+  assert.equal(removed.items.length, original.items.length);
+  assert.equal(removed.totalAmount, original.totalAmount);
+  assert.throws(() => QuoteCore.removeDraftItem({ ...original, items: [original.items[0]] }, 0), /한 개 이상/);
+  assert.throws(() => QuoteCore.removeDraftItem(original, 99), /찾지 못했습니다/);
+});
+
+test("quote item additions stop at the visible editor limit", () => {
+  let quote = QuoteCore.createDraftFromPrompt("햇빛빌라 입주청소 12만원", null, { now: "2026-09-01" });
+  while (quote.items.length < QuoteCore.MAX_ITEMS) quote = QuoteCore.addDraftItem(quote);
+  assert.equal(quote.items.length, 8);
+  assert.throws(() => QuoteCore.addDraftItem(quote), /최대 8개/);
+});

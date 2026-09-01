@@ -3526,9 +3526,21 @@ async function createWindow() {
         input.dispatchEvent(new Event('input', { bubbles: true }));
         document.querySelector('[data-ai-quote-generate]')?.click();
         for (let attempt = 0; attempt < 40 && !document.querySelector('[data-ai-quote-document]'); attempt += 1) await wait(50);
+        const initialItemCount = document.querySelectorAll('.ai-quote-editor-row').length;
+        document.querySelector('[data-ai-quote-item-add]')?.click();
+        await wait(80);
+        const addedItemCount = document.querySelectorAll('.ai-quote-editor-row').length;
+        const addedTotalVisible = (document.querySelector('[data-ai-quote-document]')?.textContent || '').includes('121,000원');
+        const deleteButtons = document.querySelectorAll('[data-ai-quote-item-delete]');
+        deleteButtons[deleteButtons.length - 1]?.click();
+        await wait(80);
+        const restoredItemCount = document.querySelectorAll('.ai-quote-editor-row').length;
         const documentNode = document.querySelector('[data-ai-quote-document]');
+        const itemToolbar = document.querySelector('.ai-quote-editor-toolbar');
+        const itemRows = [...document.querySelectorAll('.ai-quote-editor-row')];
+        itemToolbar?.scrollIntoView({ block: 'center' });
         const text = documentNode?.textContent || '';
-        return { pass: Boolean(documentNode) && text.includes('햇빛빌라') && text.includes('120,000원') && Boolean(document.querySelector('[data-ai-quote-export="xlsx"]')), state: window.__crmTest?.snapshot() };
+        return { pass: Boolean(documentNode) && text.includes('햇빛빌라') && text.includes('120,000원') && initialItemCount >= 1 && addedItemCount === initialItemCount + 1 && addedTotalVisible && restoredItemCount === initialItemCount && Boolean(document.querySelector('[data-ai-quote-export="xlsx"]')) && Boolean(document.querySelector('[data-ai-quote-item-add]')) && itemRows.every(row => row.querySelector('[data-ai-quote-item-delete]')), state: window.__crmTest?.snapshot() };
       })()`, true);
     } else if (process.env.BRING_CRM_SCREENSHOT_ACTION === "office-messenger-smoke") {
       actionResult = await mainWindow.webContents.executeJavaScript(`(async () => {

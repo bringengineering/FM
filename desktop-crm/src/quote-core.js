@@ -6,6 +6,7 @@
   "use strict";
 
   const COMPANY = Object.freeze({ brand: "BRING ENGINEERING", name: "브링엔지니어링" });
+  const MAX_ITEMS = 8;
   const SERVICE_TEMPLATES = Object.freeze({
     "입주청소": [
       ["입주청소 기본 작업", "실내 전체 먼지·오염 제거, 바닥 및 표면 청소", 0.72],
@@ -112,7 +113,7 @@
 
   function normalizeItems(items) {
     if (!Array.isArray(items)) return [];
-    return items.slice(0, 8).map(item => ({
+    return items.slice(0, MAX_ITEMS).map(item => ({
       name: text(item && item.name, 80),
       detail: text(item && item.detail, 240),
       quantity: Math.max(1, Math.min(999, positiveNumber(item && item.quantity) || 1)),
@@ -204,6 +205,29 @@
     };
   }
 
+  function addDraftItem(value) {
+    const draft = normalizeDraft(value);
+    if (draft.items.length >= MAX_ITEMS) throw new Error(`견적 품목은 최대 ${MAX_ITEMS}개까지 추가할 수 있습니다.`);
+    return normalizeDraft(Object.assign({}, draft, {
+      items: draft.items.concat({
+        name: "추가 품목",
+        detail: "세부 작업 내용을 입력하세요.",
+        quantity: 1,
+        unit: "식",
+        unitPrice: 1000,
+        note: ""
+      })
+    }));
+  }
+
+  function removeDraftItem(value, index) {
+    const draft = normalizeDraft(value);
+    const itemIndex = Number(index);
+    if (!Number.isInteger(itemIndex) || itemIndex < 0 || itemIndex >= draft.items.length) throw new Error("삭제할 견적 품목을 찾지 못했습니다.");
+    if (draft.items.length <= 1) throw new Error("견적 품목은 한 개 이상 있어야 합니다.");
+    return normalizeDraft(Object.assign({}, draft, { items: draft.items.filter((_item, currentIndex) => currentIndex !== itemIndex) }));
+  }
+
   function money(value) {
     return `${positiveNumber(value).toLocaleString("ko-KR")}원`;
   }
@@ -212,5 +236,5 @@
     return text(value && value.projectName, 50).replace(/[<>:"/\\|?*]/g, "_").replace(/[. ]+$/g, "") || "BRING_견적서";
   }
 
-  return { COMPANY, createDraftFromPrompt, normalizeDraft, normalizeSupplier, supplierComplete, parseAmount, inferService, itemTotal, money, fileBase };
+  return { COMPANY, MAX_ITEMS, createDraftFromPrompt, normalizeDraft, addDraftItem, removeDraftItem, normalizeSupplier, supplierComplete, parseAmount, inferService, itemTotal, money, fileBase };
 });

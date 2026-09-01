@@ -3053,7 +3053,8 @@
   }
 
   function quoteEditorRows(quote) {
-    return quote.items.map((item, index) => `<div class="ai-quote-editor-row"><span>${String(index + 1).padStart(2, "0")}</span><label><small>품목</small><input data-ai-quote-item="name" data-ai-quote-index="${index}" value="${attr(item.name)}"></label><label class="wide"><small>세부 내용</small><input data-ai-quote-item="detail" data-ai-quote-index="${index}" value="${attr(item.detail)}"></label><label><small>금액</small><input data-ai-quote-item="unitPrice" data-ai-quote-index="${index}" type="number" min="1" max="1000000000" step="1000" value="${item.unitPrice}"></label></div>`).join("");
+    const canDelete = quote.items.length > 1;
+    return quote.items.map((item, index) => `<div class="ai-quote-editor-row"><span>${String(index + 1).padStart(2, "0")}</span><label><small>품목</small><input data-ai-quote-item="name" data-ai-quote-index="${index}" maxlength="80" value="${attr(item.name)}"></label><label><small>금액</small><input data-ai-quote-item="unitPrice" data-ai-quote-index="${index}" type="number" min="1" max="1000000000" step="1000" value="${item.unitPrice}"></label><button type="button" class="ai-quote-item-delete" data-ai-quote-item-delete="${index}" aria-label="${attr(item.name)} 삭제"${canDelete ? "" : " disabled"}>삭제</button><label class="wide"><small>세부 내용</small><input data-ai-quote-item="detail" data-ai-quote-index="${index}" maxlength="240" value="${attr(item.detail)}"></label></div>`).join("");
   }
 
   function quoteSupplierFields() {
@@ -3130,7 +3131,7 @@
   function renderAiQuoteAssistant() {
     const quote = aiAssistantState.quote;
     const canExport = Boolean(quote && QuoteCore.supplierComplete(quote.company));
-    return `<section class="ai-assistant-hero ai-quote-hero"><div><span>BRING CRM AI · QUOTE</span><h2>한 줄로 요청하면 BRING 견적서가 완성됩니다</h2><p>현장명·작업명·최종 금액을 입력하세요. 입력 금액은 그대로 고정하고 AI는 품목과 상세 작업 범위만 구성합니다.</p></div><div class="ai-quote-hero-mark">₩</div></section><section class="ai-quote-layout"><form class="ai-assistant-card ai-quote-compose" data-ai-quote-form>${quoteSupplierFields()}<div class="ai-quote-step"><span>01</span><div><b>간단히 입력</b><small>현장명 + 작업 + 금액</small></div></div><label class="ai-content-field"><span>어떤 견적서가 필요한가요?</span><textarea data-ai-quote-content maxlength="2000" placeholder="예: 햇빛빌라 입주청소 12만원">${esc(aiAssistantState.quoteContent)}</textarea></label><div class="ai-quote-examples"><span>빠른 예시</span>${["햇빛빌라 입주청소 12만원", "늘봄상가 공용부청소 35만원", "푸른빌딩 예초작업 48만원"].map(value => `<button type="button" data-ai-quote-example="${attr(value)}">${esc(value)}</button>`).join("")}</div><button type="button" class="primary-button ai-quote-generate" data-ai-quote-generate${aiAssistantState.quoteLoading || !aiAssistantState.quoteContent.trim() ? " disabled" : ""}>${aiAssistantState.quoteLoading ? "AI가 견적서를 작성 중…" : "✦ AI 견적서 만들기"}</button>${aiAssistantState.quoteError ? `<div class="ai-error" role="alert">${esc(aiAssistantState.quoteError)}</div>` : ""}${aiAssistantState.quoteWarnings.length ? `<ul class="ai-warning-list">${aiAssistantState.quoteWarnings.map(item => `<li>${esc(item)}</li>`).join("")}</ul>` : ""}${quote ? `<div class="ai-quote-step ai-quote-step-second"><span>02</span><div><b>세부 품목 확인</b><small>이미지·엑셀 저장 전 수정할 수 있습니다</small></div></div><div class="ai-quote-editor">${quoteEditorRows(quote)}</div>` : ""}</form><section class="ai-quote-preview-card"><header><div><span>BRING 표준 양식</span><b>견적서 미리보기</b></div><div><button type="button" data-ai-quote-export="png"${canExport ? "" : " disabled"}>▧ 이미지</button><button type="button" class="primary" data-ai-quote-export="xlsx"${canExport ? "" : " disabled"}>▦ 엑셀 파일</button></div></header><div class="ai-quote-paper">${quotePreviewHtml(quote)}</div><footer>${canExport ? "AI가 작성한 초안입니다. 품목·금액·작업 범위를 확인한 뒤 발행하세요." : "회사 공급자 정보가 등록되면 이미지와 엑셀을 내보낼 수 있습니다."}</footer></section></section>`;
+    return `<section class="ai-assistant-hero ai-quote-hero"><div><span>BRING CRM AI · QUOTE</span><h2>한 줄로 요청하면 BRING 견적서가 완성됩니다</h2><p>현장명·작업명·최종 금액을 입력하세요. 입력 금액은 그대로 고정하고 AI는 품목과 상세 작업 범위만 구성합니다.</p></div><div class="ai-quote-hero-mark">₩</div></section><section class="ai-quote-layout"><form class="ai-assistant-card ai-quote-compose" data-ai-quote-form>${quoteSupplierFields()}<div class="ai-quote-step"><span>01</span><div><b>간단히 입력</b><small>현장명 + 작업 + 금액</small></div></div><label class="ai-content-field"><span>어떤 견적서가 필요한가요?</span><textarea data-ai-quote-content maxlength="2000" placeholder="예: 햇빛빌라 입주청소 12만원">${esc(aiAssistantState.quoteContent)}</textarea></label><div class="ai-quote-examples"><span>빠른 예시</span>${["햇빛빌라 입주청소 12만원", "늘봄상가 공용부청소 35만원", "푸른빌딩 예초작업 48만원"].map(value => `<button type="button" data-ai-quote-example="${attr(value)}">${esc(value)}</button>`).join("")}</div><button type="button" class="primary-button ai-quote-generate" data-ai-quote-generate${aiAssistantState.quoteLoading || !aiAssistantState.quoteContent.trim() ? " disabled" : ""}>${aiAssistantState.quoteLoading ? "AI가 견적서를 작성 중…" : "✦ AI 견적서 만들기"}</button>${aiAssistantState.quoteError ? `<div class="ai-error" role="alert">${esc(aiAssistantState.quoteError)}</div>` : ""}${aiAssistantState.quoteWarnings.length ? `<ul class="ai-warning-list">${aiAssistantState.quoteWarnings.map(item => `<li>${esc(item)}</li>`).join("")}</ul>` : ""}${quote ? `<div class="ai-quote-step ai-quote-step-second"><span>02</span><div><b>세부 품목 확인</b><small>품목명·세부 내용·금액을 직접 수정할 수 있습니다</small></div></div><div class="ai-quote-editor-toolbar"><div><b>세부 품목 ${quote.items.length}개</b><small>수정·추가·삭제하면 합계와 미리보기에 바로 반영됩니다</small></div><button type="button" data-ai-quote-item-add${quote.items.length >= QuoteCore.MAX_ITEMS ? " disabled" : ""}>＋ 품목 추가</button></div><div class="ai-quote-editor">${quoteEditorRows(quote)}</div>` : ""}</form><section class="ai-quote-preview-card"><header><div><span>BRING 표준 양식</span><b>견적서 미리보기</b></div><div><button type="button" data-ai-quote-export="png"${canExport ? "" : " disabled"}>▧ 이미지</button><button type="button" class="primary" data-ai-quote-export="xlsx"${canExport ? "" : " disabled"}>▦ 엑셀 파일</button></div></header><div class="ai-quote-paper">${quotePreviewHtml(quote)}</div><footer>${canExport ? "AI가 작성한 초안입니다. 품목·금액·작업 범위를 확인한 뒤 발행하세요." : "회사 공급자 정보가 등록되면 이미지와 엑셀을 내보낼 수 있습니다."}</footer></section></section>`;
   }
 
   async function requestAiAssistantDraft() {
@@ -5167,6 +5168,35 @@
     if (aiQuoteGenerate) { await requestAiQuoteDraft(); return; }
     const aiQuoteSupplierSave = event.target.closest("[data-ai-quote-supplier-save]");
     if (aiQuoteSupplierSave) { await saveAiQuoteSupplier(); return; }
+    const aiQuoteItemAdd = event.target.closest("[data-ai-quote-item-add]");
+    if (aiQuoteItemAdd && !aiQuoteItemAdd.disabled) {
+      try {
+        aiAssistantState.quote = QuoteCore.addDraftItem(aiAssistantState.quote);
+        aiAssistantState.quoteError = "";
+        renderAiAssistant();
+        const names = document.querySelectorAll('[data-ai-quote-item="name"]');
+        const input = names[names.length - 1];
+        if (input) { input.focus(); input.select(); }
+        showToast("품목을 추가했습니다. 내용을 수정해 주세요.", "success");
+      } catch (error) {
+        aiAssistantState.quoteError = error.message || "품목을 추가하지 못했습니다.";
+        showToast(aiAssistantState.quoteError, "error");
+      }
+      return;
+    }
+    const aiQuoteItemDelete = event.target.closest("[data-ai-quote-item-delete]");
+    if (aiQuoteItemDelete && !aiQuoteItemDelete.disabled) {
+      try {
+        aiAssistantState.quote = QuoteCore.removeDraftItem(aiAssistantState.quote, Number(aiQuoteItemDelete.dataset.aiQuoteItemDelete));
+        aiAssistantState.quoteError = "";
+        renderAiAssistant();
+        showToast("품목을 삭제하고 합계를 다시 계산했습니다.", "success");
+      } catch (error) {
+        aiAssistantState.quoteError = error.message || "품목을 삭제하지 못했습니다.";
+        showToast(aiAssistantState.quoteError, "error");
+      }
+      return;
+    }
     const aiQuoteExport = event.target.closest("[data-ai-quote-export]");
     if (aiQuoteExport && !aiQuoteExport.disabled) { await exportAiQuote(aiQuoteExport.dataset.aiQuoteExport); return; }
     const customerPhotoPick = event.target.closest("[data-customer-photo-pick]");

@@ -50,6 +50,13 @@ test("AI assistant separates report and quote creation and exposes reviewed file
   assert.match(app, /data-ai-quote-supplier="businessName"/);
   assert.match(app, /data-ai-quote-supplier="representative"/);
   assert.match(app, /data-ai-quote-supplier="registrationNumber"/);
+  assert.match(app, /data-ai-quote-item="name"/);
+  assert.match(app, /data-ai-quote-item="detail"/);
+  assert.match(app, /data-ai-quote-item="unitPrice"/);
+  assert.match(app, /data-ai-quote-item-add/);
+  assert.match(app, /data-ai-quote-item-delete/);
+  assert.match(app, /QuoteCore\.addDraftItem/);
+  assert.match(app, /QuoteCore\.removeDraftItem/);
   assert.match(app, /AI 전송 안 함/);
   assert.match(app, /회사 공통 고정값/);
   assert.match(app, /ai-quote-supplier-fixed/);
@@ -67,6 +74,8 @@ test("AI assistant separates report and quote creation and exposes reviewed file
   assert.match(main, /remoteClient\.saveQuoteSupplier\(supplier\)/);
   assert.match(main, /data:image\\\/png;base64/);
   assert.match(main, /showSaveDialog/);
+  assert.match(main, /itemToolbar\?\.scrollIntoView/);
+  assert.match(main, /itemRows\.every\(row => row\.querySelector\('\[data-ai-quote-item-delete\]'\)\)/);
 });
 
 test("consultation AI creates a reviewable draft without changing or saving the form", () => {
