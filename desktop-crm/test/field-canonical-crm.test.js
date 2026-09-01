@@ -183,6 +183,9 @@ test("loadStore reads renderer overlays separately and never bootstraps an empty
     if (location === "marketingLeadInbox") {
       return { lead_1: { requestId: "lead_1", name: "광고 문의", status: "new" } };
     }
+    if (location === "marketingMetrics/naver") {
+      return { campaigns: { cmp_1: { campaignId: "cmp_1", clicks: 2 } } };
+    }
     throw new Error(`Unexpected request ${location}`);
   };
   client.startStream = () => undefined;
@@ -193,7 +196,8 @@ test("loadStore reads renderer overlays separately and never bootstraps an empty
     { location: "crmShared/data", method: "GET" },
     { location: "crmShared/data/buildingUnits", method: "GET" },
     { location: "fieldSummaries", method: "GET" },
-    { location: "marketingLeadInbox", method: "GET" }
+    { location: "marketingLeadInbox", method: "GET" },
+    { location: "marketingMetrics/naver", method: "GET" }
   ]);
   assert.equal(result.customers[0].id, "customer_local");
   assert.equal(result.buildingUnits[0].label, "101호");
@@ -329,6 +333,7 @@ test("a field-summary stream event refreshes renderer overlays without reloading
   client.loadMarketingLeadInbox = async () => ({
     lead_1: { requestId: "lead_1", name: "광고 문의", phone: "010-1234-5678", needs: "계단청소", submittedAt: 1, status: "new" }
   });
+  client.loadMarketingMetrics = async () => ({ campaigns: { cmp_1: { campaignId: "cmp_1", clicks: 2 } } });
   client.scheduleRemoteReload = () => { sharedReloads += 1; };
   client.scheduleOverlayReload = () => client.reloadRendererOverlays();
 
@@ -352,25 +357,30 @@ test("shared and field-summary streams start and stop together, and auth revocat
   assert.deepEqual(starts, [
     { location: "crmShared/data", kind: "shared" },
     { location: "fieldSummaries", kind: "fieldSummaries" },
-    { location: "marketingLeadInbox", kind: "marketingLeadInbox" }
+    { location: "marketingLeadInbox", kind: "marketingLeadInbox" },
+    { location: "marketingMetrics/naver", kind: "marketingMetrics" }
   ]);
 
   let sharedAborts = 0;
   let summaryAborts = 0;
   let leadAborts = 0;
+  let metricAborts = 0;
   client.streamController = { abort: () => { sharedAborts += 1; } };
   client.summaryStreamController = { abort: () => { summaryAborts += 1; } };
   client.marketingLeadStreamController = { abort: () => { leadAborts += 1; } };
+  client.marketingMetricsStreamController = { abort: () => { metricAborts += 1; } };
   client.handleStreamEvent("fieldSummaries", "auth_revoked");
   assert.equal(client.session.expiresAt, 0);
   assert.equal(sharedAborts, 1);
   assert.equal(summaryAborts, 1);
   assert.equal(leadAborts, 1);
+  assert.equal(metricAborts, 1);
 
   client.stopStream();
   assert.equal(client.streamController, null);
   assert.equal(client.summaryStreamController, null);
   assert.equal(client.marketingLeadStreamController, null);
+  assert.equal(client.marketingMetricsStreamController, null);
 });
 
 test("an old session canonical refresh is discarded after logout and a different login", async () => {
@@ -846,6 +856,7 @@ test("an old session summary overlay response is discarded while the new session
   client.loadCanonicalBuildingUnits = async () => ({ unit_a: { id: "unit_a", label: "A 호실" } });
   client.loadFieldSummaries = async () => oldSummaries.promise;
   client.loadMarketingLeadInbox = async () => ({});
+  client.loadMarketingMetrics = async () => ({ campaigns: {} });
   const oldRefresh = client.reloadRendererOverlays();
 
   await client.logout(false);
@@ -858,6 +869,7 @@ test("an old session summary overlay response is discarded while the new session
   client.loadCanonicalBuildingUnits = async () => ({ unit_b: { id: "unit_b", label: "B 호실" } });
   client.loadFieldSummaries = async () => ({ job_b: { fieldJobId: "job_b", workflowStatus: "accepted" } });
   client.loadMarketingLeadInbox = async () => ({});
+  client.loadMarketingMetrics = async () => ({ campaigns: {} });
   const current = await client.reloadRendererOverlays();
   assert.equal(current.buildingUnits[0].id, "unit_b");
   assert.equal(remoteStores.at(-1).fieldSummaries[0].fieldJobId, "job_b");

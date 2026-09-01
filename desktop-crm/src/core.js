@@ -267,7 +267,7 @@
   }
 
   function blankStore() {
-    return Object.assign(blankSharedStore(), { buildingUnits: [], fieldSummaries: [], marketingLeads: [] });
+    return Object.assign(blankSharedStore(), { buildingUnits: [], fieldSummaries: [], marketingLeads: [], marketingMetrics: { campaigns: [], syncedAt: "", status: {} } });
   }
 
   function sanitizeSharedStore(input) {
@@ -370,10 +370,17 @@
 
   function sanitizeRendererOverlays(input) {
     const source = input && typeof input === "object" ? input : {};
+    const metricSource = source.marketingMetrics && typeof source.marketingMetrics === "object" ? source.marketingMetrics : {};
     return {
       buildingUnits: sanitizeOverlayCollection(source.buildingUnits, "id").map(normalizeBuildingUnit),
       fieldSummaries: sanitizeOverlayCollection(source.fieldSummaries, "fieldJobId"),
-      marketingLeads: sanitizeOverlayCollection(source.marketingLeads, "requestId").map(normalizeMarketingLead)
+      marketingLeads: sanitizeOverlayCollection(source.marketingLeads, "requestId").map(normalizeMarketingLead),
+      marketingMetrics: {
+        campaigns: sanitizeOverlayCollection(metricSource.campaigns, "campaignId"),
+        syncedAt: String(metricSource.syncedAt || "").trim(),
+        range: cloneOverlayValue(metricSource.range || {}, 0),
+        status: cloneOverlayValue(metricSource.status || {}, 0)
+      }
     };
   }
 

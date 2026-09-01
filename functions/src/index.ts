@@ -197,6 +197,8 @@ import {
   type FieldTeamActiveProjection,
 } from "./field-v2/projections.js";
 import { consumeRateLimit } from "./security/rate-limit.js";
+import { createSearchAdClient } from "./marketing/naver-searchad.js";
+import { syncNaverMarketingCore } from "./marketing/sync-naver-marketing.js";
 
 if (getApps().length === 0) {
   initializeApp();
@@ -219,6 +221,11 @@ const driveSecrets = [
   driveRootFolderId,
   driveRootMode,
 ];
+
+const naverSearchAdAccessLicense = defineSecret("NAVER_SEARCHAD_ACCESS_LICENSE");
+const naverSearchAdSecretKey = defineSecret("NAVER_SEARCHAD_SECRET_KEY");
+const naverSearchAdCustomerId = defineSecret("NAVER_SEARCHAD_CUSTOMER_ID");
+const naverSearchAdSecrets = [naverSearchAdAccessLicense, naverSearchAdSecretKey, naverSearchAdCustomerId];
 
 type UnknownRecord = Record<string, unknown>;
 
@@ -4290,6 +4297,29 @@ export const recoverFieldAdPackageGeneration = onSchedule(
     } catch {
       throw new Error("ad_package_generation_recovery_failed");
     }
+  },
+);
+
+export const syncNaverMarketingMetrics = onSchedule(
+  {
+    schedule: "every 10 minutes",
+    timeZone: "Asia/Seoul",
+    region: "asia-northeast3",
+    retryCount: 1,
+    timeoutSeconds: 60,
+    maxInstances: 1,
+    secrets: naverSearchAdSecrets,
+  },
+  async () => {
+    const client = createSearchAdClient({
+      accessLicense: naverSearchAdAccessLicense.value(),
+      secretKey: naverSearchAdSecretKey.value(),
+      customerId: naverSearchAdCustomerId.value(),
+    });
+    await syncNaverMarketingCore({ now: new Date() }, {
+      client,
+      write: (path, value) => adminDatabase.ref(`crmCompany/${path}`).set(value),
+    });
   },
 );
 

@@ -27,6 +27,7 @@
       "saveFieldRegistration",
       "setManagementContractStatus",
       "startFieldCaptureSession",
+      "syncNaverMarketingMetrics",
       "transitionFieldJob"
     ],
     "databaseRules": true

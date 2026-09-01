@@ -129,6 +129,13 @@ test("marketing leads are sanitized as renderer-only CRM inbox overlays", () => 
   assert.equal(Object.hasOwn(Core.sanitizeSharedStore(overlays), "marketingLeads"), false);
 });
 
+test("marketing metrics are sanitized as renderer-only overlays", () => {
+  const overlays = Core.sanitizeRendererOverlays({ marketingMetrics: { campaigns: { cmp_1: { campaignId: "cmp_1", clicks: 2, spend: 1500 } }, syncedAt: "2026-09-02T00:00:00.000Z" } });
+  assert.equal(overlays.marketingMetrics.campaigns.length, 1);
+  assert.equal(overlays.marketingMetrics.campaigns[0].clicks, 2);
+  assert.equal(Object.hasOwn(Core.sanitizeSharedStore(overlays), "marketingMetrics"), false);
+});
+
 test("vacancy legacy migration counts named, status-conflict, and unnamed residual gaps without double counting", () => {
   const appSource = fs.readFileSync(path.join(__dirname, "../src/app.js"), "utf8");
   const start = appSource.indexOf("function vacancyLegacyMigrationState");

@@ -140,11 +140,12 @@ function mergeRemoteStore(Core, remote, local, user) {
   return Core.sanitizeSharedStore(merged);
 }
 
-function mergeRendererOverlays(Core, sharedStore, buildingUnits, fieldSummaries, marketingLeads) {
+function mergeRendererOverlays(Core, sharedStore, buildingUnits, fieldSummaries, marketingLeads, marketingMetrics) {
   return Core.sanitizeRendererStore(Object.assign({}, sharedStore || {}, {
     buildingUnits: listFromMap(buildingUnits),
     fieldSummaries: listFromMap(fieldSummaries),
-    marketingLeads: listFromMap(marketingLeads)
+    marketingLeads: listFromMap(marketingLeads),
+    marketingMetrics
   }));
 }
 
@@ -541,6 +542,8 @@ class FirebaseRemoteClient {
     this.summaryStreamTask = null;
     this.marketingLeadStreamController = null;
     this.marketingLeadStreamTask = null;
+    this.marketingMetricsStreamController = null;
+    this.marketingMetricsStreamTask = null;
     this.reloadTimer = null;
     this.overlayReloadTimer = null;
     this.retryTimer = null;
@@ -1368,6 +1371,13 @@ class FirebaseRemoteClient {
     return this.sessionGuardActive(guard) ? value : null;
   }
 
+  async loadMarketingMetrics(guardValue) {
+    const guard = guardValue || this.captureSessionGuard();
+    if (!this.sessionGuardActive(guard)) return null;
+    const value = await this.dbRequest("marketingMetrics/naver", { method: "GET" });
+    return this.sessionGuardActive(guard) ? value : null;
+  }
+
   async loadDriveImportCandidates() {
     if (!this.session) throw createError("로그인이 필요합니다.", "AUTH_REQUIRED");
     const value = await this.dbRequest("driveImportCandidates", { method: "GET" });
@@ -1409,13 +1419,14 @@ class FirebaseRemoteClient {
 
   async loadRendererOverlays(guardValue) {
     const guard = guardValue || this.captureSessionGuard();
-    const [buildingUnits, fieldSummaries, marketingLeads] = await Promise.all([
+    const [buildingUnits, fieldSummaries, marketingLeads, marketingMetrics] = await Promise.all([
       this.loadCanonicalBuildingUnits(guard),
       this.loadFieldSummaries(guard),
-      this.loadMarketingLeadInbox(guard)
+      this.loadMarketingLeadInbox(guard),
+      this.loadMarketingMetrics(guard)
     ]);
     if (!this.sessionGuardActive(guard)) return null;
-    return this.Core.sanitizeRendererOverlays({ buildingUnits, fieldSummaries, marketingLeads });
+    return this.Core.sanitizeRendererOverlays({ buildingUnits, fieldSummaries, marketingLeads, marketingMetrics });
   }
 
   async refreshRendererSnapshot(sharedStore, notify, guardValue) {
@@ -1425,7 +1436,7 @@ class FirebaseRemoteClient {
     if (!this.sessionGuardActive(guard)) return null;
     const overlays = await this.loadRendererOverlays(guard);
     if (!overlays || !this.sessionGuardActive(guard)) return null;
-    const renderer = mergeRendererOverlays(this.Core, shared, overlays.buildingUnits, overlays.fieldSummaries, overlays.marketingLeads);
+    const renderer = mergeRendererOverlays(this.Core, shared, overlays.buildingUnits, overlays.fieldSummaries, overlays.marketingLeads, overlays.marketingMetrics);
     if (!this.sessionGuardActive(guard)) return null;
     if (notify) {
       if (!this.sessionGuardActive(guard)) return null;
@@ -2221,7 +2232,7 @@ class FirebaseRemoteClient {
       const result = await this.pushStore(local, guard);
       if (!result || !this.sessionGuardActive(guard)) throw createError("로그인 세션이 변경되었습니다.", "SESSION_CHANGED");
       this.startStream();
-      return { ok: true, data: mergeRendererOverlays(this.Core, result, overlays.buildingUnits, overlays.fieldSummaries, overlays.marketingLeads), pending: false };
+      return { ok: true, data: mergeRendererOverlays(this.Core, result, overlays.buildingUnits, overlays.fieldSummaries, overlays.marketingLeads, overlays.marketingMetrics), pending: false };
     } catch (error) {
       if (!this.sessionGuardActive(guard)) throw createError("로그인 세션이 변경되었습니다.", "SESSION_CHANGED", error);
       if (!retryableSyncError(error)) throw error;
@@ -2231,7 +2242,7 @@ class FirebaseRemoteClient {
       if (!this.sessionGuardActive(guard)) throw createError("로그인 세션이 변경되었습니다.", "SESSION_CHANGED");
       this.emitSync("pending", "서버 연결 시 자동으로 저장됩니다.", { pending: true });
       this.schedulePendingRetry(guard);
-      return { ok: true, data: mergeRendererOverlays(this.Core, local, overlays.buildingUnits, overlays.fieldSummaries, overlays.marketingLeads), pending: true, warning: error.message };
+      return { ok: true, data: mergeRendererOverlays(this.Core, local, overlays.buildingUnits, overlays.fieldSummaries, overlays.marketingLeads, overlays.marketingMetrics), pending: true, warning: error.message };
     }
   }
 
@@ -2315,6 +2326,13 @@ class FirebaseRemoteClient {
       });
       this.marketingLeadStreamTask = trackedMarketingLeads;
     }
+    if (!this.marketingMetricsStreamTask) {
+      let trackedMarketingMetrics;
+      trackedMarketingMetrics = this.streamLoop("marketingMetrics/naver", "marketingMetrics", generation).finally(() => {
+        if (this.marketingMetricsStreamTask === trackedMarketingMetrics) this.marketingMetricsStreamTask = null;
+      });
+      this.marketingMetricsStreamTask = trackedMarketingMetrics;
+    }
   }
 
   stopStream() {
@@ -2324,12 +2342,15 @@ class FirebaseRemoteClient {
     if (this.streamController) this.streamController.abort();
     if (this.summaryStreamController) this.summaryStreamController.abort();
     if (this.marketingLeadStreamController) this.marketingLeadStreamController.abort();
+    if (this.marketingMetricsStreamController) this.marketingMetricsStreamController.abort();
     this.streamController = null;
     this.summaryStreamController = null;
     this.marketingLeadStreamController = null;
+    this.marketingMetricsStreamController = null;
     this.streamTask = null;
     this.summaryStreamTask = null;
     this.marketingLeadStreamTask = null;
+    this.marketingMetricsStreamTask = null;
     clearTimeout(this.reloadTimer);
     clearTimeout(this.overlayReloadTimer);
     clearTimeout(this.retryTimer);
@@ -2338,7 +2359,7 @@ class FirebaseRemoteClient {
 
   handleStreamEvent(kind, eventName) {
     if (eventName === "put" || eventName === "patch") {
-      return ["fieldSummaries", "marketingLeadInbox"].includes(kind) ? this.scheduleOverlayReload() : this.scheduleRemoteReload();
+      return ["fieldSummaries", "marketingLeadInbox", "marketingMetrics"].includes(kind) ? this.scheduleOverlayReload() : this.scheduleRemoteReload();
     }
     if (eventName === "auth_revoked" || eventName === "cancel") {
       if (this.session) this.session.expiresAt = 0;
@@ -2346,6 +2367,7 @@ class FirebaseRemoteClient {
       if (this.streamController) this.streamController.abort();
       if (this.summaryStreamController) this.summaryStreamController.abort();
       if (this.marketingLeadStreamController) this.marketingLeadStreamController.abort();
+      if (this.marketingMetricsStreamController) this.marketingMetricsStreamController.abort();
     }
     return undefined;
   }
@@ -2353,7 +2375,8 @@ class FirebaseRemoteClient {
   async streamLoop(location, kind, generation) {
     const controllerKey = kind === "fieldSummaries"
       ? "summaryStreamController"
-      : kind === "marketingLeadInbox" ? "marketingLeadStreamController" : "streamController";
+      : kind === "marketingLeadInbox" ? "marketingLeadStreamController"
+        : kind === "marketingMetrics" ? "marketingMetricsStreamController" : "streamController";
     const sessionGuard = this.captureSessionGuard();
     while (
       !this.stopped

@@ -3617,13 +3617,16 @@ describe("Firebase entrypoint metadata", () => {
     });
   });
 
-  it("binds the five Drive runtime secrets to the retried create trigger", () => {
+  it("binds Drive and Naver runtime secrets without exposing values", () => {
     expect(registrations.defineSecret.mock.calls.map(([name]) => name)).toEqual([
       "DRIVE_CLIENT_ID",
       "DRIVE_CLIENT_SECRET",
       "DRIVE_REFRESH_TOKEN",
       "DRIVE_ROOT_FOLDER_ID",
       "DRIVE_ROOT_MODE",
+      "NAVER_SEARCHAD_ACCESS_LICENSE",
+      "NAVER_SEARCHAD_SECRET_KEY",
+      "NAVER_SEARCHAD_CUSTOMER_ID",
     ]);
     expect(registration(entrypoints.syncFieldMediaToDrive)).toMatchObject({
       kind: "database-created",
@@ -4205,7 +4208,7 @@ describe("Firebase entrypoint metadata", () => {
     expect(registrations.onRequest).toHaveBeenCalledTimes(2);
     expect(registrations.onValueWritten).toHaveBeenCalledTimes(3);
     expect(registrations.onValueCreated).toHaveBeenCalledTimes(2);
-    expect(registrations.onSchedule).toHaveBeenCalledTimes(3);
+    expect(registrations.onSchedule).toHaveBeenCalledTimes(4);
   });
 
   it("verifies desktop handoff tokens with the current default Firebase Auth", async () => {
