@@ -137,8 +137,10 @@ test("new customer registration accepts a name and creates a linked building whe
   assert.match(submit, /const requestedBuildingId = String\(form\.elements\.buildingId/);
   assert.match(submit, /requestedBuildingId \? buildingById\(requestedBuildingId\) : null/);
   assert.match(submit, /고객명을 입력해 주세요/);
-  assert.match(submit, /await saveStore\(\)/);
-  assert.match(submit, /synchronizedStore\.customers\.some\(item => item\.id === customer\.id\)/);
+  assert.match(submit, /await waitForSaveIdle\(\)/);
+  assert.match(submit, /const customerSaveResult = await saveStore\(\)/);
+  assert.match(submit, /customerSaveResult\.pending/);
+  assert.match(submit, /synchronizedStore\?\.customers\?\.some\(item => item\.id === customer\.id\)/);
   assert.match(submit, /await commitCanonicalEntity\(\{[\s\S]*?entityType: "buildings",[\s\S]*?operation: "create"/);
   assert.match(submit, /buildCanonicalBuildingPatch\(\{[\s\S]*?name: customer\.name,[\s\S]*?type: "기타",[\s\S]*?status: "영업후보",[\s\S]*?ownerCustomerId: customer\.id/);
   assert.match(submit, /if \(!wasExisting && !selectedBuilding\)/);

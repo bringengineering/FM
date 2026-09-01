@@ -879,6 +879,10 @@
     saveTimer = setTimeout(saveStore, 350);
   }
 
+  async function waitForSaveIdle() {
+    while (saveInFlight) await new Promise(resolve => setTimeout(resolve, 25));
+  }
+
   function logAudit(values) {
     const user = currentAuth && currentAuth.user || {};
     store.auditLogs.unshift(Core.createAuditLog(Object.assign({}, values || {}, {
@@ -1155,8 +1159,10 @@
     }
     payload.updatedAt = new Date().toISOString();
     saveInFlight = true;
+    let saveResult = null;
     try {
       const result = await api.save(payload);
+      saveResult = result;
       const saved = preserveRendererOverlays(result.data, payload);
       synchronizedStore = cloneStore(saved);
       if (!queuedSave) store = cloneStore(saved);
@@ -1182,6 +1188,7 @@
         saveTimer = setTimeout(saveStore, 50);
       } else flushPendingRemote();
     }
+    return saveResult;
   }
 
   function demoStore() {
@@ -7479,8 +7486,9 @@
       const customer = customerFromForm(form);
       if (!wasExisting && !selectedBuilding) {
         scheduleSave();
-        await saveStore();
-        if (!synchronizedStore.customers.some(item => item.id === customer.id)) return showToast("고객을 먼저 서버에 저장하지 못했습니다. 연결 상태를 확인해 주세요.", "error");
+        await waitForSaveIdle();
+        const customerSaveResult = await saveStore();
+        if (!customerSaveResult || customerSaveResult.pending || !synchronizedStore?.customers?.some(item => item.id === customer.id)) return showToast("고객을 먼저 서버에 저장하지 못했습니다. 연결 상태를 확인해 주세요.", "error");
         const buildingId = crypto.randomUUID();
         try {
           await commitCanonicalEntity({
