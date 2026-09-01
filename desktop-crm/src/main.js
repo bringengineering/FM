@@ -1471,6 +1471,9 @@ function closeOfficeNotifications() {
     try { notification.close(); } catch (_) {}
   }
   activeOfficeNotifications.clear();
+  try {
+    if (mainWindow && !mainWindow.isDestroyed() && typeof mainWindow.flashFrame === "function") mainWindow.flashFrame(false);
+  } catch (_) {}
 }
 
 function showOfficeMessageNotification(messages) {
@@ -1491,6 +1494,9 @@ function showOfficeMessageNotification(messages) {
   });
   if (!pending.length) return;
   const peerId = String(pending[0].senderId);
+  try {
+    if (mainWindow && !mainWindow.isDestroyed() && typeof mainWindow.flashFrame === "function") mainWindow.flashFrame(true);
+  } catch (_) {}
   if (!Notification || typeof Notification.isSupported !== "function" || !Notification.isSupported()) return;
   try {
     while (activeOfficeNotifications.size >= 5) {
@@ -1512,6 +1518,9 @@ function showOfficeMessageNotification(messages) {
       release();
       const currentUid = String(authState().user && authState().user.uid || "");
       if (!currentUid || currentUid !== expectedUid || officeNotificationSessionEpoch !== expectedSessionEpoch || !mainWindow || mainWindow.isDestroyed()) return;
+      try {
+        if (typeof mainWindow.flashFrame === "function") mainWindow.flashFrame(false);
+      } catch (_) {}
       if (mainWindow.isMinimized()) mainWindow.restore();
       mainWindow.show();
       mainWindow.focus();

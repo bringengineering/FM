@@ -19,11 +19,41 @@ const message = (id, overrides = {}) => Object.assign({
 
 test('first mailbox snapshot primes without notifying historical messages', () => {
   const notifications = [];
-  const tracker = createOfficeNotificationTracker({ onIncoming: rows => notifications.push(rows) });
+  const tracker = createOfficeNotificationTracker({
+    onIncoming: rows => notifications.push(rows),
+    now: () => Date.parse('2026-09-01T01:10:00.000Z'),
+  });
   tracker.setSession('member-me');
   assert.deepEqual(tracker.ingest({ messages: [message('msg_history_0001')] }), []);
   assert.deepEqual(notifications, []);
   assert.equal(tracker.snapshot().primed, true);
+});
+
+test('a just-arrived unread message alerts after login without repeating across account switches', () => {
+  const notifications = [];
+  const tracker = createOfficeNotificationTracker({
+    onIncoming: rows => notifications.push(rows),
+    now: () => Date.parse('2026-09-01T01:01:30.000Z'),
+  });
+  const recent = message('msg_recent_login01', { createdAt: '2026-09-01T01:01:00.000Z' });
+  tracker.setSession('member-me');
+  assert.deepEqual(tracker.ingest({ messages: [recent] }), [{
+    id: 'msg_recent_login01', senderId: 'member-a', createdAt: '2026-09-01T01:01:00.000Z',
+  }]);
+  assert.equal(notifications.length, 1);
+  tracker.setSession('member-other');
+  const sameIdForOtherAccount = message('msg_recent_login01', {
+    senderId: 'member-b',
+    receiverId: 'member-other',
+    createdAt: '2026-09-01T01:01:10.000Z',
+  });
+  assert.deepEqual(tracker.ingest({ messages: [sameIdForOtherAccount] }), [{
+    id: 'msg_recent_login01', senderId: 'member-b', createdAt: '2026-09-01T01:01:10.000Z',
+  }]);
+  assert.equal(notifications.length, 2);
+  tracker.setSession('member-me');
+  assert.deepEqual(tracker.ingest({ messages: [recent] }), []);
+  assert.equal(notifications.length, 2);
 });
 
 test('only a new unread inbound message is emitted once', () => {
@@ -98,6 +128,8 @@ test('native notification uses fixed private text and click is session-bound', a
   assert.match(source, /currentUid !== expectedUid/);
   assert.match(source, /senderId !== focusedMessengerPeer/);
   assert.match(source, /officeNotificationSessionEpoch !== expectedSessionEpoch/);
+  assert.match(source, /flashFrame\(true\)/);
+  assert.match(source, /flashFrame\(false\)/);
   assert.match(source, /mainWindow\.restore\(\)/);
   assert.match(source, /mainWindow\.show\(\)/);
   assert.match(source, /mainWindow\.focus\(\)/);
@@ -131,6 +163,7 @@ test('native notification suppresses only the selected peer and click is bound t
       restore: () => windowCalls.push('restore'),
       show: () => windowCalls.push('show'),
       focus: () => windowCalls.push('focus'),
+      flashFrame: value => windowCalls.push(['flash', value]),
     },
     Notification: FakeNotification,
     authState: () => ({ user: { uid } }),
@@ -148,7 +181,7 @@ test('native notification suppresses only the selected peer and click is bound t
   assert.equal(created[0].shown, 1);
   assert.equal(created[0].options.body, '새 메시지가 도착했습니다.');
   created[0].emit('click');
-  assert.deepEqual(windowCalls, ['restore', 'show', 'focus']);
+  assert.deepEqual(windowCalls, [['flash', true], ['flash', false], 'restore', 'show', 'focus']);
   assert.deepEqual(JSON.parse(JSON.stringify(sends)), [['app:shortcut', { type: 'open-office-messenger', peerId: 'member-b' }]]);
 
   context.officeMessengerPresence = false;
@@ -161,6 +194,34 @@ test('native notification suppresses only the selected peer and click is bound t
   uid = 'member-next';
   created[2].emit('click');
   assert.equal(sends.length, 1);
+});
+
+test('taskbar alert remains available when native Windows notifications are unsupported', async () => {
+  const main = await fs.readFile(path.join(__dirname, '..', 'src', 'main.js'), 'utf8');
+  const start = main.indexOf('function showOfficeMessageNotification');
+  const end = main.indexOf('function applyRemoteOfficeData', start);
+  const flashes = [];
+  const context = vm.createContext({
+    localTestMode: false,
+    officeMessengerPresence: false,
+    officeMessengerPeerId: '',
+    officeNotificationSessionEpoch: 1,
+    mainWindow: {
+      isDestroyed: () => false,
+      isFocused: () => false,
+      flashFrame: value => flashes.push(value),
+    },
+    Notification: { isSupported: () => false },
+    authState: () => ({ user: { uid: 'member-me' } }),
+    OfficeCore: { normalizeOfficeUserId: value => value },
+    path,
+    __dirname: path.join(__dirname, '..', 'src'),
+    activeOfficeNotifications: new Set(),
+    sendToRenderer: () => {},
+  });
+  vm.runInContext(`${main.slice(start, end)}\nthis.showOfficeMessageNotification = showOfficeMessageNotification;`, context);
+  context.showOfficeMessageNotification([{ senderId: 'member-a' }]);
+  assert.deepEqual(flashes, [true]);
 });
 
 test('the structured notification shortcut opens the matching Messenger conversation', async () => {

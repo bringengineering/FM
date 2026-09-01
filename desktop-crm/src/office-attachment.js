@@ -146,10 +146,14 @@ function validateWebp(buffer) {
   }
 }
 
-function safeUInt64LE(buffer, offset, code) {
+function safeCfbStreamSize(buffer, offset, majorVersion) {
   const low = buffer.readUInt32LE(offset);
   const high = buffer.readUInt32LE(offset + 4);
-  if (high !== 0) fail(code, "복합 문서 스트림 크기가 허용 범위를 초과했습니다.");
+  // CFB v3 stream sizes are 32-bit. Older writers commonly leave the upper
+  // DWORD uninitialised, so readers must ignore it instead of rejecting an
+  // otherwise valid legacy HWP document. CFB v4 uses the full 64-bit field.
+  if (majorVersion === 3) return low;
+  if (high !== 0) fail("ATTACHMENT_CFB_INVALID", "복합 문서 스트림 크기가 허용 범위를 초과했습니다.");
   return low;
 }
 
@@ -311,15 +315,15 @@ function parseCompoundFile(buffer) {
       right: bytes.readUInt32LE(72),
       child: bytes.readUInt32LE(76),
       start: bytes.readUInt32LE(116),
-      size: safeUInt64LE(bytes, 120, "ATTACHMENT_CFB_INVALID"),
+      size: safeCfbStreamSize(bytes, 120, majorVersion),
       path: "",
       parent: -1,
     };
-    if (type === 0) {
-      if (entry.left !== CFB_NOSTREAM || entry.right !== CFB_NOSTREAM || entry.child !== CFB_NOSTREAM || entry.size !== 0) {
-        fail("ATTACHMENT_CFB_INVALID", "사용하지 않는 복합 문서 항목이 비어 있지 않습니다.");
-      }
-    } else if (entry.size > MAX_FILE_BYTES) {
+    // CFB permits unused directory slots to contain writer-specific residual
+    // metadata. They can never be referenced below and allocated sectors are
+    // still rejected by the ownership checks, so only live entries need a
+    // stream-size limit.
+    if (type !== 0 && entry.size > MAX_FILE_BYTES) {
       fail("ATTACHMENT_CFB_INVALID", "복합 문서 사용자 스트림이 최대 파일 크기를 초과했습니다.");
     }
     entries.push(entry);
@@ -435,13 +439,42 @@ function parseCompoundFile(buffer) {
   return { entries, readStream };
 }
 
+function hwpLooksLikePeExecutable(bytes) {
+  if (!bytes || bytes.length < 64 || bytes[0] !== 0x4d || bytes[1] !== 0x5a) return false;
+  const peOffset = bytes.readUInt32LE(0x3c);
+  return Number.isSafeInteger(peOffset)
+    && peOffset >= 64
+    && peOffset + 4 <= bytes.length
+    && bytes.subarray(peOffset, peOffset + 4).equals(Buffer.from([0x50, 0x45, 0x00, 0x00]));
+}
+
 function hwpUnsafeEmbeddedBytes(bytes) {
   if (!bytes || !bytes.length) return false;
   const oleSignature = Buffer.from([0xd0, 0xcf, 0x11, 0xe0, 0xa1, 0xb1, 0x1a, 0xe1]);
-  const executableSignature = Buffer.from([0x4d, 0x5a]);
-  return bytes.indexOf(oleSignature) >= 0
-    || bytes.indexOf(executableSignature) >= 0
+  return startsWithBytes(bytes, oleSignature)
+    || hwpLooksLikePeExecutable(bytes)
     || /^\s*(?:<script\b|<\?php\b|#!)/i.test(bytes.subarray(0, 1024).toString("latin1"));
+}
+
+const HWP_INERT_SCRIPT_DECLARATIONS = "var Documents = XHwpDocuments;\r\nvar Document = Documents.Active_XHwpDocument;\r\n";
+const HWP_INERT_SCRIPT_EVENT = "function OnDocument_New()\r\n{\r\n\t//todo : \r\n}\r\n\r\n";
+const HWP_INERT_SCRIPT_VERSION = Buffer.from([1, 0, 0, 0, 0, 0, 0, 0]);
+
+function hwpHasOnlyInertDefaultScript(bytes) {
+  if (!bytes || bytes.length !== 272 || bytes.readUInt32LE(0) !== 79) return false;
+  const declarations = Buffer.from(HWP_INERT_SCRIPT_DECLARATIONS, "utf16le");
+  const declarationsEnd = 4 + declarations.length;
+  if (declarations.length !== 79 * 2 || !bytes.subarray(4, declarationsEnd).equals(declarations)) return false;
+  if (bytes.readUInt32LE(declarationsEnd) !== 47) return false;
+  const event = Buffer.from(HWP_INERT_SCRIPT_EVENT, "utf16le");
+  const eventStart = declarationsEnd + 4;
+  const eventEnd = eventStart + event.length;
+  return event.length === 47 * 2
+    && bytes.subarray(eventStart, eventEnd).equals(event)
+    && bytes.readUInt32LE(eventEnd) === 0
+    && bytes.readUInt32LE(eventEnd + 4) === 0
+    && bytes.readInt32LE(eventEnd + 8) === -1
+    && eventEnd + 12 === bytes.length;
 }
 
 function validateHwp(buffer) {
@@ -468,39 +501,95 @@ function validateHwp(buffer) {
   const encryptionVersion = header.readUInt32LE(44);
   const country = header[48];
   const hwpMajorVersion = version >>> 24;
-  const unsupportedFlags = (1 << 1) | (1 << 2) | (1 << 3) | (1 << 4) | (1 << 5) | (1 << 8) | (1 << 10) | (1 << 13) | (1 << 16);
+  const unsupportedFlags = (1 << 1) | (1 << 2) | (1 << 3) | (1 << 4) | (1 << 8) | (1 << 10) | (1 << 13) | (1 << 16);
   if (hwpMajorVersion !== 5
     || (flags & 0xfffc0000) !== 0
     || (flags & unsupportedFlags) !== 0
     || (licenseFlags & 0xfffffff8) !== 0
-    || encryptionVersion !== 0
+    || ![0, 1, 2, 3, 4].includes(encryptionVersion)
     || ![0, 6, 15].includes(country)
     || header.subarray(49).some(value => value !== 0)) {
     fail("ATTACHMENT_HWP_UNSAFE", "암호화·스크립트·활성 콘텐츠가 없고 정상적인 HWP 5.x 문서만 첨부할 수 있습니다.");
   }
+  const documentCompressed = (flags & 1) !== 0;
   let totalInflatedBytes = 0;
+  function inflateHwpStreamForInspection(bytes, allowRawFallback = false) {
+    if (!documentCompressed) return bytes;
+    let inflated;
+    try {
+      inflated = zlib.inflateRawSync(bytes, { maxOutputLength: MAX_ZIP_UNCOMPRESSED_BYTES - totalInflatedBytes + 1 });
+    } catch (error) {
+      if (allowRawFallback) return bytes;
+      fail("ATTACHMENT_HWP_UNSAFE", "압축된 HWP 내부 스트림을 제한 범위에서 검증할 수 없습니다.");
+    }
+    totalInflatedBytes += inflated.length;
+    if (totalInflatedBytes > MAX_ZIP_UNCOMPRESSED_BYTES
+      || inflated.length > Math.max(1, bytes.length) * MAX_ZIP_EXPANSION_RATIO) {
+      fail("ATTACHMENT_HWP_UNSAFE", "HWP 내부 스트림의 압축 해제 크기 또는 확장률이 허용 범위를 초과했습니다.");
+    }
+    return inflated;
+  }
+
+  const allowedScriptEntryIndexes = new Set();
+  const scriptStorages = rootEntries.filter(entry => entry.type === 1 && entry.name.toLocaleLowerCase("en-US") === "scripts");
+  if (scriptStorages.length > 1) fail("ATTACHMENT_HWP_UNSAFE", "HWP 스크립트 저장소 구조가 올바르지 않습니다.");
+  if (scriptStorages.length === 1) {
+    const scriptStorage = scriptStorages[0];
+    const children = compound.entries.filter(entry => entry.parent === scriptStorage.index);
+    const names = children.map(entry => entry.name).sort();
+    if (scriptStorage.name !== "Scripts"
+      || children.some(entry => entry.type !== 2)
+      || names.length !== 2
+      || names[0] !== "DefaultJScript"
+      || names[1] !== "JScriptVersion") {
+      fail("ATTACHMENT_HWP_UNSAFE", "실행 가능한 스크립트 구조가 포함된 HWP 문서는 첨부할 수 없습니다.");
+    }
+    const versionEntry = children.find(entry => entry.name === "JScriptVersion");
+    const defaultEntry = children.find(entry => entry.name === "DefaultJScript");
+    const versionBytes = inflateHwpStreamForInspection(compound.readStream(versionEntry));
+    const defaultBytes = inflateHwpStreamForInspection(compound.readStream(defaultEntry));
+    if (!versionBytes.equals(HWP_INERT_SCRIPT_VERSION) || !hwpHasOnlyInertDefaultScript(defaultBytes)) {
+      fail("ATTACHMENT_HWP_UNSAFE", "실행 가능한 스크립트가 포함된 HWP 문서는 첨부할 수 없습니다.");
+    }
+    allowedScriptEntryIndexes.add(scriptStorage.index);
+    allowedScriptEntryIndexes.add(versionEntry.index);
+    allowedScriptEntryIndexes.add(defaultEntry.index);
+  }
+
+  const allowedLinkDocEntryIndexes = new Set();
+  const linkDocEntries = compound.entries.filter(entry => entry.path
+    && entry.path.split("/").some(segment => segment.toLocaleLowerCase("en-US") === "_linkdoc"));
+  if (linkDocEntries.length) {
+    if (linkDocEntries.length !== 1 || linkDocEntries[0].type !== 2 || linkDocEntries[0].path !== "DocOptions/_LinkDoc") {
+      fail("ATTACHMENT_HWP_UNSAFE", "외부 연결 문서 정보가 포함된 HWP 문서는 첨부할 수 없습니다.");
+    }
+    const linkDocBytes = compound.readStream(linkDocEntries[0]);
+    if (linkDocBytes.length !== 524 || linkDocBytes.readUInt16LE(0) !== 0) {
+      fail("ATTACHMENT_HWP_UNSAFE", "활성화된 외부 연결 문서 정보가 포함된 HWP 문서는 첨부할 수 없습니다.");
+    }
+    allowedLinkDocEntryIndexes.add(linkDocEntries[0].index);
+  }
+
   for (const entry of compound.entries) {
     if (!entry.path) continue;
     const segments = entry.path.split("/").map(segment => segment.toLocaleLowerCase("en-US"));
-    if (segments.some(segment => ["scripts", "defaultjscript", "jscriptversion", "xmltemplate", "_linkdoc", "drmlicense", "objectpool", "activex", "macros", "vba"].includes(segment))) {
+    const scriptNamedEntry = segments.some(segment => ["scripts", "defaultjscript", "jscriptversion"].includes(segment));
+    const linkDocNamedEntry = segments.includes("_linkdoc");
+    if ((scriptNamedEntry && !allowedScriptEntryIndexes.has(entry.index))
+      || (linkDocNamedEntry && !allowedLinkDocEntryIndexes.has(entry.index))
+      || segments.some(segment => ["xmltemplate", "drmlicense", "objectpool", "activex", "macros", "vba"].includes(segment))) {
       fail("ATTACHMENT_HWP_UNSAFE", "스크립트·외부 연결·활성 콘텐츠가 포함된 HWP 문서는 첨부할 수 없습니다.");
     }
     if (entry.type !== 2) continue;
     const bytes = compound.readStream(entry);
     let inspectedBytes = bytes;
-    const compressedStream = (flags & 1) !== 0
-      && (entry === docInfo[0] || segments.includes("bodytext") || segments.includes("bindata") || segments.includes("dochistory"));
-    if (compressedStream) {
-      try {
-        inspectedBytes = zlib.inflateRawSync(bytes, { maxOutputLength: MAX_ZIP_UNCOMPRESSED_BYTES - totalInflatedBytes + 1 });
-      } catch (error) {
-        fail("ATTACHMENT_HWP_UNSAFE", "압축된 HWP 내부 스트림을 제한 범위에서 검증할 수 없습니다.");
-      }
-      totalInflatedBytes += inspectedBytes.length;
-      if (totalInflatedBytes > MAX_ZIP_UNCOMPRESSED_BYTES
-        || inspectedBytes.length > Math.max(1, bytes.length) * MAX_ZIP_EXPANSION_RATIO) {
-        fail("ATTACHMENT_HWP_UNSAFE", "HWP 내부 스트림의 압축 해제 크기 또는 확장률이 허용 범위를 초과했습니다.");
-      }
+    const mustBeCompressed = documentCompressed
+      && (entry === docInfo[0] || segments.includes("bodytext") || segments.includes("dochistory"));
+    const mayBeCompressedBinData = documentCompressed && segments.includes("bindata");
+    if (mustBeCompressed || mayBeCompressedBinData) {
+      // HWP BinData has its own per-item compression mode. A document can be
+      // globally compressed while a JPEG/PNG BinData stream is stored raw.
+      inspectedBytes = inflateHwpStreamForInspection(bytes, mayBeCompressedBinData);
     }
     if (!segments.includes("bindata")) continue;
     const name = segments[segments.length - 1];

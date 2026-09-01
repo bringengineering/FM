@@ -103,11 +103,11 @@ const CFB_NOSTREAM = 0xffffffff;
 
 function writeCfbDirectoryEntry(directory, index, input) {
   const offset = index * 128;
+  if (!input) return;
   directory.writeUInt32LE(CFB_NOSTREAM, offset + 68);
   directory.writeUInt32LE(CFB_NOSTREAM, offset + 72);
   directory.writeUInt32LE(CFB_NOSTREAM, offset + 76);
   directory.writeUInt32LE(CFB_ENDOFCHAIN, offset + 116);
-  if (!input) return;
   const name = Buffer.from(`${input.name}\u0000`, "utf16le");
   assert.ok(name.length <= 64);
   name.copy(directory, offset);
@@ -119,16 +119,25 @@ function writeCfbDirectoryEntry(directory, index, input) {
   directory.writeUInt32LE(input.child === undefined ? CFB_NOSTREAM : input.child, offset + 76);
   directory.writeUInt32LE(input.start === undefined ? CFB_ENDOFCHAIN : input.start, offset + 116);
   directory.writeUInt32LE(input.size || 0, offset + 120);
-  directory.writeUInt32LE(0, offset + 124);
+  directory.writeUInt32LE(input.sizeHigh >>> 0 || 0, offset + 124);
 }
 
-function hwpFileHeader(flags = 0, version = 0x05000300) {
+function hwpFileHeader(flags = 0, version = 0x05000300, options = {}) {
   const header = Buffer.alloc(256);
   header.write("HWP Document File", 0, "ascii");
   header.writeUInt32LE(version >>> 0, 32);
   header.writeUInt32LE(flags >>> 0, 36);
+  header.writeUInt32LE(options.licenseFlags >>> 0 || 0, 40);
+  header.writeUInt32LE(options.encryptionVersion >>> 0 || 0, 44);
+  header[48] = options.country >>> 0 || 0;
   return header;
 }
+
+const SAFE_HWP_SCRIPT_VERSION = Buffer.from("AQAAAAAAAAA=", "base64");
+const SAFE_HWP_DEFAULT_SCRIPT = Buffer.from(
+  "TwAAAHYAYQByACAARABvAGMAdQBtAGUAbgB0AHMAIAA9ACAAWABIAHcAcABEAG8AYwB1AG0AZQBuAHQAcwA7AA0ACgB2AGEAcgAgAEQAbwBjAHUAbQBlAG4AdAAgAD0AIABEAG8AYwB1AG0AZQBuAHQAcwAuAEEAYwB0AGkAdgBlAF8AWABIAHcAcABEAG8AYwB1AG0AZQBuAHQAOwANAAoALwAAAGYAdQBuAGMAdABpAG8AbgAgAE8AbgBEAG8AYwB1AG0AZQBuAHQAXwBOAGUAdwAoACkADQAKAHsADQAKAAkALwAvAHQAbwBkAG8AIAA6ACAADQAKAH0ADQAKAA0ACgAAAAAAAAAAAP////8=",
+  "base64",
+);
 
 function hwp(options = {}) {
   const sectorSize = 512;
@@ -161,25 +170,64 @@ function hwp(options = {}) {
   const includeFileHeader = options.includeFileHeader !== false;
   const embeddedOle = options.embeddedOle === true;
   const includeScripts = options.includeScripts === true;
+  const standardScaffold = options.standardScaffold === true;
+  const linkDocScaffold = options.linkDocScaffold === true;
+  const scriptVersionPlain = options.scriptVersionBytes ? Buffer.from(options.scriptVersionBytes) : SAFE_HWP_SCRIPT_VERSION;
+  const defaultScriptPlain = options.defaultScriptBytes ? Buffer.from(options.defaultScriptBytes) : SAFE_HWP_DEFAULT_SCRIPT;
+  const scriptVersionData = options.flags & 1 ? zlib.deflateRawSync(scriptVersionPlain) : scriptVersionPlain;
+  const defaultScriptData = options.flags & 1 ? zlib.deflateRawSync(defaultScriptPlain) : defaultScriptPlain;
+  const linkDocData = options.linkDocBytes ? Buffer.from(options.linkDocBytes) : Buffer.alloc(524);
+  assert.ok(scriptVersionData.length > 0 && scriptVersionData.length <= 64);
+  const binDataBytes = options.binDataBytes
+    ? Buffer.from(options.binDataBytes)
+    : embeddedOle
+      ? Buffer.from([0xd0, 0xcf, 0x11, 0xe0, 0xa1, 0xb1, 0x1a, 0xe1])
+      : null;
+  assert.ok(!binDataBytes || binDataBytes.length <= 128);
   const docInfoData = options.validCompressed ? zlib.deflateRawSync(Buffer.from("doc-info")) : Buffer.from([1]);
   const sectionData = options.validCompressed ? zlib.deflateRawSync(Buffer.from("section")) : Buffer.from([1]);
   const rootChild = 1;
-  const lastRootEntry = embeddedOle || includeScripts ? 5 : 3;
-  writeCfbDirectoryEntry(directories, 0, { name: "Root Entry", type: 5, child: rootChild, start: 4, size: embeddedOle ? 448 : 384 });
+  const lastRootEntry = binDataBytes || includeScripts || standardScaffold || linkDocScaffold ? 5 : 3;
+  const rootMiniStreamSize = standardScaffold
+    ? 7 * 64 + defaultScriptData.length
+    : linkDocScaffold
+      ? 6 * 64 + linkDocData.length
+      : binDataBytes
+        ? 6 * 64 + binDataBytes.length
+        : 384;
+  assert.ok(rootMiniStreamSize <= sectorSize * 2);
+  if (rootMiniStreamSize > sectorSize) {
+    fat.writeUInt32LE(5, 16);
+    fat.writeUInt32LE(CFB_ENDOFCHAIN, 20);
+  }
+  writeCfbDirectoryEntry(directories, 0, { name: "Root Entry", type: 5, child: rootChild, start: 4, size: rootMiniStreamSize });
   writeCfbDirectoryEntry(directories, 1, {
     name: includeFileHeader ? "FileHeader" : "WordDocument",
     type: 2,
     right: 2,
     start: 0,
     size: 256,
+    sizeHigh: options.fileHeaderSizeHigh,
   });
   writeCfbDirectoryEntry(directories, 2, { name: "DocInfo", type: 2, right: 3, start: 4, size: docInfoData.length });
   writeCfbDirectoryEntry(directories, 3, { name: "BodyText", type: 1, right: lastRootEntry === 3 ? CFB_NOSTREAM : lastRootEntry, child: 4, start: 0 });
   writeCfbDirectoryEntry(directories, 4, { name: "Section0", type: 2, start: 5, size: sectionData.length });
-  if (includeScripts) writeCfbDirectoryEntry(directories, 5, { name: "Scripts", type: 1, start: 0 });
-  if (embeddedOle) {
+  if (standardScaffold) {
+    writeCfbDirectoryEntry(directories, 5, { name: "Scripts", type: 1, child: 6, start: 0 });
+    writeCfbDirectoryEntry(directories, 6, { name: "JScriptVersion", type: 2, right: 7, start: 6, size: scriptVersionData.length });
+    writeCfbDirectoryEntry(directories, 7, { name: "DefaultJScript", type: 2, start: 7, size: defaultScriptData.length });
+  } else if (linkDocScaffold) {
+    writeCfbDirectoryEntry(directories, 5, { name: "DocOptions", type: 1, child: 6, start: 0 });
+    writeCfbDirectoryEntry(directories, 6, { name: "_LinkDoc", type: 2, start: 6, size: linkDocData.length });
+  } else if (includeScripts) writeCfbDirectoryEntry(directories, 5, { name: "Scripts", type: 1, start: 0 });
+  if (binDataBytes) {
     writeCfbDirectoryEntry(directories, 5, { name: "BinData", type: 1, child: 6, start: 0 });
-    writeCfbDirectoryEntry(directories, 6, { name: "BIN0001.OLE", type: 2, start: 6, size: 8 });
+    writeCfbDirectoryEntry(directories, 6, {
+      name: options.binDataName || (embeddedOle ? "BIN0001.OLE" : "BIN0001.PNG"),
+      type: 2,
+      start: 6,
+      size: binDataBytes.length,
+    });
   }
 
   const miniFat = Buffer.alloc(sectorSize, 0xff);
@@ -187,16 +235,34 @@ function hwp(options = {}) {
   miniFat.writeUInt32LE(CFB_ENDOFCHAIN, 3 * 4);
   miniFat.writeUInt32LE(CFB_ENDOFCHAIN, 4 * 4);
   miniFat.writeUInt32LE(CFB_ENDOFCHAIN, 5 * 4);
-  if (embeddedOle) miniFat.writeUInt32LE(CFB_ENDOFCHAIN, 6 * 4);
+  function writeMiniChain(start, size) {
+    const count = Math.ceil(size / 64);
+    for (let index = 0; index < count; index += 1) {
+      miniFat.writeUInt32LE(index + 1 < count ? start + index + 1 : CFB_ENDOFCHAIN, (start + index) * 4);
+    }
+  }
+  if (standardScaffold) {
+    writeMiniChain(6, scriptVersionData.length);
+    writeMiniChain(7, defaultScriptData.length);
+  } else if (linkDocScaffold) {
+    writeMiniChain(6, linkDocData.length);
+  } else if (binDataBytes) {
+    writeMiniChain(6, binDataBytes.length);
+  }
 
-  const miniStream = Buffer.alloc(sectorSize);
+  const miniStream = Buffer.alloc(rootMiniStreamSize > sectorSize ? sectorSize * 2 : sectorSize);
   const firstStream = includeFileHeader
-    ? hwpFileHeader(options.flags || 0, options.version === undefined ? 0x05000300 : options.version)
+    ? hwpFileHeader(options.flags || 0, options.version === undefined ? 0x05000300 : options.version, options)
     : Buffer.concat([Buffer.from("WordDocument legacy payload\nHWP Document File", "ascii"), Buffer.alloc(212)]).subarray(0, 256);
   firstStream.copy(miniStream, 0);
   docInfoData.copy(miniStream, 4 * 64);
   sectionData.copy(miniStream, 5 * 64);
-  if (embeddedOle) Buffer.from([0xd0, 0xcf, 0x11, 0xe0, 0xa1, 0xb1, 0x1a, 0xe1]).copy(miniStream, 6 * 64);
+  if (standardScaffold) {
+    scriptVersionData.copy(miniStream, 6 * 64);
+    defaultScriptData.copy(miniStream, 7 * 64);
+  } else if (linkDocScaffold) {
+    linkDocData.copy(miniStream, 6 * 64);
+  } else if (binDataBytes) binDataBytes.copy(miniStream, 6 * 64);
   return Buffer.concat([header, fat, directories, miniFat, miniStream]);
 }
 
@@ -292,10 +358,62 @@ test("HWP validation requires a bounded CFB graph and exact HWP 5.x streams", ()
   assert.throws(() => Attachment.prepareAttachment({ fileName: "invalid-compressed.hwp", bytes: hwp({ flags: 1 }) }), errorCode("ATTACHMENT_HWP_UNSAFE"));
 });
 
+test("common Hancom HWP 5 metadata, inert scaffolds, and raw image BinData remain compatible", () => {
+  const common = hwp({
+    flags: 1 | (1 << 5),
+    validCompressed: true,
+    standardScaffold: true,
+    encryptionVersion: 4,
+    fileHeaderSizeHigh: 0xdeadbeef,
+  });
+  const commonPayload = Attachment.prepareAttachment({ fileName: "한글-표준구조.hwp", bytes: common });
+  assert.deepEqual(Attachment.revalidateAttachmentPayload(commonPayload).bytes, common);
+  assert.doesNotThrow(() => Attachment.prepareAttachment({
+    fileName: "한글-연결문서정보.hwp",
+    bytes: hwp({ flags: 1, validCompressed: true, linkDocScaffold: true }),
+  }));
+
+  const rawPng = Buffer.alloc(48);
+  Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]).copy(rawPng);
+  Buffer.from("MZ", "ascii").copy(rawPng, 24);
+  assert.doesNotThrow(() => Attachment.prepareAttachment({
+    fileName: "이미지포함.hwp",
+    bytes: hwp({ flags: 1, validCompressed: true, binDataBytes: rawPng }),
+  }));
+  assert.throws(
+    () => Attachment.prepareAttachment({ fileName: "unknown-encryption-version.hwp", bytes: hwp({ encryptionVersion: 5 }) }),
+    errorCode("ATTACHMENT_HWP_UNSAFE"),
+  );
+});
+
 test("HWP and HWPX active content, scripts, and embedded OLE are rejected", () => {
   assert.throws(() => Attachment.prepareAttachment({ fileName: "script-flag.hwp", bytes: hwp({ flags: 1 << 3 }) }), errorCode("ATTACHMENT_HWP_UNSAFE"));
   assert.throws(() => Attachment.prepareAttachment({ fileName: "script-storage.hwp", bytes: hwp({ includeScripts: true }) }), errorCode("ATTACHMENT_HWP_UNSAFE"));
+  const modifiedDefaultScript = Buffer.from(SAFE_HWP_DEFAULT_SCRIPT);
+  modifiedDefaultScript[4] ^= 1;
+  assert.throws(() => Attachment.prepareAttachment({
+    fileName: "modified-default-script.hwp",
+    bytes: hwp({ flags: 1, validCompressed: true, standardScaffold: true, defaultScriptBytes: modifiedDefaultScript }),
+  }), errorCode("ATTACHMENT_HWP_UNSAFE"));
+  const activeLinkDoc = Buffer.alloc(524);
+  activeLinkDoc.writeUInt16LE(1, 0);
+  assert.throws(() => Attachment.prepareAttachment({
+    fileName: "active-link-document.hwp",
+    bytes: hwp({ flags: 1, validCompressed: true, linkDocScaffold: true, linkDocBytes: activeLinkDoc }),
+  }), errorCode("ATTACHMENT_HWP_UNSAFE"));
+  assert.throws(() => Attachment.prepareAttachment({
+    fileName: "invalid-link-document-size.hwp",
+    bytes: hwp({ flags: 1, validCompressed: true, linkDocScaffold: true, linkDocBytes: Buffer.alloc(523) }),
+  }), errorCode("ATTACHMENT_HWP_UNSAFE"));
   assert.throws(() => Attachment.prepareAttachment({ fileName: "embedded-ole.hwp", bytes: hwp({ embeddedOle: true }) }), errorCode("ATTACHMENT_HWP_UNSAFE"));
+  const disguisedPe = Buffer.alloc(80);
+  disguisedPe.write("MZ", 0, "ascii");
+  disguisedPe.writeUInt32LE(64, 0x3c);
+  disguisedPe.write("PE\u0000\u0000", 64, "binary");
+  assert.throws(() => Attachment.prepareAttachment({
+    fileName: "embedded-pe.hwp",
+    bytes: hwp({ binDataName: "BIN0001.PNG", binDataBytes: disguisedPe }),
+  }), errorCode("ATTACHMENT_HWP_UNSAFE"));
   assert.throws(() => Attachment.prepareAttachment({ fileName: "script.hwpx", bytes: hwpx([{ name: "Scripts/sourceScripts.xml", data: "<script/>" }]) }), errorCode("ATTACHMENT_ZIP_UNSAFE_CONTENT"));
   assert.throws(() => Attachment.prepareAttachment({
     fileName: "embedded-ole.hwpx",
