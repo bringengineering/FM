@@ -23,14 +23,42 @@ function functionSource(name) {
   assert.fail(`${name} should have a complete body`);
 }
 
-test("places the first-class calendar directly below vacancies and loads it before the app", () => {
+test("places the unified calendar after customer navigation and loads its modules before the app", () => {
   const vacancies = indexSource.indexOf('data-view="vacancies"');
   const calendar = indexSource.indexOf('data-view="buildingCalendar"');
   const work = indexSource.indexOf('data-view="workManagement"');
   assert.ok(vacancies >= 0 && calendar > vacancies && work > calendar);
   assert.equal((indexSource.match(/data-view="buildingCalendar"/g) || []).length, 1);
+  assert.match(indexSource, /data-view="buildingCalendar"[^>]*>[\s\S]*?<b>통합 캘린더<\/b>/);
+  assert.match(indexSource, /data-view="payments"[^>]*>[\s\S]*?<b>건물주 입금 캘린더<\/b>/);
+  assert.match(appSource, /buildingCalendar:\s*\["업무일정과 단건 계약을 날짜로 확인",\s*"통합 캘린더"\]/);
+  assert.match(appSource, /payments:\s*\["건물주 정기 납부 예정과 입금 확인",\s*"건물주 입금 캘린더"\]/);
   assert.ok(indexSource.indexOf("work-calendar.js") < indexSource.indexOf("app.js"));
   assert.ok(indexSource.indexOf("work-calendar.css") >= 0);
+});
+
+test("unified calendar exposes work and contract tabs over their original ledgers", () => {
+  const calendar = functionSource("renderBuildingCalendar");
+  assert.match(appSource, /let unifiedCalendarTab\s*=\s*"work"/);
+  assert.match(calendar, /class="unified-calendar-tabs"[^>]*role="tablist"[^>]*aria-label="통합 캘린더 구분"/);
+  assert.match(calendar, /data-unified-calendar-tab="work"[\s\S]*?>업무일정 <span>/);
+  assert.match(calendar, /data-unified-calendar-tab="contract"[\s\S]*?>계약 <span>/);
+  assert.equal((calendar.match(/data-unified-calendar-tab=/g) || []).length, 2);
+  assert.match(calendar, /workActive\s*\?\s*WorkCalendar\.render\(model,\s*\{ canWrite: canWriteCRM\(\) \}\)\s*:\s*renderOneOffContractCalendar\(\)/);
+  assert.match(calendar, /role="tabpanel"/);
+  assert.match(appSource, /const unifiedCalendarTabButton\s*=\s*event\.target\.closest\("\[data-unified-calendar-tab\]"\)/);
+  assert.match(appSource, /unifiedCalendarTab\s*=\s*nextTab[\s\S]{0,100}renderBuildingCalendar\(\)[\s\S]{0,80}pageMeta\(\)/);
+});
+
+test("unified calendar topbar follows the selected tab and write permission", () => {
+  const page = functionSource("pageMeta");
+  assert.match(page, /contractCalendarView\s*=\s*calendarView\s*&&\s*unifiedCalendarTab\s*===\s*"contract"/);
+  assert.match(page, /contractCalendarView\s*\?\s*"계약명·고객·건물 검색"\s*:\s*calendarView\s*\?\s*"건물명·일정 검색"/);
+  assert.match(page, /searchEl\.value\s*=\s*contractCalendarView\s*\?\s*contractCalendarQuery\s*:\s*calendarView\s*\?\s*workCalendarQuery/);
+  assert.match(page, /primaryActionButton\.hidden\s*=\s*!canWriteCRM\(\)/);
+  assert.match(page, /primaryActionButton\.dataset\.action\s*=\s*contractCalendarView\s*\?\s*"new-one-off-contract"\s*:\s*"new-building-schedule"/);
+  assert.match(page, /primaryActionButton\.textContent\s*=\s*contractCalendarView\s*\?\s*"＋ 단건 계약"\s*:\s*"＋ 일정 추가"/);
+  assert.match(page, /delete primaryActionButton\.dataset\.action/);
 });
 
 test("calendar uses the shared building-work ledger and protects it during renderer rebases", () => {
@@ -89,7 +117,7 @@ test("schedule editor starts with a required building and excludes archived buil
   assert.match(editor, /data-opened-updated-at/);
   assert.match(editor, /data-opened-commit-version/);
   assert.match(editor, /data-auth-generation/);
-  assert.match(editor, /업무일정 캘린더와 작업관리 화면에 함께 표시/);
+  assert.match(editor, /통합 캘린더의 업무일정 탭과 작업관리 화면에 함께 표시/);
 });
 
 test("schedule save validates local date and time before one dedicated CAS commit", () => {

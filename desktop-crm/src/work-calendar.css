@@ -1,3 +1,134 @@
+.unified-calendar-view {
+  display: grid;
+  gap: 14px;
+}
+
+.unified-calendar-switch {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 18px;
+  padding: 13px 15px;
+  border: 1px solid #cfe2ed;
+  border-radius: 15px;
+  background: #fff;
+  box-shadow: 0 7px 20px rgba(45, 101, 133, .05);
+}
+
+.unified-calendar-switch > div b,
+.unified-calendar-switch > div p {
+  display: block;
+  margin: 0;
+}
+
+.unified-calendar-switch > div b {
+  color: #1b4b65;
+  font-size: 13px;
+}
+
+.unified-calendar-switch > div p {
+  margin-top: 4px;
+  color: #718b9b;
+  font-size: 11px;
+}
+
+.unified-calendar-tabs {
+  display: flex;
+  flex: 0 0 auto;
+  gap: 6px;
+  padding: 5px;
+  border: 1px solid #d8e7ef;
+  border-radius: 12px;
+  background: #f3f9fc;
+}
+
+.unified-calendar-tabs button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  min-width: 120px;
+  min-height: 40px;
+  padding: 0 15px;
+  border: 0;
+  border-radius: 9px;
+  background: transparent;
+  color: #58778a;
+  font: inherit;
+  font-size: 12px;
+  font-weight: 850;
+  cursor: pointer;
+}
+
+.unified-calendar-tabs button:hover {
+  background: #eaf6fc;
+  color: #247ca8;
+}
+
+.unified-calendar-tabs button:focus-visible {
+  outline: 3px solid rgba(21, 152, 212, .25);
+  outline-offset: 2px;
+}
+
+.unified-calendar-tabs button.active {
+  background: #269ad5;
+  color: #fff;
+  box-shadow: 0 4px 12px rgba(38, 154, 213, .22);
+}
+
+.unified-calendar-tabs span {
+  display: inline-grid;
+  min-width: 22px;
+  min-height: 22px;
+  place-items: center;
+  padding: 0 6px;
+  border-radius: 999px;
+  background: #e2f1f8;
+  color: #397b9d;
+  font-size: 10px;
+}
+
+.unified-calendar-tabs button.active span {
+  background: rgba(255, 255, 255, .2);
+  color: #fff;
+}
+
+.calendar-tab-intro {
+  padding: 16px 18px;
+  border: 1px solid #d5e7f0;
+  border-radius: 15px;
+  background: linear-gradient(120deg, #f8fcff, #eef9fe);
+}
+
+.calendar-tab-intro span {
+  color: #3497c9;
+  font-size: 10px;
+  font-weight: 900;
+}
+
+.calendar-tab-intro h2 {
+  margin: 5px 0 0;
+  color: #153f57;
+  font-size: 18px;
+}
+
+.calendar-tab-intro p {
+  margin: 6px 0 0;
+  color: #6d8899;
+  font-size: 11px;
+  line-height: 1.55;
+}
+
+.one-off-contract-calendar .payment-event.is-readonly,
+.one-off-table tr:not([data-contract-edit]) {
+  cursor: default;
+}
+
+.one-off-table tr[data-contract-edit]:focus-visible {
+  outline: 3px solid rgba(21, 152, 212, .25);
+  outline-offset: -3px;
+}
+
 .work-calendar {
   --calendar-blue: #1598d4;
   --calendar-blue-dark: #176e9d;
@@ -474,6 +605,20 @@
 }
 
 @media (max-width: 700px) {
+  .unified-calendar-switch {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .unified-calendar-tabs,
+  .unified-calendar-tabs button {
+    width: 100%;
+  }
+
+  .unified-calendar-tabs button {
+    min-width: 0;
+  }
+
   .work-calendar-toolbar,
   .work-calendar-toolbar-actions {
     align-items: stretch;

@@ -4,6 +4,29 @@ const fs = require("node:fs");
 const path = require("node:path");
 const Core = require("../src/core");
 
+const source = fs.readFileSync(path.join(__dirname, "..", "src", "app.js"), "utf8");
+
+function functionSource(name) {
+  const start = source.indexOf(`function ${name}`);
+  assert.ok(start >= 0, `${name} should exist`);
+  const bodyStart = source.indexOf("{", start);
+  let depth = 0;
+  for (let index = bodyStart; index < source.length; index += 1) {
+    if (source[index] === "{") depth += 1;
+    if (source[index] === "}") depth -= 1;
+    if (depth === 0) return source.slice(start, index + 1);
+  }
+  assert.fail(`${name} should have a complete body`);
+}
+
+function sourceBetween(startMarker, endMarker) {
+  const start = source.indexOf(startMarker);
+  assert.ok(start >= 0, `${startMarker} should exist`);
+  const end = source.indexOf(endMarker, start + startMarker.length);
+  assert.ok(end > start, `${endMarker} should follow ${startMarker}`);
+  return source.slice(start, end);
+}
+
 test("one-off contract computes profit and projects into its due month", () => {
   const item = Core.normalizeContract({
     id: "ctr_once", billingCycle: "건별", amount: 150000, vendorCost: 140000,
@@ -28,20 +51,58 @@ test("one-off contract calendar supports building filters and excludes recurring
 });
 
 test("customer editor exposes one visible private notes field under the request", () => {
-  const source = fs.readFileSync(path.join(__dirname, "..", "src", "app.js"), "utf8");
   assert.match(source, /현재 어떤 요청이 있나요\?[\s\S]{0,300}개인 메모·고객 특징/);
   assert.equal((source.match(/areaField\("개인 메모·고객 특징"/g) || []).length, 1);
   assert.doesNotMatch(source, /areaField\("고객 메모"/);
   assert.match(source, /notes:\s*raw\.notes\.trim\(\)/);
 });
 
-test("payment calendar exposes a one-off contract workspace and settlement fields", () => {
-  const source = fs.readFileSync(path.join(__dirname, "..", "src", "app.js"), "utf8");
-  assert.match(source, /data-payment-mode="oneOff"/);
-  assert.match(source, /data-action="new-one-off-contract"/);
+test("unified contract tab owns the one-off workspace and independent calendar state", () => {
+  const calendar = functionSource("renderOneOffContractCalendar");
+  assert.match(source, /let contractCalendarMonth\s*=\s*Core\.dayKey\(\)\.slice\(0,\s*7\)/);
+  assert.match(source, /let contractCalendarBuildingId\s*=\s*"all"/);
+  assert.match(source, /let contractCalendarQuery\s*=\s*""/);
+  assert.match(calendar, /Core\.oneOffContractRows\(store\.contracts,\s*contractCalendarMonth,\s*contractCalendarBuildingId\)/);
+  assert.match(calendar, /data-contract-calendar-month="-1"/);
+  assert.match(calendar, /data-contract-calendar-month="1"/);
+  assert.match(calendar, /data-contract-calendar-building/);
+  assert.match(calendar, /data-action="new-one-off-contract"/);
+  assert.doesNotMatch(calendar, /\bpaymentMonth\b|\bpaymentBuildingFilter\b|data-payment-month=|data-payment-building-filter/);
+  assert.match(source, /shiftContractCalendarMonth\(contractCalendarMonthButton\.dataset\.contractCalendarMonth\)/);
+  assert.match(source, /event\.target\.matches\("\[data-contract-calendar-building\]"\)[\s\S]{0,120}contractCalendarBuildingId\s*=\s*event\.target\.value/);
   for (const name of ["workDate", "paymentDueDate", "vendorCost", "collectionStatus", "vendorPaymentStatus"]) {
     assert.match(source, new RegExp(`name=["']${name}["']|field\\([^\\n]+["']${name}["']`));
   }
-  assert.match(source, /Core\.oneOffContractRows\(store\.contracts/);
-  assert.match(source, /예상 수익/);
+  assert.match(calendar, /예상 수익/);
+});
+
+test("owner payment calendar remains recurring-only", () => {
+  const payments = functionSource("renderPayments");
+  assert.match(payments, /const rows\s*=\s*paymentRows\(\)/);
+  assert.match(payments, /건물주용 정기 납부 관리/);
+  assert.match(payments, /<h2>건물주 입금 캘린더<\/h2>/);
+  assert.match(payments, /data-payment-event=/);
+  assert.doesNotMatch(payments, /oneOffContractRows|renderOneOffContractCalendar|data-contract-edit|data-contract-calendar|data-payment-mode|단건 계약/);
+  assert.doesNotMatch(source, /data-payment-mode=/);
+});
+
+test("one-off contract save and delete return to the unified contract calendar", () => {
+  const editor = functionSource("contractEditor");
+  const save = sourceBetween('form.id === "contractForm"', 'form.id === "customerForm"');
+  const remove = functionSource("deleteContractRecord");
+
+  assert.match(editor, /const returnView\s*=\s*currentView\s*===\s*"buildingCalendar"\s*&&\s*unifiedCalendarTab\s*===\s*"contract"\s*\?\s*"buildingCalendar"\s*:\s*"contracts"/);
+  assert.match(editor, /data-return-view="\$\{attr\(returnView\)\}"/);
+
+  assert.match(save, /if \(!canWriteCRM\(\)\) return showToast\("조회 전용 계정은 계약을 저장할 수 없습니다\.", "error"\)/);
+  assert.match(save, /returnToContractCalendar\s*=\s*oneOffContract\s*&&\s*form\.dataset\.returnView\s*===\s*"buildingCalendar"/);
+  assert.match(save, /unifiedCalendarTab\s*=\s*"contract"/);
+  assert.match(save, /contractCalendarMonth\s*=\s*item\.paymentDueDate\.slice\(0,\s*7\)/);
+  assert.match(save, /contractCalendarBuildingId\s*=\s*"all"/);
+  assert.match(save, /contractCalendarQuery\s*=\s*""/);
+  assert.match(save, /currentView\s*=\s*returnToContractCalendar\s*\?\s*"buildingCalendar"\s*:\s*"contracts"/);
+
+  assert.match(remove, /dataset\.returnView\s*===\s*"buildingCalendar"\s*\?\s*"buildingCalendar"\s*:\s*"contracts"/);
+  assert.match(remove, /returnView\s*===\s*"buildingCalendar"\)\s*unifiedCalendarTab\s*=\s*"contract"/);
+  assert.match(remove, /currentView\s*=\s*returnView/);
 });

@@ -2605,7 +2605,7 @@ function buildingScheduleErrorEnvelope(error) {
     BUILDING_SCHEDULE_SESSION_CHANGED: "로그인 상태가 변경되었습니다. 다시 로그인한 뒤 시도해 주세요.",
     BUILDING_SCHEDULE_NETWORK: "서버에 연결할 수 없습니다. 연결을 확인한 뒤 다시 시도해 주세요.",
     BUILDING_SCHEDULE_WRITE_UNCONFIRMED: "저장 결과를 확인할 수 없습니다. 최신 목록을 다시 불러와 주세요.",
-    BUILDING_SCHEDULE_COMMIT_REQUIRED: "일정은 업무일정 캘린더나 작업관리에서 저장해 주세요.",
+    BUILDING_SCHEDULE_COMMIT_REQUIRED: "일정은 통합 캘린더의 업무일정 탭이나 작업관리에서 저장해 주세요.",
     BUILDING_SCHEDULE_WRITE_FAILED: "일정을 저장하지 못했습니다. 잠시 후 다시 시도해 주세요.",
   };
   return { ok: false, code, error: String(messages[code] || messages.BUILDING_SCHEDULE_WRITE_FAILED).slice(0, 180) };
@@ -5111,17 +5111,54 @@ async function createWindow() {
       })()`, true);
     } else if (process.env.BRING_CRM_SCREENSHOT_ACTION === "one-off-payment-calendar") {
       actionResult = await mainWindow.webContents.executeJavaScript(`(async () => {
-        document.querySelector('[data-view="payments"]')?.click();
-        await new Promise(resolve => setTimeout(resolve, 160));
-        document.querySelector('[data-payment-mode="oneOff"]')?.click();
-        await new Promise(resolve => setTimeout(resolve, 120));
+        const wait = ms => new Promise(resolve => setTimeout(resolve, ms));
+        const dayKey = date => [date.getFullYear(), String(date.getMonth() + 1).padStart(2, '0'), String(date.getDate()).padStart(2, '0')].join('-');
+        const today = dayKey(new Date());
+        const month = today.slice(0, 7);
+        const source = window.__crmTest.getStore();
+        const buildings = (source.buildings || []).filter(item => item && !item.archivedAt).slice(0, 2);
+        const customers = (source.customers || []).filter(Boolean).slice(0, 2);
+        if (buildings.length < 2) return { pass: false, reason: 'two active demo buildings are required' };
+        const seeded = JSON.parse(JSON.stringify(source));
+        seeded.contracts = (seeded.contracts || []).filter(contract => contract.billingCycle !== '건별' || String(contract.paymentDueDate || '').slice(0, 7) !== month);
+        seeded.contracts.push(
+          { id: 'contract_calendar_smoke_a', contractNo: 'CT-CALENDAR-A', types: ['청소'], type: '청소', name: '통합 캘린더 정기청소', customerId: customers[0]?.id || '', buildingId: buildings[0].id, startDate: month + '-08', endDate: '', amount: 150000, billingCycle: '건별', status: '진행 중', owner: '화면 점검', scope: '공용부 정기청소', workDate: month + '-08', paymentDueDate: month + '-08', vendorCost: 140000, grossProfit: 10000, collectionStatus: '입금 예정', vendorPaymentStatus: '지급 예정', createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() },
+          { id: 'contract_calendar_smoke_b', contractNo: 'CT-CALENDAR-B', types: ['건물관리'], type: '건물관리', name: '통합 캘린더 폐기물 처리', customerId: customers[1]?.id || customers[0]?.id || '', buildingId: buildings[1].id, startDate: month + '-18', endDate: '', amount: 35000, billingCycle: '건별', status: '진행 중', owner: '화면 점검', scope: '폐기물 처리', workDate: month + '-18', paymentDueDate: month + '-18', vendorCost: 32000, grossProfit: 3000, collectionStatus: '입금 완료', vendorPaymentStatus: '지급 완료', createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() }
+        );
+        window.__crmTest.applyRemoteForTest(seeded);
+        await wait(180);
+        document.querySelector('[data-workspace-enter="operations"]')?.click();
+        await wait(180);
+        document.querySelector('[data-view="buildingCalendar"]')?.click();
+        await wait(160);
+        document.querySelector('[data-unified-calendar-tab="contract"]')?.click();
+        await wait(160);
         const rows = document.querySelectorAll('.one-off-table tbody tr').length;
-        const events = document.querySelectorAll('[data-contract-edit].payment-event').length;
+        const events = document.querySelectorAll('.one-off-contract-calendar .payment-event').length;
         const text = document.getElementById('main')?.textContent || '';
-        return { pass: rows >= 2 && events >= 2 && text.includes('185,000원') && text.includes('13,000원'), rows, events, state: window.__crmTest.snapshot() };
+        const state = window.__crmTest.snapshot();
+        const contractTab = document.querySelector('[data-unified-calendar-tab="contract"]');
+        const workTab = document.querySelector('[data-unified-calendar-tab="work"]');
+        const pageTitle = document.getElementById('pageTitle')?.textContent.trim() || '';
+        const oldPaymentModeAbsent = !document.querySelector('[data-payment-mode], .payment-mode-tabs');
+        const readOnly = document.body.classList.contains('crm-read-only');
+        const mutationControlCount = document.querySelectorAll('[data-contract-edit], [data-action="new-one-off-contract"]').length;
+        const primaryAction = document.getElementById('primaryActionButton');
+        const roleSafe = readOnly
+          ? mutationControlCount === 0 && primaryAction?.hidden === true
+          : mutationControlCount >= 2 && primaryAction?.dataset.action === 'new-one-off-contract' && primaryAction?.hidden === false;
+        const pass = rows === 2 && events === 2 && text.includes('185,000원') && text.includes('13,000원')
+          && text.includes('통합 캘린더 정기청소') && text.includes('통합 캘린더 폐기물 처리')
+          && contractTab?.classList.contains('active') && contractTab?.getAttribute('aria-selected') === 'true'
+          && workTab?.getAttribute('aria-selected') === 'false' && pageTitle === '통합 캘린더'
+          && oldPaymentModeAbsent && state.view === 'buildingCalendar' && state.unifiedCalendarTab === 'contract'
+          && state.contractCalendarMonth === month && roleSafe;
+        return { pass, month, rows, events, pageTitle, contractTabActive: contractTab?.classList.contains('active'), oldPaymentModeAbsent, readOnly, mutationControlCount, roleSafe, state };
       })()`, true);
     } else if (process.env.BRING_CRM_SCREENSHOT_ACTION === "payment-building-calendar") {
       actionResult = await mainWindow.webContents.executeJavaScript(`(async () => {
+        document.querySelector('[data-workspace-enter="operations"]')?.click();
+        await new Promise(resolve => setTimeout(resolve, 180));
         document.querySelector('[data-view="payments"]')?.click();
         await new Promise(resolve => setTimeout(resolve, 180));
         const layout = document.querySelector('.payment-calendar-layout');
@@ -5138,8 +5175,13 @@ async function createWindow() {
         const calendarDays = document.querySelectorAll('.payment-day').length;
         const paymentEvents = document.querySelectorAll('[data-payment-event]').length;
         const state = window.__crmTest.snapshot();
-        const pass = !!layout && realCards.length >= 2 && selected?.dataset.paymentBuildingId === targetId && select?.value === targetId && currentText.includes(targetName) && calendarDays === 42 && paymentEvents >= 1 && state.view === 'payments';
-        return { pass, cardCount: cards.length, realCardCount: realCards.length, targetId, targetName, selectedId: selected?.dataset.paymentBuildingId, selectValue: select?.value, currentText, calendarDays, paymentEvents, state };
+        const mainText = document.getElementById('main')?.textContent || '';
+        const pageTitle = document.getElementById('pageTitle')?.textContent.trim() || '';
+        const oldPaymentModeAbsent = !document.querySelector('[data-payment-mode], .payment-mode-tabs');
+        const recurringOnly = pageTitle === '건물주 입금 캘린더' && mainText.includes('건물주용 정기 납부 관리')
+          && !mainText.includes('단건 계약') && !document.querySelector('.one-off-contract-calendar, [data-unified-calendar-tab]');
+        const pass = !!layout && realCards.length >= 2 && selected?.dataset.paymentBuildingId === targetId && select?.value === targetId && currentText.includes(targetName) && calendarDays === 42 && paymentEvents >= 1 && oldPaymentModeAbsent && recurringOnly && state.view === 'payments';
+        return { pass, cardCount: cards.length, realCardCount: realCards.length, targetId, targetName, selectedId: selected?.dataset.paymentBuildingId, selectValue: select?.value, currentText, calendarDays, paymentEvents, pageTitle, oldPaymentModeAbsent, recurringOnly, state };
       })()`, true);
     } else if (process.env.BRING_CRM_SCREENSHOT_ACTION === "payment-direct-tools") {
       actionResult = await mainWindow.webContents.executeJavaScript(`(async () => {
@@ -5328,6 +5370,8 @@ async function createWindow() {
           if (!readOnly) await window.bringCRM.save(seeded);
           window.__crmTest.applyRemoteForTest(seeded);
           await wait(260);
+          document.querySelector('[data-workspace-enter="operations"]')?.click();
+          await wait(180);
 
           const entryMain = document.getElementById('main');
           const entrySpacer = document.createElement('div');
@@ -5343,9 +5387,19 @@ async function createWindow() {
           const entryScrollTop = entryMain?.scrollTop || 0;
           const scrollResetOnEntry = entryScrollPrimed && entryScrollTop <= 1;
           const navViews = [...document.querySelectorAll('#nav [data-view]')].map(item => item.dataset.view);
+          const calendarNavIndex = navViews.indexOf('buildingCalendar');
           const navOrder = navViews.indexOf('vacancies') >= 0
-            && navViews.indexOf('buildingCalendar') === navViews.indexOf('vacancies') + 1
-            && navViews.indexOf('workManagement') === navViews.indexOf('buildingCalendar') + 1;
+            && calendarNavIndex > navViews.indexOf('vacancies')
+            && navViews.indexOf('workManagement') === calendarNavIndex + 1;
+          const calendarNavLabel = document.querySelector('[data-view="buildingCalendar"] b')?.textContent.trim() || '';
+          const pageTitle = document.getElementById('pageTitle')?.textContent.trim() || '';
+          const workTab = document.querySelector('[data-unified-calendar-tab="work"]');
+          const contractTab = document.querySelector('[data-unified-calendar-tab="contract"]');
+          const unifiedDefault = calendarNavLabel === '통합 캘린더' && pageTitle === '통합 캘린더'
+            && workTab?.textContent.trim().startsWith('업무일정') && contractTab?.textContent.trim().startsWith('계약')
+            && workTab?.classList.contains('active') && workTab?.getAttribute('aria-selected') === 'true'
+            && contractTab?.getAttribute('aria-selected') === 'false'
+            && window.__crmTest.snapshot().unifiedCalendarTab === 'work';
           const holidayHost = document.createElement('div');
           holidayHost.style.cssText = 'position:fixed;left:-10000px;top:0;width:1200px;';
           holidayHost.innerHTML = window.BringWorkCalendar.render(window.BringWorkCalendar.buildModel(
@@ -5505,14 +5559,18 @@ async function createWindow() {
             ? mutationButtonCount === 0 && visibleMutationButtonCount === 0 && viewerMutationSafe
             : formFirstField && formBuildingFocused && formRequired && savedOnce && calendarOnce && workManagementOnce;
           const responsiveLayout = innerWidth <= 1320 ? compactLayout : wideTwoColumnLayout;
-          const pass = navOrder && holidayMarked && holidayAccessible && holidayRed && initialDayCount === 42 && monthMoved && dateSelected && fullCellDateSelected && buildingFiltered && entryScrollPrimed && scrollResetOnEntry && rolePass && noHorizontalOverflow
+          const pass = navOrder && unifiedDefault && holidayMarked && holidayAccessible && holidayRed && initialDayCount === 42 && monthMoved && dateSelected && fullCellDateSelected && buildingFiltered && entryScrollPrimed && scrollResetOnEntry && rolePass && noHorizontalOverflow
             && gridFitsWithoutHorizontalScroll && toolbarTopVisible && responsiveLayout
-            && window.__crmTest.snapshot().view === 'buildingCalendar';
+            && window.__crmTest.snapshot().view === 'buildingCalendar'
+            && window.__crmTest.snapshot().unifiedCalendarTab === 'work';
           return {
             pass,
             role: readOnly ? 'viewer' : 'admin',
             navOrder,
             navViews,
+            calendarNavLabel,
+            pageTitle,
+            unifiedDefault,
             holidayMarked,
             holidayAccessible,
             holidayRed,
@@ -5613,7 +5671,7 @@ async function createWindow() {
     const uiState = await mainWindow.webContents.executeJavaScript("window.__crmTest && window.__crmTest.snapshot()", true);
     const image = await mainWindow.webContents.capturePage();
     await fs.writeFile(target, image.toPNG());
-    if (["building-rental-info", "consultation-building-hub", "customer-sales-status", "vacancy-layout-scale", "vacancy-viewer-invariant", "lookup-building-link", "work-calendar-smoke"].includes(process.env.BRING_CRM_SCREENSHOT_ACTION)) {
+    if (["building-rental-info", "consultation-building-hub", "customer-sales-status", "vacancy-layout-scale", "vacancy-viewer-invariant", "lookup-building-link", "one-off-payment-calendar", "payment-building-calendar", "work-calendar-smoke"].includes(process.env.BRING_CRM_SCREENSHOT_ACTION)) {
       await fs.writeFile(`${target}.result.json`, JSON.stringify({ actionResult, uiState }, null, 2), "utf8");
     }
     console.log(target, JSON.stringify({ empty: image.isEmpty(), size: image.getSize(), actionResult, uiState }));
