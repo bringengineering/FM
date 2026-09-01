@@ -3686,6 +3686,25 @@ class FirebaseRemoteClient {
     return this.enqueueSharedMutation(() => this.saveStoreLocked(input, guard));
   }
 
+  async saveStoreNow(input) {
+    const guard = this.captureSessionGuard();
+    return this.enqueueSharedMutation(() => this.saveStoreNowLocked(input, guard));
+  }
+
+  async saveStoreNowLocked(input, guardValue) {
+    const guard = guardValue || this.captureSessionGuard();
+    this.assertSessionGuardActive(guard);
+    this.requireMutationPermission();
+    const overlays = this.Core.sanitizeRendererOverlays(input);
+    const local = this.Core.sanitizeSharedStore(input);
+    this.Core.assertNoProhibitedSecrets(local);
+    local.updatedAt = new Date().toISOString();
+    const result = await this.pushStoreLocked(local, guard);
+    if (!result || !this.sessionGuardActive(guard)) throw createError("로그인 세션이 변경되었습니다.", "SESSION_CHANGED");
+    this.startStream();
+    return { ok: true, data: mergeRendererOverlays(this.Core, result, overlays.buildingUnits, overlays.fieldSummaries), pending: false };
+  }
+
   async saveStoreLocked(input, guardValue) {
     const guard = guardValue || this.captureSessionGuard();
     this.assertSessionGuardActive(guard);

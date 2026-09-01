@@ -2793,6 +2793,23 @@ async function writeStore(input) {
   return Object.assign({ path: dataFile() }, result);
 }
 
+async function writeStoreNow(input) {
+  assertMainMutationAllowed();
+  if (isMarketingOnlySession()) throw Object.assign(new Error("마케팅 담당자는 전체 CRM 저장을 사용할 수 없습니다."), { code: "MARKETING_ONLY_FORBIDDEN" });
+  if (localTestMode) {
+    const data = await enqueueLocalBuildingScheduleCommit(async () => {
+      const current = await readLocalStore();
+      const desired = Core.sanitizeSharedStore(input);
+      desired.serviceRecords = current.serviceRecords;
+      return writeLocalStore(desired);
+    });
+    return { ok: true, data, path: dataFile(), pending: false };
+  }
+  if (!remoteClient || !remoteClient.authState().user) throw new Error("로그인이 필요합니다.");
+  const result = await remoteClient.saveStoreNow(input);
+  return Object.assign({ path: dataFile() }, result);
+}
+
 async function updateMarketingAttribution(input) {
   const actor = assertMainMutationAllowed(); Core.assertNoProhibitedSecrets(input);
   if (!(actor.accessRole === "admin" || actor.accessRole === "member")) return { ok: false, error: "권한이 없습니다.", code: "MARKETING_ATTRIBUTION_FORBIDDEN" };
@@ -6358,6 +6375,7 @@ secureCanonicalHandle("crm:auth-logout", async input => {
 });
 secureHandle("crm:load", readStore);
 secureHandle("crm:save", data => writeStore(data));
+secureHandle("crm:save-now", data => writeStoreNow(data));
 secureCanonicalHandle("crm:office-load", readOffice);
 secureCanonicalHandle("crm:office-attendance-save", input => saveOfficeAttendance(input));
 secureCanonicalHandle("crm:office-display-name-save", input => saveOfficeDisplayName(input));

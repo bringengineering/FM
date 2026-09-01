@@ -39,6 +39,7 @@ contextBridge.exposeInMainWorld("bringCRM", {
   saveOperation: input => ipcRenderer.invoke("crm:operation-save", input),
   retryWorkOperationsSync: recordId => ipcRenderer.invoke("crm:work-operations-sync-retry", { recordId }),
   save: data => ipcRenderer.invoke("crm:save", data),
+  saveNow: data => ipcRenderer.invoke("crm:save-now", data),
   loadCanonicalBuildingUnits: () => ipcRenderer.invoke("crm:canonical-building-units-load"),
   loadFieldSummaries: () => Promise.resolve({}),
   loadCustomerPhotos: () => ipcRenderer.invoke("crm:customer-photos-load"),
