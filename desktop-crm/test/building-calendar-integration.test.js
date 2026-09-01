@@ -50,15 +50,17 @@ test("unified calendar exposes work and contract tabs over their original ledger
   assert.match(appSource, /unifiedCalendarTab\s*=\s*nextTab[\s\S]{0,100}renderBuildingCalendar\(\)[\s\S]{0,80}pageMeta\(\)/);
 });
 
-test("unified calendar topbar follows the selected tab and write permission", () => {
+test("unified calendar keeps search state while actions live inside each intro card", () => {
   const page = functionSource("pageMeta");
+  const contractCalendar = functionSource("renderOneOffContractCalendar");
+  const workCalendar = Calendar.render(Calendar.buildModel(null, {}), { canWrite: true });
   assert.match(page, /contractCalendarView\s*=\s*calendarView\s*&&\s*unifiedCalendarTab\s*===\s*"contract"/);
   assert.match(page, /contractCalendarView\s*\?\s*"계약명·고객·건물 검색"\s*:\s*calendarView\s*\?\s*"건물명·일정 검색"/);
   assert.match(page, /searchEl\.value\s*=\s*contractCalendarView\s*\?\s*contractCalendarQuery\s*:\s*calendarView\s*\?\s*workCalendarQuery/);
-  assert.match(page, /primaryActionButton\.hidden\s*=\s*!canWriteCRM\(\)/);
-  assert.match(page, /primaryActionButton\.dataset\.action\s*=\s*contractCalendarView\s*\?\s*"new-one-off-contract"\s*:\s*"new-building-schedule"/);
-  assert.match(page, /primaryActionButton\.textContent\s*=\s*contractCalendarView\s*\?\s*"＋ 단건 계약"\s*:\s*"＋ 일정 추가"/);
-  assert.match(page, /delete primaryActionButton\.dataset\.action/);
+  assert.doesNotMatch(indexSource, /id="primaryActionButton"/);
+  assert.match(indexSource, /class="help-button"[^>]*data-action="open-guide"/);
+  assert.match(contractCalendar, /calendar-tab-intro-actions[\s\S]*?data-action="new-one-off-contract"/);
+  assert.match(workCalendar, /calendar-tab-intro-actions[\s\S]*?data-action="new-building-schedule"/);
 });
 
 test("calendar uses the shared building-work ledger and protects it during renderer rebases", () => {
@@ -70,7 +72,7 @@ test("calendar uses the shared building-work ledger and protects it during rende
   assert.match(collections, /"serviceSchedules"/);
   assert.match(functionSource("renderBuildingCalendar"), /WorkCalendar\.buildModel\(store/);
   assert.match(functionSource("renderBuildingCalendar"), /WorkCalendar\.render\(model,\s*\{ canWrite: canWriteCRM\(\) \}\)/);
-  assert.match(appSource, /delete primaryActionButton\.dataset\.action/);
+  assert.doesNotMatch(appSource, /primaryActionButton/);
 });
 
 test("the full calendar day selects its date without stealing clicks from schedule controls", () => {

@@ -231,9 +231,10 @@ test("loads UMD after core and bridge before app and app integrates marketing wi
   assert.match(html, /marketing\.css/);
   assert.match(app, /MarketingUI\.createController/);
   assert.match(app, /data-marketing-nav/);
-  assert.match(app, /광고 데이터 입력/);
+  assert.match(UI.renderWorkspace({ view: "marketingInput", snapshot: emptySnapshot, filters: UI.defaultFilters() }), /광고 데이터 입력/);
   assert.match(app, /searchEl\.closest\("\.global-search"\)\.hidden = !operationsWorkspace/);
-  assert.match(app, /primaryActionButton\.dataset\.action = "new-customer"/);
+  assert.doesNotMatch(html, /id="primaryActionButton"/);
+  assert.doesNotMatch(app, /primaryActionButton/);
   assert.doesNotMatch(app, /data-marketing-date[\s\S]{0,500}showToast/);
   assert.match(app, /snapshot\.filteredFacts/);
   assert.doesNotMatch(app, /renderMarketingWorkspace\(\)[\s\S]{0,160}refreshFacts/);

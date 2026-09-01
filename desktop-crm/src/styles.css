@@ -118,7 +118,7 @@ button:focus-visible,input:focus-visible,select:focus-visible,textarea:focus-vis
 @keyframes field-spin{to{transform:rotate(360deg)}}
 @media(max-width:1380px){.field-operator-control{grid-template-columns:1fr;gap:1px;padding:4px 6px}.field-operator-control>span{font-size:8px}.field-operator-control select{width:128px}.global-search{width:min(260px,24vw)}}
 @media(max-width:1100px){.nav-copy{display:none}.field-state-card{grid-template-columns:18px 1fr}.field-state-card button{grid-column:1/-1;width:100%}.field-operator-control>span{display:none}.field-operator-control{display:block}.field-operator-control select{width:120px;height:40px}}
-.field-operator-control{min-height:52px}.field-operator-control select,#primaryActionButton{min-height:44px}@media(max-width:1100px){.field-operator-control select{height:44px}}
+.field-operator-control{min-height:52px}.field-operator-control select{min-height:44px}@media(max-width:1100px){.field-operator-control select{height:44px}}
 
 /* Shared searchable customer and vendor picker */
 .entity-picker{display:grid;gap:10px;min-width:0;max-width:100%;padding:12px;border:1px solid #c9e3ef;border-radius:13px;background:linear-gradient(180deg,#f3fbff 0%,#f8fcfe 100%);overflow:hidden}

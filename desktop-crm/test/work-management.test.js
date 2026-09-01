@@ -43,6 +43,8 @@ test("desktop entry exposes one first-class work management view", () => {
   assert.ok(index.indexOf("work-management.js") < index.indexOf("app.js"));
   assert.match(app, /WorkManagement\.renderDashboard/);
   assert.match(app, /currentView === "workManagement"/);
+  assert.match(app, /const workAction = canWriteCRM\(\) \? `<div class="operations-actions"><button[^>]+data-action="new-work-record"/);
+  assert.match(app, /class="operations-hero work-management-hero"[\s\S]*?\$\{workAction\}/);
 });
 
 test("completed work renders operations sync state and retry only when required", () => {

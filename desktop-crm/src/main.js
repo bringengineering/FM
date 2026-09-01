@@ -5575,10 +5575,10 @@ async function createWindow() {
         const oldPaymentModeAbsent = !document.querySelector('[data-payment-mode], .payment-mode-tabs');
         const readOnly = document.body.classList.contains('crm-read-only');
         const mutationControlCount = document.querySelectorAll('[data-contract-edit], [data-action="new-one-off-contract"]').length;
-        const primaryAction = document.getElementById('primaryActionButton');
+        const contentAction = document.querySelector('.calendar-tab-intro [data-action="new-one-off-contract"]');
         const roleSafe = readOnly
-          ? mutationControlCount === 0 && primaryAction?.hidden === true
-          : mutationControlCount >= 2 && primaryAction?.dataset.action === 'new-one-off-contract' && primaryAction?.hidden === false;
+          ? mutationControlCount === 0 && !contentAction
+          : mutationControlCount >= 2 && !!contentAction;
         const pass = rows === 2 && events === 2 && text.includes('185,000원') && text.includes('13,000원')
           && text.includes('통합 캘린더 정기청소') && text.includes('통합 캘린더 폐기물 처리')
           && contractTab?.classList.contains('active') && contractTab?.getAttribute('aria-selected') === 'true'

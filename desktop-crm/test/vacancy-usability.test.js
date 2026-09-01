@@ -31,7 +31,8 @@ test("vacancy workspace restores the building rail and keeps one structure-setti
   assert.match(detail, /vacancy-detail-head/);
   assert.doesNotMatch(source, /data-vacancy-building-select|vacancy-building-picker|vacancy-layout-single/);
   assert.equal((`${source}${detail}`.match(/data-vacancy-configure/g) || []).length, 1);
-  assert.match(appSource, /primaryActionButton\.hidden\s*=\s*true/);
+  assert.match(functionSource("pageMeta"), /if \(currentView === "vacancies"\)[\s\S]*?selectedVacancyBuildingId = vacancyBuildings\[0\]\?\.id \|\| ""/);
+  assert.doesNotMatch(appSource, /primaryActionButton/);
 });
 
 test("vacancy all filter renders first while attention remains the default", () => {

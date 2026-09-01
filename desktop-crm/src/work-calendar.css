@@ -94,10 +94,25 @@
 }
 
 .calendar-tab-intro {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 20px;
   padding: 16px 18px;
   border: 1px solid #d5e7f0;
   border-radius: 15px;
   background: linear-gradient(120deg, #f8fcff, #eef9fe);
+}
+
+.calendar-tab-intro > div:first-child {
+  min-width: 0;
+}
+
+.calendar-tab-intro-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  flex: 0 0 auto;
 }
 
 .calendar-tab-intro span {
@@ -146,6 +161,14 @@
   background: #fff;
   color: #17688f;
   font: inherit;
+}
+
+.work-calendar .calendar-tab-intro-actions .primary-button {
+  padding: 0 17px;
+  border: 0;
+  background: linear-gradient(180deg, #62b9e8, #3b9bd5);
+  color: #fff;
+  box-shadow: 0 8px 18px rgba(50, 147, 202, .22);
 }
 
 .work-calendar button {
@@ -617,6 +640,16 @@
 
   .unified-calendar-tabs button {
     min-width: 0;
+  }
+
+  .calendar-tab-intro {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .calendar-tab-intro-actions,
+  .calendar-tab-intro-actions .primary-button {
+    width: 100%;
   }
 
   .work-calendar-toolbar,

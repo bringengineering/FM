@@ -46,7 +46,6 @@
   const loginMessage = document.getElementById("loginMessage");
   const userPill = document.getElementById("userPill");
   const updateButton = document.getElementById("updateButton");
-  const primaryActionButton = document.getElementById("primaryActionButton");
   const fieldOperatorControl = document.getElementById("fieldOperatorControl");
   const fieldOperatorSelect = document.getElementById("fieldOperatorSelect");
   const workspaceSwitch = document.querySelector("[data-workspace-switch]");
@@ -1364,45 +1363,14 @@
     document.getElementById("navTaskCount").textContent = store.tasks.filter(item => item.status !== "완료" && item.status !== "취소").length;
     document.body.classList.toggle("crm-read-only", !canWriteCRM());
     const valueScopeView = currentView === "valueScope";
-    const aiAssistantView = currentView === "aiAssistant";
     const calendarView = currentView === "buildingCalendar";
     const contractCalendarView = calendarView && unifiedCalendarTab === "contract";
     searchEl.closest(".global-search").hidden = officeView;
     searchEl.placeholder = valueScopeView ? "지도에서 주소·건물·중개사를 검색하세요" : contractCalendarView ? "계약명·고객·건물 검색" : calendarView ? "건물명·일정 검색" : currentView === "vacancies" ? "건물명·주소 검색" : "고객·건물·연락처 검색";
     searchEl.value = contractCalendarView ? contractCalendarQuery : calendarView ? workCalendarQuery : crmSearchValue;
-    primaryActionButton.hidden = valueScopeView || aiAssistantView || officeView || currentView === "customerMessages";
-    if (valueScopeView || aiAssistantView || officeView || currentView === "customerMessages") {
-      delete primaryActionButton.dataset.action;
-      primaryActionButton.textContent = "";
-    } else if (currentView === "workManagement") {
-      primaryActionButton.hidden = !canWriteCRM();
-      primaryActionButton.dataset.action = "new-work-record";
-      primaryActionButton.textContent = "＋ 새 작업";
-    } else if (currentView === "operationsIntelligence") {
-      primaryActionButton.hidden = true;
-      delete primaryActionButton.dataset.action;
-      primaryActionButton.textContent = "";
-    } else if (calendarView) {
-      primaryActionButton.hidden = !canWriteCRM();
-      if (canWriteCRM()) {
-        primaryActionButton.dataset.action = contractCalendarView ? "new-one-off-contract" : "new-building-schedule";
-        primaryActionButton.textContent = contractCalendarView ? "＋ 단건 계약" : "＋ 일정 추가";
-      } else {
-        delete primaryActionButton.dataset.action;
-        primaryActionButton.textContent = "";
-      }
-    } else if (currentView === "vacancies") {
+    if (currentView === "vacancies") {
       const vacancyBuildings = (store.buildings || []).filter(building => building && !building.archivedAt);
       if (!vacancyBuildings.some(building => building.id === selectedVacancyBuildingId)) selectedVacancyBuildingId = vacancyBuildings[0]?.id || "";
-      primaryActionButton.hidden = true;
-    } else if (currentView === "buildings") {
-      primaryActionButton.hidden = !canWriteCRM();
-      primaryActionButton.dataset.action = "new-building";
-      primaryActionButton.textContent = "＋ 새 건물";
-    } else {
-      primaryActionButton.hidden = false;
-      primaryActionButton.dataset.action = "new-customer";
-      primaryActionButton.textContent = "＋ 새 고객";
     }
     fieldOperatorControl.hidden = !["buildings", "vacancies", "pipeline"].includes(currentView);
     if (!fieldOperatorControl.hidden) renderFieldOperatorControl();
@@ -1467,15 +1435,6 @@
     document.body.classList.toggle("marketing-workspace-active", workspace === "marketing");
     workspaceSwitch.hidden = workspace === null;
     searchEl.closest(".global-search").hidden = !operationsWorkspace;
-    primaryActionButton.hidden = !operationsWorkspace;
-    if (workspace === "marketing") {
-      primaryActionButton.hidden = false;
-      primaryActionButton.dataset.action = "marketing-input";
-      primaryActionButton.textContent = "광고 데이터 입력";
-    } else if (operationsWorkspace) {
-      primaryActionButton.dataset.action = "new-customer";
-      primaryActionButton.textContent = "＋ 새 고객";
-    }
     fieldOperatorControl.hidden = !operationsWorkspace;
     if (workspace === "operations") scheduleWelcomeGuide();
   }
@@ -2221,7 +2180,7 @@
     const days = paymentCalendarDays(contractCalendarMonth);
     const editable = canWriteCRM();
     const emptyAction = editable && !query ? `<button class="primary-button" data-action="new-one-off-contract">＋ 단건 계약 등록</button>` : "";
-    return `<section class="one-off-contract-calendar" aria-label="단건 계약 캘린더"><header class="calendar-tab-intro"><div><span>단건 계약 일정</span><h2>입금 예정일과 수익을 확인합니다</h2><p>예초·청소·도배·폐기물 처리 등 건별 계약만 모아 봅니다. 정기 납부 일정은 건물주 입금 캘린더에서 관리합니다.</p></div></header>
+    return `<section class="one-off-contract-calendar" aria-label="단건 계약 캘린더"><header class="calendar-tab-intro"><div><span>단건 계약 일정</span><h2>입금 예정일과 수익을 확인합니다</h2><p>예초·청소·도배·폐기물 처리 등 건별 계약만 모아 봅니다. 정기 납부 일정은 건물주 입금 캘린더에서 관리합니다.</p></div>${editable ? `<div class="calendar-tab-intro-actions"><button type="button" class="primary-button" data-action="new-one-off-contract">＋ 단건 계약</button></div>` : ""}</header>
       <div class="operations-kpis"><div class="operations-kpi"><span>단건 계약</span><b>${totals.count}건</b><small>${esc(paymentMonthLabel(contractCalendarMonth))}</small></div><div class="operations-kpi"><span>받을 금액</span><b>${esc(krw(totals.revenue))}</b><small>고객 청구액</small></div><div class="operations-kpi"><span>업체 지급액</span><b>${esc(krw(totals.cost))}</b><small>작업 원가</small></div><div class="operations-kpi" style="--wash:#edf9f5"><span>예상 수익</span><b>${esc(krw(totals.profit))}</b><small>받을 금액 - 지급액</small></div></div>
       <div class="payment-toolbar"><div class="payment-month-switch"><button data-contract-calendar-month="-1" aria-label="이전 달">‹</button><b>${esc(paymentMonthLabel(contractCalendarMonth))}</b><button data-contract-calendar-month="1" aria-label="다음 달">›</button></div><label class="payment-building-filter"><span>건물</span><select data-contract-calendar-building><option value="all">전체 건물</option>${buildings.map(item => `<option value="${attr(item.id)}" ${contractCalendarBuildingId === item.id ? "selected" : ""}>${esc(`${item.name}${item.archived ? " · 보관" : ""}`)}</option>`).join("")}</select></label></div>
       <section class="payment-calendar"><div class="payment-weekdays">${["일", "월", "화", "수", "목", "금", "토"].map(day => `<div>${day}</div>`).join("")}</div><div class="payment-days">${days.map(date => { const dayRows = rows.filter(row => row.dueDate === date); return `<div class="payment-day ${date.slice(0, 7) === contractCalendarMonth ? "" : "out"} ${date === todayKey() ? "today" : ""}"><div class="payment-daynum">${Number(date.slice(-2))}</div>${dayRows.slice(0, 3).map(row => { const content = `<b>${esc(row.contract.name)}</b><span>${esc(krw(row.contract.amount))} · 수익 ${esc(krw(row.contract.grossProfit))}</span>`; return editable ? `<button class="payment-event ${attr(row.status)}" data-contract-edit="${attr(row.contract.id)}">${content}</button>` : `<div class="payment-event ${attr(row.status)} is-readonly">${content}</div>`; }).join("")}${dayRows.length > 3 ? `<span class="payment-more">＋ ${dayRows.length - 3}건</span>` : ""}</div>`; }).join("")}</div></section>
@@ -3073,7 +3032,8 @@
       }),
     });
     const model = WorkManagement.buildModel(workStore, { month: Core.dayKey().slice(0, 7), today: Core.dayKey() });
-    main.innerHTML = AiOperationsUI.renderWorkAutomation({ records: workAutomationRows(), writable: canWriteCRM(), expanded: workAutomationState.expanded }) + WorkManagement.renderDashboard(model, { canWrite: canWriteCRM(), filters: workFilters });
+    const workAction = canWriteCRM() ? `<div class="operations-actions"><button type="button" class="primary-button" data-action="new-work-record">＋ 새 작업</button></div>` : "";
+    main.innerHTML = `<section class="operations-hero work-management-hero"><div><span>건물별 작업 기록</span><h2>작업 일정·비용·완료 증빙을 관리합니다</h2><p>예정된 작업과 완료 내역을 확인하고 공용 CRM에 새 작업을 등록합니다.</p></div>${workAction}</section>` + AiOperationsUI.renderWorkAutomation({ records: workAutomationRows(), writable: canWriteCRM(), expanded: workAutomationState.expanded }) + WorkManagement.renderDashboard(model, { canWrite: canWriteCRM(), filters: workFilters });
     const workAutomationPanel = main.querySelector("[data-ai-work-panel]");
     workAutomationPanel?.addEventListener("toggle", () => { workAutomationState.expanded = workAutomationPanel.open; });
     Object.entries(workFilters).forEach(([key, value]) => {

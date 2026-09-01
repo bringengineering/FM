@@ -107,7 +107,8 @@ test("application remembers only the workspace preference and supports switching
 test("marketing hides Operations chrome and operations rendering restores it", () => {
   assert.match(appSource, /const operationsWorkspace = workspace === "operations"/);
   assert.match(appSource, /searchEl\.closest\("\.global-search"\)\.hidden = !operationsWorkspace/);
-  assert.match(appSource, /primaryActionButton\.hidden = !operationsWorkspace/);
+  assert.doesNotMatch(html, /id="primaryActionButton"/);
+  assert.match(html, /class="help-button"[^>]*data-action="open-guide"/);
   assert.match(appSource, /fieldOperatorControl\.hidden = !operationsWorkspace/);
   assert.match(appSource, /renderOperations: renderOperationsWorkspace/);
 });
