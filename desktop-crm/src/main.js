@@ -2652,6 +2652,15 @@ async function runWorkflowAction(input) {
       localOperationsData.payments.rentSms ||= {};
       localOperationsData.payments.rentSms[source.month] ||= {};
       localOperationsData.payments.rentSms[source.month][source.scheduleId] = { ok: true, status: "카카오 알림톡 요청 완료", provider: "kakao_alimtalk", messageId: "demo-message", sentAt: now };
+    } else if (source.action === "sendCustomerMessage") {
+      localOperationsData.messageDeliveries ||= {};
+      localOperationsData.messageDeliveries[source.requestId] = {
+        requestId: source.requestId, customerId: source.customerId, templateCode: source.templateId,
+        channel: source.channel, status: "accepted", provider: "kakao_alimtalk", requestedAt: now, sentAt: now
+      };
+    } else if (source.action === "getCustomerMessageDeliveryStatus") {
+      localOperationsData.messageDeliveries ||= {};
+      if (localOperationsData.messageDeliveries[source.requestId]) localOperationsData.messageDeliveries[source.requestId].status = "delivered";
     }
     return { ok: true, action: source.action, local: true };
   }

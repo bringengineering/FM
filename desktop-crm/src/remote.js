@@ -134,7 +134,8 @@ const WORKFLOW_ACTIONS = new Set([
   "uploadQuoteFile", "uploadBusinessRegistration", "uploadWorkPhoto",
   "confirmQuoteAmount", "applyBusinessRegistrationToQuote", "confirmCasePayment",
   "syncPaymentBuildings", "syncPaymentSchedules", "syncPopbillBankTransactions",
-  "sendPaymentReminderSms", "getPaymentReminderDeliveryStatus"
+  "sendPaymentReminderSms", "getPaymentReminderDeliveryStatus",
+  "sendCustomerMessage", "getCustomerMessageDeliveryStatus"
 ]);
 
 const SHARED_COLLECTIONS = Object.freeze([
@@ -3097,16 +3098,18 @@ class FirebaseRemoteClient {
 
   async loadOperations() {
     if (!this.session) throw createError("로그인이 필요합니다.", "AUTH_REQUIRED");
-    const [casePayload, paymentPayload, caseSettings] = await Promise.all([
+    const [casePayload, paymentPayload, caseSettings, messageDeliveries] = await Promise.all([
       this.rootDbRequest("cases", { method: "GET" }),
       this.dbRequest("paymentCalendars/shared", { method: "GET" }),
-      this.rootDbRequest("caseSettings", { method: "GET" }).catch(() => ({}))
+      this.rootDbRequest("caseSettings", { method: "GET" }).catch(() => ({})),
+      this.dbRequest("crmShared/messageDeliveries", { method: "GET" }).catch(() => ({}))
     ]);
     this.caseSettings = caseSettings && typeof caseSettings === "object" ? caseSettings : {};
     const cases = Object.entries(casePayload || {}).map(([key, value]) => Object.assign({ id: key }, value || {}, { firebaseKey: key }));
     return {
       cases,
       payments: paymentPayload && typeof paymentPayload === "object" ? paymentPayload : {},
+      messageDeliveries: messageDeliveries && typeof messageDeliveries === "object" ? messageDeliveries : {},
       caseSettings: {
         vendorQuoteReplyEmail: String(this.caseSettings.vendorQuoteReplyEmail || ""),
         paymentScheduleSheet: this.caseSettings.paymentScheduleSheet || {},
@@ -3145,6 +3148,13 @@ class FirebaseRemoteClient {
     this.Core.assertNoProhibitedSecrets(validationSource);
     const action = String(source.action || "").trim();
     if (!WORKFLOW_ACTIONS.has(action)) throw createError("허용되지 않은 업무 실행 요청입니다.", "INVALID_WORKFLOW_ACTION");
+    if (["sendCustomerMessage", "getCustomerMessageDeliveryStatus"].includes(action)) {
+      const requestId = String(source.requestId || "").trim();
+      if (!/^[0-9a-f-]{36}$/i.test(requestId)) throw createError("메시지 요청 ID가 필요합니다.", "MESSAGE_REQUEST_ID_REQUIRED");
+      if (action === "sendCustomerMessage" && (!SAFE_DIRECT_ID.test(String(source.customerId || "")) || !SAFE_DIRECT_ID.test(String(source.templateId || "")))) {
+        throw createError("메시지 고객과 템플릿을 확인해 주세요.", "MESSAGE_REQUEST_INVALID");
+      }
+    }
     // The workflow receives a Firebase ID token, so its destination must be a
     // build-time trust decision. Shared settings cannot replace this endpoint.
     const endpoint = DEFAULT_CASE_AUTOMATION_ENDPOINT;
