@@ -72,6 +72,8 @@ let valuescopeView = null;
 let valuescopeViewVisible = false;
 let valuescopeMeasuredBounds = null;
 let valuescopeActiveTab = "wonju";
+let valuescopeVisibilityEpoch = 0;
+let valuescopeAuthUserId = "";
 let fieldView = null;
 let fieldViewVisible = false;
 let fieldViewLoaded = false;
@@ -509,6 +511,13 @@ function emitValueScopeState(status, message, extra = {}) {
   mainWindow.webContents.send("crm:valuescope-state", { status, message, ...extra });
 }
 
+function hideValueScopeView() {
+  valuescopeVisibilityEpoch += 1;
+  if (valuescopeView) valuescopeView.setVisible(false);
+  valuescopeViewVisible = false;
+  return { ok: true };
+}
+
 function applyValueScopeBounds() {
   if (!valuescopeView || !valuescopeMeasuredBounds || !valuescopeViewVisible) return false;
   valuescopeView.setBounds(valuescopeMeasuredBounds);
@@ -516,6 +525,7 @@ function applyValueScopeBounds() {
 }
 
 function destroyValueScopeView() {
+  valuescopeVisibilityEpoch += 1;
   if (!valuescopeView) return;
   const view = valuescopeView;
   valuescopeView = null;
@@ -578,23 +588,38 @@ function ensureValueScopeView() {
 }
 
 async function showValueScope(input = {}) {
-  if (!authState().user) return { ok: false, code: "AUTH_REQUIRED", error: "CRM에 먼저 로그인해 주세요." };
+  const openingUser = authState().user;
+  if (!openingUser || openingUser.mustChangePassword) return { ok: false, code: "AUTH_REQUIRED", error: "CRM에 먼저 로그인해 주세요." };
   const tab = String(input.tab || "wonju");
   const url = mapUrlForTab(tab);
   if (!url) return { ok: false, code: "VALUESCOPE_TAB_INVALID", error: "지원하지 않는 지도입니다." };
   if (!valuescopeMeasuredBounds || valuescopeMeasuredBounds.width < 1 || valuescopeMeasuredBounds.height < 1) {
     return { ok: false, code: "VALUESCOPE_BOUNDS_REQUIRED", error: "지도 화면 크기를 확인하고 있습니다." };
   }
+  let visibilityEpoch = 0;
+  let view = null;
   try {
-    const view = ensureValueScopeView();
+    visibilityEpoch = ++valuescopeVisibilityEpoch;
+    view = ensureValueScopeView();
     valuescopeActiveTab = tab;
     if (view.webContents.getURL() !== url) await view.webContents.loadURL(url);
+    if (visibilityEpoch !== valuescopeVisibilityEpoch || valuescopeView !== view || view.webContents.isDestroyed()) {
+      return { ok: false, code: "VALUESCOPE_VIEW_HIDDEN", error: "지도 화면 전환이 취소되었습니다." };
+    }
+    const activeUser = authState().user;
+    if (!activeUser || activeUser.mustChangePassword || String(activeUser.uid || "") !== String(openingUser.uid || "")) {
+      hideValueScopeView();
+      return { ok: false, code: "VALUESCOPE_VIEW_HIDDEN", error: "지도 화면 전환이 취소되었습니다." };
+    }
     valuescopeViewVisible = true;
     applyValueScopeBounds();
     view.setVisible(true);
     return { ok: true, tab, url };
   } catch (_error) {
-    if (valuescopeView) valuescopeView.setVisible(false);
+    if (visibilityEpoch !== valuescopeVisibilityEpoch) {
+      return { ok: false, code: "VALUESCOPE_VIEW_HIDDEN", error: "지도 화면 전환이 취소되었습니다." };
+    }
+    if (view && valuescopeView === view && !view.webContents.isDestroyed()) view.setVisible(false);
     valuescopeViewVisible = false;
     emitValueScopeState("error", "ValueScope 지도를 불러오지 못했습니다.");
     return { ok: false, code: "VALUESCOPE_LOAD_FAILED", error: "ValueScope 지도를 불러오지 못했습니다." };
@@ -2955,6 +2980,9 @@ async function initializeRemote() {
     onCustomerPhotos: photos => sendToRenderer("crm:customer-photos", sanitizeCustomerPhotoMap(photos)),
     onAuthState: state => {
       if (FIELD_OPERATIONS_ENABLED) syncFieldSession(state);
+      const nextValueScopeUserId = state && state.user && !state.user.mustChangePassword ? String(state.user.uid || "") : "";
+      if (!nextValueScopeUserId || (valuescopeAuthUserId && valuescopeAuthUserId !== nextValueScopeUserId)) hideValueScopeView();
+      valuescopeAuthUserId = nextValueScopeUserId;
       sendToRenderer("crm:auth-state", state);
     },
     onSyncState: state => sendToRenderer("crm:sync-state", state)
@@ -3151,6 +3179,7 @@ async function createWindow() {
       sandbox: true
     }
   });
+  mainWindow.webContents.on("did-start-loading", () => hideValueScopeView());
   mainWindow.webContents.on("will-navigate", event => event.preventDefault());
   mainWindow.webContents.setWindowOpenHandler(() => ({ action: "deny" }));
   mainWindow.on("close", event => {
@@ -5887,6 +5916,7 @@ secureHandle("crm:auth-change-password", async password => {
   finally { crmAuthenticationRequestCount = Math.max(0, crmAuthenticationRequestCount - 1); }
 });
 secureCanonicalHandle("crm:auth-logout", async input => {
+  hideValueScopeView();
   if (!FIELD_OPERATIONS_ENABLED) {
     if (fieldLogoutInFlight) return fieldLogoutInFlight;
     fieldLogoutInFlight = (async () => {
@@ -6111,11 +6141,7 @@ secureCanonicalHandle("crm:valuescope-bounds", async rect => {
   return { ok: true, bounds: measured };
 });
 secureCanonicalHandle("crm:show-valuescope", async input => showValueScope(input));
-secureCanonicalHandle("crm:hide-valuescope", async () => {
-  if (valuescopeView) valuescopeView.setVisible(false);
-  valuescopeViewVisible = false;
-  return { ok: true };
-});
+secureCanonicalHandle("crm:hide-valuescope", async () => hideValueScopeView());
 secureCanonicalHandle("crm:field-request", async (envelope, event) => {
   if (!FIELD_OPERATIONS_ENABLED) return fieldOperationsDisabledResult();
   const blockedCode = fieldReauthenticationBlockCode({ includeAuthenticationRequired: true });

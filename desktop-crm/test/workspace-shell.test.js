@@ -100,7 +100,7 @@ test("application remembers only the workspace preference and supports switching
   assert.match(appSource, /workspaceCoordinator\.select\(/);
   assert.match(appSource, /workspaceCoordinator\.showLanding\(\)/);
   assert.match(appSource, /async function prepareWorkspaceTransition/);
-  assert.match(appSource, /valueScopeOpenGeneration \+= 1[\s\S]*?await api\.hideValueScope\(\)[\s\S]*?currentView = "dashboard"/);
+  assert.match(appSource, /currentView === "valueScope"\) await deactivateValueScope\(\)[\s\S]*?currentView = "dashboard"/);
   assert.match(html, /data-workspace-switch/);
 });
 

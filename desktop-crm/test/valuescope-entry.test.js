@@ -36,3 +36,15 @@ test("ValueScope search and view transitions remain self-contained", () => {
   assert.doesNotMatch(app, /hideFieldPlatform/);
   assert.match(app, /"valueScope"/);
 });
+
+test("renderer invalidates map opening before and after asynchronous bounds work", () => {
+  const app = src("app.js");
+  const deactivate = app.slice(app.indexOf("async function deactivateValueScope"), app.indexOf("function renderValueScope"));
+  const open = app.slice(app.indexOf("async function openValueScope"), app.indexOf("async function registerValueScopeProspect"));
+  assert.match(deactivate, /valueScopeViewRequested = false/);
+  assert.match(deactivate, /valueScopeOpenGeneration \+= 1/);
+  assert.match(deactivate, /await api\.hideValueScope\(\)/);
+  assert.match(open, /await measureValueScopeWorkspace\(\)[\s\S]*generation !== valueScopeOpenGeneration[\s\S]*api\.showValueScope/);
+  assert.match(open, /!valueScopeViewRequested/);
+  assert.match(app, /currentView !== "valueScope" && valueScopeViewRequested[\s\S]*deactivateValueScope\(\)/);
+});

@@ -136,6 +136,7 @@
   let valueScopeState = { status: "idle", message: "지도를 준비하고 있습니다." };
   let valueScopeResizeObserver = null;
   let valueScopeOpenGeneration = 0;
+  let valueScopeViewRequested = false;
   let aiAssistantState = { task: "assistant_summary", content: "", customerType: "", workType: "", result: null, warnings: [], loading: false, error: "" };
   let salesAutomationState = { drafts: new Map(), loadingId: "", rows: [] };
   let workAutomationState = { drafts: new Map(), loadingId: "", expanded: false };
@@ -1348,6 +1349,7 @@
 
   function renderOperationsWorkspace() {
     if (!Object.hasOwn(viewMeta, currentView)) currentView = "dashboard";
+    if (currentView !== "valueScope" && valueScopeViewRequested) void deactivateValueScope();
     pageMeta();
     if (currentView === "dashboard") renderDashboard();
     else if (currentView === "cases") renderCases();
@@ -1449,10 +1451,7 @@
       pendingMarketingTabFocus = "";
       marketingReviewReturnFocus = "";
     }
-    if (currentView === "valueScope") {
-      valueScopeOpenGeneration += 1;
-      await api.hideValueScope();
-    }
+    if (currentView === "valueScope") await deactivateValueScope();
     currentView = "dashboard";
     marketingLoaded = false;
   }
@@ -1482,7 +1481,15 @@
     ["wonju", "원주 건물"], ["sales", "영업 지도"], ["valueup", "건물 밸류업"], ["system", "사업체계"],
   ]);
 
+  async function deactivateValueScope() {
+    valueScopeViewRequested = false;
+    valueScopeOpenGeneration += 1;
+    try { return await api.hideValueScope(); }
+    catch (_error) { return { ok: false, code: "VALUESCOPE_HIDE_FAILED" }; }
+  }
+
   function renderValueScope() {
+    valueScopeViewRequested = true;
     const selection = valueScopeSelection;
     const failed = valueScopeState.status === "error";
     main.innerHTML = `<section class="valuescope-workspace"><div class="valuescope-toolbar" role="tablist" aria-label="ValueScope 지도 선택">${VALUE_SCOPE_TABS.map(([tab, label]) => `<button type="button" role="tab" aria-selected="${valueScopeTab === tab}" class="valuescope-tab${valueScopeTab === tab ? " active" : ""}" data-valuescope-tab="${tab}">${label}</button>`).join("")}</div><div class="valuescope-layout"><div class="valuescope-map-card"><div id="valueScopeMapSlot" class="valuescope-map-slot" aria-label="ValueScope 지도 화면"></div><div class="valuescope-loading${failed ? " error" : ""}" ${valueScopeState.status === "ready" ? "hidden" : ""} role="status"><b>${failed ? "ValueScope 지도를 불러오지 못했습니다" : "지도를 불러오고 있습니다"}</b><p>${failed ? "CRM의 다른 업무와 저장 기능은 계속 사용할 수 있습니다." : esc(valueScopeState.message || "잠시만 기다려 주세요.")}</p></div></div><aside class="valuescope-action-card"><span class="valuescope-kicker">선택한 대상</span>${selection ? `<h3>${esc(selection.name)}</h3><p>${esc(selection.address || selection.category || "주소 정보 없음")}</p><div class="valuescope-summary">${esc(selection.summary || "지도에서 확인한 공개 정보입니다.")}</div>` : `<h3>지도에서 대상을 선택하세요</h3><p>건물이나 공인중개사를 누르면 CRM 연결 작업을 이어갈 수 있습니다.</p>`}<div class="valuescope-actions"><button type="button" class="secondary-button" data-action="valuescope-open-original">원본 지도 새 창에서 열기</button>${canWriteCRM() ? `<button type="button" class="primary-button" data-action="valuescope-register-prospect"${selection ? "" : " disabled"}>CRM 영업 대상 등록</button>` : `<div class="info-box">조회 전용 계정은 지도와 연결된 CRM 기록만 볼 수 있습니다.</div>`}</div></aside></div></section>`;
@@ -1509,10 +1516,11 @@
 
   async function openValueScope(generation) {
     await measureValueScopeWorkspace();
+    if (generation !== valueScopeOpenGeneration || currentView !== "valueScope" || !valueScopeViewRequested) return;
     let result;
     try { result = await api.showValueScope({ tab: valueScopeTab }); }
     catch (_error) { result = { ok: false, error: "ValueScope 지도를 불러오지 못했습니다." }; }
-    if (generation !== valueScopeOpenGeneration || currentView !== "valueScope") return;
+    if (generation !== valueScopeOpenGeneration || currentView !== "valueScope" || !valueScopeViewRequested) return;
     if (!result || !result.ok) {
       valueScopeState = { status: "error", message: result && result.error || "ValueScope 지도를 불러오지 못했습니다." };
       const loading = main.querySelector(".valuescope-loading");
@@ -1545,8 +1553,7 @@
     const existing = Sales.findProspectBySourceRef(store.salesProspects, valueScopeSourceRef);
     if (existing) {
       selectedSalesProspectId = existing.id;
-      valueScopeOpenGeneration += 1;
-      await api.hideValueScope();
+      await deactivateValueScope();
       currentView = "pipeline";
       render();
       renderSalesProspectDrawer(existing.id);
@@ -1583,8 +1590,7 @@
     logAudit({ category: "등록", targetType: "영업 대상 건물", targetId: prospect.id, targetLabel: prospect.name || prospect.address, action: "ValueScope 지도 대상 등록", reason: "공개 지도 후보를 CRM 영업 원장에 연결" });
     scheduleSave();
     selectedSalesProspectId = prospect.id;
-    valueScopeOpenGeneration += 1;
-    await api.hideValueScope();
+    await deactivateValueScope();
     currentView = "pipeline";
     render();
     renderSalesProspectDrawer(prospect.id);
@@ -4959,10 +4965,7 @@
         folder.classList.add("open");
         folder.querySelector("[data-nav-folder-toggle]")?.setAttribute("aria-expanded", "true");
       }
-      if (currentView === "valueScope" && nextView !== "valueScope") {
-        valueScopeOpenGeneration += 1;
-        await api.hideValueScope();
-      }
+      if (currentView === "valueScope" && nextView !== "valueScope") await deactivateValueScope();
       currentView = nextView;
       if (currentView === "cases") caseListMode = "active";
       render();
