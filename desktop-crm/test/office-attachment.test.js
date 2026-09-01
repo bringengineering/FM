@@ -174,8 +174,22 @@ function hwp(options = {}) {
   const linkDocScaffold = options.linkDocScaffold === true;
   const scriptVersionPlain = options.scriptVersionBytes ? Buffer.from(options.scriptVersionBytes) : SAFE_HWP_SCRIPT_VERSION;
   const defaultScriptPlain = options.defaultScriptBytes ? Buffer.from(options.defaultScriptBytes) : SAFE_HWP_DEFAULT_SCRIPT;
-  const scriptVersionData = options.flags & 1 ? zlib.deflateRawSync(scriptVersionPlain) : scriptVersionPlain;
-  const defaultScriptData = options.flags & 1 ? zlib.deflateRawSync(defaultScriptPlain) : defaultScriptPlain;
+  function withLegacyHwpTrailer(compressed, plain) {
+    if (!options.legacyScriptTrailer) return compressed;
+    const trailer = Buffer.alloc(8);
+    trailer.writeUInt32LE(crc32(plain), 0);
+    trailer.writeUInt32LE(plain.length, 4);
+    return Buffer.concat([compressed, trailer]);
+  }
+  const scriptVersionData = options.flags & 1
+    ? withLegacyHwpTrailer(zlib.deflateRawSync(scriptVersionPlain), scriptVersionPlain)
+    : scriptVersionPlain;
+  const defaultScriptBody = options.flags & 1
+    ? withLegacyHwpTrailer(zlib.deflateRawSync(defaultScriptPlain), defaultScriptPlain)
+    : defaultScriptPlain;
+  const defaultScriptData = options.defaultScriptTrailingBytes
+    ? Buffer.concat([defaultScriptBody, Buffer.from(options.defaultScriptTrailingBytes)])
+    : defaultScriptBody;
   const linkDocData = options.linkDocBytes ? Buffer.from(options.linkDocBytes) : Buffer.alloc(524);
   assert.ok(scriptVersionData.length > 0 && scriptVersionData.length <= 64);
   const binDataBytes = options.binDataBytes
@@ -363,6 +377,7 @@ test("common Hancom HWP 5 metadata, inert scaffolds, and raw image BinData remai
     flags: 1 | (1 << 5),
     validCompressed: true,
     standardScaffold: true,
+    legacyScriptTrailer: true,
     encryptionVersion: 4,
     fileHeaderSizeHigh: 0xdeadbeef,
   });
@@ -375,11 +390,30 @@ test("common Hancom HWP 5 metadata, inert scaffolds, and raw image BinData remai
 
   const rawPng = Buffer.alloc(48);
   Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]).copy(rawPng);
+  Buffer.from("IHDR", "ascii").copy(rawPng, 12);
   Buffer.from("MZ", "ascii").copy(rawPng, 24);
   assert.doesNotThrow(() => Attachment.prepareAttachment({
     fileName: "이미지포함.hwp",
     bytes: hwp({ flags: 1, validCompressed: true, binDataBytes: rawPng }),
   }));
+  const simulatedLimitFailure = hwp({ flags: 1, validCompressed: true, binDataBytes: rawPng });
+  const originalInflateRawSync = zlib.inflateRawSync;
+  zlib.inflateRawSync = (bytes, options) => {
+    if (Buffer.from(bytes).equals(rawPng)) {
+      const error = new RangeError("simulated maxOutputLength breach");
+      error.code = "ERR_BUFFER_TOO_LARGE";
+      throw error;
+    }
+    return originalInflateRawSync(bytes, options);
+  };
+  try {
+    assert.throws(
+      () => Attachment.prepareAttachment({ fileName: "압축한도초과.hwp", bytes: simulatedLimitFailure }),
+      errorCode("ATTACHMENT_HWP_UNSAFE"),
+    );
+  } finally {
+    zlib.inflateRawSync = originalInflateRawSync;
+  }
   assert.throws(
     () => Attachment.prepareAttachment({ fileName: "unknown-encryption-version.hwp", bytes: hwp({ encryptionVersion: 5 }) }),
     errorCode("ATTACHMENT_HWP_UNSAFE"),
@@ -394,6 +428,10 @@ test("HWP and HWPX active content, scripts, and embedded OLE are rejected", () =
   assert.throws(() => Attachment.prepareAttachment({
     fileName: "modified-default-script.hwp",
     bytes: hwp({ flags: 1, validCompressed: true, standardScaffold: true, defaultScriptBytes: modifiedDefaultScript }),
+  }), errorCode("ATTACHMENT_HWP_UNSAFE"));
+  assert.throws(() => Attachment.prepareAttachment({
+    fileName: "script-trailing-data.hwp",
+    bytes: hwp({ flags: 1, validCompressed: true, standardScaffold: true, defaultScriptTrailingBytes: [0xde, 0xad, 0xbe, 0xef] }),
   }), errorCode("ATTACHMENT_HWP_UNSAFE"));
   const activeLinkDoc = Buffer.alloc(524);
   activeLinkDoc.writeUInt16LE(1, 0);

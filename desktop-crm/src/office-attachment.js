@@ -456,6 +456,24 @@ function hwpUnsafeEmbeddedBytes(bytes) {
     || /^\s*(?:<script\b|<\?php\b|#!)/i.test(bytes.subarray(0, 1024).toString("latin1"));
 }
 
+function hwpLooksLikeSafeRawBinData(name, bytes) {
+  const lowerName = String(name || "").toLocaleLowerCase("en-US");
+  try {
+    if (/\.jpe?g$/.test(lowerName)) validateJpeg(bytes);
+    else if (/\.png$/.test(lowerName)) validatePng(bytes);
+    else if (/\.webp$/.test(lowerName)) validateWebp(bytes);
+    else if (/\.gif$/.test(lowerName)) {
+      const signature = bytes.subarray(0, 6).toString("ascii");
+      if (bytes.length < 14 || !["GIF87a", "GIF89a"].includes(signature) || bytes[bytes.length - 1] !== 0x3b) return false;
+    } else if (/\.bmp$/.test(lowerName)) {
+      if (bytes.length < 26 || bytes.subarray(0, 2).toString("ascii") !== "BM" || bytes.readUInt32LE(2) !== bytes.length) return false;
+    } else return false;
+  } catch (_error) {
+    return false;
+  }
+  return true;
+}
+
 const HWP_INERT_SCRIPT_DECLARATIONS = "var Documents = XHwpDocuments;\r\nvar Document = Documents.Active_XHwpDocument;\r\n";
 const HWP_INERT_SCRIPT_EVENT = "function OnDocument_New()\r\n{\r\n\t//todo : \r\n}\r\n\r\n";
 const HWP_INERT_SCRIPT_VERSION = Buffer.from([1, 0, 0, 0, 0, 0, 0, 0]);
@@ -513,14 +531,29 @@ function validateHwp(buffer) {
   }
   const documentCompressed = (flags & 1) !== 0;
   let totalInflatedBytes = 0;
-  function inflateHwpStreamForInspection(bytes, allowRawFallback = false) {
+  function inflateHwpStreamForInspection(bytes, rawFallbackName = "") {
     if (!documentCompressed) return bytes;
-    let inflated;
+    let result;
     try {
-      inflated = zlib.inflateRawSync(bytes, { maxOutputLength: MAX_ZIP_UNCOMPRESSED_BYTES - totalInflatedBytes + 1 });
+      result = zlib.inflateRawSync(bytes, {
+        info: true,
+        maxOutputLength: MAX_ZIP_UNCOMPRESSED_BYTES - totalInflatedBytes + 1,
+      });
     } catch (error) {
-      if (allowRawFallback) return bytes;
+      const invalidDeflate = error && ["Z_DATA_ERROR", "Z_BUF_ERROR"].includes(error.code);
+      if (rawFallbackName && invalidDeflate && hwpLooksLikeSafeRawBinData(rawFallbackName, bytes)) return bytes;
       fail("ATTACHMENT_HWP_UNSAFE", "압축된 HWP 내부 스트림을 제한 범위에서 검증할 수 없습니다.");
+    }
+    if (!result || !Buffer.isBuffer(result.buffer) || !result.engine || !Number.isSafeInteger(result.engine.bytesWritten)) {
+      fail("ATTACHMENT_HWP_UNSAFE", "HWP 압축 스트림 뒤에 검증되지 않은 데이터가 포함되어 있습니다.");
+    }
+    const inflated = result.buffer;
+    const trailing = bytes.subarray(result.engine.bytesWritten);
+    const validLegacyTrailer = trailing.length === 8
+      && trailing.readUInt32LE(0) === crc32(inflated)
+      && trailing.readUInt32LE(4) === inflated.length;
+    if (trailing.length !== 0 && !validLegacyTrailer) {
+      fail("ATTACHMENT_HWP_UNSAFE", "HWP 압축 스트림 뒤에 검증되지 않은 데이터가 포함되어 있습니다.");
     }
     totalInflatedBytes += inflated.length;
     if (totalInflatedBytes > MAX_ZIP_UNCOMPRESSED_BYTES
@@ -589,7 +622,7 @@ function validateHwp(buffer) {
     if (mustBeCompressed || mayBeCompressedBinData) {
       // HWP BinData has its own per-item compression mode. A document can be
       // globally compressed while a JPEG/PNG BinData stream is stored raw.
-      inspectedBytes = inflateHwpStreamForInspection(bytes, mayBeCompressedBinData);
+      inspectedBytes = inflateHwpStreamForInspection(bytes, mayBeCompressedBinData ? entry.name : "");
     }
     if (!segments.includes("bindata")) continue;
     const name = segments[segments.length - 1];
