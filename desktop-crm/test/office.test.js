@@ -148,6 +148,7 @@ test("office UI is wired to the production CRM navigation, auth context, and can
   assert.match(main, /secureCanonicalHandle\("crm:office-attachment-open"/);
   assert.match(main, /BRING_CRM_SCREENSHOT_ACTION === "office-messenger-smoke"/);
   assert.match(main, /actor\.officeAdmin !== true/);
+  assert.doesNotMatch(main, /userId === actor\.uid/);
   assert.match(remote, /this\.dbRequest\("crmAccess"/);
   assert.match(remote, /this\.dbRequest\("teamProfiles"/);
   assert.match(remote, /OfficeCore\.mergeOfficeUsers\(users, teamProfiles\)/);
@@ -156,14 +157,17 @@ test("office UI is wired to the production CRM navigation, auth context, and can
   assert.match(remote, /session\.officeAdmin === true \? "officeAttendance" : `officeAttendance\/\$\{session\.uid\}`/);
   assert.match(remote, /officeMailbox/);
   assert.match(remote, /officeMessageFiles/);
+  assert.doesNotMatch(remote, /userId === session\.uid/);
   assert.match(ui, /브링의 업무를 한 곳에서/);
   assert.match(ui, /office-admin-calendar/);
-  assert.match(ui, /새 탭으로 보기/);
+  assert.match(ui, /근태 보기/);
   assert.match(ui, /퇴근 미기록/);
   assert.match(ui, /엑셀 다운로드/);
   assert.match(ui, /Core\.shouldSendMessageKey\(event\)/);
   assert.match(ui, /requestSubmit\(\)/);
   assert.match(ui, /data-office-display-name-form/);
+  assert.match(ui, /data-office-display-name-surface="attendance"/);
+  assert.match(ui, /전체 근태관리와 모든 사용자의 메신저에 같은 이름/);
   assert.match(ui, /saveOfficeDisplayName/);
   assert.match(ui, /data-office-attachment-pick/);
   assert.match(ui, /data-office-attachment-open/);
@@ -186,14 +190,16 @@ test("office display-name persistence writes only the validated target leaf", as
     userId: "crm-viewer",
     displayName: "  황우중  ",
   });
+  await FirebaseRemoteClient.prototype.saveOfficeDisplayName.call(fake, {
+    userId: "crm-admin",
+    displayName: "  김현진  ",
+  });
   assert.deepEqual(calls.map(call => [call.location, call.options.method, call.options.body]), [
     ["crmAccess/crm-viewer", "GET", undefined],
     ["crmAccess/crm-viewer/displayName", "PUT", "황우중"],
+    ["crmAccess/crm-admin", "GET", undefined],
+    ["crmAccess/crm-admin/displayName", "PUT", "김현진"],
   ]);
-  await assert.rejects(
-    FirebaseRemoteClient.prototype.saveOfficeDisplayName.call(fake, { userId: "crm-admin", displayName: "본인" }),
-    /수정할 구성원/,
-  );
   await assert.rejects(
     FirebaseRemoteClient.prototype.saveOfficeDisplayName.call(fake, { userId: "crm-viewer", displayName: "정상", role: "admin" }),
     /요청이 올바르지/,
@@ -202,7 +208,7 @@ test("office display-name persistence writes only the validated target leaf", as
     FirebaseRemoteClient.prototype.saveOfficeDisplayName.call({
       requireOfficeSession: () => ({ uid: "crm-member", role: "member", officeAdmin: false }),
     }, { userId: "crm-viewer", displayName: "변조" }),
-    /지정된 관리자/,
+    /지정된 근태 관리자/,
   );
   await assert.rejects(
     FirebaseRemoteClient.prototype.saveOfficeDisplayName.call({
@@ -211,6 +217,15 @@ test("office display-name persistence writes only the validated target leaf", as
       assertSessionGuardActive: () => true,
       dbRequest: async () => ({ enabled: true, role: "owner" }),
     }, { userId: "crm-owner", displayName: "권한없음" }),
+    /활성 구성원/,
+  );
+  await assert.rejects(
+    FirebaseRemoteClient.prototype.saveOfficeDisplayName.call({
+      requireOfficeSession: () => ({ uid: "crm-admin", role: "admin", officeAdmin: true }),
+      captureSessionGuard: () => ({ generation: 1 }),
+      assertSessionGuardActive: () => true,
+      dbRequest: async () => ({ enabled: true, mustChangePassword: true, role: "member" }),
+    }, { userId: "crm-pending", displayName: "대기 사용자" }),
     /활성 구성원/,
   );
 });
@@ -263,6 +278,7 @@ test("production database rules deny team attendance to ordinary CRM administrat
   assert.match(company.officeMessageFiles.$messageId[".write"], /!data\.exists\(\)/);
   assert.match(company.officeMailbox.$ownerUid.$peerUid.$messageId[".write"], /attachment/);
   assert.match(company.access.$uid.displayName[".write"], /officeAdmin/);
-  assert.match(company.access.$uid.displayName[".write"], /auth\.uid !== \$uid/);
+  assert.doesNotMatch(company.access.$uid.displayName[".write"], /auth\.uid !== \$uid/);
+  assert.match(company.access.$uid.displayName[".write"], /child\(\$uid\)\.child\('mustChangePassword'\)/);
   assert.match(company.access.$uid.displayName[".validate"], /length <= 80/);
 });

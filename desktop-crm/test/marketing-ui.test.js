@@ -76,7 +76,7 @@ test("active marketing nav exposes current page semantics", () => {
 
 test("load generations ignore stale success and stale error after invalidation", async () => {
   const deferred = [];
-  const controller = UI.createController({ core: Core, bridge: { projectFacts: store => store.facts || [] }, readRaw: () => new Promise((resolve, reject) => deferred.push({ resolve, reject })) });
+  const controller = UI.createController({ core: Core, bridge: { projectFacts: store => store.facts || [] }, readRaw: () => new Promise((resolve, reject) => deferred.push({ resolve, reject })), now: () => new Date("2026-08-31T03:00:00.000Z") });
   const first = controller.load({ uid: "a", accessRole: "admin" }, { facts: [{ caseId: "old", date: "2026-08-30", inquiries: 1 }] });
   const second = controller.load({ uid: "a", accessRole: "admin" }, { facts: [{ caseId: "new", date: "2026-08-30", inquiries: 1 }] });
   deferred[1].resolve({ daily: [] }); await second;
@@ -136,7 +136,7 @@ test("pending filters remain loading and build once with latest selection after 
 
 test("refreshFacts reprojects current store without another raw fetch", async () => {
   let reads = 0;
-  const controller = UI.createController({ core: Core, bridge: { projectFacts: store => store.facts || [] }, readRaw: async () => { reads += 1; return { daily: [] }; } });
+  const controller = UI.createController({ core: Core, bridge: { projectFacts: store => store.facts || [] }, readRaw: async () => { reads += 1; return { daily: [] }; }, now: () => new Date("2026-08-31T03:00:00.000Z") });
   await controller.load({ uid: "a", accessRole: "admin" }, { facts: [{ caseId: "one", date: "2026-08-30", inquiries: 1 }] });
   controller.refreshFacts({ facts: [{ caseId: "two", date: "2026-08-30", inquiries: 1 }] });
   assert.equal(reads, 1);

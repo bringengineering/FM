@@ -1925,17 +1925,17 @@ class FirebaseRemoteClient {
   async saveOfficeDisplayName(input) {
     const session = this.requireOfficeSession();
     if (session.officeAdmin !== true) {
-      throw createError("메신저 실제 이름은 지정된 관리자만 수정할 수 있습니다.", "ACCESS_DENIED");
+      throw createError("직원 이름은 지정된 근태 관리자만 수정할 수 있습니다.", "ACCESS_DENIED");
     }
     const source = input && typeof input === "object" && !Array.isArray(input) ? input : {};
     if (Object.keys(source).some(key => !["userId", "displayName"].includes(key))) {
-      throw createError("실제 이름 저장 요청이 올바르지 않습니다.", "VALIDATION_ERROR");
+      throw createError("직원 이름 저장 요청이 올바르지 않습니다.", "VALIDATION_ERROR");
     }
     const rawUserId = typeof source.userId === "string" ? source.userId : "";
     const userId = OfficeCore.normalizeOfficeUserId(rawUserId);
     const displayName = OfficeCore.normalizeOfficeDisplayName(source.displayName);
-    if (!userId || userId !== rawUserId || userId === session.uid || !displayName) {
-      throw createError("수정할 구성원과 실제 이름을 확인해 주세요.", "VALIDATION_ERROR");
+    if (!userId || userId !== rawUserId || !displayName) {
+      throw createError("수정할 구성원과 직원 이름을 확인해 주세요.", "VALIDATION_ERROR");
     }
     const guard = this.captureSessionGuard();
     const target = await this.dbRequest(`crmAccess/${userId}`, { method: "GET" });

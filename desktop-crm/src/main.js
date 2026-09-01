@@ -2094,16 +2094,16 @@ async function saveOfficeAttendance(input) {
 
 async function saveOfficeDisplayName(input) {
   const actor = assertOfficeSession();
-  if (actor.officeAdmin !== true) throw new Error("메신저 실제 이름은 지정된 관리자만 수정할 수 있습니다.");
+  if (actor.officeAdmin !== true) throw new Error("직원 이름은 지정된 근태 관리자만 수정할 수 있습니다.");
   const source = input && typeof input === "object" && !Array.isArray(input) ? input : {};
   if (Object.keys(source).some(key => !["userId", "displayName"].includes(key))) {
-    throw new Error("실제 이름 저장 요청이 올바르지 않습니다.");
+    throw new Error("직원 이름 저장 요청이 올바르지 않습니다.");
   }
   const rawUserId = typeof source.userId === "string" ? source.userId : "";
   const userId = OfficeCore.normalizeOfficeUserId(rawUserId);
   const displayName = OfficeCore.normalizeOfficeDisplayName(source.displayName);
-  if (!userId || userId !== rawUserId || userId === actor.uid || !displayName) {
-    throw new Error("수정할 구성원과 실제 이름을 확인해 주세요.");
+  if (!userId || userId !== rawUserId || !displayName) {
+    throw new Error("수정할 구성원과 직원 이름을 확인해 주세요.");
   }
   if (!localTestMode) {
     if (!remoteClient) throw new Error("BRING OFFICE 서버 연결을 준비하지 못했습니다.");
@@ -3194,15 +3194,58 @@ async function createWindow() {
     if (process.env.BRING_CRM_SCREENSHOT_ACTION === "office-messenger-smoke") {
       actionResult = await mainWindow.webContents.executeJavaScript(`(async () => {
         const wait = ms => new Promise(resolve => setTimeout(resolve, ms));
+        const waitFor = async (read, attempts = 60) => {
+          for (let attempt = 0; attempt < attempts; attempt += 1) {
+            const value = read();
+            if (value) return value;
+            await wait(50);
+          }
+          return null;
+        };
+        const sharedDisplayName = '황우중';
+        const userControl = (selector, userId) => [...document.querySelectorAll(selector)].find(node => (
+          node.dataset.officeDisplayNameEdit === userId
+          || node.dataset.officeAdminUser === userId
+          || node.dataset.officeUser === userId
+        ));
         document.querySelector('[data-workspace-enter="operations"]')?.click();
         await wait(180);
+        document.querySelector('[data-view="officeAdmin"]')?.click();
+        const attendanceNameButton = await waitFor(() => [...document.querySelectorAll('[data-office-display-name-edit][data-office-display-name-surface="attendance"]')]
+          .find(button => button.dataset.officeDisplayNameEdit && button.dataset.officeDisplayNameEdit !== 'local-admin'));
+        if (!attendanceNameButton) return { pass: false, reason: 'attendance name editor missing', state: window.__crmTest?.snapshot() };
+        const targetUserId = attendanceNameButton.dataset.officeDisplayNameEdit;
+        attendanceNameButton.click();
+        const attendanceNameInput = await waitFor(() => document.querySelector('[data-office-display-name-form][data-office-display-name-surface="attendance"] input'));
+        if (!attendanceNameInput) return { pass: false, reason: 'attendance name input missing', targetUserId, state: window.__crmTest?.snapshot() };
+        attendanceNameInput.value = sharedDisplayName;
+        attendanceNameInput.dispatchEvent(new Event('input', { bubbles: true }));
+        attendanceNameInput.form?.requestSubmit();
+        const attendanceListNameNode = await waitFor(() => {
+          const button = userControl('[data-office-display-name-edit][data-office-display-name-surface="attendance"]', targetUserId);
+          const name = button?.closest('tr')?.querySelector('.office-user-cell b');
+          return name?.textContent.trim() === sharedDisplayName ? name : null;
+        });
+        const attendanceListName = attendanceListNameNode?.textContent.trim() || '';
+        const attendanceOpenButton = userControl('[data-office-admin-user]', targetUserId);
+        if (!attendanceOpenButton) return { pass: false, reason: 'attendance detail button missing', targetUserId, attendanceListName, state: window.__crmTest?.snapshot() };
+        attendanceOpenButton.click();
+        const attendanceDetailNameNode = await waitFor(() => {
+          const name = document.querySelector('.office-admin-detail-head .office-admin-person h3');
+          return name?.textContent.trim() === sharedDisplayName ? name : null;
+        });
+        const attendanceDetailName = attendanceDetailNameNode?.textContent.trim() || '';
         document.querySelector('[data-view="officeMessenger"]')?.click();
-        let textarea = null;
-        for (let attempt = 0; attempt < 40; attempt += 1) {
-          textarea = document.querySelector('[data-office-message-form] textarea');
-          if (textarea) break;
-          await wait(50);
-        }
+        const messengerUserButton = await waitFor(() => userControl('[data-office-user]', targetUserId));
+        if (!messengerUserButton) return { pass: false, reason: 'messenger user missing', targetUserId, attendanceListName, attendanceDetailName, state: window.__crmTest?.snapshot() };
+        const messengerListName = messengerUserButton.querySelector('b')?.textContent.trim() || '';
+        messengerUserButton.click();
+        const messengerHeaderNameNode = await waitFor(() => {
+          const name = document.querySelector('.messenger-chat > header h3');
+          return name?.textContent.trim() === sharedDisplayName ? name : null;
+        });
+        const messengerHeaderName = messengerHeaderNameNode?.textContent.trim() || '';
+        let textarea = await waitFor(() => document.querySelector('[data-office-message-form] textarea'));
         if (!textarea) return { pass: false, reason: 'messenger composer missing', state: window.__crmTest?.snapshot() };
         const names = [...document.querySelectorAll('.messenger-user b')].map(node => node.textContent.trim()).filter(Boolean);
         const before = document.querySelectorAll('.message-row').length;
@@ -3217,30 +3260,31 @@ async function createWindow() {
         textarea.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', shiftKey: true, bubbles: true, cancelable: true }));
         await wait(80);
         const afterShiftEnter = document.querySelectorAll('.message-row').length;
+        const messageDraft = textarea?.value || '';
         const attachmentButton = document.querySelector('[data-office-attachment-pick]');
-        const nameEditButton = document.querySelector('[data-office-display-name-edit]');
-        nameEditButton?.click();
-        await wait(40);
-        const nameInput = document.querySelector('[data-office-display-name-form] input');
-        if (nameInput) {
-          nameInput.value = '황우중';
-          nameInput.dispatchEvent(new Event('input', { bubbles: true }));
-          nameInput.form?.requestSubmit();
-          await wait(180);
-        }
         const updatedNames = [...document.querySelectorAll('.messenger-user b')].map(node => node.textContent.trim()).filter(Boolean);
-        textarea = document.querySelector('[data-office-message-form] textarea');
+        document.querySelector('[data-view="officeAdmin"]')?.click();
+        const attendanceListTab = await waitFor(() => document.querySelector('[data-office-admin-tab="list"]'));
+        attendanceListTab?.click();
+        const finalAttendanceNameNode = await waitFor(() => {
+          const button = userControl('[data-office-display-name-edit][data-office-display-name-surface="attendance"]', targetUserId);
+          const name = button?.closest('tr')?.querySelector('.office-user-cell b');
+          return name?.textContent.trim() === sharedDisplayName ? name : null;
+        });
+        const finalAttendanceName = finalAttendanceNameNode?.textContent.trim() || '';
         const state = window.__crmTest?.snapshot();
-        const pass = names.length >= 1
+        const sharedNames = [attendanceListName, attendanceDetailName, messengerListName, messengerHeaderName, finalAttendanceName];
+        const pass = targetUserId !== 'local-admin'
+          && sharedNames.every(name => name === sharedDisplayName)
+          && names.length >= 1
           && names.every(name => !/^[a-z][a-z0-9._-]*[0-9]+$/i.test(name))
           && afterEnter === before + 1
           && afterShiftEnter === afterEnter
-          && textarea.value === 'Shift+Enter 줄바꿈 점검'
+          && messageDraft === 'Shift+Enter 줄바꿈 점검'
           && attachmentButton?.textContent.includes('파일')
-          && Boolean(nameEditButton && nameInput)
-          && updatedNames.includes('황우중')
-          && state?.view === 'officeMessenger';
-        return { pass, names, updatedNames, before, afterEnter, afterShiftEnter, draft: textarea.value, attachmentButton: attachmentButton?.textContent.trim() || '', nameEditor: Boolean(nameInput), state };
+          && updatedNames.includes(sharedDisplayName)
+          && state?.view === 'officeAdmin';
+        return { pass, targetUserId, sharedDisplayName, sharedNames, names, updatedNames, before, afterEnter, afterShiftEnter, draft: messageDraft, attachmentButton: attachmentButton?.textContent.trim() || '', attendanceNameEditor: Boolean(attendanceNameInput), state };
       })()`, true);
     } else if (process.env.BRING_CRM_SCREENSHOT_ACTION === "login-email-editable") {
       actionResult = await mainWindow.webContents.executeJavaScript(`(() => {

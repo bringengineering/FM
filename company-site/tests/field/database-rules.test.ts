@@ -1941,14 +1941,25 @@ describe.runIf(databaseEmulatorAvailable)("fieldPlatform database rules", () => 
     await assertFails(remove(ref(authorized, gatePath)));
   });
 
-  it("lets only a clean office administrator set a canonical peer display name", async () => {
+  it("lets only a clean office administrator set canonical staff display names", async () => {
     const displayNamePath = "crmCompany/access/crm-viewer/displayName";
+    const ownDisplayNamePath = "crmCompany/access/crm-admin/displayName";
     const officeAdmin = environment.authenticatedContext(
       "crm-admin",
       crmClaims("admin@bring.test"),
     ).database();
+    const ordinaryMember = environment.authenticatedContext(
+      "crm-legacy-member",
+      crmClaims("legacy@bring.test"),
+    ).database();
+    const viewer = environment.authenticatedContext(
+      "crm-viewer",
+      crmClaims("viewer@bring.test"),
+    ).database();
     const deniedWriters = [
       environment.unauthenticatedContext().database(),
+      ordinaryMember,
+      viewer,
       environment.authenticatedContext(
         "crm-standard-admin",
         crmClaims("standard-admin@bring.test"),
@@ -1973,7 +1984,12 @@ describe.runIf(databaseEmulatorAvailable)("fieldPlatform database rules", () => 
 
     await assertSucceeds(set(ref(officeAdmin, displayNamePath), "황우중"));
     await assertSucceeds(set(ref(officeAdmin, displayNamePath), "황우중 매니저"));
+    await assertSucceeds(set(ref(officeAdmin, ownDisplayNamePath), "김현진 관리자"));
     expect((await assertSucceeds(get(ref(officeAdmin, displayNamePath)))).val()).toBe("황우중 매니저");
+    expect((await assertSucceeds(get(ref(ordinaryMember, displayNamePath)))).val()).toBe("황우중 매니저");
+    expect((await assertSucceeds(get(ref(ordinaryMember, ownDisplayNamePath)))).val()).toBe("김현진 관리자");
+    expect((await assertSucceeds(get(ref(viewer, displayNamePath)))).val()).toBe("황우중 매니저");
+    expect((await assertSucceeds(get(ref(viewer, ownDisplayNamePath)))).val()).toBe("김현진 관리자");
 
     await assertFails(set(ref(officeAdmin, displayNamePath), ""));
     await assertFails(set(ref(officeAdmin, displayNamePath), " 앞 공백"));
@@ -1985,9 +2001,11 @@ describe.runIf(databaseEmulatorAvailable)("fieldPlatform database rules", () => 
     await assertFails(set(ref(officeAdmin, displayNamePath), "숨김\u200D문자"));
     await assertFails(set(ref(officeAdmin, displayNamePath), "가".repeat(81)));
     await assertFails(remove(ref(officeAdmin, displayNamePath)));
-    await assertFails(set(ref(officeAdmin, "crmCompany/access/crm-admin/displayName"), "본인 변경"));
+    await assertFails(set(ref(ordinaryMember, "crmCompany/access/crm-legacy-member/displayName"), "일반 구성원 본인 변경"));
+    await assertFails(set(ref(viewer, "crmCompany/access/crm-viewer/displayName"), "조회자 본인 변경"));
     await assertFails(set(ref(officeAdmin, "crmCompany/access/missing-user/displayName"), "없는 사용자"));
     await assertFails(set(ref(officeAdmin, "crmCompany/access/crm-disabled/displayName"), "비활성 사용자"));
+    await assertFails(set(ref(officeAdmin, "crmCompany/access/crm-office-pending/displayName"), "비밀번호 변경 대기 사용자"));
     await assertFails(set(ref(officeAdmin, "crmCompany/access/crm-invalid-role/displayName"), "비Office 사용자"));
     await assertFails(update(ref(officeAdmin, "crmCompany/access/crm-viewer"), {
       displayName: "권한 변조",
@@ -1995,6 +2013,7 @@ describe.runIf(databaseEmulatorAvailable)("fieldPlatform database rules", () => 
     }));
     expect((await assertSucceeds(get(ref(officeAdmin, "crmCompany/access/crm-viewer/role")))).val()).toBe("viewer");
     expect((await assertSucceeds(get(ref(officeAdmin, displayNamePath)))).val()).toBe("황우중 매니저");
+    expect((await assertSucceeds(get(ref(officeAdmin, ownDisplayNamePath)))).val()).toBe("김현진 관리자");
   });
 
   it("keeps BIRNG OFFICE attendance and messages private while granting only explicit office administrators team access", async () => {

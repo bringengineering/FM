@@ -11,6 +11,7 @@
     selectedUserId: "",
     userQuery: "",
     editingDisplayNameUserId: "",
+    displayNameEditSurface: "",
     displayNameDraft: "",
     messageDraft: "",
     pendingAttachment: null,
@@ -153,6 +154,7 @@
     state.selectedUserId = peers[0] && peers[0].uid || "";
     if (previousUserId && previousUserId !== state.selectedUserId) {
       state.editingDisplayNameUserId = "";
+      state.displayNameEditSurface = "";
       state.displayNameDraft = "";
       state.messageDraft = "";
       state.pendingAttachment = null;
@@ -239,22 +241,30 @@
     });
   }
 
+  function displayNameEditor(user, surface) {
+    if (!user
+      || !isAdmin()
+      || state.editingDisplayNameUserId !== user.uid
+      || state.displayNameEditSurface !== surface) return "";
+    const inputId = `officeDisplayName-${surface}`;
+    const label = surface === "attendance" ? "전체 화면에 표시할 직원 이름" : "선택한 구성원의 표시 이름";
+    return `<form class="office-display-name-editor ${surface === "attendance" ? "attendance" : "messenger"}" data-office-display-name-form data-office-display-name-surface="${esc(surface)}"><div class="office-display-name-copy"><label for="${esc(inputId)}">${label}</label><strong>수정 대상 · ${esc(Core.displayName(user))}${user.email ? ` · ${esc(user.email)}` : ""}</strong><span>전체 근태관리와 모든 사용자의 메신저에 같은 이름으로 표시됩니다.</span></div><input id="${esc(inputId)}" name="displayName" type="text" maxlength="80" autocomplete="off" value="${esc(state.displayNameDraft)}" required><div><button type="button" data-office-display-name-cancel>취소</button><button type="submit" ${state.busy ? "disabled" : ""}>이름 저장</button></div></form>`;
+  }
+
   function messengerView() {
     const users = messengerUsers();
     const latest = Core.latestByUser(state.data.messages, currentUserId());
     const unread = Core.unreadByUser(state.data.messages, currentUserId());
     const selected = userById(state.selectedUserId);
     const conversation = selected ? state.data.messages.filter(message => message.senderId === currentUserId() && message.receiverId === selected.uid || message.receiverId === currentUserId() && message.senderId === selected.uid) : [];
-    const displayNameEditor = selected && isAdmin() && state.editingDisplayNameUserId === selected.uid
-      ? `<form class="messenger-name-editor" data-office-display-name-form><label for="officeDisplayName">선택한 구성원의 실제 이름</label><input id="officeDisplayName" name="displayName" type="text" maxlength="80" autocomplete="off" value="${esc(state.displayNameDraft)}" required><span>메신저 사용자 목록과 대화방에 표시됩니다.</span><div><button type="button" data-office-display-name-cancel>취소</button><button type="submit" ${state.busy ? "disabled" : ""}>이름 저장</button></div></form>`
-      : "";
+    const nameEditor = displayNameEditor(selected, "messenger");
     return `<section class="office-messenger">
       <aside class="messenger-people"><header><span>BRING OFFICE</span><h2>메신저</h2><label><i>⌕</i><input type="search" data-office-user-search value="${esc(state.userQuery)}" placeholder="이름, 소속 검색"></label></header><div class="messenger-user-list">${users.length ? users.map(user => {
         const message = latest.get(user.uid);
         const count = unread.get(user.uid) || 0;
         return `<button class="messenger-user ${user.uid === state.selectedUserId ? "selected" : ""}" data-office-user="${esc(user.uid)}">${avatar(user)}<span><b>${esc(Core.displayName(user))}</b><small>${esc(message ? messagePreview(message) : userMeta(user))}</small></span><time>${esc(message ? formatMessageTime(message.createdAt).split(" ").slice(-1)[0] : "")}</time>${count ? `<em>${count}</em>` : ""}</button>`;
       }).join("") : `<div class="messenger-no-users">검색 결과가 없습니다.</div>`}</div></aside>
-      <section class="messenger-chat">${selected ? `<header>${avatar(selected, "large")}<div><h3>${esc(Core.displayName(selected))}</h3><p>${esc(userMeta(selected))}</p></div><div class="messenger-chat-actions"><span class="messenger-online"><i></i>CRM 사용자</span>${isAdmin() ? `<button type="button" class="messenger-name-edit-button" data-office-display-name-edit ${state.busy ? "disabled" : ""}>이름 수정</button>` : ""}</div></header>${displayNameEditor}<div class="message-list" data-office-message-list>${conversation.length ? conversation.map(message => {
+      <section class="messenger-chat">${selected ? `<header>${avatar(selected, "large")}<div><h3>${esc(Core.displayName(selected))}</h3><p>${esc(userMeta(selected))}</p></div><div class="messenger-chat-actions"><span class="messenger-online"><i></i>CRM 사용자</span>${isAdmin() ? `<button type="button" class="messenger-name-edit-button" data-office-display-name-edit="${esc(selected.uid)}" data-office-display-name-surface="messenger" ${state.busy ? "disabled" : ""}>이름 수정</button>` : ""}</div></header>${nameEditor}<div class="message-list" data-office-message-list>${conversation.length ? conversation.map(message => {
         const mine = message.senderId === currentUserId();
         const attachment = message.attachment;
         const attachmentOnlyText = attachment && message.message === `[파일] ${attachment.fileName}`;
@@ -297,13 +307,15 @@
     const today = Core.workDate();
     const users = state.data.users.slice().sort((a, b) => Core.displayName(a).localeCompare(Core.displayName(b), "ko"));
     const selectedUser = users.find(user => user.uid === state.selectedAdminUserId) || null;
+    const editingUser = users.find(user => user.uid === state.editingDisplayNameUserId) || null;
+    const attendanceNameEditor = displayNameEditor(editingUser, "attendance");
     if (!selectedUser && state.adminTab === "detail") state.adminTab = "list";
-    const hero = officeHero("전체 근태관리", "지정된 근태 관리자만 직원별 월간 기록을 확인합니다", `<span class="office-admin-lock">◇ 관리자 전용</span><button class="secondary-button" data-office-refresh>새로고침</button>`);
+    const hero = officeHero("전체 근태관리", "직원 이름과 월간 근태 기록을 한 곳에서 관리합니다", `<span class="office-admin-lock">◇ 관리자 전용</span><button class="secondary-button" data-office-refresh>새로고침</button>`);
 
     if (state.adminTab === "detail" && selectedUser) {
       const summary = Core.monthlyAttendanceSummary(rows, selectedUser.uid, state.adminMonth);
-      return `${hero}${adminTabs(selectedUser)}<section class="office-admin-detail office-admin-calendar-tab">
-        <header class="office-admin-detail-head"><div class="office-admin-person">${avatar(selectedUser, "large")}<div><span>EMPLOYEE ATTENDANCE</span><h3>${esc(Core.displayName(selectedUser))}</h3><p>${esc(userMeta(selectedUser))}</p></div></div><div class="office-admin-month-actions"><button data-office-admin-month="previous" aria-label="이전 달">‹</button><strong>${esc(state.adminMonth.replace("-", ". "))}</strong><button data-office-admin-month="next" aria-label="다음 달">›</button><button class="attendance-today-button" data-office-admin-month="today">이번 달</button><button class="office-excel-button" data-office-attendance-export ${state.busy ? "disabled" : ""}><span>⇩</span> 엑셀 다운로드</button></div></header>
+      return `${hero}${adminTabs(selectedUser)}${attendanceNameEditor}<section class="office-admin-detail office-admin-calendar-tab">
+        <header class="office-admin-detail-head"><div class="office-admin-person">${avatar(selectedUser, "large")}<div><span>EMPLOYEE ATTENDANCE</span><h3>${esc(Core.displayName(selectedUser))}</h3><p>${esc(userMeta(selectedUser))}</p></div><button type="button" class="office-admin-name-button" aria-label="${esc(Core.displayName(selectedUser))} 이름 수정" data-office-display-name-edit="${esc(selectedUser.uid)}" data-office-display-name-surface="attendance" ${state.busy ? "disabled" : ""}>이름 수정</button></div><div class="office-admin-month-actions"><button data-office-admin-month="previous" aria-label="이전 달">‹</button><strong>${esc(state.adminMonth.replace("-", ". "))}</strong><button data-office-admin-month="next" aria-label="다음 달">›</button><button class="attendance-today-button" data-office-admin-month="today">이번 달</button><button class="office-excel-button" data-office-attendance-export ${state.busy ? "disabled" : ""}><span>⇩</span> 엑셀 다운로드</button></div></header>
         <div class="office-admin-month-kpis"><article><span>출근 일수</span><b>${summary.attendedDays}<small>일</small></b></article><article><span>퇴근 완료</span><b>${summary.completedDays}<small>일</small></b></article><article class="${summary.missingCheckoutDays ? "warning" : ""}"><span>퇴근 미기록</span><b>${summary.missingCheckoutDays}<small>일</small></b></article><article><span>총 근무시간</span><b>${esc(durationText(summary.totalMinutes))}</b></article></div>
         ${adminCalendar(summary, today)}
         <footer class="office-admin-detail-note"><b>퇴근 미기록 처리 안내</b><span>과거 날짜에 출근 기록만 있고 퇴근 기록이 없으면 자동으로 ‘퇴근 미기록’으로 표시됩니다. 관리자가 실제 퇴근 시간을 확인한 뒤 정정하는 승인 흐름을 권장합니다.</span></footer>
@@ -317,10 +329,10 @@
     const employeeRows = users.map(user => {
       const summary = Core.monthlyAttendanceSummary(rows, user.uid, state.adminMonth);
       const latest = latestFor(user.uid);
-      return `<tr class="office-admin-user-row" data-office-admin-user="${esc(user.uid)}" tabindex="0" role="button" aria-label="${esc(Core.displayName(user))} 월별 근태 탭 열기"><td><div class="office-user-cell">${avatar(user, "small")}<span><b>${esc(Core.displayName(user))}</b><small>${esc(userMeta(user))}</small></span></div></td><td><b>${summary.attendedDays}일</b></td><td>${esc(formatTime(latest && latest.checkInAt))}</td><td>${esc(formatTime(latest && latest.checkOutAt))}</td><td>${latest ? `<span class="office-status ${Core.attendanceReviewStatus(latest, today) === "퇴근 미기록" ? "missing" : statusClass(latest)}"><i></i>${esc(Core.attendanceReviewStatus(latest, today))}</span>` : statusPill(null)}</td><td><span class="office-row-arrow">새 탭으로 보기 →</span></td></tr>`;
+      return `<tr class="office-admin-user-row"><td><div class="office-user-cell">${avatar(user, "small")}<span><b>${esc(Core.displayName(user))}</b><small>${esc(userMeta(user))}</small></span></div></td><td><b>${summary.attendedDays}일</b></td><td>${esc(formatTime(latest && latest.checkInAt))}</td><td>${esc(formatTime(latest && latest.checkOutAt))}</td><td>${latest ? `<span class="office-status ${Core.attendanceReviewStatus(latest, today) === "퇴근 미기록" ? "missing" : statusClass(latest)}"><i></i>${esc(Core.attendanceReviewStatus(latest, today))}</span>` : statusPill(null)}</td><td><div class="office-admin-row-actions"><button type="button" class="office-admin-name-button" aria-label="${esc(Core.displayName(user))} 이름 수정" data-office-display-name-edit="${esc(user.uid)}" data-office-display-name-surface="attendance" ${state.busy ? "disabled" : ""}>이름 수정</button><button type="button" class="office-admin-open-button" aria-label="${esc(Core.displayName(user))} 근태 보기" data-office-admin-user="${esc(user.uid)}">근태 보기 →</button></div></td></tr>`;
     }).join("");
-    return `${hero}${adminTabs(selectedUser)}<section class="office-admin-kpis"><article><span>오늘 출근</span><b>${todayRows.length}</b><small>명</small></article><article><span>현재 근무 중</span><b>${working}</b><small>명</small></article><article><span>퇴근 완료</span><b>${completed}</b><small>명</small></article><article><span>등록 직원</span><b>${state.data.users.length}</b><small>명</small></article></section>
-      <section class="office-panel office-admin-users"><header><div><span>TEAM ATTENDANCE</span><h3>직원별 근태 기록</h3></div><small>${esc(state.adminMonth)} 기준 · 직원을 클릭해 전용 탭 열기</small></header><div class="office-table-wrap"><table class="office-table"><thead><tr><th>직원</th><th>월 출근</th><th>최근 출근</th><th>최근 퇴근</th><th>최근 상태</th><th></th></tr></thead><tbody>${employeeRows}</tbody></table></div></section>`;
+    return `${hero}${adminTabs(selectedUser)}${attendanceNameEditor}<section class="office-admin-kpis"><article><span>오늘 출근</span><b>${todayRows.length}</b><small>명</small></article><article><span>현재 근무 중</span><b>${working}</b><small>명</small></article><article><span>퇴근 완료</span><b>${completed}</b><small>명</small></article><article><span>등록 직원</span><b>${state.data.users.length}</b><small>명</small></article></section>
+      <section class="office-panel office-admin-users"><header><div><span>TEAM ATTENDANCE</span><h3>직원별 근태 기록</h3></div><small>${esc(state.adminMonth)} 기준 · 근태 보기 버튼으로 전용 탭 열기</small></header><div class="office-table-wrap"><table class="office-table"><thead><tr><th>직원</th><th>월 출근</th><th>최근 출근</th><th>최근 퇴근</th><th>최근 상태</th><th></th></tr></thead><tbody>${employeeRows}</tbody></table></div></section>`;
   }
 
   function renderCurrent() {
@@ -363,6 +375,7 @@
   async function selectUser(uid) {
     if (state.selectedUserId !== uid) {
       state.editingDisplayNameUserId = "";
+      state.displayNameEditSurface = "";
       state.displayNameDraft = "";
       state.messageDraft = "";
       state.pendingAttachment = null;
@@ -435,11 +448,14 @@
     }
   }
 
-  function beginDisplayNameEdit() {
-    const selected = userById(state.selectedUserId);
-    if (!isAdmin() || !selected || state.busy) return;
-    state.editingDisplayNameUserId = selected.uid;
-    state.displayNameDraft = Core.displayName(selected);
+  function beginDisplayNameEdit(userId, surface) {
+    const targetUid = Core.normalizeOfficeUserId(userId);
+    const target = userById(targetUid);
+    const editSurface = surface === "attendance" ? "attendance" : "messenger";
+    if (!isAdmin() || !target || state.busy) return;
+    state.editingDisplayNameUserId = target.uid;
+    state.displayNameEditSurface = editSurface;
+    state.displayNameDraft = Core.displayName(target);
     renderCurrent();
     const input = document.querySelector("[data-office-display-name-form] input");
     input?.focus();
@@ -448,6 +464,7 @@
 
   function cancelDisplayNameEdit() {
     state.editingDisplayNameUserId = "";
+    state.displayNameEditSurface = "";
     state.displayNameDraft = "";
     renderCurrent();
   }
@@ -455,24 +472,26 @@
   async function saveDisplayName(value) {
     const targetUid = Core.normalizeOfficeUserId(state.editingDisplayNameUserId);
     const displayName = Core.normalizeOfficeDisplayName(value);
-    if (!isAdmin() || !targetUid || targetUid !== state.selectedUserId || state.busy) return;
+    const target = userById(targetUid);
+    if (!isAdmin() || !targetUid || !target || state.busy) return;
     if (!displayName) {
-      notify("실제 이름은 제어문자 없이 80자 이내로 입력해 주세요.", "error");
+      notify("직원 이름은 제어문자 없이 80자 이내로 입력해 주세요.", "error");
       return;
     }
     state.busy = true;
     renderCurrent();
     try {
       const result = await state.context.api.saveOfficeDisplayName({ userId: targetUid, displayName });
-      if (!result || result.ok === false) throw new Error(result && result.error || "실제 이름을 저장하지 못했습니다.");
+      if (!result || result.ok === false) throw new Error(result && result.error || "직원 이름을 저장하지 못했습니다.");
       state.data = Core.normalizeOfficePayload(result.data || await state.context.api.loadOffice(), currentUser());
       if (state.editingDisplayNameUserId === targetUid) {
         state.editingDisplayNameUserId = "";
+        state.displayNameEditSurface = "";
         state.displayNameDraft = "";
       }
-      notify("메신저에 표시할 실제 이름을 저장했습니다.", "success");
+      notify("직원 이름을 저장했습니다. 전체 근태관리와 모든 사용자의 메신저에 반영됩니다.", "success");
     } catch (error) {
-      notify(error.message || "실제 이름을 저장하지 못했습니다.", "error");
+      notify(error.message || "직원 이름을 저장하지 못했습니다.", "error");
     } finally {
       state.busy = false;
       renderCurrent();
@@ -520,6 +539,12 @@
     }
     const refresh = event.target.closest("[data-office-refresh]");
     if (refresh) { load(true); return; }
+    const displayNameEdit = event.target.closest("[data-office-display-name-edit]");
+    if (displayNameEdit) {
+      beginDisplayNameEdit(displayNameEdit.dataset.officeDisplayNameEdit, displayNameEdit.dataset.officeDisplayNameSurface);
+      return;
+    }
+    if (event.target.closest("[data-office-display-name-cancel]")) { cancelDisplayNameEdit(); return; }
     const adminTab = event.target.closest("[data-office-admin-tab]");
     if (adminTab) {
       if (adminTab.dataset.officeAdminTab === "detail" && event.target.closest("i")) {
@@ -531,6 +556,7 @@
     }
     const adminUser = event.target.closest("[data-office-admin-user]");
     if (adminUser) {
+      cancelDisplayNameEdit();
       state.selectedAdminUserId = adminUser.dataset.officeAdminUser;
       state.adminTab = "detail";
       renderCurrent();
@@ -545,8 +571,6 @@
     if (event.target.closest("[data-office-attendance-export]")) { exportAdminAttendance(); return; }
     const attendance = event.target.closest("[data-office-attendance]");
     if (attendance) { attendanceAction(attendance.dataset.officeAttendance); return; }
-    if (event.target.closest("[data-office-display-name-edit]")) { beginDisplayNameEdit(); return; }
-    if (event.target.closest("[data-office-display-name-cancel]")) { cancelDisplayNameEdit(); return; }
     if (event.target.closest("[data-office-attachment-pick]")) { pickMessageAttachment(); return; }
     if (event.target.closest("[data-office-attachment-remove]")) {
       state.pendingAttachment = null;
@@ -621,6 +645,7 @@
       state.error = "";
       state.selectedUserId = "";
       state.editingDisplayNameUserId = "";
+      state.displayNameEditSurface = "";
       state.displayNameDraft = "";
       state.messageDraft = "";
       state.pendingAttachment = null;
