@@ -9,7 +9,7 @@ import {
   initializeTestEnvironment,
   type RulesTestEnvironment,
 } from "@firebase/rules-unit-testing";
-import { get, ref, remove, set, update } from "firebase/database";
+import { get, ref, remove, serverTimestamp, set, update } from "firebase/database";
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 
 const PROJECT_ID = "demo-bring-field-platform";
@@ -1897,6 +1897,61 @@ afterAll(async () => {
 });
 
 describe.runIf(databaseEmulatorAvailable)("fieldPlatform database rules", () => {
+  it("keeps the company quote supplier fixed, readable by clean staff, and writable only by admins", async () => {
+    const path = "crmCompany/quoteSupplier";
+    const admin = environment.authenticatedContext(
+      "crm-admin",
+      crmClaims("admin@bring.test"),
+    ).database();
+    const standardAdmin = environment.authenticatedContext(
+      "crm-standard-admin",
+      crmClaims("standard-admin@bring.test"),
+    ).database();
+    const member = environment.authenticatedContext(
+      "crm-legacy-member",
+      crmClaims("legacy@bring.test"),
+    ).database();
+    const viewer = environment.authenticatedContext(
+      "crm-viewer",
+      crmClaims("viewer@bring.test"),
+    ).database();
+    const record = (version: number, updatedByAuthUid: string) => ({
+      businessName: "테스트 상호",
+      representative: "테스트 대표",
+      registrationNumber: "123-45-67890",
+      version,
+      updatedAtMs: serverTimestamp(),
+      updatedByAuthUid,
+    });
+
+    await assertSucceeds(set(ref(admin, path), record(1, "crm-admin")));
+    for (const database of [admin, standardAdmin, member, viewer]) {
+      await assertSucceeds(get(ref(database, path)));
+    }
+
+    const rejected = [
+      environment.unauthenticatedContext().database(),
+      environment.authenticatedContext("crm-member", crmClaims("member@bring.test")).database(),
+      environment.authenticatedContext("crm-disabled", crmClaims("disabled@bring.test")).database(),
+      environment.authenticatedContext("crm-viewer", crmClaims("wrong@bring.test")).database(),
+      environment.authenticatedContext("crm-admin", crmPasswordClaims("admin@bring.test", false)).database(),
+    ];
+    for (const database of rejected) {
+      await assertFails(get(ref(database, path)));
+      await assertFails(set(ref(database, path), record(2, "crm-admin")));
+    }
+    await assertFails(set(ref(member, path), record(2, "crm-legacy-member")));
+    await assertFails(set(ref(viewer, path), record(2, "crm-viewer")));
+    await assertSucceeds(set(ref(standardAdmin, path), record(2, "crm-standard-admin")));
+    await assertFails(set(ref(standardAdmin, path), record(2, "crm-standard-admin")));
+    await assertFails(set(ref(standardAdmin, path), { ...record(3, "crm-standard-admin"), unexpected: true }));
+    await assertFails(set(ref(standardAdmin, path), { ...record(3, "crm-standard-admin"), registrationNumber: "1234567890" }));
+    await assertFails(set(ref(standardAdmin, path), { ...record(3, "crm-standard-admin"), businessName: "" }));
+    await assertFails(set(ref(standardAdmin, path), { ...record(3, "crm-standard-admin"), businessName: " 앞 공백" }));
+    await assertFails(set(ref(standardAdmin, path), { ...record(3, "crm-standard-admin"), representative: "정상처럼\u202E보이는 이름" }));
+    await assertFails(remove(ref(standardAdmin, path)));
+  });
+
   it("lets only the verified password user clear their own first-password gate", async () => {
     const gatePath = "crmCompany/access/crm-member/mustChangePassword";
     const authorized = environment.authenticatedContext(

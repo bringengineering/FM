@@ -1307,19 +1307,44 @@ function normalizeQuoteSupplier(value, options = {}) {
 
 async function loadQuoteSupplier() {
   if (!authState().user) throw Object.assign(new Error("다시 로그인해 주세요."), { code: "AUTH_REQUIRED" });
+  const user = authState().user;
+  let cached = null;
+  try { cached = await readLocalQuoteSupplier(); }
+  catch (error) { if (localTestMode) throw error; }
+  if (localTestMode) {
+    return { ok: true, supplier: cached || normalizeQuoteSupplier({}), configured: Boolean(cached), canConfigure: user.role === "admin", cached: Boolean(cached) };
+  }
+  if (!remoteClient) throw Object.assign(new Error("회사 공급자 설정에 연결할 수 없습니다."), { code: "REMOTE_UNAVAILABLE" });
   try {
-    const raw = await fs.readFile(quoteSupplierFile(), "utf8");
-    const decoded = decodeProtectedJson(safeStorage, raw);
-    if (!decoded.encrypted) throw Object.assign(new Error("암호화되지 않은 공급자 정보는 열지 않았습니다."), { code: "PROTECTED_DATA_REQUIRED" });
-    return { ok: true, supplier: normalizeQuoteSupplier(decoded.value) };
+    let record = await remoteClient.loadQuoteSupplier();
+    if (!record && cached && user.role === "admin") record = await remoteClient.saveQuoteSupplier(cached);
+    if (record) {
+      const supplier = normalizeQuoteSupplier(record, { requireComplete: true });
+      await writeLocalQuoteSupplier(supplier);
+      return { ok: true, supplier, configured: true, canConfigure: user.role === "admin", cached: false };
+    }
+    return { ok: true, supplier: normalizeQuoteSupplier({}), configured: false, canConfigure: user.role === "admin", cached: false };
   } catch (error) {
-    if (error && error.code === "ENOENT") return { ok: true, supplier: normalizeQuoteSupplier({}) };
+    if (cached && ["NETWORK", "DATABASE_ERROR"].includes(String(error && error.code || ""))) {
+      return { ok: true, supplier: cached, configured: true, canConfigure: false, cached: true };
+    }
     throw error;
   }
 }
 
-async function saveQuoteSupplier(input) {
-  if (!authState().user) throw Object.assign(new Error("다시 로그인해 주세요."), { code: "AUTH_REQUIRED" });
+async function readLocalQuoteSupplier() {
+  try {
+    const raw = await fs.readFile(quoteSupplierFile(), "utf8");
+    const decoded = decodeProtectedJson(safeStorage, raw);
+    if (!decoded.encrypted) throw Object.assign(new Error("암호화되지 않은 공급자 정보는 열지 않았습니다."), { code: "PROTECTED_DATA_REQUIRED" });
+    return normalizeQuoteSupplier(decoded.value, { requireComplete: true });
+  } catch (error) {
+    if (error && error.code === "ENOENT") return null;
+    throw error;
+  }
+}
+
+async function writeLocalQuoteSupplier(input) {
   const supplier = normalizeQuoteSupplier(input, { requireComplete: true });
   const target = quoteSupplierFile();
   const temp = `${target}.tmp.${process.pid}.${crypto.randomBytes(6).toString("hex")}`;
@@ -1331,7 +1356,17 @@ async function saveQuoteSupplier(input) {
     try { await fs.unlink(temp); } catch (cleanupError) { if (cleanupError && cleanupError.code !== "ENOENT") console.warn("quote supplier temp cleanup failed"); }
     throw error;
   }
-  return { ok: true, supplier };
+  return supplier;
+}
+
+async function saveQuoteSupplier(input) {
+  const user = authState().user;
+  if (!user) throw Object.assign(new Error("다시 로그인해 주세요."), { code: "AUTH_REQUIRED" });
+  if (user.role !== "admin") throw Object.assign(new Error("회사 공급자 정보는 관리자만 등록할 수 있습니다."), { code: "ACCESS_DENIED" });
+  const supplier = normalizeQuoteSupplier(input, { requireComplete: true });
+  const saved = localTestMode ? supplier : await remoteClient.saveQuoteSupplier(supplier);
+  const cached = await writeLocalQuoteSupplier(saved);
+  return { ok: true, supplier: cached, configured: true, canConfigure: true, cached: false };
 }
 
 function pendingFile() {
@@ -3465,6 +3500,8 @@ async function createWindow() {
           supplierInput.dispatchEvent(new Event('change', { bubbles: true }));
           await wait(30);
         }
+        document.querySelector('[data-ai-quote-supplier-save]')?.click();
+        for (let attempt = 0; attempt < 40 && !document.querySelector('.ai-quote-supplier-fixed'); attempt += 1) await wait(50);
         const input = document.querySelector('[data-ai-quote-content]');
         if (!input) return { pass: false, reason: 'quote input missing', state: window.__crmTest?.snapshot() };
         input.value = '햇빛빌라 입주청소 12만원';

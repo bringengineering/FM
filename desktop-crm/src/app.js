@@ -139,7 +139,7 @@
   let valueScopeResizeObserver = null;
   let valueScopeOpenGeneration = 0;
   let valueScopeViewRequested = false;
-  let aiAssistantState = { tab: "report", task: "assistant_summary", content: "", customerType: "", workType: "", result: null, warnings: [], loading: false, error: "", quoteContent: "", quote: null, quoteWarnings: [], quoteLoading: false, quoteError: "", supplier: { businessName: "", representative: "", registrationNumber: "" }, supplierLoaded: false, supplierLoading: false, supplierSaving: false, supplierDirty: false, supplierError: "" };
+  let aiAssistantState = { tab: "report", task: "assistant_summary", content: "", customerType: "", workType: "", result: null, warnings: [], loading: false, error: "", quoteContent: "", quote: null, quoteWarnings: [], quoteLoading: false, quoteError: "", supplier: { businessName: "", representative: "", registrationNumber: "" }, supplierLoaded: false, supplierLoading: false, supplierSaving: false, supplierDirty: false, supplierConfigured: false, supplierCanConfigure: false, supplierCached: false, supplierError: "" };
   let salesAutomationState = { drafts: new Map(), loadingId: "", rows: [] };
   let workAutomationState = { drafts: new Map(), loadingId: "", expanded: false };
   let managementReportState = { month: Core.dayKey().slice(0, 7), result: null, loading: false, error: "" };
@@ -3015,7 +3015,14 @@
 
   function quoteSupplierFields() {
     const supplier = aiAssistantState.supplier;
-    return `<section class="ai-quote-supplier-editor"><header><div><b>공급자 정보</b><small>견적서마다 동일하게 사용 · AI 전송 안 함</small></div><button type="button" data-ai-quote-supplier-save${aiAssistantState.supplierLoading || aiAssistantState.supplierSaving ? " disabled" : ""}>${aiAssistantState.supplierSaving ? "저장 중…" : "암호화 저장"}</button></header><div><label><span>상호</span><input data-ai-quote-supplier="businessName" maxlength="80" autocomplete="organization" value="${attr(supplier.businessName)}" placeholder="상호를 입력하세요"></label><label><span>대표자</span><input data-ai-quote-supplier="representative" maxlength="40" autocomplete="off" value="${attr(supplier.representative)}" placeholder="대표자명을 입력하세요"></label><label class="wide"><span>사업자등록번호</span><input data-ai-quote-supplier="registrationNumber" maxlength="12" inputmode="numeric" autocomplete="off" value="${attr(supplier.registrationNumber)}" placeholder="000-00-00000"></label></div>${aiAssistantState.supplierError ? `<p class="ai-quote-supplier-error" role="alert">${esc(aiAssistantState.supplierError)}</p>` : `<p>Windows 보안 저장소로 암호화되며 견적서 이미지와 엑셀에만 표시됩니다.</p>`}</section>`;
+    if (aiAssistantState.supplierLoading) return `<section class="ai-quote-supplier-editor ai-quote-supplier-status"><b>회사 공급자 정보를 불러오는 중…</b></section>`;
+    if (aiAssistantState.supplierConfigured && QuoteCore.supplierComplete(supplier)) {
+      return `<section class="ai-quote-supplier-editor ai-quote-supplier-fixed"><header><div><b>공급자 정보</b><small>회사 공통 고정값 · AI 전송 안 함</small></div><span>고정</span></header><dl><div><dt>상호</dt><dd>${esc(supplier.businessName)}</dd></div><div><dt>대표자</dt><dd>${esc(supplier.representative)}</dd></div><div><dt>사업자등록번호</dt><dd>${esc(supplier.registrationNumber)}</dd></div></dl><p>${aiAssistantState.supplierCached ? "서버 연결 전 마지막 암호화 저장값을 사용 중입니다." : "모든 견적서 이미지와 엑셀 파일에 동일하게 적용됩니다."}</p></section>`;
+    }
+    if (!aiAssistantState.supplierCanConfigure) {
+      return `<section class="ai-quote-supplier-editor ai-quote-supplier-status"><b>회사 공급자 정보가 아직 등록되지 않았습니다</b><p>${aiAssistantState.supplierError ? esc(aiAssistantState.supplierError) : "관리자 계정에서 최초 1회 등록해 주세요."}</p></section>`;
+    }
+    return `<section class="ai-quote-supplier-editor"><header><div><b>회사 공급자 최초 등록</b><small>관리자 1회 등록 후 모든 직원에게 고정 적용</small></div><button type="button" data-ai-quote-supplier-save${aiAssistantState.supplierSaving ? " disabled" : ""}>${aiAssistantState.supplierSaving ? "등록 중…" : "회사 공통 등록"}</button></header><div><label><span>상호</span><input data-ai-quote-supplier="businessName" maxlength="80" autocomplete="organization" value="${attr(supplier.businessName)}" placeholder="상호를 입력하세요"></label><label><span>대표자</span><input data-ai-quote-supplier="representative" maxlength="40" autocomplete="off" value="${attr(supplier.representative)}" placeholder="대표자명을 입력하세요"></label><label class="wide"><span>사업자등록번호</span><input data-ai-quote-supplier="registrationNumber" maxlength="12" inputmode="numeric" autocomplete="off" value="${attr(supplier.registrationNumber)}" placeholder="000-00-00000"></label></div>${aiAssistantState.supplierError ? `<p class="ai-quote-supplier-error" role="alert">${esc(aiAssistantState.supplierError)}</p>` : `<p>사업자등록증의 상호·대표자·등록번호를 최초 1회만 입력합니다.</p>`}</section>`;
   }
 
   function applySupplierToQuote() {
@@ -3032,6 +3039,9 @@
     try {
       const result = await api.loadQuoteSupplier();
       if (!aiAssistantState.supplierDirty) aiAssistantState.supplier = QuoteCore.normalizeSupplier(result && result.supplier);
+      aiAssistantState.supplierConfigured = Boolean(result && result.configured);
+      aiAssistantState.supplierCanConfigure = Boolean(result && result.canConfigure);
+      aiAssistantState.supplierCached = Boolean(result && result.cached);
       aiAssistantState.supplierLoaded = true;
       applySupplierToQuote();
     } catch (error) {
@@ -3055,8 +3065,11 @@
       aiAssistantState.supplier = QuoteCore.normalizeSupplier(result && result.supplier, { requireComplete: true });
       aiAssistantState.supplierLoaded = true;
       aiAssistantState.supplierDirty = false;
+      aiAssistantState.supplierConfigured = true;
+      aiAssistantState.supplierCanConfigure = Boolean(result && result.canConfigure);
+      aiAssistantState.supplierCached = false;
       applySupplierToQuote();
-      showToast("공급자 정보를 이 PC에 암호화 저장했습니다.", "success");
+      showToast("회사 공통 공급자 정보로 고정 등록했습니다.", "success");
     } catch (error) {
       aiAssistantState.supplierError = error.message || "공급자 정보를 저장하지 못했습니다.";
     } finally {
@@ -3074,7 +3087,7 @@
   function renderAiQuoteAssistant() {
     const quote = aiAssistantState.quote;
     const canExport = Boolean(quote && QuoteCore.supplierComplete(quote.company));
-    return `<section class="ai-assistant-hero ai-quote-hero"><div><span>BRING CRM AI · QUOTE</span><h2>한 줄로 요청하면 BRING 견적서가 완성됩니다</h2><p>현장명·작업명·최종 금액을 입력하세요. 입력 금액은 그대로 고정하고 AI는 품목과 상세 작업 범위만 구성합니다.</p></div><div class="ai-quote-hero-mark">₩</div></section><section class="ai-quote-layout"><form class="ai-assistant-card ai-quote-compose" data-ai-quote-form>${quoteSupplierFields()}<div class="ai-quote-step"><span>01</span><div><b>간단히 입력</b><small>현장명 + 작업 + 금액</small></div></div><label class="ai-content-field"><span>어떤 견적서가 필요한가요?</span><textarea data-ai-quote-content maxlength="2000" placeholder="예: 햇빛빌라 입주청소 12만원">${esc(aiAssistantState.quoteContent)}</textarea></label><div class="ai-quote-examples"><span>빠른 예시</span>${["햇빛빌라 입주청소 12만원", "늘봄상가 공용부청소 35만원", "푸른빌딩 예초작업 48만원"].map(value => `<button type="button" data-ai-quote-example="${attr(value)}">${esc(value)}</button>`).join("")}</div><button type="button" class="primary-button ai-quote-generate" data-ai-quote-generate${aiAssistantState.quoteLoading || !aiAssistantState.quoteContent.trim() ? " disabled" : ""}>${aiAssistantState.quoteLoading ? "AI가 견적서를 작성 중…" : "✦ AI 견적서 만들기"}</button>${aiAssistantState.quoteError ? `<div class="ai-error" role="alert">${esc(aiAssistantState.quoteError)}</div>` : ""}${aiAssistantState.quoteWarnings.length ? `<ul class="ai-warning-list">${aiAssistantState.quoteWarnings.map(item => `<li>${esc(item)}</li>`).join("")}</ul>` : ""}${quote ? `<div class="ai-quote-step ai-quote-step-second"><span>02</span><div><b>세부 품목 확인</b><small>이미지·엑셀 저장 전 수정할 수 있습니다</small></div></div><div class="ai-quote-editor">${quoteEditorRows(quote)}</div>` : ""}</form><section class="ai-quote-preview-card"><header><div><span>BRING 표준 양식</span><b>견적서 미리보기</b></div><div><button type="button" data-ai-quote-export="png"${canExport ? "" : " disabled"}>▧ 이미지</button><button type="button" class="primary" data-ai-quote-export="xlsx"${canExport ? "" : " disabled"}>▦ 엑셀 파일</button></div></header><div class="ai-quote-paper">${quotePreviewHtml(quote)}</div><footer>${canExport ? "AI가 작성한 초안입니다. 품목·금액·작업 범위를 확인한 뒤 발행하세요." : "상호·대표자·사업자등록번호를 모두 저장하면 이미지와 엑셀을 내보낼 수 있습니다."}</footer></section></section>`;
+    return `<section class="ai-assistant-hero ai-quote-hero"><div><span>BRING CRM AI · QUOTE</span><h2>한 줄로 요청하면 BRING 견적서가 완성됩니다</h2><p>현장명·작업명·최종 금액을 입력하세요. 입력 금액은 그대로 고정하고 AI는 품목과 상세 작업 범위만 구성합니다.</p></div><div class="ai-quote-hero-mark">₩</div></section><section class="ai-quote-layout"><form class="ai-assistant-card ai-quote-compose" data-ai-quote-form>${quoteSupplierFields()}<div class="ai-quote-step"><span>01</span><div><b>간단히 입력</b><small>현장명 + 작업 + 금액</small></div></div><label class="ai-content-field"><span>어떤 견적서가 필요한가요?</span><textarea data-ai-quote-content maxlength="2000" placeholder="예: 햇빛빌라 입주청소 12만원">${esc(aiAssistantState.quoteContent)}</textarea></label><div class="ai-quote-examples"><span>빠른 예시</span>${["햇빛빌라 입주청소 12만원", "늘봄상가 공용부청소 35만원", "푸른빌딩 예초작업 48만원"].map(value => `<button type="button" data-ai-quote-example="${attr(value)}">${esc(value)}</button>`).join("")}</div><button type="button" class="primary-button ai-quote-generate" data-ai-quote-generate${aiAssistantState.quoteLoading || !aiAssistantState.quoteContent.trim() ? " disabled" : ""}>${aiAssistantState.quoteLoading ? "AI가 견적서를 작성 중…" : "✦ AI 견적서 만들기"}</button>${aiAssistantState.quoteError ? `<div class="ai-error" role="alert">${esc(aiAssistantState.quoteError)}</div>` : ""}${aiAssistantState.quoteWarnings.length ? `<ul class="ai-warning-list">${aiAssistantState.quoteWarnings.map(item => `<li>${esc(item)}</li>`).join("")}</ul>` : ""}${quote ? `<div class="ai-quote-step ai-quote-step-second"><span>02</span><div><b>세부 품목 확인</b><small>이미지·엑셀 저장 전 수정할 수 있습니다</small></div></div><div class="ai-quote-editor">${quoteEditorRows(quote)}</div>` : ""}</form><section class="ai-quote-preview-card"><header><div><span>BRING 표준 양식</span><b>견적서 미리보기</b></div><div><button type="button" data-ai-quote-export="png"${canExport ? "" : " disabled"}>▧ 이미지</button><button type="button" class="primary" data-ai-quote-export="xlsx"${canExport ? "" : " disabled"}>▦ 엑셀 파일</button></div></header><div class="ai-quote-paper">${quotePreviewHtml(quote)}</div><footer>${canExport ? "AI가 작성한 초안입니다. 품목·금액·작업 범위를 확인한 뒤 발행하세요." : "회사 공급자 정보가 등록되면 이미지와 엑셀을 내보낼 수 있습니다."}</footer></section></section>`;
   }
 
   async function requestAiAssistantDraft() {

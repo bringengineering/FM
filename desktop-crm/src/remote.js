@@ -441,6 +441,40 @@ function createError(message, code, cause) {
   return error;
 }
 
+function normalizeQuoteSupplierRecord(value, options = {}) {
+  const source = value && typeof value === "object" && !Array.isArray(value) ? value : {};
+  const allowed = options.stored
+    ? new Set(["businessName", "representative", "registrationNumber", "version", "updatedAtMs", "updatedByAuthUid"])
+    : new Set(["businessName", "representative", "registrationNumber"]);
+  if (Object.keys(source).some(key => !allowed.has(key))) {
+    throw createError("공급자 정보 형식이 올바르지 않습니다.", "VALIDATION_ERROR");
+  }
+  const clean = (key, maxLength) => {
+    const text = String(source[key] || "").trim();
+    if (text.length > maxLength || /[\u0000-\u001f\u007f-\u009f\u00ad\u061c\u200b-\u200f\u202a-\u202e\u2060-\u206f\ufeff]/i.test(text)) {
+      throw createError("공급자 정보 형식이 올바르지 않습니다.", "VALIDATION_ERROR");
+    }
+    return text;
+  };
+  const supplier = {
+    businessName: clean("businessName", 80),
+    representative: clean("representative", 40),
+    registrationNumber: clean("registrationNumber", 12),
+  };
+  if (!supplier.businessName || !supplier.representative || !/^[0-9]{3}-[0-9]{2}-[0-9]{5}$/.test(supplier.registrationNumber)) {
+    throw createError("상호, 대표자, 사업자등록번호를 확인해 주세요.", "VALIDATION_ERROR");
+  }
+  if (!options.stored) return supplier;
+  const version = Number(source.version);
+  const updatedAtMs = Number(source.updatedAtMs);
+  const updatedByAuthUid = String(source.updatedByAuthUid || "");
+  if (!Number.isSafeInteger(version) || version < 1 || !Number.isSafeInteger(updatedAtMs) || updatedAtMs < 1
+    || !/^[A-Za-z0-9._-]{1,128}$/.test(updatedByAuthUid)) {
+    throw createError("회사 공급자 설정을 확인할 수 없습니다.", "PROTECTED_DATA_INVALID");
+  }
+  return Object.assign(supplier, { version, updatedAtMs, updatedByAuthUid });
+}
+
 function safeDirectId(value) {
   const id = String(value || "").trim();
   return SAFE_DIRECT_ID.test(id) && !FORBIDDEN_DIRECT_IDS.has(id) ? id : "";
@@ -1921,6 +1955,55 @@ class FirebaseRemoteClient {
     }
     if (this.session.mustChangePassword === true) throw createError("비밀번호 변경 후 BRING OFFICE를 사용할 수 있습니다.", "ACCESS_DENIED");
     return this.session;
+  }
+
+  async loadQuoteSupplier() {
+    this.requireOfficeSession();
+    const guard = this.captureSessionGuard();
+    const value = await this.dbRequest("quoteSupplier", { method: "GET" });
+    this.assertSessionGuardActive(guard);
+    return value === null ? null : normalizeQuoteSupplierRecord(value, { stored: true });
+  }
+
+  async saveQuoteSupplier(input) {
+    const session = this.requireOfficeSession();
+    if (session.role !== "admin") {
+      throw createError("회사 공급자 정보는 관리자만 등록할 수 있습니다.", "ACCESS_DENIED");
+    }
+    const supplier = normalizeQuoteSupplierRecord(input);
+    const guard = this.captureSessionGuard();
+    const snapshot = await this.dbReadWithEtag("quoteSupplier", false, guard);
+    this.assertSessionGuardActive(guard);
+    const currentVersion = snapshot.value === null
+      ? 0
+      : normalizeQuoteSupplierRecord(snapshot.value, { stored: true }).version;
+    const record = Object.assign({}, supplier, {
+      version: currentVersion + 1,
+      updatedAtMs: { ".sv": "timestamp" },
+      updatedByAuthUid: session.uid,
+    });
+    try {
+      await this.dbConditionalPut("quoteSupplier", record, snapshot.etag, false, guard);
+    } catch (error) {
+      if (!error || error.code !== "BUILDING_SCHEDULE_WRITE_UNCONFIRMED") {
+        if (error && error.code === "BUILDING_SCHEDULE_CONFLICT") {
+          throw createError("다른 관리자가 공급자 정보를 먼저 변경했습니다. 다시 시도해 주세요.", "QUOTE_SUPPLIER_CONFLICT", error);
+        }
+        throw error;
+      }
+    }
+    this.assertSessionGuardActive(guard);
+    const saved = await this.dbRequest("quoteSupplier", { method: "GET" });
+    this.assertSessionGuardActive(guard);
+    const normalized = normalizeQuoteSupplierRecord(saved, { stored: true });
+    if (normalized.version !== record.version
+      || normalized.updatedByAuthUid !== session.uid
+      || normalized.businessName !== supplier.businessName
+      || normalized.representative !== supplier.representative
+      || normalized.registrationNumber !== supplier.registrationNumber) {
+      throw createError("회사 공급자 정보의 저장 결과를 확인하지 못했습니다.", "QUOTE_SUPPLIER_WRITE_UNCONFIRMED");
+    }
+    return normalized;
   }
 
   async loadOfficeSnapshot() {
@@ -3953,5 +4036,6 @@ module.exports = {
   assertNoGenericServiceRecordPatch,
   serviceRecordsSemanticallyEqual,
   caseDeleteAuditId,
+  normalizeQuoteSupplierRecord,
   FirebaseRemoteClient
 };

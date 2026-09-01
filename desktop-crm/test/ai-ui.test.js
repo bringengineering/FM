@@ -51,6 +51,9 @@ test("AI assistant separates report and quote creation and exposes reviewed file
   assert.match(app, /data-ai-quote-supplier="representative"/);
   assert.match(app, /data-ai-quote-supplier="registrationNumber"/);
   assert.match(app, /AI 전송 안 함/);
+  assert.match(app, /회사 공통 고정값/);
+  assert.match(app, /관리자 1회 등록 후 모든 직원에게 고정 적용/);
+  assert.match(app, /supplierCanConfigure/);
   assert.match(app, /QuoteCore\.createDraftFromPrompt/);
   assert.match(preload, /crm:quote-export/);
   assert.match(preload, /crm:quote-supplier-load/);
@@ -59,6 +62,8 @@ test("AI assistant separates report and quote creation and exposes reviewed file
   assert.match(main, /secureCanonicalHandle\("crm:quote-supplier-load"/);
   assert.match(main, /secureCanonicalHandle\("crm:quote-supplier-save"/);
   assert.match(main, /encodeProtectedJson\(safeStorage, supplier\)/);
+  assert.match(main, /remoteClient\.loadQuoteSupplier\(\)/);
+  assert.match(main, /remoteClient\.saveQuoteSupplier\(supplier\)/);
   assert.match(main, /data:image\\\/png;base64/);
   assert.match(main, /showSaveDialog/);
 });
