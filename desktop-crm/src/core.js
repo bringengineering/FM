@@ -440,7 +440,7 @@
         autoSync: true,
         onboardingComplete: false
       },
-      customers: [], buildings: [], activities: [], contracts: [], partnerVendors: [], partnerQuotes: [], tasks: [], serviceRecords: [], serviceContracts: [], serviceSchedules: [], securityAssets: [], auditLogs: [], securityIncidents: [],
+      customers: [], buildings: [], activities: [], contracts: [], contractReadiness: [], partnerVendors: [], partnerQuotes: [], tasks: [], serviceRecords: [], serviceContracts: [], serviceSchedules: [], securityAssets: [], auditLogs: [], securityIncidents: [],
       salesProspects: [], salesContacts: [], salesUnits: [], salesActivities: [], salesEvents: [], salesOpportunities: [],
       accessRoles: [
         createAccessRole({ name: "데이터·운영책임자", canView: true, canEdit: true, canDownload: true, canManageSecurity: true }),
@@ -477,6 +477,9 @@
       buildings: Array.isArray(src.buildings) ? src.buildings.filter(Boolean).map(building => normalizeBuilding(building)) : [],
       activities: Array.isArray(src.activities) ? src.activities.filter(Boolean) : [],
       contracts: Array.isArray(src.contracts) ? src.contracts.filter(Boolean).map(contract => normalizeContract(contract)) : [],
+      contractReadiness: (Array.isArray(src.contractReadiness) ? src.contractReadiness : []).filter(item => item && typeof item === "object").slice(0, 2000).map(checklist => ({
+        id: String(checklist.id || "").slice(0, 120), customerId: String(checklist.customerId || "").slice(0, 120), contractId: String(checklist.contractId || "").slice(0, 120), contractType: String(checklist.contractType || "").slice(0, 120), owner: String(checklist.owner || "").slice(0, 120), dueDate: String(checklist.dueDate || "").slice(0, 10), sourceDriveFileId: String(checklist.sourceDriveFileId || "").slice(0, 200), sourceRevisionId: String(checklist.sourceRevisionId || "").slice(0, 200), createdAt: String(checklist.createdAt || "").slice(0, 40), updatedAt: String(checklist.updatedAt || "").slice(0, 40), items: (Array.isArray(checklist.items) ? checklist.items : []).slice(0, 100).map(entry => ({ id: String(entry?.id || "").slice(0, 100), label: String(entry?.label || "").slice(0, 300), party: String(entry?.party || "").slice(0, 40), required: entry?.required !== false, evidence: String(entry?.evidence || "").slice(0, 500), status: ["pending", "complete", "not_applicable"].includes(entry?.status) ? entry.status : "pending", note: String(entry?.note || "").slice(0, 500), completedAt: String(entry?.completedAt || "").slice(0, 40), completedBy: String(entry?.completedBy || "").slice(0, 160) }))
+      })).filter(item => item.id && item.contractId),
       partnerVendors,
       partnerQuotes,
       tasks: Array.isArray(src.tasks) ? src.tasks.filter(Boolean) : [],

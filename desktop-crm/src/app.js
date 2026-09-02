@@ -21,6 +21,7 @@
   const MessageUI = window.BringMessageUI;
   const AiConsultationCore = window.BringAiConsultationCore;
   const ContractReadinessUI = window.BringContractReadinessUI;
+  const ContractReadinessCore = window.BringContractReadinessCore;
   const api = window.bringCRM;
   const main = document.getElementById("main");
   const modal = document.getElementById("modal");
@@ -4291,6 +4292,22 @@
     return oneOff;
   }
 
+  const DEFAULT_CONTRACT_READINESS_ITEMS = Object.freeze([
+    { id: "party_identity", label: "계약 당사자·건물주 신분과 권한 확인", party: "고객·건물주", required: true, evidence: "계약 당사자 확인" },
+    { id: "property_document", label: "건물·사업자 관련 기본 서류 수령", party: "고객·건물주", required: true, evidence: "계약 목적물 확인" },
+    { id: "company_document", label: "회사 계약서·견적·사업자 서류 준비", party: "회사 준비", required: true, evidence: "회사 제출 서류" },
+    { id: "vendor_qualification", label: "협력업체 자격·보험·작업범위 확인", party: "협력업체", required: true, evidence: "협력업체 확인서" },
+    { id: "signature_handover", label: "서명·날인·계약서 교부 확인", party: "서명·교부", required: true, evidence: "계약 체결 확인" }
+  ]);
+  function readinessForContract(contractId) { return (store.contractReadiness || []).find(item => item.contractId === contractId); }
+  function approvedContractSources() { return Object.values(contractSources || {}).filter(item => item && item.approvedVersion); }
+  function renderContractReadinessFields(item) {
+    const checklist = readinessForContract(item.id), sources = approvedContractSources();
+    const source = sources.find(entry => entry.driveFileId === checklist?.sourceDriveFileId);
+    const items = checklist?.items?.length ? checklist.items : (source?.approvedVersion?.items?.length ? source.approvedVersion.items.map(entry => ({ ...entry, status: "pending", note: "" })) : DEFAULT_CONTRACT_READINESS_ITEMS);
+    return `<section class="contract-type-fields contract-readiness-form"><header><b>계약 준비 도우미</b><span>회사 운영 참고용이며 법률 판단이 필요한 사항은 최종 확인이 필요합니다.</span></header><div class="form-grid"><label class="field wide"><span>승인된 기준 문서</span><select name="readinessSourceId"><option value="">기준 문서 선택</option>${sources.map(entry => `<option value="${attr(entry.id)}" ${entry.driveFileId === checklist?.sourceDriveFileId ? "selected" : ""}>${esc(`${entry.contractType} · ${entry.title || entry.driveFileId} · ${entry.approvedVersion.revisionId}`)}</option>`).join("")}</select></label>${field("준비 담당자", "readinessOwner", checklist?.owner || item.owner || store.settings.owner || "김현진")}${field("준비 기한", "readinessDueDate", checklist?.dueDate || item.startDate || todayKey(), "date")}</div><div class="contract-readiness-items">${items.map(entry => `<label><span><b>${esc(entry.party || "확인")}</b>${esc(entry.label)}<small>${esc(entry.evidence || "근거 위치 확인 필요")}</small></span><select name="readiness__${attr(entry.id)}"><option value="pending" ${entry.status === "pending" ? "selected" : ""}>미완료</option><option value="complete" ${entry.status === "complete" ? "selected" : ""}>완료</option><option value="not_applicable" ${entry.status === "not_applicable" ? "selected" : ""}>해당 없음</option></select><input name="readinessNote__${attr(entry.id)}" value="${attr(entry.note || "")}" placeholder="메모·증빙 링크"></label>`).join("")}</div><label class="contract-readiness-task-option"><input type="checkbox" name="createReadinessTasks" value="yes"><span>미완료 항목을 할 일로 추가</span></label></section>`;
+  }
+
   function contractEditor(contractId, oneOff = false) {
     if (!canWriteCRM()) return showToast("조회 전용 계정은 계약을 등록하거나 변경할 수 없습니다.", "error");
     const editing = store.contracts.find(item => item.id === contractId);
@@ -4304,6 +4321,7 @@
       <div class="form-grid">${contractTypeChecklist(types)}${selectField("계약 상태", "status", Core.CONTRACT_STATUSES, item.status)}${field("계약명 *", "name", item.name, "text", "예: 혁신타워 종합관리", "wide")}${selectField("연결 고객 *", "customerId", customerOptions, item.customerId, id => id ? (customerById(id)?.name || id) : "고객 선택")}${contractBuildingField(item.customerId, item.buildingId)}${field("계약 시작일 *", "startDate", item.startDate, "date")}${field("계약 종료일 (선택)", "endDate", item.endDate, "date")}${field("계약 금액", "amount", item.amount || "", "number", "원 단위")}${selectField("납부 방식", "billingCycle", ["월 정기", "건별", "연간", "기타"], item.billingCycle, value => value === "건별" ? "단건 계약" : value)}${field("담당자", "owner", item.owner || store.settings.owner || "김현진")}${areaField("공통 업무 범위", "scope", item.scope, "wide")}</div>
       <section class="contract-type-fields one-off-contract-fields" data-one-off-contract-fields ${isOneOff ? "" : "hidden"}><header><b>단건 계약 정산</b><span>납부 방식을 건별로 선택하면 캘린더의 계약일정 캘린더 탭에 표시됩니다.</span></header><div class="form-grid">${field("작업일", "workDate", item.workDate || item.startDate, "date")}${field("입금 예정일", "paymentDueDate", item.paymentDueDate || item.workDate || item.startDate, "date")}${field("업체 지급액·작업비", "vendorCost", item.vendorCost || "", "number", "원 단위")}${selectField("고객 입금 상태", "collectionStatus", ["입금 예정", "입금 완료"], item.collectionStatus || "입금 예정")}${selectField("업체 지급 상태", "vendorPaymentStatus", ["지급 예정", "지급 완료"], item.vendorPaymentStatus || "지급 예정")}<label class="field"><span>예상 수익</span><input value="${attr(krw(Core.money(item.amount) - Core.money(item.vendorCost)))}" readonly></label></div></section>
       <section class="contract-type-fields" data-contract-fields="${attr(types.join("|"))}"><header><b>유형별 계약 내용</b><span>체크한 모든 계약 유형의 입력 항목이 표시됩니다.</span></header><div class="contract-specific-fields ${types.includes("청소") ? "is-selected" : ""}" data-contract-specific="청소">${field("청소 주기·작업 시점", "serviceFrequency", item.serviceFrequency, "text", "예: 주 2회 또는 공실 발생 시", "wide")}</div><div class="contract-specific-fields ${types.includes("건물관리") ? "is-selected" : ""}" data-contract-specific="건물관리">${field("관리 호실 수", "unitCount", item.unitCount || "", "number", "숫자 입력")}</div><div class="contract-specific-fields ${types.includes("부동산관리") ? "is-selected" : ""}" data-contract-specific="부동산관리">${field("관리 대상", "managementTarget", item.managementTarget, "text", "예: 상가·사무실 임대관리")}${field("수수료 방식", "feeMethod", item.feeMethod, "text", "예: 월 고정 또는 임대료 비율")}</div></section>
+      ${renderContractReadinessFields(item)}
       <div class="form-grid contract-note-grid">${areaField("계약 메모", "memo", item.memo, "wide")}</div><div class="form-actions">${editing ? `<button type="button" class="danger-outline-button form-delete-left" data-contract-delete="${attr(editing.id)}">계약 삭제</button>` : ""}<button type="button" class="secondary-button" data-action="close-modal">취소</button><button type="submit" class="primary-button">${editing ? "계약 수정 저장" : "계약 등록"}</button></div></form>`;
     openModal();
     refreshContractPaymentFields(document.getElementById("contractForm"));
@@ -7822,6 +7840,27 @@
       });
       else for (const fieldName of ["workDate", "paymentDueDate", "vendorCost", "grossProfit", "collectionStatus", "vendorPaymentStatus"]) delete item[fieldName];
       if (!existing) store.contracts.push(item);
+      const chosenSource = contractSources[String(raw.readinessSourceId || "")] || approvedContractSources().find(source => source.id === raw.readinessSourceId);
+      let checklist = readinessForContract(item.id);
+      const templateItems = chosenSource?.approvedVersion?.items?.length ? chosenSource.approvedVersion.items : (checklist?.items?.length ? checklist.items : DEFAULT_CONTRACT_READINESS_ITEMS);
+      {
+        const now = new Date().toISOString();
+        const nextItems = templateItems.map(entry => {
+          const previous = checklist?.items?.find(value => value.id === entry.id) || {};
+          const status = ["pending", "complete", "not_applicable"].includes(raw[`readiness__${entry.id}`]) ? raw[`readiness__${entry.id}`] : previous.status || "pending";
+          return { id: entry.id, label: entry.label, party: entry.party, required: entry.required !== false, evidence: entry.evidence || "", status, note: String(raw[`readinessNote__${entry.id}`] || previous.note || "").trim(), completedAt: status === "complete" ? previous.completedAt || now : "", completedBy: status === "complete" ? previous.completedBy || String(currentAuth.user?.uid || currentAuth.user?.email || "") : "" };
+        });
+        const sourceVersion = chosenSource?.approvedVersion || {};
+        const nextChecklist = { id: checklist?.id || `ready_${item.id}`, customerId: item.customerId, contractId: item.id, contractType: chosenSource?.contractType || types.join("·"), owner: String(raw.readinessOwner || item.owner).trim(), dueDate: String(raw.readinessDueDate || item.startDate).slice(0, 10), sourceDriveFileId: chosenSource?.driveFileId || checklist?.sourceDriveFileId || "", sourceRevisionId: sourceVersion.revisionId || checklist?.sourceRevisionId || "", items: nextItems, createdAt: checklist?.createdAt || now, updatedAt: now };
+        if (checklist) Object.assign(checklist, nextChecklist); else { store.contractReadiness ||= []; store.contractReadiness.push(nextChecklist); checklist = nextChecklist; }
+        if (raw.createReadinessTasks === "yes") {
+          const existingTaskTitles = new Set(store.tasks.filter(task => task.customerId === item.customerId && task.status !== "완료").map(task => task.title));
+          nextItems.filter(entry => entry.required && entry.status === "pending").forEach(entry => {
+            const title = `[계약 준비] ${entry.label}`;
+            if (!existingTaskTitles.has(title)) store.tasks.push(Core.createTask({ customerId: item.customerId, title, dueAt: nextChecklist.dueDate, owner: nextChecklist.owner, category: "계약 준비", note: `${item.name} · 기준 ${nextChecklist.sourceRevisionId || "직원 확인"}` }));
+          });
+        }
+      }
       contractPaymentModeFilter = item.billingCycle === "건별" ? "single" : "recurring";
       const returnToContractCalendar = oneOffContract && form.dataset.returnView === "buildingCalendar";
       if (returnToContractCalendar) {
