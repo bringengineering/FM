@@ -2643,6 +2643,39 @@ class FirebaseRemoteClient {
     return value && typeof value === "object" && !Array.isArray(value) ? value : {};
   }
 
+  async loadContractSources() {
+    if (!this.session) throw createError("로그인이 필요합니다.", "AUTH_REQUIRED");
+    const value = await this.dbRequest("contractReadiness/sources", { method: "GET" });
+    const sources = value && typeof value === "object" && !Array.isArray(value) ? value : {};
+    if (this.session.role === "admin") return sources;
+    return Object.fromEntries(Object.entries(sources).filter(([, item]) => item && item.approvedVersion));
+  }
+
+  async registerContractSource(input) {
+    if (!this.session || this.session.role !== "admin") throw createError("관리자만 계약 기준 문서를 등록할 수 있습니다.", "PERMISSION_DENIED");
+    const driveFileId = String(input?.driveFileId || "").trim();
+    const contractType = String(input?.contractType || "").trim().slice(0, 100);
+    if (!/^[A-Za-z0-9_-]{6,200}$/.test(driveFileId) || !contractType) throw createError("계약 기준 문서를 확인해 주세요.", "INVALID_CONTRACT_SOURCE_REQUEST");
+    const id = `source_${driveFileId}`;
+    const current = await this.dbRequest(`contractReadiness/sources/${id}`, { method: "GET" }) || {};
+    const record = Object.assign({}, current, { id, driveFileId, contractType, active: true, updatedAt: new Date().toISOString(), updatedBy: this.session.uid });
+    await this.dbRequest(`contractReadiness/sources/${id}`, { method: "PUT", body: record, query: "print=silent" });
+    return { ok: true, source: record };
+  }
+
+  async decideContractSource(input) {
+    if (!this.session || this.session.role !== "admin") throw createError("관리자만 계약 기준 변경을 승인할 수 있습니다.", "PERMISSION_DENIED");
+    const sourceId = String(input?.sourceId || "").trim(), decision = String(input?.decision || "");
+    if (!/^source_[A-Za-z0-9_-]{6,200}$/.test(sourceId) || !new Set(["approve", "defer"]).has(decision)) throw createError("계약 기준 검토 요청을 확인해 주세요.", "INVALID_CONTRACT_SOURCE_REQUEST");
+    const current = await this.dbRequest(`contractReadiness/sources/${sourceId}`, { method: "GET" });
+    if (!current) throw createError("계약 기준 문서를 찾지 못했습니다.", "CONTRACT_SOURCE_NOT_FOUND");
+    const now = new Date().toISOString();
+    const record = Object.assign({}, current, decision === "approve" ? { approvedVersion: current.pendingVersion || current.approvedVersion, pendingVersion: null } : {}, { reviewStatus: decision === "approve" ? "approved" : "deferred", reviewedAt: now, reviewedBy: this.session.uid });
+    const auditId = `audit_${Date.now()}_${Math.random().toString(36).slice(2, 10)}`;
+    await this.dbRequest("contractReadiness", { method: "PATCH", body: { [`sources/${sourceId}`]: record, [`audits/${auditId}`]: { id: auditId, sourceId, decision, actorUid: this.session.uid, createdAt: now } }, query: "print=silent" });
+    return { ok: true, source: record, auditId };
+  }
+
   async loadCustomerPhotos(guardValue) {
     const guard = guardValue || this.captureSessionGuard();
     if (!this.sessionGuardActive(guard)) throw createError("로그인이 필요합니다.", "AUTH_REQUIRED");

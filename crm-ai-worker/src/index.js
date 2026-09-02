@@ -5,6 +5,7 @@ const SERVICE_NAME = "bring-crm-ai-gateway";
 const SERVICE_VERSION = "2026-08-31-v1";
 const ASSIST_PATH = "/v1/assist";
 const TRANSCRIBE_PATH = "/v1/transcribe";
+const CONTRACTS_PATH = "/v1/contracts";
 const GROQ_URL = "https://api.groq.com/openai/v1/chat/completions";
 const GROQ_TRANSCRIBE_URL = "https://api.groq.com/openai/v1/audio/transcriptions";
 const MAX_REQUEST_BYTES = 64 * 1024;
@@ -20,7 +21,51 @@ const ERROR_STATUS = Object.freeze({
   AI_DISABLED: 503,
   AI_TEMPORARY_FAILURE: 503,
   AI_INVALID_RESPONSE: 502
+  , CONTRACT_DRIVE_UNAVAILABLE: 503
+  , CONTRACT_SOURCE_NOT_FOUND: 404
 });
+
+function base64url(value) {
+  const bytes = value instanceof Uint8Array ? value : new TextEncoder().encode(String(value));
+  let binary = ""; for (const byte of bytes) binary += String.fromCharCode(byte);
+  return btoa(binary).replace(/=/g, "").replace(/\+/g, "-").replace(/\//g, "_");
+}
+
+async function defaultSignGoogleJwt(unsigned, privateKey) {
+  const body = String(privateKey || "").replace(/\\n/g, "\n").replace(/-----BEGIN PRIVATE KEY-----|-----END PRIVATE KEY-----|\s/g, "");
+  if (!body) throw Object.assign(new Error("CONTRACT_DRIVE_UNAVAILABLE"), { code: "CONTRACT_DRIVE_UNAVAILABLE" });
+  const raw = Uint8Array.from(atob(body), char => char.charCodeAt(0));
+  const key = await crypto.subtle.importKey("pkcs8", raw, { name: "RSASSA-PKCS1-v1_5", hash: "SHA-256" }, false, ["sign"]);
+  return base64url(new Uint8Array(await crypto.subtle.sign("RSASSA-PKCS1-v1_5", key, new TextEncoder().encode(unsigned))));
+}
+
+async function googleDriveAccessToken(env, fetchImpl, now, signGoogleJwt) {
+  if (!env.GOOGLE_SERVICE_ACCOUNT_EMAIL || !env.GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY) throw Object.assign(new Error("CONTRACT_DRIVE_UNAVAILABLE"), { code: "CONTRACT_DRIVE_UNAVAILABLE" });
+  const issued = Math.floor(now() / 1000), header = base64url(JSON.stringify({ alg: "RS256", typ: "JWT" }));
+  const claims = base64url(JSON.stringify({ iss: env.GOOGLE_SERVICE_ACCOUNT_EMAIL, scope: "https://www.googleapis.com/auth/drive.readonly", aud: "https://oauth2.googleapis.com/token", iat: issued, exp: issued + 3600 }));
+  const unsigned = `${header}.${claims}`, signature = await signGoogleJwt(unsigned, env.GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY);
+  const response = await fetchImpl("https://oauth2.googleapis.com/token", { method: "POST", headers: { "content-type": "application/x-www-form-urlencoded" }, body: new URLSearchParams({ grant_type: "urn:ietf:params:oauth:grant-type:jwt-bearer", assertion: `${unsigned}.${signature}` }) });
+  if (!response.ok) throw Object.assign(new Error("CONTRACT_DRIVE_UNAVAILABLE"), { code: "CONTRACT_DRIVE_UNAVAILABLE" });
+  const value = await response.json();
+  if (!value?.access_token) throw Object.assign(new Error("CONTRACT_DRIVE_UNAVAILABLE"), { code: "CONTRACT_DRIVE_UNAVAILABLE" });
+  return value.access_token;
+}
+
+async function checkDriveContract(request, identity, env, fetchImpl, now, signGoogleJwt, requestId) {
+  const admins = new Set(String(env.CRM_ADMIN_EMAILS || "").split(",").map(value => value.trim().toLowerCase()).filter(Boolean));
+  if (!admins.has(identity.email)) throw Object.assign(new Error("FORBIDDEN"), { code: "FORBIDDEN" });
+  let input; try { input = await request.json(); } catch { throw Object.assign(new Error("INVALID_INPUT"), { code: "INVALID_INPUT" }); }
+  const driveFileId = String(input?.driveFileId || "").trim();
+  if (input?.action !== "check" || Object.keys(input || {}).some(key => !["action", "driveFileId"].includes(key)) || !/^[A-Za-z0-9_-]{6,200}$/.test(driveFileId)) throw Object.assign(new Error("INVALID_INPUT"), { code: "INVALID_INPUT" });
+  const token = await googleDriveAccessToken(env, fetchImpl, now, signGoogleJwt);
+  const url = `https://www.googleapis.com/drive/v3/files/${encodeURIComponent(driveFileId)}?fields=id,name,headRevisionId,modifiedTime,webViewLink&supportsAllDrives=true`;
+  let response; try { response = await fetchImpl(url, { headers: { authorization: `Bearer ${token}` } }); } catch { throw Object.assign(new Error("CONTRACT_DRIVE_UNAVAILABLE"), { code: "CONTRACT_DRIVE_UNAVAILABLE" }); }
+  if (response.status === 404) throw Object.assign(new Error("CONTRACT_SOURCE_NOT_FOUND"), { code: "CONTRACT_SOURCE_NOT_FOUND" });
+  if (!response.ok) throw Object.assign(new Error("CONTRACT_DRIVE_UNAVAILABLE"), { code: "CONTRACT_DRIVE_UNAVAILABLE" });
+  const value = await response.json();
+  if (String(value?.id || "") !== driveFileId) throw Object.assign(new Error("CONTRACT_DRIVE_UNAVAILABLE"), { code: "CONTRACT_DRIVE_UNAVAILABLE" });
+  return json({ ok: true, requestId: requestId(), source: { driveFileId, title: String(value.name || "").slice(0, 300), revisionId: String(value.headRevisionId || "").slice(0, 200), modifiedAt: String(value.modifiedTime || "").slice(0, 40), webViewLink: String(value.webViewLink || "").slice(0, 500) } });
+}
 
 function json(body, status = 200, extraHeaders = {}) {
   return new Response(JSON.stringify(body), {
@@ -197,6 +242,7 @@ export function createWorker(options = {}) {
   const now = options.now || Date.now;
   const timeoutMs = options.timeoutMs || 15_000;
   const requestId = options.requestId || (() => crypto.randomUUID());
+  const signGoogleJwt = options.signGoogleJwt || defaultSignGoogleJwt;
   return {
     async fetch(request, env) {
       const url = new URL(request.url);
@@ -204,13 +250,14 @@ export function createWorker(options = {}) {
       if (request.method === "GET" && (url.pathname === "/" || url.pathname === "/health")) {
         return json({ ok: true, service: SERVICE_NAME, version: SERVICE_VERSION, enabled: env.AI_ENABLED === "true" });
       }
-      if (![ASSIST_PATH, TRANSCRIBE_PATH].includes(url.pathname)) return json({ ok: false, code: "NOT_FOUND" }, 404);
+      if (![ASSIST_PATH, TRANSCRIBE_PATH, CONTRACTS_PATH].includes(url.pathname)) return json({ ok: false, code: "NOT_FOUND" }, 404);
       if (request.method === "OPTIONS") return new Response(null, { status: 204, headers: cors });
       if (request.method !== "POST") return json({ ok: false, code: "METHOD_NOT_ALLOWED" }, 405, cors);
-      if (env.AI_ENABLED !== "true") return json({ ok: false, code: "AI_DISABLED" }, 503, cors);
+      if (url.pathname !== CONTRACTS_PATH && env.AI_ENABLED !== "true") return json({ ok: false, code: "AI_DISABLED" }, 503, cors);
       try {
         const payload = url.pathname === ASSIST_PATH ? await readPayload(request) : null;
         const identity = await verifyFirebaseIdentity(bearerToken(request), env, fetchImpl);
+        if (url.pathname === CONTRACTS_PATH) return await checkDriveContract(request, identity, env, fetchImpl, now, signGoogleJwt, requestId);
         await enforceLimits(identity, env, now);
         if (url.pathname === TRANSCRIBE_PATH) {
           const audio = await readAudioPayload(request);

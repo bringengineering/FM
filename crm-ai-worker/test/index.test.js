@@ -128,3 +128,30 @@ test("gateway transcribes one bounded Korean audio file without exposing the pro
   assert.equal(calls[1].options.headers.authorization, "Bearer test-secret");
   assert.equal(calls[1].options.body instanceof FormData, true);
 });
+
+test("contract source route is admin-only and reads one approved Drive file ID", async () => {
+  const calls = [];
+  const worker = createWorker({ fetchImpl: async (url, options = {}) => {
+    calls.push({ url: String(url), options });
+    if (String(url).includes("accounts:lookup")) return new Response(JSON.stringify({ users: [{ localId: "uid-admin", email: "dpvld858@gmail.com" }] }), { status: 200 });
+    if (String(url).includes("oauth2.googleapis.com/token")) return new Response(JSON.stringify({ access_token: "drive-token", expires_in: 3600 }), { status: 200 });
+    return new Response(JSON.stringify({ id: "1K_a-safe_ID", name: "관리 위탁계약서.docx", headRevisionId: "rev-7", modifiedTime: "2026-09-02T01:02:03Z", webViewLink: "https://drive.google.com/file/d/1K_a-safe_ID/view" }), { status: 200 });
+  }, requestId: () => "contract-1", signGoogleJwt: async () => "signed-jwt" });
+  const response = await worker.fetch(new Request("https://ai.example/v1/contracts", { method: "POST", headers: { authorization: "Bearer firebase-token", "content-type": "application/json", origin: "app://bring-crm" }, body: JSON.stringify({ action: "check", driveFileId: "1K_a-safe_ID" }) }), environment({ CRM_ADMIN_EMAILS: "dpvld858@gmail.com", GOOGLE_SERVICE_ACCOUNT_EMAIL: "drive-reader@example.iam.gserviceaccount.com", GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY: "secret-key" }));
+  assert.equal(response.status, 200);
+  assert.deepEqual(await response.json(), { ok: true, requestId: "contract-1", source: { driveFileId: "1K_a-safe_ID", title: "관리 위탁계약서.docx", revisionId: "rev-7", modifiedAt: "2026-09-02T01:02:03Z", webViewLink: "https://drive.google.com/file/d/1K_a-safe_ID/view" } });
+  assert.match(calls[2].url, /drive\/v3\/files\/1K_a-safe_ID/);
+  assert.equal(calls[2].options.headers.authorization, "Bearer drive-token");
+});
+
+test("contract source route rejects a non-admin before contacting Drive", async () => {
+  let calls = 0;
+  const worker = createWorker({ fetchImpl: async url => {
+    calls += 1;
+    assert.match(String(url), /accounts:lookup/);
+    return new Response(JSON.stringify({ users: [{ localId: "uid-member", email: "ameejin92@gmail.com" }] }), { status: 200 });
+  } });
+  const response = await worker.fetch(new Request("https://ai.example/v1/contracts", { method: "POST", headers: { authorization: "Bearer firebase-token", "content-type": "application/json" }, body: JSON.stringify({ action: "check", driveFileId: "1K_a-safe_ID" }) }), environment({ CRM_ADMIN_EMAILS: "dpvld858@gmail.com" }));
+  assert.equal(response.status, 403);
+  assert.equal(calls, 1);
+});

@@ -39,6 +39,7 @@ const VendorExtractor = require("./vendor-extractor");
 const NaverBuildingExtractor = require("./naver-building-extractor");
 const { assistWithGateway } = require("./ai-client");
 const { validateAudioFile, transcribeWithGateway } = require("./ai-audio-client");
+const { checkContractSourceWithGateway } = require("./contract-drive-client");
 const {
   FIELD_BRIDGE_TIMEOUT_MS,
   FIELD_ORIGIN,
@@ -128,6 +129,7 @@ const localTestMode = (Boolean(process.env.BRING_CRM_SCREENSHOT) || process.env.
 const localTestRole = ["admin", "member", "marketing", "sales", "viewer"].includes(process.env.BRING_CRM_SCREENSHOT_ROLE) ? process.env.BRING_CRM_SCREENSHOT_ROLE : "admin";
 const CRM_AI_GATEWAY_URL = process.env.BRING_CRM_AI_GATEWAY_URL || "https://bring-crm-ai-gateway.bringengineering-crm.workers.dev/v1/assist";
 const CRM_AI_TRANSCRIBE_URL = new URL("/v1/transcribe", CRM_AI_GATEWAY_URL).href;
+const CRM_CONTRACT_GATEWAY_URL = new URL("/v1/contracts", CRM_AI_GATEWAY_URL).href;
 if (localTestMode && !process.env.BRING_CRM_DATA_DIR) {
   // Automated screenshots must never reuse or overwrite an employee's cache.
   app.setPath("userData", path.join(app.getPath("temp"), "bring-crm-desktop-tests", String(process.pid)));
@@ -6415,6 +6417,23 @@ secureCanonicalHandle("crm:consultation-audio-transcribe", async input => {
     fetchImpl: (url, options) => net.fetch(url, options)
   });
 });
+function assertContractSourceAdmin() {
+  const user = remoteClient && remoteClient.authState().user;
+  if (!user) throw Object.assign(new Error("다시 로그인해 주세요."), { code: "AUTH_REQUIRED" });
+  if (String(user.role || user.accessRole || "") !== "admin") throw Object.assign(new Error("계약 기준 문서는 관리자만 변경할 수 있습니다."), { code: "FORBIDDEN" });
+  return user;
+}
+secureCanonicalHandle("crm:contract-sources-load", async () => {
+  if (!remoteClient || !remoteClient.authState().user) throw Object.assign(new Error("다시 로그인해 주세요."), { code: "AUTH_REQUIRED" });
+  return remoteClient.loadContractSources();
+});
+secureCanonicalHandle("crm:contract-source-register", async input => { assertContractSourceAdmin(); return remoteClient.registerContractSource(input); });
+secureCanonicalHandle("crm:contract-source-check", async input => {
+  assertContractSourceAdmin();
+  const idToken = await remoteClient.ensureIdToken(false);
+  return checkContractSourceWithGateway({ endpoint: CRM_CONTRACT_GATEWAY_URL, idToken, input: { action: "check", driveFileId: input && input.driveFileId }, fetchImpl: (url, options) => net.fetch(url, options) });
+});
+secureCanonicalHandle("crm:contract-source-decision", async input => { assertContractSourceAdmin(); return remoteClient.decideContractSource(input); });
 secureCanonicalHandle("crm:quote-export", input => exportAiQuote(input));
 secureCanonicalHandle("crm:quote-supplier-load", () => loadQuoteSupplier());
 secureCanonicalHandle("crm:quote-supplier-save", input => saveQuoteSupplier(input));
