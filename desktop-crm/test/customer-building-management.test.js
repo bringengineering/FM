@@ -5,6 +5,8 @@ const test = require("node:test");
 
 const indexSource = fs.readFileSync(path.join(__dirname, "../src/index.html"), "utf8");
 const appSource = fs.readFileSync(path.join(__dirname, "../src/app.js"), "utf8");
+const mainSource = fs.readFileSync(path.join(__dirname, "../src/main.js"), "utf8");
+const stylesSource = fs.readFileSync(path.join(__dirname, "../src/styles.css"), "utf8");
 const buildingCss = fs.readFileSync(path.join(__dirname, "../src/buildings.css"), "utf8");
 
 function sourceBetween(startText, endText) {
@@ -73,6 +75,28 @@ test("customer detail keeps essentials visible and removes the duplicated buildi
   assert.ok(rendered.indexOf("customer-hub-kpis") < rendered.indexOf("customer-priority-grid"));
   assert.ok(rendered.indexOf("customer-priority-grid") < rendered.indexOf("${secondaryDetails}"));
   assert.doesNotMatch(detail, /customerSalesStageBadge|영업 미등록|영업 보기/);
+});
+
+test("partner vendor cards keep their actions while the remaining card opens a customer-style detail workspace", () => {
+  const partnerView = sourceBetween("function renderPartnerVendorDetail", "function renderPartnerQuotes");
+  assert.match(partnerView, /data-partner-vendor-open/);
+  assert.match(partnerView, /data-partner-vendor-edit/);
+  assert.match(partnerView, /data-partner-vendor-link/);
+  assert.doesNotMatch(partnerView, /<article class="partner-vendor-card" data-partner-vendor-edit/);
+  assert.match(partnerView, /customer-hub-workspace partner-vendor-detail-workspace/);
+  assert.match(partnerView, /customer-hub-selector-bar/);
+  assert.match(partnerView, /data-partner-vendor-detail-select/);
+  assert.match(partnerView, /building-hub-detail-head customer-hub-detail-head/);
+  assert.match(partnerView, /building-identity-strip customer-essential-summary/);
+  assert.match(partnerView, /building-hub-kpis customer-hub-kpis/);
+  assert.match(partnerView, /building-detail-grid customer-priority-grid/);
+  assert.match(partnerView, /<b>최근 상담 기록<\/b>/);
+  assert.match(appSource, /selectedPartnerVendorDetailId = partnerVendorOpen\.dataset\.partnerVendorOpen/);
+  assert.match(appSource, /selectedPartnerVendorDetailId = partnerVendorDetailSelect\.value/);
+  assert.match(appSource, /currentView === "partnerVendors"\) selectedPartnerVendorDetailId = ""/);
+  assert.match(stylesSource, /\.partner-vendor-detail-avatar/);
+  assert.match(stylesSource, /\.partner-vendor-card:focus-visible/);
+  assert.match(mainSource, /BRING_CRM_SCREENSHOT_ACTION === "partner-vendor-detail"/);
 });
 
 test("customer header moves selected building actions after the task action", () => {

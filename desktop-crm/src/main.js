@@ -3798,6 +3798,31 @@ async function createWindow() {
         button?.click();
         return { openerFound: !!button, buttonFound: !!button, state: window.__crmTest?.snapshot() };
       })()`, true);
+    } else if (process.env.BRING_CRM_SCREENSHOT_ACTION === "partner-vendor-detail") {
+      actionResult = await mainWindow.webContents.executeJavaScript(`(async () => {
+        const wait = ms => new Promise(resolve => setTimeout(resolve, ms));
+        document.querySelector('[data-workspace-enter="operations"]')?.click();
+        await wait(120);
+        document.querySelector('[data-view="partnerVendors"]')?.click();
+        await wait(120);
+        let card = document.querySelector('[data-partner-vendor-open]');
+        const vendorId = card?.dataset.partnerVendorOpen || '';
+        const listEditPreserved = !!card?.querySelector('[data-partner-vendor-edit]');
+        const listLinkExpected = !!card?.querySelector('[data-partner-vendor-link]');
+        card?.click();
+        await wait(120);
+        const detailOpened = !!document.querySelector('.partner-vendor-detail-workspace')
+          && !!document.querySelector('[data-partner-vendor-detail-select]')
+          && !!document.querySelector('[data-partner-vendor-edit="' + vendorId + '"]');
+        const detailLinkPreserved = !!document.querySelector('.partner-vendor-detail-workspace [data-partner-vendor-link]') === listLinkExpected;
+        document.querySelector('[data-partner-vendor-detail-back]')?.click();
+        await wait(100);
+        card = document.querySelector('[data-partner-vendor-open="' + vendorId + '"]');
+        const listRestored = !!card && !!card.querySelector('[data-partner-vendor-edit]');
+        card?.click();
+        await wait(100);
+        return { pass: !!vendorId && listEditPreserved && detailOpened && detailLinkPreserved && listRestored && !!document.querySelector('.partner-vendor-detail-workspace'), vendorId, listLinkExpected, state: window.__crmTest?.snapshot() };
+      })()`, true);
     } else if (process.env.BRING_CRM_SCREENSHOT_ACTION === "customer-centered-detail") {
       actionResult = await mainWindow.webContents.executeJavaScript(`(async () => {
         const wait = ms => new Promise(resolve => setTimeout(resolve, ms));
@@ -6187,7 +6212,7 @@ async function createWindow() {
     const uiState = await mainWindow.webContents.executeJavaScript("window.__crmTest && window.__crmTest.snapshot()", true);
     const image = await mainWindow.webContents.capturePage();
     await fs.writeFile(target, image.toPNG());
-    if (["ai-quote-preview", "building-rental-info", "consultation-building-hub", "customer-sales-status", "vacancy-layout-scale", "vacancy-viewer-invariant", "lookup-building-link", "office-messenger-drag-smoke", "one-off-payment-calendar", "payment-building-calendar", "work-calendar-smoke"].includes(process.env.BRING_CRM_SCREENSHOT_ACTION)) {
+    if (["ai-quote-preview", "building-rental-info", "consultation-building-hub", "customer-sales-status", "partner-vendor-detail", "vacancy-layout-scale", "vacancy-viewer-invariant", "lookup-building-link", "office-messenger-drag-smoke", "one-off-payment-calendar", "payment-building-calendar", "work-calendar-smoke"].includes(process.env.BRING_CRM_SCREENSHOT_ACTION)) {
       await fs.writeFile(`${target}.result.json`, JSON.stringify({ actionResult, uiState }, null, 2), "utf8");
     }
     console.log(target, JSON.stringify({ empty: image.isEmpty(), size: image.getSize(), actionResult, uiState }));
