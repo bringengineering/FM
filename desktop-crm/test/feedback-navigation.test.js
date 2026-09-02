@@ -8,6 +8,15 @@ const indexSource = fs.readFileSync(path.join(sourceRoot, "index.html"), "utf8")
 const appSource = fs.readFileSync(path.join(sourceRoot, "app.js"), "utf8");
 const navSource = indexSource.match(/<nav\b[^>]*\bid="nav"[^>]*>([\s\S]*?)<\/nav>/)?.[1] || "";
 
+test("sidebar folders start closed and expose collapsed accessibility state", () => {
+  for (const folder of ["office", "customer-management", "consultation", "calendar"]) {
+    const markup = navSource.match(new RegExp(`<div class="nav-folder" data-nav-folder="${folder}">([\\s\\S]*?)<div class="nav-folder-children">`));
+    assert.ok(markup, `${folder} should start without the open class`);
+    assert.match(markup[1], /data-nav-folder-toggle aria-expanded="false"/);
+  }
+  assert.equal((navSource.match(/class="nav-folder open"/g) || []).length, 0);
+});
+
 test("sidebar removes the sales pipeline tab and labels cases as complaint management", () => {
   assert.ok(navSource, "the primary sidebar navigation should exist");
   assert.equal((navSource.match(/data-view="pipeline"/g) || []).length, 0);

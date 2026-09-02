@@ -22,7 +22,7 @@ test("customer management navigation groups customers, partner vendors, and vaca
   const folderEnd = indexSource.indexOf('data-view="buildingCalendar"', folderStart);
   const folderMarkup = indexSource.slice(folderStart, folderEnd);
   assert.match(indexSource, /data-nav-folder="customer-management"/);
-  assert.match(indexSource, /data-nav-folder-toggle[^>]*aria-expanded="true"[^>]*>[\s\S]*?<b>고객 관리<\/b><i aria-hidden="true">/);
+  assert.match(indexSource, /data-nav-folder-toggle[^>]*aria-expanded="false"[^>]*>[\s\S]*?<b>고객 관리<\/b><i aria-hidden="true">/);
   assert.match(folderMarkup, /class="nav-item nav-child" data-view="customers"[^>]*>[\s\S]*?<b>고객·건물 관리<\/b><em id="navCustomerCount">0<\/em><\/button>/);
   assert.match(folderMarkup, /class="nav-item nav-child" data-view="partnerVendors"[^>]*>[\s\S]*?<b>협력 업체<\/b><em id="navPartnerVendorCount">0<\/em><\/button>/);
   assert.match(folderMarkup, /class="nav-item nav-child" data-view="vacancies"[^>]*>[\s\S]*?<b>공실 현황<\/b><em id="navVacancyCount">0<\/em><\/button>/);
@@ -35,6 +35,8 @@ test("customer management navigation groups customers, partner vendors, and vaca
   assert.match(appSource, /button\.dataset\.view === "customers" && currentView === "buildings"/);
   assert.match(appSource, /partnerVendors: \["협력 업체 정보를 한곳에서", "협력 업체"\]/);
   assert.match(appSource, /\["customers", "buildings", "vacancies", "partnerVendors"\]\.includes\(currentView\)/);
+  assert.match(appSource, /customerManagementFolder\?\.classList\.add\("open"\)/);
+  assert.match(appSource, /customerManagementFolder\?\.querySelector\("\[data-nav-folder-toggle\]"\)\?\.setAttribute\("aria-expanded", "true"\)/);
 });
 
 test("customer workspace replaces the card rail with dropdown selectors", () => {

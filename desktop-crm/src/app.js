@@ -1341,7 +1341,13 @@
         : button.dataset.view === currentView || button.dataset.view === "customers" && currentView === "buildings";
       button.classList.toggle("active", active);
     });
-    document.querySelector('[data-nav-folder="customer-management"]')?.classList.toggle("active", ["customers", "buildings", "vacancies", "partnerVendors"].includes(currentView) || currentView === "customerMessages");
+    const customerManagementView = ["customers", "buildings", "vacancies", "partnerVendors"].includes(currentView) || currentView === "customerMessages";
+    const customerManagementFolder = document.querySelector('[data-nav-folder="customer-management"]');
+    customerManagementFolder?.classList.toggle("active", customerManagementView);
+    if (customerManagementView) {
+      customerManagementFolder?.classList.add("open");
+      customerManagementFolder?.querySelector("[data-nav-folder-toggle]")?.setAttribute("aria-expanded", "true");
+    }
     const consultationView = ["consultations", "partnerQuotes"].includes(currentView);
     const consultationFolder = document.querySelector('[data-nav-folder="consultation"]');
     consultationFolder?.classList.toggle("active", consultationView);

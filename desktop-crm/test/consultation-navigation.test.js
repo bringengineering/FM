@@ -7,9 +7,10 @@ const source = file => readFile(path.join(__dirname, "..", "src", file), "utf8")
 
 test("consultation navigation groups customer and vendor consultations", async () => {
   const [html, app] = await Promise.all([source("index.html"), source("app.js")]);
-  const folder = html.match(/<div class="nav-folder open" data-nav-folder="consultation">([\s\S]*?)<\/div>\s*<\/div>/);
+  const folder = html.match(/<div class="nav-folder" data-nav-folder="consultation">([\s\S]*?)<\/div>\s*<\/div>/);
 
-  assert.ok(folder, "consultation folder must exist and start open");
+  assert.ok(folder, "consultation folder must exist and start closed");
+  assert.match(folder[1], /data-nav-folder-toggle aria-expanded="false"/);
   assert.match(folder[1], /<b>상담 기록<\/b>/);
   assert.match(folder[1], /class="nav-item nav-child" data-view="consultations"[\s\S]*?<b>고객 상담<\/b>/);
   assert.match(folder[1], /class="nav-item nav-child" data-view="partnerQuotes"[\s\S]*?<b>업체 상담<\/b>/);
