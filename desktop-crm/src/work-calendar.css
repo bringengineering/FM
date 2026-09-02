@@ -53,6 +53,112 @@
   outline-offset: -3px;
 }
 
+.contract-work-management-panel {
+  margin-top: 18px;
+  overflow: hidden;
+  border: 1px solid #c9dfeb;
+  border-radius: 16px;
+  background: #fff;
+  box-shadow: 0 9px 26px rgba(29, 82, 111, .06);
+}
+
+.contract-work-management-panel > summary {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 20px;
+  min-height: 78px;
+  padding: 14px 18px;
+  list-style: none;
+  cursor: pointer;
+  background: linear-gradient(120deg, #f8fcff, #eef9fe);
+}
+
+.contract-work-management-panel > summary::-webkit-details-marker {
+  display: none;
+}
+
+.contract-work-management-panel > summary:focus-visible {
+  outline: 3px solid rgba(21, 152, 212, .26);
+  outline-offset: -3px;
+}
+
+.contract-work-management-title {
+  display: grid;
+  min-width: 0;
+  gap: 3px;
+}
+
+.contract-work-management-title small {
+  color: #3497c9;
+  font-size: 10px;
+  font-weight: 900;
+}
+
+.contract-work-management-title b {
+  color: #173f56;
+  font-size: 17px;
+}
+
+.contract-work-management-title em {
+  color: #718b9a;
+  font-size: 11px;
+  font-style: normal;
+}
+
+.contract-work-management-toggle {
+  display: flex;
+  align-items: center;
+  flex: 0 0 auto;
+  gap: 8px;
+}
+
+.contract-work-management-toggle strong,
+.contract-work-management-toggle i {
+  padding: 7px 10px;
+  border: 1px solid #bfdce9;
+  border-radius: 9px;
+  background: #fff;
+  color: #286b8d;
+  font-size: 11px;
+  font-style: normal;
+  font-weight: 850;
+}
+
+.contract-work-management-toggle strong {
+  border-color: transparent;
+  background: #dff3fc;
+}
+
+.contract-work-management-panel .when-open {
+  display: none;
+}
+
+.contract-work-management-panel[open] .when-closed {
+  display: none;
+}
+
+.contract-work-management-panel[open] .when-open {
+  display: inline-flex;
+}
+
+.contract-work-management-body {
+  display: grid;
+  gap: 18px;
+  padding: 18px;
+  border-top: 1px solid #d8e8f0;
+  background: #f7fbfd;
+}
+
+.contract-work-management-body .work-management-hero,
+.contract-work-management-body .ai-work-tools-disclosure {
+  margin: 0;
+}
+
+.contract-work-management-body .work-management {
+  gap: 14px;
+}
+
 .work-calendar {
   --calendar-blue: #1598d4;
   --calendar-blue-dark: #176e9d;
@@ -545,6 +651,20 @@
   .calendar-tab-intro-actions,
   .calendar-tab-intro-actions .primary-button {
     width: 100%;
+  }
+
+  .contract-work-management-panel > summary {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .contract-work-management-toggle {
+    width: 100%;
+    justify-content: space-between;
+  }
+
+  .contract-work-management-body {
+    padding: 12px;
   }
 
   .work-calendar-toolbar,

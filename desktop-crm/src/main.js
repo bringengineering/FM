@@ -5928,9 +5928,10 @@ async function createWindow() {
           const vacancyNav = document.querySelector('[data-view="vacancies"]');
           const calendarFolder = document.querySelector('[data-nav-folder="calendar"]');
           const workManagementNav = document.querySelector('[data-view="workManagement"]');
-          const navOrder = !!vacancyNav && !!calendarFolder && !!workManagementNav
+          const valueScopeNav = document.querySelector('[data-view="valueScope"]');
+          const navOrder = !!vacancyNav && !!calendarFolder && !workManagementNav && !!valueScopeNav
             && !!(vacancyNav.compareDocumentPosition(calendarFolder) & Node.DOCUMENT_POSITION_FOLLOWING)
-            && !!(calendarFolder.compareDocumentPosition(workManagementNav) & Node.DOCUMENT_POSITION_FOLLOWING);
+            && !!(calendarFolder.compareDocumentPosition(valueScopeNav) & Node.DOCUMENT_POSITION_FOLLOWING);
           const calendarNavLabel = calendarFolder?.querySelector('[data-nav-folder-toggle] b')?.textContent.trim() || '';
           const pageTitle = document.getElementById('pageTitle')?.textContent.trim() || '';
           const workTab = document.querySelector('[data-unified-calendar-tab="work"]');
@@ -6011,8 +6012,14 @@ async function createWindow() {
             && filteredText.includes(seedPrefix + ' 공용부 청소')
             && !filteredText.includes(seedPrefix + ' 소방 점검');
 
-          document.querySelector('[data-view="workManagement"]')?.click();
+          document.querySelector('[data-unified-calendar-tab="contract"]')?.click();
           await wait(120);
+          let contractWorkPanel = document.querySelector('[data-contract-work-panel]');
+          const contractWorkCollapsedByDefault = !!contractWorkPanel && !contractWorkPanel.open;
+          contractWorkPanel?.querySelector(':scope > summary')?.click();
+          await wait(60);
+          contractWorkPanel = document.querySelector('[data-contract-work-panel]');
+          const contractWorkOpened = !!contractWorkPanel?.open;
           let aiWorkPanel = document.querySelector('[data-ai-work-panel]');
           let aiWorkBodyHeight = aiWorkPanel?.querySelector('.ai-work-tools-body')?.getBoundingClientRect().height || 0;
           const aiWorkCollapsedByDefault = !!aiWorkPanel && !aiWorkPanel.open
@@ -6028,6 +6035,8 @@ async function createWindow() {
           await wait(80);
           aiWorkPanel = document.querySelector('[data-ai-work-panel]');
           const aiWorkOpenAfterRender = !!aiWorkPanel?.open;
+          contractWorkPanel = document.querySelector('[data-contract-work-panel]');
+          const contractWorkOpenAfterRender = !!contractWorkPanel?.open;
           aiWorkPanel?.querySelector('summary')?.click();
           await wait(60);
           aiWorkPanel = document.querySelector('[data-ai-work-panel]');
@@ -6073,10 +6082,15 @@ async function createWindow() {
             calendarOnce = !!savedId
               && document.querySelectorAll('.work-calendar-day [data-work-calendar-edit="' + savedId + '"]').length === 1
               && document.querySelectorAll('.work-calendar-agenda [data-work-calendar-edit="' + savedId + '"]').length === 1;
-            document.querySelector('[data-view="workManagement"]')?.click();
+            document.querySelector('[data-unified-calendar-tab="contract"]')?.click();
             await wait(160);
+            const savedWorkPanel = document.querySelector('[data-contract-work-panel]');
+            if (savedWorkPanel && !savedWorkPanel.open) {
+              savedWorkPanel.querySelector(':scope > summary')?.click();
+              await wait(80);
+            }
             workManagementOnce = !!savedId && document.querySelectorAll('[data-work-id="' + savedId + '"]').length === 1;
-            document.querySelector('[data-view="buildingCalendar"]')?.click();
+            document.querySelector('[data-unified-calendar-tab="work"]')?.click();
             await wait(160);
           }
 
@@ -6140,7 +6154,7 @@ async function createWindow() {
             ? mutationButtonCount === 0 && visibleMutationButtonCount === 0 && viewerMutationSafe
             : formFirstField && formBuildingFocused && formRequired && savedOnce && calendarOnce && workManagementOnce;
           const responsiveLayout = innerWidth <= 1320 ? compactLayout : wideTwoColumnLayout;
-          const pass = navOrder && unifiedDefault && holidayMarked && holidayAccessible && holidayRed && initialDayCount === 42 && monthMoved && dateSelected && fullCellDateSelected && buildingFiltered && aiWorkCollapsedByDefault && aiWorkOpened && aiWorkOpenAfterRender && aiWorkClosedAgain && entryScrollPrimed && scrollResetOnEntry && rolePass && noHorizontalOverflow
+          const pass = navOrder && unifiedDefault && holidayMarked && holidayAccessible && holidayRed && initialDayCount === 42 && monthMoved && dateSelected && fullCellDateSelected && buildingFiltered && contractWorkCollapsedByDefault && contractWorkOpened && contractWorkOpenAfterRender && aiWorkCollapsedByDefault && aiWorkOpened && aiWorkOpenAfterRender && aiWorkClosedAgain && entryScrollPrimed && scrollResetOnEntry && rolePass && noHorizontalOverflow
             && gridFitsWithoutHorizontalScroll && toolbarTopVisible && responsiveLayout
             && window.__crmTest.snapshot().view === 'buildingCalendar'
             && window.__crmTest.snapshot().unifiedCalendarTab === 'work';
@@ -6164,6 +6178,9 @@ async function createWindow() {
             dateSelected,
             fullCellDateSelected,
             buildingFiltered,
+            contractWorkCollapsedByDefault,
+            contractWorkOpened,
+            contractWorkOpenAfterRender,
             aiWorkCollapsedByDefault,
             aiWorkOpened,
             aiWorkOpenAfterRender,

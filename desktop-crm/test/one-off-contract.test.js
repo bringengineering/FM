@@ -59,6 +59,7 @@ test("customer editor exposes one visible private notes field under the request"
 
 test("unified contract tab owns the one-off workspace and independent calendar state", () => {
   const calendar = functionSource("renderOneOffContractCalendar");
+  const workPanel = functionSource("renderContractWorkManagementPanel");
   assert.match(source, /let contractCalendarMonth\s*=\s*Core\.dayKey\(\)\.slice\(0,\s*7\)/);
   assert.match(source, /let contractCalendarBuildingId\s*=\s*"all"/);
   assert.match(source, /let contractCalendarQuery\s*=\s*""/);
@@ -67,6 +68,11 @@ test("unified contract tab owns the one-off workspace and independent calendar s
   assert.match(calendar, /data-contract-calendar-month="1"/);
   assert.match(calendar, /data-contract-calendar-building/);
   assert.match(calendar, /data-action="new-one-off-contract"/);
+  assert.equal((calendar.match(/＋ 계약 등록/g) || []).length, 2);
+  assert.doesNotMatch(calendar, /＋ 단건 계약(?: 등록)?/);
+  assert.match(calendar, /renderContractWorkManagementPanel\(\)/);
+  assert.match(workPanel, /계약을 등록하면 작업 일정이 자동으로 연결됩니다/);
+  assert.match(workPanel, /data-contract-work-panel/);
   assert.doesNotMatch(calendar, /\bpaymentMonth\b|\bpaymentBuildingFilter\b|data-payment-month=|data-payment-building-filter/);
   assert.match(source, /shiftContractCalendarMonth\(contractCalendarMonthButton\.dataset\.contractCalendarMonth\)/);
   assert.match(source, /event\.target\.matches\("\[data-contract-calendar-building\]"\)[\s\S]{0,120}contractCalendarBuildingId\s*=\s*event\.target\.value/);
@@ -101,6 +107,7 @@ test("one-off contract save and delete return to the unified contract calendar",
   assert.match(save, /contractCalendarBuildingId\s*=\s*"all"/);
   assert.match(save, /contractCalendarQuery\s*=\s*""/);
   assert.match(save, /currentView\s*=\s*returnToContractCalendar\s*\?\s*"buildingCalendar"\s*:\s*"contracts"/);
+  assert.doesNotMatch(save, /store\.serviceRecords\.(?:push|splice)|commitBuildingScheduleRecord\(/);
 
   assert.match(remove, /dataset\.returnView\s*===\s*"buildingCalendar"\s*\?\s*"buildingCalendar"\s*:\s*"contracts"/);
   assert.match(remove, /returnView\s*===\s*"buildingCalendar"\)\s*unifiedCalendarTab\s*=\s*"contract"/);

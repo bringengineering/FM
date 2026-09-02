@@ -10,6 +10,7 @@ const root = path.join(__dirname, "..", "src");
 const indexSource = fs.readFileSync(path.join(root, "index.html"), "utf8");
 const appSource = fs.readFileSync(path.join(root, "app.js"), "utf8");
 const stylesSource = fs.readFileSync(path.join(root, "styles.css"), "utf8");
+const calendarStylesSource = fs.readFileSync(path.join(root, "work-calendar.css"), "utf8");
 
 function functionSource(name) {
   const start = appSource.indexOf(`function ${name}`);
@@ -27,8 +28,9 @@ function functionSource(name) {
 test("places one calendar workspace after customer navigation and loads its modules before the app", () => {
   const vacancies = indexSource.indexOf('data-view="vacancies"');
   const calendar = indexSource.indexOf('data-nav-folder="calendar"');
-  const work = indexSource.indexOf('data-view="workManagement"');
-  assert.ok(vacancies >= 0 && calendar > vacancies && work > calendar);
+  const valueScope = indexSource.indexOf('data-view="valueScope"');
+  assert.ok(vacancies >= 0 && calendar > vacancies && valueScope > calendar);
+  assert.equal((indexSource.match(/data-view="workManagement"/g) || []).length, 0);
   assert.equal((indexSource.match(/data-view="buildingCalendar"/g) || []).length, 2);
   assert.equal((indexSource.match(/data-view="payments"/g) || []).length, 1);
   assert.match(indexSource, /data-nav-folder="calendar">[\s\S]*?data-nav-folder-toggle[^>]*aria-expanded="false"[^>]*>[\s\S]*?<b>캘린더<\/b>/);
@@ -40,7 +42,7 @@ test("places one calendar workspace after customer navigation and loads its modu
 
 test("renders the three calendars as children below the expandable calendar navigation", () => {
   const folderStart = indexSource.indexOf('data-nav-folder="calendar"');
-  const folderEnd = indexSource.indexOf('data-view="workManagement"', folderStart);
+  const folderEnd = indexSource.indexOf('data-view="valueScope"', folderStart);
   const folder = indexSource.slice(folderStart, folderEnd);
   assert.match(folder, /data-unified-calendar-tab="work"[\s\S]*?<b>업무일정 캘린더<\/b>/);
   assert.match(folder, /data-unified-calendar-tab="contract"[\s\S]*?<b>계약일정 캘린더<\/b>/);
@@ -48,6 +50,21 @@ test("renders the three calendars as children below the expandable calendar navi
   assert.match(stylesSource, /\.app-shell\{[^}]*grid-template-columns:260px minmax\(0,1fr\)/);
   assert.match(stylesSource, /@media\(max-width:1380px\)\{[\s\S]*?\.app-shell\{grid-template-columns:240px minmax\(0,1fr\)\}/);
   assert.match(stylesSource, /\.nav-item>b\{[^}]*min-width:0;[^}]*overflow:hidden;[^}]*text-overflow:ellipsis;[^}]*white-space:nowrap/);
+});
+
+test("contract calendar embeds the moved work management behind a closed disclosure", () => {
+  const contractCalendar = functionSource("renderOneOffContractCalendar");
+  const panel = functionSource("renderContractWorkManagementPanel");
+  const calendar = functionSource("renderBuildingCalendar");
+  assert.match(appSource, /let contractWorkManagementExpanded\s*=\s*false/);
+  assert.match(contractCalendar, /renderContractWorkManagementPanel\(\)/);
+  assert.match(panel, /<details class="contract-work-management-panel" data-contract-work-panel/);
+  assert.match(panel, /contractWorkManagementExpanded\s*\?\s*" open"\s*:\s*""/);
+  assert.match(panel, /작업관리/);
+  assert.match(panel, /workManagementMarkup\(model\)/);
+  assert.match(calendar, /panel\?\.addEventListener\("toggle"/);
+  assert.match(calendarStylesSource, /\.contract-work-management-panel/);
+  assert.match(calendarStylesSource, /\.contract-work-management-panel\[open\] \.when-open/);
 });
 
 test("calendar exposes work, contract, and owner-payment tabs over their original ledgers", () => {

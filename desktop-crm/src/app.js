@@ -94,6 +94,7 @@
   let partnerQuoteStatusFilter = "전체";
   let taskStatusFilter = "전체";
   let workFilters = { status: "all", buildingId: "all", serviceType: "all" };
+  let contractWorkManagementExpanded = false;
   let workCalendarMonth = Core.dayKey().slice(0, 7);
   let workCalendarDate = Core.dayKey();
   let workCalendarBuildingId = "all";
@@ -2197,12 +2198,12 @@
     const totals = Core.oneOffContractTotals(rows.map(row => row.contract));
     const days = paymentCalendarDays(contractCalendarMonth);
     const editable = canWriteCRM();
-    const emptyAction = editable && !query ? `<button class="primary-button" data-action="new-one-off-contract">＋ 단건 계약 등록</button>` : "";
-    return `<section class="one-off-contract-calendar" aria-label="단건 계약 캘린더"><header class="calendar-tab-intro"><div><span>단건 계약 일정</span><h2>입금 예정일과 수익을 확인합니다</h2><p>예초·청소·도배·폐기물 처리 등 건별 계약만 모아 봅니다. 정기 납부 일정은 건물주 입금캘린더 탭에서 관리합니다.</p></div>${editable ? `<div class="calendar-tab-intro-actions"><button type="button" class="primary-button" data-action="new-one-off-contract">＋ 단건 계약</button></div>` : ""}</header>
+    const emptyAction = editable && !query ? `<button class="primary-button" data-action="new-one-off-contract">＋ 계약 등록</button>` : "";
+    return `<section class="one-off-contract-calendar" aria-label="단건 계약 캘린더"><header class="calendar-tab-intro"><div><span>단건 계약 일정</span><h2>입금 예정일과 수익을 확인합니다</h2><p>예초·청소·도배·폐기물 처리 등 건별 계약만 모아 봅니다. 정기 납부 일정은 건물주 입금캘린더 탭에서 관리합니다.</p></div>${editable ? `<div class="calendar-tab-intro-actions"><button type="button" class="primary-button" data-action="new-one-off-contract">＋ 계약 등록</button></div>` : ""}</header>
       <div class="operations-kpis"><div class="operations-kpi"><span>단건 계약</span><b>${totals.count}건</b><small>${esc(paymentMonthLabel(contractCalendarMonth))}</small></div><div class="operations-kpi"><span>받을 금액</span><b>${esc(krw(totals.revenue))}</b><small>고객 청구액</small></div><div class="operations-kpi"><span>업체 지급액</span><b>${esc(krw(totals.cost))}</b><small>작업 원가</small></div><div class="operations-kpi" style="--wash:#edf9f5"><span>예상 수익</span><b>${esc(krw(totals.profit))}</b><small>받을 금액 - 지급액</small></div></div>
       <div class="payment-toolbar"><div class="payment-month-switch"><button data-contract-calendar-month="-1" aria-label="이전 달">‹</button><b>${esc(paymentMonthLabel(contractCalendarMonth))}</b><button data-contract-calendar-month="1" aria-label="다음 달">›</button></div><label class="payment-building-filter"><span>건물</span><select data-contract-calendar-building><option value="all">전체 건물</option>${buildings.map(item => `<option value="${attr(item.id)}" ${contractCalendarBuildingId === item.id ? "selected" : ""}>${esc(`${item.name}${item.archived ? " · 보관" : ""}`)}</option>`).join("")}</select></label></div>
       <section class="payment-calendar"><div class="payment-weekdays">${["일", "월", "화", "수", "목", "금", "토"].map(day => `<div>${day}</div>`).join("")}</div><div class="payment-days">${days.map(date => { const dayRows = rows.filter(row => row.dueDate === date); return `<div class="payment-day ${date.slice(0, 7) === contractCalendarMonth ? "" : "out"} ${date === todayKey() ? "today" : ""}"><div class="payment-daynum">${Number(date.slice(-2))}</div>${dayRows.slice(0, 3).map(row => { const content = `<b>${esc(row.contract.name)}</b><span>${esc(krw(row.contract.amount))} · 수익 ${esc(krw(row.contract.grossProfit))}</span>`; return editable ? `<button class="payment-event ${attr(row.status)}" data-contract-edit="${attr(row.contract.id)}">${content}</button>` : `<div class="payment-event ${attr(row.status)} is-readonly">${content}</div>`; }).join("")}${dayRows.length > 3 ? `<span class="payment-more">＋ ${dayRows.length - 3}건</span>` : ""}</div>`; }).join("")}</div></section>
-      ${rows.length ? `<div class="data-table-wrap one-off-table"><table class="data-table"><thead><tr><th>작업일</th><th>고객·건물</th><th>작업</th><th>받을 금액</th><th>업체 지급</th><th>예상 수익</th><th>입금·지급 상태</th></tr></thead><tbody>${rows.map(row => { const contract = row.contract; const customer = customerById(contract.customerId); const building = buildingById(contract.buildingId); const interactive = editable ? ` data-contract-edit="${attr(contract.id)}" tabindex="0" role="button" aria-label="${attr(`${contract.name || "단건 계약"} 상세·수정`)}"` : ""; return `<tr${interactive}><td>${esc(contract.workDate)}</td><td>${esc(customer?.name || "고객 미연결")}<br><small>${esc(building?.name || "건물 미연결")}</small></td><td><strong>${esc(contract.name)}</strong></td><td>${esc(krw(contract.amount))}</td><td>${esc(krw(contract.vendorCost))}</td><td><strong>${esc(krw(contract.grossProfit))}</strong></td><td>${esc(contract.collectionStatus)} · ${esc(contract.vendorPaymentStatus)}</td></tr>`; }).join("")}</tbody></table></div>` : empty(query ? "검색 결과가 없습니다" : "이번 달 단건 계약이 없습니다", query ? "계약명·고객·건물 검색어를 바꿔 보세요." : "단건 계약을 등록하면 입금 예정일에 자동으로 표시됩니다.", emptyAction)}</section>`;
+      ${rows.length ? `<div class="data-table-wrap one-off-table"><table class="data-table"><thead><tr><th>작업일</th><th>고객·건물</th><th>작업</th><th>받을 금액</th><th>업체 지급</th><th>예상 수익</th><th>입금·지급 상태</th></tr></thead><tbody>${rows.map(row => { const contract = row.contract; const customer = customerById(contract.customerId); const building = buildingById(contract.buildingId); const interactive = editable ? ` data-contract-edit="${attr(contract.id)}" tabindex="0" role="button" aria-label="${attr(`${contract.name || "단건 계약"} 상세·수정`)}"` : ""; return `<tr${interactive}><td>${esc(contract.workDate)}</td><td>${esc(customer?.name || "고객 미연결")}<br><small>${esc(building?.name || "건물 미연결")}</small></td><td><strong>${esc(contract.name)}</strong></td><td>${esc(krw(contract.amount))}</td><td>${esc(krw(contract.vendorCost))}</td><td><strong>${esc(krw(contract.grossProfit))}</strong></td><td>${esc(contract.collectionStatus)} · ${esc(contract.vendorPaymentStatus)}</td></tr>`; }).join("")}</tbody></table></div>` : empty(query ? "검색 결과가 없습니다" : "이번 달 단건 계약이 없습니다", query ? "계약명·고객·건물 검색어를 바꿔 보세요." : "계약을 등록하면 입금 예정일에 자동으로 표시됩니다.", emptyAction)}${renderContractWorkManagementPanel()}</section>`;
   }
 
   function renderPayments() {
@@ -3024,7 +3025,7 @@
       const response = await api.assist({ task, content: JSON.stringify(payload), context: { workType: WorkManagement.typeLabel(record.serviceType), owner: record.owner || "", category: payload.category, urgency: payload.urgency } });
       workAutomationState.drafts.set(recordId, { task, text: response.result.text, requestId: response.requestId, sourceRevision: AiOperationsCore.sourceRevision({ summary: record.summary || "", updatedAt: record.updatedAt || "" }) });
     } catch (error) { showToast(error.message || "AI 작업 문서를 만들지 못했습니다.", "error"); }
-    finally { workAutomationState.loadingId = ""; if (currentView === "workManagement") renderWorkManagement(); }
+    finally { workAutomationState.loadingId = ""; if (isWorkManagementSurfaceActive()) renderWorkManagementSurface(); }
   }
 
   async function requestManagementNarrative() {
@@ -3039,7 +3040,7 @@
     finally { managementReportState.loading = false; if (currentView === "operationsIntelligence") renderOperationsIntelligence(); }
   }
 
-  function renderWorkManagement() {
+  function buildWorkManagementModel() {
     const linked = new Set(operationsIntelligenceState.items.map(item => String(item && item.sourceWorkRecordId || "")).filter(Boolean));
     const workStore = Object.assign({}, store, {
       serviceRecords: store.serviceRecords.map(item => {
@@ -3051,16 +3052,53 @@
         return Object.assign({}, item, { operationsSyncStatus });
       }),
     });
-    const model = WorkManagement.buildModel(workStore, { month: Core.dayKey().slice(0, 7), today: Core.dayKey() });
+    return WorkManagement.buildModel(workStore, { month: Core.dayKey().slice(0, 7), today: Core.dayKey() });
+  }
+
+  function workManagementMarkup(model) {
+    const viewModel = model || buildWorkManagementModel();
     const workAction = canWriteCRM() ? `<div class="operations-actions"><button type="button" class="primary-button" data-action="new-work-record">＋ 새 작업</button></div>` : "";
-    main.innerHTML = `<section class="operations-hero work-management-hero"><div><span>건물별 작업 기록</span><h2>작업 일정·비용·완료 증빙을 관리합니다</h2><p>예정된 작업과 완료 내역을 확인하고 공용 CRM에 새 작업을 등록합니다.</p></div>${workAction}</section>` + AiOperationsUI.renderWorkAutomation({ records: workAutomationRows(), writable: canWriteCRM(), expanded: workAutomationState.expanded }) + WorkManagement.renderDashboard(model, { canWrite: canWriteCRM(), filters: workFilters });
-    const workAutomationPanel = main.querySelector("[data-ai-work-panel]");
+    return `<section class="operations-hero work-management-hero"><div><span>건물별 작업 기록</span><h2>작업 일정·비용·완료 증빙을 관리합니다</h2><p>계약에서 연동된 작업과 직접 등록한 작업을 한곳에서 확인합니다.</p></div>${workAction}</section>` + AiOperationsUI.renderWorkAutomation({ records: workAutomationRows(), writable: canWriteCRM(), expanded: workAutomationState.expanded }) + WorkManagement.renderDashboard(viewModel, { canWrite: canWriteCRM(), filters: workFilters });
+  }
+
+  function renderContractWorkManagementPanel() {
+    const model = buildWorkManagementModel();
+    return `<details class="contract-work-management-panel" data-contract-work-panel${contractWorkManagementExpanded ? " open" : ""}><summary><span class="contract-work-management-title"><small>계약과 작업을 한곳에서</small><b>작업관리</b><em>계약을 등록하면 작업 일정이 자동으로 연결됩니다.</em></span><span class="contract-work-management-toggle"><strong>${model.items.length}건</strong><i class="when-closed">열기</i><i class="when-open">숨기기</i></span></summary><div class="contract-work-management-body">${workManagementMarkup(model)}</div></details>`;
+  }
+
+  function bindWorkManagementControls(root) {
+    const scope = root || main;
+    const workAutomationPanel = scope.querySelector("[data-ai-work-panel]");
     workAutomationPanel?.addEventListener("toggle", () => { workAutomationState.expanded = workAutomationPanel.open; });
     Object.entries(workFilters).forEach(([key, value]) => {
-      const field = main.querySelector(`[data-work-filter="${key}"]`);
+      const field = scope.querySelector(`[data-work-filter="${key}"]`);
       if (field) field.value = value;
     });
     if (!operationsIntelligenceState.loaded && !operationsIntelligenceState.loading && !operationsIntelligenceState.error) void loadOperationsIntelligence();
+  }
+
+  function isWorkManagementSurfaceActive() {
+    return currentView === "workManagement" || (currentView === "buildingCalendar" && unifiedCalendarTab === "contract");
+  }
+
+  function renderWorkManagementSurface() {
+    if (currentView === "buildingCalendar" && unifiedCalendarTab === "contract") renderBuildingCalendar();
+    else if (currentView === "workManagement") renderWorkManagement();
+  }
+
+  function returnFromWorkRecordEditor(form) {
+    const returnToContractCalendar = form && form.dataset.returnView === "buildingCalendar";
+    currentView = returnToContractCalendar ? "buildingCalendar" : "workManagement";
+    if (returnToContractCalendar) {
+      unifiedCalendarTab = "contract";
+      contractWorkManagementExpanded = true;
+    }
+    render();
+  }
+
+  function renderWorkManagement() {
+    main.innerHTML = workManagementMarkup();
+    bindWorkManagementControls(main);
   }
 
   const AI_ASSISTANT_TASKS = Object.freeze([
@@ -3360,7 +3398,7 @@
     } finally {
       operationsIntelligenceState.loading = false;
       if (currentView === "operationsIntelligence") renderOperationsIntelligence();
-      else if (currentView === "workManagement") renderWorkManagement();
+      else if (isWorkManagementSurfaceActive()) renderWorkManagementSurface();
     }
   }
 
@@ -3412,6 +3450,11 @@
     const workActive = unifiedCalendarTab === "work";
     const content = workActive ? WorkCalendar.render(model, { canWrite: canWriteCRM() }) : renderOneOffContractCalendar();
     main.innerHTML = unifiedCalendarFrame(unifiedCalendarTab, content, unifiedCalendarCounts(model));
+    if (!workActive) {
+      const panel = main.querySelector("[data-contract-work-panel]");
+      panel?.addEventListener("toggle", () => { contractWorkManagementExpanded = panel.open; });
+      bindWorkManagementControls(main);
+    }
   }
 
   function buildingScheduleEditor(recordId, defaultDate) {
@@ -3464,7 +3507,8 @@
     }
     const item = existing || { id: `service_${crypto.randomUUID()}`, buildingId: selectedBuildingId || activeBuildings[0]?.id || "", title: "", serviceType: "grounds_cutting", status: "planned", scheduledDate: "", startTime: "", endTime: "", completedAt: "", amount: 0, vendorName: "", owner: store.settings && store.settings.owner || "김현진", summary: "", evidenceUrl: "" };
     const cancelled = item.status === "cancelled";
-    modalContent.innerHTML = `<div class="modal-head"><div><h2>${existing ? "작업 상세·수정" : "새 작업 등록"}</h2><p>건물별 작업 일정·비용·완료 증빙을 공용 CRM에 기록합니다.</p></div><button class="close-button" data-action="close-modal">×</button></div><form id="workRecordForm" class="modal-body" data-work-id="${attr(item.id)}" data-work-create="${existing ? "false" : "true"}" data-request-id="${attr(crypto.randomUUID())}" data-opened-updated-at="${attr(existing && existing.updatedAt || "")}" data-opened-commit-version="${Number(existing && existing.calendarCommitVersion) || 0}" data-auth-generation="${authGeneration}" data-auth-uid="${attr(currentAuthUid())}">${cancelled ? `<div class="info-box">취소된 작업은 기록 보호를 위해 내용을 변경할 수 없습니다.</div>` : ""}<div class="form-grid">${selectField("건물 *", "buildingId", buildingOptions.map(building => building.id), item.buildingId, id => (buildingOptions.find(building => building.id === id) || {}).name || id)}${field("작업명", "title", item.title || WorkManagement.typeLabel(item.serviceType))}${selectField("작업 종류", "serviceType", ["grounds_cutting", "stair_cleaning", "cleaning", "repair", "inspection", "meeting", "other"], item.serviceType, value => WorkManagement.typeLabel(value))}${selectField("상태", "status", cancelled ? ["cancelled"] : ["planned", "in_progress", "completed"], item.status, value => WorkManagement.statusLabel(value))}${field("예정일", "scheduledDate", item.scheduledDate || "", "date")}${field("시작 시간", "startTime", item.startTime || "", "time")}${field("종료 시간", "endTime", item.endTime || "", "time")}${field("완료일", "completedAt", item.completedAt || "", "date")}${field("비용", "amount", item.amount || "", "number", "원 단위")}${field("담당 업체", "vendorName", item.vendorName || "")}${field("담당자", "owner", item.owner || store.settings && store.settings.owner || "김현진")}${field("Drive 증빙 URL", "evidenceUrl", item.evidenceUrl || "", "url", "https://drive.google.com/...")}${areaField("작업 내용·다음 행동", "summary", item.summary || "", "wide")}</div><div class="form-actions">${existing && !["completed", "cancelled"].includes(existing.status) ? `<button type="button" class="danger-outline-button form-delete-left" data-work-record-cancel="${attr(existing.id)}">작업 취소</button>` : ""}<button type="button" class="secondary-button" data-action="close-modal">닫기</button>${cancelled ? "" : `<button class="primary-button">공용 CRM에 저장</button>`}</div></form>`;
+    const returnView = currentView === "buildingCalendar" && unifiedCalendarTab === "contract" ? "buildingCalendar" : "workManagement";
+    modalContent.innerHTML = `<div class="modal-head"><div><h2>${existing ? "작업 상세·수정" : "새 작업 등록"}</h2><p>건물별 작업 일정·비용·완료 증빙을 공용 CRM에 기록합니다.</p></div><button class="close-button" data-action="close-modal">×</button></div><form id="workRecordForm" class="modal-body" data-return-view="${attr(returnView)}" data-work-id="${attr(item.id)}" data-work-create="${existing ? "false" : "true"}" data-request-id="${attr(crypto.randomUUID())}" data-opened-updated-at="${attr(existing && existing.updatedAt || "")}" data-opened-commit-version="${Number(existing && existing.calendarCommitVersion) || 0}" data-auth-generation="${authGeneration}" data-auth-uid="${attr(currentAuthUid())}">${cancelled ? `<div class="info-box">취소된 작업은 기록 보호를 위해 내용을 변경할 수 없습니다.</div>` : ""}<div class="form-grid">${selectField("건물 *", "buildingId", buildingOptions.map(building => building.id), item.buildingId, id => (buildingOptions.find(building => building.id === id) || {}).name || id)}${field("작업명", "title", item.title || WorkManagement.typeLabel(item.serviceType))}${selectField("작업 종류", "serviceType", ["grounds_cutting", "stair_cleaning", "cleaning", "repair", "inspection", "meeting", "other"], item.serviceType, value => WorkManagement.typeLabel(value))}${selectField("상태", "status", cancelled ? ["cancelled"] : ["planned", "in_progress", "completed"], item.status, value => WorkManagement.statusLabel(value))}${field("예정일", "scheduledDate", item.scheduledDate || "", "date")}${field("시작 시간", "startTime", item.startTime || "", "time")}${field("종료 시간", "endTime", item.endTime || "", "time")}${field("완료일", "completedAt", item.completedAt || "", "date")}${field("비용", "amount", item.amount || "", "number", "원 단위")}${field("담당 업체", "vendorName", item.vendorName || "")}${field("담당자", "owner", item.owner || store.settings && store.settings.owner || "김현진")}${field("Drive 증빙 URL", "evidenceUrl", item.evidenceUrl || "", "url", "https://drive.google.com/...")}${areaField("작업 내용·다음 행동", "summary", item.summary || "", "wide")}</div><div class="form-actions">${existing && !["completed", "cancelled"].includes(existing.status) ? `<button type="button" class="danger-outline-button form-delete-left" data-work-record-cancel="${attr(existing.id)}">작업 취소</button>` : ""}<button type="button" class="secondary-button" data-action="close-modal">닫기</button>${cancelled ? "" : `<button class="primary-button">공용 CRM에 저장</button>`}</div></form>`;
     openModal();
     const form = document.getElementById("workRecordForm");
     if (form && form.elements.buildingId) form.elements.buildingId.required = true;
@@ -5208,7 +5252,7 @@
         }, workDraftApply);
         if (!result || result.ok !== true) throw new Error(serviceRecordErrorText(result));
         workAutomationState.drafts.delete(record.id);
-        renderWorkManagement(); showToast("검토한 초안을 작업 기록에 적용했습니다.", "success");
+        renderWorkManagementSurface(); showToast("검토한 초안을 작업 기록에 적용했습니다.", "success");
       } catch (error) { showToast(error.message || "작업 내용이 변경되어 초안을 적용하지 않았습니다. 다시 생성해 주세요.", "error"); }
       return;
     }
@@ -5351,7 +5395,7 @@
           operationsIntelligenceState.error = "";
           showToast("운영 분석 연동을 완료했습니다.", "success");
         } else showToast(result && result.error || "운영 분석 연동에 실패했습니다.", "error");
-        renderWorkManagement();
+        renderWorkManagementSurface();
       } catch (error) {
         showToast(error && error.message || "운영 분석 연동에 실패했습니다.", "error");
         workSyncRetry.disabled = false;
@@ -5828,7 +5872,7 @@
         render();
         return showToast(serviceRecordErrorText(result), "error");
       }
-      closeModal(); currentView = "workManagement"; render(); showToast("작업을 취소 기록으로 남겼습니다.", "success");
+      closeModal(); returnFromWorkRecordEditor(form); showToast("작업을 취소 기록으로 남겼습니다.", "success");
       return;
     }
     const buildingLinkLookup = event.target.closest("[data-building-link-lookup]");
@@ -6608,7 +6652,7 @@
     const workFilter = event.target.closest("[data-work-filter]");
     if (workFilter) {
       workFilters[workFilter.dataset.workFilter] = workFilter.value || "all";
-      renderWorkManagement();
+      renderWorkManagementSurface();
       return;
     }
     if (event.target.matches('#salesEventForm [name="type"]')) refreshSalesEventChannelField(event.target.form);
@@ -6980,7 +7024,7 @@
         render();
         return showToast(serviceRecordErrorText(result), "error");
       }
-      closeModal(); currentView = "workManagement"; render(); showToast("작업을 공용 CRM에 저장했습니다.", "success");
+      closeModal(); returnFromWorkRecordEditor(form); showToast("작업을 공용 CRM에 저장했습니다.", "success");
     } else if (form.id === "driveImportApprovalForm" || form.id === "driveImportRejectionForm") {
       if (!canAdministerSecurity()) return showToast("관리자만 Drive 자료를 승인하거나 반려할 수 있습니다.", "error");
       const item = driveImportCandidateById(form.dataset.driveFileId);
