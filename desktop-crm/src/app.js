@@ -157,6 +157,7 @@
   let contractSources = {};
   let contractSourcesLoading = false;
   let contractSourcesLoaded = false;
+  let contractDailyCheckRunning = false;
   let salesAutomationState = { drafts: new Map(), loadingId: "", rows: [] };
   let workAutomationState = { drafts: new Map(), loadingId: "", expanded: false };
   let managementReportState = { month: Core.dayKey().slice(0, 7), result: null, loading: false, error: "" };
@@ -3631,9 +3632,23 @@
 
   async function refreshContractSources() {
     contractSourcesLoading = true;
-    try { contractSources = await api.loadContractSources() || {}; contractSourcesLoaded = true; }
+    try { contractSources = await api.loadContractSources() || {}; contractSourcesLoaded = true; if (canAdministerSecurity()) runDailyContractSourceChecks(); }
     catch (error) { showToast(error.message || "계약 기준을 불러오지 못했습니다.", "error"); }
     finally { contractSourcesLoading = false; if (currentView === "contracts") { const scrollY = window.scrollY; renderContracts(); window.scrollTo(0, scrollY); } }
+  }
+
+  async function runDailyContractSourceChecks() {
+    if (contractDailyCheckRunning) return;
+    const seoulDay = value => { try { return new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Seoul", year: "numeric", month: "2-digit", day: "2-digit" }).format(new Date(value)); } catch (_) { return ""; } };
+    const today = seoulDay(new Date());
+    const due = Object.values(contractSources).filter(source => source && source.active !== false && source.driveFileId && seoulDay(source.lastCheckedAt) !== today);
+    if (!due.length) return;
+    contractDailyCheckRunning = true;
+    try {
+      for (const source of due) { try { await api.checkContractSource({ sourceId: source.id, driveFileId: source.driveFileId }); } catch (_) {} }
+      contractSources = await api.loadContractSources() || contractSources;
+      if (currentView === "contracts") renderContracts();
+    } finally { contractDailyCheckRunning = false; }
   }
 
   function contractSourceRegisterEditor() {

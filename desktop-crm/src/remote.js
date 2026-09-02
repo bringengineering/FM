@@ -139,7 +139,7 @@ const WORKFLOW_ACTIONS = new Set([
 ]);
 
 const SHARED_COLLECTIONS = Object.freeze([
-  "customers", "buildings", "activities", "contracts", "partnerVendors", "partnerQuotes", "tasks", "serviceRecords", "serviceContracts", "serviceSchedules",
+  "customers", "buildings", "activities", "contracts", "contractReadiness", "partnerVendors", "partnerQuotes", "tasks", "serviceRecords", "serviceContracts", "serviceSchedules",
   "securityAssets", "auditLogs", "securityIncidents",
   "salesProspects", "salesContacts", "salesUnits", "salesActivities", "salesEvents", "salesOpportunities"
 ]);
@@ -2688,6 +2688,17 @@ class FirebaseRemoteClient {
     const record = Object.assign({}, current, { title: String(metadata.title || current.title || "").slice(0, 300), webViewLink: String(metadata.webViewLink || "").slice(0, 500), lastCheckedAt: checkedAt, syncError: "", pendingVersion: changed ? version : null, reviewStatus: changed ? "pending" : "unchanged", updatedAt: checkedAt, updatedBy: this.session.uid });
     await this.dbRequest(`contractReadiness/sources/${sourceId}`, { method: "PUT", body: record, query: "print=silent" });
     return { ok: true, source: record, changed, requestId: String(input?.requestId || "").slice(0, 120) };
+  }
+
+  async recordContractSourceFailure(input) {
+    if (!this.session || this.session.role !== "admin") return { ok: false };
+    const sourceId = String(input?.sourceId || "").trim();
+    if (!/^source_[A-Za-z0-9_-]{6,200}$/.test(sourceId)) return { ok: false };
+    const current = await this.dbRequest(`contractReadiness/sources/${sourceId}`, { method: "GET" });
+    if (!current) return { ok: false };
+    const record = Object.assign({}, current, { lastCheckedAt: new Date().toISOString(), syncError: String(input?.message || "Drive 확인 실패").slice(0, 500), reviewStatus: "error", updatedBy: this.session.uid });
+    await this.dbRequest(`contractReadiness/sources/${sourceId}`, { method: "PUT", body: record, query: "print=silent" });
+    return { ok: true, source: record };
   }
 
   async loadCustomerPhotos(guardValue) {

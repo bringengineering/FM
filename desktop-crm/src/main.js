@@ -6431,8 +6431,13 @@ secureCanonicalHandle("crm:contract-source-register", async input => { assertCon
 secureCanonicalHandle("crm:contract-source-check", async input => {
   assertContractSourceAdmin();
   const idToken = await remoteClient.ensureIdToken(false);
-  const result = await checkContractSourceWithGateway({ endpoint: CRM_CONTRACT_GATEWAY_URL, idToken, input: { action: "check", driveFileId: input && input.driveFileId }, fetchImpl: (url, options) => net.fetch(url, options) });
-  return remoteClient.recordContractSourceCheck({ sourceId: input && input.sourceId, source: result.source, requestId: result.requestId });
+  try {
+    const result = await checkContractSourceWithGateway({ endpoint: CRM_CONTRACT_GATEWAY_URL, idToken, input: { action: "check", driveFileId: input && input.driveFileId }, fetchImpl: (url, options) => net.fetch(url, options) });
+    return remoteClient.recordContractSourceCheck({ sourceId: input && input.sourceId, source: result.source, requestId: result.requestId });
+  } catch (error) {
+    try { await remoteClient.recordContractSourceFailure({ sourceId: input && input.sourceId, message: error && error.message }); } catch (_) {}
+    throw error;
+  }
 });
 secureCanonicalHandle("crm:contract-source-decision", async input => { assertContractSourceAdmin(); return remoteClient.decideContractSource(input); });
 secureCanonicalHandle("crm:quote-export", input => exportAiQuote(input));

@@ -27,4 +27,10 @@ async function checkContractSourceWithGateway(options) {
   if (!response.ok || value?.ok !== true || !value.requestId) throw codedError(Object.prototype.hasOwnProperty.call(MESSAGES, value?.code) ? value.code : "CONTRACT_DRIVE_UNAVAILABLE");
   return { ok: true, requestId: String(value.requestId).slice(0, 120), source: normalizeSource(value.source, input.driveFileId) };
 }
-module.exports = { checkContractSourceWithGateway, validateContractSourceRequest, MESSAGES };
+function seoulDay(value) { try { return new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Seoul", year: "numeric", month: "2-digit", day: "2-digit" }).format(new Date(value)); } catch { return ""; } }
+function sourcesDueForDailyCheck(value, now = new Date()) {
+  const today = seoulDay(now);
+  const sources = Array.isArray(value) ? value : Object.values(value && typeof value === "object" ? value : {});
+  return sources.filter(source => source && source.active !== false && /^[A-Za-z0-9_-]{6,200}$/.test(String(source.driveFileId || "")) && seoulDay(source.lastCheckedAt) !== today);
+}
+module.exports = { checkContractSourceWithGateway, validateContractSourceRequest, sourcesDueForDailyCheck, MESSAGES };
