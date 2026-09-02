@@ -39,17 +39,56 @@ test("customer management navigation groups customers, partner vendors, and vaca
   assert.match(appSource, /customerManagementFolder\?\.querySelector\("\[data-nav-folder-toggle\]"\)\?\.setAttribute\("aria-expanded", "true"\)/);
 });
 
-test("customer workspace replaces the card rail with dropdown selectors", () => {
-  const customerView = sourceBetween("function renderCustomers()", "function renderCustomerHubDetail");
-  assert.match(customerView, /customer-hub-workspace/);
-  assert.match(customerView, /data-customer-hub-select/);
-  assert.match(customerView, /data-customer-management-filter/);
-  assert.match(customerView, /customerAvatar\(customer\)/);
-  assert.match(customerView, /renderCustomerHubDetail/);
-  assert.doesNotMatch(customerView, /building-hub-browser|building-hub-list|customer-hub-card|data-customer-hub-open/);
-  assert.doesNotMatch(customerView, /customerSalesStageBadge|data-customer-sales-stage-filter|건물 영업 단계/);
-  assert.doesNotMatch(customerView, /data-customer-buildings-open|건물 목록 보기|건물 미연결/);
+test("customer management mirrors the partner vendor card-list-to-detail workflow", () => {
+  const customerList = sourceBetween("function renderCustomers()", "function renderCustomerManagementDetail");
+  const customerDetail = sourceBetween("function renderCustomerManagementDetail", "function customerMessageDeliveries");
+  const inputHandler = sourceBetween('document.addEventListener("input"', 'document.addEventListener("compositionend"');
+  const compositionHandler = sourceBetween('document.addEventListener("compositionend"', 'document.addEventListener("keydown"');
+
+  assert.match(customerList, /if \(selectedCustomer\) return renderCustomerManagementDetail\(selectedCustomer\)/);
+  assert.match(customerList, /partner-vendor-hero customer-management-hero/);
+  assert.match(customerList, /quote-kpi-grid partner-vendor-kpis customer-management-kpis/);
+  assert.equal((customerList.match(/\$\{kpi\(/g) || []).length, 4);
+  ["등록 고객", "연결 건물", "관리 중", "확인 필요"].forEach(label => assert.match(customerList, new RegExp(`kpi\\("${label}"`)));
+  assert.match(customerList, /partner-vendor-toolbar customer-management-toolbar/);
+  assert.match(customerList, /partner-vendor-toolbar-controls/);
+  assert.match(customerList, /data-customer-management-filter/);
+  assert.match(customerList, /partner-vendor-list-search customer-management-list-search/);
+  assert.match(customerList, /data-customer-list-search/);
+  assert.match(customerList, /partner-vendor-list customer-management-list/);
+  assert.match(customerList, /partner-vendor-card customer-management-card/);
+  assert.match(customerList, /data-customer-hub-open="\$\{attr\(customer\.id\)\}" tabindex="0"/);
+  assert.match(customerList, /customerAvatar\(customer\)/);
+  assert.match(customerList, /data-customer-hub-edit="\$\{attr\(customer\.id\)\}"/);
+  assert.match(customerList, /data-customer-open="\$\{attr\(customer\.id\)\}"/);
+  assert.doesNotMatch(customerList, /selectedCustomerHubId = customers\[0\]/);
+  assert.doesNotMatch(customerList, /customerSalesStageBadge|data-customer-sales-stage-filter|건물 영업 단계/);
   assert.match(appSource, /Object\.freeze\(\["전체", "연결 확인 필요", "관리 예정", "관리 중", "관리 종료"\]\)/);
+
+  assert.match(customerDetail, /function renderCustomerManagementDetail\(customer\)/);
+  assert.match(customerDetail, /customer-hub-workspace partner-vendor-detail-workspace customer-management-detail-workspace/);
+  assert.match(customerDetail, /customer-hub-selector-bar/);
+  assert.match(customerDetail, /data-customer-hub-select/);
+  assert.match(customerDetail, /renderCustomerHubDetail\(customer\)/);
+  assert.equal((customerDetail.match(/data-customer-detail-back/g) || []).length, 1);
+  assert.ok(customerDetail.indexOf("data-customer-detail-back") < customerDetail.indexOf("data-customer-hub-select"));
+  assert.match(customerDetail, /customer-hub-selector-bar[^`]*?data-customer-detail-back>← 고객·건물 목록<\/button>[^`]*?data-customer-hub-select/);
+  assert.doesNotMatch(customerDetail, /customer-selector-heading|<b>고객 선택<\/b>/);
+
+  assert.match(appSource, /const customerDetailBack = event\.target\.closest\("\[data-customer-detail-back\]"\)[\s\S]*?selectedCustomerHubId = "";[\s\S]*?renderCustomers\(\)/);
+  assert.match(appSource, /const customerHubOpen = event\.target\.closest\("\[data-customer-hub-open\]"\)[\s\S]*?selectedCustomerHubId = customerHubOpen\.dataset\.customerHubOpen \|\| "";[\s\S]*?renderCustomers\(\)/);
+  assert.match(appSource, /currentView = nextView;[\s\S]*?if \(currentView === "customers"\) selectedCustomerHubId = "";/);
+  assert.match(appSource, /const customerListOpen = event\.target\.closest\("\[data-customer-list-open\]"\)[\s\S]*?selectedCustomerHubId = "";[\s\S]*?currentView = "customers";/);
+  assert.match(inputHandler, /event\.target\.matches\("\[data-customer-list-search\]"\)[\s\S]*?crmSearchValue = event\.target\.value\.slice\(0, 160\)[\s\S]*?renderCustomers\(\)/);
+  assert.match(compositionHandler, /event\.target\.matches\("\[data-customer-list-search\]"\)[\s\S]*?crmSearchValue = event\.target\.value\.slice\(0, 160\)[\s\S]*?renderCustomers\(\)/);
+  assert.match(appSource, /event\.target\.matches\?\.\("\[data-partner-vendor-open\], \[data-customer-hub-open\]"\)[\s\S]*?event\.key === "Enter" \|\| event\.key === " "[\s\S]*?detailCard\.click\(\)/);
+
+  assert.match(stylesSource, /\.crm-read-only \[data-customer-hub-edit\]/);
+  assert.match(buildingCss, /\.customer-management-detail-workspace \.customer-hub-selector-bar\{grid-template-columns:auto minmax\(280px,1fr\)\}/);
+  assert.match(buildingCss, /@media\(max-width:700px\)[\s\S]*?\.customer-management-detail-workspace \.customer-hub-selector-bar\{grid-template-columns:1fr\}/);
+  assert.match(mainSource, /BRING_CRM_SCREENSHOT_ACTION === "customer-management-ui"/);
+  assert.match(mainSource, /customer-management-ui[\s\S]*?\[data-customer-hub-open\][\s\S]*?\.customer-management-kpis \.kpi-card[\s\S]*?\[data-customer-list-search\][\s\S]*?\[data-customer-detail-back\]/);
+  assert.ok((mainSource.match(/customer-management-ui/g) || []).length >= 2, "the screenshot action must also write a result JSON file");
 });
 
 test("customer detail keeps essentials visible and removes the duplicated building screen", () => {
@@ -83,7 +122,7 @@ test("partner vendor cards keep their actions while the remaining card opens a c
   const partnerView = sourceBetween("function renderPartnerVendorDetail", "function renderPartnerQuotes");
   assert.match(partnerView, /partner-vendor-toolbar-controls/);
   assert.match(partnerView, /partner-vendor-industry-filter[\s\S]*?data-partner-vendor-industry-filter[\s\S]*?partner-vendor-list-search[\s\S]*?data-partner-vendor-list-search/);
-  assert.match(appSource, /searchEl\.closest\("\.global-search"\)\.hidden = officeView \|\| paymentCalendarView \|\| currentView === "partnerVendors"/);
+  assert.match(appSource, /searchEl\.closest\("\.global-search"\)\.hidden = officeView \|\| paymentCalendarView \|\| \["customers", "partnerVendors"\]\.includes\(currentView\)/);
   assert.match(appSource, /event\.target\.matches\("\[data-partner-vendor-list-search\]"\)[\s\S]*?crmSearchValue = event\.target\.value\.slice\(0, 160\)/);
   assert.match(stylesSource, /\.partner-vendor-toolbar-controls\{display:flex;align-items:center/);
   assert.match(partnerView, /data-partner-vendor-open/);

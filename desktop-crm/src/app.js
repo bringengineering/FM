@@ -1384,7 +1384,7 @@
     const workCalendarView = currentView === "buildingCalendar" && unifiedCalendarTab === "work";
     const contractCalendarView = currentView === "buildingCalendar" && unifiedCalendarTab === "contract";
     const paymentCalendarView = currentView === "payments";
-    searchEl.closest(".global-search").hidden = officeView || paymentCalendarView || currentView === "partnerVendors";
+    searchEl.closest(".global-search").hidden = officeView || paymentCalendarView || ["customers", "partnerVendors"].includes(currentView);
     searchEl.placeholder = valueScopeView ? "지도에서 주소·건물·중개사를 검색하세요" : contractCalendarView ? "계약명·고객·건물 검색" : workCalendarView ? "건물명·일정 검색" : currentView === "vacancies" ? "건물명·주소 검색" : "고객·건물·연락처 검색";
     searchEl.value = contractCalendarView ? contractCalendarQuery : workCalendarView ? workCalendarQuery : crmSearchValue;
     if (currentView === "vacancies") {
@@ -2444,14 +2444,34 @@
   }
 
   function renderCustomers() {
+    const selectedCustomer = customerById(selectedCustomerHubId);
+    if (selectedCustomer) return renderCustomerManagementDetail(selectedCustomer);
+    if (selectedCustomerHubId) selectedCustomerHubId = "";
     const customers = filteredCustomers();
-    if (customers.length && !customers.some(customer => customer.id === selectedCustomerHubId)) selectedCustomerHubId = customers[0].id;
-    const customer = customers.find(item => item.id === selectedCustomerHubId) || null;
-    const customerOptions = customers.length
-      ? customers.map(item => `<option value="${attr(item.id)}" ${item.id === selectedCustomerHubId ? "selected" : ""}>${esc([customerDisplayName(item), item.company || customerPhoneText(item.phone), managementStatusForCustomer(item)].filter(Boolean).join(" · "))}</option>`).join("")
-      : `<option value="" selected disabled>조건에 맞는 고객이 없습니다</option>`;
-    main.innerHTML = `<section class="building-hub-hero customer-hub-hero"><div><span>고객을 선택하면 연결 건물과 업무가 함께 열립니다</span><h2>고객·건물 정보를 한 화면에서 관리합니다</h2><p>관리 상태, 계약, 민원과 상담 이력을 한곳에서 확인합니다.</p></div><div class="building-hub-head-actions"><button class="primary-button" data-action="new-customer">＋ 고객 등록</button></div></section>
-      <section class="customer-hub-workspace"><header class="customer-hub-selector-bar"><div class="customer-selector-heading">${customer ? customerAvatar(customer) : ""}<b>고객 선택</b><span>${customers.length}명</span></div><label class="customer-select-control"><span>고객</span><select data-customer-hub-select aria-label="고객 선택" ${customers.length ? "" : "disabled"}>${customerOptions}</select></label><label class="management-filter"><span>관리 상태</span><select data-customer-management-filter aria-label="고객 관리 상태 필터">${managementFilterOptions(customerManagementFilter)}</select></label></header><section class="building-hub-detail">${customer ? renderCustomerHubDetail(customer) : `<div class="case-detail-empty"><strong>${Core.normalizeText(searchEl.value) ? "고객을 찾지 못했습니다" : "첫 고객을 등록해 주세요"}</strong><span>고객을 등록하면 연결 건물과 업무 현황이 이곳에 모입니다.</span><button class="primary-button" data-action="new-customer">＋ 고객 등록</button></div>`}</section></section>`;
+    const linkedBuildingIds = new Set(store.customers.flatMap(customer => customerBuildings(customer).filter(building => !building.archivedAt).map(building => building.id)));
+    const managedCustomers = store.customers.filter(customer => managementStatusForCustomer(customer) === "관리 중").length;
+    const reviewCustomers = store.customers.filter(customer => managementStatusForCustomer(customer) === "연결 확인 필요").length;
+    main.innerHTML = `<section class="partner-vendor-hero customer-management-hero"><div><span>고객과 건물 정보를 먼저 등록합니다</span><h2>고객·건물 정보를 관리합니다</h2><p>고객 카드를 누르면 관리 상태, 계약, 민원과 상담 이력을 한 화면에서 확인할 수 있습니다.</p></div><div class="partner-hero-actions"><button class="primary-button" data-action="new-customer">＋ 고객 등록</button></div></section>
+      <div class="quote-kpi-grid partner-vendor-kpis customer-management-kpis">${kpi("등록 고객", store.customers.length, "고객 기본정보", "#55aee8")}${kpi("연결 건물", linkedBuildingIds.size, "보관 제외 관리 건물", "#55c3d1")}${kpi("관리 중", managedCustomers, "현재 관리 중인 고객", "#48b995", managedCustomers ? "good" : "")}${kpi("확인 필요", reviewCustomers, "건물 연결 확인 대상", "#e8b855", reviewCustomers ? "alert" : "")}</div>
+      <div class="partner-vendor-toolbar customer-management-toolbar"><div class="partner-vendor-toolbar-controls"><label class="partner-vendor-industry-filter customer-management-filter-control"><span>관리 상태</span><select data-customer-management-filter aria-label="고객 관리 상태 필터">${managementFilterOptions(customerManagementFilter)}</select></label><label class="partner-vendor-list-search customer-management-list-search"><span aria-hidden="true">⌕</span><input type="search" data-customer-list-search value="${attr(crmSearchValue)}" placeholder="고객명·연락처·건물·주소 검색" autocomplete="off" aria-label="고객·건물 검색"></label></div><span>고객 카드를 누르면 상세 정보와 연결 건물 업무를 확인할 수 있습니다.</span></div>
+      ${customers.length ? `<div class="partner-vendor-list customer-management-list">${customers.map(customer => {
+        const buildings = customerBuildings(customer).filter(building => !building.archivedAt);
+        const buildingIds = new Set(buildings.map(building => building.id));
+        const activeContracts = store.contracts.filter(contract => (contract.customerId === customer.id || buildingIds.has(contract.buildingId)) && contract.status !== "종료").length;
+        const caseMap = new Map(buildings.flatMap(building => buildingCases(building)).map(item => [workflowCaseKey(item), item]));
+        const openCases = [...caseMap.values()].filter(item => Core.workflowProgress(item).done < Core.WORKFLOW_STEPS.length).length;
+        const openTasks = customerTasks(customer.id).filter(task => task.status !== "완료" && task.status !== "취소").length;
+        const primaryBuilding = buildings[0];
+        const buildingLabel = primaryBuilding ? `${primaryBuilding.name || primaryBuilding.address || "건물명 미입력"}${buildings.length > 1 ? ` 외 ${buildings.length - 1}곳` : ""}` : "연결 건물 없음";
+        return `<article class="partner-vendor-card customer-management-card" data-customer-hub-open="${attr(customer.id)}" tabindex="0" aria-label="${attr(customerDisplayName(customer))} 상세 보기"><header><div class="customer-management-card-heading">${customerAvatar(customer)}<div>${managementStatusBadge(managementStatusForCustomer(customer))}<h3>${esc(customerDisplayName(customer))}</h3><p>${esc([customer.company, customer.type].filter(Boolean).join(" · ") || "고객 추가 정보 미입력")}</p></div></div><button type="button" class="quote-card-edit" data-customer-hub-edit="${attr(customer.id)}">고객 수정</button></header><div class="partner-vendor-contact"><div><span>연락처</span><b>${esc(customerPhoneText(customer.phone) || "미입력")}</b></div><div><span>관리 건물</span><b>${esc(buildingLabel)}</b></div></div><footer><span>계약 ${activeContracts}건 · 민원 ${openCases}건 · 할 일 ${openTasks}건</span><button type="button" data-customer-open="${attr(customer.id)}">전체 상세</button></footer></article>`;
+      }).join("")}</div>` : empty(Core.normalizeText(searchEl.value) || customerManagementFilter !== "전체" ? "조건에 맞는 고객이 없습니다" : "등록된 고객이 없습니다", Core.normalizeText(searchEl.value) || customerManagementFilter !== "전체" ? "검색어나 관리 상태를 바꿔 다시 확인해 주세요." : "고객을 등록하면 연결 건물과 업무 현황을 함께 관리할 수 있습니다.", `<button class="primary-button" data-action="new-customer">＋ 첫 고객 등록</button>`)}`;
+  }
+
+  function renderCustomerManagementDetail(customer) {
+    const customers = [...store.customers].sort((left, right) => customerDisplayName(left).localeCompare(customerDisplayName(right), "ko"));
+    const customerOptions = customers.map(item => `<option value="${attr(item.id)}" ${item.id === customer.id ? "selected" : ""}>${esc([customerDisplayName(item), item.company || customerPhoneText(item.phone), managementStatusForCustomer(item)].filter(Boolean).join(" · "))}</option>`).join("");
+    main.innerHTML = `<section class="building-hub-hero customer-hub-hero partner-vendor-detail-hero customer-management-detail-hero"><div><span>고객을 선택하면 연결 건물과 업무가 함께 열립니다</span><h2>고객·건물 정보를 한 화면에서 확인합니다</h2><p>관리 상태, 계약, 민원과 상담 이력을 한곳에서 확인합니다.</p></div></section>
+      <section class="customer-hub-workspace partner-vendor-detail-workspace customer-management-detail-workspace"><header class="customer-hub-selector-bar"><div class="partner-vendor-detail-list-action"><button type="button" class="secondary-button" data-customer-detail-back>← 고객·건물 목록</button></div><label class="customer-select-control"><span>고객</span><select data-customer-hub-select aria-label="고객 선택">${customerOptions}</select></label></header><section class="building-hub-detail">${renderCustomerHubDetail(customer)}</section></section>`;
   }
 
   function customerMessageDeliveries() {
@@ -5453,6 +5473,7 @@
       }
       if (currentView === "valueScope" && nextView !== "valueScope") await deactivateValueScope();
       currentView = nextView;
+      if (currentView === "customers") selectedCustomerHubId = "";
       if (currentView === "partnerVendors") selectedPartnerVendorDetailId = "";
       if (currentView === "cases") caseListMode = "active";
       render();
@@ -6393,6 +6414,7 @@
     }
     const customerListOpen = event.target.closest("[data-customer-list-open]");
     if (customerListOpen) {
+      selectedCustomerHubId = "";
       currentView = "customers";
       render();
       return;
@@ -6414,6 +6436,20 @@
     if (customerHubEdit) { customerEditor(customerHubEdit.dataset.customerHubEdit); return; }
     const customerOpen = event.target.closest("[data-customer-open]");
     if (customerOpen) { renderCustomerDrawer(customerOpen.dataset.customerOpen); return; }
+    const customerDetailBack = event.target.closest("[data-customer-detail-back]");
+    if (customerDetailBack) {
+      selectedCustomerHubId = "";
+      renderCustomers();
+      pageMeta();
+      return;
+    }
+    const customerHubOpen = event.target.closest("[data-customer-hub-open]");
+    if (customerHubOpen) {
+      selectedCustomerHubId = customerHubOpen.dataset.customerHubOpen || "";
+      renderCustomers();
+      pageMeta();
+      return;
+    }
     const taskToggle = event.target.closest("[data-task-toggle]");
     if (taskToggle) {
       const task = store.tasks.find(item => item.id === taskToggle.dataset.taskToggle);
@@ -7944,7 +7980,17 @@
     if (direction && deleteCustomerPhoneDigit(event.target, direction)) event.preventDefault();
   });
   document.addEventListener("input", event => {
-    if (event.target.matches("[data-partner-vendor-list-search]")) {
+    if (event.target.matches("[data-customer-list-search]")) {
+      crmSearchValue = event.target.value.slice(0, 160);
+      searchEl.value = crmSearchValue;
+      if (event.isComposing) return;
+      const caret = event.target.selectionStart;
+      renderCustomers();
+      const input = document.querySelector("[data-customer-list-search]");
+      input?.focus();
+      if (Number.isInteger(caret)) input?.setSelectionRange(caret, caret);
+      return;
+    } else if (event.target.matches("[data-partner-vendor-list-search]")) {
       crmSearchValue = event.target.value.slice(0, 160);
       searchEl.value = crmSearchValue;
       if (event.isComposing) return;
@@ -8015,7 +8061,14 @@
   });
   document.addEventListener("compositionend", event => {
     if (event.target.matches(formattedPhoneInputSelector)) formatCustomerPhoneInput(event.target);
-    else if (event.target.matches("[data-partner-vendor-list-search]")) {
+    else if (event.target.matches("[data-customer-list-search]")) {
+      crmSearchValue = event.target.value.slice(0, 160);
+      searchEl.value = crmSearchValue;
+      renderCustomers();
+      const input = document.querySelector("[data-customer-list-search]");
+      input?.focus();
+      input?.setSelectionRange(input.value.length, input.value.length);
+    } else if (event.target.matches("[data-partner-vendor-list-search]")) {
       crmSearchValue = event.target.value.slice(0, 160);
       searchEl.value = crmSearchValue;
       renderPartnerVendors();
@@ -8032,10 +8085,10 @@
   modal.addEventListener("click", event => { if (event.target === modal) closeModal(); });
   drawer.addEventListener("click", event => { if (event.target === drawer) closeDrawer(); });
 document.addEventListener("keydown", event => {
-  const partnerVendorCard = event.target.matches?.("[data-partner-vendor-open]") ? event.target : null;
-  if (partnerVendorCard && (event.key === "Enter" || event.key === " ")) {
+  const detailCard = event.target.matches?.("[data-partner-vendor-open], [data-customer-hub-open]") ? event.target : null;
+  if (detailCard && (event.key === "Enter" || event.key === " ")) {
     event.preventDefault();
-    partnerVendorCard.click();
+    detailCard.click();
     return;
   }
   const marketingReviewCancel = currentWorkspace === "marketing" && main.querySelector("[data-marketing-review-cancel]");

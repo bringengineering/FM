@@ -3845,6 +3845,90 @@ async function createWindow() {
         await wait(100);
         return { pass: !!vendorId && listEditPreserved && detailOpened && detailLinkPreserved && backButtonRelocated && selectionHeadingRemoved && listRestored && !!document.querySelector('.partner-vendor-detail-workspace'), vendorId, listLinkExpected, backButtonRelocated, selectionHeadingRemoved, state: window.__crmTest?.snapshot() };
       })()`, true);
+    } else if (process.env.BRING_CRM_SCREENSHOT_ACTION === "customer-management-ui") {
+      actionResult = await mainWindow.webContents.executeJavaScript(`(async () => {
+        const wait = ms => new Promise(resolve => setTimeout(resolve, ms));
+        document.querySelector('[data-workspace-enter="operations"]')?.click();
+        await wait(120);
+        document.querySelector('[data-view="customers"]')?.click();
+        await wait(120);
+        let card = document.querySelector('[data-customer-hub-open]');
+        const customerId = card?.dataset.customerHubOpen || '';
+        const listHero = !!document.querySelector('.customer-management-hero');
+        const listKpis = document.querySelectorAll('.customer-management-kpis .kpi-card').length === 4;
+        const listToolbar = !!document.querySelector('[data-customer-management-filter]') && !!document.querySelector('[data-customer-list-search]');
+        const topSearchHidden = document.querySelector('.global-search')?.hidden === true;
+        const listEditPreserved = !!card?.querySelector('[data-customer-hub-edit="' + customerId + '"]');
+        const listDrawerPreserved = !!card?.querySelector('[data-customer-open="' + customerId + '"]');
+        const firstName = card?.querySelector('h3')?.textContent.trim() || '';
+        const localSearch = document.querySelector('[data-customer-list-search]');
+        if (localSearch && firstName) {
+          localSearch.value = firstName;
+          localSearch.dispatchEvent(new Event('input', { bubbles: true }));
+          await wait(100);
+        }
+        const searchedCards = [...document.querySelectorAll('[data-customer-hub-open]')];
+        const localSearchWorks = !!firstName && searchedCards.length >= 1 && searchedCards.every(item => item.querySelector('h3')?.textContent.includes(firstName));
+        const liveSearch = document.querySelector('[data-customer-list-search]');
+        if (liveSearch) {
+          liveSearch.value = '';
+          liveSearch.dispatchEvent(new Event('input', { bubbles: true }));
+          await wait(100);
+        }
+        const managementFilter = document.querySelector('[data-customer-management-filter]');
+        const firstStatus = document.querySelector('[data-customer-hub-open="' + customerId + '"] .contract-status')?.textContent.trim() || '';
+        let managementFilterWorks = false;
+        if (managementFilter && [...managementFilter.options].some(option => option.value === firstStatus)) {
+          managementFilter.value = firstStatus;
+          managementFilter.dispatchEvent(new Event('change', { bubbles: true }));
+          await wait(100);
+          const filteredCards = [...document.querySelectorAll('[data-customer-hub-open]')];
+          managementFilterWorks = filteredCards.length >= 1 && filteredCards.every(item => item.querySelector('.contract-status')?.textContent.trim() === firstStatus);
+          const liveFilter = document.querySelector('[data-customer-management-filter]');
+          if (liveFilter) {
+            liveFilter.value = '전체';
+            liveFilter.dispatchEvent(new Event('change', { bubbles: true }));
+            await wait(100);
+          }
+        }
+        card = document.querySelector('[data-customer-hub-open="' + customerId + '"]');
+        card?.focus();
+        card?.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true }));
+        await wait(120);
+        const selectorBar = document.querySelector('.customer-management-detail-workspace .customer-hub-selector-bar');
+        const detailBackButtons = [...document.querySelectorAll('[data-customer-detail-back]')];
+        const detailBack = detailBackButtons[0];
+        const detailSelect = selectorBar?.querySelector('[data-customer-hub-select]');
+        const backRect = detailBack?.getBoundingClientRect();
+        const selectRect = detailSelect?.getBoundingClientRect();
+        const backButtonRelocated = detailBackButtons.length === 1
+          && !!selectorBar?.contains(detailBack)
+          && detailBack?.textContent.trim() === '← 고객·건물 목록'
+          && !!backRect && !!selectRect && backRect.right <= selectRect.left;
+        const selectionHeadingRemoved = !selectorBar?.querySelector('.customer-selector-heading');
+        const detailOpened = !!document.querySelector('.customer-management-detail-workspace')
+          && detailSelect?.value === customerId
+          && !!document.querySelector('.customer-management-detail-workspace [data-customer-hub-edit="' + customerId + '"]')
+          && !!document.querySelector('.customer-management-detail-workspace [data-customer-open="' + customerId + '"]')
+          && !!document.querySelector('.customer-management-detail-workspace [data-customer-building-select]');
+        detailBack?.click();
+        await wait(100);
+        card = document.querySelector('[data-customer-hub-open="' + customerId + '"]');
+        const listRestored = !!card
+          && !!document.querySelector('[data-customer-management-filter]')
+          && !!document.querySelector('[data-customer-list-search]')
+          && !!card.querySelector('[data-customer-hub-edit]')
+          && !!card.querySelector('[data-customer-open]');
+        card?.click();
+        await wait(100);
+        const reopened = !!document.querySelector('.customer-management-detail-workspace [data-customer-hub-select]');
+        document.querySelector('[data-customer-detail-back]')?.click();
+        await wait(100);
+        const finalList = !!document.querySelector('[data-customer-hub-open="' + customerId + '"]')
+          && !!document.querySelector('.customer-management-hero')
+          && document.querySelectorAll('.customer-management-kpis .kpi-card').length === 4;
+        return { pass: !!customerId && listHero && listKpis && listToolbar && topSearchHidden && listEditPreserved && listDrawerPreserved && localSearchWorks && managementFilterWorks && detailOpened && backButtonRelocated && selectionHeadingRemoved && listRestored && reopened && finalList, customerId, listHero, listKpis, listToolbar, topSearchHidden, listEditPreserved, listDrawerPreserved, localSearchWorks, managementFilterWorks, detailOpened, backButtonRelocated, selectionHeadingRemoved, listRestored, reopened, finalList, state: window.__crmTest?.snapshot() };
+      })()`, true);
     } else if (process.env.BRING_CRM_SCREENSHOT_ACTION === "customer-centered-detail") {
       actionResult = await mainWindow.webContents.executeJavaScript(`(async () => {
         const wait = ms => new Promise(resolve => setTimeout(resolve, ms));
@@ -6281,7 +6365,7 @@ async function createWindow() {
     const uiState = await mainWindow.webContents.executeJavaScript("window.__crmTest && window.__crmTest.snapshot()", true);
     const image = await mainWindow.webContents.capturePage();
     await fs.writeFile(target, image.toPNG());
-    if (["ai-quote-preview", "building-rental-info", "consultation-building-hub", "customer-sales-status", "partner-vendor-toolbar", "partner-vendor-detail", "vacancy-layout-scale", "vacancy-viewer-invariant", "lookup-building-link", "office-messenger-drag-smoke", "one-off-payment-calendar", "payment-building-calendar", "work-calendar-smoke"].includes(process.env.BRING_CRM_SCREENSHOT_ACTION)) {
+    if (["ai-quote-preview", "building-rental-info", "consultation-building-hub", "customer-sales-status", "customer-management-ui", "partner-vendor-toolbar", "partner-vendor-detail", "vacancy-layout-scale", "vacancy-viewer-invariant", "lookup-building-link", "office-messenger-drag-smoke", "one-off-payment-calendar", "payment-building-calendar", "work-calendar-smoke"].includes(process.env.BRING_CRM_SCREENSHOT_ACTION)) {
       await fs.writeFile(`${target}.result.json`, JSON.stringify({ actionResult, uiState }, null, 2), "utf8");
     }
     console.log(target, JSON.stringify({ empty: image.isEmpty(), size: image.getSize(), actionResult, uiState }));
