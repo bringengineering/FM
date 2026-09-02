@@ -229,6 +229,18 @@ test("customer core saves preserve marketing data for the dedicated attribution 
   assert.doesNotMatch(fromForm, /customer\.marketing\s*=\s*parseMarketingAttribution/);
 });
 
+test("customer type supports storefront and a persisted custom value", () => {
+  const editor = sourceBetween("function customerEditor", "function buildingNumberField");
+  const fromForm = sourceBetween("function customerFromForm", "async function deleteActivityRecord");
+
+  assert.match(editor, /\["건물주", "임차인", "상가", "법인", "협력업체", "직접 입력"\]/);
+  assert.match(editor, /name="customType"/);
+  assert.match(editor, /data-customer-custom-type/);
+  assert.match(appSource, /function updateCustomerCustomTypeField/);
+  assert.match(fromForm, /raw\.type === "직접 입력" \? String\(raw\.customType/);
+  assert.match(fromForm, /type: customerType/);
+});
+
 test("building workspace uses the same management status vocabulary", () => {
   const buildingView = sourceBetween("function renderBuildings()", "function renderArchivedBuildings");
   assert.match(buildingView, /data-building-management-filter/);

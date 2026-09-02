@@ -3898,6 +3898,9 @@
     const linkedBuildings = customerBuildings(customer);
     const activeBuildings = (store.buildings || []).filter(building => building && !building.archivedAt).sort((left, right) => String(left.name || "").localeCompare(String(right.name || ""), "ko"));
     const selectedCustomerBuilding = linkedBuildings.find(building => !building.archivedAt) || null;
+    const customerTypes = ["건물주", "임차인", "상가", "법인", "협력업체", "직접 입력"];
+    const customCustomerType = customerTypes.includes(customer.type) ? "" : String(customer.type || "").trim();
+    const selectedCustomerType = customCustomerType ? "직접 입력" : customer.type;
     const customerBuildingOptions = activeBuildings.map(building => `<option value="${attr(building.id)}" ${building.id === selectedCustomerBuilding?.id ? "selected" : ""}>${esc(buildingChoiceLabel(building))}</option>`).join("");
     const photoDataUrl = Core.normalizeCustomerPhotoDataUrl(editing && customerPhotos[editing.id] && customerPhotos[editing.id].dataUrl);
     const photoEditor = editing
@@ -3907,7 +3910,8 @@
       <label class="field"><span>기존 건물 연결 (선택)</span><select name="buildingId"><option value="">건물 연결 안 함</option>${customerBuildingOptions}</select><small>${editing ? "선택하지 않으면 현재 연결 건물을 그대로 유지합니다." : "필요할 때만 기존 건물을 선택하세요."}</small></label>
       <label class="field"><span>고객명 *</span><input name="name" required value="${attr(customer.name)}" placeholder="예: 홍길동 또는 원주에셋"></label>
       <label class="field"><span>연락처</span><input name="phone" type="tel" inputmode="tel" autocomplete="tel" data-customer-phone value="${attr(customerPhoneText(customer.phone))}" placeholder="010-0000-0000"></label>
-      ${selectField("고객 유형", "type", ["건물주", "임차인", "법인", "협력업체", "기타"], customer.type)}
+      ${selectField("고객 유형", "type", ["건물주", "임차인", "상가", "법인", "협력업체", "직접 입력"], selectedCustomerType)}
+      <label class="field" data-customer-custom-type ${selectedCustomerType === "직접 입력" ? "" : "hidden"}><span>고객 유형 직접 입력 *</span><input name="customType" value="${attr(customCustomerType)}" maxlength="40" placeholder="예: 상가 임차인, 관리업체"></label>
       ${field("다음 연락일", "nextContactAt", datetimeValue(customer.nextContactAt), "datetime-local")}
       ${areaField("현재 어떤 요청이 있나요?", "currentIssue", customer.currentIssue, "wide")}
       ${areaField("개인 메모·고객 특징", "notes", customer.notes, "wide")}
@@ -3922,6 +3926,17 @@
     </div></details><div class="info-box">${linkedBuildings.length ? `기존 연결 건물 ${linkedBuildings.length}곳은 유지되며, 다른 건물을 선택하면 연결 건물로 추가됩니다.` : "선택한 건물이 이 고객 화면에 연결됩니다."} 건물 자체 정보는 고객 화면 아래의 건물 관리에서 수정할 수 있습니다.</div><div class="form-actions"><button type="button" class="secondary-button" data-action="close-modal">취소</button><button type="submit" class="primary-button">${editing ? "수정 저장" : "고객 등록"}</button></div></form>`;
     openModal();
     setTimeout(() => document.querySelector(`#customerForm [name="name"]`)?.focus(), 30);
+  }
+
+  function updateCustomerCustomTypeField(form) {
+    const customField = form && form.querySelector("[data-customer-custom-type]");
+    const customInput = form && form.elements.customType;
+    const custom = form && form.elements.type && form.elements.type.value === "직접 입력";
+    if (customField) customField.hidden = !custom;
+    if (customInput) {
+      customInput.required = !!custom;
+      if (custom) customInput.focus();
+    }
   }
 
   function buildingNumberField(label, name, value, suffix, placeholder) {
@@ -4960,8 +4975,9 @@
     const customer = existing || Core.createCustomer({ owner: store.settings.owner || "김현진" });
     const buildingIdLinks = Object.assign({}, customer.buildingIdLinks || {});
     if (raw.buildingId) buildingIdLinks[String(raw.buildingId)] = true;
+    const customerType = raw.type === "직접 입력" ? String(raw.customType || "").trim().slice(0, 40) : raw.type;
     Object.assign(customer, {
-      name: raw.name.trim(), company: raw.company.trim(), phone: customerPhoneText(raw.phone), email: raw.email.trim(), type: raw.type,
+      name: raw.name.trim(), company: raw.company.trim(), phone: customerPhoneText(raw.phone), email: raw.email.trim(), type: customerType,
       owner: raw.owner, source: raw.source, priority: raw.priority, expectedValue: Core.money(raw.expectedValue),
       interestServices: raw.interestServices.split(",").map(item => item.trim()).filter(Boolean), tags: raw.tags.split(",").map(item => item.trim()).filter(Boolean),
       currentIssue: raw.currentIssue.trim(), lastContactAt: raw.lastContactAt ? new Date(raw.lastContactAt).toISOString() : "",
@@ -6812,6 +6828,7 @@
     if (event.target.matches('#contractForm input[name="types"]')) refreshContractTypeFields(event.target.form);
     if (event.target.matches('#contractForm [name="customerId"]')) refreshContractBuildings(event.target.form);
     if (event.target.matches('#contractForm [name="billingCycle"]')) refreshContractPaymentFields(event.target.form);
+    if (event.target.matches('#customerForm [name="type"]')) updateCustomerCustomTypeField(event.target.form);
     if (event.target.matches('#partnerQuoteForm [name="industry"]')) {
       const form = event.target.form;
       const selectedVendor = partnerVendorById(form && form.elements.vendorId && form.elements.vendorId.value);
@@ -7664,6 +7681,9 @@
       const wasExisting = !!form.dataset.customerId;
       const customerName = String(form.elements.name && form.elements.name.value || "").trim();
       if (!customerName) return showToast("고객명을 입력해 주세요.", "error");
+      if (form.elements.type?.value === "직접 입력" && !String(form.elements.customType?.value || "").trim()) {
+        return showToast("직접 사용할 고객 유형을 입력해 주세요.", "error");
+      }
       const requestedBuildingId = String(form.elements.buildingId && form.elements.buildingId.value || "");
       let selectedBuilding = requestedBuildingId ? buildingById(requestedBuildingId) : null;
       if (requestedBuildingId && (!selectedBuilding || selectedBuilding.archivedAt)) return showToast("연결할 건물을 다시 선택해 주세요.", "error");
