@@ -2084,6 +2084,10 @@ describe.runIf(databaseEmulatorAvailable)("fieldPlatform database rules", () => 
       "crm-viewer",
       crmClaims("viewer@bring.test"),
     ).database();
+    const unverifiedViewer = environment.authenticatedContext(
+      "crm-viewer",
+      crmPasswordClaims("viewer@bring.test", false),
+    ).database();
     const passwordPending = environment.authenticatedContext(
       "crm-member",
       crmClaims("member@bring.test"),
@@ -2124,6 +2128,22 @@ describe.runIf(databaseEmulatorAvailable)("fieldPlatform database rules", () => 
       updatedAt: "2026-08-31T00:03:00.000Z",
     };
     await assertSucceeds(set(ref(viewer, attendancePath), attendance));
+    await assertFails(get(ref(unverifiedViewer, attendancePath)));
+    await assertFails(set(
+      ref(unverifiedViewer, "crmCompany/officeAttendance/crm-viewer/2026-09-01"),
+      {
+        ...attendance,
+        id: "crm-viewer_2026-09-01",
+        workDate: "2026-09-01",
+        checkInAt: "2026-09-01T00:03:00.000Z",
+        createdAt: "2026-09-01T00:03:00.000Z",
+        updatedAt: "2026-09-01T00:03:00.000Z",
+      },
+    ));
+    await assertFails(update(ref(unverifiedViewer, attendancePath), {
+      checkOutAt: "2026-08-31T09:04:00.000Z",
+      updatedAt: "2026-08-31T09:04:00.000Z",
+    }));
     await assertSucceeds(get(ref(viewer, attendancePath)));
     await assertSucceeds(get(ref(admin, "crmCompany/officeAttendance")));
     await assertFails(get(ref(standardAdmin, "crmCompany/officeAttendance")));
@@ -2450,6 +2470,289 @@ describe.runIf(databaseEmulatorAvailable)("fieldPlatform database rules", () => 
       { ...attendance, id: "crm-member_2026-08-31", userId: "crm-member" },
     ));
     await assertFails(get(ref(anonymous, attendancePath)));
+  }, 60_000);
+
+  it("allows only atomic, audited office-admin attendance corrections", async () => {
+    const officeAdmin = environment.authenticatedContext(
+      "crm-admin",
+      crmClaims("admin@bring.test"),
+    ).database();
+    const standardAdmin = environment.authenticatedContext(
+      "crm-standard-admin",
+      crmClaims("standard-admin@bring.test"),
+    ).database();
+    const member = environment.authenticatedContext(
+      "crm-legacy-member",
+      crmClaims("legacy@bring.test"),
+    ).database();
+    const viewer = environment.authenticatedContext(
+      "crm-viewer",
+      crmClaims("viewer@bring.test"),
+    ).database();
+    const unverifiedOfficeAdmin = environment.authenticatedContext(
+      "crm-admin",
+      crmPasswordClaims("admin@bring.test", false),
+    ).database();
+    const wrongEmailOfficeAdmin = environment.authenticatedContext(
+      "crm-admin",
+      crmClaims("wrong@bring.test"),
+    ).database();
+    const disabledOfficeAdmin = environment.authenticatedContext(
+      "crm-office-disabled",
+      crmClaims("office-disabled@bring.test"),
+    ).database();
+    const pendingOfficeAdmin = environment.authenticatedContext(
+      "crm-office-pending",
+      crmClaims("office-pending@bring.test"),
+    ).database();
+    const anonymous = environment.unauthenticatedContext().database();
+
+    const workDate = "2026-09-01";
+    const attendancePath = `crmCompany/officeAttendance/crm-viewer/${workDate}`;
+    const initialAttendance = {
+      id: `crm-viewer_${workDate}`,
+      userId: "crm-viewer",
+      workDate,
+      checkInAt: "2026-09-01T00:10:00.000Z",
+      checkOutAt: "",
+      createdAt: "2026-09-01T00:10:00.000Z",
+      updatedAt: "2026-09-01T00:10:00.000Z",
+    };
+    await assertSucceeds(set(ref(viewer, attendancePath), initialAttendance));
+
+    type AttendanceRecord = typeof initialAttendance & {
+      correctionVersion?: number;
+      lastCorrectionId?: string;
+      lastCorrectionRequestId?: string;
+      lastCorrectionHash?: string;
+      correctedAtMs?: number | ReturnType<typeof serverTimestamp>;
+      correctedBy?: string;
+    };
+    type CorrectionInput = {
+      actorUid: string;
+      requestId: string;
+      hashChar: string;
+      before: AttendanceRecord;
+      afterCheckInAt: string;
+      afterCheckOutAt: string;
+      afterUpdatedAt: string;
+      reason?: string;
+    };
+    const buildCorrection = ({
+      actorUid,
+      requestId,
+      hashChar,
+      before,
+      afterCheckInAt,
+      afterCheckOutAt,
+      afterUpdatedAt,
+      reason = "관리자 요청에 따른 출퇴근 시간 정정",
+    }: CorrectionInput) => {
+      const auditId = `attcorr_${requestId}`;
+      const requestHash = hashChar.repeat(64);
+      const beforeVersion = before.correctionVersion || 0;
+      const occurredAtMs = serverTimestamp();
+      const record: AttendanceRecord = {
+        ...before,
+        checkInAt: afterCheckInAt,
+        checkOutAt: afterCheckOutAt,
+        updatedAt: afterUpdatedAt,
+        correctionVersion: beforeVersion + 1,
+        lastCorrectionId: auditId,
+        lastCorrectionRequestId: requestId,
+        lastCorrectionHash: requestHash,
+        correctedAtMs: occurredAtMs,
+        correctedBy: actorUid,
+      };
+      const audit = {
+        id: auditId,
+        requestId,
+        requestHash,
+        actorAuthUid: actorUid,
+        targetUserId: before.userId,
+        workDate: before.workDate,
+        reason,
+        beforeCheckInAt: before.checkInAt,
+        beforeCheckOutAt: before.checkOutAt,
+        afterCheckInAt,
+        afterCheckOutAt,
+        expectedUpdatedAt: before.updatedAt,
+        beforeUpdatedAt: before.updatedAt,
+        afterUpdatedAt,
+        beforeVersion,
+        afterVersion: beforeVersion + 1,
+        occurredAtMs,
+      };
+      return {
+        audit,
+        auditId,
+        patch: {
+          [`officeAttendance/${before.userId}/${before.workDate}`]: record,
+          [`officeAttendanceAudits/${auditId}`]: audit,
+        },
+        record,
+      };
+    };
+
+    const deniedActors = [
+      { database: anonymous, actorUid: "crm-admin" },
+      { database: standardAdmin, actorUid: "crm-standard-admin" },
+      { database: member, actorUid: "crm-legacy-member" },
+      { database: viewer, actorUid: "crm-viewer" },
+      { database: unverifiedOfficeAdmin, actorUid: "crm-admin" },
+      { database: wrongEmailOfficeAdmin, actorUid: "crm-admin" },
+      { database: disabledOfficeAdmin, actorUid: "crm-office-disabled" },
+      { database: pendingOfficeAdmin, actorUid: "crm-office-pending" },
+    ];
+    for (const { database, actorUid } of deniedActors) {
+      const denied = buildCorrection({
+        actorUid,
+        requestId: "11111111-1111-4111-8111-111111111111",
+        hashChar: "1",
+        before: initialAttendance,
+        afterCheckInAt: "2026-09-01T00:15:00.000Z",
+        afterCheckOutAt: "",
+        afterUpdatedAt: "2026-09-01T00:15:00.000Z",
+      });
+      await assertFails(update(ref(database, "crmCompany"), denied.patch));
+    }
+
+    const first = buildCorrection({
+      actorUid: "crm-admin",
+      requestId: "22222222-2222-4222-8222-222222222222",
+      hashChar: "2",
+      before: initialAttendance,
+      afterCheckInAt: "2026-09-01T00:15:00.000Z",
+      afterCheckOutAt: "",
+      afterUpdatedAt: "2026-09-01T00:15:00.000Z",
+    });
+
+    await assertFails(set(
+      ref(officeAdmin, `crmCompany/officeAttendance/crm-viewer/${workDate}`),
+      first.record,
+    ));
+    await assertFails(set(
+      ref(officeAdmin, `crmCompany/officeAttendanceAudits/${first.auditId}`),
+      first.audit,
+    ));
+
+    const tamperedHash = {
+      ...first.patch,
+      [`officeAttendanceAudits/${first.auditId}`]: {
+        ...first.audit,
+        requestHash: "f".repeat(64),
+      },
+    };
+    await assertFails(update(ref(officeAdmin, "crmCompany"), tamperedHash));
+
+    const tamperedImmutableRecord = {
+      ...first.patch,
+      [`officeAttendance/crm-viewer/${workDate}`]: {
+        ...first.record,
+        createdAt: "2026-09-01T00:11:00.000Z",
+      },
+    };
+    await assertFails(update(ref(officeAdmin, "crmCompany"), tamperedImmutableRecord));
+
+    const missingRecord = buildCorrection({
+      actorUid: "crm-admin",
+      requestId: "33333333-3333-4333-8333-333333333333",
+      hashChar: "3",
+      before: {
+        ...initialAttendance,
+        id: "crm-viewer_2026-09-02",
+        workDate: "2026-09-02",
+      },
+      afterCheckInAt: "2026-09-02T00:15:00.000Z",
+      afterCheckOutAt: "",
+      afterUpdatedAt: "2026-09-02T00:15:00.000Z",
+    });
+    await assertFails(update(ref(officeAdmin, "crmCompany"), missingRecord.patch));
+
+    await assertSucceeds(update(ref(officeAdmin, "crmCompany"), first.patch));
+    await assertSucceeds(get(ref(officeAdmin, "crmCompany/officeAttendanceAudits")));
+    await assertFails(get(ref(standardAdmin, "crmCompany/officeAttendanceAudits")));
+    await assertFails(get(ref(viewer, `crmCompany/officeAttendanceAudits/${first.auditId}`)));
+
+    const afterFirst = (await get(ref(officeAdmin, attendancePath))).val() as AttendanceRecord;
+    expect(afterFirst.correctionVersion).toBe(1);
+    expect(afterFirst.lastCorrectionId).toBe(first.auditId);
+    expect(afterFirst.correctedBy).toBe("crm-admin");
+    expect(typeof afterFirst.correctedAtMs).toBe("number");
+
+    await assertSucceeds(update(ref(viewer, attendancePath), {
+      checkOutAt: "2026-09-01T09:00:00.000Z",
+      updatedAt: "2026-09-01T09:00:00.000Z",
+    }));
+    const checkedOut = (await get(ref(officeAdmin, attendancePath))).val() as AttendanceRecord;
+    expect(checkedOut.correctionVersion).toBe(1);
+    expect(checkedOut.lastCorrectionId).toBe(first.auditId);
+
+    const concurrentBefore = checkedOut;
+    const second = buildCorrection({
+      actorUid: "crm-admin",
+      requestId: "44444444-4444-4444-8444-444444444444",
+      hashChar: "4",
+      before: concurrentBefore,
+      afterCheckInAt: concurrentBefore.checkInAt,
+      afterCheckOutAt: "2026-09-01T09:05:00.000Z",
+      afterUpdatedAt: "2026-09-01T09:05:00.000Z",
+      reason: "퇴근 기록 오분 정정",
+    });
+    const staleConcurrent = buildCorrection({
+      actorUid: "crm-admin",
+      requestId: "55555555-5555-4555-8555-555555555555",
+      hashChar: "5",
+      before: concurrentBefore,
+      afterCheckInAt: concurrentBefore.checkInAt,
+      afterCheckOutAt: "2026-09-01T09:06:00.000Z",
+      afterUpdatedAt: "2026-09-01T09:06:00.000Z",
+      reason: "동시 수정 충돌 확인",
+    });
+    await assertSucceeds(update(ref(officeAdmin, "crmCompany"), second.patch));
+    await assertFails(update(ref(officeAdmin, "crmCompany"), staleConcurrent.patch));
+    await assertFails(update(ref(officeAdmin, "crmCompany"), second.patch));
+
+    const afterSecond = (await get(ref(officeAdmin, attendancePath))).val() as AttendanceRecord;
+    const clearCompletedCheckout = buildCorrection({
+      actorUid: "crm-admin",
+      requestId: "66666666-6666-4666-8666-666666666666",
+      hashChar: "6",
+      before: afterSecond,
+      afterCheckInAt: afterSecond.checkInAt,
+      afterCheckOutAt: "",
+      afterUpdatedAt: "2026-09-01T09:07:00.000Z",
+    });
+    await assertFails(update(ref(officeAdmin, "crmCompany"), clearCompletedCheckout.patch));
+
+    const reversedTime = buildCorrection({
+      actorUid: "crm-admin",
+      requestId: "77777777-7777-4777-8777-777777777777",
+      hashChar: "7",
+      before: afterSecond,
+      afterCheckInAt: "2026-09-01T10:00:00.000Z",
+      afterCheckOutAt: "2026-09-01T09:05:00.000Z",
+      afterUpdatedAt: "2026-09-01T10:00:00.000Z",
+    });
+    await assertFails(update(ref(officeAdmin, "crmCompany"), reversedTime.patch));
+
+    const unsafeReason = buildCorrection({
+      actorUid: "crm-admin",
+      requestId: "88888888-8888-4888-8888-888888888888",
+      hashChar: "8",
+      before: afterSecond,
+      afterCheckInAt: afterSecond.checkInAt,
+      afterCheckOutAt: "2026-09-01T09:08:00.000Z",
+      afterUpdatedAt: "2026-09-01T09:08:00.000Z",
+      reason: "숨김\u202E문자",
+    });
+    await assertFails(update(ref(officeAdmin, "crmCompany"), unsafeReason.patch));
+
+    await assertFails(remove(ref(officeAdmin, attendancePath)));
+    await assertFails(remove(ref(officeAdmin, `crmCompany/officeAttendanceAudits/${first.auditId}`)));
+    await assertFails(update(ref(officeAdmin, `crmCompany/officeAttendanceAudits/${first.auditId}`), {
+      reason: "기존 감사 기록 변조",
+    }));
   }, 60_000);
 
   it("denies every client direct reads and writes anywhere under FIELD v2", async () => {

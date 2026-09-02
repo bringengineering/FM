@@ -30,6 +30,9 @@ const {
   planBuildingScheduleCommit,
   buildingScheduleAuditRecord,
   serviceRecordsSemanticallyEqual,
+  validateOfficeAttendanceCorrectionInput,
+  officeAttendanceCorrectionAuditId,
+  planOfficeAttendanceCorrection,
 } = require("./remote");
 const VendorExtractor = require("./vendor-extractor");
 const NaverBuildingExtractor = require("./naver-building-extractor");
@@ -129,6 +132,7 @@ if (localTestMode && !process.env.BRING_CRM_DATA_DIR) {
 let localOperationsData = null;
 let localOfficeData = null;
 let localOfficeMessageFiles = Object.create(null);
+const localOfficeAttendanceAudits = new Map();
 const OFFICE_ATTACHMENT_TTL_MS = 10 * 60 * 1000;
 const MAX_PENDING_OFFICE_ATTACHMENTS = 8;
 const OFFICE_ATTACHMENT_CACHE_DIRECTORY = "bring-crm-office-attachments";
@@ -2328,6 +2332,39 @@ async function saveOfficeAttendance(input) {
     existing.updatedAt = now;
   }
   localOfficeData.loadedAt = now;
+  return { ok: true, data: await readOffice() };
+}
+
+async function correctOfficeAttendance(input) {
+  const actor = assertOfficeSession();
+  if (actor.officeAdmin !== true) throw new Error("근태 시간은 지정된 근태 관리자만 수정할 수 있습니다.");
+  const request = validateOfficeAttendanceCorrectionInput(input);
+  if (!localTestMode) {
+    if (!remoteClient) throw new Error("BRING OFFICE 서버 연결을 준비하지 못했습니다.");
+    return { ok: true, data: await remoteClient.correctOfficeAttendance(request) };
+  }
+  localOfficeData = localOfficeData || demoOffice();
+  const target = localOfficeData.users.find(item => item.uid === request.userId
+    && item.enabled === true
+    && item.mustChangePassword !== true
+    && ["admin", "member", "viewer"].includes(String(item.role || "")));
+  if (!target) throw new Error("수정할 활성 구성원을 찾지 못했습니다.");
+  const index = localOfficeData.attendance.findIndex(row => row.userId === request.userId && row.workDate === request.workDate);
+  const existing = index >= 0 ? localOfficeData.attendance[index] : null;
+  const auditId = officeAttendanceCorrectionAuditId(request.requestId);
+  const plan = planOfficeAttendanceCorrection(request, {
+    actor: { uid: actor.uid, officeAdmin: actor.officeAdmin === true },
+    existing,
+    audit: localOfficeAttendanceAudits.get(auditId) || null,
+  });
+  if (!plan.repeated) {
+    const occurredAtMs = Date.now();
+    const record = Object.assign({}, plan.record, { correctedAtMs: occurredAtMs });
+    const audit = Object.assign({}, plan.audit, { occurredAtMs });
+    localOfficeData.attendance[index] = record;
+    localOfficeAttendanceAudits.set(auditId, audit);
+  }
+  localOfficeData.loadedAt = new Date().toISOString();
   return { ok: true, data: await readOffice() };
 }
 
@@ -6378,6 +6415,7 @@ secureHandle("crm:save", data => writeStore(data));
 secureHandle("crm:save-now", data => writeStoreNow(data));
 secureCanonicalHandle("crm:office-load", readOffice);
 secureCanonicalHandle("crm:office-attendance-save", input => saveOfficeAttendance(input));
+secureCanonicalHandle("crm:office-attendance-correct", input => correctOfficeAttendance(input));
 secureCanonicalHandle("crm:office-display-name-save", input => saveOfficeDisplayName(input));
 secureCanonicalHandle("crm:office-attachment-pick", input => pickOfficeAttachment(input));
 secureCanonicalHandle("crm:office-attachment-drop", input => dropOfficeAttachment(input));

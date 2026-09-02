@@ -26,6 +26,17 @@
   });
   const OFFICE_ATTACHMENT_EXTENSIONS = new Set(Object.keys(OFFICE_ATTACHMENT_MIME_BY_EXTENSION));
   const SAFE_OFFICE_MESSAGE_ID = /^msg_[A-Za-z0-9_]{8,80}$/;
+  const SAFE_ATTENDANCE_TIME = /^(?:[01]\d|2[0-3]):[0-5]\d$/;
+  const SAFE_ATTENDANCE_CORRECTION_ID = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+  const ATTENDANCE_CORRECTION_KEYS = Object.freeze([
+    "userId",
+    "workDate",
+    "checkInTime",
+    "checkOutTime",
+    "reason",
+    "expectedUpdatedAt",
+    "requestId"
+  ]);
   const MAX_OFFICE_READ_RECEIPT_IDS = 100;
   const WINDOWS_RESERVED_NAME = /^(?:CON|PRN|AUX|NUL|COM[1-9¹²³]|LPT[1-9¹²³])(?:\.|$)/i;
   const safeText = (value, fallback) => String(value == null ? "" : value).trim() || fallback || "";
@@ -147,6 +158,104 @@
       checkOutAt: safeText(source.checkOutAt || source.check_out_at),
       createdAt: safeText(source.createdAt || source.created_at),
       updatedAt: safeText(source.updatedAt || source.updated_at)
+    };
+  }
+
+  function validWorkDate(value) {
+    if (typeof value !== "string") return false;
+    const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value);
+    if (!match) return false;
+    const year = Number(match[1]);
+    const month = Number(match[2]);
+    const day = Number(match[3]);
+    const date = new Date(Date.UTC(year, month - 1, day));
+    return year >= 2000
+      && year <= 2100
+      && date.getUTCFullYear() === year
+      && date.getUTCMonth() === month - 1
+      && date.getUTCDate() === day;
+  }
+
+  function attendanceTimeInput(value) {
+    if (typeof value !== "string" || !Number.isFinite(Date.parse(value))) return "";
+    const parts = new Intl.DateTimeFormat("en-GB", {
+      timeZone: KOREA_TIME_ZONE,
+      hour: "2-digit",
+      minute: "2-digit",
+      hour12: false,
+      hourCycle: "h23"
+    }).formatToParts(new Date(value));
+    const hour = parts.find(part => part.type === "hour")?.value || "";
+    const minute = parts.find(part => part.type === "minute")?.value || "";
+    const result = `${hour}:${minute}`;
+    return SAFE_ATTENDANCE_TIME.test(result) ? result : "";
+  }
+
+  function normalizeAttendanceCorrectionReason(value) {
+    if (typeof value !== "string") return "";
+    const reason = value.trim();
+    if ([...reason].length < 2
+      || [...reason].length > 300
+      || utf8ByteLength(reason) > 900
+      || /[\p{Cc}\p{Cf}\u2028\u2029]/u.test(reason)) return "";
+    return reason;
+  }
+
+  function validateAttendanceCorrectionRequest(input, existingRecord, todayValue) {
+    const source = isPlainRecord(input) ? input : null;
+    const existing = normalizeAttendance(existingRecord);
+    const today = typeof todayValue === "string" && validWorkDate(todayValue) ? todayValue : workDate();
+    const invalid = error => ({ ok: false, error, value: null });
+    if (!source
+      || Object.keys(source).length !== ATTENDANCE_CORRECTION_KEYS.length
+      || ATTENDANCE_CORRECTION_KEYS.some(key => !Object.prototype.hasOwnProperty.call(source, key))) {
+      return invalid("근태 시간 수정 요청이 올바르지 않습니다.");
+    }
+    const userId = normalizeOfficeUserId(source.userId);
+    const correctionWorkDate = typeof source.workDate === "string" ? source.workDate : "";
+    const checkInTime = typeof source.checkInTime === "string" ? source.checkInTime : "";
+    const checkOutTime = typeof source.checkOutTime === "string" ? source.checkOutTime : "";
+    const reason = normalizeAttendanceCorrectionReason(source.reason);
+    const expectedUpdatedAt = typeof source.expectedUpdatedAt === "string" ? source.expectedUpdatedAt : "";
+    const requestId = typeof source.requestId === "string" ? source.requestId : "";
+    if (!userId || userId !== source.userId
+      || !validWorkDate(correctionWorkDate)
+      || correctionWorkDate > today
+      || !existing.id
+      || existing.userId !== userId
+      || existing.workDate !== correctionWorkDate
+      || !existing.checkInAt
+      || workDate(existing.checkInAt) !== correctionWorkDate
+      || existing.checkOutAt && workDate(existing.checkOutAt) !== correctionWorkDate) {
+      return invalid("수정할 기존 근태 기록을 확인해 주세요.");
+    }
+    if (!SAFE_ATTENDANCE_TIME.test(checkInTime)
+      || checkOutTime && !SAFE_ATTENDANCE_TIME.test(checkOutTime)) {
+      return invalid("출근·퇴근 시간을 24시간 형식으로 확인해 주세요.");
+    }
+    if (checkOutTime && checkOutTime <= checkInTime) {
+      return invalid("퇴근 시간은 출근 시간보다 늦어야 합니다.");
+    }
+    if (existing.checkOutAt && !checkOutTime) {
+      return invalid("퇴근 완료 기록의 퇴근 시간은 비울 수 없습니다.");
+    }
+    if (!reason) return invalid("수정 사유를 제어문자 없이 2~300자로 입력해 주세요.");
+    if (!expectedUpdatedAt
+      || expectedUpdatedAt !== existing.updatedAt
+      || !Number.isFinite(Date.parse(expectedUpdatedAt))) {
+      return invalid("다른 변경 사항이 있는지 새로고침한 뒤 다시 시도해 주세요.");
+    }
+    if (!SAFE_ATTENDANCE_CORRECTION_ID.test(requestId)) {
+      return invalid("근태 시간 수정 요청 식별자가 올바르지 않습니다.");
+    }
+    if (attendanceTimeInput(existing.checkInAt) === checkInTime
+      && attendanceTimeInput(existing.checkOutAt) === checkOutTime) {
+      return invalid("변경된 출근 또는 퇴근 시간이 없습니다.");
+    }
+    return {
+      ok: true,
+      error: "",
+      value: { userId, workDate: correctionWorkDate, checkInTime, checkOutTime, reason, expectedUpdatedAt, requestId }
     };
   }
 
@@ -372,6 +481,10 @@
     mergeOfficeUsers,
     normalizeUser,
     normalizeAttendance,
+    validWorkDate,
+    attendanceTimeInput,
+    normalizeAttendanceCorrectionReason,
+    validateAttendanceCorrectionRequest,
     attendanceStatus,
     attendanceReviewStatus,
     workedMinutes,

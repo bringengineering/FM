@@ -10,7 +10,7 @@ const READ_OR_CONTROL = [
   'crm:show-field-platform','crm:hide-field-platform','crm:field-reconnect','crm:open-external','crm:vendor-lookup','crm:building-link-lookup'
 ];
 const MUTATIONS = [
-  'crm:save','crm:save-now','crm:quote-supplier-save','crm:office-attendance-save','crm:office-display-name-save','crm:office-attachment-pick','crm:office-attachment-drop','crm:office-message-send','crm:office-messages-read','crm:operation-save','crm:customer-photo-save',
+  'crm:save','crm:save-now','crm:quote-supplier-save','crm:office-attendance-save','crm:office-attendance-correct','crm:office-display-name-save','crm:office-attachment-pick','crm:office-attachment-drop','crm:office-message-send','crm:office-messages-read','crm:operation-save','crm:customer-photo-save',
   'crm:drive-import-decision','crm:canonical-entity-commit','crm:building-schedule-commit','crm:marketing-commit','crm:marketing-archive',
   'crm:marketing-attribution-update','crm:work-operations-sync-retry','crm:canonical-building-units-configure','crm:case-save','crm:payment-override',
   'crm:payment-schedule-save','crm:payment-schedule-delete','crm:payment-bank-binding','crm:workflow-action','crm:field-request','crm:backup','crm:restore'

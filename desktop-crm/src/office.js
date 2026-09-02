@@ -21,6 +21,7 @@
     selectedAdminUserId: "",
     adminMonth: Core.workDate().slice(0, 7),
     adminTab: "list",
+    adminAttendanceCorrection: null,
     busy: false,
     active: false,
     generation: 0,
@@ -139,6 +140,14 @@
   function applyOfficeData(payload, user, expectedRevision) {
     if (expectedRevision !== undefined && expectedRevision !== state.dataRevision) return false;
     state.data = Core.normalizeOfficePayload(payload && payload.data || payload, user || currentUser());
+    const correction = state.adminAttendanceCorrection;
+    if (correction) {
+      const currentRecord = state.data.attendance.find(record => record.userId === correction.userId
+        && record.workDate === correction.workDate) || null;
+      if (!currentRecord || currentRecord.updatedAt !== correction.expectedUpdatedAt) {
+        clearAdminAttendanceCorrection();
+      }
+    }
     state.dataRevision += 1;
     return true;
   }
@@ -403,6 +412,68 @@
     return `<div class="office-admin-calendar"><div class="office-calendar-weekdays">${headers}</div><div class="office-calendar-grid">${cells}</div></div>`;
   }
 
+  function clearAdminAttendanceCorrection() {
+    state.adminAttendanceCorrection = null;
+  }
+
+  function adminAttendanceCorrectionRecords(userId) {
+    return Core.monthlyAttendance(state.data.attendance, userId, state.adminMonth)
+      .filter(record => record.workDate <= Core.workDate());
+  }
+
+  function selectAdminAttendanceCorrectionRecord(workDate) {
+    const records = adminAttendanceCorrectionRecords(state.selectedAdminUserId);
+    const record = records.find(row => row.workDate === workDate) || null;
+    if (!record) {
+      clearAdminAttendanceCorrection();
+      return null;
+    }
+    state.adminAttendanceCorrection = {
+      userId: record.userId,
+      workDate: record.workDate,
+      checkInTime: Core.attendanceTimeInput(record.checkInAt),
+      checkOutTime: Core.attendanceTimeInput(record.checkOutAt),
+      reason: "",
+      expectedUpdatedAt: record.updatedAt
+    };
+    return record;
+  }
+
+  function beginAdminAttendanceCorrection() {
+    if (!isAdmin() || !state.selectedAdminUserId || state.busy) return;
+    const record = adminAttendanceCorrectionRecords(state.selectedAdminUserId)[0] || null;
+    if (!record) {
+      notify("이 달에는 수정할 수 있는 기존 근태 기록이 없습니다.", "error");
+      return;
+    }
+    state.editingDisplayNameUserId = "";
+    state.displayNameEditSurface = "";
+    state.displayNameDraft = "";
+    selectAdminAttendanceCorrectionRecord(record.workDate);
+    renderCurrent();
+    document.querySelector("[data-office-attendance-correction-date]")?.focus();
+  }
+
+  function adminAttendanceCorrectionEditor(selectedUser) {
+    const draft = state.adminAttendanceCorrection;
+    if (!draft || draft.userId !== selectedUser.uid) return "";
+    const records = adminAttendanceCorrectionRecords(selectedUser.uid);
+    const record = records.find(row => row.workDate === draft.workDate) || null;
+    if (!record) return "";
+    const disabled = state.busy ? "disabled" : "";
+    const options = records.map(row => `<option value="${esc(row.workDate)}" ${row.workDate === record.workDate ? "selected" : ""}>${esc(formatDate(row.workDate))} · 출근 ${esc(formatTime(row.checkInAt))} / 퇴근 ${esc(formatTime(row.checkOutAt))}</option>`).join("");
+    return `<form class="office-attendance-correction" data-office-attendance-correction-form>
+      <header><div><span>ATTENDANCE CORRECTION</span><h4>출근·퇴근 시간 수정</h4><p>기존 기록만 수정할 수 있으며, 변경 사유는 관리자 정정 이력에 남습니다.</p></div><button type="button" data-office-attendance-correction-cancel ${disabled} aria-label="시간 수정 취소">×</button></header>
+      <div class="office-attendance-correction-fields">
+        <label><span>근태 날짜</span><select name="workDate" data-office-attendance-correction-date ${disabled} required>${options}</select></label>
+        <label><span>출근 시간</span><input name="checkInTime" type="time" step="60" value="${esc(draft.checkInTime)}" ${disabled} required></label>
+        <label><span>퇴근 시간</span><input name="checkOutTime" type="time" step="60" value="${esc(draft.checkOutTime)}" ${record.checkOutAt ? "required" : ""} ${disabled}><small>${record.checkOutAt ? "퇴근 완료 기록은 비울 수 없습니다." : "퇴근 전이면 비워둘 수 있습니다."}</small></label>
+        <label class="office-attendance-correction-reason"><span>수정 사유</span><textarea name="reason" rows="2" minlength="2" maxlength="300" placeholder="실제 확인한 사유를 2~300자로 입력하세요" ${disabled} required>${esc(draft.reason)}</textarea></label>
+      </div>
+      <footer><span>${esc(Core.displayName(selectedUser))} · ${esc(record.workDate)} 기록을 수정합니다.</span><div><button type="button" data-office-attendance-correction-cancel ${disabled}>취소</button><button type="submit" ${disabled}>${state.busy ? "저장 중…" : "시간 저장"}</button></div></footer>
+    </form>`;
+  }
+
   function adminTabs(selectedUser) {
     return `<nav class="office-admin-tabs" aria-label="전체 근태관리 탭"><button class="${state.adminTab === "list" ? "active" : ""}" data-office-admin-tab="list"><span>▦</span> 직원 목록</button>${selectedUser ? `<button class="${state.adminTab === "detail" ? "active" : ""}" data-office-admin-tab="detail"><span>◷</span> ${esc(Core.displayName(selectedUser))} 근태 <i aria-hidden="true">×</i></button>` : ""}</nav>`;
   }
@@ -420,8 +491,11 @@
 
     if (state.adminTab === "detail" && selectedUser) {
       const summary = Core.monthlyAttendanceSummary(rows, selectedUser.uid, state.adminMonth);
+      const correctableRecords = summary.records.filter(record => record.workDate <= today);
+      const correctionEditor = adminAttendanceCorrectionEditor(selectedUser);
       return `${hero}${adminTabs(selectedUser)}${attendanceNameEditor}<section class="office-admin-detail office-admin-calendar-tab">
-        <header class="office-admin-detail-head"><div class="office-admin-person">${avatar(selectedUser, "large")}<div><span>EMPLOYEE ATTENDANCE</span><h3>${esc(Core.displayName(selectedUser))}</h3><p>${esc(userMeta(selectedUser))}</p></div><button type="button" class="office-admin-name-button" aria-label="${esc(Core.displayName(selectedUser))} 이름 수정" data-office-display-name-edit="${esc(selectedUser.uid)}" data-office-display-name-surface="attendance" ${state.busy ? "disabled" : ""}>이름 수정</button></div><div class="office-admin-month-actions"><button data-office-admin-month="previous" aria-label="이전 달">‹</button><strong>${esc(state.adminMonth.replace("-", ". "))}</strong><button data-office-admin-month="next" aria-label="다음 달">›</button><button class="attendance-today-button" data-office-admin-month="today">이번 달</button><button class="office-excel-button" data-office-attendance-export ${state.busy ? "disabled" : ""}><span>⇩</span> 엑셀 다운로드</button></div></header>
+        <header class="office-admin-detail-head"><div class="office-admin-person">${avatar(selectedUser, "large")}<div><span>EMPLOYEE ATTENDANCE</span><h3>${esc(Core.displayName(selectedUser))}</h3><p>${esc(userMeta(selectedUser))}</p></div><div class="office-admin-person-actions"><button type="button" class="office-admin-name-button" aria-label="${esc(Core.displayName(selectedUser))} 이름 수정" data-office-display-name-edit="${esc(selectedUser.uid)}" data-office-display-name-surface="attendance" ${state.busy ? "disabled" : ""}>이름 수정</button><button type="button" class="office-admin-time-edit-button" data-office-attendance-correction-open ${state.busy || !correctableRecords.length ? "disabled" : ""} title="${correctableRecords.length ? "기존 근태 기록의 시간을 수정합니다." : "이 달에는 수정할 기존 기록이 없습니다."}">시간 수정</button></div></div><div class="office-admin-month-actions"><button data-office-admin-month="previous" aria-label="이전 달">‹</button><strong>${esc(state.adminMonth.replace("-", ". "))}</strong><button data-office-admin-month="next" aria-label="다음 달">›</button><button class="attendance-today-button" data-office-admin-month="today">이번 달</button><button class="office-excel-button" data-office-attendance-export ${state.busy ? "disabled" : ""}><span>⇩</span> 엑셀 다운로드</button></div></header>
+        ${correctionEditor}
         <div class="office-admin-month-kpis"><article><span>출근 일수</span><b>${summary.attendedDays}<small>일</small></b></article><article><span>퇴근 완료</span><b>${summary.completedDays}<small>일</small></b></article><article class="${summary.missingCheckoutDays ? "warning" : ""}"><span>퇴근 미기록</span><b>${summary.missingCheckoutDays}<small>일</small></b></article><article><span>총 근무시간</span><b>${esc(durationText(summary.totalMinutes))}</b></article></div>
         ${adminCalendar(summary, today)}
         <footer class="office-admin-detail-note"><b>퇴근 미기록 처리 안내</b><span>과거 날짜에 출근 기록만 있고 퇴근 기록이 없으면 자동으로 ‘퇴근 미기록’으로 표시됩니다. 관리자가 실제 퇴근 시간을 확인한 뒤 정정하는 승인 흐름을 권장합니다.</span></footer>
@@ -625,6 +699,7 @@
     const target = userById(targetUid);
     const editSurface = surface === "attendance" ? "attendance" : "messenger";
     if (!isAdmin() || !target || state.busy) return;
+    clearAdminAttendanceCorrection();
     state.editingDisplayNameUserId = target.uid;
     state.displayNameEditSurface = editSurface;
     state.displayNameDraft = Core.displayName(target);
@@ -669,6 +744,56 @@
       state.busy = false;
       renderCurrent();
       document.querySelector("[data-office-display-name-form] input")?.focus();
+    }
+  }
+
+  async function saveAdminAttendanceCorrection(form) {
+    if (!isAdmin() || !state.selectedAdminUserId || !state.adminAttendanceCorrection || state.busy) return;
+    const values = new FormData(form);
+    const workDate = String(values.get("workDate") || "");
+    const checkInTime = String(values.get("checkInTime") || "");
+    const checkOutTime = String(values.get("checkOutTime") || "");
+    const reason = String(values.get("reason") || "");
+    const record = adminAttendanceCorrectionRecords(state.selectedAdminUserId).find(row => row.workDate === workDate) || null;
+    const requestId = window.crypto && typeof window.crypto.randomUUID === "function" ? window.crypto.randomUUID() : "";
+    const validation = Core.validateAttendanceCorrectionRequest({
+      userId: state.selectedAdminUserId,
+      workDate,
+      checkInTime,
+      checkOutTime,
+      reason,
+      expectedUpdatedAt: state.adminAttendanceCorrection.expectedUpdatedAt || "",
+      requestId
+    }, record, Core.workDate());
+    state.adminAttendanceCorrection = {
+      userId: state.selectedAdminUserId,
+      workDate,
+      checkInTime,
+      checkOutTime,
+      reason,
+      expectedUpdatedAt: state.adminAttendanceCorrection.expectedUpdatedAt || ""
+    };
+    if (!validation.ok) {
+      notify(validation.error, "error");
+      return;
+    }
+    const targetUserId = state.selectedAdminUserId;
+    const targetMonth = state.adminMonth;
+    const dataRevision = state.dataRevision;
+    state.busy = true;
+    renderCurrent();
+    try {
+      const result = await state.context.api.saveOfficeAttendanceCorrection(validation.value);
+      if (!result || result.ok === false) throw new Error(result && result.error || "근태 시간을 수정하지 못했습니다.");
+      applyOfficeData(result.data || await state.context.api.loadOffice(), currentUser(), dataRevision);
+      if (state.selectedAdminUserId === targetUserId && state.adminMonth === targetMonth) clearAdminAttendanceCorrection();
+      notify("근태 시간이 수정되고 정정 사유가 기록되었습니다.", "success");
+    } catch (error) {
+      notify(error.message || "근태 시간을 수정하지 못했습니다.", "error");
+    } finally {
+      state.busy = false;
+      renderCurrent();
+      document.querySelector("[data-office-attendance-correction-form] textarea")?.focus();
     }
   }
 
@@ -767,6 +892,8 @@
     if (event.target.closest("[data-office-display-name-cancel]")) { cancelDisplayNameEdit(); return; }
     const adminTab = event.target.closest("[data-office-admin-tab]");
     if (adminTab) {
+      if (state.busy) return;
+      clearAdminAttendanceCorrection();
       if (adminTab.dataset.officeAdminTab === "detail" && event.target.closest("i")) {
         state.adminTab = "list";
         state.selectedAdminUserId = "";
@@ -776,7 +903,9 @@
     }
     const adminUser = event.target.closest("[data-office-admin-user]");
     if (adminUser) {
+      if (state.busy) return;
       cancelDisplayNameEdit();
+      clearAdminAttendanceCorrection();
       state.selectedAdminUserId = adminUser.dataset.officeAdminUser;
       state.adminTab = "detail";
       renderCurrent();
@@ -784,8 +913,18 @@
     }
     const adminMonth = event.target.closest("[data-office-admin-month]");
     if (adminMonth) {
+      if (state.busy) return;
+      clearAdminAttendanceCorrection();
       state.adminMonth = adminMonth.dataset.officeAdminMonth === "today" ? Core.workDate().slice(0, 7) : shiftMonth(state.adminMonth, adminMonth.dataset.officeAdminMonth === "previous" ? -1 : 1);
       renderCurrent();
+      return;
+    }
+    if (event.target.closest("[data-office-attendance-correction-open]")) { beginAdminAttendanceCorrection(); return; }
+    if (event.target.closest("[data-office-attendance-correction-cancel]")) {
+      if (!state.busy) {
+        clearAdminAttendanceCorrection();
+        renderCurrent();
+      }
       return;
     }
     if (event.target.closest("[data-office-attendance-export]")) { exportAdminAttendance(); return; }
@@ -805,6 +944,13 @@
   });
 
   document.addEventListener("input", event => {
+    if (event.target.matches("[data-office-attendance-correction-form] input, [data-office-attendance-correction-form] textarea")) {
+      if (!state.adminAttendanceCorrection || state.busy) return;
+      if (event.target.name === "checkInTime") state.adminAttendanceCorrection.checkInTime = event.target.value;
+      else if (event.target.name === "checkOutTime") state.adminAttendanceCorrection.checkOutTime = event.target.value;
+      else if (event.target.name === "reason") state.adminAttendanceCorrection.reason = event.target.value;
+      return;
+    }
     if (event.target.matches("[data-office-display-name-form] input")) {
       state.displayNameDraft = event.target.value;
       return;
@@ -822,7 +968,22 @@
     input?.setSelectionRange(position, position);
   });
 
+  document.addEventListener("change", event => {
+    if (!event.target.matches("[data-office-attendance-correction-date]") || state.busy) return;
+    selectAdminAttendanceCorrectionRecord(event.target.value);
+    renderCurrent();
+    document.querySelector("[data-office-attendance-correction-form] input[name=\"checkInTime\"]")?.focus();
+  });
+
   document.addEventListener("keydown", event => {
+    if (event.target.closest("[data-office-attendance-correction-form]") && event.key === "Escape") {
+      event.preventDefault();
+      if (!state.busy) {
+        clearAdminAttendanceCorrection();
+        renderCurrent();
+      }
+      return;
+    }
     if (event.target.matches("[data-office-display-name-form] input") && event.key === "Escape") {
       event.preventDefault();
       cancelDisplayNameEdit();
@@ -839,6 +1000,12 @@
   });
 
   document.addEventListener("submit", event => {
+    const correctionForm = event.target.closest("[data-office-attendance-correction-form]");
+    if (correctionForm) {
+      event.preventDefault();
+      saveAdminAttendanceCorrection(correctionForm);
+      return;
+    }
     const nameForm = event.target.closest("[data-office-display-name-form]");
     if (nameForm) {
       event.preventDefault();
@@ -854,6 +1021,7 @@
   window.BringOffice = {
     render(context) {
       const previousView = state.context && state.context.view;
+      if (previousView && previousView !== context.view) clearAdminAttendanceCorrection();
       state.context = context;
       state.active = true;
       startClock();
@@ -870,6 +1038,7 @@
       syncMessengerPresence();
       state.generation += 1;
       state.loading = false;
+      clearAdminAttendanceCorrection();
       clearOfficeFileDrag();
       stopTimers();
     },
@@ -923,6 +1092,7 @@
       state.openingAttachmentId = "";
       state.selectedAdminUserId = "";
       state.adminTab = "list";
+      clearAdminAttendanceCorrection();
       state.busy = false;
       const unreadBadge = document.getElementById("navOfficeUnread");
       if (unreadBadge) unreadBadge.textContent = "0";

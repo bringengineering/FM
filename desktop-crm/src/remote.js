@@ -161,6 +161,12 @@ const BUILDING_SCHEDULE_VALUE_FIELDS = Object.freeze(new Set([
 const SAFE_DIRECT_ID = /^[A-Za-z0-9_-]{1,120}$/;
 const UUID_V4 = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const FORBIDDEN_DIRECT_IDS = new Set(["__proto__", "prototype", "constructor"]);
+const OFFICE_ATTENDANCE_CORRECTION_FIELDS = Object.freeze([
+  "userId", "workDate", "checkInTime", "checkOutTime", "reason", "expectedUpdatedAt", "requestId"
+]);
+const OFFICE_ATTENDANCE_TIME = /^(?:[01]\d|2[0-3]):[0-5]\d$/;
+const OFFICE_ATTENDANCE_TIMESTAMP = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{3})?(?:Z|[+-]\d{2}:\d{2})$/;
+const SERVER_TIMESTAMP = Object.freeze({ ".sv": "timestamp" });
 function canonicalEntityMutationForValidation(input) {
   if (!input || typeof input !== "object" || Array.isArray(input)) return input;
   const source = Object.assign(Object.create(null), input);
@@ -496,6 +502,259 @@ function validBuildingScheduleDate(value) {
 
 function validBuildingScheduleTime(value) {
   return /^(?:[01]\d|2[0-3]):[0-5]\d$/.test(String(value || ""));
+}
+
+function officeAttendanceTimestamp(value) {
+  const text = typeof value === "string" ? value : "";
+  return OFFICE_ATTENDANCE_TIMESTAMP.test(text) && Number.isFinite(Date.parse(text)) ? text : "";
+}
+
+function normalizeOfficeAttendanceCorrectionReason(value) {
+  if (typeof value !== "string") return "";
+  const reason = value.trim();
+  if (reason !== value
+    || [...reason].length < 2
+    || [...reason].length > 300
+    || reason.length > 300
+    || Buffer.byteLength(reason, "utf8") > 900
+    || /[\p{Cc}\p{Cf}\u2028\u2029]/u.test(reason)) return "";
+  return reason;
+}
+
+function validateOfficeAttendanceCorrectionInput(inputValue) {
+  const source = inputValue && typeof inputValue === "object" && !Array.isArray(inputValue)
+    ? inputValue
+    : null;
+  if (!source
+    || Object.keys(source).length !== OFFICE_ATTENDANCE_CORRECTION_FIELDS.length
+    || OFFICE_ATTENDANCE_CORRECTION_FIELDS.some(key => !Object.prototype.hasOwnProperty.call(source, key))) {
+    throw createError("근태 시간 수정 요청이 올바르지 않습니다.", "ATTENDANCE_CORRECTION_INVALID");
+  }
+  const userId = typeof source.userId === "string" ? source.userId : "";
+  const workDate = typeof source.workDate === "string" ? source.workDate : "";
+  const checkInTime = typeof source.checkInTime === "string" ? source.checkInTime : "";
+  const checkOutTime = typeof source.checkOutTime === "string" ? source.checkOutTime : "";
+  const reason = normalizeOfficeAttendanceCorrectionReason(source.reason);
+  const expectedUpdatedAt = officeAttendanceTimestamp(source.expectedUpdatedAt);
+  const requestId = typeof source.requestId === "string" ? source.requestId : "";
+  if (!userId || OfficeCore.normalizeOfficeUserId(userId) !== userId
+    || !validBuildingScheduleDate(workDate)
+    || Number(workDate.slice(0, 4)) < 2000
+    || Number(workDate.slice(0, 4)) > 2100
+    || workDate > OfficeCore.workDate()
+    || !OFFICE_ATTENDANCE_TIME.test(checkInTime)
+    || (checkOutTime && !OFFICE_ATTENDANCE_TIME.test(checkOutTime))
+    || (checkOutTime && checkOutTime <= checkInTime)
+    || !reason
+    || !expectedUpdatedAt
+    || !UUID_V4.test(requestId)
+    || requestId !== requestId.toLowerCase()) {
+    throw createError("직원·날짜·출퇴근 시간·수정 사유를 확인해 주세요.", "ATTENDANCE_CORRECTION_INVALID");
+  }
+  return Object.freeze({ userId, workDate, checkInTime, checkOutTime, reason, expectedUpdatedAt, requestId });
+}
+
+function officeAttendanceCorrectionAuditId(requestId) {
+  return `attcorr_${String(requestId || "")}`;
+}
+
+function officeAttendanceCorrectionIntentHash(inputValue, actorUidValue) {
+  const input = validateOfficeAttendanceCorrectionInput(inputValue);
+  const actorAuthUid = safeDirectId(actorUidValue);
+  if (!actorAuthUid) throw createError("근태 관리자 계정을 확인할 수 없습니다.", "ACCESS_DENIED");
+  return crypto.createHash("sha256").update(stableBuildingScheduleText({
+    actorAuthUid,
+    userId: input.userId,
+    workDate: input.workDate,
+    checkInTime: input.checkInTime,
+    checkOutTime: input.checkOutTime,
+    reason: input.reason,
+    expectedUpdatedAt: input.expectedUpdatedAt,
+    requestId: input.requestId,
+  })).digest("hex");
+}
+
+function officeAttendanceCorrectionVersion(existing) {
+  if (!Object.prototype.hasOwnProperty.call(existing, "correctionVersion")) return 0;
+  const version = existing.correctionVersion;
+  if (!Number.isSafeInteger(version) || version < 1 || version >= Number.MAX_SAFE_INTEGER) {
+    throw createError("근태 정정 버전을 확인할 수 없습니다.", "ATTENDANCE_CORRECTION_CONFLICT");
+  }
+  return version;
+}
+
+function officeAttendanceIso(workDate, time) {
+  const value = new Date(`${workDate}T${time}:00+09:00`);
+  if (!Number.isFinite(value.getTime()) || OfficeCore.workDate(value) !== workDate) {
+    throw createError("출퇴근 시간을 확인해 주세요.", "ATTENDANCE_CORRECTION_INVALID");
+  }
+  return value.toISOString();
+}
+
+function officeAttendanceTimeInKorea(value) {
+  const timestamp = officeAttendanceTimestamp(value);
+  if (!timestamp) return "";
+  const date = new Date(timestamp);
+  const parts = new Intl.DateTimeFormat("en-GB", {
+    timeZone: "Asia/Seoul", hour: "2-digit", minute: "2-digit", hour12: false, hourCycle: "h23"
+  }).formatToParts(date);
+  const hour = parts.find(part => part.type === "hour");
+  const minute = parts.find(part => part.type === "minute");
+  return hour && minute ? `${hour.value}:${minute.value}` : "";
+}
+
+function officeAttendanceCorrectionCommitted(recordValue, auditValue, inputValue, actorUidValue) {
+  const record = recordValue && typeof recordValue === "object" && !Array.isArray(recordValue) ? recordValue : null;
+  const audit = auditValue && typeof auditValue === "object" && !Array.isArray(auditValue) ? auditValue : null;
+  if (!record || !audit) return false;
+  const input = validateOfficeAttendanceCorrectionInput(inputValue);
+  const actorAuthUid = safeDirectId(actorUidValue);
+  const requestHash = officeAttendanceCorrectionIntentHash(input, actorAuthUid);
+  const auditId = officeAttendanceCorrectionAuditId(input.requestId);
+  const version = officeAttendanceCorrectionVersion(record);
+  return record.id === `${input.userId}_${input.workDate}`
+    && record.userId === input.userId
+    && record.workDate === input.workDate
+    && record.lastCorrectionId === auditId
+    && record.lastCorrectionRequestId === input.requestId
+    && record.lastCorrectionHash === requestHash
+    && record.correctedBy === actorAuthUid
+    && Number.isSafeInteger(record.correctedAtMs)
+    && record.correctedAtMs > 0
+    && officeAttendanceCorrectionAuditMatches(audit, input, actorAuthUid)
+    && audit.afterUpdatedAt === record.updatedAt
+    && audit.afterCheckInAt === record.checkInAt
+    && audit.afterCheckOutAt === record.checkOutAt
+    && audit.beforeVersion === version - 1
+    && audit.afterVersion === version
+    && Number.isSafeInteger(audit.occurredAtMs)
+    && audit.occurredAtMs === record.correctedAtMs;
+}
+
+function officeAttendanceCorrectionAuditMatches(auditValue, inputValue, actorUidValue) {
+  const audit = auditValue && typeof auditValue === "object" && !Array.isArray(auditValue) ? auditValue : null;
+  if (!audit) return false;
+  const input = validateOfficeAttendanceCorrectionInput(inputValue);
+  const actorAuthUid = safeDirectId(actorUidValue);
+  const requestHash = officeAttendanceCorrectionIntentHash(input, actorAuthUid);
+  const auditId = officeAttendanceCorrectionAuditId(input.requestId);
+  const afterCheckInAt = officeAttendanceIso(input.workDate, input.checkInTime);
+  const afterCheckOutAt = input.checkOutTime ? officeAttendanceIso(input.workDate, input.checkOutTime) : "";
+  return audit.id === auditId
+    && audit.requestId === input.requestId
+    && audit.requestHash === requestHash
+    && audit.actorAuthUid === actorAuthUid
+    && audit.targetUserId === input.userId
+    && audit.workDate === input.workDate
+    && audit.reason === input.reason
+    && audit.expectedUpdatedAt === input.expectedUpdatedAt
+    && audit.beforeUpdatedAt === input.expectedUpdatedAt
+    && officeAttendanceTimestamp(audit.beforeCheckInAt)
+    && (audit.beforeCheckOutAt === "" || officeAttendanceTimestamp(audit.beforeCheckOutAt))
+    && audit.afterCheckInAt === afterCheckInAt
+    && audit.afterCheckOutAt === afterCheckOutAt
+    && officeAttendanceTimestamp(audit.afterUpdatedAt)
+    && Number.isSafeInteger(audit.beforeVersion)
+    && audit.beforeVersion >= 0
+    && Number.isSafeInteger(audit.afterVersion)
+    && audit.afterVersion === audit.beforeVersion + 1
+    && Number.isSafeInteger(audit.occurredAtMs)
+    && audit.occurredAtMs > 0;
+}
+
+function planOfficeAttendanceCorrection(inputValue, contextValue) {
+  const input = validateOfficeAttendanceCorrectionInput(inputValue);
+  const context = contextValue && typeof contextValue === "object" && !Array.isArray(contextValue) ? contextValue : {};
+  const actor = context.actor && typeof context.actor === "object" && !Array.isArray(context.actor) ? context.actor : {};
+  const actorAuthUid = safeDirectId(actor.uid);
+  if (!actorAuthUid || actor.officeAdmin !== true) {
+    throw createError("근태 시간은 지정된 근태 관리자만 수정할 수 있습니다.", "ACCESS_DENIED");
+  }
+  const existing = context.existing && typeof context.existing === "object" && !Array.isArray(context.existing)
+    ? context.existing
+    : null;
+  if (!existing
+    || existing.id !== `${input.userId}_${input.workDate}`
+    || existing.userId !== input.userId
+    || existing.workDate !== input.workDate
+    || !officeAttendanceTimestamp(existing.checkInAt)
+    || (existing.checkOutAt !== "" && !officeAttendanceTimestamp(existing.checkOutAt))
+    || !officeAttendanceTimestamp(existing.createdAt)
+    || !officeAttendanceTimestamp(existing.updatedAt)) {
+    throw createError("수정할 기존 근태 기록을 확인할 수 없습니다.", "ATTENDANCE_CORRECTION_NOT_FOUND");
+  }
+  const beforeVersion = officeAttendanceCorrectionVersion(existing);
+  const requestHash = officeAttendanceCorrectionIntentHash(input, actorAuthUid);
+  const auditId = officeAttendanceCorrectionAuditId(input.requestId);
+  const audit = context.audit && typeof context.audit === "object" && !Array.isArray(context.audit) ? context.audit : null;
+  if (audit) {
+    if (!officeAttendanceCorrectionAuditMatches(audit, input, actorAuthUid)) {
+      throw createError("같은 근태 수정 요청 식별자가 이미 사용되었습니다.", "ATTENDANCE_CORRECTION_REQUEST_CONFLICT");
+    }
+    if (existing.lastCorrectionRequestId === input.requestId
+      && !officeAttendanceCorrectionCommitted(existing, audit, input, actorAuthUid)) {
+      throw createError("이전 근태 수정 요청의 저장 결과를 확인할 수 없습니다.", "ATTENDANCE_CORRECTION_WRITE_UNCONFIRMED");
+    }
+    return Object.freeze({ input, record: existing, audit, requestHash, auditId, repeated: true });
+  }
+  if (existing.lastCorrectionRequestId === input.requestId) {
+    if (existing.lastCorrectionHash !== requestHash) {
+      throw createError("같은 근태 수정 요청 식별자가 다른 내용에 사용되었습니다.", "ATTENDANCE_CORRECTION_REQUEST_CONFLICT");
+    }
+    throw createError("이전 근태 수정 요청의 감사 기록을 확인할 수 없습니다.", "ATTENDANCE_CORRECTION_WRITE_UNCONFIRMED");
+  }
+  if (existing.updatedAt !== input.expectedUpdatedAt) {
+    throw createError("다른 변경 사항이 먼저 저장되었습니다. 새로고침 후 다시 시도해 주세요.", "ATTENDANCE_CORRECTION_STALE");
+  }
+  if (existing.checkOutAt && !input.checkOutTime) {
+    throw createError("퇴근 완료 기록의 퇴근 시간은 비울 수 없습니다.", "ATTENDANCE_CORRECTION_INVALID");
+  }
+  if (officeAttendanceTimeInKorea(existing.checkInAt) === input.checkInTime
+    && officeAttendanceTimeInKorea(existing.checkOutAt) === input.checkOutTime) {
+    throw createError("변경된 출근 또는 퇴근 시간이 없습니다.", "ATTENDANCE_CORRECTION_NO_CHANGE");
+  }
+  const checkInAt = officeAttendanceIso(input.workDate, input.checkInTime);
+  const checkOutAt = input.checkOutTime ? officeAttendanceIso(input.workDate, input.checkOutTime) : "";
+  if (checkOutAt && checkOutAt <= checkInAt) {
+    throw createError("퇴근 시간은 출근 시간보다 늦어야 합니다.", "ATTENDANCE_CORRECTION_INVALID");
+  }
+  let now = context.now instanceof Date ? new Date(context.now.getTime()) : new Date(context.now || Date.now());
+  if (!Number.isFinite(now.getTime())) now = new Date();
+  const priorUpdatedAtMs = Date.parse(existing.updatedAt);
+  if (Number.isFinite(priorUpdatedAtMs) && now.getTime() <= priorUpdatedAtMs) now = new Date(priorUpdatedAtMs + 1);
+  const afterUpdatedAt = now.toISOString();
+  const afterVersion = beforeVersion + 1;
+  const record = Object.assign({}, existing, {
+    checkInAt,
+    checkOutAt,
+    updatedAt: afterUpdatedAt,
+    correctionVersion: afterVersion,
+    lastCorrectionId: auditId,
+    lastCorrectionRequestId: input.requestId,
+    lastCorrectionHash: requestHash,
+    correctedAtMs: SERVER_TIMESTAMP,
+    correctedBy: actorAuthUid,
+  });
+  const nextAudit = {
+    id: auditId,
+    requestId: input.requestId,
+    requestHash,
+    actorAuthUid,
+    targetUserId: input.userId,
+    workDate: input.workDate,
+    reason: input.reason,
+    beforeCheckInAt: existing.checkInAt,
+    beforeCheckOutAt: existing.checkOutAt,
+    afterCheckInAt: checkInAt,
+    afterCheckOutAt: checkOutAt,
+    expectedUpdatedAt: input.expectedUpdatedAt,
+    beforeUpdatedAt: existing.updatedAt,
+    afterUpdatedAt,
+    beforeVersion,
+    afterVersion,
+    occurredAtMs: SERVER_TIMESTAMP,
+  };
+  return Object.freeze({ input, record, audit: nextAudit, requestHash, auditId, repeated: false });
 }
 
 function assertClosedObject(value, allowed, message) {
@@ -1045,6 +1304,7 @@ class FirebaseRemoteClient {
     this.canonicalMutationQueue = Promise.resolve();
     this.sharedMutationQueue = Promise.resolve();
     this.marketingMutationQueue = Promise.resolve();
+    this.officeAttendanceCorrectionQueue = Promise.resolve();
     this.streamGeneration = 0;
     this.sessionGeneration = 0;
     this.stopped = false;
@@ -2068,6 +2328,159 @@ class FirebaseRemoteClient {
       if (!existing || !existing.checkInAt) throw createError("오늘 출근 기록이 있어야 퇴근할 수 있습니다.", "ATTENDANCE_CHECK_IN_REQUIRED");
       if (existing.checkOutAt) throw createError("오늘 퇴근 시간이 이미 저장되어 있습니다.", "ATTENDANCE_DUPLICATE");
       await this.dbRequest(location, { method: "PATCH", body: { checkOutAt: now, updatedAt: now }, query: "print=silent" });
+    }
+    this.assertSessionGuardActive(guard);
+    return this.loadOffice();
+  }
+
+  async atomicOfficeAttendanceCorrectionPatch(patch, guard) {
+    this.assertSessionGuardActive(guard);
+    const token = await this.ensureIdToken(false);
+    this.assertSessionGuardActive(guard);
+    const url = `${this.firebase.databaseUrl}/${resolveDatabaseLocation("", this.databaseRoot)}.json?auth=${encodeURIComponent(token)}&print=silent`;
+    let response;
+    try {
+      response = await this.fetch(url, {
+        method: "PATCH",
+        headers: { Accept: "application/json", "Content-Type": "application/json" },
+        body: JSON.stringify(patch),
+      });
+    } catch (cause) {
+      if (!this.sessionGuardActive(guard)) throw createError("로그인 세션이 변경되었습니다.", "SESSION_CHANGED", cause);
+      throw createError("근태 수정 저장 결과를 확인하지 못했습니다.", "ATTENDANCE_CORRECTION_WRITE_UNCONFIRMED", cause);
+    }
+    this.assertSessionGuardActive(guard);
+    if (!response.ok) {
+      const status = Number(response.status) || 0;
+      await cancelResponseBody(response);
+      const code = status >= 500 ? "ATTENDANCE_CORRECTION_WRITE_UNCONFIRMED" : "ATTENDANCE_CORRECTION_WRITE_REJECTED";
+      const error = createError(status >= 500 ? "근태 수정 저장 결과를 확인하지 못했습니다." : "근태 시간 수정이 거부되었습니다.", code);
+      error.status = status;
+      throw error;
+    }
+    await cancelResponseBody(response);
+    return true;
+  }
+
+  async diagnoseOfficeAttendanceCorrectionWrite(input, actor, beforeSnapshot, error, guard) {
+    const auditId = officeAttendanceCorrectionAuditId(input.requestId);
+    let recordSnapshot;
+    let auditSnapshot;
+    try {
+      [recordSnapshot, auditSnapshot] = await Promise.all([
+        this.dbReadWithEtag(`officeAttendance/${input.userId}/${input.workDate}`, false, guard),
+        this.dbReadWithEtag(`officeAttendanceAudits/${auditId}`, false, guard),
+      ]);
+    } catch (cause) {
+      if (!this.sessionGuardActive(guard)) throw createError("로그인 세션이 변경되었습니다.", "SESSION_CHANGED", cause);
+      throw createError("근태 수정 저장 결과를 확인하지 못했습니다.", "ATTENDANCE_CORRECTION_WRITE_UNCONFIRMED", cause);
+    }
+    this.assertSessionGuardActive(guard);
+    try {
+      const recovered = planOfficeAttendanceCorrection(input, {
+        actor,
+        existing: recordSnapshot.value,
+        audit: auditSnapshot.value,
+      });
+      if (recovered.repeated) return recovered;
+    } catch (recoveryError) {
+      if (["ATTENDANCE_CORRECTION_REQUEST_CONFLICT", "ATTENDANCE_CORRECTION_STALE"].includes(recoveryError && recoveryError.code)) {
+        throw recoveryError;
+      }
+      const current = recordSnapshot.value;
+      if (!current
+        || current.updatedAt !== input.expectedUpdatedAt
+        || String(recordSnapshot.etag || "") !== String(beforeSnapshot.etag || "")) {
+        throw createError("다른 변경 사항이 먼저 저장되었습니다. 새로고침 후 다시 시도해 주세요.", "ATTENDANCE_CORRECTION_STALE", error);
+      }
+      throw error;
+    }
+    throw error;
+  }
+
+  async correctOfficeAttendance(inputValue) {
+    const session = this.requireOfficeSession();
+    if (session.officeAdmin !== true) {
+      throw createError("근태 시간은 지정된 근태 관리자만 수정할 수 있습니다.", "ACCESS_DENIED");
+    }
+    const input = validateOfficeAttendanceCorrectionInput(inputValue);
+    const guard = this.captureSessionGuard();
+    const actor = Object.freeze({ uid: String(session.uid || ""), officeAdmin: session.officeAdmin === true });
+    const running = this.officeAttendanceCorrectionQueue.then(
+      () => this.correctOfficeAttendanceLocked(input, actor, guard),
+      () => this.correctOfficeAttendanceLocked(input, actor, guard)
+    );
+    this.officeAttendanceCorrectionQueue = running.catch(() => {});
+    return running;
+  }
+
+  async correctOfficeAttendanceLocked(inputValue, actor, guard) {
+    this.assertSessionGuardActive(guard);
+    const session = this.requireOfficeSession();
+    if (session.officeAdmin !== true || session.uid !== actor.uid || actor.officeAdmin !== true) {
+      throw createError("근태 시간은 지정된 근태 관리자만 수정할 수 있습니다.", "ACCESS_DENIED");
+    }
+    const input = validateOfficeAttendanceCorrectionInput(inputValue);
+    const auditId = officeAttendanceCorrectionAuditId(input.requestId);
+    const [recordSnapshot, auditSnapshot, targetSnapshot] = await Promise.all([
+      this.dbReadWithEtag(`officeAttendance/${input.userId}/${input.workDate}`, false, guard),
+      this.dbReadWithEtag(`officeAttendanceAudits/${auditId}`, false, guard),
+      this.dbReadWithEtag(`crmAccess/${input.userId}`, false, guard),
+    ]);
+    this.assertSessionGuardActive(guard);
+    if (!this.session || this.session.uid !== actor.uid || this.session.officeAdmin !== true) {
+      throw createError("근태 시간은 지정된 근태 관리자만 수정할 수 있습니다.", "ACCESS_DENIED");
+    }
+    const target = targetSnapshot.value;
+    if (!target
+      || target.enabled !== true
+      || target.mustChangePassword === true
+      || !["admin", "member", "viewer"].includes(String(target.role || ""))) {
+      throw createError("수정할 활성 구성원을 찾지 못했습니다.", "ACCESS_DENIED");
+    }
+    const plan = planOfficeAttendanceCorrection(input, {
+      actor,
+      existing: recordSnapshot.value,
+      audit: auditSnapshot.value,
+    });
+    if (!plan.repeated) {
+      const patch = {
+        [`officeAttendance/${input.userId}/${input.workDate}`]: plan.record,
+        [`officeAttendanceAudits/${plan.auditId}`]: plan.audit,
+      };
+      try {
+        await this.atomicOfficeAttendanceCorrectionPatch(patch, guard);
+      } catch (error) {
+        if (!this.sessionGuardActive(guard)) throw createError("로그인 세션이 변경되었습니다.", "SESSION_CHANGED", error);
+        if (error && error.code === "ATTENDANCE_CORRECTION_WRITE_REJECTED"
+          && [401, 403].includes(Number(error.status))) {
+          throw error;
+        }
+        if (error && ["ATTENDANCE_CORRECTION_WRITE_UNCONFIRMED", "ATTENDANCE_CORRECTION_WRITE_REJECTED"].includes(error.code)) {
+          await this.diagnoseOfficeAttendanceCorrectionWrite(input, actor, recordSnapshot, error, guard);
+        } else {
+          throw error;
+        }
+      }
+      this.assertSessionGuardActive(guard);
+      let committed;
+      try {
+        const [recordCheck, auditCheck] = await Promise.all([
+          this.dbReadWithEtag(`officeAttendance/${input.userId}/${input.workDate}`, false, guard),
+          this.dbReadWithEtag(`officeAttendanceAudits/${plan.auditId}`, false, guard),
+        ]);
+        committed = planOfficeAttendanceCorrection(input, {
+          actor,
+          existing: recordCheck.value,
+          audit: auditCheck.value,
+        });
+      } catch (cause) {
+        if (!this.sessionGuardActive(guard)) throw createError("로그인 세션이 변경되었습니다.", "SESSION_CHANGED", cause);
+        throw createError("근태 수정 저장 결과를 확인하지 못했습니다.", "ATTENDANCE_CORRECTION_WRITE_UNCONFIRMED", cause);
+      }
+      if (!committed.repeated) {
+        throw createError("근태 수정 저장 결과를 확인하지 못했습니다.", "ATTENDANCE_CORRECTION_WRITE_UNCONFIRMED");
+      }
     }
     this.assertSessionGuardActive(guard);
     return this.loadOffice();
@@ -4066,5 +4479,11 @@ module.exports = {
   serviceRecordsSemanticallyEqual,
   caseDeleteAuditId,
   normalizeQuoteSupplierRecord,
+  validateOfficeAttendanceCorrectionInput,
+  officeAttendanceCorrectionAuditId,
+  officeAttendanceCorrectionIntentHash,
+  officeAttendanceCorrectionAuditMatches,
+  officeAttendanceCorrectionCommitted,
+  planOfficeAttendanceCorrection,
   FirebaseRemoteClient
 };

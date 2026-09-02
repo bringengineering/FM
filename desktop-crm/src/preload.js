@@ -15,6 +15,7 @@ contextBridge.exposeInMainWorld("bringCRM", {
   load: () => ipcRenderer.invoke("crm:load"),
   loadOffice: () => ipcRenderer.invoke("crm:office-load"),
   saveOfficeAttendance: input => ipcRenderer.invoke("crm:office-attendance-save", input),
+  saveOfficeAttendanceCorrection: input => ipcRenderer.invoke("crm:office-attendance-correct", input),
   saveOfficeDisplayName: input => ipcRenderer.invoke("crm:office-display-name-save", input),
   pickOfficeAttachment: input => ipcRenderer.invoke("crm:office-attachment-pick", input),
   dropOfficeAttachment: (file, input) => {
