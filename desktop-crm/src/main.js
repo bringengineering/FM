@@ -2959,7 +2959,7 @@ function buildingScheduleErrorEnvelope(error) {
     BUILDING_SCHEDULE_SESSION_CHANGED: "로그인 상태가 변경되었습니다. 다시 로그인한 뒤 시도해 주세요.",
     BUILDING_SCHEDULE_NETWORK: "서버에 연결할 수 없습니다. 연결을 확인한 뒤 다시 시도해 주세요.",
     BUILDING_SCHEDULE_WRITE_UNCONFIRMED: "저장 결과를 확인할 수 없습니다. 최신 목록을 다시 불러와 주세요.",
-    BUILDING_SCHEDULE_COMMIT_REQUIRED: "일정은 통합 캘린더의 업무일정 탭이나 작업관리에서 저장해 주세요.",
+    BUILDING_SCHEDULE_COMMIT_REQUIRED: "일정은 캘린더의 업무일정 캘린더 탭이나 작업관리에서 저장해 주세요.",
     BUILDING_SCHEDULE_WRITE_FAILED: "일정을 저장하지 못했습니다. 잠시 후 다시 시도해 주세요.",
   };
   return { ok: false, code, error: String(messages[code] || messages.BUILDING_SCHEDULE_WRITE_FAILED).slice(0, 180) };
@@ -4438,7 +4438,8 @@ async function createWindow() {
         const first = await createBuilding('강원 원주시 테스트로 11');
         const second = await createBuilding('강원 원주시 테스트로 22');
         if (!first || !second || first.id === second.id) return { pass: false, reason: 'same-name buildings missing', first, second };
-        document.querySelector('[data-view="payments"]')?.click();
+        document.querySelector('[data-view="buildingCalendar"]')?.click();
+        document.querySelector('[data-unified-calendar-tab="payment"]')?.click();
         await wait(150);
         document.querySelector('[data-action="new-payment-schedule"]')?.click();
         const scheduleForm = document.getElementById('paymentScheduleForm');
@@ -4466,7 +4467,8 @@ async function createWindow() {
       actionResult = await mainWindow.webContents.executeJavaScript(`(async () => {
         const wait = ms => new Promise(resolve => setTimeout(resolve, ms));
         const buildingName = 'QA 외부입금 건물 ' + String(Date.now()).slice(-6);
-        document.querySelector('[data-view="payments"]')?.click();
+        document.querySelector('[data-view="buildingCalendar"]')?.click();
+        document.querySelector('[data-unified-calendar-tab="payment"]')?.click();
         await wait(100);
         document.querySelector('[data-action="new-payment-schedule"]')?.click();
         let form = document.getElementById('paymentScheduleForm');
@@ -4491,7 +4493,8 @@ async function createWindow() {
         form.requestSubmit();
         await wait(180);
         const building = window.__crmTest.getStore().buildings.find(item => item.name === buildingName);
-        document.querySelector('[data-view="payments"]')?.click();
+        document.querySelector('[data-view="buildingCalendar"]')?.click();
+        document.querySelector('[data-unified-calendar-tab="payment"]')?.click();
         await wait(150);
         const matchingCards = [...document.querySelectorAll('[data-payment-building-id]')].filter(card => card.querySelector('b')?.textContent.trim() === buildingName);
         const canonicalCard = building && document.querySelector('[data-payment-building-id="' + building.id + '"]');
@@ -4525,7 +4528,8 @@ async function createWindow() {
         const addressB = '강원 원주시 분리로 202';
         await window.bringCRM.savePaymentSchedule({ scheduleId: 'crm_ext_a_' + runKey, buildingId: externalA, buildingName: sharedName, buildingAddress: addressA, tenantName: '세입자 A', payerName: '세입자 A', amount: 410000, dueDay: 15, startMonth: month, active: true });
         await window.bringCRM.savePaymentSchedule({ scheduleId: 'crm_ext_b_' + runKey, buildingId: externalB, buildingName: sharedName, buildingAddress: addressB, tenantName: '세입자 B', payerName: '세입자 B', amount: 420000, dueDay: 15, startMonth: month, active: true });
-        document.querySelector('[data-view="payments"]')?.click();
+        document.querySelector('[data-view="buildingCalendar"]')?.click();
+        document.querySelector('[data-unified-calendar-tab="payment"]')?.click();
         await wait(120);
         document.querySelector('[data-action="refresh-operations"]')?.click();
         await wait(180);
@@ -4542,7 +4546,8 @@ async function createWindow() {
           return window.__crmTest.getStore().buildings.find(item => item.name === sharedName && item.address === address) || null;
         };
         const first = await createBuilding(addressA);
-        document.querySelector('[data-view="payments"]')?.click();
+        document.querySelector('[data-view="buildingCalendar"]')?.click();
+        document.querySelector('[data-unified-calendar-tab="payment"]')?.click();
         await wait(160);
         document.querySelector('[data-payment-building-id="' + first?.id + '"]')?.click();
         const firstOnlyEvents = [...document.querySelectorAll('[data-payment-event]')].map(item => item.dataset.paymentEvent);
@@ -4556,7 +4561,8 @@ async function createWindow() {
         const firstAfterEdit = window.__crmTest.getStore().buildings.find(item => item.id === first?.id);
         const firstRefsAfterEdit = firstAfterEdit?.externalRefs?.paymentBuildingIds || [];
         const second = await createBuilding(addressB);
-        document.querySelector('[data-view="payments"]')?.click();
+        document.querySelector('[data-view="buildingCalendar"]')?.click();
+        document.querySelector('[data-unified-calendar-tab="payment"]')?.click();
         await wait(180);
         const matchingCards = [...document.querySelectorAll('[data-payment-building-id]')].filter(card => card.querySelector('b')?.textContent.trim() === sharedName);
         const firstCard = first && document.querySelector('[data-payment-building-id="' + first.id + '"]');
@@ -5471,7 +5477,8 @@ async function createWindow() {
         const caseSteps = document.querySelectorAll('.workflow-case-step').length;
         const externalCaseLinks = document.querySelectorAll('[data-workflow-open],[data-action="open-workflow-builder"]').length;
         const caseState = window.__crmTest.snapshot();
-        document.querySelector('[data-view="payments"]')?.click();
+        document.querySelector('[data-view="buildingCalendar"]')?.click();
+        document.querySelector('[data-unified-calendar-tab="payment"]')?.click();
         await new Promise(resolve => setTimeout(resolve, 150));
         const calendarDays = document.querySelectorAll('.payment-day').length;
         const paymentEvents = document.querySelectorAll('[data-payment-event]').length;
@@ -5632,8 +5639,8 @@ async function createWindow() {
         const seeded = JSON.parse(JSON.stringify(source));
         seeded.contracts = (seeded.contracts || []).filter(contract => contract.billingCycle !== '건별' || String(contract.paymentDueDate || '').slice(0, 7) !== month);
         seeded.contracts.push(
-          { id: 'contract_calendar_smoke_a', contractNo: 'CT-CALENDAR-A', types: ['청소'], type: '청소', name: '통합 캘린더 정기청소', customerId: customers[0]?.id || '', buildingId: buildings[0].id, startDate: month + '-08', endDate: '', amount: 150000, billingCycle: '건별', status: '진행 중', owner: '화면 점검', scope: '공용부 정기청소', workDate: month + '-08', paymentDueDate: month + '-08', vendorCost: 140000, grossProfit: 10000, collectionStatus: '입금 예정', vendorPaymentStatus: '지급 예정', createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() },
-          { id: 'contract_calendar_smoke_b', contractNo: 'CT-CALENDAR-B', types: ['건물관리'], type: '건물관리', name: '통합 캘린더 폐기물 처리', customerId: customers[1]?.id || customers[0]?.id || '', buildingId: buildings[1].id, startDate: month + '-18', endDate: '', amount: 35000, billingCycle: '건별', status: '진행 중', owner: '화면 점검', scope: '폐기물 처리', workDate: month + '-18', paymentDueDate: month + '-18', vendorCost: 32000, grossProfit: 3000, collectionStatus: '입금 완료', vendorPaymentStatus: '지급 완료', createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() }
+          { id: 'contract_calendar_smoke_a', contractNo: 'CT-CALENDAR-A', types: ['청소'], type: '청소', name: '계약일정 캘린더 정기청소', customerId: customers[0]?.id || '', buildingId: buildings[0].id, startDate: month + '-08', endDate: '', amount: 150000, billingCycle: '건별', status: '진행 중', owner: '화면 점검', scope: '공용부 정기청소', workDate: month + '-08', paymentDueDate: month + '-08', vendorCost: 140000, grossProfit: 10000, collectionStatus: '입금 예정', vendorPaymentStatus: '지급 예정', createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() },
+          { id: 'contract_calendar_smoke_b', contractNo: 'CT-CALENDAR-B', types: ['건물관리'], type: '건물관리', name: '계약일정 캘린더 폐기물 처리', customerId: customers[1]?.id || customers[0]?.id || '', buildingId: buildings[1].id, startDate: month + '-18', endDate: '', amount: 35000, billingCycle: '건별', status: '진행 중', owner: '화면 점검', scope: '폐기물 처리', workDate: month + '-18', paymentDueDate: month + '-18', vendorCost: 32000, grossProfit: 3000, collectionStatus: '입금 완료', vendorPaymentStatus: '지급 완료', createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() }
         );
         window.__crmTest.applyRemoteForTest(seeded);
         await wait(180);
@@ -5658,9 +5665,8 @@ async function createWindow() {
           ? mutationControlCount === 0 && !contentAction
           : mutationControlCount >= 2 && !!contentAction;
         const pass = rows === 2 && events === 2 && text.includes('185,000원') && text.includes('13,000원')
-          && text.includes('통합 캘린더 정기청소') && text.includes('통합 캘린더 폐기물 처리')
-          && contractTab?.classList.contains('active') && contractTab?.getAttribute('aria-selected') === 'true'
-          && workTab?.getAttribute('aria-selected') === 'false' && pageTitle === '통합 캘린더'
+          && text.includes('계약일정 캘린더 정기청소') && text.includes('계약일정 캘린더 폐기물 처리')
+          && contractTab?.classList.contains('active') && !workTab?.classList.contains('active') && pageTitle === '캘린더'
           && oldPaymentModeAbsent && state.view === 'buildingCalendar' && state.unifiedCalendarTab === 'contract'
           && state.contractCalendarMonth === month && roleSafe;
         return { pass, month, rows, events, pageTitle, contractTabActive: contractTab?.classList.contains('active'), oldPaymentModeAbsent, readOnly, mutationControlCount, roleSafe, state };
@@ -5669,7 +5675,8 @@ async function createWindow() {
       actionResult = await mainWindow.webContents.executeJavaScript(`(async () => {
         document.querySelector('[data-workspace-enter="operations"]')?.click();
         await new Promise(resolve => setTimeout(resolve, 180));
-        document.querySelector('[data-view="payments"]')?.click();
+        document.querySelector('[data-view="buildingCalendar"]')?.click();
+        document.querySelector('[data-unified-calendar-tab="payment"]')?.click();
         await new Promise(resolve => setTimeout(resolve, 180));
         const layout = document.querySelector('.payment-calendar-layout');
         const cards = [...document.querySelectorAll('.payment-building-card')];
@@ -5688,14 +5695,18 @@ async function createWindow() {
         const mainText = document.getElementById('main')?.textContent || '';
         const pageTitle = document.getElementById('pageTitle')?.textContent.trim() || '';
         const oldPaymentModeAbsent = !document.querySelector('[data-payment-mode], .payment-mode-tabs');
-        const recurringOnly = pageTitle === '건물주 입금 캘린더' && mainText.includes('건물주용 정기 납부 관리')
-          && !mainText.includes('단건 계약') && !document.querySelector('.one-off-contract-calendar, [data-unified-calendar-tab]');
-        const pass = !!layout && realCards.length >= 2 && selected?.dataset.paymentBuildingId === targetId && select?.value === targetId && currentText.includes(targetName) && calendarDays === 42 && paymentEvents >= 1 && oldPaymentModeAbsent && recurringOnly && state.view === 'payments';
+        const paymentTab = document.querySelector('[data-unified-calendar-tab="payment"]');
+        const recurringOnly = pageTitle === '캘린더' && mainText.includes('건물주용 정기 납부 관리')
+          && mainText.includes('건물주 입금캘린더') && !document.querySelector('.one-off-contract-calendar')
+          && document.querySelectorAll('[data-unified-calendar-tab]').length === 3
+          && paymentTab?.classList.contains('active');
+        const pass = !!layout && realCards.length >= 2 && selected?.dataset.paymentBuildingId === targetId && select?.value === targetId && currentText.includes(targetName) && calendarDays === 42 && paymentEvents >= 1 && oldPaymentModeAbsent && recurringOnly && state.view === 'payments' && state.unifiedCalendarTab === 'payment';
         return { pass, cardCount: cards.length, realCardCount: realCards.length, targetId, targetName, selectedId: selected?.dataset.paymentBuildingId, selectValue: select?.value, currentText, calendarDays, paymentEvents, pageTitle, oldPaymentModeAbsent, recurringOnly, state };
       })()`, true);
     } else if (process.env.BRING_CRM_SCREENSHOT_ACTION === "payment-direct-tools") {
       actionResult = await mainWindow.webContents.executeJavaScript(`(async () => {
-        document.querySelector('[data-view="payments"]')?.click();
+        document.querySelector('[data-view="buildingCalendar"]')?.click();
+        document.querySelector('[data-unified-calendar-tab="payment"]')?.click();
         await new Promise(resolve => setTimeout(resolve, 180));
         const sheetButton = document.querySelector('[data-payment-sheet-open]');
         const bankButton = document.querySelector('[data-payment-bank-selected]');
@@ -5743,7 +5754,8 @@ async function createWindow() {
       })()`, true);
     } else if (process.env.BRING_CRM_SCREENSHOT_ACTION === "payment-schedule-form") {
       actionResult = await mainWindow.webContents.executeJavaScript(`(async () => {
-        document.querySelector('[data-view="payments"]')?.click();
+        document.querySelector('[data-view="buildingCalendar"]')?.click();
+        document.querySelector('[data-unified-calendar-tab="payment"]')?.click();
         await new Promise(resolve => setTimeout(resolve, 150));
         document.querySelector('[data-action="new-payment-schedule"]')?.click();
         const form = document.getElementById('paymentScheduleForm');
@@ -5765,7 +5777,8 @@ async function createWindow() {
       })()`, true);
     } else if (process.env.BRING_CRM_SCREENSHOT_ACTION === "payment-schedule-delete") {
       actionResult = await mainWindow.webContents.executeJavaScript(`(async () => {
-        document.querySelector('[data-view="payments"]')?.click();
+        document.querySelector('[data-view="buildingCalendar"]')?.click();
+        document.querySelector('[data-unified-calendar-tab="payment"]')?.click();
         await new Promise(resolve => setTimeout(resolve, 120));
         document.querySelector('[data-action="new-payment-schedule"]')?.click();
         const form = document.getElementById('paymentScheduleForm');
@@ -5897,18 +5910,34 @@ async function createWindow() {
           const entryScrollTop = entryMain?.scrollTop || 0;
           const scrollResetOnEntry = entryScrollPrimed && entryScrollTop <= 1;
           const navViews = [...document.querySelectorAll('#nav [data-view]')].map(item => item.dataset.view);
-          const calendarNavIndex = navViews.indexOf('buildingCalendar');
-          const navOrder = navViews.indexOf('vacancies') >= 0
-            && calendarNavIndex > navViews.indexOf('vacancies')
-            && navViews.indexOf('workManagement') === calendarNavIndex + 1;
-          const calendarNavLabel = document.querySelector('[data-view="buildingCalendar"] b')?.textContent.trim() || '';
+          const vacancyNav = document.querySelector('[data-view="vacancies"]');
+          const calendarFolder = document.querySelector('[data-nav-folder="calendar"]');
+          const workManagementNav = document.querySelector('[data-view="workManagement"]');
+          const navOrder = !!vacancyNav && !!calendarFolder && !!workManagementNav
+            && !!(vacancyNav.compareDocumentPosition(calendarFolder) & Node.DOCUMENT_POSITION_FOLLOWING)
+            && !!(calendarFolder.compareDocumentPosition(workManagementNav) & Node.DOCUMENT_POSITION_FOLLOWING);
+          const calendarNavLabel = calendarFolder?.querySelector('[data-nav-folder-toggle] b')?.textContent.trim() || '';
           const pageTitle = document.getElementById('pageTitle')?.textContent.trim() || '';
           const workTab = document.querySelector('[data-unified-calendar-tab="work"]');
           const contractTab = document.querySelector('[data-unified-calendar-tab="contract"]');
-          const unifiedDefault = calendarNavLabel === '통합 캘린더' && pageTitle === '통합 캘린더'
-            && workTab?.textContent.trim().startsWith('업무일정') && contractTab?.textContent.trim().startsWith('계약')
-            && workTab?.classList.contains('active') && workTab?.getAttribute('aria-selected') === 'true'
-            && contractTab?.getAttribute('aria-selected') === 'false'
+          const paymentTab = document.querySelector('[data-unified-calendar-tab="payment"]');
+          const calendarSubnavState = {
+            folderOpen: !!calendarFolder?.classList.contains('open'),
+            folderActive: !!calendarFolder?.classList.contains('active'),
+            workActive: !!workTab?.classList.contains('active'),
+            contractActive: !!contractTab?.classList.contains('active'),
+            paymentActive: !!paymentTab?.classList.contains('active'),
+            workLabel: workTab?.querySelector('b')?.textContent.trim() || '',
+            contractLabel: contractTab?.querySelector('b')?.textContent.trim() || '',
+            paymentLabel: paymentTab?.querySelector('b')?.textContent.trim() || ''
+          };
+          const unifiedDefault = calendarNavLabel === '캘린더' && pageTitle === '캘린더'
+            && workTab?.querySelector('b')?.textContent.trim() === '업무일정 캘린더'
+            && contractTab?.querySelector('b')?.textContent.trim() === '계약일정 캘린더'
+            && paymentTab?.querySelector('b')?.textContent.trim() === '건물주 입금캘린더'
+            && calendarFolder?.classList.contains('open') && calendarFolder?.classList.contains('active')
+            && workTab?.classList.contains('active') && !contractTab?.classList.contains('active')
+            && !paymentTab?.classList.contains('active')
             && window.__crmTest.snapshot().unifiedCalendarTab === 'work';
           const holidayHost = document.createElement('div');
           holidayHost.style.cssText = 'position:fixed;left:-10000px;top:0;width:1200px;';
@@ -6106,6 +6135,7 @@ async function createWindow() {
             navOrder,
             navViews,
             calendarNavLabel,
+            calendarSubnavState,
             pageTitle,
             unifiedDefault,
             holidayMarked,

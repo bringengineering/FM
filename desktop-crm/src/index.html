@@ -77,13 +77,19 @@
             <button class="nav-item nav-child" data-view="partnerQuotes"><span>•</span><b>업체 상담</b><em id="navPartnerQuoteCount">0</em></button>
           </div>
         </div>
-        <button class="nav-item" data-view="buildingCalendar"><span>▣</span><b>통합 캘린더</b></button>
+        <div class="nav-folder" data-nav-folder="calendar">
+          <button type="button" class="nav-folder-toggle" data-nav-folder-toggle aria-expanded="false"><span>▣</span><b>캘린더</b><i aria-hidden="true">⌄</i></button>
+          <div class="nav-folder-children">
+            <button class="nav-item nav-child" data-view="buildingCalendar" data-unified-calendar-tab="work"><span>•</span><b>업무일정 캘린더</b></button>
+            <button class="nav-item nav-child" data-view="buildingCalendar" data-unified-calendar-tab="contract"><span>•</span><b>계약일정 캘린더</b></button>
+            <button class="nav-item nav-child" data-view="payments" data-unified-calendar-tab="payment"><span>•</span><b>건물주 입금캘린더</b><em id="navPaymentCount">0</em></button>
+          </div>
+        </div>
         <button class="nav-item" data-view="workManagement"><span>✓</span><b>작업관리</b></button>
         <button class="nav-item" data-view="valueScope"><span aria-hidden="true">⌖</span><span class="nav-copy"><b>지도·밸류스코프</b><small>BRING VALUESCOPE</small></span></button>
         <button class="nav-item" data-view="aiAssistant"><span>✦</span><b>AI 비서</b></button>
         <button class="nav-item" data-view="relationships"><span>♡</span><b>계약 고객 관리</b><em id="navRelationshipCount">0</em></button>
         <button class="nav-item" data-view="cases"><span>▣</span><b>민원 관리</b><em id="navCaseCount">0</em></button>
-        <button class="nav-item" data-view="payments"><span>▤</span><b>건물주 입금 캘린더</b><em id="navPaymentCount">0</em></button>
         <button class="nav-item" data-view="security"><span>◇</span><b>정보·열쇠 관리</b></button>
         <button class="nav-item" data-view="settings"><span>⚙</span><b>설정</b></button>
       </nav>

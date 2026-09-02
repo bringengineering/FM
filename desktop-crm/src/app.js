@@ -98,6 +98,7 @@
   let workCalendarDate = Core.dayKey();
   let workCalendarBuildingId = "all";
   let workCalendarQuery = "";
+  const UNIFIED_CALENDAR_TABS = Object.freeze(["work", "contract", "payment"]);
   let unifiedCalendarTab = "work";
   let contractCalendarMonth = Core.dayKey().slice(0, 7);
   let contractCalendarBuildingId = "all";
@@ -156,12 +157,12 @@
   const viewMeta = {
     dashboard: ["오늘의 업무", "한눈에 보기"],
     cases: ["접수부터 사후관리까지", "민원 관리"],
-    payments: ["건물주 정기 납부 예정과 입금 확인", "건물주 입금 캘린더"],
+    payments: ["업무·계약·건물주 입금 일정을 한눈에", "캘린더"],
     customers: ["고객과 연결 건물을 한곳에서", "고객·건물 관리"],
     customerMessages: ["정보성 안내와 동의된 영업 메시지", "고객 메시지"],
     buildings: ["고객과 연결 건물을 한곳에서", "고객·건물 관리"],
     vacancies: ["층별 호실과 입퇴실 예정", "공실 현황"],
-    buildingCalendar: ["업무일정과 단건 계약을 날짜로 확인", "통합 캘린더"],
+    buildingCalendar: ["업무·계약·건물주 입금 일정을 한눈에", "캘린더"],
     workManagement: ["예정부터 완료·비용·증빙까지", "작업관리"],
     operationsIntelligence: ["반복 업무와 병목을 한곳에서", "운영 분석"],
     valueScope: ["BRING VALUESCOPE", "지도·밸류스코프"],
@@ -1334,7 +1335,10 @@
     document.getElementById("pageEyebrow").textContent = meta[0];
     document.getElementById("pageTitle").textContent = meta[1];
     document.querySelectorAll(".nav-item").forEach(button => {
-      const active = button.dataset.view === currentView || button.dataset.view === "customers" && currentView === "buildings";
+      const calendarTab = button.dataset.unifiedCalendarTab;
+      const active = calendarTab
+        ? ["buildingCalendar", "payments"].includes(currentView) && calendarTab === unifiedCalendarTab
+        : button.dataset.view === currentView || button.dataset.view === "customers" && currentView === "buildings";
       button.classList.toggle("active", active);
     });
     document.querySelector('[data-nav-folder="customer-management"]')?.classList.toggle("active", ["customers", "buildings", "vacancies", "partnerVendors"].includes(currentView) || currentView === "customerMessages");
@@ -1352,6 +1356,14 @@
       officeFolder?.classList.add("open");
       officeFolder?.querySelector("[data-nav-folder-toggle]")?.setAttribute("aria-expanded", "true");
     }
+    const calendarView = ["buildingCalendar", "payments"].includes(currentView);
+    const calendarFolder = document.querySelector('[data-nav-folder="calendar"]');
+    calendarFolder?.classList.toggle("active", calendarView);
+    if (calendarView) {
+      calendarFolder?.classList.add("open");
+      calendarFolder?.querySelector("[data-nav-folder-toggle]")?.setAttribute("aria-expanded", "true");
+      requestAnimationFrame(() => calendarFolder?.scrollIntoView({ block: "nearest" }));
+    }
     document.getElementById("navCaseCount").textContent = activeCases().length;
     document.getElementById("navPaymentCount").textContent = paymentRows("all").filter(item => item.status === "overdue" || item.status === "manual_unpaid" || item.status === "review").length;
     document.getElementById("navCustomerCount").textContent = store.customers.length;
@@ -1362,11 +1374,12 @@
     document.getElementById("navPartnerQuoteCount").textContent = store.partnerQuotes.filter(item => item.status !== "제외").length;
     document.body.classList.toggle("crm-read-only", !canWriteCRM());
     const valueScopeView = currentView === "valueScope";
-    const calendarView = currentView === "buildingCalendar";
-    const contractCalendarView = calendarView && unifiedCalendarTab === "contract";
-    searchEl.closest(".global-search").hidden = officeView;
-    searchEl.placeholder = valueScopeView ? "지도에서 주소·건물·중개사를 검색하세요" : contractCalendarView ? "계약명·고객·건물 검색" : calendarView ? "건물명·일정 검색" : currentView === "vacancies" ? "건물명·주소 검색" : "고객·건물·연락처 검색";
-    searchEl.value = contractCalendarView ? contractCalendarQuery : calendarView ? workCalendarQuery : crmSearchValue;
+    const workCalendarView = currentView === "buildingCalendar" && unifiedCalendarTab === "work";
+    const contractCalendarView = currentView === "buildingCalendar" && unifiedCalendarTab === "contract";
+    const paymentCalendarView = currentView === "payments";
+    searchEl.closest(".global-search").hidden = officeView || paymentCalendarView;
+    searchEl.placeholder = valueScopeView ? "지도에서 주소·건물·중개사를 검색하세요" : contractCalendarView ? "계약명·고객·건물 검색" : workCalendarView ? "건물명·일정 검색" : currentView === "vacancies" ? "건물명·주소 검색" : "고객·건물·연락처 검색";
+    searchEl.value = contractCalendarView ? contractCalendarQuery : workCalendarView ? workCalendarQuery : crmSearchValue;
     if (currentView === "vacancies") {
       const vacancyBuildings = (store.buildings || []).filter(building => building && !building.archivedAt);
       if (!vacancyBuildings.some(building => building.id === selectedVacancyBuildingId)) selectedVacancyBuildingId = vacancyBuildings[0]?.id || "";
@@ -2179,7 +2192,7 @@
     const days = paymentCalendarDays(contractCalendarMonth);
     const editable = canWriteCRM();
     const emptyAction = editable && !query ? `<button class="primary-button" data-action="new-one-off-contract">＋ 단건 계약 등록</button>` : "";
-    return `<section class="one-off-contract-calendar" aria-label="단건 계약 캘린더"><header class="calendar-tab-intro"><div><span>단건 계약 일정</span><h2>입금 예정일과 수익을 확인합니다</h2><p>예초·청소·도배·폐기물 처리 등 건별 계약만 모아 봅니다. 정기 납부 일정은 건물주 입금 캘린더에서 관리합니다.</p></div>${editable ? `<div class="calendar-tab-intro-actions"><button type="button" class="primary-button" data-action="new-one-off-contract">＋ 단건 계약</button></div>` : ""}</header>
+    return `<section class="one-off-contract-calendar" aria-label="단건 계약 캘린더"><header class="calendar-tab-intro"><div><span>단건 계약 일정</span><h2>입금 예정일과 수익을 확인합니다</h2><p>예초·청소·도배·폐기물 처리 등 건별 계약만 모아 봅니다. 정기 납부 일정은 건물주 입금캘린더 탭에서 관리합니다.</p></div>${editable ? `<div class="calendar-tab-intro-actions"><button type="button" class="primary-button" data-action="new-one-off-contract">＋ 단건 계약</button></div>` : ""}</header>
       <div class="operations-kpis"><div class="operations-kpi"><span>단건 계약</span><b>${totals.count}건</b><small>${esc(paymentMonthLabel(contractCalendarMonth))}</small></div><div class="operations-kpi"><span>받을 금액</span><b>${esc(krw(totals.revenue))}</b><small>고객 청구액</small></div><div class="operations-kpi"><span>업체 지급액</span><b>${esc(krw(totals.cost))}</b><small>작업 원가</small></div><div class="operations-kpi" style="--wash:#edf9f5"><span>예상 수익</span><b>${esc(krw(totals.profit))}</b><small>받을 금액 - 지급액</small></div></div>
       <div class="payment-toolbar"><div class="payment-month-switch"><button data-contract-calendar-month="-1" aria-label="이전 달">‹</button><b>${esc(paymentMonthLabel(contractCalendarMonth))}</b><button data-contract-calendar-month="1" aria-label="다음 달">›</button></div><label class="payment-building-filter"><span>건물</span><select data-contract-calendar-building><option value="all">전체 건물</option>${buildings.map(item => `<option value="${attr(item.id)}" ${contractCalendarBuildingId === item.id ? "selected" : ""}>${esc(`${item.name}${item.archived ? " · 보관" : ""}`)}</option>`).join("")}</select></label></div>
       <section class="payment-calendar"><div class="payment-weekdays">${["일", "월", "화", "수", "목", "금", "토"].map(day => `<div>${day}</div>`).join("")}</div><div class="payment-days">${days.map(date => { const dayRows = rows.filter(row => row.dueDate === date); return `<div class="payment-day ${date.slice(0, 7) === contractCalendarMonth ? "" : "out"} ${date === todayKey() ? "today" : ""}"><div class="payment-daynum">${Number(date.slice(-2))}</div>${dayRows.slice(0, 3).map(row => { const content = `<b>${esc(row.contract.name)}</b><span>${esc(krw(row.contract.amount))} · 수익 ${esc(krw(row.contract.grossProfit))}</span>`; return editable ? `<button class="payment-event ${attr(row.status)}" data-contract-edit="${attr(row.contract.id)}">${content}</button>` : `<div class="payment-event ${attr(row.status)} is-readonly">${content}</div>`; }).join("")}${dayRows.length > 3 ? `<span class="payment-more">＋ ${dayRows.length - 3}건</span>` : ""}</div>`; }).join("")}</div></section>
@@ -2187,6 +2200,7 @@
   }
 
   function renderPayments() {
+    unifiedCalendarTab = "payment";
     const buildings = paymentBuildings();
     if (paymentBuildingFilter !== "all" && !buildings.some(item => item.id === paymentBuildingFilter)) paymentBuildingFilter = "all";
     const selectedBuilding = buildings.find(item => item.id === paymentBuildingFilter) || null;
@@ -2200,10 +2214,10 @@
     const sheetSync = operations.payments && operations.payments.sheetSync || {};
     const bankSync = operations.payments && operations.payments.bankSync || {};
     if (operationsLoading && !operations.loadedAt) {
-      main.innerHTML = `<div class="operations-loading">건물주 입금 캘린더를 불러오고 있습니다…</div>`;
+      main.innerHTML = unifiedCalendarFrame("payment", `<div class="operations-loading">건물주 입금캘린더를 불러오고 있습니다…</div>`, unifiedCalendarCounts());
       return;
     }
-    main.innerHTML = `<section class="operations-hero payment-operations-hero"><div><span>건물주용 정기 납부 관리</span><h2>건물주 입금 캘린더</h2><p>건물별 세입자 정기 납부 예정, 입금 확인, 미입금 안내를 한곳에서 처리합니다.</p></div><div class="operations-actions payment-operation-actions"><button class="secondary-button" data-payment-sheet-open>세입자 관리대장</button><button class="secondary-button payment-bank-connect-button" data-payment-bank-selected>팝빌 계좌 연결</button><button class="secondary-button" data-action="new-payment-schedule">＋ 납부 일정</button><button class="secondary-button" data-payment-action="syncPaymentBuildings">↻ 건물 갱신</button><button class="secondary-button" data-payment-action="syncPaymentSchedules">↻ 세입자 반영</button><button class="primary-button" data-payment-action="syncPopbillBankTransactions">은행 입금 조회</button></div></section>
+    const content = `<section class="operations-hero payment-operations-hero"><div><span>건물주용 정기 납부 관리</span><h2>건물주 입금캘린더</h2><p>건물별 세입자 정기 납부 예정, 입금 확인, 미입금 안내를 한곳에서 처리합니다.</p></div><div class="operations-actions payment-operation-actions"><button class="secondary-button" data-payment-sheet-open>세입자 관리대장</button><button class="secondary-button payment-bank-connect-button" data-payment-bank-selected>팝빌 계좌 연결</button><button class="secondary-button" data-action="new-payment-schedule">＋ 납부 일정</button><button class="secondary-button" data-payment-action="syncPaymentBuildings">↻ 건물 갱신</button><button class="secondary-button" data-payment-action="syncPaymentSchedules">↻ 세입자 반영</button><button class="primary-button" data-payment-action="syncPopbillBankTransactions">은행 입금 조회</button></div></section>
       ${operationsError ? `<div class="info-box" style="margin-top:12px;color:#c6535f">${esc(operationsError)}</div>` : ""}
       <div class="payment-sync-strip"><span><i class="${sheetSync.ok === false ? "bad" : sheetSync.updatedAt ? "good" : ""}"></i>세입자 자료 ${sheetSync.updatedAt ? `최근 ${esc(shortDate(sheetSync.updatedAt))} · ${Number(sheetSync.count) || 0}명` : "동기화 대기"}</span><span><i class="${bankSync.status === "error" ? "bad" : bankSync.updatedAt ? "good" : ""}"></i>은행 입금 ${bankSync.updatedAt ? `최근 ${esc(shortDate(bankSync.updatedAt))} · ${Number(bankSync.transactionCount) || 0}건` : "조회 대기"}</span><button type="button" data-action="refresh-operations">화면 새로고침</button></div>
       <div class="operations-kpis"><div class="operations-kpi"><span>이번 달 예정</span><b>${rows.length}건</b><small>${esc(krw(expectedAmount))}</small></div><div class="operations-kpi" style="--wash:#edf9f5"><span>입금 완료</span><b>${paid.length}건</b><small>${esc(krw(paidAmount))}</small></div><div class="operations-kpi" style="--wash:#fff2f3"><span>미입금</span><b>${overdue.length}건</b><small>납부일 경과·수동 확인</small></div><div class="operations-kpi" style="--wash:#fff9eb"><span>확인 필요</span><b>${review.length}건</b><small>중복·수동 검토</small></div></div>
@@ -2213,6 +2227,7 @@
         const dayRows = rows.filter(item => item.dueDate === date);
         return `<div class="payment-day ${date.slice(0, 7) === paymentMonth ? "" : "out"} ${date === todayKey() ? "today" : ""}"><div class="payment-daynum">${Number(date.slice(-2))}</div>${dayRows.slice(0, 2).map(row => `<button class="payment-event ${attr(row.status)}" data-payment-event="${attr(row.schedule.id)}"><b>${esc([row.schedule.buildingName, row.schedule.unit].filter(Boolean).join(" · ") || row.schedule.tenantName || "납부 일정")}</b><span>${esc(krw(row.schedule.amount))} · ${esc(paymentStatusLabel(row.status))}</span></button>`).join("")}${dayRows.length > 2 ? `<span class="payment-more">＋ ${dayRows.length - 2}건</span>` : ""}</div>`;
       }).join("")}</div></section>` : `<div class="payment-calendar"><div class="payment-empty-note">${esc(paymentMonthLabel(paymentMonth))}에 ${selectedBuilding ? `${esc(selectedBuilding.name)} 건물의` : "등록된"} 납부 일정이 없습니다.<br>${selectedBuilding ? "다른 건물을 선택하거나 납부 일정을 추가해 주세요." : "위의 세입자 반영을 눌러 관리대장 자료를 가져오세요."}</div></div>`}</div></section>`;
+    main.innerHTML = unifiedCalendarFrame("payment", content, unifiedCalendarCounts());
   }
 
   function paymentStatusEditor(scheduleId) {
@@ -2232,7 +2247,7 @@
     const buildings = paymentBuildings();
     const linkedBuilding = storeBuildingForPaymentSchedule(schedule);
     const selectedBuildingId = linkedBuilding && linkedBuilding.id || schedule.buildingId || "";
-    modalContent.innerHTML = `<div class="modal-head"><div><h2>${scheduleId ? "납부 일정 수정" : "새 납부 일정"}</h2><p>입력한 일정은 모든 CRM 사용자의 건물주 입금 캘린더에 바로 반영됩니다.</p></div><button class="close-button" data-action="close-modal">×</button></div><form id="paymentScheduleForm" class="modal-body" data-schedule-id="${attr(scheduleId || "")}" data-original-building-id="${attr(schedule.buildingId || "")}"><div class="info-box">세입자 이름·연락처·예상 입금자명·금액을 정확히 입력하면 은행 입금내역 자동 일치 정확도가 높아집니다.</div><div class="form-grid" style="margin-top:14px">${selectField("등록된 건물", "buildingId", ["", ...buildings.map(item => item.id)], selectedBuildingId, id => id ? ([buildings.find(item => item.id === id)?.name, buildings.find(item => item.id === id)?.address].filter(Boolean).join(" · ") || id) : "직접 입력")}${field("건물명 *", "buildingName", schedule.buildingName || "", "text", "예: 우산오피스텔")}${field("호실", "unit", schedule.unit || "", "text", "예: 302호")}${field("세입자명 *", "tenantName", schedule.tenantName || "", "text", "예: 홍길동")}${field("세입자 연락처", "tenantPhone", schedule.tenantPhone || "", "text", "010-0000-0000")}${field("예상 입금자명", "payerName", schedule.payerName || "", "text", "통장에 표시될 이름")}${field("월 납부금액 *", "amount", schedule.amount || "", "text", "원 단위")}${field("매월 납부일 *", "dueDay", schedule.dueDay || 1, "number", "1~31")}${field("시작 월 *", "startMonth", schedule.startMonth || paymentMonth, "month")}${field("종료 월", "endMonth", schedule.endMonth || "", "month")}${selectField("사용 상태", "active", ["true", "false"], schedule.active === false ? "false" : "true", value => value === "true" ? "사용 중" : "종료")}</div><div class="form-actions">${scheduleId && schedule.source === "crm" ? `<button type="button" class="danger-outline-button form-delete-left" data-payment-schedule-delete="${attr(scheduleId)}">일정 삭제</button>` : ""}<button type="button" class="secondary-button" data-action="close-modal">취소</button><button class="primary-button">${scheduleId ? "일정 수정 저장" : "납부 일정 등록"}</button></div></form>`;
+    modalContent.innerHTML = `<div class="modal-head"><div><h2>${scheduleId ? "납부 일정 수정" : "새 납부 일정"}</h2><p>입력한 일정은 모든 CRM 사용자의 건물주 입금캘린더 탭에 바로 반영됩니다.</p></div><button class="close-button" data-action="close-modal">×</button></div><form id="paymentScheduleForm" class="modal-body" data-schedule-id="${attr(scheduleId || "")}" data-original-building-id="${attr(schedule.buildingId || "")}"><div class="info-box">세입자 이름·연락처·예상 입금자명·금액을 정확히 입력하면 은행 입금내역 자동 일치 정확도가 높아집니다.</div><div class="form-grid" style="margin-top:14px">${selectField("등록된 건물", "buildingId", ["", ...buildings.map(item => item.id)], selectedBuildingId, id => id ? ([buildings.find(item => item.id === id)?.name, buildings.find(item => item.id === id)?.address].filter(Boolean).join(" · ") || id) : "직접 입력")}${field("건물명 *", "buildingName", schedule.buildingName || "", "text", "예: 우산오피스텔")}${field("호실", "unit", schedule.unit || "", "text", "예: 302호")}${field("세입자명 *", "tenantName", schedule.tenantName || "", "text", "예: 홍길동")}${field("세입자 연락처", "tenantPhone", schedule.tenantPhone || "", "text", "010-0000-0000")}${field("예상 입금자명", "payerName", schedule.payerName || "", "text", "통장에 표시될 이름")}${field("월 납부금액 *", "amount", schedule.amount || "", "text", "원 단위")}${field("매월 납부일 *", "dueDay", schedule.dueDay || 1, "number", "1~31")}${field("시작 월 *", "startMonth", schedule.startMonth || paymentMonth, "month")}${field("종료 월", "endMonth", schedule.endMonth || "", "month")}${selectField("사용 상태", "active", ["true", "false"], schedule.active === false ? "false" : "true", value => value === "true" ? "사용 중" : "종료")}</div><div class="form-actions">${scheduleId && schedule.source === "crm" ? `<button type="button" class="danger-outline-button form-delete-left" data-payment-schedule-delete="${attr(scheduleId)}">일정 삭제</button>` : ""}<button type="button" class="secondary-button" data-action="close-modal">취소</button><button class="primary-button">${scheduleId ? "일정 수정 저장" : "납부 일정 등록"}</button></div></form>`;
     openModal();
   }
 
@@ -2246,7 +2261,7 @@
     const bindingEntry = paymentBindingEntryForBuilding(building && building.crmBuildingId || buildingId);
     const binding = bindingEntry.binding || {};
     const bindingId = bindingEntry.key || buildingId;
-    modalContent.innerHTML = `<div class="modal-head"><div><h2>입금계좌 연결</h2><p>${esc(building && building.name || "건물")}</p></div><button class="close-button" data-action="close-modal">×</button></div><form id="paymentBankBindingForm" class="modal-body" data-building-id="${attr(bindingId)}" data-building-name="${attr(building && building.name || "")}"><div class="info-box">계좌번호 전체는 CRM에 저장하지 않습니다. 팝빌에 등록된 안전한 계좌 식별정보와 끝 4자리만 연결합니다.</div><div class="payment-bank-options">${accounts.length ? accounts.map(account => `<label><input type="radio" name="accountRef" value="${attr(account.accountRef)}" data-bank-code="${attr(account.bankCode || "")}" data-account-name="${attr(account.accountName || "")}" data-account-last4="${attr(account.accountLast4 || "")}" ${binding.accountRef === account.accountRef ? "checked" : ""}><span><b>${esc(account.accountName || "등록계좌")}</b><small>${esc(account.bankCode || "은행")} · 끝 ${esc(account.accountLast4 || "----")}</small></span></label>`).join("") : `<div class="case-extra-empty">연결할 팝빌 계좌가 없습니다. 먼저 건물주 입금 캘린더에서 “은행 입금 조회”를 눌러 주세요.</div>`}</div><div class="form-actions"><button type="button" class="secondary-button" data-action="close-modal">취소</button>${binding.accountRef ? `<button type="button" class="danger-button" data-payment-bank-unlink="${attr(bindingId)}">연결 해제</button>` : ""}<button class="primary-button" ${!accounts.length ? "disabled" : ""}>계좌 연결 저장</button></div></form>`;
+    modalContent.innerHTML = `<div class="modal-head"><div><h2>입금계좌 연결</h2><p>${esc(building && building.name || "건물")}</p></div><button class="close-button" data-action="close-modal">×</button></div><form id="paymentBankBindingForm" class="modal-body" data-building-id="${attr(bindingId)}" data-building-name="${attr(building && building.name || "")}"><div class="info-box">계좌번호 전체는 CRM에 저장하지 않습니다. 팝빌에 등록된 안전한 계좌 식별정보와 끝 4자리만 연결합니다.</div><div class="payment-bank-options">${accounts.length ? accounts.map(account => `<label><input type="radio" name="accountRef" value="${attr(account.accountRef)}" data-bank-code="${attr(account.bankCode || "")}" data-account-name="${attr(account.accountName || "")}" data-account-last4="${attr(account.accountLast4 || "")}" ${binding.accountRef === account.accountRef ? "checked" : ""}><span><b>${esc(account.accountName || "등록계좌")}</b><small>${esc(account.bankCode || "은행")} · 끝 ${esc(account.accountLast4 || "----")}</small></span></label>`).join("") : `<div class="case-extra-empty">연결할 팝빌 계좌가 없습니다. 먼저 건물주 입금캘린더에서 “은행 입금 조회”를 눌러 주세요.</div>`}</div><div class="form-actions"><button type="button" class="secondary-button" data-action="close-modal">취소</button>${binding.accountRef ? `<button type="button" class="danger-button" data-payment-bank-unlink="${attr(bindingId)}">연결 해제</button>` : ""}<button class="primary-button" ${!accounts.length ? "disabled" : ""}>계좌 연결 저장</button></div></form>`;
     openModal();
   }
 
@@ -3357,7 +3372,27 @@
     setTimeout(() => modalContent.querySelector('[name="title"]')?.focus(), 30);
   }
 
+  function unifiedCalendarCounts(workModel) {
+    const model = workModel || WorkCalendar.buildModel(store, {
+      month: workCalendarMonth,
+      selectedDate: workCalendarDate,
+      buildingId: workCalendarBuildingId,
+      query: workCalendarQuery,
+      today: todayKey(),
+    });
+    return {
+      work: Number(model.counts && model.counts.month || 0),
+      contract: Core.oneOffContractRows(store.contracts, contractCalendarMonth, "all").length,
+      payment: paymentRows("all").length,
+    };
+  }
+
+  function unifiedCalendarFrame(activeTab, content, counts) {
+    return `<section class="unified-calendar-view" data-calendar-view="${attr(activeTab)}"><div class="unified-calendar-panel" role="region" aria-label="선택한 캘린더">${content}</div></section>`;
+  }
+
   function renderBuildingCalendar() {
+    if (!new Set(["work", "contract"]).has(unifiedCalendarTab)) unifiedCalendarTab = "work";
     const model = WorkCalendar.buildModel(store, {
       month: workCalendarMonth,
       selectedDate: workCalendarDate,
@@ -3368,14 +3403,9 @@
     workCalendarMonth = model.month;
     workCalendarDate = model.selectedDate;
     workCalendarBuildingId = model.buildingId;
-    const contractCount = Core.oneOffContractRows(store.contracts, contractCalendarMonth, "all").length;
     const workActive = unifiedCalendarTab === "work";
-    const description = workActive
-      ? "건물별 업무일정을 확인하고 새 일정을 등록합니다."
-      : "정기 납부를 제외한 단건 계약의 입금 예정과 수익을 확인합니다.";
-    const tabs = `<header class="unified-calendar-switch"><div><b>캘린더 구분</b><p>${esc(description)}</p></div><nav class="unified-calendar-tabs" role="tablist" aria-label="통합 캘린더 구분"><button id="unified-calendar-work-tab" type="button" role="tab" data-unified-calendar-tab="work" class="${workActive ? "active" : ""}" aria-controls="unified-calendar-panel" aria-selected="${workActive}" tabindex="${workActive ? "0" : "-1"}">업무일정 <span>${Number(model.counts && model.counts.month || 0)}</span></button><button id="unified-calendar-contract-tab" type="button" role="tab" data-unified-calendar-tab="contract" class="${workActive ? "" : "active"}" aria-controls="unified-calendar-panel" aria-selected="${!workActive}" tabindex="${workActive ? "-1" : "0"}">계약 <span>${contractCount}</span></button></nav></header>`;
     const content = workActive ? WorkCalendar.render(model, { canWrite: canWriteCRM() }) : renderOneOffContractCalendar();
-    main.innerHTML = `<section class="unified-calendar-view">${tabs}<div id="unified-calendar-panel" class="unified-calendar-panel" role="tabpanel" aria-labelledby="unified-calendar-${workActive ? "work" : "contract"}-tab">${content}</div></section>`;
+    main.innerHTML = unifiedCalendarFrame(unifiedCalendarTab, content, unifiedCalendarCounts(model));
   }
 
   function buildingScheduleEditor(recordId, defaultDate) {
@@ -3400,7 +3430,7 @@
     };
     const statusOptions = ["planned", "in_progress", "completed"];
     const typeOptions = ["inspection", "repair", "cleaning", "stair_cleaning", "grounds_cutting", "meeting", "other"];
-    modalContent.innerHTML = `<div class="modal-head"><div><h2>${existing ? "업무 일정 수정" : "업무 일정 추가"}</h2><p>건물을 먼저 선택하고 해당 건물에서 진행할 일정을 등록합니다.</p></div><button class="close-button" data-action="close-modal" aria-label="일정 창 닫기">×</button></div><form id="buildingScheduleForm" class="modal-body" data-schedule-id="${attr(item.id)}" data-schedule-create="${existing ? "false" : "true"}" data-request-id="${attr(crypto.randomUUID())}" data-opened-updated-at="${attr(existing && existing.updatedAt || "")}" data-opened-commit-version="${Number(existing && existing.calendarCommitVersion) || 0}" data-auth-generation="${authGeneration}" data-auth-uid="${attr(currentAuthUid())}"><div class="info-box">등록한 일정은 통합 캘린더의 업무일정 탭과 작업관리 화면에 함께 표시됩니다.</div><div class="form-grid work-calendar-form-grid">${selectField("건물 *", "buildingId", ["", ...buildingOptions.map(building => building.id)], item.buildingId || "", id => {
+    modalContent.innerHTML = `<div class="modal-head"><div><h2>${existing ? "업무 일정 수정" : "업무 일정 추가"}</h2><p>건물을 먼저 선택하고 해당 건물에서 진행할 일정을 등록합니다.</p></div><button class="close-button" data-action="close-modal" aria-label="일정 창 닫기">×</button></div><form id="buildingScheduleForm" class="modal-body" data-schedule-id="${attr(item.id)}" data-schedule-create="${existing ? "false" : "true"}" data-request-id="${attr(crypto.randomUUID())}" data-opened-updated-at="${attr(existing && existing.updatedAt || "")}" data-opened-commit-version="${Number(existing && existing.calendarCommitVersion) || 0}" data-auth-generation="${authGeneration}" data-auth-uid="${attr(currentAuthUid())}"><div class="info-box">등록한 일정은 캘린더의 업무일정 캘린더 탭과 작업관리 화면에 함께 표시됩니다.</div><div class="form-grid work-calendar-form-grid">${selectField("건물 *", "buildingId", ["", ...buildingOptions.map(building => building.id)], item.buildingId || "", id => {
       if (!id) return "건물을 선택해 주세요";
       const building = buildingOptions.find(candidate => candidate.id === id) || buildingById(id);
       return `${building && building.name || id}${building && building.archivedAt ? " · 보관된 건물" : building && building.address ? ` · ${building.address}` : ""}`;
@@ -4067,7 +4097,7 @@
     modalContent.innerHTML = `<div class="modal-head"><div><h2>${editing ? "계약 상세·수정" : "새 계약 등록"}</h2><p>필요한 계약 유형을 모두 체크하고 고객을 선택하세요.</p></div><button class="close-button" data-action="close-modal">×</button></div><form id="contractForm" class="modal-body contract-form" data-contract-id="${attr(editing && editing.id || "")}" data-return-view="${attr(returnView)}">
       <div class="contract-form-guide"><div><b>${esc(item.contractNo || "새 계약")}</b><span>계약 조건·기간·금액을 실제 계약 내용과 동일하게 입력하세요.</span></div><span>공용 서버에 저장</span></div>
       <div class="form-grid">${contractTypeChecklist(types)}${selectField("계약 상태", "status", Core.CONTRACT_STATUSES, item.status)}${field("계약명 *", "name", item.name, "text", "예: 혁신타워 종합관리", "wide")}${selectField("연결 고객 *", "customerId", customerOptions, item.customerId, id => id ? (customerById(id)?.name || id) : "고객 선택")}${contractBuildingField(item.customerId, item.buildingId)}${field("계약 시작일 *", "startDate", item.startDate, "date")}${field("계약 종료일 (선택)", "endDate", item.endDate, "date")}${field("계약 금액", "amount", item.amount || "", "number", "원 단위")}${selectField("납부 방식", "billingCycle", ["월 정기", "건별", "연간", "기타"], item.billingCycle, value => value === "건별" ? "단건 계약" : value)}${field("담당자", "owner", item.owner || store.settings.owner || "김현진")}${areaField("공통 업무 범위", "scope", item.scope, "wide")}</div>
-      <section class="contract-type-fields one-off-contract-fields" data-one-off-contract-fields ${isOneOff ? "" : "hidden"}><header><b>단건 계약 정산</b><span>납부 방식을 건별로 선택하면 통합 캘린더의 계약 탭에 표시됩니다.</span></header><div class="form-grid">${field("작업일", "workDate", item.workDate || item.startDate, "date")}${field("입금 예정일", "paymentDueDate", item.paymentDueDate || item.workDate || item.startDate, "date")}${field("업체 지급액·작업비", "vendorCost", item.vendorCost || "", "number", "원 단위")}${selectField("고객 입금 상태", "collectionStatus", ["입금 예정", "입금 완료"], item.collectionStatus || "입금 예정")}${selectField("업체 지급 상태", "vendorPaymentStatus", ["지급 예정", "지급 완료"], item.vendorPaymentStatus || "지급 예정")}<label class="field"><span>예상 수익</span><input value="${attr(krw(Core.money(item.amount) - Core.money(item.vendorCost)))}" readonly></label></div></section>
+      <section class="contract-type-fields one-off-contract-fields" data-one-off-contract-fields ${isOneOff ? "" : "hidden"}><header><b>단건 계약 정산</b><span>납부 방식을 건별로 선택하면 캘린더의 계약일정 캘린더 탭에 표시됩니다.</span></header><div class="form-grid">${field("작업일", "workDate", item.workDate || item.startDate, "date")}${field("입금 예정일", "paymentDueDate", item.paymentDueDate || item.workDate || item.startDate, "date")}${field("업체 지급액·작업비", "vendorCost", item.vendorCost || "", "number", "원 단위")}${selectField("고객 입금 상태", "collectionStatus", ["입금 예정", "입금 완료"], item.collectionStatus || "입금 예정")}${selectField("업체 지급 상태", "vendorPaymentStatus", ["지급 예정", "지급 완료"], item.vendorPaymentStatus || "지급 예정")}<label class="field"><span>예상 수익</span><input value="${attr(krw(Core.money(item.amount) - Core.money(item.vendorCost)))}" readonly></label></div></section>
       <section class="contract-type-fields" data-contract-fields="${attr(types.join("|"))}"><header><b>유형별 계약 내용</b><span>체크한 모든 계약 유형의 입력 항목이 표시됩니다.</span></header><div class="contract-specific-fields ${types.includes("청소") ? "is-selected" : ""}" data-contract-specific="청소">${field("청소 주기·작업 시점", "serviceFrequency", item.serviceFrequency, "text", "예: 주 2회 또는 공실 발생 시", "wide")}</div><div class="contract-specific-fields ${types.includes("건물관리") ? "is-selected" : ""}" data-contract-specific="건물관리">${field("관리 호실 수", "unitCount", item.unitCount || "", "number", "숫자 입력")}</div><div class="contract-specific-fields ${types.includes("부동산관리") ? "is-selected" : ""}" data-contract-specific="부동산관리">${field("관리 대상", "managementTarget", item.managementTarget, "text", "예: 상가·사무실 임대관리")}${field("수수료 방식", "feeMethod", item.feeMethod, "text", "예: 월 고정 또는 임대료 비율")}</div></section>
       <div class="form-grid contract-note-grid">${areaField("계약 메모", "memo", item.memo, "wide")}</div><div class="form-actions">${editing ? `<button type="button" class="danger-outline-button form-delete-left" data-contract-delete="${attr(editing.id)}">계약 삭제</button>` : ""}<button type="button" class="secondary-button" data-action="close-modal">취소</button><button type="submit" class="primary-button">${editing ? "계약 수정 저장" : "계약 등록"}</button></div></form>`;
     openModal();
@@ -5364,6 +5394,8 @@
     if (nav) {
       const nextView = nav.dataset.view;
       if (!Object.hasOwn(viewMeta, nextView)) return;
+      const requestedCalendarTab = nav.dataset.unifiedCalendarTab;
+      if (UNIFIED_CALENDAR_TABS.includes(requestedCalendarTab)) unifiedCalendarTab = requestedCalendarTab;
       const folder = nav.closest("[data-nav-folder]");
       if (folder) {
         folder.classList.add("open");
@@ -5673,18 +5705,6 @@
     const incidentEdit = event.target.closest("[data-incident-edit]");
     if (incidentEdit) {
       if (requireSecurityPermission(false)) incidentEditor(incidentEdit.dataset.incidentEdit);
-      return;
-    }
-    const unifiedCalendarTabButton = event.target.closest("[data-unified-calendar-tab]");
-    if (unifiedCalendarTabButton) {
-      const nextTab = unifiedCalendarTabButton.dataset.unifiedCalendarTab === "contract" ? "contract" : "work";
-      if (nextTab !== unifiedCalendarTab) {
-        unifiedCalendarTab = nextTab;
-        renderBuildingCalendar();
-        pageMeta();
-        main.scrollTop = 0;
-        requestAnimationFrame(() => main.querySelector(`[data-unified-calendar-tab="${nextTab}"]`)?.focus());
-      }
       return;
     }
     const contractCalendarMonthButton = event.target.closest("[data-contract-calendar-month]");
@@ -7224,7 +7244,7 @@
       const result = await api.savePaymentSchedule(Object.assign({}, raw, { scheduleId: form.dataset.scheduleId, active: raw.active === "true" }));
       if (!result.ok) return showToast(result.error || "납부 일정을 저장하지 못했습니다.", "error");
       await refreshOperations({ silent: true, render: false });
-      closeModal(); currentView = "payments"; render(); showToast("납부 일정을 건물주 입금 캘린더에 저장했습니다.", "success");
+      closeModal(); currentView = "payments"; render(); showToast("납부 일정을 건물주 입금캘린더에 저장했습니다.", "success");
     } else if (form.id === "paymentBankBindingForm") {
       const selected = form.querySelector('input[name="accountRef"]:checked');
       if (!selected) return showToast("연결할 입금계좌를 선택해 주세요.", "error");
@@ -7237,7 +7257,7 @@
       const result = await api.savePaymentOverride({ month: form.dataset.month, scheduleId: form.dataset.scheduleId, status: raw.status, reason: raw.reason.trim() });
       if (!result.ok) return showToast(result.error || "입금 상태를 저장하지 못했습니다.", "error");
       await refreshOperations({ silent: true, render: false });
-      closeModal(); currentView = "payments"; render(); showToast("입금 상태를 건물주 입금 캘린더에 반영했습니다.", "success");
+      closeModal(); currentView = "payments"; render(); showToast("입금 상태를 건물주 입금캘린더에 반영했습니다.", "success");
     } else if (form.id === "vacancyScheduleForm") {
       if (deferCanonicalMutation("공실 예정")) return;
       const building = buildingById(form.dataset.buildingId);
@@ -7987,12 +8007,16 @@ document.addEventListener("keydown", event => {
   const unifiedCalendarTabControl = event.target.closest?.("[data-unified-calendar-tab]");
   if (unifiedCalendarTabControl && ["ArrowRight", "ArrowLeft", "Home", "End"].includes(event.key)) {
     event.preventDefault();
-    const nextTab = event.key === "ArrowRight" || event.key === "End" ? "contract" : "work";
+    const currentTab = UNIFIED_CALENDAR_TABS.includes(unifiedCalendarTabControl.dataset.unifiedCalendarTab) ? unifiedCalendarTabControl.dataset.unifiedCalendarTab : "work";
+    const currentIndex = UNIFIED_CALENDAR_TABS.indexOf(currentTab);
+    const nextTab = event.key === "Home" ? UNIFIED_CALENDAR_TABS[0]
+      : event.key === "End" ? UNIFIED_CALENDAR_TABS[UNIFIED_CALENDAR_TABS.length - 1]
+      : UNIFIED_CALENDAR_TABS[(currentIndex + (event.key === "ArrowRight" ? 1 : -1) + UNIFIED_CALENDAR_TABS.length) % UNIFIED_CALENDAR_TABS.length];
     unifiedCalendarTab = nextTab;
-    renderBuildingCalendar();
-    pageMeta();
+    currentView = nextTab === "payment" ? "payments" : "buildingCalendar";
+    render();
     main.scrollTop = 0;
-    requestAnimationFrame(() => main.querySelector(`[data-unified-calendar-tab="${nextTab}"]`)?.focus());
+    requestAnimationFrame(() => document.querySelector(`[data-unified-calendar-tab="${nextTab}"]`)?.focus());
     return;
   }
   const buildingLinkInput = event.target.closest?.('#buildingForm [name="naverBuildingUrl"]');

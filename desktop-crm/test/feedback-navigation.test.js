@@ -45,7 +45,7 @@ test("removed standalone tabs keep their internal workflows and data routes", ()
   assert.match(appSource, /else if \(currentView === "operationsIntelligence"\) renderOperationsIntelligence\(\)/);
   assert.match(appSource, /else if \(currentView === "tasks"\) renderTasks\(\)/);
   assert.match(appSource, /else if \(currentView === "contracts"\) renderContracts\(\)/);
-  assert.match(appSource, /data-unified-calendar-tab="contract"/);
+  assert.match(indexSource, /data-nav-folder="calendar"[\s\S]*?data-unified-calendar-tab="contract"/);
   assert.match(
     appSource,
     /\[[^\]]*"operationsIntelligence"[^\]]*"contracts"[^\]]*"tasks"[^\]]*\]\.includes\(query\.get\("view"\)\)/,
