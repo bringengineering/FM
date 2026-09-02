@@ -47,9 +47,11 @@ test("AI assistant separates report and quote creation and exposes reviewed file
   assert.match(app, /task: "quote_draft"/);
   assert.match(app, /data-ai-quote-export="png"/);
   assert.match(app, /data-ai-quote-export="xlsx"/);
-  assert.match(app, /data-ai-quote-supplier="businessName"/);
-  assert.match(app, /data-ai-quote-supplier="representative"/);
+  assert.match(app, /data-ai-quote-export="pdf"/);
   assert.match(app, /data-ai-quote-supplier="registrationNumber"/);
+  assert.match(app, /bring-company-seal\.png/);
+  assert.match(app, /세액 \(부가세 10%\)/);
+  assert.match(app, /기존에 저장된 사업자등록번호/);
   assert.match(app, /data-ai-quote-item="name"/);
   assert.match(app, /data-ai-quote-item="detail"/);
   assert.match(app, /data-ai-quote-item="unitPrice"/);
@@ -60,7 +62,7 @@ test("AI assistant separates report and quote creation and exposes reviewed file
   assert.match(app, /AI 전송 안 함/);
   assert.match(app, /회사 공통 고정값/);
   assert.match(app, /ai-quote-supplier-fixed/);
-  assert.match(app, /관리자 1회 등록 후 모든 직원에게 고정 적용/);
+  assert.match(app, /상호·대표자·주소·연락처는 BRING 고정값/);
   assert.match(app, /supplierCanConfigure/);
   assert.match(app, /QuoteCore\.createDraftFromPrompt/);
   assert.match(preload, /crm:quote-export/);
@@ -73,6 +75,7 @@ test("AI assistant separates report and quote creation and exposes reviewed file
   assert.match(main, /remoteClient\.loadQuoteSupplier\(\)/);
   assert.match(main, /remoteClient\.saveQuoteSupplier\(supplier\)/);
   assert.match(main, /data:image\\\/png;base64/);
+  assert.match(main, /createQuotePdf\(BrowserWindow, quote, seal\)/);
   assert.match(main, /showSaveDialog/);
   assert.match(main, /itemToolbar\?\.scrollIntoView/);
   assert.match(main, /itemRows\.every\(row => row\.querySelector\('\[data-ai-quote-item-delete\]'\)\)/);

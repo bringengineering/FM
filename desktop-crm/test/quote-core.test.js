@@ -30,15 +30,30 @@ test("quote parser rejects missing prices and bounds unsafe filenames", () => {
 
 test("supplier fields stay separate and require a formatted registration number", () => {
   const supplier = { businessName: "테스트엔지니어링", representative: "홍길동", registrationNumber: "000-00-00000" };
-  const quote = QuoteCore.createDraftFromPrompt("햇빛빌라 입주청소 12만원", null, { supplier });
-  assert.deepEqual({
-    businessName: quote.company.businessName,
-    representative: quote.company.representative,
-    registrationNumber: quote.company.registrationNumber
-  }, supplier);
-  assert.equal(QuoteCore.supplierComplete(quote.company), true);
+  assert.deepEqual(QuoteCore.normalizeSupplier(supplier), supplier);
+  assert.equal(QuoteCore.supplierComplete(supplier), true);
   assert.throws(() => QuoteCore.normalizeSupplier({ ...supplier, registrationNumber: "0000000000" }), /000-00-00000/);
   assert.equal(QuoteCore.supplierComplete({ businessName: "테스트", representative: "", registrationNumber: "000-00-00000" }), false);
+});
+
+test("quotation uses the fixed BRING supplier profile and preserves only the stored registration number", () => {
+  const quote = QuoteCore.createDraftFromPrompt("햇빛빌라 입주청소 12만원", null, {
+    supplier: { businessName: "이전 상호", representative: "이전 대표", registrationNumber: "111-22-33333" }
+  });
+  assert.equal(quote.company.businessName, "브링엔지니어링");
+  assert.equal(quote.company.representative, "서창환");
+  assert.equal(quote.company.registrationNumber, "111-22-33333");
+  assert.equal(quote.company.address, "강원도 원주시 상지대길 83 벤처창업관 305호");
+  assert.equal(quote.company.phone, "010-6566-3603");
+  assert.equal(quote.company.fax, "033-746-8919");
+});
+
+test("VAT-inclusive total is split into supply amount and tax without changing the entered total", () => {
+  const quote = QuoteCore.createDraftFromPrompt("햇빛빌라 입주청소 12만원", null);
+  assert.equal(quote.supplyAmount, 109091);
+  assert.equal(quote.vatAmount, 10909);
+  assert.equal(quote.supplyAmount + quote.vatAmount, quote.totalAmount);
+  assert.equal(quote.totalAmount, 120000);
 });
 
 test("quote detail items can be added and removed while totals are recalculated", () => {

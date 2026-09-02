@@ -5,7 +5,15 @@
 })(typeof globalThis !== "undefined" ? globalThis : this, function () {
   "use strict";
 
-  const COMPANY = Object.freeze({ brand: "BRING ENGINEERING", name: "브링엔지니어링" });
+  const COMPANY = Object.freeze({
+    brand: "BRING ENGINEERING",
+    name: "브링엔지니어링",
+    businessName: "브링엔지니어링",
+    representative: "서창환",
+    address: "강원도 원주시 상지대길 83 벤처창업관 305호",
+    phone: "010-6566-3603",
+    fax: "033-746-8919"
+  });
   const MAX_ITEMS = 8;
   const SERVICE_TEMPLATES = Object.freeze({
     "입주청소": [
@@ -68,6 +76,13 @@
     } catch (_error) {
       return false;
     }
+  }
+
+  function companyProfile(value) {
+    const supplier = normalizeSupplier(value);
+    return Object.assign({}, COMPANY, {
+      registrationNumber: supplier.registrationNumber
+    });
   }
 
   function parseAmount(content) {
@@ -177,7 +192,7 @@
       totalAmount,
       taxIncluded: true,
       notes: notes.length ? notes : ["작업 범위와 현장 상태가 달라지는 경우 금액은 협의 후 조정될 수 있습니다.", "견적 유효기간은 발행일로부터 14일입니다."],
-      company: Object.assign({}, COMPANY, normalizeSupplier(options.supplier))
+      company: companyProfile(options.supplier)
     });
   }
 
@@ -201,7 +216,7 @@
       vatAmount: totalAmount - Math.round(totalAmount / 1.1),
       taxIncluded: value.taxIncluded !== false,
       notes: Array.isArray(value.notes) ? value.notes.map(item => text(item, 180)).filter(Boolean).slice(0, 4) : [],
-      company: Object.assign({}, COMPANY, normalizeSupplier(value.company))
+      company: companyProfile(value.company)
     };
   }
 
@@ -236,5 +251,5 @@
     return text(value && value.projectName, 50).replace(/[<>:"/\\|?*]/g, "_").replace(/[. ]+$/g, "") || "BRING_견적서";
   }
 
-  return { COMPANY, MAX_ITEMS, createDraftFromPrompt, normalizeDraft, addDraftItem, removeDraftItem, normalizeSupplier, supplierComplete, parseAmount, inferService, itemTotal, money, fileBase };
+  return { COMPANY, MAX_ITEMS, createDraftFromPrompt, normalizeDraft, addDraftItem, removeDraftItem, normalizeSupplier, supplierComplete, companyProfile, parseAmount, inferService, itemTotal, money, fileBase };
 });

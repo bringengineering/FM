@@ -17,6 +17,7 @@ const { createOfficeNotificationTracker } = require("./office-notification");
 const { createAttendanceWorkbook, safeFileSegment } = require("./attendance-xlsx");
 const QuoteCore = require("./quote-core");
 const { createQuoteWorkbook, quoteFileName } = require("./quote-xlsx");
+const { createQuotePdf, pngBufferDataUrl } = require("./quote-pdf");
 const OperationsIntelligence = require("./operations-intelligence-core");
 const OperationsWorkSync = require("./operations-work-sync");
 const MarketingPersistence = require("./marketing-persistence");
@@ -2489,11 +2490,18 @@ async function exportAiQuote(input) {
   if (!authState().user) throw Object.assign(new Error("다시 로그인해 주세요."), { code: "AUTH_REQUIRED" });
   if (!input || typeof input !== "object" || Array.isArray(input)) throw new Error("견적서 저장 요청이 올바르지 않습니다.");
   const format = String(input.format || "");
-  if (!new Set(["png", "xlsx"]).has(format)) throw new Error("견적서 파일 형식을 확인해 주세요.");
+  if (!new Set(["png", "xlsx", "pdf"]).has(format)) throw new Error("견적서 파일 형식을 확인해 주세요.");
   const quote = QuoteCore.normalizeDraft(input.quote);
   let bytes;
+  let fileEncoding;
   if (format === "xlsx") {
-    bytes = createQuoteWorkbook(quote, new Date());
+    const seal = await fs.readFile(path.join(__dirname, "assets", "bring-company-seal.png"));
+    bytes = createQuoteWorkbook(quote, new Date(), seal);
+  } else if (format === "pdf") {
+    const seal = pngBufferDataUrl(await fs.readFile(path.join(__dirname, "assets", "bring-company-seal.png")));
+    const pdf = await createQuotePdf(BrowserWindow, quote, seal);
+    bytes = pdf.base64;
+    fileEncoding = "base64";
   } else {
     const dataUrl = String(input.imageDataUrl || "");
     if (!/^data:image\/png;base64,[A-Za-z0-9+/=]+$/.test(dataUrl) || dataUrl.length > 24_000_000) throw new Error("견적서 이미지 데이터를 확인해 주세요.");
@@ -2502,13 +2510,19 @@ async function exportAiQuote(input) {
     if (image.isEmpty() || size.width < 600 || size.height < 800 || size.width > 3000 || size.height > 5000) throw new Error("견적서 이미지 크기를 확인해 주세요.");
     bytes = image.toPNG();
   }
+  const fileTypes = {
+    xlsx: { title: "견적서 엑셀 파일 저장", name: "Excel 통합 문서" },
+    pdf: { title: "견적서 PDF 저장", name: "PDF 문서" },
+    png: { title: "견적서 이미지 저장", name: "PNG 이미지" }
+  };
+  const fileType = fileTypes[format];
   const result = await dialog.showSaveDialog(mainWindow, {
-    title: format === "xlsx" ? "견적서 엑셀 파일 저장" : "견적서 이미지 저장",
+    title: fileType.title,
     defaultPath: quoteFileName(quote, format),
-    filters: [{ name: format === "xlsx" ? "Excel 통합 문서" : "PNG 이미지", extensions: [format] }]
+    filters: [{ name: fileType.name, extensions: [format] }]
   });
   if (result.canceled || !result.filePath) return { ok: false, canceled: true };
-  await fs.writeFile(result.filePath, bytes, { mode: 0o600 });
+  await fs.writeFile(result.filePath, bytes, { mode: 0o600, encoding: fileEncoding });
   return { ok: true };
 }
 
@@ -3564,14 +3578,12 @@ async function createWindow() {
         await wait(80);
         document.querySelector('[data-ai-assistant-tab="quote"]')?.click();
         await wait(80);
-        for (const [key, value] of [['businessName', '브링엔지니어링'], ['representative', '대표자'], ['registrationNumber', '000-00-00000']]) {
-          const supplierInput = document.querySelector('[data-ai-quote-supplier="' + key + '"]');
-          if (!supplierInput) return { pass: false, reason: 'supplier input missing', key, state: window.__crmTest?.snapshot() };
-          supplierInput.value = value;
-          supplierInput.dispatchEvent(new Event('input', { bubbles: true }));
-          supplierInput.dispatchEvent(new Event('change', { bubbles: true }));
-          await wait(30);
-        }
+        const supplierInput = document.querySelector('[data-ai-quote-supplier="registrationNumber"]');
+        if (!supplierInput) return { pass: false, reason: 'supplier registration input missing', state: window.__crmTest?.snapshot() };
+        supplierInput.value = '000-00-00000';
+        supplierInput.dispatchEvent(new Event('input', { bubbles: true }));
+        supplierInput.dispatchEvent(new Event('change', { bubbles: true }));
+        await wait(30);
         document.querySelector('[data-ai-quote-supplier-save]')?.click();
         for (let attempt = 0; attempt < 40 && !document.querySelector('.ai-quote-supplier-fixed'); attempt += 1) await wait(50);
         const input = document.querySelector('[data-ai-quote-content]');
@@ -3591,10 +3603,14 @@ async function createWindow() {
         const restoredItemCount = document.querySelectorAll('.ai-quote-editor-row').length;
         const documentNode = document.querySelector('[data-ai-quote-document]');
         const itemToolbar = document.querySelector('.ai-quote-editor-toolbar');
+        const previewHeader = document.querySelector('.ai-quote-preview-card>header');
         const itemRows = [...document.querySelectorAll('.ai-quote-editor-row')];
+        const seal = documentNode?.querySelector('.bring-quote-representative img');
         itemToolbar?.scrollIntoView({ block: 'center' });
+        previewHeader?.scrollIntoView({ block: 'start' });
+        await wait(100);
         const text = documentNode?.textContent || '';
-        return { pass: Boolean(documentNode) && text.includes('햇빛빌라') && text.includes('120,000원') && initialItemCount >= 1 && addedItemCount === initialItemCount + 1 && addedTotalVisible && restoredItemCount === initialItemCount && Boolean(document.querySelector('[data-ai-quote-export="xlsx"]')) && Boolean(document.querySelector('[data-ai-quote-item-add]')) && itemRows.every(row => row.querySelector('[data-ai-quote-item-delete]')), state: window.__crmTest?.snapshot() };
+        return { pass: Boolean(documentNode) && text.includes('햇빛빌라') && text.includes('120,000원') && text.includes('브링엔지니어링') && text.includes('서창환') && text.includes('상지대길 83') && text.includes('공급가액') && text.includes('세액 (부가세 10%)') && initialItemCount >= 1 && addedItemCount === initialItemCount + 1 && addedTotalVisible && restoredItemCount === initialItemCount && Boolean(document.querySelector('[data-ai-quote-export="xlsx"]')) && Boolean(document.querySelector('[data-ai-quote-export="pdf"]')) && Boolean(seal?.complete && seal.naturalWidth) && Boolean(document.querySelector('[data-ai-quote-item-add]')) && itemRows.every(row => row.querySelector('[data-ai-quote-item-delete]')), state: window.__crmTest?.snapshot() };
       })()`, true);
     } else if (process.env.BRING_CRM_SCREENSHOT_ACTION === "office-messenger-smoke") {
       actionResult = await mainWindow.webContents.executeJavaScript(`(async () => {
