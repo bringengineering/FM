@@ -19,6 +19,7 @@
   const MarketingUI = window.MarketingUI;
   const MessagePolicy = window.BringMessagePolicy;
   const MessageUI = window.BringMessageUI;
+  const AiConsultationCore = window.BringAiConsultationCore;
   const api = window.bringCRM;
   const main = document.getElementById("main");
   const modal = document.getElementById("modal");
@@ -150,6 +151,7 @@
   let valueScopeOpenGeneration = 0;
   let valueScopeViewRequested = false;
   let aiAssistantState = { tab: "report", task: "assistant_summary", content: "", customerType: "", workType: "", result: null, warnings: [], loading: false, error: "", quoteContent: "", quote: null, quoteWarnings: [], quoteLoading: false, quoteError: "", supplier: { businessName: "", representative: "", registrationNumber: "" }, supplierLoaded: false, supplierLoading: false, supplierSaving: false, supplierDirty: false, supplierConfigured: false, supplierCanConfigure: false, supplierCached: false, supplierError: "" };
+  let aiConsultationIntakeState = { file: null, transcript: "", loading: false, error: "", draft: null };
   let salesAutomationState = { drafts: new Map(), loadingId: "", rows: [] };
   let workAutomationState = { drafts: new Map(), loadingId: "", expanded: false };
   let managementReportState = { month: Core.dayKey().slice(0, 7), result: null, loading: false, error: "" };
@@ -2451,7 +2453,7 @@
     const linkedBuildingIds = new Set(store.customers.flatMap(customer => customerBuildings(customer).filter(building => !building.archivedAt).map(building => building.id)));
     const managedCustomers = store.customers.filter(customer => managementStatusForCustomer(customer) === "관리 중").length;
     const reviewCustomers = store.customers.filter(customer => managementStatusForCustomer(customer) === "연결 확인 필요").length;
-    main.innerHTML = `<section class="partner-vendor-hero customer-management-hero"><div><span>고객과 건물 정보를 먼저 등록합니다</span><h2>고객·건물 정보를 관리합니다</h2><p>고객 카드를 누르면 관리 상태, 계약, 민원과 상담 이력을 한 화면에서 확인할 수 있습니다.</p></div><div class="partner-hero-actions"><button class="primary-button" data-action="new-customer">＋ 고객 등록</button></div></section>
+    main.innerHTML = `<section class="partner-vendor-hero customer-management-hero"><div><span>고객과 건물 정보를 먼저 등록합니다</span><h2>고객·건물 정보를 관리합니다</h2><p>고객 카드를 누르면 관리 상태, 계약, 민원과 상담 이력을 한 화면에서 확인할 수 있습니다.</p></div><div class="partner-hero-actions"><button class="secondary-button" data-action="ai-consultation-intake">✦ AI 상담 등록</button><button class="primary-button" data-action="new-customer">＋ 고객 등록</button></div></section>
       <div class="quote-kpi-grid partner-vendor-kpis customer-management-kpis">${kpi("등록 고객", store.customers.length, "고객 기본정보", "#55aee8")}${kpi("연결 건물", linkedBuildingIds.size, "보관 제외 관리 건물", "#55c3d1")}${kpi("관리 중", managedCustomers, "현재 관리 중인 고객", "#48b995", managedCustomers ? "good" : "")}${kpi("확인 필요", reviewCustomers, "건물 연결 확인 대상", "#e8b855", reviewCustomers ? "alert" : "")}</div>
       <div class="partner-vendor-toolbar customer-management-toolbar"><div class="partner-vendor-toolbar-controls"><label class="partner-vendor-industry-filter customer-management-filter-control"><span>관리 상태</span><select data-customer-management-filter aria-label="고객 관리 상태 필터">${managementFilterOptions(customerManagementFilter)}</select></label><label class="partner-vendor-list-search customer-management-list-search"><span aria-hidden="true">⌕</span><input type="search" data-customer-list-search value="${attr(crmSearchValue)}" placeholder="고객명·연락처·건물·주소 검색" autocomplete="off" aria-label="고객·건물 검색"></label></div><span>고객 카드를 누르면 상세 정보와 연결 건물 업무를 확인할 수 있습니다.</span></div>
       ${customers.length ? `<div class="partner-vendor-list customer-management-list">${customers.map(customer => {
@@ -3884,6 +3886,60 @@
       <section class="setting-card"><h3>로그인과 작업공간</h3><p>로그인한 회사 이메일의 이름이 담당자로 자동 기록됩니다.</p><form id="settingsForm"><div class="form-grid"><label class="field"><span>현재 사용자</span><input value="${attr(user.email || store.settings.owner || "로컬 사용자")}" disabled></label><label class="field"><span>회사·작업공간</span><input name="workspace" value="${attr(store.company.workspace || "원주 고객 영업관리")}"></label></div><div class="form-actions"><button class="primary-button" type="submit">설정 저장</button></div></form></section>
       <div class="panel-stack"><section class="setting-card"><h3>공용 데이터와 백업</h3><p>고객·상담·민원·업체 상담 정보는 회사 Firebase 서버에서 실시간 공유되고, 이 PC에는 복구용 캐시가 보관됩니다.</p><div class="info-box mono">${esc(dataPath || "로컬 캐시 위치 확인 중")}</div>${canRestore ? `<div class="inline-actions" style="margin-top:12px"><button class="secondary-button" data-action="backup">암호화 백업 저장</button><button class="secondary-button" data-action="restore">공용 데이터 복원</button></div>` : `<div class="info-box" style="margin-top:12px">백업 파일 저장과 복원은 개인정보 다운로드 권한이 있는 관리자만 사용할 수 있습니다.</div>`}</section><section class="setting-card"><h3>CRM과 업무흐름 연결 범위</h3><p>민원 기본정보와 실제 처리 단계는 같은 공용 자료로 연결합니다.</p><div class="info-box">고객정보·상담·후속 연락과 민원의 기본정보·17단계 진행·단계 메모를 모두 BRING CRM에서 관리합니다. 업무흐름빌더와 민원 자료는 서로 동일하게 반영됩니다.</div></section></div>
     </div>`;
+  }
+
+  function aiConsultationIntakeEditor(reset = true) {
+    if (reset) aiConsultationIntakeState = { file: null, transcript: "", loading: false, error: "", draft: null };
+    const state = aiConsultationIntakeState;
+    modalContent.innerHTML = `<div class="modal-head"><div><h2>AI 상담 등록</h2><p>녹음 파일이나 대화문을 넣으면 고객·상담·할 일을 초안으로 정리합니다.</p></div><button class="close-button" data-action="close-modal">×</button></div><form id="aiConsultationIntakeForm" class="modal-body ai-consultation-input"><section class="ai-consultation-source"><div><b>상담 녹음</b><span>MP3·M4A·WAV, 최대 25MB</span></div><button type="button" class="secondary-button" data-action="ai-consultation-audio-pick" data-ai-consultation-audio-pick>${state.file ? "다른 파일 선택" : "녹음 파일 선택"}</button></section>${state.file ? `<div class="ai-consultation-file"><b>${esc(state.file.name)}</b><span>${esc(Math.max(1, Math.ceil(state.file.size / 1024)).toLocaleString("ko-KR"))}KB · 분석 시 음성 변환</span></div>` : ""}<label class="field wide"><span>대화문</span><textarea name="transcript" maxlength="20000" placeholder="녹취된 대화문을 붙여넣거나 위에서 녹음 파일을 선택하세요.">${esc(state.transcript)}</textarea></label><div class="info-box">AI 결과는 바로 저장되지 않습니다. 내용을 검토하고 확인한 항목만 CRM 서버에 저장합니다.</div>${state.error ? `<div class="ai-consultation-error" role="alert">${esc(state.error)}</div>` : ""}<div class="form-actions"><button type="button" class="secondary-button" data-action="close-modal">취소</button><button type="submit" class="primary-button" ${state.loading ? "disabled" : ""}>${state.loading ? "AI가 정리 중…" : "AI 상담 정리"}</button></div></form>`;
+    openModal();
+  }
+
+  async function chooseAiConsultationAudio() {
+    try {
+      const result = await api.chooseConsultationAudio();
+      if (!result || result.canceled) return;
+      aiConsultationIntakeState.file = result.file;
+      aiConsultationIntakeState.error = "";
+      aiConsultationIntakeEditor(false);
+    } catch (error) {
+      aiConsultationIntakeState.error = error.message || "녹음 파일을 선택하지 못했습니다.";
+      aiConsultationIntakeEditor(false);
+    }
+  }
+
+  async function analyzeAiConsultation(form) {
+    aiConsultationIntakeState.transcript = String(form.elements.transcript?.value || "").trim();
+    if (!aiConsultationIntakeState.transcript && !aiConsultationIntakeState.file) return showToast("녹음 파일이나 대화문을 입력해 주세요.", "error");
+    aiConsultationIntakeState.loading = true;
+    aiConsultationIntakeState.error = "";
+    aiConsultationIntakeEditor(false);
+    try {
+      if (aiConsultationIntakeState.file) {
+        const transcribed = await api.transcribeConsultationAudio({ path: aiConsultationIntakeState.file.path });
+        aiConsultationIntakeState.transcript = transcribed.transcript;
+      }
+      const prompt = AiConsultationCore.buildConsultationPrompt({ transcript: aiConsultationIntakeState.transcript });
+      const result = await api.assist({ task: "consultation_intake", content: prompt, context: { workType: "상담", owner: currentAuth.user?.displayName || store.settings.owner || "" } });
+      aiConsultationIntakeState.draft = AiConsultationCore.normalizeConsultationDraft(result.result);
+      aiConsultationIntakeState.loading = false;
+      aiConsultationReviewEditor();
+    } catch (error) {
+      aiConsultationIntakeState.loading = false;
+      aiConsultationIntakeState.error = error.message || "상담 내용을 정리하지 못했습니다.";
+      aiConsultationIntakeEditor(false);
+    }
+  }
+
+  function aiReviewMark(group) {
+    return group && group.needsReview ? `<span class="ai-consultation-review-needed">확인 필요</span>` : "";
+  }
+
+  function aiConsultationReviewEditor() {
+    const draft = aiConsultationIntakeState.draft;
+    if (!draft) return aiConsultationIntakeEditor(false);
+    modalContent.innerHTML = `<div class="modal-head"><div><h2>AI 정리 결과 확인</h2><p>틀린 내용을 수정하고 저장할 항목을 확인해 주세요.</p></div><button class="close-button" data-action="close-modal">×</button></div><form id="aiConsultationReviewForm" class="modal-body"><div class="ai-consultation-review-grid"><section><header><b>고객 정보</b>${aiReviewMark(draft.customer)}</header>${field("고객명", "customerName", draft.customer.name)}${field("연락처", "customerPhone", draft.customer.phone, "tel")}${field("고객 유형", "customerType", draft.customer.type)}${areaField("현재 요청사항", "currentRequest", draft.customer.request)}${areaField("개인 메모·고객 특징", "privateMemo", draft.customer.privateMemo)}</section><section><header><b>연결 건물</b>${aiReviewMark(draft.building)}</header>${field("건물명", "buildingName", draft.building.name)}${field("건물 주소", "buildingAddress", draft.building.address)}</section><section><header><b>상담 기록</b>${aiReviewMark(draft.consultation)}</header>${areaField("상담 내용", "consultationSummary", draft.consultation.summary)}${areaField("상담 결과", "consultationResult", draft.consultation.result)}</section><section><header><b>후속 조치</b>${aiReviewMark(draft.followUp)}</header>${field("다음 행동", "nextAction", draft.followUp.nextAction)}${field("다음 연락", "nextContactAt", datetimeValue(draft.followUp.nextContactAt), "datetime-local")}</section><section><header><b>추천 계약</b>${aiReviewMark(draft.contractSuggestion)}</header>${field("계약 유형", "contractType", draft.contractSuggestion.type)}${field("예상 계약금액", "expectedAmount", draft.contractSuggestion.expectedAmount || "", "number")}</section></div><details class="ai-consultation-transcript"><summary>원본 대화문 확인</summary><pre>${esc(aiConsultationIntakeState.transcript)}</pre></details><div class="form-actions"><button type="button" class="secondary-button" data-action="ai-consultation-back">입력으로 돌아가기</button><button type="submit" class="primary-button">검토 후 CRM에 저장</button></div></form>`;
+    openModal();
   }
 
   function customerEditor(customerId) {
@@ -6530,6 +6586,9 @@
     else if (action === "new-building-schedule") buildingScheduleEditor("", actionControl.dataset.scheduleDate || workCalendarDate);
     else if (action === "open-sales-standards") openSalesStandards("");
     else if (action === "new-customer") customerEditor("");
+    else if (action === "ai-consultation-intake") aiConsultationIntakeEditor(true);
+    else if (action === "ai-consultation-audio-pick") await chooseAiConsultationAudio();
+    else if (action === "ai-consultation-back") aiConsultationIntakeEditor(false);
     else if (action === "new-building") buildingEditor("", actionControl.dataset.customerId || "");
     else if (action === "configure-vacancy") {
       if (!canWriteCRM()) return showToast("조회 전용 계정은 층·호실 구성을 변경할 수 없습니다.", "error");
@@ -6866,6 +6925,11 @@
   document.addEventListener("submit", async event => {
     event.preventDefault();
     const form = event.target;
+    if (form.id === "aiConsultationIntakeForm") {
+      event.preventDefault();
+      await analyzeAiConsultation(form);
+      return;
+    }
     const submissionFormId = form.matches("[data-marketing-entry-form]") ? "marketingEntryForm" : form.id;
     const verifiedPolicy = MarketingUI.roleSubmissionPolicy(currentAuth.user || {}, submissionFormId);
     if ((currentAuth.user && currentAuth.user.accessRole === "member" && currentAuth.user.marketingRole === "marketing") && !verifiedPolicy.allowed) return showToast("마케팅 담당자는 전용 마케팅 정보 양식만 저장할 수 있습니다.", "error");
