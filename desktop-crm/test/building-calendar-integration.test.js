@@ -9,6 +9,7 @@ const WorkManagement = require("../src/work-management");
 const root = path.join(__dirname, "..", "src");
 const indexSource = fs.readFileSync(path.join(root, "index.html"), "utf8");
 const appSource = fs.readFileSync(path.join(root, "app.js"), "utf8");
+const stylesSource = fs.readFileSync(path.join(root, "styles.css"), "utf8");
 
 function functionSource(name) {
   const start = appSource.indexOf(`function ${name}`);
@@ -35,6 +36,13 @@ test("places the unified calendar after customer navigation and loads its module
   assert.match(appSource, /payments:\s*\["건물주 정기 납부 예정과 입금 확인",\s*"건물주 입금 캘린더"\]/);
   assert.ok(indexSource.indexOf("work-calendar.js") < indexSource.indexOf("app.js"));
   assert.ok(indexSource.indexOf("work-calendar.css") >= 0);
+});
+
+test("keeps the owner payment calendar label on one sidebar line beside its badge", () => {
+  assert.match(indexSource, /data-view="payments"[^>]*>[\s\S]*?<b>건물주 입금 캘린더<\/b><em id="navPaymentCount">0<\/em>/);
+  assert.match(stylesSource, /\.app-shell\{[^}]*grid-template-columns:260px minmax\(0,1fr\)/);
+  assert.match(stylesSource, /@media\(max-width:1380px\)\{[\s\S]*?\.app-shell\{grid-template-columns:240px minmax\(0,1fr\)\}/);
+  assert.match(stylesSource, /\.nav-item>b\{[^}]*min-width:0;[^}]*overflow:hidden;[^}]*text-overflow:ellipsis;[^}]*white-space:nowrap/);
 });
 
 test("unified calendar exposes work and contract tabs over their original ledgers", () => {
