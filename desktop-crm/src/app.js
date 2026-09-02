@@ -3773,7 +3773,6 @@
       ${selectField("중요도", "priority", ["높음", "보통", "낮음"], customer.priority)}${field("예상 계약금액", "expectedValue", customer.expectedValue || "", "number", "원 단위")}
       ${field("관심 서비스", "interestServices", (customer.interestServices || []).join(", "), "text", "예: 건물관리, 누수 대응")}${field("태그", "tags", (customer.tags || []).join(", "), "text", "예: 원주, 다가구, 소개")}
       ${field("마지막 연락일", "lastContactAt", datetimeValue(customer.lastContactAt), "datetime-local")}
-      ${marketingAttributionFields(customerMarketing)}
       <div class="info-box wide">진행상태는 고객 정보에서 직접 입력하지 않습니다. 연결된 건물의 영업 관리 단계가 고객 목록과 상세 화면에 자동으로 표시됩니다.</div>
     </div></details><div class="info-box">${linkedBuildings.length ? `기존 연결 건물 ${linkedBuildings.length}곳은 유지되며, 다른 건물을 선택하면 연결 건물로 추가됩니다.` : "선택한 건물이 이 고객 화면에 연결됩니다."} 건물 자체 정보는 고객 화면 아래의 건물 관리에서 수정할 수 있습니다.</div><div class="form-actions"><button type="button" class="secondary-button" data-action="close-modal">취소</button><button type="submit" class="primary-button">${editing ? "수정 저장" : "고객 등록"}</button></div></form>`;
     openModal();
@@ -4824,7 +4823,6 @@
       nextContactAt: raw.nextContactAt ? new Date(raw.nextContactAt).toISOString() : "", nextAction: raw.nextAction.trim(),
       notes: raw.notes.trim(), buildingIdLinks, updatedAt: new Date().toISOString()
     });
-    customer.marketing = parseMarketingAttribution(raw);
     if (!existing) store.customers.push(customer);
     return customer;
   }

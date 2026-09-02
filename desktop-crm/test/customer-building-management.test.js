@@ -143,6 +143,15 @@ test("new customer registration accepts a name and saves without creating a buil
   assert.match(appSource, /<h2>\$\{esc\(customerDisplayName\(customer\)\)\}<\/h2>/);
 });
 
+test("customer core saves preserve marketing data for the dedicated attribution API", () => {
+  const editor = sourceBetween("function customerEditor", "function buildingNumberField");
+  const fromForm = sourceBetween("function customerFromForm", "async function deleteActivityRecord");
+  const attributionEditors = editor.match(/marketingAttributionFields\(/g) || [];
+
+  assert.equal(attributionEditors.length, 1, "only the dedicated customerMarketingForm may render attribution fields");
+  assert.doesNotMatch(fromForm, /customer\.marketing\s*=\s*parseMarketingAttribution/);
+});
+
 test("building workspace uses the same management status vocabulary", () => {
   const buildingView = sourceBetween("function renderBuildings()", "function renderArchivedBuildings");
   assert.match(buildingView, /data-building-management-filter/);
