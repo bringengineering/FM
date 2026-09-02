@@ -2,7 +2,7 @@
 const MarketingCore = require('./marketing-core');
 
 const READ_OR_CONTROL = [
-  'crm:auth-state','crm:ai-assist','crm:consultation-audio-pick','crm:consultation-audio-transcribe','crm:quote-export','crm:quote-supplier-load','crm:auth-login','crm:auth-google-login','crm:field-reauthenticate-google','crm:auth-change-password','crm:auth-logout',
+  'crm:auth-state','crm:ai-assist','crm:consultation-audio-pick','crm:consultation-audio-transcribe','crm:quote-export','crm:quote-supplier-load','crm:quote-seal-load','crm:auth-login','crm:auth-google-login','crm:field-reauthenticate-google','crm:auth-change-password','crm:auth-logout',
   'crm:load','crm:office-load','crm:office-attendance-export','crm:office-attachment-open','crm:office-messenger-presence','crm:operations-intelligence-load','crm:canonical-building-units-load',
   'crm:field-summaries-load','crm:customer-photos-load','crm:drive-import-candidates-load','crm:contract-sources-load','crm:marketing-read','crm:field-team-profiles',
   'crm:operations-load','crm:workflow-vendors','crm:workflow-files','crm:customer-photo-pick','crm:data-path','crm:update-state','crm:update-check',
@@ -10,7 +10,7 @@ const READ_OR_CONTROL = [
   'crm:show-field-platform','crm:hide-field-platform','crm:field-reconnect','crm:open-external','crm:vendor-lookup','crm:building-link-lookup'
 ];
 const MUTATIONS = [
-  'crm:save','crm:save-now','crm:quote-supplier-save','crm:office-attendance-save','crm:office-attendance-correct','crm:office-display-name-save','crm:office-attachment-pick','crm:office-attachment-drop','crm:office-message-send','crm:office-messages-read','crm:operation-save','crm:customer-photo-save',
+  'crm:save','crm:save-now','crm:quote-supplier-save','crm:quote-seal-select','crm:office-attendance-save','crm:office-attendance-correct','crm:office-display-name-save','crm:office-attachment-pick','crm:office-attachment-drop','crm:office-message-send','crm:office-messages-read','crm:operation-save','crm:customer-photo-save',
   'crm:drive-import-decision','crm:contract-source-register','crm:contract-source-check','crm:contract-source-decision','crm:canonical-entity-commit','crm:building-schedule-commit','crm:marketing-commit','crm:marketing-archive',
   'crm:marketing-attribution-update','crm:work-operations-sync-retry','crm:canonical-building-units-configure','crm:case-save','crm:payment-override',
   'crm:payment-schedule-save','crm:payment-schedule-delete','crm:payment-bank-binding','crm:workflow-action','crm:field-request','crm:backup','crm:restore'

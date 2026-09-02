@@ -17,7 +17,7 @@ const { createOfficeNotificationTracker } = require("./office-notification");
 const { createAttendanceWorkbook, safeFileSegment } = require("./attendance-xlsx");
 const QuoteCore = require("./quote-core");
 const { createQuoteWorkbook, quoteFileName } = require("./quote-xlsx");
-const { createQuotePdf, pngBufferDataUrl } = require("./quote-pdf");
+const { createQuotePdfHtml, quotePdfFileName } = require("./quote-pdf");
 const OperationsIntelligence = require("./operations-intelligence-core");
 const OperationsWorkSync = require("./operations-work-sync");
 const MarketingPersistence = require("./marketing-persistence");
@@ -1310,6 +1310,32 @@ function quoteSupplierFile() {
   return path.join(path.dirname(dataFile()), "bring-crm-quote-supplier.json");
 }
 
+function quoteSealFile() {
+  return path.join(path.dirname(dataFile()), "bring-crm-quote-seal.json");
+}
+
+function normalizeQuoteSealPng(value) {
+  const buffer = Buffer.isBuffer(value) ? value : Buffer.from(value || []);
+  const signature = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
+  if (!buffer.length || buffer.length > 512 * 1024 || !buffer.subarray(0, 8).equals(signature)) {
+    throw Object.assign(new Error("인감은 512KB 이하 PNG 파일만 사용할 수 있습니다."), { code: "QUOTE_SEAL_INVALID" });
+  }
+  const image = nativeImage.createFromBuffer(buffer);
+  const size = image.getSize();
+  if (image.isEmpty() || size.width < 16 || size.height < 16 || size.width > 1024 || size.height > 1024) {
+    throw Object.assign(new Error("인감 이미지 크기를 확인해 주세요."), { code: "QUOTE_SEAL_INVALID" });
+  }
+  const normalized = image.toPNG();
+  if (!normalized.length || normalized.length > 512 * 1024) {
+    throw Object.assign(new Error("인감 이미지 용량을 확인해 주세요."), { code: "QUOTE_SEAL_INVALID" });
+  }
+  return normalized;
+}
+
+function quoteSealDataUrl(buffer) {
+  return `data:image/png;base64,${buffer.toString("base64")}`;
+}
+
 function normalizeQuoteSupplier(value, options = {}) {
   return QuoteCore.normalizeSupplier(value, options);
 }
@@ -1376,6 +1402,66 @@ async function saveQuoteSupplier(input) {
   const saved = localTestMode ? supplier : await remoteClient.saveQuoteSupplier(supplier);
   const cached = await writeLocalQuoteSupplier(saved);
   return { ok: true, supplier: cached, configured: true, canConfigure: true, cached: false };
+}
+
+async function readLocalQuoteSeal() {
+  try {
+    const raw = await fs.readFile(quoteSealFile(), "utf8");
+    const decoded = decodeProtectedJson(safeStorage, raw);
+    if (!decoded.encrypted) throw Object.assign(new Error("암호화되지 않은 인감 정보는 열지 않았습니다."), { code: "PROTECTED_DATA_REQUIRED" });
+    const value = decoded.value && typeof decoded.value === "object" && !Array.isArray(decoded.value) ? decoded.value : {};
+    if (value.mimeType !== "image/png" || typeof value.data !== "string" || !/^[A-Za-z0-9+/]+={0,2}$/.test(value.data)) {
+      throw Object.assign(new Error("저장된 인감 정보를 확인할 수 없습니다."), { code: "PROTECTED_DATA_INVALID" });
+    }
+    return normalizeQuoteSealPng(Buffer.from(value.data, "base64"));
+  } catch (error) {
+    if (error && error.code === "ENOENT") return null;
+    throw error;
+  }
+}
+
+async function writeLocalQuoteSeal(input) {
+  const seal = normalizeQuoteSealPng(input);
+  const target = quoteSealFile();
+  const temp = `${target}.tmp.${process.pid}.${crypto.randomBytes(6).toString("hex")}`;
+  await fs.mkdir(path.dirname(target), { recursive: true });
+  try {
+    const protectedValue = { mimeType: "image/png", data: seal.toString("base64") };
+    await fs.writeFile(temp, encodeProtectedJson(safeStorage, protectedValue), { encoding: "utf8", flag: "wx", mode: 0o600 });
+    await fs.rename(temp, target);
+  } catch (error) {
+    try { await fs.unlink(temp); } catch (cleanupError) { if (cleanupError && cleanupError.code !== "ENOENT") console.warn("quote seal temp cleanup failed"); }
+    throw error;
+  }
+  return seal;
+}
+
+async function loadQuoteSeal() {
+  const user = authState().user;
+  if (!user) throw Object.assign(new Error("다시 로그인해 주세요."), { code: "AUTH_REQUIRED" });
+  let seal = null;
+  if (localTestMode && process.env.BRING_CRM_SCREENSHOT_SEAL) {
+    seal = normalizeQuoteSealPng(await fs.readFile(process.env.BRING_CRM_SCREENSHOT_SEAL));
+  } else {
+    seal = await readLocalQuoteSeal();
+  }
+  return { ok: true, configured: Boolean(seal), canConfigure: user.role === "admin", dataUrl: seal ? quoteSealDataUrl(seal) : "" };
+}
+
+async function selectQuoteSeal() {
+  const user = authState().user;
+  if (!user) throw Object.assign(new Error("다시 로그인해 주세요."), { code: "AUTH_REQUIRED" });
+  if (user.role !== "admin") throw Object.assign(new Error("회사 인감은 관리자만 등록할 수 있습니다."), { code: "ACCESS_DENIED" });
+  const result = await dialog.showOpenDialog(mainWindow, {
+    title: "견적서 인감 PNG 선택",
+    properties: ["openFile"],
+    filters: [{ name: "PNG 이미지", extensions: ["png"] }]
+  });
+  if (result.canceled || !result.filePaths.length) return { ok: false, canceled: true };
+  const stat = await fs.stat(result.filePaths[0]);
+  if (!stat.isFile() || stat.size < 8 || stat.size > 512 * 1024) throw Object.assign(new Error("인감은 512KB 이하 PNG 파일만 사용할 수 있습니다."), { code: "QUOTE_SEAL_INVALID" });
+  const seal = await writeLocalQuoteSeal(await fs.readFile(result.filePaths[0]));
+  return { ok: true, configured: true, canConfigure: true, dataUrl: quoteSealDataUrl(seal) };
 }
 
 function pendingFile() {
@@ -2493,41 +2579,65 @@ async function exportOfficeAttendance(input) {
 async function exportAiQuote(input) {
   if (!authState().user) throw Object.assign(new Error("다시 로그인해 주세요."), { code: "AUTH_REQUIRED" });
   if (!input || typeof input !== "object" || Array.isArray(input)) throw new Error("견적서 저장 요청이 올바르지 않습니다.");
-  const format = String(input.format || "");
-  if (!new Set(["png", "xlsx", "pdf"]).has(format)) throw new Error("견적서 파일 형식을 확인해 주세요.");
+  const copyType = String(input.copyType || "");
+  if (!new Set(["recipient", "supplier"]).has(copyType)) throw new Error("견적서 종류를 확인해 주세요.");
+  const format = String(input.format || "xlsx").toLowerCase();
+  if (!new Set(["xlsx", "pdf"]).has(format)) throw new Error("견적서 파일 형식을 확인해 주세요.");
   const quote = QuoteCore.normalizeDraft(input.quote);
-  let bytes;
-  let fileEncoding;
-  if (format === "xlsx") {
-    const seal = await fs.readFile(path.join(__dirname, "assets", "bring-company-seal.png"));
-    bytes = createQuoteWorkbook(quote, new Date(), seal);
-  } else if (format === "pdf") {
-    const seal = pngBufferDataUrl(await fs.readFile(path.join(__dirname, "assets", "bring-company-seal.png")));
-    const pdf = await createQuotePdf(BrowserWindow, quote, seal);
-    bytes = pdf.base64;
-    fileEncoding = "base64";
-  } else {
-    const dataUrl = String(input.imageDataUrl || "");
-    if (!/^data:image\/png;base64,[A-Za-z0-9+/=]+$/.test(dataUrl) || dataUrl.length > 24_000_000) throw new Error("견적서 이미지 데이터를 확인해 주세요.");
-    const image = nativeImage.createFromDataURL(dataUrl);
-    const size = image.getSize();
-    if (image.isEmpty() || size.width < 600 || size.height < 800 || size.width > 3000 || size.height > 5000) throw new Error("견적서 이미지 크기를 확인해 주세요.");
-    bytes = image.toPNG();
-  }
-  const fileTypes = {
-    xlsx: { title: "견적서 엑셀 파일 저장", name: "Excel 통합 문서" },
-    pdf: { title: "견적서 PDF 저장", name: "PDF 문서" },
-    png: { title: "견적서 이미지 저장", name: "PNG 이미지" }
-  };
-  const fileType = fileTypes[format];
+  QuoteCore.normalizeSupplier(quote.company, { requireComplete: true });
+  QuoteCore.normalizeRecipient(quote, { requireComplete: true });
+  const seal = localTestMode && process.env.BRING_CRM_SCREENSHOT_SEAL
+    ? normalizeQuoteSealPng(await fs.readFile(process.env.BRING_CRM_SCREENSHOT_SEAL))
+    : await readLocalQuoteSeal();
+  if (!seal) throw Object.assign(new Error("견적서 인감을 먼저 등록해 주세요."), { code: "QUOTE_SEAL_REQUIRED" });
+  const copyLabel = copyType === "recipient" ? "공급받는자용 견적서" : "공급자 보관용 견적서";
+  const isPdf = format === "pdf";
   const result = await dialog.showSaveDialog(mainWindow, {
-    title: fileType.title,
-    defaultPath: quoteFileName(quote, format),
-    filters: [{ name: fileType.name, extensions: [format] }]
+    title: `${copyLabel} ${isPdf ? "PDF" : "엑셀"} 저장`,
+    defaultPath: isPdf ? quotePdfFileName(quote, copyType) : quoteFileName(quote, copyType),
+    filters: [isPdf ? { name: "PDF 문서", extensions: ["pdf"] } : { name: "Excel 통합 문서", extensions: ["xlsx"] }]
   });
   if (result.canceled || !result.filePath) return { ok: false, canceled: true };
-  await fs.writeFile(result.filePath, bytes, { mode: 0o600, encoding: fileEncoding });
-  return { ok: true };
+  const bytes = isPdf
+    ? await createQuotePdfBytes(quote, copyType, seal)
+    : createQuoteWorkbook(quote, copyType, new Date(), seal);
+  await fs.writeFile(result.filePath, bytes, { mode: 0o600 });
+  return { ok: true, format };
+}
+
+async function createQuotePdfBytes(quote, copyType, seal) {
+  const pdfWindow = new BrowserWindow({
+    show: false,
+    width: 1280,
+    height: 900,
+    autoHideMenuBar: true,
+    webPreferences: {
+      contextIsolation: true,
+      nodeIntegration: false,
+      sandbox: true,
+      partition: `quote-pdf-${crypto.randomUUID()}`,
+    },
+  });
+  pdfWindow.webContents.setWindowOpenHandler(() => ({ action: "deny" }));
+  pdfWindow.webContents.on("will-attach-webview", event => event.preventDefault());
+  pdfWindow.webContents.on("will-navigate", (event, targetUrl) => {
+    if (!String(targetUrl || "").startsWith("data:text/html")) event.preventDefault();
+  });
+  pdfWindow.webContents.session.setPermissionRequestHandler((_webContents, _permission, callback) => callback(false));
+  try {
+    const documentHtml = createQuotePdfHtml(quote, copyType, seal);
+    await pdfWindow.loadURL(`data:text/html;charset=utf-8,${encodeURIComponent(documentHtml)}`);
+    await pdfWindow.webContents.executeJavaScript("document.fonts.ready.then(() => true)", true);
+    return await pdfWindow.webContents.printToPDF({
+      landscape: true,
+      pageSize: "A4",
+      printBackground: true,
+      preferCSSPageSize: true,
+      margins: { top: 0, bottom: 0, left: 0, right: 0 },
+    });
+  } finally {
+    if (!pdfWindow.isDestroyed()) pdfWindow.destroy();
+  }
 }
 
 async function saveWorkflowCase(input) {
@@ -3596,6 +3706,14 @@ async function createWindow() {
         input.dispatchEvent(new Event('input', { bubbles: true }));
         document.querySelector('[data-ai-quote-generate]')?.click();
         for (let attempt = 0; attempt < 40 && !document.querySelector('[data-ai-quote-document]'); attempt += 1) await wait(50);
+        for (const [key, value] of [['recipient', '김고객'], ['recipientPhone', '010-1234-5678']]) {
+          const recipientInput = document.querySelector('[data-ai-quote-recipient="' + key + '"]');
+          if (!recipientInput) return { pass: false, reason: 'recipient input missing', key, state: window.__crmTest?.snapshot() };
+          recipientInput.value = value;
+          recipientInput.dispatchEvent(new Event('input', { bubbles: true }));
+          recipientInput.dispatchEvent(new Event('change', { bubbles: true }));
+          await wait(50);
+        }
         const initialItemCount = document.querySelectorAll('.ai-quote-editor-row').length;
         document.querySelector('[data-ai-quote-item-add]')?.click();
         await wait(80);
@@ -3606,15 +3724,17 @@ async function createWindow() {
         await wait(80);
         const restoredItemCount = document.querySelectorAll('.ai-quote-editor-row').length;
         const documentNode = document.querySelector('[data-ai-quote-document]');
-        const itemToolbar = document.querySelector('.ai-quote-editor-toolbar');
         const previewHeader = document.querySelector('.ai-quote-preview-card>header');
         const itemRows = [...document.querySelectorAll('.ai-quote-editor-row')];
-        const seal = documentNode?.querySelector('.bring-quote-representative img');
-        itemToolbar?.scrollIntoView({ block: 'center' });
+        const exportActions = [...document.querySelectorAll('[data-ai-quote-export]')].map(button => button.dataset.aiQuoteExport + ':' + button.dataset.aiQuoteFormat);
+        const sealCount = documentNode?.querySelectorAll('.transaction-seal').length || 0;
+        const representativeText = documentNode?.querySelectorAll('.transaction-party')[1]?.querySelectorAll('dd')[2]?.textContent || '';
+        const confirmationText = documentNode?.querySelector('.transaction-confirmation')?.textContent || '';
         previewHeader?.scrollIntoView({ block: 'start' });
         await wait(100);
         const text = documentNode?.textContent || '';
-        return { pass: Boolean(documentNode) && text.includes('햇빛빌라') && text.includes('120,000원') && text.includes('브링엔지니어링') && text.includes('서창환') && text.includes('상지대길 83') && text.includes('공급가액') && text.includes('세액 (부가세 10%)') && initialItemCount >= 1 && addedItemCount === initialItemCount + 1 && addedTotalVisible && restoredItemCount === initialItemCount && Boolean(document.querySelector('[data-ai-quote-export="xlsx"]')) && Boolean(document.querySelector('[data-ai-quote-export="pdf"]')) && Boolean(seal?.complete && seal.naturalWidth) && Boolean(document.querySelector('[data-ai-quote-item-add]')) && itemRows.every(row => row.querySelector('[data-ai-quote-item-delete]')), state: window.__crmTest?.snapshot() };
+        const expectedActions = ['supplier:xlsx', 'supplier:pdf', 'recipient:xlsx', 'recipient:pdf'];
+        return { pass: Boolean(documentNode) && text.includes('햇빛빌라') && text.includes('120,000원') && text.includes('브링엔지니어링') && text.includes('서 창 환') && text.includes('상지대길 83') && text.includes('공급가액') && text.includes('세액') && initialItemCount >= 1 && addedItemCount === initialItemCount + 1 && addedTotalVisible && restoredItemCount === initialItemCount && JSON.stringify(exportActions) === JSON.stringify(expectedActions) && representativeText.includes('서 창 환') && confirmationText.includes('서 창 환') && sealCount === 2 && Boolean(document.querySelector('[data-ai-quote-item-add]')) && itemRows.every(row => row.querySelector('[data-ai-quote-item-delete]')), exportActions, representativeText, confirmationText, sealCount, state: window.__crmTest?.snapshot() };
       })()`, true);
     } else if (process.env.BRING_CRM_SCREENSHOT_ACTION === "office-messenger-smoke") {
       actionResult = await mainWindow.webContents.executeJavaScript(`(async () => {
@@ -6443,6 +6563,8 @@ secureCanonicalHandle("crm:contract-source-decision", async input => { assertCon
 secureCanonicalHandle("crm:quote-export", input => exportAiQuote(input));
 secureCanonicalHandle("crm:quote-supplier-load", () => loadQuoteSupplier());
 secureCanonicalHandle("crm:quote-supplier-save", input => saveQuoteSupplier(input));
+secureCanonicalHandle("crm:quote-seal-load", () => loadQuoteSeal());
+secureCanonicalHandle("crm:quote-seal-select", () => selectQuoteSeal());
 secureHandle("crm:auth-login", async credentials => {
   if (FIELD_OPERATIONS_ENABLED && (fieldReauthenticationActive || fieldReauthInFlight)) {
     return fieldReauthenticationBlockedResult("FIELD_REAUTH_IN_PROGRESS");

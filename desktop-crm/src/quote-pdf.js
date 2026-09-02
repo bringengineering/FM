@@ -1,6 +1,8 @@
 "use strict";
 
 const QuoteCore = require("./quote-core");
+const { safeFileSegment } = require("./attendance-xlsx");
+const { COPY_CONFIG } = require("./quote-xlsx");
 
 function html(value) {
   return String(value == null ? "" : value).replace(/[&<>"']/g, character => ({
@@ -8,69 +10,71 @@ function html(value) {
   })[character]);
 }
 
+function configFor(copyType) {
+  const config = COPY_CONFIG[String(copyType || "")];
+  if (!config) throw new Error("견적서 종류를 확인해 주세요.");
+  return config;
+}
+
+function cssColor(argb) {
+  return `#${String(argb || "").slice(-6)}`;
+}
+
+function spacedDisplayName(value) {
+  return Array.from(String(value || "").replace(/\s+/g, "")).join(" ");
+}
+
 function sealDataUrl(value) {
-  const source = String(value || "");
-  if (!/^data:image\/png;base64,[A-Za-z0-9+/=]+$/.test(source) || source.length > 1_000_000) {
-    throw new Error("견적서 인감 이미지를 확인해 주세요.");
+  const buffer = Buffer.isBuffer(value) ? value : Buffer.from(value || []);
+  const signature = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
+  if (!buffer.length || buffer.length > 512 * 1024 || !buffer.subarray(0, 8).equals(signature)) {
+    throw new Error("견적서 인감 이미지는 512KB 이하 PNG 파일이어야 합니다.");
   }
-  return source;
+  return `data:image/png;base64,${buffer.toString("base64")}`;
 }
 
-function pngBufferDataUrl(value) {
-  const bytes = Buffer.isBuffer(value) ? value : Buffer.from(value || []);
-  if (bytes.length < 8 || bytes.length > 750_000 || bytes.subarray(0, 8).toString("hex") !== "89504e470d0a1a0a") {
-    throw new Error("견적서 인감 파일이 올바른 PNG가 아닙니다.");
-  }
-  return `data:image/png;base64,${bytes.toString("base64")}`;
+function partyRow(label, value, className = "") {
+  return `<div class="party-row ${className}"><dt>${html(label)}</dt><dd>${html(value || "미입력")}</dd></div>`;
 }
 
-function quotePrintHtml(input, sealInput) {
+function createQuotePdfHtml(input, copyType = "recipient", sealImage) {
   const quote = QuoteCore.normalizeDraft(input);
-  const supplier = quote.company;
-  const seal = sealDataUrl(sealInput);
-  const itemRows = quote.items.map((item, index) => `<tr><td>${index + 1}</td><td><b>${html(item.name)}</b></td><td>${html(item.detail)}</td><td>${item.quantity}${html(item.unit)}</td><td>${html(QuoteCore.money(QuoteCore.itemTotal(item)))}</td></tr>`).join("");
-  const notes = quote.notes.map(note => `<p>• ${html(note)}</p>`).join("");
-  return `<!doctype html><html lang="ko"><head><meta charset="utf-8"><meta http-equiv="Content-Security-Policy" content="default-src 'none'; img-src data:; style-src 'unsafe-inline'"><title>${html(quote.projectName)} 견적서</title><style>
-    @page{size:A4 portrait;margin:0}*{box-sizing:border-box}html,body{margin:0;padding:0;background:#fff;color:#294b5d;font-family:"Malgun Gothic","Apple SD Gothic Neo",sans-serif;-webkit-print-color-adjust:exact;print-color-adjust:exact}body{font-size:10px}.quote-page{position:relative;width:210mm;min-height:297mm;padding:13mm 15mm 12mm;background:#fff}.quote-header{display:flex;align-items:center;justify-content:space-between;padding-bottom:6mm;border-bottom:1.1mm solid #173f56}.brand{display:grid}.brand span{color:#173f56;font-size:28px;font-weight:950;letter-spacing:-1px}.brand small{color:#3d9dc5;font-size:8px;font-weight:900;letter-spacing:2px}.title{display:grid;text-align:right}.title b{color:#173f56;font-size:25px;letter-spacing:6px}.title small{margin-top:2px;color:#77a0b3;font-size:8px;letter-spacing:2px}.meta{display:grid;grid-template-columns:minmax(0,1fr) 86mm;gap:7mm;padding:6mm 0}.recipient>small{display:block;color:#7b929e;font-size:9px;font-weight:800}.recipient>strong{display:block;margin-top:2mm;color:#173f56;font-size:19px}.recipient>p{margin:2mm 0 0;color:#557585;font-size:11px}.issued{display:grid;gap:1.5mm;margin:4mm 0 0}.issued div{display:grid;grid-template-columns:18mm 1fr;gap:2mm}.issued dt,.issued dd{margin:0;font-size:9px}.issued dt{color:#8499a3}.issued dd{color:#506f7f;font-weight:700}.supplier{display:grid;grid-template-columns:9mm 1fr;border:.3mm solid #91adba;background:#fff}.supplier>strong{display:grid;place-items:center;padding:2mm;border-right:.3mm solid #91adba;background:#edf5f8;color:#315e72;font-size:9px;letter-spacing:1px;writing-mode:vertical-rl}.supplier dl{display:grid;margin:0}.supplier dl>div{display:grid;grid-template-columns:22mm 1fr;min-height:9mm;border-bottom:.25mm solid #cddce3}.supplier dl>div:last-child{border-bottom:0}.supplier dt,.supplier dd{display:flex;align-items:center;margin:0;padding:1.5mm 2.2mm;font-size:8.5px}.supplier dt{border-right:.25mm solid #cddce3;background:#f7fafb;color:#698391;font-weight:700}.supplier dd{position:relative;color:#173f56;font-weight:800;line-height:1.35}.representative{min-height:11mm;padding-right:17mm!important}.seal{position:absolute;right:2mm;top:50%;width:16mm;height:16mm;object-fit:contain;transform:translateY(-50%) rotate(-7deg);opacity:.88}.total-banner{display:flex;align-items:center;justify-content:space-between;padding:4mm 5mm;border-radius:3mm;background:#e8f7fc}.total-banner div{display:grid;gap:1mm}.total-banner small{color:#3f7e99;font-size:9px}.total-banner b{color:#173f56;font-size:25px}.total-banner>span{padding:1.5mm 2.5mm;border-radius:20mm;background:#173f56;color:#fff;font-size:8px;font-weight:900}.summary{margin:4mm 0;color:#597887;font-size:10px;line-height:1.55}.items{overflow:hidden;border:.3mm solid #d8e5eb;border-radius:2.5mm}.items table{width:100%;border-collapse:collapse;table-layout:fixed;font-size:9px}.items th{padding:2.5mm 2mm;background:#173f56;color:#fff;text-align:left}.items th:nth-child(1){width:12mm}.items th:nth-child(2){width:38mm}.items th:nth-child(4){width:15mm}.items th:nth-child(5){width:29mm;text-align:right}.items td{padding:3mm 2mm;border-bottom:.25mm solid #e2ebef;color:#4f6d7c;line-height:1.4;vertical-align:top}.items tbody tr:last-child td{border-bottom:0}.items td:first-child,.items td:nth-child(4){text-align:center}.items td:last-child{text-align:right;color:#173f56;font-weight:800}.items td b{color:#264e62}.amounts{width:84mm;margin:4mm 0 0 auto}.amounts>div{display:flex;justify-content:space-between;padding:1.5mm 0;color:#617e8d;font-size:10px}.amounts .grand-total{margin-top:1mm;padding:3mm 4mm;border-radius:2mm;background:#173f56;color:#fff;font-size:12px}.notes{break-inside:avoid;margin-top:5mm;padding:4mm;border-radius:2.5mm;background:#f4f8fa}.notes b{color:#173f56;font-size:10px}.notes p{margin:1.5mm 0 0;color:#688391;font-size:8px;line-height:1.45}.quote-footer{display:flex;align-items:end;justify-content:space-between;margin-top:7mm;padding-top:4mm;border-top:.25mm solid #dbe6eb}.quote-footer div{display:grid}.quote-footer b{color:#173f56;font-size:13px}.quote-footer span{color:#8298a3;font-size:7px;letter-spacing:1px}.quote-footer>strong{color:#3e9fc8;font-size:13px}
-  </style></head><body><article class="quote-page"><header class="quote-header"><div class="brand"><span>BRING</span><small>ENGINEERING</small></div><div class="title"><b>견 적 서</b><small>QUOTATION</small></div></header><section class="meta"><div class="recipient"><small>수신</small><strong>${html(quote.recipient)} 귀중</strong><p>${html(quote.projectName)}</p><dl class="issued"><div><dt>발행일</dt><dd>${html(quote.quoteDate)}</dd></div><div><dt>유효기간</dt><dd>${html(quote.validUntil)}</dd></div></dl></div><section class="supplier"><strong>공급자</strong><dl><div><dt>등록번호</dt><dd>${html(supplier.registrationNumber)}</dd></div><div><dt>상호</dt><dd>${html(supplier.businessName)}</dd></div><div><dt>대표자</dt><dd class="representative">${html(supplier.representative)}<img class="seal" src="${seal}" alt=""></dd></div><div><dt>사업장 주소</dt><dd>${html(supplier.address)}</dd></div><div><dt>전화 / 팩스</dt><dd>${html(supplier.phone)} / ${html(supplier.fax)}</dd></div></dl></section></section><section class="total-banner"><div><small>아래와 같이 견적합니다</small><b>${html(QuoteCore.money(quote.totalAmount))}</b></div><span>VAT 포함</span></section><p class="summary">${html(quote.summary)}</p><section class="items"><table><thead><tr><th>No.</th><th>품목</th><th>상세 내용</th><th>수량</th><th>금액</th></tr></thead><tbody>${itemRows}</tbody></table></section><section class="amounts"><div><span>공급가액</span><b>${html(QuoteCore.money(quote.supplyAmount))}</b></div><div><span>세액 (부가세 10%)</span><b>${html(QuoteCore.money(quote.vatAmount))}</b></div><div class="grand-total"><span>합계금액</span><b>${html(QuoteCore.money(quote.totalAmount))}</b></div></section><section class="notes"><b>안내 사항</b>${notes}</section><footer class="quote-footer"><div><b>${html(supplier.businessName)}</b><span>${html(supplier.brand)}</span></div><strong>BRING CARE</strong></footer></article></body></html>`;
+  const config = configFor(copyType);
+  const color = cssColor(config.color);
+  const light = cssColor(config.light);
+  const seal = sealDataUrl(sealImage);
+  const representative = spacedDisplayName(quote.company.representative);
+  const recipientRows = [
+    partyRow("견적명", quote.projectName),
+    partyRow("성명", quote.recipient),
+    partyRow("전화번호", quote.recipientPhone),
+    partyRow("발행일", quote.quoteDate),
+    partyRow("유효일", quote.validUntil)
+  ].join("");
+  const supplierRows = [
+    partyRow("사업자등록번호", quote.company.registrationNumber),
+    partyRow("상호", quote.company.businessName),
+    `<div class="party-row"><dt>대표자</dt><dd><span>${html(representative || "미입력")}</span><img class="seal top-seal" src="${seal}" alt="공급자 인감"></dd></div>`,
+    partyRow("소재지", quote.company.address, "address"),
+    partyRow("업태", quote.company.businessType),
+    partyRow("업종", quote.company.businessCategory)
+  ].join("");
+  const rows = Array.from({ length: 10 }, (_, index) => {
+    const item = quote.items[index];
+    if (!item) return "<tr><td></td><td></td><td></td><td></td><td></td><td></td><td></td><td></td><td></td></tr>";
+    const total = QuoteCore.itemTotal(item);
+    const supply = Math.round(total / 1.1);
+    return `<tr><td>${index + 1}</td><td>${html(item.name)}</td><td>${html(item.detail)}</td><td>${html(item.quantity)}</td><td>${html(item.unit)}</td><td>${html(QuoteCore.money(item.unitPrice))}</td><td>${html(QuoteCore.money(supply))}</td><td>${html(QuoteCore.money(total - supply))}</td><td>${html(QuoteCore.money(total))}</td></tr>`;
+  }).join("");
+  const notes = quote.notes.slice(0, 2).map((note, index) => `<span>${index + 1}. ${html(note)}</span>`).join("");
+  return `<!doctype html><html lang="ko"><head><meta charset="utf-8"><meta http-equiv="Content-Security-Policy" content="default-src 'none'; img-src data:; style-src 'unsafe-inline'"><title>${html(config.label)}</title><style>
+@page{size:A4 landscape;margin:7mm}*{box-sizing:border-box}html,body{margin:0;padding:0;background:#fff;color:#252b31;font-family:"Malgun Gothic","맑은 고딕",sans-serif;-webkit-print-color-adjust:exact;print-color-adjust:exact}body{width:283mm;min-height:196mm}.quote{display:flex;flex-direction:column;min-height:196mm;border:1.4px solid ${color}}.title{height:15mm;display:grid;place-items:center;border-bottom:1.4px solid ${color};color:${color};font-size:23pt;font-weight:800;letter-spacing:.45em;text-indent:.45em}.brand{height:8mm;display:grid;place-items:center;border-bottom:1px solid ${color};background:${light};color:${color};font-size:9pt;font-weight:800}.parties{display:grid;grid-template-columns:1fr 1fr;border-bottom:1.2px solid ${color}}.party{display:grid;grid-template-columns:9mm 1fr}.party:first-child{border-right:1.2px solid ${color}}.vertical{display:grid;place-items:center;border-right:1px solid ${color};background:${light};color:${color};font-size:9pt;font-weight:800;writing-mode:vertical-rl;letter-spacing:.14em}.party dl{display:grid;grid-auto-rows:minmax(6.1mm,auto);margin:0}.party-row{display:grid;grid-template-columns:36mm 1fr;min-height:6.1mm;border-bottom:.65px solid ${color}}.party-row:last-child{border-bottom:0}.party-row dt,.party-row dd{display:flex;align-items:center;margin:0;padding:1.15mm 2mm}.party-row dt{justify-content:center;border-right:.65px solid ${color};background:${light};color:${color};font-size:8pt;font-weight:800;text-align:center}.party-row dd{justify-content:center;gap:2mm;font-size:8.2pt;text-align:center;line-height:1.35}.party-row.address dd{font-size:7.4pt}.seal{width:8mm;height:8mm;object-fit:contain}.top-seal{margin:-1mm 0}.total-band{display:grid;grid-template-columns:1fr 46mm;min-height:9mm;border-bottom:1.2px solid ${color};background:${light};color:${color};font-weight:800}.total-band span,.total-band b{display:flex;align-items:center;justify-content:center}.total-band b{border-left:1px solid ${color};font-size:15pt}.items{width:100%;border-collapse:collapse;table-layout:fixed}.items th,.items td{border-right:.65px solid ${color};border-bottom:.65px solid ${color};padding:1mm;text-align:center;vertical-align:middle}.items th:last-child,.items td:last-child{border-right:0}.items thead th{height:7mm;background:${light};color:${color};font-size:7.5pt;font-weight:800}.items tbody td{height:6.3mm;font-size:7pt;line-height:1.25}.items th:nth-child(1){width:9mm}.items th:nth-child(2){width:48mm}.items th:nth-child(3){width:62mm}.items th:nth-child(4){width:14mm}.items th:nth-child(5){width:14mm}.items th:nth-child(6),.items th:nth-child(7),.items th:nth-child(8),.items th:nth-child(9){width:34mm}.items td:nth-child(n+4){white-space:nowrap}.items tfoot th,.items tfoot td{height:8mm;background:${light};color:${color};font-size:8pt;font-weight:800}.items tfoot td:last-child{font-size:12pt}.notes{display:grid;gap:.8mm;padding:2.2mm 3mm;border-bottom:1px solid ${color};background:${light};font-size:6.8pt;line-height:1.35}.notes b{color:${color};font-size:7.5pt}.signatures{display:grid;grid-template-columns:1fr 1.2fr 1.2fr;min-height:11mm;margin-top:auto}.signature{display:flex;align-items:center;justify-content:center;gap:2mm;border-right:.65px solid ${color};color:${color};font-size:8pt;font-weight:800}.signature:last-child{border-right:0}.signature img{width:7mm;height:7mm;object-fit:contain}
+</style></head><body><main class="quote"><header class="title">견 적 서</header><div class="brand">BRING ENGINEERING</div><section class="parties"><div class="party"><span class="vertical">공급받는자</span><dl>${recipientRows}</dl></div><div class="party"><span class="vertical">공급자</span><dl>${supplierRows}</dl></div></section><div class="total-band"><span>합계금액 (VAT 포함)</span><b>${html(QuoteCore.money(quote.totalAmount))}</b></div><table class="items"><thead><tr><th>번호</th><th>품목</th><th>규격 및 상세</th><th>수량</th><th>단위</th><th>단가</th><th>공급가액</th><th>세액</th><th>합계</th></tr></thead><tbody>${rows}</tbody><tfoot><tr><th colspan="6">합계금액 (VAT 포함)</th><td>${html(QuoteCore.money(quote.supplyAmount))}</td><td>${html(QuoteCore.money(quote.vatAmount))}</td><td>${html(QuoteCore.money(quote.totalAmount))}</td></tr></tfoot></table><section class="notes"><b>안내 사항</b>${notes}</section><footer class="signatures"><div class="signature">작성일&nbsp;&nbsp;${html(quote.quoteDate)}</div><div class="signature">공급자 확인&nbsp;&nbsp;${html(representative)}<img src="${seal}" alt="공급자 확인 인감"></div><div class="signature">공급받는자 확인&nbsp;&nbsp;${html(quote.recipient)}</div></footer></main></body></html>`;
 }
 
-async function createQuotePdf(BrowserWindowClass, input, sealInput) {
-  if (typeof BrowserWindowClass !== "function") throw new TypeError("PDF 창 생성기를 확인해 주세요.");
-  const documentHtml = quotePrintHtml(input, sealInput);
-  const printWindow = new BrowserWindowClass({
-    width: 900,
-    height: 1273,
-    show: false,
-    skipTaskbar: true,
-    backgroundColor: "#ffffff",
-    webPreferences: {
-      nodeIntegration: false,
-      contextIsolation: true,
-      sandbox: true,
-      javascript: false,
-      webSecurity: true
-    }
-  });
-  let outputBase64 = "";
-  try {
-    printWindow.webContents.setWindowOpenHandler(() => ({ action: "deny" }));
-    await printWindow.loadURL(`data:text/html;charset=UTF-8,${encodeURIComponent(documentHtml)}`);
-    const pdf = await printWindow.webContents.printToPDF({
-      printBackground: true,
-      pageSize: "A4",
-      landscape: false,
-      preferCSSPageSize: true,
-      generateTaggedPDF: true
-    });
-    if (!Buffer.isBuffer(pdf) || pdf.length < 1000 || pdf.subarray(0, 5).toString("ascii") !== "%PDF-") {
-      throw new Error("견적서 PDF 생성 결과를 확인하지 못했습니다.");
-    }
-    outputBase64 = pdf.toString("base64");
-  } finally {
-    if (!printWindow.isDestroyed()) printWindow.destroy();
-  }
-  return { base64: outputBase64, byteLength: Buffer.byteLength(outputBase64, "base64") };
+function quotePdfFileName(input, copyType = "recipient") {
+  const quote = QuoteCore.normalizeDraft(input);
+  return `${safeFileSegment(QuoteCore.fileBase(quote))}_${configFor(copyType).sheetName}.pdf`;
 }
 
-module.exports = { createQuotePdf, pngBufferDataUrl, quotePrintHtml, sealDataUrl };
+module.exports = { createQuotePdfHtml, quotePdfFileName };

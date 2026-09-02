@@ -1,73 +1,44 @@
+"use strict";
+
 const assert = require("node:assert/strict");
 const test = require("node:test");
 
 const QuoteCore = require("../src/quote-core");
-const { createQuotePdf, pngBufferDataUrl, quotePrintHtml } = require("../src/quote-pdf");
-
-const seal = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAAB";
+const { createQuotePdfHtml, quotePdfFileName } = require("../src/quote-pdf");
 
 function sampleQuote() {
-  return QuoteCore.createDraftFromPrompt("햇빛빌라 입주청소 12만원", null, {
-    now: "2026-09-02",
-    supplier: { businessName: "저장 상호", representative: "저장 대표", registrationNumber: "111-22-33333" }
+  const draft = QuoteCore.createDraftFromPrompt("햇빛빌라 입주청소 12만원", null, {
+    now: "2026-09-03",
+    idSuffix: "PDF1",
+    supplier: { businessName: "브링엔지니어링", representative: "서창환", registrationNumber: "748-28-01935" }
   });
+  return QuoteCore.normalizeDraft({ ...draft, recipient: "홍길동", recipientPhone: "010-1234-5678" });
 }
 
-test("PDF document contains the fixed supplier, seal, and separate supply and tax amounts", () => {
-  const document = quotePrintHtml(sampleQuote(), seal);
-  assert.match(document, /브링엔지니어링/);
-  assert.match(document, /서창환/);
-  assert.match(document, /111-22-33333/);
-  assert.match(document, /상지대길 83/);
-  assert.match(document, /010-6566-3603/);
-  assert.match(document, /033-746-8919/);
-  assert.match(document, /class="seal"/);
-  assert.match(document, /공급가액/);
-  assert.match(document, /세액 \(부가세 10%\)/);
-  assert.match(document, /109,091원/);
-  assert.match(document, /10,909원/);
-  assert.doesNotMatch(document, /748-28-01935/);
-});
+const seal = Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=", "base64");
 
-test("PDF document escapes quotation text and rejects non-PNG seal URLs", () => {
+test("quote PDF HTML keeps both copies identical except for their requested colors", () => {
   const quote = sampleQuote();
-  quote.projectName = "<script>alert(1)</script>";
-  const document = quotePrintHtml(quote, seal);
-  assert.doesNotMatch(document, /<script>alert/);
-  assert.match(document, /&lt;script&gt;alert\(1\)&lt;\/script&gt;/);
-  assert.throws(() => quotePrintHtml(quote, "https://example.com/seal.png"), /인감/);
+  const recipient = createQuotePdfHtml(quote, "recipient", seal);
+  const supplier = createQuotePdfHtml(quote, "supplier", seal);
+  assert.match(recipient, /#1454D8/);
+  assert.match(recipient, /#EFF4FF/);
+  assert.match(supplier, /#E25A67/);
+  assert.match(supplier, /#FFF2F3/);
+  assert.equal(recipient.slice(recipient.indexOf("<body>")), supplier.slice(supplier.indexOf("<body>")));
+  assert.match(recipient, /견 적 서/);
+  assert.match(recipient, /서 창 환/);
+  assert.match(recipient, /공급자 확인/);
+  assert.equal((recipient.match(/data:image\/png;base64/g) || []).length, 2);
+  assert.match(recipient, /Content-Security-Policy/);
+  assert.doesNotMatch(recipient, /https?:\/\//);
+  assert.equal(quotePdfFileName(quote, "recipient"), "햇빛빌라 입주청소_공급받는자용 견적서.pdf");
+  assert.equal(quotePdfFileName(quote, "supplier"), "햇빛빌라 입주청소_공급자 보관용 견적서.pdf");
 });
 
-test("PDF generation uses a sandboxed hidden Electron window", async () => {
-  let options;
-  let destroyed = false;
-  let openedPolicy;
-  class FakeBrowserWindow {
-    constructor(input) {
-      options = input;
-      this.webContents = {
-        setWindowOpenHandler: handler => { openedPolicy = handler(); },
-        printToPDF: async () => Buffer.concat([Buffer.from("%PDF-1.7\n"), Buffer.alloc(1200)])
-      };
-    }
-    async loadURL(value) { this.url = value; }
-    isDestroyed() { return destroyed; }
-    destroy() { destroyed = true; }
-  }
-  const pdf = await createQuotePdf(FakeBrowserWindow, sampleQuote(), seal);
-  assert.equal(Buffer.from(pdf.base64, "base64").subarray(0, 5).toString("ascii"), "%PDF-");
-  assert.equal(pdf.byteLength, 1209);
-  assert.equal(options.show, false);
-  assert.equal(options.webPreferences.nodeIntegration, false);
-  assert.equal(options.webPreferences.contextIsolation, true);
-  assert.equal(options.webPreferences.sandbox, true);
-  assert.equal(options.webPreferences.javascript, false);
-  assert.deepEqual(openedPolicy, { action: "deny" });
-  assert.equal(destroyed, true);
-});
-
-test("seal buffer conversion validates PNG signature and bounds", () => {
-  const bytes = Buffer.from("89504e470d0a1a0a01020304", "hex");
-  assert.match(pngBufferDataUrl(bytes), /^data:image\/png;base64,/);
-  assert.throws(() => pngBufferDataUrl(Buffer.from("not png")), /PNG/);
+test("quote PDF HTML escapes untrusted recipient text", () => {
+  const quote = QuoteCore.normalizeDraft({ ...sampleQuote(), recipient: "<img src=x onerror=alert(1)>" });
+  const document = createQuotePdfHtml(quote, "recipient", seal);
+  assert.doesNotMatch(document, /<img src=x onerror/);
+  assert.match(document, /&lt;img src=x onerror=alert\(1\)&gt;/);
 });

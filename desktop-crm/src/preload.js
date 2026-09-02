@@ -42,6 +42,8 @@ contextBridge.exposeInMainWorld("bringCRM", {
   exportQuote: input => ipcRenderer.invoke("crm:quote-export", input),
   loadQuoteSupplier: () => ipcRenderer.invoke("crm:quote-supplier-load"),
   saveQuoteSupplier: input => ipcRenderer.invoke("crm:quote-supplier-save", input),
+  loadQuoteSeal: () => ipcRenderer.invoke("crm:quote-seal-load"),
+  selectQuoteSeal: () => ipcRenderer.invoke("crm:quote-seal-select"),
   loadOperationsIntelligence: () => ipcRenderer.invoke("crm:operations-intelligence-load"),
   saveOperation: input => ipcRenderer.invoke("crm:operation-save", input),
   retryWorkOperationsSync: recordId => ipcRenderer.invoke("crm:work-operations-sync-retry", { recordId }),

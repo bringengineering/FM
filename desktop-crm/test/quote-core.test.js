@@ -10,7 +10,7 @@ test("one-line Korean request becomes a balanced BRING quote draft", () => {
   assert.equal(quote.totalAmount, 120000);
   assert.equal(quote.items.reduce((sum, item) => sum + QuoteCore.itemTotal(item), 0), 120000);
   assert.equal(Object.hasOwn(quote, "quoteNumber"), false);
-  assert.equal(quote.validUntil, "2026-09-15");
+  assert.equal(quote.validUntil, "2026-09-08");
 });
 
 test("explicit prompt amount overrides and rebalances an AI amount", () => {
@@ -30,30 +30,29 @@ test("quote parser rejects missing prices and bounds unsafe filenames", () => {
 
 test("supplier fields stay separate and require a formatted registration number", () => {
   const supplier = { businessName: "테스트엔지니어링", representative: "홍길동", registrationNumber: "000-00-00000" };
-  assert.deepEqual(QuoteCore.normalizeSupplier(supplier), supplier);
-  assert.equal(QuoteCore.supplierComplete(supplier), true);
+  const quote = QuoteCore.createDraftFromPrompt("햇빛빌라 입주청소 12만원", null, { supplier });
+  assert.deepEqual({
+    businessName: quote.company.businessName,
+    representative: quote.company.representative,
+    registrationNumber: quote.company.registrationNumber
+  }, supplier);
+  assert.equal(QuoteCore.supplierComplete(quote.company), true);
+  assert.equal(quote.company.address, "강원특별자치도 원주시 상지대길 83, 벤처창업관동 3층 305호(우산동, 상지대학교)");
+  assert.equal(quote.company.businessType, "전문, 과학 및 기술서비스업 / 서비스업");
+  assert.equal(quote.company.businessCategory, "기타 공학 연구개발업 / 건축물 일반 청소업");
   assert.throws(() => QuoteCore.normalizeSupplier({ ...supplier, registrationNumber: "0000000000" }), /000-00-00000/);
   assert.equal(QuoteCore.supplierComplete({ businessName: "테스트", representative: "", registrationNumber: "000-00-00000" }), false);
 });
 
-test("quotation uses the fixed BRING supplier profile and preserves only the stored registration number", () => {
-  const quote = QuoteCore.createDraftFromPrompt("햇빛빌라 입주청소 12만원", null, {
-    supplier: { businessName: "이전 상호", representative: "이전 대표", registrationNumber: "111-22-33333" }
-  });
-  assert.equal(quote.company.businessName, "브링엔지니어링");
-  assert.equal(quote.company.representative, "서창환");
-  assert.equal(quote.company.registrationNumber, "111-22-33333");
-  assert.equal(quote.company.address, "강원도 원주시 상지대길 83 벤처창업관 305호");
-  assert.equal(quote.company.phone, "010-6566-3603");
-  assert.equal(quote.company.fax, "033-746-8919");
-});
-
-test("VAT-inclusive total is split into supply amount and tax without changing the entered total", () => {
-  const quote = QuoteCore.createDraftFromPrompt("햇빛빌라 입주청소 12만원", null);
-  assert.equal(quote.supplyAmount, 109091);
-  assert.equal(quote.vatAmount, 10909);
-  assert.equal(quote.supplyAmount + quote.vatAmount, quote.totalAmount);
-  assert.equal(quote.totalAmount, 120000);
+test("recipient fields stay local to the workbook and dates always expire after seven days", () => {
+  const draft = QuoteCore.createDraftFromPrompt("햇빛빌라 입주청소 12만원", null, { now: "2026-09-01" });
+  const quote = QuoteCore.normalizeDraft({ ...draft, recipient: "홍길동", recipientPhone: "010-1234-5678", validUntil: "2099-12-31" });
+  assert.equal(quote.recipient, "홍길동");
+  assert.equal(quote.recipientPhone, "010-1234-5678");
+  assert.equal(quote.validUntil, "2026-09-08");
+  assert.equal(QuoteCore.recipientComplete(quote), true);
+  assert.equal(QuoteCore.recipientComplete({ recipient: "홍길동", recipientPhone: "" }), false);
+  assert.throws(() => QuoteCore.normalizeRecipient({ recipient: "홍길동", recipientPhone: "비공개" }), /전화번호/);
 });
 
 test("quote detail items can be added and removed while totals are recalculated", () => {

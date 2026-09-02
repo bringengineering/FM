@@ -10,9 +10,11 @@
     name: "브링엔지니어링",
     businessName: "브링엔지니어링",
     representative: "서창환",
-    address: "강원도 원주시 상지대길 83 벤처창업관 305호",
+    address: "강원특별자치도 원주시 상지대길 83, 벤처창업관동 3층 305호(우산동, 상지대학교)",
     phone: "010-6566-3603",
-    fax: "033-746-8919"
+    fax: "033-746-8919",
+    businessType: "전문, 과학 및 기술서비스업 / 서비스업",
+    businessCategory: "기타 공학 연구개발업 / 건축물 일반 청소업"
   });
   const MAX_ITEMS = 8;
   const SERVICE_TEMPLATES = Object.freeze({
@@ -78,9 +80,35 @@
     }
   }
 
+  function normalizeRecipient(value, options = {}) {
+    const source = value && typeof value === "object" && !Array.isArray(value) ? value : {};
+    const recipient = {
+      name: text(source.name || source.recipient, 80),
+      phone: text(source.phone || source.recipientPhone, 30)
+    };
+    if (recipient.phone && !/^[0-9+()\-\s]{8,30}$/.test(recipient.phone)) {
+      throw new Error("공급받는자 전화번호를 확인해 주세요.");
+    }
+    if (options.requireComplete && (!recipient.name || !recipient.phone)) {
+      throw new Error("공급받는자 성명과 전화번호를 입력해 주세요.");
+    }
+    return recipient;
+  }
+
+  function recipientComplete(value) {
+    try {
+      normalizeRecipient(value, { requireComplete: true });
+      return true;
+    } catch (_error) {
+      return false;
+    }
+  }
+
   function companyProfile(value) {
     const supplier = normalizeSupplier(value);
     return Object.assign({}, COMPANY, {
+      businessName: supplier.businessName || COMPANY.businessName,
+      representative: supplier.representative || COMPANY.representative,
       registrationNumber: supplier.registrationNumber
     });
   }
@@ -183,15 +211,16 @@
     const notes = Array.isArray(ai.notes) ? ai.notes.map(item => text(item, 180)).filter(Boolean).slice(0, 4) : [];
     return normalizeDraft({
       quoteDate,
-      validUntil: addDays(quoteDate, 14),
+      validUntil: addDays(quoteDate, 7),
       recipient,
+      recipientPhone: "",
       projectName: text(ai.projectName, 120) || `${recipient} ${service}`,
       service,
       summary: text(ai.summary, 240) || `${service} 요청 내용을 기준으로 작성한 견적입니다.`,
       items,
       totalAmount,
       taxIncluded: true,
-      notes: notes.length ? notes : ["작업 범위와 현장 상태가 달라지는 경우 금액은 협의 후 조정될 수 있습니다.", "견적 유효기간은 발행일로부터 14일입니다."],
+      notes: notes.length ? notes : ["작업 범위와 현장 상태가 달라지는 경우 금액은 협의 후 조정될 수 있습니다.", "견적 유효기간은 발행일로부터 7일입니다."],
       company: companyProfile(options.supplier)
     });
   }
@@ -203,10 +232,12 @@
     const totalAmount = items.reduce((sum, item) => sum + itemTotal(item), 0);
     if (!totalAmount || totalAmount > 1_000_000_000) throw new Error("견적 금액을 확인해 주세요.");
     const quoteDate = /^\d{4}-\d{2}-\d{2}$/.test(String(value.quoteDate || "")) ? String(value.quoteDate) : isoDay();
+    const recipient = normalizeRecipient(value);
     return {
       quoteDate,
-      validUntil: /^\d{4}-\d{2}-\d{2}$/.test(String(value.validUntil || "")) ? String(value.validUntil) : addDays(quoteDate, 14),
-      recipient: text(value.recipient, 80) || "고객 귀중",
+      validUntil: addDays(quoteDate, 7),
+      recipient: recipient.name || "고객",
+      recipientPhone: recipient.phone,
       projectName: text(value.projectName, 120) || "시설관리 견적",
       service: text(value.service, 60) || "시설보수",
       summary: text(value.summary, 240),
@@ -251,5 +282,5 @@
     return text(value && value.projectName, 50).replace(/[<>:"/\\|?*]/g, "_").replace(/[. ]+$/g, "") || "BRING_견적서";
   }
 
-  return { COMPANY, MAX_ITEMS, createDraftFromPrompt, normalizeDraft, addDraftItem, removeDraftItem, normalizeSupplier, supplierComplete, companyProfile, parseAmount, inferService, itemTotal, money, fileBase };
+  return { COMPANY, MAX_ITEMS, createDraftFromPrompt, normalizeDraft, addDraftItem, removeDraftItem, normalizeSupplier, supplierComplete, normalizeRecipient, recipientComplete, companyProfile, parseAmount, inferService, itemTotal, money, fileBase };
 });
