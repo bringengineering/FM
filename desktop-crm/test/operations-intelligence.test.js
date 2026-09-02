@@ -31,14 +31,11 @@ test("quick completion captures human work and produces dashboard metrics", () =
   assert.deepEqual(metrics.interventionCounts, { coordinate: 1, move: 1, execute: 1 });
 });
 
-test("existing CRM exposes operations analysis as a first-class internal view", () => {
+test("operations analysis remains an internal view without a standalone sidebar tab", () => {
   const html = src("index.html");
   const app = src("app.js");
   const preload = src("preload.js");
-  const work = html.indexOf('data-view="workManagement"');
-  const analysis = html.indexOf('data-view="operationsIntelligence"');
-  assert.equal((html.match(/data-view="operationsIntelligence"/g) || []).length, 1);
-  assert.ok(analysis > work);
+  assert.equal((html.match(/data-view="operationsIntelligence"/g) || []).length, 0);
   assert.doesNotMatch(html, /data-action="open-operations-intelligence"|별도 창/);
   assert.match(app, /currentView === "operationsIntelligence"/);
   assert.doesNotMatch(preload, /openOperationsIntelligence/);

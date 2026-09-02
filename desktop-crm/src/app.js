@@ -1356,11 +1356,9 @@
     document.getElementById("navCustomerCount").textContent = store.customers.length;
     document.getElementById("navVacancyCount").textContent = vacancyNavigationCount();
     document.getElementById("navConsultationCount").textContent = store.activities.length;
-    document.getElementById("navContractCount").textContent = store.contracts.filter(item => item.status !== "종료").length;
     document.getElementById("navRelationshipCount").textContent = store.customers.filter(customerIsRelationshipCustomer).length;
     document.getElementById("navPartnerVendorCount").textContent = partnerVendorRows().length;
     document.getElementById("navPartnerQuoteCount").textContent = store.partnerQuotes.filter(item => item.status !== "제외").length;
-    document.getElementById("navTaskCount").textContent = store.tasks.filter(item => item.status !== "완료" && item.status !== "취소").length;
     document.body.classList.toggle("crm-read-only", !canWriteCRM());
     const valueScopeView = currentView === "valueScope";
     const calendarView = currentView === "buildingCalendar";

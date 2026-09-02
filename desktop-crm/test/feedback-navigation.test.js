@@ -19,6 +19,18 @@ test("sidebar removes the sales pipeline tab and labels cases as complaint manag
   assert.match(appSource, /cases:\s*\["접수부터 사후관리까지",\s*"민원 관리"\]/);
 });
 
+test("sidebar removes the standalone operations, sales task, and contract tabs", () => {
+  for (const view of ["operationsIntelligence", "tasks", "contracts"]) {
+    assert.equal(
+      (navSource.match(new RegExp(`data-view="${view}"`, "g")) || []).length,
+      0,
+      `${view} should not remain in the primary sidebar`,
+    );
+  }
+  assert.doesNotMatch(navSource, /id="navTaskCount"|id="navContractCount"/);
+  assert.doesNotMatch(appSource, /getElementById\("navTaskCount"\)|getElementById\("navContractCount"\)/);
+});
+
 test("case and sales routes remain available behind the simplified navigation", () => {
   assert.match(appSource, /else if \(currentView === "cases"\) renderCases\(\)/);
   assert.match(appSource, /else if \(currentView === "pipeline"\) renderPipeline\(\)/);
@@ -26,6 +38,17 @@ test("case and sales routes remain available behind the simplified navigation", 
   assert.match(
     appSource,
     /\[[^\]]*"cases"[^\]]*"pipeline"[^\]]*\]\.includes\(query\.get\("view"\)\)/,
+  );
+});
+
+test("removed standalone tabs keep their internal workflows and data routes", () => {
+  assert.match(appSource, /else if \(currentView === "operationsIntelligence"\) renderOperationsIntelligence\(\)/);
+  assert.match(appSource, /else if \(currentView === "tasks"\) renderTasks\(\)/);
+  assert.match(appSource, /else if \(currentView === "contracts"\) renderContracts\(\)/);
+  assert.match(appSource, /data-unified-calendar-tab="contract"/);
+  assert.match(
+    appSource,
+    /\[[^\]]*"operationsIntelligence"[^\]]*"contracts"[^\]]*"tasks"[^\]]*\]\.includes\(query\.get\("view"\)\)/,
   );
 });
 
