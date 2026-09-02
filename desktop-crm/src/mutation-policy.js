@@ -2,7 +2,7 @@
 const MarketingCore = require('./marketing-core');
 
 const READ_OR_CONTROL = [
-  'crm:auth-state','crm:ai-assist','crm:quote-export','crm:quote-supplier-load','crm:auth-login','crm:auth-google-login','crm:field-reauthenticate-google','crm:auth-change-password','crm:auth-logout',
+  'crm:auth-state','crm:ai-assist','crm:consultation-audio-pick','crm:consultation-audio-transcribe','crm:quote-export','crm:quote-supplier-load','crm:auth-login','crm:auth-google-login','crm:field-reauthenticate-google','crm:auth-change-password','crm:auth-logout',
   'crm:load','crm:office-load','crm:office-attendance-export','crm:office-attachment-open','crm:office-messenger-presence','crm:operations-intelligence-load','crm:canonical-building-units-load',
   'crm:field-summaries-load','crm:customer-photos-load','crm:drive-import-candidates-load','crm:marketing-read','crm:field-team-profiles',
   'crm:operations-load','crm:workflow-vendors','crm:workflow-files','crm:customer-photo-pick','crm:data-path','crm:update-state','crm:update-check',

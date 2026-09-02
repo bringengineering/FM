@@ -3938,8 +3938,54 @@
   function aiConsultationReviewEditor() {
     const draft = aiConsultationIntakeState.draft;
     if (!draft) return aiConsultationIntakeEditor(false);
-    modalContent.innerHTML = `<div class="modal-head"><div><h2>AI 정리 결과 확인</h2><p>틀린 내용을 수정하고 저장할 항목을 확인해 주세요.</p></div><button class="close-button" data-action="close-modal">×</button></div><form id="aiConsultationReviewForm" class="modal-body"><div class="ai-consultation-review-grid"><section><header><b>고객 정보</b>${aiReviewMark(draft.customer)}</header>${field("고객명", "customerName", draft.customer.name)}${field("연락처", "customerPhone", draft.customer.phone, "tel")}${field("고객 유형", "customerType", draft.customer.type)}${areaField("현재 요청사항", "currentRequest", draft.customer.request)}${areaField("개인 메모·고객 특징", "privateMemo", draft.customer.privateMemo)}</section><section><header><b>연결 건물</b>${aiReviewMark(draft.building)}</header>${field("건물명", "buildingName", draft.building.name)}${field("건물 주소", "buildingAddress", draft.building.address)}</section><section><header><b>상담 기록</b>${aiReviewMark(draft.consultation)}</header>${areaField("상담 내용", "consultationSummary", draft.consultation.summary)}${areaField("상담 결과", "consultationResult", draft.consultation.result)}</section><section><header><b>후속 조치</b>${aiReviewMark(draft.followUp)}</header>${field("다음 행동", "nextAction", draft.followUp.nextAction)}${field("다음 연락", "nextContactAt", datetimeValue(draft.followUp.nextContactAt), "datetime-local")}</section><section><header><b>추천 계약</b>${aiReviewMark(draft.contractSuggestion)}</header>${field("계약 유형", "contractType", draft.contractSuggestion.type)}${field("예상 계약금액", "expectedAmount", draft.contractSuggestion.expectedAmount || "", "number")}</section></div><details class="ai-consultation-transcript"><summary>원본 대화문 확인</summary><pre>${esc(aiConsultationIntakeState.transcript)}</pre></details><div class="form-actions"><button type="button" class="secondary-button" data-action="ai-consultation-back">입력으로 돌아가기</button><button type="submit" class="primary-button">검토 후 CRM에 저장</button></div></form>`;
+    const candidates = AiConsultationCore.findCustomerCandidates(store.customers, draft);
+    const candidateField = candidates.length ? `<section class="ai-consultation-candidates"><b>기존 고객 후보를 선택해 주세요</b><p>중복 등록을 막기 위해 기존 고객인지 신규 고객인지 확인해야 합니다.</p>${selectField("저장 대상 *", "existingCustomerId", ["", "__new__", ...candidates.map(item => item.id)], "", value => value === "" ? "선택해 주세요" : value === "__new__" ? "새 고객으로 등록" : `${customerById(value)?.name || value} · ${customerPhoneText(customerById(value)?.phone) || "연락처 없음"}`)}</section>` : `<input type="hidden" name="existingCustomerId" value="__new__">`;
+    modalContent.innerHTML = `<div class="modal-head"><div><h2>AI 정리 결과 확인</h2><p>틀린 내용을 수정하고 저장할 항목을 확인해 주세요.</p></div><button class="close-button" data-action="close-modal">×</button></div><form id="aiConsultationReviewForm" class="modal-body">${candidateField}<div class="ai-consultation-review-grid"><section><header><b>고객 정보</b>${aiReviewMark(draft.customer)}</header>${field("고객명", "customerName", draft.customer.name)}${field("연락처", "customerPhone", draft.customer.phone, "tel")}${field("고객 유형", "customerType", draft.customer.type)}${areaField("현재 요청사항", "currentRequest", draft.customer.request)}${areaField("개인 메모·고객 특징", "privateMemo", draft.customer.privateMemo)}</section><section><header><b>연결 건물</b>${aiReviewMark(draft.building)}</header>${field("건물명", "buildingName", draft.building.name)}${field("건물 주소", "buildingAddress", draft.building.address)}</section><section><header><b>상담 기록</b>${aiReviewMark(draft.consultation)}</header>${areaField("상담 내용", "consultationSummary", draft.consultation.summary)}${areaField("상담 결과", "consultationResult", draft.consultation.result)}</section><section><header><b>후속 조치</b>${aiReviewMark(draft.followUp)}</header>${field("다음 행동", "nextAction", draft.followUp.nextAction)}${field("다음 연락", "nextContactAt", datetimeValue(draft.followUp.nextContactAt), "datetime-local")}</section><section><header><b>추천 계약</b>${aiReviewMark(draft.contractSuggestion)}</header>${field("계약 유형", "contractType", draft.contractSuggestion.type)}${field("예상 계약금액", "expectedAmount", draft.contractSuggestion.expectedAmount || "", "number")}</section></div><details class="ai-consultation-transcript"><summary>원본 대화문 확인</summary><pre>${esc(aiConsultationIntakeState.transcript)}</pre></details><div class="form-actions"><button type="button" class="secondary-button" data-action="ai-consultation-back">입력으로 돌아가기</button><button type="submit" class="primary-button">검토 후 CRM에 저장</button></div></form>`;
     openModal();
+  }
+
+  async function saveAiConsultationReview(form) {
+    const raw = Object.fromEntries(new FormData(form).entries());
+    const draft = AiConsultationCore.normalizeConsultationDraft({
+      customer: { name: raw.customerName, phone: raw.customerPhone, type: raw.customerType, request: raw.currentRequest, privateMemo: raw.privateMemo },
+      building: { name: raw.buildingName, address: raw.buildingAddress },
+      consultation: { type: "전화", summary: raw.consultationSummary, result: raw.consultationResult },
+      followUp: { nextAction: raw.nextAction, nextContactAt: raw.nextContactAt, priority: "normal" },
+      contractSuggestion: { type: raw.contractType, expectedAmount: raw.expectedAmount }
+    });
+    if (!draft.customer.name) return showToast("고객명을 입력해 주세요.", "error");
+    const candidates = AiConsultationCore.findCustomerCandidates(store.customers, draft);
+    if (candidates.length && !raw.existingCustomerId) return showToast("기존 고객 후보를 선택하거나 새 고객 등록을 선택해 주세요.", "error");
+    const beforeStore = cloneStore(store);
+    const owner = currentAuth.user?.displayName || store.settings.owner || "김현진";
+    let customer = raw.existingCustomerId && raw.existingCustomerId !== "__new__" ? customerById(raw.existingCustomerId) : null;
+    if (!customer) {
+      customer = Core.createCustomer({ name: draft.customer.name, phone: customerPhoneText(draft.customer.phone), type: draft.customer.type || "기타", currentIssue: draft.customer.request, notes: draft.customer.privateMemo, nextAction: draft.followUp.nextAction, nextContactAt: draft.followUp.nextContactAt, expectedValue: draft.contractSuggestion.expectedAmount, owner });
+      store.customers.push(customer);
+    } else {
+      if (draft.customer.name) customer.name = draft.customer.name;
+      if (draft.customer.phone) customer.phone = customerPhoneText(draft.customer.phone);
+      if (draft.customer.type) customer.type = draft.customer.type;
+      if (draft.customer.request) customer.currentIssue = draft.customer.request;
+      if (draft.customer.privateMemo) customer.notes = draft.customer.privateMemo;
+      if (draft.followUp.nextAction) customer.nextAction = draft.followUp.nextAction;
+      if (draft.followUp.nextContactAt) customer.nextContactAt = draft.followUp.nextContactAt;
+      if (draft.contractSuggestion.expectedAmount) customer.expectedValue = draft.contractSuggestion.expectedAmount;
+      customer.updatedAt = new Date().toISOString();
+    }
+    if (draft.building.name || draft.building.address) {
+      const building = Core.createBuilding({ name: draft.building.name || `${customer.name} 건물`, address: draft.building.address, roadAddress: draft.building.address, ownerCustomerId: customer.id, manager: owner });
+      store.buildings.push(building);
+      customer.buildingIdLinks = Object.assign({}, customer.buildingIdLinks || {}, { [building.id]: true });
+    }
+    if (draft.consultation.summary || draft.consultation.result) store.activities.push(Core.createActivity({ customerId: customer.id, type: draft.consultation.type || "전화", summary: draft.consultation.summary, result: draft.consultation.result, nextAction: draft.followUp.nextAction, nextContactAt: draft.followUp.nextContactAt, owner }));
+    if (draft.followUp.nextAction) store.tasks.push(Core.createTask({ customerId: customer.id, title: draft.followUp.nextAction, dueAt: String(draft.followUp.nextContactAt || "").slice(0, 10) || todayKey(), priority: "보통", owner, note: draft.contractSuggestion.type ? `추천 계약: ${draft.contractSuggestion.type}` : "" }));
+    logAudit({ category: "등록", targetType: "고객", targetId: customer.id, targetLabel: customer.name, action: "AI 상담 검토 등록", reason: "직원 검토 후 고객·상담·후속조치 등록" });
+    await commitSharedFormMutation({ form, beforeStore, onSaved: () => {
+      aiConsultationIntakeState = { file: null, transcript: "", loading: false, error: "", draft: null };
+      selectedCustomerHubId = customer.id;
+      closeModal(); render(); renderCustomerDrawer(customer.id); showToast("AI 상담 내용을 서버에 저장했습니다.", "success");
+    } });
   }
 
   function customerEditor(customerId) {
@@ -6928,6 +6974,11 @@
     if (form.id === "aiConsultationIntakeForm") {
       event.preventDefault();
       await analyzeAiConsultation(form);
+      return;
+    }
+    if (form.id === "aiConsultationReviewForm") {
+      event.preventDefault();
+      await saveAiConsultationReview(form);
       return;
     }
     const submissionFormId = form.matches("[data-marketing-entry-form]") ? "marketingEntryForm" : form.id;

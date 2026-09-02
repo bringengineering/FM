@@ -51,9 +51,10 @@ test("one-off contract calendar supports building filters and excludes recurring
 });
 
 test("customer editor exposes one visible private notes field under the request", () => {
-  assert.match(source, /현재 어떤 요청이 있나요\?[\s\S]{0,300}개인 메모·고객 특징/);
-  assert.equal((source.match(/areaField\("개인 메모·고객 특징"/g) || []).length, 1);
-  assert.doesNotMatch(source, /areaField\("고객 메모"/);
+  const editor = functionSource("customerEditor");
+  assert.match(editor, /현재 어떤 요청이 있나요\?[\s\S]{0,300}개인 메모·고객 특징/);
+  assert.equal((editor.match(/areaField\("개인 메모·고객 특징"/g) || []).length, 1);
+  assert.doesNotMatch(editor, /areaField\("고객 메모"/);
   assert.match(source, /notes:\s*raw\.notes\.trim\(\)/);
 });
 
