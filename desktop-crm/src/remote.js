@@ -2676,6 +2676,20 @@ class FirebaseRemoteClient {
     return { ok: true, source: record, auditId };
   }
 
+  async recordContractSourceCheck(input) {
+    if (!this.session || this.session.role !== "admin") throw createError("관리자만 계약 기준 문서를 확인할 수 있습니다.", "PERMISSION_DENIED");
+    const sourceId = String(input?.sourceId || "").trim(), metadata = input?.source || {};
+    if (!/^source_[A-Za-z0-9_-]{6,200}$/.test(sourceId) || String(metadata.driveFileId || "") !== sourceId.slice(7)) throw createError("계약 기준 확인 결과가 일치하지 않습니다.", "INVALID_CONTRACT_SOURCE_REQUEST");
+    const current = await this.dbRequest(`contractReadiness/sources/${sourceId}`, { method: "GET" });
+    if (!current) throw createError("계약 기준 문서를 찾지 못했습니다.", "CONTRACT_SOURCE_NOT_FOUND");
+    const checkedAt = new Date().toISOString();
+    const version = { revisionId: String(metadata.revisionId || ""), modifiedAt: String(metadata.modifiedAt || ""), items: Array.isArray(current.approvedVersion?.items) ? current.approvedVersion.items : [] };
+    const changed = !current.approvedVersion || current.approvedVersion.revisionId !== version.revisionId;
+    const record = Object.assign({}, current, { title: String(metadata.title || current.title || "").slice(0, 300), webViewLink: String(metadata.webViewLink || "").slice(0, 500), lastCheckedAt: checkedAt, syncError: "", pendingVersion: changed ? version : null, reviewStatus: changed ? "pending" : "unchanged", updatedAt: checkedAt, updatedBy: this.session.uid });
+    await this.dbRequest(`contractReadiness/sources/${sourceId}`, { method: "PUT", body: record, query: "print=silent" });
+    return { ok: true, source: record, changed, requestId: String(input?.requestId || "").slice(0, 120) };
+  }
+
   async loadCustomerPhotos(guardValue) {
     const guard = guardValue || this.captureSessionGuard();
     if (!this.sessionGuardActive(guard)) throw createError("로그인이 필요합니다.", "AUTH_REQUIRED");

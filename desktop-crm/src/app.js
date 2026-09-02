@@ -20,6 +20,7 @@
   const MessagePolicy = window.BringMessagePolicy;
   const MessageUI = window.BringMessageUI;
   const AiConsultationCore = window.BringAiConsultationCore;
+  const ContractReadinessUI = window.BringContractReadinessUI;
   const api = window.bringCRM;
   const main = document.getElementById("main");
   const modal = document.getElementById("modal");
@@ -152,6 +153,9 @@
   let valueScopeViewRequested = false;
   let aiAssistantState = { tab: "report", task: "assistant_summary", content: "", customerType: "", workType: "", result: null, warnings: [], loading: false, error: "", quoteContent: "", quote: null, quoteWarnings: [], quoteLoading: false, quoteError: "", supplier: { businessName: "", representative: "", registrationNumber: "" }, supplierLoaded: false, supplierLoading: false, supplierSaving: false, supplierDirty: false, supplierConfigured: false, supplierCanConfigure: false, supplierCached: false, supplierError: "" };
   let aiConsultationIntakeState = { file: null, transcript: "", loading: false, error: "", draft: null };
+  let contractSources = {};
+  let contractSourcesLoading = false;
+  let contractSourcesLoaded = false;
   let salesAutomationState = { drafts: new Map(), loadingId: "", rows: [] };
   let workAutomationState = { drafts: new Map(), loadingId: "", expanded: false };
   let managementReportState = { month: Core.dayKey().slice(0, 7), result: null, loading: false, error: "" };
@@ -3610,6 +3614,7 @@
     const recurringCount = store.contracts.filter(item => contractPaymentMode(item) === "recurring").length;
     const singleCount = store.contracts.filter(item => contractPaymentMode(item) === "single").length;
     main.innerHTML = `<section class="contract-hero"><div><span>계약 조건과 기간을 한곳에서 관리합니다</span><h2>청소·건물관리·부동산관리 계약</h2><p>계약 유형을 선택하고 고객·건물·기간·금액·업무 범위를 기록하세요.</p></div><button class="primary-button" data-action="new-contract">＋ 새 계약</button></section>
+      ${ContractReadinessUI.renderSourceConsole(contractSources, { admin: canAdministerSecurity() })}
       <nav class="contract-payment-mode-tabs" aria-label="계약 납부 구분"><button type="button" class="${contractPaymentModeFilter === "recurring" ? "active" : ""}" data-contract-payment-mode-filter="recurring" aria-pressed="${contractPaymentModeFilter === "recurring"}">정기 납부 <span>${recurringCount}</span></button><button type="button" class="${contractPaymentModeFilter === "single" ? "active" : ""}" data-contract-payment-mode-filter="single" aria-pressed="${contractPaymentModeFilter === "single"}">단건 계약 <span>${singleCount}</span></button></nav>
       <div class="contract-kpi-grid">${kpi("진행 중", active, "현재 운영 계약", "#4fb99b")}${kpi("계약 준비", preparing, "확정 전 계약", "#55aee8")}${kpi("종료 예정", ending, "종료·갱신 확인", "#efb84f")}${kpi("월 정기 금액", compactMoney(monthly), "진행 계약 기준", "#55c3d1")}</div>
       <div class="contract-toolbar"><div class="contract-type-filters">${["전체", ...Core.CONTRACT_TYPES].map(type => `<button type="button" class="filter-chip ${contractTypeFilter === type ? "active" : ""}" data-contract-type-filter="${attr(type)}">${esc(type)}</button>`).join("")}</div><label><span>계약 상태</span><select data-contract-status-filter>${["전체", ...Core.CONTRACT_STATUSES].map(status => `<option ${contractStatusFilter === status ? "selected" : ""}>${esc(status)}</option>`).join("")}</select></label></div>
@@ -3620,6 +3625,19 @@
         const detail = contractTypeDetail(contract);
         return `<article class="contract-card ${contractStatusTone(contract.status)}" data-contract-edit="${attr(contract.id)}" tabindex="0"><header><div class="contract-card-badges">${types.map(type => `<span class="contract-type">${esc(type)}</span>`).join("")}<span class="contract-status ${contractStatusTone(contract.status)}">${esc(contract.status)}</span></div><span class="contract-number">${esc(contract.contractNo || contract.id)}</span></header><h3>${esc(contract.name || `${types.join("·")} 계약`)}</h3><p class="contract-linked">${esc(customer && customer.name || "고객 미연결")} · ${esc(building && building.name || "건물 미연결")}</p><div class="contract-facts"><div><span>계약 기간</span><b>${esc(contractDateText(contract.startDate))} ~ ${esc(contractEndDateText(contract.endDate))}</b></div><div><span>계약 금액</span><b>${esc(Core.money(contract.amount) ? krw(contract.amount) : "미입력")}</b><small>${esc(contract.billingCycle || "납부 방식 미입력")}</small></div><div><span>담당자</span><b>${esc(contract.owner || "미입력")}</b></div></div><div class="contract-scope"><span>업무 범위</span><p>${esc(detail || "업무 범위가 아직 입력되지 않았습니다.")}</p></div><footer><span>${esc(contract.memo || "계약 메모 없음")}</span><button type="button" class="secondary-button" data-contract-edit="${attr(contract.id)}">상세·수정</button></footer></article>`;
       }).join("")}</section>` : empty("조건에 맞는 계약이 없습니다", "새 계약을 등록하거나 다른 유형·상태를 선택해 주세요.", `<button class="primary-button" data-action="new-contract">＋ 첫 계약 등록</button>`)}`;
+    if (!contractSourcesLoading && !contractSourcesLoaded) refreshContractSources();
+  }
+
+  async function refreshContractSources() {
+    contractSourcesLoading = true;
+    try { contractSources = await api.loadContractSources() || {}; contractSourcesLoaded = true; }
+    catch (error) { showToast(error.message || "계약 기준을 불러오지 못했습니다.", "error"); }
+    finally { contractSourcesLoading = false; if (currentView === "contracts") { const scrollY = window.scrollY; renderContracts(); window.scrollTo(0, scrollY); } }
+  }
+
+  function contractSourceRegisterEditor() {
+    modalContent.innerHTML = `<div class="modal-head"><div><h2>Drive 계약 기준 등록</h2><p>파일명이 아니라 Google Drive 파일 ID를 기준으로 추적합니다.</p></div><button class="close-button" data-action="close-modal">×</button></div><form id="contractSourceRegisterForm" class="modal-body"><div class="form-grid">${field("Google Drive 파일 ID *", "driveFileId", "", "text", "Drive 링크의 /d/ 다음 값")}${field("계약 유형 *", "contractType", "", "text", "예: 공용부 청소 위탁")}</div><div class="info-box">등록 후 ‘지금 확인’으로 파일 버전을 가져오고, 검토 뒤 승인해야 직원 체크리스트에 반영됩니다.</div><div class="form-actions"><button type="button" class="secondary-button" data-action="close-modal">취소</button><button class="primary-button">등록</button></div></form>`;
+    openModal();
   }
 
   function relationshipState(customer) {
@@ -6581,6 +6599,24 @@
       return;
     }
     const contractPaymentMode = event.target.closest("[data-contract-payment-mode-filter]");
+    const sourceCheck = event.target.closest("[data-contract-source-check]");
+    if (sourceCheck) {
+      const source = contractSources[sourceCheck.dataset.contractSourceCheck] || Object.values(contractSources).find(item => item.id === sourceCheck.dataset.contractSourceCheck);
+      if (!source) return showToast("계약 기준 문서를 찾지 못했습니다.", "error");
+      sourceCheck.disabled = true;
+      try { await api.checkContractSource({ sourceId: source.id, driveFileId: source.driveFileId }); contractSourcesLoaded = false; await refreshContractSources(); showToast("Drive 최신 버전을 확인했습니다.", "success"); }
+      catch (error) { showToast(error.message || "Drive 문서를 확인하지 못했습니다. 기존 승인 기준은 유지됩니다.", "error"); }
+      return;
+    }
+    const sourceDecision = event.target.closest("[data-contract-source-approve], [data-contract-source-defer]");
+    if (sourceDecision) {
+      const sourceId = sourceDecision.dataset.contractSourceApprove || sourceDecision.dataset.contractSourceDefer;
+      const decision = sourceDecision.hasAttribute("data-contract-source-approve") ? "approve" : "defer";
+      try { await api.decideContractSource({ sourceId, decision }); contractSourcesLoaded = false; await refreshContractSources(); showToast(decision === "approve" ? "새 계약 기준을 승인했습니다." : "변경 검토를 보류했습니다.", "success"); }
+      catch (error) { showToast(error.message || "계약 기준 검토를 저장하지 못했습니다.", "error"); }
+      return;
+    }
+    if (event.target.closest("[data-contract-source-register]")) { contractSourceRegisterEditor(); return; }
     if (contractPaymentMode) {
       contractPaymentModeFilter = contractPaymentMode.dataset.contractPaymentModeFilter === "single" ? "single" : "recurring";
       renderContracts();
@@ -6971,6 +7007,13 @@
   document.addEventListener("submit", async event => {
     event.preventDefault();
     const form = event.target;
+    if (form.id === "contractSourceRegisterForm") {
+      if (!canAdministerSecurity()) return showToast("관리자만 계약 기준 문서를 등록할 수 있습니다.", "error");
+      const raw = Object.fromEntries(new FormData(form).entries());
+      try { await api.registerContractSource(raw); closeModal(); contractSourcesLoaded = false; await refreshContractSources(); showToast("Drive 계약 기준을 등록했습니다. 지금 확인 후 승인해 주세요.", "success"); }
+      catch (error) { showToast(error.message || "계약 기준을 등록하지 못했습니다.", "error"); }
+      return;
+    }
     if (form.id === "aiConsultationIntakeForm") {
       event.preventDefault();
       await analyzeAiConsultation(form);
