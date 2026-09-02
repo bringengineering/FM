@@ -3798,6 +3798,21 @@ async function createWindow() {
         button?.click();
         return { openerFound: !!button, buttonFound: !!button, state: window.__crmTest?.snapshot() };
       })()`, true);
+    } else if (process.env.BRING_CRM_SCREENSHOT_ACTION === "partner-vendor-toolbar") {
+      actionResult = await mainWindow.webContents.executeJavaScript(`(async () => {
+        const wait = ms => new Promise(resolve => setTimeout(resolve, ms));
+        document.querySelector('[data-workspace-enter="operations"]')?.click();
+        await wait(120);
+        document.querySelector('[data-view="partnerVendors"]')?.click();
+        await wait(120);
+        const industry = document.querySelector('.partner-vendor-industry-filter');
+        const search = document.querySelector('.partner-vendor-list-search');
+        const industryRect = industry?.getBoundingClientRect();
+        const searchRect = search?.getBoundingClientRect();
+        const topSearchHidden = !!document.querySelector('.global-search')?.hidden;
+        const sideBySide = !!industryRect && !!searchRect && searchRect.left > industryRect.right && Math.abs(searchRect.top - industryRect.top) < 4;
+        return { pass: sideBySide && topSearchHidden, sideBySide, topSearchHidden, state: window.__crmTest?.snapshot() };
+      })()`, true);
     } else if (process.env.BRING_CRM_SCREENSHOT_ACTION === "partner-vendor-detail") {
       actionResult = await mainWindow.webContents.executeJavaScript(`(async () => {
         const wait = ms => new Promise(resolve => setTimeout(resolve, ms));
@@ -6242,7 +6257,7 @@ async function createWindow() {
     const uiState = await mainWindow.webContents.executeJavaScript("window.__crmTest && window.__crmTest.snapshot()", true);
     const image = await mainWindow.webContents.capturePage();
     await fs.writeFile(target, image.toPNG());
-    if (["ai-quote-preview", "building-rental-info", "consultation-building-hub", "customer-sales-status", "partner-vendor-detail", "vacancy-layout-scale", "vacancy-viewer-invariant", "lookup-building-link", "office-messenger-drag-smoke", "one-off-payment-calendar", "payment-building-calendar", "work-calendar-smoke"].includes(process.env.BRING_CRM_SCREENSHOT_ACTION)) {
+    if (["ai-quote-preview", "building-rental-info", "consultation-building-hub", "customer-sales-status", "partner-vendor-toolbar", "partner-vendor-detail", "vacancy-layout-scale", "vacancy-viewer-invariant", "lookup-building-link", "office-messenger-drag-smoke", "one-off-payment-calendar", "payment-building-calendar", "work-calendar-smoke"].includes(process.env.BRING_CRM_SCREENSHOT_ACTION)) {
       await fs.writeFile(`${target}.result.json`, JSON.stringify({ actionResult, uiState }, null, 2), "utf8");
     }
     console.log(target, JSON.stringify({ empty: image.isEmpty(), size: image.getSize(), actionResult, uiState }));

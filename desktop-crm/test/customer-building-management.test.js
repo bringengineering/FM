@@ -81,6 +81,11 @@ test("customer detail keeps essentials visible and removes the duplicated buildi
 
 test("partner vendor cards keep their actions while the remaining card opens a customer-style detail workspace", () => {
   const partnerView = sourceBetween("function renderPartnerVendorDetail", "function renderPartnerQuotes");
+  assert.match(partnerView, /partner-vendor-toolbar-controls/);
+  assert.match(partnerView, /partner-vendor-industry-filter[\s\S]*?data-partner-vendor-industry-filter[\s\S]*?partner-vendor-list-search[\s\S]*?data-partner-vendor-list-search/);
+  assert.match(appSource, /searchEl\.closest\("\.global-search"\)\.hidden = officeView \|\| paymentCalendarView \|\| currentView === "partnerVendors"/);
+  assert.match(appSource, /event\.target\.matches\("\[data-partner-vendor-list-search\]"\)[\s\S]*?crmSearchValue = event\.target\.value\.slice\(0, 160\)/);
+  assert.match(stylesSource, /\.partner-vendor-toolbar-controls\{display:flex;align-items:center/);
   assert.match(partnerView, /data-partner-vendor-open/);
   assert.match(partnerView, /data-partner-vendor-edit/);
   assert.match(partnerView, /data-partner-vendor-link/);

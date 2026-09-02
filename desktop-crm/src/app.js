@@ -1383,7 +1383,7 @@
     const workCalendarView = currentView === "buildingCalendar" && unifiedCalendarTab === "work";
     const contractCalendarView = currentView === "buildingCalendar" && unifiedCalendarTab === "contract";
     const paymentCalendarView = currentView === "payments";
-    searchEl.closest(".global-search").hidden = officeView || paymentCalendarView;
+    searchEl.closest(".global-search").hidden = officeView || paymentCalendarView || currentView === "partnerVendors";
     searchEl.placeholder = valueScopeView ? "지도에서 주소·건물·중개사를 검색하세요" : contractCalendarView ? "계약명·고객·건물 검색" : workCalendarView ? "건물명·일정 검색" : currentView === "vacancies" ? "건물명·주소 검색" : "고객·건물·연락처 검색";
     searchEl.value = contractCalendarView ? contractCalendarQuery : workCalendarView ? workCalendarQuery : crmSearchValue;
     if (currentView === "vacancies") {
@@ -3629,7 +3629,7 @@
     const withLink = partnerVendorRows().filter(item => item.quoteUrl).length;
     main.innerHTML = `<section class="partner-vendor-hero"><div><span>연락처와 업체 페이지를 먼저 등록합니다</span><h2>상담할 업체 정보를 관리합니다</h2><p>업체 링크를 붙여 넣으면 공개된 업체명·연락처·업종·작업 내용을 자동으로 채웁니다.</p></div><div class="partner-hero-actions"><button class="secondary-button" data-view="partnerQuotes">업체 상담 보기 →</button><button class="primary-button" data-action="new-partner-vendor">＋ 협력 업체 등록</button></div></section>
       <div class="quote-kpi-grid partner-vendor-kpis">${kpi("등록 업체", partnerVendorRows().length, "상담할 업체 기본정보", "#55aee8")}${kpi("연락처 확인", withPhone, "전화번호가 있는 업체", "#48b995", withPhone ? "good" : "")}${kpi("업체 링크", withLink, "홈페이지·지도 링크", "#55c3d1")}${kpi("연결 상담", linkedQuotes, "업체를 선택한 상담 기록", "#e8b855")}</div>
-      <div class="partner-vendor-toolbar"><label><span>업종 선택</span><select data-partner-vendor-industry-filter>${["전체 업종", ...Core.PARTNER_INDUSTRIES].map(industry => `<option ${industry === partnerVendorIndustryFilter ? "selected" : ""}>${esc(industry)}</option>`).join("")}</select></label><span>업체 카드를 누르면 상세 정보와 상담 이력을 확인할 수 있습니다.</span></div>
+      <div class="partner-vendor-toolbar"><div class="partner-vendor-toolbar-controls"><label class="partner-vendor-industry-filter"><span>업종 선택</span><select data-partner-vendor-industry-filter>${["전체 업종", ...Core.PARTNER_INDUSTRIES].map(industry => `<option ${industry === partnerVendorIndustryFilter ? "selected" : ""}>${esc(industry)}</option>`).join("")}</select></label><label class="partner-vendor-list-search"><span aria-hidden="true">⌕</span><input type="search" data-partner-vendor-list-search value="${attr(crmSearchValue)}" placeholder="업체명·연락처·지역·작업내용 검색" autocomplete="off" aria-label="협력 업체 검색"></label></div><span>업체 카드를 누르면 상세 정보와 상담 이력을 확인할 수 있습니다.</span></div>
       ${vendors.length ? `<div class="partner-vendor-list">${vendors.map(vendor => {
         const quotes = partnerQuotesForVendor(vendor);
         const recent = [...quotes].sort((a, b) => String(b.consultedAt || b.receivedAt || b.contactedAt || b.createdAt).localeCompare(String(a.consultedAt || a.receivedAt || a.contactedAt || a.createdAt)))[0];
@@ -7900,7 +7900,17 @@
     if (direction && deleteCustomerPhoneDigit(event.target, direction)) event.preventDefault();
   });
   document.addEventListener("input", event => {
-    if (event.target.matches("[data-ai-content]")) {
+    if (event.target.matches("[data-partner-vendor-list-search]")) {
+      crmSearchValue = event.target.value.slice(0, 160);
+      searchEl.value = crmSearchValue;
+      if (event.isComposing) return;
+      const caret = event.target.selectionStart;
+      renderPartnerVendors();
+      const input = document.querySelector("[data-partner-vendor-list-search]");
+      input?.focus();
+      if (Number.isInteger(caret)) input?.setSelectionRange(caret, caret);
+      return;
+    } else if (event.target.matches("[data-ai-content]")) {
       aiAssistantState.content = event.target.value.slice(0, 12_000);
       const submit = document.querySelector("[data-ai-assist-submit]");
       if (submit) submit.disabled = aiAssistantState.loading || !aiAssistantState.content.trim();
@@ -7961,6 +7971,14 @@
   });
   document.addEventListener("compositionend", event => {
     if (event.target.matches(formattedPhoneInputSelector)) formatCustomerPhoneInput(event.target);
+    else if (event.target.matches("[data-partner-vendor-list-search]")) {
+      crmSearchValue = event.target.value.slice(0, 160);
+      searchEl.value = crmSearchValue;
+      renderPartnerVendors();
+      const input = document.querySelector("[data-partner-vendor-list-search]");
+      input?.focus();
+      input?.setSelectionRange(input.value.length, input.value.length);
+    }
   });
   confirmationLayer.addEventListener("click", event => {
     const choice = event.target.closest("[data-confirm-choice]")?.dataset.confirmChoice;
