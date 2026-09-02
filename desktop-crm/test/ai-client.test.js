@@ -18,7 +18,7 @@ test("AI client accepts only the closed CRM automation tasks and allow-listed co
   for (const task of [
     "assistant_summary", "next_action", "sales_message", "work_report", "consultation_structure",
     "sales_focus_explanation", "sales_followup_message", "complaint_triage", "vendor_request",
-    "work_order", "completion_report", "monthly_management_report", "quote_draft"
+    "work_order", "completion_report", "monthly_management_report", "quote_draft", "consultation_intake"
   ]) {
     assert.equal(validateAssistInput({ task, content: "내용" }).task, task);
   }
@@ -26,6 +26,26 @@ test("AI client accepts only the closed CRM automation tasks and allow-listed co
   assert.throws(() => validateAssistInput({ task: "next_action", content: "" }), error => error?.code === "INVALID_INPUT");
   assert.throws(() => validateAssistInput({ task: "next_action", content: "가".repeat(12001) }), error => error?.code === "INPUT_TOO_LARGE");
   assert.throws(() => validateAssistInput({ task: "next_action", content: "내용", groqKey: "gsk_forbidden" }), error => error?.code === "INVALID_INPUT");
+});
+
+test("AI client preserves the bounded consultation intake structure", async () => {
+  const result = await assistWithGateway({
+    endpoint: "https://gateway.example/v1/assist",
+    idToken: "firebase-token",
+    input: { task: "consultation_intake", content: "다음 주 청소 상담" },
+    fetchImpl: async () => new Response(JSON.stringify({ ok: true, requestId: "intake-1", result: {
+      customer: { name: "김고객", phone: "", type: "상가", request: "공용부 청소", privateMemo: "오후 통화", needsReview: false, ignored: "drop" },
+      building: { name: "중앙상가", address: "", needsReview: true },
+      consultation: { type: "전화", summary: "청소 상담", result: "견적 요청", occurredAt: "", needsReview: false },
+      followUp: { nextAction: "견적 전달", nextContactAt: "", priority: "normal", needsReview: true },
+      contractSuggestion: { type: "공용부 청소 위탁", expectedAmount: 60000, reason: "정기 청소", needsReview: true },
+      confidence: { customer: 0.9, building: 0.4, consultation: 0.9, followUp: 0.7, contractSuggestion: 0.6 }
+    } }), { status: 200 })
+  });
+  assert.equal(result.result.customer.type, "상가");
+  assert.equal(result.result.customer.ignored, undefined);
+  assert.equal(result.result.contractSuggestion.expectedAmount, 60000);
+  assert.equal(result.result.building.needsReview, true);
 });
 
 test("AI client preserves only bounded structured quote fields", async () => {

@@ -1,7 +1,7 @@
 const SUPPORTED_TASKS = new Set([
   "assistant_summary", "next_action", "sales_message", "work_report", "consultation_structure",
   "sales_focus_explanation", "sales_followup_message", "complaint_triage", "vendor_request",
-  "work_order", "completion_report", "monthly_management_report", "quote_draft"
+  "work_order", "completion_report", "monthly_management_report", "quote_draft", "consultation_intake"
 ]);
 const INPUT_KEYS = new Set(["task", "content", "context"]);
 const CONTEXT_KEYS = new Set(["customerType", "workType", "owner", "priority", "category", "urgency", "month"]);
@@ -49,6 +49,10 @@ function normalizedSuccess(value) {
     throw codedError("AI_INVALID_RESPONSE");
   }
   const result = {};
+  if (value.result.customer || value.result.consultation || value.result.contractSuggestion) {
+    const { normalizeConsultationDraft } = require("./ai-consultation-core");
+    Object.assign(result, normalizeConsultationDraft(value.result));
+  }
   for (const key of ["text", "summary", "currentRequest", "outcome", "nextAction"]) {
     if (typeof value.result[key] === "string" && value.result[key].trim()) result[key] = value.result[key].trim();
   }

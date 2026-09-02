@@ -17,9 +17,27 @@ test("task contract exposes exactly the approved CRM automation tasks", () => {
     "work_order",
     "completion_report",
     "monthly_management_report",
-    "quote_draft"
+    "quote_draft",
+    "consultation_intake"
   ]);
   assert.throws(() => buildTaskMessages("unknown", "내용", {}), error => error?.code === "UNSUPPORTED_TASK");
+});
+
+test("consultation intake uses the closed CRM draft shape", () => {
+  const messages = buildTaskMessages("consultation_intake", "다음 주 청소 상담", {});
+  assert.match(messages[0].content, /customer/);
+  assert.match(messages[0].content, /needsReview/);
+  const result = normalizeTaskResult("consultation_intake", {
+    customer: { name: "김고객", phone: "", type: "상가", request: "청소", privateMemo: "", needsReview: false },
+    building: { name: "", address: "", needsReview: true },
+    consultation: { type: "전화", summary: "청소 상담", result: "견적 요청", occurredAt: "", needsReview: false },
+    followUp: { nextAction: "견적 전달", nextContactAt: "", priority: "normal", needsReview: false },
+    contractSuggestion: { type: "공용부 청소 위탁", expectedAmount: 60000, reason: "정기 청소", needsReview: true },
+    confidence: { customer: 0.9 }
+  });
+  assert.equal(result.customer.type, "상가");
+  assert.equal(result.contractSuggestion.expectedAmount, 60000);
+  assert.equal(result.building.needsReview, true);
 });
 
 test("quote task requires an exact evidence-bounded item total", () => {

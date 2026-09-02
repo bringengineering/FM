@@ -51,6 +51,10 @@ const TASKS = Object.freeze({
   quote_draft: {
     instruction: "입력에서 수신처·현장명·서비스와 명시된 총액을 추출해 BRING 견적서 초안을 만드세요. 총액은 절대 변경하거나 새로 추측하지 말고, 세부 품목 금액의 합이 입력 총액과 정확히 같아야 합니다. 입력에 없는 면적·주소·일정·연락처·보증 조건은 만들지 마세요. 품목은 1~5개로 나누고 각 상세 내용은 실제 작업 범위를 짧게 설명하세요.",
     shape: "{\"recipient\":\"수신처 또는 현장명\",\"projectName\":\"견적명\",\"service\":\"서비스명\",\"summary\":\"견적 요약\",\"totalAmount\":120000,\"items\":[{\"name\":\"품목명\",\"detail\":\"세부 작업 범위\",\"quantity\":1,\"unit\":\"식\",\"unitPrice\":120000,\"note\":\"\"}],\"notes\":[\"확인 문구\"]}"
+  },
+  consultation_intake: {
+    instruction: "상담 대화를 고객, 건물, 상담, 후속조치, 추천 계약 유형으로 분리하세요. 대화에 없는 이름·전화번호·주소·날짜·금액은 빈 값으로 두고 불확실한 묶음은 needsReview를 true로 표시하세요.",
+    shape: "{\"customer\":{\"name\":\"\",\"phone\":\"\",\"type\":\"\",\"request\":\"\",\"privateMemo\":\"\",\"needsReview\":false},\"building\":{\"name\":\"\",\"address\":\"\",\"needsReview\":false},\"consultation\":{\"type\":\"전화\",\"summary\":\"\",\"result\":\"\",\"occurredAt\":\"\",\"needsReview\":false},\"followUp\":{\"nextAction\":\"\",\"nextContactAt\":\"\",\"priority\":\"normal\",\"needsReview\":false},\"contractSuggestion\":{\"type\":\"\",\"expectedAmount\":0,\"reason\":\"\",\"needsReview\":false},\"confidence\":{\"customer\":0,\"building\":0,\"consultation\":0,\"followUp\":0,\"contractSuggestion\":0}}"
   }
 });
 
@@ -98,6 +102,29 @@ function normalizeQuoteResult(value) {
   };
 }
 
+function optionalString(value, max = 4000) {
+  return String(value ?? "").trim().slice(0, max);
+}
+
+function normalizeConsultationIntake(value) {
+  const group = (name) => value[name] && typeof value[name] === "object" && !Array.isArray(value[name]) ? value[name] : {};
+  const customer = group("customer");
+  const building = group("building");
+  const consultation = group("consultation");
+  const followUp = group("followUp");
+  const contract = group("contractSuggestion");
+  const scores = group("confidence");
+  const score = name => Math.max(0, Math.min(1, Number(scores[name]) || 0));
+  return {
+    customer: { name: optionalString(customer.name, 120), phone: optionalString(customer.phone, 30), type: optionalString(customer.type, 40), request: optionalString(customer.request), privateMemo: optionalString(customer.privateMemo), needsReview: customer.needsReview === true },
+    building: { name: optionalString(building.name, 160), address: optionalString(building.address, 300), needsReview: building.needsReview === true },
+    consultation: { type: optionalString(consultation.type, 30) || "메모", summary: optionalString(consultation.summary, 8000), result: optionalString(consultation.result), occurredAt: optionalString(consultation.occurredAt, 40), needsReview: consultation.needsReview === true },
+    followUp: { nextAction: optionalString(followUp.nextAction, 1000), nextContactAt: optionalString(followUp.nextContactAt, 40), priority: ["low", "normal", "high", "urgent"].includes(followUp.priority) ? followUp.priority : "normal", needsReview: followUp.needsReview === true },
+    contractSuggestion: { type: optionalString(contract.type, 100), expectedAmount: Math.max(0, Math.round(Number(contract.expectedAmount) || 0)), reason: optionalString(contract.reason, 1000), needsReview: contract.needsReview === true },
+    confidence: { customer: score("customer"), building: score("building"), consultation: score("consultation"), followUp: score("followUp"), contractSuggestion: score("contractSuggestion") }
+  };
+}
+
 export function supportedTaskIds() {
   return Object.keys(TASKS);
 }
@@ -121,6 +148,7 @@ export function normalizeTaskResult(task, value) {
   requireTask(task);
   if (!value || typeof value !== "object" || Array.isArray(value)) throw codedError("AI_INVALID_RESPONSE");
   if (task === "quote_draft") return normalizeQuoteResult(value);
+  if (task === "consultation_intake") return normalizeConsultationIntake(value);
   if (task !== "consultation_structure") return { text: boundedString(value.text) };
   return {
     summary: boundedString(value.summary),
