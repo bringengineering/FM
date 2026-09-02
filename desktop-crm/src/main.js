@@ -3826,17 +3826,24 @@ async function createWindow() {
         const listLinkExpected = !!card?.querySelector('[data-partner-vendor-link]');
         card?.click();
         await wait(120);
+        const selectorBar = document.querySelector('.partner-vendor-detail-workspace .customer-hub-selector-bar');
+        const detailBackButtons = [...document.querySelectorAll('[data-partner-vendor-detail-back]')];
+        const detailBack = detailBackButtons[0];
+        const backButtonRelocated = detailBackButtons.length === 1
+          && !!selectorBar?.contains(detailBack)
+          && detailBack?.textContent.trim() === '← 협력 업체 목록';
+        const selectionHeadingRemoved = !selectorBar?.querySelector('.customer-selector-heading');
         const detailOpened = !!document.querySelector('.partner-vendor-detail-workspace')
           && !!document.querySelector('[data-partner-vendor-detail-select]')
           && !!document.querySelector('[data-partner-vendor-edit="' + vendorId + '"]');
         const detailLinkPreserved = !!document.querySelector('.partner-vendor-detail-workspace [data-partner-vendor-link]') === listLinkExpected;
-        document.querySelector('[data-partner-vendor-detail-back]')?.click();
+        detailBack?.click();
         await wait(100);
         card = document.querySelector('[data-partner-vendor-open="' + vendorId + '"]');
         const listRestored = !!card && !!card.querySelector('[data-partner-vendor-edit]');
         card?.click();
         await wait(100);
-        return { pass: !!vendorId && listEditPreserved && detailOpened && detailLinkPreserved && listRestored && !!document.querySelector('.partner-vendor-detail-workspace'), vendorId, listLinkExpected, state: window.__crmTest?.snapshot() };
+        return { pass: !!vendorId && listEditPreserved && detailOpened && detailLinkPreserved && backButtonRelocated && selectionHeadingRemoved && listRestored && !!document.querySelector('.partner-vendor-detail-workspace'), vendorId, listLinkExpected, backButtonRelocated, selectionHeadingRemoved, state: window.__crmTest?.snapshot() };
       })()`, true);
     } else if (process.env.BRING_CRM_SCREENSHOT_ACTION === "customer-centered-detail") {
       actionResult = await mainWindow.webContents.executeJavaScript(`(async () => {

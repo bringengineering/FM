@@ -93,6 +93,11 @@ test("partner vendor cards keep their actions while the remaining card opens a c
   assert.match(partnerView, /customer-hub-workspace partner-vendor-detail-workspace/);
   assert.match(partnerView, /customer-hub-selector-bar/);
   assert.match(partnerView, /data-partner-vendor-detail-select/);
+  assert.equal((partnerView.match(/data-partner-vendor-detail-back/g) || []).length, 1);
+  assert.ok(partnerView.indexOf("data-partner-vendor-detail-back") < partnerView.indexOf("data-partner-vendor-detail-select"));
+  assert.match(partnerView, /customer-hub-selector-bar[^`]*?data-partner-vendor-detail-back>← 협력 업체 목록<\/button>[^`]*?data-partner-vendor-detail-select/);
+  assert.doesNotMatch(partnerView, /customer-selector-heading[^`]*?<b>업체 선택<\/b>/);
+  assert.doesNotMatch(partnerView, /data-partner-vendor-detail-back>목록으로<\/button>/);
   assert.match(partnerView, /building-hub-detail-head customer-hub-detail-head/);
   assert.match(partnerView, /building-identity-strip customer-essential-summary/);
   assert.match(partnerView, /building-hub-kpis customer-hub-kpis/);
@@ -102,6 +107,8 @@ test("partner vendor cards keep their actions while the remaining card opens a c
   assert.match(appSource, /selectedPartnerVendorDetailId = partnerVendorDetailSelect\.value/);
   assert.match(appSource, /currentView === "partnerVendors"\) selectedPartnerVendorDetailId = ""/);
   assert.match(stylesSource, /\.partner-vendor-detail-avatar/);
+  assert.match(stylesSource, /\.partner-vendor-detail-list-action/);
+  assert.match(buildingCss, /\.partner-vendor-detail-workspace \.customer-hub-selector-bar\{grid-template-columns:auto minmax\(280px,1fr\)\}/);
   assert.match(stylesSource, /\.partner-vendor-card:focus-visible/);
   assert.match(mainSource, /BRING_CRM_SCREENSHOT_ACTION === "partner-vendor-detail"/);
 });
