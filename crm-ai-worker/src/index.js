@@ -4,8 +4,11 @@ import { buildTaskMessages, normalizeTaskResult, supportedTaskIds } from "./task
 const SERVICE_NAME = "bring-crm-ai-gateway";
 const SERVICE_VERSION = "2026-08-31-v1";
 const ASSIST_PATH = "/v1/assist";
+const TRANSCRIBE_PATH = "/v1/transcribe";
 const GROQ_URL = "https://api.groq.com/openai/v1/chat/completions";
+const GROQ_TRANSCRIBE_URL = "https://api.groq.com/openai/v1/audio/transcriptions";
 const MAX_REQUEST_BYTES = 64 * 1024;
+const MAX_AUDIO_BYTES = 25 * 1024 * 1024;
 
 const ERROR_STATUS = Object.freeze({
   AUTH_REQUIRED: 401,
@@ -150,6 +153,45 @@ async function callGroq(payload, env, fetchImpl, timeoutMs) {
   };
 }
 
+async function readAudioPayload(request) {
+  const declared = Number(request.headers.get("content-length") || 0);
+  if (declared > MAX_AUDIO_BYTES + 64 * 1024) throw Object.assign(new Error("INPUT_TOO_LARGE"), { code: "INPUT_TOO_LARGE" });
+  let form;
+  try { form = await request.formData(); }
+  catch { throw Object.assign(new Error("INVALID_INPUT"), { code: "INVALID_INPUT" }); }
+  const file = form.get("file");
+  const language = String(form.get("language") || "ko").trim().toLowerCase();
+  const extension = String(file?.name || "").toLowerCase().match(/\.(mp3|m4a|wav)$/)?.[1] || "";
+  if (!file || typeof file.arrayBuffer !== "function" || !extension || file.size <= 0) throw Object.assign(new Error("INVALID_INPUT"), { code: "INVALID_INPUT" });
+  if (file.size > MAX_AUDIO_BYTES) throw Object.assign(new Error("INPUT_TOO_LARGE"), { code: "INPUT_TOO_LARGE" });
+  if (language !== "ko") throw Object.assign(new Error("INVALID_INPUT"), { code: "INVALID_INPUT" });
+  return { file, language };
+}
+
+async function callGroqTranscription(payload, env, fetchImpl, timeoutMs) {
+  if (!env.GROQ_API_KEY) throw Object.assign(new Error("AI_TEMPORARY_FAILURE"), { code: "AI_TEMPORARY_FAILURE" });
+  const form = new FormData();
+  form.append("file", payload.file, payload.file.name);
+  form.append("model", env.GROQ_TRANSCRIPTION_MODEL || "whisper-large-v3-turbo");
+  form.append("language", payload.language);
+  form.append("response_format", "json");
+  let response;
+  try {
+    response = await fetchImpl(GROQ_TRANSCRIBE_URL, {
+      method: "POST", headers: { authorization: `Bearer ${env.GROQ_API_KEY}` }, body: form,
+      signal: AbortSignal.timeout(Math.max(timeoutMs, 60_000))
+    });
+  } catch { throw Object.assign(new Error("AI_TEMPORARY_FAILURE"), { code: "AI_TEMPORARY_FAILURE" }); }
+  if (response.status === 429) throw Object.assign(new Error("RATE_LIMITED"), { code: "RATE_LIMITED" });
+  if (!response.ok) throw Object.assign(new Error("AI_TEMPORARY_FAILURE"), { code: "AI_TEMPORARY_FAILURE" });
+  let value;
+  try { value = await response.json(); }
+  catch { throw Object.assign(new Error("AI_INVALID_RESPONSE"), { code: "AI_INVALID_RESPONSE" }); }
+  const transcript = String(value?.text || "").trim().slice(0, 20_000);
+  if (!transcript) throw Object.assign(new Error("AI_INVALID_RESPONSE"), { code: "AI_INVALID_RESPONSE" });
+  return transcript;
+}
+
 export function createWorker(options = {}) {
   const fetchImpl = options.fetchImpl || globalThis.fetch;
   const now = options.now || Date.now;
@@ -162,14 +204,19 @@ export function createWorker(options = {}) {
       if (request.method === "GET" && (url.pathname === "/" || url.pathname === "/health")) {
         return json({ ok: true, service: SERVICE_NAME, version: SERVICE_VERSION, enabled: env.AI_ENABLED === "true" });
       }
-      if (url.pathname !== ASSIST_PATH) return json({ ok: false, code: "NOT_FOUND" }, 404);
+      if (![ASSIST_PATH, TRANSCRIBE_PATH].includes(url.pathname)) return json({ ok: false, code: "NOT_FOUND" }, 404);
       if (request.method === "OPTIONS") return new Response(null, { status: 204, headers: cors });
       if (request.method !== "POST") return json({ ok: false, code: "METHOD_NOT_ALLOWED" }, 405, cors);
       if (env.AI_ENABLED !== "true") return json({ ok: false, code: "AI_DISABLED" }, 503, cors);
       try {
-        const payload = await readPayload(request);
+        const payload = url.pathname === ASSIST_PATH ? await readPayload(request) : null;
         const identity = await verifyFirebaseIdentity(bearerToken(request), env, fetchImpl);
         await enforceLimits(identity, env, now);
+        if (url.pathname === TRANSCRIBE_PATH) {
+          const audio = await readAudioPayload(request);
+          const transcript = await callGroqTranscription(audio, env, fetchImpl, timeoutMs);
+          return json({ ok: true, requestId: requestId(), transcript }, 200, cors);
+        }
         const response = await callGroq(payload, env, fetchImpl, timeoutMs);
         return json({
           ok: true,

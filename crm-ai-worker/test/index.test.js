@@ -108,3 +108,23 @@ test("gateway fails closed for disabled, limited, missing-secret, and broken-pro
   assert.equal(response.status, 429);
   assert.equal((await response.json()).code, "RATE_LIMITED");
 });
+
+test("gateway transcribes one bounded Korean audio file without exposing the provider key", async () => {
+  const calls = [];
+  const worker = createWorker({ fetchImpl: async (url, options = {}) => {
+    calls.push({ url: String(url), options });
+    if (String(url).includes("accounts:lookup")) return new Response(JSON.stringify({ users: [{ localId: "uid-1", email: "ameejin92@gmail.com" }] }), { status: 200 });
+    return new Response(JSON.stringify({ text: "내일 공용부 청소 견적을 보내 주세요." }), { status: 200 });
+  }, requestId: () => "tr-1" });
+  const body = new FormData();
+  body.append("file", new Blob(["audio"], { type: "audio/mpeg" }), "call.mp3");
+  body.append("language", "ko");
+  const response = await worker.fetch(new Request("https://ai.example/v1/transcribe", {
+    method: "POST", headers: { authorization: "Bearer firebase-token", origin: "app://bring-crm" }, body
+  }), environment());
+  assert.equal(response.status, 200);
+  assert.deepEqual(await response.json(), { ok: true, requestId: "tr-1", transcript: "내일 공용부 청소 견적을 보내 주세요." });
+  assert.match(calls[1].url, /\/openai\/v1\/audio\/transcriptions$/);
+  assert.equal(calls[1].options.headers.authorization, "Bearer test-secret");
+  assert.equal(calls[1].options.body instanceof FormData, true);
+});

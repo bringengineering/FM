@@ -38,6 +38,7 @@ const {
 const VendorExtractor = require("./vendor-extractor");
 const NaverBuildingExtractor = require("./naver-building-extractor");
 const { assistWithGateway } = require("./ai-client");
+const { validateAudioFile, transcribeWithGateway } = require("./ai-audio-client");
 const {
   FIELD_BRIDGE_TIMEOUT_MS,
   FIELD_ORIGIN,
@@ -126,6 +127,7 @@ const passwordPreview = process.env.BRING_CRM_PASSWORD_PREVIEW === "1";
 const localTestMode = (Boolean(process.env.BRING_CRM_SCREENSHOT) || process.env.BRING_CRM_SMOKE === "1" || process.env.BRING_CRM_LOCAL_ONLY === "1") && !authPreview && !passwordPreview;
 const localTestRole = ["admin", "member", "marketing", "sales", "viewer"].includes(process.env.BRING_CRM_SCREENSHOT_ROLE) ? process.env.BRING_CRM_SCREENSHOT_ROLE : "admin";
 const CRM_AI_GATEWAY_URL = process.env.BRING_CRM_AI_GATEWAY_URL || "https://bring-crm-ai-gateway.bringengineering-crm.workers.dev/v1/assist";
+const CRM_AI_TRANSCRIBE_URL = new URL("/v1/transcribe", CRM_AI_GATEWAY_URL).href;
 if (localTestMode && !process.env.BRING_CRM_DATA_DIR) {
   // Automated screenshots must never reuse or overwrite an employee's cache.
   app.setPath("userData", path.join(app.getPath("temp"), "bring-crm-desktop-tests", String(process.pid)));
@@ -6384,6 +6386,32 @@ secureCanonicalHandle("crm:ai-assist", async input => {
     endpoint: CRM_AI_GATEWAY_URL,
     idToken,
     input,
+    fetchImpl: (url, options) => net.fetch(url, options)
+  });
+});
+secureCanonicalHandle("crm:consultation-audio-pick", async () => {
+  const result = await dialog.showOpenDialog(mainWindow, {
+    title: "상담 녹음 파일 선택",
+    properties: ["openFile"],
+    filters: [{ name: "상담 녹음", extensions: ["mp3", "m4a", "wav"] }]
+  });
+  if (result.canceled || !result.filePaths[0]) return { ok: false, canceled: true };
+  const filePath = result.filePaths[0];
+  const stat = await fs.stat(filePath);
+  const file = validateAudioFile({ path: filePath, size: stat.size });
+  return { ok: true, file: { path: file.path, name: file.name, size: file.size, extension: file.extension } };
+});
+secureCanonicalHandle("crm:consultation-audio-transcribe", async input => {
+  if (!remoteClient || !remoteClient.authState().user) throw Object.assign(new Error("다시 로그인해 주세요."), { code: "AUTH_REQUIRED" });
+  const filePath = String(input?.path || "").trim();
+  const stat = await fs.stat(filePath);
+  const file = validateAudioFile({ path: filePath, size: stat.size });
+  const bytes = await fs.readFile(file.path);
+  const idToken = await remoteClient.ensureIdToken(false);
+  return transcribeWithGateway({
+    endpoint: CRM_AI_TRANSCRIBE_URL,
+    idToken,
+    file: { name: file.name, type: file.mimeType, bytes },
     fetchImpl: (url, options) => net.fetch(url, options)
   });
 });

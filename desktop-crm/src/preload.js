@@ -33,6 +33,8 @@ contextBridge.exposeInMainWorld("bringCRM", {
   exportOfficeAttendance: input => ipcRenderer.invoke("crm:office-attendance-export", input),
   setOfficeMessengerPresence: input => ipcRenderer.invoke("crm:office-messenger-presence", input),
   assist: input => ipcRenderer.invoke("crm:ai-assist", input),
+  chooseConsultationAudio: () => ipcRenderer.invoke("crm:consultation-audio-pick"),
+  transcribeConsultationAudio: input => ipcRenderer.invoke("crm:consultation-audio-transcribe", input),
   exportQuote: input => ipcRenderer.invoke("crm:quote-export", input),
   loadQuoteSupplier: () => ipcRenderer.invoke("crm:quote-supplier-load"),
   saveQuoteSupplier: input => ipcRenderer.invoke("crm:quote-supplier-save", input),
