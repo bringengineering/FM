@@ -3929,7 +3929,28 @@ async function createWindow() {
         return { pass, email: input.value, readOnly: input.readOnly, disabled: input.disabled, passwordDisabled: password.disabled, description };
       })()`, true);
     } else if (process.env.BRING_CRM_SCREENSHOT_ACTION === "new-customer") {
-      actionResult = await mainWindow.webContents.executeJavaScript('document.querySelector("[data-action=\\"new-customer\\"]")?.click(); window.__crmTest?.snapshot()', true);
+      actionResult = await mainWindow.webContents.executeJavaScript(`(async () => {
+        const wait = ms => new Promise(resolve => setTimeout(resolve, ms));
+        document.querySelector('[data-workspace-enter="operations"]')?.click();
+        await wait(120);
+        window.__crmSmokeNavigate('customers');
+        await wait(80);
+        const opener = document.querySelector('[data-action="new-customer"]');
+        opener?.click();
+        await wait(80);
+        const form = document.getElementById('customerForm');
+        const buildingSelector = form?.elements.buildingId;
+        return {
+          pass: Boolean(form?.elements.naverBuildingUrl && form?.elements.roadAddress && form?.elements.jibunAddress) && !buildingSelector,
+          openerFound: Boolean(opener),
+          formFound: Boolean(form),
+          naverLookupFound: Boolean(form?.querySelector('[data-building-link-lookup]')),
+          roadAddressFound: Boolean(form?.elements.roadAddress),
+          jibunAddressFound: Boolean(form?.elements.jibunAddress),
+          buildingSelectorFound: Boolean(buildingSelector),
+          state: window.__crmTest?.snapshot()
+        };
+      })()`, true);
     } else if (process.env.BRING_CRM_SCREENSHOT_ACTION === "edit-first-customer") {
       actionResult = await mainWindow.webContents.executeJavaScript(`(() => {
         document.querySelector('[data-view="customers"]')?.click();
@@ -6629,7 +6650,7 @@ async function createWindow() {
     const uiState = await mainWindow.webContents.executeJavaScript("window.__crmTest && window.__crmTest.snapshot()", true);
     const image = await mainWindow.webContents.capturePage();
     await fs.writeFile(target, image.toPNG());
-    if (["ai-quote-preview", "building-rental-info", "consultation-building-hub", "customer-sales-status", "customer-management-ui", "customer-consultation-history", "partner-vendor-toolbar", "partner-vendor-detail", "vacancy-layout-scale", "vacancy-viewer-invariant", "lookup-building-link", "office-messenger-drag-smoke", "one-off-payment-calendar", "payment-building-calendar", "work-calendar-smoke"].includes(process.env.BRING_CRM_SCREENSHOT_ACTION)) {
+    if (["ai-quote-preview", "building-rental-info", "consultation-building-hub", "customer-sales-status", "customer-management-ui", "customer-consultation-history", "new-customer", "partner-vendor-toolbar", "partner-vendor-detail", "vacancy-layout-scale", "vacancy-viewer-invariant", "lookup-building-link", "office-messenger-drag-smoke", "one-off-payment-calendar", "payment-building-calendar", "work-calendar-smoke"].includes(process.env.BRING_CRM_SCREENSHOT_ACTION)) {
       await fs.writeFile(`${target}.result.json`, JSON.stringify({ actionResult, uiState }, null, 2), "utf8");
     }
     console.log(target, JSON.stringify({ empty: image.isEmpty(), size: image.getSize(), actionResult, uiState }));

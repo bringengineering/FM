@@ -288,17 +288,21 @@ test("building edits opened from customer detail return to the customer workspac
   assert.match(save, /currentView = returnView/);
 });
 
-test("new customer registration accepts a name and saves without creating a building", () => {
+test("new customer registration captures customer addresses without linking a building", () => {
   const editor = sourceBetween("function customerEditor", "function buildingNumberField");
   const fromForm = sourceBetween("function customerFromForm", "async function deleteActivityRecord");
   const submit = sourceBetween('form.id === "customerForm"', 'form.id === "partnerVendorForm"');
-  assert.match(editor, /<span>기존 건물 연결 \(선택\)<\/span><select name="buildingId">/);
-  assert.doesNotMatch(editor, /select name="buildingId" required/);
+  assert.match(editor, /name="naverBuildingUrl"/);
+  assert.match(editor, /data-building-link-lookup/);
+  assert.match(editor, /data-building-link-lookup-status/);
   assert.match(editor, /<span>고객명 \*<\/span><input name="name" required/);
-  assert.match(editor, /건물 연결 안 함/);
-  assert.match(fromForm, /buildingIdLinks\[String\(raw\.buildingId\)\] = true/);
-  assert.match(submit, /const requestedBuildingId = String\(form\.elements\.buildingId/);
-  assert.match(submit, /requestedBuildingId \? buildingById\(requestedBuildingId\) : null/);
+  assert.match(editor, /field\("도로명 주소", "roadAddress"/);
+  assert.match(editor, /field\("지번 주소", "jibunAddress"/);
+  assert.doesNotMatch(editor, /기존 건물 연결|name="buildingId"|건물 연결 안 함/);
+  assert.match(fromForm, /const address = roadAddress \|\| jibunAddress \|\| legacyAddress/);
+  assert.match(fromForm, /address, roadAddress, jibunAddress/);
+  assert.doesNotMatch(fromForm, /raw\.buildingId|buildingIdLinks\[|buildingIdLinks,/);
+  assert.doesNotMatch(submit, /requestedBuildingId|selectedBuilding|form\.elements\.buildingId/);
   assert.match(submit, /고객명을 입력해 주세요/);
   assert.match(submit, /await commitSharedFormMutation/);
   assert.doesNotMatch(submit, /commitCanonicalEntity/);
@@ -322,6 +326,7 @@ test("customer type supports storefront and a persisted custom value", () => {
   assert.match(editor, /\["건물주", "임차인", "상가", "법인", "협력업체", "직접 입력"\]/);
   assert.match(editor, /name="customType"/);
   assert.match(editor, /data-customer-custom-type/);
+  assert.match(stylesSource, /\.simple-customer-form \[data-customer-custom-type\]\[hidden\]\{display:none!important\}/);
   assert.match(appSource, /function updateCustomerCustomTypeField/);
   assert.match(fromForm, /raw\.type === "직접 입력" \? String\(raw\.customType/);
   assert.match(fromForm, /type: customerType/);

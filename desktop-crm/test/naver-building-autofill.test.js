@@ -20,6 +20,18 @@ test("building editor exposes a Naver link importer and distinct road-name and j
   assert.match(editor, /불러온 내용을 확인한 뒤 아래 건물 등록 버튼을 눌러 저장하세요/);
 });
 
+test("customer editor reuses the Naver importer and stores separate address fields without a building selector", async () => {
+  const app = await fs.readFile(path.join(SOURCE, "app.js"), "utf8");
+  const editor = app.slice(app.indexOf("function customerEditor"), app.indexOf("function buildingNumberField"));
+
+  assert.match(editor, /name="naverBuildingUrl"/);
+  assert.match(editor, /data-building-link-lookup/);
+  assert.match(editor, /고객명·도로명·지번 주소/);
+  assert.match(editor, /field\("도로명 주소", "roadAddress"/);
+  assert.match(editor, /field\("지번 주소", "jibunAddress"/);
+  assert.doesNotMatch(editor, /name="buildingId"|기존 건물 연결/);
+});
+
 test("building lookup uses trusted canonical IPC and denies read-only accounts before network access", async () => {
   const [preload, main] = await Promise.all([
     fs.readFile(path.join(SOURCE, "preload.js"), "utf8"),
@@ -37,7 +49,8 @@ test("late Naver responses cannot overwrite a replaced form, changed session, li
   const lookup = app.slice(app.indexOf('const buildingLinkLookup = event.target.closest("[data-building-link-lookup]")'), app.indexOf('const vendorLookup = event.target.closest("[data-vendor-lookup]")'));
 
   assert.match(lookup, /sequence === buildingLookupSequence/);
-  assert.match(lookup, /document\.getElementById\("buildingForm"\) === form/);
+  assert.match(lookup, /closest\("#buildingForm, #customerForm"\)/);
+  assert.match(lookup, /document\.getElementById\(formId\) === form/);
   assert.match(lookup, /generation === authGeneration/);
   assert.match(lookup, /uid === currentAuthUid\(\)/);
   assert.match(lookup, /form\.elements\.naverBuildingUrl\.value/);

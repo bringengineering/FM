@@ -203,6 +203,9 @@
     delete customer.avatarUrl;
     delete customer.localPath;
     customer.stage = normalizePipelineStage(customer.stage);
+    customer.address = String(customer.address || "").trim().slice(0, 500);
+    customer.roadAddress = String(customer.roadAddress || "").trim().slice(0, 500);
+    customer.jibunAddress = String(customer.jibunAddress || "").trim().slice(0, 500);
     customer.buildingIds = normalizeStringList(customer.buildingIds);
     const rawLinks = customer.buildingIdLinks && typeof customer.buildingIdLinks === "object" && !Array.isArray(customer.buildingIdLinks)
       ? customer.buildingIdLinks
@@ -622,7 +625,7 @@
     const now = iso();
     const customer = Object.assign({
       id: random("cus"), customerNo: `C-${dayKey(now).replace(/-/g, "")}-${String(Date.now()).slice(-4)}`,
-      name: "", company: "", phone: "", email: "", type: "건물주", address: "", source: "대표 상담",
+      name: "", company: "", phone: "", email: "", type: "건물주", address: "", roadAddress: "", jibunAddress: "", source: "대표 상담",
       interestServices: [], currentIssue: "", stage: "신규 고객", lastContactAt: "", nextContactAt: "",
       nextAction: "첫 연락", owner: "김현진", expectedValue: 0, lostReason: "", priority: "보통",
       relationshipCycleDays: 30, relationshipStartedAt: "", relationshipLastContactAt: "", relationshipNextContactAt: "",

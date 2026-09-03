@@ -2436,7 +2436,7 @@
       if (customerManagementFilter !== "전체" && managementStatus !== customerManagementFilter) return false;
       if (!query) return true;
       const buildings = customerBuildings(customer).map(item => `${item.name} ${item.address}`).join(" ");
-      return Core.normalizeText([customer.name, customer.company, customer.phone, customer.email, customer.address, customer.currentIssue, buildings, managementStatus, (customer.tags || []).join(" ")].join(" ")).includes(query)
+      return Core.normalizeText([customer.name, customer.company, customer.phone, customer.email, customer.address, customer.roadAddress, customer.jibunAddress, customer.currentIssue, buildings, managementStatus, (customer.tags || []).join(" ")].join(" ")).includes(query)
         || (phoneQuery && customerPhoneCandidateKey(customer.phone).includes(phoneQuery));
     }).sort((left, right) => (MANAGEMENT_ORDER[managementStatusForCustomer(left)] ?? 9) - (MANAGEMENT_ORDER[managementStatusForCustomer(right)] ?? 9)
       || String(right.updatedAt || right.createdAt).localeCompare(String(left.updatedAt || left.createdAt)));
@@ -2461,8 +2461,9 @@
         const openCases = [...caseMap.values()].filter(item => Core.workflowProgress(item).done < Core.WORKFLOW_STEPS.length).length;
         const openTasks = customerTasks(customer.id).filter(task => task.status !== "완료" && task.status !== "취소").length;
         const primaryBuilding = buildings[0];
-        const buildingLabel = primaryBuilding ? `${primaryBuilding.name || primaryBuilding.address || "건물명 미입력"}${buildings.length > 1 ? ` 외 ${buildings.length - 1}곳` : ""}` : "연결 건물 없음";
-        return `<article class="partner-vendor-card customer-management-card" data-customer-hub-open="${attr(customer.id)}" tabindex="0" aria-label="${attr(customerDisplayName(customer))} 상세 보기"><header><div class="customer-management-card-heading">${customerAvatar(customer)}<div>${managementStatusBadge(managementStatusForCustomer(customer))}<h3>${esc(customerDisplayName(customer))}</h3><p>${esc([customer.company, customer.type].filter(Boolean).join(" · ") || "고객 추가 정보 미입력")}</p></div></div><button type="button" class="quote-card-edit" data-customer-hub-edit="${attr(customer.id)}">고객 수정</button></header><div class="partner-vendor-contact"><div><span>연락처</span><b>${esc(customerPhoneText(customer.phone) || "미입력")}</b></div><div><span>관리 건물</span><b>${esc(buildingLabel)}</b></div></div><footer><span>계약 ${activeContracts}건 · 민원 ${openCases}건 · 할 일 ${openTasks}건</span><button type="button" data-customer-open="${attr(customer.id)}">전체 상세</button></footer></article>`;
+        const customerAddress = customer.roadAddress || customer.address || customer.jibunAddress;
+        const locationLabel = customerAddress || (primaryBuilding ? `${primaryBuilding.name || primaryBuilding.address || "건물명 미입력"}${buildings.length > 1 ? ` 외 ${buildings.length - 1}곳` : ""}` : "주소 미입력");
+        return `<article class="partner-vendor-card customer-management-card" data-customer-hub-open="${attr(customer.id)}" tabindex="0" aria-label="${attr(customerDisplayName(customer))} 상세 보기"><header><div class="customer-management-card-heading">${customerAvatar(customer)}<div>${managementStatusBadge(managementStatusForCustomer(customer))}<h3>${esc(customerDisplayName(customer))}</h3><p>${esc([customer.company, customer.type].filter(Boolean).join(" · ") || "고객 추가 정보 미입력")}</p></div></div><button type="button" class="quote-card-edit" data-customer-hub-edit="${attr(customer.id)}">고객 수정</button></header><div class="partner-vendor-contact"><div><span>연락처</span><b>${esc(customerPhoneText(customer.phone) || "미입력")}</b></div><div><span>주소</span><b>${esc(locationLabel)}</b></div></div><footer><span>계약 ${activeContracts}건 · 민원 ${openCases}건 · 할 일 ${openTasks}건</span><button type="button" data-customer-open="${attr(customer.id)}">전체 상세</button></footer></article>`;
       }).join("")}</div>` : empty(Core.normalizeText(searchEl.value) || customerManagementFilter !== "전체" ? "조건에 맞는 고객이 없습니다" : "등록된 고객이 없습니다", Core.normalizeText(searchEl.value) || customerManagementFilter !== "전체" ? "검색어나 관리 상태를 바꿔 다시 확인해 주세요." : "고객을 등록하면 연결 건물과 업무 현황을 함께 관리할 수 있습니다.", `<button class="primary-button" data-action="new-customer">＋ 첫 고객 등록</button>`)}`;
   }
 
@@ -2551,7 +2552,7 @@
     })() : "";
     const buildingContext = `<div class="customer-building-context"><label class="customer-building-select-control"><span>작업 건물</span><select data-customer-building-select aria-label="작업할 건물 선택" ${buildings.length ? "" : "disabled"}>${buildingOptions}</select></label><button type="button" class="secondary-button" data-action="new-building" data-customer-id="${attr(customer.id)}">＋ 건물</button></div>`;
     const buildingActions = managedBuilding ? `<span class="customer-action-divider" aria-hidden="true"></span><button class="secondary-button" data-building-edit="${attr(managedBuilding.id)}">건물 정보 수정</button><button class="secondary-button" data-building-vacancies="${attr(managedBuilding.id)}">공실 현황</button><button class="secondary-button" data-building-payments="${attr(managedBuilding.id)}">건물주 입금</button>` : "";
-    return `<header class="building-hub-detail-head customer-hub-detail-head"><div class="building-hub-title customer-hub-title">${customerAvatar(customer)}<div><span>${esc(customer.customerNo || customer.id)}</span><h2>${esc(customerDisplayName(customer))}</h2><p>${esc([customer.company, customer.type, customer.email].filter(Boolean).join(" · ") || "추가 정보 미입력")}</p>${buildingContext}</div></div><div class="building-hub-head-actions customer-hub-head-actions" role="group" aria-label="고객과 건물 빠른 작업"><button class="secondary-button" data-customer-open="${attr(customer.id)}">전체 상세</button><button class="secondary-button" data-customer-hub-edit="${attr(customer.id)}">고객 정보 수정</button><button type="button" class="secondary-button" data-action="new-consultation" data-customer-id="${attr(customer.id)}">＋ 상담 기록</button><button class="primary-button" data-action="new-selected-task" data-customer-id="${attr(customer.id)}">＋ 할 일</button>${buildingActions}</div></header>
+    return `<header class="building-hub-detail-head customer-hub-detail-head"><div class="building-hub-title customer-hub-title">${customerAvatar(customer)}<div><span>${esc(customer.customerNo || customer.id)}</span><h2>${esc(customerDisplayName(customer))}</h2><p>${esc([customer.company, customer.type, customer.email, customer.roadAddress || customer.address || customer.jibunAddress].filter(Boolean).join(" · ") || "추가 정보 미입력")}</p>${buildingContext}</div></div><div class="building-hub-head-actions customer-hub-head-actions" role="group" aria-label="고객과 건물 빠른 작업"><button class="secondary-button" data-customer-open="${attr(customer.id)}">전체 상세</button><button class="secondary-button" data-customer-hub-edit="${attr(customer.id)}">고객 정보 수정</button><button type="button" class="secondary-button" data-action="new-consultation" data-customer-id="${attr(customer.id)}">＋ 상담 기록</button><button class="primary-button" data-action="new-selected-task" data-customer-id="${attr(customer.id)}">＋ 할 일</button>${buildingActions}</div></header>
       <div class="building-hub-detail-scroll"><div class="building-identity-strip customer-essential-summary"><div><b>연락처</b><span>${esc(customerPhoneText(customer.phone) || "-")}</span></div><div><b>다음 연락</b><span>${esc(dateText(customer.nextContactAt))}</span></div><div><b>담당자</b><span>${esc(customer.owner || "미입력")}</span></div><div><b>중요도</b><span>${priorityClass(customer.priority)}</span></div></div>
       <div class="building-hub-kpis customer-hub-kpis"><div class="building-hub-kpi"><span>진행 계약</span><b>${activeContracts.length}건</b><small>${activeContracts[0] ? esc(contractTypes(activeContracts[0]).join("·")) : "활성 계약 없음"}</small></div><div class="building-hub-kpi"><span>진행 민원</span><b>${openCases.length}건</b><small>${openCases[0] ? esc(Core.workflowProgress(openCases[0]).current) : "진행 업무 없음"}</small></div><div class="building-hub-kpi ${tasks.length ? "alert" : ""}"><span>남은 할 일</span><b>${tasks.length}건</b><small>${esc(tasks[0]?.title || "등록된 할 일 없음")}</small></div></div>
       <div class="building-detail-grid customer-priority-grid">${essentialSections}</div>${consultationDetails}${secondaryDetails}${rentalDetails}</div>`;
@@ -4121,21 +4122,27 @@
       modalContent.innerHTML = `<div class="modal-head"><div><h2>고객 마케팅 정보 수정</h2><p>고객 기본·연락·개인 메모는 변경할 수 없습니다.</p></div><button class="close-button" data-action="close-modal">×</button></div><form id="customerMarketingForm" class="modal-body" data-customer-id="${attr(editing.id)}">${marketingAttributionFields(customerMarketing)}<div class="form-actions"><button class="primary-button">마케팅 정보 저장</button></div></form>`;
       openModal(); return;
     }
-    const linkedBuildings = customerBuildings(customer);
-    const activeBuildings = (store.buildings || []).filter(building => building && !building.archivedAt).sort((left, right) => String(left.name || "").localeCompare(String(right.name || ""), "ko"));
-    const selectedCustomerBuilding = linkedBuildings.find(building => !building.archivedAt) || null;
     const customerTypes = ["건물주", "임차인", "상가", "법인", "협력업체", "직접 입력"];
     const customCustomerType = customerTypes.includes(customer.type) ? "" : String(customer.type || "").trim();
     const selectedCustomerType = customCustomerType ? "직접 입력" : customer.type;
-    const customerBuildingOptions = activeBuildings.map(building => `<option value="${attr(building.id)}" ${building.id === selectedCustomerBuilding?.id ? "selected" : ""}>${esc(buildingChoiceLabel(building))}</option>`).join("");
+    const legacyAddress = editing && String(customer.address || "").trim() && !String(customer.roadAddress || "").trim() && !String(customer.jibunAddress || "").trim()
+      ? String(customer.address).trim()
+      : "";
+    const legacyAddressNotice = legacyAddress
+      ? `<div class="info-box wide">기존 주소 <b>${esc(legacyAddress)}</b>는 도로명·지번 구분 없이 그대로 보존됩니다. 네이버 링크로 불러오거나 주소 형식을 확인해 입력해 주세요.</div>`
+      : "";
     const photoDataUrl = Core.normalizeCustomerPhotoDataUrl(editing && customerPhotos[editing.id] && customerPhotos[editing.id].dataUrl);
     const photoEditor = editing
       ? `<section class="customer-photo-editor" data-customer-photo-editor><div class="customer-photo-preview" data-customer-photo-preview>${customerAvatar(Object.assign({}, customer, { photoDataUrl }))}</div><div><b>고객 사진</b><span>작은 썸네일로 변환해 고객 데이터·백업과 분리된 전용 보관함에 저장합니다.</span><div class="inline-actions"><button type="button" class="secondary-button" data-customer-photo-pick>사진 선택</button><button type="button" class="secondary-button" data-customer-photo-remove ${photoDataUrl ? "" : "hidden"}>사진 삭제</button></div></div><input type="hidden" name="photoDataUrl" value="${attr(photoDataUrl)}"></section>`
       : `<section class="customer-photo-editor customer-photo-editor-disabled"><div class="customer-photo-preview">${customerAvatar(customer)}</div><div><b>고객 사진</b><span>고객을 먼저 등록한 뒤 고객 정보 수정에서 사진을 추가할 수 있습니다.</span></div></section>`;
-    modalContent.innerHTML = `<div class="modal-head"><div><h2>${editing ? "고객 정보 수정" : "새 고객 등록"}</h2><p>고객명만 입력해도 고객과 건물 관리에 함께 등록됩니다.</p></div><button class="close-button" data-action="close-modal">×</button></div><form id="customerForm" class="modal-body simple-customer-form" data-customer-id="${attr(editing && editing.id || "")}" data-photo-changed="false"><div class="essential-label"><b>기본 정보</b><span>고객명을 입력하고 바로 등록할 수 있습니다.</span></div>${photoEditor}<div class="form-grid">
-      <label class="field"><span>기존 건물 연결 (선택)</span><select name="buildingId"><option value="">건물 연결 안 함</option>${customerBuildingOptions}</select><small>${editing ? "선택하지 않으면 현재 연결 건물을 그대로 유지합니다." : "필요할 때만 기존 건물을 선택하세요."}</small></label>
+    modalContent.innerHTML = `<div class="modal-head"><div><h2>${editing ? "고객 정보 수정" : "새 고객 등록"}</h2><p>고객 기본정보와 사업장 주소를 한 번에 등록합니다.</p></div><button class="close-button" data-action="close-modal">×</button></div><form id="customerForm" class="modal-body simple-customer-form" data-customer-id="${attr(editing && editing.id || "")}" data-photo-changed="false"><div class="essential-label"><b>기본 정보</b><span>고객명과 주소를 입력하고 바로 등록할 수 있습니다.</span></div>${photoEditor}
+      <section class="quote-url-import building-link-import customer-address-import"><div><b>네이버 지도 링크로 자동 입력</b><span>장소 또는 주소 검색 링크에서 고객명·도로명·지번 주소를 찾아옵니다.</span></div><div class="quote-url-import-row"><input name="naverBuildingUrl" type="url" inputmode="url" autocomplete="off" maxlength="4096" placeholder="https://naver.me/... 또는 https://map.naver.com/..."><button type="button" data-building-link-lookup>고객 정보 불러오기</button></div><p data-building-link-lookup-status aria-live="polite">불러온 내용을 확인한 뒤 아래 고객 등록 버튼을 눌러 저장하세요.</p></section>
+      <div class="form-grid">
       <label class="field"><span>고객명 *</span><input name="name" required value="${attr(customer.name)}" placeholder="예: 홍길동 또는 원주에셋"></label>
       <label class="field"><span>연락처</span><input name="phone" type="tel" inputmode="tel" autocomplete="tel" data-customer-phone value="${attr(customerPhoneText(customer.phone))}" placeholder="010-0000-0000"></label>
+      ${legacyAddressNotice}
+      ${field("도로명 주소", "roadAddress", customer.roadAddress, "text", "예: 강원특별자치도 원주시 중앙로 1", "wide")}
+      ${field("지번 주소", "jibunAddress", customer.jibunAddress, "text", "예: 강원특별자치도 원주시 중앙동 1-1", "wide")}
       ${selectField("고객 유형", "type", ["건물주", "임차인", "상가", "법인", "협력업체", "직접 입력"], selectedCustomerType)}
       <label class="field" data-customer-custom-type ${selectedCustomerType === "직접 입력" ? "" : "hidden"}><span>고객 유형 직접 입력 *</span><input name="customType" value="${attr(customCustomerType)}" maxlength="40" placeholder="예: 상가 임차인, 관리업체"></label>
       ${field("다음 연락일", "nextContactAt", datetimeValue(customer.nextContactAt), "datetime-local")}
@@ -4149,7 +4156,7 @@
       ${field("관심 서비스", "interestServices", (customer.interestServices || []).join(", "), "text", "예: 건물관리, 누수 대응")}${field("태그", "tags", (customer.tags || []).join(", "), "text", "예: 원주, 다가구, 소개")}
       ${field("마지막 연락일", "lastContactAt", datetimeValue(customer.lastContactAt), "datetime-local")}
       <div class="info-box wide">진행상태는 고객 정보에서 직접 입력하지 않습니다. 연결된 건물의 영업 관리 단계가 고객 목록과 상세 화면에 자동으로 표시됩니다.</div>
-    </div></details><div class="info-box">${linkedBuildings.length ? `기존 연결 건물 ${linkedBuildings.length}곳은 유지되며, 다른 건물을 선택하면 연결 건물로 추가됩니다.` : "선택한 건물이 이 고객 화면에 연결됩니다."} 건물 자체 정보는 고객 화면 아래의 건물 관리에서 수정할 수 있습니다.</div><div class="form-actions"><button type="button" class="secondary-button" data-action="close-modal">취소</button><button type="submit" class="primary-button">${editing ? "수정 저장" : "고객 등록"}</button></div></form>`;
+    </div></details><div class="form-actions"><button type="button" class="secondary-button" data-action="close-modal">취소</button><button type="submit" class="primary-button">${editing ? "수정 저장" : "고객 등록"}</button></div></form>`;
     openModal();
     setTimeout(() => document.querySelector(`#customerForm [name="name"]`)?.focus(), 30);
   }
@@ -5219,16 +5226,21 @@
     const id = form.dataset.customerId;
     const existing = customerById(id);
     const customer = existing || Core.createCustomer({ owner: store.settings.owner || "김현진" });
-    const buildingIdLinks = Object.assign({}, customer.buildingIdLinks || {});
-    if (raw.buildingId) buildingIdLinks[String(raw.buildingId)] = true;
+    const roadAddress = String(raw.roadAddress || "").trim().slice(0, 500);
+    const jibunAddress = String(raw.jibunAddress || "").trim().slice(0, 500);
+    const legacyAddress = existing && !String(existing.roadAddress || "").trim() && !String(existing.jibunAddress || "").trim()
+      ? String(existing.address || "").trim().slice(0, 500)
+      : "";
+    const address = roadAddress || jibunAddress || legacyAddress;
     const customerType = raw.type === "직접 입력" ? String(raw.customType || "").trim().slice(0, 40) : raw.type;
     Object.assign(customer, {
       name: raw.name.trim(), company: raw.company.trim(), phone: customerPhoneText(raw.phone), email: raw.email.trim(), type: customerType,
+      address, roadAddress, jibunAddress,
       owner: raw.owner, source: raw.source, priority: raw.priority, expectedValue: Core.money(raw.expectedValue),
       interestServices: raw.interestServices.split(",").map(item => item.trim()).filter(Boolean), tags: raw.tags.split(",").map(item => item.trim()).filter(Boolean),
       currentIssue: raw.currentIssue.trim(), lastContactAt: raw.lastContactAt ? new Date(raw.lastContactAt).toISOString() : "",
       nextContactAt: raw.nextContactAt ? new Date(raw.nextContactAt).toISOString() : "", nextAction: raw.nextAction.trim(),
-      notes: raw.notes.trim(), buildingIdLinks, updatedAt: new Date().toISOString()
+      notes: raw.notes.trim(), updatedAt: new Date().toISOString()
     });
     if (!existing) store.customers.push(customer);
     return customer;
@@ -6170,7 +6182,9 @@
     }
     const buildingLinkLookup = event.target.closest("[data-building-link-lookup]");
     if (buildingLinkLookup) {
-      const form = buildingLinkLookup.closest("#buildingForm");
+      const form = buildingLinkLookup.closest("#buildingForm, #customerForm");
+      const formId = form && form.id;
+      const customerLookup = formId === "customerForm";
       const status = form && form.querySelector("[data-building-link-lookup-status]");
       const rawUrl = String(form && form.elements.naverBuildingUrl && form.elements.naverBuildingUrl.value || "").trim();
       if (!rawUrl) return showToast("네이버 지도 링크를 먼저 입력해 주세요.", "error");
@@ -6180,12 +6194,12 @@
       const snapshots = Object.fromEntries(["name", "roadAddress", "jibunAddress"].map(name => [name, String(form.elements[name] && form.elements[name].value || "")]));
       const sameFormAndSession = () => sequence === buildingLookupSequence
         && form.isConnected
-        && document.getElementById("buildingForm") === form
+        && document.getElementById(formId) === form
         && generation === authGeneration
         && uid === currentAuthUid();
       buildingLinkLookup.disabled = true;
       buildingLinkLookup.textContent = "정보 찾는 중…";
-      if (status) { status.className = "loading"; status.textContent = "네이버 지도에서 주소·건물 정보를 확인하고 있습니다."; }
+      if (status) { status.className = "loading"; status.textContent = "네이버 지도에서 주소·장소 정보를 확인하고 있습니다."; }
       try {
         const result = await api.lookupNaverBuilding(rawUrl);
         if (!sameFormAndSession()) return;
@@ -6215,7 +6229,7 @@
           filled.push(label);
         };
         form.elements.naverBuildingUrl.value = result.url || rawUrl;
-        applyLookupValue("name", result.name, "건물명");
+        applyLookupValue("name", result.name, customerLookup ? "고객명" : "건물명");
         applyLookupValue("roadAddress", result.roadAddress, "도로명 주소");
         applyLookupValue("jibunAddress", result.jibunAddress, "지번 주소");
         if (status) {
@@ -6223,7 +6237,7 @@
           if (changedWhileLoading.length) messages.push(`${changedWhileLoading.join("·")}는 조회 중 직접 수정되어 유지했습니다.`);
           if (preservedMissing.length) messages.push(`${preservedMissing.join("·")}는 네이버에서 확인되지 않아 기존 입력을 유지했습니다.`);
           if (missing.length) messages.push(`${missing.join("·")}는 네이버에서 확인되지 않아 직접 입력해 주세요.`);
-          messages.push("내용을 확인한 뒤 건물을 등록하세요.");
+          messages.push(`내용을 확인한 뒤 ${customerLookup ? "고객" : "건물"} 정보를 등록하세요.`);
           status.className = filled.length ? "success" : "error";
           status.textContent = messages.join(" ");
         }
@@ -6233,9 +6247,9 @@
         if (status) { status.className = "error"; status.textContent = error.message || "건물 정보를 불러오지 못했습니다."; }
         showToast(error.message || "건물 정보를 불러오지 못했습니다.", "error");
       } finally {
-        if (sequence === buildingLookupSequence && form.isConnected && document.getElementById("buildingForm") === form) {
+        if (sequence === buildingLookupSequence && form.isConnected && document.getElementById(formId) === form) {
           buildingLinkLookup.disabled = false;
-          buildingLinkLookup.textContent = "건물 정보 불러오기";
+          buildingLinkLookup.textContent = customerLookup ? "고객 정보 불러오기" : "건물 정보 불러오기";
         }
       }
       return;
@@ -8007,17 +8021,13 @@
       if (form.elements.type?.value === "직접 입력" && !String(form.elements.customType?.value || "").trim()) {
         return showToast("직접 사용할 고객 유형을 입력해 주세요.", "error");
       }
-      const requestedBuildingId = String(form.elements.buildingId && form.elements.buildingId.value || "");
-      let selectedBuilding = requestedBuildingId ? buildingById(requestedBuildingId) : null;
-      if (requestedBuildingId && (!selectedBuilding || selectedBuilding.archivedAt)) return showToast("연결할 건물을 다시 선택해 주세요.", "error");
       const photoChanged = wasExisting && form.dataset.photoChanged === "true";
       const photoDataUrl = Core.normalizeCustomerPhotoDataUrl(form.elements.photoDataUrl && form.elements.photoDataUrl.value);
       const customer = customerFromForm(form);
-      const customerLabel = customer.name || selectedBuilding?.name || "고객명 미입력";
-      logAudit({ category: wasExisting ? "변경" : "등록", targetType: "고객", targetId: customer.id, targetLabel: customerLabel, action: wasExisting ? "고객 기본정보 수정" : "신규 고객 등록", reason: `고객 관리 · ${selectedBuilding && selectedBuilding.name || "건물 미연결"}` });
+      const customerLabel = customer.name || "고객명 미입력";
+      logAudit({ category: wasExisting ? "변경" : "등록", targetType: "고객", targetId: customer.id, targetLabel: customerLabel, action: wasExisting ? "고객 기본정보 수정" : "신규 고객 등록", reason: `고객 관리 · ${customer.address ? "주소 등록" : "주소 미입력"}` });
       const saved = await commitSharedFormMutation({ form, beforeStore, onSaved: () => {
         selectedCustomerHubId = customer.id;
-        if (selectedBuilding) selectedBuildingId = selectedBuilding.id;
         closeModal(); render(); renderCustomerDrawer(customer.id); showToast(`${customerLabel} 정보를 서버에 저장했습니다.`, "success");
       } });
       if (!saved) return;
@@ -8505,7 +8515,7 @@ document.addEventListener("keydown", event => {
     requestAnimationFrame(() => document.querySelector(`[data-unified-calendar-tab="${nextTab}"]`)?.focus());
     return;
   }
-  const buildingLinkInput = event.target.closest?.('#buildingForm [name="naverBuildingUrl"]');
+  const buildingLinkInput = event.target.closest?.('#buildingForm [name="naverBuildingUrl"], #customerForm [name="naverBuildingUrl"]');
   if (buildingLinkInput && event.key === "Enter" && !event.isComposing && event.keyCode !== 229) {
     event.preventDefault();
     buildingLinkInput.closest("form")?.querySelector("[data-building-link-lookup]")?.click();
