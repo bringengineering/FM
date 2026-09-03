@@ -3683,6 +3683,21 @@ async function createWindow() {
       }
     }
     let actionResult = null;
+    await mainWindow.webContents.executeJavaScript(`window.__crmSmokeNavigate = view => {
+      const existing = document.querySelector('[data-view="' + CSS.escape(String(view || '')) + '"]');
+      if (existing) {
+        existing.click();
+        return true;
+      }
+      const route = document.createElement('button');
+      route.type = 'button';
+      route.hidden = true;
+      route.dataset.view = String(view || '');
+      document.body.append(route);
+      route.click();
+      route.remove();
+      return true;
+    }; true`, true);
     if (process.env.BRING_CRM_SCREENSHOT_ACTION === "ai-quote-preview") {
       actionResult = await mainWindow.webContents.executeJavaScript(`(async () => {
         const wait = ms => new Promise(resolve => setTimeout(resolve, ms));
@@ -3961,13 +3976,71 @@ async function createWindow() {
           && !!document.querySelector('[data-partner-vendor-detail-select]')
           && !!document.querySelector('[data-partner-vendor-edit="' + vendorId + '"]');
         const detailLinkPreserved = !!document.querySelector('.partner-vendor-detail-workspace [data-partner-vendor-link]') === listLinkExpected;
-        detailBack?.click();
+        let consultationHistory = [...document.querySelectorAll('[data-partner-vendor-consultations]')].find(item => item.dataset.partnerVendorConsultations === vendorId);
+        const consultationButton = [...document.querySelectorAll('[data-action="new-partner-quote"][data-partner-vendor-id]')].find(item => item.dataset.partnerVendorId === vendorId);
+        const consultationDefaultClosed = !!consultationHistory && !consultationHistory.open;
+        const vendorScopedConsultationButton = !!consultationButton && consultationButton.dataset.partnerVendorId === vendorId;
+        const vendorQuotesBefore = window.__crmTest.getStore().partnerQuotes.filter(item => item.vendorId === vendorId).length;
+        const scenario = 'QA 업체 상세 상담 ' + Date.now();
+        consultationButton?.click();
+        await wait(60);
+        const consultationForm = document.getElementById('partnerQuoteForm');
+        const vendorPreselected = consultationForm?.elements.vendorId?.value === vendorId;
+        const returnViewPreserved = consultationForm?.dataset.returnView === 'partnerVendors'
+          && consultationForm?.dataset.returnVendorId === vendorId;
+        if (consultationForm) {
+          consultationForm.elements.scenario.value = scenario;
+          consultationForm.elements.status.value = '상담 완료';
+          consultationForm.elements.consultedAt.value = new Date().toISOString().slice(0, 10);
+          consultationForm.elements.consultationContent.value = '협력 업체 상세 화면 상담 기록 자동 점검';
+          consultationForm.elements.totalMin.value = '120000';
+          consultationForm.elements.totalMax.value = '180000';
+          consultationForm.requestSubmit();
+        }
+        let savedConsultation = null;
+        for (let attempt = 0; attempt < 80; attempt += 1) {
+          savedConsultation = [...window.__crmTest.getStore().partnerQuotes].reverse().find(item => item.vendorId === vendorId && item.scenario === scenario);
+          if (savedConsultation && !document.getElementById('modal')?.classList.contains('open')) break;
+          await wait(50);
+        }
+        consultationHistory = [...document.querySelectorAll('[data-partner-vendor-consultations]')].find(item => item.dataset.partnerVendorConsultations === vendorId);
+        const vendorQuotesAfter = window.__crmTest.getStore().partnerQuotes.filter(item => item.vendorId === vendorId).length;
+        const sameDetailAfterSave = window.__crmTest.snapshot().view === 'partnerVendors'
+          && document.querySelector('[data-partner-vendor-detail-select]')?.value === vendorId;
+        const historyAutoOpened = !!consultationHistory?.open;
+        const historyCountUpdated = vendorQuotesAfter === vendorQuotesBefore + 1
+          && consultationHistory?.querySelector('summary em')?.textContent.trim() === vendorQuotesAfter + '건';
+        const savedRecordVisible = !!savedConsultation
+          && [...consultationHistory?.querySelectorAll('.customer-consultation-record b') || []].some(item => item.textContent.trim() === scenario);
+        if (consultationHistory) consultationHistory.open = false;
+        const historyClosed = !!consultationHistory && !consultationHistory.open;
+        consultationHistory?.querySelector('summary')?.click();
+        await wait(30);
+        const historyReopened = !!consultationHistory?.open;
+        document.querySelector('[data-partner-vendor-detail-back]')?.click();
         await wait(100);
         card = document.querySelector('[data-partner-vendor-open="' + vendorId + '"]');
         const listRestored = !!card && !!card.querySelector('[data-partner-vendor-edit]');
         card?.click();
         await wait(100);
-        return { pass: !!vendorId && listEditPreserved && detailOpened && detailLinkPreserved && backButtonRelocated && selectionHeadingRemoved && listRestored && !!document.querySelector('.partner-vendor-detail-workspace'), vendorId, listLinkExpected, backButtonRelocated, selectionHeadingRemoved, state: window.__crmTest?.snapshot() };
+        const reopenedHistory = [...document.querySelectorAll('[data-partner-vendor-consultations]')].find(item => item.dataset.partnerVendorConsultations === vendorId);
+        const detailReopened = !!document.querySelector('.partner-vendor-detail-workspace');
+        const reopenedDefaultClosed = !!reopenedHistory && !reopenedHistory.open;
+        reopenedHistory?.querySelector('summary')?.click();
+        await wait(30);
+        const savedRecordVisibleAfterReopen = [...reopenedHistory?.querySelectorAll('.customer-consultation-record b') || []].some(item => item.textContent.trim() === scenario);
+        const pass = !!vendorId && listEditPreserved && detailOpened && detailLinkPreserved && backButtonRelocated && selectionHeadingRemoved
+          && consultationDefaultClosed && vendorScopedConsultationButton && vendorPreselected && returnViewPreserved && !!savedConsultation
+          && sameDetailAfterSave && historyAutoOpened && historyCountUpdated && savedRecordVisible && historyClosed && historyReopened
+          && listRestored && detailReopened && reopenedDefaultClosed && !!reopenedHistory?.open && savedRecordVisibleAfterReopen;
+        return {
+          pass, vendorId, listLinkExpected, backButtonRelocated, selectionHeadingRemoved,
+          consultationDefaultClosed, vendorScopedConsultationButton, vendorPreselected, returnViewPreserved,
+          vendorQuotesBefore, vendorQuotesAfter, sameDetailAfterSave, historyAutoOpened, historyCountUpdated,
+          savedRecordVisible, historyClosed, historyReopened, listRestored, detailReopened, reopenedDefaultClosed,
+          historyOpenAfterReopen: !!reopenedHistory?.open, savedRecordVisibleAfterReopen,
+          state: window.__crmTest?.snapshot()
+        };
       })()`, true);
     } else if (process.env.BRING_CRM_SCREENSHOT_ACTION === "customer-management-ui") {
       actionResult = await mainWindow.webContents.executeJavaScript(`(async () => {
@@ -4234,7 +4307,7 @@ async function createWindow() {
       })()`, true);
     } else if (process.env.BRING_CRM_SCREENSHOT_ACTION === "new-partner-quote") {
       actionResult = await mainWindow.webContents.executeJavaScript(`(async () => {
-        document.querySelector('[data-view="partnerQuotes"]')?.click();
+        window.__crmSmokeNavigate('partnerQuotes');
         await new Promise(resolve => setTimeout(resolve, 80));
         const button = document.querySelector('[data-action="new-partner-quote"]');
         button?.click();
@@ -4242,7 +4315,7 @@ async function createWindow() {
       })()`, true);
     } else if (process.env.BRING_CRM_SCREENSHOT_ACTION === "new-consultation") {
       actionResult = await mainWindow.webContents.executeJavaScript(`(async () => {
-        document.querySelector('[data-view="consultations"]')?.click();
+        window.__crmSmokeNavigate('consultations');
         await new Promise(resolve => setTimeout(resolve, 80));
         const button = document.querySelector('[data-action="new-consultation"]');
         button?.click();
@@ -5265,7 +5338,7 @@ async function createWindow() {
       })()`, true);
     } else if (process.env.BRING_CRM_SCREENSHOT_ACTION === "scroll-partner-quotes") {
       actionResult = await mainWindow.webContents.executeJavaScript(`(async () => {
-        document.querySelector('[data-view="partnerQuotes"]')?.click();
+        window.__crmSmokeNavigate('partnerQuotes');
         await new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)));
         const main = document.getElementById('main');
         const before = main.scrollTop;
@@ -5310,7 +5383,7 @@ async function createWindow() {
         await wait(80);
         const vendor = [...window.__crmTest.getStore().partnerVendors].reverse().find(item => item.name === vendorName);
         if (!vendor) return { pass: false, reason: 'vendor save failed' };
-        document.querySelector('[data-view="partnerQuotes"]')?.click();
+        window.__crmSmokeNavigate('partnerQuotes');
         await wait(80);
         const before = window.__crmTest.getStore().partnerQuotes.length;
         document.querySelector('[data-action="new-partner-quote"]')?.click();
@@ -5414,7 +5487,7 @@ async function createWindow() {
           const targetCustomer = seeded.customers.find(item => item.id === customerPrefix + '073');
           if (!targetVendor || !targetCustomer) return { pass: false, reason: 'scale seed failed', seededVendorCount, seededCustomerCount };
 
-          document.querySelector('[data-view="partnerQuotes"]')?.click();
+          window.__crmSmokeNavigate('partnerQuotes');
           await wait(40);
           document.querySelector('[data-action="new-partner-quote"]')?.click();
           await wait(40);
@@ -5461,7 +5534,7 @@ async function createWindow() {
           form?.querySelector('[data-action="close-modal"]')?.click();
           await wait(40);
 
-          document.querySelector('[data-view="consultations"]')?.click();
+          window.__crmSmokeNavigate('consultations');
           await wait(40);
           document.querySelector('[data-action="new-consultation"]')?.click();
           await wait(40);
@@ -5495,7 +5568,7 @@ async function createWindow() {
           customerRow?.click();
           await wait(60);
           const customerDrawerOpened = window.__crmTest.snapshot().drawerOpen;
-          document.querySelector('[data-view="consultations"]')?.click();
+          window.__crmSmokeNavigate('consultations');
           await wait(40);
           document.querySelector('[data-action="new-consultation"]')?.click();
           await wait(40);
@@ -5544,7 +5617,7 @@ async function createWindow() {
         vendorForm.elements.phone.value = '010-9999-8888';
         vendorForm.requestSubmit();
         await wait(80);
-        document.querySelector('[data-view="partnerQuotes"]')?.click();
+        window.__crmSmokeNavigate('partnerQuotes');
         await wait(80);
         document.querySelector('[data-partner-quote-edit="' + quote.id + '"]')?.click();
         const quoteForm = document.getElementById('partnerQuoteForm');
@@ -5562,7 +5635,7 @@ async function createWindow() {
       })()`, true);
     } else if (process.env.BRING_CRM_SCREENSHOT_ACTION === "switch-partner-industry") {
       actionResult = await mainWindow.webContents.executeJavaScript(`(() => {
-        document.querySelector('[data-view="partnerQuotes"]')?.click();
+        window.__crmSmokeNavigate('partnerQuotes');
         document.querySelector('[data-action="new-partner-quote"]')?.click();
         const form = document.getElementById('partnerQuoteForm');
         const select = form?.elements.industry;
@@ -6024,7 +6097,7 @@ async function createWindow() {
         await new Promise(resolve => setTimeout(resolve, 80));
         const customerDelete = Boolean(document.querySelector('[data-customer-delete]'));
         const buildingDeletes = document.querySelectorAll('[data-building-delete]').length;
-        document.querySelector('[data-view="partnerQuotes"]')?.click();
+        window.__crmSmokeNavigate('partnerQuotes');
         await new Promise(resolve => setTimeout(resolve, 80));
         document.querySelector('[data-partner-quote-edit]')?.click();
         await new Promise(resolve => setTimeout(resolve, 80));
@@ -6491,7 +6564,7 @@ async function createWindow() {
         await wait(80);
         results.customerSave = state();
         document.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
-        document.querySelector('[data-view="consultations"]')?.click();
+        window.__crmSmokeNavigate('consultations');
         await wait(80);
         document.querySelector('[data-action="new-consultation"]')?.click();
         await wait(40);

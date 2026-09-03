@@ -6,15 +6,34 @@ const test = require("node:test");
 const sourceRoot = path.join(__dirname, "..", "src");
 const indexSource = fs.readFileSync(path.join(sourceRoot, "index.html"), "utf8");
 const appSource = fs.readFileSync(path.join(sourceRoot, "app.js"), "utf8");
+const workspaceShellSource = fs.readFileSync(path.join(sourceRoot, "workspace-shell.js"), "utf8");
 const navSource = indexSource.match(/<nav\b[^>]*\bid="nav"[^>]*>([\s\S]*?)<\/nav>/)?.[1] || "";
 
 test("sidebar folders start closed and expose collapsed accessibility state", () => {
-  for (const folder of ["office", "customer-management", "consultation", "calendar"]) {
+  for (const folder of ["office", "customer-management", "calendar"]) {
     const markup = navSource.match(new RegExp(`<div class="nav-folder" data-nav-folder="${folder}">([\\s\\S]*?)<div class="nav-folder-children">`));
     assert.ok(markup, `${folder} should start without the open class`);
     assert.match(markup[1], /data-nav-folder-toggle aria-expanded="false"/);
   }
   assert.equal((navSource.match(/class="nav-folder open"/g) || []).length, 0);
+});
+
+test("sidebar removes the standalone consultation folder only", () => {
+  assert.doesNotMatch(navSource, /data-nav-folder="consultation"/);
+  assert.doesNotMatch(navSource, /data-view="consultations"|data-view="partnerQuotes"/);
+  assert.doesNotMatch(navSource, /id="navConsultationCount"|id="navPartnerQuoteCount"/);
+  assert.doesNotMatch(appSource, /const consultationView = \["consultations", "partnerQuotes"\]/);
+  assert.doesNotMatch(appSource, /getElementById\("navConsultationCount"\)|getElementById\("navPartnerQuoteCount"\)/);
+});
+
+test("marketing workspace navigation remains available", () => {
+  assert.match(indexSource, /<script src="\.\/workspace-shell\.js"><\/script>/);
+  assert.match(indexSource, /<script src="\.\/marketing-core\.js"><\/script>/);
+  assert.match(indexSource, /<script src="\.\/marketing-ui\.js"><\/script>/);
+  assert.match(workspaceShellSource, /\["marketing", "마케팅 폴더", "마케팅 업무와 콘텐츠 관리"\]/);
+  assert.match(workspaceShellSource, /data-workspace-enter="\$\{escapeHtml\(key\)\}"/);
+  assert.match(appSource, /WorkspaceShell\.createWorkspaceCoordinator\(/);
+  assert.match(appSource, /currentWorkspace === "marketing"/);
 });
 
 test("sidebar removes the sales pipeline tab and labels cases as complaint management", () => {

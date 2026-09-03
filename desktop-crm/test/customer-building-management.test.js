@@ -81,7 +81,7 @@ test("customer management mirrors the partner vendor card-list-to-detail workflo
   assert.match(appSource, /const customerListOpen = event\.target\.closest\("\[data-customer-list-open\]"\)[\s\S]*?selectedCustomerHubId = "";[\s\S]*?currentView = "customers";/);
   assert.match(inputHandler, /event\.target\.matches\("\[data-customer-list-search\]"\)[\s\S]*?crmSearchValue = event\.target\.value\.slice\(0, 160\)[\s\S]*?renderCustomers\(\)/);
   assert.match(compositionHandler, /event\.target\.matches\("\[data-customer-list-search\]"\)[\s\S]*?crmSearchValue = event\.target\.value\.slice\(0, 160\)[\s\S]*?renderCustomers\(\)/);
-  assert.match(appSource, /event\.target\.matches\?\.\("\[data-partner-vendor-open\], \[data-customer-hub-open\]"\)[\s\S]*?event\.key === "Enter" \|\| event\.key === " "[\s\S]*?detailCard\.click\(\)/);
+  assert.match(appSource, /event\.target\.matches\?\.\("\[data-partner-vendor-open\], \[data-customer-hub-open\](?:, \[data-partner-quote-edit\])?"\)[\s\S]*?event\.key === "Enter" \|\| event\.key === " "[\s\S]*?detailCard\.click\(\)/);
 
   assert.match(stylesSource, /\.crm-read-only \[data-customer-hub-edit\]/);
   assert.match(buildingCss, /\.customer-management-detail-workspace \.customer-hub-selector-bar\{grid-template-columns:auto minmax\(280px,1fr\)\}/);
@@ -163,7 +163,8 @@ test("partner vendor cards keep their actions while the remaining card opens a c
   assert.match(partnerView, /building-identity-strip customer-essential-summary/);
   assert.match(partnerView, /building-hub-kpis customer-hub-kpis/);
   assert.match(partnerView, /building-detail-grid customer-priority-grid/);
-  assert.match(partnerView, /<b>최근 상담 기록<\/b>/);
+  assert.match(partnerView, /data-action="new-partner-quote" data-partner-vendor-id="\$\{attr\(vendor\.id\)\}">＋ 상담 기록<\/button>/);
+  assert.match(partnerView, /data-partner-vendor-consultations="\$\{attr\(vendor\.id\)\}"/);
   assert.match(appSource, /selectedPartnerVendorDetailId = partnerVendorOpen\.dataset\.partnerVendorOpen/);
   assert.match(appSource, /selectedPartnerVendorDetailId = partnerVendorDetailSelect\.value/);
   assert.match(appSource, /currentView === "partnerVendors"\) selectedPartnerVendorDetailId = ""/);
@@ -172,6 +173,40 @@ test("partner vendor cards keep their actions while the remaining card opens a c
   assert.match(buildingCss, /\.partner-vendor-detail-workspace \.customer-hub-selector-bar\{grid-template-columns:auto minmax\(280px,1fr\)\}/);
   assert.match(stylesSource, /\.partner-vendor-card:focus-visible/);
   assert.match(mainSource, /BRING_CRM_SCREENSHOT_ACTION === "partner-vendor-detail"/);
+});
+
+test("partner consultation history is vendor-scoped, collapsible, and returns to the same detail after changes", () => {
+  const partnerDetail = sourceBetween("function renderPartnerVendorDetail", "function renderPartnerVendors");
+  const partnerList = sourceBetween("function renderPartnerVendors", "function renderPartnerQuotes");
+  const editor = sourceBetween("function partnerQuoteEditor", "function taskEditor");
+  const removeRecord = sourceBetween("async function deletePartnerQuoteRecord", "async function excludePartnerVendorRecord");
+  const submit = sourceBetween('form.id === "partnerQuoteForm"', 'form.id === "taskForm"');
+
+  assert.match(partnerDetail, /const quoteRecords = quotes\.map\(quoteRecord\)\.join\(""\)/);
+  assert.doesNotMatch(partnerDetail, /quotes\.slice\(/);
+  assert.match(partnerDetail, /<details class="customer-secondary-details partner-vendor-consultation-details" data-partner-vendor-consultations="\$\{attr\(vendor\.id\)\}">/);
+  assert.match(partnerDetail, /<b>상담 기록<\/b>/);
+  assert.match(partnerDetail, /\$\{quotes\.length\}건/);
+  assert.match(partnerDetail, /아직 등록된 업체 상담 기록이 없습니다/);
+  assert.doesNotMatch(partnerDetail, /<details[^>]*\sopen(?:\s|=|>)/);
+  assert.match(partnerDetail, /legacyConsultationSection\?\.remove\(\)/);
+  assert.doesNotMatch(partnerList, /data-view="partnerQuotes"/);
+
+  assert.match(editor, /function partnerQuoteEditor\(quoteId, vendorId = "", returnView = currentView\)/);
+  assert.match(editor, /const requestedVendor = partnerVendorById\(vendorId\)/);
+  assert.match(editor, /const linkedVendor = editing \? partnerVendorForQuote\(item\) : requestedVendor \|\| partnerVendorForQuote\(item\)/);
+  assert.match(editor, /item\.vendorId = linkedVendor && linkedVendor\.id \|\| ""/);
+  assert.match(editor, /item\.industry = editing \? partnerIndustry\(item\) : linkedVendor \? partnerIndustry\(linkedVendor\) : ""/);
+  assert.match(editor, /form\.dataset\.returnView = returnView \|\| "partnerQuotes"/);
+  assert.match(editor, /form\.dataset\.returnVendorId = linkedVendor && linkedVendor\.id \|\| vendorId \|\| ""/);
+  assert.match(appSource, /action === "new-partner-quote"[\s\S]*?partnerQuoteEditor\("", actionControl\.dataset\.partnerVendorId \|\| "", currentView\)/);
+
+  assert.match(partnerDetail, /function showPartnerVendorDetailAfterQuoteMutation\(vendorId\)[\s\S]*?selectedPartnerVendorDetailId = vendorId \|\| ""[\s\S]*?currentView = "partnerVendors"[\s\S]*?consultationHistory\.open = true[\s\S]*?consultationHistory\.scrollIntoView\(\{ block: "nearest" \}\)/);
+  assert.match(submit, /const returnView = form\.dataset\.returnView \|\| "partnerQuotes"/);
+  assert.match(submit, /if \(returnView === "partnerVendors"\) showPartnerVendorDetailAfterQuoteMutation\(selectedVendor\.id\)/);
+  assert.match(removeRecord, /if \(returnView === "partnerVendors"\)[\s\S]*?showPartnerVendorDetailAfterQuoteMutation\(returnVendorId \|\| quote\.vendorId\)/);
+  assert.match(appSource, /deletePartnerQuoteRecord\(partnerQuoteDelete\.dataset\.partnerQuoteDelete, form\?\.dataset\.returnView, form\?\.dataset\.returnVendorId\)/);
+  assert.match(stylesSource, /\.crm-read-only \[data-action="new-partner-quote"\]/);
 });
 
 test("customer header moves selected building actions after the task action", () => {
