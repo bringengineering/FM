@@ -4053,6 +4053,57 @@ async function createWindow() {
           && document.querySelectorAll('.customer-management-kpis .kpi-card').length === 4;
         return { pass: !!customerId && listHero && listKpis && listToolbar && topSearchHidden && listEditPreserved && listDrawerPreserved && localSearchWorks && managementFilterWorks && detailOpened && backButtonRelocated && selectionHeadingRemoved && listRestored && reopened && finalList, customerId, listHero, listKpis, listToolbar, topSearchHidden, listEditPreserved, listDrawerPreserved, localSearchWorks, managementFilterWorks, detailOpened, backButtonRelocated, selectionHeadingRemoved, listRestored, reopened, finalList, state: window.__crmTest?.snapshot() };
       })()`, true);
+    } else if (process.env.BRING_CRM_SCREENSHOT_ACTION === "customer-consultation-history") {
+      actionResult = await mainWindow.webContents.executeJavaScript(`(async () => {
+        const wait = ms => new Promise(resolve => setTimeout(resolve, ms));
+        document.querySelector('[data-workspace-enter="operations"]')?.click();
+        await wait(120);
+        document.querySelector('[data-view="customers"]')?.click();
+        await wait(120);
+        const card = document.querySelector('[data-customer-hub-open]');
+        const customerId = card?.dataset.customerHubOpen || '';
+        card?.click();
+        await wait(120);
+        const initialHistory = document.querySelector('[data-customer-consultations]');
+        const initialCount = Number.parseInt(initialHistory?.querySelector('summary em')?.textContent || '0', 10);
+        const initiallyClosed = !!initialHistory && initialHistory.open === false;
+        const button = document.querySelector('[data-action="new-consultation"][data-customer-id="' + customerId + '"]');
+        button?.click();
+        await wait(80);
+        const form = document.getElementById('consultationForm');
+        const customerPrefilled = form?.elements.customerId?.value === customerId;
+        const returnsToCustomers = form?.dataset.returnView === 'customers';
+        const summary = '고객 상세 상담 기록 ' + Date.now().toString(36);
+        if (form) {
+          form.elements.summary.value = summary;
+          form.elements.result.value = '요청 내용 확인 완료';
+          form.elements.nextAction.value = '후속 일정 안내';
+          form.requestSubmit();
+        }
+        for (let attempt = 0; attempt < 40; attempt += 1) {
+          if (!document.getElementById('modal')?.classList.contains('open')
+            && window.__crmTest?.getStore().activities.some(item => item.customerId === customerId && item.summary === summary)) break;
+          await wait(100);
+        }
+        const history = document.querySelector('[data-customer-consultations]');
+        const saved = window.__crmTest?.getStore().activities.some(item => item.customerId === customerId && item.summary === summary);
+        const record = [...document.querySelectorAll('.customer-consultation-record b')].find(item => item.textContent === summary);
+        const finalCount = Number.parseInt(history?.querySelector('summary em')?.textContent || '0', 10);
+        const sameCustomerDetail = document.querySelector('[data-customer-hub-select]')?.value === customerId;
+        const autoOpened = !!history?.open;
+        if (history) history.open = false;
+        history?.querySelector('summary')?.click();
+        await wait(40);
+        const canReopen = !!history?.open;
+        record?.scrollIntoView({ block: 'center' });
+        return {
+          pass: !!customerId && initiallyClosed && !!button && customerPrefilled && returnsToCustomers && saved
+            && sameCustomerDetail && autoOpened && canReopen && !!record && finalCount === initialCount + 1,
+          customerId, initiallyClosed, buttonFound: !!button, customerPrefilled, returnsToCustomers, saved,
+          sameCustomerDetail, autoOpened, canReopen, recordVisible: !!record, initialCount, finalCount,
+          state: window.__crmTest?.snapshot()
+        };
+      })().catch(error => ({ pass: false, error: String(error && error.stack || error) }))`, true);
     } else if (process.env.BRING_CRM_SCREENSHOT_ACTION === "customer-centered-detail") {
       actionResult = await mainWindow.webContents.executeJavaScript(`(async () => {
         const wait = ms => new Promise(resolve => setTimeout(resolve, ms));
@@ -6489,7 +6540,7 @@ async function createWindow() {
     const uiState = await mainWindow.webContents.executeJavaScript("window.__crmTest && window.__crmTest.snapshot()", true);
     const image = await mainWindow.webContents.capturePage();
     await fs.writeFile(target, image.toPNG());
-    if (["ai-quote-preview", "building-rental-info", "consultation-building-hub", "customer-sales-status", "customer-management-ui", "partner-vendor-toolbar", "partner-vendor-detail", "vacancy-layout-scale", "vacancy-viewer-invariant", "lookup-building-link", "office-messenger-drag-smoke", "one-off-payment-calendar", "payment-building-calendar", "work-calendar-smoke"].includes(process.env.BRING_CRM_SCREENSHOT_ACTION)) {
+    if (["ai-quote-preview", "building-rental-info", "consultation-building-hub", "customer-sales-status", "customer-management-ui", "customer-consultation-history", "partner-vendor-toolbar", "partner-vendor-detail", "vacancy-layout-scale", "vacancy-viewer-invariant", "lookup-building-link", "office-messenger-drag-smoke", "one-off-payment-calendar", "payment-building-calendar", "work-calendar-smoke"].includes(process.env.BRING_CRM_SCREENSHOT_ACTION)) {
       await fs.writeFile(`${target}.result.json`, JSON.stringify({ actionResult, uiState }, null, 2), "utf8");
     }
     console.log(target, JSON.stringify({ empty: image.isEmpty(), size: image.getSize(), actionResult, uiState }));

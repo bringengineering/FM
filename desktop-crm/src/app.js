@@ -2539,17 +2539,21 @@
     const openCaseRecords = openCases.slice(0, 6).map(caseRecord).join("");
     const closedContractRecords = closedContracts.slice(0, 5).map(contractRecord).join("");
     const completedCaseRecords = completedCases.slice(0, 6).map(caseRecord).join("");
-    const activityRecords = activities.slice(0, 5).map(activity => `<div class="building-detail-record"><div><b>${esc(`${activity.type} · ${activity.summary || "기록 내용 없음"}`)}</b><span>${esc([activity.result, activity.nextAction, dateText(activity.occurredAt)].filter(Boolean).join(" · "))}</span></div></div>`).join("");
+    const activityRecords = activities.map(activity => {
+      const detailText = [activity.result && `결과 ${activity.result}`, activity.nextAction && `다음 ${activity.nextAction}`, activity.owner && `담당 ${activity.owner}`].filter(Boolean).join(" · ");
+      return `<div class="building-detail-record customer-consultation-record"><div><b>${esc(activity.summary || "기록 내용 없음")}</b><span>${esc(detailText || "결과·다음 할 일 미입력")}</span></div><em>${esc([activity.type || "상담", dateText(activity.occurredAt)].filter(Boolean).join(" · "))}</em></div>`;
+    }).join("");
     const essentialSections = `<section class="building-detail-section wide"><header><b>고객 요청·후속조치</b><span>${tasks.length}건</span></header><div class="building-detail-body"><div class="building-detail-record"><div><b>${esc(customer.currentIssue || "현재 요청 미입력")}</b><span>${esc([customer.nextAction || "다음 행동 미입력", dateText(customer.nextContactAt)].join(" · "))}</span></div></div></div></section>${activeContracts.length ? `<section class="building-detail-section"><header><b>진행 계약</b><span>${activeContracts.length}건</span></header><div class="building-detail-body">${activeContractRecords}</div></section>` : ""}${openCases.length ? `<section class="building-detail-section"><header><b>진행 민원</b><span>${openCases.length}건</span></header><div class="building-detail-body">${openCaseRecords}</div></section>` : ""}`;
-    const secondaryCount = closedContracts.length + completedCases.length + activities.length;
-    const secondarySections = `${closedContracts.length ? `<section class="building-detail-section"><header><b>종료 계약</b><span>${closedContracts.length}건</span></header><div class="building-detail-body">${closedContractRecords}</div></section>` : ""}${completedCases.length ? `<section class="building-detail-section"><header><b>완료 민원</b><span>${completedCases.length}건</span></header><div class="building-detail-body">${completedCaseRecords}</div></section>` : ""}${activities.length ? `<section class="building-detail-section"><header><b>최근 상담</b><span>${activities.length}건</span></header><div class="building-detail-body">${activityRecords}</div></section>` : ""}`;
-    const secondaryDetails = secondaryCount ? `<details class="customer-secondary-details"><summary><span><b>추가 정보 보기</b><small>종료된 계약·완료 민원·최근 상담</small></span><em>${secondaryCount}건</em></summary><div class="customer-secondary-body"><div class="building-detail-grid">${secondarySections}</div></div></details>` : "";
+    const consultationDetails = `<details class="customer-secondary-details customer-consultation-details" data-customer-consultations="${attr(customer.id)}"><summary><span><b>상담 기록</b><small>고객과 나눈 내용과 다음 조치를 펼쳐서 확인합니다.</small></span><em>${activities.length}건</em></summary><div class="customer-secondary-body customer-consultation-body"><div class="building-detail-body">${activityRecords || `<div class="building-detail-empty">아직 등록된 상담 기록이 없습니다.</div>`}</div></div></details>`;
+    const secondaryCount = closedContracts.length + completedCases.length;
+    const secondarySections = `${closedContracts.length ? `<section class="building-detail-section"><header><b>종료 계약</b><span>${closedContracts.length}건</span></header><div class="building-detail-body">${closedContractRecords}</div></section>` : ""}${completedCases.length ? `<section class="building-detail-section"><header><b>완료 민원</b><span>${completedCases.length}건</span></header><div class="building-detail-body">${completedCaseRecords}</div></section>` : ""}`;
+    const secondaryDetails = secondaryCount ? `<details class="customer-secondary-details"><summary><span><b>추가 정보 보기</b><small>종료된 계약과 완료 민원을 확인합니다.</small></span><em>${secondaryCount}건</em></summary><div class="customer-secondary-body"><div class="building-detail-grid">${secondarySections}</div></div></details>` : "";
     const buildingContext = `<div class="customer-building-context"><label class="customer-building-select-control"><span>작업 건물</span><select data-customer-building-select aria-label="작업할 건물 선택" ${buildings.length ? "" : "disabled"}>${buildingOptions}</select></label><button type="button" class="secondary-button" data-action="new-building" data-customer-id="${attr(customer.id)}">＋ 건물</button></div>`;
     const buildingActions = managedBuilding ? `<span class="customer-action-divider" aria-hidden="true"></span><button class="secondary-button" data-building-edit="${attr(managedBuilding.id)}">건물 정보 수정</button><button class="secondary-button" data-building-vacancies="${attr(managedBuilding.id)}">공실 현황</button><button class="secondary-button" data-building-payments="${attr(managedBuilding.id)}">건물주 입금</button><button class="primary-button" data-building-new-case="${attr(managedBuilding.id)}">＋ 새 민원</button>` : "";
-    return `<header class="building-hub-detail-head customer-hub-detail-head"><div class="building-hub-title customer-hub-title">${customerAvatar(customer)}<div><span>${esc(customer.customerNo || customer.id)}</span><h2>${esc(customerDisplayName(customer))}</h2><p>${esc([customer.company, customer.type, customer.email].filter(Boolean).join(" · ") || "추가 정보 미입력")}</p>${buildingContext}</div></div><div class="building-hub-head-actions customer-hub-head-actions" role="group" aria-label="고객과 건물 빠른 작업"><button class="secondary-button" data-customer-open="${attr(customer.id)}">전체 상세</button><button class="secondary-button" data-customer-hub-edit="${attr(customer.id)}">고객 정보 수정</button><button class="primary-button" data-action="new-selected-task" data-customer-id="${attr(customer.id)}">＋ 할 일</button>${buildingActions}</div></header>
+    return `<header class="building-hub-detail-head customer-hub-detail-head"><div class="building-hub-title customer-hub-title">${customerAvatar(customer)}<div><span>${esc(customer.customerNo || customer.id)}</span><h2>${esc(customerDisplayName(customer))}</h2><p>${esc([customer.company, customer.type, customer.email].filter(Boolean).join(" · ") || "추가 정보 미입력")}</p>${buildingContext}</div></div><div class="building-hub-head-actions customer-hub-head-actions" role="group" aria-label="고객과 건물 빠른 작업"><button class="secondary-button" data-customer-open="${attr(customer.id)}">전체 상세</button><button class="secondary-button" data-customer-hub-edit="${attr(customer.id)}">고객 정보 수정</button><button type="button" class="secondary-button" data-action="new-consultation" data-customer-id="${attr(customer.id)}">＋ 상담 기록</button><button class="primary-button" data-action="new-selected-task" data-customer-id="${attr(customer.id)}">＋ 할 일</button>${buildingActions}</div></header>
       <div class="building-hub-detail-scroll"><div class="building-identity-strip customer-essential-summary"><div><b>연락처</b><span>${esc(customerPhoneText(customer.phone) || "-")}</span></div><div><b>다음 연락</b><span>${esc(dateText(customer.nextContactAt))}</span></div><div><b>담당자</b><span>${esc(customer.owner || "미입력")}</span></div><div><b>중요도</b><span>${priorityClass(customer.priority)}</span></div></div>
       <div class="building-hub-kpis customer-hub-kpis"><div class="building-hub-kpi"><span>진행 계약</span><b>${activeContracts.length}건</b><small>${activeContracts[0] ? esc(contractTypes(activeContracts[0]).join("·")) : "활성 계약 없음"}</small></div><div class="building-hub-kpi"><span>진행 민원</span><b>${openCases.length}건</b><small>${openCases[0] ? esc(Core.workflowProgress(openCases[0]).current) : "진행 업무 없음"}</small></div><div class="building-hub-kpi ${tasks.length ? "alert" : ""}"><span>남은 할 일</span><b>${tasks.length}건</b><small>${esc(tasks[0]?.title || "등록된 할 일 없음")}</small></div></div>
-      <div class="building-detail-grid customer-priority-grid">${essentialSections}</div>${secondaryDetails}</div>`;
+      <div class="building-detail-grid customer-priority-grid">${essentialSections}</div>${consultationDetails}${secondaryDetails}</div>`;
   }
 
   const buildingCustomers = building => store.customers.filter(customer => customer.id === building.ownerCustomerId || Core.customerBuildingIds(customer).includes(building.id));
@@ -6806,7 +6810,7 @@
       closeDrawer();
       customerEditor(customerId);
     }
-    else if (action === "new-consultation") consultationEditor(selectedCustomerId, currentView);
+    else if (action === "new-consultation") consultationEditor(actionControl.dataset.customerId || selectedCustomerId, currentView);
     else if (action === "new-partner-vendor") {
       if (!canWriteCRM()) return showToast("조회 전용 계정은 협력 업체를 등록할 수 없습니다.", "error");
       partnerVendorEditor("");
@@ -8159,7 +8163,21 @@
         customer.updatedAt = new Date().toISOString();
       }
       logAudit({ category: "변경", targetType: "고객", targetId: raw.customerId, targetLabel: customer && customer.name || "고객", action: `${activity.type} 상담 기록 추가`, reason: "상담 이력 관리" });
-      await commitSharedFormMutation({ form, beforeStore, onSaved: () => { closeModal(); currentView = returnView; render(); if (returnView === "relationships") renderRelationshipDrawer(raw.customerId); showToast(returnView === "relationships" ? "후속 연락을 서버에 기록했습니다." : "상담 기록을 서버에 저장했습니다.", "success"); } });
+      await commitSharedFormMutation({ form, beforeStore, onSaved: () => {
+        closeModal();
+        currentView = returnView;
+        if (returnView === "customers") selectedCustomerHubId = raw.customerId;
+        render();
+        if (returnView === "relationships") renderRelationshipDrawer(raw.customerId);
+        if (returnView === "customers") {
+          const consultationHistory = main.querySelector("[data-customer-consultations]");
+          if (consultationHistory) {
+            consultationHistory.open = true;
+            consultationHistory.scrollIntoView({ block: "nearest" });
+          }
+        }
+        showToast(returnView === "relationships" ? "후속 연락을 서버에 기록했습니다." : "상담 기록을 서버에 저장했습니다.", "success");
+      } });
     } else if (form.id === "relationshipPlanForm") {
       const beforeStore = cloneStore(store);
       const raw = Object.fromEntries(new FormData(form).entries());

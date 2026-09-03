@@ -91,31 +91,53 @@ test("customer management mirrors the partner vendor card-list-to-detail workflo
   assert.ok((mainSource.match(/customer-management-ui/g) || []).length >= 2, "the screenshot action must also write a result JSON file");
 });
 
-test("customer detail keeps essentials visible and removes the duplicated building screen", () => {
+test("customer detail keeps essentials visible and moves consultation history into its own disclosure", () => {
   const detail = sourceBetween("function renderCustomerHubDetail", "const buildingCustomers");
   const rendered = detail.slice(detail.indexOf("return `<header"));
+  const consultationMarkup = detail.slice(detail.indexOf("const consultationDetails"), detail.indexOf("const secondaryCount"));
+  const secondaryMarkup = detail.slice(detail.indexOf("const secondaryCount"), detail.indexOf("const buildingContext"));
   assert.doesNotMatch(detail, /const buildingRecords =|<b>연결 건물<\/b>|customer-linked-building|data-building-jump/);
   assert.doesNotMatch(detail, /customer-management-kpi|건물 미연결|건물 연결 필요/);
   assert.doesNotMatch(buildingCss, /\.customer-linked-building/);
   assert.match(detail, /<b>고객 요청·후속조치<\/b>/);
   assert.match(detail, /<b>진행 계약<\/b>/);
   assert.match(detail, /<b>진행 민원<\/b>/);
-  assert.match(detail, /<b>최근 상담<\/b>/);
+  assert.match(consultationMarkup, /<details class="customer-secondary-details customer-consultation-details" data-customer-consultations="\$\{attr\(customer\.id\)\}">/);
+  assert.match(consultationMarkup, /<b>상담 기록<\/b>/);
+  assert.match(consultationMarkup, /\$\{activities\.length\}건/);
+  assert.match(consultationMarkup, /아직 등록된 상담 기록이 없습니다/);
+  assert.doesNotMatch(consultationMarkup, /<details[^>]*\sopen(?:\s|=|>)/);
+  assert.doesNotMatch(secondaryMarkup, /activities|최근 상담|상담 기록/);
   assert.match(detail, /customerAvatar\(customer\)/);
   assert.match(detail, /customer-essential-summary/);
-  assert.match(detail, /data-customer-open|data-customer-hub-edit|new-selected-task/);
+  assert.match(detail, /data-customer-open|data-customer-hub-edit|new-consultation|new-selected-task/);
   assert.match(detail, /data-contract-edit|data-building-case-open/);
   assert.match(detail, /data-customer-building-select/);
   assert.match(detail, /data-action="new-building" data-customer-id/);
   assert.match(detail, /customer-hub-kpis/);
-  assert.match(detail, /<details class="customer-secondary-details"><summary>/);
   assert.match(detail, /추가 정보 보기/);
   assert.doesNotMatch(detail, /customer-embedded-building-management|customer-building-selector-bar|renderBuildingDetail\(managedBuilding\)|<h3>건물 관리<\/h3>/);
   assert.doesNotMatch(buildingCss, /\.customer-embedded-building-management|\.customer-building-selector-bar/);
   assert.ok(rendered.indexOf("customer-essential-summary") < rendered.indexOf("customer-hub-kpis"));
   assert.ok(rendered.indexOf("customer-hub-kpis") < rendered.indexOf("customer-priority-grid"));
-  assert.ok(rendered.indexOf("customer-priority-grid") < rendered.indexOf("${secondaryDetails}"));
+  assert.ok(rendered.indexOf("customer-priority-grid") < rendered.indexOf("${consultationDetails}"));
+  assert.ok(rendered.indexOf("${consultationDetails}") < rendered.indexOf("${secondaryDetails}"));
   assert.doesNotMatch(detail, /customerSalesStageBadge|영업 미등록|영업 보기/);
+});
+
+test("customer detail consultation action prefills the customer and returns to an expanded history", () => {
+  const detail = sourceBetween("function renderCustomerHubDetail", "const buildingCustomers");
+  const submit = sourceBetween('form.id === "consultationForm"', 'form.id === "relationshipPlanForm"');
+  assert.match(detail, /<button type="button" class="secondary-button" data-action="new-consultation" data-customer-id="\$\{attr\(customer\.id\)\}">＋ 상담 기록<\/button>/);
+  assert.match(appSource, /action === "new-consultation"\) consultationEditor\(actionControl\.dataset\.customerId \|\| selectedCustomerId, currentView\)/);
+  assert.match(submit, /if \(returnView === "customers"\) selectedCustomerHubId = raw\.customerId/);
+  assert.match(submit, /const consultationHistory = main\.querySelector\("\[data-customer-consultations\]"\)/);
+  assert.match(submit, /consultationHistory\.open = true/);
+  assert.match(submit, /consultationHistory\.scrollIntoView\(\{ block: "nearest" \}\)/);
+  assert.match(stylesSource, /\.crm-read-only \[data-action="new-consultation"\]/);
+  assert.match(buildingCss, /\.customer-consultation-record b,\.customer-consultation-record span\{[^}]*white-space:normal[^}]*overflow-wrap:anywhere/);
+  assert.match(mainSource, /BRING_CRM_SCREENSHOT_ACTION === "customer-consultation-history"/);
+  assert.ok((mainSource.match(/customer-consultation-history/g) || []).length >= 2, "the consultation screenshot action must also write a result JSON file");
 });
 
 test("partner vendor cards keep their actions while the remaining card opens a customer-style detail workspace", () => {
@@ -158,6 +180,7 @@ test("customer header moves selected building actions after the task action", ()
   const customerActionTokens = [
     "data-customer-open",
     "data-customer-hub-edit",
+    'data-action="new-consultation"',
     'data-action="new-selected-task"',
     "${buildingActions}",
   ];
