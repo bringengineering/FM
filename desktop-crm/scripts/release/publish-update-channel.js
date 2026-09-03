@@ -19,6 +19,7 @@ const MAX_CHANNEL_BYTES = 4 * 1024;
 const MAX_MANIFEST_BYTES = 128 * 1024;
 const MAX_INSTALLER_BYTES = 2 * 1024 * 1024 * 1024;
 const GITHUB_API = "https://api.github.com";
+const POST_WRITE_RETRY_DELAYS_MS = Object.freeze([1_000, 2_000, 4_000]);
 const EXACT_TOP_LEVEL_KEYS = Object.freeze(["installer", "manifest", "publishedAt", "schemaVersion", "tag", "version"]);
 const EXACT_INSTALLER_KEYS = Object.freeze(["name", "sha512", "size"]);
 const EXACT_MANIFEST_KEYS = Object.freeze(["name", "sha256", "size"]);
@@ -155,11 +156,14 @@ function assertNewestStableRelease(releases, targetVersion) {
   return true;
 }
 
-async function githubJson(url, { token, fetchImpl = globalThis.fetch, method = "GET", body, allow404 = false } = {}) {
+async function githubJson(url, { token, fetchImpl = globalThis.fetch, method = "GET", body, allow404 = false, headers = {} } = {}) {
   if (typeof fetchImpl !== "function") throw releaseError("CRM_UPDATE_CHANNEL_FETCH_UNAVAILABLE", "The CRM update-channel publisher cannot fetch.");
   const response = await fetchImpl(url, {
     method,
-    headers: githubHeaders(token, body === undefined ? {} : { "Content-Type": "application/json" }),
+    headers: githubHeaders(token, {
+      ...headers,
+      ...(body === undefined ? {} : { "Content-Type": "application/json" }),
+    }),
     body: body === undefined ? undefined : JSON.stringify(body),
   });
   if (allow404 && response && response.status === 404) return null;
@@ -180,7 +184,12 @@ function repoApi(owner, repo, suffix) {
 }
 
 async function loadUpdateChannel({ owner, repo, token, fetchImpl = globalThis.fetch }) {
-  const ref = await githubJson(repoApi(owner, repo, `/git/ref/heads/${CHANNEL_BRANCH}`), { token, fetchImpl, allow404: true });
+  const ref = await githubJson(repoApi(owner, repo, `/git/ref/heads/${CHANNEL_BRANCH}`), {
+    token,
+    fetchImpl,
+    allow404: true,
+    headers: { "Cache-Control": "no-cache" },
+  });
   if (!ref) return null;
   if (ref.ref !== CHANNEL_REF || !ref.object || ref.object.type !== "commit") {
     throw releaseError("CRM_UPDATE_CHANNEL_REF_INVALID", "The CRM update-channel ref is invalid.");
@@ -269,7 +278,7 @@ async function moveChannelRef({ owner, repo, token, fetchImpl, previous, commitS
   });
 }
 
-async function publishUpdateChannel({ owner, repo, token, pointer, fetchImpl = globalThis.fetch }) {
+async function publishUpdateChannel({ owner, repo, token, pointer, fetchImpl = globalThis.fetch, sleepImpl }) {
   if (!pointer || typeof pointer.text !== "string" || !pointer.value) throw releaseError("CRM_UPDATE_CHANNEL_POINTER_REQUIRED", "A verified CRM update-channel pointer is required.");
   parseUpdateChannel(pointer.text);
   let previous = await loadUpdateChannel({ owner, repo, token, fetchImpl });
@@ -295,11 +304,19 @@ async function publishUpdateChannel({ owner, repo, token, pointer, fetchImpl = g
     }
     throw releaseError("CRM_UPDATE_CHANNEL_REF_CONFLICT", "The CRM update-channel ref changed concurrently and was not overwritten.");
   }
-  const current = await loadUpdateChannel({ owner, repo, token, fetchImpl });
-  if (!current || current.commitSha !== commitSha || current.text !== pointer.text) {
-    throw releaseError("CRM_UPDATE_CHANNEL_POST_WRITE_MISMATCH", "The CRM update-channel ref did not retain the exact committed pointer.");
+  const pause = typeof sleepImpl === "function"
+    ? sleepImpl
+    : delayMs => new Promise(resolve => setTimeout(resolve, delayMs));
+  for (let attempt = 0; attempt <= POST_WRITE_RETRY_DELAYS_MS.length; attempt += 1) {
+    const current = await loadUpdateChannel({ owner, repo, token, fetchImpl });
+    if (current && current.commitSha === commitSha && current.text === pointer.text) {
+      return { advanced: true, status: "advanced", commitSha, value: current.value };
+    }
+    if (attempt < POST_WRITE_RETRY_DELAYS_MS.length) {
+      await pause(POST_WRITE_RETRY_DELAYS_MS[attempt]);
+    }
   }
-  return { advanced: true, status: "advanced", commitSha, value: current.value };
+  throw releaseError("CRM_UPDATE_CHANNEL_POST_WRITE_MISMATCH", "The CRM update-channel ref did not retain the exact committed pointer after bounded verification retries.");
 }
 
 module.exports = {

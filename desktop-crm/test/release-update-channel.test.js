@@ -108,6 +108,9 @@ function fakeChannelApi(initialText = "") {
   const calls = [];
   let refSha = "";
   let conflict = null;
+  let postWriteStaleReads = 0;
+  let staleRefSha = "";
+  let staleReadsRemaining = 0;
 
   const install = text => {
     const blobSha = nextSha();
@@ -127,6 +130,10 @@ function fakeChannelApi(initialText = "") {
     const body = options.body ? JSON.parse(options.body) : null;
     calls.push({ method, path, body });
     if (method === "GET" && path.endsWith("/git/ref/heads/crm-update-channel")) {
+      if (staleReadsRemaining > 0 && staleRefSha) {
+        staleReadsRemaining -= 1;
+        return jsonResponse(200, { ref: CHANNEL_REF, object: { type: "commit", sha: staleRefSha } });
+      }
       return refSha
         ? jsonResponse(200, { ref: CHANNEL_REF, object: { type: "commit", sha: refSha } })
         : jsonResponse(404, { message: "Not Found" });
@@ -171,7 +178,9 @@ function fakeChannelApi(initialText = "") {
       if (conflict) return conflict({ install, body, current: () => refSha });
       const commit = commits.get(body.sha);
       if (!commit || commit.parents.length !== 1 || commit.parents[0] !== refSha || body.force !== false) return jsonResponse(422, {});
+      staleRefSha = refSha;
       refSha = body.sha;
+      staleReadsRemaining = postWriteStaleReads;
       return jsonResponse(200, { ref: CHANNEL_REF, object: { sha: refSha } });
     }
     return jsonResponse(500, { unexpected: `${method} ${path}` });
@@ -182,6 +191,7 @@ function fakeChannelApi(initialText = "") {
     current: () => refSha,
     install,
     setConflict(handler) { conflict = handler; },
+    setPostWriteStaleReads(count) { postWriteStaleReads = count; },
   };
 }
 
@@ -233,6 +243,25 @@ test("same-source retry is an exact no-op and creates no Git objects", async () 
   assert.equal(result.advanced, false);
   assert.equal(result.status, "current");
   assert.equal(api.calls.some(call => call.method === "POST" || call.method === "PATCH"), false);
+});
+
+test("post-write verification tolerates bounded stale ref reads", async () => {
+  const previous = fixture("1.8.7").pointer;
+  const pointer = fixture("1.8.8").pointer;
+  const api = fakeChannelApi(previous.text);
+  const delays = [];
+  api.setPostWriteStaleReads(2);
+  const result = await publishUpdateChannel({
+    owner: "bringengineering",
+    repo: "FM",
+    token: "token",
+    pointer,
+    fetchImpl: api.fetchImpl,
+    sleepImpl: async delayMs => { delays.push(delayMs); },
+  });
+  assert.equal(result.advanced, true);
+  assert.equal(result.status, "advanced");
+  assert.deepEqual(delays, [1_000, 2_000]);
 });
 
 test("a failed compare-and-swap leaves the previous channel ref unchanged", async () => {
