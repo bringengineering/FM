@@ -209,7 +209,9 @@ describe("CRM-native FIELD operations home", () => {
     // which must keep running. (Without this the test only passed on 2026-08-14.)
     vi.useFakeTimers({ toFake: ["Date"] });
     vi.setSystemTime(new Date("2026-08-14T03:00:00Z")); // 2026-08-14 12:00 KST
-    onTestFinished(() => vi.useRealTimers());
+    onTestFinished(() => {
+      vi.useRealTimers();
+    });
     const ref = createRef<FieldOperationsHomeHandle>();
     const onSearchChange = vi.fn();
     function ControlledHome() {
