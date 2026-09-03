@@ -4452,6 +4452,26 @@ async function createWindow() {
         let seed = window.__crmTest.getStore();
         let first = seed.buildings[0];
         if (!first) return { pass: false, reason: 'seed building missing', isReadOnly };
+        if (!Number.isInteger(first.entityVersion) || first.entityVersion < 1) {
+          first.entityVersion = 1;
+          first.entityUpdatedAt = new Date().toISOString();
+          seed.updatedAt = first.entityUpdatedAt;
+          window.__crmTest.applyRemoteForTest(seed);
+          await wait(100);
+          seed = window.__crmTest.getStore();
+          first = seed.buildings.find(item => item.id === first.id) || seed.buildings[0];
+        }
+        const linkedCustomer = seed.customers.find(item => item.id === first.ownerCustomerId || (Array.isArray(item.buildingIds) && item.buildingIds.includes(first.id)));
+        if (!linkedCustomer) return { pass: false, reason: 'linked customer missing', isReadOnly };
+        document.querySelector('[data-workspace-enter="operations"]')?.click();
+        await wait(120);
+        const operatorSelect = document.getElementById('fieldOperatorSelect');
+        if (operatorSelect) {
+          const operatorValue = [...operatorSelect.options].find(option => option.value)?.value || '';
+          operatorSelect.value = operatorValue;
+          operatorSelect.dispatchEvent(new Event('change', { bubbles: true }));
+          await wait(40);
+        }
         if (isReadOnly) {
           Object.assign(first, {
             rentDeposit: 3000000, monthlyRent: 330000, maintenanceFee: 50000,
@@ -4463,84 +4483,77 @@ async function createWindow() {
           seed.updatedAt = new Date().toISOString();
           window.__crmTest.applyRemoteForTest(seed);
           await wait(100);
-          document.querySelector('[data-view="buildings"]')?.click();
+          document.querySelector('[data-view="customers"]')?.click();
           await wait(80);
-          document.querySelector('[data-building-open="' + first.id + '"]')?.click();
-          const detail = document.querySelector('.building-rental-detail');
-          const editButton = document.querySelector('[data-building-edit="' + first.id + '"]');
+          document.querySelector('[data-customer-hub-open="' + linkedCustomer.id + '"]')?.click();
+          await wait(80);
+          const readOnlyBuildingSelect = document.querySelector('[data-customer-building-select]');
+          if (readOnlyBuildingSelect && [...readOnlyBuildingSelect.options].some(option => option.value === first.id)) {
+            readOnlyBuildingSelect.value = first.id;
+            readOnlyBuildingSelect.dispatchEvent(new Event('change', { bubbles: true }));
+            await wait(80);
+          }
+          const detail = document.querySelector('[data-customer-rental-details="' + first.id + '"]');
+          const initiallyClosed = !!detail && !detail.open;
+          detail?.querySelector('summary')?.click();
+          await wait(40);
+          const editButton = detail?.querySelector('[data-building-edit="' + first.id + '"]');
           const editHidden = !editButton || getComputedStyle(editButton).display === 'none';
           const detailText = detail?.textContent || '';
-          const pass = !!detail && editHidden && detailText.includes('3,000,000원') && detailText.includes('101호, 203호') && detailText.includes('기타: 복도 청소') && detailText.includes('기타: 인덕션');
-          return { pass, isReadOnly, editHidden, detailText, state: window.__crmTest.snapshot() };
+          detail?.scrollIntoView({ block: 'center' });
+          const pass = initiallyClosed && !!detail?.open && editHidden && detailText.includes('3,000,000원') && detailText.includes('101호, 203호') && detailText.includes('기타: 복도 청소') && detailText.includes('기타: 인덕션');
+          return { pass, isReadOnly, initiallyClosed, opened: !!detail?.open, editHidden, detailText, state: window.__crmTest.snapshot() };
         }
 
-        document.querySelector('[data-view="buildings"]')?.click();
+        Object.assign(first, {
+          rentDeposit: 3000000, monthlyRent: 330000, maintenanceFee: 50000,
+          maintenanceIncludes: ['수도', '인터넷', '기타'], maintenanceIncludeOther: '복도 청소',
+          vacantUnitCount: 3, vacantUnits: ['101호', '203호'],
+          roomTypes: ['원룸', '투룸', '기타'], roomTypeOther: '복층',
+          roomOptions: ['냉장고', '세탁기', '에어컨', '기타'], roomOptionOther: '인덕션'
+        });
+        seed.updatedAt = new Date().toISOString();
+        window.__crmTest.applyRemoteForTest(seed);
+        await wait(100);
+        document.querySelector('[data-view="customers"]')?.click();
         await wait(80);
-        document.querySelector('[data-building-open="' + first.id + '"]')?.click();
-        document.querySelector('[data-building-edit="' + first.id + '"]')?.click();
-        let form = document.getElementById('buildingForm');
-        if (!form) return { pass: false, reason: 'building form missing', isReadOnly };
-        const check = (name, value) => {
-          const input = [...form.querySelectorAll('input[name="' + name + '"]')].find(item => item.value === value);
-          if (input) input.checked = true;
-          return !!input;
-        };
-        form.elements.rentDeposit.value = '3000000';
-        form.elements.monthlyRent.value = '330000';
-        form.elements.maintenanceFee.value = '50000';
-        form.elements.vacantUnitCount.value = '1';
-        form.elements.vacantUnits.value = '101호, 203호';
-        check('maintenanceIncludes', '수도');
-        check('maintenanceIncludes', '인터넷');
-        check('maintenanceIncludes', '기타');
-        form.elements.maintenanceIncludeOther.value = '복도 청소';
-        check('roomTypes', '원룸');
-        check('roomTypes', '투룸');
-        check('roomTypes', '기타');
-        form.elements.roomTypeOther.value = '복층';
-        check('roomOptions', '냉장고');
-        check('roomOptions', '세탁기');
-        check('roomOptions', '에어컨');
-        check('roomOptions', '기타');
-        form.elements.roomOptionOther.value = '인덕션';
-        form.requestSubmit();
+        document.querySelector('[data-customer-hub-open="' + linkedCustomer.id + '"]')?.click();
         await wait(80);
-        const validationBlocked = !!document.getElementById('buildingForm') && (document.getElementById('toast')?.textContent || '').includes('공실 수를 2개 이상');
-        form = document.getElementById('buildingForm');
-        form.elements.vacantUnitCount.value = '3';
-        form.requestSubmit();
-        await wait(220);
-        const saved = window.__crmTest.getStore().buildings.find(item => item.id === first.id);
-        const detail = document.querySelector('.building-rental-detail');
+        const buildingSelect = document.querySelector('[data-customer-building-select]');
+        if (buildingSelect && [...buildingSelect.options].some(option => option.value === first.id)) {
+          buildingSelect.value = first.id;
+          buildingSelect.dispatchEvent(new Event('change', { bubbles: true }));
+          await wait(80);
+        }
+        let detail = document.querySelector('[data-customer-rental-details="' + first.id + '"]');
+        const initiallyClosed = !!detail && !detail.open;
+        detail?.querySelector('summary')?.click();
+        await wait(40);
         const detailText = detail?.textContent || '';
-        document.querySelector('[data-building-edit="' + first.id + '"]')?.click();
-        form = document.getElementById('buildingForm');
-        const checkedValues = name => [...form.querySelectorAll('input[name="' + name + '"]:checked')].map(item => item.value);
-        const reopened = {
-          rentDeposit: form.elements.rentDeposit.value,
-          vacantUnitCount: form.elements.vacantUnitCount.value,
-          vacantUnits: form.elements.vacantUnits.value,
-          maintenanceIncludes: checkedValues('maintenanceIncludes'),
-          roomTypes: checkedValues('roomTypes'),
-          roomOptions: checkedValues('roomOptions'),
-          maintenanceIncludeOther: form.elements.maintenanceIncludeOther.value,
-          roomTypeOther: form.elements.roomTypeOther.value,
-          roomOptionOther: form.elements.roomOptionOther.value
-        };
-        const card = document.querySelector('.modal-card');
-        const noHorizontalOverflow = !!card && card.scrollWidth <= card.clientWidth + 1 && form.scrollWidth <= form.clientWidth + 1;
-        const pass = validationBlocked && saved?.rentDeposit === 3000000 && saved?.monthlyRent === 330000 && saved?.maintenanceFee === 50000
-          && saved?.vacantUnitCount === 3 && JSON.stringify(saved?.vacantUnits) === JSON.stringify(['101호', '203호'])
-          && ['수도', '인터넷', '기타'].every(value => saved?.maintenanceIncludes?.includes(value)) && saved?.maintenanceIncludeOther === '복도 청소'
-          && ['원룸', '투룸', '기타'].every(value => saved?.roomTypes?.includes(value)) && saved?.roomTypeOther === '복층'
-          && ['냉장고', '세탁기', '에어컨', '기타'].every(value => saved?.roomOptions?.includes(value)) && saved?.roomOptionOther === '인덕션'
-          && reopened.rentDeposit === '3000000' && reopened.vacantUnitCount === '3' && reopened.vacantUnits === '101호, 203호'
-          && reopened.maintenanceIncludes.length === 3 && reopened.roomTypes.length === 3 && reopened.roomOptions.length === 4
-          && detailText.includes('3,000,000원') && detailText.includes('101호, 203호') && detailText.includes('기타: 복도 청소') && detailText.includes('기타: 인덕션')
-          && noHorizontalOverflow;
-        if (card) card.scrollTop = card.scrollHeight;
+        const editButton = detail?.querySelector('[data-building-edit="' + first.id + '"]');
+        editButton?.click();
         await wait(80);
-        return { pass, isReadOnly, validationBlocked, saved, reopened, detailText, noHorizontalOverflow, state: window.__crmTest.snapshot() };
+        const form = document.getElementById('buildingForm');
+        const checkedValues = name => [...form?.querySelectorAll('input[name="' + name + '"]:checked') || []].map(item => item.value);
+        const editOpened = !!form
+          && form.elements.rentDeposit.value === '3000000'
+          && form.elements.vacantUnitCount.value === '3'
+          && form.elements.vacantUnits.value === '101호, 203호'
+          && checkedValues('maintenanceIncludes').length === 3
+          && checkedValues('roomTypes').length === 3
+          && checkedValues('roomOptions').length === 4;
+        const card = document.querySelector('.modal-card');
+        const noHorizontalOverflow = !!card && !!form && card.scrollWidth <= card.clientWidth + 1 && form.scrollWidth <= form.clientWidth + 1;
+        form?.querySelector('[data-action="close-modal"]')?.click();
+        await wait(40);
+        detail = document.querySelector('[data-customer-rental-details="' + first.id + '"]');
+        if (detail) detail.open = true;
+        detail?.scrollIntoView({ block: 'center' });
+        const removedFromBuildingDetail = !document.querySelector('.building-rental-detail');
+        const pass = initiallyClosed && !!detail?.open && !!editButton && editOpened && noHorizontalOverflow && removedFromBuildingDetail
+          && detailText.includes('3,000,000원') && detailText.includes('101호, 203호') && detailText.includes('기타: 복도 청소') && detailText.includes('기타: 인덕션');
+        await wait(80);
+        return { pass, isReadOnly, initiallyClosed, opened: !!detail?.open, editButtonInside: !!editButton, editOpened, detailText, removedFromBuildingDetail, noHorizontalOverflow, state: window.__crmTest.snapshot() };
       })().catch(error => ({ pass: false, error: String(error && error.stack || error) }))`, true);
     } else if (process.env.BRING_CRM_SCREENSHOT_ACTION === "vacancy-layout-scale") {
       actionResult = await mainWindow.webContents.executeJavaScript(`(async () => {

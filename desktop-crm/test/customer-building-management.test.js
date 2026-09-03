@@ -96,6 +96,7 @@ test("customer detail keeps essentials visible and moves consultation history in
   const rendered = detail.slice(detail.indexOf("return `<header"));
   const consultationMarkup = detail.slice(detail.indexOf("const consultationDetails"), detail.indexOf("const secondaryCount"));
   const secondaryMarkup = detail.slice(detail.indexOf("const secondaryCount"), detail.indexOf("const buildingContext"));
+  const rentalMarkup = detail.slice(detail.indexOf("const rentalDetails"), detail.indexOf("const buildingContext"));
   assert.doesNotMatch(detail, /const buildingRecords =|<b>연결 건물<\/b>|customer-linked-building|data-building-jump/);
   assert.doesNotMatch(detail, /customer-management-kpi|건물 미연결|건물 연결 필요/);
   assert.doesNotMatch(buildingCss, /\.customer-linked-building/);
@@ -116,13 +117,23 @@ test("customer detail keeps essentials visible and moves consultation history in
   assert.match(detail, /data-action="new-building" data-customer-id/);
   assert.match(detail, /customer-hub-kpis/);
   assert.match(detail, /추가 정보 보기/);
+  assert.match(rentalMarkup, /<details class="customer-secondary-details customer-rental-details" data-customer-rental-details="\$\{attr\(managedBuilding\.id\)\}">/);
+  assert.match(rentalMarkup, /<b>임대·공실 정보<\/b>/);
+  assert.match(rentalMarkup, /data-building-edit="\$\{attr\(managedBuilding\.id\)\}">수정<\/button>/);
+  assert.match(rentalMarkup, /data-building-vacancies="\$\{attr\(managedBuilding\.id\)\}">공실 현황 보기<\/button>/);
+  assert.doesNotMatch(rentalMarkup, /<details[^>]*\sopen(?:\s|=|>)/);
   assert.doesNotMatch(detail, /customer-embedded-building-management|customer-building-selector-bar|renderBuildingDetail\(managedBuilding\)|<h3>건물 관리<\/h3>/);
   assert.doesNotMatch(buildingCss, /\.customer-embedded-building-management|\.customer-building-selector-bar/);
   assert.ok(rendered.indexOf("customer-essential-summary") < rendered.indexOf("customer-hub-kpis"));
   assert.ok(rendered.indexOf("customer-hub-kpis") < rendered.indexOf("customer-priority-grid"));
   assert.ok(rendered.indexOf("customer-priority-grid") < rendered.indexOf("${consultationDetails}"));
   assert.ok(rendered.indexOf("${consultationDetails}") < rendered.indexOf("${secondaryDetails}"));
+  assert.ok(rendered.indexOf("${secondaryDetails}") < rendered.indexOf("${rentalDetails}"));
   assert.doesNotMatch(detail, /customerSalesStageBadge|영업 미등록|영업 보기/);
+  const buildingDetail = sourceBetween("function renderBuildingDetail", "function vacancyUnitSearchText");
+  assert.doesNotMatch(buildingDetail, /building-rental-detail|<b>임대·공실 정보<\/b>/);
+  assert.match(buildingCss, /\.customer-rental-details:not\(\[open\]\)>\.customer-rental-body\{display:none\}/);
+  assert.match(buildingCss, /\.customer-rental-toolbar\{/);
 });
 
 test("customer detail consultation action prefills the customer and returns to an expanded history", () => {
