@@ -4429,22 +4429,21 @@ async function createWindow() {
         return { pass: fields?.dataset.contractFields === '청소|부동산관리' && visible.join('|') === '청소|부동산관리' && selectedTypes.join('|') === '청소|부동산관리' && form.elements.buildingId.value === expectedBuilding, visible, selectedTypes, selectedBuilding: form.elements.buildingId.value, expectedBuilding, state: window.__crmTest.snapshot() };
       })()`, true);
     } else if (process.env.BRING_CRM_SCREENSHOT_ACTION === "building-hub") {
-      actionResult = await mainWindow.webContents.executeJavaScript(`(() => {
-        document.querySelector('[data-view="buildings"]')?.click();
+      actionResult = await mainWindow.webContents.executeJavaScript(`(async () => {
+        const wait = ms => new Promise(resolve => setTimeout(resolve, ms));
+        document.querySelector('[data-workspace-enter="operations"]')?.click();
+        await wait(120);
+        window.__crmSmokeNavigate('buildings');
+        await wait(120);
         const state = window.__crmTest.snapshot();
         const selected = document.querySelector('[data-building-open].selected');
         const buildingId = selected?.dataset.buildingOpen || '';
         const title = document.querySelector('.building-hub-title h2')?.textContent.trim() || '';
         const kpis = document.querySelectorAll('.building-hub-kpi').length;
         const sections = [...document.querySelectorAll('.building-detail-section>header>b')].map(item => item.textContent.trim());
-        document.querySelector('[data-building-new-case="' + buildingId + '"]')?.click();
-        const form = document.getElementById('workflowCaseCreateForm');
-        const linkedBuildingId = form?.elements.crmBuildingId.value || '';
-        const linkedCustomerId = form?.elements.crmCustomerId.value || '';
-        const buildingName = form?.elements.building.value || '';
-        const pass = state.view === 'buildings' && !!buildingId && !!title && kpis === 4 && sections.includes('연결 고객') && sections.includes('계약') && sections.includes('민원') && linkedBuildingId === buildingId && linkedCustomerId === '' && buildingName === title;
-        form?.querySelector('[data-action="close-modal"]')?.click();
-        return { pass, buildingId, title, kpis, sections, linkedBuildingId, linkedCustomerId, buildingName, state: window.__crmTest.snapshot() };
+        const newCaseShortcuts = document.querySelectorAll('[data-building-new-case]').length;
+        const pass = state.view === 'buildings' && !!buildingId && !!title && kpis === 4 && sections.includes('연결 고객') && sections.includes('계약') && sections.includes('민원') && newCaseShortcuts === 0;
+        return { pass, buildingId, title, kpis, sections, newCaseShortcuts, state: window.__crmTest.snapshot() };
       })()`, true);
     } else if (process.env.BRING_CRM_SCREENSHOT_ACTION === "building-rental-info") {
       actionResult = await mainWindow.webContents.executeJavaScript(`(async () => {
@@ -4748,20 +4747,24 @@ async function createWindow() {
     } else if (process.env.BRING_CRM_SCREENSHOT_ACTION === "building-link-flow") {
       actionResult = await mainWindow.webContents.executeJavaScript(`(async () => {
         const wait = ms => new Promise(resolve => setTimeout(resolve, ms));
-        document.querySelector('[data-view="buildings"]')?.click();
+        document.querySelector('[data-workspace-enter="operations"]')?.click();
+        await wait(120);
+        window.__crmSmokeNavigate('buildings');
         await wait(150);
         const store = window.__crmTest.getStore();
         const building = store.buildings.find(item => item && !item.archivedAt);
         const customer = store.customers.find(item => item.id === building?.ownerCustomerId) || store.customers[0];
         if (!building || !customer) return { pass: false, reason: 'seed building or customer missing' };
-        document.querySelector('[data-building-open="' + building.id + '"]')?.click();
-        await wait(80);
-        document.querySelector('[data-building-new-case="' + building?.id + '"]')?.click();
+        window.__crmSmokeNavigate('cases');
+        await wait(150);
+        document.querySelector('[data-action="new-workflow-case"]')?.click();
         await wait(80);
         const form = document.getElementById('workflowCaseCreateForm');
         if (!building || !form) return { pass: false, reason: 'linked case form missing', building };
-        const startsUnlinked = form.elements.crmCustomerId.value === '';
+        const startsUnlinked = form.elements.crmBuildingId.value === '' && form.elements.crmCustomerId.value === '';
         form.elements.caseParty.value = '건물주';
+        form.elements.crmBuildingId.value = building.id;
+        form.elements.crmBuildingId.dispatchEvent(new Event('change', { bubbles: true }));
         form.elements.crmCustomerId.value = customer.id;
         form.elements.crmCustomerId.dispatchEvent(new Event('change', { bubbles: true }));
         form.elements.issueType.value = '시설 점검';

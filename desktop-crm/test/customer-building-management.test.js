@@ -209,7 +209,7 @@ test("partner consultation history is vendor-scoped, collapsible, and returns to
   assert.match(stylesSource, /\.crm-read-only \[data-action="new-partner-quote"\]/);
 });
 
-test("customer header moves selected building actions after the task action", () => {
+test("customer header keeps selected building actions after the task action without a complaint shortcut", () => {
   const detail = sourceBetween("function renderCustomerHubDetail", "const buildingCustomers");
   const rendered = detail.slice(detail.indexOf("return `<header"));
   const customerActionTokens = [
@@ -228,7 +228,6 @@ test("customer header moves selected building actions after the task action", ()
     "data-building-edit",
     "data-building-vacancies",
     "data-building-payments",
-    "data-building-new-case",
   ];
   buildingActionTokens.reduce((previousIndex, token) => {
     const index = detail.indexOf(token);
@@ -237,9 +236,27 @@ test("customer header moves selected building actions after the task action", ()
   }, -1);
   assert.match(detail, /const buildingActions = managedBuilding \?/);
   assert.match(detail, /data-building-edit="\$\{attr\(managedBuilding\.id\)\}"/);
+  assert.doesNotMatch(detail, /data-building-new-case/);
   assert.match(detail, /customer-hub-head-actions" role="group" aria-label="고객과 건물 빠른 작업"/);
   assert.match(buildingCss, /\.customer-hub-head-actions\{[^}]*flex-wrap/);
   assert.match(buildingCss, /@media\(max-width:700px\)[\s\S]*?\.customer-hub-head-actions\{display:grid;grid-template-columns:repeat\(2/);
+});
+
+test("detail pages omit complaint shortcuts while complaint management keeps its create flow", () => {
+  const customerDetail = sourceBetween("function renderCustomerHubDetail", "const buildingCustomers");
+  const buildingDetail = sourceBetween("function renderBuildingDetail", "function vacancyUnitSearchText");
+  const casesView = sourceBetween("function renderCases", "function renderWorkflowCaseDetail");
+  const editor = sourceBetween("function workflowCaseEditor", "function field");
+
+  assert.doesNotMatch(customerDetail, /data-building-new-case/);
+  assert.doesNotMatch(buildingDetail, /data-building-new-case/);
+  assert.ok(
+    (casesView.match(/data-action="new-workflow-case"/g) || []).length >= 2,
+    "complaint management should keep its primary and empty-state create actions"
+  );
+  assert.match(editor, /function workflowCaseEditor\(buildingId\)/);
+  assert.match(editor, /id="workflowCaseCreateForm"/);
+  assert.match(appSource, /action === "new-workflow-case"\) workflowCaseEditor\(\)/);
 });
 
 test("compact building controls keep the selected customer relationship", () => {
