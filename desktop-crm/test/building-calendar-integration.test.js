@@ -149,8 +149,14 @@ test("schedule editor lists customer-management entries and auto-links customers
   const editor = functionSource("buildingScheduleEditor");
   const choices = functionSource("customerManagedBuildingChoices");
   const resolver = functionSource("resolveCustomerManagedBuildingSelection");
+  const labelStart = appSource.indexOf("const customerManagedBuildingChoiceLabel");
+  const labelEnd = appSource.indexOf("const customerDisplayName", labelStart);
+  const choiceLabel = appSource.slice(labelStart, labelEnd);
   assert.match(choices, /store\.customers/);
   assert.match(choices, /`customer:\$\{customer\.id\}`/);
+  assert.match(choiceLabel, /customerPhoneText\(choice\.customer\.phone\)/);
+  assert.match(choiceLabel, /managementStatusForCustomer\(choice\.customer\)/);
+  assert.doesNotMatch(choiceLabel, /choice && choice\.address/);
   assert.match(editor, /customerManagedBuildingChoices\(existing && existing\.buildingId\)/);
   assert.ok(editor.indexOf('selectField("고객건물 *"') < editor.indexOf('field("일정명 *"'));
   assert.match(editor, /고객·건물 관리 목록에서 고객건물을 선택/);

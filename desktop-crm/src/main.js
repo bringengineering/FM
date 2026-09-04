@@ -6329,13 +6329,18 @@ async function createWindow() {
         const labels = options.map(option => option.textContent.trim());
         const values = options.map(option => option.value);
         const allCustomersVisible = customers.every(customer => labels.some(label => label.includes(String(customer.name || '').trim())));
+        const customerLabelsMatchManagementList = customers.every(customer => {
+          const label = labels.find(value => value.includes(String(customer.name || '').trim())) || '';
+          const phone = String(customer.phone || '').trim();
+          return (!phone || label.includes(phone)) && /관리 (예정|중|종료)|연결 확인 필요/.test(label);
+        });
         const unlinkedCustomerVisible = values.some(value => value.startsWith('customer:'));
         const pickerLabel = form?.elements.buildingId?.closest('label')?.querySelector(':scope > span')?.textContent.trim() || '';
         const description = document.querySelector('#modalContent .modal-head p')?.textContent.trim() || '';
         const pass = !!form && pickerLabel === '고객건물 *' && options.length === customers.length + 1
-          && allCustomersVisible && unlinkedCustomerVisible
+          && allCustomersVisible && customerLabelsMatchManagementList && unlinkedCustomerVisible
           && description.includes('고객·건물 관리 목록');
-        return { pass, customerCount: customers.length, optionCount: options.length, labels, values, allCustomersVisible, unlinkedCustomerVisible, pickerLabel, description, state: window.__crmTest.snapshot() };
+        return { pass, customerCount: customers.length, optionCount: options.length, labels, values, allCustomersVisible, customerLabelsMatchManagementList, unlinkedCustomerVisible, pickerLabel, description, state: window.__crmTest.snapshot() };
       })()`, true);
     } else if (process.env.BRING_CRM_SCREENSHOT_ACTION === "work-calendar-smoke") {
       actionResult = await mainWindow.webContents.executeJavaScript(`Promise.race([

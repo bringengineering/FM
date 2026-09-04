@@ -463,8 +463,8 @@
   }
   const customerManagedBuildingChoiceLabel = choice => [
     choice && choice.name || "고객명 미입력",
-    choice && choice.address,
-    choice && choice.building && choice.building.archivedAt ? "기존 연결" : "",
+    choice && choice.customer ? customerPhoneText(choice.customer.phone) : "",
+    choice && choice.customer ? managementStatusForCustomer(choice.customer) : choice && choice.building && choice.building.archivedAt ? "기존 연결" : "",
   ].filter(Boolean).join(" · ");
   const customerDisplayName = customer => String(customer && customer.name || "").trim()
     || customerBuildings(customer).find(building => !building.archivedAt)?.name
