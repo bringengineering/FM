@@ -4192,6 +4192,33 @@ async function createWindow() {
           && document.querySelectorAll('.customer-management-kpis .kpi-card').length === 4;
         return { pass: !!customerId && listHero && listKpis && listToolbar && topSearchHidden && listEditPreserved && listDrawerPreserved && localSearchWorks && managementFilterWorks && detailOpened && backButtonRelocated && selectionHeadingRemoved && listRestored && reopened && finalList, customerId, listHero, listKpis, listToolbar, topSearchHidden, listEditPreserved, listDrawerPreserved, localSearchWorks, managementFilterWorks, detailOpened, backButtonRelocated, selectionHeadingRemoved, listRestored, reopened, finalList, state: window.__crmTest?.snapshot() };
       })()`, true);
+    } else if (process.env.BRING_CRM_SCREENSHOT_ACTION === "customer-building-picker") {
+      actionResult = await mainWindow.webContents.executeJavaScript(`(async () => {
+        const wait = ms => new Promise(resolve => setTimeout(resolve, ms));
+        document.querySelector('[data-workspace-enter="operations"]')?.click();
+        await wait(120);
+        document.querySelector('[data-view="buildingCalendar"]')?.click();
+        await wait(100);
+        document.querySelector('[data-unified-calendar-tab="payment"]')?.click();
+        await wait(120);
+        const openButton = document.querySelector('[data-customer-building-picker="payments"]');
+        openButton?.click();
+        await wait(80);
+        const expectedCount = window.__crmTest.getStore().buildings.filter(item => item && !item.archivedAt).length;
+        const pickerVisible = !!document.querySelector('.customer-building-picker') && !!document.querySelector('[data-customer-building-picker-search]');
+        const buildingFormAbsent = !document.getElementById('buildingForm');
+        const options = [...document.querySelectorAll('[data-customer-building-pick]')];
+        const optionCountMatches = options.length === expectedCount;
+        const selectedId = options[0]?.dataset.customerBuildingPick || '';
+        options[0]?.click();
+        await wait(100);
+        const modalClosedAfterPick = !document.querySelector('.modal-layer.open');
+        const selectedCard = !!selectedId && !!document.querySelector('[data-payment-building-id="' + selectedId + '"].selected');
+        document.querySelector('[data-customer-building-picker="payments"]')?.click();
+        await wait(80);
+        const reopenedForPreview = !!document.querySelector('.customer-building-picker [data-customer-building-pick="' + selectedId + '"][aria-pressed="true"]');
+        return { pass: !!openButton && pickerVisible && buildingFormAbsent && optionCountMatches && modalClosedAfterPick && selectedCard && reopenedForPreview, pickerVisible, buildingFormAbsent, expectedCount, optionCount: options.length, selectedId, modalClosedAfterPick, selectedCard, reopenedForPreview, state: window.__crmTest?.snapshot() };
+      })()`, true);
     } else if (process.env.BRING_CRM_SCREENSHOT_ACTION === "customer-consultation-history") {
       actionResult = await mainWindow.webContents.executeJavaScript(`(async () => {
         const wait = ms => new Promise(resolve => setTimeout(resolve, ms));
@@ -4738,7 +4765,7 @@ async function createWindow() {
         const finalModalClosed = !document.getElementById('modal')?.classList.contains('open');
         const finalAttentionActive = document.querySelector('[data-vacancy-filter="attention"]')?.classList.contains('active') === true;
         const customerBuildingList = document.querySelector('.vacancy-building-browser>header b')?.textContent.trim() === '고객건물 목록';
-        const customerBuildingAdd = document.querySelector('.vacancy-hero [data-action="new-customer"]')?.textContent.trim() === '＋ 고객건물 추가';
+        const customerBuildingAdd = document.querySelector('.vacancy-hero [data-customer-building-picker="vacancies"]')?.textContent.trim() === '＋ 고객건물 추가';
         const pass = configured.totalUnits === 100 && configured.createdCount === 100
           && selectedBuilding && finalBuildingSelected && buildingRailPresent && legacyPickerAbsent
           && customerBuildingList && customerBuildingAdd
@@ -6136,7 +6163,7 @@ async function createWindow() {
         const oldPaymentModeAbsent = !document.querySelector('[data-payment-mode], .payment-mode-tabs');
         const paymentTab = document.querySelector('[data-unified-calendar-tab="payment"]');
         const customerBuildingList = document.querySelector('.payment-building-panel>header b')?.textContent.trim() === '고객건물 목록';
-        const customerBuildingAdd = document.querySelector('.payment-operations-hero [data-action="new-customer"]')?.textContent.trim() === '＋ 고객건물 추가';
+        const customerBuildingAdd = document.querySelector('.payment-operations-hero [data-customer-building-picker="payments"]')?.textContent.trim() === '＋ 고객건물 추가';
         const recurringOnly = pageTitle === '캘린더' && mainText.includes('건물주용 정기 납부 관리')
           && mainText.includes('건물주 입금캘린더') && !document.querySelector('.one-off-contract-calendar')
           && document.querySelectorAll('[data-unified-calendar-tab]').length === 3
@@ -6728,7 +6755,7 @@ async function createWindow() {
     const uiState = await mainWindow.webContents.executeJavaScript("window.__crmTest && window.__crmTest.snapshot()", true);
     const image = await mainWindow.webContents.capturePage();
     await fs.writeFile(target, image.toPNG());
-    if (["ai-quote-preview", "building-rental-info", "consultation-building-hub", "customer-sales-status", "customer-management-ui", "customer-consultation-history", "customer-modal-drag-dismissal", "new-customer", "partner-vendor-toolbar", "partner-vendor-detail", "vacancy-layout-scale", "vacancy-viewer-invariant", "lookup-building-link", "office-messenger-drag-smoke", "one-off-payment-calendar", "payment-building-calendar", "customer-managed-schedule-picker", "work-calendar-smoke"].includes(process.env.BRING_CRM_SCREENSHOT_ACTION)) {
+    if (["ai-quote-preview", "building-rental-info", "consultation-building-hub", "customer-building-picker", "customer-sales-status", "customer-management-ui", "customer-consultation-history", "customer-modal-drag-dismissal", "new-customer", "partner-vendor-toolbar", "partner-vendor-detail", "vacancy-layout-scale", "vacancy-viewer-invariant", "lookup-building-link", "office-messenger-drag-smoke", "one-off-payment-calendar", "payment-building-calendar", "customer-managed-schedule-picker", "work-calendar-smoke"].includes(process.env.BRING_CRM_SCREENSHOT_ACTION)) {
       await fs.writeFile(`${target}.result.json`, JSON.stringify({ actionResult, uiState }, null, 2), "utf8");
     }
     console.log(target, JSON.stringify({ empty: image.isEmpty(), size: image.getSize(), actionResult, uiState }));

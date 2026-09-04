@@ -2294,7 +2294,7 @@
       main.innerHTML = unifiedCalendarFrame("payment", `<div class="operations-loading">건물주 입금캘린더를 불러오고 있습니다…</div>`, unifiedCalendarCounts());
       return;
     }
-    const content = `<section class="operations-hero payment-operations-hero"><div><span>건물주용 정기 납부 관리</span><h2>건물주 입금캘린더</h2><p>건물별 세입자 정기 납부 예정, 입금 확인, 미입금 안내를 한곳에서 처리합니다.</p></div><div class="operations-actions payment-operation-actions">${canWriteCRM() ? `<button class="secondary-button" data-action="new-customer">＋ 고객건물 추가</button>` : ""}<button class="secondary-button" data-payment-sheet-open>세입자 관리대장</button><button class="secondary-button payment-bank-connect-button" data-payment-bank-selected>팝빌 계좌 연결</button><button class="secondary-button" data-action="new-payment-schedule">＋ 납부 일정</button><button class="secondary-button" data-payment-action="syncPaymentBuildings">↻ 건물 갱신</button><button class="secondary-button" data-payment-action="syncPaymentSchedules">↻ 세입자 반영</button><button class="primary-button" data-payment-action="syncPopbillBankTransactions">은행 입금 조회</button></div></section>
+    const content = `<section class="operations-hero payment-operations-hero"><div><span>건물주용 정기 납부 관리</span><h2>건물주 입금캘린더</h2><p>건물별 세입자 정기 납부 예정, 입금 확인, 미입금 안내를 한곳에서 처리합니다.</p></div><div class="operations-actions payment-operation-actions">${canWriteCRM() ? `<button class="secondary-button" data-customer-building-picker="payments">＋ 고객건물 추가</button>` : ""}<button class="secondary-button" data-payment-sheet-open>세입자 관리대장</button><button class="secondary-button payment-bank-connect-button" data-payment-bank-selected>팝빌 계좌 연결</button><button class="secondary-button" data-action="new-payment-schedule">＋ 납부 일정</button><button class="secondary-button" data-payment-action="syncPaymentBuildings">↻ 건물 갱신</button><button class="secondary-button" data-payment-action="syncPaymentSchedules">↻ 세입자 반영</button><button class="primary-button" data-payment-action="syncPopbillBankTransactions">은행 입금 조회</button></div></section>
       ${operationsError ? `<div class="info-box" style="margin-top:12px;color:#c6535f">${esc(operationsError)}</div>` : ""}
       <div class="payment-sync-strip"><span><i class="${sheetSync.ok === false ? "bad" : sheetSync.updatedAt ? "good" : ""}"></i>세입자 자료 ${sheetSync.updatedAt ? `최근 ${esc(shortDate(sheetSync.updatedAt))} · ${Number(sheetSync.count) || 0}명` : "동기화 대기"}</span><span><i class="${bankSync.status === "error" ? "bad" : bankSync.updatedAt ? "good" : ""}"></i>은행 입금 ${bankSync.updatedAt ? `최근 ${esc(shortDate(bankSync.updatedAt))} · ${Number(bankSync.transactionCount) || 0}건` : "조회 대기"}</span><button type="button" data-action="refresh-operations">화면 새로고침</button></div>
       <div class="operations-kpis"><div class="operations-kpi"><span>이번 달 예정</span><b>${rows.length}건</b><small>${esc(krw(expectedAmount))}</small></div><div class="operations-kpi" style="--wash:#edf9f5"><span>입금 완료</span><b>${paid.length}건</b><small>${esc(krw(paidAmount))}</small></div><div class="operations-kpi" style="--wash:#fff2f3"><span>미입금</span><b>${overdue.length}건</b><small>납부일 경과·수동 확인</small></div><div class="operations-kpi" style="--wash:#fff9eb"><span>확인 필요</span><b>${review.length}건</b><small>중복·수동 검토</small></div></div>
@@ -2305,6 +2305,48 @@
         return `<div class="payment-day ${date.slice(0, 7) === paymentMonth ? "" : "out"} ${date === todayKey() ? "today" : ""}"><div class="payment-daynum">${Number(date.slice(-2))}</div>${dayRows.slice(0, 2).map(row => `<button class="payment-event ${attr(row.status)}" data-payment-event="${attr(row.schedule.id)}"><b>${esc([row.schedule.buildingName, row.schedule.unit].filter(Boolean).join(" · ") || row.schedule.tenantName || "납부 일정")}</b><span>${esc(krw(row.schedule.amount))} · ${esc(paymentStatusLabel(row.status))}</span></button>`).join("")}${dayRows.length > 2 ? `<span class="payment-more">＋ ${dayRows.length - 2}건</span>` : ""}</div>`;
       }).join("")}</div></section>` : `<div class="payment-calendar"><div class="payment-empty-note">${esc(paymentMonthLabel(paymentMonth))}에 ${selectedBuilding ? `${esc(selectedBuilding.name)} 건물의` : "등록된"} 납부 일정이 없습니다.<br>${selectedBuilding ? "다른 건물을 선택하거나 납부 일정을 추가해 주세요." : "위의 세입자 반영을 눌러 관리대장 자료를 가져오세요."}</div></div>`}</div></section>`;
     main.innerHTML = unifiedCalendarFrame("payment", content, unifiedCalendarCounts());
+  }
+
+  function customerBuildingPickerRows(query) {
+    const normalizedQuery = Core.normalizeText(query);
+    const phoneQuery = customerPhoneSearchKey(query);
+    return (store.buildings || [])
+      .filter(building => building && !building.archivedAt)
+      .filter(building => {
+        if (!normalizedQuery) return true;
+        const customers = buildingCustomers(building);
+        const text = [building.name, building.buildingNo, building.address, building.roadAddress, building.jibunAddress, building.type, building.status, building.manager, ...customers.flatMap(customer => [customerDisplayName(customer), customer.phone])].join(" ");
+        return Core.normalizeText(text).includes(normalizedQuery)
+          || phoneQuery && customers.some(customer => customerPhoneCandidateKey(customer.phone).includes(phoneQuery));
+      })
+      .sort((left, right) => String(left.name || "").localeCompare(String(right.name || ""), "ko"));
+  }
+
+  function renderCustomerBuildingPickerResults(targetView, query) {
+    const results = modalContent.querySelector("[data-customer-building-picker-results]");
+    const count = modalContent.querySelector("[data-customer-building-picker-count]");
+    if (!results || !count) return;
+    const rows = customerBuildingPickerRows(query);
+    const selectedId = targetView === "vacancies" ? selectedVacancyBuildingId : paymentBuildingFilter;
+    count.textContent = `고객·건물 관리 등록 건물 ${rows.length.toLocaleString("ko-KR")}곳`;
+    results.innerHTML = rows.length ? rows.map(building => {
+      const customers = buildingCustomers(building);
+      const customerLabel = customers.length ? customers.slice(0, 2).map(customerDisplayName).join(", ") : "고객 미연결";
+      const contextLabel = targetView === "vacancies"
+        ? `전체 ${vacancySummaryForBuilding(building).total.toLocaleString("ko-KR")}개 호실`
+        : `이번 달 납부 ${paymentRows(building.id).length.toLocaleString("ko-KR")}건`;
+      const selected = String(building.id) === String(selectedId || "");
+      return `<button type="button" class="entity-picker-option ${selected ? "selected" : ""}" data-customer-building-pick="${attr(building.id)}" data-target-view="${attr(targetView)}" aria-pressed="${selected ? "true" : "false"}"><span class="entity-picker-option-main"><b>${esc(building.name || "건물명 미입력")}</b><small>${selected ? "현재 선택" : "추가"}</small></span><span class="entity-picker-option-meta">${esc([building.address || building.roadAddress || building.jibunAddress || "주소 미입력", customerLabel, contextLabel].join(" · "))}</span></button>`;
+    }).join("") : `<div class="entity-picker-empty">${query ? "검색 조건에 맞는 고객건물이 없습니다." : "고객·건물 관리에 등록된 건물이 없습니다."}</div>`;
+  }
+
+  function customerBuildingPicker(targetView) {
+    const safeTargetView = targetView === "vacancies" ? "vacancies" : "payments";
+    const targetLabel = safeTargetView === "vacancies" ? "공실현황" : "건물주 입금캘린더";
+    modalContent.innerHTML = `<div class="modal-head"><div><h2>고객건물 추가</h2><p>고객·건물 관리에 등록된 건물 중 ${esc(targetLabel)}에서 확인할 건물을 선택하세요.</p></div><button class="close-button" data-action="close-modal">×</button></div><div class="modal-body"><div class="info-box">새 건물을 만들지 않습니다. 고객·건물 관리에 이미 등록된 목록에서 선택합니다.</div><section class="entity-picker customer-building-picker"><div class="entity-picker-step"><div class="entity-picker-step-label"><b>고객건물 목록</b><span>${esc(targetLabel)}에 바로 연결</span></div><input class="entity-picker-search" type="search" data-customer-building-picker-search data-target-view="${attr(safeTargetView)}" placeholder="건물명·주소·고객명·연락처 검색" autocomplete="off" aria-label="고객건물 검색"><div class="entity-picker-count" data-customer-building-picker-count aria-live="polite"></div><div class="entity-picker-results" data-customer-building-picker-results role="group" aria-label="고객건물 선택 목록"></div></div></section></div>`;
+    openModal();
+    renderCustomerBuildingPickerResults(safeTargetView, "");
+    setTimeout(() => modalContent.querySelector("[data-customer-building-picker-search]")?.focus(), 0);
   }
 
   function paymentStatusEditor(scheduleId) {
@@ -2956,7 +2998,7 @@
       const summary = vacancySummaryForBuilding(item);
       return `<button type="button" class="vacancy-building-card ${item.id === selectedVacancyBuildingId ? "selected" : ""}" data-vacancy-building="${attr(item.id)}" aria-pressed="${item.id === selectedVacancyBuildingId}"><div><strong>${esc(item.name || "건물명 미입력")}</strong><em>${summary.actionable.toLocaleString("ko-KR")}</em></div><p>${esc(item.address || "주소 미입력")}</p><small>전체 ${summary.total.toLocaleString("ko-KR")} · 공실 ${summary.vacant.toLocaleString("ko-KR")} · 예정 ${summary.move_out_scheduled.toLocaleString("ko-KR")}${summary.formal ? "" : " · 설정 필요"}</small></button>`;
     }).join("");
-    main.innerHTML = `<section class="vacancy-hero" data-vacancy-view><div><span>건물별 공실 체크</span><h2>층마다 입주·공실·공실 예정 호실을 확인합니다</h2><p>왼쪽 고객건물 목록에서 건물을 고르고, 오른쪽에서 필요한 호실을 빠르게 확인하고 변경하세요.</p></div>${canWriteCRM() ? `<button type="button" class="primary-button" data-action="new-customer">＋ 고객건물 추가</button>` : ""}</section><section class="vacancy-layout"><aside class="vacancy-building-browser"><header><div><b>고객건물 목록</b><span>확인할 건물을 선택하세요.</span></div><em>${buildings.length.toLocaleString("ko-KR")}곳</em></header><div class="vacancy-building-list">${buildingCards || `<div class="vacancy-building-empty">${buildingQuery ? "검색 조건에 맞는 건물이 없습니다." : "등록된 고객건물이 없습니다."}</div>`}</div></aside><section class="vacancy-detail">${building ? renderVacancyDetail(building, unitQuery) : `<div class="vacancy-detail-empty"><b>${buildingQuery ? "고객건물을 찾지 못했습니다" : "고객건물을 먼저 추가해 주세요"}</b><span>고객·건물 관리에 등록한 고객 정보를 기준으로 층과 호실을 설정합니다.</span></div>`}</section></section>`;
+    main.innerHTML = `<section class="vacancy-hero" data-vacancy-view><div><span>건물별 공실 체크</span><h2>층마다 입주·공실·공실 예정 호실을 확인합니다</h2><p>왼쪽 고객건물 목록에서 건물을 고르고, 오른쪽에서 필요한 호실을 빠르게 확인하고 변경하세요.</p></div>${canWriteCRM() ? `<button type="button" class="primary-button" data-customer-building-picker="vacancies">＋ 고객건물 추가</button>` : ""}</section><section class="vacancy-layout"><aside class="vacancy-building-browser"><header><div><b>고객건물 목록</b><span>확인할 건물을 선택하세요.</span></div><em>${buildings.length.toLocaleString("ko-KR")}곳</em></header><div class="vacancy-building-list">${buildingCards || `<div class="vacancy-building-empty">${buildingQuery ? "검색 조건에 맞는 건물이 없습니다." : "등록된 고객건물이 없습니다."}</div>`}</div></aside><section class="vacancy-detail">${building ? renderVacancyDetail(building, unitQuery) : `<div class="vacancy-detail-empty"><b>${buildingQuery ? "고객건물을 찾지 못했습니다" : "고객건물을 먼저 추가해 주세요"}</b><span>고객·건물 관리에 등록한 고객 정보를 기준으로 층과 호실을 설정합니다.</span></div>`}</section></section>`;
   }
 
   function vacancyConfigurationDraft(building) {
@@ -6043,6 +6085,31 @@
     if (quoteConfirm) { if (!canWriteCRM()) return showToast("조회 전용 계정은 견적을 확정할 수 없습니다.", "error"); await confirmWorkflowQuoteAmount(quoteConfirm); return; }
     const paymentAction = event.target.closest("[data-payment-action]");
     if (paymentAction) { if (!canWriteCRM()) return showToast("조회 전용 계정은 입금 업무를 실행할 수 없습니다.", "error"); await executePaymentAction(paymentAction); return; }
+    const customerBuildingPickerOpen = event.target.closest("[data-customer-building-picker]");
+    if (customerBuildingPickerOpen) {
+      customerBuildingPicker(customerBuildingPickerOpen.dataset.customerBuildingPicker);
+      return;
+    }
+    const customerBuildingPick = event.target.closest("[data-customer-building-pick]");
+    if (customerBuildingPick) {
+      const building = buildingById(customerBuildingPick.dataset.customerBuildingPick);
+      if (!building || building.archivedAt) return showToast("고객·건물 관리에서 건물을 찾지 못했습니다.", "error");
+      if (customerBuildingPick.dataset.targetView === "vacancies") {
+        selectedVacancyBuildingId = building.id;
+        vacancyStatusFilter = "attention";
+        vacancyUnitQuery = "";
+        closeModal();
+        renderVacancies();
+        showToast(`${building.name || "선택한 건물"}을 공실현황에 추가하고 선택했습니다.`, "success");
+      } else {
+        paymentBuildingFilter = building.id;
+        closeModal();
+        renderPayments();
+        pageMeta();
+        showToast(`${building.name || "선택한 건물"}을 입금캘린더에 추가하고 선택했습니다.`, "success");
+      }
+      return;
+    }
     const paymentSheetOpen = event.target.closest("[data-payment-sheet-open]");
     if (paymentSheetOpen) {
       const sheet = operations.caseSettings && operations.caseSettings.paymentScheduleSheet || {};
@@ -8416,7 +8483,10 @@
     if (direction && deleteCustomerPhoneDigit(event.target, direction)) event.preventDefault();
   });
   document.addEventListener("input", event => {
-    if (event.target.matches("[data-customer-list-search]")) {
+    if (event.target.matches("[data-customer-building-picker-search]")) {
+      renderCustomerBuildingPickerResults(event.target.dataset.targetView, event.target.value.slice(0, 160));
+      return;
+    } else if (event.target.matches("[data-customer-list-search]")) {
       crmSearchValue = event.target.value.slice(0, 160);
       searchEl.value = crmSearchValue;
       if (event.isComposing) return;

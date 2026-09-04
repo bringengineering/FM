@@ -376,5 +376,23 @@ test("vacancy workspace remains available under customer management", () => {
   assert.match(appSource, /currentView = "vacancies"/);
   assert.match(appSource, /고객·건물 관리에 등록한 고객 정보를 기준으로 층과 호실을 설정합니다/);
   assert.match(vacancies, /<b>고객건물 목록<\/b>/);
-  assert.match(vacancies, /data-action="new-customer">＋ 고객건물 추가<\/button>/);
+  assert.match(vacancies, /data-customer-building-picker="vacancies">＋ 고객건물 추가<\/button>/);
+  assert.doesNotMatch(vacancies, /data-action="new-building">＋ 고객건물 추가<\/button>/);
+  assert.doesNotMatch(vacancies, /data-action="new-customer">＋ 고객건물 추가<\/button>/);
+});
+
+test("occupancy add buttons choose an existing customer-management building", () => {
+  const payments = sourceBetween("function renderPayments", "function customerBuildingPickerRows");
+  const picker = sourceBetween("function customerBuildingPickerRows", "function paymentStatusEditor");
+  const selection = sourceBetween('const paymentAction = event.target.closest("[data-payment-action]")', 'const paymentSheetOpen = event.target.closest("[data-payment-sheet-open]")');
+  assert.match(payments, /data-customer-building-picker="payments">＋ 고객건물 추가<\/button>/);
+  assert.doesNotMatch(payments, /data-action="new-building">＋ 고객건물 추가<\/button>/);
+  assert.match(picker, /store\.buildings \|\| \[\]/);
+  assert.match(picker, /!building\.archivedAt/);
+  assert.match(picker, /고객·건물 관리에 이미 등록된 목록에서 선택합니다/);
+  assert.match(picker, /data-customer-building-picker-search/);
+  assert.match(picker, /data-customer-building-pick=/);
+  assert.match(selection, /paymentBuildingFilter = building\.id/);
+  assert.match(selection, /selectedVacancyBuildingId = building\.id/);
+  assert.match(appSource, /renderCustomerBuildingPickerResults\(event\.target\.dataset\.targetView, event\.target\.value\.slice\(0, 160\)\)/);
 });
