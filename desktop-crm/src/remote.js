@@ -325,6 +325,17 @@ function appendCustomerPatch(patch, customerId, previousValue, nextValue) {
 
   const fields = new Set([...Object.keys(before), ...Object.keys(next)]);
   fields.delete("buildingIdLinks");
+  // These fields are owned by dedicated, separately authorized persistence
+  // paths. A generic CRM form save must never overwrite or clear them merely
+  // because the renderer snapshot omits or normalizes their values.
+  for (const protectedField of [
+    "marketing",
+    "marketingUpdatedAt",
+    "marketingUpdatedBy",
+    "photoDataUrl",
+    "avatarUrl",
+    "localPath",
+  ]) fields.delete(protectedField);
   for (const field of fields) {
     if (!jsonEqual(before[field], next[field])) {
       patch[`customers/${customerId}/${field}`] = Object.prototype.hasOwnProperty.call(next, field)

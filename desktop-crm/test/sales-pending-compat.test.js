@@ -231,6 +231,43 @@ test("customer creation and unlinked deletion never emit a whole-record overwrit
   assert.equal(Object.hasOwn(deleted, "customers/customer_old"), false);
 });
 
+test("generic CRM saves do not patch customer fields owned by protected subsystems", () => {
+  const before = {
+    customers: {
+      customer_1: {
+        id: "customer_1",
+        name: "Before",
+        marketing: { source: "server" },
+        marketingUpdatedAt: "2026-09-04T01:00:00.000Z",
+        marketingUpdatedBy: "marketing-user",
+        photoDataUrl: "server-photo",
+        avatarUrl: "server-avatar",
+        localPath: "server-only"
+      }
+    }
+  };
+  const after = {
+    customers: {
+      customer_1: {
+        id: "customer_1",
+        name: "After",
+        marketing: {},
+        marketingUpdatedAt: "",
+        marketingUpdatedBy: "",
+        photoDataUrl: "",
+        avatarUrl: "",
+        localPath: ""
+      }
+    }
+  };
+
+  const patch = diffRemoteStores(before, after);
+  assert.equal(patch["customers/customer_1/name"], "After");
+  for (const field of ["marketing", "marketingUpdatedAt", "marketingUpdatedBy", "photoDataUrl", "avatarUrl", "localPath"]) {
+    assert.equal(Object.hasOwn(patch, `customers/customer_1/${field}`), false);
+  }
+});
+
 test("customer diffs fail closed when an existing building link is removed or changed", () => {
   const before = {
     customers: {
