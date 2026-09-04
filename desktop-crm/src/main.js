@@ -4573,6 +4573,8 @@ async function createWindow() {
     } else if (process.env.BRING_CRM_SCREENSHOT_ACTION === "vacancy-layout-scale") {
       actionResult = await mainWindow.webContents.executeJavaScript(`(async () => {
         const wait = ms => new Promise(resolve => setTimeout(resolve, ms));
+        document.querySelector('[data-workspace-enter="operations"]')?.click();
+        await wait(120);
         const initial = window.__crmTest.getStore();
         const building = initial.buildings.find(item => item && !item.archivedAt);
         if (!building) return { pass: false, reason: 'building missing' };
@@ -4686,8 +4688,11 @@ async function createWindow() {
         await wait(80);
         const finalModalClosed = !document.getElementById('modal')?.classList.contains('open');
         const finalAttentionActive = document.querySelector('[data-vacancy-filter="attention"]')?.classList.contains('active') === true;
+        const customerBuildingList = document.querySelector('.vacancy-building-browser>header b')?.textContent.trim() === '고객건물 목록';
+        const customerBuildingAdd = document.querySelector('.vacancy-hero [data-action="new-building"]')?.textContent.trim() === '＋ 고객건물 추가';
         const pass = configured.totalUnits === 100 && configured.createdCount === 100
           && selectedBuilding && finalBuildingSelected && buildingRailPresent && legacyPickerAbsent
+          && customerBuildingList && customerBuildingAdd
           && configureButtonsBefore === 1 && configureButtons === 1
           && defaultAttention && attentionCardsBefore === 10
           && cardsBeforeQuickStatus === 100 && scheduleRequiredBefore && scheduleValidAtSubmit
@@ -4698,7 +4703,7 @@ async function createWindow() {
           && !!wizard && !!preview && floorRows === 10 && labels === 100 && noHorizontalOverflow
           && finalModalClosed && finalAttentionActive
           && window.__crmTest.snapshot().view === 'vacancies';
-        return { pass, configured, selectedBuilding, finalBuildingSelected, buildingRailPresent, legacyPickerAbsent, configureButtonsBefore, configureButtons, defaultAttention, attentionCardsBefore, cardsBeforeQuickStatus, scheduleRequiredBefore, scheduleValidAtSubmit, scheduleSubmitClosed, quickStatusSaved, scheduledUnit, operatorAtSubmit, formValidAtSubmit, submitToast, wizardSubmitClosed, loadedUnits: Object.keys(loaded || {}).length, loadedAfterSubmit: Object.keys(loadedAfterSubmit || {}).length, attentionCards, cards, floors, quickStatuses, floorRows, labels, firstFilter: filters[0]?.dataset.vacancyFilter, firstFilterActive: filters[0]?.classList.contains('active'), noHorizontalOverflow, finalModalClosed, finalAttentionActive, viewport, state: window.__crmTest.snapshot() };
+        return { pass, configured, selectedBuilding, finalBuildingSelected, buildingRailPresent, legacyPickerAbsent, customerBuildingList, customerBuildingAdd, configureButtonsBefore, configureButtons, defaultAttention, attentionCardsBefore, cardsBeforeQuickStatus, scheduleRequiredBefore, scheduleValidAtSubmit, scheduleSubmitClosed, quickStatusSaved, scheduledUnit, operatorAtSubmit, formValidAtSubmit, submitToast, wizardSubmitClosed, loadedUnits: Object.keys(loaded || {}).length, loadedAfterSubmit: Object.keys(loadedAfterSubmit || {}).length, attentionCards, cards, floors, quickStatuses, floorRows, labels, firstFilter: filters[0]?.dataset.vacancyFilter, firstFilterActive: filters[0]?.classList.contains('active'), noHorizontalOverflow, finalModalClosed, finalAttentionActive, viewport, state: window.__crmTest.snapshot() };
       })().catch(error => ({ pass: false, error: String(error && error.stack || error) }))`, true);
     } else if (process.env.BRING_CRM_SCREENSHOT_ACTION === "vacancy-viewer-invariant") {
       actionResult = await mainWindow.webContents.executeJavaScript(`(async () => {
@@ -6081,12 +6086,14 @@ async function createWindow() {
         const pageTitle = document.getElementById('pageTitle')?.textContent.trim() || '';
         const oldPaymentModeAbsent = !document.querySelector('[data-payment-mode], .payment-mode-tabs');
         const paymentTab = document.querySelector('[data-unified-calendar-tab="payment"]');
+        const customerBuildingList = document.querySelector('.payment-building-panel>header b')?.textContent.trim() === '고객건물 목록';
+        const customerBuildingAdd = document.querySelector('.payment-operations-hero [data-action="new-building"]')?.textContent.trim() === '＋ 고객건물 추가';
         const recurringOnly = pageTitle === '캘린더' && mainText.includes('건물주용 정기 납부 관리')
           && mainText.includes('건물주 입금캘린더') && !document.querySelector('.one-off-contract-calendar')
           && document.querySelectorAll('[data-unified-calendar-tab]').length === 3
           && paymentTab?.classList.contains('active');
-        const pass = !!layout && realCards.length >= 2 && selected?.dataset.paymentBuildingId === targetId && select?.value === targetId && currentText.includes(targetName) && calendarDays === 42 && paymentEvents >= 1 && oldPaymentModeAbsent && recurringOnly && state.view === 'payments' && state.unifiedCalendarTab === 'payment';
-        return { pass, cardCount: cards.length, realCardCount: realCards.length, targetId, targetName, selectedId: selected?.dataset.paymentBuildingId, selectValue: select?.value, currentText, calendarDays, paymentEvents, pageTitle, oldPaymentModeAbsent, recurringOnly, state };
+        const pass = !!layout && realCards.length >= 2 && selected?.dataset.paymentBuildingId === targetId && select?.value === targetId && currentText.includes(targetName) && calendarDays === 42 && paymentEvents >= 1 && oldPaymentModeAbsent && recurringOnly && customerBuildingList && customerBuildingAdd && state.view === 'payments' && state.unifiedCalendarTab === 'payment';
+        return { pass, cardCount: cards.length, realCardCount: realCards.length, targetId, targetName, selectedId: selected?.dataset.paymentBuildingId, selectValue: select?.value, currentText, calendarDays, paymentEvents, pageTitle, oldPaymentModeAbsent, recurringOnly, customerBuildingList, customerBuildingAdd, state };
       })()`, true);
     } else if (process.env.BRING_CRM_SCREENSHOT_ACTION === "payment-direct-tools") {
       actionResult = await mainWindow.webContents.executeJavaScript(`(async () => {

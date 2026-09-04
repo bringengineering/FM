@@ -88,6 +88,8 @@ test("owner payment calendar remains recurring-only", () => {
   assert.match(payments, /const rows\s*=\s*paymentRows\(\)/);
   assert.match(payments, /건물주용 정기 납부 관리/);
   assert.match(payments, /<h2>건물주 입금캘린더<\/h2>/);
+  assert.match(payments, /<b>고객건물 목록<\/b>/);
+  assert.match(payments, /data-action="new-building">＋ 고객건물 추가<\/button>/);
   assert.match(payments, /data-payment-event=/);
   assert.doesNotMatch(payments, /oneOffContractRows|renderOneOffContractCalendar|data-contract-edit|data-contract-calendar|data-payment-mode|단건 계약/);
   assert.doesNotMatch(source, /data-payment-mode=/);

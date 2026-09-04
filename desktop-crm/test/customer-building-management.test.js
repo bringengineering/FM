@@ -299,12 +299,15 @@ test("building edits opened from customer detail return to the customer workspac
   const editor = sourceBetween("function buildingEditor", "function updateVacancyScheduleGuide");
   const save = sourceBetween('form.id === "buildingForm"', 'form.id === "contractForm"');
   const detail = sourceBetween("function renderCustomerHubDetail", "const buildingCustomers");
-  assert.match(editor, /data-return-view="\$\{attr\(currentView === "customers" \? "customers" : "buildings"\)\}"/);
+  assert.match(editor, /const returnView = \["customers", "vacancies", "payments"\]\.includes\(currentView\) \? currentView : "buildings"/);
+  assert.match(editor, /data-return-view="\$\{attr\(returnView\)\}"/);
   assert.match(editor, /const buildingIdentityEditor = editing \? "" :/);
   assert.match(editor, /<h2>\$\{editing \? "임대·공실 정보 수정" : "새 건물 등록"\}<\/h2>/);
   assert.match(editor, /name="\$\{editing \? "rentDeposit" : "naverBuildingUrl"\}"/);
   assert.match(detail, /data-building-edit="\$\{attr\(managedBuilding\.id\)\}">임대·공실 정보 수정<\/button>/);
-  assert.match(save, /const returnView = form\.dataset\.returnView === "customers" \? "customers" : "buildings"/);
+  assert.match(save, /const returnView = \["customers", "vacancies", "payments"\]\.includes\(form\.dataset\.returnView\) \? form\.dataset\.returnView : "buildings"/);
+  assert.match(save, /if \(returnView === "vacancies"\) selectedVacancyBuildingId = selectedBuildingId/);
+  assert.match(save, /if \(returnView === "payments"\) paymentBuildingFilter = selectedBuildingId/);
   assert.match(save, /const name = String\(existing \? existing\.name : raw\.name/);
   assert.match(save, /type: existing \? existing\.type : raw\.type, status: existing \? existing\.status : raw\.status/);
   assert.match(save, /reason: existing \? "CRM 건물 임대·공실 정보 수정" : "CRM 건물 등록"/);
@@ -366,7 +369,10 @@ test("building workspace uses the same management status vocabulary", () => {
 });
 
 test("vacancy workspace remains available under customer management", () => {
+  const vacancies = sourceBetween("function renderVacancies", "function vacancyConfigurationDraft");
   assert.match(appSource, /function renderVacancies\(\)/);
   assert.match(appSource, /currentView = "vacancies"/);
   assert.match(appSource, /고객·건물 관리에 등록된 건물을 기준으로 층과 호실을 설정합니다/);
+  assert.match(vacancies, /<b>고객건물 목록<\/b>/);
+  assert.match(vacancies, /data-action="new-building">＋ 고객건물 추가<\/button>/);
 });
