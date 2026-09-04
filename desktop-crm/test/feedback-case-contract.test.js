@@ -72,6 +72,14 @@ test("single-contract tabs do not introduce a second persisted contract kind", (
   assert.doesNotMatch(contractSubmit, /\b(?:contractKind|paymentMode|contractPaymentMode)\s*:/);
 });
 
+test("contract save safely normalizes fields hidden by unselected contract types", () => {
+  const contractSubmit = sourceBetween(appSource, 'form.id === "contractForm"', 'form.id === "customerForm"');
+  for (const field of ["serviceFrequency", "managementTarget", "feeMethod", "memo", "scope", "owner"]) {
+    assert.match(contractSubmit, new RegExp(`String\\(raw\\.${field} \\|\\| ""\\)\\.trim\\(\\)`));
+  }
+  assert.doesNotMatch(contractSubmit, /raw\.(?:serviceFrequency|managementTarget|feeMethod|memo|scope|owner)\.trim\(\)/);
+});
+
 test("single-contract tab reuses the existing one-off settlement fields and flows", () => {
   const contractEditor = sourceBetween(appSource, "function contractEditor", "function industryChecklistFields");
   const contractSubmit = sourceBetween(appSource, 'form.id === "contractForm"', 'form.id === "customerForm"');

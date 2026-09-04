@@ -8176,9 +8176,9 @@
       Object.assign(item, {
         types, type: types[0], name: raw.name.trim(), customerId: raw.customerId, buildingId: raw.buildingId,
         startDate: raw.startDate, endDate: raw.endDate || "", amount: Core.money(raw.amount), billingCycle: raw.billingCycle,
-        status: raw.status, owner: raw.owner.trim() || store.settings.owner || "김현진", scope: raw.scope.trim(),
-        serviceFrequency: raw.serviceFrequency.trim(), unitCount: Number(raw.unitCount) || 0,
-        managementTarget: raw.managementTarget.trim(), feeMethod: raw.feeMethod.trim(), memo: raw.memo.trim(), updatedAt: new Date().toISOString()
+        status: raw.status, owner: String(raw.owner || "").trim() || store.settings.owner || "김현진", scope: String(raw.scope || "").trim(),
+        serviceFrequency: String(raw.serviceFrequency || "").trim(), unitCount: Number(raw.unitCount) || 0,
+        managementTarget: String(raw.managementTarget || "").trim(), feeMethod: String(raw.feeMethod || "").trim(), memo: String(raw.memo || "").trim(), updatedAt: new Date().toISOString()
       });
       if (oneOffContract) Object.assign(item, {
         workDate: raw.workDate, paymentDueDate: raw.paymentDueDate, vendorCost: Core.money(raw.vendorCost),
