@@ -27,6 +27,12 @@
   --toss-fill:#F2F4F6;
   --toss-fill-hover:#E8EBED;
   --toss-blue-weak:#E8F3FF;
+  /* 상태 배지 4색: 배경은 아주 옅게, 글자만 또렷하게 */
+  --tone-good-bg:#E6F8F0;   --tone-good-ink:#04A66B;
+  --tone-warn-bg:#FFF6E5;   --tone-warn-ink:#C77A00;
+  --tone-bad-bg:#FFEFF0;    --tone-bad-ink:#E0303F;
+  --tone-info-bg:#E8F3FF;   --tone-info-ink:#2272EB;
+  --tone-idle-bg:#F2F4F6;   --tone-idle-ink:#6B7684;
 }
 
 body{ letter-spacing:-0.3px; }
@@ -341,4 +347,33 @@ select:disabled{ background-color:var(--toss-fill); color:var(--muted); }
 .entity-picker-option.selected,.entity-picker-option[aria-pressed="true"]{
   background-image:none; background-color:var(--toss-blue-weak);
   color:var(--blue); box-shadow:none; font-weight:700;
+}
+
+/* ---- 상태 배지 색 통일 ----
+   기본 규칙(.contract-status 등)만 중립톤으로 바꿔 두었더니, 실제로 화면에
+   뜨는 거의 모든 배지가 상태 수식어(.active/.overdue/.high …)를 달고 있어
+   더 강한 선택자에 밀려 예전 색이 그대로 남아 있었다. 색을 없애는 게 아니라
+   같은 뜻끼리 같은 색을 쓰도록 수식어까지 함께 맞춘다. */
+.contract-status.active,.relationship-state.active,
+.sales-state-label.vacant,.sales-state-label.success,.priority-badge.low{
+  background:var(--tone-good-bg); color:var(--tone-good-ink);
+}
+.contract-status.ending,.relationship-state.today,
+.sales-state-label.upcoming,.priority-badge.normal{
+  background:var(--tone-warn-bg); color:var(--tone-warn-ink);
+}
+.relationship-state.overdue,.sales-state-label.danger,.priority-badge.high{
+  background:var(--tone-bad-bg); color:var(--tone-bad-ink);
+}
+.relationship-state.soon{
+  background:var(--tone-info-bg); color:var(--tone-info-ink);
+}
+.contract-status.preparing,.contract-status.closed,
+.relationship-state.unscheduled{
+  background:var(--tone-idle-bg); color:var(--tone-idle-ink);
+}
+/* .industry-badge 는 원래 글자색에 !important 가 걸려 있어 같은 무기가 필요하다 */
+.industry-badge{
+  background:var(--tone-info-bg) !important; color:var(--tone-info-ink) !important;
+  border-radius:999px;
 }

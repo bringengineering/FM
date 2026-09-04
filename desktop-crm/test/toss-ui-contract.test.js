@@ -61,3 +61,31 @@ test("토스 덮어쓰기 층은 항상 마지막에 불러온다", () => {
   const links = [...html.matchAll(/<link rel="stylesheet" href="\.\/([^"]+)">/g)].map(m => m[1]);
   assert.equal(links[links.length - 1], "toss.css");
 });
+
+test("상태 배지는 수식어까지 색을 다시 정한다", () => {
+  // 기본 규칙만 덮어쓰면 .contract-status.active 처럼 수식어가 붙은 선택자가
+  // 더 강해서 예전 색이 그대로 남는다. 실제 화면에 뜨는 배지는 대부분 수식어를
+  // 달고 있으므로, 기본 CSS 에 있는 수식어 조합은 빠짐없이 다시 잡아야 한다.
+  const BADGES = ["contract-status", "relationship-state", "sales-state-label", "priority-badge"];
+  const baseCss = fs.readdirSync(SRC)
+    .filter(name => name.endsWith(".css") && name !== "toss.css")
+    .map(name => fs.readFileSync(path.join(SRC, name), "utf8"))
+    .join("\n");
+
+  const missing = [];
+  for (const badge of BADGES) {
+    const modifiers = new Set(
+      [...baseCss.matchAll(new RegExp(`\\.${badge}\\.([A-Za-z][\\w-]*)`, "g"))].map(m => m[1])
+    );
+    for (const modifier of modifiers) {
+      if (!toss.includes(`.${badge}.${modifier}`)) missing.push(`.${badge}.${modifier}`);
+    }
+  }
+  assert.deepEqual(missing, [], `토스 층에서 다시 잡지 않은 상태 배지: ${missing.join(", ")}`);
+});
+
+test("industry-badge 는 !important 색을 같은 무기로 덮는다", () => {
+  const rule = toss.match(/\.industry-badge\{[^}]*\}/);
+  assert.ok(rule, ".industry-badge 규칙이 없습니다");
+  assert.match(rule[0], /color:var\(--tone-info-ink\) !important/);
+});
