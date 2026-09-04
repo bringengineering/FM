@@ -7094,7 +7094,7 @@
     if (event.target.matches("[data-ai-quote-recipient]")) {
       const quote = aiAssistantState.quote;
       const key = event.target.dataset.aiQuoteRecipient;
-      if (!quote || !["recipient", "recipientPhone"].includes(key)) return;
+      if (!quote || !["projectName", "recipient", "recipientPhone"].includes(key)) return;
       const next = JSON.parse(JSON.stringify(quote));
       next[key] = event.target.value.trim();
       try { aiAssistantState.quote = QuoteCore.normalizeDraft(next); aiAssistantState.quoteError = ""; renderAiAssistant(); }
