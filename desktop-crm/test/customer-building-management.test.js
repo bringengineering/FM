@@ -95,8 +95,8 @@ test("customer detail keeps essentials visible and moves consultation history in
   const detail = sourceBetween("function renderCustomerHubDetail", "const buildingCustomers");
   const rendered = detail.slice(detail.indexOf("return `<header"));
   const consultationMarkup = detail.slice(detail.indexOf("const consultationDetails"), detail.indexOf("const secondaryCount"));
-  const secondaryMarkup = detail.slice(detail.indexOf("const secondaryCount"), detail.indexOf("const buildingContext"));
-  const rentalMarkup = detail.slice(detail.indexOf("const rentalDetails"), detail.indexOf("const buildingContext"));
+  const secondaryMarkup = detail.slice(detail.indexOf("const secondaryCount"), detail.indexOf("const rentalDetails"));
+  const rentalMarkup = detail.slice(detail.indexOf("const rentalDetails"), detail.indexOf("const buildingActions"));
   assert.doesNotMatch(detail, /const buildingRecords =|<b>연결 건물<\/b>|customer-linked-building|data-building-jump/);
   assert.doesNotMatch(detail, /customer-management-kpi|건물 미연결|건물 연결 필요/);
   assert.doesNotMatch(buildingCss, /\.customer-linked-building/);
@@ -113,8 +113,8 @@ test("customer detail keeps essentials visible and moves consultation history in
   assert.match(detail, /customer-essential-summary/);
   assert.match(detail, /data-customer-open|data-customer-hub-edit|new-consultation|new-selected-task/);
   assert.match(detail, /data-contract-edit|data-building-case-open/);
-  assert.match(detail, /data-customer-building-select/);
-  assert.match(detail, /data-action="new-building" data-customer-id/);
+  assert.doesNotMatch(detail, /data-customer-building-select|작업 건물|customer-building-context/);
+  assert.doesNotMatch(detail, /data-action="new-building"|data-customer-id=.*건물/);
   assert.match(detail, /customer-hub-kpis/);
   assert.match(detail, /추가 정보 보기/);
   assert.match(rentalMarkup, /<details class="customer-secondary-details customer-rental-details" data-customer-rental-details="\$\{attr\(managedBuilding\.id\)\}">/);
@@ -220,7 +220,7 @@ test("partner consultation history is vendor-scoped, collapsible, and returns to
   assert.match(stylesSource, /\.crm-read-only \[data-action="new-partner-quote"\]/);
 });
 
-test("customer header keeps selected building actions after the task action without a complaint shortcut", () => {
+test("customer header keeps legacy building actions without a work-building selector", () => {
   const detail = sourceBetween("function renderCustomerHubDetail", "const buildingCustomers");
   const rendered = detail.slice(detail.indexOf("return `<header"));
   const customerActionTokens = [
@@ -246,7 +246,9 @@ test("customer header keeps selected building actions after the task action with
     return index;
   }, -1);
   assert.match(detail, /const buildingActions = managedBuilding \?/);
+  assert.match(detail, /const managedBuilding = buildings\[0\] \|\| null/);
   assert.match(detail, /data-building-edit="\$\{attr\(managedBuilding\.id\)\}"/);
+  assert.doesNotMatch(detail, /data-customer-building-select|작업 건물|data-action="new-building"/);
   assert.doesNotMatch(detail, /data-building-new-case/);
   assert.match(detail, /customer-hub-head-actions" role="group" aria-label="고객과 건물 빠른 작업"/);
   assert.match(buildingCss, /\.customer-hub-head-actions\{[^}]*flex-wrap/);
@@ -270,13 +272,16 @@ test("detail pages omit complaint shortcuts while complaint management keeps its
   assert.match(appSource, /action === "new-workflow-case"\) workflowCaseEditor\(\)/);
 });
 
-test("compact building controls keep the selected customer relationship", () => {
-  assert.match(appSource, /const customerBuildingSelect = event\.target\.closest\("\[data-customer-building-select\]"\)/);
-  assert.match(appSource, /customerBuildings\(customer\)\.some\(building => !building\.archivedAt && building\.id === customerBuildingSelect\.value\)/);
-  assert.match(appSource, /function buildingEditor\(buildingId, ownerCustomerId = ""\)/);
-  assert.match(appSource, /Core\.createBuilding\(\{ manager: store\.settings\.owner \|\| "김현진", ownerCustomerId: selectedOwnerCustomerId \}\)/);
-  assert.match(appSource, /action === "new-building"\) buildingEditor\("", actionControl\.dataset\.customerId \|\| ""\)/);
-  assert.match(buildingCss, /\.customer-building-context\{/);
+test("customer detail removes work-building selection and customer-scoped building creation", () => {
+  const detail = sourceBetween("function renderCustomerHubDetail", "const buildingCustomers");
+  assert.doesNotMatch(detail, /data-customer-building-select|작업 건물|customer-building-context/);
+  assert.doesNotMatch(detail, /data-action="new-building"|buildingOptions/);
+  assert.doesNotMatch(appSource, /const customerBuildingSelect = event\.target\.closest\("\[data-customer-building-select\]"\)/);
+  assert.match(appSource, /function buildingEditor\(buildingId\)/);
+  assert.doesNotMatch(appSource, /function buildingEditor\(buildingId, ownerCustomerId|selectedOwnerCustomerId/);
+  assert.match(appSource, /action === "new-building"\) buildingEditor\(""\)/);
+  assert.doesNotMatch(appSource, /action === "new-building"\) buildingEditor\("", actionControl\.dataset\.customerId/);
+  assert.doesNotMatch(buildingCss, /\.customer-building-context|\.customer-building-select-control/);
   assert.match(buildingCss, /\.customer-secondary-details>summary:focus-visible/);
 });
 

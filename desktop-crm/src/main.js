@@ -4128,7 +4128,8 @@ async function createWindow() {
           && detailSelect?.value === customerId
           && !!document.querySelector('.customer-management-detail-workspace [data-customer-hub-edit="' + customerId + '"]')
           && !!document.querySelector('.customer-management-detail-workspace [data-customer-open="' + customerId + '"]')
-          && !!document.querySelector('.customer-management-detail-workspace [data-customer-building-select]');
+          && !document.querySelector('.customer-management-detail-workspace [data-customer-building-select]')
+          && !document.querySelector('.customer-management-detail-workspace [data-action="new-building"][data-customer-id]');
         detailBack?.click();
         await wait(100);
         card = document.querySelector('[data-customer-hub-open="' + customerId + '"]');
@@ -4508,12 +4509,6 @@ async function createWindow() {
           await wait(80);
           document.querySelector('[data-customer-hub-open="' + linkedCustomer.id + '"]')?.click();
           await wait(80);
-          const readOnlyBuildingSelect = document.querySelector('[data-customer-building-select]');
-          if (readOnlyBuildingSelect && [...readOnlyBuildingSelect.options].some(option => option.value === first.id)) {
-            readOnlyBuildingSelect.value = first.id;
-            readOnlyBuildingSelect.dispatchEvent(new Event('change', { bubbles: true }));
-            await wait(80);
-          }
           const detail = document.querySelector('[data-customer-rental-details="' + first.id + '"]');
           const initiallyClosed = !!detail && !detail.open;
           detail?.querySelector('summary')?.click();
@@ -4540,12 +4535,6 @@ async function createWindow() {
         await wait(80);
         document.querySelector('[data-customer-hub-open="' + linkedCustomer.id + '"]')?.click();
         await wait(80);
-        const buildingSelect = document.querySelector('[data-customer-building-select]');
-        if (buildingSelect && [...buildingSelect.options].some(option => option.value === first.id)) {
-          buildingSelect.value = first.id;
-          buildingSelect.dispatchEvent(new Event('change', { bubbles: true }));
-          await wait(80);
-        }
         let detail = document.querySelector('[data-customer-rental-details="' + first.id + '"]');
         const initiallyClosed = !!detail && !detail.open;
         detail?.querySelector('summary')?.click();

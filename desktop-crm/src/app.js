@@ -2509,12 +2509,7 @@
 
   function renderCustomerHubDetail(customer) {
     const buildings = customerBuildings(customer).filter(building => !building.archivedAt);
-    if (buildings.length && !buildings.some(building => building.id === selectedBuildingId)) selectedBuildingId = buildings[0].id;
-    if (!buildings.length) selectedBuildingId = "";
-    const managedBuilding = buildings.find(building => building.id === selectedBuildingId) || null;
-    const buildingOptions = buildings.length
-      ? buildings.map(building => `<option value="${attr(building.id)}" ${building.id === selectedBuildingId ? "selected" : ""}>${esc([building.name || "건물명 미입력", building.address || building.roadAddress || building.jibunAddress, managementStatusForBuilding(building)].filter(Boolean).join(" · "))}</option>`).join("")
-      : `<option value="" selected>등록된 건물이 없습니다</option>`;
+    const managedBuilding = buildings[0] || null;
     const buildingIds = new Set(buildings.map(building => building.id));
     const contracts = store.contracts.filter(contract => contract.customerId === customer.id || buildingIds.has(contract.buildingId)).sort((left, right) => String(right.updatedAt || right.startDate || "").localeCompare(String(left.updatedAt || left.startDate || "")));
     const caseMap = new Map(buildings.flatMap(building => buildingCases(building)).map(item => [workflowCaseKey(item), item]));
@@ -2550,9 +2545,8 @@
       const vacancySubline = [vacantUnits.join(", "), vacancySummary.move_out_scheduled ? `공실 예정 ${vacancySummary.move_out_scheduled}개` : ""].filter(Boolean).join(" · ") || "호실 미입력";
       return `<details class="customer-secondary-details customer-rental-details" data-customer-rental-details="${attr(managedBuilding.id)}"><summary><span><b>임대·공실 정보</b><small>${esc(managedBuilding.name || "선택 건물")} · 금액은 원 단위</small></span><em>공실 ${esc(vacancyLabel)}</em></summary><div class="customer-secondary-body customer-rental-body"><div class="customer-rental-toolbar"><span>선택한 건물의 대표 임대 조건입니다.</span><div><button type="button" class="secondary-button" data-building-edit="${attr(managedBuilding.id)}">수정</button><button type="button" class="mini-button" data-building-vacancies="${attr(managedBuilding.id)}">공실 현황 보기</button></div></div><div class="building-rental-facts"><div><span>보증금</span><b>${esc(buildingMoneySummary(managedBuilding.rentDeposit))}</b></div><div><span>월세</span><b>${esc(buildingMoneySummary(managedBuilding.monthlyRent))}</b></div><div><span>관리비</span><b>${esc(buildingMoneySummary(managedBuilding.maintenanceFee))}</b></div><div><span>공실</span><b>${esc(vacancyLabel)}</b><small>${esc(vacancySubline)}</small></div></div><div class="building-rental-lines"><div><b>관리비 포함</b><span>${esc(buildingListSummary(managedBuilding.maintenanceIncludes, managedBuilding.maintenanceIncludeOther))}</span></div><div><b>구조</b><span>${esc(buildingListSummary(managedBuilding.roomTypes, managedBuilding.roomTypeOther))}</span></div><div><b>호실 옵션</b><span>${esc(buildingListSummary(managedBuilding.roomOptions, managedBuilding.roomOptionOther))}</span></div></div></div></details>`;
     })() : "";
-    const buildingContext = `<div class="customer-building-context"><label class="customer-building-select-control"><span>작업 건물</span><select data-customer-building-select aria-label="작업할 건물 선택" ${buildings.length ? "" : "disabled"}>${buildingOptions}</select></label><button type="button" class="secondary-button" data-action="new-building" data-customer-id="${attr(customer.id)}">＋ 건물</button></div>`;
     const buildingActions = managedBuilding ? `<span class="customer-action-divider" aria-hidden="true"></span><button class="secondary-button" data-building-edit="${attr(managedBuilding.id)}">건물 정보 수정</button><button class="secondary-button" data-building-vacancies="${attr(managedBuilding.id)}">공실 현황</button><button class="secondary-button" data-building-payments="${attr(managedBuilding.id)}">건물주 입금</button>` : "";
-    return `<header class="building-hub-detail-head customer-hub-detail-head"><div class="building-hub-title customer-hub-title">${customerAvatar(customer)}<div><span>${esc(customer.customerNo || customer.id)}</span><h2>${esc(customerDisplayName(customer))}</h2><p>${esc([customer.company, customer.type, customer.email, customer.roadAddress || customer.address || customer.jibunAddress].filter(Boolean).join(" · ") || "추가 정보 미입력")}</p>${buildingContext}</div></div><div class="building-hub-head-actions customer-hub-head-actions" role="group" aria-label="고객과 건물 빠른 작업"><button class="secondary-button" data-customer-open="${attr(customer.id)}">전체 상세</button><button class="secondary-button" data-customer-hub-edit="${attr(customer.id)}">고객 정보 수정</button><button type="button" class="secondary-button" data-action="new-consultation" data-customer-id="${attr(customer.id)}">＋ 상담 기록</button><button class="primary-button" data-action="new-selected-task" data-customer-id="${attr(customer.id)}">＋ 할 일</button>${buildingActions}</div></header>
+    return `<header class="building-hub-detail-head customer-hub-detail-head"><div class="building-hub-title customer-hub-title">${customerAvatar(customer)}<div><span>${esc(customer.customerNo || customer.id)}</span><h2>${esc(customerDisplayName(customer))}</h2><p>${esc([customer.company, customer.type, customer.email, customer.roadAddress || customer.address || customer.jibunAddress].filter(Boolean).join(" · ") || "추가 정보 미입력")}</p></div></div><div class="building-hub-head-actions customer-hub-head-actions" role="group" aria-label="고객과 건물 빠른 작업"><button class="secondary-button" data-customer-open="${attr(customer.id)}">전체 상세</button><button class="secondary-button" data-customer-hub-edit="${attr(customer.id)}">고객 정보 수정</button><button type="button" class="secondary-button" data-action="new-consultation" data-customer-id="${attr(customer.id)}">＋ 상담 기록</button><button class="primary-button" data-action="new-selected-task" data-customer-id="${attr(customer.id)}">＋ 할 일</button>${buildingActions}</div></header>
       <div class="building-hub-detail-scroll"><div class="building-identity-strip customer-essential-summary"><div><b>연락처</b><span>${esc(customerPhoneText(customer.phone) || "-")}</span></div><div><b>다음 연락</b><span>${esc(dateText(customer.nextContactAt))}</span></div><div><b>담당자</b><span>${esc(customer.owner || "미입력")}</span></div><div><b>중요도</b><span>${priorityClass(customer.priority)}</span></div></div>
       <div class="building-hub-kpis customer-hub-kpis"><div class="building-hub-kpi"><span>진행 계약</span><b>${activeContracts.length}건</b><small>${activeContracts[0] ? esc(contractTypes(activeContracts[0]).join("·")) : "활성 계약 없음"}</small></div><div class="building-hub-kpi"><span>진행 민원</span><b>${openCases.length}건</b><small>${openCases[0] ? esc(Core.workflowProgress(openCases[0]).current) : "진행 업무 없음"}</small></div><div class="building-hub-kpi ${tasks.length ? "alert" : ""}"><span>남은 할 일</span><b>${tasks.length}건</b><small>${esc(tasks[0]?.title || "등록된 할 일 없음")}</small></div></div>
       <div class="building-detail-grid customer-priority-grid">${essentialSections}</div>${consultationDetails}${secondaryDetails}${rentalDetails}</div>`;
@@ -4184,11 +4178,10 @@
     return `<fieldset class="building-check-field wide"><legend>${esc(label)}</legend>${help ? `<p>${esc(help)}</p>` : ""}<div class="building-check-grid">${options.map(option => `<label><input type="checkbox" name="${attr(name)}" value="${attr(option)}" ${checked.has(option) || option === "기타" && !!other ? "checked" : ""}><span>${esc(option)}</span></label>`).join("")}</div>${otherName ? `<label class="building-other-field"><span>기타 설명</span><input name="${attr(otherName)}" value="${attr(other)}" placeholder="${attr(otherPlaceholder || "기타 내용을 입력하세요")}"></label>` : ""}</fieldset>`;
   }
 
-  function buildingEditor(buildingId, ownerCustomerId = "") {
+  function buildingEditor(buildingId) {
     if (deferCanonicalMutation("건물")) return;
     const editing = buildingById(buildingId);
-    const selectedOwnerCustomerId = customerById(ownerCustomerId)?.id || "";
-    const building = editing ? JSON.parse(JSON.stringify(editing)) : Core.createBuilding({ manager: store.settings.owner || "김현진", ownerCustomerId: selectedOwnerCustomerId });
+    const building = editing ? JSON.parse(JSON.stringify(editing)) : Core.createBuilding({ manager: store.settings.owner || "김현진" });
     const formalUnits = editing ? activeBuildingUnitsForBuilding(editing) : [];
     const formalVacantUnits = formalUnits.filter(unit => vacancyUnitStatus(unit) === "vacant");
     const formalUpcomingUnits = formalUnits.filter(unit => vacancyUnitStatus(unit) === "move_out_scheduled");
@@ -6819,7 +6812,7 @@
     else if (action === "ai-consultation-intake") aiConsultationIntakeEditor(true);
     else if (action === "ai-consultation-audio-pick") await chooseAiConsultationAudio();
     else if (action === "ai-consultation-back") aiConsultationIntakeEditor(false);
-    else if (action === "new-building") buildingEditor("", actionControl.dataset.customerId || "");
+    else if (action === "new-building") buildingEditor("");
     else if (action === "configure-vacancy") {
       if (!canWriteCRM()) return showToast("조회 전용 계정은 층·호실 구성을 변경할 수 없습니다.", "error");
       const buildingId = selectedVacancyBuildingId || (store.buildings || []).find(building => building && !building.archivedAt)?.id || "";
@@ -7010,13 +7003,6 @@
     const customerHubSelect = event.target.closest("[data-customer-hub-select]");
     if (customerHubSelect) {
       selectedCustomerHubId = customerById(customerHubSelect.value) ? customerHubSelect.value : "";
-      renderCustomers();
-      return;
-    }
-    const customerBuildingSelect = event.target.closest("[data-customer-building-select]");
-    if (customerBuildingSelect) {
-      const customer = customerById(selectedCustomerHubId);
-      selectedBuildingId = customer && customerBuildings(customer).some(building => !building.archivedAt && building.id === customerBuildingSelect.value) ? customerBuildingSelect.value : "";
       renderCustomers();
       return;
     }
