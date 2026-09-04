@@ -435,6 +435,37 @@
     const linkedIds = new Set(Core.customerBuildingIds(customer));
     return store.buildings.filter(building => linkedIds.has(building.id) || building.ownerCustomerId === customer.id);
   };
+  const customerManagedBuildingAddress = (customer, building) => String(customer && (customer.roadAddress || customer.jibunAddress || customer.address)
+    || building && (building.roadAddress || building.jibunAddress || building.address)
+    || "").trim();
+  function customerManagedBuildingChoices(existingBuildingId = "") {
+    const choices = (store.customers || []).filter(customer => customer && !customer.archivedAt).map(customer => {
+      const building = customerBuildings(customer).find(item => item && !item.archivedAt) || null;
+      return {
+        value: building && building.id || `customer:${customer.id}`,
+        customer,
+        building,
+        name: customerDisplayName(customer),
+        address: customerManagedBuildingAddress(customer, building),
+      };
+    }).sort((left, right) => left.name.localeCompare(right.name, "ko-KR", { numeric: true }));
+    if (existingBuildingId && !choices.some(choice => choice.value === existingBuildingId)) {
+      const building = buildingById(existingBuildingId);
+      choices.push({
+        value: existingBuildingId,
+        customer: null,
+        building: building || { id: existingBuildingId, name: "연결 기록이 남아 있는 고객건물", archivedAt: "missing" },
+        name: building && building.name || "연결 기록이 남아 있는 고객건물",
+        address: customerManagedBuildingAddress(null, building),
+      });
+    }
+    return choices;
+  }
+  const customerManagedBuildingChoiceLabel = choice => [
+    choice && choice.name || "고객명 미입력",
+    choice && choice.address,
+    choice && choice.building && choice.building.archivedAt ? "기존 연결" : "",
+  ].filter(Boolean).join(" · ");
   const customerDisplayName = customer => String(customer && customer.name || "").trim()
     || customerBuildings(customer).find(building => !building.archivedAt)?.name
     || String(customer && customer.company || "").trim()
@@ -1023,6 +1054,46 @@
       }).catch(() => undefined);
     }
     return result;
+  }
+
+  async function resolveCustomerManagedBuildingSelection(value) {
+    const selectedValue = String(value || "");
+    if (!selectedValue.startsWith("customer:")) return buildingById(selectedValue);
+    const customer = customerById(selectedValue.slice("customer:".length));
+    if (!customer || customer.archivedAt) {
+      showToast("고객·건물 관리 목록에서 고객건물을 다시 선택해 주세요.", "error");
+      return null;
+    }
+    const linkedBuilding = customerBuildings(customer).find(item => item && !item.archivedAt);
+    if (linkedBuilding) return linkedBuilding;
+    const address = customerManagedBuildingAddress(customer, null);
+    if (!address) {
+      showToast("고객·건물 관리에서 도로명 주소나 지번 주소를 먼저 입력해 주세요.", "error");
+      return null;
+    }
+    const safeCustomerId = /^[A-Za-z0-9_-]{1,120}$/.test(String(customer.id || ""))
+      && !["__proto__", "prototype", "constructor"].includes(String(customer.id || ""));
+    const entityId = safeCustomerId && !buildingById(customer.id) ? customer.id : crypto.randomUUID();
+    const result = await commitCanonicalEntity({
+      entityType: "buildings",
+      entityId,
+      operation: "create",
+      expectedVersion: 0,
+      patch: buildCanonicalBuildingPatch({
+        name: customerDisplayName(customer),
+        ownerCustomerId: customer.id,
+        type: "다가구",
+        status: "관리 예정",
+        address,
+        roadAddress: String(customer.roadAddress || "").trim(),
+        jibunAddress: String(customer.jibunAddress || "").trim(),
+        manager: String(customer.owner || store.settings && store.settings.owner || "김현진").trim(),
+      }),
+      reason: "업무 일정 고객건물 자동 연결",
+    });
+    if (!result) return null;
+    const committedId = String(result.entityId || entityId);
+    return buildingById(committedId) || { id: committedId, name: customerDisplayName(customer), address };
   }
 
   function replaceServiceRecord(snapshot, record) {
@@ -2223,7 +2294,7 @@
       main.innerHTML = unifiedCalendarFrame("payment", `<div class="operations-loading">건물주 입금캘린더를 불러오고 있습니다…</div>`, unifiedCalendarCounts());
       return;
     }
-    const content = `<section class="operations-hero payment-operations-hero"><div><span>건물주용 정기 납부 관리</span><h2>건물주 입금캘린더</h2><p>건물별 세입자 정기 납부 예정, 입금 확인, 미입금 안내를 한곳에서 처리합니다.</p></div><div class="operations-actions payment-operation-actions">${canWriteCRM() ? `<button class="secondary-button" data-action="new-building">＋ 고객건물 추가</button>` : ""}<button class="secondary-button" data-payment-sheet-open>세입자 관리대장</button><button class="secondary-button payment-bank-connect-button" data-payment-bank-selected>팝빌 계좌 연결</button><button class="secondary-button" data-action="new-payment-schedule">＋ 납부 일정</button><button class="secondary-button" data-payment-action="syncPaymentBuildings">↻ 건물 갱신</button><button class="secondary-button" data-payment-action="syncPaymentSchedules">↻ 세입자 반영</button><button class="primary-button" data-payment-action="syncPopbillBankTransactions">은행 입금 조회</button></div></section>
+    const content = `<section class="operations-hero payment-operations-hero"><div><span>건물주용 정기 납부 관리</span><h2>건물주 입금캘린더</h2><p>건물별 세입자 정기 납부 예정, 입금 확인, 미입금 안내를 한곳에서 처리합니다.</p></div><div class="operations-actions payment-operation-actions">${canWriteCRM() ? `<button class="secondary-button" data-action="new-customer">＋ 고객건물 추가</button>` : ""}<button class="secondary-button" data-payment-sheet-open>세입자 관리대장</button><button class="secondary-button payment-bank-connect-button" data-payment-bank-selected>팝빌 계좌 연결</button><button class="secondary-button" data-action="new-payment-schedule">＋ 납부 일정</button><button class="secondary-button" data-payment-action="syncPaymentBuildings">↻ 건물 갱신</button><button class="secondary-button" data-payment-action="syncPaymentSchedules">↻ 세입자 반영</button><button class="primary-button" data-payment-action="syncPopbillBankTransactions">은행 입금 조회</button></div></section>
       ${operationsError ? `<div class="info-box" style="margin-top:12px;color:#c6535f">${esc(operationsError)}</div>` : ""}
       <div class="payment-sync-strip"><span><i class="${sheetSync.ok === false ? "bad" : sheetSync.updatedAt ? "good" : ""}"></i>세입자 자료 ${sheetSync.updatedAt ? `최근 ${esc(shortDate(sheetSync.updatedAt))} · ${Number(sheetSync.count) || 0}명` : "동기화 대기"}</span><span><i class="${bankSync.status === "error" ? "bad" : bankSync.updatedAt ? "good" : ""}"></i>은행 입금 ${bankSync.updatedAt ? `최근 ${esc(shortDate(bankSync.updatedAt))} · ${Number(bankSync.transactionCount) || 0}건` : "조회 대기"}</span><button type="button" data-action="refresh-operations">화면 새로고침</button></div>
       <div class="operations-kpis"><div class="operations-kpi"><span>이번 달 예정</span><b>${rows.length}건</b><small>${esc(krw(expectedAmount))}</small></div><div class="operations-kpi" style="--wash:#edf9f5"><span>입금 완료</span><b>${paid.length}건</b><small>${esc(krw(paidAmount))}</small></div><div class="operations-kpi" style="--wash:#fff2f3"><span>미입금</span><b>${overdue.length}건</b><small>납부일 경과·수동 확인</small></div><div class="operations-kpi" style="--wash:#fff9eb"><span>확인 필요</span><b>${review.length}건</b><small>중복·수동 검토</small></div></div>
@@ -2727,12 +2798,12 @@
       .sort((left, right) => (MANAGEMENT_ORDER[managementStatusForBuilding(left)] ?? 9) - (MANAGEMENT_ORDER[managementStatusForBuilding(right)] ?? 9) || String(left.name || "").localeCompare(String(right.name || ""), "ko"));
     if (buildings.length && !buildings.some(item => item.id === selectedBuildingId)) selectedBuildingId = buildings[0].id;
     const building = buildings.find(item => item.id === selectedBuildingId) || null;
-    main.innerHTML = `${DriveImportUI.renderReviewPanel(driveImportCandidates, currentAuth.user || {})}<section class="building-hub-hero"><div><span>건물 기준으로 연결된 업무를 확인합니다</span><h2>고객·계약·민원·입금을 한곳에서 봅니다</h2><p>이름이 같아도 섞이지 않도록 건물 고유 ID를 기준으로 연결합니다.</p></div><div class="building-hub-head-actions"><button class="secondary-button" data-customer-list-open>고객 목록 보기</button><button class="primary-button" data-action="new-building">＋ 건물 등록</button></div></section>
+    main.innerHTML = `${DriveImportUI.renderReviewPanel(driveImportCandidates, currentAuth.user || {})}<section class="building-hub-hero"><div><span>건물 기준으로 연결된 업무를 확인합니다</span><h2>고객·계약·민원·입금을 한곳에서 봅니다</h2><p>고객·건물 관리에 등록한 정보를 기준으로 연결합니다.</p></div><div class="building-hub-head-actions"><button class="primary-button" data-action="new-customer">＋ 고객건물 추가</button></div></section>
       <section class="building-hub-layout"><aside class="building-hub-browser"><header class="hub-browser-filter-head"><div><b>건물 목록</b><span>${buildings.length}곳</span></div><label class="management-filter"><span>관리 상태</span><select data-building-management-filter aria-label="건물 관리 상태 필터">${managementFilterOptions(buildingManagementFilter)}</select></label></header><div class="building-hub-list">${buildings.length ? buildings.map(item => {
         const customers = buildingCustomers(item);
         const cases = buildingCases(item);
         return `<button type="button" class="building-hub-card ${item.id === selectedBuildingId ? "selected" : ""}" data-building-open="${attr(item.id)}"><div><strong>${esc(item.name || "건물명 미입력")}</strong><em>${esc(managementStatusForBuilding(item))}</em></div><p>${esc(item.address || "주소 미입력")}</p><small>${esc(customers[0]?.name || "고객 미연결")} · 진행 민원 ${cases.length}건</small></button>`;
-      }).join("") : `<div class="building-hub-empty">${query ? "검색 조건에 맞는 건물이 없습니다." : "등록된 건물이 없습니다."}<br>건물을 먼저 등록해 업무를 연결하세요.</div>`}</div></aside><section class="building-hub-detail">${building ? renderBuildingDetail(building) : `<div class="case-detail-empty"><strong>${query ? "건물을 찾지 못했습니다" : "첫 건물을 등록해 주세요"}</strong><span>건물을 등록하면 고객·계약·민원·입금 현황이 이곳에 모입니다.</span><button class="primary-button" data-action="new-building">＋ 건물 등록</button></div>`}</section></section>${renderArchivedBuildings()}`;
+      }).join("") : `<div class="building-hub-empty">${query ? "검색 조건에 맞는 고객건물이 없습니다." : "등록된 고객건물이 없습니다."}<br>고객·건물 관리에서 고객 정보를 등록해 주세요.</div>`}</div></aside><section class="building-hub-detail">${building ? renderBuildingDetail(building) : `<div class="case-detail-empty"><strong>${query ? "고객건물을 찾지 못했습니다" : "고객건물을 추가해 주세요"}</strong><span>고객·건물 관리에 고객을 등록하면 관련 업무를 연결할 수 있습니다.</span><button class="primary-button" data-action="new-customer">＋ 고객건물 추가</button></div>`}</section></section>${renderArchivedBuildings()}`;
   }
 
   function renderArchivedBuildings() {
@@ -2885,7 +2956,7 @@
       const summary = vacancySummaryForBuilding(item);
       return `<button type="button" class="vacancy-building-card ${item.id === selectedVacancyBuildingId ? "selected" : ""}" data-vacancy-building="${attr(item.id)}" aria-pressed="${item.id === selectedVacancyBuildingId}"><div><strong>${esc(item.name || "건물명 미입력")}</strong><em>${summary.actionable.toLocaleString("ko-KR")}</em></div><p>${esc(item.address || "주소 미입력")}</p><small>전체 ${summary.total.toLocaleString("ko-KR")} · 공실 ${summary.vacant.toLocaleString("ko-KR")} · 예정 ${summary.move_out_scheduled.toLocaleString("ko-KR")}${summary.formal ? "" : " · 설정 필요"}</small></button>`;
     }).join("");
-    main.innerHTML = `<section class="vacancy-hero" data-vacancy-view><div><span>건물별 공실 체크</span><h2>층마다 입주·공실·공실 예정 호실을 확인합니다</h2><p>왼쪽 고객건물 목록에서 건물을 고르고, 오른쪽에서 필요한 호실을 빠르게 확인하고 변경하세요.</p></div>${canWriteCRM() ? `<button type="button" class="primary-button" data-action="new-building">＋ 고객건물 추가</button>` : ""}</section><section class="vacancy-layout"><aside class="vacancy-building-browser"><header><div><b>고객건물 목록</b><span>확인할 건물을 선택하세요.</span></div><em>${buildings.length.toLocaleString("ko-KR")}곳</em></header><div class="vacancy-building-list">${buildingCards || `<div class="vacancy-building-empty">${buildingQuery ? "검색 조건에 맞는 건물이 없습니다." : "등록된 건물이 없습니다."}</div>`}</div></aside><section class="vacancy-detail">${building ? renderVacancyDetail(building, unitQuery) : `<div class="vacancy-detail-empty"><b>${buildingQuery ? "건물을 찾지 못했습니다" : "건물을 먼저 등록해 주세요"}</b><span>고객·건물 관리에 등록된 건물을 기준으로 층과 호실을 설정합니다.</span></div>`}</section></section>`;
+    main.innerHTML = `<section class="vacancy-hero" data-vacancy-view><div><span>건물별 공실 체크</span><h2>층마다 입주·공실·공실 예정 호실을 확인합니다</h2><p>왼쪽 고객건물 목록에서 건물을 고르고, 오른쪽에서 필요한 호실을 빠르게 확인하고 변경하세요.</p></div>${canWriteCRM() ? `<button type="button" class="primary-button" data-action="new-customer">＋ 고객건물 추가</button>` : ""}</section><section class="vacancy-layout"><aside class="vacancy-building-browser"><header><div><b>고객건물 목록</b><span>확인할 건물을 선택하세요.</span></div><em>${buildings.length.toLocaleString("ko-KR")}곳</em></header><div class="vacancy-building-list">${buildingCards || `<div class="vacancy-building-empty">${buildingQuery ? "검색 조건에 맞는 건물이 없습니다." : "등록된 고객건물이 없습니다."}</div>`}</div></aside><section class="vacancy-detail">${building ? renderVacancyDetail(building, unitQuery) : `<div class="vacancy-detail-empty"><b>${buildingQuery ? "고객건물을 찾지 못했습니다" : "고객건물을 먼저 추가해 주세요"}</b><span>고객·건물 관리에 등록한 고객 정보를 기준으로 층과 호실을 설정합니다.</span></div>`}</section></section>`;
   }
 
   function vacancyConfigurationDraft(building) {
@@ -3557,28 +3628,23 @@
     if (!canWriteCRM()) return showToast("조회 전용 계정은 일정을 등록하거나 변경할 수 없습니다.", "error");
     const existing = String(recordId || "") ? store.serviceRecords.find(record => record.id === recordId) : null;
     if (recordId && !existing) return showToast("일정 정보를 찾지 못했습니다. 최신 화면을 확인해 주세요.", "error");
-    const activeBuildings = store.buildings.filter(building => building && !building.archivedAt);
-    if (!existing && !activeBuildings.length) {
-      showToast("일정을 등록하려면 건물 관리에서 건물을 먼저 등록해 주세요.", "error");
+    const buildingOptions = customerManagedBuildingChoices(existing && existing.buildingId);
+    if (!existing && !buildingOptions.length) {
+      showToast("일정을 등록하려면 고객·건물 관리에서 고객건물을 먼저 추가해 주세요.", "error");
       return;
     }
-    const linkedBuilding = existing && buildingById(existing.buildingId);
-    const buildingOptions = [...activeBuildings];
-    if (existing && existing.buildingId && !buildingOptions.some(building => building.id === existing.buildingId)) {
-      buildingOptions.push(linkedBuilding || { id: existing.buildingId, name: "연결 기록이 남아 있는 건물", archivedAt: "missing" });
-    }
     const defaultBuildingId = existing && existing.buildingId
-      || (workCalendarBuildingId !== "all" && activeBuildings.some(building => building.id === workCalendarBuildingId) ? workCalendarBuildingId : "");
+      || (workCalendarBuildingId !== "all" && buildingOptions.some(choice => choice.value === workCalendarBuildingId) ? workCalendarBuildingId : "");
     const item = existing || {
       id: `service_${crypto.randomUUID()}`, buildingId: defaultBuildingId, title: "", serviceType: "inspection", status: "planned",
       scheduledDate: defaultDate || workCalendarDate || todayKey(), startTime: "", endTime: "", owner: store.settings && store.settings.owner || "김현진", summary: "",
     };
     const statusOptions = ["planned", "in_progress", "completed"];
     const typeOptions = ["inspection", "repair", "cleaning", "stair_cleaning", "grounds_cutting", "meeting", "other"];
-    modalContent.innerHTML = `<div class="modal-head"><div><h2>${existing ? "업무 일정 수정" : "업무 일정 추가"}</h2><p>건물을 먼저 선택하고 해당 건물에서 진행할 일정을 등록합니다.</p></div><button class="close-button" data-action="close-modal" aria-label="일정 창 닫기">×</button></div><form id="buildingScheduleForm" class="modal-body" data-schedule-id="${attr(item.id)}" data-schedule-create="${existing ? "false" : "true"}" data-request-id="${attr(crypto.randomUUID())}" data-opened-updated-at="${attr(existing && existing.updatedAt || "")}" data-opened-commit-version="${Number(existing && existing.calendarCommitVersion) || 0}" data-auth-generation="${authGeneration}" data-auth-uid="${attr(currentAuthUid())}"><div class="info-box">등록한 일정은 캘린더의 업무일정 캘린더 탭과 작업관리 화면에 함께 표시됩니다.</div><div class="form-grid work-calendar-form-grid">${selectField("건물 *", "buildingId", ["", ...buildingOptions.map(building => building.id)], item.buildingId || "", id => {
-      if (!id) return "건물을 선택해 주세요";
-      const building = buildingOptions.find(candidate => candidate.id === id) || buildingById(id);
-      return `${building && building.name || id}${building && building.archivedAt ? " · 보관된 건물" : building && building.address ? ` · ${building.address}` : ""}`;
+    modalContent.innerHTML = `<div class="modal-head"><div><h2>${existing ? "업무 일정 수정" : "업무 일정 추가"}</h2><p>고객·건물 관리 목록에서 고객건물을 선택하고 진행할 일정을 등록합니다.</p></div><button class="close-button" data-action="close-modal" aria-label="일정 창 닫기">×</button></div><form id="buildingScheduleForm" class="modal-body" data-schedule-id="${attr(item.id)}" data-schedule-create="${existing ? "false" : "true"}" data-request-id="${attr(crypto.randomUUID())}" data-opened-updated-at="${attr(existing && existing.updatedAt || "")}" data-opened-commit-version="${Number(existing && existing.calendarCommitVersion) || 0}" data-auth-generation="${authGeneration}" data-auth-uid="${attr(currentAuthUid())}"><div class="info-box">등록한 일정은 캘린더의 업무일정 캘린더 탭과 작업관리 화면에 함께 표시됩니다.</div><div class="form-grid work-calendar-form-grid">${selectField("고객건물 *", "buildingId", ["", ...buildingOptions.map(choice => choice.value)], item.buildingId || "", value => {
+      if (!value) return "고객건물을 선택해 주세요";
+      const choice = buildingOptions.find(candidate => candidate.value === value);
+      return choice ? customerManagedBuildingChoiceLabel(choice) : value;
     })}${field("일정명 *", "title", item.title || "", "text", "예: 소방시설 정기 점검")}${field("날짜 *", "scheduledDate", item.scheduledDate || defaultDate || todayKey(), "date")}${field("시작 시간", "startTime", item.startTime || "", "time")}${field("종료 시간", "endTime", item.endTime || "", "time")}${selectField("진행 상태", "status", statusOptions, statusOptions.includes(item.status) ? item.status : "planned", value => WorkManagement.statusLabel(value))}${selectField("업무 종류", "serviceType", typeOptions, typeOptions.includes(item.serviceType) ? item.serviceType : "other", value => WorkManagement.typeLabel(value))}${field("담당자", "owner", item.owner || store.settings && store.settings.owner || "김현진")}${areaField("메모", "summary", item.summary || "", "wide")}</div><div class="form-actions">${existing && !["completed", "cancelled"].includes(existing.status) ? `<button type="button" class="danger-outline-button form-delete-left" data-work-calendar-cancel="${attr(existing.id)}">일정 취소</button>` : ""}<button type="button" class="secondary-button" data-action="close-modal">닫기</button><button class="primary-button" type="submit">${existing ? "일정 수정 저장" : "일정 등록"}</button></div></form>`;
     openModal();
     const form = document.getElementById("buildingScheduleForm");
@@ -3594,17 +3660,13 @@
     if (!canWriteCRM()) return showToast("조회 전용 계정은 작업을 기록할 수 없습니다.", "error");
     const existing = store.serviceRecords.find(record => record.id === recordId) || null;
     if (recordId && !existing) return showToast("작업 정보를 찾지 못했습니다. 최신 화면을 확인해 주세요.", "error");
-    const activeBuildings = store.buildings.filter(building => building && !building.archivedAt);
-    if (!existing && !activeBuildings.length) return showToast("작업을 등록하려면 건물 관리에서 건물을 먼저 등록해 주세요.", "error");
-    const linkedBuilding = existing && buildingById(existing.buildingId);
-    const buildingOptions = [...activeBuildings];
-    if (existing && existing.buildingId && !buildingOptions.some(building => building.id === existing.buildingId)) {
-      buildingOptions.push(linkedBuilding || { id: existing.buildingId, name: "연결 기록이 남아 있는 건물", archivedAt: "missing" });
-    }
-    const item = existing || { id: `service_${crypto.randomUUID()}`, buildingId: selectedBuildingId || activeBuildings[0]?.id || "", title: "", serviceType: "grounds_cutting", status: "planned", scheduledDate: "", startTime: "", endTime: "", completedAt: "", amount: 0, vendorName: "", owner: store.settings && store.settings.owner || "김현진", summary: "", evidenceUrl: "" };
+    const buildingOptions = customerManagedBuildingChoices(existing && existing.buildingId);
+    if (!existing && !buildingOptions.length) return showToast("작업을 등록하려면 고객·건물 관리에서 고객건물을 먼저 추가해 주세요.", "error");
+    const selectedChoice = buildingOptions.find(choice => choice.value === selectedBuildingId) || buildingOptions[0] || null;
+    const item = existing || { id: `service_${crypto.randomUUID()}`, buildingId: selectedChoice && selectedChoice.value || "", title: "", serviceType: "grounds_cutting", status: "planned", scheduledDate: "", startTime: "", endTime: "", completedAt: "", amount: 0, vendorName: "", owner: store.settings && store.settings.owner || "김현진", summary: "", evidenceUrl: "" };
     const cancelled = item.status === "cancelled";
     const returnView = currentView === "buildingCalendar" && unifiedCalendarTab === "contract" ? "buildingCalendar" : "workManagement";
-    modalContent.innerHTML = `<div class="modal-head"><div><h2>${existing ? "작업 상세·수정" : "새 작업 등록"}</h2><p>건물별 작업 일정·비용·완료 증빙을 공용 CRM에 기록합니다.</p></div><button class="close-button" data-action="close-modal">×</button></div><form id="workRecordForm" class="modal-body" data-return-view="${attr(returnView)}" data-work-id="${attr(item.id)}" data-work-create="${existing ? "false" : "true"}" data-request-id="${attr(crypto.randomUUID())}" data-opened-updated-at="${attr(existing && existing.updatedAt || "")}" data-opened-commit-version="${Number(existing && existing.calendarCommitVersion) || 0}" data-auth-generation="${authGeneration}" data-auth-uid="${attr(currentAuthUid())}">${cancelled ? `<div class="info-box">취소된 작업은 기록 보호를 위해 내용을 변경할 수 없습니다.</div>` : ""}<div class="form-grid">${selectField("건물 *", "buildingId", buildingOptions.map(building => building.id), item.buildingId, id => (buildingOptions.find(building => building.id === id) || {}).name || id)}${field("작업명", "title", item.title || WorkManagement.typeLabel(item.serviceType))}${selectField("작업 종류", "serviceType", ["grounds_cutting", "stair_cleaning", "cleaning", "repair", "inspection", "meeting", "other"], item.serviceType, value => WorkManagement.typeLabel(value))}${selectField("상태", "status", cancelled ? ["cancelled"] : ["planned", "in_progress", "completed"], item.status, value => WorkManagement.statusLabel(value))}${field("예정일", "scheduledDate", item.scheduledDate || "", "date")}${field("시작 시간", "startTime", item.startTime || "", "time")}${field("종료 시간", "endTime", item.endTime || "", "time")}${field("완료일", "completedAt", item.completedAt || "", "date")}${field("비용", "amount", item.amount || "", "number", "원 단위")}${field("담당 업체", "vendorName", item.vendorName || "")}${field("담당자", "owner", item.owner || store.settings && store.settings.owner || "김현진")}${field("Drive 증빙 URL", "evidenceUrl", item.evidenceUrl || "", "url", "https://drive.google.com/...")}${areaField("작업 내용·다음 행동", "summary", item.summary || "", "wide")}</div><div class="form-actions">${existing && !["completed", "cancelled"].includes(existing.status) ? `<button type="button" class="danger-outline-button form-delete-left" data-work-record-cancel="${attr(existing.id)}">작업 취소</button>` : ""}<button type="button" class="secondary-button" data-action="close-modal">닫기</button>${cancelled ? "" : `<button class="primary-button">공용 CRM에 저장</button>`}</div></form>`;
+    modalContent.innerHTML = `<div class="modal-head"><div><h2>${existing ? "작업 상세·수정" : "새 작업 등록"}</h2><p>고객·건물 관리 목록의 고객건물별 일정·비용·완료 증빙을 공용 CRM에 기록합니다.</p></div><button class="close-button" data-action="close-modal">×</button></div><form id="workRecordForm" class="modal-body" data-return-view="${attr(returnView)}" data-work-id="${attr(item.id)}" data-work-create="${existing ? "false" : "true"}" data-request-id="${attr(crypto.randomUUID())}" data-opened-updated-at="${attr(existing && existing.updatedAt || "")}" data-opened-commit-version="${Number(existing && existing.calendarCommitVersion) || 0}" data-auth-generation="${authGeneration}" data-auth-uid="${attr(currentAuthUid())}">${cancelled ? `<div class="info-box">취소된 작업은 기록 보호를 위해 내용을 변경할 수 없습니다.</div>` : ""}<div class="form-grid">${selectField("고객건물 *", "buildingId", buildingOptions.map(choice => choice.value), item.buildingId, value => customerManagedBuildingChoiceLabel(buildingOptions.find(choice => choice.value === value)) || value)}${field("작업명", "title", item.title || WorkManagement.typeLabel(item.serviceType))}${selectField("작업 종류", "serviceType", ["grounds_cutting", "stair_cleaning", "cleaning", "repair", "inspection", "meeting", "other"], item.serviceType, value => WorkManagement.typeLabel(value))}${selectField("상태", "status", cancelled ? ["cancelled"] : ["planned", "in_progress", "completed"], item.status, value => WorkManagement.statusLabel(value))}${field("예정일", "scheduledDate", item.scheduledDate || "", "date")}${field("시작 시간", "startTime", item.startTime || "", "time")}${field("종료 시간", "endTime", item.endTime || "", "time")}${field("완료일", "completedAt", item.completedAt || "", "date")}${field("비용", "amount", item.amount || "", "number", "원 단위")}${field("담당 업체", "vendorName", item.vendorName || "")}${field("담당자", "owner", item.owner || store.settings && store.settings.owner || "김현진")}${field("Drive 증빙 URL", "evidenceUrl", item.evidenceUrl || "", "url", "https://drive.google.com/...")}${areaField("작업 내용·다음 행동", "summary", item.summary || "", "wide")}</div><div class="form-actions">${existing && !["completed", "cancelled"].includes(existing.status) ? `<button type="button" class="danger-outline-button form-delete-left" data-work-record-cancel="${attr(existing.id)}">작업 취소</button>` : ""}<button type="button" class="secondary-button" data-action="close-modal">닫기</button>${cancelled ? "" : `<button class="primary-button">공용 CRM에 저장</button>`}</div></form>`;
     openModal();
     const form = document.getElementById("workRecordForm");
     if (form && form.elements.buildingId) form.elements.buildingId.required = true;
@@ -7305,9 +7367,13 @@
       const creating = form.dataset.scheduleCreate === "true";
       const existing = creating ? null : store.serviceRecords.find(item => item.id === form.dataset.scheduleId) || null;
       if (!creating && !existing) return showToast("일정이 이미 변경되었거나 취소되었습니다. 최신 화면을 확인해 주세요.", "error");
-      const building = buildingById(raw.buildingId);
+      if (!raw.buildingId) return showToast("일정을 등록할 고객건물을 선택해 주세요.", "error");
+      let building;
+      try { building = await resolveCustomerManagedBuildingSelection(raw.buildingId); }
+      catch (error) { return showToast(error.message || "고객건물을 일정에 연결하지 못했습니다.", "error"); }
+      if (!building) return;
+      raw.buildingId = building.id;
       const retainingExistingBuilding = Boolean(existing && existing.buildingId === raw.buildingId);
-      if (!retainingExistingBuilding && !building) return showToast("일정을 등록할 건물을 선택해 주세요.", "error");
       if (!retainingExistingBuilding && building && building.archivedAt) return showToast("보관된 건물에는 새 일정을 등록할 수 없습니다.", "error");
       const title = String(raw.title || "").trim();
       const summary = String(raw.summary || "").trim();
@@ -7366,9 +7432,14 @@
       const existing = creating ? null : store.serviceRecords.find(item => item.id === form.dataset.workId) || null;
       if (!creating && !existing) return showToast("작업이 이미 변경되었거나 취소되었습니다. 최신 화면을 확인해 주세요.", "error");
       if (existing && existing.status === "cancelled") return showToast("취소된 작업은 변경할 수 없습니다.", "error");
-      const building = buildingById(raw.buildingId);
+      if (!raw.buildingId) return showToast("작업을 등록할 고객건물을 선택해 주세요.", "error");
+      let building;
+      try { building = await resolveCustomerManagedBuildingSelection(raw.buildingId); }
+      catch (error) { return showToast(error.message || "고객건물을 작업에 연결하지 못했습니다.", "error"); }
+      if (!building) return;
+      raw.buildingId = building.id;
       const retainingExistingBuilding = Boolean(existing && existing.buildingId === raw.buildingId);
-      if (!retainingExistingBuilding && (!building || building.archivedAt)) return showToast("연결할 활성 건물을 선택해 주세요.", "error");
+      if (!retainingExistingBuilding && building.archivedAt) return showToast("연결할 활성 건물을 선택해 주세요.", "error");
       if (raw.scheduledDate && !WorkCalendar.isDateKey(raw.scheduledDate)) return showToast("예정일을 확인해 주세요.", "error");
       if (raw.completedAt && !WorkCalendar.isDateKey(raw.completedAt)) return showToast("완료일을 확인해 주세요.", "error");
       if (raw.status === "completed" && !raw.completedAt) return showToast("완료 작업은 완료일을 입력해 주세요.", "error");

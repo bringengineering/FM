@@ -362,6 +362,8 @@ test("building workspace uses the same management status vocabulary", () => {
   const buildingView = sourceBetween("function renderBuildings()", "function renderArchivedBuildings");
   assert.match(buildingView, /data-building-management-filter/);
   assert.match(buildingView, /managementStatusForBuilding/);
+  assert.doesNotMatch(buildingView, /data-action="new-building"|＋ 건물 등록/);
+  assert.match(buildingView, /data-action="new-customer">＋ 고객건물 추가<\/button>/);
   assert.match(appSource, /selectField\("관리 상태", "status", \["관리 예정", "관리 중", "관리 종료"\]/);
   assert.match(buildingCss, /\.management-filter\s*\{/);
   assert.match(buildingCss, /\.customer-hub-workspace/);
@@ -372,7 +374,7 @@ test("vacancy workspace remains available under customer management", () => {
   const vacancies = sourceBetween("function renderVacancies", "function vacancyConfigurationDraft");
   assert.match(appSource, /function renderVacancies\(\)/);
   assert.match(appSource, /currentView = "vacancies"/);
-  assert.match(appSource, /고객·건물 관리에 등록된 건물을 기준으로 층과 호실을 설정합니다/);
+  assert.match(appSource, /고객·건물 관리에 등록한 고객 정보를 기준으로 층과 호실을 설정합니다/);
   assert.match(vacancies, /<b>고객건물 목록<\/b>/);
-  assert.match(vacancies, /data-action="new-building">＋ 고객건물 추가<\/button>/);
+  assert.match(vacancies, /data-action="new-customer">＋ 고객건물 추가<\/button>/);
 });

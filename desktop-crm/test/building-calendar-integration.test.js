@@ -145,22 +145,34 @@ test("main scroll resets only after changing to a different rendered view", () =
   );
 });
 
-test("schedule editor starts with a required building and excludes archived buildings for new records", () => {
+test("schedule editor lists customer-management entries and auto-links customers without a backing building", () => {
   const editor = functionSource("buildingScheduleEditor");
-  assert.match(editor, /activeBuildings\s*=\s*store\.buildings\.filter\(building\s*=>\s*building\s*&&\s*!building\.archivedAt\)/);
-  assert.ok(editor.indexOf('selectField("건물 *"') < editor.indexOf('field("일정명 *"'));
+  const choices = functionSource("customerManagedBuildingChoices");
+  const resolver = functionSource("resolveCustomerManagedBuildingSelection");
+  assert.match(choices, /store\.customers/);
+  assert.match(choices, /`customer:\$\{customer\.id\}`/);
+  assert.match(editor, /customerManagedBuildingChoices\(existing && existing\.buildingId\)/);
+  assert.ok(editor.indexOf('selectField("고객건물 *"') < editor.indexOf('field("일정명 *"'));
+  assert.match(editor, /고객·건물 관리 목록에서 고객건물을 선택/);
   assert.match(editor, /form\.elements\.buildingId\.required\s*=\s*true/);
   assert.match(editor, /form\.elements\.buildingId\s*\|\|\s*form\.elements\.title/);
   assert.match(editor, /data-opened-updated-at/);
   assert.match(editor, /data-opened-commit-version/);
   assert.match(editor, /data-auth-generation/);
   assert.match(editor, /캘린더의 업무일정 캘린더 탭과 작업관리 화면에 함께 표시/);
+  assert.match(resolver, /customerBuildings\(customer\)\.find\(item => item && !item\.archivedAt\)/);
+  assert.match(resolver, /고객·건물 관리에서 도로명 주소나 지번 주소를 먼저 입력/);
+  assert.match(resolver, /operation: "create"/);
+  assert.match(resolver, /ownerCustomerId: customer\.id/);
+  assert.match(resolver, /reason: "업무 일정 고객건물 자동 연결"/);
 });
 
 test("schedule save validates local date and time before one dedicated CAS commit", () => {
   const start = appSource.indexOf('form.id === "buildingScheduleForm"');
   const end = appSource.indexOf('form.id === "workRecordForm"', start);
   const branch = appSource.slice(start, end);
+  assert.match(branch, /await resolveCustomerManagedBuildingSelection\(raw\.buildingId\)/);
+  assert.match(branch, /raw\.buildingId = building\.id/);
   assert.match(branch, /WorkCalendar\.isDateKey\(raw\.scheduledDate\)/);
   assert.match(branch, /WorkCalendar\.isTimeKey\(startTime\)/);
   assert.match(branch, /endTime <= startTime/);
