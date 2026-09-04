@@ -2386,7 +2386,15 @@ const CASE_STEPS = [
  {k:"c16",t:"⑯ 월간 리포트",doc:"monthly"},
  {k:"c17",t:"⑰ 유지관리·사후관리"},
 ];
-const OWNER_PAYMENT_ACCOUNT = { accountNumber:"123-456-789012", accountHolder:"브링케어" };
+/* 입금 계좌는 케이스에 저장된 값만 신뢰한다. 없으면 임의의 계좌를 보여주지 않는다.
+   운영 계좌는 Apps Script 속성(OWNER_PAYMENT_ACCOUNT_NUMBER/_HOLDER)에서 관리한다. */
+const PAYMENT_ACCOUNT_UNSET = "미설정 — Apps Script 속성을 확인하세요";
+function casePaymentAccount(c){
+  const stored = (c && c.paymentAccount) || {};
+  const accountNumber = String(stored.accountNumber || "").trim();
+  const accountHolder = String(stored.accountHolder || "").trim();
+  return { accountNumber, accountHolder, ready: !!(accountNumber && accountHolder) };
+}
 const DOC_NAMES = { onboard:"온보딩 수집서", quote:"견적서", contract:"계약서", approval:"승인 링크", inspect:"점검 체크리스트", ba:"B/A 보고서", monthly:"월간 리포트" };
 function gradeFee(g){ return g==="라이트"?"190,000원/월":g==="프리미엄"?"월세수입의 7~11%":"390,000원/월"; }
 function workPhotoFilesList(c, phase){
@@ -5380,7 +5388,7 @@ const paymentConfirmationRequests=new Set();
 function paymentConfirmationPanel(c, st){
   if(st!=="doing" && st!=="done") return "";
   const confirmed=st==="done" || String(c&&c.paymentStatus||"")==="confirmed";
-  const account=Object.assign({}, OWNER_PAYMENT_ACCOUNT, c&&c.paymentAccount||{});
+  const account=casePaymentAccount(c);
   const q=recommendedQuoteForCase(c);
   const amounts=q?recommendedQuoteAmounts(q):{total:Number(c&&c.ownerDecision&&c.ownerDecision.bringTotalAmount||0)};
   const confirmedAt=c&&c.paymentConfirmation&&c.paymentConfirmation.confirmedAt||c&&c.paymentConfirmedAt||"";
@@ -5390,7 +5398,7 @@ function paymentConfirmationPanel(c, st){
     : "실제 사업자계좌의 입금 내역을 확인한 뒤 아래 버튼을 눌러주세요.";
   return `<div class="payment-confirm-panel">
     <div class="payment-confirm-head"><div><div class="payment-confirm-title">관리자 입금 확인</div><div class="payment-confirm-sub">${esc(sub)}</div></div><span class="payment-confirm-badge ${confirmed?'done':''}">${confirmed?"입금 확인 완료":"관리자 확인 대기"}</span></div>
-    <div class="payment-confirm-info"><div><b>입금 계좌</b><span>${esc(account.accountNumber||"")}</span></div><div><b>예금주</b><span>${esc(account.accountHolder||"")}</span></div><div><b>확인 금액</b><span>${esc(recommendedQuoteMoney(amounts.total)||"금액 미입력")}</span></div></div>
+    <div class="payment-confirm-info"><div><b>입금 계좌</b><span>${esc(account.accountNumber||PAYMENT_ACCOUNT_UNSET)}</span></div><div><b>예금주</b><span>${esc(account.accountHolder||PAYMENT_ACCOUNT_UNSET)}</span></div><div><b>확인 금액</b><span>${esc(recommendedQuoteMoney(amounts.total)||"금액 미입력")}</span></div></div>
     ${confirmed?`<div class="payment-confirm-sub">확인 시각: ${esc(confirmedAt?formatCaseDate(confirmedAt):"확인 완료")}</div>`:`<button type="button" class="payment-confirm-action" data-payment-confirm="1" ${pending?'disabled':''}>${pending?"확인 처리 중":"입금 확인"}</button>`}
   </div>`;
 }
@@ -5406,7 +5414,12 @@ function confirmCasePayment(id){
   const q=recommendedQuoteForCase(c);
   const amounts=q?recommendedQuoteAmounts(q):{total:Number(c.ownerDecision&&c.ownerDecision.bringTotalAmount||0)};
   const amountText=recommendedQuoteMoney(amounts.total)||"금액 미입력";
-  if(!confirm(`실제 사업자계좌 입금 내역을 확인했나요?\n\n예금주: ${OWNER_PAYMENT_ACCOUNT.accountHolder}\n확인 금액: ${amountText}\n\n확인하면 ⑩이 완료되고 ⑪ 업체 연결·일정이 시작됩니다.`)) return;
+  const account=casePaymentAccount(c);
+  if(!account.ready){
+    alert("이 케이스에 입금 계좌가 저장되어 있지 않습니다.\n\nApps Script 속성(OWNER_PAYMENT_ACCOUNT_NUMBER / OWNER_PAYMENT_ACCOUNT_HOLDER)을 먼저 설정한 뒤,\n건물주 승인을 다시 처리해 주세요.");
+    return;
+  }
+  if(!confirm(`실제 사업자계좌 입금 내역을 확인했나요?\n\n예금주: ${account.accountHolder}\n계좌번호: ${account.accountNumber}\n확인 금액: ${amountText}\n\n확인하면 ⑩이 완료되고 ⑪ 업체 연결·일정이 시작됩니다.`)) return;
   if(!caseAutomationEndpoint()){
     if(!promptCaseAutomationSetup()) return;
   }
@@ -6287,7 +6300,7 @@ document.getElementById("noticeBanner").addEventListener("click", openNoticePane
 /* ===== 업데이트 알림(What's New) — 새 버전 나오면 자동 팝업 ===== */
 const APP_VERSION = "5.42";
 const CHANGELOG = [
-  { v:"5.42", d:"2026-09-04", items:["저장이 실패하면 화면 위에 빨간 알림으로 바로 알려줍니다 (예전에는 조용히 실패)","연결이 끊기면 ‘아직 서버에 저장되지 않았습니다’를 함께 표시","업무 흐름·보드·케이스·입금 감사기록 저장 실패를 모두 감지"] },
+  { v:"5.42", d:"2026-09-04", items:["저장이 실패하면 화면 위에 빨간 알림으로 바로 알려줍니다 (예전에는 조용히 실패)","연결이 끊기면 ‘아직 서버에 저장되지 않았습니다’를 함께 표시","업무 흐름·보드·케이스·입금 감사기록 저장 실패를 모두 감지","입금 계좌가 설정되지 않은 케이스는 예시 계좌 대신 ‘미설정’으로 표시하고 입금 확인을 막습니다"] },
   { v:"5.41", d:"2026-08-07", items:["⑬ 작업 전·후 사진 분리 업로드 및 Drive 저장","⑬ 사진 비교 보기와 개별 목록 제거","⑭ B/A 보고서에 작업 사진 자동 참조"] },
   { v:"5.40", d:"2026-08-07", items:["브링 견적서 가산율을 10%에서 5%로 변경","최종 합계금액은 기존처럼 100원 단위 반올림","기존 견적은 브링 양식 재작성 시 5% 적용"] },
   { v:"5.39", d:"2026-07-30", items:["동일한 건물주 전화번호로 등록된 여러 건물의 납부예정·미입금·입금완료 알림을 한 건으로 통합"] },
