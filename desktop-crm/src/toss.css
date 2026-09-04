@@ -922,3 +922,51 @@ h3,h4{ letter-spacing:-0.3px; font-weight:700; }
 
 /* 포커스 링을 브랜드 색으로 통일 */
 :focus-visible{ outline:3px solid rgba(49,130,246,.45); outline-offset:2px; }
+
+/* =====================================================================
+   매일 마주치는 자잘한 불편
+   ===================================================================== */
+
+/* ---- 사이드바: 메뉴가 더 있다는 것을 알려준다 ----
+   메뉴가 18개 + 폴더 3개라 화면에 다 들어가지 않는다. 스크롤은 되지만
+   아래가 그냥 잘려 보여서 더 있는 줄 모른다. 끝에서 옅게 흐려 준다. */
+.nav-list{
+  -webkit-mask-image:linear-gradient(to bottom, #000 calc(100% - 28px), transparent 100%);
+  mask-image:linear-gradient(to bottom, #000 calc(100% - 28px), transparent 100%);
+  padding-bottom:12px;
+}
+/* 스크롤이 끝까지 내려갔으면 흐리지 않는다 */
+.nav-list:not([data-scroll="more"]){
+  -webkit-mask-image:none; mask-image:none;
+}
+
+/* ---- 연결 상태: 평소엔 조용히, 문제일 때만 눈에 띄게 ----
+   왼쪽 아래 구석이라 평소에는 눈이 가지 않는다. 저장이 밀리거나 서버가
+   끊겼을 때만 색과 테두리로 알린다. */
+.sync-state{
+  border-radius:12px; border:1px solid transparent;
+  transition:background .18s ease, border-color .18s ease;
+}
+.sidebar-foot:has(.sync-state > i.pending) .sync-state,
+.sync-state:has(> i.pending){
+  background:var(--tone-warn-bg); border-color:var(--tone-warn-ink);
+}
+.sync-state:has(> i.pending) b{ color:var(--tone-warn-ink); }
+.sync-state:has(> i.offline){
+  background:var(--tone-bad-bg); border-color:var(--tone-bad-ink);
+}
+.sync-state:has(> i.offline) b{ color:var(--tone-bad-ink); }
+.sync-state > i.pending{ background:var(--tone-warn-ink); box-shadow:0 0 0 4px rgba(199,122,0,.16); }
+.sync-state > i.offline{ background:var(--tone-bad-ink); box-shadow:0 0 0 4px rgba(224,48,63,.16); }
+.sync-state > i.syncing{ background:var(--blue); box-shadow:0 0 0 4px rgba(49,130,246,.16); }
+
+/* ---- 버튼이 몰린 상단 배너에서 제목이 눌리지 않게 ----
+   입금 캘린더 상단에는 버튼이 7개까지 온다. 제목 칸이 밀려 두 줄로
+   접히던 것을 막고, 버튼 줄이 알아서 접히도록 한다. */
+.operations-hero,.building-hub-hero,.partner-quote-hero,.partner-vendor-hero{
+  flex-wrap:wrap; row-gap:14px;
+}
+.operations-hero > div:first-child{ flex:1 1 340px; min-width:280px; }
+.operations-actions,.payment-operation-actions,.partner-hero-actions{
+  flex-wrap:wrap; justify-content:flex-end; row-gap:8px;
+}
