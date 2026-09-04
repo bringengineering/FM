@@ -6,8 +6,12 @@ const path = require("node:path");
 const test = require("node:test");
 
 const root = path.resolve(__dirname, "../..");
-const ci = fs.readFileSync(path.join(root, ".github/workflows/crm-ci.yml"), "utf8");
-const release = fs.readFileSync(path.join(root, ".github/workflows/crm-release.yml"), "utf8");
+// Normalize line endings so the LF-anchored assertions below pass regardless of
+// the checkout's autocrlf setting. Windows CI runners check these workflow files
+// out with CRLF, which otherwise breaks `\n`-anchored regexes (jobBlock, .exe\n).
+const readWorkflow = (rel) => fs.readFileSync(path.join(root, rel), "utf8").replace(/\r\n/g, "\n");
+const ci = readWorkflow(".github/workflows/crm-ci.yml");
+const release = readWorkflow(".github/workflows/crm-release.yml");
 
 function jobBlock(name) {
   const match = release.match(new RegExp(`\\n  ${name}:\\n([\\s\\S]*?)(?=\\n  [a-z][a-z0-9-]*:\\n|$)`));

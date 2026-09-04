@@ -1,6 +1,6 @@
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { createRef, useState } from "react";
-import { describe, expect, it, vi } from "vitest";
+import { describe, expect, it, onTestFinished, vi } from "vitest";
 
 import FieldOperationsHome, {
   type FieldOperationsHomeHandle,
@@ -204,6 +204,14 @@ describe("CRM-native FIELD operations home", () => {
   });
 
   it("restores the exact supported desktop route state and rejects unsupported filters", async () => {
+    // Pin the clock to the fixture's dueDate so the "todayVisits" KPI matches
+    // deterministically. Fake only Date — restoreNavigation awaits real setTimeout,
+    // which must keep running. (Without this the test only passed on 2026-08-14.)
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(new Date("2026-08-14T03:00:00Z")); // 2026-08-14 12:00 KST
+    onTestFinished(() => {
+      vi.useRealTimers();
+    });
     const ref = createRef<FieldOperationsHomeHandle>();
     const onSearchChange = vi.fn();
     function ControlledHome() {
