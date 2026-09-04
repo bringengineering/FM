@@ -69,7 +69,9 @@ test("customer management mirrors the partner vendor card-list-to-detail workflo
   assert.match(customerList, /jibunAddressLabel/);
   assert.match(stylesSource, /\.customer-address-contact\{grid-template-columns:1fr\}/);
   assert.match(stylesSource, /\.customer-address-contact>div\{display:grid;grid-template-columns:76px minmax\(0,1fr\)/);
-  assert.match(stylesSource, /\.customer-address-contact>div\+div\{border-top:1px solid #e3edf2;border-left:0\}/);
+  // 주소 줄은 세로가 아니라 가로로 나뉜다(위쪽 경계선만, 왼쪽 경계선 없음).
+  // 경계선 색은 팔레트를 따라가므로 값 자체는 고정하지 않는다.
+  assert.match(stylesSource, /\.customer-address-contact>div\+div\{border-top:1px solid #[0-9a-fA-F]{6};border-left:0\}/);
   assert.match(customerList, /data-customer-hub-edit="\$\{attr\(customer\.id\)\}"/);
   assert.match(customerList, /data-customer-open="\$\{attr\(customer\.id\)\}"/);
   assert.doesNotMatch(customerList, /selectedCustomerHubId = customers\[0\]/);

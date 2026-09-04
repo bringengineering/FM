@@ -813,3 +813,112 @@ input:focus,select:focus,textarea:focus{
     0 2px 6px rgba(49,130,246,.14),
     inset 0 1px 0 rgba(255,255,255,.8);
 }
+
+/* =====================================================================
+   빠진 화면이 없도록 — 클래스 이름이 아니라 요소로 잡는다
+   화면마다 버튼 클래스 이름이 제각각이라(.marketing-nav button 처럼 이름이
+   아예 없는 것도 있다) 하나씩 나열하면 계속 빠진다. button 요소 전체에
+   기본 입체감을 주고, 버튼이 아닌 것처럼 쓰이는 것들만 빼낸다.
+   ===================================================================== */
+button:not(.nav-item):not(.nav-folder-toggle):not(.close-button):not(.timeline-delete)
+:not([class*="card"]):not([class*="-row"]):not([class*="-day"]):not([class*="-option"])
+:not([class*="-item"]):not([class*="-record"]):not([class*="-tab"]):not(.primary-button)
+:not(.email-login-button):not(.filter-chip):not(.sales-stage-button){
+  border-radius:12px;
+  background-image:linear-gradient(180deg,#fff 0%,#F7F8FA 100%);
+  border:1px solid #DFE3E8;
+  box-shadow:
+    0 2px 0 #DBE0E6,
+    0 3px 6px rgba(16,24,40,.07),
+    0 8px 16px rgba(16,24,40,.06),
+    var(--sheen);
+  color:var(--soft);
+  font-weight:600;
+}
+button:not(.nav-item):not(.nav-folder-toggle):not(.close-button):not(.timeline-delete)
+:not([class*="card"]):not([class*="-row"]):not([class*="-day"]):not([class*="-option"])
+:not([class*="-item"]):not([class*="-record"]):not([class*="-tab"]):not(.primary-button)
+:not(.email-login-button):not(.filter-chip):not(.sales-stage-button):hover:not(:disabled){
+  transform:translateY(-1px);
+  border-color:#D0D6DD;
+  box-shadow:
+    0 3px 0 #D3D9E0,
+    0 5px 10px rgba(16,24,40,.09),
+    0 12px 22px rgba(16,24,40,.07),
+    var(--sheen);
+}
+
+/* 선택된 탭·칩은 파랑으로 (마케팅 탭이 거의 검정이었다) */
+.marketing-nav button.active,
+[role="tab"][aria-selected="true"],
+button[aria-current="page"]{
+  background-image:linear-gradient(180deg, #4A90F7 0%, var(--blue) 100%) !important;
+  border-color:var(--blue) !important;
+  color:#fff !important;
+  box-shadow:
+    0 3px 0 #1F63CE,
+    0 5px 10px rgba(21,84,180,.30),
+    0 10px 22px rgba(49,130,246,.26),
+    var(--sheen-strong) !important;
+}
+
+/* 마케팅 화면도 같은 카드·입력 규칙을 따르게 */
+.marketing-filters,.marketing-kpi-grid>*,.marketing-table-wrap,.marketing-alerts,
+.marketing-funnel,.marketing-attention,.marketing-customer-list,.marketing-input,
+.marketing-report-metrics,.marketing-duplicate-review{
+  border:1px solid var(--line); border-radius:var(--radius); background:#fff;
+  box-shadow:
+    0 1px 2px rgba(16,24,40,.04),
+    0 4px 8px rgba(16,24,40,.05),
+    0 12px 28px rgba(16,24,40,.07);
+}
+.marketing-customer-row,.marketing-entry-row,.marketing-metric-row{ border-color:var(--line); }
+
+/* =====================================================================
+   마무리 손질 — 조금 더 보기 좋게
+   ===================================================================== */
+
+/* 모서리를 조금 더 둥글게 (14 → 16) */
+:root{ --radius:16px; }
+
+/* KPI 카드
+   - 오른쪽 위 옅은 원은 잘려 보여서 정리감을 해쳤다. 은은한 사선 결로 교체
+   - 왼쪽 강조 막대는 위아래로 길게 빼 카드 전체를 지지하는 느낌으로 */
+.kpi-card::after{
+  right:-40px; top:-40px; width:150px; height:150px; opacity:.06;
+  background:radial-gradient(circle at 30% 70%, var(--accent,#3182F6), transparent 62%);
+}
+.kpi-card::before{
+  top:18px; height:calc(100% - 36px); width:3px; border-radius:0 4px 4px 0; opacity:.9;
+}
+.kpi-card .kpi-value,.security-kpi>strong{ letter-spacing:-1.2px; }
+
+/* 글자 위계를 조금 더 또렷하게 */
+h1,.topbar h1{ letter-spacing:-0.8px; font-weight:800; }
+h2{ letter-spacing:-0.6px; font-weight:800; }
+h3,h4{ letter-spacing:-0.3px; font-weight:700; }
+.eyebrow,.section-head>div>p,.today-brief p{ line-height:1.55; }
+
+/* 표: 줄에 마우스를 올리면 은은하게 */
+.data-table tbody tr:hover{ background:#FAFBFC; }
+.data-table thead th{
+  background:#FAFBFC; color:var(--muted); font-weight:700; letter-spacing:-0.1px;
+}
+.data-table tbody td{ border-bottom:1px solid #F1F3F5; }
+
+/* 빈 화면: 가운데 글자만 덩그러니 있던 것을 조금 다듬음 */
+.empty-state b,.empty-state>b{ letter-spacing:-0.4px; }
+.empty-state{ color:var(--muted); }
+
+/* 스크롤바를 얇고 조용하게 (본문 전체) */
+*{ scrollbar-width:thin; scrollbar-color:#D7DCE2 transparent; }
+::-webkit-scrollbar{ width:8px; height:8px; }
+::-webkit-scrollbar-thumb{ background:#D7DCE2; border-radius:999px; }
+::-webkit-scrollbar-thumb:hover{ background:#C4CBD3; }
+::-webkit-scrollbar-track{ background:transparent; }
+
+/* 선택 영역 색 */
+::selection{ background:rgba(49,130,246,.18); }
+
+/* 포커스 링을 브랜드 색으로 통일 */
+:focus-visible{ outline:3px solid rgba(49,130,246,.45); outline-offset:2px; }

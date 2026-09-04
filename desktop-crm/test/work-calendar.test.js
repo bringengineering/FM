@@ -165,5 +165,6 @@ test("calendar stylesheet includes responsive and accessible control rules", () 
   const saturdayRule = css.indexOf(".work-calendar-weekdays .is-saturday");
   const holidayRule = css.indexOf(".work-calendar-day.is-holiday .work-calendar-day-number");
   assert.ok(saturdayRule >= 0 && holidayRule > saturdayRule);
-  assert.match(css, /\.work-calendar-day\.is-holiday \.work-calendar-holiday-name\s*\{[\s\S]*?color:\s*#c63f4d;/);
+  // 공휴일 이름은 빨강 계열로 표시한다 (팔레트 값: #F04452)
+  assert.match(css, /\.work-calendar-day\.is-holiday \.work-calendar-holiday-name\s*\{[\s\S]*?color:\s*#F04452;/);
 });

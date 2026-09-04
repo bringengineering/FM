@@ -106,7 +106,7 @@ textarea {
 /* Tasks, workflow and settings */
 .task-title strong { font-size: 13px; }
 .task-title span { font-size: 11px; }
-.task-meta-label { color: #718b9b; font-size: 10px; }
+.task-meta-label { color: #8B95A1; font-size: 10px; }
 .task-meta strong,
 .task-meta time b,
 .task-customer-button { font-size: 12px; }
@@ -371,11 +371,11 @@ textarea {
 
 /* 2026 readability refinement: calmer contrast and clearer primary information */
 :root {
-  --bg: #f5f9fc;
-  --text: #16364d;
-  --muted: #687f90;
-  --soft: #47657a;
-  --line: #d8e5ed;
+  --bg: #FAFBFC;
+  --text: #191F28;
+  --muted: #4E5968;
+  --soft: #4E5968;
+  --line: #E5E8EB;
   --shadow: 0 12px 34px rgba(50, 93, 119, .09);
 }
 
@@ -405,59 +405,59 @@ textarea {
 .section-head p,
 .operations-hero p,
 .relationship-hero p,
-.partner-quote-hero p { color: #617d90; line-height: 1.55; }
+.partner-quote-hero p { color: #4E5968; line-height: 1.55; }
 
 .primary-button,
 .secondary-button,
 .danger-button,
 .danger-outline-button { min-height: 39px; }
 
-.field > span { color: #526f83; font-size: 12px; }
+.field > span { color: #4E5968; font-size: 12px; }
 .field input,
 .field select,
-.field textarea { min-height: 42px; color: #1d4259; background: #fff; }
+.field textarea { min-height: 42px; color: #191F28; background: #fff; }
 .field input::placeholder,
-.field textarea::placeholder { color: #94a7b3; }
+.field textarea::placeholder { color: #8B95A1; }
 
-.data-table th { color: #5d7789; font-size: 11px; }
-.data-table td { color: #38566a; font-size: 12px; line-height: 1.5; }
-.data-table tbody tr:hover { background: #f3f9fc; }
+.data-table th { color: #4E5968; font-size: 11px; }
+.data-table td { color: #4E5968; font-size: 12px; line-height: 1.5; }
+.data-table tbody tr:hover { background: #FAFBFC; }
 
 .case-browser > header small,
 .case-list-card p,
-.case-list-card > small { color: #657f90; font-size: 11px; }
+.case-list-card > small { color: #4E5968; font-size: 11px; }
 .case-step-main { min-height: 56px; }
-.case-step-main > div > b { color: #1d435a; font-size: 13px; }
-.case-step-main > div > span { color: #6f8796; font-size: 11px; }
+.case-step-main > div > b { color: #191F28; font-size: 13px; }
+.case-step-main > div > span { color: #4E5968; font-size: 11px; }
 .case-step-main select,
 .case-note-button { min-height: 34px; font-size: 11px; }
-.case-extra-grid b { color: #647e8f; font-size: 10px; }
+.case-extra-grid b { color: #4E5968; font-size: 10px; }
 .case-extra-grid span,
-.case-extra-text { color: #294c62; font-size: 12px; }
-.case-action-panel span { color: #58778a; font-size: 11px; }
+.case-extra-text { color: #191F28; font-size: 12px; }
+.case-action-panel span { color: #4E5968; font-size: 11px; }
 
-.payment-sync-strip { color: #5f7889; font-size: 11px; }
+.payment-sync-strip { color: #4E5968; font-size: 11px; }
 .payment-toolbar { min-height: 46px; }
-.payment-month-switch b { color: #173f58; font-size: 16px; }
-.payment-weekdays > div { padding: 10px; color: #637e90; font-size: 11px; }
+.payment-month-switch b { color: #191F28; font-size: 16px; }
+.payment-weekdays > div { padding: 10px; color: #4E5968; font-size: 11px; }
 .payment-day { min-height: 82px; padding: 7px; }
-.payment-daynum { color: #5e7b8e; font-size: 11px; }
+.payment-daynum { color: #4E5968; font-size: 11px; }
 .payment-event { padding: 6px 7px; }
 .payment-event b { font-size: 11px; line-height: 1.35; }
 .payment-event span { margin-top: 2px; font-size: 10px; line-height: 1.35; }
 .payment-more { font-size: 10px; }
 .payment-building-card b { font-size: 12px; }
-.payment-building-card span { color: #677f8f; font-size: 10px; }
+.payment-building-card span { color: #4E5968; font-size: 10px; }
 .payment-building-card small { font-size: 10px; }
 
-.timeline-item strong { color: #294b61; font-size: 12px; }
-.timeline-item p { color: #657f90; font-size: 11px; }
-.timeline-item time { color: #7a919f; font-size: 10px; }
+.timeline-item strong { color: #191F28; font-size: 12px; }
+.timeline-item p { color: #4E5968; font-size: 11px; }
+.timeline-item time { color: #8B95A1; font-size: 10px; }
 .timeline-delete,
 .record-delete-button { min-height: 30px; padding: 6px 9px; font-size: 10px; }
 
-.task-title strong { color: #244960; font-size: 13px; }
-.task-title span { color: #667f90; font-size: 11px; }
+.task-title strong { color: #191F28; font-size: 13px; }
+.task-title span { color: #4E5968; font-size: 11px; }
 
 .case-trash-action,
 .case-browser-mode button,
@@ -476,9 +476,9 @@ textarea {
 
 /* 2026 compact readability pass: keep the layout, clarify text hierarchy */
 :root {
-  --muted: #5e7688;
-  --soft: #3f6075;
-  --line: #d2e1e9;
+  --muted: #4E5968;
+  --soft: #4E5968;
+  --line: #E5E8EB;
 }
 
 body { font-size: 15px; line-height: 1.5; }
@@ -508,24 +508,24 @@ textarea { font-size: 14px; }
 
 .brief-kicker { font-size: 12px; }
 .today-brief h2 { font-size: 22px; }
-.today-brief p { color: #5e788b; font-size: 13px; }
+.today-brief p { color: #4E5968; font-size: 13px; }
 .section-head h2 { font-size: 20px; }
-.section-head p { color: #5e788b; font-size: 13px; }
+.section-head p { color: #4E5968; font-size: 13px; }
 .kpi-label { font-size: 13px; }
-.kpi-foot { color: #718898; font-size: 11px; }
+.kpi-foot { color: #4E5968; font-size: 11px; }
 .panel-head h3 { font-size: 16px; }
 .panel-head p,
-.panel-head > span { color: #667f90; font-size: 12px; }
+.panel-head > span { color: #4E5968; font-size: 12px; }
 .focus-row strong { font-size: 14px; }
 .focus-row span,
-.focus-row time { color: #6c8393; font-size: 11px; }
-.focus-row p { color: #476579; font-size: 12px; }
+.focus-row time { color: #4E5968; font-size: 11px; }
+.focus-row p { color: #4E5968; font-size: 12px; }
 .filter-chip { font-size: 12px; }
 
 .data-table th { padding-top: 13px; padding-bottom: 13px; font-size: 12px; }
 .data-table td { padding-top: 13px; padding-bottom: 13px; font-size: 13px; }
 .customer-cell strong { font-size: 14px; }
-.customer-cell span { color: #718897; font-size: 12px; }
+.customer-cell span { color: #4E5968; font-size: 12px; }
 .stage-badge,
 .priority-badge,
 .status-badge,
@@ -536,15 +536,15 @@ textarea { font-size: 14px; }
 .sales-kanban-head strong { font-size: 13px; }
 .sales-kanban-head span { font-size: 11px; }
 .sales-kanban-card strong { font-size: 13px; }
-.sales-kanban-card p { color: #536f82; font-size: 12px; }
+.sales-kanban-card p { color: #4E5968; font-size: 12px; }
 .sales-kanban-card footer,
 .sales-kanban-card footer b { font-size: 11px; }
 
-.field > span { color: #47677c; font-size: 12px; }
+.field > span { color: #4E5968; font-size: 12px; }
 .field input,
 .field select,
 .field textarea { font-size: 14px; line-height: 1.55; }
-.field .hint { color: #718897; font-size: 11px; }
+.field .hint { color: #4E5968; font-size: 11px; }
 .form-section h4,
 .essential-label b { font-size: 14px; }
 .essential-label span,
@@ -558,12 +558,12 @@ textarea { font-size: 14px; }
 .warning-box { font-size: 13px; }
 
 .customer-summary h3 { font-size: 22px; }
-.customer-summary p { color: #5f7889; font-size: 13px; }
+.customer-summary p { color: #4E5968; font-size: 13px; }
 .summary-value strong { font-size: 20px; }
 .summary-value span { font-size: 11px; }
 .detail-section-head h4 { font-size: 14px; }
 .detail-section .text-muted { font-size: 12px !important; }
-.kv b { color: #627b8c; font-size: 11px; }
+.kv b { color: #4E5968; font-size: 11px; }
 .kv span { font-size: 13px; }
 .timeline-item strong { font-size: 13px; }
 .timeline-item p { font-size: 12px; }
@@ -574,7 +574,7 @@ textarea { font-size: 14px; }
 .customer-task-record > span { font-size: 13px; }
 .building-record span,
 .customer-task-record time,
-.record-danger-zone span { color: #657e8f; font-size: 11px; }
+.record-danger-zone span { color: #4E5968; font-size: 11px; }
 .record-danger-zone b { font-size: 13px; }
 
 .contract-hero span,
@@ -584,7 +584,7 @@ textarea { font-size: 14px; }
 .contract-hero p,
 .relationship-hero p,
 .partner-quote-hero p,
-.operations-hero p { color: #5b7588; font-size: 13px; }
+.operations-hero p { color: #4E5968; font-size: 13px; }
 .contract-card > footer > span,
 .contract-number,
 .contract-facts span,
@@ -612,7 +612,7 @@ textarea { font-size: 14px; }
 .audit-category { font-size: 11px !important; }
 
 .operations-kpi span { font-size: 12px; }
-.operations-kpi small { color: #718999; font-size: 11px; }
+.operations-kpi small { color: #8B95A1; font-size: 11px; }
 .case-list-card p,
 .case-list-card > small,
 .case-progress-head,
@@ -622,7 +622,7 @@ textarea { font-size: 14px; }
 .case-current b,
 .case-current-label b { font-size: 12px; }
 .case-step-main > div > b { font-size: 14px; }
-.case-step-main > div > span { color: #607b8d; font-size: 11px; }
+.case-step-main > div > span { color: #4E5968; font-size: 11px; }
 .case-step-main select,
 .case-note-button { font-size: 12px; }
 .case-extra-block > header,
@@ -638,19 +638,19 @@ textarea { font-size: 14px; }
 
 .building-hub-hero span { font-size: 12px; }
 .building-hub-hero h2 { font-size: 22px; }
-.building-hub-hero p { color: #5f7889; font-size: 12px; }
+.building-hub-hero p { color: #4E5968; font-size: 12px; }
 .building-hub-browser > header b { font-size: 14px; }
 .building-hub-browser > header span { font-size: 11px; }
 .building-hub-card strong { font-size: 14px; }
 .building-hub-card em,
 .building-hub-card small { font-size: 10px; }
-.building-hub-card p { color: #617b8c; font-size: 11px; }
+.building-hub-card p { color: #4E5968; font-size: 11px; }
 .building-hub-title span { font-size: 10px; }
 .building-hub-title h2 { font-size: 23px; }
-.building-hub-title p { color: #607a8c; font-size: 11px; }
+.building-hub-title p { color: #4E5968; font-size: 11px; }
 .building-hub-kpi span { font-size: 11px; }
 .building-hub-kpi b { font-size: 20px; }
-.building-hub-kpi small { color: #708797; font-size: 10px; }
+.building-hub-kpi small { color: #4E5968; font-size: 10px; }
 .building-detail-section > header b { font-size: 13px; }
 .building-detail-section > header span { font-size: 10px; }
 .customer-secondary-details > summary b { font-size: 13px; }
@@ -662,7 +662,7 @@ textarea { font-size: 14px; }
 .building-identity-strip b { font-size: 10px; }
 .building-identity-strip span { font-size: 12px; }
 .building-form-section > header h3 { font-size: 14px; }
-.building-form-section > header p { color: #688393; font-size: 11px; }
+.building-form-section > header p { color: #4E5968; font-size: 11px; }
 .building-form-section > header > span { font-size: 10px; }
 .building-check-field > legend { font-size: 12px; }
 .building-check-field > p,
