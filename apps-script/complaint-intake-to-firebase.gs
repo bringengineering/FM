@@ -10384,7 +10384,9 @@ function getKakaoAlimTalkConfig_() {
       paymentOwnerSummary: String(props.getProperty("KAKAO_TEMPLATE_PAYMENT_OWNER_SUMMARY") || "BRINGRENTOWNERSUMMARYV1").trim(),
       paymentOwnerConfirmed: String(props.getProperty("KAKAO_TEMPLATE_PAYMENT_OWNER_CONFIRMED") || "BRINGRENTOWNERPAIDV1").trim(),
       paymentOwnerGroup: String(props.getProperty("KAKAO_TEMPLATE_PAYMENT_OWNER_GROUP") || "BRINGRENTOWNERGROUPV1").trim(),
-      paymentOwnerConfirmedGroup: String(props.getProperty("KAKAO_TEMPLATE_PAYMENT_OWNER_CONFIRMED_GROUP") || "BRINGRENTOWNERPAIDGROUPV1").trim()
+      paymentOwnerConfirmedGroup: String(props.getProperty("KAKAO_TEMPLATE_PAYMENT_OWNER_CONFIRMED_GROUP") || "BRINGRENTOWNERPAIDGROUPV1").trim(),
+      customerQuote: String(props.getProperty("KAKAO_TEMPLATE_CUSTOMER_QUOTE") || "BRINGCUSTOMERQUOTEV1").trim(),
+      completionReport: String(props.getProperty("KAKAO_TEMPLATE_COMPLETION_REPORT") || "BRINGCOMPLETIONREPORTV1").trim()
     }
   };
   config.enabled = Boolean(
