@@ -59,6 +59,16 @@ test("customer management mirrors the partner vendor card-list-to-detail workflo
   assert.match(customerList, /partner-vendor-card customer-management-card/);
   assert.match(customerList, /data-customer-hub-open="\$\{attr\(customer\.id\)\}" tabindex="0"/);
   assert.match(customerList, /customerAvatar\(customer\)/);
+  assert.match(customerList, /partner-vendor-contact customer-address-contact/);
+  assert.match(customerList, /<span>도로명 주소<\/span>/);
+  assert.match(customerList, /<span>지번 주소<\/span>/);
+  assert.match(customerList, /<span>연락처<\/span>/);
+  assert.match(customerList, /<span>연락처<\/span>[\s\S]*?<span>도로명 주소<\/span>[\s\S]*?<span>지번 주소<\/span>/);
+  assert.match(customerList, /roadAddressLabel/);
+  assert.match(customerList, /jibunAddressLabel/);
+  assert.match(stylesSource, /\.customer-address-contact\{grid-template-columns:1fr\}/);
+  assert.match(stylesSource, /\.customer-address-contact>div\{display:grid;grid-template-columns:76px minmax\(0,1fr\)/);
+  assert.match(stylesSource, /\.customer-address-contact>div\+div\{border-top:1px solid #e3edf2;border-left:0\}/);
   assert.match(customerList, /data-customer-hub-edit="\$\{attr\(customer\.id\)\}"/);
   assert.match(customerList, /data-customer-open="\$\{attr\(customer\.id\)\}"/);
   assert.doesNotMatch(customerList, /selectedCustomerHubId = customers\[0\]/);
