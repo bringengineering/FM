@@ -611,8 +611,12 @@
     const user = currentAuth.user;
     userPill.hidden = !user;
     if (user) {
-      document.getElementById("currentUserName").textContent = user.displayName || user.email || "사용자";
-      document.getElementById("currentUserEmail").textContent = user.email || "";
+      const displayName = user.displayName || user.email || "사용자";
+      const email = user.email || "";
+      document.getElementById("currentUserName").textContent = displayName;
+      document.getElementById("currentUserEmail").textContent = email;
+      // 이름이 없어 이메일이 이름 자리에 올라온 경우 아랫줄을 한 번 더 보여주지 않는다
+      userPill.classList.toggle("is-email-only", !!email && displayName === email);
     }
   }
 
@@ -1274,7 +1278,7 @@
     const detail = selected
       ? (caseListMode === "trash" ? renderWorkflowCaseTrashDetail(selected) : renderWorkflowCaseDetail(selected))
       : `<div class="case-detail-empty"><strong>${query ? "검색 결과가 없습니다" : caseListMode === "trash" ? "휴지통이 비어 있습니다" : "등록된 케이스가 없습니다"}</strong><span>${query ? "다른 검색어를 입력해 주세요." : caseListMode === "trash" ? "휴지통으로 이동한 케이스가 여기에 표시됩니다." : "새 케이스를 등록해 업무를 시작하세요."}</span>${caseListMode === "trash" ? `<button class="secondary-button" data-case-list-mode="active">케이스 목록으로 돌아가기</button>` : `<button class="primary-button" data-action="new-workflow-case">＋ 새 케이스</button>`}</div>`;
-    main.innerHTML = `<section class="operations-hero case-hero"><div><span>BRING CRM에서 직접 처리합니다</span><h2>접수부터 사후관리까지 17단계 케이스</h2><p>업무흐름빌더와 같은 공용 데이터를 사용하며, 이동하지 않고 이 화면에서 수정·처리합니다.</p></div><div class="operations-actions"><button class="secondary-button" data-action="refresh-operations">↻ 새로고침</button><button class="primary-button" data-action="new-workflow-case">＋ 새 케이스</button></div></section>
+    main.innerHTML = `<section class="operations-hero case-hero"><div><span>BRING CRM에서 직접 처리합니다</span><h2>접수부터 사후관리까지 17단계 케이스</h2><p>업무흐름빌더와 같은 공용 데이터를 사용하며, 이동하지 않고 이 화면에서 수정·처리합니다.</p></div><div class="operations-actions"><button class="secondary-button" data-action="refresh-operations"><svg class="btn-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M20 12a8 8 0 1 1-2.6-5.9"/><path d="M20 4v4.5h-4.5"/></svg> 새로고침</button><button class="primary-button" data-action="new-workflow-case">＋ 새 케이스</button></div></section>
       ${operationsError ? `<div class="info-box" style="margin-top:12px;color:#c6535f">${esc(operationsError)}</div>` : ""}
       <section class="case-workspace"><aside class="case-browser"><header><div><b>${caseListMode === "trash" ? "휴지통" : "케이스 목록"}</b><span>${cases.length}건</span></div><small>${caseListMode === "trash" ? "복원할 케이스를 선택하세요." : "선택하면 오른쪽에서 바로 처리됩니다."}</small></header><div class="case-browser-mode"><button type="button" class="${caseListMode === "trash" ? "" : "active"}" data-case-list-mode="${caseListMode === "trash" ? "active" : "trash"}">${caseListMode === "trash" ? `← 케이스 목록 (${activeCases().length})` : `휴지통 (${trashCases().length})`}</button></div><div class="case-browser-list">${cases.length ? cases.map(item => {
         const progress = Core.workflowProgress(item);
@@ -1591,7 +1595,7 @@
       main.innerHTML = `<div class="operations-loading">공용 입금 캘린더를 불러오고 있습니다…</div>`;
       return;
     }
-    main.innerHTML = `<section class="operations-hero payment-operations-hero"><div><span>BRING CRM에서 직접 처리합니다</span><h2>예정일·입금내역·미입금 안내를 한곳에서 관리하세요</h2><p>세입자 자료 동기화부터 입금 확인, 카카오 알림톡까지 이 화면에서 처리합니다.</p></div><div class="operations-actions payment-operation-actions"><button class="secondary-button" data-payment-sheet-open>세입자 관리대장</button><button class="secondary-button payment-bank-connect-button" data-payment-bank-selected>팝빌 계좌 연결</button><button class="secondary-button" data-action="new-payment-schedule">＋ 납부 일정</button><button class="secondary-button" data-payment-action="syncPaymentBuildings">↻ 건물 갱신</button><button class="secondary-button" data-payment-action="syncPaymentSchedules">↻ 세입자 반영</button><button class="primary-button" data-payment-action="syncPopbillBankTransactions">은행 입금 조회</button></div></section>
+    main.innerHTML = `<section class="operations-hero payment-operations-hero"><div><span>BRING CRM에서 직접 처리합니다</span><h2>예정일·입금내역·미입금 안내를 한곳에서 관리하세요</h2><p>세입자 자료 동기화부터 입금 확인, 카카오 알림톡까지 이 화면에서 처리합니다.</p></div><div class="operations-actions payment-operation-actions"><button class="secondary-button" data-payment-sheet-open>세입자 관리대장</button><button class="secondary-button payment-bank-connect-button" data-payment-bank-selected>팝빌 계좌 연결</button><button class="secondary-button" data-action="new-payment-schedule">＋ 납부 일정</button><button class="secondary-button" data-payment-action="syncPaymentBuildings"><svg class="btn-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M20 12a8 8 0 1 1-2.6-5.9"/><path d="M20 4v4.5h-4.5"/></svg> 건물 갱신</button><button class="secondary-button" data-payment-action="syncPaymentSchedules"><svg class="btn-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M20 12a8 8 0 1 1-2.6-5.9"/><path d="M20 4v4.5h-4.5"/></svg> 세입자 반영</button><button class="primary-button" data-payment-action="syncPopbillBankTransactions">은행 입금 조회</button></div></section>
       ${operationsError ? `<div class="info-box" style="margin-top:12px;color:#c6535f">${esc(operationsError)}</div>` : ""}
       <div class="payment-sync-strip"><span><i class="${sheetSync.ok === false ? "bad" : sheetSync.updatedAt ? "good" : ""}"></i>세입자 자료 ${sheetSync.updatedAt ? `최근 ${esc(shortDate(sheetSync.updatedAt))} · ${Number(sheetSync.count) || 0}명` : "동기화 대기"}</span><span><i class="${bankSync.status === "error" ? "bad" : bankSync.updatedAt ? "good" : ""}"></i>은행 입금 ${bankSync.updatedAt ? `최근 ${esc(shortDate(bankSync.updatedAt))} · ${Number(bankSync.transactionCount) || 0}건` : "조회 대기"}</span><button type="button" data-action="refresh-operations">화면 새로고침</button></div>
       <div class="operations-kpis"><div class="operations-kpi"><span>이번 달 예정</span><b>${rows.length}건</b><small>${esc(krw(expectedAmount))}</small></div><div class="operations-kpi" style="--wash:#edf9f5"><span>입금 완료</span><b>${paid.length}건</b><small>${esc(krw(paidAmount))}</small></div><div class="operations-kpi" style="--wash:#fff2f3"><span>미입금</span><b>${overdue.length}건</b><small>납부일 경과·수동 확인</small></div><div class="operations-kpi" style="--wash:#fff9eb"><span>확인 필요</span><b>${review.length}건</b><small>중복·수동 검토</small></div></div>
@@ -3425,8 +3429,21 @@
     openDrawer();
   }
 
+  // 연락 방식 아이콘. 예전에는 한글 옆에 S·K·M·V 같은 알파벳 머리글자를 붙여
+  // '방문' 이 'V 방문' 으로 보였다. 글꼴을 타지 않도록 SVG 로 그린다.
+  const ACTIVITY_ICON_PATHS = Object.freeze({
+    "전화": '<path d="M6.6 3.8h3l1.6 4-2 1.3a11 11 0 0 0 5.7 5.7l1.3-2 4 1.6v3a1.6 1.6 0 0 1-1.8 1.6C11.2 20.1 3.9 12.8 5 5.6a1.6 1.6 0 0 1 1.6-1.8z"/>',
+    "문자": '<path d="M20 14a2.5 2.5 0 0 1-2.5 2.5H9l-4 3.5V6.5A2.5 2.5 0 0 1 7.5 4h10A2.5 2.5 0 0 1 20 6.5z"/><path d="M8.5 8.8h7M8.5 12h4.5"/>',
+    "카카오": '<path d="M12 4.2c-4.4 0-8 2.7-8 6.1 0 2.2 1.5 4.1 3.7 5.2l-.9 3.4 3.8-2.2c.5.1 1 .1 1.4.1 4.4 0 8-2.7 8-6.5s-3.6-6.1-8-6.1z"/>',
+    "이메일": '<rect x="3.5" y="5.5" width="17" height="13" rx="2.5"/><path d="m4.5 7.5 7.5 5.5 7.5-5.5"/>',
+    "미팅": '<circle cx="9" cy="9" r="2.8"/><path d="M3.6 19a5.4 5.4 0 0 1 10.8 0"/><path d="M16 6.6a2.6 2.6 0 0 1 0 5"/><path d="M17.4 14.4a5 5 0 0 1 3 4.6"/>',
+    "방문": '<path d="M12 21s7-5.5 7-11a7 7 0 1 0-14 0c0 5.5 7 11 7 11z"/><circle cx="12" cy="10" r="2.6"/>',
+    "메모": '<path d="M6 3.5h7.5L19 9v11.5a1 1 0 0 1-1 1H6a1 1 0 0 1-1-1v-16a1 1 0 0 1 1-1z"/><path d="M13.5 3.5V9H19"/><path d="M8.5 13h7M8.5 17h4.5"/>'
+  });
+
   function activityIcon(type) {
-    return ({ "전화": "☎", "문자": "S", "카카오": "K", "이메일": "@", "미팅": "M", "방문": "V", "메모": "N" })[type] || "·";
+    const paths = ACTIVITY_ICON_PATHS[type] || '<circle cx="12" cy="12" r="3"/>';
+    return `<svg class="activity-glyph" viewBox="0 0 24 24" aria-hidden="true" focusable="false">${paths}</svg>`;
   }
 
   function customerFromForm(form) {
