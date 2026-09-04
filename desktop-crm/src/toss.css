@@ -109,8 +109,14 @@ body{ letter-spacing:-0.3px; }
   border:0; background:var(--toss-fill); box-shadow:none; border-radius:12px; color:var(--muted);
 }
 .global-search input::placeholder{ color:#B0B8C1; }
-/* 검색창 안의 input 은 껍데기(.global-search)가 이미 배경을 갖고 있으므로 투명하게 */
-.global-search input{ background:transparent !important; border:0 !important; box-shadow:none !important; }
+/* 껍데기(label)가 이미 테두리·배경을 갖고 있는 검색창은 안쪽 input 을 투명하게.
+   그러지 않으면 아래의 일반 input 규칙과 힘이 같아 상자 안에 상자가 하나 더 생긴다. */
+.global-search input,
+.partner-vendor-list-search input,
+.customer-management-list-search input,
+.messenger-people label input{
+  background:transparent !important; border:0 !important; box-shadow:none !important;
+}
 input[type="text"],input[type="email"],input[type="password"],input[type="search"],
 input[type="number"],input[type="date"],input[type="tel"],select,textarea{
   border:1px solid var(--line); border-radius:12px; background:#fff; color:var(--text);
@@ -458,3 +464,132 @@ select:disabled{ background-color:var(--toss-fill); color:var(--muted); }
    기본값(break-word)은 '건물주 입금캘린 / 더' 처럼 단어 가운데를 자른다.
    keep-all 은 띄어쓰기 단위로만 넘긴다. */
 h1,h2,h3,h4,.today-brief h2,.section-head h2{ word-break:keep-all; }
+
+/* =====================================================================
+   BRING OFFICE (그룹웨어) — 하늘/민트색 그라데이션을 토스 톤으로
+   ===================================================================== */
+
+/* 아이콘 */
+.office-glyph{
+  width:18px; height:18px; display:block;
+  fill:none; stroke:currentColor; stroke-width:1.8;
+  stroke-linecap:round; stroke-linejoin:round;
+}
+.office-card-icon .office-glyph{ width:22px; height:22px; }
+.office-empty-icon .office-glyph{ width:28px; height:28px; }
+.office-btn-icon,.office-tab-icon,.office-empty-icon{
+  display:inline-flex; align-items:center; justify-content:center;
+}
+.office-btn-icon .office-glyph,.office-tab-icon .office-glyph{
+  width:15px; height:15px; vertical-align:-2px;
+}
+.office-admin-lock{ display:inline-flex; align-items:center; gap:6px; }
+.office-admin-lock .office-glyph{ width:14px; height:14px; }
+
+/* 상단 배너 */
+.office-hero{
+  background:var(--toss-blue-weak); background-image:none;
+  border:1px solid transparent; border-radius:var(--radius); box-shadow:none;
+}
+.office-hero h2{ color:var(--text); font-weight:800; letter-spacing:-0.5px; }
+.office-hero p,.office-hero>div:first-child>p{ color:var(--muted); }
+.office-hero>div:first-child>span,.office-panel>header span,.messenger-people>header>span{
+  color:var(--blue); font-weight:700; letter-spacing:.06em;
+}
+
+/* 요약 카드 */
+.office-summary-card,.office-summary-card.messenger{
+  background:#fff; background-image:none;
+  border:1px solid var(--line); border-radius:var(--radius); box-shadow:var(--shadow);
+}
+.office-summary-card:hover{
+  border-color:#D7DCE2; box-shadow:0 6px 20px rgba(0,0,0,.07); transform:none;
+}
+.office-card-icon{
+  background:var(--toss-blue-weak); color:var(--blue);
+  display:grid; place-items:center; border-radius:14px;
+}
+.office-summary-card small{ color:var(--muted); font-weight:600; }
+.office-summary-card h3{ color:var(--text); font-weight:800; letter-spacing:-0.4px; }
+
+/* 이름표 */
+.office-avatar{
+  background:var(--toss-blue-weak); background-image:none;
+  color:var(--blue); font-weight:700;
+}
+
+/* 메신저 */
+.message-list{ background:var(--bg); background-image:none; }
+.message-row p{
+  border:1px solid var(--line); background:#fff; color:var(--text);
+  box-shadow:none;
+}
+.message-row.mine p{
+  background:var(--blue); background-image:none; border-color:var(--blue); color:#fff;
+}
+.message-composer{ border-top:1px solid var(--line); }
+.message-composer textarea{ border:1px solid var(--line); border-radius:12px; color:var(--text); }
+.message-composer button,.message-composer .message-send-button{
+  background:var(--blue); background-image:none; border:0; color:#fff;
+  border-radius:12px; font-weight:700;
+}
+.message-empty b{ color:var(--text); }
+.message-empty p{ color:var(--muted); }
+.office-empty-icon{ color:#B0B8C1; }
+
+/* 근태 */
+.attendance-work-bar,.attendance-progress>div i{
+  background:var(--blue); background-image:none;
+}
+.attendance-progress>span{ color:var(--soft); }
+.attendance-progress>span b{ color:var(--blue); }
+.office-display-name-editor,.office-display-name-editor.attendance,
+.office-admin-detail-head,.office-attendance-correction{
+  background:#fff; background-image:none; border-color:var(--line);
+}
+.office-display-name-editor.attendance{ border-radius:var(--radius); }
+.office-attendance-correction>header span{ color:var(--muted); letter-spacing:.06em; }
+.office-display-name-editor input{ border:1px solid var(--line); border-radius:10px; color:var(--text); }
+/* 메신저 카드 아이콘만 민트색이라 파랑 일색인 나머지와 겉돌았다.
+   `.office-summary-card.messenger .office-card-icon` 이 더 강한 선택자라
+   같은 무게로 맞받아야 한다. */
+.office-summary-card.messenger .office-card-icon{
+  background:var(--toss-blue-weak); color:var(--blue);
+}
+.partner-vendor-list-search,.customer-management-list-search,.messenger-people label{
+  border:1px solid var(--line); border-radius:12px; background:#fff; box-shadow:none; color:var(--muted);
+}
+.partner-vendor-list-search:focus-within,.messenger-people label:focus-within{
+  border-color:var(--blue); box-shadow:0 0 0 3px rgba(49,130,246,.14);
+}
+.messenger-people{ background:#fff; border-right:1px solid var(--line); }
+.messenger-people>header{ border-bottom:1px solid var(--line); }
+.messenger-people h2{ color:var(--text); font-weight:800; letter-spacing:-0.5px; }
+
+/* 근태 — 남아 있던 민트색을 파랑으로 (출근/퇴근은 뜻이 있으니 형태로 구분) */
+.office-punch-button{
+  border:0; border-radius:12px; background:var(--toss-fill); color:var(--soft); font-weight:700;
+}
+.office-punch-button:not(.out){ background:var(--blue); color:#fff; }
+.office-punch-button.out{ border:0; background:var(--toss-fill); color:var(--soft); }
+.office-punch-button:hover:not(:disabled){ filter:brightness(.97); background:var(--toss-fill-hover); }
+.office-punch-button:not(.out):hover:not(:disabled){ background:var(--blue-2); }
+.attendance-punch>div{ border:1px solid var(--line); border-radius:12px; background:#fff; }
+
+/* 선택한 날짜 표시: 초록 테두리 → 파랑 */
+.attendance-day.selected{ background:var(--toss-blue-weak); box-shadow:inset 0 0 0 2px var(--blue); }
+.attendance-day.selected::after{
+  border-right-color:var(--blue); border-bottom-color:var(--blue); background:var(--toss-blue-weak);
+}
+.attendance-clock-card{ border:1px solid var(--line); border-radius:var(--radius); box-shadow:var(--shadow); }
+.attendance-clock-main>strong{ color:var(--text); letter-spacing:-1px; }
+.attendance-today-times b{ color:var(--text); }
+.attendance-today-times span{ color:var(--muted); }
+.attendance-week-toolbar button{ border:1px solid var(--line); border-radius:10px; color:var(--soft); }
+.attendance-week-toolbar button:hover{ border-color:var(--line); background:var(--toss-fill); }
+.attendance-week-toolbar strong{ color:var(--text); }
+.office-status.working i{ background:var(--green); box-shadow:0 0 0 4px rgba(0,196,113,.14); }
+/* 비활성 버튼이 옅은 하늘색 배너 위에서 거의 안 보이던 것 */
+.office-punch-button:disabled{
+  opacity:1; background:rgba(255,255,255,.7); color:var(--muted); cursor:not-allowed;
+}
