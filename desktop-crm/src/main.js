@@ -3958,6 +3958,50 @@ async function createWindow() {
         button?.click();
         return { openerFound: !!button, buttonFound: !!button, state: window.__crmTest?.snapshot() };
       })()`, true);
+    } else if (process.env.BRING_CRM_SCREENSHOT_ACTION === "customer-modal-drag-dismissal") {
+      actionResult = await mainWindow.webContents.executeJavaScript(`(async () => {
+        const wait = ms => new Promise(resolve => setTimeout(resolve, ms));
+        const pointer = (target, type, pointerId) => target?.dispatchEvent(new PointerEvent(type, {
+          bubbles: true, cancelable: true, pointerId, pointerType: 'mouse', isPrimary: true, button: 0
+        }));
+        document.querySelector('[data-workspace-enter="operations"]')?.click();
+        await wait(120);
+        window.__crmSmokeNavigate('customers');
+        await wait(100);
+        const opener = document.querySelector('[data-customer-hub-edit]');
+        opener?.click();
+        await wait(80);
+        const layer = document.getElementById('modal');
+        const form = document.getElementById('customerForm');
+        const nameInput = form?.elements.name;
+        const draftName = '드래그 선택 보존 ' + String(Date.now()).slice(-6);
+        if (nameInput) {
+          nameInput.value = draftName;
+          nameInput.setSelectionRange(0, draftName.length);
+        }
+        pointer(nameInput, 'pointerdown', 71);
+        pointer(layer, 'pointerup', 71);
+        layer?.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true, detail: 1, button: 0 }));
+        await wait(40);
+        const formAfterDrag = document.getElementById('customerForm');
+        const dragPreserved = layer?.classList.contains('open')
+          && formAfterDrag === form
+          && formAfterDrag?.elements.name.value === draftName;
+        pointer(layer, 'pointerdown', 72);
+        pointer(layer, 'pointerup', 72);
+        layer?.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true, detail: 1, button: 0 }));
+        await wait(40);
+        const directBackdropClosed = !layer?.classList.contains('open');
+        return {
+          pass: !!opener && !!form && !!nameInput && dragPreserved && directBackdropClosed,
+          openerFound: !!opener,
+          formFound: !!form,
+          nameInputFound: !!nameInput,
+          dragPreserved,
+          directBackdropClosed,
+          state: window.__crmTest?.snapshot()
+        };
+      })().catch(error => ({ pass: false, error: String(error && error.stack || error) }))`, true);
     } else if (process.env.BRING_CRM_SCREENSHOT_ACTION === "partner-vendor-toolbar") {
       actionResult = await mainWindow.webContents.executeJavaScript(`(async () => {
         const wait = ms => new Promise(resolve => setTimeout(resolve, ms));
@@ -4202,6 +4246,10 @@ async function createWindow() {
     } else if (process.env.BRING_CRM_SCREENSHOT_ACTION === "customer-centered-detail") {
       actionResult = await mainWindow.webContents.executeJavaScript(`(async () => {
         const wait = ms => new Promise(resolve => setTimeout(resolve, ms));
+        document.querySelector('[data-workspace-enter="operations"]')?.click();
+        await wait(120);
+        window.__crmSmokeNavigate('customers');
+        await wait(100);
         const opener = document.querySelector('[data-customer-open]');
         opener?.click();
         await wait(220);
@@ -4266,7 +4314,8 @@ async function createWindow() {
         document.querySelector('[data-customer-open]')?.click();
         await wait(25);
         const escapeReopened = layer?.classList.contains('open') && layer?.classList.contains('customer-centered');
-        layer?.click();
+        layer?.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true, cancelable: true, pointerId: 73, pointerType: 'mouse', isPrimary: true, button: 0 }));
+        layer?.dispatchEvent(new PointerEvent('pointerup', { bubbles: true, cancelable: true, pointerId: 73, pointerType: 'mouse', isPrimary: true, button: 0 }));
         await wait(25);
         const backgroundClosed = !layer?.classList.contains('open');
         document.querySelector('[data-customer-open]')?.click();
@@ -6651,7 +6700,7 @@ async function createWindow() {
     const uiState = await mainWindow.webContents.executeJavaScript("window.__crmTest && window.__crmTest.snapshot()", true);
     const image = await mainWindow.webContents.capturePage();
     await fs.writeFile(target, image.toPNG());
-    if (["ai-quote-preview", "building-rental-info", "consultation-building-hub", "customer-sales-status", "customer-management-ui", "customer-consultation-history", "new-customer", "partner-vendor-toolbar", "partner-vendor-detail", "vacancy-layout-scale", "vacancy-viewer-invariant", "lookup-building-link", "office-messenger-drag-smoke", "one-off-payment-calendar", "payment-building-calendar", "work-calendar-smoke"].includes(process.env.BRING_CRM_SCREENSHOT_ACTION)) {
+    if (["ai-quote-preview", "building-rental-info", "consultation-building-hub", "customer-sales-status", "customer-management-ui", "customer-consultation-history", "customer-modal-drag-dismissal", "new-customer", "partner-vendor-toolbar", "partner-vendor-detail", "vacancy-layout-scale", "vacancy-viewer-invariant", "lookup-building-link", "office-messenger-drag-smoke", "one-off-payment-calendar", "payment-building-calendar", "work-calendar-smoke"].includes(process.env.BRING_CRM_SCREENSHOT_ACTION)) {
       await fs.writeFile(`${target}.result.json`, JSON.stringify({ actionResult, uiState }, null, 2), "utf8");
     }
     console.log(target, JSON.stringify({ empty: image.isEmpty(), size: image.getSize(), actionResult, uiState }));

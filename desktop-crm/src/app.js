@@ -5119,6 +5119,26 @@
     return requestConfirmation(Object.assign({ notice: true, confirmLabel: "확인", tone: "primary" }, options || {}));
   }
 
+  function bindBackdropDismissal(layer, dismiss) {
+    let backdropPointerId = null;
+    const resetPointer = () => { backdropPointerId = null; };
+    layer.addEventListener("pointerdown", event => {
+      backdropPointerId = event.target === layer && event.button === 0 && event.isPrimary !== false
+        ? event.pointerId
+        : null;
+    });
+    layer.addEventListener("pointerup", event => {
+      const shouldDismiss = backdropPointerId !== null
+        && event.pointerId === backdropPointerId
+        && event.target === layer
+        && event.button === 0
+        && event.isPrimary !== false;
+      resetPointer();
+      if (shouldDismiss) dismiss();
+    });
+    layer.addEventListener("pointercancel", resetPointer);
+  }
+
   function openModal() {
     if (drawer.classList.contains("open")) closeDrawer();
     modal.classList.add("open");
@@ -8434,8 +8454,8 @@
     if (choice === "confirm") finishConfirmation(true);
     else if (choice === "cancel") finishConfirmation(false);
   });
-  modal.addEventListener("click", event => { if (event.target === modal) closeModal(); });
-  drawer.addEventListener("click", event => { if (event.target === drawer) closeDrawer(); });
+  bindBackdropDismissal(modal, closeModal);
+  bindBackdropDismissal(drawer, closeDrawer);
 document.addEventListener("keydown", event => {
   const detailCard = event.target.matches?.("[data-partner-vendor-open], [data-customer-hub-open], [data-partner-quote-edit]") ? event.target : null;
   if (detailCard && (event.key === "Enter" || event.key === " ")) {
