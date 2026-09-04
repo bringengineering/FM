@@ -1,0 +1,47 @@
+const test = require("node:test");
+const assert = require("node:assert/strict");
+
+const {
+  normalizeBackupPath,
+  parsePathList,
+  buildManifest,
+  DEFAULT_PATHS,
+} = require("./export-rtdb.js");
+
+test("normalizeBackupPath는 앞뒤 슬래시와 공백을 정리한다", () => {
+  assert.equal(normalizeBackupPath("  /cases/ "), "cases");
+  assert.equal(normalizeBackupPath("workflow"), "workflow");
+});
+
+test("normalizeBackupPath는 위험한 경로를 거부한다", () => {
+  for (const bad of ["", "   ", "a/b", "../etc", "cases.json", "a b", "$ref", "#x"]) {
+    assert.throws(() => normalizeBackupPath(bad), /백업 경로|빈 백업/);
+  }
+});
+
+test("parsePathList는 기본 경로를 사용한다", () => {
+  assert.deepEqual(parsePathList(""), DEFAULT_PATHS);
+  assert.deepEqual(parsePathList(undefined), DEFAULT_PATHS);
+});
+
+test("parsePathList는 쉼표 목록을 정리하고 중복을 제거한다", () => {
+  assert.deepEqual(parsePathList("cases, workflow ,,cases"), ["cases", "workflow"]);
+});
+
+test("parsePathList는 잘못된 항목이 있으면 실패한다", () => {
+  assert.throws(() => parsePathList("cases,a/b"), /백업 경로/);
+});
+
+test("buildManifest는 합계와 빈 경로 표시를 계산한다", () => {
+  const manifest = buildManifest(
+    [
+      { path: "cases", file: "cases.json", bytes: 100, sha256: "aa" },
+      { path: "workflow", file: "workflow.json", bytes: 4, sha256: "bb" },
+    ],
+    { generatedAt: "2026-01-01T00:00:00.000Z", databaseUrl: "https://example.test" }
+  );
+  assert.equal(manifest.totalBytes, 104);
+  assert.equal(manifest.databaseUrl, "https://example.test");
+  assert.equal(manifest.files[0].empty, false);
+  assert.equal(manifest.files[1].empty, true, "4바이트 이하는 비어 있음으로 표시");
+});

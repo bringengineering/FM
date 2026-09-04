@@ -1,0 +1,117 @@
+name: CRM Nightly Backup
+
+# Realtime Database 야간 백업.
+# 결과물은 GPG 대칭키로 암호화한 뒤에만 아티팩트로 올라간다(평문 업로드 없음).
+#
+# 최초 1회 설정이 필요하다(README 참고: backup/README.md)
+#   vars.GCP_WORKLOAD_IDENTITY_PROVIDER_BRING_FM   (기존 릴리스와 동일 값 재사용)
+#   vars.GCP_BACKUP_SERVICE_ACCOUNT_BRING_FM       (신규: DB 읽기 전용 서비스 계정)
+#   vars.RTDB_URL                                  (신규: Realtime Database URL)
+#   secrets.CRM_BACKUP_PASSPHRASE                  (신규: 백업 복호화 암호)
+# 설정 전에는 백업 잡이 명확한 안내와 함께 실패한다(조용히 넘어가지 않음).
+
+on:
+  schedule:
+    # 매일 18:10 UTC = 한국시간 03:10
+    - cron: "10 18 * * *"
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - "backup/**"
+      - ".github/workflows/crm-backup.yml"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: crm-backup-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  # PR에서는 실제 백업을 돌리지 않고 스크립트 단위 테스트만 검증한다.
+  verify-script:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 22
+      - run: node --test backup/export-rtdb.test.js
+
+  backup:
+    if: github.event_name != 'pull_request'
+    needs: [verify-script]
+    runs-on: ubuntu-latest
+    environment: bring-crm-production
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 22
+
+      - name: Fail closed when backup settings are missing
+        env:
+          WIF_PROVIDER: ${{ vars.GCP_WORKLOAD_IDENTITY_PROVIDER_BRING_FM }}
+          BACKUP_SERVICE_ACCOUNT: ${{ vars.GCP_BACKUP_SERVICE_ACCOUNT_BRING_FM }}
+          RTDB_URL: ${{ vars.RTDB_URL }}
+          BACKUP_PASSPHRASE: ${{ secrets.CRM_BACKUP_PASSPHRASE }}
+        run: |
+          missing=""
+          [ -n "$WIF_PROVIDER" ] || missing="$missing vars.GCP_WORKLOAD_IDENTITY_PROVIDER_BRING_FM"
+          [ -n "$BACKUP_SERVICE_ACCOUNT" ] || missing="$missing vars.GCP_BACKUP_SERVICE_ACCOUNT_BRING_FM"
+          [ -n "$RTDB_URL" ] || missing="$missing vars.RTDB_URL"
+          [ -n "$BACKUP_PASSPHRASE" ] || missing="$missing secrets.CRM_BACKUP_PASSPHRASE"
+          if [ -n "$missing" ]; then
+            echo "::error::백업 설정이 없습니다:$missing — backup/README.md 의 최초 설정을 먼저 완료하세요."
+            exit 1
+          fi
+
+      - name: Authenticate with a read-only database service account
+        id: auth
+        uses: google-github-actions/auth@7c6bc770dae815cd3e89ee6cdf493a5fab2cc093 # v3
+        with:
+          workload_identity_provider: ${{ vars.GCP_WORKLOAD_IDENTITY_PROVIDER_BRING_FM }}
+          service_account: ${{ vars.GCP_BACKUP_SERVICE_ACCOUNT_BRING_FM }}
+          token_format: access_token
+          access_token_scopes: https://www.googleapis.com/auth/firebase.database,https://www.googleapis.com/auth/userinfo.email
+
+      - name: Export Realtime Database
+        env:
+          RTDB_URL: ${{ vars.RTDB_URL }}
+          ACCESS_TOKEN: ${{ steps.auth.outputs.access_token }}
+          BACKUP_PATHS: ${{ vars.BACKUP_PATHS }}
+          OUT_DIR: backup-out
+        run: node backup/export-rtdb.js
+
+      - name: Encrypt before anything leaves the runner
+        env:
+          BACKUP_PASSPHRASE: ${{ secrets.CRM_BACKUP_PASSPHRASE }}
+        run: |
+          set -euo pipefail
+          stamp="$(date -u +%Y%m%d-%H%M)"
+          tar -czf "backup-${stamp}.tar.gz" -C backup-out .
+          printf '%s' "$BACKUP_PASSPHRASE" | gpg --batch --yes --passphrase-fd 0 \
+            --symmetric --cipher-algo AES256 \
+            --output "backup-${stamp}.tar.gz.gpg" "backup-${stamp}.tar.gz"
+          rm -f "backup-${stamp}.tar.gz"
+          rm -rf backup-out
+          sha256sum "backup-${stamp}.tar.gz.gpg" > "backup-${stamp}.sha256"
+          echo "BACKUP_STAMP=${stamp}" >> "$GITHUB_ENV"
+
+      - name: Upload the encrypted backup
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: crm-backup-${{ env.BACKUP_STAMP }}
+          path: |
+            backup-${{ env.BACKUP_STAMP }}.tar.gz.gpg
+            backup-${{ env.BACKUP_STAMP }}.sha256
+          retention-days: 30
+          if-no-files-found: error

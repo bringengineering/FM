@@ -1,0 +1,11 @@
+title: BRING CRM Database Backup Reader
+description: Reads Firebase Realtime Database data for bring-fm nightly backups. Read-only.
+stage: GA
+includedPermissions:
+  - firebasedatabase.instances.get
+  - firebasedatabase.instances.list
+  - firebase.projects.get
+  - resourcemanager.projects.get
+  - serviceusage.services.get
+  - serviceusage.services.list
+  - serviceusage.services.use
