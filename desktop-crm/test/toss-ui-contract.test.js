@@ -121,3 +121,32 @@ test("상태 배지는 수식어까지 색을 다시 정한다", () => {
   }
   assert.deepEqual(missing, [], `토스 층에서 다시 잡지 않은 상태 배지: ${missing.join(", ")}`);
 });
+
+test("건물번호가 비어 있으면 내부 식별자를 화면에 내보내지 않는다", () => {
+  // 예전에는 `building.buildingNo || building.id` 라서 번호를 입력하지 않은
+  // 건물에 b1, b2 같은 내부 값이 그대로 보였다.
+  assert.doesNotMatch(app, /buildingNo \|\| building\.id/);
+  assert.match(app, /function buildingNumberLabel\(building\)/);
+  const fn = app.match(/function buildingNumberLabel\(building\) \{[\s\S]*?\n  \}/);
+  assert.ok(fn, "buildingNumberLabel 을 찾지 못했습니다");
+  assert.doesNotMatch(fn[0], /building\.id/, "내부 식별자로 되돌아가면 안 됩니다");
+  // 건물 상세와 공실 상세 두 곳에서 쓰인다
+  assert.equal((app.match(/buildingNumberLabel\(building\)/g) || []).length, 3);
+});
+
+test("메뉴가 화면보다 길면 더 있다는 표시를 켠다", () => {
+  assert.match(app, /function markNavOverflow\(\)/);
+  assert.match(app, /list\.dataset\.scroll = "more"/);
+  assert.match(toss, /\.nav-list:not\(\[data-scroll="more"\]\)/);
+});
+
+test("연결 상태는 문제일 때만 눈에 띈다", () => {
+  // 평상시(connected)에는 배경색을 주지 않고, 밀림·끊김일 때만 알린다
+  assert.match(toss, /\.sync-state:has\(> i\.pending\)\{/);
+  assert.match(toss, /\.sync-state:has\(> i\.offline\)\{/);
+});
+
+test("버튼이 몰린 상단 배너는 제목을 밀어내지 않는다", () => {
+  assert.match(toss, /\.operations-hero[^{]*\{[^}]*flex-wrap:wrap/);
+  assert.match(toss, /\.operations-hero > div:first-child\{[^}]*flex:1 1 340px/);
+});

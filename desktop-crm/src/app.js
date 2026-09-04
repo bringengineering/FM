@@ -1600,6 +1600,26 @@
     marketingLoaded = false;
   }
 
+  // 메뉴가 화면보다 길 때만 아래쪽을 흐려 '더 있다'는 것을 알린다.
+  // 끝까지 내려갔으면 표시를 지운다.
+  function markNavOverflow() {
+    const list = document.getElementById("nav");
+    if (!list) return;
+    const remaining = list.scrollHeight - list.clientHeight - list.scrollTop;
+    if (remaining > 4) list.dataset.scroll = "more";
+    else delete list.dataset.scroll;
+  }
+
+  function watchNavOverflow() {
+    const list = document.getElementById("nav");
+    if (!list || list.dataset.overflowWatched === "1") return;
+    list.dataset.overflowWatched = "1";
+    list.addEventListener("scroll", markNavOverflow, { passive: true });
+    if (typeof ResizeObserver === "function") new ResizeObserver(markNavOverflow).observe(list);
+    window.addEventListener("resize", markNavOverflow);
+    markNavOverflow();
+  }
+
   const workspaceCoordinator = WorkspaceShell.createWorkspaceCoordinator({
     storage: localStorage,
     onWorkspaceChange: applyWorkspaceChrome,
@@ -1612,6 +1632,8 @@
 
   function render() {
     workspaceCoordinator.render();
+    watchNavOverflow();
+    markNavOverflow();
     // The Operations callback runs through else renderSettings() before finishViewRender(currentView).
   }
 
@@ -2903,6 +2925,13 @@
     openModal();
   }
 
+  // 건물번호가 입력돼 있을 때만 보여준다. 예전에는 비어 있으면 내부 식별자
+  // (b1, b2 ...)가 그대로 화면에 나왔는데 직원에게는 뜻이 없는 값이다.
+  function buildingNumberLabel(building) {
+    const number = String((building && building.buildingNo) || "").trim();
+    return number ? "<span>" + esc(number) + "</span>" : "";
+  }
+
   function renderBuildingDetail(building) {
     const customers = buildingCustomers(building);
     const owner = customerById(building.ownerCustomerId) || customers[0] || null;
@@ -2928,7 +2957,7 @@
     const vacancySummary = vacancySummaryForBuilding(building);
     const primaryAddress = building.roadAddress || building.address || building.jibunAddress || "주소 미입력";
     const secondaryAddress = building.jibunAddress && Core.normalizeText(building.jibunAddress) !== Core.normalizeText(primaryAddress) ? ` · 지번 ${building.jibunAddress}` : "";
-    return `<header class="building-hub-detail-head"><div class="building-hub-title"><span>${esc(building.buildingNo || building.id)}</span><h2>${esc(building.name || "건물명 미입력")}</h2><p>${esc(primaryAddress)}${esc(secondaryAddress)}</p></div><div class="building-hub-head-actions"><button class="secondary-button" data-building-edit="${attr(building.id)}">건물 정보 수정</button><button class="secondary-button" data-building-vacancies="${attr(building.id)}">공실 현황</button><button class="secondary-button" data-building-payments="${attr(building.id)}">건물주 입금</button></div></header>
+    return `<header class="building-hub-detail-head"><div class="building-hub-title">${buildingNumberLabel(building)}<h2>${esc(building.name || "건물명 미입력")}</h2><p>${esc(primaryAddress)}${esc(secondaryAddress)}</p></div><div class="building-hub-head-actions"><button class="secondary-button" data-building-edit="${attr(building.id)}">건물 정보 수정</button><button class="secondary-button" data-building-vacancies="${attr(building.id)}">공실 현황</button><button class="secondary-button" data-building-payments="${attr(building.id)}">건물주 입금</button></div></header>
       <div class="building-hub-detail-scroll"><div class="building-hub-kpis"><div class="building-hub-kpi"><span>연결 고객</span><b>${customers.length}명</b><small>${esc(owner ? `대표 ${owner.name}` : "건물주 연결 필요")}</small></div><div class="building-hub-kpi"><span>진행 계약</span><b>${activeContracts.length}건</b><small>${esc(activeContracts.length ? contractTypes(activeContracts[0]).join("·") : "활성 계약 없음")}</small></div><div class="building-hub-kpi"><span>진행 민원</span><b>${openCases.length}건</b><small>${esc(openCases[0] ? Core.workflowProgress(openCases[0]).current : "진행 업무 없음")}</small></div><div class="building-hub-kpi ${overdueRows.length ? "alert" : ""}"><span>이번 달 입금</span><b>${rows.length}건</b><small>${esc(overdueRows.length ? `확인 필요 ${overdueRows.length}건` : amount ? `예정 ${krw(amount)}` : "납부 일정 없음")}</small></div></div>
       <div class="building-identity-strip"><div><b>건물 유형</b><span>${esc(building.type || "미입력")}</span></div><div><b>운영 상태</b><span>${buildingStatusBadge(building.status)}</span></div><div><b>호실 수</b><span>${vacancySummary.formal ? `${vacancySummary.total.toLocaleString("ko-KR")}개` : Number(building.unitCount) ? `${Number(building.unitCount).toLocaleString("ko-KR")}개` : "미입력"}</span></div><div><b>담당자</b><span>${esc(building.manager || "미입력")}</span></div></div>
       <div class="building-detail-grid"><section class="building-detail-section"><header><b>연결 고객</b><span>${customers.length}명</span></header><div class="building-detail-body">${customerRecords || `<div class="building-detail-empty">연결된 고객이 없습니다. 건물 정보 수정에서 건물주를 선택하세요.</div>`}</div></section><section class="building-detail-section"><header><b>건물 호실</b><button type="button" class="mini-button" data-building-unit-add="${attr(building.id)}">＋ 호실</button></header><div class="building-detail-body">${unitRecords || `<div class="building-detail-empty">등록된 호실이 없습니다.</div>`}${archivedUnitRecords}</div></section><section class="building-detail-section"><header><b>계약</b><span>${contracts.length}건</span></header><div class="building-detail-body">${contractRecords || `<div class="building-detail-empty">연결된 계약이 없습니다.</div>`}</div></section><section class="building-detail-section"><header><b>민원</b><span>${cases.length}건</span></header><div class="building-detail-body">${caseRecords || `<div class="building-detail-empty">연결된 민원이 없습니다.</div>`}</div></section><section class="building-detail-section"><header><b>${esc(paymentMonthLabel(paymentMonth))} 입금 일정</b><span>${rows.length}건</span></header><div class="building-detail-body">${paymentRecords || `<div class="building-detail-empty">이번 달 납부 일정이 없습니다.</div>`}</div></section>${building.memo ? `<section class="building-detail-section wide"><header><b>건물 메모</b><span>공용 정보</span></header><div class="building-detail-body"><div class="building-detail-record"><div><b>관리 참고사항</b><span>${esc(building.memo)}</span></div></div></div></section>` : ""}</div></div>`;
@@ -3004,7 +3033,7 @@
       ["move_out_scheduled", "upcoming", "공실 예정", summary.move_out_scheduled, "예정일 확인 필요"],
       ["all", "", "전체 호실", summary.total, summary.formal ? `등록된 층 ${new Set(units.map(inferredVacancyFloorLabel)).size}개` : "기존 건물 정보 기준"],
     ].map(([filter, className, label, count, description]) => `<button type="button" class="${className} ${vacancyStatusFilter === filter ? "active" : ""}" data-vacancy-filter="${attr(filter)}" aria-pressed="${vacancyStatusFilter === filter}"><span>${esc(label)}</span><b>${Number(count || 0).toLocaleString("ko-KR")}</b><small>${esc(description)}</small></button>`).join("");
-    return `<header class="vacancy-detail-head"><div><span>${esc(building.buildingNo || building.id)}</span><h2>${esc(building.name || "건물명 미입력")}</h2><p>${esc(building.address || "주소 미입력")}</p></div>${canWriteCRM() ? `<button type="button" class="secondary-button" data-vacancy-configure="${attr(building.id)}">층·호실 설정</button>` : ""}</header><div class="vacancy-detail-scroll"><div class="vacancy-kpis" data-vacancy-kpis>${kpis}</div>${formalMismatch ? `<div class="vacancy-count-warning">건물 정보의 전체 호실 ${Number(building.unitCount).toLocaleString("ko-KR")}개와 등록된 정식 호실 ${summary.total.toLocaleString("ko-KR")}개가 다릅니다. 층·호실 설정을 확인해 주세요.</div>` : ""}${legacyMigration.unresolvedCount ? `<div class="vacancy-count-warning" data-vacancy-legacy-resolution>정식 공실로 옮기지 않은 기존 공실이 ${legacyMigration.unresolvedCount.toLocaleString("ko-KR")}실 있습니다.${legacyMigration.missingNamedLabels.length ? ` 아직 없는 호실: ${esc(legacyMigration.missingNamedLabels.join(", "))}.` : ""}${legacyMigration.statusConflictNamedLabels.length ? ` 상태 변경 필요: ${esc(legacyMigration.statusConflictNamedLabels.join(", "))}. 해당 호실 단건 수정에서 먼저 공실로 변경해 주세요.` : ""}${legacyMigration.unnamedCount ? ` 기존 기록 중 호실명 미지정 ${legacyMigration.unnamedCount.toLocaleString("ko-KR")}실.` : ""} 층·호실 설정에서 실제 호실로 지정해 주세요.</div>` : ""}<div class="vacancy-unit-tools"><label><span>호실 검색</span><input type="search" data-vacancy-unit-search value="${attr(vacancyUnitQuery)}" placeholder="호실명·층·메모 검색" autocomplete="off"></label>${vacancyUnitQuery ? `<button type="button" class="secondary-button" data-vacancy-search-clear>검색 지우기</button>` : ""}</div><nav class="vacancy-status-tabs" aria-label="호실 상태 필터">${statusTabs}</nav><p class="vacancy-result-summary" aria-live="polite">${query ? `검색 결과 ${filteredUnits.length.toLocaleString("ko-KR")}개 호실` : `${VACANCY_FILTER_LABELS[vacancyStatusFilter]} ${filteredUnits.length.toLocaleString("ko-KR")}개 호실`}</p><div class="vacancy-floor-list">${floorMarkup || emptyMarkup}</div></div>`;
+    return `<header class="vacancy-detail-head"><div>${buildingNumberLabel(building)}<h2>${esc(building.name || "건물명 미입력")}</h2><p>${esc(building.address || "주소 미입력")}</p></div>${canWriteCRM() ? `<button type="button" class="secondary-button" data-vacancy-configure="${attr(building.id)}">층·호실 설정</button>` : ""}</header><div class="vacancy-detail-scroll"><div class="vacancy-kpis" data-vacancy-kpis>${kpis}</div>${formalMismatch ? `<div class="vacancy-count-warning">건물 정보의 전체 호실 ${Number(building.unitCount).toLocaleString("ko-KR")}개와 등록된 정식 호실 ${summary.total.toLocaleString("ko-KR")}개가 다릅니다. 층·호실 설정을 확인해 주세요.</div>` : ""}${legacyMigration.unresolvedCount ? `<div class="vacancy-count-warning" data-vacancy-legacy-resolution>정식 공실로 옮기지 않은 기존 공실이 ${legacyMigration.unresolvedCount.toLocaleString("ko-KR")}실 있습니다.${legacyMigration.missingNamedLabels.length ? ` 아직 없는 호실: ${esc(legacyMigration.missingNamedLabels.join(", "))}.` : ""}${legacyMigration.statusConflictNamedLabels.length ? ` 상태 변경 필요: ${esc(legacyMigration.statusConflictNamedLabels.join(", "))}. 해당 호실 단건 수정에서 먼저 공실로 변경해 주세요.` : ""}${legacyMigration.unnamedCount ? ` 기존 기록 중 호실명 미지정 ${legacyMigration.unnamedCount.toLocaleString("ko-KR")}실.` : ""} 층·호실 설정에서 실제 호실로 지정해 주세요.</div>` : ""}<div class="vacancy-unit-tools"><label><span>호실 검색</span><input type="search" data-vacancy-unit-search value="${attr(vacancyUnitQuery)}" placeholder="호실명·층·메모 검색" autocomplete="off"></label>${vacancyUnitQuery ? `<button type="button" class="secondary-button" data-vacancy-search-clear>검색 지우기</button>` : ""}</div><nav class="vacancy-status-tabs" aria-label="호실 상태 필터">${statusTabs}</nav><p class="vacancy-result-summary" aria-live="polite">${query ? `검색 결과 ${filteredUnits.length.toLocaleString("ko-KR")}개 호실` : `${VACANCY_FILTER_LABELS[vacancyStatusFilter]} ${filteredUnits.length.toLocaleString("ko-KR")}개 호실`}</p><div class="vacancy-floor-list">${floorMarkup || emptyMarkup}</div></div>`;
   }
 
   function renderVacancies() {
