@@ -21,6 +21,16 @@
   .conn.local{ color:#8a6d3b; background:#fff8e6; border-color:#f0dca0; }
   .conn.on{ color:#147a3d; background:#e9f9ef; border-color:#a7e3c0; }
   .conn.off{ color:#b34700; background:#fff1e6; border-color:#f3c39a; }
+  /* 저장/불러오기 실패 알림 — 조용히 실패하지 않도록 화면 상단에 띄운다 */
+  .data-alert{ position:fixed; left:50%; transform:translateX(-50%); top:12px; z-index:9999;
+    display:flex; align-items:flex-start; gap:10px; max-width:min(680px,92vw);
+    background:#fff2f0; border:1px solid #f0b3ab; color:#8a2318; border-radius:10px;
+    padding:10px 14px; font-size:13px; line-height:1.55; box-shadow:0 8px 26px rgba(120,30,20,.18); }
+  .data-alert b{ flex:0 0 auto; font-weight:800; }
+  .data-alert span{ flex:1 1 auto; word-break:keep-all; }
+  .data-alert button{ flex:0 0 auto; border:1px solid #e0a79f; background:#fff; color:#8a2318;
+    border-radius:7px; padding:3px 10px; font-size:12px; cursor:pointer; }
+  @media (max-width:520px){ .data-alert{ top:6px; font-size:12px; padding:8px 10px; } }
 
   .toolbar{ display:flex; gap:7px; justify-content:center; flex-wrap:wrap; padding:9px 16px 5px; }
   .btn{ border:1px solid var(--line); background:#fff; color:var(--ink); padding:7px 12px; border-radius:10px; font-size:13px; cursor:pointer; font-family:inherit; transition:.15s; }
@@ -1444,7 +1454,58 @@ function bootFirebase(){
   openBoard(curBoard);
   updateConn(); updateUndoBtn();
 }
-function firebaseErr(err){ if(err) console.warn("Firebase 권한 확인 필요", err); }
+/* ===== 저장/불러오기 실패 알림 =====
+   예전에는 모든 실패를 console.warn 으로만 삼켜서, 저장이 안 됐는데도
+   사용자는 저장된 줄 알고 창을 닫는 일이 생겼다. 이제 화면으로 알린다. */
+let dataAlertBox = null, dataAlertTimer = null, dataAlertCount = 0;
+function ensureDataAlertBox(){
+  if (dataAlertBox && dataAlertBox.isConnected) return dataAlertBox;
+  const box = document.createElement("div");
+  box.className = "data-alert"; box.setAttribute("role","alert"); box.style.display = "none";
+  const title = document.createElement("b");
+  const msg = document.createElement("span");
+  const close = document.createElement("button");
+  close.type = "button"; close.textContent = "닫기";
+  close.onclick = () => { box.style.display = "none"; dataAlertCount = 0; };
+  box.appendChild(title); box.appendChild(msg); box.appendChild(close);
+  document.body.appendChild(box);
+  dataAlertBox = box; box._title = title; box._msg = msg;
+  return box;
+}
+function showDataAlert(titleText, messageText){
+  try{
+    const box = ensureDataAlertBox();
+    dataAlertCount++;
+    box._title.textContent = titleText;
+    box._msg.textContent = messageText + (dataAlertCount > 1 ? " (" + dataAlertCount + "건)" : "");
+    box.style.display = "flex";
+    clearTimeout(dataAlertTimer);
+    dataAlertTimer = setTimeout(() => { box.style.display = "none"; dataAlertCount = 0; }, 15000);
+  }catch(e){ console.warn("알림 표시 실패", e); }
+}
+function errDetail(err){
+  const text = err && (err.message || err.code) ? String(err.message || err.code) : "";
+  return text ? " · " + text : "";
+}
+function reportSaveError(what, err){
+  console.warn("저장 실패", what || "", err);
+  showDataAlert("저장 실패",
+    (what ? what + " " : "") + "변경 내용이 서버에 저장되지 않았습니다. " +
+    "인터넷 연결을 확인한 뒤 다시 시도해 주세요. 창을 닫으면 이 변경은 사라집니다." + errDetail(err));
+}
+function reportLoadError(err){
+  console.warn("불러오기 실패", err);
+  showDataAlert("불러오기 실패",
+    "서버에서 최신 내용을 받지 못했습니다. 화면이 오래된 상태일 수 있으니 새로고침해 주세요." + errDetail(err));
+}
+/* 쓰기 Promise 를 감시해 실패하면 화면에 알린다. */
+function watchWrite(promise, what){
+  try{
+    if (promise && typeof promise.catch === "function") promise.catch(err => reportSaveError(what, err));
+  }catch(e){ console.warn("쓰기 감시 실패", e); }
+  return promise;
+}
+function firebaseErr(err){ if(err){ reportLoadError(err); } }
 
 /* ===== 저장 (보드별) ===== */
 function graphState(){ return { nodes, links }; }
@@ -1455,7 +1516,7 @@ function loadBoardsLocal(){
   return { main: "업무 흐름" };
 }
 function saveBoardsLocal(){ try{ localStorage.setItem(BOARDS_KEY, JSON.stringify(boards)); }catch(e){} }
-function saveBoards(){ if(boardsRef){ boardsRef.set(boards); } else { saveBoardsLocal(); } }
+function saveBoards(){ if(boardsRef){ watchWrite(boardsRef.set(boards), "보드 목록"); } else { saveBoardsLocal(); } }
 function graphKey(id){ return "fm_graph_" + id; }
 function loadGraphLocal(id){
   try{ const g=JSON.parse(localStorage.getItem(graphKey(id)));
@@ -1472,7 +1533,7 @@ function loadGraphLocal(id){
   return { nodes:{}, links:[] };                     // 새 보드는 빈 캔버스
 }
 function saveGraphLocal(){ try{ localStorage.setItem(graphKey(curBoard), JSON.stringify(graphState())); }catch(e){} }
-function persist(){ saveGraphLocal(); if(graphRef){ graphRef.set(graphState()); } }
+function persist(){ saveGraphLocal(); if(graphRef){ watchWrite(graphRef.set(graphState()), "업무 흐름"); } }
 function persistDebounced(){ clearTimeout(writeTimer); writeTimer = setTimeout(persist, 250); }
 
 function applyRemote(remote){
@@ -1609,7 +1670,7 @@ function setupPresence(id){
 function updateConn(){
   if (!db){ conn.className="conn local"; conn.innerHTML="⚪ 로컬 모드 · <b>내 브라우저에만</b> 저장 (팀과 공유 안 됨)"; return; }
   if (online){ conn.className="conn on"; conn.innerHTML="🟢 실시간 연결됨 · 👥 <b>"+presenceCount+"</b>명"; }
-  else { conn.className="conn off"; conn.innerHTML="🟠 연결 끊김 — 재연결 중…"; }
+  else { conn.className="conn off"; conn.innerHTML="🟠 연결 끊김 — 재연결 중… · <b>지금 변경한 내용은 아직 서버에 저장되지 않았습니다</b>"; }
 }
 
 /* ===== 보조 ===== */
@@ -2494,7 +2555,7 @@ function saveCase(id, immediate, options){
   const payload=caseSavePayload(id, options);
   if(casesRef){
     clearTimeout(caseWriteTimers[id]);
-    const write=()=>{ if(casesRef) casesRef.child(id).update(payload); delete caseWriteTimers[id]; };
+    const write=()=>{ if(casesRef) watchWrite(casesRef.child(id).update(payload), "케이스"); delete caseWriteTimers[id]; };
     if(immediate) write();
     else caseWriteTimers[id]=setTimeout(write, 300);
   } else if(!isConfigured) {
@@ -2510,14 +2571,14 @@ function saveCaseWithRemovedChild(id, childPath, options){
     const rootKey=String(childPath).split("/")[0];
     delete payload[rootKey];
     payload[childPath]=null;
-    casesRef.child(id).update(payload);
+    watchWrite(casesRef.child(id).update(payload), "케이스");
   }else if(!isConfigured){
     try{ localStorage.setItem("fm_cases_v1", JSON.stringify(cases)); }catch(e){}
   }
 }
 function removeCaseChild(id, childPath){
   if(!id || !childPath || !casesRef) return;
-  casesRef.child(id).child(childPath).remove().catch(e=>console.warn("case child remove failed", childPath, e));
+  watchWrite(casesRef.child(id).child(childPath).remove(), "케이스 항목 삭제");
 }
 function resolveCaseMapKey(map, requestedKey){
   if(!map || !requestedKey) return requestedKey;
@@ -2981,7 +3042,7 @@ function setCaseVendorSelection(caseId, vendorId, selected, fallbackPayload){
   saveCase(caseId, true);
   if(!selected && casesRef && vendorId){
     const key=String(vendorId);
-    casesRef.child(caseId).child("vendorSelections").child(key).remove().catch(e=>console.warn("vendor selection remove failed", e));
+    watchWrite(casesRef.child(caseId).child("vendorSelections").child(key).remove(), "업체 선정 삭제");
   }
   renderCaseDetailKeepScroll();
 }
@@ -5730,7 +5791,7 @@ function recordPaymentAudit(action,details){
   const id=paymentId("a_");
   const row={action:String(action||""),details:details||{},at:new Date().toISOString(),by:authedUser&&authedUser.email||"local"};
   paymentData.audit[id]=row; savePaymentLocal();
-  if(paymentRef) paymentRef.child("audit/"+id).set(row).catch(err=>console.warn("입금 감사기록 저장 실패",err));
+  if(paymentRef) watchWrite(paymentRef.child("audit/"+id).set(row), "입금 감사기록");
 }
 function detachPaymentCalendarRef(){ if(paymentRef&&paymentValueHandler) paymentRef.off("value",paymentValueHandler); paymentRef=null; paymentValueHandler=null; paymentData={profile:{},schedules:{},transactions:{},overrides:{},rentSms:{},bankSync:{},bankBindings:{},audit:{}}; }
 function attachPaymentCalendarRef(user){
@@ -6224,8 +6285,9 @@ document.getElementById("noticeBtn").addEventListener("click", openNoticePanel);
 document.getElementById("noticeBanner").addEventListener("click", openNoticePanel);
 
 /* ===== 업데이트 알림(What's New) — 새 버전 나오면 자동 팝업 ===== */
-const APP_VERSION = "5.41";
+const APP_VERSION = "5.42";
 const CHANGELOG = [
+  { v:"5.42", d:"2026-09-04", items:["저장이 실패하면 화면 위에 빨간 알림으로 바로 알려줍니다 (예전에는 조용히 실패)","연결이 끊기면 ‘아직 서버에 저장되지 않았습니다’를 함께 표시","업무 흐름·보드·케이스·입금 감사기록 저장 실패를 모두 감지"] },
   { v:"5.41", d:"2026-08-07", items:["⑬ 작업 전·후 사진 분리 업로드 및 Drive 저장","⑬ 사진 비교 보기와 개별 목록 제거","⑭ B/A 보고서에 작업 사진 자동 참조"] },
   { v:"5.40", d:"2026-08-07", items:["브링 견적서 가산율을 10%에서 5%로 변경","최종 합계금액은 기존처럼 100원 단위 반올림","기존 견적은 브링 양식 재작성 시 5% 적용"] },
   { v:"5.39", d:"2026-07-30", items:["동일한 건물주 전화번호로 등록된 여러 건물의 납부예정·미입금·입금완료 알림을 한 건으로 통합"] },
