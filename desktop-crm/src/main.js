@@ -40,6 +40,7 @@ const NaverBuildingExtractor = require("./naver-building-extractor");
 const { assistWithGateway } = require("./ai-client");
 const { validateAudioFile, transcribeWithGateway } = require("./ai-audio-client");
 const { checkContractSourceWithGateway } = require("./contract-drive-client");
+const { requestDocumentDelivery } = require("./document-delivery-client");
 const {
   FIELD_BRIDGE_TIMEOUT_MS,
   FIELD_ORIGIN,
@@ -130,6 +131,7 @@ const localTestRole = ["admin", "member", "marketing", "sales", "viewer"].includ
 const CRM_AI_GATEWAY_URL = process.env.BRING_CRM_AI_GATEWAY_URL || "https://bring-crm-ai-gateway.bringengineering-crm.workers.dev/v1/assist";
 const CRM_AI_TRANSCRIBE_URL = new URL("/v1/transcribe", CRM_AI_GATEWAY_URL).href;
 const CRM_CONTRACT_GATEWAY_URL = new URL("/v1/contracts", CRM_AI_GATEWAY_URL).href;
+const CRM_DOCUMENT_DELIVERY_URL = new URL("/v1/document-delivery", CRM_AI_GATEWAY_URL).href;
 if (localTestMode && !process.env.BRING_CRM_DATA_DIR) {
   // Automated screenshots must never reuse or overwrite an employee's cache.
   app.setPath("userData", path.join(app.getPath("temp"), "bring-crm-desktop-tests", String(process.pid)));
@@ -2841,6 +2843,20 @@ async function runWorkflowAction(input) {
   if (!remoteClient || !remoteClient.authState().user) return { ok: false, error: "로그인이 필요합니다." };
   try { return await remoteClient.runWorkflowAction(input); }
   catch (error) { return { ok: false, error: error.message || "업무를 실행하지 못했습니다.", code: error.code || "WORKFLOW_ACTION_FAILED" }; }
+}
+
+async function runDocumentDelivery(action, input) {
+  if (localTestMode) {
+    if (action === "capabilities") return { ok: true, capabilities: { kakao: false, sms: false } };
+    return { ok: false, code: "DOCUMENT_DELIVERY_UNAVAILABLE", error: "문서 발송 중계 서버 연결이 필요합니다." };
+  }
+  if (!remoteClient || !remoteClient.authState().user) return { ok: false, code: "AUTH_REQUIRED", error: "로그인이 필요합니다." };
+  try {
+    const idToken = await remoteClient.ensureIdToken(false);
+    return await requestDocumentDelivery({ endpoint: CRM_DOCUMENT_DELIVERY_URL, idToken, action, input, fetchImpl: (url, options) => net.fetch(url, options) });
+  } catch (error) {
+    return { ok: false, code: error.code || "DOCUMENT_DELIVERY_UNAVAILABLE", error: error.message || "문서 발송 서버를 사용할 수 없습니다." };
+  }
 }
 
 async function pickWorkflowFiles(input) {
@@ -7213,6 +7229,11 @@ secureHandle("crm:payment-schedule-delete", input => deletePaymentSchedule(input
 secureHandle("crm:payment-bank-binding", input => savePaymentBankBinding(input));
 secureHandle("crm:workflow-vendors", input => loadWorkflowVendors(input));
 secureHandle("crm:workflow-action", input => runWorkflowAction(input));
+secureHandle("crm:document-delivery-capabilities", () => runDocumentDelivery("capabilities"));
+secureHandle("crm:document-delivery-create", input => runDocumentDelivery("create", input));
+secureHandle("crm:document-delivery-send", input => runDocumentDelivery("send", input));
+secureHandle("crm:document-delivery-status", input => runDocumentDelivery("status", input));
+secureHandle("crm:document-delivery-revoke", input => runDocumentDelivery("revoke", input));
 secureHandle("crm:workflow-files", input => pickWorkflowFiles(input));
 secureCanonicalHandle("crm:customer-photo-pick", () => pickCustomerPhoto());
 secureHandle("crm:data-path", () => dataFile());

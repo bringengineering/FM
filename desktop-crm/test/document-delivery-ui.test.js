@@ -32,4 +32,5 @@ test("desktop loads the delivery core before message UI and wires document mode 
   assert.match(app, /selectedMessageMode/);
   assert.match(app, /customerDocumentDeliveryForm/);
   assert.match(app, /data-message-mode/);
+  assert.match(app, /api\.readDocumentDeliveryCapabilities\(\)/);
 });

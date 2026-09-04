@@ -79,6 +79,7 @@
   let selectedDocumentId = "";
   let selectedDocumentName = "견적서";
   let selectedDocumentExpiresOn = new Date(Date.now() + 14 * 86400000).toISOString().slice(0, 10);
+  let documentDeliveryCapabilities = { kakao: false, sms: false, loaded: false, loading: false };
   let selectedBuildingId = "";
   let selectedVacancyBuildingId = "";
   let vacancyStatusFilter = "attention";
@@ -2615,10 +2616,22 @@
       documentId: selectedDocumentId,
       documentName: selectedDocumentName,
       expiresOn: selectedDocumentExpiresOn,
-      deliveryCapabilities: { kakao: false, sms: false },
+      deliveryCapabilities: documentDeliveryCapabilities,
       documentDeliveries: customerMessageDeliveries().filter(item => item.documentId),
       writable: canWriteCRM()
     });
+    if (selectedMessageMode === "documents" && !documentDeliveryCapabilities.loaded && !documentDeliveryCapabilities.loading) void refreshDocumentDeliveryCapabilities();
+  }
+
+  async function refreshDocumentDeliveryCapabilities() {
+    documentDeliveryCapabilities = Object.assign({}, documentDeliveryCapabilities, { loading: true });
+    try {
+      const result = await api.readDocumentDeliveryCapabilities();
+      documentDeliveryCapabilities = { kakao: result && result.capabilities && result.capabilities.kakao === true, sms: result && result.capabilities && result.capabilities.sms === true, loaded: true, loading: false };
+    } catch (_error) {
+      documentDeliveryCapabilities = { kakao: false, sms: false, loaded: true, loading: false };
+    }
+    if (currentView === "customerMessages" && selectedMessageMode === "documents") renderCustomerMessages();
   }
 
   function openMessageConsentEditor(customerId) {
