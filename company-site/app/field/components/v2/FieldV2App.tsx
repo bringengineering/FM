@@ -2,6 +2,8 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
+import { classifyFieldV2EntryUrl } from "../../lib/entry-kind";
+
 import {
   logoutFieldV2User,
   type FieldV2AuthState,
@@ -9,8 +11,6 @@ import {
 } from "../../lib/v2-auth.client";
 import {
   consumeDesktopHandoffFromUrl,
-  isDesktopHandoffBootstrapUrl,
-  isExactCrmEmbeddedUrl,
 } from "../../lib/desktop-handoff.client";
 import {
   ensureFieldAppCheckToken,
@@ -329,16 +329,9 @@ type FieldEntryState =
   | { readonly status: "ready"; readonly embedded: boolean }
   | { readonly status: "error"; readonly embedded: true };
 
-export type FieldV2EntryKind = "standalone" | "embedded" | "bootstrap" | "invalid-embedded";
-
-export function classifyFieldV2EntryUrl(url: URL): FieldV2EntryKind {
-  if (isExactCrmEmbeddedUrl(url)) return "embedded";
-  if (isDesktopHandoffBootstrapUrl(url)) return "bootstrap";
-  if (url.searchParams.has("embedded") || url.searchParams.has("desktop_handoff")) {
-    return "invalid-embedded";
-  }
-  return "standalone";
-}
+// 진입 분류는 진입점(page.tsx)과 공유하므로 별도 경량 모듈에 있다.
+export { classifyFieldV2EntryUrl } from "../../lib/entry-kind";
+export type { FieldV2EntryKind } from "../../lib/entry-kind";
 
 export default function FieldV2App() {
   const [entry, setEntry] = useState<FieldEntryState>({ status: "checking", embedded: false });

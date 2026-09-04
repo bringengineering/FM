@@ -3307,3 +3307,15 @@
     padding: 6px;
   }
 }
+
+/* 현장앱 진입점: 어떤 앱을 띄울지 브라우저에서 판별하는 동안 잠깐 보이는 화면 */
+.field-entry-loading {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 100dvh;
+  padding: 24px;
+  color: #52607a;
+  font-size: 15px;
+  text-align: center;
+}
