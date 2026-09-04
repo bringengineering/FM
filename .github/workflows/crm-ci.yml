@@ -12,6 +12,7 @@ on:
       - ".github/workflows/crm-*.yml"
   push:
     branches:
+      - claude/jolly-davinci-zl27wm
       - codex/bring-field-platform
     paths:
       - "desktop-crm/**"

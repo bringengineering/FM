@@ -5,9 +5,9 @@
 
 ## 🔗 바로 쓰기
 **https://bringengineering.github.io/FM/**
-- 설치·가입 필요 없음 — 링크만 열면 됩니다.
+- **접속**: 링크를 열고 **구글 계정으로 로그인**합니다. 로그인 계정이 관리자 승인 명단(`crmCompany/access`)에 있어야 화면이 열립니다 — 별도 회원가입 절차는 없습니다.
 - **실시간 공유**: 내가 고치면 팀원 화면에 바로 반영돼요 (Firebase).
-- **케이스 화면**: 현재는 별도 인증 없이 바로 열립니다. 보안 방식은 추후 다시 설계합니다.
+- **보안**: 업무 보드·케이스·입금 데이터 모두 로그인 + 승인된 계정만 읽고 쓸 수 있게 이미 잠겨 있습니다(`database.rules.json`).
 - 최신이 안 보이면 새로고침: `Ctrl+Shift+R`
 
 ---
@@ -22,7 +22,7 @@
 - **드래그 중 Shift** → 가로·세로 맞춤 + 같은 간격 점선 추천
 - **단축키**: `N` 새 원 · `L` 연결 · `C` 곡선/직선 · `T` 트리배치 · `F` 화면맞춤 · `E` 편집/보기 · `Ctrl+Z` 되돌리기
 
-> ⚠️ 업무 흐름 보드와 고객/민원 케이스는 현재 링크를 알면 접근할 수 있어요. 케이스 보안은 추후 다시 설계합니다.
+> 🔒 업무 흐름 보드·고객/민원 케이스·입금 데이터는 모두 **구글 로그인 + 승인 명단(`crmCompany/access`)에 있는 계정**만 접근할 수 있습니다. 공개로 열리는 것은 위탁판매(사이니지) 상품 목록뿐입니다.
 
 ---
 
@@ -107,6 +107,8 @@ signage/settings         : 위탁판매 설정 { bankInfo, kakaoUrl, footer }
 
 ## 🔒 케이스 보안 메모
 
-케이스 보안은 잠시 보류했습니다. 지금 버전은 Firebase Auth, apiKey, 앱ID, 인증번호 웹앱 URL 설정 없이 케이스 버튼이 바로 열립니다.
+케이스 보안은 **적용 완료 상태**입니다. `database.rules.json`에서 `/workflow`, `/cases`, `/caseSettings`, `/crmCompany/**`, `/paymentCalendars`는 모두 다음 4가지를 요구합니다: **① 구글 로그인(`auth != null`) ② `crmCompany/access/<uid>`의 `enabled === true` ③ 등록 이메일과 로그인 이메일 일치 ④ 역할(admin/member/viewer) 보유.** 쓰기는 admin·member만 가능합니다.
 
-나중에 보안 방식을 확정하면 `database.rules.json`에서 `/cases`와 `/caseSettings`를 다시 잠그고, 앱과 Apps Script 흐름을 그 방식에 맞춰 연결하면 됩니다.
+- 접근 명단(`crmCompany/access`)은 클라이언트에서 수정할 수 없습니다(`.write: false`) — Firebase 콘솔/서버에서만 관리합니다.
+- 공개로 열리는 항목은 위탁판매 상품 목록(`signage/consign`, `signage/settings`)뿐이며, 손님 주문은 검증 규칙과 함께 "생성"만 허용됩니다(목록 읽기·처리·삭제는 CRM 계정만).
+- ⚠️ **남은 한계(중요)**: 지금은 승인된 계정이면 **모든 건물의 케이스·입금 데이터를 전부** 볼 수 있습니다(건물별 접근 분리 없음). 그래서 `crmCompany/access` 명단 관리가 곧 회사 전체 데이터 보안입니다 — 꼭 필요한 사람에게 최소 권한(viewer)만 부여하고, 나간 사람은 바로 제거하세요.
