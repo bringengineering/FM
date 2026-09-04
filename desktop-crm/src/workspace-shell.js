@@ -59,7 +59,7 @@
     ];
     return `<section class="workspace-landing" aria-labelledby="workspaceLandingTitle">
       <header><span>BRING WORKSPACE</span><h2 id="workspaceLandingTitle">작업 폴더를 선택하세요</h2><p>하나의 로그인으로 운영과 마케팅 업무를 오갈 수 있습니다.</p></header>
-      <div class="workspace-folder-grid">${folders.map(([key, title, description]) => `<button type="button" class="workspace-folder-card" data-workspace-enter="${escapeHtml(key)}"><span class="workspace-folder-icon" aria-hidden="true">▰</span><strong>${escapeHtml(title)}</strong><small>${escapeHtml(description)}</small></button>`).join("")}</div>
+      <div class="workspace-folder-grid">${folders.map(([key, title, description]) => `<button type="button" class="workspace-folder-card" data-workspace-enter="${escapeHtml(key)}"><span class="workspace-folder-icon" aria-hidden="true"><svg class="workspace-folder-glyph" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M3.5 7.5a2 2 0 0 1 2-2h3.4l2 2.4h7.6a2 2 0 0 1 2 2v8.6a2 2 0 0 1-2 2h-13a2 2 0 0 1-2-2z"/></svg></span><strong>${escapeHtml(title)}</strong><small>${escapeHtml(description)}</small></button>`).join("")}</div>
     </section>`;
   }
 
