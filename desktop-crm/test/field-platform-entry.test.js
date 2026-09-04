@@ -66,18 +66,16 @@ test("operator selection remains profile-backed for canonical audit writes", asy
   assert.doesNotMatch(main, /role:\s*String\(profile/);
 });
 
-test("ownerless buildings can link a customer once while assigned owners stay fixed", async () => {
+test("new buildings may link a customer while rental edits preserve the existing owner", async () => {
   const app = await source("app.js");
   const editor = app.slice(app.indexOf("function buildingEditor"), app.indexOf("function buildingUnitEditor"));
   const save = app.slice(app.indexOf('form.id === "buildingForm"'), app.indexOf('form.id === "contractForm"'));
 
-  assert.match(editor, /editing\s*&&\s*currentOwnerCustomerId[\s\S]*?disabled/);
-  assert.match(editor, /type="hidden" name="ownerCustomerId"/);
-  assert.match(editor, /select name="ownerCustomerId"[\s\S]*?연결할 고객을 선택하세요/);
-  assert.match(editor, /고객 관리에서 고객을 먼저 등록/);
-  assert.match(editor, /최초 연결 후 변경은 별도 이전 절차/);
-  assert.match(save, /requestedOwnerCustomerId\s*=\s*currentOwnerCustomerId\s*\|\|\s*String\(raw\.ownerCustomerId/);
-  assert.match(save, /title:\s*"이 고객을 건물주로 연결할까요\?"/);
+  assert.match(editor, /buildingIdentityEditor\s*=\s*editing\s*\?\s*""\s*:/);
+  assert.match(editor, /select name="ownerCustomerId"/);
+  assert.match(editor, /고객 관리에 등록된 고객을 건물주·대표 고객으로 연결합니다/);
+  assert.doesNotMatch(editor, /type="hidden" name="ownerCustomerId"|이 고객을 건물주로 연결할까요/);
+  assert.match(save, /requestedOwnerCustomerId\s*=\s*existing\s*\?\s*currentOwnerCustomerId\s*:\s*String\(raw\.ownerCustomerId/);
   assert.match(save, /ownerCustomerId:\s*requestedOwnerCustomerId/);
   assert.match(save, /existing\s*&&\s*!Object\.hasOwn\(existing,\s*"ownerCustomerId"\)\s*&&\s*!requestedOwnerCustomerId[\s\S]*?delete patch\.ownerCustomerId/);
 });

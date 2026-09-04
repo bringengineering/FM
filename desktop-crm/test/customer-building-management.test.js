@@ -298,8 +298,16 @@ test("customer detail removes work-building selection and customer-scoped buildi
 test("building edits opened from customer detail return to the customer workspace", () => {
   const editor = sourceBetween("function buildingEditor", "function updateVacancyScheduleGuide");
   const save = sourceBetween('form.id === "buildingForm"', 'form.id === "contractForm"');
+  const detail = sourceBetween("function renderCustomerHubDetail", "const buildingCustomers");
   assert.match(editor, /data-return-view="\$\{attr\(currentView === "customers" \? "customers" : "buildings"\)\}"/);
+  assert.match(editor, /const buildingIdentityEditor = editing \? "" :/);
+  assert.match(editor, /<h2>\$\{editing \? "임대·공실 정보 수정" : "새 건물 등록"\}<\/h2>/);
+  assert.match(editor, /name="\$\{editing \? "rentDeposit" : "naverBuildingUrl"\}"/);
+  assert.match(detail, /data-building-edit="\$\{attr\(managedBuilding\.id\)\}">임대·공실 정보 수정<\/button>/);
   assert.match(save, /const returnView = form\.dataset\.returnView === "customers" \? "customers" : "buildings"/);
+  assert.match(save, /const name = String\(existing \? existing\.name : raw\.name/);
+  assert.match(save, /type: existing \? existing\.type : raw\.type, status: existing \? existing\.status : raw\.status/);
+  assert.match(save, /reason: existing \? "CRM 건물 임대·공실 정보 수정" : "CRM 건물 등록"/);
   assert.match(save, /currentView = returnView/);
 });
 

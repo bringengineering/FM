@@ -4545,7 +4545,12 @@ async function createWindow() {
         await wait(80);
         const form = document.getElementById('buildingForm');
         const checkedValues = name => [...form?.querySelectorAll('input[name="' + name + '"]:checked') || []].map(item => item.value);
+        const identityEditorRemoved = !form?.querySelector('.building-identity-form-section')
+          && !form?.elements.name && !form?.elements.roadAddress && !form?.elements.jibunAddress;
+        const rentalEditTitle = document.querySelector('#modal .modal-head h2')?.textContent.trim() === '임대·공실 정보 수정';
         const editOpened = !!form
+          && identityEditorRemoved
+          && rentalEditTitle
           && form.elements.rentDeposit.value === '3000000'
           && form.elements.vacantUnitCount.value === '3'
           && form.elements.vacantUnits.value === '101호, 203호'
@@ -4560,10 +4565,10 @@ async function createWindow() {
         if (detail) detail.open = true;
         detail?.scrollIntoView({ block: 'center' });
         const removedFromBuildingDetail = !document.querySelector('.building-rental-detail');
-        const pass = initiallyClosed && !!detail?.open && !!editButton && editOpened && noHorizontalOverflow && removedFromBuildingDetail
+        const pass = initiallyClosed && !!detail?.open && !!editButton && editOpened && identityEditorRemoved && rentalEditTitle && noHorizontalOverflow && removedFromBuildingDetail
           && detailText.includes('3,000,000원') && detailText.includes('101호, 203호') && detailText.includes('기타: 복도 청소') && detailText.includes('기타: 인덕션');
         await wait(80);
-        return { pass, isReadOnly, initiallyClosed, opened: !!detail?.open, editButtonInside: !!editButton, editOpened, detailText, removedFromBuildingDetail, noHorizontalOverflow, state: window.__crmTest.snapshot() };
+        return { pass, isReadOnly, initiallyClosed, opened: !!detail?.open, editButtonInside: !!editButton, editOpened, identityEditorRemoved, rentalEditTitle, detailText, removedFromBuildingDetail, noHorizontalOverflow, state: window.__crmTest.snapshot() };
       })().catch(error => ({ pass: false, error: String(error && error.stack || error) }))`, true);
     } else if (process.env.BRING_CRM_SCREENSHOT_ACTION === "vacancy-layout-scale") {
       actionResult = await mainWindow.webContents.executeJavaScript(`(async () => {
