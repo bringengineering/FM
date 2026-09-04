@@ -16,6 +16,7 @@
   --muted:#8B95A1;         /* 보조 텍스트 */
   --soft:#4E5968;
   --blue:#3182F6;          /* 포인트 */
+  --accent:#3182F6;        /* KPI 카드 강조 막대·원 */
   --blue-2:#1B64DA;
   --green:#00C471;
   --yellow:#FFB020;
@@ -151,3 +152,64 @@ input:focus,select:focus,textarea:focus{
 .main-content::-webkit-scrollbar-thumb,
 .nav-list::-webkit-scrollbar-thumb,
 .detail-drawer::-webkit-scrollbar-thumb{ background:#D1D6DB; }
+
+
+/* =====================================================================
+   안쪽 업무 화면 공통 요소
+   표·칩·카드가 하늘색 계열 + 9~11px 작은 글씨였다. 색을 맞추고
+   본문 가독성을 올린다(밀도는 크게 흔들지 않는 선에서).
+   ===================================================================== */
+
+/* ---- 표 : 업무 화면의 주력 요소 ---- */
+.data-table-wrap{
+  border:1px solid var(--line); border-radius:var(--radius);
+  box-shadow:var(--shadow);
+}
+.data-table th{
+  background:#FAFBFC; border-bottom:1px solid var(--line);
+  color:var(--muted); font-size:12px; font-weight:700; letter-spacing:0;
+  padding:13px 14px;
+}
+.data-table td{
+  border-bottom:1px solid #F2F4F6; color:#333D4B; font-size:13px; padding:14px;
+}
+.data-table tbody tr:hover{ background:#F9FAFB; }
+.data-table tbody tr.is-selected,
+.data-table tbody tr[aria-selected="true"]{ background:var(--toss-blue-weak); }
+
+/* ---- 필터 칩 ---- */
+.filter-chip{
+  border:0; background:var(--toss-fill); color:var(--soft);
+  border-radius:999px; padding:8px 14px; font-size:13px; font-weight:600;
+}
+.filter-chip:hover{ background:var(--toss-fill-hover); }
+.filter-chip.active{ background:var(--blue); color:#fff; font-weight:700; border:0; }
+
+/* ---- KPI 카드 ---- */
+.kpi-card{ border:1px solid var(--line); box-shadow:var(--shadow); }
+.kpi-card::after{ opacity:.06; }
+.kpi-label{ color:var(--muted); font-size:12px; font-weight:600; }
+.kpi-card b,.kpi-value{ color:var(--text); letter-spacing:-0.5px; }
+
+/* ---- 빈 상태 ---- */
+.empty-state{
+  border:1px solid var(--line); border-radius:var(--radius);
+  background:#fff; color:var(--muted); font-size:14px;
+}
+
+/* ---- 폼 라벨 ---- */
+label>span,.essential-label{ color:var(--soft); font-weight:600; }
+.building-form-section,.contract-type-fields,.case-summary-field{ border-color:var(--line); }
+
+/* ---- 상태 배지류 : 하늘색 계열을 중립·파랑으로 ---- */
+.contract-status,.relationship-state,.sales-state-label,.industry-badge,.priority-badge{
+  border:0; background:var(--toss-fill); color:var(--soft);
+  border-radius:999px; padding:5px 10px; font-size:12px; font-weight:700;
+}
+
+/* ---- 영업 단계 스테퍼 ---- */
+.sales-stage-button.active,.sales-stage-button[aria-current="step"]{
+  background:var(--blue); color:#fff; border-color:var(--blue);
+}
+.sales-stage-number{ background:var(--toss-fill); color:var(--soft); }
+.sales-stage-button.active .sales-stage-number{ background:rgba(255,255,255,.22); color:#fff; }
