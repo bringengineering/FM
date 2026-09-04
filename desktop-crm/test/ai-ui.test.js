@@ -118,6 +118,15 @@ test("quote screen offers an AI-free manual authoring path", () => {
   assert.doesNotMatch(handler, /api\.assist/);
 });
 
+test("quote identity exposes editable issue, validity and site fields", () => {
+  const app = read("app.js");
+  assert.match(app, /data-ai-quote-recipient="siteAddress"/);
+  assert.match(app, /data-ai-quote-recipient="quoteDate"[^>]*type="date"/);
+  assert.match(app, /data-ai-quote-recipient="validUntil"[^>]*type="date"/);
+  assert.match(app, /현장명 \+ 작업명/);
+  assert.match(app, /QuoteCore\.dateAfter\(next\.quoteDate, 7\)/);
+});
+
 test("consultation AI creates a reviewable draft without changing or saving the form", () => {
   const app = read("app.js");
   assert.match(app, /data-consultation-ai-organize[^>]*disabled/);

@@ -12,6 +12,14 @@ test("creates a manual quote without prompt or AI output", () => {
   assert.equal(quote.totalAmount, 1000);
 });
 
+test("preserves manually entered site address and valid-until date", () => {
+  const quote = QuoteCore.createManualDraft({ now: "2026-09-04" });
+  const edited = QuoteCore.normalizeDraft({ ...quote, quoteDate: "2026-09-10", validUntil: "2026-09-30", siteAddress: "강원특별자치도 원주시 이화3길 28-5" });
+  assert.equal(edited.quoteDate, "2026-09-10");
+  assert.equal(edited.validUntil, "2026-09-30");
+  assert.equal(edited.siteAddress, "강원특별자치도 원주시 이화3길 28-5");
+});
+
 test("one-line Korean request becomes a balanced BRING quote draft", () => {
   const quote = QuoteCore.createDraftFromPrompt("햇빛빌라 입주청소 12만원", null, { now: "2026-09-01T00:00:00+09:00", idSuffix: "A102" });
   assert.equal(quote.recipient, "햇빛빌라");
@@ -53,12 +61,12 @@ test("supplier fields stay separate and require a formatted registration number"
   assert.equal(QuoteCore.supplierComplete({ businessName: "테스트", representative: "", registrationNumber: "000-00-00000" }), false);
 });
 
-test("recipient fields stay local to the workbook and dates always expire after seven days", () => {
+test("recipient fields stay local to the workbook and a manually changed validity date is preserved", () => {
   const draft = QuoteCore.createDraftFromPrompt("햇빛빌라 입주청소 12만원", null, { now: "2026-09-01" });
   const quote = QuoteCore.normalizeDraft({ ...draft, recipient: "홍길동", recipientPhone: "010-1234-5678", validUntil: "2099-12-31" });
   assert.equal(quote.recipient, "홍길동");
   assert.equal(quote.recipientPhone, "010-1234-5678");
-  assert.equal(quote.validUntil, "2026-09-08");
+  assert.equal(quote.validUntil, "2099-12-31");
   assert.equal(QuoteCore.recipientComplete(quote), true);
   assert.equal(QuoteCore.recipientComplete({ recipient: "홍길동", recipientPhone: "" }), false);
   assert.throws(() => QuoteCore.normalizeRecipient({ recipient: "홍길동", recipientPhone: "비공개" }), /전화번호/);

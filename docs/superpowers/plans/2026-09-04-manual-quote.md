@@ -29,3 +29,10 @@
 - [ ] Run syntax checks and `git diff --check`.
 - [ ] Run the full `node --test test/*.test.js` suite.
 - [ ] Verify the manual mode in Electron with a blank draft and confirm no AI request is required before editing.
+
+### Task 4: Editable quote identity and dates
+**Files:** Modify `desktop-crm/src/quote-core.js`, `desktop-crm/src/app.js`; test `desktop-crm/test/quote-core.test.js`, `desktop-crm/test/ai-ui.test.js`.
+- [ ] Write failing tests for explicit validity dates and the editable project, site address, issue date, and valid-until fields.
+- [ ] Preserve explicit valid-until values during normalization and export.
+- [ ] When the issue date changes in the renderer, calculate a new seven-day validity date; allow a later direct valid-until edit.
+- [ ] Run focused and full regression tests before pushing.

@@ -12,7 +12,7 @@ function sampleQuote() {
     idSuffix: "PDF1",
     supplier: { businessName: "브링엔지니어링", representative: "서창환", registrationNumber: "748-28-01935" }
   });
-  return QuoteCore.normalizeDraft({ ...draft, recipient: "홍길동", recipientPhone: "010-1234-5678" });
+  return QuoteCore.normalizeDraft({ ...draft, recipient: "홍길동", recipientPhone: "010-1234-5678", siteAddress: "강원특별자치도 원주시 이화3길 28-5" });
 }
 
 const seal = Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=", "base64");
@@ -29,6 +29,8 @@ test("quote PDF HTML keeps both copies identical except for their requested colo
   assert.match(recipient, /견 적 서/);
   assert.match(recipient, /서 창 환/);
   assert.match(recipient, /공급자 확인/);
+  assert.match(recipient, /현장 주소/);
+  assert.match(recipient, /강원특별자치도 원주시 이화3길 28-5/);
   assert.equal((recipient.match(/data:image\/png;base64/g) || []).length, 2);
   assert.match(recipient, /Content-Security-Policy/);
   assert.doesNotMatch(recipient, /https?:\/\//);

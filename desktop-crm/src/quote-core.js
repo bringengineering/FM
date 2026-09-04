@@ -248,12 +248,14 @@
     const totalAmount = items.reduce((sum, item) => sum + itemTotal(item), 0);
     if (!totalAmount || totalAmount > 1_000_000_000) throw new Error("견적 금액을 확인해 주세요.");
     const quoteDate = /^\d{4}-\d{2}-\d{2}$/.test(String(value.quoteDate || "")) ? String(value.quoteDate) : isoDay();
+    const validUntil = /^\d{4}-\d{2}-\d{2}$/.test(String(value.validUntil || "")) ? String(value.validUntil) : addDays(quoteDate, 7);
     const recipient = normalizeRecipient(value);
     return {
       quoteDate,
-      validUntil: addDays(quoteDate, 7),
+      validUntil,
       recipient: recipient.name || "고객",
       recipientPhone: recipient.phone,
+      siteAddress: text(value.siteAddress, 180),
       projectName: text(value.projectName, 120) || "시설관리 견적",
       service: text(value.service, 60) || "시설보수",
       summary: text(value.summary, 240),
@@ -298,5 +300,5 @@
     return text(value && value.projectName, 50).replace(/[<>:"/\\|?*]/g, "_").replace(/[. ]+$/g, "") || "BRING_견적서";
   }
 
-  return { COMPANY, MAX_ITEMS, createDraftFromPrompt, createManualDraft, normalizeDraft, addDraftItem, removeDraftItem, normalizeSupplier, supplierComplete, normalizeRecipient, recipientComplete, companyProfile, parseAmount, inferService, itemTotal, money, fileBase };
+  return { COMPANY, MAX_ITEMS, createDraftFromPrompt, createManualDraft, normalizeDraft, addDraftItem, removeDraftItem, normalizeSupplier, supplierComplete, normalizeRecipient, recipientComplete, companyProfile, parseAmount, inferService, itemTotal, money, fileBase, dateAfter: addDays };
 });

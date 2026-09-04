@@ -6,7 +6,7 @@ const { createQuoteWorkbook, ocrDataSheetXml, quoteFileName, quoteSheetXml } = r
 
 function sampleQuote() {
   const draft = QuoteCore.createDraftFromPrompt("햇빛빌라 입주청소 12만원", null, { now: "2026-09-01", idSuffix: "T001", supplier: { businessName: "테스트엔지니어링", representative: "홍길동", registrationNumber: "000-00-00000" } });
-  return QuoteCore.normalizeDraft({ ...draft, recipient: "김고객", recipientPhone: "010-1234-5678" });
+  return QuoteCore.normalizeDraft({ ...draft, recipient: "김고객", recipientPhone: "010-1234-5678", siteAddress: "강원특별자치도 원주시 이화3길 28-5" });
 }
 
 test("recipient and supplier copies are real XLSX packages with matching labels and formulas", () => {
@@ -38,6 +38,8 @@ test("recipient and supplier copies are real XLSX packages with matching labels 
   assert.match(sheet, /010-1234-5678/);
   assert.match(sheet, /발행일/);
   assert.match(sheet, /유효일/);
+  assert.match(sheet, /현장 주소/);
+  assert.match(sheet, /강원특별자치도 원주시 이화3길 28-5/);
   assert.match(sheet, /사업자등록번호/);
   assert.match(sheet, /000-00-00000/);
   assert.match(sheet, /홍 길 동/);
@@ -52,7 +54,7 @@ test("recipient and supplier copies are real XLSX packages with matching labels 
   assert.doesNotMatch(sheet, /㊞/);
   assert.equal(quoteSheetXml(quote, "supplier", true), sheet);
   const ocr = ocrDataSheetXml(quote, "recipient");
-  for (const key of ["DOCUMENT_TYPE", "RECIPIENT_NAME", "RECIPIENT_PHONE", "SUPPLIER_NAME", "SUPPLIER_REPRESENTATIVE", "SUPPLIER_BUSINESS_NUMBER", "SUPPLIER_ADDRESS", "SUPPLIER_BUSINESS_TYPE", "SUPPLIER_BUSINESS_CATEGORY", "PROJECT_NAME", "ISSUE_DATE", "VALID_UNTIL", "SUPPLY_AMOUNT", "TAX_AMOUNT", "TOTAL_AMOUNT", "ITEM_NAME", "LINE_TOTAL"]) assert.match(ocr, new RegExp(key));
+  for (const key of ["DOCUMENT_TYPE", "RECIPIENT_NAME", "RECIPIENT_PHONE", "SITE_ADDRESS", "SUPPLIER_NAME", "SUPPLIER_REPRESENTATIVE", "SUPPLIER_BUSINESS_NUMBER", "SUPPLIER_ADDRESS", "SUPPLIER_BUSINESS_TYPE", "SUPPLIER_BUSINESS_CATEGORY", "PROJECT_NAME", "ISSUE_DATE", "VALID_UNTIL", "SUPPLY_AMOUNT", "TAX_AMOUNT", "TOTAL_AMOUNT", "ITEM_NAME", "LINE_TOTAL"]) assert.match(ocr, new RegExp(key));
   assert.doesNotMatch(ocr, /COPY_TYPE/);
   assert.match(ocr, />홍길동</);
   assert.doesNotMatch(ocr, />홍 길 동</);
