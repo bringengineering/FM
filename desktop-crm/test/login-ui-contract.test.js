@@ -95,12 +95,23 @@ test("login copy consistently describes allowed email and password login", () =>
   assert.equal(showLogin.includes(copy.google), false);
 });
 
-test("login shows the initial password and directs users to change it", () => {
+test("login guides the first password change without revealing the password", () => {
+  // 예전에는 로그인 화면에 최초 비밀번호(1234)를 그대로 적어 두었다. 프로그램만
+  // 열면 누구나 볼 수 있어, 아직 한 번도 로그인하지 않은 계정을 가로챌 수 있었다.
+  // 비밀번호 변경 강제는 이미 app.js 의 mustChangePassword 흐름이 하고 있으므로
+  // 안내 문구에서 값은 빼고 '관리자에게 확인' 으로 돌린다.
   const temporaryPassword = html.match(/<div\b[^>]*\bclass=["']temporary-password["'][^>]*>([\s\S]*?)<\/div>/i);
-  assert.ok(temporaryPassword, "temporary password guidance must be visible on the login form");
+  assert.ok(temporaryPassword, "첫 비밀번호 안내는 로그인 화면에 남아 있어야 합니다");
   const visibleCopy = temporaryPassword[1].replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim();
-  assert.match(visibleCopy, /최초 비밀번호\s+1234/);
-  assert.match(visibleCopy, /로그인 후 새 비밀번호로 변경/);
+  assert.match(visibleCopy, /새 비밀번호/);
+  assert.match(visibleCopy, /관리자에게 확인/);
+  assert.doesNotMatch(html, /최초 비밀번호[^<]*\b1234\b/, "로그인 화면에 최초 비밀번호를 그대로 적으면 안 됩니다");
+});
+
+test("첫 로그인은 비밀번호를 바꾸기 전까지 앱으로 들어갈 수 없다", () => {
+  // 안내 문구를 지워도 안전한 근거. 이 흐름이 사라지면 알아채야 한다.
+  assert.match(appSource, /currentAuth\.user\.mustChangePassword\)\s*showPasswordChange\(currentAuth\)/);
+  assert.match(appSource, /if \(currentAuth\.user && currentAuth\.user\.mustChangePassword\) \{\s*\n\s*showPasswordChange\(currentAuth\);/);
 });
 
 test("email form submits the account typed by the user", () => {
