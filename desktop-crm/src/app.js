@@ -611,8 +611,12 @@
     const user = currentAuth.user;
     userPill.hidden = !user;
     if (user) {
-      document.getElementById("currentUserName").textContent = user.displayName || user.email || "사용자";
-      document.getElementById("currentUserEmail").textContent = user.email || "";
+      const displayName = user.displayName || user.email || "사용자";
+      const email = user.email || "";
+      document.getElementById("currentUserName").textContent = displayName;
+      document.getElementById("currentUserEmail").textContent = email;
+      // 이름이 없어 이메일이 이름 자리에 올라온 경우 아랫줄을 한 번 더 보여주지 않는다
+      userPill.classList.toggle("is-email-only", !!email && displayName === email);
     }
   }
 
