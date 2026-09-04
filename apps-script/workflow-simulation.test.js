@@ -104,10 +104,15 @@ const context = {
   String,
   Number,
   JSON,
+  // 오프라인 시뮬레이션 전용 값. 운영 계좌는 Apps Script 속성에서 읽는다.
   OWNER_PAYMENT_ACCOUNT: {
-    accountNumber: "123-456-789012",
+    accountNumber: "352-0000-0000-11",
     accountHolder: "브링케어"
   },
+  OWNER_PAYMENT_ACCOUNT_NUMBER_PROPERTY: "OWNER_PAYMENT_ACCOUNT_NUMBER",
+  OWNER_PAYMENT_ACCOUNT_HOLDER_PROPERTY: "OWNER_PAYMENT_ACCOUNT_HOLDER",
+  OWNER_PAYMENT_ACCOUNT_PLACEHOLDERS: ["123456789012"],
+  OWNER_PAYMENT_ACCOUNT_UNSET_MESSAGE: "입금 계좌가 설정되지 않았습니다.",
   readCaseFromFirebase_(caseId) {
     return clone(db[caseId] || null);
   },
@@ -151,6 +156,10 @@ const functions = [
   "ownerMmsWorkflowComplete_",
   "workflowPricedQuote_",
   "workflowStepState_",
+  "ownerPaymentAccountDigits_",
+  "validateOwnerPaymentAccount_",
+  "tryResolveOwnerPaymentAccount_",
+  "resolveOwnerPaymentAccount_",
   "submitOwnerDecisionLocked_",
   "confirmCasePaymentLocked_",
   "reopenCaseForAnotherQuote_",

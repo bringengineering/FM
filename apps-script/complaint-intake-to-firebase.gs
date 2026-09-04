@@ -45,10 +45,57 @@ const PAYMENT_NOTIFICATION_LEDGER_PREFIX = "PAYMENT_NOTIFICATION_LEDGER_";
 const PAYMENT_NOTIFICATION_CONFIRMED_BASELINE_PROPERTY = "PAYMENT_NOTIFICATION_CONFIRMED_BASELINE";
 const PAYMENT_DUE_ALERT_HOUR = 9;
 const PAYMENT_OVERDUE_ALERT_HOUR = 13;
-const OWNER_PAYMENT_ACCOUNT = {
-  accountNumber: "123-456-789012",
-  accountHolder: "브링케어"
-};
+// 입금 계좌는 소스에 넣지 않고 스크립트 속성에서 읽는다.
+// 설정되지 않았거나 예시값이면 건물주에게 계좌를 보여주지도, 저장하지도 않는다(fail-closed).
+const OWNER_PAYMENT_ACCOUNT_NUMBER_PROPERTY = "OWNER_PAYMENT_ACCOUNT_NUMBER";
+const OWNER_PAYMENT_ACCOUNT_HOLDER_PROPERTY = "OWNER_PAYMENT_ACCOUNT_HOLDER";
+const OWNER_PAYMENT_ACCOUNT_PLACEHOLDERS = ["123456789012"];
+const OWNER_PAYMENT_ACCOUNT_UNSET_MESSAGE =
+  "입금 계좌가 설정되지 않았습니다. Apps Script 속성에 " +
+  "OWNER_PAYMENT_ACCOUNT_NUMBER / OWNER_PAYMENT_ACCOUNT_HOLDER 를 등록해 주세요.";
+
+function ownerPaymentAccountDigits_(value) {
+  return String(value == null ? "" : value).replace(/[^0-9]/g, "");
+}
+
+function validateOwnerPaymentAccount_(account) {
+  const accountNumber = String((account && account.accountNumber) || "").trim();
+  const accountHolder = String((account && account.accountHolder) || "").trim();
+  if (!accountNumber || !accountHolder) return null;
+  if (!/^[0-9][0-9-]{6,}$/.test(accountNumber)) return null;
+  const digits = ownerPaymentAccountDigits_(accountNumber);
+  if (digits.length < 8) return null;
+  for (let i = 0; i < OWNER_PAYMENT_ACCOUNT_PLACEHOLDERS.length; i++) {
+    if (digits === OWNER_PAYMENT_ACCOUNT_PLACEHOLDERS[i]) return null;
+  }
+  return { accountNumber: accountNumber, accountHolder: accountHolder };
+}
+
+/** 설정된 입금 계좌를 돌려준다. 없거나 예시값이면 null. (화면 표시용) */
+function tryResolveOwnerPaymentAccount_() {
+  if (typeof PropertiesService !== "undefined" && PropertiesService && PropertiesService.getScriptProperties) {
+    const props = PropertiesService.getScriptProperties();
+    return validateOwnerPaymentAccount_({
+      accountNumber: props.getProperty(OWNER_PAYMENT_ACCOUNT_NUMBER_PROPERTY),
+      accountHolder: props.getProperty(OWNER_PAYMENT_ACCOUNT_HOLDER_PROPERTY)
+    });
+  }
+  // 오프라인 테스트 하네스에서는 주입된 값을 그대로 쓴다(운영 경로에는 해당 없음).
+  if (typeof OWNER_PAYMENT_ACCOUNT !== "undefined" && OWNER_PAYMENT_ACCOUNT) {
+    return {
+      accountNumber: String(OWNER_PAYMENT_ACCOUNT.accountNumber || ""),
+      accountHolder: String(OWNER_PAYMENT_ACCOUNT.accountHolder || "")
+    };
+  }
+  return null;
+}
+
+/** 설정된 입금 계좌를 돌려준다. 없으면 예외를 던진다. (저장·발송용) */
+function resolveOwnerPaymentAccount_() {
+  const account = tryResolveOwnerPaymentAccount_();
+  if (!account) throw new Error(OWNER_PAYMENT_ACCOUNT_UNSET_MESSAGE);
+  return account;
+}
 
 const OUTPUT_HEADERS = [
   "접수번호",
@@ -1431,14 +1478,27 @@ function ownerDecisionStatusText_(status) {
 }
 
 function ownerDecisionPaymentHtml_(amount) {
+  const account = tryResolveOwnerPaymentAccount_();
+  if (!account) {
+    // 계좌가 설정되지 않았으면 임의의 값을 보여주지 않는다.
+    return [
+      "<section class=\"payment\">",
+      "<div class=\"payment-head\"><span>입금 계좌</span><b>승인 완료</b></div>",
+      "<p>입금 계좌는 담당자가 확인 후 별도로 안내드립니다.</p>",
+      "<dl><div><dt>입금금액</dt><dd>" +
+        ownerDecisionEscapeHtml_(ownerRecommendationAmountText_(amount)) +
+        "</dd></div></dl>",
+      "</section>"
+    ].join("");
+  }
   return [
     "<section class=\"payment\">",
     "<div class=\"payment-head\"><span>입금 계좌</span><b>승인 완료</b></div>",
     "<p>아래 계좌로 입금을 진행해 주세요.</p>",
     "<dl><div><dt>계좌번호</dt><dd id=\"accountNumber\">" +
-      ownerDecisionEscapeHtml_(OWNER_PAYMENT_ACCOUNT.accountNumber) +
+      ownerDecisionEscapeHtml_(account.accountNumber) +
       "</dd></div><div><dt>예금주</dt><dd>" +
-      ownerDecisionEscapeHtml_(OWNER_PAYMENT_ACCOUNT.accountHolder) +
+      ownerDecisionEscapeHtml_(account.accountHolder) +
       "</dd></div><div><dt>입금금액</dt><dd>" +
       ownerDecisionEscapeHtml_(ownerRecommendationAmountText_(amount)) +
       "</dd></div></dl>",
@@ -1478,7 +1538,8 @@ function renderOwnerDecisionPage_(params) {
   const caseIdJs = JSON.stringify(caseId).replace(/</g, "\\u003c");
   const tokenJs = JSON.stringify(token).replace(/</g, "\\u003c");
   const paymentHtmlJs = JSON.stringify(ownerDecisionPaymentHtml_(amounts.totalAmount)).replace(/</g, "\\u003c");
-  const accountNumberJs = JSON.stringify(OWNER_PAYMENT_ACCOUNT.accountNumber).replace(/</g, "\\u003c");
+  const resolvedAccountForPage = tryResolveOwnerPaymentAccount_();
+  const accountNumberJs = JSON.stringify(resolvedAccountForPage ? resolvedAccountForPage.accountNumber : "").replace(/</g, "\\u003c");
   const html = [
     "<!doctype html><html lang=\"ko\"><head><meta charset=\"utf-8\">",
     "<meta name=\"viewport\" content=\"width=device-width,initial-scale=1,viewport-fit=cover\">",
@@ -1549,12 +1610,14 @@ function submitOwnerDecisionLocked_(caseId, token, decision) {
         ok: true,
         skipped: true,
         status: current.status,
-        payment: current.status === "approved_payment" ? Object.assign({}, OWNER_PAYMENT_ACCOUNT) : null
+        payment: current.status === "approved_payment" ? tryResolveOwnerPaymentAccount_() : null
       }
       : { ok: false, message: "이미 다른 응답이 접수된 링크입니다." };
   }
 
   const now = new Date().toISOString();
+  // 입금 안내가 나가는 승인 건은 계좌가 확인되기 전에는 아무것도 저장하지 않는다.
+  const ownerPaymentAccount = decision === "approve_payment" ? resolveOwnerPaymentAccount_() : null;
   const resolved = Object.assign({}, current, {
     status: decision === "approve_payment" ? "approved_payment" : "request_other_quote",
     statusText: decision === "approve_payment" ? "승인하고 입금 진행" : "다른 견적 요청",
@@ -1578,7 +1641,7 @@ function submitOwnerDecisionLocked_(caseId, token, decision) {
     patchCaseToFirebase_(caseId, {
       automationState: automationState,
       paymentStatus: "awaiting_payment",
-      paymentAccount: Object.assign({}, OWNER_PAYMENT_ACCOUNT),
+      paymentAccount: Object.assign({}, ownerPaymentAccount),
       paymentExpectedAmount: Number(current.bringTotalAmount || 0),
       log: log,
       updatedAt: now
@@ -1587,7 +1650,7 @@ function submitOwnerDecisionLocked_(caseId, token, decision) {
       ok: true,
       status: resolved.status,
       nextStep: "c10",
-      payment: Object.assign({}, OWNER_PAYMENT_ACCOUNT)
+      payment: Object.assign({}, ownerPaymentAccount)
     };
   }
 
@@ -1639,12 +1702,17 @@ function confirmCasePaymentLocked_(caseId, adminEmail, adminUid) {
 
   const priced = workflowPricedQuote_(casePayload);
   const amounts = priced ? ownerRecommendationAmounts_(priced.quote) : { totalAmount: Number(casePayload.paymentExpectedAmount || ownerDecision.bringTotalAmount || 0) };
+  const storedAccount = casePayload.paymentAccount || {};
+  const confirmAccount =
+    String(storedAccount.accountNumber || "").trim() && String(storedAccount.accountHolder || "").trim()
+      ? { accountNumber: String(storedAccount.accountNumber), accountHolder: String(storedAccount.accountHolder) }
+      : resolveOwnerPaymentAccount_();
   const confirmation = {
     status: "confirmed",
     statusText: "관리자 입금 확인 완료",
     amount: Number(amounts.totalAmount || 0),
-    accountNumber: String(casePayload.paymentAccount && casePayload.paymentAccount.accountNumber || OWNER_PAYMENT_ACCOUNT.accountNumber),
-    accountHolder: String(casePayload.paymentAccount && casePayload.paymentAccount.accountHolder || OWNER_PAYMENT_ACCOUNT.accountHolder),
+    accountNumber: confirmAccount.accountNumber,
+    accountHolder: confirmAccount.accountHolder,
     confirmedAt: now,
     confirmedBy: String(adminEmail || adminUid || "관리자")
   };
