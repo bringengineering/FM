@@ -133,6 +133,11 @@
   .legend .ld{ width:13px; height:13px; border-radius:50%; display:inline-block; }
   /* 노트 핸들 */
   .note{ cursor:pointer; }
+  /* 손가락 입력에서 원의 ×·≡·색·연결 버튼이 너무 작아 눌리지 않던 문제.
+     보이는 모양은 그대로 두고, 투명한 히트 영역만 넓힌다.
+     마우스(fine) 환경에서는 아예 렌더링되지 않아 동작이 전혀 바뀌지 않는다. */
+  .hitpad{ display:none; fill:transparent !important; stroke:none !important; pointer-events:all; }
+  @media (pointer: coarse){ .hitpad{ display:block; } }
   /* 상세 내용 — 전체 창 모드 (들어가기) */
   .workspace{ position:fixed; inset:0; background:#fff; z-index:40; display:none; flex-direction:column; }
   .workspace.open{ display:flex; }
@@ -904,6 +909,8 @@ let boardsRef = null, presenceRoot = null, presenceMeRef = null, connectedAttach
 
 const PALETTE  = ["#4b7bec","#26de81","#f7b731","#fa8231","#a55eea","#eb3b5a","#2bcbba","#3867d6"];
 const COLORSET = ["#4b7bec","#3867d6","#45aaf2","#2d98da","#26de81","#20bf6b","#0fb9b1","#2bcbba","#f7b731","#fed330","#fa8231","#fd9644","#eb3b5a","#fc5c65","#e84393","#a55eea","#8854d0","#778ca3","#4b6584","#1f2733"];
+/* 손가락 입력에서 조작 핸들의 히트 영역 반지름(px). 보이는 크기는 그대로다. */
+const TOUCH_HIT_R = 16;
 const SHAPES = [["circle","● 원"],["rect","▭ 사각"],["pill","⬭ 캡슐"],["diamond","◆ 마름모"],["ellipse","⬬ 타원"]];
 const LS_KEY   = "fm_workflow_graph_v1";
 const hasFirebaseValue = v => !!v && !String(v).includes("여기에");
@@ -1728,7 +1735,20 @@ function wrapLabel(s){
 }
 
 /* ===== 렌더 ===== */
-function render(){
+/* 드래그 중 한 노드의 위치만 반영한다. 성공하면 true. */
+function moveNodeFast(n){
+  if (!n) return false;
+  const g = nodesG.querySelector(`g.node[data-id="${cssEscape(n.id)}"]`);
+  if (!g) return false;
+  g.setAttribute("transform", `translate(${n.x},${n.y})`);
+  renderEdges();
+  return true;
+}
+const cssEscape = v => (window.CSS && CSS.escape) ? CSS.escape(String(v)) : String(v).replace(/["\\]/g, "\\$&");
+
+/* 연결선만 다시 그린다. 노드 마크업은 위치와 무관하고(위치는 transform 으로만 반영)
+   드래그 중에는 이 함수와 transform 갱신만으로 충분하다. */
+function renderEdges(){
   let e = "";
   Object.values(nodes).forEach(n => {
     if (!n.parent || !nodes[n.parent]) return;
@@ -1752,6 +1772,10 @@ function render(){
     e += `<path class="link" marker-end="url(#arrow)" d="${d}"/>`;   // 화살표 머리 1개
   });
   edgesG.innerHTML = e;
+}
+
+function render(){
+  renderEdges();
 
   let h = "";
   Object.values(nodes).forEach(n => {
@@ -1788,13 +1812,17 @@ function render(){
             ${bdg}
             ${body}
             <text class="lbl" text-anchor="middle" font-size="${fs}">${tspans}</text>
+            <circle class="port hitpad" cx="0" cy="${halfH}" r="${TOUCH_HIT_R}"></circle>
             <circle class="port" cx="0" cy="${halfH}" r="9" stroke="#fff" stroke-width="2"><title>끌어서 연결</title></circle>
+            <circle class="swatch hitpad" cx="${-offX}" cy="${-offY}" r="${TOUCH_HIT_R}"></circle>
             <circle class="swatch" cx="${-offX}" cy="${-offY}" r="11" fill="${color}" stroke="#fff" stroke-width="2"><title>색·크기·모양</title></circle>
             <g class="del" transform="translate(${offX},${-offY})">
+              <circle class="hitpad" r="${TOUCH_HIT_R}"></circle>
               <circle r="11" fill="#fff" stroke="#e03131" stroke-width="1.5"></circle>
               <text text-anchor="middle" dy="4.5" font-size="14" fill="#e03131" font-weight="700">×</text>
             </g>
             <g class="note" transform="translate(${offX},${offY})">
+              <circle class="hitpad" r="${TOUCH_HIT_R}"></circle>
               <circle r="11" fill="${hasDoc(n)?'#4b7bec':'#fff'}" stroke="#4b7bec" stroke-width="1.5"></circle>
               <text text-anchor="middle" dy="4" font-size="12" fill="${hasDoc(n)?'#fff':'#4b7bec'}">≡</text>
             </g>
@@ -2264,7 +2292,10 @@ svg.addEventListener("pointermove", e => {
     const n = nodes[drag.id]; if(!n) return;
     let nx = drag.ox + dx/zoom, ny = drag.oy + dy/zoom;
     if (e.shiftKey){ const s = snapPos(drag.id, nx, ny); nx = s[0]; ny = s[1]; } else clearGuides();
-    n.x = nx; n.y = ny; render();
+    n.x = nx; n.y = ny;
+    // 노드 전체를 다시 그리면 규모가 커질수록 급격히 느려진다(200개에서 프레임당 ~12ms).
+    // 움직인 노드의 transform 과 연결선만 갱신하고, 못 찾은 경우에만 전체 렌더로 물러난다.
+    if (!moveNodeFast(n)) render();
   } else if (pan){
     if (Math.hypot(e.clientX-pan.sx, e.clientY-pan.sy) > 4) pan.moved = true;
     panX = pan.px + (e.clientX-pan.sx); panY = pan.py + (e.clientY-pan.sy); setViewport();
@@ -6300,7 +6331,7 @@ document.getElementById("noticeBanner").addEventListener("click", openNoticePane
 /* ===== 업데이트 알림(What's New) — 새 버전 나오면 자동 팝업 ===== */
 const APP_VERSION = "5.42";
 const CHANGELOG = [
-  { v:"5.42", d:"2026-09-04", items:["저장이 실패하면 화면 위에 빨간 알림으로 바로 알려줍니다 (예전에는 조용히 실패)","연결이 끊기면 ‘아직 서버에 저장되지 않았습니다’를 함께 표시","업무 흐름·보드·케이스·입금 감사기록 저장 실패를 모두 감지","입금 계좌가 설정되지 않은 케이스는 예시 계좌 대신 ‘미설정’으로 표시하고 입금 확인을 막습니다"] },
+  { v:"5.42", d:"2026-09-04", items:["저장이 실패하면 화면 위에 빨간 알림으로 바로 알려줍니다 (예전에는 조용히 실패)","연결이 끊기면 ‘아직 서버에 저장되지 않았습니다’를 함께 표시","업무 흐름·보드·케이스·입금 감사기록 저장 실패를 모두 감지","입금 계좌가 설정되지 않은 케이스는 예시 계좌 대신 ‘미설정’으로 표시하고 입금 확인을 막습니다","원이 많은 보드에서 드래그가 훨씬 부드러워졌습니다 (200개 기준 약 17배)","폰에서 원의 ×·≡·색·연결 버튼이 잘 눌리도록 터치 영역을 넓혔습니다"] },
   { v:"5.41", d:"2026-08-07", items:["⑬ 작업 전·후 사진 분리 업로드 및 Drive 저장","⑬ 사진 비교 보기와 개별 목록 제거","⑭ B/A 보고서에 작업 사진 자동 참조"] },
   { v:"5.40", d:"2026-08-07", items:["브링 견적서 가산율을 10%에서 5%로 변경","최종 합계금액은 기존처럼 100원 단위 반올림","기존 견적은 브링 양식 재작성 시 5% 적용"] },
   { v:"5.39", d:"2026-07-30", items:["동일한 건물주 전화번호로 등록된 여러 건물의 납부예정·미입금·입금완료 알림을 한 건으로 통합"] },

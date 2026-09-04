@@ -1,0 +1,40 @@
+name: App Smoke Tests
+
+# index.html(업무 흐름 빌더) 브라우저 스모크 테스트.
+# 이 앱은 빌드 시스템이 없는 단일 파일이라 CI 가 유일한 회귀 방지선이다.
+
+on:
+  pull_request:
+    paths:
+      - "index.html"
+      - "data/**"
+      - "test/browser/**"
+      - ".github/workflows/app-smoke.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: app-smoke-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  smoke:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: test/browser/package-lock.json
+      - run: npm ci
+        working-directory: test/browser
+      - name: Install Chromium
+        run: npx playwright install --with-deps chromium
+        working-directory: test/browser
+      - run: npm test
+        working-directory: test/browser
