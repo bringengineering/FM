@@ -4,6 +4,7 @@
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
 <title>업무 흐름 빌더 (Flow Builder)</title>
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/variable/pretendardvariable.min.css">
 <style>
   :root{ --bg:#eef1f6; --panel:#fff; --ink:#1f2733; --ink-soft:#6b7686; --line:#c7d0dd; }
   *{ box-sizing:border-box; }
@@ -686,6 +687,148 @@
   .np-post .meta{ font-size:11px; color:#98a2b3; margin-bottom:4px; display:flex; justify-content:space-between; align-items:center; }
   .np-post .body2{ font-size:13px; color:#2a3445; white-space:pre-wrap; line-height:1.55; }
   .np-post .del{ border:none; background:none; color:#c92a2a; cursor:pointer; font-size:11px; }
+
+  /* =====================================================================
+     토스 스타일 UI 레이어
+     기존 규칙 뒤에 얹어 색·여백·모서리·타이포만 바꾼다. 구조·클래스는 그대로라
+     동작에는 영향이 없고, 이 블록만 지우면 원래 모습으로 되돌아간다.
+     ===================================================================== */
+  :root{
+    --bg:#F2F4F6;          /* 배경: 아주 연한 회색 */
+    --panel:#FFFFFF;
+    --ink:#191F28;         /* 본문: 거의 검정 */
+    --ink-soft:#8B95A1;    /* 보조 텍스트: 회색 */
+    --line:#E5E8EB;        /* 경계선: 아주 옅게 */
+    --primary:#3182F6;     /* 토스 블루 */
+    --primary-weak:#E8F3FF;
+    --fill:#F2F4F6;        /* 버튼 기본 채움 */
+    --fill-hover:#E8EBED;
+    --r-sm:10px; --r-md:14px; --r-lg:20px;
+    --shadow-sm:0 1px 3px rgba(0,0,0,.04);
+    --shadow-md:0 4px 16px rgba(0,0,0,.06);
+    --shadow-lg:0 12px 32px rgba(0,0,0,.10);
+  }
+  body{
+    font-family:"Pretendard Variable",Pretendard,"Apple SD Gothic Neo","Malgun Gothic","Noto Sans KR",system-ui,-apple-system,sans-serif;
+    letter-spacing:-0.3px;
+  }
+
+  /* 헤더 — 크고 또렷하게 */
+  header{ padding:20px 16px 4px; }
+  header h1{ font-size:22px; font-weight:800; letter-spacing:-0.7px; color:var(--ink); }
+
+  /* 상태 배지 — 테두리 없이 은은한 알약 */
+  .conn{ border:0; padding:6px 13px; font-size:12px; font-weight:600; border-radius:999px; }
+  .conn.local{ color:#B78A2B; background:#FFF6E0; }
+  .conn.on{ color:#0F9960; background:#E6F7EF; }
+  .conn.off{ color:#E0672C; background:#FFF0E6; }
+  .verbadge{ border:0 !important; background:var(--primary-weak) !important; color:var(--primary) !important;
+    font-weight:700 !important; border-radius:999px !important; padding:5px 11px !important; }
+
+  /* 버튼 — 테두리 대신 채움, 큼직한 터치 영역 */
+  .btn{
+    border:0; background:var(--fill); color:#4E5968;
+    padding:10px 15px; border-radius:var(--r-sm);
+    font-size:13.5px; font-weight:600; letter-spacing:-0.3px;
+    transition:background .15s, transform .06s;
+  }
+  .btn:hover{ background:var(--fill-hover); }
+  .btn:active{ transform:scale(.97); }
+  .btn.active, #linkBtn.active{ background:var(--primary); border:0; color:#fff; box-shadow:var(--shadow-sm); }
+  .toolbar{ gap:8px; padding:14px 16px 8px; }
+
+  /* 안내문 — 정보는 그대로 두되 시각적으로 뒤로 물린다 */
+  .help{ color:#B0B8C1; font-size:11.5px; line-height:1.9; padding:2px 16px 10px; }
+  .linkhint{ border:0; background:var(--primary-weak); color:#1B64DA; border-radius:var(--r-sm);
+    font-weight:600; padding:9px 12px; }
+
+  /* 보드 탭 — 선택된 것만 파란 알약 */
+  .tabs{ gap:4px; padding:6px 16px 10px; border-bottom:1px solid var(--line); }
+  .tab{ padding:7px 12px; border-radius:999px; font-size:13.5px; font-weight:600; color:var(--ink-soft); }
+  .tab:hover{ background:var(--fill); }
+  .tab.active{ background:var(--primary); color:#fff; font-weight:700; }
+  .tab.active .tx{ color:#fff; }
+  .tab.add{ color:var(--primary); border:0; background:var(--primary-weak); }
+
+  /* 카드·패널 — 둥글고 부드러운 그림자 */
+  #nodePop, #linkPop, #slashMenu, #addBox, #selBar{
+    border-radius:var(--r-md) !important; border:1px solid var(--line) !important;
+    box-shadow:var(--shadow-lg) !important;
+  }
+
+  /* 실패 알림 — 토스식 경고 카드 */
+  .data-alert{
+    border:0; background:#FFF0F0; color:#D93B3B;
+    border-radius:var(--r-md); padding:13px 16px; gap:12px;
+    box-shadow:var(--shadow-md); font-weight:500;
+  }
+  .data-alert b{ font-weight:800; }
+  .data-alert button{ border:0; background:#fff; color:#D93B3B; font-weight:700;
+    border-radius:8px; padding:6px 12px; }
+
+  /* 입력 요소 공통 */
+  input[type="text"], input[type="search"], input[type="number"], input[type="date"],
+  select, textarea{
+    border-radius:var(--r-sm) !important; border:1px solid var(--line) !important;
+    font-family:inherit; letter-spacing:-0.3px;
+  }
+  input:focus, select:focus, textarea:focus{
+    outline:0 !important; border-color:var(--primary) !important;
+    box-shadow:0 0 0 3px rgba(49,130,246,.14) !important;
+  }
+
+  /* 강조 버튼 (케이스 등) */
+  .btn-primary{ background:var(--primary); color:#fff; font-weight:700; }
+  .btn-primary:hover{ background:#1B64DA; }
+
+  /* 공지 배너 — 화면을 가로지르는 진한 띠 대신 둥근 카드 */
+  .notice-banner{
+    margin:10px 16px 2px; padding:14px 18px; border-radius:var(--r-md);
+    background:var(--primary-weak); color:#1B64DA;
+    box-shadow:none; gap:12px;
+  }
+  .notice-banner .nb-ti{ color:#4593FC; font-size:11.5px; font-weight:700; letter-spacing:0; }
+  .notice-banner .nb-txt{ color:#1B3A6B; font-size:14.5px; font-weight:700; }
+  .notice-banner .nb-more{ color:#4593FC; }
+  .notice-banner:hover{ filter:none; background:#DCEBFF; }
+
+  /* 범례 — 떠 있는 둥근 카드 */
+  .legend{ border:0 !important; border-radius:999px !important; background:#fff !important;
+    box-shadow:var(--shadow-md) !important; padding:9px 14px !important; font-weight:600; }
+
+  /* 손가락 입력에서는 버튼을 더 크게 */
+  @media (pointer: coarse){
+    .btn{ padding:12px 16px; font-size:14px; }
+    .tab{ padding:9px 14px; font-size:14px; }
+  }
+
+  /* ---- 좁은 화면(폰) ----
+     기존에는 툴바와 안내문이 화면을 거의 다 차지해 정작 작업 캔버스가
+     보이지 않았다. 도구는 한 줄로 밀어서 넘기고, 캔버스에 자리를 준다. */
+  @media (max-width:640px){
+    header{ padding:12px 14px 2px; }
+    header h1{ font-size:18px; }
+
+    /* 단축키 안내는 키보드가 없는 폰에서 의미가 없다 */
+    .help{ display:none; }
+
+    /* 도구모음·탭은 줄바꿈 대신 가로 스크롤 한 줄로 */
+    .toolbar, .tabs{
+      flex-wrap:nowrap; overflow-x:auto; justify-content:flex-start;
+      scrollbar-width:none; -webkit-overflow-scrolling:touch;
+      padding-left:14px; padding-right:14px;
+    }
+    .toolbar::-webkit-scrollbar, .tabs::-webkit-scrollbar{ display:none; }
+    .toolbar{ padding-top:10px; padding-bottom:8px; gap:7px; }
+    .btn, .tab{ flex:0 0 auto; white-space:nowrap; }
+    .btn{ padding:11px 14px; font-size:13.5px; }
+
+    .notice-banner{ margin:8px 14px 0; padding:12px 14px; }
+    .notice-banner .nb-txt{ font-size:13.5px; }
+
+    .legend{ left:10px; bottom:10px; padding:7px 12px !important; font-size:12px; }
+  }
+
 </style>
 </head>
 <body class="editing">
@@ -717,7 +860,7 @@
       <button class="btn" id="fitBtn">⊡ 화면 맞춤</button>
       <button class="btn" id="exportBtn">💾 내보내기</button>
       <button class="btn" id="resetBtn">↺ 초기화</button>
-      <button class="btn" id="caseBtn" style="background:#1b335f;color:#fff;border-color:#1b335f;font-weight:700">🚀 케이스</button>
+      <button class="btn btn-primary" id="caseBtn">🚀 케이스</button>
       <button class="btn" id="paymentBtn" style="border-color:#0c8478;color:#0c6f66;font-weight:700">💰 입금확인 캘린더<span class="payment-alert-badge" id="paymentAlertBadge"></span></button>
       <button class="btn" id="noticeBtn">📢 비전·공지</button>
       <a class="btn" href="./wonju-map.html" target="_blank" rel="noopener">📍 건물지도</a>
@@ -907,7 +1050,7 @@ let curBoard = "main";
 let boardOrder = [];                    // 탭 표시 순서 (workflow/_order)
 let boardsRef = null, presenceRoot = null, presenceMeRef = null, connectedAttached = false, justOpened = false;
 
-const PALETTE  = ["#4b7bec","#26de81","#f7b731","#fa8231","#a55eea","#eb3b5a","#2bcbba","#3867d6"];
+const PALETTE  = ["#3182F6","#00C471","#FFB020","#FF7847","#9B6BFF","#F04452","#00B8B8","#1B64DA"];
 const COLORSET = ["#4b7bec","#3867d6","#45aaf2","#2d98da","#26de81","#20bf6b","#0fb9b1","#2bcbba","#f7b731","#fed330","#fa8231","#fd9644","#eb3b5a","#fc5c65","#e84393","#a55eea","#8854d0","#778ca3","#4b6584","#1f2733"];
 /* 손가락 입력에서 조작 핸들의 히트 영역 반지름(px). 보이는 크기는 그대로다. */
 const TOUCH_HIT_R = 16;
@@ -6329,8 +6472,9 @@ document.getElementById("noticeBtn").addEventListener("click", openNoticePanel);
 document.getElementById("noticeBanner").addEventListener("click", openNoticePanel);
 
 /* ===== 업데이트 알림(What's New) — 새 버전 나오면 자동 팝업 ===== */
-const APP_VERSION = "5.42";
+const APP_VERSION = "5.43";
 const CHANGELOG = [
+  { v:"5.43", d:"2026-09-04", items:["화면을 전체적으로 산뜻하게 새단장했습니다 (배경·버튼·탭·카드)","폰에서 도구모음이 한 줄로 정리되고 작업 화면이 훨씬 넓어졌습니다","폰에서는 키보드 단축키 안내를 감춰 화면을 아꼈습니다","공지 배너와 범례를 둥근 카드로 정리했습니다"] },
   { v:"5.42", d:"2026-09-04", items:["저장이 실패하면 화면 위에 빨간 알림으로 바로 알려줍니다 (예전에는 조용히 실패)","연결이 끊기면 ‘아직 서버에 저장되지 않았습니다’를 함께 표시","업무 흐름·보드·케이스·입금 감사기록 저장 실패를 모두 감지","입금 계좌가 설정되지 않은 케이스는 예시 계좌 대신 ‘미설정’으로 표시하고 입금 확인을 막습니다","원이 많은 보드에서 드래그가 훨씬 부드러워졌습니다 (200개 기준 약 17배)","폰에서 원의 ×·≡·색·연결 버튼이 잘 눌리도록 터치 영역을 넓혔습니다"] },
   { v:"5.41", d:"2026-08-07", items:["⑬ 작업 전·후 사진 분리 업로드 및 Drive 저장","⑬ 사진 비교 보기와 개별 목록 제거","⑭ B/A 보고서에 작업 사진 자동 참조"] },
   { v:"5.40", d:"2026-08-07", items:["브링 견적서 가산율을 10%에서 5%로 변경","최종 합계금액은 기존처럼 100원 단위 반올림","기존 견적은 브링 양식 재작성 시 5% 적용"] },
