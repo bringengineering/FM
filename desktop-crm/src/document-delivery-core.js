@@ -79,5 +79,19 @@
     }), { now: options.now });
   }
 
-  return Object.freeze({ DOCUMENT_TYPES, CHANNELS, STATUSES, createDraft, composeMessage, transition, createSmsFallback });
+  function normalizeHistoryRecord(value) {
+    const source = value || {};
+    const keys = ["id", "documentId", "documentType", "documentName", "documentVersion", "customerId", "customerName", "maskedPhone", "channel", "templateId", "templateVersion", "requestedBy", "requestedAt", "providerMessageId", "status", "failureCode", "fallbackParentId", "deliveredAt", "failedAt", "openedAt", "expiredAt", "revokedAt"];
+    const result = {};
+    for (const key of keys) {
+      const normalized = clean(source[key], key === "documentName" ? 160 : 120);
+      if (normalized) result[key] = normalized;
+    }
+    if (!DOCUMENT_TYPES.includes(result.documentType)) result.documentType = "quote";
+    if (!CHANNELS.includes(result.channel)) result.channel = "sms";
+    if (!STATUSES.includes(result.status)) result.status = "failed";
+    return Object.freeze(result);
+  }
+
+  return Object.freeze({ DOCUMENT_TYPES, CHANNELS, STATUSES, createDraft, composeMessage, transition, createSmsFallback, normalizeHistoryRecord });
 });

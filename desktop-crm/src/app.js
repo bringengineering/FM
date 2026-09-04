@@ -5567,6 +5567,15 @@
   document.addEventListener("click", async event => {
     const messageMode = event.target.closest("[data-message-mode]");
     if (messageMode) { selectedMessageMode = messageMode.dataset.messageMode === "documents" ? "documents" : "messages"; renderCustomerMessages(); return; }
+    const documentFallback = event.target.closest("[data-document-sms-fallback]");
+    if (documentFallback) {
+      const previous = customerMessageDeliveries().find(item => String(item.id || item.requestId) === documentFallback.dataset.documentSmsFallback);
+      if (!previous || previous.channel !== "kakao" || previous.status !== "failed") return showToast("SMS로 다시 보낼 발송 기록을 찾지 못했습니다.", "error");
+      if (!documentDeliveryCapabilities.sms) return showToast("SMS 중계 서버 연결이 필요합니다.", "error");
+      if (!await requestConfirmation({ title: "SMS 발송을 준비할까요?", description: "실패한 카카오 문서를 SMS로 다시 보냅니다.", target: previous.customerName || previous.customerId || "고객", confirmLabel: "SMS 발송 준비" })) return;
+      selectedMessageChannel = "sms"; selectedDocumentId = previous.documentId || ""; selectedDocumentName = previous.documentName || "견적서"; selectedMessageCustomerId = previous.customerId || selectedMessageCustomerId; renderCustomerMessages();
+      return;
+    }
     const messageCustomerOpen = event.target.closest("[data-message-customer-open]");
     if (messageCustomerOpen) {
       selectedMessageCustomerId = messageCustomerOpen.dataset.messageCustomerOpen;
