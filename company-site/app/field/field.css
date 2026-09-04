@@ -1,13 +1,13 @@
 :root {
-  --field-crm-background: #f3f8fc;
+  --field-crm-background: #F2F4F6;
   --field-crm-panel: #ffffff;
-  --field-crm-text: #17364d;
-  --field-crm-muted: #7890a1;
-  --field-crm-line: #dceaf3;
-  --field-crm-primary: #52ace3;
-  --field-crm-success: #48b995;
-  --field-crm-warning: #e8b855;
-  --field-crm-danger: #e96f7a;
+  --field-crm-text: #191F28;
+  --field-crm-muted: #8B95A1;
+  --field-crm-line: #E5E8EB;
+  --field-crm-primary: #3182F6;
+  --field-crm-success: #00C471;
+  --field-crm-warning: #FFB020;
+  --field-crm-danger: #F04452;
   --field-crm-radius: 16px;
   --field-crm-shadow: 0 16px 44px rgba(61,119,153,.12);
 }

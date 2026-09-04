@@ -593,3 +593,332 @@ h1,h2,h3,h4,.today-brief h2,.section-head h2{ word-break:keep-all; }
 .office-punch-button:disabled{
   opacity:1; background:rgba(255,255,255,.7); color:var(--muted); cursor:not-allowed;
 }
+
+/* =====================================================================
+   입체감 층 — 버튼·카드·입력창에 깊이를 준다
+   평평한 색만 있던 화면에 그림자·미세한 결·눌리는 반응을 얹는다.
+   ===================================================================== */
+
+:root{
+  /* 떠 있는 정도 3단계 */
+  --lift-1:0 1px 2px rgba(16,24,40,.06), 0 1px 3px rgba(16,24,40,.08);
+  --lift-2:0 2px 4px rgba(16,24,40,.05), 0 4px 10px rgba(16,24,40,.08);
+  --lift-3:0 4px 8px rgba(16,24,40,.05), 0 12px 24px rgba(16,24,40,.10);
+  /* 파란 버튼이 자기 색 그림자를 드리우게 */
+  --lift-blue:0 1px 2px rgba(21,84,180,.24), 0 4px 12px rgba(49,130,246,.34);
+  --lift-blue-hover:0 2px 4px rgba(21,84,180,.26), 0 8px 20px rgba(49,130,246,.42);
+  /* 위쪽 안쪽 하이라이트 — 빛을 위에서 받는 느낌 */
+  --sheen:inset 0 1px 0 rgba(255,255,255,.55);
+  --sheen-strong:inset 0 1px 0 rgba(255,255,255,.28);
+}
+
+/* ---- 눌리는 버튼 ---- */
+button{ transition:transform .12s ease, box-shadow .16s ease, background .16s ease; }
+button:active:not(:disabled){ transform:translateY(1px); }
+
+/* 주요 버튼: 위가 밝은 파랑 → 아래가 짙은 파랑 */
+.primary-button,.email-login-button,.message-composer button,
+.message-composer .message-send-button,.office-punch-button:not(.out){
+  background-image:linear-gradient(180deg, #4A90F7 0%, var(--blue) 52%, #2A76E8 100%);
+  box-shadow:var(--lift-blue), var(--sheen-strong);
+  border:0;
+}
+.primary-button:hover:not(:disabled),.email-login-button:hover:not(:disabled),
+.message-composer button:hover:not(:disabled),.office-punch-button:not(.out):hover:not(:disabled){
+  background-image:linear-gradient(180deg, #5899F8 0%, #3585F7 52%, #2E7BEB 100%);
+  box-shadow:var(--lift-blue-hover), var(--sheen-strong);
+}
+.primary-button:active:not(:disabled),.email-login-button:active:not(:disabled),
+.office-punch-button:not(.out):active:not(:disabled){
+  background-image:linear-gradient(180deg, #2A76E8 0%, #2A76E8 100%);
+  box-shadow:inset 0 2px 5px rgba(12,58,130,.35);
+}
+
+/* 보조 버튼: 흰 바탕 + 얇은 테두리 + 살짝 떠 있음 */
+.secondary-button,.mini-button,.help-button,.help-launch,.workflow-launch,
+.update-button,.quote-card-edit,.record-delete-button,.attendance-week-toolbar button,
+.office-punch-button.out,.filter-chip:not(.active){
+  background-image:linear-gradient(180deg,#fff 0%,#F7F8FA 100%);
+  border:1px solid #DFE3E8;
+  box-shadow:var(--lift-1), var(--sheen);
+}
+.secondary-button:hover:not(:disabled),.mini-button:hover:not(:disabled),
+.help-button:hover,.help-launch:hover,.workflow-launch:hover,.update-button:hover,
+.quote-card-edit:hover,.attendance-week-toolbar button:hover,
+.office-punch-button.out:hover:not(:disabled),.filter-chip:not(.active):hover{
+  background-image:linear-gradient(180deg,#fff 0%,#F1F3F5 100%);
+  border-color:#D0D6DD;
+  box-shadow:var(--lift-2), var(--sheen);
+}
+.secondary-button:active:not(:disabled),.mini-button:active:not(:disabled),
+.filter-chip:not(.active):active{
+  box-shadow:inset 0 2px 4px rgba(16,24,40,.10);
+  background-image:linear-gradient(180deg,#EEF0F3 0%,#F5F6F8 100%);
+}
+
+/* 선택된 칩 */
+.filter-chip.active,.sales-stage-button.active{
+  background-image:linear-gradient(180deg, #4A90F7 0%, var(--blue) 100%);
+  box-shadow:var(--lift-blue), var(--sheen-strong);
+}
+
+/* ---- 카드·패널: 한 겹 더 떠 있게 ---- */
+.kpi-card,.security-kpi,.partner-quote-card,.partner-vendor-card,
+.office-summary-card,.office-summary-card.messenger,.setting-card,
+.attendance-clock-card,.workspace-folder-card,.data-table-wrap,
+.today-brief,.detail-drawer,.modal-card,.confirmation-card{
+  box-shadow:var(--lift-2);
+  border:1px solid #E8EBEF;
+}
+.kpi-card:hover,.partner-quote-card:hover,.partner-vendor-card:hover,
+.office-summary-card:hover,.workspace-folder-card:hover{
+  box-shadow:var(--lift-3);
+  border-color:#DDE1E6;
+  transform:translateY(-1px);
+}
+.kpi-card,.partner-quote-card,.partner-vendor-card,
+.office-summary-card,.workspace-folder-card{ transition:transform .16s ease, box-shadow .16s ease, border-color .16s ease; }
+
+/* 떠 있는 것들은 더 높이 */
+.modal-card,.detail-drawer,.confirmation-card{ box-shadow:var(--lift-3); }
+
+/* ---- 입력창: 살짝 파인 느낌 ---- */
+input[type="text"],input[type="email"],input[type="password"],input[type="search"],
+input[type="number"],input[type="date"],input[type="tel"],select,textarea{
+  box-shadow:inset 0 1px 2px rgba(16,24,40,.06);
+  border-color:#DFE3E8;
+}
+input:focus,select:focus,textarea:focus{
+  box-shadow:inset 0 1px 2px rgba(16,24,40,.05), 0 0 0 3px rgba(49,130,246,.16);
+}
+.global-search,.partner-vendor-list-search,.customer-management-list-search,
+.messenger-people label,.field-operator-control{
+  box-shadow:inset 0 1px 2px rgba(16,24,40,.05);
+  border:1px solid #DFE3E8;
+}
+.global-search:focus-within,.partner-vendor-list-search:focus-within,
+.messenger-people label:focus-within{
+  border-color:var(--blue);
+  box-shadow:inset 0 1px 2px rgba(16,24,40,.04), 0 0 0 3px rgba(49,130,246,.16);
+}
+
+/* ---- 사이드바 선택 항목 ---- */
+.nav-item.active{
+  box-shadow:0 1px 2px rgba(49,130,246,.10), inset 0 1px 0 rgba(255,255,255,.7);
+}
+.nav-item em{ box-shadow:inset 0 1px 2px rgba(16,24,40,.05); }
+
+/* ---- 상단바가 본문 위에 얹혀 보이도록 ---- */
+.topbar{ box-shadow:0 1px 3px rgba(16,24,40,.05); position:relative; z-index:2; }
+.sidebar{ box-shadow:1px 0 3px rgba(16,24,40,.04); position:relative; z-index:1; }
+
+/* ---- 표 ---- */
+.data-table thead th{ box-shadow:inset 0 -1px 0 var(--line); }
+.data-table tbody tr{ transition:background .12s ease; }
+
+/* ---- 배지도 아주 살짝 ---- */
+.contract-status,.relationship-state,.sales-state-label,.industry-badge,
+.priority-badge,.filter-chip{ box-shadow:var(--sheen); }
+
+/* ---- 더 또렷한 입체감 ----
+   버튼 아래에 단단한 모서리를 깔아 실제로 두께가 있는 것처럼 보이게 하고,
+   누르면 그 두께만큼 내려앉는다. */
+.primary-button,.email-login-button,.message-composer button,
+.message-composer .message-send-button,.office-punch-button:not(.out),
+.filter-chip.active,.sales-stage-button.active{
+  box-shadow:
+    0 3px 0 #1F63CE,
+    0 5px 10px rgba(21,84,180,.30),
+    0 10px 22px rgba(49,130,246,.26),
+    var(--sheen-strong);
+}
+.primary-button:hover:not(:disabled),.email-login-button:hover:not(:disabled),
+.message-composer button:hover:not(:disabled),.office-punch-button:not(.out):hover:not(:disabled){
+  transform:translateY(-1px);
+  box-shadow:
+    0 4px 0 #1F63CE,
+    0 7px 14px rgba(21,84,180,.32),
+    0 14px 28px rgba(49,130,246,.30),
+    var(--sheen-strong);
+}
+.primary-button:active:not(:disabled),.email-login-button:active:not(:disabled),
+.message-composer button:active:not(:disabled),.office-punch-button:not(.out):active:not(:disabled){
+  transform:translateY(2px);
+  box-shadow:
+    0 1px 0 #1F63CE,
+    0 2px 4px rgba(21,84,180,.28),
+    inset 0 2px 5px rgba(12,58,130,.30);
+}
+
+.secondary-button,.mini-button,.help-button,.help-launch,.workflow-launch,
+.update-button,.quote-card-edit,.attendance-week-toolbar button,
+.office-punch-button.out,.filter-chip:not(.active){
+  box-shadow:
+    0 2px 0 #DBE0E6,
+    0 3px 6px rgba(16,24,40,.07),
+    0 8px 16px rgba(16,24,40,.06),
+    var(--sheen);
+}
+.secondary-button:hover:not(:disabled),.mini-button:hover:not(:disabled),
+.help-button:hover,.help-launch:hover,.workflow-launch:hover,.update-button:hover,
+.quote-card-edit:hover,.attendance-week-toolbar button:hover,
+.office-punch-button.out:hover:not(:disabled),.filter-chip:not(.active):hover{
+  transform:translateY(-1px);
+  box-shadow:
+    0 3px 0 #D3D9E0,
+    0 5px 10px rgba(16,24,40,.09),
+    0 12px 22px rgba(16,24,40,.07),
+    var(--sheen);
+}
+.secondary-button:active:not(:disabled),.mini-button:active:not(:disabled),
+.help-button:active,.filter-chip:not(.active):active,
+.office-punch-button.out:active:not(:disabled){
+  transform:translateY(1px);
+  box-shadow:
+    0 0 0 #DBE0E6,
+    inset 0 2px 4px rgba(16,24,40,.12);
+}
+
+/* 카드도 한 단계 더 띄운다 */
+.kpi-card,.security-kpi,.partner-quote-card,.partner-vendor-card,
+.office-summary-card,.office-summary-card.messenger,.setting-card,
+.attendance-clock-card,.workspace-folder-card,.data-table-wrap,.today-brief{
+  box-shadow:
+    0 1px 2px rgba(16,24,40,.04),
+    0 4px 8px rgba(16,24,40,.05),
+    0 12px 28px rgba(16,24,40,.07);
+}
+.kpi-card:hover,.partner-quote-card:hover,.partner-vendor-card:hover,
+.office-summary-card:hover,.workspace-folder-card:hover{
+  transform:translateY(-3px);
+  box-shadow:
+    0 2px 4px rgba(16,24,40,.05),
+    0 8px 16px rgba(16,24,40,.07),
+    0 22px 44px rgba(16,24,40,.11);
+}
+.modal-card,.detail-drawer,.confirmation-card{
+  box-shadow:
+    0 4px 10px rgba(16,24,40,.08),
+    0 16px 32px rgba(16,24,40,.12),
+    0 40px 80px rgba(16,24,40,.16);
+}
+
+/* KPI 카드 왼쪽 강조 막대에도 두께감 */
+.kpi-card::before{ box-shadow:1px 0 3px rgba(16,24,40,.10); }
+
+/* 사이드바 선택 항목 */
+.nav-item.active{
+  box-shadow:
+    0 1px 0 rgba(49,130,246,.16),
+    0 2px 6px rgba(49,130,246,.14),
+    inset 0 1px 0 rgba(255,255,255,.8);
+}
+
+/* =====================================================================
+   빠진 화면이 없도록 — 클래스 이름이 아니라 요소로 잡는다
+   화면마다 버튼 클래스 이름이 제각각이라(.marketing-nav button 처럼 이름이
+   아예 없는 것도 있다) 하나씩 나열하면 계속 빠진다. button 요소 전체에
+   기본 입체감을 주고, 버튼이 아닌 것처럼 쓰이는 것들만 빼낸다.
+   ===================================================================== */
+button:not(.nav-item):not(.nav-folder-toggle):not(.close-button):not(.timeline-delete)
+:not([class*="card"]):not([class*="-row"]):not([class*="-day"]):not([class*="-option"])
+:not([class*="-item"]):not([class*="-record"]):not([class*="-tab"]):not(.primary-button)
+:not(.email-login-button):not(.filter-chip):not(.sales-stage-button){
+  border-radius:12px;
+  background-image:linear-gradient(180deg,#fff 0%,#F7F8FA 100%);
+  border:1px solid #DFE3E8;
+  box-shadow:
+    0 2px 0 #DBE0E6,
+    0 3px 6px rgba(16,24,40,.07),
+    0 8px 16px rgba(16,24,40,.06),
+    var(--sheen);
+  color:var(--soft);
+  font-weight:600;
+}
+button:not(.nav-item):not(.nav-folder-toggle):not(.close-button):not(.timeline-delete)
+:not([class*="card"]):not([class*="-row"]):not([class*="-day"]):not([class*="-option"])
+:not([class*="-item"]):not([class*="-record"]):not([class*="-tab"]):not(.primary-button)
+:not(.email-login-button):not(.filter-chip):not(.sales-stage-button):hover:not(:disabled){
+  transform:translateY(-1px);
+  border-color:#D0D6DD;
+  box-shadow:
+    0 3px 0 #D3D9E0,
+    0 5px 10px rgba(16,24,40,.09),
+    0 12px 22px rgba(16,24,40,.07),
+    var(--sheen);
+}
+
+/* 선택된 탭·칩은 파랑으로 (마케팅 탭이 거의 검정이었다) */
+.marketing-nav button.active,
+[role="tab"][aria-selected="true"],
+button[aria-current="page"]{
+  background-image:linear-gradient(180deg, #4A90F7 0%, var(--blue) 100%) !important;
+  border-color:var(--blue) !important;
+  color:#fff !important;
+  box-shadow:
+    0 3px 0 #1F63CE,
+    0 5px 10px rgba(21,84,180,.30),
+    0 10px 22px rgba(49,130,246,.26),
+    var(--sheen-strong) !important;
+}
+
+/* 마케팅 화면도 같은 카드·입력 규칙을 따르게 */
+.marketing-filters,.marketing-kpi-grid>*,.marketing-table-wrap,.marketing-alerts,
+.marketing-funnel,.marketing-attention,.marketing-customer-list,.marketing-input,
+.marketing-report-metrics,.marketing-duplicate-review{
+  border:1px solid var(--line); border-radius:var(--radius); background:#fff;
+  box-shadow:
+    0 1px 2px rgba(16,24,40,.04),
+    0 4px 8px rgba(16,24,40,.05),
+    0 12px 28px rgba(16,24,40,.07);
+}
+.marketing-customer-row,.marketing-entry-row,.marketing-metric-row{ border-color:var(--line); }
+
+/* =====================================================================
+   마무리 손질 — 조금 더 보기 좋게
+   ===================================================================== */
+
+/* 모서리를 조금 더 둥글게 (14 → 16) */
+:root{ --radius:16px; }
+
+/* KPI 카드
+   - 오른쪽 위 옅은 원은 잘려 보여서 정리감을 해쳤다. 은은한 사선 결로 교체
+   - 왼쪽 강조 막대는 위아래로 길게 빼 카드 전체를 지지하는 느낌으로 */
+.kpi-card::after{
+  right:-40px; top:-40px; width:150px; height:150px; opacity:.06;
+  background:radial-gradient(circle at 30% 70%, var(--accent,#3182F6), transparent 62%);
+}
+.kpi-card::before{
+  top:18px; height:calc(100% - 36px); width:3px; border-radius:0 4px 4px 0; opacity:.9;
+}
+.kpi-card .kpi-value,.security-kpi>strong{ letter-spacing:-1.2px; }
+
+/* 글자 위계를 조금 더 또렷하게 */
+h1,.topbar h1{ letter-spacing:-0.8px; font-weight:800; }
+h2{ letter-spacing:-0.6px; font-weight:800; }
+h3,h4{ letter-spacing:-0.3px; font-weight:700; }
+.eyebrow,.section-head>div>p,.today-brief p{ line-height:1.55; }
+
+/* 표: 줄에 마우스를 올리면 은은하게 */
+.data-table tbody tr:hover{ background:#FAFBFC; }
+.data-table thead th{
+  background:#FAFBFC; color:var(--muted); font-weight:700; letter-spacing:-0.1px;
+}
+.data-table tbody td{ border-bottom:1px solid #F1F3F5; }
+
+/* 빈 화면: 가운데 글자만 덩그러니 있던 것을 조금 다듬음 */
+.empty-state b,.empty-state>b{ letter-spacing:-0.4px; }
+.empty-state{ color:var(--muted); }
+
+/* 스크롤바를 얇고 조용하게 (본문 전체) */
+*{ scrollbar-width:thin; scrollbar-color:#D7DCE2 transparent; }
+::-webkit-scrollbar{ width:8px; height:8px; }
+::-webkit-scrollbar-thumb{ background:#D7DCE2; border-radius:999px; }
+::-webkit-scrollbar-thumb:hover{ background:#C4CBD3; }
+::-webkit-scrollbar-track{ background:transparent; }
+
+/* 선택 영역 색 */
+::selection{ background:rgba(49,130,246,.18); }
+
+/* 포커스 링을 브랜드 색으로 통일 */
+:focus-visible{ outline:3px solid rgba(49,130,246,.45); outline-offset:2px; }

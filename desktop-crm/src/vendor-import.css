@@ -5,9 +5,9 @@
   align-items: center;
   margin-bottom: 16px;
   padding: 14px;
-  border: 1px solid #acd9ec;
+  border: 1px solid #DFE3E8;
   border-radius: 12px;
-  background: linear-gradient(105deg, #edf9fe, #f8fdff);
+  background: linear-gradient(105deg, #FAFBFC, #FFFFFF);
 }
 
 .quote-url-import > div:first-child b,
@@ -16,13 +16,13 @@
 }
 
 .quote-url-import > div:first-child b {
-  color: #277fae;
+  color: #1B64DA;
   font-size: 11px;
 }
 
 .quote-url-import > div:first-child span {
   margin-top: 5px;
-  color: #7594a6;
+  color: #8B95A1;
   font-size: 9px;
   line-height: 1.45;
 }
@@ -37,17 +37,17 @@
   min-width: 0;
   height: 42px;
   padding: 0 12px;
-  border: 1px solid #bdddea;
+  border: 1px solid #DFE3E8;
   border-radius: 10px;
   outline: 0;
   background: #fff;
-  color: #244b63;
+  color: #191F28;
   font: inherit;
   font-size: 11px;
 }
 
 .quote-url-import-row input:focus {
-  border-color: #57acd7;
+  border-color: #3182F6;
   box-shadow: 0 0 0 3px rgba(70, 165, 215, 0.12);
 }
 
@@ -55,7 +55,7 @@
   min-width: 138px;
   border: 0;
   border-radius: 10px;
-  background: linear-gradient(135deg, #54b5e7, #3499d0);
+  background: linear-gradient(135deg, #3182F6, #3182F6);
   color: #fff;
   font-size: 10px;
   font-weight: 900;
@@ -71,13 +71,13 @@
 .quote-url-import > p {
   grid-column: 2;
   margin: -5px 0 0;
-  color: #7895a6;
+  color: #8B95A1;
   font-size: 9px;
 }
 
-.quote-url-import > p.loading { color: #3e91bc; }
-.quote-url-import > p.success { color: #2f9876; font-weight: 800; }
-.quote-url-import > p.error { color: #d45d68; font-weight: 800; }
+.quote-url-import > p.loading { color: #1B64DA; }
+.quote-url-import > p.success { color: #04A66B; font-weight: 800; }
+.quote-url-import > p.error { color: #F04452; font-weight: 800; }
 
 @media (max-width: 1100px) {
   .quote-url-import { grid-template-columns: 1fr; }

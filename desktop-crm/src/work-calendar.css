@@ -8,9 +8,9 @@
   justify-content: space-between;
   gap: 20px;
   padding: 16px 18px;
-  border: 1px solid #d5e7f0;
+  border: 1px solid #E5E8EB;
   border-radius: 15px;
-  background: linear-gradient(120deg, #f8fcff, #eef9fe);
+  background: linear-gradient(120deg, #FFFFFF, #FAFBFC);
 }
 
 .calendar-tab-intro > div:first-child {
@@ -25,20 +25,20 @@
 }
 
 .calendar-tab-intro span {
-  color: #3497c9;
+  color: #1B64DA;
   font-size: 10px;
   font-weight: 900;
 }
 
 .calendar-tab-intro h2 {
   margin: 5px 0 0;
-  color: #153f57;
+  color: #191F28;
   font-size: 18px;
 }
 
 .calendar-tab-intro p {
   margin: 6px 0 0;
-  color: #6d8899;
+  color: #4E5968;
   font-size: 11px;
   line-height: 1.55;
 }
@@ -56,7 +56,7 @@
 .contract-work-management-panel {
   margin-top: 18px;
   overflow: hidden;
-  border: 1px solid #c9dfeb;
+  border: 1px solid #DFE3E8;
   border-radius: 16px;
   background: #fff;
   box-shadow: 0 9px 26px rgba(29, 82, 111, .06);
@@ -71,7 +71,7 @@
   padding: 14px 18px;
   list-style: none;
   cursor: pointer;
-  background: linear-gradient(120deg, #f8fcff, #eef9fe);
+  background: linear-gradient(120deg, #FFFFFF, #FAFBFC);
 }
 
 .contract-work-management-panel > summary::-webkit-details-marker {
@@ -90,18 +90,18 @@
 }
 
 .contract-work-management-title small {
-  color: #3497c9;
+  color: #1B64DA;
   font-size: 10px;
   font-weight: 900;
 }
 
 .contract-work-management-title b {
-  color: #173f56;
+  color: #191F28;
   font-size: 17px;
 }
 
 .contract-work-management-title em {
-  color: #718b9a;
+  color: #8B95A1;
   font-size: 11px;
   font-style: normal;
 }
@@ -116,10 +116,10 @@
 .contract-work-management-toggle strong,
 .contract-work-management-toggle i {
   padding: 7px 10px;
-  border: 1px solid #bfdce9;
+  border: 1px solid #DFE3E8;
   border-radius: 9px;
   background: #fff;
-  color: #286b8d;
+  color: #4E5968;
   font-size: 11px;
   font-style: normal;
   font-weight: 850;
@@ -127,7 +127,7 @@
 
 .contract-work-management-toggle strong {
   border-color: transparent;
-  background: #dff3fc;
+  background: #E8F3FF;
 }
 
 .contract-work-management-panel .when-open {
@@ -146,8 +146,8 @@
   display: grid;
   gap: 18px;
   padding: 18px;
-  border-top: 1px solid #d8e8f0;
-  background: #f7fbfd;
+  border-top: 1px solid #E5E8EB;
+  background: #FFFFFF;
 }
 
 .contract-work-management-body .work-management-hero,
@@ -160,11 +160,11 @@
 }
 
 .work-calendar {
-  --calendar-blue: #1598d4;
-  --calendar-blue-dark: #176e9d;
-  --calendar-line: #c9deeb;
-  --calendar-soft: #f5fbfe;
-  color: #163b52;
+  --calendar-blue: #1B64DA;
+  --calendar-blue-dark: #4E5968;
+  --calendar-line: #DFE3E8;
+  --calendar-soft: #FFFFFF;
+  color: #191F28;
 }
 
 .work-calendar button,
@@ -174,14 +174,14 @@
   border: 1px solid var(--calendar-line);
   border-radius: 11px;
   background: #fff;
-  color: #17688f;
+  color: #4E5968;
   font: inherit;
 }
 
 .work-calendar .calendar-tab-intro-actions .primary-button {
   padding: 0 17px;
   border: 0;
-  background: linear-gradient(180deg, #62b9e8, #3b9bd5);
+  background: linear-gradient(180deg, #3182F6, #3182F6);
   color: #fff;
   box-shadow: 0 8px 18px rgba(50, 147, 202, .22);
 }
@@ -192,8 +192,8 @@
 }
 
 .work-calendar button:hover {
-  border-color: #82c4e2;
-  background: #eef9fe;
+  border-color: #3182F6;
+  background: #FAFBFC;
 }
 
 .work-calendar button:focus-visible,
@@ -223,7 +223,7 @@
   margin: 0;
   text-align: center;
   font-size: 22px;
-  color: #123e58;
+  color: #191F28;
 }
 
 .work-calendar-today {
@@ -266,16 +266,16 @@
   gap: 6px;
   min-height: 34px;
   padding: 0 12px;
-  border: 1px solid #d9e8f1;
+  border: 1px solid #E8F3FF;
   border-radius: 999px;
   background: #fff;
-  color: #557487;
+  color: #4E5968;
   font-size: 12px;
   font-weight: 700;
 }
 
 .work-calendar-summary b {
-  color: #146f9e;
+  color: #4E5968;
   font-size: 14px;
 }
 
@@ -286,21 +286,21 @@
   gap: 8px;
   margin: 0 0 12px;
   padding: 11px 14px;
-  border: 1px solid #f0cf84;
+  border: 1px solid #FFD98A;
   border-radius: 12px;
-  background: #fff9e9;
-  color: #795d21;
+  background: #FFF6E5;
+  color: #C77A00;
   font-size: 13px;
 }
 
 .work-calendar-sync-warning span {
-  color: #8a713e;
+  color: #C77A00;
 }
 
 .work-calendar-month-empty {
-  border-color: #cee4ef;
-  background: #f4fbfe;
-  color: #4e7489;
+  border-color: #E5E8EB;
+  background: #FFFFFF;
+  color: #4E5968;
 }
 
 .work-calendar-layout {
@@ -330,33 +330,33 @@
 
 .work-calendar-weekdays {
   border-bottom: 1px solid var(--calendar-line);
-  background: #eef8fd;
+  background: #FAFBFC;
 }
 
 .work-calendar-weekdays > div {
   padding: 11px 6px;
   text-align: center;
-  color: #4f7286;
+  color: #4E5968;
   font-size: 12px;
   font-weight: 800;
 }
 
 .work-calendar-weekdays .is-sunday,
 .work-calendar-day:nth-child(7n + 1) .work-calendar-day-number {
-  color: #d75d68;
+  color: #F04452;
 }
 
 .work-calendar-weekdays .is-saturday,
 .work-calendar-day:nth-child(7n) .work-calendar-day-number {
-  color: #397eba;
+  color: #1B64DA;
 }
 
 .work-calendar-day {
   min-width: 0;
   min-height: clamp(92px, calc((100vh - 300px) / 6), 116px);
   padding: 6px;
-  border-right: 1px solid #e1ecf2;
-  border-bottom: 1px solid #e1ecf2;
+  border-right: 1px solid #E8F3FF;
+  border-bottom: 1px solid #E8F3FF;
   background: #fff;
   cursor: pointer;
 }
@@ -370,7 +370,7 @@
 }
 
 .work-calendar-day.is-other-month {
-  background: #f8fafb;
+  background: #FFFFFF;
 }
 
 .work-calendar-day.is-other-month .work-calendar-day-number,
@@ -380,11 +380,11 @@
 }
 
 .work-calendar-day.is-today {
-  box-shadow: inset 0 0 0 2px #62b9df;
+  box-shadow: inset 0 0 0 2px #3182F6;
 }
 
 .work-calendar-day.is-selected {
-  background: #eef9fe;
+  background: #FAFBFC;
   box-shadow: inset 0 0 0 2px var(--calendar-blue);
 }
 
@@ -398,19 +398,19 @@
   padding: 0 5px;
   border-color: transparent;
   background: transparent;
-  color: #315d75;
+  color: #4E5968;
 }
 
 .work-calendar-day.is-holiday .work-calendar-day-number,
 .work-calendar-day.is-holiday .work-calendar-holiday-name {
-  color: #c63f4d;
+  color: #F04452;
 }
 
 .work-calendar-holiday-name {
   display: inline-block;
   max-width: calc(100% - 52px);
   overflow: hidden;
-  color: #c63f4d;
+  color: #F04452;
   font-size: 10px;
   font-weight: 800;
   line-height: 1.25;
@@ -422,8 +422,8 @@
 .work-calendar-day-number small {
   padding: 2px 5px;
   border-radius: 999px;
-  background: #dff3fc;
-  color: #1679a9;
+  background: #E8F3FF;
+  color: #4E5968;
   font-size: 9px;
 }
 
@@ -436,10 +436,10 @@
   position: relative;
   display: flex;
   min-width: 0;
-  border: 1px solid #cbe4ef;
+  border: 1px solid #E5E8EB;
   border-radius: 8px;
-  background: #eff9fd;
-  color: #245c78;
+  background: #FAFBFC;
+  color: #4E5968;
   font-size: 11px;
   text-align: left;
 }
@@ -466,19 +466,19 @@
 
 .work-calendar-event-meta {
   margin-top: 1px;
-  color: #66899a;
+  color: #4E5968;
   font-size: 9px;
 }
 
 .work-calendar-event.status-in_progress {
-  border-color: #87c5e5;
-  background: #e4f5fd;
+  border-color: #3182F6;
+  background: #E8F3FF;
 }
 
 .work-calendar-event.is-completed {
-  border-color: #b8dfcf;
-  background: #edf9f4;
-  color: #377b62;
+  border-color: #7FDDB4;
+  background: #E6F8F0;
+  color: #04A66B;
 }
 
 .work-calendar-day-events .work-calendar-event.is-completed .work-calendar-event-title {
@@ -506,7 +506,7 @@
 
 .work-calendar-more {
   padding: 2px 7px;
-  color: #47778f;
+  color: #4E5968;
   font-size: 10px;
   font-weight: 800;
 }
@@ -527,21 +527,21 @@
   justify-content: space-between;
   gap: 10px;
   padding: 14px;
-  border-bottom: 1px solid #dbeaf2;
-  background: #f2fafe;
+  border-bottom: 1px solid #E8F3FF;
+  background: #FAFBFC;
 }
 
 .work-calendar-agenda-header span,
 .work-calendar-agenda-header small {
   display: block;
-  color: #6b8797;
+  color: #4E5968;
   font-size: 11px;
   font-weight: 700;
 }
 
 .work-calendar-agenda-header h3 {
   margin: 3px 0;
-  color: #173f56;
+  color: #191F28;
   font-size: 16px;
 }
 
@@ -582,13 +582,13 @@
 
 .work-calendar-agenda-copy p {
   margin-top: 5px;
-  color: #406c84;
+  color: #4E5968;
   font-weight: 700;
 }
 
 .work-calendar-agenda-copy small {
   margin-top: 4px;
-  color: #6f8998;
+  color: #4E5968;
 }
 
 .work-calendar-status {
@@ -616,11 +616,11 @@
   gap: 5px;
   padding: 30px 14px;
   text-align: center;
-  color: #6c8796;
+  color: #4E5968;
 }
 
 .work-calendar-agenda-empty strong {
-  color: #385f75;
+  color: #4E5968;
 }
 
 @media (max-width: 1320px) {

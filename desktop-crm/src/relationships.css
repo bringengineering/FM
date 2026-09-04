@@ -5,28 +5,28 @@
   gap: 20px;
   margin-bottom: 14px;
   padding: 20px 22px;
-  border: 1px solid #cce5f1;
+  border: 1px solid #E5E8EB;
   border-radius: 17px;
-  background: linear-gradient(110deg, #edf9fe, #ffffff);
+  background: linear-gradient(110deg, #FAFBFC, #ffffff);
   box-shadow: 0 9px 26px rgba(57, 112, 143, 0.06);
 }
 
 .relationship-hero span {
-  color: #3f98c8;
+  color: #3182F6;
   font-size: 10px;
   font-weight: 950;
 }
 
 .relationship-hero h2 {
   margin: 6px 0 0;
-  color: #173b53;
+  color: #191F28;
   font-size: 20px;
   letter-spacing: -0.03em;
 }
 
 .relationship-hero p {
   margin: 7px 0 0;
-  color: #718c9d;
+  color: #8B95A1;
   font-size: 11px;
 }
 
@@ -50,7 +50,7 @@
 
 .relationship-card {
   overflow: hidden;
-  border: 1px solid #d2e5ef;
+  border: 1px solid #E5E8EB;
   border-radius: 15px;
   background: #fff;
   box-shadow: 0 8px 22px rgba(48, 105, 137, 0.06);
@@ -60,7 +60,7 @@
 
 .relationship-card:hover,
 .relationship-card:focus-visible {
-  border-color: #78bfe2;
+  border-color: #3182F6;
   box-shadow: 0 12px 28px rgba(48, 105, 137, 0.12);
   outline: 0;
   transform: translateY(-2px);
@@ -82,13 +82,13 @@
 
 .relationship-card h3 {
   margin: 0;
-  color: #183e56;
+  color: #191F28;
   font-size: 14px;
 }
 
 .relationship-card header p {
   margin: 4px 0 0;
-  color: #8198a7;
+  color: #8B95A1;
   font-size: 9px;
 }
 
@@ -100,25 +100,25 @@
   white-space: nowrap;
 }
 
-.relationship-state.active { background: #eaf8f3; color: #359379; }
-.relationship-state.soon { background: #eef8fd; color: #348ab8; }
-.relationship-state.today { background: #fff4d8; color: #a77719; }
-.relationship-state.overdue { background: #fff0f2; color: #d15b67; }
-.relationship-state.unscheduled { background: #f1f4f6; color: #798e9a; }
+.relationship-state.active { background: #E6F8F0; color: #04A66B; }
+.relationship-state.soon { background: #FAFBFC; color: #1B64DA; }
+.relationship-state.today { background: #FFF6E5; color: #C77A00; }
+.relationship-state.overdue { background: #FFEFF0; color: #F04452; }
+.relationship-state.unscheduled { background: #FAFBFC; color: #8B95A1; }
 
 .relationship-facts {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 1px;
-  border-top: 1px solid #e5eef3;
-  border-bottom: 1px solid #e5eef3;
-  background: #e5eef3;
+  border-top: 1px solid #E8F3FF;
+  border-bottom: 1px solid #E8F3FF;
+  background: #E8F3FF;
 }
 
 .relationship-facts > div {
   min-height: 63px;
   padding: 11px 14px;
-  background: #fafdfe;
+  background: #FFFFFF;
 }
 
 .relationship-facts span,
@@ -127,14 +127,14 @@
 }
 
 .relationship-facts span {
-  color: #7992a2;
+  color: #8B95A1;
   font-size: 9px;
   font-weight: 800;
 }
 
 .relationship-facts b {
   margin-top: 6px;
-  color: #244c65;
+  color: #191F28;
   font-size: 11px;
   line-height: 1.4;
 }
@@ -142,10 +142,10 @@
 .relationship-note {
   margin: 0;
   padding: 10px 15px;
-  color: #688395;
+  color: #4E5968;
   font-size: 9px;
   line-height: 1.5;
-  background: #f6fafc;
+  background: #FFFFFF;
 }
 
 .relationship-card > footer {
@@ -164,7 +164,7 @@
 
 .relationship-open-hint {
   margin-left: auto;
-  color: #3188b8;
+  color: #1B64DA;
   font-size: 9px;
   font-weight: 850;
 }
@@ -176,8 +176,8 @@
   margin-bottom: 14px;
   padding: 12px 14px;
   border-radius: 11px;
-  background: #edf9fe;
-  color: #3b7e9f;
+  background: #FAFBFC;
+  color: #4E5968;
 }
 
 .relationship-customer-guide b,
@@ -197,16 +197,16 @@
 }
 
 .relationship-detail-summary .avatar { width: 52px; height: 52px; border-radius: 15px; font-size: 18px; }
-.relationship-detail-summary h3 { margin: 0; color: #173d55; font-size: 18px; }
-.relationship-detail-summary p { margin: 5px 0 0; color: #7891a1; font-size: 10px; }
+.relationship-detail-summary h3 { margin: 0; color: #191F28; font-size: 18px; }
+.relationship-detail-summary p { margin: 5px 0 0; color: #8B95A1; font-size: 10px; }
 .relationship-detail-actions { justify-content: space-between; margin-bottom: 14px; }
-.relationship-plan-cycle { color: #3189b8; font-size: 10px; font-weight: 900; }
-.relationship-detail-note { margin: 10px 0 0; padding: 10px 11px; border-radius: 9px; background: #eef8fc; color: #57788d; font-size: 10px; line-height: 1.55; }
+.relationship-plan-cycle { color: #1B64DA; font-size: 10px; font-weight: 900; }
+.relationship-detail-note { margin: 10px 0 0; padding: 10px 11px; border-radius: 9px; background: #FAFBFC; color: #4E5968; font-size: 10px; line-height: 1.55; }
 .relationship-add-section .detail-section-head > div h4,
 .relationship-history-section .detail-section-head > div h4 { margin: 0; }
 .relationship-add-section .detail-section-head > div span,
-.relationship-history-section .detail-section-head > div span { display: block; margin-top: 4px; color: #8198a7; font-size: 9px; }
-.relationship-history-section .detail-section-head > b { color: #3189b8; font-size: 11px; }
+.relationship-history-section .detail-section-head > div span { display: block; margin-top: 4px; color: #8B95A1; font-size: 9px; }
+.relationship-history-section .detail-section-head > b { color: #1B64DA; font-size: 11px; }
 .relationship-timeline .timeline-item { grid-template-columns: 24px minmax(0, 1fr) auto; align-items: start; padding: 4px 0 9px; }
 .relationship-timeline .timeline-delete { margin-top: 1px; }
 
