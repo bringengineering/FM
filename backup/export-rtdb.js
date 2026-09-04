@@ -17,7 +17,20 @@ const fs = require("node:fs");
 const path = require("node:path");
 const crypto = require("node:crypto");
 
-const DEFAULT_PATHS = ["workflow", "cases", "caseSettings", "crmCompany"];
+// 실제 데이터가 있는 최상위 경로 전부. 하나라도 빠지면 그 부분은 복구할 수 없다.
+// fieldPlatform: 현장 건물·호실·매물·방문·촬영세션·미디어 기록
+// paymentCalendars: 계정별 입금 캘린더
+// signage: 위탁판매 상품·주문
+// (crmMigrationStaging 은 과거 이관 사본이라 제외)
+const DEFAULT_PATHS = [
+  "workflow",
+  "cases",
+  "caseSettings",
+  "crmCompany",
+  "fieldPlatform",
+  "paymentCalendars",
+  "signage",
+];
 
 /** 백업 경로를 검증하고 정규화한다. 최상위 한 칸짜리 안전한 키만 허용. */
 function normalizeBackupPath(raw) {
@@ -118,10 +131,19 @@ async function main() {
   if (failures.length) {
     throw new Error(`백업하지 못한 경로가 있습니다:\n- ${failures.join("\n- ")}`);
   }
-  if (!manifest.totalBytes) {
-    throw new Error("백업 결과가 완전히 비어 있습니다. 권한 또는 경로를 확인하세요.");
+  // Firebase 는 없는 경로에도 200 과 함께 본문 "null"(4바이트)을 돌려준다.
+  // 그래서 바이트 합계만 보면 DB 주소가 틀렸거나 경로 이름이 바뀐 경우에도
+  // "성공"으로 판정돼 내용 없는 백업이 쌓인다. 실제 내용이 있는 경로로 센다.
+  const recovered = manifest.files.filter((file) => !file.empty);
+  if (!recovered.length) {
+    throw new Error(
+      "백업한 모든 경로가 비어 있습니다. RTDB_URL·권한·경로 이름을 확인하세요.\n" +
+        `확인한 경로: ${manifest.files.map((file) => file.path).join(", ")}`
+    );
   }
-  console.log(`[백업 완료] 총 ${manifest.totalBytes} bytes / ${entries.length}개 경로`);
+  console.log(
+    `[백업 완료] 총 ${manifest.totalBytes} bytes / 내용 있는 경로 ${recovered.length}개 (전체 ${entries.length}개)`
+  );
 }
 
 module.exports = { normalizeBackupPath, parsePathList, buildManifest, DEFAULT_PATHS };
