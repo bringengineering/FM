@@ -453,3 +453,8 @@ select:disabled{ background-color:var(--toss-fill); color:var(--muted); }
   background:#fff; box-shadow:var(--shadow);
 }
 .workspace-folder-card:hover{ border-color:#D7DCE2; box-shadow:0 6px 20px rgba(0,0,0,.07); }
+
+/* ---- 한글 줄바꿈 ----
+   기본값(break-word)은 '건물주 입금캘린 / 더' 처럼 단어 가운데를 자른다.
+   keep-all 은 띄어쓰기 단위로만 넘긴다. */
+h1,h2,h3,h4,.today-brief h2,.section-head h2{ word-break:keep-all; }
