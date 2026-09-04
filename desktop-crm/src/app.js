@@ -18,6 +18,7 @@
   const MarketingCrmBridge = window.MarketingCrmBridge;
   const MarketingUI = window.MarketingUI;
   const MessagePolicy = window.BringMessagePolicy;
+  const DocumentDelivery = window.BringDocumentDeliveryCore;
   const MessageUI = window.BringMessageUI;
   const AiConsultationCore = window.BringAiConsultationCore;
   const ContractReadinessUI = window.BringContractReadinessUI;
@@ -68,11 +69,16 @@
   let selectedCustomerId = "";
   let selectedCustomerHubId = "";
   let selectedMessageCustomerId = "";
+  let selectedMessageMode = "messages";
   let selectedMessageTemplateId = "cleaning_schedule";
   let selectedMessageChannel = "kakao";
   let selectedMessageSourceType = "";
   let selectedMessageSourceId = "";
   let selectedMessageNote = "";
+  let selectedDocumentType = "quote";
+  let selectedDocumentId = "";
+  let selectedDocumentName = "견적서";
+  let selectedDocumentExpiresOn = new Date(Date.now() + 14 * 86400000).toISOString().slice(0, 10);
   let selectedBuildingId = "";
   let selectedVacancyBuildingId = "";
   let vacancyStatusFilter = "attention";
@@ -2597,6 +2603,7 @@
     if (!store.customers.some(item => item.id === selectedMessageCustomerId)) selectedMessageCustomerId = store.customers[0]?.id || "";
     main.innerHTML = MessageUI.renderWorkspace({
       customers: store.customers,
+      mode: selectedMessageMode,
       selectedCustomerId: selectedMessageCustomerId,
       templateId: selectedMessageTemplateId,
       channel: selectedMessageChannel,
@@ -2604,6 +2611,12 @@
       sourceId: selectedMessageSourceId,
       note: selectedMessageNote,
       deliveries: customerMessageDeliveries(),
+      documentType: selectedDocumentType,
+      documentId: selectedDocumentId,
+      documentName: selectedDocumentName,
+      expiresOn: selectedDocumentExpiresOn,
+      deliveryCapabilities: { kakao: false, sms: false },
+      documentDeliveries: customerMessageDeliveries().filter(item => item.documentId),
       writable: canWriteCRM()
     });
   }
@@ -5539,6 +5552,8 @@
   }
 
   document.addEventListener("click", async event => {
+    const messageMode = event.target.closest("[data-message-mode]");
+    if (messageMode) { selectedMessageMode = messageMode.dataset.messageMode === "documents" ? "documents" : "messages"; renderCustomerMessages(); return; }
     const messageCustomerOpen = event.target.closest("[data-message-customer-open]");
     if (messageCustomerOpen) {
       selectedMessageCustomerId = messageCustomerOpen.dataset.messageCustomerOpen;
@@ -7306,6 +7321,17 @@
   });
 
   document.addEventListener("change", event => {
+    const documentForm = event.target.closest("#customerDocumentDeliveryForm");
+    if (documentForm) {
+      selectedMessageCustomerId = documentForm.elements.customerId.value;
+      selectedDocumentType = documentForm.elements.documentType.value;
+      selectedDocumentId = documentForm.elements.documentId.value;
+      selectedDocumentName = documentForm.elements.documentName.value;
+      selectedMessageChannel = documentForm.elements.channel.value;
+      selectedDocumentExpiresOn = documentForm.elements.expiresOn.value;
+      renderCustomerMessages();
+      return;
+    }
     if (!event.target.closest("#customerMessageForm")) return;
     const form = event.target.form;
     selectedMessageCustomerId = form.elements.customerId.value;
@@ -7390,6 +7416,10 @@
         renderCustomerMessages();
         showToast("고객 메시지 발송을 요청했습니다.", "success");
       } catch (error) { showToast(error.message || "고객 메시지 발송에 실패했습니다.", "error"); }
+      return;
+    }
+    if (form.id === "customerDocumentDeliveryForm") {
+      showToast("카카오 알림톡·SMS 중계 서버 연결 후 실제 발송할 수 있습니다.", "error");
       return;
     }
     if (form.matches("[data-marketing-entry-form]")) {
