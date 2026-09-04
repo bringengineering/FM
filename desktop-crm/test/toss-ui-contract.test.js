@@ -89,3 +89,22 @@ test("industry-badge 는 !important 색을 같은 무기로 덮는다", () => {
   assert.ok(rule, ".industry-badge 규칙이 없습니다");
   assert.match(rule[0], /color:var\(--tone-info-ink\) !important/);
 });
+
+test("글꼴에 없으면 네모로 깨지던 기호는 SVG 로 그린다", () => {
+  // 입금 캘린더의 '건물 갱신'·'세입자 반영' 버튼이 실제로 두부(네모)로 나왔다.
+  assert.doesNotMatch(app, /↻/, "app.js 에 ↻ 가 남아 있습니다");
+  assert.doesNotMatch(html, /⌕/, "index.html 에 ⌕ 가 남아 있습니다");
+  assert.match(app, /<svg class="btn-icon"/);
+  assert.match(html, /<svg class="search-icon"/);
+  assert.match(toss, /\.btn-icon,\.search-icon\{/);
+});
+
+test("선택된 단계 칩의 건물 수가 흰 배경에 묻히지 않는다", () => {
+  // .sales-stage-button.active 에 color:#fff 를 주면 흰 배경인 개수 뱃지(> b)의
+  // 글자까지 흰색이 되어 숫자가 사라진다.
+  const activeButton = toss.match(/\.sales-stage-button\.active[^>{]*\{[^}]*\}/);
+  if (activeButton && /color:#fff/.test(activeButton[0])) {
+    assert.match(toss, /\.sales-stage-button\.active>b\{[^}]*color:var\(--blue\)/,
+      "개수 뱃지에 색을 따로 주지 않았습니다");
+  }
+});

@@ -230,6 +230,10 @@ label>span,.essential-label{ color:var(--soft); font-weight:600; }
 }
 .sales-stage-number{ background:var(--toss-fill); color:var(--soft); }
 .sales-stage-button.active .sales-stage-number{ background:rgba(255,255,255,.22); color:#fff; }
+/* 건물 수 뱃지(> b)는 흰 배경 그대로라, 버튼 글자색만 흰색으로 바꾸면
+   흰 글씨가 흰 배경에 묻혀 숫자가 사라진다. 색을 따로 지정한다. */
+.sales-stage-button>b{ color:var(--soft); }
+.sales-stage-button.active>b{ background:#fff; color:var(--blue); font-weight:800; }
 
 /* ---- 선택 상자: 브라우저 기본 화살표 대신 토스풍 셰브론 ----
    화면별 CSS 가 select 에 background 단축속성을 걸어두어 배경 이미지가 지워지므로
@@ -377,3 +381,16 @@ select:disabled{ background-color:var(--toss-fill); color:var(--muted); }
   background:var(--tone-info-bg) !important; color:var(--tone-info-ink) !important;
   border-radius:999px;
 }
+
+/* ---- 버튼·검색창 아이콘 ----
+   ↻ ⌕ 같은 기호는 PC 글꼴에 없으면 네모(두부)로 나온다. 실제로 입금 캘린더의
+   '건물 갱신' '세입자 반영' 버튼이 그렇게 깨져 있었다. SVG 로 그린다. */
+.btn-icon,.search-icon{
+  width:15px; height:15px; display:inline-block; vertical-align:-2px;
+  fill:none; stroke:currentColor; stroke-width:1.9;
+  stroke-linecap:round; stroke-linejoin:round;
+}
+.global-search .search-mark{
+  display:inline-flex; align-items:center; color:var(--muted);
+}
+.global-search .search-icon{ width:16px; height:16px; vertical-align:0; }
