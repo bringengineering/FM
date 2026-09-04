@@ -107,6 +107,17 @@ test("AI assistant separates report and quote creation and exposes reviewed file
   assert.equal(fs.existsSync(path.join(__dirname, "../src/assets/bring-company-seal.png")), false);
 });
 
+test("quote screen offers an AI-free manual authoring path", () => {
+  const app = read("app.js");
+  assert.match(app, /data-quote-mode="ai"/);
+  assert.match(app, /data-quote-mode="manual"/);
+  assert.match(app, /data-manual-quote-create/);
+  assert.match(app, /QuoteCore\.createManualDraft/);
+  assert.match(app, /data-ai-quote-recipient="projectName"/);
+  const handler = app.slice(app.indexOf("const manualQuoteCreate"), app.indexOf("const aiQuoteSupplierSave"));
+  assert.doesNotMatch(handler, /api\.assist/);
+});
+
 test("consultation AI creates a reviewable draft without changing or saving the form", () => {
   const app = read("app.js");
   assert.match(app, /data-consultation-ai-organize[^>]*disabled/);

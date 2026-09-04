@@ -3,6 +3,15 @@ const test = require("node:test");
 
 const QuoteCore = require("../src/quote-core");
 
+test("creates a manual quote without prompt or AI output", () => {
+  const quote = QuoteCore.createManualDraft({ now: "2026-09-04", supplier: { businessName: "브링엔지니어링" } });
+  assert.equal(quote.projectName, "수기 견적서");
+  assert.equal(quote.recipient, "고객");
+  assert.equal(quote.items.length, 1);
+  assert.equal(quote.items[0].name, "품목을 입력하세요");
+  assert.equal(quote.totalAmount, 1000);
+});
+
 test("one-line Korean request becomes a balanced BRING quote draft", () => {
   const quote = QuoteCore.createDraftFromPrompt("햇빛빌라 입주청소 12만원", null, { now: "2026-09-01T00:00:00+09:00", idSuffix: "A102" });
   assert.equal(quote.recipient, "햇빛빌라");

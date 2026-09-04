@@ -225,6 +225,22 @@
     });
   }
 
+  function createManualDraft(options = {}) {
+    const quoteDate = isoDay(options.now);
+    return normalizeDraft({
+      quoteDate,
+      recipient: "고객",
+      recipientPhone: "",
+      projectName: "수기 견적서",
+      service: "직접 입력",
+      summary: "직접 작성한 견적입니다.",
+      items: [{ name: "품목을 입력하세요", detail: "세부 작업 내용을 입력하세요.", quantity: 1, unit: "식", unitPrice: 1000 }],
+      taxIncluded: true,
+      notes: ["작업 범위와 현장 상태가 달라지는 경우 금액은 협의 후 조정될 수 있습니다.", "견적 유효기간은 발행일로부터 7일입니다."],
+      company: companyProfile(options.supplier)
+    });
+  }
+
   function normalizeDraft(value) {
     if (!value || typeof value !== "object" || Array.isArray(value)) throw new Error("견적 데이터가 올바르지 않습니다.");
     const items = normalizeItems(value.items);
@@ -282,5 +298,5 @@
     return text(value && value.projectName, 50).replace(/[<>:"/\\|?*]/g, "_").replace(/[. ]+$/g, "") || "BRING_견적서";
   }
 
-  return { COMPANY, MAX_ITEMS, createDraftFromPrompt, normalizeDraft, addDraftItem, removeDraftItem, normalizeSupplier, supplierComplete, normalizeRecipient, recipientComplete, companyProfile, parseAmount, inferService, itemTotal, money, fileBase };
+  return { COMPANY, MAX_ITEMS, createDraftFromPrompt, createManualDraft, normalizeDraft, addDraftItem, removeDraftItem, normalizeSupplier, supplierComplete, normalizeRecipient, recipientComplete, companyProfile, parseAmount, inferService, itemTotal, money, fileBase };
 });
