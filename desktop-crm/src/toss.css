@@ -1,0 +1,153 @@
+/* =====================================================================
+   BRING CRM — 토스 스타일 UI 레이어
+   ---------------------------------------------------------------------
+   기존 스타일시트 전부를 읽은 뒤 마지막에 얹는 오버레이다.
+   색·여백·모서리·그림자만 바꾸고 구조·클래스·동작은 건드리지 않는다.
+   되돌리려면 index.html 에서 이 파일 <link> 한 줄만 지우면 된다.
+   ===================================================================== */
+
+:root{
+  --bg:#F2F4F6;            /* 배경: 아주 연한 회색 */
+  --panel:#FFFFFF;
+  --panel-2:#FAFBFC;
+  --panel-3:#F2F4F6;
+  --line:#E5E8EB;          /* 경계선: 옅게 */
+  --text:#191F28;          /* 본문: 거의 검정 */
+  --muted:#8B95A1;         /* 보조 텍스트 */
+  --soft:#4E5968;
+  --blue:#3182F6;          /* 포인트 */
+  --blue-2:#1B64DA;
+  --green:#00C471;
+  --yellow:#FFB020;
+  --orange:#FF7847;
+  --red:#F04452;
+  --radius:14px;
+  --shadow:0 4px 16px rgba(0,0,0,.06);
+  --toss-fill:#F2F4F6;
+  --toss-fill-hover:#E8EBED;
+  --toss-blue-weak:#E8F3FF;
+}
+
+body{ letter-spacing:-0.3px; }
+
+/* ---- 사이드바 : 그라데이션 제거, 흰 바탕 ---- */
+.sidebar{ background:#FFFFFF; border-right:1px solid var(--line); }
+.brand{ border-bottom:1px solid var(--line); }
+.brand strong{ font-weight:800; letter-spacing:-0.4px; }
+.brand span{ color:var(--muted); }
+.brand-mark{ box-shadow:none; }
+
+.nav-item{ border:0; color:var(--soft); border-radius:12px; }
+.nav-item:hover{ background:var(--toss-fill); color:var(--text); }
+.nav-item.active{
+  background:var(--toss-blue-weak); border:0; color:var(--blue);
+  box-shadow:none; font-weight:700;
+}
+.nav-item>span{ color:#B0B8C1; }
+.nav-item.active>span{ color:var(--blue); }
+.nav-item b{ font-size:13.5px; font-weight:600; }
+.nav-item.active b{ font-weight:700; }
+.nav-item em{ background:var(--toss-fill); color:var(--muted); font-weight:700; }
+.nav-item.active em{ background:#fff; color:var(--blue); }
+
+.sidebar-foot{ border-top:1px solid var(--line); }
+.sync-state b{ color:var(--text); }
+.workflow-launch,.help-launch{
+  border:0; background:var(--toss-fill); color:var(--soft); border-radius:10px; font-weight:600;
+}
+.workflow-launch:hover,.help-launch:hover{ background:var(--toss-fill-hover); color:var(--text); }
+
+/* ---- 작업 영역 · 상단바 ---- */
+.workspace{ background:var(--bg); }
+.topbar{
+  background:#FFFFFF; border-bottom:1px solid var(--line);
+  backdrop-filter:none;
+}
+.eyebrow{ color:var(--muted); font-weight:700; letter-spacing:0; }
+.topbar h1{ font-size:22px; font-weight:800; letter-spacing:-0.6px; color:var(--text); }
+
+/* ---- 버튼 : 그라데이션 대신 단색, 눌리는 반응 ---- */
+.primary-button{
+  background:var(--blue); box-shadow:none; font-weight:700; border-radius:12px;
+}
+.primary-button:hover{ background:var(--blue-2); filter:none; transform:none; }
+.primary-button:active{ transform:scale(.98); }
+
+.secondary-button,.help-button,.update-button,.icon-button{
+  border:0; background:var(--toss-fill); color:var(--soft);
+  border-radius:12px; font-weight:600;
+}
+.secondary-button:hover,.help-button:hover,.update-button:hover,.icon-button:hover{
+  background:var(--toss-fill-hover); border:0; color:var(--text);
+}
+.update-button.ready{ background:#E6F7EF; color:#00A45E; box-shadow:none; }
+.update-button.error{ background:#FFF0F0; color:var(--red); }
+.danger-button,.danger-outline-button{
+  border:0; background:#FFF0F0; color:var(--red); border-radius:12px; font-weight:700;
+}
+
+/* ---- 검색 · 입력 ---- */
+.global-search{
+  border:0; background:var(--toss-fill); box-shadow:none; border-radius:12px; color:var(--muted);
+}
+.global-search input::placeholder{ color:#B0B8C1; }
+/* 검색창 안의 input 은 껍데기(.global-search)가 이미 배경을 갖고 있으므로 투명하게 */
+.global-search input{ background:transparent !important; border:0 !important; box-shadow:none !important; }
+input[type="text"],input[type="email"],input[type="password"],input[type="search"],
+input[type="number"],input[type="date"],input[type="tel"],select,textarea{
+  border:1px solid var(--line); border-radius:12px; background:#fff; color:var(--text);
+}
+input:focus,select:focus,textarea:focus{
+  outline:0; border-color:var(--blue); box-shadow:0 0 0 3px rgba(49,130,246,.14);
+}
+
+.user-pill{ border:1px solid var(--line); border-radius:12px; }
+.user-pill button{ background:var(--toss-fill); color:var(--soft); font-weight:700; }
+
+/* ---- 카드 · 패널 : 그라데이션 제거, 부드러운 그림자 ---- */
+.today-brief{
+  border:1px solid var(--line); border-radius:var(--radius);
+  background:#FFFFFF; box-shadow:var(--shadow);
+}
+.brief-kicker{ color:var(--muted); letter-spacing:.06em; }
+.today-brief h2{ color:var(--text); font-weight:800; letter-spacing:-0.5px; }
+.today-brief p{ color:var(--muted); }
+.brief-value{ border-right:1px solid var(--line); color:var(--muted); }
+.brief-value b{ color:var(--blue); }
+
+.kpi-card,.panel,.card,.data-table-wrap,.activity-feed,.focus-list,.empty-state,
+.drive-import-panel,.entity-picker,.detail-drawer,.modal-layer .modal,.confirmation-layer > *{
+  border-color:var(--line) !important;
+  border-radius:var(--radius) !important;
+  background:#FFFFFF;
+  box-shadow:var(--shadow);
+}
+.kpi-label{ color:var(--muted); font-weight:600; }
+
+/* ---- 로그인 화면 ---- */
+.login-gate{ background:var(--bg); }
+.login-card{
+  border:1px solid var(--line); border-radius:20px; box-shadow:var(--shadow);
+}
+.login-card>span{ color:var(--muted); letter-spacing:.08em; }
+.login-card h1{ font-weight:800; letter-spacing:-0.6px; color:var(--text); }
+.login-card p{ color:var(--muted); }
+.login-logo{ box-shadow:none; }
+.login-form label>span{ color:var(--soft); font-weight:600; }
+.login-form input{ background:#fff; border:1px solid var(--line); border-radius:12px; height:48px; }
+.email-login-button{
+  background:var(--blue); box-shadow:none; border-radius:12px; font-weight:700; min-height:50px;
+}
+.email-login-button:hover{ background:var(--blue-2); filter:none; }
+.google-login-button{ background:#fff; color:var(--soft); border:1px solid var(--line); }
+.google-login-button:hover{ background:var(--toss-fill); }
+.temporary-password{ border:0; background:var(--toss-blue-weak); color:var(--blue-2); border-radius:12px; }
+.password-user{ background:var(--toss-fill); border-radius:12px; }
+.password-user span{ color:var(--text); }
+.login-message.error{ color:var(--red); }
+.login-message.success{ color:#00A45E; }
+
+/* ---- 스크롤바 ---- */
+.main-content::-webkit-scrollbar-thumb,
+.nav-list::-webkit-scrollbar-thumb,
+.detail-drawer::-webkit-scrollbar-thumb{ background:#D1D6DB; }
