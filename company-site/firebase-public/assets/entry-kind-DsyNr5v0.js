@@ -1,0 +1,1 @@
+import{n as e,r as t}from"./desktop-handoff.client-CXsEeZNj.js";function n(n){return t(n)?`embedded`:e(n)?`bootstrap`:n.searchParams.has(`embedded`)||n.searchParams.has(`desktop_handoff`)?`invalid-embedded`:`standalone`}export{n as t};
