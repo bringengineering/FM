@@ -1,11 +1,13 @@
 import { maskSensitiveText, normalizeText, sanitizeContext } from "./privacy.js";
 import { buildTaskMessages, normalizeTaskResult, supportedTaskIds } from "./tasks.js";
+import { createDocumentDeliveryHandler } from "./document-delivery.js";
 
 const SERVICE_NAME = "bring-crm-ai-gateway";
 const SERVICE_VERSION = "2026-08-31-v1";
 const ASSIST_PATH = "/v1/assist";
 const TRANSCRIBE_PATH = "/v1/transcribe";
 const CONTRACTS_PATH = "/v1/contracts";
+const DOCUMENT_DELIVERY_PATH = "/v1/document-delivery";
 const GROQ_URL = "https://api.groq.com/openai/v1/chat/completions";
 const GROQ_TRANSCRIBE_URL = "https://api.groq.com/openai/v1/audio/transcriptions";
 const MAX_REQUEST_BYTES = 64 * 1024;
@@ -243,6 +245,7 @@ export function createWorker(options = {}) {
   const timeoutMs = options.timeoutMs || 15_000;
   const requestId = options.requestId || (() => crypto.randomUUID());
   const signGoogleJwt = options.signGoogleJwt || defaultSignGoogleJwt;
+  const documentDeliveryHandler = options.documentDeliveryHandler || createDocumentDeliveryHandler({ fetchImpl, now });
   return {
     async fetch(request, env) {
       const url = new URL(request.url);
@@ -250,13 +253,16 @@ export function createWorker(options = {}) {
       if (request.method === "GET" && (url.pathname === "/" || url.pathname === "/health")) {
         return json({ ok: true, service: SERVICE_NAME, version: SERVICE_VERSION, enabled: env.AI_ENABLED === "true" });
       }
-      if (![ASSIST_PATH, TRANSCRIBE_PATH, CONTRACTS_PATH].includes(url.pathname)) return json({ ok: false, code: "NOT_FOUND" }, 404);
+      if (url.pathname.startsWith("/d/")) return documentDeliveryHandler(request, null, env);
+      const isDocumentDelivery = url.pathname === DOCUMENT_DELIVERY_PATH || url.pathname.startsWith(`${DOCUMENT_DELIVERY_PATH}/`);
+      if (![ASSIST_PATH, TRANSCRIBE_PATH, CONTRACTS_PATH].includes(url.pathname) && !isDocumentDelivery) return json({ ok: false, code: "NOT_FOUND" }, 404);
       if (request.method === "OPTIONS") return new Response(null, { status: 204, headers: cors });
-      if (request.method !== "POST") return json({ ok: false, code: "METHOD_NOT_ALLOWED" }, 405, cors);
+      if (!isDocumentDelivery && request.method !== "POST") return json({ ok: false, code: "METHOD_NOT_ALLOWED" }, 405, cors);
       if (url.pathname !== CONTRACTS_PATH && env.AI_ENABLED !== "true") return json({ ok: false, code: "AI_DISABLED" }, 503, cors);
       try {
         const payload = url.pathname === ASSIST_PATH ? await readPayload(request) : null;
         const identity = await verifyFirebaseIdentity(bearerToken(request), env, fetchImpl);
+        if (isDocumentDelivery) return await documentDeliveryHandler(request, identity, env);
         if (url.pathname === CONTRACTS_PATH) return await checkDriveContract(request, identity, env, fetchImpl, now, signGoogleJwt, requestId);
         await enforceLimits(identity, env, now);
         if (url.pathname === TRANSCRIBE_PATH) {

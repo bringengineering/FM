@@ -11,6 +11,8 @@ AI_COMPANY_DAILY_LIMIT = "1000"
 CRM_ALLOWED_EMAILS = "dpvld858@gmail.com,ameejin92@gmail.com"
 CRM_ADMIN_EMAILS = "dpvld858@gmail.com,ameejin92@gmail.com"
 ALLOWED_ORIGINS = "app://bring-crm"
+DOCUMENT_DELIVERY_ENABLED = "false"
+KAKAO_DOCUMENT_TEMPLATES_APPROVED = "false"
 
 [[ratelimits]]
 name = "AI_RATE_LIMITER"
@@ -23,3 +25,7 @@ period = 60
 [[kv_namespaces]]
 binding = "AI_USAGE"
 id = "d62c9d8a0f9a487495da8a3f915ac083"
+
+[[kv_namespaces]]
+binding = "DOCUMENT_DELIVERY"
+id = "8e340879954e455a909258ccd65dfaff"

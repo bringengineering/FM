@@ -155,3 +155,15 @@ test("contract source route rejects a non-admin before contacting Drive", async 
   assert.equal(response.status, 403);
   assert.equal(calls, 1);
 });
+
+test("document delivery routes reuse Firebase employee authentication", async () => {
+  const calls = [];
+  const worker = createWorker({
+    fetchImpl: successfulFetch(calls),
+    documentDeliveryHandler: async (_request, identity) => new Response(JSON.stringify({ ok: true, email: identity.email }), { headers: { "content-type": "application/json" } })
+  });
+  const response = await worker.fetch(new Request("https://ai.example/v1/document-delivery/capabilities", { headers: { authorization: "Bearer firebase-token" } }), environment());
+  assert.equal(response.status, 200);
+  assert.deepEqual(await response.json(), { ok: true, email: "ameejin92@gmail.com" });
+  assert.equal(calls.length, 1);
+});

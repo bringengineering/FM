@@ -11,6 +11,12 @@ BRING CRM과 Groq Cloud 사이에서 Firebase 직원 인증, 개인정보 마스
 - 직원 이메일은 `CRM_ALLOWED_EMAILS`의 명시적 허용 목록과 대조합니다.
 - AI 응답은 초안이며 CRM 데이터를 자동으로 변경하지 않습니다.
 
+## CRM 고객 문서 발송
+
+견적서와 작업 결과보고서는 전용 KV `DOCUMENT_DELIVERY`에 최대 14일 동안 저장되고, 추측하기 어려운 만료 링크로만 열립니다. 카카오 검수 완료 전에는 `DOCUMENT_DELIVERY_ENABLED=false`, `KAKAO_DOCUMENT_TEMPLATES_APPROVED=false`를 유지하므로 실제 발송이 차단됩니다.
+
+검수 완료 후 Worker Secret에 `NCP_ACCESS_KEY`, `NCP_SECRET_KEY`를 등록하고, 일반 변수에 `NCP_BIZ_MESSAGE_SERVICE_ID`, `KAKAO_CHANNEL_ID`, `NCP_SENS_SERVICE_ID`, `NCP_SENS_FROM`을 등록합니다. 이후 두 승인 플래그를 `true`로 바꿔 배포합니다. 견적서는 `BRINGCUSTOMERQUOTEV1`, 결과보고서는 `BRINGCOMPLETIONREPORTV1`만 사용하며 CRM이 임의 템플릿 코드를 지정할 수 없습니다.
+
 ## 최초 배포
 
 ```powershell

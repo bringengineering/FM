@@ -22,3 +22,11 @@ test("production gateway is enabled only through the reviewed deployment config"
   const config = fs.readFileSync(path.join(__dirname, "..", "wrangler.toml"), "utf8");
   assert.match(config, /^AI_ENABLED\s*=\s*"true"$/m);
 });
+
+test("document delivery has dedicated storage and stays closed before Kakao approval", () => {
+  const config = fs.readFileSync(path.join(__dirname, "..", "wrangler.toml"), "utf8");
+  assert.match(config, /^DOCUMENT_DELIVERY_ENABLED\s*=\s*"false"$/m);
+  assert.match(config, /^KAKAO_DOCUMENT_TEMPLATES_APPROVED\s*=\s*"false"$/m);
+  assert.match(config, /binding\s*=\s*"DOCUMENT_DELIVERY"/);
+  assert.match(config, /id\s*=\s*"8e340879954e455a909258ccd65dfaff"/);
+});
