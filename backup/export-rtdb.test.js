@@ -45,3 +45,24 @@ test("buildManifest는 합계와 빈 경로 표시를 계산한다", () => {
   assert.equal(manifest.files[0].empty, false);
   assert.equal(manifest.files[1].empty, true, "4바이트 이하는 비어 있음으로 표시");
 });
+
+test("기본 백업 경로에 실제 데이터 트리가 모두 들어 있다", () => {
+  // 하나라도 빠지면 그 영역은 사고 시 복구할 수 없다.
+  for (const required of ["workflow", "cases", "caseSettings", "crmCompany",
+                          "fieldPlatform", "paymentCalendars", "signage"]) {
+    assert.ok(DEFAULT_PATHS.includes(required), `${required} 이 기본 백업 경로에 있어야 한다`);
+  }
+});
+
+test("경로가 모두 비어 있으면 바이트 합계가 0이 아니어도 비어 있음으로 본다", () => {
+  // Firebase 는 없는 경로에도 본문 "null"(4바이트)을 돌려준다.
+  const manifest = buildManifest([
+    { path: "cases", file: "cases.json", bytes: 4, sha256: "a" },
+    { path: "workflow", file: "workflow.json", bytes: 4, sha256: "b" },
+  ]);
+  assert.equal(manifest.totalBytes, 8, "합계만 보면 0이 아니라 성공으로 오인된다");
+  assert.deepEqual(manifest.files.map((f) => f.empty), [true, true],
+    "내용 없는 경로는 모두 empty 로 표시돼야 한다");
+  assert.equal(manifest.files.some((f) => !f.empty), false,
+    "실제 내용이 있는 경로가 하나도 없다고 판정돼야 한다");
+});

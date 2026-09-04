@@ -293,3 +293,33 @@ test("새 버전이면 업데이트 안내가 뜨고, 확인하면 다시 뜨지
     await app.close();
   }
 });
+
+test("예전에 저장된 예시 계좌는 입금 확인에 쓰이지 않는다", async () => {
+  const app = await openApp();
+  try {
+    const result = await app.page.evaluate(() => {
+      const legacy = { paymentAccount: { accountNumber: "123-456-789012", accountHolder: "브링케어" } };
+      const noHyphen = { paymentAccount: { accountNumber: "123456789012", accountHolder: "브링케어" } };
+      const real = { paymentAccount: { accountNumber: "352-0000-0000-11", accountHolder: "브링케어" } };
+      const empty = {};
+      return {
+        legacy: casePaymentAccount(legacy),
+        noHyphen: casePaymentAccount(noHyphen),
+        real: casePaymentAccount(real),
+        empty: casePaymentAccount(empty),
+      };
+    });
+
+    // 이 변경 이전에 승인된 케이스에는 예시 계좌가 저장돼 있다 — 통과시키면 안 된다
+    assert.equal(result.legacy.ready, false, "저장된 예시 계좌는 거부돼야 한다");
+    assert.equal(result.legacy.accountNumber, "", "거부된 계좌번호는 화면에 노출되면 안 된다");
+    assert.equal(result.noHyphen.ready, false, "하이픈이 없어도 예시 계좌는 거부돼야 한다");
+    assert.equal(result.empty.ready, false);
+
+    // 정상 계좌는 그대로 동작해야 한다
+    assert.equal(result.real.ready, true);
+    assert.equal(result.real.accountNumber, "352-0000-0000-11");
+  } finally {
+    await app.close();
+  }
+});

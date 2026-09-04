@@ -1702,11 +1702,10 @@ function confirmCasePaymentLocked_(caseId, adminEmail, adminUid) {
 
   const priced = workflowPricedQuote_(casePayload);
   const amounts = priced ? ownerRecommendationAmounts_(priced.quote) : { totalAmount: Number(casePayload.paymentExpectedAmount || ownerDecision.bringTotalAmount || 0) };
-  const storedAccount = casePayload.paymentAccount || {};
-  const confirmAccount =
-    String(storedAccount.accountNumber || "").trim() && String(storedAccount.accountHolder || "").trim()
-      ? { accountNumber: String(storedAccount.accountNumber), accountHolder: String(storedAccount.accountHolder) }
-      : resolveOwnerPaymentAccount_();
+  // 이 변경 이전에 승인된 케이스에는 예시 계좌가 저장돼 있을 수 있다.
+  // 저장값도 형식·예시값 검증을 통과해야만 쓰고, 아니면 설정값으로 되돌린다.
+  const storedAccount = validateOwnerPaymentAccount_(casePayload.paymentAccount);
+  const confirmAccount = storedAccount || resolveOwnerPaymentAccount_();
   const confirmation = {
     status: "confirmed",
     statusText: "관리자 입금 확인 완료",
