@@ -374,7 +374,7 @@
     const conversation = selected ? state.data.messages.filter(message => message.senderId === currentUserId() && message.receiverId === selected.uid || message.receiverId === currentUserId() && message.senderId === selected.uid) : [];
     const nameEditor = displayNameEditor(selected, "messenger");
     return `<section class="office-messenger">
-      <aside class="messenger-people"><header><span>BRING OFFICE</span><h2>메신저</h2><label><i>⌕</i><input type="search" data-office-user-search value="${esc(state.userQuery)}" placeholder="이름, 소속 검색"></label></header><div class="messenger-user-list">${users.length ? users.map(user => {
+      <aside class="messenger-people"><header><span>BRING OFFICE</span><h2>메신저</h2><label><i class="search-mark" aria-hidden="true"><svg class="search-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><circle cx="11" cy="11" r="6.5"/><path d="M15.8 15.8 20.5 20.5"/></svg></i><input type="search" data-office-user-search value="${esc(state.userQuery)}" placeholder="이름, 소속 검색"></label></header><div class="messenger-user-list">${users.length ? users.map(user => {
         const message = latest.get(user.uid);
         const count = unread.get(user.uid) || 0;
         return `<button class="messenger-user ${user.uid === state.selectedUserId ? "selected" : ""}" data-office-user="${esc(user.uid)}">${avatar(user)}<span><b>${esc(Core.displayName(user))}</b><small>${esc(message ? messagePreview(message) : userMeta(user))}</small></span><time>${esc(message ? formatMessageTime(message.createdAt).split(" ").slice(-1)[0] : "")}</time>${count ? `<em>${count}</em>` : ""}</button>`;
