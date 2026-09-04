@@ -3429,8 +3429,21 @@
     openDrawer();
   }
 
+  // 연락 방식 아이콘. 예전에는 한글 옆에 S·K·M·V 같은 알파벳 머리글자를 붙여
+  // '방문' 이 'V 방문' 으로 보였다. 글꼴을 타지 않도록 SVG 로 그린다.
+  const ACTIVITY_ICON_PATHS = Object.freeze({
+    "전화": '<path d="M6.6 3.8h3l1.6 4-2 1.3a11 11 0 0 0 5.7 5.7l1.3-2 4 1.6v3a1.6 1.6 0 0 1-1.8 1.6C11.2 20.1 3.9 12.8 5 5.6a1.6 1.6 0 0 1 1.6-1.8z"/>',
+    "문자": '<path d="M20 14a2.5 2.5 0 0 1-2.5 2.5H9l-4 3.5V6.5A2.5 2.5 0 0 1 7.5 4h10A2.5 2.5 0 0 1 20 6.5z"/><path d="M8.5 8.8h7M8.5 12h4.5"/>',
+    "카카오": '<path d="M12 4.2c-4.4 0-8 2.7-8 6.1 0 2.2 1.5 4.1 3.7 5.2l-.9 3.4 3.8-2.2c.5.1 1 .1 1.4.1 4.4 0 8-2.7 8-6.5s-3.6-6.1-8-6.1z"/>',
+    "이메일": '<rect x="3.5" y="5.5" width="17" height="13" rx="2.5"/><path d="m4.5 7.5 7.5 5.5 7.5-5.5"/>',
+    "미팅": '<circle cx="9" cy="9" r="2.8"/><path d="M3.6 19a5.4 5.4 0 0 1 10.8 0"/><path d="M16 6.6a2.6 2.6 0 0 1 0 5"/><path d="M17.4 14.4a5 5 0 0 1 3 4.6"/>',
+    "방문": '<path d="M12 21s7-5.5 7-11a7 7 0 1 0-14 0c0 5.5 7 11 7 11z"/><circle cx="12" cy="10" r="2.6"/>',
+    "메모": '<path d="M6 3.5h7.5L19 9v11.5a1 1 0 0 1-1 1H6a1 1 0 0 1-1-1v-16a1 1 0 0 1 1-1z"/><path d="M13.5 3.5V9H19"/><path d="M8.5 13h7M8.5 17h4.5"/>'
+  });
+
   function activityIcon(type) {
-    return ({ "전화": "☎", "문자": "S", "카카오": "K", "이메일": "@", "미팅": "M", "방문": "V", "메모": "N" })[type] || "·";
+    const paths = ACTIVITY_ICON_PATHS[type] || '<circle cx="12" cy="12" r="3"/>';
+    return `<svg class="activity-glyph" viewBox="0 0 24 24" aria-hidden="true" focusable="false">${paths}</svg>`;
   }
 
   function customerFromForm(form) {

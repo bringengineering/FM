@@ -108,3 +108,21 @@ test("선택된 단계 칩의 건물 수가 흰 배경에 묻히지 않는다", 
       "개수 뱃지에 색을 따로 주지 않았습니다");
   }
 });
+
+test("연락 방식은 알파벳 머리글자 대신 아이콘으로 보여준다", () => {
+  // 예전에는 '방문' 이 'V 방문', '문자' 가 'S 문자' 로 나왔다
+  assert.doesNotMatch(app, /"전화": "☎"/);
+  assert.match(app, /const ACTIVITY_ICON_PATHS = Object\.freeze\(/);
+  for (const type of ["전화", "문자", "카카오", "이메일", "미팅", "방문", "메모"]) {
+    assert.ok(app.includes(`"${type}": '<`), `${type} 아이콘이 없습니다`);
+  }
+});
+
+test("연락 방식 아이콘에는 사용자가 넣은 값이 섞이지 않는다", () => {
+  // 이 함수의 결과는 이스케이프 없이 HTML 에 그대로 들어간다.
+  // 고정된 표에서만 꺼내 쓰고, 넘겨받은 값을 결과에 붙이면 안 된다.
+  const fn = app.match(/function activityIcon\(type\) \{[\s\S]*?\n  \}/);
+  assert.ok(fn, "activityIcon 을 찾지 못했습니다");
+  assert.doesNotMatch(fn[0], /\$\{type\}/, "넘겨받은 값이 결과 HTML 에 들어갑니다");
+  assert.match(fn[0], /ACTIVITY_ICON_PATHS\[type\]/);
+});
