@@ -184,3 +184,112 @@ test("모바일(터치) 환경에서 히트 영역이 실제로 켜진다", asyn
     await app.close();
   }
 });
+
+test("드래그하면 노드가 따라오고 연결선도 함께 갱신된다", async () => {
+  const app = await openApp();
+  try {
+    // 편집 모드에서만 드래그가 동작한다
+    const start = await app.page.evaluate(() => {
+      document.body.classList.add("editing");
+      const child = addChild(Object.keys(nodes)[0]); // 부모-자식 연결선이 생기도록
+      render();
+      const g = document.querySelector(`g.node[data-id="${child}"]`);
+      const box = g.getBoundingClientRect();
+      return {
+        id: child,
+        x: nodes[child].x,
+        y: nodes[child].y,
+        cx: Math.round(box.left + box.width / 2),
+        cy: Math.round(box.top + box.height / 2),
+        edges: [...document.querySelectorAll("path.edge")].map((p) => p.getAttribute("d")).join("|"),
+        zoom,
+      };
+    });
+
+    await app.page.mouse.move(start.cx, start.cy);
+    await app.page.mouse.down();
+    await app.page.mouse.move(start.cx + 120, start.cy + 80, { steps: 8 });
+    await app.page.mouse.up();
+
+    const end = await app.page.evaluate((id) => ({
+      x: nodes[id].x,
+      y: nodes[id].y,
+      transform: document.querySelector(`g.node[data-id="${id}"]`).getAttribute("transform"),
+      edges: [...document.querySelectorAll("path.edge")].map((p) => p.getAttribute("d")).join("|"),
+      saved: JSON.parse(localStorage.getItem(graphKey(curBoard))).nodes[id],
+    }), start.id);
+
+    assert.ok(end.x > start.x + 50, `가로로 움직여야 한다 (${start.x} → ${end.x})`);
+    assert.ok(end.y > start.y + 30, `세로로 움직여야 한다 (${start.y} → ${end.y})`);
+    assert.equal(
+      end.transform,
+      `translate(${end.x},${end.y})`,
+      "화면의 transform 이 실제 좌표와 일치해야 한다",
+    );
+    assert.notEqual(end.edges, start.edges, "연결선도 새 위치를 따라와야 한다");
+    assert.equal(Math.round(end.saved.x), Math.round(end.x), "이동 결과가 저장돼야 한다");
+    assert.deepEqual(app.pageErrors, []);
+  } finally {
+    await app.close();
+  }
+});
+
+test("드래그 중에는 전체 렌더 대신 빠른 경로를 쓴다", async () => {
+  const app = await openApp();
+  try {
+    const result = await app.page.evaluate(() => {
+      const root = Object.keys(nodes)[0];
+      for (let i = 0; i < 150; i++) addChild(root);
+      const target = nodes[Object.keys(nodes)[3]];
+
+      const t0 = performance.now();
+      for (let i = 0; i < 30; i++) { target.x += 1; moveNodeFast(target); }
+      const fast = (performance.now() - t0) / 30;
+
+      const t1 = performance.now();
+      for (let i = 0; i < 30; i++) render();
+      const full = (performance.now() - t1) / 30;
+
+      return { count: Object.keys(nodes).length, fast, full };
+    });
+
+    assert.ok(result.count > 150, "충분히 큰 보드를 만들어야 한다");
+    assert.ok(
+      result.fast < result.full / 3,
+      `빠른 경로가 전체 렌더보다 3배 이상 빨라야 한다 (fast ${result.fast.toFixed(2)}ms vs full ${result.full.toFixed(2)}ms)`,
+    );
+  } finally {
+    await app.close();
+  }
+});
+
+test("노드를 찾지 못하면 전체 렌더로 안전하게 물러난다", async () => {
+  const app = await openApp();
+  try {
+    const safe = await app.page.evaluate(() => ({
+      nullNode: moveNodeFast(null),
+      unknownNode: moveNodeFast({ id: "존재하지-않는-노드", x: 0, y: 0 }),
+    }));
+    assert.equal(safe.nullNode, false);
+    assert.equal(safe.unknownNode, false, "DOM 에 없으면 false 를 돌려줘 전체 렌더로 넘어가야 한다");
+  } finally {
+    await app.close();
+  }
+});
+
+test("새 버전이면 업데이트 안내가 뜨고, 확인하면 다시 뜨지 않는다", async () => {
+  const app = await openApp();
+  try {
+    assert.equal(app.whatsNewShown, true, "처음 방문에서는 업데이트 안내가 떠야 한다");
+
+    const state = await app.page.evaluate(() => ({
+      seen: localStorage.getItem("fm_seen_ver"),
+      version: APP_VERSION,
+      open: document.getElementById("wnOverlay").classList.contains("open"),
+    }));
+    assert.equal(state.open, false, "확인하면 닫혀야 한다");
+    assert.equal(state.seen, state.version, "본 버전이 기록돼 다시 뜨지 않아야 한다");
+  } finally {
+    await app.close();
+  }
+});

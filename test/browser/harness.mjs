@@ -80,10 +80,19 @@ export async function openApp({ mobile = false } = {}) {
   await page.goto(`file://${path.join(dir, "index.html")}`);
   await page.waitForFunction(() => document.querySelectorAll("g.node").length > 0, null, { timeout: 15000 });
 
+  // 버전이 오르면 "새 업데이트" 모달이 캔버스를 덮는다. 테스트는 앱 본체를 다루므로 닫아둔다.
+  const whatsNewShown = await page.evaluate(() => {
+    const overlay = document.getElementById("wnOverlay");
+    const open = !!overlay && overlay.classList.contains("open");
+    if (open) closeWhatsNew();
+    return open;
+  });
+
   return {
     browser,
     page,
     pageErrors,
+    whatsNewShown,
     async close() {
       await browser.close();
       fs.rmSync(dir, { recursive: true, force: true });
