@@ -14,6 +14,7 @@
   const ManagementReportCore = window.BringManagementReportCore;
   const TenantHistoryCore = window.BringTenantHistoryCore;
   const AiOperationsUI = window.BringAiOperationsUI;
+  const BuildingDocs = window.BringBuildingDocsCore;
   const WorkspaceShell = window.BringWorkspaceShell;
   const MarketingCore = window.MarketingCore;
   const MarketingCrmBridge = window.MarketingCrmBridge;
@@ -195,6 +196,7 @@
     officeAttendance: ["나의 주간 근무 현황", "근태관리"],
     officeMessenger: ["CRM 구성원과 빠른 대화", "메신저"],
     officeAdmin: ["관리자 전용 직원 근무 현황", "전체 근태관리"],
+    buildingDocuments: ["건물마다 어떤 서류가 있는지", "건물 문서함"],
     security: ["운영매뉴얼 DATA-01", "정보·열쇠 관리"],
     settings: ["프로그램 관리", "설정"]
   };
@@ -1520,6 +1522,7 @@
         setMessengerPresence: syncOfficeMessengerPresence,
       });
     }
+    else if (currentView === "buildingDocuments") renderBuildingDocuments();
     else if (currentView === "security") renderSecurity();
     else renderSettings();
     finishViewRender(currentView);
@@ -4155,6 +4158,74 @@
       }).join("")}</div>` : empty("할 일이 없습니다", "고객별 후속조치를 등록하면 오늘 할 일에서 관리할 수 있습니다.", `<button class="primary-button" data-action="new-task">＋ 할 일 추가</button>`)}</section>`;
   }
 
+  // 건물 문서함. 회사 Drive 에 있는 서류를 건물에 붙여 두고, 무엇이 비었는지 본다.
+  //
+  // 파일을 올리지는 않는다. 회사 Drive 권한이 읽기 전용이라 CRM 이 Drive 에
+  // 쓸 수 없다. 사람이 Drive 에 올리고 링크를 여기 등록하는 방식이다.
+  let buildingDocsState = { buildingId: "", error: "" };
+
+  function renderBuildingDocuments() {
+    const buildings = (store.buildings || []).filter(item => item && !item.archivedAt);
+    const documents = store.buildingDocuments || [];
+    const summary = BuildingDocs.summarize(documents, buildings);
+    if (buildingDocsState.buildingId && !buildings.some(item => item.id === buildingDocsState.buildingId)) {
+      buildingDocsState.buildingId = "";
+    }
+    const selectedId = buildingDocsState.buildingId || (summary[0] && summary[0].buildingId) || "";
+    const selected = buildings.find(item => item.id === selectedId) || null;
+    const box = selected ? BuildingDocs.buildBuildingBox(documents, selectedId) : null;
+
+    const hero = `<section class="operations-hero"><div><span>건물 문서함</span><h2>건물마다 어떤 서류가 있는지 한곳에서 봅니다</h2><p>회사 Drive 에 둔 서류를 건물에 연결합니다. 사내에서만 봅니다.</p></div>${canWriteCRM() && selected ? `<div class="operations-actions"><button type="button" class="primary-button" data-action="new-building-document">＋ 서류 연결</button></div>` : ""}</section>`;
+
+    if (!buildings.length) {
+      main.innerHTML = hero + empty("등록된 건물이 없습니다", "고객·건물 관리에서 건물을 먼저 등록하면 문서함이 만들어집니다.", `<button class="primary-button" data-view="customers">고객·건물 관리로 이동 →</button>`);
+      return;
+    }
+
+    const list = summary.map(item => `<button type="button" class="building-docs-row ${item.buildingId === selectedId ? "selected" : ""}" data-building-docs-select="${attr(item.buildingId)}"><span><b>${esc(item.buildingName)}</b><small>서류 ${item.total}건</small></span>${item.missingRequired.length ? `<em class="building-docs-missing">필수 ${item.missingRequired.length}건 없음</em>` : `<em class="building-docs-ok">갖춤</em>`}</button>`).join("");
+
+    const groups = box ? box.byType.map(group => {
+      if (!group.documents.length) {
+        return group.required
+          ? `<article class="building-docs-group missing"><header><b>${esc(group.label)}</b><span>없음 · 필수</span></header><p>이 서류가 아직 연결되지 않았습니다.</p></article>`
+          : "";
+      }
+      const rows = group.documents.map(doc => `<li><div><b>${esc(doc.title || "제목 미확인")}</b>${doc.memo ? `<small>${esc(doc.memo)}</small>` : ""}</div><div class="building-docs-actions">${doc.webViewLink ? `<button type="button" class="mini-button" data-open-external="${attr(doc.webViewLink)}">Drive 에서 열기</button>` : `<span class="building-docs-unchecked">확인 전</span>`}${canWriteCRM() ? `<button type="button" class="mini-button" data-building-document-check="${attr(doc.id)}">최신 확인</button><button type="button" class="mini-button return" data-building-document-archive="${attr(doc.id)}">보관</button>` : ""}</div></li>`).join("");
+      return `<article class="building-docs-group"><header><b>${esc(group.label)}</b><span>${group.documents.length}건</span></header><ul>${rows}</ul></article>`;
+    }).filter(Boolean).join("") : "";
+
+    main.innerHTML = hero + `<div class="building-docs-layout">
+      <aside class="building-docs-list"><div class="panel-head"><div><h3>건물</h3><p>필수 서류가 빠진 건물이 위에 옵니다.</p></div></div>${list}</aside>
+      <section class="building-docs-detail">
+        ${selected ? `<div class="panel-head"><div><h3>${esc(selected.name || "건물명 미입력")}</h3><p>${esc(selected.address || "주소 미입력")} · 서류 ${box.total}건${box.archivedCount ? ` · 보관 ${box.archivedCount}건` : ""}</p></div></div>` : ""}
+        ${box && box.missingRequired.length ? `<div class="info-box building-docs-warning"><b>빠진 필수 서류</b><span>${box.missingRequired.map(item => esc(item.label)).join(" · ")}</span></div>` : ""}
+        ${groups || (box && box.total === 0 ? empty("연결된 서류가 없습니다", "Drive 에 올린 서류의 링크를 연결하면 여기에 모입니다.", canWriteCRM() ? `<button class="primary-button" data-action="new-building-document">＋ 서류 연결</button>` : "") : "")}
+        <div class="info-box building-docs-note">서류 파일은 회사 Drive 에 있고 여기에는 연결만 저장합니다. 건물주에게는 나가지 않습니다. 열쇠 번호·출입 비밀번호는 이곳이 아니라 정보·열쇠 관리에서 다룹니다.</div>
+      </section>
+    </div>`;
+    if (buildingDocsState.error) showToast(buildingDocsState.error, "error");
+    buildingDocsState.error = "";
+  }
+
+  function buildingDocumentEditor(buildingId) {
+    const building = (store.buildings || []).find(item => item && item.id === buildingId);
+    if (!building) return showToast("건물을 먼저 선택해 주세요.", "error");
+    const options = BuildingDocs.DOC_TYPES
+      .map(type => `<option value="${attr(type.key)}">${esc(type.label)}${type.required ? " (필수)" : ""}</option>`)
+      .join("");
+    modalContent.innerHTML = `<div class="modal-head"><div><h2>서류 연결</h2><p>${esc(building.name || "건물")} · 회사 Drive 에 올린 서류를 연결합니다.</p></div><button class="close-button" data-action="close-modal">×</button></div>
+      <form id="buildingDocumentForm" class="modal-body">
+        <input type="hidden" name="buildingId" value="${attr(building.id)}">
+        <label class="field wide"><span>Drive 주소 또는 파일 ID</span><input name="driveRef" placeholder="https://drive.google.com/file/d/... 또는 파일 ID" autocomplete="off" required></label>
+        <label class="field"><span>서류 종류</span><select name="docType">${options}</select></label>
+        <label class="field"><span>제목 (비우면 Drive 이름)</span><input name="title" maxlength="300" autocomplete="off"></label>
+        <label class="field wide"><span>메모</span><textarea name="memo" rows="2" maxlength="1000" placeholder="어떤 상황의 서류인지 적어 주세요."></textarea></label>
+        <div class="info-box">파일은 회사 Drive 에 그대로 있고 여기에는 연결만 저장합니다. <b>열쇠 번호·출입 비밀번호는 적지 마세요</b> — 그 값은 정보·열쇠 관리에서 다룹니다.</div>
+        <div class="form-actions"><button type="button" class="secondary-button" data-action="close-modal">취소</button><button type="submit" class="primary-button">연결</button></div>
+      </form>`;
+    openModal();
+  }
+
   function renderSecurity() {
     const stats = Core.calculateSecurityStatus(store, new Date());
     const tabs = [
@@ -6323,6 +6394,58 @@
       }
       return;
     }
+    const buildingDocsSelect = event.target.closest("[data-building-docs-select]");
+    if (buildingDocsSelect) {
+      buildingDocsState.buildingId = buildingDocsSelect.dataset.buildingDocsSelect;
+      renderBuildingDocuments();
+      return;
+    }
+    const buildingDocOpen = event.target.closest("[data-open-external]");
+    if (buildingDocOpen) {
+      const result = await api.openExternal(buildingDocOpen.dataset.openExternal);
+      if (!result.ok) showToast(result.error || "Drive 문서를 열지 못했습니다.", "error");
+      return;
+    }
+    const buildingDocCheck = event.target.closest("[data-building-document-check]");
+    if (buildingDocCheck) {
+      if (!canWriteCRM()) return showToast("서류 확인은 쓰기 권한이 있어야 합니다.", "error");
+      const doc = (store.buildingDocuments || []).find(item => item && item.id === buildingDocCheck.dataset.buildingDocumentCheck);
+      if (!doc) return showToast("서류를 찾지 못했습니다.", "error");
+      try {
+        // 계약 기준 문서와 같은 경로로 확인한다. 회사 Drive 를 읽기 전용으로
+        // 보는 게이트웨이라 파일 내용은 가져오지 않고 제목·수정시각만 본다.
+        const result = await api.checkContractSource({ sourceId: `source_${doc.driveFileId}`, driveFileId: doc.driveFileId });
+        const source = result && result.source || {};
+        Object.assign(doc, {
+          title: String(source.title || doc.title || "").slice(0, 300),
+          webViewLink: String(source.webViewLink || doc.webViewLink || "").slice(0, 500),
+          revisionId: String(source.revisionId || "").slice(0, 200),
+          modifiedAt: String(source.modifiedAt || "").slice(0, 40),
+          lastCheckedAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString(),
+        });
+        scheduleSave();
+        renderBuildingDocuments();
+        showToast("Drive 에서 서류 정보를 확인했습니다.", "success");
+      } catch (error) {
+        showToast(error && error.message || "Drive 에서 서류를 확인하지 못했습니다.", "error");
+      }
+      return;
+    }
+    const buildingDocArchive = event.target.closest("[data-building-document-archive]");
+    if (buildingDocArchive) {
+      if (!canWriteCRM()) return showToast("서류 보관은 쓰기 권한이 있어야 합니다.", "error");
+      const doc = (store.buildingDocuments || []).find(item => item && item.id === buildingDocArchive.dataset.buildingDocumentArchive);
+      if (!doc) return showToast("서류를 찾지 못했습니다.", "error");
+      // 지우지 않고 보관만 한다. 어떤 서류가 언제 연결돼 있었는지가 남아야 한다.
+      doc.archivedAt = new Date().toISOString();
+      doc.updatedAt = doc.archivedAt;
+      logAudit({ category: "문서", targetType: "건물 서류", targetId: doc.id, targetLabel: doc.title || doc.driveFileId, action: "건물 문서함에서 보관", reason: "목록 정리" });
+      scheduleSave();
+      renderBuildingDocuments();
+      showToast("서류를 보관했습니다.", "success");
+      return;
+    }
     const paymentSheetOpen = event.target.closest("[data-payment-sheet-open]");
     if (paymentSheetOpen) {
       const sheet = operations.caseSettings && operations.caseSettings.paymentScheduleSheet || {};
@@ -7167,6 +7290,7 @@
     }
     else if (action === "valuescope-open-original") await api.openExternal(VALUE_SCOPE_URLS[valueScopeTab]);
     else if (action === "valuescope-register-prospect") await registerValueScopeProspect();
+    else if (action === "new-building-document") buildingDocumentEditor(buildingDocsState.buildingId || ((store.buildings || []).find(item => item && !item.archivedAt) || {}).id || "");
     else if (action === "new-work-record") workRecordEditor("");
     else if (action === "new-building-schedule") buildingScheduleEditor("", actionControl.dataset.scheduleDate || workCalendarDate);
     else if (action === "open-sales-standards") openSalesStandards("");
@@ -8664,6 +8788,34 @@
       if (!existing) store.securityIncidents.push(item);
       logAudit({ category: "사고", targetType: "보안사고", targetId: item.id, targetLabel: item.type, action: `${existing ? "처리 내용 변경" : "사고 보고"} · ${item.status}`, actor: item.reportedBy, reason: item.summary });
       await commitSharedFormMutation({ form, beforeStore, onSaved: () => { closeModal(); securityTab = "incidents"; renderSecurity(); showToast(existing ? "사고 처리 내용을 서버에 저장했습니다." : "사고를 책임자 보고 목록에 서버 등록했습니다.", existing ? "success" : "error"); } });
+    } else if (form.id === "buildingDocumentForm") {
+      if (!canWriteCRM()) return showToast("서류 연결은 쓰기 권한이 있어야 합니다.", "error");
+      const beforeStore = cloneStore(store);
+      const raw = Object.fromEntries(new FormData(form).entries());
+      const driveFileId = BuildingDocs.extractDriveFileId(raw.driveRef);
+      let record;
+      try {
+        // 여기서 출입 비밀번호 메모를 걸러낸다. 통과시키면 그 값이 백업·화면
+        // 곳곳으로 퍼진 뒤에야 알게 된다.
+        record = BuildingDocs.validateRegisterRequest({
+          buildingId: raw.buildingId,
+          driveFileId,
+          docType: raw.docType,
+          title: raw.title,
+          memo: raw.memo,
+        });
+      } catch (error) {
+        return showToast(error.message || "서류를 연결하지 못했습니다.", "error");
+      }
+      const existing = (store.buildingDocuments || []).find(item => item && item.id === record.id);
+      if (existing && !existing.archivedAt) return showToast("이미 연결된 서류입니다.", "error");
+      const now = new Date().toISOString();
+      const saved = Object.assign({}, record, { archivedAt: "", updatedAt: now, updatedBy: salesActorName() });
+      if (existing) Object.assign(existing, saved);
+      else (store.buildingDocuments = store.buildingDocuments || []).push(saved);
+      buildingDocsState.buildingId = record.buildingId;
+      logAudit({ category: "문서", targetType: "건물 서류", targetId: record.id, targetLabel: record.title || record.driveFileId, action: "건물 문서함에 연결", reason: BuildingDocs.typeLabel(record.docType) });
+      await commitSharedFormMutation({ form, beforeStore, onSaved: () => { closeModal(); renderBuildingDocuments(); showToast("서류를 연결했습니다. ‘최신 확인’ 을 누르면 Drive 에서 제목을 가져옵니다.", "success"); } });
     } else if (form.id === "settingsForm") {
       const beforeStore = cloneStore(store);
       const raw = Object.fromEntries(new FormData(form).entries());
@@ -9094,7 +9246,7 @@ document.addEventListener("keydown", event => {
       if (query.get("demo") === "1" && !store.customers.length) store = demoStore();
       synchronizedStore = cloneStore(store);
       store.partnerVendors = Array.isArray(store.partnerVendors) ? store.partnerVendors : [];
-      if (["dashboard", "cases", "payments", "customers", "buildings", "vacancies", "buildingCalendar", "workManagement", "operationsIntelligence", "valueScope", "consultations", "aiAssistant", "pipeline", "contracts", "relationships", "partnerVendors", "partnerQuotes", "tasks", "officeHome", "officeAttendance", "officeMessenger", "officeAdmin", "security", "settings"].includes(query.get("view")) || query.get("view") === "customerMessages") currentView = query.get("view");
+      if (["dashboard", "cases", "payments", "customers", "buildings", "vacancies", "buildingCalendar", "workManagement", "operationsIntelligence", "valueScope", "consultations", "aiAssistant", "pipeline", "contracts", "relationships", "partnerVendors", "partnerQuotes", "tasks", "officeHome", "officeAttendance", "officeMessenger", "officeAdmin", "buildingDocuments", "security", "settings"].includes(query.get("view")) || query.get("view") === "customerMessages") currentView = query.get("view");
       await refreshOperations({ silent: true, render: false });
       document.getElementById("lastSaved").textContent = store.updatedAt ? `최신 반영 ${dateText(store.updatedAt)}` : "새 데이터";
       render();
