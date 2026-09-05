@@ -435,7 +435,7 @@
   function blankSharedStore() {
     return {
       schemaVersion: 3,
-      company: { name: "BRING Care", workspace: "원주 건물 운영" },
+      company: { name: "BRING Care", workspace: "원주 건물 운영", buildingDocsFolderId: "" },
       settings: {
         owner: "김현진",
         workflowUrl: "https://bringengineering.github.io/FM/",
