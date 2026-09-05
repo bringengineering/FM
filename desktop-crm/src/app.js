@@ -3741,7 +3741,22 @@
   }
 
   function renderOperationsIntelligence() {
-    main.innerHTML = AiOperationsUI.renderManagementReport({ report: currentManagementReport(), result: managementReportState.result, loading: managementReportState.loading, error: managementReportState.error, writable: canWriteCRM() }) + OperationsIntelligenceUI.renderPage({
+    main.innerHTML = AiOperationsUI.renderManagementReport({
+      report: currentManagementReport(),
+      result: managementReportState.result,
+      loading: managementReportState.loading,
+      error: managementReportState.error,
+      writable: canWriteCRM(),
+      ownerOs: {
+        visible: canAdministerSecurity(),
+        configured: Boolean(ownerOsState.view && ownerOsState.view.configured),
+        summary: ownerOsSummaryState.summary,
+        confirmedBy: ownerOsSummaryState.confirmedBy,
+        sending: ownerOsSummaryState.sending,
+        notice: ownerOsSummaryState.notice,
+        error: ownerOsSummaryState.error,
+      },
+    }) + OperationsIntelligenceUI.renderPage({
       operations: operationsIntelligenceState.items,
       buildings: operationsIntelligenceState.buildings,
       profiles: operationsIntelligenceState.profiles,
@@ -3752,6 +3767,7 @@
       error: operationsIntelligenceState.error,
     });
     if (!operationsIntelligenceState.loaded && !operationsIntelligenceState.loading) void loadOperationsIntelligence();
+    if (!ownerOsState.loaded && !ownerOsState.loading && canAdministerSecurity()) void loadOwnerOsSettingsView();
   }
 
   async function loadOperationsIntelligence() {
@@ -4270,9 +4286,40 @@
     openModal();
   }
 
+  // 대표OS 로 올릴 총평 초안. 확인(confirmedBy)은 사람이 버튼을 눌러야 붙고,
+  // 글을 고치면 풀린다. 확인한 문장과 보내는 문장이 달라지면 안 된다.
+  let ownerOsSummaryState = { summary: "", draftedBy: "", confirmedBy: "", confirmedAt: "", sending: false, notice: "", error: "" };
+
   // 대표OS 연결 상태. 비밀키는 절대 여기 담기지 않는다 — 화면은 설정 여부와
   // 끝 네 자리만 안다(main.js 의 loadOwnerOsSettings 가 그것만 넘긴다).
   let ownerOsState = { view: null, loaded: false, loading: false, saving: false, sending: false, error: "", notice: "" };
+
+  // 설정 화면과 월간 경영보고 화면이 같은 함수로 보낸다. 두 곳이 서로 다른
+  // 내용을 보내게 되는 상황을 만들지 않으려는 것이다.
+  async function sendOwnerOsMonthlyReport({ month, qualitative, onDone }) {
+    if (!canAdministerSecurity()) {
+      showToast("대표OS 보고는 관리자만 보낼 수 있습니다.", "error");
+      return { ok: false };
+    }
+    try {
+      const result = await api.sendOwnerOsReport({
+        store,
+        operations: operationsIntelligenceState.items,
+        month,
+        qualitative,
+      });
+      if (result && result.ok) {
+        logAudit({ category: "설정", targetType: "대표OS", targetLabel: result.month, action: "대표OS 월간 보고 전송", reason: "정기 보고" });
+        scheduleSave();
+        return { ok: true, message: `${result.month} 보고를 대표OS 에 올렸습니다.` };
+      }
+      return { ok: false, message: (result && result.error) || "대표OS 보고를 보내지 못했습니다." };
+    } catch (error) {
+      return { ok: false, message: error && error.message || "대표OS 보고를 보내지 못했습니다." };
+    } finally {
+      if (typeof onDone === "function") onDone();
+    }
+  }
 
   async function loadOwnerOsSettingsView() {
     if (ownerOsState.loading) return;
@@ -4285,7 +4332,9 @@
       ownerOsState.error = error && error.message || "대표OS 연결 설정을 읽지 못했습니다.";
     } finally {
       ownerOsState.loading = false;
+      // 이 값은 설정 화면과 월간 경영보고 화면 양쪽이 쓴다. 열려 있는 쪽을 다시 그린다.
       if (currentView === "settings") renderSettings();
+      else if (currentView === "operationsIntelligence") renderOperationsIntelligence();
     }
   }
 
@@ -4305,7 +4354,7 @@
         <label class="field wide"><span>비밀키</span><input name="secret" type="password" placeholder="${configured ? "바꿀 때만 입력" : "대표OS 에 넣은 것과 같은 값"}" autocomplete="off"></label>
         <div class="form-actions"><button class="primary-button" type="submit" ${ownerOsState.saving ? "disabled" : ""}>${ownerOsState.saving ? "저장 중…" : "연결 저장"}</button></div>
       </form>
-      ${configured ? `<div class="inline-actions" style="margin-top:12px"><button class="secondary-button" data-action="owner-os-send" ${ownerOsState.sending ? "disabled" : ""}>${ownerOsState.sending ? "보내는 중…" : "지난달 보고 보내기"}</button></div>` : ""}
+      ${configured ? `<div class="inline-actions" style="margin-top:12px"><button class="secondary-button" data-action="owner-os-send-from-settings" ${ownerOsState.sending ? "disabled" : ""}>${ownerOsState.sending ? "보내는 중…" : "지난달 보고 보내기"}</button></div>` : ""}
       ${ownerOsState.notice ? `<div class="info-box" style="margin-top:12px">${esc(ownerOsState.notice)}</div>` : ""}
       ${ownerOsState.error ? `<div class="info-box" role="alert" style="margin-top:12px">${esc(ownerOsState.error)}</div>` : ""}
       <div class="info-box" style="margin-top:12px">미리보기(preview) 주소는 Vercel 이 앞에서 막습니다. 대표OS 운영 주소를 넣어 주세요.</div>
@@ -5914,6 +5963,58 @@
       catch { showToast("경영보고를 복사하지 못했습니다.", "error"); }
       return;
     }
+    const ownerOsUseDraft = event.target.closest("[data-owner-os-use-draft]");
+    if (ownerOsUseDraft) {
+      const text = managementReportState.result?.text || "";
+      if (!text) { showToast("먼저 AI 월간 경영보고를 만들어 주세요.", "error"); return; }
+      // 초안을 가져오면 확인은 풀린 상태다. 사람이 읽고 다시 눌러야 한다.
+      ownerOsSummaryState = Object.assign({}, ownerOsSummaryState, {
+        summary: text, draftedBy: "ai", confirmedBy: "", confirmedAt: "", notice: "", error: "",
+      });
+      renderOperationsIntelligence();
+      return;
+    }
+    const ownerOsConfirm = event.target.closest("[data-owner-os-confirm]");
+    if (ownerOsConfirm) {
+      const typed = document.querySelector("[data-owner-os-summary]")?.value || "";
+      if (!typed.trim()) { showToast("확인할 총평 내용이 없습니다.", "error"); return; }
+      ownerOsSummaryState = Object.assign({}, ownerOsSummaryState, {
+        summary: typed,
+        // 초안을 안 가져오고 직접 썼으면 사람이 쓴 것이다.
+        draftedBy: ownerOsSummaryState.draftedBy || "human",
+        confirmedBy: salesActorName(),
+        confirmedAt: new Date().toISOString(),
+        notice: "이 총평을 확인했습니다. 이대로 보내면 대표 평가 근거가 됩니다.",
+        error: "",
+      });
+      renderOperationsIntelligence();
+      return;
+    }
+    const ownerOsSend = event.target.closest("[data-owner-os-send]");
+    if (ownerOsSend) {
+      const typed = document.querySelector("[data-owner-os-summary]")?.value || "";
+      const state = ownerOsSummaryState;
+      ownerOsSummaryState = Object.assign({}, state, { summary: typed, sending: true, notice: "", error: "" });
+      renderOperationsIntelligence();
+      const result = await sendOwnerOsMonthlyReport({
+        month: managementReportState.month,
+        qualitative: {
+          summary: typed,
+          draftedBy: state.draftedBy || "human",
+          // 확인한 문장과 지금 보내는 문장이 같을 때만 확인자를 붙인다.
+          confirmedBy: typed === state.summary ? state.confirmedBy : "",
+          confirmedAt: typed === state.summary ? state.confirmedAt : "",
+        },
+        onDone: () => { ownerOsSummaryState.sending = false; },
+      });
+      ownerOsSummaryState = Object.assign({}, ownerOsSummaryState, {
+        sending: false,
+        notice: result.ok ? result.message : "",
+        error: result.ok ? "" : (result.message || ""),
+      });
+      renderOperationsIntelligence();
+      return;
+    }
     const consultationAiOrganize = event.target.closest("[data-consultation-ai-organize]");
     if (consultationAiOrganize) { await requestConsultationAiDraft(consultationAiOrganize.closest("#consultationForm")); return; }
     const consultationAiApply = event.target.closest("[data-consultation-ai-apply]");
@@ -7264,29 +7365,17 @@
       if (!canAdministerSecurity()) return showToast("백업 파일은 관리자만 저장할 수 있습니다.", "error");
       const result = await api.backup(store);
       if (result.ok) { logAudit({ category: "백업", targetType: "백업", targetLabel: Core.dayKey(), action: "CRM 전체 데이터 백업 생성", reason: "정기·수동 백업" }); scheduleSave(); showToast("CRM 백업을 저장했습니다.", "success"); }
-    } else if (action === "owner-os-send") {
-      if (!canAdministerSecurity()) return showToast("대표OS 보고는 관리자만 보낼 수 있습니다.", "error");
+    } else if (action === "owner-os-send-from-settings") {
       ownerOsState.sending = true;
       ownerOsState.error = "";
       ownerOsState.notice = "";
       renderSettings();
-      try {
-        // 총평은 여기서 지어내지 않는다. 아직 입력 화면이 없으므로 비운 채로
-        // 보내고, 받는 쪽은 "확인 전 초안" 으로 표시한다.
-        const result = await api.sendOwnerOsReport({ store, operations: operationsIntelligenceState.items });
-        if (result && result.ok) {
-          ownerOsState.notice = `${result.month} 보고를 대표OS 에 올렸습니다.`;
-          logAudit({ category: "설정", targetType: "대표OS", targetLabel: result.month, action: "대표OS 월간 보고 전송", reason: "정기 보고" });
-          scheduleSave();
-        } else if (result && result.error) {
-          ownerOsState.error = result.error;
-        }
-      } catch (error) {
-        ownerOsState.error = error && error.message || "대표OS 보고를 보내지 못했습니다.";
-      } finally {
-        ownerOsState.sending = false;
-        renderSettings();
-      }
+      // 총평은 여기서 지어내지 않는다. 설정 화면에는 총평 입력 칸이 없으므로
+      // 비운 채로 보내고, 받는 쪽은 "확인 전 초안" 으로 표시한다.
+      const result = await sendOwnerOsMonthlyReport({ onDone: () => { ownerOsState.sending = false; } });
+      if (result.ok) ownerOsState.notice = result.message;
+      else if (result.message) ownerOsState.error = result.message;
+      renderSettings();
     } else if (action === "restore") {
       try {
         const result = await api.restore();

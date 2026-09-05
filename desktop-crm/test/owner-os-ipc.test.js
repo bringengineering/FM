@@ -110,7 +110,7 @@ test("설정 화면이 대표OS 연결 칸을 보여준다", () => {
   assert.match(appSource, /function ownerOsCard\(\)/u);
   assert.match(appSource, /\$\{ownerOsCard\(\)\}/u, "설정 화면에 실제로 붙어 있어야 한다");
   assert.match(appSource, /id="ownerOsForm"/u);
-  assert.match(appSource, /data-action="owner-os-send"/u);
+  assert.match(appSource, /data-action="owner-os-send-from-settings"/u);
   // 관리자만.
   const card = appSource.slice(appSource.indexOf("function ownerOsCard"), appSource.indexOf("function renderSettings"));
   assert.match(card, /canAdministerSecurity\(\)/u);
@@ -134,13 +134,64 @@ test("화면은 비밀키를 저장해 두지 않는다", () => {
   assert.match(appSource, /ownerOsState\.view = await api\.saveOwnerOsSettings/u);
 });
 
-test("총평은 화면이 지어내지 않는다", () => {
+test("설정 화면에서는 총평을 지어내지 않고 비운 채 보낸다", () => {
   const sender = appSource.slice(
-    appSource.indexOf('action === "owner-os-send"'),
+    appSource.indexOf('action === "owner-os-send-from-settings"'),
     appSource.indexOf('} else if (action === "restore")'),
   );
   assert.ok(sender.length > 0);
-  // qualitative 를 임의 문장으로 채워 보내면 확인 안 된 말이 대표 평가에 들어간다.
+  // 총평 입력 칸이 없는 화면이라 문장을 만들어 넣으면 확인 안 된 말이 나간다.
   assert.doesNotMatch(sender, /summary:\s*["'`]/u);
   assert.match(sender, /확인 전 초안/u, "왜 비우는지 코드에 남겨 둔다");
+});
+
+// --- 총평 확인 ---
+
+test("총평을 고치면 확인이 풀린 채로 나간다", () => {
+  // 확인한 문장과 보내는 문장이 달라지면 확인의 뜻이 없어진다.
+  const sender = appSource.slice(
+    appSource.indexOf('data-owner-os-send]'),
+    appSource.indexOf('const consultationAiOrganize'),
+  );
+  assert.ok(sender.length > 0);
+  assert.match(sender, /confirmedBy: typed === state\.summary \? state\.confirmedBy : ""/u);
+  assert.match(sender, /confirmedAt: typed === state\.summary \? state\.confirmedAt : ""/u);
+});
+
+test("AI 초안을 가져오면 확인이 풀린다", () => {
+  const block = appSource.slice(
+    appSource.indexOf('data-owner-os-use-draft]'),
+    appSource.indexOf('data-owner-os-confirm]'),
+  );
+  assert.ok(block.length > 0);
+  assert.match(block, /draftedBy: "ai"/u);
+  assert.match(block, /confirmedBy: ""/u, "가져오자마자 확인된 상태가 되면 안 된다");
+});
+
+test("확인은 사람이 눌러야 붙는다", () => {
+  const block = appSource.slice(
+    appSource.indexOf('data-owner-os-confirm]'),
+    appSource.indexOf('data-owner-os-send]'),
+  );
+  assert.ok(block.length > 0);
+  assert.match(block, /confirmedBy: salesActorName\(\)/u);
+  // 직접 쓴 글은 human 으로 남는다.
+  assert.match(block, /ownerOsSummaryState\.draftedBy \|\| "human"/u);
+});
+
+test("두 화면이 같은 전송 함수를 쓴다", () => {
+  // 두 곳이 서로 다른 내용을 보내게 되면 어느 쪽이 맞는지 알 수 없다.
+  assert.match(appSource, /async function sendOwnerOsMonthlyReport\(/u);
+  const calls = appSource.match(/await sendOwnerOsMonthlyReport\(/g) || [];
+  assert.equal(calls.length, 2, "설정 화면과 경영보고 화면 두 곳에서만 부른다");
+  assert.equal((appSource.match(/api\.sendOwnerOsReport\(/g) || []).length, 1, "IPC 는 한 곳에서만 부른다");
+});
+
+test("확인 전 총평이라는 것을 화면이 말해 준다", () => {
+  const uiSource = fs.readFileSync(path.join(__dirname, "../src/ai-operations-ui.js"), "utf8");
+  assert.match(uiSource, /function ownerOsBlock\(/u);
+  assert.match(uiSource, /확인 전 초안/u);
+  assert.match(uiSource, /평가 근거로 쓰이지 않습니다/u);
+  // 연결 전에는 보내기 칸 대신 안내를 낸다.
+  assert.match(uiSource, /설정 화면에서 대표OS 연결을 먼저 넣어 주세요/u);
 });
