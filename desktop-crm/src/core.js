@@ -443,7 +443,7 @@
         autoSync: true,
         onboardingComplete: false
       },
-      customers: [], buildings: [], activities: [], contracts: [], contractReadiness: [], partnerVendors: [], partnerQuotes: [], tasks: [], serviceRecords: [], serviceContracts: [], serviceSchedules: [], securityAssets: [], auditLogs: [], securityIncidents: [],
+      customers: [], buildings: [], activities: [], contracts: [], contractReadiness: [], partnerVendors: [], partnerQuotes: [], tasks: [], serviceRecords: [], serviceContracts: [], serviceSchedules: [], securityAssets: [], auditLogs: [], securityIncidents: [], buildingDocuments: [],
       salesProspects: [], salesContacts: [], salesUnits: [], salesActivities: [], salesEvents: [], salesOpportunities: [],
       accessRoles: [
         createAccessRole({ name: "데이터·운영책임자", canView: true, canEdit: true, canDownload: true, canManageSecurity: true }),
@@ -493,6 +493,7 @@
       accessRoles: Array.isArray(src.accessRoles) && src.accessRoles.length ? src.accessRoles.filter(Boolean) : base.accessRoles,
       auditLogs: Array.isArray(src.auditLogs) ? src.auditLogs.filter(Boolean) : [],
       securityIncidents: Array.isArray(src.securityIncidents) ? src.securityIncidents.filter(Boolean) : [],
+      buildingDocuments: Array.isArray(src.buildingDocuments) ? src.buildingDocuments.filter(Boolean) : [],
       salesProspects: Array.isArray(src.salesProspects) ? src.salesProspects.filter(Boolean) : [],
       salesContacts: Array.isArray(src.salesContacts) ? src.salesContacts.filter(Boolean) : [],
       salesUnits: Array.isArray(src.salesUnits) ? src.salesUnits.filter(Boolean) : [],
