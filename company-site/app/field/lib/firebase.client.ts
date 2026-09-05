@@ -22,7 +22,11 @@ const firebaseConfig = {
 
 export const firebaseApp = getApps().length > 0 ? getApp() : initializeApp(firebaseConfig);
 
-const appCheckSiteKey = process.env.NEXT_PUBLIC_FIREBASE_APPCHECK_SITE_KEY;
+// reCAPTCHA Enterprise 사이트 키. 위 firebaseConfig 의 apiKey 와 같이 브라우저에
+// 그대로 실려 나가는 공개 값이라 저장소에 둔다. 빌드 환경변수가 있으면 그쪽이 이긴다.
+const DEFAULT_APPCHECK_SITE_KEY = "6LeYi6otAAAAAPAfvg6zmIFJxtyrzGUYUFacYWB9";
+const appCheckSiteKey = process.env.NEXT_PUBLIC_FIREBASE_APPCHECK_SITE_KEY?.trim()
+  || DEFAULT_APPCHECK_SITE_KEY;
 const appCheckState = globalThis as typeof globalThis & {
   __bringFieldAppCheckApps?: Set<string>;
   __bringFieldAppCheckInstances?: Map<string, AppCheck>;

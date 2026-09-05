@@ -21,7 +21,7 @@
     ]
   },
   "app/field/components/v2/FieldV2App.tsx": {
-    "file": "assets/FieldV2App-BZaaT5BM.js",
+    "file": "assets/FieldV2App-I7AiOlYA.js",
     "name": "FieldV2App",
     "src": "app/field/components/v2/FieldV2App.tsx",
     "isDynamicEntry": true,
@@ -30,10 +30,10 @@
       "_framework-CXnKph_e.js"
     ]
   },
-  "node_modules/.pnpm/vinext@0.0.50_@vitejs+plugi_9192fdac6e7854526409bdfa1df91a00/node_modules/vinext/dist/shims/layout-segment-context.js": {
-    "file": "assets/layout-segment-context-DC0PmEF3.js",
+  "node_modules/.pnpm/vinext@0.0.50_@vitejs+plugin-react@6.0.2_vite@8.0.13_@types+node@22.19.19_esbuild@0.28._9192fdac6e7854526409bdfa1df91a00/node_modules/vinext/dist/shims/layout-segment-context.js": {
+    "file": "assets/layout-segment-context-CkiTYqrl.js",
     "name": "layout-segment-context",
-    "src": "node_modules/.pnpm/vinext@0.0.50_@vitejs+plugi_9192fdac6e7854526409bdfa1df91a00/node_modules/vinext/dist/shims/layout-segment-context.js",
+    "src": "node_modules/.pnpm/vinext@0.0.50_@vitejs+plugin-react@6.0.2_vite@8.0.13_@types+node@22.19.19_esbuild@0.28._9192fdac6e7854526409bdfa1df91a00/node_modules/vinext/dist/shims/layout-segment-context.js",
     "isDynamicEntry": true,
     "imports": [
       "_rolldown-runtime-S-ySWqyJ.js",
@@ -42,7 +42,7 @@
     ]
   },
   "virtual:vinext-app-browser-entry": {
-    "file": "assets/index-BHjVDuS2.js",
+    "file": "assets/index-Clis8_mQ.js",
     "name": "index",
     "src": "virtual:vinext-app-browser-entry",
     "isEntry": true,
@@ -54,7 +54,7 @@
       "virtual:vinext-app-browser-entry",
       "app/consult/ConsultForm.tsx",
       "app/field/components/v2/FieldV2App.tsx",
-      "node_modules/.pnpm/vinext@0.0.50_@vitejs+plugi_9192fdac6e7854526409bdfa1df91a00/node_modules/vinext/dist/shims/layout-segment-context.js"
+      "node_modules/.pnpm/vinext@0.0.50_@vitejs+plugin-react@6.0.2_vite@8.0.13_@types+node@22.19.19_esbuild@0.28._9192fdac6e7854526409bdfa1df91a00/node_modules/vinext/dist/shims/layout-segment-context.js"
     ]
   }
 }
