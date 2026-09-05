@@ -1,0 +1,972 @@
+/* =====================================================================
+   BRING CRM — 토스 스타일 UI 레이어
+   ---------------------------------------------------------------------
+   기존 스타일시트 전부를 읽은 뒤 마지막에 얹는 오버레이다.
+   색·여백·모서리·그림자만 바꾸고 구조·클래스·동작은 건드리지 않는다.
+   되돌리려면 index.html 에서 이 파일 <link> 한 줄만 지우면 된다.
+   ===================================================================== */
+
+:root{
+  --bg:#F2F4F6;            /* 배경: 아주 연한 회색 */
+  --panel:#FFFFFF;
+  --panel-2:#FAFBFC;
+  --panel-3:#F2F4F6;
+  --line:#E5E8EB;          /* 경계선: 옅게 */
+  --text:#191F28;          /* 본문: 거의 검정 */
+  --muted:#8B95A1;         /* 보조 텍스트 */
+  --soft:#4E5968;
+  --blue:#3182F6;          /* 포인트 */
+  --accent:#3182F6;        /* KPI 카드 강조 막대·원 */
+  --blue-2:#1B64DA;
+  --green:#00C471;
+  --yellow:#FFB020;
+  --orange:#FF7847;
+  --red:#F04452;
+  --radius:14px;
+  --shadow:0 4px 16px rgba(0,0,0,.06);
+  --toss-fill:#F2F4F6;
+  --toss-fill-hover:#E8EBED;
+  --toss-blue-weak:#E8F3FF;
+  /* 상태 배지 4색: 배경은 아주 옅게, 글자만 또렷하게 */
+  --tone-good-bg:#E6F8F0;   --tone-good-ink:#04A66B;
+  --tone-warn-bg:#FFF6E5;   --tone-warn-ink:#C77A00;
+  --tone-bad-bg:#FFEFF0;    --tone-bad-ink:#E0303F;
+  --tone-info-bg:#E8F3FF;   --tone-info-ink:#2272EB;
+  --tone-idle-bg:#F2F4F6;   --tone-idle-ink:#6B7684;
+}
+
+body{ letter-spacing:-0.3px; }
+
+/* ---- 사이드바 : 그라데이션 제거, 흰 바탕 ---- */
+.sidebar{ background:#FFFFFF; border-right:1px solid var(--line); }
+.brand{ border-bottom:1px solid var(--line); }
+.brand strong{ font-weight:800; letter-spacing:-0.4px; }
+.brand span{ color:var(--muted); }
+.brand-mark{ box-shadow:none; }
+
+.nav-item{ border:0; color:var(--soft); border-radius:12px; }
+.nav-item:hover{ background:var(--toss-fill); color:var(--text); }
+.nav-item.active{
+  background:var(--toss-blue-weak); border:0; color:var(--blue);
+  box-shadow:none; font-weight:700;
+}
+.nav-item>.nav-icon{
+  color:#B0B8C1; display:inline-flex; align-items:center; justify-content:center;
+  width:20px; height:20px; flex:0 0 20px;
+}
+.nav-item>.nav-icon svg{
+  width:19px; height:19px; display:block;
+  fill:none; stroke:currentColor; stroke-width:1.7;
+  stroke-linecap:round; stroke-linejoin:round;
+}
+.nav-item:hover>.nav-icon{ color:var(--soft); }
+.nav-item.active>.nav-icon{ color:var(--blue); }
+/* 아이콘이 아닌 본문 묶음(.nav-copy)까지 흐려지지 않도록 */
+.nav-item>.nav-copy{ color:inherit; }
+.nav-item b{ font-size:13.5px; font-weight:600; }
+.nav-item.active b{ font-weight:700; }
+.nav-item em{ background:var(--toss-fill); color:var(--muted); font-weight:700; }
+.nav-item.active em{ background:#fff; color:var(--blue); }
+
+.sidebar-foot{ border-top:1px solid var(--line); }
+.sync-state b{ color:var(--text); }
+.workflow-launch,.help-launch{
+  border:0; background:var(--toss-fill); color:var(--soft); border-radius:10px; font-weight:600;
+}
+.workflow-launch:hover,.help-launch:hover{ background:var(--toss-fill-hover); color:var(--text); }
+
+/* ---- 작업 영역 · 상단바 ---- */
+.workspace{ background:var(--bg); }
+.topbar{
+  background:#FFFFFF; border-bottom:1px solid var(--line);
+  backdrop-filter:none;
+}
+.eyebrow{ color:var(--muted); font-weight:700; letter-spacing:0; }
+.topbar h1{ font-size:22px; font-weight:800; letter-spacing:-0.6px; color:var(--text); }
+
+/* ---- 버튼 : 그라데이션 대신 단색, 눌리는 반응 ---- */
+.primary-button{
+  background:var(--blue); box-shadow:none; font-weight:700; border-radius:12px;
+}
+.primary-button:hover{ background:var(--blue-2); filter:none; transform:none; }
+.primary-button:active{ transform:scale(.98); }
+
+.secondary-button,.help-button,.update-button,.icon-button{
+  border:0; background:var(--toss-fill); color:var(--soft);
+  border-radius:12px; font-weight:600;
+}
+.secondary-button:hover,.help-button:hover,.update-button:hover,.icon-button:hover{
+  background:var(--toss-fill-hover); border:0; color:var(--text);
+}
+.update-button.ready{ background:#E6F7EF; color:#00A45E; box-shadow:none; }
+.update-button.error{ background:#FFF0F0; color:var(--red); }
+.danger-button,.danger-outline-button{
+  border:0; background:#FFF0F0; color:var(--red); border-radius:12px; font-weight:700;
+}
+
+/* ---- 검색 · 입력 ---- */
+.global-search{
+  border:0; background:var(--toss-fill); box-shadow:none; border-radius:12px; color:var(--muted);
+}
+.global-search input::placeholder{ color:#B0B8C1; }
+/* 껍데기(label)가 이미 테두리·배경을 갖고 있는 검색창은 안쪽 input 을 투명하게.
+   그러지 않으면 아래의 일반 input 규칙과 힘이 같아 상자 안에 상자가 하나 더 생긴다. */
+.global-search input,
+.partner-vendor-list-search input,
+.customer-management-list-search input,
+.messenger-people label input{
+  background:transparent !important; border:0 !important; box-shadow:none !important;
+}
+input[type="text"],input[type="email"],input[type="password"],input[type="search"],
+input[type="number"],input[type="date"],input[type="tel"],select,textarea{
+  border:1px solid var(--line); border-radius:12px; background:#fff; color:var(--text);
+}
+input:focus,select:focus,textarea:focus{
+  outline:0; border-color:var(--blue); box-shadow:0 0 0 3px rgba(49,130,246,.14);
+}
+
+.user-pill{ border:1px solid var(--line); border-radius:12px; }
+.user-pill button{ background:var(--toss-fill); color:var(--soft); font-weight:700; }
+
+/* ---- 카드 · 패널 : 그라데이션 제거, 부드러운 그림자 ---- */
+.today-brief{
+  border:1px solid var(--line); border-radius:var(--radius);
+  background:#FFFFFF; box-shadow:var(--shadow);
+}
+.brief-kicker{ color:var(--muted); letter-spacing:.06em; }
+.today-brief h2{ color:var(--text); font-weight:800; letter-spacing:-0.5px; }
+.today-brief p{ color:var(--muted); }
+.brief-value{ border-right:1px solid var(--line); color:var(--muted); }
+.brief-value b{ color:var(--blue); }
+
+.kpi-card,.panel,.card,.data-table-wrap,.activity-feed,.focus-list,.empty-state,
+.drive-import-panel,.entity-picker,.detail-drawer,.modal-layer .modal,.confirmation-layer > *{
+  border-color:var(--line) !important;
+  border-radius:var(--radius) !important;
+  background:#FFFFFF;
+  box-shadow:var(--shadow);
+}
+.kpi-label{ color:var(--muted); font-weight:600; }
+
+/* ---- 로그인 화면 ---- */
+.login-gate{ background:var(--bg); }
+.login-card{
+  border:1px solid var(--line); border-radius:20px; box-shadow:var(--shadow);
+}
+.login-card>span{ color:var(--muted); letter-spacing:.08em; }
+.login-card h1{ font-weight:800; letter-spacing:-0.6px; color:var(--text); }
+.login-card p{ color:var(--muted); }
+.login-logo{ box-shadow:none; }
+.login-form label>span{ color:var(--soft); font-weight:600; }
+.login-form input{ background:#fff; border:1px solid var(--line); border-radius:12px; height:48px; }
+.email-login-button{
+  background:var(--blue); box-shadow:none; border-radius:12px; font-weight:700; min-height:50px;
+}
+.email-login-button:hover{ background:var(--blue-2); filter:none; }
+.google-login-button{ background:#fff; color:var(--soft); border:1px solid var(--line); }
+.google-login-button:hover{ background:var(--toss-fill); }
+.temporary-password{ border:0; background:var(--toss-blue-weak); color:var(--blue-2); border-radius:12px; }
+.password-user{ background:var(--toss-fill); border-radius:12px; }
+.password-user span{ color:var(--text); }
+.login-message.error{ color:var(--red); }
+.login-message.success{ color:#00A45E; }
+
+/* ---- 스크롤바 ---- */
+.main-content::-webkit-scrollbar-thumb,
+.nav-list::-webkit-scrollbar-thumb,
+.detail-drawer::-webkit-scrollbar-thumb{ background:#D1D6DB; }
+
+
+/* =====================================================================
+   안쪽 업무 화면 공통 요소
+   표·칩·카드가 하늘색 계열 + 9~11px 작은 글씨였다. 색을 맞추고
+   본문 가독성을 올린다(밀도는 크게 흔들지 않는 선에서).
+   ===================================================================== */
+
+/* ---- 표 : 업무 화면의 주력 요소 ---- */
+.data-table-wrap{
+  border:1px solid var(--line); border-radius:var(--radius);
+  box-shadow:var(--shadow);
+}
+.data-table th{
+  background:#FAFBFC; border-bottom:1px solid var(--line);
+  color:var(--muted); font-size:12px; font-weight:700; letter-spacing:0;
+  padding:13px 14px;
+}
+.data-table td{
+  border-bottom:1px solid #F2F4F6; color:#333D4B; font-size:13px; padding:14px;
+}
+.data-table tbody tr:hover{ background:#F9FAFB; }
+.data-table tbody tr.is-selected,
+.data-table tbody tr[aria-selected="true"]{ background:var(--toss-blue-weak); }
+
+/* ---- 필터 칩 ---- */
+.filter-chip{
+  border:0; background:var(--toss-fill); color:var(--soft);
+  border-radius:999px; padding:8px 14px; font-size:13px; font-weight:600;
+}
+.filter-chip:hover{ background:var(--toss-fill-hover); }
+.filter-chip.active{ background:var(--blue); color:#fff; font-weight:700; border:0; }
+
+/* ---- KPI 카드 ---- */
+.kpi-card{ border:1px solid var(--line); box-shadow:var(--shadow); }
+.kpi-card::after{ opacity:.06; }
+.kpi-label{ color:var(--muted); font-size:12px; font-weight:600; }
+.kpi-card b,.kpi-value{ color:var(--text); letter-spacing:-0.5px; }
+
+/* ---- 빈 상태 ---- */
+.empty-state{
+  border:1px solid var(--line); border-radius:var(--radius);
+  background:#fff; color:var(--muted); font-size:14px;
+}
+
+/* ---- 폼 라벨 ---- */
+label>span,.essential-label{ color:var(--soft); font-weight:600; }
+.building-form-section,.contract-type-fields,.case-summary-field{ border-color:var(--line); }
+
+/* ---- 상태 배지류 : 하늘색 계열을 중립·파랑으로 ---- */
+.contract-status,.relationship-state,.sales-state-label,.industry-badge,.priority-badge{
+  border:0; background:var(--toss-fill); color:var(--soft);
+  border-radius:999px; padding:5px 10px; font-size:12px; font-weight:700;
+}
+
+/* ---- 영업 단계 스테퍼 ---- */
+.sales-stage-button.active,.sales-stage-button[aria-current="step"]{
+  background:var(--blue); color:#fff; border-color:var(--blue);
+}
+.sales-stage-number{ background:var(--toss-fill); color:var(--soft); }
+.sales-stage-button.active .sales-stage-number{ background:rgba(255,255,255,.22); color:#fff; }
+/* 건물 수 뱃지(> b)는 흰 배경 그대로라, 버튼 글자색만 흰색으로 바꾸면
+   흰 글씨가 흰 배경에 묻혀 숫자가 사라진다. 색을 따로 지정한다. */
+.sales-stage-button>b{ color:var(--soft); }
+.sales-stage-button.active>b{ background:#fff; color:var(--blue); font-weight:800; }
+
+/* ---- 선택 상자: 브라우저 기본 화살표 대신 토스풍 셰브론 ----
+   화면별 CSS 가 select 에 background 단축속성을 걸어두어 배경 이미지가 지워지므로
+   이 덮어쓰기 층에서는 !important 로 화살표를 고정한다. */
+select{
+  appearance:none !important; -webkit-appearance:none !important; -moz-appearance:none !important;
+  padding-right:34px !important;
+  background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%238B95A1' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M6 9l6 6 6-6'/%3E%3C/svg%3E") !important;
+  background-repeat:no-repeat !important;
+  background-position:right 11px center !important;
+  background-size:15px 15px !important;
+}
+/* 화면마다 제각각이던 하늘색 배경·글자색을 토스 중립톤으로 통일 */
+.field select,.customer-sales-filter select,.entity-picker-step select{
+  background-color:#fff; border-color:var(--line); color:var(--text);
+}
+.quote-filter-bar select,.partner-vendor-toolbar select,.field-operator-control select{
+  background-color:var(--toss-fill); color:var(--text); font-weight:600;
+}
+.field-operator-control{ border-color:var(--line); border-radius:12px; }
+.quote-filter-bar>label,.partner-vendor-toolbar>label{
+  border-color:var(--line); border-radius:12px;
+}
+.quote-filter-bar>label span,.partner-vendor-toolbar>label span,.field-operator-control>span{ color:var(--muted); }
+select:disabled{ background-color:var(--toss-fill); color:var(--muted); }
+
+/* ---- 사이드바 스크롤바: 길어진 메뉴에서 얇고 조용하게 ---- */
+.nav-list{ scrollbar-width:thin; scrollbar-color:#D7DCE2 transparent; }
+.nav-list::-webkit-scrollbar{ width:6px; }
+.nav-list::-webkit-scrollbar-thumb{ background:#D7DCE2; border-radius:999px; }
+.nav-list::-webkit-scrollbar-track{ background:transparent; }
+
+/* ---- 사용자 칩: 이름이 없어 이메일만 있을 때 두 줄 중복 방지 ---- */
+.user-pill.is-email-only small{ display:none; }
+
+/* ---- 화면 상단 배너(히어로): 하늘색 그라데이션 → 토스풍 단색 ---- */
+.building-hub-hero,.operations-hero,.partner-quote-hero,.partner-vendor-hero,.security-hero{
+  background:var(--toss-blue-weak); background-image:none;
+  border:1px solid transparent; border-radius:var(--radius); box-shadow:none;
+}
+.security-hero-icon{
+  background:var(--blue); background-image:none; border-radius:14px;
+  box-shadow:none; color:#fff;
+}
+
+/* ---- 정보·열쇠 KPI: 하늘/민트색 숫자를 대시보드와 같은 규칙으로 ---- */
+.security-kpi{ border:1px solid var(--line); border-radius:var(--radius); box-shadow:var(--shadow); }
+.security-kpi>span{ color:var(--muted); font-weight:600; }
+.security-kpi>strong{ color:var(--text); font-weight:800; letter-spacing:-0.5px; }
+.security-kpi>small{ color:var(--muted); }
+.security-kpi.red>strong{ color:var(--red); }
+.security-kpi.green>strong,.security-kpi.cyan>strong{ color:var(--text); }
+.security-kpi::after,.security-kpi.red::after,
+.security-kpi.green::after,.security-kpi.cyan::after{ display:none; }
+
+/* ---- 업체 상담 카드: 민트색 금액 상자를 파랑 계열로 ---- */
+.quote-card-total{
+  border:1px solid var(--line); border-radius:12px; background:var(--toss-fill);
+}
+.quote-card-total span{ color:var(--muted); font-weight:600; }
+.quote-card-total strong{ color:var(--text); font-weight:800; letter-spacing:-0.5px; }
+.quote-card-total small{ color:var(--muted); }
+.partner-quote-card,.partner-vendor-card{
+  border:1px solid var(--line); border-radius:var(--radius); box-shadow:var(--shadow);
+}
+.partner-quote-card:hover,.partner-vendor-card:hover{
+  border-color:#D7DCE2; box-shadow:0 6px 20px rgba(0,0,0,.07); transform:none;
+}
+.quote-card-costs,.quote-card-note,.partner-vendor-contact{ background:#FAFBFC; }
+.quote-card-head,.quote-card-note,.partner-vendor-contact{ border-color:var(--line); }
+.quote-card-costs>div{ border-right-color:var(--line); }
+
+/* ---- 상단바 줄바꿈 방지 ----
+   현장 작업자 선택이 함께 보일 때 제목·버튼 글자가 두 줄로 쪼개지던 문제. */
+.topbar{ gap:14px; flex-wrap:nowrap; }
+.topbar>div:first-child{ min-width:0; flex:0 1 auto; }
+.topbar .eyebrow,.topbar h1{
+  overflow:hidden; white-space:nowrap; text-overflow:ellipsis;
+}
+.top-actions{ min-width:0; flex:1 1 auto; justify-content:flex-end; }
+.top-actions button,.top-actions .user-pill span b,.top-actions .user-pill span small{
+  white-space:nowrap;
+}
+.global-search{ flex:0 1 320px; min-width:0; }
+.global-search input{ min-width:0; }
+.user-pill{ min-width:0; }
+.user-pill span{ min-width:0; overflow:hidden; }
+.user-pill span b,.user-pill span small{ overflow:hidden; text-overflow:ellipsis; display:block; }
+@media(max-width:1500px){
+  .update-button{ display:none; }
+}
+@media(max-width:1320px){
+  .help-button{ display:none; }
+}
+
+/* ---- Drive 검토 패널: 옅은 그라데이션 제거 ---- */
+.drive-import-panel,.drive-import-panel>header{ background-image:none; }
+.drive-import-panel{ border:1px solid var(--line); border-radius:var(--radius); box-shadow:var(--shadow); }
+
+/* ---- 남은 그라데이션 헤더들 단색화 ---- */
+.building-hub-detail-head,.vacancy-detail-head,.case-detail-head,
+.case-trash-head,.case-action-panel,.confirmation-head,.entity-picker{
+  background-image:none; background-color:#fff; border-color:var(--line);
+}
+.case-action-panel,.entity-picker{ background-color:#FAFBFC; }
+.avatar{ background-image:none; background-color:var(--toss-blue-weak); color:var(--blue); font-weight:700; }
+
+/* ---- 진행 막대: 그라데이션 → 단색 파랑 ---- */
+.case-progress-track i,.workflow-progress i,.mini-bar i,.case-list-progress>i>span{
+  background-image:none; background-color:var(--blue);
+}
+.case-progress-track,.workflow-progress,.mini-bar,.case-list-progress>i{
+  background-color:var(--toss-fill);
+}
+.entity-picker-option.selected,.entity-picker-option[aria-pressed="true"]{
+  background-image:none; background-color:var(--toss-blue-weak);
+  color:var(--blue); box-shadow:none; font-weight:700;
+}
+
+/* ---- 상태 배지 색 통일 ----
+   기본 규칙(.contract-status 등)만 중립톤으로 바꿔 두었더니, 실제로 화면에
+   뜨는 거의 모든 배지가 상태 수식어(.active/.overdue/.high …)를 달고 있어
+   더 강한 선택자에 밀려 예전 색이 그대로 남아 있었다. 색을 없애는 게 아니라
+   같은 뜻끼리 같은 색을 쓰도록 수식어까지 함께 맞춘다. */
+.contract-status.active,.relationship-state.active,
+.sales-state-label.vacant,.sales-state-label.success,.priority-badge.low{
+  background:var(--tone-good-bg); color:var(--tone-good-ink);
+}
+.contract-status.ending,.relationship-state.today,
+.sales-state-label.upcoming,.priority-badge.normal{
+  background:var(--tone-warn-bg); color:var(--tone-warn-ink);
+}
+.relationship-state.overdue,.sales-state-label.danger,.priority-badge.high{
+  background:var(--tone-bad-bg); color:var(--tone-bad-ink);
+}
+.relationship-state.soon{
+  background:var(--tone-info-bg); color:var(--tone-info-ink);
+}
+.contract-status.preparing,.contract-status.closed,
+.relationship-state.unscheduled{
+  background:var(--tone-idle-bg); color:var(--tone-idle-ink);
+}
+/* .industry-badge 는 원래 글자색에 !important 가 걸려 있어 같은 무기가 필요하다 */
+.industry-badge{
+  background:var(--tone-info-bg) !important; color:var(--tone-info-ink) !important;
+  border-radius:999px;
+}
+
+/* ---- 버튼·검색창 아이콘 ----
+   ↻ ⌕ 같은 기호는 PC 글꼴에 없으면 네모(두부)로 나온다. 실제로 입금 캘린더의
+   '건물 갱신' '세입자 반영' 버튼이 그렇게 깨져 있었다. SVG 로 그린다. */
+.btn-icon,.search-icon{
+  width:15px; height:15px; display:inline-block; vertical-align:-2px;
+  fill:none; stroke:currentColor; stroke-width:1.9;
+  stroke-linecap:round; stroke-linejoin:round;
+}
+.global-search .search-mark{
+  display:inline-flex; align-items:center; color:var(--muted);
+}
+.global-search .search-icon{ width:16px; height:16px; vertical-align:0; }
+
+/* ---- 연락 방식 아이콘 ---- */
+.activity-glyph{
+  width:14px; height:14px; display:inline-block; vertical-align:-2px;
+  fill:none; stroke:currentColor; stroke-width:1.8;
+  stroke-linecap:round; stroke-linejoin:round;
+}
+.activity-icon .activity-glyph,.timeline-dot .activity-glyph{
+  width:15px; height:15px; vertical-align:0;
+}
+.activity-icon,.timeline-dot{
+  display:inline-grid; place-items:center;
+  background:var(--toss-blue-weak); color:var(--blue);
+}
+.activity-method{
+  display:inline-flex; align-items:center; gap:5px;
+  background:var(--toss-fill); color:var(--soft);
+  border-radius:999px; padding:4px 10px; font-weight:600;
+}
+
+/* ---- 폴더형 메뉴(BRING OFFICE·고객 관리·캘린더) ---- */
+.nav-folder-toggle{ border:0; color:var(--soft); border-radius:12px; }
+.nav-folder-toggle:hover,.nav-folder.active>.nav-folder-toggle{
+  background:var(--toss-fill); color:var(--text);
+}
+.nav-folder-toggle>.nav-icon{
+  color:#B0B8C1; display:inline-flex; align-items:center; justify-content:center;
+  width:20px; height:20px;
+}
+.nav-folder-toggle>.nav-icon svg{
+  width:19px; height:19px; display:block;
+  fill:none; stroke:currentColor; stroke-width:1.7;
+  stroke-linecap:round; stroke-linejoin:round;
+}
+.nav-folder-toggle:hover>.nav-icon,.nav-folder.active>.nav-folder-toggle>.nav-icon{ color:var(--soft); }
+.nav-folder-toggle b{ font-size:13.5px; font-weight:600; }
+.nav-chevron{
+  display:inline-flex; align-items:center; justify-content:center; color:#B0B8C1;
+}
+.nav-chevron svg{
+  width:13px; height:13px; display:block;
+  fill:none; stroke:currentColor; stroke-width:2;
+  stroke-linecap:round; stroke-linejoin:round;
+}
+.nav-folder-children{ padding-left:14px; }
+.nav-item.nav-child b{ font-size:13px; }
+
+/* ---- 작업 폴더 선택 화면 ---- */
+.workspace-folder-icon{ display:inline-flex; align-items:center; justify-content:center; color:var(--blue); }
+.workspace-folder-glyph{
+  width:26px; height:26px; display:block;
+  fill:none; stroke:currentColor; stroke-width:1.6;
+  stroke-linecap:round; stroke-linejoin:round;
+}
+.workspace-folder-card{
+  border:1px solid var(--line); border-radius:var(--radius);
+  background:#fff; box-shadow:var(--shadow);
+}
+.workspace-folder-card:hover{ border-color:#D7DCE2; box-shadow:0 6px 20px rgba(0,0,0,.07); }
+
+/* ---- 한글 줄바꿈 ----
+   기본값(break-word)은 '건물주 입금캘린 / 더' 처럼 단어 가운데를 자른다.
+   keep-all 은 띄어쓰기 단위로만 넘긴다. */
+h1,h2,h3,h4,.today-brief h2,.section-head h2{ word-break:keep-all; }
+
+/* =====================================================================
+   BRING OFFICE (그룹웨어) — 하늘/민트색 그라데이션을 토스 톤으로
+   ===================================================================== */
+
+/* 아이콘 */
+.office-glyph{
+  width:18px; height:18px; display:block;
+  fill:none; stroke:currentColor; stroke-width:1.8;
+  stroke-linecap:round; stroke-linejoin:round;
+}
+.office-card-icon .office-glyph{ width:22px; height:22px; }
+.office-empty-icon .office-glyph{ width:28px; height:28px; }
+.office-btn-icon,.office-tab-icon,.office-empty-icon{
+  display:inline-flex; align-items:center; justify-content:center;
+}
+.office-btn-icon .office-glyph,.office-tab-icon .office-glyph{
+  width:15px; height:15px; vertical-align:-2px;
+}
+.office-admin-lock{ display:inline-flex; align-items:center; gap:6px; }
+.office-admin-lock .office-glyph{ width:14px; height:14px; }
+
+/* 상단 배너 */
+.office-hero{
+  background:var(--toss-blue-weak); background-image:none;
+  border:1px solid transparent; border-radius:var(--radius); box-shadow:none;
+}
+.office-hero h2{ color:var(--text); font-weight:800; letter-spacing:-0.5px; }
+.office-hero p,.office-hero>div:first-child>p{ color:var(--muted); }
+.office-hero>div:first-child>span,.office-panel>header span,.messenger-people>header>span{
+  color:var(--blue); font-weight:700; letter-spacing:.06em;
+}
+
+/* 요약 카드 */
+.office-summary-card,.office-summary-card.messenger{
+  background:#fff; background-image:none;
+  border:1px solid var(--line); border-radius:var(--radius); box-shadow:var(--shadow);
+}
+.office-summary-card:hover{
+  border-color:#D7DCE2; box-shadow:0 6px 20px rgba(0,0,0,.07); transform:none;
+}
+.office-card-icon{
+  background:var(--toss-blue-weak); color:var(--blue);
+  display:grid; place-items:center; border-radius:14px;
+}
+.office-summary-card small{ color:var(--muted); font-weight:600; }
+.office-summary-card h3{ color:var(--text); font-weight:800; letter-spacing:-0.4px; }
+
+/* 이름표 */
+.office-avatar{
+  background:var(--toss-blue-weak); background-image:none;
+  color:var(--blue); font-weight:700;
+}
+
+/* 메신저 */
+.message-list{ background:var(--bg); background-image:none; }
+.message-row p{
+  border:1px solid var(--line); background:#fff; color:var(--text);
+  box-shadow:none;
+}
+.message-row.mine p{
+  background:var(--blue); background-image:none; border-color:var(--blue); color:#fff;
+}
+.message-composer{ border-top:1px solid var(--line); }
+.message-composer textarea{ border:1px solid var(--line); border-radius:12px; color:var(--text); }
+.message-composer button,.message-composer .message-send-button{
+  background:var(--blue); background-image:none; border:0; color:#fff;
+  border-radius:12px; font-weight:700;
+}
+.message-empty b{ color:var(--text); }
+.message-empty p{ color:var(--muted); }
+.office-empty-icon{ color:#B0B8C1; }
+
+/* 근태 */
+.attendance-work-bar,.attendance-progress>div i{
+  background:var(--blue); background-image:none;
+}
+.attendance-progress>span{ color:var(--soft); }
+.attendance-progress>span b{ color:var(--blue); }
+.office-display-name-editor,.office-display-name-editor.attendance,
+.office-admin-detail-head,.office-attendance-correction{
+  background:#fff; background-image:none; border-color:var(--line);
+}
+.office-display-name-editor.attendance{ border-radius:var(--radius); }
+.office-attendance-correction>header span{ color:var(--muted); letter-spacing:.06em; }
+.office-display-name-editor input{ border:1px solid var(--line); border-radius:10px; color:var(--text); }
+/* 메신저 카드 아이콘만 민트색이라 파랑 일색인 나머지와 겉돌았다.
+   `.office-summary-card.messenger .office-card-icon` 이 더 강한 선택자라
+   같은 무게로 맞받아야 한다. */
+.office-summary-card.messenger .office-card-icon{
+  background:var(--toss-blue-weak); color:var(--blue);
+}
+.partner-vendor-list-search,.customer-management-list-search,.messenger-people label{
+  border:1px solid var(--line); border-radius:12px; background:#fff; box-shadow:none; color:var(--muted);
+}
+.partner-vendor-list-search:focus-within,.messenger-people label:focus-within{
+  border-color:var(--blue); box-shadow:0 0 0 3px rgba(49,130,246,.14);
+}
+.messenger-people{ background:#fff; border-right:1px solid var(--line); }
+.messenger-people>header{ border-bottom:1px solid var(--line); }
+.messenger-people h2{ color:var(--text); font-weight:800; letter-spacing:-0.5px; }
+
+/* 근태 — 남아 있던 민트색을 파랑으로 (출근/퇴근은 뜻이 있으니 형태로 구분) */
+.office-punch-button{
+  border:0; border-radius:12px; background:var(--toss-fill); color:var(--soft); font-weight:700;
+}
+.office-punch-button:not(.out){ background:var(--blue); color:#fff; }
+.office-punch-button.out{ border:0; background:var(--toss-fill); color:var(--soft); }
+.office-punch-button:hover:not(:disabled){ filter:brightness(.97); background:var(--toss-fill-hover); }
+.office-punch-button:not(.out):hover:not(:disabled){ background:var(--blue-2); }
+.attendance-punch>div{ border:1px solid var(--line); border-radius:12px; background:#fff; }
+
+/* 선택한 날짜 표시: 초록 테두리 → 파랑 */
+.attendance-day.selected{ background:var(--toss-blue-weak); box-shadow:inset 0 0 0 2px var(--blue); }
+.attendance-day.selected::after{
+  border-right-color:var(--blue); border-bottom-color:var(--blue); background:var(--toss-blue-weak);
+}
+.attendance-clock-card{ border:1px solid var(--line); border-radius:var(--radius); box-shadow:var(--shadow); }
+.attendance-clock-main>strong{ color:var(--text); letter-spacing:-1px; }
+.attendance-today-times b{ color:var(--text); }
+.attendance-today-times span{ color:var(--muted); }
+.attendance-week-toolbar button{ border:1px solid var(--line); border-radius:10px; color:var(--soft); }
+.attendance-week-toolbar button:hover{ border-color:var(--line); background:var(--toss-fill); }
+.attendance-week-toolbar strong{ color:var(--text); }
+.office-status.working i{ background:var(--green); box-shadow:0 0 0 4px rgba(0,196,113,.14); }
+/* 비활성 버튼이 옅은 하늘색 배너 위에서 거의 안 보이던 것 */
+.office-punch-button:disabled{
+  opacity:1; background:rgba(255,255,255,.7); color:var(--muted); cursor:not-allowed;
+}
+
+/* =====================================================================
+   입체감 층 — 버튼·카드·입력창에 깊이를 준다
+   평평한 색만 있던 화면에 그림자·미세한 결·눌리는 반응을 얹는다.
+   ===================================================================== */
+
+:root{
+  /* 떠 있는 정도 3단계 */
+  --lift-1:0 1px 2px rgba(16,24,40,.06), 0 1px 3px rgba(16,24,40,.08);
+  --lift-2:0 2px 4px rgba(16,24,40,.05), 0 4px 10px rgba(16,24,40,.08);
+  --lift-3:0 4px 8px rgba(16,24,40,.05), 0 12px 24px rgba(16,24,40,.10);
+  /* 파란 버튼이 자기 색 그림자를 드리우게 */
+  --lift-blue:0 1px 2px rgba(21,84,180,.24), 0 4px 12px rgba(49,130,246,.34);
+  --lift-blue-hover:0 2px 4px rgba(21,84,180,.26), 0 8px 20px rgba(49,130,246,.42);
+  /* 위쪽 안쪽 하이라이트 — 빛을 위에서 받는 느낌 */
+  --sheen:inset 0 1px 0 rgba(255,255,255,.55);
+  --sheen-strong:inset 0 1px 0 rgba(255,255,255,.28);
+}
+
+/* ---- 눌리는 버튼 ---- */
+button{ transition:transform .12s ease, box-shadow .16s ease, background .16s ease; }
+button:active:not(:disabled){ transform:translateY(1px); }
+
+/* 주요 버튼: 위가 밝은 파랑 → 아래가 짙은 파랑 */
+.primary-button,.email-login-button,.message-composer button,
+.message-composer .message-send-button,.office-punch-button:not(.out){
+  background-image:linear-gradient(180deg, #4A90F7 0%, var(--blue) 52%, #2A76E8 100%);
+  box-shadow:var(--lift-blue), var(--sheen-strong);
+  border:0;
+}
+.primary-button:hover:not(:disabled),.email-login-button:hover:not(:disabled),
+.message-composer button:hover:not(:disabled),.office-punch-button:not(.out):hover:not(:disabled){
+  background-image:linear-gradient(180deg, #5899F8 0%, #3585F7 52%, #2E7BEB 100%);
+  box-shadow:var(--lift-blue-hover), var(--sheen-strong);
+}
+.primary-button:active:not(:disabled),.email-login-button:active:not(:disabled),
+.office-punch-button:not(.out):active:not(:disabled){
+  background-image:linear-gradient(180deg, #2A76E8 0%, #2A76E8 100%);
+  box-shadow:inset 0 2px 5px rgba(12,58,130,.35);
+}
+
+/* 보조 버튼: 흰 바탕 + 얇은 테두리 + 살짝 떠 있음 */
+.secondary-button,.mini-button,.help-button,.help-launch,.workflow-launch,
+.update-button,.quote-card-edit,.record-delete-button,.attendance-week-toolbar button,
+.office-punch-button.out,.filter-chip:not(.active){
+  background-image:linear-gradient(180deg,#fff 0%,#F7F8FA 100%);
+  border:1px solid #DFE3E8;
+  box-shadow:var(--lift-1), var(--sheen);
+}
+.secondary-button:hover:not(:disabled),.mini-button:hover:not(:disabled),
+.help-button:hover,.help-launch:hover,.workflow-launch:hover,.update-button:hover,
+.quote-card-edit:hover,.attendance-week-toolbar button:hover,
+.office-punch-button.out:hover:not(:disabled),.filter-chip:not(.active):hover{
+  background-image:linear-gradient(180deg,#fff 0%,#F1F3F5 100%);
+  border-color:#D0D6DD;
+  box-shadow:var(--lift-2), var(--sheen);
+}
+.secondary-button:active:not(:disabled),.mini-button:active:not(:disabled),
+.filter-chip:not(.active):active{
+  box-shadow:inset 0 2px 4px rgba(16,24,40,.10);
+  background-image:linear-gradient(180deg,#EEF0F3 0%,#F5F6F8 100%);
+}
+
+/* 선택된 칩 */
+.filter-chip.active,.sales-stage-button.active{
+  background-image:linear-gradient(180deg, #4A90F7 0%, var(--blue) 100%);
+  box-shadow:var(--lift-blue), var(--sheen-strong);
+}
+
+/* ---- 카드·패널: 한 겹 더 떠 있게 ---- */
+.kpi-card,.security-kpi,.partner-quote-card,.partner-vendor-card,
+.office-summary-card,.office-summary-card.messenger,.setting-card,
+.attendance-clock-card,.workspace-folder-card,.data-table-wrap,
+.today-brief,.detail-drawer,.modal-card,.confirmation-card{
+  box-shadow:var(--lift-2);
+  border:1px solid #E8EBEF;
+}
+.kpi-card:hover,.partner-quote-card:hover,.partner-vendor-card:hover,
+.office-summary-card:hover,.workspace-folder-card:hover{
+  box-shadow:var(--lift-3);
+  border-color:#DDE1E6;
+  transform:translateY(-1px);
+}
+.kpi-card,.partner-quote-card,.partner-vendor-card,
+.office-summary-card,.workspace-folder-card{ transition:transform .16s ease, box-shadow .16s ease, border-color .16s ease; }
+
+/* 떠 있는 것들은 더 높이 */
+.modal-card,.detail-drawer,.confirmation-card{ box-shadow:var(--lift-3); }
+
+/* ---- 입력창: 살짝 파인 느낌 ---- */
+input[type="text"],input[type="email"],input[type="password"],input[type="search"],
+input[type="number"],input[type="date"],input[type="tel"],select,textarea{
+  box-shadow:inset 0 1px 2px rgba(16,24,40,.06);
+  border-color:#DFE3E8;
+}
+input:focus,select:focus,textarea:focus{
+  box-shadow:inset 0 1px 2px rgba(16,24,40,.05), 0 0 0 3px rgba(49,130,246,.16);
+}
+.global-search,.partner-vendor-list-search,.customer-management-list-search,
+.messenger-people label,.field-operator-control{
+  box-shadow:inset 0 1px 2px rgba(16,24,40,.05);
+  border:1px solid #DFE3E8;
+}
+.global-search:focus-within,.partner-vendor-list-search:focus-within,
+.messenger-people label:focus-within{
+  border-color:var(--blue);
+  box-shadow:inset 0 1px 2px rgba(16,24,40,.04), 0 0 0 3px rgba(49,130,246,.16);
+}
+
+/* ---- 사이드바 선택 항목 ---- */
+.nav-item.active{
+  box-shadow:0 1px 2px rgba(49,130,246,.10), inset 0 1px 0 rgba(255,255,255,.7);
+}
+.nav-item em{ box-shadow:inset 0 1px 2px rgba(16,24,40,.05); }
+
+/* ---- 상단바가 본문 위에 얹혀 보이도록 ---- */
+.topbar{ box-shadow:0 1px 3px rgba(16,24,40,.05); position:relative; z-index:2; }
+.sidebar{ box-shadow:1px 0 3px rgba(16,24,40,.04); position:relative; z-index:1; }
+
+/* ---- 표 ---- */
+.data-table thead th{ box-shadow:inset 0 -1px 0 var(--line); }
+.data-table tbody tr{ transition:background .12s ease; }
+
+/* ---- 배지도 아주 살짝 ---- */
+.contract-status,.relationship-state,.sales-state-label,.industry-badge,
+.priority-badge,.filter-chip{ box-shadow:var(--sheen); }
+
+/* ---- 더 또렷한 입체감 ----
+   버튼 아래에 단단한 모서리를 깔아 실제로 두께가 있는 것처럼 보이게 하고,
+   누르면 그 두께만큼 내려앉는다. */
+.primary-button,.email-login-button,.message-composer button,
+.message-composer .message-send-button,.office-punch-button:not(.out),
+.filter-chip.active,.sales-stage-button.active{
+  box-shadow:
+    0 3px 0 #1F63CE,
+    0 5px 10px rgba(21,84,180,.30),
+    0 10px 22px rgba(49,130,246,.26),
+    var(--sheen-strong);
+}
+.primary-button:hover:not(:disabled),.email-login-button:hover:not(:disabled),
+.message-composer button:hover:not(:disabled),.office-punch-button:not(.out):hover:not(:disabled){
+  transform:translateY(-1px);
+  box-shadow:
+    0 4px 0 #1F63CE,
+    0 7px 14px rgba(21,84,180,.32),
+    0 14px 28px rgba(49,130,246,.30),
+    var(--sheen-strong);
+}
+.primary-button:active:not(:disabled),.email-login-button:active:not(:disabled),
+.message-composer button:active:not(:disabled),.office-punch-button:not(.out):active:not(:disabled){
+  transform:translateY(2px);
+  box-shadow:
+    0 1px 0 #1F63CE,
+    0 2px 4px rgba(21,84,180,.28),
+    inset 0 2px 5px rgba(12,58,130,.30);
+}
+
+.secondary-button,.mini-button,.help-button,.help-launch,.workflow-launch,
+.update-button,.quote-card-edit,.attendance-week-toolbar button,
+.office-punch-button.out,.filter-chip:not(.active){
+  box-shadow:
+    0 2px 0 #DBE0E6,
+    0 3px 6px rgba(16,24,40,.07),
+    0 8px 16px rgba(16,24,40,.06),
+    var(--sheen);
+}
+.secondary-button:hover:not(:disabled),.mini-button:hover:not(:disabled),
+.help-button:hover,.help-launch:hover,.workflow-launch:hover,.update-button:hover,
+.quote-card-edit:hover,.attendance-week-toolbar button:hover,
+.office-punch-button.out:hover:not(:disabled),.filter-chip:not(.active):hover{
+  transform:translateY(-1px);
+  box-shadow:
+    0 3px 0 #D3D9E0,
+    0 5px 10px rgba(16,24,40,.09),
+    0 12px 22px rgba(16,24,40,.07),
+    var(--sheen);
+}
+.secondary-button:active:not(:disabled),.mini-button:active:not(:disabled),
+.help-button:active,.filter-chip:not(.active):active,
+.office-punch-button.out:active:not(:disabled){
+  transform:translateY(1px);
+  box-shadow:
+    0 0 0 #DBE0E6,
+    inset 0 2px 4px rgba(16,24,40,.12);
+}
+
+/* 카드도 한 단계 더 띄운다 */
+.kpi-card,.security-kpi,.partner-quote-card,.partner-vendor-card,
+.office-summary-card,.office-summary-card.messenger,.setting-card,
+.attendance-clock-card,.workspace-folder-card,.data-table-wrap,.today-brief{
+  box-shadow:
+    0 1px 2px rgba(16,24,40,.04),
+    0 4px 8px rgba(16,24,40,.05),
+    0 12px 28px rgba(16,24,40,.07);
+}
+.kpi-card:hover,.partner-quote-card:hover,.partner-vendor-card:hover,
+.office-summary-card:hover,.workspace-folder-card:hover{
+  transform:translateY(-3px);
+  box-shadow:
+    0 2px 4px rgba(16,24,40,.05),
+    0 8px 16px rgba(16,24,40,.07),
+    0 22px 44px rgba(16,24,40,.11);
+}
+.modal-card,.detail-drawer,.confirmation-card{
+  box-shadow:
+    0 4px 10px rgba(16,24,40,.08),
+    0 16px 32px rgba(16,24,40,.12),
+    0 40px 80px rgba(16,24,40,.16);
+}
+
+/* KPI 카드 왼쪽 강조 막대에도 두께감 */
+.kpi-card::before{ box-shadow:1px 0 3px rgba(16,24,40,.10); }
+
+/* 사이드바 선택 항목 */
+.nav-item.active{
+  box-shadow:
+    0 1px 0 rgba(49,130,246,.16),
+    0 2px 6px rgba(49,130,246,.14),
+    inset 0 1px 0 rgba(255,255,255,.8);
+}
+
+/* =====================================================================
+   빠진 화면이 없도록 — 클래스 이름이 아니라 요소로 잡는다
+   화면마다 버튼 클래스 이름이 제각각이라(.marketing-nav button 처럼 이름이
+   아예 없는 것도 있다) 하나씩 나열하면 계속 빠진다. button 요소 전체에
+   기본 입체감을 주고, 버튼이 아닌 것처럼 쓰이는 것들만 빼낸다.
+   ===================================================================== */
+button:not(.nav-item):not(.nav-folder-toggle):not(.close-button):not(.timeline-delete)
+:not([class*="card"]):not([class*="-row"]):not([class*="-day"]):not([class*="-option"])
+:not([class*="-item"]):not([class*="-record"]):not([class*="-tab"]):not(.primary-button)
+:not(.email-login-button):not(.filter-chip):not(.sales-stage-button){
+  border-radius:12px;
+  background-image:linear-gradient(180deg,#fff 0%,#F7F8FA 100%);
+  border:1px solid #DFE3E8;
+  box-shadow:
+    0 2px 0 #DBE0E6,
+    0 3px 6px rgba(16,24,40,.07),
+    0 8px 16px rgba(16,24,40,.06),
+    var(--sheen);
+  color:var(--soft);
+  font-weight:600;
+}
+button:not(.nav-item):not(.nav-folder-toggle):not(.close-button):not(.timeline-delete)
+:not([class*="card"]):not([class*="-row"]):not([class*="-day"]):not([class*="-option"])
+:not([class*="-item"]):not([class*="-record"]):not([class*="-tab"]):not(.primary-button)
+:not(.email-login-button):not(.filter-chip):not(.sales-stage-button):hover:not(:disabled){
+  transform:translateY(-1px);
+  border-color:#D0D6DD;
+  box-shadow:
+    0 3px 0 #D3D9E0,
+    0 5px 10px rgba(16,24,40,.09),
+    0 12px 22px rgba(16,24,40,.07),
+    var(--sheen);
+}
+
+/* 선택된 탭·칩은 파랑으로 (마케팅 탭이 거의 검정이었다) */
+.marketing-nav button.active,
+[role="tab"][aria-selected="true"],
+button[aria-current="page"]{
+  background-image:linear-gradient(180deg, #4A90F7 0%, var(--blue) 100%) !important;
+  border-color:var(--blue) !important;
+  color:#fff !important;
+  box-shadow:
+    0 3px 0 #1F63CE,
+    0 5px 10px rgba(21,84,180,.30),
+    0 10px 22px rgba(49,130,246,.26),
+    var(--sheen-strong) !important;
+}
+
+/* 마케팅 화면도 같은 카드·입력 규칙을 따르게 */
+.marketing-filters,.marketing-kpi-grid>*,.marketing-table-wrap,.marketing-alerts,
+.marketing-funnel,.marketing-attention,.marketing-customer-list,.marketing-input,
+.marketing-report-metrics,.marketing-duplicate-review{
+  border:1px solid var(--line); border-radius:var(--radius); background:#fff;
+  box-shadow:
+    0 1px 2px rgba(16,24,40,.04),
+    0 4px 8px rgba(16,24,40,.05),
+    0 12px 28px rgba(16,24,40,.07);
+}
+.marketing-customer-row,.marketing-entry-row,.marketing-metric-row{ border-color:var(--line); }
+
+/* =====================================================================
+   마무리 손질 — 조금 더 보기 좋게
+   ===================================================================== */
+
+/* 모서리를 조금 더 둥글게 (14 → 16) */
+:root{ --radius:16px; }
+
+/* KPI 카드
+   - 오른쪽 위 옅은 원은 잘려 보여서 정리감을 해쳤다. 은은한 사선 결로 교체
+   - 왼쪽 강조 막대는 위아래로 길게 빼 카드 전체를 지지하는 느낌으로 */
+.kpi-card::after{
+  right:-40px; top:-40px; width:150px; height:150px; opacity:.06;
+  background:radial-gradient(circle at 30% 70%, var(--accent,#3182F6), transparent 62%);
+}
+.kpi-card::before{
+  top:18px; height:calc(100% - 36px); width:3px; border-radius:0 4px 4px 0; opacity:.9;
+}
+.kpi-card .kpi-value,.security-kpi>strong{ letter-spacing:-1.2px; }
+
+/* 글자 위계를 조금 더 또렷하게 */
+h1,.topbar h1{ letter-spacing:-0.8px; font-weight:800; }
+h2{ letter-spacing:-0.6px; font-weight:800; }
+h3,h4{ letter-spacing:-0.3px; font-weight:700; }
+.eyebrow,.section-head>div>p,.today-brief p{ line-height:1.55; }
+
+/* 표: 줄에 마우스를 올리면 은은하게 */
+.data-table tbody tr:hover{ background:#FAFBFC; }
+.data-table thead th{
+  background:#FAFBFC; color:var(--muted); font-weight:700; letter-spacing:-0.1px;
+}
+.data-table tbody td{ border-bottom:1px solid #F1F3F5; }
+
+/* 빈 화면: 가운데 글자만 덩그러니 있던 것을 조금 다듬음 */
+.empty-state b,.empty-state>b{ letter-spacing:-0.4px; }
+.empty-state{ color:var(--muted); }
+
+/* 스크롤바를 얇고 조용하게 (본문 전체) */
+*{ scrollbar-width:thin; scrollbar-color:#D7DCE2 transparent; }
+::-webkit-scrollbar{ width:8px; height:8px; }
+::-webkit-scrollbar-thumb{ background:#D7DCE2; border-radius:999px; }
+::-webkit-scrollbar-thumb:hover{ background:#C4CBD3; }
+::-webkit-scrollbar-track{ background:transparent; }
+
+/* 선택 영역 색 */
+::selection{ background:rgba(49,130,246,.18); }
+
+/* 포커스 링을 브랜드 색으로 통일 */
+:focus-visible{ outline:3px solid rgba(49,130,246,.45); outline-offset:2px; }
+
+/* =====================================================================
+   매일 마주치는 자잘한 불편
+   ===================================================================== */
+
+/* ---- 사이드바: 메뉴가 더 있다는 것을 알려준다 ----
+   메뉴가 18개 + 폴더 3개라 화면에 다 들어가지 않는다. 스크롤은 되지만
+   아래가 그냥 잘려 보여서 더 있는 줄 모른다. 끝에서 옅게 흐려 준다. */
+.nav-list{
+  -webkit-mask-image:linear-gradient(to bottom, #000 calc(100% - 28px), transparent 100%);
+  mask-image:linear-gradient(to bottom, #000 calc(100% - 28px), transparent 100%);
+  padding-bottom:12px;
+}
+/* 스크롤이 끝까지 내려갔으면 흐리지 않는다 */
+.nav-list:not([data-scroll="more"]){
+  -webkit-mask-image:none; mask-image:none;
+}
+
+/* ---- 연결 상태: 평소엔 조용히, 문제일 때만 눈에 띄게 ----
+   왼쪽 아래 구석이라 평소에는 눈이 가지 않는다. 저장이 밀리거나 서버가
+   끊겼을 때만 색과 테두리로 알린다. */
+.sync-state{
+  border-radius:12px; border:1px solid transparent;
+  transition:background .18s ease, border-color .18s ease;
+}
+.sidebar-foot:has(.sync-state > i.pending) .sync-state,
+.sync-state:has(> i.pending){
+  background:var(--tone-warn-bg); border-color:var(--tone-warn-ink);
+}
+.sync-state:has(> i.pending) b{ color:var(--tone-warn-ink); }
+.sync-state:has(> i.offline){
+  background:var(--tone-bad-bg); border-color:var(--tone-bad-ink);
+}
+.sync-state:has(> i.offline) b{ color:var(--tone-bad-ink); }
+.sync-state > i.pending{ background:var(--tone-warn-ink); box-shadow:0 0 0 4px rgba(199,122,0,.16); }
+.sync-state > i.offline{ background:var(--tone-bad-ink); box-shadow:0 0 0 4px rgba(224,48,63,.16); }
+.sync-state > i.syncing{ background:var(--blue); box-shadow:0 0 0 4px rgba(49,130,246,.16); }
+
+/* ---- 버튼이 몰린 상단 배너에서 제목이 눌리지 않게 ----
+   입금 캘린더 상단에는 버튼이 7개까지 온다. 제목 칸이 밀려 두 줄로
+   접히던 것을 막고, 버튼 줄이 알아서 접히도록 한다. */
+.operations-hero,.building-hub-hero,.partner-quote-hero,.partner-vendor-hero{
+  flex-wrap:wrap; row-gap:14px;
+}
+.operations-hero > div:first-child{ flex:1 1 340px; min-width:280px; }
+.operations-actions,.payment-operation-actions,.partner-hero-actions{
+  flex-wrap:wrap; justify-content:flex-end; row-gap:8px;
+}

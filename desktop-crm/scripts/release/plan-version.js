@@ -1,0 +1,114 @@
+"use strict";
+
+const fs = require("node:fs");
+const path = require("node:path");
+
+const {
+  assertCanonicalBranchHead,
+  assertSha,
+  assertSourceBranch,
+  collectVersionClaims,
+  inspectDeterministicReleaseCommit,
+  listGithubReleases,
+  listRemoteBranch,
+  listRemoteRefs,
+  planNextVersion,
+  resolveStablePublishedState,
+  writeGithubOutput,
+} = require("./release-lib");
+const { fail, parseArgs, printResult, required, resolveWithin } = require("./cli-utils");
+const { verifyPublishedReleaseAssets } = require("./publish-release");
+const { probePublishedRelease } = require("./probe-published-release");
+const { shouldBurnClaimedVersion } = require("./reserve-version");
+const {
+  markVerifiedStableClaims,
+  selectReleaseType,
+  sourceCommitMessages,
+  verifiedStableReleases,
+} = require("./release-type");
+
+function shouldDeferStableClaimToReservation(error) {
+  const code = String(error && error.code || "");
+  return code.startsWith("CRM_RELEASE_STABLE_")
+    || code === "CRM_RELEASE_TAG_FORMAT_INVALID"
+    || code === "CRM_RELEASE_TARGET_INVALID"
+    || shouldBurnClaimedVersion(error);
+}
+
+async function main() {
+  const args = parseArgs(process.argv.slice(2), ["source-sha", "source-branch", "package", "owner", "repo", "remote"]);
+  const cwd = process.cwd();
+  const sourceSha = assertSha(required(args, "source-sha", process.env.GITHUB_SHA));
+  const sourceBranch = assertSourceBranch(required(args, "source-branch", process.env.GITHUB_REF_NAME));
+  const packagePath = resolveWithin(cwd, required(args, "package", "desktop-crm/package.json"), "package.json");
+  const packageJson = JSON.parse(fs.readFileSync(packagePath, "utf8"));
+  const owner = required(args, "owner", process.env.GITHUB_REPOSITORY_OWNER || "bringengineering");
+  const repositoryName = String(process.env.GITHUB_REPOSITORY || "").split("/")[1] || "FM";
+  const repo = required(args, "repo", repositoryName);
+  const remote = String(args.remote || "origin").trim();
+
+  assertCanonicalBranchHead({
+    sourceBranch,
+    sourceSha,
+    branchRefs: listRemoteBranch({ sourceBranch, cwd, remote }),
+  });
+  const remoteRefs = listRemoteRefs({ cwd, remote });
+  const releases = await listGithubReleases({ owner, repo, token: process.env.GITHUB_TOKEN });
+  const rawClaims = collectVersionClaims({ ...remoteRefs, releases });
+  const verifiedReleases = verifiedStableReleases({ sourceSha, releases, tagRefs: remoteRefs.tagRefs, reservationRefs: remoteRefs.reservationRefs, cwd });
+  const claims = markVerifiedStableClaims(rawClaims, verifiedReleases);
+  const commitMessages = sourceCommitMessages({ sourceSha, verifiedReleases, cwd });
+  const releaseType = selectReleaseType({ messages: commitMessages });
+  const plan = planNextVersion({ packageVersion: packageJson.version, sourceSha, claims, releaseType });
+  const inspectCommit = (releaseSha, expectedSourceSha = sourceSha, expectedVersion = plan.version) => {
+    try {
+      return inspectDeterministicReleaseCommit({ cwd, releaseSha, sourceSha: expectedSourceSha, version: expectedVersion });
+    } catch {
+      throw Object.assign(new Error("Stable release commit package metadata is unavailable."), { code: "CRM_RELEASE_STABLE_COMMIT_UNAVAILABLE" });
+    }
+  };
+  let stable = null;
+  try {
+    stable = resolveStablePublishedState({ plan, claims, tagRefs: remoteRefs.tagRefs, releases, inspectCommit });
+  } catch (error) {
+    if (!shouldDeferStableClaimToReservation(error)) throw error;
+  }
+  if (stable) {
+    try {
+      await verifyPublishedReleaseAssets(stable.release, plan.version, {
+        token: process.env.GITHUB_TOKEN,
+        owner,
+        repo,
+        tag: plan.tag,
+      });
+    } catch (error) {
+      if (!shouldDeferStableClaimToReservation(error)) throw error;
+      stable = null;
+    }
+  }
+  if (stable) {
+    // A previous run may have published stable but failed before advancing the
+    // dedicated update-channel ref. Probe the immutable public release here;
+    // the workflow's repair job will idempotently advance and probe the pointer.
+    await probePublishedRelease({ version: plan.version, attempts: 3 });
+  }
+  const result = {
+    version: plan.version,
+    tag: plan.tag,
+    reservation_ref: plan.reservationRef,
+    source_sha: sourceSha,
+    source_branch: sourceBranch,
+    resume: String(plan.resume),
+    stable_published: String(Boolean(stable)),
+    release_sha: stable ? stable.releaseSha : "",
+    package_version: packageJson.version,
+    release_type: releaseType,
+    package_path: path.relative(cwd, packagePath).replace(/\\/g, "/"),
+  };
+  writeGithubOutput(result);
+  printResult(result);
+}
+
+if (require.main === module) main().catch(fail);
+
+module.exports = { main, shouldDeferStableClaimToReservation };

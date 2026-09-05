@@ -46,11 +46,11 @@ GPT·클로드·커서에 **파일을 통째로** 넣고 "○○ 기능 추가/�
 
 ## 📂 데이터 구조 (Firebase Realtime Database)
 
-- 운영 프로젝트: `BRING-FM-HJ` (`bring-fm-hj`), 소유 계정 `ameejin92@gmail.com`
-- `paymentCalendars/{Google UID}`: 현재 로그인한 구글 계정 전용 입금 캘린더(월 납부 일정, 거래, 수동 보정, 감사 기록)
-- `caseSettings/paymentBuildings`: 온보딩 Drive 폴더에서 동기화한 건물명·주소·원본 파일 링크. 계좌번호나 토큰은 저장하지 않습니다.
+- 운영 프로젝트: `BRING-FM` (`bring-fm`). 기존 `bring-fm-hj` 자료는 2026-08-18 검증된 백업과 읽기 전용 이관 기록으로만 보존합니다.
+- `crmCompany/paymentCalendars/{Google UID}`: 현재 로그인한 구글 계정 전용 입금 캘린더(월 납부 일정, 거래, 건물별 팝빌 계좌 연결, 수동 보정, 감사 기록)
+- `caseSettings/paymentBuildings`: 공개 민원 자동화와 호환되는 건물명·주소·원본 파일 링크. 계좌번호나 토큰은 저장하지 않습니다.
 
-입금 캘린더를 사용하기 전에 `database.rules.json`의 최신 규칙을 Firebase Realtime Database에 반영해야 합니다. 건물주 계좌의 `fintech_use_num`과 Access Token은 추후 서버 함수에만 연결하며 브라우저나 Realtime Database에는 넣지 않습니다.
+입금캘린더의 건물 카드에서 팝빌 등록계좌를 연결합니다. 연결정보에는 서버가 만든 익명 계좌 ID, 은행명, 계좌번호 끝 4자리만 저장하며 전체 계좌번호·조회 비밀번호·SecretKey는 브라우저나 Realtime Database에 넣지 않습니다. 실제 입금은 같은 계좌에 연결된 건물의 세입자 일정과만 비교합니다.
 ```
 workflow/
   _boards : { "<bo드id>": "보드 이름", ... }     // 탭 목록
@@ -95,13 +95,13 @@ signage/settings         : 위탁판매 설정 { bankInfo, kakaoUrl, footer }
 **흐름:** 대화면에서 순환되는 상품 QR 스캔 → `/shop/?id=…` 자체 상품페이지(사진·가격·설명) → **주문하기**(성함·연락처·수량) → `signage/orders`에 접수 → 관리페이지에서 확인 후 결제·수령 안내.
 
 **쓰는 법**
-- 상품 등록: `/signage/admin.html` 접속 → 비밀번호 입력 → `+ 새 상품`. 사진은 고르면 **자동 압축**되어 저장됩니다.
+- 상품 등록: `/signage/admin.html` 접속 → CRM 권한이 있는 Google 계정으로 로그인 → `+ 새 상품`. 사진은 고르면 **자동 압축**되어 저장됩니다.
 - 주문 확인: 관리페이지 **주문** 탭. 상태를 신규 → 처리중 → 완료로 바꿀 수 있어요.
 - 결제 방식: 온라인 즉시결제(PG)는 아직 없습니다. 주문 접수 후 **계좌이체/방문결제**로 안내하는 방식이며, 안내 문구는 관리페이지 **설정**에서 바꿉니다.
 
-> ⚠️ **관리 비밀번호**: `signage/admin.html` 상단 `ADMIN_PASS` 값을 배포 전에 꼭 바꾸세요(기본값 `bring0000`). 지금 보안 수준은 케이스와 동일하게 "링크+비밀번호" 정도이며, 정식 인증은 케이스 보안과 함께 추후 설계합니다.
+> 🔒 **관리자 인증**: 별도 공용 비밀번호를 사용하지 않습니다. Firebase Google 로그인 후 `crmCompany/access/<uid>`가 `enabled: true`이고, 로그인 이메일이 등록 이메일과 일치하며, 역할이 `admin` 또는 `member`인 계정만 관리페이지를 열 수 있습니다. 계정 전환과 로그아웃은 관리페이지에서 바로 할 수 있습니다.
 >
-> ⚠️ **DB 규칙 반영 필요**: 이 기능은 `database.rules.json`에 `signage` 노드를 열어야 동작합니다. 이 파일을 **Firebase 콘솔(Realtime Database → 규칙)** 또는 `firebase deploy --only database`로 반영해 주세요. (GitHub Pages 배포와 별개입니다)
+> 🔒 **데이터 규칙**: 손님 페이지에는 판매 상품·안내 설정 읽기와 검증된 신규 주문 생성만 허용합니다. 주문 목록 읽기, 상품·설정 변경, 주문 처리·삭제는 CRM 인증 계정에만 허용됩니다. `database.rules.json`은 릴리스의 Rules 배포 단계에서 함께 반영해야 하며, Firebase Authentication에서 Google 공급자와 실제 서비스 도메인이 활성화되어 있어야 합니다.
 
 ---
 

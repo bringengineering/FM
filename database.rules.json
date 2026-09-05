@@ -3,26 +3,1625 @@
     ".read": false,
     ".write": false,
     "workflow": {
-      ".read": true,
-      ".write": true
+      ".read": "auth != null && root.child('crmCompany/access').child(auth.uid).child('enabled').val() === true && root.child('crmCompany/access').child(auth.uid).child('email').val() === auth.token.email && (root.child('crmCompany/access').child(auth.uid).child('role').val() === 'admin' || root.child('crmCompany/access').child(auth.uid).child('role').val() === 'member' || root.child('crmCompany/access').child(auth.uid).child('role').val() === 'viewer')",
+      ".write": "auth != null && root.child('crmCompany/access').child(auth.uid).child('enabled').val() === true && root.child('crmCompany/access').child(auth.uid).child('email').val() === auth.token.email && (root.child('crmCompany/access').child(auth.uid).child('role').val() === 'admin' || (root.child('crmCompany/access').child(auth.uid).child('role').val() === 'member' && root.child('crmCompany/access').child(auth.uid).child('marketingRole').val() !== 'marketing'))"
     },
     "caseSettings": {
-      ".read": true,
-      ".write": true
+      ".read": "auth != null && root.child('crmCompany/access').child(auth.uid).child('enabled').val() === true && root.child('crmCompany/access').child(auth.uid).child('email').val() === auth.token.email && (root.child('crmCompany/access').child(auth.uid).child('role').val() === 'admin' || root.child('crmCompany/access').child(auth.uid).child('role').val() === 'member' || root.child('crmCompany/access').child(auth.uid).child('role').val() === 'viewer')",
+      ".write": "auth != null && root.child('crmCompany/access').child(auth.uid).child('enabled').val() === true && root.child('crmCompany/access').child(auth.uid).child('email').val() === auth.token.email && (root.child('crmCompany/access').child(auth.uid).child('role').val() === 'admin' || (root.child('crmCompany/access').child(auth.uid).child('role').val() === 'member' && root.child('crmCompany/access').child(auth.uid).child('marketingRole').val() !== 'marketing'))"
+    },
+    "crmCompany": {
+      ".read": false,
+      ".write": false,
+      "access": {
+        ".read": "auth != null && root.child('crmCompany/access').child(auth.uid).child('enabled').val() === true && root.child('crmCompany/access').child(auth.uid).child('email').val() === auth.token.email && root.child('crmCompany/access').child(auth.uid).child('mustChangePassword').val() !== true && (root.child('crmCompany/access').child(auth.uid).child('role').val() === 'admin' || root.child('crmCompany/access').child(auth.uid).child('role').val() === 'member' || root.child('crmCompany/access').child(auth.uid).child('role').val() === 'viewer')",
+        "$uid": {
+          ".read": "auth != null && auth.uid === $uid",
+          ".write": false,
+          "displayName": {
+            ".write": "auth != null && $uid.matches(/^[A-Za-z0-9._-]{1,128}$/) && $uid !== '__proto__' && $uid !== 'prototype' && $uid !== 'constructor' && root.child('crmCompany/access').child(auth.uid).child('enabled').val() === true && root.child('crmCompany/access').child(auth.uid).child('email').val() === auth.token.email && root.child('crmCompany/access').child(auth.uid).child('mustChangePassword').val() !== true && root.child('crmCompany/access').child(auth.uid).child('officeAdmin').val() === true && (root.child('crmCompany/access').child(auth.uid).child('role').val() === 'admin' || root.child('crmCompany/access').child(auth.uid).child('role').val() === 'member' || root.child('crmCompany/access').child(auth.uid).child('role').val() === 'viewer') && root.child('crmCompany/access').child($uid).exists() && root.child('crmCompany/access').child($uid).child('enabled').val() === true && root.child('crmCompany/access').child($uid).child('mustChangePassword').val() !== true && (root.child('crmCompany/access').child($uid).child('role').val() === 'admin' || root.child('crmCompany/access').child($uid).child('role').val() === 'member' || root.child('crmCompany/access').child($uid).child('role').val() === 'viewer') && newData.exists()",
+            ".validate": "newData.isString() && newData.val().length > 0 && newData.val().length <= 80 && newData.val().matches(/^[^ ](.*[^ ])?$/) && newData.val().matches(/^[^\u0000-\u001F\u007F-\u009F\u00A0\u1680\u2000-\u200A\u202F\u205F\u3000]{1,80}$/) && !newData.val().contains('\u00AD') && !newData.val().contains('\u061C') && !newData.val().contains('\u200B') && !newData.val().contains('\u200C') && !newData.val().contains('\u200D') && !newData.val().contains('\u200E') && !newData.val().contains('\u200F') && !newData.val().contains('\u202A') && !newData.val().contains('\u202B') && !newData.val().contains('\u202C') && !newData.val().contains('\u202D') && !newData.val().contains('\u202E') && !newData.val().contains('\\u2028') && !newData.val().contains('\\u2029') && !newData.val().contains('\u2060') && !newData.val().contains('\u2061') && !newData.val().contains('\u2062') && !newData.val().contains('\u2063') && !newData.val().contains('\u2064') && !newData.val().contains('\u2065') && !newData.val().contains('\u2066') && !newData.val().contains('\u2067') && !newData.val().contains('\u2068') && !newData.val().contains('\u2069') && !newData.val().contains('\u206A') && !newData.val().contains('\u206B') && !newData.val().contains('\u206C') && !newData.val().contains('\u206D') && !newData.val().contains('\u206E') && !newData.val().contains('\u206F') && !newData.val().contains('\uFEFF')"
+          },
+          "mustChangePassword": {
+            ".write": "auth != null && auth.uid === $uid && auth.token.email_verified === true && auth.token.firebase.sign_in_provider === 'password' && root.child('crmCompany/access').child($uid).child('enabled').val() === true && root.child('crmCompany/access').child($uid).child('email').val() === auth.token.email && data.val() === true && newData.val() === false",
+            ".validate": "newData.isBoolean()"
+          }
+        }
+      },
+      "quoteSupplier": {
+        ".read": "auth != null && auth.token.email_verified === true && root.child('crmCompany/access').child(auth.uid).child('enabled').val() === true && root.child('crmCompany/access').child(auth.uid).child('email').val() === auth.token.email && root.child('crmCompany/access').child(auth.uid).child('mustChangePassword').val() !== true && (root.child('crmCompany/access').child(auth.uid).child('role').val() === 'admin' || root.child('crmCompany/access').child(auth.uid).child('role').val() === 'member' || root.child('crmCompany/access').child(auth.uid).child('role').val() === 'viewer')",
+        ".write": "auth != null && auth.token.email_verified === true && root.child('crmCompany/access').child(auth.uid).child('enabled').val() === true && root.child('crmCompany/access').child(auth.uid).child('email').val() === auth.token.email && root.child('crmCompany/access').child(auth.uid).child('mustChangePassword').val() !== true && root.child('crmCompany/access').child(auth.uid).child('role').val() === 'admin' && newData.exists()",
+        ".validate": "newData.hasChildren(['businessName','representative','registrationNumber','version','updatedAtMs','updatedByAuthUid']) && newData.child('updatedByAuthUid').val() === auth.uid && newData.child('updatedAtMs').val() === now && ((!data.exists() && newData.child('version').val() === 1) || (data.exists() && newData.child('version').val() === data.child('version').val() + 1))",
+        "businessName": {
+          ".validate": "newData.isString() && newData.val().matches(/^[^ ](.*[^ ])?$/) && newData.val().matches(/^[^\u0000-\u001F\u007F-\u009F]{1,80}$/) && !newData.val().contains('\u00AD') && !newData.val().contains('\u061C') && !newData.val().contains('\u200B') && !newData.val().contains('\u200C') && !newData.val().contains('\u200D') && !newData.val().contains('\u200E') && !newData.val().contains('\u200F') && !newData.val().contains('\u202A') && !newData.val().contains('\u202B') && !newData.val().contains('\u202C') && !newData.val().contains('\u202D') && !newData.val().contains('\u202E') && !newData.val().contains('\u2060') && !newData.val().contains('\u2061') && !newData.val().contains('\u2062') && !newData.val().contains('\u2063') && !newData.val().contains('\u2064') && !newData.val().contains('\u2065') && !newData.val().contains('\u2066') && !newData.val().contains('\u2067') && !newData.val().contains('\u2068') && !newData.val().contains('\u2069') && !newData.val().contains('\u206A') && !newData.val().contains('\u206B') && !newData.val().contains('\u206C') && !newData.val().contains('\u206D') && !newData.val().contains('\u206E') && !newData.val().contains('\u206F') && !newData.val().contains('\uFEFF')"
+        },
+        "representative": {
+          ".validate": "newData.isString() && newData.val().matches(/^[^ ](.*[^ ])?$/) && newData.val().matches(/^[^\u0000-\u001F\u007F-\u009F]{1,40}$/) && !newData.val().contains('\u00AD') && !newData.val().contains('\u061C') && !newData.val().contains('\u200B') && !newData.val().contains('\u200C') && !newData.val().contains('\u200D') && !newData.val().contains('\u200E') && !newData.val().contains('\u200F') && !newData.val().contains('\u202A') && !newData.val().contains('\u202B') && !newData.val().contains('\u202C') && !newData.val().contains('\u202D') && !newData.val().contains('\u202E') && !newData.val().contains('\u2060') && !newData.val().contains('\u2061') && !newData.val().contains('\u2062') && !newData.val().contains('\u2063') && !newData.val().contains('\u2064') && !newData.val().contains('\u2065') && !newData.val().contains('\u2066') && !newData.val().contains('\u2067') && !newData.val().contains('\u2068') && !newData.val().contains('\u2069') && !newData.val().contains('\u206A') && !newData.val().contains('\u206B') && !newData.val().contains('\u206C') && !newData.val().contains('\u206D') && !newData.val().contains('\u206E') && !newData.val().contains('\u206F') && !newData.val().contains('\uFEFF')"
+        },
+        "registrationNumber": {
+          ".validate": "newData.isString() && newData.val().matches(/^[0-9]{3}-[0-9]{2}-[0-9]{5}$/)"
+        },
+        "version": {
+          ".validate": "newData.isNumber() && newData.val() >= 1 && newData.val() % 1 === 0"
+        },
+        "updatedAtMs": {
+          ".validate": "newData.isNumber() && newData.val() > 0"
+        },
+        "updatedByAuthUid": {
+          ".validate": "newData.isString() && newData.val().matches(/^[A-Za-z0-9._-]{1,128}$/)"
+        },
+        "$other": {
+          ".validate": false
+        }
+      },
+      "officeAttendance": {
+        ".read": "auth != null && auth.token.email_verified === true && root.child('crmCompany/access').child(auth.uid).child('enabled').val() === true && root.child('crmCompany/access').child(auth.uid).child('email').val() === auth.token.email && root.child('crmCompany/access').child(auth.uid).child('mustChangePassword').val() !== true && root.child('crmCompany/access').child(auth.uid).child('officeAdmin').val() === true && (root.child('crmCompany/access').child(auth.uid).child('role').val() === 'admin' || root.child('crmCompany/access').child(auth.uid).child('role').val() === 'member' || root.child('crmCompany/access').child(auth.uid).child('role').val() === 'viewer')",
+        ".write": false,
+        "$uid": {
+          ".read": "auth != null && auth.token.email_verified === true && auth.uid === $uid && root.child('crmCompany/access').child(auth.uid).child('enabled').val() === true && root.child('crmCompany/access').child(auth.uid).child('email').val() === auth.token.email && root.child('crmCompany/access').child(auth.uid).child('mustChangePassword').val() !== true && (root.child('crmCompany/access').child(auth.uid).child('role').val() === 'admin' || root.child('crmCompany/access').child(auth.uid).child('role').val() === 'member' || root.child('crmCompany/access').child(auth.uid).child('role').val() === 'viewer')",
+          ".write": false,
+          "$workDate": {
+            ".write": "auth != null && $workDate.matches(/^[0-9]{4}-[0-9]{2}-[0-9]{2}$/) && newData.exists() && ((auth.token.email_verified === true && auth.uid === $uid && root.child('crmCompany/access').child(auth.uid).child('enabled').val() === true && root.child('crmCompany/access').child(auth.uid).child('email').val() === auth.token.email && root.child('crmCompany/access').child(auth.uid).child('mustChangePassword').val() !== true && (root.child('crmCompany/access').child(auth.uid).child('role').val() === 'admin' || root.child('crmCompany/access').child(auth.uid).child('role').val() === 'member' || root.child('crmCompany/access').child(auth.uid).child('role').val() === 'viewer') && ((!data.exists() && newData.child('checkOutAt').val() === '' && !newData.child('correctionVersion').exists() && !newData.child('lastCorrectionId').exists() && !newData.child('lastCorrectionRequestId').exists() && !newData.child('lastCorrectionHash').exists() && !newData.child('correctedAtMs').exists() && !newData.child('correctedBy').exists()) || (data.exists() && data.child('checkOutAt').val() === '' && newData.child('id').val() === data.child('id').val() && newData.child('userId').val() === data.child('userId').val() && newData.child('workDate').val() === data.child('workDate').val() && newData.child('checkInAt').val() === data.child('checkInAt').val() && newData.child('createdAt').val() === data.child('createdAt').val() && newData.child('checkOutAt').isString() && newData.child('checkOutAt').val().matches(/^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}[.][0-9]{3}Z$/) && newData.child('checkOutAt').val() > newData.child('checkInAt').val() && newData.child('updatedAt').val() !== data.child('updatedAt').val() && newData.child('correctionVersion').val() === data.child('correctionVersion').val() && newData.child('lastCorrectionId').val() === data.child('lastCorrectionId').val() && newData.child('lastCorrectionRequestId').val() === data.child('lastCorrectionRequestId').val() && newData.child('lastCorrectionHash').val() === data.child('lastCorrectionHash').val() && newData.child('correctedAtMs').val() === data.child('correctedAtMs').val() && newData.child('correctedBy').val() === data.child('correctedBy').val()))) || (auth.token.email_verified === true && root.child('crmCompany/access').child(auth.uid).child('enabled').val() === true && root.child('crmCompany/access').child(auth.uid).child('email').val() === auth.token.email && root.child('crmCompany/access').child(auth.uid).child('mustChangePassword').val() !== true && root.child('crmCompany/access').child(auth.uid).child('officeAdmin').val() === true && (root.child('crmCompany/access').child(auth.uid).child('role').val() === 'admin' || root.child('crmCompany/access').child(auth.uid).child('role').val() === 'member' || root.child('crmCompany/access').child(auth.uid).child('role').val() === 'viewer') && root.child('crmCompany/access').child($uid).child('enabled').val() === true && root.child('crmCompany/access').child($uid).child('mustChangePassword').val() !== true && (root.child('crmCompany/access').child($uid).child('role').val() === 'admin' || root.child('crmCompany/access').child($uid).child('role').val() === 'member' || root.child('crmCompany/access').child($uid).child('role').val() === 'viewer') && data.exists() && newData.child('id').val() === data.child('id').val() && newData.child('userId').val() === data.child('userId').val() && newData.child('workDate').val() === data.child('workDate').val() && newData.child('createdAt').val() === data.child('createdAt').val() && (newData.child('checkInAt').val() !== data.child('checkInAt').val() || newData.child('checkOutAt').val() !== data.child('checkOutAt').val()) && (data.child('checkOutAt').val() === '' || newData.child('checkOutAt').val() !== '') && newData.child('updatedAt').val() !== data.child('updatedAt').val() && ((!data.child('correctionVersion').exists() && newData.child('correctionVersion').val() === 1) || (data.child('correctionVersion').isNumber() && newData.child('correctionVersion').val() === data.child('correctionVersion').val() + 1)) && newData.child('correctedBy').val() === auth.uid && newData.child('correctedAtMs').val() === now))",
+            ".validate": "newData.hasChildren(['id', 'userId', 'workDate', 'checkInAt', 'checkOutAt', 'createdAt', 'updatedAt']) && newData.child('id').val() === $uid + '_' + $workDate && newData.child('userId').val() === $uid && newData.child('workDate').val() === $workDate && newData.child('checkInAt').isString() && newData.child('checkInAt').val().matches(/^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}[.][0-9]{3}Z$/) && newData.child('checkOutAt').isString() && (newData.child('checkOutAt').val() === '' || (newData.child('checkOutAt').val().matches(/^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}[.][0-9]{3}Z$/) && newData.child('checkOutAt').val() > newData.child('checkInAt').val())) && newData.child('createdAt').isString() && newData.child('createdAt').val().matches(/^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}[.][0-9]{3}Z$/) && newData.child('updatedAt').isString() && newData.child('updatedAt').val().matches(/^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}[.][0-9]{3}Z$/) && ((!newData.child('correctionVersion').exists() && !newData.child('lastCorrectionId').exists() && !newData.child('lastCorrectionRequestId').exists() && !newData.child('lastCorrectionHash').exists() && !newData.child('correctedAtMs').exists() && !newData.child('correctedBy').exists()) || (newData.child('correctionVersion').isNumber() && newData.child('correctionVersion').val() >= 1 && newData.child('correctionVersion').val() % 1 === 0 && newData.child('lastCorrectionId').isString() && newData.child('lastCorrectionId').val().matches(/^attcorr_[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/) && newData.child('lastCorrectionRequestId').isString() && newData.child('lastCorrectionRequestId').val().matches(/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/) && newData.child('lastCorrectionId').val() === 'attcorr_' + newData.child('lastCorrectionRequestId').val() && newData.child('lastCorrectionHash').isString() && newData.child('lastCorrectionHash').val().matches(/^[a-f0-9]{64}$/) && newData.child('correctedAtMs').isNumber() && newData.child('correctedBy').isString() && newData.child('correctedBy').val().matches(/^[A-Za-z0-9._-]{1,128}$/) && ((data.exists() && data.child('correctionVersion').exists() && newData.child('correctionVersion').val() === data.child('correctionVersion').val() && newData.child('lastCorrectionId').val() === data.child('lastCorrectionId').val() && newData.child('lastCorrectionRequestId').val() === data.child('lastCorrectionRequestId').val() && newData.child('lastCorrectionHash').val() === data.child('lastCorrectionHash').val() && newData.child('correctedAtMs').val() === data.child('correctedAtMs').val() && newData.child('correctedBy').val() === data.child('correctedBy').val()) || (!root.child('crmCompany/officeAttendanceAudits').child(newData.child('lastCorrectionId').val()).exists() && newData.parent().parent().parent().child('officeAttendanceAudits').child(newData.child('lastCorrectionId').val()).child('id').val() === newData.child('lastCorrectionId').val() && newData.parent().parent().parent().child('officeAttendanceAudits').child(newData.child('lastCorrectionId').val()).child('requestId').val() === newData.child('lastCorrectionRequestId').val() && newData.parent().parent().parent().child('officeAttendanceAudits').child(newData.child('lastCorrectionId').val()).child('requestHash').val() === newData.child('lastCorrectionHash').val() && newData.parent().parent().parent().child('officeAttendanceAudits').child(newData.child('lastCorrectionId').val()).child('actorAuthUid').val() === newData.child('correctedBy').val() && newData.parent().parent().parent().child('officeAttendanceAudits').child(newData.child('lastCorrectionId').val()).child('targetUserId').val() === $uid && newData.parent().parent().parent().child('officeAttendanceAudits').child(newData.child('lastCorrectionId').val()).child('workDate').val() === $workDate && newData.parent().parent().parent().child('officeAttendanceAudits').child(newData.child('lastCorrectionId').val()).child('occurredAtMs').val() === newData.child('correctedAtMs').val()))))",
+            "id": {
+              ".validate": true
+            },
+            "userId": {
+              ".validate": true
+            },
+            "workDate": {
+              ".validate": true
+            },
+            "checkInAt": {
+              ".validate": true
+            },
+            "checkOutAt": {
+              ".validate": true
+            },
+            "createdAt": {
+              ".validate": true
+            },
+            "updatedAt": {
+              ".validate": true
+            },
+            "correctionVersion": {
+              ".validate": true
+            },
+            "lastCorrectionId": {
+              ".validate": true
+            },
+            "lastCorrectionRequestId": {
+              ".validate": true
+            },
+            "lastCorrectionHash": {
+              ".validate": true
+            },
+            "correctedAtMs": {
+              ".validate": true
+            },
+            "correctedBy": {
+              ".validate": true
+            },
+            "$other": {
+              ".validate": false
+            }
+          }
+        }
+      },
+      "officeAttendanceAudits": {
+        ".read": "auth != null && auth.token.email_verified === true && root.child('crmCompany/access').child(auth.uid).child('enabled').val() === true && root.child('crmCompany/access').child(auth.uid).child('email').val() === auth.token.email && root.child('crmCompany/access').child(auth.uid).child('mustChangePassword').val() !== true && root.child('crmCompany/access').child(auth.uid).child('officeAdmin').val() === true && (root.child('crmCompany/access').child(auth.uid).child('role').val() === 'admin' || root.child('crmCompany/access').child(auth.uid).child('role').val() === 'member' || root.child('crmCompany/access').child(auth.uid).child('role').val() === 'viewer')",
+        ".write": false,
+        "$auditId": {
+          ".write": "auth != null && auth.token.email_verified === true && $auditId.matches(/^attcorr_[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/) && !data.exists() && newData.exists() && root.child('crmCompany/access').child(auth.uid).child('enabled').val() === true && root.child('crmCompany/access').child(auth.uid).child('email').val() === auth.token.email && root.child('crmCompany/access').child(auth.uid).child('mustChangePassword').val() !== true && root.child('crmCompany/access').child(auth.uid).child('officeAdmin').val() === true && (root.child('crmCompany/access').child(auth.uid).child('role').val() === 'admin' || root.child('crmCompany/access').child(auth.uid).child('role').val() === 'member' || root.child('crmCompany/access').child(auth.uid).child('role').val() === 'viewer') && root.child('crmCompany/access').child(newData.child('targetUserId').val()).child('enabled').val() === true && root.child('crmCompany/access').child(newData.child('targetUserId').val()).child('mustChangePassword').val() !== true && (root.child('crmCompany/access').child(newData.child('targetUserId').val()).child('role').val() === 'admin' || root.child('crmCompany/access').child(newData.child('targetUserId').val()).child('role').val() === 'member' || root.child('crmCompany/access').child(newData.child('targetUserId').val()).child('role').val() === 'viewer')",
+          ".validate": "newData.hasChildren(['id','requestId','requestHash','actorAuthUid','targetUserId','workDate','reason','beforeCheckInAt','beforeCheckOutAt','afterCheckInAt','afterCheckOutAt','expectedUpdatedAt','beforeUpdatedAt','afterUpdatedAt','beforeVersion','afterVersion','occurredAtMs']) && newData.child('id').val() === $auditId && newData.child('requestId').isString() && newData.child('requestId').val().matches(/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/) && $auditId === 'attcorr_' + newData.child('requestId').val() && newData.child('requestHash').isString() && newData.child('requestHash').val().matches(/^[a-f0-9]{64}$/) && newData.child('actorAuthUid').val() === auth.uid && newData.child('targetUserId').isString() && newData.child('targetUserId').val().matches(/^[A-Za-z0-9._-]{1,128}$/) && newData.child('workDate').isString() && newData.child('workDate').val().matches(/^[0-9]{4}-[0-9]{2}-[0-9]{2}$/) && newData.child('reason').isString() && newData.child('reason').val().length >= 2 && newData.child('reason').val().length <= 300 && newData.child('reason').val().matches(/^[^ ].*[^ ]$/) && newData.child('reason').val().matches(/^[^\u0000-\u001F\u007F-\u009F]{2,300}$/) && !newData.child('reason').val().contains('\u00AD') && !newData.child('reason').val().contains('\u061C') && !newData.child('reason').val().contains('\u200B') && !newData.child('reason').val().contains('\u200C') && !newData.child('reason').val().contains('\u200D') && !newData.child('reason').val().contains('\u200E') && !newData.child('reason').val().contains('\u200F') && !newData.child('reason').val().contains('\u202A') && !newData.child('reason').val().contains('\u202B') && !newData.child('reason').val().contains('\u202C') && !newData.child('reason').val().contains('\u202D') && !newData.child('reason').val().contains('\u202E') && !newData.child('reason').val().contains('\\u2028') && !newData.child('reason').val().contains('\\u2029') && !newData.child('reason').val().contains('\u2060') && !newData.child('reason').val().contains('\u2061') && !newData.child('reason').val().contains('\u2062') && !newData.child('reason').val().contains('\u2063') && !newData.child('reason').val().contains('\u2064') && !newData.child('reason').val().contains('\u2065') && !newData.child('reason').val().contains('\u2066') && !newData.child('reason').val().contains('\u2067') && !newData.child('reason').val().contains('\u2068') && !newData.child('reason').val().contains('\u2069') && !newData.child('reason').val().contains('\u206A') && !newData.child('reason').val().contains('\u206B') && !newData.child('reason').val().contains('\u206C') && !newData.child('reason').val().contains('\u206D') && !newData.child('reason').val().contains('\u206E') && !newData.child('reason').val().contains('\u206F') && !newData.child('reason').val().contains('\uFEFF') && root.child('crmCompany/officeAttendance').child(newData.child('targetUserId').val()).child(newData.child('workDate').val()).exists() && newData.child('beforeCheckInAt').val() === root.child('crmCompany/officeAttendance').child(newData.child('targetUserId').val()).child(newData.child('workDate').val()).child('checkInAt').val() && newData.child('beforeCheckOutAt').val() === root.child('crmCompany/officeAttendance').child(newData.child('targetUserId').val()).child(newData.child('workDate').val()).child('checkOutAt').val() && newData.child('beforeUpdatedAt').val() === root.child('crmCompany/officeAttendance').child(newData.child('targetUserId').val()).child(newData.child('workDate').val()).child('updatedAt').val() && newData.child('expectedUpdatedAt').val() === newData.child('beforeUpdatedAt').val() && newData.child('beforeVersion').isNumber() && ((!root.child('crmCompany/officeAttendance').child(newData.child('targetUserId').val()).child(newData.child('workDate').val()).child('correctionVersion').exists() && newData.child('beforeVersion').val() === 0) || (root.child('crmCompany/officeAttendance').child(newData.child('targetUserId').val()).child(newData.child('workDate').val()).child('correctionVersion').isNumber() && newData.child('beforeVersion').val() === root.child('crmCompany/officeAttendance').child(newData.child('targetUserId').val()).child(newData.child('workDate').val()).child('correctionVersion').val())) && newData.child('afterVersion').isNumber() && newData.child('afterVersion').val() === newData.child('beforeVersion').val() + 1 && newData.child('afterCheckInAt').isString() && newData.child('afterCheckInAt').val().matches(/^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}[.][0-9]{3}Z$/) && newData.child('afterCheckOutAt').isString() && (newData.child('afterCheckOutAt').val() === '' || (newData.child('afterCheckOutAt').val().matches(/^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}[.][0-9]{3}Z$/) && newData.child('afterCheckOutAt').val() > newData.child('afterCheckInAt').val())) && (newData.child('beforeCheckInAt').val() !== newData.child('afterCheckInAt').val() || newData.child('beforeCheckOutAt').val() !== newData.child('afterCheckOutAt').val()) && (newData.child('beforeCheckOutAt').val() === '' || newData.child('afterCheckOutAt').val() !== '') && newData.child('afterUpdatedAt').isString() && newData.child('afterUpdatedAt').val().matches(/^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}[.][0-9]{3}Z$/) && newData.child('afterUpdatedAt').val() !== newData.child('beforeUpdatedAt').val() && newData.child('occurredAtMs').isNumber() && newData.child('occurredAtMs').val() === now && newData.parent().parent().child('officeAttendance').child(newData.child('targetUserId').val()).child(newData.child('workDate').val()).child('id').val() === newData.child('targetUserId').val() + '_' + newData.child('workDate').val() && newData.parent().parent().child('officeAttendance').child(newData.child('targetUserId').val()).child(newData.child('workDate').val()).child('checkInAt').val() === newData.child('afterCheckInAt').val() && newData.parent().parent().child('officeAttendance').child(newData.child('targetUserId').val()).child(newData.child('workDate').val()).child('checkOutAt').val() === newData.child('afterCheckOutAt').val() && newData.parent().parent().child('officeAttendance').child(newData.child('targetUserId').val()).child(newData.child('workDate').val()).child('updatedAt').val() === newData.child('afterUpdatedAt').val() && newData.parent().parent().child('officeAttendance').child(newData.child('targetUserId').val()).child(newData.child('workDate').val()).child('correctionVersion').val() === newData.child('afterVersion').val() && newData.parent().parent().child('officeAttendance').child(newData.child('targetUserId').val()).child(newData.child('workDate').val()).child('lastCorrectionId').val() === $auditId && newData.parent().parent().child('officeAttendance').child(newData.child('targetUserId').val()).child(newData.child('workDate').val()).child('lastCorrectionRequestId').val() === newData.child('requestId').val() && newData.parent().parent().child('officeAttendance').child(newData.child('targetUserId').val()).child(newData.child('workDate').val()).child('lastCorrectionHash').val() === newData.child('requestHash').val() && newData.parent().parent().child('officeAttendance').child(newData.child('targetUserId').val()).child(newData.child('workDate').val()).child('correctedAtMs').val() === newData.child('occurredAtMs').val() && newData.parent().parent().child('officeAttendance').child(newData.child('targetUserId').val()).child(newData.child('workDate').val()).child('correctedBy').val() === auth.uid",
+          "id": { ".validate": true },
+          "requestId": { ".validate": true },
+          "requestHash": { ".validate": true },
+          "actorAuthUid": { ".validate": true },
+          "targetUserId": { ".validate": true },
+          "workDate": { ".validate": true },
+          "reason": { ".validate": true },
+          "beforeCheckInAt": { ".validate": true },
+          "beforeCheckOutAt": { ".validate": true },
+          "afterCheckInAt": { ".validate": true },
+          "afterCheckOutAt": { ".validate": true },
+          "expectedUpdatedAt": { ".validate": true },
+          "beforeUpdatedAt": { ".validate": true },
+          "afterUpdatedAt": { ".validate": true },
+          "beforeVersion": { ".validate": true },
+          "afterVersion": { ".validate": true },
+          "occurredAtMs": { ".validate": true },
+          "$other": { ".validate": false }
+        }
+      },
+      "officeMessageFiles": {
+        ".read": false,
+        ".write": false,
+        "$messageId": {
+          ".read": "auth != null && (auth.uid === data.child('senderId').val() || auth.uid === data.child('receiverId').val()) && root.child('crmCompany/access').child(auth.uid).child('enabled').val() === true && root.child('crmCompany/access').child(auth.uid).child('email').val() === auth.token.email && root.child('crmCompany/access').child(auth.uid).child('mustChangePassword').val() !== true && (root.child('crmCompany/access').child(auth.uid).child('role').val() === 'admin' || root.child('crmCompany/access').child(auth.uid).child('role').val() === 'member' || root.child('crmCompany/access').child(auth.uid).child('role').val() === 'viewer')",
+          ".write": "auth != null && $messageId.matches(/^msg_[A-Za-z0-9_]{8,80}$/) && !data.exists() && newData.exists() && newData.child('id').val() === $messageId && newData.child('senderId').val() === auth.uid && newData.child('receiverId').val() !== auth.uid && root.child('crmCompany/access').child(auth.uid).child('enabled').val() === true && root.child('crmCompany/access').child(auth.uid).child('email').val() === auth.token.email && root.child('crmCompany/access').child(auth.uid).child('mustChangePassword').val() !== true && (root.child('crmCompany/access').child(auth.uid).child('role').val() === 'admin' || root.child('crmCompany/access').child(auth.uid).child('role').val() === 'member' || root.child('crmCompany/access').child(auth.uid).child('role').val() === 'viewer') && root.child('crmCompany/access').child(newData.child('receiverId').val()).child('enabled').val() === true && root.child('crmCompany/access').child(newData.child('receiverId').val()).child('mustChangePassword').val() !== true && (root.child('crmCompany/access').child(newData.child('receiverId').val()).child('role').val() === 'admin' || root.child('crmCompany/access').child(newData.child('receiverId').val()).child('role').val() === 'member' || root.child('crmCompany/access').child(newData.child('receiverId').val()).child('role').val() === 'viewer')",
+          ".validate": "newData.hasChildren(['id','senderId','receiverId','fileName','extension','mimeType','size','sha256','bodyBase64','createdAt']) && newData.child('id').val() === $messageId && newData.child('senderId').isString() && newData.child('senderId').val().matches(/^[A-Za-z0-9._-]{1,128}$/) && newData.child('receiverId').isString() && newData.child('receiverId').val().matches(/^[A-Za-z0-9._-]{1,128}$/) && newData.child('senderId').val() !== newData.child('receiverId').val() && newData.child('fileName').isString() && newData.child('fileName').val().matches(/^[^\u0000-\u001F\u007F\\/\\\\:*?\"<>|]{1,180}$/) && !newData.child('fileName').val().contains('\\\\') && newData.child('extension').isString() && newData.child('mimeType').isString() && ((newData.child('extension').val() === 'pdf' && newData.child('mimeType').val() === 'application/pdf') || (newData.child('extension').val() === 'xlsx' && newData.child('mimeType').val() === 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet') || (newData.child('extension').val() === 'csv' && newData.child('mimeType').val() === 'text/csv') || (newData.child('extension').val() === 'docx' && newData.child('mimeType').val() === 'application/vnd.openxmlformats-officedocument.wordprocessingml.document') || (newData.child('extension').val() === 'hwp' && newData.child('mimeType').val() === 'application/x-hwp') || (newData.child('extension').val() === 'hwpx' && newData.child('mimeType').val() === 'application/vnd.hancom.hwpx') || (newData.child('extension').val() === 'pptx' && newData.child('mimeType').val() === 'application/vnd.openxmlformats-officedocument.presentationml.presentation') || (newData.child('extension').val() === 'txt' && newData.child('mimeType').val() === 'text/plain') || ((newData.child('extension').val() === 'jpg' || newData.child('extension').val() === 'jpeg') && newData.child('mimeType').val() === 'image/jpeg') || (newData.child('extension').val() === 'png' && newData.child('mimeType').val() === 'image/png') || (newData.child('extension').val() === 'webp' && newData.child('mimeType').val() === 'image/webp')) && newData.child('size').isNumber() && newData.child('size').val() >= 1 && newData.child('size').val() <= 5242880 && newData.child('size').val() % 1 === 0 && newData.child('sha256').isString() && newData.child('sha256').val().matches(/^[a-f0-9]{64}$/) && newData.child('bodyBase64').isString() && newData.child('bodyBase64').val().length <= 6990508 && ((newData.child('size').val() % 3 === 0 && newData.child('bodyBase64').val().length === newData.child('size').val() / 3 * 4 && newData.child('bodyBase64').val().matches(/^[A-Za-z0-9+\\/]+$/)) || (newData.child('size').val() % 3 === 1 && newData.child('bodyBase64').val().length === (newData.child('size').val() - 1) / 3 * 4 + 4 && newData.child('bodyBase64').val().matches(/^[A-Za-z0-9+\\/]+==$/)) || (newData.child('size').val() % 3 === 2 && newData.child('bodyBase64').val().length === (newData.child('size').val() - 2) / 3 * 4 + 4 && newData.child('bodyBase64').val().matches(/^[A-Za-z0-9+\\/]+=$/))) && newData.child('createdAt').isString() && newData.child('createdAt').val().matches(/^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}[.][0-9]{3}Z$/) && newData.parent().parent().child('officeMailbox').child(newData.child('senderId').val()).child(newData.child('receiverId').val()).child($messageId).child('attachment').child('fileId').val() === $messageId && newData.parent().parent().child('officeMailbox').child(newData.child('receiverId').val()).child(newData.child('senderId').val()).child($messageId).child('attachment').child('fileId').val() === $messageId",
+          "id": { ".validate": true },
+          "senderId": { ".validate": true },
+          "receiverId": { ".validate": true },
+          "fileName": { ".validate": "newData.isString() && newData.val().length > newData.parent().child('extension').val().length + 1 && newData.val().matches(/^[^ ].*[^ .]$/) && newData.val().matches(/^[^\u0000-\u001F\u007F-\u009F\u00A0\u1680\u2000-\u200A\u202F\u205F\u3000]{1,180}$/) && !newData.val().contains('\u00AD') && !newData.val().contains('\u061C') && !newData.val().contains('\u200B') && !newData.val().contains('\u200C') && !newData.val().contains('\u200D') && !newData.val().contains('\u200E') && !newData.val().contains('\u200F') && !newData.val().contains('\u202A') && !newData.val().contains('\u202B') && !newData.val().contains('\u202C') && !newData.val().contains('\u202D') && !newData.val().contains('\u202E') && !newData.val().contains('\\u2028') && !newData.val().contains('\\u2029') && !newData.val().contains('\u2060') && !newData.val().contains('\u2061') && !newData.val().contains('\u2062') && !newData.val().contains('\u2063') && !newData.val().contains('\u2064') && !newData.val().contains('\u2065') && !newData.val().contains('\u2066') && !newData.val().contains('\u2067') && !newData.val().contains('\u2068') && !newData.val().contains('\u2069') && !newData.val().contains('\u206A') && !newData.val().contains('\u206B') && !newData.val().contains('\u206C') && !newData.val().contains('\u206D') && !newData.val().contains('\u206E') && !newData.val().contains('\u206F') && !newData.val().contains('\uFEFF') && !newData.val().matches(/^([Cc][Oo][Nn]|[Pp][Rr][Nn]|[Aa][Uu][Xx]|[Nn][Uu][Ll]|[Cc][Oo][Mm][1-9]|[Ll][Pp][Tt][1-9])([.].*)?$/) && ((newData.parent().child('extension').val() === 'pdf' && newData.val().matches(/^.*[.][Pp][Dd][Ff]$/)) || (newData.parent().child('extension').val() === 'xlsx' && newData.val().matches(/^.*[.][Xx][Ll][Ss][Xx]$/)) || (newData.parent().child('extension').val() === 'csv' && newData.val().matches(/^.*[.][Cc][Ss][Vv]$/)) || (newData.parent().child('extension').val() === 'docx' && newData.val().matches(/^.*[.][Dd][Oo][Cc][Xx]$/)) || (newData.parent().child('extension').val() === 'hwp' && newData.val().matches(/^.*[.][Hh][Ww][Pp]$/)) || (newData.parent().child('extension').val() === 'hwpx' && newData.val().matches(/^.*[.][Hh][Ww][Pp][Xx]$/)) || (newData.parent().child('extension').val() === 'pptx' && newData.val().matches(/^.*[.][Pp][Pp][Tt][Xx]$/)) || (newData.parent().child('extension').val() === 'txt' && newData.val().matches(/^.*[.][Tt][Xx][Tt]$/)) || (newData.parent().child('extension').val() === 'jpg' && newData.val().matches(/^.*[.][Jj][Pp][Gg]$/)) || (newData.parent().child('extension').val() === 'jpeg' && newData.val().matches(/^.*[.][Jj][Pp][Ee][Gg]$/)) || (newData.parent().child('extension').val() === 'png' && newData.val().matches(/^.*[.][Pp][Nn][Gg]$/)) || (newData.parent().child('extension').val() === 'webp' && newData.val().matches(/^.*[.][Ww][Ee][Bb][Pp]$/)))" },
+          "extension": { ".validate": true },
+          "mimeType": { ".validate": true },
+          "size": { ".validate": true },
+          "sha256": { ".validate": true },
+          "bodyBase64": { ".validate": true },
+          "createdAt": { ".validate": true },
+          "$other": { ".validate": false }
+        }
+      },
+      "officeMailbox": {
+        ".read": false,
+        ".write": false,
+        "$ownerUid": {
+          ".read": "auth != null && auth.uid === $ownerUid && root.child('crmCompany/access').child(auth.uid).child('enabled').val() === true && root.child('crmCompany/access').child(auth.uid).child('email').val() === auth.token.email && root.child('crmCompany/access').child(auth.uid).child('mustChangePassword').val() !== true && (root.child('crmCompany/access').child(auth.uid).child('role').val() === 'admin' || root.child('crmCompany/access').child(auth.uid).child('role').val() === 'member' || root.child('crmCompany/access').child(auth.uid).child('role').val() === 'viewer')",
+          ".write": false,
+          "$peerUid": {
+            ".write": false,
+            "$messageId": {
+              ".write": "auth != null && $messageId.matches(/^msg_[A-Za-z0-9_]{8,80}$/) && root.child('crmCompany/access').child(auth.uid).child('enabled').val() === true && root.child('crmCompany/access').child(auth.uid).child('email').val() === auth.token.email && root.child('crmCompany/access').child(auth.uid).child('mustChangePassword').val() !== true && (root.child('crmCompany/access').child(auth.uid).child('role').val() === 'admin' || root.child('crmCompany/access').child(auth.uid).child('role').val() === 'member' || root.child('crmCompany/access').child(auth.uid).child('role').val() === 'viewer') && newData.exists() && ((!data.exists() && newData.child('senderId').val() === auth.uid && newData.child('receiverId').val() !== auth.uid && (($ownerUid === auth.uid && $peerUid === newData.child('receiverId').val()) || ($ownerUid === newData.child('receiverId').val() && $peerUid === auth.uid)) && root.child('crmCompany/access').child(newData.child('receiverId').val()).child('enabled').val() === true && root.child('crmCompany/access').child(newData.child('receiverId').val()).child('mustChangePassword').val() !== true && (root.child('crmCompany/access').child(newData.child('receiverId').val()).child('role').val() === 'admin' || root.child('crmCompany/access').child(newData.child('receiverId').val()).child('role').val() === 'member' || root.child('crmCompany/access').child(newData.child('receiverId').val()).child('role').val() === 'viewer')) || (data.exists() && auth.uid === data.child('receiverId').val() && (($ownerUid === auth.uid && $peerUid === data.child('senderId').val()) || ($ownerUid === data.child('senderId').val() && $peerUid === auth.uid)) && newData.child('id').val() === data.child('id').val() && newData.child('senderId').val() === data.child('senderId').val() && newData.child('receiverId').val() === data.child('receiverId').val() && newData.child('message').val() === data.child('message').val() && newData.child('attachment').exists() === data.child('attachment').exists() && newData.child('attachment').child('fileId').val() === data.child('attachment').child('fileId').val() && newData.child('attachment').child('fileName').val() === data.child('attachment').child('fileName').val() && newData.child('attachment').child('extension').val() === data.child('attachment').child('extension').val() && newData.child('attachment').child('mimeType').val() === data.child('attachment').child('mimeType').val() && newData.child('attachment').child('size').val() === data.child('attachment').child('size').val() && newData.child('attachment').child('sha256').val() === data.child('attachment').child('sha256').val() && newData.child('createdAt').val() === data.child('createdAt').val() && data.child('readAt').val() === '' && newData.child('readAt').isString() && newData.child('readAt').val().matches(/^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}[.][0-9]{3}Z$/)))",
+              ".validate": "newData.hasChildren(['id', 'senderId', 'receiverId', 'message', 'readAt', 'createdAt']) && newData.child('id').val() === $messageId && newData.child('senderId').isString() && newData.child('senderId').val().matches(/^[A-Za-z0-9._-]{1,128}$/) && newData.child('receiverId').isString() && newData.child('receiverId').val().matches(/^[A-Za-z0-9._-]{1,128}$/) && newData.child('senderId').val() !== newData.child('receiverId').val() && newData.child('message').isString() && newData.child('message').val().length > 0 && newData.child('message').val().length <= 4000 && newData.child('readAt').isString() && (newData.child('readAt').val() === '' || newData.child('readAt').val().matches(/^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}[.][0-9]{3}Z$/)) && newData.child('createdAt').isString() && newData.child('createdAt').val().matches(/^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}[.][0-9]{3}Z$/) && (!newData.child('attachment').exists() || (newData.child('attachment').child('fileId').val() === $messageId && newData.parent().parent().parent().parent().child('officeMessageFiles').child($messageId).child('id').val() === $messageId && newData.parent().parent().parent().parent().child('officeMessageFiles').child($messageId).child('senderId').val() === newData.child('senderId').val() && newData.parent().parent().parent().parent().child('officeMessageFiles').child($messageId).child('receiverId').val() === newData.child('receiverId').val() && newData.parent().parent().parent().parent().child('officeMessageFiles').child($messageId).child('fileName').val() === newData.child('attachment').child('fileName').val() && newData.parent().parent().parent().parent().child('officeMessageFiles').child($messageId).child('extension').val() === newData.child('attachment').child('extension').val() && newData.parent().parent().parent().parent().child('officeMessageFiles').child($messageId).child('mimeType').val() === newData.child('attachment').child('mimeType').val() && newData.parent().parent().parent().parent().child('officeMessageFiles').child($messageId).child('size').val() === newData.child('attachment').child('size').val() && newData.parent().parent().parent().parent().child('officeMessageFiles').child($messageId).child('sha256').val() === newData.child('attachment').child('sha256').val()))",
+              "id": {
+                ".validate": true
+              },
+              "senderId": {
+                ".validate": true
+              },
+              "receiverId": {
+                ".validate": true
+              },
+              "message": {
+                ".validate": "newData.isString() && newData.val() === newData.parent().parent().parent().parent().child($peerUid).child($ownerUid).child($messageId).child('message').val()"
+              },
+              "attachment": {
+                ".validate": "newData.hasChildren(['fileId','fileName','extension','mimeType','size','sha256']) && newData.child('fileId').isString() && newData.child('fileId').val() === $messageId && newData.child('fileName').isString() && newData.child('fileName').val().matches(/^[^\u0000-\u001F\u007F\\/\\\\:*?\"<>|]{1,180}$/) && !newData.child('fileName').val().contains('\\\\') && newData.child('extension').isString() && newData.child('mimeType').isString() && ((newData.child('extension').val() === 'pdf' && newData.child('mimeType').val() === 'application/pdf') || (newData.child('extension').val() === 'xlsx' && newData.child('mimeType').val() === 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet') || (newData.child('extension').val() === 'csv' && newData.child('mimeType').val() === 'text/csv') || (newData.child('extension').val() === 'docx' && newData.child('mimeType').val() === 'application/vnd.openxmlformats-officedocument.wordprocessingml.document') || (newData.child('extension').val() === 'hwp' && newData.child('mimeType').val() === 'application/x-hwp') || (newData.child('extension').val() === 'hwpx' && newData.child('mimeType').val() === 'application/vnd.hancom.hwpx') || (newData.child('extension').val() === 'pptx' && newData.child('mimeType').val() === 'application/vnd.openxmlformats-officedocument.presentationml.presentation') || (newData.child('extension').val() === 'txt' && newData.child('mimeType').val() === 'text/plain') || ((newData.child('extension').val() === 'jpg' || newData.child('extension').val() === 'jpeg') && newData.child('mimeType').val() === 'image/jpeg') || (newData.child('extension').val() === 'png' && newData.child('mimeType').val() === 'image/png') || (newData.child('extension').val() === 'webp' && newData.child('mimeType').val() === 'image/webp')) && newData.child('size').isNumber() && newData.child('size').val() >= 1 && newData.child('size').val() <= 5242880 && newData.child('size').val() % 1 === 0 && newData.child('sha256').isString() && newData.child('sha256').val().matches(/^[a-f0-9]{64}$/)",
+                "fileId": { ".validate": true },
+                "fileName": { ".validate": "newData.isString() && newData.val().length > newData.parent().child('extension').val().length + 1 && newData.val().matches(/^[^ ].*[^ .]$/) && newData.val().matches(/^[^\u0000-\u001F\u007F-\u009F\u00A0\u1680\u2000-\u200A\u202F\u205F\u3000]{1,180}$/) && !newData.val().contains('\u00AD') && !newData.val().contains('\u061C') && !newData.val().contains('\u200B') && !newData.val().contains('\u200C') && !newData.val().contains('\u200D') && !newData.val().contains('\u200E') && !newData.val().contains('\u200F') && !newData.val().contains('\u202A') && !newData.val().contains('\u202B') && !newData.val().contains('\u202C') && !newData.val().contains('\u202D') && !newData.val().contains('\u202E') && !newData.val().contains('\\u2028') && !newData.val().contains('\\u2029') && !newData.val().contains('\u2060') && !newData.val().contains('\u2061') && !newData.val().contains('\u2062') && !newData.val().contains('\u2063') && !newData.val().contains('\u2064') && !newData.val().contains('\u2065') && !newData.val().contains('\u2066') && !newData.val().contains('\u2067') && !newData.val().contains('\u2068') && !newData.val().contains('\u2069') && !newData.val().contains('\u206A') && !newData.val().contains('\u206B') && !newData.val().contains('\u206C') && !newData.val().contains('\u206D') && !newData.val().contains('\u206E') && !newData.val().contains('\u206F') && !newData.val().contains('\uFEFF') && !newData.val().matches(/^([Cc][Oo][Nn]|[Pp][Rr][Nn]|[Aa][Uu][Xx]|[Nn][Uu][Ll]|[Cc][Oo][Mm][1-9]|[Ll][Pp][Tt][1-9])([.].*)?$/) && ((newData.parent().child('extension').val() === 'pdf' && newData.val().matches(/^.*[.][Pp][Dd][Ff]$/)) || (newData.parent().child('extension').val() === 'xlsx' && newData.val().matches(/^.*[.][Xx][Ll][Ss][Xx]$/)) || (newData.parent().child('extension').val() === 'csv' && newData.val().matches(/^.*[.][Cc][Ss][Vv]$/)) || (newData.parent().child('extension').val() === 'docx' && newData.val().matches(/^.*[.][Dd][Oo][Cc][Xx]$/)) || (newData.parent().child('extension').val() === 'hwp' && newData.val().matches(/^.*[.][Hh][Ww][Pp]$/)) || (newData.parent().child('extension').val() === 'hwpx' && newData.val().matches(/^.*[.][Hh][Ww][Pp][Xx]$/)) || (newData.parent().child('extension').val() === 'pptx' && newData.val().matches(/^.*[.][Pp][Pp][Tt][Xx]$/)) || (newData.parent().child('extension').val() === 'txt' && newData.val().matches(/^.*[.][Tt][Xx][Tt]$/)) || (newData.parent().child('extension').val() === 'jpg' && newData.val().matches(/^.*[.][Jj][Pp][Gg]$/)) || (newData.parent().child('extension').val() === 'jpeg' && newData.val().matches(/^.*[.][Jj][Pp][Ee][Gg]$/)) || (newData.parent().child('extension').val() === 'png' && newData.val().matches(/^.*[.][Pp][Nn][Gg]$/)) || (newData.parent().child('extension').val() === 'webp' && newData.val().matches(/^.*[.][Ww][Ee][Bb][Pp]$/)))" },
+                "extension": { ".validate": true },
+                "mimeType": { ".validate": true },
+                "size": { ".validate": true },
+                "sha256": { ".validate": true },
+                "$other": { ".validate": false }
+              },
+              "readAt": {
+                ".validate": "newData.isString() && ((!data.exists() && newData.val() === '') || (data.exists() && data.val() === '' && newData.val().matches(/^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}[.][0-9]{3}Z$/))) && newData.val() === newData.parent().parent().parent().parent().child($peerUid).child($ownerUid).child($messageId).child('readAt').val()"
+              },
+              "createdAt": {
+                ".validate": "newData.isString() && newData.val() === newData.parent().parent().parent().parent().child($peerUid).child($ownerUid).child($messageId).child('createdAt').val() && (!newData.parent().child('attachment').exists() || newData.val() === newData.parent().parent().parent().parent().parent().child('officeMessageFiles').child($messageId).child('createdAt').val())"
+              },
+              "$other": {
+                ".validate": false
+              }
+            }
+          }
+        }
+      },
+      "teamProfiles": {
+        ".read": "auth != null && root.child('crmCompany/access').child(auth.uid).child('enabled').val() === true && root.child('crmCompany/access').child(auth.uid).child('email').val() === auth.token.email && (root.child('crmCompany/access').child(auth.uid).child('role').val() === 'admin' || root.child('crmCompany/access').child(auth.uid).child('role').val() === 'member' || root.child('crmCompany/access').child(auth.uid).child('role').val() === 'viewer')",
+        ".write": false
+      },
+      "driveImportCandidates": {
+        ".read": "auth != null && root.child('crmCompany/access').child(auth.uid).child('enabled').val() === true && root.child('crmCompany/access').child(auth.uid).child('email').val() === auth.token.email && (root.child('crmCompany/access').child(auth.uid).child('role').val() === 'admin' || root.child('crmCompany/access').child(auth.uid).child('role').val() === 'member' || root.child('crmCompany/access').child(auth.uid).child('role').val() === 'viewer')",
+        ".write": false
+      },
+      "contractReadiness": {
+        ".read": "auth != null && root.child('crmCompany/access').child(auth.uid).child('enabled').val() === true && root.child('crmCompany/access').child(auth.uid).child('email').val() === auth.token.email && (root.child('crmCompany/access').child(auth.uid).child('role').val() === 'admin' || root.child('crmCompany/access').child(auth.uid).child('role').val() === 'member' || root.child('crmCompany/access').child(auth.uid).child('role').val() === 'viewer')",
+        ".write": "auth != null && root.child('crmCompany/access').child(auth.uid).child('enabled').val() === true && root.child('crmCompany/access').child(auth.uid).child('email').val() === auth.token.email && root.child('crmCompany/access').child(auth.uid).child('role').val() === 'admin'"
+      },
+      "operationsIntelligence": {
+        ".read": "auth != null && root.child('crmCompany/access').child(auth.uid).child('enabled').val() === true && root.child('crmCompany/access').child(auth.uid).child('email').val() === auth.token.email && (root.child('crmCompany/access').child(auth.uid).child('role').val() === 'admin' || root.child('crmCompany/access').child(auth.uid).child('role').val() === 'member' || root.child('crmCompany/access').child(auth.uid).child('role').val() === 'viewer')",
+        ".write": false,
+        "operations": {
+          ".write": false,
+          "$operationId": {
+            ".write": "auth != null && newData.exists() && root.child('crmCompany/access').child(auth.uid).child('enabled').val() === true && root.child('crmCompany/access').child(auth.uid).child('email').val() === auth.token.email && (root.child('crmCompany/access').child(auth.uid).child('role').val() === 'admin' || (root.child('crmCompany/access').child(auth.uid).child('role').val() === 'member' && root.child('crmCompany/access').child(auth.uid).child('marketingRole').val() !== 'marketing'))",
+            ".validate": "newData.child('id').isString() && newData.child('id').val() === $operationId && newData.child('id').val().matches(/^[A-Za-z0-9_-]{1,120}$/) && newData.child('title').isString() && newData.child('title').val().length > 0 && newData.child('title').val().length <= 160 && newData.child('status').isString() && (newData.child('status').val() === 'created' || newData.child('status').val() === 'triaged' || newData.child('status').val() === 'assigned' || newData.child('status').val() === 'scheduled' || newData.child('status').val() === 'in_progress' || newData.child('status').val() === 'waiting' || newData.child('status').val() === 'verification' || newData.child('status').val() === 'completed' || newData.child('status').val() === 'failed' || newData.child('status').val() === 'cancelled') && (newData.child('repeatability').val() === 'low' || newData.child('repeatability').val() === 'medium' || newData.child('repeatability').val() === 'high') && newData.child('managerMinutes').isNumber() && newData.child('managerMinutes').val() >= 0 && newData.child('managerMinutes').val() % 1 === 0 && newData.child('assignmentChangeCount').isNumber() && newData.child('scheduleChangeCount').isNumber() && newData.child('reopenCount').isNumber() && newData.child('commentCount').isNumber() && newData.child('updatedBy').val() === auth.uid && newData.child('updatedAt').isString() && newData.child('version').isNumber() && newData.child('version').val() >= 1 && newData.child('version').val() % 1 === 0 && ((!data.exists() && newData.child('version').val() === 1 && newData.child('createdBy').val() === auth.uid && newData.child('assignmentChangeCount').val() === 0 && newData.child('scheduleChangeCount').val() === 0 && newData.child('reopenCount').val() === 0 && newData.child('commentCount').val() === 0) || (data.exists() && newData.child('id').val() === data.child('id').val() && newData.child('createdAt').val() === data.child('createdAt').val() && newData.child('createdBy').val() === data.child('createdBy').val() && newData.child('version').val() === data.child('version').val() + 1 && newData.child('assignmentChangeCount').val() >= data.child('assignmentChangeCount').val() && newData.child('assignmentChangeCount').val() <= data.child('assignmentChangeCount').val() + 1 && newData.child('scheduleChangeCount').val() >= data.child('scheduleChangeCount').val() && newData.child('scheduleChangeCount').val() <= data.child('scheduleChangeCount').val() + 1 && newData.child('reopenCount').val() === data.child('reopenCount').val() && newData.child('commentCount').val() === data.child('commentCount').val()))",
+            "attachments": {
+              "$index": {
+                ".validate": "newData.child('id').isString() && newData.child('id').val().matches(/^[A-Za-z0-9_-]{1,120}$/) && newData.child('type').isString() && (newData.child('type').val() === 'before_photo' || newData.child('type').val() === 'after_photo' || newData.child('type').val() === 'video' || newData.child('type').val() === 'audio' || newData.child('type').val() === 'estimate' || newData.child('type').val() === 'receipt' || newData.child('type').val() === 'invoice' || newData.child('type').val() === 'document' || newData.child('type').val() === 'other') && newData.child('ref').isString() && newData.child('ref').val().matches(/^https:\\/\\//) && newData.child('ref').val().length <= 2000"
+              }
+            }
+          }
+        }
+      },
+      "data": {
+        ".read": "auth != null && root.child('crmCompany/access').child(auth.uid).child('enabled').val() === true && root.child('crmCompany/access').child(auth.uid).child('email').val() === auth.token.email && (root.child('crmCompany/access').child(auth.uid).child('role').val() === 'admin' || root.child('crmCompany/access').child(auth.uid).child('role').val() === 'member' || root.child('crmCompany/access').child(auth.uid).child('role').val() === 'viewer')",
+        ".write": false,
+        "buildings": {
+          ".write": false,
+          "$entityId": {
+            ".write": "auth != null && newData.exists() && root.child('crmCompany/access').child(auth.uid).child('enabled').val() === true && root.child('crmCompany/access').child(auth.uid).child('email').val() === auth.token.email && (root.child('crmCompany/access').child(auth.uid).child('role').val() === 'admin' || (root.child('crmCompany/access').child(auth.uid).child('role').val() === 'member' && root.child('crmCompany/access').child(auth.uid).child('marketingRole').val() !== 'marketing'))",
+            ".validate": "newData.exists() && newData.child('id').val() === $entityId && newData.child('entityVersion').isNumber() && newData.child('entityVersion').val() >= 1 && newData.child('entityVersion').val() % 1 === 0 && newData.child('name').isString() && newData.child('name').val().length > 0 && newData.child('address').isString() && newData.child('address').val().length > 0 && ((newData.child('roadAddress').exists() && newData.child('roadAddress').val() !== '' && newData.child('address').val() === newData.child('roadAddress').val()) || ((!newData.child('roadAddress').exists() || newData.child('roadAddress').val() === '') && (!newData.child('jibunAddress').exists() || newData.child('jibunAddress').val() === '' || newData.child('address').val() === newData.child('jibunAddress').val()))) && newData.child('createdAt').isString() && newData.child('updatedAt').isString() && newData.child('updatedByAuthUid').val() === auth.uid && root.child('crmCompany/teamProfiles').child(newData.child('updatedByOperatorId').val()).child('active').val() === true && ((!data.exists() && newData.child('entityVersion').val() === 1 && newData.child('createdByAuthUid').val() === auth.uid) || (data.exists() && newData.child('id').val() === data.child('id').val() && newData.child('createdAt').val() === data.child('createdAt').val() && newData.child('createdByAuthUid').val() === data.child('createdByAuthUid').val() && newData.child('createdByOperatorId').val() === data.child('createdByOperatorId').val() && newData.child('entityVersion').val() === data.child('entityVersion').val() + 1)) && newData.child('buildingNo').val() === data.child('buildingNo').val() && (!newData.child('ownerCustomerId').exists() || newData.child('ownerCustomerId').val() === '' || (newData.child('ownerCustomerId').isString() && newData.child('ownerCustomerId').val().length <= 120 && newData.child('ownerCustomerId').val().matches(/^[A-Za-z0-9_-]+$/) && newData.child('ownerCustomerId').val() !== '__proto__' && newData.child('ownerCustomerId').val() !== 'prototype' && newData.child('ownerCustomerId').val() !== 'constructor' && newData.parent().parent().child('customers').child(newData.child('ownerCustomerId').val()).child('id').val() === newData.child('ownerCustomerId').val())) && (!data.exists() || !data.child('ownerCustomerId').exists() || data.child('ownerCustomerId').val() === '' || newData.child('ownerCustomerId').val() === data.child('ownerCustomerId').val()) && (!newData.child('ownerCustomerId').exists() || newData.child('ownerCustomerId').val() === '' || (data.exists() && data.child('ownerCustomerId').exists() && data.child('ownerCustomerId').val() !== '' && newData.child('ownerCustomerId').val() === data.child('ownerCustomerId').val()) || (newData.parent().parent().child('customers').child(newData.child('ownerCustomerId').val()).child('buildingIdLinks').child($entityId).val() === true && !root.child('crmCompany/data/customers').child(newData.child('ownerCustomerId').val()).child('buildingIdLinks').child($entityId).exists() && (!newData.parent().parent().child('customers').child(newData.child('ownerCustomerId').val()).child('archivedAt').exists() || newData.parent().parent().child('customers').child(newData.child('ownerCustomerId').val()).child('archivedAt').val() === ''))) && ((!newData.child('archivedAt').exists() || newData.child('archivedAt').val() === '') || (newData.child('archivedByAuthUid').val() === auth.uid && newData.child('archivedByOperatorId').val() === newData.child('updatedByOperatorId').val()))",
+            "id": {
+              ".validate": true
+            },
+            "entityVersion": {
+              ".validate": true
+            },
+            "createdAt": {
+              ".validate": true
+            },
+            "createdByAuthUid": {
+              ".validate": true
+            },
+            "createdByOperatorId": {
+              ".validate": true
+            },
+            "updatedAt": {
+              ".validate": true
+            },
+            "updatedByAuthUid": {
+              ".validate": true
+            },
+            "updatedByOperatorId": {
+              ".validate": true
+            },
+            "archivedAt": {
+              ".validate": true
+            },
+            "archivedByAuthUid": {
+              ".validate": true
+            },
+            "archivedByOperatorId": {
+              ".validate": true
+            },
+            "name": {
+              ".validate": true
+            },
+            "address": {
+              ".validate": true
+            },
+            "roadAddress": {
+              ".validate": "newData.isString() && newData.val().length <= 1000"
+            },
+            "jibunAddress": {
+              ".validate": "newData.isString() && newData.val().length <= 1000"
+            },
+            "type": {
+              ".validate": true
+            },
+            "status": {
+              ".validate": true
+            },
+            "ownerCustomerId": {
+              ".validate": true
+            },
+            "unitCount": {
+              ".validate": true
+            },
+            "manager": {
+              ".validate": true
+            },
+            "memo": {
+              ".validate": true
+            },
+            "aliases": {
+              ".validate": true
+            },
+            "externalRefs": {
+              ".validate": true
+            },
+            "rentDeposit": {
+              ".validate": true
+            },
+            "monthlyRent": {
+              ".validate": true
+            },
+            "maintenanceFee": {
+              ".validate": true
+            },
+            "maintenanceIncludes": {
+              ".validate": true
+            },
+            "maintenanceIncludeOther": {
+              ".validate": true
+            },
+            "roomTypes": {
+              ".validate": true
+            },
+            "roomTypeOther": {
+              ".validate": true
+            },
+            "roomOptions": {
+              ".validate": true
+            },
+            "roomOptionOther": {
+              ".validate": true
+            },
+            "vacantUnitCount": {
+              ".validate": true
+            },
+            "vacantUnits": {
+              ".validate": true
+            },
+            "buildingNo": {
+              ".validate": "data.exists() && newData.isString() && newData.val() === data.val()"
+            },
+            "$other": {
+              ".validate": false
+            }
+          }
+        },
+        "buildingUnits": {
+          ".write": false,
+          "$entityId": {
+            ".write": "auth != null && newData.exists() && root.child('crmCompany/access').child(auth.uid).child('enabled').val() === true && root.child('crmCompany/access').child(auth.uid).child('email').val() === auth.token.email && (root.child('crmCompany/access').child(auth.uid).child('role').val() === 'admin' || (root.child('crmCompany/access').child(auth.uid).child('role').val() === 'member' && root.child('crmCompany/access').child(auth.uid).child('marketingRole').val() !== 'marketing'))",
+            ".validate": "newData.exists() && newData.child('id').val() === $entityId && newData.child('entityVersion').isNumber() && newData.child('entityVersion').val() >= 1 && newData.child('entityVersion').val() % 1 === 0 && newData.child('crmBuildingId').isString() && newData.parent().parent().child('buildings').child(newData.child('crmBuildingId').val()).child('id').val() === newData.child('crmBuildingId').val() && newData.parent().parent().child('buildings').child(newData.child('crmBuildingId').val()).child('archivedAt').val() === '' && newData.child('label').isString() && newData.child('label').val().length > 0 && (newData.child('status').val() === 'unknown' || newData.child('status').val() === 'occupied' || newData.child('status').val() === 'vacant' || newData.child('status').val() === 'move_out_scheduled' || newData.child('status').val() === 'maintenance') && (newData.child('status').val() !== 'move_out_scheduled' || (newData.child('moveOutAt').val() !== '' || newData.child('availableFrom').val() !== '')) && newData.child('createdAt').isString() && newData.child('updatedAt').isString() && newData.child('updatedByAuthUid').val() === auth.uid && root.child('crmCompany/teamProfiles').child(newData.child('updatedByOperatorId').val()).child('active').val() === true && ((!data.exists() && newData.child('entityVersion').val() === 1 && newData.child('createdByAuthUid').val() === auth.uid) || (data.exists() && newData.child('id').val() === data.child('id').val() && newData.child('crmBuildingId').val() === data.child('crmBuildingId').val() && newData.child('createdAt').val() === data.child('createdAt').val() && newData.child('createdByAuthUid').val() === data.child('createdByAuthUid').val() && newData.child('createdByOperatorId').val() === data.child('createdByOperatorId').val() && newData.child('entityVersion').val() === data.child('entityVersion').val() + 1)) && ((!newData.child('archivedAt').exists() || newData.child('archivedAt').val() === '') || (newData.child('archivedByAuthUid').val() === auth.uid && newData.child('archivedByOperatorId').val() === newData.child('updatedByOperatorId').val()))",
+            "id": {
+              ".validate": true
+            },
+            "entityVersion": {
+              ".validate": true
+            },
+            "createdAt": {
+              ".validate": true
+            },
+            "createdByAuthUid": {
+              ".validate": true
+            },
+            "createdByOperatorId": {
+              ".validate": true
+            },
+            "updatedAt": {
+              ".validate": true
+            },
+            "updatedByAuthUid": {
+              ".validate": true
+            },
+            "updatedByOperatorId": {
+              ".validate": true
+            },
+            "archivedAt": {
+              ".validate": true
+            },
+            "archivedByAuthUid": {
+              ".validate": true
+            },
+            "archivedByOperatorId": {
+              ".validate": true
+            },
+            "crmBuildingId": {
+              ".validate": true
+            },
+            "label": {
+              ".validate": true
+            },
+            "floorLabel": {
+              ".validate": true
+            },
+            "floorOrder": {
+              ".validate": true
+            },
+            "unitOrder": {
+              ".validate": true
+            },
+            "status": {
+              ".validate": true
+            },
+            "moveOutAt": {
+              ".validate": true
+            },
+            "availableFrom": {
+              ".validate": true
+            },
+            "memo": {
+              ".validate": true
+            },
+            "externalRefs": {
+              ".validate": true
+            },
+            "$other": {
+              ".validate": false
+            }
+          }
+        },
+        "salesUnits": {
+          ".write": false,
+          "$entityId": {
+            ".write": "auth != null && newData.exists() && root.child('crmCompany/access').child(auth.uid).child('enabled').val() === true && root.child('crmCompany/access').child(auth.uid).child('email').val() === auth.token.email && (root.child('crmCompany/access').child(auth.uid).child('role').val() === 'admin' || (root.child('crmCompany/access').child(auth.uid).child('role').val() === 'member' && root.child('crmCompany/access').child(auth.uid).child('marketingRole').val() !== 'marketing'))",
+            ".validate": "newData.exists() && newData.child('id').val() === $entityId && newData.child('entityVersion').isNumber() && newData.child('entityVersion').val() >= 1 && newData.child('entityVersion').val() % 1 === 0 && newData.child('prospectId').isString() && newData.parent().parent().child('salesProspects').child(newData.child('prospectId').val()).child('id').val() === newData.child('prospectId').val() && newData.child('label').isString() && newData.child('label').val().length > 0 && (!newData.child('crmBuildingUnitId').exists() || newData.child('crmBuildingUnitId').val() === '' || newData.parent().parent().child('buildingUnits').child(newData.child('crmBuildingUnitId').val()).child('id').val() === newData.child('crmBuildingUnitId').val()) && newData.child('createdAt').isString() && newData.child('updatedAt').isString() && newData.child('updatedByAuthUid').val() === auth.uid && root.child('crmCompany/teamProfiles').child(newData.child('updatedByOperatorId').val()).child('active').val() === true && ((!data.exists() && newData.child('entityVersion').val() === 1 && newData.child('createdByAuthUid').val() === auth.uid) || (data.exists() && newData.child('id').val() === data.child('id').val() && newData.child('prospectId').val() === data.child('prospectId').val() && newData.child('createdAt').val() === data.child('createdAt').val() && newData.child('createdByAuthUid').val() === data.child('createdByAuthUid').val() && newData.child('createdByOperatorId').val() === data.child('createdByOperatorId').val() && newData.child('entityVersion').val() === data.child('entityVersion').val() + 1)) && ((!newData.child('archivedAt').exists() || newData.child('archivedAt').val() === '') || (newData.child('archivedByAuthUid').val() === auth.uid && newData.child('archivedByOperatorId').val() === newData.child('updatedByOperatorId').val()))",
+            "id": {
+              ".validate": true
+            },
+            "entityVersion": {
+              ".validate": true
+            },
+            "createdAt": {
+              ".validate": true
+            },
+            "createdByAuthUid": {
+              ".validate": true
+            },
+            "createdByOperatorId": {
+              ".validate": true
+            },
+            "updatedAt": {
+              ".validate": true
+            },
+            "updatedByAuthUid": {
+              ".validate": true
+            },
+            "updatedByOperatorId": {
+              ".validate": true
+            },
+            "archivedAt": {
+              ".validate": true
+            },
+            "archivedByAuthUid": {
+              ".validate": true
+            },
+            "archivedByOperatorId": {
+              ".validate": true
+            },
+            "prospectId": {
+              ".validate": true
+            },
+            "crmBuildingUnitId": {
+              ".validate": true
+            },
+            "label": {
+              ".validate": true
+            },
+            "status": {
+              ".validate": true
+            },
+            "moveOutAt": {
+              ".validate": true
+            },
+            "availableFrom": {
+              ".validate": true
+            },
+            "deposit": {
+              ".validate": true
+            },
+            "rent": {
+              ".validate": true
+            },
+            "maintenanceFee": {
+              ".validate": true
+            },
+            "photoUrl": {
+              ".validate": true
+            },
+            "evidenceUrl": {
+              ".validate": true
+            },
+            "note": {
+              ".validate": true
+            },
+            "externalRefs": {
+              ".validate": true
+            },
+            "$other": {
+              ".validate": false
+            }
+          }
+        },
+        "canonicalReceipts": {
+          "$requestId": {
+            ".write": "auth != null && newData.exists() && root.child('crmCompany/access').child(auth.uid).child('enabled').val() === true && root.child('crmCompany/access').child(auth.uid).child('email').val() === auth.token.email && (root.child('crmCompany/access').child(auth.uid).child('role').val() === 'admin' || (root.child('crmCompany/access').child(auth.uid).child('role').val() === 'member' && root.child('crmCompany/access').child(auth.uid).child('marketingRole').val() !== 'marketing')) && !data.exists()",
+            ".validate": "newData.exists() && !data.exists() && newData.child('requestId').val() === $requestId && newData.child('actorUid').val() === auth.uid && newData.child('scope').isString() && newData.child('requestHash').isString() && newData.child('createdAt').isString() && newData.child('result').exists()",
+            "scope": {
+              ".validate": true
+            },
+            "requestId": {
+              ".validate": true
+            },
+            "requestHash": {
+              ".validate": true
+            },
+            "actorUid": {
+              ".validate": true
+            },
+            "result": {
+              ".validate": true
+            },
+            "createdAt": {
+              ".validate": true
+            },
+            "$other": {
+              ".validate": false
+            }
+          }
+        },
+        "canonicalAuditLogs": {
+          "$auditId": {
+            ".write": "auth != null && newData.exists() && root.child('crmCompany/access').child(auth.uid).child('enabled').val() === true && root.child('crmCompany/access').child(auth.uid).child('email').val() === auth.token.email && (root.child('crmCompany/access').child(auth.uid).child('role').val() === 'admin' || (root.child('crmCompany/access').child(auth.uid).child('role').val() === 'member' && root.child('crmCompany/access').child(auth.uid).child('marketingRole').val() !== 'marketing')) && !data.exists()",
+            ".validate": "newData.exists() && !data.exists() && newData.child('id').val() === $auditId && newData.child('authUid').val() === auth.uid && newData.child('operatorId').isString() && root.child('crmCompany/teamProfiles').child(newData.child('operatorId').val()).child('active').val() === true && newData.child('requestId').isString() && newData.child('occurredAt').isString()",
+            "id": {
+              ".validate": true
+            },
+            "scope": {
+              ".validate": true
+            },
+            "requestId": {
+              ".validate": true
+            },
+            "authUid": {
+              ".validate": true
+            },
+            "operatorId": {
+              ".validate": true
+            },
+            "occurredAt": {
+              ".validate": true
+            },
+            "action": {
+              ".validate": true
+            },
+            "entityType": {
+              ".validate": true
+            },
+            "entityId": {
+              ".validate": true
+            },
+            "beforeVersion": {
+              ".validate": true
+            },
+            "afterVersion": {
+              ".validate": true
+            },
+            "changedFields": {
+              ".validate": true
+            },
+            "reason": {
+              ".validate": true
+            },
+            "createdCount": {
+              ".validate": true
+            },
+            "updatedCount": {
+              ".validate": true
+            },
+            "unchangedCount": {
+              ".validate": true
+            },
+            "$other": {
+              ".validate": false
+            }
+          }
+        },
+        "schemaVersion": {
+          ".write": "auth != null && root.child('crmCompany/access').child(auth.uid).child('enabled').val() === true && root.child('crmCompany/access').child(auth.uid).child('email').val() === auth.token.email && (root.child('crmCompany/access').child(auth.uid).child('role').val() === 'admin' || (root.child('crmCompany/access').child(auth.uid).child('role').val() === 'member' && root.child('crmCompany/access').child(auth.uid).child('marketingRole').val() !== 'marketing'))"
+        },
+        "company": {
+          ".write": "auth != null && root.child('crmCompany/access').child(auth.uid).child('enabled').val() === true && root.child('crmCompany/access').child(auth.uid).child('email').val() === auth.token.email && (root.child('crmCompany/access').child(auth.uid).child('role').val() === 'admin' || (root.child('crmCompany/access').child(auth.uid).child('role').val() === 'member' && root.child('crmCompany/access').child(auth.uid).child('marketingRole').val() !== 'marketing'))"
+        },
+        "updatedAt": {
+          ".write": "auth != null && root.child('crmCompany/access').child(auth.uid).child('enabled').val() === true && root.child('crmCompany/access').child(auth.uid).child('email').val() === auth.token.email && (root.child('crmCompany/access').child(auth.uid).child('role').val() === 'admin' || (root.child('crmCompany/access').child(auth.uid).child('role').val() === 'member' && root.child('crmCompany/access').child(auth.uid).child('marketingRole').val() !== 'marketing'))"
+        },
+        "updatedBy": {
+          ".write": "auth != null && root.child('crmCompany/access').child(auth.uid).child('enabled').val() === true && root.child('crmCompany/access').child(auth.uid).child('email').val() === auth.token.email && (root.child('crmCompany/access').child(auth.uid).child('role').val() === 'admin' || (root.child('crmCompany/access').child(auth.uid).child('role').val() === 'member' && root.child('crmCompany/access').child(auth.uid).child('marketingRole').val() !== 'marketing'))"
+        },
+        "customers": {
+          "$customerId": {
+            ".write": "auth != null && root.child('crmCompany/access').child(auth.uid).child('enabled').val() === true && root.child('crmCompany/access').child(auth.uid).child('email').val() === auth.token.email && (root.child('crmCompany/access').child(auth.uid).child('role').val() === 'admin' || (root.child('crmCompany/access').child(auth.uid).child('role').val() === 'member' && root.child('crmCompany/access').child(auth.uid).child('marketingRole').val() !== 'marketing')) && !data.child('buildingIdLinks').exists() && !newData.child('buildingIdLinks').exists() && (!newData.exists() || (newData.child('id').isString() && newData.child('id').val() === $customerId)) && (newData.exists() || !newData.parent().parent().parent().child('customerPhotos').child($customerId).exists()) && ((!newData.child('archivedAt').exists() || newData.child('archivedAt').val() === '') || !newData.parent().parent().parent().child('customerPhotos').child($customerId).exists()) && (root.child('crmCompany/access').child(auth.uid).child('role').val() === 'admin' || newData.child('marketing').val() === data.child('marketing').val())",
+            "marketing": {
+              ".write": "auth != null && root.child('crmCompany/access').child(auth.uid).child('enabled').val() === true && root.child('crmCompany/access').child(auth.uid).child('email').val() === auth.token.email && root.child('crmCompany/access').child(auth.uid).child('mustChangePassword').val() !== true && (root.child('crmCompany/access').child(auth.uid).child('role').val() === 'admin' || (root.child('crmCompany/access').child(auth.uid).child('role').val() === 'member' && (root.child('crmCompany/access').child(auth.uid).child('marketingRole').val() === 'marketing' || root.child('crmCompany/access').child(auth.uid).child('marketingRole').val() === 'sales'))) && data.parent().exists()",
+              ".validate": "newData.exists() && (!newData.child('validLead').exists() || !newData.child('validLead').isBoolean() || newData.child('validLead').val() !== false || newData.child('invalidReason').exists()) && (!newData.child('validLead').exists() || !newData.child('validLead').isBoolean() || newData.child('validLead').val() !== true || !newData.child('invalidReason').exists()) && newData.hasChildren(['_version','_updatedAtMs','_updatedByAuthUid','_updatedByOperatorId']) && newData.child('_version').isNumber() && newData.child('_version').val() >= 1 && newData.child('_version').val() <= 9007199254740991 && newData.child('_version').val() % 1 === 0 && newData.child('_updatedAtMs').val() === now && newData.child('_updatedByAuthUid').val() === auth.uid && newData.child('_updatedByOperatorId').val() === root.child('crmCompany/access').child(auth.uid).child('operatorId').val() && root.child('crmCompany/teamProfiles').child(newData.child('_updatedByOperatorId').val()).child('active').val() === true && (((!data.exists() || !data.child('_version').exists()) && newData.child('_version').val() === 1) || (data.child('_version').isNumber() && data.child('_version').val() >= 1 && data.child('_version').val() < 9007199254740991 && data.child('_version').val() % 1 === 0 && newData.child('_version').val() === data.child('_version').val() + 1))",
+              "firstSource": {
+                ".validate": "newData.isString() && (newData.val() === 'naver_place_ads' || newData.val() === 'naver_place_organic' || newData.val() === 'naver_blog' || newData.val() === 'soomgo' || newData.val() === 'daangn' || newData.val() === 'broker' || newData.val() === 'referral' || newData.val() === 'direct_sales' || newData.val() === 'other' || newData.val() === 'needs_review')"
+              },
+              "lastSource": {
+                ".validate": "newData.isString() && (newData.val() === 'naver_place_ads' || newData.val() === 'naver_place_organic' || newData.val() === 'naver_blog' || newData.val() === 'soomgo' || newData.val() === 'daangn' || newData.val() === 'broker' || newData.val() === 'referral' || newData.val() === 'direct_sales' || newData.val() === 'other' || newData.val() === 'needs_review')"
+              },
+              "inquiryMethod": {
+                ".validate": "newData.isString() && (newData.val() === 'phone' || newData.val() === 'talktalk' || newData.val() === 'chat' || newData.val() === 'sms' || newData.val() === 'email' || newData.val() === 'google_form' || newData.val() === 'visit' || newData.val() === 'referral' || newData.val() === 'other')"
+              },
+              "invalidReason": {
+                ".validate": "newData.isString() && (newData.val() === 'outside_area' || newData.val() === 'unsupported_service' || newData.val() === 'vendor_sales' || newData.val() === 'duplicate' || newData.val() === 'unreachable' || newData.val() === 'wrong_number' || newData.val() === 'spam' || newData.val() === 'budget' || newData.val() === 'schedule' || newData.val() === 'other')"
+              },
+              "validLead": {
+                ".validate": "newData.isBoolean()"
+              },
+              "subChannel": {
+                ".validate": "newData.isString() && newData.val().length <= 200"
+              },
+              "campaignId": {
+                ".validate": "newData.isString() && newData.val().length <= 200"
+              },
+              "campaignName": {
+                ".validate": "newData.isString() && newData.val().length <= 200"
+              },
+              "keyword": {
+                ".validate": "newData.isString() && newData.val().length <= 200"
+              },
+              "contentId": {
+                ".validate": "newData.isString() && newData.val().length <= 200"
+              },
+              "contentTitle": {
+                ".validate": "newData.isString() && newData.val().length <= 200"
+              },
+              "firstTouchAt": {
+                ".validate": "newData.isString() && newData.val().length <= 40"
+              },
+              "inquiryAt": {
+                ".validate": "newData.isString() && newData.val().length <= 40"
+              },
+              "attributionNote": {
+                ".validate": "newData.isString() && newData.val().length <= 1000"
+              },
+              "$other": {
+                ".validate": false
+              },
+              "_version": {
+                ".validate": true
+              },
+              "_updatedAtMs": {
+                ".validate": true
+              },
+              "_updatedByAuthUid": {
+                ".validate": true
+              },
+              "_updatedByOperatorId": {
+                ".validate": true
+              }
+            },
+            "messageConsents": {
+              ".validate": "newData.exists()",
+              "kakao": {
+                ".validate": "newData.hasChildren(['status','consentedAt','withdrawnAt','source','consentTextVersion','evidenceRef','evidenceUrl','recordedBy','recordedAt','updatedAt']) && (newData.child('status').val() === 'not_collected' || newData.child('status').val() === 'granted' || newData.child('status').val() === 'withdrawn') && newData.child('consentedAt').isString() && newData.child('withdrawnAt').isString() && newData.child('source').isString() && newData.child('consentTextVersion').isString() && newData.child('evidenceRef').isString() && newData.child('evidenceUrl').isString() && newData.child('recordedBy').isString() && newData.child('recordedAt').isString() && newData.child('updatedAt').isString() && (newData.child('status').val() !== 'granted' || (newData.child('consentedAt').val().length > 0 && newData.child('consentTextVersion').val().length > 0 && newData.child('evidenceRef').val().length > 0)) && (newData.child('status').val() !== 'withdrawn' || newData.child('withdrawnAt').val().length > 0)",
+                "$other": { ".validate": false }
+              },
+              "sms": {
+                ".validate": "newData.hasChildren(['status','consentedAt','withdrawnAt','source','consentTextVersion','evidenceRef','evidenceUrl','recordedBy','recordedAt','updatedAt']) && (newData.child('status').val() === 'not_collected' || newData.child('status').val() === 'granted' || newData.child('status').val() === 'withdrawn') && newData.child('consentedAt').isString() && newData.child('withdrawnAt').isString() && newData.child('source').isString() && newData.child('consentTextVersion').isString() && newData.child('evidenceRef').isString() && newData.child('evidenceUrl').isString() && newData.child('recordedBy').isString() && newData.child('recordedAt').isString() && newData.child('updatedAt').isString() && (newData.child('status').val() !== 'granted' || (newData.child('consentedAt').val().length > 0 && newData.child('consentTextVersion').val().length > 0 && newData.child('evidenceRef').val().length > 0)) && (newData.child('status').val() !== 'withdrawn' || newData.child('withdrawnAt').val().length > 0)",
+                "$other": { ".validate": false }
+              },
+              "$other": { ".validate": false }
+            },
+            "$field": {
+              ".write": "auth != null && $field !== 'marketing' && $field !== 'marketingUpdatedAt' && $field !== 'marketingUpdatedBy' && $field !== 'buildingIdLinks' && $field !== 'photoDataUrl' && $field !== 'avatarUrl' && $field !== 'localPath' && ($field !== 'id' || (newData.exists() && newData.isString() && newData.val() === $customerId)) && ($field !== 'archivedAt' || (!data.parent().child('buildingIdLinks').exists() && (!newData.exists() || newData.val() === '' || !newData.parent().parent().parent().parent().child('customerPhotos').child($customerId).exists()))) && root.child('crmCompany/access').child(auth.uid).child('enabled').val() === true && root.child('crmCompany/access').child(auth.uid).child('email').val() === auth.token.email && (root.child('crmCompany/access').child(auth.uid).child('role').val() === 'admin' || (root.child('crmCompany/access').child(auth.uid).child('role').val() === 'member' && root.child('crmCompany/access').child(auth.uid).child('marketingRole').val() !== 'marketing'))"
+            },
+            "photoDataUrl": {
+              ".validate": false
+            },
+            "avatarUrl": {
+              ".validate": false
+            },
+            "localPath": {
+              ".validate": false
+            },
+            "buildingIdLinks": {
+              ".write": false,
+              "$buildingId": {
+                ".write": "auth != null && !data.exists() && newData.exists() && newData.isBoolean() && newData.val() === true && root.child('crmCompany/access').child(auth.uid).child('enabled').val() === true && root.child('crmCompany/access').child(auth.uid).child('email').val() === auth.token.email && (root.child('crmCompany/access').child(auth.uid).child('role').val() === 'admin' || (root.child('crmCompany/access').child(auth.uid).child('role').val() === 'member' && root.child('crmCompany/access').child(auth.uid).child('marketingRole').val() !== 'marketing')) && newData.parent().parent().parent().parent().child('buildings').child($buildingId).child('ownerCustomerId').val() === $customerId && (!newData.parent().parent().child('archivedAt').exists() || newData.parent().parent().child('archivedAt').val() === '')",
+                ".validate": "newData.isBoolean() && newData.val() === true"
+              }
+            }
+          }
+        },
+        "activities": {
+          ".write": "auth != null && root.child('crmCompany/access').child(auth.uid).child('enabled').val() === true && root.child('crmCompany/access').child(auth.uid).child('email').val() === auth.token.email && (root.child('crmCompany/access').child(auth.uid).child('role').val() === 'admin' || (root.child('crmCompany/access').child(auth.uid).child('role').val() === 'member' && root.child('crmCompany/access').child(auth.uid).child('marketingRole').val() !== 'marketing'))"
+        },
+        "contracts": {
+          ".write": "auth != null && root.child('crmCompany/access').child(auth.uid).child('enabled').val() === true && root.child('crmCompany/access').child(auth.uid).child('email').val() === auth.token.email && (root.child('crmCompany/access').child(auth.uid).child('role').val() === 'admin' || (root.child('crmCompany/access').child(auth.uid).child('role').val() === 'member' && root.child('crmCompany/access').child(auth.uid).child('marketingRole').val() !== 'marketing'))"
+        },
+        "contractReadiness": {
+          ".write": "auth != null && root.child('crmCompany/access').child(auth.uid).child('enabled').val() === true && root.child('crmCompany/access').child(auth.uid).child('email').val() === auth.token.email && (root.child('crmCompany/access').child(auth.uid).child('role').val() === 'admin' || (root.child('crmCompany/access').child(auth.uid).child('role').val() === 'member' && root.child('crmCompany/access').child(auth.uid).child('marketingRole').val() !== 'marketing'))"
+        },
+        "partnerVendors": {
+          ".write": "auth != null && root.child('crmCompany/access').child(auth.uid).child('enabled').val() === true && root.child('crmCompany/access').child(auth.uid).child('email').val() === auth.token.email && (root.child('crmCompany/access').child(auth.uid).child('role').val() === 'admin' || (root.child('crmCompany/access').child(auth.uid).child('role').val() === 'member' && root.child('crmCompany/access').child(auth.uid).child('marketingRole').val() !== 'marketing'))"
+        },
+        "partnerQuotes": {
+          ".write": "auth != null && root.child('crmCompany/access').child(auth.uid).child('enabled').val() === true && root.child('crmCompany/access').child(auth.uid).child('email').val() === auth.token.email && (root.child('crmCompany/access').child(auth.uid).child('role').val() === 'admin' || (root.child('crmCompany/access').child(auth.uid).child('role').val() === 'member' && root.child('crmCompany/access').child(auth.uid).child('marketingRole').val() !== 'marketing'))"
+        },
+        "tasks": {
+          ".write": "auth != null && root.child('crmCompany/access').child(auth.uid).child('enabled').val() === true && root.child('crmCompany/access').child(auth.uid).child('email').val() === auth.token.email && (root.child('crmCompany/access').child(auth.uid).child('role').val() === 'admin' || (root.child('crmCompany/access').child(auth.uid).child('role').val() === 'member' && root.child('crmCompany/access').child(auth.uid).child('marketingRole').val() !== 'marketing'))"
+        },
+        "serviceRecords": {
+          ".write": false,
+          "$serviceRecordId": {
+            ".write": "auth != null && newData.exists() && (!data.exists() || data.child('status').val() !== 'cancelled') && root.child('crmCompany/access').child(auth.uid).child('enabled').val() === true && root.child('crmCompany/access').child(auth.uid).child('email').val() === auth.token.email && (root.child('crmCompany/access').child(auth.uid).child('role').val() === 'admin' || (root.child('crmCompany/access').child(auth.uid).child('role').val() === 'member' && root.child('crmCompany/access').child(auth.uid).child('marketingRole').val() !== 'marketing'))",
+            ".validate": "newData.child('id').isString() && newData.child('id').val() === $serviceRecordId && newData.child('id').val().length > 0 && newData.child('id').val().length <= 120 && newData.child('id').val().matches(/^[A-Za-z0-9_-]+$/) && newData.child('id').val() !== '__proto__' && newData.child('id').val() !== 'prototype' && newData.child('id').val() !== 'constructor' && newData.child('buildingId').isString() && newData.child('buildingId').val().length > 0 && newData.child('buildingId').val().length <= 120 && newData.child('buildingId').val().matches(/^[A-Za-z0-9_-]+$/) && newData.child('buildingId').val() !== '__proto__' && newData.child('buildingId').val() !== 'prototype' && newData.child('buildingId').val() !== 'constructor' && newData.child('calendarCommitRequestId').isString() && newData.child('calendarCommitRequestId').val().matches(/^[0-9A-Fa-f]{8}-[0-9A-Fa-f]{4}-4[0-9A-Fa-f]{3}-[89ABab][0-9A-Fa-f]{3}-[0-9A-Fa-f]{12}$/) && newData.child('calendarCommitHash').isString() && newData.child('calendarCommitHash').val().matches(/^[0-9A-Fa-f]{64}$/) && newData.child('calendarAuditId').isString() && newData.child('calendarAuditId').val().matches(/^audit_schedule_[0-9A-Fa-f]{32}$/) && newData.child('updatedByAuthUid').isString() && newData.child('updatedByAuthUid').val() === auth.uid && newData.child('updatedAt').isString() && newData.child('updatedAt').val().length > 0 && newData.child('updatedAt').val().matches(/^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}([.][0-9]{1,9})?Z$/) && newData.child('calendarCommitVersion').isNumber() && newData.child('calendarCommitVersion').val() >= 1 && newData.child('calendarCommitVersion').val() <= 9007199254740991 && newData.child('calendarCommitVersion').val() % 1 === 0 && ((!data.exists() && newData.child('calendarCommitVersion').val() === 1) || (data.exists() && (((!data.child('calendarCommitVersion').isNumber() || data.child('calendarCommitVersion').val() < 1 || data.child('calendarCommitVersion').val() > 9007199254740991 || data.child('calendarCommitVersion').val() % 1 !== 0) && newData.child('calendarCommitVersion').val() === 1) || (data.child('calendarCommitVersion').isNumber() && data.child('calendarCommitVersion').val() >= 1 && data.child('calendarCommitVersion').val() < 9007199254740991 && data.child('calendarCommitVersion').val() % 1 === 0 && newData.child('calendarCommitVersion').val() === data.child('calendarCommitVersion').val() + 1)))) && (!data.exists() || (newData.child('calendarCommitRequestId').val() !== data.child('calendarCommitRequestId').val() && newData.child('calendarCommitHash').val() !== data.child('calendarCommitHash').val() && newData.child('calendarAuditId').val() !== data.child('calendarAuditId').val() && newData.child('updatedAt').val() !== data.child('updatedAt').val())) && ((data.exists() && data.child('buildingId').val() === newData.child('buildingId').val()) || (newData.parent().parent().child('buildings').child(newData.child('buildingId').val()).child('id').val() === newData.child('buildingId').val() && (!newData.parent().parent().child('buildings').child(newData.child('buildingId').val()).child('archivedAt').exists() || newData.parent().parent().child('buildings').child(newData.child('buildingId').val()).child('archivedAt').val() === '')))"
+          }
+        },
+        "serviceContracts": {
+          ".write": "auth != null && root.child('crmCompany/access').child(auth.uid).child('enabled').val() === true && root.child('crmCompany/access').child(auth.uid).child('email').val() === auth.token.email && (root.child('crmCompany/access').child(auth.uid).child('role').val() === 'admin' || (root.child('crmCompany/access').child(auth.uid).child('role').val() === 'member' && root.child('crmCompany/access').child(auth.uid).child('marketingRole').val() !== 'marketing'))"
+        },
+        "serviceSchedules": {
+          ".write": "auth != null && root.child('crmCompany/access').child(auth.uid).child('enabled').val() === true && root.child('crmCompany/access').child(auth.uid).child('email').val() === auth.token.email && (root.child('crmCompany/access').child(auth.uid).child('role').val() === 'admin' || (root.child('crmCompany/access').child(auth.uid).child('role').val() === 'member' && root.child('crmCompany/access').child(auth.uid).child('marketingRole').val() !== 'marketing'))"
+        },
+        "securityAssets": {
+          ".write": "auth != null && root.child('crmCompany/access').child(auth.uid).child('enabled').val() === true && root.child('crmCompany/access').child(auth.uid).child('email').val() === auth.token.email && (root.child('crmCompany/access').child(auth.uid).child('role').val() === 'admin' || (root.child('crmCompany/access').child(auth.uid).child('role').val() === 'member' && root.child('crmCompany/access').child(auth.uid).child('marketingRole').val() !== 'marketing'))"
+        },
+        "auditLogs": {
+          ".write": "auth != null && root.child('crmCompany/access').child(auth.uid).child('enabled').val() === true && root.child('crmCompany/access').child(auth.uid).child('email').val() === auth.token.email && (root.child('crmCompany/access').child(auth.uid).child('role').val() === 'admin' || (root.child('crmCompany/access').child(auth.uid).child('role').val() === 'member' && root.child('crmCompany/access').child(auth.uid).child('marketingRole').val() !== 'marketing'))"
+        },
+        "securityIncidents": {
+          ".write": "auth != null && root.child('crmCompany/access').child(auth.uid).child('enabled').val() === true && root.child('crmCompany/access').child(auth.uid).child('email').val() === auth.token.email && (root.child('crmCompany/access').child(auth.uid).child('role').val() === 'admin' || (root.child('crmCompany/access').child(auth.uid).child('role').val() === 'member' && root.child('crmCompany/access').child(auth.uid).child('marketingRole').val() !== 'marketing'))"
+        },
+        "salesProspects": {
+          ".write": "auth != null && root.child('crmCompany/access').child(auth.uid).child('enabled').val() === true && root.child('crmCompany/access').child(auth.uid).child('email').val() === auth.token.email && (root.child('crmCompany/access').child(auth.uid).child('role').val() === 'admin' || (root.child('crmCompany/access').child(auth.uid).child('role').val() === 'member' && root.child('crmCompany/access').child(auth.uid).child('marketingRole').val() !== 'marketing'))"
+        },
+        "salesContacts": {
+          ".write": "auth != null && root.child('crmCompany/access').child(auth.uid).child('enabled').val() === true && root.child('crmCompany/access').child(auth.uid).child('email').val() === auth.token.email && (root.child('crmCompany/access').child(auth.uid).child('role').val() === 'admin' || (root.child('crmCompany/access').child(auth.uid).child('role').val() === 'member' && root.child('crmCompany/access').child(auth.uid).child('marketingRole').val() !== 'marketing'))"
+        },
+        "salesActivities": {
+          ".write": "auth != null && root.child('crmCompany/access').child(auth.uid).child('enabled').val() === true && root.child('crmCompany/access').child(auth.uid).child('email').val() === auth.token.email && (root.child('crmCompany/access').child(auth.uid).child('role').val() === 'admin' || (root.child('crmCompany/access').child(auth.uid).child('role').val() === 'member' && root.child('crmCompany/access').child(auth.uid).child('marketingRole').val() !== 'marketing'))"
+        },
+        "salesEvents": {
+          ".write": "auth != null && root.child('crmCompany/access').child(auth.uid).child('enabled').val() === true && root.child('crmCompany/access').child(auth.uid).child('email').val() === auth.token.email && (root.child('crmCompany/access').child(auth.uid).child('role').val() === 'admin' || (root.child('crmCompany/access').child(auth.uid).child('role').val() === 'member' && root.child('crmCompany/access').child(auth.uid).child('marketingRole').val() !== 'marketing'))"
+        },
+        "salesOpportunities": {
+          ".write": "auth != null && root.child('crmCompany/access').child(auth.uid).child('enabled').val() === true && root.child('crmCompany/access').child(auth.uid).child('email').val() === auth.token.email && (root.child('crmCompany/access').child(auth.uid).child('role').val() === 'admin' || (root.child('crmCompany/access').child(auth.uid).child('role').val() === 'member' && root.child('crmCompany/access').child(auth.uid).child('marketingRole').val() !== 'marketing'))"
+        }
+      },
+      "messageDeliveries": {
+        ".read": "auth != null && root.child('crmCompany/access').child(auth.uid).child('enabled').val() === true && root.child('crmCompany/access').child(auth.uid).child('email').val() === auth.token.email && root.child('crmCompany/access').child(auth.uid).child('mustChangePassword').val() !== true && (root.child('crmCompany/access').child(auth.uid).child('role').val() === 'admin' || root.child('crmCompany/access').child(auth.uid).child('role').val() === 'member' || root.child('crmCompany/access').child(auth.uid).child('role').val() === 'viewer')",
+        ".write": false
+      },
+      "customerPhotos": {
+        ".read": "auth != null && root.child('crmCompany/access').child(auth.uid).child('enabled').val() === true && root.child('crmCompany/access').child(auth.uid).child('email').val() === auth.token.email && (root.child('crmCompany/access').child(auth.uid).child('role').val() === 'admin' || root.child('crmCompany/access').child(auth.uid).child('role').val() === 'member' || root.child('crmCompany/access').child(auth.uid).child('role').val() === 'viewer')",
+        ".write": false,
+        "$customerId": {
+          ".write": "auth != null && $customerId.matches(/^[A-Za-z0-9_-]{1,120}$/) && $customerId !== '__proto__' && $customerId !== 'prototype' && $customerId !== 'constructor' && root.child('crmCompany/access').child(auth.uid).child('enabled').val() === true && root.child('crmCompany/access').child(auth.uid).child('email').val() === auth.token.email && (root.child('crmCompany/access').child(auth.uid).child('role').val() === 'admin' || (root.child('crmCompany/access').child(auth.uid).child('role').val() === 'member' && root.child('crmCompany/access').child(auth.uid).child('marketingRole').val() !== 'marketing')) && (!newData.exists() || (newData.parent().parent().child('data').child('customers').child($customerId).child('id').val() === $customerId && (!newData.parent().parent().child('data').child('customers').child($customerId).child('archivedAt').exists() || newData.parent().parent().child('data').child('customers').child($customerId).child('archivedAt').val() === '')))",
+          ".validate": "!newData.exists() || (newData.child('dataUrl').isString() && newData.child('dataUrl').val().length > 23 && newData.child('dataUrl').val().length <= 20000 && newData.child('dataUrl').val().matches(/^data:image[/]jpeg;base64,[/]9j[/][A-Za-z0-9+/]+={0,2}$/) && newData.child('size').isNumber() && newData.child('size').val() === newData.child('dataUrl').val().length && newData.child('size').val() <= 20000 && newData.child('size').val() % 1 === 0 && newData.child('updatedAt').isString() && newData.child('updatedAt').val().matches(/^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}[.][0-9]{3}Z$/) && newData.child('updatedBy').isString() && newData.child('updatedBy').val() === auth.uid)",
+          "dataUrl": {
+            ".validate": true
+          },
+          "size": {
+            ".validate": true
+          },
+          "updatedAt": {
+            ".validate": true
+          },
+          "updatedBy": {
+            ".validate": true
+          },
+          "$other": {
+            ".validate": false
+          }
+        }
+      },
+      "fieldSummaries": {
+        ".read": "auth != null && root.child('crmCompany/access').child(auth.uid).child('enabled').val() === true && root.child('crmCompany/access').child(auth.uid).child('email').val() === auth.token.email && (root.child('crmCompany/access').child(auth.uid).child('role').val() === 'admin' || root.child('crmCompany/access').child(auth.uid).child('role').val() === 'member' || root.child('crmCompany/access').child(auth.uid).child('role').val() === 'viewer')",
+        ".write": false
+      },
+      "cases": {
+        ".read": "auth != null && root.child('crmCompany/access').child(auth.uid).child('enabled').val() === true && root.child('crmCompany/access').child(auth.uid).child('email').val() === auth.token.email && (root.child('crmCompany/access').child(auth.uid).child('role').val() === 'admin' || root.child('crmCompany/access').child(auth.uid).child('role').val() === 'member' || root.child('crmCompany/access').child(auth.uid).child('role').val() === 'viewer')",
+        ".write": "auth != null && root.child('crmCompany/access').child(auth.uid).child('enabled').val() === true && root.child('crmCompany/access').child(auth.uid).child('email').val() === auth.token.email && (root.child('crmCompany/access').child(auth.uid).child('role').val() === 'admin' || (root.child('crmCompany/access').child(auth.uid).child('role').val() === 'member' && root.child('crmCompany/access').child(auth.uid).child('marketingRole').val() !== 'marketing')) && (root.child('crmCompany/access').child(auth.uid).child('role').val() === 'admin' || newData.child('marketing').val() === data.child('marketing').val())",
+        "$caseId": {
+          "marketing": {
+            ".write": "auth != null && root.child('crmCompany/access').child(auth.uid).child('enabled').val() === true && root.child('crmCompany/access').child(auth.uid).child('email').val() === auth.token.email && root.child('crmCompany/access').child(auth.uid).child('mustChangePassword').val() !== true && (root.child('crmCompany/access').child(auth.uid).child('role').val() === 'admin' || (root.child('crmCompany/access').child(auth.uid).child('role').val() === 'member' && (root.child('crmCompany/access').child(auth.uid).child('marketingRole').val() === 'marketing' || root.child('crmCompany/access').child(auth.uid).child('marketingRole').val() === 'sales'))) && data.parent().exists()",
+            ".validate": "newData.exists() && (!newData.child('firstSource').exists() || newData.child('firstSource').val() === 'naver_place_ads' || newData.child('firstSource').val() === 'naver_place_organic' || newData.child('firstSource').val() === 'naver_blog' || newData.child('firstSource').val() === 'soomgo' || newData.child('firstSource').val() === 'daangn' || newData.child('firstSource').val() === 'broker' || newData.child('firstSource').val() === 'referral' || newData.child('firstSource').val() === 'direct_sales' || newData.child('firstSource').val() === 'other' || newData.child('firstSource').val() === 'needs_review') && (!newData.child('lastSource').exists() || newData.child('lastSource').val() === 'naver_place_ads' || newData.child('lastSource').val() === 'naver_place_organic' || newData.child('lastSource').val() === 'naver_blog' || newData.child('lastSource').val() === 'soomgo' || newData.child('lastSource').val() === 'daangn' || newData.child('lastSource').val() === 'broker' || newData.child('lastSource').val() === 'referral' || newData.child('lastSource').val() === 'direct_sales' || newData.child('lastSource').val() === 'other' || newData.child('lastSource').val() === 'needs_review') && (!newData.child('validLead').exists() || newData.child('validLead').isBoolean()) && (newData.child('validLead').val() !== false || newData.child('invalidReason').exists()) && (newData.child('validLead').val() !== true || !newData.child('invalidReason').exists()) && (!newData.child('attributionNote').exists() || (newData.child('attributionNote').isString() && newData.child('attributionNote').val().length <= 1000)) && newData.hasChildren(['_version','_updatedAtMs','_updatedByAuthUid','_updatedByOperatorId']) && newData.child('_version').isNumber() && newData.child('_version').val() >= 1 && newData.child('_version').val() <= 9007199254740991 && newData.child('_version').val() % 1 === 0 && newData.child('_updatedAtMs').val() === now && newData.child('_updatedByAuthUid').val() === auth.uid && newData.child('_updatedByOperatorId').val() === root.child('crmCompany/access').child(auth.uid).child('operatorId').val() && root.child('crmCompany/teamProfiles').child(newData.child('_updatedByOperatorId').val()).child('active').val() === true && (((!data.exists() || !data.child('_version').exists()) && newData.child('_version').val() === 1) || (data.child('_version').isNumber() && data.child('_version').val() >= 1 && data.child('_version').val() < 9007199254740991 && data.child('_version').val() % 1 === 0 && newData.child('_version').val() === data.child('_version').val() + 1))",
+            "firstSource": {
+              ".validate": true
+            },
+            "lastSource": {
+              ".validate": true
+            },
+            "subChannel": {
+              ".validate": "newData.isString() && newData.val().length <= 200"
+            },
+            "campaignId": {
+              ".validate": "newData.isString() && newData.val().length <= 200"
+            },
+            "campaignName": {
+              ".validate": "newData.isString() && newData.val().length <= 200"
+            },
+            "keyword": {
+              ".validate": "newData.isString() && newData.val().length <= 200"
+            },
+            "contentId": {
+              ".validate": "newData.isString() && newData.val().length <= 200"
+            },
+            "contentTitle": {
+              ".validate": "newData.isString() && newData.val().length <= 200"
+            },
+            "inquiryMethod": {
+              ".validate": "newData.isString() && (newData.val() === 'phone' || newData.val() === 'talktalk' || newData.val() === 'chat' || newData.val() === 'sms' || newData.val() === 'email' || newData.val() === 'google_form' || newData.val() === 'visit' || newData.val() === 'referral' || newData.val() === 'other')"
+            },
+            "validLead": {
+              ".validate": true
+            },
+            "invalidReason": {
+              ".validate": "newData.isString() && (newData.val() === 'outside_area' || newData.val() === 'unsupported_service' || newData.val() === 'vendor_sales' || newData.val() === 'duplicate' || newData.val() === 'unreachable' || newData.val() === 'wrong_number' || newData.val() === 'spam' || newData.val() === 'budget' || newData.val() === 'schedule' || newData.val() === 'other')"
+            },
+            "firstTouchAt": {
+              ".validate": "newData.isString() && newData.val().length <= 40"
+            },
+            "inquiryAt": {
+              ".validate": "newData.isString() && newData.val().length <= 40"
+            },
+            "attributionNote": {
+              ".validate": true
+            },
+            "$other": {
+              ".validate": false
+            },
+            "_version": {
+              ".validate": true
+            },
+            "_updatedAtMs": {
+              ".validate": true
+            },
+            "_updatedByAuthUid": {
+              ".validate": true
+            },
+            "_updatedByOperatorId": {
+              ".validate": true
+            }
+          },
+          ".validate": "!newData.exists() || newData.child('caseParty').val() === '건물주' || newData.child('caseParty').val() === '브링' || (data.exists() && (!data.child('caseParty').exists() || data.child('caseParty').val() === '') && (!newData.child('caseParty').exists() || newData.child('caseParty').val() === ''))",
+          ".write": "auth != null && root.child('crmCompany/access').child(auth.uid).child('enabled').val() === true && root.child('crmCompany/access').child(auth.uid).child('email').val() === auth.token.email && (root.child('crmCompany/access').child(auth.uid).child('role').val() === 'admin' || (root.child('crmCompany/access').child(auth.uid).child('role').val() === 'member' && root.child('crmCompany/access').child(auth.uid).child('marketingRole').val() !== 'marketing')) && (root.child('crmCompany/access').child(auth.uid).child('role').val() === 'admin' || newData.child('marketing').val() === data.child('marketing').val())"
+        }
+      },
+      "paymentCalendars": {
+        ".read": "auth != null && root.child('crmCompany/access').child(auth.uid).child('enabled').val() === true && root.child('crmCompany/access').child(auth.uid).child('email').val() === auth.token.email && (root.child('crmCompany/access').child(auth.uid).child('role').val() === 'admin' || root.child('crmCompany/access').child(auth.uid).child('role').val() === 'member' || root.child('crmCompany/access').child(auth.uid).child('role').val() === 'viewer')",
+        ".write": "auth != null && root.child('crmCompany/access').child(auth.uid).child('enabled').val() === true && root.child('crmCompany/access').child(auth.uid).child('email').val() === auth.token.email && (root.child('crmCompany/access').child(auth.uid).child('role').val() === 'admin' || (root.child('crmCompany/access').child(auth.uid).child('role').val() === 'member' && root.child('crmCompany/access').child(auth.uid).child('marketingRole').val() !== 'marketing'))"
+      },
+      "caseSettings": {
+        ".read": "auth != null && root.child('crmCompany/access').child(auth.uid).child('enabled').val() === true && root.child('crmCompany/access').child(auth.uid).child('email').val() === auth.token.email && (root.child('crmCompany/access').child(auth.uid).child('role').val() === 'admin' || root.child('crmCompany/access').child(auth.uid).child('role').val() === 'member' || root.child('crmCompany/access').child(auth.uid).child('role').val() === 'viewer')",
+        ".write": "auth != null && root.child('crmCompany/access').child(auth.uid).child('enabled').val() === true && root.child('crmCompany/access').child(auth.uid).child('email').val() === auth.token.email && (root.child('crmCompany/access').child(auth.uid).child('role').val() === 'admin' || (root.child('crmCompany/access').child(auth.uid).child('role').val() === 'member' && root.child('crmCompany/access').child(auth.uid).child('marketingRole').val() !== 'marketing'))"
+      },
+      "marketing": {
+        "daily": {
+          ".read": "auth != null && root.child('crmCompany/access').child(auth.uid).child('enabled').val() === true && root.child('crmCompany/access').child(auth.uid).child('email').val() === auth.token.email && root.child('crmCompany/access').child(auth.uid).child('mustChangePassword').val() !== true && (root.child('crmCompany/access').child(auth.uid).child('role').val() === 'admin' || (root.child('crmCompany/access').child(auth.uid).child('role').val() === 'member' && root.child('crmCompany/access').child(auth.uid).child('marketingRole').val() === 'marketing'))",
+          "$recordId": {
+            ".write": "auth != null && newData.exists() && root.child('crmCompany/access').child(auth.uid).child('enabled').val() === true && root.child('crmCompany/access').child(auth.uid).child('email').val() === auth.token.email && root.child('crmCompany/access').child(auth.uid).child('mustChangePassword').val() !== true && (root.child('crmCompany/access').child(auth.uid).child('role').val() === 'admin' || (root.child('crmCompany/access').child(auth.uid).child('role').val() === 'member' && root.child('crmCompany/access').child(auth.uid).child('marketingRole').val() === 'marketing'))",
+            ".validate": "newData.exists() && $recordId.matches(/^[A-Za-z0-9_-]{1,120}$/) && $recordId !== '__proto__' && $recordId !== 'prototype' && $recordId !== 'constructor' && newData.hasChildren(['id','date','channel','accountName','campaignId','campaignName','adGroup','keyword','contentId','contentTitle','service','region','spend','impressions','clicks','phoneClicks','chatClicks','directionsClicks','saves','platformLeads','note','sourceType','version','createdAtMs','createdByAuthUid','createdByOperatorId','updatedAtMs','updatedByAuthUid','updatedByOperatorId','lastAction','lastAuditId','lastReceiptId','lastRequestId','lastRequestHash']) && newData.child('id').val() === $recordId && newData.child('updatedAtMs').val() === now && newData.child('updatedByAuthUid').val() === auth.uid && newData.child('updatedByOperatorId').val() === root.child('crmCompany/access').child(auth.uid).child('operatorId').val() && root.child('crmCompany/teamProfiles').child(newData.child('updatedByOperatorId').val()).child('active').val() === true && ((!data.exists() && newData.child('version').val() === 1 && newData.child('lastAction').val() === 'create' && newData.child('createdAtMs').val() === now && newData.child('createdByAuthUid').val() === auth.uid && newData.child('createdByOperatorId').val() === newData.child('updatedByOperatorId').val() && !newData.child('archivedAtMs').exists() && !newData.child('archivedByAuthUid').exists() && !newData.child('archivedByOperatorId').exists()) || (data.exists() && !data.child('archivedAtMs').exists() && newData.child('version').val() === data.child('version').val() + 1 && newData.child('id').val() === data.child('id').val() && newData.child('createdAtMs').val() === data.child('createdAtMs').val() && newData.child('createdByAuthUid').val() === data.child('createdByAuthUid').val() && newData.child('createdByOperatorId').val() === data.child('createdByOperatorId').val() && ((newData.child('lastAction').val() === 'update' && !newData.child('archivedAtMs').exists() && !newData.child('archivedByAuthUid').exists() && !newData.child('archivedByOperatorId').exists()) || (newData.child('lastAction').val() === 'archive' && newData.child('archivedAtMs').val() === now && newData.child('archivedByAuthUid').val() === auth.uid && newData.child('archivedByOperatorId').val() === newData.child('updatedByOperatorId').val())))) && newData.parent().parent().child('audits').child(newData.child('lastAuditId').val()).child('recordId').val() === $recordId && newData.parent().parent().child('audits').child(newData.child('lastAuditId').val()).child('requestId').val() === newData.child('lastRequestId').val() && newData.parent().parent().child('audits').child(newData.child('lastAuditId').val()).child('requestHash').val() === newData.child('lastRequestHash').val() && newData.parent().parent().child('audits').child(newData.child('lastAuditId').val()).child('action').val() === newData.child('lastAction').val() && newData.parent().parent().child('audits').child(newData.child('lastAuditId').val()).child('beforeVersion').val() + 1 === newData.child('version').val() && newData.parent().parent().child('receipts').child(newData.child('lastReceiptId').val()).child('recordId').val() === $recordId && newData.parent().parent().child('receipts').child(newData.child('lastReceiptId').val()).child('requestId').val() === newData.child('lastRequestId').val() && newData.parent().parent().child('receipts').child(newData.child('lastReceiptId').val()).child('requestHash').val() === newData.child('lastRequestHash').val() && newData.parent().parent().child('receipts').child(newData.child('lastReceiptId').val()).child('action').val() === newData.child('lastAction').val() && newData.parent().parent().child('receipts').child(newData.child('lastReceiptId').val()).child('afterVersion').val() === newData.child('version').val()",
+            "id": {
+              ".validate": "newData.isString()"
+            },
+            "date": {
+              ".validate": "newData.isString() && newData.val().matches(/^[0-9]{4}-[0-9]{2}-[0-9]{2}$/)"
+            },
+            "channel": {
+              ".validate": "newData.isString() && newData.val().length > 0 && newData.val().length <= 200"
+            },
+            "accountName": {
+              ".validate": "newData.isString() && newData.val().length <= 200"
+            },
+            "campaignId": {
+              ".validate": "newData.isString() && newData.val().length <= 200"
+            },
+            "campaignName": {
+              ".validate": "newData.isString() && newData.val().length <= 200"
+            },
+            "adGroup": {
+              ".validate": "newData.isString() && newData.val().length <= 200"
+            },
+            "keyword": {
+              ".validate": "newData.isString() && newData.val().length <= 200"
+            },
+            "contentId": {
+              ".validate": "newData.isString() && newData.val().length <= 200"
+            },
+            "contentTitle": {
+              ".validate": "newData.isString() && newData.val().length <= 200"
+            },
+            "service": {
+              ".validate": "newData.isString() && newData.val().length <= 200"
+            },
+            "region": {
+              ".validate": "newData.isString() && newData.val().length <= 200"
+            },
+            "note": {
+              ".validate": "newData.isString() && newData.val().length <= 1000"
+            },
+            "spend": {
+              ".validate": "newData.isNumber() && newData.val() >= 0 && newData.val() <= 9007199254740991 && newData.val() % 1 === 0"
+            },
+            "impressions": {
+              ".validate": "newData.isNumber() && newData.val() >= 0 && newData.val() <= 9007199254740991 && newData.val() % 1 === 0"
+            },
+            "clicks": {
+              ".validate": "newData.isNumber() && newData.val() >= 0 && newData.val() <= 9007199254740991 && newData.val() % 1 === 0"
+            },
+            "phoneClicks": {
+              ".validate": "newData.isNumber() && newData.val() >= 0 && newData.val() <= 9007199254740991 && newData.val() % 1 === 0"
+            },
+            "chatClicks": {
+              ".validate": "newData.isNumber() && newData.val() >= 0 && newData.val() <= 9007199254740991 && newData.val() % 1 === 0"
+            },
+            "directionsClicks": {
+              ".validate": "newData.isNumber() && newData.val() >= 0 && newData.val() <= 9007199254740991 && newData.val() % 1 === 0"
+            },
+            "saves": {
+              ".validate": "newData.isNumber() && newData.val() >= 0 && newData.val() <= 9007199254740991 && newData.val() % 1 === 0"
+            },
+            "platformLeads": {
+              ".validate": "newData.isNumber() && newData.val() >= 0 && newData.val() <= 9007199254740991 && newData.val() % 1 === 0"
+            },
+            "dailyBudget": {
+              ".validate": "newData.isNumber() && newData.val() > 0 && newData.val() <= 9007199254740991 && newData.val() % 1 === 0 && newData.parent().child('budgetValidatedAtMs').isNumber() && newData.parent().child('budgetValidatedAtMs').val() > 0"
+            },
+            "budgetValidatedAtMs": {
+              ".validate": "newData.isNumber() && newData.val() > 0 && newData.val() <= now && newData.val() <= 9007199254740991 && newData.val() % 1 === 0 && newData.parent().child('dailyBudget').isNumber() && newData.parent().child('dailyBudget').val() > 0"
+            },
+            "sourceType": {
+              ".validate": "newData.val() === 'manual' || newData.val() === 'crm'"
+            },
+            "version": {
+              ".validate": "newData.isNumber() && newData.val() >= 1 && newData.val() <= 9007199254740991 && newData.val() % 1 === 0"
+            },
+            "createdAtMs": {
+              ".validate": "newData.isNumber() && newData.val() > 0"
+            },
+            "createdByAuthUid": {
+              ".validate": "newData.isString()"
+            },
+            "createdByOperatorId": {
+              ".validate": "newData.isString()"
+            },
+            "updatedAtMs": {
+              ".validate": "newData.isNumber() && newData.val() > 0"
+            },
+            "updatedByAuthUid": {
+              ".validate": "newData.isString()"
+            },
+            "updatedByOperatorId": {
+              ".validate": "newData.isString()"
+            },
+            "archivedAtMs": {
+              ".validate": "newData.isNumber() && newData.val() > 0"
+            },
+            "archivedByAuthUid": {
+              ".validate": "newData.isString()"
+            },
+            "archivedByOperatorId": {
+              ".validate": "newData.isString()"
+            },
+            "lastAction": {
+              ".validate": "newData.val() === 'create' || newData.val() === 'update' || newData.val() === 'archive'"
+            },
+            "lastAuditId": {
+              ".validate": "newData.isString() && newData.val().matches(/^audit_[A-Za-z0-9_]{36}$/)"
+            },
+            "lastReceiptId": {
+              ".validate": "newData.isString() && newData.val().matches(/^request_[A-Za-z0-9_]{36}$/)"
+            },
+            "lastRequestId": {
+              ".validate": "newData.isString() && newData.val().matches(/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/)"
+            },
+            "lastRequestHash": {
+              ".validate": "newData.isString() && newData.val().matches(/^[0-9a-f]{64}$/)"
+            },
+            "$other": {
+              ".validate": false
+            }
+          }
+        },
+        "audits": {
+          ".read": "auth != null && root.child('crmCompany/access').child(auth.uid).child('enabled').val() === true && root.child('crmCompany/access').child(auth.uid).child('email').val() === auth.token.email && root.child('crmCompany/access').child(auth.uid).child('mustChangePassword').val() !== true && (root.child('crmCompany/access').child(auth.uid).child('role').val() === 'admin' || (root.child('crmCompany/access').child(auth.uid).child('role').val() === 'member' && root.child('crmCompany/access').child(auth.uid).child('marketingRole').val() === 'marketing'))",
+          "$auditId": {
+            ".write": "auth != null && newData.exists() && !data.exists() && root.child('crmCompany/access').child(auth.uid).child('enabled').val() === true && root.child('crmCompany/access').child(auth.uid).child('email').val() === auth.token.email && root.child('crmCompany/access').child(auth.uid).child('mustChangePassword').val() !== true && (root.child('crmCompany/access').child(auth.uid).child('role').val() === 'admin' || (root.child('crmCompany/access').child(auth.uid).child('role').val() === 'member' && root.child('crmCompany/access').child(auth.uid).child('marketingRole').val() === 'marketing'))",
+            ".validate": "newData.hasChildren(['id','actorAuthUid','operatorId','actorIdentifier','action','recordId','occurredAtMs','beforeVersion','afterVersion','requestId','requestHash','beforeSpend','afterSpend']) && newData.child('id').val() === $auditId && newData.child('actorAuthUid').val() === auth.uid && newData.child('operatorId').val() === root.child('crmCompany/access').child(auth.uid).child('operatorId').val() && root.child('crmCompany/teamProfiles').child(newData.child('operatorId').val()).child('active').val() === true && newData.child('occurredAtMs').val() === now && newData.parent().parent().child('daily').child(newData.child('recordId').val()).child('lastAuditId').val() === $auditId && newData.parent().parent().child('daily').child(newData.child('recordId').val()).child('lastRequestId').val() === newData.child('requestId').val() && newData.parent().parent().child('daily').child(newData.child('recordId').val()).child('lastRequestHash').val() === newData.child('requestHash').val() && newData.parent().parent().child('daily').child(newData.child('recordId').val()).child('lastAction').val() === newData.child('action').val() && newData.parent().parent().child('daily').child(newData.child('recordId').val()).child('version').val() === newData.child('afterVersion').val() && newData.child('beforeSpend').val() === (newData.child('beforeVersion').val() === 0 ? 0 : data.parent().parent().child('daily').child(newData.child('recordId').val()).child('spend').val()) && newData.child('afterSpend').val() === newData.parent().parent().child('daily').child(newData.child('recordId').val()).child('spend').val()",
+            "id": {
+              ".validate": "newData.isString() && newData.val().matches(/^audit_[A-Za-z0-9_]{36}$/)"
+            },
+            "actorAuthUid": {
+              ".validate": "newData.isString()"
+            },
+            "operatorId": {
+              ".validate": "newData.isString()"
+            },
+            "actorIdentifier": {
+              ".validate": "newData.isString() && newData.val().length <= 200"
+            },
+            "action": {
+              ".validate": "newData.val() === 'create' || newData.val() === 'update' || newData.val() === 'archive'"
+            },
+            "recordId": {
+              ".validate": "newData.isString() && newData.val().matches(/^[A-Za-z0-9_-]{1,120}$/)"
+            },
+            "occurredAtMs": {
+              ".validate": "newData.isNumber() && newData.val() > 0"
+            },
+            "beforeVersion": {
+              ".validate": "newData.isNumber() && newData.val() >= 0 && newData.val() % 1 === 0"
+            },
+            "afterVersion": {
+              ".validate": "newData.isNumber() && newData.val() === newData.parent().child('beforeVersion').val() + 1"
+            },
+            "requestId": {
+              ".validate": "newData.isString() && newData.val().matches(/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/)"
+            },
+            "requestHash": {
+              ".validate": "newData.isString() && newData.val().matches(/^[0-9a-f]{64}$/)"
+            },
+            "beforeSpend": {
+              ".validate": "newData.isNumber() && newData.val() >= 0 && newData.val() <= 9007199254740991"
+            },
+            "afterSpend": {
+              ".validate": "newData.isNumber() && newData.val() >= 0 && newData.val() <= 9007199254740991"
+            },
+            "$other": {
+              ".validate": false
+            }
+          }
+        },
+        "receipts": {
+          ".read": "auth != null && root.child('crmCompany/access').child(auth.uid).child('enabled').val() === true && root.child('crmCompany/access').child(auth.uid).child('email').val() === auth.token.email && root.child('crmCompany/access').child(auth.uid).child('mustChangePassword').val() !== true && (root.child('crmCompany/access').child(auth.uid).child('role').val() === 'admin' || (root.child('crmCompany/access').child(auth.uid).child('role').val() === 'member' && root.child('crmCompany/access').child(auth.uid).child('marketingRole').val() === 'marketing'))",
+          "$receiptId": {
+            ".write": "auth != null && newData.exists() && !data.exists() && root.child('crmCompany/access').child(auth.uid).child('enabled').val() === true && root.child('crmCompany/access').child(auth.uid).child('email').val() === auth.token.email && root.child('crmCompany/access').child(auth.uid).child('mustChangePassword').val() !== true && (root.child('crmCompany/access').child(auth.uid).child('role').val() === 'admin' || (root.child('crmCompany/access').child(auth.uid).child('role').val() === 'member' && root.child('crmCompany/access').child(auth.uid).child('marketingRole').val() === 'marketing'))",
+            ".validate": "newData.hasChildren(['id','actorAuthUid','operatorId','action','recordId','occurredAtMs','beforeVersion','afterVersion','requestId','requestHash','resultRecord']) && newData.child('id').val() === $receiptId && newData.child('actorAuthUid').val() === auth.uid && newData.child('operatorId').val() === root.child('crmCompany/access').child(auth.uid).child('operatorId').val() && root.child('crmCompany/teamProfiles').child(newData.child('operatorId').val()).child('active').val() === true && newData.child('occurredAtMs').val() === now && newData.parent().parent().child('daily').child(newData.child('recordId').val()).child('lastReceiptId').val() === $receiptId && newData.parent().parent().child('daily').child(newData.child('recordId').val()).child('lastRequestId').val() === newData.child('requestId').val() && newData.parent().parent().child('daily').child(newData.child('recordId').val()).child('lastRequestHash').val() === newData.child('requestHash').val() && newData.parent().parent().child('daily').child(newData.child('recordId').val()).child('version').val() === newData.child('afterVersion').val()",
+            "id": {
+              ".validate": "newData.isString() && newData.val().matches(/^request_[A-Za-z0-9_]{36}$/)"
+            },
+            "actorAuthUid": {
+              ".validate": "newData.isString()"
+            },
+            "operatorId": {
+              ".validate": "newData.isString()"
+            },
+            "action": {
+              ".validate": "newData.val() === 'create' || newData.val() === 'update' || newData.val() === 'archive'"
+            },
+            "recordId": {
+              ".validate": "newData.isString() && newData.val().matches(/^[A-Za-z0-9_-]{1,120}$/)"
+            },
+            "occurredAtMs": {
+              ".validate": "newData.isNumber() && newData.val() > 0"
+            },
+            "beforeVersion": {
+              ".validate": "newData.isNumber() && newData.val() >= 0 && newData.val() % 1 === 0"
+            },
+            "afterVersion": {
+              ".validate": "newData.isNumber() && newData.val() === newData.parent().child('beforeVersion').val() + 1"
+            },
+            "requestId": {
+              ".validate": "newData.isString() && newData.val().matches(/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/)"
+            },
+            "requestHash": {
+              ".validate": "newData.isString() && newData.val().matches(/^[0-9a-f]{64}$/)"
+            },
+            "resultRecord": {
+              ".validate": "newData.hasChildren(['id','date','channel','accountName','campaignId','campaignName','adGroup','keyword','contentId','contentTitle','service','region','spend','impressions','clicks','phoneClicks','chatClicks','directionsClicks','saves','platformLeads','note','sourceType','version','createdAtMs','createdByAuthUid','createdByOperatorId','updatedAtMs','updatedByAuthUid','updatedByOperatorId','lastAction','lastAuditId','lastReceiptId','lastRequestId','lastRequestHash'])",
+              "id": {
+                ".validate": "newData.val() === newData.parent().parent().parent().parent().child('daily').child(newData.parent().parent().child('recordId').val()).child('id').val()"
+              },
+              "date": {
+                ".validate": "newData.val() === newData.parent().parent().parent().parent().child('daily').child(newData.parent().parent().child('recordId').val()).child('date').val()"
+              },
+              "channel": {
+                ".validate": "newData.val() === newData.parent().parent().parent().parent().child('daily').child(newData.parent().parent().child('recordId').val()).child('channel').val()"
+              },
+              "accountName": {
+                ".validate": "newData.val() === newData.parent().parent().parent().parent().child('daily').child(newData.parent().parent().child('recordId').val()).child('accountName').val()"
+              },
+              "campaignId": {
+                ".validate": "newData.val() === newData.parent().parent().parent().parent().child('daily').child(newData.parent().parent().child('recordId').val()).child('campaignId').val()"
+              },
+              "campaignName": {
+                ".validate": "newData.val() === newData.parent().parent().parent().parent().child('daily').child(newData.parent().parent().child('recordId').val()).child('campaignName').val()"
+              },
+              "adGroup": {
+                ".validate": "newData.val() === newData.parent().parent().parent().parent().child('daily').child(newData.parent().parent().child('recordId').val()).child('adGroup').val()"
+              },
+              "keyword": {
+                ".validate": "newData.val() === newData.parent().parent().parent().parent().child('daily').child(newData.parent().parent().child('recordId').val()).child('keyword').val()"
+              },
+              "contentId": {
+                ".validate": "newData.val() === newData.parent().parent().parent().parent().child('daily').child(newData.parent().parent().child('recordId').val()).child('contentId').val()"
+              },
+              "contentTitle": {
+                ".validate": "newData.val() === newData.parent().parent().parent().parent().child('daily').child(newData.parent().parent().child('recordId').val()).child('contentTitle').val()"
+              },
+              "service": {
+                ".validate": "newData.val() === newData.parent().parent().parent().parent().child('daily').child(newData.parent().parent().child('recordId').val()).child('service').val()"
+              },
+              "region": {
+                ".validate": "newData.val() === newData.parent().parent().parent().parent().child('daily').child(newData.parent().parent().child('recordId').val()).child('region').val()"
+              },
+              "spend": {
+                ".validate": "newData.val() === newData.parent().parent().parent().parent().child('daily').child(newData.parent().parent().child('recordId').val()).child('spend').val()"
+              },
+              "impressions": {
+                ".validate": "newData.val() === newData.parent().parent().parent().parent().child('daily').child(newData.parent().parent().child('recordId').val()).child('impressions').val()"
+              },
+              "clicks": {
+                ".validate": "newData.val() === newData.parent().parent().parent().parent().child('daily').child(newData.parent().parent().child('recordId').val()).child('clicks').val()"
+              },
+              "phoneClicks": {
+                ".validate": "newData.val() === newData.parent().parent().parent().parent().child('daily').child(newData.parent().parent().child('recordId').val()).child('phoneClicks').val()"
+              },
+              "chatClicks": {
+                ".validate": "newData.val() === newData.parent().parent().parent().parent().child('daily').child(newData.parent().parent().child('recordId').val()).child('chatClicks').val()"
+              },
+              "directionsClicks": {
+                ".validate": "newData.val() === newData.parent().parent().parent().parent().child('daily').child(newData.parent().parent().child('recordId').val()).child('directionsClicks').val()"
+              },
+              "saves": {
+                ".validate": "newData.val() === newData.parent().parent().parent().parent().child('daily').child(newData.parent().parent().child('recordId').val()).child('saves').val()"
+              },
+              "platformLeads": {
+                ".validate": "newData.val() === newData.parent().parent().parent().parent().child('daily').child(newData.parent().parent().child('recordId').val()).child('platformLeads').val()"
+              },
+              "dailyBudget": {
+                ".validate": "newData.val() === newData.parent().parent().parent().parent().child('daily').child(newData.parent().parent().child('recordId').val()).child('dailyBudget').val()"
+              },
+              "budgetValidatedAtMs": {
+                ".validate": "newData.val() === newData.parent().parent().parent().parent().child('daily').child(newData.parent().parent().child('recordId').val()).child('budgetValidatedAtMs').val()"
+              },
+              "note": {
+                ".validate": "newData.val() === newData.parent().parent().parent().parent().child('daily').child(newData.parent().parent().child('recordId').val()).child('note').val()"
+              },
+              "sourceType": {
+                ".validate": "newData.val() === newData.parent().parent().parent().parent().child('daily').child(newData.parent().parent().child('recordId').val()).child('sourceType').val()"
+              },
+              "version": {
+                ".validate": "newData.val() === newData.parent().parent().parent().parent().child('daily').child(newData.parent().parent().child('recordId').val()).child('version').val()"
+              },
+              "createdAtMs": {
+                ".validate": "newData.val() === newData.parent().parent().parent().parent().child('daily').child(newData.parent().parent().child('recordId').val()).child('createdAtMs').val()"
+              },
+              "createdByAuthUid": {
+                ".validate": "newData.val() === newData.parent().parent().parent().parent().child('daily').child(newData.parent().parent().child('recordId').val()).child('createdByAuthUid').val()"
+              },
+              "createdByOperatorId": {
+                ".validate": "newData.val() === newData.parent().parent().parent().parent().child('daily').child(newData.parent().parent().child('recordId').val()).child('createdByOperatorId').val()"
+              },
+              "updatedAtMs": {
+                ".validate": "newData.val() === newData.parent().parent().parent().parent().child('daily').child(newData.parent().parent().child('recordId').val()).child('updatedAtMs').val()"
+              },
+              "updatedByAuthUid": {
+                ".validate": "newData.val() === newData.parent().parent().parent().parent().child('daily').child(newData.parent().parent().child('recordId').val()).child('updatedByAuthUid').val()"
+              },
+              "updatedByOperatorId": {
+                ".validate": "newData.val() === newData.parent().parent().parent().parent().child('daily').child(newData.parent().parent().child('recordId').val()).child('updatedByOperatorId').val()"
+              },
+              "lastAction": {
+                ".validate": "newData.val() === newData.parent().parent().parent().parent().child('daily').child(newData.parent().parent().child('recordId').val()).child('lastAction').val()"
+              },
+              "lastAuditId": {
+                ".validate": "newData.val() === newData.parent().parent().parent().parent().child('daily').child(newData.parent().parent().child('recordId').val()).child('lastAuditId').val()"
+              },
+              "lastReceiptId": {
+                ".validate": "newData.val() === newData.parent().parent().parent().parent().child('daily').child(newData.parent().parent().child('recordId').val()).child('lastReceiptId').val()"
+              },
+              "lastRequestId": {
+                ".validate": "newData.val() === newData.parent().parent().parent().parent().child('daily').child(newData.parent().parent().child('recordId').val()).child('lastRequestId').val()"
+              },
+              "lastRequestHash": {
+                ".validate": "newData.val() === newData.parent().parent().parent().parent().child('daily').child(newData.parent().parent().child('recordId').val()).child('lastRequestHash').val()"
+              },
+              "archivedAtMs": {
+                ".validate": "newData.val() === newData.parent().parent().parent().parent().child('daily').child(newData.parent().parent().child('recordId').val()).child('archivedAtMs').val()"
+              },
+              "archivedByAuthUid": {
+                ".validate": "newData.val() === newData.parent().parent().parent().parent().child('daily').child(newData.parent().parent().child('recordId').val()).child('archivedByAuthUid').val()"
+              },
+              "archivedByOperatorId": {
+                ".validate": "newData.val() === newData.parent().parent().parent().parent().child('daily').child(newData.parent().parent().child('recordId').val()).child('archivedByOperatorId').val()"
+              },
+              "$other": {
+                ".validate": false
+              }
+            },
+            "$other": {
+              ".validate": false
+            }
+          }
+        },
+        "aggregates": {
+          ".read": "auth != null && root.child('crmCompany/access').child(auth.uid).child('enabled').val() === true && root.child('crmCompany/access').child(auth.uid).child('email').val() === auth.token.email && root.child('crmCompany/access').child(auth.uid).child('mustChangePassword').val() !== true && (root.child('crmCompany/access').child(auth.uid).child('role').val() === 'admin' || root.child('crmCompany/access').child(auth.uid).child('role').val() === 'member' || root.child('crmCompany/access').child(auth.uid).child('role').val() === 'viewer')",
+          "$aggregateId": {
+            ".write": false,
+            ".validate": "newData.hasChildren(['id','date','spend','impressions','clicks','platformLeads','version','updatedAtMs']) && newData.child('id').val() === $aggregateId && newData.child('updatedAtMs').val() === now && ((!data.exists() && newData.child('version').val() === 1) || (data.exists() && newData.child('version').val() === data.child('version').val() + 1))",
+            "id": {
+              ".validate": "newData.isString() && newData.val().matches(/^[A-Za-z0-9_-]{1,120}$/)"
+            },
+            "date": {
+              ".validate": "newData.isString() && newData.val().matches(/^[0-9]{4}-[0-9]{2}-[0-9]{2}$/)"
+            },
+            "spend": {
+              ".validate": "newData.isNumber() && newData.val() >= 0 && newData.val() <= 9007199254740991 && newData.val() % 1 === 0"
+            },
+            "impressions": {
+              ".validate": "newData.isNumber() && newData.val() >= 0 && newData.val() <= 9007199254740991 && newData.val() % 1 === 0"
+            },
+            "clicks": {
+              ".validate": "newData.isNumber() && newData.val() >= 0 && newData.val() <= 9007199254740991 && newData.val() % 1 === 0"
+            },
+            "platformLeads": {
+              ".validate": "newData.isNumber() && newData.val() >= 0 && newData.val() <= 9007199254740991 && newData.val() % 1 === 0"
+            },
+            "version": {
+              ".validate": "newData.isNumber() && newData.val() >= 1 && newData.val() % 1 === 0"
+            },
+            "updatedAtMs": {
+              ".validate": "newData.isNumber() && newData.val() > 0"
+            },
+            "$other": {
+              ".validate": false
+            }
+          }
+        },
+        "$other": {
+          ".validate": false
+        }
+      },
+      "migration": {
+        ".read": false,
+        ".write": false
+      }
+    },
+    "crmMigrationStaging": {
+      ".read": false,
+      ".write": false
     },
     "cases": {
-      ".read": true,
-      ".write": true
+      ".read": "auth != null && root.child('crmCompany/access').child(auth.uid).child('enabled').val() === true && root.child('crmCompany/access').child(auth.uid).child('email').val() === auth.token.email && (root.child('crmCompany/access').child(auth.uid).child('role').val() === 'admin' || root.child('crmCompany/access').child(auth.uid).child('role').val() === 'member' || root.child('crmCompany/access').child(auth.uid).child('role').val() === 'viewer')",
+      ".write": "auth != null && root.child('crmCompany/access').child(auth.uid).child('enabled').val() === true && root.child('crmCompany/access').child(auth.uid).child('email').val() === auth.token.email && (root.child('crmCompany/access').child(auth.uid).child('role').val() === 'admin' || (root.child('crmCompany/access').child(auth.uid).child('role').val() === 'member' && root.child('crmCompany/access').child(auth.uid).child('marketingRole').val() !== 'marketing')) && (root.child('crmCompany/access').child(auth.uid).child('role').val() === 'admin' || newData.child('marketing').val() === data.child('marketing').val())",
+      "$caseId": {
+        "marketing": {
+          ".write": "auth != null && root.child('crmCompany/access').child(auth.uid).child('enabled').val() === true && root.child('crmCompany/access').child(auth.uid).child('email').val() === auth.token.email && root.child('crmCompany/access').child(auth.uid).child('mustChangePassword').val() !== true && (root.child('crmCompany/access').child(auth.uid).child('role').val() === 'admin' || (root.child('crmCompany/access').child(auth.uid).child('role').val() === 'member' && (root.child('crmCompany/access').child(auth.uid).child('marketingRole').val() === 'marketing' || root.child('crmCompany/access').child(auth.uid).child('marketingRole').val() === 'sales'))) && data.parent().exists()",
+          ".validate": "newData.exists() && (!newData.child('firstSource').exists() || newData.child('firstSource').val() === 'naver_place_ads' || newData.child('firstSource').val() === 'naver_place_organic' || newData.child('firstSource').val() === 'naver_blog' || newData.child('firstSource').val() === 'soomgo' || newData.child('firstSource').val() === 'daangn' || newData.child('firstSource').val() === 'broker' || newData.child('firstSource').val() === 'referral' || newData.child('firstSource').val() === 'direct_sales' || newData.child('firstSource').val() === 'other' || newData.child('firstSource').val() === 'needs_review') && (!newData.child('validLead').exists() || newData.child('validLead').isBoolean()) && (newData.child('validLead').val() !== false || newData.child('invalidReason').exists()) && (newData.child('validLead').val() !== true || !newData.child('invalidReason').exists()) && (!newData.child('attributionNote').exists() || (newData.child('attributionNote').isString() && newData.child('attributionNote').val().length <= 1000)) && newData.hasChildren(['_version','_updatedAtMs','_updatedByAuthUid','_updatedByOperatorId']) && newData.child('_version').isNumber() && newData.child('_version').val() >= 1 && newData.child('_version').val() <= 9007199254740991 && newData.child('_version').val() % 1 === 0 && newData.child('_updatedAtMs').val() === now && newData.child('_updatedByAuthUid').val() === auth.uid && newData.child('_updatedByOperatorId').val() === root.child('crmCompany/access').child(auth.uid).child('operatorId').val() && root.child('crmCompany/teamProfiles').child(newData.child('_updatedByOperatorId').val()).child('active').val() === true && (((!data.exists() || !data.child('_version').exists()) && newData.child('_version').val() === 1) || (data.child('_version').isNumber() && data.child('_version').val() >= 1 && data.child('_version').val() < 9007199254740991 && data.child('_version').val() % 1 === 0 && newData.child('_version').val() === data.child('_version').val() + 1))",
+          "firstSource": {
+            ".validate": true
+          },
+          "lastSource": {
+            ".validate": "newData.isString() && (newData.val() === 'naver_place_ads' || newData.val() === 'naver_place_organic' || newData.val() === 'naver_blog' || newData.val() === 'soomgo' || newData.val() === 'daangn' || newData.val() === 'broker' || newData.val() === 'referral' || newData.val() === 'direct_sales' || newData.val() === 'other' || newData.val() === 'needs_review')"
+          },
+          "subChannel": {
+            ".validate": "newData.isString() && newData.val().length <= 200"
+          },
+          "campaignId": {
+            ".validate": "newData.isString() && newData.val().length <= 200"
+          },
+          "campaignName": {
+            ".validate": "newData.isString() && newData.val().length <= 200"
+          },
+          "keyword": {
+            ".validate": "newData.isString() && newData.val().length <= 200"
+          },
+          "contentId": {
+            ".validate": "newData.isString() && newData.val().length <= 200"
+          },
+          "contentTitle": {
+            ".validate": "newData.isString() && newData.val().length <= 200"
+          },
+          "inquiryMethod": {
+            ".validate": "newData.isString() && (newData.val() === 'phone' || newData.val() === 'talktalk' || newData.val() === 'chat' || newData.val() === 'sms' || newData.val() === 'email' || newData.val() === 'google_form' || newData.val() === 'visit' || newData.val() === 'referral' || newData.val() === 'other')"
+          },
+          "validLead": {
+            ".validate": true
+          },
+          "invalidReason": {
+            ".validate": "newData.isString() && (newData.val() === 'outside_area' || newData.val() === 'unsupported_service' || newData.val() === 'vendor_sales' || newData.val() === 'duplicate' || newData.val() === 'unreachable' || newData.val() === 'wrong_number' || newData.val() === 'spam' || newData.val() === 'budget' || newData.val() === 'schedule' || newData.val() === 'other')"
+          },
+          "firstTouchAt": {
+            ".validate": "newData.isString() && newData.val().length <= 40"
+          },
+          "inquiryAt": {
+            ".validate": "newData.isString() && newData.val().length <= 40"
+          },
+          "attributionNote": {
+            ".validate": true
+          },
+          "$other": {
+            ".validate": false
+          },
+          "_version": {
+            ".validate": true
+          },
+          "_updatedAtMs": {
+            ".validate": true
+          },
+          "_updatedByAuthUid": {
+            ".validate": true
+          },
+          "_updatedByOperatorId": {
+            ".validate": true
+          }
+        },
+        ".validate": "!newData.exists() || newData.child('caseParty').val() === '건물주' || newData.child('caseParty').val() === '브링' || (data.exists() && (!data.child('caseParty').exists() || data.child('caseParty').val() === '') && (!newData.child('caseParty').exists() || newData.child('caseParty').val() === ''))",
+        ".write": "auth != null && root.child('crmCompany/access').child(auth.uid).child('enabled').val() === true && root.child('crmCompany/access').child(auth.uid).child('email').val() === auth.token.email && (root.child('crmCompany/access').child(auth.uid).child('role').val() === 'admin' || (root.child('crmCompany/access').child(auth.uid).child('role').val() === 'member' && root.child('crmCompany/access').child(auth.uid).child('marketingRole').val() !== 'marketing')) && (root.child('crmCompany/access').child(auth.uid).child('role').val() === 'admin' || newData.child('marketing').val() === data.child('marketing').val())"
+      }
     },
     "paymentCalendars": {
       "$uid": {
         ".read": "auth != null && auth.uid === $uid",
-        ".write": "auth != null && auth.uid === $uid"
+        ".write": "auth != null && auth.uid === $uid && root.child('crmCompany/access').child(auth.uid).child('marketingRole').val() !== 'marketing'"
+      }
+    },
+    "fieldPlatform": {
+      "v2": {
+        ".read": false,
+        ".write": false,
+        "projections": {
+          "operatorJobs": {
+            "$operatorId": {
+              ".indexOn": [
+                "updatedAt"
+              ]
+            }
+          },
+          "unassigned": {
+            ".indexOn": [
+              "updatedAt"
+            ]
+          },
+          "teamActive": {
+            ".indexOn": [
+              "activeOrderKey"
+            ]
+          }
+        }
+      },
+      "desktopHandoffs": {
+        ".read": false,
+        ".write": false,
+        ".indexOn": [
+          "expiresAt"
+        ]
+      },
+      "desktopHandoffRateLimits": {
+        ".read": false,
+        ".write": false
+      },
+      "users": {
+        "$uid": {
+          ".read": "auth != null && auth.token.fieldPlatform === true && (auth.uid === $uid || (auth.token.fieldRole === 'admin' && root.child('fieldPlatform/users').child(auth.uid).child('enabled').val() === true && root.child('fieldPlatform/users').child(auth.uid).child('role').val() === auth.token.fieldRole))",
+          ".write": false
+        }
+      },
+      "buildingAssignments": {
+        "$buildingId": {
+          "$uid": {
+            ".read": "auth != null && auth.token.fieldPlatform === true && root.child('fieldPlatform/users').child(auth.uid).child('enabled').val() === true && root.child('fieldPlatform/users').child(auth.uid).child('role').val() === auth.token.fieldRole && (auth.uid === $uid || auth.token.fieldRole === 'admin')",
+            ".write": "auth != null && auth.token.fieldPlatform === true && root.child('fieldPlatform/users').child(auth.uid).child('enabled').val() === true && root.child('fieldPlatform/users').child(auth.uid).child('role').val() === auth.token.fieldRole && (auth.token.fieldRole === 'admin' || (auth.token.fieldRole === 'staff' && auth.uid === $uid && newData.val() === true))",
+            ".validate": "newData.val() === true"
+          }
+        }
+      },
+      "ownerNotes": {
+        "$buildingId": {
+          ".read": "auth != null && auth.token.fieldPlatform === true && root.child('fieldPlatform/users').child(auth.uid).child('enabled').val() === true && root.child('fieldPlatform/users').child(auth.uid).child('role').val() === auth.token.fieldRole && (auth.token.fieldRole === 'admin' || (auth.token.fieldRole === 'staff' && root.child('fieldPlatform/buildingAssignments').child($buildingId).child(auth.uid).val() === true))",
+          ".indexOn": [
+            "createdAt"
+          ],
+          "$noteId": {
+            ".write": "auth != null && auth.token.fieldPlatform === true && newData.exists() && root.child('fieldPlatform/users').child(auth.uid).child('enabled').val() === true && root.child('fieldPlatform/users').child(auth.uid).child('role').val() === auth.token.fieldRole && (auth.token.fieldRole === 'admin' || (auth.token.fieldRole === 'staff' && root.child('fieldPlatform/buildingAssignments').child($buildingId).child(auth.uid).val() === true))",
+            ".validate": "newData.hasChildren(['id', 'buildingId', 'body', 'recordedAt', 'createdAt', 'createdBy', 'createdByName']) && newData.child('id').val() === $noteId && newData.child('buildingId').val() === $buildingId && newData.child('body').isString() && newData.child('body').val().length > 0 && newData.child('body').val().length <= 2000 && newData.child('recordedAt').isString() && newData.child('recordedAt').val().matches(/^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}[.][0-9]{3}Z$/) && newData.child('createdAt').isString() && newData.child('createdAt').val().matches(/^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}[.][0-9]{3}Z$/) && newData.child('createdBy').isString() && newData.child('createdByName').isString() && newData.child('createdByName').val().length > 0 && newData.child('createdByName').val().length <= 80 && ((!data.exists() && newData.child('createdBy').val() === auth.uid && !newData.child('archivedAt').exists() && !newData.child('archivedBy').exists()) || (data.exists() && !data.child('archivedAt').exists() && newData.child('id').val() === data.child('id').val() && newData.child('buildingId').val() === data.child('buildingId').val() && newData.child('body').val() === data.child('body').val() && newData.child('recordedAt').val() === data.child('recordedAt').val() && newData.child('createdAt').val() === data.child('createdAt').val() && newData.child('createdBy').val() === data.child('createdBy').val() && newData.child('createdByName').val() === data.child('createdByName').val() && newData.child('archivedAt').isString() && newData.child('archivedAt').val().matches(/^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}[.][0-9]{3}Z$/) && newData.child('archivedBy').val() === auth.uid))"
+          }
+        }
+      },
+      "secureAccessAssignments": {
+        "$buildingId": {
+          "$uid": {
+            ".read": "auth != null && auth.token.fieldPlatform === true && root.child('fieldPlatform/users').child(auth.uid).child('enabled').val() === true && root.child('fieldPlatform/users').child(auth.uid).child('role').val() === auth.token.fieldRole && (auth.uid === $uid || auth.token.fieldRole === 'admin')",
+            ".write": false
+          }
+        }
+      },
+      "managementNumberCounters": {
+        "$year": {
+          "$area": {
+            ".read": "auth != null && auth.token.fieldPlatform === true && root.child('fieldPlatform/users').child(auth.uid).child('enabled').val() === true && (auth.token.fieldRole === 'admin' || auth.token.fieldRole === 'staff')",
+            ".write": "auth != null && auth.token.fieldPlatform === true && root.child('fieldPlatform/users').child(auth.uid).child('enabled').val() === true && (auth.token.fieldRole === 'admin' || auth.token.fieldRole === 'staff')",
+            ".validate": "newData.isNumber() && newData.val() % 1 === 0 && newData.val() === (data.exists() ? data.val() + 1 : 1)"
+          }
+        }
+      },
+      "buildings": {
+        ".read": "auth != null && auth.token.fieldPlatform === true && root.child('fieldPlatform/users').child(auth.uid).child('enabled').val() === true && root.child('fieldPlatform/users').child(auth.uid).child('role').val() === auth.token.fieldRole",
+        ".indexOn": [
+          "managementContract/status"
+        ],
+        "$buildingId": {
+          ".write": "auth != null && auth.token.fieldPlatform === true && root.child('fieldPlatform/users').child(auth.uid).child('enabled').val() === true && root.child('fieldPlatform/users').child(auth.uid).child('role').val() === auth.token.fieldRole && newData.exists() && (auth.token.fieldRole === 'admin' || auth.token.fieldRole === 'staff')",
+          ".validate": "newData.hasChildren(['id', 'managementNumber', 'name', 'roadAddress', 'latitude', 'longitude']) && newData.child('id').val() === $buildingId && (!data.exists() || data.child('id').val() === newData.child('id').val()) && ((!data.exists() && newData.child('managementNumber').isString() && newData.child('managementNumber').val().matches(/^BR-WJ-[A-Z]+-[0-9]{2}-[0-9]{4,}$/)) || (data.exists() && newData.child('managementNumber').val() === data.child('managementNumber').val())) && newData.child('latitude').isNumber() && newData.child('latitude').val() >= -90 && newData.child('latitude').val() <= 90 && newData.child('longitude').isNumber() && newData.child('longitude').val() >= -180 && newData.child('longitude').val() <= 180 && (!data.child('managementContract').exists() || newData.child('managementContract').exists()) && (!data.exists() || auth.token.fieldRole === 'admin' || newData.child('managementContract').val() === data.child('managementContract').val()) && (!newData.child('managementContract').exists() || ((newData.child('managementContract/status').val() === 'none' || newData.child('managementContract/status').val() === 'pending' || newData.child('managementContract/status').val() === 'active' || newData.child('managementContract/status').val() === 'paused' || newData.child('managementContract/status').val() === 'ended') && (!newData.child('managementContract/startedOn').exists() || (newData.child('managementContract/startedOn').isString() && newData.child('managementContract/startedOn').val().matches(/^[0-9]{4}-[0-9]{2}-[0-9]{2}$/))) && (!newData.child('managementContract/endedOn').exists() || (newData.child('managementContract/endedOn').isString() && newData.child('managementContract/endedOn').val().matches(/^[0-9]{4}-[0-9]{2}-[0-9]{2}$/))) && newData.child('managementContract/updatedBy').val() === auth.uid && newData.child('managementContract/updatedAt').isString()))",
+          "managementContract": {
+            "$contractField": {
+              ".validate": "$contractField === 'status' || $contractField === 'startedOn' || $contractField === 'endedOn' || $contractField === 'updatedBy' || $contractField === 'updatedAt'"
+            }
+          }
+        }
+      },
+      "units": {
+        ".read": "auth != null && auth.token.fieldPlatform === true && root.child('fieldPlatform/users').child(auth.uid).child('enabled').val() === true && root.child('fieldPlatform/users').child(auth.uid).child('role').val() === auth.token.fieldRole",
+        "$unitId": {
+          ".write": "auth != null && auth.token.fieldPlatform === true && root.child('fieldPlatform/users').child(auth.uid).child('enabled').val() === true && root.child('fieldPlatform/users').child(auth.uid).child('role').val() === auth.token.fieldRole && (auth.token.fieldRole === 'admin' || auth.token.fieldRole === 'staff')",
+          ".validate": "newData.hasChildren(['id', 'buildingId', 'unitLabel']) && newData.child('id').val() === $unitId && (!data.exists() || data.child('id').val() === newData.child('id').val()) && (!data.exists() || newData.child('buildingId').val() === data.child('buildingId').val()) && (root.child('fieldPlatform/buildings').child(newData.child('buildingId').val()).exists() || (!data.exists() && newData.child('createdBy').val() === auth.uid))"
+        }
+      },
+      "listings": {
+        ".read": "auth != null && auth.token.fieldPlatform === true && root.child('fieldPlatform/users').child(auth.uid).child('enabled').val() === true && root.child('fieldPlatform/users').child(auth.uid).child('role').val() === auth.token.fieldRole",
+        ".indexOn": [
+          "buildingId",
+          "status"
+        ],
+        "$listingId": {
+          ".write": "auth != null && auth.token.fieldPlatform === true && root.child('fieldPlatform/users').child(auth.uid).child('enabled').val() === true && root.child('fieldPlatform/users').child(auth.uid).child('role').val() === auth.token.fieldRole && (auth.token.fieldRole === 'admin' || auth.token.fieldRole === 'staff' || auth.token.fieldRole === 'reviewer')",
+          ".validate": "newData.hasChildren(['id', 'buildingId', 'unitId', 'unitLabel', 'status', 'depositWon', 'monthlyRentWon', 'maintenanceFeeWon']) && newData.child('id').val() === $listingId && (!data.exists() || data.child('id').val() === newData.child('id').val()) && (!data.exists() || newData.child('buildingId').val() === data.child('buildingId').val()) && (newData.child('status').val() === 'draft' || newData.child('status').val() === 'capturing' || newData.child('status').val() === 'reviewPending' || newData.child('status').val() === 'ready' || newData.child('status').val() === 'advertising' || newData.child('status').val() === 'closed') && newData.child('depositWon').isNumber() && newData.child('depositWon').val() >= 0 && newData.child('depositWon').val() % 1 === 0 && newData.child('monthlyRentWon').isNumber() && newData.child('monthlyRentWon').val() >= 0 && newData.child('monthlyRentWon').val() % 1 === 0 && newData.child('maintenanceFeeWon').isNumber() && newData.child('maintenanceFeeWon').val() >= 0 && newData.child('maintenanceFeeWon').val() % 1 === 0"
+        }
+      },
+      "visits": {
+        ".read": "auth != null && auth.token.fieldPlatform === true && root.child('fieldPlatform/users').child(auth.uid).child('enabled').val() === true && root.child('fieldPlatform/users').child(auth.uid).child('role').val() === auth.token.fieldRole",
+        "$visitId": {
+          ".write": "auth != null && auth.token.fieldPlatform === true && root.child('fieldPlatform/users').child(auth.uid).child('enabled').val() === true && root.child('fieldPlatform/users').child(auth.uid).child('role').val() === auth.token.fieldRole && (auth.token.fieldRole === 'admin' || (auth.token.fieldRole === 'staff' && newData.child('assignedUserId').val() === auth.uid))",
+          ".validate": "newData.hasChildren(['id', 'buildingId', 'type', 'assignedUserId']) && newData.child('id').val() === $visitId && (!data.exists() || data.child('id').val() === newData.child('id').val()) && (!data.exists() || newData.child('buildingId').val() === data.child('buildingId').val())"
+        }
+      },
+      "captureSessions": {
+        ".read": "auth != null && auth.token.fieldPlatform === true && root.child('fieldPlatform/users').child(auth.uid).child('enabled').val() === true && root.child('fieldPlatform/users').child(auth.uid).child('role').val() === auth.token.fieldRole && (auth.token.fieldRole === 'admin' || auth.token.fieldRole === 'reviewer' || (auth.token.fieldRole === 'staff' && query.orderByChild === 'createdBy' && query.equalTo === auth.uid))",
+        ".write": "auth != null && auth.token.fieldPlatform === true && root.child('fieldPlatform/users').child(auth.uid).child('enabled').val() === true && root.child('fieldPlatform/users').child(auth.uid).child('role').val() === auth.token.fieldRole && (auth.token.fieldRole === 'admin' || auth.token.fieldRole === 'staff')",
+        ".indexOn": [
+          "buildingId",
+          "createdBy"
+        ],
+        "$captureSessionId": {
+          ".read": "auth != null && auth.token.fieldPlatform === true && root.child('fieldPlatform/users').child(auth.uid).child('enabled').val() === true && root.child('fieldPlatform/users').child(auth.uid).child('role').val() === auth.token.fieldRole && (auth.token.fieldRole === 'admin' || auth.token.fieldRole === 'reviewer' || root.child('fieldPlatform/buildingAssignments').child(data.child('buildingId').val()).child(auth.uid).val() === true || (data.child('createdBy').val() === auth.uid && data.child('status').val() === 'open'))",
+          ".validate": "newData.hasChildren(['id', 'requestId', 'buildingId', 'visitId', 'createdBy', 'status', 'createdAt', 'updatedAt']) && newData.child('id').val() === $captureSessionId && newData.child('createdBy').val() === auth.uid && (newData.child('status').val() === 'open' || newData.child('status').val() === 'complete') && (!data.exists() || (newData.child('id').val() === data.child('id').val() && newData.child('requestId').val() === data.child('requestId').val() && newData.child('buildingId').val() === data.child('buildingId').val() && newData.child('visitId').val() === data.child('visitId').val() && newData.child('createdBy').val() === data.child('createdBy').val()))"
+        }
+      },
+      "media": {
+        ".write": "auth != null && auth.token.fieldPlatform === true && root.child('fieldPlatform/users').child(auth.uid).child('enabled').val() === true && root.child('fieldPlatform/users').child(auth.uid).child('role').val() === auth.token.fieldRole && (auth.token.fieldRole === 'admin' || auth.token.fieldRole === 'reviewer' || auth.token.fieldRole === 'staff')",
+        ".indexOn": [
+          "buildingId",
+          "listingId"
+        ],
+        "$mediaId": {
+          ".read": "auth != null && auth.token.fieldPlatform === true && root.child('fieldPlatform/users').child(auth.uid).child('enabled').val() === true && root.child('fieldPlatform/users').child(auth.uid).child('role').val() === auth.token.fieldRole && (auth.token.fieldRole === 'admin' || auth.token.fieldRole === 'reviewer' || root.child('fieldPlatform/buildingAssignments').child(data.child('buildingId').val()).child(auth.uid).val() === true || (data.child('capturedBy').val() === auth.uid && root.child('fieldPlatform/captureSessions').child(data.child('captureSessionId').val()).child('createdBy').val() === auth.uid && root.child('fieldPlatform/captureSessions').child(data.child('captureSessionId').val()).child('status').val() === 'open'))",
+          ".validate": "newData.hasChildren(['id', 'requestId', 'buildingId', 'visitId', 'captureSessionId', 'capturedBy', 'uploadState', 'uploadProgress', 'driveSyncState', 'driveFileId']) && newData.child('id').val() === $mediaId && newData.child('driveFileId').isString() && newData.child('driveFileId').val().length > 0 && newData.child('uploadState').val() === 'finalized' && newData.child('uploadProgress').val() === 100 && newData.child('driveSyncState').val() === 'complete' && root.child('fieldPlatform/captureSessions').child(newData.child('captureSessionId').val()).child('id').val() === newData.child('captureSessionId').val() && root.child('fieldPlatform/captureSessions').child(newData.child('captureSessionId').val()).child('buildingId').val() === newData.child('buildingId').val() && root.child('fieldPlatform/captureSessions').child(newData.child('captureSessionId').val()).child('unitId').val() === newData.child('unitId').val() && root.child('fieldPlatform/captureSessions').child(newData.child('captureSessionId').val()).child('listingId').val() === newData.child('listingId').val() && root.child('fieldPlatform/captureSessions').child(newData.child('captureSessionId').val()).child('visitId').val() === newData.child('visitId').val() && root.child('fieldPlatform/captureSessions').child(newData.child('captureSessionId').val()).child('createdBy').val() === newData.child('capturedBy').val() && (auth.token.fieldRole === 'admin' || auth.token.fieldRole === 'reviewer' || newData.child('capturedBy').val() === auth.uid) && (!data.exists() || (newData.child('id').val() === data.child('id').val() && newData.child('requestId').val() === data.child('requestId').val() && newData.child('buildingId').val() === data.child('buildingId').val() && newData.child('visitId').val() === data.child('visitId').val() && newData.child('captureSessionId').val() === data.child('captureSessionId').val() && newData.child('capturedBy').val() === data.child('capturedBy').val() && newData.child('driveFileId').val() === data.child('driveFileId').val()))"
+        }
+      },
+      "secureAccess": {
+        "$accessId": {
+          ".read": "auth != null && auth.token.fieldPlatform === true && root.child('fieldPlatform/users').child(auth.uid).child('enabled').val() === true && root.child('fieldPlatform/users').child(auth.uid).child('role').val() === auth.token.fieldRole && (auth.token.fieldRole === 'admin' || root.child('fieldPlatform/secureAccessAssignments').child(data.child('buildingId').val()).child(auth.uid).val() === true)",
+          ".write": "auth != null && auth.token.fieldPlatform === true && root.child('fieldPlatform/users').child(auth.uid).child('enabled').val() === true && root.child('fieldPlatform/users').child(auth.uid).child('role').val() === auth.token.fieldRole && auth.token.fieldRole === 'admin'",
+          ".validate": "newData.hasChildren(['id', 'buildingId', 'updatedAt', 'updatedBy']) && newData.child('id').val() === $accessId && (!data.exists() || data.child('id').val() === newData.child('id').val())"
+        }
+      },
+      "adPackages": {
+        ".read": "auth != null && auth.token.fieldPlatform === true && root.child('fieldPlatform/users').child(auth.uid).child('enabled').val() === true && root.child('fieldPlatform/users').child(auth.uid).child('role').val() === auth.token.fieldRole",
+        ".indexOn": [
+          "listingId",
+          "generation/recoveryKey"
+        ],
+        "$packageId": {
+          ".write": "auth != null && auth.token.fieldPlatform === true && root.child('fieldPlatform/users').child(auth.uid).child('enabled').val() === true && root.child('fieldPlatform/users').child(auth.uid).child('role').val() === auth.token.fieldRole && (auth.token.fieldRole === 'admin' || auth.token.fieldRole === 'reviewer') && newData.child('reviewerId').val() === auth.uid",
+          ".validate": "newData.hasChildren(['id', 'listingId', 'status', 'version', 'driveFolderId', 'driveFileIds']) && newData.child('id').val() === $packageId && (!data.exists() || data.child('id').val() === newData.child('id').val()) && (newData.child('status').val() === 'complete' || newData.child('status').val() === data.child('status').val())"
+        }
+      },
+      "adPackageVersions": {
+        ".read": false,
+        ".write": false
+      },
+      "adPackageLatest": {
+        ".read": false,
+        ".write": false
+      },
+      "adPackageGenerationAlerts": {
+        ".read": "auth != null && auth.token.fieldPlatform === true && root.child('fieldPlatform/users').child(auth.uid).child('enabled').val() === true && root.child('fieldPlatform/users').child(auth.uid).child('role').val() === auth.token.fieldRole && auth.token.fieldRole === 'admin'",
+        ".write": false
+      },
+      "checklistTemplates": {
+        ".read": "auth != null && auth.token.fieldPlatform === true && root.child('fieldPlatform/users').child(auth.uid).child('enabled').val() === true && root.child('fieldPlatform/users').child(auth.uid).child('role').val() === auth.token.fieldRole",
+        ".write": "auth != null && auth.token.fieldPlatform === true && root.child('fieldPlatform/users').child(auth.uid).child('enabled').val() === true && root.child('fieldPlatform/users').child(auth.uid).child('role').val() === auth.token.fieldRole && auth.token.fieldRole === 'admin'"
+      },
+      "checklistSubmissions": {
+        ".read": "auth != null && auth.token.fieldPlatform === true && root.child('fieldPlatform/users').child(auth.uid).child('enabled').val() === true && root.child('fieldPlatform/users').child(auth.uid).child('role').val() === auth.token.fieldRole",
+        ".write": "auth != null && auth.token.fieldPlatform === true && root.child('fieldPlatform/users').child(auth.uid).child('enabled').val() === true && root.child('fieldPlatform/users').child(auth.uid).child('role').val() === auth.token.fieldRole && (auth.token.fieldRole === 'staff' || auth.token.fieldRole === 'admin')"
+      },
+      "auditLogs": {
+        ".read": "auth != null && auth.token.fieldPlatform === true && root.child('fieldPlatform/users').child(auth.uid).child('enabled').val() === true && root.child('fieldPlatform/users').child(auth.uid).child('role').val() === auth.token.fieldRole && auth.token.fieldRole === 'admin'",
+        ".write": false
+      },
+      "driveSyncJobs": {
+        ".read": "auth != null && auth.token.fieldPlatform === true && root.child('fieldPlatform/users').child(auth.uid).child('enabled').val() === true && root.child('fieldPlatform/users').child(auth.uid).child('role').val() === auth.token.fieldRole && auth.token.fieldRole === 'admin'",
+        ".indexOn": [
+          "recoveryKey"
+        ],
+        ".write": false
+      },
+      "driveSyncAlerts": {
+        ".read": "auth != null && auth.token.fieldPlatform === true && root.child('fieldPlatform/users').child(auth.uid).child('enabled').val() === true && root.child('fieldPlatform/users').child(auth.uid).child('role').val() === auth.token.fieldRole && auth.token.fieldRole === 'admin'",
+        ".write": false
+      },
+      "driveFolderLeases": {
+        ".read": false,
+        ".write": false
+      },
+      "driveFolderCaches": {
+        ".read": false,
+        ".write": false
+      },
+      "driveUploadSessions": {
+        ".read": false,
+        ".write": false
+      },
+      "mapProjections": {
+        ".read": "auth != null && auth.token.fieldPlatform === true && root.child('fieldPlatform/users').child(auth.uid).child('enabled').val() === true && root.child('fieldPlatform/users').child(auth.uid).child('role').val() === auth.token.fieldRole",
+        "$buildingId": {
+          ".write": "auth != null && auth.token.fieldPlatform === true && root.child('fieldPlatform/users').child(auth.uid).child('enabled').val() === true && root.child('fieldPlatform/users').child(auth.uid).child('role').val() === auth.token.fieldRole && (auth.token.fieldRole === 'admin' || auth.token.fieldRole === 'staff')",
+          ".validate": "newData.hasChildren(['buildingId', 'name', 'roadAddress', 'latitude', 'longitude', 'markerStatus', 'vacancyCount', 'approvedRentSummary', 'parkingSummary', 'captureStatus', 'updatedAt']) && newData.child('buildingId').val() === $buildingId && root.child('fieldPlatform/buildings').child($buildingId).child('managementContract/status').val() === 'active' && newData.child('name').val() === root.child('fieldPlatform/buildings').child($buildingId).child('name').val() && newData.child('roadAddress').val() === root.child('fieldPlatform/buildings').child($buildingId).child('roadAddress').val() && newData.child('latitude').val() === root.child('fieldPlatform/buildings').child($buildingId).child('latitude').val() && newData.child('longitude').val() === root.child('fieldPlatform/buildings').child($buildingId).child('longitude').val() && newData.child('name').isString() && newData.child('roadAddress').isString() && newData.child('latitude').isNumber() && newData.child('latitude').val() >= -90 && newData.child('latitude').val() <= 90 && newData.child('longitude').isNumber() && newData.child('longitude').val() >= -180 && newData.child('longitude').val() <= 180 && (newData.child('markerStatus').val() === 'managed' || newData.child('markerStatus').val() === 'vacant') && newData.child('vacancyCount').isNumber() && newData.child('vacancyCount').val() >= 0 && newData.child('vacancyCount').val() % 1 === 0 && (newData.child('captureStatus').val() === 'notStarted' || newData.child('captureStatus').val() === 'inProgress' || newData.child('captureStatus').val() === 'complete') && newData.child('updatedAt').isString()"
+        }
+      },
+      "registrationDrafts": {
+        "$uid": {
+          ".read": "auth != null && auth.uid === $uid && auth.token.fieldPlatform === true && root.child('fieldPlatform/users').child(auth.uid).child('enabled').val() === true && root.child('fieldPlatform/users').child(auth.uid).child('role').val() === auth.token.fieldRole",
+          "$draftId": {
+            ".write": "auth != null && auth.uid === $uid && auth.token.fieldPlatform === true && root.child('fieldPlatform/users').child(auth.uid).child('enabled').val() === true && root.child('fieldPlatform/users').child(auth.uid).child('role').val() === auth.token.fieldRole && (auth.token.fieldRole === 'admin' || auth.token.fieldRole === 'staff')",
+            ".validate": "newData.hasChildren(['ownerUid', 'draftId', 'updatedAt', 'value']) && newData.child('ownerUid').val() === $uid && newData.child('draftId').val() === $draftId && newData.child('updatedAt').isString() && newData.child('updatedAt').val().matches(/^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}[.][0-9]{3}Z$/) && newData.child('value/draftId').val() === $draftId && newData.child('value/draftVersion').val() === 4"
+          }
+        }
+      },
+      "registrationRequests": {
+        "$uid": {
+          ".read": "auth != null && auth.uid === $uid && auth.token.fieldPlatform === true",
+          "$requestId": {
+            ".write": "auth != null && auth.uid === $uid && auth.token.fieldPlatform === true && root.child('fieldPlatform/users').child(auth.uid).child('enabled').val() === true && newData.exists()",
+            ".validate": "newData.hasChildren(['result', 'completedAt']) && newData.child('completedAt').isString() && newData.child('result').hasChildren(['buildingId', 'managementNumber', 'unitIds', 'listingId', 'visitId']) && newData.child('result/buildingId').isString() && newData.child('result/managementNumber').isString() && newData.child('result/listingId').isString() && newData.child('result/visitId').isString() && newData.child('result/unitIds').exists()"
+          }
+        }
+      },
+      "managementContractRequests": {
+        ".read": false,
+        ".write": false
       }
     },
     "signage": {
-      ".read": true,
-      ".write": true
+      "consign": {
+        ".read": true,
+        ".write": "auth != null && root.child('crmCompany/access').child(auth.uid).child('enabled').val() === true && root.child('crmCompany/access').child(auth.uid).child('email').val() === auth.token.email && (root.child('crmCompany/access').child(auth.uid).child('role').val() === 'admin' || (root.child('crmCompany/access').child(auth.uid).child('role').val() === 'member' && root.child('crmCompany/access').child(auth.uid).child('marketingRole').val() !== 'marketing'))"
+      },
+      "settings": {
+        ".read": true,
+        ".write": "auth != null && root.child('crmCompany/access').child(auth.uid).child('enabled').val() === true && root.child('crmCompany/access').child(auth.uid).child('email').val() === auth.token.email && (root.child('crmCompany/access').child(auth.uid).child('role').val() === 'admin' || (root.child('crmCompany/access').child(auth.uid).child('role').val() === 'member' && root.child('crmCompany/access').child(auth.uid).child('marketingRole').val() !== 'marketing'))"
+      },
+      "orders": {
+        ".read": "auth != null && root.child('crmCompany/access').child(auth.uid).child('enabled').val() === true && root.child('crmCompany/access').child(auth.uid).child('email').val() === auth.token.email && (root.child('crmCompany/access').child(auth.uid).child('role').val() === 'admin' || root.child('crmCompany/access').child(auth.uid).child('role').val() === 'member' || root.child('crmCompany/access').child(auth.uid).child('role').val() === 'viewer')",
+        "$orderId": {
+          ".write": "(!data.exists() && newData.exists()) || (auth != null && root.child('crmCompany/access').child(auth.uid).child('enabled').val() === true && root.child('crmCompany/access').child(auth.uid).child('email').val() === auth.token.email && (root.child('crmCompany/access').child(auth.uid).child('role').val() === 'admin' || (root.child('crmCompany/access').child(auth.uid).child('role').val() === 'member' && root.child('crmCompany/access').child(auth.uid).child('marketingRole').val() !== 'marketing')))",
+          ".validate": "newData.hasChildren(['productId', 'productName', 'price', 'qty', 'amount', 'name', 'phone', 'receive', 'addr', 'status', 'createdAt']) && newData.child('productId').isString() && newData.child('productId').val().length > 0 && newData.child('productId').val().length <= 160 && newData.child('productName').isString() && newData.child('productName').val().length <= 200 && newData.child('price').isNumber() && newData.child('price').val() >= 0 && newData.child('qty').isNumber() && newData.child('qty').val() >= 1 && newData.child('qty').val() <= 100 && newData.child('amount').isNumber() && newData.child('amount').val() >= 0 && newData.child('name').isString() && newData.child('name').val().length > 0 && newData.child('name').val().length <= 80 && newData.child('phone').isString() && newData.child('phone').val().length >= 9 && newData.child('phone').val().length <= 30 && newData.child('receive').isString() && newData.child('receive').val().length <= 40 && newData.child('addr').isString() && newData.child('addr').val().length > 0 && newData.child('addr').val().length <= 300 && (!newData.child('memo').exists() || (newData.child('memo').isString() && newData.child('memo').val().length <= 1000)) && newData.child('status').isString() && newData.child('status').val().length > 0 && newData.child('status').val().length <= 40 && newData.child('createdAt').isNumber()",
+          "productId": {
+            ".validate": true
+          },
+          "productName": {
+            ".validate": true
+          },
+          "option": {
+            ".validate": true
+          },
+          "vendor": {
+            ".validate": true
+          },
+          "price": {
+            ".validate": true
+          },
+          "qty": {
+            ".validate": true
+          },
+          "amount": {
+            ".validate": true
+          },
+          "name": {
+            ".validate": true
+          },
+          "phone": {
+            ".validate": true
+          },
+          "receive": {
+            ".validate": true
+          },
+          "addr": {
+            ".validate": true
+          },
+          "memo": {
+            ".validate": true
+          },
+          "status": {
+            ".validate": true
+          },
+          "createdAt": {
+            ".validate": true
+          },
+          "$other": {
+            ".validate": false
+          }
+        }
+      },
+      "$other": {
+        ".read": false,
+        ".write": false
+      }
     }
   }
 }

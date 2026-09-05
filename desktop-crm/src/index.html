@@ -1,0 +1,152 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="light">
+  <title>BRING CRM</title>
+  <link rel="stylesheet" href="./styles.css">
+  <link rel="stylesheet" href="./marketing.css">
+  <link rel="stylesheet" href="./vendor-import.css">
+  <link rel="stylesheet" href="./relationships.css">
+  <link rel="stylesheet" href="./contracts.css">
+  <link rel="stylesheet" href="./contract-readiness.css">
+  <link rel="stylesheet" href="./operations.css">
+  <link rel="stylesheet" href="./buildings.css">
+  <link rel="stylesheet" href="./vacancies.css">
+  <link rel="stylesheet" href="./work-calendar.css">
+  <link rel="stylesheet" href="./readability.css">
+  <link rel="stylesheet" href="./sales.css">
+  <link rel="stylesheet" href="./office.css">
+  <!-- 색·여백·모서리만 덮어쓰는 층. 항상 마지막에 온다. -->
+  <link rel="stylesheet" href="./toss.css">
+</head>
+<body>
+  <div id="loginGate" class="login-gate" aria-live="polite">
+    <section class="login-card">
+      <div class="login-logo"><img src="./assets/bring-logo.png" alt="BRING 로고"></div>
+      <span>BRING ENGINEERING</span>
+      <h1 id="loginTitle">공용 CRM 로그인</h1>
+      <p id="loginDescription">허용된 회사 이메일과 비밀번호로 로그인하면<br>BRING CRM을 사용할 수 있습니다.</p>
+      <button id="googleLoginButton" class="email-login-button google-login-button" type="button" hidden>Google 로그인</button>
+      <form id="emailLoginForm" class="login-form">
+        <label><span>이메일</span><input id="loginEmail" name="email" type="email" autocomplete="username" placeholder="회사에서 허용한 이메일" required></label>
+        <label><span>비밀번호</span><input id="loginPassword" name="password" type="password" autocomplete="current-password" placeholder="비밀번호 입력" required></label>
+        <div class="temporary-password">처음 로그인하면 새 비밀번호를 정하는 화면이 먼저 열립니다. 최초 비밀번호는 계정을 만든 관리자에게 확인해 주세요.</div>
+        <button id="emailLoginButton" class="email-login-button" type="submit">로그인</button>
+      </form>
+      <form id="passwordChangeForm" class="login-form" hidden>
+        <div class="password-user"><span id="passwordUserName">사용자</span><small id="passwordUserEmail"></small></div>
+        <label><span>새 비밀번호</span><input id="newPassword" name="newPassword" type="password" autocomplete="new-password" placeholder="8자 이상 입력" minlength="8" required></label>
+        <label><span>새 비밀번호 확인</span><input id="confirmPassword" name="confirmPassword" type="password" autocomplete="new-password" placeholder="한 번 더 입력" minlength="8" required></label>
+        <div class="password-rule">영문과 숫자를 함께 사용해 주세요.</div>
+        <button id="passwordChangeButton" class="email-login-button" type="submit">비밀번호 변경 후 시작</button>
+      </form>
+      <div id="loginMessage" class="login-message">로그인 상태를 확인하고 있습니다…</div>
+      <small>비밀번호는 CRM 코드나 회사 데이터베이스에 저장되지 않습니다.</small>
+    </section>
+  </div>
+
+  <div id="app" class="app-shell app-locked" aria-hidden="true">
+    <aside class="sidebar">
+      <div class="brand">
+        <div class="brand-mark"><img src="./assets/bring-logo.png" alt="BRING 로고"></div>
+        <div><strong>BRING CRM</strong><span>고객·건물 업무관리</span></div>
+      </div>
+      <nav id="nav" class="nav-list" aria-label="주 메뉴">
+        <button class="nav-item active" data-view="dashboard"><span class="nav-icon" aria-hidden="true"><svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><rect x="3" y="3" width="7.5" height="7.5" rx="2"/><rect x="13.5" y="3" width="7.5" height="7.5" rx="2"/><rect x="3" y="13.5" width="7.5" height="7.5" rx="2"/><rect x="13.5" y="13.5" width="7.5" height="7.5" rx="2"/></svg></span><b>한눈에 보기</b></button>
+        <div class="nav-folder" data-nav-folder="office">
+          <button type="button" class="nav-folder-toggle" data-nav-folder-toggle aria-expanded="false"><span class="nav-icon" aria-hidden="true"><svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><rect x="3" y="7.5" width="18" height="12.5" rx="3"/><path d="M9 7.5V6a2 2 0 0 1 2-2h2a2 2 0 0 1 2 2v1.5"/><path d="M3 13h18"/></svg></span><b>BRING OFFICE</b><i class="nav-chevron" aria-hidden="true"><svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M6 9.5 12 15.5 18 9.5"/></svg></i></button>
+          <div class="nav-folder-children">
+            <button class="nav-item nav-child" data-view="officeHome"><span class="nav-icon" aria-hidden="true"><svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M4 10.5 12 4l8 6.5V20a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1z"/><path d="M9.5 21v-6h5v6"/></svg></span><b>홈</b></button>
+            <button class="nav-item nav-child" data-view="officeAttendance"><span class="nav-icon" aria-hidden="true"><svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><circle cx="12" cy="12" r="8.2"/><path d="M12 7.4V12l3.2 1.9"/></svg></span><b>근태관리</b></button>
+            <button class="nav-item nav-child" data-view="officeMessenger"><span class="nav-icon" aria-hidden="true"><svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M20 14.5a2.5 2.5 0 0 1-2.5 2.5H9l-4 3.5v-14A2.5 2.5 0 0 1 7.5 4h10A2.5 2.5 0 0 1 20 6.5z"/></svg></span><b>메신저</b><em id="navOfficeUnread">0</em></button>
+            <button id="navOfficeAdmin" class="nav-item nav-child" data-view="officeAdmin" hidden><span class="nav-icon" aria-hidden="true"><svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><circle cx="9" cy="9" r="2.9"/><path d="M3.4 19.2a5.6 5.6 0 0 1 11.2 0"/><path d="M16.2 6.6a2.7 2.7 0 0 1 0 5.2"/><path d="M17.6 14.6a5.2 5.2 0 0 1 3 4.6"/></svg></span><b>전체 근태관리</b></button>
+          </div>
+        </div>
+        <div class="nav-folder" data-nav-folder="customer-management">
+          <button type="button" class="nav-folder-toggle" data-nav-folder-toggle aria-expanded="false"><span class="nav-icon" aria-hidden="true"><svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><circle cx="12" cy="8" r="3.4"/><path d="M4.8 20a7.2 7.2 0 0 1 14.4 0"/></svg></span><b>고객 관리</b><i class="nav-chevron" aria-hidden="true"><svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M6 9.5 12 15.5 18 9.5"/></svg></i></button>
+          <div class="nav-folder-children">
+            <button class="nav-item nav-child" data-view="customers"><span class="nav-icon" aria-hidden="true"><svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M4 21V6a2 2 0 0 1 2-2h6a2 2 0 0 1 2 2v15"/><path d="M14 21V10h4a2 2 0 0 1 2 2v9"/><path d="M2.5 21h19"/><path d="M7.5 8h3M7.5 12h3M7.5 16h3"/></svg></span><b>고객·건물 관리</b><em id="navCustomerCount">0</em></button>
+            <button class="nav-item nav-child" data-view="partnerVendors"><span class="nav-icon" aria-hidden="true"><svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M14.5 6.2a4.2 4.2 0 0 0 5.5 5.5l-8 8a2.4 2.4 0 0 1-3.4-3.4z"/><path d="M14.5 6.2 17 3.7"/></svg></span><b>협력 업체</b><em id="navPartnerVendorCount">0</em></button>
+            <button class="nav-item nav-child" data-view="vacancies"><span class="nav-icon" aria-hidden="true"><svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M4 21V5a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v16"/><path d="M2.5 21h19"/><circle cx="13.5" cy="12.5" r="1"/></svg></span><b>공실 현황</b><em id="navVacancyCount">0</em></button>
+            <button class="nav-item nav-child" data-view="customerMessages"><span class="nav-icon" aria-hidden="true"><svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M20.5 3.5 10.8 13.2"/><path d="M20.5 3.5 14.3 20.5l-3.5-7.3-7.3-3.5z"/></svg></span><b>고객 메시지</b></button>
+          </div>
+        </div>
+        <div class="nav-folder" data-nav-folder="calendar">
+          <button type="button" class="nav-folder-toggle" data-nav-folder-toggle aria-expanded="false"><span class="nav-icon" aria-hidden="true"><svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><rect x="3.5" y="5" width="17" height="15.5" rx="3"/><path d="M3.5 10h17"/><path d="M8 3.2v3.6M16 3.2v3.6"/></svg></span><b>캘린더</b><i class="nav-chevron" aria-hidden="true"><svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M6 9.5 12 15.5 18 9.5"/></svg></i></button>
+          <div class="nav-folder-children">
+            <button class="nav-item nav-child" data-view="buildingCalendar" data-unified-calendar-tab="work"><span class="nav-icon" aria-hidden="true"><svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><rect x="3.5" y="4.5" width="17" height="15" rx="3"/><path d="M8.5 12.2l2.4 2.4 4.6-5"/></svg></span><b>업무일정 캘린더</b></button>
+            <button class="nav-item nav-child" data-view="buildingCalendar" data-unified-calendar-tab="contract"><span class="nav-icon" aria-hidden="true"><svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M6 3.5h7.5L19 9v11.5a1 1 0 0 1-1 1H6a1 1 0 0 1-1-1v-16a1 1 0 0 1 1-1z"/><path d="M13.5 3.5V9H19"/><path d="M8.5 13h7M8.5 17h4.5"/></svg></span><b>계약일정 캘린더</b></button>
+            <button class="nav-item nav-child" data-view="payments" data-unified-calendar-tab="payment"><span class="nav-icon" aria-hidden="true"><svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><rect x="3" y="6" width="18" height="12" rx="2.5"/><circle cx="12" cy="12" r="2.6"/><path d="M6.5 12h.01M17.5 12h.01"/></svg></span><b>건물주 입금캘린더</b><em id="navPaymentCount">0</em></button>
+          </div>
+        </div>
+        <button class="nav-item" data-view="valueScope"><span class="nav-icon" aria-hidden="true"><svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="m3.5 6.8 5.8-2.3 5.4 2.3 5.8-2.3v12.7l-5.8 2.3-5.4-2.3-5.8 2.3z"/><path d="M9.3 4.5v14.7M14.7 6.8v14.7"/></svg></span><span class="nav-copy"><b>지도·밸류스코프</b><small>BRING VALUESCOPE</small></span></button>
+        <button class="nav-item" data-view="aiAssistant"><span class="nav-icon" aria-hidden="true"><svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="m12 3.2 1.9 4.9 4.9 1.9-4.9 1.9L12 16.8l-1.9-4.9-4.9-1.9 4.9-1.9z"/><path d="M18.6 15.4l.8 2 2 .8-2 .8-.8 2-.8-2-2-.8 2-.8z"/></svg></span><b>AI 비서</b></button>
+        <button class="nav-item" data-view="relationships"><span class="nav-icon" aria-hidden="true"><svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M12 20.2s-7.2-4.4-7.2-9.4A4 4 0 0 1 12 8.2a4 4 0 0 1 7.2 2.6c0 5-7.2 9.4-7.2 9.4z"/></svg></span><b>계약 고객 관리</b><em id="navRelationshipCount">0</em></button>
+        <button class="nav-item" data-view="cases"><span class="nav-icon" aria-hidden="true"><svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M12 3 21 7.6l-9 4.6-9-4.6z"/><path d="M3 12.2 12 16.8l9-4.6"/><path d="M3 16.6 12 21.2l9-4.6"/></svg></span><b>민원 관리</b><em id="navCaseCount">0</em></button>
+        <button class="nav-item" data-view="security"><span class="nav-icon" aria-hidden="true"><svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><circle cx="8.4" cy="15.6" r="3.9"/><path d="M11.2 12.8 19.5 4.5"/><path d="M16.6 7.4l2.2 2.2M14.2 9.8l2.2 2.2"/></svg></span><b>정보·열쇠 관리</b></button>
+        <button class="nav-item" data-view="settings"><span class="nav-icon" aria-hidden="true"><svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><circle cx="12" cy="12" r="3.1"/><path d="M19.6 14.4a1.6 1.6 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.6 1.6 0 0 0-2.7 1.1v.3a2 2 0 0 1-4 0v-.2a1.6 1.6 0 0 0-2.8-1.1l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1A1.6 1.6 0 0 0 3.7 13H3.4a2 2 0 0 1 0-4h.2a1.6 1.6 0 0 0 1.1-2.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.6 1.6 0 0 0 2.7-1.1V2a2 2 0 0 1 4 0v.2a1.6 1.6 0 0 0 2.8 1.1l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.6 1.6 0 0 0 1.1 2.7h.3a2 2 0 0 1 0 4h-.2a1.6 1.6 0 0 0-1.4 1.6z"/></svg></span><b>설정</b></button>
+      </nav>
+      <div class="sidebar-foot">
+        <div class="sync-state"><i id="connectionDot"></i><div><b id="connectionLabel">이 PC에 자동 저장</b><span id="lastSaved">저장 준비 중</span></div></div>
+        <button class="help-launch" data-action="open-guide">? 처음 사용 안내</button>
+      </div>
+    </aside>
+
+    <section class="workspace">
+      <header class="topbar">
+        <div>
+          <div class="eyebrow" id="pageEyebrow">오늘의 업무</div>
+          <h1 id="pageTitle">한눈에 보기</h1>
+        </div>
+        <div class="top-actions">
+          <button type="button" class="workspace-switch" data-workspace-switch hidden>작업 폴더 전환</button>
+          <label id="fieldOperatorControl" class="field-operator-control" hidden><span>현재 작업자</span><select id="fieldOperatorSelect" aria-label="현재 작업자 선택"><option value="">작업자를 선택해 주세요</option></select></label>
+          <label class="global-search"><span class="search-mark" aria-hidden="true"><svg class="search-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><circle cx="11" cy="11" r="6.5"/><path d="M15.8 15.8 20.5 20.5"/></svg></span><input id="globalSearch" type="search" placeholder="고객·건물·연락처 검색"></label>
+          <button id="updateButton" class="update-button" data-action="check-update" hidden>업데이트 확인</button>
+          <div id="userPill" class="user-pill" hidden><span><b id="currentUserName">사용자</b><small id="currentUserEmail"></small></span><button data-action="logout" title="로그아웃">로그아웃</button></div>
+          <button class="help-button" data-action="open-guide" title="처음 사용 안내">? 도움말</button>
+        </div>
+      </header>
+      <main id="main" class="main-content" aria-live="polite"></main>
+    </section>
+  </div>
+
+  <div id="modal" class="modal-layer" aria-hidden="true"><div class="modal-card" role="dialog" aria-modal="true"><div id="modalContent"></div></div></div>
+  <div id="drawer" class="drawer-layer" aria-hidden="true"><aside class="detail-drawer" role="dialog" aria-modal="true" aria-label="상세 정보"><div id="drawerContent"></div></aside></div>
+  <div id="confirmationLayer" class="confirmation-layer" aria-hidden="true"><div id="confirmationCard" class="confirmation-card" role="alertdialog" aria-modal="true" aria-labelledby="confirmationTitle" aria-describedby="confirmationDescription"><div id="confirmationContent"></div></div></div>
+  <div id="toast" class="toast" role="status"></div>
+
+  <script src="./core.js"></script>
+  <script src="./sales-core.js"></script>
+  <script src="./sales-standards.js"></script>
+  <script src="./sales-ui.js"></script>
+  <script src="./drive-import-ui.js"></script>
+  <script src="./work-management.js"></script>
+  <script src="./work-calendar.js"></script>
+  <script src="./service-operations-ui.js"></script>
+  <script src="./operations-intelligence-core.js"></script>
+  <script src="./operations-intelligence-ui.js"></script>
+  <script src="./ai-operations-core.js"></script>
+  <script src="./management-report-core.js"></script>
+  <script src="./ai-operations-ui.js"></script>
+  <script src="./quote-core.js"></script>
+    <script src="./service-report-core.js"></script>
+    <script src="./building-report-core.js"></script>
+    <script src="./tenant-history-core.js"></script>
+  <script src="./office-core.js"></script>
+  <script src="./office.js"></script>
+  <script src="./workspace-shell.js"></script>
+  <script src="./marketing-core.js"></script>
+  <script src="./marketing-crm-bridge.js"></script>
+  <script src="./marketing-ui.js"></script>
+  <script src="./message-policy.js"></script>
+  <script src="./document-delivery-core.js"></script>
+  <script src="./message-ui.js"></script>
+  <script src="./ai-consultation-core.js"></script>
+  <script src="./contract-readiness-core.js"></script>
+  <script src="./contract-readiness-ui.js"></script>
+  <script src="./app.js"></script>
+</body>
+</html>
