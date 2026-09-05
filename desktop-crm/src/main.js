@@ -21,6 +21,8 @@ const { createQuotePdfHtml, quotePdfFileName } = require("./quote-pdf");
 const { createServiceReportHtml, serviceReportFileName } = require("./service-report-pdf");
 const { createBuildingReportHtml, buildingReportFileName } = require("./building-report-pdf");
 const BuildingReportCore = require("./building-report-core");
+const OwnerOsReportCore = require("./owner-os-report-core");
+const OwnerOsEndpointCore = require("./owner-os-endpoint-core");
 const ServiceReportCore = require("./service-report-core");
 const OperationsIntelligence = require("./operations-intelligence-core");
 const OperationsWorkSync = require("./operations-work-sync");
@@ -1318,6 +1320,100 @@ function quoteSupplierFile() {
 
 function quoteSealFile() {
   return path.join(path.dirname(dataFile()), "bring-crm-quote-seal.json");
+}
+
+function ownerOsSettingsFile() {
+  return path.join(path.dirname(dataFile()), "bring-crm-owner-os.json");
+}
+
+// 대표OS 주소와 비밀키. 견적 공급자 정보와 같은 방식으로 이 PC 의 보안
+// 저장소로 잠가서 둔다. 암호화가 안 되는 PC 에서는 저장하지 않는다.
+async function readOwnerOsSettings() {
+  try {
+    const raw = await fs.readFile(ownerOsSettingsFile(), "utf8");
+    const decoded = decodeProtectedJson(safeStorage, raw);
+    if (!decoded.encrypted) {
+      throw Object.assign(new Error("암호화되지 않은 대표OS 설정은 열지 않았습니다."), { code: "PROTECTED_DATA_REQUIRED" });
+    }
+    return OwnerOsEndpointCore.normalizeSettings(decoded.value);
+  } catch (error) {
+    if (error && error.code === "ENOENT") return null;
+    throw error;
+  }
+}
+
+async function writeOwnerOsSettings(input) {
+  const settings = OwnerOsEndpointCore.normalizeSettings(input);
+  const target = ownerOsSettingsFile();
+  const temp = `${target}.tmp.${process.pid}.${crypto.randomBytes(6).toString("hex")}`;
+  await fs.mkdir(path.dirname(target), { recursive: true });
+  try {
+    await fs.writeFile(temp, encodeProtectedJson(safeStorage, settings), { encoding: "utf8", flag: "wx", mode: 0o600 });
+    await fs.rename(temp, target);
+  } catch (error) {
+    try { await fs.unlink(temp); } catch (cleanupError) { if (cleanupError && cleanupError.code !== "ENOENT") console.warn("owner os settings temp cleanup failed"); }
+    throw error;
+  }
+  return settings;
+}
+
+// 화면에는 설정 여부와 끝 네 자리만 준다. 비밀키 자체는 렌더러로 건너가지 않는다.
+async function loadOwnerOsSettings() {
+  try {
+    return OwnerOsEndpointCore.toPublicView(await readOwnerOsSettings());
+  } catch (error) {
+    if (error && ["PROTECTED_DATA_REQUIRED", "PROTECTED_DATA_INVALID", "LOCAL_ENCRYPTION_UNAVAILABLE"].includes(error.code)) {
+      return OwnerOsEndpointCore.toPublicView(null);
+    }
+    throw error;
+  }
+}
+
+async function saveOwnerOsSettings(input) {
+  const user = authState().user;
+  if (!user) throw Object.assign(new Error("다시 로그인해 주세요."), { code: "AUTH_REQUIRED" });
+  if (user.role !== "admin") {
+    throw Object.assign(new Error("대표OS 연결은 관리자만 설정할 수 있습니다."), { code: "ACCESS_DENIED" });
+  }
+  return OwnerOsEndpointCore.toPublicView(await writeOwnerOsSettings(input));
+}
+
+// 한 달치 보고를 대표OS 로 올린다. 총평은 화면에서 받은 것을 그대로 넣고,
+// 여기서 지어내지 않는다. 확인 전 초안이면 받는 쪽이 그렇게 표시한다.
+async function sendOwnerOsReport(input) {
+  const user = authState().user;
+  if (!user) throw Object.assign(new Error("다시 로그인해 주세요."), { code: "AUTH_REQUIRED" });
+  // 매출·원가·이익률이 담긴다. 마케팅 전용 계정이 내보낼 자료가 아니다.
+  if (isMarketingOnlySession()) {
+    return { ok: false, error: "마케팅 담당자는 대표OS 보고를 보낼 수 없습니다.", code: "MARKETING_ONLY_FORBIDDEN" };
+  }
+  const settings = await readOwnerOsSettings();
+  if (!settings) throw Object.assign(new Error("대표OS 연결을 먼저 설정해 주세요."), { code: "OWNER_OS_NOT_CONFIGURED" });
+
+  const options = input && typeof input === "object" && !Array.isArray(input) ? input : {};
+  const envelope = OwnerOsReportCore.buildReportEnvelope({
+    store: options.store,
+    operations: Array.isArray(options.operations) ? options.operations : null,
+    month: options.month,
+    companyId: settings.companyId,
+    appVersion: app.getVersion(),
+    qualitative: options.qualitative,
+  });
+
+  const request = OwnerOsEndpointCore.buildRequest(settings, envelope);
+  let status = 0;
+  let body = "";
+  try {
+    const response = await fetch(request.url, { method: request.method, headers: request.headers, body: request.body });
+    status = response.status;
+    body = await response.text();
+  } catch (error) {
+    // 네트워크 오류 문구에 주소는 남겨도 키는 절대 남기지 않는다.
+    throw Object.assign(new Error("대표OS 에 연결하지 못했습니다. 인터넷 연결과 주소를 확인해 주세요."), { code: "OWNER_OS_UNREACHABLE" });
+  }
+  const verdict = OwnerOsEndpointCore.describeResponse(status, body, request.url);
+  if (!verdict.ok) throw Object.assign(new Error(verdict.message), { code: verdict.code });
+  return { ok: true, month: envelope.period.month, message: verdict.message };
 }
 
 function normalizeQuoteSealPng(value) {
@@ -6947,6 +7043,9 @@ secureCanonicalHandle("crm:service-report-export", input => exportServiceReport(
 secureCanonicalHandle("crm:building-monthly-report-export", input => exportBuildingMonthlyReport(input));
 secureCanonicalHandle("crm:quote-supplier-load", () => loadQuoteSupplier());
 secureCanonicalHandle("crm:quote-supplier-save", input => saveQuoteSupplier(input));
+secureCanonicalHandle("crm:owner-os-settings-load", () => loadOwnerOsSettings());
+secureCanonicalHandle("crm:owner-os-settings-save", input => saveOwnerOsSettings(input));
+secureCanonicalHandle("crm:owner-os-report-send", input => sendOwnerOsReport(input));
 secureCanonicalHandle("crm:quote-seal-load", () => loadQuoteSeal());
 secureCanonicalHandle("crm:quote-seal-select", () => selectQuoteSeal());
 secureHandle("crm:auth-login", async credentials => {
