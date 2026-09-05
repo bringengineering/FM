@@ -71,6 +71,17 @@ describe("CRM Drive 연결 페이지", () => {
     expect(codes.every((code) => /^[A-Z_]{1,32}$/.test(code))).toBe(true);
   });
 
+  it("배포본에도 같은 내용으로 들어가 있다", async () => {
+    // firebase-public 은 커밋된 배포 산출물이다. public 에만 두고 여기 빠뜨리면
+    // 배포해도 페이지가 없어 Drive 연결이 404 로 실패한다. 빌드는 성공하므로
+    // CI 로는 안 잡힌다. 로그인 페이지(crm-auth)와 같은 취급이다.
+    const [source, deployed] = await Promise.all([
+      loadPage(),
+      readFile(resolve("firebase-public/crm-drive-auth/index.html"), "utf8"),
+    ]);
+    expect(deployed).toBe(source);
+  });
+
   it("Firebase Hosting 에서 캐시되지 않는다", async () => {
     // 캐시되면 예전 페이지가 남아 콜백 주소가 어긋난다.
     const firebaseConfig = JSON.parse(
