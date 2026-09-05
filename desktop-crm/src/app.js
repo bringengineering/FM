@@ -12,6 +12,7 @@
   const OperationsIntelligenceUI = window.OperationsIntelligenceUI;
   const AiOperationsCore = window.BringAiOperationsCore;
   const ManagementReportCore = window.BringManagementReportCore;
+  const TenantHistoryCore = window.BringTenantHistoryCore;
   const AiOperationsUI = window.BringAiOperationsUI;
   const WorkspaceShell = window.BringWorkspaceShell;
   const MarketingCore = window.MarketingCore;
@@ -2150,6 +2151,24 @@
     }).join("")}</div></section>`;
   };
 
+  // 이 민원을 넣은 사람이 전에도 넣었는지 보여 준다. 같은 유형이 짧은
+  // 기간에 다시 왔다면 고쳐지지 않았다는 뜻이라 눈에 띄게 짚는다.
+  const caseTenantHistoryPanel = item => {
+    const list = TenantHistoryCore.buildTenantHistories({ cases: activeCases(), phoneKey: Core.canonicalPhoneKey });
+    const tenant = TenantHistoryCore.findTenantForCase(list, Core.canonicalPhoneKey, item);
+    if (!tenant || tenant.caseCount < 2) return "";
+    const others = tenant.cases.filter(entry => entry.id !== String(item.ticketNo || item.id || ""));
+    const recurring = tenant.recurring.map(entry =>
+      `<span class="case-recurring-chip">${esc(entry.kind)} ${entry.count}회 반복</span>`
+    ).join("");
+    return `<section class="case-extra-block case-tenant-history${tenant.recurring.length ? " alert" : ""}"><header>${
+      esc(tenant.name)}${tenant.unit ? ` · ${esc(tenant.unit)}` : ""} · 이 건물에서 ${tenant.caseCount}번째 접수</header>${
+      recurring ? `<div class="case-recurring-list">${recurring}</div>` : ""
+    }<div class="case-history-list">${others.slice(0, 6).map(entry =>
+      `<article><div><b>${esc(entry.kind)}</b><span>${esc(entry.summary || "내용 없음")}</span></div><em>${esc(entry.date)}</em></article>`
+    ).join("")}</div></section>`;
+  };
+
   // 건물주에게 보내는 작업 결과 보고서. 사진은 PDF 에 직접 박아야 해서
   // 만들 때 PC 에서 고르게 한다. 드라이브 링크는 보고서를 만드는 창에서
   // 불러올 수 없다(견적서와 같은 CSP 로 data: 이미지만 허용).
@@ -2224,6 +2243,7 @@
     let content = "";
     if (stepKey === "c1") {
       content += caseDetailGrid("접수 정보", [["접수번호", item.ticketNo || item.id], ["고객명", item.name], ["연락처", item.phone], ["건물·호실", [item.building, item.room].filter(Boolean).join(" · ")], ["주소", item.address], ["문제 유형", item.issueType], ["방문 가능", item.visitTime || item.visitDate], ["접수 시각", item.receivedAt || item.createdAt]]);
+      content += caseTenantHistoryPanel(item);
       content += caseTextPanel("접수 내용", item.summary);
       content += caseResourceLinks("접수 원본·사진", commonFiles);
     } else if (stepKey === "c2") {
