@@ -1854,15 +1854,28 @@ class FirebaseRemoteClient {
     return this.session;
   }
 
-  async receiveGoogleCredential(options = {}) {
+  // 로컬 콜백 서버를 띄우고 브라우저에서 돌아오는 값을 받는다.
+  // 로그인(receiveGoogleCredential)과 Drive 연결(receiveDriveToken)이 같이 쓴다.
+  // 두 곳이 다른 것은 어느 페이지를 여는지, 어떤 칸을 읽는지, 어떤 말로
+  // 알려 주는지뿐이라 그것만 밖에서 넣는다.
+  async receiveBrowserCallback(settings, options = {}) {
+    const pageUrl = settings.pageUrl;
+    const parse = settings.parse;
+    const cancelledMessage = settings.cancelledMessage;
+    const cancelledCode = settings.cancelledCode;
+    const failedMessage = settings.failedMessage;
+    const failedCode = settings.failedCode;
+    const timeoutMessage = settings.timeoutMessage;
+    const timeoutCode = settings.timeoutCode;
+    const donePage = settings.donePage;
     const state = crypto.randomBytes(32).toString("base64url");
     const signal = options && options.signal;
-    if (signal && signal.aborted) throw createError("Google 로그인이 취소되었습니다.", "LOGIN_CANCELLED");
+    if (signal && signal.aborted) throw createError(cancelledMessage, cancelledCode);
     return new Promise((resolve, reject) => {
       let settled = false;
       let timer = null;
       let server = null;
-      const abort = () => finish(createError("Google 로그인이 취소되었습니다.", "LOGIN_CANCELLED"));
+      const abort = () => finish(createError(cancelledMessage, cancelledCode));
       const closeServer = () => {
         if (!server || typeof server.close !== "function") return;
         try {
@@ -1901,24 +1914,23 @@ class FirebaseRemoteClient {
           body += chunk;
           if (body.length > 16000) request.destroy();
         });
-        request.on("error", error => finish(createError("로그인 응답을 받지 못했습니다.", "LOGIN_FAILED", error)));
+        request.on("error", error => finish(createError(failedMessage, failedCode, error)));
         request.on("end", () => {
           try {
             const fields = new URLSearchParams(body);
             const receivedState = fields.get("state") || "";
-            const token = fields.get("provider_token") || fields.get("google_id_token") || "";
-            const tokenType = fields.get("provider_token_type") || "id_token";
+            // 확인값과 오류는 어느 쪽이든 같은 방식으로 본다. 여기서 막지
+            // 않으면 다른 창에서 온 응답을 받아들이게 된다.
+            if (receivedState !== state) throw createError(failedMessage, failedCode);
             const error = fields.get("error") || "";
-            if (receivedState !== state) throw createError("로그인 확인값이 일치하지 않습니다.", "LOGIN_FAILED");
-            if (error) throw createError(error, "LOGIN_FAILED");
-            if (!token || token.length > 12000) throw createError("Google 인증 정보를 받지 못했습니다.", "LOGIN_FAILED");
-            if (!["id_token", "access_token"].includes(tokenType)) throw createError("Google 인증 형식을 확인하지 못했습니다.", "LOGIN_FAILED");
+            if (error) throw createError(error, failedCode);
+            const value = parse(fields);
             response.writeHead(200, { "Content-Type": "text/html; charset=utf-8", "Cache-Control": "no-store", "Referrer-Policy": "no-referrer" });
-            response.end("<!doctype html><meta charset='utf-8'><title>BRING CRM 로그인 완료</title><body style='font-family:sans-serif;text-align:center;padding:70px;background:#eef9ff;color:#17364d'><h2>로그인이 완료되었습니다.</h2><p>이 창을 닫고 BRING CRM으로 돌아가세요.</p></body>");
-            finish(null, { token, type: tokenType });
+            response.end(donePage);
+            finish(null, value);
           } catch (error) {
             response.writeHead(400, { "Content-Type": "text/plain; charset=utf-8", "Cache-Control": "no-store" });
-            response.end("로그인을 완료하지 못했습니다.");
+            response.end("요청을 완료하지 못했습니다.");
             finish(error);
           }
         });
@@ -1927,7 +1939,7 @@ class FirebaseRemoteClient {
         closeServer();
         return;
       }
-      server.on("error", error => finish(createError("로그인 연결을 열지 못했습니다.", "LOGIN_FAILED", error)));
+      server.on("error", error => finish(createError(failedMessage, failedCode, error)));
       server.listen(0, "127.0.0.1", async () => {
         if (settled) return;
         if (signal && signal.aborted) {
@@ -1936,17 +1948,75 @@ class FirebaseRemoteClient {
         }
         try {
           const port = server.address().port;
-          const authUrl = new URL(this.firebase.authPageUrl);
+          const authUrl = new URL(pageUrl);
           authUrl.searchParams.set("port", String(port));
           authUrl.searchParams.set("state", state);
           await this.openGoogleAuth(authUrl.toString());
         } catch (error) {
-          finish(createError("기본 브라우저에서 로그인 페이지를 열지 못했습니다.", "LOGIN_FAILED", error));
+          finish(createError(failedMessage, failedCode, error));
         }
       });
       if (settled) return;
-      timer = setTimeout(() => finish(createError("로그인 시간이 초과되었습니다. 다시 시도해 주세요.", "LOGIN_TIMEOUT")), 180000);
+      timer = setTimeout(() => finish(createError(timeoutMessage, timeoutCode)), 180000);
     });
+  }
+
+  // 로그인. 예전과 같은 값·같은 문구를 그대로 쓴다.
+  async receiveGoogleCredential(options = {}) {
+    return this.receiveBrowserCallback({
+      pageUrl: this.firebase.authPageUrl,
+      cancelledMessage: "Google 로그인이 취소되었습니다.",
+      cancelledCode: "LOGIN_CANCELLED",
+      failedMessage: "로그인을 완료하지 못했습니다.",
+      failedCode: "LOGIN_FAILED",
+      timeoutMessage: "로그인 시간이 초과되었습니다. 다시 시도해 주세요.",
+      timeoutCode: "LOGIN_TIMEOUT",
+      donePage: "<!doctype html><meta charset='utf-8'><title>BRING CRM 로그인 완료</title><body style='font-family:sans-serif;text-align:center;padding:70px;background:#eef9ff;color:#17364d'><h2>로그인이 완료되었습니다.</h2><p>이 창을 닫고 BRING CRM으로 돌아가세요.</p></body>",
+      parse: fields => {
+        const token = fields.get("provider_token") || fields.get("google_id_token") || "";
+        const tokenType = fields.get("provider_token_type") || "id_token";
+        if (!token || token.length > 12000) throw createError("Google 인증 정보를 받지 못했습니다.", "LOGIN_FAILED");
+        if (!["id_token", "access_token"].includes(tokenType)) throw createError("Google 인증 형식을 확인하지 못했습니다.", "LOGIN_FAILED");
+        return { token, type: tokenType };
+      },
+    }, options);
+  }
+
+  /**
+   * Drive 연결. 로그인과 다른 페이지를 열고 다른 칸을 읽는다.
+   * 여기서 받은 값은 로그인 세션이 아니다 — 파일을 올릴 때만 쓰는 접근 토큰이고,
+   * 유효 시간이 지나면 다시 받아야 한다.
+   */
+  async receiveDriveToken(options = {}) {
+    const pageUrl = new URL(this.firebase.authPageUrl);
+    pageUrl.pathname = pageUrl.pathname.replace(/crm-auth\/?$/, "crm-drive-auth/");
+    return this.receiveBrowserCallback({
+      pageUrl: pageUrl.toString(),
+      cancelledMessage: "Drive 연결이 취소되었습니다.",
+      cancelledCode: "DRIVE_CONNECT_CANCELLED",
+      failedMessage: "Drive 연결을 완료하지 못했습니다.",
+      failedCode: "DRIVE_CONNECT_FAILED",
+      timeoutMessage: "Drive 연결 시간이 초과되었습니다. 다시 시도해 주세요.",
+      timeoutCode: "DRIVE_CONNECT_TIMEOUT",
+      donePage: "<!doctype html><meta charset='utf-8'><title>BRING CRM Drive 연결 완료</title><body style='font-family:sans-serif;text-align:center;padding:70px;background:#eef9ff;color:#17364d'><h2>Drive 연결이 완료되었습니다.</h2><p>이 창을 닫고 BRING CRM으로 돌아가세요.</p></body>",
+      parse: fields => {
+        const token = fields.get("drive_access_token") || "";
+        if (!token || token.length > 12000) throw createError("Drive 권한을 받지 못했습니다.", "DRIVE_CONNECT_FAILED");
+        // 로그인 토큰이 이 길로 들어오면 거절한다. 두 길이 섞이면
+        // Drive 연결만 한 사람이 로그인한 것처럼 보일 수 있다.
+        if (fields.get("provider_token") || fields.get("firebase_id_token")) {
+          throw createError("Drive 연결 응답이 올바르지 않습니다.", "DRIVE_CONNECT_FAILED");
+        }
+        const expiresIn = Number(fields.get("drive_token_expires_in") || 0);
+        const email = String(fields.get("drive_account_email") || "").slice(0, 200);
+        return {
+          accessToken: token,
+          // 만료 시각을 같이 남긴다. 없으면 기본 1시간으로 본다.
+          expiresAt: new Date(Date.now() + (Number.isFinite(expiresIn) && expiresIn > 0 ? expiresIn : 3600) * 1000).toISOString(),
+          email,
+        };
+      },
+    }, options);
   }
 
   async receiveEmailCredential(credentials) {
