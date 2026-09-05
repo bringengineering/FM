@@ -31,11 +31,19 @@ test("quick completion captures human work and produces dashboard metrics", () =
   assert.deepEqual(metrics.interventionCounts, { coordinate: 1, move: 1, execute: 1 });
 });
 
-test("operations analysis remains an internal view without a standalone sidebar tab", () => {
+// 이 화면은 "remove legacy sidebar tabs" 에서 사이드바 탭이 빠졌는데, 그 뒤로
+// currentView 를 operationsIntelligence 로 바꾸는 코드가 어디에도 남지 않아
+// 열 수 없는 화면이 되었다. BI·대시보드 폴더 안에 다시 낸다. 별도 창으로
+// 띄우지 않는다는 원래 제약은 그대로 둔다.
+test("operations analysis opens from the BI folder and stays in the main window", () => {
   const html = src("index.html");
   const app = src("app.js");
   const preload = src("preload.js");
-  assert.equal((html.match(/data-view="operationsIntelligence"/g) || []).length, 0);
+  assert.equal((html.match(/data-view="operationsIntelligence"/g) || []).length, 1);
+  assert.match(
+    html,
+    /data-nav-folder="bi"[\s\S]*?data-view="operationsIntelligence"[\s\S]*?<b>운영 분석<\/b>/u,
+  );
   assert.doesNotMatch(html, /data-action="open-operations-intelligence"|별도 창/);
   assert.match(app, /currentView === "operationsIntelligence"/);
   assert.doesNotMatch(preload, /openOperationsIntelligence/);
