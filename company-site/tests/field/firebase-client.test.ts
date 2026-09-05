@@ -79,3 +79,19 @@ describe("Firebase App Check configuration", () => {
     expect(firebaseMocks.initializeAppCheck).toHaveBeenCalledOnce();
   });
 });
+
+describe("App Check 사이트 키", () => {
+  // 이 키가 빠진 채 배포되면 현장앱이 "현장 업무 연결 확인 필요" 에서 멈춘다.
+  // 화면에서만 드러나고 단위 테스트는 통과해 버리므로, 소스에 남아 있는지 직접 본다.
+  it("소스에 reCAPTCHA 사이트 키가 들어 있다", async () => {
+    const [{ readFile }, path] = await Promise.all([
+      import("node:fs/promises"),
+      import("node:path"),
+    ]);
+    const source = await readFile(
+      path.join(process.cwd(), "app", "field", "lib", "firebase.client.ts"),
+      "utf8",
+    );
+    expect(source).toMatch(/DEFAULT_APPCHECK_SITE_KEY\s*=\s*"6L[A-Za-z0-9_-]{20,}"/u);
+  });
+});
