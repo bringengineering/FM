@@ -2486,6 +2486,45 @@
     }
   }
 
+  // 건물주에게 매달 드리는 관리 보고서. 기본은 지난달이다 — 이번 달은
+  // 아직 안 끝났으니 보고할 것이 아니다.
+  function previousMonthKey() {
+    const now = new Date();
+    return new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() - 1, 1)).toISOString().slice(0, 7);
+  }
+
+  async function createBuildingMonthlyReportPdf(buildingId) {
+    const building = buildingById(buildingId);
+    if (!building) return showToast("건물을 찾지 못했습니다.", "error");
+    const month = window.prompt("어느 달의 보고서를 만들까요? (예: 2026-08)", previousMonthKey());
+    if (month === null) return;
+    if (!/^\d{4}-\d{2}$/.test(String(month).trim())) {
+      return showToast("연-월을 2026-08 형태로 입력해 주세요.", "error");
+    }
+    const owner = customerById(building.ownerCustomerId) || buildingCustomers(building)[0] || null;
+    try {
+      const result = await api.exportBuildingMonthlyReport({
+        // 이 건물 것만 걸러 보낸다. 보고서 계산은 건물 기준으로 한 번 더
+        // 거르지만, 전체 데이터를 넘기면 무겁고 남의 건물 일이 오갈 이유도 없다.
+        store: {
+          cases: buildingCases(building),
+          buildingUnits: buildingUnitsForBuilding(building).filter(unit => !unit.archivedAt),
+        },
+        building,
+        month: String(month).trim(),
+        ownerName: owner ? owner.name : "",
+        owner: store.settings.owner,
+        company: { name: store.company.name || "BRING Care", phone: store.company.phone, email: store.company.email },
+      });
+      if (result.canceled) return;
+      if (!result.ok) return showToast(result.error || "보고서를 만들지 못했습니다.", "error");
+      const summary = result.summary || {};
+      showToast(`월간 보고서를 저장했습니다. 처리 업무 ${summary.workCount || 0}건.`, "success");
+    } catch (error) {
+      showToast(error && error.message || "보고서를 만들지 못했습니다.", "error");
+    }
+  }
+
   async function createServiceReportPdf(caseKey) {
     const item = workflowCaseByKey(caseKey);
     if (!item) return showToast("사건을 찾지 못했습니다.", "error");
@@ -3005,7 +3044,7 @@
     const vacancySummary = vacancySummaryForBuilding(building);
     const primaryAddress = building.roadAddress || building.address || building.jibunAddress || "주소 미입력";
     const secondaryAddress = building.jibunAddress && Core.normalizeText(building.jibunAddress) !== Core.normalizeText(primaryAddress) ? ` · 지번 ${building.jibunAddress}` : "";
-    return `<header class="building-hub-detail-head"><div class="building-hub-title">${buildingNumberLabel(building)}<h2>${esc(building.name || "건물명 미입력")}</h2><p>${esc(primaryAddress)}${esc(secondaryAddress)}</p></div><div class="building-hub-head-actions"><button class="secondary-button" data-building-edit="${attr(building.id)}">건물 정보 수정</button><button class="secondary-button" data-building-vacancies="${attr(building.id)}">공실 현황</button><button class="secondary-button" data-building-payments="${attr(building.id)}">건물주 입금</button></div></header>
+    return `<header class="building-hub-detail-head"><div class="building-hub-title">${buildingNumberLabel(building)}<h2>${esc(building.name || "건물명 미입력")}</h2><p>${esc(primaryAddress)}${esc(secondaryAddress)}</p></div><div class="building-hub-head-actions"><button class="secondary-button" data-building-edit="${attr(building.id)}">건물 정보 수정</button><button class="secondary-button" data-building-vacancies="${attr(building.id)}">공실 현황</button><button class="secondary-button" data-building-payments="${attr(building.id)}">건물주 입금</button><button class="primary-button" data-building-monthly-report="${attr(building.id)}">⇩ 월간 보고서</button></div></header>
       <div class="building-hub-detail-scroll"><div class="building-hub-kpis"><div class="building-hub-kpi"><span>연결 고객</span><b>${customers.length}명</b><small>${esc(owner ? `대표 ${owner.name}` : "건물주 연결 필요")}</small></div><div class="building-hub-kpi"><span>진행 계약</span><b>${activeContracts.length}건</b><small>${esc(activeContracts.length ? contractTypes(activeContracts[0]).join("·") : "활성 계약 없음")}</small></div><div class="building-hub-kpi"><span>진행 민원</span><b>${openCases.length}건</b><small>${esc(openCases[0] ? Core.workflowProgress(openCases[0]).current : "진행 업무 없음")}</small></div><div class="building-hub-kpi ${overdueRows.length ? "alert" : ""}"><span>이번 달 입금</span><b>${rows.length}건</b><small>${esc(overdueRows.length ? `확인 필요 ${overdueRows.length}건` : amount ? `예정 ${krw(amount)}` : "납부 일정 없음")}</small></div></div>
       <div class="building-identity-strip"><div><b>건물 유형</b><span>${esc(building.type || "미입력")}</span></div><div><b>운영 상태</b><span>${buildingStatusBadge(building.status)}</span></div><div><b>호실 수</b><span>${vacancySummary.formal ? `${vacancySummary.total.toLocaleString("ko-KR")}개` : Number(building.unitCount) ? `${Number(building.unitCount).toLocaleString("ko-KR")}개` : "미입력"}</span></div><div><b>담당자</b><span>${esc(building.manager || "미입력")}</span></div></div>
       <div class="building-detail-grid"><section class="building-detail-section"><header><b>연결 고객</b><span>${customers.length}명</span></header><div class="building-detail-body">${customerRecords || `<div class="building-detail-empty">연결된 고객이 없습니다. 건물 정보 수정에서 건물주를 선택하세요.</div>`}</div></section><section class="building-detail-section"><header><b>건물 호실</b><button type="button" class="mini-button" data-building-unit-add="${attr(building.id)}">＋ 호실</button></header><div class="building-detail-body">${unitRecords || `<div class="building-detail-empty">등록된 호실이 없습니다.</div>`}${archivedUnitRecords}</div></section><section class="building-detail-section"><header><b>계약</b><span>${contracts.length}건</span></header><div class="building-detail-body">${contractRecords || `<div class="building-detail-empty">연결된 계약이 없습니다.</div>`}</div></section><section class="building-detail-section"><header><b>민원</b><span>${cases.length}건</span></header><div class="building-detail-body">${caseRecords || `<div class="building-detail-empty">연결된 민원이 없습니다.</div>`}</div></section><section class="building-detail-section"><header><b>${esc(paymentMonthLabel(paymentMonth))} 입금 일정</b><span>${rows.length}건</span></header><div class="building-detail-body">${paymentRecords || `<div class="building-detail-empty">이번 달 납부 일정이 없습니다.</div>`}</div></section>${building.memo ? `<section class="building-detail-section wide"><header><b>건물 메모</b><span>공용 정보</span></header><div class="building-detail-body"><div class="building-detail-record"><div><b>관리 참고사항</b><span>${esc(building.memo)}</span></div></div></div></section>` : ""}</div></div>`;
@@ -6229,6 +6268,8 @@
     }
     const workflowAction = event.target.closest("[data-workflow-action]");
     if (workflowAction) { if (!canWriteCRM()) return showToast("조회 전용 계정은 민원 업무를 실행할 수 없습니다.", "error"); await executeCaseWorkflowAction(workflowAction); return; }
+    const monthlyReport = event.target.closest("[data-building-monthly-report]");
+    if (monthlyReport) { await createBuildingMonthlyReportPdf(monthlyReport.dataset.buildingMonthlyReport); return; }
     const serviceReport = event.target.closest("[data-case-service-report]");
     if (serviceReport) { await createServiceReportPdf(serviceReport.dataset.caseServiceReport); return; }
     const caseUpload = event.target.closest("[data-case-upload]");

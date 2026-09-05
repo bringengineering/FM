@@ -19,6 +19,8 @@ const QuoteCore = require("./quote-core");
 const { createQuoteWorkbook, quoteFileName } = require("./quote-xlsx");
 const { createQuotePdfHtml, quotePdfFileName } = require("./quote-pdf");
 const { createServiceReportHtml, serviceReportFileName } = require("./service-report-pdf");
+const { createBuildingReportHtml, buildingReportFileName } = require("./building-report-pdf");
+const BuildingReportCore = require("./building-report-core");
 const ServiceReportCore = require("./service-report-core");
 const OperationsIntelligence = require("./operations-intelligence-core");
 const OperationsWorkSync = require("./operations-work-sync");
@@ -2634,12 +2636,42 @@ async function exportServiceReport(input) {
     filters: [{ name: "PDF 문서", extensions: ["pdf"] }],
   });
   if (result.canceled || !result.filePath) return { ok: false, canceled: true };
-  const bytes = await createServiceReportPdfBytes(report);
+  const bytes = await createReportPdfBytes(createServiceReportHtml(report), "service-report");
   await fs.writeFile(result.filePath, bytes, { mode: 0o600 });
   return { ok: true, photoCounts: report.photoCounts };
 }
 
-async function createServiceReportPdfBytes(report) {
+async function exportBuildingMonthlyReport(input) {
+  if (!authState().user) throw Object.assign(new Error("다시 로그인해 주세요."), { code: "AUTH_REQUIRED" });
+  if (!input || typeof input !== "object" || Array.isArray(input)) {
+    throw new Error("월간 보고서 요청이 올바르지 않습니다.");
+  }
+  // 건물주 이름·주소와 관리 내역이 담긴다. 마케팅 전용 계정이 볼 자료가 아니다.
+  if (isMarketingOnlySession()) {
+    return { ok: false, error: "마케팅 담당자는 월간 보고서를 만들 수 없습니다.", code: "MARKETING_ONLY_FORBIDDEN" };
+  }
+  const report = BuildingReportCore.buildBuildingMonthlyReport(input);
+  const leaks = BuildingReportCore.findLeakedFields(report, input.store);
+  if (leaks.length) {
+    throw Object.assign(
+      new Error(`보고서에 ${leaks.join(", ")}이(가) 들어 있어 만들지 않았습니다.`),
+      { code: "BUILDING_REPORT_LEAK" },
+    );
+  }
+  const result = await dialog.showSaveDialog(mainWindow, {
+    title: "월간 관리 보고서 PDF 저장",
+    defaultPath: buildingReportFileName(report),
+    filters: [{ name: "PDF 문서", extensions: ["pdf"] }],
+  });
+  if (result.canceled || !result.filePath) return { ok: false, canceled: true };
+  const bytes = await createReportPdfBytes(createBuildingReportHtml(report), "building-report");
+  await fs.writeFile(result.filePath, bytes, { mode: 0o600 });
+  return { ok: true, summary: report.summary };
+}
+
+// 결과보고서와 월간 보고서가 같은 방식으로 문서를 그린다. 창을 따로 두면
+// 보안 설정이 갈라지므로 한 곳에서 만든다.
+async function createReportPdfBytes(documentHtml, partitionName) {
   const pdfWindow = new BrowserWindow({
     show: false,
     width: 1000,
@@ -2649,7 +2681,7 @@ async function createServiceReportPdfBytes(report) {
       contextIsolation: true,
       nodeIntegration: false,
       sandbox: true,
-      partition: `service-report-pdf-${crypto.randomUUID()}`,
+      partition: `${partitionName}-${crypto.randomUUID()}`,
     },
   });
   pdfWindow.webContents.setWindowOpenHandler(() => ({ action: "deny" }));
@@ -2659,7 +2691,6 @@ async function createServiceReportPdfBytes(report) {
   });
   pdfWindow.webContents.session.setPermissionRequestHandler((_webContents, _permission, callback) => callback(false));
   try {
-    const documentHtml = createServiceReportHtml(report);
     await pdfWindow.loadURL(`data:text/html;charset=utf-8,${encodeURIComponent(documentHtml)}`);
     await pdfWindow.webContents.executeJavaScript("document.fonts.ready.then(() => true)", true);
     return await pdfWindow.webContents.printToPDF({
@@ -6913,6 +6944,7 @@ secureCanonicalHandle("crm:contract-source-check", async input => {
 secureCanonicalHandle("crm:contract-source-decision", async input => { assertContractSourceAdmin(); return remoteClient.decideContractSource(input); });
 secureCanonicalHandle("crm:quote-export", input => exportAiQuote(input));
 secureCanonicalHandle("crm:service-report-export", input => exportServiceReport(input));
+secureCanonicalHandle("crm:building-monthly-report-export", input => exportBuildingMonthlyReport(input));
 secureCanonicalHandle("crm:quote-supplier-load", () => loadQuoteSupplier());
 secureCanonicalHandle("crm:quote-supplier-save", input => saveQuoteSupplier(input));
 secureCanonicalHandle("crm:quote-seal-load", () => loadQuoteSeal());
