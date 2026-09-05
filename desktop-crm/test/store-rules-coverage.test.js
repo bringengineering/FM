@@ -30,6 +30,21 @@ test("공용 저장소의 모든 컬렉션에 쓰기 규칙이 있다", () => {
   assert.deepEqual(missing, [], `규칙이 없는 컬렉션: ${missing.join(", ")}`);
 });
 
+// 서버로 보내는 짐은 SHARED_COLLECTIONS 목록으로만 싼다. 저장소에만 넣고 이
+// 목록에 빠뜨리면 화면에는 남는데 서버로는 한 번도 안 올라간다. 다음 기기에서
+// 열면 그냥 없다. 규칙 누락보다 알아채기 어려운 실패라 같이 묶어 검사한다.
+test("공용 저장소의 모든 컬렉션이 서버로 실제로 보내진다", () => {
+  const remoteSource = fs.readFileSync(path.join(__dirname, "../src/remote.js"), "utf8");
+  const block = /const SHARED_COLLECTIONS = Object\.freeze\(\[([\s\S]*?)\]\)/u.exec(remoteSource);
+  assert.ok(block, "SHARED_COLLECTIONS 목록을 찾지 못했다");
+  const shipped = new Set([...block[1].matchAll(/"([A-Za-z]+)"/gu)].map(match => match[1]));
+
+  const store = Core.blankSharedStore();
+  const collections = Object.keys(store).filter(key => Array.isArray(store[key]) && key !== "accessRoles");
+  const missing = collections.filter(key => !shipped.has(key));
+  assert.deepEqual(missing, [], `서버로 안 보내지는 컬렉션: ${missing.join(", ")}`);
+});
+
 test("건물 문서함이 저장소와 규칙 양쪽에 있다", () => {
   const store = Core.blankSharedStore();
   assert.ok(Array.isArray(store.buildingDocuments), "저장소에 buildingDocuments 가 있어야 한다");
