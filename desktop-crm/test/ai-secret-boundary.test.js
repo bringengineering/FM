@@ -41,5 +41,5 @@ test("renderer and preload never reference the Groq secret or provider authoriza
 
 test("main process targets the deployed company AI gateway", () => {
   const source = fs.readFileSync(path.join(repositoryRoot, "desktop-crm/src/main.js"), "utf8");
-  assert.match(source, /https:\/\/bring-crm-ai-gateway\.bringengineering-crm\.workers\.dev\/v1\/assist/);
+  assert.match(source, /https:\/\/bring-crm-ai-gateway\.bringengineering1008\.workers\.dev\/v1\/assist/);
 });

@@ -28,5 +28,12 @@ test("document delivery has dedicated storage and stays closed before Kakao appr
   assert.match(config, /^DOCUMENT_DELIVERY_ENABLED\s*=\s*"false"$/m);
   assert.match(config, /^KAKAO_DOCUMENT_TEMPLATES_APPROVED\s*=\s*"false"$/m);
   assert.match(config, /binding\s*=\s*"DOCUMENT_DELIVERY"/);
-  assert.match(config, /id\s*=\s*"8e340879954e455a909258ccd65dfaff"/);
+  assert.match(config, /id\s*=\s*"e45a57c874534b76b90107d43ad4a759"/);
+});
+
+test("production gateway and usage storage belong to the company account", () => {
+  const config = fs.readFileSync(path.join(__dirname, "..", "wrangler.toml"), "utf8");
+  assert.match(config, /^account_id\s*=\s*"3c3bcd08bb6ed3a7a8f98c292386c327"$/m);
+  assert.match(config, /id\s*=\s*"e2ff82add8014f11aebf8bd1f6d95f8e"/);
+  assert.doesNotMatch(config, /d62c9d8a0f9a487495da8a3f915ac083|8e340879954e455a909258ccd65dfaff/);
 });
