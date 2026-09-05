@@ -40,6 +40,7 @@ contextBridge.exposeInMainWorld("bringCRM", {
   checkContractSource: input => ipcRenderer.invoke("crm:contract-source-check", input),
   decideContractSource: input => ipcRenderer.invoke("crm:contract-source-decision", input),
   exportQuote: input => ipcRenderer.invoke("crm:quote-export", input),
+  exportServiceReport: input => ipcRenderer.invoke("crm:service-report-export", input),
   loadQuoteSupplier: () => ipcRenderer.invoke("crm:quote-supplier-load"),
   saveQuoteSupplier: input => ipcRenderer.invoke("crm:quote-supplier-save", input),
   loadQuoteSeal: () => ipcRenderer.invoke("crm:quote-seal-load"),

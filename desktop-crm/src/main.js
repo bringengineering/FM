@@ -18,6 +18,8 @@ const { createAttendanceWorkbook, safeFileSegment } = require("./attendance-xlsx
 const QuoteCore = require("./quote-core");
 const { createQuoteWorkbook, quoteFileName } = require("./quote-xlsx");
 const { createQuotePdfHtml, quotePdfFileName } = require("./quote-pdf");
+const { createServiceReportHtml, serviceReportFileName } = require("./service-report-pdf");
+const ServiceReportCore = require("./service-report-core");
 const OperationsIntelligence = require("./operations-intelligence-core");
 const OperationsWorkSync = require("./operations-work-sync");
 const MarketingPersistence = require("./marketing-persistence");
@@ -2607,6 +2609,71 @@ async function exportAiQuote(input) {
   return { ok: true, format };
 }
 
+async function exportServiceReport(input) {
+  if (!authState().user) throw Object.assign(new Error("다시 로그인해 주세요."), { code: "AUTH_REQUIRED" });
+  if (!input || typeof input !== "object" || Array.isArray(input)) {
+    throw new Error("결과보고서 요청이 올바르지 않습니다.");
+  }
+  // 이 문서에는 건물주 이름·주소와 현장 사진이 담긴다. 마케팅 전용 계정이
+  // 볼 자료가 아니다.
+  if (isMarketingOnlySession()) {
+    return { ok: false, error: "마케팅 담당자는 결과보고서를 만들 수 없습니다.", code: "MARKETING_ONLY_FORBIDDEN" };
+  }
+  const report = ServiceReportCore.buildServiceReport(input);
+  // 건물주에게 나가는 문서다. 업체명·업체 견적·내부 메모가 섞였으면 만들지 않는다.
+  const leaks = ServiceReportCore.findLeakedFields(report, input.case);
+  if (leaks.length) {
+    throw Object.assign(
+      new Error(`보고서에 ${leaks.join(", ")}이(가) 들어 있어 만들지 않았습니다.`),
+      { code: "SERVICE_REPORT_LEAK" },
+    );
+  }
+  const result = await dialog.showSaveDialog(mainWindow, {
+    title: "작업 결과 보고서 PDF 저장",
+    defaultPath: serviceReportFileName(report),
+    filters: [{ name: "PDF 문서", extensions: ["pdf"] }],
+  });
+  if (result.canceled || !result.filePath) return { ok: false, canceled: true };
+  const bytes = await createServiceReportPdfBytes(report);
+  await fs.writeFile(result.filePath, bytes, { mode: 0o600 });
+  return { ok: true, photoCounts: report.photoCounts };
+}
+
+async function createServiceReportPdfBytes(report) {
+  const pdfWindow = new BrowserWindow({
+    show: false,
+    width: 1000,
+    height: 1400,
+    autoHideMenuBar: true,
+    webPreferences: {
+      contextIsolation: true,
+      nodeIntegration: false,
+      sandbox: true,
+      partition: `service-report-pdf-${crypto.randomUUID()}`,
+    },
+  });
+  pdfWindow.webContents.setWindowOpenHandler(() => ({ action: "deny" }));
+  pdfWindow.webContents.on("will-attach-webview", event => event.preventDefault());
+  pdfWindow.webContents.on("will-navigate", (event, targetUrl) => {
+    if (!String(targetUrl || "").startsWith("data:text/html")) event.preventDefault();
+  });
+  pdfWindow.webContents.session.setPermissionRequestHandler((_webContents, _permission, callback) => callback(false));
+  try {
+    const documentHtml = createServiceReportHtml(report);
+    await pdfWindow.loadURL(`data:text/html;charset=utf-8,${encodeURIComponent(documentHtml)}`);
+    await pdfWindow.webContents.executeJavaScript("document.fonts.ready.then(() => true)", true);
+    return await pdfWindow.webContents.printToPDF({
+      landscape: false,
+      pageSize: "A4",
+      printBackground: true,
+      preferCSSPageSize: true,
+      margins: { top: 0, bottom: 0, left: 0, right: 0 },
+    });
+  } finally {
+    if (!pdfWindow.isDestroyed()) pdfWindow.destroy();
+  }
+}
+
 async function createQuotePdfBytes(quote, copyType, seal) {
   const pdfWindow = new BrowserWindow({
     show: false,
@@ -2861,12 +2928,14 @@ async function runDocumentDelivery(action, input) {
 
 async function pickWorkflowFiles(input) {
   const kind = String(input && input.kind || "quote");
-  const imageOnly = kind === "work-photo";
+  const imageOnly = kind === "work-photo" || kind === "service-report-photo";
   const filters = imageOnly
     ? [{ name: "사진", extensions: ["jpg", "jpeg", "png", "webp"] }]
     : [{ name: "업무 파일", extensions: ["pdf", "jpg", "jpeg", "png", "doc", "docx", "xls", "xlsx", "hwp", "hwpx"] }];
   const result = await dialog.showOpenDialog(mainWindow, {
-    title: imageOnly ? "작업 사진 선택" : kind === "business-registration" ? "사업자등록증 선택" : "견적서 선택",
+    title: kind === "service-report-photo" ? "보고서에 넣을 사진 선택"
+      : imageOnly ? "작업 사진 선택"
+      : kind === "business-registration" ? "사업자등록증 선택" : "견적서 선택",
     properties: ["openFile", "multiSelections"],
     filters
   });
@@ -6843,6 +6912,7 @@ secureCanonicalHandle("crm:contract-source-check", async input => {
 });
 secureCanonicalHandle("crm:contract-source-decision", async input => { assertContractSourceAdmin(); return remoteClient.decideContractSource(input); });
 secureCanonicalHandle("crm:quote-export", input => exportAiQuote(input));
+secureCanonicalHandle("crm:service-report-export", input => exportServiceReport(input));
 secureCanonicalHandle("crm:quote-supplier-load", () => loadQuoteSupplier());
 secureCanonicalHandle("crm:quote-supplier-save", input => saveQuoteSupplier(input));
 secureCanonicalHandle("crm:quote-seal-load", () => loadQuoteSeal());

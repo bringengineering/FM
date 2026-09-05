@@ -2150,6 +2150,16 @@
     }).join("")}</div></section>`;
   };
 
+  // 건물주에게 보내는 작업 결과 보고서. 사진은 PDF 에 직접 박아야 해서
+  // 만들 때 PC 에서 고르게 한다. 드라이브 링크는 보고서를 만드는 창에서
+  // 불러올 수 없다(견적서와 같은 CSP 로 data: 이미지만 허용).
+  const caseServiceReportPanel = item => {
+    const photoCount = [...caseObjectValues(item.workPhotoFiles), ...caseObjectValues(item.photos)].length;
+    return `<section class="case-action-panel case-action-panel-stack"><div><b>작업 결과 보고서</b><span>${
+      photoCount ? `등록된 사진 ${photoCount}장이 있습니다. 보고서에 넣을 사진을 PC에서 골라 주세요.` : "작업 전·후 사진을 골라 PDF 보고서를 만듭니다."
+    }</span></div><div class="case-action-buttons"><button type="button" class="primary-button" data-case-service-report="${attr(workflowCaseKey(item))}">⇩ 결과보고서 PDF</button></div></section>`;
+  };
+
   const caseOwnerRecommendationMessage = (item, quote, supplier, amount) => [
     "[BRING Care 추천 견적 안내]", "", `${item.name || "건물주"}님, 요청하신 유지보수 건의 추천 견적을 안내드립니다.`, "",
     `접수번호: ${item.ticketNo || item.id || "미발급"}`,
@@ -2261,6 +2271,7 @@
       content += caseDetailGrid("B/A 보고서", [["보고서 상태", caseFirst(report.statusText, report.status)], ["작성일", caseFirst(report.createdAt, report.updatedAt)], ["작성자", report.owner], ["작업 사진", caseObjectValues(item.workPhotoFiles).length ? `${caseObjectValues(item.workPhotoFiles).length}장` : ""]]);
       content += caseResourceLinks("보고서 파일", [report, ...caseObjectValues(item.reportFiles)]);
       content += casePhotoPanel(item, "보고서 참고 사진");
+      content += caseServiceReportPanel(item);
     } else if (stepKey === "c15") {
       const settlement = item.settlement || item.settlementEvidence || {};
       content += caseDetailGrid("정산·증빙", [["정산 상태", caseFirst(settlement.statusText, settlement.status)], ["정산 금액", caseMoneyText(caseFirst(settlement.amount, item.settlementAmount))], ["정산일", caseFirst(settlement.settledAt, settlement.date)], ["증빙 수", caseObjectValues(item.evidenceFiles || settlement.files).length ? `${caseObjectValues(item.evidenceFiles || settlement.files).length}건` : ""]]);
@@ -2472,6 +2483,43 @@
     } finally {
       workflowActionKey = "";
       renderCases();
+    }
+  }
+
+  async function createServiceReportPdf(caseKey) {
+    const item = workflowCaseByKey(caseKey);
+    if (!item) return showToast("사건을 찾지 못했습니다.", "error");
+    const picked = await api.pickWorkflowFiles({ kind: "service-report-photo" });
+    if (!picked.ok && !picked.canceled) return showToast(picked.error || "사진을 고르지 못했습니다.", "error");
+    // 사진 없이도 보고서는 만들 수 있다. 취소한 것과 구분해서 다룬다.
+    const files = picked.ok ? picked.files : [];
+    const IMAGE_TYPES = new Set(["image/jpeg", "image/png", "image/webp"]);
+    const attachments = files
+      .filter(file => IMAGE_TYPES.has(String(file.mimeType || "")))
+      .map(file => ({
+        fileName: file.fileName,
+        // 파일명에 '전'/'후'가 있으면 자동으로 나눈다. 없으면 현장 사진으로 둔다.
+        phase: /전|before/iu.test(String(file.fileName || "")) ? "before"
+          : /후|after/iu.test(String(file.fileName || "")) ? "after" : "",
+        dataUrl: `data:${file.mimeType};base64,${file.fileBody}`,
+      }));
+    const building = buildingById(item.crmBuildingId) || {};
+    const customer = customerById(item.crmCustomerId) || {};
+    try {
+      const result = await api.exportServiceReport({
+        case: item,
+        building,
+        customer,
+        company: { name: store.company.name || "BRING Care", phone: store.company.phone, email: store.company.email },
+        attachments,
+        owner: store.settings.owner,
+      });
+      if (result.canceled) return;
+      if (!result.ok) return showToast(result.error || "보고서를 만들지 못했습니다.", "error");
+      const counts = result.photoCounts || {};
+      showToast(`결과보고서를 저장했습니다. 사진 ${counts.embedded || 0}장 포함.`, "success");
+    } catch (error) {
+      showToast(error && error.message || "보고서를 만들지 못했습니다.", "error");
     }
   }
 
@@ -6181,6 +6229,8 @@
     }
     const workflowAction = event.target.closest("[data-workflow-action]");
     if (workflowAction) { if (!canWriteCRM()) return showToast("조회 전용 계정은 민원 업무를 실행할 수 없습니다.", "error"); await executeCaseWorkflowAction(workflowAction); return; }
+    const serviceReport = event.target.closest("[data-case-service-report]");
+    if (serviceReport) { await createServiceReportPdf(serviceReport.dataset.caseServiceReport); return; }
     const caseUpload = event.target.closest("[data-case-upload]");
     if (caseUpload) { if (!canWriteCRM()) return showToast("조회 전용 계정은 파일을 올릴 수 없습니다.", "error"); await uploadCaseFiles(caseUpload); return; }
     const quoteConfirm = event.target.closest("[data-case-quote-confirm]");
