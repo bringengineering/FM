@@ -809,3 +809,5 @@ button:focus-visible,input:focus-visible,select:focus-visible,textarea:focus-vis
 .di-head{display:grid;grid-template-columns:150px 1fr;gap:6px 12px;margin:0;font-size:13px}
 .di-head dt{color:#8B95A1}
 .di-head dd{margin:0;color:#191F28}
+.di-split{display:grid;gap:8px;border:1px solid #E5E8EB;border-radius:10px;padding:12px;background:#F9FAFB}
+.di-split > b{font-size:13px;color:#191F28}

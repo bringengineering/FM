@@ -214,6 +214,28 @@ async function boot(): Promise<Booted> {
         },
       ],
     },
+    assist: {
+      ok: true,
+      requestId: "req-1",
+      result: {
+        text: [
+          "== 서창환 ==",
+          "배경\t엄준식 교수님 건이 아직 안 나갔습니다.",
+          "목표\t결과보고서와 견적서가 나가 있습니다.",
+          "",
+          "업무명\t목적\t완료기준\t산출물\t예상시간\t가중치",
+          "엄준식 교수님 서류 발송\t약속한 것을 보낸다\t보낸 메일이 남으면 끝\t20260911_엄준식_결과보고서.pdf\t3\t100",
+          "== 황우중 ==",
+          "배경\t유입 통로가 좁습니다.",
+          "목표\t카페가 열려 있습니다.",
+          "",
+          "업무명\t목적\t완료기준\t산출물\t예상시간\t가중치",
+          "카페 구축\t광고 데이터로 만든다\t글 5개가 올라가면 끝\t20260911_카페.png\t8\t100",
+          "== 누구인지 모름 ==",
+          "단체 문자 보내기 및 업무 연락처 정리",
+        ].join("\n"),
+      },
+    },
     loadForms: { ...empty, templates: [], entries: [], canEditTemplates: true, canFill: true },
     loadOfficeSnapshot: {
       ok: true,
@@ -1037,18 +1059,11 @@ describe("desktop CRM screens actually render", () => {
     (booted.document.querySelector("[data-wo-import]") as HTMLElement).click();
     await sleep(200);
 
-    // 누구 것인지 안 고르면 가용시간을 모른 채 짜게 된다.
-    // 앞선 검사가 고른 사람이 남아 있을 수 있어 빈 상태로 되돌린다.
-    (booted.document.querySelector("[data-di-uid]") as HTMLSelectElement).value = "";
-    (booted.document.querySelector("[data-di-paste]") as HTMLTextAreaElement).value = "당근이랑 숨고 좀 살려야 함";
-    let before = booted.calls.length;
-    (booted.document.querySelector("[data-di-draft]") as HTMLElement).click();
-    await sleep(250);
-    expect(booted.calls.slice(before).some(call => call.name === "assist"),
-      "받는 사람 없이 짜면 시간을 모른 채 짠다").toBe(false);
-
+    // 받는 사람을 고르면 그 사람 것으로만 짠다. 안 고르면 섞인 뭉치로 보고
+    // 갈라주기로 가는데, 그건 따로 검사한다.
     (booted.document.querySelector("[data-di-uid]") as HTMLSelectElement).value = "u-admin";
-    before = booted.calls.length;
+    (booted.document.querySelector("[data-di-paste]") as HTMLTextAreaElement).value = "당근이랑 숨고 좀 살려야 함";
+    const before = booted.calls.length;
     (booted.document.querySelector("[data-di-draft]") as HTMLElement).click();
     await sleep(400);
     const asked = booted.calls.slice(before).find(call => call.name === "assist");
@@ -1066,6 +1081,63 @@ describe("desktop CRM screens actually render", () => {
     const after = booted.calls.slice(before);
     expect(after.some(call => call.name === "saveWorkOrder")).toBe(false);
     expect(after.some(call => call.name === "sendTelegramDirective")).toBe(false);
+    expect(booted.errors, booted.errors.join(" / ")).toEqual([]);
+  }, 60000);
+  it("여러 사람 것이 섞인 뭉치를 사람별로 갈라 준다", async () => {
+    // 대표가 실제로 쓰는 모양은 한 사람짜리 표가 아니라 카톡에 흘려 적은
+    // 뭉치다 — "현진 저거 마무리 / 우중 카페 만들기" 가 섞여 있다.
+    (booted.document.querySelector("[data-workspace-switch]") as HTMLElement | null)?.click();
+    await sleep(100);
+    const navItem = booted.document.querySelector('.nav-item[data-view="workOrders"]') as HTMLElement;
+    const folder = (navItem.closest("[data-nav-folder]") as HTMLElement).dataset.navFolder as string;
+    (booted.document.querySelector(`[data-workspace-enter-folder="${folder}"]`) as HTMLElement).click();
+    await sleep(150);
+    navItem.click();
+    await sleep(250);
+    (booted.document.querySelector("[data-wo-import]") as HTMLElement).click();
+    await sleep(200);
+
+    // 받는 사람을 안 고른 채로 뭉치를 넣는다.
+    (booted.document.querySelector("[data-di-uid]") as HTMLSelectElement).value = "";
+    (booted.document.querySelector("[data-di-paste]") as HTMLTextAreaElement).value =
+      "현진 CRM 마무리하기\n우중 카페 만들어서 구축하기\n엄준식 교수님 결과보고서 및 견적서 보내드리기\n단체 문자 보내기";
+    const before = booted.calls.length;
+    (booted.document.querySelector("[data-di-draft]") as HTMLElement).click();
+    await sleep(450);
+
+    const asked = booted.calls.slice(before).find(call => call.name === "assist");
+    expect(asked, "AI 통로로 나가야 한다").toBeTruthy();
+    const sent = asked!.input as { task: string; content: string };
+    expect(sent.task, "사람을 안 골랐으면 갈라주기로 간다").toBe("directive_split");
+    // 사람마다 가용시간이 다르다. 한 사람 기준으로 다 짜면 누군가는 넘친다.
+    expect(sent.content).toContain("여기 있는 이름만 쓰세요");
+    expect(sent.content).toContain("서창환");
+    expect(sent.content).toContain("황우중");
+
+    // 갈라낸 사람이 줄로 나와야 한다.
+    const tabs = [...booted.document.querySelectorAll("[data-di-person]")] as HTMLElement[];
+    expect(tabs.length, "두 사람으로 갈려야 한다").toBe(2);
+    expect(tabs.map(tab => tab.textContent)).toEqual(["서창환", "황우중"]);
+    // 누구 것인지 모르는 줄을 아무에게나 붙이지 않는다.
+    const shown = (booted.document.querySelector(".di-panel") as HTMLElement).textContent || "";
+    expect(shown).toContain("누구 것인지 모르는 줄");
+    expect(shown).toContain("단체 문자 보내기 및 업무 연락처 정리");
+
+    // 첫 사람이 이미 올라와 있어야 한다.
+    expect((booted.document.querySelector("[data-di-paste]") as HTMLTextAreaElement).value).toContain("엄준식 교수님 서류 발송");
+    expect((booted.document.querySelector("[data-di-uid]") as HTMLSelectElement).value).toBe("u-admin");
+    expect(shown).toContain("엄준식 교수님 서류 발송");
+
+    // 두 번째 사람으로 옮기면 그 사람 것만 보인다.
+    tabs[1].click();
+    await sleep(250);
+    const second = (booted.document.querySelector(".di-panel") as HTMLElement).textContent || "";
+    expect(second).toContain("카페 구축");
+    expect(second, "한 화면에 둘을 다 펼치면 첫 사람만 읽고 만들기를 누른다").not.toContain("엄준식 교수님 서류 발송");
+    expect((booted.document.querySelector("[data-di-uid]") as HTMLSelectElement).value).toBe("u-hwang");
+
+    // 갈라 놓기만으로 아무것도 만들지 않는다.
+    expect(booted.calls.slice(before).some(call => call.name === "saveWorkOrder")).toBe(false);
     expect(booted.errors, booted.errors.join(" / ")).toEqual([]);
   }, 60000);
 });

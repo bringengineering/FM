@@ -213,12 +213,84 @@
     return { header, tasks, unread: unread.filter(Boolean), warnings, columns };
   }
 
+  // 사람별로 갈라진 글을 토막으로 나눈다.
+  //
+  // 대표가 실제로 쓰는 모양은 한 사람짜리 표가 아니라 카톡에 흘려 적은
+  // 뭉치다 — "현진 저거 마무리하기 / 우중 카페 만들기" 가 섞여 있다.
+  // AI 가 == 이름 == 으로 갈라 주면 여기서 사람별로 나눠 담는다.
+  //
+  // **누구 것인지 모르는 줄을 아무에게나 붙이지 않는다.** 짐작해서 붙이면
+  // 시킨 적 없는 일이 지시가 되어 그 사람에게 나간다. 그런 줄은 따로 모아
+  // 화면에 보여 주고, 대표가 직접 사람을 정하게 한다.
+  const UNKNOWN_MARK = "누구인지 모름";
+  const BLOCK_PATTERN = /^\s*={2,}\s*(.+?)\s*={2,}\s*$/u;
+
+  function splitByPerson(input) {
+    const raw = String(input == null ? "" : input);
+    const blocks = [];
+    let current = null;
+    raw.split(/\r?\n/u).forEach(line => {
+      const found = BLOCK_PATTERN.exec(line);
+      if (found) {
+        current = { name: text(found[1], 80), lines: [] };
+        blocks.push(current);
+        return;
+      }
+      if (current) current.lines.push(line);
+      // 첫 == 이름 == 앞에 있는 줄은 누구 것인지 정해지지 않았다. 버리지 않고
+      // 모름 칸으로 보낸다.
+      else if (text(line, 500)) {
+        if (!blocks.length || blocks[0].name !== UNKNOWN_MARK) {
+          blocks.unshift({ name: UNKNOWN_MARK, lines: [] });
+        }
+        blocks[0].lines.push(line);
+      }
+    });
+    const people = blocks
+      .map(block => ({ name: block.name, text: block.lines.join("\n").trim() }))
+      .filter(block => block.name);
+    return {
+      people: people.filter(block => block.name !== UNKNOWN_MARK && block.text),
+      unknown: people.filter(block => block.name === UNKNOWN_MARK)
+        .flatMap(block => block.text.split(/\r?\n/u))
+        .map(line => text(line, 300))
+        .filter(Boolean),
+    };
+  }
+
   // AI 에게 넘길 상황. 대표가 대충 적은 글만 주면 AI 는 사람이 몇 시간을
   // 낼 수 있는지도, 지금 무엇을 물고 있는지도 모르고 짠다. 그러면 22시간
   // 낼 수 있는 사람에게 40시간짜리 주를 짜 준다.
   //
   // 여기서 만드는 숫자는 없다. 가용시간은 capacity 가, 물고 있는 지시는
   // 업무지시가 이미 센 것을 옮길 뿐이다.
+  // 여러 사람 것이 섞인 뭉치를 넘길 때 쓰는 상황. 사람마다 가용시간이 달라서
+  // 한 사람 기준으로 다 짜면 누군가는 반드시 넘친다.
+  function splitContext(input) {
+    const settings = input && typeof input === "object" ? input : {};
+    const lines = [];
+    if (text(settings.weekStart, 10)) lines.push(`이 주의 월요일: ${text(settings.weekStart, 10)}`);
+    lines.push("사람 목록 — 여기 있는 이름만 쓰세요:");
+    rows(settings.people).forEach(person => {
+      const name = text(person && person.name, 80);
+      if (!name) return;
+      const hours = Number(person && person.capacityHours);
+      const open = rows(person && person.openTitles).map(title => text(title, 120)).filter(Boolean);
+      const parts = [`- ${name}`];
+      parts.push(Number.isFinite(hours) && hours > 0
+        ? `이번 주 낼 수 있는 시간 ${hours}시간`
+        : "가용시간 미등록 — 보수적으로 잡으세요");
+      if (open.length) parts.push(`이미 물고 있는 일: ${open.slice(0, 8).join(", ")}`);
+      lines.push(parts.join(" / "));
+    });
+    const projects = rows(settings.projects).map(project => text(project && project.name, 120)).filter(Boolean);
+    if (projects.length) lines.push(`우리 프로젝트: ${projects.join(", ")}`);
+    lines.push("");
+    lines.push("대표가 적은 뭉치:");
+    lines.push(text(settings.notes, 8000) || "(비어 있음)");
+    return lines.join("\n");
+  }
+
   function draftContext(input) {
     const settings = input && typeof input === "object" ? input : {};
     const lines = [];
@@ -313,6 +385,9 @@
 
   return Object.freeze({
     draftContext,
+    splitContext,
+    splitByPerson,
+    UNKNOWN_MARK,
     HEADER_WORDS,
     COLUMN_WORDS,
     splitCells,
