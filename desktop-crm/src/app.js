@@ -198,6 +198,7 @@
     officeLeave: ["신청·승인과 남은 일수", "연차"],
     officeMembers: ["입사일·계약형태·근로계약서", "인사기록"],
     workOrders: ["왜·무엇을·완료 기준을 적어 시킵니다", "업무지시"],
+    objectives: ["이번 분기에 무엇을 이루려 하는가", "분기 목표"],
     forms: ["점검표·확인서를 만들고 채웁니다", "서식"],
     supplies: ["지금 몇 개 남았는지 한 장에서", "비품·자재"],
     deliveryFlow: ["견적서에서 입금까지 어디까지 왔는지", "수주 진행"],
@@ -1515,6 +1516,7 @@
     else if (currentView === "cases") renderCases();
     else if (currentView === "payments") renderPayments();
     else if (currentView === "forms") renderForms();
+    else if (currentView === "objectives") renderObjectives();
     else if (currentView === "workOrders") renderWorkOrders();
     else if (currentView === "supplies") renderSupplies();
     else if (currentView === "deliveryFlow") renderDeliveryFlows();
@@ -6594,6 +6596,289 @@
     </section>`;
   }
 
+  // --- 분기 목표 (OKR · RACI) ---
+  //
+  // 대표가 바란 것은 도구가 아니라 경험이다. "팀원들에게 대기업 인사구조
+  // 업무 체계 프로젝트 체계를 경험해주고 싶은거야."
+  //
+  // 그래서 이 화면이 답하는 질문은 두 개다.
+  //
+  //   1. 이번 분기에 무엇을 이루려 하고, 지금 어디까지 왔나
+  //   2. 지금 우리가 하는 일 중에 무엇이 그 목표와 상관없나
+  //
+  // 두 번째가 더 중요하다. 첫 번째만 보여 주는 도구는 많고, 그런 도구는
+  // 목표판을 예쁘게 채워 두고 실제 일은 따로 하는 회사를 만든다.
+  let okrState = {
+    objectives: [], admin: false, canWork: false, uid: "",
+    loaded: false, loading: false, error: "",
+    quarter: "", editing: null, busyId: "",
+  };
+
+  const okrCore = () => window.BringOkrCore;
+
+  async function loadObjectives() {
+    if (okrState.loading) return;
+    okrState.loading = true;
+    okrState.error = "";
+    if (currentView === "objectives") renderObjectives();
+    try {
+      const data = await api.loadObjectives();
+      okrState.objectives = Array.isArray(data && data.objectives) ? data.objectives : [];
+      okrState.admin = data && data.admin === true;
+      okrState.canWork = data && data.canWork === true;
+      okrState.uid = String((data && data.uid) || "");
+      okrState.loaded = true;
+    } catch (error) {
+      okrState.error = error && error.message || "분기 목표를 불러오지 못했습니다.";
+    } finally {
+      okrState.loading = false;
+      updateObjectiveBadge();
+      if (currentView === "objectives") renderObjectives();
+    }
+  }
+
+  // 사이드바 숫자는 "손봐야 할 목표" 다. 목표 수를 세면 늘 같은 숫자라
+  // 아무도 안 본다.
+  function updateObjectiveBadge() {
+    const badge = document.getElementById("navObjectiveCount");
+    if (!badge) return;
+    const O = okrCore();
+    if (!O) { badge.hidden = true; return; }
+    const view = O.quarterView({
+      quarter: okrState.quarter || O.quarterOf(todayKey()),
+      objectives: okrState.objectives, projects: [], orders: [],
+    });
+    const count = view.cards.filter(card => card.objective.status === "active" && card.grade.tone === "poor").length;
+    badge.textContent = String(count);
+    badge.hidden = count === 0;
+  }
+
+  function okrQuarterChoices(O) {
+    const now = O.quarterOf(todayKey());
+    const seen = new Set(okrState.objectives.map(item => item.quarter).filter(Boolean));
+    seen.add(now);
+    return [...seen].sort().reverse();
+  }
+
+  function renderObjectives() {
+    const O = okrCore();
+    if (!O) { main.innerHTML = `<section class="operations-hero"><div><h2>분기 목표</h2><p>모듈을 불러오지 못했습니다.</p></div></section>`; return; }
+    if (!okrState.loaded && !okrState.loading && !okrState.error) void loadObjectives();
+    if (!workOrderState.loaded && !workOrderState.loading) void loadWorkOrders();
+
+    const quarter = okrState.quarter || O.quarterOf(todayKey());
+    const view = O.quarterView({
+      quarter,
+      objectives: okrState.objectives,
+      projects: workOrderState.projects || [],
+      orders: workOrderState.orders || [],
+    });
+    const choices = okrQuarterChoices(O);
+
+    main.innerHTML = `
+      <section class="operations-hero">
+        <div>
+          <span>${esc(quarter)} · ${esc(view.range.from)} ~ ${esc(view.range.to)}</span>
+          <h2>이번 분기에 무엇을 이루려 하는가</h2>
+          <p>목표(Objective)는 말로 적고, 핵심결과(KR)는 숫자로 잽니다. 진척도는 사람이 적지 않고 지금 값에서 셉니다.</p>
+        </div>
+        <div class="okr-hero-actions">
+          <select data-okr-quarter>${choices.map(item => `<option value="${esc(item)}"${item === quarter ? " selected" : ""}>${esc(item)}</option>`).join("")}</select>
+          ${okrState.admin ? `<button type="button" class="primary-button" data-okr-new>새 목표</button>` : ""}
+        </div>
+      </section>
+      ${okrState.error ? `<div class="okr-error" role="alert">${esc(okrState.error)}</div>` : ""}
+      <div class="operations-kpis">
+        <div class="operations-kpi"><span>진행 중인 목표</span><b>${view.activeCount}개</b><small>전체 ${view.objectiveCount}개</small></div>
+        <div class="operations-kpi" style="--wash:#eef5ff"><span>분기 진척도</span><b>${Math.round(view.average * 100)}%</b><small>${esc(view.grade.label)}</small></div>
+        <div class="operations-kpi${view.looseProjects.length ? " " : ""}" style="--wash:#fff9eb"><span>목표에 안 붙은 프로젝트</span><b>${view.looseProjects.length}개</b><small>${view.looseProjects.length ? "왜 하는지 적어야 합니다" : "다 이어져 있습니다"}</small></div>
+        <div class="operations-kpi" style="--wash:#fff2f3"><span>프로젝트에 안 붙은 업무</span><b>${view.looseOrders.length}건</b><small>${view.looseOrders.length ? "어디에 닿는지 모릅니다" : "다 이어져 있습니다"}</small></div>
+      </div>
+      ${okrState.editing ? objectiveEditor(O) : ""}
+      ${view.cards.length ? view.cards.map(card => objectiveCard(O, card)).join("") : `<div class="office-empty">${esc(quarter)} 에 세운 목표가 없습니다.${okrState.admin ? " 새 목표를 눌러 시작하세요." : ""}</div>`}
+      ${okrLooseBoard(view)}
+      ${okrRaciBoard(O)}
+    `;
+  }
+
+  function objectiveCard(O, card) {
+    const objective = card.objective;
+    const bars = card.keyResults.map(entry => {
+      const kr = entry.keyResult;
+      const percent = Math.min(120, Math.round(entry.score * 100));
+      return `<li class="okr-kr">
+        <div class="okr-kr-head">
+          <b>${esc(kr.title)}</b>
+          <span>${esc(O.formatValue(kr.current, kr.unit))} / ${esc(O.formatValue(kr.target, kr.unit))}</span>
+        </div>
+        <div class="okr-bar"><i style="width:${percent}%" class="${entry.score >= 1 ? "is-over" : entry.score >= 0.7 ? "is-good" : entry.score >= 0.4 ? "is-fair" : "is-poor"}"></i></div>
+        <div class="okr-kr-foot">
+          <small>${esc(kr.ownerName || "담당 없음")}</small>
+          ${okrState.canWork ? `<button type="button" class="text-button" data-okr-kr-edit="${esc(kr.id)}" data-okr-objective="${esc(objective.id)}">값 올리기</button>` : ""}
+        </div>
+      </li>`;
+    }).join("");
+    return `<section class="office-panel okr-card">
+      <header>
+        <span class="eyebrow">${esc(O.RACI_ROLES ? "" : "")}${esc(objective.status === "active" ? "진행" : objective.status === "draft" ? "초안" : "마감")} · ${esc(objective.ownerName || "담당 없음")}</span>
+        <h3>${esc(objective.title)}</h3>
+        <div class="okr-score okr-tone-${esc(card.grade.tone)}"><b>${Math.round(card.score * 100)}%</b><small>${esc(card.grade.label)}</small></div>
+      </header>
+      <div class="panel-body">
+        ${objective.why ? `<p class="okr-why">${esc(objective.why)}</p>` : ""}
+        <ul class="okr-krs">${bars}</ul>
+        <div class="okr-links">
+          <span>프로젝트 ${card.projects.length}개</span>
+          <span>업무 ${card.orderCount}건${card.openCount ? ` · 진행 ${card.openCount}건` : ""}</span>
+          ${card.projects.map(project => `<em>${esc(project.name)}</em>`).join("")}
+        </div>
+        ${okrState.admin ? `<div class="okr-card-actions"><button type="button" class="mini-button" data-okr-edit="${esc(objective.id)}">고치기</button></div>` : ""}
+      </div>
+    </section>`;
+  }
+
+  // 목표에 안 붙은 것들. 이 판이 이 화면의 요지다.
+  function okrLooseBoard(view) {
+    if (!view.looseProjects.length && !view.looseOrders.length) return "";
+    return `<section class="office-panel okr-loose">
+      <header>
+        <span class="eyebrow">이어지지 않은 일</span>
+        <h3>이 일들은 어느 목표에 닿는지 적혀 있지 않습니다</h3>
+      </header>
+      <div class="panel-body">
+        <p class="office-muted">목표판만 예쁘게 채워 두고 실제 일은 따로 하는 회사가 되지 않으려면, 이 칸이 비어 있어야 합니다.</p>
+        ${view.looseProjects.length ? `<div class="okr-loose-group"><b>목표에 안 붙은 프로젝트</b><ul>${view.looseProjects.map(item => `<li>${esc(item.name || item.id)}</li>`).join("")}</ul></div>` : ""}
+        ${view.looseOrders.length ? `<div class="okr-loose-group"><b>프로젝트에 안 붙은 업무</b><ul>${view.looseOrders.slice(0, 12).map(item => `<li>${esc(item.title || item.id)}</li>`).join("")}${view.looseOrders.length > 12 ? `<li class="office-muted">… ${view.looseOrders.length - 12}건 더</li>` : ""}</ul></div>` : ""}
+      </div>
+    </section>`;
+  }
+
+  // 누가 무엇을 쥐고 있는가. 책임이 한 사람에게 몰려 있으면 그 사람이
+  // 병목이고, 그건 팀원에게 책임을 나눠 주지 못했다는 뜻이다.
+  function okrRaciBoard(O) {
+    const orders = workOrderState.orders || [];
+    const members = workOrderState.members || [];
+    if (!members.length) return "";
+    const load = O.raciLoad(orders, members);
+    const anyRaci = load.some(row => row.R || row.A || row.C || row.I);
+    return `<section class="office-panel okr-raci">
+      <header>
+        <span class="eyebrow">RACI · 역할 배정</span>
+        <h3>누가 하고, 누가 책임지는가</h3>
+      </header>
+      <div class="panel-body">
+        <ul class="okr-raci-legend">${O.RACI_ROLES.map(role => `<li><b>${esc(role.key)}</b> ${esc(role.label)} — ${esc(role.meaning)}</li>`).join("")}</ul>
+        ${anyRaci ? `<div class="office-table-wrap"><table class="office-table">
+          <thead><tr><th>사람</th><th>실무 R</th><th>책임 A</th><th>자문 C</th><th>공유 I</th></tr></thead>
+          <tbody>${load.map(row => `<tr><td class="office-user-cell">${esc(row.name)}</td><td>${row.R}</td><td class="${row.A >= 5 ? "okr-heavy" : ""}">${row.A}</td><td>${row.C}</td><td>${row.I}</td></tr>`).join("")}</tbody>
+        </table></div>` : `<p class="office-empty">아직 역할을 배정한 업무가 없습니다. 업무지시에서 실무자(R)와 책임자(A)를 정해 주세요.</p>`}
+      </div>
+    </section>`;
+  }
+
+  function objectiveEditor(O) {
+    const draft = O.normalizeObjective(okrState.editing);
+    const members = workOrderState.members || [];
+    const projects = workOrderState.projects || [];
+    const krRows = draft.keyResults.map((kr, index) => `<div class="okr-kr-row" data-okr-kr-row="${index}">
+      <input type="text" name="krTitle_${index}" maxlength="200" value="${esc(kr.title)}" placeholder="무엇을 얼마나 (예: 계단청소 계약 건수)" required>
+      <select name="krUnit_${index}">${O.UNITS.map(unit => `<option value="${esc(unit.key)}"${unit.key === kr.unit ? " selected" : ""}>${esc(unit.label)}</option>`).join("")}</select>
+      <input type="number" name="krBaseline_${index}" step="any" value="${kr.baseline}" placeholder="지금" title="지금 값">
+      <input type="number" name="krTarget_${index}" step="any" value="${kr.target}" placeholder="목표" title="목표 값" required>
+      <select name="krOwner_${index}"><option value="">담당 없음</option>${members.map(member => `<option value="${esc(member.uid)}"${member.uid === kr.ownerUid ? " selected" : ""}>${esc(member.displayName)}</option>`).join("")}</select>
+      <button type="button" class="text-button" data-okr-kr-drop="${index}">빼기</button>
+    </div>`).join("");
+    return `<form class="wo-editor okr-editor" data-okr-form>
+      <h3>${esc(draft.createdAt ? "목표 고치기" : "새 목표")}</h3>
+      <label class="wide"><span>목표 (말로 적습니다)</span><input type="text" name="title" maxlength="200" value="${esc(draft.title)}" required placeholder="예: 원주에서 계단청소를 자리잡힌 일로 만든다"></label>
+      <label><span>분기</span><input type="text" name="quarter" value="${esc(draft.quarter || O.quarterOf(todayKey()))}" pattern="\\d{4}-Q[1-4]" required></label>
+      <label><span>책임자</span><select name="ownerUid" required><option value="">고르세요</option>${members.map(member => `<option value="${esc(member.uid)}"${member.uid === draft.ownerUid ? " selected" : ""}>${esc(member.displayName)}</option>`).join("")}</select></label>
+      <label><span>트랙</span><select name="track">${(window.BringProjectCore ? window.BringProjectCore.TRACKS : []).map(track => `<option value="${esc(track.key)}"${track.key === draft.track ? " selected" : ""}>${esc(track.label)}</option>`).join("")}</select></label>
+      <label><span>상태</span><select name="status">${O.OBJECTIVE_STATUSES.map(item => `<option value="${esc(item.key)}"${item.key === draft.status ? " selected" : ""}>${esc(item.label)}</option>`).join("")}</select></label>
+      <label class="wide"><span>왜 이것을 하는가</span><textarea name="why" rows="2" maxlength="1000">${esc(draft.why)}</textarea></label>
+      <div class="wide okr-kr-editor">
+        <div class="okr-kr-editor-head"><b>핵심결과 (숫자로 잽니다)</b><button type="button" class="mini-button" data-okr-kr-add>+ 핵심결과</button></div>
+        ${krRows || `<p class="office-muted">핵심결과가 없으면 분기 끝에 다 했는지 아무도 모릅니다. 하나 이상 적어 주세요.</p>`}
+      </div>
+      <label class="wide"><span>이 목표에 붙는 프로젝트</span><select name="projectIds" multiple size="4">${projects.map(project => `<option value="${esc(project.id)}"${draft.projectIds.includes(project.id) ? " selected" : ""}>${esc(project.name)}</option>`).join("")}</select></label>
+      <div class="wo-editor-actions">
+        <button class="primary-button" type="submit"${okrState.busyId ? " disabled" : ""}>저장</button>
+        <button class="secondary-button" type="button" data-okr-cancel>취소</button>
+      </div>
+    </form>`;
+  }
+
+  function readObjectiveForm(form) {
+    const O = okrCore();
+    const raw = Object.fromEntries(new FormData(form).entries());
+    const previous = O.normalizeObjective(okrState.editing);
+    const members = workOrderState.members || [];
+    const nameOf = uid => (members.find(member => member.uid === uid) || {}).displayName || "";
+    const keyResults = previous.keyResults.map((kr, index) => Object.assign({}, kr, {
+      title: String(raw[`krTitle_${index}`] || ""),
+      unit: String(raw[`krUnit_${index}`] || kr.unit),
+      baseline: Number(raw[`krBaseline_${index}`] || 0),
+      target: Number(raw[`krTarget_${index}`] || 0),
+      ownerUid: String(raw[`krOwner_${index}`] || ""),
+      ownerName: nameOf(String(raw[`krOwner_${index}`] || "")),
+    }));
+    const selected = [...form.querySelectorAll('[name="projectIds"] option:checked')].map(option => option.value);
+    return O.normalizeObjective(Object.assign({}, previous, {
+      id: previous.id || `ob_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`,
+      title: String(raw.title || ""),
+      quarter: String(raw.quarter || ""),
+      ownerUid: String(raw.ownerUid || ""),
+      ownerName: nameOf(String(raw.ownerUid || "")),
+      track: String(raw.track || ""),
+      status: String(raw.status || "draft"),
+      why: String(raw.why || ""),
+      keyResults,
+      projectIds: selected,
+    }));
+  }
+
+  async function saveObjectiveFromForm(form) {
+    const O = okrCore();
+    if (!O || okrState.busyId) return;
+    const draft = readObjectiveForm(form);
+    const checked = O.validateObjective(draft);
+    if (!checked.ok) { showToast(checked.error, "error"); return; }
+    okrState.busyId = draft.id;
+    renderObjectives();
+    try {
+      await api.saveObjective(checked.objective);
+      okrState.editing = null;
+      okrState.loaded = false;
+      showToast("목표를 저장했습니다.", "success");
+      await loadObjectives();
+    } catch (error) {
+      showToast(error && error.message || "저장하지 못했습니다.", "error");
+    } finally {
+      okrState.busyId = "";
+      renderObjectives();
+    }
+  }
+
+  async function bumpKeyResult(objectiveId, keyResultId) {
+    const O = okrCore();
+    if (!O) return;
+    const objective = okrState.objectives.find(item => item.id === objectiveId);
+    const kr = objective && O.normalizeObjective(objective).keyResults.find(item => item.id === keyResultId);
+    if (!kr) return;
+    const typed = window.prompt(`${kr.title}\n지금 값을 적어 주세요. (목표 ${O.formatValue(kr.target, kr.unit)})`, String(kr.current));
+    if (typed === null) return;
+    const current = Number(typed);
+    if (!Number.isFinite(current)) { showToast("숫자로 적어 주세요.", "error"); return; }
+    try {
+      await api.updateKeyResult({ objectiveId, keyResultId, current });
+      okrState.loaded = false;
+      showToast("값을 올렸습니다.", "success");
+      await loadObjectives();
+    } catch (error) {
+      showToast(error && error.message || "올리지 못했습니다.", "error");
+    }
+  }
+
   // --- 텔레그램 알림 ---
   //
   // 화면에 "지연 09.04" 라고 떠 있어도 그 화면을 열어야 보인다. 열지 않으면
@@ -8277,6 +8562,52 @@
       if (found) { reportState.draft = found; reportState.selectedId = found.id; renderWorkReports(); }
       return;
     }
+    if (event.target.closest("[data-okr-new]")) {
+      const O = okrCore();
+      // 빈 폼을 주면 사람은 핵심결과 칸을 안 채우고 저장부터 누른다.
+      // 한 줄을 깔아 두면 무엇을 적어야 하는지 보인다.
+      if (O) {
+        okrState.editing = O.normalizeObjective({
+          quarter: okrState.quarter || O.quarterOf(todayKey()),
+          keyResults: [{ id: `kr_${Date.now().toString(36)}`, unit: "count" }],
+        });
+        renderObjectives();
+      }
+      return;
+    }
+    const okrEdit = event.target.closest("[data-okr-edit]");
+    if (okrEdit) {
+      const O = okrCore();
+      const found = okrState.objectives.find(item => item.id === okrEdit.dataset.okrEdit);
+      if (O && found) { okrState.editing = O.normalizeObjective(found); renderObjectives(); }
+      return;
+    }
+    if (event.target.closest("[data-okr-cancel]")) { okrState.editing = null; renderObjectives(); return; }
+    if (event.target.closest("[data-okr-kr-add]")) {
+      const O = okrCore();
+      const addForm = event.target.closest("[data-okr-form]");
+      // 지금 화면에 적어 둔 것을 잃지 않고 한 줄만 늘린다.
+      if (O && addForm) {
+        const draft = readObjectiveForm(addForm);
+        draft.keyResults.push(O.normalizeKeyResult({ id: `kr_${Date.now().toString(36)}_${draft.keyResults.length}`, unit: "count" }));
+        okrState.editing = draft;
+        renderObjectives();
+      }
+      return;
+    }
+    const krDrop = event.target.closest("[data-okr-kr-drop]");
+    if (krDrop) {
+      const dropForm = event.target.closest("[data-okr-form]");
+      if (dropForm) {
+        const draft = readObjectiveForm(dropForm);
+        draft.keyResults.splice(Number(krDrop.dataset.okrKrDrop), 1);
+        okrState.editing = draft;
+        renderObjectives();
+      }
+      return;
+    }
+    const krEdit = event.target.closest("[data-okr-kr-edit]");
+    if (krEdit) { void bumpKeyResult(krEdit.dataset.okrObjective, krEdit.dataset.okrKrEdit); return; }
     if (event.target.closest("[data-telegram-send]")) { void sendTelegramNow(true); return; }
     if (event.target.closest("[data-telegram-forget]")) { void forgetTelegram(); return; }
     if (event.target.closest("[data-report-drive-scan]")) { void scanReportDriveFolder(); return; }
@@ -11666,6 +11997,9 @@
       buildingDocsState.buildingId = record.buildingId;
       logAudit({ category: "문서", targetType: "건물 서류", targetId: record.id, targetLabel: record.title || record.driveFileId, action: "건물 문서함에 연결", reason: BuildingDocs.typeLabel(record.docType) });
       await commitSharedFormMutation({ form, beforeStore, onSaved: () => { closeModal(); renderBuildingDocuments(); showToast("서류를 연결했습니다. ‘최신 확인’ 을 누르면 Drive 에서 제목을 가져옵니다.", "success"); } });
+    } else if (form.matches("[data-okr-form]")) {
+      await saveObjectiveFromForm(form);
+      return;
     } else if (form.matches("[data-telegram-form]")) {
       await saveTelegramFromForm(form);
       return;
@@ -11748,6 +12082,11 @@
     if (direction && deleteCustomerPhoneDigit(event.target, direction)) event.preventDefault();
   });
   document.addEventListener("input", event => {
+    if (event.target.matches("[data-okr-quarter]")) {
+      okrState.quarter = String(event.target.value || "");
+      renderObjectives();
+      return;
+    }
     if (event.target.matches("[data-report-drive-id]")) {
       // 링크째로 붙여 넣어도 되게 ID 를 떼어낸다. 다시 그리지 않는다 —
       // 그리면 커서가 튄다. 단추만 열고 닫는다.

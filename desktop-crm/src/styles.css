@@ -617,3 +617,65 @@ button:focus-visible,input:focus-visible,select:focus-visible,textarea:focus-vis
   white-space: pre-wrap;
   word-break: break-word;
 }
+
+/* 분기 목표 (OKR · RACI) */
+.okr-hero-actions { display: flex; gap: 8px; align-items: center; }
+.okr-hero-actions select {
+  min-height: 40px; padding: 0 12px;
+  border: 1px solid #E5E8EB; border-radius: 10px;
+  background: #fff; color: #4E5968; font-size: 13px; font-weight: 700;
+}
+.okr-error { margin: 0 0 14px; padding: 11px 13px; border-radius: 10px; background: #FEF2F3; color: #C6535F; font-size: 13px; }
+.okr-card header { position: relative; }
+.okr-score { position: absolute; top: 0; right: 0; text-align: right; }
+.okr-score b { display: block; font-size: 21px; letter-spacing: -.03em; }
+.okr-score small { display: block; margin-top: 2px; font-size: 11px; }
+.okr-tone-good b { color: #00875A; } .okr-tone-good small { color: #00875A; }
+.okr-tone-over b { color: #C77A00; } .okr-tone-over small { color: #C77A00; }
+.okr-tone-fair b { color: #3182F6; } .okr-tone-fair small { color: #4E5968; }
+.okr-tone-poor b { color: #C6535F; } .okr-tone-poor small { color: #C6535F; }
+.okr-why { margin: 0 0 12px; color: #4E5968; font-size: 13px; line-height: 1.65; }
+.okr-krs { display: grid; gap: 12px; margin: 0; padding: 0; list-style: none; }
+.okr-kr-head { display: flex; justify-content: space-between; gap: 10px; align-items: baseline; }
+.okr-kr-head b { font-size: 13px; color: #191F28; }
+.okr-kr-head span { color: #4E5968; font-size: 12px; white-space: nowrap; }
+.okr-bar { height: 8px; margin: 6px 0 4px; border-radius: 999px; background: #F1F3F5; overflow: hidden; }
+.okr-bar i { display: block; height: 100%; border-radius: 999px; }
+.okr-bar i.is-good { background: #00875A; }
+.okr-bar i.is-over { background: #C77A00; }
+.okr-bar i.is-fair { background: #3182F6; }
+.okr-bar i.is-poor { background: #C6535F; }
+.okr-kr-foot { display: flex; justify-content: space-between; align-items: center; }
+.okr-kr-foot small { color: #8B95A1; font-size: 11px; }
+.okr-links { display: flex; flex-wrap: wrap; gap: 7px; margin-top: 14px; align-items: center; }
+.okr-links span { color: #4E5968; font-size: 12px; }
+.okr-links em {
+  padding: 3px 9px; border-radius: 999px; background: #EAF2FE;
+  color: #3182F6; font-size: 11px; font-style: normal;
+}
+.okr-card-actions { margin-top: 12px; }
+.okr-loose .panel-body > p { margin: 0 0 12px; }
+.okr-loose-group { margin-bottom: 12px; }
+.okr-loose-group b { display: block; margin-bottom: 5px; color: #191F28; font-size: 12px; }
+.okr-loose-group ul { margin: 0; padding-left: 18px; color: #4E5968; font-size: 12px; line-height: 1.8; }
+.okr-raci-legend { margin: 0 0 12px; padding: 0; list-style: none; display: grid; gap: 4px; }
+.okr-raci-legend li { color: #4E5968; font-size: 12px; }
+.okr-raci-legend b {
+  display: inline-block; width: 18px; margin-right: 5px;
+  color: #3182F6; font-size: 12px; text-align: center;
+}
+.okr-heavy { color: #C6535F; font-weight: 800; }
+.okr-kr-editor { border: 1px solid #E5E8EB; border-radius: 10px; padding: 11px 13px; background: #FBFCFD; }
+.okr-kr-editor-head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 9px; }
+.okr-kr-editor-head b { font-size: 12px; color: #191F28; }
+.okr-kr-row {
+  display: grid;
+  grid-template-columns: minmax(0, 2fr) 72px 84px 84px minmax(0, 1fr) auto;
+  gap: 6px; align-items: center; margin-bottom: 7px;
+}
+.okr-kr-row input, .okr-kr-row select {
+  min-width: 0; height: 36px; padding: 0 9px;
+  border: 1px solid #E5E8EB; border-radius: 8px; font-size: 12px;
+}
+@media (max-width: 900px) { .okr-kr-row { grid-template-columns: 1fr 1fr; } }
+.okr-editor .okr-kr-editor { margin-top: 4px; }
