@@ -113,6 +113,9 @@ let fieldLogoutInFlight = null;
 let fieldRecoveryInFlight = null;
 let fieldReauthInFlight = null;
 let fieldReauthAbortController = null;
+// Drive 연결도 창을 닫으면 그 자리에서 끝나야 한다. 안 그러면 콜백을 기다리는
+// 로컬 서버가 3분 동안 살아 있고, 다시 누를수록 쌓인다.
+let driveConnectAbortController = null;
 let fieldReauthenticationActive = false;
 let fieldBrowserAuthQuarantined = false;
 let fieldReauthenticationGeneration = 0;
@@ -281,6 +284,7 @@ async function openCrmGoogleAuth(url) {
 
   closeCrmAuthWindow();
   const reauthAbortController = fieldReauthAbortController;
+  const driveAbortController = driveConnectAbortController;
   crmAuthWindow = new BrowserWindow({
     parent: mainWindow || undefined,
     autoHideMenuBar: true,
@@ -314,6 +318,9 @@ async function openCrmGoogleAuth(url) {
     if (crmAuthWindow === authWindow) crmAuthWindow = null;
     if (reauthAbortController && fieldReauthAbortController === reauthAbortController) {
       reauthAbortController.abort();
+    }
+    if (driveAbortController && driveConnectAbortController === driveAbortController) {
+      driveAbortController.abort();
     }
   });
   await crmAuthWindow.loadURL(target.toString());
@@ -3067,8 +3074,16 @@ function driveSessionView() {
 async function connectDrive() {
   if (!authState().user) throw Object.assign(new Error("다시 로그인해 주세요."), { code: "AUTH_REQUIRED" });
   if (!remoteClient) throw Object.assign(new Error("로그인 모듈을 사용할 수 없습니다."), { code: "DRIVE_CONNECT_FAILED" });
-  driveSession = await remoteClient.receiveDriveToken();
-  return driveSessionView();
+  // 앞선 시도가 아직 콜백을 기다리고 있으면 먼저 끊는다. 안 그러면 서버가 쌓인다.
+  if (driveConnectAbortController) driveConnectAbortController.abort();
+  const controller = new AbortController();
+  driveConnectAbortController = controller;
+  try {
+    driveSession = await remoteClient.receiveDriveToken({ signal: controller.signal });
+    return driveSessionView();
+  } finally {
+    if (driveConnectAbortController === controller) driveConnectAbortController = null;
+  }
 }
 
 function disconnectDrive() {

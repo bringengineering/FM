@@ -174,3 +174,25 @@ test("Drive 가 여는 주소와 허용 목록이 실제로 맞는다", () => {
     assert.equal(crmAuthPageKind(openedUrl), "drive", `허용 목록이 ${openedUrl} 를 거절한다`);
   });
 });
+
+test("창을 닫으면 Drive 연결도 그 자리에서 끝난다", () => {
+  // 창만 닫히고 기다리는 쪽이 살아 있으면, 콜백을 받는 로컬 서버가 3분 동안
+  // 남고 다시 누를수록 쌓인다. 사용자는 멈춘 줄도 모른다.
+  const connect = mainSource.slice(
+    mainSource.indexOf("async function connectDrive"),
+    mainSource.indexOf("async function connectDrive") + 900,
+  );
+  assert.match(connect, /receiveDriveToken\(\{ signal: controller\.signal \}\)/u, "신호를 넘겨야 한다");
+  // 다시 누르면 앞선 시도를 먼저 끊는다.
+  assert.match(connect, /if \(driveConnectAbortController\) driveConnectAbortController\.abort\(\)/u);
+  // 끝나면 치운다.
+  assert.match(connect, /finally \{[\s\S]*driveConnectAbortController = null/u);
+
+  // 창이 닫힐 때 실제로 그 신호를 끊는지.
+  const opener = mainSource.slice(
+    mainSource.indexOf("async function openCrmGoogleAuth"),
+    mainSource.indexOf("async function openCrmEmailAuth"),
+  );
+  assert.match(opener, /const driveAbortController = driveConnectAbortController;/u);
+  assert.match(opener, /driveConnectAbortController === driveAbortController[\s\S]*driveAbortController\.abort\(\)/u);
+});
