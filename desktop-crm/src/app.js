@@ -4135,13 +4135,14 @@
   // 카드에서 그 셋을 접지 않는다. 접어 두면 받는 사람은 제목만 보고 시작하고,
   // 결국 짐작으로 일하게 된다.
   let workOrderState = {
-    orders: [], projects: [], members: [], admin: false, canWork: false, uid: "",
-    projectId: "", projectEditing: null,
+    orders: [], projects: [], members: [], capacity: [], admin: false, canWork: false, uid: "",
+    projectId: "", projectEditing: null, capacityEditing: null, seeding: false,
     loaded: false, loading: false, error: "",
     scope: "mine", editing: null, busyId: "",
   };
 
   const workOrderCore = () => window.BringWorkOrderCore;
+  const capacityCore = () => window.BringCapacityCore;
 
   async function loadWorkOrders() {
     if (workOrderState.loading) return;
@@ -4153,6 +4154,7 @@
       workOrderState.orders = Array.isArray(data && data.orders) ? data.orders : [];
       workOrderState.members = Array.isArray(data && data.members) ? data.members : [];
       workOrderState.projects = Array.isArray(data && data.projects) ? data.projects : [];
+      workOrderState.capacity = Array.isArray(data && data.capacity) ? data.capacity : [];
       workOrderState.admin = data && data.admin === true;
       workOrderState.canWork = data && data.canWork === true;
       workOrderState.uid = String((data && data.uid) || "");
@@ -4228,6 +4230,7 @@
             <button type="button" class="wo-scope-tab${workOrderState.scope === "mine" ? " is-active" : ""}" data-wo-scope="mine">내 것만</button>
             <button type="button" class="wo-scope-tab${workOrderState.scope === "all" ? " is-active" : ""}" data-wo-scope="all">전체</button>
           </div>
+          ${workOrderState.admin && P.missingSeeds(projects).length ? `<button type="button" class="mini-button" data-wo-seed>기본 프로젝트 ${P.missingSeeds(projects).length}개 만들기</button>` : ""}
           ${workOrderState.admin ? `<button type="button" class="mini-button" data-wo-project-new>새 프로젝트</button><button type="button" class="primary-button" data-wo-new>새 지시</button>` : ""}
         </div>
       </section>
@@ -4241,7 +4244,9 @@
       </div>
       ${workOrderState.projectEditing ? projectEditor(P) : ""}
       ${workOrderState.editing ? workOrderEditor(W, P, projects) : ""}
+      ${workOrderState.capacityEditing ? capacityEditor() : ""}
       ${dueSoonBoard(P, scoped, today)}
+      ${capacityBoard(P, today)}
       ${assigneeBoard(P, scoped, today)}
       ${ganttBoard(W, P, scoped, today, summary)}
       <div class="wo-list">${scoped.length ? W.sortForBoard(scoped, today).map(item => workOrderCard(W, item, today)).join("") : `<div class="wo-empty">지시가 없습니다.</div>`}</div>`;
@@ -4271,6 +4276,104 @@
   }
 
   // 사람별로 몇 건 물고 있는지. 이게 없으면 일을 나눠 줄 때 감으로 하게 된다.
+  // 이번 주 가용시간. 건수만 세던 판 위에 놓는다.
+  //
+  // 여기 있는 부하는 지금 고른 프로젝트가 아니라 그 사람 일 전부로 센다.
+  // 프로젝트별로 나눠 보면 "이 프로젝트에서는 여유" 라는, 아무 데도 못 쓰는
+  // 답이 나온다. 사람은 프로젝트를 나눠서 살지 않는다.
+  function capacityBoard(P, today) {
+    const C = capacityCore();
+    if (!C) return "";
+    const people = workOrderState.members
+      .filter(item => item && item.uid)
+      .map(item => {
+        const saved = C.personOf(workOrderState.capacity, item.uid);
+        return Object.assign(saved || C.normalizePerson({ uid: item.uid }), {
+          uid: item.uid,
+          name: item.displayName || item.email || item.uid,
+        });
+      });
+    if (!people.length) return "";
+    const board = C.loadBoard({
+      people,
+      orders: workOrderState.orders,
+      asOf: today,
+      offCapacityProjectIds: P.offCapacityIds(workOrderState.projects),
+    });
+    const week = C.weekRange(today);
+    const mine = workOrderState.uid;
+    const rowsHtml = board.map(row => {
+      const canEdit = workOrderState.admin || row.uid === mine;
+      const ratio = row.ratio == null ? "" : `${row.ratio}%`;
+      const bar = row.ratio == null
+        ? `<span class="office-muted">—</span>`
+        : `<div class="dv-bar cap-bar is-${esc(row.verdict.key)}"><i style="width:${Math.min(100, row.ratio)}%"></i></div><small>${esc(ratio)}</small>`;
+      return `<tr>
+        <td><b>${esc(row.name)}</b>${row.note ? `<small>${esc(row.note)}</small>` : ""}</td>
+        <td>${row.registered ? `<b>${row.hours}시간</b>${row.flexibleHours ? `<small>수업 빼면 +${row.flexibleHours}</small>` : ""}` : `<span class="office-muted">시간표 없음</span>`}</td>
+        <td><b>${row.assignedHours}시간</b><small>${row.orders}건${row.untimed ? ` · 시간 미기입 ${row.untimed}` : ""}</small></td>
+        <td>${bar}</td>
+        <td><span class="office-status ${row.verdict.key === "over" ? "missing" : (row.verdict.key === "tight" || row.verdict.key === "unknown" ? "warn" : "complete")}"><i></i>${esc(row.verdict.label)}</span>${row.verdict.hint ? `<small>${esc(row.verdict.hint)}</small>` : ""}</td>
+        <td>${row.weightOk ? `<span class="office-muted">${row.weightTotal}%</span>` : `<span class="office-status warn"><i></i>${row.weightTotal}%</span>`}</td>
+        <td>${canEdit ? `<button type="button" class="mini-button" data-cap-edit="${esc(row.uid)}">시간표</button>` : `<span class="office-muted">—</span>`}</td>
+      </tr>`;
+    }).join("");
+    return `<section class="office-panel">
+      <header>
+        <div><span>CAPACITY</span><h3>이번 주 가용시간</h3></div>
+        <small>${week ? `${esc(week.from.slice(5))} ~ ${esc(week.to.slice(5))}` : ""} · 수업을 뺀 시간과 배정된 시간을 맞대 봅니다</small>
+      </header>
+      <div class="office-table-wrap"><table class="office-table">
+        <thead><tr><th>사람</th><th>낼 수 있는 시간</th><th>물고 있는 시간</th><th>채움</th><th>판정</th><th>가중치 합</th><th></th></tr></thead>
+        <tbody>${rowsHtml}</tbody>
+      </table></div>
+      <p class="office-muted cap-note">40분짜리 틈은 시간으로 세지 않습니다. 그 시간에 되는 일이 없어서, 더해 두면 그 주가 반드시 밀립니다.</p>
+    </section>`;
+  }
+
+  // 시간표 고치기. 학기마다 바뀌는 것이라 코드가 아니라 여기서 고친다.
+  function capacityEditor() {
+    const C = capacityCore();
+    if (!C) return "";
+    const draft = C.normalizePerson(workOrderState.capacityEditing);
+    const seed = C.seedFor(draft.name);
+    const week = C.weekCapacity(draft);
+    const blocks = draft.blocks.slice().sort((a, b) => a.day - b.day || C.minutesOf(a.start) - C.minutesOf(b.start));
+    const dayOptions = day => C.DAYS.map(item => `<option value="${item.day}"${item.day === day ? " selected" : ""}>${esc(item.label)}</option>`).join("");
+    const rowsHtml = blocks.map((item, index) => `<tr>
+      <td><select data-cap-field="day" data-cap-index="${index}">${dayOptions(item.day)}</select></td>
+      <td><input type="time" value="${esc(item.start)}" data-cap-field="start" data-cap-index="${index}"></td>
+      <td><input type="time" value="${esc(item.end)}" data-cap-field="end" data-cap-index="${index}"></td>
+      <td><input type="text" maxlength="80" value="${esc(item.label)}" placeholder="수업 이름" data-cap-field="label" data-cap-index="${index}"></td>
+      <td><input type="text" maxlength="60" value="${esc(item.place)}" placeholder="강의실" data-cap-field="place" data-cap-index="${index}"></td>
+      <td><label class="cap-skip"><input type="checkbox"${item.skippable ? " checked" : ""} data-cap-field="skippable" data-cap-index="${index}"> 빠져도 됨</label></td>
+      <td><button type="button" class="mini-button return" data-cap-remove="${index}">지우기</button></td>
+    </tr>`).join("");
+    return `<section class="office-panel wo-editor cap-editor">
+      <header>
+        <div><span>TIMETABLE</span><h3>${esc(draft.name || "시간표")}</h3></div>
+        <small>지금 이대로면 주 ${week.hours}시간${week.flexibleHours ? ` (빠져도 되는 수업을 빼면 +${week.flexibleHours})` : ""}</small>
+      </header>
+      <div class="panel-body">
+        <div class="cap-window">
+          <label><span>하루 중 일하는 때</span><input type="time" value="${esc(draft.window.start)}" data-cap-window="start"> ~ <input type="time" value="${esc(draft.window.end)}" data-cap-window="end"></label>
+          <label class="wide"><span>일하는 요일</span><span class="cap-days">${C.DAYS.map(item => `<label><input type="checkbox" value="${item.day}"${draft.workDays.includes(item.day) ? " checked" : ""} data-cap-workday> ${esc(item.label)}</label>`).join("")}</span></label>
+        </div>
+        <div class="office-table-wrap"><table class="office-table">
+          <thead><tr><th>요일</th><th>시작</th><th>끝</th><th>이름</th><th>장소</th><th></th><th></th></tr></thead>
+          <tbody>${rowsHtml || `<tr><td colspan="7" class="office-empty">비어 있습니다. 수업이 없으면 그대로 두세요.</td></tr>`}</tbody>
+        </table></div>
+        <div class="wo-editor-actions">
+          <button type="button" class="mini-button" data-cap-add>줄 넣기</button>
+          ${seed ? `<button type="button" class="mini-button" data-cap-seed>${esc(draft.name)} 시간표 불러오기</button>` : ""}
+          <button type="button" class="primary-button" data-cap-save>저장</button>
+          <button type="button" class="mini-button return" data-cap-cancel>그만두기</button>
+        </div>
+        <p class="office-muted">여기 적힌 시간은 못 쓰는 시간입니다. 남는 조각이 ${C.MIN_CHUNK}분보다 짧으면 가용시간으로 세지 않습니다.</p>
+      </div>
+    </section>`;
+  }
+
   function assigneeBoard(P, orders, today) {
     const board = P.byAssignee(orders, today);
     if (!board.length) return "";
@@ -4401,6 +4504,8 @@
         <dt>왜 해야 하나</dt><dd>${esc(order.why)}</dd>
         <dt>무엇을 어떻게</dt><dd>${esc(order.what)}</dd>
         <dt>어디까지 하면 끝</dt><dd>${esc(order.doneWhen)}</dd>
+        ${order.deliverable ? `<dt>산출물</dt><dd>${esc(order.deliverable)}</dd>` : ""}
+        ${order.hours || order.weight ? `<dt>크기</dt><dd>${order.hours ? `${order.hours}시간쯤` : "시간 미기입"}${order.weight ? ` · 이번 주 ${order.weight}%` : ""}</dd>` : ""}
       </dl>
       ${order.reviewNote ? `<p class="wo-return">다시 요청 — ${esc(order.reviewNote)}</p>` : ""}
       <section class="wo-result-block"><h4>결과물</h4>${results}</section>
@@ -4422,6 +4527,9 @@
       <label><span>구분</span><select name="track"><option value="">기타</option>${trackOptions}</select></label>
       <label><span>시작일</span><input type="date" name="startDate" value="${esc(draft.startDate)}"></label>
       <label><span>언제까지</span><input type="date" name="dueDate" value="${esc(draft.dueDate)}"></label>
+      <label><span>몇 시간쯤</span><input type="number" name="hours" min="0.5" max="${W.MAX_HOURS}" step="0.5" value="${draft.hours || ""}" placeholder="예: 4"></label>
+      <label><span>가중치(%)</span><input type="number" name="weight" min="0" max="100" step="1" value="${draft.weight || ""}" placeholder="이 주에서 몇 %"></label>
+      <label class="wide"><span>산출물은 어떤 파일로</span><input type="text" name="deliverable" maxlength="200" value="${esc(draft.deliverable)}" placeholder="예: 20260907_3층누수_점검결과.xlsx (프로젝트 폴더에 올림)"></label>
       <label class="wide"><span>왜 해야 하나</span><textarea name="why" rows="3" maxlength="2000" required placeholder="이유를 모르면 받는 사람이 짐작으로 합니다.">${esc(draft.why)}</textarea></label>
       <label class="wide"><span>무엇을 어떻게</span><textarea name="what" rows="3" maxlength="2000" required>${esc(draft.what)}</textarea></label>
       <label class="wide"><span>어디까지 하면 끝인가</span><textarea name="doneWhen" rows="2" maxlength="1000" required placeholder="예: 사진 3장과 원인 한 줄이 올라오면 끝">${esc(draft.doneWhen)}</textarea></label>
@@ -4429,7 +4537,7 @@
         <button class="primary-button" type="submit">${esc(draft.createdAt ? "고쳐서 저장" : "지시하기")}</button>
         <button type="button" class="mini-button return" data-wo-cancel>그만두기</button>
       </div>
-      <p class="wo-editor-note">세 칸은 비워 둘 수 없습니다. 비어 있으면 시킨 사람 머릿속에만 남습니다.</p>
+      <p class="wo-editor-note">세 칸은 비워 둘 수 없습니다. 비어 있으면 시킨 사람 머릿속에만 남습니다. 예상 시간이 없으면 누가 얼마나 물고 있는지 셀 수 없어 새 지시에는 함께 받습니다.</p>
     </form>`;
   }
 
@@ -4452,6 +4560,9 @@
       why: String(raw.why || ""),
       what: String(raw.what || ""),
       doneWhen: String(raw.doneWhen || ""),
+      hours: String(raw.hours || ""),
+      weight: String(raw.weight || ""),
+      deliverable: String(raw.deliverable || ""),
     }));
     // 서버에 보내기 전에 여기서 걸러야 사람이 이유를 알 수 있는 문구를 받는다.
     if (!checked.ok) { showToast(checked.error, "error"); return; }
@@ -4464,6 +4575,86 @@
     } catch (error) {
       showToast(error && error.message || "저장하지 못했습니다.", "error");
     }
+  }
+
+  // 시간표 편집기에 적힌 것을 읽는다. 글자를 칠 때마다 상태에 옮기면 매번
+  // 다시 그리게 되고 커서가 튄다. 그래서 누르는 순간 한 번에 읽는다.
+  function readCapacityDraft(C) {
+    const base = C.normalizePerson(workOrderState.capacityEditing);
+    const editor = document.querySelector(".cap-editor");
+    if (!editor) return base;
+    const value = selector => {
+      const node = editor.querySelector(selector);
+      return node ? String(node.value || "") : "";
+    };
+    const blocks = [...editor.querySelectorAll("[data-cap-index]")].reduce((acc, node) => {
+      const index = Number(node.dataset.capIndex);
+      const field = node.dataset.capField;
+      if (!Number.isFinite(index) || !field) return acc;
+      const row = acc[index] || Object.assign({}, base.blocks[index] || {});
+      row.id = row.id || `cb_${index}_${Date.now().toString(36)}`;
+      if (field === "skippable") row.skippable = node.checked === true;
+      else if (field === "day") row.day = Number(node.value);
+      else row[field] = String(node.value || "");
+      acc[index] = row;
+      return acc;
+    }, []);
+    const workDays = [...editor.querySelectorAll("[data-cap-workday]")]
+      .filter(node => node.checked)
+      .map(node => Number(node.value));
+    return C.normalizePerson(Object.assign({}, base, {
+      window: { start: value("[data-cap-window='start']"), end: value("[data-cap-window='end']") },
+      // 요일을 하나도 안 고르면 정규화가 월~금으로 되돌린다. 아무 날도 일
+      // 안 하는 사람은 없다.
+      workDays,
+      blocks: blocks.filter(Boolean),
+    }));
+  }
+
+  async function saveCapacityDraft() {
+    const C = capacityCore();
+    if (!C || workOrderState.busyId === "capacity") return;
+    const draft = readCapacityDraft(C);
+    if (!draft.uid) { showToast("누구의 시간표인지 알 수 없습니다.", "error"); return; }
+    workOrderState.busyId = "capacity";
+    try {
+      await api.saveCapacity(draft);
+      workOrderState.capacityEditing = null;
+      workOrderState.loaded = false;
+      showToast("시간표를 저장했습니다.", "success");
+      await loadWorkOrders();
+    } catch (error) {
+      showToast(error && error.message || "시간표를 저장하지 못했습니다.", "error");
+    } finally {
+      workOrderState.busyId = "";
+      renderWorkOrders();
+    }
+  }
+
+  // 기본 프로젝트를 한 번에 만든다. 빈 화면을 주면 사람들은 자기 일을 어디에
+  // 넣어야 할지 몰라 아무 데도 안 넣고, 결국 일은 다시 카톡으로 간다.
+  async function seedProjects() {
+    const P = projectCore();
+    if (!P || workOrderState.seeding) return;
+    const missing = P.missingSeeds(workOrderState.projects);
+    if (!missing.length) return;
+    workOrderState.seeding = true;
+    renderWorkOrders();
+    const failed = [];
+    for (const project of missing) {
+      try {
+        await api.saveProject(project);
+      } catch (error) {
+        failed.push(`${project.name}: ${error && error.message || "저장 실패"}`);
+      }
+    }
+    workOrderState.seeding = false;
+    workOrderState.loaded = false;
+    // 몇 개 실패했는지 말한다. "만들었습니다" 만 띄우고 반만 생기면 왜 목록이
+    // 이상한지 아무도 모른다.
+    if (failed.length) showToast(`${missing.length - failed.length}개를 만들었습니다. 못 만든 것: ${failed.join(" / ")}`, "error");
+    else showToast(`기본 프로젝트 ${missing.length}개를 만들었습니다.`, "success");
+    await loadWorkOrders();
   }
 
   async function saveProjectFromForm(form) {
@@ -9057,6 +9248,58 @@
       return;
     }
     if (event.target.closest("[data-wo-project-cancel]")) { workOrderState.projectEditing = null; renderWorkOrders(); return; }
+    if (event.target.closest("[data-wo-seed]")) { await seedProjects(); return; }
+    const capEdit = event.target.closest("[data-cap-edit]");
+    if (capEdit) {
+      const C = capacityCore();
+      if (!C) return;
+      const uid = capEdit.dataset.capEdit;
+      const member = workOrderState.members.find(item => item && item.uid === uid);
+      const name = member ? (member.displayName || member.email || uid) : uid;
+      const saved = C.personOf(workOrderState.capacity, uid);
+      workOrderState.capacityEditing = Object.assign(saved || C.normalizePerson({ uid }), { uid, name });
+      renderWorkOrders();
+      return;
+    }
+    if (event.target.closest("[data-cap-cancel]")) { workOrderState.capacityEditing = null; renderWorkOrders(); return; }
+    if (event.target.closest("[data-cap-add]")) {
+      const C = capacityCore();
+      if (!C) return;
+      const draft = readCapacityDraft(C);
+      // 새 줄은 저장 가능한 값으로 시작한다. 빈 줄을 넣으면 정규화가 조용히
+      // 버려서 [줄 넣기] 를 눌러도 아무 일도 안 일어난 것처럼 보인다.
+      draft.blocks = [...draft.blocks, {
+        id: `cb_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 6)}`,
+        day: 1, start: "09:00", end: "10:00", label: "", place: "", skippable: false,
+      }];
+      workOrderState.capacityEditing = draft;
+      renderWorkOrders();
+      return;
+    }
+    const capRemove = event.target.closest("[data-cap-remove]");
+    if (capRemove) {
+      const C = capacityCore();
+      if (!C) return;
+      const draft = readCapacityDraft(C);
+      const index = Number(capRemove.dataset.capRemove);
+      draft.blocks = draft.blocks.filter((item, at) => at !== index);
+      workOrderState.capacityEditing = draft;
+      renderWorkOrders();
+      return;
+    }
+    if (event.target.closest("[data-cap-seed]")) {
+      const C = capacityCore();
+      const draft = C && C.normalizePerson(workOrderState.capacityEditing);
+      const seed = draft && C.seedFor(draft.name);
+      if (!seed) return;
+      // 견본은 이름·창·요일까지 통째로 갈아 끼운다. 수업만 바꾸면 창이
+      // 그대로 남아 계산이 견본과 달라지고, 왜 다른지 아무도 모른다.
+      workOrderState.capacityEditing = Object.assign(seed, { uid: draft.uid, name: draft.name });
+      renderWorkOrders();
+      showToast("견본을 넣었습니다. 확인하고 저장해 주세요.", "success");
+      return;
+    }
+    if (event.target.closest("[data-cap-save]")) { await saveCapacityDraft(); return; }
     const woOpenCard = event.target.closest("[data-wo-open-card]");
     if (woOpenCard) {
       // 간트에서 막대를 누르면 아래 카드로 데려간다. 자세한 것은 카드에 있다.

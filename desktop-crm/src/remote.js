@@ -9,6 +9,7 @@ const WorkOrderCore = require("./work-order-core");
 const ProjectCore = require("./project-core");
 const OkrCore = require("./okr-core");
 const GrowthCore = require("./growth-core");
+const CapacityCore = require("./capacity-core");
 const SupplyCore = require("./supply-core");
 const DeliveryCore = require("./delivery-core");
 const WorkReportCore = require("./work-report-core");
@@ -4014,14 +4015,23 @@ class FirebaseRemoteClient {
         displayName: String(user.displayName || user.email || uid),
       }))
       .sort((a, b) => a.displayName.localeCompare(b.displayName, "ko"));
-    const projectPayload = await this.dbRequest("projects", { method: "GET" }).catch(() => null);
+    const [projectPayload, capacityPayload] = await Promise.all([
+      this.dbRequest("projects", { method: "GET" }).catch(() => null),
+      this.dbRequest("capacity", { method: "GET" }).catch(() => null),
+    ]);
     this.assertSessionGuardActive(guard);
     const projects = Object.entries(projectPayload && typeof projectPayload === "object" ? projectPayload : {})
       .map(([id, value]) => ProjectCore.normalizeProject(Object.assign({ id }, value || {})))
       .filter(item => item.id);
+    // 시간표. 사내 사람 전부의 것을 준다 — 누구에게 일을 더 넣을 수 있는지
+    // 보려면 나만 봐서는 알 수 없다.
+    const capacity = Object.entries(capacityPayload && typeof capacityPayload === "object" ? capacityPayload : {})
+      .map(([uid, value]) => CapacityCore.normalizePerson(Object.assign({ uid }, value || {})))
+      .filter(item => item.uid);
     return {
       orders,
       projects,
+      capacity,
       members,
       admin: session.role === "admin",
       canWork: session.role === "admin" || session.role === "member",
@@ -4215,6 +4225,33 @@ class FirebaseRemoteClient {
       updatedBy: session.uid,
     });
     await this.dbRequest(location, { method: "PUT", body: record });
+    this.assertSessionGuardActive(guard);
+    return record;
+  }
+
+  // 시간표를 저장한다. 본인 것은 본인이, 남의 것은 관리자가.
+  //
+  // 관리자만 고칠 수 있게 하면 수업이 바뀔 때마다 대표를 거쳐야 하고, 그러면
+  // 아무도 안 고친다. 안 고친 시간표는 없는 것만 못하다 — 틀린 숫자로
+  // 일을 나누게 된다.
+  async saveCapacity(input) {
+    const session = this.requireOfficeSession();
+    if (session.role !== "admin" && session.role !== "member") {
+      throw createError("조회 전용 계정은 시간표를 고칠 수 없습니다.", "CAPACITY_FORBIDDEN");
+    }
+    const guard = this.captureSessionGuard();
+    const source = input && typeof input === "object" && !Array.isArray(input) ? input : {};
+    const uid = String(source.uid || session.uid);
+    if (session.role !== "admin" && uid !== session.uid) {
+      throw createError("남의 시간표는 대표만 고칠 수 있습니다.", "CAPACITY_NOT_MINE");
+    }
+    const person = CapacityCore.normalizePerson(Object.assign({}, source, { uid }));
+    if (!person.uid) throw createError("누구의 시간표인지 정해 주세요.", "VALIDATION_ERROR");
+    const record = Object.assign({}, person, {
+      updatedAt: new Date().toISOString(),
+      updatedBy: session.uid,
+    });
+    await this.dbRequest(`capacity/${record.uid}`, { method: "PUT", body: record });
     this.assertSessionGuardActive(guard);
     return record;
   }

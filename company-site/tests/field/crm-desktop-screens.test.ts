@@ -149,6 +149,15 @@ async function boot(): Promise<Booted> {
       // 두 사람을 둔다. 한 사람뿐이면 "이번 주에 아직 이야기 안 한 사람"
       // 이 늘 0 이라, 그 칸이 도는지 알 수 없다.
       members: [{ uid: "u-admin", displayName: "서창환" }, { uid: "u-hwang", displayName: "황우중" }],
+      // 한 사람만 시간표를 넣어 둔다. 넣은 사람과 안 넣은 사람이 화면에서
+      // 다르게 보여야 하는데, 둘 다 넣으면 그게 도는지 알 수 없다.
+      capacity: [
+        {
+          uid: "u-admin", name: "서창환", window: { start: "09:00", end: "22:00" }, workDays: [1, 2, 3, 4, 5],
+          blocks: [{ id: "c1", day: 1, start: "13:00", end: "14:00", label: "수문학", place: "이공1-502", skippable: true }],
+          updatedAt: "2026-09-01T00:00:00.000Z", updatedBy: "u-admin",
+        },
+      ],
       projects: [
         { id: "p1", name: "브링 케어", status: "active", startDate: "2026-09-01", endDate: "2026-09-30" },
         // 어느 목표에도 안 붙은 프로젝트. 분기 목표 화면이 이걸 세어 보여 줘야 한다.
@@ -157,9 +166,9 @@ async function boot(): Promise<Booted> {
       orders: [
         // 기한 지난 것·오늘·이번 주·담당자 없는 것을 한 벌씩 둔다. 표가
         // 빈 목록에서만 그려지는지 아닌지는 자료를 넣어 봐야 안다.
-        { id: "o1", title: "지난 것", why: "왜", what: "무엇", doneWhen: "끝", assigneeUid: "u-admin", assigneeName: "서창환", projectId: "p1", track: "ops", status: "doing", dueDate: "2026-01-02", startDate: "2026-01-01", progress: 40 },
+        { id: "o1", title: "지난 것", why: "왜", what: "무엇", doneWhen: "끝", assigneeUid: "u-admin", assigneeName: "서창환", projectId: "p1", track: "ops", status: "doing", dueDate: "2026-01-02", startDate: "2026-01-01", progress: 40, hours: 4, weight: 30 },
         { id: "o2", title: "담당 없음", why: "왜", what: "무엇", doneWhen: "끝", assigneeUid: "", assigneeName: "", projectId: "p1", track: "biz", status: "assigned", dueDate: "", startDate: "", progress: 0 },
-        { id: "o3", title: "검수 대기", why: "왜", what: "무엇", doneWhen: "끝", assigneeUid: "u-admin", assigneeName: "서창환", projectId: "p1", track: "tech", status: "submitted", dueDate: "2026-09-20", startDate: "2026-09-10", progress: 100 },
+        { id: "o3", title: "검수 대기", why: "왜", what: "무엇", doneWhen: "끝", assigneeUid: "u-admin", assigneeName: "서창환", projectId: "p1", track: "tech", status: "submitted", dueDate: "2026-09-20", startDate: "2026-09-10", progress: 100, hours: 6, weight: 40 },
         // 어느 프로젝트에도 안 붙은 업무. 이것이 "왜 하는지 모르는 일" 이다.
         { id: "o4", title: "떠도는 일", why: "왜", what: "무엇", doneWhen: "끝", assigneeUid: "u-admin", assigneeName: "서창환", projectId: "", track: "etc", status: "assigned", dueDate: "", startDate: "", progress: 0, raci: { R: ["u-admin"], A: ["u-admin"] } },
       ],
@@ -592,6 +601,94 @@ describe("desktop CRM screens actually render", () => {
     await sleep(200);
     const chatInput = booted.document.querySelector('[data-telegram-form] [name="chatId"]') as HTMLInputElement;
     expect(chatInput.value, "고른 방 번호가 칸에 들어가야 한다").toBe("-1001234567890");
+    expect(booted.errors, booted.errors.join(" / ")).toEqual([]);
+  }, 60000);
+  it("가용시간 판이 건수가 아니라 시간으로 말하고, 시간표를 그 자리에서 고친다", async () => {
+    // 지금까지 사람별 부하는 건수였다. "4건" 은 30분짜리인지 이틀짜리인지
+    // 말해 주지 않아서, 일을 나눌 때 결국 감으로 했다.
+    (booted.document.querySelector("[data-workspace-switch]") as HTMLElement | null)?.click();
+    await sleep(100);
+    const navItem = booted.document.querySelector('.nav-item[data-view="workOrders"]') as HTMLElement;
+    const folder = (navItem.closest("[data-nav-folder]") as HTMLElement).dataset.navFolder as string;
+    (booted.document.querySelector(`[data-workspace-enter-folder="${folder}"]`) as HTMLElement).click();
+    await sleep(150);
+    navItem.click();
+    await sleep(250);
+
+    const shown = () => (booted.document.getElementById("main") as HTMLElement).textContent || "";
+    expect(shown()).toContain("이번 주 가용시간");
+    // 시간표를 넣은 사람과 안 넣은 사람이 다르게 보여야 한다.
+    expect(shown(), "시간표가 없으면 비율을 내지 않는다").toContain("시간표 없음");
+    // 서창환은 월요일 13~14 한 시간만 막혀 있다. 주 5일 09~22 에서 한 시간을
+    // 빼면 64시간이고, 그 수업은 빠져도 되니 +1 이 따로 붙는다.
+    expect(shown(), "수업을 뺀 시간이 나와야 한다").toContain("64시간");
+    expect(shown(), "빠져도 되는 수업은 따로 알린다").toContain("수업 빼면 +1");
+
+    // 시간표를 고치는 자리로 들어간다.
+    const edit = booted.document.querySelector('[data-cap-edit="u-admin"]') as HTMLElement;
+    expect(edit, "본인·대표는 시간표를 고칠 수 있어야 한다").toBeTruthy();
+    edit.click();
+    await sleep(200);
+    expect(booted.document.querySelector(".cap-editor"), "시간표 편집기가 열려야 한다").toBeTruthy();
+
+    // 줄을 하나 넣는다. 빈 줄을 넣으면 정규화가 조용히 버려서 아무 일도 안
+    // 일어난 것처럼 보인다 — 그래서 저장 가능한 값으로 시작해야 한다.
+    const rowsBefore = booted.document.querySelectorAll('.cap-editor [data-cap-field="day"]').length;
+    (booted.document.querySelector("[data-cap-add]") as HTMLElement).click();
+    await sleep(150);
+    expect(booted.document.querySelectorAll('.cap-editor [data-cap-field="day"]').length).toBe(rowsBefore + 1);
+
+    // 화면에 친 것이 저장으로 실려 나가야 한다. 상태에만 있고 화면에서 안
+    // 읽으면 사람이 고친 값이 통째로 사라진다.
+    const labels = [...booted.document.querySelectorAll('.cap-editor [data-cap-field="label"]')] as HTMLInputElement[];
+    labels[labels.length - 1].value = "구조역학(2)";
+    const starts = [...booted.document.querySelectorAll('.cap-editor [data-cap-field="start"]')] as HTMLInputElement[];
+    starts[starts.length - 1].value = "14:00";
+    const ends = [...booted.document.querySelectorAll('.cap-editor [data-cap-field="end"]')] as HTMLInputElement[];
+    ends[ends.length - 1].value = "17:00";
+
+    const before = booted.calls.length;
+    (booted.document.querySelector("[data-cap-save]") as HTMLElement).click();
+    await sleep(300);
+    const saved = booted.calls.slice(before).find(call => call.name === "saveCapacity");
+    expect(saved, "저장 통로로 나가야 한다").toBeTruthy();
+    const sent = saved!.input as { uid: string; blocks: Array<{ label: string; start: string; end: string }> };
+    expect(sent.uid).toBe("u-admin");
+    const added = sent.blocks.find(block => block.label === "구조역학(2)");
+    expect(added, "화면에 친 줄이 실려 나가야 한다").toBeTruthy();
+    expect(added!.start).toBe("14:00");
+    expect(added!.end).toBe("17:00");
+    expect(booted.errors, booted.errors.join(" / ")).toEqual([]);
+  }, 60000);
+
+  it("기본 프로젝트 여섯 개를 한 번에 만든다", async () => {
+    // 빈 화면을 주면 사람들은 자기 일을 어디에 넣어야 할지 몰라 아무 데도
+    // 안 넣고, 결국 일은 다시 카톡으로 간다.
+    (booted.document.querySelector("[data-workspace-switch]") as HTMLElement | null)?.click();
+    await sleep(100);
+    const navItem = booted.document.querySelector('.nav-item[data-view="workOrders"]') as HTMLElement;
+    const folder = (navItem.closest("[data-nav-folder]") as HTMLElement).dataset.navFolder as string;
+    (booted.document.querySelector(`[data-workspace-enter-folder="${folder}"]`) as HTMLElement).click();
+    await sleep(150);
+    navItem.click();
+    await sleep(250);
+
+    const button = booted.document.querySelector("[data-wo-seed]") as HTMLElement;
+    expect(button, "아직 안 만든 것이 있으면 버튼이 보여야 한다").toBeTruthy();
+    expect(button.textContent).toContain("6개");
+
+    const before = booted.calls.length;
+    button.click();
+    await sleep(600);
+    const made = booted.calls.slice(before).filter(call => call.name === "saveProject");
+    expect(made.length, "여섯 개를 다 만들어야 한다").toBe(6);
+    const names = made.map(call => (call.input as { name: string }).name);
+    expect(names).toContain("브링 CRM·OFFICE");
+    expect(names).toContain("학업·자기계발");
+    // 학업만 가용시간을 잡아먹지 않는 것으로 둔다. 수업 시간은 시간표에서
+    // 이미 빠졌는데 "수강 7시간" 을 또 더하면 학생은 늘 넘침으로 뜬다.
+    const study = made.find(call => (call.input as { id: string }).id === "pj-study");
+    expect((study!.input as { offCapacity: boolean }).offCapacity).toBe(true);
     expect(booted.errors, booted.errors.join(" / ")).toEqual([]);
   }, 60000);
 });
