@@ -1,0 +1,113 @@
+name: Firebase Rules Deploy
+
+# 서버 규칙(database.rules.json)을 사람 손으로 올리면 반드시 어긋난다.
+#
+# 지금까지 새 화면을 낼 때마다 "받아서 firebase deploy --only database 를 한 번
+# 돌려 주세요" 를 붙여 왔다. 실제로 한 번은 옛날 커밋에서 올려서, 배포는
+# 성공했는데 새 화면이 전부 Permission denied 가 났다. 명령이 성공했으니
+# 사람은 다 된 줄 알았다. **사람이 매번 해야 하는 절차는 언젠가 어긋난다.**
+#
+# 그래서 규칙을 코드와 같은 곳에서 같은 순간에 올린다. 규칙이 바뀐 커밋이
+# codex/bring-field-platform 에 들어오면 여기서 자동으로 올라간다.
+#
+# 관문이 하나 있다
+#
+# 올리기 전에 **올릴 그 규칙 그대로** 에뮬레이터 검사를 돌린다. 규칙은
+# 권한의 경계라, 잘못 올리면 남의 급여가 보이거나 아무도 로그인을 못 한다.
+# 검사가 빨간 채로 올라가는 길은 없다.
+#
+# 되돌리는 길
+#
+# 규칙 파일은 늘 저장소에서 온다. 그래서 되돌리기는 옛날 커밋을 다시
+# 올리는 것이다. Actions 탭에서 이 워크플로를 고르고 Run workflow 를 눌러
+# rules_ref 에 되돌릴 커밋(SHA)을 넣으면 그 시점 규칙이 그대로 올라간다.
+# 마지막에 어느 커밋이 올라갔는지도 남긴다.
+
+on:
+  push:
+    branches:
+      - codex/bring-field-platform
+    paths:
+      - "database.rules.json"
+      - "firebase.json"
+      - ".github/workflows/crm-rules-deploy.yml"
+  workflow_dispatch:
+    inputs:
+      rules_ref:
+        description: "올릴 커밋 SHA. 비우면 브랜치 끝. 되돌릴 때 옛날 SHA 를 넣는다."
+        required: false
+        default: ""
+
+# 규칙은 한 벌뿐이다. 두 배포가 겹치면 나중 것이 먼저 것을 덮는데, 어느
+# 것이 나중인지는 순서가 아니라 끝난 시각이 정한다. 줄을 세우고 취소하지
+# 않는다.
+concurrency:
+  group: crm-firebase-rules
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  verify-and-deploy:
+    runs-on: ubuntu-latest
+    # 나중에 승인자를 걸고 싶으면 저장소 Settings > Environments 에서
+    # firebase-production 에 required reviewer 를 넣으면 된다. 지금은
+    # 아무 제한이 없어서 그냥 통과한다.
+    environment: firebase-production
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.event.inputs.rules_ref || github.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-java@b6effb05e454b25005698d916606bdc6ffcbf961 # v5.7.0
+        with:
+          distribution: temurin
+          java-version: "21"
+      - uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86 # v6.0.10
+        with:
+          version: 10
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 22
+          cache: pnpm
+          cache-dependency-path: company-site/pnpm-lock.yaml
+      - run: pnpm --dir company-site install --frozen-lockfile
+
+      # 관문. 올릴 그 파일 그대로 돌린다.
+      - name: Test the rules being deployed
+        run: pnpm --dir company-site exec firebase --config ../firebase.json --project demo-bring-fm emulators:exec --only database,storage "pnpm test:rules"
+
+      # 무엇이 올라갔는지 나중에 볼 수 있게 남긴다. 되돌릴 때 필요한 것은
+      # 파일이 아니라 커밋이지만, 사고가 났을 때 원본이 손에 있는 편이 낫다.
+      - name: Record what is about to go up
+        run: |
+          {
+            echo "### 올라가는 규칙"
+            echo ""
+            echo "- 커밋: \`$(git rev-parse HEAD)\`"
+            echo "- 규칙 파일이 마지막으로 바뀐 커밋: \`$(git log -1 --format='%h %s' -- database.rules.json)\`"
+            echo "- 되돌리려면: 이 워크플로를 Run workflow 로 돌리면서 rules_ref 에 이전 SHA 를 넣는다"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Deploy database rules
+        env:
+          FIREBASE_SERVICE_ACCOUNT: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
+        run: |
+          set -euo pipefail
+          if [ -z "${FIREBASE_SERVICE_ACCOUNT:-}" ]; then
+            echo "::error::FIREBASE_SERVICE_ACCOUNT 시크릿이 없습니다. 저장소 Settings > Secrets and variables > Actions 에서 서비스 계정 JSON 을 그 이름으로 넣어 주세요."
+            exit 1
+          fi
+          # 키는 러너 임시 폴더에만 두고 바로 지운다. 작업 폴더에 두면
+          # 다음 단계나 artifact 에 딸려 갈 수 있다.
+          key="$RUNNER_TEMP/firebase-service-account.json"
+          umask 077
+          printf '%s' "$FIREBASE_SERVICE_ACCOUNT" > "$key"
+          trap 'rm -f "$key"' EXIT
+          GOOGLE_APPLICATION_CREDENTIALS="$key" \
+            pnpm --dir company-site exec firebase \
+              --config ../firebase.json \
+              --project bring-fm \
+              deploy --only database --non-interactive

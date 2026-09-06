@@ -1,8 +1,10 @@
 name: CRM Automatic Release
 
 # This workflow publishes only the signed desktop updater artifacts. Production
-# Firebase Rules belong to a separately reviewed deployment with complete target
-# rules, explicit authorization, backup, and rollback verification.
+# Firebase Rules go up in crm-rules-deploy.yml, which gates every deploy on the
+# emulator rule tests and keeps a one-click rollback to any earlier commit.
+# Keeping the two apart matters: a rules change has to reach the server the
+# moment it merges, while a desktop build is a slower, signed artifact.
 
 on:
   workflow_dispatch:
