@@ -225,6 +225,28 @@ function sanitizeFieldTeamProfiles(value) {
     || left.id.localeCompare(right.id));
 }
 
+// CRM 이 스스로 여는 인증 페이지. 로그인과 Drive 연결 두 개뿐이고, 그 밖의
+// 주소로는 창을 열지 않는다. 여기 빠뜨리면 창이 아예 안 열려서, 화면에는
+// "완료하지 못했습니다" 만 뜨고 원인은 안 보인다.
+const CRM_AUTH_ORIGIN = "https://bring-fm.web.app";
+const CRM_AUTH_PAGES = Object.freeze({ "/crm-auth/": "login", "/crm-drive-auth/": "drive" });
+
+function crmAuthPageKind(rawUrl) {
+  try {
+    const url = new URL(String(rawUrl || ""));
+    if (url.username || url.password) return "";
+    if (url.origin !== CRM_AUTH_ORIGIN) return "";
+    const kind = CRM_AUTH_PAGES[url.pathname] || "";
+    if (!kind) return "";
+    // 돌아올 포트가 없으면 열어 봐야 응답을 받을 곳이 없다.
+    const port = Number(url.searchParams.get("port"));
+    if (!Number.isInteger(port) || port < 1024 || port > 65535) return "";
+    return kind;
+  } catch (_error) {
+    return "";
+  }
+}
+
 function isAllowedFieldAuthPopup(rawUrl) {
   if (rawUrl === "about:blank") return true;
   try {
@@ -906,6 +928,7 @@ module.exports = {
   externalFieldLinkDecision,
   fieldBounds,
   isAllowedFieldAuthPopup,
+  crmAuthPageKind,
   isAllowedFieldNavigation,
   isAllowedFieldPermission,
   isFieldRequestId,
