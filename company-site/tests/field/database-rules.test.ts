@@ -2128,9 +2128,7 @@ describe.runIf(databaseEmulatorAvailable)("fieldPlatform database rules", () => 
 
   it("rejects unknown fields and bad amounts on approvals", async () => {
     const viewer = environment.authenticatedContext("crm-viewer", crmClaims("viewer@bring.test")).database();
-    const target = "crmCompany/officeApprovals/crm-viewer/ap-3";
     const base = {
-      id: "ap-3",
       userId: "crm-viewer",
       kind: "general",
       title: "비품 정리",
@@ -2138,20 +2136,29 @@ describe.runIf(databaseEmulatorAvailable)("fieldPlatform database rules", () => 
       status: "requested",
       createdAt: "2026-09-06T00:00:00.000Z",
     };
+    // 결재는 한 번 올리면 그 칸을 다시 쓰지 못한다. 그래서 경우마다 새 번호로
+    // 올려 본다 — 같은 번호로 다시 쓰면 "내용이 틀려서" 가 아니라 "이미
+    // 있어서" 막히는 것이라, 검사가 무엇을 확인했는지 알 수 없게 된다.
+    const at = (id: string) => `crmCompany/officeApprovals/crm-viewer/${id}`;
+    const record = (id: string, patch: Record<string, unknown> = {}) => ({ ...base, id, ...patch });
 
-    await assertSucceeds(set(ref(viewer, target), base));
+    await assertSucceeds(set(ref(viewer, at("ok-1")), record("ok-1")));
+
     // 원 단위 정수만. 소수점이 붙은 원화는 없다.
-    await assertFails(set(ref(viewer, target), { ...base, amount: 1000.5 }));
-    await assertFails(set(ref(viewer, target), { ...base, amount: -1000 }));
-    await assertFails(set(ref(viewer, target), { ...base, amount: "120000" }));
+    await assertFails(set(ref(viewer, at("bad-1")), record("bad-1", { amount: 1000.5 })));
+    await assertFails(set(ref(viewer, at("bad-2")), record("bad-2", { amount: -1000 })));
+    await assertFails(set(ref(viewer, at("bad-3")), record("bad-3", { amount: "120000" })));
     // 모르는 종류와 모르는 칸은 막는다.
-    await assertFails(set(ref(viewer, target), { ...base, kind: "bribe" }));
-    await assertFails(set(ref(viewer, target), { ...base, secret: "x" }));
+    await assertFails(set(ref(viewer, at("bad-4")), record("bad-4", { kind: "bribe" })));
+    await assertFails(set(ref(viewer, at("bad-5")), record("bad-5", { secret: "x" })));
     // id 를 다른 것으로 적어 다른 결재인 척할 수 없다.
-    await assertFails(set(ref(viewer, target), { ...base, id: "ap-9" }));
+    await assertFails(set(ref(viewer, at("bad-6")), record("ap-9")));
     // 첨부는 https 만.
-    await assertFails(set(ref(viewer, target), { ...base, attachmentUrl: "http://x.test/a" }));
-    await assertSucceeds(set(ref(viewer, target), { ...base, attachmentUrl: "https://x.test/a" }));
+    await assertFails(set(ref(viewer, at("bad-7")), record("bad-7", { attachmentUrl: "http://x.test/a" })));
+    await assertSucceeds(set(ref(viewer, at("ok-2")), record("ok-2", { attachmentUrl: "https://x.test/a" })));
+
+    // 올린 뒤에는 같은 칸을 다시 쓰지 못한다. 고치려면 취소하고 다시 올린다.
+    await assertFails(set(ref(viewer, at("ok-1")), record("ok-1", { title: "다른 제목" })));
   });
 
   it("keeps HR records readable only by the person and administrators", async () => {
