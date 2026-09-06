@@ -469,6 +469,12 @@
       users: userMap.filter(user => user.uid && user.enabled && !user.mustChangePassword),
       attendance: Array.isArray(source.attendance) ? source.attendance.map(normalizeAttendance) : flattenAttendance(source.attendance),
       messages: Array.isArray(source.messages) ? source.messages.map(normalizeMessage) : flattenMailbox(source.messages),
+      // 휴가는 여기서 모양만 편다. 값 검사는 leave-core 가 한다 — 이 파일이
+      // 근태·메신저와 함께 쓰이는 곳이라 휴가 규칙까지 들이지 않는다.
+      leave: Array.isArray(source.leave) ? source.leave.slice() : flattenLeave(source.leave, current.uid),
+      leaveGrants: Array.isArray(source.leaveGrants) ? source.leaveGrants.slice() : flattenLeaveGrants(source.leaveGrants, current.uid),
+      // 관리자면 남의 휴가도 받는다. 화면이 이 값으로 승인 칸을 낼지 정한다.
+      leaveAdmin: source.leaveAdmin === true,
       loadedAt: safeText(source.loadedAt)
     };
   }

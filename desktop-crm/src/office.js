@@ -547,6 +547,193 @@
       ${attendanceAnomalyPanel("")}`;
   }
 
+  // --- 연차 ---
+  // 잔여를 확정 전에 말하지 않는 것이 이 화면의 핵심이다. leave-core 가
+  // remainingDays 를 null 로 주면 숫자 대신 "관리자 확정 전" 이라고 쓴다.
+  const Leave = () => window.BringLeaveCore;
+
+  function leaveView() {
+    const L = Leave();
+    if (!L) return `<section class="office-panel"><p>연차 모듈을 불러오지 못했습니다.</p></section>`;
+    const uid = currentUserId();
+    const year = String(new Date().getFullYear());
+    const all = state.data.leave || [];
+    const grants = state.data.leaveGrants || [];
+    const myGrant = grants.find(item => item && item.userId === uid) || null;
+    const balance = L.summarizeBalance({ userId: uid, year, grant: myGrant, requests: all });
+    const mine = all
+      .map(L.normalizeRequest)
+      .filter(item => item.userId === uid)
+      .sort((a, b) => String(b.startDate).localeCompare(String(a.startDate)));
+
+    const remaining = balance.confirmed
+      ? `<b>${balance.remainingDays}</b><small>일 남음</small>`
+      : `<b class="office-leave-unset">—</b><small>관리자 확정 전</small>`;
+    const grantNote = balance.confirmed
+      ? `${balance.grantedDays}일 중 ${balance.usedDays}일 사용${balance.pendingDays ? ` · 신청 중 ${balance.pendingDays}일` : ""}`
+      : "올해 발생일수를 관리자가 아직 확정하지 않았습니다. 신청은 지금도 할 수 있습니다.";
+
+    const rowsHtml = mine.length
+      ? mine.map(item => {
+        const type = (L.LEAVE_TYPES.find(entry => entry.key === item.type) || {}).label || item.type;
+        const status = (L.STATUSES.find(entry => entry.key === item.status) || {}).label || item.status;
+        const range = item.startDate === item.endDate ? item.startDate : `${item.startDate} ~ ${item.endDate}`;
+        const decided = item.decidedBy ? `<small>${esc(status)} · ${esc(item.decidedBy)}</small>` : `<small>${esc(status)}</small>`;
+        return `<article class="office-leave-row status-${esc(item.status)}"><div><b>${esc(range)}</b><span>${esc(type)} · ${item.days}일</span>${item.reason ? `<p>${esc(item.reason)}</p>` : ""}</div><div class="office-leave-status">${decided}${item.status === "requested" ? `<button type="button" class="mini-button return" data-office-leave-cancel="${esc(item.id)}">취소</button>` : ""}</div></article>`;
+      }).join("")
+      : `<p class="office-empty">아직 신청한 휴가가 없습니다.</p>`;
+
+    return `<section class="office-panel office-leave">
+      <header class="office-leave-head"><div><b>내 연차</b><span>${esc(year)}년</span></div><div class="office-leave-remaining">${remaining}</div></header>
+      <p class="office-leave-note">${esc(grantNote)}</p>
+      <form class="office-leave-form" data-office-leave-form>
+        <label><span>종류</span><select name="type">${L.LEAVE_TYPES.map(item => `<option value="${esc(item.key)}">${esc(item.label)}</option>`).join("")}</select></label>
+        <label><span>시작일</span><input type="date" name="startDate" required></label>
+        <label><span>종료일</span><input type="date" name="endDate" required></label>
+        <label><span>일수</span><input type="number" name="days" min="0.5" step="0.5" placeholder="비우면 기간대로"></label>
+        <label class="wide"><span>사유</span><input type="text" name="reason" maxlength="200" placeholder="선택"></label>
+        <button class="primary-button" type="submit">휴가 신청</button>
+      </form>
+      <div class="office-leave-list">${rowsHtml}</div>
+      ${state.data.leaveAdmin ? leaveAdminPanel(L, all, grants) : ""}
+    </section>`;
+  }
+
+  function leaveAdminPanel(L, all, grants) {
+    const pending = all
+      .map(L.normalizeRequest)
+      .filter(item => item.status === "requested")
+      .sort((a, b) => String(a.startDate).localeCompare(String(b.startDate)));
+    const nameOf = uid => {
+      const user = state.data.users.find(item => item && item.uid === uid);
+      return user ? Core.displayName(user) : uid;
+    };
+    const list = pending.length
+      ? pending.map(item => {
+        const type = (L.LEAVE_TYPES.find(entry => entry.key === item.type) || {}).label || item.type;
+        const range = item.startDate === item.endDate ? item.startDate : `${item.startDate} ~ ${item.endDate}`;
+        return `<article class="office-leave-row"><div><b>${esc(nameOf(item.userId))}</b><span>${esc(range)} · ${esc(type)} · ${item.days}일</span>${item.reason ? `<p>${esc(item.reason)}</p>` : ""}</div><div class="office-leave-actions"><button type="button" class="mini-button" data-office-leave-decide="approved" data-office-leave-user="${esc(item.userId)}" data-office-leave-id="${esc(item.id)}">승인</button><button type="button" class="mini-button return" data-office-leave-decide="rejected" data-office-leave-user="${esc(item.userId)}" data-office-leave-id="${esc(item.id)}">반려</button></div></article>`;
+      }).join("")
+      : `<p class="office-empty">승인을 기다리는 신청이 없습니다.</p>`;
+
+    // 발생일수 확정. 입사일을 모르면 제안도 못 한다 — 그때는 그렇게 적는다.
+    const year = String(new Date().getFullYear());
+    const people = state.data.users.map(user => {
+      const confirmed = grants.find(item => item && item.userId === user.uid) || null;
+      const hireDate = String(user.hireDate || "");
+      const suggestion = hireDate ? L.suggestGrant(hireDate, Core.workDate()) : null;
+      const hint = suggestion
+        ? `제안 ${suggestion.days}일 · ${esc(suggestion.basis)}${suggestion.caveat ? " ⚠" : ""}`
+        : "입사일이 없어 제안할 수 없습니다";
+      return `<tr><td>${esc(Core.displayName(user))}</td><td>${confirmed ? `${confirmed.days}일` : "<em>미확정</em>"}</td><td><small>${hint}</small></td><td><form class="office-leave-grant" data-office-leave-grant="${esc(user.uid)}"><input type="number" name="days" min="0" max="40" step="0.5" value="${confirmed ? esc(String(confirmed.days)) : (suggestion ? esc(String(suggestion.days)) : "")}" required><button class="mini-button" type="submit">확정</button></form></td></tr>`;
+    }).join("");
+
+    return `<section class="office-leave-admin">
+      <header><b>승인 대기</b><span>${pending.length}건</span></header>
+      <div class="office-leave-list">${list}</div>
+      <header><b>${esc(year)}년 발생일수 확정</b><span>확정한 값이 잔여의 기준이 됩니다</span></header>
+      <table class="office-leave-grants"><thead><tr><th>이름</th><th>확정</th><th>법정 제안</th><th></th></tr></thead><tbody>${people}</tbody></table>
+      <p class="office-leave-note">법정 제안은 입사일만 보고 계산한 값입니다. 개근 여부와 회사 규정은 반영되지 않습니다.</p>
+    </section>`;
+  }
+
+  async function submitLeaveRequest(form) {
+    const L = Leave();
+    if (!L || state.busy) return;
+    const raw = Object.fromEntries(new FormData(form).entries());
+    const request = {
+      id: `lv_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`,
+      userId: currentUserId(),
+      type: String(raw.type || "annual"),
+      startDate: String(raw.startDate || ""),
+      endDate: String(raw.endDate || raw.startDate || ""),
+      days: raw.days ? Number(raw.days) : 0,
+      reason: String(raw.reason || ""),
+      status: "requested",
+      createdAt: new Date().toISOString(),
+    };
+    const year = request.startDate.slice(0, 4);
+    const grant = (state.data.leaveGrants || []).find(item => item && item.userId === request.userId) || null;
+    // 서버에 보내기 전에 여기서 걸러야 사람이 이유를 알 수 있는 문구를 받는다.
+    const checked = L.validateRequest({ request, requests: state.data.leave || [], grant, year });
+    if (!checked.ok) { notify(checked.error, "error"); return; }
+    state.busy = true;
+    renderCurrent();
+    try {
+      await window.bringCRM.saveLeaveRequest(checked.record);
+      notify("휴가를 신청했습니다.", "success");
+      await load(true);
+    } catch (error) {
+      notify(error && error.message || "휴가를 신청하지 못했습니다.", "error");
+    } finally {
+      state.busy = false;
+      renderCurrent();
+    }
+  }
+
+  async function decideLeave(userId, requestId, decision) {
+    const L = Leave();
+    if (!L || state.busy) return;
+    const request = (state.data.leave || [])
+      .map(L.normalizeRequest)
+      .find(item => item.userId === userId && item.id === requestId);
+    if (!request) { notify("신청을 찾지 못했습니다.", "error"); return; }
+    state.busy = true;
+    renderCurrent();
+    try {
+      await window.bringCRM.decideLeaveRequest({ request, decision });
+      notify(decision === "approved" ? "휴가를 승인했습니다." : "휴가를 반려했습니다.", "success");
+      await load(true);
+    } catch (error) {
+      notify(error && error.message || "처리하지 못했습니다.", "error");
+    } finally {
+      state.busy = false;
+      renderCurrent();
+    }
+  }
+
+  async function cancelLeave(requestId) {
+    const L = Leave();
+    if (!L || state.busy) return;
+    const request = (state.data.leave || [])
+      .map(L.normalizeRequest)
+      .find(item => item.userId === currentUserId() && item.id === requestId);
+    if (!request) return;
+    state.busy = true;
+    renderCurrent();
+    try {
+      await window.bringCRM.saveLeaveRequest(Object.assign({}, request, { status: "cancelled" }));
+      notify("휴가 신청을 취소했습니다.", "success");
+      await load(true);
+    } catch (error) {
+      notify(error && error.message || "취소하지 못했습니다.", "error");
+    } finally {
+      state.busy = false;
+      renderCurrent();
+    }
+  }
+
+  async function saveLeaveGrant(form, userId) {
+    if (state.busy) return;
+    const raw = Object.fromEntries(new FormData(form).entries());
+    state.busy = true;
+    renderCurrent();
+    try {
+      await window.bringCRM.saveLeaveGrant({
+        userId,
+        year: String(new Date().getFullYear()),
+        days: Number(raw.days),
+      });
+      notify("발생일수를 확정했습니다.", "success");
+      await load(true);
+    } catch (error) {
+      notify(error && error.message || "확정하지 못했습니다.", "error");
+    } finally {
+      state.busy = false;
+      renderCurrent();
+    }
+  }
+
   function renderCurrent() {
     if (!state.context || !state.context.container) return;
     syncMessengerPresence();
@@ -557,6 +744,7 @@
     else {
       if (state.context.view === "officeHome") state.context.container.innerHTML = homeView();
       else if (state.context.view === "officeAttendance") state.context.container.innerHTML = attendanceView();
+      else if (state.context.view === "officeLeave") state.context.container.innerHTML = leaveView();
       else if (state.context.view === "officeMessenger") state.context.container.innerHTML = messengerView();
       else state.context.container.innerHTML = adminView();
       requestAnimationFrame(() => {
@@ -894,6 +1082,13 @@
   window.addEventListener("focus", acknowledgeVisibleConversation);
 
   document.addEventListener("click", event => {
+    const leaveDecide = event.target.closest("[data-office-leave-decide]");
+    if (leaveDecide) {
+      void decideLeave(leaveDecide.dataset.officeLeaveUser, leaveDecide.dataset.officeLeaveId, leaveDecide.dataset.officeLeaveDecide);
+      return;
+    }
+    const leaveCancel = event.target.closest("[data-office-leave-cancel]");
+    if (leaveCancel) { void cancelLeave(leaveCancel.dataset.officeLeaveCancel); return; }
     const go = event.target.closest("[data-office-go]");
     if (go) {
       document.querySelector(`[data-view="${go.dataset.officeGo}"]`)?.click();
@@ -1032,6 +1227,10 @@
   });
 
   document.addEventListener("submit", event => {
+    const leaveForm = event.target.closest("[data-office-leave-form]");
+    if (leaveForm) { event.preventDefault(); void submitLeaveRequest(leaveForm); return; }
+    const grantForm = event.target.closest("[data-office-leave-grant]");
+    if (grantForm) { event.preventDefault(); void saveLeaveGrant(grantForm, grantForm.dataset.officeLeaveGrant); return; }
     const correctionForm = event.target.closest("[data-office-attendance-correction-form]");
     if (correctionForm) {
       event.preventDefault();
@@ -1109,7 +1308,7 @@
       stopTimers();
       clearOfficeFileDrag();
       state.context = null;
-      state.data = { users: [], attendance: [], messages: [], loadedAt: "" };
+      state.data = { users: [], attendance: [], messages: [], leave: [], leaveGrants: [], leaveAdmin: false, loadedAt: "" };
       state.dataRevision += 1;
       state.loaded = false;
       state.loading = false;
