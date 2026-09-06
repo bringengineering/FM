@@ -59,6 +59,7 @@ contextBridge.exposeInMainWorld("bringCRM", {
   saveFormTemplate: input => ipcRenderer.invoke("crm:form-template-save", input),
   saveFormEntry: input => ipcRenderer.invoke("crm:form-entry-save", input),
   loadForms: () => ipcRenderer.invoke("crm:forms-load"),
+  savePayrollSlip: input => ipcRenderer.invoke("crm:payroll-save", input),
   saveApprovalRequest: input => ipcRenderer.invoke("crm:approval-save", input),
   decideApprovalRequest: input => ipcRenderer.invoke("crm:approval-decide", input),
   savePurchase: input => ipcRenderer.invoke("crm:purchase-save", input),

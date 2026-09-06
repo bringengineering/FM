@@ -471,6 +471,26 @@
     return rows.filter(row => row.id && row.userId);
   }
 
+  // 급여도 모양이 두 가지다. 관리자는 uid → 월 → 명세서를, 본인은
+  // 월 → 명세서를 받는다. 연도 확정(flattenLeaveGrants)과 같은 사정이다.
+  function flattenPayroll(value, ownerUid) {
+    if (!value || typeof value !== "object") return [];
+    const rows = [];
+    const push = (uid, month, record) => {
+      if (!record || typeof record !== "object") return;
+      rows.push(Object.assign({}, record, {
+        userId: String(record.userId || uid || ""),
+        month: String(record.month || month || ""),
+      }));
+    };
+    Object.entries(value).forEach(([firstKey, firstValue]) => {
+      if (!firstValue || typeof firstValue !== "object") return;
+      if (/^\d{4}-\d{2}$/.test(firstKey)) push(ownerUid, firstKey, firstValue);
+      else Object.entries(firstValue).forEach(([month, record]) => push(firstKey, month, record));
+    });
+    return rows.filter(row => row.userId && row.month);
+  }
+
   function flattenAttendance(value) {
     if (!value || typeof value !== "object") return [];
     const rows = [];
@@ -524,6 +544,9 @@
       // 결재도 여기서 모양만 편다. 값 검사는 approval-core 가 한다.
       approvals: Array.isArray(source.approvals) ? source.approvals.slice() : flattenApprovals(source.approvals, current.uid),
       approvalAdmin: source.approvalAdmin === true,
+      // 급여도 여기서 모양만 편다. 값 검사는 payroll-core 가 한다.
+      payroll: Array.isArray(source.payroll) ? source.payroll.slice() : flattenPayroll(source.payroll, current.uid),
+      payrollAdmin: source.payrollAdmin === true,
       loadedAt: safeText(source.loadedAt)
     };
   }
@@ -586,6 +609,7 @@
     flattenLeaveGrants,
     flattenMembers,
     flattenApprovals,
+    flattenPayroll,
     flattenAttendance,
     flattenMailbox,
     normalizeOfficePayload,

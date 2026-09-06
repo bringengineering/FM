@@ -2236,6 +2236,128 @@ describe.runIf(databaseEmulatorAvailable)("fieldPlatform database rules", () => 
     await assertFails(set(ref(admin, target), { ...base, profitMargin: 0.3 }));
   });
 
+  it("lets a person read only their own payslip and never write one", async () => {
+    // 교부가 법정 의무라 본인이 볼 수 없으면 교부한 것이 아니다. 반대로
+    // 자기 급여를 스스로 적을 수 있으면 그건 명세서가 아니다.
+    const admin = environment.authenticatedContext("crm-admin", crmClaims("admin@bring.test")).database();
+    const member = environment.authenticatedContext("crm-member", crmClaims("member@bring.test")).database();
+    const viewer = environment.authenticatedContext("crm-viewer", crmClaims("viewer@bring.test")).database();
+    const anonymous = environment.unauthenticatedContext().database();
+
+    const target = "crmCompany/officePayroll/crm-viewer/2026-09";
+    const slip = {
+      userId: "crm-viewer",
+      month: "2026-09",
+      payDate: "2026-09-25",
+      status: "draft",
+      basePay: 2400000,
+      overtimePay: 0,
+      nightPay: 0,
+      holidayPay: 0,
+      allowance: 0,
+      bonus: 0,
+      nationalPension: 108000,
+      healthInsurance: 85000,
+      longTermCare: 11000,
+      employmentInsurance: 21600,
+      incomeTax: 30000,
+      localIncomeTax: 3000,
+      otherDeduction: 0,
+      grossPay: 2400000,
+      totalDeduction: 258600,
+      netPay: 2141400,
+      calcNote: "",
+      note: "",
+      issuedAt: "",
+      issuedBy: "",
+      updatedAt: "2026-09-25T00:00:00.000Z",
+      updatedBy: "crm-admin",
+    };
+
+    await assertSucceeds(set(ref(admin, target), slip));
+    // 본인은 읽는다.
+    await assertSucceeds(get(ref(viewer, target)));
+    // 본인이라도 쓰지는 못한다.
+    await assertFails(set(ref(viewer, target), { ...slip, basePay: 9000000, grossPay: 9000000, netPay: 8741400, updatedBy: "crm-viewer" }));
+    // 동료는 읽지도 못한다.
+    await assertFails(get(ref(member, target)));
+    await assertFails(get(ref(member, "crmCompany/officePayroll")));
+    await assertFails(get(ref(anonymous, target)));
+    // 회사 전체 대장은 관리자만.
+    await assertSucceeds(get(ref(admin, "crmCompany/officePayroll")));
+    // 지워지면 교부 기록이 사라진다.
+    await assertFails(remove(ref(admin, target)));
+  });
+
+  it("checks payslip arithmetic and freezes an issued slip", async () => {
+    // 앞뒤가 안 맞는 명세서는 그 자체로 분쟁거리다. 화면이 보낸 합계를
+    // 서버가 그대로 믿으면 안 된다.
+    const admin = environment.authenticatedContext("crm-admin", crmClaims("admin@bring.test")).database();
+    const at = (month: string) => `crmCompany/officePayroll/crm-member/${month}`;
+    const slip = (month: string, patch: Record<string, unknown> = {}) => ({
+      userId: "crm-member",
+      month,
+      payDate: "2026-09-25",
+      status: "draft",
+      basePay: 2000000,
+      overtimePay: 0,
+      nightPay: 0,
+      holidayPay: 0,
+      allowance: 0,
+      bonus: 0,
+      nationalPension: 90000,
+      healthInsurance: 0,
+      longTermCare: 0,
+      employmentInsurance: 0,
+      incomeTax: 10000,
+      localIncomeTax: 0,
+      otherDeduction: 0,
+      grossPay: 2000000,
+      totalDeduction: 100000,
+      netPay: 1900000,
+      calcNote: "",
+      note: "",
+      issuedAt: "",
+      issuedBy: "",
+      updatedAt: "2026-09-25T00:00:00.000Z",
+      updatedBy: "crm-admin",
+      ...patch,
+    });
+
+    await assertSucceeds(set(ref(admin, at("2026-01")), slip("2026-01")));
+    // 합계가 항목과 다르면 막는다.
+    await assertFails(set(ref(admin, at("2026-02")), slip("2026-02", { grossPay: 3000000 })));
+    await assertFails(set(ref(admin, at("2026-03")), slip("2026-03", { netPay: 2000000 })));
+    await assertFails(set(ref(admin, at("2026-04")), slip("2026-04", { totalDeduction: 0 })));
+    // 연장근로수당이 있으면 계산방법이 있어야 한다. 법정 기재사항이다.
+    await assertFails(set(ref(admin, at("2026-05")), slip("2026-05", {
+      overtimePay: 150000, grossPay: 2150000, netPay: 2050000,
+    })));
+    await assertSucceeds(set(ref(admin, at("2026-06")), slip("2026-06", {
+      overtimePay: 150000, grossPay: 2150000, netPay: 2050000, calcNote: "통상시급 × 1.5 × 10시간",
+    })));
+    // 칸 이름을 지어내 계좌번호를 넣는 길도 막는다.
+    await assertFails(set(ref(admin, at("2026-07")), slip("2026-07", { accountNumber: "110-1234-5678" })));
+    // 월 칸과 기록 안의 월이 어긋나면 막는다.
+    await assertFails(set(ref(admin, at("2026-08")), slip("2026-09")));
+
+    // 교부한 뒤에는 금액이 바뀌지 않는다. 이미 준 명세서가 바뀌면 교부한
+    // 의미가 없다.
+    const issued = at("2026-10");
+    await assertSucceeds(set(ref(admin, issued), slip("2026-10")));
+    await assertSucceeds(set(ref(admin, issued), slip("2026-10", {
+      status: "issued", issuedBy: "김현진", issuedAt: "2026-09-25T01:00:00.000Z",
+    })));
+    await assertFails(set(ref(admin, issued), slip("2026-10", {
+      status: "issued", issuedBy: "김현진", issuedAt: "2026-09-25T01:00:00.000Z",
+      basePay: 2500000, grossPay: 2500000, netPay: 2400000,
+    })));
+    // 메모만 고치는 것은 된다 — 금액과 지급일이 그대로이기 때문이다.
+    await assertSucceeds(set(ref(admin, issued), slip("2026-10", {
+      status: "issued", issuedBy: "김현진", issuedAt: "2026-09-25T01:00:00.000Z", note: "재교부",
+    })));
+  });
+
   it("lets only administrators author forms and refuses access secrets", async () => {
     // 서식은 관리자가 만들고 현장이 채운다. 열쇠·출입 비밀번호는 어느 쪽에도
     // 적지 못한다 — 문서함과 같은 기준이다.

@@ -170,6 +170,99 @@
           }
         }
       },
+      "officePayroll": {
+        ".read": "auth != null && auth.token.email_verified === true && root.child('crmCompany/access').child(auth.uid).child('enabled').val() === true && root.child('crmCompany/access').child(auth.uid).child('email').val() === auth.token.email && root.child('crmCompany/access').child(auth.uid).child('mustChangePassword').val() !== true && root.child('crmCompany/access').child(auth.uid).child('role').val() === 'admin'",
+        ".write": false,
+        "$uid": {
+          ".read": "auth != null && auth.token.email_verified === true && root.child('crmCompany/access').child(auth.uid).child('enabled').val() === true && root.child('crmCompany/access').child(auth.uid).child('email').val() === auth.token.email && root.child('crmCompany/access').child(auth.uid).child('mustChangePassword').val() !== true && (root.child('crmCompany/access').child(auth.uid).child('role').val() === 'admin' || root.child('crmCompany/access').child(auth.uid).child('role').val() === 'member' || root.child('crmCompany/access').child(auth.uid).child('role').val() === 'viewer') && (auth.uid === $uid || root.child('crmCompany/access').child(auth.uid).child('role').val() === 'admin')",
+          ".write": false,
+          "$month": {
+            ".write": "auth != null && auth.token.email_verified === true && root.child('crmCompany/access').child(auth.uid).child('enabled').val() === true && root.child('crmCompany/access').child(auth.uid).child('email').val() === auth.token.email && root.child('crmCompany/access').child(auth.uid).child('mustChangePassword').val() !== true && root.child('crmCompany/access').child(auth.uid).child('role').val() === 'admin' && newData.exists()",
+            ".validate": "$month.matches(/^[0-9]{4}-[0-9]{2}$/) && newData.hasChildren(['userId','month','payDate','status','grossPay','totalDeduction','netPay','updatedAt','updatedBy']) && newData.child('userId').val() === $uid && newData.child('month').val() === $month && newData.child('grossPay').val() === newData.child('basePay').val() + newData.child('overtimePay').val() + newData.child('nightPay').val() + newData.child('holidayPay').val() + newData.child('allowance').val() + newData.child('bonus').val() && newData.child('totalDeduction').val() === newData.child('nationalPension').val() + newData.child('healthInsurance').val() + newData.child('longTermCare').val() + newData.child('employmentInsurance').val() + newData.child('incomeTax').val() + newData.child('localIncomeTax').val() + newData.child('otherDeduction').val() && newData.child('netPay').val() === newData.child('grossPay').val() - newData.child('totalDeduction').val() && ((newData.child('overtimePay').val() === 0 && newData.child('nightPay').val() === 0 && newData.child('holidayPay').val() === 0) || newData.child('calcNote').val() !== '') && (newData.child('status').val() !== 'issued' || newData.child('issuedBy').val() !== '') && (!data.exists() || data.child('status').val() !== 'issued' || newData.child('basePay').val() === data.child('basePay').val() && newData.child('overtimePay').val() === data.child('overtimePay').val() && newData.child('nightPay').val() === data.child('nightPay').val() && newData.child('holidayPay').val() === data.child('holidayPay').val() && newData.child('allowance').val() === data.child('allowance').val() && newData.child('bonus').val() === data.child('bonus').val() && newData.child('nationalPension').val() === data.child('nationalPension').val() && newData.child('healthInsurance').val() === data.child('healthInsurance').val() && newData.child('longTermCare').val() === data.child('longTermCare').val() && newData.child('employmentInsurance').val() === data.child('employmentInsurance').val() && newData.child('incomeTax').val() === data.child('incomeTax').val() && newData.child('localIncomeTax').val() === data.child('localIncomeTax').val() && newData.child('otherDeduction').val() === data.child('otherDeduction').val() && newData.child('month').val() === data.child('month').val() && newData.child('payDate').val() === data.child('payDate').val() && newData.child('calcNote').val() === data.child('calcNote').val())",
+            "userId": {
+              ".validate": "newData.isString() && newData.val() === $uid"
+            },
+            "month": {
+              ".validate": "newData.isString() && newData.val() === $month"
+            },
+            "payDate": {
+              ".validate": "newData.isString() && newData.val().matches(/^[0-9]{4}-[0-9]{2}-[0-9]{2}$/)"
+            },
+            "status": {
+              ".validate": "newData.isString() && (newData.val() === 'draft' || newData.val() === 'issued')"
+            },
+            "calcNote": {
+              ".validate": "newData.isString() && newData.val().length <= 1000"
+            },
+            "note": {
+              ".validate": "newData.isString() && newData.val().length <= 500"
+            },
+            "issuedAt": {
+              ".validate": "newData.isString() && (newData.val() === '' || newData.val().matches(/^[0-9]{4}-[0-9]{2}-[0-9]{2}T/))"
+            },
+            "issuedBy": {
+              ".validate": "newData.isString() && newData.val().length <= 80"
+            },
+            "grossPay": {
+              ".validate": "newData.isNumber() && newData.val() >= 0 && newData.val() % 1 === 0 && newData.val() <= 1000000000"
+            },
+            "totalDeduction": {
+              ".validate": "newData.isNumber() && newData.val() >= 0 && newData.val() % 1 === 0 && newData.val() <= 1000000000"
+            },
+            "netPay": {
+              ".validate": "newData.isNumber() && newData.val() >= 0 && newData.val() % 1 === 0 && newData.val() <= 1000000000"
+            },
+            "updatedAt": {
+              ".validate": "newData.isString() && newData.val().matches(/^[0-9]{4}-[0-9]{2}-[0-9]{2}T/)"
+            },
+            "updatedBy": {
+              ".validate": "newData.isString() && newData.val() === auth.uid"
+            },
+            "basePay": {
+              ".validate": "newData.isNumber() && newData.val() >= 0 && newData.val() % 1 === 0 && newData.val() <= 1000000000"
+            },
+            "overtimePay": {
+              ".validate": "newData.isNumber() && newData.val() >= 0 && newData.val() % 1 === 0 && newData.val() <= 1000000000"
+            },
+            "nightPay": {
+              ".validate": "newData.isNumber() && newData.val() >= 0 && newData.val() % 1 === 0 && newData.val() <= 1000000000"
+            },
+            "holidayPay": {
+              ".validate": "newData.isNumber() && newData.val() >= 0 && newData.val() % 1 === 0 && newData.val() <= 1000000000"
+            },
+            "allowance": {
+              ".validate": "newData.isNumber() && newData.val() >= 0 && newData.val() % 1 === 0 && newData.val() <= 1000000000"
+            },
+            "bonus": {
+              ".validate": "newData.isNumber() && newData.val() >= 0 && newData.val() % 1 === 0 && newData.val() <= 1000000000"
+            },
+            "nationalPension": {
+              ".validate": "newData.isNumber() && newData.val() >= 0 && newData.val() % 1 === 0 && newData.val() <= 1000000000"
+            },
+            "healthInsurance": {
+              ".validate": "newData.isNumber() && newData.val() >= 0 && newData.val() % 1 === 0 && newData.val() <= 1000000000"
+            },
+            "longTermCare": {
+              ".validate": "newData.isNumber() && newData.val() >= 0 && newData.val() % 1 === 0 && newData.val() <= 1000000000"
+            },
+            "employmentInsurance": {
+              ".validate": "newData.isNumber() && newData.val() >= 0 && newData.val() % 1 === 0 && newData.val() <= 1000000000"
+            },
+            "incomeTax": {
+              ".validate": "newData.isNumber() && newData.val() >= 0 && newData.val() % 1 === 0 && newData.val() <= 1000000000"
+            },
+            "localIncomeTax": {
+              ".validate": "newData.isNumber() && newData.val() >= 0 && newData.val() % 1 === 0 && newData.val() <= 1000000000"
+            },
+            "otherDeduction": {
+              ".validate": "newData.isNumber() && newData.val() >= 0 && newData.val() % 1 === 0 && newData.val() <= 1000000000"
+            },
+            "$other": {
+              ".validate": false
+            }
+          }
+        }
+      },
       "formTemplates": {
         ".read": "auth != null && auth.token.email_verified === true && root.child('crmCompany/access').child(auth.uid).child('enabled').val() === true && root.child('crmCompany/access').child(auth.uid).child('email').val() === auth.token.email && root.child('crmCompany/access').child(auth.uid).child('mustChangePassword').val() !== true && (root.child('crmCompany/access').child(auth.uid).child('role').val() === 'admin' || root.child('crmCompany/access').child(auth.uid).child('role').val() === 'member' || root.child('crmCompany/access').child(auth.uid).child('role').val() === 'viewer')",
         ".write": false,

@@ -7177,6 +7177,7 @@ secureCanonicalHandle("crm:leave-grant-save", input => remoteClient.saveLeaveGra
 secureCanonicalHandle("crm:hr-record-save", input => remoteClient.saveMemberRecord(input));
 secureCanonicalHandle("crm:form-template-save", input => remoteClient.saveFormTemplate(input));
 secureCanonicalHandle("crm:form-entry-save", input => remoteClient.saveFormEntry(input));
+secureCanonicalHandle("crm:payroll-save", input => remoteClient.savePayrollSlip(input));
 secureCanonicalHandle("crm:approval-save", input => remoteClient.saveApprovalRequest(input));
 secureCanonicalHandle("crm:approval-decide", input => remoteClient.decideApprovalRequest(input));
 secureCanonicalHandle("crm:purchase-save", input => remoteClient.savePurchase(input));
