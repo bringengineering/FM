@@ -4509,7 +4509,8 @@
 
   // 대표OS 로 올릴 총평 초안. 확인(confirmedBy)은 사람이 버튼을 눌러야 붙고,
   // 글을 고치면 풀린다. 확인한 문장과 보내는 문장이 달라지면 안 된다.
-  let ownerOsSummaryState = { summary: "", draftedBy: "", confirmedBy: "", confirmedAt: "", sending: false, notice: "", error: "" };
+  const blankOwnerOsSummaryState = () => ({ summary: "", draftedBy: "", confirmedBy: "", confirmedAt: "", sending: false, notice: "", error: "" });
+  let ownerOsSummaryState = blankOwnerOsSummaryState();
 
   // 대표OS 연결 상태. 비밀키는 절대 여기 담기지 않는다 — 화면은 설정 여부와
   // 끝 네 자리만 안다(main.js 의 loadOwnerOsSettings 가 그것만 넘긴다).
@@ -7709,6 +7710,9 @@
       managementReportState.month = /^\d{4}-\d{2}$/.test(event.target.value) ? event.target.value : Core.dayKey().slice(0, 7);
       managementReportState.result = null;
       managementReportState.error = "";
+      // 달이 바뀌면 총평도 그 달의 것이 아니다. 확인까지 같이 푼다 — 7월 총평이
+      // "확인됨" 인 채로 8월 보고에 붙으면 대표는 8월을 읽었다고 믿게 된다.
+      ownerOsSummaryState = blankOwnerOsSummaryState();
       renderOperationsIntelligence();
       return;
     }
@@ -9231,6 +9235,28 @@
     if (direction && deleteCustomerPhoneDigit(event.target, direction)) event.preventDefault();
   });
   document.addEventListener("input", event => {
+    if (event.target.matches("[data-owner-os-summary]")) {
+      // 확인한 문장과 보내는 문장이 달라지면 확인은 무효다. 보내는 쪽은 이미
+      // 그렇게 처리하지만, 화면이 계속 "확인됨" 이라고 하면 관리자는 고친 글이
+      // 승인된 줄 알고 보낸다. 상태를 여기서 같이 풀어 준다.
+      const wasConfirmed = Boolean(ownerOsSummaryState.confirmedBy);
+      ownerOsSummaryState = Object.assign({}, ownerOsSummaryState, {
+        summary: event.target.value,
+        confirmedBy: "",
+        confirmedAt: "",
+        notice: "",
+      });
+      // 다시 그리는 건 확인이 풀리는 그 한 번뿐이다. 글자마다 다시 그리면
+      // 커서가 튀고 한글 조합이 끊긴다.
+      if (wasConfirmed && !event.isComposing) {
+        const caret = event.target.selectionStart;
+        renderOperationsIntelligence();
+        const box = document.querySelector("[data-owner-os-summary]");
+        box?.focus();
+        if (Number.isInteger(caret)) box?.setSelectionRange(caret, caret);
+      }
+      return;
+    }
     if (event.target.matches("[data-customer-building-picker-search]")) {
       renderCustomerBuildingPickerResults(event.target.dataset.targetView, event.target.value.slice(0, 160));
       return;

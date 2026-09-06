@@ -1388,6 +1388,11 @@ async function sendOwnerOsReport(input) {
   if (isMarketingOnlySession()) {
     return { ok: false, error: "마케팅 담당자는 대표OS 보고를 보낼 수 없습니다.", code: "MARKETING_ONLY_FORBIDDEN" };
   }
+  // 연결 설정과 같은 기준으로 막는다. 화면에서만 관리자를 확인하면 개발자 도구로
+  // 채널을 직접 불러 지어낸 실적을 대표 보고로 올릴 수 있다.
+  if (user.role !== "admin") {
+    throw Object.assign(new Error("대표OS 보고는 관리자만 보낼 수 있습니다."), { code: "ACCESS_DENIED" });
+  }
   const settings = await readOwnerOsSettings();
   if (!settings) throw Object.assign(new Error("대표OS 연결을 먼저 설정해 주세요."), { code: "OWNER_OS_NOT_CONFIGURED" });
 
