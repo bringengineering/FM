@@ -683,7 +683,7 @@
     const now = iso();
     return Object.assign({
       id: random("tsk"), customerId: "", title: "", dueAt: dayKey(now), priority: "보통", status: "할 일",
-      owner: "김현진", category: "후속 연락", note: "", createdAt: now, updatedAt: now
+      owner: "김현진", assigneeUid: "", category: "후속 연락", note: "", createdAt: now, updatedAt: now
     }, values || {});
   }
 

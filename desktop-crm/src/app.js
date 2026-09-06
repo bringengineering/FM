@@ -1458,6 +1458,9 @@
       requestAnimationFrame(() => calendarFolder?.scrollIntoView({ block: "nearest" }));
     }
     document.getElementById("navCaseCount").textContent = activeCases().length;
+    // 열려 있는 할 일만 센다. 완료까지 세면 숫자가 줄지 않아 아무도 안 본다.
+    const taskBadge = document.getElementById("navTaskCount");
+    if (taskBadge) taskBadge.textContent = openTasks().length;
     document.getElementById("navPaymentCount").textContent = paymentRows("all").filter(item => item.status === "overdue" || item.status === "manual_unpaid" || item.status === "review").length;
     document.getElementById("navCustomerCount").textContent = store.customers.length;
     document.getElementById("navVacancyCount").textContent = vacancyNavigationCount();
@@ -4162,9 +4165,14 @@
 
   function renderTasks() {
     const today = todayKey();
-    const tasks = [...store.tasks].filter(task => taskStatusFilter === "전체" || (taskStatusFilter === "완료" ? task.status === "완료" : task.status !== "완료" && task.status !== "취소"))
+    const tasks = [...store.tasks].filter(task => {
+      if (taskStatusFilter === "내 할 일") return isMyTask(task) && task.status !== "완료" && task.status !== "취소";
+      if (taskStatusFilter === "전체") return true;
+      if (taskStatusFilter === "완료") return task.status === "완료";
+      return task.status !== "완료" && task.status !== "취소";
+    })
       .sort((a, b) => (a.status === "완료") - (b.status === "완료") || String(a.dueAt).localeCompare(String(b.dueAt)));
-    main.innerHTML = `<section class="task-workspace"><div class="toolbar task-toolbar"><div class="filter-group">${["전체", "열린 업무", "완료"].map(filter => `<button class="filter-chip ${taskStatusFilter === filter ? "active" : ""}" data-task-filter="${filter}">${filter}</button>`).join("")}</div><button class="secondary-button" data-action="new-task">＋ 할 일 추가</button></div>
+    main.innerHTML = `<section class="task-workspace"><div class="toolbar task-toolbar"><div class="filter-group">${["내 할 일", "전체", "열린 업무", "완료"].map(filter => `<button class="filter-chip ${taskStatusFilter === filter ? "active" : ""}" data-task-filter="${filter}">${filter}</button>`).join("")}</div><button class="secondary-button" data-action="new-task">＋ 할 일 추가</button></div>
       ${tasks.length ? `<div class="task-list">${tasks.map(task => {
         const customer = customerById(task.customerId);
         const due = dueKey(task.dueAt);
@@ -5283,7 +5291,7 @@
   }
 
   function taskEditor(customerId) {
-    modalContent.innerHTML = `<div class="modal-head"><div><h2>할 일 추가</h2><p>후속 연락과 제출 업무를 기한별로 관리합니다.</p></div><button class="close-button" data-action="close-modal">×</button></div><form id="taskForm" class="modal-body" data-return-customer="${attr(customerId || "")}"><div class="form-grid">${selectField("연결 고객", "customerId", ["", ...store.customers.map(item => item.id)], customerId || "", id => id ? (customerById(id)?.name || id) : "공통 업무")}${field("할 일 *", "title", "")}${field("기한", "dueAt", todayKey(), "date")}${selectField("우선순위", "priority", ["높음", "보통", "낮음"], "보통")}${selectField("구분", "category", ["후속 연락", "견적", "현장방문", "제안서", "계약", "보고", "기타"], "후속 연락")}${field("담당자", "owner", store.settings.owner || "김현진")}${areaField("메모", "note", "", "wide")}</div><div class="form-actions"><button type="button" class="secondary-button" data-action="close-modal">취소</button><button class="primary-button" type="submit">추가</button></div></form>`;
+    modalContent.innerHTML = `<div class="modal-head"><div><h2>할 일 추가</h2><p>후속 연락과 제출 업무를 기한별로 관리합니다.</p></div><button class="close-button" data-action="close-modal">×</button></div><form id="taskForm" class="modal-body" data-return-customer="${attr(customerId || "")}"><div class="form-grid">${selectField("연결 고객", "customerId", ["", ...store.customers.map(item => item.id)], customerId || "", id => id ? (customerById(id)?.name || id) : "공통 업무")}${field("할 일 *", "title", "")}${field("기한", "dueAt", todayKey(), "date")}${selectField("우선순위", "priority", ["높음", "보통", "낮음"], "보통")}${selectField("구분", "category", ["후속 연락", "견적", "현장방문", "제안서", "계약", "보고", "기타"], "후속 연락")}${taskAssigneeField("", "")}${areaField("메모", "note", "", "wide")}</div><div class="form-actions"><button type="button" class="secondary-button" data-action="close-modal">취소</button><button class="primary-button" type="submit">추가</button></div></form>`;
     openModal();
   }
 
@@ -5391,6 +5399,44 @@
     return { email: user.email || "", name: user.displayName || store.settings.owner || "담당자" };
   };
   const salesActorName = () => salesActor().name;
+
+  // --- 할 일 담당자 ---
+  // 이름만 자유 입력으로 두면 오타 하나에 "내 할 일" 이 비어 버린다. 그래서
+  // 고른 사람은 uid 로 붙이고, 이름은 보여주기용으로 같이 둔다. 예전에 만든
+  // 할 일에는 uid 가 없으므로 그때는 이름으로 견준다.
+  const teamMembers = () => {
+    try { return window.BringOffice?.members?.() || []; } catch (_) { return []; }
+  };
+  // 팀원 목록을 못 가져오는 상황(오피스 자료 미로드)에서도 할 일은 만들 수
+  // 있어야 한다. 그때는 예전처럼 이름을 직접 적는다.
+  function taskAssigneeField(selectedUid, selectedName) {
+    const members = teamMembers();
+    const fallbackName = selectedName || store.settings.owner || salesActorName() || "";
+    if (!members.length) return field("담당자", "owner", fallbackName);
+    const options = ["", ...members.map(member => member.uid)];
+    const current = selectedUid || members.find(member => member.displayName === fallbackName)?.uid || "";
+    const label = uid => {
+      if (!uid) return "지정 안 함";
+      const member = members.find(item => item.uid === uid);
+      if (!member) return uid;
+      const role = [member.department, member.title].filter(Boolean).join(" · ");
+      return role ? `${member.displayName} (${role})` : member.displayName;
+    };
+    return selectField("담당자", "assigneeUid", options, current, label);
+  }
+
+  // 함수 선언으로 둔다. 사이드바 배지를 그리는 코드가 이 줄보다 위에 있어서,
+  // const 로 두면 실행 순서에 따라 아직 정의되지 않은 값을 부르게 된다.
+  function openTasks() {
+    return (store.tasks || []).filter(task => task && task.status !== "완료" && task.status !== "취소");
+  }
+  function isMyTask(task) {
+    if (!task) return false;
+    const uid = currentAuthUid();
+    if (task.assigneeUid) return Boolean(uid) && task.assigneeUid === uid;
+    const mine = salesActorName().trim();
+    return Boolean(mine) && String(task.owner || "").trim() === mine;
+  }
   const salesProspectById = id => (store.salesProspects || []).find(item => item && item.id === id) || null;
   const salesContactById = id => (store.salesContacts || []).find(item => item && item.id === id) || null;
   const salesUnitById = id => (store.salesUnits || []).find(item => item && item.id === id) || null;
@@ -8946,6 +8992,10 @@
       const raw = Object.fromEntries(new FormData(form).entries());
       if (!raw.title.trim()) return showToast("할 일을 입력해 주세요.", "error");
       const returnCustomerId = String(form.dataset.returnCustomer || "");
+      // 화면은 uid 를 보내지만 목록·보고서는 이름으로 읽는다. 둘 다 남긴다.
+      const picked = teamMembers().find(member => member.uid === String(raw.assigneeUid || ""));
+      if (picked) raw.owner = picked.displayName;
+      else if (raw.assigneeUid !== undefined && !raw.owner) raw.owner = "";
       const task = Core.createTask(raw);
       store.tasks.push(task);
       logAudit({ category: "등록", targetType: "영업 할 일", targetId: task.id, targetLabel: task.title, action: "영업 할 일 등록", reason: "후속 업무 관리" });
