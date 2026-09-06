@@ -51,6 +51,59 @@
   const rows = value => (Array.isArray(value) ? value.filter(Boolean) : []);
   const isDate = value => /^\d{4}-\d{2}-\d{2}$/.test(text(value, 10));
 
+  // 산출물 종류. 다섯 가지로 못 박는다.
+  //
+  // 자유 글로 두면 "사진", "사진 몇 장", "당근 사진" 이 다 다른 말이 되고,
+  // 그러면 "요구한 만큼 냈나" 를 기계가 못 본다. 사람이 눈으로 세는 순간
+  // 아무도 안 센다.
+  const DELIVERABLE_KINDS = Object.freeze([
+    { key: "photo", label: "사진", hint: "현장 사진. 몇 장이 있어야 하는지 정해 주세요.", counted: true },
+    { key: "doc", label: "문서", hint: "PDF·한글·워드 같은 것", counted: true },
+    { key: "sheet", label: "표", hint: "엑셀·시트", counted: true },
+    { key: "link", label: "링크만", hint: "올린 글·영상 주소. 파일이 아니라 주소가 결과물입니다.", counted: true },
+    { key: "none", label: "없음", hint: "현장에서 확인만 하고 끝나는 일", counted: false },
+  ]);
+  const isDeliverableKind = key => DELIVERABLE_KINDS.some(item => item.key === key);
+  const deliverableLabel = key => (DELIVERABLE_KINDS.find(item => item.key === key) || {}).label || key;
+  const deliverableCounted = key => Boolean((DELIVERABLE_KINDS.find(item => item.key === key) || {}).counted);
+
+  // 몇 개가 있어야 하는가. 20을 넘기면 그건 한 지시가 아니다.
+  function deliverableCountOf(value) {
+    const number = Number(value);
+    if (!Number.isFinite(number) || number <= 0) return 0;
+    return Math.min(20, Math.round(number));
+  }
+
+  // 파일 이름을 앱이 붙인다. 사람이 손으로 치면 매번 다르게 적힌다.
+  //
+  // 지시에 적어 둔 이름 뒤에 번호를 붙이고 확장자는 원본 그대로 둔다 —
+  // 확장자를 바꾸면 파일이 안 열린다.
+  function resultFileName(order, originalName, index) {
+    const base = text((order || {}).deliverable, 200).replace(/\.[A-Za-z0-9]{1,8}$/u, "");
+    const original = text(originalName, 200);
+    const dot = original.lastIndexOf(".");
+    const extension = dot > 0 ? original.slice(dot).toLowerCase() : "";
+    if (!base) return original;
+    const seq = Number(index);
+    const suffix = Number.isFinite(seq) && seq > 0 ? `_${Math.round(seq)}` : "";
+    return `${base}${suffix}${extension}`;
+  }
+
+  // 요구한 만큼 냈는가. 안 세면 사진 5장을 시켜도 1장에 제출이 열린다.
+  function deliverableCheck(order) {
+    const item = normalizeOrder(order);
+    const need = deliverableCounted(item.deliverableKind) ? item.deliverableCount : 0;
+    const have = item.results.length;
+    return {
+      kind: item.deliverableKind,
+      label: deliverableLabel(item.deliverableKind),
+      need,
+      have,
+      ok: have >= need,
+      short: Math.max(0, need - have),
+    };
+  }
+
   // 예상 소요시간. 30분 단위까지만 받는다 — 0.37시간을 적을 수 있게 하면
   // 정확해 보이지만 그 정확도는 어디에도 없다. 한 지시가 40시간을 넘으면
   // 그건 지시가 아니라 프로젝트라서 거기서 자른다.
@@ -141,6 +194,10 @@
       // 산출물이 어떤 파일로 어디에 남아야 하는가. 이게 비면 "다 했다" 의
       // 뜻이 사람마다 달라진다.
       deliverable: text(source.deliverable, 200),
+      // 어떤 종류를 몇 개. 옛 지시에는 없으니 기본은 "정하지 않음" 이다 —
+      // 없던 규격을 소급해서 세우면 옛 지시가 통째로 제출이 막힌다.
+      deliverableKind: isDeliverableKind(source.deliverableKind) ? source.deliverableKind : "",
+      deliverableCount: deliverableCountOf(source.deliverableCount),
       progress: progressOf(source.progress),
       assigneeUid: text(source.assigneeUid, 128),
       assigneeName: text(source.assigneeName, 80),
@@ -227,8 +284,20 @@
       return { ok: false, code: "RETURN_REASON_REQUIRED", error: "다시 요청하는 이유를 적어 주세요." };
     }
     // 결과물 없이 제출하면 볼 것이 없다.
-    if (next === "submitted" && !order.results.length) {
+    if (next === "submitted" && order.deliverableKind !== "none" && !order.results.length) {
       return { ok: false, code: "RESULT_REQUIRED", error: "결과물을 먼저 올려 주세요." };
+    }
+    // 요구한 만큼 냈는가. 안 세면 사진 5장을 시켜도 1장에 제출이 열리고,
+    // 그러면 완료 기준이 있으나 마나다.
+    if (next === "submitted") {
+      const need = deliverableCheck(order);
+      if (!need.ok) {
+        return {
+          ok: false,
+          code: "RESULT_SHORT",
+          error: `${need.label} ${need.need}개가 필요한데 ${need.have}개 올렸습니다. ${need.short}개 더 올려 주세요.`,
+        };
+      }
     }
     return {
       ok: true,
@@ -244,7 +313,7 @@
   // 담당자가 못 고치는 칸. 소요시간과 가중치와 산출물도 여기 넣는다 —
   // 받는 사람이 "이건 두 시간짜리였다" 로 고칠 수 있으면 부하 계산이 무너지고,
   // 산출물을 고칠 수 있으면 완료 기준이 사후에 낮아진다.
-  const FROZEN = Object.freeze(["title", "why", "what", "doneWhen", "assigneeUid", "dueDate", "startDate", "projectId", "track", "buildingId", "hours", "weight", "deliverable", "createdAt", "createdBy"]);
+  const FROZEN = Object.freeze(["title", "why", "what", "doneWhen", "assigneeUid", "dueDate", "startDate", "projectId", "track", "buildingId", "hours", "weight", "deliverable", "deliverableKind", "deliverableCount", "createdAt", "createdBy"]);
   function sameInstruction(before, after) {
     const a = normalizeOrder(before);
     const b = normalizeOrder(after);
@@ -310,6 +379,13 @@
     isStatus,
     progressOf,
     MAX_HOURS,
+    DELIVERABLE_KINDS,
+    isDeliverableKind,
+    deliverableLabel,
+    deliverableCounted,
+    deliverableCountOf,
+    deliverableCheck,
+    resultFileName,
     hoursOf,
     weightOf,
     normalizeResult,

@@ -3604,7 +3604,7 @@ async function uploadWorkOrderResult(input) {
   }
   const orderId = String(options.orderId || "");
   const orderTitle = String(options.orderTitle || "");
-  const projectName = String(options.projectName || "");
+  const assigneeName = String(options.assigneeName || "");
   if (!orderId) throw Object.assign(new Error("어느 지시의 결과물인지 정해 주세요."), { code: "ORDER_REQUIRED" });
 
   const content = await fs.readFile(filePath);
@@ -3613,10 +3613,15 @@ async function uploadWorkOrderResult(input) {
     { fetchImpl: (url, init) => fetch(url, init), accessToken: driveSession.accessToken },
     {
       rootFolderId: String(options.rootFolderId || ""),
-      // 프로젝트별로 쌓는다. 연도로 나누면 "브링 케어 결과물 다 보여줘" 가
-      // 안 된다 — 그게 결과물을 찾는 가장 흔한 이유다.
-      folderPath: ["업무지시", projectName || "프로젝트 없음", `${orderTitle || "제목없음"}_${orderId}`],
-      fileName: "",
+      // 달 · 사람 · 지시 순으로 쌓는다. Drive 에서 찾는 이유는 거의 늘
+      // "우중이 지난달에 뭐 냈냐" 라서다. 프로젝트로 모아 보는 것은 앱이
+      // 한다 — 프로젝트 탭에 그 지시들이 이미 모여 있고 카드마다 폴더
+      // 링크가 붙는다. 한 파일은 한 폴더에만 있을 수 있어 둘 중 하나를
+      // 골라야 했다.
+      folderPath: ["업무지시", day.slice(0, 7), assigneeName || "담당 미정", orderTitle || `제목없음_${orderId}`],
+      // 이름은 지시에 적어 둔 산출물 이름을 따른다. 사람이 손으로 치면
+      // 매번 다르게 적힌다.
+      fileName: String(options.fileName || ""),
       docTypeLabel: "업무지시 결과물",
       documentDate: day,
       originalFileName: path.basename(filePath),
