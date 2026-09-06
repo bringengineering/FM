@@ -11,6 +11,7 @@ const full = {
   doneWhen: "사진 3장과 원인 한 줄이 올라오면 끝입니다.",
   assigneeUid: "u1",
   status: "assigned",
+  hours: 4,
 };
 const withResult = patch => Object.assign({}, full, {
   results: [{ id: "r1", driveFileId: "1AbCdEfGhIjK", title: "사진", uploadedAt: "2026-09-06T00:00:00.000Z" }],
@@ -115,9 +116,52 @@ test("고를 수 있는 다음 상태가 사람마다 다르다", () => {
 });
 
 test("모르는 칸과 상태는 조용히 버린다", () => {
-  const order = W.normalizeOrder({ ...full, status: "cancelled", hours: 3 });
+  const order = W.normalizeOrder({ ...full, status: "cancelled", secretNote: "여기 적으면 안 되는 것" });
   assert.equal(order.status, "assigned");
-  assert.ok(!("hours" in order));
+  assert.ok(!("secretNote" in order));
   // Drive 정보가 없는 결과물은 담지 않는다. 링크가 없으면 결과물이 아니다.
   assert.deepEqual(W.normalizeOrder({ ...full, results: [{ id: "r1" }] }).results, []);
+});
+
+// --- 예상 소요시간·가중치·산출물 ---
+
+const order = (patch = {}) => Object.assign({}, full, patch);
+test("새 지시는 예상 소요시간을 비워 둘 수 없다", () => {
+  const made = W.validateOrder(order({ hours: 0 }));
+  assert.equal(made.ok, false);
+  assert.equal(made.code, "HOURS_REQUIRED");
+  assert.match(made.error, /몇 시간쯤 걸릴지/u);
+});
+
+test("이미 있던 지시는 시간이 없어도 막지 않는다", () => {
+  // 간트에서 기간 한 번 옮기려다 옛 지시가 통째로 안 저장되면 안 된다.
+  const made = W.validateOrder(order({ hours: 0, createdAt: "2026-07-01T00:00:00Z" }));
+  assert.equal(made.ok, true);
+  assert.equal(made.order.hours, 0);
+});
+
+test("소요시간은 30분 단위로 자르고 40시간을 넘기지 않는다", () => {
+  assert.equal(W.hoursOf(2.4), 2.5);
+  assert.equal(W.hoursOf(2.2), 2);
+  assert.equal(W.hoursOf(0), 0);
+  assert.equal(W.hoursOf(-3), 0);
+  assert.equal(W.hoursOf("아무거나"), 0);
+  // 40시간 넘는 것은 지시가 아니라 프로젝트다.
+  assert.equal(W.hoursOf(400), 40);
+});
+
+test("가중치는 0~100 정수다", () => {
+  assert.equal(W.weightOf(33.4), 33);
+  assert.equal(W.weightOf(0), 0);
+  assert.equal(W.weightOf(140), 100);
+  assert.equal(W.weightOf(""), 0);
+});
+
+test("담당자는 소요시간·가중치·산출물을 고칠 수 없다", () => {
+  const before = order({ hours: 8, weight: 40, deliverable: "20260907_점검표.xlsx" });
+  // 받는 사람이 "이건 두 시간짜리였다" 로 고칠 수 있으면 부하 계산이 무너진다.
+  assert.equal(W.sameInstruction(before, Object.assign({}, before, { hours: 2 })), false);
+  assert.equal(W.sameInstruction(before, Object.assign({}, before, { weight: 10 })), false);
+  assert.equal(W.sameInstruction(before, Object.assign({}, before, { deliverable: "아무거나" })), false);
+  assert.equal(W.sameInstruction(before, Object.assign({}, before, { progress: 50 })), true);
 });

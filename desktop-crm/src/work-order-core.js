@@ -24,12 +24,22 @@
 // **돌려보낼 때는 이유가 있어야 한다.** 이유 없는 반려는 다시 하라는 말인데
 // 무엇을 고쳐야 하는지 알 수 없다.
 //
+// **몇 시간짜리인지 적는다.** 건수만 세면 30분짜리와 이틀짜리가 같은 한 건이
+// 된다. 그러면 일을 나눠 줄 때 감으로 하게 되고, 받는 쪽은 못 한다는 말을
+// 못 한다. 새 지시에는 예상 소요시간을 비워 둘 수 없다 — 다만 이미 있던
+// 지시는 막지 않는다. 옛 기록 때문에 오늘 일이 멈추면 안 된다.
+//
+// **가중치는 저장을 막지 않는다.** 한 사람의 한 주에서 합이 100% 가 되어야
+// 하는데, 첫 지시를 낼 때는 어차피 100이 아니다. 저장을 막으면 지시를 못
+// 낸다. 그래서 합이 얼마인지 화면에서 보여 주고, 맞추는 것은 사람이 한다.
+//
 // 하지 않는 것
 //
 // 1. 결과물 파일을 여기 담지 않는다. Drive 에 올리고 링크만 들고 있다.
 // 2. 기한을 자동으로 미루지 않는다. 지났으면 지났다고 보여 줄 뿐이다.
 // 3. 담당자를 자동으로 정하지 않는다.
-// 4. 일한 시간을 재지 않는다. 근태가 따로 있다.
+// 4. 실제로 일한 시간을 재지 않는다. 근태와 일일업무일지가 한다. 여기 있는
+//    시간은 "얼마나 걸릴 것 같은가" 하나뿐이다.
 (function attachWorkOrderCore(root, factory) {
   const api = factory();
   if (typeof module === "object" && module.exports) module.exports = api;
@@ -40,6 +50,25 @@
   const text = (value, limit = 500) => String(value == null ? "" : value).trim().slice(0, limit);
   const rows = value => (Array.isArray(value) ? value.filter(Boolean) : []);
   const isDate = value => /^\d{4}-\d{2}-\d{2}$/.test(text(value, 10));
+
+  // 예상 소요시간. 30분 단위까지만 받는다 — 0.37시간을 적을 수 있게 하면
+  // 정확해 보이지만 그 정확도는 어디에도 없다. 한 지시가 40시간을 넘으면
+  // 그건 지시가 아니라 프로젝트라서 거기서 자른다.
+  const MAX_HOURS = 40;
+  function hoursOf(value) {
+    if (value === "" || value == null) return 0;
+    const number = Number(value);
+    if (!Number.isFinite(number) || number <= 0) return 0;
+    return Math.min(MAX_HOURS, Math.round(number * 2) / 2);
+  }
+
+  // 가중치. 한 사람의 한 주에서 합이 100 이 되게 쓴다. 0 은 "안 정했다" 다.
+  function weightOf(value) {
+    if (value === "" || value == null) return 0;
+    const number = Number(value);
+    if (!Number.isFinite(number) || number <= 0) return 0;
+    return Math.min(100, Math.round(number));
+  }
 
   // 진행률은 0~100 정수. 소수점을 두면 두 사람이 다른 숫자를 보게 된다.
   function progressOf(value) {
@@ -105,6 +134,13 @@
       projectId: text(source.projectId, 80),
       track: text(source.track, 40),
       startDate: isDate(source.startDate) ? text(source.startDate, 10) : "",
+      // 얼마나 걸릴 것 같은가. 가용시간과 맞대 보는 유일한 숫자다.
+      hours: hoursOf(source.hours),
+      // 이 주에 이 사람에게 이 일이 얼마나 중요한가. 합이 100.
+      weight: weightOf(source.weight),
+      // 산출물이 어떤 파일로 어디에 남아야 하는가. 이게 비면 "다 했다" 의
+      // 뜻이 사람마다 달라진다.
+      deliverable: text(source.deliverable, 200),
       progress: progressOf(source.progress),
       assigneeUid: text(source.assigneeUid, 128),
       assigneeName: text(source.assigneeName, 80),
@@ -144,6 +180,15 @@
         ok: false,
         code: "DONE_WHEN_REQUIRED",
         error: "무엇이 있으면 끝난 것인지 적어 주세요. 기준이 없으면 두 번 일하게 됩니다.",
+      };
+    }
+    // 새 지시에만 건다. 이미 있던 지시까지 막으면 간트에서 기간 한 번
+    // 옮기려다 옛 지시가 통째로 안 저장된다.
+    if (!order.createdAt && !order.hours) {
+      return {
+        ok: false,
+        code: "HOURS_REQUIRED",
+        error: "몇 시간쯤 걸릴지 적어 주세요. 시간이 없으면 누가 얼마나 물고 있는지 셀 수 없습니다.",
       };
     }
     return { ok: true, order };
@@ -196,7 +241,10 @@
   }
 
   // 지시 내용이 바뀌었는지 본다. 담당자가 상태만 바꾸는지 확인하는 데 쓴다.
-  const FROZEN = Object.freeze(["title", "why", "what", "doneWhen", "assigneeUid", "dueDate", "startDate", "projectId", "track", "buildingId", "createdAt", "createdBy"]);
+  // 담당자가 못 고치는 칸. 소요시간과 가중치와 산출물도 여기 넣는다 —
+  // 받는 사람이 "이건 두 시간짜리였다" 로 고칠 수 있으면 부하 계산이 무너지고,
+  // 산출물을 고칠 수 있으면 완료 기준이 사후에 낮아진다.
+  const FROZEN = Object.freeze(["title", "why", "what", "doneWhen", "assigneeUid", "dueDate", "startDate", "projectId", "track", "buildingId", "hours", "weight", "deliverable", "createdAt", "createdBy"]);
   function sameInstruction(before, after) {
     const a = normalizeOrder(before);
     const b = normalizeOrder(after);
@@ -261,6 +309,9 @@
     statusLabel,
     isStatus,
     progressOf,
+    MAX_HOURS,
+    hoursOf,
+    weightOf,
     normalizeResult,
     normalizeOrder,
     validateOrder,

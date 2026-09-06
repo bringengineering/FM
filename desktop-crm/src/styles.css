@@ -753,3 +753,18 @@ button:focus-visible,input:focus-visible,select:focus-visible,textarea:focus-vis
 .tg-hour-pick.is-on { border-color: #3182F6; background: #EAF2FE; color: #1B64DA; }
 .tg-hour-pick input { margin: 0; }
 .tg-hour-pick b { font-weight: 700; }
+
+/* 가용시간 판. 채움 막대는 넘칠 때만 색이 달라진다 — 늘 알록달록하면
+   무엇이 문제인지 눈에 안 들어온다. */
+.cap-bar.is-over i{background:#C6535F}
+.cap-bar.is-tight i{background:#C77A00}
+.cap-bar.is-fit i,.cap-bar.is-room i{background:#3182F6}
+.cap-note{margin:10px 16px 14px;font-size:12px}
+.cap-editor .panel-body{display:grid;gap:12px}
+.cap-window{display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:12px}
+.cap-window label{display:grid;gap:4px;font-size:13px;color:#4E5968}
+.cap-window label.wide{grid-column:1/-1}
+.cap-window input[type=time]{width:auto}
+.cap-days{display:flex;flex-wrap:wrap;gap:10px}
+.cap-days label{display:inline-flex;align-items:center;gap:4px;color:#191F28}
+.cap-skip{display:inline-flex;align-items:center;gap:6px;white-space:nowrap;font-size:12px;color:#4E5968}

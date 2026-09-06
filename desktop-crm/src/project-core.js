@@ -27,7 +27,17 @@
 //    날짜로 짐작하면 80% 라고 적힌 숫자를 아무도 안 믿게 된다.
 // 2. 앞뒤 일의 의존 관계를 다루지 않는다. 선을 잇기 시작하면 일정이 저절로
 //    밀리는 것처럼 보이는데, 실제로는 아무도 그걸 유지하지 않는다.
-// 3. 사람이 몇 시간 쓸 수 있는지 따지지 않는다.
+// 3. 여기서 가용시간을 계산하지 않는다. 시간표와 부하는 capacity-core 가
+//    맡는다. 프로젝트는 "무엇을 하는가", 가용시간은 "언제 할 수 있는가"라
+//    바뀌는 이유가 다르다.
+//
+// 기본 프로젝트
+//
+// 처음 켜면 프로젝트가 하나도 없다. 빈 화면을 주면 사람들은 자기 일을 어디에
+// 넣어야 할지 몰라 아무 데도 안 넣고, 결국 일은 다시 카톡으로 간다. 그래서
+// 지금 실제로 돌고 있는 여섯 덩어리를 견본으로 들고 있다가 한 번에 만든다.
+// 만든 뒤에는 보통 프로젝트와 똑같다 — 이름도 담당도 고칠 수 있고, 다시
+// 만들어지지 않는다.
 (function attachProjectCore(root, factory) {
   const api = factory();
   if (typeof module === "object" && module.exports) module.exports = api;
@@ -74,6 +84,10 @@
       owner: text(source.owner, 80),
       goal: text(source.goal, 2000),
       status: STATUSES.some(item => item.key === source.status) ? source.status : "active",
+      // 이 프로젝트의 일이 가용시간을 잡아먹는가. 학업이 그렇지 않다 —
+      // 수업 시간은 시간표에서 이미 빠져 있는데 거기에 "수강 3시간" 을 또
+      // 더하면 같은 시간을 두 번 세게 되고, 학생은 늘 "넘침" 으로 뜬다.
+      offCapacity: source.offCapacity === true,
       startDate: isDate(source.startDate) ? text(source.startDate, 10) : "",
       endDate: isDate(source.endDate) ? text(source.endDate, 10) : "",
       createdAt: text(source.createdAt, 40),
@@ -252,6 +266,46 @@
       .filter(group => group.orders.length);
   }
 
+  // 지금 실제로 돌고 있는 여섯 덩어리. 이름은 대표가 부르는 이름 그대로
+  // 썼다 — 여기서만 쓰는 이름을 새로 지으면 사람들이 매번 "그게 뭐였지" 를
+  // 한 번 더 한다.
+  const SEED_PROJECTS = Object.freeze([
+    Object.freeze({
+      id: "pj-crm", name: "브링 CRM·OFFICE", owner: "김현진",
+      goal: "현장·사무 일을 프로그램 한 곳에서 처리한다. 엑셀과 카톡으로 흩어진 기록을 여기로 모은다.",
+    }),
+    Object.freeze({
+      id: "pj-care", name: "브링 케어", owner: "서창환",
+      goal: "건물관리·청소 현장을 굴린다. 점검·입퇴실·긴급조치와 그 결과보고서까지가 한 덩어리다.",
+    }),
+    Object.freeze({
+      id: "pj-marketing", name: "마케팅 채널", owner: "황우중",
+      goal: "당근·네이버플레이스·카카오채널·숨고에서 문의가 들어오게 한다. 채널마다 무엇이 들어왔는지 센다.",
+    }),
+    Object.freeze({
+      id: "pj-rnd", name: "R&D·정부과제", owner: "황우중",
+      goal: "과제와 지원사업을 찾아 쓰고, 낸 것의 결과를 남긴다.",
+    }),
+    Object.freeze({
+      id: "pj-base", name: "회사 기반", owner: "서창환",
+      goal: "계약서식·보험·규정·정산처럼 회사가 굴러가는 데 필요한 바탕을 만든다.",
+    }),
+    Object.freeze({
+      id: "pj-study", name: "학업·자기계발", owner: "", offCapacity: true,
+      goal: "수업과 자격증. 무엇을 듣고 있는지 남기되, 가용시간은 시간표에서 이미 빠져 있어 부하로 세지 않는다.",
+    }),
+  ]);
+
+  // 아직 안 만든 견본. 이미 있는 것을 다시 만들면 이름을 고쳐 둔 것이 되돌아간다.
+  function missingSeeds(projects) {
+    const have = new Set(rows(projects).map(item => text(item && item.id, 80)).filter(Boolean));
+    return SEED_PROJECTS.filter(item => !have.has(item.id)).map(item => normalizeProject(item));
+  }
+
+  // 가용시간을 잡아먹지 않는 프로젝트. 부하를 셀 때 이 목록을 뺀다.
+  const offCapacityIds = projects =>
+    rows(projects).map(normalizeProject).filter(item => item.id && item.offCapacity).map(item => item.id);
+
   function sortProjects(projects) {
     const weight = item => (item.status === "active" ? 0 : (item.status === "paused" ? 1 : 2));
     return rows(projects).map(normalizeProject).filter(item => item.id)
@@ -261,6 +315,9 @@
   return Object.freeze({
     TRACKS,
     STATUSES,
+    SEED_PROJECTS,
+    missingSeeds,
+    offCapacityIds,
     trackOf,
     trackLabel,
     statusLabel,

@@ -2192,6 +2192,108 @@ describe.runIf(databaseEmulatorAvailable)("fieldPlatform database rules", () => 
     await assertFails(remove(ref(admin, at("p1"))));
   });
 
+  it("lets each person edit their own timetable and only the boss edit someone else's", async () => {
+    // 관리자만 고칠 수 있게 하면 수업이 바뀔 때마다 대표를 거쳐야 하고,
+    // 그러면 아무도 안 고친다. 안 고친 시간표는 틀린 숫자로 일을 나누게 한다.
+    const admin = environment.authenticatedContext("crm-admin", crmClaims("admin@bring.test")).database();
+    const member = environment.authenticatedContext("crm-legacy-member", crmClaims("legacy@bring.test")).database();
+    const viewer = environment.authenticatedContext("crm-viewer", crmClaims("viewer@bring.test")).database();
+    const at = (uid: string) => `crmCompany/capacity/${uid}`;
+    const sheet = (uid: string, updatedBy: string, patch: Record<string, unknown> = {}) => ({
+      uid,
+      name: "김현진",
+      note: "",
+      window: { start: "09:00", end: "22:00" },
+      workDays: [1, 2, 3, 4, 5],
+      blocks: [
+        { id: "b1", day: 1, start: "13:00", end: "15:00", label: "수문학", place: "이공1-502", skippable: false },
+      ],
+      updatedAt: "2026-09-06T00:00:00.000Z",
+      updatedBy,
+      ...patch,
+    });
+
+    await assertSucceeds(set(ref(member, at("crm-legacy-member")), sheet("crm-legacy-member", "crm-legacy-member")));
+    // 남의 시간표는 대표만 고친다.
+    await assertFails(set(ref(member, at("crm-admin")), sheet("crm-admin", "crm-legacy-member")));
+    await assertSucceeds(set(ref(admin, at("crm-admin")), sheet("crm-admin", "crm-admin")));
+    // 누구에게 일을 더 넣을 수 있는지 보려면 남의 시간표도 읽어야 한다.
+    await assertSucceeds(get(ref(member, at("crm-admin"))));
+    // 조회 전용은 읽되 쓰지 못한다. 부하 계산이 통째로 틀어진다.
+    await assertSucceeds(get(ref(viewer, at("crm-admin"))));
+    await assertFails(set(ref(viewer, at("crm-viewer")), sheet("crm-viewer", "crm-viewer")));
+
+    // 끝이 시작보다 이르면 그 줄이 음수 시간이 된다.
+    await assertFails(set(ref(admin, at("crm-admin")), sheet("crm-admin", "crm-admin", {
+      blocks: [{ id: "b1", day: 1, start: "15:00", end: "13:00", label: "수업", place: "", skippable: false }],
+    })));
+    // 25시는 시각이 아니다.
+    await assertFails(set(ref(admin, at("crm-admin")), sheet("crm-admin", "crm-admin", {
+      blocks: [{ id: "b1", day: 1, start: "25:00", end: "26:00", label: "수업", place: "", skippable: false }],
+    })));
+    // 요일은 0~6 이다. 7 이 들어오면 그 줄은 어느 날에도 안 나온다.
+    await assertFails(set(ref(admin, at("crm-admin")), sheet("crm-admin", "crm-admin", {
+      blocks: [{ id: "b1", day: 7, start: "09:00", end: "10:00", label: "수업", place: "", skippable: false }],
+    })));
+    // 하루 일하는 창이 거꾸로면 가용시간이 0 이 된다.
+    await assertFails(set(ref(admin, at("crm-admin")), sheet("crm-admin", "crm-admin", {
+      window: { start: "22:00", end: "09:00" },
+    })));
+    // 모르는 칸은 막는다.
+    await assertFails(set(ref(admin, at("crm-admin")), sheet("crm-admin", "crm-admin", { salary: 3000000 })));
+    // 남의 이름으로 고쳐 놓지 못한다.
+    await assertFails(set(ref(admin, at("crm-admin")), sheet("crm-admin", "crm-legacy-member")));
+  });
+
+  it("keeps hours and weight on a work order out of the assignee's hands", async () => {
+    // 받는 사람이 "이건 두 시간짜리였다" 로 고칠 수 있으면 부하 계산이 무너지고,
+    // 산출물을 고칠 수 있으면 완료 기준이 사후에 낮아진다.
+    const admin = environment.authenticatedContext("crm-admin", crmClaims("admin@bring.test")).database();
+    const member = environment.authenticatedContext("crm-legacy-member", crmClaims("legacy@bring.test")).database();
+    const at = (id: string) => `crmCompany/workOrders/${id}`;
+    const order = (id: string, patch: Record<string, unknown> = {}) => ({
+      id,
+      title: "건물지도",
+      why: "현장에서 동 호수를 못 찾아 헤맵니다.",
+      what: "도면을 받아 층별 지도를 만듭니다.",
+      doneWhen: "층별 지도 PDF 가 올라오면 끝입니다.",
+      assigneeUid: "crm-legacy-member",
+      assigneeName: "황우중",
+      projectId: "p1",
+      track: "tech",
+      buildingId: "",
+      startDate: "2026-09-07",
+      dueDate: "2026-09-11",
+      hours: 6.5,
+      weight: 40,
+      deliverable: "20260911_건물지도.pdf",
+      progress: 10,
+      status: "doing",
+      reviewNote: "",
+      createdBy: "대표",
+      createdAt: "2026-09-06T00:00:00.000Z",
+      updatedAt: "2026-09-06T00:00:00.000Z",
+      updatedBy: "crm-admin",
+      ...patch,
+    });
+
+    await assertSucceeds(set(ref(admin, at("h1")), order("h1")));
+    // 담당자는 진행률만 옮긴다.
+    await assertSucceeds(update(ref(member, at("h1")), { progress: 60, updatedAt: NOW, updatedBy: "crm-legacy-member" }));
+    await assertFails(update(ref(member, at("h1")), { hours: 1, updatedAt: NOW, updatedBy: "crm-legacy-member" }));
+    await assertFails(update(ref(member, at("h1")), { weight: 5, updatedAt: NOW, updatedBy: "crm-legacy-member" }));
+    await assertFails(update(ref(member, at("h1")), { deliverable: "아무거나", updatedAt: NOW, updatedBy: "crm-legacy-member" }));
+
+    // 30분 단위가 아닌 시간은 막는다. 0.37시간은 정확해 보이지만 그 정확도가 없다.
+    await assertFails(set(ref(admin, at("h2")), order("h2", { hours: 2.4 })));
+    // 40시간 넘는 것은 지시가 아니라 프로젝트다.
+    await assertFails(set(ref(admin, at("h3")), order("h3", { hours: 80 })));
+    // 가중치는 100 을 넘지 않는다.
+    await assertFails(set(ref(admin, at("h4")), order("h4", { weight: 140 })));
+    // 옛 지시에는 시간이 없다. 규칙이 그것까지 막으면 옛 기록을 못 만진다.
+    await assertSucceeds(set(ref(admin, at("h5")), order("h5", { hours: 0, weight: 0, deliverable: "" })));
+  });
+
   it("keeps a work order's schedule and progress in a shape the chart can draw", async () => {
     const admin = environment.authenticatedContext("crm-admin", crmClaims("admin@bring.test")).database();
     const at = (id: string) => `crmCompany/workOrders/${id}`;
