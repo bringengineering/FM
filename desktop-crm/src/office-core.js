@@ -396,6 +396,38 @@
       && Number(source.keyCode || 0) !== 229;
   }
 
+  // 서버에서 오는 모양이 두 가지다. 관리자는 uid 아래 전부를 받고, 본인은
+  // 자기 uid 아래만 받는다. flattenAttendance 와 같은 사정이다.
+  function flattenLeave(value, ownerUid) {
+    if (!value || typeof value !== "object") return [];
+    const rows = [];
+    const push = (uid, id, record) => {
+      if (!record || typeof record !== "object") return;
+      rows.push(Object.assign({}, record, {
+        id: String(record.id || id || ""),
+        userId: String(record.userId || uid || ""),
+      }));
+    };
+    Object.entries(value).forEach(([firstKey, firstValue]) => {
+      if (!firstValue || typeof firstValue !== "object") return;
+      // 신청 한 건인지(본인 자료) uid 묶음인지(관리자 자료) 로 가른다.
+      if (firstValue.startDate || firstValue.start_date) push(ownerUid, firstKey, firstValue);
+      else Object.entries(firstValue).forEach(([id, record]) => push(firstKey, id, record));
+    });
+    return rows;
+  }
+
+  function flattenLeaveGrants(value, ownerUid) {
+    if (!value || typeof value !== "object") return [];
+    // 본인 자료는 확정 한 건이 그대로 온다.
+    if (value.days !== undefined || value.confirmedBy !== undefined) {
+      return [Object.assign({}, value, { userId: String(value.userId || ownerUid || "") })];
+    }
+    return Object.entries(value)
+      .filter(([, record]) => record && typeof record === "object")
+      .map(([uid, record]) => Object.assign({}, record, { userId: String(record.userId || uid) }));
+  }
+
   function flattenAttendance(value) {
     if (!value || typeof value !== "object") return [];
     const rows = [];
@@ -495,6 +527,8 @@
     normalizeOfficeMessageIds,
     unreadOfficeMessageIds,
     mergeConfirmedOfficeReadReceipts,
+    flattenLeave,
+    flattenLeaveGrants,
     flattenAttendance,
     flattenMailbox,
     normalizeOfficePayload,

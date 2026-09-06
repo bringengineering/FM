@@ -3,6 +3,7 @@ const http = require("node:http");
 const path = require("node:path");
 const SparkCanonical = require("./spark-canonical");
 const OfficeCore = require("./office-core");
+const LeaveCore = require("./leave-core");
 const OfficeAttachment = require("./office-attachment");
 const MarketingCore = require("./marketing-core");
 const MarketingPersistence = require("./marketing-persistence");
@@ -2353,10 +2354,19 @@ class FirebaseRemoteClient {
     const session = this.requireOfficeSession();
     const guard = this.captureSessionGuard();
     const attendanceLocation = session.officeAdmin === true ? "officeAttendance" : `officeAttendance/${session.uid}`;
-    const [users, teamProfiles, attendance] = await Promise.all([
+    // 휴가는 관리자만 전체를 본다. 근태의 officeAdmin 과 기준이 다르다 —
+    // 휴가 사유는 더 사적이라 승인 권한이 있는 사람까지만 본다.
+    const leaveAdmin = session.role === "admin";
+    const leaveLocation = leaveAdmin ? "officeLeave" : `officeLeave/${session.uid}`;
+    const grantLocation = leaveAdmin ? "officeLeaveGrants" : `officeLeaveGrants/${session.uid}`;
+    const [users, teamProfiles, attendance, leave, leaveGrants] = await Promise.all([
       this.dbRequest("crmAccess", { method: "GET" }),
       this.dbRequest("teamProfiles", { method: "GET" }),
       this.dbRequest(attendanceLocation, { method: "GET" }),
+      // 규칙이 막으면 빈 값으로 둔다. 휴가를 못 읽는다고 근태·메신저까지
+      // 같이 죽으면 안 된다.
+      this.dbRequest(leaveLocation, { method: "GET" }).catch(() => null),
+      this.dbRequest(grantLocation, { method: "GET" }).catch(() => null),
     ]);
     this.assertSessionGuardActive(guard);
     const mergedUsers = OfficeCore.mergeOfficeUsers(users, teamProfiles);
@@ -2378,6 +2388,9 @@ class FirebaseRemoteClient {
       data: {
         users: mergedUsers,
         attendance: OfficeCore.flattenAttendance(attendance),
+        leave: OfficeCore.flattenLeave(leave, session.uid),
+        leaveGrants: OfficeCore.flattenLeaveGrants(leaveGrants, session.uid),
+        leaveAdmin,
         messages: OfficeCore.flattenMailbox(mailbox),
         loadedAt: new Date().toISOString(),
       },
@@ -2386,6 +2399,66 @@ class FirebaseRemoteClient {
 
   async loadOffice() {
     return (await this.loadOfficeSnapshot()).data;
+  }
+
+  // 휴가 신청. 본인 칸에만 쓴다. 서버 규칙도 같은 것을 막지만, 여기서
+  // 먼저 걸러야 사람이 이유를 알 수 있는 문구를 받는다.
+  async saveLeaveRequest(input) {
+    const session = this.requireOfficeSession();
+    const guard = this.captureSessionGuard();
+    const source = input && typeof input === "object" && !Array.isArray(input) ? input : {};
+    const record = LeaveCore.normalizeRequest(Object.assign({}, source, { userId: session.uid }));
+    if (!record.id) throw createError("신청 번호가 없습니다.", "VALIDATION_ERROR");
+    if (record.status !== "requested" && record.status !== "cancelled") {
+      // 승인·반려는 decideLeaveRequest 로만 한다. 여기로 들어오면 본인이
+      // 자기 신청을 승인하는 길이 생긴다.
+      throw createError("승인과 반려는 관리자만 할 수 있습니다.", "LEAVE_DECISION_FORBIDDEN");
+    }
+    const location = `officeLeave/${session.uid}/${record.id}`;
+    await this.dbRequest(location, { method: "PUT", body: record });
+    this.assertSessionGuardActive(guard);
+    return record;
+  }
+
+  // 승인·반려. 남의 칸에 쓰는 유일한 길이라 관리자만 통과한다.
+  async decideLeaveRequest(input) {
+    const session = this.requireOfficeSession();
+    if (session.role !== "admin") {
+      throw createError("휴가 승인은 관리자만 할 수 있습니다.", "LEAVE_DECISION_FORBIDDEN");
+    }
+    const guard = this.captureSessionGuard();
+    const source = input && typeof input === "object" && !Array.isArray(input) ? input : {};
+    const decided = LeaveCore.decide({
+      request: source.request,
+      decision: source.decision,
+      decidedBy: String(source.decidedBy || session.displayName || session.email || "관리자"),
+      note: source.note,
+    });
+    if (!decided.ok) throw createError(decided.error, decided.code);
+    const record = decided.record;
+    if (!record.userId || !record.id) throw createError("신청을 찾지 못했습니다.", "VALIDATION_ERROR");
+    await this.dbRequest(`officeLeave/${record.userId}/${record.id}`, { method: "PUT", body: record });
+    this.assertSessionGuardActive(guard);
+    return record;
+  }
+
+  // 발생일수 확정. 본인이 고칠 수 있으면 잔여가 스스로 늘어난다.
+  async saveLeaveGrant(input) {
+    const session = this.requireOfficeSession();
+    if (session.role !== "admin") {
+      throw createError("연차 발생일수는 관리자만 확정할 수 있습니다.", "LEAVE_GRANT_FORBIDDEN");
+    }
+    const guard = this.captureSessionGuard();
+    const source = input && typeof input === "object" && !Array.isArray(input) ? input : {};
+    const record = LeaveCore.normalizeGrant(Object.assign({}, source, {
+      confirmedBy: String(source.confirmedBy || session.displayName || session.email || "관리자"),
+      confirmedAt: new Date().toISOString(),
+    }));
+    if (!record.userId) throw createError("대상자를 골라 주세요.", "VALIDATION_ERROR");
+    if (!record.year) throw createError("연도를 골라 주세요.", "VALIDATION_ERROR");
+    await this.dbRequest(`officeLeaveGrants/${record.userId}`, { method: "PUT", body: record });
+    this.assertSessionGuardActive(guard);
+    return record;
   }
 
   async saveOfficeAttendance(input) {
