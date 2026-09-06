@@ -811,3 +811,20 @@ button:focus-visible,input:focus-visible,select:focus-visible,textarea:focus-vis
 .di-head dd{margin:0;color:#191F28}
 .di-split{display:grid;gap:8px;border:1px solid #E5E8EB;border-radius:10px;padding:12px;background:#F9FAFB}
 .di-split > b{font-size:13px;color:#191F28}
+
+/* 주간 지시서 펼치기. 앱이 원본이고 텔레그램은 알림이라, 전문은 여기 있다. */
+.wd-name{background:none;border:0;padding:0;font:inherit;font-weight:600;color:#191F28;cursor:pointer;display:inline-flex;align-items:center;gap:6px}
+.wd-name i{font-style:normal;color:#8B95A1;font-size:11px}
+.wd-row.is-open{background:#F9FAFB}
+.wd-detail-row td{background:#F9FAFB;padding:0 14px 14px}
+.wd-detail{display:grid;gap:12px}
+.wd-tasks{display:grid;gap:10px}
+.wd-task{border:1px solid #E5E8EB;border-radius:10px;background:#fff;padding:12px 14px;display:grid;gap:8px}
+.wd-task > header{display:flex;justify-content:space-between;align-items:baseline;gap:10px;flex-wrap:wrap}
+.wd-task > header b{font-size:14px;color:#191F28}
+.wd-task > header span{font-size:12px;color:#8B95A1;white-space:nowrap}
+.wd-task > header em{font-style:normal;color:#C6535F}
+.wd-task dl{display:grid;grid-template-columns:130px 1fr;gap:4px 12px;margin:0;font-size:13px}
+.wd-task dt{color:#8B95A1}
+.wd-task dd{margin:0;color:#4E5968}
+.wd-task-foot{display:flex;align-items:center;gap:10px}

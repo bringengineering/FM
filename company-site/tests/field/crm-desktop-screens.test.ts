@@ -1140,4 +1140,52 @@ describe("desktop CRM screens actually render", () => {
     expect(booted.calls.slice(before).some(call => call.name === "saveWorkOrder")).toBe(false);
     expect(booted.errors, booted.errors.join(" / ")).toEqual([]);
   }, 60000);
+  it("지시서를 눌러 펼치면 왜 하는지까지 다 보인다", async () => {
+    // 텔레그램에는 줄여서 보낸다. 앱이 원본이고 텔레그램은 알림이라,
+    // 전문이 있는 자리는 여기다.
+    (booted.document.querySelector("[data-workspace-switch]") as HTMLElement | null)?.click();
+    await sleep(100);
+    const navItem = booted.document.querySelector('.nav-item[data-view="workOrders"]') as HTMLElement;
+    const folder = (navItem.closest("[data-nav-folder]") as HTMLElement).dataset.navFolder as string;
+    (booted.document.querySelector(`[data-workspace-enter-folder="${folder}"]`) as HTMLElement).click();
+    await sleep(150);
+    navItem.click();
+    await sleep(300);
+
+    // 지시서 칸만 본다. 같은 문장이 아래 업무지시 카드에도 있어서, 화면
+    // 전체를 보면 접었는지 폈는지를 못 가린다.
+    const sheet = () => (booted.document.querySelector(".wd-detail") as HTMLElement | null)?.textContent || "";
+
+    // 자기 것은 기본으로 펼쳐져 있어야 한다. 눌러야 나오면 안 누르고
+    // 텔레그램만 본다.
+    expect(sheet(), "왜 하는지가 펼쳐져 있어야 한다").toContain("임차인이 두 번 민원을 넣었고");
+    expect(sheet()).toContain("끝나면 무엇이 달라지나");
+    // 지시 한 건의 완료기준·산출물까지 보여야 한다. 그게 없어서 애들이 헷갈렸다.
+    expect(sheet()).toContain("어디까지 하면 끝");
+    expect(sheet()).toContain("사진 3장과 원인 한 줄");
+    expect(sheet()).toContain("20260906_3층누수.xlsx");
+
+    // 접었다 폈다 된다. 누를 때마다 다시 그리므로 버튼을 매번 새로 찾는다 —
+    // 옛 버튼을 들고 있으면 화면에서 떨어져 나가 눌러도 아무 일이 없다.
+    const handle = () => booted.document.querySelector('[data-wd-open="u-admin"]') as HTMLElement;
+    expect(handle()).toBeTruthy();
+    handle().click();
+    await sleep(200);
+    expect(booted.document.querySelector(".wd-detail"), "접으면 사라진다").toBeNull();
+    handle().click();
+    await sleep(200);
+    expect(sheet()).toContain("임차인이 두 번 민원을 넣었고");
+
+    // 지시서가 없는 사람을 눌러도 터지지 않는다.
+    (booted.document.querySelector('[data-wd-open="u-hwang"]') as HTMLElement).click();
+    await sleep(200);
+    expect(sheet()).toContain("이번 주 지시서가 아직 없습니다");
+    expect(sheet(), "남의 것을 펼치면 내 것은 접힌다").not.toContain("임차인이 두 번 민원을 넣었고");
+
+    // 진행률은 「오늘」 에서 올라온 값이다. 여기서 또 적게 하면 두 곳이 어긋난다.
+    handle().click();
+    await sleep(200);
+    expect(sheet()).toContain("진행은 「오늘」 에서 적습니다");
+    expect(booted.errors, booted.errors.join(" / ")).toEqual([]);
+  }, 60000);
 });

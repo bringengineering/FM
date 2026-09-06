@@ -182,3 +182,40 @@ test("갈라주기 갈래도 서버·앱 양쪽에 다 있다", () => {
   assert.match(worker, /directive_split: \{/u);
   assert.match(read("ai-client.js"), /"directive_split"/u);
 });
+
+test("지시서를 애들도 본다", () => {
+  // 대표만 보면 애들은 텔레그램으로만 지시를 받게 되고, 그러면 지시서의
+  // 원본이 텔레그램이 된다. 앱이 원본이어야 진행률이 올라가고 일지가 써진다.
+  const board = appSource.slice(appSource.indexOf("function directiveBoard"), appSource.indexOf("function directiveDetail"));
+  assert.ok(board, "directiveBoard 가 없다");
+  assert.ok(!/if \(!WD \|\| !workOrderState\.admin\) return "";/u.test(board), "대표만 보면 안 된다");
+  // 보내는 것은 대표만 한다. 보는 것과 보내는 것은 다르다.
+  assert.match(board, /workOrderState\.admin\n?\s*\? `<button type="button" class="mini-button" data-wd-send/u);
+});
+
+test("자기 것이 기본으로 펼쳐져 있다", () => {
+  // 눌러야 나오면 안 누르고 텔레그램만 본다.
+  const board = appSource.slice(appSource.indexOf("function directiveBoard"), appSource.indexOf("function directiveDetail"));
+  assert.match(board, /row\.uid === workOrderState\.uid && row\.has/u);
+  assert.match(board, /data-wd-open=/u);
+});
+
+test("펼친 자리에 텔레그램에 안 나가는 것까지 다 있다", () => {
+  // 텔레그램에는 줄여서 보낸다. 여기가 전문이 있는 자리다.
+  const detail = appSource.slice(appSource.indexOf("function directiveDetail"), appSource.indexOf("// 이번 주 가용시간"));
+  assert.ok(detail, "directiveDetail 이 없다");
+  for (const label of ["왜 이번 주에", "끝나면 무엇이 달라지나", "안 하면", "이번 주에 안 하는 것", "먼저 있어야 하는 것", "확인 받는 사람"]) {
+    assert.ok(detail.includes(label), `펼친 자리에 ${label} 가 없다`);
+  }
+  // 지시 한 건 한 건의 왜·완료기준·산출물이 보여야 한다. 그게 없어서 애들이 헷갈렸다.
+  assert.match(detail, /order\.doneWhen \? `<dt>어디까지 하면 끝<\/dt>/u);
+  assert.match(detail, /W\.deliverableCheck\(order\)/u);
+  // 진행률은 「오늘」 에서 올라온 값이다. 여기서 또 적게 하면 두 곳이 어긋난다.
+  assert.match(detail, /진행은 「오늘」 에서 적습니다/u);
+  assert.ok(!/data-wo-progress/u.test(detail), "여기서 진행률을 고치게 하면 안 된다");
+});
+
+test("지시서가 없는 사람을 눌러도 터지지 않는다", () => {
+  const detail = appSource.slice(appSource.indexOf("function directiveDetail"), appSource.indexOf("// 이번 주 가용시간"));
+  assert.match(detail, /이번 주 지시서가 아직 없습니다/u);
+});

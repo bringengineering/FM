@@ -4551,7 +4551,7 @@
     orders: [], projects: [], members: [], capacity: [], admin: false, canWork: false, uid: "",
     projectId: "", projectEditing: null, capacityEditing: null, seeding: false,
     directives: [], importOpen: false, importPlan: null, importUid: "", importing: false,
-    sendingDirective: false, importSplit: null,
+    sendingDirective: false, importSplit: null, directiveOpen: "",
     loaded: false, loading: false, error: "",
     scope: "mine", editing: null, busyId: "",
   };
@@ -4776,7 +4776,10 @@
   function directiveBoard(P, today) {
     const WD = window.BringWeeklyDirectiveCore;
     const C = capacityCore();
-    if (!WD || !workOrderState.admin) return "";
+    // 애들도 본다. 대표만 보면 애들은 텔레그램으로만 지시를 받게 되고,
+    // 그러면 지시서의 원본이 텔레그램이 된다. 앱이 원본이어야 진행률이
+    // 올라가고 일지가 써진다.
+    if (!WD) return "";
     const people = workOrderState.members.filter(item => item && item.uid).map(item => {
       const name = item.displayName || item.email || item.uid;
       const saved = C ? C.personOf(workOrderState.capacity, item.uid) : null;
@@ -4793,33 +4796,101 @@
     const monday = WD.weekStart(today);
     const busy = workOrderState.sendingDirective;
 
+    // 애들에게는 자기 것이 기본으로 펼쳐져 있어야 한다. 눌러야 나오면
+    // 안 누르고 텔레그램만 본다.
+    const open = workOrderState.directiveOpen
+      || (board.some(row => row.uid === workOrderState.uid && row.has) ? workOrderState.uid : "");
+    // 자동으로 편 것도 상태에 남긴다. 안 남기면 그 줄을 눌렀을 때 "닫기" 가
+    // 아니라 "열기" 로 처리돼서 첫 번째 클릭이 헛돈다.
+    workOrderState.directiveOpen = open;
+
     const rowsHtml = board.map(row => {
       const state = !row.has
         ? `<span class="office-status missing"><i></i>아직 없음</span>`
         : (row.published ? `<span class="office-status complete"><i></i>보냈음</span>` : `<span class="office-status warn"><i></i>쓰는 중</span>`);
-      return `<tr>
-        <td><b>${esc(row.name)}</b></td>
+      const mine = row.uid === workOrderState.uid;
+      const detail = row.uid === open ? directiveDetail(WD, row, today) : "";
+      return `<tr class="wd-row${row.uid === open ? " is-open" : ""}">
+        <td><button type="button" class="wd-name" data-wd-open="${esc(row.uid)}">${esc(row.name)}${mine ? " (나)" : ""} <i>${row.uid === open ? "▾" : "▸"}</i></button></td>
         <td>${row.orders ? `<b>${row.orders}건</b>` : `<span class="office-muted">—</span>`}</td>
         <td>${row.orders ? `<span class="${row.weightOk ? "office-muted" : "office-status warn"}">${row.weightOk ? "" : "<i></i>"}${row.weightTotal}%</span>` : `<span class="office-muted">—</span>`}</td>
         <td>${row.hours ? `${row.hours}h${row.capacityHours ? ` / ${row.capacityHours}h` : ""}` : `<span class="office-muted">—</span>`}${row.over ? `<small>${row.over}h 넘침</small>` : ""}</td>
         <td>${state}</td>
-        <td>${row.orders
+        <td>${row.orders && workOrderState.admin
           ? `<button type="button" class="mini-button" data-wd-send="${esc(row.uid)}"${busy ? " disabled" : ""}>텔레그램으로 보내기</button>`
           : `<span class="office-muted">—</span>`}</td>
-      </tr>`;
+      </tr>${detail ? `<tr class="wd-detail-row"><td colspan="6">${detail}</td></tr>` : ""}`;
     }).join("");
 
     return `<section class="office-panel">
       <header>
         <div><span>DIRECTIVE</span><h3>${esc(monday)} 주 지시서</h3></div>
-        <small>아직 못 받은 사람을 맨 위에 둡니다</small>
+        <small>이름을 누르면 왜 하는지까지 펼쳐집니다</small>
       </header>
-      <div class="office-table-wrap"><table class="office-table">
+      <div class="office-table-wrap"><table class="office-table wd-table">
         <thead><tr><th>사람</th><th>지시</th><th>가중치</th><th>시간</th><th>상태</th><th></th></tr></thead>
         <tbody>${rowsHtml}</tbody>
       </table></div>
-      <p class="office-muted cap-note">보내기 전에 왜 하는지·끝나면 무엇이 달라지는지·가중치 100%·산출물이 갖춰졌는지 봅니다. 모자란 것은 한 번에 다 알려 드립니다.</p>
+      ${workOrderState.admin ? `<p class="office-muted cap-note">보내기 전에 왜 하는지·끝나면 무엇이 달라지는지·가중치 100%·산출물이 갖춰졌는지 봅니다. 모자란 것은 한 번에 다 알려 드립니다.</p>` : ""}
     </section>`;
+  }
+
+  // 지시서 한 장을 펼친다.
+  //
+  // 텔레그램에는 줄여서 보낸다. 여기가 전문이 있는 자리다 — 앱이 원본이고
+  // 텔레그램은 알림이다. 그래서 텔레그램에 안 나가는 선행조건·비고까지
+  // 여기에는 다 있다.
+  function directiveDetail(WD, row, today) {
+    const C = capacityCore();
+    const W = workOrderCore();
+    const saved = C ? C.personOf(workOrderState.capacity, row.uid) : null;
+    const found = (workOrderState.directives || [])
+      .map(WD.normalizeDirective)
+      .find(item => item.uid === row.uid && item.weekStart === row.weekStart);
+    const sheet = WD.assemble({
+      directive: found || { uid: row.uid, name: row.name, weekStart: row.weekStart },
+      orders: workOrderState.orders,
+      capacityHours: C && saved ? C.weekCapacity(saved).hours : 0,
+    });
+    if (!found && !sheet.orders.length) {
+      return `<div class="wd-detail"><p class="office-empty">이번 주 지시서가 아직 없습니다.</p></div>`;
+    }
+    const head = [
+      ["왜 이번 주에", sheet.directive.background],
+      ["끝나면 무엇이 달라지나", sheet.directive.goal],
+      ["안 하면", sheet.directive.loss],
+      ["이번 주에 안 하는 것", sheet.directive.scopeExclude],
+      ["먼저 있어야 하는 것", sheet.directive.precondition],
+      ["확인 받는 사람", sheet.directive.approvers],
+    ].filter(([, body]) => body)
+      .map(([label, body]) => `<dt>${esc(label)}</dt><dd>${esc(body)}</dd>`).join("");
+
+    const list = sheet.orders.map((order, index) => {
+      const need = W ? W.deliverableCheck(order) : null;
+      const late = W && W.overdue(order, today);
+      return `<article class="wd-task">
+        <header>
+          <b>${index + 1}. ${esc(order.title)}</b>
+          <span>${order.weight ? `${order.weight}%` : ""}${order.hours ? ` · ${order.hours}h` : ""}${order.dueDate ? ` · ~${esc(order.dueDate.slice(5))}` : ""}${late ? ` · <em>기한 지남</em>` : ""}</span>
+        </header>
+        <dl>
+          ${order.why ? `<dt>왜</dt><dd>${esc(order.why)}</dd>` : ""}
+          ${order.what && order.what !== order.why ? `<dt>무엇을</dt><dd>${esc(order.what)}</dd>` : ""}
+          ${order.doneWhen ? `<dt>어디까지 하면 끝</dt><dd>${esc(order.doneWhen)}</dd>` : ""}
+          ${order.deliverable || (need && need.kind) ? `<dt>산출물</dt><dd>${esc(order.deliverable || "이름 미정")}${need && need.kind && need.kind !== "none" ? ` · ${esc(need.label)} ${need.have}/${need.need}${need.ok ? " ✅" : ""}` : ""}</dd>` : ""}
+        </dl>
+        <div class="wd-task-foot">
+          <span class="wo-status">${esc(W ? W.statusLabel(order.status) : order.status)}</span>
+          <span class="wo-progress"><i style="width:${order.progress}%"></i><b>${order.progress}%</b></span>
+        </div>
+      </article>`;
+    }).join("");
+
+    return `<div class="wd-detail">
+      ${head ? `<dl class="di-head">${head}</dl>` : `<p class="office-muted">왜 하는지가 아직 안 적혀 있습니다.</p>`}
+      <div class="wd-tasks">${list || `<p class="office-empty">이 주에 걸친 지시가 없습니다.</p>`}</div>
+      <p class="office-muted">진행은 「오늘」 에서 적습니다. 여기 진행률은 거기서 올라온 값입니다.</p>
+    </div>`;
   }
 
   // 이번 주 가용시간. 건수만 세던 판 위에 놓는다.
@@ -10117,6 +10188,13 @@
     }
     if (event.target.closest("[data-wo-project-cancel]")) { workOrderState.projectEditing = null; renderWorkOrders(); return; }
     if (event.target.closest("[data-wo-seed]")) { await seedProjects(); return; }
+    const wdOpen = event.target.closest("[data-wd-open]");
+    if (wdOpen) {
+      const uid = wdOpen.dataset.wdOpen;
+      workOrderState.directiveOpen = workOrderState.directiveOpen === uid ? "__none" : uid;
+      renderWorkOrders();
+      return;
+    }
     const wdSend = event.target.closest("[data-wd-send]");
     if (wdSend) { await sendDirectiveToTelegram(wdSend.dataset.wdSend); return; }
     if (event.target.closest("[data-wo-import]")) {
