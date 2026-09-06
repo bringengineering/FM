@@ -197,6 +197,7 @@
     officeAttendance: ["나의 주간 근무 현황", "근태관리"],
     officeLeave: ["신청·승인과 남은 일수", "연차"],
     officeMembers: ["입사일·계약형태·근로계약서", "인사기록"],
+    dailyLog: ["오늘 무엇에 몇 시간을 썼는지 그 자리에서", "오늘"],
     workOrders: ["왜·무엇을·완료 기준을 적어 시킵니다", "업무지시"],
     objectives: ["이번 분기에 무엇을 이루려 하는가", "분기 목표"],
     growth: ["다음 단계가 무엇인지 적어 둡니다", "성장·1on1"],
@@ -1519,6 +1520,7 @@
     else if (currentView === "forms") renderForms();
     else if (currentView === "growth") renderGrowth();
     else if (currentView === "objectives") renderObjectives();
+    else if (currentView === "dailyLog") renderDailyLog();
     else if (currentView === "workOrders") renderWorkOrders();
     else if (currentView === "supplies") renderSupplies();
     else if (currentView === "deliveryFlow") renderDeliveryFlows();
@@ -4127,6 +4129,339 @@
       await loadForms();
     } catch (error) {
       showToast(error && error.message || "저장하지 못했습니다.", "error");
+    }
+  }
+
+  // --- 오늘 ---
+  //
+  // 애들이 매일 엑셀에 적고 저녁에 파일로 보내던 자리다. 그래서 낮에 막혀
+  // 있어도 저녁까지 아무도 몰랐고, 일지의 "AI 견적서 3H" 가 어느 지시의 몇
+  // %인지는 어디에도 없었다.
+  //
+  // 화면에 친 것을 글자마다 상태로 옮기지 않는다. 그러면 칠 때마다 다시
+  // 그려서 커서가 튄다. 누르는 순간 한 번에 읽는다 — 시간표 편집기와 같다.
+  let dailyLogState = {
+    logs: [], admin: false, canWork: false, uid: "", name: "",
+    loaded: false, loading: false, error: "",
+    date: "", draft: null, busy: false, tab: "mine",
+  };
+
+  const dailyLogCore = () => window.BringDailyLogCore;
+
+  async function loadDailyLogs() {
+    if (dailyLogState.loading) return;
+    dailyLogState.loading = true;
+    dailyLogState.error = "";
+    if (currentView === "dailyLog") renderDailyLog();
+    try {
+      const data = await api.loadDailyLogs();
+      dailyLogState.logs = Array.isArray(data && data.logs) ? data.logs : [];
+      dailyLogState.admin = data && data.admin === true;
+      dailyLogState.canWork = data && data.canWork === true;
+      dailyLogState.uid = String((data && data.uid) || "");
+      dailyLogState.name = String((data && data.name) || "");
+      dailyLogState.loaded = true;
+      // 불러온 것으로 초안을 다시 잡는다. 저장하고 나면 서버 것이 맞다.
+      dailyLogState.draft = null;
+    } catch (error) {
+      dailyLogState.error = error && error.message || "일지를 불러오지 못했습니다.";
+    } finally {
+      dailyLogState.loading = false;
+      updateDailyLogBadge();
+      if (currentView === "dailyLog") renderDailyLog();
+    }
+  }
+
+  // 사이드바 숫자. 대표에게는 아직 확인 안 한 일지, 담당자에게는 오늘 아직
+  // 안 보낸 것을 센다.
+  function updateDailyLogBadge() {
+    const badge = document.getElementById("navDailyLogCount");
+    if (!badge) return;
+    const D = dailyLogCore();
+    let count = 0;
+    if (D) {
+      if (dailyLogState.admin) {
+        count = dailyLogState.logs.filter(item => item.submittedAt && !item.confirmedBy).length;
+      } else {
+        const today = todayKey();
+        const mine = dailyLogState.logs.find(item => item.uid === dailyLogState.uid && item.date === today);
+        count = mine && mine.submittedAt ? 0 : 1;
+      }
+    }
+    badge.textContent = String(count);
+    badge.hidden = count === 0;
+  }
+
+  const dailyLogDate = () => dailyLogState.date || todayKey();
+
+  // 지금 고친 날의 초안. 서버에 있던 것이 바탕이고, 없으면 빈 하루다.
+  function dailyLogDraft(D) {
+    if (dailyLogState.draft) return D.normalizeDay(dailyLogState.draft);
+    const date = dailyLogDate();
+    const found = dailyLogState.logs.find(item => item.uid === dailyLogState.uid && item.date === date);
+    return D.normalizeDay(found || { uid: dailyLogState.uid, name: dailyLogState.name, date });
+  }
+
+  // 이 사람이 지금 물고 있는 지시. 줄마다 고르게 한다 — 지시를 안 고르면
+  // 그 시간은 "시킨 일 밖" 으로 잡히고, 그 합계가 대표가 봐야 할 숫자다.
+  function myOpenOrders() {
+    const W = workOrderCore();
+    if (!W) return [];
+    return W.forAssignee(workOrderState.orders || [], dailyLogState.uid)
+      .filter(item => W.OPEN.includes(item.status));
+  }
+
+  function renderDailyLog() {
+    const D = dailyLogCore();
+    if (!D) { main.innerHTML = `<section class="operations-hero"><div><h2>오늘</h2><p>모듈을 불러오지 못했습니다.</p></div></section>`; return; }
+    if (!dailyLogState.loaded && !dailyLogState.loading && !dailyLogState.error) void loadDailyLogs();
+    // 줄마다 지시를 고르려면 지시 목록이 있어야 한다.
+    if (!workOrderState.loaded && !workOrderState.loading && !workOrderState.error) void loadWorkOrders();
+
+    const date = dailyLogDate();
+    const draft = dailyLogDraft(D);
+    const summary = D.summarize(draft);
+    const checked = D.validateDay(draft);
+    const status = dailyLogState.loading
+      ? `<div class="info-box">불러오는 중…</div>`
+      : (dailyLogState.error ? `<div class="info-box" style="color:#C6535F">${esc(dailyLogState.error)}</div>` : "");
+
+    const stateLabel = draft.confirmedBy ? "대표 확인함" : (draft.submittedAt ? "보냈습니다" : "아직 안 보냄");
+    const stateKind = draft.confirmedBy ? "complete" : (draft.submittedAt ? "warn" : "missing");
+    const weekday = ["일", "월", "화", "수", "목", "금", "토"][new Date(`${date}T00:00:00Z`).getUTCDay()] || "";
+
+    main.innerHTML = `<section class="operations-hero">
+        <div><span>일일 업무일지</span><h2>${esc(date)} (${esc(weekday)})</h2><p>무엇에 몇 시간을 썼는지 그 자리에서 적습니다. 적어 둔 달성률은 [보냄] 을 누를 때 업무지시로 올라갑니다.</p></div>
+        <div class="operations-actions">
+          <div class="dl-datenav">
+            <button type="button" class="mini-button" data-dl-shift="-1">◀ 어제</button>
+            <input type="date" value="${esc(date)}" data-dl-date>
+            <button type="button" class="mini-button" data-dl-shift="1">내일 ▶</button>
+          </div>
+          ${dailyLogState.admin ? `<div class="sp-tabs">
+            <button type="button" class="sp-tab${dailyLogState.tab === "mine" ? " is-active" : ""}" data-dl-tab="mine">내 일지</button>
+            <button type="button" class="sp-tab${dailyLogState.tab === "team" ? " is-active" : ""}" data-dl-tab="team">받은 보고</button>
+          </div>` : ""}
+        </div>
+      </section>
+      ${status}
+      ${dailyLogState.admin && dailyLogState.tab === "team" ? dailyLogTeamBoard(D) : dailyLogMine(D, draft, summary, checked, stateLabel, stateKind)}`;
+  }
+
+  function dailyLogMine(D, draft, summary, checked, stateLabel, stateKind) {
+    const orders = myOpenOrders();
+    const orderOptions = (selected) => [`<option value=""${selected ? "" : " selected"}>지시 없음</option>`]
+      .concat(orders.map(item => `<option value="${esc(item.id)}"${item.id === selected ? " selected" : ""}>${esc(item.title)}</option>`))
+      // 이미 지워졌거나 남에게 넘어간 지시를 가리키는 줄도 자리를 지킨다.
+      // 목록에서 빠지면 저장할 때 그 줄만 조용히 지시를 잃는다.
+      .concat(selected && !orders.some(item => item.id === selected)
+        ? [`<option value="${esc(selected)}" selected>${esc(selected)} (목록에 없음)</option>`] : [])
+      .join("");
+    const natureOptions = value => D.NATURES
+      .map(item => `<option value="${esc(item.key)}"${item.key === value ? " selected" : ""}>${esc(item.label)}</option>`).join("");
+
+    const rowsHtml = draft.entries.map((item, index) => `<tr>
+      <td><input type="time" value="${esc(item.start)}" data-dl-field="start" data-dl-index="${index}"></td>
+      <td><input type="time" value="${esc(item.end)}" data-dl-field="end" data-dl-index="${index}"></td>
+      <td><input type="text" maxlength="200" value="${esc(item.title)}" placeholder="무엇을 했나" data-dl-field="title" data-dl-index="${index}"></td>
+      <td><select data-dl-field="nature" data-dl-index="${index}">${natureOptions(item.nature)}</select></td>
+      <td><select data-dl-field="orderId" data-dl-index="${index}">${orderOptions(item.orderId)}</select></td>
+      <td><input type="number" min="0" max="100" step="5" value="${item.progress}" data-dl-field="progress" data-dl-index="${index}"><b>%</b></td>
+      <td><span class="office-muted">${D.toHours(D.entryMinutes(item))}h</span></td>
+      <td><button type="button" class="mini-button return" data-dl-remove="${index}">지우기</button></td>
+    </tr>`).join("");
+
+    const planRows = draft.plans.map((item, index) => `<tr>
+      <td><input type="text" maxlength="200" value="${esc(item.title)}" placeholder="내일 할 일" data-dl-plan="title" data-dl-plan-index="${index}"></td>
+      <td><select data-dl-plan="nature" data-dl-plan-index="${index}">${natureOptions(item.nature)}</select></td>
+      <td><input type="number" min="0" max="40" step="0.5" value="${item.hours || ""}" placeholder="예상" data-dl-plan="hours" data-dl-plan-index="${index}"><b>h</b></td>
+      <td><input type="date" value="${esc(item.dueDate)}" data-dl-plan="dueDate" data-dl-plan-index="${index}"></td>
+      <td><button type="button" class="mini-button return" data-dl-plan-remove="${index}">지우기</button></td>
+    </tr>`).join("");
+
+    const natureBar = summary.byNature.map(item => `<span class="dl-nature is-${esc(item.key)}"><b>${esc(item.label)}</b> ${item.hours}h · ${item.percent}%</span>`).join("");
+    const notes = (checked.notes || []).map(note => `<li>${esc(note)}</li>`).join("");
+    const frozen = Boolean(draft.confirmedBy);
+
+    return `<div class="operations-kpis">
+        <div class="operations-kpi"><span>채운 시간</span><b>${summary.hours}시간</b><small>${summary.entries}줄${summary.overlapMinutes ? ` · 겹친 ${summary.overlapMinutes}분은 한 번만` : ""}</small></div>
+        <div class="operations-kpi" style="--wash:#EDF9F5"><span>달성률(시간 가중)</span><b>${summary.weightedProgress}%</b><small>단순 평균 ${summary.plainProgress}%</small></div>
+        <div class="operations-kpi" style="--wash:#FFF8E6"><span>지시 밖</span><b>${D.toHours(summary.looseMinutes)}시간</b><small>시킨 일 밖에서 쓴 시간</small></div>
+        <div class="operations-kpi" style="--wash:#EDF5FF"><span>상태</span><b><span class="office-status ${esc(stateKind)}"><i></i>${esc(stateLabel)}</span></b><small>${draft.confirmedBy ? "고칠 수 없습니다" : "보내기 전까지 고칠 수 있습니다"}</small></div>
+      </div>
+      <section class="office-panel dl-panel">
+        <header><div><span>TODAY</span><h3>시간대별로 적기</h3></div><small>${esc(natureBar ? "" : "한 줄부터 넣어 보세요")}</small></header>
+        <div class="panel-body">
+          ${natureBar ? `<div class="dl-natures">${natureBar}</div>` : ""}
+          <div class="office-table-wrap"><table class="office-table dl-table">
+            <thead><tr><th>시작</th><th>끝</th><th>무엇을</th><th>성격</th><th>어느 지시</th><th>달성률</th><th>시간</th><th></th></tr></thead>
+            <tbody>${rowsHtml || `<tr><td colspan="8" class="office-empty">아직 한 줄도 없습니다.</td></tr>`}</tbody>
+          </table></div>
+          ${frozen ? "" : `<div class="wo-editor-actions"><button type="button" class="mini-button" data-dl-add>줄 넣기</button></div>`}
+          ${notes ? `<ul class="dl-notes">${notes}</ul>` : ""}
+        </div>
+      </section>
+      <section class="office-panel dl-panel">
+        <header><div><span>TOMORROW</span><h3>내일 할 일</h3></div><small>여기 적은 것이 내일 아침의 시작입니다</small></header>
+        <div class="panel-body">
+          <div class="office-table-wrap"><table class="office-table">
+            <thead><tr><th>무엇을</th><th>성격</th><th>예상</th><th>언제까지</th><th></th></tr></thead>
+            <tbody>${planRows || `<tr><td colspan="5" class="office-empty">비어 있습니다.</td></tr>`}</tbody>
+          </table></div>
+          ${frozen ? "" : `<div class="wo-editor-actions"><button type="button" class="mini-button" data-dl-plan-add>줄 넣기</button></div>`}
+        </div>
+      </section>
+      <section class="office-panel dl-panel">
+        <header><div><span>WORDS</span><h3>숫자로 안 남는 것</h3></div><small>여기가 비면 대표는 무엇이 막혔는지 모릅니다</small></header>
+        <div class="panel-body dl-words">
+          <label class="wide"><span>못 한 일 · 특이사항</span><textarea rows="3" maxlength="2000" data-dl-word="blockers" placeholder="예: 당근 비즈프로필 권한이 아직 안 넘어왔습니다.">${esc(draft.blockers)}</textarea></label>
+          <label class="wide"><span>아이디어 · 알아 둘 것</span><textarea rows="3" maxlength="2000" data-dl-word="ideas">${esc(draft.ideas)}</textarea></label>
+          <label class="wide"><span>오늘 나에게 한 줄</span><textarea rows="3" maxlength="2000" data-dl-word="feedback" placeholder="잘한 것과 다음에 다르게 할 것">${esc(draft.feedback)}</textarea></label>
+          <label class="wide"><span>일정 조정 · 건의</span><textarea rows="3" maxlength="2000" data-dl-word="requests">${esc(draft.requests)}</textarea></label>
+        </div>
+      </section>
+      ${frozen ? `<div class="info-box">대표가 확인한 일지입니다. 고치려면 대표에게 말해 주세요.</div>` : `<div class="wo-editor-actions dl-actions">
+        <button type="button" class="mini-button" data-dl-save${dailyLogState.busy ? " disabled" : ""}>임시 저장</button>
+        <button type="button" class="primary-button" data-dl-submit${dailyLogState.busy ? " disabled" : ""}>${draft.submittedAt ? "다시 보내기" : "보내기"}</button>
+        <span class="office-muted">보내야 대표에게 갑니다. 저장만 하면 나만 봅니다.</span>
+      </div>`}`;
+  }
+
+  // 대표가 보는 판. 오늘 누가 냈고 누가 안 냈는지가 첫 줄이다.
+  function dailyLogTeamBoard(D) {
+    const date = dailyLogDate();
+    const today = dailyLogState.logs.filter(item => item.date === date);
+    const people = (workOrderState.members || []).filter(item => item && item.uid);
+    const rowsHtml = people.map(person => {
+      const log = today.find(item => item.uid === person.uid);
+      const name = person.displayName || person.email || person.uid;
+      if (!log) {
+        return `<tr><td><b>${esc(name)}</b></td><td colspan="5"><span class="office-status missing"><i></i>아직 안 썼습니다</span></td></tr>`;
+      }
+      const summary = D.summarize(log);
+      const nature = summary.byNature.map(item => `${esc(item.label)} ${item.percent}%`).join(" · ");
+      return `<tr>
+        <td><b>${esc(name)}</b><small>${esc(nature)}</small></td>
+        <td><b>${summary.hours}시간</b><small>${summary.entries}줄</small></td>
+        <td><b>${summary.weightedProgress}%</b><small>단순 ${summary.plainProgress}%</small></td>
+        <td>${summary.looseMinutes ? `<span class="office-status warn"><i></i>${D.toHours(summary.looseMinutes)}h</span>` : `<span class="office-muted">—</span>`}</td>
+        <td>${log.submittedAt ? `<span class="office-status complete"><i></i>보냄</span>` : `<span class="office-status warn"><i></i>쓰는 중</span>`}</td>
+        <td>${log.confirmedBy
+          ? `<span class="office-muted">확인함</span>`
+          : (log.submittedAt ? `<button type="button" class="mini-button" data-dl-confirm="${esc(log.uid)}" data-dl-confirm-date="${esc(log.date)}"${dailyLogState.busy ? " disabled" : ""}>확인</button>` : `<span class="office-muted">—</span>`)}</td>
+      </tr>`;
+    }).join("");
+
+    const words = today.filter(item => item.blockers || item.requests).map(item => {
+      const person = people.find(row => row.uid === item.uid);
+      const name = person ? (person.displayName || person.email || person.uid) : item.uid;
+      return `<div class="dl-word-card">
+        <b>${esc(name)}</b>
+        ${item.blockers ? `<p><em>막힌 것</em> ${esc(item.blockers)}</p>` : ""}
+        ${item.requests ? `<p><em>건의</em> ${esc(item.requests)}</p>` : ""}
+      </div>`;
+    }).join("");
+
+    return `<section class="office-panel">
+        <header><div><span>REPORTS</span><h3>${esc(date)} 받은 보고</h3></div><small>안 쓴 사람을 먼저 보여 줍니다</small></header>
+        <div class="office-table-wrap"><table class="office-table">
+          <thead><tr><th>사람</th><th>채운 시간</th><th>달성률</th><th>지시 밖</th><th>상태</th><th></th></tr></thead>
+          <tbody>${rowsHtml || `<tr><td colspan="6" class="office-empty">사내 계정이 없습니다.</td></tr>`}</tbody>
+        </table></div>
+      </section>
+      ${words ? `<section class="office-panel">
+        <header><div><span>WORDS</span><h3>숫자로 안 남는 것</h3></div><small>여기가 대개 더 중요합니다</small></header>
+        <div class="panel-body dl-word-list">${words}</div>
+      </section>` : ""}`;
+  }
+
+  // 화면에 적힌 것을 한 번에 읽는다. 글자마다 상태로 옮기면 커서가 튄다.
+  function readDailyLogDraft(D) {
+    const base = dailyLogDraft(D);
+    const panel = document.getElementById("main");
+    if (!panel || !panel.querySelector("[data-dl-add], [data-dl-save]")) return base;
+    const collect = (selector, indexKey, fieldKey, seed) =>
+      [...panel.querySelectorAll(selector)].reduce((acc, node) => {
+        const index = Number(node.dataset[indexKey]);
+        const field = node.dataset[fieldKey];
+        if (!Number.isFinite(index) || !field) return acc;
+        const row = acc[index] || Object.assign({}, seed[index] || {});
+        row.id = row.id || `dl_${index}_${Date.now().toString(36)}`;
+        row[field] = String(node.value || "");
+        acc[index] = row;
+        return acc;
+      }, []).filter(Boolean);
+
+    const words = {};
+    [...panel.querySelectorAll("[data-dl-word]")].forEach(node => {
+      words[node.dataset.dlWord] = String(node.value || "");
+    });
+
+    return D.normalizeDay(Object.assign({}, base, words, {
+      entries: collect("[data-dl-index]", "dlIndex", "dlField", base.entries),
+      plans: collect("[data-dl-plan-index]", "dlPlanIndex", "dlPlan", base.plans),
+    }));
+  }
+
+  // 화면을 다시 그리기 전에 친 것을 챙긴다. 안 챙기면 날짜를 옮겼다가
+  // 돌아왔을 때 적은 것이 사라지고, 그런 일이 한 번 있으면 다음부터 안 쓴다.
+  function stashDailyLogDraft(D) {
+    const draft = readDailyLogDraft(D);
+    // 아무것도 안 적은 하루는 챙기지 않는다. 빈 초안을 붙들고 있으면 다른
+    // 날로 옮겨도 그 빈 하루가 따라다닌다.
+    dailyLogState.draft = (draft.entries.length || draft.plans.length
+      || draft.blockers || draft.ideas || draft.feedback || draft.requests) ? draft : null;
+  }
+
+  async function confirmDailyLog(uid, date) {
+    if (dailyLogState.busy) return;
+    dailyLogState.busy = true;
+    renderDailyLog();
+    try {
+      await api.confirmDailyLog({ uid, date });
+      dailyLogState.loaded = false;
+      showToast("확인했습니다.", "success");
+      await loadDailyLogs();
+    } catch (error) {
+      showToast(error && error.message || "확인하지 못했습니다.", "error");
+    } finally {
+      dailyLogState.busy = false;
+      renderDailyLog();
+    }
+  }
+
+  async function saveDailyLogDraft(submit) {
+    const D = dailyLogCore();
+    if (!D || dailyLogState.busy) return;
+    const draft = readDailyLogDraft(D);
+    const checked = D.validateDay(draft);
+    if (!checked.ok) { showToast(checked.error, "error"); dailyLogState.draft = draft; renderDailyLog(); return; }
+    dailyLogState.busy = true;
+    renderDailyLog();
+    try {
+      const saved = await api.saveDailyLog(Object.assign({}, checked.day, { submit: submit === true }));
+      dailyLogState.draft = null;
+      dailyLogState.loaded = false;
+      const rolled = Array.isArray(saved && saved.rolled) ? saved.rolled : [];
+      const failed = Array.isArray(saved && saved.failed) ? saved.failed : [];
+      if (submit) {
+        // 무엇이 올라갔는지 말한다. "보냈습니다" 만 띄우면 지시가 안 움직여도
+        // 아무도 모른다.
+        const moved = rolled.length ? ` 지시 ${rolled.length}건의 진행률을 올렸습니다.` : "";
+        if (failed.length) showToast(`보냈습니다.${moved} 못 올린 지시 ${failed.length}건이 있습니다.`, "error");
+        else showToast(`보냈습니다.${moved}`, "success");
+      } else {
+        showToast("저장했습니다. 아직 대표에게 가지 않았습니다.", "success");
+      }
+      await loadDailyLogs();
+      workOrderState.loaded = false;
+    } catch (error) {
+      // 실패해도 친 것을 날리지 않는다. 다시 치게 하면 다음부터 안 쓴다.
+      dailyLogState.draft = draft;
+      showToast(error && error.message || "저장하지 못했습니다.", "error");
+    } finally {
+      dailyLogState.busy = false;
+      renderDailyLog();
     }
   }
 
@@ -9249,6 +9584,83 @@
     }
     if (event.target.closest("[data-wo-project-cancel]")) { workOrderState.projectEditing = null; renderWorkOrders(); return; }
     if (event.target.closest("[data-wo-seed]")) { await seedProjects(); return; }
+    const dlShift = event.target.closest("[data-dl-shift]");
+    if (dlShift) {
+      const D = dailyLogCore();
+      if (!D) return;
+      // 날짜를 옮기기 전에 친 것을 챙긴다. 안 그러면 어제를 눌렀다가
+      // 돌아왔을 때 오늘 적은 것이 사라진다.
+      stashDailyLogDraft(D);
+      const step = Number(dlShift.dataset.dlShift) || 0;
+      const moved = new Date(Date.parse(`${dailyLogDate()}T00:00:00Z`) + step * 86400000);
+      dailyLogState.date = moved.toISOString().slice(0, 10);
+      dailyLogState.draft = null;
+      renderDailyLog();
+      return;
+    }
+    const dlTab = event.target.closest("[data-dl-tab]");
+    if (dlTab) {
+      const D = dailyLogCore();
+      if (D) stashDailyLogDraft(D);
+      dailyLogState.tab = dlTab.dataset.dlTab;
+      renderDailyLog();
+      return;
+    }
+    if (event.target.closest("[data-dl-add]")) {
+      const D = dailyLogCore();
+      if (!D) return;
+      const draft = readDailyLogDraft(D);
+      // 새 줄은 저장 가능한 값으로 시작한다. 빈 줄은 정규화가 조용히 버려서
+      // [줄 넣기] 를 눌러도 아무 일도 안 일어난 것처럼 보인다.
+      const last = draft.entries[draft.entries.length - 1];
+      const start = last ? last.end : "09:00";
+      const end = D.isTime(start) ? `${String(Math.min(23, Number(start.slice(0, 2)) + 1)).padStart(2, "0")}:${start.slice(3)}` : "10:00";
+      draft.entries = [...draft.entries, {
+        id: `dl_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 6)}`,
+        start, end: end > start ? end : "23:00", title: "", nature: "routine", orderId: "", progress: 0,
+      }];
+      dailyLogState.draft = draft;
+      renderDailyLog();
+      return;
+    }
+    const dlRemove = event.target.closest("[data-dl-remove]");
+    if (dlRemove) {
+      const D = dailyLogCore();
+      if (!D) return;
+      const draft = readDailyLogDraft(D);
+      const index = Number(dlRemove.dataset.dlRemove);
+      draft.entries = draft.entries.filter((item, at) => at !== index);
+      dailyLogState.draft = draft;
+      renderDailyLog();
+      return;
+    }
+    if (event.target.closest("[data-dl-plan-add]")) {
+      const D = dailyLogCore();
+      if (!D) return;
+      const draft = readDailyLogDraft(D);
+      draft.plans = [...draft.plans, {
+        id: `dp_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 6)}`,
+        title: "", nature: "routine", hours: 0, dueDate: "",
+      }];
+      dailyLogState.draft = draft;
+      renderDailyLog();
+      return;
+    }
+    const dlPlanRemove = event.target.closest("[data-dl-plan-remove]");
+    if (dlPlanRemove) {
+      const D = dailyLogCore();
+      if (!D) return;
+      const draft = readDailyLogDraft(D);
+      const index = Number(dlPlanRemove.dataset.dlPlanRemove);
+      draft.plans = draft.plans.filter((item, at) => at !== index);
+      dailyLogState.draft = draft;
+      renderDailyLog();
+      return;
+    }
+    if (event.target.closest("[data-dl-save]")) { await saveDailyLogDraft(false); return; }
+    if (event.target.closest("[data-dl-submit]")) { await saveDailyLogDraft(true); return; }
+    const dlConfirm = event.target.closest("[data-dl-confirm]");
+    if (dlConfirm) { await confirmDailyLog(dlConfirm.dataset.dlConfirm, dlConfirm.dataset.dlConfirmDate); return; }
     const capEdit = event.target.closest("[data-cap-edit]");
     if (capEdit) {
       const C = capacityCore();
@@ -11059,6 +11471,25 @@
   });
 
   document.addEventListener("change", async event => {
+    if (event.target.matches("[data-dl-date]")) {
+      const D = dailyLogCore();
+      if (!D) return;
+      // 날짜를 바꾸기 전에 친 것을 챙긴다.
+      stashDailyLogDraft(D);
+      dailyLogState.date = String(event.target.value || "");
+      dailyLogState.draft = null;
+      renderDailyLog();
+      return;
+    }
+    // 줄의 시각·지시를 바꾸면 그 자리에서 시간과 합계가 다시 나와야 한다.
+    // 글자 칸은 여기 안 걸린다 — change 는 칸을 떠날 때 오므로 커서가 안 튄다.
+    if (event.target.matches("[data-dl-field='start'], [data-dl-field='end'], [data-dl-field='nature'], [data-dl-field='orderId'], [data-dl-field='progress']")) {
+      const D = dailyLogCore();
+      if (!D) return;
+      dailyLogState.draft = readDailyLogDraft(D);
+      renderDailyLog();
+      return;
+    }
     if (event.target.matches("[data-report-kind]")) {
       // 종류를 바꾸면 항목이 통째로 바뀐다. 적어 둔 것은 같은 열쇠끼리 얹힌다.
       syncReportDraft();
@@ -13110,7 +13541,7 @@ document.addEventListener("keydown", event => {
       if (query.get("demo") === "1" && !store.customers.length) store = demoStore();
       synchronizedStore = cloneStore(store);
       store.partnerVendors = Array.isArray(store.partnerVendors) ? store.partnerVendors : [];
-      if (["dashboard", "cases", "payments", "customers", "buildings", "vacancies", "buildingCalendar", "workManagement", "operationsIntelligence", "valueScope", "consultations", "aiAssistant", "pipeline", "contracts", "relationships", "partnerVendors", "partnerQuotes", "tasks", "officeHome", "officeAttendance", "officeLeave", "officeMembers", "officeApprovals", "officePayroll", "officeMessenger", "officeAdmin", "buildingDocuments", "security", "settings", "forms", "quotes", "workOrders"].includes(query.get("view")) || query.get("view") === "customerMessages") currentView = query.get("view");
+      if (["dashboard", "cases", "payments", "customers", "buildings", "vacancies", "buildingCalendar", "workManagement", "operationsIntelligence", "valueScope", "consultations", "aiAssistant", "pipeline", "contracts", "relationships", "partnerVendors", "partnerQuotes", "tasks", "officeHome", "officeAttendance", "officeLeave", "officeMembers", "officeApprovals", "officePayroll", "officeMessenger", "officeAdmin", "buildingDocuments", "security", "settings", "forms", "quotes", "workOrders", "dailyLog"].includes(query.get("view")) || query.get("view") === "customerMessages") currentView = query.get("view");
       await refreshOperations({ silent: true, render: false });
       document.getElementById("lastSaved").textContent = store.updatedAt ? `최신 반영 ${dateText(store.updatedAt)}` : "새 데이터";
       render();

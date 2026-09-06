@@ -768,3 +768,28 @@ button:focus-visible,input:focus-visible,select:focus-visible,textarea:focus-vis
 .cap-days{display:flex;flex-wrap:wrap;gap:10px}
 .cap-days label{display:inline-flex;align-items:center;gap:4px;color:#191F28}
 .cap-skip{display:inline-flex;align-items:center;gap:6px;white-space:nowrap;font-size:12px;color:#4E5968}
+
+/* 오늘 — 일일 업무일지. 표가 넓어서 칸 폭을 정해 둔다. 안 정하면 "무엇을"
+   칸이 눌려 제목이 두 글자만 보인다. */
+.dl-datenav{display:flex;align-items:center;gap:6px}
+.dl-datenav input[type=date]{width:auto}
+.dl-panel .panel-body{display:grid;gap:12px}
+.dl-table th:nth-child(1),.dl-table th:nth-child(2),.dl-table td:nth-child(1),.dl-table td:nth-child(2){width:96px}
+.dl-table th:nth-child(4),.dl-table td:nth-child(4){width:96px}
+.dl-table th:nth-child(6),.dl-table td:nth-child(6){width:110px;white-space:nowrap}
+.dl-table th:nth-child(7),.dl-table td:nth-child(7){width:64px}
+.dl-table td input[type=number]{width:62px}
+.dl-natures{display:flex;flex-wrap:wrap;gap:8px}
+.dl-nature{display:inline-flex;align-items:center;gap:6px;padding:4px 10px;border-radius:999px;background:#F2F4F6;color:#4E5968;font-size:12px}
+.dl-nature b{color:#191F28}
+.dl-nature.is-urgent{background:#FFF1F1}
+.dl-nature.is-innovation{background:#EDF5FF}
+.dl-nature.is-routine{background:#F2F4F6}
+.dl-notes{margin:0;padding-left:18px;color:#8B95A1;font-size:12px;display:grid;gap:4px}
+.dl-words{display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:12px}
+.dl-words label{display:grid;gap:4px;font-size:13px;color:#4E5968}
+.dl-actions{align-items:center;gap:10px}
+.dl-word-list{display:grid;gap:10px}
+.dl-word-card{border:1px solid #E5E8EB;border-radius:10px;padding:10px 12px}
+.dl-word-card p{margin:4px 0 0;color:#4E5968;font-size:13px}
+.dl-word-card em{font-style:normal;color:#8B95A1;margin-right:6px}

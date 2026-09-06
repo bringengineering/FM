@@ -10,6 +10,7 @@ const ProjectCore = require("./project-core");
 const OkrCore = require("./okr-core");
 const GrowthCore = require("./growth-core");
 const CapacityCore = require("./capacity-core");
+const DailyLogCore = require("./daily-log-core");
 const SupplyCore = require("./supply-core");
 const DeliveryCore = require("./delivery-core");
 const WorkReportCore = require("./work-report-core");
@@ -4227,6 +4228,125 @@ class FirebaseRemoteClient {
     await this.dbRequest(location, { method: "PUT", body: record });
     this.assertSessionGuardActive(guard);
     return record;
+  }
+
+  // 일일업무일지를 불러온다.
+  //
+  // 대표는 전원 것을, 나머지는 자기 가지만 읽는다. **읽는 경로 자체가 다르다**
+  // — 다 읽어 와서 화면에서 걸러 보여 주면, 화면을 안 거치는 길로 남의 일지를
+  // 그대로 가져갈 수 있다.
+  //
+  // 여기서 실패를 삼키지 않는다. 권한이 막혀 못 읽는 것을 조용히 빈 목록으로
+  // 바꾸면 화면은 "아직 아무도 안 썼습니다" 라고 말한다. 그건 거짓말이고,
+  // 아무도 이상한 줄 모른 채 몇 주가 간다.
+  async loadDailyLogs() {
+    const session = this.requireOfficeSession();
+    const guard = this.captureSessionGuard();
+    const admin = session.role === "admin";
+    const payload = await this.dbRequest(admin ? "dailyLogs" : `dailyLogs/${session.uid}`, { method: "GET" });
+    this.assertSessionGuardActive(guard);
+    const bag = payload && typeof payload === "object" ? payload : {};
+    // 대표가 읽으면 {uid: {날짜: 일지}}, 본인이 읽으면 {날짜: 일지} 다.
+    const flat = admin
+      ? Object.entries(bag).flatMap(([uid, days]) => Object.entries(days && typeof days === "object" ? days : {})
+        .map(([date, value]) => Object.assign({ uid, date }, value || {})))
+      : Object.entries(bag).map(([date, value]) => Object.assign({ uid: session.uid, date }, value || {}));
+    const logs = flat.map(DailyLogCore.normalizeDay).filter(item => item.uid && item.date);
+    return {
+      logs,
+      admin,
+      canWork: session.role === "admin" || session.role === "member",
+      uid: session.uid,
+      name: String(session.displayName || session.email || session.uid),
+      loadedAt: new Date().toISOString(),
+    };
+  }
+
+  // 일지를 저장한다. 자기 것만.
+  //
+  // [보냄] 을 누르면 그 날 적은 달성률이 업무지시로 올라간다. 그게 이 화면이
+  // 있는 이유다 — 같은 숫자를 일지에 한 번, 지시에 또 한 번 적게 하면 둘은
+  // 반드시 어긋난다.
+  //
+  // 되올리는 것은 **자기 지시, 아직 안 끝난 것**뿐이다. 남의 지시나 이미 끝난
+  // 지시를 일지로 움직일 수 있으면 그건 일지가 아니라 뒷문이다.
+  async saveDailyLog(input) {
+    const session = this.requireOfficeSession();
+    if (session.role !== "admin" && session.role !== "member") {
+      throw createError("조회 전용 계정은 일지를 쓸 수 없습니다.", "DAILY_LOG_FORBIDDEN");
+    }
+    const guard = this.captureSessionGuard();
+    const source = input && typeof input === "object" && !Array.isArray(input) ? input : {};
+    const draft = Object.assign({}, source, {
+      uid: session.uid,
+      name: String(session.displayName || session.email || session.uid),
+    });
+    const checked = DailyLogCore.validateDay(draft);
+    if (!checked.ok) throw createError(checked.error, checked.code);
+    const day = checked.day;
+    const location = `dailyLogs/${day.uid}/${day.date}`;
+    const existing = await this.dbRequest(location, { method: "GET" });
+    this.assertSessionGuardActive(guard);
+    const before = DailyLogCore.normalizeDay(existing || {});
+    const submit = source.submit === true || Boolean(day.submittedAt);
+    const record = Object.assign({}, day, {
+      id: DailyLogCore.dayId(day.uid, day.date),
+      // 확인 도장은 대표가 찍는다. 여기서는 있던 것을 그대로 둔다.
+      confirmedBy: before.confirmedBy,
+      confirmedAt: before.confirmedAt,
+      submittedAt: submit ? (before.submittedAt || new Date().toISOString()) : "",
+      updatedAt: new Date().toISOString(),
+      updatedBy: session.uid,
+    });
+    await this.dbRequest(location, { method: "PUT", body: record });
+    this.assertSessionGuardActive(guard);
+
+    // 지시로 되올리기. 한 건이 안 되어도 일지는 이미 저장됐다 — 그래서 여기서
+    // 터뜨리지 않고 무엇이 안 올라갔는지 돌려준다.
+    const rolled = [];
+    const failed = [];
+    if (submit) {
+      for (const item of DailyLogCore.orderRollup(record)) {
+        try {
+          const order = await this.dbRequest(`workOrders/${item.orderId}`, { method: "GET" });
+          if (!order) continue;
+          const current = WorkOrderCore.normalizeOrder(Object.assign({ id: item.orderId }, order));
+          if (current.assigneeUid !== session.uid) continue;
+          if (!WorkOrderCore.OPEN.includes(current.status)) continue;
+          if (current.progress === item.progress) continue;
+          await this.updateWorkOrderProgress({ id: item.orderId, progress: item.progress });
+          rolled.push({ orderId: item.orderId, title: current.title, progress: item.progress });
+        } catch (error) {
+          failed.push({ orderId: item.orderId, error: String(error && error.message || "올리지 못했습니다.") });
+        }
+      }
+    }
+    this.assertSessionGuardActive(guard);
+    return { log: record, rolled, failed };
+  }
+
+  // 대표가 봤다는 표시. 자기 일지에 자기가 찍으면 그건 확인이 아니라서
+  // 규칙도 여기도 같은 것을 막는다.
+  async confirmDailyLog(input) {
+    const session = this.requireOfficeSession();
+    if (session.role !== "admin") {
+      throw createError("확인은 대표만 합니다.", "DAILY_LOG_CONFIRM_FORBIDDEN");
+    }
+    const guard = this.captureSessionGuard();
+    const source = input && typeof input === "object" && !Array.isArray(input) ? input : {};
+    const uid = String(source.uid || "");
+    const date = String(source.date || "");
+    if (!uid || !/^\d{4}-\d{2}-\d{2}$/.test(date)) {
+      throw createError("어느 일지인지 정해 주세요.", "VALIDATION_ERROR");
+    }
+    const location = `dailyLogs/${uid}/${date}`;
+    const existing = await this.dbRequest(location, { method: "GET" });
+    this.assertSessionGuardActive(guard);
+    if (!existing) throw createError("없는 일지입니다.", "DAILY_LOG_NOT_FOUND");
+    const now = new Date().toISOString();
+    await this.dbRequest(location, { method: "PATCH", body: { confirmedBy: session.uid, confirmedAt: now } });
+    this.assertSessionGuardActive(guard);
+    return { uid, date, confirmedBy: session.uid, confirmedAt: now };
   }
 
   // 시간표를 저장한다. 본인 것은 본인이, 남의 것은 관리자가.

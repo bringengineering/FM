@@ -2192,6 +2192,73 @@ describe.runIf(databaseEmulatorAvailable)("fieldPlatform database rules", () => 
     await assertFails(remove(ref(admin, at("p1"))));
   });
 
+  it("keeps a daily log readable by its writer and the boss, and lists only for the boss", async () => {
+    // 일지에는 셀프 피드백과 건의사항이 들어간다. 옆자리에 다 보이면 아무도
+    // 솔직하게 안 적는다. 그렇다고 아무도 못 읽게 하면 보고가 안 된다.
+    const admin = environment.authenticatedContext("crm-admin", crmClaims("admin@bring.test")).database();
+    const member = environment.authenticatedContext("crm-legacy-member", crmClaims("legacy@bring.test")).database();
+    const other = environment.authenticatedContext("crm-viewer", crmClaims("viewer@bring.test")).database();
+    const at = (uid: string, date: string) => `crmCompany/dailyLogs/${uid}/${date}`;
+    const log = (uid: string, date: string, patch: Record<string, unknown> = {}) => ({
+      id: `${uid}_${date}`,
+      uid,
+      name: "황우중",
+      date,
+      entries: [
+        { id: "e1", start: "09:00", end: "11:00", title: "카카오톡 채널 정비", nature: "routine", orderId: "h1", projectId: "p1", progress: 60, note: "" },
+      ],
+      plans: [{ id: "p1", title: "숨고 등록", nature: "innovation", hours: 2, dueDate: "2026-09-08", orderId: "" }],
+      blockers: "당근 비즈프로필 권한이 아직 안 넘어왔습니다.",
+      ideas: "",
+      feedback: "",
+      requests: "",
+      submittedAt: "",
+      confirmedBy: "",
+      confirmedAt: "",
+      updatedAt: "2026-09-06T00:00:00.000Z",
+      updatedBy: uid,
+      ...patch,
+    });
+
+    await assertSucceeds(set(ref(member, at("crm-legacy-member", "2026-09-07")), log("crm-legacy-member", "2026-09-07")));
+    await assertSucceeds(get(ref(member, at("crm-legacy-member", "2026-09-07"))));
+    // 대표는 본다. 그게 보고다 — 한 장씩도, 목록째로도.
+    await assertSucceeds(get(ref(admin, at("crm-legacy-member", "2026-09-07"))));
+    await assertSucceeds(get(ref(admin, "crmCompany/dailyLogs")));
+    // 옆자리 동료는 못 본다. 목록을 훑는 길도 없다.
+    await assertFails(get(ref(other, at("crm-legacy-member", "2026-09-07"))));
+    await assertFails(get(ref(other, "crmCompany/dailyLogs")));
+    await assertFails(get(ref(member, "crmCompany/dailyLogs")));
+    // 자기 가지는 통째로 읽는다. 이게 없으면 자기 일지를 못 불러온다.
+    await assertSucceeds(get(ref(member, "crmCompany/dailyLogs/crm-legacy-member")));
+
+    // 남의 이름으로 적을 수 없고, 남의 자리에 쓸 수도 없다.
+    await assertFails(set(ref(member, at("crm-admin", "2026-09-07")), log("crm-admin", "2026-09-07")));
+    await assertFails(set(ref(member, at("crm-legacy-member", "2026-09-08")), log("crm-admin", "2026-09-08")));
+    // 조회 전용은 일지를 쓰지 못한다.
+    await assertFails(set(ref(other, at("crm-viewer", "2026-09-07")), log("crm-viewer", "2026-09-07")));
+
+    // 대표가 봤다는 표시는 대표만 찍는다. 자기 일지에 자기가 도장을 찍으면
+    // 그건 확인이 아니다.
+    await assertFails(set(ref(member, at("crm-legacy-member", "2026-09-07")), log("crm-legacy-member", "2026-09-07", { confirmedBy: "crm-legacy-member" })));
+    await assertSucceeds(set(ref(admin, `${at("crm-legacy-member", "2026-09-07")}/confirmedBy`), "crm-admin"));
+    // 찍은 사람이 자기여야 한다. 남의 이름으로 확인 도장을 찍을 수 없다.
+    await assertFails(set(ref(admin, `${at("crm-legacy-member", "2026-09-07")}/confirmedBy`), "crm-legacy-member"));
+
+    // 줄이 거꾸로면 그 줄이 음수 시간이 된다.
+    await assertFails(set(ref(member, at("crm-legacy-member", "2026-09-09")), log("crm-legacy-member", "2026-09-09", {
+      entries: [{ id: "e1", start: "13:00", end: "09:00", title: "거꾸로", nature: "routine", orderId: "", projectId: "", progress: 0, note: "" }],
+    })));
+    // 모르는 성격은 안 받는다. 조용히 들어오면 그 줄 시간이 어느 칸에도 안 잡힌다.
+    await assertFails(set(ref(member, at("crm-legacy-member", "2026-09-10")), log("crm-legacy-member", "2026-09-10", {
+      entries: [{ id: "e1", start: "09:00", end: "10:00", title: "무엇", nature: "창의", orderId: "", projectId: "", progress: 0, note: "" }],
+    })));
+    // 모르는 칸도 안 받는다.
+    await assertFails(set(ref(member, at("crm-legacy-member", "2026-09-11")), log("crm-legacy-member", "2026-09-11", { mood: 3 })));
+    // 날짜 자리와 안에 적힌 날짜가 다르면 하루가 두 장이 된다.
+    await assertFails(set(ref(member, at("crm-legacy-member", "2026-09-12")), log("crm-legacy-member", "2026-09-13")));
+  });
+
   it("lets each person edit their own timetable and only the boss edit someone else's", async () => {
     // 관리자만 고칠 수 있게 하면 수업이 바뀔 때마다 대표를 거쳐야 하고,
     // 그러면 아무도 안 고친다. 안 고친 시간표는 틀린 숫자로 일을 나누게 한다.

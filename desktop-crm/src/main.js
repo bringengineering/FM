@@ -7608,6 +7608,8 @@ secureCanonicalHandle("crm:leave-grant-save", input => remoteClient.saveLeaveGra
 secureCanonicalHandle("crm:hr-record-save", input => remoteClient.saveMemberRecord(input));
 secureCanonicalHandle("crm:work-order-save", input => remoteClient.saveWorkOrder(input));
 secureCanonicalHandle("crm:capacity-save", input => remoteClient.saveCapacity(input));
+secureCanonicalHandle("crm:daily-log-save", input => remoteClient.saveDailyLog(input));
+secureCanonicalHandle("crm:daily-log-confirm", input => remoteClient.confirmDailyLog(input));
 secureCanonicalHandle("crm:project-save", input => remoteClient.saveProject(input));
 secureCanonicalHandle("crm:work-order-progress", input => remoteClient.updateWorkOrderProgress(input));
 secureCanonicalHandle("crm:supply-item-save", input => remoteClient.saveSupplyItem(input));
@@ -8016,6 +8018,7 @@ secureCanonicalHandle("crm:field-team-profiles", async () => {
 secureHandle("crm:operations-load", readOperations);
 secureHandle("crm:forms-load", () => remoteClient.loadForms());
 secureHandle("crm:work-orders-load", () => remoteClient.loadWorkOrders());
+secureHandle("crm:daily-logs-load", () => remoteClient.loadDailyLogs());
 secureHandle("crm:supplies-load", () => remoteClient.loadSupplies());
 secureHandle("crm:delivery-flows-load", () => remoteClient.loadDeliveryFlows());
 secureHandle("crm:work-reports-load", () => remoteClient.loadWorkReports());
