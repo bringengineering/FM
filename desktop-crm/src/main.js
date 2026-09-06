@@ -3191,6 +3191,7 @@ async function uploadWorkOrderResult(input) {
   }
   const orderId = String(options.orderId || "");
   const orderTitle = String(options.orderTitle || "");
+  const projectName = String(options.projectName || "");
   if (!orderId) throw Object.assign(new Error("어느 지시의 결과물인지 정해 주세요."), { code: "ORDER_REQUIRED" });
 
   const content = await fs.readFile(filePath);
@@ -3199,7 +3200,9 @@ async function uploadWorkOrderResult(input) {
     { fetchImpl: (url, init) => fetch(url, init), accessToken: driveSession.accessToken },
     {
       rootFolderId: String(options.rootFolderId || ""),
-      folderPath: ["업무지시", day.slice(0, 4), `${orderTitle || "제목없음"}_${orderId}`],
+      // 프로젝트별로 쌓는다. 연도로 나누면 "브링 케어 결과물 다 보여줘" 가
+      // 안 된다 — 그게 결과물을 찾는 가장 흔한 이유다.
+      folderPath: ["업무지시", projectName || "프로젝트 없음", `${orderTitle || "제목없음"}_${orderId}`],
       fileName: "",
       docTypeLabel: "업무지시 결과물",
       documentDate: day,

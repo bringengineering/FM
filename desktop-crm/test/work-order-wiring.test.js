@@ -102,6 +102,8 @@ test("결과물은 Drive 에 지시별로 쌓인다", () => {
   );
   assert.ok(upload.length > 0);
   assert.match(upload, /folderPath: \["업무지시"/u);
+  // 프로젝트별로 쌓는다. 연도로 나누면 "브링 케어 결과물 다 보여줘" 가 안 된다.
+  assert.match(upload, /projectName \|\| "프로젝트 없음"/u);
   assert.match(upload, /DRIVE_AUTH_REQUIRED/u);
   assert.match(upload, /MARKETING_ONLY_FORBIDDEN/u);
   // Drive 도우미가 그 길을 실제로 쓴다.

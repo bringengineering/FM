@@ -4483,7 +4483,11 @@
   async function uploadWorkOrderResult(orderId) {
     const W = workOrderCore();
     if (!W || workOrderState.busyId) return;
+    const P = projectCore();
     const order = W.normalizeOrder(workOrderState.orders.find(item => item && item.id === orderId));
+    const project = P && order.projectId
+      ? P.sortProjects(workOrderState.projects).find(item => item.id === order.projectId)
+      : null;
     const rootFolderId = buildingDocsRootFolderId();
     if (!rootFolderId) return showToast("Drive 문서함 폴더를 먼저 지정해 주세요.", "error");
 
@@ -4507,6 +4511,7 @@
           rootFolderId,
           orderId,
           orderTitle: order.title,
+          projectName: project ? project.name : "",
         });
         if (!uploaded || uploaded.ok === false) throw new Error(uploaded && uploaded.error || "Drive 에 올리지 못했습니다.");
         await api.updateWorkOrderProgress({
