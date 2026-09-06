@@ -1640,6 +1640,38 @@
     document.querySelectorAll("[data-nav-folder]").forEach(folder => {
       folder.hidden = Boolean(activeNavFolder) && folder.dataset.navFolder !== activeNavFolder;
     });
+    renderNavFolderSwitch();
+  }
+
+  // 고른 폴더만 남기는 것은 그렇게 하기로 정한 것이다. 그런데 나갈 길이
+  // 안 보이면 사람은 "다른 화면이 사라졌다" 고 읽는다. 실제로 그랬다.
+  //
+  // 그래서 사이드바 맨 위에 지금 어느 폴더인지 적고, 눌러서 바로 옮겨 갈 수
+  // 있게 둔다. 처음 화면까지 나갔다 오지 않아도 된다.
+  function renderNavFolderSwitch() {
+    const box = document.querySelector("[data-nav-folder-switch]");
+    if (!box) return;
+    // 폴더를 안 고른 상태(전부 보임)에서는 이 줄이 할 일이 없다.
+    box.hidden = !activeNavFolder;
+    if (!activeNavFolder) return;
+
+    const folders = WorkspaceShell.LANDING_FOLDERS.filter(item => item.navFolder);
+    const current = folders.find(item => item.navFolder === activeNavFolder);
+    const nameEl = box.querySelector("[data-nav-switch-name]");
+    if (nameEl) nameEl.textContent = current ? current.title : "작업 폴더";
+
+    const list = box.querySelector("[data-nav-switch-list]");
+    if (!list) return;
+    list.innerHTML = folders.map(item => `<button type="button" class="nav-switch-go${item.navFolder === activeNavFolder ? " is-current" : ""}" data-nav-folder-go="${esc(item.navFolder)}" data-nav-folder-view="${esc(item.view)}">
+        <b>${esc(item.title)}</b><small>${esc(item.description || "")}</small>
+      </button>`).join("") + `<button type="button" class="nav-switch-go nav-switch-all" data-nav-folder-go="" data-nav-folder-view=""><b>전체 보기</b><small>모든 폴더를 한 번에</small></button>`;
+  }
+
+  function closeNavFolderSwitch() {
+    const box = document.querySelector("[data-nav-folder-switch]");
+    if (!box) return;
+    box.querySelector("[data-nav-switch-list]")?.setAttribute("hidden", "");
+    box.querySelector("[data-nav-switch-toggle]")?.setAttribute("aria-expanded", "false");
   }
 
   function setActiveNavFolder(folderKey) {
@@ -4127,7 +4159,7 @@
     let count = 0;
     if (W) {
       count = workOrderState.admin
-        ? W.summarize(orders, Core.workDate()).waitingReview
+        ? W.summarize(orders, todayKey()).waitingReview
         : W.forAssignee(orders, workOrderState.uid).filter(item => W.OPEN.includes(item.status)).length;
     }
     badge.textContent = String(count);
@@ -4142,7 +4174,7 @@
     if (!W || !P) { main.innerHTML = `<section class="operations-hero"><div><h2>프로젝트</h2><p>모듈을 불러오지 못했습니다.</p></div></section>`; return; }
     if (!workOrderState.loaded && !workOrderState.loading && !workOrderState.error) void loadWorkOrders();
 
-    const today = Core.workDate();
+    const today = todayKey();
     const projects = P.sortProjects(workOrderState.projects);
     const selected = workOrderState.projectId && projects.some(item => item.id === workOrderState.projectId)
       ? workOrderState.projectId
@@ -4442,7 +4474,7 @@
     const orderId = track.dataset.woGanttDrag;
     const order = W.normalizeOrder(workOrderState.orders.find(item => item && item.id === orderId));
     if (!order.id || order.status === "done") return;
-    const today = Core.workDate();
+    const today = todayKey();
     const scoped = workOrderState.scope === "mine"
       ? W.forAssignee(currentProjectOrders(P), workOrderState.uid)
       : currentProjectOrders(P);
@@ -4613,7 +4645,7 @@
 
     const reports = R.sortReports(reportState.reports);
     const draft = reportState.draft ? R.normalizeReport(reportState.draft) : null;
-    const thisMonth = Core.workDate().slice(0, 7);
+    const thisMonth = todayKey().slice(0, 7);
     const monthly = reports.filter(item => item.workDate.slice(0, 7) === thisMonth);
 
     const status = reportState.loading
@@ -5143,7 +5175,7 @@
   // 날짜 칸이 빈 채로 열리면 사람은 연도부터 네 자리를 친다. 올해 앞뒤로
   // 범위를 잡아 두면 달력이 올해로 열리고, 화살표만 눌러도 연도가 안 튄다.
   function supplyDateBounds() {
-    const year = Number(Core.workDate().slice(0, 4)) || new Date().getFullYear();
+    const year = Number(todayKey().slice(0, 4)) || new Date().getFullYear();
     return ` min="${year - 1}-01-01" max="${year + 1}-12-31"`;
   }
 
@@ -5157,7 +5189,7 @@
     if (!S) { main.innerHTML = `<section class="operations-hero"><div><h2>비품·자재</h2><p>모듈을 불러오지 못했습니다.</p></div></section>`; return; }
     if (!supplyState.loaded && !supplyState.loading && !supplyState.error) void loadSupplies();
 
-    const today = Core.workDate();
+    const today = todayKey();
     const summary = S.summarize(supplyState.items, supplyState.moves, today);
     const low = S.lowStock(supplyState.items, supplyState.moves);
     const groups = S.groupByCategory(supplyState.items, supplyState.moves);
@@ -5300,7 +5332,7 @@
       </select></label>
       <label><span>종류</span><select name="kind">${choices.map(item => `<option value="${esc(item.key)}"${item.key === (kind && kind.key) ? " selected" : ""}>${esc(item.label)}</option>`).join("")}</select></label>
       <label><span>수량</span><input type="number" name="qty" min="0" max="999999" step="1" value="${draft.qty || ""}" required></label>
-      <label><span>날짜</span><input type="date" name="date" value="${esc(draft.date || Core.workDate())}" required${supplyDateBounds()}></label>
+      <label><span>날짜</span><input type="date" name="date" value="${esc(draft.date || todayKey())}" required${supplyDateBounds()}></label>
       <label class="wide"><span>이유 · 어디에 썼는지</span><input type="text" name="reason" maxlength="500" value="${esc(draft.reason)}" placeholder="폐기와 실사는 반드시 적어야 합니다"></label>
       <p class="wo-editor-note">한 번 적은 기록은 고치지 않습니다. 잘못 적었으면 반대 기록이나 실사를 적어 바로잡습니다. 실사는 “세어 보니 N개였다”라는 뜻이라 그 앞의 계산을 지우고 N 으로 맞춥니다.</p>
       <div class="wo-editor-actions">
@@ -7735,9 +7767,33 @@
   }
 
   document.addEventListener("click", async event => {
+    const navSwitchToggle = event.target.closest("[data-nav-switch-toggle]");
+    if (navSwitchToggle) {
+      const list = document.querySelector("[data-nav-switch-list]");
+      const open = list && list.hasAttribute("hidden");
+      if (list) list.toggleAttribute("hidden", !open);
+      navSwitchToggle.setAttribute("aria-expanded", open ? "true" : "false");
+      return;
+    }
+    const navFolderGo = event.target.closest("[data-nav-folder-go]");
+    if (navFolderGo) {
+      const folder = navFolderGo.dataset.navFolderGo || "";
+      const view = navFolderGo.dataset.navFolderView || "";
+      closeNavFolderSwitch();
+      setActiveNavFolder(folder);
+      // 폴더를 옮겼으면 그 폴더의 첫 화면을 연다. 옮겼는데 화면이 그대로면
+      // 사람은 아무 일도 안 일어난 줄 안다.
+      if (view && Object.hasOwn(viewMeta, view) && folder) {
+        currentView = view;
+        render();
+      }
+      return;
+    }
+    // 목록 밖을 누르면 닫는다. 열어 둔 채로 두면 메뉴를 가린다.
+    if (!event.target.closest("[data-nav-folder-switch]")) closeNavFolderSwitch();
     if (event.target.closest("[data-report-new]")) {
       const R = reportCore();
-      if (R) { reportState.draft = R.normalizeReport({ id: `wr_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`, workDate: Core.workDate() }); renderWorkReports(); }
+      if (R) { reportState.draft = R.normalizeReport({ id: `wr_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`, workDate: todayKey() }); renderWorkReports(); }
       return;
     }
     const reportEdit = event.target.closest("[data-report-edit]");
@@ -7808,13 +7864,13 @@
     if (event.target.closest("[data-supply-item-cancel]")) { supplyState.itemEditing = null; renderSupplies(); return; }
     if (event.target.closest("[data-supply-move-new]")) {
       const S = supplyCore();
-      if (S) { supplyState.moveEditing = S.normalizeMove({ date: Core.workDate() }); renderSupplies(); }
+      if (S) { supplyState.moveEditing = S.normalizeMove({ date: todayKey() }); renderSupplies(); }
       return;
     }
     const supplyMoveFor = event.target.closest("[data-supply-move-for]");
     if (supplyMoveFor) {
       const S = supplyCore();
-      if (S) { supplyState.moveEditing = S.normalizeMove({ itemId: supplyMoveFor.dataset.supplyMoveFor, date: Core.workDate() }); renderSupplies(); }
+      if (S) { supplyState.moveEditing = S.normalizeMove({ itemId: supplyMoveFor.dataset.supplyMoveFor, date: todayKey() }); renderSupplies(); }
       return;
     }
     if (event.target.closest("[data-supply-move-cancel]")) { supplyState.moveEditing = null; renderSupplies(); return; }
