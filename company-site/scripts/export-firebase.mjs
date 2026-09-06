@@ -28,6 +28,11 @@ const routes = [
     pathname: "/consult/complete",
     outputFile: "consult/complete/index.html",
   },
+  { pathname: "/stair-cleaning", outputFile: "stair-cleaning/index.html" },
+  { pathname: "/building-care", outputFile: "building-care/index.html" },
+  { pathname: "/move-in-cleaning", outputFile: "move-in-cleaning/index.html" },
+  { pathname: "/turnover-care", outputFile: "turnover-care/index.html" },
+  { pathname: "/care-records", outputFile: "care-records/index.html" },
 ];
 
 for (const route of routes) {

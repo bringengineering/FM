@@ -171,15 +171,19 @@ test("active Firebase hosting sources and exported assets target bring-fm only",
     /https:\/\/bring-fm-default-rtdb\.asia-southeast1\.firebasedatabase\.app/,
   );
 
-  const fieldAssetPath = JSON.parse(assetManifest)[
-    "app/field/components/v2/FieldV2App.tsx"
-  ].file;
-  const fieldAsset = await readFile(
-    new URL(`../firebase-public/${fieldAssetPath}`, import.meta.url),
+  const manifest = JSON.parse(assetManifest);
+  const fieldEntry = manifest["app/field/FieldApp.tsx"];
+  assert.ok(fieldEntry, "the field client entry must be present in the Vite manifest");
+  const firebaseEntry = Object.entries(manifest).find(([key]) =>
+    key.startsWith("_firebase.client-"),
+  );
+  assert.ok(firebaseEntry, "the Firebase client chunk must be present in the Vite manifest");
+  const firebaseAsset = await readFile(
+    new URL(`../firebase-public/${firebaseEntry[1].file}`, import.meta.url),
     "utf8",
   );
-  assert.match(fieldAsset, /authDomain:[`"]bring-fm\.firebaseapp\.com[`"]/);
-  assert.match(fieldAsset, /projectId:[`"]bring-fm[`"]/);
+  assert.match(firebaseAsset, /authDomain:[`"]bring-fm\.firebaseapp\.com[`"]/);
+  assert.match(firebaseAsset, /projectId:[`"]bring-fm[`"]/);
 });
 
 test("the retired project reference remains confined to the GET-only migration adapter", async () => {

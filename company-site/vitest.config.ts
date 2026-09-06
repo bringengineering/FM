@@ -14,6 +14,7 @@ export default defineConfig({
     environment: "jsdom",
     include: [
       "tests/field/**/*.{test,spec}.{ts,tsx}",
+      "tests/landing/**/*.{test,spec}.{ts,tsx}",
       "tests/crm-auth-email.test.ts",
     ],
     setupFiles: ["./tests/field/setup.ts"],

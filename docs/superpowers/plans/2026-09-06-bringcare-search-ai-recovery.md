@@ -138,7 +138,7 @@ Use `git show dafa419c:<path>` for each text file through a temporary file and a
 
 ```powershell
 pnpm --dir company-site install --frozen-lockfile
-pnpm --dir company-site test -- --run tests/landing
+pnpm --dir company-site run test:landing
 ```
 
 Expected: existing landing behavior passes; only the new discovery tests remain red until Task 4.
@@ -251,7 +251,7 @@ git commit -m "feat: add Bring Care search discovery foundations"
 - [ ] **Step 1: Run the complete company-site test suite**
 
 ```powershell
-pnpm --dir company-site test
+pnpm --dir company-site run test
 ```
 
 Expected: all tests pass with zero failures.
@@ -259,7 +259,7 @@ Expected: all tests pass with zero failures.
 - [ ] **Step 2: Build the static Hosting output**
 
 ```powershell
-pnpm --dir company-site build
+pnpm --dir company-site run build
 ```
 
 Expected: exit code 0; `firebase-public/building-care/index.html`, `stair-cleaning/index.html`, `move-in-cleaning/index.html`, `robots.txt`, `sitemap.xml`, and `llms.txt` exist.

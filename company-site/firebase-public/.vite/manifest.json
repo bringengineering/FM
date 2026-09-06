@@ -1,60 +1,180 @@
 {
-  "_framework-CXnKph_e.js": {
-    "file": "assets/framework-CXnKph_e.js",
+  "_firebase.client-B1qA1J7L.js": {
+    "file": "assets/firebase.client-B1qA1J7L.js",
+    "name": "firebase.client"
+  },
+  "_framework-B8WyT5R3.js": {
+    "file": "assets/framework-B8WyT5R3.js",
     "name": "framework",
     "imports": [
       "_rolldown-runtime-S-ySWqyJ.js"
+    ]
+  },
+  "_image-aOWsHzJx.js": {
+    "file": "assets/image-aOWsHzJx.js",
+    "name": "image",
+    "imports": [
+      "_rolldown-runtime-S-ySWqyJ.js",
+      "_framework-B8WyT5R3.js"
+    ]
+  },
+  "_marketingLeadClient-C-cj6NqK.js": {
+    "file": "assets/marketingLeadClient-C-cj6NqK.js",
+    "name": "marketingLeadClient",
+    "imports": [
+      "_rolldown-runtime-S-ySWqyJ.js",
+      "_firebase.client-B1qA1J7L.js",
+      "_framework-B8WyT5R3.js",
+      "_readonly-url-search-params-BRv7ewS0.js",
+      "_url-utils-BAkPrQqo.js"
+    ]
+  },
+  "_query-B1xsQAPP.js": {
+    "file": "assets/query-B1xsQAPP.js",
+    "name": "query"
+  },
+  "_readonly-url-search-params-BRv7ewS0.js": {
+    "file": "assets/readonly-url-search-params-BRv7ewS0.js",
+    "name": "readonly-url-search-params",
+    "imports": [
+      "_rolldown-runtime-S-ySWqyJ.js",
+      "_framework-B8WyT5R3.js"
     ]
   },
   "_rolldown-runtime-S-ySWqyJ.js": {
     "file": "assets/rolldown-runtime-S-ySWqyJ.js",
     "name": "rolldown-runtime"
   },
+  "_url-utils-BAkPrQqo.js": {
+    "file": "assets/url-utils-BAkPrQqo.js",
+    "name": "url-utils"
+  },
   "app/consult/ConsultForm.tsx": {
-    "file": "assets/ConsultForm-hcBSrucM.js",
+    "file": "assets/ConsultForm-DCEW7Sfj.js",
     "name": "ConsultForm",
     "src": "app/consult/ConsultForm.tsx",
     "isDynamicEntry": true,
     "imports": [
       "_rolldown-runtime-S-ySWqyJ.js",
-      "_framework-CXnKph_e.js"
+      "_framework-B8WyT5R3.js"
     ]
   },
   "app/field/FieldApp.tsx": {
-    "file": "assets/FieldApp-BLD36BC3.js",
+    "file": "assets/FieldApp-CrlRKUoL.js",
     "name": "FieldApp",
     "src": "app/field/FieldApp.tsx",
     "isDynamicEntry": true,
     "imports": [
       "_rolldown-runtime-S-ySWqyJ.js",
-      "_framework-CXnKph_e.js"
+      "_firebase.client-B1qA1J7L.js",
+      "_image-aOWsHzJx.js",
+      "_framework-B8WyT5R3.js"
     ]
   },
-  "node_modules/.pnpm/vinext@0.0.50_@vitejs+plugin-react@6.0.2_vite@8.0.13_@types+node@22.19.19_esbuild@0.28._9192fdac6e7854526409bdfa1df91a00/node_modules/vinext/dist/shims/layout-segment-context.js": {
-    "file": "assets/layout-segment-context-B_-6lmR3.js",
+  "app/landing/BuildingCareLanding.tsx": {
+    "file": "assets/BuildingCareLanding-Bdy4e7KH.js",
+    "name": "BuildingCareLanding",
+    "src": "app/landing/BuildingCareLanding.tsx",
+    "isDynamicEntry": true,
+    "imports": [
+      "_rolldown-runtime-S-ySWqyJ.js",
+      "app/landing/QuickEstimateExperience.tsx",
+      "app/landing/QuickEstimateForm.tsx",
+      "_marketingLeadClient-C-cj6NqK.js",
+      "_image-aOWsHzJx.js",
+      "_framework-B8WyT5R3.js"
+    ],
+    "css": [
+      "assets/BuildingCareLanding-d5pEQ9Sw.css"
+    ]
+  },
+  "app/landing/QuickEstimateExperience.tsx": {
+    "file": "assets/QuickEstimateExperience-Dy8XS5R1.js",
+    "name": "QuickEstimateExperience",
+    "src": "app/landing/QuickEstimateExperience.tsx",
+    "isDynamicEntry": true,
+    "imports": [
+      "_rolldown-runtime-S-ySWqyJ.js",
+      "_marketingLeadClient-C-cj6NqK.js",
+      "_framework-B8WyT5R3.js"
+    ]
+  },
+  "app/landing/QuickEstimateForm.tsx": {
+    "file": "assets/QuickEstimateForm-CvrYWOiA.js",
+    "name": "QuickEstimateForm",
+    "src": "app/landing/QuickEstimateForm.tsx",
+    "isDynamicEntry": true,
+    "imports": [
+      "_rolldown-runtime-S-ySWqyJ.js",
+      "_marketingLeadClient-C-cj6NqK.js",
+      "_framework-B8WyT5R3.js"
+    ]
+  },
+  "node_modules/.pnpm/vinext@0.0.50_@vitejs+plugi_9192fdac6e7854526409bdfa1df91a00/node_modules/vinext/dist/shims/layout-segment-context.js": {
+    "file": "assets/layout-segment-context-Ag6UuOV1.js",
     "name": "layout-segment-context",
-    "src": "node_modules/.pnpm/vinext@0.0.50_@vitejs+plugin-react@6.0.2_vite@8.0.13_@types+node@22.19.19_esbuild@0.28._9192fdac6e7854526409bdfa1df91a00/node_modules/vinext/dist/shims/layout-segment-context.js",
+    "src": "node_modules/.pnpm/vinext@0.0.50_@vitejs+plugi_9192fdac6e7854526409bdfa1df91a00/node_modules/vinext/dist/shims/layout-segment-context.js",
     "isDynamicEntry": true,
     "imports": [
       "_rolldown-runtime-S-ySWqyJ.js",
       "virtual:vinext-app-browser-entry",
-      "_framework-CXnKph_e.js"
+      "_framework-B8WyT5R3.js"
+    ]
+  },
+  "node_modules/.pnpm/vinext@0.0.50_@vitejs+plugi_9192fdac6e7854526409bdfa1df91a00/node_modules/vinext/dist/shims/link.js": {
+    "file": "assets/link-xJNQLKKX.js",
+    "name": "link",
+    "src": "node_modules/.pnpm/vinext@0.0.50_@vitejs+plugi_9192fdac6e7854526409bdfa1df91a00/node_modules/vinext/dist/shims/link.js",
+    "isDynamicEntry": true,
+    "imports": [
+      "_rolldown-runtime-S-ySWqyJ.js",
+      "virtual:vinext-app-browser-entry",
+      "_framework-B8WyT5R3.js",
+      "_readonly-url-search-params-BRv7ewS0.js",
+      "_url-utils-BAkPrQqo.js",
+      "_query-B1xsQAPP.js"
+    ],
+    "dynamicImports": [
+      "node_modules/.pnpm/vinext@0.0.50_@vitejs+plugi_9192fdac6e7854526409bdfa1df91a00/node_modules/vinext/dist/shims/router.js"
+    ]
+  },
+  "node_modules/.pnpm/vinext@0.0.50_@vitejs+plugi_9192fdac6e7854526409bdfa1df91a00/node_modules/vinext/dist/shims/router.js": {
+    "file": "assets/router-Bfhs0Vld.js",
+    "name": "router",
+    "src": "node_modules/.pnpm/vinext@0.0.50_@vitejs+plugi_9192fdac6e7854526409bdfa1df91a00/node_modules/vinext/dist/shims/router.js",
+    "isDynamicEntry": true,
+    "imports": [
+      "_rolldown-runtime-S-ySWqyJ.js",
+      "virtual:vinext-app-browser-entry",
+      "_framework-B8WyT5R3.js",
+      "_url-utils-BAkPrQqo.js",
+      "_query-B1xsQAPP.js"
+    ],
+    "dynamicImports": [
+      "_framework-B8WyT5R3.js"
     ]
   },
   "virtual:vinext-app-browser-entry": {
-    "file": "assets/index-DVJ0zRte.js",
+    "file": "assets/index-C9bK0g0V.js",
     "name": "index",
     "src": "virtual:vinext-app-browser-entry",
     "isEntry": true,
     "imports": [
       "_rolldown-runtime-S-ySWqyJ.js",
-      "_framework-CXnKph_e.js"
+      "_framework-B8WyT5R3.js",
+      "_readonly-url-search-params-BRv7ewS0.js",
+      "_url-utils-BAkPrQqo.js"
     ],
     "dynamicImports": [
+      "app/landing/BuildingCareLanding.tsx",
       "virtual:vinext-app-browser-entry",
       "app/consult/ConsultForm.tsx",
+      "app/landing/QuickEstimateExperience.tsx",
+      "_image-aOWsHzJx.js",
+      "node_modules/.pnpm/vinext@0.0.50_@vitejs+plugi_9192fdac6e7854526409bdfa1df91a00/node_modules/vinext/dist/shims/link.js",
       "app/field/FieldApp.tsx",
-      "node_modules/.pnpm/vinext@0.0.50_@vitejs+plugin-react@6.0.2_vite@8.0.13_@types+node@22.19.19_esbuild@0.28._9192fdac6e7854526409bdfa1df91a00/node_modules/vinext/dist/shims/layout-segment-context.js"
+      "app/landing/QuickEstimateForm.tsx",
+      "node_modules/.pnpm/vinext@0.0.50_@vitejs+plugi_9192fdac6e7854526409bdfa1df91a00/node_modules/vinext/dist/shims/layout-segment-context.js"
     ]
   }
 }

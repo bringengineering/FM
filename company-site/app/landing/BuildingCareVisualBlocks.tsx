@@ -1,0 +1,56 @@
+import Image from "next/image";
+import {
+  activeCertifications,
+  directVsBringRows,
+  managementCycle,
+  managementScopeRows,
+} from "./buildingCareVisualData";
+import { managementServices, turnoverProcess } from "./buildingCareData";
+import { officialCompanyCredentials } from "./buildingCareTrustData";
+
+export function BrandTeamManifesto() {
+  return <div className="bc-team-manifesto bc-team-manifesto-overlay" role="region" aria-labelledby="bc-team-title"><div className="bc-shell"><div className="bc-team-stage"><Image src="/brand-campaign/bringcare-team-stair-v1.png" alt="계단에서 건물을 함께 살피는 BRING CARE 브랜드 팀 장면" fill priority unoptimized sizes="100vw" /><div className="bc-team-shade"/><div className="bc-team-copy"><p className="bc-kicker">BRING CARE MANAGEMENT TEAM</p><h1 id="bc-team-title">BRING CARE는 건물을 관리하며,<br />청소까지 책임지는 회사입니다.</h1><p>건물을 대하는 태도부터 다릅니다.</p></div></div><p className="bc-team-caption">BRING CARE 브랜드 캠페인 이미지</p></div></div>;
+}
+
+export function CertificationTrustBar() {
+  return <div className="bc-shell"><a className="bc-cert-trust-bar" href="#company-credentials"><span>공식 기업 인증</span><div>{officialCompanyCredentials.map(cert => <strong className="bc-trust-badge" key={cert.id}>{cert.title}</strong>)}</div><b>인증·수상 보기 →</b></a></div>;
+}
+
+export function CertificationStrip() {
+  return <div className="bc-certifications"><div className="bc-cert-heading"><div><p className="bc-kicker">CERTIFICATION &amp; AWARDS</p><h2>공식 인증으로,<br />운영 기반을 증명합니다.</h2></div><p>연구개발 조직부터 벤처·창업기업 확인까지,<br />BRING CARE는 기업 운영 기반을 공식 문서로 확인받았습니다.</p></div><div className="bc-cert-grid">{activeCertifications.map(cert => <details className="bc-cert-card" key={cert.id}><summary><div className="bc-cert-thumb"><Image src={cert.image} alt={`${cert.title} 개인정보 보호 처리 썸네일`} fill unoptimized sizes="220px" /></div><div><small>{cert.issuer}</small><strong>{cert.title}</strong>{cert.validUntil && <span>{cert.validUntil}까지</span>}</div><b>확인서 보기 ＋</b></summary><div className="bc-cert-expanded"><Image src={cert.image} alt={`${cert.title} 공개용 확인서`} width={640} height={820} unoptimized /><p>개인정보 보호를 위해 공개용 이미지의 식별정보를 흐림 처리했습니다.</p></div></details>)}</div><p className="bc-cert-note">현재 공개 중인 자료는 공식 인증 3건입니다. 인증은 기업의 운영 기반을 나타내며 개별 건물관리 서비스의 품질 보증을 의미하지 않습니다.</p></div>;
+}
+
+export function ServiceVisualMenu() {
+  return <div className="bc-visual-block"><VisualHeading eyebrow="MANAGEMENT SERVICES" title="건물 운영에 필요한 일을 한 곳에서 관리합니다." copy="시설관리부터 임차인 응대, 유지관리, 입·퇴실, 공실, 관리기록까지 하나의 흐름으로 연결합니다." /><div className="bc-service-visual-grid">{managementServices.map((item, index) => <article className="bc-service-visual" key={item.title}><span aria-hidden="true">{item.icon}</span><small>{String(index + 1).padStart(2, "0")}</small><h3>{item.title}</h3><p>{item.copy}</p></article>)}</div></div>;
+}
+
+export function TurnoverProcessVisual() {
+  const effects = ["공실 준비 선제화", "업무 누락 최소화", "임차인 응대 일원화", "퇴실부터 다음 입주까지 관리이력 연결"] as const;
+  return <div className="bc-turnover-panel"><header><p className="bc-kicker">INTEGRATED TURNOVER</p><h2>퇴실은 관리의 끝이 아니라,<br />다음 임대차 관리의 시작입니다.</h2><p>퇴실 예정 파악부터 다음 입주 전 확인까지, 흩어지기 쉬운 일을 하나의 관리 흐름으로 연결합니다.</p></header><ol className="bc-turnover-timeline">{turnoverProcess.map((item, index) => <li className="bc-turnover-step" key={item.title}><span>{String(index + 1).padStart(2, "0")}</span><h3>{item.title}</h3><p>{item.copy}</p></li>)}</ol><div className="bc-turnover-effects">{effects.map((effect) => <strong className="bc-turnover-effect" key={effect}>✓ {effect}</strong>)}</div><a className="bc-turnover-cta" href="#building-care-consultation">입·퇴실 통합관리 상담</a></div>;
+}
+
+export function ManagementComparison() {
+  return <div className="bc-visual-block"><VisualHeading eyebrow="WHY BRING CARE" title="직접 관리와 이렇게 다릅니다." copy="흩어진 연락과 확인을 BRING CARE 한 곳으로 모읍니다." /><div className="bc-management-comparison" role="table" aria-label="건물주 직접 관리와 BRING CARE 관리 비교"><div className="bc-compare-row bc-compare-head" role="row"><strong role="columnheader">관리 항목</strong><strong role="columnheader">건물주 직접 관리</strong><strong role="columnheader">BRING CARE</strong></div>{directVsBringRows.map(row => <div className="bc-compare-row" role="row" key={row.label}><strong role="cell">{row.label}</strong><span role="cell">{row.direct}</span><b role="cell">{row.bring}</b></div>)}</div></div>;
+}
+
+export function ManagementCycle() {
+  return <div className="bc-visual-block"><VisualHeading eyebrow="MANAGEMENT FLOW" title="확인부터 기록까지, 한 흐름으로." copy="현장을 보고 끝내지 않고 처리 과정과 결과까지 기록합니다." /><div className="bc-cycle-grid">{managementCycle.map((item, index) => <article className="bc-cycle-step" key={item.title}><div><Image src={item.image} alt={`BRING CARE 관리 흐름 브랜드 캠페인 - ${item.title}`} fill unoptimized sizes="(max-width: 760px) 100vw, 25vw" /></div><span>{String(index + 1).padStart(2, "0")}</span><h3>{item.title}</h3><p>{item.copy}</p></article>)}</div><p className="bc-campaign-note">관리 흐름의 이해를 돕기 위한 BRING CARE 브랜드 캠페인 이미지입니다.</p></div>;
+}
+
+export function ManagementScopeTable() {
+  return <div className="bc-visual-block"><VisualHeading eyebrow="SERVICE SCOPE" title="월 관리비에 무엇이 포함되나요?" copy="기본 관리와 별도 작업을 시작 전에 분명하게 구분합니다." /><div className="bc-scope-table" role="table" aria-label="월 관리비 포함 범위와 별도 작업"><div className="bc-scope-row bc-scope-head" role="row"><strong role="columnheader">관리 항목</strong><strong role="columnheader">월 관리비 포함</strong><strong role="columnheader">별도 작업비</strong></div>{managementScopeRows.map(row => <div className="bc-scope-row" role="row" key={row.label}><strong role="cell">{row.label}</strong><span role="cell">{row.included ? "● 포함" : "－"}</span><b role="cell">{row.separate ? "● 별도" : "－"}</b></div>)}<p>별도 비용이 필요한 작업은 범위와 금액을 먼저 안내하고 승인 후 진행합니다.</p></div></div>;
+}
+
+export function OperatingStandardComparison() {
+  const rows = [
+    ["연락", "여러 업체에 각각 요청", "BRING CARE 한 곳에 요청"],
+    ["확인", "완료 여부를 직접 확인", "완료 사진과 기록으로 확인"],
+    ["비용", "작업 후 비용 확인", "사전 안내·승인 후 진행"],
+    ["기록", "문자와 사진에 분산", "월간 관리보고로 정리"],
+  ] as const;
+  return <div className="bc-visual-block"><VisualHeading eyebrow="OPERATING STANDARD" title="관리 방식부터 다릅니다." copy="연락·확인·비용·기록의 기준을 투명하게 정리합니다." /><div className="bc-standard-stack"><article className="bc-standard-back"><h3>일반 개별관리</h3>{rows.map(([label, direct]) => <p key={label}><span>{label}</span>{direct}</p>)}</article><article className="bc-standard-front"><small>BRING CARE STANDARD</small><h3>BRING CARE 운영 기준</h3>{rows.map(([label,, bring]) => <p key={label}><span>{label}</span><b>{bring}</b></p>)}</article></div></div>;
+}
+
+function VisualHeading({ eyebrow, title, copy }: { eyebrow: string; title: string; copy: string }) {
+  return <div className="bc-visual-heading"><p>{eyebrow}</p><h2>{title}</h2><span>{copy}</span></div>;
+}
