@@ -1129,6 +1129,19 @@
       const unreadBadge = document.getElementById("navOfficeUnread");
       if (unreadBadge) unreadBadge.textContent = "0";
     },
+    // 할 일 담당자를 고르는 데 쓴다. 이름만 자유 입력으로 두면 오타 하나에
+    // "내 할 일" 이 비어 버린다. uid 로 붙여야 이름을 바꿔도 따라간다.
+    members() {
+      return state.data.users
+        .filter(user => user && user.uid)
+        .map(user => ({
+          uid: String(user.uid),
+          displayName: Core.displayName(user),
+          department: String(user.department || ""),
+          title: String(user.title || ""),
+        }))
+        .sort((a, b) => a.displayName.localeCompare(b.displayName, "ko"));
+    },
     snapshot() {
       return { loaded: state.loaded, loading: state.loading, error: state.error, selectedUserId: state.selectedUserId, users: state.data.users.length, attendance: state.data.attendance.length, messages: state.data.messages.length };
     }
