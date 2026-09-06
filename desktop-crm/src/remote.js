@@ -5,6 +5,7 @@ const SparkCanonical = require("./spark-canonical");
 const OfficeCore = require("./office-core");
 const LeaveCore = require("./leave-core");
 const HrCore = require("./hr-core");
+const WorkOrderCore = require("./work-order-core");
 const FormCore = require("./form-core");
 const PayrollCore = require("./payroll-core");
 const ApprovalCore = require("./approval-core");
@@ -4017,6 +4018,132 @@ class FirebaseRemoteClient {
     await this.dbRequest(location, { method: "PUT", body: record });
     this.assertSessionGuardActive(guard);
     return record;
+  }
+
+  // 업무지시. 팀 전체가 읽는다 — 누가 무엇을 맡았는지는 감출 것이 아니다.
+  async loadWorkOrders() {
+    const session = this.requireOfficeSession();
+    const guard = this.captureSessionGuard();
+    // 담당자는 로그인 계정이어야 한다. 규칙이 auth.uid 로 판단하기 때문에,
+    // 현장 작업자 명단(이름만 있는 것)으로는 지시를 걸 수 없다.
+    const [payload, users, teamProfiles] = await Promise.all([
+      this.dbRequest("workOrders", { method: "GET" }),
+      this.dbRequest("crmAccess", { method: "GET" }),
+      this.dbRequest("teamProfiles", { method: "GET" }).catch(() => null),
+    ]);
+    this.assertSessionGuardActive(guard);
+    const orders = Object.entries(payload && typeof payload === "object" ? payload : {})
+      .map(([id, value]) => WorkOrderCore.normalizeOrder(Object.assign({ id }, value || {})))
+      .filter(item => item.id);
+    const merged = OfficeCore.mergeOfficeUsers(users, teamProfiles);
+    const members = Object.entries(merged)
+      .filter(([uid, user]) => OfficeCore.normalizeOfficeUserId(uid) === uid
+        && user && user.enabled !== false && user.mustChangePassword !== true)
+      .map(([uid, user]) => ({
+        uid,
+        displayName: String(user.displayName || user.email || uid),
+      }))
+      .sort((a, b) => a.displayName.localeCompare(b.displayName, "ko"));
+    return {
+      orders,
+      members,
+      admin: session.role === "admin",
+      canWork: session.role === "admin" || session.role === "member",
+      uid: session.uid,
+      loadedAt: new Date().toISOString(),
+    };
+  }
+
+  // 지시를 내거나 고친다. 관리자만.
+  async saveWorkOrder(input) {
+    const session = this.requireOfficeSession();
+    if (session.role !== "admin") {
+      throw createError("업무지시는 관리자만 낼 수 있습니다.", "WORK_ORDER_FORBIDDEN");
+    }
+    const guard = this.captureSessionGuard();
+    const source = input && typeof input === "object" && !Array.isArray(input) ? input : {};
+    const checked = WorkOrderCore.validateOrder(source);
+    if (!checked.ok) throw createError(checked.error, checked.code);
+    const location = `workOrders/${checked.order.id}`;
+    const existing = await this.dbRequest(location, { method: "GET" });
+    this.assertSessionGuardActive(guard);
+    if (existing && WorkOrderCore.normalizeOrder(existing).status === "done") {
+      // 끝난 일이 나중에 바뀌면 기록이 아니다.
+      throw createError("완료한 지시는 고칠 수 없습니다.", "WORK_ORDER_DONE");
+    }
+    const now = new Date().toISOString();
+    const record = Object.assign({}, checked.order, {
+      results: existing ? WorkOrderCore.normalizeOrder(existing).results : checked.order.results,
+      status: existing ? WorkOrderCore.normalizeOrder(existing).status : checked.order.status,
+      createdBy: (existing && existing.createdBy) || String(session.displayName || session.email || "관리자"),
+      createdAt: (existing && existing.createdAt) || now,
+      updatedAt: now,
+      updatedBy: session.uid,
+    });
+    await this.dbRequest(location, { method: "PUT", body: record });
+    this.assertSessionGuardActive(guard);
+    return record;
+  }
+
+  // 상태를 옮기거나 결과물을 붙인다. 담당자와 관리자가 함께 쓴다.
+  async updateWorkOrderProgress(input) {
+    const session = this.requireOfficeSession();
+    if (session.role !== "admin" && session.role !== "member") {
+      throw createError("조회 전용 계정은 업무지시를 진행할 수 없습니다.", "WORK_ORDER_FORBIDDEN");
+    }
+    const guard = this.captureSessionGuard();
+    const source = input && typeof input === "object" && !Array.isArray(input) ? input : {};
+    const orderId = String(source.id || "");
+    if (!orderId) throw createError("어느 지시인지 정해 주세요.", "VALIDATION_ERROR");
+    const location = `workOrders/${orderId}`;
+    // 서버에 있는 것을 다시 읽고 판단한다. 화면이 오래됐을 수 있고, 두 사람이
+    // 동시에 눌렀을 수도 있다.
+    const existing = await this.dbRequest(location, { method: "GET" });
+    this.assertSessionGuardActive(guard);
+    if (!existing) throw createError("없는 지시입니다.", "WORK_ORDER_NOT_FOUND");
+    const current = WorkOrderCore.normalizeOrder(Object.assign({ id: orderId }, existing));
+    const admin = session.role === "admin";
+    if (!admin && current.assigneeUid !== session.uid) {
+      throw createError("내 지시가 아닙니다.", "NOT_ASSIGNEE");
+    }
+
+    const addResult = source.result && typeof source.result === "object"
+      ? WorkOrderCore.normalizeResult(source.result)
+      : null;
+    const withResult = addResult && addResult.id && addResult.driveFileId
+      ? Object.assign({}, current, {
+        results: [...current.results.filter(item => item.id !== addResult.id), addResult],
+      })
+      : current;
+
+    const nextStatus = String(source.status || "");
+    let record = withResult;
+    if (nextStatus && nextStatus !== withResult.status) {
+      const moved = WorkOrderCore.moveStatus({
+        order: withResult,
+        next: nextStatus,
+        admin,
+        actorUid: session.uid,
+        note: String(source.note || ""),
+      });
+      if (!moved.ok) throw createError(moved.error, moved.code);
+      record = moved.order;
+    } else if (withResult.status === "done") {
+      throw createError("완료한 지시는 고칠 수 없습니다.", "WORK_ORDER_DONE");
+    }
+
+    // 담당자는 지시 내용을 못 고친다. 규칙도 같은 것을 막지만, 여기서 먼저
+    // 걸러야 사람이 이유를 알 수 있는 문구를 받는다.
+    if (!admin && !WorkOrderCore.sameInstruction(current, record)) {
+      throw createError("지시 내용은 고칠 수 없습니다.", "INSTRUCTION_LOCKED");
+    }
+    const saved = Object.assign({}, record, {
+      updatedAt: new Date().toISOString(),
+      updatedBy: session.uid,
+    });
+    await this.dbRequest(location, { method: "PUT", body: saved });
+    this.assertSessionGuardActive(guard);
+    return saved;
   }
 
   async loadVendorDirectory(force) {

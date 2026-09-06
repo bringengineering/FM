@@ -360,6 +360,73 @@
           "$other": {".validate": false}
         }
       },
+      "workOrders": {
+        ".read": "auth != null && auth.token.email_verified === true && root.child('crmCompany/access').child(auth.uid).child('enabled').val() === true && root.child('crmCompany/access').child(auth.uid).child('email').val() === auth.token.email && root.child('crmCompany/access').child(auth.uid).child('mustChangePassword').val() !== true && (root.child('crmCompany/access').child(auth.uid).child('role').val() === 'admin' || root.child('crmCompany/access').child(auth.uid).child('role').val() === 'member' || root.child('crmCompany/access').child(auth.uid).child('role').val() === 'viewer')",
+        ".write": false,
+        "$orderId": {
+          ".write": "auth != null && auth.token.email_verified === true && root.child('crmCompany/access').child(auth.uid).child('enabled').val() === true && root.child('crmCompany/access').child(auth.uid).child('email').val() === auth.token.email && root.child('crmCompany/access').child(auth.uid).child('mustChangePassword').val() !== true && (root.child('crmCompany/access').child(auth.uid).child('role').val() === 'admin' || root.child('crmCompany/access').child(auth.uid).child('role').val() === 'member') && newData.exists()",
+          ".validate": "newData.hasChildren(['id','title','why','what','doneWhen','assigneeUid','status','updatedAt','updatedBy']) && newData.child('id').val() === $orderId && (!data.exists() || data.child('status').val() !== 'done') && ((root.child('crmCompany/access').child(auth.uid).child('role').val() === 'admin') || (data.exists() && data.child('assigneeUid').val() === auth.uid && newData.child('status').val() !== 'done' && newData.child('title').val() === data.child('title').val() && newData.child('why').val() === data.child('why').val() && newData.child('what').val() === data.child('what').val() && newData.child('doneWhen').val() === data.child('doneWhen').val() && newData.child('assigneeUid').val() === data.child('assigneeUid').val() && newData.child('dueDate').val() === data.child('dueDate').val() && newData.child('buildingId').val() === data.child('buildingId').val() && newData.child('createdAt').val() === data.child('createdAt').val() && newData.child('createdBy').val() === data.child('createdBy').val()))",
+          "id": {
+            ".validate": "newData.isString() && newData.val() === $orderId"
+          },
+          "title": {
+            ".validate": "newData.isString() && newData.val().length <= 120 && newData.val().length > 0"
+          },
+          "why": {
+            ".validate": "newData.isString() && newData.val().length <= 2000 && newData.val().length > 0"
+          },
+          "what": {
+            ".validate": "newData.isString() && newData.val().length <= 2000 && newData.val().length > 0"
+          },
+          "doneWhen": {
+            ".validate": "newData.isString() && newData.val().length <= 1000 && newData.val().length > 0"
+          },
+          "assigneeUid": {
+            ".validate": "newData.isString() && newData.val().matches(/^[A-Za-z0-9._-]{1,128}$/)"
+          },
+          "assigneeName": {
+            ".validate": "newData.isString() && newData.val().length <= 80"
+          },
+          "buildingId": {
+            ".validate": "newData.isString() && newData.val().length <= 80"
+          },
+          "dueDate": {
+            ".validate": "newData.isString() && (newData.val() === '' || newData.val().matches(/^[0-9]{4}-[0-9]{2}-[0-9]{2}$/))"
+          },
+          "status": {
+            ".validate": "newData.isString() && (newData.val() === 'assigned' || newData.val() === 'doing' || newData.val() === 'submitted' || newData.val() === 'returned' || newData.val() === 'done')"
+          },
+          "reviewNote": {
+            ".validate": "newData.isString() && newData.val().length <= 500"
+          },
+          "createdBy": {
+            ".validate": "newData.isString() && newData.val().length <= 80"
+          },
+          "createdAt": {
+            ".validate": "newData.isString() && newData.val().matches(/^[0-9]{4}-[0-9]{2}-[0-9]{2}T/)"
+          },
+          "updatedAt": {
+            ".validate": "newData.isString() && newData.val().matches(/^[0-9]{4}-[0-9]{2}-[0-9]{2}T/)"
+          },
+          "updatedBy": {
+            ".validate": "newData.isString() && newData.val() === auth.uid"
+          },
+          "results": {
+            "$index": {
+              ".validate": "newData.hasChildren(['id','driveFileId','uploadedAt'])",
+              "id": {".validate": "newData.isString() && newData.val().length <= 80 && newData.val().length > 0"},
+              "title": {".validate": "newData.isString() && newData.val().length <= 200"},
+              "driveFileId": {".validate": "newData.isString() && newData.val().matches(/^[A-Za-z0-9_-]{6,200}$/)"},
+              "webViewLink": {".validate": "newData.isString() && (newData.val() === '' || (newData.val().beginsWith('https://') && newData.val().length <= 500))"},
+              "note": {".validate": "newData.isString() && newData.val().length <= 300"},
+              "uploadedBy": {".validate": "newData.isString() && newData.val().length <= 80"},
+              "uploadedAt": {".validate": "newData.isString() && newData.val().matches(/^[0-9]{4}-[0-9]{2}-[0-9]{2}T/)"},
+              "$other": {".validate": false}
+            }
+          },
+          "$other": {".validate": false}
+        }
+      },
       "officeMembers": {
         ".read": "auth != null && auth.token.email_verified === true && root.child('crmCompany/access').child(auth.uid).child('enabled').val() === true && root.child('crmCompany/access').child(auth.uid).child('email').val() === auth.token.email && root.child('crmCompany/access').child(auth.uid).child('mustChangePassword').val() !== true && root.child('crmCompany/access').child(auth.uid).child('role').val() === 'admin'",
         ".write": false,

@@ -2461,6 +2461,108 @@ describe.runIf(databaseEmulatorAvailable)("fieldPlatform database rules", () => 
     await assertFails(remove(ref(member, at("e1"))));
   });
 
+  it("refuses a work order without why, what and done-when", async () => {
+    // 이 셋이 이 화면의 전부다. 화면에서만 막으면 IPC 를 직접 불러 뚫는다.
+    const admin = environment.authenticatedContext("crm-admin", crmClaims("admin@bring.test")).database();
+    const at = (id: string) => `crmCompany/workOrders/${id}`;
+    const order = (id: string, patch: Record<string, unknown> = {}) => ({
+      id,
+      title: "3층 누수 확인",
+      why: "임차인이 두 번 민원을 넣었고, 다음 주에 계약 갱신 면담이 있습니다.",
+      what: "3층 화장실 천장을 열어 배관 상태를 보고 사진을 남깁니다.",
+      doneWhen: "사진 3장과 원인 한 줄이 올라오면 끝입니다.",
+      assigneeUid: "crm-legacy-member",
+      assigneeName: "김현진",
+      buildingId: "",
+      dueDate: "2026-09-12",
+      status: "assigned",
+      reviewNote: "",
+      createdBy: "대표",
+      createdAt: "2026-09-06T00:00:00.000Z",
+      updatedAt: "2026-09-06T00:00:00.000Z",
+      updatedBy: "crm-admin",
+      ...patch,
+    });
+
+    await assertSucceeds(set(ref(admin, at("w1")), order("w1")));
+    await assertFails(set(ref(admin, at("w2")), order("w2", { why: "" })));
+    await assertFails(set(ref(admin, at("w3")), order("w3", { what: "" })));
+    await assertFails(set(ref(admin, at("w4")), order("w4", { doneWhen: "" })));
+    await assertFails(set(ref(admin, at("w5")), order("w5", { title: "" })));
+    // 모르는 칸은 막는다.
+    await assertFails(set(ref(admin, at("w6")), order("w6", { hours: 3 })));
+    // 시킨 일이 사라지면 시킨 적 없는 일이 된다.
+    await assertFails(remove(ref(admin, at("w1"))));
+  });
+
+  it("lets the assignee move status but never edit the instruction", async () => {
+    // 고칠 수 있으면 그건 지시가 아니라 메모다.
+    const admin = environment.authenticatedContext("crm-admin", crmClaims("admin@bring.test")).database();
+    const assignee = environment.authenticatedContext("crm-legacy-member", crmClaims("legacy@bring.test")).database();
+    const other = environment.authenticatedContext("crm-viewer", crmClaims("viewer@bring.test")).database();
+
+    const target = "crmCompany/workOrders/w10";
+    const order = (patch: Record<string, unknown> = {}) => ({
+      id: "w10",
+      title: "3층 누수 확인",
+      why: "임차인 민원이 두 번 있었습니다.",
+      what: "천장을 열어 배관을 봅니다.",
+      doneWhen: "사진과 원인 한 줄.",
+      assigneeUid: "crm-legacy-member",
+      assigneeName: "김현진",
+      buildingId: "",
+      dueDate: "2026-09-12",
+      status: "assigned",
+      reviewNote: "",
+      createdBy: "대표",
+      createdAt: "2026-09-06T00:00:00.000Z",
+      updatedAt: "2026-09-06T01:00:00.000Z",
+      updatedBy: "crm-legacy-member",
+      ...patch,
+    });
+
+    await assertSucceeds(set(ref(admin, target), order({ updatedBy: "crm-admin" })));
+
+    // 담당자는 상태를 옮긴다.
+    await assertSucceeds(set(ref(assignee, target), order({ status: "doing" })));
+    // 지시 내용은 못 고친다.
+    await assertFails(set(ref(assignee, target), order({ status: "doing", what: "그냥 안 해도 됩니다" })));
+    await assertFails(set(ref(assignee, target), order({ status: "doing", dueDate: "2026-12-31" })));
+    await assertFails(set(ref(assignee, target), order({ status: "doing", assigneeUid: "crm-viewer" })));
+    // 스스로 완료로 두지 못한다. 검수가 없는 것과 같다.
+    await assertFails(set(ref(assignee, target), order({ status: "done" })));
+    // 남의 지시는 못 만진다. 조회 계정은 읽기만 한다.
+    await assertSucceeds(get(ref(other, target)));
+    await assertFails(set(ref(other, target), order({ status: "doing", updatedBy: "crm-viewer" })));
+
+    // 결과물은 Drive 파일 정보만 담는다.
+    await assertSucceeds(set(ref(assignee, target), order({
+      status: "submitted",
+      results: [{
+        id: "r1", title: "3층 천장 사진", driveFileId: "1AbCdEfGhIjKlMnOp",
+        webViewLink: "https://drive.google.com/file/d/1AbCdEfGhIjKlMnOp/view",
+        note: "", uploadedBy: "김현진", uploadedAt: "2026-09-06T02:00:00.000Z",
+      }],
+    })));
+    await assertFails(set(ref(assignee, target), order({
+      status: "submitted",
+      results: [{ id: "r2", title: "x", driveFileId: "1AbCdEfGhIjKlMnOp", webViewLink: "http://drive.google.com/x", uploadedAt: "2026-09-06T02:00:00.000Z" }],
+    })));
+
+    // 대표가 완료로 둔다.
+    await assertSucceeds(set(ref(admin, target), order({
+      status: "done", updatedBy: "crm-admin",
+      results: [{
+        id: "r1", title: "3층 천장 사진", driveFileId: "1AbCdEfGhIjKlMnOp",
+        webViewLink: "https://drive.google.com/file/d/1AbCdEfGhIjKlMnOp/view",
+        note: "", uploadedBy: "김현진", uploadedAt: "2026-09-06T02:00:00.000Z",
+      }],
+    })));
+    // 끝난 일이 나중에 바뀌면 기록이 아니다.
+    await assertFails(set(ref(admin, target), order({ status: "doing", updatedBy: "crm-admin" })));
+    await assertFails(set(ref(assignee, target), order({ status: "doing" })));
+  });
+
   it("keeps HR records readable only by the person and administrators", async () => {
     // 입사일·계약형태는 그 사람 것이다. 옆자리 동료가 볼 이유가 없다.
     const admin = environment.authenticatedContext("crm-admin", crmClaims("admin@bring.test")).database();

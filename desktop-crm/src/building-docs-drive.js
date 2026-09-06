@@ -332,7 +332,17 @@
       rootFolderId: source.rootFolderId,
       size: content.length,
     });
-    const folderId = await ensureFolderPath(deps, source.rootFolderId, buildFolderPath(source));
+    // 부르는 쪽이 폴더 길을 직접 줄 수 있다. 건물 서류는 건물별로 쌓이지만
+    // 업무지시 결과물은 지시별로 쌓여야 해서, 한쪽 규칙을 다른 쪽에 억지로
+    // 맞추면 폴더 이름이 거짓말을 하게 된다.
+    const explicitPath = Array.isArray(source.folderPath)
+      ? source.folderPath.map(part => sanitizeName(part, "기타")).filter(Boolean)
+      : null;
+    const folderId = await ensureFolderPath(
+      deps,
+      source.rootFolderId,
+      explicitPath && explicitPath.length ? explicitPath : buildFolderPath(source),
+    );
     const documentKey = text(source.documentKey) || text(source.documentId);
     if (documentKey) {
       const existing = await findExisting(deps, folderId, documentKey);
@@ -340,7 +350,7 @@
       if (existing) return Object.assign({ alreadyThere: true, folderId }, existing);
     }
     const metadata = {
-      name: buildFileName(source),
+      name: text(source.fileName) || buildFileName(source),
       parents: [folderId],
       appProperties: documentKey ? { [APP_TAG]: documentKey } : undefined,
     };
