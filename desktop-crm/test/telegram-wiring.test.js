@@ -86,6 +86,36 @@ test("설정을 고칠 때마다 토큰을 다시 넣지 않아도 된다", () =
   assert.match(body, /String\(options\.botToken \|\| ""\) \|\| \(saved \? saved\.botToken : ""\)/u);
 });
 
+test("방 번호를 사람이 알아내게 두지 않는다", () => {
+  // 브라우저 주소창에 토큰을 치고 JSON 에서 숫자를 찾아내라는 것은
+  // 앱이 할 일을 사람에게 시킨 것이다.
+  const channel = "crm:telegram-chats-find";
+  assert.doesNotThrow(() => MutationPolicy.assertRegistered(channel));
+  assert.ok(mainSource.includes(`secureCanonicalHandle("${channel}"`));
+  assert.ok(preloadSource.includes(`"${channel}"`));
+  assert.match(appSource, /data-telegram-find/u);
+  assert.match(appSource, /data-telegram-pick/u);
+  // 눌러서 고르게 한다. 손으로 옮겨 적으면 한 자리 틀린다.
+  assert.match(appSource, /telegramState\.chatId = telegramPick\.dataset\.telegramPick/u);
+});
+
+test("저장 안 한 토큰으로도 방을 찾을 수 있다", () => {
+  // 방 번호를 알아야 저장할 수 있는데 저장해야 찾을 수 있으면 아무 데도 못 간다.
+  const body = topLevelBody(mainSource, "findTelegramChats");
+  assert.match(body, /String\(options\.botToken \|\| ""\) \|\| \(saved \? saved\.botToken : ""\)/u);
+  assert.match(body, /requireTelegramAdmin\(\)/u);
+  // 화면도 아직 안 저장한 칸에서 토큰을 집어 올린다.
+  const finder = appSource.slice(appSource.indexOf("async function findTelegramChats("));
+  assert.match(finder.slice(0, 900), /new FormData\(form\)\.get\("botToken"\)/u);
+});
+
+test("방을 찾다 실패해도 토큰이 새지 않는다", () => {
+  // 토큰은 주소에 들어 있다. 주소를 오류에 실으면 화면과 로그에 남는다.
+  const body = topLevelBody(mainSource, "findTelegramChats");
+  assert.match(body, /TelegramCore\.describeFailure\(response\.status, parsed\)/u);
+  assert.doesNotMatch(body, /error: `[^`]*\$\{botToken\}/u);
+});
+
 test("화면이 보내기 전에 무엇이 갈지 보여 준다", () => {
   assert.match(appSource, /function telegramCard\(\)/u);
   assert.match(appSource, /T\.composeMessage\(alerts, \{ asOf: todayKey\(\), includePhone: telegramState\.includePhone \}\)/u);

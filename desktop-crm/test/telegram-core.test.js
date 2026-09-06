@@ -132,6 +132,45 @@ test("설정 모양을 먼저 본다", () => {
   assert.equal(T.validateSettings(Object.assign({}, good, { chatId: "방이름" })).code, "TELEGRAM_CHAT_INVALID");
 });
 
+test("봇이 들어가 있는 방을 찾아 준다", () => {
+  // 사람에게 브라우저 주소창에 토큰을 치고 JSON 에서 숫자를 찾아내라고
+  // 시키던 자리다. 그건 앱이 할 일이다.
+  const chats = T.parseChats({
+    ok: true,
+    result: [
+      { update_id: 1, my_chat_member: { chat: { id: -1001234567890, title: "브링 알림", type: "supergroup" } } },
+      { update_id: 2, message: { chat: { id: -1001234567890, title: "브링 알림", type: "supergroup" }, text: "/start" } },
+      { update_id: 3, message: { chat: { id: 987654321, first_name: "서", last_name: "창환", type: "private" } } },
+    ],
+  });
+  // 같은 방이 여러 번 나와도 한 줄로 접는다.
+  assert.equal(chats.length, 2);
+  // 그룹이 위로. 회사 방을 찾으려는 것이 보통이다.
+  assert.equal(chats[0].id, "-1001234567890");
+  assert.equal(chats[0].title, "브링 알림");
+  assert.equal(chats[0].group, true);
+  assert.equal(chats[1].title, "서 창환", "1:1 은 이름이 나뉘어 온다");
+  assert.equal(chats[1].group, false);
+});
+
+test("모르는 종류의 소식에서도 방을 찾는다", () => {
+  // 종류를 일일이 열거하면 텔레그램이 새 종류를 더할 때마다 못 찾게 된다.
+  const chats = T.parseChats({ ok: true, result: [{ update_id: 9, 앞으로생길것: { chat: { id: -100999, title: "새 방", type: "group" } } }] });
+  assert.equal(chats.length, 1);
+  assert.equal(chats[0].id, "-100999");
+});
+
+test("방 번호가 아닌 것은 안 줍는다", () => {
+  assert.deepEqual(T.parseChats({ ok: true, result: [{ message: { chat: { id: "아무거나", type: "group" } } }] }), []);
+  assert.deepEqual(T.parseChats({}), []);
+  assert.deepEqual(T.parseChats(null), []);
+});
+
+test("못 찾았을 때 무엇을 해 보라고 말해 준다", () => {
+  // "없습니다" 만 말하면 사람은 무엇이 잘못됐는지 모른다.
+  assert.match(T.noChatHint(), /\/start/u);
+});
+
 test("실패한 까닭을 사람 말로 바꾼다", () => {
   assert.match(T.describeFailure(401, {}), /토큰이 맞지 않습니다/u);
   assert.match(T.describeFailure(400, { description: "Bad Request: chat not found" }), /봇을 그 방에 초대했는지/u);

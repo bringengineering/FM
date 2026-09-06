@@ -87,6 +87,15 @@ async function boot(): Promise<Booted> {
     },
     loadDeliveryFlows: { ...empty, flows: [] },
     loadWorkReports: { ...empty, reports: [] },
+    loadTelegramSettings: { ok: true, configured: false, chatId: "", autoSend: true, includePhone: false, lastSentDay: "" },
+    findTelegramChats: {
+      ok: true,
+      chats: [
+        { id: "-1001234567890", type: "supergroup", title: "브링 알림", group: true },
+        { id: "987654321", type: "private", title: "서 창환", group: false },
+      ],
+      hint: "",
+    },
     loadGrowth: {
       ...empty,
       checkins: [
@@ -547,6 +556,42 @@ describe("desktop CRM screens actually render", () => {
     await sleep(200);
     expect(booted.calls.slice(before).some(call => call.name === "saveGrowthReview"),
       "성적표는 저장하지 않는다").toBe(false);
+    expect(booted.errors, booted.errors.join(" / ")).toEqual([]);
+  }, 60000);
+
+  it("텔레그램 방 번호를 앱이 찾아 준다", async () => {
+    // 사람에게 브라우저 주소창에 토큰을 치고 JSON 에서 숫자를 찾아내라고
+    // 시키던 자리다. 그건 앱이 할 일이다.
+    (booted.document.querySelector("[data-workspace-switch]") as HTMLElement | null)?.click();
+    await sleep(100);
+    (booted.document.querySelector('[data-workspace-enter-folder="customer-management"]') as HTMLElement).click();
+    await sleep(150);
+    (booted.document.querySelector('.nav-item[data-view="settings"]') as HTMLElement).click();
+    await sleep(250);
+
+    const form = booted.document.querySelector("[data-telegram-form]") as HTMLFormElement | null;
+    expect(form, "텔레그램 설정 칸이 있어야 한다").toBeTruthy();
+    // 아직 저장 안 한 토큰을 친 상태에서 찾을 수 있어야 한다.
+    (form!.querySelector('[name="botToken"]') as HTMLInputElement).value = "123456789:AAF-abcdefghijklmnopqrstuvwxyz012345";
+
+    const before = booted.calls.length;
+    (booted.document.querySelector("[data-telegram-find]") as HTMLElement).click();
+    await sleep(250);
+    const asked = booted.calls.slice(before).find(call => call.name === "findTelegramChats");
+    expect(asked, "찾기 통로로 나가야 한다").toBeTruthy();
+    expect((asked!.input as { botToken: string }).botToken,
+      "화면이 방금 친 토큰을 실어 보내야 한다").toContain("123456789:");
+
+    // 찾은 방이 눌러서 고를 수 있게 나와야 한다.
+    const picks = [...booted.document.querySelectorAll("[data-telegram-pick]")] as HTMLElement[];
+    expect(picks.length).toBe(2);
+    expect(picks[0].textContent).toContain("브링 알림");
+    expect(picks[0].textContent).toContain("그룹");
+
+    picks[0].click();
+    await sleep(200);
+    const chatInput = booted.document.querySelector('[data-telegram-form] [name="chatId"]') as HTMLInputElement;
+    expect(chatInput.value, "고른 방 번호가 칸에 들어가야 한다").toBe("-1001234567890");
     expect(booted.errors, booted.errors.join(" / ")).toEqual([]);
   }, 60000);
 });

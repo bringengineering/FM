@@ -7138,6 +7138,7 @@
     loaded: false, loading: false, saving: false, sending: false,
     configured: false, chatId: "", autoSend: true, includePhone: false,
     lastSentDay: "", error: "", notice: "",
+    finding: false, chats: null, chatHint: "",
   };
   const telegramCore = () => window.BringTelegramCore;
   // 앱을 켜 둔 채로 자정을 넘겨도 하루에 한 번은 가게 한다.
@@ -7185,7 +7186,12 @@
       <form data-telegram-form>
         <div class="form-grid">
           <label class="field"><span>봇 토큰</span><input type="password" name="botToken" autocomplete="off" spellcheck="false" placeholder="${telegramState.configured ? "넣어 두었습니다 — 바꿀 때만 다시 입력" : "BotFather 가 준 값"}"></label>
-          <label class="field"><span>방 번호 (chat id)</span><input type="text" name="chatId" value="${attr(telegramState.chatId)}" spellcheck="false" placeholder="그룹은 - 로 시작합니다"></label>
+          <label class="field"><span>방 번호 (chat id)</span>
+            <div class="tg-chat-row">
+              <input type="text" name="chatId" value="${attr(telegramState.chatId)}" spellcheck="false" placeholder="아래 단추로 찾으세요">
+              <button type="button" class="secondary-button" data-telegram-find${telegramState.finding ? " disabled" : ""}>${telegramState.finding ? "찾는 중…" : "방 찾기"}</button>
+            </div>
+          </label>
         </div>
         <label class="tg-toggle"><input type="checkbox" name="autoSend"${telegramState.autoSend ? " checked" : ""}> 앱을 켜면 하루에 한 번 자동으로 보냅니다</label>
         <label class="tg-toggle"><input type="checkbox" name="includePhone"${telegramState.includePhone ? " checked" : ""}> 전화번호도 함께 보냅니다 <small>텔레그램 방은 사람이 나가도 글이 남습니다. 꼭 필요할 때만 켜 주세요.</small></label>
@@ -7195,12 +7201,53 @@
           ${telegramState.configured ? `<button class="secondary-button" type="button" data-telegram-forget>연결 끊기</button>` : ""}
         </div>
       </form>
+      ${telegramState.chats ? telegramChatList() : ""}
       <div class="tg-preview">
         <b>지금 보내면 이렇게 갑니다</b>
         <small>${alerts.length ? `${alerts.length}건${late ? ` · 늦음 ${late}건` : ""}` : "보낼 것이 없습니다"}${telegramState.lastSentDay ? ` · 마지막 발송 ${esc(telegramState.lastSentDay)}` : ""}</small>
         ${preview ? `<pre>${esc(preview.replace(/<[^>]+>/gu, ""))}</pre>` : `<p class="office-muted">오늘 연락할 고객이 없습니다.</p>`}
       </div>
     </section>`;
+  }
+
+  // 찾은 방을 눌러서 고르게 한다. 번호를 손으로 옮겨 적게 두면 한 자리
+  // 틀리고, 틀리면 "방을 못 찾았습니다" 만 뜬다.
+  function telegramChatList() {
+    const chats = telegramState.chats || [];
+    if (!chats.length) {
+      return `<div class="tg-chats"><p class="tg-chats-none">${esc(telegramState.chatHint || "찾은 방이 없습니다.")}</p></div>`;
+    }
+    return `<div class="tg-chats">
+      <b>봇이 들어가 있는 방</b>
+      <div class="tg-chat-picks">${chats.map(chat => `<button type="button" class="tg-chat-pick${chat.id === telegramState.chatId ? " is-current" : ""}" data-telegram-pick="${esc(chat.id)}">
+        <b>${esc(chat.title)}</b><small>${esc(chat.group ? "그룹" : "1:1 대화")}</small>
+      </button>`).join("")}</div>
+      <small>고르면 위 칸에 번호가 들어갑니다. 그 다음 저장을 누르세요.</small>
+    </div>`;
+  }
+
+  async function findTelegramChats() {
+    if (telegramState.finding) return;
+    // 아직 저장 안 한 토큰으로도 찾을 수 있어야 한다 — 방 번호를 알아야
+    // 저장할 수 있는데 저장해야 찾을 수 있으면 아무 데도 못 간다.
+    const form = document.querySelector("[data-telegram-form]");
+    const typed = form ? String(new FormData(form).get("botToken") || "") : "";
+    telegramState.finding = true;
+    telegramState.error = "";
+    telegramState.notice = "";
+    renderSettings();
+    try {
+      const result = await api.findTelegramChats({ botToken: typed });
+      if (!result || result.ok !== true) throw new Error((result && result.error) || "방을 찾지 못했습니다.");
+      telegramState.chats = Array.isArray(result.chats) ? result.chats : [];
+      telegramState.chatHint = String(result.hint || "");
+    } catch (error) {
+      telegramState.chats = null;
+      telegramState.error = error && error.message || "방을 찾지 못했습니다.";
+    } finally {
+      telegramState.finding = false;
+      renderSettings();
+    }
   }
 
   async function saveTelegramFromForm(form) {
@@ -8871,6 +8918,14 @@
     }
     const krEdit = event.target.closest("[data-okr-kr-edit]");
     if (krEdit) { void bumpKeyResult(krEdit.dataset.okrObjective, krEdit.dataset.okrKrEdit); return; }
+    if (event.target.closest("[data-telegram-find]")) { void findTelegramChats(); return; }
+    const telegramPick = event.target.closest("[data-telegram-pick]");
+    if (telegramPick) {
+      telegramState.chatId = telegramPick.dataset.telegramPick;
+      telegramState.notice = "방을 골랐습니다. 저장을 눌러 주세요.";
+      renderSettings();
+      return;
+    }
     if (event.target.closest("[data-telegram-send]")) { void sendTelegramNow(true); return; }
     if (event.target.closest("[data-telegram-forget]")) { void forgetTelegram(); return; }
     if (event.target.closest("[data-report-drive-scan]")) { void scanReportDriveFolder(); return; }

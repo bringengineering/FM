@@ -721,3 +721,23 @@ button:focus-visible,input:focus-visible,select:focus-visible,textarea:focus-vis
 .gr-editor label > span > small { display: block; margin-top: 2px; color: #8B95A1; font-size: 11px; font-weight: 400; }
 .gr-skill-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 9px; }
 .gr-skill-grid select { height: 36px; padding: 0 9px; border: 1px solid #E5E8EB; border-radius: 8px; font-size: 12px; }
+.tg-chat-row { display: flex; gap: 7px; align-items: stretch; }
+.tg-chat-row input { flex: 1 1 auto; min-width: 0; }
+.tg-chat-row button { flex: 0 0 auto; min-height: 0; padding: 0 14px; white-space: nowrap; }
+.tg-chats {
+  margin: 10px 0 0; padding: 11px 13px;
+  border: 1px solid #E5E8EB; border-radius: 10px; background: #FBFCFD;
+}
+.tg-chats > b { display: block; margin-bottom: 8px; color: #191F28; font-size: 12px; }
+.tg-chats > small { display: block; margin-top: 8px; color: #8B95A1; font-size: 11px; }
+.tg-chats-none { margin: 0; color: #C77A00; font-size: 12px; line-height: 1.65; }
+.tg-chat-picks { display: grid; gap: 6px; }
+.tg-chat-pick {
+  display: flex; align-items: baseline; gap: 8px;
+  padding: 9px 11px; border: 1px solid #E5E8EB; border-radius: 8px;
+  background: #fff; text-align: left; cursor: pointer;
+}
+.tg-chat-pick:hover { border-color: #3182F6; }
+.tg-chat-pick.is-current { border-color: #3182F6; background: #EAF2FE; }
+.tg-chat-pick b { color: #191F28; font-size: 13px; }
+.tg-chat-pick small { color: #8B95A1; font-size: 11px; }
