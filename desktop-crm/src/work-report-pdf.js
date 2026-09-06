@@ -83,12 +83,17 @@ function createWorkReportHtml(input, copyType = "owner", options = {}) {
   const summary = WorkReportCore.summarizeItems(report);
   const representative = spacedDisplayName(company.representative);
 
+  // 쓰던 양식(작업점검_결과보고서_양식)의 1. 기본 정보 칸을 그대로 옮긴다.
   const headRows = [
+    ["보고 일자", report.workDate],
+    ["문서번호", WorkReportCore.documentNo(report)],
     ["건물명", report.buildingName],
     ["현장 주소", report.siteAddress],
+    ["작업·점검 일시", report.workDate],
+    ["담당자", report.workerName],
+    ["요청자(건물주)", report.ownerName],
+    ["연락 방식", report.ownerContact],
     ["작업 종류", WorkReportCore.kindLabel(report.kind)],
-    ["작업 일자", report.workDate],
-    ["작업 인원", report.workerName],
     ["작업 범위", report.area],
   ];
   // 청창사 서식은 계약기간과 수행업체를 표지에서 요구한다.
@@ -104,9 +109,18 @@ function createWorkReportHtml(input, copyType = "owner", options = {}) {
     .map(([label, value]) => `<div class="row"><dt>${html(label)}</dt><dd>${html(value || "미기재")}</dd></div>`)
     .join("");
 
+  // 구분은 체크 줄로 낸다. 종이 양식과 같은 모양이라야 받는 쪽이 익숙하다.
+  const categoryLine = WorkReportCore.CATEGORIES
+    .map(item => {
+      const on = item.key === report.category;
+      const extra = item.key === "etc" && on && report.categoryEtc ? `(${report.categoryEtc})` : "";
+      return `<span class="${on ? "on" : ""}">${on ? "\u2611" : "\u2610"} ${html(item.label)}${html(extra)}</span>`;
+    })
+    .join("");
+
   const columns = program
     ? "<th>No.</th><th>항목</th><th>수행범위</th><th>진척도</th><th>결과평가</th>"
-    : "<th>No.</th><th>항목</th><th>작업 내용</th><th>상태</th><th>비고</th>";
+    : "<th>No.</th><th>위치·항목</th><th>조치 내용</th><th>상태</th><th>비고</th>";
 
   return `<!doctype html><html lang="ko"><head><meta charset="utf-8"><meta http-equiv="Content-Security-Policy" content="default-src 'none'; img-src data:; style-src 'unsafe-inline'"><title>${html(copy.title)}</title><style>
 @page{size:A4 portrait;margin:12mm}*{box-sizing:border-box}html,body{margin:0;padding:0;background:#fff;color:#252b31;font-family:"Malgun Gothic","맑은 고딕",sans-serif;-webkit-print-color-adjust:exact;print-color-adjust:exact}
@@ -137,6 +151,14 @@ function createWorkReportHtml(input, copyType = "owner", options = {}) {
 .shot img{width:100%;height:100%;object-fit:cover}
 .shot.empty{color:#8B95A1;font-size:7.5pt}
 .none{color:#8B95A1;font-size:8pt}
+.cats{display:flex;flex-wrap:wrap;align-items:center;gap:4mm;padding:2mm 4mm;border-bottom:1px solid ${color};font-size:8pt}
+.cats b{color:${color}}
+.cats span.on{font-weight:800;color:${color}}
+.note h4{margin:0 0 1mm;color:${color};font-size:8.5pt}
+.note p{margin:0;white-space:pre-wrap}
+.notices{padding:2.5mm 4mm;border-top:.65px solid ${color};background:${light};color:#4E5968;font-size:7pt;line-height:1.6}
+.notices p{margin:0 0 .8mm}
+.sign .stamp{color:#8B95A1;font-weight:400}
 .sign{display:grid;grid-template-columns:1fr 1fr;min-height:14mm;border-top:1.2px solid ${color}}
 .sign div{display:flex;align-items:center;justify-content:center;gap:2.5mm;color:${color};font-size:8.5pt;font-weight:800}
 .sign div:first-child{border-right:.65px solid ${color}}
@@ -145,13 +167,16 @@ function createWorkReportHtml(input, copyType = "owner", options = {}) {
 <header class="title">${html(copy.title.split("").join(" "))}</header>
 <div class="brand"><span>BRING ENGINEERING</span><span>${html(copy.label)}</span></div>
 <section class="info">${infoRows}</section>
+<div class="cats"><b>구분</b>${categoryLine}</div>
 <div class="summary"><span>항목 ${summary.total}개</span><span>완료 ${summary.done}</span><span>일부 ${summary.partial}</span><span>미실시 ${summary.skipped}</span><span>진척도 ${summary.progress}%</span><span>증빙 사진 ${summary.photos}장</span></div>
 <table class="items"><thead><tr>${columns}</tr></thead><tbody>${itemRows(report, copy.key)}</tbody></table>
-${report.summary ? `<section class="note">${html(report.summary)}</section>` : ""}
+<section class="note"><h4>발견 사항 및 조치 내용</h4><p>${html(report.summary) || "특이사항 없음"}</p></section>
+<section class="note"><h4>후속 필요 사항 · 권고</h4><p>${html(report.followUp) || "없음"}</p></section>
 <div class="boards">${photoBoard(report, images)}</div>
+<section class="notices">${WorkReportCore.NOTICES.map(line => `<p>\u00b7 ${html(line)}</p>`).join("")}</section>
 <footer class="sign">
-  <div>작성일&nbsp;&nbsp;${html(report.workDate)}</div>
-  <div>${html(program ? "수행업체 대표자" : "작업 확인")}&nbsp;&nbsp;${html(representative || company.businessName || "")}<img src="${seal}" alt="대표자 날인"></div>
+  <div>${html(program ? "수행업체 대표자" : "담당자")}&nbsp;&nbsp;${html(representative || company.businessName || "")}<img src="${seal}" alt="대표자 날인"></div>
+  <div>확인자(건물주)&nbsp;&nbsp;${html(report.ownerName || "")}<span class="stamp">(서명 또는 인)</span></div>
 </footer>
 </main></body></html>`;
 }

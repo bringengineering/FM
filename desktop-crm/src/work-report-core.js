@@ -98,6 +98,28 @@
     { key: "skipped", label: "못 함", weight: 0 },
   ]);
 
+  // 보고서 구분. 쓰던 양식(작업점검_결과보고서_양식)의 체크 줄을 그대로
+  // 옮긴 것이다. 작업 종류(KINDS)와는 다른 축이다 — 같은 입주청소라도
+  // 정기로 도는 것과 급히 부른 것은 건물주가 다르게 읽는다.
+  const CATEGORIES = Object.freeze([
+    { key: "routine", label: "정기점검" },
+    { key: "single", label: "단발작업" },
+    { key: "urgent", label: "긴급조치" },
+    { key: "moveCheck", label: "입·퇴실 점검" },
+    { key: "etc", label: "기타" },
+  ]);
+
+  const CATEGORY_KEYS = Object.freeze(CATEGORIES.map(item => item.key));
+
+  // 어느 보고서에도 그대로 실린다. 사람이 지울 수 없다 — 이 세 줄은
+  // 우리가 지키기로 한 것이고, 빠진 보고서가 한 장이라도 나가면
+  // 지키기로 한 것이 아니게 된다.
+  const NOTICES = Object.freeze([
+    "열쇠·출입 비밀번호 등 보안 정보는 본 보고서를 포함한 어떠한 서류에도 기재하지 않습니다.",
+    "법정 의무점검은 브링이 직접 수행하지 않으며, 만료일 관리·업체 예약·결과 보관·후속 추적만 담당합니다.",
+    "비용 부담 비율·과실·법적 책임에 대한 단정적 판단은 본 보고서 범위가 아니며, 사실관계 기록에 한합니다.",
+  ]);
+
   // 두 벌. 같은 자료로 모양만 달리 낸다.
   const COPIES = Object.freeze([
     { key: "owner", label: "건물주 제출용", title: "작업 결과 보고서" },
@@ -120,6 +142,25 @@
   function statusLabel(key) {
     const found = statusOf(key);
     return found ? found.label : text(key, 20);
+  }
+
+  function categoryOf(key) {
+    return CATEGORIES.find(item => item.key === text(key, 20)) || null;
+  }
+
+  function categoryLabel(key) {
+    const found = categoryOf(key);
+    return found ? found.label : text(key, 20);
+  }
+
+  // 문서번호. 쓰던 양식의 그 칸이다. 사람이 매기면 겹치거나 빠진다.
+  // 건물·날짜·종류가 정해지면 번호도 정해지게 둔다.
+  function documentNo(report) {
+    const row = report && typeof report === "object" ? report : {};
+    const day = text(row.workDate, 10).replace(/-/gu, "") || "00000000";
+    const kind = text(row.kind, 20).slice(0, 3).toUpperCase() || "GEN";
+    const tail = text(row.id, 80).replace(/[^A-Za-z0-9]/gu, "").slice(-4).toUpperCase() || "0000";
+    return `BR-${day}-${kind}-${tail}`;
   }
 
   function copyOf(key) {
@@ -182,6 +223,12 @@
       workerName: text(value.workerName, 120),
       area: text(value.area, 60),
       summary: text(value.summary, 2000),
+      // 쓰던 양식의 나머지 칸. 없으면 "미기재" 로 찍힌다 — 빈칸이 그냥
+      // 사라지면 받은 사람은 안 적은 것인지 없는 것인지 모른다.
+      category: categoryOf(text(value.category, 20)) ? text(value.category, 20) : "single",
+      categoryEtc: text(value.categoryEtc, 60),
+      ownerContact: text(value.ownerContact, 120),
+      followUp: text(value.followUp, 2000),
       // 청창사 제출용에만 쓰는 칸. 건물주용에는 안 나온다.
       contractFrom: isDate(value.contractFrom) ? text(value.contractFrom, 10) : "",
       contractTo: isDate(value.contractTo) ? text(value.contractTo, 10) : "",
@@ -326,6 +373,12 @@
   return Object.freeze({
     KINDS,
     KIND_KEYS,
+    CATEGORIES,
+    CATEGORY_KEYS,
+    NOTICES,
+    categoryOf,
+    categoryLabel,
+    documentNo,
     ITEM_STATUSES,
     COPIES,
     kindOf,

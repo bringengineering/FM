@@ -1640,6 +1640,38 @@
     document.querySelectorAll("[data-nav-folder]").forEach(folder => {
       folder.hidden = Boolean(activeNavFolder) && folder.dataset.navFolder !== activeNavFolder;
     });
+    renderNavFolderSwitch();
+  }
+
+  // 고른 폴더만 남기는 것은 그렇게 하기로 정한 것이다. 그런데 나갈 길이
+  // 안 보이면 사람은 "다른 화면이 사라졌다" 고 읽는다. 실제로 그랬다.
+  //
+  // 그래서 사이드바 맨 위에 지금 어느 폴더인지 적고, 눌러서 바로 옮겨 갈 수
+  // 있게 둔다. 처음 화면까지 나갔다 오지 않아도 된다.
+  function renderNavFolderSwitch() {
+    const box = document.querySelector("[data-nav-folder-switch]");
+    if (!box) return;
+    // 폴더를 안 고른 상태(전부 보임)에서는 이 줄이 할 일이 없다.
+    box.hidden = !activeNavFolder;
+    if (!activeNavFolder) return;
+
+    const folders = WorkspaceShell.LANDING_FOLDERS.filter(item => item.navFolder);
+    const current = folders.find(item => item.navFolder === activeNavFolder);
+    const nameEl = box.querySelector("[data-nav-switch-name]");
+    if (nameEl) nameEl.textContent = current ? current.title : "작업 폴더";
+
+    const list = box.querySelector("[data-nav-switch-list]");
+    if (!list) return;
+    list.innerHTML = folders.map(item => `<button type="button" class="nav-switch-go${item.navFolder === activeNavFolder ? " is-current" : ""}" data-nav-folder-go="${esc(item.navFolder)}" data-nav-folder-view="${esc(item.view)}">
+        <b>${esc(item.title)}</b><small>${esc(item.description || "")}</small>
+      </button>`).join("") + `<button type="button" class="nav-switch-go nav-switch-all" data-nav-folder-go="" data-nav-folder-view=""><b>전체 보기</b><small>모든 폴더를 한 번에</small></button>`;
+  }
+
+  function closeNavFolderSwitch() {
+    const box = document.querySelector("[data-nav-folder-switch]");
+    if (!box) return;
+    box.querySelector("[data-nav-switch-list]")?.setAttribute("hidden", "");
+    box.querySelector("[data-nav-switch-toggle]")?.setAttribute("aria-expanded", "false");
   }
 
   function setActiveNavFolder(folderKey) {
@@ -4127,7 +4159,7 @@
     let count = 0;
     if (W) {
       count = workOrderState.admin
-        ? W.summarize(orders, Core.workDate()).waitingReview
+        ? W.summarize(orders, todayKey()).waitingReview
         : W.forAssignee(orders, workOrderState.uid).filter(item => W.OPEN.includes(item.status)).length;
     }
     badge.textContent = String(count);
@@ -4142,7 +4174,7 @@
     if (!W || !P) { main.innerHTML = `<section class="operations-hero"><div><h2>프로젝트</h2><p>모듈을 불러오지 못했습니다.</p></div></section>`; return; }
     if (!workOrderState.loaded && !workOrderState.loading && !workOrderState.error) void loadWorkOrders();
 
-    const today = Core.workDate();
+    const today = todayKey();
     const projects = P.sortProjects(workOrderState.projects);
     const selected = workOrderState.projectId && projects.some(item => item.id === workOrderState.projectId)
       ? workOrderState.projectId
@@ -4190,8 +4222,53 @@
       </div>
       ${workOrderState.projectEditing ? projectEditor(P) : ""}
       ${workOrderState.editing ? workOrderEditor(W, P, projects) : ""}
+      ${dueSoonBoard(P, scoped, today)}
+      ${assigneeBoard(P, scoped, today)}
       ${ganttBoard(W, P, scoped, today, summary)}
       <div class="wo-list">${scoped.length ? W.sortForBoard(scoped, today).map(item => workOrderCard(W, item, today)).join("") : `<div class="wo-empty">지시가 없습니다.</div>`}</div>`;
+  }
+
+  // 곧 마감. 간트는 언제 무엇을 하는지 보여 주지만, 오늘 무엇부터 손대야
+  // 하는지는 말해 주지 않는다. 지난 것과 이번 주 안에 올 것을 한 줄씩 적는다.
+  //
+  // 아무것도 없으면 이 칸을 아예 안 그린다. 늘 자리를 차지하고 "없음" 이라고
+  // 적혀 있으면 사람은 그 자리를 안 보게 된다.
+  function dueSoonBoard(P, orders, today) {
+    const list = P.dueSoon(orders, today, 7);
+    if (!list.length) return "";
+    const late = list.filter(item => item.late).length;
+    return `<section class="office-panel wo-due">
+      <header>
+        <div><span>DUE SOON</span><h3>손이 가야 할 것 ${list.length}건</h3></div>
+        <small>${late ? `기한 지남 ${late}건` : "이번 주 안에 마감"}</small>
+      </header>
+      <ul class="wo-due-list">${list.slice(0, 12).map(item => `<li class="${item.late ? "is-late" : ""}" data-wo-open-card="${esc(item.id)}">
+        <b>${esc(item.title)}</b>
+        <span>${esc(item.assigneeName || "담당자 없음")}</span>
+        <em>${item.late ? `${Math.abs(item.daysLeft)}일 지남` : (item.daysLeft === 0 ? "오늘" : `${item.daysLeft}일 남음`)}</em>
+        <small>${esc(item.dueDate)}</small>
+      </li>`).join("")}</ul>
+    </section>`;
+  }
+
+  // 사람별로 몇 건 물고 있는지. 이게 없으면 일을 나눠 줄 때 감으로 하게 된다.
+  function assigneeBoard(P, orders, today) {
+    const board = P.byAssignee(orders, today);
+    if (!board.length) return "";
+    return `<section class="office-panel">
+      <header><div><span>WORKLOAD</span><h3>사람별 진행</h3></div><small>기한 지난 것이 많은 사람부터</small></header>
+      <div class="office-table-wrap"><table class="office-table">
+        <thead><tr><th>담당</th><th>물고 있는 것</th><th>기한 지남</th><th>이번 주</th><th>검수 대기</th><th>평균 진행률</th></tr></thead>
+        <tbody>${board.map(row => `<tr class="${row.uid ? "" : "wo-unassigned"}">
+          <td><b>${esc(row.name)}</b><small>${row.total}건 중 완료 ${row.done}</small></td>
+          <td><b>${row.open}</b></td>
+          <td>${row.overdue ? `<span class="office-status missing"><i></i>${row.overdue}</span>` : `<span class="office-muted">—</span>`}</td>
+          <td>${row.soon ? `<span class="office-status warn"><i></i>${row.soon}</span>` : `<span class="office-muted">—</span>`}</td>
+          <td>${row.waitingReview ? `<span class="office-status complete"><i></i>${row.waitingReview}</span>` : `<span class="office-muted">—</span>`}</td>
+          <td><div class="dv-bar"><i style="width:${row.progress}%"></i></div><small>${row.progress}%</small></td>
+        </tr>`).join("")}</tbody>
+      </table></div>
+    </section>`;
   }
 
   // 간트. 엑셀 표의 오른쪽 칸이 하던 일이다.
@@ -4442,7 +4519,7 @@
     const orderId = track.dataset.woGanttDrag;
     const order = W.normalizeOrder(workOrderState.orders.find(item => item && item.id === orderId));
     if (!order.id || order.status === "done") return;
-    const today = Core.workDate();
+    const today = todayKey();
     const scoped = workOrderState.scope === "mine"
       ? W.forAssignee(currentProjectOrders(P), workOrderState.uid)
       : currentProjectOrders(P);
@@ -4575,6 +4652,8 @@
     reports: [], admin: false, canWork: false, uid: "",
     loaded: false, loading: false, error: "",
     selectedId: "", draft: null, busyKey: "",
+    driveOpen: false, driveFolderId: "", driveFolderName: "", driveScanning: false,
+    drivePlan: null, driveLeftovers: [], driveError: "",
   };
 
   const reportCore = () => window.BringWorkReportCore;
@@ -4613,7 +4692,7 @@
 
     const reports = R.sortReports(reportState.reports);
     const draft = reportState.draft ? R.normalizeReport(reportState.draft) : null;
-    const thisMonth = Core.workDate().slice(0, 7);
+    const thisMonth = todayKey().slice(0, 7);
     const monthly = reports.filter(item => item.workDate.slice(0, 7) === thisMonth);
 
     const status = reportState.loading
@@ -4658,6 +4737,119 @@
       </section>`;
   }
 
+  const reportPhotoPlan = () => window.BringReportPhotoPlan;
+
+  // Drive 폴더에서 초안 끌어오기.
+  //
+  // 사진은 이미 Drive 에 위치별로 나뉘어 있다 — 화장실·주방·베란다.
+  // 사람이 손으로 해 둔 그 분류를 다시 시키지 않는다.
+  //
+  // 끌어온 것은 초안일 뿐이다. 상태를 올리지 않고, 전·후를 못 가른 것은
+  // 못 갈랐다고 적는다. 사람이 보고 고친 다음에 저장한다.
+  function reportDriveBox(R) {
+    const plan = reportState.drivePlan;
+    const rows = plan
+      ? plan.buckets.map(bucket => {
+        const item = bucket.itemKey ? (R.itemsFor(plan.kind || reportState.draft.kind, []).find(entry => entry.key === bucket.itemKey) || null) : null;
+        return `<tr class="${item ? "" : "is-loose"}">
+          <td>${esc(bucket.folder || "(폴더 밖)")}</td>
+          <td>${item ? esc(item.label) : `<span class="wr-drive-loose">붙일 항목 없음</span>`}</td>
+          <td>${bucket.before.length}</td>
+          <td>${bucket.after.length}</td>
+          <td>${bucket.unsorted.length ? `<span class="wr-drive-unsure">${bucket.unsorted.length}</span>` : "0"}</td>
+          <td class="wr-drive-why">${esc(bucket.reason || "")}</td>
+        </tr>`;
+      }).join("")
+      : "";
+    return `<div class="wide wr-drive">
+      <div class="wr-drive-head">
+        <b>Drive 폴더에서 끌어오기</b>
+        <small>폴더 안의 위치별 폴더가 그대로 보고서 항목이 됩니다.</small>
+      </div>
+      <div class="wr-drive-form">
+        <input type="text" data-report-drive-id value="${esc(reportState.driveFolderId)}" placeholder="Drive 폴더 링크 또는 ID" spellcheck="false">
+        <input type="text" data-report-drive-name value="${esc(reportState.driveFolderName)}" placeholder="폴더 이름 (예: 입주청소(햇빛빌라)_블로그_20260831)" spellcheck="false">
+        <button type="button" class="mini-button" data-report-drive-scan${reportState.driveScanning || !reportState.driveFolderId ? " disabled" : ""}>${reportState.driveScanning ? "읽는 중…" : "읽어 보기"}</button>
+      </div>
+      ${reportState.driveError ? `<p class="wr-drive-error">${esc(reportState.driveError)}</p>` : ""}
+      ${plan ? `
+        ${plan.warnings.length ? `<ul class="wr-drive-warn">${plan.warnings.map(line => `<li>${esc(line)}</li>`).join("")}</ul>` : ""}
+        <div class="office-table-wrap"><table class="office-table wr-drive-table">
+          <thead><tr><th>Drive 폴더</th><th>보고서 항목</th><th>작업 전</th><th>작업 후</th><th>못 가름</th><th>어떻게 나눴나</th></tr></thead>
+          <tbody>${rows}</tbody>
+        </table></div>
+        <div class="wr-drive-actions">
+          <button type="button" class="primary-button" data-report-drive-apply${plan.photoCount ? "" : " disabled"}>이 사진들로 초안 채우기</button>
+          <small>${plan.photoCount}장 · 항목에 붙는 폴더 ${plan.matched}개${plan.unmatched.length ? ` · 못 붙인 폴더 ${plan.unmatched.length}개` : ""}</small>
+        </div>` : ""}
+    </div>`;
+  }
+
+  // 링크를 그대로 붙여 넣어도 되게 한다. 사람은 ID 만 떼어내지 않는다.
+  function reportDriveFolderId(value) {
+    const raw = String(value || "").trim();
+    const inUrl = raw.match(/\/folders\/([A-Za-z0-9_-]{10,})/u);
+    if (inUrl) return inUrl[1];
+    const query = raw.match(/[?&]id=([A-Za-z0-9_-]{10,})/u);
+    if (query) return query[1];
+    return /^[A-Za-z0-9_-]{10,}$/u.test(raw) ? raw : "";
+  }
+
+  async function scanReportDriveFolder() {
+    if (reportState.driveScanning) return;
+    const R = reportCore();
+    if (!R) return;
+    reportState.driveScanning = true;
+    reportState.driveError = "";
+    renderWorkReports();
+    try {
+      const result = await api.scanWorkReportPhotos({
+        folderId: reportState.driveFolderId,
+        folderName: reportState.driveFolderName,
+        kind: reportState.draft ? reportState.draft.kind : "",
+      });
+      if (!result || result.ok !== true) throw new Error((result && result.error) || "폴더를 읽지 못했습니다.");
+      reportState.drivePlan = result.plan;
+    } catch (error) {
+      reportState.drivePlan = null;
+      reportState.driveError = error && error.message || "폴더를 읽지 못했습니다.";
+    } finally {
+      reportState.driveScanning = false;
+      renderWorkReports();
+    }
+  }
+
+  function applyReportDrivePlan() {
+    const R = reportCore();
+    const P = reportPhotoPlan();
+    const plan = reportState.drivePlan;
+    if (!R || !P || !plan) return;
+    const draft = R.normalizeReport(readReportForm() || reportState.draft);
+    const made = P.toReportDraft(plan, { core: R, kind: draft.kind });
+    if (!made.ok) { showToast(made.error, "error"); return; }
+
+    // 사람이 이미 적어 둔 것은 덮지 않는다. 사진만 얹는다.
+    const byKey = new Map(made.draft.items.map(item => [item.key, item]));
+    const merged = draft.items.map(item => {
+      const found = byKey.get(item.key);
+      if (!found) return item;
+      return Object.assign({}, item, {
+        before: item.before.concat(found.before),
+        after: item.after.concat(found.after),
+        note: item.note || found.note,
+      });
+    });
+    reportState.draft = R.normalizeReport(Object.assign({}, draft, {
+      items: merged,
+      buildingName: draft.buildingName || made.draft.buildingName,
+      workDate: draft.workDate || made.draft.workDate,
+    }));
+    reportState.driveLeftovers = made.leftovers;
+    const added = made.draft.items.reduce((sum, item) => sum + item.before.length + item.after.length, 0);
+    showToast(`사진 ${added}장을 초안에 얹었습니다.${made.leftovers.length ? ` 못 붙인 폴더 ${made.leftovers.length}개는 그대로 뒀습니다.` : ""} 확인하고 저장해 주세요.`, "success");
+    renderWorkReports();
+  }
+
   function reportEditor(R, draft) {
     const buildings = (store.buildings || []).slice().sort((a, b) => String(a.name || "").localeCompare(String(b.name || ""), "ko"));
     const blockers = R.blockers(draft);
@@ -4695,7 +4887,12 @@
       <label><span>현장 주소</span><input type="text" name="siteAddress" maxlength="300" value="${esc(draft.siteAddress)}"></label>
       <label><span>계약 시작 (청창사용)</span><input type="date" name="contractFrom" value="${esc(draft.contractFrom)}"${supplyDateBounds()}></label>
       <label><span>계약 종료 (청창사용)</span><input type="date" name="contractTo" value="${esc(draft.contractTo)}"${supplyDateBounds()}></label>
-      <label class="wide"><span>총평</span><textarea name="summary" rows="2" maxlength="2000">${esc(draft.summary)}</textarea></label>
+      <label><span>구분</span><select name="category">${R.CATEGORIES.map(item => `<option value="${esc(item.key)}"${item.key === draft.category ? " selected" : ""}>${esc(item.label)}</option>`).join("")}</select></label>
+      <label><span>요청자(건물주)</span><input type="text" name="ownerName" maxlength="80" value="${esc(draft.ownerName)}"></label>
+      <label><span>연락 방식</span><input type="text" name="ownerContact" maxlength="120" value="${esc(draft.ownerContact)}" placeholder="예: 문자 010-0000-0000"></label>
+      <label class="wide"><span>발견 사항 및 조치 내용</span><textarea name="summary" rows="2" maxlength="2000">${esc(draft.summary)}</textarea></label>
+      <label class="wide"><span>후속 필요 사항 · 권고</span><textarea name="followUp" rows="2" maxlength="2000">${esc(draft.followUp)}</textarea></label>
+      ${reportState.canWork ? reportDriveBox(R) : ""}
       <div class="wide wr-items">${cards}</div>
       ${blockers.length
         ? `<div class="wide wr-blockers"><b>아직 낼 수 없습니다</b><ul>${blockers.map(item => `<li>${esc(item.text)}</li>`).join("")}</ul></div>`
@@ -4733,6 +4930,10 @@
       workerName: String(raw.workerName || ""),
       area: String(raw.area || ""),
       summary: String(raw.summary || ""),
+      followUp: String(raw.followUp || ""),
+      category: String(raw.category || previous.category),
+      ownerName: String(raw.ownerName || ""),
+      ownerContact: String(raw.ownerContact || ""),
       contractFrom: String(raw.contractFrom || ""),
       contractTo: String(raw.contractTo || ""),
       items,
@@ -5102,6 +5303,7 @@
     loaded: false, loading: false, error: "",
     category: "", showRetired: false, openItemId: "",
     itemEditing: null, moveEditing: null, busyId: "",
+    manualOpen: false, manualText: "", manualKind: "in", manualDate: "", manualVendor: "", manualSaving: false,
   };
 
   const supplyCore = () => window.BringSupplyCore;
@@ -5143,7 +5345,7 @@
   // 날짜 칸이 빈 채로 열리면 사람은 연도부터 네 자리를 친다. 올해 앞뒤로
   // 범위를 잡아 두면 달력이 올해로 열리고, 화살표만 눌러도 연도가 안 튄다.
   function supplyDateBounds() {
-    const year = Number(Core.workDate().slice(0, 4)) || new Date().getFullYear();
+    const year = Number(todayKey().slice(0, 4)) || new Date().getFullYear();
     return ` min="${year - 1}-01-01" max="${year + 1}-12-31"`;
   }
 
@@ -5157,7 +5359,7 @@
     if (!S) { main.innerHTML = `<section class="operations-hero"><div><h2>비품·자재</h2><p>모듈을 불러오지 못했습니다.</p></div></section>`; return; }
     if (!supplyState.loaded && !supplyState.loading && !supplyState.error) void loadSupplies();
 
-    const today = Core.workDate();
+    const today = todayKey();
     const summary = S.summarize(supplyState.items, supplyState.moves, today);
     const low = S.lowStock(supplyState.items, supplyState.moves);
     const groups = S.groupByCategory(supplyState.items, supplyState.moves);
@@ -5193,6 +5395,7 @@
         <div class="operations-actions">
           <label class="sp-toggle"><input type="checkbox" data-supply-retired${supplyState.showRetired ? " checked" : ""}> 안 쓰는 것도 보기</label>
           ${supplyState.canWork ? `<button type="button" class="mini-button" data-supply-move-new>입출고 적기</button>` : ""}
+          ${supplyState.canWork ? `<button type="button" class="mini-button" data-supply-manual>수기로 적기</button>` : ""}
           ${supplyState.canWork ? `<button type="button" class="primary-button" data-supply-item-new>새 품목</button>` : ""}
         </div>
       </section>
@@ -5204,6 +5407,7 @@
         <div class="operations-kpi" style="--wash:#EDF9F5"><span>이번 달 사용</span><b>${summary.usedThisMonth}</b><small>기록 ${summary.movesThisMonth}건</small></div>
       </div>
       ${lowBox}
+      ${supplyState.manualOpen ? supplyManualEditor(S) : ""}
       ${supplyState.itemEditing ? supplyItemEditor(S) : ""}
       ${supplyState.moveEditing ? supplyMoveEditor(S) : ""}
       <div class="sp-tabs">${tabs}</div>
@@ -5264,6 +5468,133 @@
     }).join("")}</ol>`;
   }
 
+  // 종이 장부처럼 그냥 줄로 적는다. 다이소에서 다섯 가지를 사 왔을 때
+  // 품목 다섯 개를 먼저 만들고 입고를 다섯 번 적는 것은 열 번의 폼이다.
+  //
+  // 대신 적은 것을 바로 쓰지 않는다. 무엇이 들어갈지 표로 보고 나서
+  // 누른다. 기록은 고칠 수 없으니 잘못 읽은 줄은 저장 전에 잡아야 한다.
+  function supplyManualEditor(S) {
+    const plan = S.planManualEntry(supplyState.manualText, {
+      items: supplyState.items,
+      kind: supplyState.manualKind,
+      date: supplyState.manualDate || todayKey(),
+      vendor: supplyState.manualVendor,
+      makeId: () => "preview",
+    });
+    const typed = String(supplyState.manualText || "").trim().length > 0;
+    return `<form class="wo-editor sp-manual" data-supply-manual-form>
+      <h3>수기로 적기</h3>
+      <p class="wo-editor-note">한 줄에 하나씩 적으세요. 없는 품목은 적는 김에 같이 만듭니다. 엑셀에서 복사해 붙여도 됩니다.</p>
+      <label><span>기본 종류</span><select name="kind">${S.MOVE_KINDS.map(item => `<option value="${esc(item.key)}"${item.key === supplyState.manualKind ? " selected" : ""}>${esc(item.label)}</option>`).join("")}</select></label>
+      <label><span>기본 날짜</span><input type="date" name="date" value="${esc(supplyState.manualDate || todayKey())}"${supplyDateBounds()}></label>
+      <label><span>새 품목 구매처</span><input type="text" name="vendor" maxlength="120" value="${esc(supplyState.manualVendor)}" placeholder="예: 다이소"></label>
+      <label class="wide"><span>적을 내용</span><textarea name="lines" rows="7" spellcheck="false" placeholder="락스 4L 2통 입고 쿠팡&#10;극세사걸레 5개 입고 다이소&#10;9/5 고무장갑 2켤레 사용 햇빛빌라&#10;마대자루 3개 폐기 젖어서 버림">${esc(supplyState.manualText)}</textarea></label>
+      <p class="wo-editor-note">줄 앞에 날짜를 적으면 그날로 갑니다. 입고·사용·폐기·실사를 적으면 그 줄만 종류가 바뀝니다. # 로 시작하는 줄은 넘깁니다.</p>
+      ${typed ? supplyManualPreview(S, plan) : ""}
+      <div class="wo-editor-actions">
+        <button class="primary-button" type="submit"${plan.ok && !supplyState.manualSaving ? "" : " disabled"}>${supplyState.manualSaving ? "적는 중…" : `${plan.moves.length}줄 적기`}</button>
+        <button class="secondary-button" type="button" data-supply-manual-cancel>취소</button>
+      </div>
+    </form>`;
+  }
+
+  function supplyManualPreview(S, plan) {
+    if (!plan.entries.length) {
+      return `<p class="office-empty sp-manual-empty">아직 읽을 줄이 없습니다.</p>`;
+    }
+    const rows = plan.entries.map(entry => {
+      const kind = S.moveKind(entry.kind);
+      return `<tr class="${entry.ok ? "" : "is-bad"}">
+        <td class="sp-manual-no">${entry.lineNo}</td>
+        <td>${esc(entry.name || entry.raw)}${entry.isNew ? ` <span class="sp-manual-new">새 품목</span>` : ""}</td>
+        <td class="sp-manual-qty">${entry.ok ? `${entry.qty}${esc(entry.unit || "")}` : "—"}</td>
+        <td>${esc(kind ? kind.label : entry.kind)}</td>
+        <td>${esc(entry.date || "—")}</td>
+        <td>${entry.ok ? esc(entry.reason) : `<span class="sp-manual-error">${esc(entry.error)}</span>`}</td>
+      </tr>`;
+    }).join("");
+    const newCount = plan.entries.filter(entry => entry.isNew).length;
+    return `<div class="wide sp-manual-preview">
+      <div class="sp-manual-head">
+        <b>이렇게 들어갑니다</b>
+        <small>${plan.entries.length}줄 읽음${newCount ? ` · 새 품목 ${newCount}개` : ""}${plan.errorCount ? ` · 못 읽은 줄 ${plan.errorCount}개` : ""}</small>
+      </div>
+      <div class="office-table-wrap"><table class="office-table sp-manual-table">
+        <thead><tr><th>줄</th><th>품목</th><th>수량</th><th>종류</th><th>날짜</th><th>이유 · 메모</th></tr></thead>
+        <tbody>${rows}</tbody>
+      </table></div>
+      ${plan.errorCount ? `<p class="sp-manual-block">못 읽은 줄이 있어 아직 저장할 수 없습니다. 그 줄만 고쳐 주세요 — 반만 저장되면 어디까지 들어갔는지 다시 세어야 합니다.</p>` : ""}
+    </div>`;
+  }
+
+  // 화면을 통째로 다시 그리면 글자를 치던 자리에서 커서가 튀고 한글
+  // 조합이 끊긴다. 그래서 상태만 담아 두고 아래 표만 갈아 끼운다.
+  // 타자(input)와 고르기(change) 둘 다 여기로 온다.
+  function captureSupplyManualForm(target) {
+    const form = target && target.closest ? target.closest("[data-supply-manual-form]") : null;
+    if (!form) return false;
+    const raw = Object.fromEntries(new FormData(form).entries());
+    supplyState.manualText = String(raw.lines || "");
+    supplyState.manualKind = String(raw.kind || "in");
+    supplyState.manualDate = String(raw.date || "");
+    supplyState.manualVendor = String(raw.vendor || "");
+    refreshSupplyManualPreview(form);
+    return true;
+  }
+
+  function refreshSupplyManualPreview(form) {
+    const S = supplyCore();
+    if (!S || !form) return;
+    const plan = S.planManualEntry(supplyState.manualText, {
+      items: supplyState.items,
+      kind: supplyState.manualKind,
+      date: supplyState.manualDate || todayKey(),
+      vendor: supplyState.manualVendor,
+      makeId: () => "preview",
+    });
+    const typed = String(supplyState.manualText || "").trim().length > 0;
+    const existing = form.querySelector(".sp-manual-preview, .sp-manual-empty");
+    const markup = typed ? supplyManualPreview(S, plan) : "";
+    if (existing) existing.outerHTML = markup;
+    else if (markup) form.querySelector(".wo-editor-actions").insertAdjacentHTML("beforebegin", markup);
+    const submit = form.querySelector("button[type=\"submit\"]");
+    if (submit) {
+      submit.disabled = !plan.ok || supplyState.manualSaving;
+      submit.textContent = supplyState.manualSaving ? "적는 중…" : `${plan.moves.length}줄 적기`;
+    }
+  }
+
+  async function saveSupplyManualFromForm(form) {
+    const S = supplyCore();
+    if (!S || supplyState.manualSaving) return;
+    const raw = Object.fromEntries(new FormData(form).entries());
+    const plan = S.planManualEntry(String(raw.lines || ""), {
+      items: supplyState.items,
+      kind: String(raw.kind || "in"),
+      date: String(raw.date || todayKey()),
+      vendor: String(raw.vendor || ""),
+    });
+    if (!plan.ok) {
+      showToast(plan.errorCount ? "못 읽은 줄이 있습니다. 고치고 다시 눌러 주세요." : "적을 것이 없습니다.", "error");
+      return;
+    }
+    supplyState.manualSaving = true;
+    renderSupplies();
+    try {
+      await api.saveSupplyBatch({ items: plan.newItems, moves: plan.moves });
+      supplyState.manualOpen = false;
+      supplyState.manualText = "";
+      supplyState.loaded = false;
+      showToast(`${plan.moves.length}줄을 적었습니다.${plan.newItems.length ? ` 새 품목 ${plan.newItems.length}개도 만들었습니다.` : ""}`, "success");
+      await loadSupplies();
+    } catch (error) {
+      showToast(error && error.message || "적지 못했습니다.", "error");
+    } finally {
+      supplyState.manualSaving = false;
+      renderSupplies();
+    }
+  }
+
   function supplyItemEditor(S) {
     const draft = S.normalizeItem(supplyState.itemEditing);
     const cost = supplyCostOf(draft.id);
@@ -5300,7 +5631,7 @@
       </select></label>
       <label><span>종류</span><select name="kind">${choices.map(item => `<option value="${esc(item.key)}"${item.key === (kind && kind.key) ? " selected" : ""}>${esc(item.label)}</option>`).join("")}</select></label>
       <label><span>수량</span><input type="number" name="qty" min="0" max="999999" step="1" value="${draft.qty || ""}" required></label>
-      <label><span>날짜</span><input type="date" name="date" value="${esc(draft.date || Core.workDate())}" required${supplyDateBounds()}></label>
+      <label><span>날짜</span><input type="date" name="date" value="${esc(draft.date || todayKey())}" required${supplyDateBounds()}></label>
       <label class="wide"><span>이유 · 어디에 썼는지</span><input type="text" name="reason" maxlength="500" value="${esc(draft.reason)}" placeholder="폐기와 실사는 반드시 적어야 합니다"></label>
       <p class="wo-editor-note">한 번 적은 기록은 고치지 않습니다. 잘못 적었으면 반대 기록이나 실사를 적어 바로잡습니다. 실사는 “세어 보니 N개였다”라는 뜻이라 그 앞의 계산을 지우고 N 으로 맞춥니다.</p>
       <div class="wo-editor-actions">
@@ -7735,9 +8066,33 @@
   }
 
   document.addEventListener("click", async event => {
+    const navSwitchToggle = event.target.closest("[data-nav-switch-toggle]");
+    if (navSwitchToggle) {
+      const list = document.querySelector("[data-nav-switch-list]");
+      const open = list && list.hasAttribute("hidden");
+      if (list) list.toggleAttribute("hidden", !open);
+      navSwitchToggle.setAttribute("aria-expanded", open ? "true" : "false");
+      return;
+    }
+    const navFolderGo = event.target.closest("[data-nav-folder-go]");
+    if (navFolderGo) {
+      const folder = navFolderGo.dataset.navFolderGo || "";
+      const view = navFolderGo.dataset.navFolderView || "";
+      closeNavFolderSwitch();
+      setActiveNavFolder(folder);
+      // 폴더를 옮겼으면 그 폴더의 첫 화면을 연다. 옮겼는데 화면이 그대로면
+      // 사람은 아무 일도 안 일어난 줄 안다.
+      if (view && Object.hasOwn(viewMeta, view) && folder) {
+        currentView = view;
+        render();
+      }
+      return;
+    }
+    // 목록 밖을 누르면 닫는다. 열어 둔 채로 두면 메뉴를 가린다.
+    if (!event.target.closest("[data-nav-folder-switch]")) closeNavFolderSwitch();
     if (event.target.closest("[data-report-new]")) {
       const R = reportCore();
-      if (R) { reportState.draft = R.normalizeReport({ id: `wr_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`, workDate: Core.workDate() }); renderWorkReports(); }
+      if (R) { reportState.draft = R.normalizeReport({ id: `wr_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`, workDate: todayKey() }); renderWorkReports(); }
       return;
     }
     const reportEdit = event.target.closest("[data-report-edit]");
@@ -7747,6 +8102,8 @@
       if (found) { reportState.draft = found; reportState.selectedId = found.id; renderWorkReports(); }
       return;
     }
+    if (event.target.closest("[data-report-drive-scan]")) { void scanReportDriveFolder(); return; }
+    if (event.target.closest("[data-report-drive-apply]")) { applyReportDrivePlan(); return; }
     if (event.target.closest("[data-report-cancel]")) { reportState.draft = null; renderWorkReports(); return; }
     const reportAddPhoto = event.target.closest("[data-report-add-photo]");
     if (reportAddPhoto) { await addWorkReportPhoto(reportAddPhoto.dataset.reportAddPhoto, reportAddPhoto.dataset.reportPhase); return; }
@@ -7808,16 +8165,23 @@
     if (event.target.closest("[data-supply-item-cancel]")) { supplyState.itemEditing = null; renderSupplies(); return; }
     if (event.target.closest("[data-supply-move-new]")) {
       const S = supplyCore();
-      if (S) { supplyState.moveEditing = S.normalizeMove({ date: Core.workDate() }); renderSupplies(); }
+      if (S) { supplyState.moveEditing = S.normalizeMove({ date: todayKey() }); renderSupplies(); }
       return;
     }
     const supplyMoveFor = event.target.closest("[data-supply-move-for]");
     if (supplyMoveFor) {
       const S = supplyCore();
-      if (S) { supplyState.moveEditing = S.normalizeMove({ itemId: supplyMoveFor.dataset.supplyMoveFor, date: Core.workDate() }); renderSupplies(); }
+      if (S) { supplyState.moveEditing = S.normalizeMove({ itemId: supplyMoveFor.dataset.supplyMoveFor, date: todayKey() }); renderSupplies(); }
       return;
     }
     if (event.target.closest("[data-supply-move-cancel]")) { supplyState.moveEditing = null; renderSupplies(); return; }
+    if (event.target.closest("[data-supply-manual]")) {
+      supplyState.manualOpen = true;
+      supplyState.manualDate = supplyState.manualDate || todayKey();
+      renderSupplies();
+      return;
+    }
+    if (event.target.closest("[data-supply-manual-cancel]")) { supplyState.manualOpen = false; renderSupplies(); return; }
     const supplyMoveDelete = event.target.closest("[data-supply-move-delete]");
     if (supplyMoveDelete) { await removeSupplyMove(supplyMoveDelete.dataset.supplyMoveDelete); return; }
     const woProject = event.target.closest("[data-wo-project]");
@@ -9603,6 +9967,7 @@
       renderSupplies();
       return;
     }
+    if (captureSupplyManualForm(event.target)) return;
     if (event.target.matches("[data-supply-move-form] [name=\"kind\"]")) {
       // 종류를 바꾸면 이유 칸이 필수인지가 바뀐다. 눌러 보고서야 아는 것보다
       // 고르는 순간 보이는 편이 낫다.
@@ -9937,6 +10302,7 @@
     if (form.matches("[data-delivery-form]")) { await saveDeliveryFlowFromForm(form); return; }
     if (form.matches("[data-supply-item-form]")) { await saveSupplyItemFromForm(form); return; }
     if (form.matches("[data-supply-move-form]")) { await addSupplyMoveFromForm(form); return; }
+    if (form.matches("[data-supply-manual-form]")) { await saveSupplyManualFromForm(form); return; }
     if (form.matches("[data-form-template-form]")) { await saveFormTemplateFromDom(); return; }
     if (form.matches("[data-form-entry-form]")) {
       // 어느 단추로 냈는지에 따라 임시 저장인지 완료인지 갈린다.
@@ -11202,6 +11568,19 @@
     if (direction && deleteCustomerPhoneDigit(event.target, direction)) event.preventDefault();
   });
   document.addEventListener("input", event => {
+    if (event.target.matches("[data-report-drive-id]")) {
+      // 링크째로 붙여 넣어도 되게 ID 를 떼어낸다. 다시 그리지 않는다 —
+      // 그리면 커서가 튄다. 단추만 열고 닫는다.
+      reportState.driveFolderId = reportDriveFolderId(event.target.value);
+      const scan = document.querySelector("[data-report-drive-scan]");
+      if (scan) scan.disabled = !reportState.driveFolderId || reportState.driveScanning;
+      return;
+    }
+    if (event.target.matches("[data-report-drive-name]")) {
+      reportState.driveFolderName = String(event.target.value || "");
+      return;
+    }
+    if (captureSupplyManualForm(event.target)) return;
     if (event.target.matches("[data-owner-os-summary]")) {
       // 확인한 문장과 보내는 문장이 달라지면 확인은 무효다. 보내는 쪽은 이미
       // 그렇게 처리하지만, 화면이 계속 "확인됨" 이라고 하면 관리자는 고친 글이

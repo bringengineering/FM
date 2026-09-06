@@ -453,3 +453,124 @@ button:focus-visible,input:focus-visible,select:focus-visible,textarea:focus-vis
 .wr-blockers { padding: 12px 14px; border: 1px solid #F6D8DB; border-radius: 12px; background: #FFF6F7; }
 .wr-blockers b { display: block; margin-bottom: 5px; color: #C6535F; font-size: 11px; }
 .wr-blockers ul { margin: 0; padding-left: 16px; color: #4E5968; font-size: 11px; line-height: 1.7; }
+
+/* 사이드바 폴더 전환. 고른 폴더만 남기되, 나갈 길은 늘 보이게 둔다.
+   이게 없으면 사람은 "다른 화면이 사라졌다" 고 읽는다. */
+.nav-switch { position: relative; margin-bottom: 8px; }
+.nav-switch-current { display: grid; grid-template-columns: 1fr auto; align-items: center; gap: 4px 8px; width: 100%; padding: 9px 12px; border: 1px solid #E5E8EB; border-radius: 12px; background: #fff; color: #191F28; font: inherit; text-align: left; cursor: pointer; }
+.nav-switch-label { grid-column: 1; color: #8B95A1; font-size: 9px; font-weight: 800; letter-spacing: .04em; }
+.nav-switch-current b { grid-column: 1; font-size: 13px; font-weight: 800; }
+.nav-switch-current .nav-chevron { grid-column: 2; grid-row: 1 / 3; display: grid; place-items: center; width: 16px; height: 16px; color: #8B95A1; }
+.nav-switch-current .nav-chevron svg { width: 14px; height: 14px; fill: none; stroke: currentColor; stroke-width: 2; }
+.nav-switch-current:hover { border-color: #C9D3DD; }
+.nav-switch-current[aria-expanded="true"] { border-color: #3182F6; background: #EDF5FF; }
+.nav-switch-current[aria-expanded="true"] .nav-chevron { transform: rotate(180deg); }
+.nav-switch-list { position: absolute; z-index: 30; top: calc(100% + 5px); left: 0; right: 0; display: flex; max-height: 340px; overflow-y: auto; flex-direction: column; gap: 2px; padding: 6px; border: 1px solid #E5E8EB; border-radius: 14px; background: #fff; box-shadow: 0 12px 32px rgba(23, 42, 61, .14); }
+.nav-switch-go { display: flex; flex-direction: column; gap: 2px; padding: 8px 10px; border: 0; border-radius: 10px; background: transparent; color: #191F28; font: inherit; text-align: left; cursor: pointer; }
+.nav-switch-go b { font-size: 12px; font-weight: 800; }
+.nav-switch-go small { overflow: hidden; color: #8B95A1; font-size: 9px; text-overflow: ellipsis; white-space: nowrap; }
+.nav-switch-go:hover { background: #F2F4F6; }
+.nav-switch-go.is-current { background: #EDF5FF; color: #1B64DA; }
+.nav-switch-all { margin-top: 3px; border-top: 1px solid #F2F4F6; border-radius: 0 0 10px 10px; }
+
+/* 곧 마감. 간트는 언제 무엇을 하는지 보여 주지만, 오늘 무엇부터 손대야
+   하는지는 말해 주지 않는다. 그 한 줄이 여기다. */
+.wo-due { border-color: #F6D8DB; }
+.wo-due > header { border-bottom-color: #FBECEE; }
+.wo-due > header span { color: #C6535F; }
+.wo-due-list { display: flex; flex-direction: column; gap: 0; margin: 0; padding: 6px 0; list-style: none; }
+.wo-due-list li { display: grid; grid-template-columns: 1fr 90px 78px 74px; align-items: center; gap: 10px; padding: 9px 20px; border-top: 1px solid #F7F9FA; cursor: pointer; }
+.wo-due-list li:first-child { border-top: 0; }
+.wo-due-list li:hover { background: #FAFBFC; }
+.wo-due-list b { overflow: hidden; color: #191F28; font-size: 12px; font-weight: 700; text-overflow: ellipsis; white-space: nowrap; }
+.wo-due-list span { color: #8B95A1; font-size: 11px; }
+.wo-due-list em { font-size: 11px; font-style: normal; font-weight: 800; text-align: right; }
+.wo-due-list li em { color: #C77A00; }
+.wo-due-list li.is-late em { color: #C6535F; }
+.wo-due-list small { color: #8B95A1; font-size: 10px; text-align: right; }
+.wo-unassigned > td:first-child b { color: #C6535F; }
+@media (max-width: 900px) {
+  .wo-due-list li { grid-template-columns: 1fr auto; row-gap: 3px; }
+  .wo-due-list small { grid-column: 1 / -1; text-align: left; }
+}
+
+/* 수기 기록 — 적은 것이 무엇으로 들어가는지 누르기 전에 보여 준다. */
+.sp-manual textarea {
+  font-family: ui-monospace, "D2Coding", "Consolas", monospace;
+  font-size: 13px;
+  line-height: 1.7;
+}
+.sp-manual-preview {
+  border: 1px solid #E5E8EB;
+  border-radius: 10px;
+  background: #FBFCFD;
+  padding: 11px 13px;
+}
+.sp-manual-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 10px;
+  margin-bottom: 8px;
+}
+.sp-manual-head b { font-size: 13px; color: #191F28; }
+.sp-manual-head small { font-size: 12px; color: #8B95A1; }
+.sp-manual-table { font-size: 12px; }
+.sp-manual-table td { vertical-align: top; }
+.sp-manual-no { color: #8B95A1; width: 34px; }
+.sp-manual-qty { white-space: nowrap; }
+.sp-manual-table tr.is-bad { background: #FEF6F6; }
+.sp-manual-new {
+  display: inline-block;
+  margin-left: 4px;
+  padding: 1px 5px;
+  border-radius: 5px;
+  background: #EAF2FE;
+  color: #3182F6;
+  font-size: 11px;
+}
+.sp-manual-error { color: #C6535F; }
+.sp-manual-block {
+  margin: 8px 0 0;
+  font-size: 12px;
+  color: #C6535F;
+  line-height: 1.6;
+}
+.sp-manual-empty { margin: 0; }
+
+/* Drive 폴더에서 결과보고서 초안 끌어오기 */
+.wr-drive {
+  border: 1px solid #E5E8EB;
+  border-radius: 10px;
+  background: #FBFCFD;
+  padding: 12px 14px;
+}
+.wr-drive-head { display: flex; align-items: baseline; gap: 8px; flex-wrap: wrap; margin-bottom: 9px; }
+.wr-drive-head b { font-size: 13px; color: #191F28; }
+.wr-drive-head small { font-size: 12px; color: #8B95A1; }
+.wr-drive-form { display: flex; gap: 7px; flex-wrap: wrap; }
+.wr-drive-form input {
+  flex: 1 1 220px;
+  min-width: 0;
+  padding: 8px 10px;
+  border: 1px solid #E5E8EB;
+  border-radius: 8px;
+  font-size: 12px;
+}
+.wr-drive-warn {
+  margin: 9px 0 0;
+  padding: 9px 11px 9px 26px;
+  border-radius: 8px;
+  background: #FFF8EC;
+  color: #C77A00;
+  font-size: 12px;
+  line-height: 1.7;
+}
+.wr-drive-error { margin: 8px 0 0; color: #C6535F; font-size: 12px; }
+.wr-drive-table { margin-top: 9px; font-size: 12px; }
+.wr-drive-table tr.is-loose { background: #FBFAF7; }
+.wr-drive-loose { color: #C77A00; }
+.wr-drive-unsure { color: #C77A00; font-weight: 700; }
+.wr-drive-why { color: #8B95A1; }
+.wr-drive-actions { display: flex; align-items: center; gap: 10px; margin-top: 10px; flex-wrap: wrap; }
+.wr-drive-actions small { color: #8B95A1; font-size: 12px; }
