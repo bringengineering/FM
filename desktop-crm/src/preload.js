@@ -74,6 +74,7 @@ contextBridge.exposeInMainWorld("bringCRM", {
   saveObjective: input => ipcRenderer.invoke("crm:objective-save", input),
   updateKeyResult: input => ipcRenderer.invoke("crm:key-result-update", input),
   loadTelegramSettings: () => ipcRenderer.invoke("crm:telegram-settings-load"),
+  findTelegramChats: input => ipcRenderer.invoke("crm:telegram-chats-find", input),
   saveTelegramSettings: input => ipcRenderer.invoke("crm:telegram-settings-save", input),
   forgetTelegramSettings: () => ipcRenderer.invoke("crm:telegram-settings-forget"),
   sendTelegramContactAlert: input => ipcRenderer.invoke("crm:telegram-contact-alert", input),

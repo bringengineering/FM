@@ -3281,6 +3281,39 @@ async function forgetTelegramSettings() {
   return loadTelegramSettings();
 }
 
+/**
+ * 봇이 최근에 본 대화방을 찾아 준다.
+ *
+ * 사람에게 브라우저 주소창에 토큰을 치고 JSON 에서 숫자를 찾아내라고
+ * 시키던 자리다. 그건 앱이 할 일이다.
+ *
+ * 아직 저장 안 한 토큰으로도 찾을 수 있어야 한다 — 방 번호를 알아야
+ * 저장할 수 있는데 저장해야 찾을 수 있으면 아무 데도 못 간다.
+ */
+async function findTelegramChats(input) {
+  requireTelegramAdmin();
+  const options = input && typeof input === "object" && !Array.isArray(input) ? input : {};
+  const saved = await readTelegramSettings();
+  const botToken = String(options.botToken || "") || (saved ? saved.botToken : "");
+  if (!TelegramCore.looksLikeBotToken(botToken)) {
+    return { ok: false, code: "TELEGRAM_TOKEN_INVALID", error: "봇 토큰을 먼저 넣어 주세요. BotFather 가 준 값을 그대로요." };
+  }
+  let response;
+  try {
+    response = await fetch(`https://api.telegram.org/bot${botToken}/getUpdates`, { method: "GET" });
+  } catch {
+    return { ok: false, code: "TELEGRAM_UNREACHABLE", error: "텔레그램에 연결하지 못했습니다. 인터넷 연결을 확인해 주세요." };
+  }
+  let parsed = {};
+  try { parsed = await response.json(); } catch { parsed = {}; }
+  if (!response.ok) {
+    // 토큰은 주소에 들어 있다. 어떤 경우에도 그 주소를 오류에 싣지 않는다.
+    return { ok: false, code: "TELEGRAM_REJECTED", error: TelegramCore.describeFailure(response.status, parsed) };
+  }
+  const chats = TelegramCore.parseChats(parsed);
+  return { ok: true, chats, hint: chats.length ? "" : TelegramCore.noChatHint() };
+}
+
 async function postToTelegram(botToken, chatId, body) {
   let response;
   try {
@@ -7585,6 +7618,7 @@ secureCanonicalHandle("crm:growth-review-save", input => remoteClient.saveGrowth
 secureCanonicalHandle("crm:objective-save", input => remoteClient.saveObjective(input));
 secureCanonicalHandle("crm:key-result-update", input => remoteClient.updateKeyResult(input));
 secureHandle("crm:telegram-settings-load", () => loadTelegramSettings());
+secureCanonicalHandle("crm:telegram-chats-find", input => findTelegramChats(input));
 secureCanonicalHandle("crm:telegram-settings-save", input => saveTelegramSettings(input));
 secureCanonicalHandle("crm:telegram-settings-forget", () => forgetTelegramSettings());
 secureCanonicalHandle("crm:telegram-contact-alert", input => sendTelegramContactAlert(input));

@@ -175,6 +175,51 @@
     };
   }
 
+  /**
+   * 봇이 최근에 본 대화방들을 추린다.
+   *
+   * 이걸 왜 만들었나 — 방 번호(chat id)를 사람이 알아내게 두었더니,
+   * 브라우저 주소창에 토큰을 치고 JSON 에서 숫자를 찾아내라는 일이 됐다.
+   * 그건 앱이 할 일이지 사람이 할 일이 아니다.
+   *
+   * getUpdates 응답에는 같은 방이 여러 번 나온다. 방마다 한 줄로 접는다.
+   */
+  function parseChats(payload) {
+    const list = payload && Array.isArray(payload.result) ? payload.result : [];
+    const found = new Map();
+    list.forEach(update => {
+      if (!update || typeof update !== "object") return;
+      // 어떤 종류의 소식이든 그 안에 chat 이 들어 있다. 종류를 일일이
+      // 열거하면 텔레그램이 새 종류를 더할 때마다 못 찾게 된다.
+      Object.values(update).forEach(value => {
+        const chat = value && typeof value === "object" ? value.chat : null;
+        if (!chat || typeof chat !== "object") return;
+        const id = String(chat.id == null ? "" : chat.id);
+        if (!looksLikeChatId(id)) return;
+        if (found.has(id)) return;
+        const type = text(chat.type, 20);
+        found.set(id, {
+          id,
+          type,
+          // 그룹은 title, 1:1 은 이름이 나뉘어 온다.
+          title: text(chat.title, 120)
+            || [text(chat.first_name, 60), text(chat.last_name, 60)].filter(Boolean).join(" ")
+            || text(chat.username, 60)
+            || "이름 없는 방",
+          group: type === "group" || type === "supergroup",
+        });
+      });
+    });
+    // 그룹을 위에 둔다. 회사 방을 찾으려는 것이 보통이다.
+    return [...found.values()].sort((left, right) => Number(right.group) - Number(left.group));
+  }
+
+  // 방을 못 찾았을 때 무엇을 해 보라고 할지. "없습니다" 만 말하면 사람은
+  // 무엇이 잘못됐는지 모른다.
+  function noChatHint() {
+    return "방을 아직 못 찾았습니다. 봇을 넣은 방에서 /start 라고 한 줄 보낸 다음 다시 눌러 주세요.";
+  }
+
   // 실패한 까닭을 사람 말로. 텔레그램이 주는 영어를 그대로 띄우면 아무도
   // 무엇을 고쳐야 하는지 모른다.
   function describeFailure(status, body) {
@@ -202,6 +247,8 @@
     looksLikeBotToken,
     looksLikeChatId,
     validateSettings,
+    parseChats,
+    noChatHint,
     describeFailure,
     text,
     rows,
