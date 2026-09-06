@@ -19,6 +19,7 @@
     attendanceWeekOffset: 0,
     selectedAttendanceDate: Core.workDate(),
     selectedAdminUserId: "",
+    selectedMemberId: "",
     adminMonth: Core.workDate().slice(0, 7),
     adminTab: "list",
     adminAttendanceCorrection: null,
@@ -621,7 +622,10 @@
     const year = String(new Date().getFullYear());
     const people = state.data.users.map(user => {
       const confirmed = grants.find(item => item && item.userId === user.uid && String(item.year) === year) || null;
-      const hireDate = String(user.hireDate || "");
+      // 입사일은 인사기록에서 온다. normalizeUser 는 hireDate 를 들고
+      // 오지 않아서 여기 제안 칸이 그동안 늘 비어 있었다.
+      const record = memberRecordOf(user.uid);
+      const hireDate = String((record && record.hireDate) || user.hireDate || "");
       const suggestion = hireDate ? L.suggestGrant(hireDate, Core.workDate()) : null;
       const hint = suggestion
         ? `제안 ${suggestion.days}일 · ${esc(suggestion.basis)}${suggestion.caveat ? " ⚠" : ""}`
@@ -735,6 +739,126 @@
     }
   }
 
+  // --- 인사기록 ---
+  // 이 화면은 그 자체가 목적이 아니라 **연차·급여의 재료**다. 그래서 비어
+  // 있는 칸을 조용히 넘기지 않고, 법으로 걸리는 것과 그냥 안 채운 것을
+  // 갈라서 보여 준다. 다 똑같이 빨갛게 칠하면 무엇부터 채울지 알 수 없다.
+  const Hr = () => window.BringHrCore;
+
+  function memberRecordOf(uid) {
+    const H = Hr();
+    if (!H) return null;
+    return H.findRecord(state.data.members || [], uid);
+  }
+
+  function membersView() {
+    const H = Hr();
+    if (!H) return `<section class="office-panel"><p>인사기록 모듈을 불러오지 못했습니다.</p></section>`;
+    const today = Core.workDate();
+    if (!state.data.memberAdmin) return myRecordView(H, today);
+
+    const people = state.data.users.slice().sort((a, b) => Core.displayName(a).localeCompare(Core.displayName(b)));
+    const selected = state.selectedMemberId && people.some(user => user.uid === state.selectedMemberId)
+      ? state.selectedMemberId
+      : (people[0] ? people[0].uid : "");
+    const todo = H.alerts(state.data.members || [], today);
+
+    const rows = people.map(user => {
+      const record = memberRecordOf(user.uid);
+      const status = H.statusOf(record || { userId: user.uid }, today);
+      const missing = H.checklist(record || { userId: user.uid }, today).filter(item => item.level === "required").length;
+      const label = { active: "재직", resigned: "퇴사", scheduled: "입사 예정", unknown: "미등록" }[status] || status;
+      return `<button type="button" class="office-hr-person${user.uid === selected ? " is-selected" : ""}" data-office-hr-select="${esc(user.uid)}">
+        <b>${esc(Core.displayName(user))}</b>
+        <span>${esc(record && record.hireDate ? `${record.hireDate} 입사` : "입사일 없음")} · ${esc(label)}</span>
+        ${missing ? `<em class="office-hr-missing">${missing}</em>` : ""}
+      </button>`;
+    }).join("");
+
+    const selectedUser = people.find(user => user.uid === selected) || null;
+    return `<section class="office-panel office-hr">
+      <header class="office-hr-head"><div><b>인사기록</b><span>입사일·계약형태·근로계약서 보관 위치</span></div>${todo.length ? `<span class="office-hr-todo">채워야 할 것 ${todo.length}건</span>` : ""}</header>
+      <p class="office-hr-warn">주민등록번호·계좌번호는 여기에 적지 마세요. 저장되지 않습니다.</p>
+      <div class="office-hr-body">
+        <div class="office-hr-list">${rows || `<p class="office-empty">팀원이 없습니다.</p>`}</div>
+        <div class="office-hr-detail">${selectedUser ? memberForm(H, selectedUser, today) : `<p class="office-empty">왼쪽에서 사람을 고르세요.</p>`}</div>
+      </div>
+    </section>`;
+  }
+
+  // 본인 화면. 고칠 수는 없고, 회사가 무엇을 들고 있는지 보여 준다.
+  // 무엇이 비어 있는지도 본인이 알아야 채워 달라고 말할 수 있다.
+  function myRecordView(H, today) {
+    const record = memberRecordOf(currentUserId());
+    if (!record) {
+      return `<section class="office-panel office-hr"><header class="office-hr-head"><div><b>내 인사기록</b></div></header>
+        <p class="office-empty">아직 등록된 인사기록이 없습니다. 관리자에게 등록을 요청해 주세요.</p></section>`;
+    }
+    const type = (H.typeOf(record.employmentType) || {}).label || "미정";
+    const missing = H.checklist(record, today);
+    const rows = [
+      ["입사일", record.hireDate || "—"],
+      ["계약형태", type],
+      ["계약 종료일", record.contractEndDate || "—"],
+      ["부서·직책", [record.department, record.position].filter(Boolean).join(" · ") || "—"],
+      ["근로계약서", record.contractFileUrl ? "보관됨" : "미보관"],
+      ["4대보험 취득일", record.insuranceStartDate || "—"],
+    ].map(([label, value]) => `<tr><th>${esc(label)}</th><td>${esc(String(value))}</td></tr>`).join("");
+    return `<section class="office-panel office-hr">
+      <header class="office-hr-head"><div><b>내 인사기록</b><span>고치려면 관리자에게 말씀해 주세요</span></div></header>
+      <table class="office-hr-mine"><tbody>${rows}</tbody></table>
+      ${missing.length ? `<ul class="office-hr-checklist">${missing.map(item => `<li class="level-${esc(item.level)}">${esc(item.label)}</li>`).join("")}</ul>` : ""}
+    </section>`;
+  }
+
+  function memberForm(H, user, today) {
+    const record = memberRecordOf(user.uid) || H.normalizeRecord({ userId: user.uid });
+    const checklist = H.checklist(record, today);
+    const field = (name, label, type, extra) => `<label><span>${esc(label)}</span><input type="${type}" name="${esc(name)}" value="${esc(String(record[name] || ""))}"${extra || ""}></label>`;
+    const types = H.EMPLOYMENT_TYPES.map(item => `<option value="${esc(item.key)}"${record.employmentType === item.key ? " selected" : ""}>${esc(item.label)}</option>`).join("");
+    const suggestion = record.hireDate && window.BringLeaveCore
+      ? window.BringLeaveCore.suggestGrant(record.hireDate, today)
+      : null;
+    return `<form class="office-hr-form" data-office-hr-form="${esc(user.uid)}">
+      <header><b>${esc(Core.displayName(user))}</b>${suggestion ? `<span class="office-hr-suggest">올해 연차 제안 ${suggestion.days}일 · ${esc(suggestion.basis)}</span>` : `<span class="office-hr-suggest">입사일을 넣으면 연차 발생일수를 제안합니다</span>`}</header>
+      ${checklist.length ? `<ul class="office-hr-checklist">${checklist.map(item => `<li class="level-${esc(item.level)}"><b>${esc(item.label)}</b>${item.why ? `<small>${esc(item.why)}</small>` : ""}</li>`).join("")}</ul>` : `<p class="office-hr-ok">비어 있는 항목이 없습니다.</p>`}
+      ${field("hireDate", "입사일", "date")}
+      <label><span>계약형태</span><select name="employmentType"><option value="">선택</option>${types}</select></label>
+      ${field("contractEndDate", "계약 종료일", "date")}
+      ${field("department", "부서", "text", ' maxlength="60"')}
+      ${field("position", "직책", "text", ' maxlength="60"')}
+      ${field("phone", "연락처", "text", ' maxlength="40"')}
+      ${field("emergencyContact", "비상연락처", "text", ' maxlength="120"')}
+      ${field("contractSignedDate", "근로계약서 체결일", "date")}
+      ${field("contractFileUrl", "근로계약서 보관 위치", "url", ' placeholder="https://drive.google.com/... " maxlength="500"')}
+      ${field("insuranceStartDate", "4대보험 취득일", "date")}
+      ${field("resignedDate", "퇴사일", "date")}
+      <label class="wide"><span>비고</span><input type="text" name="note" value="${esc(record.note || "")}" maxlength="500"></label>
+      <button class="primary-button" type="submit"${state.busy ? " disabled" : ""}>저장</button>
+    </form>`;
+  }
+
+  async function saveMemberRecord(form, userId) {
+    const H = Hr();
+    if (!H || state.busy) return;
+    const raw = Object.fromEntries(new FormData(form).entries());
+    const checked = H.validateRecord(Object.assign({}, raw, { userId }));
+    // 서버에 보내기 전에 여기서 걸러야 사람이 이유를 알 수 있는 문구를 받는다.
+    if (!checked.ok) { notify(checked.error, "error"); return; }
+    state.busy = true;
+    renderCurrent();
+    try {
+      await window.bringCRM.saveMemberRecord(checked.record);
+      notify("인사기록을 저장했습니다.", "success");
+      await load(true);
+    } catch (error) {
+      notify(error && error.message || "저장하지 못했습니다.", "error");
+    } finally {
+      state.busy = false;
+      renderCurrent();
+    }
+  }
+
   function renderCurrent() {
     if (!state.context || !state.context.container) return;
     syncMessengerPresence();
@@ -746,6 +870,7 @@
       if (state.context.view === "officeHome") state.context.container.innerHTML = homeView();
       else if (state.context.view === "officeAttendance") state.context.container.innerHTML = attendanceView();
       else if (state.context.view === "officeLeave") state.context.container.innerHTML = leaveView();
+      else if (state.context.view === "officeMembers") state.context.container.innerHTML = membersView();
       else if (state.context.view === "officeMessenger") state.context.container.innerHTML = messengerView();
       else state.context.container.innerHTML = adminView();
       requestAnimationFrame(() => {
@@ -1090,6 +1215,8 @@
     }
     const leaveCancel = event.target.closest("[data-office-leave-cancel]");
     if (leaveCancel) { void cancelLeave(leaveCancel.dataset.officeLeaveCancel); return; }
+    const hrSelect = event.target.closest("[data-office-hr-select]");
+    if (hrSelect) { state.selectedMemberId = hrSelect.dataset.officeHrSelect; renderCurrent(); return; }
     const go = event.target.closest("[data-office-go]");
     if (go) {
       document.querySelector(`[data-view="${go.dataset.officeGo}"]`)?.click();
@@ -1230,6 +1357,8 @@
   document.addEventListener("submit", event => {
     const leaveForm = event.target.closest("[data-office-leave-form]");
     if (leaveForm) { event.preventDefault(); void submitLeaveRequest(leaveForm); return; }
+    const hrForm = event.target.closest("[data-office-hr-form]");
+    if (hrForm) { event.preventDefault(); void saveMemberRecord(hrForm, hrForm.dataset.officeHrForm); return; }
     const grantForm = event.target.closest("[data-office-leave-grant]");
     if (grantForm) { event.preventDefault(); void saveLeaveGrant(grantForm, grantForm.dataset.officeLeaveGrant); return; }
     const correctionForm = event.target.closest("[data-office-attendance-correction-form]");

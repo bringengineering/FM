@@ -438,6 +438,19 @@
     return rows;
   }
 
+  // 인사기록도 모양이 두 가지다. 관리자는 uid 묶음을, 본인은 자기 기록
+  // 하나를 받는다. 기록 한 건인지 묶음인지는 userId 가 있는지로 가른다.
+  function flattenMembers(value, ownerUid) {
+    if (!value || typeof value !== "object") return [];
+    if (value.userId) return [Object.assign({}, value, { userId: String(value.userId) })];
+    const rows = [];
+    Object.entries(value).forEach(([uid, record]) => {
+      if (!record || typeof record !== "object") return;
+      rows.push(Object.assign({}, record, { userId: String(record.userId || uid || ownerUid || "") }));
+    });
+    return rows.filter(row => row.userId);
+  }
+
   function flattenAttendance(value) {
     if (!value || typeof value !== "object") return [];
     const rows = [];
@@ -485,6 +498,9 @@
       leaveGrants: Array.isArray(source.leaveGrants) ? source.leaveGrants.slice() : flattenLeaveGrants(source.leaveGrants, current.uid),
       // 관리자면 남의 휴가도 받는다. 화면이 이 값으로 승인 칸을 낼지 정한다.
       leaveAdmin: source.leaveAdmin === true,
+      // 인사기록은 여기서 모양만 편다. 값 검사는 hr-core 가 한다.
+      members: Array.isArray(source.members) ? source.members.slice() : flattenMembers(source.members, current.uid),
+      memberAdmin: source.memberAdmin === true,
       loadedAt: safeText(source.loadedAt)
     };
   }
@@ -545,6 +561,7 @@
     mergeConfirmedOfficeReadReceipts,
     flattenLeave,
     flattenLeaveGrants,
+    flattenMembers,
     flattenAttendance,
     flattenMailbox,
     normalizeOfficePayload,

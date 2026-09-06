@@ -2071,6 +2071,68 @@ describe.runIf(databaseEmulatorAvailable)("fieldPlatform database rules", () => 
     expect((await assertSucceeds(get(ref(officeAdmin, ownDisplayNamePath)))).val()).toBe("김현진 관리자");
   });
 
+  it("keeps HR records readable only by the person and administrators", async () => {
+    // 입사일·계약형태는 그 사람 것이다. 옆자리 동료가 볼 이유가 없다.
+    const admin = environment.authenticatedContext("crm-admin", crmClaims("admin@bring.test")).database();
+    const member = environment.authenticatedContext("crm-member", crmClaims("member@bring.test")).database();
+    const viewer = environment.authenticatedContext("crm-viewer", crmClaims("viewer@bring.test")).database();
+    const anonymous = environment.unauthenticatedContext().database();
+
+    const target = "crmCompany/officeMembers/crm-viewer";
+    const record = {
+      userId: "crm-viewer",
+      hireDate: "2024-03-01",
+      employmentType: "regular",
+      updatedAt: "2026-09-06T00:00:00.000Z",
+      updatedBy: "crm-admin",
+    };
+
+    // 관리자만 쓴다. 본인도 자기 인사기록을 못 고친다 — 입사일을 스스로
+    // 바꿀 수 있으면 연차 발생일수를 스스로 늘릴 수 있다.
+    await assertSucceeds(set(ref(admin, target), record));
+    await assertFails(set(ref(viewer, target), { ...record, hireDate: "2020-01-01", updatedBy: "crm-viewer" }));
+
+    // 본인은 읽는다. 회사가 무엇을 들고 있는지 알아야 한다.
+    await assertSucceeds(get(ref(viewer, target)));
+    // 동료는 못 읽는다.
+    await assertFails(get(ref(member, target)));
+    await assertFails(get(ref(member, "crmCompany/officeMembers")));
+    await assertFails(get(ref(anonymous, target)));
+    // 전체 명부는 관리자만.
+    await assertSucceeds(get(ref(admin, "crmCompany/officeMembers")));
+  });
+
+  it("refuses resident registration numbers and unknown fields in HR records", async () => {
+    // 개인정보보호법 24조의2 — 법령 근거 없이 주민번호를 처리할 수 없다.
+    // 화면에서 막는 것만으로는 부족하다. 서버가 판단해야 진짜로 막힌다.
+    const admin = environment.authenticatedContext("crm-admin", crmClaims("admin@bring.test")).database();
+    const target = "crmCompany/officeMembers/crm-member";
+    const base = {
+      userId: "crm-member",
+      updatedAt: "2026-09-06T00:00:00.000Z",
+      updatedBy: "crm-admin",
+    };
+
+    await assertSucceeds(set(ref(admin, target), base));
+
+    // 비고란에 적어도 막힌다. 칸이 없으면 사람은 비고란에 적는다.
+    await assertFails(set(ref(admin, target), { ...base, note: "900101-1234567" }));
+    await assertFails(set(ref(admin, target), { ...base, emergencyContact: "9001011234567" }));
+    // 전화번호는 통과한다. 너무 많이 잡으면 검사를 꺼 달라고 하게 된다.
+    await assertSucceeds(set(ref(admin, target), { ...base, phone: "010-1234-5678" }));
+
+    // 칸을 새로 지어내는 길도 막는다.
+    await assertFails(set(ref(admin, target), { ...base, residentNumber: "900101-1234567" }));
+    await assertFails(set(ref(admin, target), { ...base, salary: 3000000 }));
+
+    // 근로계약서 보관 위치는 https 만 받는다.
+    await assertFails(set(ref(admin, target), { ...base, contractFileUrl: "http://drive.google.com/x" }));
+    await assertSucceeds(set(ref(admin, target), { ...base, contractFileUrl: "https://drive.google.com/x" }));
+
+    // 지우는 길은 없다. 근로계약서는 3년 보관 의무가 있다.
+    await assertFails(remove(ref(admin, target)));
+  });
+
   it("keeps leave requests private to the person and their administrator", async () => {
     // 휴가 사유는 근태보다 사적이다. 같은 회사 사람이라고 서로 볼 수 있으면
     // 아무도 솔직한 사유를 적지 않는다.
