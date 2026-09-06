@@ -193,6 +193,61 @@
     return { id: meta.id || fileId, name: meta.name || "", mimeType: meta.mimeType || "application/octet-stream", content: buffer };
   }
 
+  /**
+   * 폴더 하나의 내용을 훑는다. 만들지 않고 보기만 한다.
+   *
+   * 결과보고서를 자동으로 짤 때 쓴다. 이름과 찍은 시각이 있어야 위치와
+   * 전·후를 가를 수 있으므로 createdTime 을 같이 받는다.
+   */
+  async function listFolder(deps, folderId, options) {
+    const { fetchImpl, accessToken } = deps;
+    const id = text(folderId);
+    if (!id) throw fail("어느 폴더인지 정해 주세요.", "VALIDATION_ERROR");
+    const settings = options && typeof options === "object" ? options : {};
+    const maxPages = Number(settings.maxPages) > 0 ? Number(settings.maxPages) : 5;
+    const query = `'${quote(id)}' in parents and trashed = false`;
+    const files = [];
+    let pageToken = "";
+    for (let page = 0; page < maxPages; page += 1) {
+      const url = `${DRIVE_FILES_URL}?q=${encodeURIComponent(query)}`
+        + "&fields=nextPageToken,files(id,name,mimeType,size,createdTime,webViewLink)"
+        + "&pageSize=200&orderBy=name&supportsAllDrives=true&includeItemsFromAllDrives=true"
+        + (pageToken ? `&pageToken=${encodeURIComponent(pageToken)}` : "");
+      const got = await driveJson(fetchImpl, url, { headers: authHeader(accessToken) }, "폴더 읽기");
+      (Array.isArray(got.files) ? got.files : []).forEach(file => files.push(file));
+      pageToken = text(got.nextPageToken);
+      if (!pageToken) break;
+    }
+    return {
+      folders: files.filter(file => file.mimeType === FOLDER_MIME),
+      files: files.filter(file => file.mimeType !== FOLDER_MIME),
+      truncated: Boolean(pageToken),
+    };
+  }
+
+  /**
+   * 폴더와 그 바로 아래 폴더까지만 훑는다.
+   *
+   * 더 깊이 들어가지 않는다. 사진 폴더는 두 층이면 끝이고, 깊이 제한이
+   * 없으면 실수로 Drive 전체를 훑다가 멈춘다.
+   */
+  async function scanPhotoFolder(deps, folderId, options) {
+    const settings = options && typeof options === "object" ? options : {};
+    const maxFolders = Number(settings.maxFolders) > 0 ? Number(settings.maxFolders) : 30;
+    const root = await listFolder(deps, folderId, settings);
+    const children = root.folders.slice(0, maxFolders);
+    const folders = [];
+    for (const child of children) {
+      const inner = await listFolder(deps, child.id, settings);
+      folders.push({ id: child.id, name: child.name, files: inner.files });
+    }
+    return {
+      folders,
+      files: root.files,
+      truncated: root.truncated || root.folders.length > children.length,
+    };
+  }
+
   /** 경로를 따라 폴더를 차례로 만들고 마지막 폴더 ID 를 돌려준다. */
   async function ensureFolderPath(deps, rootFolderId, segments) {
     let parentId = rootFolderId;
@@ -409,6 +464,8 @@
     quote,
     ensureFolder,
     ensureFolderPath,
+    listFolder,
+    scanPhotoFolder,
     downloadFile,
     findExisting,
     APP_TAG,

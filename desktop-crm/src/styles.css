@@ -537,3 +537,40 @@ button:focus-visible,input:focus-visible,select:focus-visible,textarea:focus-vis
   line-height: 1.6;
 }
 .sp-manual-empty { margin: 0; }
+
+/* Drive 폴더에서 결과보고서 초안 끌어오기 */
+.wr-drive {
+  border: 1px solid #E5E8EB;
+  border-radius: 10px;
+  background: #FBFCFD;
+  padding: 12px 14px;
+}
+.wr-drive-head { display: flex; align-items: baseline; gap: 8px; flex-wrap: wrap; margin-bottom: 9px; }
+.wr-drive-head b { font-size: 13px; color: #191F28; }
+.wr-drive-head small { font-size: 12px; color: #8B95A1; }
+.wr-drive-form { display: flex; gap: 7px; flex-wrap: wrap; }
+.wr-drive-form input {
+  flex: 1 1 220px;
+  min-width: 0;
+  padding: 8px 10px;
+  border: 1px solid #E5E8EB;
+  border-radius: 8px;
+  font-size: 12px;
+}
+.wr-drive-warn {
+  margin: 9px 0 0;
+  padding: 9px 11px 9px 26px;
+  border-radius: 8px;
+  background: #FFF8EC;
+  color: #C77A00;
+  font-size: 12px;
+  line-height: 1.7;
+}
+.wr-drive-error { margin: 8px 0 0; color: #C6535F; font-size: 12px; }
+.wr-drive-table { margin-top: 9px; font-size: 12px; }
+.wr-drive-table tr.is-loose { background: #FBFAF7; }
+.wr-drive-loose { color: #C77A00; }
+.wr-drive-unsure { color: #C77A00; font-weight: 700; }
+.wr-drive-why { color: #8B95A1; }
+.wr-drive-actions { display: flex; align-items: center; gap: 10px; margin-top: 10px; flex-wrap: wrap; }
+.wr-drive-actions small { color: #8B95A1; font-size: 12px; }

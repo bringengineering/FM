@@ -67,8 +67,19 @@ test("화면이 저장 전에 무엇이 들어갈지 보여 준다", () => {
 
 test("타자와 고르기 둘 다 미리보기를 다시 그린다", () => {
   // change 만 붙이면 텍스트 칸은 커서가 빠져나갈 때까지 안 바뀐다.
-  assert.match(appSource, /document\.addEventListener\("input", event => \{\n\s*if \(captureSupplyManualForm/u);
-  assert.match(appSource, /document\.addEventListener\("change", async event => \{[\s\S]{0,4000}?if \(captureSupplyManualForm/u);
+  //
+  // 어느 줄에 있는지는 보지 않는다 — 앞에 다른 처리가 끼어드는 것은
+  // 흔한 일이고, 그때마다 검사가 깨지면 검사를 고치게 된다.
+  const listeners = ["input", "change"].map(name => {
+    const start = appSource.indexOf(`document.addEventListener("${name}"`);
+    assert.ok(start > 0, `${name} 리스너가 없다`);
+    // 다음 리스너가 시작되기 전까지가 이 리스너의 몸통이다.
+    const next = appSource.indexOf("document.addEventListener(", start + 1);
+    return appSource.slice(start, next < 0 ? undefined : next);
+  });
+  listeners.forEach((body, index) => {
+    assert.match(body, /captureSupplyManualForm\(event\.target\)/u, ["input", "change"][index]);
+  });
 });
 
 test("글자를 칠 때 화면을 통째로 다시 그리지 않는다", () => {

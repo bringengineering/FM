@@ -4652,6 +4652,8 @@
     reports: [], admin: false, canWork: false, uid: "",
     loaded: false, loading: false, error: "",
     selectedId: "", draft: null, busyKey: "",
+    driveOpen: false, driveFolderId: "", driveFolderName: "", driveScanning: false,
+    drivePlan: null, driveLeftovers: [], driveError: "",
   };
 
   const reportCore = () => window.BringWorkReportCore;
@@ -4735,6 +4737,119 @@
       </section>`;
   }
 
+  const reportPhotoPlan = () => window.BringReportPhotoPlan;
+
+  // Drive 폴더에서 초안 끌어오기.
+  //
+  // 사진은 이미 Drive 에 위치별로 나뉘어 있다 — 화장실·주방·베란다.
+  // 사람이 손으로 해 둔 그 분류를 다시 시키지 않는다.
+  //
+  // 끌어온 것은 초안일 뿐이다. 상태를 올리지 않고, 전·후를 못 가른 것은
+  // 못 갈랐다고 적는다. 사람이 보고 고친 다음에 저장한다.
+  function reportDriveBox(R) {
+    const plan = reportState.drivePlan;
+    const rows = plan
+      ? plan.buckets.map(bucket => {
+        const item = bucket.itemKey ? (R.itemsFor(plan.kind || reportState.draft.kind, []).find(entry => entry.key === bucket.itemKey) || null) : null;
+        return `<tr class="${item ? "" : "is-loose"}">
+          <td>${esc(bucket.folder || "(폴더 밖)")}</td>
+          <td>${item ? esc(item.label) : `<span class="wr-drive-loose">붙일 항목 없음</span>`}</td>
+          <td>${bucket.before.length}</td>
+          <td>${bucket.after.length}</td>
+          <td>${bucket.unsorted.length ? `<span class="wr-drive-unsure">${bucket.unsorted.length}</span>` : "0"}</td>
+          <td class="wr-drive-why">${esc(bucket.reason || "")}</td>
+        </tr>`;
+      }).join("")
+      : "";
+    return `<div class="wide wr-drive">
+      <div class="wr-drive-head">
+        <b>Drive 폴더에서 끌어오기</b>
+        <small>폴더 안의 위치별 폴더가 그대로 보고서 항목이 됩니다.</small>
+      </div>
+      <div class="wr-drive-form">
+        <input type="text" data-report-drive-id value="${esc(reportState.driveFolderId)}" placeholder="Drive 폴더 링크 또는 ID" spellcheck="false">
+        <input type="text" data-report-drive-name value="${esc(reportState.driveFolderName)}" placeholder="폴더 이름 (예: 입주청소(햇빛빌라)_블로그_20260831)" spellcheck="false">
+        <button type="button" class="mini-button" data-report-drive-scan${reportState.driveScanning || !reportState.driveFolderId ? " disabled" : ""}>${reportState.driveScanning ? "읽는 중…" : "읽어 보기"}</button>
+      </div>
+      ${reportState.driveError ? `<p class="wr-drive-error">${esc(reportState.driveError)}</p>` : ""}
+      ${plan ? `
+        ${plan.warnings.length ? `<ul class="wr-drive-warn">${plan.warnings.map(line => `<li>${esc(line)}</li>`).join("")}</ul>` : ""}
+        <div class="office-table-wrap"><table class="office-table wr-drive-table">
+          <thead><tr><th>Drive 폴더</th><th>보고서 항목</th><th>작업 전</th><th>작업 후</th><th>못 가름</th><th>어떻게 나눴나</th></tr></thead>
+          <tbody>${rows}</tbody>
+        </table></div>
+        <div class="wr-drive-actions">
+          <button type="button" class="primary-button" data-report-drive-apply${plan.photoCount ? "" : " disabled"}>이 사진들로 초안 채우기</button>
+          <small>${plan.photoCount}장 · 항목에 붙는 폴더 ${plan.matched}개${plan.unmatched.length ? ` · 못 붙인 폴더 ${plan.unmatched.length}개` : ""}</small>
+        </div>` : ""}
+    </div>`;
+  }
+
+  // 링크를 그대로 붙여 넣어도 되게 한다. 사람은 ID 만 떼어내지 않는다.
+  function reportDriveFolderId(value) {
+    const raw = String(value || "").trim();
+    const inUrl = raw.match(/\/folders\/([A-Za-z0-9_-]{10,})/u);
+    if (inUrl) return inUrl[1];
+    const query = raw.match(/[?&]id=([A-Za-z0-9_-]{10,})/u);
+    if (query) return query[1];
+    return /^[A-Za-z0-9_-]{10,}$/u.test(raw) ? raw : "";
+  }
+
+  async function scanReportDriveFolder() {
+    if (reportState.driveScanning) return;
+    const R = reportCore();
+    if (!R) return;
+    reportState.driveScanning = true;
+    reportState.driveError = "";
+    renderWorkReports();
+    try {
+      const result = await api.scanWorkReportPhotos({
+        folderId: reportState.driveFolderId,
+        folderName: reportState.driveFolderName,
+        kind: reportState.draft ? reportState.draft.kind : "",
+      });
+      if (!result || result.ok !== true) throw new Error((result && result.error) || "폴더를 읽지 못했습니다.");
+      reportState.drivePlan = result.plan;
+    } catch (error) {
+      reportState.drivePlan = null;
+      reportState.driveError = error && error.message || "폴더를 읽지 못했습니다.";
+    } finally {
+      reportState.driveScanning = false;
+      renderWorkReports();
+    }
+  }
+
+  function applyReportDrivePlan() {
+    const R = reportCore();
+    const P = reportPhotoPlan();
+    const plan = reportState.drivePlan;
+    if (!R || !P || !plan) return;
+    const draft = R.normalizeReport(readReportForm() || reportState.draft);
+    const made = P.toReportDraft(plan, { core: R, kind: draft.kind });
+    if (!made.ok) { showToast(made.error, "error"); return; }
+
+    // 사람이 이미 적어 둔 것은 덮지 않는다. 사진만 얹는다.
+    const byKey = new Map(made.draft.items.map(item => [item.key, item]));
+    const merged = draft.items.map(item => {
+      const found = byKey.get(item.key);
+      if (!found) return item;
+      return Object.assign({}, item, {
+        before: item.before.concat(found.before),
+        after: item.after.concat(found.after),
+        note: item.note || found.note,
+      });
+    });
+    reportState.draft = R.normalizeReport(Object.assign({}, draft, {
+      items: merged,
+      buildingName: draft.buildingName || made.draft.buildingName,
+      workDate: draft.workDate || made.draft.workDate,
+    }));
+    reportState.driveLeftovers = made.leftovers;
+    const added = made.draft.items.reduce((sum, item) => sum + item.before.length + item.after.length, 0);
+    showToast(`사진 ${added}장을 초안에 얹었습니다.${made.leftovers.length ? ` 못 붙인 폴더 ${made.leftovers.length}개는 그대로 뒀습니다.` : ""} 확인하고 저장해 주세요.`, "success");
+    renderWorkReports();
+  }
+
   function reportEditor(R, draft) {
     const buildings = (store.buildings || []).slice().sort((a, b) => String(a.name || "").localeCompare(String(b.name || ""), "ko"));
     const blockers = R.blockers(draft);
@@ -4772,7 +4887,12 @@
       <label><span>현장 주소</span><input type="text" name="siteAddress" maxlength="300" value="${esc(draft.siteAddress)}"></label>
       <label><span>계약 시작 (청창사용)</span><input type="date" name="contractFrom" value="${esc(draft.contractFrom)}"${supplyDateBounds()}></label>
       <label><span>계약 종료 (청창사용)</span><input type="date" name="contractTo" value="${esc(draft.contractTo)}"${supplyDateBounds()}></label>
-      <label class="wide"><span>총평</span><textarea name="summary" rows="2" maxlength="2000">${esc(draft.summary)}</textarea></label>
+      <label><span>구분</span><select name="category">${R.CATEGORIES.map(item => `<option value="${esc(item.key)}"${item.key === draft.category ? " selected" : ""}>${esc(item.label)}</option>`).join("")}</select></label>
+      <label><span>요청자(건물주)</span><input type="text" name="ownerName" maxlength="80" value="${esc(draft.ownerName)}"></label>
+      <label><span>연락 방식</span><input type="text" name="ownerContact" maxlength="120" value="${esc(draft.ownerContact)}" placeholder="예: 문자 010-0000-0000"></label>
+      <label class="wide"><span>발견 사항 및 조치 내용</span><textarea name="summary" rows="2" maxlength="2000">${esc(draft.summary)}</textarea></label>
+      <label class="wide"><span>후속 필요 사항 · 권고</span><textarea name="followUp" rows="2" maxlength="2000">${esc(draft.followUp)}</textarea></label>
+      ${reportState.canWork ? reportDriveBox(R) : ""}
       <div class="wide wr-items">${cards}</div>
       ${blockers.length
         ? `<div class="wide wr-blockers"><b>아직 낼 수 없습니다</b><ul>${blockers.map(item => `<li>${esc(item.text)}</li>`).join("")}</ul></div>`
@@ -4810,6 +4930,10 @@
       workerName: String(raw.workerName || ""),
       area: String(raw.area || ""),
       summary: String(raw.summary || ""),
+      followUp: String(raw.followUp || ""),
+      category: String(raw.category || previous.category),
+      ownerName: String(raw.ownerName || ""),
+      ownerContact: String(raw.ownerContact || ""),
       contractFrom: String(raw.contractFrom || ""),
       contractTo: String(raw.contractTo || ""),
       items,
@@ -5451,7 +5575,7 @@
       vendor: String(raw.vendor || ""),
     });
     if (!plan.ok) {
-      setStatus(plan.errorCount ? "못 읽은 줄이 있습니다. 고치고 다시 눌러 주세요." : "적을 것이 없습니다.", "error");
+      showToast(plan.errorCount ? "못 읽은 줄이 있습니다. 고치고 다시 눌러 주세요." : "적을 것이 없습니다.", "error");
       return;
     }
     supplyState.manualSaving = true;
@@ -5461,10 +5585,10 @@
       supplyState.manualOpen = false;
       supplyState.manualText = "";
       supplyState.loaded = false;
-      setStatus(`${plan.moves.length}줄을 적었습니다.${plan.newItems.length ? ` 새 품목 ${plan.newItems.length}개도 만들었습니다.` : ""}`, "success");
+      showToast(`${plan.moves.length}줄을 적었습니다.${plan.newItems.length ? ` 새 품목 ${plan.newItems.length}개도 만들었습니다.` : ""}`, "success");
       await loadSupplies();
     } catch (error) {
-      setStatus(error && error.message || "적지 못했습니다.", "error");
+      showToast(error && error.message || "적지 못했습니다.", "error");
     } finally {
       supplyState.manualSaving = false;
       renderSupplies();
@@ -7978,6 +8102,8 @@
       if (found) { reportState.draft = found; reportState.selectedId = found.id; renderWorkReports(); }
       return;
     }
+    if (event.target.closest("[data-report-drive-scan]")) { void scanReportDriveFolder(); return; }
+    if (event.target.closest("[data-report-drive-apply]")) { applyReportDrivePlan(); return; }
     if (event.target.closest("[data-report-cancel]")) { reportState.draft = null; renderWorkReports(); return; }
     const reportAddPhoto = event.target.closest("[data-report-add-photo]");
     if (reportAddPhoto) { await addWorkReportPhoto(reportAddPhoto.dataset.reportAddPhoto, reportAddPhoto.dataset.reportPhase); return; }
@@ -11442,6 +11568,18 @@
     if (direction && deleteCustomerPhoneDigit(event.target, direction)) event.preventDefault();
   });
   document.addEventListener("input", event => {
+    if (event.target.matches("[data-report-drive-id]")) {
+      // 링크째로 붙여 넣어도 되게 ID 를 떼어낸다. 다시 그리지 않는다 —
+      // 그리면 커서가 튄다. 단추만 열고 닫는다.
+      reportState.driveFolderId = reportDriveFolderId(event.target.value);
+      const scan = document.querySelector("[data-report-drive-scan]");
+      if (scan) scan.disabled = !reportState.driveFolderId || reportState.driveScanning;
+      return;
+    }
+    if (event.target.matches("[data-report-drive-name]")) {
+      reportState.driveFolderName = String(event.target.value || "");
+      return;
+    }
     if (captureSupplyManualForm(event.target)) return;
     if (event.target.matches("[data-owner-os-summary]")) {
       // 확인한 문장과 보내는 문장이 달라지면 확인은 무효다. 보내는 쪽은 이미

@@ -26,6 +26,7 @@ const BuildingReportCore = require("./building-report-core");
 const OwnerOsReportCore = require("./owner-os-report-core");
 const OwnerOsEndpointCore = require("./owner-os-endpoint-core");
 const BuildingDocsDrive = require("./building-docs-drive");
+const ReportPhotoPlan = require("./report-photo-plan");
 const ServiceReportCore = require("./service-report-core");
 const OperationsIntelligence = require("./operations-intelligence-core");
 const OperationsWorkSync = require("./operations-work-sync");
@@ -3180,6 +3181,44 @@ async function uploadBuildingDocument(input) {
 // 나중에 어느 지시의 결과인지 알 수 없다.
 // 결과보고서 사진. 건물별·작업일별로 쌓는다. 나중에 "그 집 그날 사진"을
 // 찾는 일이 제일 흔하다.
+/**
+ * Drive 사진 폴더를 훑어 결과보고서 초안을 짠다.
+ *
+ * 대표가 물은 것 — "구글드라이브에 폴더가 있는데 거기 사진 활용해서
+ * 네가 알아서 만들어주면 안 되나?" 된다. 폴더가 이미 보고서 모양으로
+ * 정리돼 있기 때문이다.
+ *
+ * 여기서는 목록만 본다. 사진을 받지 않는다 — 초안을 짜는 데 필요한 것은
+ * 이름과 시각뿐이고, 스무 장을 받아 오면 화면이 그동안 멈춘다. 사진은
+ * 인쇄할 때 그때 받는다.
+ */
+async function scanWorkReportPhotos(input) {
+  if (!authState().user) throw Object.assign(new Error("다시 로그인해 주세요."), { code: "AUTH_REQUIRED" });
+  if (isMarketingOnlySession()) {
+    return { ok: false, error: "마케팅 담당자는 결과보고서를 만들 수 없습니다.", code: "MARKETING_ONLY_FORBIDDEN" };
+  }
+  const options = input && typeof input === "object" && !Array.isArray(input) ? input : {};
+  if (!driveSessionView().connected) {
+    throw Object.assign(new Error("회사 Drive 에 먼저 연결해 주세요."), { code: "DRIVE_AUTH_REQUIRED" });
+  }
+  const folderId = String(options.folderId || "").trim();
+  if (!folderId) throw Object.assign(new Error("어느 폴더인지 정해 주세요."), { code: "FOLDER_REQUIRED" });
+
+  const scanned = await BuildingDocsDrive.scanPhotoFolder(
+    { fetchImpl: (url, init) => fetch(url, init), accessToken: driveSession.accessToken },
+    folderId,
+    {},
+  );
+  const plan = ReportPhotoPlan.planFromTree(
+    { name: String(options.folderName || ""), folders: scanned.folders, files: scanned.files },
+    { kind: String(options.kind || "") },
+  );
+  if (scanned.truncated) {
+    plan.warnings.push("폴더가 너무 커서 일부만 읽었습니다. 폴더를 나눠 주세요.");
+  }
+  return { ok: true, plan };
+}
+
 async function uploadWorkReportPhoto(input) {
   if (!authState().user) throw Object.assign(new Error("다시 로그인해 주세요."), { code: "AUTH_REQUIRED" });
   if (isMarketingOnlySession()) {
@@ -7391,6 +7430,7 @@ secureCanonicalHandle("crm:delivery-stage-advance", input => remoteClient.advanc
 secureCanonicalHandle("crm:delivery-file-upload", input => uploadDeliveryFile(input));
 secureCanonicalHandle("crm:work-report-save", input => remoteClient.saveWorkReport(input));
 secureCanonicalHandle("crm:work-report-photo-upload", input => uploadWorkReportPhoto(input));
+secureHandle("crm:work-report-photos-scan", input => scanWorkReportPhotos(input));
 secureCanonicalHandle("crm:work-report-export", input => exportWorkReport(input));
 secureCanonicalHandle("crm:form-template-save", input => remoteClient.saveFormTemplate(input));
 secureCanonicalHandle("crm:form-entry-save", input => remoteClient.saveFormEntry(input));

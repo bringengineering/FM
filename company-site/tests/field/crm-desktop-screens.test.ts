@@ -85,6 +85,30 @@ async function boot(): Promise<Booted> {
     },
     loadDeliveryFlows: { ...empty, flows: [] },
     loadWorkReports: { ...empty, reports: [] },
+    // 진짜 Drive 에 있는 폴더·파일 이름이다. 지어낸 이름으로 검사하면
+    // 지어낸 것만 통과한다.
+    scanWorkReportPhotos: {
+      ok: true,
+      plan: {
+        folderName: "입주청소(햇빛빌라)_블로그_20260831",
+        work: "입주청소", buildingName: "햇빛빌라", workDate: "2026-08-31", kind: "moveIn",
+        buckets: [
+          {
+            folder: "화장실", itemKey: "bath", confident: true, reason: "1009분이 벌어진 자리에서 나눴습니다.",
+            before: [{ id: "p1", name: "20260831_172901.jpg", webViewLink: "https://drive.google.com/file/d/p1/view" }],
+            after: [{ id: "p2", name: "20260901_101819.jpg", webViewLink: "https://drive.google.com/file/d/p2/view" }],
+            unsorted: [], heic: [], skipped: 0,
+          },
+          {
+            folder: "공간기획", itemKey: "", confident: false, reason: "사진이 한 번에 찍혔습니다.",
+            before: [], after: [], unsorted: [{ id: "p3", name: "20260831_190000.jpg", webViewLink: "https://drive.google.com/file/d/p3/view" }],
+            heic: [], skipped: 0,
+          },
+        ],
+        warnings: ["아이폰 사진(HEIC) 2장은 화면과 PDF 에서 안 열립니다. JPG 로 바꿔 올려 주세요."],
+        skipped: [], photoCount: 3, heicCount: 2, matched: 1, unmatched: ["공간기획"],
+      },
+    },
     loadWorkOrders: {
       ...empty,
       members: [{ uid: "u-admin", displayName: "서창환" }],
@@ -286,5 +310,70 @@ describe("desktop CRM screens actually render", () => {
     // 미리보기용 임시 번호가 그대로 나가면 두 줄이 한 줄로 덮인다.
     expect(new Set(body.moves.map(move => (move as unknown as { id: string }).id)).size).toBe(2);
     expect(body.moves.every(move => (move as unknown as { id: string }).id !== "preview")).toBe(true);
+    // 저장 뒤에 터지는 것도 잡는다. api 호출만 확인하면 그 다음 줄에서
+    // 없는 함수를 불러도 통과한다 — 실제로 그렇게 한 번 놓쳤다.
+    expect(booted.errors, booted.errors.join(" / ")).toEqual([]);
+  }, 60000);
+
+  it("결과보고서가 Drive 폴더에서 사진을 끌어온다", async () => {
+    (booted.document.querySelector("[data-workspace-switch]") as HTMLElement | null)?.click();
+    await sleep(100);
+    const navItem = booted.document.querySelector('.nav-item[data-view="workReports"]') as HTMLElement;
+    const folder = (navItem.closest("[data-nav-folder]") as HTMLElement).dataset.navFolder as string;
+    (booted.document.querySelector(`[data-workspace-enter-folder="${folder}"]`) as HTMLElement).click();
+    await sleep(150);
+    navItem.click();
+    await sleep(180);
+
+    // 새 보고서를 연다.
+    const newButton = [...booted.document.querySelectorAll("button")]
+      .find(button => (button.textContent || "").includes("새 보고서")) as HTMLElement | undefined;
+    expect(newButton, "새 보고서 단추가 있어야 한다").toBeTruthy();
+    newButton!.click();
+    await sleep(150);
+
+    const box = booted.document.querySelector(".wr-drive") as HTMLElement | null;
+    expect(box, "Drive 에서 끌어오는 자리가 있어야 한다").toBeTruthy();
+
+    // 주소창을 통째로 붙여 넣는다. ID 만 떼어내라고 시키면 안 쓴다.
+    const idInput = box!.querySelector("[data-report-drive-id]") as HTMLInputElement;
+    const scan = box!.querySelector("[data-report-drive-scan]") as HTMLButtonElement;
+    expect(scan.disabled, "폴더를 적기 전에는 잠겨 있어야 한다").toBe(true);
+    idInput.value = "https://drive.google.com/drive/folders/17EWMXA834daN5r9ZedRWrhJHWR8ppB7q";
+    idInput.dispatchEvent(new booted.window.Event("input", { bubbles: true }));
+    await sleep(60);
+    expect(scan.disabled, "폴더를 적으면 열려야 한다").toBe(false);
+
+    const before = booted.calls.length;
+    scan.click();
+    await sleep(250);
+    const asked = booted.calls.slice(before).find(call => call.name === "scanWorkReportPhotos");
+    expect(asked, "훑기 통로로 실제로 나가야 한다").toBeTruthy();
+    // 링크가 아니라 떼어낸 ID 가 나가야 한다.
+    expect((asked!.input as { folderId: string }).folderId).toBe("17EWMXA834daN5r9ZedRWrhJHWR8ppB7q");
+
+    const table = booted.document.querySelector(".wr-drive-table") as HTMLElement | null;
+    expect(table, "무엇이 어디에 붙는지 표가 나와야 한다").toBeTruthy();
+    const shown = (booted.document.querySelector(".wr-drive") as HTMLElement).textContent || "";
+    expect(shown).toContain("화장실");
+    expect(shown).toContain("욕실");
+    expect(shown, "못 붙인 폴더도 숨기지 않는다").toContain("공간기획");
+    expect(shown, "못 여는 사진은 미리 말해 준다").toContain("HEIC");
+
+    // 초안에 얹는다.
+    const apply = booted.document.querySelector("[data-report-drive-apply]") as HTMLButtonElement;
+    expect(apply.disabled).toBe(false);
+    apply.click();
+    await sleep(200);
+
+    // 욕실 항목에 전·후가 한 장씩 붙었는지 화면에서 본다.
+    const items = [...booted.document.querySelectorAll(".wr-item")] as HTMLElement[];
+    const bath = items.find(item => (item.textContent || "").includes("욕실"));
+    expect(bath, "욕실 항목이 있어야 한다").toBeTruthy();
+    const links = [...bath!.querySelectorAll("[data-report-open-photo]")];
+    expect(links.length, "전·후 한 장씩 붙어야 한다").toBe(2);
+    // 얹었다고 서버에 쓰지 않는다. 사람이 저장을 눌러야 한다.
+    expect(booted.calls.some(call => call.name === "saveWorkReport")).toBe(false);
+    expect(booted.errors, booted.errors.join(" / ")).toEqual([]);
   }, 60000);
 });
