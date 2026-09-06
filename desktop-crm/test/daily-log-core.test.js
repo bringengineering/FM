@@ -26,16 +26,26 @@ test("소요시간을 따로 받지 않고 시각에서 뽑는다", () => {
   assert.ok(!("hours" in kept), "소요시간 칸을 따로 두면 두 숫자가 어긋난다");
 });
 
-test("성한 줄만 남긴다", () => {
-  const record = D.normalizeDay(day({
-    entries: [
-      entry(),
-      entry({ id: "e2", title: "" }),                       // 무엇을 했는지 없다
-      entry({ id: "e3", start: "15:00", end: "13:00" }),      // 거꾸로다
-      entry({ id: "", title: "번호 없음" }),
-    ],
-  }));
-  assert.deepEqual(record.entries.map(item => item.id), ["e1"]);
+test("쓰는 중인 줄은 들고 있고, 저장할 때 성한 줄만 남긴다", () => {
+  // [줄 넣기] 를 누르면 아직 아무것도 안 찬 줄이 하나 생긴다. 그 줄을 그
+  // 자리에서 버리면 버튼을 눌러도 아무 일이 안 일어난 것처럼 보인다.
+  const half = [
+    entry(),
+    entry({ id: "e2", title: "" }),                       // 무엇을 했는지 없다
+    entry({ id: "e3", start: "15:00", end: "13:00" }),      // 거꾸로다
+    entry({ id: "", title: "번호 없음" }),                   // 번호가 없으면 줄이 아니다
+  ];
+  const draft = D.normalizeDay(day({ entries: half }));
+  assert.deepEqual(draft.entries.map(item => item.id), ["e1", "e2", "e3"]);
+
+  // 저장되는 것은 성한 줄뿐이고, 몇 개를 뺐는지 말해 준다.
+  const checked = D.validateDay(day({ entries: half }));
+  assert.equal(checked.ok, true);
+  assert.deepEqual(checked.day.entries.map(item => item.id), ["e1"]);
+  assert.ok(checked.notes.some(note => /덜 찬 줄 2개는 저장하지 않습니다/u.test(note)));
+
+  // 합계도 성한 줄만 센다. 반만 찬 줄을 0분으로 더하면 줄 수만 늘어난다.
+  assert.equal(D.summarize(day({ entries: half })).entries, 1);
 });
 
 test("모르는 성격은 기존으로 둔다", () => {

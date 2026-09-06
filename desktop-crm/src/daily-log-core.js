@@ -34,6 +34,11 @@
 // **다 적었다고 보고가 아니다.** 사람이 [보냄] 을 눌러야 대표에게 간다.
 // 자동으로 올라가면 쓰다 만 것이 보고가 되고, 그러면 아무도 낮에 안 적는다.
 //
+// **쓰는 중인 하루와 저장되는 하루를 나눈다.** [줄 넣기] 를 누르면 아직
+// 제목도 시각도 없는 줄이 하나 생긴다. 그 줄을 그 자리에서 버리면 버튼을
+// 눌러도 아무 일이 안 일어난 것처럼 보인다. 그래서 초안은 덜 채워진 채로
+// 들고 있고, **저장되는 것만** 성한 줄로 추린다.
+//
 // 하지 않는 것
 //
 // 1. 근태를 대신하지 않는다. 출퇴근 시각은 근태가 갖고 있고, 여기 적힌
@@ -129,8 +134,10 @@
       uid: text(source.uid, 128),
       name: text(source.name, 80),
       date: isDate(source.date) ? text(source.date, 10) : "",
-      entries: rows(source.entries).map(normalizeEntry).filter(entryOk),
-      plans: rows(source.plans).map(normalizePlan).filter(planOk),
+      // 번호만 있으면 들고 있는다. 쓰는 중인 줄을 여기서 버리면 [줄 넣기] 를
+      // 눌러도 아무 일이 안 일어난 것처럼 보인다. 성한지는 저장할 때 본다.
+      entries: rows(source.entries).map(normalizeEntry).filter(item => item.id),
+      plans: rows(source.plans).map(normalizePlan).filter(item => item.id),
       // 엑셀에 있던 네 칸. 숫자로 안 남는 것이 여기 남는다.
       blockers: text(source.blockers, 2000),
       ideas: text(source.ideas, 2000),
@@ -178,7 +185,9 @@
 
   function summarize(day) {
     const record = normalizeDay(day);
-    const entries = record.entries;
+    // 쓰다 만 줄은 세지 않는다. 시각이 반만 찬 줄을 0분으로 더하면 줄 수만
+    // 늘고 시간은 안 늘어서, 화면이 이상해 보인다.
+    const entries = record.entries.filter(entryOk);
     const spans = entries.map(item => ({ start: minutesOf(item.start), end: minutesOf(item.end) }));
     // 그냥 더한 값과 겹침을 뺀 값 둘 다 낸다. 벌어지면 겹쳐 적었다는 뜻이다.
     const sumMinutes = spans.reduce((total, span) => total + (span.end - span.start), 0);
@@ -235,13 +244,23 @@
   // 하나도 없는 것. 나머지는 잔소리로 남긴다. 보내는 것을 자꾸 막으면
   // 사람들은 아예 안 적는다.
   function validateDay(input) {
-    const day = normalizeDay(input);
-    if (!day.uid) return { ok: false, code: "UID_REQUIRED", error: "누구의 일지인지 알 수 없습니다." };
-    if (!day.date) return { ok: false, code: "DATE_REQUIRED", error: "언제 것인지 정해 주세요." };
+    const draft = normalizeDay(input);
+    if (!draft.uid) return { ok: false, code: "UID_REQUIRED", error: "누구의 일지인지 알 수 없습니다." };
+    if (!draft.date) return { ok: false, code: "DATE_REQUIRED", error: "언제 것인지 정해 주세요." };
+    // 여기서 성한 줄만 추린다. 쓰다 만 줄은 저장하지 않되, 몇 개를 뺐는지
+    // 말해 준다 — 조용히 사라지면 적은 줄이 없어졌다고 생각하게 된다.
+    const dropped = draft.entries.length - draft.entries.filter(entryOk).length;
+    const droppedPlans = draft.plans.length - draft.plans.filter(planOk).length;
+    const day = Object.assign({}, draft, {
+      entries: draft.entries.filter(entryOk),
+      plans: draft.plans.filter(planOk),
+    });
     if (!day.entries.length) {
-      return { ok: false, code: "ENTRY_REQUIRED", error: "한 줄이라도 적어 주세요. 무엇을 했는지가 이 일지의 전부입니다." };
+      return { ok: false, code: "ENTRY_REQUIRED", error: "한 줄이라도 적어 주세요. 무엇을 했는지가 이 일지의 전부입니다. 시작·끝 시각과 무엇을 했는지가 다 있어야 한 줄입니다." };
     }
     const notes = [];
+    if (dropped) notes.push(`시각이나 내용이 덜 찬 줄 ${dropped}개는 저장하지 않습니다.`);
+    if (droppedPlans) notes.push(`이름이 없는 내일 계획 ${droppedPlans}개는 저장하지 않습니다.`);
     const clash = overlaps(day.entries);
     if (clash.length) {
       notes.push(`시간이 겹치는 줄이 ${clash.length}개 있습니다. 합계에서는 겹친 자리를 한 번만 셉니다.`);
@@ -260,7 +279,7 @@
   function orderRollup(day) {
     const record = normalizeDay(day);
     const buckets = new Map();
-    record.entries.filter(item => item.orderId).forEach(item => {
+    record.entries.filter(entryOk).filter(item => item.orderId).forEach(item => {
       const key = item.orderId;
       if (!buckets.has(key)) buckets.set(key, { orderId: key, minutes: 0, progress: 0, entries: 0, lastEnd: "" });
       const bucket = buckets.get(key);
@@ -367,7 +386,7 @@
         looseHours: toHours(summary.looseMinutes),
       },
       byNature: summary.byNature.map(item => ({ label: item.label, hours: item.hours, percent: item.percent })),
-      entries: record.entries.map(item => ({
+      entries: record.entries.filter(entryOk).map(item => ({
         time: `${item.start}~${item.end}`,
         hours: toHours(entryMinutes(item)),
         title: item.title,
@@ -375,7 +394,7 @@
         progress: item.progress,
         order: item.orderId ? text(orderTitles[item.orderId], 120) || item.orderId : "",
       })),
-      plans: record.plans.map(item => ({
+      plans: record.plans.filter(planOk).map(item => ({
         title: item.title, nature: natureLabel(item.nature), hours: item.hours, dueDate: item.dueDate,
       })),
       // 사람이 쓴 말은 그대로 넘긴다. 요약해서 넘기면 AI 는 요약의 요약을 쓴다.
@@ -399,6 +418,7 @@
     normalizeDay,
     entryMinutes,
     entryOk,
+    planOk,
     mergeSpans,
     overlaps,
     summarize,
