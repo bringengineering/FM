@@ -114,6 +114,19 @@ test("Drive 주소를 붙여넣어도 파일 ID 를 뽑는다", () => {
   assert.equal(Docs.extractDriveFileId(""), "");
 });
 
+test("폴더 주소를 붙여넣어도 폴더 ID 를 뽑는다", () => {
+  // 문서함 폴더를 지정하는 칸에 사람이 실제로 붙여넣는 형태다. 이걸 빠뜨리면
+  // "주소를 붙여넣어도 된다" 고 안내해 놓고 정작 폴더만 거절하게 된다.
+  const id = "1HGT6nr9gbTNIqeFBPuE6vdNH3Jc3Bfiu";
+  assert.equal(Docs.extractDriveFileId(`https://drive.google.com/drive/folders/${id}`), id);
+  // 공유 버튼으로 복사하면 뒤에 붙어 온다.
+  assert.equal(Docs.extractDriveFileId(`https://drive.google.com/drive/folders/${id}?usp=drive_link`), id);
+  // 계정을 여러 개 쓰면 /u/0/ 이 끼어든다.
+  assert.equal(Docs.extractDriveFileId(`https://drive.google.com/drive/u/0/folders/${id}`), id);
+  // 발표자료도 같은 모양이라 함께 받는다.
+  assert.equal(Docs.extractDriveFileId(`https://docs.google.com/presentation/d/${id}/edit`), id);
+});
+
 test("모르는 종류는 기타로 떨어뜨린다", () => {
   const record = Docs.normalizeDocument({ buildingId: "b1", driveFileId: "a1AbCdef123", docType: "없는종류" });
   assert.equal(record.docType, "etc");
