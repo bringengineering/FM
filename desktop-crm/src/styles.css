@@ -453,3 +453,22 @@ button:focus-visible,input:focus-visible,select:focus-visible,textarea:focus-vis
 .wr-blockers { padding: 12px 14px; border: 1px solid #F6D8DB; border-radius: 12px; background: #FFF6F7; }
 .wr-blockers b { display: block; margin-bottom: 5px; color: #C6535F; font-size: 11px; }
 .wr-blockers ul { margin: 0; padding-left: 16px; color: #4E5968; font-size: 11px; line-height: 1.7; }
+
+/* 사이드바 폴더 전환. 고른 폴더만 남기되, 나갈 길은 늘 보이게 둔다.
+   이게 없으면 사람은 "다른 화면이 사라졌다" 고 읽는다. */
+.nav-switch { position: relative; margin-bottom: 8px; }
+.nav-switch-current { display: grid; grid-template-columns: 1fr auto; align-items: center; gap: 4px 8px; width: 100%; padding: 9px 12px; border: 1px solid #E5E8EB; border-radius: 12px; background: #fff; color: #191F28; font: inherit; text-align: left; cursor: pointer; }
+.nav-switch-label { grid-column: 1; color: #8B95A1; font-size: 9px; font-weight: 800; letter-spacing: .04em; }
+.nav-switch-current b { grid-column: 1; font-size: 13px; font-weight: 800; }
+.nav-switch-current .nav-chevron { grid-column: 2; grid-row: 1 / 3; display: grid; place-items: center; width: 16px; height: 16px; color: #8B95A1; }
+.nav-switch-current .nav-chevron svg { width: 14px; height: 14px; fill: none; stroke: currentColor; stroke-width: 2; }
+.nav-switch-current:hover { border-color: #C9D3DD; }
+.nav-switch-current[aria-expanded="true"] { border-color: #3182F6; background: #EDF5FF; }
+.nav-switch-current[aria-expanded="true"] .nav-chevron { transform: rotate(180deg); }
+.nav-switch-list { position: absolute; z-index: 30; top: calc(100% + 5px); left: 0; right: 0; display: flex; max-height: 340px; overflow-y: auto; flex-direction: column; gap: 2px; padding: 6px; border: 1px solid #E5E8EB; border-radius: 14px; background: #fff; box-shadow: 0 12px 32px rgba(23, 42, 61, .14); }
+.nav-switch-go { display: flex; flex-direction: column; gap: 2px; padding: 8px 10px; border: 0; border-radius: 10px; background: transparent; color: #191F28; font: inherit; text-align: left; cursor: pointer; }
+.nav-switch-go b { font-size: 12px; font-weight: 800; }
+.nav-switch-go small { overflow: hidden; color: #8B95A1; font-size: 9px; text-overflow: ellipsis; white-space: nowrap; }
+.nav-switch-go:hover { background: #F2F4F6; }
+.nav-switch-go.is-current { background: #EDF5FF; color: #1B64DA; }
+.nav-switch-all { margin-top: 3px; border-top: 1px solid #F2F4F6; border-radius: 0 0 10px 10px; }

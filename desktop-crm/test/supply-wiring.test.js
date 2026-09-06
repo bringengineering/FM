@@ -176,7 +176,10 @@ test("날짜 칸은 올해 앞뒤로 묶어 둔다", () => {
   const start = appSource.indexOf("function supplyDateBounds(");
   const body = appSource.slice(start, start + 400);
   assert.match(body, /min="\$\{year - 1\}-01-01" max="\$\{year \+ 1\}-12-31"/u);
-  assert.ok(appSource.includes('name="date" value="${esc(draft.date || Core.workDate())}" required${supplyDateBounds()}'));
+  // app.js 의 Core 는 BringCore 라 workDate() 가 없다. 그건 office.js 의
+  // Core(BringOfficeCore) 다. 여기서는 app.js 가 이미 가진 todayKey() 를 쓴다.
+  assert.ok(appSource.includes('name="date" value="${esc(draft.date || todayKey())}" required${supplyDateBounds()}'));
+  assert.doesNotMatch(appSource, /Core\.workDate/u, 'app.js 에서 Core.workDate 를 부르면 화면이 열자마자 죽는다');
 });
 
 test("새 화면이 없는 클래스에 기대지 않는다", () => {
