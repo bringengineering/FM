@@ -689,129 +689,135 @@
       }
     },
     "growthCheckins": {
-      ".read": false,
+      ".read": "auth != null && auth.token.email_verified === true && root.child('crmCompany/access').child(auth.uid).child('enabled').val() === true && root.child('crmCompany/access').child(auth.uid).child('email').val() === auth.token.email && root.child('crmCompany/access').child(auth.uid).child('mustChangePassword').val() !== true && root.child('crmCompany/access').child(auth.uid).child('role').val() === 'admin'",
       ".write": false,
-      "$checkinId": {
-        ".read": "auth != null && auth.token.email_verified === true && root.child('crmCompany/access').child(auth.uid).child('enabled').val() === true && root.child('crmCompany/access').child(auth.uid).child('email').val() === auth.token.email && root.child('crmCompany/access').child(auth.uid).child('mustChangePassword').val() !== true && (data.child('uid').val() === auth.uid || root.child('crmCompany/access').child(auth.uid).child('role').val() === 'admin')",
-        ".write": "auth != null && auth.token.email_verified === true && root.child('crmCompany/access').child(auth.uid).child('enabled').val() === true && root.child('crmCompany/access').child(auth.uid).child('email').val() === auth.token.email && root.child('crmCompany/access').child(auth.uid).child('mustChangePassword').val() !== true && (root.child('crmCompany/access').child(auth.uid).child('role').val() === 'admin' || root.child('crmCompany/access').child(auth.uid).child('role').val() === 'member') && newData.exists() && newData.child('uid').val() === auth.uid && (!data.exists() || data.child('uid').val() === auth.uid)",
-        ".validate": "newData.hasChildren(['id','uid','week','updatedAt','updatedBy']) && newData.child('id').val() === $checkinId",
-        "id": {
-          ".validate": "newData.isString() && newData.val() === $checkinId && newData.val().length <= 80"
-        },
-        "uid": {
-          ".validate": "newData.isString() && newData.val() === auth.uid"
-        },
-        "name": {
-          ".validate": "newData.isString() && newData.val().length <= 80"
-        },
-        "week": {
-          ".validate": "newData.isString() && newData.val().length === 10"
-        },
-        "answers": {
-          "done": {
+      "$uid": {
+        ".read": "auth != null && auth.token.email_verified === true && root.child('crmCompany/access').child(auth.uid).child('enabled').val() === true && root.child('crmCompany/access').child(auth.uid).child('email').val() === auth.token.email && root.child('crmCompany/access').child(auth.uid).child('mustChangePassword').val() !== true && (auth.uid === $uid || root.child('crmCompany/access').child(auth.uid).child('role').val() === 'admin')",
+        ".write": false,
+        "$checkinId": {
+          ".write": "auth != null && auth.token.email_verified === true && root.child('crmCompany/access').child(auth.uid).child('enabled').val() === true && root.child('crmCompany/access').child(auth.uid).child('email').val() === auth.token.email && root.child('crmCompany/access').child(auth.uid).child('mustChangePassword').val() !== true && (root.child('crmCompany/access').child(auth.uid).child('role').val() === 'admin' || root.child('crmCompany/access').child(auth.uid).child('role').val() === 'member') && newData.exists() && $uid === auth.uid && (!data.exists() || $uid === auth.uid)",
+          ".validate": "newData.hasChildren(['id','uid','week','updatedAt','updatedBy']) && newData.child('id').val() === $checkinId && newData.child('uid').val() === $uid",
+          "id": {
+            ".validate": "newData.isString() && newData.val() === $checkinId && newData.val().length <= 80"
+          },
+          "uid": {
+            ".validate": "newData.isString() && newData.val() === auth.uid"
+          },
+          "name": {
+            ".validate": "newData.isString() && newData.val().length <= 80"
+          },
+          "week": {
+            ".validate": "newData.isString() && newData.val().length === 10"
+          },
+          "answers": {
+            "done": {
+              ".validate": "newData.isString() && newData.val().length <= 2000"
+            },
+            "stuck": {
+              ".validate": "newData.isString() && newData.val().length <= 2000"
+            },
+            "next": {
+              ".validate": "newData.isString() && newData.val().length <= 2000"
+            },
+            "grow": {
+              ".validate": "newData.isString() && newData.val().length <= 2000"
+            },
+            "$other": {
+              ".validate": false
+            }
+          },
+          "leadUid": {
+            ".validate": "newData.isString() && newData.val().length <= 80"
+          },
+          "leadNote": {
             ".validate": "newData.isString() && newData.val().length <= 2000"
           },
-          "stuck": {
-            ".validate": "newData.isString() && newData.val().length <= 2000"
+          "createdAt": {
+            ".validate": "newData.isString() && newData.val().length <= 40"
           },
-          "next": {
-            ".validate": "newData.isString() && newData.val().length <= 2000"
+          "updatedAt": {
+            ".validate": "newData.isString() && newData.val().length <= 40"
           },
-          "grow": {
-            ".validate": "newData.isString() && newData.val().length <= 2000"
+          "updatedBy": {
+            ".validate": "newData.isString() && newData.val().length <= 128"
           },
           "$other": {
             ".validate": false
           }
-        },
-        "leadUid": {
-          ".validate": "newData.isString() && newData.val().length <= 80"
-        },
-        "leadNote": {
-          ".validate": "newData.isString() && newData.val().length <= 2000"
-        },
-        "createdAt": {
-          ".validate": "newData.isString() && newData.val().length <= 40"
-        },
-        "updatedAt": {
-          ".validate": "newData.isString() && newData.val().length <= 40"
-        },
-        "updatedBy": {
-          ".validate": "newData.isString() && newData.val().length <= 128"
-        },
-        "$other": {
-          ".validate": false
         }
       }
     },
     "growthReviews": {
-      ".read": false,
+      ".read": "auth != null && auth.token.email_verified === true && root.child('crmCompany/access').child(auth.uid).child('enabled').val() === true && root.child('crmCompany/access').child(auth.uid).child('email').val() === auth.token.email && root.child('crmCompany/access').child(auth.uid).child('mustChangePassword').val() !== true && root.child('crmCompany/access').child(auth.uid).child('role').val() === 'admin'",
       ".write": false,
-      "$reviewId": {
-        ".read": "auth != null && auth.token.email_verified === true && root.child('crmCompany/access').child(auth.uid).child('enabled').val() === true && root.child('crmCompany/access').child(auth.uid).child('email').val() === auth.token.email && root.child('crmCompany/access').child(auth.uid).child('mustChangePassword').val() !== true && (data.child('uid').val() === auth.uid || root.child('crmCompany/access').child(auth.uid).child('role').val() === 'admin')",
-        ".write": "auth != null && auth.token.email_verified === true && root.child('crmCompany/access').child(auth.uid).child('enabled').val() === true && root.child('crmCompany/access').child(auth.uid).child('email').val() === auth.token.email && root.child('crmCompany/access').child(auth.uid).child('mustChangePassword').val() !== true && root.child('crmCompany/access').child(auth.uid).child('role').val() === 'admin' && newData.exists()",
-        ".validate": "newData.hasChildren(['id','uid','quarter','level','nextStep','updatedAt','updatedBy']) && newData.child('id').val() === $reviewId",
-        "id": {
-          ".validate": "newData.isString() && newData.val() === $reviewId && newData.val().length <= 80"
-        },
-        "uid": {
-          ".validate": "newData.isString() && newData.val().length > 0 && newData.val().length <= 80"
-        },
-        "name": {
-          ".validate": "newData.isString() && newData.val().length <= 80"
-        },
-        "quarter": {
-          ".validate": "newData.isString() && newData.val().length === 7"
-        },
-        "level": {
-          ".validate": "newData.isString() && (newData.val() === 'L1' || newData.val() === 'L2' || newData.val() === 'L3' || newData.val() === 'L4' || newData.val() === 'L5')"
-        },
-        "skills": {
-          "field": {
-            ".validate": "newData.isString() && newData.val().length <= 4"
+      "$uid": {
+        ".read": "auth != null && auth.token.email_verified === true && root.child('crmCompany/access').child(auth.uid).child('enabled').val() === true && root.child('crmCompany/access').child(auth.uid).child('email').val() === auth.token.email && root.child('crmCompany/access').child(auth.uid).child('mustChangePassword').val() !== true && (auth.uid === $uid || root.child('crmCompany/access').child(auth.uid).child('role').val() === 'admin')",
+        ".write": false,
+        "$reviewId": {
+          ".write": "auth != null && auth.token.email_verified === true && root.child('crmCompany/access').child(auth.uid).child('enabled').val() === true && root.child('crmCompany/access').child(auth.uid).child('email').val() === auth.token.email && root.child('crmCompany/access').child(auth.uid).child('mustChangePassword').val() !== true && root.child('crmCompany/access').child(auth.uid).child('role').val() === 'admin' && newData.exists()",
+          ".validate": "newData.hasChildren(['id','uid','quarter','level','nextStep','updatedAt','updatedBy']) && newData.child('id').val() === $reviewId && newData.child('uid').val() === $uid",
+          "id": {
+            ".validate": "newData.isString() && newData.val() === $reviewId && newData.val().length <= 80"
           },
-          "owner": {
-            ".validate": "newData.isString() && newData.val().length <= 4"
+          "uid": {
+            ".validate": "newData.isString() && newData.val().length > 0 && newData.val().length <= 80"
           },
-          "record": {
-            ".validate": "newData.isString() && newData.val().length <= 4"
+          "name": {
+            ".validate": "newData.isString() && newData.val().length <= 80"
           },
-          "plan": {
-            ".validate": "newData.isString() && newData.val().length <= 4"
+          "quarter": {
+            ".validate": "newData.isString() && newData.val().length === 7"
           },
-          "tool": {
-            ".validate": "newData.isString() && newData.val().length <= 4"
+          "level": {
+            ".validate": "newData.isString() && (newData.val() === 'L1' || newData.val() === 'L2' || newData.val() === 'L3' || newData.val() === 'L4' || newData.val() === 'L5')"
           },
-          "biz": {
-            ".validate": "newData.isString() && newData.val().length <= 4"
+          "skills": {
+            "field": {
+              ".validate": "newData.isString() && newData.val().length <= 4"
+            },
+            "owner": {
+              ".validate": "newData.isString() && newData.val().length <= 4"
+            },
+            "record": {
+              ".validate": "newData.isString() && newData.val().length <= 4"
+            },
+            "plan": {
+              ".validate": "newData.isString() && newData.val().length <= 4"
+            },
+            "tool": {
+              ".validate": "newData.isString() && newData.val().length <= 4"
+            },
+            "biz": {
+              ".validate": "newData.isString() && newData.val().length <= 4"
+            },
+            "$other": {
+              ".validate": false
+            }
+          },
+          "did": {
+            ".validate": "newData.isString() && newData.val().length <= 3000"
+          },
+          "nextStep": {
+            ".validate": "newData.isString() && newData.val().length > 0 && newData.val().length <= 2000"
+          },
+          "leadUid": {
+            ".validate": "newData.isString() && newData.val().length <= 80"
+          },
+          "leadNote": {
+            ".validate": "newData.isString() && newData.val().length <= 3000"
+          },
+          "createdAt": {
+            ".validate": "newData.isString() && newData.val().length <= 40"
+          },
+          "updatedAt": {
+            ".validate": "newData.isString() && newData.val().length <= 40"
+          },
+          "updatedBy": {
+            ".validate": "newData.isString() && newData.val().length <= 128"
           },
           "$other": {
             ".validate": false
           }
-        },
-        "did": {
-          ".validate": "newData.isString() && newData.val().length <= 3000"
-        },
-        "nextStep": {
-          ".validate": "newData.isString() && newData.val().length > 0 && newData.val().length <= 2000"
-        },
-        "leadUid": {
-          ".validate": "newData.isString() && newData.val().length <= 80"
-        },
-        "leadNote": {
-          ".validate": "newData.isString() && newData.val().length <= 3000"
-        },
-        "createdAt": {
-          ".validate": "newData.isString() && newData.val().length <= 40"
-        },
-        "updatedAt": {
-          ".validate": "newData.isString() && newData.val().length <= 40"
-        },
-        "updatedBy": {
-          ".validate": "newData.isString() && newData.val().length <= 128"
-        },
-        "$other": {
-          ".validate": false
         }
       }
     },
