@@ -2192,6 +2192,212 @@ describe.runIf(databaseEmulatorAvailable)("fieldPlatform database rules", () => 
     await assertFails(remove(ref(admin, at("p1"))));
   });
 
+  it("keeps a daily log readable by its writer and the boss, and lists only for the boss", async () => {
+    // 일지에는 셀프 피드백과 건의사항이 들어간다. 옆자리에 다 보이면 아무도
+    // 솔직하게 안 적는다. 그렇다고 아무도 못 읽게 하면 보고가 안 된다.
+    const admin = environment.authenticatedContext("crm-admin", crmClaims("admin@bring.test")).database();
+    const member = environment.authenticatedContext("crm-legacy-member", crmClaims("legacy@bring.test")).database();
+    const other = environment.authenticatedContext("crm-viewer", crmClaims("viewer@bring.test")).database();
+    const at = (uid: string, date: string) => `crmCompany/dailyLogs/${uid}/${date}`;
+    const log = (uid: string, date: string, patch: Record<string, unknown> = {}) => ({
+      id: `${uid}_${date}`,
+      uid,
+      name: "황우중",
+      date,
+      entries: [
+        { id: "e1", start: "09:00", end: "11:00", title: "카카오톡 채널 정비", nature: "routine", orderId: "h1", projectId: "p1", progress: 60, note: "" },
+      ],
+      plans: [{ id: "p1", title: "숨고 등록", nature: "innovation", hours: 2, dueDate: "2026-09-08", orderId: "" }],
+      blockers: "당근 비즈프로필 권한이 아직 안 넘어왔습니다.",
+      ideas: "",
+      feedback: "",
+      requests: "",
+      submittedAt: "",
+      confirmedBy: "",
+      confirmedAt: "",
+      updatedAt: "2026-09-06T00:00:00.000Z",
+      updatedBy: uid,
+      ...patch,
+    });
+
+    await assertSucceeds(set(ref(member, at("crm-legacy-member", "2026-09-07")), log("crm-legacy-member", "2026-09-07")));
+    await assertSucceeds(get(ref(member, at("crm-legacy-member", "2026-09-07"))));
+    // 대표는 본다. 그게 보고다 — 한 장씩도, 목록째로도.
+    await assertSucceeds(get(ref(admin, at("crm-legacy-member", "2026-09-07"))));
+    await assertSucceeds(get(ref(admin, "crmCompany/dailyLogs")));
+    // 옆자리 동료는 못 본다. 목록을 훑는 길도 없다.
+    await assertFails(get(ref(other, at("crm-legacy-member", "2026-09-07"))));
+    await assertFails(get(ref(other, "crmCompany/dailyLogs")));
+    await assertFails(get(ref(member, "crmCompany/dailyLogs")));
+    // 자기 가지는 통째로 읽는다. 이게 없으면 자기 일지를 못 불러온다.
+    await assertSucceeds(get(ref(member, "crmCompany/dailyLogs/crm-legacy-member")));
+
+    // 남의 이름으로 적을 수 없고, 남의 자리에 쓸 수도 없다.
+    await assertFails(set(ref(member, at("crm-admin", "2026-09-07")), log("crm-admin", "2026-09-07")));
+    await assertFails(set(ref(member, at("crm-legacy-member", "2026-09-08")), log("crm-admin", "2026-09-08")));
+    // 조회 전용은 일지를 쓰지 못한다.
+    await assertFails(set(ref(other, at("crm-viewer", "2026-09-07")), log("crm-viewer", "2026-09-07")));
+
+    // 대표가 봤다는 표시는 대표만 찍는다. 자기 일지에 자기가 도장을 찍으면
+    // 그건 확인이 아니다.
+    await assertFails(set(ref(member, at("crm-legacy-member", "2026-09-07")), log("crm-legacy-member", "2026-09-07", { confirmedBy: "crm-legacy-member" })));
+    await assertSucceeds(set(ref(admin, `${at("crm-legacy-member", "2026-09-07")}/confirmedBy`), "crm-admin"));
+    // 찍은 사람이 자기여야 한다. 남의 이름으로 확인 도장을 찍을 수 없다.
+    await assertFails(set(ref(admin, `${at("crm-legacy-member", "2026-09-07")}/confirmedBy`), "crm-legacy-member"));
+
+    // 줄이 거꾸로면 그 줄이 음수 시간이 된다.
+    await assertFails(set(ref(member, at("crm-legacy-member", "2026-09-09")), log("crm-legacy-member", "2026-09-09", {
+      entries: [{ id: "e1", start: "13:00", end: "09:00", title: "거꾸로", nature: "routine", orderId: "", projectId: "", progress: 0, note: "" }],
+    })));
+    // 모르는 성격은 안 받는다. 조용히 들어오면 그 줄 시간이 어느 칸에도 안 잡힌다.
+    await assertFails(set(ref(member, at("crm-legacy-member", "2026-09-10")), log("crm-legacy-member", "2026-09-10", {
+      entries: [{ id: "e1", start: "09:00", end: "10:00", title: "무엇", nature: "창의", orderId: "", projectId: "", progress: 0, note: "" }],
+    })));
+    // 모르는 칸도 안 받는다.
+    await assertFails(set(ref(member, at("crm-legacy-member", "2026-09-11")), log("crm-legacy-member", "2026-09-11", { mood: 3 })));
+    // 날짜 자리와 안에 적힌 날짜가 다르면 하루가 두 장이 된다.
+    await assertFails(set(ref(member, at("crm-legacy-member", "2026-09-12")), log("crm-legacy-member", "2026-09-13")));
+  });
+
+  it("lets only the boss issue a weekly directive while everyone reads it", async () => {
+    // 지시서는 감출 것이 아니다. 서로 무엇을 하는지 보이는 게 목적이다.
+    const admin = environment.authenticatedContext("crm-admin", crmClaims("admin@bring.test")).database();
+    const member = environment.authenticatedContext("crm-legacy-member", crmClaims("legacy@bring.test")).database();
+    const at = (id: string) => `crmCompany/weeklyDirectives/${id}`;
+    const sheet = (id: string, patch: Record<string, unknown> = {}) => ({
+      id,
+      uid: "crm-legacy-member",
+      name: "황우중",
+      weekStart: "2026-09-07",
+      background: "당근에서 문의가 줄고 있습니다.",
+      goal: "채널 네 곳이 살아 있고 문의가 주 3건 들어옵니다.",
+      loss: "",
+      scopeExclude: "",
+      precondition: "",
+      approvers: "대표",
+      note: "",
+      publishedAt: "",
+      updatedAt: "2026-09-06T00:00:00.000Z",
+      updatedBy: "crm-admin",
+      ...patch,
+    });
+
+    await assertSucceeds(set(ref(admin, at("crm-legacy-member_2026-09-07")), sheet("crm-legacy-member_2026-09-07")));
+    // 받는 사람도 사내 누구도 읽는다. 안 보이면 지시서가 아니다.
+    await assertSucceeds(get(ref(member, at("crm-legacy-member_2026-09-07"))));
+    await assertSucceeds(get(ref(member, "crmCompany/weeklyDirectives")));
+    // 받은 사람이 지시서를 고치면 그건 지시가 아니라 메모다.
+    await assertFails(set(ref(member, at("crm-legacy-member_2026-09-07")), sheet("crm-legacy-member_2026-09-07", { goal: "고쳐 적기", updatedBy: "crm-legacy-member" })));
+    // 월요일이 아닌 날짜 모양은 막는다.
+    await assertFails(set(ref(admin, at("w2")), sheet("w2", { weekStart: "2026년 9월 7일" })));
+    // 지시 줄을 여기 복사해 두면 업무지시와 갈라진다.
+    await assertFails(set(ref(admin, at("w3")), sheet("w3", { tasks: [{ title: "가" }] })));
+    // 지우는 길은 없다. 지난 주에 무엇을 시켰는지가 사라진다.
+    await assertFails(remove(ref(admin, at("crm-legacy-member_2026-09-07"))));
+  });
+
+  it("lets each person edit their own timetable and only the boss edit someone else's", async () => {
+    // 관리자만 고칠 수 있게 하면 수업이 바뀔 때마다 대표를 거쳐야 하고,
+    // 그러면 아무도 안 고친다. 안 고친 시간표는 틀린 숫자로 일을 나누게 한다.
+    const admin = environment.authenticatedContext("crm-admin", crmClaims("admin@bring.test")).database();
+    const member = environment.authenticatedContext("crm-legacy-member", crmClaims("legacy@bring.test")).database();
+    const viewer = environment.authenticatedContext("crm-viewer", crmClaims("viewer@bring.test")).database();
+    const at = (uid: string) => `crmCompany/capacity/${uid}`;
+    const sheet = (uid: string, updatedBy: string, patch: Record<string, unknown> = {}) => ({
+      uid,
+      name: "김현진",
+      note: "",
+      window: { start: "09:00", end: "22:00" },
+      workDays: [1, 2, 3, 4, 5],
+      blocks: [
+        { id: "b1", day: 1, start: "13:00", end: "15:00", label: "수문학", place: "이공1-502", skippable: false },
+      ],
+      updatedAt: "2026-09-06T00:00:00.000Z",
+      updatedBy,
+      ...patch,
+    });
+
+    await assertSucceeds(set(ref(member, at("crm-legacy-member")), sheet("crm-legacy-member", "crm-legacy-member")));
+    // 남의 시간표는 대표만 고친다.
+    await assertFails(set(ref(member, at("crm-admin")), sheet("crm-admin", "crm-legacy-member")));
+    await assertSucceeds(set(ref(admin, at("crm-admin")), sheet("crm-admin", "crm-admin")));
+    // 누구에게 일을 더 넣을 수 있는지 보려면 남의 시간표도 읽어야 한다.
+    await assertSucceeds(get(ref(member, at("crm-admin"))));
+    // 조회 전용은 읽되 쓰지 못한다. 부하 계산이 통째로 틀어진다.
+    await assertSucceeds(get(ref(viewer, at("crm-admin"))));
+    await assertFails(set(ref(viewer, at("crm-viewer")), sheet("crm-viewer", "crm-viewer")));
+
+    // 끝이 시작보다 이르면 그 줄이 음수 시간이 된다.
+    await assertFails(set(ref(admin, at("crm-admin")), sheet("crm-admin", "crm-admin", {
+      blocks: [{ id: "b1", day: 1, start: "15:00", end: "13:00", label: "수업", place: "", skippable: false }],
+    })));
+    // 25시는 시각이 아니다.
+    await assertFails(set(ref(admin, at("crm-admin")), sheet("crm-admin", "crm-admin", {
+      blocks: [{ id: "b1", day: 1, start: "25:00", end: "26:00", label: "수업", place: "", skippable: false }],
+    })));
+    // 요일은 0~6 이다. 7 이 들어오면 그 줄은 어느 날에도 안 나온다.
+    await assertFails(set(ref(admin, at("crm-admin")), sheet("crm-admin", "crm-admin", {
+      blocks: [{ id: "b1", day: 7, start: "09:00", end: "10:00", label: "수업", place: "", skippable: false }],
+    })));
+    // 하루 일하는 창이 거꾸로면 가용시간이 0 이 된다.
+    await assertFails(set(ref(admin, at("crm-admin")), sheet("crm-admin", "crm-admin", {
+      window: { start: "22:00", end: "09:00" },
+    })));
+    // 모르는 칸은 막는다.
+    await assertFails(set(ref(admin, at("crm-admin")), sheet("crm-admin", "crm-admin", { salary: 3000000 })));
+    // 남의 이름으로 고쳐 놓지 못한다.
+    await assertFails(set(ref(admin, at("crm-admin")), sheet("crm-admin", "crm-legacy-member")));
+  });
+
+  it("keeps hours and weight on a work order out of the assignee's hands", async () => {
+    // 받는 사람이 "이건 두 시간짜리였다" 로 고칠 수 있으면 부하 계산이 무너지고,
+    // 산출물을 고칠 수 있으면 완료 기준이 사후에 낮아진다.
+    const admin = environment.authenticatedContext("crm-admin", crmClaims("admin@bring.test")).database();
+    const member = environment.authenticatedContext("crm-legacy-member", crmClaims("legacy@bring.test")).database();
+    const at = (id: string) => `crmCompany/workOrders/${id}`;
+    const order = (id: string, patch: Record<string, unknown> = {}) => ({
+      id,
+      title: "건물지도",
+      why: "현장에서 동 호수를 못 찾아 헤맵니다.",
+      what: "도면을 받아 층별 지도를 만듭니다.",
+      doneWhen: "층별 지도 PDF 가 올라오면 끝입니다.",
+      assigneeUid: "crm-legacy-member",
+      assigneeName: "황우중",
+      projectId: "p1",
+      track: "tech",
+      buildingId: "",
+      startDate: "2026-09-07",
+      dueDate: "2026-09-11",
+      hours: 6.5,
+      weight: 40,
+      deliverable: "20260911_건물지도.pdf",
+      progress: 10,
+      status: "doing",
+      reviewNote: "",
+      createdBy: "대표",
+      createdAt: "2026-09-06T00:00:00.000Z",
+      updatedAt: "2026-09-06T00:00:00.000Z",
+      updatedBy: "crm-admin",
+      ...patch,
+    });
+
+    await assertSucceeds(set(ref(admin, at("h1")), order("h1")));
+    // 담당자는 진행률만 옮긴다.
+    await assertSucceeds(update(ref(member, at("h1")), { progress: 60, updatedAt: NOW, updatedBy: "crm-legacy-member" }));
+    await assertFails(update(ref(member, at("h1")), { hours: 1, updatedAt: NOW, updatedBy: "crm-legacy-member" }));
+    await assertFails(update(ref(member, at("h1")), { weight: 5, updatedAt: NOW, updatedBy: "crm-legacy-member" }));
+    await assertFails(update(ref(member, at("h1")), { deliverable: "아무거나", updatedAt: NOW, updatedBy: "crm-legacy-member" }));
+
+    // 30분 단위가 아닌 시간은 막는다. 0.37시간은 정확해 보이지만 그 정확도가 없다.
+    await assertFails(set(ref(admin, at("h2")), order("h2", { hours: 2.4 })));
+    // 40시간 넘는 것은 지시가 아니라 프로젝트다.
+    await assertFails(set(ref(admin, at("h3")), order("h3", { hours: 80 })));
+    // 가중치는 100 을 넘지 않는다.
+    await assertFails(set(ref(admin, at("h4")), order("h4", { weight: 140 })));
+    // 옛 지시에는 시간이 없다. 규칙이 그것까지 막으면 옛 기록을 못 만진다.
+    await assertSucceeds(set(ref(admin, at("h5")), order("h5", { hours: 0, weight: 0, deliverable: "" })));
+  });
+
   it("keeps a work order's schedule and progress in a shape the chart can draw", async () => {
     const admin = environment.authenticatedContext("crm-admin", crmClaims("admin@bring.test")).database();
     const at = (id: string) => `crmCompany/workOrders/${id}`;
@@ -2366,7 +2572,7 @@ describe.runIf(databaseEmulatorAvailable)("fieldPlatform database rules", () => 
     const admin = environment.authenticatedContext("crm-admin", crmClaims("admin@bring.test")).database();
     const member = environment.authenticatedContext("crm-legacy-member", crmClaims("legacy@bring.test")).database();
     const other = environment.authenticatedContext("crm-viewer", crmClaims("viewer@bring.test")).database();
-    const at = (id: string) => `crmCompany/growthCheckins/${id}`;
+    const at = (id: string, uid = "crm-legacy-member") => `crmCompany/growthCheckins/${uid}/${id}`;
     const note = (id: string, uid: string, patch: Record<string, unknown> = {}) => ({
       id,
       uid,
@@ -2384,15 +2590,21 @@ describe.runIf(databaseEmulatorAvailable)("fieldPlatform database rules", () => 
     // 자기 것은 자기가 적는다. 남이 대신 적으면 그건 관찰이지 1on1 이 아니다.
     await assertSucceeds(set(ref(member, at("w1")), note("w1", "crm-legacy-member")));
     await assertSucceeds(get(ref(member, at("w1"))));
-    // 관리자는 본다 — 1on1 상대이기 때문이다.
+    // 자기 가지는 통째로 읽는다. 이게 없으면 자기 기록을 불러올 길이 없어
+    // 화면이 늘 비어 있게 된다 — 실제로 그랬다.
+    await assertSucceeds(get(ref(member, "crmCompany/growthCheckins/crm-legacy-member")));
+    // 관리자는 본다 — 1on1 상대이기 때문이다. 목록째로도 봐야 화면이 돈다.
     await assertSucceeds(get(ref(admin, at("w1"))));
+    await assertSucceeds(get(ref(admin, "crmCompany/growthCheckins")));
     // 옆자리 동료는 못 본다.
     await assertFails(get(ref(other, at("w1"))));
-    // 목록째로 훑는 길도 없다.
+    // 팀원이 목록째로 훑는 길은 없다.
     await assertFails(get(ref(member, "crmCompany/growthCheckins")));
-    // 남의 이름으로 적을 수 없고, 남의 것을 고칠 수도 없다.
+    await assertFails(get(ref(other, "crmCompany/growthCheckins/crm-legacy-member")));
+    // 남의 이름으로 적을 수 없고, 남의 자리에 쓸 수도 없다.
     await assertFails(set(ref(member, at("w2")), note("w2", "crm-admin")));
-    await assertFails(set(ref(other, at("w3")), note("w3", "crm-viewer")));
+    await assertFails(set(ref(member, at("w2", "crm-admin")), note("w2", "crm-admin")));
+    await assertFails(set(ref(other, at("w3", "crm-viewer")), note("w3", "crm-viewer")));
     await assertFails(set(ref(admin, `${at("w1")}/answers/stuck`), "고쳐 적기"));
     // 모르는 칸은 안 받는다.
     await assertFails(set(ref(member, at("w4")), note("w4", "crm-legacy-member", { mood: 3 })));
@@ -2403,7 +2615,7 @@ describe.runIf(databaseEmulatorAvailable)("fieldPlatform database rules", () => 
     const admin = environment.authenticatedContext("crm-admin", crmClaims("admin@bring.test")).database();
     const member = environment.authenticatedContext("crm-legacy-member", crmClaims("legacy@bring.test")).database();
     const other = environment.authenticatedContext("crm-viewer", crmClaims("viewer@bring.test")).database();
-    const at = (id: string) => `crmCompany/growthReviews/${id}`;
+    const at = (id: string, uid = "crm-legacy-member") => `crmCompany/growthReviews/${uid}/${id}`;
     const review = (id: string, patch: Record<string, unknown> = {}) => ({
       id,
       uid: "crm-legacy-member",
@@ -2424,8 +2636,12 @@ describe.runIf(databaseEmulatorAvailable)("fieldPlatform database rules", () => 
     await assertSucceeds(set(ref(admin, at("r1")), review("r1")));
     // 본인은 자기 평가를 읽는다. 안 보이면 다음에 무엇을 할지 알 수 없다.
     await assertSucceeds(get(ref(member, at("r1"))));
-    // 남의 평가는 못 본다.
+    await assertSucceeds(get(ref(member, "crmCompany/growthReviews/crm-legacy-member")));
+    // 대표는 목록째로 봐야 사다리 화면이 돈다.
+    await assertSucceeds(get(ref(admin, "crmCompany/growthReviews")));
+    // 남의 평가는 못 본다. 목록째로 훑는 길도 없다.
     await assertFails(get(ref(other, at("r1"))));
+    await assertFails(get(ref(member, "crmCompany/growthReviews")));
     // 본인이 자기 레벨을 올릴 수는 없다.
     await assertFails(set(ref(member, `${at("r1")}/level`), "L4"));
     await assertFails(set(ref(member, at("r2")), review("r2", { level: "L5" })));

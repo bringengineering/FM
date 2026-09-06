@@ -9,6 +9,9 @@ const WorkOrderCore = require("./work-order-core");
 const ProjectCore = require("./project-core");
 const OkrCore = require("./okr-core");
 const GrowthCore = require("./growth-core");
+const CapacityCore = require("./capacity-core");
+const DailyLogCore = require("./daily-log-core");
+const WeeklyDirectiveCore = require("./weekly-directive-core");
 const SupplyCore = require("./supply-core");
 const DeliveryCore = require("./delivery-core");
 const WorkReportCore = require("./work-report-core");
@@ -462,6 +465,31 @@ function resolveDatabaseLocation(location, databaseRoot) {
   const companyLocation = resolveDatabasePatchLocation(location, databaseRoot);
   if (!databaseRoot) return companyLocation;
   return companyLocation ? `${databaseRoot}/${companyLocation}` : databaseRoot;
+}
+
+// 성장 기록을 한 줄씩 펴 놓는다.
+//
+// 대표가 읽으면 {uid: {번호: 기록}}, 본인이 읽으면 {번호: 기록} 이라 모양이
+// 다르다. 여기에 더해 사람별로 나누기 전에 저장된 것이 남아 있을 수 있어서,
+// **그 옛 모양도 같이 받는다**. 옛 기록을 조용히 버리면 적어 둔 사람은 자기
+// 기록이 사라진 것을 나중에야 안다. `marker` 는 그 값이 기록 한 장인지
+// (week / quarter 를 갖고 있다) 사람 가지인지 가르는 데 쓴다.
+function flattenGrowth(payload, admin, uid, marker) {
+  const bag = payload && typeof payload === "object" && !Array.isArray(payload) ? payload : {};
+  if (!admin) return Object.entries(bag).map(([id, value]) => Object.assign({ id, uid }, value || {}));
+  const rows = [];
+  Object.entries(bag).forEach(([key, value]) => {
+    if (!value || typeof value !== "object") return;
+    if (typeof value[marker] === "string") {
+      // 사람별로 나누기 전에 저장된 한 장. 열쇠가 기록 번호였다.
+      rows.push(Object.assign({ id: key }, value));
+      return;
+    }
+    Object.entries(value).forEach(([id, row]) => {
+      if (row && typeof row === "object") rows.push(Object.assign({ id, uid: key }, row));
+    });
+  });
+  return rows;
 }
 
 function createError(message, code, cause) {
@@ -4014,14 +4042,30 @@ class FirebaseRemoteClient {
         displayName: String(user.displayName || user.email || uid),
       }))
       .sort((a, b) => a.displayName.localeCompare(b.displayName, "ko"));
-    const projectPayload = await this.dbRequest("projects", { method: "GET" }).catch(() => null);
+    const [projectPayload, capacityPayload, directivePayload] = await Promise.all([
+      this.dbRequest("projects", { method: "GET" }).catch(() => null),
+      this.dbRequest("capacity", { method: "GET" }).catch(() => null),
+      this.dbRequest("weeklyDirectives", { method: "GET" }).catch(() => null),
+    ]);
     this.assertSessionGuardActive(guard);
     const projects = Object.entries(projectPayload && typeof projectPayload === "object" ? projectPayload : {})
       .map(([id, value]) => ProjectCore.normalizeProject(Object.assign({ id }, value || {})))
       .filter(item => item.id);
+    // 시간표. 사내 사람 전부의 것을 준다 — 누구에게 일을 더 넣을 수 있는지
+    // 보려면 나만 봐서는 알 수 없다.
+    const capacity = Object.entries(capacityPayload && typeof capacityPayload === "object" ? capacityPayload : {})
+      .map(([uid, value]) => CapacityCore.normalizePerson(Object.assign({ uid }, value || {})))
+      .filter(item => item.uid);
+    // 주간 지시서 머리말. 지시 줄은 담지 않는다 — 한 번 복사하면 지시서와
+    // 업무지시가 갈라지고, 그때부터 둘 다 못 믿는다.
+    const directives = Object.entries(directivePayload && typeof directivePayload === "object" ? directivePayload : {})
+      .map(([id, value]) => WeeklyDirectiveCore.normalizeDirective(Object.assign({ id }, value || {})))
+      .filter(item => item.uid && item.weekStart);
     return {
       orders,
       projects,
+      capacity,
+      directives,
       members,
       admin: session.role === "admin",
       canWork: session.role === "admin" || session.role === "member",
@@ -4037,18 +4081,25 @@ class FirebaseRemoteClient {
   async loadGrowth() {
     const session = this.requireOfficeSession();
     const guard = this.captureSessionGuard();
+    const admin = session.role === "admin";
+    // 대표는 전부를, 나머지는 자기 가지만 읽는다. **읽는 경로 자체가 다르다**
+    // — 다 읽어 와서 화면에서 걸러 주면 화면을 안 거치는 길로 남의 1on1 을
+    // 그대로 가져갈 수 있다.
+    //
+    // 여기서 실패를 삼키지 않는다. 예전에는 못 읽은 것을 빈 목록으로 바꿨고,
+    // 그래서 화면이 늘 "아직 아무것도 없습니다" 라고 말했다. 그건 거짓말이라
+    // 아무도 이상한 줄 몰랐다.
     const [checkinPayload, reviewPayload] = await Promise.all([
-      this.dbRequest("growthCheckins", { method: "GET" }).catch(() => null),
-      this.dbRequest("growthReviews", { method: "GET" }).catch(() => null),
+      this.dbRequest(admin ? "growthCheckins" : `growthCheckins/${session.uid}`, { method: "GET" }),
+      this.dbRequest(admin ? "growthReviews" : `growthReviews/${session.uid}`, { method: "GET" }),
     ]);
     this.assertSessionGuardActive(guard);
-    const admin = session.role === "admin";
     const mine = row => admin || row.uid === session.uid;
-    const checkins = Object.entries(checkinPayload && typeof checkinPayload === "object" ? checkinPayload : {})
-      .map(([id, value]) => GrowthCore.normalizeCheckin(Object.assign({ id }, value || {})))
+    const checkins = flattenGrowth(checkinPayload, admin, session.uid, "week")
+      .map(value => GrowthCore.normalizeCheckin(value))
       .filter(item => item.id && mine(item));
-    const reviews = Object.entries(reviewPayload && typeof reviewPayload === "object" ? reviewPayload : {})
-      .map(([id, value]) => GrowthCore.normalizeReview(Object.assign({ id }, value || {})))
+    const reviews = flattenGrowth(reviewPayload, admin, session.uid, "quarter")
+      .map(value => GrowthCore.normalizeReview(value))
       .filter(item => item.id && mine(item));
     return {
       checkins,
@@ -4071,7 +4122,7 @@ class FirebaseRemoteClient {
     const source = input && typeof input === "object" && !Array.isArray(input) ? input : {};
     const checked = GrowthCore.validateCheckin(Object.assign({}, source, { uid: session.uid }));
     if (!checked.ok) throw createError(checked.error, checked.code);
-    const location = `growthCheckins/${checked.checkin.id}`;
+    const location = `growthCheckins/${session.uid}/${checked.checkin.id}`;
     const existing = await this.dbRequest(location, { method: "GET" });
     this.assertSessionGuardActive(guard);
     if (existing && GrowthCore.text(existing.uid, 80) !== session.uid) {
@@ -4099,7 +4150,7 @@ class FirebaseRemoteClient {
     const source = input && typeof input === "object" && !Array.isArray(input) ? input : {};
     const checked = GrowthCore.validateReview(source);
     if (!checked.ok) throw createError(checked.error, checked.code);
-    const location = `growthReviews/${checked.review.id}`;
+    const location = `growthReviews/${checked.review.uid}/${checked.review.id}`;
     const existing = await this.dbRequest(location, { method: "GET" });
     this.assertSessionGuardActive(guard);
     const now = new Date().toISOString();
@@ -4215,6 +4266,184 @@ class FirebaseRemoteClient {
       updatedBy: session.uid,
     });
     await this.dbRequest(location, { method: "PUT", body: record });
+    this.assertSessionGuardActive(guard);
+    return record;
+  }
+
+  // 일일업무일지를 불러온다.
+  //
+  // 대표는 전원 것을, 나머지는 자기 가지만 읽는다. **읽는 경로 자체가 다르다**
+  // — 다 읽어 와서 화면에서 걸러 보여 주면, 화면을 안 거치는 길로 남의 일지를
+  // 그대로 가져갈 수 있다.
+  //
+  // 여기서 실패를 삼키지 않는다. 권한이 막혀 못 읽는 것을 조용히 빈 목록으로
+  // 바꾸면 화면은 "아직 아무도 안 썼습니다" 라고 말한다. 그건 거짓말이고,
+  // 아무도 이상한 줄 모른 채 몇 주가 간다.
+  async loadDailyLogs() {
+    const session = this.requireOfficeSession();
+    const guard = this.captureSessionGuard();
+    const admin = session.role === "admin";
+    const payload = await this.dbRequest(admin ? "dailyLogs" : `dailyLogs/${session.uid}`, { method: "GET" });
+    this.assertSessionGuardActive(guard);
+    const bag = payload && typeof payload === "object" ? payload : {};
+    // 대표가 읽으면 {uid: {날짜: 일지}}, 본인이 읽으면 {날짜: 일지} 다.
+    const flat = admin
+      ? Object.entries(bag).flatMap(([uid, days]) => Object.entries(days && typeof days === "object" ? days : {})
+        .map(([date, value]) => Object.assign({ uid, date }, value || {})))
+      : Object.entries(bag).map(([date, value]) => Object.assign({ uid: session.uid, date }, value || {}));
+    const logs = flat.map(DailyLogCore.normalizeDay).filter(item => item.uid && item.date);
+    return {
+      logs,
+      admin,
+      canWork: session.role === "admin" || session.role === "member",
+      uid: session.uid,
+      name: String(session.displayName || session.email || session.uid),
+      loadedAt: new Date().toISOString(),
+    };
+  }
+
+  // 일지를 저장한다. 자기 것만.
+  //
+  // [보냄] 을 누르면 그 날 적은 달성률이 업무지시로 올라간다. 그게 이 화면이
+  // 있는 이유다 — 같은 숫자를 일지에 한 번, 지시에 또 한 번 적게 하면 둘은
+  // 반드시 어긋난다.
+  //
+  // 되올리는 것은 **자기 지시, 아직 안 끝난 것**뿐이다. 남의 지시나 이미 끝난
+  // 지시를 일지로 움직일 수 있으면 그건 일지가 아니라 뒷문이다.
+  async saveDailyLog(input) {
+    const session = this.requireOfficeSession();
+    if (session.role !== "admin" && session.role !== "member") {
+      throw createError("조회 전용 계정은 일지를 쓸 수 없습니다.", "DAILY_LOG_FORBIDDEN");
+    }
+    const guard = this.captureSessionGuard();
+    const source = input && typeof input === "object" && !Array.isArray(input) ? input : {};
+    const draft = Object.assign({}, source, {
+      uid: session.uid,
+      name: String(session.displayName || session.email || session.uid),
+    });
+    const checked = DailyLogCore.validateDay(draft);
+    if (!checked.ok) throw createError(checked.error, checked.code);
+    const day = checked.day;
+    const location = `dailyLogs/${day.uid}/${day.date}`;
+    const existing = await this.dbRequest(location, { method: "GET" });
+    this.assertSessionGuardActive(guard);
+    const before = DailyLogCore.normalizeDay(existing || {});
+    const submit = source.submit === true || Boolean(day.submittedAt);
+    const record = Object.assign({}, day, {
+      id: DailyLogCore.dayId(day.uid, day.date),
+      // 확인 도장은 대표가 찍는다. 여기서는 있던 것을 그대로 둔다.
+      confirmedBy: before.confirmedBy,
+      confirmedAt: before.confirmedAt,
+      submittedAt: submit ? (before.submittedAt || new Date().toISOString()) : "",
+      updatedAt: new Date().toISOString(),
+      updatedBy: session.uid,
+    });
+    await this.dbRequest(location, { method: "PUT", body: record });
+    this.assertSessionGuardActive(guard);
+
+    // 지시로 되올리기. 한 건이 안 되어도 일지는 이미 저장됐다 — 그래서 여기서
+    // 터뜨리지 않고 무엇이 안 올라갔는지 돌려준다.
+    const rolled = [];
+    const failed = [];
+    if (submit) {
+      for (const item of DailyLogCore.orderRollup(record)) {
+        try {
+          const order = await this.dbRequest(`workOrders/${item.orderId}`, { method: "GET" });
+          if (!order) continue;
+          const current = WorkOrderCore.normalizeOrder(Object.assign({ id: item.orderId }, order));
+          if (current.assigneeUid !== session.uid) continue;
+          if (!WorkOrderCore.OPEN.includes(current.status)) continue;
+          if (current.progress === item.progress) continue;
+          await this.updateWorkOrderProgress({ id: item.orderId, progress: item.progress });
+          rolled.push({ orderId: item.orderId, title: current.title, progress: item.progress });
+        } catch (error) {
+          failed.push({ orderId: item.orderId, error: String(error && error.message || "올리지 못했습니다.") });
+        }
+      }
+    }
+    this.assertSessionGuardActive(guard);
+    return { log: record, rolled, failed };
+  }
+
+  // 대표가 봤다는 표시. 자기 일지에 자기가 찍으면 그건 확인이 아니라서
+  // 규칙도 여기도 같은 것을 막는다.
+  async confirmDailyLog(input) {
+    const session = this.requireOfficeSession();
+    if (session.role !== "admin") {
+      throw createError("확인은 대표만 합니다.", "DAILY_LOG_CONFIRM_FORBIDDEN");
+    }
+    const guard = this.captureSessionGuard();
+    const source = input && typeof input === "object" && !Array.isArray(input) ? input : {};
+    const uid = String(source.uid || "");
+    const date = String(source.date || "");
+    if (!uid || !/^\d{4}-\d{2}-\d{2}$/.test(date)) {
+      throw createError("어느 일지인지 정해 주세요.", "VALIDATION_ERROR");
+    }
+    const location = `dailyLogs/${uid}/${date}`;
+    const existing = await this.dbRequest(location, { method: "GET" });
+    this.assertSessionGuardActive(guard);
+    if (!existing) throw createError("없는 일지입니다.", "DAILY_LOG_NOT_FOUND");
+    const now = new Date().toISOString();
+    await this.dbRequest(location, { method: "PATCH", body: { confirmedBy: session.uid, confirmedAt: now } });
+    this.assertSessionGuardActive(guard);
+    return { uid, date, confirmedBy: session.uid, confirmedAt: now };
+  }
+
+  // 주간 지시서 머리말을 저장한다. 대표만 낸다.
+  //
+  // 지시 줄은 여기서 만들지 않는다. 그건 saveWorkOrder 가 한 건씩 한다 —
+  // 여기서도 만들 수 있게 하면 같은 일을 두 곳에서 하게 되고, 두 곳은 반드시
+  // 어긋난다.
+  async saveWeeklyDirective(input) {
+    const session = this.requireOfficeSession();
+    if (session.role !== "admin") {
+      throw createError("주간 지시서는 대표만 냅니다.", "DIRECTIVE_FORBIDDEN");
+    }
+    const guard = this.captureSessionGuard();
+    const source = input && typeof input === "object" && !Array.isArray(input) ? input : {};
+    const checked = WeeklyDirectiveCore.validateDirective(source);
+    if (!checked.ok) throw createError(checked.error, checked.code);
+    const directive = checked.directive;
+    const location = `weeklyDirectives/${directive.id}`;
+    const existing = await this.dbRequest(location, { method: "GET" });
+    this.assertSessionGuardActive(guard);
+    const before = WeeklyDirectiveCore.normalizeDirective(existing || {});
+    const publish = source.publish === true;
+    const record = Object.assign({}, directive, {
+      // 내보낸 시각은 처음 한 번만 찍는다. 고칠 때마다 새로 찍으면 언제 처음
+      // 나갔는지를 잃는다.
+      publishedAt: publish ? (before.publishedAt || new Date().toISOString()) : before.publishedAt,
+      updatedAt: new Date().toISOString(),
+      updatedBy: session.uid,
+    });
+    await this.dbRequest(location, { method: "PUT", body: record });
+    this.assertSessionGuardActive(guard);
+    return record;
+  }
+
+  // 시간표를 저장한다. 본인 것은 본인이, 남의 것은 관리자가.
+  //
+  // 관리자만 고칠 수 있게 하면 수업이 바뀔 때마다 대표를 거쳐야 하고, 그러면
+  // 아무도 안 고친다. 안 고친 시간표는 없는 것만 못하다 — 틀린 숫자로
+  // 일을 나누게 된다.
+  async saveCapacity(input) {
+    const session = this.requireOfficeSession();
+    if (session.role !== "admin" && session.role !== "member") {
+      throw createError("조회 전용 계정은 시간표를 고칠 수 없습니다.", "CAPACITY_FORBIDDEN");
+    }
+    const guard = this.captureSessionGuard();
+    const source = input && typeof input === "object" && !Array.isArray(input) ? input : {};
+    const uid = String(source.uid || session.uid);
+    if (session.role !== "admin" && uid !== session.uid) {
+      throw createError("남의 시간표는 대표만 고칠 수 있습니다.", "CAPACITY_NOT_MINE");
+    }
+    const person = CapacityCore.normalizePerson(Object.assign({}, source, { uid }));
+    if (!person.uid) throw createError("누구의 시간표인지 정해 주세요.", "VALIDATION_ERROR");
+    const record = Object.assign({}, person, {
+      updatedAt: new Date().toISOString(),
+      updatedBy: session.uid,
+    });
+    await this.dbRequest(`capacity/${record.uid}`, { method: "PUT", body: record });
     this.assertSessionGuardActive(guard);
     return record;
   }

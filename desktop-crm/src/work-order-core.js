@@ -24,12 +24,22 @@
 // **돌려보낼 때는 이유가 있어야 한다.** 이유 없는 반려는 다시 하라는 말인데
 // 무엇을 고쳐야 하는지 알 수 없다.
 //
+// **몇 시간짜리인지 적는다.** 건수만 세면 30분짜리와 이틀짜리가 같은 한 건이
+// 된다. 그러면 일을 나눠 줄 때 감으로 하게 되고, 받는 쪽은 못 한다는 말을
+// 못 한다. 새 지시에는 예상 소요시간을 비워 둘 수 없다 — 다만 이미 있던
+// 지시는 막지 않는다. 옛 기록 때문에 오늘 일이 멈추면 안 된다.
+//
+// **가중치는 저장을 막지 않는다.** 한 사람의 한 주에서 합이 100% 가 되어야
+// 하는데, 첫 지시를 낼 때는 어차피 100이 아니다. 저장을 막으면 지시를 못
+// 낸다. 그래서 합이 얼마인지 화면에서 보여 주고, 맞추는 것은 사람이 한다.
+//
 // 하지 않는 것
 //
 // 1. 결과물 파일을 여기 담지 않는다. Drive 에 올리고 링크만 들고 있다.
 // 2. 기한을 자동으로 미루지 않는다. 지났으면 지났다고 보여 줄 뿐이다.
 // 3. 담당자를 자동으로 정하지 않는다.
-// 4. 일한 시간을 재지 않는다. 근태가 따로 있다.
+// 4. 실제로 일한 시간을 재지 않는다. 근태와 일일업무일지가 한다. 여기 있는
+//    시간은 "얼마나 걸릴 것 같은가" 하나뿐이다.
 (function attachWorkOrderCore(root, factory) {
   const api = factory();
   if (typeof module === "object" && module.exports) module.exports = api;
@@ -40,6 +50,78 @@
   const text = (value, limit = 500) => String(value == null ? "" : value).trim().slice(0, limit);
   const rows = value => (Array.isArray(value) ? value.filter(Boolean) : []);
   const isDate = value => /^\d{4}-\d{2}-\d{2}$/.test(text(value, 10));
+
+  // 산출물 종류. 다섯 가지로 못 박는다.
+  //
+  // 자유 글로 두면 "사진", "사진 몇 장", "당근 사진" 이 다 다른 말이 되고,
+  // 그러면 "요구한 만큼 냈나" 를 기계가 못 본다. 사람이 눈으로 세는 순간
+  // 아무도 안 센다.
+  const DELIVERABLE_KINDS = Object.freeze([
+    { key: "photo", label: "사진", hint: "현장 사진. 몇 장이 있어야 하는지 정해 주세요.", counted: true },
+    { key: "doc", label: "문서", hint: "PDF·한글·워드 같은 것", counted: true },
+    { key: "sheet", label: "표", hint: "엑셀·시트", counted: true },
+    { key: "link", label: "링크만", hint: "올린 글·영상 주소. 파일이 아니라 주소가 결과물입니다.", counted: true },
+    { key: "none", label: "없음", hint: "현장에서 확인만 하고 끝나는 일", counted: false },
+  ]);
+  const isDeliverableKind = key => DELIVERABLE_KINDS.some(item => item.key === key);
+  const deliverableLabel = key => (DELIVERABLE_KINDS.find(item => item.key === key) || {}).label || key;
+  const deliverableCounted = key => Boolean((DELIVERABLE_KINDS.find(item => item.key === key) || {}).counted);
+
+  // 몇 개가 있어야 하는가. 20을 넘기면 그건 한 지시가 아니다.
+  function deliverableCountOf(value) {
+    const number = Number(value);
+    if (!Number.isFinite(number) || number <= 0) return 0;
+    return Math.min(20, Math.round(number));
+  }
+
+  // 파일 이름을 앱이 붙인다. 사람이 손으로 치면 매번 다르게 적힌다.
+  //
+  // 지시에 적어 둔 이름 뒤에 번호를 붙이고 확장자는 원본 그대로 둔다 —
+  // 확장자를 바꾸면 파일이 안 열린다.
+  function resultFileName(order, originalName, index) {
+    const base = text((order || {}).deliverable, 200).replace(/\.[A-Za-z0-9]{1,8}$/u, "");
+    const original = text(originalName, 200);
+    const dot = original.lastIndexOf(".");
+    const extension = dot > 0 ? original.slice(dot).toLowerCase() : "";
+    if (!base) return original;
+    const seq = Number(index);
+    const suffix = Number.isFinite(seq) && seq > 0 ? `_${Math.round(seq)}` : "";
+    return `${base}${suffix}${extension}`;
+  }
+
+  // 요구한 만큼 냈는가. 안 세면 사진 5장을 시켜도 1장에 제출이 열린다.
+  function deliverableCheck(order) {
+    const item = normalizeOrder(order);
+    const need = deliverableCounted(item.deliverableKind) ? item.deliverableCount : 0;
+    const have = item.results.length;
+    return {
+      kind: item.deliverableKind,
+      label: deliverableLabel(item.deliverableKind),
+      need,
+      have,
+      ok: have >= need,
+      short: Math.max(0, need - have),
+    };
+  }
+
+  // 예상 소요시간. 30분 단위까지만 받는다 — 0.37시간을 적을 수 있게 하면
+  // 정확해 보이지만 그 정확도는 어디에도 없다. 한 지시가 40시간을 넘으면
+  // 그건 지시가 아니라 프로젝트라서 거기서 자른다.
+  const MAX_HOURS = 40;
+  function hoursOf(value) {
+    if (value === "" || value == null) return 0;
+    const number = Number(value);
+    if (!Number.isFinite(number) || number <= 0) return 0;
+    return Math.min(MAX_HOURS, Math.round(number * 2) / 2);
+  }
+
+  // 가중치. 한 사람의 한 주에서 합이 100 이 되게 쓴다. 0 은 "안 정했다" 다.
+  function weightOf(value) {
+    if (value === "" || value == null) return 0;
+    const number = Number(value);
+    if (!Number.isFinite(number) || number <= 0) return 0;
+    return Math.min(100, Math.round(number));
+  }
 
   // 진행률은 0~100 정수. 소수점을 두면 두 사람이 다른 숫자를 보게 된다.
   function progressOf(value) {
@@ -105,6 +187,17 @@
       projectId: text(source.projectId, 80),
       track: text(source.track, 40),
       startDate: isDate(source.startDate) ? text(source.startDate, 10) : "",
+      // 얼마나 걸릴 것 같은가. 가용시간과 맞대 보는 유일한 숫자다.
+      hours: hoursOf(source.hours),
+      // 이 주에 이 사람에게 이 일이 얼마나 중요한가. 합이 100.
+      weight: weightOf(source.weight),
+      // 산출물이 어떤 파일로 어디에 남아야 하는가. 이게 비면 "다 했다" 의
+      // 뜻이 사람마다 달라진다.
+      deliverable: text(source.deliverable, 200),
+      // 어떤 종류를 몇 개. 옛 지시에는 없으니 기본은 "정하지 않음" 이다 —
+      // 없던 규격을 소급해서 세우면 옛 지시가 통째로 제출이 막힌다.
+      deliverableKind: isDeliverableKind(source.deliverableKind) ? source.deliverableKind : "",
+      deliverableCount: deliverableCountOf(source.deliverableCount),
       progress: progressOf(source.progress),
       assigneeUid: text(source.assigneeUid, 128),
       assigneeName: text(source.assigneeName, 80),
@@ -146,6 +239,15 @@
         error: "무엇이 있으면 끝난 것인지 적어 주세요. 기준이 없으면 두 번 일하게 됩니다.",
       };
     }
+    // 새 지시에만 건다. 이미 있던 지시까지 막으면 간트에서 기간 한 번
+    // 옮기려다 옛 지시가 통째로 안 저장된다.
+    if (!order.createdAt && !order.hours) {
+      return {
+        ok: false,
+        code: "HOURS_REQUIRED",
+        error: "몇 시간쯤 걸릴지 적어 주세요. 시간이 없으면 누가 얼마나 물고 있는지 셀 수 없습니다.",
+      };
+    }
     return { ok: true, order };
   }
 
@@ -182,8 +284,20 @@
       return { ok: false, code: "RETURN_REASON_REQUIRED", error: "다시 요청하는 이유를 적어 주세요." };
     }
     // 결과물 없이 제출하면 볼 것이 없다.
-    if (next === "submitted" && !order.results.length) {
+    if (next === "submitted" && order.deliverableKind !== "none" && !order.results.length) {
       return { ok: false, code: "RESULT_REQUIRED", error: "결과물을 먼저 올려 주세요." };
+    }
+    // 요구한 만큼 냈는가. 안 세면 사진 5장을 시켜도 1장에 제출이 열리고,
+    // 그러면 완료 기준이 있으나 마나다.
+    if (next === "submitted") {
+      const need = deliverableCheck(order);
+      if (!need.ok) {
+        return {
+          ok: false,
+          code: "RESULT_SHORT",
+          error: `${need.label} ${need.need}개가 필요한데 ${need.have}개 올렸습니다. ${need.short}개 더 올려 주세요.`,
+        };
+      }
     }
     return {
       ok: true,
@@ -196,7 +310,10 @@
   }
 
   // 지시 내용이 바뀌었는지 본다. 담당자가 상태만 바꾸는지 확인하는 데 쓴다.
-  const FROZEN = Object.freeze(["title", "why", "what", "doneWhen", "assigneeUid", "dueDate", "startDate", "projectId", "track", "buildingId", "createdAt", "createdBy"]);
+  // 담당자가 못 고치는 칸. 소요시간과 가중치와 산출물도 여기 넣는다 —
+  // 받는 사람이 "이건 두 시간짜리였다" 로 고칠 수 있으면 부하 계산이 무너지고,
+  // 산출물을 고칠 수 있으면 완료 기준이 사후에 낮아진다.
+  const FROZEN = Object.freeze(["title", "why", "what", "doneWhen", "assigneeUid", "dueDate", "startDate", "projectId", "track", "buildingId", "hours", "weight", "deliverable", "deliverableKind", "deliverableCount", "createdAt", "createdBy"]);
   function sameInstruction(before, after) {
     const a = normalizeOrder(before);
     const b = normalizeOrder(after);
@@ -261,6 +378,16 @@
     statusLabel,
     isStatus,
     progressOf,
+    MAX_HOURS,
+    DELIVERABLE_KINDS,
+    isDeliverableKind,
+    deliverableLabel,
+    deliverableCounted,
+    deliverableCountOf,
+    deliverableCheck,
+    resultFileName,
+    hoursOf,
+    weightOf,
     normalizeResult,
     normalizeOrder,
     validateOrder,

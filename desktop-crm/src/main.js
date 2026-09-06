@@ -3339,6 +3339,37 @@ async function postToTelegram(botToken, chatId, body) {
 }
 
 /**
+ * 주간 업무지시서를 회사 텔레그램 방으로 보낸다.
+ *
+ * 대표가 하던 것은 이랬다 — 이번 주 할 것을 적고, GPT 로 다듬고, 그걸 사람이
+ * 다시 정리해서 텔레그램에 붙여 넣었다. 중간에 사람이 두 번 낀다. 이제
+ * 지시서가 CRM 에 남아 있으니 여기서 바로 나간다.
+ *
+ * 지시서와 지시 줄은 화면이 들고 있으므로 화면에서 받는다. 여기서 다시 읽으면
+ * 화면이 보고 있는 것과 다른 것을 보낼 수 있다.
+ *
+ * 갖춰지지 않은 지시서는 보내지 않는다. 왜 하는지가 빈 지시서가 나가면 애들이
+ * 헷갈리는 그 자리로 그대로 돌아간다.
+ */
+async function sendTelegramDirective(input) {
+  requireTelegramAdmin();
+  const options = input && typeof input === "object" && !Array.isArray(input) ? input : {};
+  const saved = await readTelegramSettings();
+  if (!saved || !saved.botToken || !saved.chatId) {
+    return { ok: false, code: "TELEGRAM_NOT_CONFIGURED", error: "텔레그램을 아직 연결하지 않았습니다. 설정에서 봇 토큰과 방 번호를 넣어 주세요." };
+  }
+  const body = TelegramCore.composeDirective({
+    directive: options.directive,
+    orders: Array.isArray(options.orders) ? options.orders : [],
+    name: options.name,
+    week: options.week,
+  });
+  if (!body) return { ok: false, code: "DIRECTIVE_EMPTY", error: "보낼 지시가 없습니다." };
+  await postToTelegram(saved.botToken, saved.chatId, body);
+  return { ok: true, sent: true, count: (Array.isArray(options.orders) ? options.orders : []).length };
+}
+
+/**
  * 연락할 고객을 회사 텔레그램 방으로 보낸다.
  *
  * 고객 자료는 화면이 들고 있으므로 화면에서 받는다. 여기서 다시 읽으면
@@ -3573,7 +3604,7 @@ async function uploadWorkOrderResult(input) {
   }
   const orderId = String(options.orderId || "");
   const orderTitle = String(options.orderTitle || "");
-  const projectName = String(options.projectName || "");
+  const assigneeName = String(options.assigneeName || "");
   if (!orderId) throw Object.assign(new Error("어느 지시의 결과물인지 정해 주세요."), { code: "ORDER_REQUIRED" });
 
   const content = await fs.readFile(filePath);
@@ -3582,10 +3613,15 @@ async function uploadWorkOrderResult(input) {
     { fetchImpl: (url, init) => fetch(url, init), accessToken: driveSession.accessToken },
     {
       rootFolderId: String(options.rootFolderId || ""),
-      // 프로젝트별로 쌓는다. 연도로 나누면 "브링 케어 결과물 다 보여줘" 가
-      // 안 된다 — 그게 결과물을 찾는 가장 흔한 이유다.
-      folderPath: ["업무지시", projectName || "프로젝트 없음", `${orderTitle || "제목없음"}_${orderId}`],
-      fileName: "",
+      // 달 · 사람 · 지시 순으로 쌓는다. Drive 에서 찾는 이유는 거의 늘
+      // "우중이 지난달에 뭐 냈냐" 라서다. 프로젝트로 모아 보는 것은 앱이
+      // 한다 — 프로젝트 탭에 그 지시들이 이미 모여 있고 카드마다 폴더
+      // 링크가 붙는다. 한 파일은 한 폴더에만 있을 수 있어 둘 중 하나를
+      // 골라야 했다.
+      folderPath: ["업무지시", day.slice(0, 7), assigneeName || "담당 미정", orderTitle || `제목없음_${orderId}`],
+      // 이름은 지시에 적어 둔 산출물 이름을 따른다. 사람이 손으로 치면
+      // 매번 다르게 적힌다.
+      fileName: String(options.fileName || ""),
       docTypeLabel: "업무지시 결과물",
       documentDate: day,
       originalFileName: path.basename(filePath),
@@ -7607,6 +7643,10 @@ secureCanonicalHandle("crm:leave-decide", input => remoteClient.decideLeaveReque
 secureCanonicalHandle("crm:leave-grant-save", input => remoteClient.saveLeaveGrant(input));
 secureCanonicalHandle("crm:hr-record-save", input => remoteClient.saveMemberRecord(input));
 secureCanonicalHandle("crm:work-order-save", input => remoteClient.saveWorkOrder(input));
+secureCanonicalHandle("crm:capacity-save", input => remoteClient.saveCapacity(input));
+secureCanonicalHandle("crm:weekly-directive-save", input => remoteClient.saveWeeklyDirective(input));
+secureCanonicalHandle("crm:daily-log-save", input => remoteClient.saveDailyLog(input));
+secureCanonicalHandle("crm:daily-log-confirm", input => remoteClient.confirmDailyLog(input));
 secureCanonicalHandle("crm:project-save", input => remoteClient.saveProject(input));
 secureCanonicalHandle("crm:work-order-progress", input => remoteClient.updateWorkOrderProgress(input));
 secureCanonicalHandle("crm:supply-item-save", input => remoteClient.saveSupplyItem(input));
@@ -7630,6 +7670,7 @@ secureCanonicalHandle("crm:telegram-chats-find", input => findTelegramChats(inpu
 secureCanonicalHandle("crm:telegram-settings-save", input => saveTelegramSettings(input));
 secureCanonicalHandle("crm:telegram-settings-forget", () => forgetTelegramSettings());
 secureCanonicalHandle("crm:telegram-contact-alert", input => sendTelegramContactAlert(input));
+secureCanonicalHandle("crm:telegram-directive-send", input => sendTelegramDirective(input));
 secureCanonicalHandle("crm:work-report-export", input => exportWorkReport(input));
 secureCanonicalHandle("crm:form-template-save", input => remoteClient.saveFormTemplate(input));
 secureCanonicalHandle("crm:form-entry-save", input => remoteClient.saveFormEntry(input));
@@ -8015,6 +8056,7 @@ secureCanonicalHandle("crm:field-team-profiles", async () => {
 secureHandle("crm:operations-load", readOperations);
 secureHandle("crm:forms-load", () => remoteClient.loadForms());
 secureHandle("crm:work-orders-load", () => remoteClient.loadWorkOrders());
+secureHandle("crm:daily-logs-load", () => remoteClient.loadDailyLogs());
 secureHandle("crm:supplies-load", () => remoteClient.loadSupplies());
 secureHandle("crm:delivery-flows-load", () => remoteClient.loadDeliveryFlows());
 secureHandle("crm:work-reports-load", () => remoteClient.loadWorkReports());

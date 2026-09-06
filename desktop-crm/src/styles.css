@@ -753,3 +753,78 @@ button:focus-visible,input:focus-visible,select:focus-visible,textarea:focus-vis
 .tg-hour-pick.is-on { border-color: #3182F6; background: #EAF2FE; color: #1B64DA; }
 .tg-hour-pick input { margin: 0; }
 .tg-hour-pick b { font-weight: 700; }
+
+/* 가용시간 판. 채움 막대는 넘칠 때만 색이 달라진다 — 늘 알록달록하면
+   무엇이 문제인지 눈에 안 들어온다. */
+.cap-bar.is-over i{background:#C6535F}
+.cap-bar.is-tight i{background:#C77A00}
+.cap-bar.is-fit i,.cap-bar.is-room i{background:#3182F6}
+.cap-note{margin:10px 16px 14px;font-size:12px}
+.cap-editor .panel-body{display:grid;gap:12px}
+.cap-window{display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:12px}
+.cap-window label{display:grid;gap:4px;font-size:13px;color:#4E5968}
+.cap-window label.wide{grid-column:1/-1}
+.cap-window input[type=time]{width:auto}
+.cap-days{display:flex;flex-wrap:wrap;gap:10px}
+.cap-days label{display:inline-flex;align-items:center;gap:4px;color:#191F28}
+.cap-skip{display:inline-flex;align-items:center;gap:6px;white-space:nowrap;font-size:12px;color:#4E5968}
+
+/* 오늘 — 일일 업무일지. 표가 넓어서 칸 폭을 정해 둔다. 안 정하면 "무엇을"
+   칸이 눌려 제목이 두 글자만 보인다. */
+.dl-datenav{display:flex;align-items:center;gap:6px}
+.dl-datenav input[type=date]{width:auto}
+.dl-panel .panel-body{display:grid;gap:12px}
+.dl-table th:nth-child(1),.dl-table th:nth-child(2),.dl-table td:nth-child(1),.dl-table td:nth-child(2){width:96px}
+.dl-table th:nth-child(4),.dl-table td:nth-child(4){width:96px}
+.dl-table th:nth-child(6),.dl-table td:nth-child(6){width:110px;white-space:nowrap}
+.dl-table th:nth-child(7),.dl-table td:nth-child(7){width:64px}
+.dl-table td input[type=number]{width:62px}
+.dl-natures{display:flex;flex-wrap:wrap;gap:8px}
+.dl-nature{display:inline-flex;align-items:center;gap:6px;padding:4px 10px;border-radius:999px;background:#F2F4F6;color:#4E5968;font-size:12px}
+.dl-nature b{color:#191F28}
+.dl-nature.is-urgent{background:#FFF1F1}
+.dl-nature.is-innovation{background:#EDF5FF}
+.dl-nature.is-routine{background:#F2F4F6}
+.dl-notes{margin:0;padding-left:18px;color:#8B95A1;font-size:12px;display:grid;gap:4px}
+.dl-words{display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:12px}
+.dl-words label{display:grid;gap:4px;font-size:13px;color:#4E5968}
+.dl-actions{align-items:center;gap:10px}
+.dl-word-list{display:grid;gap:10px}
+.dl-word-card{border:1px solid #E5E8EB;border-radius:10px;padding:10px 12px}
+.dl-word-card p{margin:4px 0 0;color:#4E5968;font-size:13px}
+.dl-word-card em{font-style:normal;color:#8B95A1;margin-right:6px}
+.dl-ai-draft{border:1px solid #E5E8EB;border-radius:10px;padding:12px 14px;background:#FBFCFD;color:#191F28;font-size:13px;line-height:1.7;white-space:normal}
+
+/* 지시서 붙여넣기. 읽은 결과를 보여 주는 자리라 표가 넓다. */
+.di-panel .panel-body{display:grid;gap:12px}
+.di-top{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:12px}
+.di-top label,.di-panel label.wide{display:grid;gap:4px;font-size:13px;color:#4E5968}
+.di-panel textarea{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:12px;line-height:1.6}
+.di-review{display:grid;gap:12px}
+.di-blockers{margin:0;padding-left:18px;color:#C6535F;font-size:12px;display:grid;gap:4px}
+.di-notready{background:#FFF8F8}
+.di-unread{border:1px solid #E5E8EB;border-radius:10px;padding:10px 12px;background:#FFFBFB}
+.di-unread ul{margin:6px 0;padding-left:18px;color:#4E5968;font-size:12px;display:grid;gap:2px}
+.di-unread small{color:#8B95A1;font-size:12px}
+.di-head{display:grid;grid-template-columns:150px 1fr;gap:6px 12px;margin:0;font-size:13px}
+.di-head dt{color:#8B95A1}
+.di-head dd{margin:0;color:#191F28}
+.di-split{display:grid;gap:8px;border:1px solid #E5E8EB;border-radius:10px;padding:12px;background:#F9FAFB}
+.di-split > b{font-size:13px;color:#191F28}
+
+/* 주간 지시서 펼치기. 앱이 원본이고 텔레그램은 알림이라, 전문은 여기 있다. */
+.wd-name{background:none;border:0;padding:0;font:inherit;font-weight:600;color:#191F28;cursor:pointer;display:inline-flex;align-items:center;gap:6px}
+.wd-name i{font-style:normal;color:#8B95A1;font-size:11px}
+.wd-row.is-open{background:#F9FAFB}
+.wd-detail-row td{background:#F9FAFB;padding:0 14px 14px}
+.wd-detail{display:grid;gap:12px}
+.wd-tasks{display:grid;gap:10px}
+.wd-task{border:1px solid #E5E8EB;border-radius:10px;background:#fff;padding:12px 14px;display:grid;gap:8px}
+.wd-task > header{display:flex;justify-content:space-between;align-items:baseline;gap:10px;flex-wrap:wrap}
+.wd-task > header b{font-size:14px;color:#191F28}
+.wd-task > header span{font-size:12px;color:#8B95A1;white-space:nowrap}
+.wd-task > header em{font-style:normal;color:#C6535F}
+.wd-task dl{display:grid;grid-template-columns:130px 1fr;gap:4px 12px;margin:0;font-size:13px}
+.wd-task dt{color:#8B95A1}
+.wd-task dd{margin:0;color:#4E5968}
+.wd-task-foot{display:flex;align-items:center;gap:10px}

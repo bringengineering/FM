@@ -16,6 +16,9 @@ test("task contract exposes exactly the approved CRM automation tasks", () => {
     "vendor_request",
     "work_order",
     "completion_report",
+    "directive_split",
+    "directive_draft",
+    "daily_report",
     "monthly_management_report",
     "quote_draft",
     "consultation_intake"
@@ -114,4 +117,52 @@ test("task result requires every consultation draft field", () => {
     () => normalizeTaskResult("consultation_structure", { summary: "누수 상담", currentRequest: "현장 확인", outcome: "견적 검토" }),
     error => error?.code === "AI_INVALID_RESPONSE"
   );
+});
+
+test("daily report never invents a number and never grades the person", () => {
+  // 여기 오는 숫자는 CRM 이 이미 세서 화면에 띄운 것뿐이다. AI 가 다시
+  // 계산하기 시작하면 보고서와 화면이 다른 말을 하고, 그러면 둘 다 못 믿는다.
+  const messages = buildTaskMessages("daily_report", "09:00~11:00 누수 확인 2시간", {});
+  assert.match(messages[0].content, /다시 계산하거나 고치지 마세요/u);
+  // 평가는 사람이 한다. AI 가 "수고했다" 를 쓰면 그게 평가처럼 읽힌다.
+  assert.match(messages[0].content, /평가는 쓰지 말고/u);
+  // 막힌 것과 건의는 줄이면 안 된다. 대개 그게 제일 중요하다.
+  assert.match(messages[0].content, /그대로 옮기세요/u);
+
+  const result = normalizeTaskResult("daily_report", { text: "오늘 누수 확인에 2시간을 썼습니다." });
+  assert.equal(result.text, "오늘 누수 확인에 2시간을 썼습니다.");
+  assert.throws(() => normalizeTaskResult("daily_report", { text: "" }), error => error?.code === "AI_INVALID_RESPONSE");
+});
+
+test("directive draft writes a pasteable sheet and never invents facts", () => {
+  // 이 갈래가 내놓는 글은 그대로 붙여넣기 칸에 들어가 파서를 지난다. 그래서
+  // 모양이 어긋나면 화면이 "못 읽은 줄" 로 다 뱉는다.
+  const messages = buildTaskMessages("directive_draft", "당근이랑 숨고 좀 살려야 함", {});
+  assert.match(messages[0].content, /업무명\\t목적\\t완료기준\\t산출물\\t예상시간\\t가중치\\t마감/u);
+  // 없는 마감일과 건물명을 지어내면 그게 지시가 되어 애들에게 나간다.
+  assert.match(messages[0].content, /적히지 않은 사실을 만들지 마세요/u);
+  // 가중치 합이 100이 아니면 내보내기에서 막힌다. 애초에 맞춰서 내놓게 한다.
+  assert.match(messages[0].content, /합이 정확히 100/u);
+  // "열심히 한다" 는 완료 기준이 아니다.
+  assert.match(messages[0].content, /눈에 보이는 것으로/u);
+
+  const result = normalizeTaskResult("directive_draft", { text: "배경\t당근 문의가 줄었습니다" });
+  assert.equal(result.text, "배경\t당근 문의가 줄었습니다");
+  assert.throws(() => normalizeTaskResult("directive_draft", { text: "" }), error => error?.code === "AI_INVALID_RESPONSE");
+});
+
+test("directive split never guesses whose work an unclear line is", () => {
+  // 짐작해서 아무에게나 붙이면 시킨 적 없는 일이 지시가 되어 나간다.
+  const messages = buildTaskMessages("directive_split", "현진 CRM 마무리, 우중 카페 구축", {});
+  assert.match(messages[0].content, /== 사람이름 ==/u);
+  assert.match(messages[0].content, /누구인지 모름/u);
+  assert.match(messages[0].content, /짐작해서 아무에게나 붙이면/u);
+  // 목록에 없는 사람을 만들어 내면 그 지시는 갈 곳이 없다.
+  assert.match(messages[0].content, /주어진 사람 목록에 있는 이름만/u);
+  // 사람마다 가용시간이 다르다. 한 사람 기준으로 다 짜면 누군가는 넘친다.
+  assert.match(messages[0].content, /사람마다 주어진 가용시간/u);
+  assert.match(messages[0].content, /사람마다 합이 정확히 100/u);
+
+  const result = normalizeTaskResult("directive_split", { text: "== 김현진 ==\n배경\t가" });
+  assert.match(result.text, /== 김현진 ==/u);
 });

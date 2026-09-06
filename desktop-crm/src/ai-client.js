@@ -1,7 +1,8 @@
 const SUPPORTED_TASKS = new Set([
   "assistant_summary", "next_action", "sales_message", "work_report", "consultation_structure",
   "sales_focus_explanation", "sales_followup_message", "complaint_triage", "vendor_request",
-  "work_order", "completion_report", "monthly_management_report", "quote_draft", "consultation_intake"
+  "work_order", "completion_report", "monthly_management_report", "quote_draft", "consultation_intake",
+  "daily_report", "directive_draft", "directive_split"
 ]);
 const INPUT_KEYS = new Set(["task", "content", "context"]);
 const CONTEXT_KEYS = new Set(["customerType", "workType", "owner", "priority", "category", "urgency", "month"]);

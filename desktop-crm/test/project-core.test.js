@@ -173,3 +173,36 @@ test("손이 가야 하는 상태 목록이 한 곳에만 있다", () => {
   const source = require("node:fs").readFileSync(require("node:path").join(__dirname, "../src/project-core.js"), "utf8");
   assert.equal((source.match(/"assigned", "doing", "returned"/gu) || []).length, 1);
 });
+
+// --- 기본 프로젝트 여섯 덩어리 ---
+
+test("처음 켜면 여섯 덩어리를 통째로 만들 수 있다", () => {
+  const missing = P.missingSeeds([]);
+  assert.equal(missing.length, 6);
+  // 이름이 하나라도 비면 프로젝트 탭에 빈 칸이 생긴다.
+  assert.equal(missing.every(item => item.id && item.name && item.goal), true);
+  assert.deepEqual(missing.map(item => item.name), [
+    "브링 CRM·OFFICE", "브링 케어", "마케팅 채널", "R&D·정부과제", "회사 기반", "학업·자기계발",
+  ]);
+  assert.equal(missing.every(item => P.validateProject(item).ok), true);
+});
+
+test("이미 있는 것은 다시 만들지 않는다", () => {
+  // 다시 만들면 이름을 고쳐 둔 것이 되돌아간다.
+  const missing = P.missingSeeds([{ id: "pj-crm", name: "사내 프로그램(이름 고침)" }, { id: "pj-care", name: "브링 케어" }]);
+  assert.equal(missing.length, 4);
+  assert.equal(missing.some(item => item.id === "pj-crm"), false);
+});
+
+test("학업만 가용시간을 잡아먹지 않는 것으로 둔다", () => {
+  const seeds = P.missingSeeds([]);
+  const off = seeds.filter(item => item.offCapacity);
+  assert.deepEqual(off.map(item => item.id), ["pj-study"]);
+  assert.deepEqual(P.offCapacityIds(seeds), ["pj-study"]);
+});
+
+test("견본을 고쳐도 다음에 다시 꺼낼 때 원본이 남아 있다", () => {
+  const first = P.missingSeeds([])[0];
+  first.name = "바뀜";
+  assert.equal(P.missingSeeds([])[0].name, "브링 CRM·OFFICE");
+});

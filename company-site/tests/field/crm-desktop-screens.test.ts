@@ -32,6 +32,7 @@ const SCREENS: Array<[string, string]> = [
   ["vacancies", "공실"],
   ["quotes", "견적"],
   ["deliveryFlow", "견적서에서 입금까지"],
+  ["dailyLog", "무엇에 몇 시간을 썼는지 그 자리에서"],
   ["workOrders", "표의 한 줄이 곧 업무지시"],
   ["objectives", "이번 분기에 무엇을 이루려 하는가"],
   ["growth", "다음 단계가 무엇인지 적어 둡니다"],
@@ -61,6 +62,15 @@ type Booted = {
 };
 
 const sleep = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
+
+// 주는 월요일에 시작한다. 화면·코어와 같은 잣대를 써야 검사가 오늘 날짜에
+// 상관없이 돈다 — 고정 날짜를 박으면 다음 주에 검사가 깨진다.
+function mondayOf(date: Date): string {
+  const utc = new Date(Date.UTC(date.getFullYear(), date.getMonth(), date.getDate()));
+  const day = utc.getUTCDay();
+  utc.setUTCDate(utc.getUTCDate() + (day === 0 ? -6 : 1 - day));
+  return utc.toISOString().slice(0, 10);
+}
 
 async function boot(): Promise<Booted> {
   const errors: string[] = [];
@@ -149,20 +159,82 @@ async function boot(): Promise<Booted> {
       // 두 사람을 둔다. 한 사람뿐이면 "이번 주에 아직 이야기 안 한 사람"
       // 이 늘 0 이라, 그 칸이 도는지 알 수 없다.
       members: [{ uid: "u-admin", displayName: "서창환" }, { uid: "u-hwang", displayName: "황우중" }],
+      // 한 사람만 시간표를 넣어 둔다. 넣은 사람과 안 넣은 사람이 화면에서
+      // 다르게 보여야 하는데, 둘 다 넣으면 그게 도는지 알 수 없다.
+      capacity: [
+        {
+          uid: "u-admin", name: "서창환", window: { start: "09:00", end: "22:00" }, workDays: [1, 2, 3, 4, 5],
+          blocks: [{ id: "c1", day: 1, start: "13:00", end: "14:00", label: "수문학", place: "이공1-502", skippable: true }],
+          updatedAt: "2026-09-01T00:00:00.000Z", updatedBy: "u-admin",
+        },
+      ],
       projects: [
         { id: "p1", name: "브링 케어", status: "active", startDate: "2026-09-01", endDate: "2026-09-30" },
         // 어느 목표에도 안 붙은 프로젝트. 분기 목표 화면이 이걸 세어 보여 줘야 한다.
         { id: "p2", name: "회사 서버", status: "active", startDate: "2026-09-01", endDate: "2026-09-30" },
       ],
+      // 이번 주 지시서. 머리말만 담고 지시 줄은 안 담는다 — 복사해 두면 갈라진다.
+      directives: [
+        {
+          id: "u-admin_" + mondayOf(new Date()), uid: "u-admin", name: "서창환", weekStart: mondayOf(new Date()),
+          background: "임차인이 두 번 민원을 넣었고 다음 주에 갱신 면담이 있습니다.",
+          goal: "누수 원인이 확인되고 건물주에게 보고가 나가 있습니다.",
+          loss: "", scopeExclude: "", precondition: "", approvers: "대표", note: "",
+          publishedAt: "", updatedAt: "2026-09-06T00:00:00.000Z", updatedBy: "u-admin",
+        },
+      ],
       orders: [
         // 기한 지난 것·오늘·이번 주·담당자 없는 것을 한 벌씩 둔다. 표가
         // 빈 목록에서만 그려지는지 아닌지는 자료를 넣어 봐야 안다.
-        { id: "o1", title: "지난 것", why: "왜", what: "무엇", doneWhen: "끝", assigneeUid: "u-admin", assigneeName: "서창환", projectId: "p1", track: "ops", status: "doing", dueDate: "2026-01-02", startDate: "2026-01-01", progress: 40 },
+        { id: "o1", title: "지난 것", why: "왜", what: "무엇", doneWhen: "끝", assigneeUid: "u-admin", assigneeName: "서창환", projectId: "p1", track: "ops", status: "doing", dueDate: "2026-01-02", startDate: "2026-01-01", progress: 40, hours: 4, weight: 30 },
         { id: "o2", title: "담당 없음", why: "왜", what: "무엇", doneWhen: "끝", assigneeUid: "", assigneeName: "", projectId: "p1", track: "biz", status: "assigned", dueDate: "", startDate: "", progress: 0 },
-        { id: "o3", title: "검수 대기", why: "왜", what: "무엇", doneWhen: "끝", assigneeUid: "u-admin", assigneeName: "서창환", projectId: "p1", track: "tech", status: "submitted", dueDate: "2026-09-20", startDate: "2026-09-10", progress: 100 },
+        { id: "o3", title: "검수 대기", why: "왜", what: "무엇", doneWhen: "끝", assigneeUid: "u-admin", assigneeName: "서창환", projectId: "p1", track: "tech", status: "submitted", dueDate: "2026-09-20", startDate: "2026-09-10", progress: 100, hours: 6, weight: 40 },
         // 어느 프로젝트에도 안 붙은 업무. 이것이 "왜 하는지 모르는 일" 이다.
+        // 이번 주에 걸친 지시. 지시서를 보내려면 이 주에 뭔가 있어야 한다.
+        { id: "o5", title: "3층 누수 확인", why: "임차인이 두 번 민원을 넣었습니다", what: "천장을 열어 배관을 봅니다", doneWhen: "사진 3장과 원인 한 줄", deliverable: "20260906_3층누수.xlsx", assigneeUid: "u-admin", assigneeName: "서창환", projectId: "p1", track: "ops", status: "assigned", startDate: mondayOf(new Date()), dueDate: mondayOf(new Date()), progress: 0, hours: 8, weight: 100 },
         { id: "o4", title: "떠도는 일", why: "왜", what: "무엇", doneWhen: "끝", assigneeUid: "u-admin", assigneeName: "서창환", projectId: "", track: "etc", status: "assigned", dueDate: "", startDate: "", progress: 0, raci: { R: ["u-admin"], A: ["u-admin"] } },
       ],
+    },
+    loadDailyLogs: {
+      ...empty,
+      name: "서창환",
+      logs: [
+        // 어제 것. 오늘 자리가 비어 있어도 화면이 도는지 보려고 다른 날로 둔다.
+        {
+          id: "u-admin_2026-09-05", uid: "u-admin", name: "서창환", date: "2026-09-05",
+          entries: [
+            { id: "e1", start: "09:00", end: "11:00", title: "BRING OFFICE 통합", nature: "innovation", orderId: "o1", progress: 60, note: "" },
+            { id: "e2", start: "11:00", end: "18:00", title: "철근콘크리트 수강", nature: "routine", orderId: "", progress: 100, note: "" },
+          ],
+          plans: [{ id: "p1", title: "견적서 화면 마무리", nature: "innovation", hours: 3, dueDate: "2026-09-06", orderId: "" }],
+          blockers: "당근 비즈프로필 권한이 아직 안 넘어왔습니다.",
+          ideas: "", feedback: "", requests: "",
+          submittedAt: "2026-09-05T18:00:00.000Z", confirmedBy: "", confirmedAt: "",
+          updatedAt: "2026-09-05T18:00:00.000Z", updatedBy: "u-admin",
+        },
+      ],
+    },
+    assist: {
+      ok: true,
+      requestId: "req-1",
+      result: {
+        text: [
+          "== 서창환 ==",
+          "배경\t엄준식 교수님 건이 아직 안 나갔습니다.",
+          "목표\t결과보고서와 견적서가 나가 있습니다.",
+          "",
+          "업무명\t목적\t완료기준\t산출물\t예상시간\t가중치",
+          "엄준식 교수님 서류 발송\t약속한 것을 보낸다\t보낸 메일이 남으면 끝\t20260911_엄준식_결과보고서.pdf\t3\t100",
+          "== 황우중 ==",
+          "배경\t유입 통로가 좁습니다.",
+          "목표\t카페가 열려 있습니다.",
+          "",
+          "업무명\t목적\t완료기준\t산출물\t예상시간\t가중치",
+          "카페 구축\t광고 데이터로 만든다\t글 5개가 올라가면 끝\t20260911_카페.png\t8\t100",
+          "== 누구인지 모름 ==",
+          "단체 문자 보내기 및 업무 연락처 정리",
+        ].join("\n"),
+      },
     },
     loadForms: { ...empty, templates: [], entries: [], canEditTemplates: true, canFill: true },
     loadOfficeSnapshot: {
@@ -592,6 +664,528 @@ describe("desktop CRM screens actually render", () => {
     await sleep(200);
     const chatInput = booted.document.querySelector('[data-telegram-form] [name="chatId"]') as HTMLInputElement;
     expect(chatInput.value, "고른 방 번호가 칸에 들어가야 한다").toBe("-1001234567890");
+    expect(booted.errors, booted.errors.join(" / ")).toEqual([]);
+  }, 60000);
+  it("가용시간 판이 건수가 아니라 시간으로 말하고, 시간표를 그 자리에서 고친다", async () => {
+    // 지금까지 사람별 부하는 건수였다. "4건" 은 30분짜리인지 이틀짜리인지
+    // 말해 주지 않아서, 일을 나눌 때 결국 감으로 했다.
+    (booted.document.querySelector("[data-workspace-switch]") as HTMLElement | null)?.click();
+    await sleep(100);
+    const navItem = booted.document.querySelector('.nav-item[data-view="workOrders"]') as HTMLElement;
+    const folder = (navItem.closest("[data-nav-folder]") as HTMLElement).dataset.navFolder as string;
+    (booted.document.querySelector(`[data-workspace-enter-folder="${folder}"]`) as HTMLElement).click();
+    await sleep(150);
+    navItem.click();
+    await sleep(250);
+
+    const shown = () => (booted.document.getElementById("main") as HTMLElement).textContent || "";
+    expect(shown()).toContain("이번 주 가용시간");
+    // 시간표를 넣은 사람과 안 넣은 사람이 다르게 보여야 한다.
+    expect(shown(), "시간표가 없으면 비율을 내지 않는다").toContain("시간표 없음");
+    // 서창환은 월요일 13~14 한 시간만 막혀 있다. 주 5일 09~22 에서 한 시간을
+    // 빼면 64시간이고, 그 수업은 빠져도 되니 +1 이 따로 붙는다.
+    expect(shown(), "수업을 뺀 시간이 나와야 한다").toContain("64시간");
+    expect(shown(), "빠져도 되는 수업은 따로 알린다").toContain("수업 빼면 +1");
+
+    // 시간표를 고치는 자리로 들어간다.
+    const edit = booted.document.querySelector('[data-cap-edit="u-admin"]') as HTMLElement;
+    expect(edit, "본인·대표는 시간표를 고칠 수 있어야 한다").toBeTruthy();
+    edit.click();
+    await sleep(200);
+    expect(booted.document.querySelector(".cap-editor"), "시간표 편집기가 열려야 한다").toBeTruthy();
+
+    // 줄을 하나 넣는다. 빈 줄을 넣으면 정규화가 조용히 버려서 아무 일도 안
+    // 일어난 것처럼 보인다 — 그래서 저장 가능한 값으로 시작해야 한다.
+    const rowsBefore = booted.document.querySelectorAll('.cap-editor [data-cap-field="day"]').length;
+    (booted.document.querySelector("[data-cap-add]") as HTMLElement).click();
+    await sleep(150);
+    expect(booted.document.querySelectorAll('.cap-editor [data-cap-field="day"]').length).toBe(rowsBefore + 1);
+
+    // 화면에 친 것이 저장으로 실려 나가야 한다. 상태에만 있고 화면에서 안
+    // 읽으면 사람이 고친 값이 통째로 사라진다.
+    const labels = [...booted.document.querySelectorAll('.cap-editor [data-cap-field="label"]')] as HTMLInputElement[];
+    labels[labels.length - 1].value = "구조역학(2)";
+    const starts = [...booted.document.querySelectorAll('.cap-editor [data-cap-field="start"]')] as HTMLInputElement[];
+    starts[starts.length - 1].value = "14:00";
+    const ends = [...booted.document.querySelectorAll('.cap-editor [data-cap-field="end"]')] as HTMLInputElement[];
+    ends[ends.length - 1].value = "17:00";
+
+    const before = booted.calls.length;
+    (booted.document.querySelector("[data-cap-save]") as HTMLElement).click();
+    await sleep(300);
+    const saved = booted.calls.slice(before).find(call => call.name === "saveCapacity");
+    expect(saved, "저장 통로로 나가야 한다").toBeTruthy();
+    const sent = saved!.input as { uid: string; blocks: Array<{ label: string; start: string; end: string }> };
+    expect(sent.uid).toBe("u-admin");
+    const added = sent.blocks.find(block => block.label === "구조역학(2)");
+    expect(added, "화면에 친 줄이 실려 나가야 한다").toBeTruthy();
+    expect(added!.start).toBe("14:00");
+    expect(added!.end).toBe("17:00");
+    expect(booted.errors, booted.errors.join(" / ")).toEqual([]);
+  }, 60000);
+
+  it("기본 프로젝트 여섯 개를 한 번에 만든다", async () => {
+    // 빈 화면을 주면 사람들은 자기 일을 어디에 넣어야 할지 몰라 아무 데도
+    // 안 넣고, 결국 일은 다시 카톡으로 간다.
+    (booted.document.querySelector("[data-workspace-switch]") as HTMLElement | null)?.click();
+    await sleep(100);
+    const navItem = booted.document.querySelector('.nav-item[data-view="workOrders"]') as HTMLElement;
+    const folder = (navItem.closest("[data-nav-folder]") as HTMLElement).dataset.navFolder as string;
+    (booted.document.querySelector(`[data-workspace-enter-folder="${folder}"]`) as HTMLElement).click();
+    await sleep(150);
+    navItem.click();
+    await sleep(250);
+
+    const button = booted.document.querySelector("[data-wo-seed]") as HTMLElement;
+    expect(button, "아직 안 만든 것이 있으면 버튼이 보여야 한다").toBeTruthy();
+    expect(button.textContent).toContain("6개");
+
+    const before = booted.calls.length;
+    button.click();
+    await sleep(600);
+    const made = booted.calls.slice(before).filter(call => call.name === "saveProject");
+    expect(made.length, "여섯 개를 다 만들어야 한다").toBe(6);
+    const names = made.map(call => (call.input as { name: string }).name);
+    expect(names).toContain("브링 CRM·OFFICE");
+    expect(names).toContain("학업·자기계발");
+    // 학업만 가용시간을 잡아먹지 않는 것으로 둔다. 수업 시간은 시간표에서
+    // 이미 빠졌는데 "수강 7시간" 을 또 더하면 학생은 늘 넘침으로 뜬다.
+    const study = made.find(call => (call.input as { id: string }).id === "pj-study");
+    expect((study!.input as { offCapacity: boolean }).offCapacity).toBe(true);
+    expect(booted.errors, booted.errors.join(" / ")).toEqual([]);
+  }, 60000);
+  it("오늘 화면에서 줄을 넣고 보내면 지시로 올라간다", async () => {
+    // 같은 숫자를 일지에 한 번, 지시에 또 한 번 적게 하면 둘은 반드시 어긋난다.
+    (booted.document.querySelector("[data-workspace-switch]") as HTMLElement | null)?.click();
+    await sleep(100);
+    const navItem = booted.document.querySelector('.nav-item[data-view="dailyLog"]') as HTMLElement;
+    const folder = (navItem.closest("[data-nav-folder]") as HTMLElement).dataset.navFolder as string;
+    (booted.document.querySelector(`[data-workspace-enter-folder="${folder}"]`) as HTMLElement).click();
+    await sleep(150);
+    navItem.click();
+    await sleep(300);
+
+    const shown = () => (booted.document.getElementById("main") as HTMLElement).textContent || "";
+    expect(shown()).toContain("일일 업무일지");
+    // 오늘은 아직 안 썼다. 어제 것이 딸려 오면 날짜를 잘못 고른 것이다.
+    expect(shown()).toContain("아직 안 보냄");
+    expect(shown()).toContain("아직 한 줄도 없습니다");
+
+    // 줄을 하나 넣는다.
+    (booted.document.querySelector("[data-dl-add]") as HTMLElement).click();
+    await sleep(150);
+    const titles = [...booted.document.querySelectorAll('[data-dl-field="title"]')] as HTMLInputElement[];
+    expect(titles.length).toBe(1);
+    titles[0].value = "3층 누수 확인";
+    const starts = booted.document.querySelector('[data-dl-field="start"]') as HTMLInputElement;
+    const ends = booted.document.querySelector('[data-dl-field="end"]') as HTMLInputElement;
+    starts.value = "09:00";
+    ends.value = "13:00";
+    // 지시를 고르면 그 시간이 "시킨 일 밖" 에서 빠져야 한다.
+    const orderPick = booted.document.querySelector('[data-dl-field="orderId"]') as HTMLSelectElement;
+    const mine = [...orderPick.options].find(option => option.textContent === "지난 것");
+    expect(mine, "내가 물고 있는 지시가 골라져야 한다").toBeTruthy();
+    orderPick.value = mine!.value;
+    const progress = booted.document.querySelector('[data-dl-field="progress"]') as HTMLInputElement;
+    progress.value = "80";
+    // change 는 칸을 떠날 때 온다 — 글자 칸은 안 걸려서 커서가 안 튄다.
+    progress.dispatchEvent(new booted.window.Event("change", { bubbles: true }));
+    await sleep(200);
+
+    // 합계가 그 자리에서 다시 나와야 한다.
+    expect(shown(), "시각에서 뽑은 시간이 나와야 한다").toContain("4시간");
+    expect(shown(), "지시를 골랐으니 지시 밖은 0 이다").toContain("0시간");
+
+    const before = booted.calls.length;
+    (booted.document.querySelector("[data-dl-submit]") as HTMLElement).click();
+    await sleep(400);
+    const sent = booted.calls.slice(before).find(call => call.name === "saveDailyLog");
+    expect(sent, "보내기 통로로 나가야 한다").toBeTruthy();
+    const body = sent!.input as { submit: boolean; date: string; entries: Array<{ title: string; start: string; end: string; orderId: string; progress: number }> };
+    expect(body.submit, "보내기는 저장과 다르다").toBe(true);
+    expect(body.entries.length).toBe(1);
+    expect(body.entries[0].title).toBe("3층 누수 확인");
+    expect(body.entries[0].start).toBe("09:00");
+    expect(body.entries[0].end).toBe("13:00");
+    expect(body.entries[0].progress).toBe(80);
+    expect(body.entries[0].orderId).toBe("o1");
+    expect(booted.errors, booted.errors.join(" / ")).toEqual([]);
+  }, 60000);
+
+  it("한 줄도 없으면 보내지 못하고, 친 것을 날리지 않는다", async () => {
+    (booted.document.querySelector("[data-workspace-switch]") as HTMLElement | null)?.click();
+    await sleep(100);
+    const navItem = booted.document.querySelector('.nav-item[data-view="dailyLog"]') as HTMLElement;
+    const folder = (navItem.closest("[data-nav-folder]") as HTMLElement).dataset.navFolder as string;
+    (booted.document.querySelector(`[data-workspace-enter-folder="${folder}"]`) as HTMLElement).click();
+    await sleep(150);
+    navItem.click();
+    await sleep(300);
+
+    // 막힌 것만 적고 줄은 안 적었다.
+    const blockers = booted.document.querySelector('[data-dl-word="blockers"]') as HTMLTextAreaElement;
+    blockers.value = "건물주가 전화를 안 받습니다.";
+    const before = booted.calls.length;
+    (booted.document.querySelector("[data-dl-submit]") as HTMLElement).click();
+    await sleep(300);
+    expect(booted.calls.slice(before).some(call => call.name === "saveDailyLog"),
+      "무엇을 했는지가 없으면 보내지 않는다").toBe(false);
+    // 다시 치게 하면 다음부터 안 쓴다.
+    const kept = booted.document.querySelector('[data-dl-word="blockers"]') as HTMLTextAreaElement;
+    expect(kept.value, "친 것을 날리지 않는다").toBe("건물주가 전화를 안 받습니다.");
+    expect(booted.errors, booted.errors.join(" / ")).toEqual([]);
+  }, 60000);
+
+  it("대표는 누가 안 썼는지를 먼저 본다", async () => {
+    (booted.document.querySelector("[data-workspace-switch]") as HTMLElement | null)?.click();
+    await sleep(100);
+    const navItem = booted.document.querySelector('.nav-item[data-view="dailyLog"]') as HTMLElement;
+    const folder = (navItem.closest("[data-nav-folder]") as HTMLElement).dataset.navFolder as string;
+    (booted.document.querySelector(`[data-workspace-enter-folder="${folder}"]`) as HTMLElement).click();
+    await sleep(150);
+    navItem.click();
+    await sleep(300);
+
+    // 어제로 옮긴다. 받은 보고가 있는 날이다.
+    const dateInput = booted.document.querySelector("[data-dl-date]") as HTMLInputElement;
+    dateInput.value = "2026-09-05";
+    dateInput.dispatchEvent(new booted.window.Event("change", { bubbles: true }));
+    await sleep(200);
+    (booted.document.querySelector('[data-dl-tab="team"]') as HTMLElement).click();
+    await sleep(250);
+
+    const shown = (booted.document.getElementById("main") as HTMLElement).textContent || "";
+    expect(shown).toContain("받은 보고");
+    // 서창환은 냈고 황우중은 안 냈다.
+    expect(shown).toContain("서창환");
+    expect(shown, "안 쓴 사람이 드러나야 한다").toContain("아직 안 썼습니다");
+    // 09~11 혁신 2시간 + 11~18 기존 7시간 = 9시간.
+    expect(shown).toContain("9시간");
+    // 수업 7시간은 지시에 안 붙었다. 그 합계가 대표가 봐야 할 숫자다.
+    expect(shown).toContain("7h");
+    // 숫자로 안 남는 것이 대개 더 중요하다.
+    expect(shown).toContain("당근 비즈프로필 권한이 아직 안 넘어왔습니다.");
+
+    const confirm = booted.document.querySelector("[data-dl-confirm]") as HTMLElement;
+    expect(confirm, "보낸 일지는 확인할 수 있어야 한다").toBeTruthy();
+    const before = booted.calls.length;
+    confirm.click();
+    await sleep(300);
+    const asked = booted.calls.slice(before).find(call => call.name === "confirmDailyLog");
+    expect(asked, "확인 통로로 나가야 한다").toBeTruthy();
+    expect((asked!.input as { uid: string; date: string })).toEqual({ uid: "u-admin", date: "2026-09-05" });
+    expect(booted.errors, booted.errors.join(" / ")).toEqual([]);
+  }, 60000);
+  it("AI 초안은 화면에 뜬 숫자만 넘기고, 만들자마자 저장하지 않는다", async () => {
+    (booted.document.querySelector("[data-workspace-switch]") as HTMLElement | null)?.click();
+    await sleep(100);
+    const navItem = booted.document.querySelector('.nav-item[data-view="dailyLog"]') as HTMLElement;
+    const folder = (navItem.closest("[data-nav-folder]") as HTMLElement).dataset.navFolder as string;
+    (booted.document.querySelector(`[data-workspace-enter-folder="${folder}"]`) as HTMLElement).click();
+    await sleep(150);
+    navItem.click();
+    await sleep(300);
+
+    // 앞선 검사가 날짜와 탭을 옮겨 놓았을 수 있다. 화면을 내 일지·오늘로
+    // 되돌린다 — 검사끼리 순서에 기대면 하나를 옮길 때마다 다른 게 깨진다.
+    (booted.document.querySelector('[data-dl-tab="mine"]') as HTMLElement | null)?.click();
+    await sleep(150);
+    const back = booted.document.querySelector("[data-dl-date]") as HTMLInputElement;
+    back.value = new Date().toISOString().slice(0, 10);
+    back.dispatchEvent(new booted.window.Event("change", { bubbles: true }));
+    await sleep(200);
+
+    // 한 줄 적는다. 아무것도 없으면 초안을 만들 것도 없다.
+    (booted.document.querySelector("[data-dl-add]") as HTMLElement).click();
+    await sleep(150);
+    (booted.document.querySelector('[data-dl-field="title"]') as HTMLInputElement).value = "3층 누수 확인";
+    (booted.document.querySelector('[data-dl-field="start"]') as HTMLInputElement).value = "09:00";
+    (booted.document.querySelector('[data-dl-field="end"]') as HTMLInputElement).value = "13:00";
+    const orderPick = booted.document.querySelector('[data-dl-field="orderId"]') as HTMLSelectElement;
+    orderPick.value = ([...orderPick.options].find(option => option.textContent === "지난 것") as HTMLOptionElement).value;
+    (booted.document.querySelector('[data-dl-word="blockers"]') as HTMLTextAreaElement).value = "건물주가 전화를 안 받습니다.";
+
+    const before = booted.calls.length;
+    (booted.document.querySelector("[data-dl-ai]") as HTMLElement).click();
+    await sleep(400);
+    const asked = booted.calls.slice(before).find(call => call.name === "assist");
+    expect(asked, "AI 통로로 나가야 한다").toBeTruthy();
+    const sent = asked!.input as { task: string; content: string };
+    expect(sent.task).toBe("daily_report");
+    // 화면에 뜬 숫자를 그대로 넘긴다. 여기서 새로 세면 보고서와 화면이 다른
+    // 말을 하고, 그러면 둘 다 못 믿는다.
+    expect(sent.content).toContain("채운 시간: 4시간");
+    // 지시는 번호가 아니라 이름으로 간다. 번호만 주면 AI 가 지어낸다.
+    expect(sent.content).toContain("지시: 지난 것");
+    // 사람이 적은 말은 줄이지 않고 그대로 넘어가야 한다.
+    expect(sent.content).toContain("건물주가 전화를 안 받습니다.");
+    // 칸 이름이 새어 나가면 AI 가 그걸 문장에 옮겨 적는다.
+    expect(sent.content).not.toContain("weightedProgress");
+
+    // 만들자마자 서버에 쓰지 않는다. 아무도 안 읽은 글이 대표에게 올라간다.
+    expect(booted.calls.slice(before).some(call => call.name === "saveDailyLog"),
+      "초안을 만들면서 저장하면 안 된다").toBe(false);
+    expect(booted.errors, booted.errors.join(" / ")).toEqual([]);
+  }, 60000);
+  it("쓰던 지시서를 붙여 넣으면 읽어 보여 주고, 누르면 지시가 만들어진다", async () => {
+    // 이미 시트에 다 적어 놓은 것을 화면에서 다시 치게 하면, 그건 일을 덜어
+    // 준 게 아니라 하나 더 만든 것이다.
+    (booted.document.querySelector("[data-workspace-switch]") as HTMLElement | null)?.click();
+    await sleep(100);
+    const navItem = booted.document.querySelector('.nav-item[data-view="workOrders"]') as HTMLElement;
+    const folder = (navItem.closest("[data-nav-folder]") as HTMLElement).dataset.navFolder as string;
+    (booted.document.querySelector(`[data-workspace-enter-folder="${folder}"]`) as HTMLElement).click();
+    await sleep(150);
+    navItem.click();
+    await sleep(250);
+
+    (booted.document.querySelector("[data-wo-import]") as HTMLElement).click();
+    await sleep(200);
+    expect(booted.document.querySelector(".di-panel"), "붙여넣기 자리가 열려야 한다").toBeTruthy();
+
+    const sheet = [
+      "■ 주간 업무지시서",
+      "배경\t당근에서 문의가 줄고 있습니다.",
+      "목표\t채널 네 곳이 살아 있고 문의가 주 3건 들어옵니다.",
+      "안 하면\t겨울 성수기 전에 못 살립니다.",
+      "",
+      "업무명\t목적\t완료기준\t산출물\t예상시간\t가중치\t마감",
+      "당근 비즈프로필 정비\t권한을 받아 최신으로 만든다\t사진 5장이 올라가면 끝\t20260909_당근.png\t4\t60\t2026-09-09",
+      "숨고 등록\t새 유입 통로를 만든다\t프로필 승인 화면\t20260911_숨고.png\t3\t40\t2026-09-11",
+    ].join("\n");
+    (booted.document.querySelector("[data-di-paste]") as HTMLTextAreaElement).value = sheet;
+    (booted.document.querySelector("[data-di-uid]") as HTMLSelectElement).value = "u-hwang";
+    (booted.document.querySelector("[data-di-week]") as HTMLInputElement).value = "2026-09-07";
+
+    (booted.document.querySelector("[data-di-read]") as HTMLElement).click();
+    await sleep(250);
+
+    const shown = () => (booted.document.querySelector(".di-panel") as HTMLElement).textContent || "";
+    expect(shown()).toContain("당근 비즈프로필 정비");
+    expect(shown()).toContain("사진 5장이 올라가면 끝");
+    expect(shown(), "가중치 합을 보여 줘야 한다").toContain("100%");
+    // 못 읽은 줄을 조용히 버리면 대표는 시킨 줄 알고 애들은 못 받은 줄 안다.
+    expect(shown()).toContain("못 읽은 줄");
+    expect(shown()).toContain("■ 주간 업무지시서");
+    // 머리말도 읽혀야 한다. 이게 없어서 애들이 헷갈렸다.
+    expect(shown()).toContain("당근에서 문의가 줄고 있습니다.");
+    // 읽어 보기만으로 아무것도 만들지 않는다.
+    expect(booted.calls.some(call => call.name === "saveWorkOrder"), "읽기만으로 지시가 나가면 안 된다").toBe(false);
+    // 붙여 넣은 글이 다시 그리면서 사라지면 안 된다.
+    expect((booted.document.querySelector("[data-di-paste]") as HTMLTextAreaElement).value).toContain("당근 비즈프로필 정비");
+
+    const before = booted.calls.length;
+    (booted.document.querySelector("[data-di-make]") as HTMLButtonElement).click();
+    await sleep(700);
+    const orders = booted.calls.slice(before).filter(call => call.name === "saveWorkOrder");
+    expect(orders.length, "업무지시 두 건이 나가야 한다").toBe(2);
+    const first = orders[0].input as { title: string; why: string; doneWhen: string; deliverable: string; hours: number; weight: number; assigneeUid: string; dueDate: string };
+    expect(first.title).toBe("당근 비즈프로필 정비");
+    expect(first.why).toBe("권한을 받아 최신으로 만든다");
+    expect(first.doneWhen).toBe("사진 5장이 올라가면 끝");
+    expect(first.deliverable).toBe("20260909_당근.png");
+    expect(first.hours).toBe(4);
+    expect(first.weight).toBe(60);
+    expect(first.assigneeUid).toBe("u-hwang");
+    expect(first.dueDate).toBe("2026-09-09");
+
+    // 머리말은 지시 줄과 따로 저장된다. 지시 줄을 여기 복사해 두면 둘이 갈라진다.
+    const directive = booted.calls.slice(before).find(call => call.name === "saveWeeklyDirective");
+    expect(directive, "주간 지시서 머리말도 나가야 한다").toBeTruthy();
+    const head = directive!.input as { uid: string; weekStart: string; background: string; goal: string };
+    expect(head.uid).toBe("u-hwang");
+    expect(head.weekStart).toBe("2026-09-07");
+    expect(head.background).toContain("당근에서 문의가 줄고");
+    expect(head.goal).toContain("주 3건");
+    expect("tasks" in (directive!.input as Record<string, unknown>), "지시 줄을 머리말에 복사하면 안 된다").toBe(false);
+    expect(booted.errors, booted.errors.join(" / ")).toEqual([]);
+  }, 60000);
+  it("지시서를 텔레그램으로 바로 보낸다", async () => {
+    // 대표가 하던 것은 — 이번 주 할 것을 적고, GPT 로 다듬고, 사람이 다시
+    // 정리해서 텔레그램에 붙여 넣었다. 중간에 사람이 두 번 낀다.
+    (booted.document.querySelector("[data-workspace-switch]") as HTMLElement | null)?.click();
+    await sleep(100);
+    const navItem = booted.document.querySelector('.nav-item[data-view="workOrders"]') as HTMLElement;
+    const folder = (navItem.closest("[data-nav-folder]") as HTMLElement).dataset.navFolder as string;
+    (booted.document.querySelector(`[data-workspace-enter-folder="${folder}"]`) as HTMLElement).click();
+    await sleep(150);
+    navItem.click();
+    await sleep(300);
+
+    const shown = (booted.document.getElementById("main") as HTMLElement).textContent || "";
+    expect(shown).toContain("주 지시서");
+    // 아직 못 받은 사람이 드러나야 한다. 밑에 깔리면 그 사람은 그 주를 그냥 보낸다.
+    expect(shown).toContain("아직 없음");
+
+    const send = booted.document.querySelector('[data-wd-send="u-admin"]') as HTMLElement;
+    expect(send, "지시가 있는 사람에게는 보내기가 있어야 한다").toBeTruthy();
+
+    const before = booted.calls.length;
+    send.click();
+    await sleep(250);
+    // 방에 있는 사람 모두가 보게 되고, 보낸 글은 지울 수 없다. 그래서 묻는다.
+    const dialog = booted.document.querySelector(".confirmation-layer.open");
+    expect(dialog, "묻지 않고 보내면 안 된다").toBeTruthy();
+    expect((dialog as HTMLElement).textContent).toContain("3층 누수 확인");
+    expect(booted.calls.slice(before).some(call => call.name === "sendTelegramDirective"),
+      "묻기 전에 나가면 안 된다").toBe(false);
+
+    (booted.document.querySelector('[data-confirm-choice="confirm"]') as HTMLElement).click();
+    await sleep(400);
+    const sent = booted.calls.slice(before).find(call => call.name === "sendTelegramDirective");
+    expect(sent, "보내기 통로로 나가야 한다").toBeTruthy();
+    const body = sent!.input as { name: string; orders: Array<{ title: string }>; directive: { background: string } };
+    expect(body.name).toBe("서창환");
+    expect(body.orders.map(order => order.title)).toContain("3층 누수 확인");
+    expect(body.directive.background).toContain("임차인이 두 번 민원");
+    // 보낸 뒤에 내보낸 것으로 찍는다. 먼저 찍으면 실패한 것도 보낸 것이 된다.
+    const marked = booted.calls.slice(before).find(call => call.name === "saveWeeklyDirective");
+    expect(marked, "내보낸 것으로 남겨야 한다").toBeTruthy();
+    expect((marked!.input as { publish: boolean }).publish).toBe(true);
+    expect(booted.calls.indexOf(sent!)).toBeLessThan(booted.calls.indexOf(marked!));
+    expect(booted.errors, booted.errors.join(" / ")).toEqual([]);
+  }, 60000);
+  it("대충 적고 [AI로 짜기] 를 누르면 지시서 모양으로 짜 주되 바로 만들지 않는다", async () => {
+    // 대표가 하던 것 — 적고, 브라우저 GPT 로 다듬고, 다시 붙여 넣기. 그 가운데
+    // 단계를 없앤다. 다만 AI 가 짠 것도 사람이 적은 것과 같은 길을 지나야 한다.
+    (booted.document.querySelector("[data-workspace-switch]") as HTMLElement | null)?.click();
+    await sleep(100);
+    const navItem = booted.document.querySelector('.nav-item[data-view="workOrders"]') as HTMLElement;
+    const folder = (navItem.closest("[data-nav-folder]") as HTMLElement).dataset.navFolder as string;
+    (booted.document.querySelector(`[data-workspace-enter-folder="${folder}"]`) as HTMLElement).click();
+    await sleep(150);
+    navItem.click();
+    await sleep(250);
+    (booted.document.querySelector("[data-wo-import]") as HTMLElement).click();
+    await sleep(200);
+
+    // 받는 사람을 고르면 그 사람 것으로만 짠다. 안 고르면 섞인 뭉치로 보고
+    // 갈라주기로 가는데, 그건 따로 검사한다.
+    (booted.document.querySelector("[data-di-uid]") as HTMLSelectElement).value = "u-admin";
+    (booted.document.querySelector("[data-di-paste]") as HTMLTextAreaElement).value = "당근이랑 숨고 좀 살려야 함";
+    const before = booted.calls.length;
+    (booted.document.querySelector("[data-di-draft]") as HTMLElement).click();
+    await sleep(400);
+    const asked = booted.calls.slice(before).find(call => call.name === "assist");
+    expect(asked, "AI 통로로 나가야 한다").toBeTruthy();
+    const sent = asked!.input as { task: string; content: string };
+    expect(sent.task).toBe("directive_draft");
+    expect(sent.content).toContain("당근이랑 숨고 좀 살려야 함");
+    expect(sent.content).toContain("받는 사람: 서창환");
+    // 서창환은 월 13~14 한 시간만 막혀 있어 주 64시간이다.
+    expect(sent.content, "가용시간을 같이 넘겨야 한다").toContain("64시간");
+    // 지금 물고 있는 일을 알려야 같은 것을 또 시키지 않는다.
+    expect(sent.content).toContain("이미 물고 있어서");
+
+    // 짜면서 만들거나 보내면 안 된다. 사람이 읽고 고쳐야 한다.
+    const after = booted.calls.slice(before);
+    expect(after.some(call => call.name === "saveWorkOrder")).toBe(false);
+    expect(after.some(call => call.name === "sendTelegramDirective")).toBe(false);
+    expect(booted.errors, booted.errors.join(" / ")).toEqual([]);
+  }, 60000);
+  it("여러 사람 것이 섞인 뭉치를 사람별로 갈라 준다", async () => {
+    // 대표가 실제로 쓰는 모양은 한 사람짜리 표가 아니라 카톡에 흘려 적은
+    // 뭉치다 — "현진 저거 마무리 / 우중 카페 만들기" 가 섞여 있다.
+    (booted.document.querySelector("[data-workspace-switch]") as HTMLElement | null)?.click();
+    await sleep(100);
+    const navItem = booted.document.querySelector('.nav-item[data-view="workOrders"]') as HTMLElement;
+    const folder = (navItem.closest("[data-nav-folder]") as HTMLElement).dataset.navFolder as string;
+    (booted.document.querySelector(`[data-workspace-enter-folder="${folder}"]`) as HTMLElement).click();
+    await sleep(150);
+    navItem.click();
+    await sleep(250);
+    (booted.document.querySelector("[data-wo-import]") as HTMLElement).click();
+    await sleep(200);
+
+    // 받는 사람을 안 고른 채로 뭉치를 넣는다.
+    (booted.document.querySelector("[data-di-uid]") as HTMLSelectElement).value = "";
+    (booted.document.querySelector("[data-di-paste]") as HTMLTextAreaElement).value =
+      "현진 CRM 마무리하기\n우중 카페 만들어서 구축하기\n엄준식 교수님 결과보고서 및 견적서 보내드리기\n단체 문자 보내기";
+    const before = booted.calls.length;
+    (booted.document.querySelector("[data-di-draft]") as HTMLElement).click();
+    await sleep(450);
+
+    const asked = booted.calls.slice(before).find(call => call.name === "assist");
+    expect(asked, "AI 통로로 나가야 한다").toBeTruthy();
+    const sent = asked!.input as { task: string; content: string };
+    expect(sent.task, "사람을 안 골랐으면 갈라주기로 간다").toBe("directive_split");
+    // 사람마다 가용시간이 다르다. 한 사람 기준으로 다 짜면 누군가는 넘친다.
+    expect(sent.content).toContain("여기 있는 이름만 쓰세요");
+    expect(sent.content).toContain("서창환");
+    expect(sent.content).toContain("황우중");
+
+    // 갈라낸 사람이 줄로 나와야 한다.
+    const tabs = [...booted.document.querySelectorAll("[data-di-person]")] as HTMLElement[];
+    expect(tabs.length, "두 사람으로 갈려야 한다").toBe(2);
+    expect(tabs.map(tab => tab.textContent)).toEqual(["서창환", "황우중"]);
+    // 누구 것인지 모르는 줄을 아무에게나 붙이지 않는다.
+    const shown = (booted.document.querySelector(".di-panel") as HTMLElement).textContent || "";
+    expect(shown).toContain("누구 것인지 모르는 줄");
+    expect(shown).toContain("단체 문자 보내기 및 업무 연락처 정리");
+
+    // 첫 사람이 이미 올라와 있어야 한다.
+    expect((booted.document.querySelector("[data-di-paste]") as HTMLTextAreaElement).value).toContain("엄준식 교수님 서류 발송");
+    expect((booted.document.querySelector("[data-di-uid]") as HTMLSelectElement).value).toBe("u-admin");
+    expect(shown).toContain("엄준식 교수님 서류 발송");
+
+    // 두 번째 사람으로 옮기면 그 사람 것만 보인다.
+    tabs[1].click();
+    await sleep(250);
+    const second = (booted.document.querySelector(".di-panel") as HTMLElement).textContent || "";
+    expect(second).toContain("카페 구축");
+    expect(second, "한 화면에 둘을 다 펼치면 첫 사람만 읽고 만들기를 누른다").not.toContain("엄준식 교수님 서류 발송");
+    expect((booted.document.querySelector("[data-di-uid]") as HTMLSelectElement).value).toBe("u-hwang");
+
+    // 갈라 놓기만으로 아무것도 만들지 않는다.
+    expect(booted.calls.slice(before).some(call => call.name === "saveWorkOrder")).toBe(false);
+    expect(booted.errors, booted.errors.join(" / ")).toEqual([]);
+  }, 60000);
+  it("지시서를 눌러 펼치면 왜 하는지까지 다 보인다", async () => {
+    // 텔레그램에는 줄여서 보낸다. 앱이 원본이고 텔레그램은 알림이라,
+    // 전문이 있는 자리는 여기다.
+    (booted.document.querySelector("[data-workspace-switch]") as HTMLElement | null)?.click();
+    await sleep(100);
+    const navItem = booted.document.querySelector('.nav-item[data-view="workOrders"]') as HTMLElement;
+    const folder = (navItem.closest("[data-nav-folder]") as HTMLElement).dataset.navFolder as string;
+    (booted.document.querySelector(`[data-workspace-enter-folder="${folder}"]`) as HTMLElement).click();
+    await sleep(150);
+    navItem.click();
+    await sleep(300);
+
+    // 지시서 칸만 본다. 같은 문장이 아래 업무지시 카드에도 있어서, 화면
+    // 전체를 보면 접었는지 폈는지를 못 가린다.
+    const sheet = () => (booted.document.querySelector(".wd-detail") as HTMLElement | null)?.textContent || "";
+
+    // 자기 것은 기본으로 펼쳐져 있어야 한다. 눌러야 나오면 안 누르고
+    // 텔레그램만 본다.
+    expect(sheet(), "왜 하는지가 펼쳐져 있어야 한다").toContain("임차인이 두 번 민원을 넣었고");
+    expect(sheet()).toContain("끝나면 무엇이 달라지나");
+    // 지시 한 건의 완료기준·산출물까지 보여야 한다. 그게 없어서 애들이 헷갈렸다.
+    expect(sheet()).toContain("어디까지 하면 끝");
+    expect(sheet()).toContain("사진 3장과 원인 한 줄");
+    expect(sheet()).toContain("20260906_3층누수.xlsx");
+
+    // 접었다 폈다 된다. 누를 때마다 다시 그리므로 버튼을 매번 새로 찾는다 —
+    // 옛 버튼을 들고 있으면 화면에서 떨어져 나가 눌러도 아무 일이 없다.
+    const handle = () => booted.document.querySelector('[data-wd-open="u-admin"]') as HTMLElement;
+    expect(handle()).toBeTruthy();
+    handle().click();
+    await sleep(200);
+    expect(booted.document.querySelector(".wd-detail"), "접으면 사라진다").toBeNull();
+    handle().click();
+    await sleep(200);
+    expect(sheet()).toContain("임차인이 두 번 민원을 넣었고");
+
+    // 지시서가 없는 사람을 눌러도 터지지 않는다.
+    (booted.document.querySelector('[data-wd-open="u-hwang"]') as HTMLElement).click();
+    await sleep(200);
+    expect(sheet()).toContain("이번 주 지시서가 아직 없습니다");
+    expect(sheet(), "남의 것을 펼치면 내 것은 접힌다").not.toContain("임차인이 두 번 민원을 넣었고");
+
+    // 진행률은 「오늘」 에서 올라온 값이다. 여기서 또 적게 하면 두 곳이 어긋난다.
+    handle().click();
+    await sleep(200);
+    expect(sheet()).toContain("진행은 「오늘」 에서 적습니다");
     expect(booted.errors, booted.errors.join(" / ")).toEqual([]);
   }, 60000);
 });
