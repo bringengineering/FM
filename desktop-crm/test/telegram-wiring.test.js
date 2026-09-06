@@ -109,7 +109,9 @@ test("자동 발송이 하루에 한 번만 돈다", () => {
   assert.match(body, /if \(!telegramState\.configured \|\| !telegramState\.autoSend\) return;/u);
   assert.match(body, /canAdministerSecurity\(\)/u);
   // 자료를 받은 뒤에 돌아야 한다.
-  assert.match(appSource, /function render\(\) \{\n[\s\S]{0,200}?void maybeAutoSendTelegram\(\);/u);
+  // \n 하나로 못박으면 Windows 체크아웃(CRLF)에서만 깨진다. 검사가 운영체제를
+  // 타면 고친 사람은 자기 컴퓨터에서 재현조차 못 한다.
+  assert.match(appSource, /function render\(\) \{\r?\n[\s\S]{0,200}?void maybeAutoSendTelegram\(\);/u);
 });
 
 test("새 화면이 없는 클래스에 기대지 않는다", () => {
