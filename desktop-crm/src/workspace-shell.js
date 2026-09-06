@@ -58,14 +58,14 @@
   // workspace 는 둘뿐이다(operations·marketing). 나머지는 운영 안의 폴더라
   // 눌렀을 때 운영으로 들어가면서 그 폴더의 첫 화면을 연다. view 가 있는
   // 카드는 운영 폴더고, 없는 카드는 그 workspace 자체로 들어간다.
+  // 처음 화면은 **셸이 다른 것**만 고르게 한다. 운영 안의 일곱 갈래는
+  // 들어가면 왼쪽에 그대로 다 있다. 그걸 여기에 또 늘어놓으면, 어차피
+  // 사이드바에서 다시 고를 것을 한 번 더 고르게 하는 셈이다.
+  //
+  // 마케팅은 남긴다. 셸이 달라서 사이드바가 통째로 바뀌고, 여기서 빼면
+  // 마케팅으로 들어갈 길이 없어진다.
   const LANDING_FOLDERS = Object.freeze([
-    { workspace: "operations", view: "customers", title: "CRM", description: "고객·건물·협력업체·공실" },
-    { workspace: "operations", view: "tasks", title: "프로젝트 관리", description: "할 일과 민원" },
-    { workspace: "operations", view: "buildingCalendar", title: "ERP·일정", description: "업무·계약 일정과 입금" },
-    { workspace: "operations", view: "officeHome", title: "HRIS·그룹웨어", description: "근태와 메신저" },
-    { workspace: "operations", view: "operationsIntelligence", title: "BI·대시보드", description: "운영 분석과 밸류스코프" },
-    { workspace: "operations", view: "buildingDocuments", title: "문서관리", description: "건물 문서함과 정보·열쇠" },
-    { workspace: "operations", view: "aiAssistant", title: "워크플로·AI", description: "AI 비서" },
+    { workspace: "operations", view: "customers", title: "CRM", description: "고객·건물·업무·근태·문서를 한곳에서" },
     { workspace: "marketing", view: "", title: "마케팅", description: "마케팅 업무와 콘텐츠 관리" },
   ]);
 

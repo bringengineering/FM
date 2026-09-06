@@ -42,8 +42,14 @@ test("AI assistant separates report and quote creation and exposes reviewed file
   const preload = read("preload.js");
   const main = read("main.js");
   assert.match(html, /quote-core\.js/);
-  assert.match(app, /data-ai-assistant-tab="report"[\s\S]*보고서 작성/);
-  assert.match(app, /data-ai-assistant-tab="quote"[\s\S]*견적서 작성/);
+  // 견적서는 AI 비서 탭이 아니라 CRM 폴더의 제 화면으로 나갔다. 고객에게
+  // 보내는 서류라 그쪽이 제자리다 — AI 로 초안을 뽑는 것은 그 안의 한 가지
+  // 방법일 뿐이다. 둘이 갈려 있다는 뜻은 그대로다.
+  assert.match(app, /currentView === "quotes"\) renderQuotes\(\)/);
+  assert.match(app, /quotes: \["고객에게 보낼 견적서", "견적서"\]/);
+  assert.match(html, /data-view="quotes"/);
+  assert.ok(!app.includes("data-ai-assistant-tab"), "AI 비서에 견적서 탭이 남아 있다");
+  assert.match(app, /main\.innerHTML = renderAiReportAssistant\(\);/);
   assert.match(app, /task: "quote_draft"/);
   assert.match(app, /data-ai-quote-export="recipient"/);
   assert.match(app, /data-ai-quote-export="supplier"/);
