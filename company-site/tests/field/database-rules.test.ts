@@ -2230,6 +2230,141 @@ describe.runIf(databaseEmulatorAvailable)("fieldPlatform database rules", () => 
     await assertSucceeds(set(ref(admin, at("g7")), order("g7", { startDate: "", dueDate: "", progress: 0 })));
   });
 
+  it("lets only administrators own the supply catalogue and never delete an item", async () => {
+    // 품목을 지우면 그 품목에 달린 과거 기록의 이름이 사라진다. 안 쓰는
+    // 것은 active 를 내려 목록 아래로 보낸다.
+    const admin = environment.authenticatedContext("crm-admin", crmClaims("admin@bring.test")).database();
+    const member = environment.authenticatedContext("crm-legacy-member", crmClaims("legacy@bring.test")).database();
+    const at = (id: string) => `crmCompany/supplyItems/${id}`;
+    const item = (id: string, patch: Record<string, unknown> = {}) => ({
+      id,
+      name: "락스 4L",
+      category: "clean",
+      spec: "4L",
+      unit: "통",
+      minStock: 5,
+      location: "사무실 창고 2번칸",
+      vendor: "자재상",
+      note: "",
+      active: true,
+      createdAt: "2026-09-06T00:00:00.000Z",
+      updatedAt: "2026-09-06T00:00:00.000Z",
+      updatedBy: "crm-admin",
+      ...patch,
+    });
+
+    await assertSucceeds(set(ref(admin, at("s1")), item("s1")));
+    // 무엇이 창고에 있는지는 팀 전체가 안다. 감출 것이 아니다.
+    await assertSucceeds(get(ref(member, at("s1"))));
+    await assertSucceeds(get(ref(member, "crmCompany/supplyItems")));
+    // 만드는 것은 관리자만. 아무나 품목을 늘리면 같은 물건이 두 줄이 된다.
+    await assertFails(set(ref(member, at("s2")), { ...item("s2"), updatedBy: "crm-legacy-member" }));
+    // 이름과 단위가 없으면 목록에서 무엇인지, 몇 개인지 알 수 없다.
+    await assertFails(set(ref(admin, at("s3")), item("s3", { name: "" })));
+    await assertFails(set(ref(admin, at("s4")), item("s4", { unit: "" })));
+    // 모르는 분류는 막는다. 분류가 늘어나면 창고 칸이 흩어진다.
+    await assertFails(set(ref(admin, at("s5")), item("s5", { category: "우리끼리" })));
+    // 남은 수량을 품목에 적어 두는 길을 막는다. 그 숫자는 기록에서 센다.
+    await assertFails(set(ref(admin, at("s6")), item("s6", { stock: 12 })));
+    // 단가도 여기 못 적는다 — 팀 전체가 읽는 자리다.
+    await assertFails(set(ref(admin, at("s7")), item("s7", { unitPrice: 3200 })));
+    await assertFails(remove(ref(admin, at("s1"))));
+  });
+
+  it("keeps the supply ledger append-only and lets only administrators book stock in", async () => {
+    const admin = environment.authenticatedContext("crm-admin", crmClaims("admin@bring.test")).database();
+    const member = environment.authenticatedContext("crm-legacy-member", crmClaims("legacy@bring.test")).database();
+    const viewer = environment.authenticatedContext("crm-viewer", crmClaims("viewer@bring.test")).database();
+
+    await assertSucceeds(set(ref(admin, "crmCompany/supplyItems/m1"), {
+      id: "m1", name: "마대", category: "clean", unit: "장", minStock: 10, active: true,
+      createdAt: "2026-09-06T00:00:00.000Z", updatedAt: "2026-09-06T00:00:00.000Z", updatedBy: "crm-admin",
+    }));
+
+    const at = (id: string) => `crmCompany/supplyMoves/${id}`;
+    const move = (id: string, uid: string, patch: Record<string, unknown> = {}) => ({
+      id,
+      itemId: "m1",
+      kind: "out",
+      qty: 2,
+      date: "2026-09-06",
+      buildingId: "",
+      reason: "",
+      byName: "황우중",
+      createdAt: "2026-09-06T00:00:00.000Z",
+      createdBy: uid,
+      ...patch,
+    });
+
+    // 쓴 사람이 그 자리에서 적는다.
+    await assertSucceeds(set(ref(member, at("v1")), move("v1", "crm-legacy-member")));
+    // 조회 전용 계정은 재고를 못 움직인다.
+    await assertFails(set(ref(viewer, at("v2")), move("v2", "crm-viewer")));
+    // 남의 이름으로 적지 못한다.
+    await assertFails(set(ref(member, at("v3")), move("v3", "crm-admin")));
+
+    // 입고와 실사는 관리자만. 아무나 재고를 만들어내면 숫자를 못 믿는다.
+    await assertFails(set(ref(member, at("v4")), move("v4", "crm-legacy-member", { kind: "in", qty: 20 })));
+    await assertFails(set(ref(member, at("v5")), move("v5", "crm-legacy-member", { kind: "adjust", qty: 7, reason: "재고조사" })));
+    await assertSucceeds(set(ref(admin, at("v6")), move("v6", "crm-admin", { kind: "in", qty: 20 })));
+    await assertSucceeds(set(ref(admin, at("v7")), move("v7", "crm-admin", { kind: "adjust", qty: 7, reason: "재고조사" })));
+
+    // 폐기와 실사는 이유가 있어야 한다. 없으면 나중에 왜 줄었는지 모른다.
+    await assertFails(set(ref(member, at("v8")), move("v8", "crm-legacy-member", { kind: "disposal", qty: 1 })));
+    await assertSucceeds(set(ref(member, at("v9")), move("v9", "crm-legacy-member", { kind: "disposal", qty: 1, reason: "찢어짐" })));
+    await assertFails(set(ref(admin, at("v10")), move("v10", "crm-admin", { kind: "adjust", qty: 0 })));
+    // 실사만 0 을 받는다. "세어 보니 하나도 없었다" 는 뜻이 있는 숫자다.
+    await assertSucceeds(set(ref(admin, at("v11")), move("v11", "crm-admin", { kind: "adjust", qty: 0, reason: "다 씀" })));
+    await assertFails(set(ref(member, at("v12")), move("v12", "crm-legacy-member", { qty: 0 })));
+
+    // 없는 품목에 붙은 기록은 어느 화면에서도 안 보인다.
+    await assertFails(set(ref(member, at("v13")), move("v13", "crm-legacy-member", { itemId: "없음" })));
+    // 수량은 숫자다. 문자열이 들어오면 합계가 이어붙는다.
+    await assertFails(set(ref(member, at("v14")), move("v14", "crm-legacy-member", { qty: "2" })));
+    await assertFails(set(ref(member, at("v15")), move("v15", "crm-legacy-member", { kind: "steal" })));
+    await assertFails(set(ref(member, at("v16")), move("v16", "crm-legacy-member", { memo: "x" })));
+
+    // 한 번 적은 기록은 못 고친다. 고칠 수 있는 장부는 장부가 아니다.
+    await assertFails(set(ref(member, at("v1")), move("v1", "crm-legacy-member", { qty: 99 })));
+    await assertFails(set(ref(admin, at("v1")), move("v1", "crm-admin", { qty: 99 })));
+    // 지우는 것은 관리자만. 오타 하나가 영원히 남으면 아무도 안 적는다.
+    await assertFails(remove(ref(member, at("v1"))));
+    await assertSucceeds(remove(ref(admin, at("v1"))));
+  });
+
+  it("keeps supply unit prices out of everyone's reach but the administrator", async () => {
+    // 원가는 회사 재무다. 팀 전체가 읽는 품목 노드에 두면 읽기를 다시 막을
+    // 길이 없다 — Firebase 는 부모가 허용하면 자식에서 못 막는다.
+    const admin = environment.authenticatedContext("crm-admin", crmClaims("admin@bring.test")).database();
+    const member = environment.authenticatedContext("crm-legacy-member", crmClaims("legacy@bring.test")).database();
+    const viewer = environment.authenticatedContext("crm-viewer", crmClaims("viewer@bring.test")).database();
+
+    await assertSucceeds(set(ref(admin, "crmCompany/supplyItems/c1"), {
+      id: "c1", name: "실리콘", category: "consumable", unit: "개", minStock: 0, active: true,
+      createdAt: "2026-09-06T00:00:00.000Z", updatedAt: "2026-09-06T00:00:00.000Z", updatedBy: "crm-admin",
+    }));
+
+    const target = "crmCompany/supplyCosts/c1";
+    const cost = {
+      itemId: "c1",
+      unitPrice: 3200,
+      pricedAt: "2026-09-01",
+      updatedAt: "2026-09-06T00:00:00.000Z",
+      updatedBy: "crm-admin",
+    };
+    await assertSucceeds(set(ref(admin, target), cost));
+    await assertSucceeds(get(ref(admin, target)));
+    // 품목은 보이지만 값은 안 보인다.
+    await assertSucceeds(get(ref(member, "crmCompany/supplyItems/c1")));
+    await assertFails(get(ref(member, target)));
+    await assertFails(get(ref(viewer, target)));
+    await assertFails(get(ref(member, "crmCompany/supplyCosts")));
+    await assertFails(set(ref(member, target), { ...cost, updatedBy: "crm-legacy-member" }));
+    // 음수 단가는 어디서도 뜻이 없다.
+    await assertFails(set(ref(admin, target), { ...cost, unitPrice: -100 }));
+    await assertFails(set(ref(admin, target), { ...cost, vendorSecret: "x" }));
+  });
+
   it("keeps HR records readable only by the person and administrators", async () => {
     // 입사일·계약형태는 그 사람 것이다. 옆자리 동료가 볼 이유가 없다.
     const admin = environment.authenticatedContext("crm-admin", crmClaims("admin@bring.test")).database();

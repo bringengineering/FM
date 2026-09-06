@@ -199,6 +199,7 @@
     officeMembers: ["입사일·계약형태·근로계약서", "인사기록"],
     workOrders: ["왜·무엇을·완료 기준을 적어 시킵니다", "업무지시"],
     forms: ["점검표·확인서를 만들고 채웁니다", "서식"],
+    supplies: ["지금 몇 개 남았는지 한 장에서", "비품·자재"],
     officeApprovals: ["지출·구매를 올리고 승인받는 곳", "결재"],
     officePayroll: ["임금명세서 · 본인 것만 보입니다", "급여"],
     officeMessenger: ["CRM 구성원과 빠른 대화", "메신저"],
@@ -1512,6 +1513,7 @@
     else if (currentView === "payments") renderPayments();
     else if (currentView === "forms") renderForms();
     else if (currentView === "workOrders") renderWorkOrders();
+    else if (currentView === "supplies") renderSupplies();
     else if (currentView === "customers") renderCustomers();
     else if (currentView === "customerMessages") renderCustomerMessages();
     else if (currentView === "buildings") renderBuildings();
@@ -4538,6 +4540,303 @@
     }
   }
 
+  // --- 비품·자재 ---
+  // 이 화면이 답하는 질문은 하나다. **지금 몇 개 남았나.**
+  //
+  // 그래서 남은 수량을 어디에도 저장하지 않는다. 들어온 것과 나간 것만 적고,
+  // 볼 때마다 다시 센다. 칸에 숫자를 적어 두면 두 사람이 같은 날 다르게
+  // 고치는 순간 그 숫자는 아무 뜻이 없어진다.
+  let supplyState = {
+    items: [], moves: [], costs: [], admin: false, canWork: false, uid: "",
+    loaded: false, loading: false, error: "",
+    category: "", showRetired: false, openItemId: "",
+    itemEditing: null, moveEditing: null, busyId: "",
+  };
+
+  const supplyCore = () => window.BringSupplyCore;
+
+  async function loadSupplies() {
+    if (supplyState.loading) return;
+    supplyState.loading = true;
+    supplyState.error = "";
+    if (currentView === "supplies") renderSupplies();
+    try {
+      const data = await api.loadSupplies();
+      supplyState.items = Array.isArray(data && data.items) ? data.items : [];
+      supplyState.moves = Array.isArray(data && data.moves) ? data.moves : [];
+      supplyState.costs = Array.isArray(data && data.costs) ? data.costs : [];
+      supplyState.admin = data && data.admin === true;
+      supplyState.canWork = data && data.canWork === true;
+      supplyState.uid = String((data && data.uid) || "");
+      supplyState.loaded = true;
+    } catch (error) {
+      supplyState.error = error && error.message || "비품·자재를 불러오지 못했습니다.";
+    } finally {
+      supplyState.loading = false;
+      updateSupplyBadge();
+      if (currentView === "supplies") renderSupplies();
+    }
+  }
+
+  // 사이드바 숫자는 "부족한 것"이다. 품목 수를 세면 늘 같은 숫자라 아무도
+  // 안 본다. 여기 숫자가 0 이 아니면 사야 할 것이 있다는 뜻이다.
+  function updateSupplyBadge() {
+    const badge = document.getElementById("navSupplyCount");
+    if (!badge) return;
+    const S = supplyCore();
+    const count = S ? S.lowStock(supplyState.items, supplyState.moves).length : 0;
+    badge.textContent = String(count);
+    badge.hidden = count === 0;
+  }
+
+  // 날짜 칸이 빈 채로 열리면 사람은 연도부터 네 자리를 친다. 올해 앞뒤로
+  // 범위를 잡아 두면 달력이 올해로 열리고, 화살표만 눌러도 연도가 안 튄다.
+  function supplyDateBounds() {
+    const year = Number(Core.workDate().slice(0, 4)) || new Date().getFullYear();
+    return ` min="${year - 1}-01-01" max="${year + 1}-12-31"`;
+  }
+
+  function supplyCostOf(itemId) {
+    const found = (supplyState.costs || []).find(cost => cost && cost.itemId === itemId);
+    return found || null;
+  }
+
+  function renderSupplies() {
+    const S = supplyCore();
+    if (!S) { main.innerHTML = `<section class="operations-hero"><div><h2>비품·자재</h2><p>모듈을 불러오지 못했습니다.</p></div></section>`; return; }
+    if (!supplyState.loaded && !supplyState.loading && !supplyState.error) void loadSupplies();
+
+    const today = Core.workDate();
+    const summary = S.summarize(supplyState.items, supplyState.moves, today);
+    const low = S.lowStock(supplyState.items, supplyState.moves);
+    const groups = S.groupByCategory(supplyState.items, supplyState.moves);
+    const lastMoved = S.lastMovedMap(supplyState.moves);
+
+    const status = supplyState.loading
+      ? `<div class="info-box">불러오는 중…</div>`
+      : (supplyState.error ? `<div class="info-box" style="color:#C6535F">${esc(supplyState.error)}</div>` : "");
+
+    const tabs = [{ key: "", label: "전체" }, ...S.CATEGORIES.map(item => ({ key: item.key, label: item.label }))]
+      .map(item => {
+        const group = groups.find(row => row.key === item.key);
+        const count = item.key ? group.items.filter(row => supplyState.showRetired || row.active).length : summary.items + (supplyState.showRetired ? summary.retired : 0);
+        return `<button type="button" class="sp-tab${item.key === supplyState.category ? " is-active" : ""}" data-supply-category="${esc(item.key)}"><b>${esc(item.label)}</b><small>${count}</small></button>`;
+      }).join("");
+
+    const shown = groups
+      .filter(group => !supplyState.category || group.key === supplyState.category)
+      .map(group => ({ key: group.key, label: group.label, items: group.items.filter(item => supplyState.showRetired || item.active) }))
+      .filter(group => group.items.length);
+
+    const lowBox = low.length
+      ? `<section class="office-panel sp-low">
+          <header><div><span>NEEDS BUYING</span><h3>지금 모자란 것 ${low.length}가지</h3></div><small>다 떨어진 것부터</small></header>
+          <div class="sp-low-list">${low.slice(0, 12).map(item => `<button type="button" class="sp-low-chip${item.stock <= 0 ? " is-empty" : ""}" data-supply-open="${esc(item.id)}">
+            <b>${esc(item.name)}</b><small>${item.stock}${esc(item.unit)}${item.minStock ? ` / 최소 ${item.minStock}${esc(item.unit)}` : ""}</small>
+          </button>`).join("")}${low.length > 12 ? `<span class="sp-low-more">외 ${low.length - 12}가지</span>` : ""}</div>
+        </section>`
+      : "";
+
+    main.innerHTML = `<section class="operations-hero">
+        <div><span>비품·자재</span><h2>우리 물품</h2><p>청소용품·소모자재·공구까지, 지금 몇 개 남았는지 한 장에서 봅니다. 남은 수량은 저장하지 않고 입출고 기록에서 매번 다시 셉니다.</p></div>
+        <div class="operations-actions">
+          <label class="sp-toggle"><input type="checkbox" data-supply-retired${supplyState.showRetired ? " checked" : ""}> 안 쓰는 것도 보기</label>
+          ${supplyState.canWork ? `<button type="button" class="mini-button" data-supply-move-new>입출고 적기</button>` : ""}
+          ${supplyState.admin ? `<button type="button" class="primary-button" data-supply-item-new>새 품목</button>` : ""}
+        </div>
+      </section>
+      ${status}
+      <div class="operations-kpis">
+        <div class="operations-kpi"><span>쓰는 품목</span><b>${summary.items}</b><small>안 쓰는 것 ${summary.retired}가지</small></div>
+        <div class="operations-kpi" style="--wash:#FFF1F1"><span>모자란 것</span><b>${summary.low}</b><small>사야 합니다</small></div>
+        <div class="operations-kpi" style="--wash:#FFF6E9"><span>다 떨어짐</span><b>${summary.empty}</b><small>현장 나가기 전에 확인</small></div>
+        <div class="operations-kpi" style="--wash:#EDF9F5"><span>이번 달 사용</span><b>${summary.usedThisMonth}</b><small>기록 ${summary.movesThisMonth}건</small></div>
+      </div>
+      ${lowBox}
+      ${supplyState.itemEditing ? supplyItemEditor(S) : ""}
+      ${supplyState.moveEditing ? supplyMoveEditor(S) : ""}
+      <div class="sp-tabs">${tabs}</div>
+      ${shown.length ? shown.map(group => supplyGroupTable(S, group, lastMoved)).join("") : `<div class="office-empty">${supplyState.loaded ? "등록한 품목이 없습니다." : ""}</div>`}`;
+  }
+
+  function supplyGroupTable(S, group, lastMoved) {
+    const rowsHtml = group.items.map(item => {
+      const cost = supplyState.admin ? supplyCostOf(item.id) : null;
+      const short = item.minStock > 0 ? item.stock < item.minStock : item.stock <= 0;
+      const badge = !item.active
+        ? `<span class="office-status off"><i></i>안 씀</span>`
+        : (item.stock <= 0
+          ? `<span class="office-status missing"><i></i>없음</span>`
+          : (short ? `<span class="office-status warn"><i></i>부족</span>` : `<span class="office-status working"><i></i>충분</span>`));
+      const open = supplyState.openItemId === item.id;
+      const history = open
+        ? `<tr class="sp-history-row"><td colspan="${supplyState.admin ? 7 : 6}">${supplyHistory(S, item)}</td></tr>`
+        : "";
+      return `<tr data-supply-row="${esc(item.id)}">
+          <td><b>${esc(item.name)}</b><small>${esc(item.spec || "규격 없음")}</small></td>
+          <td><b>${item.stock}${esc(item.unit)}</b><small>${item.minStock ? `최소 ${item.minStock}${esc(item.unit)}` : "최소 미정"}</small></td>
+          <td>${badge}</td>
+          <td><b>${esc(item.location || "-")}</b><small>${esc(item.vendor || "구매처 미정")}</small></td>
+          <td><b>${esc(lastMoved[item.id] || "-")}</b><small>마지막 이동</small></td>
+          ${supplyState.admin ? `<td><b>${cost && cost.unitPrice ? `${cost.unitPrice.toLocaleString("ko-KR")}원` : "-"}</b><small>${cost && cost.pricedAt ? esc(cost.pricedAt) : "단가 미기입"}</small></td>` : ""}
+          <td class="sp-row-actions">
+            <button type="button" class="text-button" data-supply-open="${esc(item.id)}">${open ? "기록 접기" : "기록 보기"}</button>
+            ${supplyState.canWork ? `<button type="button" class="mini-button" data-supply-move-for="${esc(item.id)}">적기</button>` : ""}
+            ${supplyState.admin ? `<button type="button" class="mini-button" data-supply-item-edit="${esc(item.id)}">고치기</button>` : ""}
+          </td>
+        </tr>${history}`;
+    }).join("");
+
+    return `<section class="office-panel">
+      <header><div><span>${esc(group.key.toUpperCase())}</span><h3>${esc(group.label)}</h3></div><small>${group.items.length}가지</small></header>
+      <div class="office-table-wrap"><table class="office-table">
+        <thead><tr><th>품목</th><th>남은 수량</th><th>상태</th><th>보관·구매처</th><th>마지막 이동</th>${supplyState.admin ? "<th>단가</th>" : ""}<th></th></tr></thead>
+        <tbody>${rowsHtml}</tbody>
+      </table></div>
+    </section>`;
+  }
+
+  // 한 품목의 장부. 왜 지금 이 숫자인지 여기서만 알 수 있다.
+  function supplyHistory(S, item) {
+    const moves = S.movesOfItem(item.id, supplyState.moves, 20);
+    if (!moves.length) return `<div class="sp-history-empty">아직 기록이 없습니다.</div>`;
+    return `<ol class="sp-history">${moves.map(move => {
+      const kind = S.moveKind(move.kind);
+      const amount = move.kind === "adjust" ? `= ${move.qty}${esc(item.unit)}` : `${kind.sign > 0 ? "+" : "−"}${move.qty}${esc(item.unit)}`;
+      return `<li class="sp-history-item kind-${esc(move.kind)}">
+        <b>${esc(move.date)}</b>
+        <span class="sp-history-kind">${esc(kind.label)}</span>
+        <em>${amount}</em>
+        <small>${esc(move.byName || "")}${move.reason ? ` · ${esc(move.reason)}` : ""}</small>
+        ${supplyState.admin ? `<button type="button" class="text-button sp-history-del" data-supply-move-delete="${esc(move.id)}">지우기</button>` : ""}
+      </li>`;
+    }).join("")}</ol>`;
+  }
+
+  function supplyItemEditor(S) {
+    const draft = S.normalizeItem(supplyState.itemEditing);
+    const cost = supplyCostOf(draft.id);
+    return `<form class="wo-editor" data-supply-item-form>
+      <h3>${esc(draft.createdAt ? "품목 고치기" : "새 품목")}</h3>
+      <label class="wide"><span>품목 이름</span><input type="text" name="name" maxlength="120" value="${esc(draft.name)}" required placeholder="예: 락스 4L"></label>
+      <label><span>분류</span><select name="category">${S.CATEGORIES.map(item => `<option value="${esc(item.key)}"${item.key === draft.category ? " selected" : ""}>${esc(item.label)}</option>`).join("")}</select></label>
+      <label><span>단위</span><input type="text" name="unit" maxlength="20" value="${esc(draft.unit)}" required placeholder="개 · 통 · 박스"></label>
+      <label><span>최소 보유 수량</span><input type="number" name="minStock" min="0" max="999999" step="1" value="${draft.minStock}"></label>
+      <label><span>규격</span><input type="text" name="spec" maxlength="200" value="${esc(draft.spec)}" placeholder="예: 4L / 20매입"></label>
+      <label><span>보관 장소</span><input type="text" name="location" maxlength="120" value="${esc(draft.location)}" placeholder="예: 사무실 창고 2번칸"></label>
+      <label><span>구매처</span><input type="text" name="vendor" maxlength="120" value="${esc(draft.vendor)}" placeholder="예: 쿠팡 / 자재상"></label>
+      ${supplyState.admin ? `<label><span>단가 (원)</span><input type="number" name="unitPrice" min="0" step="1" value="${cost && cost.unitPrice ? cost.unitPrice : ""}" placeholder="관리자만 봅니다"></label>
+      <label><span>단가 기준일</span><input type="date" name="pricedAt" value="${esc(cost && cost.pricedAt ? cost.pricedAt : "")}"${supplyDateBounds()}></label>` : ""}
+      <label class="wide"><span>메모</span><textarea name="note" rows="2" maxlength="1000">${esc(draft.note)}</textarea></label>
+      <label class="wide sp-active"><input type="checkbox" name="active"${draft.active ? " checked" : ""}> 지금 쓰는 품목입니다 (끄면 목록 아래로 내려갑니다 — 지우지는 않습니다)</label>
+      ${supplyState.admin ? `<p class="wo-editor-note">단가는 팀 전체가 보는 자리에 저장하지 않습니다. 관리자만 읽는 곳에 따로 들어갑니다.</p>` : ""}
+      <div class="wo-editor-actions">
+        <button class="primary-button" type="submit">${esc(draft.createdAt ? "고쳐서 저장" : "만들기")}</button>
+        <button class="secondary-button" type="button" data-supply-item-cancel>취소</button>
+      </div>
+    </form>`;
+  }
+
+  function supplyMoveEditor(S) {
+    const draft = S.normalizeMove(supplyState.moveEditing);
+    const choices = S.moveChoices(supplyState.admin);
+    const kind = S.moveKind(draft.kind) || choices[0];
+    const items = supplyState.items.filter(item => item.active || item.id === draft.itemId);
+    return `<form class="wo-editor" data-supply-move-form>
+      <h3>입출고 적기</h3>
+      <label class="wide"><span>품목</span><select name="itemId" required>
+        <option value="">고르세요</option>
+        ${items.map(item => `<option value="${esc(item.id)}"${item.id === draft.itemId ? " selected" : ""}>${esc(item.name)}${item.spec ? ` (${esc(item.spec)})` : ""}</option>`).join("")}
+      </select></label>
+      <label><span>종류</span><select name="kind">${choices.map(item => `<option value="${esc(item.key)}"${item.key === (kind && kind.key) ? " selected" : ""}>${esc(item.label)}</option>`).join("")}</select></label>
+      <label><span>수량</span><input type="number" name="qty" min="0" max="999999" step="1" value="${draft.qty || ""}" required></label>
+      <label><span>날짜</span><input type="date" name="date" value="${esc(draft.date || Core.workDate())}" required${supplyDateBounds()}></label>
+      <label class="wide"><span>이유 · 어디에 썼는지</span><input type="text" name="reason" maxlength="500" value="${esc(draft.reason)}" placeholder="폐기와 실사는 반드시 적어야 합니다"></label>
+      <p class="wo-editor-note">한 번 적은 기록은 고치지 않습니다. 잘못 적었으면 반대 기록이나 실사를 적어 바로잡습니다. 실사는 “세어 보니 N개였다”라는 뜻이라 그 앞의 계산을 지우고 N 으로 맞춥니다.</p>
+      <div class="wo-editor-actions">
+        <button class="primary-button" type="submit">적기</button>
+        <button class="secondary-button" type="button" data-supply-move-cancel>취소</button>
+      </div>
+    </form>`;
+  }
+
+  async function saveSupplyItemFromForm(form) {
+    const S = supplyCore();
+    if (!S) return;
+    const raw = Object.fromEntries(new FormData(form).entries());
+    const previous = S.normalizeItem(supplyState.itemEditing);
+    const checked = S.validateItem(Object.assign({}, previous, {
+      id: previous.id || `sp_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`,
+      name: String(raw.name || ""),
+      category: String(raw.category || "etc"),
+      unit: String(raw.unit || ""),
+      minStock: raw.minStock,
+      spec: String(raw.spec || ""),
+      location: String(raw.location || ""),
+      vendor: String(raw.vendor || ""),
+      note: String(raw.note || ""),
+      active: raw.active === "on",
+    }));
+    if (!checked.ok) { showToast(checked.error, "error"); return; }
+    // 단가 칸은 관리자에게만 보인다. 안 보이는 사람이 낸 폼에는 없으므로,
+    // 있을 때만 실어 보낸다 — 빈 값을 보내면 있던 단가가 0 이 된다.
+    const payload = Object.assign({}, checked.item);
+    if (supplyState.admin && Object.prototype.hasOwnProperty.call(raw, "unitPrice")) {
+      payload.unitPrice = String(raw.unitPrice || "").trim() === "" ? 0 : raw.unitPrice;
+      payload.pricedAt = String(raw.pricedAt || "");
+    }
+    try {
+      await api.saveSupplyItem(payload);
+      supplyState.itemEditing = null;
+      supplyState.loaded = false;
+      showToast("품목을 저장했습니다.", "success");
+      await loadSupplies();
+    } catch (error) {
+      showToast(error && error.message || "저장하지 못했습니다.", "error");
+    }
+  }
+
+  async function addSupplyMoveFromForm(form) {
+    const S = supplyCore();
+    if (!S) return;
+    const raw = Object.fromEntries(new FormData(form).entries());
+    const checked = S.validateMove({
+      id: `mv_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`,
+      itemId: String(raw.itemId || ""),
+      kind: String(raw.kind || "out"),
+      qty: raw.qty,
+      date: String(raw.date || ""),
+      reason: String(raw.reason || ""),
+    }, supplyState.admin);
+    if (!checked.ok) { showToast(checked.error, "error"); return; }
+    try {
+      await api.addSupplyMove(checked.move);
+      supplyState.moveEditing = null;
+      supplyState.openItemId = checked.move.itemId;
+      supplyState.loaded = false;
+      showToast(`${S.moveLabel(checked.move.kind)}를 적었습니다.`, "success");
+      await loadSupplies();
+    } catch (error) {
+      showToast(error && error.message || "적지 못했습니다.", "error");
+    }
+  }
+
+  async function removeSupplyMove(moveId) {
+    if (!supplyState.admin || supplyState.busyId) return;
+    if (!window.confirm("이 기록을 지웁니다. 남은 수량이 바로 바뀝니다. 계속할까요?")) return;
+    supplyState.busyId = moveId;
+    try {
+      await api.deleteSupplyMove({ id: moveId });
+      supplyState.loaded = false;
+      showToast("기록을 지웠습니다.", "success");
+      await loadSupplies();
+    } catch (error) {
+      showToast(error && error.message || "지우지 못했습니다.", "error");
+    } finally {
+      supplyState.busyId = "";
+    }
+  }
+
   function renderOperationsIntelligence() {
     main.innerHTML = AiOperationsUI.renderManagementReport({
       report: currentManagementReport(),
@@ -6870,6 +7169,43 @@
   }
 
   document.addEventListener("click", async event => {
+    const supplyCategory = event.target.closest("[data-supply-category]");
+    if (supplyCategory) { supplyState.category = supplyCategory.dataset.supplyCategory; renderSupplies(); return; }
+    const supplyOpen = event.target.closest("[data-supply-open]");
+    if (supplyOpen) {
+      const id = supplyOpen.dataset.supplyOpen;
+      supplyState.openItemId = supplyState.openItemId === id ? "" : id;
+      supplyState.category = "";
+      renderSupplies();
+      return;
+    }
+    if (event.target.closest("[data-supply-item-new]")) {
+      const S = supplyCore();
+      if (S) { supplyState.itemEditing = S.normalizeItem({}); renderSupplies(); }
+      return;
+    }
+    const supplyItemEdit = event.target.closest("[data-supply-item-edit]");
+    if (supplyItemEdit) {
+      const S = supplyCore();
+      const found = S && supplyState.items.find(item => item && item.id === supplyItemEdit.dataset.supplyItemEdit);
+      if (found) { supplyState.itemEditing = S.normalizeItem(found); renderSupplies(); }
+      return;
+    }
+    if (event.target.closest("[data-supply-item-cancel]")) { supplyState.itemEditing = null; renderSupplies(); return; }
+    if (event.target.closest("[data-supply-move-new]")) {
+      const S = supplyCore();
+      if (S) { supplyState.moveEditing = S.normalizeMove({ date: Core.workDate() }); renderSupplies(); }
+      return;
+    }
+    const supplyMoveFor = event.target.closest("[data-supply-move-for]");
+    if (supplyMoveFor) {
+      const S = supplyCore();
+      if (S) { supplyState.moveEditing = S.normalizeMove({ itemId: supplyMoveFor.dataset.supplyMoveFor, date: Core.workDate() }); renderSupplies(); }
+      return;
+    }
+    if (event.target.closest("[data-supply-move-cancel]")) { supplyState.moveEditing = null; renderSupplies(); return; }
+    const supplyMoveDelete = event.target.closest("[data-supply-move-delete]");
+    if (supplyMoveDelete) { await removeSupplyMove(supplyMoveDelete.dataset.supplyMoveDelete); return; }
     const woProject = event.target.closest("[data-wo-project]");
     if (woProject) { workOrderState.projectId = woProject.dataset.woProject; renderWorkOrders(); return; }
     if (event.target.closest("[data-wo-project-new]")) {
@@ -8637,6 +8973,24 @@
   });
 
   document.addEventListener("change", async event => {
+    if (event.target.matches("[data-supply-retired]")) {
+      supplyState.showRetired = event.target.checked === true;
+      renderSupplies();
+      return;
+    }
+    if (event.target.matches("[data-supply-move-form] [name=\"kind\"]")) {
+      // 종류를 바꾸면 이유 칸이 필수인지가 바뀐다. 눌러 보고서야 아는 것보다
+      // 고르는 순간 보이는 편이 낫다.
+      const S = supplyCore();
+      const form = event.target.form;
+      const reason = form && form.querySelector("[name=\"reason\"]");
+      const kind = S && S.moveKind(event.target.value);
+      if (reason && kind) {
+        reason.required = kind.needsReason;
+        reason.placeholder = kind.needsReason ? `${kind.label}는 이유를 반드시 적어야 합니다` : "어디에 썼는지 적어 두면 나중에 찾을 수 있습니다";
+      }
+      return;
+    }
     if (event.target.matches("[data-marketing-valid-lead]")) {
       const reason = event.target.form && event.target.form.querySelector("[data-marketing-invalid-reason]");
       if (reason) { const invalid = event.target.value === "false"; reason.disabled = !invalid; reason.required = invalid; if (!invalid) reason.value = ""; }
@@ -8954,6 +9308,8 @@
     const form = event.target;
     if (form.matches("[data-wo-form]")) { await saveWorkOrderFromForm(form); return; }
     if (form.matches("[data-wo-project-form]")) { await saveProjectFromForm(form); return; }
+    if (form.matches("[data-supply-item-form]")) { await saveSupplyItemFromForm(form); return; }
+    if (form.matches("[data-supply-move-form]")) { await addSupplyMoveFromForm(form); return; }
     if (form.matches("[data-form-template-form]")) { await saveFormTemplateFromDom(); return; }
     if (form.matches("[data-form-entry-form]")) {
       // 어느 단추로 냈는지에 따라 임시 저장인지 완료인지 갈린다.
