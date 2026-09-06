@@ -197,6 +197,7 @@
     officeLeave: ["신청·승인과 남은 일수", "연차"],
     officeMembers: ["입사일·계약형태·근로계약서", "인사기록"],
     officeApprovals: ["지출·구매를 올리고 승인받는 곳", "결재"],
+    purchases: ["회사에서 나간 돈 · 대표만", "매입·지급"],
     officeMessenger: ["CRM 구성원과 빠른 대화", "메신저"],
     officeAdmin: ["관리자 전용 직원 근무 현황", "전체 근태관리"],
     buildingDocuments: ["건물마다 어떤 서류가 있는지", "건물 문서함"],
@@ -882,6 +883,9 @@
       // 이름이 없어 이메일이 이름 자리에 올라온 경우 아랫줄을 한 번 더 보여주지 않는다
       userPill.classList.toggle("is-email-only", !!email && displayName === email);
       document.getElementById("navOfficeAdmin").hidden = user.officeAdmin !== true;
+      // 매입은 원가와 이익률이 드러난다. 대표가 아니면 칸 자체를 내지 않는다.
+      // 화면을 우회해도 서버 규칙이 다시 막는다 — 여기서 숨기는 것은 그 위의 예의다.
+      document.getElementById("navPurchases").hidden = user.accessRole !== "admin";
     }
     workspaceCoordinator.start();
   }
@@ -1500,6 +1504,7 @@
     if (currentView === "dashboard") renderDashboard();
     else if (currentView === "cases") renderCases();
     else if (currentView === "payments") renderPayments();
+    else if (currentView === "purchases") renderPurchases();
     else if (currentView === "customers") renderCustomers();
     else if (currentView === "customerMessages") renderCustomerMessages();
     else if (currentView === "buildings") renderBuildings();
@@ -3755,6 +3760,162 @@
       const result = await api.exportQuote({ copyType, format, quote: aiAssistantState.quote });
       if (result && result.ok) showToast(`${copyType === "recipient" ? "공급받는자용" : "공급자 보관용"} 견적서 ${format === "pdf" ? "PDF" : "Excel"} 파일을 저장했습니다.`, "success");
     } catch (error) { showToast(error.message || "견적서를 저장하지 못했습니다.", "error"); }
+  }
+
+  // --- 매입·지급 ---
+  // 대표만 보는 화면이다. 매출은 팀원도 보지만 매입은 아니다 — 원가와
+  // 이익률이 드러나기 때문이다. 사이드바 칸도 대표가 아니면 안 나오고,
+  // 서버 규칙도 관리자만 읽게 막는다.
+  let purchaseState = { items: [], month: "", loaded: false, loading: false, error: "", editingId: "" };
+
+  const purchaseCore = () => window.BringPurchaseCore;
+  const wonText = value => `${Number(value || 0).toLocaleString("ko-KR")}원`;
+
+  async function loadPurchases() {
+    if (purchaseState.loading) return;
+    purchaseState.loading = true;
+    purchaseState.error = "";
+    if (currentView === "purchases") renderPurchases();
+    try {
+      const data = await api.loadPurchases();
+      purchaseState.items = Array.isArray(data && data.items) ? data.items : [];
+      purchaseState.loaded = true;
+    } catch (error) {
+      purchaseState.error = error && error.message || "매입 자료를 불러오지 못했습니다.";
+    } finally {
+      purchaseState.loading = false;
+      if (currentView === "purchases") renderPurchases();
+    }
+  }
+
+  function renderPurchases() {
+    const P = purchaseCore();
+    if (!P) { main.innerHTML = `<section class="panel"><p>매입 모듈을 불러오지 못했습니다.</p></section>`; return; }
+    if (currentAuth.user && currentAuth.user.accessRole !== "admin") {
+      main.innerHTML = `<section class="panel"><p>매입·지급은 대표만 볼 수 있습니다.</p></section>`;
+      return;
+    }
+    if (!purchaseState.loaded && !purchaseState.loading && !purchaseState.error) void loadPurchases();
+
+    const monthList = P.months(purchaseState.items);
+    const month = purchaseState.month && monthList.includes(purchaseState.month)
+      ? purchaseState.month
+      : (monthList[0] || new Date().toISOString().slice(0, 7));
+    const summary = P.summarize(purchaseState.items, month);
+    const care = P.attention(purchaseState.items, new Date().toISOString().slice(0, 10));
+    const editing = purchaseState.editingId
+      ? purchaseState.items.find(item => item && item.id === purchaseState.editingId) || null
+      : null;
+
+    const status = purchaseState.loading
+      ? `<p class="muted">불러오는 중…</p>`
+      : (purchaseState.error ? `<p class="error-text">${esc(purchaseState.error)}</p>` : "");
+
+    const rowsHtml = P.rows(purchaseState.items)
+      .map(P.normalizeRecord)
+      .filter(item => item.id && item.tradeDate.slice(0, 7) === month)
+      .sort((a, b) => String(b.tradeDate).localeCompare(String(a.tradeDate)))
+      .map(item => {
+        const tax = (P.taxStateOf(item.taxState) || {}).label || item.taxState;
+        const pay = (P.payStateOf(item.payState) || {}).label || item.payState;
+        return `<tr class="pay-${esc(item.payState)}">
+          <td>${esc(item.tradeDate)}</td>
+          <td>${esc(item.vendor)}</td>
+          <td>${esc(item.title)}</td>
+          <td class="num">${esc(wonText(item.supplyAmount))}</td>
+          <td class="num">${esc(wonText(item.taxAmount))}</td>
+          <td>${esc(tax)}</td>
+          <td>${esc(pay)}${item.paidDate ? `<small> ${esc(item.paidDate)}</small>` : ""}</td>
+          <td><button type="button" class="mini-button" data-purchase-edit="${esc(item.id)}">고치기</button></td>
+        </tr>`;
+      }).join("");
+
+    main.innerHTML = `<section class="panel purchase-panel">
+      <header class="purchase-head">
+        <div><h2>매입·지급</h2><p class="muted">회사에서 나간 돈입니다. 대표만 볼 수 있습니다.</p></div>
+        <label class="purchase-month"><span>기준 월</span>
+          <select data-purchase-month>${(monthList.includes(month) ? monthList : [month, ...monthList]).map(value => `<option value="${esc(value)}"${value === month ? " selected" : ""}>${esc(value)}</option>`).join("")}</select>
+        </label>
+      </header>
+      ${status}
+      <div class="purchase-summary">
+        <div><span>공급가</span><b>${esc(wonText(summary.supplyAmount))}</b></div>
+        <div><span>세액</span><b>${esc(wonText(summary.taxAmount))}</b></div>
+        <div><span>합계</span><b>${esc(wonText(summary.totalAmount))}</b></div>
+        <div><span>미지급</span><b class="owing">${esc(wonText(summary.unpaidAmount))}</b></div>
+        <div><span>공제 가능 매입세액</span><b>${esc(wonText(summary.deductibleTaxAmount))}</b></div>
+      </div>
+      <p class="purchase-note">공제 가능 매입세액은 <b>세금계산서를 받은 것만</b> 셉니다. 못 받은 것은 공제받을 수 없습니다. 이 값은 신고 근거일 뿐, 신고를 대신하지 않습니다.</p>
+      ${purchaseForm(P, editing)}
+      <table class="purchase-table">
+        <thead><tr><th>거래일</th><th>거래처</th><th>항목</th><th class="num">공급가</th><th class="num">세액</th><th>계산서</th><th>지급</th><th></th></tr></thead>
+        <tbody>${rowsHtml || `<tr><td colspan="8" class="muted">이 달에 잡힌 매입이 없습니다.</td></tr>`}</tbody>
+      </table>
+      ${purchaseAttention(care)}
+    </section>`;
+  }
+
+  function purchaseForm(P, editing) {
+    const record = editing || P.normalizeRecord({});
+    const value = name => esc(String(record[name] || ""));
+    const option = (list, selected) => list.map(item => `<option value="${esc(item.key)}"${item.key === selected ? " selected" : ""}>${esc(item.label)}</option>`).join("");
+    return `<form class="purchase-form" data-purchase-form${editing ? ` data-purchase-id="${esc(editing.id)}"` : ""}>
+      <label><span>거래일</span><input type="date" name="tradeDate" value="${value("tradeDate")}" required></label>
+      <label><span>거래처</span><input type="text" name="vendor" maxlength="120" value="${value("vendor")}" required></label>
+      <label><span>항목</span><input type="text" name="title" maxlength="120" value="${value("title")}" required></label>
+      <label><span>공급가</span><input type="text" name="supplyAmount" inputmode="numeric" value="${editing ? esc(String(record.supplyAmount)) : ""}" required></label>
+      <label><span>세액</span><input type="text" name="taxAmount" inputmode="numeric" value="${editing ? esc(String(record.taxAmount)) : ""}"></label>
+      <label><span>세금계산서</span><select name="taxState">${option(P.TAX_STATES, record.taxState)}</select></label>
+      <label><span>발행일</span><input type="date" name="taxInvoiceDate" value="${value("taxInvoiceDate")}"></label>
+      <label><span>지급</span><select name="payState">${option(P.PAY_STATES, record.payState)}</select></label>
+      <label><span>지급일</span><input type="date" name="paidDate" value="${value("paidDate")}"></label>
+      <label><span>결재 번호</span><input type="text" name="approvalId" maxlength="80" value="${value("approvalId")}" placeholder="선택"></label>
+      <label class="wide"><span>비고</span><input type="text" name="note" maxlength="500" value="${value("note")}"></label>
+      <div class="purchase-form-actions">
+        <button class="primary-button" type="submit">${editing ? "고쳐서 저장" : "매입 추가"}</button>
+        ${editing ? `<button type="button" class="mini-button return" data-purchase-cancel>그만두기</button>` : ""}
+      </div>
+    </form>`;
+  }
+
+  function purchaseAttention(care) {
+    // 미지급과 계산서 미수취는 성격이 다르다. 앞은 돈이 나가야 하는 것이고,
+    // 뒤는 공제를 못 받는 것이다. 그래서 한 목록에 섞지 않는다.
+    const block = (title, hint, items, render) => `<section class="purchase-care">
+      <header><b>${esc(title)}</b><span>${items.length}건</span></header>
+      <p class="muted">${esc(hint)}</p>
+      ${items.length ? `<ul>${items.slice(0, 20).map(render).join("")}</ul>` : `<p class="muted">없습니다.</p>`}
+    </section>`;
+    return `<div class="purchase-care-grid">
+      ${block("미지급", "아직 나가지 않은 돈입니다. 기간이 오래된 것부터.", care.unpaid,
+        item => `<li><b>${esc(item.vendor)}</b> ${esc(item.title)} · ${esc(wonText(item.supplyAmount + item.taxAmount))}<small>${item.agedDays}일 경과</small></li>`)}
+      ${block("세금계산서 미수취", "받지 못하면 매입세액을 공제받을 수 없습니다.", care.missingInvoice,
+        item => `<li><b>${esc(item.vendor)}</b> ${esc(item.title)} · ${esc(wonText(item.taxAmount))}<small>${esc(item.tradeDate)}</small></li>`)}
+    </div>`;
+  }
+
+  async function savePurchaseFromForm(form) {
+    const P = purchaseCore();
+    if (!P) return;
+    const raw = Object.fromEntries(new FormData(form).entries());
+    const existing = form.dataset.purchaseId
+      ? purchaseState.items.find(item => item && item.id === form.dataset.purchaseId) || null
+      : null;
+    const checked = P.validateRecord(Object.assign({}, raw, {
+      id: existing ? existing.id : `pu_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`,
+      createdAt: existing ? existing.createdAt : new Date().toISOString(),
+    }));
+    // 서버에 보내기 전에 여기서 걸러야 사람이 이유를 알 수 있는 문구를 받는다.
+    if (!checked.ok) { showToast(checked.error, "error"); return; }
+    try {
+      await api.savePurchase(checked.record);
+      purchaseState.editingId = "";
+      purchaseState.loaded = false;
+      showToast("매입을 저장했습니다.", "success");
+      await loadPurchases();
+    } catch (error) {
+      showToast(error && error.message || "저장하지 못했습니다.", "error");
+    }
   }
 
   function renderOperationsIntelligence() {
@@ -6089,6 +6250,9 @@
   }
 
   document.addEventListener("click", async event => {
+    const purchaseEdit = event.target.closest("[data-purchase-edit]");
+    if (purchaseEdit) { purchaseState.editingId = purchaseEdit.dataset.purchaseEdit; renderPurchases(); return; }
+    if (event.target.closest("[data-purchase-cancel]")) { purchaseState.editingId = ""; renderPurchases(); return; }
     const messageMode = event.target.closest("[data-message-mode]");
     if (messageMode) { selectedMessageMode = messageMode.dataset.messageMode === "documents" ? "documents" : "messages"; renderCustomerMessages(); return; }
     const documentFallback = event.target.closest("[data-document-sms-fallback]");
@@ -8038,9 +8202,17 @@
     renderCustomerMessages();
   });
 
+  document.addEventListener("change", event => {
+    const monthPicker = event.target.closest("[data-purchase-month]");
+    if (!monthPicker) return;
+    purchaseState.month = monthPicker.value;
+    renderPurchases();
+  });
+
   document.addEventListener("submit", async event => {
     event.preventDefault();
     const form = event.target;
+    if (form.matches("[data-purchase-form]")) { await savePurchaseFromForm(form); return; }
     if (form.id === "contractSourceRegisterForm") {
       if (!canAdministerSecurity()) return showToast("관리자만 계약 기준 문서를 등록할 수 있습니다.", "error");
       const raw = Object.fromEntries(new FormData(form).entries());
@@ -9704,7 +9876,7 @@ document.addEventListener("keydown", event => {
       if (query.get("demo") === "1" && !store.customers.length) store = demoStore();
       synchronizedStore = cloneStore(store);
       store.partnerVendors = Array.isArray(store.partnerVendors) ? store.partnerVendors : [];
-      if (["dashboard", "cases", "payments", "customers", "buildings", "vacancies", "buildingCalendar", "workManagement", "operationsIntelligence", "valueScope", "consultations", "aiAssistant", "pipeline", "contracts", "relationships", "partnerVendors", "partnerQuotes", "tasks", "officeHome", "officeAttendance", "officeLeave", "officeMembers", "officeApprovals", "officeMessenger", "officeAdmin", "buildingDocuments", "security", "settings"].includes(query.get("view")) || query.get("view") === "customerMessages") currentView = query.get("view");
+      if (["dashboard", "cases", "payments", "customers", "buildings", "vacancies", "buildingCalendar", "workManagement", "operationsIntelligence", "valueScope", "consultations", "aiAssistant", "pipeline", "contracts", "relationships", "partnerVendors", "partnerQuotes", "tasks", "officeHome", "officeAttendance", "officeLeave", "officeMembers", "officeApprovals", "officeMessenger", "officeAdmin", "buildingDocuments", "security", "settings", "purchases"].includes(query.get("view")) || query.get("view") === "customerMessages") currentView = query.get("view");
       await refreshOperations({ silent: true, render: false });
       document.getElementById("lastSaved").textContent = store.updatedAt ? `최신 반영 ${dateText(store.updatedAt)}` : "새 데이터";
       render();

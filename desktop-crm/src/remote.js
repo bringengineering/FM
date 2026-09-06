@@ -6,6 +6,7 @@ const OfficeCore = require("./office-core");
 const LeaveCore = require("./leave-core");
 const HrCore = require("./hr-core");
 const ApprovalCore = require("./approval-core");
+const PurchaseCore = require("./purchase-core");
 const OfficeAttachment = require("./office-attachment");
 const MarketingCore = require("./marketing-core");
 const MarketingPersistence = require("./marketing-persistence");
@@ -3859,6 +3860,41 @@ class FirebaseRemoteClient {
       },
       loadedAt: new Date().toISOString()
     };
+  }
+
+  // 매입·지급. 대표만 읽고 쓴다. 규칙도 같은 것을 막지만, 여기서 먼저
+  // 걸러야 사람이 이유를 알 수 있는 문구를 받는다.
+  async loadPurchases() {
+    const session = this.requireOfficeSession();
+    if (session.role !== "admin") {
+      throw createError("매입·지급은 대표만 볼 수 있습니다.", "PURCHASE_FORBIDDEN");
+    }
+    const guard = this.captureSessionGuard();
+    const payload = await this.dbRequest("officePurchases", { method: "GET" });
+    this.assertSessionGuardActive(guard);
+    const items = Object.entries(payload && typeof payload === "object" ? payload : {})
+      .map(([id, value]) => PurchaseCore.normalizeRecord(Object.assign({ id }, value || {})))
+      .filter(item => item.id);
+    return { items, loadedAt: new Date().toISOString() };
+  }
+
+  async savePurchase(input) {
+    const session = this.requireOfficeSession();
+    if (session.role !== "admin") {
+      throw createError("매입·지급은 대표만 고칠 수 있습니다.", "PURCHASE_FORBIDDEN");
+    }
+    const guard = this.captureSessionGuard();
+    const source = input && typeof input === "object" && !Array.isArray(input) ? input : {};
+    const now = new Date().toISOString();
+    const checked = PurchaseCore.validateRecord(Object.assign({}, source, {
+      createdAt: String(source.createdAt || now),
+      updatedAt: now,
+      updatedBy: session.uid,
+    }));
+    if (!checked.ok) throw createError(checked.error, checked.code);
+    await this.dbRequest(`officePurchases/${checked.record.id}`, { method: "PUT", body: checked.record });
+    this.assertSessionGuardActive(guard);
+    return checked.record;
   }
 
   async loadVendorDirectory(force) {
