@@ -4142,13 +4142,13 @@
   // 그려서 커서가 튄다. 누르는 순간 한 번에 읽는다 — 시간표 편집기와 같다.
   let dailyLogState = {
     logs: [], admin: false, canWork: false, uid: "", name: "",
-    loaded: false, loading: false, error: "",
+    loaded: false, loading: false, error: "", refreshedAt: 0,
     date: "", draft: null, busy: false, tab: "mine",
   };
 
   const dailyLogCore = () => window.BringDailyLogCore;
 
-  async function loadDailyLogs() {
+  async function loadDailyLogs(keepDraft) {
     if (dailyLogState.loading) return;
     dailyLogState.loading = true;
     dailyLogState.error = "";
@@ -4161,8 +4161,11 @@
       dailyLogState.uid = String((data && data.uid) || "");
       dailyLogState.name = String((data && data.name) || "");
       dailyLogState.loaded = true;
+      dailyLogState.refreshedAt = Date.now();
       // 불러온 것으로 초안을 다시 잡는다. 저장하고 나면 서버 것이 맞다.
-      dailyLogState.draft = null;
+      // 다만 아직 안 보낸 것을 치는 중이면 그대로 둔다. 새로고침이 남의 손처럼
+      // 쳐 놓은 것을 지우면 다음부터 아무도 안 쓴다.
+      if (!keepDraft) dailyLogState.draft = null;
     } catch (error) {
       dailyLogState.error = error && error.message || "일지를 불러오지 못했습니다.";
     } finally {
@@ -4214,9 +4217,10 @@
   function renderDailyLog() {
     const D = dailyLogCore();
     if (!D) { main.innerHTML = `<section class="operations-hero"><div><h2>오늘</h2><p>모듈을 불러오지 못했습니다.</p></div></section>`; return; }
-    if (!dailyLogState.loaded && !dailyLogState.loading && !dailyLogState.error) void loadDailyLogs();
+    // 치던 것이 있으면 건드리지 않는다.
+    if (isStale(dailyLogState) && !dailyLogState.draft) void loadDailyLogs();
     // 줄마다 지시를 고르려면 지시 목록이 있어야 한다.
-    if (!workOrderState.loaded && !workOrderState.loading && !workOrderState.error) void loadWorkOrders();
+    if (isStale(workOrderState)) void loadWorkOrders();
 
     const date = dailyLogDate();
     const draft = dailyLogDraft(D);
@@ -4242,6 +4246,7 @@
             <button type="button" class="sp-tab${dailyLogState.tab === "mine" ? " is-active" : ""}" data-dl-tab="mine">내 일지</button>
             <button type="button" class="sp-tab${dailyLogState.tab === "team" ? " is-active" : ""}" data-dl-tab="team">받은 보고</button>
           </div>` : ""}
+          ${refreshButton(dailyLogState, "dailyLog")}
         </div>
       </section>
       ${status}
@@ -4543,6 +4548,27 @@
     }
   }
 
+  // 앱을 켤 때 한 번만 읽으면, 대표가 지시를 보내도 켜 둔 앱에는 영영 안 뜬다.
+  // 화면에 들어올 때마다 다시 읽되, 오갈 때마다 서버를 때리지는 않는다.
+  const LIVE_STALE_MS = 60 * 1000;
+  function isStale(state) {
+    if (state.loading) return false;
+    if (!state.loaded) return !state.error;
+    return Date.now() - Number(state.refreshedAt || 0) >= LIVE_STALE_MS;
+  }
+  function freshLabel(state) {
+    if (state.loading) return "불러오는 중…";
+    if (!state.refreshedAt) return "";
+    const seconds = Math.max(0, Math.round((Date.now() - state.refreshedAt) / 1000));
+    if (seconds < 60) return "방금";
+    const minutes = Math.round(seconds / 60);
+    return minutes < 60 ? `${minutes}분 전` : `${Math.round(minutes / 60)}시간 전`;
+  }
+  function refreshButton(state, action) {
+    const when = freshLabel(state);
+    return `<button type="button" class="mini-button" data-live-refresh="${action}"${state.loading ? " disabled" : ""}>새로고침${when ? ` <small>· ${esc(when)}</small>` : ""}</button>`;
+  }
+
   // --- 업무지시 ---
   // 이 화면의 요지는 목록이 아니라 **왜·무엇을·완료 기준** 세 칸이다. 그래서
   // 카드에서 그 셋을 접지 않는다. 접어 두면 받는 사람은 제목만 보고 시작하고,
@@ -4552,7 +4578,7 @@
     projectId: "", projectEditing: null, capacityEditing: null, seeding: false,
     directives: [], importOpen: false, importPlan: null, importUid: "", importing: false,
     sendingDirective: false, importSplit: null, directiveOpen: "",
-    loaded: false, loading: false, error: "",
+    loaded: false, loading: false, error: "", refreshedAt: 0,
     scope: "mine", editing: null, busyId: "",
   };
 
@@ -4576,12 +4602,16 @@
       workOrderState.uid = String((data && data.uid) || "");
       if (!workOrderState.admin) workOrderState.scope = "mine";
       workOrderState.loaded = true;
+      workOrderState.refreshedAt = Date.now();
     } catch (error) {
       workOrderState.error = error && error.message || "업무지시를 불러오지 못했습니다.";
     } finally {
       workOrderState.loading = false;
       updateWorkOrderBadge();
       if (currentView === "workOrders") renderWorkOrders();
+      // 「오늘」 은 줄마다 지시를 고른다. 지시가 새로 왔는데 그 화면을 다시
+      // 그리지 않으면, 방금 받은 지시가 고를 목록에 없다.
+      else if (currentView === "dailyLog" && !dailyLogState.loading) renderDailyLog();
     }
   }
 
@@ -4609,7 +4639,7 @@
     const W = workOrderCore();
     const P = projectCore();
     if (!W || !P) { main.innerHTML = `<section class="operations-hero"><div><h2>프로젝트</h2><p>모듈을 불러오지 못했습니다.</p></div></section>`; return; }
-    if (!workOrderState.loaded && !workOrderState.loading && !workOrderState.error) void loadWorkOrders();
+    if (isStale(workOrderState) && !workOrderState.editing && !workOrderState.projectEditing) void loadWorkOrders();
 
     const today = todayKey();
     const projects = P.sortProjects(workOrderState.projects);
@@ -4646,6 +4676,7 @@
             <button type="button" class="wo-scope-tab${workOrderState.scope === "mine" ? " is-active" : ""}" data-wo-scope="mine">내 것만</button>
             <button type="button" class="wo-scope-tab${workOrderState.scope === "all" ? " is-active" : ""}" data-wo-scope="all">전체</button>
           </div>
+          ${refreshButton(workOrderState, "workOrders")}
           ${workOrderState.admin ? `<button type="button" class="mini-button" data-wo-import>지시서 붙여넣기</button>` : ""}
           ${workOrderState.admin && P.missingSeeds(projects).length ? `<button type="button" class="mini-button" data-wo-seed>기본 프로젝트 ${P.missingSeeds(projects).length}개 만들기</button>` : ""}
           ${workOrderState.admin ? `<button type="button" class="mini-button" data-wo-project-new>새 프로젝트</button><button type="button" class="primary-button" data-wo-new>새 지시</button>` : ""}
@@ -10352,6 +10383,19 @@
         card.scrollIntoView({ behavior: "smooth", block: "center" });
         card.classList.add("is-flash");
         setTimeout(() => card.classList.remove("is-flash"), 1200);
+      }
+      return;
+    }
+    const liveRefresh = event.target.closest("[data-live-refresh]");
+    if (liveRefresh) {
+      if (liveRefresh.dataset.liveRefresh === "dailyLog") {
+        // 치던 것은 그대로 둔다. 새로고침이 손으로 친 것을 지우면 안 된다.
+        const typing = Boolean(dailyLogState.draft);
+        void loadDailyLogs(typing).then(() => {
+          showToast(typing ? "다시 불러왔습니다. 치던 것은 그대로 뒀습니다." : "다시 불러왔습니다.", "success");
+        });
+      } else {
+        void loadWorkOrders().then(() => showToast("다시 불러왔습니다.", "success"));
       }
       return;
     }
