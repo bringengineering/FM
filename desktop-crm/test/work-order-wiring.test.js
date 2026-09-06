@@ -133,8 +133,15 @@ test("왜·무엇을·완료 기준을 카드에서 접지 않는다", () => {
 
 test("대시보드 숫자는 core 한 곳에서만 센다", () => {
   const view = appSource.slice(appSource.indexOf("function renderWorkOrders()"), appSource.indexOf("function workOrderCard("));
-  assert.match(view, /W\.summarize\(/u);
+  // 프로젝트 한 장의 숫자는 project-core 가 낸다. 사이드바 숫자는 여전히
+  // work-order-core 가 낸다 — 둘이 세는 범위가 다르다.
+  assert.match(view, /P\.summarize\(/u);
   assert.ok(!/\.filter\([^)]*status ===/.test(view), "화면이 직접 세고 있다");
+  const badge = appSource.slice(
+    appSource.indexOf("function updateWorkOrderBadge()"),
+    appSource.indexOf("function renderWorkOrders()"),
+  );
+  assert.match(badge, /W\.summarize\(/u);
   assert.match(view, /class="operations-hero"/u);
   assert.match(view, /class="operations-kpis wo-kpis"/u);
 });

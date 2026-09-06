@@ -6,6 +6,7 @@ const OfficeCore = require("./office-core");
 const LeaveCore = require("./leave-core");
 const HrCore = require("./hr-core");
 const WorkOrderCore = require("./work-order-core");
+const ProjectCore = require("./project-core");
 const FormCore = require("./form-core");
 const PayrollCore = require("./payroll-core");
 const ApprovalCore = require("./approval-core");
@@ -4008,14 +4009,44 @@ class FirebaseRemoteClient {
         displayName: String(user.displayName || user.email || uid),
       }))
       .sort((a, b) => a.displayName.localeCompare(b.displayName, "ko"));
+    const projectPayload = await this.dbRequest("projects", { method: "GET" }).catch(() => null);
+    this.assertSessionGuardActive(guard);
+    const projects = Object.entries(projectPayload && typeof projectPayload === "object" ? projectPayload : {})
+      .map(([id, value]) => ProjectCore.normalizeProject(Object.assign({ id }, value || {})))
+      .filter(item => item.id);
     return {
       orders,
+      projects,
       members,
       admin: session.role === "admin",
       canWork: session.role === "admin" || session.role === "member",
       uid: session.uid,
       loadedAt: new Date().toISOString(),
     };
+  }
+
+  // 프로젝트를 만들거나 고친다. 관리자만.
+  async saveProject(input) {
+    const session = this.requireOfficeSession();
+    if (session.role !== "admin") {
+      throw createError("프로젝트는 관리자만 만들 수 있습니다.", "PROJECT_FORBIDDEN");
+    }
+    const guard = this.captureSessionGuard();
+    const source = input && typeof input === "object" && !Array.isArray(input) ? input : {};
+    const checked = ProjectCore.validateProject(source);
+    if (!checked.ok) throw createError(checked.error, checked.code);
+    const location = `projects/${checked.project.id}`;
+    const existing = await this.dbRequest(location, { method: "GET" });
+    this.assertSessionGuardActive(guard);
+    const now = new Date().toISOString();
+    const record = Object.assign({}, checked.project, {
+      createdAt: (existing && existing.createdAt) || now,
+      updatedAt: now,
+      updatedBy: session.uid,
+    });
+    await this.dbRequest(location, { method: "PUT", body: record });
+    this.assertSessionGuardActive(guard);
+    return record;
   }
 
   // 지시를 내거나 고친다. 관리자만.
@@ -4080,11 +4111,35 @@ class FirebaseRemoteClient {
       })
       : current;
 
+    // 진행률은 담당자도 고친다. 상태만 옮길 수 있으면 "80% 왔다" 를 적을
+    // 길이 없어서, 결국 그 숫자가 다시 카톡으로 간다.
+    const withProgress = Object.prototype.hasOwnProperty.call(source, "progress")
+      ? Object.assign({}, withResult, { progress: WorkOrderCore.progressOf(source.progress) })
+      : withResult;
+
+    // 간트에서 끌어 기간을 옮기는 길. 지시 내용이 아니라 일정이라 관리자만
+    // 만진다 — 받은 사람이 마감을 스스로 미룰 수 있으면 마감이 아니다.
+    const movingDates = Object.prototype.hasOwnProperty.call(source, "startDate")
+      || Object.prototype.hasOwnProperty.call(source, "dueDate");
+    if (movingDates && !admin) {
+      throw createError("기간은 지시한 사람만 바꿀 수 있습니다.", "SCHEDULE_ADMIN_ONLY");
+    }
+    const withDates = movingDates
+      ? WorkOrderCore.normalizeOrder(Object.assign({}, withProgress, {
+        startDate: String(source.startDate == null ? withProgress.startDate : source.startDate),
+        dueDate: String(source.dueDate == null ? withProgress.dueDate : source.dueDate),
+      }))
+      : withProgress;
+    if (movingDates) {
+      const checked = WorkOrderCore.validateOrder(withDates);
+      if (!checked.ok) throw createError(checked.error, checked.code);
+    }
+
     const nextStatus = String(source.status || "");
-    let record = withResult;
+    let record = withDates;
     if (nextStatus && nextStatus !== withResult.status) {
       const moved = WorkOrderCore.moveStatus({
-        order: withResult,
+        order: withDates,
         next: nextStatus,
         admin,
         actorUid: session.uid,
@@ -4092,7 +4147,7 @@ class FirebaseRemoteClient {
       });
       if (!moved.ok) throw createError(moved.error, moved.code);
       record = moved.order;
-    } else if (withResult.status === "done") {
+    } else if (withDates.status === "done") {
       throw createError("완료한 지시는 고칠 수 없습니다.", "WORK_ORDER_DONE");
     }
 

@@ -57,6 +57,7 @@ contextBridge.exposeInMainWorld("bringCRM", {
   saveLeaveGrant: input => ipcRenderer.invoke("crm:leave-grant-save", input),
   saveMemberRecord: input => ipcRenderer.invoke("crm:hr-record-save", input),
   saveWorkOrder: input => ipcRenderer.invoke("crm:work-order-save", input),
+  saveProject: input => ipcRenderer.invoke("crm:project-save", input),
   updateWorkOrderProgress: input => ipcRenderer.invoke("crm:work-order-progress", input),
   uploadWorkOrderResult: input => ipcRenderer.invoke("crm:work-order-result-upload", input),
   loadWorkOrders: () => ipcRenderer.invoke("crm:work-orders-load"),
