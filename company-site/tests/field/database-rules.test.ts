@@ -2071,6 +2071,96 @@ describe.runIf(databaseEmulatorAvailable)("fieldPlatform database rules", () => 
     expect((await assertSucceeds(get(ref(officeAdmin, ownDisplayNamePath)))).val()).toBe("김현진 관리자");
   });
 
+  it("freezes an approval once it is decided", async () => {
+    // 승인받은 지출의 금액이 나중에 바뀔 수 있으면 결재 기록이 아무 의미가 없다.
+    const admin = environment.authenticatedContext("crm-admin", crmClaims("admin@bring.test")).database();
+    const member = environment.authenticatedContext("crm-member", crmClaims("member@bring.test")).database();
+    const viewer = environment.authenticatedContext("crm-viewer", crmClaims("viewer@bring.test")).database();
+
+    const target = "crmCompany/officeApprovals/crm-viewer/ap-1";
+    const request = {
+      id: "ap-1",
+      userId: "crm-viewer",
+      kind: "expense",
+      title: "청소 세제 구매",
+      amount: 120000,
+      vendor: "",
+      dueDate: "",
+      content: "",
+      attachmentUrl: "",
+      status: "requested",
+      decidedBy: "",
+      decidedAt: "",
+      decisionNote: "",
+      createdAt: "2026-09-06T00:00:00.000Z",
+    };
+
+    // 상신은 언제나 대기로만. 스스로 승인한 채로 올리는 길을 막는다.
+    await assertFails(set(ref(viewer, target), { ...request, status: "approved", decidedBy: "본인" }));
+    await assertSucceeds(set(ref(viewer, target), request));
+
+    // 남의 칸에 대신 올리지 못하고, 남의 결재를 읽지도 못한다.
+    await assertFails(set(ref(member, "crmCompany/officeApprovals/crm-viewer/ap-2"), request));
+    await assertFails(get(ref(member, target)));
+    await assertFails(get(ref(member, "crmCompany/officeApprovals")));
+
+    // 상신자는 승인하지 못한다.
+    await assertFails(set(ref(viewer, target), { ...request, status: "approved", decidedBy: "김현진" }));
+    // 취소는 되지만, 금액을 바꾸면서 취소할 수는 없다.
+    await assertFails(set(ref(viewer, target), { ...request, amount: 12000, status: "cancelled" }));
+
+    // 반려에는 사유가 있어야 한다.
+    await assertFails(set(ref(admin, target), { ...request, status: "rejected", decidedBy: "김현진" }));
+
+    // 관리자가 승인한다.
+    await assertSucceeds(set(ref(admin, target), {
+      ...request, status: "approved", decidedBy: "김현진", decidedAt: "2026-09-06T01:00:00.000Z",
+    }));
+
+    // 정해진 뒤에는 아무도 못 고친다 — 관리자도, 상신자도.
+    await assertFails(set(ref(admin, target), {
+      ...request, amount: 20000, status: "approved", decidedBy: "김현진", decidedAt: "2026-09-06T01:00:00.000Z",
+    }));
+    await assertFails(set(ref(viewer, target), { ...request, status: "cancelled" }));
+    // 지우지도 못한다.
+    await assertFails(remove(ref(admin, target)));
+  });
+
+  it("rejects unknown fields and bad amounts on approvals", async () => {
+    const viewer = environment.authenticatedContext("crm-viewer", crmClaims("viewer@bring.test")).database();
+    const base = {
+      userId: "crm-viewer",
+      kind: "general",
+      title: "비품 정리",
+      amount: 0,
+      status: "requested",
+      createdAt: "2026-09-06T00:00:00.000Z",
+    };
+    // 결재는 한 번 올리면 그 칸을 다시 쓰지 못한다. 그래서 경우마다 새 번호로
+    // 올려 본다 — 같은 번호로 다시 쓰면 "내용이 틀려서" 가 아니라 "이미
+    // 있어서" 막히는 것이라, 검사가 무엇을 확인했는지 알 수 없게 된다.
+    const at = (id: string) => `crmCompany/officeApprovals/crm-viewer/${id}`;
+    const record = (id: string, patch: Record<string, unknown> = {}) => ({ ...base, id, ...patch });
+
+    await assertSucceeds(set(ref(viewer, at("ok-1")), record("ok-1")));
+
+    // 원 단위 정수만. 소수점이 붙은 원화는 없다.
+    await assertFails(set(ref(viewer, at("bad-1")), record("bad-1", { amount: 1000.5 })));
+    await assertFails(set(ref(viewer, at("bad-2")), record("bad-2", { amount: -1000 })));
+    await assertFails(set(ref(viewer, at("bad-3")), record("bad-3", { amount: "120000" })));
+    // 모르는 종류와 모르는 칸은 막는다.
+    await assertFails(set(ref(viewer, at("bad-4")), record("bad-4", { kind: "bribe" })));
+    await assertFails(set(ref(viewer, at("bad-5")), record("bad-5", { secret: "x" })));
+    // id 를 다른 것으로 적어 다른 결재인 척할 수 없다.
+    await assertFails(set(ref(viewer, at("bad-6")), record("ap-9")));
+    // 첨부는 https 만.
+    await assertFails(set(ref(viewer, at("bad-7")), record("bad-7", { attachmentUrl: "http://x.test/a" })));
+    await assertSucceeds(set(ref(viewer, at("ok-2")), record("ok-2", { attachmentUrl: "https://x.test/a" })));
+
+    // 올린 뒤에는 같은 칸을 다시 쓰지 못한다. 고치려면 취소하고 다시 올린다.
+    await assertFails(set(ref(viewer, at("ok-1")), record("ok-1", { title: "다른 제목" })));
+  });
+
   it("lets a person read only their own payslip and never write one", async () => {
     // 교부가 법정 의무라 본인이 볼 수 없으면 교부한 것이 아니다. 반대로
     // 자기 급여를 스스로 적을 수 있으면 그건 명세서가 아니다.

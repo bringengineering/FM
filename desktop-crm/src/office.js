@@ -170,6 +170,22 @@
   function updateUnreadBadge(userId = currentUserId()) {
     const unreadBadge = document.getElementById("navOfficeUnread");
     if (unreadBadge) unreadBadge.textContent = String(unreadCountFor(userId));
+    updateApprovalBadge(userId);
+  }
+
+  // 결재 숫자. 관리자에게는 승인을 기다리는 전체 건수를, 나머지에게는 자기가
+  // 올려 두고 답을 기다리는 건수를 낸다. 갱신하지 않으면 늘 0 으로 보이는데,
+  // 그건 "대기 없음" 이라고 거짓말하는 것과 같다.
+  function updateApprovalBadge(userId = currentUserId()) {
+    const badge = document.getElementById("navApprovalCount");
+    if (!badge) return;
+    const A = Approval();
+    const rows = state.data.approvals || [];
+    const waiting = A
+      ? (state.data.approvalAdmin ? A.pending(rows) : A.forUser(rows, userId).filter(item => item.status === "requested"))
+      : [];
+    badge.textContent = String(waiting.length);
+    badge.hidden = waiting.length === 0;
   }
 
   function mergeConfirmedReadReceipts(payload, peerId, userId, messageIds) {
@@ -861,6 +877,146 @@
     }
   }
 
+  // --- 전자결재 ---
+  // 단계는 하나다. 상신하고, 관리자가 승인하거나 반려한다. 7동 관리하는
+  // 회사에 3단 결재선을 얹으면 아무도 안 쓴다. 그 대신 정해진 뒤에는
+  // 아무도 못 고친다 — 그게 결재 기록의 전부다.
+  const Approval = () => window.BringApprovalCore;
+
+  const won = value => `${Number(value || 0).toLocaleString("ko-KR")}원`;
+
+  function approvalsView() {
+    const A = Approval();
+    if (!A) return `<section class="office-panel"><p>결재 모듈을 불러오지 못했습니다.</p></section>`;
+    const uid = currentUserId();
+    const all = state.data.approvals || [];
+    const mine = A.forUser(all, uid);
+
+    const rowsHtml = mine.length
+      ? mine.map(item => approvalRow(A, item, false)).join("")
+      : `<p class="office-empty">아직 올린 결재가 없습니다.</p>`;
+
+    return `<section class="office-panel office-approval">
+      <header class="office-approval-head"><div><b>내 결재</b><span>올린 뒤에는 내용을 고칠 수 없습니다</span></div></header>
+      <form class="office-approval-form" data-office-approval-form>
+        <label><span>종류</span><select name="kind">${A.KINDS.map(item => `<option value="${esc(item.key)}">${esc(item.label)}</option>`).join("")}</select></label>
+        <label><span>제목</span><input type="text" name="title" maxlength="120" required></label>
+        <label><span>금액</span><input type="text" name="amount" inputmode="numeric" placeholder="지출·구매는 필수"></label>
+        <label><span>거래처</span><input type="text" name="vendor" maxlength="120" placeholder="선택"></label>
+        <label><span>필요일</span><input type="date" name="dueDate"></label>
+        <label><span>첨부 위치</span><input type="url" name="attachmentUrl" maxlength="500" placeholder="https:// 견적서 등"></label>
+        <label class="wide"><span>내용</span><textarea name="content" maxlength="2000" rows="3" placeholder="무엇을 왜 쓰는지"></textarea></label>
+        <button class="primary-button" type="submit"${state.busy ? " disabled" : ""}>결재 올리기</button>
+      </form>
+      <div class="office-approval-list">${rowsHtml}</div>
+      ${state.data.approvalAdmin ? approvalAdminPanel(A, all) : ""}
+    </section>`;
+  }
+
+  function approvalRow(A, item, decidable) {
+    const kind = (A.kindOf(item.kind) || {}).label || item.kind;
+    const amount = item.amount > 0 ? ` · ${won(item.amount)}` : "";
+    const decided = item.decidedBy
+      ? `<small>${esc(A.statusLabel(item.status))} · ${esc(item.decidedBy)}</small>`
+      : `<small>${esc(A.statusLabel(item.status))}</small>`;
+    const note = item.decisionNote ? `<p class="office-approval-note">${esc(item.decisionNote)}</p>` : "";
+    const actions = decidable
+      ? `<div class="office-approval-actions">
+          <button type="button" class="mini-button" data-office-approval-decide="approved" data-office-approval-user="${esc(item.userId)}" data-office-approval-id="${esc(item.id)}">승인</button>
+          <button type="button" class="mini-button return" data-office-approval-decide="rejected" data-office-approval-user="${esc(item.userId)}" data-office-approval-id="${esc(item.id)}">반려</button>
+        </div>`
+      : (item.status === "requested"
+        ? `<div class="office-approval-actions"><button type="button" class="mini-button return" data-office-approval-cancel="${esc(item.id)}">취소</button></div>`
+        : "");
+    const who = decidable ? `${esc(nameOfUser(item.userId))} · ` : "";
+    return `<article class="office-approval-row status-${esc(item.status)}">
+      <div><b>${who}${esc(item.title)}</b><span>${esc(kind)}${amount}${item.vendor ? ` · ${esc(item.vendor)}` : ""}${item.dueDate ? ` · ${esc(item.dueDate)}까지` : ""}</span>${item.content ? `<p>${esc(item.content)}</p>` : ""}${note}</div>
+      <div class="office-approval-status">${decided}${actions}</div>
+    </article>`;
+  }
+
+  function nameOfUser(uid) {
+    const user = state.data.users.find(item => item && item.uid === uid);
+    return user ? Core.displayName(user) : uid;
+  }
+
+  function approvalAdminPanel(A, all) {
+    const pending = A.pending(all);
+    const list = pending.length
+      ? pending.map(item => approvalRow(A, item, true)).join("")
+      : `<p class="office-empty">승인을 기다리는 결재가 없습니다.</p>`;
+    return `<section class="office-approval-admin">
+      <header><b>승인 대기</b><span>${pending.length}건</span></header>
+      <div class="office-approval-list">${list}</div>
+      <p class="office-approval-hint">승인은 "써도 된다" 이지 "나갔다" 가 아닙니다. 실제로 나간 돈은 따로 잡습니다.</p>
+    </section>`;
+  }
+
+  async function submitApproval(form) {
+    const A = Approval();
+    if (!A || state.busy) return;
+    const raw = Object.fromEntries(new FormData(form).entries());
+    const checked = A.validateRequest({
+      id: `ap_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`,
+      userId: currentUserId(),
+      kind: String(raw.kind || "general"),
+      title: String(raw.title || ""),
+      amount: raw.amount,
+      vendor: String(raw.vendor || ""),
+      dueDate: String(raw.dueDate || ""),
+      content: String(raw.content || ""),
+      attachmentUrl: String(raw.attachmentUrl || ""),
+      status: "requested",
+      createdAt: new Date().toISOString(),
+    });
+    // 서버에 보내기 전에 여기서 걸러야 사람이 이유를 알 수 있는 문구를 받는다.
+    if (!checked.ok) { notify(checked.error, "error"); return; }
+    await runApproval(() => window.bringCRM.saveApprovalRequest(checked.record), "결재를 올렸습니다.");
+  }
+
+  async function cancelApproval(id) {
+    const A = Approval();
+    if (!A || state.busy) return;
+    const found = (state.data.approvals || []).find(item => item && item.id === id && item.userId === currentUserId());
+    if (!found) { notify("취소할 결재를 찾지 못했습니다.", "error"); return; }
+    const record = A.normalizeRequest(found);
+    if (record.status !== "requested") { notify("이미 처리된 결재는 취소할 수 없습니다.", "error"); return; }
+    await runApproval(
+      () => window.bringCRM.saveApprovalRequest(Object.assign({}, record, { status: "cancelled" })),
+      "결재를 취소했습니다.",
+    );
+  }
+
+  async function decideApproval(userId, id, decision) {
+    if (state.busy) return;
+    // 반려는 이유가 있어야 한다. 이유 없는 반려는 다시 올리라는 말과 같은데
+    // 무엇을 고쳐야 하는지 알 수 없다.
+    let note = "";
+    if (decision === "rejected") {
+      note = String(window.prompt("반려 사유를 적어 주세요.") || "").trim();
+      if (!note) { notify("반려 사유를 적어야 합니다.", "error"); return; }
+    }
+    await runApproval(
+      () => window.bringCRM.decideApprovalRequest({ userId, id, decision, note }),
+      decision === "approved" ? "승인했습니다." : "반려했습니다.",
+    );
+  }
+
+  async function runApproval(action, message) {
+    state.busy = true;
+    renderCurrent();
+    try {
+      await action();
+      notify(message, "success");
+      await load(true);
+    } catch (error) {
+      notify(error && error.message || "처리하지 못했습니다.", "error");
+    } finally {
+      state.busy = false;
+      renderCurrent();
+    }
+  }
+
   // --- 급여 ---
   // 임금명세서 교부는 법정 의무다(근로기준법 48조 2항). 그래서 본인은 자기
   // 명세서를 반드시 볼 수 있어야 한다 — 볼 수 없으면 교부한 것이 아니다.
@@ -1003,6 +1159,7 @@
       else if (state.context.view === "officeLeave") state.context.container.innerHTML = leaveView();
       else if (state.context.view === "officeMembers") state.context.container.innerHTML = membersView();
       else if (state.context.view === "officePayroll") state.context.container.innerHTML = payrollView();
+      else if (state.context.view === "officeApprovals") state.context.container.innerHTML = approvalsView();
       else if (state.context.view === "officeMessenger") state.context.container.innerHTML = messengerView();
       else state.context.container.innerHTML = adminView();
       requestAnimationFrame(() => {
@@ -1347,6 +1504,13 @@
     }
     const leaveCancel = event.target.closest("[data-office-leave-cancel]");
     if (leaveCancel) { void cancelLeave(leaveCancel.dataset.officeLeaveCancel); return; }
+    const approvalDecide = event.target.closest("[data-office-approval-decide]");
+    if (approvalDecide) {
+      void decideApproval(approvalDecide.dataset.officeApprovalUser, approvalDecide.dataset.officeApprovalId, approvalDecide.dataset.officeApprovalDecide);
+      return;
+    }
+    const approvalCancel = event.target.closest("[data-office-approval-cancel]");
+    if (approvalCancel) { void cancelApproval(approvalCancel.dataset.officeApprovalCancel); return; }
     const paySelect = event.target.closest("[data-office-pay-user]");
     if (paySelect) { state.payrollUserId = paySelect.dataset.officePayUser; renderCurrent(); return; }
     const hrSelect = event.target.closest("[data-office-hr-select]");
@@ -1496,6 +1660,8 @@
   document.addEventListener("submit", event => {
     const leaveForm = event.target.closest("[data-office-leave-form]");
     if (leaveForm) { event.preventDefault(); void submitLeaveRequest(leaveForm); return; }
+    const approvalForm = event.target.closest("[data-office-approval-form]");
+    if (approvalForm) { event.preventDefault(); void submitApproval(approvalForm); return; }
     const payForm = event.target.closest("[data-office-pay-form]");
     if (payForm) {
       event.preventDefault();
