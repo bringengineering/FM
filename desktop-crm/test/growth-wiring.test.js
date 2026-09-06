@@ -12,6 +12,11 @@ const preloadSource = read("preload.js");
 const remoteSource = read("remote.js");
 const indexSource = read("index.html");
 const rules = JSON.parse(fs.readFileSync(path.join(__dirname, "../../database.rules.json"), "utf8")).rules.crmCompany;
+// 기록은 사람별 가지 아래에 담긴다. 한 자루에 몰아 담으면 자기 것만 골라
+// 읽을 길이 없어서, 목록을 통째로 열어 주거나 아무것도 못 읽거나 둘 중
+// 하나가 된다 — 예전에는 뒤쪽이었고, 그래서 화면이 늘 비어 있었다.
+const checkin = rules.growthCheckins.$uid.$checkinId;
+const review = rules.growthReviews.$uid.$reviewId;
 
 function methodBody(source, name) {
   const start = source.indexOf(`async ${name}(`);
@@ -37,45 +42,54 @@ test("1on1 은 자기 것만 적고, 남의 것은 관리자만 본다", () => {
   assert.match(save, /GrowthCore\.text\(existing\.uid, 80\) !== session\.uid/u, "남의 기록은 못 고친다");
   const load = methodBody(remoteSource, "loadGrowth");
   assert.match(load, /const mine = row => admin \|\| row\.uid === session\.uid/u);
+  // 읽는 경로 자체가 다르다. 다 읽어 와서 화면에서 걸러 주면 화면을 안 거치는
+  // 길로 남의 1on1 을 그대로 가져갈 수 있다.
+  assert.match(load, /admin \? "growthCheckins" : `growthCheckins\/\$\{session\.uid\}`/u);
+  // 못 읽은 것을 빈 목록으로 바꾸면 화면이 "아직 아무것도 없습니다" 라고
+  // 거짓말을 하고, 아무도 이상한 줄 모른다. 실제로 그랬다.
+  assert.ok(!/growth(Checkins|Reviews)[^\n]*\.catch\(\(\) => null\)/u.test(load), "실패를 삼키면 안 된다");
 
-  // 규칙도 같은 것을 본다. 목록째로 훑는 길이 없어야 한다.
-  assert.equal(rules.growthCheckins[".read"], false, "목록 읽기를 열어 두면 다 보인다");
-  assert.match(rules.growthCheckins.$checkinId[".read"], /data\.child\('uid'\)\.val\(\) === auth\.uid/u);
-  assert.match(rules.growthCheckins.$checkinId[".write"], /newData\.child\('uid'\)\.val\(\) === auth\.uid/u);
-  assert.equal(rules.growthCheckins.$checkinId.$other[".validate"], false);
+  // 규칙도 같은 것을 본다. 목록째로 훑는 것은 대표뿐이다.
+  assert.match(rules.growthCheckins[".read"], /'admin'/u);
+  assert.ok(!rules.growthCheckins[".read"].includes("'member'"), "팀원이 목록을 훑으면 다 보인다");
+  assert.equal(rules.growthCheckins[".write"], false);
+  assert.match(rules.growthCheckins.$uid[".read"], /auth\.uid === \$uid/u);
+  assert.match(checkin[".write"], /\$uid === auth\.uid/u);
+  assert.match(checkin[".validate"], /newData\.child\('uid'\)\.val\(\) === \$uid/u);
+  assert.equal(checkin.$other[".validate"], false);
 });
 
 test("레벨은 회사가 정한다", () => {
   // 본인이 올릴 수 있으면 그건 약속이 아니다.
   assert.match(methodBody(remoteSource, "saveGrowthReview"), /session\.role !== "admin"/u);
-  assert.match(rules.growthReviews.$reviewId[".write"], /'admin'/u);
-  assert.doesNotMatch(rules.growthReviews.$reviewId[".write"], /'member'/u);
+  assert.match(review[".write"], /'admin'/u);
+  assert.doesNotMatch(review[".write"], /'member'/u);
   // 그런데 본인은 자기 평가를 읽어야 한다 — 안 보이면 다음에 무엇을 할지 모른다.
-  assert.match(rules.growthReviews.$reviewId[".read"], /data\.child\('uid'\)\.val\(\) === auth\.uid/u);
+  assert.match(rules.growthReviews.$uid[".read"], /auth\.uid === \$uid/u);
 });
 
 test("다음에 무엇을 배울지 없으면 저장이 막힌다", () => {
   // 그건 평가가 아니라 성적표다. 화면·코어·규칙 세 곳에서 다 막는다.
   assert.equal(G.validateReview({ id: "r", uid: "u", quarter: "2026-Q3", nextStep: "" }).code, "NEXT_STEP_REQUIRED");
-  assert.match(rules.growthReviews.$reviewId[".validate"], /'nextStep'/u);
-  assert.match(rules.growthReviews.$reviewId.nextStep[".validate"], /length > 0/u);
+  assert.match(review[".validate"], /'nextStep'/u);
+  assert.match(review.nextStep[".validate"], /length > 0/u);
   assert.match(appSource, /이게 없으면 평가가 아니라 성적표입니다/u);
 });
 
 test("규칙이 코어와 같은 레벨을 안다", () => {
-  const level = rules.growthReviews.$reviewId.level[".validate"];
+  const level = review.level[".validate"];
   G.LEVEL_KEYS.forEach(key => assert.ok(level.includes(`'${key}'`), key));
   assert.equal((level.match(/=== '/gu) || []).length, G.LEVEL_KEYS.length);
   // 질문 네 칸과 역량 여섯 칸도 같아야 한다.
-  G.QUESTION_KEYS.forEach(key => assert.ok(rules.growthCheckins.$checkinId.answers[key], key));
-  assert.equal(rules.growthCheckins.$checkinId.answers.$other[".validate"], false);
-  G.SKILL_KEYS.forEach(key => assert.ok(rules.growthReviews.$reviewId.skills[key], key));
+  G.QUESTION_KEYS.forEach(key => assert.ok(checkin.answers[key], key));
+  assert.equal(checkin.answers.$other[".validate"], false);
+  G.SKILL_KEYS.forEach(key => assert.ok(review.skills[key], key));
 });
 
 test("급여는 어디에도 없다", () => {
   // 회사 재무는 브링 CRM 에 올리지 않는다.
   assert.doesNotMatch(read("growth-core.js"), /salary|연봉/u);
-  assert.equal(rules.growthReviews.$reviewId.$other[".validate"], false);
+  assert.equal(review.$other[".validate"], false);
 });
 
 test("화면이 사이드바와 라우팅에 다 걸려 있다", () => {

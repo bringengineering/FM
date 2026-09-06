@@ -2535,7 +2535,7 @@ describe.runIf(databaseEmulatorAvailable)("fieldPlatform database rules", () => 
     const admin = environment.authenticatedContext("crm-admin", crmClaims("admin@bring.test")).database();
     const member = environment.authenticatedContext("crm-legacy-member", crmClaims("legacy@bring.test")).database();
     const other = environment.authenticatedContext("crm-viewer", crmClaims("viewer@bring.test")).database();
-    const at = (id: string) => `crmCompany/growthCheckins/${id}`;
+    const at = (id: string, uid = "crm-legacy-member") => `crmCompany/growthCheckins/${uid}/${id}`;
     const note = (id: string, uid: string, patch: Record<string, unknown> = {}) => ({
       id,
       uid,
@@ -2553,15 +2553,21 @@ describe.runIf(databaseEmulatorAvailable)("fieldPlatform database rules", () => 
     // 자기 것은 자기가 적는다. 남이 대신 적으면 그건 관찰이지 1on1 이 아니다.
     await assertSucceeds(set(ref(member, at("w1")), note("w1", "crm-legacy-member")));
     await assertSucceeds(get(ref(member, at("w1"))));
-    // 관리자는 본다 — 1on1 상대이기 때문이다.
+    // 자기 가지는 통째로 읽는다. 이게 없으면 자기 기록을 불러올 길이 없어
+    // 화면이 늘 비어 있게 된다 — 실제로 그랬다.
+    await assertSucceeds(get(ref(member, "crmCompany/growthCheckins/crm-legacy-member")));
+    // 관리자는 본다 — 1on1 상대이기 때문이다. 목록째로도 봐야 화면이 돈다.
     await assertSucceeds(get(ref(admin, at("w1"))));
+    await assertSucceeds(get(ref(admin, "crmCompany/growthCheckins")));
     // 옆자리 동료는 못 본다.
     await assertFails(get(ref(other, at("w1"))));
-    // 목록째로 훑는 길도 없다.
+    // 팀원이 목록째로 훑는 길은 없다.
     await assertFails(get(ref(member, "crmCompany/growthCheckins")));
-    // 남의 이름으로 적을 수 없고, 남의 것을 고칠 수도 없다.
+    await assertFails(get(ref(other, "crmCompany/growthCheckins/crm-legacy-member")));
+    // 남의 이름으로 적을 수 없고, 남의 자리에 쓸 수도 없다.
     await assertFails(set(ref(member, at("w2")), note("w2", "crm-admin")));
-    await assertFails(set(ref(other, at("w3")), note("w3", "crm-viewer")));
+    await assertFails(set(ref(member, at("w2", "crm-admin")), note("w2", "crm-admin")));
+    await assertFails(set(ref(other, at("w3", "crm-viewer")), note("w3", "crm-viewer")));
     await assertFails(set(ref(admin, `${at("w1")}/answers/stuck`), "고쳐 적기"));
     // 모르는 칸은 안 받는다.
     await assertFails(set(ref(member, at("w4")), note("w4", "crm-legacy-member", { mood: 3 })));
@@ -2572,7 +2578,7 @@ describe.runIf(databaseEmulatorAvailable)("fieldPlatform database rules", () => 
     const admin = environment.authenticatedContext("crm-admin", crmClaims("admin@bring.test")).database();
     const member = environment.authenticatedContext("crm-legacy-member", crmClaims("legacy@bring.test")).database();
     const other = environment.authenticatedContext("crm-viewer", crmClaims("viewer@bring.test")).database();
-    const at = (id: string) => `crmCompany/growthReviews/${id}`;
+    const at = (id: string, uid = "crm-legacy-member") => `crmCompany/growthReviews/${uid}/${id}`;
     const review = (id: string, patch: Record<string, unknown> = {}) => ({
       id,
       uid: "crm-legacy-member",
@@ -2593,8 +2599,12 @@ describe.runIf(databaseEmulatorAvailable)("fieldPlatform database rules", () => 
     await assertSucceeds(set(ref(admin, at("r1")), review("r1")));
     // 본인은 자기 평가를 읽는다. 안 보이면 다음에 무엇을 할지 알 수 없다.
     await assertSucceeds(get(ref(member, at("r1"))));
-    // 남의 평가는 못 본다.
+    await assertSucceeds(get(ref(member, "crmCompany/growthReviews/crm-legacy-member")));
+    // 대표는 목록째로 봐야 사다리 화면이 돈다.
+    await assertSucceeds(get(ref(admin, "crmCompany/growthReviews")));
+    // 남의 평가는 못 본다. 목록째로 훑는 길도 없다.
     await assertFails(get(ref(other, at("r1"))));
+    await assertFails(get(ref(member, "crmCompany/growthReviews")));
     // 본인이 자기 레벨을 올릴 수는 없다.
     await assertFails(set(ref(member, `${at("r1")}/level`), "L4"));
     await assertFails(set(ref(member, at("r2")), review("r2", { level: "L5" })));
