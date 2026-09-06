@@ -4551,6 +4551,7 @@
     orders: [], projects: [], members: [], capacity: [], admin: false, canWork: false, uid: "",
     projectId: "", projectEditing: null, capacityEditing: null, seeding: false,
     directives: [], importOpen: false, importPlan: null, importUid: "", importing: false,
+    sendingDirective: false,
     loaded: false, loading: false, error: "",
     scope: "mine", editing: null, busyId: "",
   };
@@ -4663,6 +4664,7 @@
       ${workOrderState.importOpen ? directiveImporter() : ""}
       ${workOrderState.capacityEditing ? capacityEditor() : ""}
       ${dueSoonBoard(P, scoped, today)}
+      ${directiveBoard(P, today)}
       ${capacityBoard(P, today)}
       ${assigneeBoard(P, scoped, today)}
       ${ganttBoard(W, P, scoped, today, summary)}
@@ -4761,6 +4763,60 @@
         </div>
         <p class="office-muted">읽은 것을 보여 드린 다음에 만듭니다. 붙여 넣자마자 지시가 나가면 잘못 붙여 넣은 것도 지시가 됩니다.</p>
       </div>
+    </section>`;
+  }
+
+  // 이번 주 지시서. 누가 받았고 누가 아직 못 받았는지가 첫 줄이다.
+  //
+  // 대표가 하던 것은 이랬다 — 이번 주 할 것을 적고, GPT 로 다듬고, 그걸 다시
+  // 정리해서 텔레그램에 붙여 넣었다. 중간에 사람이 두 번 낀다. 붙여 넣은
+  // 지시서가 여기 남아 있으니 이제 [텔레그램으로 보내기] 한 번이면 된다.
+  function directiveBoard(P, today) {
+    const WD = window.BringWeeklyDirectiveCore;
+    const C = capacityCore();
+    if (!WD || !workOrderState.admin) return "";
+    const people = workOrderState.members.filter(item => item && item.uid).map(item => {
+      const name = item.displayName || item.email || item.uid;
+      const saved = C ? C.personOf(workOrderState.capacity, item.uid) : null;
+      const week = C && saved ? C.weekCapacity(saved) : null;
+      return { uid: item.uid, name, capacityHours: week ? week.hours : 0 };
+    });
+    if (!people.length) return "";
+    const board = WD.weekBoard({
+      asOf: today,
+      people,
+      directives: workOrderState.directives,
+      orders: workOrderState.orders,
+    });
+    const monday = WD.weekStart(today);
+    const busy = workOrderState.sendingDirective;
+
+    const rowsHtml = board.map(row => {
+      const state = !row.has
+        ? `<span class="office-status missing"><i></i>아직 없음</span>`
+        : (row.published ? `<span class="office-status complete"><i></i>보냈음</span>` : `<span class="office-status warn"><i></i>쓰는 중</span>`);
+      return `<tr>
+        <td><b>${esc(row.name)}</b></td>
+        <td>${row.orders ? `<b>${row.orders}건</b>` : `<span class="office-muted">—</span>`}</td>
+        <td>${row.orders ? `<span class="${row.weightOk ? "office-muted" : "office-status warn"}">${row.weightOk ? "" : "<i></i>"}${row.weightTotal}%</span>` : `<span class="office-muted">—</span>`}</td>
+        <td>${row.hours ? `${row.hours}h${row.capacityHours ? ` / ${row.capacityHours}h` : ""}` : `<span class="office-muted">—</span>`}${row.over ? `<small>${row.over}h 넘침</small>` : ""}</td>
+        <td>${state}</td>
+        <td>${row.orders
+          ? `<button type="button" class="mini-button" data-wd-send="${esc(row.uid)}"${busy ? " disabled" : ""}>텔레그램으로 보내기</button>`
+          : `<span class="office-muted">—</span>`}</td>
+      </tr>`;
+    }).join("");
+
+    return `<section class="office-panel">
+      <header>
+        <div><span>DIRECTIVE</span><h3>${esc(monday)} 주 지시서</h3></div>
+        <small>아직 못 받은 사람을 맨 위에 둡니다</small>
+      </header>
+      <div class="office-table-wrap"><table class="office-table">
+        <thead><tr><th>사람</th><th>지시</th><th>가중치</th><th>시간</th><th>상태</th><th></th></tr></thead>
+        <tbody>${rowsHtml}</tbody>
+      </table></div>
+      <p class="office-muted cap-note">보내기 전에 왜 하는지·끝나면 무엇이 달라지는지·가중치 100%·산출물이 갖춰졌는지 봅니다. 모자란 것은 한 번에 다 알려 드립니다.</p>
     </section>`;
   }
 
@@ -5097,6 +5153,65 @@
       workDays,
       blocks: blocks.filter(Boolean),
     }));
+  }
+
+  // 지시서를 회사 텔레그램 방으로 보낸다.
+  //
+  // 갖춰지지 않은 지시서는 안 보낸다. 왜 하는지가 빈 지시서가 나가면 애들이
+  // 헷갈리는 그 자리로 그대로 돌아간다. 모자란 것은 한 번에 다 말한다 —
+  // 하나 고치면 다음 하나가 나오는 식이면 사람은 세 번 누르고 그만둔다.
+  async function sendDirectiveToTelegram(uid) {
+    const WD = window.BringWeeklyDirectiveCore;
+    const C = capacityCore();
+    if (!WD || workOrderState.sendingDirective) return;
+    const monday = WD.weekStart(todayKey());
+    const person = workOrderState.members.find(item => item && item.uid === uid);
+    const name = person ? (person.displayName || person.email || person.uid) : uid;
+    const found = (workOrderState.directives || [])
+      .map(WD.normalizeDirective)
+      .find(item => item.uid === uid && item.weekStart === monday);
+    const saved = C ? C.personOf(workOrderState.capacity, uid) : null;
+    const check = WD.readiness({
+      directive: found || { uid, name, weekStart: monday },
+      orders: workOrderState.orders,
+      capacityHours: C && saved ? C.weekCapacity(saved).hours : 0,
+    });
+    if (!check.ok) { showToast(`${name}: ${check.missing.join(" / ")}`, "error"); return; }
+
+    const confirmed = await requestConfirmation({
+      title: "회사 텔레그램 방으로 보냅니다",
+      description: "방에 있는 사람 모두가 보게 됩니다. 보낸 글은 지울 수 없습니다.",
+      target: `${name} · ${monday} 주 · 지시 ${check.sheet.orders.length}건`,
+      message: check.sheet.orders.map((order, index) => `${index + 1}. ${order.title}`).join("\n"),
+      warning: check.warnings.length ? check.warnings.join(" ") : "",
+      confirmLabel: "보내기",
+    });
+    if (!confirmed) return;
+
+    workOrderState.sendingDirective = true;
+    renderWorkOrders();
+    try {
+      const answer = await api.sendTelegramDirective({
+        directive: check.sheet.directive,
+        orders: check.sheet.orders,
+        name,
+        week: check.sheet.week,
+      });
+      if (!answer || answer.ok !== true) throw new Error((answer && answer.error) || "보내지 못했습니다.");
+      // 보낸 뒤에 내보낸 것으로 표시한다. 보내기 전에 찍으면 실패한 것도
+      // 보낸 것으로 남는다.
+      await api.saveWeeklyDirective(Object.assign({}, check.sheet.directive, {
+        uid, name, weekStart: monday, publish: true,
+      }));
+      workOrderState.loaded = false;
+      showToast(`${name} 의 지시서를 보냈습니다.`, "success");
+      await loadWorkOrders();
+    } catch (error) {
+      showToast(error && error.message || "보내지 못했습니다.", "error");
+    } finally {
+      workOrderState.sendingDirective = false;
+      renderWorkOrders();
+    }
   }
 
   // 붙여 넣은 것을 읽어 본다. 만들지는 않는다 — 사람이 보고 누른다.
@@ -9820,6 +9935,8 @@
     }
     if (event.target.closest("[data-wo-project-cancel]")) { workOrderState.projectEditing = null; renderWorkOrders(); return; }
     if (event.target.closest("[data-wo-seed]")) { await seedProjects(); return; }
+    const wdSend = event.target.closest("[data-wd-send]");
+    if (wdSend) { await sendDirectiveToTelegram(wdSend.dataset.wdSend); return; }
     if (event.target.closest("[data-wo-import]")) {
       workOrderState.importOpen = true;
       workOrderState.importPlan = null;
