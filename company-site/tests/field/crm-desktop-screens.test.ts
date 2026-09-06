@@ -79,7 +79,18 @@ async function boot(): Promise<Booted> {
     loadSupplies: { ...empty, items: [], moves: [], costs: [] },
     loadDeliveryFlows: { ...empty, flows: [] },
     loadWorkReports: { ...empty, reports: [] },
-    loadWorkOrders: { ...empty, orders: [], projects: [], members: [{ uid: "u-admin", displayName: "서창환" }] },
+    loadWorkOrders: {
+      ...empty,
+      members: [{ uid: "u-admin", displayName: "서창환" }],
+      projects: [{ id: "p1", name: "브링 케어", status: "active", startDate: "2026-09-01", endDate: "2026-09-30" }],
+      orders: [
+        // 기한 지난 것·오늘·이번 주·담당자 없는 것을 한 벌씩 둔다. 표가
+        // 빈 목록에서만 그려지는지 아닌지는 자료를 넣어 봐야 안다.
+        { id: "o1", title: "지난 것", why: "왜", what: "무엇", doneWhen: "끝", assigneeUid: "u-admin", assigneeName: "서창환", projectId: "p1", track: "ops", status: "doing", dueDate: "2026-01-02", startDate: "2026-01-01", progress: 40 },
+        { id: "o2", title: "담당 없음", why: "왜", what: "무엇", doneWhen: "끝", assigneeUid: "", assigneeName: "", projectId: "p1", track: "biz", status: "assigned", dueDate: "", startDate: "", progress: 0 },
+        { id: "o3", title: "검수 대기", why: "왜", what: "무엇", doneWhen: "끝", assigneeUid: "u-admin", assigneeName: "서창환", projectId: "p1", track: "tech", status: "submitted", dueDate: "2026-09-20", startDate: "2026-09-10", progress: 100 },
+      ],
+    },
     loadForms: { ...empty, templates: [], entries: [], canEditTemplates: true, canFill: true },
     loadOfficeSnapshot: {
       ok: true,

@@ -41,6 +41,8 @@
   const DAY = 86400000;
   const stamp = value => Date.parse(`${text(value, 10)}T00:00:00Z`);
   const addDays = (value, days) => new Date(stamp(value) + days * DAY).toISOString().slice(0, 10);
+  // 아직 손이 가야 하는 상태들. 여기저기 늘어놓으면 한 곳만 고치고 끝난다.
+  const OPEN_STATUSES = Object.freeze(["assigned", "doing", "returned"]);
   const daysBetween = (from, to) => Math.round((stamp(to) - stamp(from)) / DAY);
 
   // 엑셀 표의 세로 구분을 그대로 가져왔다. 쓰던 이름을 바꾸면 옮겨 오는
@@ -153,11 +155,78 @@
 
   // 프로젝트 한 장의 숫자. 진행률은 지시들의 평균이다 — 사람이 적은 값을
   // 그대로 쓰고, 개수나 날짜로 짐작하지 않는다.
+  // 곧 마감인 것. 기한이 지난 것만 세면 늦고 나서야 안다 — 그때는 이미
+  // 건물주에게 말이 나간 뒤다. 오늘부터 며칠 안쪽을 미리 보여 준다.
+  //
+  // 이미 지난 것도 같이 준다. 지난 것과 곧 올 것을 나눠 놓으면 사람은 둘 중
+  // 하나만 보게 되는데, 손이 가야 하는 것은 어차피 둘 다다.
+  function dueSoon(orders, asOf, days) {
+    const today = text(asOf, 10);
+    if (!isDate(today)) return [];
+    const span = Number.isFinite(Number(days)) ? Math.max(0, Math.round(Number(days))) : 7;
+    const limit = addDays(today, span);
+    return rows(orders)
+      .filter(item => OPEN_STATUSES.includes(text(item.status, 20)))
+      .filter(item => isDate(item.dueDate) && text(item.dueDate, 10) <= limit)
+      .map(item => Object.assign({}, item, {
+        // 음수는 지났다는 뜻이다. 0 은 오늘이다.
+        daysLeft: daysBetween(today, text(item.dueDate, 10)),
+        late: text(item.dueDate, 10) < today,
+      }))
+      .sort((a, b) => (a.dueDate === b.dueDate
+        ? String(a.title).localeCompare(String(b.title), "ko")
+        : (a.dueDate < b.dueDate ? -1 : 1)));
+  }
+
+  // 누가 몇 건 물고 있는가. 이게 없으면 일을 나눠 줄 때 감으로 하게 된다.
+  //
+  // 담당자를 안 정한 것도 한 줄로 남긴다. 그게 제일 먼저 손봐야 할 것인데,
+  // 사람 목록에서 빠지면 아무도 안 본다.
+  function byAssignee(orders, asOf) {
+    const today = text(asOf, 10);
+    const buckets = new Map();
+    rows(orders).forEach(item => {
+      const uid = text(item.assigneeUid, 80);
+      const key = uid || "__none";
+      if (!buckets.has(key)) {
+        buckets.set(key, {
+          uid,
+          name: uid ? text(item.assigneeName, 80) || uid : "담당자 없음",
+          total: 0, open: 0, overdue: 0, soon: 0, waitingReview: 0, done: 0, progress: 0,
+        });
+      }
+      const row = buckets.get(key);
+      const status = text(item.status, 20);
+      row.total += 1;
+      if (OPEN_STATUSES.includes(status)) {
+        row.open += 1;
+        if (isDate(item.dueDate) && isDate(today)) {
+          if (text(item.dueDate, 10) < today) row.overdue += 1;
+          else if (text(item.dueDate, 10) <= addDays(today, 7)) row.soon += 1;
+        }
+      }
+      if (status === "submitted") row.waitingReview += 1;
+      if (status === "done") row.done += 1;
+      row.progress += Number(item.progress) || 0;
+      if (uid && !row.name) row.name = text(item.assigneeName, 80) || uid;
+    });
+    return [...buckets.values()]
+      .map(row => Object.assign(row, { progress: row.total ? Math.round(row.progress / row.total) : 0 }))
+      // 손이 가야 하는 사람부터. 기한 지난 것이 많은 순, 그 다음 물고 있는 수.
+      .sort((a, b) => {
+        if (a.uid === "" && b.uid !== "") return -1;
+        if (b.uid === "" && a.uid !== "") return 1;
+        if (a.overdue !== b.overdue) return b.overdue - a.overdue;
+        if (a.open !== b.open) return b.open - a.open;
+        return a.name.localeCompare(b.name, "ko");
+      });
+  }
+
   function summarize(orders, asOf) {
     const list = rows(orders);
-    const open = list.filter(item => ["assigned", "doing", "returned"].includes(item.status));
+    const open = list.filter(item => OPEN_STATUSES.includes(item.status));
     const late = list.filter(item => item.dueDate && isDate(asOf)
-      && ["assigned", "doing", "returned"].includes(item.status) && item.dueDate < text(asOf, 10));
+      && OPEN_STATUSES.includes(item.status) && item.dueDate < text(asOf, 10));
     const progress = list.length
       ? Math.round(list.reduce((sum, item) => sum + (Number(item.progress) || 0), 0) / list.length)
       : 0;
@@ -203,6 +272,9 @@
     todayOffset,
     datesFromColumns,
     summarize,
+    OPEN_STATUSES,
+    dueSoon,
+    byAssignee,
     groupByTrack,
     sortProjects,
     addDays,
