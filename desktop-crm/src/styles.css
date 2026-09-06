@@ -584,3 +584,36 @@ button:focus-visible,input:focus-visible,select:focus-visible,textarea:focus-vis
  * 같은 일이 다른 자리에서 또 나지 않게 여기서 한 번에 막는다. 요소를
  * 감추면서 굳이 보이게 하고 싶은 곳은 없다. */
 [hidden] { display: none !important; }
+
+/* 텔레그램 알림 설정 */
+.tg-card .form-grid { margin-bottom: 10px; }
+.tg-toggle {
+  display: block;
+  margin: 0 0 8px;
+  color: #4E5968;
+  font-size: 12px;
+  line-height: 1.6;
+}
+.tg-toggle small { display: block; margin-left: 20px; color: #8B95A1; font-size: 11px; }
+.tg-error { margin: 0 0 10px; padding: 9px 11px; border-radius: 9px; background: #FEF2F3; color: #C6535F; font-size: 12px; }
+.tg-notice { margin: 0 0 10px; padding: 9px 11px; border-radius: 9px; background: #EFF6EE; color: #00875A; font-size: 12px; }
+.tg-preview {
+  margin-top: 13px;
+  padding: 11px 13px;
+  border: 1px solid #E5E8EB;
+  border-radius: 10px;
+  background: #FBFCFD;
+}
+.tg-preview b { display: block; color: #191F28; font-size: 12px; }
+.tg-preview small { display: block; margin: 3px 0 8px; color: #8B95A1; font-size: 11px; }
+.tg-preview pre {
+  margin: 0;
+  max-height: 220px;
+  overflow: auto;
+  color: #4E5968;
+  font-family: ui-monospace, "D2Coding", "Consolas", monospace;
+  font-size: 11px;
+  line-height: 1.7;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
